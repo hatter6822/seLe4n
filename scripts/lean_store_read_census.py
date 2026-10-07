@@ -1564,10 +1564,10 @@ ACCESSOR_BODIES = {
     for d in ("getObject?", "getTcb?", "getEndpoint?", "getNotification?",
               "getCNode?", "getVSpaceRoot?", "getSchedContext?", "getReply?")
 } | {
-    # The lock domain's store primitive: it reads the store generically and
-    # writes it back, applying a lock-only transform to whatever is stored.
-    ("SeLe4n/Kernel/Concurrency/Locks/WithLockSet.lean", "updateObjectAt"):
-        "lock-domain store primitive; kind-agnostic, `f : KernelObject → KernelObject`",
+    # The serializability model's store primitive: it reads the store
+    # generically and writes it back, applying `f` to whatever is stored.
+    ("SeLe4n/Kernel/Concurrency/Locks/Serializability.lean", "updateObjectAt"):
+        "serializability-model store primitive; kind-agnostic, `f : KernelObject → KernelObject`",
 }
 
 #: The declarations that write an object table RAW by design (`v0.35.76`) —
@@ -1581,8 +1581,8 @@ ACCESSOR_BODIES = {
 #: exemption, and a raw write anywhere else is a `STORE_WRITE_CODE` violation.
 #:
 #: `updateObjectAt` cannot be a `rewriteObject`: it is kind-agnostic and a
-#: CNode or VSpace root is not rewrite-neutral, so it stays the lock domain's
-#: raw read-modify-write over `storeObject`'s bookkeeping.  The planted
+#: CNode or VSpace root is not rewrite-neutral, so it stays the serializability
+#: model's raw read-modify-write over `storeObject`'s bookkeeping.  The planted
 #: witness is the reply-stack write census's own fixture — a definition that
 #: stores a chain-bearing record through the bare table so that census is
 #: known to see a raw table write — and it must stay raw for exactly that
@@ -1594,8 +1594,8 @@ WRITE_PRIMITIVE_BODIES = {
         "the proof-carrying in-place rewrite: the bare insert under `rewriteAdmissible`",
     ("SeLe4n/Model/Builder.lean", "createObject"):
         "the boot-time population, capacity-bounded by `PlatformConfig`",
-    ("SeLe4n/Kernel/Concurrency/Locks/WithLockSet.lean", "updateObjectAt"):
-        "lock-domain read-modify-write; kind-agnostic, so not a rewrite",
+    ("SeLe4n/Kernel/Concurrency/Locks/Serializability.lean", "updateObjectAt"):
+        "serializability-model read-modify-write; kind-agnostic, so not a rewrite",
     ("SeLe4n/Kernel/FrozenOps/Core.lean", "frozenWithObjectStored"):
         "the frozen surface's one store, over `FrozenMap.set`",
     ("SeLe4n/Kernel/Lifecycle/Operations/UntypedReset.lean", "retireCarvedObject"):

@@ -973,7 +973,7 @@ theorem endpointCallOnCore_withLockSet_preserves_objects_invExt
     -- generalizes the prior `replyId? = none` statement to the runtime footprint.
     (replyId? : Option SeLe4n.ReplyId := none)
     (s : LockedSystemState) (hObjInv : s.kernel.objects.invExt) :
-    (withLockSetGhost (lockSet_endpointCall caller cnRoot endpointId receiver? donatedSc? replyId?)
+    (withLockSet (lockSet_endpointCall caller cnRoot endpointId receiver? donatedSc? replyId?)
         executingCore (endpointCallOnCore endpointId caller msg executingCore) s).1.kernel.objects.invExt :=
   withLockSet_invariant_preserved _ executingCore _ s (fun st => st.objects.invExt) hObjInv
     (fun s' h => endpointCallOnCore_preserves_objects_invExt endpointId caller msg executingCore s' h)
@@ -2915,7 +2915,7 @@ theorem endpointCallOnCore_observer_atomic
     (replyId? : Option SeLe4n.ReplyId) (observed : SeLe4n.ThreadId)
     (s : LockedSystemState) :
     threadIpcStateObserver observed
-        (withLockSetGhost (lockSet_endpointCall caller cnRoot endpointId receiver? donatedSc?
+        (withLockSet (lockSet_endpointCall caller cnRoot endpointId receiver? donatedSc?
             replyId?)
           executingCore (endpointCallOnCore endpointId caller msg executingCore) s).1.kernel
       = threadIpcStateObserver observed

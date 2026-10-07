@@ -61,9 +61,9 @@ bracket consumes.
 
 > **Model note.**  This kernel now has a first-class `Reply` *object*
 > (`KernelObject.reply`, addressed by `ReplyId`) carrying the caller back-link in
-> `reply.caller`.  The `.reply` lock-kind is a **live level-6 per-object lock**:
-> `LockId.lookup` resolves `(reply.lock, .reply r)` via `getReply?` and `lockHeld`
-> reads `Reply.lock` (`LockIdProjection.lookup_reply`, `LockSetHeld`).  SM6.C.6
+> `reply.caller`.  The `.reply` lock-kind is a **live level-6 lock**: its key
+> `.object ⟨.reply, r⟩` is an entry of the ghost lock table (WS-LS LS3.1), which
+> the bracket acquires and `LockState.held` reads.  SM6.C.6
 > ("reply object lifecycle") is the lifecycle of `reply.caller` — set on the
 > receive path (`linkCallerReply`) and consumed `:= none` on reply
 > (`consumeReply`) — and SM6.C.7 ("reply-replay protection") is that single-use
@@ -2893,7 +2893,7 @@ theorem endpointReplyOnCore_atomic_under_lockSet
     -- **WS-HP HP10.6**: and at the origin-recipient arity.
     (originRecipient? : Option SeLe4n.ThreadId)
     (s : LockedSystemState) :
-    withLockSetGhost (lockSet_endpointReply replier cnRoot target donatedSc? donatedOwner?
+    withLockSet (lockSet_endpointReply replier cnRoot target donatedSc? donatedOwner?
         replyId? belowHeadReply? outerCaller? donatedHead? answeredFrameAbove? answeredFrameBelow? originRecipient?)
         executingCore (endpointReplyOnCore replier target msg executingCore) s
       = (⟨(endpointReplyOnCore replier target msg executingCore s.kernel).1,

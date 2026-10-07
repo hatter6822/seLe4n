@@ -167,7 +167,7 @@ under its lock-set — the ghost bracket's value is the bare transition's. -/
 example (replier target : SeLe4n.ThreadId) (cnRoot : SeLe4n.ObjId) (msg : IpcMessage)
     (executingCore : CoreId) (donatedSc? : Option SeLe4n.SchedContextId)
     (donatedOwner? : Option SeLe4n.ThreadId) (s : SystemState) :
-    (withLockSetGhost (lockSet_endpointReply replier cnRoot target donatedSc? donatedOwner? none none none none none none none)
+    (withLockSet (lockSet_endpointReply replier cnRoot target donatedSc? donatedOwner? none none none none none none none)
         executingCore (endpointReplyOnCore replier target msg executingCore)
         ⟨s, LockState.unheld⟩).2
       = (endpointReplyOnCore replier target msg executingCore s).2 := by

@@ -14,7 +14,7 @@ import SeLe4n.Kernel.Concurrency.Locks.Kind
 import SeLe4n.Kernel.Concurrency.Locks.LockSet
 import SeLe4n.Kernel.Concurrency.Locks.LockSetTransitions
 import SeLe4n.Kernel.Concurrency.Locks.LockSet2PL
-import SeLe4n.Kernel.Concurrency.Locks.LockSetHeld
+import SeLe4n.Kernel.Concurrency.Locks.LockState
 
 /-!
 # WS-SM SM3.D — Deadlock-freedom under two-phase locking + lock ordering
@@ -1984,21 +1984,21 @@ theorem execution_satisfies_hypotheses_of_all_prefix (e : KernelExecution)
         exact coreAcquiresInOrder_of_prefix e c S hPre
 
 -- ============================================================================
--- §7b — Bridge: the abstract `held` model ↔ the SM3.C concrete lock state
+-- §7b — Bridge: the abstract `held` model ↔ the ghost lock table
 -- ============================================================================
 --
 -- §7 grounds the *hypotheses* in the SM3.B `lockAcquireSequence` discipline.
 -- This section grounds the *model itself*: it connects the abstract
--- `heldBy` / `KernelExecution` to SM3.C's concrete `lockSetHeld` / `lockHeld`
--- (which read the actual per-object `RwLockState` of a `SystemState`).
+-- `heldBy` / `KernelExecution` to the ghost lock table's `heldAll` / `held`
+-- (`Concurrency/Locks/LockState.lean`, the only lock state since WS-LS LS3.1).
 -- `executionOfHeld` materialises the `KernelExecution` of a single core that
--- holds a lock set `S` and is blocked on `blk`; `lockSetHeld_realizes_heldBy`
--- proves that when the core *genuinely* holds `S` on a concrete state `s`
--- (SM3.C `lockSetHeld`), the abstract `heldBy` agrees and each declared lock
--- is concretely held (`lockHeld`).  This closes the abstract-model ↔
--- concrete-kernel gap for the holding side.  (The *blocked* side has no
--- concrete counterpart until SM5+ adds per-core blocked tracking to the
--- kernel state; `blk` is supplied externally as the next-to-acquire lock.)
+-- holds a lock set `S` and is blocked on `blk`; `heldAll_realizes_heldBy`
+-- proves that when the core *genuinely* holds `S` in a table `L`
+-- (`LockState.heldAll`), the abstract `heldBy` agrees and each declared lock
+-- is held in the table (`LockState.held`).  This closes the abstract-model ↔
+-- lock-table gap for the holding side.  (The *blocked* side has no
+-- counterpart until SM5+ adds per-core blocked tracking; `blk` is supplied
+-- externally as the next-to-acquire lock.)
 
 /-- WS-SM SM3.D §7b: the `KernelExecution` of a single core `c` that holds
 exactly the lock set `S` (its `held` is `S`'s canonical `LockKey` sequence)
@@ -2015,21 +2015,23 @@ theorem executionOfHeld_heldBy (c : CoreId) (S : LockSet) (blk : Option LockKey)
   unfold heldBy executionOfHeld
   simp
 
-/-- WS-SM SM3.D §7b (the model↔kernel bridge): if core `c` genuinely holds
-the lock set `S` on the concrete state `s` (SM3.C `lockSetHeld`), then for
+/-- WS-SM SM3.D §7b (the model↔table bridge): if core `c` genuinely holds
+the lock set `S` in the ghost lock table `L` (`LockState.heldAll`), then for
 every declared `(l, m) ∈ S`:
-* the **concrete** word is held — `keyHeld c l m s` (SM3.C / WS-LS LS1.2,
-  reads the actual per-object or per-core `RwLockState`), and
+* the table's word is held — `L.held c l m` (reads the `RwLockState` the
+  table assigns to `l`), and
 * the **abstract** model agrees — `heldBy (executionOfHeld c S blk) c l`.
 
-This is the missing connection between the abstract `KernelExecution` the
-deadlock theorems reason about and the concrete kernel lock state: a
-deadlock-relevant "held" edge in the abstract model is realised by a genuine
-`RwLockState` holding in the kernel. -/
-theorem lockSetHeld_realizes_heldBy (c : CoreId) (S : LockSet)
-    (s : SeLe4n.Model.SystemState) (blk : Option LockKey)
-    (hHeld : lockSetHeld c S s) :
-    ∀ p ∈ S.pairs, keyHeld c p.fst p.snd s ∧ heldBy (executionOfHeld c S blk) c p.fst := by
+This is the connection between the abstract `KernelExecution` the deadlock
+theorems reason about and the lock table every seam's `BracketSpec.run`
+advances: a deadlock-relevant "held" edge in the abstract model is realised by
+a genuine `RwLockState` holding in the table.  (WS-LS LS3.1 restated it from
+the per-object words to the table, renaming it from
+`lockSetHeld_realizes_heldBy`.) -/
+theorem heldAll_realizes_heldBy (c : CoreId) (S : LockSet)
+    (L : LockState) (blk : Option LockKey)
+    (hHeld : L.heldAll c S.pairs) :
+    ∀ p ∈ S.pairs, L.held c p.fst p.snd ∧ heldBy (executionOfHeld c S blk) c p.fst := by
   intro p hp
   refine ⟨hHeld p hp, ?_⟩
   rw [executionOfHeld_heldBy]

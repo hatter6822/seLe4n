@@ -56,7 +56,7 @@ them) and `writeReg` takes a `UInt64`; a register file is built with
 read on the entry/exit path; build a saved context from `TrapContext` through
 `ofWords` and the existing writers instead.
 
-### WS-LS Lock state separated from kernel state — IN FLIGHT (registered v0.36.60; LS0.1 v0.36.62; LS1.1 v0.36.63; LS1.2 v0.36.64; LS2.1 v0.36.65; LS2.2 v0.36.66; LS2.3 v0.36.67; runs beside WS-CV, before WS-CB)
+### WS-LS Lock state separated from kernel state — IN FLIGHT (registered v0.36.60; LS0.1 v0.36.62; LS1.1 v0.36.63; LS1.2 v0.36.64; LS2.1 v0.36.65; LS2.2 v0.36.66; LS2.3 v0.36.67; LS2.4 v0.36.68; LS2.5 v0.36.69; LS3.1 v0.36.70; runs beside WS-CV, before WS-CB)
 
 The lock words leave the kernel state: a ghost `LockState` (one total function
 over one `LockKey` type) sits beside `SystemState` in `LockedSystemState`, a
@@ -71,18 +71,23 @@ keep describing the executed path.  Plan:
 measured after CV1.1 (LS0.1's reading) are the bracket, which rewrites lock words no hardware
 reads (the kernel-entry ticket lock is the exclusion).
 
-**What new code must assume until WS-LS lands**: the brackets and the lock
-fields are as `docs/planning/SMP_FINE_LOCK_MIGRATION_PLAN.md` describes.
-**What new code must not do**: add a transition that reads or writes a `lock`
-field, `objStoreLock` or `schedulerLocks` (LS3 deletes them); add a consumer of
+**What new code must assume until WS-LS lands**: since LS3.1 no kernel object
+and no `SystemState` field carries lock state; the only lock state is the ghost
+`LockState` (`Locks/LockState.lean`) in `LockedSystemState`, and
+`LockKind.objStore` survives until LS3.3 only because `LockKey.kind` and the
+`permittedKinds` lemmas read it.
+**What new code must not do**: reintroduce a lock word into the kernel state
+(a `lock : RwLockState` field, `objStoreLock` or `schedulerLocks`, deleted at
+LS3.1), or a revalidated-entry model beside `BracketSpec` (retired at LS3.1,
+plan §2 item 3); add a consumer of
 `runBracketed`, `LockBracketOutcome`, `runUnderDeclaredLockSet` or
 `syscallBracketRefusalResult` (deleted at LS2.4); reintroduce a second lock-key
 type beside `LockKey` (`Locks/LockKey.lean`; LS1.2 retired `SchedLockId` and
 `SchedLockSet` into `LockKey` and `LockSet`, so every footprint, object or
 scheduler, is one `LockSet` and the one bracket domain is
 `objectLockBracketDomain`); state a new 2PL, atomicity or serializability
-result over the word-level `withLockSet` (since LS2.1 those results are over
-`LockedSystemState` and `withLockSetGhost` in `Locks/BracketSpec.lean` /
+result over `SystemState` alone (since LS2.1 those results are over
+`LockedSystemState` and `withLockSet` in `Locks/BracketSpec.lean` /
 `LockSet2PL.lean` / `Serializability.lean`, where the bracket's kernel
 projection is the action by `rfl`; a new bracketed seam is a `BracketSpec`
 whose `covers` field is its coverage theorem; since LS2.2 the timer tick, the

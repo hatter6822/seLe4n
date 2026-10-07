@@ -11,11 +11,8 @@ import SeLe4n.Model.State
 import SeLe4n.Kernel.Scheduler.PriorityInheritance.BlockingGraph
 import SeLe4n.Kernel.Concurrency.Locks.Kind
 import SeLe4n.Kernel.Concurrency.Locks.LockSet
-import SeLe4n.Kernel.Concurrency.Locks.LockIdProjection
 import SeLe4n.Kernel.Concurrency.Locks.LockSetTransitions
-import SeLe4n.Kernel.Concurrency.Locks.WithLockSet
-import SeLe4n.Kernel.Concurrency.Locks.LockSetHeld
-import SeLe4n.Kernel.Concurrency.Locks.LockSet2PL
+import SeLe4n.Kernel.Concurrency.Locks.LockState
 
 /-!
 # WS-SM SM3.C.11 — Dynamic priority-inheritance chain-walk locking
@@ -97,10 +94,10 @@ The strategy preserves deadlock-freedom (Theorem 3.7.1) because:
 
 ## Used by
 
-SM3.C.11.b — the per-transition `withLockSet` wrappers for the
-5 PIP-invoking transitions consume their `pipChainStart_<τ>`
-markers (six in all — `.replyRecv` declares two) after the static
-lock-set is held and `action` completes.
+SM3.C.11.b — the per-transition bracket specs (`BracketSpec.run`,
+`Locks/BracketSpec.lean`) for the 5 PIP-invoking transitions consume
+their `pipChainStart_<τ>` markers (six in all — `.replyRecv` declares
+two) after the static lock-set is held and `action` completes.
 -/
 
 namespace SeLe4n.Kernel.Concurrency
@@ -371,9 +368,12 @@ The four conjuncts:
 * `pathChain`: `chainFollowsBlockingServer s path.path` — every
   adjacent pair follows the actual blocking graph.
 
-This is the dynamic counterpart to `lockSetHeld`: the static
+This is the dynamic counterpart to `LockState.heldAll`: the static
 lock-set discipline plus this predicate together discharge the
 SMP-migration precondition for the 3 PIP-invoking transitions.
+Since WS-LS LS3.1 the held conjunct reads the ghost lock table `L`
+(`Concurrency/Locks/LockState.lean`), and the path-structure conjuncts
+read the kernel state `s`; the two halves of a `LockedSystemState`.
 
 **Audit-pass-2**: conjunct 4 reformulated from the indexed
 `∀ i, path.path[i] → path.path[i+1]` form to the recursive
@@ -383,10 +383,9 @@ The indexed form was a defined-but-unestablished spec; the recursive
 form is provably produced by `walkAndAcquire`, wiring this predicate
 to its producer. -/
 def dynamicChainHeld (c : CoreId) (path : PipChainPath)
-    (s : SystemState) : Prop :=
-  -- 1. Every TCB in path has its write lock held by c.
-  (∀ tid ∈ path.path,
-    lockHeld c ⟨.tcb, tid.toObjId⟩ .write s) ∧
+    (L : LockState) (s : SystemState) : Prop :=
+  -- 1. Every TCB in path has its write lock held by c in the ghost table.
+  (∀ tid ∈ path.path, L.held c (tcbLock tid) .write) ∧
   -- 2. ObjId-ascending discipline (SM0.I).
   path.path.Pairwise (fun a b => a.toNat < b.toNat) ∧
   -- 3. Path starts at the declared start.
@@ -913,193 +912,37 @@ theorem walkAndAcquire_terminated_satisfies_path_structure
 -- ============================================================================
 --
 -- The §8 theorems establish the three *path-structure* conjuncts (ascending,
--- starts-at-start, follows-blocking-graph).  The remaining conjunct — every
--- chain TCB write-locked by the caller — is a property of the *lock-acquired*
--- state produced by the `acquireAll` fold over `chainLockSeq`, not of the
--- walker's pure path discovery.  This section closes that gap, reusing the
--- SM3.C.8 multi-lock establishment lemma.
-
-/-- WS-SM SM3.C.11.c helper: distinct `ThreadId.toNat`s yield distinct
-`ObjId`s (`toObjId` is `ObjId.ofNat ∘ toNat`, injective on `toNat`). -/
-theorem threadId_toObjId_ne_of_toNat_lt {a b : SeLe4n.ThreadId}
-    (h : a.toNat < b.toNat) : a.toObjId ≠ b.toObjId := by
-  intro heq
-  have hN : a.toNat = b.toNat := by
-    have hc := congrArg SeLe4n.ObjId.toNat heq
-    simpa [SeLe4n.ThreadId.toObjId, SeLe4n.ObjId.ofNat, SeLe4n.ObjId.toNat] using hc
-  omega
-
+-- starts-at-start, follows-blocking-graph) on the kernel state.  The remaining
+-- conjunct — every chain TCB write-locked by the caller — is a property of the
+-- ghost lock table produced by the `LockState.acquireAll` fold over
+-- `chainLockSeq`, not of the walker's pure path discovery.  This section closes
+-- that gap with the table's multi-lock establishment lemma.  The kernel state
+-- is untouched by the fold, so the path-structure conjuncts need no transport
+-- (WS-LS LS3.1 deleted the per-object transport section that the lock words
+-- once required).
 
 /-- WS-SM SM3.C.11.c (substantive — closes the conjunct-1 gap): after acquiring
 the chain's write locks, the caller holds the write lock on **every** TCB in the
 path.  This is `dynamicChainHeld`'s conjunct 1, established on the post-acquire
-state.
+table.
 
-The chain locks are `.tcb`-kinded write locks at the path TCBs' ObjIds.  The
-path is `ObjId.val`-ascending (the walker invariant / SM0.I discipline), so the
-ObjIds are pairwise distinct; with each chain TCB present and `unheld`, the
-SM3.C.8 multi-lock establishment lemma
-(`acquireAll_establishes_lockHeld_of_distinct_present_unheld`) grants every
-write lock. -/
+The chain locks are the path TCBs' `tcbLock` keys in write mode.  The path is
+`toNat`-ascending (the walker invariant / SM0.I discipline), so the keys are
+pairwise distinct (`chainLockSeq_keys_nodup`); with every chain key `unheld`,
+`LockState.acquireAll_held_of_free` grants every write lock. -/
 theorem chainLockSeq_acquire_establishes_pathHeld (caller : CoreId)
-    (path : PipChainPath) (s : SystemState)
-    (hExt : s.objects.invExt)
-    (hChainPresent : ∀ tid ∈ path.path, ∃ o,
-      s.objects.get? tid.toObjId = some o ∧ o.lockKind = .tcb ∧
-      o.objectLockOf = RwLockState.unheld)
+    (path : PipChainPath) (L : LockState)
+    (hFree : ∀ tid ∈ path.path, L (tcbLock tid) = RwLockState.unheld)
     (hAscending : path.path.Pairwise (fun a b => a.toNat < b.toNat)) :
     ∀ tid ∈ path.path,
-      lockHeld caller ⟨.tcb, tid.toObjId⟩ .write
-        (acquireAll caller (chainLockSeq path) s) := by
-  have hEach : ∀ p ∈ chainLockSeq path, ∃ l o, p.fst = .object l ∧
-      s.objects[l.objId]? = some o ∧ o.lockKind = l.kind ∧
-      o.objectLockOf = RwLockState.unheld := by
-    intro p hp
-    obtain ⟨tid, htid, hpEq⟩ := List.mem_map.mp hp
-    obtain ⟨o, hPres, hKind, hUnheld⟩ := hChainPresent tid htid
-    refine ⟨⟨.tcb, tid.toObjId⟩, o, ?_, hPres, hKind, hUnheld⟩
-    rw [← hpEq]; rfl
-  have hDistinct : (chainLockSeq path).Pairwise (fun a b => a.fst.objId? ≠ b.fst.objId?) := by
-    unfold chainLockSeq
-    rw [List.pairwise_map]
-    refine hAscending.imp (fun {x y} hlt => ?_)
-    intro heq
-    exact threadId_toObjId_ne_of_toNat_lt hlt
-      (by simpa only [tcbLock, LockKey.objId?_object, Option.some.injEq] using heq)
-  have hAll := acquireAll_establishes_lockHeld_of_distinct_present_unheld caller
-    (chainLockSeq path) s hExt hEach hDistinct
+      (LockState.acquireAll caller (chainLockSeq path) L).held caller (tcbLock tid) .write := by
+  have hAll := LockState.acquireAll_held_of_free caller (chainLockSeq path) L
+    (chainLockSeq_keys_nodup path hAscending)
+    (fun p hp => by
+      obtain ⟨tid, htid, hpEq⟩ := List.mem_map.mp hp
+      rw [← hpEq]; exact hFree tid htid)
   intro tid htid
-  have hMem : (tcbLock tid, AccessMode.write) ∈ chainLockSeq path :=
-    List.mem_map.mpr ⟨tid, htid, rfl⟩
-  exact hAll _ hMem
-
--- ============================================================================
--- §10 — SM3.C.11.c — `blockingServer` transport (conjunct 4 on the acquired state)
--- ============================================================================
---
--- `dynamicChainHeld`'s conjunct 4 (`chainFollowsBlockingServer`) is evaluated on
--- the *post-acquire* state, but the walker establishes it on the *pre-acquire*
--- state.  Lock acquisition only advances `RwLockState` fields via
--- `KernelObject.updateLock`, which preserves the TCB `ipcState` that
--- `blockingServer` reads — so `blockingServer` (and hence
--- `chainFollowsBlockingServer`) transports unchanged across the acquire fold.
-
-/-- WS-SM SM3.C.11.c helper: the pure projection `blockingServer` reads from a
-stored object — the reply-blocking server of a TCB, `none` for any other
-variant or non-reply-blocked TCB. -/
-def tcbReplyServer : KernelObject → Option SeLe4n.ThreadId
-  | .tcb tcb =>
-      match tcb.ipcState with
-      | .blockedOnReply _ (some server) => some server
-      | _ => none
-  | _ => none
-
-/-- WS-SM SM3.C.11.c helper: the object-store `getElem?` bracket equals the
-`get?` method form (the GetElem? instance IS `get?`).  Stated over a generic
-key so the proof text routes `blockingServer`'s bracket lookup through the
-`get?` method form the AK7-cascade metric prefers. -/
-theorem objects_getElem?_eq_get? (s : SystemState) (k : SeLe4n.ObjId) :
-    s.objects[k]? = s.objects.get? k := rfl
-
-/-- WS-SM SM3.C.11.c helper: `blockingServer` factors as the stored object's
-`tcbReplyServer`. -/
-theorem blockingServer_eq_bind (s : SystemState) (tid : SeLe4n.ThreadId) :
-    blockingServer s tid = (s.objects.get? tid.toObjId).bind tcbReplyServer := by
-  unfold blockingServer SystemState.getTcb? tcbReplyServer
-  rw [objects_getElem?_eq_get? s tid.toObjId]
-  cases s.objects.get? tid.toObjId with
-  | none => rfl
-  | some o => cases o <;> rfl
-
-/-- WS-SM SM3.C.11.c helper: `KernelObject.updateLock` preserves `tcbReplyServer`
-— it only advances the `lock` field, never `ipcState`. -/
-theorem tcbReplyServer_updateLock (o : KernelObject) (op : RwLockOp) :
-    tcbReplyServer (o.updateLock op) = tcbReplyServer o := by
-  cases o <;> rfl
-
-/-- WS-SM SM3.C.11.c: a single lock acquisition preserves `blockingServer` at
-every thread.  Acquiring at a different ObjId leaves the object untouched
-(frame); acquiring at the same ObjId replaces the object with its
-`updateLock`-image, whose `tcbReplyServer` is unchanged. -/
-theorem acquireLockOnObject_preserves_blockingServer (s : SystemState)
-    (core : CoreId) (l : LockId) (m : AccessMode)
-    (hExt : s.objects.invExt) (tid : SeLe4n.ThreadId) :
-    blockingServer (acquireLockOnObject s core l m) tid = blockingServer s tid := by
-  rw [blockingServer_eq_bind, blockingServer_eq_bind]
-  by_cases hEq : tid.toObjId = l.objId
-  · unfold acquireLockOnObject
-    cases hk : l.kind with
-    | objStore | runQueue | replenishQueue => all_goals rfl
-    | tcb | endpoint | notification | cnode
-    | vspaceRoot | untyped | schedContext | reply | page =>
-      all_goals (
-        unfold updateObjectLockAt
-        cases hL : LockId.lookup s l with
-        | none => rfl
-        | some pr =>
-          unfold updateObjectAt
-          cases hG : s.objects.get? l.objId with
-          | none => rfl
-          | some o =>
-            have hSelf : (s.objects.insert l.objId
-                (o.updateLock (m.toAcquireOp core))).get? tid.toObjId
-                = some (o.updateLock (m.toAcquireOp core)) := by
-              rw [hEq]
-              exact SeLe4n.Kernel.RobinHood.RHTable.getElem?_insert_self s.objects
-                l.objId (o.updateLock (m.toAcquireOp core)) hExt
-            have hOrig : s.objects.get? tid.toObjId = some o := by rw [hEq]; exact hG
-            show ((s.objects.insert l.objId
-                (o.updateLock (m.toAcquireOp core))).get? tid.toObjId).bind tcbReplyServer
-              = (s.objects.get? tid.toObjId).bind tcbReplyServer
-            rw [hSelf, hOrig]
-            show tcbReplyServer (o.updateLock (m.toAcquireOp core)) = tcbReplyServer o
-            exact tcbReplyServer_updateLock o (m.toAcquireOp core))
-  · rw [show (acquireLockOnObject s core l m).objects.get? tid.toObjId
-          = s.objects.get? tid.toObjId from
-        acquireLockOnObject_objects_getElem?_of_ne s core l m tid.toObjId hExt hEq]
-
-/-- **WS-LS LS1.2**: at any key — the table and scheduler words are not
-objects, so `blockingServer`'s store read is untouched there. -/
-theorem acquireLock_preserves_blockingServer (s : SystemState)
-    (core : CoreId) (k : LockKey) (m : AccessMode)
-    (hExt : s.objects.invExt) (tid : SeLe4n.ThreadId) :
-    blockingServer (acquireLock s core k m) tid = blockingServer s tid := by
-  cases k with
-  | object l => exact acquireLockOnObject_preserves_blockingServer s core l m hExt tid
-  | _ => rw [blockingServer_eq_bind, blockingServer_eq_bind]; rfl
-
-/-- WS-SM SM3.C.11.c: the `acquireAll` fold preserves `blockingServer` at every
-thread.  Induction on the sequence via the single-step preservation, threading
-`invExt`. -/
-theorem acquireAll_preserves_blockingServer (core : CoreId) :
-    ∀ (pairs : List (LockKey × AccessMode)) (s : SystemState),
-      s.objects.invExt → ∀ tid : SeLe4n.ThreadId,
-        blockingServer (acquireAll core pairs s) tid = blockingServer s tid := by
-  intro pairs
-  induction pairs with
-  | nil => intro s _ tid; rfl
-  | cons head tail ih =>
-      intro s hExt tid
-      have hExt1 := acquireLock_preserves_invExt s core head.fst head.snd hExt
-      show blockingServer
-        (acquireAll core tail (acquireLock s core head.fst head.snd)) tid
-        = blockingServer s tid
-      rw [ih (acquireLock s core head.fst head.snd) hExt1 tid,
-        acquireLock_preserves_blockingServer s core head.fst head.snd hExt tid]
-
-/-- WS-SM SM3.C.11.c: `chainFollowsBlockingServer` transports across the
-acquire fold — equal `blockingServer` at every thread gives an equal chain
-predicate.  Induction on the list shape. -/
-theorem chainFollowsBlockingServer_of_blockingServer_eq (s s' : SystemState)
-    (hEq : ∀ tid, blockingServer s' tid = blockingServer s tid) :
-    ∀ (l : List SeLe4n.ThreadId),
-      chainFollowsBlockingServer s l → chainFollowsBlockingServer s' l
-  | [], h => h
-  | [_], h => h
-  | a :: b :: rest, h => by
-      obtain ⟨hEdge, hRest⟩ := h
-      refine ⟨?_, chainFollowsBlockingServer_of_blockingServer_eq s s' hEq (b :: rest) hRest⟩
-      rw [hEq a]; exact hEdge
+  exact hAll (tcbLock tid, .write) (List.mem_map.mpr ⟨tid, htid, rfl⟩)
 
 -- ============================================================================
 -- §11 — SM3.C.11.d — Two-core deadlock-freedom for the dynamic chain

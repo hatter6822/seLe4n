@@ -12,10 +12,7 @@
 import SeLe4n.Model.State
 import SeLe4n.Kernel.Concurrency.Locks.Kind
 import SeLe4n.Kernel.Concurrency.Locks.LockSet
-import SeLe4n.Kernel.Concurrency.Locks.LockIdProjection
 import SeLe4n.Kernel.Concurrency.Locks.LockSetTransitions
-import SeLe4n.Kernel.Concurrency.Locks.WithLockSet
-import SeLe4n.Kernel.Concurrency.Locks.LockSetHeld
 import SeLe4n.Kernel.Concurrency.Locks.LockSet2PL
 import SeLe4n.Kernel.Concurrency.Locks.BracketSpec
 import SeLe4n.Kernel.Concurrency.Locks.Deadlock
@@ -66,8 +63,8 @@ commit-order schedule.
   holds all its locks until commit (no early release).
 * **SM3.E.5** ≥8 commutativity lemmas — non-conflicting operation pairs commute.
 * **SM3.E.6** `singleCore_proof_preservation` (Corollary 2.1.11) — every
-  single-core kernel-transition theorem lifts to the SMP form under the
-  `lockSetHeld` precondition, reusing SM3.C.8's structural-preservation lever.
+  single-core kernel-transition theorem lifts to the SMP form over the pair
+  (the bracket's phases write only the ghost lock table, WS-LS LS2.1).
 
 ## Relationship to SM3.D
 
@@ -1005,10 +1002,12 @@ theorem readOnlyInstance_actionsCommute_readOnly (S₁ S₂ : LockSet) (c₁ c�
 
 /-! ### §7b — Disjoint-subsystem (different-field) transitions commute (structural) -/
 
-/-- WS-SM SM3.E.5: a transition whose action writes only the table-level
-`objStoreLock` field (a pure object-store-lock-bookkeeping action). -/
-def setObjStoreLockAction (lk : RwLockState) : SystemState → SystemState :=
-  fun s => { s with objStoreLock := lk }
+/-- WS-SM SM3.E.5: a transition whose action writes only the `tlb` field
+(a pure TLB-bookkeeping action).  WS-LS LS3.1 deleted the `objStoreLock`
+field this witness used to write; the TLB field is another kernel field
+disjoint from the scheduler. -/
+def setTlbAction (t : TlbState) : SystemState → SystemState :=
+  fun s => { s with tlb := t }
 
 /-- WS-SM SM3.E.5: a transition whose action writes only the `scheduler`
 subsystem field. -/
@@ -1017,23 +1016,23 @@ def setSchedulerAction (sch : SchedulerState) : SystemState → SystemState :=
 
 /-- WS-SM SM3.E.5 (disjoint-subsystem commutativity, structural): two actions that
 write **different** SystemState record fields commute structurally.  Concretely,
-an object-store-lock action and a scheduler action touch disjoint record fields,
-so applying them in either order yields the identical state.  This witnesses
-"transitions operating on disjoint kernel subsystems commute" — a major class of
+a TLB action and a scheduler action touch disjoint record fields, so applying
+them in either order yields the identical state.  This witnesses "transitions
+operating on disjoint kernel subsystems commute" — a major class of
 non-conflicting pairs. -/
-theorem setObjStoreLock_setScheduler_commute (lk : RwLockState) (sch : SchedulerState)
+theorem setTlb_setScheduler_commute (t : TlbState) (sch : SchedulerState)
     (s : SystemState) :
-    setObjStoreLockAction lk (setSchedulerAction sch s)
-      = setSchedulerAction sch (setObjStoreLockAction lk s) := rfl
+    setTlbAction t (setSchedulerAction sch s)
+      = setSchedulerAction sch (setTlbAction t s) := rfl
 
 /-- WS-SM SM3.E.5: the disjoint-subsystem commute lifted to `actionsCommute` on
 the transition instances whose actions are the two field setters. -/
-theorem disjointField_actionsCommute (lk : RwLockState) (sch : SchedulerState)
+theorem disjointField_actionsCommute (t : TlbState) (sch : SchedulerState)
     (S₁ S₂ : LockSet) (c₁ c₂ : CoreId) (ct₁ ct₂ : Nat) (at₁ at₂ : LockKey → Nat) :
-    (KernelTransitionInstance.mk S₁ c₁ ct₁ at₁ (setObjStoreLockAction lk)).actionsCommute
+    (KernelTransitionInstance.mk S₁ c₁ ct₁ at₁ (setTlbAction t)).actionsCommute
       (KernelTransitionInstance.mk S₂ c₂ ct₂ at₂ (setSchedulerAction sch)) := by
   intro s
-  exact (setObjStoreLock_setScheduler_commute lk sch s)
+  exact (setTlb_setScheduler_commute t sch s)
 
 /-! ### §7c — Write/write on different objects commute (observational) -/
 
@@ -1054,6 +1053,44 @@ theorem objStoreEquiv_symm {s₁ s₂ : SystemState} (h : objStoreEquiv s₁ s�
 theorem objStoreEquiv_trans {s₁ s₂ s₃ : SystemState}
     (h₁ : objStoreEquiv s₁ s₂) (h₂ : objStoreEquiv s₂ s₃) : objStoreEquiv s₁ s₃ :=
   fun k => (h₁ k).trans (h₂ k)
+
+/-- WS-SM SM3.E.5: the plain object-store write the commutativity workload is
+built from — apply `f` to the object stored at `oid`, the identity when `oid`
+is absent.  Until WS-LS LS3.1 it lived in `Locks/WithLockSet.lean` as the body
+of the per-object lock update; the lock words are gone, and this is the only
+store write the serializability model still folds. -/
+def updateObjectAt (s : SystemState) (oid : SeLe4n.ObjId)
+    (f : KernelObject → KernelObject) : SystemState :=
+  match s.objects.get? oid with
+  | some obj => { s with objects := s.objects.insert oid (f obj) }
+  | none => s
+
+/-- WS-SM SM3.E.5: closed-form characterisation of `updateObjectAt`'s effect on
+a lookup.  Looking up `k` after `updateObjectAt s oid f` returns `f`-mapped
+content at the target key `oid`, and the unchanged content at every other key.
+Unifies the present/absent branches: when `oid` is absent, `(s.get? oid).map f =
+none` agrees with the unchanged lookup. -/
+theorem updateObjectAt_get? (s : SystemState) (oid k : SeLe4n.ObjId)
+    (f : KernelObject → KernelObject) (hExt : s.objects.invExt) :
+    (updateObjectAt s oid f).objects.get? k
+      = if k = oid then (s.objects.get? oid).map f else s.objects.get? k := by
+  unfold updateObjectAt
+  by_cases hk : k = oid
+  · subst hk
+    rw [if_pos rfl]
+    cases hg : s.objects.get? k with
+    | none => simp [hg]
+    | some o =>
+        show (s.objects.insert k (f o)).get? k = (some o).map f
+        rw [SeLe4n.Kernel.RobinHood.RHTable.getElem?_insert_self s.objects k (f o) hExt]
+        rfl
+  · rw [if_neg hk]
+    cases hg : s.objects.get? oid with
+    | none => rfl
+    | some o =>
+        show (s.objects.insert oid (f o)).get? k = s.objects.get? k
+        exact SeLe4n.Kernel.RobinHood.RHTable.getElem?_insert_ne s.objects oid k (f o)
+          (by simp [Ne.symm hk]) hExt
 
 /-- WS-SM SM3.E.5: `updateObjectAt` preserves the RHTable extension invariant
 (the `insert` branch via `RHTable.insert_preserves_invExt`; the absent branch is
@@ -1124,7 +1161,7 @@ theorem singleCore_invariant_preservation {α : Type} (S : LockSet) (core : Core
     (action : SystemState → SystemState × α) (s : LockedSystemState)
     (inv : SystemState → Prop) (hPre : inv s.kernel)
     (hAction : ∀ s', inv s' → inv (action s').1) :
-    inv (withLockSetGhost S core action s).1.kernel :=
+    inv (withLockSet S core action s).1.kernel :=
   withLockSet_invariant_preserved S core action s inv hPre hAction
 
 /-- WS-SM SM3.E.6 (Corollary 2.1.11, **pre→post** meta-theorem — the general
@@ -1141,24 +1178,9 @@ theorem singleCore_proof_preservation {α : Type} (S : LockSet) (core : CoreId)
     (op : SystemState → SystemState × α) (s : LockedSystemState)
     (pre post : SystemState → Prop) (hpre : pre s.kernel)
     (hSingleCore : ∀ s', pre s' → post (op s').1) :
-    post (withLockSetGhost S core op s).1.kernel :=
+    post (withLockSet S core op s).1.kernel :=
   hSingleCore s.kernel hpre
 
-/-- WS-SM SM3.E.6: the `lockSetHeld` precondition the single-core argument
-rests on is a **consequence** of the word-level growing phase, not an external
-assumption.  When every lock in `S` resolves to a present, kind-matching,
-available (`unheld`) object in `s`, the growing phase puts the entire lock set
-into the held state on the post-acquire state the action sees.  Lifts
-SM3.C.8's `acquireAll_establishes_lockSetHeld`; its ghost form, with no
-object-presence hypothesis, is `BracketSpec.guard_of_unheld`.  Retired with
-the words at LS3.1. -/
-theorem withLockSet_growing_phase_establishes_lockSetHeld (S : LockSet)
-    (core : CoreId) (s : SystemState)
-    (hExt : s.objects.invExt)
-    (hEach : ∀ p ∈ S.pairs, ∃ l o, p.fst = .object l ∧ s.objects[l.objId]? = some o ∧
-        o.lockKind = l.kind ∧ o.objectLockOf = RwLockState.unheld) :
-    lockSetHeld core S (acquireAll core S.lockAcquireSequence s) :=
-  acquireAll_establishes_lockSetHeld S core s hExt hEach
 -- ============================================================================
 -- §9 — Atomicity bridge: `applySequential` faithfully models the bracketed
 --      execution (SM3.E.2 grounding)
@@ -1170,7 +1192,7 @@ theorem withLockSet_growing_phase_establishes_lockSetHeld (S : LockSet)
 -- asserts in prose — that the two agree: the lock machinery is invisible, so
 -- `applySequential` of the business actions IS the kernel half of the
 -- bracketed execution.  **WS-LS LS2.1**: stated over the pair
--- `LockedSystemState` and the ghost bracket `withLockSetGhost`, where the
+-- `LockedSystemState` and the ghost bracket `withLockSet`, where the
 -- bracket's phases write the lock table and the action writes the kernel
 -- state, so the agreement is `rfl` for every observer.  Before LS2.1 the
 -- phases wrote lock words into kernel objects and the bridge held only for a
@@ -1184,13 +1206,13 @@ theorem withLockSet_growing_phase_establishes_lockSetHeld (S : LockSet)
 the pair, hypothesis-free): bracketing a business action is **observationally
 identical** to the bare action, for every observer `π` of the kernel state.
 The lock machinery is invisible because it touches only the lock half:
-`π (withLockSetGhost S core (action, ()) s).1.kernel = π (action s.kernel)`.
+`π (withLockSet S core (action, ()) s).1.kernel = π (action s.kernel)`.
 This is the formal content behind "`applySequential` models the interleaved
 execution" — not an assumption but `rfl`. -/
 theorem withLockSet_observation_eq_action {β : Type} (S : LockSet) (core : CoreId)
     (businessAction : SystemState → SystemState) (s : LockedSystemState)
     (π : SystemState → β) :
-    π (withLockSetGhost S core (fun st => (businessAction st, ())) s).1.kernel
+    π (withLockSet S core (fun st => (businessAction st, ())) s).1.kernel
       = π (businessAction s.kernel) := rfl
 
 /-- WS-SM SM3.E.2 (atomicity bridge): a bracketed schedule — each transition's
@@ -1200,7 +1222,7 @@ SM3.E proves its kernel half equals the bare `applySequential` model. -/
 def applySequentialWithLockSet (sched : List KernelTransitionInstance)
     (s : LockedSystemState) : LockedSystemState :=
   sched.foldl
-    (fun st τ => (withLockSetGhost τ.lockSet τ.core (fun s' => (τ.action s', ())) st).1) s
+    (fun st τ => (withLockSet τ.lockSet τ.core (fun s' => (τ.action s', ())) st).1) s
 
 @[simp] theorem applySequentialWithLockSet_nil (s : LockedSystemState) :
     applySequentialWithLockSet [] s = s := rfl
@@ -1209,12 +1231,12 @@ def applySequentialWithLockSet (sched : List KernelTransitionInstance)
     (rest : List KernelTransitionInstance) (s : LockedSystemState) :
     applySequentialWithLockSet (τ :: rest) s =
       applySequentialWithLockSet rest
-        (withLockSetGhost τ.lockSet τ.core (fun s' => (τ.action s', ())) s).1 := rfl
+        (withLockSet τ.lockSet τ.core (fun s' => (τ.action s', ())) s).1 := rfl
 
 /-- **WS-LS LS2.1**: the kernel half of a bracketed schedule is the bare
 `applySequential` model — the bridge in its strongest form, as a state
 equality rather than an observation.  Induction on the schedule; each step
-is `withLockSetGhost_fst_kernel`. -/
+is `withLockSet_fst_kernel`. -/
 theorem applySequentialWithLockSet_kernel :
     ∀ (sched : List KernelTransitionInstance) (s : LockedSystemState),
       (applySequentialWithLockSet sched s).kernel = applySequential sched s.kernel

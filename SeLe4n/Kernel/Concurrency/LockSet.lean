@@ -8,16 +8,12 @@
 -/
 
 import SeLe4n.Kernel.Concurrency.Locks.LockSet
-import SeLe4n.Kernel.Concurrency.Locks.LockIdProjection
 import SeLe4n.Kernel.Concurrency.Locks.LockSetTransitions
 import SeLe4n.Kernel.Concurrency.Locks.LockSetInventory
-import SeLe4n.Kernel.Concurrency.Locks.WithLockSet
-import SeLe4n.Kernel.Concurrency.Locks.LockSetHeld
-import SeLe4n.Kernel.Concurrency.Locks.LockSet2PL
 import SeLe4n.Kernel.Concurrency.Locks.LockState
 import SeLe4n.Kernel.Concurrency.Locks.BracketSpec
+import SeLe4n.Kernel.Concurrency.Locks.LockSet2PL
 import SeLe4n.Kernel.Concurrency.Locks.DynamicChainExtension
-import SeLe4n.Kernel.Concurrency.Locks.WithLockSetInventory
 import SeLe4n.Kernel.Concurrency.Locks.Deadlock
 import SeLe4n.Kernel.Concurrency.Locks.DeadlockInventory
 import SeLe4n.Kernel.Concurrency.Locks.Serializability
@@ -37,21 +33,19 @@ the underlying modules.
 
 * `LockSet` — abstract LockSet type + canonical sort + ordered /
   complete / canonical theorems.
-* `LockIdProjection` — `KernelObject.lockKind`, `LockId.fromObject`,
-  `LockId.lookup`.
 * `LockSetTransitions` — per-syscall `lockSet_<τ>` definitions +
   `permittedKinds` + `lockSet_consistent_<τ>` theorems.
 * `LockSetInventory` — SM3.B typed theorem inventory.
 
 ## SM3.C modules (2PL discipline + SMP-migration contract)
 
-* `WithLockSet` — `withLockSet` 2PL combinator (SM3.C.1) +
-  per-object `acquireLockOnObject` / `releaseLockOnObject`
-  (SM3.C.2) + `KernelObject.updateLock` helper.
-* `LockSetHeld` — `lockHeld` / `lockSetHeld` predicates
-  (SM3.C.4) — the SMP-migration precondition for Corollary 2.1.11.
-* `BracketSpec` — **WS-LS LS2.1**: `LockedSystemState`, the ghost bracket
-  `withLockSetGhost`, `BracketSpec` with `run` / `runGhost` and the
+* `LockState` — **WS-LS LS1.1**: the ghost lock table `LockKey → RwLockState`,
+  its per-key `acquire` / `release` / `cancel`, the folds a bracket runs and
+  the `held` / `heldAll` predicates (the SMP-migration precondition for
+  Corollary 2.1.11).  Since WS-LS LS3.1 this is the only lock state: no
+  kernel object carries a lock word.
+* `BracketSpec` — **WS-LS LS2.1**: `LockedSystemState`, the bracket
+  `withLockSet` over the pair, `BracketSpec` with `run` / `runGhost` and the
   coverage predicate `footprintCoversWrites`.
 * `LockSet2PL` — 2PL discipline theorems: `lockSet_acquired_in_order`
   (SM3.C.5), `lockSet_released_in_reverse` (SM3.C.6),
@@ -61,7 +55,6 @@ the underlying modules.
 * `DynamicChainExtension` — the PIP chain walker and `chainLockSeq`
   (SM3.C.11), the chain's footprint under the SM0.I total-order
   discipline.
-* `WithLockSetInventory` — SM3.C typed theorem inventory.
 
 ## SM3.D modules (deadlock-freedom)
 

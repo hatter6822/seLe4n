@@ -105,7 +105,7 @@ cross-domain under-locking class SM5.A's audit (PR #804) closed for
 
 Crucially, the save is an `RHTable.insert`, and **SM3.A.10 guards the RobinHood
 object store's structural concurrency-safety at *table* granularity, not
-per-object** (`SystemState.objStoreLock` = `LockKind.objStore`, level 0): a
+per-object** (the `LockKey.objStore` table key, level 0): a
 concurrent insert can relocate slots along the probe sequence, so per-object
 TCB locks would not protect the table structure.  The object-store **table**
 write lock is therefore the *sound* discipline (and it subsumes the dynamic

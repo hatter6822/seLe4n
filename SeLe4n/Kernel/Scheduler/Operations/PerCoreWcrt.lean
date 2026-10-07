@@ -127,8 +127,8 @@ What is true now: **the syscall seam brackets**.
 and runs unbracketed, exactly as before, for the twenty-seven that do not.  The
 **per-core scheduler entries** — the timer tick, the `.reschedule` SGI receiver
 and the secondary bring-up entry — bracket too since **WS-RR RR7.39**, which gave
-`LockKey` a runtime (`SystemState.schedulerLocks`) and an instance of the
-shared bracket, so these bounds describe those entries as well.  What remains
+`LockKey` its per-core keys (since WS-LS, keys of the one ghost lock table
+beside the kernel state) and an instance of the shared bracket, so these bounds describe those entries as well.  What remains
 outside a declared footprint is the *syscall* seam's scheduler writes:
 `lockSetForSyscall` returns a `LockSet`, whose `LockId` cannot name a run-queue
 lock at all, so an `endpointSend`'s receiver wake was still uncovered.  That was

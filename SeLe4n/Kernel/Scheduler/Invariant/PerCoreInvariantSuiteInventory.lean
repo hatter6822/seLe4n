@@ -16,7 +16,7 @@ import SeLe4n.PackedString
 Aggregates the SM5.I per-core invariant-suite theorems into a single typed
 inventory with size and per-category witnesses.  Mirrors the SM5.E
 `PerCoreIdleInventory.lean` / SM5.D `PerCoreTimerInventory.lean` patterns (and,
-further back, the SM3.A `PerObjectLockInventory.lean`).
+further back, the SM3.B `LockSetInventory.lean`).
 
 Three categories matching the plan §5 SM5.I sub-tasks:
 

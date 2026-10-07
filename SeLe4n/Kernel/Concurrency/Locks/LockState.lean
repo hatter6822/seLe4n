@@ -8,8 +8,6 @@
 -/
 import SeLe4n.Kernel.Concurrency.Locks.LockKey
 import SeLe4n.Kernel.Concurrency.Locks.RwLock
-import SeLe4n.Kernel.Concurrency.Locks.WithLockSet
-import SeLe4n.Kernel.Concurrency.Locks.LockSetHeld
 
 /-!
 # WS-LS LS1.1 — the ghost lock state
@@ -18,7 +16,7 @@ One key type for every lock the kernel's brackets declare, one order over it,
 and one table of `RwLockState`s indexed by it, held **beside** the kernel
 state rather than inside it.
 
-Until this row a lock was a word *in* a kernel object (`KernelObject.lock`),
+Until WS-LS LS3.1 a lock was a word *in* a kernel object (`KernelObject.lock`),
 in the object store's own header (`SystemState.objStoreLock`), or in a per-core
 scheduler record (`SystemState.schedulerLocks`), and the bracket that took a
 footprint rewrote those objects — the lock model's share of a syscall's heap
@@ -28,6 +26,8 @@ taken out of the state: a total function from `LockKey` to `RwLockState`,
 advanced by the same `RwLockState.applyOp` the per-object words were.  Every
 2PL, serializability and deadlock theorem is about the sequence of lock
 operations a bracket applies, and that sequence is what this module keeps.
+The kernel state carries no lock word since LS3.1; the only lock state is
+this table.
 
 ## What is here
 
@@ -40,10 +40,10 @@ operations a bracket applies, and that sequence is what this module keeps.
   a list of `(key, op)` pairs applied in order, and `applySeq_key` reads any
   one key's trace out of it (`keyOps`), which is the lift the per-lock
   refinement chain needs.
-* The ghost forms of the theorems the per-object layer proved under
-  object-presence hypotheses: `acquireAll_unheld_held` (no object has to be
-  present for a ghost lock to exist), `unwindAll_not_queued` (no `invExt`),
-  `acquireAll_unwindAll_unheld` (the bracket's round trip, which LS2's
+* The theorems the per-object layer once proved under object-presence
+  hypotheses, in their ghost form: `acquireAll_unheld_held` (no object has to
+  be present for a ghost lock to exist), `unwindAll_not_queued` (no `invExt`),
+  `acquireAll_unwindAll_unheld` (the bracket's round trip, which
   `BracketSpec.runGhost` consumes), and `lockAcquireSequence_ordered` over
   `LockKey`.
 * The refinement lift, `LockState.applySeq_unheld_key_refines`, lives in
@@ -53,9 +53,8 @@ operations a bracket applies, and that sequence is what this module keeps.
   every such list, so the deployed `QueuedRwLock` refines the ghost key by key
   with no change to that file.
 
-Nothing executes against this table yet: LS2 switches the seams to it and LS3
-deletes the words.  The per-object primitives this module sits beside are the
-ones LS3 retires.
+Every seam runs `BracketSpec.run` over this table (LS2), and LS3.1 deleted the
+words and the per-object primitives that advanced them.
 -/
 
 namespace SeLe4n.Kernel.Concurrency
@@ -183,8 +182,8 @@ def releaseAll (c : CoreId) (pairs : List (LockKey × AccessMode)) (L : LockStat
 def cancelAll (c : CoreId) (pairs : List (LockKey × AccessMode)) (L : LockState) : LockState :=
   pairs.foldl (fun L p => L.cancel c p.fst p.snd) L
 
-/-- The shrinking phase: withdraw, then release — `WithLockSet.unwindAll`'s
-order, for its reason (a withdrawal before any promotion can see it). -/
+/-- The shrinking phase: withdraw, then release, so a withdrawal lands before
+any promotion a release triggers can see the withdrawn request. -/
 def unwindAll (c : CoreId) (pairs : List (LockKey × AccessMode)) (L : LockState) : LockState :=
   releaseAll c pairs (cancelAll c pairs L)
 

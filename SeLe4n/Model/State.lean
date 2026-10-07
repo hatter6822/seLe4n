@@ -856,45 +856,6 @@ def adapterFlushTlbByAsid (tlb : TlbState) (asid : SeLe4n.ASID) : TlbState :=
 def adapterFlushTlbByVAddr (tlb : TlbState) (asid : SeLe4n.ASID) (vaddr : SeLe4n.VAddr) : TlbState :=
   { entries := tlb.entries.filter (fun e => !(e.asid == asid && e.vaddr == vaddr)) }
 
-/-- **WS-RR RR7.39**: the per-core scheduler lock words — the state
-representation of the two `LockKey` constructors the object domain cannot
-name.
-
-`LockKey` (SM5.A.2) unifies three lock domains under one order —
-`object < runQueue < replenishQueue` — and every per-core scheduler transition
-declares its footprint over it.  Two of the three constructors had no state to
-advance: `LockSet`'s primitives route `.objStore` to `SystemState.objStoreLock`
-and a modeled kind to the object's own `lock` field, and neither is a per-core
-scheduler word.  So a bracket over a scheduler footprint could sort the list,
-walk it, and change nothing — the footprints were declarations without a
-runtime.  These are the words that give them one.
-
-**What each guards.**  `runQueue[c]` guards core `c`'s scheduling slots: its run
-queue (`SchedulerState.runQueue[c]`), its current-thread slot
-(`SchedulerState.current[c]`) and its domain triple (`activeDomain`,
-`domainTimeRemaining`, `domainScheduleIndex` at `c`) — exactly the reads and
-writes `chooseThreadOnCoreLockSet`, `switchToThreadOnCoreLockSet`,
-`wakeThreadLockSet`, `enqueueIdleThreadOnCoreLockSet` and
-`advanceDomainOnCoreLockSet` declare it for.  `replenishQueue[c]` guards core
-`c`'s CBS replenishment queue (`SchedulerState.replenishQueue[c]`).
-
-**Why two words and not one per core.**  The SM5.D timer tick declares them
-separately and the ladder orders them; collapsing them into a single per-core
-scheduler word would erase a level of the hierarchy the deadlock-freedom
-argument walks, and would make `advanceDomainOnCoreLockSet` — a rotation that
-touches no replenishment at all — exclude a concurrent replenishment it has no
-conflict with. -/
-structure SchedulerLockState where
-  /-- Core `c`'s run-queue lock word.  Unheld at boot. -/
-  runQueue : Vector SeLe4n.Kernel.Concurrency.RwLockState numCores :=
-    Vector.replicate numCores SeLe4n.Kernel.Concurrency.RwLockState.unheld
-  /-- Core `c`'s replenish-queue lock word.  Unheld at boot. -/
-  replenishQueue : Vector SeLe4n.Kernel.Concurrency.RwLockState numCores :=
-    Vector.replicate numCores SeLe4n.Kernel.Concurrency.RwLockState.unheld
-  deriving Repr
-
-instance : Inhabited SchedulerLockState := ⟨{}⟩
-
 structure SystemState where
   machine : SeLe4n.MachineState
   /-- Q2-C: Object store backed by `RHTable` (verified Robin Hood hash table)
@@ -983,49 +944,6 @@ structure SystemState where
       coordination lives in the `tlbShootdown` field below (WS-SM SM7.A),
       and SM7.C generalises this field to a per-core `Vector`. -/
   tlb : TlbState := TlbState.empty
-  /-- WS-SM SM3.A.10: ObjStore table-level reader-writer lock state.
-
-      Per §4.4 of the SM3 plan, the underlying RobinHood hash table
-      (`objects : RHTable ObjId KernelObject`) carries a single table-level
-      lock at the top of the lock hierarchy
-      (`LockKind.objStore`, level 0).  Rationale: inserts and deletes can
-      relocate entries across buckets (Robin Hood probe-sequence
-      reorganisation), so a per-bucket lock would require complex
-      hand-over-hand acquisition.  The table-level lock is acquired in:
-
-      * `read` mode for lookups (`objects[id]?`, `lookupObject`).
-      * `write` mode for inserts (`storeObject`,
-        `storeObjectChecked`, `storeObjectKindChecked`) and deletes
-        (`removeObject` etc.).
-
-      Default `RwLockState.unheld` means a freshly-created SystemState
-      starts with the ObjStore lock available.  This is the lowest-level
-      lock in the SM3 hierarchy, acquired first (before any per-object
-      lock) per the 2PL discipline in SM3.C.  See
-      WS-SM SM3.A.10. -/
-  objStoreLock : SeLe4n.Kernel.Concurrency.RwLockState :=
-    SeLe4n.Kernel.Concurrency.RwLockState.unheld
-  /-- **WS-RR RR7.39**: the per-core scheduler lock words — the state
-      representation of `LockKey.runQueue` and `LockKey.replenishQueue`.
-
-      SM5.A.2 gave the per-core scheduler its cross-domain lock identifier
-      (`LockKey`, ordered object < runQueue < replenishQueue) and SM5.B–G
-      declared a footprint for every per-core transition — but the run-queue and
-      replenish-queue constructors named locks the state had no word for, so a
-      bracket over them could sort a list and acquire nothing.  This field is
-      those words.
-
-      It sits here, beside `objStoreLock`, and **not** inside `SchedulerState`,
-      for the reason the object store's lock sits beside `objects` rather than
-      inside the table: a lock write must *frame* the data it guards, and every
-      `st.scheduler` frame lemma in the tree would be false of an acquisition
-      that lived in the scheduler record.
-
-      Grouped as one nested record rather than two parallel vectors because
-      `SystemState` is compared field-by-field by `isDefEq` in several thousand
-      `rfl`-shaped proofs, and a nested record costs one such comparison instead
-      of two.  See `SchedulerLockState` for what each word guards. -/
-  schedulerLocks : SchedulerLockState := {}
   /-- WS-SM SM7.A: per-core TLB-shootdown coordination state — the
       pending-invalidation queues and acknowledgment flags of
       `SeLe4n/Kernel/Architecture/TlbShootdown.lean`.
@@ -1034,8 +952,7 @@ structure SystemState where
       "`pendingShootdowns : Vector (List TlbShootdownDescriptor)
       coreCount` in `ConcurrencyState`" placement in the codebase's
       actual state architecture: `SystemState` is the kernel's runtime
-      state (there is no separate `ConcurrencyState` structure; the
-      SM3.A.10 `objStoreLock` field above landed the same way).
+      state (there is no separate `ConcurrencyState` structure).
 
       Defaults to `TlbShootdownState.initial` — the quiescent boot
       state (all queues empty, every core's acknowledged generation
@@ -1462,17 +1379,6 @@ instance : Inhabited SystemState where
     cdtNextNode := ⟨0⟩
     scThreadIndex := {}
     tlb := TlbState.empty
-    -- WS-SM SM3.A.10: ObjStore table-level lock starts in the unheld
-    -- state (lock available) at boot.  Explicit listing pins the
-    -- default-state invariant `default.objStoreLock = .unheld` so the
-    -- `default_objStoreLock_unheld` and `default_objects_locks_unheld`
-    -- theorems (SM3.A.11) can discharge by `rfl`.
-    objStoreLock := SeLe4n.Kernel.Concurrency.RwLockState.unheld
-    -- **WS-RR RR7.39**: every per-core scheduler lock word starts unheld at
-    -- boot, exactly as the table-level lock above does.  Explicit listing pins
-    -- `default_runQueueLocks_unheld` / `default_replenishQueueLocks_unheld` by
-    -- `rfl` rather than through the field default.
-    schedulerLocks := {}
     -- WS-SM SM7.A: TLB-shootdown coordination state starts quiescent
     -- at boot (all pending queues empty; every acknowledged
     -- generation and `roundGeneration` zero, so no round is
@@ -1589,205 +1495,7 @@ theorem default_allTablesInvExtK : (default : SystemState).allTablesInvExtK := b
   constructor; exact SeLe4n.Kernel.RobinHood.RHSet.empty_invExtK
   exact SeLe4n.Kernel.RobinHood.RHTable.empty_invExtK 16 (by omega)
 
--- ============================================================================
--- WS-SM SM3.A.11 — Per-object lock invariants on the default SystemState
--- ============================================================================
-
-/-- WS-SM SM3.A.10/A.11: The default SystemState has `objStoreLock = .unheld`.
-
-This pins the "lock available at boot" semantics of the SM3.A.10
-table-level ObjStore lock: a freshly-constructed SystemState (e.g. the
-seed passed to `bootFromPlatform`) carries an unheld ObjStore lock by
-construction.  Subsequent boot operations (`storeObject`, etc.) acquire
-the lock per the SM3.C.1 `withLockSet` discipline. -/
-theorem default_objStoreLock_unheld :
-    (default : SystemState).objStoreLock = SeLe4n.Kernel.Concurrency.RwLockState.unheld := rfl
-
-/-- **WS-RR RR7.39**: core `c`'s run-queue lock word.
-
-Named rather than indexed at each use site, so the RR7.39 primitives and the
-information-flow theorems about them all read the same accessor. -/
-@[inline] def SystemState.runQueueLockOnCore (st : SystemState)
-    (c : SeLe4n.Kernel.Concurrency.CoreId) : SeLe4n.Kernel.Concurrency.RwLockState :=
-  st.schedulerLocks.runQueue.get c
-
-/-- **WS-RR RR7.39**: core `c`'s replenish-queue lock word. -/
-@[inline] def SystemState.replenishQueueLockOnCore (st : SystemState)
-    (c : SeLe4n.Kernel.Concurrency.CoreId) : SeLe4n.Kernel.Concurrency.RwLockState :=
-  st.schedulerLocks.replenishQueue.get c
-
-/-- **WS-RR RR7.39**: every per-core run-queue lock is unheld on the default
-state — the scheduler-domain counterpart of `default_objStoreLock_unheld`. -/
-theorem default_runQueueLocks_unheld (c : SeLe4n.Kernel.Concurrency.CoreId) :
-    (default : SystemState).runQueueLockOnCore c
-      = SeLe4n.Kernel.Concurrency.RwLockState.unheld :=
-  PerCoreVector.replicate_get _ _ c
-
-/-- **WS-RR RR7.39**: every per-core replenish-queue lock is unheld on the
-default state. -/
-theorem default_replenishQueueLocks_unheld (c : SeLe4n.Kernel.Concurrency.CoreId) :
-    (default : SystemState).replenishQueueLockOnCore c
-      = SeLe4n.Kernel.Concurrency.RwLockState.unheld :=
-  PerCoreVector.replicate_get _ _ c
-
-/-- **WS-RR RR7.39**: write core `c`'s run-queue lock word, leaving every other
-core's untouched and the whole rest of the state alone.
-
-Framing this narrowly is the point: an acquisition must be visible only in the
-word it advances, so every `runQueueLockOnCore_setRunQueueLockOnCore_ne`-shaped
-frame lemma below, and the information-flow results that consume them, are
-statements about a single-slot vector write. -/
-@[inline] def SystemState.setRunQueueLockOnCore (st : SystemState)
-    (c : SeLe4n.Kernel.Concurrency.CoreId)
-    (lk : SeLe4n.Kernel.Concurrency.RwLockState) : SystemState :=
-  { st with schedulerLocks :=
-      { st.schedulerLocks with runQueue := st.schedulerLocks.runQueue.set c.val lk c.isLt } }
-
-/-- **WS-RR RR7.39**: write core `c`'s replenish-queue lock word. -/
-@[inline] def SystemState.setReplenishQueueLockOnCore (st : SystemState)
-    (c : SeLe4n.Kernel.Concurrency.CoreId)
-    (lk : SeLe4n.Kernel.Concurrency.RwLockState) : SystemState :=
-  { st with schedulerLocks :=
-      { st.schedulerLocks with
-          replenishQueue := st.schedulerLocks.replenishQueue.set c.val lk c.isLt } }
-
-/-- **WS-RR RR7.39**: reading back the slot just written returns the written
-word. -/
-@[simp] theorem runQueueLockOnCore_setRunQueueLockOnCore_self (st : SystemState)
-    (c : SeLe4n.Kernel.Concurrency.CoreId)
-    (lk : SeLe4n.Kernel.Concurrency.RwLockState) :
-    (st.setRunQueueLockOnCore c lk).runQueueLockOnCore c = lk :=
-  PerCoreVector.get_set_eq _ c lk
-
-/-- **WS-RR RR7.39**: a run-queue lock write is invisible at every other core —
-the per-core independence the deadlock and WCRT arguments read off the
-footprints. -/
-theorem runQueueLockOnCore_setRunQueueLockOnCore_ne (st : SystemState)
-    (c d : SeLe4n.Kernel.Concurrency.CoreId)
-    (lk : SeLe4n.Kernel.Concurrency.RwLockState) (h : c ≠ d) :
-    (st.setRunQueueLockOnCore c lk).runQueueLockOnCore d = st.runQueueLockOnCore d :=
-  PerCoreVector.get_set_ne _ c d lk h
-
-/-- **WS-RR RR7.39**: reading back the replenish slot just written. -/
-@[simp] theorem replenishQueueLockOnCore_setReplenishQueueLockOnCore_self
-    (st : SystemState) (c : SeLe4n.Kernel.Concurrency.CoreId)
-    (lk : SeLe4n.Kernel.Concurrency.RwLockState) :
-    (st.setReplenishQueueLockOnCore c lk).replenishQueueLockOnCore c = lk :=
-  PerCoreVector.get_set_eq _ c lk
-
-/-- **WS-RR RR7.39**: a replenish-queue lock write is invisible at every other
-core. -/
-theorem replenishQueueLockOnCore_setReplenishQueueLockOnCore_ne (st : SystemState)
-    (c d : SeLe4n.Kernel.Concurrency.CoreId)
-    (lk : SeLe4n.Kernel.Concurrency.RwLockState) (h : c ≠ d) :
-    (st.setReplenishQueueLockOnCore c lk).replenishQueueLockOnCore d
-      = st.replenishQueueLockOnCore d :=
-  PerCoreVector.get_set_ne _ c d lk h
-
-/-- **WS-RR RR7.39**: a run-queue lock write does not touch the replenish-queue
-words.  The two levels of the ladder are independent, which is why they are two
-levels. -/
-@[simp] theorem replenishQueueLockOnCore_setRunQueueLockOnCore (st : SystemState)
-    (c d : SeLe4n.Kernel.Concurrency.CoreId)
-    (lk : SeLe4n.Kernel.Concurrency.RwLockState) :
-    (st.setRunQueueLockOnCore c lk).replenishQueueLockOnCore d
-      = st.replenishQueueLockOnCore d := rfl
-
-/-- **WS-RR RR7.39**: a replenish-queue lock write does not touch the run-queue
-words. -/
-@[simp] theorem runQueueLockOnCore_setReplenishQueueLockOnCore (st : SystemState)
-    (c d : SeLe4n.Kernel.Concurrency.CoreId)
-    (lk : SeLe4n.Kernel.Concurrency.RwLockState) :
-    (st.setReplenishQueueLockOnCore c lk).runQueueLockOnCore d
-      = st.runQueueLockOnCore d := rfl
-
-/-- **WS-RR RR7.39**: a scheduler-lock write frames the object store — the
-guarantee that makes an acquisition invisible to every kernel transition, and
-the reason these words live on `SystemState` rather than inside
-`SchedulerState`. -/
-@[simp] theorem setRunQueueLockOnCore_objects (st : SystemState)
-    (c : SeLe4n.Kernel.Concurrency.CoreId)
-    (lk : SeLe4n.Kernel.Concurrency.RwLockState) :
-    (st.setRunQueueLockOnCore c lk).objects = st.objects := rfl
-
-/-- **WS-RR RR7.39**: a scheduler-lock write frames the scheduler itself. -/
-@[simp] theorem setRunQueueLockOnCore_scheduler (st : SystemState)
-    (c : SeLe4n.Kernel.Concurrency.CoreId)
-    (lk : SeLe4n.Kernel.Concurrency.RwLockState) :
-    (st.setRunQueueLockOnCore c lk).scheduler = st.scheduler := rfl
-
-/-- **WS-RR RR7.39**: the replenish-lock write frames the object store. -/
-@[simp] theorem setReplenishQueueLockOnCore_objects (st : SystemState)
-    (c : SeLe4n.Kernel.Concurrency.CoreId)
-    (lk : SeLe4n.Kernel.Concurrency.RwLockState) :
-    (st.setReplenishQueueLockOnCore c lk).objects = st.objects := rfl
-
-/-- **WS-RR RR7.39**: the replenish-lock write frames the scheduler. -/
-@[simp] theorem setReplenishQueueLockOnCore_scheduler (st : SystemState)
-    (c : SeLe4n.Kernel.Concurrency.CoreId)
-    (lk : SeLe4n.Kernel.Concurrency.RwLockState) :
-    (st.setReplenishQueueLockOnCore c lk).scheduler = st.scheduler := rfl
-
-/-- **WS-RR RR7.39**: a scheduler-lock write frames the object-store table lock
-— the object domain's own word is untouched, so the two domains' brackets
-compose without either overwriting the other's state. -/
-@[simp] theorem setRunQueueLockOnCore_objStoreLock (st : SystemState)
-    (c : SeLe4n.Kernel.Concurrency.CoreId)
-    (lk : SeLe4n.Kernel.Concurrency.RwLockState) :
-    (st.setRunQueueLockOnCore c lk).objStoreLock = st.objStoreLock := rfl
-
-/-- **WS-RR RR7.39**: the replenish-lock write frames the object-store table
-lock. -/
-@[simp] theorem setReplenishQueueLockOnCore_objStoreLock (st : SystemState)
-    (c : SeLe4n.Kernel.Concurrency.CoreId)
-    (lk : SeLe4n.Kernel.Concurrency.RwLockState) :
-    (st.setReplenishQueueLockOnCore c lk).objStoreLock = st.objStoreLock := rfl
-
-/-- WS-SM SM3.A.11: Every object reachable through the default SystemState
-has its per-object lock in the `.unheld` state.
-
-This is the canonical SM3.A.11 closure theorem: a freshly-constructed
-SystemState has an empty object store (`RHTable.empty 16`), so the
-universal quantifier is **vacuously discharged** — no `id` ever resolves
-to `some o`.  The discharge uses `RHTable.getElem?_empty`, which proves
-that `(RHTable.empty 16 _)[id]? = none` for every key.
-
-For a non-default state where `bootFromPlatform` populates initial
-objects, the analogous theorem proves that **every initial object**
-(created via the `Builder.createObject` smart constructor) has its
-lock in `.unheld` — because the smart constructor invokes the
-per-object struct's default constructor, which sets `lock :=
-RwLockState.unheld` by the SM3.A.1..A.9 field defaults.  That stronger
-statement is part of the SM3.B follow-on (`LockId.lookup` discharge for
-post-boot states).
-
-Per SM3.C.4 (`lockSetHeld`), this theorem is the **base case** for the
-per-state lock-set-availability induction: at boot, no core holds any
-per-object lock; subsequent transitions acquire and release per the
-2PL discipline. -/
-theorem default_objects_locks_unheld :
-    ∀ (id : SeLe4n.ObjId) (o : KernelObject),
-      (default : SystemState).objects.get? id = some o →
-      KernelObject.objectLockOf o = SeLe4n.Kernel.Concurrency.RwLockState.unheld := by
-  intro id o hLookup
-  -- The default SystemState's `objects` is `RHTable.empty 16 (by decide)`
-  -- via `instInhabitedRHTable`. `RHTable.getElem?_empty` proves that
-  -- looking up any key in an empty table returns `none`.
-  have hEmpty : (default : SystemState).objects.get? id = none := by
-    show (default : SeLe4n.Kernel.RobinHood.RHTable SeLe4n.ObjId KernelObject).get? id = none
-    exact SeLe4n.Kernel.RobinHood.RHTable.getElem?_empty
-      SeLe4n.Kernel.RobinHood.minPracticalRHCapacity (by decide) id
-  -- Lookup returns `some o` and `none` simultaneously — contradiction.
-  rw [hEmpty] at hLookup
-  cases hLookup
-
-/-- WS-SM SM3.A.11 (decidable variant): the predicate "every object's
-lock is unheld" reduces to a vacuous quantification on the default
-state.  Used as a Tier-2 runtime assertion in `PerObjectLockSuite`.
-
-The proof closes via `default_objects_toList_empty` below — the default
-state's object store has an empty `toList`, so the universal
-quantification over members is vacuously discharged. -/
+/-- The default state's object store has an empty `toList`. -/
 theorem default_objects_toList_empty :
     (default : SystemState).objects.toList = [] := by
   -- `default.objects` is the canonical `RHTable.empty 16` populated with
@@ -1797,26 +1505,13 @@ theorem default_objects_toList_empty :
   -- because the capacity is the literal `16` (`minPracticalRHCapacity`).
   decide
 
-/-- WS-SM SM3.A.11 (decidable variant): every entry in the default
-state's `toList` snapshot has `objectLockOf p.2 = .unheld`.  The default
-state's `toList` is empty (`default_objects_toList_empty`), so this is
-vacuously true.  Used as a Tier-2 runtime assertion in
-`PerObjectLockSuite`. -/
-theorem default_objects_locks_unheld_via_toList :
-    ∀ p ∈ (default : SystemState).objects.toList,
-      KernelObject.objectLockOf p.2 = SeLe4n.Kernel.Concurrency.RwLockState.unheld := by
-  intro p hp
-  rw [default_objects_toList_empty] at hp
-  exact absurd hp (List.not_mem_nil)
-
 -- ============================================================================
 -- WS-SM SM7.A — TLB-shootdown state invariants on the default SystemState
 -- ============================================================================
 
 /-- WS-SM SM7.A: the default SystemState carries the quiescent
 TLB-shootdown boot state.  Pinned by the explicit listing in the
-`Inhabited SystemState` instance, mirroring
-`default_objStoreLock_unheld` (SM3.A.11). -/
+`Inhabited SystemState` instance. -/
 theorem default_tlbShootdown_initial :
     (default : SystemState).tlbShootdown =
       SeLe4n.Kernel.Architecture.TlbShootdownState.initial := rfl
@@ -1926,104 +1621,6 @@ conjunct — the empty trail is within capacity. -/
 theorem default_auditLogBounded :
     SeLe4n.Kernel.auditLogBounded (default : SystemState).declassificationAuditLog :=
   SeLe4n.Kernel.auditLogBounded_nil
-
--- ============================================================================
--- WS-SM SM3.A audit-pass-5 — Non-vacuous lock-state invariant + preservation
--- ============================================================================
-
-/-- WS-SM SM3.A audit-pass-5: the SM3.A runtime invariant — every
-object in the store has its lock in the unheld state, AND the
-table-level `objStoreLock` is also unheld.
-
-Captures the *static* shape that holds at SM3.A scope: no current
-kernel operation acquires or releases any lock, so every reachable
-state from `default` has all locks in their initial state.
-
-This predicate is **not** vacuous: it has two conjuncts that are
-both substantive (the `objStoreLock = .unheld` clause alone is a
-non-trivial assertion about the state's table-level lock field).
-
-SM3.C (`withLockSet`) will introduce the *dynamic* shape — locks
-can transition.  At SM3.A scope this predicate is invariant under
-every kernel transition, witnessed by the
-`*_preserves_allObjectLocksUnheld` family of theorems below. -/
-def SystemState.allObjectLocksUnheld (st : SystemState) : Prop :=
-  st.objStoreLock = SeLe4n.Kernel.Concurrency.RwLockState.unheld ∧
-  ∀ id o, st.objects.get? id = some o →
-    KernelObject.objectLockOf o = SeLe4n.Kernel.Concurrency.RwLockState.unheld
-
-/-- WS-SM SM3.A audit-pass-5: a Bool-valued decidable form of
-`allObjectLocksUnheld` over the `toList` snapshot.
-
-Runtime fixtures use this Bool form to `decide`-discharge the
-invariant on small object stores.  The relationship to the Prop
-form is the standard "list-quantification ↔ universal
-quantification on lookups" bridge, captured by
-`allObjectLocksUnheld_iff_via_toList` in
-`SeLe4n/Model/FreezeProofs.lean` (audit-pass-6) for states whose
-object store satisfies the Robin Hood invariant `invExt`.
-
-The Bool form lets `tests/PerObjectLockSuite.lean` exercise the
-invariant via `decide ((default : SystemState).allObjectLocksUnheldB
-= true)` without needing the Prop ↔ Bool bridge in scope. -/
-def SystemState.allObjectLocksUnheldB (st : SystemState) : Bool :=
-  (st.objStoreLock = SeLe4n.Kernel.Concurrency.RwLockState.unheld) &&
-  (st.objects.toList.all
-    (fun p => p.snd.objectLockOf = SeLe4n.Kernel.Concurrency.RwLockState.unheld))
-
-/-- WS-SM SM3.A audit-pass-5 — STRONGER non-vacuous form of SM3.A.11.
-
-The default SystemState satisfies the full SM3.A runtime
-invariant: both the table-level `objStoreLock` is unheld AND every
-object in the store has its lock unheld.
-
-This is the canonical SM3.A.11 closure theorem in its non-vacuous
-form: the first conjunct (`objStoreLock = .unheld`) is a
-**substantive** witness, not a vacuous quantification.  The second
-conjunct still discharges vacuously on the empty default store,
-but its presence in the conjunction is the pin that downstream
-SM3.B/C consumers can `obtain` against.
-
-Per the SM3.A scope (no current kernel operation modifies any
-lock), every reachable state from `default` satisfies this
-predicate.  SM3.C will replace this with a weaker
-`lockSetHeld`-relative predicate that accommodates lock
-acquisition. -/
-theorem default_allObjectLocksUnheld :
-    (default : SystemState).allObjectLocksUnheld :=
-  ⟨rfl, default_objects_locks_unheld⟩
-
-/-- WS-SM SM3.A audit-pass-5: a more useful form of SM3.A.11 — for
-any `SystemState` whose stored objects are constructed via default
-constructors (so `objectLockOf` on each yields `.unheld`), the
-predicate holds.
-
-This is the "analogous post-boot theorem" promised in the
-`default_objects_locks_unheld` docstring: at boot, the builder
-populates the object store via `Builder.createObject`, which
-constructs each object with the default `lock := .unheld` field
-value.  The resulting state therefore satisfies
-`allObjectLocksUnheld` (modulo the `objStoreLock` field, which is
-also `.unheld` by default at boot).
-
-The theorem is parameterised over `objStoreLock` to capture both
-cases: the default `.unheld` and any future operationally-acquired
-state.
-
-**Closure path (SM3.B/C)**: once `Builder.createObject` is
-extended to enforce `objectLockOf newObj = .unheld` at construction
-time (the structural enforcement of the SM3.A.10 invariant), this
-theorem becomes a direct corollary. -/
-theorem allObjectLocksUnheld_of_pointwise (st : SystemState)
-    (hObjStore : st.objStoreLock = SeLe4n.Kernel.Concurrency.RwLockState.unheld)
-    (hPointwise : ∀ id o, st.objects.get? id = some o →
-        KernelObject.objectLockOf o = SeLe4n.Kernel.Concurrency.RwLockState.unheld) :
-    st.allObjectLocksUnheld :=
-  ⟨hObjStore, hPointwise⟩
-
--- WS-SM SM3.A audit-pass-5: the `storeObject_preserves_*` theorems are
--- placed AFTER `storeObject`'s definition (around line 900 below), since
--- they reference its definitional reduction.
 
 /-- U2-M: Compile-time completeness witness for `allTablesInvExtK`.
     This theorem destructures `allTablesInvExtK` into exactly 16 named conjuncts.
@@ -2215,80 +1812,9 @@ def storeObject (id : SeLe4n.ObjId) (obj : KernelObject) : Kernel Unit :=
           | _ => cleared
     })
 
--- ============================================================================
--- WS-SM SM3.A audit-pass-5 — `storeObject` lock-state preservation
--- ============================================================================
-
-/-- WS-SM SM3.A audit-pass-5: `storeObject` preserves the
-table-level `objStoreLock` field.
-
-`storeObject` updates `objects`, `objectIndex`, `objectIndexSet`,
-`lifecycle`, and `asidTable`, but does NOT touch `objStoreLock`.
-This is a structural witness that no current SM3.A operation
-modifies the table-level lock field — closes the audit-pass-4
-finding "no preservation theorems for the new fields".
-
-The theorem statement uses the underlying state-update view to
-keep the proof a `rfl`: `storeObject` returns `.ok ((), newSt)`
-where `newSt` is the `{st with ...}`-spreaded record that retains
-`st.objStoreLock`.
-
-A `result` parameter (rather than introducing the post-state via a
-`match`) keeps the theorem in a shape that SM3.B/C 2PL discipline
-consumers can chain through `Except.ok`-destructuring on
-`storeObject`'s result. -/
-theorem storeObject_preserves_objStoreLock (st : SystemState)
-    (id : SeLe4n.ObjId) (obj : KernelObject) :
-    ∀ result, storeObject id obj st = .ok ((), result) →
-      result.objStoreLock = st.objStoreLock := by
-  intro result hRun
-  -- `storeObject id obj st` reduces definitionally to
-  -- `.ok ((), {st with ...})` where `...` does NOT mention `objStoreLock`.
-  unfold storeObject at hRun
-  cases hRun
-  rfl
-
-/-- WS-SM SM3.A audit-pass-5: `storeObject` preserves the
-per-object lock state of every object whose ObjId is **not** the
-one being overwritten.
-
-For ObjIds other than the inserted one, the object store's entries
-are unchanged, so their `objectLockOf` projections agree across the
-transition.  Closes the audit-pass-4 finding "no preservation
-theorems for per-object lock fields".
-
-The theorem requires `id ≠ id'` because at `id` itself the new
-object replaces the old one — its lock state is determined by the
-inserted object (`obj`), not the prior state.  The `id = id'`
-case is covered by `storeObject_inserted_object_lock` below. -/
-theorem storeObject_preserves_objectLockOf_off_target (st : SystemState)
-    (id id' : SeLe4n.ObjId) (obj : KernelObject)
-    (hObjInv : st.objects.invExt)
-    (hNe : id ≠ id') :
-    ∀ result, storeObject id obj st = .ok ((), result) →
-      result.objects.get? id' = st.objects.get? id' := by
-  intro result hRun
-  unfold storeObject at hRun
-  cases hRun
-  -- `result.objects = st.objects.insert id obj`; lookup at `id' ≠ id`
-  -- is unchanged by `RHTable.getElem?_insert_ne` (which requires the
-  -- Robin Hood invariant `invExt` on the pre-insert table).
-  show (st.objects.insert id obj).get? id' = st.objects.get? id'
-  exact SeLe4n.Kernel.RobinHood.RHTable.getElem?_insert_ne st.objects id id' obj
-    (fun h => hNe (eq_of_beq h)) hObjInv
-
-/-- WS-SM SM3.A audit-pass-5: lookup at the just-inserted ObjId
-returns the inserted object.
-
-Closes the SM3.A.11 conclusion at the operational level: after
-storing `obj` at `id`, the lookup returns precisely `obj`.
-Combined with the field-level default of `lock := .unheld`, the
-SM3.A.11 invariant is operationally preserved through
-`storeObject`.
-
-Mirrors `storeObject_objects_eq` (line 1517 below) but is phrased
-in terms of `result.objects.get?` so it composes cleanly with
-`storeObject_preserves_allObjectLocksUnheld`'s case analysis. -/
+/-- Lookup at the just-inserted ObjId returns the inserted object.  Mirrors
+`storeObject_objects_eq` but is phrased in terms of `result.objects.get?` so
+the IPC structural invariants can chain through `Except.ok`-destructuring. -/
 theorem storeObject_inserted_object_lookup (st : SystemState)
     (id : SeLe4n.ObjId) (obj : KernelObject)
     (hObjInv : st.objects.invExt) :
@@ -2299,58 +1825,6 @@ theorem storeObject_inserted_object_lookup (st : SystemState)
   cases hRun
   exact SeLe4n.Kernel.RobinHood.RHTable.getElem?_insert_self st.objects id obj
     hObjInv
-
-/-- WS-SM SM3.A audit-pass-5: `storeObject` with an unheld-lock
-object preserves the SM3.A `allObjectLocksUnheld` invariant.
-
-This is the per-operation preservation theorem that the SM3.C
-2PL discipline will compose: if every kernel transition either
-(a) doesn't modify a lock field (most SM3.A transitions), or
-(b) modifies it by storing an object with `objectLockOf = .unheld`
-(this case), then the SM3.A `allObjectLocksUnheld` invariant is
-maintained.
-
-Closes the audit-pass-4 finding "no preservation theorems for any
-kernel transition".  Establishes that `storeObject` is the
-canonical operation through which fresh objects enter the store,
-and that as long as fresh objects are constructed with the default
-`.unheld` lock (which is enforced by the SM3.A.1..A.9 field
-defaults plus the convention that `Builder.createObject` never
-overrides them), the global invariant holds.
-
-The hypothesis `hFreshLock : objectLockOf obj = .unheld` is the
-operational form of "every freshly-allocated object starts with
-lock unheld" — discharged at every callsite via the field default
-when `obj` is constructed via named-field syntax without an
-explicit `lock := ...` override. -/
-theorem storeObject_preserves_allObjectLocksUnheld (st : SystemState)
-    (id : SeLe4n.ObjId) (obj : KernelObject)
-    (hObjInv : st.objects.invExt)
-    (hInv : st.allObjectLocksUnheld)
-    (hFreshLock : KernelObject.objectLockOf obj
-                    = SeLe4n.Kernel.Concurrency.RwLockState.unheld) :
-    ∀ result, storeObject id obj st = .ok ((), result) →
-      result.allObjectLocksUnheld := by
-  intro result hRun
-  refine ⟨?_, ?_⟩
-  · -- objStoreLock preserved by storeObject_preserves_objStoreLock
-    rw [storeObject_preserves_objStoreLock st id obj result hRun]
-    exact hInv.1
-  · -- Per-object claim: for any id', the lock is unheld.
-    intro id' o hLookup
-    -- Two cases: id' = id (the inserted object) or id' ≠ id.
-    by_cases hEq : id = id'
-    · -- id' = id: the lookup returns `obj`, whose lock is unheld by hFreshLock.
-      subst hEq
-      have hSelf := storeObject_inserted_object_lookup st id obj hObjInv result hRun
-      rw [hSelf] at hLookup
-      cases hLookup
-      exact hFreshLock
-    · -- id' ≠ id: lookup is unchanged from st.objects.get? id'.
-      have hOff := storeObject_preserves_objectLockOf_off_target st id id' obj
-        hObjInv hEq result hRun
-      rw [hOff] at hLookup
-      exact hInv.2 id' o hLookup
 
 /-- The store adds at most one index entry: a key already in the index leaves
     it alone, a new key is consed onto it.  Hypothesis-free — the bound is a
@@ -5241,41 +4715,6 @@ theorem getPageTable?_eq_some_iff (st : SystemState) (id : SeLe4n.ObjId)
   · rename_i hne; constructor
     · intro h; cases h
     · intro h; exact absurd h (fun h' => hne _ (by rw [h']))
-
-/-- **WS-BP BP7.1 (`v0.36.12`): the object at `id` if it is a page** — a frame or
-a page table, the two kinds whose per-object lock is the hierarchy's `page`
-kind.  `LockId.lookup` reads its `.page` kind through this, so a page lock
-names either. -/
-def getPageObject? (st : SystemState) (id : SeLe4n.ObjId) : Option KernelObject :=
-  match st.getFrame? id with
-  | some f => some (.frame f)
-  | none => (st.getPageTable? id).map KernelObject.pageTable
-
-/-- `getPageObject?` answers the stored object exactly when it is a frame or a
-page table. -/
-theorem getPageObject?_eq_some_iff (st : SystemState) (id : SeLe4n.ObjId)
-    (o : KernelObject) :
-    st.getPageObject? id = some o ↔
-      st.objects[id]? = some o ∧ ((∃ f, o = .frame f) ∨ (∃ p, o = .pageTable p)) := by
-  unfold getPageObject?
-  cases hF : st.getFrame? id with
-  | some f =>
-    have hAt := (getFrame?_eq_some_iff st id f).mp hF
-    constructor
-    · intro h; cases h; exact ⟨hAt, Or.inl ⟨f, rfl⟩⟩
-    · rintro ⟨h, -⟩; rw [hAt] at h; cases h; rfl
-  | none =>
-    cases hP : st.getPageTable? id with
-    | some p =>
-      have hAt := (getPageTable?_eq_some_iff st id p).mp hP
-      constructor
-      · intro h; cases h; exact ⟨hAt, Or.inr ⟨p, rfl⟩⟩
-      · rintro ⟨h, -⟩; rw [hAt] at h; cases h; rfl
-    | none =>
-      simp only [Option.map_none, reduceCtorEq, false_iff, not_and]
-      rintro h (⟨f, rfl⟩ | ⟨p, rfl⟩)
-      · rw [(getFrame?_eq_some_iff st id f).mpr h] at hF; cases hF
-      · rw [(getPageTable?_eq_some_iff st id p).mpr h] at hP; cases hP
 
 /-- AL2-B (audit remediation): `getTcb?` returns `none` iff the stored
 object at `tid.toObjId` is either absent or is not of the `.tcb`

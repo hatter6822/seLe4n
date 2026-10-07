@@ -1120,14 +1120,11 @@ theorem memoryAddressObservable_monotone (ctx : LabelingContext) {L₁ L₂ : Se
 /-! ### Object-content refinement across clearances -/
 
 /-- The observer-filtered CNode that `projectKernelObject` produces in its
-`.cnode` arm, named so the slot-level lemmas below have a handle.
-
-The `lock` erasure mirrors `projectKernelObject`'s (WS-SM SM8.B.4): an
-`RwLockState` is a set of core identities, and carrying it into the projection
-would re-open the placement channel SM5.B closed on `TCB.cpuAffinity`. -/
+`.cnode` arm, named so the slot-level lemmas below have a handle.  (The
+CNode carries no lock word since WS-LS LS3.1, so there is nothing to erase
+beside the slot filter.) -/
 def projectCNode (ctx : LabelingContext) (observer : IfObserver) (cn : CNode) : CNode :=
-  { cn with lock := SeLe4n.Kernel.Concurrency.RwLockState.unheld,
-            slots := cn.slots.filter (fun _ cap => capTargetObservable ctx observer cap.target) }
+  { cn with slots := cn.slots.filter (fun _ cap => capTargetObservable ctx observer cap.target) }
 
 /-- Definition-pinning: `projectKernelObject`'s `.cnode` arm **is**
 `projectCNode`, so the slot lemmas below are statements about the live
@@ -1189,28 +1186,27 @@ structure cnodeVisibilityLe (cn₁ cn₂ : CNode) : Prop where
   guardWidth : cn₁.guardWidth = cn₂.guardWidth
   guardValue : cn₁.guardValue = cn₂.guardValue
   radixWidth : cn₁.radixWidth = cn₂.radixWidth
-  lock : cn₁.lock = cn₂.lock
   lookup : ∀ slot cap, cn₁.lookup slot = some cap → cn₂.lookup slot = some cap
 
 theorem cnodeVisibilityLe_refl (cn : CNode) : cnodeVisibilityLe cn cn :=
-  ⟨rfl, rfl, rfl, rfl, rfl, fun _ _ h => h⟩
+  ⟨rfl, rfl, rfl, rfl, fun _ _ h => h⟩
 
 theorem cnodeVisibilityLe_trans {cn₁ cn₂ cn₃ : CNode}
     (h₁ : cnodeVisibilityLe cn₁ cn₂) (h₂ : cnodeVisibilityLe cn₂ cn₃) :
     cnodeVisibilityLe cn₁ cn₃ :=
   ⟨h₁.depth.trans h₂.depth, h₁.guardWidth.trans h₂.guardWidth,
    h₁.guardValue.trans h₂.guardValue, h₁.radixWidth.trans h₂.radixWidth,
-   h₁.lock.trans h₂.lock, fun slot cap h => h₂.lookup slot cap (h₁.lookup slot cap h)⟩
+   fun slot cap h => h₂.lookup slot cap (h₁.lookup slot cap h)⟩
 
 /-- SM8.A.5: the field list of `cnodeVisibilityLe` is **exhaustive** — two
-CNodes ordered by it whose slot maps agree are equal.  A sixth non-slot field
+CNodes ordered by it whose slot maps agree are equal.  A fifth non-slot field
 added to `CNode` makes this proof fail, which is how the relation learns it has
 to grow. -/
 theorem eq_of_cnodeVisibilityLe_of_slots_eq {cn₁ cn₂ : CNode}
     (h : cnodeVisibilityLe cn₁ cn₂) (hSlots : cn₁.slots = cn₂.slots) : cn₁ = cn₂ := by
-  obtain ⟨d₁, gw₁, gv₁, rw₁, s₁, lk₁⟩ := cn₁
-  obtain ⟨d₂, gw₂, gv₂, rw₂, s₂, lk₂⟩ := cn₂
-  obtain ⟨hd, hgw, hgv, hrw, hlk, _⟩ := h
+  obtain ⟨d₁, gw₁, gv₁, rw₁, s₁⟩ := cn₁
+  obtain ⟨d₂, gw₂, gv₂, rw₂, s₂⟩ := cn₂
+  obtain ⟨hd, hgw, hgv, hrw, _⟩ := h
   simp_all
 
 /-- SM8.A.5: the visibility order on a **projected kernel object**.
@@ -1273,7 +1269,7 @@ theorem projectCNode_visibilityLe_monotone (ctx : LabelingContext) {L₁ L₂ : 
     (hFlow : securityFlowsTo L₁ L₂ = true) (cn : CNode) :
     cnodeVisibilityLe (projectCNode ctx (IfObserver.ofLabel L₁) cn)
       (projectCNode ctx (IfObserver.ofLabel L₂) cn) :=
-  ⟨rfl, rfl, rfl, rfl, rfl,
+  ⟨rfl, rfl, rfl, rfl,
    fun slot cap h => projectCNode_lookup_monotone ctx hFlow cn slot cap h⟩
 
 /-- SM8.A.5: the whole object projection is monotone in the clearance.  This is

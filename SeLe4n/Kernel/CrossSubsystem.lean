@@ -887,8 +887,7 @@ inductive StateField where
   | services | scheduler | irqHandlers | lifecycle
   | asidTable | interfaceRegistry | serviceRegistry
   | cdt | cdtSlotNode | cdtNodeSlot | cdtNextNode
-  | scThreadIndex | tlb
-  | objStoreLock | schedulerLocks | tlbShootdown
+  | scThreadIndex | tlb | tlbShootdown
   | perCoreTlb | perCoreICache | pendingIcacheMaintenance | pendingPhysicalWrites
   | declassificationAuditLog | declassificationAuditEpoch
   | declassificationRefusals | declassificationTaint
@@ -1340,8 +1339,6 @@ def SystemState.fieldEq : StateField → SystemState → SystemState → Prop
   | .cdtNextNode,                st, st' => st'.cdtNextNode = st.cdtNextNode
   | .scThreadIndex,              st, st' => st'.scThreadIndex = st.scThreadIndex
   | .tlb,                        st, st' => st'.tlb = st.tlb
-  | .objStoreLock,               st, st' => st'.objStoreLock = st.objStoreLock
-  | .schedulerLocks,             st, st' => st'.schedulerLocks = st.schedulerLocks
   | .tlbShootdown,               st, st' => st'.tlbShootdown = st.tlbShootdown
   | .perCoreTlb,                 st, st' => st'.perCoreTlb = st.perCoreTlb
   | .perCoreICache,              st, st' => st'.perCoreICache = st.perCoreICache
@@ -1371,8 +1368,7 @@ theorem SystemState.eq_of_fieldEq_all (st st' : SystemState)
     h .services, h .scheduler, h .irqHandlers, h .lifecycle,
     h .asidTable, h .interfaceRegistry, h .serviceRegistry,
     h .cdt, h .cdtSlotNode, h .cdtNodeSlot, h .cdtNextNode,
-    h .scThreadIndex, h .tlb,
-    h .objStoreLock, h .schedulerLocks, h .tlbShootdown,
+    h .scThreadIndex, h .tlb, h .tlbShootdown,
     h .perCoreTlb, h .perCoreICache, h .pendingIcacheMaintenance, h .pendingPhysicalWrites,
     h .declassificationAuditLog, h .declassificationAuditEpoch,
     h .declassificationRefusals, h .declassificationTaint⟩

@@ -1029,7 +1029,7 @@ theorem endpointCallOnCore_atomic_under_lockSet
     -- the 2PL bracket; the decomposition is generic over the footprint.
     (replyId? : Option SeLe4n.ReplyId := none)
     (s : LockedSystemState) :
-    withLockSetGhost (lockSet_endpointCall caller cnRoot endpointId receiver? donatedSc? replyId?)
+    withLockSet (lockSet_endpointCall caller cnRoot endpointId receiver? donatedSc? replyId?)
         executingCore (endpointCallOnCore endpointId caller msg executingCore) s
       = (⟨(endpointCallOnCore endpointId caller msg executingCore s.kernel).1,
           LockState.bracket executingCore

@@ -1030,39 +1030,16 @@ def nonExecutedTransitionsPlain : List Name :=
   , `SeLe4n.Kernel.Concurrency.KernelTransitionInstance.action
   , `SeLe4n.Kernel.Concurrency.KernelTransitionInstance.ofWithLockSet
   , `SeLe4n.Kernel.Concurrency.LockedSystemState.kernel
-  -- WS-LS LS2.4: the word-level lock layer is the proofs' alone.  The suspend
-  -- seam was its last executed reader (`withLockSet` at `suspend_thread_cross_core`,
-  -- SM3.C.9); every seam runs a `BracketSpec` now, whose executed path writes
-  -- no lock word, and LS3 deletes the layer with the fields it writes.
-  , `SeLe4n.Kernel.Concurrency.acquireAll
-  , `SeLe4n.Kernel.Concurrency.acquireLock
-  , `SeLe4n.Kernel.Concurrency.acquireLockOnObject
-  -- WS-LS LS1.2: the one word update the three per-key primitives are each
-  -- proved equal to (`acquireLock_eq_applyLockOp` and siblings), so the
-  -- never-enqueues frames are proved once.  Nothing runs it: the primitives
-  -- keep their own bodies, which every `unfold` in the lock layer reads, and
-  -- LS3 deletes the per-object layer with its equations.
-  , `SeLe4n.Kernel.Concurrency.applyLockOp
-  , `SeLe4n.Kernel.Concurrency.applyLockOpOnObject
   , `SeLe4n.Kernel.Concurrency.applySequential
   , `SeLe4n.Kernel.Concurrency.applySequentialWithLockSet
-  , `SeLe4n.Kernel.Concurrency.cancelAll
-  , `SeLe4n.Kernel.Concurrency.cancelLock
-  , `SeLe4n.Kernel.Concurrency.cancelLockOnObject
   , `SeLe4n.Kernel.Concurrency.commitSort
   , `SeLe4n.Kernel.Concurrency.insertByCommitTime
   , `SeLe4n.Kernel.Concurrency.objStoreWriteInstance
   , `SeLe4n.Kernel.Concurrency.readOnlyInstance
-  , `SeLe4n.Kernel.Concurrency.releaseAll
-  , `SeLe4n.Kernel.Concurrency.releaseLock
-  , `SeLe4n.Kernel.Concurrency.releaseLockOnObject
-  , `SeLe4n.Kernel.Concurrency.setObjStoreLockAction
   , `SeLe4n.Kernel.Concurrency.setSchedulerAction
-  , `SeLe4n.Kernel.Concurrency.unwindAll
+  , `SeLe4n.Kernel.Concurrency.setTlbAction
   , `SeLe4n.Kernel.Concurrency.updateObjectAt
-  , `SeLe4n.Kernel.Concurrency.updateObjectLockAt
   , `SeLe4n.Kernel.Concurrency.withLockSet
-  , `SeLe4n.Kernel.Concurrency.withLockSetGhost
   , `SeLe4n.Kernel.Internal.lifecycleRetypeObject
   , `SeLe4n.Kernel.Lifecycle.Suspend.cancelBoundDonation
   , `SeLe4n.Kernel.Lifecycle.Suspend.cancelDonatedDonation
@@ -1100,7 +1077,6 @@ def nonExecutedTransitionsPlain : List Name :=
   , `SeLe4n.Kernel.cleanupPreReceiveDonation
   , `SeLe4n.Kernel.cleanupPreReceiveDonation_never_errors_under_ipcInvariantFull
   , `SeLe4n.Kernel.commitKernelAction
-  , `SeLe4n.Kernel.continueFromAcquired
   , `SeLe4n.Kernel.cspaceLookupMultiLevel
   , `SeLe4n.Kernel.cspaceLookupPath
   , `SeLe4n.Kernel.cspaceMutate
@@ -1182,7 +1158,7 @@ def nonExecutedTransitionsPlain : List Name :=
   , `SeLe4n.Kernel.scheduleEffective
   , `SeLe4n.Kernel.scheduleOrIdleOnCore
   , `SeLe4n.Kernel.serviceRegisterDependency
-  , `SeLe4n.Kernel.setObjectLockAt
+  , `SeLe4n.Kernel.setLockAt
   , `SeLe4n.Kernel.setThreadCpuAffinityOp
   , `SeLe4n.Kernel.storeServiceEntry
   , `SeLe4n.Kernel.storeTcbIpcState_fromTcb
@@ -1193,11 +1169,8 @@ def nonExecutedTransitionsPlain : List Name :=
   , `SeLe4n.Kernel.switchDomainChecked
   , `SeLe4n.Kernel.syncThreadStates
   , `SeLe4n.Kernel.syscallEntry
-  , `SeLe4n.Kernel.syscallEntryFromAcquired
   , `SeLe4n.Kernel.syscallEntryUnderDeclaredLockSet
   , `SeLe4n.Kernel.syscallEntryUnderLockSet
-  , `SeLe4n.Kernel.syscallEntryUnderRevalidatedLockSet
-  , `SeLe4n.Kernel.syscallEntryUnderRevalidatedLockSetModel
   , `SeLe4n.Kernel.syscallLookupReplyId
   , `SeLe4n.Kernel.timeoutAwareReceive
   , `SeLe4n.Kernel.timerTick
@@ -1219,10 +1192,6 @@ def nonExecutedTransitionsPlain : List Name :=
   , `SeLe4n.Model.storeObjectChecked
   , `SeLe4n.Model.storeObjectKindChecked
   , `SeLe4n.Model.storeServiceState
-  -- WS-LS LS2.4: the scheduler lock-word setters are reached only by the
-  -- word-level lock layer above, which no committing export runs any more.
-  , `SeLe4n.Model.SystemState.setReplenishQueueLockOnCore
-  , `SeLe4n.Model.SystemState.setRunQueueLockOnCore
   , `SeLe4n.Platform.Boot.applyMachineConfigChecked
   , `SeLe4n.Platform.Boot.bootFromPlatformCheckedWithIdleThreads
   , `SeLe4n.Platform.Boot.bootFromPlatformUnchecked

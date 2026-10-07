@@ -17,7 +17,7 @@ import SeLe4n.PackedString
 Aggregates the SM5.E per-core idle-thread substantive theorems into a single
 typed inventory with size and per-category witnesses.  Mirrors the SM5.C
 `CrossCoreWakeInventory.lean` and SM5.D `PerCoreTimerInventory.lean` patterns
-(and, further back, the SM3.A `PerObjectLockInventory.lean`).
+(and, further back, the SM3.B `LockSetInventory.lean`).
 
 Seven categories matching the plan §3.5 / §4.3 / §5 sub-tasks (62 entries):
 

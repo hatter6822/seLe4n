@@ -84,10 +84,9 @@ def kind : LockKey → LockKind
 @[simp] theorem kind_replenishQueue (c : CoreId) :
     (LockKey.replenishQueue c).kind = LockKind.replenishQueue := rfl
 
-/-- **LS1.2**: the object a key's lock lives on, when it lives on one.  Two
-object keys at one `ObjId` that both resolve to a stored object resolve to the
-same object, which is what the per-object establishment theorems
-(`LockSetHeld.lean` §4) rule out by distinctness of this projection. -/
+/-- **LS1.2**: the object a key names, when it names one.  Two object keys at
+one `ObjId` name the same object, so a footprint that must not name an object
+twice states distinctness of this projection. -/
 def objId? : LockKey → Option SeLe4n.ObjId
   | .object l => some l.objId
   | _ => none
@@ -202,8 +201,8 @@ theorem runQueue_lt_replenishQueue (c d : CoreId) :
 -- ----------------------------------------------------------------------------
 
 /-- **LS1.1**: the key a `LockId` names.  A `.objStore`-kind `LockId` is the
-table lock whatever `ObjId` it carried — `SystemState.objStoreLock` is one
-word and `lockHeld` routes every such id to it — so here it is one key.  This
+table lock whatever `ObjId` it carried — the table has one lock, so here it
+is one key.  This
 is what LS1.2 retired `canonicalSchedLockOfObject` into: the canonical form
 made a constructor, which is what lets a key have exactly one spelling. -/
 def ofLockId (l : LockId) : LockKey :=

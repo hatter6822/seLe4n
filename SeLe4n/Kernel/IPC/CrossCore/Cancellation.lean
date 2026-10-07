@@ -2969,7 +2969,7 @@ theorem cancelIpcBlocking_atomic_under_lockSet
     -- **WS-HP HP3.1**: the frame below the cut, which the splice re-links.
     (splicedBelow? : Option SeLe4n.ReplyId)
     (s : LockedSystemState) :
-    withLockSetGhost (lockSet_cancelIpcBlocking victim blEp blN consumedReplyId rdSc dhTid holderEp holderNb belowHeadReply? outerCaller? reclaimHead? frameAbove? splicedBelow?)
+    withLockSet (lockSet_cancelIpcBlocking victim blEp blN consumedReplyId rdSc dhTid holderEp holderNb belowHeadReply? outerCaller? reclaimHead? frameAbove? splicedBelow?)
         executingCore (fun st => (cancelIpcBlocking st victim tcb, ())) s
       = (⟨cancelIpcBlocking s.kernel victim tcb,
           LockState.bracket executingCore
@@ -2996,7 +2996,7 @@ theorem cancelIpcBlockingOnCore_atomic_under_lockSet
     -- **WS-HP HP3.1**: the frame below the cut, which the splice re-links.
     (splicedBelow? : Option SeLe4n.ReplyId)
     (s : LockedSystemState) :
-    withLockSetGhost (lockSet_cancelIpcBlocking victim blEp blN consumedReplyId rdSc dhTid holderEp holderNb belowHeadReply? outerCaller? reclaimHead? frameAbove? splicedBelow?)
+    withLockSet (lockSet_cancelIpcBlocking victim blEp blN consumedReplyId rdSc dhTid holderEp holderNb belowHeadReply? outerCaller? reclaimHead? frameAbove? splicedBelow?)
         executingCore (cancelIpcBlockingOnCore victim tcb executingCore) s
       = (⟨(cancelIpcBlockingOnCore victim tcb executingCore s.kernel).1,
           LockState.bracket executingCore
@@ -3018,7 +3018,7 @@ theorem cancelDonation_atomic_under_lockSet
     (headReplyId belowHeadReplyId : Option SeLe4n.ReplyId)
     (outerCallerTid : Option SeLe4n.ThreadId)
     (s : LockedSystemState) :
-    withLockSetGhost (lockSet_cancelDonation victim bindingScId donatedOriginalOwnerTid
+    withLockSet (lockSet_cancelDonation victim bindingScId donatedOriginalOwnerTid
             headReplyId belowHeadReplyId outerCallerTid)
         executingCore
         (fun st => match cancelDonation st victim tcb with
@@ -3046,7 +3046,7 @@ theorem cancelDonationOnCore_atomic_under_lockSet
     (headReplyId belowHeadReplyId : Option SeLe4n.ReplyId)
     (outerCallerTid : Option SeLe4n.ThreadId)
     (s : LockedSystemState) :
-    withLockSetGhost (lockSet_cancelDonation victim bindingScId donatedOriginalOwnerTid
+    withLockSet (lockSet_cancelDonation victim bindingScId donatedOriginalOwnerTid
             headReplyId belowHeadReplyId outerCallerTid)
         executingCore (cancelDonationOnCore victim tcb) s
       = (⟨(cancelDonationOnCore victim tcb s.kernel).1,
@@ -4450,10 +4450,9 @@ end Lifecycle.Suspend
 -- the guarded capstone they fed.
 
 -- WS-LC LC4.7: the per-primitive `invExt` preservation lemmas that stood here
--- are gone.  This file carried a *third* copy of them — `LockSetHeld` and
--- `NonInterferencePerCore` each had one too — because no two of those modules
--- are in each other's import closure.  They now live once, beside
--- `updateObjectLockAt` in `WithLockSet`, which all three import.
+-- are gone, and WS-LS LS3.1 deleted the primitives themselves: the bracket's
+-- phases write only the ghost lock table, so no object-store invariant has a
+-- lock-phase obligation left to discharge.
 
 /-- WS-SM SM6.E: the cancellation's decisive business observable — the
 victim's `ipcState` (the field the teardown transitions and the wake/suspend
@@ -4482,7 +4481,7 @@ theorem cancelIpcBlockingOnCore_observer_atomic
     (splicedBelow? : Option SeLe4n.ReplyId)
     (s : LockedSystemState) :
     cancellationVictimIpcStateObserver victim
-        (withLockSetGhost (lockSet_cancelIpcBlocking victim blEp blN consumedReplyId rdSc dhTid holderEp holderNb belowHeadReply? outerCaller? reclaimHead? frameAbove? splicedBelow?)
+        (withLockSet (lockSet_cancelIpcBlocking victim blEp blN consumedReplyId rdSc dhTid holderEp holderNb belowHeadReply? outerCaller? reclaimHead? frameAbove? splicedBelow?)
           executingCore (cancelIpcBlockingOnCore victim tcb executingCore) s).1.kernel
       = cancellationVictimIpcStateObserver victim
           (cancelIpcBlockingOnCore victim tcb executingCore s.kernel).1 :=
@@ -4509,7 +4508,7 @@ theorem cancelDonationOnCore_observer_atomic
     (outerCallerTid : Option SeLe4n.ThreadId)
     (s : LockedSystemState) :
     cancellationVictimBindingObserver victim
-        (withLockSetGhost (lockSet_cancelDonation victim bindingScId donatedOwner
+        (withLockSet (lockSet_cancelDonation victim bindingScId donatedOwner
             headReplyId belowHeadReplyId outerCallerTid)
           executingCore (cancelDonationOnCore victim tcb) s).1.kernel
       = cancellationVictimBindingObserver victim

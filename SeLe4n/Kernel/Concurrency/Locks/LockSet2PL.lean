@@ -10,18 +10,15 @@
 import SeLe4n.Model.State
 import SeLe4n.Kernel.Concurrency.Locks.Kind
 import SeLe4n.Kernel.Concurrency.Locks.LockSet
-import SeLe4n.Kernel.Concurrency.Locks.LockIdProjection
 import SeLe4n.Kernel.Concurrency.Locks.LockSetTransitions
-import SeLe4n.Kernel.Concurrency.Locks.WithLockSet
-import SeLe4n.Kernel.Concurrency.Locks.LockSetHeld
 import SeLe4n.Kernel.Concurrency.Locks.BracketSpec
 
 /-!
 # WS-SM SM3.C.5 / C.6 / C.7 / C.8 — Two-phase-locking discipline theorems
 
 The four substantive theorems for SM3.C, stated since **WS-LS LS2.1** over the
-pair `LockedSystemState` and the ghost bracket `withLockSetGhost`
-(`Locks/BracketSpec.lean`), which LS3.1 renames to `withLockSet`:
+pair `LockedSystemState` and the bracket `withLockSet`
+(`Locks/BracketSpec.lean`):
 
 * **SM3.C.5** `lockSet_acquired_in_order`: every lock acquisition
   via the bracket happens in `LockKey` ascending order.  Follows
@@ -68,10 +65,10 @@ worked instantiation on the table lock's well-formedness.  Over the pair the
 kernel half of the bracket's result *is* the action's, by `rfl`, so that
 machinery has nothing left to prove and is deleted; the theorems it fed keep
 their names with the hypotheses dropped (a strengthening, recorded in
-`docs/planning/LOCK_STATE_SEPARATION_PLAN.md` §5 O6).  §5b keeps the
-word-level growing-phase facts (`acquireAll_establishes_lockSetHeld` and its
-feeders) beside the word-level `withLockSet` until LS3.1 deletes the words;
-their ghost forms are `LockState.acquireAll_unheld_heldAll_pairs` and
+`docs/planning/LOCK_STATE_SEPARATION_PLAN.md` §5 O6).  The word-level
+growing-phase facts that sat here until WS-LS LS3.1
+(`acquireAll_establishes_lockSetHeld` and its feeders) went with the lock
+words; their ghost forms are `LockState.acquireAll_unheld_held` and
 `LockState.bracket_unheld`.
 -/
 
@@ -86,8 +83,9 @@ open SeLe4n.Model
 
 /-- WS-SM SM3.C.5 helper: extract the LockId-ordered acquisition
 sequence from a `LockSet`.  This is the *order* in which
-`withLockSet` invokes `acquireLockOnObject`, separated from the
-state-update fold so the ordering theorem can target it directly. -/
+`withLockSet`'s growing phase acquires the ghost lock table's keys,
+separated from the state-update fold so the ordering theorem can target it
+directly. -/
 def acquireOrder (S : LockSet) : List LockKey :=
   S.lockAcquireSequence.map Prod.fst
 
@@ -162,7 +160,7 @@ theorem withLockSet_three_phase_decomposition {α : Type} (S : LockSet)
     let acquired := LockState.acquireAll core S.lockAcquireSequence s.locks
     let (postAction, result) := action s.kernel
     let unwound := LockState.unwindAll core S.lockAcquireSequence.reverse acquired
-    withLockSetGhost S core action s = (⟨postAction, unwound⟩, result) := by
+    withLockSet S core action s = (⟨postAction, unwound⟩, result) := by
   rfl
 
 /-- WS-SM SM3.C.7 (plan §5.3 Theorem 2.1.10 operational form; **WS-LS LS2.1**:
@@ -181,7 +179,7 @@ the pair it is `rfl`. -/
 theorem lockSet_atomic_under_2pl {α : Type} (S : LockSet) (core : CoreId)
     (action : SystemState → SystemState × α) (s : LockedSystemState) :
     let (postAction, result) := action s.kernel
-    withLockSetGhost S core action s =
+    withLockSet S core action s =
       (⟨postAction, LockState.bracket core S s.locks⟩, result) := by
   rfl
 
@@ -206,7 +204,7 @@ and its siblings) now instantiate. -/
 theorem lockSet_observer_atomic {α β : Type} (S : LockSet) (core : CoreId)
     (action : SystemState → SystemState × α) (s : LockedSystemState)
     (π : SystemState → β) :
-    π (withLockSetGhost S core action s).1.kernel = π (action s.kernel).1 := rfl
+    π (withLockSet S core action s).1.kernel = π (action s.kernel).1 := rfl
 
 -- ---------------------------------------------------------------------------
 -- WS-RR RR7.4: the two shared decisive observers of the IPC surface
@@ -262,144 +260,8 @@ theorem withLockSet_invariant_preserved {α : Type} (S : LockSet) (core : CoreId
     (post : SystemState → Prop)
     (hPre : post s.kernel)
     (hActionPreserves : ∀ s', post s' → post (action s').1) :
-    post (withLockSetGhost S core action s).1.kernel :=
+    post (withLockSet S core action s).1.kernel :=
   hActionPreserves s.kernel hPre
-
--- ============================================================================
--- §5b — The word-level growing phase (retired with the words at LS3.1)
--- ============================================================================
--- These are about the lock words in kernel objects, which the word-level
--- `withLockSet` still writes until LS2.4 switches the syscall seams and LS3.1 deletes
--- the words.  Their ghost forms are `LockState.acquireAll_unheld_heldAll_pairs`
--- (the growing phase holds the footprint, with no object-presence hypothesis)
--- and `LockState.bracket_unheld` (the round trip).
-/-- WS-SM SM3.C.8 (audit-pass-1, Comment 7): **substantive**
-acquire-establishes-holding theorem — replaces the previous
-tautological `_unchanged_outside_lockSet` placeholder the codex
-review correctly flagged as a false verification anchor.
-
-Under the precondition that the table-level `objStoreLock` is
-**available** (`unheld`), acquiring it via `acquireLockOnObject`
-produces a state where the lock is genuinely **held** by `core`
-in the requested mode — `lockHeld core ⟨.objStore, oid⟩ mode`
-holds on the post-acquire state.
-
-This is the honest bridge the reviewer asked for: it actually
-involves the acquire phase and the transformed state, proving that
-on an available lock the action runs with the lock held (not merely
-`hHeld → hHeld`).  Lifts `RwLockState.unheld_acquire_grants`
-through the `acquireLockOnObject` `.objStore` branch and the
-`lockHeld` `.objStore` projection. -/
-theorem acquireLockOnObject_objStore_establishes_lockHeld
-    (s : SystemState) (core : CoreId) (oid : SeLe4n.ObjId) (mode : AccessMode)
-    (hAvail : s.objStoreLock = RwLockState.unheld) :
-    lockHeld core ⟨.objStore, oid⟩ mode
-      (acquireLockOnObject s core ⟨.objStore, oid⟩ mode) := by
-  -- The objStore branch sets objStoreLock := s.objStoreLock.applyOp …
-  unfold acquireLockOnObject lockHeld
-  simp only
-  -- Post-state objStoreLock = unheld.applyOp (mode.toAcquireOp core).
-  rw [hAvail]
-  exact RwLockState.unheld_acquire_grants core mode
-
-/-- WS-SM SM3.C.8 (audit-pass-1, Comment 4): acquiring then releasing
-the table-level lock from an **available** state returns it to
-`unheld` — NO waiter leak.
-
-Refutes the waiter-leak concern for the abstract single-core model:
-because the acquire GRANTED (the lock was available), the symmetric
-release cleanly removes the holder and the lock round-trips to
-`unheld`.  Lifts `RwLockState.unheld_acquire_release_roundtrip`
-through the `acquireLockOnObject` / `releaseLockOnObject`
-`.objStore` branches. -/
-theorem acquireLockOnObject_objStore_release_roundtrip
-    (s : SystemState) (core : CoreId) (oid : SeLe4n.ObjId) (mode : AccessMode)
-    (hAvail : s.objStoreLock = RwLockState.unheld) :
-    (releaseLockOnObject (acquireLockOnObject s core ⟨.objStore, oid⟩ mode)
-      core ⟨.objStore, oid⟩ mode).objStoreLock = RwLockState.unheld := by
-  unfold acquireLockOnObject releaseLockOnObject
-  simp only
-  rw [hAvail]
-  exact RwLockState.unheld_acquire_release_roundtrip core mode
-
-/-- WS-SM SM3.C.8 helper: two `LockId`s with equal `kind` and `objId`
-components are equal (`LockId` carries exactly those two fields). -/
-theorem lockId_eq_of_components {l₁ l₂ : LockId}
-    (hk : l₁.kind = l₂.kind) (ho : l₁.objId = l₂.objId) : l₁ = l₂ := by
-  cases l₁; cases l₂; simp_all
-
-/-- WS-SM SM3.C.8 foundation: in a well-formed `LockSet` whose every pair
-resolves to a present object of matching kind, the canonical acquisition
-sequence has pairwise-distinct ObjIds.
-
-Two pairs sharing an ObjId would both resolve to the object stored there, hence
-have that object's `lockKind`, hence the same `kind` AND the same `objId`, hence
-the same `LockId` key — contradicting the `Nodup`-keys invariant
-(`LockSet.fst_inj_at_pairs`).  This is why the SM3.C.8 multi-lock establishment
-hypothesis (distinct ObjIds) is automatically met by any state-resolvable
-lock set. -/
-theorem lockAcquireSequence_distinct_objId_of_resolves (S : LockSet)
-    (s : SystemState)
-    (hEach : ∀ p ∈ S.pairs, ∃ l o, p.fst = .object l ∧ s.objects[l.objId]? = some o ∧
-        o.lockKind = l.kind) :
-    S.lockAcquireSequence.Pairwise (fun a b => a.fst.objId? ≠ b.fst.objId?) := by
-  have hPairsNodup : S.pairs.Nodup :=
-    (List.pairwise_map.mp S.hUniqueKeys).imp
-      (fun hfst heq => hfst (congrArg Prod.fst heq))
-  have hSeqNodup : S.lockAcquireSequence.Nodup :=
-    (LockSet.lockAcquireSequence_perm S).nodup_iff.mpr hPairsNodup
-  refine hSeqNodup.imp_of_mem ?_
-  intro a b ha hb hab hObjEq
-  apply hab
-  have haP : a ∈ S.pairs :=
-    (LockSet.mem_def a S).mp ((LockSet.lockAcquireSequence_complete S a).mpr ha)
-  have hbP : b ∈ S.pairs :=
-    (LockSet.mem_def b S).mp ((LockSet.lockAcquireSequence_complete S b).mpr hb)
-  obtain ⟨la, oa, hLa, hPa, hKa⟩ := hEach a haP
-  obtain ⟨lb, ob, hLb, hPb, hKb⟩ := hEach b hbP
-  have hIdEq : la.objId = lb.objId := by
-    rw [hLa, hLb, LockKey.objId?_object, LockKey.objId?_object] at hObjEq
-    exact Option.some.inj hObjEq
-  have hoEq : oa = ob := by
-    have hObj : s.objects[la.objId]? = s.objects[lb.objId]? := by rw [hIdEq]
-    rw [hPa, hPb] at hObj
-    exact Option.some.inj hObj
-  have hKindEq : la.kind = lb.kind := by rw [← hKa, hoEq, hKb]
-  refine LockSet.fst_inj_at_pairs S haP hbP ?_
-  rw [hLa, hLb, lockId_eq_of_components hKindEq hIdEq]
-
-/-- WS-SM SM3.C.8 (substantive — the LockSet-level "acquireAll establishes
-lockSetHeld" theorem): `withLockSet`'s growing phase genuinely puts the
-declared lock set into the held state.
-
-If every lock in `S` resolves to a present, kind-matching, `unheld` object in
-the pre-state `s`, then after the canonical acquire fold the executing `core`
-holds the entire lock set: `lockSetHeld core S (acquireAll core
-S.lockAcquireSequence s)`.
-
-This is the bridge the SM3.C.8 metatheorem's `lockSetHeld` precondition rests
-on — it is not an arbitrary assumption but a *consequence* of the 2PL growing
-phase on an available lock set.  Combines the multi-lock establishment
-(`acquireAll_establishes_lockHeld_of_distinct_present_unheld`) with the
-automatic ObjId-distinctness
-(`lockAcquireSequence_distinct_objId_of_resolves`) and the
-sequence ↔ pairs membership bridge (`lockAcquireSequence_complete`). -/
-theorem acquireAll_establishes_lockSetHeld (S : LockSet) (core : CoreId)
-    (s : SystemState)
-    (hExt : s.objects.invExt)
-    (hEach : ∀ p ∈ S.pairs, ∃ l o, p.fst = .object l ∧ s.objects[l.objId]? = some o ∧
-        o.lockKind = l.kind ∧ o.objectLockOf = RwLockState.unheld) :
-    lockSetHeld core S (acquireAll core S.lockAcquireSequence s) := by
-  have hEachSeq : ∀ p ∈ S.lockAcquireSequence, ∃ l o, p.fst = .object l ∧
-      s.objects[l.objId]? = some o ∧ o.lockKind = l.kind ∧
-      o.objectLockOf = RwLockState.unheld := fun p hp =>
-    hEach p ((LockSet.mem_def p S).mp ((LockSet.lockAcquireSequence_complete S p).mpr hp))
-  have hDistinct := lockAcquireSequence_distinct_objId_of_resolves S s
-    (fun p hp => by obtain ⟨l, o, h0, h1, h2, _⟩ := hEach p hp; exact ⟨l, o, h0, h1, h2⟩)
-  have hAll := acquireAll_establishes_lockHeld_of_distinct_present_unheld core
-    S.lockAcquireSequence s hExt hEachSeq hDistinct
-  intro p hp
-  exact hAll p ((LockSet.lockAcquireSequence_complete S p).mp ((LockSet.mem_def p S).mpr hp))
 
 -- ============================================================================
 -- §6 — SM3.C aggregator theorems (architectural anchors)
@@ -424,8 +286,8 @@ useful for SM3.E.3's serializability proof's serial-equivalent
 construction. -/
 theorem withLockSet_computation {α : Type} (S : LockSet) (core : CoreId)
     (action : SystemState → SystemState × α) (s : LockedSystemState) :
-    withLockSetGhost S core action s =
+    withLockSet S core action s =
       (⟨(action s.kernel).1, LockState.bracket core S s.locks⟩, (action s.kernel).2) :=
-  withLockSetGhost_eq_decomposition S core action s
+  withLockSet_eq_decomposition S core action s
 
 end SeLe4n.Kernel.Concurrency

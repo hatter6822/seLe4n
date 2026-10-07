@@ -1034,35 +1034,27 @@ private def runSchedLockDomainChecks : IO Unit := do
   let st : SeLe4n.Model.SystemState := default
   let c0 : SeLe4n.Kernel.Concurrency.CoreId := SeLe4n.Kernel.Concurrency.bootCoreId
   let c1 : SeLe4n.Kernel.Concurrency.CoreId := ⟨1, by decide⟩
-  -- 1. The words exist and start unheld.
-  assertBool "every per-core run-queue lock is unheld at boot"
+  -- 1. The ghost lock table starts all-free.  (WS-LS: the lock words left the
+  --    kernel state; they are the ghost table beside it, so a lock write cannot
+  --    reach the data it guards by construction.)
+  let L0 := SeLe4n.Kernel.Concurrency.LockState.unheld
+  assertBool "every per-core run-queue and replenish-queue lock is unheld at boot"
     (SeLe4n.Kernel.Concurrency.allCores.all
-      (fun c => decide (st.runQueueLockOnCore c
-        = SeLe4n.Kernel.Concurrency.RwLockState.unheld)))
-  assertBool "every per-core replenish-queue lock is unheld at boot"
-    (SeLe4n.Kernel.Concurrency.allCores.all
-      (fun c => decide (st.replenishQueueLockOnCore c
-        = SeLe4n.Kernel.Concurrency.RwLockState.unheld)))
-  -- 2. An acquire is visible in the word it names, and in no other.
-  let stRq := SeLe4n.Kernel.Concurrency.acquireLock st c0 (.runQueue c0) .write
+      (fun c => decide (L0 (.runQueue c) = SeLe4n.Kernel.Concurrency.RwLockState.unheld) &&
+        decide (L0 (.replenishQueue c) = SeLe4n.Kernel.Concurrency.RwLockState.unheld)))
+  -- 2. An acquire is visible in the key it names, and in no other.
+  let lRq := L0.acquire c0 (.runQueue c0) .write
   assertBool "acquiring core 0's run-queue lock makes core 0 the holder"
-    (decide (SeLe4n.Kernel.Concurrency.keyHeld c0 (.runQueue c0) .write stRq))
+    (decide (lRq.held c0 (.runQueue c0) .write))
   assertBool "NEGATIVE: it does not make core 1's run-queue lock held"
-    (decide (¬ SeLe4n.Kernel.Concurrency.keyHeld c0 (.runQueue c1) .write stRq))
+    (decide (¬ lRq.held c0 (.runQueue c1) .write))
   assertBool "NEGATIVE: it does not touch core 0's replenish-queue lock"
-    (decide (¬ SeLe4n.Kernel.Concurrency.keyHeld c0 (.replenishQueue c0) .write stRq))
-  -- A lock write must be invisible to the data it guards.  `RunQueue` carries no
-  -- `BEq`, so the runtime witness is the current slot and the object count; the
-  -- whole-field statement is `setRunQueueLockOnCore_scheduler` (`rfl`).
-  assertBool "a run-queue acquire frames the scheduler data it guards"
-    (SeLe4n.Kernel.Concurrency.allCores.all (fun c =>
-      decide (stRq.scheduler.currentOnCore c = st.scheduler.currentOnCore c)))
-  assertBool "a run-queue acquire frames the object store"
-    (decide (stRq.objects.size = st.objects.size))
-  -- 3. The unwind gives the word back.
-  let stBack := SeLe4n.Kernel.Concurrency.unwindAll c0 [(SeLe4n.Kernel.Concurrency.LockKey.runQueue c0, .write)] stRq
+    (decide (¬ lRq.held c0 (.replenishQueue c0) .write))
+  -- 3. The unwind gives the lock back.
+  let lBack := SeLe4n.Kernel.Concurrency.LockState.unwindAll c0
+    [(SeLe4n.Kernel.Concurrency.LockKey.runQueue c0, .write)] lRq
   assertBool "the shrinking phase releases what the growing phase took"
-    (decide (¬ SeLe4n.Kernel.Concurrency.keyHeld c0 (.runQueue c0) .write stBack))
+    (decide (¬ lBack.held c0 (.runQueue c0) .write))
   -- 4. The footprint type is fail-closed on duplicate keys.
   assertBool "a duplicate-free footprint is accepted"
     (SeLe4n.Kernel.Concurrency.LockSet.ofList?
@@ -1098,24 +1090,15 @@ private def runSchedLockDomainChecks : IO Unit := do
     (SeLe4n.Kernel.declaredLockSetForReschedule 1 st |>.isSome)
   assertBool "NEGATIVE: an out-of-range core id declares no reschedule footprint"
     (SeLe4n.Kernel.declaredLockSetForReschedule 99 st |>.isNone)
-  -- 7. WS-LS LS2.2: the executed bracket is the step and nothing else — on an
-  --    out-of-range id and on a valid core alike no lock word is written,
-  --    because the executed path has none to write.
+  -- 7. WS-LS LS2.2: the executed bracket is the step and nothing else, on an
+  --    out-of-range id and on a valid core alike.
   let outBad := (SeLe4n.Kernel.rescheduleBracket 99).run st
   assertBool "an out-of-range reschedule commits the bare step"
     (decide (outBad.2.scheduler.currentOnCore c1
       = (SeLe4n.Kernel.perCoreRescheduleStep st 99).scheduler.currentOnCore c1))
-  assertBool "…and writes no scheduler lock word"
-    (SeLe4n.Kernel.Concurrency.allCores.all (fun c =>
-      decide (outBad.2.runQueueLockOnCore c
-        = SeLe4n.Kernel.Concurrency.RwLockState.unheld)))
   -- 8. On a valid core the proven bracket advances the ghost table by the
-  --    declared footprint and hands it back; the executed one writes nothing.
+  --    declared footprint and hands it back.
   let outGood := (SeLe4n.Kernel.rescheduleBracket 1).run st
-  assertBool "the executed bracket leaves every scheduler lock word unheld"
-    (SeLe4n.Kernel.Concurrency.allCores.all (fun c =>
-      decide (outGood.2.runQueueLockOnCore c
-        = SeLe4n.Kernel.Concurrency.RwLockState.unheld)))
   let ghost := (SeLe4n.Kernel.rescheduleBracket 1).runGhost c1
     ⟨st, SeLe4n.Kernel.Concurrency.LockState.unheld⟩
   assertBool "the proven bracket hands the ghost table back all-free"

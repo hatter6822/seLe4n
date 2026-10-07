@@ -1,3 +1,57 @@
+## v0.36.70 — WS-LS LS3.1: the lock words leave the kernel state
+
+**No kernel object and no `SystemState` field carries lock state any more.**
+The twelve per-object `lock : RwLockState` fields, `SystemState.objStoreLock`,
+`schedulerLocks`, their frozen mirrors and the per-object lock layer built on
+them are deleted; the only lock state is the ghost table `LockState`
+(`Concurrency/Locks/LockState.lean`) beside the kernel state in
+`LockedSystemState`.  The plan's old LS3.1 (the deletion) and LS3.2 (the
+information-flow restatement) land as one row: Tier 1 builds
+`SeLe4n.Platform.Staged`, which imports `FineLockFlow` and the NI modules, so
+neither half compiles alone.  `main_trace_smoke.expected` is unchanged.
+
+- **Deleted modules**: `Locks/WithLockSet.lean` (the word-level bracket and
+  `acquireLockOnObject` / `releaseLockOnObject`), `Locks/LockSetHeld.lean`,
+  `Locks/LockIdProjection.lean`, `Locks/WithLockSetInventory.lean`,
+  `Model/Object/PerObjectLockInventory.lean`, and the suites
+  `tests/PerObjectLockSuite.lean` and `tests/WithLockSetSuite.lean`.  The
+  bracket over the pair is `withLockSet` in `BracketSpec.lean`; `held` /
+  `heldAll` live on `LockState` (`heldAll_realizes_heldBy` in
+  `DeadlockFreedomSuite` replaces the per-object form).
+- **Information flow over the pair** (`FineLockFlow.lean`,
+  `NonInterferencePerCore.lean` §6): an observer's view is a function of the
+  kernel half, so a lock write is invisible by type.  `lockWritesOnly` is
+  kernel equality; `setLockAt`, `lockTableWrite_lockWritesOnly`,
+  `setLockAt_lockWritesOnly` and `lockWritesOnly_preserves_projection` /
+  `_onCore` / `_lowEquivalent_smp` replace the lock-erasure factoring
+  (`projectKernelObject_setLock`, `KernelObject.eraseLock`).  Reader
+  multiplicity, writer exclusion, the blocked acquirer and both integrity
+  directions are restated with their names kept.
+- **Revalidated-entry model retired** (plan §2 item 3): no seam executes it,
+  so `RevalidatedLockSet` and the two claims about it go; `FineLockClaimId`
+  keeps nine claims.
+- **Inventories**: the SM3.A per-object-lock and SM3.C bracket inventories are
+  deleted with what they listed; the SM3.E serializability inventory keeps 96
+  entries (the two object-store lock-word preservation witnesses went with
+  the word; `setTlb_setScheduler_commute` replaces the object-store lock's
+  commutation witness).  The phase manifest reads 967 entries, 787 theorems.
+- **Gates**: about 150 Tier 3 anchors re-pointed or deleted, with negative
+  anchors holding `RwLockState` out of the model's object, structure, state,
+  frozen-state and projection files and `RevalidatedLockSet` out of
+  `FineLockFlow`; `SeLe4n.PackedString` registered as staged-only (every
+  inventory that uses it is staged now); the dethreading pins, the two
+  information-flow fixtures and the manifest JSON regenerated.
+- **Plan**: LS3.1 done; LS3.2 is the debt close and measurement, LS3.3 the
+  `LockKind.objStore` deletion (still read by `LockKey.kind` and the
+  `permittedKinds` lemmas), LS3.4 the archive.
+- **Exerciser**: 387 heap allocations per notification-signal round trip,
+  unchanged from LS2.5: since LS2.4 no executed path wrote a lock word, so
+  the fields were dead weight in each object rather than allocation sites.
+  Kernel image 8,884,824 bytes.  The remaining allocations are LS3.2's
+  measurement to attribute.
+
+Refs: docs/planning/LOCK_STATE_SEPARATION_PLAN.md (row LS3.1).
+
 ## v0.36.69 — WS-LS LS2.5: the resolved scheduler footprints move beside their transitions
 
 **Every resolved scheduler-domain footprint now sits beside the transition it

@@ -8,10 +8,6 @@
 -/
 
 import SeLe4n.Prelude
--- WS-SM SM6.D: per-Reply lock field needs the RwLock state type from SM2.C.
--- Only the types-only module is imported (not the `Locks.RwLock`
--- specification and its proofs); it depends only on `Concurrency.Types`.
-import SeLe4n.Kernel.Concurrency.Locks.RwLockState
 
 /-! # Reply object — WS-SM SM6.D
 
@@ -90,8 +86,6 @@ structure Reply where
   caller    : Option SeLe4n.ThreadId       := none
   prev      : Option SeLe4n.ReplyId        := none
   next      : Option ReplyStackLink         := none
-  lock      : SeLe4n.Kernel.Concurrency.RwLockState :=
-    SeLe4n.Kernel.Concurrency.RwLockState.unheld
 deriving Repr
 
 namespace Reply
@@ -105,13 +99,11 @@ instance : Inhabited Reply where
   default := empty SeLe4n.ReplyId.sentinel
 
 /-- Manual `BEq` mirroring `BEq SchedContext`: dispatches to constituent `BEq`
-instances so `BEq KernelObject`'s `.reply` arm has a comparator.  `RwLockState`
-derives `DecidableEq`, so its `==` agrees with `=`; the lock state participates
-in structural equality so lock-state regressions are not masked. -/
+instances so `BEq KernelObject`'s `.reply` arm has a comparator. -/
 instance : BEq Reply where
   beq a b :=
     a.replyId == b.replyId && a.caller == b.caller &&
-    a.prev == b.prev && a.next == b.next && a.lock == b.lock
+    a.prev == b.prev && a.next == b.next
 
 /-- WS-OD (`v0.35.4`): **a Reply is on a stack iff it carries a stack link**,
 and **an unlinked Reply is off every stack** — the object-local half of the
@@ -239,9 +231,6 @@ def consumed (r : Reply) : Reply :=
   unfold consumed; split <;> rfl
 
 @[simp] theorem consumed_replyId (r : Reply) : r.consumed.replyId = r.replyId := by
-  unfold consumed; split <;> rfl
-
-@[simp] theorem consumed_lock (r : Reply) : r.consumed.lock = r.lock := by
   unfold consumed; split <;> rfl
 
 /-- A head keeps its links across consumption — the pop that follows clears them. -/

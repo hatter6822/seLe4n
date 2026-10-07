@@ -12,7 +12,7 @@
 
 import SeLe4n.Kernel.InformationFlow.ObservableStatePerCore
 import SeLe4n.Kernel.InformationFlow.Invariant.Composition
-import SeLe4n.Kernel.Concurrency.Locks.WithLockSet
+import SeLe4n.Kernel.Concurrency.Locks.BracketSpec
 import SeLe4n.Kernel.SlotConfinement.Predicate
 -- The SM6.A/SM6.B cross-core non-interference modules own the `*_machine_eq`
 -- frames for the IPC primitives (`storeTcbIpcState{,AndMessage}`,
@@ -61,9 +61,10 @@ that decomposition applied to a different premise:
 
 Plan §3.3 discharges Theorem 3.3.1 from serializability (Corollary 2.1.11):
 "c-observable state writes happen only with c's locks held, which c' does not
-have".  That argument is not available on the live path — SM3.C.9 still defers
-wrapping the `@[export]` bodies in `withLockSet`, and v0.32.142 serialises
-kernel entry with one global ticket lock rather than the per-object fine locks.
+have".  That argument is not available on the live path — the seams run
+`BracketSpec.run` (WS-LS LS2), whose executed form is the step alone with the
+locks a ghost table beside it, and v0.32.142 serialises kernel entry with one
+global ticket lock rather than per-object fine locks.
 The theorem is therefore proven from the **frame** premises directly, which
 assumes strictly less (no lock discipline at all) and so concludes strictly
 more.  §6 supplies the missing direction as a *bridge*: a lock set disjoint
@@ -2330,65 +2331,30 @@ theorem niStepCoverage_perCore (ctx : LabelingContext) (observer : IfObserver)
               (.syscallDecodeError rfl) (observableSlotsConfinedToCore_refl st bootCoreId)⟩
 
 -- ============================================================================
--- §6  SM8.B.4 — non-interference under the per-object lock set
+-- §6  SM8.B.4 — non-interference under the lock set
 -- ============================================================================
 --
 -- The SM3 two-phase-locking bracket `withLockSet S core action s` acquires
--- every lock in `S`, runs `action`, and releases in reverse order.  Each
--- acquire/release rewrites the `lock : RwLockState` field of the object the
--- `LockId` names (or the table-level `objStoreLock`).
+-- every lock in `S`, runs `action`, and releases in reverse order.  Since
+-- WS-LS LS3.1 the locks are keys of the ghost lock table
+-- (`Concurrency/Locks/LockState.lean`) and the bracket runs over the pair
+-- `LockedSystemState`: its phases write the table, the action alone writes the
+-- kernel state, and the kernel half of its result is `action s.kernel` by `rfl`
+-- (`withLockSet_fst_kernel`).
 --
--- `RwLockState` carries `writerHeld : Option CoreId`, `readers : List CoreId`
--- and `waiters : List (CoreId × AccessMode)` — every field a core identity.  If
--- the projection carried it, an observer that can see an object would learn the
--- set of cores currently operating on that object, which is the *placement*
--- channel WS-SM SM5.B closed by stripping `TCB.cpuAffinity`, re-opened through
--- another field.  `projectKernelObject` therefore erases `lock` structurally
--- (see its `.endpoint` … `.untyped` arms), and the consequence is proved here:
--- the bracket is invisible **unconditionally** — no hypothesis about which
--- objects the lock set names, and none about whether the locks are contended.
+-- The projection reads the kernel state only, so the bracket is invisible
+-- **by type** — no hypothesis about which objects the lock set names, none
+-- about whether the locks are contended, and none about the object store's
+-- extension invariant (the per-object lock words this section once had to
+-- frame were deleted with LS3.1).  `RwLockState` carries core identities; had
+-- a lock word stayed in an object, an observer that could see the object would
+-- learn which cores were operating on it, the *placement* channel WS-SM SM5.B
+-- closed by stripping `TCB.cpuAffinity`.  With no word in the kernel state
+-- there is nothing to erase.
 --
 -- That is what leaves CC-5 a *hardware timing* channel and nothing more (plan
 -- Definition 3.4.1): the model carries no state flow through lock acquisition
 -- at all, so a spinning core's only signal is wall-clock time.
-
-/-- SM8.B.4: a lock-field update is invisible to the projection — the projected
-object is literally the same, because `projectKernelObject` erases `lock` on
-every arm. -/
-@[simp] theorem projectKernelObject_updateLock (ctx : LabelingContext) (observer : IfObserver)
-    (obj : KernelObject) (op : SeLe4n.Kernel.Concurrency.RwLockOp) :
-    projectKernelObject ctx observer (obj.updateLock op) =
-      projectKernelObject ctx observer obj := by
-  cases obj <;> rfl
-
-/-- SM8.B.4: `updateObjectAt` with a lock-only transform preserves the
-observer's object projection at **every** id — including ids the observer can
-see, which is the point. -/
-theorem updateObjectAt_updateLock_preserves_projectObjects (ctx : LabelingContext)
-    (observer : IfObserver) (s : SystemState) (oid : SeLe4n.ObjId)
-    (op : SeLe4n.Kernel.Concurrency.RwLockOp) (hInv : s.objects.invExt) :
-    projectObjects ctx observer
-        (SeLe4n.Kernel.Concurrency.updateObjectAt s oid (fun obj => obj.updateLock op))
-      = projectObjects ctx observer s := by
-  unfold SeLe4n.Kernel.Concurrency.updateObjectAt
-  cases hGet : s.objects.get? oid with
-  | none => rfl
-  | some obj =>
-    funext o
-    simp only [projectObjects, SystemState.getObject?]
-    by_cases hObs : objectObservable ctx observer o = true
-    · rw [if_pos hObs, if_pos hObs]
-      simp only [RHTable_getElem?_eq_get?]
-      rw [RHTable_getElem?_insert s.objects oid _ hInv o]
-      by_cases hEq : (oid == o) = true
-      · have hOid : oid = o := eq_of_beq hEq
-        subst hOid
-        rw [if_pos hEq, hGet]
-        simp only [Option.map_some, Option.some.injEq]
-        exact projectKernelObject_updateLock ctx observer obj op
-      · rw [if_neg hEq]
-    · simp only [Bool.not_eq_true] at hObs
-      rw [if_neg (by simp [hObs]), if_neg (by simp [hObs])]
 
 /-- SM8.B.4 (the assembly helper): a rewrite whose only projection-relevant
 effect is on the object store — and there only in ways the observer's object
@@ -2418,370 +2384,49 @@ theorem projectState_eq_of_objects_projection_eq (ctx : LabelingContext) (observ
       | exact projectMemory_eq_of_memory_eq ctx observer st' st (by rw [hMachine])
       | exact projectServiceRegistry_eq_of_services_eq ctx observer st' st hServices
 
-/-- The lock-only object rewrite frames the scheduler. -/
-theorem updateObjectAt_updateLock_scheduler_eq (s : SystemState) (oid : SeLe4n.ObjId)
-    (op : SeLe4n.Kernel.Concurrency.RwLockOp) :
-    (SeLe4n.Kernel.Concurrency.updateObjectAt s oid (fun obj => obj.updateLock op)).scheduler
-      = s.scheduler := by
-  unfold SeLe4n.Kernel.Concurrency.updateObjectAt; split <;> rfl
-
-/-- The lock-only object rewrite frames the machine. -/
-theorem updateObjectAt_updateLock_machine_eq (s : SystemState) (oid : SeLe4n.ObjId)
-    (op : SeLe4n.Kernel.Concurrency.RwLockOp) :
-    (SeLe4n.Kernel.Concurrency.updateObjectAt s oid (fun obj => obj.updateLock op)).machine
-      = s.machine := by
-  unfold SeLe4n.Kernel.Concurrency.updateObjectAt; split <;> rfl
-
-/-- The lock-only object rewrite frames the object index. -/
-theorem updateObjectAt_updateLock_objectIndex_eq (s : SystemState) (oid : SeLe4n.ObjId)
-    (op : SeLe4n.Kernel.Concurrency.RwLockOp) :
-    (SeLe4n.Kernel.Concurrency.updateObjectAt s oid (fun obj => obj.updateLock op)).objectIndex
-      = s.objectIndex := by
-  unfold SeLe4n.Kernel.Concurrency.updateObjectAt; split <;> rfl
-
-/-- The lock-only object rewrite frames the service store. -/
-theorem updateObjectAt_updateLock_services_eq (s : SystemState) (oid : SeLe4n.ObjId)
-    (op : SeLe4n.Kernel.Concurrency.RwLockOp) :
-    (SeLe4n.Kernel.Concurrency.updateObjectAt s oid (fun obj => obj.updateLock op)).services
-      = s.services := by
-  unfold SeLe4n.Kernel.Concurrency.updateObjectAt; split <;> rfl
-
-/-- The lock-only object rewrite frames the IRQ table. -/
-theorem updateObjectAt_updateLock_irqHandlers_eq (s : SystemState) (oid : SeLe4n.ObjId)
-    (op : SeLe4n.Kernel.Concurrency.RwLockOp) :
-    (SeLe4n.Kernel.Concurrency.updateObjectAt s oid (fun obj => obj.updateLock op)).irqHandlers
-      = s.irqHandlers := by
-  unfold SeLe4n.Kernel.Concurrency.updateObjectAt; split <;> rfl
-
-/-- SM8.B.4: the kind-checked lock update preserves the observer's projection —
-**unconditionally**, with no hypothesis about which object the `LockId` names. -/
-theorem updateObjectLockAt_preserves_projection (ctx : LabelingContext) (observer : IfObserver)
-    (s : SystemState) (l : SeLe4n.Kernel.Concurrency.LockId)
-    (op : SeLe4n.Kernel.Concurrency.RwLockOp) (hInv : s.objects.invExt) :
-    projectState ctx observer (SeLe4n.Kernel.Concurrency.updateObjectLockAt s l op)
-      = projectState ctx observer s := by
-  unfold SeLe4n.Kernel.Concurrency.updateObjectLockAt
-  split
-  · refine projectState_eq_of_objects_projection_eq ctx observer s _
-      (updateObjectAt_updateLock_preserves_projectObjects ctx observer s l.objId op hInv)
-      (updateObjectAt_updateLock_scheduler_eq s l.objId op)
-      (updateObjectAt_updateLock_services_eq s l.objId op)
-      (updateObjectAt_updateLock_irqHandlers_eq s l.objId op)
-      (updateObjectAt_updateLock_objectIndex_eq s l.objId op)
-      (updateObjectAt_updateLock_machine_eq s l.objId op)
-  · rfl
-
-/-- SM8.B.4: acquiring one per-object lock preserves the observer's projection. -/
-theorem acquireLockOnObject_preserves_projection (ctx : LabelingContext) (observer : IfObserver)
-    (s : SystemState) (core : CoreId) (l : SeLe4n.Kernel.Concurrency.LockId)
-    (mode : SeLe4n.Kernel.Concurrency.AccessMode) (hInv : s.objects.invExt) :
-    projectState ctx observer (SeLe4n.Kernel.Concurrency.acquireLockOnObject s core l mode)
-      = projectState ctx observer s := by
-  unfold SeLe4n.Kernel.Concurrency.acquireLockOnObject
-  cases l.kind <;>
-    first
-      | rfl
-      | exact updateObjectLockAt_preserves_projection ctx observer s l _ hInv
-
-/-- SM8.B.4: releasing one per-object lock preserves the observer's projection. -/
-theorem releaseLockOnObject_preserves_projection (ctx : LabelingContext) (observer : IfObserver)
-    (s : SystemState) (core : CoreId) (l : SeLe4n.Kernel.Concurrency.LockId)
-    (mode : SeLe4n.Kernel.Concurrency.AccessMode) (hInv : s.objects.invExt) :
-    projectState ctx observer (SeLe4n.Kernel.Concurrency.releaseLockOnObject s core l mode)
-      = projectState ctx observer s := by
-  unfold SeLe4n.Kernel.Concurrency.releaseLockOnObject
-  cases l.kind <;>
-    first
-      | rfl
-      | exact updateObjectLockAt_preserves_projection ctx observer s l _ hInv
-
-/-- **WS-LC LC4.2**: and withdrawing one, the third sibling.  A withdrawal
-writes the same `lock` field the projection erases, so it is invisible for
-exactly the reason a release is. -/
-theorem cancelLockOnObject_preserves_projection (ctx : LabelingContext) (observer : IfObserver)
-    (s : SystemState) (core : CoreId) (l : SeLe4n.Kernel.Concurrency.LockId)
-    (mode : SeLe4n.Kernel.Concurrency.AccessMode) (hInv : s.objects.invExt) :
-    projectState ctx observer (SeLe4n.Kernel.Concurrency.cancelLockOnObject s core l mode)
-      = projectState ctx observer s := by
-  unfold SeLe4n.Kernel.Concurrency.cancelLockOnObject
-  cases l.kind <;>
-    first
-      | rfl
-      | exact updateObjectLockAt_preserves_projection ctx observer s l _ hInv
-
-theorem updateObjectLockAt_scheduler_eq (s : SystemState) (l : SeLe4n.Kernel.Concurrency.LockId)
-    (op : SeLe4n.Kernel.Concurrency.RwLockOp) :
-    (SeLe4n.Kernel.Concurrency.updateObjectLockAt s l op).scheduler = s.scheduler := by
-  unfold SeLe4n.Kernel.Concurrency.updateObjectLockAt
-  split
-  · exact updateObjectAt_updateLock_scheduler_eq s l.objId op
-  · rfl
-
-theorem updateObjectLockAt_machine_eq (s : SystemState) (l : SeLe4n.Kernel.Concurrency.LockId)
-    (op : SeLe4n.Kernel.Concurrency.RwLockOp) :
-    (SeLe4n.Kernel.Concurrency.updateObjectLockAt s l op).machine = s.machine := by
-  unfold SeLe4n.Kernel.Concurrency.updateObjectLockAt
-  split
-  · exact updateObjectAt_updateLock_machine_eq s l.objId op
-  · rfl
-
-/-- SM8.B.4: acquiring one lock writes no scheduler slot and no register bank. -/
-theorem acquireLockOnObject_confinedToCore (s : SystemState) (core : CoreId)
-    (l : SeLe4n.Kernel.Concurrency.LockId) (mode : SeLe4n.Kernel.Concurrency.AccessMode) (c₀ : CoreId) :
-    observableSlotsConfinedToCore s
-      (SeLe4n.Kernel.Concurrency.acquireLockOnObject s core l mode) c₀ := by
-  refine observableSlotsConfinedToCore_of_scheduler_machine_eq c₀ ?_ ?_ <;>
-    (unfold SeLe4n.Kernel.Concurrency.acquireLockOnObject
-     cases l.kind <;>
-       first
-         | rfl
-         | exact updateObjectLockAt_scheduler_eq s l _
-         | exact updateObjectLockAt_machine_eq s l _)
-
-/-- SM8.B.4: releasing one lock writes no scheduler slot and no register bank. -/
-theorem releaseLockOnObject_confinedToCore (s : SystemState) (core : CoreId)
-    (l : SeLe4n.Kernel.Concurrency.LockId) (mode : SeLe4n.Kernel.Concurrency.AccessMode) (c₀ : CoreId) :
-    observableSlotsConfinedToCore s
-      (SeLe4n.Kernel.Concurrency.releaseLockOnObject s core l mode) c₀ := by
-  refine observableSlotsConfinedToCore_of_scheduler_machine_eq c₀ ?_ ?_ <;>
-    (unfold SeLe4n.Kernel.Concurrency.releaseLockOnObject
-     cases l.kind <;>
-       first
-         | rfl
-         | exact updateObjectLockAt_scheduler_eq s l _
-         | exact updateObjectLockAt_machine_eq s l _)
-
-/-- **WS-LC LC4.2**: withdrawing one lock writes no scheduler slot and no
-register bank either. -/
-theorem cancelLockOnObject_confinedToCore (s : SystemState) (core : CoreId)
-    (l : SeLe4n.Kernel.Concurrency.LockId) (mode : SeLe4n.Kernel.Concurrency.AccessMode)
-    (c₀ : CoreId) :
-    observableSlotsConfinedToCore s
-      (SeLe4n.Kernel.Concurrency.cancelLockOnObject s core l mode) c₀ := by
-  refine observableSlotsConfinedToCore_of_scheduler_machine_eq c₀ ?_ ?_ <;>
-    (unfold SeLe4n.Kernel.Concurrency.cancelLockOnObject
-     cases l.kind <;>
-       first
-         | rfl
-         | exact updateObjectLockAt_scheduler_eq s l _
-         | exact updateObjectLockAt_machine_eq s l _)
-
-
-/-- **WS-LS LS1.2**: at any key.  The table key and the two scheduler keys
-write a lock word the projection does not read; an object key is the
-per-object lemma. -/
-theorem acquireLock_preserves_projection (ctx : LabelingContext) (observer : IfObserver)
-    (s : SystemState) (core : CoreId) (k : SeLe4n.Kernel.Concurrency.LockKey)
-    (mode : SeLe4n.Kernel.Concurrency.AccessMode) (hInv : s.objects.invExt) :
-    projectState ctx observer (SeLe4n.Kernel.Concurrency.acquireLock s core k mode)
-      = projectState ctx observer s := by
-  cases k with
-  | object l => exact acquireLockOnObject_preserves_projection ctx observer s core l mode hInv
-  | _ => rfl
-
-theorem releaseLock_preserves_projection (ctx : LabelingContext) (observer : IfObserver)
-    (s : SystemState) (core : CoreId) (k : SeLe4n.Kernel.Concurrency.LockKey)
-    (mode : SeLe4n.Kernel.Concurrency.AccessMode) (hInv : s.objects.invExt) :
-    projectState ctx observer (SeLe4n.Kernel.Concurrency.releaseLock s core k mode)
-      = projectState ctx observer s := by
-  cases k with
-  | object l => exact releaseLockOnObject_preserves_projection ctx observer s core l mode hInv
-  | _ => rfl
-
-theorem cancelLock_preserves_projection (ctx : LabelingContext) (observer : IfObserver)
-    (s : SystemState) (core : CoreId) (k : SeLe4n.Kernel.Concurrency.LockKey)
-    (mode : SeLe4n.Kernel.Concurrency.AccessMode) (hInv : s.objects.invExt) :
-    projectState ctx observer (SeLe4n.Kernel.Concurrency.cancelLock s core k mode)
-      = projectState ctx observer s := by
-  cases k with
-  | object l => exact cancelLockOnObject_preserves_projection ctx observer s core l mode hInv
-  | _ => rfl
-
-theorem acquireLock_confinedToCore (s : SystemState) (core : CoreId)
-    (k : SeLe4n.Kernel.Concurrency.LockKey) (mode : SeLe4n.Kernel.Concurrency.AccessMode)
-    (c₀ : CoreId) :
-    observableSlotsConfinedToCore s (SeLe4n.Kernel.Concurrency.acquireLock s core k mode) c₀ := by
-  cases k with
-  | object l => exact acquireLockOnObject_confinedToCore s core l mode c₀
-  | _ => exact observableSlotsConfinedToCore_of_scheduler_machine_eq c₀ rfl rfl
-
-theorem releaseLock_confinedToCore (s : SystemState) (core : CoreId)
-    (k : SeLe4n.Kernel.Concurrency.LockKey) (mode : SeLe4n.Kernel.Concurrency.AccessMode)
-    (c₀ : CoreId) :
-    observableSlotsConfinedToCore s (SeLe4n.Kernel.Concurrency.releaseLock s core k mode) c₀ := by
-  cases k with
-  | object l => exact releaseLockOnObject_confinedToCore s core l mode c₀
-  | _ => exact observableSlotsConfinedToCore_of_scheduler_machine_eq c₀ rfl rfl
-
-theorem cancelLock_confinedToCore (s : SystemState) (core : CoreId)
-    (k : SeLe4n.Kernel.Concurrency.LockKey) (mode : SeLe4n.Kernel.Concurrency.AccessMode)
-    (c₀ : CoreId) :
-    observableSlotsConfinedToCore s (SeLe4n.Kernel.Concurrency.cancelLock s core k mode) c₀ := by
-  cases k with
-  | object l => exact cancelLockOnObject_confinedToCore s core l mode c₀
-  | _ => exact observableSlotsConfinedToCore_of_scheduler_machine_eq c₀ rfl rfl
-
-/-! ### The 2PL folds and the bracket -/
-
-/-- SM8.B.4: the growing phase of the 2PL bracket is invisible. -/
-theorem acquireAll_preserves_projection (ctx : LabelingContext) (observer : IfObserver)
-    (core : CoreId)
-    (pairs : List (SeLe4n.Kernel.Concurrency.LockKey × SeLe4n.Kernel.Concurrency.AccessMode))
-    (s : SystemState) (hInv : s.objects.invExt) :
-    projectState ctx observer (SeLe4n.Kernel.Concurrency.acquireAll core pairs s)
-      = projectState ctx observer s := by
-  induction pairs generalizing s with
-  | nil => rfl
-  | cons p rest ih =>
-    obtain ⟨l, m⟩ := p
-    rw [SeLe4n.Kernel.Concurrency.acquireAll_cons,
-        ih _ (SeLe4n.Kernel.Concurrency.acquireLock_preserves_invExt s core l m hInv)]
-    exact acquireLock_preserves_projection ctx observer s core l m hInv
-
-/-- SM8.B.4: the shrinking phase of the 2PL bracket is invisible. -/
-theorem releaseAll_preserves_projection (ctx : LabelingContext) (observer : IfObserver)
-    (core : CoreId)
-    (pairs : List (SeLe4n.Kernel.Concurrency.LockKey × SeLe4n.Kernel.Concurrency.AccessMode))
-    (s : SystemState) (hInv : s.objects.invExt) :
-    projectState ctx observer (SeLe4n.Kernel.Concurrency.releaseAll core pairs s)
-      = projectState ctx observer s := by
-  induction pairs generalizing s with
-  | nil => rfl
-  | cons p rest ih =>
-    obtain ⟨l, m⟩ := p
-    rw [SeLe4n.Kernel.Concurrency.releaseAll_cons,
-        ih _ (SeLe4n.Kernel.Concurrency.releaseLock_preserves_invExt s core l m hInv)]
-    exact releaseLock_preserves_projection ctx observer s core l m hInv
-
-/-- **WS-LC LC4.2**: and its withdrawal half. -/
-theorem cancelAll_preserves_projection (ctx : LabelingContext) (observer : IfObserver)
-    (core : CoreId)
-    (pairs : List (SeLe4n.Kernel.Concurrency.LockKey × SeLe4n.Kernel.Concurrency.AccessMode))
-    (s : SystemState) (hInv : s.objects.invExt) :
-    projectState ctx observer (SeLe4n.Kernel.Concurrency.cancelAll core pairs s)
-      = projectState ctx observer s := by
-  induction pairs generalizing s with
-  | nil => rfl
-  | cons p rest ih =>
-    obtain ⟨l, m⟩ := p
-    rw [SeLe4n.Kernel.Concurrency.cancelAll_cons,
-        ih _ (SeLe4n.Kernel.Concurrency.cancelLock_preserves_invExt s core l m hInv)]
-    exact cancelLock_preserves_projection ctx observer s core l m hInv
-
-/-- **WS-LC LC4.2**: the shrinking phase as a whole is invisible.  A
-withdrawal is as unobservable as a release — both write only the `lock`
-field the projection erases — so adding one to the bracket costs the
-non-interference results nothing. -/
-theorem unwindAll_preserves_projection (ctx : LabelingContext) (observer : IfObserver)
-    (core : CoreId)
-    (pairs : List (SeLe4n.Kernel.Concurrency.LockKey × SeLe4n.Kernel.Concurrency.AccessMode))
-    (s : SystemState) (hInv : s.objects.invExt) :
-    projectState ctx observer (SeLe4n.Kernel.Concurrency.unwindAll core pairs s)
-      = projectState ctx observer s := by
-  rw [SeLe4n.Kernel.Concurrency.unwindAll_eq_releaseAll_cancelAll,
-      releaseAll_preserves_projection ctx observer core pairs _
-        (SeLe4n.Kernel.Concurrency.cancelAll_preserves_invExt core pairs s hInv)]
-  exact cancelAll_preserves_projection ctx observer core pairs s hInv
-
-theorem acquireAll_confinedToCore (core : CoreId)
-    (pairs : List (SeLe4n.Kernel.Concurrency.LockKey × SeLe4n.Kernel.Concurrency.AccessMode))
-    (s : SystemState) (c₀ : CoreId) :
-    observableSlotsConfinedToCore s (SeLe4n.Kernel.Concurrency.acquireAll core pairs s) c₀ := by
-  induction pairs generalizing s with
-  | nil => exact observableSlotsConfinedToCore_refl s c₀
-  | cons p rest ih =>
-    obtain ⟨l, m⟩ := p
-    rw [SeLe4n.Kernel.Concurrency.acquireAll_cons]
-    exact observableSlotsConfinedToCore_trans
-      (acquireLock_confinedToCore s core l m c₀) (ih _)
-
-theorem releaseAll_confinedToCore (core : CoreId)
-    (pairs : List (SeLe4n.Kernel.Concurrency.LockKey × SeLe4n.Kernel.Concurrency.AccessMode))
-    (s : SystemState) (c₀ : CoreId) :
-    observableSlotsConfinedToCore s (SeLe4n.Kernel.Concurrency.releaseAll core pairs s) c₀ := by
-  induction pairs generalizing s with
-  | nil => exact observableSlotsConfinedToCore_refl s c₀
-  | cons p rest ih =>
-    obtain ⟨l, m⟩ := p
-    rw [SeLe4n.Kernel.Concurrency.releaseAll_cons]
-    exact observableSlotsConfinedToCore_trans
-      (releaseLock_confinedToCore s core l m c₀) (ih _)
-
-/-- **WS-LC LC4.2**: and its withdrawal half. -/
-theorem cancelAll_confinedToCore (core : CoreId)
-    (pairs : List (SeLe4n.Kernel.Concurrency.LockKey × SeLe4n.Kernel.Concurrency.AccessMode))
-    (s : SystemState) (c₀ : CoreId) :
-    observableSlotsConfinedToCore s (SeLe4n.Kernel.Concurrency.cancelAll core pairs s) c₀ := by
-  induction pairs generalizing s with
-  | nil => exact observableSlotsConfinedToCore_refl s c₀
-  | cons p rest ih =>
-    obtain ⟨l, m⟩ := p
-    rw [SeLe4n.Kernel.Concurrency.cancelAll_cons]
-    exact observableSlotsConfinedToCore_trans
-      (cancelLock_confinedToCore s core l m c₀) (ih _)
-
-/-- **WS-LC LC4.2**: the shrinking phase as a whole. -/
-theorem unwindAll_confinedToCore (core : CoreId)
-    (pairs : List (SeLe4n.Kernel.Concurrency.LockKey × SeLe4n.Kernel.Concurrency.AccessMode))
-    (s : SystemState) (c₀ : CoreId) :
-    observableSlotsConfinedToCore s (SeLe4n.Kernel.Concurrency.unwindAll core pairs s) c₀ :=
-  observableSlotsConfinedToCore_trans (cancelAll_confinedToCore core pairs s c₀)
-    (releaseAll_confinedToCore core pairs _ c₀)
-
-/-- SM8.B.4 (headline): **the two-phase-locking bracket is non-interference
-transparent.**  `withLockSet` preserves the observer's projection exactly when
-its guarded action does — the acquire and release phases contribute nothing.
+/-- SM8.B.4: the whole 2PL bracket is invisible to the projection whenever the
+guarded action is.
 
 No hypothesis constrains the lock set: it may name objects the observer can
-see, and the locks may be contended.  That is the whole point of erasing
-`lock` from the projection; without the erasure this theorem would need
-"every lock in `S` names a non-observable object", and the lock state of a
-*visible* object would be a model-level flow rather than the pure timing
-channel CC-5 is documented to be. -/
+see, and the locks may be contended.  The bracket's phases write only the ghost
+lock table, which no projection reads, so the kernel half of the result is the
+action's output (`withLockSet_fst_kernel`) and the action's own invisibility is
+all that is left to supply. -/
 theorem withLockSet_preserves_projection {α : Type} (ctx : LabelingContext)
     (observer : IfObserver) (S : SeLe4n.Kernel.Concurrency.LockSet) (core : CoreId)
-    (action : SystemState → SystemState × α) (s : SystemState)
-    (hInv : s.objects.invExt)
-    (hActionInv : ∀ s', s'.objects.invExt → ((action s').1).objects.invExt)
-    (hAction : ∀ s', s'.objects.invExt →
-      projectState ctx observer (action s').1 = projectState ctx observer s') :
-    projectState ctx observer (SeLe4n.Kernel.Concurrency.withLockSet S core action s).1
-      = projectState ctx observer s := by
-  rw [SeLe4n.Kernel.Concurrency.withLockSet_fst]
-  have hAcqInv := SeLe4n.Kernel.Concurrency.acquireAll_preserves_invExt core S.lockAcquireSequence s hInv
-  rw [unwindAll_preserves_projection ctx observer core _ _ (hActionInv _ hAcqInv),
-      hAction _ hAcqInv,
-      acquireAll_preserves_projection ctx observer core S.lockAcquireSequence s hInv]
+    (action : SystemState → SystemState × α)
+    (s : SeLe4n.Kernel.Concurrency.LockedSystemState)
+    (hAction : projectState ctx observer (action s.kernel).1 = projectState ctx observer s.kernel) :
+    projectState ctx observer (SeLe4n.Kernel.Concurrency.withLockSet S core action s).1.kernel
+      = projectState ctx observer s.kernel :=
+  hAction
 
-/-- SM8.B.4: the bracket's own writes stay off every core's scheduler slots and
-register banks, so confinement rides through it too. -/
+/-- SM8.B.4: the bracket's phases write no kernel field, so confinement of the
+guarded action is confinement of the bracket. -/
 theorem withLockSet_confinedToCore {α : Type} (S : SeLe4n.Kernel.Concurrency.LockSet)
-    (core : CoreId) (action : SystemState → SystemState × α) (s : SystemState) (c₀ : CoreId)
-    (hAction : ∀ s', observableSlotsConfinedToCore s' (action s').1 c₀) :
-    observableSlotsConfinedToCore s
-      (SeLe4n.Kernel.Concurrency.withLockSet S core action s).1 c₀ := by
-  rw [SeLe4n.Kernel.Concurrency.withLockSet_fst]
-  exact observableSlotsConfinedToCore_trans
-    (acquireAll_confinedToCore core S.lockAcquireSequence s c₀)
-    (observableSlotsConfinedToCore_trans (hAction _)
-      (unwindAll_confinedToCore core _ _ c₀))
+    (core : CoreId) (action : SystemState → SystemState × α)
+    (s : SeLe4n.Kernel.Concurrency.LockedSystemState) (c₀ : CoreId)
+    (hAction : observableSlotsConfinedToCore s.kernel (action s.kernel).1 c₀) :
+    observableSlotsConfinedToCore s.kernel
+      (SeLe4n.Kernel.Concurrency.withLockSet S core action s).1.kernel c₀ :=
+  hAction
 
-/-- SM8.B.4 (the per-core headline): **non-interference under the per-object
-lock set.**  A 2PL-guarded transition is invisible to an observer on *every*
-core exactly when the guarded action is invisible on the boot core and keeps
-its per-core writes on the boot core. -/
+/-- SM8.B.4 (the per-core headline): **non-interference under the lock set.**
+A 2PL-guarded transition is invisible to an observer on *every* core exactly
+when the guarded action is invisible on the boot core and keeps its per-core
+writes on the boot core.  Over the pair the bracket contributes nothing to
+discharge: no object-store invariant, no lock-insensitivity premise. -/
 theorem nonInterference_perCore_underLockSet {α : Type} (ctx : LabelingContext)
     (observer : IfObserver) (S : SeLe4n.Kernel.Concurrency.LockSet) (core : CoreId)
-    (action : SystemState → SystemState × α) (s : SystemState)
-    (hInv : s.objects.invExt)
-    (hActionInv : ∀ s', s'.objects.invExt → ((action s').1).objects.invExt)
-    (hActionProj : ∀ s', s'.objects.invExt →
-      projectState ctx observer (action s').1 = projectState ctx observer s')
-    (hActionConfined : ∀ s', observableSlotsConfinedToCore s' (action s').1 bootCoreId) :
+    (action : SystemState → SystemState × α)
+    (s : SeLe4n.Kernel.Concurrency.LockedSystemState)
+    (hActionProj :
+      projectState ctx observer (action s.kernel).1 = projectState ctx observer s.kernel)
+    (hActionConfined : observableSlotsConfinedToCore s.kernel (action s.kernel).1 bootCoreId) :
     lowEquivalent_smp ctx observer
-      (SeLe4n.Kernel.Concurrency.withLockSet S core action s).1 s :=
+      (SeLe4n.Kernel.Concurrency.withLockSet S core action s).1.kernel s.kernel :=
   lowEquivalent_smp_of_projection_and_confinement ctx observer
-    (withLockSet_preserves_projection ctx observer S core action s hInv hActionInv hActionProj)
+    (withLockSet_preserves_projection ctx observer S core action s hActionProj)
     (withLockSet_confinedToCore S core action s bootCoreId hActionConfined)
 
 /-- SM8.B.4 (the plan's Corollary 2.1.11 route, as a bridge): a lock set whose

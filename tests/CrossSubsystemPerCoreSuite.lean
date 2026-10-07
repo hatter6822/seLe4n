@@ -572,12 +572,10 @@ private def runModifiedFieldsChecks : IO Unit := do
     (decide (StateField.objectIndex ∈ capabilityOp_modifiedFields ∧
              StateField.objectIndexSet ∈ capabilityOp_modifiedFields ∧
              StateField.asidTable ∈ capabilityOp_modifiedFields))
-  -- The eleven fields `StateField` could not name before the audit round: each
+  -- The nine fields `StateField` could not name before the audit round: each
   -- is outside `storeObject`'s set, and each can now be SAID to be.
-  assertBool "NEGATIVE: storeObject declares none of the eleven fields StateField gained"
+  assertBool "NEGATIVE: storeObject declares none of the nine fields StateField gained"
     (decide (StateField.scThreadIndex ∉ storeObject_modifiedFields ∧
-             StateField.objStoreLock ∉ storeObject_modifiedFields ∧
-             StateField.schedulerLocks ∉ storeObject_modifiedFields ∧
              StateField.tlbShootdown ∉ storeObject_modifiedFields ∧
              StateField.perCoreTlb ∉ storeObject_modifiedFields ∧
              StateField.perCoreICache ∉ storeObject_modifiedFields ∧

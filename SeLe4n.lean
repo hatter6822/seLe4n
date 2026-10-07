@@ -11,14 +11,6 @@ import SeLe4n.Prelude
 import SeLe4n.Machine
 import SeLe4n.Model.Object
 import SeLe4n.Model.State
--- WS-SM SM3.A audit-pass-6: pull the SM3.A theorem inventory into the
--- production import closure so `lake build` (default target) catches
--- regressions in the 34-entry aggregator at the production-build step,
--- not just at the Tier-3 invariant-surface or test-suite levels.  The
--- inventory has no run-time semantics (it is a documentation/audit
--- artifact); production reachability ensures CI cannot drop it
--- silently.
-import SeLe4n.Model.Object.PerObjectLockInventory
 import SeLe4n.Kernel.API
 -- WS-RR RR8.10: the cancellation's arm-complete IPC bundle and its cross-core
 -- lift.  Its three arm theorems live in three different modules, so the

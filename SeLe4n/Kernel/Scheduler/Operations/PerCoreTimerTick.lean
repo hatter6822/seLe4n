@@ -375,8 +375,8 @@ theorem timerTickOnCoreCompleteLockSet_contains_timeout (c : CoreId) :
 /-- **WS-RR RR7.39 (the widening is free)**: any two cores' complete tick
 footprints already share the object-store **table** write lock.
 
-`LockKey.objStore` names `SystemState.objStoreLock` — a single word, not a
-per-core one — so two ticks on distinct cores exclude each other on it whatever
+`LockKey.objStore` is a single key of the ghost lock table, not a per-core
+one — so two ticks on distinct cores exclude each other on it whatever
 their run-queue segments contain.  That is why widening the run-queue segment
 from two locks to every core (see `timerTickOnCoreTimeoutDynamicLockSet`) costs
 no achievable concurrency: the ticks were already fully serialised against one

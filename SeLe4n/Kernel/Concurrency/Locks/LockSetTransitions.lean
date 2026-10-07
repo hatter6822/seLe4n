@@ -10,7 +10,6 @@
 import SeLe4n.Model.State
 import SeLe4n.Kernel.Concurrency.Locks.Kind
 import SeLe4n.Kernel.Concurrency.Locks.LockSet
-import SeLe4n.Kernel.Concurrency.Locks.LockIdProjection
 
 /-!
 # WS-SM SM3.B.3 / B.4 — Per-transition `lockSet` declarations + `lockSet_consistent`
@@ -398,11 +397,10 @@ own lock rather than falling into another's. -/
 /-- WS-SM SM3.A.10 / PR #870 round 7: **the SystemState-level lock**, as a
 declarable footprint member.
 
-`.objStore` is the one `LockKind` whose lock word lives on `SystemState`
-itself (`objStoreLock`, hierarchy level 0) rather than on an object —
-`acquireLockOnObject` and `lockHeld` dispatch on the kind and read/advance
-that field directly, ignoring the `objId`
-(`stateLevelLock_objId_irrelevant`).  It guards the RobinHood table's
+`.objStore` is the one `LockKind` that names no object: its key stands for
+the object store as a whole (hierarchy level 0), and since WS-LS LS3.1 it is
+a key of the ghost lock table like every other kind, with no word on
+`SystemState` behind it.  It guards the RobinHood table's
 structure and, by the SM3.A.10 convention this cut makes **structural**, the
 SystemState-level auxiliary structures: the declassification audit trail and
 its epoch, whose three accessors (`.declassify` append, `.auditRead` read,
@@ -1534,9 +1532,8 @@ taint write at a CSpace root on this path.  The transition's other write is the
 audit-trail append — a `SystemState` field, not an object — and since PR #870
 round 7
 that write is declared through the **state-level lock** in write mode:
-`stateLevelLock` is SM3.A.10's `objStoreLock` singleton, whose acquire
-advances `SystemState.objStoreLock` directly, and it is the serialization
-subject for the SystemState-level auxiliary structures.  Without it, two
+`stateLevelLock` is the `.objStore` table key's singleton, and it is the
+serialization subject for the SystemState-level auxiliary structures.  Without it, two
 declassifications — or a declassification and an `.auditDrain` — from
 different callers had provably disjoint footprints while read-modify-writing
 the same trail, so SM3.C.9's fine locks would have admitted a lost append

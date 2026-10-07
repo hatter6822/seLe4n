@@ -179,7 +179,7 @@ under its lock-set — the ghost bracket's value is the bare transition's. -/
 example (endpointId cnRoot : SeLe4n.ObjId) (caller : SeLe4n.ThreadId) (msg : IpcMessage)
     (executingCore : CoreId) (receiver? : Option SeLe4n.ThreadId)
     (donatedSc? : Option SeLe4n.SchedContextId) (s : SystemState) :
-    (withLockSetGhost (lockSet_endpointCall caller cnRoot endpointId receiver? donatedSc?)
+    (withLockSet (lockSet_endpointCall caller cnRoot endpointId receiver? donatedSc?)
         executingCore (endpointCallOnCore endpointId caller msg executingCore)
         ⟨s, LockState.unheld⟩).2
       = (endpointCallOnCore endpointId caller msg executingCore s).2 := by
@@ -1330,14 +1330,13 @@ private def runDeclaredFootprintBracketChecks : IO Unit := do
      decide (br.1.1.tagWord = ba.1.1.tagWord) &&
      decide (br.1.1.mailboxFrame.x0 = ba.1.1.mailboxFrame.x0) &&
      decide (br.1.1.mailboxFrame.x1 = ba.1.1.mailboxFrame.x1))
-  -- The executed path writes no lock word: the step commits the same object
-  -- store and scheduler whether or not a footprint is declared, and the
-  -- seam's lock words stay as they were.
-  assertBool "the bracketed step leaves every declared member's lock word untouched"
+  -- The executed path writes no lock word (the kernel state carries none:
+  -- the lock table is ghost state beside it), so a declared footprint changes
+  -- nothing the step commits; what a runtime check can add is that this
+  -- state does declare one.
+  assertBool "the bracketed state declares a non-empty footprint"
     (match bracketDecl bracketState with
-     | some fp =>
-       fp.pairs.all (fun p =>
-         decide (¬ Concurrency.keyHeld bootCoreId p.1 p.2 (bracketRun bracketState).2))
+     | some fp => !fp.pairs.isEmpty
      | none => false)
   -- An UNDECLARED syscall runs the same step as a declared one: the footprint
   -- is a proof obligation, not a runtime branch.

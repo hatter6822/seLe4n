@@ -874,7 +874,7 @@ on. -/
 theorem notificationWaitOnCore_atomic_under_lockSet
     (notificationId : SeLe4n.ObjId) (caller : SeLe4n.ThreadId) (executingCore : CoreId)
     (cnRoot : SeLe4n.ObjId) (s : LockedSystemState) :
-    withLockSetGhost (lockSet_notificationWait caller cnRoot notificationId) executingCore
+    withLockSet (lockSet_notificationWait caller cnRoot notificationId) executingCore
         (notificationWaitOnCore notificationId caller executingCore) s
       = (⟨(notificationWaitOnCore notificationId caller executingCore s.kernel).1,
           LockState.bracket executingCore
@@ -889,7 +889,7 @@ theorem notificationSignalOnCore_atomic_under_lockSet
     (notificationId : SeLe4n.ObjId) (badge : SeLe4n.Badge) (executingCore : CoreId)
     (signaller : SeLe4n.ThreadId) (cnRoot : SeLe4n.ObjId)
     (waiter? : Option SeLe4n.ThreadId) (s : LockedSystemState) :
-    withLockSetGhost (lockSet_notificationSignal signaller cnRoot notificationId waiter?) executingCore
+    withLockSet (lockSet_notificationSignal signaller cnRoot notificationId waiter?) executingCore
         (notificationSignalOnCore notificationId badge executingCore) s
       = (⟨(notificationSignalOnCore notificationId badge executingCore s.kernel).1,
           LockState.bracket executingCore

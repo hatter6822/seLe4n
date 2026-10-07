@@ -22,25 +22,27 @@ SM8.D.5 (SM8.D.6 is the scenario suite in `tests/SmpInformationFlowSuite.lean`).
 
 SM8.A built the per-core observer, SM8.B proved what the SMP kernel does not
 leak and registered what it does, SM8.C audited the one flow it deliberately
-permits.  This module is about the **lock words themselves**: the per-object
-`RwLockState` the SM3 two-phase-locking bracket writes on every acquire and
-every release, once SM3.C.9 wraps the `@[export]` bodies in `withLockSet`.
+permits.  This module is about the **lock state itself**: the `RwLockState`
+the SM3 two-phase-locking bracket advances on every acquire and every release.
+Since WS-LS LS3.1 that state is the ghost lock table
+(`Concurrency/Locks/LockState.lean`) carried beside the kernel state in a
+`LockedSystemState`, not a word inside any kernel object.
 
-## What the plan's table said, and what SM8.B made of it
+## What the plan's table said, and what became of it
 
 The SM8.D table was written while `projectKernelObject` carried each object's
-`lock` into the observable state.  SM8.B.4 erased it — three fields of
-`CoreId`s on every object kind re-opened the SM5.B placement channel — which
-moves D.1 … D.3 rather than discharging them:
+`lock` into the observable state.  SM8.B.4 erased it from the projection — three
+fields of `CoreId`s on every object kind re-opened the SM5.B placement channel —
+and WS-LS LS3.1 deleted the fields, moving the lock state into the ghost table.
+That moves D.1 … D.3 rather than discharging them:
 
 * **D.1** is no longer "document what an observer sees of the lock"; it is the
   statement that an observer sees *nothing* of it, and a statement is a
   theorem, not a docstring.  §1 proves it in the strongest available form: the
-  observer's whole view **factors through lock erasure**, so the lock word is
-  not merely absent from one arm of one projection — no part of any observer's
-  view on any core is a function of it.
-* **D.2** is then an instance: reader multiplicity is one coordinate of the
-  erased field (§2), and what is left of it is the CC-5 *timing* claim.
+  observer's view of a locked state is a function of its kernel half, so no
+  part of any observer's view on any core is a function of the lock table.
+* **D.2** is then an instance: reader multiplicity is one coordinate of a
+  table entry (§2), and what is left of it is the CC-5 *timing* claim.
 * **D.3** is **false as written** at the model level — a blocked reader sees
   nothing of writer exclusion in the projection — and §3 states the true form:
   what a blocked acquirer observes is *delay*, that delay is CC-5, and under the
@@ -49,16 +51,15 @@ moves D.1 … D.3 rather than discharging them:
   **lock operations**, not seconds — `lockContention_wallClock_bounded` is the
   timing statement, and it carries the per-critical-section ceiling that
   conversion needs as an explicit hypothesis.
-* **D.4** (§4) and **D.5** (§5) are unaffected by the erasure: integrity is
-  about which subjects may write which objects, and the secure-flow witness is
-  about the live path.
+* **D.4** (§4) is simplified rather than moved: an acquire writes no object,
+  so integrity is stated over raw stored objects.  **D.5** (§5) is about the
+  live path's bracket, which runs over the pair.
 
 ## Section map
 
-* §1 (SM8.D.1) — `KernelObject.eraseLock`, the lock-erased content; the
-  projection factors through it; `lockWritesOnly`, the state-level "this step
-  moved nothing but lock words"; and the acquire / release / fold / bracket
-  instances.
+* §1 (SM8.D.1) — `setLockAt`, an arbitrary table write; `lockWritesOnly`,
+  the state-level "this step moved nothing but the lock table"; its
+  invisibility on every core; and the bracket instance.
 * §2 (SM8.D.2) — reader multiplicity is not observable, instantiated at the
   SM2.C reachable multi-reader witness; and the CC-5 restatement.
 * §3 (SM8.D.3) — writer exclusion is not observable either; the blocked
@@ -97,64 +98,11 @@ axioms (`propext` / `Quot.sound` / `Classical.choice`), checked exhaustively
 by `scripts/check_module_axioms.py`.
 -/
 
-namespace SeLe4n.Model
-
-/-!
-### The lock-erased content lives beside its getter
-
-`KernelObject.setLock` / `KernelObject.eraseLock` — the setter for the SM3.A.10
-`objectLockOf` getter and the quotient it induces — are defined in
-`Model/Object/Structures.lean`, beside `objectLockOf` itself, together with the
-setter/getter algebra (`setLock_objectLockOf`, `eraseLock_setLock`,
-`setLock_objectLockOf_self`, `eq_of_eraseLock_eq_of_lock_eq`,
-`eraseLock_objectType`, `eraseLock_wellFormed`).  They are model vocabulary, not
-information-flow vocabulary, and putting them here would have made a
-`KernelObject` setter reachable only through a staged module.
-
-What stays here is the part that cannot: `lockKind` lives in
-`Concurrency/Locks/LockIdProjection.lean` and `updateLock` in
-`Concurrency/Locks/WithLockSet.lean`, both of which import `Structures`.
--/
-
-/-- SM8.D.1: erasure preserves the SM3.B lock-kind projection, so nothing that
-dispatches on `lockKind` — the whole `LockId` discipline — can tell an erased
-object from its original either. -/
-@[simp] theorem KernelObject.eraseLock_lockKind (obj : KernelObject) :
-    obj.eraseLock.lockKind = obj.lockKind := by cases obj <;> rfl
-
-/-- SM8.D.1: the SM3.C.2 lock *advance* is a lock write and nothing else. -/
-@[simp] theorem KernelObject.eraseLock_updateLock (obj : KernelObject)
-    (op : SeLe4n.Kernel.Concurrency.RwLockOp) :
-    (obj.updateLock op).eraseLock = obj.eraseLock := by cases obj <;> rfl
-
-/-- SM8.D.1 (**the non-vacuity witness for the whole section**): a lock write is
-a *real* write.  Erasing the lock is therefore an abstraction over content that
-genuinely moves — not a restatement of "nothing happened", which is what every
-theorem below would collapse to if `updateLock` were the identity.
-
-Stated over an arbitrary object whose lock is free, which is every object at
-boot (`default_objects_locks_unheld`) and every freshly retyped one, so the
-witness is about the states the kernel actually runs in. -/
-theorem KernelObject.updateLock_not_identity (obj : KernelObject)
-    (hFree : objectLockOf obj = SeLe4n.Kernel.Concurrency.RwLockState.unheld)
-    (c : SeLe4n.Kernel.Concurrency.CoreId) :
-    obj.updateLock (.tryAcquireWrite c) ≠ obj := by
-  intro h
-  have hLock := congrArg objectLockOf h
-  rw [KernelObject.objectLockOf_updateLock, hFree] at hLock
-  have hWriter := congrArg SeLe4n.Kernel.Concurrency.RwLockState.writerHeld hLock
-  simp [SeLe4n.Kernel.Concurrency.RwLockState.applyOp,
-    SeLe4n.Kernel.Concurrency.RwLockState.unheld,
-    SeLe4n.Kernel.Concurrency.RwLockState.coreInvolved] at hWriter
-
-end SeLe4n.Model
-
 namespace SeLe4n.Kernel
 
 open SeLe4n.Model
 open SeLe4n.Kernel.Concurrency (CoreId bootCoreId numCores RwLockState RwLockOp AccessMode LockId
-  LockSet
-  LockKey)
+  LockSet LockKey LockState LockedSystemState)
 
 -- ============================================================================
 -- §1  SM8.D.1 — the observer sees nothing of the lock
@@ -162,447 +110,111 @@ open SeLe4n.Kernel.Concurrency (CoreId bootCoreId numCores RwLockState RwLockOp 
 --
 -- The SM8.B.4 result is that the 2PL bracket does not move the projection.
 -- That is a statement about the *operations* the bracket performs.  D.1 asks
--- the stronger question — what can an observer learn about the lock word at
--- all? — and the answer is nothing, because the projection **factors through**
--- lock erasure: `projectKernelObject` composed with `setLock l` is
--- `projectKernelObject`, for every `l`.  An operation-by-operation argument
--- could not say that; it would leave open whether some *other* way of writing
--- the field is visible.
+-- the stronger question — what can an observer learn about the lock state at
+-- all? — and since WS-LS LS3.1 the answer is nothing **by type**: the lock
+-- state is the ghost table `LockedSystemState.locks`, every projection takes a
+-- `SystemState`, and a locked state is observed through its `kernel` half
+-- alone.  There is no lock word inside the kernel state for a projection to
+-- erase, so no erasure argument is needed; the theorems below state the
+-- consequence at the forms D.1 … D.4 quantify over.
 
-/-- SM8.D.1 (the object-level headline): **the observer's view of an object is a
-function of its lock-erased content.**  Overwriting the lock word with an
-arbitrary `RwLockState` — held, contended, queued, anything — leaves the
-projected object literally identical. -/
-@[simp] theorem projectKernelObject_setLock (ctx : LabelingContext) (observer : IfObserver)
-    (obj : KernelObject) (l : RwLockState) :
-    projectKernelObject ctx observer (obj.setLock l) = projectKernelObject ctx observer obj := by
-  cases obj <;> rfl
+/-- SM8.D.1: **writing an arbitrary word into the ghost lock table** at key `k`
+— free, write-held by any core, read-held by any set of cores, with any queue
+of waiters.  The form D.1, D.2 and D.3 quantify over. -/
+def setLockAt (s : LockedSystemState) (k : LockKey) (l : RwLockState) : LockedSystemState :=
+  { s with locks := s.locks.update k (fun _ => l) }
 
-/-- SM8.D.1: the factoring, stated as such — projecting an object is projecting
-its erased content. -/
-theorem projectKernelObject_eq_eraseLock (ctx : LabelingContext) (observer : IfObserver)
-    (obj : KernelObject) :
-    projectKernelObject ctx observer obj = projectKernelObject ctx observer obj.eraseLock :=
-  (projectKernelObject_setLock ctx observer obj _).symm
+/-- SM8.D.1: **the state-level relation** — this step wrote nothing but the
+lock table.  Over the pair that is literal kernel-half equality: the bracket's
+growing and shrinking phases leave `kernel` untouched and advance `locks`. -/
+def lockWritesOnly (s s' : LockedSystemState) : Prop :=
+  s'.kernel = s.kernel
 
-/-- SM8.D.1: consequently, objects that agree up to their lock words project
-identically.  This is the transport §1's state-level results are built from:
-a step that leaves every object's *erased* content alone leaves every
-observer's object view alone, whatever it did to the locks. -/
-theorem projectKernelObject_congr_of_eraseLock (ctx : LabelingContext) (observer : IfObserver)
-    {o₁ o₂ : KernelObject} (h : o₁.eraseLock = o₂.eraseLock) :
-    projectKernelObject ctx observer o₁ = projectKernelObject ctx observer o₂ := by
-  rw [projectKernelObject_eq_eraseLock ctx observer o₁,
-      projectKernelObject_eq_eraseLock ctx observer o₂, h]
+theorem lockWritesOnly_refl (s : LockedSystemState) : lockWritesOnly s s := rfl
 
-/-- SM8.D.1: **the state-level relation** — this step wrote nothing but lock
-words.
+theorem lockWritesOnly_trans {s₁ s₂ s₃ : LockedSystemState}
+    (h₁ : lockWritesOnly s₁ s₂) (h₂ : lockWritesOnly s₂ s₃) : lockWritesOnly s₁ s₃ :=
+  h₂.trans h₁
 
-Two clauses, and both are load-bearing:
+/-- SM8.D.1: any rewrite of the lock table is a lock-only step — the growing
+phase (`LockState.acquireAll`), the shrinking phase (`LockState.unwindAll`), a
+single acquire, release or withdrawal, all at once. -/
+theorem lockTableWrite_lockWritesOnly (s : LockedSystemState) (f : LockState → LockState) :
+    lockWritesOnly s { s with locks := f s.locks } := rfl
 
-* the equation names the only two fields allowed to move, `objects` and the
-  table-level `objStoreLock`, by *reconstructing* the post-state from the
-  pre-state and those two — so every other `SystemState` field is pinned
-  without enumerating them (a field added tomorrow is covered on the day it is
-  added, which an enumeration would not be);
-* the object clause says the object store moved only in lock words.
+theorem setLockAt_lockWritesOnly (s : LockedSystemState) (k : LockKey) (l : RwLockState) :
+    lockWritesOnly s (setLockAt s k l) := rfl
 
-Note this is deliberately **not** "the state is unchanged".  Under fine locks
-that claim is simply false — the bracket writes real lock words
-(`KernelObject.updateLock_not_identity`) — and stating it would be the
-shortcut this section exists to avoid.  What is true, and what §1 … §5 show is
-enough, is that the writes are confined to a field no observer and no integrity
-policy reads. -/
-def lockWritesOnly (s s' : SystemState) : Prop :=
-  (∃ (objs : SeLe4n.Kernel.RobinHood.RHTable SeLe4n.ObjId KernelObject) (lk : RwLockState)
-      (sl : SchedulerLockState),
-      s' = { s with objects := objs, objStoreLock := lk, schedulerLocks := sl }) ∧
-    ∀ oid : SeLe4n.ObjId,
-      (s'.objects[oid]?).map KernelObject.eraseLock
-        = (s.objects[oid]?).map KernelObject.eraseLock
-
-theorem lockWritesOnly_refl (s : SystemState) : lockWritesOnly s s :=
-  ⟨⟨s.objects, s.objStoreLock, s.schedulerLocks, rfl⟩, fun _ => rfl⟩
-
-theorem lockWritesOnly_trans {s₁ s₂ s₃ : SystemState}
-    (h₁ : lockWritesOnly s₁ s₂) (h₂ : lockWritesOnly s₂ s₃) : lockWritesOnly s₁ s₃ := by
-  obtain ⟨⟨objs₁, lk₁, sl₁, hEq₁⟩, hObj₁⟩ := h₁
-  obtain ⟨⟨objs₂, lk₂, sl₂, hEq₂⟩, hObj₂⟩ := h₂
-  refine ⟨⟨objs₂, lk₂, sl₂, ?_⟩, fun oid => (hObj₂ oid).trans (hObj₁ oid)⟩
-  rw [hEq₂, hEq₁]
-
-/-- SM8.D.1: the fields `lockWritesOnly` pins, extracted one at a time.  Every
-consumer below reaches for these rather than re-deriving them from the
-reconstruction equation. -/
-theorem lockWritesOnly_scheduler {s s' : SystemState} (h : lockWritesOnly s s') :
-    s'.scheduler = s.scheduler := by obtain ⟨⟨_, _, _, hEq⟩, _⟩ := h; rw [hEq]
-
-theorem lockWritesOnly_machine {s s' : SystemState} (h : lockWritesOnly s s') :
-    s'.machine = s.machine := by obtain ⟨⟨_, _, _, hEq⟩, _⟩ := h; rw [hEq]
-
-theorem lockWritesOnly_objectIndex {s s' : SystemState} (h : lockWritesOnly s s') :
-    s'.objectIndex = s.objectIndex := by obtain ⟨⟨_, _, _, hEq⟩, _⟩ := h; rw [hEq]
-
-theorem lockWritesOnly_services {s s' : SystemState} (h : lockWritesOnly s s') :
-    s'.services = s.services := by obtain ⟨⟨_, _, _, hEq⟩, _⟩ := h; rw [hEq]
-
-theorem lockWritesOnly_irqHandlers {s s' : SystemState} (h : lockWritesOnly s s') :
-    s'.irqHandlers = s.irqHandlers := by obtain ⟨⟨_, _, _, hEq⟩, _⟩ := h; rw [hEq]
-
-/-- SM8.D.1: a lock-only step preserves the observer's **object** view. -/
-theorem lockWritesOnly_preserves_projectObjects (ctx : LabelingContext) (observer : IfObserver)
-    {s s' : SystemState} (h : lockWritesOnly s s') :
-    projectObjects ctx observer s' = projectObjects ctx observer s := by
-  funext oid
-  simp only [projectObjects, SystemState.getObject?]
-  by_cases hObs : objectObservable ctx observer oid = true
-  · rw [if_pos hObs, if_pos hObs]
-    have hErase := h.2 oid
-    cases hPost : s'.objects[oid]? with
-    | none =>
-      rw [hPost] at hErase
-      cases hPre : s.objects[oid]? with
-      | none => rfl
-      | some o => rw [hPre] at hErase; simp at hErase
-    | some o' =>
-      rw [hPost] at hErase
-      cases hPre : s.objects[oid]? with
-      | none => rw [hPre] at hErase; simp at hErase
-      | some o =>
-        rw [hPre] at hErase
-        simp only [Option.map_some, Option.some.injEq] at hErase
-        simp only [Option.map_some, Option.some.injEq]
-        exact projectKernelObject_congr_of_eraseLock ctx observer hErase
-  · simp only [Bool.not_eq_true] at hObs
-    rw [if_neg (by simp [hObs]), if_neg (by simp [hObs])]
-
-/-- SM8.D.1 (**the D.1 headline at the state level**): a step that writes only
-lock words is invisible to the single-core observer. -/
+/-- SM8.D.1 (**the D.1 headline at the state level**): a lock-only step is
+invisible to the single-core observer. -/
 theorem lockWritesOnly_preserves_projection (ctx : LabelingContext) (observer : IfObserver)
-    {s s' : SystemState} (h : lockWritesOnly s s') :
-    projectState ctx observer s' = projectState ctx observer s :=
-  projectState_eq_of_objects_projection_eq ctx observer s s'
-    (lockWritesOnly_preserves_projectObjects ctx observer h)
-    (lockWritesOnly_scheduler h) (lockWritesOnly_services h) (lockWritesOnly_irqHandlers h)
-    (lockWritesOnly_objectIndex h) (lockWritesOnly_machine h)
+    {s s' : LockedSystemState} (h : lockWritesOnly s s') :
+    projectState ctx observer s'.kernel = projectState ctx observer s.kernel := by
+  rw [h]
 
-/-- SM8.D.1 (**the D.1 headline, per core**): and therefore invisible to the
-observer `(c, L)` on *every* core.
-
-The per-core lift is not automatic — a step could preserve the global
-projection and still move a remote core's slots (`crossCoreLeakage_bounded`
-is stated because that happens) — but a lock-only step frames the scheduler
-outright, so every per-core component rides through. -/
+/-- SM8.D.1 (**the D.1 headline, per core**): and to the observer `(c, L)` on
+*every* core. -/
 theorem lockWritesOnly_preserves_onCore (ctx : LabelingContext) (c : CoreId) (L : SecurityLabel)
-    {s s' : SystemState} (h : lockWritesOnly s s') :
-    ObservableState.onCore ctx c L s' = ObservableState.onCore ctx c L s :=
-  projectStateOnCore_congr ctx (IfObserver.ofLabel L)
-    (lockWritesOnly_preserves_projection ctx (IfObserver.ofLabel L) h)
-    (by rw [lockWritesOnly_scheduler h]) (by rw [lockWritesOnly_scheduler h])
-    (by rw [lockWritesOnly_scheduler h]) (by rw [lockWritesOnly_scheduler h])
-    (by rw [lockWritesOnly_scheduler h]) (by rw [lockWritesOnly_machine h])
+    {s s' : LockedSystemState} (h : lockWritesOnly s s') :
+    ObservableState.onCore ctx c L s'.kernel = ObservableState.onCore ctx c L s.kernel := by
+  rw [h]
 
-/-- SM8.D.1: the same at an arbitrary `IfObserver` rather than a clearance label.
-
-`lockWritesOnly_preserves_onCore` is the `IfObserver.ofLabel` instance.  This form
-is what the §5 bracket needs, because the SM8.B non-interference surface is stated
-over observers. -/
+/-- SM8.D.1: the same at an arbitrary `IfObserver`, the form the SM8.B
+non-interference surface is stated over. -/
 theorem lockWritesOnly_preserves_projectionOnCore (ctx : LabelingContext)
-    (observer : IfObserver) (c : CoreId) {s s' : SystemState} (h : lockWritesOnly s s') :
-    projectStateOnCore ctx observer s' c = projectStateOnCore ctx observer s c :=
-  projectStateOnCore_congr ctx observer
-    (lockWritesOnly_preserves_projection ctx observer h)
-    (by rw [lockWritesOnly_scheduler h]) (by rw [lockWritesOnly_scheduler h])
-    (by rw [lockWritesOnly_scheduler h]) (by rw [lockWritesOnly_scheduler h])
-    (by rw [lockWritesOnly_scheduler h]) (by rw [lockWritesOnly_machine h])
-
-/-- SM8.D.1: a **decidable refuter** for `lockWritesOnly`.
-
-Not an `iff`, and deliberately so: `lockWritesOnly`'s object clause quantifies
-over every `ObjId` and compares whole `KernelObject`s, neither of which is
-decidable (`KernelObject` has no `DecidableEq` — WS-G5 removed it because
-`RHTable`'s structural equality would hide hash-layout non-determinism).  What
-*is* decidable is the index and the per-object *kind*, and a step that moved
-either moved something no lock write can move.  So a `false` here is a genuine
-refutation of `lockWritesOnly`, which is what a test needs; a `true` is
-necessary and not sufficient, which is what `lockWritesOnly_lockWritesOnlyCheck`
-records. -/
-def lockWritesOnlyCheck (s s' : SystemState) : Bool :=
-  (s'.objectIndex == s.objectIndex) &&
-    s.objectIndex.all (fun oid =>
-      (s'.getObjectType? oid)
-        == (s.getObjectType? oid))
-
-/-- SM8.D.1: the refuter is **sound** — a lock-only step passes it, so a
-failure is a real counterexample rather than an artefact of the approximation. -/
-theorem lockWritesOnly_lockWritesOnlyCheck {s s' : SystemState} (h : lockWritesOnly s s') :
-    lockWritesOnlyCheck s s' = true := by
-  unfold lockWritesOnlyCheck
-  refine Bool.and_eq_true _ _ |>.mpr ⟨?_, ?_⟩
-  · simpa using lockWritesOnly_objectIndex h
-  · refine List.all_eq_true.mpr ?_
-    intro oid _
-    have hErase := h.2 oid
-    have : (s'.objects[oid]?).map KernelObject.objectType
-        = (s.objects[oid]?).map KernelObject.objectType := by
-      cases hPost : s'.objects[oid]? with
-      | none =>
-        rw [hPost] at hErase
-        cases hPre : s.objects[oid]? with
-        | none => rfl
-        | some o => rw [hPre] at hErase; simp at hErase
-      | some o' =>
-        rw [hPost] at hErase
-        cases hPre : s.objects[oid]? with
-        | none => rw [hPre] at hErase; simp at hErase
-        | some o =>
-          rw [hPre] at hErase
-          simp only [Option.map_some, Option.some.injEq] at hErase
-          simp only [Option.map_some, Option.some.injEq]
-          rw [← KernelObject.eraseLock_objectType o', ← KernelObject.eraseLock_objectType o,
-            hErase]
-    simpa using this
+    (observer : IfObserver) (c : CoreId) {s s' : LockedSystemState} (h : lockWritesOnly s s') :
+    projectStateOnCore ctx observer s'.kernel c = projectStateOnCore ctx observer s.kernel c := by
+  rw [h]
 
 /-- SM8.D.1: the `lowEquivalent_smp` form, for composition with the SM8.B
 surface. -/
 theorem lockWritesOnly_lowEquivalent_smp (ctx : LabelingContext) (observer : IfObserver)
-    {s s' : SystemState} (h : lockWritesOnly s s') :
-    lowEquivalent_smp ctx observer s' s := fun c =>
-  projectStateOnCore_congr ctx observer
-    (lockWritesOnly_preserves_projection ctx observer h)
-    (by rw [lockWritesOnly_scheduler h]) (by rw [lockWritesOnly_scheduler h])
-    (by rw [lockWritesOnly_scheduler h]) (by rw [lockWritesOnly_scheduler h])
-    (by rw [lockWritesOnly_scheduler h]) (by rw [lockWritesOnly_machine h])
+    {s s' : LockedSystemState} (h : lockWritesOnly s s') :
+    lowEquivalent_smp ctx observer s'.kernel s.kernel := fun _ => by rw [h]; rfl
 
--- ----------------------------------------------------------------------------
--- SM8.D.1 — the lock-writing operations, one at a time
--- ----------------------------------------------------------------------------
+/-- SM8.D.1: a **decidable refuter** for `lockWritesOnly`.
 
-/-- SM8.D.1: an in-place object rewrite that preserves erased content is a
-lock-only write.  Every lock primitive below is an instance of this: what
-distinguishes them is only which `LockId` they resolve and which `RwLockOp`
-they apply. -/
-theorem updateObjectAt_lockWritesOnly (s : SystemState) (oid : SeLe4n.ObjId)
-    (f : KernelObject → KernelObject) (hf : ∀ o, (f o).eraseLock = o.eraseLock)
-    (hInv : s.objects.invExt) :
-    lockWritesOnly s (SeLe4n.Kernel.Concurrency.updateObjectAt s oid f) := by
-  unfold SeLe4n.Kernel.Concurrency.updateObjectAt
-  cases hGet : s.objects.get? oid with
-  | none => exact lockWritesOnly_refl s
-  | some obj =>
-    refine ⟨⟨s.objects.insert oid (f obj), s.objStoreLock, s.schedulerLocks, rfl⟩, fun o => ?_⟩
-    show ((s.objects.insert oid (f obj))[o]?).map KernelObject.eraseLock = _
-    simp only [RHTable_getElem?_eq_get?]
-    rw [RHTable_getElem?_insert s.objects oid (f obj) hInv o]
-    by_cases hEq : (oid == o) = true
-    · have hOid : oid = o := eq_of_beq hEq
-      subst hOid
-      rw [if_pos hEq, hGet]
-      simp only [Option.map_some, Option.some.injEq]
-      exact hf obj
-    · rw [if_neg hEq]
+Not an `iff`: kernel-state equality is not decidable (`KernelObject` has no
+`DecidableEq` — WS-G5 removed it because `RHTable`'s structural equality would
+hide hash-layout non-determinism).  What *is* decidable is the object index and
+the per-object *kind*, and a step that moved either moved the kernel state.  So
+a `false` here is a genuine refutation, which is what a test needs; a `true` is
+necessary and not sufficient (`lockWritesOnly_lockWritesOnlyCheck`). -/
+def lockWritesOnlyCheck (s s' : LockedSystemState) : Bool :=
+  (s'.kernel.objectIndex == s.kernel.objectIndex) &&
+    s.kernel.objectIndex.all (fun oid =>
+      (s'.kernel.getObjectType? oid) == (s.kernel.getObjectType? oid))
 
-/-- SM8.D.1: **writing an arbitrary lock word** into the object at `oid` — the
-form D.1 and D.2 quantify over. -/
-def setObjectLockAt (s : SystemState) (oid : SeLe4n.ObjId) (l : RwLockState) : SystemState :=
-  SeLe4n.Kernel.Concurrency.updateObjectAt s oid (fun obj => obj.setLock l)
+/-- SM8.D.1: the refuter is **sound** — a lock-only step passes it. -/
+theorem lockWritesOnly_lockWritesOnlyCheck {s s' : LockedSystemState} (h : lockWritesOnly s s') :
+    lockWritesOnlyCheck s s' = true := by
+  unfold lockWritesOnlyCheck
+  rw [h]
+  simp
 
-theorem setObjectLockAt_lockWritesOnly (s : SystemState) (oid : SeLe4n.ObjId)
-    (l : RwLockState) (hInv : s.objects.invExt) :
-    lockWritesOnly s (setObjectLockAt s oid l) :=
-  updateObjectAt_lockWritesOnly s oid _ (fun o => o.eraseLock_setLock l) hInv
-
-/-- SM8.D.1 (**the direct form of D.1**): *whatever* an object's lock word says
-— free, write-held by any core, read-held by any set of cores, with any queue of
-waiters — the observer `(c, L)` sees exactly the same state on every core.
-
-This is the statement the plan's D.1 row asked for, in the only form that
-survived SM8.B.4's erasure: there is nothing about the lock to document as
-visible, because none of it is. -/
+/-- SM8.D.1 (**the direct form of D.1**): *whatever* the table says at a key,
+the observer `(c, L)` sees exactly the same state on every core. -/
 theorem onCore_lock_invisible (ctx : LabelingContext) (c : CoreId) (L : SecurityLabel)
-    (s : SystemState) (oid : SeLe4n.ObjId) (l : RwLockState) (hInv : s.objects.invExt) :
-    ObservableState.onCore ctx c L (setObjectLockAt s oid l)
-      = ObservableState.onCore ctx c L s :=
-  lockWritesOnly_preserves_onCore ctx c L (setObjectLockAt_lockWritesOnly s oid l hInv)
+    (s : LockedSystemState) (k : LockKey) (l : RwLockState) :
+    ObservableState.onCore ctx c L (setLockAt s k l).kernel
+      = ObservableState.onCore ctx c L s.kernel := rfl
 
 /-- SM8.D.1: and no observer can distinguish *two* lock words either — the
 version with no reference to a "starting" lock state, which is what makes it a
-statement about the field rather than about a particular write. -/
+statement about the lock state rather than about a particular write. -/
 theorem onCore_lock_indistinguishable (ctx : LabelingContext) (c : CoreId) (L : SecurityLabel)
-    (s : SystemState) (oid : SeLe4n.ObjId) (l₁ l₂ : RwLockState) (hInv : s.objects.invExt) :
-    ObservableState.onCore ctx c L (setObjectLockAt s oid l₁)
-      = ObservableState.onCore ctx c L (setObjectLockAt s oid l₂) :=
-  (onCore_lock_invisible ctx c L s oid l₁ hInv).trans
-    (onCore_lock_invisible ctx c L s oid l₂ hInv).symm
+    (s : LockedSystemState) (k : LockKey) (l₁ l₂ : RwLockState) :
+    ObservableState.onCore ctx c L (setLockAt s k l₁).kernel
+      = ObservableState.onCore ctx c L (setLockAt s k l₂).kernel := rfl
 
-/-- SM8.D.1: the **table-level** lock (SM3.A.10's `objStoreLock`, hierarchy
-level 0) is outside the observable state as well.  Unlike the per-object locks
-this needs no erasure — the field was never a component of `ObservableState` —
-but it needs saying, because the level-0 lock is the one every `withLockSet`
-whose set names `.objStore` writes. -/
-@[simp] theorem onCore_objStoreLock (ctx : LabelingContext) (c : CoreId) (L : SecurityLabel)
-    (s : SystemState) (lk : RwLockState) :
-    ObservableState.onCore ctx c L { s with objStoreLock := lk }
-      = ObservableState.onCore ctx c L s := rfl
-
-theorem objStoreLock_write_lockWritesOnly (s : SystemState) (lk : RwLockState) :
-    lockWritesOnly s { s with objStoreLock := lk } :=
-  ⟨⟨s.objects, lk, s.schedulerLocks, rfl⟩, fun _ => rfl⟩
-
-/-- **WS-LS LS1.2**: a scheduler lock word is a lock word — the two per-core
-setters write `schedulerLocks` and nothing else. -/
-theorem setRunQueueLockOnCore_lockWritesOnly (s : SystemState) (c : CoreId)
-    (lk : RwLockState) : lockWritesOnly s (s.setRunQueueLockOnCore c lk) :=
-  ⟨⟨s.objects, s.objStoreLock, (s.setRunQueueLockOnCore c lk).schedulerLocks, rfl⟩,
-    fun _ => rfl⟩
-
-theorem setReplenishQueueLockOnCore_lockWritesOnly (s : SystemState) (c : CoreId)
-    (lk : RwLockState) : lockWritesOnly s (s.setReplenishQueueLockOnCore c lk) :=
-  ⟨⟨s.objects, s.objStoreLock, (s.setReplenishQueueLockOnCore c lk).schedulerLocks, rfl⟩,
-    fun _ => rfl⟩
-
-/-- SM8.D.1: the SM3.C.2 kind-checked lock update writes only lock words. -/
-theorem updateObjectLockAt_lockWritesOnly (s : SystemState) (l : LockId) (op : RwLockOp)
-    (hInv : s.objects.invExt) :
-    lockWritesOnly s (SeLe4n.Kernel.Concurrency.updateObjectLockAt s l op) := by
-  unfold SeLe4n.Kernel.Concurrency.updateObjectLockAt
-  split
-  · exact updateObjectAt_lockWritesOnly s l.objId _
-      (fun o => o.eraseLock_updateLock op) hInv
-  · exact lockWritesOnly_refl s
-
-/-- SM8.D.1: the acquire primitive writes only lock words — the `.objStore` arm
-through the table-level field, the modelled kinds through the object's, the
-`.page` arm not at all. -/
-theorem acquireLockOnObject_lockWritesOnly (s : SystemState) (core : CoreId)
-    (l : LockId) (m : AccessMode) (hInv : s.objects.invExt) :
-    lockWritesOnly s (SeLe4n.Kernel.Concurrency.acquireLockOnObject s core l m) := by
-  unfold SeLe4n.Kernel.Concurrency.acquireLockOnObject
-  cases l.kind <;>
-    first
-      | exact objStoreLock_write_lockWritesOnly s _
-      | exact lockWritesOnly_refl s
-      | exact updateObjectLockAt_lockWritesOnly s l _ hInv
-
-/-- SM8.D.1: and the release primitive, symmetrically. -/
-theorem releaseLockOnObject_lockWritesOnly (s : SystemState) (core : CoreId)
-    (l : LockId) (m : AccessMode) (hInv : s.objects.invExt) :
-    lockWritesOnly s (SeLe4n.Kernel.Concurrency.releaseLockOnObject s core l m) := by
-  unfold SeLe4n.Kernel.Concurrency.releaseLockOnObject
-  cases l.kind <;>
-    first
-      | exact objStoreLock_write_lockWritesOnly s _
-      | exact lockWritesOnly_refl s
-      | exact updateObjectLockAt_lockWritesOnly s l _ hInv
-
-/-- **WS-LC LC4.2**: and the withdrawal primitive, the third sibling. -/
-theorem cancelLockOnObject_lockWritesOnly (s : SystemState) (core : CoreId)
-    (l : LockId) (m : AccessMode) (hInv : s.objects.invExt) :
-    lockWritesOnly s (SeLe4n.Kernel.Concurrency.cancelLockOnObject s core l m) := by
-  unfold SeLe4n.Kernel.Concurrency.cancelLockOnObject
-  cases l.kind <;>
-    first
-      | exact objStoreLock_write_lockWritesOnly s _
-      | exact lockWritesOnly_refl s
-      | exact updateObjectLockAt_lockWritesOnly s l _ hInv
-
-/-- **WS-LS LS1.2**: the per-key primitives write only lock words — an object
-key through the per-object primitive, the table key through `objStoreLock`,
-a scheduler key through its per-core word. -/
-theorem acquireLock_lockWritesOnly (s : SystemState) (core : CoreId)
-    (k : LockKey) (m : AccessMode) (hInv : s.objects.invExt) :
-    lockWritesOnly s (SeLe4n.Kernel.Concurrency.acquireLock s core k m) := by
-  cases k with
-  | objStore => exact objStoreLock_write_lockWritesOnly s _
-  | object l => exact acquireLockOnObject_lockWritesOnly s core l m hInv
-  | runQueue d => exact setRunQueueLockOnCore_lockWritesOnly s d _
-  | replenishQueue d => exact setReplenishQueueLockOnCore_lockWritesOnly s d _
-
-theorem releaseLock_lockWritesOnly (s : SystemState) (core : CoreId)
-    (k : LockKey) (m : AccessMode) (hInv : s.objects.invExt) :
-    lockWritesOnly s (SeLe4n.Kernel.Concurrency.releaseLock s core k m) := by
-  cases k with
-  | objStore => exact objStoreLock_write_lockWritesOnly s _
-  | object l => exact releaseLockOnObject_lockWritesOnly s core l m hInv
-  | runQueue d => exact setRunQueueLockOnCore_lockWritesOnly s d _
-  | replenishQueue d => exact setReplenishQueueLockOnCore_lockWritesOnly s d _
-
-theorem cancelLock_lockWritesOnly (s : SystemState) (core : CoreId)
-    (k : LockKey) (m : AccessMode) (hInv : s.objects.invExt) :
-    lockWritesOnly s (SeLe4n.Kernel.Concurrency.cancelLock s core k m) := by
-  cases k with
-  | objStore => exact objStoreLock_write_lockWritesOnly s _
-  | object l => exact cancelLockOnObject_lockWritesOnly s core l m hInv
-  | runQueue d => exact setRunQueueLockOnCore_lockWritesOnly s d _
-  | replenishQueue d => exact setReplenishQueueLockOnCore_lockWritesOnly s d _
-
-/-- SM8.D.1: the 2PL **growing phase** writes only lock words. -/
-theorem acquireAll_lockWritesOnly (core : CoreId) (pairs : List (LockKey × AccessMode))
-    (s : SystemState) (hInv : s.objects.invExt) :
-    lockWritesOnly s (SeLe4n.Kernel.Concurrency.acquireAll core pairs s) := by
-  induction pairs generalizing s with
-  | nil => exact lockWritesOnly_refl s
-  | cons p rest ih =>
-    obtain ⟨l, m⟩ := p
-    rw [SeLe4n.Kernel.Concurrency.acquireAll_cons]
-    exact lockWritesOnly_trans (acquireLock_lockWritesOnly s core l m hInv)
-      (ih _ (SeLe4n.Kernel.Concurrency.acquireLock_preserves_invExt s core l m hInv))
-
-/-- SM8.D.1: the 2PL **shrinking phase** writes only lock words. -/
-theorem releaseAll_lockWritesOnly (core : CoreId) (pairs : List (LockKey × AccessMode))
-    (s : SystemState) (hInv : s.objects.invExt) :
-    lockWritesOnly s (SeLe4n.Kernel.Concurrency.releaseAll core pairs s) := by
-  induction pairs generalizing s with
-  | nil => exact lockWritesOnly_refl s
-  | cons p rest ih =>
-    obtain ⟨l, m⟩ := p
-    rw [SeLe4n.Kernel.Concurrency.releaseAll_cons]
-    exact lockWritesOnly_trans (releaseLock_lockWritesOnly s core l m hInv)
-      (ih _ (SeLe4n.Kernel.Concurrency.releaseLock_preserves_invExt s core l m hInv))
-
-/-- **WS-LC LC4.2**: the withdrawal fold writes only lock words. -/
-theorem cancelAll_lockWritesOnly (core : CoreId) (pairs : List (LockKey × AccessMode))
-    (s : SystemState) (hInv : s.objects.invExt) :
-    lockWritesOnly s (SeLe4n.Kernel.Concurrency.cancelAll core pairs s) := by
-  induction pairs generalizing s with
-  | nil => exact lockWritesOnly_refl s
-  | cons p rest ih =>
-    obtain ⟨l, m⟩ := p
-    rw [SeLe4n.Kernel.Concurrency.cancelAll_cons]
-    exact lockWritesOnly_trans (cancelLock_lockWritesOnly s core l m hInv)
-      (ih _ (SeLe4n.Kernel.Concurrency.cancelLock_preserves_invExt s core l m hInv))
-
-/-- **WS-LC LC4.2**: so does the shrinking phase as a whole.
-
-The composite every §4 and §5 result now factors through: adding the
-withdrawal to the bracket adds lock-word writes and nothing else, so the
-integrity and information-flow arguments carry over unchanged. -/
-theorem unwindAll_lockWritesOnly (core : CoreId) (pairs : List (LockKey × AccessMode))
-    (s : SystemState) (hInv : s.objects.invExt) :
-    lockWritesOnly s (SeLe4n.Kernel.Concurrency.unwindAll core pairs s) := by
-  rw [SeLe4n.Kernel.Concurrency.unwindAll_eq_releaseAll_cancelAll]
-  exact lockWritesOnly_trans (cancelAll_lockWritesOnly core pairs s hInv)
-    (releaseAll_lockWritesOnly core pairs _
-      (SeLe4n.Kernel.Concurrency.cancelAll_preserves_invExt core pairs s hInv))
-
-/-- SM8.D.1 (**the bracket**): `withLockSet` writes only lock words beyond
-whatever its guarded action writes.
-
-This is the composition that carries every §4 and §5 result: a 2PL-bracketed
-transition's *whole* effect is its action's effect plus lock words, and lock
-words are invisible to every observer (§1) and to every integrity policy
-(§4). -/
+/-- SM8.D.1 (**the bracket**): `withLockSet` is a lock-only step whenever its
+guarded action leaves the kernel state alone — the phases contribute only table
+writes. -/
 theorem withLockSet_lockWritesOnly {α : Type} (S : LockSet) (core : CoreId)
-    (action : SystemState → SystemState × α) (s : SystemState)
-    (hInv : s.objects.invExt)
-    (hActionInv : ∀ s', s'.objects.invExt → ((action s').1).objects.invExt)
-    (hActionLock : ∀ s', s'.objects.invExt → lockWritesOnly s' (action s').1) :
-    lockWritesOnly s (SeLe4n.Kernel.Concurrency.withLockSet S core action s).1 := by
-  rw [SeLe4n.Kernel.Concurrency.withLockSet_fst]
-  have hAcqInv := SeLe4n.Kernel.Concurrency.acquireAll_preserves_invExt core S.lockAcquireSequence s hInv
-  exact lockWritesOnly_trans (acquireAll_lockWritesOnly core S.lockAcquireSequence s hInv)
-    (lockWritesOnly_trans (hActionLock _ hAcqInv)
-      (unwindAll_lockWritesOnly core _ _ (hActionInv _ hAcqInv)))
+    (action : SystemState → SystemState × α) (s : LockedSystemState)
+    (hAction : (action s.kernel).1 = s.kernel) :
+    lockWritesOnly s (SeLe4n.Kernel.Concurrency.withLockSet S core action s).1 :=
+  hAction
 
 -- ============================================================================
 -- §2  SM8.D.2 — reader multiplicity is not directly observable
@@ -611,9 +223,9 @@ theorem withLockSet_lockWritesOnly {α : Type} (S : LockSet) (core : CoreId)
 -- The plan's D.2 row predates SM8.B.4.  With the `lock` field carried into the
 -- projection, "how many cores hold this object for reading" would have been a
 -- component of the observable state and the row would have been a genuine
--- proof obligation about a visible quantity.  With the field erased, reader
--- multiplicity is not a component of `ObservableState` at all, and §1's
--- factoring settles it — but it is worth stating at the multiplicity itself
+-- proof obligation about a visible quantity.  With the lock state in the ghost
+-- table, reader multiplicity is not a component of `ObservableState` at all,
+-- and §1 settles it — but it is worth stating at the multiplicity itself
 -- rather than leaving it as a corollary a reader has to assemble, because the
 -- plan asked a specific question and the answer should be findable under the
 -- name it was asked under.
@@ -622,8 +234,8 @@ theorem withLockSet_lockWritesOnly {α : Type} (S : LockSet) (core : CoreId)
 -- and bounded in §3.
 
 /-- SM8.D.2 (**the headline**): **reader multiplicity is not directly
-observable.**  Two states that differ only in how many cores — and which cores
-— hold an object's read lock are identical to the observer `(c, L)` on every
+observable.**  Two locked states that differ only in how many cores — and which
+cores — hold a key for reading are identical to the observer `(c, L)` on every
 core.
 
 Stated over arbitrary reader lists rather than over a particular acquire, so it
@@ -631,13 +243,13 @@ covers every multiplicity the lock can reach, including the reachable
 two-reader state SM2.C.6 constructs (see
 `readerMultiplicity_not_observable_at_reachable_witness`). -/
 theorem readerMultiplicity_not_observable (ctx : LabelingContext) (c : CoreId)
-    (L : SecurityLabel) (s : SystemState) (oid : SeLe4n.ObjId)
-    (readers₁ readers₂ : List CoreId) (hInv : s.objects.invExt) :
+    (L : SecurityLabel) (s : LockedSystemState) (k : LockKey)
+    (readers₁ readers₂ : List CoreId) :
     ObservableState.onCore ctx c L
-        (setObjectLockAt s oid { RwLockState.unheld with readers := readers₁ })
+        (setLockAt s k { RwLockState.unheld with readers := readers₁ }).kernel
       = ObservableState.onCore ctx c L
-        (setObjectLockAt s oid { RwLockState.unheld with readers := readers₂ }) :=
-  onCore_lock_indistinguishable ctx c L s oid _ _ hInv
+        (setLockAt s k { RwLockState.unheld with readers := readers₂ }).kernel :=
+  onCore_lock_indistinguishable ctx c L s k _ _
 
 /-- SM8.D.2: the same statement against the **reachable** multi-reader state
 SM2.C.6 exhibits, so the theorem is not about lock words the protocol can never
@@ -650,15 +262,14 @@ discharge this with a lock word the protocol never reaches — and the claim bei
 made here is precisely that the invisible multiplicity is one the protocol *does*
 reach.  `rwLock_reader_multiplicity_reachable` supplies the derivation. -/
 theorem readerMultiplicity_not_observable_at_reachable_witness (ctx : LabelingContext)
-    (c : CoreId) (L : SecurityLabel) (s : SystemState) (oid : SeLe4n.ObjId)
-    (hInv : s.objects.invExt) :
+    (c : CoreId) (L : SecurityLabel) (s : LockedSystemState) (k : LockKey) :
     ∃ shared : RwLockState, SeLe4n.Kernel.Concurrency.RwLockReachable shared ∧
       shared.wf ∧ 2 ≤ shared.readers.length ∧
-      ObservableState.onCore ctx c L (setObjectLockAt s oid shared)
-        = ObservableState.onCore ctx c L (setObjectLockAt s oid RwLockState.unheld) := by
+      ObservableState.onCore ctx c L (setLockAt s k shared).kernel
+        = ObservableState.onCore ctx c L (setLockAt s k RwLockState.unheld).kernel := by
   obtain ⟨shared, hReach, hWf, hLen⟩ :=
     SeLe4n.Kernel.Concurrency.rwLock_reader_multiplicity_reachable
-  exact ⟨shared, hReach, hWf, hLen, onCore_lock_indistinguishable ctx c L s oid _ _ hInv⟩
+  exact ⟨shared, hReach, hWf, hLen, onCore_lock_indistinguishable ctx c L s k _ _⟩
 
 /-- SM8.D.2 (the CC-5 restatement, which is the only open form): reader
 multiplicity is invisible in the model, and the channel that remains is the
@@ -669,13 +280,12 @@ Stated as a conjunction so the inventory entry and this result cannot drift:
 reclassifying CC-5 as model-visible without changing the projection breaks
 this theorem. -/
 theorem readerMultiplicity_is_timing_only (ctx : LabelingContext) (c : CoreId)
-    (L : SecurityLabel) (s : SystemState) (oid : SeLe4n.ObjId)
-    (l₁ l₂ : RwLockState) (hInv : s.objects.invExt) :
+    (L : SecurityLabel) (s : LockedSystemState) (k : LockKey) (l₁ l₂ : RwLockState) :
     acceptedCovertChannel_lockContention.modelVisible = false ∧
       acceptedCovertChannel_lockContention.perCoreInstance = true ∧
-      ObservableState.onCore ctx c L (setObjectLockAt s oid l₁)
-        = ObservableState.onCore ctx c L (setObjectLockAt s oid l₂) :=
-  ⟨rfl, rfl, onCore_lock_indistinguishable ctx c L s oid l₁ l₂ hInv⟩
+      ObservableState.onCore ctx c L (setLockAt s k l₁).kernel
+        = ObservableState.onCore ctx c L (setLockAt s k l₂).kernel :=
+  ⟨rfl, rfl, onCore_lock_indistinguishable ctx c L s k l₁ l₂⟩
 
 -- ============================================================================
 -- §3  SM8.D.3 — writer exclusion, and what a blocked acquirer really observes
@@ -683,10 +293,10 @@ theorem readerMultiplicity_is_timing_only (ctx : LabelingContext) (c : CoreId)
 --
 -- The plan's D.3 row reads "writer-exclusion observable to blocked readers".
 -- At the model level that is **false**, and it is false in the safe direction:
--- since SM8.B.4 erased `lock`, a blocked reader observes *nothing* of the
--- writer holding the object — not the holder's identity, not the queue it is
--- sitting in, not its own position in that queue.  §3.1 states the refutation
--- rather than reinstating the field.
+-- the lock state lives in the ghost table (WS-LS LS3.1), so a blocked reader
+-- observes *nothing* of the writer holding the key — not the holder's
+-- identity, not the queue it is sitting in, not its own position in that
+-- queue.  §3.1 states the refutation rather than reinstating the field.
 --
 -- What a blocked acquirer does observe is **delay**, and that is CC-5.  §3.2
 -- makes it a quantity and bounds it; §3.3 turns the bound into an alphabet, a
@@ -702,14 +312,14 @@ theorem readerMultiplicity_is_timing_only (ctx : LabelingContext) (c : CoreId)
 -- decorative: drop fairness and the queued core is never admitted at all.
 
 /-- SM8.D.3 (**the refutation, part 1**): writer exclusion is not observable.
-A state whose object is write-held by an arbitrary core is indistinguishable
-from one whose object is free, to the observer `(c, L)` on every core. -/
+A state whose key is write-held by an arbitrary core is indistinguishable from
+one whose key is free, to the observer `(c, L)` on every core. -/
 theorem writerExclusion_not_observable (ctx : LabelingContext) (c : CoreId) (L : SecurityLabel)
-    (s : SystemState) (oid : SeLe4n.ObjId) (holder : CoreId) (hInv : s.objects.invExt) :
+    (s : LockedSystemState) (k : LockKey) (holder : CoreId) :
     ObservableState.onCore ctx c L
-        (setObjectLockAt s oid { RwLockState.unheld with writerHeld := some holder })
-      = ObservableState.onCore ctx c L (setObjectLockAt s oid RwLockState.unheld) :=
-  onCore_lock_indistinguishable ctx c L s oid _ _ hInv
+        (setLockAt s k { RwLockState.unheld with writerHeld := some holder }).kernel
+      = ObservableState.onCore ctx c L (setLockAt s k RwLockState.unheld).kernel :=
+  onCore_lock_indistinguishable ctx c L s k _ _
 
 /-- SM8.D.3 (**the refutation, part 2**): and a *blocked* acquirer observes
 nothing either — not even its own presence in the queue.
@@ -719,13 +329,12 @@ observer here is the very core that is blocked (`c` appears in `waiters`), and
 its view is unchanged.  Whatever a blocked reader learns from writer exclusion,
 it does not learn it from the kernel state. -/
 theorem blockedAcquirer_observes_nothing (ctx : LabelingContext) (c : CoreId) (L : SecurityLabel)
-    (s : SystemState) (oid : SeLe4n.ObjId) (holder : CoreId) (mode : AccessMode)
-    (hInv : s.objects.invExt) :
+    (s : LockedSystemState) (k : LockKey) (holder : CoreId) (mode : AccessMode) :
     ObservableState.onCore ctx c L
-        (setObjectLockAt s oid
-          { RwLockState.unheld with writerHeld := some holder, waiters := [(c, mode)] })
-      = ObservableState.onCore ctx c L (setObjectLockAt s oid RwLockState.unheld) :=
-  onCore_lock_indistinguishable ctx c L s oid _ _ hInv
+        (setLockAt s k
+          { RwLockState.unheld with writerHeld := some holder, waiters := [(c, mode)] }).kernel
+      = ObservableState.onCore ctx c L (setLockAt s k RwLockState.unheld).kernel :=
+  onCore_lock_indistinguishable ctx c L s k _ _
 
 /-- SM8.D.3 (**what the blocked reader does learn, and when**): the reader at
 the head of the queue becomes a holder at the very step the writer releases.
@@ -1674,14 +1283,15 @@ theorem acceptedCovertChannel_lockContention_severity_basis (maxDelay : Nat) :
 -- §4  SM8.D.4 — Biba integrity under per-core locks
 -- ============================================================================
 --
--- Integrity asks which *subjects* may modify which *objects*.  Fine-grained
--- locking makes every core a writer of every object it touches — an acquire is
--- a store into that object's `lock` field — so the question the plan's D.4 row
--- raises is real: does the 2PL bracket let an untrusted core write a trusted
--- object?
+-- Integrity asks which *subjects* may modify which *objects*.  Until WS-LS
+-- LS3.1 fine-grained locking made every core a writer of every object it
+-- touched — an acquire was a store into that object's lock word — and §4 had
+-- to argue that the write was not one an integrity policy governs.  The lock
+-- state is now the ghost table beside the kernel state, so an acquire writes
+-- **no object at all**, and the question the plan's D.4 row raised dissolves:
+-- the 2PL bracket's only kernel-state writes are its guarded action's.
 --
--- It does write it.  What §4 proves is that the write is not one an integrity
--- policy governs, and it proves it in a form that does not depend on which
+-- What §4 still has to say is stated in a form that does not depend on which
 -- direction the deployment's integrity order runs.  seLe4n's `integrityFlowsTo`
 -- is deliberately the *reverse* of standard BIBA (U6-I: the dimension tracks
 -- authority delegation, not data purity), and `bibaIntegrityFlowsTo` is the
@@ -1689,20 +1299,13 @@ theorem acceptedCovertChannel_lockContention_severity_basis (maxDelay : Nat) :
 -- nothing about a deployment configured with the other, so §4 is stated over an
 -- arbitrary write rule and instantiated at both.
 --
--- Two theorems keep this from being an argument about a definition:
--- `lockWrite_carries_no_subject_data` (the value written is protocol
--- bookkeeping the writing subject cannot choose) and
--- `KernelObject.updateLock_not_identity` from §1 (the write is real).
---
--- One subtlety worth stating rather than leaving to be noticed.  The *value*
--- written into a lock word carries no subject data, but *which* lock words a
--- subject causes to be written is a function of the lock set, and the lock set
+-- One subtlety worth stating rather than leaving to be noticed.  *Which* keys a
+-- subject causes to be acquired is a function of the lock set, and the lock set
 -- is a function of the syscall the subject issued.  So the choice of footprint
--- is subject-influenced.  That does not open an integrity flow, for the reason
--- §1 establishes: the words it writes are invisible, so the choice cannot be
--- read back out of the state by anyone.  What the choice *can* affect is how
--- long another core spins, and that is CC-5 — bounded in §3, and a timing
--- channel rather than an integrity violation.
+-- is subject-influenced.  That does not open an integrity flow: the table is
+-- read by no observer (§1) and no integrity predicate.  What the choice *can*
+-- affect is how long another core spins, and that is CC-5 — bounded in §3, and
+-- a timing channel rather than an integrity violation.
 
 /-- SM8.D.4: the standard-BIBA write rule — a subject may modify an object only
 if the object's integrity is no greater than the subject's (no write-up).
@@ -1754,40 +1357,20 @@ theorem writeRules_differ :
       bibaWritePermitted ctx subject oid ≠ authorityWritePermitted ctx subject oid :=
   ⟨writeRulesWitnessContext, SecurityLabel.publicLabel, ⟨0⟩, by decide⟩
 
-/-- SM8.D.4: **a step performs no write the rule `permitted` forbids.**
+/-- SM8.D.4: **a step performs no write the rule `permitted` forbids** — every
+object the rule denies comes out of the step with its stored value unchanged.
 
-Stated over the lock-erased content, which is what makes the whole section
-work: the objects an untrusted core may not modify come out of the step with
-their content intact, lock words excepted.  §1 proves those lock words reach no
-observer; `lockWrite_carries_no_subject_data` below proves the writing subject
-does not choose them.
-
-**The erasure is a modelling decision, and it is exactly the scope of the
-claim.**  An untrusted subject acquiring a lock embedded in a trusted object
-*does* modify that object — `KernelObject.updateLock_not_identity` says a lock
-write is real, and
-`lockAcquisition_modifies_trusted_object_and_is_not_counted` exhibits the case
-this predicate declines to count.  What is claimed is therefore integrity
-**modulo lock words**, not standard BIBA no-write-up over raw object equality.
-
-Two reasons that is the right predicate here rather than a weakening.  First,
-lock acquisition is *kernel-mediated*: the subject names an operation, the
-kernel chooses the lock set (`lockSetForSyscall`) and performs the writes, and
-the subject supplies no part of the written value — which is what
-`lockWrite_carries_no_subject_data` states.  Permission-checking it would make
-an untrusted thread unable to send to a trusted endpoint at all, since the
-rendezvous necessarily touches that endpoint's lock.  Second, what the
-uncounted write can affect is *availability and ordering* — the trusted object's
-holder and waiter state — and availability is outside the Biba model, which
-governs the integrity of data rather than of scheduling.  The contention that
-mutation causes is registered separately, and bounded, as CC-5.
+Raw object equality, with no erasure: since WS-LS LS3.1 no lock state lives in
+an object, so the predicate that used to read "unchanged modulo lock words" is
+now standard no-write-up over the stored objects themselves.  (The lock-erased
+form and the two theorems that justified it, `lockWrite_carries_no_subject_data`
+and `lockAcquisition_modifies_trusted_object_and_is_not_counted`, went with the
+lock words; this form is strictly stronger.)
 
 What is **not** claimed: that lock acquisition cannot be used to delay a trusted
 subject.  It can, and that is CC-5's subject. -/
 def noUnpermittedWrite (permitted : SeLe4n.ObjId → Bool) (s s' : SystemState) : Prop :=
-  ∀ oid : SeLe4n.ObjId, permitted oid = false →
-    (s'.objects[oid]?).map KernelObject.eraseLock
-      = (s.objects[oid]?).map KernelObject.eraseLock
+  ∀ oid : SeLe4n.ObjId, permitted oid = false → s'.objects[oid]? = s.objects[oid]?
 
 theorem noUnpermittedWrite_refl (permitted : SeLe4n.ObjId → Bool) (s : SystemState) :
     noUnpermittedWrite permitted s s := fun _ _ => rfl
@@ -1798,54 +1381,16 @@ theorem noUnpermittedWrite_trans {permitted : SeLe4n.ObjId → Bool} {s₁ s₂ 
   fun oid hDenied => (h₂ oid hDenied).trans (h₁ oid hDenied)
 
 /-- SM8.D.4: **a lock-only step satisfies every write rule at once.**  No
-hypothesis on the rule, on the subject, on the labelling, or on which objects
-the lock set names. -/
+hypothesis on the rule, on the subject, on the labelling, or on which keys the
+lock set names. -/
 theorem lockWritesOnly_noUnpermittedWrite (permitted : SeLe4n.ObjId → Bool)
-    {s s' : SystemState} (h : lockWritesOnly s s') : noUnpermittedWrite permitted s s' :=
-  fun oid _ => h.2 oid
-
-/-- SM8.D.4: **the lock word is not a data channel.**
-
-Run the same acquire against two objects whose *content* differs arbitrarily but
-whose lock words agree, and the installed lock word is the same.  So nothing the
-writing subject holds — no message, no capability, no field it controls — can
-reach the lock word; what the acquire installs is a function of the lock's own
-prior value and the `(core, mode)` request.
-
-This is what stops §4's use of `eraseLock` from being a way of defining the
-write away.  The bracket does write, really
-(`KernelObject.updateLock_not_identity`); §4's claim is that what it writes is
-protocol bookkeeping no integrity policy governs, and this theorem is why that
-claim is about the model rather than about the abstraction chosen to state
-it. -/
-theorem lockWrite_carries_no_subject_data (o₁ o₂ : KernelObject) (op : RwLockOp)
-    (hLock : KernelObject.objectLockOf o₁ = KernelObject.objectLockOf o₂) :
-    KernelObject.objectLockOf (o₁.updateLock op)
-      = KernelObject.objectLockOf (o₂.updateLock op) := by
-  rw [KernelObject.objectLockOf_updateLock, KernelObject.objectLockOf_updateLock, hLock]
+    {s s' : LockedSystemState} (h : lockWritesOnly s s') :
+    noUnpermittedWrite permitted s.kernel s'.kernel :=
+  fun _ _ => by rw [h]
 
 -- ----------------------------------------------------------------------------
 -- SM8.D.4 — the bracket, under an arbitrary write rule and then at both
 -- ----------------------------------------------------------------------------
-
-
-/-- SM8.D.4 (**the scope of `noUnpermittedWrite`, exhibited**): an untrusted
-subject's acquire really does modify a trusted object, and the predicate does not
-count it.
-
-Stated rather than left to a reader of the definition, because the gap between
-"no forbidden write" and "no forbidden write *to lock-erased content*" is exactly
-where a reader could take the Biba results to say more than they do.  The
-modification is real (the lock word changes); it is uncounted by construction;
-and the justification is the modelling decision recorded at `noUnpermittedWrite`
-— kernel mediation, with the availability consequence carried by CC-5 rather
-than by the integrity predicate. -/
-theorem lockAcquisition_modifies_trusted_object_and_is_not_counted
-    (obj : KernelObject) (c : CoreId)
-    (hFree : KernelObject.objectLockOf obj = RwLockState.unheld) :
-    obj.updateLock (.tryAcquireWrite c) ≠ obj ∧
-      (obj.updateLock (.tryAcquireWrite c)).eraseLock = obj.eraseLock :=
-  ⟨obj.updateLock_not_identity hFree c, obj.eraseLock_updateLock _⟩
 
 /-- SM8.D.4 (**the generic result**): a 2PL bracket performs no write the rule
 forbids, whenever its guarded action performs none — for *any* write rule, and
@@ -1855,85 +1400,69 @@ The genericity is the content, not convenience: it is what makes the two
 instantiations below cover a deployment configured either way round, and what
 makes the result independent of the labelling entirely. -/
 theorem withLockSet_noUnpermittedWrite {α : Type} (permitted : SeLe4n.ObjId → Bool)
-    (S : LockSet) (core : CoreId) (action : SystemState → SystemState × α) (s : SystemState)
-    (hInv : s.objects.invExt)
-    (hActionInv : ∀ s', s'.objects.invExt → ((action s').1).objects.invExt)
-    (hAction : ∀ s', s'.objects.invExt → noUnpermittedWrite permitted s' (action s').1) :
-    noUnpermittedWrite permitted s (SeLe4n.Kernel.Concurrency.withLockSet S core action s).1 := by
-  rw [SeLe4n.Kernel.Concurrency.withLockSet_fst]
-  have hAcqInv := SeLe4n.Kernel.Concurrency.acquireAll_preserves_invExt core S.lockAcquireSequence s hInv
-  refine noUnpermittedWrite_trans
-    (lockWritesOnly_noUnpermittedWrite permitted
-      (acquireAll_lockWritesOnly core S.lockAcquireSequence s hInv))
-    (noUnpermittedWrite_trans (hAction _ hAcqInv)
-      (lockWritesOnly_noUnpermittedWrite permitted
-        (unwindAll_lockWritesOnly core _ _ (hActionInv _ hAcqInv))))
+    (S : LockSet) (core : CoreId) (action : SystemState → SystemState × α)
+    (s : LockedSystemState)
+    (hAction : noUnpermittedWrite permitted s.kernel (action s.kernel).1) :
+    noUnpermittedWrite permitted s.kernel
+      (SeLe4n.Kernel.Concurrency.withLockSet S core action s).1.kernel :=
+  hAction
 
-/-- SM8.D.4 (**the headline, standard BIBA**): under per-object locks, a
-subject at integrity `subject.integrity` running on **any** core writes no
-object standard BIBA forbids it to write, whenever the transition it brackets
-writes none.
-
-Acquiring a lock on a trusted object from an untrusted core is therefore not a
-BIBA violation: the acquire's only effect on that object is its lock word, which
-no observer reads (§1) and whose value the subject does not choose
-(`lockWrite_carries_no_subject_data`). -/
+/-- SM8.D.4 (**the headline, standard BIBA**): under per-core locks, a subject
+at integrity `subject.integrity` running on **any** core writes no object
+standard BIBA forbids it to write, whenever the transition it brackets writes
+none.  Acquiring a lock on a trusted object from an untrusted core writes the
+ghost table, not the object. -/
 theorem bibaIntegrity_underLockSet {α : Type} (ctx : LabelingContext) (subject : SecurityLabel)
-    (S : LockSet) (core : CoreId) (action : SystemState → SystemState × α) (s : SystemState)
-    (hInv : s.objects.invExt)
-    (hActionInv : ∀ s', s'.objects.invExt → ((action s').1).objects.invExt)
-    (hAction : ∀ s', s'.objects.invExt →
-      noUnpermittedWrite (bibaWritePermitted ctx subject) s' (action s').1) :
-    noUnpermittedWrite (bibaWritePermitted ctx subject) s
-      (SeLe4n.Kernel.Concurrency.withLockSet S core action s).1 :=
-  withLockSet_noUnpermittedWrite _ S core action s hInv hActionInv hAction
+    (S : LockSet) (core : CoreId) (action : SystemState → SystemState × α)
+    (s : LockedSystemState)
+    (hAction : noUnpermittedWrite (bibaWritePermitted ctx subject) s.kernel (action s.kernel).1) :
+    noUnpermittedWrite (bibaWritePermitted ctx subject) s.kernel
+      (SeLe4n.Kernel.Concurrency.withLockSet S core action s).1.kernel :=
+  withLockSet_noUnpermittedWrite _ S core action s hAction
 
 /-- SM8.D.4 (**the headline, seLe4n's authority direction**): the same, for the
 integrity order the kernel actually ships with. -/
 theorem authorityIntegrity_underLockSet {α : Type} (ctx : LabelingContext)
     (subject : SecurityLabel) (S : LockSet) (core : CoreId)
-    (action : SystemState → SystemState × α) (s : SystemState)
-    (hInv : s.objects.invExt)
-    (hActionInv : ∀ s', s'.objects.invExt → ((action s').1).objects.invExt)
-    (hAction : ∀ s', s'.objects.invExt →
-      noUnpermittedWrite (authorityWritePermitted ctx subject) s' (action s').1) :
-    noUnpermittedWrite (authorityWritePermitted ctx subject) s
-      (SeLe4n.Kernel.Concurrency.withLockSet S core action s).1 :=
-  withLockSet_noUnpermittedWrite _ S core action s hInv hActionInv hAction
+    (action : SystemState → SystemState × α) (s : LockedSystemState)
+    (hAction :
+      noUnpermittedWrite (authorityWritePermitted ctx subject) s.kernel (action s.kernel).1) :
+    noUnpermittedWrite (authorityWritePermitted ctx subject) s.kernel
+      (SeLe4n.Kernel.Concurrency.withLockSet S core action s).1.kernel :=
+  withLockSet_noUnpermittedWrite _ S core action s hAction
 
 /-- SM8.D.4 (**"under per-core locks"**, spelled out): the acquire and release
 phases satisfy both integrity rules on *every* core, with no hypothesis on the
-guarded action at all — because those phases are pure lock writes.
+guarded action at all — because those phases write only the ghost table.
 
 The `∀ core` is what makes this a statement about per-core locking rather than
 about one core's bracket: whichever core takes the set, and however many take
 sets concurrently (`noUnpermittedWrite_trans` composes their steps), the lock
 traffic itself adds no integrity-relevant write. -/
 theorem lockPhases_integrity_clean_on_every_core (ctx : LabelingContext)
-    (subject : SecurityLabel) (S : LockSet) (s : SystemState) (hInv : s.objects.invExt) :
+    (subject : SecurityLabel) (S : LockSet) (s : LockedSystemState) :
     ∀ core : CoreId,
-      noUnpermittedWrite (bibaWritePermitted ctx subject) s
-        (SeLe4n.Kernel.Concurrency.acquireAll core S.lockAcquireSequence s) ∧
-      noUnpermittedWrite (authorityWritePermitted ctx subject) s
-        (SeLe4n.Kernel.Concurrency.acquireAll core S.lockAcquireSequence s) ∧
-      noUnpermittedWrite (bibaWritePermitted ctx subject) s
-        (SeLe4n.Kernel.Concurrency.releaseAll core S.lockAcquireSequence.reverse s) ∧
-      noUnpermittedWrite (authorityWritePermitted ctx subject) s
-        (SeLe4n.Kernel.Concurrency.releaseAll core S.lockAcquireSequence.reverse s) :=
-  fun core =>
-    ⟨lockWritesOnly_noUnpermittedWrite _ (acquireAll_lockWritesOnly core _ s hInv),
-     lockWritesOnly_noUnpermittedWrite _ (acquireAll_lockWritesOnly core _ s hInv),
-     lockWritesOnly_noUnpermittedWrite _ (releaseAll_lockWritesOnly core _ s hInv),
-     lockWritesOnly_noUnpermittedWrite _ (releaseAll_lockWritesOnly core _ s hInv)⟩
+      noUnpermittedWrite (bibaWritePermitted ctx subject) s.kernel
+        { s with locks := LockState.acquireAll core S.lockAcquireSequence s.locks }.kernel ∧
+      noUnpermittedWrite (authorityWritePermitted ctx subject) s.kernel
+        { s with locks := LockState.acquireAll core S.lockAcquireSequence s.locks }.kernel ∧
+      noUnpermittedWrite (bibaWritePermitted ctx subject) s.kernel
+        { s with locks := LockState.unwindAll core S.lockAcquireSequence.reverse s.locks }.kernel ∧
+      noUnpermittedWrite (authorityWritePermitted ctx subject) s.kernel
+        { s with locks := LockState.unwindAll core S.lockAcquireSequence.reverse s.locks }.kernel :=
+  fun _ =>
+    ⟨lockWritesOnly_noUnpermittedWrite _ (lockTableWrite_lockWritesOnly s _),
+     lockWritesOnly_noUnpermittedWrite _ (lockTableWrite_lockWritesOnly s _),
+     lockWritesOnly_noUnpermittedWrite _ (lockTableWrite_lockWritesOnly s _),
+     lockWritesOnly_noUnpermittedWrite _ (lockTableWrite_lockWritesOnly s _)⟩
 
 -- ============================================================================
 -- §5  SM8.D.5 — the secure-information-flow witness under fine locks
 -- ============================================================================
 --
--- SM3.C.9 defers wrapping the `@[export]` bodies in `withLockSet`; what it does
--- not defer is the *shape* the wrap takes, which `lockSetForSyscall` already
--- fixes: resolve the syscall's declared footprint from the pre-state, bracket
--- the entry in it, commit.  §5 states the information-flow property of exactly
+-- The *shape* of a bracketed entry is fixed by `lockSetForSyscall`: resolve
+-- the syscall's declared footprint from the pre-state, bracket the entry in
+-- it, commit.  §5 states the information-flow property of exactly
 -- that shape, so the migration inherits its security argument instead of
 -- needing a new one.
 --
@@ -1944,15 +1473,12 @@ theorem lockPhases_integrity_clean_on_every_core (ctx : LabelingContext)
 -- what a failure commits.  It commits the pre-state — which is what the runtime
 -- does, and what makes the fail-closed statement below true.
 --
--- Second, the fail-closed statement itself **weakens under fine locks, and §1
--- is what makes the weaker form sufficient**.  Unbracketed, a denied syscall
--- leaves the state *identical* (`…_denied_preserves_state`).  Bracketed, it
--- cannot: the growing and shrinking phases really did write lock words.  What
--- survives is `lockWritesOnly`, and by §1 that is enough — the observer's view
--- on every core is unchanged, which is the property the fail-closed theorems
--- exist to deliver.  Recording the weakening explicitly matters: a reader who
--- assumed the literal state equality still held after SM3.C.9 would be assuming
--- something false.
+-- Second, the fail-closed statement keeps its strongest form.  Unbracketed, a
+-- denied syscall leaves the state *identical* (`…_denied_preserves_state`).
+-- Bracketed, the growing and shrinking phases advance the ghost lock table, and
+-- the kernel half is still identical — the denied entry commits its input and
+-- the phases write only `locks` — so the fail-closed theorems below conclude
+-- kernel-half equality, not merely invisibility.
 
 /-- SM8.D.5: a `Kernel` action as the total state transformer the 2PL bracket
 takes — commit the post-state on success, keep the pre-state on failure.
@@ -1972,13 +1498,6 @@ def commitKernelAction {α : Type} (k : Kernel α) (s : SystemState) :
 @[simp] theorem commitKernelAction_error {α : Type} (k : Kernel α) (s : SystemState)
     (e : KernelError) (h : k s = .error e) : commitKernelAction k s = (s, .error e) := by
   unfold commitKernelAction; rw [h]
-
-/-- SM8.D.5: a failing action commits its input, so it writes no lock words
-either — the base case the fail-closed theorem composes. -/
-theorem commitKernelAction_lockWritesOnly_of_error {α : Type} (k : Kernel α) (s : SystemState)
-    (e : KernelError) (h : k s = .error e) : lockWritesOnly s (commitKernelAction k s).1 := by
-  rw [commitKernelAction_error k s e h]
-  exact lockWritesOnly_refl s
 
 /-- SM8.D.5 (**the missing per-core live-entry witness**): the
 information-flow-checked syscall entry preserves the observer's projection when
@@ -2089,7 +1608,7 @@ declared footprint in the executing core's name, run the
 information-flow-checked entry, release.
 
 **What the bracket does and does not provide.**  The bracket is
-`withLockSetGhost` over `LockedSystemState`: the growing phase writes the
+`withLockSet` over `LockedSystemState`: the growing phase writes the
 **ghost lock table** (`s.locks`, by `LockState.bracket`) and the entry runs on
 the **kernel half** (`s.kernel`), so by type the lock trace never touches a
 kernel object.  The growing phase folds SM2.C's `tryAcquire*`, which
@@ -2123,7 +1642,7 @@ def syscallEntryUnderLockSet (ctx : LabelingContext) (S : LockSet) (lockCore : C
     (layout : SeLe4n.SyscallRegisterLayout) (executingCore : CoreId) (regCount : Nat)
     (s : SeLe4n.Kernel.Concurrency.LockedSystemState) :
     SeLe4n.Kernel.Concurrency.LockedSystemState × Except KernelError Unit :=
-  SeLe4n.Kernel.Concurrency.withLockSetGhost S lockCore
+  SeLe4n.Kernel.Concurrency.withLockSet S lockCore
     (commitKernelAction (syscallEntryChecked ctx layout executingCore regCount)) s
 
 /-- SM8.D.5 (**WS-LS LS2.1**): the kernel half of the bracket's result is the
@@ -2131,15 +1650,15 @@ committed entry at `s.kernel` — the state the growing phase hands the entry
 **is** the kernel half it was given, because the growing phase writes only the
 table.  Before LS2.1 this exposed the three word-level phases
 (`unwindAll … (commitKernelAction … (acquireAll … s)).1`); over the pair the
-lock trace sits in `.locks` (`withLockSetGhost_fst_locks`) and this is `rfl`.
-The value half is `withLockSetGhost_snd`. -/
+lock trace sits in `.locks` (`withLockSet_fst_locks`) and this is `rfl`.
+The value half is `withLockSet_snd`. -/
 theorem syscallEntryUnderLockSet_fst (ctx : LabelingContext) (S : LockSet) (lockCore : CoreId)
     (layout : SeLe4n.SyscallRegisterLayout) (executingCore : CoreId) (regCount : Nat)
     (s : SeLe4n.Kernel.Concurrency.LockedSystemState) :
     (syscallEntryUnderLockSet ctx S lockCore layout executingCore regCount s).1.kernel
       = (commitKernelAction (syscallEntryChecked ctx layout executingCore regCount)
           s.kernel).1 :=
-  SeLe4n.Kernel.Concurrency.withLockSetGhost_fst_kernel _ _ _ _
+  SeLe4n.Kernel.Concurrency.withLockSet_fst_kernel _ _ _ _
 
 /-- SM8.D.5 (**the headline, at the core the entry runs on**): a 2PL-bracketed
 live syscall entry is non-interfering on **every core** exactly when the
@@ -2224,7 +1743,7 @@ state is identical.  Before LS2.1 that claim did not survive the bracket,
 because the growing and shrinking phases wrote real lock words into kernel
 objects (`KernelObject.updateLock_not_identity`), and what survived was the
 weaker `lockWritesOnly`.  Over the pair the lock trace lives in `.locks`
-(`withLockSetGhost_fst_locks`) and the kernel half is the committed entry's
+(`withLockSet_fst_locks`) and the kernel half is the committed entry's
 input (`commitKernelAction_error`), so the identity is recovered on the kernel
 half — which is what the result is stated as, never as an identity of the
 whole pair: the table moved (`LockState.bracket`), and a refusal must still
@@ -3145,10 +2664,9 @@ inductive UncoveredLockDomain where
   -- **corrected** rather than merely satisfied: it read *"the object-domain
   -- syscall footprints hold `stateLevelLock` and per-object locks, **not** the
   -- object-store table lock"*, and `stateLevelLock` IS the object-store table
-  -- lock — `acquireLockOnObject`'s `.objStore` arm writes
-  -- `SystemState.objStoreLock` and reads nothing else of the `LockId`
-  -- (`acquireLock_objStore_congr`).  The two domains were therefore never
-  -- two lock words, which is why the cut unifies the footprints rather than
+  -- lock — a `.objStore`-kinded `LockId` names no object, so every one of
+  -- them is the one table key.  The two domains were therefore never
+  -- two locks, which is why the cut unifies the footprints rather than
   -- nesting two brackets: nesting would take that one word twice and walk the
   -- SM0.I ladder backwards.
   /-- WS-SM SM9.D.17 (audit): the **taint table's per-key realisation**.
@@ -3239,8 +2757,8 @@ may.
 One correction the deletion carries, because the retired constructor's own stated
 reason was false: it said the object-domain syscall footprints hold
 `stateLevelLock` *"**not** the object-store table lock"*.  They are the same lock
-— `acquireLockOnObject`'s `.objStore` arm writes `SystemState.objStoreLock` and
-reads nothing else of the `LockId` — so the two domains were never two words, and
+— a `.objStore`-kinded `LockId` names no object, so every one of them is the one
+table key — and the two domains were never two locks, and
 the seam acquires **one** unified footprint (`declaredUnifiedLockSetForAbiEntry`)
 rather than nesting two brackets that would take that word twice. -/
 def declaredFootprintUncoveredDomains : List (UncoveredLockDomain × String) :=
@@ -3357,47 +2875,6 @@ def syscallEntryUnderDeclaredLockSet (ctx : LabelingContext) (lockCore : CoreId)
   (declaredLockSetForEntry ctx layout executingCore regCount s.kernel).map
     (fun S => syscallEntryUnderLockSet ctx S lockCore layout executingCore regCount s)
 
-/-- SM8.D.5: the bracket's **action and shrinking phases**, run from a state in
-which the growing phase has already happened.
-
-`withLockSet` is acquire → action → unwind from a pre-acquire state.  A
-revalidating bracket has already acquired, and then *looked* at the state it
-ended up in; re-running the whole bracket from the original `s` would throw that
-state away and act on a snapshot the revalidation did not check.  This is the
-continuation: it runs the action on the acquired state it is handed and unwinds,
-without re-acquiring.
-
-`withLockSet_eq_continueFromAcquired` is the decomposition that ties it back — a
-full bracket **is** this continuation applied to `acquireAll`'s output — so the
-two forms cannot drift. -/
-def continueFromAcquired {α : Type} (S : LockSet) (lockCore : CoreId)
-    (action : SystemState → SystemState × α) (acquired : SystemState) : SystemState × α :=
-  let (postAction, result) := action acquired
-  (SeLe4n.Kernel.Concurrency.unwindAll lockCore S.lockAcquireSequence.reverse postAction, result)
-
-/-- SM8.D.5: the decomposition — the bracket is its growing phase followed by the
-continuation.  Definitional, so it is a naming of `withLockSet`'s own structure
-rather than a new fact; it exists so that a proof about the revalidated form can
-be transported to the plain one without unfolding either. -/
-theorem withLockSet_eq_continueFromAcquired {α : Type} (S : LockSet) (lockCore : CoreId)
-    (action : SystemState → SystemState × α) (s : SystemState) :
-    SeLe4n.Kernel.Concurrency.withLockSet S lockCore action s
-      = continueFromAcquired S lockCore action
-          (SeLe4n.Kernel.Concurrency.acquireAll lockCore S.lockAcquireSequence s) := rfl
-
-/-- SM8.D.5: the guarded entry, continued from the state the word-level growing
-phase ended in.  **WS-LS LS2.1**: this is the word-level bracket's
-continuation and stays beside the revalidated bracket (which is executed at
-the suspend seam until LS2.4); its decomposition `…_eq_fromAcquired` against
-`syscallEntryUnderLockSet` is retired with that bracket's move to the pair,
-where the kernel half the entry runs on *is* the pre-state's
-(`syscallEntryUnderLockSet_fst`). -/
-def syscallEntryFromAcquired (ctx : LabelingContext) (S : LockSet) (lockCore : CoreId)
-    (layout : SeLe4n.SyscallRegisterLayout) (executingCore : CoreId) (regCount : Nat)
-    (acquired : SystemState) : SystemState × Except KernelError Unit :=
-  continueFromAcquired S lockCore
-    (commitKernelAction (syscallEntryChecked ctx layout executingCore regCount)) acquired
-
 /-- SM8.D.5 (**why the shrinking phase needs a withdrawal**): a release by a
 core that is not a holder is the identity, so it cannot remove that core's
 *queued* request.
@@ -3411,7 +2888,7 @@ partial under contention.
 The theorem is unchanged; what changed is what it implies about this tree.
 `RwLockOp.cancel` exists (WS-LC LC1), the shrinking phase is `unwindAll` and
 withdraws before it releases (LC4.1), and
-`unwindAll_leaves_no_queued_request` closes the gap this result identifies.
+`LockState.unwindAll_not_queued` closes the gap this result identifies.
 It is kept, and kept in this form, because it is the *reason* the withdrawal
 has to exist: delete the withdrawal and this theorem is exactly the defect
 that comes back. -/
@@ -3424,347 +2901,6 @@ theorem rwLock_release_by_nonholder_preserves_waiters (l : RwLockState) (c : Cor
     rw [if_pos hNotReader]
   · show (if l.writerHeld ≠ some c then l else _).waiters = l.waiters
     rw [if_pos hNotWriter]
-
-/-- SM8.D.5 (**the resolve/acquire race, closed by revalidation**): the bracket
-that re-resolves the footprint **after** the growing phase and refuses if it
-moved.
-
-`declaredLockSetForEntry` reads the caller's CNode to resolve the target, and the
-CNode read lock that protects that read is in the set it *returns* — so it is
-acquired strictly after the read it should have been protecting.  Under the
-SM5.I global kernel-entry lock no other core can commit in between, which is why
-this is not a live defect; but this helper exists to model the shape SM3.C.9
-installs once that lock is gone, and there another core could replace the
-caller's capability between resolution and acquisition.  The guarded entry would
-then resolve a *different* target while holding locks for the first.
-
-The fix is the standard one for a footprint resolved before its own locks are
-held: re-resolve at the state the growing phase actually ended in and fail closed
-on any change.  Retrying is the alternative; refusing is what a total,
-deterministic transition can express, and a refused syscall here is invisible
-anyway (`syscallEntryUnderLockSet_failClosed_invisible`).
-
-**The observed state is an input, not a computation.**  An earlier cut
-re-resolved at `acquireAll lockCore S.lockAcquireSequence s`, which is derived
-from the very same immutable `s` — so the only writer it could see was the
-acquire itself, and the acquire writes nothing the resolver reads.  The refusal
-branch was therefore unreachable, and a guard whose refusal cannot happen does
-not model the race it was added for.  `observed` is now supplied: in this pure
-model a caller passes `acquireAll lockCore S.lockAcquireSequence s`
-(`syscallEntryUnderRevalidatedLockSetModel`), and a caller modelling a
-concurrent kernel passes that state plus whatever other cores committed —
-which is exactly the interleaving a single-state transition cannot manufacture
-for itself.  `revalidationRefusalReachable` exhibits a refusal.
-
-**The outcome distinguishes the three cases, because they oblige the caller
-differently.**  An earlier cut returned `Option`, collapsing "no footprint was
-declared" with "a footprint was acquired and then refused" — and the refusal
-branch returned `none` without running the shrinking phase, so a caller taking
-the documented fallback walked away still holding the abandoned footprint and
-blocked every later user of those objects.  Lock unwinding is now part of the
-result: `.refused` carries the **released** state, so there is no way to observe
-a refusal without also receiving the state the shrinking phase produced.
-
-**What "released" means (WS-LC LC4.4).**  It means the footprint is unwound,
-including the members the growing phase only managed to *queue* on.
-
-That was not always so, and the difference is worth stating because it is the
-whole reason `RwLockOp` gained a fifth constructor.  `releaseRead` /
-`releaseWrite` are the *identity* for a core that is not a holder
-(`rwLock_release_by_nonholder_preserves_waiters`), so where the growing phase
-found a member contended, `lockCore` is **queued** on it rather than holding
-it, and a release-only unwind could not remove that request — it stayed to be
-promoted later and strand the lock.  The shrinking phase is now
-`unwindAll`, which withdraws before it releases, and
-`unwindAll_leaves_no_queued_request` is the theorem: after a refusal
-`lockCore` has no queued request at any member of the footprint, with no
-hypothesis beyond the object store's own structural invariant.
-
-What it still does not mean is that `lockCore` holds *nothing* at those
-members.  A core holding a write lock, unwound at a member declared `.read`,
-keeps `writerHeld`; ruling that out needs the growing phase's mode agreement
-threaded through, which is a different claim from the one this docstring used
-to have to disclaim. -/
-inductive RevalidatedEntryOutcome where
-  /-- No footprint is declared for the operation the entry runs, so nothing was
-  acquired and nothing needs releasing — the caller keeps its coarser
-  serialisation. -/
-  | undeclared
-  /-- A footprint was declared and acquired, and then the resolution moved (or
-  the observed state does not hold it).  Carries the state with the footprint
-  **unwound** — released where it was granted, withdrawn where it was only
-  queued — so a refusal cannot be observed without the unwinding. -/
-  | refused (unwound : SystemState)
-  /-- The guard passed: the transition ran from the observed state and the
-  footprint was released after it. -/
-  | committed (result : SystemState × Except KernelError Unit)
-
-def syscallEntryUnderRevalidatedLockSet (ctx : LabelingContext) (lockCore : CoreId)
-    (layout : SeLe4n.SyscallRegisterLayout) (executingCore : CoreId) (regCount : Nat)
-    (s : SystemState) (observed : SystemState) : RevalidatedEntryOutcome :=
-  match declaredLockSetForEntry ctx layout executingCore regCount s with
-  | none => .undeclared
-  | some S =>
-    -- Two conditions, both necessary.  The resolution must not have moved, and
-    -- `observed` must actually **hold** the footprint: the continuation skips
-    -- the growing phase, so a state that merely resolves the same set — one
-    -- never produced by a successful acquisition, or one an intervening
-    -- replacement stripped a grant from — would have the syscall run and
-    -- release with no exclusion at all.
-    if declaredLockSetForEntry ctx layout executingCore regCount observed = some S
-        ∧ SeLe4n.Kernel.Concurrency.lockSetHeld lockCore S observed then
-      -- Continue from `observed`, NOT from `s`.  `observed` is the state the
-      -- growing phase actually ended in — the one the guard just revalidated —
-      -- so re-running the whole bracket from `s` would discard exactly the
-      -- intervening commits the revalidation accepted.
-      .committed (syscallEntryFromAcquired ctx S lockCore layout executingCore regCount observed)
-    else
-      -- Refusing still has to unwind: the footprint was acquired before the
-      -- guard ran, so returning without unwinding strands it on `lockCore`.
-      -- `unwindAll`, not `releaseAll` (WS-LC LC4.4): a release is the identity
-      -- for a non-holder, so a release-only unwind left every *contended*
-      -- member queued.
-      .refused (SeLe4n.Kernel.Concurrency.unwindAll lockCore
-        S.lockAcquireSequence.reverse observed)
-
-/-- SM8.D.5: the instance this pure model can run — the growing phase ends at
-`acquireAll lockCore S.lockAcquireSequence s` (the word-level growing phase),
-because no other core can commit in between.
-
-Kept as a named definition so the model's own reading is a *choice of `observed`*
-rather than the only shape the bracket has.  `revalidationRefusalReachable` is the
-other reading, and it is the one SM3.C.9's concurrent kernel lives in. -/
-def syscallEntryUnderRevalidatedLockSetModel (ctx : LabelingContext) (lockCore : CoreId)
-    (layout : SeLe4n.SyscallRegisterLayout) (executingCore : CoreId) (regCount : Nat)
-    (s : SystemState) : RevalidatedEntryOutcome :=
-  match declaredLockSetForEntry ctx layout executingCore regCount s with
-  | none => .undeclared
-  | some S =>
-    syscallEntryUnderRevalidatedLockSet ctx lockCore layout executingCore regCount s
-      (SeLe4n.Kernel.Concurrency.acquireAll lockCore S.lockAcquireSequence s)
-
-/-- SM8.D.5: when the revalidated bracket runs, the footprint it holds **is** the
-footprint the guarded entry's own decode resolves at the state that entry sees.
-
-This is the property the un-revalidated form cannot state: there, the returned
-set is the one resolved at the *pre*-acquire state, and nothing ties it to what
-the entry decodes once the locks are in hand. -/
-theorem syscallEntryUnderRevalidatedLockSet_footprint_stable (ctx : LabelingContext)
-    (lockCore : CoreId) (layout : SeLe4n.SyscallRegisterLayout) (executingCore : CoreId)
-    (regCount : Nat) (s observed : SystemState)
-    (r : SystemState × Except KernelError Unit)
-    (h : syscallEntryUnderRevalidatedLockSet ctx lockCore layout executingCore regCount s
-      observed = .committed r) :
-    ∃ S, declaredLockSetForEntry ctx layout executingCore regCount s = some S ∧
-      declaredLockSetForEntry ctx layout executingCore regCount observed = some S ∧
-      SeLe4n.Kernel.Concurrency.lockSetHeld lockCore S observed ∧
-      r = syscallEntryFromAcquired ctx S lockCore layout executingCore regCount observed := by
-  unfold syscallEntryUnderRevalidatedLockSet at h
-  cases hRes : declaredLockSetForEntry ctx layout executingCore regCount s with
-  | none => rw [hRes] at h; exact absurd h (by simp)
-  | some S =>
-    rw [hRes] at h
-    simp only at h
-    split at h
-    · next hGuard => exact ⟨S, rfl, hGuard.1, hGuard.2, by simpa using h.symm⟩
-    · exact absurd h (by simp)
-
-/-- SM8.D.5 (**fail-closed under the race**): if the resolution moved by the time
-the growing phase ended, nothing is bracketed and nothing is run.
-
-Stated over an arbitrary `observed`, so the hypothesis is satisfiable: it is the
-foreign commit the earlier `acquireAll`-derived form could not express.
-`revalidationRefusalReachable` discharges it on concrete states. -/
-theorem syscallEntryUnderRevalidatedLockSet_refuses_on_change (ctx : LabelingContext)
-    (lockCore : CoreId) (layout : SeLe4n.SyscallRegisterLayout) (executingCore : CoreId)
-    (regCount : Nat) (s observed : SystemState) (S : LockSet)
-    (hRes : declaredLockSetForEntry ctx layout executingCore regCount s = some S)
-    (hMoved : declaredLockSetForEntry ctx layout executingCore regCount observed ≠ some S) :
-    syscallEntryUnderRevalidatedLockSet ctx lockCore layout executingCore regCount s
-      observed = .refused (SeLe4n.Kernel.Concurrency.unwindAll lockCore
-        S.lockAcquireSequence.reverse observed) := by
-  unfold syscallEntryUnderRevalidatedLockSet
-  rw [hRes]
-  simp only
-  rw [if_neg (fun hG => hMoved hG.1)]
-
-/-- SM8.D.5 (**a refusal always carries the unwinding**): the state a `.refused`
-outcome hands back is the observed state with the declared footprint released —
-never the observed state itself.
-
-This is the property whose absence stranded the footprint: with an `Option`
-result there was no payload to carry the release, so the shrinking phase simply
-did not run on the refusal path and a caller taking the documented fallback kept
-holding every lock it had acquired. -/
-theorem syscallEntryUnderRevalidatedLockSet_refused_unwinds (ctx : LabelingContext)
-    (lockCore : CoreId) (layout : SeLe4n.SyscallRegisterLayout) (executingCore : CoreId)
-    (regCount : Nat) (s observed unwound : SystemState)
-    (h : syscallEntryUnderRevalidatedLockSet ctx lockCore layout executingCore regCount s
-      observed = .refused unwound) :
-    ∃ S, declaredLockSetForEntry ctx layout executingCore regCount s = some S ∧
-      unwound = SeLe4n.Kernel.Concurrency.unwindAll lockCore
-        S.lockAcquireSequence.reverse observed := by
-  unfold syscallEntryUnderRevalidatedLockSet at h
-  cases hRes : declaredLockSetForEntry ctx layout executingCore regCount s with
-  | none => rw [hRes] at h; exact absurd h (by simp)
-  | some S =>
-    rw [hRes] at h
-    simp only at h
-    split at h
-    · exact absurd h (by simp)
-    · exact ⟨S, rfl, by simpa using h.symm⟩
-
-/-- **WS-LC LC4.4 (the refusal's payoff)**: a refused entry leaves `lockCore`
-with **no queued request at any member of the declared footprint**.
-
-This is the theorem the "what 'released' does and does not mean" caveat was
-written to disclaim, and it is why that caveat is gone.  A release is the
-identity for a non-holder, so before the shrinking phase gained a withdrawal
-this statement was false of exactly the members the growing phase found
-contended — the ones a refusal most needs to give back.
-
-The only hypothesis is `observed.objects.invExt`, the object store's own
-structural invariant.  Nothing is assumed about the footprint: not that its
-members resolve, not that they are distinct, not that `lockCore` holds any of
-them.  What it does not claim is that `lockCore` holds nothing at those
-members — see `unwindAll_leaves_no_queued_request` for why that is a
-different, mode-sensitive statement. -/
-theorem syscallEntryUnderRevalidatedLockSet_refused_leaves_no_queued_request
-    (ctx : LabelingContext) (lockCore : CoreId)
-    (layout : SeLe4n.SyscallRegisterLayout) (executingCore : CoreId)
-    (regCount : Nat) (s observed unwound : SystemState)
-    (hExt : observed.objects.invExt)
-    (h : syscallEntryUnderRevalidatedLockSet ctx lockCore layout executingCore regCount s
-      observed = .refused unwound) :
-    ∃ S, declaredLockSetForEntry ctx layout executingCore regCount s = some S ∧
-      ∀ p ∈ S.lockAcquireSequence,
-        ¬ SeLe4n.Kernel.Concurrency.keyQueued lockCore p.fst unwound := by
-  obtain ⟨S, hRes, hEq⟩ :=
-    syscallEntryUnderRevalidatedLockSet_refused_unwinds ctx lockCore layout executingCore
-      regCount s observed unwound h
-  refine ⟨S, hRes, ?_⟩
-  intro p hp
-  rw [hEq]
-  exact SeLe4n.Kernel.Concurrency.unwindAll_leaves_no_queued_request lockCore
-    S.lockAcquireSequence.reverse observed hExt p (List.mem_reverse.mpr hp)
-
-/-- SM8.D.5 (**the refusal is reachable**): a state on which the guard fires.
-
-The point the previous cut could not make.  Take any two states whose declared
-footprints differ and at least one is `some` — the resolver reads the caller's
-CNode, so a foreign commit that replaces the capability is exactly such a pair —
-and the bracket refuses.  The witness is stated over the *difference*, not over a
-particular fixture, so it holds for every way a concurrent kernel can move the
-resolution rather than for one hand-built example. -/
-theorem revalidationRefusalReachable (ctx : LabelingContext) (lockCore : CoreId)
-    (layout : SeLe4n.SyscallRegisterLayout) (executingCore : CoreId) (regCount : Nat)
-    (s observed : SystemState)
-    (hDeclared : (declaredLockSetForEntry ctx layout executingCore regCount s).isSome)
-    (hDiffers : declaredLockSetForEntry ctx layout executingCore regCount observed
-      ≠ declaredLockSetForEntry ctx layout executingCore regCount s) :
-    ∃ released, syscallEntryUnderRevalidatedLockSet ctx lockCore layout executingCore
-      regCount s observed = .refused released := by
-  cases hRes : declaredLockSetForEntry ctx layout executingCore regCount s with
-  | none => rw [hRes] at hDeclared; exact absurd hDeclared (by simp)
-  | some S =>
-    refine ⟨_, syscallEntryUnderRevalidatedLockSet_refuses_on_change ctx lockCore layout
-      executingCore regCount s observed S hRes ?_⟩
-    rw [hRes] at hDiffers
-    exact hDiffers
-
-/-- SM8.D.5 (**the refusal is the resolution change, not a lost grant**).
-
-`syscallEntryUnderRevalidatedLockSet` refuses on two different conditions — the
-resolution moved, or `observed` does not hold the declared footprint — and a
-witness that does not distinguish them is weak evidence for the race being
-modelled.  A state assembled without ever running the growing phase holds none of
-the locks, so it refuses for the *second* reason and says nothing about the
-first.
-
-This carries `lockSetHeld` as a hypothesis, so the conclusion is about a state
-that really could be a post-growing-phase one: every declared lock is still held
-in `lockCore`'s name, and the refusal is attributable to the foreign commit
-alone.  That is the shape the suite's fixture is now built to satisfy — the
-observed state is the word-level growing phase's output
-(`acquireAll lockCore S.lockAcquireSequence s`) with a lock-preserving
-capability replacement applied on top. -/
-theorem syscallEntryUnderRevalidatedLockSet_refuses_on_change_while_held
-    (ctx : LabelingContext) (lockCore : CoreId)
-    (layout : SeLe4n.SyscallRegisterLayout) (executingCore : CoreId) (regCount : Nat)
-    (s observed : SystemState) (S : LockSet)
-    (hRes : declaredLockSetForEntry ctx layout executingCore regCount s = some S)
-    (_hHeld : SeLe4n.Kernel.Concurrency.lockSetHeld lockCore S observed)
-    (hDiffers : declaredLockSetForEntry ctx layout executingCore regCount observed ≠ some S) :
-    syscallEntryUnderRevalidatedLockSet ctx lockCore layout executingCore regCount s
-        observed
-      = .refused (SeLe4n.Kernel.Concurrency.unwindAll lockCore
-          S.lockAcquireSequence.reverse observed) :=
-  -- The held hypothesis is deliberately unused in the *proof*: the guard is a
-  -- conjunction, so the resolution change alone already forces the refusal.
-  -- Carrying it in the *statement* is the point — it pins which of the two
-  -- refusal causes this theorem is about, hence the underscore rather than a
-  -- weaker statement that omits it.
-  syscallEntryUnderRevalidatedLockSet_refuses_on_change ctx lockCore layout
-    executingCore regCount s observed S hRes hDiffers
-
-/-- SM8.D.5: **the revalidated bracket does not refine the plain one in general —
-and must not.**
-
-An earlier cut stated `…_refines` for an arbitrary `observed`: whenever the
-revalidated form ran, it ran exactly `syscallEntryUnderDeclaredLockSet`'s
-transition.  That was only true because the action was being run from `s`, which
-is the defect — a guard that accepts a state and then acts on a different one has
-checked nothing.  With the action continued from `observed`, the two forms agree
-exactly when `observed` is the state the plain bracket's own growing phase
-produces, and that is `syscallEntryUnderRevalidatedLockSetModel_refines` below.
-
-For any other `observed` they *should* differ: that difference is the foreign
-commits being carried into the transition instead of discarded.  Stating a
-general refinement here would therefore re-assert the bug. -/
-theorem syscallEntryUnderRevalidatedLockSet_not_refines_in_general :
-    ∀ ctx lockCore layout executingCore regCount s observed r,
-      syscallEntryUnderRevalidatedLockSet ctx lockCore layout executingCore regCount s
-        observed = .committed r →
-      ∃ S, declaredLockSetForEntry ctx layout executingCore regCount s = some S ∧
-        r = syscallEntryFromAcquired ctx S lockCore layout executingCore regCount observed := by
-  intro ctx lockCore layout executingCore regCount s observed r h
-  obtain ⟨S, hRes, _, _, hEq⟩ :=
-    syscallEntryUnderRevalidatedLockSet_footprint_stable ctx lockCore layout executingCore
-      regCount s observed r h
-  exact ⟨S, hRes, hEq⟩
-
-/-- SM8.D.5: the model instance refines the plain word-level bracket at the
-declared footprint, so choosing `observed` does not change what a committed
-entry runs.
-
-**WS-LS LS2.1.**  Before this row the conclusion was
-`syscallEntryUnderDeclaredLockSet … s = some r`, which unfolded to exactly
-this: the declared footprint exists and `r` is `withLockSet` of the committed
-entry at it.  The named bracket now lives over the pair, so the word-level
-bracket the model continues from is named directly; the content is
-unchanged.  Relating the model to the ghost bracket's kernel half is the
-word-level/ghost refinement the plan schedules after the seams switch, not a
-fact this row can state. -/
-theorem syscallEntryUnderRevalidatedLockSetModel_refines (ctx : LabelingContext)
-    (lockCore : CoreId) (layout : SeLe4n.SyscallRegisterLayout) (executingCore : CoreId)
-    (regCount : Nat) (s : SystemState) (r : SystemState × Except KernelError Unit)
-    (h : syscallEntryUnderRevalidatedLockSetModel ctx lockCore layout executingCore regCount s
-      = .committed r) :
-    ∃ S, declaredLockSetForEntry ctx layout executingCore regCount s = some S ∧
-      r = SeLe4n.Kernel.Concurrency.withLockSet S lockCore
-        (commitKernelAction (syscallEntryChecked ctx layout executingCore regCount)) s := by
-  unfold syscallEntryUnderRevalidatedLockSetModel at h
-  cases hRes : declaredLockSetForEntry ctx layout executingCore regCount s with
-  | none => rw [hRes] at h; exact absurd h (by simp)
-  | some S =>
-    rw [hRes] at h
-    simp only at h
-    obtain ⟨S', hRes', _, _, hEq⟩ :=
-      syscallEntryUnderRevalidatedLockSet_footprint_stable ctx lockCore layout executingCore
-        regCount s _ r h
-    rw [hRes] at hRes'
-    cases Option.some.inj hRes'
-    exact ⟨S, rfl, hEq.trans (withLockSet_eq_continueFromAcquired S lockCore _ s).symm⟩
 
 /-- SM8.D.5 (**fail-closed**): every syscall other than `.tcbSuspend` is
 undeclared, so no footprint is bracketed and the caller keeps its existing
@@ -3938,30 +3074,20 @@ inductive FineLockClaimId where
   | failClosedUnderFineLocks
   /-- SM8.D.3 — CC-5's inventory entry is backed by the bound, not by prose. -/
   | contentionChannelRegistered
-  /-- SM8.D.5 — a **committed** revalidated entry ran from the state the guard
-  checked, holding the footprint it declared.  Separate from
-  `.secureFlowUnderFineLocks`, which is about the plain pre-state bracket: the
-  revalidated path runs `syscallEntryFromAcquired` from `observed`, so an arm
-  citing only the plain bracket would keep elaborating if that path regressed. -/
-  | revalidatedCommitTracked
-  /-- SM8.D.5 — a **refused** revalidated entry unwinds: the outcome carries the
-  released state rather than the observed one. -/
-  | revalidatedRefusalUnwinds
   deriving DecidableEq, Repr
 
 def FineLockClaimId.all : List FineLockClaimId :=
   [ .lockStateInvisible, .readerMultiplicityHidden, .writerExclusionHidden
   , .contentionDelayBounded, .integrityUnderLocks, .authorityIntegrityUnderLocks
   , .secureFlowUnderFineLocks, .failClosedUnderFineLocks
-  , .contentionChannelRegistered
-  , .revalidatedCommitTracked, .revalidatedRefusalUnwinds ]
+  , .contentionChannelRegistered ]
 
 theorem FineLockClaimId.mem_all (id : FineLockClaimId) : id ∈ FineLockClaimId.all := by
   cases id <;> decide
 
 theorem FineLockClaimId.all_nodup : FineLockClaimId.all.Nodup := by decide
 
-theorem fineLockClaims_count : FineLockClaimId.all.length = 11 := by rfl
+theorem fineLockClaims_count : FineLockClaimId.all.length = 9 := by rfl
 
 /-- SM8.D: the plan sub-task each claim discharges. -/
 def FineLockClaimId.subTask : FineLockClaimId → String
@@ -3974,8 +3100,6 @@ def FineLockClaimId.subTask : FineLockClaimId → String
   | .secureFlowUnderFineLocks => "SM8.D.5"
   | .failClosedUnderFineLocks => "SM8.D.5"
   | .contentionChannelRegistered => "SM8.D.3"
-  | .revalidatedCommitTracked => "SM8.D.5"
-  | .revalidatedRefusalUnwinds => "SM8.D.5"
 
 /-- SM8.D: **every proof-carrying sub-task of the phase is claimed.**  D.6 is
 the scenario suite (`tests/SmpInformationFlowSuite.lean` §7), which is a Tier-2
@@ -3983,7 +3107,7 @@ runner rather than a theorem, so it is deliberately absent. -/
 theorem fineLockClaims_cover_subTasks :
     FineLockClaimId.all.map FineLockClaimId.subTask
       = ["SM8.D.1", "SM8.D.2", "SM8.D.3", "SM8.D.3", "SM8.D.4", "SM8.D.4", "SM8.D.5",
-         "SM8.D.5", "SM8.D.3", "SM8.D.5", "SM8.D.5"] := by
+         "SM8.D.5", "SM8.D.3"] := by
   rfl
 
 /-- SM8.D: the name of the theorem that discharges each claim, compile-time
@@ -3998,8 +3122,6 @@ def fineLockClaimTheorem : FineLockClaimId → String
   | .secureFlowUnderFineLocks => niName! syscallEntryUnderLockSet_preserves_projectionOnCore_atCore
   | .failClosedUnderFineLocks => niName! syscallEntryUnderLockSet_failClosed_invisible
   | .contentionChannelRegistered => niName! acceptedCovertChannel_lockContention_bounded
-  | .revalidatedCommitTracked => niName! syscallEntryUnderRevalidatedLockSet_footprint_stable
-  | .revalidatedRefusalUnwinds => niName! syscallEntryUnderRevalidatedLockSet_refused_unwinds
 
 theorem fineLockClaimTheorem_nodup :
     (FineLockClaimId.all.map fineLockClaimTheorem).Nodup := by decide
@@ -4013,24 +3135,24 @@ each arm is the conclusion of the theorem `fineLockClaimTheorem` names, so
 supplying a different one is a type error. -/
 def FineLockClaimId.evidenceProp : FineLockClaimId → Prop
   | .lockStateInvisible =>
-      ∀ (ctx : LabelingContext) (c : CoreId) (L : SecurityLabel) (s : SystemState)
-        (oid : SeLe4n.ObjId) (l₁ l₂ : RwLockState), s.objects.invExt →
-        ObservableState.onCore ctx c L (setObjectLockAt s oid l₁)
-          = ObservableState.onCore ctx c L (setObjectLockAt s oid l₂)
+      ∀ (ctx : LabelingContext) (c : CoreId) (L : SecurityLabel) (s : LockedSystemState)
+        (k : LockKey) (l₁ l₂ : RwLockState),
+        ObservableState.onCore ctx c L (setLockAt s k l₁).kernel
+          = ObservableState.onCore ctx c L (setLockAt s k l₂).kernel
   | .readerMultiplicityHidden =>
-      ∀ (ctx : LabelingContext) (c : CoreId) (L : SecurityLabel) (s : SystemState)
-        (oid : SeLe4n.ObjId) (readers₁ readers₂ : List CoreId), s.objects.invExt →
+      ∀ (ctx : LabelingContext) (c : CoreId) (L : SecurityLabel) (s : LockedSystemState)
+        (k : LockKey) (readers₁ readers₂ : List CoreId),
         ObservableState.onCore ctx c L
-            (setObjectLockAt s oid { RwLockState.unheld with readers := readers₁ })
+            (setLockAt s k { RwLockState.unheld with readers := readers₁ }).kernel
           = ObservableState.onCore ctx c L
-            (setObjectLockAt s oid { RwLockState.unheld with readers := readers₂ })
+            (setLockAt s k { RwLockState.unheld with readers := readers₂ }).kernel
   | .writerExclusionHidden =>
-      ∀ (ctx : LabelingContext) (c : CoreId) (L : SecurityLabel) (s : SystemState)
-        (oid : SeLe4n.ObjId) (holder : CoreId) (mode : AccessMode), s.objects.invExt →
+      ∀ (ctx : LabelingContext) (c : CoreId) (L : SecurityLabel) (s : LockedSystemState)
+        (k : LockKey) (holder : CoreId) (mode : AccessMode),
         ObservableState.onCore ctx c L
-            (setObjectLockAt s oid
-              { RwLockState.unheld with writerHeld := some holder, waiters := [(c, mode)] })
-          = ObservableState.onCore ctx c L (setObjectLockAt s oid RwLockState.unheld)
+            (setLockAt s k
+              { RwLockState.unheld with writerHeld := some holder, waiters := [(c, mode)] }).kernel
+          = ObservableState.onCore ctx c L (setLockAt s k RwLockState.unheld).kernel
   | .contentionDelayBounded =>
       ∀ (e : SeLe4n.Kernel.Concurrency.RwLockExecution) (maxDelay : Nat),
         SeLe4n.Kernel.Concurrency.FairTrace e maxDelay →
@@ -4048,20 +3170,16 @@ def FineLockClaimId.evidenceProp : FineLockClaimId → Prop
             delay ≤ lockContentionDelayBound maxDelay
   | .integrityUnderLocks =>
       ∀ (α : Type) (ctx : LabelingContext) (subject : SecurityLabel) (S : LockSet) (core : CoreId)
-        (action : SystemState → SystemState × α) (s : SystemState), s.objects.invExt →
-        (∀ s', s'.objects.invExt → ((action s').1).objects.invExt) →
-        (∀ s', s'.objects.invExt →
-          noUnpermittedWrite (bibaWritePermitted ctx subject) s' (action s').1) →
-        noUnpermittedWrite (bibaWritePermitted ctx subject) s
-          (SeLe4n.Kernel.Concurrency.withLockSet S core action s).1
+        (action : SystemState → SystemState × α) (s : LockedSystemState),
+        noUnpermittedWrite (bibaWritePermitted ctx subject) s.kernel (action s.kernel).1 →
+        noUnpermittedWrite (bibaWritePermitted ctx subject) s.kernel
+          (SeLe4n.Kernel.Concurrency.withLockSet S core action s).1.kernel
   | .authorityIntegrityUnderLocks =>
       ∀ (α : Type) (ctx : LabelingContext) (subject : SecurityLabel) (S : LockSet) (core : CoreId)
-        (action : SystemState → SystemState × α) (s : SystemState), s.objects.invExt →
-        (∀ s', s'.objects.invExt → ((action s').1).objects.invExt) →
-        (∀ s', s'.objects.invExt →
-          noUnpermittedWrite (authorityWritePermitted ctx subject) s' (action s').1) →
-        noUnpermittedWrite (authorityWritePermitted ctx subject) s
-          (SeLe4n.Kernel.Concurrency.withLockSet S core action s).1
+        (action : SystemState → SystemState × α) (s : LockedSystemState),
+        noUnpermittedWrite (authorityWritePermitted ctx subject) s.kernel (action s.kernel).1 →
+        noUnpermittedWrite (authorityWritePermitted ctx subject) s.kernel
+          (SeLe4n.Kernel.Concurrency.withLockSet S core action s).1.kernel
   | .secureFlowUnderFineLocks =>
       -- Quantified over the confinement core `c'`, NOT pinned at `bootCoreId`:
       -- an ordinary syscall on a secondary core writes that core's scheduler
@@ -4116,49 +3234,27 @@ def FineLockClaimId.evidenceProp : FineLockClaimId → Prop
                 (∀ k ∈ steps, 1 ≤ k) →
                 ∀ tMin : Nat, e.CostedCriticalSection tMin →
                   steps.length * tMin ≤ e.elapsed 0 e.ops.length)
-  | .revalidatedCommitTracked =>
-      -- Over an ARBITRARY `observed`, so a concurrent kernel's foreign commits
-      -- are in scope: a committed outcome ran from the state the guard checked
-      -- and held the footprint it declared there.
-      ∀ (ctx : LabelingContext) (lockCore : CoreId)
-        (layout : SeLe4n.SyscallRegisterLayout) (executingCore : CoreId) (regCount : Nat)
-        (s observed : SystemState) (r : SystemState × Except KernelError Unit),
-        syscallEntryUnderRevalidatedLockSet ctx lockCore layout executingCore regCount s
-            observed = .committed r →
-        ∃ S, declaredLockSetForEntry ctx layout executingCore regCount s = some S ∧
-          declaredLockSetForEntry ctx layout executingCore regCount observed = some S ∧
-          SeLe4n.Kernel.Concurrency.lockSetHeld lockCore S observed ∧
-          r = syscallEntryFromAcquired ctx S lockCore layout executingCore regCount observed
-  | .revalidatedRefusalUnwinds =>
-      ∀ (ctx : LabelingContext) (lockCore : CoreId)
-        (layout : SeLe4n.SyscallRegisterLayout) (executingCore : CoreId) (regCount : Nat)
-        (s observed unwound : SystemState),
-        syscallEntryUnderRevalidatedLockSet ctx lockCore layout executingCore regCount s
-            observed = .refused unwound →
-        ∃ S, declaredLockSetForEntry ctx layout executingCore regCount s = some S ∧
-          unwound = SeLe4n.Kernel.Concurrency.unwindAll lockCore
-            S.lockAcquireSequence.reverse observed
 
 /-- SM8.D: **the evidence** — every claim discharged by citation.  This
 definition is the phase's completeness check: it elaborates only if every claim
 has a theorem, and only if that theorem proves *that* claim. -/
 def fineLockClaimEvidence : (id : FineLockClaimId) → id.evidenceProp
   | .lockStateInvisible =>
-      fun ctx c L s oid l₁ l₂ hInv => onCore_lock_indistinguishable ctx c L s oid l₁ l₂ hInv
+      fun ctx c L s k l₁ l₂ => onCore_lock_indistinguishable ctx c L s k l₁ l₂
   | .readerMultiplicityHidden =>
-      fun ctx c L s oid r₁ r₂ hInv => readerMultiplicity_not_observable ctx c L s oid r₁ r₂ hInv
+      fun ctx c L s k r₁ r₂ => readerMultiplicity_not_observable ctx c L s k r₁ r₂
   | .writerExclusionHidden =>
-      fun ctx c L s oid holder mode hInv =>
-        blockedAcquirer_observes_nothing ctx c L s oid holder mode hInv
+      fun ctx c L s k holder mode =>
+        blockedAcquirer_observes_nothing ctx c L s k holder mode
   | .contentionDelayBounded =>
       fun e maxDelay hFair hInit c m kEnq hQueued hWithin hNoCancel =>
         lockContention_delay_bounded e maxDelay hFair hInit c m kEnq hQueued hWithin hNoCancel
   | .integrityUnderLocks =>
-      fun _α ctx subject S core action s hInv hActionInv hAction =>
-        bibaIntegrity_underLockSet ctx subject S core action s hInv hActionInv hAction
+      fun _α ctx subject S core action s hAction =>
+        bibaIntegrity_underLockSet ctx subject S core action s hAction
   | .authorityIntegrityUnderLocks =>
-      fun _α ctx subject S core action s hInv hActionInv hAction =>
-        authorityIntegrity_underLockSet ctx subject S core action s hInv hActionInv hAction
+      fun _α ctx subject S core action s hAction =>
+        authorityIntegrity_underLockSet ctx subject S core action s hAction
   | .secureFlowUnderFineLocks =>
       fun ctx observer S lockCore layout executingCore regCount s st' c' hOk hProjOn hConfined =>
         syscallEntryUnderLockSet_preserves_projectionOnCore_atCore ctx observer S lockCore
@@ -4178,14 +3274,6 @@ def fineLockClaimEvidence : (id : FineLockClaimId) → id.evidenceProp
          fun steps hNodup hRange hPos tMin hCost =>
            lockContentionChannel_rate_per_execution_time e tMin hCost steps hNodup hRange
              hPos⟩
-  | .revalidatedCommitTracked =>
-      fun ctx lockCore layout executingCore regCount s observed r h =>
-        syscallEntryUnderRevalidatedLockSet_footprint_stable ctx lockCore layout executingCore
-          regCount s observed r h
-  | .revalidatedRefusalUnwinds =>
-      fun ctx lockCore layout executingCore regCount s observed unwound h =>
-        syscallEntryUnderRevalidatedLockSet_refused_unwinds ctx lockCore layout executingCore
-          regCount s observed unwound h
 
 /-- SM8.D: the evidence is non-empty at every claim — the sanity check that the
 table is inhabited rather than a family of vacuous `True`s. -/

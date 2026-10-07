@@ -156,7 +156,7 @@ open SeLe4n.Kernel.Concurrency
 
 #check @executionOfHeld
 #check @executionOfHeld_heldBy
-#check @lockSetHeld_realizes_heldBy
+#check @heldAll_realizes_heldBy
 #check @twoCorePathScenario
 
 /-! ## SM3.D — Inventory aggregator -/
@@ -357,22 +357,20 @@ example :
     (some ⟨21⟩) (some ⟨22⟩)
       (some (ThreadId.ofNat 23))).sizeWithinBound
 
-/-- SM3.D §7b (non-vacuous bridge): after core 0 acquires the table lock on
-the default state (SM3.C `acquireLockOnObject`), it genuinely holds the
-singleton `{objStore 0}` (SM3.C `lockSetHeld`), so `lockSetHeld_realizes_heldBy`
-yields both the concrete `lockHeld` and the abstract `heldBy` for that lock.
-This exercises the bridge on a *non-empty, genuinely-held* lock set. -/
+/-- SM3.D §7b (non-vacuous bridge): after core 0 runs the growing phase of
+the singleton `{objStore 0}` from the all-free ghost lock table, it genuinely
+holds that lock (`LockState.acquireAll_unheld_held`), so
+`heldAll_realizes_heldBy` yields both the table-level `held` and the abstract
+`heldBy` for it.  This exercises the bridge on a *non-empty, genuinely-held*
+lock set. -/
 example :
     ∀ p ∈ (LockSet.singleton .objStore .write).pairs,
-      keyHeld c0 p.fst p.snd
-          (acquireLockOnObject (default : SeLe4n.Model.SystemState) c0
-            ⟨.objStore, SeLe4n.ObjId.ofNat 0⟩ .write) ∧
+      (LockState.acquireAll c0 (LockSet.singleton .objStore .write).pairs
+          LockState.unheld).held c0 p.fst p.snd ∧
       heldBy (executionOfHeld c0
           (LockSet.singleton .objStore .write) none) c0 p.fst :=
-  lockSetHeld_realizes_heldBy c0
-    (LockSet.singleton .objStore .write)
-    (acquireLockOnObject (default : SeLe4n.Model.SystemState) c0
-      ⟨.objStore, SeLe4n.ObjId.ofNat 0⟩ .write) none (by decide)
+  heldAll_realizes_heldBy c0 (LockSet.singleton .objStore .write) _ none
+    (LockState.acquireAll_unheld_held c0 _ (by decide))
 
 /-- SM3.D §7 grounding: a real `CorePrefixOf` witness on a 2-element lock
 set.  `execGrounded` holds the prefix `[tcb5]` of the canonical acquire

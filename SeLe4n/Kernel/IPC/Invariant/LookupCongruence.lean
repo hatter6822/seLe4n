@@ -546,7 +546,6 @@ structure OffSchedulerAgrees (s1 s2 : SystemState) : Prop where
   cdtNextNode : s2.cdtNextNode = s1.cdtNextNode
   scThreadIndex : s2.scThreadIndex = s1.scThreadIndex
   tlb : s2.tlb = s1.tlb
-  objStoreLock : s2.objStoreLock = s1.objStoreLock
   perCoreTlb : s2.perCoreTlb = s1.perCoreTlb
   perCoreICache : s2.perCoreICache = s1.perCoreICache
   pendingIcacheMaintenance :
@@ -587,7 +586,7 @@ namespace OffSchedulerAgrees
 /-- Reflexivity. -/
 theorem refl (st : SystemState) : OffSchedulerAgrees st st :=
   ⟨fun _ => rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl,
-   rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl⟩
+   rfl, rfl, rfl, rfl, rfl, rfl, rfl⟩
 
 /-- Symmetry. -/
 theorem symm {s1 s2 : SystemState} (h : OffSchedulerAgrees s1 s2) :
@@ -596,7 +595,7 @@ theorem symm {s1 s2 : SystemState} (h : OffSchedulerAgrees s1 s2) :
    h.objectIndexSet.symm, h.services.symm, h.irqHandlers.symm, h.lifecycle.symm,
    h.asidTable.symm, h.interfaceRegistry.symm, h.serviceRegistry.symm, h.cdt.symm,
    h.cdtSlotNode.symm, h.cdtNodeSlot.symm, h.cdtNextNode.symm, h.scThreadIndex.symm,
-   h.tlb.symm, h.objStoreLock.symm, h.perCoreTlb.symm, h.perCoreICache.symm,
+   h.tlb.symm, h.perCoreTlb.symm, h.perCoreICache.symm,
    h.pendingIcacheMaintenance.symm, h.pendingPhysicalWrites.symm, h.declassificationAuditLog.symm,
    h.declassificationAuditEpoch.symm, h.declassificationRefusals.symm,
    h.declassificationTaint.symm⟩
@@ -613,7 +612,7 @@ theorem trans {s1 s2 s3 : SystemState}
    hSecond.serviceRegistry.trans hFirst.serviceRegistry, hSecond.cdt.trans hFirst.cdt,
    hSecond.cdtSlotNode.trans hFirst.cdtSlotNode, hSecond.cdtNodeSlot.trans hFirst.cdtNodeSlot,
    hSecond.cdtNextNode.trans hFirst.cdtNextNode, hSecond.scThreadIndex.trans hFirst.scThreadIndex,
-   hSecond.tlb.trans hFirst.tlb, hSecond.objStoreLock.trans hFirst.objStoreLock,
+   hSecond.tlb.trans hFirst.tlb,
    hSecond.perCoreTlb.trans hFirst.perCoreTlb, hSecond.perCoreICache.trans hFirst.perCoreICache,
    hSecond.pendingIcacheMaintenance.trans hFirst.pendingIcacheMaintenance,
    hSecond.pendingPhysicalWrites.trans hFirst.pendingPhysicalWrites,
@@ -633,7 +632,7 @@ off-scheduler. -/
 theorem offSchedulerAgrees_scheduler_update (st : SystemState) (σ : SchedulerState) :
     OffSchedulerAgrees st { st with scheduler := σ } :=
   ⟨fun _ => rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl,
-   rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl⟩
+   rfl, rfl, rfl, rfl, rfl, rfl, rfl⟩
 
 /-- SM6.D: `ensureRunnable` (the single-core boot enqueue) agrees with its
 input off-scheduler. -/
@@ -680,7 +679,7 @@ theorem enqueueRunnableOnCore_offSchedulerAgrees_of_ready
     (hInv : st.objects.invExt) :
     OffSchedulerAgrees st (enqueueRunnableOnCore st c tid) := by
   refine ⟨fun oid => enqueueRunnableOnCore_objects_getElem_eq_of_ready st c tid tcb hTcb hReady hInv oid,
-    ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_⟩
+    ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_⟩
   all_goals simp only [enqueueRunnableOnCore, SystemState.getTcbWitnessed?_eq_some hTcb]
   all_goals split <;> rfl
 
@@ -721,7 +720,7 @@ theorem storeObject_offSchedulerAgrees {s1 s2 r1 r2 : SystemState}
   cases h2
   refine ⟨hObjEq, hRel.machine, ?_, ?_, hRel.services, hRel.irqHandlers, ?_, ?_,
     hRel.interfaceRegistry, hRel.serviceRegistry, hRel.cdt, hRel.cdtSlotNode,
-    hRel.cdtNodeSlot, hRel.cdtNextNode, hRel.scThreadIndex, hRel.tlb, hRel.objStoreLock,
+    hRel.cdtNodeSlot, hRel.cdtNextNode, hRel.scThreadIndex, hRel.tlb,
     hRel.perCoreTlb, hRel.perCoreICache, hRel.pendingIcacheMaintenance, hRel.pendingPhysicalWrites,
     hRel.declassificationAuditLog, hRel.declassificationAuditEpoch,
     hRel.declassificationRefusals, hRel.declassificationTaint⟩

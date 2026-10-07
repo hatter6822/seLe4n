@@ -35,7 +35,7 @@ namespace SeLe4n.Kernel
 
 open SeLe4n.Model
 open SeLe4n.Kernel.Concurrency (bootCoreId
-  LockKey acquireAll)
+  LockKey)
 
 /-- The step is the identity when the holder *is* the receiver: the receive leg's
 new donation goes to `tid`, so a holder that is the receiver regains a
@@ -1738,7 +1738,7 @@ theorem endpointReplyRecvOnCore_observer_atomic
           receiverCspaceRoot receiverSlotBase executingCore s' with
         | .ok (r, s'') => (s'', .ok r)
         | .error e => (s', .error e)
-    threadIpcStateObserver observed (withLockSetGhost S executingCore action s).1.kernel
+    threadIpcStateObserver observed (withLockSet S executingCore action s).1.kernel
       = threadIpcStateObserver observed (action s.kernel).1 := by
   intro S action
   exact lockSet_observer_atomic S executingCore action s _

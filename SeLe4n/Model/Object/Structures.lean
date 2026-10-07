@@ -226,17 +226,6 @@ structure VSpaceRoot where
       translation is harmless — every mapping a capability records is made by
       `.vspaceMap`, which overwrites the entry with a fresh epoch. -/
   mappingEpochs : SeLe4n.Kernel.RobinHood.RHTable SeLe4n.VAddr Nat := {}
-  /-- WS-SM SM3.A.7: per-VSpaceRoot reader-writer lock state.  Default
-      `RwLockState.unheld` means a freshly-allocated VSpaceRoot starts
-      with its lock available.  VSpace mutation paths (`vspaceMapPage`,
-      `vspaceUnmapPage`) acquire in write mode; lookup paths
-      (`vspaceLookup`, `vspaceLookupAddr`) acquire in read mode.  Per
-      §4.3 of the SM3 plan, page-level (per-PTE) locking is rejected as
-      a v1.0.0 design — VSpace mutations operate at the table level and
-      a single VSpaceRoot lock suffices for serializability.  See
-      WS-SM SM3.A.7. -/
-  lock : SeLe4n.Kernel.Concurrency.RwLockState :=
-    SeLe4n.Kernel.Concurrency.RwLockState.unheld
   deriving Repr
 
 namespace VSpaceRoot
@@ -605,9 +594,8 @@ the interrupt controller — latent only because no mapping reached hardware yet
 A frame is exactly one `pageBytes` page, page-aligned (`wellFormed`), and never
 changes after creation: `base` and `isDevice` are fixed at the carve that makes
 it.  `isDevice` records that the page is MMIO rather than RAM, which the mapping
-path turns into "never executable, never cacheable".  `lock` is the per-object
-lock word every kernel object carries — the lock hierarchy's `page` kind
-(level 9), which this object makes real. -/
+path turns into "never executable, never cacheable".  The lock hierarchy's
+`page` kind (level 9) is the ghost lock key this object makes real. -/
 structure FrameObject where
   base : SeLe4n.PAddr
   isDevice : Bool := false
@@ -616,8 +604,6 @@ structure FrameObject where
       makes (`FrameMapping.epoch`, `VSpaceRoot.mappingEpochs`) and advances it,
       so no two mappings of one frame share an epoch while the frame exists. -/
   mapEpoch : Nat := 0
-  lock : SeLe4n.Kernel.Concurrency.RwLockState :=
-    SeLe4n.Kernel.Concurrency.RwLockState.unheld
   deriving Repr, DecidableEq
 
 namespace FrameObject
@@ -655,8 +641,6 @@ it is installed nowhere. -/
 structure PageTableObject where
   base : SeLe4n.PAddr
   installedIn : Option PageTableInstall := none
-  lock : SeLe4n.Kernel.Concurrency.RwLockState :=
-    SeLe4n.Kernel.Concurrency.RwLockState.unheld
   deriving Repr, DecidableEq
 
 namespace PageTableObject
@@ -683,10 +667,7 @@ instance : BEq VSpaceRoot where
     -- WS-BP BP7.1: the table page and the intermediate tables are part of what
     -- an address space is.
     a.tableBase == b.tableBase &&
-    a.tables == b.tables &&
-    -- WS-SM SM3.A.7: per-VSpaceRoot lock state participates in structural equality.
-    -- `RwLockState` derives `DecidableEq`, so its `==` agrees with `=`.
-    a.lock == b.lock
+    a.tables == b.tables
 
 /-- WS-H7: VSpaceRoot BEq correctness — the fold-based comparison is sound.
 When BEq returns true, the two VSpaceRoots have equal ASIDs and identical
@@ -699,12 +680,10 @@ the forward (soundness) direction; the reverse follows from `BEq.refl` when the
 structures are definitionally equal. -/
 theorem VSpaceRoot.beq_sound (a b : VSpaceRoot) (h : (a == b) = true) :
     a.asid = b.asid ∧ a.mappings.size = b.mappings.size := by
-  -- WS-SM SM3.A.7 audit-pass note: rewritten with `obtain` to be robust
-  -- against the addition of the `lock` conjunct.  The previous positional
-  -- projection pattern `h.1.1` / `h.1.2` was structurally fragile — adding
-  -- a new conjunct to the BEq definition silently shifted indices.
+  -- WS-SM SM3.A.7 audit-pass note: written with `obtain` so that adding a
+  -- conjunct to the BEq definition does not silently shift positional indices.
   simp only [BEq.beq, Bool.and_eq_true_iff, decide_eq_true_eq] at h
-  obtain ⟨⟨⟨⟨⟨hAsid, hSize⟩, _hFold⟩, _hBase⟩, _hTables⟩, _hLock⟩ := h
+  obtain ⟨⟨⟨⟨hAsid, hSize⟩, _hFold⟩, _hBase⟩, _hTables⟩ := h
   exact ⟨hAsid, hSize⟩
 
 /-- Y2-D: BEq reflexivity for VSpaceRoot under the Robin Hood invariant.
@@ -741,10 +720,6 @@ theorem VSpaceRoot.beq_sound (a b : VSpaceRoot) (h : (a == b) = true) :
     as a proof obligation in any kernel invariant or preservation theorem. -/
 theorem VSpaceRoot.beq_refl (a : VSpaceRoot) (hExt : a.mappings.invExt) :
     (a == a) = true := by
-  -- WS-SM SM3.A.7: extended `simp only` set with `Bool.and_true` to handle
-  -- the trailing `&& a.lock == a.lock` conjunct added in SM3.A.7.
-  -- `RwLockState` derives `LawfulBEq` (via `DecidableEq`), so
-  -- `a.lock == a.lock` reduces to `true` via `beq_self_eq_true`.
   unfold BEq.beq instBEqVSpaceRoot
   simp only [beq_self_eq_true, Bool.true_and, Bool.and_true]
   -- Remaining goal: the fold over a.mappings produces true
@@ -1330,28 +1305,19 @@ instance : BEq CNode where
     a.depth == b.depth && a.guardWidth == b.guardWidth &&
     a.guardValue == b.guardValue && a.radixWidth == b.radixWidth &&
     a.slots.size == b.slots.size &&
-    a.slots.fold (init := true) (fun acc k v => acc && b.slots.get? k == some v) &&
-    -- WS-SM SM3.A.3: per-CNode lock state participates in structural equality.
-    -- `RwLockState` derives `DecidableEq`, so its `==` agrees with `=`.
-    a.lock == b.lock
+    a.slots.fold (init := true) (fun acc k v => acc && b.slots.get? k == some v)
 
 /-- WS-H13: CNode BEq soundness — when BEq returns true, the two CNodes have
 equal depth, guardWidth, guardValue, radixWidth, and slot count.
 
-WS-SM SM3.A.3 audit-pass note: rewritten with `obtain` to be robust against
-the addition of the `lock` conjunct (and any future per-CNode field added to
-`BEq`).  The previous positional projection pattern `h.1.1.1.1.1` was
-structurally fragile — adding a new conjunct to the BEq definition silently
-shifted every index by one and surfaced as a confusing "field mismatch" error.
-The `obtain` form names each conjunct explicitly, so a future BEq addition
-only requires extending the pattern. -/
+WS-SM SM3.A.3 audit-pass note: written with `obtain` so that a future per-CNode
+field added to `BEq` does not silently shift positional indices. -/
 theorem CNode.beq_sound (a b : CNode) (h : (a == b) = true) :
     a.depth = b.depth ∧ a.guardWidth = b.guardWidth ∧
     a.guardValue = b.guardValue ∧ a.radixWidth = b.radixWidth ∧
     a.slots.size = b.slots.size := by
   simp only [BEq.beq, Bool.and_eq_true_iff, decide_eq_true_eq] at h
-  obtain ⟨⟨⟨⟨⟨⟨hDepth, hGuardWidth⟩, hGuardValue⟩, hRadixWidth⟩, hSlotsSize⟩, _hFold⟩,
-          _hLock⟩ := h
+  obtain ⟨⟨⟨⟨⟨hDepth, hGuardWidth⟩, hGuardValue⟩, hRadixWidth⟩, hSlotsSize⟩, _hFold⟩ := h
   exact ⟨hDepth, hGuardWidth, hGuardValue, hRadixWidth, hSlotsSize⟩
 
 -- ============================================================================
@@ -3077,227 +3043,6 @@ def objectType : KernelObject → KernelObjectType
   | .frame _ => .frame
   | .pageTable _ => .pageTable
 
-/-- WS-SM SM3.A.10: per-object lock state projection.
-
-Returns the `RwLockState` carried by the inner per-object struct (TCB,
-Endpoint, Notification, CNode, VSpaceRoot, UntypedObject, SchedContext).
-This is the abstract-state side of the per-object lock field discipline:
-
-* SM3.B (`LockId.fromObject`) maps an object to its `LockId` (kind +
-  ObjId) without consulting the lock state.
-* SM3.B (`LockId.lookup`) routes an `(s, LockId)` pair through the
-  RHTable and `objectLockOf` to return the abstract lock state.
-* SM3.C.4 (`lockSetHeld`) consumes `objectLockOf o` to check that the
-  declared lock set is currently held by the executing core.
-
-By construction, every newly-allocated object has `objectLockOf o =
-RwLockState.unheld` — see `default_objects_locks_unheld` (SM3.A.11).
-The abstract spec mirrors the runtime per-object lock state because the
-Lean abstract `RwLockState` refines the Rust `AtomicU64`-backed
-`RwLock` via the SM2.C.20 refinement bridge in
-`Concurrency/Locks/RwLockRefinement.lean`. -/
-def objectLockOf : KernelObject → SeLe4n.Kernel.Concurrency.RwLockState
-  | .tcb t          => t.lock
-  | .endpoint e     => e.lock
-  | .notification n => n.lock
-  | .cnode c        => c.lock
-  | .vspaceRoot v   => v.lock
-  | .untyped u      => u.lock
-  | .schedContext s => s.lock
-  | .reply r        => r.lock
-  | .frame f        => f.lock
-  | .pageTable p    => p.lock
-
-/-- WS-SM SM3.A.10: per-variant unfold lemma for `objectLockOf` on `.tcb`.
-
-Surface-anchor for SM3.B consumers (`LockId.lookup`) and SM3.C
-(`withLockSet`) that need to thread the projection through
-case-analysis on `KernelObject`. -/
-@[simp] theorem objectLockOf_tcb (t : TCB) :
-    objectLockOf (.tcb t) = t.lock := rfl
-
-/-- WS-SM SM3.A.10: per-variant unfold lemma for `objectLockOf` on `.endpoint`. -/
-@[simp] theorem objectLockOf_endpoint (e : Endpoint) :
-    objectLockOf (.endpoint e) = e.lock := rfl
-
-/-- WS-SM SM3.A.10: per-variant unfold lemma for `objectLockOf` on `.notification`. -/
-@[simp] theorem objectLockOf_notification (n : Notification) :
-    objectLockOf (.notification n) = n.lock := rfl
-
-/-- WS-SM SM3.A.10: per-variant unfold lemma for `objectLockOf` on `.cnode`. -/
-@[simp] theorem objectLockOf_cnode (c : CNode) :
-    objectLockOf (.cnode c) = c.lock := rfl
-
-/-- WS-SM SM3.A.10: per-variant unfold lemma for `objectLockOf` on `.vspaceRoot`. -/
-@[simp] theorem objectLockOf_vspaceRoot (v : VSpaceRoot) :
-    objectLockOf (.vspaceRoot v) = v.lock := rfl
-
-/-- WS-SM SM3.A.10: per-variant unfold lemma for `objectLockOf` on `.untyped`. -/
-@[simp] theorem objectLockOf_untyped (u : UntypedObject) :
-    objectLockOf (.untyped u) = u.lock := rfl
-
-/-- WS-SM SM3.A.10: per-variant unfold lemma for `objectLockOf` on `.schedContext`. -/
-@[simp] theorem objectLockOf_schedContext (s : SeLe4n.Kernel.SchedContext) :
-    objectLockOf (.schedContext s) = s.lock := rfl
-
-/-- WS-SM SM6.D: per-variant unfold lemma for `objectLockOf` on `.reply`. -/
-@[simp] theorem objectLockOf_reply (r : SeLe4n.Kernel.Reply) :
-    objectLockOf (.reply r) = r.lock := rfl
-
-/-- WS-BP BP7.1: per-variant unfold lemma for `objectLockOf` on `.frame`. -/
-@[simp] theorem objectLockOf_frame (f : FrameObject) :
-    objectLockOf (.frame f) = f.lock := rfl
-
-/-- WS-BP BP7.1 (`v0.36.12`): per-variant unfold lemma for `objectLockOf` on
-`.pageTable`. -/
-@[simp] theorem objectLockOf_pageTable (p : PageTableObject) :
-    objectLockOf (.pageTable p) = p.lock := rfl
-
--- ============================================================================
--- WS-SM SM8.D — the lock **setter**, and the lock-erased content
--- ============================================================================
---
--- `objectLockOf` above is the getter.  These are its setter and the quotient
--- the setter induces.  They live here, beside the getter and below every
--- consumer, because `KernelObject.updateLock` (SM3.C.2, in
--- `Concurrency/Locks/WithLockSet.lean`) *advances* a lock by an `RwLockOp`
--- and cannot express "this field holds an arbitrary value" — which is exactly
--- what WS-SM SM8.D's information-flow statements quantify over.
-
-/-- WS-SM SM8.D: **set** a kernel object's lock word.
-
-The setter half of the SM3.A.10 `objectLockOf` getter.  Where `updateLock`
-advances a lock by an `RwLockOp`, this replaces it outright, which is what lets
-a caller quantify over *arbitrary* lock contents — the form "an observer cannot
-see the lock" needs, since it is a statement about every value the field could
-hold and not only about the ones a particular operation produces. -/
-def setLock (obj : KernelObject) (l : SeLe4n.Kernel.Concurrency.RwLockState) :
-    KernelObject :=
-  match obj with
-  | .tcb t           => .tcb           { t with lock := l }
-  | .endpoint e      => .endpoint      { e with lock := l }
-  | .notification n  => .notification  { n with lock := l }
-  | .cnode c         => .cnode         { c with lock := l }
-  | .vspaceRoot v    => .vspaceRoot    { v with lock := l }
-  | .untyped u       => .untyped       { u with lock := l }
-  | .schedContext sc => .schedContext  { sc with lock := l }
-  | .reply r         => .reply         { r with lock := l }
-  | .frame f         => .frame         { f with lock := l }
-  | .pageTable p     => .pageTable     { p with lock := l }
-
-/-- WS-SM SM8.D: the **lock-erased content** of a kernel object — everything
-about it except which cores are holding or waiting for it.
-
-This is the quotient WS-SM SM8.D is stated over: two objects with the same
-erasure differ only in their lock word, and that difference is invisible to
-every information-flow observer on every core and to every integrity policy. -/
-def eraseLock (obj : KernelObject) : KernelObject :=
-  obj.setLock SeLe4n.Kernel.Concurrency.RwLockState.unheld
-
-@[simp] theorem setLock_objectLockOf (obj : KernelObject)
-    (l : SeLe4n.Kernel.Concurrency.RwLockState) :
-    objectLockOf (obj.setLock l) = l := by cases obj <;> rfl
-
-@[simp] theorem eraseLock_objectLockOf (obj : KernelObject) :
-    objectLockOf obj.eraseLock = SeLe4n.Kernel.Concurrency.RwLockState.unheld :=
-  obj.setLock_objectLockOf _
-
-/-- WS-SM SM8.D: the number of readers holding an object is a coordinate of the
-lock word, hence of the field `eraseLock` discards. -/
-@[simp] theorem setLock_readers (obj : KernelObject)
-    (l : SeLe4n.Kernel.Concurrency.RwLockState) :
-    (objectLockOf (obj.setLock l)).readers = l.readers := by
-  rw [obj.setLock_objectLockOf]
-
-/-- WS-SM SM8.D: setting a lock does not disturb the erased content — so
-`eraseLock` really is a quotient by the lock word and nothing else. -/
-@[simp] theorem eraseLock_setLock (obj : KernelObject)
-    (l : SeLe4n.Kernel.Concurrency.RwLockState) :
-    (obj.setLock l).eraseLock = obj.eraseLock := by cases obj <;> rfl
-
-@[simp] theorem eraseLock_idempotent (obj : KernelObject) :
-    obj.eraseLock.eraseLock = obj.eraseLock := obj.eraseLock_setLock _
-
-/-- WS-SM SM8.D: the getter/setter round trip — writing back the lock an object
-already holds is the identity.  With `eraseLock_setLock` this says the pair
-`(eraseLock obj, objectLockOf obj)` **determines** `obj`, which is what makes
-the erasure lossless in the direction that matters: nothing outside the lock
-word is discarded. -/
-theorem setLock_objectLockOf_self (obj : KernelObject) :
-    obj.setLock (objectLockOf obj) = obj := by cases obj <;> rfl
-
-/-- WS-SM SM8.D: two objects with the same erased content and the same lock word
-are equal — the reconstruction half of the previous theorem. -/
-theorem eq_of_eraseLock_eq_of_lock_eq {o₁ o₂ : KernelObject}
-    (hErase : o₁.eraseLock = o₂.eraseLock) (hLock : objectLockOf o₁ = objectLockOf o₂) :
-    o₁ = o₂ := by
-  rw [← o₁.setLock_objectLockOf_self, ← o₂.setLock_objectLockOf_self, hLock]
-  cases o₁ <;> cases o₂ <;> simp_all [KernelObject.eraseLock, KernelObject.setLock]
-
-/-- WS-SM SM8.D: erasure preserves the object kind, so nothing that dispatches
-on `objectType` can tell an erased object from its original. -/
-@[simp] theorem eraseLock_objectType (obj : KernelObject) :
-    obj.eraseLock.objectType = obj.objectType := by cases obj <;> rfl
-
--- ============================================================================
--- WS-SM SM3.A audit-pass-5 — `objectLockOf` consistency theorems
--- ============================================================================
-
-/-- WS-SM SM3.A audit-pass-5: `objectLockOf` is exhaustive — for
-every `KernelObject`, the projection returns *some* `RwLockState`.
-
-This is the totality witness: pattern-match exhaustivity is
-machine-checked by Lean's elaborator, but this theorem makes the
-totality explicit for SM3.B/C consumers that need to argue "every
-object has a lock state" without unfolding the case analysis.
-
-The theorem is trivial (every total function returns a value of
-its codomain), but its presence enables consumers to write
-`have h := objectLockOf_exists obj` and proceed without
-re-examining the case structure. -/
-theorem objectLockOf_exists (obj : KernelObject) :
-    ∃ ls : SeLe4n.Kernel.Concurrency.RwLockState, objectLockOf obj = ls :=
-  ⟨objectLockOf obj, rfl⟩
-
-/-- WS-SM SM3.A audit-pass-5: `objectLockOf` and `objectType` are
-**co-consistent** — for every object, both projections succeed
-without partiality.  This pairs the SM3.A.10 lock projection with
-the existing `objectType` projection to confirm they are
-structural siblings (both are total per-variant case dispatches
-on `KernelObject`).
-
-SM3.B's `LockId.fromObject` will combine `objectType` (to compute
-the `LockKind`) with the object's identifier field (e.g.
-`t.tid.toObjId`) to produce a `LockId`.  This theorem witnesses
-that the kind dispatch is already total at SM3.A. -/
-theorem objectType_and_lockOf_total (obj : KernelObject) :
-    ∃ (k : KernelObjectType) (ls : SeLe4n.Kernel.Concurrency.RwLockState),
-      objectType obj = k ∧ objectLockOf obj = ls :=
-  ⟨objectType obj, objectLockOf obj, rfl, rfl⟩
-
-/-- WS-SM SM3.A audit-pass-5: the kind tag is determined by the
-variant, and so is the lock state — together they uniquely
-characterise the per-variant lock-field projection contract.
-
-For every kernel-object kind `k`, there is a unique
-`(objectType obj = k, objectLockOf obj = obj.lock)` mapping.  This
-theorem is the type-level dual of the seven `@[simp] objectLockOf_*`
-unfold lemmas: given a variant tag, you know exactly which inner
-struct's `lock` field is projected. -/
-theorem objectLockOf_consistent_with_type (obj : KernelObject) :
-    match obj with
-    | .tcb t          => objectType obj = .tcb          ∧ objectLockOf obj = t.lock
-    | .endpoint e     => objectType obj = .endpoint     ∧ objectLockOf obj = e.lock
-    | .notification n => objectType obj = .notification ∧ objectLockOf obj = n.lock
-    | .cnode c        => objectType obj = .cnode        ∧ objectLockOf obj = c.lock
-    | .vspaceRoot v   => objectType obj = .vspaceRoot   ∧ objectLockOf obj = v.lock
-    | .untyped u      => objectType obj = .untyped      ∧ objectLockOf obj = u.lock
-    | .schedContext s => objectType obj = .schedContext ∧ objectLockOf obj = s.lock
-    | .reply r        => objectType obj = .reply        ∧ objectLockOf obj = r.lock
-    | .frame f        => objectType obj = .frame        ∧ objectLockOf obj = f.lock
-    | .pageTable p    => objectType obj = .pageTable    ∧ objectLockOf obj = p.lock := by
-  cases obj <;> exact ⟨rfl, rfl⟩
-
 end KernelObject
 
 namespace KernelObjectType
@@ -3479,17 +3224,6 @@ instance (obj : KernelObject)
   | .pageTable _ => exact inferInstance
   | .endpoint _ | .notification _ | .vspaceRoot _ | .untyped _ =>
     exact instDecidableTrue
-
-/-- WS-SM SM8.D: well-formedness does not read the lock word, so the lock-erased
-content of an object is well-formed exactly when the object is.
-
-This is what makes `eraseLock` an abstraction over *concurrency-control
-plumbing* rather than over object content: the predicate the kernel validates
-before installing an object (`lifecycleRetype`) cannot tell the two apart. -/
-@[simp] theorem eraseLock_wellFormed (obj : KernelObject)
-    (objects : SeLe4n.Kernel.RobinHood.RHTable SeLe4n.ObjId KernelObject) :
-    obj.eraseLock.wellFormed objects ↔ obj.wellFormed objects := by
-  cases obj <;> simp [wellFormed, eraseLock, setLock, CNode.guardBounded] <;> exact Iff.rfl
 
 end KernelObject
 

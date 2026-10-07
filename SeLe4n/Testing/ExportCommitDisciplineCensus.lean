@@ -103,7 +103,7 @@ census refuses a committing body that reaches one, whatever its recorded
 discipline, so the day a seam is pointed at `runGhost` is a build failure. -/
 def ghostForms : List Name :=
   [ `SeLe4n.Kernel.Concurrency.BracketSpec.runGhost
-  , `SeLe4n.Kernel.Concurrency.withLockSetGhost
+  , `SeLe4n.Kernel.Concurrency.withLockSet
   , `SeLe4n.Kernel.Concurrency.LockState.bracket
   , `SeLe4n.Kernel.Concurrency.LockState.bracketDeclared
   , `SeLe4n.Kernel.Concurrency.LockState.acquire

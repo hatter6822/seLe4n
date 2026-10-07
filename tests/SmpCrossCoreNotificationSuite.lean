@@ -232,7 +232,7 @@ step under its lock-set — the ghost bracket's value is the bare transition's. 
 example (notificationId cnRoot : SeLe4n.ObjId) (badge : SeLe4n.Badge)
     (signaller : SeLe4n.ThreadId) (executingCore : CoreId)
     (waiter? : Option SeLe4n.ThreadId) (s : SystemState) :
-    (withLockSetGhost (lockSet_notificationSignal signaller cnRoot notificationId waiter?)
+    (withLockSet (lockSet_notificationSignal signaller cnRoot notificationId waiter?)
         executingCore (notificationSignalOnCore notificationId badge executingCore)
         ⟨s, LockState.unheld⟩).2
       = (notificationSignalOnCore notificationId badge executingCore s).2 := by

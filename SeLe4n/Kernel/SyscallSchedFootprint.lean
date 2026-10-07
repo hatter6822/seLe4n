@@ -565,9 +565,9 @@ theorem abiEntrySchedReceiverCspaceRoot (decoded : SyscallDecodeResult)
 
 One `LockSet` spanning both lock domains, which is what `LockKey` was
 introduced for (SM5.A.2) and what the seam has never had.  The two domains are
-not two lock *words*: `acquireLock`'s `.object` arm calls SM3.C's own
-`acquireLockOnObject`, so a `.object` member writes exactly the state a `LockSet`
-member writes.  Bracketing them separately would therefore acquire the table lock
+one ghost lock table (`Concurrency/Locks/LockState.lean`): a `.object` key and
+a scheduler key are entries of the same table, advanced by the same
+`LockState.acquireAll`.  Bracketing them separately would therefore acquire the table lock
 **twice** on the five arms whose object footprint names `stateLevelLock`, and —
 worse — would walk the SM0.I ladder backwards: the inner bracket's level-0 table
 lock would be taken after the outer bracket's levels 1..9.  `lockAcquireSequence`

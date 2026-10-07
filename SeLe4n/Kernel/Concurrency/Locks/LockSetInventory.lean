@@ -8,7 +8,6 @@
 -/
 
 import SeLe4n.Kernel.Concurrency.Locks.LockSet
-import SeLe4n.Kernel.Concurrency.Locks.LockIdProjection
 import SeLe4n.Kernel.Concurrency.Locks.LockSetTransitions
 -- **WS-OD (`v0.35.4`)**: the `.tcbSuspend` footprint is rooted at the
 -- state-resolved cancellation footprint and lives beside it; the inventory
@@ -21,14 +20,13 @@ import SeLe4n.PackedString
 
 Aggregates the SM3.B substantive theorems into a single typed
 inventory with size and per-category witnesses.  Mirrors the
-SM3.A `PerObjectLockInventory.lean` pattern (34-theorem aggregator)
-and the SM2.D `LockPrimitives.lean` pattern (22-theorem aggregator).
+SM2.D `LockPrimitives.lean` pattern.
 
-The inventory has six categories matching the plan §5.2 sub-tasks:
+The inventory has five categories matching the plan §5.2 sub-tasks
+(the SM3.B.1 / SM3.B.2 projection layer — `KernelObject.lockKind`,
+`LockId.fromObject`, `LockId.lookup` — went with the lock words at WS-LS
+LS3.1; a lock is a key of the ghost lock table, not a field to project):
 
-* `.projection` — SM3.B.1 / SM3.B.2 (KernelObject.lockKind,
-  LockId.fromObject, LockId.lookup + per-variant simp / round-trip
-  lemmas).
 * `.lockSet` — SM3.B.3 per-transition lockSet definitions (25
   transitions).
 * `.consistency` — SM3.B.4 per-transition lockSet_consistent
@@ -66,8 +64,6 @@ open SeLe4n.Model
 
 /-- WS-SM SM3.B: category tag for LockSet theorems. -/
 inductive LockSetCategory where
-  /-- Projection layer: kindOf, fromObject, lookup. -/
-  | projection
   /-- Per-transition lockSet declarations. -/
   | lockSet
   /-- Per-transition lockSet_consistent theorems. -/
@@ -134,54 +130,7 @@ macro_rules
 /-- WS-SM SM3.B: substantive theorem inventory.  Every entry's
 identifier is compile-time-validated. -/
 def lockSetTheorems : List LockSetTheorem :=
-  [-- §1 projection (18 entries — 1 lockKind def + 7 per-variant lockKind
-    -- unfolds + agreement-with-objectType + LockId.fromObject + LockId.lookup
-    -- + 6 lookup structural theorems + 3 fail-closed witnesses for N/A kinds)
-    lkst! "KernelObject.lockKind projects the LockKind from a variant"
-      SeLe4n.Model.KernelObject.lockKind .projection,
-    lkst! "lockKind on .tcb reduces to .tcb"
-      SeLe4n.Model.KernelObject.lockKind_tcb .projection,
-    lkst! "lockKind on .endpoint reduces to .endpoint"
-      SeLe4n.Model.KernelObject.lockKind_endpoint .projection,
-    lkst! "lockKind on .notification reduces to .notification"
-      SeLe4n.Model.KernelObject.lockKind_notification .projection,
-    lkst! "lockKind on .cnode reduces to .cnode"
-      SeLe4n.Model.KernelObject.lockKind_cnode .projection,
-    lkst! "lockKind on .vspaceRoot reduces to .vspaceRoot"
-      SeLe4n.Model.KernelObject.lockKind_vspaceRoot .projection,
-    lkst! "lockKind on .untyped reduces to .untyped"
-      SeLe4n.Model.KernelObject.lockKind_untyped .projection,
-    lkst! "lockKind on .schedContext reduces to .schedContext"
-      SeLe4n.Model.KernelObject.lockKind_schedContext .projection,
-    lkst! "lockKind agrees with objectType per variant"
-      SeLe4n.Model.KernelObject.lockKind_eq_of_objectType .projection,
-    lkst! "lockKind is one of the 9 modeled kinds (excludes objStore)"
-      SeLe4n.Model.KernelObject.lockKind_in_modeledKinds .projection,
-    lkst! "lockKind ≠ .objStore (SystemState-level lock is separate)"
-      SeLe4n.Model.KernelObject.lockKind_ne_objStore .projection,
-    lkst! "lockKind on .reply reduces to .reply (WS-SM SM6.D first-class Reply)"
-      SeLe4n.Model.KernelObject.lockKind_reply .projection,
-    lkst! "lockKind on .frame reduces to .page (WS-BP BP7.1 first-class frame)"
-      SeLe4n.Model.KernelObject.lockKind_frame .projection,
-    lkst! "LockId.fromObject builds LockId from ObjId + KernelObject"
-      SeLe4n.Model.LockId.fromObject .projection,
-    lkst! "LockId.lookup resolves a LockId against a SystemState"
-      SeLe4n.Model.LockId.lookup .projection,
-    lkst! "LockId.lookup_some_of_kindMatch: success branch on matching kind"
-      SeLe4n.Model.LockId.lookup_some_of_kindMatch .projection,
-    lkst! "LockId.lookup_fromObject_of_present: round-trip identity"
-      SeLe4n.Model.LockId.lookup_fromObject_of_present .projection,
-    lkst! "LockId.lookup_kindMatch: post-condition on success"
-      SeLe4n.Model.LockId.lookup_kindMatch .projection,
-    lkst! "LockId.lookup_lockState_eq: returned state matches objectLockOf"
-      SeLe4n.Model.LockId.lookup_lockState_eq .projection,
-    lkst! "LockId.lookup_objStore: SystemState-level kind fails closed"
-      SeLe4n.Model.LockId.lookup_objStore .projection,
-    lkst! "LockId.lookup_reply: WS-SM SM6.D dispatches to the Reply per-object lock"
-      SeLe4n.Model.LockId.lookup_reply .projection,
-    lkst! "LockId.lookup_page: WS-BP BP7.1 dispatches to the frame per-object lock"
-      SeLe4n.Model.LockId.lookup_page .projection,
-    -- §2 lockSet — per-transition declarations (25 entries — one per SyscallId variant)
+  [-- §2 lockSet — per-transition declarations (25 entries — one per SyscallId variant)
     lkst! "lockSet for endpointSend"
       lockSet_endpointSend .lockSet,
     lkst! "lockSet for endpointReceive"
@@ -421,17 +370,7 @@ PR #822 Phase H's `mintReplyCap` pair, and SM6.B's `tcbBindNotification` /
 A regression that adds a new SM3.B theorem without updating the
 inventory fails this count witness at the Tier-3 surface check. -/
 theorem lockSetTheorems_count :
-    lockSetTheorems.length = 121 := by decide
-
-/-- WS-SM SM3.B: 22 entries in the `projection` category
-(lockKind def + 7 per-variant simp lemmas + lockKind_eq_of_objectType
- + lockKind_in_modeledKinds + lockKind_ne_objStore + lockKind_reply + lockKind_frame
- + LockId.fromObject
- + LockId.lookup + 4 lookup structural theorems + 3 fail-closed N/A
- witnesses). -/
-theorem lockSetTheorems_projection_count :
-    (lockSetTheorems.filter (fun t => t.category == .projection)).length = 22 := by
-  decide
+    lockSetTheorems.length = 99 := by decide
 
 /-- WS-SM SM3.B: 37 entries in the `lockSet` category (one per statically
 declared SyscallId variant). -/
@@ -472,7 +411,6 @@ theorem lockSetTheorems_chainStart_count :
 
 /-- WS-SM SM3.B: per-category counts sum to the total. -/
 theorem lockSetTheorems_partition_sum :
-    (lockSetTheorems.filter (fun t => t.category == .projection)).length +
     (lockSetTheorems.filter (fun t => t.category == .lockSet)).length +
     (lockSetTheorems.filter (fun t => t.category == .consistency)).length +
     (lockSetTheorems.filter (fun t => t.category == .acquireSort)).length +

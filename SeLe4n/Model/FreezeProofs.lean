@@ -304,7 +304,7 @@ theorem toList_noDupKeys [BEq κ] [Hashable κ] [LawfulBEq κ]
     · omega
 
 -- ============================================================================
--- WS-SM SM3.A audit-pass-6 — reverse toList/get? bridge + allObjectLocksUnheld iff
+-- WS-SM SM3.A audit-pass-6 — reverse toList/get? bridge
 -- ============================================================================
 
 /-- WS-SM SM3.A audit-pass-6: reverse direction of `toList_contains_of_get` —
@@ -383,53 +383,6 @@ theorem toList_all_iff_forall_get_some [BEq κ] [Hashable κ] [LawfulBEq κ]
     obtain ⟨k, v⟩ := p
     have hGet := get_some_of_toList_contains rt k v hExt hMem
     exact hForall k v hGet
-
-/-- WS-SM SM3.A audit-pass-6: the "Prop ↔ Bool" bridge for the SM3.A
-`allObjectLocksUnheld` predicate.
-
-The Bool form (`allObjectLocksUnheldB`) and the Prop form
-(`allObjectLocksUnheld`) are equivalent under the Robin Hood
-invariant `st.objects.invExt`.  This is the theorem referenced in
-the `allObjectLocksUnheldB` docstring (`SeLe4n/Model/State.lean`).
-
-Proof: pure case-by-case via `toList_all_iff_forall_get_some` for
-the per-object conjunct, plus a decidable-equality rewrite for the
-table-level `objStoreLock` conjunct (which is identical between
-Bool and Prop forms via `decide`).
-
-Closes the audit-pass-5 dead-link docstring reference. -/
-theorem allObjectLocksUnheld_iff_via_toList (st : SystemState)
-    (hInv : st.objects.invExt) :
-    st.allObjectLocksUnheld ↔ st.allObjectLocksUnheldB = true := by
-  unfold SystemState.allObjectLocksUnheld SystemState.allObjectLocksUnheldB
-  -- Both forms are conjunctions: split the iff into both directions and both conjuncts.
-  constructor
-  · intro ⟨hStore, hPointwise⟩
-    rw [Bool.and_eq_true]
-    refine ⟨?_, ?_⟩
-    · -- The first conjunct: Bool form is `decide`-ified Prop.
-      simp [hStore]
-    · -- The second conjunct: use the toList bridge.
-      have hP := (toList_all_iff_forall_get_some st.objects
-                   (fun p => p.snd.objectLockOf
-                       = SeLe4n.Kernel.Concurrency.RwLockState.unheld) hInv).mpr
-      apply hP
-      intro k v hGet
-      have := hPointwise k v hGet
-      simp [this]
-  · intro hBool
-    rw [Bool.and_eq_true] at hBool
-    obtain ⟨hStoreBool, hAllBool⟩ := hBool
-    refine ⟨?_, ?_⟩
-    · -- Recover the Prop form of the first conjunct from the Bool form.
-      simpa using hStoreBool
-    · -- Recover the Prop form of the second conjunct via the toList bridge.
-      intro id o hLookup
-      have hP := (toList_all_iff_forall_get_some st.objects
-                   (fun p => p.snd.objectLockOf
-                       = SeLe4n.Kernel.Concurrency.RwLockState.unheld) hInv).mp
-      have hLifted := hP hAllBool id o hLookup
-      simpa using hLifted
 
 -- ============================================================================
 -- Q6-A: freezeMap index construction — absent key preservation

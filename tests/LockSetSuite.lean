@@ -46,37 +46,6 @@ open SeLe4n.Kernel.Concurrency
 -- §1 — Surface anchors
 -- ============================================================================
 
-/-! ## SM3.B.1 — KernelObject.lockKind + LockId.fromObject -/
-
-#check @KernelObject.lockKind
-#check @KernelObject.lockKind_tcb
-#check @KernelObject.lockKind_endpoint
-#check @KernelObject.lockKind_notification
-#check @KernelObject.lockKind_cnode
-#check @KernelObject.lockKind_vspaceRoot
-#check @KernelObject.lockKind_untyped
-#check @KernelObject.lockKind_schedContext
-#check @KernelObject.lockKind_exists
-#check @KernelObject.lockKind_eq_of_objectType
-#check @KernelObject.lockKind_in_modeledKinds
-#check @KernelObject.lockKind_ne_objStore
-#check @KernelObject.lockKind_reply
-#check @KernelObject.lockKind_frame
-#check @LockId.fromObject
-#check @LockId.fromObject_kind
-#check @LockId.fromObject_objId
-
-/-! ## SM3.B.2 — LockId.lookup -/
-
-#check @LockId.lookup
-#check @LockId.lookup_some_of_kindMatch
-#check @LockId.lookup_fromObject_of_present
-#check @LockId.lookup_objStore
-#check @LockId.lookup_reply
-#check @LockId.lookup_page
-#check @LockId.lookup_kindMatch
-#check @LockId.lookup_lockState_eq
-
 /-! ## SM3.B.5..B.8 — LockSet structure + canonical sort + theorems -/
 
 #check @LockSet
@@ -188,7 +157,6 @@ open SeLe4n.Kernel.Concurrency
 #check @LockSetTheorem
 #check @lockSetTheorems
 #check @lockSetTheorems_count
-#check @lockSetTheorems_projection_count
 #check @lockSetTheorems_lockSet_count
 #check @lockSetTheorems_consistency_count
 #check @lockSetTheorems_acquireSort_count
@@ -457,83 +425,6 @@ donated arm that performs it: 7. -/
 example :
     (SeLe4n.Kernel.lockSet_cancelDonation ⟨3⟩ (some ⟨50⟩) (some ⟨7⟩)
       (some ⟨60⟩) (some ⟨61⟩) (some ⟨9⟩)).size = 7 := by decide
-
--- ============================================================================
--- §5 — LockId.fromObject + LockId.lookup with fixture states
--- ============================================================================
-
-/-! ### LockId.fromObject reflects KernelObject.lockKind -/
-
-example :
-    let oid := ObjId.ofNat 5
-    let ep : Endpoint := {}
-    let l := LockId.fromObject oid (KernelObject.endpoint ep)
-    l = ⟨.endpoint, oid⟩ := rfl
-
-example :
-    let oid := ObjId.ofNat 7
-    let u : UntypedObject :=
-      { regionBase := PAddr.ofNat 0, regionSize := 4096 }
-    let l := LockId.fromObject oid (KernelObject.untyped u)
-    l = ⟨.untyped, oid⟩ := rfl
-
-/-! ### LockId.lookup on the empty SystemState returns none -/
-
-example :
-    LockId.lookup (default : SystemState) ⟨.tcb, ObjId.ofNat 1⟩ = none := by decide
-
-example :
-    LockId.lookup (default : SystemState) ⟨.endpoint, ObjId.ofNat 99⟩ = none := by
-  decide
-
-/-! ### LockId.lookup on the empty SystemState for `.objStore`/`.reply`/`.page`
-returns none — the table-level kind has no object, and the empty state holds no
-Reply and no frame (both are modeled kinds since SM6.D / WS-BP BP7.1). -/
-
-example :
-    LockId.lookup (default : SystemState) ⟨.objStore, ObjId.ofNat 0⟩ = none := by
-  decide
-
-example :
-    LockId.lookup (default : SystemState) ⟨.reply, ObjId.ofNat 0⟩ = none := by
-  decide
-
-example :
-    LockId.lookup (default : SystemState) ⟨.page, ObjId.ofNat 0⟩ = none := by
-  decide
-
-/-! ### LockId.lookup on a state with an inserted Endpoint.
-
-Audit-pass-1 addition: tests the `some` branch of `LockId.lookup`.
-After inserting an Endpoint at ObjId 5, lookup at `(.endpoint, 5)`
-returns `some (lock, object)` and lookup at any other kind+ObjId
-returns `none` (the kind-confusion fail-closed branch). -/
-
-private def stateWithEndpoint : SystemState :=
-  let s : SystemState := default
-  let ep : KernelObject := KernelObject.endpoint ({} : Endpoint)
-  { s with objects := s.objects.insert (ObjId.ofNat 5) ep }
-
-example :
-    (LockId.lookup stateWithEndpoint ⟨.endpoint, ObjId.ofNat 5⟩).isSome :=
-  by native_decide
-
-/-! ### Kind mismatch fail-closed: a TCB-tagged LockId at an
-ObjId storing an Endpoint resolves to `none`. -/
-
-example :
-    LockId.lookup stateWithEndpoint ⟨.tcb, ObjId.ofNat 5⟩ = none := by
-  native_decide
-
-example :
-    LockId.lookup stateWithEndpoint ⟨.cnode, ObjId.ofNat 5⟩ = none := by
-  native_decide
-
-/-! ### Lookup at an unrelated ObjId is none. -/
-
-example :
-    LockId.lookup stateWithEndpoint ⟨.endpoint, ObjId.ofNat 99⟩ = none := by
-  native_decide
 
 -- ============================================================================
 -- §6 — Permitted kinds for every syscall
@@ -865,10 +756,7 @@ example :
 -- §7 — Inventory examples (decidable)
 -- ============================================================================
 
-example : lockSetTheorems.length = 121 := by decide
-
-example : (lockSetTheorems.filter (fun t => t.category == .projection)).length = 22 := by
-  decide
+example : lockSetTheorems.length = 99 := by decide
 
 example : (lockSetTheorems.filter (fun t => t.category == .lockSet)).length = 39 := by
   decide
@@ -1073,26 +961,6 @@ private def runLockKindHelpersChecks : IO Unit := do
     (decide ((vspaceRootLock (ObjId.ofNat 99)).kind = .vspaceRoot))
   assertBool "untypedLock kind = .untyped"
     (decide ((untypedLock (ObjId.ofNat 200)).kind = .untyped))
-
-private def runLockIdProjectionChecks : IO Unit := do
-  IO.println "--- §6 LockId projection ---"
-  -- KernelObject lockKind cases.
-  let ep : Endpoint := {}
-  assertBool "KernelObject.lockKind on endpoint = .endpoint"
-    (decide ((KernelObject.endpoint ep).lockKind = .endpoint))
-  let u : UntypedObject :=
-    { regionBase := PAddr.ofNat 0, regionSize := 4096 }
-  assertBool "KernelObject.lockKind on untyped = .untyped"
-    (decide ((KernelObject.untyped u).lockKind = .untyped))
-  -- LockId.fromObject pairs kind with ObjId.
-  let oid := ObjId.ofNat 5
-  assertBool "LockId.fromObject pairs kind + ObjId"
-    (decide (LockId.fromObject oid (KernelObject.endpoint ep) = ⟨.endpoint, oid⟩))
-  -- LockId.lookup on default SystemState is none.
-  assertBool "LockId.lookup default state at tcb 1 = none"
-    (decide (LockId.lookup (default : SystemState) ⟨.tcb, ObjId.ofNat 1⟩ = none))
-  assertBool "LockId.lookup default state at endpoint 99 = none"
-    (decide (LockId.lookup (default : SystemState) ⟨.endpoint, ObjId.ofNat 99⟩ = none))
 
 private def runPerTransitionShapeChecks : IO Unit := do
   IO.println "--- §7 Per-transition lock-set shapes ---"
@@ -1787,35 +1655,6 @@ private def runCanonicalSortRuntimeChecks : IO Unit := do
   assertBool "lockAcquireSequence: within-kind sort by ObjId ascending"
     (decide (withinKind.lockAcquireSequence = withinKindExpected))
 
-private def runLockKindCoDomainChecks : IO Unit := do
-  IO.println "--- §14 lockKind co-domain (audit-pass-2) ---"
-  -- Audit-pass-2: substantive co-domain claim — lockKind returns one
-  -- of the modeled kinds, and neither of these two objects is a Reply or a frame.
-  let ep : KernelObject := KernelObject.endpoint ({} : Endpoint)
-  let u : KernelObject := KernelObject.untyped
-    { regionBase := PAddr.ofNat 0, regionSize := 4096 }
-  assertBool "endpoint.lockKind ≠ .objStore"
-    (decide (ep.lockKind ≠ .objStore))
-  assertBool "endpoint.lockKind ≠ .reply"
-    (decide (ep.lockKind ≠ .reply))
-  assertBool "endpoint.lockKind ≠ .page"
-    (decide (ep.lockKind ≠ .page))
-  assertBool "untyped.lockKind ≠ .objStore"
-    (decide (u.lockKind ≠ .objStore))
-  assertBool "untyped.lockKind ≠ .reply"
-    (decide (u.lockKind ≠ .reply))
-  assertBool "untyped.lockKind ≠ .page"
-    (decide (u.lockKind ≠ .page))
-  assertBool "endpoint.lockKind is one of the 7 modeled kinds"
-    (decide (ep.lockKind = .tcb ∨ ep.lockKind = .endpoint ∨
-             ep.lockKind = .notification ∨ ep.lockKind = .cnode ∨
-             ep.lockKind = .vspaceRoot ∨ ep.lockKind = .untyped ∨
-             ep.lockKind = .schedContext))
-  -- The new substantive theorems are surface-anchored via #check
-  -- above; their content is exercised by the decidable assertions
-  -- preceding this line (e.g. "endpoint.lockKind is one of the 7
-  -- modeled kinds" applies the same Or-chain via decide).
-
 private def runFstInjChecks : IO Unit := do
   IO.println "--- §15 LockSet.fst_inj_at_pairs (audit-pass-2) ---"
   -- Construct a 2-element LockSet and verify membership.  The
@@ -1839,47 +1678,10 @@ private def runFstInjChecks : IO Unit := do
   assertBool "p1.fst ≠ p2.fst"
     (decide (p1.fst ≠ p2.fst))
 
-private def runLookupFixtureChecks : IO Unit := do
-  IO.println "--- §13 LockId.lookup on non-default fixture state ---"
-  let ep : KernelObject := KernelObject.endpoint ({} : Endpoint)
-  let s : SystemState := {
-    (default : SystemState) with
-      objects := (default : SystemState).objects.insert (ObjId.ofNat 5) ep
-  }
-  -- Right kind, right ObjId → some.
-  assertBool "LockId.lookup at (.endpoint, 5) on state-with-endpoint: some"
-    (LockId.lookup s ⟨.endpoint, ObjId.ofNat 5⟩).isSome
-  -- Wrong kind (TCB at Endpoint's ObjId) → none.
-  assertBool "LockId.lookup at (.tcb, 5) on state-with-endpoint: none (kind mismatch)"
-    (decide (LockId.lookup s ⟨.tcb, ObjId.ofNat 5⟩ = none))
-  assertBool "LockId.lookup at (.cnode, 5) on state-with-endpoint: none (kind mismatch)"
-    (decide (LockId.lookup s ⟨.cnode, ObjId.ofNat 5⟩ = none))
-  -- Right kind, wrong ObjId → none.
-  assertBool "LockId.lookup at (.endpoint, 99) on state-with-endpoint: none (absent ObjId)"
-    (decide (LockId.lookup s ⟨.endpoint, ObjId.ofNat 99⟩ = none))
-  -- Fail-closed for N/A kinds.
-  assertBool "LockId.lookup at (.objStore, 0): none (no object for table-level lock)"
-    (decide (LockId.lookup s ⟨.objStore, ObjId.ofNat 0⟩ = none))
-  assertBool "LockId.lookup at (.reply, 0): none (SM3.A.5 N/A)"
-    (decide (LockId.lookup s ⟨.reply, ObjId.ofNat 0⟩ = none))
-  assertBool "LockId.lookup at (.page, 0): none (no frame at 0)"
-    (decide (LockId.lookup s ⟨.page, ObjId.ofNat 0⟩ = none))
-  -- WS-BP BP7.1: `.page` is a modeled kind — a frame's lock resolves.
-  let frameObj : KernelObject := .frame { base := PAddr.ofNat 0x8000 }
-  assertBool "frame.lockKind = .page (WS-BP BP7.1)"
-    (decide (frameObj.lockKind = .page))
-  let sFrame : SystemState :=
-    { (default : SystemState) with
-        objects := (default : SystemState).objects.insert (ObjId.ofNat 77) frameObj }
-  assertBool "LockId.lookup at (.page, 77): the frame's lock"
-    ((LockId.lookup sFrame ⟨.page, ObjId.ofNat 77⟩).isSome)
-
 private def runInventoryChecks : IO Unit := do
   IO.println "--- §8 Inventory aggregator ---"
-  assertBool "lockSetTheorems.length = 121"
-    (decide (lockSetTheorems.length = 121))
-  assertBool "projection category count = 22"
-    (decide ((lockSetTheorems.filter (fun t => t.category == .projection)).length = 22))
+  assertBool "lockSetTheorems.length = 99"
+    (decide (lockSetTheorems.length = 99))
   -- WS-RR RR8.16: the figure is DERIVED from the classifier rather than
   -- written down.  `.cspaceRevoke` declares no static footprint (its CDT
   -- subtree is unbounded and a `LockSet` is capped at `maxLockSetSize`), so
@@ -1901,8 +1703,7 @@ private def runInventoryChecks : IO Unit := do
     (decide ((lockSetTheorems.filter (fun t => t.category == .chainStart)).length = 6))
   assertBool "category-partition sum = total"
     (decide
-      ((lockSetTheorems.filter (fun t => t.category == .projection)).length +
-       (lockSetTheorems.filter (fun t => t.category == .lockSet)).length +
+      ((lockSetTheorems.filter (fun t => t.category == .lockSet)).length +
        (lockSetTheorems.filter (fun t => t.category == .consistency)).length +
        (lockSetTheorems.filter (fun t => t.category == .acquireSort)).length +
        (lockSetTheorems.filter (fun t => t.category == .algebra)).length +
@@ -1979,15 +1780,12 @@ def runLockSetChecks : IO Unit := do
   runAccessModeAlgebraChecks
   runPermittedKindsChecks
   runLockKindHelpersChecks
-  runLockIdProjectionChecks
   runPerTransitionShapeChecks
   runInventoryChecks
   runLubMergeChecks
   runUnionChecks
   runConsistencyRuntimeChecks
   runCanonicalSortRuntimeChecks
-  runLookupFixtureChecks
-  runLockKindCoDomainChecks
   runFstInjChecks
   runPipChainStartChecks
   runAuditPass6FootprintChecks

@@ -1487,7 +1487,7 @@ theorem endpointReplyOnCore_observer_atomic
     (originRecipient? : Option SeLe4n.ThreadId)
     (s : LockedSystemState) :
     threadIpcStateObserver observed
-        (withLockSetGhost
+        (withLockSet
           (lockSet_endpointReply replier cnRoot target donatedSc? donatedOwner? replyId
             belowHeadReply? outerCaller? donatedHead? answeredFrameAbove? answeredFrameBelow? originRecipient?)
           executingCore (endpointReplyOnCore replier target msg executingCore) s).1.kernel

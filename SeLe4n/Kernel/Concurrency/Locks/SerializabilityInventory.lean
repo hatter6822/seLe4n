@@ -16,9 +16,8 @@ import SeLe4n.PackedString
 # WS-SM SM3.E — Theorem inventory
 
 Aggregates the SM3.E substantive definitions and theorems into a single typed
-inventory with size and per-category witnesses.  Mirrors the SM3.A
-`PerObjectLockInventory.lean`, SM3.B `LockSetInventory.lean`, SM3.C
-`WithLockSetInventory.lean`, and SM3.D `DeadlockInventory.lean` patterns.
+inventory with size and per-category witnesses.  Mirrors the
+`LockSetInventory.lean` (SM3.B) and `DeadlockInventory.lean` (SM3.D) patterns.
 
 Nine categories matching the plan §5.5 sub-tasks (the last two added by the
 audit-pass-3 atomicity-bridge and observational-serializability closures):
@@ -47,8 +46,8 @@ audit-pass-3 atomicity-bridge and observational-serializability closures):
 
 ## Identifier validation
 
-Identifiers are compile-time-validated via the `serlt!` macro, mirroring SM3.A's
-`polt!` / SM3.B's `lkst!` / SM3.C's `wlst!` / SM3.D's `dlt!`.  A typo or stale
+Identifiers are compile-time-validated via the `serlt!` macro, mirroring
+SM3.B's `lkst!` / SM3.D's `dlt!`.  A typo or stale
 rename fails to elaborate with "unknown constant".
 -/
 
@@ -109,8 +108,7 @@ def SerializabilityTheorem.description (t : SerializabilityTheorem) : String := 
 def SerializabilityTheorem.identifier (t : SerializabilityTheorem) : String := stringOfPacked t.identifierKey
 
 /-- WS-SM SM3.E: build a `SerializabilityTheorem` with a compile-time-validated
-identifier.  See SM3.A's `polt!` / SM3.B's `lkst!` / SM3.C's `wlst!` / SM3.D's
-`dlt!`. -/
+identifier.  See SM3.B's `lkst!` / SM3.D's `dlt!`. -/
 syntax (name := serltMacro) "serlt!" str ident term : term
 
 macro_rules
@@ -190,12 +188,12 @@ def serializabilityTheorems : List SerializabilityTheorem :=
       readOnlyInstance_actionsCommute .commutativity,
     serlt! "readOnlyInstance_actionsCommute_readOnly — two reads commute"
       readOnlyInstance_actionsCommute_readOnly .commutativity,
-    serlt! "setObjStoreLockAction — an objStoreLock-only field action"
-      setObjStoreLockAction .commutativity,
+    serlt! "setTlbAction — a TLB-only field action"
+      setTlbAction .commutativity,
     serlt! "setSchedulerAction — a scheduler-only field action"
       setSchedulerAction .commutativity,
-    serlt! "setObjStoreLock_setScheduler_commute — disjoint-field actions commute"
-      setObjStoreLock_setScheduler_commute .commutativity,
+    serlt! "setTlb_setScheduler_commute — disjoint-field actions commute"
+      setTlb_setScheduler_commute .commutativity,
     serlt! "disjointField_actionsCommute — disjoint-subsystem instances commute"
       disjointField_actionsCommute .commutativity,
     serlt! "objStoreEquiv — observational equivalence of the object store"
@@ -276,17 +274,14 @@ def serializabilityTheorems : List SerializabilityTheorem :=
       outOfOrderCommute_of_conflictsCommitOrdered .serializability,
     serlt! "serializability_under_2pl_of_conflicts_ordered — grounded Theorem 2.1.10 (honest under-2PL)"
       serializability_under_2pl_of_conflicts_ordered .serializability,
-    -- §8 preservation (4) — WS-LS LS2.1: the two metatheorems are over the pair
+    -- §8 preservation (2) — WS-LS LS2.1: the two metatheorems are over the pair
     -- and hypothesis-free; the §8b/§8c non-vacuity witnesses for the dropped
-    -- lock-insensitivity hypotheses are gone with them.
+    -- lock-insensitivity hypotheses are gone with them, and (LS3.1) the two
+    -- word-level entries with the lock words.
     serlt! "singleCore_invariant_preservation — SM3.E.6 Cor 2.1.11 invariant form (over the pair)"
       singleCore_invariant_preservation .preservation,
     serlt! "singleCore_proof_preservation — SM3.E.6 Cor 2.1.11 pre→post meta-theorem (over the pair)"
       singleCore_proof_preservation .preservation,
-    serlt! "withLockSet_growing_phase_establishes_lockSetHeld — lockSetHeld is a consequence (word-level)"
-      withLockSet_growing_phase_establishes_lockSetHeld .preservation,
-    serlt! "releaseLockOnObject_preserves_invExt — release preserves the RHTable invExt"
-      releaseLockOnObject_preserves_invExt .preservation,
     -- §9 atomicityBridge (4) — WS-LS LS2.1: over the pair, hypothesis-free
     serlt! "withLockSet_observation_eq_action — the bracket is observationally the bare action (SM3.C.7)"
       withLockSet_observation_eq_action .atomicityBridge,
@@ -334,11 +329,12 @@ def serializabilityTheorems : List SerializabilityTheorem :=
     serlt! "objStoreWriteInstance_actionsCommuteObs — writes to distinct objects commute observationally"
       objStoreWriteInstance_actionsCommuteObs .observational]
 
-/-- WS-SM SM3.E: the inventory has exactly 98 entries (**WS-LS LS2.1**: 111 → 98 —
+/-- WS-SM SM3.E: the inventory has exactly 96 entries (**WS-LS LS2.1**: 111 → 98 —
 the §8b/§8c and §9b non-vacuity witnesses for the dropped lock-insensitivity
-hypotheses are gone, `applySequentialWithLockSet_kernel` is new). -/
+hypotheses are gone, `applySequentialWithLockSet_kernel` is new; **LS3.1**:
+98 → 96, the two word-level preservation entries deleted with the lock words). -/
 theorem serializabilityTheorems_count :
-    serializabilityTheorems.length = 98 := by decide
+    serializabilityTheorems.length = 96 := by decide
 
 /-- WS-SM SM3.E: 5 entries in `model`. -/
 theorem serializabilityTheorems_model_count :
@@ -364,9 +360,9 @@ theorem serializabilityTheorems_acyclicity_count :
 theorem serializabilityTheorems_serializability_count :
     (serializabilityTheorems.filter (fun t => t.category == .serializability)).length = 22 := by decide
 
-/-- WS-SM SM3.E: 4 entries in `preservation`. -/
+/-- WS-SM SM3.E: 2 entries in `preservation`. -/
 theorem serializabilityTheorems_preservation_count :
-    (serializabilityTheorems.filter (fun t => t.category == .preservation)).length = 4 := by decide
+    (serializabilityTheorems.filter (fun t => t.category == .preservation)).length = 2 := by decide
 
 /-- WS-SM SM3.E: 4 entries in `atomicityBridge`. -/
 theorem serializabilityTheorems_atomicityBridge_count :

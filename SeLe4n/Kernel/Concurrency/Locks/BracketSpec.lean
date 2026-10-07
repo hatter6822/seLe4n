@@ -6,6 +6,8 @@
   This is free software, and you are welcome to redistribute it
   under certain conditions. See: https://github.com/hatter6822/seLe4n/blob/main/LICENSE
 -/
+import SeLe4n.Model.State
+import SeLe4n.Kernel.Concurrency.Locks.LockSet
 import SeLe4n.Kernel.Concurrency.Locks.LockState
 
 /-!
@@ -30,9 +32,9 @@ into a kernel object on the executed path.
   it is the obligation every spec carries, scheduler-domain or not.
 * `LockState.bracket` / `LockState.bracketDeclared` — the lock trace a
   bracket applies to the table: the growing phase over the sorted footprint,
-  the shrinking phase in reverse.  Stated once so `withLockSetGhost` and
+  the shrinking phase in reverse.  Stated once so `withLockSet` and
   `runGhost` have one answer.
-* `withLockSetGhost` — the ghost form of `withLockSet`: the same shape with
+* `withLockSet` — the ghost form of `withLockSet`: the same shape with
   the lock trace applied to the table instead of to the objects.  The
   word-level `withLockSet` stays until LS2.4 switches the syscall seams (it
   is still executed at `SyscallDispatchEntry.lean`'s suspend seam); LS3.1 renames
@@ -198,7 +200,7 @@ namespace LockState
 
 /-- The lock trace one bracket over footprint `S` applies in core `c`'s name:
 the growing phase over the sorted acquisition sequence, then the shrinking
-phase (withdraw, then release) over its reverse.  `withLockSetGhost` and
+phase (withdraw, then release) over its reverse.  `withLockSet` and
 `BracketSpec.runGhost` both advance the table by exactly this, so "what does a
 bracket do to the locks" has one answer. -/
 def bracket (c : CoreId) (S : LockSet) (L : LockState) : LockState :=
@@ -266,50 +268,50 @@ with its anchors.  Every theorem the 2PL, serializability and observer files
 state over the word-level bracket is restated over this one in LS2.1, with
 the lock-write-invisibility hypotheses gone: here the kernel half of the
 result *is* the action's, by `rfl`. -/
-def withLockSetGhost {α : Type} (S : LockSet) (core : CoreId)
+def withLockSet {α : Type} (S : LockSet) (core : CoreId)
     (action : SystemState → SystemState × α) (s : LockedSystemState) :
     LockedSystemState × α :=
   let (postAction, result) := action s.kernel
   (⟨postAction, LockState.bracket core S s.locks⟩, result)
 
-/-- The result of `withLockSetGhost`, decomposed: the action's kernel state,
+/-- The result of `withLockSet`, decomposed: the action's kernel state,
 the bracket's lock trace, the action's value. -/
-theorem withLockSetGhost_eq_decomposition {α : Type} (S : LockSet) (core : CoreId)
+theorem withLockSet_eq_decomposition {α : Type} (S : LockSet) (core : CoreId)
     (action : SystemState → SystemState × α) (s : LockedSystemState) :
-    withLockSetGhost S core action s =
+    withLockSet S core action s =
       (⟨(action s.kernel).1, LockState.bracket core S s.locks⟩, (action s.kernel).2) := rfl
 
 /-- The kernel half of the bracket's result is the action's. -/
-@[simp] theorem withLockSetGhost_fst_kernel {α : Type} (S : LockSet) (core : CoreId)
+@[simp] theorem withLockSet_fst_kernel {α : Type} (S : LockSet) (core : CoreId)
     (action : SystemState → SystemState × α) (s : LockedSystemState) :
-    (withLockSetGhost S core action s).1.kernel = (action s.kernel).1 := rfl
+    (withLockSet S core action s).1.kernel = (action s.kernel).1 := rfl
 
 /-- The lock half of the bracket's result is the bracket's trace, whatever the
 action did. -/
-@[simp] theorem withLockSetGhost_fst_locks {α : Type} (S : LockSet) (core : CoreId)
+@[simp] theorem withLockSet_fst_locks {α : Type} (S : LockSet) (core : CoreId)
     (action : SystemState → SystemState × α) (s : LockedSystemState) :
-    (withLockSetGhost S core action s).1.locks = LockState.bracket core S s.locks := rfl
+    (withLockSet S core action s).1.locks = LockState.bracket core S s.locks := rfl
 
 /-- The value the bracket returns is the action's. -/
-@[simp] theorem withLockSetGhost_snd {α : Type} (S : LockSet) (core : CoreId)
+@[simp] theorem withLockSet_snd {α : Type} (S : LockSet) (core : CoreId)
     (action : SystemState → SystemState × α) (s : LockedSystemState) :
-    (withLockSetGhost S core action s).2 = (action s.kernel).2 := rfl
+    (withLockSet S core action s).2 = (action s.kernel).2 := rfl
 
 /-- WS-SM SM3.C.1 over the pair: the empty footprint's bracket is the action
 on the kernel half with the table untouched. -/
-@[simp] theorem withLockSetGhost_empty {α : Type} (core : CoreId)
+@[simp] theorem withLockSet_empty {α : Type} (core : CoreId)
     (action : SystemState → SystemState × α) (s : LockedSystemState) :
-    withLockSetGhost LockSet.empty core action s =
+    withLockSet LockSet.empty core action s =
       (⟨(action s.kernel).1, s.locks⟩, (action s.kernel).2) := by
-  rw [withLockSetGhost_eq_decomposition, LockState.bracket_empty]
+  rw [withLockSet_eq_decomposition, LockState.bracket_empty]
 
-/-- **O3 at `withLockSetGhost`**: from the all-free table a bracket returns
+/-- **O3 at `withLockSet`**: from the all-free table a bracket returns
 to the all-free table. -/
-theorem withLockSetGhost_locks_of_unheld {α : Type} (S : LockSet) (core : CoreId)
+theorem withLockSet_locks_of_unheld {α : Type} (S : LockSet) (core : CoreId)
     (action : SystemState → SystemState × α) (s : LockedSystemState)
     (hL : s.locks = LockState.unheld) :
-    (withLockSetGhost S core action s).1.locks = LockState.unheld := by
-  rw [withLockSetGhost_fst_locks, hL, LockState.bracket_unheld]
+    (withLockSet S core action s).1.locks = LockState.unheld := by
+  rw [withLockSet_fst_locks, hL, LockState.bracket_unheld]
 
 -- ============================================================================
 -- §4  The bracket specification
@@ -396,14 +398,14 @@ theorem runGhost_declared (b : BracketSpec α) (c : CoreId) (s : LockedSystemSta
     LockState.bracketDeclared c (b.declared s.kernel) s.locks⟩ : LockedSystemState)) = _
   rw [h, LockState.bracketDeclared_some]
 
-/-- A declared entry's proven bracket is `withLockSetGhost` at its footprint,
+/-- A declared entry's proven bracket is `withLockSet` at its footprint,
 up to the order of the pair: `withLockSet` is `runGhost` of a spec whose
 `declared` is constant. -/
-theorem runGhost_eq_withLockSetGhost (b : BracketSpec α) (c : CoreId) (s : LockedSystemState)
+theorem runGhost_eq_withLockSet (b : BracketSpec α) (c : CoreId) (s : LockedSystemState)
     (S : LockSet) (h : b.declared s.kernel = some S) :
     b.runGhost c s =
-      ((withLockSetGhost S c (fun st => ((b.step st).2, (b.step st).1)) s).2,
-       (withLockSetGhost S c (fun st => ((b.step st).2, (b.step st).1)) s).1) := by
+      ((withLockSet S c (fun st => ((b.step st).2, (b.step st).1)) s).2,
+       (withLockSet S c (fun st => ((b.step st).2, (b.step st).1)) s).1) := by
   rw [runGhost_declared b c s S h]
   rfl
 

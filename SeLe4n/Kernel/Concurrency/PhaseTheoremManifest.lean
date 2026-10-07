@@ -13,11 +13,9 @@
 
 import Lean.Elab.Command
 import Lean.Meta.Basic
-import SeLe4n.Model.Object.PerObjectLockInventory
 import SeLe4n.Kernel.Concurrency.Assumptions
 import SeLe4n.Kernel.Concurrency.LockPrimitives
 import SeLe4n.Kernel.Concurrency.Locks.LockSetInventory
-import SeLe4n.Kernel.Concurrency.Locks.WithLockSetInventory
 import SeLe4n.Kernel.Concurrency.Locks.DeadlockInventory
 import SeLe4n.Kernel.Concurrency.Locks.SerializabilityInventory
 import SeLe4n.Kernel.Scheduler.Operations.CrossCoreWakeInventory
@@ -184,7 +182,7 @@ structure PhaseTheoremEntry where
   /-- **Theorems** among those entries: the entries whose declaration type is a
       `Prop`.  This is the number `smpInventoriedTheoremCount` sums, and it is
       *not* `entryCount`: the inventories register a phase's whole surface, so
-      224 of the 1142 entries are `def`s — lock-set footprints, per-core
+      180 of the 967 entries are `def`s — lock-set footprints, per-core
       invariant predicates, WCRT cost functions — rather than proofs.  Checked
       against the environment by the census at the end of this module, which
       fails elaboration on drift; zero for every non-theorem kind. -/
@@ -218,11 +216,10 @@ def smpPhaseTheoremManifest : List PhaseTheoremEntry :=
     { phase := .perObjectLocks,
       label := "SM3 — per-object locks",
       kind := .theoremInventory,
-      inventories := ["perObjectLockTheorems", "lockSetTheorems",
-                      "withLockSetTheorems", "deadlockTheorems",
+      inventories := ["lockSetTheorems", "deadlockTheorems",
                       "serializabilityTheorems"],
-      entryCount := 436,
-      theoremCount := 286 },
+      entryCount := 261,
+      theoremCount := 155 },
     { phase := .perCoreState,
       label := "SM4 — per-core state",
       kind := .assumptionLedger,
@@ -344,15 +341,17 @@ theorem smpPhase_verifiedLockPrimitives_entryCount_eq_inventories :
   rw [lockPrimitives_count]
   decide
 
-/-- SM3's registered **entry** count is the sum of its five SM3.A–E
-    inventories' lengths.  Of those 436 entries, 286 are propositions. -/
+/-- SM3's registered **entry** count is the sum of its three surviving
+    inventories' lengths (SM3.B lock sets, SM3.D deadlock freedom and SM3.E
+    serializability).  Of those 261 entries, 155 are propositions.  The SM3.A
+    per-object-lock and SM3.C bracket inventories went with the lock words at
+    WS-LS LS3.1: the surviving SM3.C theorems are stated over the ghost lock
+    table and are pinned by the Tier 3 surface anchors. -/
 theorem smpPhase_perObjectLocks_entryCount_eq_inventories :
     smpPhaseEntryCount .perObjectLocks
-      = Model.perObjectLockTheorems.length + lockSetTheorems.length
-        + withLockSetTheorems.length + deadlockTheorems.length
+      = lockSetTheorems.length + deadlockTheorems.length
         + serializabilityTheorems.length := by
-  rw [Model.perObjectLockTheorems_count, lockSetTheorems_count,
-      withLockSetTheorems_count, deadlockTheorems_count,
+  rw [lockSetTheorems_count, deadlockTheorems_count,
       serializabilityTheorems_count]
   decide
 
@@ -412,20 +411,20 @@ here is written twice. -/
     summands are each pinned to a real inventory length above.  Changing any
     inventory changes this number, and the Tier-0 gate fails until the
     manifest and `docs/smp_theorem_manifest.json` agree with the tree. -/
-theorem smp_inventoried_theorem_count : smpInventoriedTheoremCount = 918 := by
+theorem smp_inventoried_theorem_count : smpInventoriedTheoremCount = 787 := by
   decide
 
-/-- Entries in the same inventories: 1142, of which 224 are `def`s rather than
+/-- Entries in the same inventories: 967, of which 180 are `def`s rather than
     proofs.  Kept beside the theorem count so the gap is a number a reader can
     see, not a caveat they have to be told. -/
-theorem smp_inventoried_entry_count : smpInventoriedEntryCount = 1142 := by
+theorem smp_inventoried_entry_count : smpInventoriedEntryCount = 967 := by
   decide
 
 /-- The two differ, and by how much.  Stated so that collapsing them — quoting
     1111 as a theorem count, which this module did until `v0.34.27` — is a
     visible edit rather than a silent one. -/
 theorem smp_inventoried_theorem_count_lt_entry_count :
-    smpInventoriedTheoremCount + 224 = smpInventoriedEntryCount := by
+    smpInventoriedTheoremCount + 180 = smpInventoriedEntryCount := by
   decide
 
 /-- The total is the sum of the two phases that carry inventories today.
@@ -454,15 +453,11 @@ deletion fails elaboration rather than leaving a dangling string in
 that a string resolves — which is exactly the gap this anchor closes on the
 Lean side and `generate_smp_theorem_manifest.py` closes on the tree side.
 
-Sixteen inventories: fourteen theorem inventories plus the two assumption
+Fourteen inventories: twelve theorem inventories plus the two assumption
 ledgers, each with its size witness. -/
 example : True := by
-  let _ := @Model.perObjectLockTheorems
-  let _ := @Model.perObjectLockTheorems_count
   let _ := @lockSetTheorems
   let _ := @lockSetTheorems_count
-  let _ := @withLockSetTheorems
-  let _ := @withLockSetTheorems_count
   let _ := @deadlockTheorems
   let _ := @deadlockTheorems_count
   let _ := @serializabilityTheorems
@@ -497,8 +492,8 @@ example : True := by
 cannot distinguish a proof from a definition, and the inventories deliberately
 register both: `crossCoreWakeTheorems` carries `wakeThreadLockSet` and
 `determineTargetCore`, `perCoreCbsTheorems` carries `replenishOnCore` and
-`migrateSchedContextReplenishment`, and so on — 210 such entries across the
-fourteen inventories.  Every inventory's construction macro resolves its
+`migrateSchedContextReplenishment`, and so on — 180 such entries across the
+twelve inventories.  Every inventory's construction macro resolves its
 identifier (`let _ := @$ident`) and so proves the name exists; **none** checks
 that its type is a `Prop`.
 
@@ -569,9 +564,7 @@ macro "census_entry_named " x:ident : term =>
     the bridge from a published name to the list it names has to be written by
     hand — but each row is now a single token, not a pairing. -/
 private def censusInventories : List (String × Name × List String) :=
-  [ census_entry SeLe4n.Model.perObjectLockTheorems
-  , census_entry SeLe4n.Kernel.Concurrency.lockSetTheorems
-  , census_entry SeLe4n.Kernel.Concurrency.withLockSetTheorems
+  [ census_entry SeLe4n.Kernel.Concurrency.lockSetTheorems
   , census_entry SeLe4n.Kernel.Concurrency.deadlockTheorems
   , census_entry SeLe4n.Kernel.Concurrency.serializabilityTheorems
   , census_entry_named SeLe4n.Kernel.Concurrency.lockPrimitives

@@ -20,9 +20,8 @@ import SeLe4n.PackedString
 # WS-SM SM3.D — Theorem inventory
 
 Aggregates the SM3.D substantive definitions and theorems into a single
-typed inventory with size and per-category witnesses.  Mirrors the SM3.A
-`PerObjectLockInventory.lean`, SM3.B `LockSetInventory.lean`, and SM3.C
-`WithLockSetInventory.lean` patterns.
+typed inventory with size and per-category witnesses.  Mirrors the SM3.B
+`LockSetInventory.lean` pattern.
 
 Nine categories matching the plan §5.4 sub-tasks and the audit-pass
 expansion:
@@ -40,8 +39,8 @@ expansion:
 * `.boundedWait` — the contention-sensitive `WCRT` + `KernelOperation` +
   the full `boundedWait_under_2pl` (SM3.D.6).
 * `.grounding` — the §7/§7b bridges discharging the hypotheses from the
-  SM3.B/C discipline and connecting the abstract model to the concrete
-  SM3.C `lockSetHeld` lock state.
+  SM3.B/C discipline and connecting the abstract model to the ghost lock
+  table's `LockState.heldAll`.
 
 ## Identifier validation
 
@@ -263,8 +262,8 @@ def deadlockTheorems : List DeadlockTheorem :=
       executionOfHeld .grounding,
     dlt! "executionOfHeld_heldBy — abstract heldBy = lock set membership"
       executionOfHeld_heldBy .grounding,
-    dlt! "lockSetHeld_realizes_heldBy — concrete lockSetHeld realizes abstract heldBy"
-      lockSetHeld_realizes_heldBy .grounding,
+    dlt! "heldAll_realizes_heldBy — ghost-table heldAll realizes abstract heldBy"
+      heldAll_realizes_heldBy .grounding,
     dlt! "twoCorePathScenario — SM3.D.7 two-core acquire scenario"
       twoCorePathScenario .grounding]
 

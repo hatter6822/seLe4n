@@ -684,7 +684,7 @@ theorem notificationSignalOnCore_observer_atomic
     (waiter? : Option SeLe4n.ThreadId) (observed : SeLe4n.ObjId)
     (s : LockedSystemState) :
     notificationDeliveryObserver observed
-        (withLockSetGhost (lockSet_notificationSignal signaller cnRoot notificationId waiter?)
+        (withLockSet (lockSet_notificationSignal signaller cnRoot notificationId waiter?)
           executingCore (notificationSignalOnCore notificationId badge executingCore) s).1.kernel
       = notificationDeliveryObserver observed
           (notificationSignalOnCore notificationId badge executingCore s.kernel).1 :=
@@ -696,7 +696,7 @@ theorem notificationWaitOnCore_observer_atomic
     (cnRoot : SeLe4n.ObjId) (observed : SeLe4n.ObjId)
     (s : LockedSystemState) :
     notificationDeliveryObserver observed
-        (withLockSetGhost (lockSet_notificationWait caller cnRoot notificationId)
+        (withLockSet (lockSet_notificationWait caller cnRoot notificationId)
           executingCore (notificationWaitOnCore notificationId caller executingCore) s).1.kernel
       = notificationDeliveryObserver observed
           (notificationWaitOnCore notificationId caller executingCore s.kernel).1 :=
@@ -710,7 +710,7 @@ theorem notificationWaitOnCore_thread_observer_atomic
     (cnRoot : SeLe4n.ObjId) (observed : SeLe4n.ThreadId)
     (s : LockedSystemState) :
     threadIpcStateObserver observed
-        (withLockSetGhost (lockSet_notificationWait caller cnRoot notificationId)
+        (withLockSet (lockSet_notificationWait caller cnRoot notificationId)
           executingCore (notificationWaitOnCore notificationId caller executingCore) s).1.kernel
       = threadIpcStateObserver observed
           (notificationWaitOnCore notificationId caller executingCore s.kernel).1 :=

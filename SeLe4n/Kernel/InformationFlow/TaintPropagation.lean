@@ -2254,7 +2254,7 @@ holds on the object the write is keyed at?
 
 The codebase already answers it for the object store, and the answer is the
 per-object lock.  `storeObject` writes one key of `SystemState.objects` and no
-`lockSet_<τ>` declares `objStoreLock` for it; `.objStore` is reserved for
+`lockSet_<τ>` declares the `.objStore` table key for it; that key is reserved for
 *structural* table operations, which is why `stateLevelLock` appears in exactly
 three footprints before this phase — `lockSet_declassify`, `lockSet_auditRead`
 and `lockSet_auditDrain` — all of which write the audit **trail**, a `List`

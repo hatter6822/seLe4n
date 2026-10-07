@@ -14,12 +14,11 @@ import SeLe4n.Kernel.Concurrency.Types
 
 The data types of the abstract reader-writer lock — `AccessMode`,
 `RwLockState` and its canonical initial state `RwLockState.unheld` —
-split out of `Locks/RwLock.lean` so that the model layer can carry a
-per-object `lock : RwLockState` field without importing the lock's
-operational specification and its proofs.
+split out of `Locks/RwLock.lean` so that a consumer of the lock word's
+shape (the ghost lock table, `Locks/LockState.lean`) need not import the
+lock's operational specification and its proofs.
 
-`Model/Object/Types.lean` (and the other kernel-object structure
-modules) import only this module.  `Locks/RwLock.lean` imports it and
+`Locks/LockKey.lean` imports only this module.  `Locks/RwLock.lean` imports it and
 builds the transition system (`RwLockOp`, `applyOp`), the five-conjunct
 `wf` predicate and every RwLock theorem on top, so `import
 SeLe4n.Kernel.Concurrency.Locks.RwLock` still brings every name defined

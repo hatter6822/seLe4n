@@ -81,7 +81,7 @@ open SeLe4n.Kernel.Concurrency
 #check @readOnlyInstance
 #check @readOnlyInstance_actionsCommute
 #check @readOnlyInstance_actionsCommute_readOnly
-#check @setObjStoreLock_setScheduler_commute
+#check @setTlb_setScheduler_commute
 #check @disjointField_actionsCommute
 #check @objStoreEquiv
 #check @objStoreEquiv_refl
@@ -122,13 +122,11 @@ open SeLe4n.Kernel.Concurrency
 /-! ## SM3.E.6 — Single-core proof preservation -/
 #check @singleCore_invariant_preservation
 #check @singleCore_proof_preservation
-#check @withLockSet_growing_phase_establishes_lockSetHeld
-#check @releaseLockOnObject_preserves_invExt
 
 /-! ## SM3.E.2 — Atomicity bridge (applySequential models the bracketed execution;
 **WS-LS LS2.1**: over the pair `LockedSystemState`, hypothesis-free) -/
 #check @LockedSystemState
-#check @withLockSetGhost
+#check @withLockSet
 #check @withLockSet_observation_eq_action
 #check @applySequentialWithLockSet
 #check @applySequentialWithLockSet_nil
@@ -282,22 +280,23 @@ example (s : SystemState) (f₁ f₂ : KernelObject → KernelObject) (hExt : s.
 
 /-! ## SM3.E.6 — single-core proof preservation on a REAL (non-trivial) invariant -/
 
--- NON-VACUOUS witness: the genuine `objStoreLock.wf` invariant (a real SM2.C/SM3.C
--- invariant — NOT the trivial `True`) transfers through the ghost bracket
+-- NON-VACUOUS witness: the genuine object-store `invExt` invariant (the
+-- RobinHood well-formedness every store write carries — NOT the trivial
+-- `True`) transfers through the ghost bracket
 -- (**WS-LS LS2.1**: over the pair, from the all-free table), given the action
 -- preserves it.  No lock-insensitivity is assumed or discharged: the bracket's
 -- phases write the lock table, so there is nothing for the invariant to survive.
 example (core : CoreId) (op : SystemState → SystemState × Unit) (s : SystemState)
-    (hwf : s.objStoreLock.wf)
-    (hAction : ∀ s', s'.objStoreLock.wf → (op s').1.objStoreLock.wf) :
-    (withLockSetGhost lsW5 core op ⟨s, LockState.unheld⟩).1.kernel.objStoreLock.wf :=
+    (hwf : s.objects.invExt)
+    (hAction : ∀ s', s'.objects.invExt → (op s').1.objects.invExt) :
+    (withLockSet lsW5 core op ⟨s, LockState.unheld⟩).1.kernel.objects.invExt :=
   singleCore_invariant_preservation lsW5 core op ⟨s, LockState.unheld⟩
-    (fun st => st.objStoreLock.wf) hwf hAction
+    (fun st => st.objects.invExt) hwf hAction
 
 -- The pre→post form on a real postcondition: the action's write is what the
 -- bracketed kernel half shows.
 example (core : CoreId) (s : SystemState) (sch : SchedulerState) :
-    (withLockSetGhost lsW5 core (fun st => (setSchedulerAction sch st, ()))
+    (withLockSet lsW5 core (fun st => (setSchedulerAction sch st, ()))
       ⟨s, LockState.unheld⟩).1.kernel.scheduler = sch :=
   singleCore_proof_preservation lsW5 core (fun st => (setSchedulerAction sch st, ()))
     ⟨s, LockState.unheld⟩ (fun _ => True) (fun st => st.scheduler = sch)
@@ -305,7 +304,7 @@ example (core : CoreId) (s : SystemState) (sch : SchedulerState) :
 
 -- The trivial `True` invariant remains inhabited too (the metatheorem is total).
 example (core : CoreId) (op : SystemState → SystemState × Unit) (s : LockedSystemState) :
-    (fun _ => True) (withLockSetGhost lsW5 core op s).1.kernel :=
+    (fun _ => True) (withLockSet lsW5 core op s).1.kernel :=
   singleCore_proof_preservation lsW5 core op s (fun _ => True) (fun _ => True)
     trivial (fun _ _ => trivial)
 
@@ -358,7 +357,7 @@ example (sched : List KernelTransitionInstance) (s : LockedSystemState) :
 -- kernel half, the lock trace invisible — the single-transition bridge at a
 -- concrete observer.
 example (S : LockSet) (core : CoreId) (sch : SchedulerState) (s : SystemState) :
-    (withLockSetGhost S core (fun st => (setSchedulerAction sch st, ()))
+    (withLockSet S core (fun st => (setSchedulerAction sch st, ()))
       ⟨s, LockState.unheld⟩).1.kernel.scheduler = sch :=
   withLockSet_observation_eq_action S core (setSchedulerAction sch)
     ⟨s, LockState.unheld⟩ (fun st => st.scheduler)
@@ -412,9 +411,9 @@ example (core : CoreId) (op : SystemState → SystemState × Unit) (s s₀ : Sys
         = Option.map KernelObject.objectType (s₀.objects.get? k)) →
       ((op s').1.objects.invExt ∧ ∀ k, Option.map KernelObject.objectType ((op s').1.objects.get? k)
         = Option.map KernelObject.objectType (s₀.objects.get? k))) :
-    (withLockSetGhost lsW5 core op ⟨s, LockState.unheld⟩).1.kernel.objects.invExt ∧
+    (withLockSet lsW5 core op ⟨s, LockState.unheld⟩).1.kernel.objects.invExt ∧
     ∀ k, Option.map KernelObject.objectType
-        ((withLockSetGhost lsW5 core op ⟨s, LockState.unheld⟩).1.kernel.objects.get? k)
+        ((withLockSet lsW5 core op ⟨s, LockState.unheld⟩).1.kernel.objects.get? k)
       = Option.map KernelObject.objectType (s₀.objects.get? k) :=
   withLockSet_invariant_preserved lsW5 core op ⟨s, LockState.unheld⟩
     (fun st => st.objects.invExt ∧
@@ -484,11 +483,10 @@ private def runCommitSortChecks : IO Unit := do
 
 private def runInventoryChecks : IO Unit := do
   IO.println "--- §5 SM3.E — inventory counts ---"
-  -- WS-LS LS2.1: −7 preservation and −7 atomicityBridge for the retired
-  -- lock-insensitivity machinery, +1 atomicityBridge for
-  -- `applySequentialWithLockSet_kernel` (111 → 98).
-  assertBool "serializabilityTheorems.length = 98"
-    (decide (serializabilityTheorems.length = 98))
+  -- WS-LS LS3.1: −2 preservation for the deleted object-store lock-word
+  -- witnesses (98 → 96).
+  assertBool "serializabilityTheorems.length = 96"
+    (decide (serializabilityTheorems.length = 96))
   assertBool "model count = 5"
     (decide ((serializabilityTheorems.filter (fun t => t.category == .model)).length = 5))
   assertBool "conflict count = 7"
@@ -501,8 +499,8 @@ private def runInventoryChecks : IO Unit := do
     (decide ((serializabilityTheorems.filter (fun t => t.category == .acyclicity)).length = 9))
   assertBool "serializability count = 22"
     (decide ((serializabilityTheorems.filter (fun t => t.category == .serializability)).length = 22))
-  assertBool "preservation count = 4"
-    (decide ((serializabilityTheorems.filter (fun t => t.category == .preservation)).length = 4))
+  assertBool "preservation count = 2"
+    (decide ((serializabilityTheorems.filter (fun t => t.category == .preservation)).length = 2))
   assertBool "atomicityBridge count = 4"
     (decide ((serializabilityTheorems.filter (fun t => t.category == .atomicityBridge)).length = 4))
   assertBool "observational count = 18"
