@@ -147,6 +147,14 @@ import SeLe4n.Kernel.Lifecycle.Invariant.RetypeReservation
 -- so without this line it would be outside every Tier 1 census's environment —
 -- the `v0.35.76` finding one file smaller.
 import SeLe4n.Kernel.SyscallSchedFootprint
+-- WS-LS LS2.3: the syscall and suspend seams' footprint coverage — each
+-- declared footprint covers every object-store and scheduler write its seam
+-- performs (`syscallDispatchCrossCoreStep_coversWrites`,
+-- `suspendSeamAction_coversWrites`), built over the production per-arm
+-- containment (`SyscallSchedContainment`) and slot confinement
+-- (`SlotConfinement.*`), so the bracket's `hCover` is discharged at the seam
+-- rather than assumed.
+import SeLe4n.Kernel.SyscallSeamCoverage
 -- WS-SM SM7.B: the TLB shootdown protocol — `tlbShootdownLocal` /
 -- `tlbShootdownBroadcast` / `handleTlbShootdownReqOnCore`, the round
 -- composition with its quiescence capstone, Theorem 3.3.1

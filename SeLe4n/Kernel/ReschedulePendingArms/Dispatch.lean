@@ -34,30 +34,9 @@ open Architecture.SyscallArgDecode
 /-- Resolving the extra capabilities mints CDT nodes only. -/
 theorem resolveExtraCaps_keyFrame (cspaceRoot : SeLe4n.ObjId) (capAddrs : Array SeLe4n.CPtr)
     (depth : Nat) (granted : Bool) (st : SystemState) (hInv : st.objects.invExt) :
-    capabilityKeyFrame st (resolveExtraCaps cspaceRoot capAddrs depth granted st).2 := by
-  suffices h : (resolveExtraCaps cspaceRoot capAddrs depth granted st).2.objects = st.objects ∧
-      (resolveExtraCaps cspaceRoot capAddrs depth granted st).2.scheduler = st.scheduler from
-    capabilityKeyFrame_of_objects_scheduler_eq hInv h.1 h.2
-  unfold resolveExtraCaps
-  split
-  · exact ⟨rfl, rfl⟩
-  · refine Array.foldl_induction
-      (motive := fun (_ : Nat) (acc : Array TransferCap × SystemState) =>
-        acc.2.objects = st.objects ∧ acc.2.scheduler = st.scheduler) ⟨rfl, rfl⟩ ?_
-    intro i acc hAcc
-    split
-    · exact hAcc
-    · split
-      · exact hAcc
-      · split
-        · exact hAcc
-        · rename_i node stNode hNode
-          unfold SystemState.ensureCdtNodeForSlotChecked at hNode
-          split at hNode
-          · cases hNode; exact hAcc
-          · split at hNode
-            · cases hNode; exact hAcc
-            · cases hNode
+    capabilityKeyFrame st (resolveExtraCaps cspaceRoot capAddrs depth granted st).2 :=
+  let h := resolveExtraCaps_objects_scheduler_eq cspaceRoot capAddrs depth granted st
+  capabilityKeyFrame_of_objects_scheduler_eq hInv h.1 h.2
 
 theorem clearWokenReceiverStash_keyFrame (receiver? : Option SeLe4n.ThreadId) {st : SystemState}
     {pair : Unit × SystemState} (hInv : st.objects.invExt)

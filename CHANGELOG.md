@@ -1,3 +1,86 @@
+## v0.36.67 — WS-LS LS2.3: the syscall and suspend seams' coverage, stated at the seam
+
+The two seams the plan's first draft claimed coverage theorems for now have
+them.  `SeLe4n/Kernel/SyscallSeamCoverage.lean` (new, production, imported by
+`SeLe4n.lean`) proves `syscallDispatchCrossCoreStep_coversWrites`: the unified
+footprint `declaredUnifiedLockSetForAbiEntry` resolves at the entry state
+covers every object-store and scheduler write of `syscallDispatchCrossCoreStep`
+— the register spill and the IPC-buffer TLB fill (scheduler frames), the
+checked dispatch (`dispatchSyscallChecked_coversWrites` over
+`dispatchWithCapChecked_coversWrites`, one `case` per declared arm, each the
+arm's `SyscallSchedContainment` theorem applied once; the undeclared arms close
+on the resolver's `none`; the cap-fault arm is excluded by re-running the
+gate's resolution at the spilled state, `syscallResolveCap_congr_objects`) and
+the wrapper's own tail (`stageCallerReturnFor`, `scheduleLocalSuccessorFrom`,
+`settleResidencyOnCore`, `clearIcacheMaintenance`, `clearPhysicalWrites`, by
+tail lemmas framed on the executing core) — under
+`st.objects.invExt ∧ queueHeadBlockedConsistent st`; and
+`suspendSeamAction_coversWrites`: the unified `.tcbSuspend` footprint covers
+the suspend seam's action.  Neither takes coverage as a hypothesis;
+`unifiedLockSetForSyscall_coversWrites`'s `hCover` is discharged at the seam.
+`BracketSpec` gains an `inv : SystemState → Prop` field its `covers` assumes
+(the scheduler seams' and the census witnesses' are `fun _ => True`), so LS2.4
+can build the syscall seam's record from the theorem as stated.
+
+- **Promoted, not routed around.**  The SM8.B confinement predicate
+  `observableSlotsConfinedToCores`, its frame layer and every
+  `*_confinedToCores` theorem moved from the staged
+  `InformationFlow/NonInterferenceCrossCore.lean` / `NonInterferencePerCore.lean`
+  into the production `SeLe4n/Kernel/SlotConfinement/` family (`Predicate`,
+  `Legs`, `IpcArms`, `SchedContextArms`, `PriorityArms`, `MemoryArms`, with an
+  import hub), so `SyscallSchedContainment` leaves
+  `scripts/staged_module_allowlist.txt` and `Platform/Staged.lean` no longer
+  imports it.  The NI module keeps only the observer-facing statements over
+  them (`crossCoreNiTheorem_count` unchanged at 32).  The tail lemmas take no
+  `invExt` — confinement to the executing core plus the replenish frames
+  suffice — which is what kept the staged `ReschedulePendingSchedulingPoints`
+  lemmas out of the production closure.  The `*_machine_eq` and per-core slot
+  frames the moved proofs consume moved beside their definitions
+  (`Transport.lean`, `Endpoint.lean`, `SchedulerLemmas.lean`,
+  `Selection.lean`).
+- **Three footprints changed so the seam proof can be stated** (compiled
+  changes on the syscall path until LS2.4 switches the seam to
+  `BracketSpec.run`, which resolves no footprint).  `unifiedLockSetForSyscall`
+  closes the union with the executing core's run-queue write lock
+  (`mem_unifiedLockSetForSyscall_executingCore`), which the wrapper's tail
+  writes for every arm.  `.receive`'s footprint carries the chain walk's own
+  write set by simulation (`endpointReceiveHandoffChainWriteSet`; the resolver
+  re-runs the receive leg at the state the walk runs on), so
+  `schedLockSet_endpointReceiveOnCore` takes the receiver's CSpace root and
+  slot base and `schedLockSet_endpointReceiveOnCore_coversWrites` is stated of
+  `applyReceiveRendezvousHandoff`, the whole hand-off the arm runs (Cut C6f's
+  leg-plus-donation unit was a claim about a prefix; its Tier 3 negative
+  flips).  `.call`'s footprint is read at the state the arm's
+  extra-capability resolution leaves, where the dispatch reads the derivation
+  nodes it mints (`SyscallLockOperands.extraCapAddrs`, resolved by
+  `abiEntryLockOperands`); `.send`'s is unchanged, its write set reading only
+  the object store the resolution leaves as it was
+  (`resolveExtraCaps_objects_scheduler_eq`,
+  `schedLockSet_endpointSendOnCore_congr_objects`).  `.tcbResume`'s is read
+  at the entry state and carried across the fault retire
+  (`schedLockSet_resumeThreadOnCore_retire`).
+- **Helper lemmas beside their definitions**: `footprintCoversWrites_trans` /
+  `_of_objects_scheduler_eq` / `_of_scheduler_eq` (`BracketSpec.lean`);
+  `stageCallerReturnFor_scheduler`; `abiEntryGate_components`,
+  `abiEntryPlan_components`, `abiEntryLockOperands_gate_lookup`
+  (`SyscallLockBracket.lean`); `schedLockSetForSyscall_contains_objStore_write`,
+  `unifiedLockSetForSyscall_some_imp_sched`, `mem_unifiedLockSetForSyscall_objStore`
+  (`SyscallSchedFootprint.lean`); `validateThreadIdArg_ok_toValid?`,
+  `validateObjIdArg_ok_val`, `resolveReplyRecvReply_answered`,
+  `syscallLookupCap_resolve`, `syscallResolveCap_congr_objects` (`API.lean`);
+  `notificationSignalBoundCrossCoreDispatchChecked_fst_of_ok` and the wait
+  twin; `queueHeadBlockedConsistent_updateTcb_of_ipcState_eq`
+  (`LookupCongruence.lean`).
+- Tier 3: fifty-eight anchors follow the moved confinement theorems into
+  `SlotConfinement/`; the containment module's staged-import pin becomes the
+  production pins (its `SlotConfinement` import, its absence from the staged
+  anchor and the allowlist); a seam-coverage block pins the two theorems'
+  shapes, the `SeLe4n.lean` import, the executing-core membership and the
+  absence of a coverage hypothesis; the `.receive` footprint's and the unified
+  footprint's shapes are re-pinned.  Store-reader baseline, theorem manifest
+  and codebase map regenerated.  Plan row LS2.3 done, with its four decisions;
+  §6's no-object lemma is LS2.4's.  Exerciser reading: 387 heap allocations per syscall, unchanged from LS2.2 (the three footprint changes add no allocation on the notification-signal round trip).
+
 ## v0.36.66 — WS-LS LS2.2: the scheduler seams run the bracket specification
 
 **The first WS-LS row that changes the compiled kernel.**  The timer tick, the

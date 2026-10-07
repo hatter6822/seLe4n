@@ -278,8 +278,8 @@ theorem endpointCallCrossCoreDispatch_no_receiver
 -- `InformationFlow/NonInterferenceCrossCore.lean` for the reason Cuts 5, 7, 8a-ii
 -- and C2 each applied: a write set declared in a staged module is one the
 -- production footprint cannot read.  The confinement theorem
--- (`endpointCallCrossCoreDispatch_confinedToCores`) stays there, because
--- `observableSlotsConfinedToCores` is that module's predicate.
+-- (`endpointCallCrossCoreDispatch_confinedToCores`) is in the production
+-- `SlotConfinement/IpcArms.lean` since WS-LS LS2.3.
 
 /-- SM8.B.2: the WithCaps call leaves the bare call's run queues in place — every
 arm either *is* the bare call's post-state or is that state after an
@@ -329,8 +329,8 @@ chain returns `[]`.
 
 Relocated to production at **WS-RR RR8.12 Cut C3a**, beside the dispatch it mirrors,
 so the scheduler-domain footprint `schedLockSet_endpointCallOnCore` can read it; its
-confinement theorem stays in `InformationFlow/NonInterferenceCrossCore.lean`, because
-`observableSlotsConfinedToCores` is that module's predicate. -/
+confinement theorem is in the production `SlotConfinement/IpcArms.lean` since
+WS-LS LS2.3. -/
 def endpointCallDispatchChainWriteSet
     (endpointId : SeLe4n.ObjId) (caller : SeLe4n.ThreadId) (msg : IpcMessage)
     (endpointRights : AccessRightSet)
@@ -364,8 +364,8 @@ supplied by hand.
 
 Relocated to production at **WS-RR RR8.12 Cut C3a**, beside the dispatch it mirrors,
 so the scheduler-domain footprint `schedLockSet_endpointCallOnCore` can read it; its
-confinement theorem stays in `InformationFlow/NonInterferenceCrossCore.lean`, because
-`observableSlotsConfinedToCores` is that module's predicate. -/
+confinement theorem is in the production `SlotConfinement/IpcArms.lean` since
+WS-LS LS2.3. -/
 def endpointCallDispatchWriteSet
     (endpointId : SeLe4n.ObjId) (caller : SeLe4n.ThreadId) (msg : IpcMessage)
     (endpointRights : AccessRightSet)

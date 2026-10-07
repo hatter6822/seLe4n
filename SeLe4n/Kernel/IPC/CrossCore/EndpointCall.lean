@@ -114,8 +114,8 @@ Relocated for the reason `endpointSendWriteSet`'s docstring gives: the
 scheduler-domain footprint is production and
 `InformationFlow/NonInterferenceCrossCore.lean`, where this was declared, is
 staged and imports `Kernel.API`.  Its confinement theorem
-`endpointCallOnCore_confinedToCores` stays there, because
-`observableSlotsConfinedToCores` is that module's predicate. -/
+`endpointCallOnCore_confinedToCores` is in the production
+`SlotConfinement/IpcArms.lean` since WS-LS LS2.3. -/
 def endpointCallWriteSet (st : SystemState) (endpointId : SeLe4n.ObjId)
     (executingCore : CoreId) : List CoreId :=
   match endpointCallReceiver? st endpointId with

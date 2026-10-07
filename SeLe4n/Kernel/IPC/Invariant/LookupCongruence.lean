@@ -277,6 +277,43 @@ theorem queueHeadBlockedConsistent_of_getElem_eq {s1 s2 : SystemState}
   rw [hEq] at hEp hTcb
   exact h epId ep hd tcb hEp hTcb
 
+/-- **WS-LS LS2.3**: a TCB rewrite that keeps the thread's `ipcState` keeps
+every queue head consistent — the shape of the syscall seam's register spill,
+which rewrites the caller's register file before the dispatch runs. -/
+theorem queueHeadBlockedConsistent_updateTcb_of_ipcState_eq (st : SystemState)
+    (tid : SeLe4n.ThreadId) (f : TCB → TCB) (hInv : st.objects.invExt)
+    (hF : ∀ t, (f t).ipcState = t.ipcState) (h : queueHeadBlockedConsistent st) :
+    queueHeadBlockedConsistent (st.updateTcb tid f) := by
+  intro epId ep hd tcb hEp hTcb
+  have hEp' : st.objects[epId]? = some (.endpoint ep) := by
+    by_cases hNe : tid.toObjId = epId
+    · subst hNe
+      cases hT : st.getTcb? tid with
+      | none => rw [SystemState.updateTcb_eq_self_of_none hT] at hEp; exact hEp
+      | some t =>
+        have := SystemState.updateTcb_getTcb?_self st tid f hInv
+        rw [hT, Option.map_some] at this
+        rw [(SystemState.getTcb?_eq_some_iff _ _ _).mp this] at hEp
+        exact absurd hEp (by simp)
+    · rw [SystemState.updateTcb_objects_ne st tid f epId hNe hInv] at hEp; exact hEp
+  by_cases hNe : tid.toObjId = hd.toObjId
+  · have hHd : hd = tid := ThreadId.toObjId_injective _ _ hNe.symm
+    subst hHd
+    cases hT : st.getTcb? hd with
+    | none => rw [SystemState.updateTcb_eq_self_of_none hT] at hTcb; exact h epId ep hd tcb hEp' hTcb
+    | some t =>
+      have hSelf := SystemState.updateTcb_getTcb?_self st hd f hInv
+      rw [hT, Option.map_some] at hSelf
+      rw [(SystemState.getTcb?_eq_some_iff _ _ _).mp hSelf] at hTcb
+      injection hTcb with hTcb
+      injection hTcb with hTcb
+      subst hTcb
+      have hOrig := h epId ep hd t hEp' ((SystemState.getTcb?_eq_some_iff _ _ _).mp hT)
+      rw [hF t]
+      exact hOrig
+  · rw [SystemState.updateTcb_objects_ne st tid f hd.toObjId hNe hInv] at hTcb
+    exact h epId ep hd tcb hEp' hTcb
+
 /-- SM6.D: pointwise-lookup transport of `blockedThreadTimeoutConsistent`. -/
 theorem blockedThreadTimeoutConsistent_of_getElem_eq {s1 s2 : SystemState}
     (hEq : ∀ oid : SeLe4n.ObjId, s2.objects[oid]? = s1.objects[oid]?)

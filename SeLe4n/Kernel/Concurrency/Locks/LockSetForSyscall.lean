@@ -188,6 +188,14 @@ structure SyscallLockOperands where
   unsupplied operand read as an unpin request, which is a footprint for a
   different transition. -/
   affinity : Option (Option CoreId) := none
+  /-- **WS-LS LS2.3**: the extra-capability addresses a `.send` / `.call`
+  message names.  The arm resolves them — minting a derivation node per source
+  slot — *before* its transition runs, so `.call`'s scheduler footprint, whose
+  write set re-runs the dispatch and reads those nodes, is resolved at the state
+  the resolution leaves (`schedLockSetForSyscall`'s `.call` arm).  `.send`'s
+  write set reads the object store alone, which the resolution leaves
+  unchanged, so its footprint needs no such re-reading. -/
+  extraCapAddrs : Array SeLe4n.CPtr := #[]
 
 /-- **WS-RR RR7.10**: the operands of a thread-directed syscall. -/
 def SyscallLockOperands.ofThreadTarget (caller target : ThreadId) :

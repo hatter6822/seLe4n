@@ -980,7 +980,8 @@ private def rescheduleFlagSpec : BracketSpec Nat :=
   { declared := fun _ =>
       some (lockSet_notificationWait ⟨5⟩ (SeLe4n.ObjId.ofNat 10) (SeLe4n.ObjId.ofNat 20))
     step := fun st => (7, st.clearReschedulePendingOnCore bootCoreId)
-    covers := fun st S _ =>
+    inv := fun _ => True
+    covers := fun st S _ _ =>
       SeLe4n.Kernel.footprintCoversWrites_clearReschedulePendingOnCore S st bootCoreId }
 
 /-- **WS-LS LS2.1**: the ghost bracket executes — the kernel half is the

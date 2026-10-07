@@ -1962,6 +1962,83 @@ theorem removeRunnableOnCore_currentOnCore_ne (st : SystemState)
   simp [removeRunnableOnCore, SchedulerState.setRunQueueOnCore_currentOnCore,
     SchedulerState.setCurrentOnCore_currentOnCore_ne, h]
 
+/-- `enqueueRunnableOnCore` leaves every core's active-domain slot untouched. -/
+theorem enqueueRunnableOnCore_activeDomainOnCore (st : SystemState) (c : CoreId)
+    (tid : SeLe4n.ThreadId) (c' : CoreId) :
+    (enqueueRunnableOnCore st c tid).scheduler.activeDomainOnCore c'
+      = st.scheduler.activeDomainOnCore c' := by
+  cases hTcb : st.getTcb? tid with
+  | none => simp only [enqueueRunnableOnCore, SystemState.getTcbWitnessed?_eq_none hTcb]
+  | some tcb =>
+    simp only [enqueueRunnableOnCore, SystemState.getTcbWitnessed?_eq_some hTcb]
+    split
+    · rfl
+    · simp only [SchedulerState.markReschedulePendingOnCore_activeDomainOnCore,
+        SchedulerState.setRunQueueOnCore_activeDomainOnCore]
+
+/-- `enqueueRunnableOnCore` leaves every core's domain-time-remaining slot. -/
+theorem enqueueRunnableOnCore_domainTimeRemainingOnCore (st : SystemState) (c : CoreId)
+    (tid : SeLe4n.ThreadId) (c' : CoreId) :
+    (enqueueRunnableOnCore st c tid).scheduler.domainTimeRemainingOnCore c'
+      = st.scheduler.domainTimeRemainingOnCore c' := by
+  cases hTcb : st.getTcb? tid with
+  | none => simp only [enqueueRunnableOnCore, SystemState.getTcbWitnessed?_eq_none hTcb]
+  | some tcb =>
+    simp only [enqueueRunnableOnCore, SystemState.getTcbWitnessed?_eq_some hTcb]
+    split
+    · rfl
+    · simp only [SchedulerState.markReschedulePendingOnCore_domainTimeRemainingOnCore,
+        SchedulerState.setRunQueueOnCore_domainTimeRemainingOnCore]
+
+/-- `enqueueRunnableOnCore` leaves every core's domain-schedule-index slot. -/
+theorem enqueueRunnableOnCore_domainScheduleIndexOnCore (st : SystemState) (c : CoreId)
+    (tid : SeLe4n.ThreadId) (c' : CoreId) :
+    (enqueueRunnableOnCore st c tid).scheduler.domainScheduleIndexOnCore c'
+      = st.scheduler.domainScheduleIndexOnCore c' := by
+  cases hTcb : st.getTcb? tid with
+  | none => simp only [enqueueRunnableOnCore, SystemState.getTcbWitnessed?_eq_none hTcb]
+  | some tcb =>
+    simp only [enqueueRunnableOnCore, SystemState.getTcbWitnessed?_eq_some hTcb]
+    split
+    · rfl
+    · simp only [SchedulerState.markReschedulePendingOnCore_domainScheduleIndexOnCore,
+        SchedulerState.setRunQueueOnCore_domainScheduleIndexOnCore]
+
+/-- `enqueueRunnableOnCore` leaves the machine registers untouched. -/
+theorem enqueueRunnableOnCore_machineEq (st : SystemState) (c : CoreId)
+    (tid : SeLe4n.ThreadId) : (enqueueRunnableOnCore st c tid).machine = st.machine := by
+  cases hTcb : st.getTcb? tid with
+  | none => simp only [enqueueRunnableOnCore, SystemState.getTcbWitnessed?_eq_none hTcb]
+  | some tcb => simp only [enqueueRunnableOnCore, SystemState.getTcbWitnessed?_eq_some hTcb]; split <;> rfl
+
+/-- `removeRunnableOnCore` leaves every core's machine registers untouched. -/
+theorem removeRunnableOnCore_machine_eq (st : SystemState) (tid : SeLe4n.ThreadId)
+    (c : CoreId) : (removeRunnableOnCore st tid c).machine = st.machine := rfl
+
+/-- `removeRunnableOnCore` leaves every core's active-domain slot untouched. -/
+theorem removeRunnableOnCore_activeDomainOnCore (st : SystemState) (tid : SeLe4n.ThreadId)
+    (c c' : CoreId) :
+    (removeRunnableOnCore st tid c).scheduler.activeDomainOnCore c'
+      = st.scheduler.activeDomainOnCore c' := by
+  simp [removeRunnableOnCore, SchedulerState.setCurrentOnCore_activeDomainOnCore,
+    SchedulerState.setRunQueueOnCore_activeDomainOnCore]
+
+/-- `removeRunnableOnCore` leaves every core's domain-time-remaining slot. -/
+theorem removeRunnableOnCore_domainTimeRemainingOnCore (st : SystemState)
+    (tid : SeLe4n.ThreadId) (c c' : CoreId) :
+    (removeRunnableOnCore st tid c).scheduler.domainTimeRemainingOnCore c'
+      = st.scheduler.domainTimeRemainingOnCore c' := by
+  simp [removeRunnableOnCore, SchedulerState.setCurrentOnCore_domainTimeRemainingOnCore,
+    SchedulerState.setRunQueueOnCore_domainTimeRemainingOnCore]
+
+/-- `removeRunnableOnCore` leaves every core's domain-schedule-index slot. -/
+theorem removeRunnableOnCore_domainScheduleIndexOnCore (st : SystemState)
+    (tid : SeLe4n.ThreadId) (c c' : CoreId) :
+    (removeRunnableOnCore st tid c).scheduler.domainScheduleIndexOnCore c'
+      = st.scheduler.domainScheduleIndexOnCore c' := by
+  simp [removeRunnableOnCore, SchedulerState.setCurrentOnCore_domainScheduleIndexOnCore,
+    SchedulerState.setRunQueueOnCore_domainScheduleIndexOnCore]
+
 /-- `v0.35.158`: `placedCoreOf?` reads one bit per core of each of its two
 slices — *is `tid` in this queue*, *is `tid` this core's current thread* — so two
 states agreeing on those two bits at every core place `tid` alike.  The finest of

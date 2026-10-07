@@ -6,16 +6,15 @@
   This is free software, and you are welcome to redistribute it
   under certain conditions. See: https://github.com/hatter6822/seLe4n/blob/main/LICENSE
 -/
--- STATUS: staged for WS-RR RR8.12 Cut C6a — the syscall arms' scheduler-domain
--- write-set containment.  Staged because every proof here consumes an SM8.B
--- confinement theorem and those live in `InformationFlow/NonInterferenceCrossCore`,
--- which is staged; a proof links into no image, and CI builds this module on
--- every PR through `Platform.Staged`.  The reschedule seam's counterpart
--- (`perCoreRescheduleStep_coversWrites`) is production for the mirror-image
--- reason — the switch's frames are.
+-- The syscall arms' scheduler-domain write-set containment (WS-RR RR8.12 Cut
+-- C6a).  Production since WS-LS LS2.3: every proof here consumes an SM8.B
+-- confinement theorem, and those moved from the staged
+-- `InformationFlow/NonInterferenceCrossCore` into `Kernel/SlotConfinement` so
+-- that the syscall seam's `BracketSpec.covers` (`SyscallSeamCoverage.lean`)
+-- can be built from the sixteen theorems below.
 import SeLe4n.Kernel.SyscallSchedFootprint
 import SeLe4n.Kernel.SchedLockBracket
-import SeLe4n.Kernel.InformationFlow.NonInterferenceCrossCore
+import SeLe4n.Kernel.SlotConfinement
 
 /-!
 # WS-RR RR8.12 Cut C6a — the non-donating arms' footprints are not false
@@ -366,47 +365,80 @@ theorem schedLockSet_endpointReplyRecvOnCore_coversWrites (endpointId : SeLe4n.O
     (fun d hd => endpointReplyRecvOnCore_replenishQueueOnCore_ne endpointId receiver replyId prevCaller msg
       receiverCspaceRoot receiverSlotBase executingCore st st' summary d hObjInv hd hStep)
 
-/-- **WS-RR RR8.12 Cut C6f**: `.receive`'s footprint covers its writes — the leg
-composed with WS-OD OD3.6's donation, which is what that footprint bounds.
+/-- **Cut C6f (`v0.35.179`) / WS-LS LS2.3**: the live `.receive` ARM's coverage —
+the leg composed with the **whole hand-off**.
 
-**Not the chain walk**, and that is the arm's own design rather than a gap here:
-`.receive` is the one declared arm whose walk sits outside its run segment
-(`endpointReceiveDualWriteSet` is the leg's), because the walk's cores are
-state-discovered and are declared dynamically through `pipChainSchedFootprint`
-under the `pipChainStart_endpointReceive` obligation.  A bracket acquires the two
-together; a coverage claim stated at the whole hand-off would be *false* of this
-footprint, which is why the unit here is the leg and the donation.
-
-The run half is free: the donation is per-core silent (it moves a budget, not a
-scheduling decision), so the composition is confined to the leg's own set.  The
-replenish half is the arm's three shapes under one keyed frame. -/
+Until LS2.3 the unit was the leg and the donation, because the chain walk
+sat outside the run segment; the footprint now carries the walk's own write
+set by simulation (`endpointReceiveHandoffChainWriteSet`), so the theorem is
+stated of `applyReceiveRendezvousHandoff`, the step `API.lean`'s arm runs.
+The run segment is the leg's own write set followed by the walk's at the
+post-donation state, which is exactly how the arm composes
+(`applyReceiveRendezvousHandoff_ok_decompose`); the replenish segment is the
+donation's pair, and the walk moves no scheduling context
+(`propagatePipChainCrossCore_replenishQueueOnCore`). -/
 theorem schedLockSet_endpointReceiveOnCore_coversWrites (endpointId : SeLe4n.ObjId)
     (receiver : SeLe4n.ThreadId) (replyId : Option SeLe4n.ReplyId)
     (receiverCspaceRoot : SeLe4n.ObjId) (receiverSlotBase : SeLe4n.Slot)
-    (executingCore : CoreId) (st st1 stDon : SystemState) (dequeued : SeLe4n.ThreadId)
+    (executingCore : CoreId) (st st1 st' : SystemState) (dequeued : SeLe4n.ThreadId)
     (summary : CapTransferSummary) (sgi : Option (CoreId × Concurrency.SgiKind)) (S : LockSet)
     (hObjInv : st.objects.invExt) (hHeads : queueHeadBlockedConsistent st)
-    (hS : LockSet.ofList? (schedLockSet_endpointReceiveOnCore st endpointId receiver
-      executingCore) = some S)
+    (hS : LockSet.ofList? (schedLockSet_endpointReceiveOnCore st endpointId receiver replyId
+      receiverCspaceRoot receiverSlotBase executingCore) = some S)
     (hLeg : endpointReceiveDualWithCapsOnCore endpointId receiver replyId receiverCspaceRoot
       receiverSlotBase executingCore st = (st1, .ok (dequeued, summary, sgi)))
-    (hDon : applyReceiveRendezvousDonation st1 receiver dequeued = .ok stDon) :
-    footprintCoversWrites S st stDon :=
-  footprintCoversWrites_of_confined S
-    (endpointReceiveDualWriteSet st endpointId executingCore)
-    (endpointReceiveHandoffReplenishCores st endpointId receiver) st stDon
-    (LockSet.ofList?_pairs hS)
-    (observableSlotsConfinedToCores_mono (fun _ hm => by simpa using hm)
-      (observableSlotsConfinedToCores_trans
-        (by
-          have h := endpointReceiveDualWithCapsOnCore_confinedToCores endpointId receiver replyId
-            receiverCspaceRoot receiverSlotBase executingCore st hObjInv
-          rw [hLeg] at h
-          exact h)
-        (applyReceiveRendezvousDonation_confinedToCores st1 stDon receiver dequeued hDon)))
-    (fun d hd => endpointReceiveLegAndDonation_replenishQueueOnCore_ne endpointId receiver replyId
+    (hHand : applyReceiveRendezvousHandoff st1 receiver dequeued executingCore = .ok st') :
+    footprintCoversWrites S st st' := by
+  obtain ⟨stDon, hDon, hEq⟩ :=
+    applyReceiveRendezvousHandoff_ok_decompose st1 st' receiver dequeued executingCore hHand
+  have hChain : endpointReceiveHandoffChainWriteSet st endpointId receiver replyId
+      receiverCspaceRoot receiverSlotBase executingCore
+      = if rendezvousDequeuedCall st1 dequeued then
+          pipChainWriteSet stDon receiver executingCore stDon.objectIndex.length
+        else [] := by
+    unfold endpointReceiveHandoffChainWriteSet
+    rw [hLeg]
+    simp only
+    rw [hDon]
+  have hLegConf : observableSlotsConfinedToCores st st1
+      (endpointReceiveDualWriteSet st endpointId executingCore) := by
+    have h := endpointReceiveDualWithCapsOnCore_confinedToCores endpointId receiver replyId
+      receiverCspaceRoot receiverSlotBase executingCore st hObjInv
+    rw [hLeg] at h
+    exact h
+  have hDonConf := applyReceiveRendezvousDonation_confinedToCores st1 stDon receiver dequeued hDon
+  have hReplDon : ∀ d : CoreId, d ∉ endpointReceiveHandoffReplenishCores st endpointId receiver →
+      stDon.scheduler.replenishQueueOnCore d = st.scheduler.replenishQueueOnCore d :=
+    fun d hd => endpointReceiveLegAndDonation_replenishQueueOnCore_ne endpointId receiver replyId
       receiverCspaceRoot receiverSlotBase executingCore st st1 stDon dequeued summary sgi d
-      hObjInv hHeads hd hLeg hDon)
+      hObjInv hHeads hd hLeg hDon
+  refine footprintCoversWrites_of_confined S
+    (endpointReceiveDualWriteSet st endpointId executingCore
+      ++ endpointReceiveHandoffChainWriteSet st endpointId receiver replyId receiverCspaceRoot
+          receiverSlotBase executingCore)
+    (endpointReceiveHandoffReplenishCores st endpointId receiver) st st'
+    (LockSet.ofList?_pairs hS) ?_ ?_
+  · rw [hChain]
+    subst hEq
+    cases hCall : rendezvousDequeuedCall st1 dequeued
+    · simp only [Bool.false_eq_true, if_false]
+      exact observableSlotsConfinedToCores_trans hLegConf hDonConf
+    · simp only [if_true]
+      unfold applyReceiverPipHandoff
+      exact observableSlotsConfinedToCores_trans hLegConf
+        (observableSlotsConfinedToCores_mono (fun _ hm => hm)
+          (observableSlotsConfinedToCores_trans hDonConf
+            (propagatePipChainCrossCore_confinedToCores executingCore
+              stDon.objectIndex.length stDon receiver)))
+  · intro d hd
+    subst hEq
+    cases hCall : rendezvousDequeuedCall st1 dequeued
+    · simp only [Bool.false_eq_true, if_false]
+      exact hReplDon d hd
+    · simp only [if_true]
+      unfold applyReceiverPipHandoff
+      rw [PriorityInheritance.propagatePipChainCrossCore_replenishQueueOnCore]
+      exact hReplDon d hd
 
 -- ============================================================================
 -- §7  What the obligation refuses

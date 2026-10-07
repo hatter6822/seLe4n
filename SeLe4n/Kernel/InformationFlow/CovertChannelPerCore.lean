@@ -1757,8 +1757,9 @@ stating precisely rather than gesturing at:
   `notificationSignalOnCore`, `.tcbSuspend` → the `descheduleThread` leg), the
   premise is **false in general** — those transitions really do write a remote
   core.  What holds instead is the set-of-cores statement, and
-  `NonInterferenceCrossCore` proves it for each of them: the writes stay inside
-  a write set computed from the pre-state.
+  the production `SlotConfinement` modules prove it for each of them (the
+  writes stay inside a write set computed from the pre-state) and
+  `NonInterferenceCrossCore` turns each into the remote observer's statement.
 
   **Read that boundary precisely.**  Those write sets bound the *below-API
   transitions*, and the live dispatch is more than the transition: the `.call`

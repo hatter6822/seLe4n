@@ -25,7 +25,8 @@ preservation, the SchedContext hand-off catalogue (`PerCoreDonationStep`,
 `schedLockSet_endpointReplyRecvOnCore`.  The composed transition's
 `ipcInvariantFull` preservation is `endpointReplyRecvOnCore_preserves_ipcInvariantFull`
 (`IPC/Invariant/DispatchPayoff.lean`), and its per-core confinement and
-non-interference are `endpointReplyRecvOnCore_confinedToCores` /
+non-interference are `endpointReplyRecvOnCore_confinedToCores`
+(`SlotConfinement/IpcArms.lean`, production since WS-LS LS2.3) /
 `endpointReplyRecvOnCore_crossCoreNonInterference`
 (`InformationFlow/NonInterferenceCrossCore.lean`).
 -/

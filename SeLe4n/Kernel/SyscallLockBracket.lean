@@ -200,6 +200,63 @@ theorem abiEntryPlan_dispatches (ctx : LabelingContext) (executingCore : CoreId)
             Bool.false_eq_true, if_false]
           rfl
 
+/-- **WS-LS LS2.3**: the plan, component by component — the caller is the
+executing core's current thread, the decode is of the caller's spilled register
+file at the spilled state, and the state the dispatch runs on is that spilled
+state with the IPC-buffer window filled (which touches the per-core TLB alone,
+`tlbFillIpcBufferOnCore_eq_setPerCoreTlb`).  What the seam coverage proof
+reads to carry a claim from the dispatch state back to the entry state. -/
+theorem abiEntryPlan_components (ctx : LabelingContext) (executingCore : CoreId)
+    (syscallId : UInt32) (x0 x1 x2 x3 x4 x5 : UInt64) (st : SystemState)
+    (tid : SeLe4n.ThreadId) (decoded : SyscallDecodeResult) (stFilled : SystemState)
+    (h : abiEntryPlan ctx executingCore syscallId x0 x1 x2 x3 x4 x5 st
+          = some (tid, decoded, stFilled)) :
+    st.scheduler.currentOnCore executingCore = some tid ∧
+      ∃ tcb : TCB,
+        (Platform.FFI.writeFfiRegistersToTcb st tid syscallId x0 x1 x2 x3 x4 x5).getObject?
+            tid.toObjId = some (.tcb tcb) ∧
+        SeLe4n.Kernel.Architecture.RegisterDecode.decodeSyscallArgsFromState
+          (Platform.FFI.writeFfiRegistersToTcb st tid syscallId x0 x1 x2 x3 x4 x5) tid
+          SeLe4n.arm64DefaultLayout tcb.registerContext 32 = .ok decoded ∧
+        stFilled = SeLe4n.Kernel.Architecture.tlbFillIpcBufferOnCore
+          (Platform.FFI.writeFfiRegistersToTcb st tid syscallId x0 x1 x2 x3 x4 x5)
+          executingCore tid decoded.overflowCount := by
+  unfold abiEntryPlan at h
+  by_cases hCtx : isInsecureDefaultContext ctx
+  · rw [if_pos hCtx] at h; exact absurd h (by simp)
+  · rw [if_neg hCtx] at h
+    cases hCur : st.scheduler.currentOnCore executingCore with
+    | none => rw [hCur] at h; exact absurd h (by simp)
+    | some tid' =>
+      rw [hCur] at h
+      simp only at h
+      cases hRegs : lookupThreadRegisterContext tid'
+          (Platform.FFI.writeFfiRegistersToTcb st tid' syscallId x0 x1 x2 x3 x4 x5) with
+      | error e => rw [hRegs] at h; exact absurd h (by simp)
+      | ok regsPair =>
+        obtain ⟨regs, _⟩ := regsPair
+        rw [hRegs] at h
+        simp only at h
+        cases hDec : SeLe4n.Kernel.Architecture.RegisterDecode.decodeSyscallArgsFromState
+            (Platform.FFI.writeFfiRegistersToTcb st tid' syscallId x0 x1 x2 x3 x4 x5)
+            tid' SeLe4n.arm64DefaultLayout regs 32 with
+        | error e => rw [hDec] at h; exact absurd h (by simp)
+        | ok decoded' =>
+          rw [hDec] at h
+          simp only [Option.some.injEq, Prod.mk.injEq] at h
+          obtain ⟨hTid, hDecoded, hFilled⟩ := h
+          subst hTid; subst hDecoded; subst hFilled
+          refine ⟨rfl, ?_⟩
+          unfold lookupThreadRegisterContext at hRegs
+          split at hRegs
+          · rename_i tcb hTcb
+            simp only [Except.ok.injEq, Prod.mk.injEq] at hRegs
+            obtain ⟨hR, _⟩ := hRegs
+            subst hR
+            exact ⟨tcb, hTcb, hDec, rfl⟩
+          · exact absurd hRegs (by simp)
+          · exact absurd hRegs (by simp)
+
 -- ============================================================================
 -- §2  The operands, from the capability the decode addresses
 -- ============================================================================
@@ -279,6 +336,41 @@ theorem abiEntryGate_cspaceRoot (decoded : SyscallDecodeResult) (tid : SeLe4n.Th
               subst hT
               subst hG
               exact ⟨rfl, rfl, rfl⟩
+
+/-- **WS-LS LS2.3**: the gate, field by field — the caller's TCB, its root
+CNode, and the `SyscallGate` `dispatchSyscallChecked` builds from the two.
+
+`abiEntryGate_cspaceRoot` reads two fields off it; the seam coverage proof
+needs the whole record, because the dispatch builds its own gate from the same
+two lookups and the operands' lookup has to be shown to be *that* gate's. -/
+theorem abiEntryGate_components (decoded : SyscallDecodeResult) (tid : SeLe4n.ThreadId)
+    (s : SystemState) (tcb : TCB) (gate : SyscallGate)
+    (h : abiEntryGate decoded tid s = some (tcb, gate)) :
+    s.getTcb? tid = some tcb ∧
+      ∃ rootCn : CNode, s.getCNode? tcb.cspaceRoot = some rootCn ∧
+        gate = { callerId := tid, cspaceRoot := tcb.cspaceRoot,
+                 capAddr := decoded.capAddr, capDepth := rootCn.depth,
+                 requiredRight := syscallRequiredRight decoded.syscallId } := by
+  unfold abiEntryGate at h
+  cases hTcb : s.getTcb? tid with
+  | none => rw [hTcb] at h; exact absurd h (by simp)
+  | some tcb' =>
+      rw [hTcb] at h
+      simp only at h
+      split at h
+      · exact absurd h (by simp)
+      · rename_i rootCn hRoot
+        split at h
+        · exact absurd h (by simp)
+        · split at h
+          · exact absurd h (by simp)
+          · rename_i ref hRef
+            split at h
+            · exact absurd h (by simp)
+            · obtain ⟨hT, hG⟩ := Prod.mk.injEq .. ▸ Option.some.inj h
+              subst hT
+              subst hG
+              exact ⟨rfl, rootCn, hRoot, rfl⟩
 
 /-- **WS-RR RR7.12**: the message a sending arm's footprint is a function of.
 
@@ -361,7 +453,10 @@ def abiEntryLockOperands (decoded : SyscallDecodeResult) (tid : SeLe4n.ThreadId)
           match (SeLe4n.ThreadId.ofNat objId.toNat).toValid? with
           | none => none
           | some valid => some (.ofThreadTarget tid valid.val)
-      | .send, .object epId => some (.ofObjectTarget tid epId (some (abiEntryMessage decoded gate cap s)))
+      | .send, .object epId =>
+          some { SyscallLockOperands.ofObjectTarget tid epId
+                   (some (abiEntryMessage decoded gate cap s)) with
+                 extraCapAddrs := Architecture.SyscallArgDecode.decodeExtraCapAddrs decoded }
       -- **WS-RR RR8.12 Cut C4b**: `.call` additionally carries the invoked
       -- capability's **rights** and the receiver's **slot base**, which are what
       -- the arm's SCHEDULER-domain footprint needs — `endpointCallDispatchWriteSet`
@@ -372,12 +467,14 @@ def abiEntryLockOperands (decoded : SyscallDecodeResult) (tid : SeLe4n.ThreadId)
           some { caller := tid, targetObject := some epId,
                  message := some (abiEntryMessage decoded gate cap s),
                  endpointRights := some cap.rights,
-                 receiverSlotBase := some decoded.capRecvSlot }
+                 receiverSlotBase := some decoded.capRecvSlot,
+                 extraCapAddrs := Architecture.SyscallArgDecode.decodeExtraCapAddrs decoded }
       | .receive, .object epId =>
           match resolveRecvReplyId gate decoded s with
           | .error _ => none
           | .ok replyId? =>
-              some { caller := tid, targetObject := some epId, targetReply := replyId? }
+              some { caller := tid, targetObject := some epId, targetReply := replyId?,
+                     receiverSlotBase := some decoded.capRecvSlot }
       | .notificationSignal, .object nId => some (.ofObjectTarget tid nId)
       | .notificationWait, .object nId => some (.ofObjectTarget tid nId)
       -- **Cut C4b**: `.reply` carries the message the live arm builds and the
@@ -564,6 +661,30 @@ theorem abiEntryLockOperands_caller (decoded : SyscallDecodeResult)
           | rw [← Option.some.inj h]
           | exact absurd h (by simp)
           | simp_all
+
+/-- **WS-LS LS2.3**: resolved operands come from a resolved gate and a
+successful rights-gated lookup of the capability the decode addresses, at the
+very state the operands are read at (the lookup is read-only). -/
+theorem abiEntryLockOperands_gate_lookup (decoded : SyscallDecodeResult)
+    (tid : SeLe4n.ThreadId) (s : SystemState) (ops : SyscallLockOperands)
+    (h : abiEntryLockOperands decoded tid s = some ops) :
+    ∃ (tcb : TCB) (gate : SyscallGate) (cap : Capability),
+      abiEntryGate decoded tid s = some (tcb, gate) ∧
+      syscallLookupCap gate s = .ok (cap, s) := by
+  unfold abiEntryLockOperands at h
+  cases hGate : abiEntryGate decoded tid s with
+  | none => rw [hGate] at h; exact absurd h (by simp)
+  | some pair =>
+    obtain ⟨tcb, gate⟩ := pair
+    rw [hGate] at h
+    simp only at h
+    cases hLk : syscallLookupCap gate s with
+    | error e => rw [hLk] at h; exact absurd h (by simp)
+    | ok capPair =>
+      obtain ⟨cap, s'⟩ := capPair
+      have hS := syscallLookupCap_preserves_state gate s s' cap hLk
+      subst hS
+      exact ⟨tcb, gate, cap, rfl, hLk⟩
 
 -- ============================================================================
 -- §3  The revalidated bracket

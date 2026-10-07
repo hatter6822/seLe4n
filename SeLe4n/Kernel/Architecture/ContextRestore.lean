@@ -93,10 +93,12 @@ theorem stageCallerReturn_blocks (pre post : SystemState) (c : CoreId) :
 theorem stageCallerReturn_faulted (pre post : SystemState) (c : CoreId) :
     stageCallerReturn pre post c .faulted = post := rfl
 
-/-- The staging writes no scheduler state. -/
-theorem stageCallerReturn_scheduler (pre post : SystemState) (c : CoreId)
-    (o : SyscallOutcome) : (stageCallerReturn pre post c o).scheduler = post.scheduler := by
-  unfold stageCallerReturn stageCallerReturnFor
+/-- **WS-LS LS2.3**: staging a caller's result writes a register context and
+the core's bank, never the scheduler — whichever caller the seam captured. -/
+theorem stageCallerReturnFor_scheduler (caller? : Option SeLe4n.ThreadId)
+    (post : SystemState) (c : CoreId) (o : SyscallOutcome) :
+    (stageCallerReturnFor caller? post c o).scheduler = post.scheduler := by
+  unfold stageCallerReturnFor
   split
   · split
     · split
@@ -105,6 +107,11 @@ theorem stageCallerReturn_scheduler (pre post : SystemState) (c : CoreId)
     · rfl
   · rfl
   · rfl
+
+/-- The staging writes no scheduler state. -/
+theorem stageCallerReturn_scheduler (pre post : SystemState) (c : CoreId)
+    (o : SyscallOutcome) : (stageCallerReturn pre post c o).scheduler = post.scheduler :=
+  stageCallerReturnFor_scheduler _ post c o
 
 /-- **The payoff**: a caller still current on the core has its result in its
 saved context and in the bank. -/

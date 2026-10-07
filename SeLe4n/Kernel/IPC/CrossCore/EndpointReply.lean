@@ -4953,17 +4953,44 @@ operands, so a bracket resolving this footprint has everything it needs before t
 transition runs — the property WS-HP HP10.8 could not get for the reply arm's
 origin member and registered as an asymmetry.
 
-**Dynamic chain extension (declared, not static).** The arm also runs
+**The chain walk, by simulation (WS-LS LS2.3).** The arm also runs
 `applyReceiverPipHandoff`, which re-buckets each blocking-chain member's run
-queue on *that member's* home core.  The chain is state-discovered, so no static
-footprint can enumerate those cores: `PriorityInheritance.pipChainSchedFootprint`
-declares them per walked member, and the SM3.C obligation
-`pipChainStart_endpointReceive` is what ties the walk to it.  Every sibling
-footprint over an arm that walks a chain carries the identical caveat. -/
+queue on *that member's* home core.  The chain is state-discovered — it runs at
+the post-donation state, and the donation rewrites the SchedContext bindings
+`determineTargetCore` reads — so until LS2.3 this footprint left it out and
+`PriorityInheritance.pipChainSchedFootprint` declared it per walked member, a
+nested bracket no export reached.  `endpointReceiveHandoffChainWriteSet` now
+re-runs the leg and the donation from the pre-state and reads the walk's own
+write set (`pipChainWriteSet`) at the state the walk really runs on, exactly as
+`.call`'s `endpointCallDispatchChainWriteSet` has since RR2.7: a footprint
+resolved before the transition runs, naming every core the whole hand-off
+writes, so `schedLockSet_endpointReceiveOnCore_coversWrites` is stated of the
+arm's step and not of its donation half. -/
+def endpointReceiveHandoffChainWriteSet (st : SystemState) (endpointId : SeLe4n.ObjId)
+    (receiver : SeLe4n.ThreadId) (replyId : Option SeLe4n.ReplyId)
+    (receiverCspaceRoot : SeLe4n.ObjId) (receiverSlotBase : SeLe4n.Slot)
+    (executingCore : CoreId) : List CoreId :=
+  match endpointReceiveDualWithCapsOnCore endpointId receiver replyId receiverCspaceRoot
+      receiverSlotBase executingCore st with
+  | (_, .error _) => []
+  | (st1, .ok (dequeued, _, _)) =>
+    match applyReceiveRendezvousDonation st1 receiver dequeued with
+    | .error _ => []
+    | .ok stDon =>
+      if rendezvousDequeuedCall st1 dequeued then
+        pipChainWriteSet stDon receiver executingCore
+          stDon.objectIndex.length
+      else []
+
 def schedLockSet_endpointReceiveOnCore (st : SystemState) (endpointId : SeLe4n.ObjId)
-    (receiver : SeLe4n.ThreadId) (executingCore : CoreId) :
+    (receiver : SeLe4n.ThreadId) (replyId : Option SeLe4n.ReplyId)
+    (receiverCspaceRoot : SeLe4n.ObjId) (receiverSlotBase : SeLe4n.Slot)
+    (executingCore : CoreId) :
     List (LockKey × Concurrency.AccessMode) :=
-  schedFootprintOfCores (endpointReceiveDualWriteSet st endpointId executingCore)
+  schedFootprintOfCores
+    (endpointReceiveDualWriteSet st endpointId executingCore
+      ++ endpointReceiveHandoffChainWriteSet st endpointId receiver replyId receiverCspaceRoot
+          receiverSlotBase executingCore)
     (endpointReceiveHandoffReplenishCores st endpointId receiver)
 
 -- No `_write_only` / `_pairwise_le` restatement here, and that is deliberate: both
@@ -4976,11 +5003,13 @@ def schedLockSet_endpointReceiveOnCore (st : SystemState) (endpointId : SeLe4n.O
 sender's home core — resolved through `receiveRendezvousSender?`, the resolver the
 object-domain footprint's own sender member comes from. -/
 theorem schedLockSet_endpointReceiveOnCore_contains_sender_runQueue_write (st : SystemState)
-    (endpointId : SeLe4n.ObjId) (receiver : SeLe4n.ThreadId) (executingCore : CoreId)
+    (endpointId : SeLe4n.ObjId) (receiver : SeLe4n.ThreadId) (replyId : Option SeLe4n.ReplyId)
+    (receiverCspaceRoot : SeLe4n.ObjId) (receiverSlotBase : SeLe4n.Slot) (executingCore : CoreId)
     (sender : SeLe4n.ThreadId)
     (hSender : receiveRendezvousSender? st endpointId = some sender) :
     (LockKey.runQueue (determineTargetCore st sender), Concurrency.AccessMode.write)
-      ∈ schedLockSet_endpointReceiveOnCore st endpointId receiver executingCore := by
+      ∈ schedLockSet_endpointReceiveOnCore st endpointId receiver replyId receiverCspaceRoot
+        receiverSlotBase executingCore := by
   refine (mem_schedFootprintOfCores_runQueue_iff _ _ _).mpr ?_
   rw [endpointReceiveDualWriteSet_of_sender st endpointId executingCore sender hSender]
   simp
@@ -4990,10 +5019,12 @@ the receiver's own deschedule writes.  The two arms are exclusive — a receive
 that rendezvouses does not block — so the run segment is one member either
 way. -/
 theorem schedLockSet_endpointReceiveOnCore_contains_executing_runQueue_write (st : SystemState)
-    (endpointId : SeLe4n.ObjId) (receiver : SeLe4n.ThreadId) (executingCore : CoreId)
+    (endpointId : SeLe4n.ObjId) (receiver : SeLe4n.ThreadId) (replyId : Option SeLe4n.ReplyId)
+    (receiverCspaceRoot : SeLe4n.ObjId) (receiverSlotBase : SeLe4n.Slot) (executingCore : CoreId)
     (ep : Endpoint) (hEp : st.getEndpoint? endpointId = some ep) (hHead : ep.sendQ.head = none) :
     (LockKey.runQueue executingCore, Concurrency.AccessMode.write)
-      ∈ schedLockSet_endpointReceiveOnCore st endpointId receiver executingCore := by
+      ∈ schedLockSet_endpointReceiveOnCore st endpointId receiver replyId receiverCspaceRoot
+        receiverSlotBase executingCore := by
   refine (mem_schedFootprintOfCores_runQueue_iff _ _ _).mpr ?_
   rw [endpointReceiveDualWriteSet_of_blocked st endpointId executingCore ep hEp hHead]
   simp
@@ -5007,11 +5038,13 @@ pre-receive return migrates between
 `endpointReceiveDualOnCore_replenishQueueOnCore_of_no_donation` is the licence that
 the transition writes none on this shape. -/
 theorem schedLockSet_endpointReceiveOnCore_no_replenishQueue_of_blocked (st : SystemState)
-    (endpointId : SeLe4n.ObjId) (receiver : SeLe4n.ThreadId) (executingCore : CoreId)
+    (endpointId : SeLe4n.ObjId) (receiver : SeLe4n.ThreadId) (replyId : Option SeLe4n.ReplyId)
+    (receiverCspaceRoot : SeLe4n.ObjId) (receiverSlotBase : SeLe4n.Slot) (executingCore : CoreId)
     (ep : Endpoint) (hEp : st.getEndpoint? endpointId = some ep) (hHead : ep.sendQ.head = none)
     (hNoDon : endpointReplyDonation? st receiver = none) (c : CoreId) :
     (LockKey.replenishQueue c, Concurrency.AccessMode.write)
-      ∉ schedLockSet_endpointReceiveOnCore st endpointId receiver executingCore := by
+      ∉ schedLockSet_endpointReceiveOnCore st endpointId receiver replyId receiverCspaceRoot
+        receiverSlotBase executingCore := by
   intro hMem
   have := (mem_schedFootprintOfCores_replenishQueue_iff _ _ c).mp hMem
   rw [endpointReceiveHandoffReplenishCores_of_blocked st endpointId receiver ep hEp hHead
@@ -5087,14 +5120,16 @@ used to declare two.
 Over-declaring is sound and not free: lock contention is an observable channel
 (SM8.D's CC-5), and WS-OD OD3.5 narrowed a footprint for exactly this reason. -/
 theorem schedLockSet_endpointReceiveOnCore_no_replenishQueue_of_blockedOnSend
-    (st : SystemState) (endpointId : SeLe4n.ObjId) (receiver : SeLe4n.ThreadId)
+    (st : SystemState) (endpointId : SeLe4n.ObjId) (receiver : SeLe4n.ThreadId) (replyId : Option SeLe4n.ReplyId)
+    (receiverCspaceRoot : SeLe4n.ObjId) (receiverSlotBase : SeLe4n.Slot)
     (executingCore : CoreId) (ep : Endpoint) (sender : SeLe4n.ThreadId)
     (senderTcb : TCB) (sendEp : SeLe4n.ObjId)
     (hEp : st.getEndpoint? endpointId = some ep) (hHead : ep.sendQ.head = some sender)
     (hTcb : lookupTcb st sender = some senderTcb)
     (hSend : senderTcb.ipcState = .blockedOnSend sendEp) (c : CoreId) :
     (LockKey.replenishQueue c, Concurrency.AccessMode.write)
-      ∉ schedLockSet_endpointReceiveOnCore st endpointId receiver executingCore := by
+      ∉ schedLockSet_endpointReceiveOnCore st endpointId receiver replyId receiverCspaceRoot
+        receiverSlotBase executingCore := by
   intro hMem
   have := (mem_schedFootprintOfCores_replenishQueue_iff _ _ c).mp hMem
   rw [endpointReceiveHandoffReplenishCores_of_blockedOnSend st endpointId receiver ep sender
@@ -5202,7 +5237,8 @@ beside `…_of_blocked` and `…_of_blockedOnSend`, for the path that used to de
 Over-declaring is sound and not free: lock contention is an observable channel
 (SM8.D's CC-5), and WS-OD OD3.5 narrowed a footprint for exactly this reason. -/
 theorem schedLockSet_endpointReceiveOnCore_no_replenishQueue_of_no_donation
-    (st : SystemState) (endpointId : SeLe4n.ObjId) (receiver : SeLe4n.ThreadId)
+    (st : SystemState) (endpointId : SeLe4n.ObjId) (receiver : SeLe4n.ThreadId) (replyId : Option SeLe4n.ReplyId)
+    (receiverCspaceRoot : SeLe4n.ObjId) (receiverSlotBase : SeLe4n.Slot)
     (executingCore : CoreId) (ep : Endpoint) (sender : SeLe4n.ThreadId)
     (senderTcb : TCB) (callEp : SeLe4n.ObjId)
     (hEp : st.getEndpoint? endpointId = some ep) (hHead : ep.sendQ.head = some sender)
@@ -5210,7 +5246,8 @@ theorem schedLockSet_endpointReceiveOnCore_no_replenishQueue_of_no_donation
     (hCall : senderTcb.ipcState = .blockedOnCall callEp)
     (hNone : callDonationSchedContext? st sender receiver = none) (c : CoreId) :
     (LockKey.replenishQueue c, Concurrency.AccessMode.write)
-      ∉ schedLockSet_endpointReceiveOnCore st endpointId receiver executingCore := by
+      ∉ schedLockSet_endpointReceiveOnCore st endpointId receiver replyId receiverCspaceRoot
+        receiverSlotBase executingCore := by
   intro hMem
   have := (mem_schedFootprintOfCores_replenishQueue_iff _ _ c).mp hMem
   rw [endpointReceiveHandoffReplenishCores_of_no_donation st endpointId receiver ep sender
@@ -5266,7 +5303,8 @@ theorem schedLockSet_endpointReceiveOnCore_covers_donation (st : SystemState)
              (determineTargetCore
                (endpointReceiveDualWithCapsOnCore endpointId receiver replyId receiverCspaceRoot
                  receiverSlotBase executingCore st).1 receiver),
-      p ∈ schedLockSet_endpointReceiveOnCore st endpointId receiver executingCore := by
+      p ∈ schedLockSet_endpointReceiveOnCore st endpointId receiver replyId receiverCspaceRoot
+        receiverSlotBase executingCore := by
   have hDonPre : callDonationSchedContext? st sender receiver = some scId :=
     callDonationSchedContext?_some_of_sameSchedContextBindings
       (endpointReceiveDualWithCapsOnCore_sameSchedContextBindings_of_rendezvous endpointId
@@ -5283,15 +5321,18 @@ theorem schedLockSet_endpointReceiveOnCore_covers_donation (st : SystemState)
 footprint names both replenish-queue write locks the pre-receive return's migration
 takes — the receiver's home core and the owner's. -/
 theorem schedLockSet_endpointReceiveOnCore_contains_preReturn_replenish_writes
-    (st : SystemState) (endpointId : SeLe4n.ObjId) (receiver : SeLe4n.ThreadId)
+    (st : SystemState) (endpointId : SeLe4n.ObjId) (receiver : SeLe4n.ThreadId) (replyId : Option SeLe4n.ReplyId)
+    (receiverCspaceRoot : SeLe4n.ObjId) (receiverSlotBase : SeLe4n.Slot)
     (executingCore : CoreId) (ep : Endpoint) (scId : SeLe4n.SchedContextId)
     (owner : SeLe4n.ThreadId)
     (hEp : st.getEndpoint? endpointId = some ep) (hHead : ep.sendQ.head = none)
     (hDon : endpointReplyDonation? st receiver = some (scId, owner)) :
     (LockKey.replenishQueue (determineTargetCore st receiver), Concurrency.AccessMode.write)
-        ∈ schedLockSet_endpointReceiveOnCore st endpointId receiver executingCore ∧
+        ∈ schedLockSet_endpointReceiveOnCore st endpointId receiver replyId receiverCspaceRoot
+        receiverSlotBase executingCore ∧
     (LockKey.replenishQueue (determineTargetCore st owner), Concurrency.AccessMode.write)
-        ∈ schedLockSet_endpointReceiveOnCore st endpointId receiver executingCore := by
+        ∈ schedLockSet_endpointReceiveOnCore st endpointId receiver replyId receiverCspaceRoot
+        receiverSlotBase executingCore := by
   constructor <;>
   · refine (mem_schedFootprintOfCores_replenishQueue_iff _ _ _).mpr ?_
     rw [endpointReceiveHandoffReplenishCores_of_blocked_returning st endpointId receiver ep scId
@@ -5314,7 +5355,8 @@ a migration to cover; where the guard declines the segment is empty
 (`cleanupPreReceiveDonationMigrated_of_no_donation`), so a coverage claim there would
 be covering nothing while reading like coverage. -/
 theorem schedLockSet_endpointReceiveOnCore_covers_preReturnMigration
-    (st stClean : SystemState) (endpointId : SeLe4n.ObjId) (receiver : SeLe4n.ThreadId)
+    (st stClean : SystemState) (endpointId : SeLe4n.ObjId) (receiver : SeLe4n.ThreadId) (replyId : Option SeLe4n.ReplyId)
+    (receiverCspaceRoot : SeLe4n.ObjId) (receiverSlotBase : SeLe4n.Slot)
     (executingCore : CoreId) (ep : Endpoint) (scId : SeLe4n.SchedContextId)
     (owner : SeLe4n.ThreadId)
     (hObjInv : st.objects.invExt)
@@ -5323,7 +5365,8 @@ theorem schedLockSet_endpointReceiveOnCore_covers_preReturnMigration
     (hClean : cleanupPreReceiveDonationChecked st receiver = .ok stClean) :
     ∀ p ∈ migrateSchedContextReplenishmentLockSet (determineTargetCore st receiver)
              (replenishHomeOfSchedContext stClean scId (determineTargetCore st receiver)),
-      p ∈ schedLockSet_endpointReceiveOnCore st endpointId receiver executingCore := by
+      p ∈ schedLockSet_endpointReceiveOnCore st endpointId receiver replyId receiverCspaceRoot
+        receiverSlotBase executingCore := by
   intro p hp
   simp only [migrateSchedContextReplenishmentLockSet, List.mem_cons, List.not_mem_nil,
     or_false] at hp

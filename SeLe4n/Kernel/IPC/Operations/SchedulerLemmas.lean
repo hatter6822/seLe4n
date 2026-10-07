@@ -307,6 +307,14 @@ theorem storeTcbIpcStateAndMessage_scheduler_eq
     st'.scheduler = st.scheduler :=
   modifyTcb_scheduler_eq hStep
 
+/-- `storeTcbIpcStateAndMessage` leaves the machine registers untouched. -/
+theorem storeTcbIpcStateAndMessage_machine_eq
+    (st st' : SystemState) (tid : SeLe4n.ThreadId)
+    (ipc : ThreadIpcState) (msg : Option IpcMessage)
+    (hStep : storeTcbIpcStateAndMessage st tid ipc msg = .ok st') :
+    st'.machine = st.machine :=
+  modifyTcb_machine_eq hStep
+
 /-- Finding F-1: `storeTcbReceiveComplete` does not modify the scheduler.
 Mirror of `storeTcbIpcStateAndMessage_scheduler_eq`. -/
 theorem storeTcbReceiveComplete_scheduler_eq

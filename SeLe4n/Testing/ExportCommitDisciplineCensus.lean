@@ -329,7 +329,8 @@ private def censusWitnessBracketed : BaseIO Unit := do
 private def censusWitnessSpec : SeLe4n.Kernel.Concurrency.BracketSpec Unit where
   declared := fun _ => none
   step := fun s => ((), s)
-  covers := fun _ _ h => nomatch h
+  inv := fun _ => True
+  covers := fun _ _ _ h => nomatch h
 
 private def censusWitnessBracketedSpec : BaseIO Unit := do
   let _ ← SeLe4n.Platform.FFI.modifyGetKernelState (fun st =>

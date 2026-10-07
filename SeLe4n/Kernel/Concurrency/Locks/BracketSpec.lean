@@ -108,6 +108,41 @@ theorem footprintCoversWrites_clearReschedulePendingOnCore (S : LockSet)
     footprintCoversWrites S st (st.clearReschedulePendingOnCore c) :=
   ⟨fun _ _ _ => rfl, fun _ _ => ⟨rfl, rfl, rfl⟩, fun _ _ => rfl⟩
 
+/-- **WS-LS LS2.3**: coverage composes along a step sequence under one
+footprint — every clause is an equation between the two ends, and equations
+chain.  What lets a seam's coverage be the arm's coverage followed by the
+wrapper's own writes (`syscallCommitTail_coversWrites`). -/
+theorem footprintCoversWrites_trans (S : LockSet) {st₁ st₂ st₃ : SystemState}
+    (h₁ : footprintCoversWrites S st₁ st₂) (h₂ : footprintCoversWrites S st₂ st₃) :
+    footprintCoversWrites S st₁ st₃ := by
+  obtain ⟨hObj₁, hRun₁, hRepl₁⟩ := h₁
+  obtain ⟨hObj₂, hRun₂, hRepl₂⟩ := h₂
+  refine ⟨fun hT oid hTcb => (hObj₂ hT oid hTcb).trans (hObj₁ hT oid hTcb),
+    fun d hd => ?_, fun d hd => (hRepl₂ d hd).trans (hRepl₁ d hd)⟩
+  obtain ⟨a₁, b₁, c₁⟩ := hRun₁ d hd
+  obtain ⟨a₂, b₂, c₂⟩ := hRun₂ d hd
+  exact ⟨a₂.trans a₁, b₂.trans b₁, c₂.trans c₁⟩
+
+/-- **WS-LS LS2.3**: a step that leaves the object store and the scheduler
+alone is covered by every footprint — the three clauses read nothing else. -/
+theorem footprintCoversWrites_of_objects_scheduler_eq (S : LockSet)
+    {st st' : SystemState} (hObj : st'.objects = st.objects)
+    (hSched : st'.scheduler = st.scheduler) :
+    footprintCoversWrites S st st' :=
+  ⟨fun _ oid _ => by rw [hObj], fun d _ => by rw [hSched]; exact ⟨rfl, rfl, rfl⟩,
+   fun d _ => by rw [hSched]⟩
+
+/-- **WS-LS LS2.3**: under the table write lock, a step that leaves the
+scheduler alone is covered whatever it wrote in the object store — the object
+clause is vacuous and the other two read the scheduler alone.  The shape of
+every register spill, return-frame staging and taint pass at the syscall seam. -/
+theorem footprintCoversWrites_of_scheduler_eq (S : LockSet) {st st' : SystemState}
+    (hTable : (LockKey.objStore, AccessMode.write) ∈ S.pairs)
+    (hSched : st'.scheduler = st.scheduler) :
+    footprintCoversWrites S st st' :=
+  ⟨fun hAbsent => absurd hTable hAbsent,
+   fun d _ => by rw [hSched]; exact ⟨rfl, rfl, rfl⟩, fun d _ => by rw [hSched]⟩
+
 /-- **WS-RR RR8.12 Cut C6h**: coverage is MONOTONE in the footprint.
 
 A footprint that names more locks covers at least what a smaller one covers,
@@ -285,19 +320,34 @@ does, and the proof that the declaration covers the doing.
 
 `declared` resolves the footprint from the pre-state (`none` when the entry
 declares nothing, which the executed path runs unbracketed and the ghost path
-runs with the table untouched); `step` is the transition; `covers` is the
-obligation every seam's spec discharges with its own coverage theorem
-(`perCoreTimerTickStep_coversWrites` and `perCoreRescheduleStep_coversWrites`
-for `timerTickBracket` / `rescheduleBracket` since LS2.2; the syscall and
-suspend seams' are LS2.3's, and LS2.4 builds their specs and points the
-exported bodies at `run`). -/
+runs with the table untouched); `step` is the transition; `inv` is the
+pre-state invariant the coverage proof may assume (`fun _ => True` for the
+scheduler seams, the object-store invariant and the queue-head consistency
+for the syscall seam, whose arms' confinement theorems are stated under them);
+`covers` is the obligation every seam's spec discharges with its own coverage
+theorem (`perCoreTimerTickStep_coversWrites` and
+`perCoreRescheduleStep_coversWrites` for `timerTickBracket` /
+`rescheduleBracket` since LS2.2; `syscallDispatchCrossCoreStep_coversWrites`
+and `suspendSeamAction_coversWrites` for the syscall and suspend seams since
+LS2.3, and LS2.4 builds their specs and points the exported bodies at `run`).
+
+**WS-LS LS2.3**: `inv` is a field rather than a hypothesis of `covers` alone
+because the ghost obligations (`runGhost_locks_of_unheld`, the serialisation
+results over the ghost table) are stated of the record, and a record whose
+coverage holds only on invariant pre-states is what the syscall seam is — the
+invariant is the one every transition of the kernel preserves
+(`proofLayerInvariantBundle`), so a seam that starts from it ends in it. -/
 structure BracketSpec (α : Type) where
   /-- The footprint the entry declares for a pre-state, if any. -/
   declared : SystemState → Option LockSet
   /-- The transition. -/
   step     : SystemState → α × SystemState
-  /-- The declared footprint covers every write the step makes. -/
-  covers   : ∀ st S, declared st = some S → footprintCoversWrites S st (step st).2
+  /-- The pre-state invariant the coverage obligation assumes. -/
+  inv      : SystemState → Prop
+  /-- The declared footprint covers every write the step makes from an
+  invariant pre-state. -/
+  covers   : ∀ st S, inv st → declared st = some S →
+    footprintCoversWrites S st (step st).2
 
 namespace BracketSpec
 
@@ -367,9 +417,9 @@ theorem runGhost_locks_of_unheld (b : BracketSpec α) (c : CoreId) (s : LockedSy
 
 /-- The spec's coverage, read at the executed path. -/
 theorem run_covers (b : BracketSpec α) (st : SystemState) (S : LockSet)
-    (h : b.declared st = some S) :
+    (hInv : b.inv st) (h : b.declared st = some S) :
     footprintCoversWrites S st (b.run st).2 :=
-  b.covers st S h
+  b.covers st S hInv h
 
 end BracketSpec
 

@@ -146,6 +146,34 @@ def schedLockSet_resumeThreadOnCore (st : SystemState) (vtid : SeLe4n.ValidThrea
     (executingCore : CoreId) : List (LockKey × Concurrency.AccessMode) :=
   schedFootprintOfCores (resumeThreadOnCoreWriteSet st vtid executingCore) []
 
+/-- **WS-LS LS2.3**: the fault retire the live `.tcbResume` arm runs first
+rewrites the target's register file and clears its pending fault; the home core
+reads the TCB's affinity alone, so it is the same at both states. -/
+theorem retirePendingFaultForResume_determineTargetCore (st : SystemState)
+    (t : SeLe4n.ThreadId) (hInv : st.objects.invExt) :
+    determineTargetCore (retirePendingFaultForResume st t) t = determineTargetCore st t := by
+  unfold retirePendingFaultForResume
+  cases hT : st.getTcb? t with
+  | none => rfl
+  | some tcb =>
+    simp only
+    cases hF : tcb.pendingFault with
+    | none => rfl
+    | some tf =>
+      simp only [applyFaultRestart]
+      unfold determineTargetCore
+      rw [SystemState.updateTcb_getTcb?_self st t _ hInv, hT, Option.map_some]
+      rfl
+
+/-- **WS-LS LS2.3**: so the resume footprint resolved at the entry state is the
+one the arm's transition runs under after the retire. -/
+theorem schedLockSet_resumeThreadOnCore_retire (st : SystemState)
+    (vtid : SeLe4n.ValidThreadId) (executingCore : CoreId) (hInv : st.objects.invExt) :
+    schedLockSet_resumeThreadOnCore (retirePendingFaultForResume st vtid.val) vtid executingCore
+      = schedLockSet_resumeThreadOnCore st vtid executingCore := by
+  unfold schedLockSet_resumeThreadOnCore resumeThreadOnCoreWriteSet
+  rw [retirePendingFaultForResume_determineTargetCore st vtid.val hInv]
+
 /-- `v0.35.167`: the footprint holds the resumed thread's home core's run-queue
 write lock — the enqueue's own. -/
 theorem schedLockSet_resumeThreadOnCore_contains_home_runQueue_write (st : SystemState)
@@ -2129,17 +2157,35 @@ def schedLockSetForSyscall (sid : SyscallId) (ops : SyscallLockOperands)
   | .send =>
       ops.targetObject.bind fun epId =>
         LockSet.ofList? (schedLockSet_endpointSendOnCore st epId executingCore)
+  -- **WS-LS LS2.3**: the receiver's CSpace root is read the way `.replyRecv`'s
+  -- is (`abiEntrySchedReceiverCspaceRoot`), and the slot base is the syscall's
+  -- own operand, because the footprint now re-runs the receive leg to read the
+  -- chain walk's write set at the state the walk runs on.
   | .receive =>
       ops.targetObject.bind fun epId =>
-        LockSet.ofList? (schedLockSet_endpointReceiveOnCore st epId ops.caller executingCore)
+        ops.receiverSlotBase.bind fun slotBase =>
+          (st.getTcb? ops.caller).bind fun receiver =>
+            LockSet.ofList?
+              (schedLockSet_endpointReceiveOnCore st epId ops.caller ops.targetReply
+                receiver.cspaceRoot slotBase executingCore)
+  -- **WS-LS LS2.3**: read at the state the arm's own extra-capability
+  -- resolution leaves.  `endpointCallDispatchWriteSet` re-runs the dispatch,
+  -- and the dispatch reads the derivation nodes that resolution mints, so a
+  -- footprint read before it would be a footprint for a leg run on a different
+  -- derivation tree.  The root and depth are the caller's own, as the gate's
+  -- are (`abiEntryGate_components`); the grant bit travels on the message.
   | .call =>
       ops.targetObject.bind fun epId =>
         ops.message.bind fun msg =>
           ops.endpointRights.bind fun rights =>
             ops.receiverSlotBase.bind fun slotBase =>
-              LockSet.ofList?
-                (schedLockSet_endpointCallOnCore epId ops.caller msg rights slotBase
-                  executingCore st)
+              (st.getTcb? ops.caller).bind fun callerTcb =>
+                (st.getCNode? callerTcb.cspaceRoot).bind fun rootCn =>
+                  LockSet.ofList?
+                    (schedLockSet_endpointCallOnCore epId ops.caller msg rights slotBase
+                      executingCore
+                      (resolveExtraCaps callerTcb.cspaceRoot ops.extraCapAddrs rootCn.depth
+                        msg.capsGranted st).2)
   | .reply =>
       ops.targetReply.bind fun rid =>
         (replyAnsweredCaller? st rid).bind fun answered =>
@@ -2266,14 +2312,16 @@ theorem schedLockSetForSyscall_objectDirected_isSome_iff
          schedLockSet_notificationSignalBoundOnCore, schedLockSet_endpointSendOnCore,
          schedFootprintOfCores_keys_nodup])
 
-/-- `.receive` is object-directed too, and its footprint additionally reads the
-receiving thread — which is the caller, so no operand beyond the endpoint. -/
+/-- `.receive` needs the endpoint, the receiver's slot base and the receiver's
+TCB (its CSpace root) — **WS-LS LS2.3**: its footprint re-runs the receive leg,
+which reads all three. -/
 theorem schedLockSetForSyscall_receive_isSome_iff
     (ops : SyscallLockOperands) (executingCore : CoreId) (st : SystemState) :
     (schedLockSetForSyscall .receive ops executingCore st).isSome
-      ↔ ops.targetObject.isSome := by
+      ↔ ops.targetObject.isSome ∧ ops.receiverSlotBase.isSome ∧
+        (st.getTcb? ops.caller).isSome := by
   unfold schedLockSetForSyscall
-  cases ops.targetObject <;>
+  cases ops.targetObject <;> cases ops.receiverSlotBase <;> cases st.getTcb? ops.caller <;>
     simp [LockSet.ofList?, schedLockSet_endpointReceiveOnCore,
       schedFootprintOfCores_keys_nodup]
 
@@ -2316,19 +2364,24 @@ theorem schedLockSetForSyscall_lifecycle_isSome_iff
           simp [hV, LockSet.ofList?, schedLockSet_suspendThreadOnCore,
             schedLockSet_resumeThreadOnCore, schedFootprintOfCores_keys_nodup])
 
-/-- `.call` needs the endpoint, the message, the invoked capability's rights and
-the receiver's slot base — its write set re-runs the dispatch, which reads all
-four. -/
+/-- `.call` needs the endpoint, the message, the invoked capability's rights,
+the receiver's slot base, and (**WS-LS LS2.3**) the caller's TCB and CSpace
+root — its write set re-runs the dispatch at the state the arm's
+extra-capability resolution leaves, which reads all of them. -/
 theorem schedLockSetForSyscall_call_isSome_iff
     (ops : SyscallLockOperands) (executingCore : CoreId) (st : SystemState) :
     (schedLockSetForSyscall .call ops executingCore st).isSome
       ↔ ops.targetObject.isSome ∧ ops.message.isSome ∧ ops.endpointRights.isSome ∧
-        ops.receiverSlotBase.isSome := by
+        ops.receiverSlotBase.isSome ∧
+        ∃ callerTcb, st.getTcb? ops.caller = some callerTcb ∧
+          (st.getCNode? callerTcb.cspaceRoot).isSome := by
   unfold schedLockSetForSyscall
   cases ops.targetObject <;> cases ops.message <;> cases ops.endpointRights <;>
-    cases ops.receiverSlotBase <;>
+    cases ops.receiverSlotBase <;> cases hT : st.getTcb? ops.caller <;>
       simp [LockSet.ofList?, schedLockSet_endpointCallOnCore,
         schedFootprintOfCores_keys_nodup]
+  rename_i callerTcb
+  cases st.getCNode? callerTcb.cspaceRoot <;> simp
 
 /-- `.reply` needs the Reply object to resolve to an answered caller, and the
 message, `MessageInfo` and register payload `decodeFaultReply` reads. -/
@@ -2367,6 +2420,32 @@ theorem schedLockSetForSyscall_replyRecv_isSome_iff
               cases ops.receiverSlotBase <;>
                 simp [hA, LockSet.ofList?, schedLockSet_endpointReplyRecvOnCore,
                   schedFootprintOfCores_keys_nodup]
+
+/-- **WS-LS LS2.3**: every scheduler footprint names the object-store table
+write lock — each of the sixteen arms is `schedFootprintOfCores` of its own
+core lists, and that constructor leads with the table lock
+(`schedFootprintOfCores_contains_objStore_write`).  What makes the object
+clause of `footprintCoversWrites` vacuous at the syscall seam, so the arms'
+object writes (register spills, derivation nodes, delivered frames) need no
+per-object member. -/
+theorem schedLockSetForSyscall_contains_objStore_write (sid : SyscallId)
+    (ops : SyscallLockOperands) (executingCore : CoreId) (st : SystemState) (S : LockSet)
+    (hS : schedLockSetForSyscall sid ops executingCore st = some S) :
+    (LockKey.objStore, Concurrency.AccessMode.write) ∈ S.pairs := by
+  unfold schedLockSetForSyscall at hS
+  cases sid <;> simp only [Option.bind_eq_some_iff, reduceCtorEq] at hS
+  all_goals
+    repeat' obtain ⟨_, _, hS⟩ := hS
+    rw [LockSet.ofList?_pairs hS]
+    simp only [schedLockSet_suspendThreadOnCore, schedLockSet_resumeThreadOnCore,
+      schedLockSet_priorityControlOnCore, schedLockSet_setThreadCpuAffinityOnCore,
+      schedLockSet_schedContextConfigureOnCore, schedLockSet_schedContextBindOnCore,
+      schedLockSet_schedContextUnbindOnCore, schedLockSet_lifecycleRetypeOnCore,
+      schedLockSet_notificationSignalBoundOnCore, schedLockSet_notificationWaitOnCore,
+      schedLockSet_endpointSendOnCore, schedLockSet_endpointReceiveOnCore,
+      schedLockSet_endpointCallOnCore, schedLockSet_replyTransferOnCore,
+      schedLockSet_endpointReplyRecvOnCore]
+    exact schedFootprintOfCores_contains_objStore_write _ _
 
 -- ============================================================================
 -- §14  The ABI entry's scheduler-domain footprint
@@ -2501,53 +2580,79 @@ worse — would walk the SM0.I ladder backwards: the inner bracket's level-0 tab
 lock would be taken after the outer bracket's levels 1..9.  `lockAcquireSequence`
 sorts one list, so one footprint is one ladder.
 
-Four arms, and the `none` arm is what keeps the pre-bracket seam reachable:
+**WS-LS LS2.3** reshaped the arms around one rule: *a declared footprint is a
+covered footprint*.  `BracketSpec.covers` is a proof field, so a footprint the
+seam cannot prove covers the step is not one it may declare.
 
-* **neither domain declares** — `none`, and the bracket falls back to the
-  unbracketed step, exactly as it did before this row;
-* **only the object domain** — that footprint unchanged;
-* **only the scheduler domain** — that footprint unchanged;
-* **both** — their `LockSet.union`: one key, one member, at the stronger of the
-  two modes (**WS-LS LS1.2**; until this row the object members were lifted
-  through a canonicalising map and the table lock's second copy dropped by a
-  filter, because the two domains had two key types).
+* **the scheduler domain declares nothing** — `none`, whatever the object domain
+  says, and the bracket falls back to the unbracketed step.  Until LS2.3 an
+  object-only answer was declared on its own; it named no run-queue lock, and
+  every declared arm writes a scheduling slot, so that footprint could never
+  carry the coverage proof the record now demands.  The scheduler domain is
+  the one that names cores, and a footprint without a scheduler answer has no
+  coverage claim to make.
+* **the scheduler domain declares** — its footprint, with the object domain's
+  members merged in by `LockSet.union` when it declares too (one key, one
+  member, at the stronger of the two modes — **WS-LS LS1.2**), and with the
+  **executing core's run-queue write lock** inserted by `LockSet.insertOrMerge`.
 
-Acquiring a footprint is not claiming coverage: an arm declared in one domain and
-not the other acquires what that domain declared, and the *other* domain's writes
-stay outside a footprint until that domain declares one for it.  That is the same
-posture `runUnderDeclaredLockSet` has taken since RR7.12 and is why landing this
-ahead of the remaining object-domain declarations is safe. -/
+The last member is the seam's own: `syscallDispatchCrossCoreStep` follows every
+arm with `scheduleLocalSuccessorFrom` and `settleResidencyOnCore` on the
+executing core, which select a successor when the arm vacated it and defer a
+thread still resident elsewhere — writes to that core's run queue and `current`
+slot that are nobody's arm's.  Nine arms' own write sets already name the
+executing core (`resumeThreadOnCoreWriteSet`, `priorityControlWriteSet`, …);
+the others (`.tcbSetAffinity`, the two SchedContext arms directed at an object,
+`.lifecycleRetype`, the rendezvous paths of the IPC arms) name only the
+cores the arm moves, so the seam adds the lock its own tail needs rather than
+widening sixteen per-arm sets for a write that is not theirs.  No replenish
+member is added: the tail's scheduling points move no scheduling context
+(`handleRescheduleSgiOnCore_replenishQueueOnCore`,
+`deferResidentElsewhere`'s legs likewise). -/
 def unifiedLockSetForSyscall (sid : SyscallId) (ops : Concurrency.SyscallLockOperands)
     (executingCore : CoreId) (st : SystemState) : Option LockSet :=
-  match Concurrency.lockSetForSyscall sid ops st,
-        schedLockSetForSyscall sid ops executingCore st with
-  | none, none => none
-  | some O, none => some O
-  | none, some S => some S
-  | some O, some S => some (S.union O)
+  match schedLockSetForSyscall sid ops executingCore st with
+  | none => none
+  | some S =>
+    some ((match Concurrency.lockSetForSyscall sid ops st with
+           | none => S
+           | some O => S.union O).insertOrMerge (LockKey.runQueue executingCore)
+            Concurrency.AccessMode.write)
 
-/-- **Cut C6h**: an arm neither domain declares yields no unified footprint.
+/-- **Cut C6h**: an arm the scheduler domain does not declare yields no unified
+footprint (**WS-LS LS2.3**: whatever the object domain declares).
 
 The statement a bracket reads as "no exclusion established", and the one that
 makes the fallback arm reachable rather than notional. -/
 @[simp] theorem unifiedLockSetForSyscall_undeclared (sid : SyscallId)
     (ops : Concurrency.SyscallLockOperands) (executingCore : CoreId) (st : SystemState)
-    (hObj : Concurrency.lockSetForSyscall sid ops st = none)
     (hSched : schedLockSetForSyscall sid ops executingCore st = none) :
     unifiedLockSetForSyscall sid ops executingCore st = none := by
   unfold unifiedLockSetForSyscall
-  rw [hObj, hSched]
+  rw [hSched]
 
 /-- **Cut C6h**: where only the scheduler domain declares, the unified footprint
-IS the scheduler footprint — no widening, no reordering, definitionally. -/
+IS the scheduler footprint, plus the seam's own executing-core member
+(**WS-LS LS2.3**) — no reordering, definitionally. -/
 @[simp] theorem unifiedLockSetForSyscall_sched_only (sid : SyscallId)
     (ops : Concurrency.SyscallLockOperands) (executingCore : CoreId) (st : SystemState)
     (S : LockSet)
     (hObj : Concurrency.lockSetForSyscall sid ops st = none)
     (hSched : schedLockSetForSyscall sid ops executingCore st = some S) :
-    unifiedLockSetForSyscall sid ops executingCore st = some S := by
+    unifiedLockSetForSyscall sid ops executingCore st
+      = some (S.insertOrMerge (LockKey.runQueue executingCore) Concurrency.AccessMode.write) := by
   unfold unifiedLockSetForSyscall
-  rw [hObj, hSched]
+  rw [hSched, hObj]
+
+/-- **WS-LS LS2.3**: a unified footprint is declared only over a scheduler one. -/
+theorem unifiedLockSetForSyscall_some_imp_sched (sid : SyscallId)
+    (ops : Concurrency.SyscallLockOperands) (executingCore : CoreId) (st : SystemState)
+    (U : LockSet) (hU : unifiedLockSetForSyscall sid ops executingCore st = some U) :
+    ∃ S, schedLockSetForSyscall sid ops executingCore st = some S := by
+  unfold unifiedLockSetForSyscall at hU
+  cases hSched : schedLockSetForSyscall sid ops executingCore st with
+  | none => rw [hSched] at hU; cases hU
+  | some S => exact ⟨S, rfl⟩
 
 /-- **Cut C6h**: every member the SCHEDULER domain declared is in the unified
 footprint.
@@ -2557,7 +2662,7 @@ of the scheduler footprint, and it is the unified one the bracket acquires, so a
 claim about the first has to reach the second.  Write membership is enough — the
 predicate's three clauses are all of the form "a lock the footprint does **not**
 name at `write`", and a merge only ever raises a mode
-(`LockSet.mem_union_write_of_mem_write`). -/
+(`LockSet.mem_union_write_of_mem_write`, `LockSet.mem_insertOrMerge_write_of_mem_write`). -/
 theorem mem_unifiedLockSetForSyscall_of_sched (sid : SyscallId)
     (ops : Concurrency.SyscallLockOperands) (executingCore : CoreId) (st : SystemState)
     (S U : LockSet) (l : LockKey)
@@ -2566,19 +2671,47 @@ theorem mem_unifiedLockSetForSyscall_of_sched (sid : SyscallId)
     (hp : (l, Concurrency.AccessMode.write) ∈ S.pairs) :
     (l, Concurrency.AccessMode.write) ∈ U.pairs := by
   unfold unifiedLockSetForSyscall at hU
+  rw [hSched] at hU
   cases hObj : Concurrency.lockSetForSyscall sid ops st with
   | none =>
-      rw [hObj, hSched] at hU
-      exact (Option.some.inj hU) ▸ hp
+      rw [hObj] at hU
+      exact (Option.some.inj hU) ▸ LockSet.mem_insertOrMerge_write_of_mem_write S _ _ l hp
   | some O =>
-      rw [hObj, hSched] at hU
-      exact (Option.some.inj hU) ▸ LockSet.mem_union_write_of_mem_write S O l hp
+      rw [hObj] at hU
+      exact (Option.some.inj hU) ▸ LockSet.mem_insertOrMerge_write_of_mem_write (S.union O) _ _ l
+        (LockSet.mem_union_write_of_mem_write S O l hp)
+
+/-- **WS-LS LS2.3**: the seam's own member — the executing core's run-queue
+write lock is in every unified footprint. -/
+theorem mem_unifiedLockSetForSyscall_executingCore (sid : SyscallId)
+    (ops : Concurrency.SyscallLockOperands) (executingCore : CoreId) (st : SystemState)
+    (U : LockSet) (hU : unifiedLockSetForSyscall sid ops executingCore st = some U) :
+    (LockKey.runQueue executingCore, Concurrency.AccessMode.write) ∈ U.pairs := by
+  unfold unifiedLockSetForSyscall at hU
+  cases hSched : schedLockSetForSyscall sid ops executingCore st with
+  | none => rw [hSched] at hU; cases hU
+  | some S =>
+      rw [hSched] at hU
+      exact (Option.some.inj hU) ▸ LockSet.mem_insertOrMerge_write_self _ _
+
+/-- **WS-LS LS2.3**: and the table write lock — every scheduler footprint names
+it (`schedLockSetForSyscall_contains_objStore_write`), and the unified one
+keeps every write member of the scheduler's. -/
+theorem mem_unifiedLockSetForSyscall_objStore (sid : SyscallId)
+    (ops : Concurrency.SyscallLockOperands) (executingCore : CoreId) (st : SystemState)
+    (U : LockSet) (hU : unifiedLockSetForSyscall sid ops executingCore st = some U) :
+    (LockKey.objStore, Concurrency.AccessMode.write) ∈ U.pairs := by
+  obtain ⟨S, hSched⟩ := unifiedLockSetForSyscall_some_imp_sched sid ops executingCore st U hU
+  exact mem_unifiedLockSetForSyscall_of_sched sid ops executingCore st S U _ hSched hU
+    (schedLockSetForSyscall_contains_objStore_write sid ops executingCore st S hSched)
 
 /-- **Cut C6h**: and every member the OBJECT domain declared is in it, at its own
-mode or subsumed by the table lock's write.
+mode or subsumed by a write.
 
 The merge is what makes the disjunction necessary: a key the scheduler footprint
-already names at `.write` keeps that mode (`LockSet.mem_union_of_mem_right`). -/
+already names at `.write` keeps that mode (`LockSet.mem_union_of_mem_right`),
+and the executing core's run-queue key is raised to `.write` by the seam's own
+insertion (**WS-LS LS2.3**). -/
 theorem mem_unifiedLockSetForSyscall_of_object (sid : SyscallId)
     (ops : Concurrency.SyscallLockOperands) (executingCore : CoreId) (st : SystemState)
     (O U : LockSet) (l : LockKey) (m : Concurrency.AccessMode)
@@ -2589,12 +2722,16 @@ theorem mem_unifiedLockSetForSyscall_of_object (sid : SyscallId)
       (l, Concurrency.AccessMode.write) ∈ U.pairs := by
   unfold unifiedLockSetForSyscall at hU
   cases hSched : schedLockSetForSyscall sid ops executingCore st with
-  | none =>
-      rw [hObj, hSched] at hU
-      exact Or.inl ((Option.some.inj hU) ▸ hp)
+  | none => rw [hSched] at hU; cases hU
   | some S =>
-      rw [hObj, hSched] at hU
-      exact (Option.some.inj hU) ▸ LockSet.mem_union_of_mem_right S O l m hp
+      rw [hSched, hObj] at hU
+      rw [← Option.some.inj hU]
+      rcases LockSet.mem_union_of_mem_right S O l m hp with hIn | hIn
+      · by_cases hl : l = LockKey.runQueue executingCore
+        · subst hl
+          exact Or.inr (LockSet.mem_insertOrMerge_write_self _ _)
+        · exact Or.inl (LockSet.mem_insertOrMerge_of_mem_of_ne _ _ _ (l, m) hIn hl)
+      · exact Or.inr (LockSet.mem_insertOrMerge_write_of_mem_write _ _ _ l hIn)
 
 /-- **WS-RR RR8.12 Cut C6h: the arm's coverage claim reaches what the seam
 ACQUIRES.**
@@ -2603,14 +2740,16 @@ The bridge the deletion of `UncoveredLockDomain.syscallSeamSchedulerDomain`
 rests on.  Every per-arm coverage theorem in `SyscallSchedContainment` is stated
 over `schedLockSetForSyscall`'s answer; what the bracket acquires is
 `unifiedLockSetForSyscall`'s, which is that footprint with the object
-domain's members merged in.  `mem_unifiedLockSetForSyscall_of_sched` says every
-write member of the first is one of the second, and coverage is monotone upward
+domain's members merged in and the seam's executing-core member inserted.
+`mem_unifiedLockSetForSyscall_of_sched` says every write member of the first
+is one of the second, and coverage is monotone upward
 (`footprintCoversWrites_mono`), so the claim travels without being restated
 — which is what keeps "what does this arm's footprint cover" a single question.
 
 Stated once and generically rather than sixteen times at the arms: an instance
 per arm would be sixteen copies of one application, and the next declared arm
-would owe a seventeenth. -/
+would owe a seventeenth.  **WS-LS LS2.3** discharges `hCover` at the seam
+(`SyscallSeamCoverage.lean`) rather than assuming it. -/
 theorem unifiedLockSetForSyscall_coversWrites (sid : SyscallId)
     (ops : Concurrency.SyscallLockOperands) (executingCore : CoreId) (st : SystemState)
     (S U : LockSet) (st₀ st₁ : SystemState)
@@ -2654,34 +2793,31 @@ fail-closed direction both single-domain resolvers already take. -/
   unfold declaredUnifiedLockSetForAbiEntry
   rw [h]
 
-/-- **Cut C6h**: an entry undeclared in BOTH domains declares nothing.
+/-- **Cut C6h**: an entry undeclared in the scheduler domain declares nothing
+(**WS-LS LS2.3**: whatever the object domain declares — a footprint without a
+scheduler answer has no coverage claim to make, so the seam declares none).
 
-The seam-level fallback condition, and the one that has to name both domains:
-an arm the object domain declares nothing for is still bracketed when the
-scheduler domain declares, and the converse. -/
+The seam-level fallback condition. -/
 theorem declaredUnifiedLockSetForAbiEntry_undeclared (ctx : LabelingContext)
     (executingCore : CoreId) (syscallId : UInt32) (x0 x1 x2 x3 x4 x5 : UInt64)
     (st : SystemState)
-    (hObj : declaredLockSetForAbiEntry ctx executingCore syscallId x0 x1 x2 x3 x4 x5 st
-      = none)
     (hSched : declaredSchedulerLockSetForAbiEntry ctx executingCore syscallId
       x0 x1 x2 x3 x4 x5 st = none) :
     declaredUnifiedLockSetForAbiEntry ctx executingCore syscallId x0 x1 x2 x3 x4 x5 st
       = none := by
   unfold declaredUnifiedLockSetForAbiEntry
-  unfold declaredLockSetForAbiEntry at hObj
   unfold declaredSchedulerLockSetForAbiEntry at hSched
   rcases hPlan : abiEntryPlan ctx executingCore syscallId x0 x1 x2 x3 x4 x5 st with
     _ | ⟨tid, decoded, stFilled⟩
   · rfl
-  · rw [hPlan] at hObj hSched
-    simp only at hObj hSched ⊢
+  · rw [hPlan] at hSched
+    simp only at hSched ⊢
     rcases hOps : abiEntryLockOperands decoded tid stFilled with _ | ops
     · rfl
-    · rw [hOps] at hObj hSched
-      simp only [Option.bind_some] at hObj hSched ⊢
+    · rw [hOps] at hSched
+      simp only [Option.bind_some] at hSched ⊢
       exact unifiedLockSetForSyscall_undeclared decoded.syscallId ops executingCore
-        stFilled hObj hSched
+        stFilled hSched
 
 /-- **Cut C6h**: the seam's unified footprint is the union of what the two
 single-domain resolvers declare, at the decode all three share.

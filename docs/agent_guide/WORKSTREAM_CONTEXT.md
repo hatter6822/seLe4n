@@ -56,7 +56,7 @@ them) and `writeReg` takes a `UInt64`; a register file is built with
 read on the entry/exit path; build a saved context from `TrapContext` through
 `ofWords` and the existing writers instead.
 
-### WS-LS Lock state separated from kernel state — IN FLIGHT (registered v0.36.60; LS0.1 v0.36.62; LS1.1 v0.36.63; LS1.2 v0.36.64; LS2.1 v0.36.65; LS2.2 v0.36.66; runs beside WS-CV, before WS-CB)
+### WS-LS Lock state separated from kernel state — IN FLIGHT (registered v0.36.60; LS0.1 v0.36.62; LS1.1 v0.36.63; LS1.2 v0.36.64; LS2.1 v0.36.65; LS2.2 v0.36.66; LS2.3 v0.36.67; runs beside WS-CV, before WS-CB)
 
 The lock words leave the kernel state: a ghost `LockState` (one total function
 over one `LockKey` type) sits beside `SystemState` in `LockedSystemState`, a
@@ -87,8 +87,13 @@ result over the word-level `withLockSet` (since LS2.1 those results are over
 projection is the action by `rfl`; a new bracketed seam is a `BracketSpec`
 whose `covers` field is its coverage theorem; since LS2.2 the timer tick, the
 reschedule receiver and the secondary bring-up run `timerTickBracket` /
-`rescheduleBracket` through `BracketSpec.run`, and LS2.3–LS2.4 prove the
-syscall seams' coverage and switch them).
+`rescheduleBracket` through `BracketSpec.run`; since LS2.3 the syscall and
+suspend seams' coverage theorems exist — `SyscallSeamCoverage.lean`'s
+`syscallDispatchCrossCoreStep_coversWrites` and `suspendSeamAction_coversWrites`,
+with `SyscallSchedContainment` and the SM8.B confinement family promoted to
+production as `SlotConfinement.*` — and LS2.4 switches the seams; a new
+declared arm adds its `case` to `dispatchWithCapChecked_coversWrites` in the
+same cut, or the seam theorem does not elaborate).
 
 ### WS-CB Hierarchical constant-bandwidth servers — PLANNED (registered v0.34.49; opens after WS-CV)
 
@@ -2148,7 +2153,8 @@ code may assume:
   `perCoreTimerTickStep_coversWrites`).  Since WS-LS LS2.2 those three seams run
   `timerTickBracket` / `rescheduleBracket` (`SchedLockBracket.lean`), the
   `BracketSpec`s whose `covers` field is that proof; the syscall and suspend
-  seams still run `runBracketed` / `withLockSet` until LS2.4.  Two things new
+  seams still run `runBracketed` / `withLockSet` until LS2.4, their coverage
+  proved since LS2.3 (`SyscallSeamCoverage.lean`).  Two things new
   code must respect.  (1)
   **The tick's footprint names every core's run-queue write lock**, not the boot
   core's and its own: the replenish drain and the bound-exhausted timeout both
@@ -5182,17 +5188,17 @@ code may assume:
   **the coverage lands before the bracket**, which is the numbering rule's
   semantic half: a bracket acquiring a footprint nobody proved covers the writes
   hands out exclusion the runtime never established.
-  `SeLe4n/Kernel/SyscallSchedContainment.lean` is staged because every proof
-  consumes an SM8.B confinement theorem, and those are staged (the timer
-  tick's coverage chain, which consumes none, is production since WS-LS
-  LS2.2).  Four things new code must respect.
+  `SeLe4n/Kernel/SyscallSchedContainment.lean` is production since WS-LS
+  LS2.3, when the SM8.B confinement predicate and theorems every proof consumes
+  moved into `SeLe4n/Kernel/SlotConfinement/` (the timer tick's coverage chain,
+  which consumes none, since LS2.2).  Four things new code must respect.
 
   (1) **One bridge, and the three clauses are discharged three different ways.**
   `footprintCoversWrites_of_cores` (production, beside the obligation) makes
   the **object** clause structural — `schedFootprintOfCores` always names the
   object-store table write lock, a scheduler footprint being a footprint of an
   operation that stores — and reduces the rest to two hypotheses;
-  `footprintCoversWrites_of_confined` (staged) supplies the **run-queue**
+  `footprintCoversWrites_of_confined` (production since LS2.3) supplies the **run-queue**
   clause from the arm's own `observableSlotsConfinedToCores`.  The **replenish**
   clause has no such bridge and cannot: confinement covers six per-core slots and
   the replenish queue is not one of them, which is exactly why every donating arm

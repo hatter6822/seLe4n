@@ -65,6 +65,24 @@ def notificationSignalBoundCrossCoreDispatchChecked (ctx : LabelingContext)
   else
     (st, .error .flowDenied)
 
+/-- **WS-LS LS2.3**: a checked signal that succeeds committed the unchecked
+transition's state — every refusing branch returns the pre-state with an error,
+so the state a successful answer carries is `notificationSignalBoundOnCore`'s. -/
+theorem notificationSignalBoundCrossCoreDispatchChecked_fst_of_ok (ctx : LabelingContext)
+    (notificationId : SeLe4n.ObjId) (signaler : SeLe4n.ThreadId) (badge : SeLe4n.Badge)
+    (executingCore : CoreId) (st st' : SystemState) (r : Option (CoreId × SgiKind))
+    (h : notificationSignalBoundCrossCoreDispatchChecked ctx notificationId signaler badge
+      executingCore st = (st', .ok r)) :
+    (notificationSignalBoundOnCore notificationId badge executingCore st).1 = st' := by
+  unfold notificationSignalBoundCrossCoreDispatchChecked at h
+  split at h
+  · split at h
+    · split at h
+      · exact congrArg Prod.fst h
+      · exact absurd (congrArg Prod.snd h) (by simp)
+    · exact congrArg Prod.fst h
+  · exact absurd (congrArg Prod.snd h) (by simp)
+
 /-- WS-SM SM6.B: a disallowed signaler→notification flow is rejected before any
 state change. -/
 theorem notificationSignalBoundCrossCoreDispatchChecked_flow_denied
@@ -205,6 +223,19 @@ def notificationWaitCrossCoreDispatchChecked (ctx : LabelingContext)
     notificationWaitOnCore notificationId waiter executingCore st
   else
     (st, .error .flowDenied)
+
+/-- **WS-LS LS2.3**: a checked wait that succeeds committed the unchecked
+transition's state. -/
+theorem notificationWaitCrossCoreDispatchChecked_fst_of_ok (ctx : LabelingContext)
+    (notificationId : SeLe4n.ObjId) (waiter : SeLe4n.ThreadId) (executingCore : CoreId)
+    (st st' : SystemState) (r : Option SeLe4n.Badge)
+    (h : notificationWaitCrossCoreDispatchChecked ctx notificationId waiter executingCore st
+      = (st', .ok r)) :
+    (notificationWaitOnCore notificationId waiter executingCore st).1 = st' := by
+  unfold notificationWaitCrossCoreDispatchChecked at h
+  split at h
+  · exact congrArg Prod.fst h
+  · exact absurd (congrArg Prod.snd h) (by simp)
 
 /-- WS-SM SM6.B: a disallowed wait flow is rejected before any state change. -/
 theorem notificationWaitCrossCoreDispatchChecked_flow_denied

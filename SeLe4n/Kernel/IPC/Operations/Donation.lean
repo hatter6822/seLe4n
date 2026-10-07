@@ -1271,8 +1271,9 @@ def applyReceiveLegPipHandoff (st : SystemState) (receiver dequeued : SeLe4n.Thr
 
 /- **WS-RR RR8.12 Cut 8b (`v0.35.145`)**: relocated from the staged
 `InformationFlow/NonInterferenceCrossCore.lean`, beside the step it describes, so
-a production scheduler footprint can read it.  Its confinement theorem stays
-there.  The `SeLe4n.Kernel` namespace is unchanged, so nothing is renamed. -/
+a production scheduler footprint can read it.  Its confinement theorem is in
+the production `SlotConfinement/Legs.lean` since WS-LS LS2.3.  The
+`SeLe4n.Kernel` namespace is unchanged, so nothing is renamed. -/
 /-- **WS-OD OD3.14: the cores the receive leg's hand-off may write.**
 
 Unlike the receive arm's `receiveRendezvousHandoffWriteSet`, this one *is*

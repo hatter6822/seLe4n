@@ -534,8 +534,9 @@ def timerTickBracket (coreId : UInt64) :
     BracketSpec (List (CoreId × SgiKind) × Bool) where
   declared := declaredLockSetForTimerTick coreId
   step := fun s => perCoreTimerTickStepWithClockAdvance s coreId
+  inv := fun _ => True
   covers := by
-    intro st S hS
+    intro st S _ hS
     by_cases h : coreId.toNat < numCores
     · rw [declaredLockSetForTimerTick_resolves coreId st h] at hS
       rw [← Option.some.inj hS]
@@ -549,8 +550,9 @@ entry's.  The proof field is `perCoreRescheduleStep_coversWrites` (§4). -/
 def rescheduleBracket (coreId : UInt64) : BracketSpec Unit where
   declared := declaredLockSetForReschedule coreId
   step := fun s => ((), perCoreRescheduleStep s coreId)
+  inv := fun _ => True
   covers := by
-    intro st S hS
+    intro st S _ hS
     by_cases h : coreId.toNat < numCores
     · rw [declaredLockSetForReschedule_resolves coreId st h] at hS
       rw [← Option.some.inj hS]

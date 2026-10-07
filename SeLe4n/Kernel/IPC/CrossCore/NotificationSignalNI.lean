@@ -164,13 +164,6 @@ theorem notificationSignalOnCore_signal_path_NI_smp
 -- §4  SM6.B.7 (wait) — `notificationWaitOnCore` block-path non-interference
 -- ============================================================================
 
-/-- `storeTcbIpcState` leaves the machine registers untouched (it writes only the
-target TCB's `ipcState`). -/
-theorem storeTcbIpcState_machine_eq (st st' : SystemState) (tid : SeLe4n.ThreadId)
-    (ipc : ThreadIpcState) (hStep : storeTcbIpcState st tid ipc = .ok st') :
-    st'.machine = st.machine :=
-  modifyTcb_machine_eq hStep
-
 /-- SM6.B.7: the per-core form of `storeTcbIpcState_preserves_projection` — a
 `storeTcbIpcState` at a **high** thread preserves every core's per-core observer
 projection (object-store base preserved; scheduler + machine untouched). -/
