@@ -844,15 +844,33 @@ def file_digest(path: Path) -> str | None:
     return hashlib.sha256(path.read_bytes()).hexdigest()
 
 
+def config_digests() -> dict[str, str | None]:
+    """The digest of every input that is not a module's own source: the build
+    configuration and the headers every object is compiled against.  It keys
+    the object cache (`prepare_objects`) as well as the record, so an object
+    is reused only under the configuration the record will name."""
+    paths = list(BUILD_CONFIG) + [str(h.relative_to(REPO))
+                                  for h in sorted(SHIM_INCLUDE.rglob("*")) if h.is_file()]
+    return {path: file_digest(REPO / path) for path in sorted(paths)}
+
+
 def input_digests(package: list[str]) -> dict[str, str | None]:
     """The digest of every file the archive is compiled from.
 
     A module that joins or leaves the closure does so through an import line
     in a module already recorded, so re-hashing the recorded sources detects
     a closure change as well as an edit."""
-    inputs = ([m.replace(".", "/") + ".lean" for m in package] + list(BUILD_CONFIG)
-              + [str(h.relative_to(REPO)) for h in sorted(SHIM_INCLUDE.rglob("*")) if h.is_file()])
-    return {path: file_digest(REPO / path) for path in sorted(inputs)}
+    modules = {m.replace(".", "/") + ".lean": file_digest(REPO / (m.replace(".", "/") + ".lean"))
+               for m in package}
+    return dict(sorted({**modules, **config_digests()}.items()))
+
+
+def object_cache_stamp(tc: dict[str, str], flags: list[str],
+                       config: dict[str, str | None]) -> str:
+    """What an object in the cache was compiled under: the toolchain, the
+    compiler, the flags and `config_digests`."""
+    return hashlib.sha256("\n".join([tc["githash"], tc["clang"], *flags,
+                                      json.dumps(config, sort_keys=True)]).encode()).hexdigest()
 
 
 def provenance_record(inputs: dict[str, str | None]) -> dict[str, dict[str, str | None]]:
@@ -924,7 +942,7 @@ def build(jobs: int) -> int:
     parallel(lambda m: generate_one_stdlib_c(m, tc), stdlib, jobs)
     print(f"[4/8] C: Lake `c` facet for the package, regenerated stdlib C cached under {tc['githash'][:12]}")
     flags = compile_flags(tc)
-    prepare_objects(hashlib.sha256("\n".join([tc["githash"], tc["clang"], *flags]).encode()).hexdigest())
+    prepare_objects(object_cache_stamp(tc, flags, {p: inputs[p] for p in config_digests()}))
     sources = [(m, package_c(m)) for m in package] + [(m, stdlib_c(m, tc)) for m in stdlib]
     parallel(lambda item: compile_one(item, tc, flags), sources, jobs)
     build_archive(package + stdlib, tc)
@@ -1215,6 +1233,13 @@ def self_test() -> int:
     expect("an unchanged tree is fresh", stale_entries(then, json.loads(json.dumps(then))) == [])
     expect("the record holds the inputs read before the build, not the tree's",
            provenance_record({"SeLe4n.lean": "before"})["inputs"] == {"SeLe4n.lean": "before"})
+    stamp_tc = {"githash": "g", "clang": "c"}
+    expect("the object cache is keyed on the headers",
+           object_cache_stamp(stamp_tc, ["-O2"], {"h.h": "a"})
+           != object_cache_stamp(stamp_tc, ["-O2"], {"h.h": "b"}))
+    expect("every shim header keys the object cache",
+           all(str(h.relative_to(REPO)) in config_digests()
+               for h in SHIM_INCLUDE.rglob("*") if h.is_file()))
     expect("an input edited while the build ran is caught",
            stale_files({"SeLe4n.lean": "before"}, {"SeLe4n.lean": "after"}, "inputs")
            == ["SeLe4n.lean"])

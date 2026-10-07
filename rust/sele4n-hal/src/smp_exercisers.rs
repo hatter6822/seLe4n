@@ -1429,13 +1429,23 @@ fn heap_allocations_per_syscall() -> Option<bool> {
         return Some(false);
     };
     let outcome = match dispatched {
-        Ok(crate::svc_dispatch::SvcOutcome::Frame(regs)) => {
+        // A refusal is an ordinary frame too, its status in the `x1` label
+        // (`error_frame_regs`): only label 0, the unit success a signal
+        // returns, measures the syscall the gate names.
+        Ok(crate::svc_dispatch::SvcOutcome::Frame(regs)) if regs[1] >> 9 == 0 => {
             crate::kprintln!(
                 "[smp-test] heap-allocations-per-syscall: core {core}: returned x0={:#x} x1={:#x}",
                 regs[0],
                 regs[1]
             );
             true
+        }
+        Ok(crate::svc_dispatch::SvcOutcome::Frame(regs)) => {
+            crate::kprintln!(
+                "[smp-test] FAIL: heap-allocations-per-syscall: the signal was refused (x1 label {:#x})",
+                regs[1] >> 9
+            );
+            false
         }
         Ok(other) => {
             crate::kprintln!(
@@ -1469,12 +1479,15 @@ fn heap_allocations_per_syscall() -> Option<bool> {
         );
         return Some(false);
     }
+    if !outcome {
+        return Some(false);
+    }
     crate::kprintln!(
         "[smp-test] heap-allocations-per-syscall: core {core}: before={before} after={after} \
          delta={}",
         after - before
     );
-    Some(outcome)
+    Some(true)
 }
 
 /// The HAL-only image links no Lean kernel, so there is no syscall to measure.

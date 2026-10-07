@@ -43,6 +43,17 @@ when an edit landed mid-build and the record named a version of
 now reads the inputs before compiling, records those, and refuses to write a
 record when any input changed during the build.
 
+**Fixed: two more ways the exerciser could publish a reading it should not.**
+The builder's object cache was keyed on the toolchain, compiler and flags
+only, so after a shim-header edit a warm cache reused objects compiled
+against the old header while the record named the new one; the cache is
+now keyed on the same configuration digests the record holds
+(`config_digests`).  And a syscall the kernel refused returns an ordinary
+frame with its status in the `x1` label, which the exerciser accepted as
+the measured signal; it now requires label 0 and prints no reading
+otherwise (checked under QEMU with an invalid message-info word: the gate
+fails, naming label `0xfff20`).
+
 ## v0.36.71 — the allocation exerciser refuses a stale Lean archive; first reading of the separated lock state: 112
 
 **The `heap-allocations-per-syscall` exerciser had been measuring the kernel
