@@ -630,5 +630,45 @@ sub-task as the definition they cover, or in the lower-numbered row it cites.
 
 ## 7. Tier 3 anchors touched (filled by CV0.3)
 
-To be filled by CV0.3 from the 78 lines §1.2 counts, one row per anchor:
-anchor line, the definition it pins, the sub-task that retargets or deletes it.
+**The set is a derivation, re-run by every row that changes a register term**:
+the anchor lines of `scripts/test_tier3_invariant_surface.sh`
+(`^run_(check|negative_check|prose_check|prose_negative_check) `) whose text
+matches `RegisterFile|RegValue|registerContext|regsOnCore|setRegsOnCore|TrapContext|\bgpr\b|writeReg|readReg|RegName|contextMatchesCurrent|saveOutgoingContext|restoreIncomingContext|writeReturnFrameToTcb|writeRestartFrameToTcb|FaultRegisterWindow|spill|writeFaultRegistersToTcb|writeFfiRegistersToTcb|wordBounded|machineRegs|registerContextStableCheck|registerContextsWordBounded|trapWords|stageReturnFrame|readReturnFrame|RestoreTarget|coreRegs`.
+At `v0.36.57` it is **57 lines**, not §1.2's 78: anchors retired between
+`v0.36.48` and that head took the rest.  The rows below are that cut's pin; a
+row's anchor line numbers drift, so each is named by what it pins.  "Kept"
+means the anchor's text survives the workstream: the definition or theorem
+keeps its name and the pinned shape, and only its types change underneath (the
+row that changes the type re-runs the anchor, as CLAUDE.md's refactor sweep
+requires).
+
+| Anchor (what it pins) | Lines at `v0.36.57` | Sub-task |
+|---|---|---|
+| `registerContextStableDecidable` field (`Architecture/Assumptions.lean`) | 218 | kept |
+| `saveOutgoingContext` / `…OnCore` / `…Checked` bodies through `updateTcb` / `getTcbWitnessed?`, and their three `objects.insert` negatives | 3061–3063, 3072, 3073, 3076 | kept |
+| `writeReturnFrameToTcb`, `writeRestartFrameToTcb`, `writeFaultRegistersToTcb` (`spill` into `registerContext`), `writeFfiRegistersToTcb` bodies, their `objects.insert` / `getTcb?` negatives and their three `_id_when_not_tcb` proofs | 3229–3235, 3238–3240 | kept (CV4.3 changes `FaultRegisterWindow`'s fields, not the `spill` call) |
+| `pstate : RegValue := ⟨0⟩` (`Machine.lean`) | 4308 | **CV1.1** retargets (`pstate : UInt64`) |
+| `saveTrapFrameOnCore_contextMatchesCurrentOnCore` | 4343 | kept (restated over `snapshotInto` at CV3.1) |
+| `ffiRestoreStageContext (trapContextOfRegisterFile ctx)` (`Platform/FFI.lean`) | 4358 | **CV2.1** retargets (`trapContextOfRegisterFile` deleted; the TCB's context is staged) |
+| `RestoreTarget.deliveredFrame?`, `switchToThreadOnCore_delivers_readReturnFrame`, `abortPendingIpcOnEndpoint_readReturnFrame` | 4397, 4398, 4400 | kept |
+| `let trapped ← Platform.FFI.ffiTrapContext` (`SyscallDispatchEntry.lean`) | 4674 | kept (the binding's type changes at CV2.1 and CV3.1) |
+| `writeFaultRegistersToTcb` at fault entry, `faultContextOfThread_writeFaultRegistersToTcb` | 4977, 4980 | kept |
+| `ofRegisterFile_spill` (`Model/Fault.lean`) | 4981 | kept (re-proved at CV4.3 over the scalar `x0`–`x7` window) |
+| `machineRegs_beq_self` | 5825 | **CV1.2** deletes (the `beq_*` lemmas retire with their last consumer) |
+| `onCore_machineRegs`, `onCore_setRegsOnCore_ne` | 5849, 5888 | kept |
+| `machineRegs_beq_not_injective` | 5879 | **CV1.1** deletes (a `not_lawfulBEq` witness, §6) |
+| `saveOutgoingContext_confinedToCore`, `restoreIncomingContext_confinedToBootCore` | 6018, 6019 | kept |
+| `recordPhysicalWrites (writeReturnFrameToTcb …)` in the receive path | 7714 | kept |
+| `saveVacatedFrameOnCore`'s `registerContext := saved` arm | 7740 | **CV3.1** retargets (the save is `snapshotInto`) |
+| `.user tcb.registerContext ops.1 ops.2 (fpLiveFor st c tid)` (`ContextRestore.lean`) | 7783 | **CV4.5** retargets (the step writes the restore record's fields directly) |
+| `recordSyscallRefusal_readReturnFrame_eq`, `restoreToReadyCancelled_readReturnFrame` | 8365, 9498 | kept |
+| `contextMatchesCurrent`: its definition, its two bundle conjuncts, `EndpointReplyAndLifecycle`'s conjunct, `schedulerInvariantBundleFull_to_contextMatchesCurrent`, `switchDomain_preserves_contextMatchesCurrent` | 10375, 10376, 10380, 10384, 10389, 10447 | kept (lawful equality from CV1.1; the statement is unchanged) |
+| `writeRegisterState_preserves_registerDecodeConsistent`, `lookupThreadRegisterContext_preserves_lowEquivalent` | 10507, 10512 | kept |
+| `msgRegs.*Array.*RegValue` (`Model/Object/Types.lean`) | 10541 | **CV4.3** retargets (`MessageWords`) |
+| `writeFfiRegistersToTcb`, `writeReturnFrameToTcb`, `readReturnFrame` definitions; `readReturnFrame_writeReturnFrame`, `readReturnValue_eq_readReturnFrame_x0`, `writeReturnFrameToTcb_preserves_projection`, `writeFfiRegistersToTcb_id_when_not_tcb` | 10624, 10978–10980, 10999, 11000, 11050 | kept |
+| `saveOutgoingContext_effectiveBucketPriority_eq`'s congruence | 20102 | kept |
+| `replyRegisters : Option (Array SeLe4n.RegValue) := none` (`Locks/LockSetForSyscall.lean`) | 20902 | **CV4.3** retargets (`MessageWords`) |
+| `scheduleEffectiveOnCore`'s `saveOutgoingContextOnCore` composition | 22094 | kept |
+
+Eight anchors change: CV1.1 two, CV1.2 one, CV2.1 one, CV3.1 one, CV4.3 two,
+CV4.5 one — each in the row named, with the row's own anchors re-swept.

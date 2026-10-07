@@ -2417,14 +2417,11 @@ const LEAN_UPCALLS_OUTSIDE_THE_ENTRY_LOCK: &[(&str, &str, &str, usize, &str)] = 
         "lean_classify_synchronous_exception",
         1,
         "the exception classifier: it runs in exception context, so IRQs are \
-         masked and it cannot be preempted inside the heap lock; it reads no \
-         kernel state, and the one shared object it touches is the allocator's \
-         metadata — its compiled body allocates the `ExceptionContext` it \
-         classifies, under the heap's own leaf lock (`lean_heap.rs` \
-         § Concurrency), which is why that lock is load-bearing; the generated \
-         closed terms it reads are marked persistent, so their reference \
-         counts are never written; and it is taken before the entry lock so an \
-         `SVC` can be routed without entering the kernel twice",
+         masked; it reads no kernel state and touches no shared object — it \
+         classifies the `ESR_EL1` word (`classifySynchronousExceptionOfEsr`), \
+         so its compiled body allocates nothing and writes no reference count; \
+         and it is taken before the entry lock so an `SVC` can be routed \
+         without entering the kernel twice",
     ),
 ];
 

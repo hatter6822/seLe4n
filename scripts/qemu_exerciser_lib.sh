@@ -31,7 +31,7 @@
 
 EXERCISER_MACHINE="virt,gic-version=2,virtualization=on"
 EXERCISER_SUMMARY="[smp-test] exercisers: "
-EXERCISER_DRIVERS=(sgi-round-trip kprintln-stress tlb-shootdown tlb-shootdown-stress per-core-stats)
+EXERCISER_DRIVERS=(sgi-round-trip kprintln-stress tlb-shootdown tlb-shootdown-stress per-core-stats heap-allocations-per-syscall)
 
 # exerciser_parse_args "$@": `--lean-kernel` selects the Lean-linked image
 # (LEAN_KERNEL=1); any other argument is an error.
@@ -83,7 +83,9 @@ exerciser_boot() {
 # exerciser_check LABEL DRIVER...: hold EXERCISER_LOG to the named drivers'
 # banners — each of `sgi-round-trip`, `kprintln-stress`, `tlb-shootdown`,
 # `tlb-shootdown-stress`, `per-core-stats` (WS-BP BP8.5; the Lean-linked image
-# only, since the reader and the verdict are the kernel's), or `all` for every
+# only, since the reader and the verdict are the kernel's),
+# `heap-allocations-per-syscall` (WS-CV CV0.1; Lean-linked only, it measures a
+# syscall through the Lean kernel), or `all` for every
 # driver the image runs and the summary tally.  Records a failure per finding;
 # returns 1 on any.
 exerciser_check() {
@@ -122,6 +124,7 @@ if not any(line.startswith("[smp-test] exercisers: window installed at ") for li
 every = ["sgi-round-trip", "kprintln-stress", "tlb-shootdown", "tlb-shootdown-stress"]
 if lean:
     every.append("per-core-stats")
+    every.append("heap-allocations-per-syscall")
 if "all" in drivers:
     drivers = every
     require(f"[smp-test] exercisers: {len(every)} passed, 0 failed")
@@ -200,6 +203,18 @@ for driver in drivers:
             sgis_by_core[core] = sgis
         if len(set(sgis_by_core.values())) != len(sgis_by_core):
             failures.append(f"per-core-stats: two cores report one SGI count ({sgis_by_core}), so a wrong slot could not be told from the right one")
+    elif driver == "heap-allocations-per-syscall":
+        # WS-CV CV0.1: the number is evidence, read by review; the gate holds
+        # only that both reads happened on the boot core, the delta is their
+        # difference, and the round trip returned a frame.
+        readings = matches(r"\[smp-test\] heap-allocations-per-syscall: core 0: before=(\d+) after=(\d+) delta=(\d+)")
+        returned = matches(r"\[smp-test\] heap-allocations-per-syscall: core 0: returned x0=0x[0-9a-f]+ x1=0x[0-9a-f]+")
+        if len(readings) != 1 or len(returned) != 1:
+            failures.append(f"heap-allocations-per-syscall: expected one reading and one returned frame on core 0, found {len(readings)} and {len(returned)}")
+        else:
+            before, after, delta = (int(g) for g in readings[0].groups())
+            if after < before or delta != after - before:
+                failures.append(f"heap-allocations-per-syscall: the reading is not a delta: {readings[0].group(0)!r}")
     else:
         failures.append(f"unknown driver {driver!r}")
 for failure in failures:

@@ -103,6 +103,11 @@ gate test_qemu_smp_shootdown_stress.sh
 # so the Lean-linked image alone.
 gate_lean_only test_qemu_smp_per_core_stats.sh
 
+# WS-CV CV0.1 — the heap allocations of one syscall round trip through the
+# Lean kernel, read from the boot core's own slot of the heap's monotone
+# counter: the context-by-value plan's evidence.  Lean-linked image alone.
+gate_lean_only test_qemu_heap_allocations_per_syscall.sh
+
 # The gates that need a user program: each reports NOT RUN with its reason.
 # SM3.D.7 — cross-core deadlock-freedom stress (formal:
 # tests/DeadlockFreedomSuite.lean).
