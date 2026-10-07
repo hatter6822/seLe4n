@@ -26,7 +26,7 @@ The round lock and the per-core queue locks are keyed by round /
 `CoreId`, not by `ObjId`, so they are not `LockKind`/`LockId` members
 (the SM0.I ten-kind object hierarchy is deliberately closed).
 `TlbShootdownLockId` is the protocol's unified order — the exact
-`SchedLockId` pattern (SM5.A.2), with the object domain below the
+`LockKey` pattern (SM5.A.2), with the object domain below the
 round lock below the queue domain:
 
     object (LockId lex order)  <  round (unique)  <  queue (by core)

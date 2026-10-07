@@ -548,7 +548,7 @@ theorem lockSetForSyscall_replyRecv_delegated_declares
       caller.cspaceRoot prevCaller server endpointId hServer
   · intro hEq
     refine hDelegated (SeLe4n.ThreadId.toObjId_injective _ _ ?_)
-    simpa [tcbLock] using congrArg LockId.objId hEq
+    simpa [tcbLock] using congrArg LockKey.objId? hEq
 
 /-- **WS-RR RR7.11**: and it declares when both of its operands resolve — the
 endpoint it will receive on next and the reply object it answers first.  A
@@ -1220,7 +1220,7 @@ five operands.
 `lockSetForSyscall` here and by `schedLockSetForSyscall`
 (`SyscallSchedFootprint.lean`) there — which is what lets the ABI seam resolve
 one decode for both domains rather than two, and what
-`declaredSchedLockSetForAbiEntry_shares_decode` states of the seam.  The cost of
+`declaredSchedulerLockSetForAbiEntry_shares_decode` states of the seam.  The cost of
 one record is that a field added for one domain could silently move the other's
 answer; this says it cannot, so `abiEntryLockOperands` supplying the five below
 left every object-domain footprint exactly where Cut C4 found it.
@@ -1375,7 +1375,7 @@ cancellation footprint, so the coverage crosses one lift rather than a
 member-by-member family. -/
 theorem lockSetForSyscall_tcbSuspend_covers_cancellation
     (ops : SyscallLockOperands) (st : SystemState) (targetTid : ThreadId) (S : LockSet)
-    (l : LockId)
+    (l : LockKey)
     (hT : ops.targetThread = some targetTid)
     (hDecl : lockSetForSyscall .tcbSuspend ops st = some S)
     (hMem : (l, AccessMode.write)

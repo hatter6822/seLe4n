@@ -15,7 +15,8 @@ import SeLe4n.Model.FrozenState
 import SeLe4n.Kernel.SchedContext.Types
 
 open SeLe4n.Model
-open SeLe4n.Kernel.Concurrency (bootCoreId)
+open SeLe4n.Kernel.Concurrency (bootCoreId
+  LockKey)
 open SeLe4n.Kernel
 open SeLe4n.Kernel.SchedContext.PriorityManagement
 open SeLe4n.Kernel.FrozenOps
@@ -1502,14 +1503,14 @@ private def pm_fp_01_priorityFootprintNamesHomeAndExecutingCores : IO Unit := do
   expect "PM-FP-01 precondition: the target is homed on core 0 and the syscall runs on core 1"
     (determineTargetCore st targetTid == bootCoreId && core1 != bootCoreId)
   expect "PM-FP-01 the footprint names the target's home core's run-queue write lock"
-    (decide ((SchedLockId.runQueue ⟨bootCoreId⟩,
+    (decide ((LockKey.runQueue bootCoreId,
       SeLe4n.Kernel.Concurrency.AccessMode.write) ∈ fp))
   expect "PM-FP-01 ...and the executing core's, which the demotion's preemption point writes"
-    (decide ((SchedLockId.runQueue ⟨core1⟩,
+    (decide ((LockKey.runQueue core1,
       SeLe4n.Kernel.Concurrency.AccessMode.write) ∈ fp))
   expect "PM-FP-01 ...and no replenish-queue write lock on any core"
     (SeLe4n.Kernel.Concurrency.allCores.all (fun c =>
-      !decide ((SchedLockId.replenishQueue ⟨c⟩,
+      !decide ((LockKey.replenishQueue c,
         SeLe4n.Kernel.Concurrency.AccessMode.write) ∈ fp)))
   match setPriorityOnCore st ⟨callerTid, by decide⟩ ⟨targetTid, by decide⟩ ⟨10⟩ core1 with
   | .error e => throw <| IO.userError s!"PM-FP-01 setPriority should succeed, got {repr e}"
@@ -1584,7 +1585,7 @@ private def pm_pip_01_setPriorityReboostsServer : IO Unit := do
       (serverBoost st1 serverTid == some ⟨30⟩)
   let fp := schedLockSet_priorityControlOnCore st waiterTid core1
   expect "PM-PIP-01 the footprint names the server's home core, where the re-walk re-buckets"
-    (decide ((SchedLockId.runQueue ⟨core2⟩,
+    (decide ((LockKey.runQueue core2,
       SeLe4n.Kernel.Concurrency.AccessMode.write) ∈ fp))
 
 /-- PM-PIP-02: a configure that propagates a new priority to a reply-blocked
@@ -1605,7 +1606,7 @@ private def pm_pip_02_configureReboostsServer : IO Unit := do
   let st := pipWaiterState callerTid serverTid waiterTid (.bound scId)
     [(scObjId, .schedContext sc)]
   expect "PM-PIP-02 the configure footprint names the server's home core"
-    (decide ((SchedLockId.runQueue ⟨core2⟩, SeLe4n.Kernel.Concurrency.AccessMode.write) ∈
+    (decide ((LockKey.runQueue core2, SeLe4n.Kernel.Concurrency.AccessMode.write) ∈
       schedLockSet_schedContextConfigureOnCore st scObjId))
   match SeLe4n.Kernel.SchedContextOps.schedContextConfigure ⟨scObjId, by decide⟩ 100 200 90 0 0 st with
   | .error e => throw <| IO.userError s!"PM-PIP-02 configure should succeed, got {repr e}"

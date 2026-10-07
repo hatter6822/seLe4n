@@ -405,8 +405,8 @@ def dynamicChainHeld (c : CoreId) (path : PipChainPath)
 the locks `withDynamicChainExtension` acquires over a terminated walk path.
 Defined to match the inline `chainLocks` in `withDynamicChainExtension` so the
 establishment theorem below applies to the combinator's actual acquire fold. -/
-def chainLockSeq (path : PipChainPath) : List (LockId × AccessMode) :=
-  path.path.map (fun t => (⟨.tcb, t.toObjId⟩, AccessMode.write))
+def chainLockSeq (path : PipChainPath) : List (LockKey × AccessMode) :=
+  path.path.map (fun t => (tcbLock t, AccessMode.write))
 
 
 /-- WS-SM SM3.C.11.b (plan §5.3): the dynamic-chain extension
@@ -501,7 +501,7 @@ theorem chainLockSeq_keys_nodup (path : PipChainPath)
   rw [List.pairwise_map]
   refine hAsc.imp ?_
   intro a b hab heq
-  simp only [Function.comp, LockId.mk.injEq, true_and] at heq
+  simp only [Function.comp, tcbLock, LockKey.object.injEq, LockId.mk.injEq, true_and] at heq
   have := SeLe4n.ThreadId.toObjId_injective a b heq
   subst this
   exact Nat.lt_irrefl _ hab
@@ -517,7 +517,7 @@ theorem chainLockSeq_sorted (path : PipChainPath)
   rw [List.pairwise_map]
   refine hAsc.imp ?_
   intro a b hab
-  exact Or.inr ⟨rfl, Nat.le_of_lt hab⟩
+  exact (Or.inr ⟨rfl, Nat.le_of_lt hab⟩ : (⟨.tcb, a.toObjId⟩ : LockId) ≤ ⟨.tcb, b.toObjId⟩)
 
 /-- **PR #892 review round 2**: the object domain acquires a chain footprint in
 the order the walker produced it.  `runChainExtension` acquires
@@ -1088,23 +1088,25 @@ theorem chainLockSeq_acquire_establishes_pathHeld (caller : CoreId)
     ∀ tid ∈ path.path,
       lockHeld caller ⟨.tcb, tid.toObjId⟩ .write
         (acquireAll caller (chainLockSeq path) s) := by
-  have hEach : ∀ p ∈ chainLockSeq path, ∃ o,
-      s.objects[p.fst.objId]? = some o ∧ o.lockKind = p.fst.kind ∧
+  have hEach : ∀ p ∈ chainLockSeq path, ∃ l o, p.fst = .object l ∧
+      s.objects[l.objId]? = some o ∧ o.lockKind = l.kind ∧
       o.objectLockOf = RwLockState.unheld := by
     intro p hp
     obtain ⟨tid, htid, hpEq⟩ := List.mem_map.mp hp
     obtain ⟨o, hPres, hKind, hUnheld⟩ := hChainPresent tid htid
-    refine ⟨o, ?_, ?_, hUnheld⟩
-    · rw [← hpEq]; exact hPres
-    · rw [← hpEq]; exact hKind
-  have hDistinct : (chainLockSeq path).Pairwise (fun a b => a.fst.objId ≠ b.fst.objId) := by
+    refine ⟨⟨.tcb, tid.toObjId⟩, o, ?_, hPres, hKind, hUnheld⟩
+    rw [← hpEq]; rfl
+  have hDistinct : (chainLockSeq path).Pairwise (fun a b => a.fst.objId? ≠ b.fst.objId?) := by
     unfold chainLockSeq
     rw [List.pairwise_map]
-    exact hAscending.imp (fun {x y} hlt => threadId_toObjId_ne_of_toNat_lt hlt)
+    refine hAscending.imp (fun {x y} hlt => ?_)
+    intro heq
+    exact threadId_toObjId_ne_of_toNat_lt hlt
+      (by simpa only [tcbLock, LockKey.objId?_object, Option.some.injEq] using heq)
   have hAll := acquireAll_establishes_lockHeld_of_distinct_present_unheld caller
     (chainLockSeq path) s hExt hEach hDistinct
   intro tid htid
-  have hMem : ((⟨.tcb, tid.toObjId⟩ : LockId), AccessMode.write) ∈ chainLockSeq path :=
+  have hMem : (tcbLock tid, AccessMode.write) ∈ chainLockSeq path :=
     List.mem_map.mpr ⟨tid, htid, rfl⟩
   exact hAll _ hMem
 
@@ -1164,7 +1166,7 @@ theorem acquireLockOnObject_preserves_blockingServer (s : SystemState)
   by_cases hEq : tid.toObjId = l.objId
   · unfold acquireLockOnObject
     cases hk : l.kind with
-    | objStore => rfl
+    | objStore | runQueue | replenishQueue => all_goals rfl
     | tcb | endpoint | notification | cnode
     | vspaceRoot | untyped | schedContext | reply | page =>
       all_goals (
@@ -1193,11 +1195,21 @@ theorem acquireLockOnObject_preserves_blockingServer (s : SystemState)
           = s.objects.get? tid.toObjId from
         acquireLockOnObject_objects_getElem?_of_ne s core l m tid.toObjId hExt hEq]
 
+/-- **WS-LS LS1.2**: at any key — the table and scheduler words are not
+objects, so `blockingServer`'s store read is untouched there. -/
+theorem acquireLock_preserves_blockingServer (s : SystemState)
+    (core : CoreId) (k : LockKey) (m : AccessMode)
+    (hExt : s.objects.invExt) (tid : SeLe4n.ThreadId) :
+    blockingServer (acquireLock s core k m) tid = blockingServer s tid := by
+  cases k with
+  | object l => exact acquireLockOnObject_preserves_blockingServer s core l m hExt tid
+  | _ => rw [blockingServer_eq_bind, blockingServer_eq_bind]; rfl
+
 /-- WS-SM SM3.C.11.c: the `acquireAll` fold preserves `blockingServer` at every
 thread.  Induction on the sequence via the single-step preservation, threading
 `invExt`. -/
 theorem acquireAll_preserves_blockingServer (core : CoreId) :
-    ∀ (pairs : List (LockId × AccessMode)) (s : SystemState),
+    ∀ (pairs : List (LockKey × AccessMode)) (s : SystemState),
       s.objects.invExt → ∀ tid : SeLe4n.ThreadId,
         blockingServer (acquireAll core pairs s) tid = blockingServer s tid := by
   intro pairs
@@ -1205,12 +1217,12 @@ theorem acquireAll_preserves_blockingServer (core : CoreId) :
   | nil => intro s _ tid; rfl
   | cons head tail ih =>
       intro s hExt tid
-      have hExt1 := acquireLockOnObject_preserves_invExt s core head.fst head.snd hExt
+      have hExt1 := acquireLock_preserves_invExt s core head.fst head.snd hExt
       show blockingServer
-        (acquireAll core tail (acquireLockOnObject s core head.fst head.snd)) tid
+        (acquireAll core tail (acquireLock s core head.fst head.snd)) tid
         = blockingServer s tid
-      rw [ih (acquireLockOnObject s core head.fst head.snd) hExt1 tid,
-        acquireLockOnObject_preserves_blockingServer s core head.fst head.snd hExt tid]
+      rw [ih (acquireLock s core head.fst head.snd) hExt1 tid,
+        acquireLock_preserves_blockingServer s core head.fst head.snd hExt tid]
 
 /-- WS-SM SM3.C.11.c: `chainFollowsBlockingServer` transports across the
 acquire fold — equal `blockingServer` at every thread gives an equal chain

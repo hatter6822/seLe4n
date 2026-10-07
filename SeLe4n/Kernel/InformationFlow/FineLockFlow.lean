@@ -152,7 +152,8 @@ namespace SeLe4n.Kernel
 
 open SeLe4n.Model
 open SeLe4n.Kernel.Concurrency (CoreId bootCoreId numCores RwLockState RwLockOp AccessMode LockId
-  LockSet)
+  LockSet
+  LockKey)
 
 -- ============================================================================
 -- §1  SM8.D.1 — the observer sees nothing of the lock
@@ -212,39 +213,40 @@ shortcut this section exists to avoid.  What is true, and what §1 … §5 show 
 enough, is that the writes are confined to a field no observer and no integrity
 policy reads. -/
 def lockWritesOnly (s s' : SystemState) : Prop :=
-  (∃ (objs : SeLe4n.Kernel.RobinHood.RHTable SeLe4n.ObjId KernelObject) (lk : RwLockState),
-      s' = { s with objects := objs, objStoreLock := lk }) ∧
+  (∃ (objs : SeLe4n.Kernel.RobinHood.RHTable SeLe4n.ObjId KernelObject) (lk : RwLockState)
+      (sl : SchedulerLockState),
+      s' = { s with objects := objs, objStoreLock := lk, schedulerLocks := sl }) ∧
     ∀ oid : SeLe4n.ObjId,
       (s'.objects[oid]?).map KernelObject.eraseLock
         = (s.objects[oid]?).map KernelObject.eraseLock
 
 theorem lockWritesOnly_refl (s : SystemState) : lockWritesOnly s s :=
-  ⟨⟨s.objects, s.objStoreLock, rfl⟩, fun _ => rfl⟩
+  ⟨⟨s.objects, s.objStoreLock, s.schedulerLocks, rfl⟩, fun _ => rfl⟩
 
 theorem lockWritesOnly_trans {s₁ s₂ s₃ : SystemState}
     (h₁ : lockWritesOnly s₁ s₂) (h₂ : lockWritesOnly s₂ s₃) : lockWritesOnly s₁ s₃ := by
-  obtain ⟨⟨objs₁, lk₁, hEq₁⟩, hObj₁⟩ := h₁
-  obtain ⟨⟨objs₂, lk₂, hEq₂⟩, hObj₂⟩ := h₂
-  refine ⟨⟨objs₂, lk₂, ?_⟩, fun oid => (hObj₂ oid).trans (hObj₁ oid)⟩
+  obtain ⟨⟨objs₁, lk₁, sl₁, hEq₁⟩, hObj₁⟩ := h₁
+  obtain ⟨⟨objs₂, lk₂, sl₂, hEq₂⟩, hObj₂⟩ := h₂
+  refine ⟨⟨objs₂, lk₂, sl₂, ?_⟩, fun oid => (hObj₂ oid).trans (hObj₁ oid)⟩
   rw [hEq₂, hEq₁]
 
 /-- SM8.D.1: the fields `lockWritesOnly` pins, extracted one at a time.  Every
 consumer below reaches for these rather than re-deriving them from the
 reconstruction equation. -/
 theorem lockWritesOnly_scheduler {s s' : SystemState} (h : lockWritesOnly s s') :
-    s'.scheduler = s.scheduler := by obtain ⟨⟨_, _, hEq⟩, _⟩ := h; rw [hEq]
+    s'.scheduler = s.scheduler := by obtain ⟨⟨_, _, _, hEq⟩, _⟩ := h; rw [hEq]
 
 theorem lockWritesOnly_machine {s s' : SystemState} (h : lockWritesOnly s s') :
-    s'.machine = s.machine := by obtain ⟨⟨_, _, hEq⟩, _⟩ := h; rw [hEq]
+    s'.machine = s.machine := by obtain ⟨⟨_, _, _, hEq⟩, _⟩ := h; rw [hEq]
 
 theorem lockWritesOnly_objectIndex {s s' : SystemState} (h : lockWritesOnly s s') :
-    s'.objectIndex = s.objectIndex := by obtain ⟨⟨_, _, hEq⟩, _⟩ := h; rw [hEq]
+    s'.objectIndex = s.objectIndex := by obtain ⟨⟨_, _, _, hEq⟩, _⟩ := h; rw [hEq]
 
 theorem lockWritesOnly_services {s s' : SystemState} (h : lockWritesOnly s s') :
-    s'.services = s.services := by obtain ⟨⟨_, _, hEq⟩, _⟩ := h; rw [hEq]
+    s'.services = s.services := by obtain ⟨⟨_, _, _, hEq⟩, _⟩ := h; rw [hEq]
 
 theorem lockWritesOnly_irqHandlers {s s' : SystemState} (h : lockWritesOnly s s') :
-    s'.irqHandlers = s.irqHandlers := by obtain ⟨⟨_, _, hEq⟩, _⟩ := h; rw [hEq]
+    s'.irqHandlers = s.irqHandlers := by obtain ⟨⟨_, _, _, hEq⟩, _⟩ := h; rw [hEq]
 
 /-- SM8.D.1: a lock-only step preserves the observer's **object** view. -/
 theorem lockWritesOnly_preserves_projectObjects (ctx : LabelingContext) (observer : IfObserver)
@@ -387,7 +389,7 @@ theorem updateObjectAt_lockWritesOnly (s : SystemState) (oid : SeLe4n.ObjId)
   cases hGet : s.objects.get? oid with
   | none => exact lockWritesOnly_refl s
   | some obj =>
-    refine ⟨⟨s.objects.insert oid (f obj), s.objStoreLock, rfl⟩, fun o => ?_⟩
+    refine ⟨⟨s.objects.insert oid (f obj), s.objStoreLock, s.schedulerLocks, rfl⟩, fun o => ?_⟩
     show ((s.objects.insert oid (f obj))[o]?).map KernelObject.eraseLock = _
     simp only [RHTable_getElem?_eq_get?]
     rw [RHTable_getElem?_insert s.objects oid (f obj) hInv o]
@@ -444,7 +446,19 @@ whose set names `.objStore` writes. -/
 
 theorem objStoreLock_write_lockWritesOnly (s : SystemState) (lk : RwLockState) :
     lockWritesOnly s { s with objStoreLock := lk } :=
-  ⟨⟨s.objects, lk, rfl⟩, fun _ => rfl⟩
+  ⟨⟨s.objects, lk, s.schedulerLocks, rfl⟩, fun _ => rfl⟩
+
+/-- **WS-LS LS1.2**: a scheduler lock word is a lock word — the two per-core
+setters write `schedulerLocks` and nothing else. -/
+theorem setRunQueueLockOnCore_lockWritesOnly (s : SystemState) (c : CoreId)
+    (lk : RwLockState) : lockWritesOnly s (s.setRunQueueLockOnCore c lk) :=
+  ⟨⟨s.objects, s.objStoreLock, (s.setRunQueueLockOnCore c lk).schedulerLocks, rfl⟩,
+    fun _ => rfl⟩
+
+theorem setReplenishQueueLockOnCore_lockWritesOnly (s : SystemState) (c : CoreId)
+    (lk : RwLockState) : lockWritesOnly s (s.setReplenishQueueLockOnCore c lk) :=
+  ⟨⟨s.objects, s.objStoreLock, (s.setReplenishQueueLockOnCore c lk).schedulerLocks, rfl⟩,
+    fun _ => rfl⟩
 
 /-- SM8.D.1: the SM3.C.2 kind-checked lock update writes only lock words. -/
 theorem updateObjectLockAt_lockWritesOnly (s : SystemState) (l : LockId) (op : RwLockOp)
@@ -491,8 +505,38 @@ theorem cancelLockOnObject_lockWritesOnly (s : SystemState) (core : CoreId)
       | exact lockWritesOnly_refl s
       | exact updateObjectLockAt_lockWritesOnly s l _ hInv
 
+/-- **WS-LS LS1.2**: the per-key primitives write only lock words — an object
+key through the per-object primitive, the table key through `objStoreLock`,
+a scheduler key through its per-core word. -/
+theorem acquireLock_lockWritesOnly (s : SystemState) (core : CoreId)
+    (k : LockKey) (m : AccessMode) (hInv : s.objects.invExt) :
+    lockWritesOnly s (SeLe4n.Kernel.Concurrency.acquireLock s core k m) := by
+  cases k with
+  | objStore => exact objStoreLock_write_lockWritesOnly s _
+  | object l => exact acquireLockOnObject_lockWritesOnly s core l m hInv
+  | runQueue d => exact setRunQueueLockOnCore_lockWritesOnly s d _
+  | replenishQueue d => exact setReplenishQueueLockOnCore_lockWritesOnly s d _
+
+theorem releaseLock_lockWritesOnly (s : SystemState) (core : CoreId)
+    (k : LockKey) (m : AccessMode) (hInv : s.objects.invExt) :
+    lockWritesOnly s (SeLe4n.Kernel.Concurrency.releaseLock s core k m) := by
+  cases k with
+  | objStore => exact objStoreLock_write_lockWritesOnly s _
+  | object l => exact releaseLockOnObject_lockWritesOnly s core l m hInv
+  | runQueue d => exact setRunQueueLockOnCore_lockWritesOnly s d _
+  | replenishQueue d => exact setReplenishQueueLockOnCore_lockWritesOnly s d _
+
+theorem cancelLock_lockWritesOnly (s : SystemState) (core : CoreId)
+    (k : LockKey) (m : AccessMode) (hInv : s.objects.invExt) :
+    lockWritesOnly s (SeLe4n.Kernel.Concurrency.cancelLock s core k m) := by
+  cases k with
+  | objStore => exact objStoreLock_write_lockWritesOnly s _
+  | object l => exact cancelLockOnObject_lockWritesOnly s core l m hInv
+  | runQueue d => exact setRunQueueLockOnCore_lockWritesOnly s d _
+  | replenishQueue d => exact setReplenishQueueLockOnCore_lockWritesOnly s d _
+
 /-- SM8.D.1: the 2PL **growing phase** writes only lock words. -/
-theorem acquireAll_lockWritesOnly (core : CoreId) (pairs : List (LockId × AccessMode))
+theorem acquireAll_lockWritesOnly (core : CoreId) (pairs : List (LockKey × AccessMode))
     (s : SystemState) (hInv : s.objects.invExt) :
     lockWritesOnly s (SeLe4n.Kernel.Concurrency.acquireAll core pairs s) := by
   induction pairs generalizing s with
@@ -500,11 +544,11 @@ theorem acquireAll_lockWritesOnly (core : CoreId) (pairs : List (LockId × Acces
   | cons p rest ih =>
     obtain ⟨l, m⟩ := p
     rw [SeLe4n.Kernel.Concurrency.acquireAll_cons]
-    exact lockWritesOnly_trans (acquireLockOnObject_lockWritesOnly s core l m hInv)
-      (ih _ (SeLe4n.Kernel.Concurrency.acquireLockOnObject_preserves_invExt s core l m hInv))
+    exact lockWritesOnly_trans (acquireLock_lockWritesOnly s core l m hInv)
+      (ih _ (SeLe4n.Kernel.Concurrency.acquireLock_preserves_invExt s core l m hInv))
 
 /-- SM8.D.1: the 2PL **shrinking phase** writes only lock words. -/
-theorem releaseAll_lockWritesOnly (core : CoreId) (pairs : List (LockId × AccessMode))
+theorem releaseAll_lockWritesOnly (core : CoreId) (pairs : List (LockKey × AccessMode))
     (s : SystemState) (hInv : s.objects.invExt) :
     lockWritesOnly s (SeLe4n.Kernel.Concurrency.releaseAll core pairs s) := by
   induction pairs generalizing s with
@@ -512,11 +556,11 @@ theorem releaseAll_lockWritesOnly (core : CoreId) (pairs : List (LockId × Acces
   | cons p rest ih =>
     obtain ⟨l, m⟩ := p
     rw [SeLe4n.Kernel.Concurrency.releaseAll_cons]
-    exact lockWritesOnly_trans (releaseLockOnObject_lockWritesOnly s core l m hInv)
-      (ih _ (SeLe4n.Kernel.Concurrency.releaseLockOnObject_preserves_invExt s core l m hInv))
+    exact lockWritesOnly_trans (releaseLock_lockWritesOnly s core l m hInv)
+      (ih _ (SeLe4n.Kernel.Concurrency.releaseLock_preserves_invExt s core l m hInv))
 
 /-- **WS-LC LC4.2**: the withdrawal fold writes only lock words. -/
-theorem cancelAll_lockWritesOnly (core : CoreId) (pairs : List (LockId × AccessMode))
+theorem cancelAll_lockWritesOnly (core : CoreId) (pairs : List (LockKey × AccessMode))
     (s : SystemState) (hInv : s.objects.invExt) :
     lockWritesOnly s (SeLe4n.Kernel.Concurrency.cancelAll core pairs s) := by
   induction pairs generalizing s with
@@ -524,15 +568,15 @@ theorem cancelAll_lockWritesOnly (core : CoreId) (pairs : List (LockId × Access
   | cons p rest ih =>
     obtain ⟨l, m⟩ := p
     rw [SeLe4n.Kernel.Concurrency.cancelAll_cons]
-    exact lockWritesOnly_trans (cancelLockOnObject_lockWritesOnly s core l m hInv)
-      (ih _ (SeLe4n.Kernel.Concurrency.cancelLockOnObject_preserves_invExt s core l m hInv))
+    exact lockWritesOnly_trans (cancelLock_lockWritesOnly s core l m hInv)
+      (ih _ (SeLe4n.Kernel.Concurrency.cancelLock_preserves_invExt s core l m hInv))
 
 /-- **WS-LC LC4.2**: so does the shrinking phase as a whole.
 
 The composite every §4 and §5 result now factors through: adding the
 withdrawal to the bracket adds lock-word writes and nothing else, so the
 integrity and information-flow arguments carry over unchanged. -/
-theorem unwindAll_lockWritesOnly (core : CoreId) (pairs : List (LockId × AccessMode))
+theorem unwindAll_lockWritesOnly (core : CoreId) (pairs : List (LockKey × AccessMode))
     (s : SystemState) (hInv : s.objects.invExt) :
     lockWritesOnly s (SeLe4n.Kernel.Concurrency.unwindAll core pairs s) := by
   rw [SeLe4n.Kernel.Concurrency.unwindAll_eq_releaseAll_cancelAll]
@@ -2048,7 +2092,7 @@ def lockSetAcquiredState (S : LockSet) (lockCore : CoreId) (s : SystemState) : S
 is a single field read.  Used by the two grant lemmas below as the smallest
 witness that says something about `acquireAll` rather than about one primitive. -/
 private def objStoreLockSet : LockSet :=
-  LockSet.singleton { kind := .objStore, objId := SeLe4n.ObjId.ofNat 0 } .write
+  LockSet.singleton .objStore .write
 
 /-- SM8.D.5 (**the acquire phase grants when the lock is free**): on a state
 whose object-store lock is unheld, the growing phase really does leave the
@@ -2065,19 +2109,14 @@ theorem lockSetAcquiredState_grants_when_free (s : SystemState) (lockCore : Core
   rw [LockSet.singleton_pairs] at hp
   simp only [List.mem_singleton] at hp
   subst hp
-  show SeLe4n.Kernel.Concurrency.lockHeld lockCore
-    { kind := .objStore, objId := SeLe4n.ObjId.ofNat 0 } .write _
-  unfold SeLe4n.Kernel.Concurrency.lockHeld
-  simp only
+  show SeLe4n.Kernel.Concurrency.keyHeld lockCore .objStore .write _
+  rw [SeLe4n.Kernel.Concurrency.keyHeld_objStore]
   show (SeLe4n.Kernel.Concurrency.acquireAll lockCore objStoreLockSet.lockAcquireSequence
     s).objStoreLock.coreHolds lockCore .write
   unfold objStoreLockSet
   rw [LockSet.lockAcquireSequence_singleton]
-  show (SeLe4n.Kernel.Concurrency.acquireLockOnObject s lockCore
-    { kind := .objStore, objId := SeLe4n.ObjId.ofNat 0 } .write).objStoreLock.coreHolds
-      lockCore .write
-  unfold SeLe4n.Kernel.Concurrency.acquireLockOnObject
-  simp only
+  show (SeLe4n.Kernel.Concurrency.acquireLock s lockCore .objStore .write).objStoreLock.coreHolds
+    lockCore .write
   show (s.objStoreLock.applyOp (AccessMode.write.toAcquireOp lockCore)).coreHolds lockCore .write
   rw [hFree]
   show (SeLe4n.Kernel.Concurrency.RwLockState.unheld.applyOp
@@ -2099,10 +2138,9 @@ theorem lockSetAcquiredState_does_not_grant_when_contended (s : SystemState)
     ¬ SeLe4n.Kernel.Concurrency.lockSetHeld lockCore objStoreLockSet
         (lockSetAcquiredState objStoreLockSet lockCore s) := by
   intro hAll
-  have hOne := hAll ({ kind := .objStore, objId := SeLe4n.ObjId.ofNat 0 }, .write)
+  have hOne := hAll (.objStore, .write)
     (by unfold objStoreLockSet; rw [LockSet.singleton_pairs]; simp)
-  unfold SeLe4n.Kernel.Concurrency.lockHeld at hOne
-  simp only at hOne
+  rw [SeLe4n.Kernel.Concurrency.keyHeld_objStore] at hOne
   rw [show (lockSetAcquiredState objStoreLockSet lockCore s).objStoreLock
         = s.objStoreLock.applyOp (AccessMode.write.toAcquireOp lockCore) from by
       unfold lockSetAcquiredState objStoreLockSet
@@ -2468,8 +2506,8 @@ theorem syscallEntryUnderLockSet_preserves_projectionOnCore_of_entry (ctx : Labe
 -- `objStore` table lock and the per-object locks.  A live `.tcbSuspend` also
 -- takes locks in two domains this type cannot name:
 --
--- * the **scheduler domain** — `suspendThreadOnCoreSchedLockSet` over
---   `SchedLockId` (run queues of the core the victim is placed on and of the
+-- * the **scheduler domain** — `suspendThreadOnCoreLockSet` over
+--   `LockKey` (run queues of the core the victim is placed on and of the
 --   executing core, plus replenish queues), and
 -- * the **dynamic PIP chain** — SM3.C.11's contract requires each chain member's
 --   TCB write lock *and* its home-core run-queue write lock, discovered as the
@@ -2477,7 +2515,7 @@ theorem syscallEntryUnderLockSet_preserves_projectionOnCore_of_entry (ctx : Labe
 --
 -- So `syscallEntryUnderLockSet` is a witness that the *object*-domain bracket is
 -- information-flow transparent, not a complete migration harness.  Composing the
--- three domains needs a `withLockSet` over `SchedLockId` (which strictly
+-- three domains needs a `withLockSet` over `LockKey` (which strictly
 -- contains `LockId` via its `.object` constructor) plus a fold that extends the
 -- held set mid-transition — both SM3.C work, tracked there, and neither
 -- affecting the §5 results, which never mention which objects a set names.
@@ -3190,11 +3228,11 @@ inductive UncoveredLockDomain where
   -- **WS-RR RR8.12 Cut C6h (`v0.35.181`)**: `syscallSeamSchedulerDomain` is
   -- DELETED.  The syscall seam brackets on the scheduler domain now:
   -- `syscallDispatchCrossCoreBracketedStep` runs `Concurrency.runBracketed
-  -- schedulerLockBracketDomain` over `declaredUnifiedLockSetForAbiEntry`, whose
-  -- `SchedLockId` members name the run-queue and replenish-queue locks the
+  -- objectLockBracketDomain` over `declaredUnifiedLockSetForAbiEntry`, whose
+  -- `LockKey` members name the run-queue and replenish-queue locks the
   -- constructor said a `LockSet` could not express, and each of the sixteen
   -- declared arms carries a `schedLockSet_*_coversWrites` proof that reaches the
-  -- acquired set through `unifiedSchedLockSetForSyscall_coversWrites`.
+  -- acquired set through `unifiedLockSetForSyscall_coversWrites`.
   --
   -- The constructor's stated reason for the syscall half being its own cut is
   -- **corrected** rather than merely satisfied: it read *"the object-domain
@@ -3202,7 +3240,7 @@ inductive UncoveredLockDomain where
   -- object-store table lock"*, and `stateLevelLock` IS the object-store table
   -- lock — `acquireLockOnObject`'s `.objStore` arm writes
   -- `SystemState.objStoreLock` and reads nothing else of the `LockId`
-  -- (`schedAcquireLock_objStore_congr`).  The two domains were therefore never
+  -- (`acquireLock_objStore_congr`).  The two domains were therefore never
   -- two lock words, which is why the cut unifies the footprints rather than
   -- nesting two brackets: nesting would take that one word twice and walk the
   -- SM0.I ladder backwards.
@@ -3272,7 +3310,7 @@ with the write every structural writer declares.
 locks are nameable now that RR7.39 gave the scheduler domain a runtime:
 `PriorityInheritance.pipChainSchedFootprint` declares every visited thread's TCB
 write lock **and** its home core's run-queue write lock — two segments, because
-the `SchedLockId` ladder puts every object lock below every run-queue lock and
+the `LockKey` ladder puts every object lock below every run-queue lock and
 per-member coupling would walk it backwards.  `withPipChainSchedExtension`
 acquires it through the shared `runChainExtension` — which acts only once the
 footprint is held and otherwise unwinds and returns the fallback (PR #892 review
@@ -3692,7 +3730,7 @@ theorem syscallEntryUnderRevalidatedLockSet_refused_leaves_no_queued_request
       observed = .refused unwound) :
     ∃ S, declaredLockSetForEntry ctx layout executingCore regCount s = some S ∧
       ∀ p ∈ S.lockAcquireSequence,
-        ¬ SeLe4n.Kernel.Concurrency.lockQueued lockCore p.fst unwound := by
+        ¬ SeLe4n.Kernel.Concurrency.keyQueued lockCore p.fst unwound := by
   obtain ⟨S, hRes, hEq⟩ :=
     syscallEntryUnderRevalidatedLockSet_refused_unwinds ctx lockCore layout executingCore
       regCount s observed unwound h

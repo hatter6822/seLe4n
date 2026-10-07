@@ -188,7 +188,7 @@ example (st : SystemState) (c : CoreId) (st' : SystemState)
 
 -- SM5.G.5: disjoint cores' rotation footprints are disjoint.
 example (c c' : CoreId) (h : c ≠ c') :
-    SchedLockId.runQueue (⟨c⟩ : RunQueueLockId) ∉ (advanceDomainOnCoreLockSet c').map (·.1) :=
+    LockKey.runQueue c ∉ (advanceDomainOnCoreLockSet c').map (·.1) :=
   advanceDomainOnCoreLockSet_disjoint_of_ne c c' h
 
 -- SM5.G completion: the FULL domain-triple bridge — the operational switch's entire
@@ -357,10 +357,10 @@ private def runLockSetChecks : IO Unit := do
   assertBool "advanceDomainOnCoreLockSet bootCoreId is write-only"
     (decide ((advanceDomainOnCoreLockSet bootCoreId).all (fun p => p.2 == AccessMode.write)))
   assertBool "footprint contains the boot core's run-queue write lock"
-    (decide ((SchedLockId.runQueue ⟨bootCoreId⟩, AccessMode.write)
+    (decide ((LockKey.runQueue bootCoreId, AccessMode.write)
               ∈ advanceDomainOnCoreLockSet bootCoreId))
   assertBool "boot core's run-queue lock is NOT in core 1's rotation footprint (disjoint)"
-    (decide (SchedLockId.runQueue (⟨bootCoreId⟩ : RunQueueLockId)
+    (decide (LockKey.runQueue bootCoreId
               ∉ (advanceDomainOnCoreLockSet core1).map (·.1)))
 
 /-- §3.8: the SM5.G theorem-inventory partition counts (compiled-`decide` guards). -/

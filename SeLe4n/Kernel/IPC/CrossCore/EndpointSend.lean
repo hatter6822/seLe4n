@@ -573,7 +573,7 @@ than two that have to be kept in step.  No replenish segment: a plain send
 carries no scheduling context (only `.call` donates), so `.send` writes no
 replenish queue on any path. -/
 def schedLockSet_endpointSendOnCore (st : SystemState) (endpointId : SeLe4n.ObjId)
-    (executingCore : CoreId) : List (SchedLockId × Concurrency.AccessMode) :=
+    (executingCore : CoreId) : List (LockKey × Concurrency.AccessMode) :=
   schedFootprintOfCores (endpointSendWriteSet st endpointId executingCore) []
 
 /-- **WS-RR RR8.12**: on the rendezvous path the footprint names the woken
@@ -581,7 +581,7 @@ receiver's home core. -/
 theorem schedLockSet_endpointSendOnCore_contains_receiver_runQueue_write (st : SystemState)
     (endpointId : SeLe4n.ObjId) (executingCore : CoreId) (receiver : SeLe4n.ThreadId)
     (hRecv : endpointCallReceiver? st endpointId = some receiver) :
-    (SchedLockId.runQueue ⟨determineTargetCore st receiver⟩, Concurrency.AccessMode.write)
+    (LockKey.runQueue (determineTargetCore st receiver), Concurrency.AccessMode.write)
       ∈ schedLockSet_endpointSendOnCore st endpointId executingCore := by
   refine (mem_schedFootprintOfCores_runQueue_iff _ _ _).mpr ?_
   unfold endpointSendWriteSet
@@ -595,7 +595,7 @@ way. -/
 theorem schedLockSet_endpointSendOnCore_contains_executing_runQueue_write (st : SystemState)
     (endpointId : SeLe4n.ObjId) (executingCore : CoreId)
     (hRecv : endpointCallReceiver? st endpointId = none) :
-    (SchedLockId.runQueue ⟨executingCore⟩, Concurrency.AccessMode.write)
+    (LockKey.runQueue executingCore, Concurrency.AccessMode.write)
       ∈ schedLockSet_endpointSendOnCore st endpointId executingCore := by
   refine (mem_schedFootprintOfCores_runQueue_iff _ _ _).mpr ?_
   unfold endpointSendWriteSet

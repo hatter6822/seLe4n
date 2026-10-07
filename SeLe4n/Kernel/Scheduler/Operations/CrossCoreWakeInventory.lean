@@ -130,7 +130,7 @@ def crossCoreWakeTheorems : List CrossCoreWakeTheorem :=
       wakeThreadLockSet_object_before_runQueue .lockSet,
     ccwt! "wakeThreadLockSet_keys_nodup: footprint keys are duplicate-free"
       wakeThreadLockSet_keys_nodup .lockSet,
-    ccwt! "wakeThreadLockSet_pairwise_le: canonical SchedLockId-ascending acquisition order"
+    ccwt! "wakeThreadLockSet_pairwise_le: canonical LockKey-ascending acquisition order"
       wakeThreadLockSet_pairwise_le .lockSet,
     ccwt! "handleRescheduleSgiOnCoreLockSet: the SGI-handler footprint (= switch footprint)"
       handleRescheduleSgiOnCoreLockSet .lockSet,

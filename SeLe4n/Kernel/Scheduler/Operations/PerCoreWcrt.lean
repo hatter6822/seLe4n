@@ -48,7 +48,7 @@ lock-contention dimension (plan §3.9):
     WCRT_lockSet(op) ≤ max-lock-set-size × (coreCount − 1) × WCRT_per_lock
 
 On the RPi5 target (`coreCount = 4`, pinned by `numCores_eq_rpi5_coreCount`) the
-core-count factor is `coreCount − 1 = 3`, so any op whose `SchedLockId` footprint
+core-count factor is `coreCount − 1 = 3`, so any op whose `LockKey` footprint
 respects the SM3.D static `maxLockSetSize` bound has lock-WCRT
 `≤ maxLockSetSize × 3 × WCRT_per_lock`.
 
@@ -82,7 +82,7 @@ and the boundary at that cost is a footprint of five locks
 ## Contents (plan §5 SM5.J sub-tasks)
 
 * **SM5.J.1** `WCRT_lockSet` — the fine-lock-contention WCRT of a per-core
-  scheduler operation as a function of its `SchedLockId` footprint length, reusing
+  scheduler operation as a function of its `LockKey` footprint length, reusing
   the SM3.D `perLockWaitCost` (= `(numCores − 1) · tCs`) so the per-lock cost is
   shared verbatim with the `boundedWait_under_2pl` model.
 * **SM5.J.2** `wcrt_bound_rpi5_smp` — the plan §3.9 Theorem 3.9.1 RPi5 bound, plus
@@ -127,13 +127,13 @@ What is true now: **the syscall seam brackets**.
 and runs unbracketed, exactly as before, for the twenty-seven that do not.  The
 **per-core scheduler entries** — the timer tick, the `.reschedule` SGI receiver
 and the secondary bring-up entry — bracket too since **WS-RR RR7.39**, which gave
-`SchedLockId` a runtime (`SystemState.schedulerLocks`) and an instance of the
+`LockKey` a runtime (`SystemState.schedulerLocks`) and an instance of the
 shared bracket, so these bounds describe those entries as well.  What remains
 outside a declared footprint is the *syscall* seam's scheduler writes:
 `lockSetForSyscall` returns a `LockSet`, whose `LockId` cannot name a run-queue
 lock at all, so an `endpointSend`'s receiver wake was still uncovered.  That was
 `UncoveredLockDomain.syscallSeamSchedulerDomain`, closed at WS-RR RR8.12 Cut C6h
-(`v0.35.181`): the seam brackets on `schedulerLockBracketDomain` over the unified
+(`v0.35.181`): the seam brackets on `objectLockBracketDomain` over the unified
 `declaredUnifiedLockSetForAbiEntry`, so the live WCRT is the global entry lock's
 for the arms neither domain declares and the declared footprint's for the rest.
 
@@ -152,7 +152,8 @@ namespace SeLe4n.Kernel
 
 open SeLe4n.Model
 open SeLe4n.Kernel.Concurrency (numCores maxLockSetSize perLockWaitCost CoreId AccessMode
-  bootCoreId allCores)
+  bootCoreId allCores
+  LockKey)
 
 -- ============================================================================
 -- §1  SM5.J.1 — `WCRT_lockSet`: fine-lock-contention WCRT of a per-core op
@@ -160,7 +161,7 @@ open SeLe4n.Kernel.Concurrency (numCores maxLockSetSize perLockWaitCost CoreId A
 
 /-- WS-SM SM5.J.1 (plan §3.9): the worst-case response time contributed by
 per-object RW **fine-lock contention** for a per-core scheduler operation, as a
-function of its `SchedLockId`-typed lock-set footprint and the per-lock
+function of its `LockKey`-typed lock-set footprint and the per-lock
 critical-section cost `tCs` (= the §3.9 `WCRT_per_lock`).
 
 Under FIFO RwLock fairness (SM2.C) each lock in the footprint is contended by at
@@ -176,12 +177,12 @@ This *extends* the R5 domain-rotation / band-exhaustion bound (`wcrtBound`,
 on the CPU waits for kernel locks under per-object fine locks.  Reuses the SM3.D
 `perLockWaitCost` (= `(numCores − 1) · tCs`) so the per-lock cost is shared with the
 `boundedWait_under_2pl` model verbatim. -/
-def WCRT_lockSet (lockSet : List (SchedLockId × AccessMode)) (tCs : Nat) : Nat :=
+def WCRT_lockSet (lockSet : List (LockKey × AccessMode)) (tCs : Nat) : Nat :=
   lockSet.length * perLockWaitCost tCs
 
 /-- SM5.J.1: `WCRT_lockSet` unfolds to the §3.9 product form
 `|lockSet| · ((numCores − 1) · tCs)`. -/
-theorem WCRT_lockSet_eq_product (lockSet : List (SchedLockId × AccessMode)) (tCs : Nat) :
+theorem WCRT_lockSet_eq_product (lockSet : List (LockKey × AccessMode)) (tCs : Nat) :
     WCRT_lockSet lockSet tCs = lockSet.length * ((numCores - 1) * tCs) := rfl
 
 /-- SM5.J.1: the empty footprint contributes zero lock-wait. -/
@@ -190,13 +191,13 @@ theorem WCRT_lockSet_nil (tCs : Nat) : WCRT_lockSet [] tCs = 0 := by
 
 /-- SM5.J.1: `WCRT_lockSet` is monotone in the footprint length — a larger lock-set
 can only increase the worst-case wait. -/
-theorem WCRT_lockSet_mono_length {l₁ l₂ : List (SchedLockId × AccessMode)} (tCs : Nat)
+theorem WCRT_lockSet_mono_length {l₁ l₂ : List (LockKey × AccessMode)} (tCs : Nat)
     (h : l₁.length ≤ l₂.length) :
     WCRT_lockSet l₁ tCs ≤ WCRT_lockSet l₂ tCs :=
   Nat.mul_le_mul_right _ h
 
 /-- SM5.J.1: `WCRT_lockSet` is monotone in the per-lock critical-section cost. -/
-theorem WCRT_lockSet_mono_cost (lockSet : List (SchedLockId × AccessMode)) {t₁ t₂ : Nat}
+theorem WCRT_lockSet_mono_cost (lockSet : List (LockKey × AccessMode)) {t₁ t₂ : Nat}
     (h : t₁ ≤ t₂) :
     WCRT_lockSet lockSet t₁ ≤ WCRT_lockSet lockSet t₂ := by
   unfold WCRT_lockSet perLockWaitCost
@@ -206,7 +207,7 @@ theorem WCRT_lockSet_mono_cost (lockSet : List (SchedLockId × AccessMode)) {t�
 any footprint of size `≤ maxLockSetSize` has lock-wait `≤ maxLockSetSize ·
 (numCores − 1) · tCs`.  Mirrors SM3.D's `totalWaitCost_le_bound`; the RPi5
 specialisation substitutes `numCores − 1 = 3`. -/
-theorem WCRT_lockSet_le_maxLockSetSize (lockSet : List (SchedLockId × AccessMode)) (tCs : Nat)
+theorem WCRT_lockSet_le_maxLockSetSize (lockSet : List (LockKey × AccessMode)) (tCs : Nat)
     (hSize : lockSet.length ≤ maxLockSetSize) :
     WCRT_lockSet lockSet tCs ≤ maxLockSetSize * perLockWaitCost tCs := by
   unfold WCRT_lockSet
@@ -226,7 +227,7 @@ theorem perLockWaitCost_rpi5 (tCs : Nat) : perLockWaitCost tCs = 3 * tCs := by
   unfold perLockWaitCost; rw [rpi5OtherCoreCount]
 
 /-- SM5.J.1: the RPi5 form of `WCRT_lockSet` — `|lockSet| · 3 · tCs`. -/
-theorem WCRT_lockSet_rpi5 (lockSet : List (SchedLockId × AccessMode)) (tCs : Nat) :
+theorem WCRT_lockSet_rpi5 (lockSet : List (LockKey × AccessMode)) (tCs : Nat) :
     WCRT_lockSet lockSet tCs = lockSet.length * (3 * tCs) := by
   rw [WCRT_lockSet_eq_product, rpi5OtherCoreCount]
 
@@ -261,7 +262,7 @@ def admissibleCriticalSection (budget : Nat) : Nat :=
 /-- WS-RR RR7.31: the admissible cost is admissible — any footprint respecting
 the declared ceiling fits inside the budget at that per-lock cost. -/
 theorem WCRT_lockSet_le_budget_of_admissible
-    (lockSet : List (SchedLockId × AccessMode)) (budget : Nat)
+    (lockSet : List (LockKey × AccessMode)) (budget : Nat)
     (hSize : lockSet.length ≤ maxLockSetSize) :
     WCRT_lockSet lockSet (admissibleCriticalSection budget) ≤ budget := by
   have hStep : WCRT_lockSet lockSet (admissibleCriticalSection budget)
@@ -275,7 +276,7 @@ theorem WCRT_lockSet_le_budget_of_admissible
 /-- WS-RR RR7.31: the general form — a budget condition stated on the cost, so a
 caller may supply a *measured* `tCs` rather than the largest admissible one. -/
 theorem WCRT_lockSet_le_budget_of_cost
-    (lockSet : List (SchedLockId × AccessMode)) (tCs budget : Nat)
+    (lockSet : List (LockKey × AccessMode)) (tCs budget : Nat)
     (hSize : lockSet.length ≤ maxLockSetSize)
     (hCost : maxLockSetSize * ((numCores - 1) * tCs) ≤ budget) :
     WCRT_lockSet lockSet tCs ≤ budget := by
@@ -368,7 +369,7 @@ open SeLe4n.Kernel.Liveness (DeploymentSchedulingConfig rpi5CanonicalConfig)
 under fine locks for the RPi5 canonical deployment.
 
 For the canonical RPi5 config (`coreCount = 4 ⟹ coreCount − 1 = 3`), any per-core
-scheduler operation whose `SchedLockId` lock-set footprint respects the SM3.D
+scheduler operation whose `LockKey` lock-set footprint respects the SM3.D
 static `maxLockSetSize` bound has worst-case lock-contention response time
 `≤ maxLockSetSize · 3 · tCs`.  With `tCs ≈ 60 µs` (a bounded critical section) the
 typical `|lockSet| ≤ 4` syscall fits the plan's `4 · 3 · 60 µs ≈ 1 ms` (the §3
@@ -386,7 +387,7 @@ does not influence the lock bound.  This EXTENDS the R5 WCRT (`wcrtBound`): R5 b
 the scheduling latency; SM5.J.2 bounds the orthogonal lock-contention latency. -/
 theorem wcrt_bound_rpi5_smp
     (config : DeploymentSchedulingConfig) (hConfig : config = rpi5CanonicalConfig)
-    (lockSet : List (SchedLockId × AccessMode)) (tCs : Nat)
+    (lockSet : List (LockKey × AccessMode)) (tCs : Nat)
     (hSize : lockSet.length ≤ maxLockSetSize) :
     config.wellFormed ∧ WCRT_lockSet lockSet tCs ≤ maxLockSetSize * (3 * tCs) := by
   refine ⟨?_, ?_⟩
@@ -403,27 +404,27 @@ scheduler tick is `cyclesPerTick`, a lock critical section is `tCs` cycles); the
 sum is the algebraic upper bound on the total time from a thread becoming runnable
 to its syscall completing — the scheduling delay plus the in-kernel lock-wait.  R5
 bounded only the first summand; SM5.J adds the second. -/
-def WCRT_smp (D L_max N B P : Nat) (lockSet : List (SchedLockId × AccessMode)) (tCs : Nat) : Nat :=
+def WCRT_smp (D L_max N B P : Nat) (lockSet : List (LockKey × AccessMode)) (tCs : Nat) : Nat :=
   Liveness.wcrtBound D L_max N B P + WCRT_lockSet lockSet tCs
 
 /-- SM5.J.2: the combined bound splits into the R5 scheduling-latency term and the
 SM5.J lock-contention term. -/
 theorem WCRT_smp_decomposition (D L_max N B P : Nat)
-    (lockSet : List (SchedLockId × AccessMode)) (tCs : Nat) :
+    (lockSet : List (LockKey × AccessMode)) (tCs : Nat) :
     WCRT_smp D L_max N B P lockSet tCs =
       Liveness.wcrtBound D L_max N B P + WCRT_lockSet lockSet tCs := rfl
 
 /-- SM5.J.2: the R5 scheduling-latency term is a lower component of the combined
 bound (the SM5.J lock term only adds to it). -/
 theorem WCRT_smp_r5_component_le (D L_max N B P : Nat)
-    (lockSet : List (SchedLockId × AccessMode)) (tCs : Nat) :
+    (lockSet : List (LockKey × AccessMode)) (tCs : Nat) :
     Liveness.wcrtBound D L_max N B P ≤ WCRT_smp D L_max N B P lockSet tCs :=
   Nat.le_add_right _ _
 
 /-- SM5.J.2: the SM5.J lock-contention term is a lower component of the combined
 bound. -/
 theorem WCRT_smp_lockSet_component_le (D L_max N B P : Nat)
-    (lockSet : List (SchedLockId × AccessMode)) (tCs : Nat) :
+    (lockSet : List (LockKey × AccessMode)) (tCs : Nat) :
     WCRT_lockSet lockSet tCs ≤ WCRT_smp D L_max N B P lockSet tCs :=
   Nat.le_add_left _ _
 
@@ -431,7 +432,7 @@ theorem WCRT_smp_lockSet_component_le (D L_max N B P : Nat)
 bounded by the R5 scheduling latency plus the bounded RPi5 lock contention
 `maxLockSetSize · 3 · tCs`. -/
 theorem wcrt_smp_bound_rpi5 (D L_max N B P : Nat)
-    (lockSet : List (SchedLockId × AccessMode)) (tCs : Nat)
+    (lockSet : List (LockKey × AccessMode)) (tCs : Nat)
     (hSize : lockSet.length ≤ maxLockSetSize) :
     WCRT_smp D L_max N B P lockSet tCs ≤
       Liveness.wcrtBound D L_max N B P + maxLockSetSize * (3 * tCs) := by
@@ -445,10 +446,10 @@ theorem wcrt_smp_bound_rpi5 (D L_max N B P : Nat)
 -- ============================================================================
 
 /-- WS-SM SM5.J.3 (generic per-operation bound): any per-core scheduler op whose
-`SchedLockId` footprint respects `maxLockSetSize` has RPi5 lock-WCRT
+`LockKey` footprint respects `maxLockSetSize` has RPi5 lock-WCRT
 `≤ maxLockSetSize · 3 · tCs`.  The five named per-op bounds below are this lemma
 applied to each op's footprint-length witness. -/
-theorem wcrt_op_bounded_of_size (lockSet : List (SchedLockId × AccessMode)) (tCs : Nat)
+theorem wcrt_op_bounded_of_size (lockSet : List (LockKey × AccessMode)) (tCs : Nat)
     (hSize : lockSet.length ≤ maxLockSetSize) :
     WCRT_lockSet lockSet tCs ≤ maxLockSetSize * (3 * tCs) := by
   rw [WCRT_lockSet_rpi5]
@@ -547,18 +548,18 @@ each lock", at which point a read lock and a write lock both face the full
 the sound worst-case bound; the per-execution mode-aware tightening is the
 *execution-sensitive* `Concurrency.WCRT` (bridged below), not the static ceiling. -/
 theorem WCRT_lockSet_mode_independent
-    (locks : List SchedLockId) (m₁ m₂ : AccessMode) (tCs : Nat) :
+    (locks : List LockKey) (m₁ m₂ : AccessMode) (tCs : Nat) :
     WCRT_lockSet (locks.map (·, m₁)) tCs = WCRT_lockSet (locks.map (·, m₂)) tCs := by
   simp [WCRT_lockSet]
 
 /-- WS-SM SM5.J (execution bridge — B6/C7): `WCRT_lockSet` (the static per-core
-SchedLockId-footprint cost) coincides with the SM3.D `Concurrency.totalWaitCost`
+LockKey-footprint cost) coincides with the SM3.D `Concurrency.totalWaitCost`
 (the LockId-domain uniform cost) whenever the two footprints have equal size — both
 are `size · (numCores − 1) · tCs`.  This formally connects the per-core scheduler
 WCRT model to the deadlock-freedom WCRT model: they are the *same* uniform bound on
 their respective lock domains. -/
 theorem WCRT_lockSet_eq_totalWaitCost_of_length_eq
-    (ls : List (SchedLockId × AccessMode)) (S : Concurrency.LockSet) (tCs : Nat)
+    (ls : List (LockKey × AccessMode)) (S : Concurrency.LockSet) (tCs : Nat)
     (hlen : ls.length = S.size) :
     WCRT_lockSet ls tCs = Concurrency.totalWaitCost S tCs := by
   rw [WCRT_lockSet_eq_product, Concurrency.totalWaitCost_eq, hlen]
@@ -566,13 +567,13 @@ theorem WCRT_lockSet_eq_totalWaitCost_of_length_eq
 /-- WS-SM SM5.J (execution bridge — B6/C7): the *execution-sensitive* worst-case
 response time `Concurrency.WCRT e c op tCs` of a `KernelOperation` (which counts
 the cores actually contending each lock, `≤ numCores − 1`) is bounded by the
-*static* per-core `WCRT_lockSet` of any equal-size SchedLockId footprint.  So the
-per-operation bounds of §3 (on the SchedLockId footprints) dominate the genuine
+*static* per-core `WCRT_lockSet` of any equal-size LockKey footprint.  So the
+per-operation bounds of §3 (on the LockKey footprints) dominate the genuine
 per-execution lock-wait — closing the gap between the two WCRT models: the static
 ceiling is a sound over-approximation of the execution-aware cost. -/
 theorem kernelWait_le_WCRT_lockSet_of_length_eq
     (e : Concurrency.KernelExecution) (c : CoreId) (op : Concurrency.KernelOperation)
-    (ls : List (SchedLockId × AccessMode)) (tCs : Nat)
+    (ls : List (LockKey × AccessMode)) (tCs : Nat)
     (hlen : ls.length = op.lockSet.size) :
     Concurrency.WCRT e c op tCs ≤ WCRT_lockSet ls tCs := by
   rw [WCRT_lockSet_eq_totalWaitCost_of_length_eq ls op.lockSet tCs hlen]
@@ -584,7 +585,7 @@ to `coreCount` by `numCores_eq_rpi5_coreCount`), *independent of the
 `DeploymentSchedulingConfig`*.  This is the config-free form of `wcrt_bound_rpi5_smp`
 (whose `config = rpi5CanonicalConfig` hypothesis adds only the orthogonal
 `config.wellFormed` deployment-identity conjunct, not the bound itself). -/
-theorem wcrt_bound_smp (lockSet : List (SchedLockId × AccessMode)) (tCs : Nat)
+theorem wcrt_bound_smp (lockSet : List (LockKey × AccessMode)) (tCs : Nat)
     (hSize : lockSet.length ≤ maxLockSetSize) :
     WCRT_lockSet lockSet tCs ≤ maxLockSetSize * (3 * tCs) :=
   wcrt_op_bounded_of_size lockSet tCs hSize
@@ -597,19 +598,19 @@ makes the sum genuinely commensurate: `cyclesPerTick · wcrtBound + WCRT_lockSet
 `WCRT_smp` is the `cyclesPerTick = 1` special case (operands pre-scaled to a shared
 base). -/
 def WCRT_smp_cycles (cyclesPerTick D L_max N B P : Nat)
-    (lockSet : List (SchedLockId × AccessMode)) (tCs : Nat) : Nat :=
+    (lockSet : List (LockKey × AccessMode)) (tCs : Nat) : Nat :=
   cyclesPerTick * Liveness.wcrtBound D L_max N B P + WCRT_lockSet lockSet tCs
 
 /-- SM5.J.2: `WCRT_smp` is the `cyclesPerTick = 1` instance of `WCRT_smp_cycles`. -/
 theorem WCRT_smp_cycles_one (D L_max N B P : Nat)
-    (lockSet : List (SchedLockId × AccessMode)) (tCs : Nat) :
+    (lockSet : List (LockKey × AccessMode)) (tCs : Nat) :
     WCRT_smp_cycles 1 D L_max N B P lockSet tCs = WCRT_smp D L_max N B P lockSet tCs := by
   simp [WCRT_smp_cycles, WCRT_smp, Nat.one_mul]
 
 /-- SM5.J.2: the cycle-commensurate bound decomposes into the (scaled) R5
 scheduling-latency term and the SM5.J lock-contention term. -/
 theorem WCRT_smp_cycles_decomposition (cyclesPerTick D L_max N B P : Nat)
-    (lockSet : List (SchedLockId × AccessMode)) (tCs : Nat) :
+    (lockSet : List (LockKey × AccessMode)) (tCs : Nat) :
     WCRT_smp_cycles cyclesPerTick D L_max N B P lockSet tCs =
       cyclesPerTick * Liveness.wcrtBound D L_max N B P + WCRT_lockSet lockSet tCs := rfl
 
@@ -655,7 +656,7 @@ SMP no-starvation argument (the scheduling half is `schedulerNoStall_smp`). -/
 theorem boundedKernelWait_smp (e : Concurrency.KernelExecution) (c : CoreId)
     (op : Concurrency.KernelOperation) (tCs : Nat)
     (h2pl : Concurrency.executionFollows2PL e)
-    (hOrder : Concurrency.executionAcquiresInLockIdOrder e) :
+    (hOrder : Concurrency.executionAcquiresInLockKeyOrder e) :
     Concurrency.noDeadlock e ∧
     Concurrency.WCRT e c op tCs ≤ maxLockSetSize * (3 * tCs) := by
   obtain ⟨hNoDeadlock, hb⟩ := Concurrency.boundedWait_under_2pl e c op tCs h2pl hOrder
@@ -722,7 +723,7 @@ headroom), since `wcrtBound ≤ WCRT_smp`.  So adding the fine-lock dimension ne
 weakens the per-core liveness guarantee — the combined bound subsumes it. -/
 theorem thread_eventually_scheduled_within_smp_bound
     (st : SystemState) (tid : ThreadId) (c : CoreId) (trace : Liveness.SchedulerTrace)
-    (lockSet : List (SchedLockId × AccessMode)) (tCs : Nat)
+    (lockSet : List (LockKey × AccessMode)) (tCs : Nat)
     (hyp : Liveness.WCRTHypothesesOnCore st tid c)
     (hValid : Liveness.ValidTrace st trace)
     (hDomainActiveRunnable : ∃ k₁, k₁ ≤ Liveness.domainRotationBound
@@ -783,7 +784,7 @@ theorem no_starvation_under_smp (st : SystemState)
       ∃ k₂, k₂ ≤ Liveness.bandExhaustionBound hyp.N hyp.B hyp.P ∧
         Liveness.selectedAtOnCore trace (k₁ + k₂) tid c)
     (h2pl : Concurrency.executionFollows2PL e)
-    (hOrder : Concurrency.executionAcquiresInLockIdOrder e) :
+    (hOrder : Concurrency.executionAcquiresInLockKeyOrder e) :
     -- (1) no core stalls:
     (∀ c' : CoreId, ∃ tid', chooseThreadOnCore st c' = .ok (some tid')) ∧
     -- (2) the runnable thread `tid` is genuinely selected on core `c` within the bound:
@@ -803,7 +804,7 @@ combined `WCRT_smp` bound.  Retained for the single-core surface; the genuine
 per-core form is `thread_eventually_scheduled_within_smp_bound`. -/
 theorem r5_latency_within_smp_bound
     (trace : Liveness.SchedulerTrace) (tid : ThreadId)
-    (D L_max N B P : Nat) (lockSet : List (SchedLockId × AccessMode)) (tCs : Nat)
+    (D L_max N B P : Nat) (lockSet : List (LockKey × AccessMode)) (tCs : Nat)
     (k : Nat) (hk : k ≤ Liveness.wcrtBound D L_max N B P)
     (hSel : Liveness.selectedAt trace k tid) :
     ∃ k', k' ≤ WCRT_smp D L_max N B P lockSet tCs ∧ Liveness.selectedAt trace k' tid :=

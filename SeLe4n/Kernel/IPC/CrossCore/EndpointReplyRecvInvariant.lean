@@ -33,7 +33,8 @@ non-interference are `endpointReplyRecvOnCore_confinedToCores` /
 namespace SeLe4n.Kernel
 
 open SeLe4n.Model
-open SeLe4n.Kernel.Concurrency (bootCoreId)
+open SeLe4n.Kernel.Concurrency (bootCoreId
+  LockKey acquireAll)
 
 /-- The step is the identity when the holder *is* the receiver: the receive leg's
 new donation goes to `tid`, so a holder that is the receiver regains a
@@ -919,7 +920,7 @@ theorem schedLockSet_endpointReplyRecvOnCore_contains_prevCaller_runQueue_write
     (endpointId : SeLe4n.ObjId) (receiver : SeLe4n.ThreadId) (replyId : SeLe4n.ReplyId)
     (prevCaller : SeLe4n.ThreadId) (msg : IpcMessage) (receiverCspaceRoot : SeLe4n.ObjId)
     (receiverSlotBase : SeLe4n.Slot) (executingCore : Concurrency.CoreId) (st : SystemState) :
-    (SchedLockId.runQueue ⟨determineTargetCore st prevCaller⟩, Concurrency.AccessMode.write)
+    (LockKey.runQueue (determineTargetCore st prevCaller), Concurrency.AccessMode.write)
       ∈ schedLockSet_endpointReplyRecvOnCore endpointId receiver replyId prevCaller msg
           receiverCspaceRoot receiverSlotBase executingCore st := by
   refine (mem_schedFootprintOfCores_runQueue_iff _ _ _).mpr ?_
@@ -937,7 +938,7 @@ theorem schedLockSet_endpointReplyRecvOnCore_covers_receiveLeg
     (hReply : endpointReplyOnCore receiver prevCaller msg executingCore st = (st1, .ok sgi))
     (hPop : replyRecvPopDonation replyId prevCaller st1 = .ok (returned?, st1p)) :
     ∀ c ∈ endpointReceiveDualWriteSet st1p endpointId executingCore,
-      (SchedLockId.runQueue ⟨c⟩, Concurrency.AccessMode.write)
+      (LockKey.runQueue c, Concurrency.AccessMode.write)
         ∈ schedLockSet_endpointReplyRecvOnCore endpointId receiver replyId prevCaller msg
             receiverCspaceRoot receiverSlotBase executingCore st := by
   intro c hc
@@ -1018,7 +1019,7 @@ theorem schedLockSet_endpointReplyRecvOnCore_covers_preReturnMigration
 /-- **WS-RR RR8.12 Cut C2 (coverage, the re-donation)**: on a receive leg that
 dequeues a `Call` after the pop handed a context back, the footprint covers WS-OD
 OD3.6's donation footprint member for member — hence, by
-`applyCallDonationOnCoreSchedLockSet_covers_migration`, the SM5.H migration's two
+`applyCallDonationOnCoreLockSet_covers_migration`, the SM5.H migration's two
 replenish-queue write locks — at the cores the donation **actually** resolves, on the
 post-deschedule state it runs on, under the donation's OWN resolver
 (`applyRendezvousCallDonation_ok_migrates` is the licence that those are the
@@ -1040,7 +1041,7 @@ theorem schedLockSet_endpointReplyRecvOnCore_covers_postReceiveDonation
     (hCall : rendezvousDequeuedCall st2 nextThread = true)
     (hDon : callDonationSchedContext? (replyRecvHolderDeschedule receiver holder st2)
         nextThread receiver = some scId) :
-    ∀ p ∈ applyCallDonationOnCoreSchedLockSet
+    ∀ p ∈ applyCallDonationOnCoreLockSet
              (determineTargetCore (replyRecvHolderDeschedule receiver holder st2) nextThread)
              (determineTargetCore (replyRecvHolderDeschedule receiver holder st2) receiver),
       p ∈ schedLockSet_endpointReplyRecvOnCore endpointId receiver replyId prevCaller msg
@@ -1089,7 +1090,7 @@ theorem schedLockSet_endpointReplyRecvOnCore_no_replenishQueue_of_no_donation
     (hReply : endpointReplyOnCore receiver prevCaller msg executingCore st = (st1, .ok sgi))
     (hPop : replyRecvPopDonation replyId prevCaller st1 = .ok (none, st1p))
     (hPre : receivePreReturn? st1p endpointId receiver = none) (c : Concurrency.CoreId) :
-    (SchedLockId.replenishQueue ⟨c⟩, Concurrency.AccessMode.write)
+    (LockKey.replenishQueue c, Concurrency.AccessMode.write)
       ∉ schedLockSet_endpointReplyRecvOnCore endpointId receiver replyId prevCaller msg
           receiverCspaceRoot receiverSlotBase executingCore st := by
   intro hMem

@@ -186,11 +186,11 @@ def tcb5 : LockId := ⟨.tcb, SeLe4n.ObjId.ofNat 5⟩
 def tcb7 : LockId := ⟨.tcb, SeLe4n.ObjId.ofNat 7⟩
 
 /-- `{tcb5 : write}`. -/
-def lsW5 : LockSet := LockSet.singleton tcb5 .write
+def lsW5 : LockSet := LockSet.singleton (.object tcb5) .write
 /-- `{tcb5 : read}`. -/
-def lsR5 : LockSet := LockSet.singleton tcb5 .read
+def lsR5 : LockSet := LockSet.singleton (.object tcb5) .read
 /-- `{tcb7 : write}`. -/
-def lsW7 : LockSet := LockSet.singleton tcb7 .write
+def lsW7 : LockSet := LockSet.singleton (.object tcb7) .write
 
 /-- Build a transition instance with `acquireTime ≡ 0` (so strict 2PL holds for
 any non-zero commit time) and an arbitrary action. -/

@@ -2691,7 +2691,7 @@ private def runTimeoutEndpointTrace (_counter : IO.Ref Nat) (st1 : SystemState) 
   -- identity: the holder stays parked, recoverable by its own manager.  The holder
   -- is pinned to core 1 so that the placement the next line removes from is one
   -- the victim's own deschedule (core 0) does not cover — which is why
-  -- `cancelIpcBlockingOnCoreSchedLockSet` names it.
+  -- `cancelIpcBlockingOnCoreLockSet` names it.
   let holderPinned : TCB := { holderTcb with cpuAffinity := some ⟨1, by decide⟩ }
   let stPin := stR.withObjectStored hTid.toObjId (.tcb holderPinned)
   let stParked := (SeLe4n.Kernel.cancelIpcBlockingOnCore vTid victimTcb ⟨0, by decide⟩ stPin).1

@@ -4188,8 +4188,8 @@ private def unlockedState : SystemState :=
 
 /-- The 2PL acquire fold over a two-lock sequence, both on observable objects. -/
 private def lockPairs :
-    List (SeLe4n.Kernel.Concurrency.LockId × SeLe4n.Kernel.Concurrency.AccessMode) :=
-  [(lowEndpointLock, .write), ({ kind := .cnode, objId := probeCNode }, .read)]
+    List (SeLe4n.Kernel.Concurrency.LockKey × SeLe4n.Kernel.Concurrency.AccessMode) :=
+  [(.object lowEndpointLock, .write), (.object { kind := .cnode, objId := probeCNode }, .read)]
 
 private def foldedLockState : SystemState :=
   SeLe4n.Kernel.Concurrency.acquireAll c1 lockPairs niState
@@ -7933,7 +7933,7 @@ private def ipcSendOperands (msg : IpcMessage) : Concurrency.SyscallLockOperands
 
 private def ipcDeclaredMember
     (declared : Option Concurrency.LockSet)
-    (l : Concurrency.LockId) (m : Concurrency.AccessMode) : Bool :=
+    (l : Concurrency.LockKey) (m : Concurrency.AccessMode) : Bool :=
   match declared with
   | some S => decide ((l, m) ∈ S.pairs)
   | none => false
@@ -8319,8 +8319,8 @@ private def runDeclaredFootprintChecks : IO Unit := do
   --
   -- WS-RR RR8.12 Cut C6h (`v0.35.181`): **one**, from two.  The syscall seam's
   -- scheduler-domain entry is deleted — `syscallDispatchCrossCoreBracketedStep`
-  -- brackets on `schedulerLockBracketDomain` over the unified
-  -- `declaredUnifiedLockSetForAbiEntry`, whose `SchedLockId` members name the
+  -- brackets on `objectLockBracketDomain` over the unified
+  -- `declaredUnifiedLockSetForAbiEntry`, whose `LockKey` members name the
   -- run-queue and replenish-queue locks a `LockSet` could not express, and each
   -- of the sixteen declared arms carries a coverage proof.
   assertBool "the one uncovered lock domain is registered, with an owner"
@@ -11361,8 +11361,8 @@ private def runTaintFootprintChecks : IO Unit := do
   let sendSet := SeLe4n.Kernel.Concurrency.lockSet_endpointSend highCurrent probeCNode
                    highEndpoint (some lowCurrent)
   let sendWriteObjects : List SeLe4n.ObjId :=
-    (sendSet.pairs.filter (fun p => decide (p.snd = SeLe4n.Kernel.Concurrency.AccessMode.write))).map
-      (fun p => p.fst.objId)
+    (sendSet.pairs.filter (fun p => decide (p.snd = SeLe4n.Kernel.Concurrency.AccessMode.write))).filterMap
+      (fun p => p.fst.objId?)
   let recvRoot : SeLe4n.ObjId :=
     match sendRendezvousState.getTcb? lowCurrent with
     | some tcb => tcb.cspaceRoot

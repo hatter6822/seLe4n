@@ -312,7 +312,7 @@ theorem purgeReplenishmentFromAllCores_preserves_replenishQueueEntriesBound_smp
   exact hCons c scId₀ t (mem_remove_entries hMem).1
 
 -- **WS-RR RR7.39**: `SystemState` gained the `schedulerLocks` field (the state
--- representation of `SchedLockId.runQueue` / `.replenishQueue`), so every
+-- representation of `LockKey.runQueue` / `.replenishQueue`), so every
 -- structural `isDefEq` over a `SystemState` record update compares one more
 -- field.  This characterisation rewrites through a `match` on `getTcb?` whose
 -- motive abstracts two such updates, and it was already the tree's most

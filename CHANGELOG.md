@@ -1,3 +1,57 @@
+## v0.36.64 — WS-LS LS1.2: one lock key, one footprint type, one bracket domain
+
+Nothing the compiled kernel runs changes; `main_trace_smoke.expected` is
+unchanged.  Every footprint, object or scheduler, is now a `LockSet` over
+`LockKey`, and the scheduler-domain twins of the lock layer are deleted.
+
+- **`LockSet` re-keyed over `LockKey`** (`Locks/LockKey.lean`, split out of
+  `LockState.lean`): `pairs : List (LockKey × AccessMode)`,
+  `lockAcquireSequence` is the one sort (`Concurrency.lockAcquireSequence`),
+  and `lockSetHeld` folds the per-key `keyHeld` (`objStore` → `objStoreLock`,
+  `object l` → `lockHeld`, `runQueue c` / `replenishQueue c` → the per-core
+  word).  The per-key primitives `acquireLock` / `releaseLock` / `cancelLock`
+  dispatch on the key, with `applyLockOp` as the one word update the
+  never-enqueues frames are proved over; the 2PL folds, `withLockSet`, the
+  insensitivity predicates, the serializability and deadlock theorems
+  (`executionAcquiresInLockKeyOrder`, `lockOrder_strict` over `LockKey`), the
+  dynamic chain extension, the IPC footprints, `lockWritesOnly` (now admitting
+  the two scheduler words) and the per-core non-interference frames are stated
+  over keys.  `LockKey.objId?` and the existential "names an object" shape
+  replace the `LockId` projections in the establishment theorems.
+- **`SchedLockId`, `RunQueueLockId`, `ReplenishQueueLockId`, `SchedLockSet`
+  and `Scheduler/Operations/SchedLockSet.lean` deleted**, with
+  `schedAcquireLock` / `schedLockHeld` / `schedAcquireAll` / `schedLockSetHeld`
+  / `schedulerLockBracketDomain` / `canonicalSchedLockOfObject` and their
+  congruences: the object arm of the scheduler primitive *was* the object
+  primitive, so one definition answers both.  `LockKey.objStore_lt_*`,
+  `object_lt_*` and `runQueue_lt_replenishQueue` carry the ladder edges the
+  scheduler footprints' ordering proofs read.  Every `*SchedLockSet` footprint
+  is renamed `*LockSet` (`suspendThreadOnCoreLockSet`,
+  `cancelIpcBlockingOnCoreLockSet`, `declaredLockSetForTimerTick`, …);
+  `declaredSchedLockSetForAbiEntry` is `declaredSchedulerLockSetForAbiEntry`
+  because its object twin already had the plain name.
+- **The unified syscall footprint is a `LockSet.union`**
+  (`unifiedLockSetForSyscall`): the lifting map and the residue filter the two
+  key types needed are gone, and `schedFootprintCoversWrites_mono` is stated
+  over write members, which is all the predicate reads
+  (`LockSet.mem_union_write_of_mem_write`, `mem_union_of_mem_right`).
+- Tier 3 anchors re-pointed at the lock layer; the scheduler footprint census
+  and the lock, 2PL, deadlock, serializability, information-flow and SMP
+  suites re-keyed (`LockSet.singleton (.object l)`, `keyHeld`, `objId?`);
+  `DeadlockInventory` names the `LockKey` order.  Docstrings that still named
+  the deleted identifiers now name the key.
+- **A placement reason that LS1.2 removed is registered, not left implied.**
+  `SyscallSchedFootprint.lean` holds the lifecycle, priority, affinity,
+  SchedContext and retype arms' resolved footprints because `LockKey` was
+  declared above their modules; with `LockKey` in
+  `Concurrency/Locks/LockKey.lean` that reason is gone.  The module's docstring
+  says so, plan row **LS2.3** moves the footprints beside their transitions
+  after the seams switch, and `REGISTERED_DEBT.md` carries the row until then.
+  The serializability-premise row LS0.1 registered is moved into the lock-debt
+  table it was written for.
+- Plan row LS1.2 closed (`docs/planning/LOCK_STATE_SEPARATION_PLAN.md`);
+  `WORKSTREAM_CONTEXT.md` and `REGISTERED_DEBT.md` updated.
+
 ## v0.36.63 — WS-LS LS1.1: the ghost lock state, beside the per-object layer
 
 Nothing the compiled kernel runs changes; `main_trace_smoke.expected` is

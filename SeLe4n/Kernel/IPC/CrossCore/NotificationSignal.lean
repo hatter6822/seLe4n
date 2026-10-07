@@ -408,7 +408,7 @@ No replenish segment: a signal moves no scheduling context, so the set is the
 run-queue side alone.  On the badge-accumulation path and on every fail-closed
 arm the write set is empty and the footprint is the table lock by itself. -/
 def schedLockSet_notificationSignalOnCore (st : SystemState) (notificationId : SeLe4n.ObjId) :
-    List (SchedLockId × Concurrency.AccessMode) :=
+    List (LockKey × Concurrency.AccessMode) :=
   schedFootprintOfCores (notificationSignalWriteSet st notificationId) []
 
 /-- **WS-RR RR8.12**: the scheduler-domain footprint of a cross-core
@@ -422,14 +422,14 @@ stated at `[executingCore]`).  So the footprint is state-independent, which is
 why — unlike the signal's — it takes no `SystemState`; the object-domain
 `lockSet_notificationWaitOnCore` is state-independent for the same reason. -/
 def schedLockSet_notificationWaitOnCore (executingCore : CoreId) :
-    List (SchedLockId × Concurrency.AccessMode) :=
+    List (LockKey × Concurrency.AccessMode) :=
   schedFootprintOfCores [executingCore] []
 
 /-- **WS-RR RR8.12**: the wait footprint names the executing core's run-queue
 write lock — the one the block path's `removeRunnableOnCore` writes under. -/
 theorem schedLockSet_notificationWaitOnCore_contains_executing_runQueue_write
     (executingCore : CoreId) :
-    (SchedLockId.runQueue ⟨executingCore⟩, Concurrency.AccessMode.write)
+    (LockKey.runQueue executingCore, Concurrency.AccessMode.write)
       ∈ schedLockSet_notificationWaitOnCore executingCore :=
   (mem_schedFootprintOfCores_runQueue_iff _ _ executingCore).mpr (by simp)
 
@@ -438,7 +438,7 @@ merely sound but *exact* on this arm — the negative half, and the one a widene
 footprint would fail. -/
 theorem schedLockSet_notificationWaitOnCore_no_other_runQueue
     (executingCore d : CoreId) (hne : d ≠ executingCore) :
-    (SchedLockId.runQueue ⟨d⟩, Concurrency.AccessMode.write)
+    (LockKey.runQueue d, Concurrency.AccessMode.write)
       ∉ schedLockSet_notificationWaitOnCore executingCore := by
   rw [schedLockSet_notificationWaitOnCore, mem_schedFootprintOfCores_runQueue_iff]
   simpa using hne
@@ -449,7 +449,7 @@ theorem schedLockSet_notificationSignalOnCore_contains_waiter_runQueue_write
     (ntfn : Notification) (rest : SeLe4n.NoDupList SeLe4n.ThreadId)
     (hN : st.getNotification? notificationId = some ntfn)
     (hT : ntfn.waitingThreads.tail? = some (waiter, rest)) :
-    (SchedLockId.runQueue ⟨determineTargetCore st waiter⟩, Concurrency.AccessMode.write)
+    (LockKey.runQueue (determineTargetCore st waiter), Concurrency.AccessMode.write)
       ∈ schedLockSet_notificationSignalOnCore st notificationId := by
   refine (mem_schedFootprintOfCores_runQueue_iff _ _ _).mpr ?_
   unfold notificationSignalWriteSet
@@ -650,7 +650,7 @@ existing entry is replaced by `(l, oldMode.lub .write) = (l, .write)` (write is
 the `AccessMode.lub` top).  So `(l, .write)` is a member of the result
 unconditionally — the structural fact behind "both ends of the signal binding are
 write-locked". -/
-theorem self_write_mem_insertOrMerge (S : LockSet) (l : LockId) :
+theorem self_write_mem_insertOrMerge (S : LockSet) (l : LockKey) :
     (l, AccessMode.write) ∈ (S.insertOrMerge l AccessMode.write).pairs := by
   unfold LockSet.insertOrMerge
   split

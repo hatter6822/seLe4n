@@ -32,7 +32,7 @@ Seven categories matching the plan §3.5 / §4.3 / §5 sub-tasks (62 entries):
   validity, the conditional dequeue-on-dispatch / current-in-domain, idempotency,
   and self-core affinity consistency).
 * `.lockSet` — SM5.E.3: the `enqueueIdleThreadOnCoreLockSet` cross-domain
-  object-store + run-queue WRITE footprint over SM5.A's `SchedLockId` and its
+  object-store + run-queue WRITE footprint over SM5.A's `LockKey` and its
   seven witnesses (SM5.A–D parity).
 * `.alwaysSucceeds` — SM5.E.6: the `idleThreadEnqueuedOnCore` discharge
   predicate, its constructive establishment, the keystone

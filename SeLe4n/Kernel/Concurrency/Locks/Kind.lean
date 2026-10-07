@@ -25,8 +25,9 @@ acquiring multiple locks always grabs them in a strictly-increasing
 sequence.  Wait-for cycles cannot form when every cycle would imply a
 strict-decrease somewhere on the lock ladder.
 
-`LockKind` partitions the lock universe into ten kinds in a fixed
-hierarchical order (lower level = acquired first).  `LockId` pairs a
+`LockKind` partitions the lock universe into twelve kinds in a fixed
+hierarchical order (ten object kinds and, since WS-LS LS1.2, the two per-core
+scheduler-queue kinds that `LockKey` kept outside the ladder until then) (lower level = acquired first).  `LockId` pairs a
 kind with the identifier of the locked object.  The lexicographic
 order on `(kind.level, objId.val)` is total, decidable, reflexive,
 transitive, and antisymmetric — the four order properties downstream
@@ -44,14 +45,19 @@ namespace SeLe4n.Kernel.Concurrency
 -- ============================================================================
 
 /-- WS-SM SM0.I: lock kinds partitioning the set of kernel locks into
-ten layers in a fixed hierarchical order.
+twelve layers in a fixed hierarchical order.
 
 The ordering reflects *acquisition discipline*: a thread holding a
 lock at level `k` may only request locks at level `> k`.  Level 0
 (`objStore`) is the coarsest lock — the RobinHood object store
-itself.  Level 9 (`page`) is the finest — individual page frames.
+itself.  Level 9 (`page`) is the finest object lock — individual page
+frames.  **WS-LS LS1.2**: levels 10 and 11 are the per-core run-queue and
+replenish-queue locks, which are not object locks (no `LockId` names one; a
+`LockKey.runQueue c` does) but sit on the one ladder so every key has one
+level and every object lock is acquired before every scheduler lock — the
+order `LockKey` encoded as a sum until this row.
 
-The ten kinds enumerate every fine-grained kernel resource that
+The ten object kinds enumerate every fine-grained kernel resource that
 SM3..SM7 will protect: capability nodes, thread control blocks,
 endpoints, notifications, replies, scheduling contexts, VSpace
 roots, and page frames.
@@ -79,8 +85,18 @@ inductive LockKind where
   | reply            -- Reply objects            (level 6)
   | schedContext     -- Scheduling contexts      (level 7)
   | vspaceRoot       -- VSpace roots / ASIDs     (level 8)
-  | page             -- Page frames              (level 9, finest)
+  | page             -- Page frames              (level 9)
+  | runQueue         -- A core's run queue       (level 10)  [WS-LS LS1.2]
+  | replenishQueue   -- A core's replenish queue (level 11, finest)  [WS-LS LS1.2]
   deriving DecidableEq, Repr, Inhabited
+
+/-- **WS-LS LS1.2**: the ten kinds an object lock can have — every kind but
+the two per-core scheduler-queue kinds, which no `LockId` names.  The
+permitted-kinds theorems that admit "any target" admit any *object*
+kind, and this is the predicate they say it with. -/
+def LockKind.isObjectKind : LockKind → Bool
+  | .runQueue | .replenishQueue => false
+  | _ => true
 
 /-- WS-SM SM0.I: extract the numeric level of a lock kind for the
 lexicographic order.  Strict-monotone (`level_strictMono`) so the
@@ -96,9 +112,11 @@ def LockKind.level : LockKind → Nat
   | .schedContext   => 7
   | .vspaceRoot     => 8
   | .page           => 9
+  | .runQueue       => 10
+  | .replenishQueue => 11
 
 /-- WS-SM SM0.I: distinct kinds have distinct levels.  Pairwise
-distinctness via 10-way `cases` analysis discharged by `decide` on
+distinctness via 12-way `cases` analysis discharged by `decide` on
 the resulting numeric inequalities. -/
 theorem LockKind.level_strictMono :
     ∀ k₁ k₂ : LockKind, k₁ ≠ k₂ → k₁.level ≠ k₂.level := by
@@ -113,7 +131,7 @@ Proof by direct `match` on the natural number plus its bound — the
 ten in-range cases each give an existential witness; the
 `n + 10` case is excluded by `omega` from the `< 10` hypothesis. -/
 theorem LockKind.level_surjective :
-    ∀ n : Nat, n < 10 → ∃ k : LockKind, k.level = n := by
+    ∀ n : Nat, n < 12 → ∃ k : LockKind, k.level = n := by
   intro n hn
   match n, hn with
   | 0, _ => exact ⟨.objStore, rfl⟩
@@ -126,18 +144,20 @@ theorem LockKind.level_surjective :
   | 7, _ => exact ⟨.schedContext, rfl⟩
   | 8, _ => exact ⟨.vspaceRoot, rfl⟩
   | 9, _ => exact ⟨.page, rfl⟩
-  | n + 10, h => exact absurd h (by omega)
+  | 10, _ => exact ⟨.runQueue, rfl⟩
+  | 11, _ => exact ⟨.replenishQueue, rfl⟩
+  | n + 12, h => exact absurd h (by omega)
 
-/-- WS-SM SM0.I: every kind's level is `< 10`.  Discharged by case
+/-- WS-SM SM0.I: every kind's level is `< 12`.  Discharged by case
 analysis on `LockKind`. -/
 theorem LockKind.level_bounded :
-    ∀ k : LockKind, k.level < 10 := by
+    ∀ k : LockKind, k.level < 12 := by
   intro k; cases k <;> decide
 
-/-- WS-SM SM0.I: lift a kind to a `Fin 10` index.  Bundles `level`
+/-- WS-SM SM0.I: lift a kind to a `Fin 12` index.  Bundles `level`
 with its `level_bounded` witness so consumers obtain a structurally
 in-range index. -/
-def LockKind.toFin (k : LockKind) : Fin 10 := ⟨k.level, k.level_bounded⟩
+def LockKind.toFin (k : LockKind) : Fin 12 := ⟨k.level, k.level_bounded⟩
 
 /-- WS-SM SM0.I: `toFin` agrees with `level` on the underlying value. -/
 theorem LockKind.toFin_val (k : LockKind) : k.toFin.val = k.level := rfl

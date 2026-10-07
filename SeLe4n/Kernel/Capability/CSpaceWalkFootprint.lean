@@ -281,7 +281,8 @@ failed at a key and a writer that would make it succeed are ordered by SM3.E's
 conflict relation rather than interleaved.  A lock of the object's *actual*
 kind would not do: the resolution does not know the kind, and a `cnodeLock` at a
 key holding a TCB is a different `LockId` from the TCB's own. -/
-def cspaceWalkKeyLock (st : SystemState) (oid : SeLe4n.ObjId) : LockId × AccessMode :=
+def cspaceWalkKeyLock (st : SystemState) (oid : SeLe4n.ObjId) :
+    Concurrency.LockKey × AccessMode :=
   match st.getCNode? oid with
   | some _ => (cnodeLock oid, AccessMode.read)
   | none => (Concurrency.stateLevelLock, AccessMode.read)
@@ -410,7 +411,7 @@ theorem cspaceWalk_conflicts_with_delete (rootId : SeLe4n.ObjId) (addr : SeLe4n.
     (callerTid : SeLe4n.ThreadId) (deleteRoot targetCnode : SeLe4n.ObjId)
     (unmappedRoot : Option SeLe4n.ObjId)
     (hOnPath : targetCnode ∈ cspaceWalkPath rootId addr bitsRemaining st) :
-    ∃ (l : LockId) (m₁ m₂ : AccessMode),
+    ∃ (l : Concurrency.LockKey) (m₁ m₂ : AccessMode),
       (l, m₁) ∈ (cspaceWalkLockSet rootId addr bitsRemaining st).pairs ∧
       (l, m₂) ∈ (Concurrency.lockSet_cspaceDelete callerTid deleteRoot targetCnode
         unmappedRoot).pairs ∧

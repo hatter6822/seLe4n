@@ -2490,11 +2490,11 @@ theorem ShootdownRoundLockId.singleton (a b : ShootdownRoundLockId) :
 lock — the "PendingShootdown lock" of plan §3.2 step 2, at per-core
 granularity per the WS-SM per-object-fine-locks decision.
 
-Like the scheduler's `RunQueueLockId`, the guarded state is keyed by
+Like the scheduler's `LockKey.runQueue`, the guarded state is keyed by
 `CoreId` rather than `ObjId`, so this is **not** a `LockKind`/`LockId`
 (the SM0.I object-lock hierarchy is deliberately closed at ten kinds);
 SM7.B.7 (`lockSet_tlbShootdown_correct`) integrates it into the
-protocol's cross-domain lock-set the same way `SchedLockId` wraps the
+protocol's cross-domain lock-set the same way `LockKey` wraps the
 run-queue locks.
 
 **Acquisition order**: strictly ascending `core` (the total order

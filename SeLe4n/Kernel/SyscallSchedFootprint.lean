@@ -11,12 +11,11 @@ import SeLe4n.Kernel.API
 import SeLe4n.Kernel.Scheduler.PriorityInheritance.PerCore
 import SeLe4n.Kernel.Lifecycle.Invariant.RetypeReservation
 import SeLe4n.Kernel.Concurrency.Locks.LockSetForSyscall
-import SeLe4n.Kernel.Scheduler.Operations.SchedLockSet
 import SeLe4n.Kernel.SyscallLockBracket
 import SeLe4n.Kernel.SchedLockBracket
 
 /-!
-# `v0.35.167` (WS-RR RR8.12 Cut C3b-i) — the syscall arms whose own modules cannot name a `SchedLockId`
+# `v0.35.167` (WS-RR RR8.12 Cut C3b-i) — the syscall arms whose own modules could not name a `LockKey`
 
 Every scheduler-domain footprint declared so far sits beside the transition it is
 about: `schedLockSet_endpointSendOnCore` in `EndpointSend.lean`,
@@ -27,31 +26,33 @@ for a reason worth stating once rather than rediscovering per arm.
 
 ## Why these arms are here
 
-`SchedLockId` — the cross-domain lock identifier every scheduler footprint is a
-list of — is declared in `Scheduler/Operations/PerCoreChooseThread.lean`, and
-that module imports `Lifecycle/Suspend.lean` and `IPC/Operations/Endpoint.lean`.
-So it sits **above** the modules holding the lifecycle, priority, affinity,
-SchedContext and retype transitions, and none of them can name a `SchedLockId`
-at all.  Measured: `Lifecycle/Suspend.lean`, `SchedContext/Operations.lean`,
+`LockKey` — the cross-domain lock key every footprint is a list of — was
+declared in `Scheduler/Operations/PerCoreChooseThread.lean` until WS-LS LS1.2,
+and that module imports `Lifecycle/Suspend.lean` and `IPC/Operations/Endpoint.lean`.
+So it sat **above** the modules holding the lifecycle, priority, affinity,
+SchedContext and retype transitions, and none of them could name a `LockKey`
+at all.  Measured then: `Lifecycle/Suspend.lean`, `SchedContext/Operations.lean`,
 `SchedContext/PriorityManagementPerCore.lean`, `Scheduler/Operations/Core.lean`
-and `Lifecycle/Operations/RetypeWrappers.lean` are all outside
-`PerCoreChooseThread`'s reverse closure.
-
-Moving `SchedLockId` down was considered and rejected: it is declared with
-`RunQueueLockId` and `ReplenishQueueLockId` and the cross-domain order over them
-(`object_lt_runQueue`, `runQueue_lt_replenishQueue`), and that order is what
-`schedCoreSegment` and `schedFootprintOfCores` are *about* — the constructor's own
-docstring records the decision to keep the three together.  So the rule this
-module states instead is:
+and `Lifecycle/Operations/RetypeWrappers.lean` were all outside
+`PerCoreChooseThread`'s reverse closure.  The rule this module stated was:
 
 > **A resolved scheduler footprint lives beside its transition where that module
-> can name a `SchedLockId`, and here where it cannot.**
+> can name a `LockKey`, and here where it cannot.**
+
+**Since LS1.2 that reason is gone**: `LockKey` is declared in
+`Concurrency/Locks/LockKey.lean`, below every transition module, with the
+scheduler keys as its own constructors and the cross-domain order
+(`LockKey.object_lt_runQueue`, `LockKey.runQueue_lt_replenishQueue`) beside
+it.  Every footprint and write set here can now move beside its transition;
+that move is WS-LS LS2.3 (`docs/planning/LOCK_STATE_SEPARATION_PLAN.md` §4)
+and a row of `docs/REGISTERED_DEBT.md`, so this module is a waypoint, not a
+home.
 
 The write sets follow the footprints for the same reason: a write set exists to
 be the argument of `schedFootprintOfCores` (and of the staged confinement
-theorem), and splitting the pair across two modules to satisfy a convention
-neither half can follow buys nothing.  Each carries the tombstone of its move out
-of the staged `InformationFlow/NonInterferenceCrossCore.lean`, where a production
+theorem), and splitting the pair across two modules buys nothing.  Each carries
+the tombstone of its move out of the staged
+`InformationFlow/NonInterferenceCrossCore.lean`, where a production
 footprint could not read it — the layering finding Cuts 7, 8a-ii and C3a each
 paid once, arriving at the three arms nobody had asked it of.
 
@@ -79,7 +80,8 @@ channel (SM8.D's CC-5) and the reason WS-OD OD3.5 *narrowed* a footprint.
 namespace SeLe4n.Kernel
 
 open SeLe4n.Model
-open SeLe4n.Kernel.Concurrency (CoreId)
+open SeLe4n.Kernel.Concurrency (CoreId
+  LockKey LockSet)
 
 -- ============================================================================
 -- §1  The `.tcbResume` arm
@@ -141,21 +143,21 @@ The fault retire the arm runs first (`retirePendingFaultForResume`, WS-RR RR4.11
 needs no member of its own: it writes one TCB's `pendingFault` and no scheduler
 state at all (`retirePendingFaultForResume_scheduler_eq`). -/
 def schedLockSet_resumeThreadOnCore (st : SystemState) (vtid : SeLe4n.ValidThreadId)
-    (executingCore : CoreId) : List (SchedLockId × Concurrency.AccessMode) :=
+    (executingCore : CoreId) : List (LockKey × Concurrency.AccessMode) :=
   schedFootprintOfCores (resumeThreadOnCoreWriteSet st vtid executingCore) []
 
 /-- `v0.35.167`: the footprint holds the resumed thread's home core's run-queue
 write lock — the enqueue's own. -/
 theorem schedLockSet_resumeThreadOnCore_contains_home_runQueue_write (st : SystemState)
     (vtid : SeLe4n.ValidThreadId) (executingCore : CoreId) :
-    (SchedLockId.runQueue ⟨determineTargetCore st vtid.val⟩, Concurrency.AccessMode.write)
+    (LockKey.runQueue (determineTargetCore st vtid.val), Concurrency.AccessMode.write)
       ∈ schedLockSet_resumeThreadOnCore st vtid executingCore :=
   (mem_schedFootprintOfCores_runQueue_iff _ _ _).mpr (by simp [resumeThreadOnCoreWriteSet])
 
 /-- `v0.35.167`: ...and the executing core's, which the local reschedule writes. -/
 theorem schedLockSet_resumeThreadOnCore_contains_executing_runQueue_write (st : SystemState)
     (vtid : SeLe4n.ValidThreadId) (executingCore : CoreId) :
-    (SchedLockId.runQueue ⟨executingCore⟩, Concurrency.AccessMode.write)
+    (LockKey.runQueue executingCore, Concurrency.AccessMode.write)
       ∈ schedLockSet_resumeThreadOnCore st vtid executingCore :=
   (mem_schedFootprintOfCores_runQueue_iff _ _ _).mpr (by simp [resumeThreadOnCoreWriteSet])
 
@@ -163,7 +165,7 @@ theorem schedLockSet_resumeThreadOnCore_contains_executing_runQueue_write (st : 
 exact half, against `resumeThreadOnCore_replenishQueueOnCore`'s. -/
 theorem schedLockSet_resumeThreadOnCore_no_replenishQueue (st : SystemState)
     (vtid : SeLe4n.ValidThreadId) (executingCore : CoreId) (c : CoreId) :
-    (SchedLockId.replenishQueue ⟨c⟩, Concurrency.AccessMode.write)
+    (LockKey.replenishQueue c, Concurrency.AccessMode.write)
       ∉ schedLockSet_resumeThreadOnCore st vtid executingCore := by
   intro hMem
   exact absurd ((mem_schedFootprintOfCores_replenishQueue_iff _ _ _).mp hMem) (by simp)
@@ -285,14 +287,14 @@ scheduler-domain footprint.**
 replenish segment: a priority change re-buckets a run queue and may take a
 scheduling point, and moves no scheduling context. -/
 def schedLockSet_priorityControlOnCore (st : SystemState) (tid : SeLe4n.ThreadId)
-    (executingCore : CoreId) : List (SchedLockId × Concurrency.AccessMode) :=
+    (executingCore : CoreId) : List (LockKey × Concurrency.AccessMode) :=
   schedFootprintOfCores (priorityControlWriteSet st tid executingCore) []
 
 /-- `v0.35.167`: the footprint holds the target's home core's run-queue write
 lock — the bucket migration's own. -/
 theorem schedLockSet_priorityControlOnCore_contains_home_runQueue_write (st : SystemState)
     (tid : SeLe4n.ThreadId) (executingCore : CoreId) :
-    (SchedLockId.runQueue ⟨determineTargetCore st tid⟩, Concurrency.AccessMode.write)
+    (LockKey.runQueue (determineTargetCore st tid), Concurrency.AccessMode.write)
       ∈ schedLockSet_priorityControlOnCore st tid executingCore :=
   (mem_schedFootprintOfCores_runQueue_iff _ _ _).mpr (by simp [priorityControlWriteSet])
 
@@ -300,14 +302,14 @@ theorem schedLockSet_priorityControlOnCore_contains_home_runQueue_write (st : Sy
 preemption point writes. -/
 theorem schedLockSet_priorityControlOnCore_contains_executing_runQueue_write (st : SystemState)
     (tid : SeLe4n.ThreadId) (executingCore : CoreId) :
-    (SchedLockId.runQueue ⟨executingCore⟩, Concurrency.AccessMode.write)
+    (LockKey.runQueue executingCore, Concurrency.AccessMode.write)
       ∈ schedLockSet_priorityControlOnCore st tid executingCore :=
   (mem_schedFootprintOfCores_runQueue_iff _ _ _).mpr (by simp [priorityControlWriteSet])
 
 /-- `v0.35.167`: and **no** replenish-queue lock, on any core. -/
 theorem schedLockSet_priorityControlOnCore_no_replenishQueue (st : SystemState)
     (tid : SeLe4n.ThreadId) (executingCore c : CoreId) :
-    (SchedLockId.replenishQueue ⟨c⟩, Concurrency.AccessMode.write)
+    (LockKey.replenishQueue c, Concurrency.AccessMode.write)
       ∉ schedLockSet_priorityControlOnCore st tid executingCore := by
   intro hMem
   exact absurd ((mem_schedFootprintOfCores_replenishQueue_iff _ _ _).mp hMem) (by simp)
@@ -440,21 +442,21 @@ theorem setThreadCpuAffinityWithMigration_replenishQueueOnCore_ne (st st' : Syst
 
 /-- **`v0.35.167`: the live `.tcbSetAffinity` arm's scheduler-domain footprint.** -/
 def schedLockSet_setThreadCpuAffinityOnCore (st : SystemState) (tid : SeLe4n.ThreadId)
-    (affinity : Option CoreId) : List (SchedLockId × Concurrency.AccessMode) :=
+    (affinity : Option CoreId) : List (LockKey × Concurrency.AccessMode) :=
   schedFootprintOfCores (setThreadCpuAffinityWriteSet st tid affinity)
     (setThreadCpuAffinityReplenishCores st tid affinity)
 
 /-- `v0.35.167`: the footprint holds the old home core's run-queue write lock. -/
 theorem schedLockSet_setThreadCpuAffinityOnCore_contains_old_runQueue_write (st : SystemState)
     (tid : SeLe4n.ThreadId) (affinity : Option CoreId) :
-    (SchedLockId.runQueue ⟨determineTargetCore st tid⟩, Concurrency.AccessMode.write)
+    (LockKey.runQueue (determineTargetCore st tid), Concurrency.AccessMode.write)
       ∈ schedLockSet_setThreadCpuAffinityOnCore st tid affinity :=
   (mem_schedFootprintOfCores_runQueue_iff _ _ _).mpr (by simp [setThreadCpuAffinityWriteSet])
 
 /-- `v0.35.167`: ...and the new one's. -/
 theorem schedLockSet_setThreadCpuAffinityOnCore_contains_new_runQueue_write (st : SystemState)
     (tid : SeLe4n.ThreadId) (affinity : Option CoreId) :
-    (SchedLockId.runQueue ⟨affinity.getD Concurrency.bootCoreId⟩, Concurrency.AccessMode.write)
+    (LockKey.runQueue (affinity.getD Concurrency.bootCoreId), Concurrency.AccessMode.write)
       ∈ schedLockSet_setThreadCpuAffinityOnCore st tid affinity :=
   (mem_schedFootprintOfCores_runQueue_iff _ _ _).mpr (by simp [setThreadCpuAffinityWriteSet])
 
@@ -464,9 +466,9 @@ theorem schedLockSet_setThreadCpuAffinityOnCore_contains_replenishQueue_writes
     (st : SystemState) (tid : SeLe4n.ThreadId) (affinity : Option CoreId)
     (scId : SeLe4n.SchedContextId)
     (h : (st.getTcb? tid).bind (fun tcb => tcb.schedContextBinding.scId?) = some scId) :
-    (SchedLockId.replenishQueue ⟨determineTargetCore st tid⟩, Concurrency.AccessMode.write)
+    (LockKey.replenishQueue (determineTargetCore st tid), Concurrency.AccessMode.write)
       ∈ schedLockSet_setThreadCpuAffinityOnCore st tid affinity ∧
-    (SchedLockId.replenishQueue ⟨affinity.getD Concurrency.bootCoreId⟩,
+    (LockKey.replenishQueue (affinity.getD Concurrency.bootCoreId),
       Concurrency.AccessMode.write)
       ∈ schedLockSet_setThreadCpuAffinityOnCore st tid affinity := by
   constructor <;>
@@ -489,9 +491,9 @@ theorem schedLockSet_setThreadCpuAffinityOnCore_covers_migration (st stSet : Sys
     (hInv : st.objects.invExt)
     (hSet : setThreadCpuAffinity st tid affinity = .ok stSet)
     (h : (st.getTcb? tid).bind (fun tcb => tcb.schedContextBinding.scId?) = some scId) :
-    (SchedLockId.replenishQueue ⟨determineTargetCore st tid⟩, Concurrency.AccessMode.write)
+    (LockKey.replenishQueue (determineTargetCore st tid), Concurrency.AccessMode.write)
       ∈ schedLockSet_setThreadCpuAffinityOnCore st tid affinity ∧
-    (SchedLockId.replenishQueue ⟨determineTargetCore stSet tid⟩, Concurrency.AccessMode.write)
+    (LockKey.replenishQueue (determineTargetCore stSet tid), Concurrency.AccessMode.write)
       ∈ schedLockSet_setThreadCpuAffinityOnCore st tid affinity := by
   rw [setThreadCpuAffinity_determineTargetCore_eq st stSet tid affinity hInv hSet]
   exact schedLockSet_setThreadCpuAffinityOnCore_contains_replenishQueue_writes
@@ -508,7 +510,7 @@ which is why WS-OD OD3.5 narrowed a footprint for the same reason. -/
 theorem schedLockSet_setThreadCpuAffinityOnCore_no_replenishQueue_of_no_context
     (st : SystemState) (tid : SeLe4n.ThreadId) (affinity : Option CoreId) (c : CoreId)
     (h : (st.getTcb? tid).bind (fun tcb => tcb.schedContextBinding.scId?) = none) :
-    (SchedLockId.replenishQueue ⟨c⟩, Concurrency.AccessMode.write)
+    (LockKey.replenishQueue c, Concurrency.AccessMode.write)
       ∉ schedLockSet_setThreadCpuAffinityOnCore st tid affinity := by
   intro hMem
   have := (mem_schedFootprintOfCores_replenishQueue_iff _ _ _).mp hMem
@@ -525,7 +527,7 @@ lower-core-first.  Every member of it is a member here. -/
 theorem schedLockSet_setThreadCpuAffinityOnCore_covers_parametric (st : SystemState)
     (tid : SeLe4n.ThreadId) (affinity : Option CoreId) (scId : SeLe4n.SchedContextId)
     (h : (st.getTcb? tid).bind (fun tcb => tcb.schedContextBinding.scId?) = some scId)
-    (p : SchedLockId × Concurrency.AccessMode)
+    (p : LockKey × Concurrency.AccessMode)
     (hp : p ∈ setThreadCpuAffinityWithMigrationLockSet (determineTargetCore st tid)
       (affinity.getD Concurrency.bootCoreId)) :
     p ∈ schedLockSet_setThreadCpuAffinityOnCore st tid affinity := by
@@ -623,7 +625,7 @@ def schedContextConfigureWriteSet (st : SystemState) (scObjId : SeLe4n.ObjId) :
 /-- **`v0.35.168`: the live `.schedContextConfigure` arm's scheduler-domain
 footprint.** -/
 def schedLockSet_schedContextConfigureOnCore (st : SystemState) (scObjId : SeLe4n.ObjId) :
-    List (SchedLockId × Concurrency.AccessMode) :=
+    List (LockKey × Concurrency.AccessMode) :=
   schedFootprintOfCores (schedContextConfigureWriteSet st scObjId)
     (schedContextConfigureReplenishCores st scObjId)
 
@@ -632,7 +634,7 @@ write lock — the bucket propagation's own. -/
 theorem schedLockSet_schedContextConfigureOnCore_contains_home_runQueue_write
     (st : SystemState) (scObjId : SeLe4n.ObjId) (tid : SeLe4n.ThreadId)
     (h : SchedContextOps.schedContextBoundThread? st scObjId = some tid) :
-    (SchedLockId.runQueue ⟨determineTargetCore st tid⟩, Concurrency.AccessMode.write)
+    (LockKey.runQueue (determineTargetCore st tid), Concurrency.AccessMode.write)
       ∈ schedLockSet_schedContextConfigureOnCore st scObjId :=
   (mem_schedFootprintOfCores_runQueue_iff _ _ _).mpr
     (by unfold schedContextConfigureWriteSet schedContextWriteSet; rw [h]; simp)
@@ -642,7 +644,7 @@ the purge's. -/
 theorem schedLockSet_schedContextConfigureOnCore_contains_replenishQueue_write
     (st : SystemState) (scObjId : SeLe4n.ObjId) (sc : SchedContext)
     (h : st.getSchedContext? (SeLe4n.SchedContextId.ofObjId scObjId) = some sc) :
-    (SchedLockId.replenishQueue ⟨SchedContextOps.schedContextReplenishHome st sc⟩,
+    (LockKey.replenishQueue (SchedContextOps.schedContextReplenishHome st sc),
       Concurrency.AccessMode.write)
       ∈ schedLockSet_schedContextConfigureOnCore st scObjId :=
   (mem_schedFootprintOfCores_replenishQueue_iff _ _ _).mpr
@@ -668,7 +670,7 @@ writes nothing. -/
 theorem schedLockSet_schedContextConfigureOnCore_no_replenishQueue_of_absent
     (st : SystemState) (scObjId : SeLe4n.ObjId) (c : CoreId)
     (h : st.getSchedContext? (SeLe4n.SchedContextId.ofObjId scObjId) = none) :
-    (SchedLockId.replenishQueue ⟨c⟩, Concurrency.AccessMode.write)
+    (LockKey.replenishQueue c, Concurrency.AccessMode.write)
       ∉ schedLockSet_schedContextConfigureOnCore st scObjId := by
   intro hMem
   have := (mem_schedFootprintOfCores_replenishQueue_iff _ _ _).mp hMem
@@ -703,14 +705,14 @@ segment"; it did not, because the segment is the **home core** either way — th
 placement inserts on exactly the core the re-bucket already wrote.  The
 replenish segment stays empty on all three branches. -/
 def schedLockSet_schedContextBindOnCore (st : SystemState) (tid : SeLe4n.ThreadId) :
-    List (SchedLockId × Concurrency.AccessMode) :=
+    List (LockKey × Concurrency.AccessMode) :=
   schedFootprintOfCores (schedContextBindWriteSet st tid) []
 
 /-- `v0.35.168`: the footprint holds the bound thread's home core's run-queue
 write lock. -/
 theorem schedLockSet_schedContextBindOnCore_contains_home_runQueue_write (st : SystemState)
     (tid : SeLe4n.ThreadId) :
-    (SchedLockId.runQueue ⟨determineTargetCore st tid⟩, Concurrency.AccessMode.write)
+    (LockKey.runQueue (determineTargetCore st tid), Concurrency.AccessMode.write)
       ∈ schedLockSet_schedContextBindOnCore st tid :=
   (mem_schedFootprintOfCores_runQueue_iff _ _ _).mpr (by simp [schedContextBindWriteSet])
 
@@ -718,7 +720,7 @@ theorem schedLockSet_schedContextBindOnCore_contains_home_runQueue_write (st : S
 exact half, against `schedContextBind_replenishQueueOnCore`'s. -/
 theorem schedLockSet_schedContextBindOnCore_no_replenishQueue (st : SystemState)
     (tid : SeLe4n.ThreadId) (c : CoreId) :
-    (SchedLockId.replenishQueue ⟨c⟩, Concurrency.AccessMode.write)
+    (LockKey.replenishQueue c, Concurrency.AccessMode.write)
       ∉ schedLockSet_schedContextBindOnCore st tid := by
   intro hMem
   exact absurd ((mem_schedFootprintOfCores_replenishQueue_iff _ _ _).mp hMem) (by simp)
@@ -783,7 +785,7 @@ def schedContextUnbindReplenishCores (st : SystemState) (scObjId : SeLe4n.ObjId)
 /-- **`v0.35.168`: the live `.schedContextUnbind` arm's scheduler-domain
 footprint.** -/
 def schedLockSet_schedContextUnbindOnCore (st : SystemState) (scObjId : SeLe4n.ObjId)
-    (executingCore : CoreId) : List (SchedLockId × Concurrency.AccessMode) :=
+    (executingCore : CoreId) : List (LockKey × Concurrency.AccessMode) :=
   schedFootprintOfCores (schedContextUnbindOnCoreWriteSet st scObjId executingCore)
     (schedContextUnbindReplenishCores st scObjId)
 
@@ -792,7 +794,7 @@ write lock — the re-bucket's own. -/
 theorem schedLockSet_schedContextUnbindOnCore_contains_home_runQueue_write (st : SystemState)
     (scObjId : SeLe4n.ObjId) (executingCore : CoreId) (tid : SeLe4n.ThreadId)
     (h : SchedContextOps.schedContextBoundThread? st scObjId = some tid) :
-    (SchedLockId.runQueue ⟨determineTargetCore st tid⟩, Concurrency.AccessMode.write)
+    (LockKey.runQueue (determineTargetCore st tid), Concurrency.AccessMode.write)
       ∈ schedLockSet_schedContextUnbindOnCore st scObjId executingCore :=
   (mem_schedFootprintOfCores_runQueue_iff _ _ _).mpr
     (by unfold schedContextUnbindOnCoreWriteSet schedContextUnbindWriteSet; rw [h]; simp)
@@ -804,7 +806,7 @@ theorem schedLockSet_schedContextUnbindOnCore_contains_running_runQueue_write
     (tid : SeLe4n.ThreadId) (runCore : CoreId)
     (h : SchedContextOps.schedContextBoundThread? st scObjId = some tid)
     (hRun : runningCoreOf? st tid = some runCore) :
-    (SchedLockId.runQueue ⟨runCore⟩, Concurrency.AccessMode.write)
+    (LockKey.runQueue runCore, Concurrency.AccessMode.write)
       ∈ schedLockSet_schedContextUnbindOnCore st scObjId executingCore :=
   (mem_schedFootprintOfCores_runQueue_iff _ _ _).mpr
     (by simp [schedContextUnbindOnCoreWriteSet, schedContextUnbindWriteSet, h, hRun])
@@ -812,7 +814,7 @@ theorem schedLockSet_schedContextUnbindOnCore_contains_running_runQueue_write
 /-- `v0.35.168`: ...and the executing core's, which the scheduling point writes. -/
 theorem schedLockSet_schedContextUnbindOnCore_contains_executing_runQueue_write
     (st : SystemState) (scObjId : SeLe4n.ObjId) (executingCore : CoreId) :
-    (SchedLockId.runQueue ⟨executingCore⟩, Concurrency.AccessMode.write)
+    (LockKey.runQueue executingCore, Concurrency.AccessMode.write)
       ∈ schedLockSet_schedContextUnbindOnCore st scObjId executingCore :=
   (mem_schedFootprintOfCores_runQueue_iff _ _ _).mpr
     (by unfold schedContextUnbindOnCoreWriteSet; simp)
@@ -825,7 +827,7 @@ theorem schedLockSet_schedContextUnbindOnCore_contains_replenishQueue_write
     (tid : SeLe4n.ThreadId) (tcb : TCB)
     (h : SchedContextOps.schedContextBoundThread? st scObjId = some tid)
     (hTcb : st.getTcb? tid = some tcb) :
-    (SchedLockId.replenishQueue ⟨determineTargetCore st tid⟩, Concurrency.AccessMode.write)
+    (LockKey.replenishQueue (determineTargetCore st tid), Concurrency.AccessMode.write)
       ∈ schedLockSet_schedContextUnbindOnCore st scObjId executingCore :=
   (mem_schedFootprintOfCores_replenishQueue_iff _ _ _).mpr
     (by simp [schedContextUnbindReplenishCores, h, hTcb])
@@ -838,7 +840,7 @@ theorem schedLockSet_schedContextUnbindOnCore_contains_every_replenishQueue_writ
     (tid : SeLe4n.ThreadId) (c : CoreId)
     (h : SchedContextOps.schedContextBoundThread? st scObjId = some tid)
     (hTcb : st.getTcb? tid = none) :
-    (SchedLockId.replenishQueue ⟨c⟩, Concurrency.AccessMode.write)
+    (LockKey.replenishQueue c, Concurrency.AccessMode.write)
       ∈ schedLockSet_schedContextUnbindOnCore st scObjId executingCore :=
   (mem_schedFootprintOfCores_replenishQueue_iff _ _ _).mpr
     (by simp only [schedContextUnbindReplenishCores, h, hTcb]
@@ -849,7 +851,7 @@ arm refuses `.illegalState` there and writes nothing. -/
 theorem schedLockSet_schedContextUnbindOnCore_no_replenishQueue_of_unbound
     (st : SystemState) (scObjId : SeLe4n.ObjId) (executingCore : CoreId) (c : CoreId)
     (h : SchedContextOps.schedContextBoundThread? st scObjId = none) :
-    (SchedLockId.replenishQueue ⟨c⟩, Concurrency.AccessMode.write)
+    (LockKey.replenishQueue c, Concurrency.AccessMode.write)
       ∉ schedLockSet_schedContextUnbindOnCore st scObjId executingCore := by
   intro hMem
   have := (mem_schedFootprintOfCores_replenishQueue_iff _ _ _).mp hMem
@@ -1235,7 +1237,7 @@ def lifecycleRetypeReplenishCores (st : SystemState) (target : SeLe4n.ObjId) :
 /-- **`v0.35.169`: the live `.lifecycleRetype` arm's scheduler-domain
 footprint.** -/
 def schedLockSet_lifecycleRetypeOnCore (st : SystemState) (target : SeLe4n.ObjId) :
-    List (SchedLockId × Concurrency.AccessMode) :=
+    List (LockKey × Concurrency.AccessMode) :=
   schedFootprintOfCores (lifecycleRetypeWriteSet st target)
     (lifecycleRetypeReplenishCores st target)
 
@@ -1245,7 +1247,7 @@ theorem schedLockSet_lifecycleRetypeOnCore_contains_occupied_runQueue_write
     (st : SystemState) (target : SeLe4n.ObjId) (tcb : TCB) (c : CoreId)
     (h : st.getObject? target = some (.tcb tcb))
     (hOcc : threadOccupiesCore st tcb.tid c = true) :
-    (SchedLockId.runQueue ⟨c⟩, Concurrency.AccessMode.write)
+    (LockKey.runQueue c, Concurrency.AccessMode.write)
       ∈ schedLockSet_lifecycleRetypeOnCore st target :=
   (mem_schedFootprintOfCores_runQueue_iff _ _ _).mpr
     (by simp only [lifecycleRetypeWriteSet, lifecycleRetypeWriteSetOf, h,
@@ -1258,7 +1260,7 @@ theorem schedLockSet_lifecycleRetypeOnCore_contains_bound_replenishQueue_write
     (st : SystemState) (target : SeLe4n.ObjId) (tcb : TCB) (scId : SeLe4n.SchedContextId)
     (h : st.getObject? target = some (.tcb tcb))
     (hBind : tcb.schedContextBinding = .bound scId) :
-    (SchedLockId.replenishQueue ⟨determineTargetCore st tcb.tid⟩, Concurrency.AccessMode.write)
+    (LockKey.replenishQueue (determineTargetCore st tcb.tid), Concurrency.AccessMode.write)
       ∈ schedLockSet_lifecycleRetypeOnCore st target :=
   (mem_schedFootprintOfCores_replenishQueue_iff _ _ _).mpr
     (by unfold lifecycleRetypeReplenishCores
@@ -1274,9 +1276,9 @@ theorem schedLockSet_lifecycleRetypeOnCore_contains_donated_replenishQueue_write
     (h : st.getObject? target = some (.tcb tcb))
     (hBind : tcb.schedContextBinding = .donated scId owner)
     (hRet : cleanupDonatedSchedContext st tcb.tid = .ok st') :
-    (SchedLockId.replenishQueue ⟨determineTargetCore st tcb.tid⟩,
+    (LockKey.replenishQueue (determineTargetCore st tcb.tid),
       Concurrency.AccessMode.write) ∈ schedLockSet_lifecycleRetypeOnCore st target ∧
-    (SchedLockId.replenishQueue ⟨determineTargetCore st' owner⟩,
+    (LockKey.replenishQueue (determineTargetCore st' owner),
       Concurrency.AccessMode.write) ∈ schedLockSet_lifecycleRetypeOnCore st target := by
   constructor <;>
     exact (mem_schedFootprintOfCores_replenishQueue_iff _ _ _).mpr
@@ -1293,7 +1295,7 @@ theorem schedLockSet_lifecycleRetypeOnCore_contains_release_replenishQueue_write
     (h : st.getObject? target = some (.schedContext sc))
     (hBound : sc.boundThread = some tid)
     (hTcb : st.getTcb? tid = some tcb) :
-    (SchedLockId.replenishQueue ⟨determineTargetCore st tid⟩, Concurrency.AccessMode.write)
+    (LockKey.replenishQueue (determineTargetCore st tid), Concurrency.AccessMode.write)
       ∈ schedLockSet_lifecycleRetypeOnCore st target :=
   (mem_schedFootprintOfCores_replenishQueue_iff _ _ _).mpr
     (by unfold lifecycleRetypeReplenishCores
@@ -1310,7 +1312,7 @@ theorem schedLockSet_lifecycleRetypeOnCore_contains_every_replenishQueue_write_o
     (h : st.getObject? target = some (.schedContext sc))
     (hBound : sc.boundThread = some tid)
     (hTcb : st.getTcb? tid = none) :
-    (SchedLockId.replenishQueue ⟨c⟩, Concurrency.AccessMode.write)
+    (LockKey.replenishQueue c, Concurrency.AccessMode.write)
       ∈ schedLockSet_lifecycleRetypeOnCore st target :=
   (mem_schedFootprintOfCores_replenishQueue_iff _ _ _).mpr
     (by unfold lifecycleRetypeReplenishCores
@@ -1331,7 +1333,7 @@ theorem schedLockSet_lifecycleRetypeOnCore_empty_of_other (st : SystemState)
     (hTcb : ∀ tcb, obj ≠ .tcb tcb)
     (hSc : ∀ sc, obj ≠ .schedContext sc) :
     schedLockSet_lifecycleRetypeOnCore st target
-      = [(SchedLockId.object schedObjStoreLockId, Concurrency.AccessMode.write)] := by
+      = [(LockKey.objStore, Concurrency.AccessMode.write)] := by
   unfold schedLockSet_lifecycleRetypeOnCore lifecycleRetypeWriteSet
     lifecycleRetypeReplenishCores
   rw [h]
@@ -1809,13 +1811,13 @@ def suspendThreadReplenishCores (st : SystemState) (vtid : SeLe4n.ValidThreadId)
 the last of the declared arms, and the one that retires a six-parameter
 parametric form.
 
-`suspendThreadOnCoreSchedLockSet home executingCore ownerHome outerHome placed
+`suspendThreadOnCoreLockSet home executingCore ownerHome outerHome placed
 holderPlaced` takes five cores and an optional sixth from its caller; this reads
 every one of them off the state the transition reads it from.  *A parameter is a
 place for a caller to be wrong* (PR #895 round 10), and six of them is the
 largest such surface in the tree. -/
 def schedLockSet_suspendThreadOnCore (st : SystemState) (vtid : SeLe4n.ValidThreadId)
-    (executingCore : CoreId) : List (SchedLockId × Concurrency.AccessMode) :=
+    (executingCore : CoreId) : List (LockKey × Concurrency.AccessMode) :=
   schedFootprintOfCores (suspendThreadOnCoreWriteSet st vtid executingCore)
     (suspendThreadReplenishCores st vtid executingCore)
 
@@ -1826,7 +1828,7 @@ theorem schedLockSet_suspendThreadOnCore_of_inactive (st : SystemState)
     (hTcb : st.getTcb? vtid.val = some tcb)
     (hInactive : tcb.threadState = .Inactive) :
     schedLockSet_suspendThreadOnCore st vtid executingCore
-      = [(SchedLockId.object schedObjStoreLockId, Concurrency.AccessMode.write)] := by
+      = [(LockKey.objStore, Concurrency.AccessMode.write)] := by
   unfold schedLockSet_suspendThreadOnCore suspendThreadOnCoreWriteSet
     suspendThreadReplenishCores
   rw [hTcb]
@@ -1838,7 +1840,7 @@ theorem schedLockSet_suspendThreadOnCore_contains_executing_runQueue_write (st :
     (vtid : SeLe4n.ValidThreadId) (executingCore : CoreId) (tcb : TCB)
     (hTcb : st.getTcb? vtid.val = some tcb)
     (hActive : tcb.threadState ≠ .Inactive) :
-    (SchedLockId.runQueue ⟨executingCore⟩, Concurrency.AccessMode.write)
+    (LockKey.runQueue executingCore, Concurrency.AccessMode.write)
       ∈ schedLockSet_suspendThreadOnCore st vtid executingCore :=
   (mem_schedFootprintOfCores_runQueue_iff _ _ _).mpr
     (by unfold suspendThreadOnCoreWriteSet
@@ -1851,7 +1853,7 @@ theorem schedLockSet_suspendThreadOnCore_contains_placed_runQueue_write (st : Sy
     (hTcb : st.getTcb? vtid.val = some tcb)
     (hActive : tcb.threadState ≠ .Inactive)
     (hPlaced : placedCoreOf? st vtid.val = some placed) :
-    (SchedLockId.runQueue ⟨placed⟩, Concurrency.AccessMode.write)
+    (LockKey.runQueue placed, Concurrency.AccessMode.write)
       ∈ schedLockSet_suspendThreadOnCore st vtid executingCore :=
   (mem_schedFootprintOfCores_runQueue_iff _ _ _).mpr
     (by unfold suspendThreadOnCoreWriteSet
@@ -1866,11 +1868,11 @@ theorem schedLockSet_suspendThreadOnCore_contains_reclaim_replenishQueue_writes
     (hTcb : st.getTcb? vtid.val = some tcb)
     (hActive : tcb.threadState ≠ .Inactive)
     (hDon : Lifecycle.Suspend.cancelledCallerDonation? st vtid.val tcb = some (scId, holder)) :
-    (SchedLockId.replenishQueue ⟨determineTargetCore st holder⟩,
+    (LockKey.replenishQueue (determineTargetCore st holder),
       Concurrency.AccessMode.write) ∈ schedLockSet_suspendThreadOnCore st vtid executingCore ∧
-    (SchedLockId.replenishQueue
-        ⟨replenishHomeOfSchedContext (Lifecycle.Suspend.cancelIpcBlocking st vtid.val tcb) scId
-          (determineTargetCore st holder)⟩,
+    (LockKey.replenishQueue
+        (replenishHomeOfSchedContext (Lifecycle.Suspend.cancelIpcBlocking st vtid.val tcb) scId
+          (determineTargetCore st holder)),
       Concurrency.AccessMode.write)
       ∈ schedLockSet_suspendThreadOnCore st vtid executingCore := by
   constructor <;>
@@ -1899,15 +1901,15 @@ theorem schedLockSet_suspendThreadOnCore_covers_parametric_runQueue (st : System
     (home ownerHome outerHome : CoreId) (reclaimReplenish : List CoreId) (c : CoreId)
     (hTcb : st.getTcb? vtid.val = some tcb)
     (hActive : tcb.threadState ≠ .Inactive)
-    (hp : (SchedLockId.runQueue ⟨c⟩, Concurrency.AccessMode.write)
-      ∈ suspendThreadOnCoreSchedLockSet home executingCore ownerHome outerHome
+    (hp : (LockKey.runQueue c, Concurrency.AccessMode.write)
+      ∈ suspendThreadOnCoreLockSet home executingCore ownerHome outerHome
           (placedCoreOf? st vtid.val)
           (cancelUnboundHolderCore? st (cancelIpcBlockingMigrated vtid.val tcb st)
             vtid.val tcb)
           reclaimReplenish) :
-    (SchedLockId.runQueue ⟨c⟩, Concurrency.AccessMode.write)
+    (LockKey.runQueue c, Concurrency.AccessMode.write)
       ∈ schedLockSet_suspendThreadOnCore st vtid executingCore := by
-  rw [suspendThreadOnCoreSchedLockSet, mem_schedFootprintOfCores_runQueue_iff] at hp
+  rw [suspendThreadOnCoreLockSet, mem_schedFootprintOfCores_runQueue_iff] at hp
   refine (mem_schedFootprintOfCores_runQueue_iff _ _ c).mpr ?_
   unfold suspendThreadOnCoreWriteSet
   rw [hTcb]
@@ -1952,7 +1954,7 @@ footprint declares the same pair.
 `cancelIpcBlockingOnCore` is the reclaim-complete teardown followed by the
 victim's placement deschedule, and a deschedule is a run-queue step — so the
 composite writes exactly what the reclaim's migration writes.  Stated because
-`cancelIpcBlockingOnCoreSchedLockSet_covers_migration` is the *names what is
+`cancelIpcBlockingOnCoreLockSet_covers_migration` is the *names what is
 written* half and a footprint owes both: without this the composite could
 acquire a replenish lock it never writes, or write one it never declares, and
 nothing would say which. -/
@@ -2037,7 +2039,7 @@ theorem suspendThreadOnCore_replenishQueueOnCore_ne (st st' : SystemState)
 -- every other arm declares nothing whatever the operands and whatever the state.
 --
 -- It is here rather than beside `lockSetForSyscall` for the reason this module
--- exists at all (see the header): `SchedLockId` is declared above every module
+-- exists at all (see the header): `LockKey` is declared above every module
 -- that holds a lifecycle, priority, affinity, SchedContext or retype
 -- transition, so the arms' own footprints could not live beside them and this
 -- resolver cannot live beside its object-domain twin.
@@ -2048,7 +2050,7 @@ open SeLe4n.Kernel.Concurrency (SyscallLockOperands)
 declares**, at the decoded arm and the operands that arm's capability names.
 
 Sixteen arms declare; the other nineteen answer `none`.  Each declared arm is
-`SchedLockSet.ofList?` of its own resolved footprint, and that constructor's
+`LockSet.ofList?` of its own resolved footprint, and that constructor's
 `Nodup` obligation is `schedFootprintOfCores_keys_nodup` — so it provably never
 refuses a footprint this kernel declares, which the per-arm `_isSome_iff`
 characterisations below state.
@@ -2075,7 +2077,7 @@ member is one the dispatch never writes, so a resolver that named the dispatch's
 would be short by it.
 
 **Reachable from the ABI seam since Cut C4b** (§14's
-`declaredSchedLockSetForAbiEntry`), which is what makes the paragraph above a
+`declaredSchedulerLockSetForAbiEntry`), which is what makes the paragraph above a
 statement about the live entry rather than about a resolver nobody calls.  Cut
 C4 shipped this with `abiEntryLockOperands` (`SyscallLockBracket.lean`) building
 its operands for the object domain alone: it supplied none of the five fields
@@ -2085,57 +2087,57 @@ exclusion established" and which is therefore sound, and which would have
 silently dropped four arms out of the very coverage this workstream is building.
 C4b extended that one builder rather than adding a second: **the two domains
 share `abiEntryPlan` and `abiEntryLockOperands`**
-(`declaredSchedLockSetForAbiEntry_shares_decode`), so the syscall id, the caller
+(`declaredSchedulerLockSetForAbiEntry_shares_decode`), so the syscall id, the caller
 and the operands each domain's footprint is a function of are one decode.  A
 second builder is the shape that lets one domain's footprint be acquired around
 the other domain's transition. -/
 def schedLockSetForSyscall (sid : SyscallId) (ops : SyscallLockOperands)
-    (executingCore : CoreId) (st : SystemState) : Option SchedLockSet :=
+    (executingCore : CoreId) (st : SystemState) : Option LockSet :=
   match sid with
   | .tcbSuspend =>
       ops.targetThread.bind fun victim =>
         victim.toValid?.bind fun vtid =>
-          SchedLockSet.ofList? (schedLockSet_suspendThreadOnCore st vtid executingCore)
+          LockSet.ofList? (schedLockSet_suspendThreadOnCore st vtid executingCore)
   | .tcbResume =>
       ops.targetThread.bind fun target =>
         target.toValid?.bind fun vtid =>
-          SchedLockSet.ofList? (schedLockSet_resumeThreadOnCore st vtid executingCore)
+          LockSet.ofList? (schedLockSet_resumeThreadOnCore st vtid executingCore)
   | .tcbSetPriority | .tcbSetMCPriority =>
       ops.targetThread.bind fun target =>
-        SchedLockSet.ofList? (schedLockSet_priorityControlOnCore st target executingCore)
+        LockSet.ofList? (schedLockSet_priorityControlOnCore st target executingCore)
   | .tcbSetAffinity =>
       ops.targetThread.bind fun target =>
         ops.affinity.bind fun newCore =>
-          SchedLockSet.ofList? (schedLockSet_setThreadCpuAffinityOnCore st target newCore)
+          LockSet.ofList? (schedLockSet_setThreadCpuAffinityOnCore st target newCore)
   | .schedContextConfigure =>
       ops.targetObject.bind fun scObjId =>
-        SchedLockSet.ofList? (schedLockSet_schedContextConfigureOnCore st scObjId)
+        LockSet.ofList? (schedLockSet_schedContextConfigureOnCore st scObjId)
   | .schedContextBind =>
       ops.targetThread.bind fun target =>
-        SchedLockSet.ofList? (schedLockSet_schedContextBindOnCore st target)
+        LockSet.ofList? (schedLockSet_schedContextBindOnCore st target)
   | .schedContextUnbind =>
       ops.targetObject.bind fun scObjId =>
-        SchedLockSet.ofList? (schedLockSet_schedContextUnbindOnCore st scObjId executingCore)
+        LockSet.ofList? (schedLockSet_schedContextUnbindOnCore st scObjId executingCore)
   | .lifecycleRetype =>
       ops.targetObject.bind fun target =>
-        SchedLockSet.ofList? (schedLockSet_lifecycleRetypeOnCore st target)
+        LockSet.ofList? (schedLockSet_lifecycleRetypeOnCore st target)
   | .notificationSignal =>
       ops.targetObject.bind fun nId =>
-        SchedLockSet.ofList? (schedLockSet_notificationSignalBoundOnCore st nId)
+        LockSet.ofList? (schedLockSet_notificationSignalBoundOnCore st nId)
   | .notificationWait =>
-      SchedLockSet.ofList? (schedLockSet_notificationWaitOnCore executingCore)
+      LockSet.ofList? (schedLockSet_notificationWaitOnCore executingCore)
   | .send =>
       ops.targetObject.bind fun epId =>
-        SchedLockSet.ofList? (schedLockSet_endpointSendOnCore st epId executingCore)
+        LockSet.ofList? (schedLockSet_endpointSendOnCore st epId executingCore)
   | .receive =>
       ops.targetObject.bind fun epId =>
-        SchedLockSet.ofList? (schedLockSet_endpointReceiveOnCore st epId ops.caller executingCore)
+        LockSet.ofList? (schedLockSet_endpointReceiveOnCore st epId ops.caller executingCore)
   | .call =>
       ops.targetObject.bind fun epId =>
         ops.message.bind fun msg =>
           ops.endpointRights.bind fun rights =>
             ops.receiverSlotBase.bind fun slotBase =>
-              SchedLockSet.ofList?
+              LockSet.ofList?
                 (schedLockSet_endpointCallOnCore epId ops.caller msg rights slotBase
                   executingCore st)
   | .reply =>
@@ -2144,7 +2146,7 @@ def schedLockSetForSyscall (sid : SyscallId) (ops : SyscallLockOperands)
           ops.message.bind fun msg =>
             ops.replyMessageInfo.bind fun mi =>
               ops.replyRegisters.bind fun regs =>
-                SchedLockSet.ofList?
+                LockSet.ofList?
                   (schedLockSet_replyTransferOnCore ops.caller answered mi regs msg
                     executingCore st)
   | .replyRecv =>
@@ -2154,7 +2156,7 @@ def schedLockSetForSyscall (sid : SyscallId) (ops : SyscallLockOperands)
             (st.getTcb? ops.caller).bind fun receiver =>
               ops.message.bind fun msg =>
                 ops.receiverSlotBase.bind fun slotBase =>
-                  SchedLockSet.ofList?
+                  LockSet.ofList?
                     (schedLockSet_endpointReplyRecvOnCore epId ops.caller rid prevCaller msg
                       receiver.cspaceRoot slotBase executingCore st)
   | .cspaceMint | .cspaceCopy | .cspaceMove | .cspaceDelete | .cspaceRevoke
@@ -2231,7 +2233,7 @@ Each says exactly which operands its arm needs, which is what closes the other
 direction of `declaredSchedFootprintSyscall`'s drift: an arm listed there that
 had quietly become unconditionally `none` could not satisfy its own `iff`.
 
-Two things they establish besides.  **`SchedLockSet.ofList?` never refuses a
+Two things they establish besides.  **`LockSet.ofList?` never refuses a
 footprint this kernel declares** — every one of them is
 `schedFootprintOfCores`, whose keys are `Nodup` by
 `schedFootprintOfCores_keys_nodup` — so no arm's condition mentions the
@@ -2246,7 +2248,7 @@ core's run-queue lock and nothing the state or the operands can withhold. -/
 @[simp] theorem schedLockSetForSyscall_notificationWait_isSome
     (ops : SyscallLockOperands) (executingCore : CoreId) (st : SystemState) :
     (schedLockSetForSyscall .notificationWait ops executingCore st).isSome := by
-  simp [schedLockSetForSyscall, SchedLockSet.ofList?, schedLockSet_notificationWaitOnCore,
+  simp [schedLockSetForSyscall, LockSet.ofList?, schedLockSet_notificationWaitOnCore,
     schedFootprintOfCores_keys_nodup]
 
 /-- The four object-directed arms declare exactly when the operand naming the
@@ -2259,7 +2261,7 @@ theorem schedLockSetForSyscall_objectDirected_isSome_iff
   rcases h with rfl | rfl | rfl | rfl | rfl <;>
     (unfold schedLockSetForSyscall
      cases ops.targetObject <;>
-       simp [SchedLockSet.ofList?, schedLockSet_schedContextConfigureOnCore,
+       simp [LockSet.ofList?, schedLockSet_schedContextConfigureOnCore,
          schedLockSet_schedContextUnbindOnCore, schedLockSet_lifecycleRetypeOnCore,
          schedLockSet_notificationSignalBoundOnCore, schedLockSet_endpointSendOnCore,
          schedFootprintOfCores_keys_nodup])
@@ -2272,7 +2274,7 @@ theorem schedLockSetForSyscall_receive_isSome_iff
       ↔ ops.targetObject.isSome := by
   unfold schedLockSetForSyscall
   cases ops.targetObject <;>
-    simp [SchedLockSet.ofList?, schedLockSet_endpointReceiveOnCore,
+    simp [LockSet.ofList?, schedLockSet_endpointReceiveOnCore,
       schedFootprintOfCores_keys_nodup]
 
 /-- The two thread-directed priority arms declare on the target alone. -/
@@ -2283,7 +2285,7 @@ theorem schedLockSetForSyscall_priority_isSome_iff
   rcases h with rfl | rfl | rfl <;>
     (unfold schedLockSetForSyscall
      cases ops.targetThread <;>
-       simp [SchedLockSet.ofList?, schedLockSet_priorityControlOnCore,
+       simp [LockSet.ofList?, schedLockSet_priorityControlOnCore,
          schedLockSet_schedContextBindOnCore, schedFootprintOfCores_keys_nodup])
 
 /-- `.tcbSetAffinity` needs the destination core as well, and its outer `Option`
@@ -2294,7 +2296,7 @@ theorem schedLockSetForSyscall_tcbSetAffinity_isSome_iff
       ↔ ops.targetThread.isSome ∧ ops.affinity.isSome := by
   unfold schedLockSetForSyscall
   cases ops.targetThread <;> cases ops.affinity <;>
-    simp [SchedLockSet.ofList?, schedLockSet_setThreadCpuAffinityOnCore,
+    simp [LockSet.ofList?, schedLockSet_setThreadCpuAffinityOnCore,
       schedFootprintOfCores_keys_nodup]
 
 /-- The two thread-directed lifecycle arms need a target that is not the
@@ -2311,7 +2313,7 @@ theorem schedLockSetForSyscall_lifecycle_isSome_iff
      | none => simp
      | some t =>
         cases hV : t.toValid? <;>
-          simp [hV, SchedLockSet.ofList?, schedLockSet_suspendThreadOnCore,
+          simp [hV, LockSet.ofList?, schedLockSet_suspendThreadOnCore,
             schedLockSet_resumeThreadOnCore, schedFootprintOfCores_keys_nodup])
 
 /-- `.call` needs the endpoint, the message, the invoked capability's rights and
@@ -2325,7 +2327,7 @@ theorem schedLockSetForSyscall_call_isSome_iff
   unfold schedLockSetForSyscall
   cases ops.targetObject <;> cases ops.message <;> cases ops.endpointRights <;>
     cases ops.receiverSlotBase <;>
-      simp [SchedLockSet.ofList?, schedLockSet_endpointCallOnCore,
+      simp [LockSet.ofList?, schedLockSet_endpointCallOnCore,
         schedFootprintOfCores_keys_nodup]
 
 /-- `.reply` needs the Reply object to resolve to an answered caller, and the
@@ -2341,7 +2343,7 @@ theorem schedLockSetForSyscall_reply_isSome_iff
   | some rid =>
       cases hA : replyAnsweredCaller? st rid <;>
         cases ops.message <;> cases ops.replyMessageInfo <;> cases ops.replyRegisters <;>
-          simp [hA, SchedLockSet.ofList?, schedLockSet_replyTransferOnCore,
+          simp [hA, LockSet.ofList?, schedLockSet_replyTransferOnCore,
             schedFootprintOfCores_keys_nodup]
 
 /-- `.replyRecv` needs both targets, the answered caller, the caller's own TCB
@@ -2363,7 +2365,7 @@ theorem schedLockSetForSyscall_replyRecv_isSome_iff
           cases hA : replyAnsweredCaller? st rid <;>
             cases st.getTcb? ops.caller <;> cases ops.message <;>
               cases ops.receiverSlotBase <;>
-                simp [hA, SchedLockSet.ofList?, schedLockSet_endpointReplyRecvOnCore,
+                simp [hA, LockSet.ofList?, schedLockSet_endpointReplyRecvOnCore,
                   schedFootprintOfCores_keys_nodup]
 
 -- ============================================================================
@@ -2388,9 +2390,9 @@ Cut C4b is what made that sharing possible — the builder now supplies the five
 operands the scheduler footprints read and the eight arms the object domain
 declares nothing for, so the two resolvers see one decode and disagree only
 about which *locks* it implies. -/
-def declaredSchedLockSetForAbiEntry (ctx : LabelingContext) (executingCore : CoreId)
+def declaredSchedulerLockSetForAbiEntry (ctx : LabelingContext) (executingCore : CoreId)
     (syscallId : UInt32) (x0 x1 x2 x3 x4 x5 : UInt64) (st : SystemState) :
-    Option SchedLockSet :=
+    Option LockSet :=
   match abiEntryPlan ctx executingCore syscallId x0 x1 x2 x3 x4 x5 st with
   | none => none
   | some (tid, decoded, stFilled) =>
@@ -2400,13 +2402,13 @@ def declaredSchedLockSetForAbiEntry (ctx : LabelingContext) (executingCore : Cor
 /-- **Cut C4b**: an entry whose plan does not resolve declares nothing — the
 fail-closed direction the object domain's resolver takes for the same reason,
 and the one a bracket reads as "no exclusion established". -/
-@[simp] theorem declaredSchedLockSetForAbiEntry_of_no_plan (ctx : LabelingContext)
+@[simp] theorem declaredSchedulerLockSetForAbiEntry_of_no_plan (ctx : LabelingContext)
     (executingCore : CoreId) (syscallId : UInt32) (x0 x1 x2 x3 x4 x5 : UInt64)
     (st : SystemState)
     (h : abiEntryPlan ctx executingCore syscallId x0 x1 x2 x3 x4 x5 st = none) :
-    declaredSchedLockSetForAbiEntry ctx executingCore syscallId x0 x1 x2 x3 x4 x5 st
+    declaredSchedulerLockSetForAbiEntry ctx executingCore syscallId x0 x1 x2 x3 x4 x5 st
       = none := by
-  unfold declaredSchedLockSetForAbiEntry
+  unfold declaredSchedulerLockSetForAbiEntry
   rw [h]
 
 /-- **Cut C4b**: and an entry whose decoded arm is undeclared declares nothing,
@@ -2416,16 +2418,16 @@ The seam-level reading of `schedLockSetForSyscall_undeclared_none`, and the
 statement a bracket needs: the nineteen arms this workstream has not given a
 scheduler footprint fall back to the coarse serialisation rather than acquiring
 a footprint nobody proved covers them. -/
-theorem declaredSchedLockSetForAbiEntry_undeclared_none (ctx : LabelingContext)
+theorem declaredSchedulerLockSetForAbiEntry_undeclared_none (ctx : LabelingContext)
     (executingCore : CoreId) (syscallId : UInt32) (x0 x1 x2 x3 x4 x5 : UInt64)
     (st : SystemState) (tid : SeLe4n.ThreadId) (decoded : SyscallDecodeResult)
     (stFilled : SystemState)
     (hPlan : abiEntryPlan ctx executingCore syscallId x0 x1 x2 x3 x4 x5 st
       = some (tid, decoded, stFilled))
     (h : declaredSchedFootprintSyscall decoded.syscallId = false) :
-    declaredSchedLockSetForAbiEntry ctx executingCore syscallId x0 x1 x2 x3 x4 x5 st
+    declaredSchedulerLockSetForAbiEntry ctx executingCore syscallId x0 x1 x2 x3 x4 x5 st
       = none := by
-  unfold declaredSchedLockSetForAbiEntry
+  unfold declaredSchedulerLockSetForAbiEntry
   rw [hPlan]
   simp only
   cases hOps : abiEntryLockOperands decoded tid stFilled with
@@ -2441,7 +2443,7 @@ Stated rather than left to be read off two definitions: both resolvers run
 the caller and the operands each domain's footprint is a function of are the same
 three values.  A decode resolved twice is the shape that lets one domain's
 footprint be acquired around the other domain's transition. -/
-theorem declaredSchedLockSetForAbiEntry_shares_decode (ctx : LabelingContext)
+theorem declaredSchedulerLockSetForAbiEntry_shares_decode (ctx : LabelingContext)
     (executingCore : CoreId) (syscallId : UInt32) (x0 x1 x2 x3 x4 x5 : UInt64)
     (st : SystemState) (tid : SeLe4n.ThreadId) (decoded : SyscallDecodeResult)
     (stFilled : SystemState) (ops : SyscallLockOperands)
@@ -2450,7 +2452,7 @@ theorem declaredSchedLockSetForAbiEntry_shares_decode (ctx : LabelingContext)
     (hOps : abiEntryLockOperands decoded tid stFilled = some ops) :
     declaredLockSetForAbiEntry ctx executingCore syscallId x0 x1 x2 x3 x4 x5 st
         = lockSetForSyscall decoded.syscallId ops stFilled ∧
-    declaredSchedLockSetForAbiEntry ctx executingCore syscallId x0 x1 x2 x3 x4 x5 st
+    declaredSchedulerLockSetForAbiEntry ctx executingCore syscallId x0 x1 x2 x3 x4 x5 st
         = schedLockSetForSyscall decoded.syscallId ops executingCore stFilled := by
   refine ⟨?_, ?_⟩
   · unfold declaredLockSetForAbiEntry
@@ -2458,7 +2460,7 @@ theorem declaredSchedLockSetForAbiEntry_shares_decode (ctx : LabelingContext)
     simp only
     rw [hOps]
     rfl
-  · unfold declaredSchedLockSetForAbiEntry
+  · unfold declaredSchedulerLockSetForAbiEntry
     rw [hPlan]
     simp only
     rw [hOps]
@@ -2487,49 +2489,11 @@ theorem abiEntrySchedReceiverCspaceRoot (decoded : SyscallDecodeResult)
 -- §15  The UNIFIED syscall footprint — one ladder over both domains
 -- ============================================================================
 
-/-- **WS-RR RR8.12 Cut C6h**: an object-domain footprint's members lifted into
-the unified domain, with the table lock canonicalised.
-
-`canonicalSchedLockOfObject` is the per-lock half; this is the per-footprint one.
-It is a plain `map`, so the object domain's declaration order is preserved and
-`lockAcquireSequence` — which sorts — is what imposes the ladder, exactly as it
-is for a scheduler footprint. -/
-def liftObjectFootprint (S : Concurrency.LockSet) :
-    List (SchedLockId × Concurrency.AccessMode) :=
-  S.pairs.map (fun p => (canonicalSchedLockOfObject p.fst, p.snd))
-
-/-- **Cut C6h**: the lift preserves membership, which is what a coverage or
-conflict claim stated over the object footprint needs in order to reach the
-unified one. -/
-theorem mem_liftObjectFootprint (S : Concurrency.LockSet) (l : Concurrency.LockId)
-    (m : Concurrency.AccessMode) (h : (l, m) ∈ S.pairs) :
-    (canonicalSchedLockOfObject l, m) ∈ liftObjectFootprint S :=
-  List.mem_map_of_mem h
-
-/-- **Cut C6h**: the lifted members an already-named key would duplicate, dropped.
-
-A syscall's two footprints both name the object-store table lock — the object
-domain spells it `stateLevelLock` and the scheduler domain
-`schedObjStoreLockId`, and they are one word (`schedAcquireLock_objStore_congr`).
-Canonicalising makes them one **key**, so the union has to drop the second copy
-or `SchedLockSet.ofList?` refuses the whole footprint for a duplicate key.
-
-The drop is at `.write` only, which is the fail-closed direction: a scheduler
-footprint always names the table lock at `.write`
-(`schedFootprintOfCores_contains_objStore_write`), so a `.read` declaration on
-the object side is subsumed and anything the predicate cannot see keeps its own
-member and is refused by `ofList?` rather than silently merged at the weaker
-mode. -/
-def unifiedObjectResidue (O : Concurrency.LockSet) (S : SchedLockSet) :
-    List (SchedLockId × Concurrency.AccessMode) :=
-  (liftObjectFootprint O).filter
-    (fun p => !S.pairs.contains (p.fst, Concurrency.AccessMode.write))
-
 /-- **WS-RR RR8.12 Cut C6h: the syscall seam's UNIFIED footprint.**
 
-One `SchedLockSet` spanning both lock domains, which is what `SchedLockId` was
+One `LockSet` spanning both lock domains, which is what `LockKey` was
 introduced for (SM5.A.2) and what the seam has never had.  The two domains are
-not two lock *words*: `schedAcquireLock`'s `.object` arm calls SM3.C's own
+not two lock *words*: `acquireLock`'s `.object` arm calls SM3.C's own
 `acquireLockOnObject`, so a `.object` member writes exactly the state a `LockSet`
 member writes.  Bracketing them separately would therefore acquire the table lock
 **twice** on the five arms whose object footprint names `stateLevelLock`, and —
@@ -2541,45 +2505,48 @@ Four arms, and the `none` arm is what keeps the pre-bracket seam reachable:
 
 * **neither domain declares** — `none`, and the bracket falls back to the
   unbracketed step, exactly as it did before this row;
-* **only the object domain** — the lifted object footprint;
+* **only the object domain** — that footprint unchanged;
 * **only the scheduler domain** — that footprint unchanged;
-* **both** — the scheduler footprint with the object domain's residue appended.
+* **both** — their `LockSet.union`: one key, one member, at the stronger of the
+  two modes (**WS-LS LS1.2**; until this row the object members were lifted
+  through a canonicalising map and the table lock's second copy dropped by a
+  filter, because the two domains had two key types).
 
 Acquiring a footprint is not claiming coverage: an arm declared in one domain and
 not the other acquires what that domain declared, and the *other* domain's writes
 stay outside a footprint until that domain declares one for it.  That is the same
 posture `runUnderDeclaredLockSet` has taken since RR7.12 and is why landing this
 ahead of the remaining object-domain declarations is safe. -/
-def unifiedSchedLockSetForSyscall (sid : SyscallId) (ops : Concurrency.SyscallLockOperands)
-    (executingCore : CoreId) (st : SystemState) : Option SchedLockSet :=
+def unifiedLockSetForSyscall (sid : SyscallId) (ops : Concurrency.SyscallLockOperands)
+    (executingCore : CoreId) (st : SystemState) : Option LockSet :=
   match Concurrency.lockSetForSyscall sid ops st,
         schedLockSetForSyscall sid ops executingCore st with
   | none, none => none
-  | some O, none => SchedLockSet.ofList? (liftObjectFootprint O)
+  | some O, none => some O
   | none, some S => some S
-  | some O, some S => SchedLockSet.ofList? (S.pairs ++ unifiedObjectResidue O S)
+  | some O, some S => some (S.union O)
 
 /-- **Cut C6h**: an arm neither domain declares yields no unified footprint.
 
 The statement a bracket reads as "no exclusion established", and the one that
 makes the fallback arm reachable rather than notional. -/
-@[simp] theorem unifiedSchedLockSetForSyscall_undeclared (sid : SyscallId)
+@[simp] theorem unifiedLockSetForSyscall_undeclared (sid : SyscallId)
     (ops : Concurrency.SyscallLockOperands) (executingCore : CoreId) (st : SystemState)
     (hObj : Concurrency.lockSetForSyscall sid ops st = none)
     (hSched : schedLockSetForSyscall sid ops executingCore st = none) :
-    unifiedSchedLockSetForSyscall sid ops executingCore st = none := by
-  unfold unifiedSchedLockSetForSyscall
+    unifiedLockSetForSyscall sid ops executingCore st = none := by
+  unfold unifiedLockSetForSyscall
   rw [hObj, hSched]
 
 /-- **Cut C6h**: where only the scheduler domain declares, the unified footprint
 IS the scheduler footprint — no widening, no reordering, definitionally. -/
-@[simp] theorem unifiedSchedLockSetForSyscall_sched_only (sid : SyscallId)
+@[simp] theorem unifiedLockSetForSyscall_sched_only (sid : SyscallId)
     (ops : Concurrency.SyscallLockOperands) (executingCore : CoreId) (st : SystemState)
-    (S : SchedLockSet)
+    (S : LockSet)
     (hObj : Concurrency.lockSetForSyscall sid ops st = none)
     (hSched : schedLockSetForSyscall sid ops executingCore st = some S) :
-    unifiedSchedLockSetForSyscall sid ops executingCore st = some S := by
-  unfold unifiedSchedLockSetForSyscall
+    unifiedLockSetForSyscall sid ops executingCore st = some S := by
+  unfold unifiedLockSetForSyscall
   rw [hObj, hSched]
 
 /-- **Cut C6h**: every member the SCHEDULER domain declared is in the unified
@@ -2587,56 +2554,47 @@ footprint.
 
 The direction the coverage family needs: `schedFootprintCoversWrites` is stated
 of the scheduler footprint, and it is the unified one the bracket acquires, so a
-claim about the first has to reach the second.  Membership is enough — the
+claim about the first has to reach the second.  Write membership is enough — the
 predicate's three clauses are all of the form "a lock the footprint does **not**
-name", so a superset of the declared members only ever makes them easier. -/
-theorem mem_unifiedSchedLockSetForSyscall_of_sched (sid : SyscallId)
+name at `write`", and a merge only ever raises a mode
+(`LockSet.mem_union_write_of_mem_write`). -/
+theorem mem_unifiedLockSetForSyscall_of_sched (sid : SyscallId)
     (ops : Concurrency.SyscallLockOperands) (executingCore : CoreId) (st : SystemState)
-    (S U : SchedLockSet) (p : SchedLockId × Concurrency.AccessMode)
+    (S U : LockSet) (l : LockKey)
     (hSched : schedLockSetForSyscall sid ops executingCore st = some S)
-    (hU : unifiedSchedLockSetForSyscall sid ops executingCore st = some U)
-    (hp : p ∈ S.pairs) : p ∈ U.pairs := by
-  unfold unifiedSchedLockSetForSyscall at hU
+    (hU : unifiedLockSetForSyscall sid ops executingCore st = some U)
+    (hp : (l, Concurrency.AccessMode.write) ∈ S.pairs) :
+    (l, Concurrency.AccessMode.write) ∈ U.pairs := by
+  unfold unifiedLockSetForSyscall at hU
   cases hObj : Concurrency.lockSetForSyscall sid ops st with
   | none =>
       rw [hObj, hSched] at hU
       exact (Option.some.inj hU) ▸ hp
   | some O =>
       rw [hObj, hSched] at hU
-      rw [SchedLockSet.ofList?_pairs hU]
-      exact List.mem_append_left _ hp
+      exact (Option.some.inj hU) ▸ LockSet.mem_union_write_of_mem_write S O l hp
 
 /-- **Cut C6h**: and every member the OBJECT domain declared is in it, at its own
 mode or subsumed by the table lock's write.
 
-The residue's filter is what makes the disjunction necessary: a member the
-scheduler footprint already names at `.write` is dropped, and the only member it
-can name is the canonical table lock. -/
-theorem mem_unifiedSchedLockSetForSyscall_of_object (sid : SyscallId)
+The merge is what makes the disjunction necessary: a key the scheduler footprint
+already names at `.write` keeps that mode (`LockSet.mem_union_of_mem_right`). -/
+theorem mem_unifiedLockSetForSyscall_of_object (sid : SyscallId)
     (ops : Concurrency.SyscallLockOperands) (executingCore : CoreId) (st : SystemState)
-    (O : Concurrency.LockSet) (U : SchedLockSet) (l : Concurrency.LockId)
-    (m : Concurrency.AccessMode)
+    (O U : LockSet) (l : LockKey) (m : Concurrency.AccessMode)
     (hObj : Concurrency.lockSetForSyscall sid ops st = some O)
-    (hU : unifiedSchedLockSetForSyscall sid ops executingCore st = some U)
+    (hU : unifiedLockSetForSyscall sid ops executingCore st = some U)
     (hp : (l, m) ∈ O.pairs) :
-    (canonicalSchedLockOfObject l, m) ∈ U.pairs ∨
-      (canonicalSchedLockOfObject l, Concurrency.AccessMode.write) ∈ U.pairs := by
-  unfold unifiedSchedLockSetForSyscall at hU
+    (l, m) ∈ U.pairs ∨
+      (l, Concurrency.AccessMode.write) ∈ U.pairs := by
+  unfold unifiedLockSetForSyscall at hU
   cases hSched : schedLockSetForSyscall sid ops executingCore st with
   | none =>
       rw [hObj, hSched] at hU
-      exact Or.inl ((SchedLockSet.ofList?_pairs hU) ▸ mem_liftObjectFootprint O l m hp)
+      exact Or.inl ((Option.some.inj hU) ▸ hp)
   | some S =>
       rw [hObj, hSched] at hU
-      rw [SchedLockSet.ofList?_pairs hU]
-      by_cases hDrop : S.pairs.contains (canonicalSchedLockOfObject l,
-          Concurrency.AccessMode.write)
-      · exact Or.inr (List.mem_append_left _ (List.mem_of_elem_eq_true hDrop))
-      · refine Or.inl (List.mem_append_right _ ?_)
-        unfold unifiedObjectResidue
-        refine List.mem_filter.mpr ⟨mem_liftObjectFootprint O l m hp, ?_⟩
-        simp only [Bool.not_eq_true, Bool.not_eq_true'] at hDrop ⊢
-        exact hDrop
+      exact (Option.some.inj hU) ▸ LockSet.mem_union_of_mem_right S O l m hp
 
 /-- **WS-RR RR8.12 Cut C6h: the arm's coverage claim reaches what the seam
 ACQUIRES.**
@@ -2644,46 +2602,46 @@ ACQUIRES.**
 The bridge the deletion of `UncoveredLockDomain.syscallSeamSchedulerDomain`
 rests on.  Every per-arm coverage theorem in `SyscallSchedContainment` is stated
 over `schedLockSetForSyscall`'s answer; what the bracket acquires is
-`unifiedSchedLockSetForSyscall`'s, which is that footprint with the object
-domain's residue appended.  `mem_unifiedSchedLockSetForSyscall_of_sched` says the
-first is a sub-multiset of the second, and coverage is monotone upward
+`unifiedLockSetForSyscall`'s, which is that footprint with the object
+domain's members merged in.  `mem_unifiedLockSetForSyscall_of_sched` says every
+write member of the first is one of the second, and coverage is monotone upward
 (`schedFootprintCoversWrites_mono`), so the claim travels without being restated
 — which is what keeps "what does this arm's footprint cover" a single question.
 
 Stated once and generically rather than sixteen times at the arms: an instance
 per arm would be sixteen copies of one application, and the next declared arm
 would owe a seventeenth. -/
-theorem unifiedSchedLockSetForSyscall_coversWrites (sid : SyscallId)
+theorem unifiedLockSetForSyscall_coversWrites (sid : SyscallId)
     (ops : Concurrency.SyscallLockOperands) (executingCore : CoreId) (st : SystemState)
-    (S U : SchedLockSet) (st₀ st₁ : SystemState)
+    (S U : LockSet) (st₀ st₁ : SystemState)
     (hSched : schedLockSetForSyscall sid ops executingCore st = some S)
-    (hU : unifiedSchedLockSetForSyscall sid ops executingCore st = some U)
+    (hU : unifiedLockSetForSyscall sid ops executingCore st = some U)
     (hCover : schedFootprintCoversWrites S st₀ st₁) :
     schedFootprintCoversWrites U st₀ st₁ :=
   schedFootprintCoversWrites_mono S U st₀ st₁
-    (fun p hp => mem_unifiedSchedLockSetForSyscall_of_sched sid ops executingCore st S U p
-      hSched hU hp)
+    (fun l hl => mem_unifiedLockSetForSyscall_of_sched sid ops executingCore st S U l
+      hSched hU hl)
     hCover
 
 /-- **WS-RR RR8.12 Cut C6h: the unified footprint the live ABI seam declares.**
 
-`declaredLockSetForAbiEntry`'s and `declaredSchedLockSetForAbiEntry`'s successor
+`declaredLockSetForAbiEntry`'s and `declaredSchedulerLockSetForAbiEntry`'s successor
 at the seam, and their union by construction: it runs `abiEntryPlan` and
 `abiEntryLockOperands` once — the same decode both single-domain resolvers read,
-which `declaredSchedLockSetForAbiEntry_shares_decode` states — and hands the one
-answer to `unifiedSchedLockSetForSyscall`.
+which `declaredSchedulerLockSetForAbiEntry_shares_decode` states — and hands the one
+answer to `unifiedLockSetForSyscall`.
 
 The two single-domain resolvers are **kept**, not retired: each is what its own
 domain's theorems are stated over, and the relation below is what ties them to
 what the seam acquires. -/
 def declaredUnifiedLockSetForAbiEntry (ctx : LabelingContext) (executingCore : CoreId)
     (syscallId : UInt32) (x0 x1 x2 x3 x4 x5 : UInt64) (st : SystemState) :
-    Option SchedLockSet :=
+    Option LockSet :=
   match abiEntryPlan ctx executingCore syscallId x0 x1 x2 x3 x4 x5 st with
   | none => none
   | some (tid, decoded, stFilled) =>
     (abiEntryLockOperands decoded tid stFilled).bind
-      (fun ops => unifiedSchedLockSetForSyscall decoded.syscallId ops executingCore stFilled)
+      (fun ops => unifiedLockSetForSyscall decoded.syscallId ops executingCore stFilled)
 
 /-- **Cut C6h**: an entry whose plan does not resolve declares nothing — the
 fail-closed direction both single-domain resolvers already take. -/
@@ -2706,13 +2664,13 @@ theorem declaredUnifiedLockSetForAbiEntry_undeclared (ctx : LabelingContext)
     (st : SystemState)
     (hObj : declaredLockSetForAbiEntry ctx executingCore syscallId x0 x1 x2 x3 x4 x5 st
       = none)
-    (hSched : declaredSchedLockSetForAbiEntry ctx executingCore syscallId
+    (hSched : declaredSchedulerLockSetForAbiEntry ctx executingCore syscallId
       x0 x1 x2 x3 x4 x5 st = none) :
     declaredUnifiedLockSetForAbiEntry ctx executingCore syscallId x0 x1 x2 x3 x4 x5 st
       = none := by
   unfold declaredUnifiedLockSetForAbiEntry
   unfold declaredLockSetForAbiEntry at hObj
-  unfold declaredSchedLockSetForAbiEntry at hSched
+  unfold declaredSchedulerLockSetForAbiEntry at hSched
   rcases hPlan : abiEntryPlan ctx executingCore syscallId x0 x1 x2 x3 x4 x5 st with
     _ | ⟨tid, decoded, stFilled⟩
   · rfl
@@ -2722,7 +2680,7 @@ theorem declaredUnifiedLockSetForAbiEntry_undeclared (ctx : LabelingContext)
     · rfl
     · rw [hOps] at hObj hSched
       simp only [Option.bind_some] at hObj hSched ⊢
-      exact unifiedSchedLockSetForSyscall_undeclared decoded.syscallId ops executingCore
+      exact unifiedLockSetForSyscall_undeclared decoded.syscallId ops executingCore
         stFilled hObj hSched
 
 /-- **Cut C6h**: the seam's unified footprint is the union of what the two
@@ -2740,7 +2698,7 @@ theorem declaredUnifiedLockSetForAbiEntry_shares_decode (ctx : LabelingContext)
       = some (tid, decoded, stFilled))
     (hOps : abiEntryLockOperands decoded tid stFilled = some ops) :
     declaredUnifiedLockSetForAbiEntry ctx executingCore syscallId x0 x1 x2 x3 x4 x5 st
-      = unifiedSchedLockSetForSyscall decoded.syscallId ops executingCore stFilled := by
+      = unifiedLockSetForSyscall decoded.syscallId ops executingCore stFilled := by
   unfold declaredUnifiedLockSetForAbiEntry
   rw [hPlan]
   simp only

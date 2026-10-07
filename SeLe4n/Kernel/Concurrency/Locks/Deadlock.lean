@@ -22,7 +22,7 @@ import SeLe4n.Kernel.Concurrency.Locks.LockSetHeld
 This module proves the architectural keystone of SM3: **no execution of
 the verified microkernel can deadlock**, given that every kernel
 transition (a) acquires its locks under the two-phase-locking discipline
-(`withLockSet`, SM3.C) and (b) acquires them in the SM0.I `LockId`
+(`withLockSet`, SM3.C) and (b) acquires them in the SM0.I `LockKey`
 total order (`lockAcquireSequence`, SM3.B).
 
 ## The abstract execution model (plan §5.4 `KernelExecution`)
@@ -30,8 +30,8 @@ total order (`lockAcquireSequence`, SM3.B).
 `KernelExecution` is the abstract per-core lock-state snapshot that the
 deadlock-freedom theorems reason about.  For each `CoreId` it records:
 
-* `held c`     — the list of `LockId`s the core currently holds, and
-* `blocked c`  — the `LockId` the core is currently blocked waiting for
+* `held c`     — the list of `LockKey`s the core currently holds, and
+* `blocked c`  — the `LockKey` the core is currently blocked waiting for
                  (`none` if the core is running, not blocked).
 
 `blockedAt` and `heldBy` (plan §5.4 SM3.D.1) lift these fields to
@@ -46,9 +46,9 @@ SM3.D §7 grounds the abstract model in the concrete SM3.B/SM3.C
 The main theorem takes two hypotheses, each carrying *distinct,
 non-redundant* content:
 
-* `executionAcquiresInLockIdOrder` — a blocked core's held locks are all
-  `≤` (in the `LockId` total order) the lock it is blocked on.  This is
-  the operational meaning of "acquires in `LockId` order": a core only
+* `executionAcquiresInLockKeyOrder` — a blocked core's held locks are all
+  `≤` (in the `LockKey` total order) the lock it is blocked on.  This is
+  the operational meaning of "acquires in `LockKey` order": a core only
   ever reaches for a lock ranked at-or-above everything it already holds
   (it acquired a prefix of its ascending sequence and is reaching for the
   next element).
@@ -67,7 +67,7 @@ hypotheses from the SM3.B canonical-sort discipline, so they are
 
 ## What is proved
 
-* **SM3.D.3** `lockOrder_strict` — the `LockId` strict order is
+* **SM3.D.3** `lockOrder_strict` — the `LockKey` strict order is
   irreflexive and transitive (the engine of every cycle contradiction).
 * **SM3.D.4** `deadlockFreedom_under_2pl_and_ordering` (Theorem 2.1.9) —
   no two cores can be mutually blocked.
@@ -84,7 +84,7 @@ SM3.C's `DynamicChainExtension` proved a *special case* — two cores
 walking PIP blocking chains cannot mutually wait
 (`dynamic_chain_no_mutual_wait`), using the `ObjId.val` order on the
 all-`.tcb` chain locks.  SM3.D generalises to **arbitrary lock sets** and
-**arbitrary numbers of cores**, using the full `LockId` total order
+**arbitrary numbers of cores**, using the full `LockKey` total order
 (kind-level lexicographic, SM0.I).  The dynamic-chain result is the
 TCB-only instance of SM3.D's general theorem.
 -/
@@ -110,25 +110,25 @@ relationship the deadlock argument needs.  It is grounded in the concrete
 SM3.B/SM3.C lock discipline by §7 (`CorePrefixOf`). -/
 structure KernelExecution where
   /-- The locks each core currently holds. -/
-  held : CoreId → List LockId
+  held : CoreId → List LockKey
   /-- The lock each core is currently blocked waiting for (`none` if the
       core is not blocked). -/
-  blocked : CoreId → Option LockId
+  blocked : CoreId → Option LockKey
 
 /-- WS-SM SM3.D.1 (plan §5.4): core `c` is **blocked at** lock `l`. -/
-def blockedAt (e : KernelExecution) (c : CoreId) (l : LockId) : Prop :=
+def blockedAt (e : KernelExecution) (c : CoreId) (l : LockKey) : Prop :=
   e.blocked c = some l
 
 /-- WS-SM SM3.D.1 (plan §5.4): lock `l` is **held by** core `c`. -/
-def heldBy (e : KernelExecution) (c : CoreId) (l : LockId) : Prop :=
+def heldBy (e : KernelExecution) (c : CoreId) (l : LockKey) : Prop :=
   l ∈ e.held c
 
 /-- WS-SM SM3.D.1: `blockedAt` is decidable (`Option` equality). -/
-instance (e : KernelExecution) (c : CoreId) (l : LockId) :
+instance (e : KernelExecution) (c : CoreId) (l : LockKey) :
     Decidable (blockedAt e c l) := by unfold blockedAt; exact inferInstance
 
 /-- WS-SM SM3.D.1: `heldBy` is decidable (`List` membership). -/
-instance (e : KernelExecution) (c : CoreId) (l : LockId) :
+instance (e : KernelExecution) (c : CoreId) (l : LockKey) :
     Decidable (heldBy e c l) := by unfold heldBy; exact inferInstance
 
 -- ============================================================================
@@ -148,9 +148,9 @@ def coreFollows2PL (e : KernelExecution) (c : CoreId) : Prop :=
   | none => True
 
 /-- WS-SM SM3.D.4 helper: the per-core lock-ordering property — if `c` is
-blocked on `w`, every lock `c` holds is `≤ w` in the `LockId` total order.
+blocked on `w`, every lock `c` holds is `≤ w` in the `LockKey` total order.
 
-This is the operational meaning of "acquires in `LockId` order": the held
+This is the operational meaning of "acquires in `LockKey` order": the held
 locks are an ascending prefix and `w` is the next (≥) lock requested. -/
 def coreAcquiresInOrder (e : KernelExecution) (c : CoreId) : Prop :=
   match e.blocked c with
@@ -170,9 +170,9 @@ discipline — no core blocks on a lock it already holds. -/
 def executionFollows2PL (e : KernelExecution) : Prop :=
   ∀ c : CoreId, coreFollows2PL e c
 
-/-- WS-SM SM3.D.4 (plan §5.4): the execution acquires locks in `LockId`
+/-- WS-SM SM3.D.4 (plan §5.4): the execution acquires locks in `LockKey`
 ascending order — every blocked core's held locks are `≤` its wanted lock. -/
-def executionAcquiresInLockIdOrder (e : KernelExecution) : Prop :=
+def executionAcquiresInLockKeyOrder (e : KernelExecution) : Prop :=
   ∀ c : CoreId, coreAcquiresInOrder e c
 
 /-- WS-SM SM3.D.4: `executionFollows2PL` is decidable (finite `∀` over
@@ -180,12 +180,12 @@ def executionAcquiresInLockIdOrder (e : KernelExecution) : Prop :=
 instance (e : KernelExecution) : Decidable (executionFollows2PL e) :=
   inferInstanceAs (Decidable (∀ c : CoreId, coreFollows2PL e c))
 
-/-- WS-SM SM3.D.4: `executionAcquiresInLockIdOrder` is decidable. -/
-instance (e : KernelExecution) : Decidable (executionAcquiresInLockIdOrder e) :=
+/-- WS-SM SM3.D.4: `executionAcquiresInLockKeyOrder` is decidable. -/
+instance (e : KernelExecution) : Decidable (executionAcquiresInLockKeyOrder e) :=
   inferInstanceAs (Decidable (∀ c : CoreId, coreAcquiresInOrder e c))
 
 /-- WS-SM SM3.D.4 (the **ladder invariant** — plan §3.7 "all locks in
-`H_c` have `LockId < l₁`"): under 2PL + ordering, every lock a blocked
+`H_c` have `LockKey < l₁`"): under 2PL + ordering, every lock a blocked
 core holds is *strictly* below the lock it is blocked on.
 
 This is the single fact every deadlock-freedom theorem below rests on.
@@ -194,9 +194,9 @@ ordering gives `l ≤ w`; 2PL gives `w ∉ held`, hence `l ≠ w` (because
 `l ∈ held`); together `l < w`. -/
 theorem ladder_of_2pl_and_order (e : KernelExecution)
     (h2pl : executionFollows2PL e)
-    (hOrder : executionAcquiresInLockIdOrder e)
-    (c : CoreId) (w : LockId) (hBlocked : e.blocked c = some w)
-    (l : LockId) (hHeld : l ∈ e.held c) : l < w := by
+    (hOrder : executionAcquiresInLockKeyOrder e)
+    (c : CoreId) (w : LockKey) (hBlocked : e.blocked c = some w)
+    (l : LockKey) (hHeld : l ∈ e.held c) : l < w := by
   have h2c := h2pl c
   have hoc := hOrder c
   unfold coreFollows2PL at h2c
@@ -209,18 +209,18 @@ theorem ladder_of_2pl_and_order (e : KernelExecution)
 -- §3 — SM3.D.3 — `lockOrder_strict`
 -- ============================================================================
 
-/-- WS-SM SM3.D.3 (plan §5.4): the `LockId` strict order is irreflexive
+/-- WS-SM SM3.D.3 (plan §5.4): the `LockKey` strict order is irreflexive
 and transitive.  Both halves are proved in `Kind.lean`
-(`LockId.lt_irrefl`, `LockId.lt_trans`) from the lexicographic-order
+(`LockKey.lt_irrefl`, `LockKey.lt_trans`) from the lexicographic-order
 properties; this bundles them as the single SM3.D.3 deliverable.
 
 (`Irreflexive` / `Transitive` are mathlib typeclasses unavailable in the
 core-only seLe4n toolchain, so the conjuncts are stated with explicit
 `∀`.) -/
 theorem lockOrder_strict :
-    (∀ l : LockId, ¬ (l < l)) ∧
-    (∀ l₁ l₂ l₃ : LockId, l₁ < l₂ → l₂ < l₃ → l₁ < l₃) :=
-  ⟨LockId.lt_irrefl, LockId.lt_trans⟩
+    (∀ l : LockKey, ¬ (l < l)) ∧
+    (∀ l₁ l₂ l₃ : LockKey, l₁ < l₂ → l₂ < l₃ → l₁ < l₃) :=
+  ⟨LockKey.lt_irrefl, LockKey.lt_trans⟩
 
 /-- WS-SM SM3.D.3: a binary relation is irreflexive when no element relates
 to itself.  seLe4n is mathlib-free, so the `Irreflexive` order-class the
@@ -241,9 +241,9 @@ namespaced `Irreflexive` / `Transitive` abbreviations above.  Definitionally
 the same content as `lockOrder_strict`; provided so a reader matching the
 plan text finds the literal signature. -/
 theorem lockOrder_strict_classes :
-    Irreflexive (· < · : LockId → LockId → Prop) ∧
-    Transitive (· < · : LockId → LockId → Prop) :=
-  ⟨LockId.lt_irrefl, fun h₁ h₂ => LockId.lt_trans _ _ _ h₁ h₂⟩
+    Irreflexive (· < · : LockKey → LockKey → Prop) ∧
+    Transitive (· < · : LockKey → LockKey → Prop) :=
+  ⟨LockKey.lt_irrefl, fun h₁ h₂ => LockKey.lt_trans _ _ _ h₁ h₂⟩
 
 -- ============================================================================
 -- §4 — SM3.D.1 `noDeadlock` + SM3.D.4 main theorem (Theorem 2.1.9)
@@ -254,7 +254,7 @@ no pair of distinct cores that are mutually blocked (each blocked on a
 lock the *other* holds).  This is the two-core deadlock cycle, the
 smallest possible deadlock. -/
 def noDeadlock (e : KernelExecution) : Prop :=
-  ¬ (∃ (c₁ c₂ : CoreId) (l₁ l₂ : LockId),
+  ¬ (∃ (c₁ c₂ : CoreId) (l₁ l₂ : LockKey),
       c₁ ≠ c₂ ∧
       blockedAt e c₁ l₁ ∧
       blockedAt e c₂ l₂ ∧
@@ -263,7 +263,7 @@ def noDeadlock (e : KernelExecution) : Prop :=
 
 /-- WS-SM SM3.D.1 helper: per-pair mutual-block test.  Decidable because
 both locks are pinned by the `blocked` fields (no free existential over
-the infinite `LockId` type). -/
+the infinite `LockKey` type). -/
 def mutualBlocked (e : KernelExecution) (c₁ c₂ : CoreId) : Prop :=
   match e.blocked c₁, e.blocked c₂ with
   | some l₁, some l₂ => l₁ ∈ e.held c₂ ∧ l₂ ∈ e.held c₁
@@ -289,7 +289,7 @@ instance (e : KernelExecution) : Decidable (noDeadlockDec e) :=
 
 /-- WS-SM SM3.D.1: the spec form `noDeadlock` and the decidable form
 `noDeadlockDec` agree.  The existential's `l₁ l₂` are pinned by the
-`blocked` fields, so the `∃ l₁ l₂ : LockId` collapses to the `match` in
+`blocked` fields, so the `∃ l₁ l₂ : LockKey` collapses to the `match` in
 `mutualBlocked`. -/
 theorem noDeadlock_iff_dec (e : KernelExecution) :
     noDeadlock e ↔ noDeadlockDec e := by
@@ -319,23 +319,23 @@ instance noDeadlock_definition_decidable (e : KernelExecution) :
 
 /-- WS-SM SM3.D.4 (plan §5.4, **Theorem 2.1.9**):
 `deadlockFreedom_under_2pl_and_ordering`.  No execution that follows 2PL
-and acquires in `LockId` order can reach a two-core deadlock.
+and acquires in `LockKey` order can reach a two-core deadlock.
 
 Proof (plan §3.7): suppose `c₁ ≠ c₂` are mutually blocked — `c₁` blocked
 at `l₁` while holding `l₂`, `c₂` blocked at `l₂` while holding `l₁`.  The
 ladder invariant on `c₁` (blocked at `l₁`, holds `l₂`) gives `l₂ < l₁`;
 on `c₂` (blocked at `l₂`, holds `l₁`) gives `l₁ < l₂`.  By asymmetry of
-the `LockId` strict order, `l₂ < l₁` and `l₁ < l₂` is impossible. -/
+the `LockKey` strict order, `l₂ < l₁` and `l₁ < l₂` is impossible. -/
 theorem deadlockFreedom_under_2pl_and_ordering (e : KernelExecution)
     (h2pl : executionFollows2PL e)
-    (hOrder : executionAcquiresInLockIdOrder e) :
+    (hOrder : executionAcquiresInLockKeyOrder e) :
     noDeadlock e := by
   rintro ⟨c₁, c₂, l₁, l₂, _hne, hb₁, hb₂, hh₂, hh₁⟩
   -- hb₁ : blockedAt e c₁ l₁ ; hh₁ : heldBy e c₁ l₂ ⟹ l₂ < l₁.
   have hA : l₂ < l₁ := ladder_of_2pl_and_order e h2pl hOrder c₁ l₁ hb₁ l₂ hh₁
   -- hb₂ : blockedAt e c₂ l₂ ; hh₂ : heldBy e c₂ l₁ ⟹ l₁ < l₂.
   have hB : l₁ < l₂ := ladder_of_2pl_and_order e h2pl hOrder c₂ l₂ hb₂ l₁ hh₂
-  exact LockId.lt_asymm _ _ hA hB
+  exact LockKey.lt_asymm _ _ hA hB
 
 -- ============================================================================
 -- §5 — SM3.D.5 — Wait-graph acyclicity (the N-core dual form)
@@ -397,7 +397,7 @@ increases the wanted lock.  If `c` (blocked at `lc`) waits for `c'`
 (blocked at `lc'`), then `lc < lc'`: `c` holds nothing above `lc` is
 false — rather, `lc ∈ held c'` and `c'`'s ladder gives `lc < lc'`. -/
 theorem blockedWaitsFor_wanted_lt (e : KernelExecution)
-    (h2pl : executionFollows2PL e) (hOrder : executionAcquiresInLockIdOrder e)
+    (h2pl : executionFollows2PL e) (hOrder : executionAcquiresInLockKeyOrder e)
     {c c' : CoreId} (h : blockedWaitsFor e c c') :
     ∃ lc lc', e.blocked c = some lc ∧ e.blocked c' = some lc' ∧ lc < lc' := by
   obtain ⟨hc'some, l, hbl, hmem⟩ := h
@@ -409,9 +409,9 @@ theorem blockedWaitsFor_wanted_lt (e : KernelExecution)
 wanted lock strictly increases (both endpoints are blocked, and the
 end's wanted lock is `>` the start's).  Induction on the closure;
 single steps use `blockedWaitsFor_wanted_lt`, composition uses
-`LockId.lt_trans`. -/
+`LockKey.lt_trans`. -/
 theorem reachesPlus_wanted_lt (e : KernelExecution)
-    (h2pl : executionFollows2PL e) (hOrder : executionAcquiresInLockIdOrder e)
+    (h2pl : executionFollows2PL e) (hOrder : executionAcquiresInLockKeyOrder e)
     {c c' : CoreId} (h : ReachesPlus (waitGraph e) c c') :
     ∃ lc lc', e.blocked c = some lc ∧ e.blocked c' = some lc' ∧ lc < lc' := by
   induction h with
@@ -423,7 +423,7 @@ theorem reachesPlus_wanted_lt (e : KernelExecution)
       rw [hbmid'] at hbmid
       injection hbmid with hEq
       subst hEq
-      exact ⟨lc, lc', hbc, hbc', LockId.lt_trans _ _ _ hlt hlt'⟩
+      exact ⟨lc, lc', hbc, hbc', LockKey.lt_trans _ _ _ hlt hlt'⟩
 
 /-- WS-SM SM3.D.5 (plan §5.4): `waitGraph_acyclic_under_2pl`.  The wait
 graph of any 2PL + ordered execution is acyclic — the dual, N-core form
@@ -432,17 +432,17 @@ of deadlock-freedom.
 Proof: a cycle `ReachesPlus (waitGraph e) c c` would force the wanted
 lock of `c` strictly below itself (`reachesPlus_wanted_lt` gives
 `lc < lc'` with `lc = lc'` both equal to `e.blocked c`), contradicting
-`LockId.lt_irrefl`. -/
+`LockKey.lt_irrefl`. -/
 theorem waitGraph_acyclic_under_2pl (e : KernelExecution)
     (h2pl : executionFollows2PL e)
-    (hOrder : executionAcquiresInLockIdOrder e) :
+    (hOrder : executionAcquiresInLockKeyOrder e) :
     Acyclic (waitGraph e) := by
   intro c hCycle
   obtain ⟨lc, lc', hb, hb', hlt⟩ := reachesPlus_wanted_lt e h2pl hOrder hCycle
   rw [hb] at hb'
   injection hb' with hEq
   subst hEq
-  exact LockId.lt_irrefl lc hlt
+  exact LockKey.lt_irrefl lc hlt
 
 /-- WS-SM SM3.D.5 (coherence corollary): wait-graph acyclicity implies the
 two-core `noDeadlock`.  A mutual block between `c₁` and `c₂` would close a
@@ -483,7 +483,7 @@ theorem noDeadlock_of_waitGraph_acyclic (e : KernelExecution)
 -- The per-lock modes are supplied as auxiliary functions (`wantMode`,
 -- `heldMode`) rather than carried inside `KernelExecution`, so the
 -- plan-signature `noDeadlock` / `blockedAt` / `heldBy` (SM3.D.1, bare
--- `LockId`) and the §4/§5 theorems remain exactly as the plan specifies.
+-- `LockKey`) and the §4/§5 theorems remain exactly as the plan specifies.
 
 /-- WS-SM SM3.D.5: `ReachesPlus` is monotone in its edge relation — a path
 under `R` is a path under any `R'` that contains every `R`-edge. -/
@@ -510,17 +510,17 @@ request (SM3.B `AccessMode.conflicts`).  Two concurrent readers of `l` do
 NOT induce an edge (`conflicts .read .read = false`), so this is the
 realistic deadlock-relevant wait relation. -/
 def conflictWaitsFor (e : KernelExecution)
-    (wantMode : CoreId → AccessMode) (heldMode : CoreId → LockId → AccessMode)
+    (wantMode : CoreId → AccessMode) (heldMode : CoreId → LockKey → AccessMode)
     (c c' : CoreId) : Prop :=
   (e.blocked c').isSome = true ∧
   ∃ l, e.blocked c = some l ∧ l ∈ e.held c' ∧
     AccessMode.conflicts (wantMode c) (heldMode c' l) = true
 
 /-- WS-SM SM3.D.5b: `conflictWaitsFor` is decidable.  The existential lock
-is pinned by `e.blocked c`, so the `∃ l : LockId` collapses to a decidable
+is pinned by `e.blocked c`, so the `∃ l : LockKey` collapses to a decidable
 per-state test (no unbounded search). -/
 instance (e : KernelExecution) (wm : CoreId → AccessMode)
-    (hm : CoreId → LockId → AccessMode) (c c' : CoreId) :
+    (hm : CoreId → LockKey → AccessMode) (c c' : CoreId) :
     Decidable (conflictWaitsFor e wm hm c c') := by
   unfold conflictWaitsFor
   cases hb : e.blocked c with
@@ -542,7 +542,7 @@ instance (e : KernelExecution) (wm : CoreId → AccessMode)
 `blockedWaitsFor` edge — the conflict graph is a subgraph of the wait graph
 (it just drops the `AccessMode.conflicts` conjunct). -/
 theorem conflictWaitsFor_sub_blockedWaitsFor (e : KernelExecution)
-    (wm : CoreId → AccessMode) (hm : CoreId → LockId → AccessMode) (c c' : CoreId) :
+    (wm : CoreId → AccessMode) (hm : CoreId → LockKey → AccessMode) (c c' : CoreId) :
     conflictWaitsFor e wm hm c c' → blockedWaitsFor e c c' := by
   rintro ⟨hsome, l, hbl, hmem, _hconf⟩
   exact ⟨hsome, l, hbl, hmem⟩
@@ -554,9 +554,9 @@ mode-distinguishing form of `waitGraph_acyclic_under_2pl` — it accounts for
 `Acyclic_mono`: the conflict graph is a subgraph of the plain wait graph
 (`conflictWaitsFor_sub_blockedWaitsFor`), which is already acyclic. -/
 theorem conflictWaitGraph_acyclic_under_2pl (e : KernelExecution)
-    (wm : CoreId → AccessMode) (hm : CoreId → LockId → AccessMode)
+    (wm : CoreId → AccessMode) (hm : CoreId → LockKey → AccessMode)
     (h2pl : executionFollows2PL e)
-    (hOrder : executionAcquiresInLockIdOrder e) :
+    (hOrder : executionAcquiresInLockKeyOrder e) :
     Acyclic (conflictWaitsFor e wm hm) :=
   Acyclic_mono (fun a b => conflictWaitsFor_sub_blockedWaitsFor e wm hm a b)
     (waitGraph_acyclic_under_2pl e h2pl hOrder)
@@ -626,7 +626,7 @@ theorem totalWaitCost_le_bound (S : LockSet) (tCs : Nat)
 
 /-- WS-SM SM3.D.6b: `insertOrMerge` grows the lock-set size by at most 1
 (the merge branch keeps the length; the prepend branch adds one key). -/
-theorem insertOrMerge_size_le (S : LockSet) (l : LockId) (m : AccessMode) :
+theorem insertOrMerge_size_le (S : LockSet) (l : LockKey) (m : AccessMode) :
     (S.insertOrMerge l m).size ≤ S.size + 1 := by
   unfold LockSet.insertOrMerge LockSet.size
   split
@@ -636,10 +636,10 @@ theorem insertOrMerge_size_le (S : LockSet) (l : LockId) (m : AccessMode) :
 /-- WS-SM SM3.D.6b: `lockSetOfList` has size at most the length of its
 source list (the fold of `insertOrMerge` over the empty set grows by ≤ 1
 per element). -/
-theorem lockSetOfList_size_le (pairs : List (LockId × AccessMode)) :
+theorem lockSetOfList_size_le (pairs : List (LockKey × AccessMode)) :
     (lockSetOfList pairs).size ≤ pairs.length := by
   unfold lockSetOfList
-  have hgen : ∀ (ps : List (LockId × AccessMode)) (acc : LockSet),
+  have hgen : ∀ (ps : List (LockKey × AccessMode)) (acc : LockSet),
       (ps.foldl (fun a p => a.insertOrMerge p.fst p.snd) acc).size
         ≤ acc.size + ps.length := by
     intro ps
@@ -655,29 +655,29 @@ theorem lockSetOfList_size_le (pairs : List (LockId × AccessMode)) :
   simpa [LockSet.size] using this
 
 /-- WS-SM SM3.D.6b: `lockSetExtendOpt` grows the size by at most 1. -/
-theorem lockSetExtendOpt_size_le (S : LockSet) (opt : Option (LockId × AccessMode)) :
+theorem lockSetExtendOpt_size_le (S : LockSet) (opt : Option (LockKey × AccessMode)) :
     (lockSetExtendOpt S opt).size ≤ S.size + 1 := by
   cases opt with
   | none => exact Nat.le_succ _
   | some p => exact insertOrMerge_size_le S p.fst p.snd
 
 /-- WS-SM SM3.D.6b shape helper: one optional extension over a base list. -/
-theorem size_le_1 (L : List (LockId × AccessMode)) (o₁ : Option (LockId × AccessMode)) :
+theorem size_le_1 (L : List (LockKey × AccessMode)) (o₁ : Option (LockKey × AccessMode)) :
     (lockSetExtendOpt (lockSetOfList L) o₁).size ≤ L.length + 1 :=
   Nat.le_trans (lockSetExtendOpt_size_le _ _)
     (Nat.add_le_add_right (lockSetOfList_size_le _) 1)
 
 /-- WS-SM SM3.D.6b shape helper: two optional extensions over a base list. -/
-theorem size_le_2 (L : List (LockId × AccessMode))
-    (o₁ o₂ : Option (LockId × AccessMode)) :
+theorem size_le_2 (L : List (LockKey × AccessMode))
+    (o₁ o₂ : Option (LockKey × AccessMode)) :
     (lockSetExtendOpt (lockSetExtendOpt (lockSetOfList L) o₁) o₂).size ≤ L.length + 2 := by
   refine Nat.le_trans (lockSetExtendOpt_size_le _ _) ?_
   refine Nat.le_trans (Nat.add_le_add_right (size_le_1 L o₁) 1) ?_
   omega
 
 /-- WS-SM SM3.D.6b shape helper: three optional extensions over a base list. -/
-theorem size_le_3 (L : List (LockId × AccessMode))
-    (o₁ o₂ o₃ : Option (LockId × AccessMode)) :
+theorem size_le_3 (L : List (LockKey × AccessMode))
+    (o₁ o₂ o₃ : Option (LockKey × AccessMode)) :
     (lockSetExtendOpt (lockSetExtendOpt (lockSetExtendOpt (lockSetOfList L) o₁) o₂) o₃).size
       ≤ L.length + 3 := by
   refine Nat.le_trans (lockSetExtendOpt_size_le _ _) ?_
@@ -685,8 +685,8 @@ theorem size_le_3 (L : List (LockId × AccessMode))
   omega
 
 /-- WS-SM SM3.D.6b shape helper: four optional extensions over a base list. -/
-theorem size_le_4 (L : List (LockId × AccessMode))
-    (o₁ o₂ o₃ o₄ : Option (LockId × AccessMode)) :
+theorem size_le_4 (L : List (LockKey × AccessMode))
+    (o₁ o₂ o₃ o₄ : Option (LockKey × AccessMode)) :
     (lockSetExtendOpt (lockSetExtendOpt (lockSetExtendOpt
       (lockSetExtendOpt (lockSetOfList L) o₁) o₂) o₃) o₄).size ≤ L.length + 4 := by
   refine Nat.le_trans (lockSetExtendOpt_size_le _ _) ?_
@@ -695,8 +695,8 @@ theorem size_le_4 (L : List (LockId × AccessMode))
 
 /-- WS-SM SM6.E shape helper: five optional extensions over a base list
 (the `tcbSuspend` footprint after the reply-link teardown extension). -/
-theorem size_le_5 (L : List (LockId × AccessMode))
-    (o₁ o₂ o₃ o₄ o₅ : Option (LockId × AccessMode)) :
+theorem size_le_5 (L : List (LockKey × AccessMode))
+    (o₁ o₂ o₃ o₄ o₅ : Option (LockKey × AccessMode)) :
     (lockSetExtendOpt (lockSetExtendOpt (lockSetExtendOpt (lockSetExtendOpt
       (lockSetExtendOpt (lockSetOfList L) o₁) o₂) o₃) o₄) o₅).size ≤ L.length + 5 := by
   refine Nat.le_trans (lockSetExtendOpt_size_le _ _) ?_
@@ -704,8 +704,8 @@ theorem size_le_5 (L : List (LockId × AccessMode))
   omega
 
 /-- WS-RR RR7.22 (residual, remediation): six optional extensions. -/
-theorem size_le_6 (L : List (LockId × AccessMode))
-    (o₁ o₂ o₃ o₄ o₅ o₆ : Option (LockId × AccessMode)) :
+theorem size_le_6 (L : List (LockKey × AccessMode))
+    (o₁ o₂ o₃ o₄ o₅ o₆ : Option (LockKey × AccessMode)) :
     (lockSetExtendOpt (lockSetExtendOpt (lockSetExtendOpt (lockSetExtendOpt
       (lockSetExtendOpt (lockSetExtendOpt (lockSetOfList L) o₁) o₂) o₃) o₄) o₅) o₆).size
       ≤ L.length + 6 := by
@@ -716,8 +716,8 @@ theorem size_le_6 (L : List (LockId × AccessMode))
 /-- WS-RR RR7.22 (residual, remediation): seven optional extensions — the arity
 the state-resolved cancellation footprint reaches once the reply arm's donation
 return is a declared write. -/
-theorem size_le_7 (L : List (LockId × AccessMode))
-    (o₁ o₂ o₃ o₄ o₅ o₆ o₇ : Option (LockId × AccessMode)) :
+theorem size_le_7 (L : List (LockKey × AccessMode))
+    (o₁ o₂ o₃ o₄ o₅ o₆ o₇ : Option (LockKey × AccessMode)) :
     (lockSetExtendOpt (lockSetExtendOpt (lockSetExtendOpt (lockSetExtendOpt
       (lockSetExtendOpt (lockSetExtendOpt (lockSetExtendOpt
         (lockSetOfList L) o₁) o₂) o₃) o₄) o₅) o₆) o₇).size ≤ L.length + 7 := by
@@ -728,8 +728,8 @@ theorem size_le_7 (L : List (LockId × AccessMode))
 /-- WS-OD OD1.5: eight optional extensions — the arity the state-resolved
 cancellation footprint reaches once the reclaim's abort prefix declares the
 holder's endpoint and its two queue neighbours. -/
-theorem size_le_8 (L : List (LockId × AccessMode))
-    (o₁ o₂ o₃ o₄ o₅ o₆ o₇ o₈ : Option (LockId × AccessMode)) :
+theorem size_le_8 (L : List (LockKey × AccessMode))
+    (o₁ o₂ o₃ o₄ o₅ o₆ o₇ o₈ : Option (LockKey × AccessMode)) :
     (lockSetExtendOpt (lockSetExtendOpt (lockSetExtendOpt (lockSetExtendOpt
       (lockSetExtendOpt (lockSetExtendOpt (lockSetExtendOpt (lockSetExtendOpt
         (lockSetOfList L) o₁) o₂) o₃) o₄) o₅) o₆) o₇) o₈).size ≤ L.length + 8 := by
@@ -740,8 +740,8 @@ theorem size_le_8 (L : List (LockId × AccessMode))
 /-- WS-OD OD3.5: nine optional extensions — the arity the parametric
 cancellation footprint reaches once the reply arm's donation hand-back declares
 the state-level lock its `scThreadIndex` write takes. -/
-theorem size_le_9 (L : List (LockId × AccessMode))
-    (o₁ o₂ o₃ o₄ o₅ o₆ o₇ o₈ o₉ : Option (LockId × AccessMode)) :
+theorem size_le_9 (L : List (LockKey × AccessMode))
+    (o₁ o₂ o₃ o₄ o₅ o₆ o₇ o₈ o₉ : Option (LockKey × AccessMode)) :
     (lockSetExtendOpt (lockSetExtendOpt (lockSetExtendOpt (lockSetExtendOpt
       (lockSetExtendOpt (lockSetExtendOpt (lockSetExtendOpt (lockSetExtendOpt
         (lockSetExtendOpt (lockSetOfList L) o₁) o₂) o₃) o₄) o₅) o₆) o₇) o₈) o₉).size
@@ -751,8 +751,8 @@ theorem size_le_9 (L : List (LockId × AccessMode))
   omega
 
 /-- WS-OD OD3.7: ten optionals. -/
-theorem size_le_10 (L : List (LockId × AccessMode))
-    (o₁ o₂ o₃ o₄ o₅ o₆ o₇ o₈ o₉ o₁₀ : Option (LockId × AccessMode)) :
+theorem size_le_10 (L : List (LockKey × AccessMode))
+    (o₁ o₂ o₃ o₄ o₅ o₆ o₇ o₈ o₉ o₁₀ : Option (LockKey × AccessMode)) :
     (lockSetExtendOpt (lockSetExtendOpt (lockSetExtendOpt (lockSetExtendOpt
       (lockSetExtendOpt (lockSetExtendOpt (lockSetExtendOpt (lockSetExtendOpt
         (lockSetExtendOpt (lockSetExtendOpt (lockSetOfList L) o₁) o₂) o₃) o₄) o₅)
@@ -764,8 +764,8 @@ theorem size_le_10 (L : List (LockId × AccessMode))
 
 /-- WS-OD OD3.7: eleven optionals — `lockSet_cancelIpcBlocking`'s arity once the
 reclaim's two below-head reads are declared. -/
-theorem size_le_11 (L : List (LockId × AccessMode))
-    (o₁ o₂ o₃ o₄ o₅ o₆ o₇ o₈ o₉ o₁₀ o₁₁ : Option (LockId × AccessMode)) :
+theorem size_le_11 (L : List (LockKey × AccessMode))
+    (o₁ o₂ o₃ o₄ o₅ o₆ o₇ o₈ o₉ o₁₀ o₁₁ : Option (LockKey × AccessMode)) :
     (lockSetExtendOpt (lockSetExtendOpt (lockSetExtendOpt (lockSetExtendOpt
       (lockSetExtendOpt (lockSetExtendOpt (lockSetExtendOpt (lockSetExtendOpt
         (lockSetExtendOpt (lockSetExtendOpt (lockSetExtendOpt (lockSetOfList L) o₁) o₂) o₃)
@@ -778,8 +778,8 @@ theorem size_le_11 (L : List (LockId × AccessMode))
 
 /-- WS-OD (`v0.35.4`): twelve optionals — `lockSet_replyRecv`'s arity once the
 re-donation's old head and the returned context's head are declared. -/
-theorem size_le_12 (L : List (LockId × AccessMode))
-    (o₁ o₂ o₃ o₄ o₅ o₆ o₇ o₈ o₉ o₁₀ o₁₁ o₁₂ : Option (LockId × AccessMode)) :
+theorem size_le_12 (L : List (LockKey × AccessMode))
+    (o₁ o₂ o₃ o₄ o₅ o₆ o₇ o₈ o₉ o₁₀ o₁₁ o₁₂ : Option (LockKey × AccessMode)) :
     (lockSetExtendOpt (lockSetExtendOpt (lockSetExtendOpt (lockSetExtendOpt
       (lockSetExtendOpt (lockSetExtendOpt (lockSetExtendOpt (lockSetExtendOpt
         (lockSetExtendOpt (lockSetExtendOpt (lockSetExtendOpt (lockSetExtendOpt
@@ -792,8 +792,8 @@ theorem size_le_12 (L : List (LockId × AccessMode))
 
 /-- WS-OD (`v0.35.4`): thirteen optionals — `lockSet_cancelIpcBlocking`'s arity
 once the reclaim's head and the detached frame above the cancelled one join it. -/
-theorem size_le_13 (L : List (LockId × AccessMode))
-    (o₁ o₂ o₃ o₄ o₅ o₆ o₇ o₈ o₉ o₁₀ o₁₁ o₁₂ o₁₃ : Option (LockId × AccessMode)) :
+theorem size_le_13 (L : List (LockKey × AccessMode))
+    (o₁ o₂ o₃ o₄ o₅ o₆ o₇ o₈ o₉ o₁₀ o₁₁ o₁₂ o₁₃ : Option (LockKey × AccessMode)) :
     (lockSetExtendOpt (lockSetExtendOpt (lockSetExtendOpt (lockSetExtendOpt
       (lockSetExtendOpt (lockSetExtendOpt (lockSetExtendOpt (lockSetExtendOpt
         (lockSetExtendOpt (lockSetExtendOpt (lockSetExtendOpt (lockSetExtendOpt
@@ -808,8 +808,8 @@ theorem size_le_13 (L : List (LockId × AccessMode))
 /-- **PR #894 review**: fourteen optionals -- `lockSet_replyRecv`'s arity once
 the invoking receiver's own pre-receive return declares its scheduling context,
 the previous owner's TCB and the head it clears. -/
-theorem size_le_14 (L : List (LockId × AccessMode))
-    (o₁ o₂ o₃ o₄ o₅ o₆ o₇ o₈ o₉ o₁₀ o₁₁ o₁₂ o₁₃ o₁₄ : Option (LockId × AccessMode)) :
+theorem size_le_14 (L : List (LockKey × AccessMode))
+    (o₁ o₂ o₃ o₄ o₅ o₆ o₇ o₈ o₉ o₁₀ o₁₁ o₁₂ o₁₃ o₁₄ : Option (LockKey × AccessMode)) :
     (lockSetExtendOpt (lockSetExtendOpt (lockSetExtendOpt (lockSetExtendOpt (lockSetExtendOpt (lockSetExtendOpt (lockSetExtendOpt (lockSetExtendOpt (lockSetExtendOpt (lockSetExtendOpt (lockSetExtendOpt (lockSetExtendOpt (lockSetExtendOpt (lockSetExtendOpt (lockSetOfList L) o₁) o₂) o₃) o₄) o₅) o₆) o₇) o₈) o₉) o₁₀) o₁₁) o₁₂) o₁₃) o₁₄).size
       ≤ L.length + 14 := by
   refine Nat.le_trans (lockSetExtendOpt_size_le _ _) ?_
@@ -818,8 +818,8 @@ theorem size_le_14 (L : List (LockId × AccessMode))
   omega
 
 /-- **PR #894 review**: fifteen optionals -- …and the frame below that head. -/
-theorem size_le_15 (L : List (LockId × AccessMode))
-    (o₁ o₂ o₃ o₄ o₅ o₆ o₇ o₈ o₉ o₁₀ o₁₁ o₁₂ o₁₃ o₁₄ o₁₅ : Option (LockId × AccessMode)) :
+theorem size_le_15 (L : List (LockKey × AccessMode))
+    (o₁ o₂ o₃ o₄ o₅ o₆ o₇ o₈ o₉ o₁₀ o₁₁ o₁₂ o₁₃ o₁₄ o₁₅ : Option (LockKey × AccessMode)) :
     (lockSetExtendOpt (lockSetExtendOpt (lockSetExtendOpt (lockSetExtendOpt (lockSetExtendOpt (lockSetExtendOpt (lockSetExtendOpt (lockSetExtendOpt (lockSetExtendOpt (lockSetExtendOpt (lockSetExtendOpt (lockSetExtendOpt (lockSetExtendOpt (lockSetExtendOpt (lockSetExtendOpt (lockSetOfList L) o₁) o₂) o₃) o₄) o₅) o₆) o₇) o₈) o₉) o₁₀) o₁₁) o₁₂) o₁₃) o₁₄) o₁₅).size
       ≤ L.length + 15 := by
   refine Nat.le_trans (lockSetExtendOpt_size_le _ _) ?_
@@ -828,8 +828,8 @@ theorem size_le_15 (L : List (LockId × AccessMode))
   omega
 
 /-- **PR #894 review**: sixteen optionals -- …and the outer caller it reads. -/
-theorem size_le_16 (L : List (LockId × AccessMode))
-    (o₁ o₂ o₃ o₄ o₅ o₆ o₇ o₈ o₉ o₁₀ o₁₁ o₁₂ o₁₃ o₁₄ o₁₅ o₁₆ : Option (LockId × AccessMode)) :
+theorem size_le_16 (L : List (LockKey × AccessMode))
+    (o₁ o₂ o₃ o₄ o₅ o₆ o₇ o₈ o₉ o₁₀ o₁₁ o₁₂ o₁₃ o₁₄ o₁₅ o₁₆ : Option (LockKey × AccessMode)) :
     (lockSetExtendOpt (lockSetExtendOpt (lockSetExtendOpt (lockSetExtendOpt (lockSetExtendOpt (lockSetExtendOpt (lockSetExtendOpt (lockSetExtendOpt (lockSetExtendOpt (lockSetExtendOpt (lockSetExtendOpt (lockSetExtendOpt (lockSetExtendOpt (lockSetExtendOpt (lockSetExtendOpt (lockSetExtendOpt (lockSetOfList L) o₁) o₂) o₃) o₄) o₅) o₆) o₇) o₈) o₉) o₁₀) o₁₁) o₁₂) o₁₃) o₁₄) o₁₅) o₁₆).size
       ≤ L.length + 16 := by
   refine Nat.le_trans (lockSetExtendOpt_size_le _ _) ?_
@@ -841,8 +841,8 @@ theorem size_le_16 (L : List (LockId × AccessMode))
 **at that cut**.  `4 + 17 = 21`, which was the footprint `maxLockSetSize` was
 measured against then; the arity has grown three times since and the ceiling with
 it.  See `size_le_20`, and read the constant for the current value. -/
-theorem size_le_17 (L : List (LockId × AccessMode))
-    (o₁ o₂ o₃ o₄ o₅ o₆ o₇ o₈ o₉ o₁₀ o₁₁ o₁₂ o₁₃ o₁₄ o₁₅ o₁₆ o₁₇ : Option (LockId × AccessMode)) :
+theorem size_le_17 (L : List (LockKey × AccessMode))
+    (o₁ o₂ o₃ o₄ o₅ o₆ o₇ o₈ o₉ o₁₀ o₁₁ o₁₂ o₁₃ o₁₄ o₁₅ o₁₆ o₁₇ : Option (LockKey × AccessMode)) :
     (lockSetExtendOpt (lockSetExtendOpt (lockSetExtendOpt (lockSetExtendOpt (lockSetExtendOpt (lockSetExtendOpt (lockSetExtendOpt (lockSetExtendOpt (lockSetExtendOpt (lockSetExtendOpt (lockSetExtendOpt (lockSetExtendOpt (lockSetExtendOpt (lockSetExtendOpt (lockSetExtendOpt (lockSetExtendOpt (lockSetExtendOpt (lockSetOfList L) o₁) o₂) o₃) o₄) o₅) o₆) o₇) o₈) o₉) o₁₀) o₁₁) o₁₂) o₁₃) o₁₄) o₁₅) o₁₆) o₁₇).size
       ≤ L.length + 17 := by
   refine Nat.le_trans (lockSetExtendOpt_size_le _ _) ?_
@@ -854,9 +854,9 @@ theorem size_le_17 (L : List (LockId × AccessMode))
 **at that cut**, once the frame above the answered caller's reply object is
 declared.  `4 + 18 = 22`, which was the footprint `maxLockSetSize` was measured
 against then.  See `size_le_20`, and read the constant for the current value. -/
-theorem size_le_18 (L : List (LockId × AccessMode))
+theorem size_le_18 (L : List (LockKey × AccessMode))
     (o₁ o₂ o₃ o₄ o₅ o₆ o₇ o₈ o₉ o₁₀ o₁₁ o₁₂ o₁₃ o₁₄ o₁₅ o₁₆ o₁₇ o₁₈ :
-      Option (LockId × AccessMode)) :
+      Option (LockKey × AccessMode)) :
     (lockSetExtendOpt (lockSetExtendOpt (lockSetExtendOpt (lockSetExtendOpt (lockSetExtendOpt (lockSetExtendOpt (lockSetExtendOpt (lockSetExtendOpt (lockSetExtendOpt (lockSetExtendOpt (lockSetExtendOpt (lockSetExtendOpt (lockSetExtendOpt (lockSetExtendOpt (lockSetExtendOpt (lockSetExtendOpt (lockSetExtendOpt (lockSetExtendOpt (lockSetOfList L) o₁) o₂) o₃) o₄) o₅) o₆) o₇) o₈) o₉) o₁₀) o₁₁) o₁₂) o₁₃) o₁₄) o₁₅) o₁₆) o₁₇) o₁₈).size
       ≤ L.length + 18 := by
   refine Nat.le_trans (lockSetExtendOpt_size_le _ _) ?_
@@ -872,9 +872,9 @@ pop redirects the reservation to, so the arity is `size_le_20` below and the
 constant is 24.  A ceiling figure in a docstring is a live claim, and this one
 said "now" for eighty-three cuts -- reported on PR #897 against the sibling
 headline in `PerCoreWcrt.lean`, which had the same shape.  Read the constant. -/
-theorem size_le_19 (L : List (LockId × AccessMode))
+theorem size_le_19 (L : List (LockKey × AccessMode))
     (o₁ o₂ o₃ o₄ o₅ o₆ o₇ o₈ o₉ o₁₀ o₁₁ o₁₂ o₁₃ o₁₄ o₁₅ o₁₆ o₁₇ o₁₈ o₁₉ :
-      Option (LockId × AccessMode)) :
+      Option (LockKey × AccessMode)) :
     (lockSetExtendOpt (lockSetExtendOpt (lockSetExtendOpt (lockSetExtendOpt (lockSetExtendOpt (lockSetExtendOpt (lockSetExtendOpt (lockSetExtendOpt (lockSetExtendOpt (lockSetExtendOpt (lockSetExtendOpt (lockSetExtendOpt (lockSetExtendOpt (lockSetExtendOpt (lockSetExtendOpt (lockSetExtendOpt (lockSetExtendOpt (lockSetExtendOpt (lockSetExtendOpt (lockSetOfList L) o₁) o₂) o₃) o₄) o₅) o₆) o₇) o₈) o₉) o₁₀) o₁₁) o₁₂) o₁₃) o₁₄) o₁₅) o₁₆) o₁₇) o₁₈) o₁₉).size
       ≤ L.length + 19 := by
   refine Nat.le_trans (lockSetExtendOpt_size_le _ _) ?_
@@ -884,9 +884,9 @@ theorem size_le_19 (L : List (LockId × AccessMode))
 
 /-- **WS-HP HP10.6**: twenty, the arity `.replyRecv` reaches once the origin a
 bottom-of-stack pop redirects the reservation to is declared. -/
-theorem size_le_20 (L : List (LockId × AccessMode))
+theorem size_le_20 (L : List (LockKey × AccessMode))
     (o₁ o₂ o₃ o₄ o₅ o₆ o₇ o₈ o₉ o₁₀ o₁₁ o₁₂ o₁₃ o₁₄ o₁₅ o₁₆ o₁₇ o₁₈ o₁₉ o₂₀ :
-      Option (LockId × AccessMode)) :
+      Option (LockKey × AccessMode)) :
     (lockSetExtendOpt (lockSetExtendOpt (lockSetExtendOpt (lockSetExtendOpt (lockSetExtendOpt (lockSetExtendOpt (lockSetExtendOpt (lockSetExtendOpt (lockSetExtendOpt (lockSetExtendOpt (lockSetExtendOpt (lockSetExtendOpt (lockSetExtendOpt (lockSetExtendOpt (lockSetExtendOpt (lockSetExtendOpt (lockSetExtendOpt (lockSetExtendOpt (lockSetExtendOpt (lockSetExtendOpt (lockSetOfList L) o₁) o₂) o₃) o₄) o₅) o₆) o₇) o₈) o₉) o₁₀) o₁₁) o₁₂) o₁₃) o₁₄) o₁₅) o₁₆) o₁₇) o₁₈) o₁₉) o₂₀).size
       ≤ L.length + 20 := by
   refine Nat.le_trans (lockSetExtendOpt_size_le _ _) ?_
@@ -898,7 +898,7 @@ theorem size_le_20 (L : List (LockId × AccessMode))
 over a `lockSetOfList`.  The `size_le_k` family above all bottom out in a literal
 base list, which cannot express "the base is whatever this merge left" — the
 shape a sharp bound needs when one layer is free. -/
-theorem size_le_6_over (S : LockSet) (o₁ o₂ o₃ o₄ o₅ o₆ : Option (LockId × AccessMode)) :
+theorem size_le_6_over (S : LockSet) (o₁ o₂ o₃ o₄ o₅ o₆ : Option (LockKey × AccessMode)) :
     (lockSetExtendOpt (lockSetExtendOpt (lockSetExtendOpt (lockSetExtendOpt
       (lockSetExtendOpt (lockSetExtendOpt S o₁) o₂) o₃) o₄) o₅) o₆).size ≤ S.size + 6 := by
   refine Nat.le_trans (lockSetExtendOpt_size_le _ _) ?_
@@ -919,7 +919,7 @@ theorem size_le_6_over (S : LockSet) (o₁ o₂ o₃ o₄ o₅ o₆ : Option (Lo
 bound at the queue-structure-neighbour arity.  Derived from the six-extension
 form rather than re-run, so the two cannot disagree about what an extension
 costs. -/
-theorem size_le_7_over (S : LockSet) (o₁ o₂ o₃ o₄ o₅ o₆ o₇ : Option (LockId × AccessMode)) :
+theorem size_le_7_over (S : LockSet) (o₁ o₂ o₃ o₄ o₅ o₆ o₇ : Option (LockKey × AccessMode)) :
     (lockSetExtendOpt (lockSetExtendOpt (lockSetExtendOpt (lockSetExtendOpt
       (lockSetExtendOpt (lockSetExtendOpt (lockSetExtendOpt S o₁) o₂) o₃) o₄) o₅) o₆)
       o₇).size ≤ S.size + 7 := by
@@ -928,7 +928,7 @@ theorem size_le_7_over (S : LockSet) (o₁ o₂ o₃ o₄ o₅ o₆ o₇ : Optio
 
 /-- WS-OD (`v0.35.4`): eight extensions over a set. -/
 theorem size_le_8_over (S : LockSet)
-    (o₁ o₂ o₃ o₄ o₅ o₆ o₇ o₈ : Option (LockId × AccessMode)) :
+    (o₁ o₂ o₃ o₄ o₅ o₆ o₇ o₈ : Option (LockKey × AccessMode)) :
     (lockSetExtendOpt (lockSetExtendOpt (lockSetExtendOpt (lockSetExtendOpt
       (lockSetExtendOpt (lockSetExtendOpt (lockSetExtendOpt (lockSetExtendOpt S o₁) o₂) o₃)
       o₄) o₅) o₆) o₇) o₈).size ≤ S.size + 8 := by
@@ -939,7 +939,7 @@ theorem size_le_8_over (S : LockSet)
 bound once the re-donation's old head and the returned context's head sit above
 the owner merge. -/
 theorem size_le_9_over (S : LockSet)
-    (o₁ o₂ o₃ o₄ o₅ o₆ o₇ o₈ o₉ : Option (LockId × AccessMode)) :
+    (o₁ o₂ o₃ o₄ o₅ o₆ o₇ o₈ o₉ : Option (LockKey × AccessMode)) :
     (lockSetExtendOpt (lockSetExtendOpt (lockSetExtendOpt (lockSetExtendOpt
       (lockSetExtendOpt (lockSetExtendOpt (lockSetExtendOpt (lockSetExtendOpt
       (lockSetExtendOpt S o₁) o₂) o₃) o₄) o₅) o₆) o₇) o₈) o₉).size ≤ S.size + 9 := by
@@ -948,28 +948,28 @@ theorem size_le_9_over (S : LockSet)
 
 /-- **PR #894 review**: ten extensions over a set. -/
 theorem size_le_10_over (S : LockSet)
-    (o₁ o₂ o₃ o₄ o₅ o₆ o₇ o₈ o₉ o₁₀ : Option (LockId × AccessMode)) :
+    (o₁ o₂ o₃ o₄ o₅ o₆ o₇ o₈ o₉ o₁₀ : Option (LockKey × AccessMode)) :
     (lockSetExtendOpt (lockSetExtendOpt (lockSetExtendOpt (lockSetExtendOpt (lockSetExtendOpt (lockSetExtendOpt (lockSetExtendOpt (lockSetExtendOpt (lockSetExtendOpt (lockSetExtendOpt S o₁) o₂) o₃) o₄) o₅) o₆) o₇) o₈) o₉) o₁₀).size ≤ S.size + 10 := by
   refine Nat.le_trans (lockSetExtendOpt_size_le _ _) ?_
   exact Nat.add_le_add_right (size_le_9_over S o₁ o₂ o₃ o₄ o₅ o₆ o₇ o₈ o₉) 1
 
 /-- **PR #894 review**: eleven extensions over a set. -/
 theorem size_le_11_over (S : LockSet)
-    (o₁ o₂ o₃ o₄ o₅ o₆ o₇ o₈ o₉ o₁₀ o₁₁ : Option (LockId × AccessMode)) :
+    (o₁ o₂ o₃ o₄ o₅ o₆ o₇ o₈ o₉ o₁₀ o₁₁ : Option (LockKey × AccessMode)) :
     (lockSetExtendOpt (lockSetExtendOpt (lockSetExtendOpt (lockSetExtendOpt (lockSetExtendOpt (lockSetExtendOpt (lockSetExtendOpt (lockSetExtendOpt (lockSetExtendOpt (lockSetExtendOpt (lockSetExtendOpt S o₁) o₂) o₃) o₄) o₅) o₆) o₇) o₈) o₉) o₁₀) o₁₁).size ≤ S.size + 11 := by
   refine Nat.le_trans (lockSetExtendOpt_size_le _ _) ?_
   exact Nat.add_le_add_right (size_le_10_over S o₁ o₂ o₃ o₄ o₅ o₆ o₇ o₈ o₉ o₁₀) 1
 
 /-- **PR #894 review**: twelve extensions over a set. -/
 theorem size_le_12_over (S : LockSet)
-    (o₁ o₂ o₃ o₄ o₅ o₆ o₇ o₈ o₉ o₁₀ o₁₁ o₁₂ : Option (LockId × AccessMode)) :
+    (o₁ o₂ o₃ o₄ o₅ o₆ o₇ o₈ o₉ o₁₀ o₁₁ o₁₂ : Option (LockKey × AccessMode)) :
     (lockSetExtendOpt (lockSetExtendOpt (lockSetExtendOpt (lockSetExtendOpt (lockSetExtendOpt (lockSetExtendOpt (lockSetExtendOpt (lockSetExtendOpt (lockSetExtendOpt (lockSetExtendOpt (lockSetExtendOpt (lockSetExtendOpt S o₁) o₂) o₃) o₄) o₅) o₆) o₇) o₈) o₉) o₁₀) o₁₁) o₁₂).size ≤ S.size + 12 := by
   refine Nat.le_trans (lockSetExtendOpt_size_le _ _) ?_
   exact Nat.add_le_add_right (size_le_11_over S o₁ o₂ o₃ o₄ o₅ o₆ o₇ o₈ o₉ o₁₀ o₁₁) 1
 
 /-- **PR #894 review**: thirteen extensions over a set. -/
 theorem size_le_13_over (S : LockSet)
-    (o₁ o₂ o₃ o₄ o₅ o₆ o₇ o₈ o₉ o₁₀ o₁₁ o₁₂ o₁₃ : Option (LockId × AccessMode)) :
+    (o₁ o₂ o₃ o₄ o₅ o₆ o₇ o₈ o₉ o₁₀ o₁₁ o₁₂ o₁₃ : Option (LockKey × AccessMode)) :
     (lockSetExtendOpt (lockSetExtendOpt (lockSetExtendOpt (lockSetExtendOpt (lockSetExtendOpt (lockSetExtendOpt (lockSetExtendOpt (lockSetExtendOpt (lockSetExtendOpt (lockSetExtendOpt (lockSetExtendOpt (lockSetExtendOpt (lockSetExtendOpt S o₁) o₂) o₃) o₄) o₅) o₆) o₇) o₈) o₉) o₁₀) o₁₁) o₁₂) o₁₃).size ≤ S.size + 13 := by
   refine Nat.le_trans (lockSetExtendOpt_size_le _ _) ?_
   exact Nat.add_le_add_right (size_le_12_over S o₁ o₂ o₃ o₄ o₅ o₆ o₇ o₈ o₉ o₁₀ o₁₁ o₁₂) 1
@@ -978,7 +978,7 @@ theorem size_le_13_over (S : LockSet)
 `.replyRecv` bound reaches once the invoker's five pre-receive members sit above
 the owner merge. -/
 theorem size_le_14_over (S : LockSet)
-    (o₁ o₂ o₃ o₄ o₅ o₆ o₇ o₈ o₉ o₁₀ o₁₁ o₁₂ o₁₃ o₁₄ : Option (LockId × AccessMode)) :
+    (o₁ o₂ o₃ o₄ o₅ o₆ o₇ o₈ o₉ o₁₀ o₁₁ o₁₂ o₁₃ o₁₄ : Option (LockKey × AccessMode)) :
     (lockSetExtendOpt (lockSetExtendOpt (lockSetExtendOpt (lockSetExtendOpt (lockSetExtendOpt (lockSetExtendOpt (lockSetExtendOpt (lockSetExtendOpt (lockSetExtendOpt (lockSetExtendOpt (lockSetExtendOpt (lockSetExtendOpt (lockSetExtendOpt (lockSetExtendOpt S o₁) o₂) o₃) o₄) o₅) o₆) o₇) o₈) o₉) o₁₀) o₁₁) o₁₂) o₁₃) o₁₄).size ≤ S.size + 14 := by
   refine Nat.le_trans (lockSetExtendOpt_size_le _ _) ?_
   exact Nat.add_le_add_right (size_le_13_over S o₁ o₂ o₃ o₄ o₅ o₆ o₇ o₈ o₉ o₁₀ o₁₁ o₁₂ o₁₃) 1
@@ -987,7 +987,7 @@ theorem size_le_14_over (S : LockSet)
 `.replyRecv` bound reaches once the frame above the answered reply sits above the
 owner merge. -/
 theorem size_le_15_over (S : LockSet)
-    (o₁ o₂ o₃ o₄ o₅ o₆ o₇ o₈ o₉ o₁₀ o₁₁ o₁₂ o₁₃ o₁₄ o₁₅ : Option (LockId × AccessMode)) :
+    (o₁ o₂ o₃ o₄ o₅ o₆ o₇ o₈ o₉ o₁₀ o₁₁ o₁₂ o₁₃ o₁₄ o₁₅ : Option (LockKey × AccessMode)) :
     (lockSetExtendOpt (lockSetExtendOpt (lockSetExtendOpt (lockSetExtendOpt (lockSetExtendOpt (lockSetExtendOpt (lockSetExtendOpt (lockSetExtendOpt (lockSetExtendOpt (lockSetExtendOpt (lockSetExtendOpt (lockSetExtendOpt (lockSetExtendOpt (lockSetExtendOpt (lockSetExtendOpt S o₁) o₂) o₃) o₄) o₅) o₆) o₇) o₈) o₉) o₁₀) o₁₁) o₁₂) o₁₃) o₁₄) o₁₅).size ≤ S.size + 15 := by
   refine Nat.le_trans (lockSetExtendOpt_size_le _ _) ?_
   exact Nat.add_le_add_right (size_le_14_over S o₁ o₂ o₃ o₄ o₅ o₆ o₇ o₈ o₉ o₁₀ o₁₁ o₁₂ o₁₃ o₁₄) 1
@@ -996,7 +996,7 @@ theorem size_le_15_over (S : LockSet)
 `.replyRecv` bound reaches once the frame **below** the answered reply joins the
 frame above it. -/
 theorem size_le_16_over (S : LockSet)
-    (o₁ o₂ o₃ o₄ o₅ o₆ o₇ o₈ o₉ o₁₀ o₁₁ o₁₂ o₁₃ o₁₄ o₁₅ o₁₆ : Option (LockId × AccessMode)) :
+    (o₁ o₂ o₃ o₄ o₅ o₆ o₇ o₈ o₉ o₁₀ o₁₁ o₁₂ o₁₃ o₁₄ o₁₅ o₁₆ : Option (LockKey × AccessMode)) :
     (lockSetExtendOpt (lockSetExtendOpt (lockSetExtendOpt (lockSetExtendOpt (lockSetExtendOpt (lockSetExtendOpt (lockSetExtendOpt (lockSetExtendOpt (lockSetExtendOpt (lockSetExtendOpt (lockSetExtendOpt (lockSetExtendOpt (lockSetExtendOpt (lockSetExtendOpt (lockSetExtendOpt (lockSetExtendOpt S o₁) o₂) o₃) o₄) o₅) o₆) o₇) o₈) o₉) o₁₀) o₁₁) o₁₂) o₁₃) o₁₄) o₁₅) o₁₆).size ≤ S.size + 16 := by
   refine Nat.le_trans (lockSetExtendOpt_size_le _ _) ?_
   exact Nat.add_le_add_right (size_le_15_over S o₁ o₂ o₃ o₄ o₅ o₆ o₇ o₈ o₉ o₁₀ o₁₁ o₁₂ o₁₃ o₁₄ o₁₅) 1
@@ -1423,7 +1423,7 @@ theorem lockSet_cspaceDelete_size_le (a : ThreadId) (b c : ObjId)
   exact Nat.le_trans (size_le_1 _ _) (by size_bound)
 
 theorem lockSet_lifecycleRetype_size_le (a : ThreadId) (b c d : ObjId)
-    (t : Option LockId) :
+    (t : Option LockKey) :
     (lockSet_lifecycleRetype a b c d t).size ≤ maxLockSetSize := by
   unfold lockSet_lifecycleRetype maxLockSetSize
   exact Nat.le_trans (size_le_1 _ _) (by size_bound)
@@ -1459,7 +1459,7 @@ Quantified over the target member too.  Stating it at partial application would
 leave the optional defaulted to `none` and the *resolved* shape — the one the
 dispatch builds — silently unbounded: the same defect the `notificationSignal`
 conjunct carried before SM9.C. -/
-theorem lockSet_declassify_size_le (a : ThreadId) (b : ObjId) (t : Option LockId) :
+theorem lockSet_declassify_size_le (a : ThreadId) (b : ObjId) (t : Option LockKey) :
     (lockSet_declassify a b t).size ≤ maxLockSetSize := by
   unfold lockSet_declassify maxLockSetSize
   exact Nat.le_trans (size_le_1 _ _) (by size_bound)
@@ -1809,12 +1809,12 @@ theorem otherCores_length_eq : ∀ c : CoreId, (otherCores c).length = numCores 
 lock `l` in execution `e` — the contention `c` faces for `l`.  This makes
 `WCRT` genuinely depend on the execution's contention and on the requesting
 core. -/
-def contendersAhead (e : KernelExecution) (c : CoreId) (l : LockId) : Nat :=
+def contendersAhead (e : KernelExecution) (c : CoreId) (l : LockKey) : Nat :=
   (otherCores c).countP (fun c' => decide (heldBy e c' l))
 
 /-- WS-SM SM3.D.6: at most `numCores − 1` cores contend for any lock (only
 the other cores can hold it).  `countP ≤ length = numCores − 1`. -/
-theorem contendersAhead_le (e : KernelExecution) (c : CoreId) (l : LockId) :
+theorem contendersAhead_le (e : KernelExecution) (c : CoreId) (l : LockKey) :
     contendersAhead e c l ≤ numCores - 1 := by
   unfold contendersAhead
   rw [← otherCores_length_eq c]
@@ -1853,7 +1853,7 @@ def WCRT (e : KernelExecution) (c : CoreId) (op : KernelOperation) (tCs : Nat) :
   (op.lockSet.lockAcquireSequence.map (fun p => contendersAhead e c p.fst * tCs)).sum
 
 /-- WS-SM SM3.D.6 (plan §5.4, **full** `boundedWait_under_2pl`): under 2PL +
-`LockId`-order acquisition, an execution is deadlock-free AND every kernel
+`LockKey`-order acquisition, an execution is deadlock-free AND every kernel
 operation's worst-case response time is bounded by
 `maxLockSetSize · (numCores − 1) · T_cs`.
 
@@ -1868,7 +1868,7 @@ Both conjuncts are substantive and use distinct hypotheses:
 theorem boundedWait_under_2pl (e : KernelExecution) (c : CoreId)
     (op : KernelOperation) (tCs : Nat)
     (h2pl : executionFollows2PL e)
-    (hOrder : executionAcquiresInLockIdOrder e) :
+    (hOrder : executionAcquiresInLockKeyOrder e) :
     noDeadlock e ∧ WCRT e c op tCs ≤ maxLockSetSize * ((numCores - 1) * tCs) := by
   refine ⟨deadlockFreedom_under_2pl_and_ordering e h2pl hOrder, ?_⟩
   unfold WCRT
@@ -1896,7 +1896,7 @@ theorem WCRT_le_totalWaitCost (e : KernelExecution) (c : CoreId)
 -- §7 — Grounding: the hypotheses are CONSEQUENCES of the SM3.B/C discipline
 -- ============================================================================
 --
--- §2's hypotheses (`executionFollows2PL`, `executionAcquiresInLockIdOrder`)
+-- §2's hypotheses (`executionFollows2PL`, `executionAcquiresInLockKeyOrder`)
 -- are not arbitrary assumptions.  This section discharges them from the
 -- concrete SM3.B `lockAcquireSequence` canonical sort, realising the plan
 -- §3.7 step "By 2PL, H_c is the prefix of c's lockAcquireSequence(S_c)
@@ -1906,7 +1906,7 @@ theorem WCRT_le_totalWaitCost (e : KernelExecution) (c : CoreId)
 -- forces both hypotheses.
 
 /-- WS-SM SM3.D §7 helper: the projected acquisition order
-(`acquireOrder S`, SM3.C.5) has no duplicate `LockId`s — it is a
+(`acquireOrder S`, SM3.C.5) has no duplicate `LockKey`s — it is a
 permutation of `S.pairs.map (·.fst)`, which `S.hUniqueKeys` proves
 `Nodup`. -/
 theorem acquireOrder_nodup (S : LockSet) : (acquireOrder S).Nodup := by
@@ -1915,14 +1915,14 @@ theorem acquireOrder_nodup (S : LockSet) : (acquireOrder S).Nodup := by
 
 /-- WS-SM SM3.D §7 (plan §3.7 "H_c is the prefix"): a core is in the
 **2PL growing-phase prefix** of `S` when its held set is exactly a prefix
-of `S`'s canonical (`LockId`-ascending) acquisition order and it is
+of `S`'s canonical (`LockKey`-ascending) acquisition order and it is
 blocked on the next lock in that order.
 
 `acquireOrder S = pre ++ w :: suf` splits the canonical order into the
 acquired prefix `pre = held`, the next (blocked-on) lock `w`, and the
 not-yet-acquired remainder `suf`. -/
 def CorePrefixOf (e : KernelExecution) (c : CoreId) (S : LockSet) : Prop :=
-  ∃ (pre suf : List LockId) (w : LockId),
+  ∃ (pre suf : List LockKey) (w : LockKey),
     acquireOrder S = pre ++ w :: suf ∧
     e.held c = pre ∧
     e.blocked c = some w
@@ -1963,13 +1963,13 @@ theorem coreAcquiresInOrder_of_prefix (e : KernelExecution) (c : CoreId)
 satisfies both deadlock-freedom hypotheses.
 
 This closes the loop: the abstract `executionFollows2PL` /
-`executionAcquiresInLockIdOrder` hypotheses of SM3.D.4/D.5 are genuine
+`executionAcquiresInLockKeyOrder` hypotheses of SM3.D.4/D.5 are genuine
 consequences of `withLockSet`'s 2PL discipline over the SM3.B canonical
 sort — not assumptions bolted on for the proof.  A non-blocked core
 trivially satisfies both per-core predicates (the `none` branch). -/
 theorem execution_satisfies_hypotheses_of_all_prefix (e : KernelExecution)
     (h : ∀ c : CoreId, (e.blocked c).isSome = true → ∃ S, CorePrefixOf e c S) :
-    executionFollows2PL e ∧ executionAcquiresInLockIdOrder e := by
+    executionFollows2PL e ∧ executionAcquiresInLockKeyOrder e := by
   refine ⟨fun c => ?_, fun c => ?_⟩
   · -- 2PL: blocked ⟹ prefix ⟹ coreFollows2PL; not blocked ⟹ vacuous.
     cases hb : e.blocked c with
@@ -2001,16 +2001,16 @@ theorem execution_satisfies_hypotheses_of_all_prefix (e : KernelExecution)
 -- kernel state; `blk` is supplied externally as the next-to-acquire lock.)
 
 /-- WS-SM SM3.D §7b: the `KernelExecution` of a single core `c` that holds
-exactly the lock set `S` (its `held` is `S`'s canonical `LockId` sequence)
+exactly the lock set `S` (its `held` is `S`'s canonical `LockKey` sequence)
 and is blocked on `blk`; all other cores are idle. -/
-def executionOfHeld (c : CoreId) (S : LockSet) (blk : Option LockId) : KernelExecution :=
+def executionOfHeld (c : CoreId) (S : LockSet) (blk : Option LockKey) : KernelExecution :=
   { held := fun c' => if c' = c then acquireOrder S else [],
     blocked := fun c' => if c' = c then blk else none }
 
 /-- WS-SM SM3.D §7b: in `executionOfHeld c S blk`, core `c` (abstractly)
-holds exactly the `LockId`s of `S`. -/
-theorem executionOfHeld_heldBy (c : CoreId) (S : LockSet) (blk : Option LockId)
-    (l : LockId) :
+holds exactly the `LockKey`s of `S`. -/
+theorem executionOfHeld_heldBy (c : CoreId) (S : LockSet) (blk : Option LockKey)
+    (l : LockKey) :
     heldBy (executionOfHeld c S blk) c l ↔ l ∈ acquireOrder S := by
   unfold heldBy executionOfHeld
   simp
@@ -2018,8 +2018,8 @@ theorem executionOfHeld_heldBy (c : CoreId) (S : LockSet) (blk : Option LockId)
 /-- WS-SM SM3.D §7b (the model↔kernel bridge): if core `c` genuinely holds
 the lock set `S` on the concrete state `s` (SM3.C `lockSetHeld`), then for
 every declared `(l, m) ∈ S`:
-* the **concrete** lock is held — `lockHeld c l m s` (SM3.C, reads the actual
-  per-object `RwLockState`), and
+* the **concrete** word is held — `keyHeld c l m s` (SM3.C / WS-LS LS1.2,
+  reads the actual per-object or per-core `RwLockState`), and
 * the **abstract** model agrees — `heldBy (executionOfHeld c S blk) c l`.
 
 This is the missing connection between the abstract `KernelExecution` the
@@ -2027,9 +2027,9 @@ deadlock theorems reason about and the concrete kernel lock state: a
 deadlock-relevant "held" edge in the abstract model is realised by a genuine
 `RwLockState` holding in the kernel. -/
 theorem lockSetHeld_realizes_heldBy (c : CoreId) (S : LockSet)
-    (s : SeLe4n.Model.SystemState) (blk : Option LockId)
+    (s : SeLe4n.Model.SystemState) (blk : Option LockKey)
     (hHeld : lockSetHeld c S s) :
-    ∀ p ∈ S.pairs, lockHeld c p.fst p.snd s ∧ heldBy (executionOfHeld c S blk) c p.fst := by
+    ∀ p ∈ S.pairs, keyHeld c p.fst p.snd s ∧ heldBy (executionOfHeld c S blk) c p.fst := by
   intro p hp
   refine ⟨hHeld p hp, ?_⟩
   rw [executionOfHeld_heldBy]
@@ -2049,13 +2049,13 @@ deadlock-free interleaving — `c₁` will acquire `hi`, finish, and release,
 after which `c₂` proceeds.  The plan's SM3.D.7 example existentially
 witnesses such a scenario satisfying the 2PL + ordering hypotheses (see
 `DeadlockFreedomSuite`). -/
-def twoCorePathScenario (e : KernelExecution) (c₁ c₂ : CoreId) (lo hi : LockId) : Prop :=
+def twoCorePathScenario (e : KernelExecution) (c₁ c₂ : CoreId) (lo hi : LockKey) : Prop :=
   c₁ ≠ c₂ ∧ lo < hi ∧
   e.held c₁ = [lo] ∧ e.blocked c₁ = some hi ∧
   e.held c₂ = [] ∧ e.blocked c₂ = some lo
 
 /-- WS-SM SM3.D.7: `twoCorePathScenario` is decidable. -/
-instance (e : KernelExecution) (c₁ c₂ : CoreId) (lo hi : LockId) :
+instance (e : KernelExecution) (c₁ c₂ : CoreId) (lo hi : LockKey) :
     Decidable (twoCorePathScenario e c₁ c₂ lo hi) := by
   unfold twoCorePathScenario; exact inferInstance
 

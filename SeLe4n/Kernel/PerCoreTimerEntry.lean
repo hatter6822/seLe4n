@@ -76,7 +76,7 @@ decision #7's `smp_enabled: true`.
 
 ## WS-RR RR7.39 — the declared footprint, acquired
 
-The `SchedLockId`-level bracket this paragraph used to owe as "the SM3.C
+The `LockKey`-level bracket this paragraph used to owe as "the SM3.C
 combinator's cross-domain extension (tracked SM5.I closure target)" is
 `SeLe4n/Kernel/SchedLockBracket.lean`, and this entry runs it.  The step executes
 inside `timerTickOnCoreCompleteLockSet` at the core the argument decodes to —

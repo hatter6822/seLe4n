@@ -2841,12 +2841,66 @@ theorem cancelLockOnObject_confinedToCore (s : SystemState) (core : CoreId)
          | exact updateObjectLockAt_machine_eq s l _)
 
 
+/-- **WS-LS LS1.2**: at any key.  The table key and the two scheduler keys
+write a lock word the projection does not read; an object key is the
+per-object lemma. -/
+theorem acquireLock_preserves_projection (ctx : LabelingContext) (observer : IfObserver)
+    (s : SystemState) (core : CoreId) (k : SeLe4n.Kernel.Concurrency.LockKey)
+    (mode : SeLe4n.Kernel.Concurrency.AccessMode) (hInv : s.objects.invExt) :
+    projectState ctx observer (SeLe4n.Kernel.Concurrency.acquireLock s core k mode)
+      = projectState ctx observer s := by
+  cases k with
+  | object l => exact acquireLockOnObject_preserves_projection ctx observer s core l mode hInv
+  | _ => rfl
+
+theorem releaseLock_preserves_projection (ctx : LabelingContext) (observer : IfObserver)
+    (s : SystemState) (core : CoreId) (k : SeLe4n.Kernel.Concurrency.LockKey)
+    (mode : SeLe4n.Kernel.Concurrency.AccessMode) (hInv : s.objects.invExt) :
+    projectState ctx observer (SeLe4n.Kernel.Concurrency.releaseLock s core k mode)
+      = projectState ctx observer s := by
+  cases k with
+  | object l => exact releaseLockOnObject_preserves_projection ctx observer s core l mode hInv
+  | _ => rfl
+
+theorem cancelLock_preserves_projection (ctx : LabelingContext) (observer : IfObserver)
+    (s : SystemState) (core : CoreId) (k : SeLe4n.Kernel.Concurrency.LockKey)
+    (mode : SeLe4n.Kernel.Concurrency.AccessMode) (hInv : s.objects.invExt) :
+    projectState ctx observer (SeLe4n.Kernel.Concurrency.cancelLock s core k mode)
+      = projectState ctx observer s := by
+  cases k with
+  | object l => exact cancelLockOnObject_preserves_projection ctx observer s core l mode hInv
+  | _ => rfl
+
+theorem acquireLock_confinedToCore (s : SystemState) (core : CoreId)
+    (k : SeLe4n.Kernel.Concurrency.LockKey) (mode : SeLe4n.Kernel.Concurrency.AccessMode)
+    (c₀ : CoreId) :
+    observableSlotsConfinedToCore s (SeLe4n.Kernel.Concurrency.acquireLock s core k mode) c₀ := by
+  cases k with
+  | object l => exact acquireLockOnObject_confinedToCore s core l mode c₀
+  | _ => exact observableSlotsConfinedToCore_of_scheduler_machine_eq c₀ rfl rfl
+
+theorem releaseLock_confinedToCore (s : SystemState) (core : CoreId)
+    (k : SeLe4n.Kernel.Concurrency.LockKey) (mode : SeLe4n.Kernel.Concurrency.AccessMode)
+    (c₀ : CoreId) :
+    observableSlotsConfinedToCore s (SeLe4n.Kernel.Concurrency.releaseLock s core k mode) c₀ := by
+  cases k with
+  | object l => exact releaseLockOnObject_confinedToCore s core l mode c₀
+  | _ => exact observableSlotsConfinedToCore_of_scheduler_machine_eq c₀ rfl rfl
+
+theorem cancelLock_confinedToCore (s : SystemState) (core : CoreId)
+    (k : SeLe4n.Kernel.Concurrency.LockKey) (mode : SeLe4n.Kernel.Concurrency.AccessMode)
+    (c₀ : CoreId) :
+    observableSlotsConfinedToCore s (SeLe4n.Kernel.Concurrency.cancelLock s core k mode) c₀ := by
+  cases k with
+  | object l => exact cancelLockOnObject_confinedToCore s core l mode c₀
+  | _ => exact observableSlotsConfinedToCore_of_scheduler_machine_eq c₀ rfl rfl
+
 /-! ### The 2PL folds and the bracket -/
 
 /-- SM8.B.4: the growing phase of the 2PL bracket is invisible. -/
 theorem acquireAll_preserves_projection (ctx : LabelingContext) (observer : IfObserver)
     (core : CoreId)
-    (pairs : List (SeLe4n.Kernel.Concurrency.LockId × SeLe4n.Kernel.Concurrency.AccessMode))
+    (pairs : List (SeLe4n.Kernel.Concurrency.LockKey × SeLe4n.Kernel.Concurrency.AccessMode))
     (s : SystemState) (hInv : s.objects.invExt) :
     projectState ctx observer (SeLe4n.Kernel.Concurrency.acquireAll core pairs s)
       = projectState ctx observer s := by
@@ -2855,13 +2909,13 @@ theorem acquireAll_preserves_projection (ctx : LabelingContext) (observer : IfOb
   | cons p rest ih =>
     obtain ⟨l, m⟩ := p
     rw [SeLe4n.Kernel.Concurrency.acquireAll_cons,
-        ih _ (SeLe4n.Kernel.Concurrency.acquireLockOnObject_preserves_invExt s core l m hInv)]
-    exact acquireLockOnObject_preserves_projection ctx observer s core l m hInv
+        ih _ (SeLe4n.Kernel.Concurrency.acquireLock_preserves_invExt s core l m hInv)]
+    exact acquireLock_preserves_projection ctx observer s core l m hInv
 
 /-- SM8.B.4: the shrinking phase of the 2PL bracket is invisible. -/
 theorem releaseAll_preserves_projection (ctx : LabelingContext) (observer : IfObserver)
     (core : CoreId)
-    (pairs : List (SeLe4n.Kernel.Concurrency.LockId × SeLe4n.Kernel.Concurrency.AccessMode))
+    (pairs : List (SeLe4n.Kernel.Concurrency.LockKey × SeLe4n.Kernel.Concurrency.AccessMode))
     (s : SystemState) (hInv : s.objects.invExt) :
     projectState ctx observer (SeLe4n.Kernel.Concurrency.releaseAll core pairs s)
       = projectState ctx observer s := by
@@ -2870,13 +2924,13 @@ theorem releaseAll_preserves_projection (ctx : LabelingContext) (observer : IfOb
   | cons p rest ih =>
     obtain ⟨l, m⟩ := p
     rw [SeLe4n.Kernel.Concurrency.releaseAll_cons,
-        ih _ (SeLe4n.Kernel.Concurrency.releaseLockOnObject_preserves_invExt s core l m hInv)]
-    exact releaseLockOnObject_preserves_projection ctx observer s core l m hInv
+        ih _ (SeLe4n.Kernel.Concurrency.releaseLock_preserves_invExt s core l m hInv)]
+    exact releaseLock_preserves_projection ctx observer s core l m hInv
 
 /-- **WS-LC LC4.2**: and its withdrawal half. -/
 theorem cancelAll_preserves_projection (ctx : LabelingContext) (observer : IfObserver)
     (core : CoreId)
-    (pairs : List (SeLe4n.Kernel.Concurrency.LockId × SeLe4n.Kernel.Concurrency.AccessMode))
+    (pairs : List (SeLe4n.Kernel.Concurrency.LockKey × SeLe4n.Kernel.Concurrency.AccessMode))
     (s : SystemState) (hInv : s.objects.invExt) :
     projectState ctx observer (SeLe4n.Kernel.Concurrency.cancelAll core pairs s)
       = projectState ctx observer s := by
@@ -2885,8 +2939,8 @@ theorem cancelAll_preserves_projection (ctx : LabelingContext) (observer : IfObs
   | cons p rest ih =>
     obtain ⟨l, m⟩ := p
     rw [SeLe4n.Kernel.Concurrency.cancelAll_cons,
-        ih _ (SeLe4n.Kernel.Concurrency.cancelLockOnObject_preserves_invExt s core l m hInv)]
-    exact cancelLockOnObject_preserves_projection ctx observer s core l m hInv
+        ih _ (SeLe4n.Kernel.Concurrency.cancelLock_preserves_invExt s core l m hInv)]
+    exact cancelLock_preserves_projection ctx observer s core l m hInv
 
 /-- **WS-LC LC4.2**: the shrinking phase as a whole is invisible.  A
 withdrawal is as unobservable as a release — both write only the `lock`
@@ -2894,7 +2948,7 @@ field the projection erases — so adding one to the bracket costs the
 non-interference results nothing. -/
 theorem unwindAll_preserves_projection (ctx : LabelingContext) (observer : IfObserver)
     (core : CoreId)
-    (pairs : List (SeLe4n.Kernel.Concurrency.LockId × SeLe4n.Kernel.Concurrency.AccessMode))
+    (pairs : List (SeLe4n.Kernel.Concurrency.LockKey × SeLe4n.Kernel.Concurrency.AccessMode))
     (s : SystemState) (hInv : s.objects.invExt) :
     projectState ctx observer (SeLe4n.Kernel.Concurrency.unwindAll core pairs s)
       = projectState ctx observer s := by
@@ -2904,7 +2958,7 @@ theorem unwindAll_preserves_projection (ctx : LabelingContext) (observer : IfObs
   exact cancelAll_preserves_projection ctx observer core pairs s hInv
 
 theorem acquireAll_confinedToCore (core : CoreId)
-    (pairs : List (SeLe4n.Kernel.Concurrency.LockId × SeLe4n.Kernel.Concurrency.AccessMode))
+    (pairs : List (SeLe4n.Kernel.Concurrency.LockKey × SeLe4n.Kernel.Concurrency.AccessMode))
     (s : SystemState) (c₀ : CoreId) :
     observableSlotsConfinedToCore s (SeLe4n.Kernel.Concurrency.acquireAll core pairs s) c₀ := by
   induction pairs generalizing s with
@@ -2913,10 +2967,10 @@ theorem acquireAll_confinedToCore (core : CoreId)
     obtain ⟨l, m⟩ := p
     rw [SeLe4n.Kernel.Concurrency.acquireAll_cons]
     exact observableSlotsConfinedToCore_trans
-      (acquireLockOnObject_confinedToCore s core l m c₀) (ih _)
+      (acquireLock_confinedToCore s core l m c₀) (ih _)
 
 theorem releaseAll_confinedToCore (core : CoreId)
-    (pairs : List (SeLe4n.Kernel.Concurrency.LockId × SeLe4n.Kernel.Concurrency.AccessMode))
+    (pairs : List (SeLe4n.Kernel.Concurrency.LockKey × SeLe4n.Kernel.Concurrency.AccessMode))
     (s : SystemState) (c₀ : CoreId) :
     observableSlotsConfinedToCore s (SeLe4n.Kernel.Concurrency.releaseAll core pairs s) c₀ := by
   induction pairs generalizing s with
@@ -2925,11 +2979,11 @@ theorem releaseAll_confinedToCore (core : CoreId)
     obtain ⟨l, m⟩ := p
     rw [SeLe4n.Kernel.Concurrency.releaseAll_cons]
     exact observableSlotsConfinedToCore_trans
-      (releaseLockOnObject_confinedToCore s core l m c₀) (ih _)
+      (releaseLock_confinedToCore s core l m c₀) (ih _)
 
 /-- **WS-LC LC4.2**: and its withdrawal half. -/
 theorem cancelAll_confinedToCore (core : CoreId)
-    (pairs : List (SeLe4n.Kernel.Concurrency.LockId × SeLe4n.Kernel.Concurrency.AccessMode))
+    (pairs : List (SeLe4n.Kernel.Concurrency.LockKey × SeLe4n.Kernel.Concurrency.AccessMode))
     (s : SystemState) (c₀ : CoreId) :
     observableSlotsConfinedToCore s (SeLe4n.Kernel.Concurrency.cancelAll core pairs s) c₀ := by
   induction pairs generalizing s with
@@ -2938,11 +2992,11 @@ theorem cancelAll_confinedToCore (core : CoreId)
     obtain ⟨l, m⟩ := p
     rw [SeLe4n.Kernel.Concurrency.cancelAll_cons]
     exact observableSlotsConfinedToCore_trans
-      (cancelLockOnObject_confinedToCore s core l m c₀) (ih _)
+      (cancelLock_confinedToCore s core l m c₀) (ih _)
 
 /-- **WS-LC LC4.2**: the shrinking phase as a whole. -/
 theorem unwindAll_confinedToCore (core : CoreId)
-    (pairs : List (SeLe4n.Kernel.Concurrency.LockId × SeLe4n.Kernel.Concurrency.AccessMode))
+    (pairs : List (SeLe4n.Kernel.Concurrency.LockKey × SeLe4n.Kernel.Concurrency.AccessMode))
     (s : SystemState) (c₀ : CoreId) :
     observableSlotsConfinedToCore s (SeLe4n.Kernel.Concurrency.unwindAll core pairs s) c₀ :=
   observableSlotsConfinedToCore_trans (cancelAll_confinedToCore core pairs s c₀)

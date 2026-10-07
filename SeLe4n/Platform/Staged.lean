@@ -273,8 +273,8 @@ import SeLe4n.Platform.RPi5.RuntimeContractPerCore
 -- WS-SM SM5 §3.1, §5).  The selection function
 -- `chooseThreadOnCore` itself is production-reached (the legacy
 -- `chooseThread` delegates to it, SM5.A.5); this module collects the
--- forward-looking SM5.A theorems: the `RunQueueLockId` + the cross-domain
--- `SchedLockId` (object-lock ⊕ run-queue, plan §4.4 order) + the complete
+-- forward-looking SM5.A theorems: the `LockKey.runQueue` arm + the cross-domain
+-- `LockKey` (object-lock ⊕ run-queue, plan §4.4 order) + the complete
 -- two-domain `chooseThreadOnCoreLockSet` (SM5.A.2), the per-core-independence frame +
 -- corollaries (SM5.A.3), idle-fallback completeness
 -- (`chooseThreadOnCore_ok_of_runnableTCBs` / `_none_no_eligible` /
@@ -320,7 +320,7 @@ import SeLe4n.Kernel.Scheduler.Operations.PerCoreWake
 -- theorem fails the inventory's elaboration here.
 import SeLe4n.Kernel.Scheduler.Operations.CrossCoreWakeInventory
 -- WS-SM SM5.D: the per-core timer-tick theorem surface — the SM5.D.3 cross-domain
--- lock-set (`timerTickOnCoreLockSet` over the `SchedLockId` extended with the
+-- lock-set (`timerTickOnCoreLockSet` over the `LockKey` extended with the
 -- replenish-queue domain) + WCRT bound, SM5.D.6 domain rotation, SM5.D.4 CBS
 -- replenishment + cross-core wake (`cbsReplenish_can_wake_remote_core`), SM5.D.5
 -- budget tick + the IPC-timeout objects-`invExt` preservation chain, and the

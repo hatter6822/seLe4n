@@ -29,7 +29,7 @@ expansion:
 
 * `.model` — `KernelExecution` snapshot + `blockedAt` / `heldBy` (SM3.D.1).
 * `.hypotheses` — 2PL + ordering hypotheses + `ladder_of_2pl_and_order`.
-* `.order` — `lockOrder_strict` (+ class form) and the `LockId` strict-order
+* `.order` — `lockOrder_strict` (+ class form) and the `LockKey` strict-order
   helpers (SM3.D.2/D.3).
 * `.deadlock` — `noDeadlock` + decidability + Theorem 2.1.9 (SM3.D.1/D.4).
 * `.waitGraph` — wait-graph acyclicity (SM3.D.5).
@@ -65,7 +65,7 @@ inductive DeadlockCategory where
   | model
   /-- 2PL + ordering hypotheses + ladder invariant (SM3.D.4 setup). -/
   | hypotheses
-  /-- `lockOrder_strict` + `LockId` strict-order helpers (SM3.D.2/D.3). -/
+  /-- `lockOrder_strict` + `LockKey` strict-order helpers (SM3.D.2/D.3). -/
   | order
   /-- `noDeadlock` + Theorem 2.1.9 (SM3.D.1/D.4). -/
   | deadlock
@@ -136,25 +136,25 @@ def deadlockTheorems : List DeadlockTheorem :=
     -- §2 hypotheses (5)
     dlt! "coreFollows2PL — per-core 2PL growing-phase property"
       coreFollows2PL .hypotheses,
-    dlt! "coreAcquiresInOrder — per-core LockId-ascending property"
+    dlt! "coreAcquiresInOrder — per-core LockKey-ascending property"
       coreAcquiresInOrder .hypotheses,
     dlt! "executionFollows2PL — execution-level 2PL hypothesis (SM3.D.4)"
       executionFollows2PL .hypotheses,
-    dlt! "executionAcquiresInLockIdOrder — execution-level ordering hypothesis"
-      executionAcquiresInLockIdOrder .hypotheses,
+    dlt! "executionAcquiresInLockKeyOrder — execution-level ordering hypothesis"
+      executionAcquiresInLockKeyOrder .hypotheses,
     dlt! "ladder_of_2pl_and_order — the ladder invariant (held < wanted)"
       ladder_of_2pl_and_order .hypotheses,
     -- §3 order (5)
-    dlt! "lockOrder_strict — SM3.D.3 LockId strict order irreflexive + transitive"
+    dlt! "lockOrder_strict — SM3.D.3 LockKey strict order irreflexive + transitive"
       lockOrder_strict .order,
     dlt! "lockOrder_strict_classes — SM3.D.3 in the plan's Irreflexive ∧ Transitive form"
       lockOrder_strict_classes .order,
-    dlt! "LockId.lt_irrefl — strict order irreflexive (SM3.D.3 half)"
-      LockId.lt_irrefl .order,
-    dlt! "LockId.lt_trans — strict order transitive (SM3.D.3 half)"
-      LockId.lt_trans .order,
-    dlt! "LockId.lt_asymm — strict order asymmetric (cycle closer)"
-      LockId.lt_asymm .order,
+    dlt! "LockKey.lt_irrefl — strict order irreflexive (SM3.D.3 half)"
+      LockKey.lt_irrefl .order,
+    dlt! "LockKey.lt_trans — strict order transitive (SM3.D.3 half)"
+      LockKey.lt_trans .order,
+    dlt! "LockKey.lt_asymm — strict order asymmetric (cycle closer)"
+      LockKey.lt_asymm .order,
     -- §4 deadlock (6)
     dlt! "noDeadlock — SM3.D.1 two-core deadlock-freedom predicate"
       noDeadlock .deadlock,
@@ -249,7 +249,7 @@ def deadlockTheorems : List DeadlockTheorem :=
     dlt! "boundedWait_under_2pl — SM3.D.6 noDeadlock ∧ WCRT ≤ maxLockSetSize*(numCores-1)*T_cs"
       boundedWait_under_2pl .boundedWait,
     -- §7/§7b/§7c grounding (9)
-    dlt! "acquireOrder_nodup — projected acquire order has distinct LockIds"
+    dlt! "acquireOrder_nodup — projected acquire order has distinct LockKeys"
       acquireOrder_nodup .grounding,
     dlt! "CorePrefixOf — a core in the 2PL growing-phase prefix of S"
       CorePrefixOf .grounding,

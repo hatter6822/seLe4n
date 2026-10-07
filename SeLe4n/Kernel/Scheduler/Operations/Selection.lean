@@ -1663,7 +1663,7 @@ resolved — `descheduleAtPlacement`'s body, split out so a transition that must
 declare its footprint *before* it runs can resolve the placement on the
 pre-state and remove at it later, through the one primitive the state-resolved
 form is defined by.  `suspendThreadOnCore` is that transition: its scheduler
-footprint (`suspendThreadOnCoreSchedLockSet`) is declared over `placedCoreOf?`
+footprint (`suspendThreadOnCoreLockSet`) is declared over `placedCoreOf?`
 of the syscall's pre-state, and nothing between the resolution and this removal
 moves a thread between scheduler slots — the IPC teardown and both donation
 arms write no run queue and no current slot, and the priority-inheritance

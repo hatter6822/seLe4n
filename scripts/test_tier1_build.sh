@@ -128,7 +128,7 @@ run_check "BUILD" lake build SeLe4n.Testing.LockFootprintBoundCensus
 # `_subset` / `mem_..._iff`: they are stated once of `schedFootprintOfCores` and
 # inherited BECAUSE each footprint is that function applied to two core lists,
 # so a footprint written any other way loses all five silently -- and
-# `_keys_nodup` is `SchedLockSet.ofList?`'s own obligation, so the constructor
+# `_keys_nodup` is `LockSet.ofList?`'s own obligation, so the constructor
 # then refuses and the arm answers `none`, which is an undeclared arm rather
 # than a failure.  And a footprint the syscall resolver names nowhere is one
 # nobody acquires: Cut 8a-ii measured thirty-three of the family's forty-seven

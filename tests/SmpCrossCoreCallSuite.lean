@@ -1341,7 +1341,7 @@ private def runDeclaredFootprintBracketChecks : IO Unit := do
     (match bracketDecl bracketState with
      | some fp =>
        fp.pairs.all (fun p =>
-         decide (¬ Concurrency.lockHeld bootCoreId p.1 p.2 (bracketRun bracketState).2))
+         decide (¬ Concurrency.keyHeld bootCoreId p.1 p.2 (bracketRun bracketState).2))
      | none => false)
   -- The fallback: an UNDECLARED syscall runs bit-identically to the unbracketed
   -- step, which is what makes landing the bracket safe ahead of the remaining
@@ -1362,17 +1362,17 @@ entry.**
 `bracketDecl` is the object domain's answer at these words; this is the
 scheduler domain's, resolved from the *same* `abiEntryPlan` and the same
 `abiEntryLockOperands`.  That sharing is what
-`declaredSchedLockSetForAbiEntry_shares_decode` states and what this group
+`declaredSchedulerLockSetForAbiEntry_shares_decode` states and what this group
 measures on a state: the syscall id, the caller and the operands the two
 footprints are functions of are one decode, so neither domain can bracket one
 syscall's locks around another's transition. -/
-private def bracketSchedDecl (st : SystemState) : Option SchedLockSet :=
-  declaredSchedLockSetForAbiEntry harnessLabelingContext bootCoreId
+private def bracketSchedDecl (st : SystemState) : Option LockSet :=
+  declaredSchedulerLockSetForAbiEntry harnessLabelingContext bootCoreId
     (syscallId := 20) (x0 := 1) (x1 := 0) (x2 := 0) (x3 := 0) (x4 := 0) (x5 := 0) st
 
 /-- The same entry's scheduler-domain footprint at an **undeclared** arm. -/
-private def undeclaredSchedDecl (st : SystemState) : Option SchedLockSet :=
-  declaredSchedLockSetForAbiEntry harnessLabelingContext bootCoreId
+private def undeclaredSchedDecl (st : SystemState) : Option LockSet :=
+  declaredSchedulerLockSetForAbiEntry harnessLabelingContext bootCoreId
     (syscallId := 4) (x0 := 1) (x1 := 0) (x2 := 0) (x3 := 0) (x4 := 0) (x5 := 0) st
 
 /-- The same state with the victim **active**, so the suspend arm's footprint is
@@ -1440,13 +1440,13 @@ private def runAbiSchedFootprintChecks : IO Unit := do
   assertBool "an INACTIVE victim declares the object-store write lock alone"
     (match bracketSchedDecl bracketState with
      | some fp =>
-         decide (fp.pairs = [(SchedLockId.object schedObjStoreLockId,
+         decide (fp.pairs = [(LockKey.objStore,
                               Concurrency.AccessMode.write)])
      | none => false)
   assertBool "...and an ACTIVE one additionally declares the executing core's run queue"
     (match bracketSchedDecl bracketActiveVictimState with
      | some fp =>
-         decide ((SchedLockId.runQueue ⟨bootCoreId⟩, Concurrency.AccessMode.write) ∈ fp.pairs)
+         decide ((LockKey.runQueue bootCoreId, Concurrency.AccessMode.write) ∈ fp.pairs)
      | none => false)
   -- NEGATIVE: an undeclared arm declares nothing in the scheduler domain either,
   -- so the seam keeps the coarse serialisation rather than acquiring a footprint
@@ -1463,15 +1463,15 @@ private def runAbiSchedFootprintChecks : IO Unit := do
 
 `bracketDecl` is the object domain's answer at these words and `bracketSchedDecl`
 the scheduler domain's; this is the one the bracket takes.  The two are not two
-lock *words* — `schedAcquireLock`'s `.object` arm calls SM3.C's own
+lock *words* — `acquireLock`'s `.object` arm calls SM3.C's own
 `acquireLockOnObject` — so the seam acquires one set rather than nesting two
 brackets that would take the object-store table lock twice. -/
-private def bracketUnifiedDecl (st : SystemState) : Option SchedLockSet :=
+private def bracketUnifiedDecl (st : SystemState) : Option LockSet :=
   declaredUnifiedLockSetForAbiEntry harnessLabelingContext bootCoreId
     (syscallId := 20) (x0 := 1) (x1 := 0) (x2 := 0) (x3 := 0) (x4 := 0) (x5 := 0) st
 
 /-- The same entry at an **undeclared** arm. -/
-private def undeclaredUnifiedDecl (st : SystemState) : Option SchedLockSet :=
+private def undeclaredUnifiedDecl (st : SystemState) : Option LockSet :=
   declaredUnifiedLockSetForAbiEntry harnessLabelingContext bootCoreId
     (syscallId := 4) (x0 := 1) (x1 := 0) (x2 := 0) (x3 := 0) (x4 := 0) (x5 := 0) st
 
@@ -1499,8 +1499,8 @@ private def runUnifiedBracketChecks : IO Unit := do
            bracketUnifiedDecl bracketActiveVictimState with
      | some obj, some uni =>
          obj.pairs.all (fun p =>
-           uni.pairs.contains (canonicalSchedLockOfObject p.fst, p.snd)
-             || uni.pairs.contains (canonicalSchedLockOfObject p.fst,
+           uni.pairs.contains (p.fst, p.snd)
+             || uni.pairs.contains (p.fst,
                   Concurrency.AccessMode.write))
      | _, _ => false)
   -- (b) THE POINT OF THE CUT: the acquired set names the per-core scheduler
@@ -1509,15 +1509,15 @@ private def runUnifiedBracketChecks : IO Unit := do
   assertBool "(b) the unified footprint names the executing core's run-queue write lock"
     (match bracketUnifiedDecl bracketActiveVictimState with
      | some uni =>
-         decide ((SchedLockId.runQueue ⟨bootCoreId⟩, Concurrency.AccessMode.write)
+         decide ((LockKey.runQueue bootCoreId, Concurrency.AccessMode.write)
            ∈ uni.pairs)
      | none => false)
   assertBool "(b) NEGATIVE: the OBJECT domain's footprint names no run-queue lock at all"
     (match bracketDecl bracketActiveVictimState with
      | some obj =>
          Concurrency.allCores.all (fun c =>
-           !obj.pairs.any (fun p => decide (canonicalSchedLockOfObject p.fst
-             = SchedLockId.runQueue ⟨c⟩)))
+           !obj.pairs.any (fun p => decide (p.fst
+             = LockKey.runQueue c)))
      | none => false)
   -- ...and the negative is not vacuous: that footprint has members, and the
   -- unified one is STRICTLY larger, so the claim is about what was added rather
@@ -1526,19 +1526,20 @@ private def runUnifiedBracketChecks : IO Unit := do
     (match bracketDecl bracketActiveVictimState, bracketUnifiedDecl bracketActiveVictimState with
      | some obj, some uni => decide (0 < obj.pairs.length) && decide (obj.pairs.length < uni.pairs.length)
      | _, _ => false)
-  -- (c) ONE table lock, not two.  `stateLevelLock` and `schedObjStoreLockId` are
-  --     the same word under two keys; canonicalising is what keeps the unified
-  --     set's `Nodup` true and its acquisition sequence one ladder.
-  assertBool "(c) the two table-lock spellings canonicalise to one key"
-    (decide (canonicalSchedLockOfObject Concurrency.stateLevelLock
-      = SchedLockId.object schedObjStoreLockId))
+  -- (c) ONE table lock, not two.  `stateLevelLock` is `LockKey.objStore`
+  --     itself since LS1.2: the table lock has one spelling, which is what
+  --     keeps the unified set's `Nodup` true and its acquisition sequence
+  --     one ladder.
+  assertBool "(c) the object domain's table lock is the one table-lock key"
+    (decide (Concurrency.stateLevelLock
+      = LockKey.objStore))
   assertBool "(c) ...and the unified footprint names it exactly once"
     (match bracketUnifiedDecl bracketActiveVictimState with
      | some uni =>
          decide ((uni.pairs.filter (fun p =>
-           decide (p.fst = SchedLockId.object schedObjStoreLockId))).length = 1)
+           decide (p.fst = LockKey.objStore))).length = 1)
      | none => false)
-  -- (d) the ladder: what the bracket acquires is `SchedLockId`-ascending, which
+  -- (d) the ladder: what the bracket acquires is `LockKey`-ascending, which
   --     is `lockAcquireSequence`'s job and not the resolver's.
   assertBool "(d) the acquisition sequence is the SM0.I ladder, object < runQueue < replenishQueue"
     (match bracketUnifiedDecl bracketActiveVictimState with
@@ -1560,7 +1561,7 @@ private def runUnifiedBracketChecks : IO Unit := do
   --     (The uncovered-domain inventory falling from two to one is measured in
   --     `tests/SmpInformationFlowSuite.lean`, where `FineLockFlow` is in scope.)
   assertBool "(f) the per-arm coverage claim reaches the set the bracket acquires"
-    (have _h := @SeLe4n.Kernel.unifiedSchedLockSetForSyscall_coversWrites
+    (have _h := @SeLe4n.Kernel.unifiedLockSetForSyscall_coversWrites
      have _m := @SeLe4n.Kernel.schedFootprintCoversWrites_mono
      true)
 

@@ -36,7 +36,8 @@ hardware core and fires the SGI) layers on top of these in
 namespace SeLe4n.Kernel
 
 open SeLe4n.Model
-open SeLe4n.Kernel.Concurrency (CoreId SgiKind)
+open SeLe4n.Kernel.Concurrency (CoreId SgiKind
+  LockKey)
 
 -- ============================================================================
 -- §1 Cross-core `endpointCallWithCaps`
@@ -125,8 +126,8 @@ def endpointCallCrossCoreDispatch
           -- a reachable path and the donee's budget is refilled by a core that no
           -- longer runs it. Both endpoints are resolved from the **pre**-state
           -- `st`, which is what the `withLockSet` bracket sees when it acquires
-          -- the two `SchedLockId.replenishQueue` write locks
-          -- (`endpointCallCrossCoreDispatchSchedLockSet`); the intervening
+          -- the two `LockKey.replenishQueue` write locks
+          -- (`endpointCallCrossCoreDispatchLockSet`); the intervening
           -- rendezvous writes `ipcState` / queue links / scheduler slots and the
           -- receiver's CSpace, never a `cpuAffinity`, so the pre-state reading is
           -- the reading at the donation site. Donor and donee on one core makes
@@ -268,7 +269,7 @@ theorem endpointCallCrossCoreDispatch_no_receiver
 -- `UncoveredLockDomain.syscallSeamSchedulerDomain` recorded the live `.call` arm's
 -- scheduler writes as outside the footprint the RR7.12 seam acquired (that entry is
 -- retired at Cut C6h, `v0.35.181`).  This
--- section declares them, in the same cross-domain `SchedLockId` order every
+-- section declares them, in the same cross-domain `LockKey` order every
 -- sibling footprint uses (`object < runQueue < replenishQueue`, each same-kind
 -- segment `CoreId`-ascending, so the list *is* the SM3.D acquisition sequence).
 -- Inert until the bracket cut wires `schedLockSetForSyscall`.
@@ -563,10 +564,10 @@ footprint has everything it needs before the transition runs.
 `endpointCallDispatchWriteSet` appends `pipChainWriteSet` at the post-donation
 state the walk really starts from, so every run queue the reversion re-buckets is a
 static member here — bounded by the object count rather than by a constant, which
-a `SchedLockSet` permits, carrying no cardinality bound.  What
+a `LockSet` permits, carrying no cardinality bound.  What
 `pipChainStart_endpointCall`'s dynamic walker still adds is the object domain's
 per-member TCB write lock, which no scheduler footprint can name.  The RR2.4
-parametric `endpointCallCrossCoreDispatchSchedLockSet` is the shape this refines:
+parametric `endpointCallCrossCoreDispatchLockSet` is the shape this refines:
 on the rendezvous arm whose donation resolves, this footprint covers it at the
 resolved cores (`…_covers_parametric`), and names besides the chain members the
 parametric form left to the walker. -/
@@ -574,7 +575,7 @@ def schedLockSet_endpointCallOnCore
     (endpointId : SeLe4n.ObjId) (caller : SeLe4n.ThreadId) (msg : IpcMessage)
     (endpointRights : AccessRightSet)
     (receiverSlotBase : SeLe4n.Slot) (executingCore : CoreId)
-    (st : SystemState) : List (SchedLockId × Concurrency.AccessMode) :=
+    (st : SystemState) : List (LockKey × Concurrency.AccessMode) :=
   schedFootprintOfCores
     (endpointCallDispatchWriteSet endpointId caller msg endpointRights receiverSlotBase
       executingCore st)
@@ -591,7 +592,7 @@ theorem schedLockSet_endpointCallOnCore_contains_executing_runQueue_write
     (endpointId : SeLe4n.ObjId) (caller : SeLe4n.ThreadId) (msg : IpcMessage)
     (endpointRights : AccessRightSet) (receiverSlotBase : SeLe4n.Slot)
     (executingCore : CoreId) (st : SystemState) :
-    (SchedLockId.runQueue ⟨executingCore⟩, Concurrency.AccessMode.write)
+    (LockKey.runQueue executingCore, Concurrency.AccessMode.write)
       ∈ schedLockSet_endpointCallOnCore endpointId caller msg endpointRights
           receiverSlotBase executingCore st := by
   refine (mem_schedFootprintOfCores_runQueue_iff _ _ _).mpr ?_
@@ -607,7 +608,7 @@ theorem schedLockSet_endpointCallOnCore_contains_receiver_runQueue_write
     (endpointRights : AccessRightSet) (receiverSlotBase : SeLe4n.Slot)
     (executingCore : CoreId) (st : SystemState) (receiver : SeLe4n.ThreadId)
     (hRecv : endpointCallReceiver? st endpointId = some receiver) :
-    (SchedLockId.runQueue ⟨determineTargetCore st receiver⟩, Concurrency.AccessMode.write)
+    (LockKey.runQueue (determineTargetCore st receiver), Concurrency.AccessMode.write)
       ∈ schedLockSet_endpointCallOnCore endpointId caller msg endpointRights
           receiverSlotBase executingCore st := by
   refine (mem_schedFootprintOfCores_runQueue_iff _ _ _).mpr ?_
@@ -616,10 +617,10 @@ theorem schedLockSet_endpointCallOnCore_contains_receiver_runQueue_write
   simp
 
 /-- **WS-RR RR8.12 Cut C3a (coverage)**: on the rendezvous arm whose donation
-resolves, the footprint covers `applyCallDonationOnCoreSchedLockSet` member for
+resolves, the footprint covers `applyCallDonationOnCoreLockSet` member for
 member — at the two cores the dispatch hands the migration, which are the two the
 segment names — hence, through
-`applyCallDonationOnCoreSchedLockSet_covers_migration`, the migration's two
+`applyCallDonationOnCoreLockSet_covers_migration`, the migration's two
 replenish-queue write locks.  Conditioned on the dispatch's own readings (the
 receiver it resolves, the WithCaps leg it runs, the guard it asks at that leg's
 post-state), because those are the only shape on which there is a migration to
@@ -636,19 +637,19 @@ theorem schedLockSet_endpointCallOnCore_covers_donation (endpointId : SeLe4n.Obj
     (hCallerV : SeLe4n.ThreadId.toValid? caller = some callerV)
     (hRecvV : SeLe4n.ThreadId.toValid? receiverTid = some receiverV)
     (hSc : callDonationSchedContext? stWith callerV.val receiverV.val = some scId) :
-    ∀ p ∈ applyCallDonationOnCoreSchedLockSet (determineTargetCore st caller)
+    ∀ p ∈ applyCallDonationOnCoreLockSet (determineTargetCore st caller)
              (determineTargetCore st receiverTid),
       p ∈ schedLockSet_endpointCallOnCore endpointId caller msg endpointRights
             receiverSlotBase executingCore st := by
   have hSeg := endpointCallDispatchReplenishCores_of_donation endpointId caller msg
     endpointRights receiverSlotBase executingCore st stWith receiverTid callerV receiverV
     summary sgi scId hRecv hWith hCallerV hRecvV hSc
-  unfold applyCallDonationOnCoreSchedLockSet schedLockSet_endpointCallOnCore
+  unfold applyCallDonationOnCoreLockSet schedLockSet_endpointCallOnCore
   rw [hSeg]
   exact schedFootprintOfCores_subset (fun _ h => absurd h (by simp)) (fun _ h => h)
 
 /-- **WS-RR RR8.12 Cut C3a (the RR2.4 footprint is covered)**: on the same arm the
-derived footprint covers the parametric `endpointCallCrossCoreDispatchSchedLockSet`
+derived footprint covers the parametric `endpointCallCrossCoreDispatchLockSet`
 at the resolved cores — the executing core and the receiver's home in its run
 segment, the caller's and receiver's homes in its replenish segment — and names in
 addition every chain member's home, which the parametric form leaves to the dynamic
@@ -666,7 +667,7 @@ theorem schedLockSet_endpointCallOnCore_covers_parametric (endpointId : SeLe4n.O
     (hCallerV : SeLe4n.ThreadId.toValid? caller = some callerV)
     (hRecvV : SeLe4n.ThreadId.toValid? receiverTid = some receiverV)
     (hSc : callDonationSchedContext? stWith callerV.val receiverV.val = some scId) :
-    ∀ p ∈ endpointCallCrossCoreDispatchSchedLockSet executingCore
+    ∀ p ∈ endpointCallCrossCoreDispatchLockSet executingCore
              (determineTargetCore st receiverTid) (determineTargetCore st caller)
              (determineTargetCore st receiverTid),
       p ∈ schedLockSet_endpointCallOnCore endpointId caller msg endpointRights
@@ -674,7 +675,7 @@ theorem schedLockSet_endpointCallOnCore_covers_parametric (endpointId : SeLe4n.O
   have hSeg := endpointCallDispatchReplenishCores_of_donation endpointId caller msg
     endpointRights receiverSlotBase executingCore st stWith receiverTid callerV receiverV
     summary sgi scId hRecv hWith hCallerV hRecvV hSc
-  unfold endpointCallCrossCoreDispatchSchedLockSet schedLockSet_endpointCallOnCore
+  unfold endpointCallCrossCoreDispatchLockSet schedLockSet_endpointCallOnCore
   rw [hSeg]
   refine schedFootprintOfCores_subset (fun c hc => ?_) (fun _ h => h)
   unfold endpointCallDispatchWriteSet
@@ -701,7 +702,7 @@ theorem schedLockSet_endpointCallOnCore_no_replenishQueue_of_no_donation
     (hRecvV : SeLe4n.ThreadId.toValid? receiverTid = some receiverV)
     (hNone : callDonationSchedContext? stWith callerV.val receiverV.val = none)
     (c : CoreId) :
-    (SchedLockId.replenishQueue ⟨c⟩, Concurrency.AccessMode.write)
+    (LockKey.replenishQueue c, Concurrency.AccessMode.write)
       ∉ schedLockSet_endpointCallOnCore endpointId caller msg endpointRights
           receiverSlotBase executingCore st := by
   intro hMem
@@ -718,7 +719,7 @@ theorem schedLockSet_endpointCallOnCore_no_replenishQueue_of_no_receiver
     (endpointRights : AccessRightSet) (receiverSlotBase : SeLe4n.Slot)
     (executingCore : CoreId) (st : SystemState)
     (hRecv : endpointCallReceiver? st endpointId = none) (c : CoreId) :
-    (SchedLockId.replenishQueue ⟨c⟩, Concurrency.AccessMode.write)
+    (LockKey.replenishQueue c, Concurrency.AccessMode.write)
       ∉ schedLockSet_endpointCallOnCore endpointId caller msg endpointRights
           receiverSlotBase executingCore st := by
   intro hMem

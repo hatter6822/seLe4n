@@ -194,10 +194,10 @@ def commitDisciplineRegistry : List (Name × CommitDiscipline) :=
     -- declared arms and falling back — bit-identically — for the rest.
   , (`SeLe4n.Kernel.syscallDispatchCrossCoreEntry, .bracketed)
     -- WS-RR RR7.39: the three per-core scheduler entries.  They commit run-queue
-    -- and replenish-queue state, which lives in the `SchedLockId` domain rather
+    -- and replenish-queue state, which lives in the `LockKey` domain rather
     -- than the object-lock domain a `LockSet` names — so RR7.39 gave that domain
-    -- a runtime (`SystemState.schedulerLocks`, the `SchedLockId` primitives, the
-    -- `SchedLockSet` footprint type) and an instance of the shared bracket, and
+    -- a runtime (`SystemState.schedulerLocks`, the `LockKey` primitives, the
+    -- `LockSet` footprint type) and an instance of the shared bracket, and
     -- these three now acquire the footprints SM5.B–G declared for them.
   , (`SeLe4n.Kernel.perCoreTimerTickEntry, .bracketed)
   , (`SeLe4n.Kernel.perCoreRescheduleEntry, .bracketed)

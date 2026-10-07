@@ -251,7 +251,7 @@ TCB it returns is the one the state holds at the caller.
 Needed by the scheduler domain, which reads a receiver's `cspaceRoot` off the
 state rather than off the gate: `schedLockSet_endpointReplyRecvOnCore` takes the
 root the capability installation walks, the live `.replyRecv` arm hands it
-`gate.cspaceRoot`, and `declaredSchedLockSetForAbiEntry` resolves it through
+`gate.cspaceRoot`, and `declaredSchedulerLockSetForAbiEntry` resolves it through
 `st.getTcb? ops.caller`.  This is what makes those one lookup rather than two
 readings of the same question — the shape that would let the footprint name a
 root the transition does not install through. -/
@@ -326,10 +326,10 @@ dispatch arm names:
   object it answers first, resolved through `resolveReplyRecvReply`.
 
 **WS-RR RR8.12 Cut C4b: it serves BOTH domains, and that is one builder rather
-than two.**  `declaredSchedLockSetForAbiEntry`
+than two.**  `declaredSchedulerLockSetForAbiEntry`
 (`SyscallSchedFootprint.lean` §14) reads this record too, so a second builder
 would be the shape that lets one domain's footprint be acquired around the other
-domain's transition — `declaredSchedLockSetForAbiEntry_shares_decode` is the
+domain's transition — `declaredSchedulerLockSetForAbiEntry_shares_decode` is the
 statement that it is not.  Two things follow.  Four arms above gained the
 operands the *scheduler* footprints read and the object domain ignores, so their
 object-domain answers are byte-identical to the pre-C4b ones: `.call` the

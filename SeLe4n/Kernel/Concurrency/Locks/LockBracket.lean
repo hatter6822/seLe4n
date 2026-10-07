@@ -22,7 +22,7 @@ RR7.12 built the revalidating bracket the live syscall seam runs: resolve the
 declared footprint, acquire it, **re-resolve at the state the growing phase
 ended in**, refuse on any change, and otherwise run the step from that state and
 unwind.  RR7.39 needs the same discipline at the per-core scheduler entries, over
-a different lock domain (`SchedLockId`, which spans the object store, the
+a different lock domain (`LockKey`, which spans the object store, the
 per-core run queues and the per-core replenishment queues).
 
 Writing it twice is the shape this project's key conventions name explicitly:
@@ -81,7 +81,7 @@ Five fields and no more.  A domain that needed a sixth would be telling the
 bracket something about its own words, which is exactly what this record exists
 to keep out of the bracket's argument. -/
 structure LockBracketDomain where
-  /-- The footprint type — `LockSet` at the object domain, the `SchedLockId`
+  /-- The footprint type — `LockSet` at the object domain, the `LockKey`
   footprint at the scheduler domain. -/
   Footprint : Type
   /-- The key type the acquisition sequence is a list of. -/
@@ -328,14 +328,15 @@ theorem runChainExtension_empty {α : Type} (D : LockBracketDomain) (caller : Co
 -- ============================================================================
 
 /-- **WS-RR RR7.39**: the SM0.I object domain as a bracket domain — `LockSet`
-over `LockId`, with SM3.C's own acquire / unwind folds and `lockSetHeld`.
+over `LockKey` (WS-LS LS1.2), with SM3.C's own acquire / unwind folds and
+`lockSetHeld`.
 
 This is the domain RR7.12's syscall seam runs.  It is stated here rather than
 beside the seam so the scheduler domain's instance sits next to it and a reader
 can see that the two differ in exactly five primitives. -/
 def objectLockBracketDomain : LockBracketDomain where
   Footprint := LockSet
-  Key := LockId × AccessMode
+  Key := LockKey × AccessMode
   decEqFootprint := inferInstance
   sequence := LockSet.lockAcquireSequence
   acquire := acquireAll
@@ -346,12 +347,26 @@ def objectLockBracketDomain : LockBracketDomain where
 @[simp] theorem objectLockBracketDomain_sequence (S : LockSet) :
     objectLockBracketDomain.sequence S = S.lockAcquireSequence := rfl
 
+/-- **WS-LS LS1.2**: the domain acquires in `LockKey`-ascending order whatever
+order the footprint was resolved in — the ladder held by the domain rather
+than by a convention every resolver has to remember. -/
+theorem objectLockBracketDomain_sequence_ordered (S : LockSet) :
+    (objectLockBracketDomain.sequence S).Pairwise (fun p₁ p₂ => p₁.fst ≤ p₂.fst) :=
+  LockSet.lockAcquireSequence_ordered S
+
+/-- **WS-LS LS1.2**: a footprint declared in ascending order — every one a
+transition declares — is acquired exactly as it lists. -/
+theorem objectLockBracketDomain_sequence_eq_pairs (S : LockSet)
+    (h : (S.pairs.map (·.fst)).Pairwise (· ≤ ·)) :
+    objectLockBracketDomain.sequence S = S.pairs :=
+  LockSet.lockAcquireSequence_eq_pairs_of_pairwise_le S h
+
 @[simp] theorem objectLockBracketDomain_acquire (c : CoreId)
-    (pairs : List (LockId × AccessMode)) (s : SystemState) :
+    (pairs : List (LockKey × AccessMode)) (s : SystemState) :
     objectLockBracketDomain.acquire c pairs s = acquireAll c pairs s := rfl
 
 @[simp] theorem objectLockBracketDomain_unwind (c : CoreId)
-    (pairs : List (LockId × AccessMode)) (s : SystemState) :
+    (pairs : List (LockKey × AccessMode)) (s : SystemState) :
     objectLockBracketDomain.unwind c pairs s = unwindAll c pairs s := rfl
 
 @[simp] theorem objectLockBracketDomain_held (c : CoreId) (S : LockSet)

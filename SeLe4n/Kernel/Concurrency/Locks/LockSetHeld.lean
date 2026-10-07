@@ -177,6 +177,7 @@ def lockHeld (c : CoreId) (l : LockId) (mode : AccessMode)
       match LockId.lookup s l with
       | some (lockState, _) => lockState.coreHolds c mode
       | none => False
+  | .runQueue | .replenishQueue => False
 
 /-- WS-SM SM3.C.4: `lockHeld` is decidable.  Each case reduces to
 decidable predicates on `List` and `Option`. -/
@@ -214,6 +215,43 @@ theorem lockHeld_page (c : CoreId) (oid : SeLe4n.ObjId)
   simp [lockHeld, hLook]
 
 -- ============================================================================
+-- §1c — WS-LS LS1.2: the per-key predicate
+-- ============================================================================
+
+/-- **WS-LS LS1.2**: core `c` holds the word key `k` names in mode `mode`.
+
+One arm per `LockKey` constructor: the table lock is the `objStoreLock` word,
+an object key is `lockHeld` verbatim, and the scheduler keys read the per-core
+words.  `lockSetHeld` quantifies this over a footprint's pairs. -/
+def keyHeld (c : CoreId) (k : LockKey) (mode : AccessMode) (s : SystemState) : Prop :=
+  match k with
+  | .objStore => s.objStoreLock.coreHolds c mode
+  | .object l => lockHeld c l mode s
+  | .runQueue d => (s.runQueueLockOnCore d).coreHolds c mode
+  | .replenishQueue d => (s.replenishQueueLockOnCore d).coreHolds c mode
+
+instance keyHeld_decidable (c : CoreId) (k : LockKey) (mode : AccessMode)
+    (s : SystemState) : Decidable (keyHeld c k mode s) := by
+  unfold keyHeld
+  cases k <;> exact inferInstance
+
+@[simp] theorem keyHeld_objStore (c : CoreId) (mode : AccessMode) (s : SystemState) :
+    keyHeld c .objStore mode s = s.objStoreLock.coreHolds c mode := rfl
+@[simp] theorem keyHeld_object (c : CoreId) (l : LockId) (mode : AccessMode)
+    (s : SystemState) : keyHeld c (.object l) mode s = lockHeld c l mode s := rfl
+@[simp] theorem keyHeld_runQueue (c d : CoreId) (mode : AccessMode) (s : SystemState) :
+    keyHeld c (.runQueue d) mode s = (s.runQueueLockOnCore d).coreHolds c mode := rfl
+@[simp] theorem keyHeld_replenishQueue (c d : CoreId) (mode : AccessMode)
+    (s : SystemState) :
+    keyHeld c (.replenishQueue d) mode s = (s.replenishQueueLockOnCore d).coreHolds c mode :=
+  rfl
+
+/-- The table key and the `.objStore`-kind id read the same word, whatever the
+id's decorative `objId`. -/
+theorem keyHeld_objStore_eq_lockHeld (c : CoreId) (oid : SeLe4n.ObjId) (mode : AccessMode)
+    (s : SystemState) : keyHeld c .objStore mode s = lockHeld c ⟨.objStore, oid⟩ mode s := rfl
+
+-- ============================================================================
 -- §2 — Lock-set held predicate (plan §5.3 SM3.C.4)
 -- ============================================================================
 
@@ -231,7 +269,7 @@ The forall-over-pairs encoding (rather than a `List.all` Bool)
 keeps the predicate first-class Prop so it composes cleanly with
 the operational semantics of kernel transitions. -/
 def lockSetHeld (c : CoreId) (S : LockSet) (s : SystemState) : Prop :=
-  ∀ p ∈ S.pairs, lockHeld c p.fst p.snd s
+  ∀ p ∈ S.pairs, keyHeld c p.fst p.snd s
 
 /-- WS-SM SM3.C.4: `lockSetHeld` on the empty set is vacuously
 true.  Useful as the base case for `withLockSet`'s post-acquire
@@ -243,9 +281,9 @@ reasoning when the lock set is empty. -/
 
 /-- WS-SM SM3.C.4: `lockSetHeld` on a singleton lock set reduces to
 the underlying per-lock predicate. -/
-@[simp] theorem lockSetHeld_singleton (c : CoreId) (l : LockId) (m : AccessMode)
+@[simp] theorem lockSetHeld_singleton (c : CoreId) (l : LockKey) (m : AccessMode)
     (s : SystemState) :
-    lockSetHeld c (LockSet.singleton l m) s ↔ lockHeld c l m s := by
+    lockSetHeld c (LockSet.singleton l m) s ↔ keyHeld c l m s := by
   unfold lockSetHeld
   constructor
   · intro h
@@ -262,7 +300,7 @@ list construction lifts to a `List.all` reduction. -/
 instance lockSetHeld_decidable (c : CoreId) (S : LockSet)
     (s : SystemState) : Decidable (lockSetHeld c S s) := by
   unfold lockSetHeld
-  exact List.decidableBAll (fun p => lockHeld c p.fst p.snd s) S.pairs
+  exact List.decidableBAll (fun p => keyHeld c p.fst p.snd s) S.pairs
 
 /-- WS-SM SM3.C.4: monotone form — if `lockSetHeld` for the
 extended set holds, then the same holds for the base set.
@@ -382,36 +420,44 @@ theorem lockSetHeld_default_iff_empty (c : CoreId) (S : LockSet) :
       exfalso
       have hMem : head ∈ S.pairs := by rw [hPairs]; exact List.mem_cons_self
       have hHead := hHeld head hMem
-      -- Show lockHeld c head.fst head.snd default is False.
-      unfold lockHeld at hHead
-      -- Case-split on the kind of head.fst.
-      have hLookupNone : LockId.lookup (default : SystemState) head.fst = none :=
-        default_lookup_none head.fst
-      have hObjStore : (default : SystemState).objStoreLock = RwLockState.unheld :=
-        default_objStoreLock_unheld
-      cases hK : head.fst.kind with
+      -- No `unheld` word is held in either mode.
+      have hWord : ∀ w : RwLockState, w = RwLockState.unheld → ¬ w.coreHolds c head.snd := by
+        intro w hw
+        subst hw
+        unfold RwLockState.coreHolds
+        cases head.snd <;> simp [RwLockState.unheld]
+      -- Show keyHeld c head.fst head.snd default is False, key by key.
+      unfold keyHeld at hHead
+      cases hK : head.fst with
       | objStore =>
         rw [hK] at hHead
+        exact hWord _ default_objStoreLock_unheld hHead
+      | runQueue d =>
+        rw [hK] at hHead
+        exact hWord _ (default_runQueueLocks_unheld d) hHead
+      | replenishQueue d =>
+        rw [hK] at hHead
+        exact hWord _ (default_replenishQueueLocks_unheld d) hHead
+      | object l =>
+        rw [hK] at hHead
         simp only at hHead
-        rw [hObjStore] at hHead
-        unfold RwLockState.coreHolds at hHead
-        cases hM : head.snd with
-        | read =>
-          rw [hM] at hHead
-          rcases hHead with hR | hW
-          · exact absurd hR (by simp [RwLockState.unheld])
-          · simp [RwLockState.unheld] at hW
-        | write =>
-          rw [hM] at hHead
-          simp [RwLockState.unheld] at hHead
-      | tcb | endpoint | notification | cnode
-      | vspaceRoot | untyped | schedContext | reply | page =>
-        all_goals (
-          rw [hK] at hHead
-          simp only at hHead
-          rw [hLookupNone] at hHead
-          exact hHead
-        )
+        unfold lockHeld at hHead
+        have hLookupNone : LockId.lookup (default : SystemState) l = none :=
+          default_lookup_none l
+        cases hK' : l.kind with
+        | objStore =>
+          rw [hK'] at hHead
+          exact hWord _ default_objStoreLock_unheld hHead
+        | runQueue | replenishQueue =>
+          all_goals (rw [hK'] at hHead; exact hHead)
+        | tcb | endpoint | notification | cnode
+        | vspaceRoot | untyped | schedContext | reply | page =>
+          all_goals (
+            rw [hK'] at hHead
+            simp only at hHead
+            rw [hLookupNone] at hHead
+            exact hHead
+          )
   · intro hEmpty
     intro p hp
     rw [hEmpty] at hp
@@ -453,6 +499,7 @@ theorem LockId.lookup_eq_of_objects_getElem?_eq (s s' : SystemState) (l : LockId
   unfold LockId.lookup
   cases l.kind with
   | objStore => rfl
+  | runQueue | replenishQueue => all_goals rfl
   | reply =>
       simp only [SystemState.getReply?, hObjIdRp, h]
   | page =>
@@ -527,6 +574,7 @@ theorem acquireLockOnObject_objects_getElem?_of_ne (s : SystemState)
   unfold acquireLockOnObject
   cases l.kind with
   | objStore => rfl
+  | runQueue | replenishQueue => all_goals rfl
   | tcb | endpoint | notification | cnode
   | vspaceRoot | untyped | schedContext | reply | page =>
       all_goals exact updateObjectLockAt_objects_getElem?_of_ne s l _ oid hExt hNe
@@ -597,6 +645,8 @@ theorem acquireLockOnObject_establishes_lockHeld_modeled
   -- The lock id names a modeled kind (its kind is the kind of a real object).
   have hNeObjStore : l.kind ≠ .objStore := by
     rw [← hKind]; exact KernelObject.lockKind_ne_objStore o
+  have hObjKind : l.kind.isObjectKind = true := by
+    rw [← hKind]; exact KernelObject.lockKind_isObjectKind o
   -- The modeled branch of `acquireLockOnObject` is `updateObjectLockAt`
   -- (WS-SM SM6.D: `.reply` is now a modeled kind, not an N/A no-op).
   have hAcq : acquireLockOnObject s core l mode
@@ -604,6 +654,7 @@ theorem acquireLockOnObject_establishes_lockHeld_modeled
     unfold acquireLockOnObject
     cases hk : l.kind with
     | objStore => exact absurd hk hNeObjStore
+    | runQueue | replenishQueue => all_goals (rw [hk] at hObjKind; cases hObjKind)
     | tcb | endpoint | notification | cnode
     | vspaceRoot | untyped | schedContext | reply | page => all_goals rfl
   rw [hAcq]
@@ -613,6 +664,7 @@ theorem acquireLockOnObject_establishes_lockHeld_modeled
   unfold lockHeld
   cases hk : l.kind with
   | objStore => exact absurd hk hNeObjStore
+  | runQueue | replenishQueue => all_goals (rw [hk] at hObjKind; cases hObjKind)
   | tcb | endpoint | notification | cnode
   | vspaceRoot | untyped | schedContext | reply | page =>
       all_goals (
@@ -655,35 +707,72 @@ theorem acquireLockOnObject_preserves_lockHeld_of_ne_objId (s : SystemState)
   rw [hLookupEq, hObjStoreEq]
   exact hHeld
 
+/-- **WS-LS LS1.2**: `lockHeld` reads `objStoreLock` and the object store only,
+so a scheduler-word write is invisible to it. -/
+theorem lockHeld_setRunQueueLockOnCore (c : CoreId) (l : LockId) (m : AccessMode)
+    (s : SystemState) (d : CoreId) (w : RwLockState) :
+    lockHeld c l m (s.setRunQueueLockOnCore d w) ↔ lockHeld c l m s := by
+  unfold lockHeld
+  rw [LockId.lookup_eq_of_objects_getElem?_eq s (s.setRunQueueLockOnCore d w) l (by simp),
+    setRunQueueLockOnCore_objStoreLock]
+
+theorem lockHeld_setReplenishQueueLockOnCore (c : CoreId) (l : LockId) (m : AccessMode)
+    (s : SystemState) (d : CoreId) (w : RwLockState) :
+    lockHeld c l m (s.setReplenishQueueLockOnCore d w) ↔ lockHeld c l m s := by
+  unfold lockHeld
+  rw [LockId.lookup_eq_of_objects_getElem?_eq s (s.setReplenishQueueLockOnCore d w) l
+    (by simp), setReplenishQueueLockOnCore_objStoreLock]
+
+/-- **WS-LS LS1.2**: the per-step frame over keys — `lockHeld` on an object
+lock `lA` survives acquiring any key that is not the table lock and, if it is
+an object key, names a modeled kind at another ObjId.  The scheduler keys
+pass on `lockHeld_setRunQueueLockOnCore`; the object key is
+`acquireLockOnObject_preserves_lockHeld_of_ne_objId`. -/
+theorem acquireLock_preserves_lockHeld_of_ne (s : SystemState) (core : CoreId)
+    (lA : LockId) (kB : LockKey) (mA mB : AccessMode)
+    (hExt : s.objects.invExt)
+    (hNeObjStoreB : kB ≠ .objStore)
+    (hNe : ∀ lB, kB = .object lB → lB.kind ≠ .objStore ∧ lA.objId ≠ lB.objId)
+    (hHeld : lockHeld core lA mA s) :
+    lockHeld core lA mA (acquireLock s core kB mB) := by
+  cases kB with
+  | objStore => exact absurd rfl hNeObjStoreB
+  | object lB =>
+      obtain ⟨hKind, hObj⟩ := hNe lB rfl
+      exact acquireLockOnObject_preserves_lockHeld_of_ne_objId s core lA lB mA mB hExt
+        hKind hObj hHeld
+  | runQueue d =>
+      exact (lockHeld_setRunQueueLockOnCore core lA mA s d _).mpr hHeld
+  | replenishQueue d =>
+      exact (lockHeld_setReplenishQueueLockOnCore core lA mA s d _).mpr hHeld
+
 /-- WS-SM SM3.C.8 foundation: the `acquireAll` fold preserves an
-already-established `lockHeld core lA mA` provided every lock acquired in the
-remaining sequence is a non-`.objStore` lock at a different ObjId than `lA`.
+already-established `lockHeld core lA mA` provided no key acquired in the
+remaining sequence is the table lock, and every object key among them names
+a modeled kind at a different ObjId than `lA`.
 
 Induction on the remaining sequence, applying the per-step frame
-(`acquireLockOnObject_preserves_lockHeld_of_ne_objId`) and threading `invExt`
-through (`acquireLockOnObject_preserves_invExt`). -/
+(`acquireLock_preserves_lockHeld_of_ne`) and threading `invExt`
+through (`acquireLock_preserves_invExt`). -/
 theorem acquireAll_preserves_lockHeld_of_ne_all (core : CoreId)
     (lA : LockId) (mA : AccessMode) :
-    ∀ (rest : List (LockId × AccessMode)) (s : SystemState),
+    ∀ (rest : List (LockKey × AccessMode)) (s : SystemState),
       s.objects.invExt →
-      (∀ p ∈ rest, p.fst.kind ≠ .objStore) →
-      (∀ p ∈ rest, lA.objId ≠ p.fst.objId) →
+      (∀ p ∈ rest, p.fst ≠ .objStore) →
+      (∀ p ∈ rest, ∀ lB, p.fst = .object lB → lB.kind ≠ .objStore ∧ lA.objId ≠ lB.objId) →
       lockHeld core lA mA s →
       lockHeld core lA mA (acquireAll core rest s) := by
   intro rest
   induction rest with
   | nil => intro s _ _ _ hHeld; exact hHeld
   | cons head tail ih =>
-      intro s hExt hMod hNe hHeld
-      have hHeadModeled := hMod head List.mem_cons_self
-      have hHeadNe := hNe head List.mem_cons_self
-      have hHeld1 := acquireLockOnObject_preserves_lockHeld_of_ne_objId s core lA
-        head.fst mA head.snd hExt hHeadModeled hHeadNe hHeld
-      have hExt1 := acquireLockOnObject_preserves_invExt s core head.fst head.snd hExt
-      show lockHeld core lA mA
-        (acquireAll core tail (acquireLockOnObject s core head.fst head.snd))
-      exact ih (acquireLockOnObject s core head.fst head.snd) hExt1
-        (fun p hp => hMod p (List.mem_cons_of_mem _ hp))
+      intro s hExt hStore hNe hHeld
+      have hHeld1 := acquireLock_preserves_lockHeld_of_ne s core lA head.fst mA head.snd
+        hExt (hStore head List.mem_cons_self) (hNe head List.mem_cons_self) hHeld
+      have hExt1 := acquireLock_preserves_invExt s core head.fst head.snd hExt
+      show lockHeld core lA mA (acquireAll core tail (acquireLock s core head.fst head.snd))
+      exact ih (acquireLock s core head.fst head.snd) hExt1
+        (fun p hp => hStore p (List.mem_cons_of_mem _ hp))
         (fun p hp => hNe p (List.mem_cons_of_mem _ hp)) hHeld1
 
 /-- WS-SM SM3.C.8 (substantive — closes the "acquireAll establishes lockHeld"
@@ -706,61 +795,81 @@ Induction on the sequence:
   per-lock present/unheld hypotheses survive the head acquire because the head
   is at a different ObjId (frame lemma).
 
-The distinct-ObjId hypothesis is exactly what a `LockSet`'s `Nodup`-keys
+The distinct-`objId?` hypothesis is exactly what a `LockSet`'s `Nodup`-keys
 invariant guarantees once every key resolves to a present matching-kind object
-(two pairs with the same ObjId would resolve to the same object, hence the same
-kind, hence the same key — contradicting `Nodup`), and what the SM0.I
-ascending-ObjId chain discipline guarantees for the PIP chain. -/
+(two object keys with the same ObjId would resolve to the same object, hence
+the same kind, hence the same key — contradicting `Nodup`), and what the SM0.I
+ascending-ObjId chain discipline guarantees for the PIP chain.  Every key is
+an object key here: the table and scheduler words are not objects, and the
+word they name is established by `RwLockState.unheld_acquire_grants` directly. -/
 theorem acquireAll_establishes_lockHeld_of_distinct_present_unheld
     (core : CoreId) :
-    ∀ (pairs : List (LockId × AccessMode)) (s : SystemState),
+    ∀ (pairs : List (LockKey × AccessMode)) (s : SystemState),
       s.objects.invExt →
-      (∀ p ∈ pairs, ∃ o, s.objects[p.fst.objId]? = some o ∧
-        o.lockKind = p.fst.kind ∧ o.objectLockOf = RwLockState.unheld) →
-      pairs.Pairwise (fun a b => a.fst.objId ≠ b.fst.objId) →
-      ∀ p ∈ pairs, lockHeld core p.fst p.snd (acquireAll core pairs s) := by
+      (∀ p ∈ pairs, ∃ l o, p.fst = .object l ∧ s.objects[l.objId]? = some o ∧
+        o.lockKind = l.kind ∧ o.objectLockOf = RwLockState.unheld) →
+      pairs.Pairwise (fun a b => a.fst.objId? ≠ b.fst.objId?) →
+      ∀ p ∈ pairs, keyHeld core p.fst p.snd (acquireAll core pairs s) := by
   intro pairs
   induction pairs with
   | nil => intro s _ _ _ p hp; cases hp
   | cons head tail ih =>
       intro s hExt hEach hDistinct p hp
-      obtain ⟨oHead, hPresentHead, hKindHead, hUnheldHead⟩ :=
+      obtain ⟨lHead, oHead, hKeyHead, hPresentHead, hKindHead, hUnheldHead⟩ :=
         hEach head List.mem_cons_self
-      have hExt1 := acquireLockOnObject_preserves_invExt s core head.fst head.snd hExt
-      have hHeadDistinct : ∀ q ∈ tail, head.fst.objId ≠ q.fst.objId :=
+      have hExt1 := acquireLock_preserves_invExt s core head.fst head.snd hExt
+      have hHeadDistinct : ∀ q ∈ tail, head.fst.objId? ≠ q.fst.objId? :=
         (List.pairwise_cons.mp hDistinct).1
-      have hTailDistinct : tail.Pairwise (fun a b => a.fst.objId ≠ b.fst.objId) :=
+      have hTailDistinct : tail.Pairwise (fun a b => a.fst.objId? ≠ b.fst.objId?) :=
         (List.pairwise_cons.mp hDistinct).2
-      have hHeadHeld1 : lockHeld core head.fst head.snd
-          (acquireLockOnObject s core head.fst head.snd) :=
-        acquireLockOnObject_establishes_lockHeld_modeled s core head.fst head.snd
+      -- The head step is the per-object acquire at `lHead`.
+      have hStep : acquireLock s core head.fst head.snd
+          = acquireLockOnObject s core lHead head.snd := by
+        rw [hKeyHead]; rfl
+      have hHeadHeld1 : lockHeld core lHead head.snd
+          (acquireLockOnObject s core lHead head.snd) :=
+        acquireLockOnObject_establishes_lockHeld_modeled s core lHead head.snd
           oHead hExt hPresentHead hKindHead hUnheldHead
+      -- A tail key's object sits at another ObjId than the head's.
+      have hTailNeObjId : ∀ q ∈ tail, ∀ lq, q.fst = .object lq → lq.objId ≠ lHead.objId := by
+        intro q hq lq hKq hEq
+        apply hHeadDistinct q hq
+        rw [hKeyHead, hKq, LockKey.objId?_object, LockKey.objId?_object, hEq]
       -- The per-lock present/unheld hypotheses survive the head acquire.
-      have hEachTail1 : ∀ q ∈ tail, ∃ o,
-          (acquireLockOnObject s core head.fst head.snd).objects[q.fst.objId]?
-            = some o ∧ o.lockKind = q.fst.kind ∧ o.objectLockOf = RwLockState.unheld := by
+      have hEachTail1 : ∀ q ∈ tail, ∃ l o, q.fst = .object l ∧
+          (acquireLock s core head.fst head.snd).objects[l.objId]? = some o ∧
+          o.lockKind = l.kind ∧ o.objectLockOf = RwLockState.unheld := by
         intro q hq
-        obtain ⟨oq, hPq, hKq, hUq⟩ := hEach q (List.mem_cons_of_mem _ hq)
-        refine ⟨oq, ?_, hKq, hUq⟩
-        rw [acquireLockOnObject_objects_getElem?_of_ne s core head.fst head.snd
-          q.fst.objId hExt (Ne.symm (hHeadDistinct q hq))]
+        obtain ⟨lq, oq, hKq, hPq, hKindq, hUq⟩ := hEach q (List.mem_cons_of_mem _ hq)
+        refine ⟨lq, oq, hKq, ?_, hKindq, hUq⟩
+        rw [hStep, acquireLockOnObject_objects_getElem?_of_ne s core lHead head.snd
+          lq.objId hExt (hTailNeObjId q hq lq hKq)]
         exact hPq
-      -- Tail locks are modeled (their resolving object has a modeled kind).
-      have hTailModeled : ∀ q ∈ tail, q.fst.kind ≠ .objStore := by
+      -- Tail keys are object keys of a modeled kind at other ObjIds.
+      have hTailStore : ∀ q ∈ tail, q.fst ≠ .objStore := by
         intro q hq
-        obtain ⟨oq, _, hKq, _⟩ := hEachTail1 q hq
-        rw [← hKq]; exact KernelObject.lockKind_ne_objStore oq
+        obtain ⟨lq, _, hKq, _⟩ := hEachTail1 q hq
+        rw [hKq]; exact fun h => by cases h
+      have hTailNe : ∀ q ∈ tail, ∀ lB, q.fst = .object lB →
+          lB.kind ≠ .objStore ∧ lHead.objId ≠ lB.objId := by
+        intro q hq lB hqB
+        obtain ⟨lq, oq, hKq, _, hKindq, _⟩ := hEachTail1 q hq
+        have hlq : lB = lq := by
+          rw [hqB] at hKq; exact LockKey.object.inj hKq
+        subst hlq
+        exact ⟨by rw [← hKindq]; exact KernelObject.lockKind_ne_objStore oq,
+          Ne.symm (hTailNeObjId q hq lB hqB)⟩
       rw [List.mem_cons] at hp
-      show lockHeld core p.fst p.snd
-        (acquireAll core tail (acquireLockOnObject s core head.fst head.snd))
+      show keyHeld core p.fst p.snd (acquireAll core tail (acquireLock s core head.fst head.snd))
       cases hp with
       | inl hpHead =>
-          rw [hpHead]
-          exact acquireAll_preserves_lockHeld_of_ne_all core head.fst head.snd tail
-            (acquireLockOnObject s core head.fst head.snd) hExt1 hTailModeled
-            hHeadDistinct hHeadHeld1
+          rw [hpHead, hStep, hKeyHead]
+          exact acquireAll_preserves_lockHeld_of_ne_all core lHead head.snd tail
+            (acquireLockOnObject s core lHead head.snd)
+            (acquireLockOnObject_preserves_invExt s core lHead head.snd hExt)
+            hTailStore hTailNe hHeadHeld1
       | inr hpTail =>
-          exact ih (acquireLockOnObject s core head.fst head.snd) hExt1 hEachTail1
+          exact ih (acquireLock s core head.fst head.snd) hExt1 hEachTail1
             hTailDistinct p hpTail
 
 -- ============================================================================
@@ -794,6 +903,7 @@ def lockQueued (c : CoreId) (l : LockId) (s : SystemState) : Prop :=
       match LockId.lookup s l with
       | some (lockState, _) => c ∈ lockState.waiters.map Prod.fst
       | none => False
+  | .runQueue | .replenishQueue => False
 
 /-- **WS-LC LC4.3**: `lockQueued` is decidable, like its `lockHeld` sibling. -/
 instance lockQueued_decidable (c : CoreId) (l : LockId) (s : SystemState) :
@@ -810,6 +920,43 @@ theorem lockQueued_page (c : CoreId) (oid : SeLe4n.ObjId) (s : SystemState)
   have hLook : LockId.lookup s ⟨.page, oid⟩ = none := by
     rw [LockId.lookup_page, hAbsent]; rfl
   simp [lockQueued, hLook]
+
+/-- **WS-LS LS1.2**: `c` has a queued request at the word key `k` names —
+`keyHeld`'s sibling, reading `waiters` where that reads `coreHolds`. -/
+def keyQueued (c : CoreId) (k : LockKey) (s : SystemState) : Prop :=
+  match k with
+  | .objStore => c ∈ s.objStoreLock.waiters.map Prod.fst
+  | .object l => lockQueued c l s
+  | .runQueue d => c ∈ (s.runQueueLockOnCore d).waiters.map Prod.fst
+  | .replenishQueue d => c ∈ (s.replenishQueueLockOnCore d).waiters.map Prod.fst
+
+instance keyQueued_decidable (c : CoreId) (k : LockKey) (s : SystemState) :
+    Decidable (keyQueued c k s) := by
+  unfold keyQueued
+  cases k <;> exact inferInstance
+
+@[simp] theorem keyQueued_object (c : CoreId) (l : LockId) (s : SystemState) :
+    keyQueued c (.object l) s = lockQueued c l s := rfl
+
+/-- The table key and the `.objStore`-kind id read the same word. -/
+theorem keyQueued_objStore_eq_lockQueued (c : CoreId) (oid : SeLe4n.ObjId)
+    (s : SystemState) : keyQueued c .objStore s = lockQueued c ⟨.objStore, oid⟩ s := rfl
+
+/-- **WS-LS LS1.2**: `lockQueued` reads `objStoreLock` and the object store
+only, so a scheduler-word write is invisible to it. -/
+theorem lockQueued_setRunQueueLockOnCore (c : CoreId) (l : LockId) (s : SystemState)
+    (d : CoreId) (w : RwLockState) :
+    lockQueued c l (s.setRunQueueLockOnCore d w) ↔ lockQueued c l s := by
+  unfold lockQueued
+  rw [LockId.lookup_eq_of_objects_getElem?_eq s (s.setRunQueueLockOnCore d w) l (by simp),
+    setRunQueueLockOnCore_objStoreLock]
+
+theorem lockQueued_setReplenishQueueLockOnCore (c : CoreId) (l : LockId) (s : SystemState)
+    (d : CoreId) (w : RwLockState) :
+    lockQueued c l (s.setReplenishQueueLockOnCore d w) ↔ lockQueued c l s := by
+  unfold lockQueued
+  rw [LockId.lookup_eq_of_objects_getElem?_eq s (s.setReplenishQueueLockOnCore d w) l
+    (by simp), setReplenishQueueLockOnCore_objStoreLock]
 
 /-- **WS-LC LC4.3**: an update at *any* lock cannot enqueue a core the
 operation itself never enqueues.
@@ -838,6 +985,7 @@ theorem lockQueued_updateObjectLockAt_of_never_enqueues
   | objStore =>
       rw [updateObjectLockAt_preserves_objStoreLock s l' op]
       exact fun h hPost => h hPost
+  | runQueue | replenishQueue => all_goals exact fun _ hPost => hPost
   | tcb | endpoint | notification | cnode
   | vspaceRoot | untyped | schedContext | reply | page =>
     all_goals (
@@ -904,6 +1052,7 @@ theorem cancelLockOnObject_withdraws (s : SystemState) (core : CoreId)
   cases hK : l.kind with
   | objStore =>
       exact rwLock_cancel_not_queued s.objStoreLock core
+  | runQueue | replenishQueue => all_goals exact id
   | tcb | endpoint | notification | cnode
   | vspaceRoot | untyped | schedContext | reply | page =>
     all_goals (
@@ -941,6 +1090,7 @@ theorem lockQueued_objStoreLock_applyOp_of_never_enqueues
   unfold lockQueued
   cases l.kind with
   | objStore => exact fun h => hOp _ h
+  | runQueue | replenishQueue => all_goals exact fun h => h
   | tcb | endpoint | notification | cnode
   | vspaceRoot | untyped | schedContext | reply | page =>
       all_goals (
@@ -958,6 +1108,7 @@ theorem cancelLockOnObject_preserves_not_queued (c core : CoreId) (l l' : LockId
   | objStore =>
       exact lockQueued_objStoreLock_applyOp_of_never_enqueues c l _ s
         (fun r hr => rwLock_cancel_preserves_not_queued r c core hr) h
+  | runQueue | replenishQueue => all_goals exact h
   | tcb | endpoint | notification | cnode
   | vspaceRoot | untyped | schedContext | reply | page =>
       all_goals (
@@ -977,6 +1128,7 @@ theorem releaseLockOnObject_preserves_not_queued (c core : CoreId) (l l' : LockI
   | objStore =>
       exact lockQueued_objStoreLock_applyOp_of_never_enqueues c l _ s
         (fun r hr => rwLock_release_preserves_not_queued r c core m hr) h
+  | runQueue | replenishQueue => all_goals exact h
   | tcb | endpoint | notification | cnode
   | vspaceRoot | untyped | schedContext | reply | page =>
       all_goals (
@@ -984,33 +1136,168 @@ theorem releaseLockOnObject_preserves_not_queued (c core : CoreId) (l l' : LockI
         exact lockQueued_updateObjectLockAt_of_never_enqueues c l l' _ s hExt
           (fun r hr => rwLock_release_preserves_not_queued r c core m hr) h)
 
+/-- **WS-LS LS1.2**: the per-object frame, op-generic — the body the three
+per-object primitives share (`applyLockOpOnObject`) cannot enqueue a core the
+op itself never enqueues, at any lock.  The two state-level lemmas above are
+its `.objStore` and modeled arms. -/
+theorem lockQueued_applyLockOpOnObject_of_never_enqueues
+    (c : CoreId) (l l' : LockId) (op : RwLockOp) (s : SystemState)
+    (hExt : s.objects.invExt)
+    (hOp : ∀ r : RwLockState, c ∉ r.waiters.map Prod.fst →
+      c ∉ (r.applyOp op).waiters.map Prod.fst)
+    (h : ¬ lockQueued c l s) :
+    ¬ lockQueued c l (applyLockOpOnObject s l' op) := by
+  unfold applyLockOpOnObject
+  cases l'.kind with
+  | objStore => exact lockQueued_objStoreLock_applyOp_of_never_enqueues c l op s hOp h
+  | runQueue | replenishQueue => all_goals exact h
+  | tcb | endpoint | notification | cnode
+  | vspaceRoot | untyped | schedContext | reply | page =>
+      all_goals exact lockQueued_updateObjectLockAt_of_never_enqueues c l l' op s hExt hOp h
+
+/-- **WS-LS LS1.2**: the frame every unwinding fold runs on, over keys — a
+word update by an op that never enqueues `c` cannot enqueue `c` at any key.
+The written key against the read key: a scheduler word is invisible to the
+table and object reads and conversely; two scheduler words at different
+cores are independent; the same word is `hOp`. -/
+theorem keyQueued_applyLockOp_of_never_enqueues (c : CoreId) (k k' : LockKey)
+    (op : RwLockOp) (s : SystemState) (hExt : s.objects.invExt)
+    (hOp : ∀ r : RwLockState, c ∉ r.waiters.map Prod.fst →
+      c ∉ (r.applyOp op).waiters.map Prod.fst)
+    (h : ¬ keyQueued c k s) :
+    ¬ keyQueued c k (applyLockOp s k' op) := by
+  cases k' with
+  | objStore =>
+      cases k with
+      | objStore => exact hOp _ h
+      | object l => exact lockQueued_objStoreLock_applyOp_of_never_enqueues c l op s hOp h
+      | runQueue d => exact h
+      | replenishQueue d => exact h
+  | object l' =>
+      cases k with
+      | objStore =>
+          rw [keyQueued_objStore_eq_lockQueued c l'.objId] at h ⊢
+          exact lockQueued_applyLockOpOnObject_of_never_enqueues c _ l' op s hExt hOp h
+      | object l =>
+          exact lockQueued_applyLockOpOnObject_of_never_enqueues c l l' op s hExt hOp h
+      | runQueue d =>
+          show c ∉ ((applyLockOpOnObject s l' op).runQueueLockOnCore d).waiters.map Prod.fst
+          unfold SystemState.runQueueLockOnCore
+          rw [applyLockOpOnObject_schedulerLocks]
+          exact h
+      | replenishQueue d =>
+          show c ∉ ((applyLockOpOnObject s l' op).replenishQueueLockOnCore d).waiters.map
+            Prod.fst
+          unfold SystemState.replenishQueueLockOnCore
+          rw [applyLockOpOnObject_schedulerLocks]
+          exact h
+  | runQueue d' =>
+      cases k with
+      | objStore =>
+          show c ∉ (s.setRunQueueLockOnCore d' _).objStoreLock.waiters.map Prod.fst
+          rw [setRunQueueLockOnCore_objStoreLock]
+          exact h
+      | object l =>
+          exact fun hq => h ((lockQueued_setRunQueueLockOnCore c l s d' _).mp hq)
+      | runQueue d =>
+          show c ∉ ((s.setRunQueueLockOnCore d' _).runQueueLockOnCore d).waiters.map Prod.fst
+          by_cases hd : d' = d
+          · subst hd
+            rw [runQueueLockOnCore_setRunQueueLockOnCore_self]
+            exact hOp _ h
+          · rw [runQueueLockOnCore_setRunQueueLockOnCore_ne s d' d _ hd]
+            exact h
+      | replenishQueue d =>
+          show c ∉ ((s.setRunQueueLockOnCore d' _).replenishQueueLockOnCore d).waiters.map
+            Prod.fst
+          rw [replenishQueueLockOnCore_setRunQueueLockOnCore]
+          exact h
+  | replenishQueue d' =>
+      cases k with
+      | objStore =>
+          show c ∉ (s.setReplenishQueueLockOnCore d' _).objStoreLock.waiters.map Prod.fst
+          rw [setReplenishQueueLockOnCore_objStoreLock]
+          exact h
+      | object l =>
+          exact fun hq => h ((lockQueued_setReplenishQueueLockOnCore c l s d' _).mp hq)
+      | runQueue d =>
+          show c ∉ ((s.setReplenishQueueLockOnCore d' _).runQueueLockOnCore d).waiters.map
+            Prod.fst
+          rw [runQueueLockOnCore_setReplenishQueueLockOnCore]
+          exact h
+      | replenishQueue d =>
+          show c ∉ ((s.setReplenishQueueLockOnCore d' _).replenishQueueLockOnCore d).waiters.map
+            Prod.fst
+          by_cases hd : d' = d
+          · subst hd
+            rw [replenishQueueLockOnCore_setReplenishQueueLockOnCore_self]
+            exact hOp _ h
+          · rw [replenishQueueLockOnCore_setReplenishQueueLockOnCore_ne s d' d _ hd]
+            exact h
+
+/-- **WS-LS LS1.2**: a withdrawal never enqueues anybody, at any key. -/
+theorem cancelLock_preserves_not_queued (c core : CoreId) (k k' : LockKey)
+    (m : AccessMode) (s : SystemState) (hExt : s.objects.invExt)
+    (h : ¬ keyQueued c k s) :
+    ¬ keyQueued c k (cancelLock s core k' m) := by
+  rw [cancelLock_eq_applyLockOp]
+  exact keyQueued_applyLockOp_of_never_enqueues c k k' _ s hExt
+    (fun r hr => rwLock_cancel_preserves_not_queued r c core hr) h
+
+/-- **WS-LS LS1.2**: no release ever enqueues, at any key. -/
+theorem releaseLock_preserves_not_queued (c core : CoreId) (k k' : LockKey)
+    (m : AccessMode) (s : SystemState) (hExt : s.objects.invExt)
+    (h : ¬ keyQueued c k s) :
+    ¬ keyQueued c k (releaseLock s core k' m) := by
+  rw [releaseLock_eq_applyLockOp]
+  exact keyQueued_applyLockOp_of_never_enqueues c k k' _ s hExt
+    (fun r hr => rwLock_release_preserves_not_queued r c core m hr) h
+
+/-- **WS-LS LS1.2**: a withdrawal at a key leaves the withdrawing core with no
+queued request at that key — `cancelLockOnObject_withdraws` at every key. -/
+theorem cancelLock_withdraws (s : SystemState) (core : CoreId) (k : LockKey)
+    (m : AccessMode) (hExt : s.objects.invExt) :
+    ¬ keyQueued core k (cancelLock s core k m) := by
+  cases k with
+  | objStore => exact rwLock_cancel_not_queued s.objStoreLock core
+  | object l => exact cancelLockOnObject_withdraws s core l m hExt
+  | runQueue d =>
+      show core ∉ ((s.setRunQueueLockOnCore d _).runQueueLockOnCore d).waiters.map Prod.fst
+      rw [runQueueLockOnCore_setRunQueueLockOnCore_self]
+      exact rwLock_cancel_not_queued _ core
+  | replenishQueue d =>
+      show core ∉ ((s.setReplenishQueueLockOnCore d _).replenishQueueLockOnCore d).waiters.map
+        Prod.fst
+      rw [replenishQueueLockOnCore_setReplenishQueueLockOnCore_self]
+      exact rwLock_cancel_not_queued _ core
+
 /-- **WS-LC LC4.3**: the withdrawal *fold* never enqueues. -/
-theorem cancelAll_preserves_not_queued (c core : CoreId) (l : LockId)
-    (pairs : List (LockId × AccessMode)) :
-    ∀ s : SystemState, s.objects.invExt → ¬ lockQueued c l s →
-      ¬ lockQueued c l (cancelAll core pairs s) := by
+theorem cancelAll_preserves_not_queued (c core : CoreId) (k : LockKey)
+    (pairs : List (LockKey × AccessMode)) :
+    ∀ s : SystemState, s.objects.invExt → ¬ keyQueued c k s →
+      ¬ keyQueued c k (cancelAll core pairs s) := by
   induction pairs with
   | nil => intro s _ h; exact h
   | cons head tail ih =>
       intro s hExt h
-      obtain ⟨hl, hm⟩ := head
+      obtain ⟨hk, hm⟩ := head
       rw [cancelAll_cons]
-      exact ih _ (cancelLockOnObject_preserves_invExt s core hl hm hExt)
-        (cancelLockOnObject_preserves_not_queued c core l hl hm s hExt h)
+      exact ih _ (cancelLock_preserves_invExt s core hk hm hExt)
+        (cancelLock_preserves_not_queued c core k hk hm s hExt h)
 
 /-- **WS-LC LC4.3**: the release *fold* never enqueues. -/
-theorem releaseAll_preserves_not_queued (c core : CoreId) (l : LockId)
-    (pairs : List (LockId × AccessMode)) :
-    ∀ s : SystemState, s.objects.invExt → ¬ lockQueued c l s →
-      ¬ lockQueued c l (releaseAll core pairs s) := by
+theorem releaseAll_preserves_not_queued (c core : CoreId) (k : LockKey)
+    (pairs : List (LockKey × AccessMode)) :
+    ∀ s : SystemState, s.objects.invExt → ¬ keyQueued c k s →
+      ¬ keyQueued c k (releaseAll core pairs s) := by
   induction pairs with
   | nil => intro s _ h; exact h
   | cons head tail ih =>
       intro s hExt h
-      obtain ⟨hl, hm⟩ := head
+      obtain ⟨hk, hm⟩ := head
       rw [releaseAll_cons]
-      exact ih _ (releaseLockOnObject_preserves_invExt s core hl hm hExt)
-        (releaseLockOnObject_preserves_not_queued c core l hl hm s hExt h)
+      exact ih _ (releaseLock_preserves_invExt s core hk hm hExt)
+        (releaseLock_preserves_not_queued c core k hk hm s hExt h)
 
 /-- **WS-LC LC4.3**: the withdrawal fold *establishes* the property at every
 member it visits.
@@ -1020,23 +1307,23 @@ withdrawal never enqueues anywhere.  No distinctness hypothesis on the
 footprint: two members naming the same lock are harmless, since withdrawing
 twice is still a withdrawal. -/
 theorem cancelAll_leaves_no_queued_request (core : CoreId)
-    (pairs : List (LockId × AccessMode)) :
+    (pairs : List (LockKey × AccessMode)) :
     ∀ s : SystemState, s.objects.invExt →
-      ∀ p ∈ pairs, ¬ lockQueued core p.fst (cancelAll core pairs s) := by
+      ∀ p ∈ pairs, ¬ keyQueued core p.fst (cancelAll core pairs s) := by
   induction pairs with
   | nil => intro s _ p hp; cases hp
   | cons head tail ih =>
       intro s hExt p hp
-      obtain ⟨hl, hm⟩ := head
+      obtain ⟨hk, hm⟩ := head
       rw [cancelAll_cons]
-      have hExt' : (cancelLockOnObject s core hl hm).objects.invExt :=
-        cancelLockOnObject_preserves_invExt s core hl hm hExt
+      have hExt' : (cancelLock s core hk hm).objects.invExt :=
+        cancelLock_preserves_invExt s core hk hm hExt
       rw [List.mem_cons] at hp
       cases hp with
       | inl hHead =>
           subst hHead
           exact cancelAll_preserves_not_queued core core _ tail _ hExt'
-            (cancelLockOnObject_withdraws s core hl hm hExt)
+            (cancelLock_withdraws s core hk hm hExt)
       | inr hTail => exact ih _ hExt' p hTail
 
 /-- **WS-LC LC4.3 (the payoff)**: the shrinking phase leaves the unwinding
@@ -1046,7 +1333,7 @@ This is the theorem that replaces the "what 'released' does and does not
 mean" caveat: that caveat's claim was that the unwind *cannot* remove a
 request the growing phase queued, and this is its exact negation.
 
-Note what it does not say — `¬ lockHeld`, which is false here: a core
+Note what it does not say — `¬ keyHeld`, which is false here: a core
 holding a *write* lock, unwound at a member declared `.read`, keeps
 `writerHeld`, and ruling that out needs a mode-agreement hypothesis
 threaded from the growing phase, for a conclusion the caveat never made.
@@ -1059,9 +1346,9 @@ condition on the footprint, because the withdrawal fold establishes the
 property everywhere before the release fold runs, and no release arm
 enqueues. -/
 theorem unwindAll_leaves_no_queued_request (core : CoreId)
-    (pairs : List (LockId × AccessMode)) (s : SystemState)
+    (pairs : List (LockKey × AccessMode)) (s : SystemState)
     (hExt : s.objects.invExt) :
-    ∀ p ∈ pairs, ¬ lockQueued core p.fst (unwindAll core pairs s) := by
+    ∀ p ∈ pairs, ¬ keyQueued core p.fst (unwindAll core pairs s) := by
   intro p hp
   rw [unwindAll_eq_releaseAll_cancelAll]
   exact releaseAll_preserves_not_queued core core p.fst pairs _

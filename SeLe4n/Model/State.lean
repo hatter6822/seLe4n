@@ -857,10 +857,10 @@ def adapterFlushTlbByVAddr (tlb : TlbState) (asid : SeLe4n.ASID) (vaddr : SeLe4n
   { entries := tlb.entries.filter (fun e => !(e.asid == asid && e.vaddr == vaddr)) }
 
 /-- **WS-RR RR7.39**: the per-core scheduler lock words — the state
-representation of the two `SchedLockId` constructors the object domain cannot
+representation of the two `LockKey` constructors the object domain cannot
 name.
 
-`SchedLockId` (SM5.A.2) unifies three lock domains under one order —
+`LockKey` (SM5.A.2) unifies three lock domains under one order —
 `object < runQueue < replenishQueue` — and every per-core scheduler transition
 declares its footprint over it.  Two of the three constructors had no state to
 advance: `LockSet`'s primitives route `.objStore` to `SystemState.objStoreLock`
@@ -1006,10 +1006,10 @@ structure SystemState where
   objStoreLock : SeLe4n.Kernel.Concurrency.RwLockState :=
     SeLe4n.Kernel.Concurrency.RwLockState.unheld
   /-- **WS-RR RR7.39**: the per-core scheduler lock words — the state
-      representation of `SchedLockId.runQueue` and `SchedLockId.replenishQueue`.
+      representation of `LockKey.runQueue` and `LockKey.replenishQueue`.
 
       SM5.A.2 gave the per-core scheduler its cross-domain lock identifier
-      (`SchedLockId`, ordered object < runQueue < replenishQueue) and SM5.B–G
+      (`LockKey`, ordered object < runQueue < replenishQueue) and SM5.B–G
       declared a footprint for every per-core transition — but the run-queue and
       replenish-queue constructors named locks the state had no word for, so a
       bracket over them could sort a list and acquire nothing.  This field is

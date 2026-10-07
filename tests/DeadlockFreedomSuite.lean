@@ -59,7 +59,7 @@ open SeLe4n.Kernel.Concurrency
 #check @coreFollows2PL
 #check @coreAcquiresInOrder
 #check @executionFollows2PL
-#check @executionAcquiresInLockIdOrder
+#check @executionAcquiresInLockKeyOrder
 #check @ladder_of_2pl_and_order
 
 /-! ## SM3.D.3 — Strict-order helpers -/
@@ -179,9 +179,9 @@ def c0 : CoreId := ⟨0, by decide⟩
 def c1 : CoreId := ⟨1, by decide⟩
 
 /-- A `.tcb` lock at ObjId 5 (lower in the LockId order). -/
-def tcb5 : LockId := ⟨.tcb, SeLe4n.ObjId.ofNat 5⟩
+def tcb5 : LockKey := .object ⟨.tcb, SeLe4n.ObjId.ofNat 5⟩
 /-- A `.tcb` lock at ObjId 7 (higher in the LockId order). -/
-def tcb7 : LockId := ⟨.tcb, SeLe4n.ObjId.ofNat 7⟩
+def tcb7 : LockKey := .object ⟨.tcb, SeLe4n.ObjId.ofNat 7⟩
 
 /-- **Deadlock-free scenario** (plan §5.4 SM3.D.7): two cores both want
 `{tcb5, tcb7}`.  Core 0 holds the lower lock `tcb5` and is blocked on the
@@ -221,13 +221,13 @@ example : ¬ (tcb7 < tcb5) := by decide
 /-! ## SM3.D.4 — Deadlock-free fixture satisfies the hypotheses -/
 
 example : executionFollows2PL execNoDeadlock := by decide
-example : executionAcquiresInLockIdOrder execNoDeadlock := by decide
+example : executionAcquiresInLockKeyOrder execNoDeadlock := by decide
 example : noDeadlock execNoDeadlock := by decide
 
 /-! ## SM3.D.4 — Deadlock fixture violates ordering (non-vacuity) -/
 
 example : ¬ noDeadlock execDeadlock := by decide
-example : ¬ executionAcquiresInLockIdOrder execDeadlock := by decide
+example : ¬ executionAcquiresInLockKeyOrder execDeadlock := by decide
 example : mutualBlocked execDeadlock c0 c1 := by decide
 example : ¬ mutualBlocked execNoDeadlock c0 c1 := by decide
 
@@ -363,14 +363,14 @@ singleton `{objStore 0}` (SM3.C `lockSetHeld`), so `lockSetHeld_realizes_heldBy`
 yields both the concrete `lockHeld` and the abstract `heldBy` for that lock.
 This exercises the bridge on a *non-empty, genuinely-held* lock set. -/
 example :
-    ∀ p ∈ (LockSet.singleton ⟨.objStore, SeLe4n.ObjId.ofNat 0⟩ .write).pairs,
-      lockHeld c0 p.fst p.snd
+    ∀ p ∈ (LockSet.singleton .objStore .write).pairs,
+      keyHeld c0 p.fst p.snd
           (acquireLockOnObject (default : SeLe4n.Model.SystemState) c0
             ⟨.objStore, SeLe4n.ObjId.ofNat 0⟩ .write) ∧
       heldBy (executionOfHeld c0
-          (LockSet.singleton ⟨.objStore, SeLe4n.ObjId.ofNat 0⟩ .write) none) c0 p.fst :=
+          (LockSet.singleton .objStore .write) none) c0 p.fst :=
   lockSetHeld_realizes_heldBy c0
-    (LockSet.singleton ⟨.objStore, SeLe4n.ObjId.ofNat 0⟩ .write)
+    (LockSet.singleton .objStore .write)
     (acquireLockOnObject (default : SeLe4n.Model.SystemState) c0
       ⟨.objStore, SeLe4n.ObjId.ofNat 0⟩ .write) none (by decide)
 
@@ -415,7 +415,7 @@ private def runHypothesisChecks : IO Unit := do
   IO.println "--- §2 SM3.D.4 — deadlock-free fixture satisfies hypotheses ---"
   assertBool "execNoDeadlock follows 2PL" (decide (executionFollows2PL execNoDeadlock))
   assertBool "execNoDeadlock acquires in LockId order"
-    (decide (executionAcquiresInLockIdOrder execNoDeadlock))
+    (decide (executionAcquiresInLockKeyOrder execNoDeadlock))
   assertBool "execNoDeadlock is deadlock-free" (decide (noDeadlock execNoDeadlock))
   assertBool "execNoDeadlock has no mutual block (c0,c1)"
     (decide (¬ mutualBlocked execNoDeadlock c0 c1))
@@ -429,7 +429,7 @@ private def runDeadlockNonVacuityChecks : IO Unit := do
   -- And it necessarily violates the ordering hypothesis (the contrapositive
   -- of deadlockFreedom_under_2pl_and_ordering).
   assertBool "execDeadlock VIOLATES the LockId-ordering hypothesis"
-    (decide (¬ executionAcquiresInLockIdOrder execDeadlock))
+    (decide (¬ executionAcquiresInLockKeyOrder execDeadlock))
 
 private def runWaitGraphChecks : IO Unit := do
   IO.println "--- §4 SM3.D.5 — wait-graph edges (decidable) ---"
@@ -476,7 +476,7 @@ private def runGroundingChecks : IO Unit := do
   assertBool "execGrounded follows 2PL (prefix-shaped)"
     (decide (executionFollows2PL execGrounded))
   assertBool "execGrounded acquires in order (prefix-shaped)"
-    (decide (executionAcquiresInLockIdOrder execGrounded))
+    (decide (executionAcquiresInLockKeyOrder execGrounded))
   -- The canonical acquire order of the 2-element set is [tcb5, tcb7].
   assertBool "acquireOrder twoLockSet = [tcb5, tcb7]"
     (decide (acquireOrder twoLockSet = [tcb5, tcb7]))
@@ -486,13 +486,13 @@ private def runModeAwareChecks : IO Unit := do
   -- Auxiliary mode functions: every core requests write, every held lock is
   -- held in write mode (so all overlaps conflict).
   let wm : CoreId → AccessMode := fun _ => .write
-  let hm : CoreId → LockId → AccessMode := fun _ _ => .write
+  let hm : CoreId → LockKey → AccessMode := fun _ _ => .write
   -- In execDeadlock both write-write edges are present (a genuine conflict).
   assertBool "execDeadlock: c0 conflictWaitsFor c1 (write–write conflict edge)"
     (decide (conflictWaitsFor execDeadlock wm hm c0 c1))
   -- Read–read does NOT conflict: with everyone reading, no conflict edge.
   let rd : CoreId → AccessMode := fun _ => .read
-  let rdHeld : CoreId → LockId → AccessMode := fun _ _ => .read
+  let rdHeld : CoreId → LockKey → AccessMode := fun _ _ => .read
   assertBool "execDeadlock: ¬ c0 conflictWaitsFor c1 under read–read (no conflict)"
     (decide (¬ conflictWaitsFor execDeadlock rd rdHeld c0 c1))
   -- Every conflict edge is a plain blocked-wait edge (subgraph witness).
@@ -933,19 +933,19 @@ private def runWCRTChecks : IO Unit := do
   assertBool "execContention follows 2PL"
     (decide (executionFollows2PL execContention))
   assertBool "execContention acquires in LockId order"
-    (decide (executionAcquiresInLockIdOrder execContention))
+    (decide (executionAcquiresInLockKeyOrder execContention))
   assertBool "execContention is deadlock-free"
     (decide (noDeadlock execContention))
 
 private def runBridgeChecks : IO Unit := do
   IO.println "--- §11 SM3.D §7b/§7c — model↔kernel bridge + twoCorePathScenario ---"
   -- executionOfHeld: the abstract heldBy reflects lock-set membership.
-  let S := LockSet.singleton ⟨.tcb, (ThreadId.ofNat 5).toObjId⟩ .write
+  let S := LockSet.singleton (.object ⟨.tcb, (ThreadId.ofNat 5).toObjId⟩) .write
   let e := executionOfHeld c0 S none
   assertBool "executionOfHeld c0 S: heldBy c0 (tcb 5) holds"
-    (decide (heldBy e c0 ⟨.tcb, (ThreadId.ofNat 5).toObjId⟩))
+    (decide (heldBy e c0 (.object ⟨.tcb, (ThreadId.ofNat 5).toObjId⟩)))
   assertBool "executionOfHeld c0 S: heldBy c0 (tcb 99) does NOT hold"
-    (decide (¬ heldBy e c0 ⟨.tcb, (ThreadId.ofNat 99).toObjId⟩))
+    (decide (¬ heldBy e c0 (.object ⟨.tcb, (ThreadId.ofNat 99).toObjId⟩)))
   -- twoCorePathScenario: the deadlock-free fixture is a canonical two-core path.
   assertBool "execNoDeadlock is a twoCorePathScenario c0 c1 tcb5 tcb7"
     (decide (twoCorePathScenario execNoDeadlock c0 c1 tcb5 tcb7))

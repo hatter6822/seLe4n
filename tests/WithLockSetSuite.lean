@@ -251,11 +251,11 @@ example : (lockSetHeld bootCoreId LockSet.empty (default : SystemState) : Prop) 
 
 -- The default state's lockSetHeld for a non-empty set is False.
 example : ¬ lockSetHeld bootCoreId
-    (LockSet.singleton ⟨.tcb, SeLe4n.ObjId.ofNat 1⟩ .write)
+    (LockSet.singleton (.object ⟨.tcb, SeLe4n.ObjId.ofNat 1⟩) .write)
     (default : SystemState) := by
   intro h
   have hEmpty := (lockSetHeld_default_iff_empty bootCoreId
-    (LockSet.singleton ⟨.tcb, SeLe4n.ObjId.ofNat 1⟩ .write)).mp h
+    (LockSet.singleton (.object ⟨.tcb, SeLe4n.ObjId.ofNat 1⟩) .write)).mp h
   -- The singleton list is not empty.
   simp [LockSet.singleton] at hEmpty
 
@@ -305,8 +305,8 @@ example : releaseOrder LockSet.empty = [] := by
   simp [releaseOrder, acquireOrder]
 
 -- The acquire order on a singleton is a one-element list.
-example : acquireOrder (LockSet.singleton ⟨.tcb, SeLe4n.ObjId.ofNat 1⟩ .write)
-    = [⟨.tcb, SeLe4n.ObjId.ofNat 1⟩] := by
+example : acquireOrder (LockSet.singleton (.object ⟨.tcb, SeLe4n.ObjId.ofNat 1⟩) .write)
+    = [.object ⟨.tcb, SeLe4n.ObjId.ofNat 1⟩] := by
   simp [acquireOrder]
 
 /-! ## §3.2 SM3.C.7 — Three-phase atomic decomposition -/
@@ -387,12 +387,12 @@ private def runAcquireAllChecks : IO Unit := do
   assertBool "releaseAll [] preserves objStoreLock"
     (decide (sRelNil.objStoreLock = RwLockState.unheld))
   -- acquireAll on a singleton [(objStore, .read)] takes a read lock on objStore.
-  let l : LockId := ⟨.objStore, SeLe4n.ObjId.ofNat 0⟩
+  let l : LockKey := .objStore
   let acq : SystemState := acquireAll bootCoreId [(l, .read)] s₀
   assertBool "acquireAll [(.objStore, .read)] adds bootCoreId to readers"
     (decide (bootCoreId ∈ acq.objStoreLock.readers))
   -- acquireAll then releaseAll round-trip: writer is none and readers empty.
-  let writeL : LockId := ⟨.objStore, SeLe4n.ObjId.ofNat 0⟩
+  let writeL : LockKey := .objStore
   let acqWrite := acquireAll bootCoreId [(writeL, .write)] s₀
   let relWrite := releaseAll bootCoreId [(writeL, .write)] acqWrite
   assertBool "acquireAll then releaseAll round-trip writer = none"
@@ -406,30 +406,30 @@ private def runLockSetHeldChecks : IO Unit := do
   -- Default state holds NO locks (every modeled-kind lookup is none).
   assertBool "¬ lockSetHeld for singleton on default state"
     (decide (¬ lockSetHeld bootCoreId
-      (LockSet.singleton ⟨.tcb, SeLe4n.ObjId.ofNat 1⟩ .write)
+      (LockSet.singleton (.object ⟨.tcb, SeLe4n.ObjId.ofNat 1⟩) .write)
       (default : SystemState)))
   -- Default state's objStoreLock is unheld, so even .objStore not held.
   assertBool "¬ lockSetHeld for .objStore singleton on default state"
     (decide (¬ lockSetHeld bootCoreId
-      (LockSet.singleton ⟨.objStore, SeLe4n.ObjId.ofNat 0⟩ .write)
+      (LockSet.singleton .objStore .write)
       (default : SystemState)))
   -- After acquiring objStore lock for bootCoreId, lockSetHeld is true.
   let s₁ := acquireLockOnObject (default : SystemState) bootCoreId
     ⟨.objStore, SeLe4n.ObjId.ofNat 0⟩ .write
   assertBool "lockSetHeld after acquiring objStore .write"
     (decide (lockSetHeld bootCoreId
-      (LockSet.singleton ⟨.objStore, SeLe4n.ObjId.ofNat 0⟩ .write) s₁))
+      (LockSet.singleton .objStore .write) s₁))
 
 private def runOrderingChecks : IO Unit := do
   IO.println "--- §5 SM3.C.5 / SM3.C.6 — Ordering properties ---"
   -- Empty acquire order is empty.
   assertBool "acquireOrder LockSet.empty = []"
-    (decide (acquireOrder LockSet.empty = ([] : List LockId)))
+    (decide (acquireOrder LockSet.empty = ([] : List LockKey)))
   -- Empty release order is empty.
   assertBool "releaseOrder LockSet.empty = []"
-    (decide (releaseOrder LockSet.empty = ([] : List LockId)))
+    (decide (releaseOrder LockSet.empty = ([] : List LockKey)))
   -- Singleton acquire order has one element.
-  let l : LockId := ⟨.tcb, SeLe4n.ObjId.ofNat 1⟩
+  let l : LockKey := .object ⟨.tcb, SeLe4n.ObjId.ofNat 1⟩
   assertBool "acquireOrder singleton = [l]"
     (decide (acquireOrder (LockSet.singleton l .write) = [l]))
   -- Release order is reverse of acquire order.
@@ -630,7 +630,7 @@ private def runIntegrationChecks : IO Unit := do
               = [LockKind.objStore, LockKind.cnode, LockKind.cnode, LockKind.tcb]))
   assertBool "acquireOrder(cspaceMove) cnode objIds ascending = [7, 9]"
     (decide (((acquireOrder cmSet).filterMap
-        (fun l => if l.kind = .cnode then some l.objId.val else none)) = [7, 9]))
+        (fun l => if l.kind = .cnode then l.objId?.map (·.val) else none)) = [7, 9]))
   -- SM3.C.5 ordering theorem applies to the real lockSet: acquireOrder is
   -- Pairwise (· ≤ ·).  (Decidable check mirroring lockSet_acquired_in_order.)
   assertBool "acquireOrder(cspaceMove) is Pairwise (· ≤ ·) [SM3.C.5 on real set]"
@@ -695,7 +695,7 @@ private def cspaceMoveFixture : SystemState :=
 private def runRaiiReleaseChecks : IO Unit := do
   IO.println "--- §12 SM3.C.10 — RAII release discipline (panic/early-exit) ---"
   let s₀ : SystemState := default
-  let objStoreSet := LockSet.singleton ⟨.objStore, SeLe4n.ObjId.ofNat 0⟩ .write
+  let objStoreSet := LockSet.singleton .objStore .write
   -- A "failing" action: it returns the (lock-acquired) state unchanged with an
   -- error value, modelling an early-exit / panic that does NOT release locks
   -- itself.  withLockSet's shrinking phase must still release them.
@@ -711,7 +711,7 @@ private def runRaiiReleaseChecks : IO Unit := do
   assertBool "RAII: ¬ lockSetHeld after withLockSet (shrinking phase released all)"
     (decide (¬ lockSetHeld bootCoreId objStoreSet result.fst))
   -- A read-mode failing action: same release guarantee.
-  let readSet := LockSet.singleton ⟨.objStore, SeLe4n.ObjId.ofNat 0⟩ .read
+  let readSet := LockSet.singleton .objStore .read
   let resultR := withLockSet readSet bootCoreId failingAction s₀
   assertBool "RAII: objStore read lock released after failing action"
     (decide (resultR.fst.objStoreLock = RwLockState.unheld))
@@ -762,7 +762,7 @@ private def runObserverAtomicChecks : IO Unit := do
   let s : SystemState := { (default : SystemState) with
     objects := (default : SystemState).objects.insert
       (ThreadId.ofNat 5).toObjId (.tcb (mkTcbReady 5)) }
-  let tcbSet := LockSet.singleton ⟨.tcb, (ThreadId.ofNat 5).toObjId⟩ .write
+  let tcbSet := LockSet.singleton (.object ⟨.tcb, (ThreadId.ofNat 5).toObjId⟩) .write
   -- Acquire fold is invisible to the observer.
   assertBool "observer: acquireAll invisible to objectType projection"
     (decide (observe (acquireAll bootCoreId tcbSet.lockAcquireSequence s) = observe s))
@@ -820,8 +820,8 @@ private def runMultiStepChainChecks : IO Unit := do
   let chainA := chainLockSeq ⟨⟨5⟩, [⟨5⟩, ⟨7⟩], by rfl⟩
   let chainB := chainLockSeq ⟨⟨20⟩, [⟨20⟩, ⟨25⟩], by rfl⟩
   assertBool "two-core: disjoint chains [5,7] / [20,25] share no lock objId"
-    (decide ((chainA.map (·.fst.objId.val)).all (fun a =>
-      (chainB.map (·.fst.objId.val)).all (fun b => a ≠ b))))
+    (decide ((chainA.filterMap (·.fst.objId?)).all (fun a =>
+      (chainB.filterMap (·.fst.objId?)).all (fun b => a ≠ b))))
 
 
 /-- **WS-LS LS1.1**: the ghost table executes the lock semantics the per-object

@@ -56,7 +56,7 @@ them) and `writeReg` takes a `UInt64`; a register file is built with
 read on the entry/exit path; build a saved context from `TrapContext` through
 `ofWords` and the existing writers instead.
 
-### WS-LS Lock state separated from kernel state — IN FLIGHT (registered v0.36.60; LS0.1 v0.36.62; LS1.1 v0.36.63; runs beside WS-CV, before WS-CB)
+### WS-LS Lock state separated from kernel state — IN FLIGHT (registered v0.36.60; LS0.1 v0.36.62; LS1.1 v0.36.63; LS1.2 v0.36.64; runs beside WS-CV, before WS-CB)
 
 The lock words leave the kernel state: a ghost `LockState` (one total function
 over one `LockKey` type) sits beside `SystemState` in `LockedSystemState`, a
@@ -76,10 +76,11 @@ fields are as `docs/planning/SMP_FINE_LOCK_MIGRATION_PLAN.md` describes.
 **What new code must not do**: add a transition that reads or writes a `lock`
 field, `objStoreLock` or `schedulerLocks` (LS3 deletes them); add a consumer of
 `runBracketed`, `LockBracketOutcome`, `runUnderDeclaredLockSet` or
-`syscallBracketRefusalResult` (LS2 deletes them); declare a new footprint over
-`SchedLockId` (LS1.2 retires it into `LockKey`, which exists since LS1.1 in
-`Locks/LockState.lean` beside the ghost `LockState`) — declare it as a `LockSet`
-member and let LS1 re-key it.
+`syscallBracketRefusalResult` (LS2 deletes them); reintroduce a second lock-key
+type beside `LockKey` (`Locks/LockKey.lean`; LS1.2 retired `SchedLockId` and
+`SchedLockSet` into `LockKey` and `LockSet`, so every footprint, object or
+scheduler, is one `LockSet` and the one bracket domain is
+`objectLockBracketDomain`).
 
 ### WS-CB Hierarchical constant-bandwidth servers — PLANNED (registered v0.34.49; opens after WS-CV)
 

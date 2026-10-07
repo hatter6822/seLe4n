@@ -130,7 +130,7 @@ open SeLe4n.Testing
 -- SM5.J.2: the plan §3.9 Theorem 3.9.1 — for the RPi5 canonical config, any
 -- bounded-footprint op's lock-WCRT is ≤ maxLockSetSize · 3 · tCs, and the config is
 -- well-formed.
-example (lockSet : List (SchedLockId × AccessMode)) (tCs : Nat)
+example (lockSet : List (LockKey × AccessMode)) (tCs : Nat)
     (hSize : lockSet.length ≤ maxLockSetSize) :
     Liveness.rpi5CanonicalConfig.wellFormed ∧
     WCRT_lockSet lockSet tCs ≤ maxLockSetSize * (3 * tCs) :=
@@ -148,7 +148,7 @@ example (c : CoreId) (tCs : Nat) :
 
 -- SM5.J.2 (extends R5): the combined SMP WCRT splits into the R5 scheduling-latency
 -- term and the SM5.J lock-contention term.
-example (D L_max N B P : Nat) (lockSet : List (SchedLockId × AccessMode)) (tCs : Nat) :
+example (D L_max N B P : Nat) (lockSet : List (LockKey × AccessMode)) (tCs : Nat) :
     WCRT_smp D L_max N B P lockSet tCs =
       Liveness.wcrtBound D L_max N B P + WCRT_lockSet lockSet tCs :=
   WCRT_smp_decomposition D L_max N B P lockSet tCs
@@ -180,7 +180,7 @@ example (st : SystemState) (tid : SeLe4n.ThreadId) (c : CoreId)
 -- cores actually contending each lock) is bounded by the static per-core WCRT_lockSet of
 -- an equal-size footprint — connecting the two WCRT models.
 example (e : Concurrency.KernelExecution) (c : CoreId) (op : Concurrency.KernelOperation)
-    (ls : List (SchedLockId × AccessMode)) (tCs : Nat) (hlen : ls.length = op.lockSet.size) :
+    (ls : List (LockKey × AccessMode)) (tCs : Nat) (hlen : ls.length = op.lockSet.size) :
     Concurrency.WCRT e c op tCs ≤ WCRT_lockSet ls tCs :=
   kernelWait_le_WCRT_lockSet_of_length_eq e c op ls tCs hlen
 
@@ -195,7 +195,7 @@ example (st : SystemState)
 
 -- SM5.J.4 (extends R5): an R5-scheduled thread is within the combined SMP bound.
 example (trace : Liveness.SchedulerTrace) (tid : SeLe4n.ThreadId)
-    (D L_max N B P : Nat) (lockSet : List (SchedLockId × AccessMode)) (tCs : Nat)
+    (D L_max N B P : Nat) (lockSet : List (LockKey × AccessMode)) (tCs : Nat)
     (k : Nat) (hk : k ≤ Liveness.wcrtBound D L_max N B P)
     (hSel : Liveness.selectedAt trace k tid) :
     ∃ k', k' ≤ WCRT_smp D L_max N B P lockSet tCs ∧ Liveness.selectedAt trace k' tid :=
@@ -401,8 +401,8 @@ private def runRefinementChecks : IO Unit := do
   -- Access-mode soundness: a read footprint and a write footprint of the same shape
   -- have the same WCRT_lockSet (the worst case is all-writers, mode-agnostic).
   assertBool "mode soundness: read-mode and write-mode 2-lock footprints have equal WCRT_lockSet"
-    (decide (WCRT_lockSet [(SchedLockId.runQueue ⟨bootCoreId⟩, AccessMode.read)] tCs60
-              = WCRT_lockSet [(SchedLockId.runQueue ⟨bootCoreId⟩, AccessMode.write)] tCs60))
+    (decide (WCRT_lockSet [(LockKey.runQueue bootCoreId, AccessMode.read)] tCs60
+              = WCRT_lockSet [(LockKey.runQueue bootCoreId, AccessMode.write)] tCs60))
   -- The SGI-handler footprint (= switch, 2 locks) and the complete-timer footprint are
   -- both within the RPi5 bound (the §3 completion per-op bounds).
   assertBool "SGI-handler lock-WCRT (= switch, 360) ≤ RPi5 bound (1980)"

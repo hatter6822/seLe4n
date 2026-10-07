@@ -200,6 +200,14 @@ theorem lockKind_ne_objStore (obj : KernelObject) :
     obj.lockKind ≠ .objStore := by
   cases obj <;> intro h <;> cases h
 
+/-- **WS-LS LS1.2**: `lockKind` is an object kind — never `.objStore`, and
+never one of the two scheduler-queue kinds, which name per-core words
+(`LockKey.runQueue c`) and no stored object.  The one witness the
+scheduler-kind arms of the per-object primitives discharge against. -/
+theorem lockKind_isObjectKind (obj : KernelObject) :
+    obj.lockKind.isObjectKind = true := by
+  cases obj <;> rfl
+
 -- WS-SM SM6.D: `lockKind_ne_reply` removed — `.reply` is now a real
 -- kernel-object kind (`KernelObject.reply` → `LockKind.reply`, hierarchy
 -- level 6), so the former "never .reply" pin is false by construction.
@@ -384,6 +392,8 @@ def lookup (s : SystemState) (l : LockId) :
   | .page =>
       (s.getPageObject? l.objId).map
         (fun (o : KernelObject) => (o.objectLockOf, o))
+  -- **WS-LS LS1.2**: the scheduler-queue kinds name no object; see `LockKey`.
+  | .runQueue | .replenishQueue => none
 
 /-- WS-SM SM3.B.2: lookup at a present ObjId with matching kind returns
 `some` carrying the abstract lock state and the object.
@@ -520,6 +530,8 @@ theorem lookup_kindMatch (s : SystemState) (l : LockId)
   unfold LockId.lookup at hLookup
   cases hK : l.kind with
   | objStore => rw [hK] at hLookup; cases hLookup
+  | runQueue => rw [hK] at hLookup; cases hLookup
+  | replenishQueue => rw [hK] at hLookup; cases hLookup
   | reply =>
       rw [hK] at hLookup
       cases hG : s.getReply? ⟨l.objId.val⟩ with
@@ -614,6 +626,8 @@ theorem lookup_lockState_eq (s : SystemState) (l : LockId)
   unfold LockId.lookup at hLookup
   cases hK : l.kind with
   | objStore => rw [hK] at hLookup; cases hLookup
+  | runQueue => rw [hK] at hLookup; cases hLookup
+  | replenishQueue => rw [hK] at hLookup; cases hLookup
   | reply =>
       rw [hK] at hLookup
       cases hG : s.getReply? ⟨l.objId.val⟩ with
@@ -723,6 +737,8 @@ theorem lookup_object_eq (s : SystemState) (l : LockId)
   unfold LockId.lookup at hLookup
   cases hK : l.kind with
   | objStore => rw [hK] at hLookup; cases hLookup
+  | runQueue => rw [hK] at hLookup; cases hLookup
+  | replenishQueue => rw [hK] at hLookup; cases hLookup
   | page =>
       rw [hK] at hLookup
       cases hG : s.getPageObject? l.objId with

@@ -83,7 +83,8 @@ thread is identified and descheduled on its own core rather than the boot core.
 namespace SeLe4n.Kernel
 
 open SeLe4n.Model
-open SeLe4n.Kernel.Concurrency (CoreId SgiKind)
+open SeLe4n.Kernel.Concurrency (CoreId SgiKind
+  LockSet lockSetHeld acquireAll unwindAll objectLockBracketDomain)
 
 /-- **WS-SM SM7.B.12**: the sharing domain the live shootdown round's
 TLBIs are issued in — read **directly from the platform binding**
@@ -648,7 +649,7 @@ def syscallDispatchCrossCoreBracketedStep (ctx : LabelingContext) (execCore : Co
       List Architecture.TlbInvalidation × (Nat × Nat) ×
       List Architecture.ICacheInvalidation × List Architecture.PhysicalWrite ×
       Architecture.RestoreTarget × Option SeLe4n.ThreadId) × SystemState :=
-  match Concurrency.runBracketed schedulerLockBracketDomain
+  match Concurrency.runBracketed objectLockBracketDomain
       (declaredUnifiedLockSetForAbiEntry ctx execCore syscallId
         trapped.x0 trapped.x1 trapped.x2 trapped.x3 trapped.x4 trapped.x5)
       execCore
@@ -688,18 +689,18 @@ would be worse than no guard: the syscall would have committed against a
 resolution the guard judged stale. -/
 theorem syscallDispatchCrossCoreBracketedStep_refused (ctx : LabelingContext)
     (execCore : CoreId) (syscallId : UInt32) (trapped : Architecture.TrapContext)
-    (st : SystemState) (S : SchedLockSet)
+    (st : SystemState) (S : LockSet)
     (hDecl : declaredUnifiedLockSetForAbiEntry ctx execCore syscallId
           trapped.x0 trapped.x1 trapped.x2 trapped.x3 trapped.x4 trapped.x5 st = some S)
     (hGuard : ¬ (declaredUnifiedLockSetForAbiEntry ctx execCore syscallId
           trapped.x0 trapped.x1 trapped.x2 trapped.x3 trapped.x4 trapped.x5
-          (schedAcquireAll execCore S.lockAcquireSequence st) = some S ∧
-        schedLockSetHeld execCore S
-          (schedAcquireAll execCore S.lockAcquireSequence st))) :
+          (acquireAll execCore S.lockAcquireSequence st) = some S ∧
+        lockSetHeld execCore S
+          (acquireAll execCore S.lockAcquireSequence st))) :
     syscallDispatchCrossCoreBracketedStep ctx execCore syscallId trapped st
       = syscallBracketRefusalResult execCore
-          (schedUnwindAll execCore S.lockAcquireSequence.reverse
-            (schedAcquireAll execCore S.lockAcquireSequence st)) := by
+          (unwindAll execCore S.lockAcquireSequence.reverse
+            (acquireAll execCore S.lockAcquireSequence st)) := by
   unfold syscallDispatchCrossCoreBracketedStep
   rw [Concurrency.runBracketed_refused _ _ _ _ st S hDecl hGuard]
   rfl

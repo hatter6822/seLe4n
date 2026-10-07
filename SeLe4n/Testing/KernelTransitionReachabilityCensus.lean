@@ -1020,19 +1020,18 @@ def nonExecutedTransitionsPlain : List Name :=
   , `SeLe4n.Kernel.Architecture.writeRestartFrameToTcb
   , `SeLe4n.Kernel.Concurrency.KernelTransitionInstance.action
   , `SeLe4n.Kernel.Concurrency.KernelTransitionInstance.ofWithLockSet
+  -- WS-LS LS1.2: the one word update the three per-key primitives are each
+  -- proved equal to (`acquireLock_eq_applyLockOp` and siblings), so the
+  -- never-enqueues frames are proved once.  Nothing runs it: the primitives
+  -- keep their own bodies, which every `unfold` in the lock layer reads, and
+  -- LS3 deletes the per-object layer with its equations.
+  , `SeLe4n.Kernel.Concurrency.applyLockOp
+  , `SeLe4n.Kernel.Concurrency.applyLockOpOnObject
   , `SeLe4n.Kernel.Concurrency.applySequential
   , `SeLe4n.Kernel.Concurrency.applySequentialWithLockSet
   , `SeLe4n.Kernel.Concurrency.commitSort
   , `SeLe4n.Kernel.Concurrency.insertByCommitTime
   , `SeLe4n.Kernel.Concurrency.objStoreWriteInstance
-  -- WS-RR RR8.12 Cut C6h (`v0.35.181`): the OBJECT domain's bracket instance.
-  -- The syscall seam moved to `schedulerLockBracketDomain` over the unified
-  -- footprint, so nothing a committing `@[export]` reaches acquires through this
-  -- one any more.  Not retired: it is the domain `runUnderDeclaredLockSet` is an
-  -- instance of, and the CSpace-walk bracket that still reads it is STAGED, so
-  -- no runtime path executes it.  It becomes live again when that surface is
-  -- promoted, or when a second object-domain seam is bracketed.
-  , `SeLe4n.Kernel.Concurrency.objectLockBracketDomain
   , `SeLe4n.Kernel.Concurrency.readOnlyInstance
   , `SeLe4n.Kernel.Concurrency.runChainExtension
   , `SeLe4n.Kernel.Concurrency.setObjStoreLockAction

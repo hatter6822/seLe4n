@@ -1530,9 +1530,9 @@ private def replyCapH : Capability :=
 
 /-- WS-RR RR8.12 Cut C3a: does a scheduler-domain footprint name this core's run-queue
 write lock? -/
-private def hasRunQueueWriteLock (fp : List (SchedLockId × Concurrency.AccessMode))
+private def hasRunQueueWriteLock (fp : List (LockKey × Concurrency.AccessMode))
     (c : CoreId) : Bool :=
-  decide ((SchedLockId.runQueue ⟨c⟩, Concurrency.AccessMode.write) ∈ fp)
+  decide ((LockKey.runQueue c, Concurrency.AccessMode.write) ∈ fp)
 
 /-- WS-RR RR4.14/RR4.15: the seam under test — a fault handler answers through
 the **ordinary reply syscall**, which is the only reply a handler has.  Before

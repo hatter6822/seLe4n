@@ -506,11 +506,11 @@ private def runLockSetChecks : IO Unit := do
   assertBool "idle-enqueue footprint is write-only"
     (decide ((enqueueIdleThreadOnCoreLockSet bootCoreId).all (fun p => p.2 == AccessMode.write)))
   assertBool "idle-enqueue footprint contains the object-store write lock"
-    (decide ((SchedLockId.object schedObjStoreLockId, AccessMode.write)
+    (decide ((LockKey.objStore, AccessMode.write)
               ∈ enqueueIdleThreadOnCoreLockSet bootCoreId))
   assertBool "idle-enqueue footprint acquires object-store before run-queue (§4.4)"
-    (decide (SchedLockId.object schedObjStoreLockId
-              < SchedLockId.runQueue (⟨bootCoreId⟩ : RunQueueLockId)))
+    (decide (LockKey.objStore
+              < LockKey.runQueue bootCoreId))
 
 private def runInventoryChecks : IO Unit := do
   IO.println "--- §3.8 SM5.E theorem inventory ---"

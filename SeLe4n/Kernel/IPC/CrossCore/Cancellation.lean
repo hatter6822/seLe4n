@@ -47,7 +47,7 @@ lock-set discipline:
   actively-running remote victim must be interrupted.  The footprint is
   declared on the **pre-state** (the SM3.B lock-set pre-resolution discipline)
   and the removal resolves on the state it acts on;
-  `cancelIpcBlockingOnCoreSchedLockSet_covers_deschedule` is the relation
+  `cancelIpcBlockingOnCoreLockSet_covers_deschedule` is the relation
   between the two, resting on `cancelIpcBlocking_scheduler_eq` (the teardown
   never touches the scheduler) and on the holder deschedule removing a thread
   that is never the victim (`cancelUnboundHolder?_ne_victim`).
@@ -411,11 +411,11 @@ the holder's post-teardown binding to be `.unbound` and the victim's not to be).
 Until `v0.35.158` the reclaim's step was WS-OD OD1.7's *wake*, a run-queue
 insert, and this paragraph carried a degenerate `holder = victim` case the
 insert could reach on no reachable state; the deschedule has no such case, so
-the footprint (`cancelIpcBlockingOnCoreSchedLockSet`), declared on the
+the footprint (`cancelIpcBlockingOnCoreLockSet`), declared on the
 **pre**-state as every footprint is, covers the victim's removal core with no
-disjunction (`cancelIpcBlockingOnCoreSchedLockSet_covers_deschedule`) and the
+disjunction (`cancelIpcBlockingOnCoreLockSet_covers_deschedule`) and the
 holder's own removal core at its declared member
-(`cancelIpcBlockingOnCoreSchedLockSet_covers_holder_deschedule`).
+(`cancelIpcBlockingOnCoreLockSet_covers_holder_deschedule`).
 
 **TOCTOU caveat (resolution vs. concurrent mutation).**  On hardware the whole
 transition runs inside the suspend syscall's 2PL bracket holding the victim's
@@ -424,7 +424,7 @@ AN9-D FFI bracket (`with_interrupts_disabled` around
 `suspend_thread_cross_core`) excludes same-core ISR interleavings.  The
 placement scan reads OTHER cores' run queues and current slots, which the
 victim's TCB lock does not serialise — its declared guard is the placed core's
-`SchedLockId.runQueue` write lock in the scheduler-domain footprint, and in the
+`LockKey.runQueue` write lock in the scheduler-domain footprint, and in the
 current runtime every transition is serialised through the single global state
 ref (`modifyGetKernelState`; the per-object runtime acquisition is the
 SM3.C.9/SM5.I deferral).  The same argument covers `suspendThreadOnCore`'s
@@ -2687,7 +2687,7 @@ cancellation footprint, so nothing has to be re-derived when that one gains a
 member. -/
 theorem lockSet_tcbSuspendOnCore_covers_cancelIpcBlockingOnCore (st : SystemState)
     (callerTid : SeLe4n.ThreadId) (cnodeRootObjId : SeLe4n.ObjId)
-    (targetTid : SeLe4n.ThreadId) (l : LockId)
+    (targetTid : SeLe4n.ThreadId) (l : LockKey)
     (hMem : (l, AccessMode.write) ∈ (lockSet_cancelIpcBlockingOnCore st targetTid).pairs) :
     (l, AccessMode.write)
       ∈ (lockSet_tcbSuspendOnCore st callerTid cnodeRootObjId targetTid).pairs := by
@@ -2699,7 +2699,7 @@ theorem lockSet_tcbSuspendOnCore_covers_cancelIpcBlockingOnCore (st : SystemStat
 is a key the suspend footprint holds. -/
 theorem lockSet_tcbSuspendOnCore_containsKey_of_cancelIpcBlockingOnCore (st : SystemState)
     (callerTid : SeLe4n.ThreadId) (cnodeRootObjId : SeLe4n.ObjId)
-    (targetTid : SeLe4n.ThreadId) (l : LockId)
+    (targetTid : SeLe4n.ThreadId) (l : LockKey)
     (hKey : (lockSet_cancelIpcBlockingOnCore st targetTid).containsKey l = true) :
     (lockSet_tcbSuspendOnCore st callerTid cnodeRootObjId targetTid).containsKey l = true := by
   unfold lockSet_tcbSuspendOnCore
@@ -3368,17 +3368,17 @@ theorem cancellation_cross_core_correct
     exact cancelIpcBlockingOnCore_objects_eq victim tcb executingCore st
 
 -- ============================================================================
--- §12  SM6.E — Scheduler-domain (`SchedLockId`) lock footprints
+-- §12  SM6.E — Scheduler-domain (`LockKey`) lock footprints
 -- ============================================================================
 -- The SM3.B object-domain `LockSet` footprints (§5) cover the cancellation's
 -- kernel-object writes; the scheduler-slot writes — the placed core's run-queue
 -- and current slots (the deschedule) and the replenish-queue slots (the
--- donation purge / migration) — live in the SM5 `SchedLockId` domain
+-- donation purge / migration) — live in the SM5 `LockKey` domain
 -- (`object < runQueue < replenishQueue`, plan §4.4).  These are the
 -- cancellation counterparts of SM5.C's `wakeThreadLockSet` and SM5.D's
 -- `timerTickOnCoreLockSet`: declarative footprints with the standard
 -- length / write-only / membership / Nodup / ascending-order lemma family,
--- consumed by the future `SchedLockId`-level `withLockSet` bracket (the
+-- consumed by the future `LockKey`-level `withLockSet` bracket (the
 -- tracked SM5.I closure target).  Per the SM5.B convention, a core's
 -- `runQueue ⟨c⟩` lock guards **all** of core `c`'s scheduler slots (run
 -- queue *and* current slot — cf. `switchToThreadOnCoreLockSet`, which writes
@@ -3398,17 +3398,17 @@ deschedule's names its placed core's, which need not coincide, so the table
 lock is the one member the dual operations are guaranteed to share.  Wider
 than the operation's own reads, and in the direction this project rates safe. -/
 def descheduleThreadLockSet (placed : Option CoreId) :
-    List (SchedLockId × Concurrency.AccessMode) :=
-  (SchedLockId.object schedObjStoreLockId, .write) ::
+    List (LockKey × Concurrency.AccessMode) :=
+  (LockKey.objStore, .write) ::
     (match placed with
-     | some c => [(SchedLockId.runQueue ⟨c⟩, .write)]
+     | some c => [(LockKey.runQueue c, .write)]
      | none => [])
 
 /-- WS-SM SM6.E: at a placed thread the deschedule footprint **is** the wake
 footprint at that core — the dual operations serialise on exactly the same two
 locks whenever the wake targets the placed core, and on the table lock always
 (see the docstring above), which is what makes a concurrent wake/cancel race on
-the same victim impossible under the `SchedLockId` bracket (the plan §7
+the same victim impossible under the `LockKey` bracket (the plan §7
 "cancellation interleaves with wake" risk row, scheduler-domain half). -/
 theorem descheduleThreadLockSet_eq_wakeThreadLockSet (c : CoreId) :
     descheduleThreadLockSet (some c) = wakeThreadLockSet c := rfl
@@ -3420,7 +3420,7 @@ theorem descheduleThreadLockSet_eq_wakeThreadLockSet (c : CoreId) :
 /-- ...and the table lock alone at a thread the state places nowhere. -/
 @[simp] theorem descheduleThreadLockSet_none :
     descheduleThreadLockSet none
-      = [(SchedLockId.object schedObjStoreLockId, Concurrency.AccessMode.write)] := rfl
+      = [(LockKey.objStore, Concurrency.AccessMode.write)] := rfl
 
 /-- SM6.E: every lock in the deschedule footprint is acquired in **write**
 mode. -/
@@ -3436,7 +3436,7 @@ theorem descheduleThreadLockSet_write_only (placed : Option CoreId) :
 
 /-- SM6.E: the object-store write lock is in the deschedule footprint. -/
 theorem descheduleThreadLockSet_contains_objStore_write (placed : Option CoreId) :
-    (SchedLockId.object schedObjStoreLockId, Concurrency.AccessMode.write)
+    (LockKey.objStore, Concurrency.AccessMode.write)
       ∈ descheduleThreadLockSet placed := by
   unfold descheduleThreadLockSet
   exact List.mem_cons.mpr (Or.inl rfl)
@@ -3444,7 +3444,7 @@ theorem descheduleThreadLockSet_contains_objStore_write (placed : Option CoreId)
 /-- SM6.E: the placed core's run-queue write lock is in the deschedule
 footprint — it guards the dequeue and the current-slot clear. -/
 theorem descheduleThreadLockSet_contains_runQueue_write (c : CoreId) :
-    (SchedLockId.runQueue ⟨c⟩, Concurrency.AccessMode.write)
+    (LockKey.runQueue c, Concurrency.AccessMode.write)
       ∈ descheduleThreadLockSet (some c) :=
   wakeThreadLockSet_contains_runQueue_write c
 
@@ -3455,7 +3455,7 @@ theorem descheduleThreadLockSet_keys_nodup (placed : Option CoreId) :
   | none => simp [descheduleThreadLockSet_none]
   | some c => exact wakeThreadLockSet_keys_nodup c
 
-/-- SM6.E: the deschedule footprint's keys form a `SchedLockId`-ascending
+/-- SM6.E: the deschedule footprint's keys form a `LockKey`-ascending
 acquisition sequence. -/
 theorem descheduleThreadLockSet_pairwise_le (placed : Option CoreId) :
     ((descheduleThreadLockSet placed).map (·.1)).Pairwise (· ≤ ·) := by
@@ -3473,7 +3473,7 @@ concern; the composite's scheduler-slot writes are the two placement removals
 **and the reclaim's replenishment migration** — the third, which this docstring
 counted for four cuts as though it were not one (see `v0.35.170` below).  Each
 is resolved on the state it acts on and the footprint on the pre-state;
-`cancelIpcBlockingOnCoreSchedLockSet_covers_deschedule`,
+`cancelIpcBlockingOnCoreLockSet_covers_deschedule`,
 `…_covers_holder_deschedule` and `…_covers_migration` are the relations between
 the two.
 
@@ -3492,7 +3492,7 @@ holder's **home**, where the wake inserted it; a removal writes the holder's
 step.  A holder placed on the victim's own placed core names a core the segment
 already carries, and the canonical form emits it once rather than leaving a
 duplicate to a `Nodup` obligation that would then be false;
-`cancelIpcBlockingOnCoreSchedLockSet_dedup` is that as a theorem.
+`cancelIpcBlockingOnCoreLockSet_dedup` is that as a theorem.
 
 **WS-RR RR8.12**: spelled through `schedFootprintOfCores` over the *set*
 `placed.toList ++ holderPlaced.toList`, which is what retires the deduplication
@@ -3526,19 +3526,19 @@ The member is a **list**, not a pair of cores, because that is the shape
 `schedFootprintOfCores` takes and the shape the resolver answers in: a caller
 passes `cancelIpcBlockingReplenishCores st victim tcb`, which is empty on every
 arm but a reply arm whose caller had donated, and
-`cancelIpcBlockingOnCoreSchedLockSet_covers_migration` is the relation. -/
-def cancelIpcBlockingOnCoreSchedLockSet (placed holderPlaced : Option CoreId)
+`cancelIpcBlockingOnCoreLockSet_covers_migration` is the relation. -/
+def cancelIpcBlockingOnCoreLockSet (placed holderPlaced : Option CoreId)
     (reclaimReplenish : List CoreId) :
-    List (SchedLockId × Concurrency.AccessMode) :=
+    List (LockKey × Concurrency.AccessMode) :=
   schedFootprintOfCores (placed.toList ++ holderPlaced.toList) reclaimReplenish
 
 /-- `v0.35.158`: with no holder descheduled — no donation resolved, or an
 unbound holder placed nowhere — the footprint is the victim's deschedule's
 alone, which is every arm but a reply arm whose caller had donated. -/
-@[simp] theorem cancelIpcBlockingOnCoreSchedLockSet_none (placed : Option CoreId) :
-    cancelIpcBlockingOnCoreSchedLockSet placed none [] = descheduleThreadLockSet placed := by
+@[simp] theorem cancelIpcBlockingOnCoreLockSet_none (placed : Option CoreId) :
+    cancelIpcBlockingOnCoreLockSet placed none [] = descheduleThreadLockSet placed := by
   cases placed <;>
-    simp [cancelIpcBlockingOnCoreSchedLockSet, descheduleThreadLockSet,
+    simp [cancelIpcBlockingOnCoreLockSet, descheduleThreadLockSet,
       schedFootprintOfCores, schedCoreSegment_nil, schedCoreSegment_singleton]
 
 /-- `v0.35.158`: a holder placed on the victim's own placed core adds no member
@@ -3547,22 +3547,22 @@ alone, which is every arm but a reply arm whose caller had donated. -/
 **WS-RR RR8.12**: now a consequence of the canonical form rather than of a
 branch that tested for the coincidence — `schedFootprintOfCores_congr` is the
 statement that the argument is a set. -/
-@[simp] theorem cancelIpcBlockingOnCoreSchedLockSet_dedup (c : CoreId) :
-    cancelIpcBlockingOnCoreSchedLockSet (some c) (some c) []
+@[simp] theorem cancelIpcBlockingOnCoreLockSet_dedup (c : CoreId) :
+    cancelIpcBlockingOnCoreLockSet (some c) (some c) []
       = descheduleThreadLockSet (some c) := by
-  rw [show cancelIpcBlockingOnCoreSchedLockSet (some c) (some c) []
+  rw [show cancelIpcBlockingOnCoreLockSet (some c) (some c) []
         = schedFootprintOfCores [c, c] [] from rfl,
     schedFootprintOfCores_congr (run₂ := [c]) (rep₂ := ([] : List CoreId))
       (by intro x; simp) (fun _ => Iff.rfl),
     show schedFootprintOfCores [c] ([] : List CoreId)
-        = cancelIpcBlockingOnCoreSchedLockSet (some c) none [] from rfl,
-    cancelIpcBlockingOnCoreSchedLockSet_none]
+        = cancelIpcBlockingOnCoreLockSet (some c) none [] from rfl,
+    cancelIpcBlockingOnCoreLockSet_none]
 
 /-- WS-OD OD1.7: every lock in the footprint is acquired in **write** mode —
 both removals are mutations. -/
-theorem cancelIpcBlockingOnCoreSchedLockSet_write_only (placed holderPlaced : Option CoreId)
+theorem cancelIpcBlockingOnCoreLockSet_write_only (placed holderPlaced : Option CoreId)
     (reclaimReplenish : List CoreId) :
-    ∀ p ∈ cancelIpcBlockingOnCoreSchedLockSet placed holderPlaced reclaimReplenish,
+    ∀ p ∈ cancelIpcBlockingOnCoreLockSet placed holderPlaced reclaimReplenish,
       p.2 = Concurrency.AccessMode.write :=
   schedFootprintOfCores_write_only _ _
 
@@ -3575,19 +3575,19 @@ performs is covered rather than merely permitted.
 deschedule's list and the membership had to be read off *that* instead; the
 canonical form names the core either way, which is the statement the coverage
 argument wanted in the first place. -/
-theorem cancelIpcBlockingOnCoreSchedLockSet_contains_holder_runQueue_write
+theorem cancelIpcBlockingOnCoreLockSet_contains_holder_runQueue_write
     (placed : Option CoreId) (c : CoreId) (reclaimReplenish : List CoreId) :
-    (SchedLockId.runQueue ⟨c⟩, Concurrency.AccessMode.write)
-      ∈ cancelIpcBlockingOnCoreSchedLockSet placed (some c) reclaimReplenish :=
+    (LockKey.runQueue c, Concurrency.AccessMode.write)
+      ∈ cancelIpcBlockingOnCoreLockSet placed (some c) reclaimReplenish :=
   (mem_schedFootprintOfCores_runQueue_iff _ _ c).mpr (by simp)
 
 /-- WS-OD OD1.7 / WS-RR RR8.6: ...and still holds the victim's placed core's
 run-queue write lock, so widening the footprint costs the deschedule's own
 coverage nothing. -/
-theorem cancelIpcBlockingOnCoreSchedLockSet_contains_placed_runQueue_write
+theorem cancelIpcBlockingOnCoreLockSet_contains_placed_runQueue_write
     (c : CoreId) (holderPlaced : Option CoreId) (reclaimReplenish : List CoreId) :
-    (SchedLockId.runQueue ⟨c⟩, Concurrency.AccessMode.write)
-      ∈ cancelIpcBlockingOnCoreSchedLockSet (some c) holderPlaced reclaimReplenish :=
+    (LockKey.runQueue c, Concurrency.AccessMode.write)
+      ∈ cancelIpcBlockingOnCoreLockSet (some c) holderPlaced reclaimReplenish :=
   (mem_schedFootprintOfCores_runQueue_iff _ _ c).mpr (by simp)
 
 /-- **WS-RR RR8.6: the footprint covers the core the composite deschedules the
@@ -3599,16 +3599,16 @@ footprint is resolved from the pre-state alone, as a footprint must be, and this
 is what ties it to a removal resolved later.  Until `v0.35.158` this was a case
 split, because the reclaim's *wake* could — on a state no operation reaches —
 insert the victim itself; the deschedule cannot. -/
-theorem cancelIpcBlockingOnCoreSchedLockSet_covers_deschedule
+theorem cancelIpcBlockingOnCoreLockSet_covers_deschedule
     (victim : SeLe4n.ThreadId) (tcb : TCB) (st : SystemState) (c : CoreId)
     (h : placedCoreOf? (cancelIpcBlockingReclaimed victim tcb st) victim = some c) :
-    (SchedLockId.runQueue ⟨c⟩, Concurrency.AccessMode.write)
-      ∈ cancelIpcBlockingOnCoreSchedLockSet (placedCoreOf? st victim)
+    (LockKey.runQueue c, Concurrency.AccessMode.write)
+      ∈ cancelIpcBlockingOnCoreLockSet (placedCoreOf? st victim)
           (cancelUnboundHolderCore? st (cancelIpcBlockingMigrated victim tcb st)
             victim tcb) (cancelIpcBlockingReplenishCores st victim tcb) := by
   rw [cancelIpcBlockingReclaimed_placedCoreOf?_victim] at h
   rw [h]
-  exact cancelIpcBlockingOnCoreSchedLockSet_contains_placed_runQueue_write c _ _
+  exact cancelIpcBlockingOnCoreLockSet_contains_placed_runQueue_write c _ _
 
 /-- **`v0.35.158`: ...and the core the reclaim deschedules the HOLDER at.**  The
 step resolves the holder's placement on the post-teardown state, and so does the
@@ -3616,14 +3616,14 @@ footprint's member (`cancelUnboundHolderCore?` reads the same `placedCoreOf?`
 the step does), so the relation is the member's own resolution: the core
 `descheduleAtPlacement` writes is the core the resolver names, and
 `descheduleUnboundHolder_of_some` is that at the level of the step. -/
-theorem cancelIpcBlockingOnCoreSchedLockSet_covers_holder_deschedule
+theorem cancelIpcBlockingOnCoreLockSet_covers_holder_deschedule
     (victim : SeLe4n.ThreadId) (tcb : TCB) (st : SystemState) (holder : SeLe4n.ThreadId)
     (c : CoreId)
     (hW : cancelUnboundHolder? st (cancelIpcBlockingMigrated victim tcb st) victim tcb
         = some holder)
     (h : placedCoreOf? (cancelIpcBlockingMigrated victim tcb st) holder = some c) :
-    (SchedLockId.runQueue ⟨c⟩, Concurrency.AccessMode.write)
-      ∈ cancelIpcBlockingOnCoreSchedLockSet (placedCoreOf? st victim)
+    (LockKey.runQueue c, Concurrency.AccessMode.write)
+      ∈ cancelIpcBlockingOnCoreLockSet (placedCoreOf? st victim)
           (cancelUnboundHolderCore? st (cancelIpcBlockingMigrated victim tcb st)
             victim tcb) (cancelIpcBlockingReplenishCores st victim tcb) := by
   have hCore : cancelUnboundHolderCore? st (cancelIpcBlockingMigrated victim tcb st) victim tcb
@@ -3631,7 +3631,7 @@ theorem cancelIpcBlockingOnCoreSchedLockSet_covers_holder_deschedule
     unfold cancelUnboundHolderCore?
     rw [hW, Option.bind_some, h]
   rw [hCore]
-  exact cancelIpcBlockingOnCoreSchedLockSet_contains_holder_runQueue_write _ c _
+  exact cancelIpcBlockingOnCoreLockSet_contains_holder_runQueue_write _ c _
 
 /-- **`v0.35.170`: ...and the two replenish queues the reclaim's MIGRATION
 writes.**
@@ -3644,20 +3644,20 @@ pair, read through the same `let`s, so this is the member's own resolution
 rather than a claim about it.  Vacuous where nothing was donated — the resolver
 is `[]` there and the transition migrates nothing, which is the honest shape for
 a segment whose membership is the arm's own guard. -/
-theorem cancelIpcBlockingOnCoreSchedLockSet_covers_migration
+theorem cancelIpcBlockingOnCoreLockSet_covers_migration
     (victim : SeLe4n.ThreadId) (tcb : TCB) (st : SystemState)
     (scId : SeLe4n.SchedContextId) (holder : SeLe4n.ThreadId)
     (h : Lifecycle.Suspend.cancelledCallerDonation? st victim tcb = some (scId, holder)) :
-    (SchedLockId.replenishQueue ⟨determineTargetCore st holder⟩,
+    (LockKey.replenishQueue (determineTargetCore st holder),
       Concurrency.AccessMode.write)
-      ∈ cancelIpcBlockingOnCoreSchedLockSet (placedCoreOf? st victim)
+      ∈ cancelIpcBlockingOnCoreLockSet (placedCoreOf? st victim)
           (cancelUnboundHolderCore? st (cancelIpcBlockingMigrated victim tcb st)
             victim tcb) (cancelIpcBlockingReplenishCores st victim tcb) ∧
-    (SchedLockId.replenishQueue
-        ⟨replenishHomeOfSchedContext (Lifecycle.Suspend.cancelIpcBlocking st victim tcb) scId
-          (determineTargetCore st holder)⟩,
+    (LockKey.replenishQueue
+        (replenishHomeOfSchedContext (Lifecycle.Suspend.cancelIpcBlocking st victim tcb) scId
+          (determineTargetCore st holder)),
       Concurrency.AccessMode.write)
-      ∈ cancelIpcBlockingOnCoreSchedLockSet (placedCoreOf? st victim)
+      ∈ cancelIpcBlockingOnCoreLockSet (placedCoreOf? st victim)
           (cancelUnboundHolderCore? st (cancelIpcBlockingMigrated victim tcb st)
             victim tcb) (cancelIpcBlockingReplenishCores st victim tcb) := by
   constructor <;>
@@ -3667,53 +3667,53 @@ theorem cancelIpcBlockingOnCoreSchedLockSet_covers_migration
 /-- WS-SM SM6.E: the scheduler-domain footprint of `cancelBoundDonationOnCore`
 — the object-store table write lock (the SC + TCB rebinding rides the table
 discipline) and the purge core's replenish-queue **write** lock. -/
-def cancelBoundDonationOnCoreSchedLockSet (rqCore : CoreId) :
-    List (SchedLockId × Concurrency.AccessMode) :=
-  [ (SchedLockId.object schedObjStoreLockId, .write)
-  , (SchedLockId.replenishQueue ⟨rqCore⟩, .write) ]
+def cancelBoundDonationOnCoreLockSet (rqCore : CoreId) :
+    List (LockKey × Concurrency.AccessMode) :=
+  [ (LockKey.objStore, .write)
+  , (LockKey.replenishQueue rqCore, .write) ]
 
 /-- SM6.E: the bound-arm footprint is the two-lock set. -/
-@[simp] theorem cancelBoundDonationOnCoreSchedLockSet_length (rqCore : CoreId) :
-    (cancelBoundDonationOnCoreSchedLockSet rqCore).length = 2 := rfl
+@[simp] theorem cancelBoundDonationOnCoreLockSet_length (rqCore : CoreId) :
+    (cancelBoundDonationOnCoreLockSet rqCore).length = 2 := rfl
 
 /-- SM6.E: every lock in the bound-arm footprint is acquired in **write**
 mode. -/
-theorem cancelBoundDonationOnCoreSchedLockSet_write_only (rqCore : CoreId) :
-    ∀ p ∈ cancelBoundDonationOnCoreSchedLockSet rqCore,
+theorem cancelBoundDonationOnCoreLockSet_write_only (rqCore : CoreId) :
+    ∀ p ∈ cancelBoundDonationOnCoreLockSet rqCore,
       p.2 = Concurrency.AccessMode.write := by
   intro p hp
-  simp only [cancelBoundDonationOnCoreSchedLockSet, List.mem_cons,
+  simp only [cancelBoundDonationOnCoreLockSet, List.mem_cons,
     List.not_mem_nil, or_false] at hp
   rcases hp with h | h <;> subst h <;> rfl
 
 /-- SM6.E: the object-store write lock is in the bound-arm footprint. -/
-theorem cancelBoundDonationOnCoreSchedLockSet_contains_objStore_write
+theorem cancelBoundDonationOnCoreLockSet_contains_objStore_write
     (rqCore : CoreId) :
-    (SchedLockId.object schedObjStoreLockId, Concurrency.AccessMode.write)
-      ∈ cancelBoundDonationOnCoreSchedLockSet rqCore := by
-  simp [cancelBoundDonationOnCoreSchedLockSet]
+    (LockKey.objStore, Concurrency.AccessMode.write)
+      ∈ cancelBoundDonationOnCoreLockSet rqCore := by
+  simp [cancelBoundDonationOnCoreLockSet]
 
 /-- SM6.E: the purge core's replenish-queue write lock is in the bound-arm
 footprint — it guards the SC-entry removal. -/
-theorem cancelBoundDonationOnCoreSchedLockSet_contains_replenishQueue_write
+theorem cancelBoundDonationOnCoreLockSet_contains_replenishQueue_write
     (rqCore : CoreId) :
-    (SchedLockId.replenishQueue ⟨rqCore⟩, Concurrency.AccessMode.write)
-      ∈ cancelBoundDonationOnCoreSchedLockSet rqCore := by
-  simp [cancelBoundDonationOnCoreSchedLockSet]
+    (LockKey.replenishQueue rqCore, Concurrency.AccessMode.write)
+      ∈ cancelBoundDonationOnCoreLockSet rqCore := by
+  simp [cancelBoundDonationOnCoreLockSet]
 
 /-- SM6.E: the bound-arm footprint's projected keys are duplicate-free. -/
-theorem cancelBoundDonationOnCoreSchedLockSet_keys_nodup (rqCore : CoreId) :
-    ((cancelBoundDonationOnCoreSchedLockSet rqCore).map (·.1)).Nodup := by
-  simp [cancelBoundDonationOnCoreSchedLockSet]
+theorem cancelBoundDonationOnCoreLockSet_keys_nodup (rqCore : CoreId) :
+    ((cancelBoundDonationOnCoreLockSet rqCore).map (·.1)).Nodup := by
+  simp [cancelBoundDonationOnCoreLockSet]
 
-/-- SM6.E: the bound-arm footprint's keys form a `SchedLockId`-ascending
+/-- SM6.E: the bound-arm footprint's keys form a `LockKey`-ascending
 acquisition sequence (object < replenishQueue, plan §4.4). -/
-theorem cancelBoundDonationOnCoreSchedLockSet_pairwise_le (rqCore : CoreId) :
-    ((cancelBoundDonationOnCoreSchedLockSet rqCore).map (·.1)).Pairwise (· ≤ ·) := by
-  have hle : SchedLockId.object schedObjStoreLockId
-      ≤ SchedLockId.replenishQueue (⟨rqCore⟩ : ReplenishQueueLockId) :=
-    (SchedLockId.object_lt_replenishQueue _ _).1
-  simp only [cancelBoundDonationOnCoreSchedLockSet, List.map_cons, List.map_nil]
+theorem cancelBoundDonationOnCoreLockSet_pairwise_le (rqCore : CoreId) :
+    ((cancelBoundDonationOnCoreLockSet rqCore).map (·.1)).Pairwise (· ≤ ·) := by
+  have hle : LockKey.objStore
+      ≤ LockKey.replenishQueue rqCore :=
+    (LockKey.objStore_lt_replenishQueue _).1
+  simp only [cancelBoundDonationOnCoreLockSet, List.map_cons, List.map_nil]
   exact List.Pairwise.cons
     (fun a ha => by rcases List.mem_singleton.mp ha with rfl; exact hle)
     (List.Pairwise.cons (fun a ha => by simp at ha) List.Pairwise.nil)
@@ -3728,48 +3728,48 @@ the footprint collapses to the bound-arm shape.
 
 **WS-RR RR8.12**: spelled through `schedFootprintOfCores` — an empty run set,
 because the donated arm moves replenishments and touches no run queue. -/
-def cancelDonatedDonationOnCoreSchedLockSet (victimHome ownerHome : CoreId) :
-    List (SchedLockId × Concurrency.AccessMode) :=
+def cancelDonatedDonationOnCoreLockSet (victimHome ownerHome : CoreId) :
+    List (LockKey × Concurrency.AccessMode) :=
   schedFootprintOfCores [] [victimHome, ownerHome]
 
 /-- SM6.E: every lock in the donated-arm footprint is acquired in **write**
 mode. -/
-theorem cancelDonatedDonationOnCoreSchedLockSet_write_only
+theorem cancelDonatedDonationOnCoreLockSet_write_only
     (victimHome ownerHome : CoreId) :
-    ∀ p ∈ cancelDonatedDonationOnCoreSchedLockSet victimHome ownerHome,
+    ∀ p ∈ cancelDonatedDonationOnCoreLockSet victimHome ownerHome,
       p.2 = Concurrency.AccessMode.write :=
   schedFootprintOfCores_write_only _ _
 
 /-- SM6.E: the victim's home-core replenish-queue write lock is in the
 donated-arm footprint (the migration source / purge slot). -/
-theorem cancelDonatedDonationOnCoreSchedLockSet_contains_victimHome_write
+theorem cancelDonatedDonationOnCoreLockSet_contains_victimHome_write
     (victimHome ownerHome : CoreId) :
-    (SchedLockId.replenishQueue ⟨victimHome⟩, Concurrency.AccessMode.write)
-      ∈ cancelDonatedDonationOnCoreSchedLockSet victimHome ownerHome :=
+    (LockKey.replenishQueue victimHome, Concurrency.AccessMode.write)
+      ∈ cancelDonatedDonationOnCoreLockSet victimHome ownerHome :=
   (mem_schedFootprintOfCores_replenishQueue_iff _ _ victimHome).mpr (by simp)
 
 /-- SM6.E: the owner's home-core replenish-queue write lock is in the
 donated-arm footprint (the migration destination). -/
-theorem cancelDonatedDonationOnCoreSchedLockSet_contains_ownerHome_write
+theorem cancelDonatedDonationOnCoreLockSet_contains_ownerHome_write
     (victimHome ownerHome : CoreId) :
-    (SchedLockId.replenishQueue ⟨ownerHome⟩, Concurrency.AccessMode.write)
-      ∈ cancelDonatedDonationOnCoreSchedLockSet victimHome ownerHome :=
+    (LockKey.replenishQueue ownerHome, Concurrency.AccessMode.write)
+      ∈ cancelDonatedDonationOnCoreLockSet victimHome ownerHome :=
   (mem_schedFootprintOfCores_replenishQueue_iff _ _ ownerHome).mpr (by simp)
 
 /-- SM6.E: the donated-arm footprint's projected keys are duplicate-free —
 the segment carries one lock per distinct home core, and the object-store key
 is of a different constructor. -/
-theorem cancelDonatedDonationOnCoreSchedLockSet_keys_nodup
+theorem cancelDonatedDonationOnCoreLockSet_keys_nodup
     (victimHome ownerHome : CoreId) :
-    ((cancelDonatedDonationOnCoreSchedLockSet victimHome ownerHome).map (·.1)).Nodup :=
+    ((cancelDonatedDonationOnCoreLockSet victimHome ownerHome).map (·.1)).Nodup :=
   schedFootprintOfCores_keys_nodup _ _
 
-/-- SM6.E: the donated-arm footprint's keys form a `SchedLockId`-ascending
+/-- SM6.E: the donated-arm footprint's keys form a `LockKey`-ascending
 acquisition sequence — object < replenishQueue cross-domain, and the two
 replenish endpoints are emitted in `CoreId`-ascending order. -/
-theorem cancelDonatedDonationOnCoreSchedLockSet_pairwise_le
+theorem cancelDonatedDonationOnCoreLockSet_pairwise_le
     (victimHome ownerHome : CoreId) :
-    ((cancelDonatedDonationOnCoreSchedLockSet victimHome ownerHome).map (·.1)).Pairwise (· ≤ ·) :=
+    ((cancelDonatedDonationOnCoreLockSet victimHome ownerHome).map (·.1)).Pairwise (· ≤ ·) :=
   schedFootprintOfCores_pairwise_le _ _
 
 /-- WS-SM SM6.E: the scheduler-domain footprint of the donation-cancellation
@@ -3778,9 +3778,9 @@ theorem cancelDonatedDonationOnCoreSchedLockSet_pairwise_le
 victim's home-core replenish queue (the `victimHome` member), and the
 `.donated` arm additionally writes the owner's home-core queue (the
 migration destination).  The donated-arm footprint is exactly that union. -/
-def cancelDonationOnCoreSchedLockSet (victimHome ownerHome : CoreId) :
-    List (SchedLockId × Concurrency.AccessMode) :=
-  cancelDonatedDonationOnCoreSchedLockSet victimHome ownerHome
+def cancelDonationOnCoreLockSet (victimHome ownerHome : CoreId) :
+    List (LockKey × Concurrency.AccessMode) :=
+  cancelDonatedDonationOnCoreLockSet victimHome ownerHome
 
 /-- **WS-RR RR8.12**: the suspend pipeline's G3 **is** this dispatcher.
 
@@ -3827,7 +3827,7 @@ theorem suspendDonationArm_eq_cancelDonationOnCore (st : SystemState)
 
 -- WS-RR RR2.4 / RR2.10, superseded at WS-RR RR8.12: the sorted same-kind
 -- scheduler-lock segment lives in `Scheduler/Operations/PerCoreChooseThread.lean`,
--- beside the `SchedLockId` order it is about, so the cross-core `.call` and
+-- beside the `LockKey` order it is about, so the cross-core `.call` and
 -- `.reply` dispatch footprints (which sit below this module and cannot import
 -- it) share the one definition.  RR2.4 and RR2.10 relocated a two-endpoint and
 -- a three-endpoint spelling; RR8.12 replaced both with `schedCoreSegment`, which
@@ -3870,7 +3870,7 @@ resolved by `cancelUnboundHolderCore?` on the reclaim's own state pair, and
 placed nowhere; the segment's canonical form collapses it where it coincides
 with a core already named.  Widening costs the two existing members nothing
 (`…_contains_placed_runQueue_write`, `…_contains_executing_runQueue_write`), and
-`maxLockSetSize` does not move — a `SchedLockSet` carries no cardinality bound,
+`maxLockSetSize` does not move — a `LockSet` carries no cardinality bound,
 the ceiling being the *object* domain's.
 
 **Dynamic chain extension (declared, not static — PR #831 review 3).**  The
@@ -3881,7 +3881,7 @@ footprint can enumerate those cores — exactly the SM3.C.11 argument for the
 chain members' TCB locks.  The obligation is declared by
 `pipChainStart_tcbSuspend` (SM3.B.3): the SM3.C.11 walker must acquire, per
 chain step, the member's TCB **write** lock *and* its home-core
-`SchedLockId.runQueue` **write** lock together (see the amended SM3.C
+`LockKey.runQueue` **write** lock together (see the amended SM3.C
 consumer contract in `LockSetTransitions.lean`).  The same declaration
 covers the `.call`/`.reply`/`.replyRecv` walks, which run the identical
 `updatePipBoostOnCore` re-bucketing.
@@ -3917,48 +3917,48 @@ footprint that found it.
 
 The member is the *list* `cancelIpcBlockingReplenishCores` answers in, so a
 caller passes the resolver rather than two cores it has to compute, and
-`suspendThreadOnCoreSchedLockSet_contains_reclaim_replenishQueue_writes` is the
+`suspendThreadOnCoreLockSet_contains_reclaim_replenishQueue_writes` is the
 relation.  Where nothing is donated the resolver is `[]` and the transition
 migrates nothing, so the widening costs an ordinary suspend no member at all. -/
-def suspendThreadOnCoreSchedLockSet
+def suspendThreadOnCoreLockSet
     (home executingCore ownerHome outerHome : CoreId) (placed holderPlaced : Option CoreId)
     (reclaimReplenish : List CoreId) :
-    List (SchedLockId × Concurrency.AccessMode) :=
+    List (LockKey × Concurrency.AccessMode) :=
   schedFootprintOfCores ([placed.getD executingCore, executingCore] ++ holderPlaced.toList)
     ([home, ownerHome, outerHome] ++ reclaimReplenish)
 
 /-- **`v0.35.158`** (WS-RR RR8.12's wake member until then): the footprint holds
 the unbound holder's placed core's run-queue write lock.
 
-`cancelIpcBlockingOnCoreSchedLockSet_contains_holder_runQueue_write`'s twin: a
+`cancelIpcBlockingOnCoreLockSet_contains_holder_runQueue_write`'s twin: a
 footprint that omits a written lock is false, and this member is the one the
 reclaim's holder deschedule writes (`descheduleUnboundHolder_runQueueOnCore_ne`
 says it writes no other). -/
-theorem suspendThreadOnCoreSchedLockSet_contains_holder_runQueue_write
+theorem suspendThreadOnCoreLockSet_contains_holder_runQueue_write
     (home executingCore ownerHome outerHome : CoreId) (placed : Option CoreId) (c : CoreId)
     (reclaimReplenish : List CoreId) :
-    (SchedLockId.runQueue ⟨c⟩, Concurrency.AccessMode.write)
-      ∈ suspendThreadOnCoreSchedLockSet home executingCore ownerHome outerHome placed (some c)
+    (LockKey.runQueue c, Concurrency.AccessMode.write)
+      ∈ suspendThreadOnCoreLockSet home executingCore ownerHome outerHome placed (some c)
           reclaimReplenish :=
   (mem_schedFootprintOfCores_runQueue_iff _ _ c).mpr (by simp)
 
 /-- **WS-RR RR8.12**: ...and still holds the victim's placed core's, so widening
 the run-queue segment costs the placement removal's own coverage nothing. -/
-theorem suspendThreadOnCoreSchedLockSet_contains_placed_runQueue_write
+theorem suspendThreadOnCoreLockSet_contains_placed_runQueue_write
     (home executingCore ownerHome outerHome : CoreId) (c : CoreId)
     (holderPlaced : Option CoreId) (reclaimReplenish : List CoreId) :
-    (SchedLockId.runQueue ⟨c⟩, Concurrency.AccessMode.write)
-      ∈ suspendThreadOnCoreSchedLockSet home executingCore ownerHome outerHome (some c)
+    (LockKey.runQueue c, Concurrency.AccessMode.write)
+      ∈ suspendThreadOnCoreLockSet home executingCore ownerHome outerHome (some c)
           holderPlaced reclaimReplenish :=
   (mem_schedFootprintOfCores_runQueue_iff _ _ c).mpr (by simp)
 
 /-- **WS-RR RR8.12**: ...and the executing core's, which the G7 local preemption
 gate writes on every arm. -/
-theorem suspendThreadOnCoreSchedLockSet_contains_executing_runQueue_write
+theorem suspendThreadOnCoreLockSet_contains_executing_runQueue_write
     (home executingCore ownerHome outerHome : CoreId) (placed holderPlaced : Option CoreId)
     (reclaimReplenish : List CoreId) :
-    (SchedLockId.runQueue ⟨executingCore⟩, Concurrency.AccessMode.write)
-      ∈ suspendThreadOnCoreSchedLockSet home executingCore ownerHome outerHome placed
+    (LockKey.runQueue executingCore, Concurrency.AccessMode.write)
+      ∈ suspendThreadOnCoreLockSet home executingCore ownerHome outerHome placed
           holderPlaced reclaimReplenish :=
   (mem_schedFootprintOfCores_runQueue_iff _ _ executingCore).mpr (by simp)
 
@@ -3968,13 +3968,13 @@ between**, which the `[home, ownerHome, outerHome]` triple could not name.
 G3's three members are read off the *victim's* binding; this pair is read off
 the **holder's** affinity and the torn state's, which is a different thread and
 a different state.  `cancelIpcBlockingReplenishCores` is the resolver both this
-footprint and `cancelIpcBlockingOnCoreSchedLockSet` pass, so the two composites
+footprint and `cancelIpcBlockingOnCoreLockSet` pass, so the two composites
 over one step cannot declare different cores for it. -/
-theorem suspendThreadOnCoreSchedLockSet_contains_reclaim_replenishQueue_writes
+theorem suspendThreadOnCoreLockSet_contains_reclaim_replenishQueue_writes
     (home executingCore ownerHome outerHome : CoreId) (placed holderPlaced : Option CoreId)
     (reclaimReplenish : List CoreId) (c : CoreId) (hc : c ∈ reclaimReplenish) :
-    (SchedLockId.replenishQueue ⟨c⟩, Concurrency.AccessMode.write)
-      ∈ suspendThreadOnCoreSchedLockSet home executingCore ownerHome outerHome placed
+    (LockKey.replenishQueue c, Concurrency.AccessMode.write)
+      ∈ suspendThreadOnCoreLockSet home executingCore ownerHome outerHome placed
           holderPlaced reclaimReplenish :=
   (mem_schedFootprintOfCores_replenishQueue_iff _ _ c).mpr (by simp [hc])
 
@@ -4006,14 +4006,14 @@ theorem cancelDonatedDonationOnCore_migrates_to_recorded_owner
   | error e => rw [hC] at h; cases h
   | ok stC => rw [hC] at h; exact ⟨stC, rfl, (Except.ok.inj h).symm⟩
 
-/-- SM6.E: the suspend footprint's keys form a `SchedLockId`-ascending
+/-- SM6.E: the suspend footprint's keys form a `LockKey`-ascending
 acquisition sequence — the full three-domain ladder
 `object < runQueue < replenishQueue` with each same-kind segment's endpoints
 in `CoreId`-ascending order. -/
-theorem suspendThreadOnCoreSchedLockSet_pairwise_le
+theorem suspendThreadOnCoreLockSet_pairwise_le
     (home executingCore ownerHome outerHome : CoreId) (placed holderPlaced : Option CoreId)
     (reclaimReplenish : List CoreId) :
-    ((suspendThreadOnCoreSchedLockSet home executingCore ownerHome outerHome
+    ((suspendThreadOnCoreLockSet home executingCore ownerHome outerHome
         placed holderPlaced reclaimReplenish).map (·.1)).Pairwise (· ≤ ·) :=
   schedFootprintOfCores_pairwise_le _ _
 
@@ -4203,7 +4203,7 @@ def suspendThreadOnCore (st : SystemState) (vtid : SeLe4n.ValidThreadId)
       let home := determineTargetCore st tid
       -- G4-precapture (WS-RR RR8.6): the core the state PLACES the victim on,
       -- queued or current — resolved on the pre-state, where
-      -- `suspendThreadOnCoreSchedLockSet` declares it, and removed at below.
+      -- `suspendThreadOnCoreLockSet` declares it, and removed at below.
       -- Nothing between here and the removal moves THE VICTIM between scheduler
       -- slots: both donation arms write no run queue and no current slot, the
       -- priority-inheritance revert re-buckets a chain member inside the queue it
@@ -4540,9 +4540,9 @@ theorem cancelIpcBlockingOnCore_observer_atomic
             (acquireAll executingCore
               (lockSet_cancelIpcBlocking victim blEp blN
                 consumedReplyId rdSc dhTid holderEp holderNb belowHeadReply? outerCaller? reclaimHead? frameAbove? splicedBelow?).lockAcquireSequence s)).1 := by
-  have hAcqStable : ∀ (s' : SystemState) l m, s'.objects.invExt →
-      (acquireLockOnObject s' executingCore l m).objects.invExt :=
-    fun s' l m h => acquireLockOnObject_preserves_invExt s' executingCore l m h
+  have hAcqStable : ∀ (s' : SystemState) k m, s'.objects.invExt →
+      (acquireLock s' executingCore k m).objects.invExt :=
+    fun s' k m h => acquireLock_preserves_invExt s' executingCore k m h
   have hInvAcq : (acquireAll executingCore
       (lockSet_cancelIpcBlocking victim blEp blN
         consumedReplyId rdSc dhTid holderEp holderNb belowHeadReply? outerCaller? reclaimHead? frameAbove? splicedBelow?).lockAcquireSequence s).objects.invExt :=
@@ -4555,8 +4555,8 @@ theorem cancelIpcBlockingOnCore_observer_atomic
     (cancellationObserver_acquireInsensitiveOn executingCore victim)
     (cancellationObserver_unwindInsensitiveOn executingCore victim)
     hAcqStable
-    (fun s' l m h => releaseLockOnObject_preserves_invExt s' executingCore l m h)
-    (fun s' l m h => cancelLockOnObject_preserves_invExt s' executingCore l m h)
+    (fun s' k m h => releaseLock_preserves_invExt s' executingCore k m h)
+    (fun s' k m h => cancelLock_preserves_invExt s' executingCore k m h)
     hInv
     (cancelIpcBlockingOnCore_preserves_objects_invExt victim tcb executingCore _ hInvAcq)
 
@@ -4620,9 +4620,9 @@ theorem cancelDonationOnCore_observer_atomic
             (acquireAll executingCore
               (lockSet_cancelDonation victim bindingScId donatedOwner
             headReplyId belowHeadReplyId outerCallerTid).lockAcquireSequence s)).1 := by
-  have hAcqStable : ∀ (s' : SystemState) l m, s'.objects.invExt →
-      (acquireLockOnObject s' executingCore l m).objects.invExt :=
-    fun s' l m h => acquireLockOnObject_preserves_invExt s' executingCore l m h
+  have hAcqStable : ∀ (s' : SystemState) k m, s'.objects.invExt →
+      (acquireLock s' executingCore k m).objects.invExt :=
+    fun s' k m h => acquireLock_preserves_invExt s' executingCore k m h
   have hInvAcq : (acquireAll executingCore
       (lockSet_cancelDonation victim bindingScId donatedOwner
             headReplyId belowHeadReplyId outerCallerTid).lockAcquireSequence s).objects.invExt :=
@@ -4635,8 +4635,8 @@ theorem cancelDonationOnCore_observer_atomic
     (cancellationBindingObserver_acquireInsensitiveOn executingCore victim)
     (cancellationBindingObserver_unwindInsensitiveOn executingCore victim)
     hAcqStable
-    (fun s' l m h => releaseLockOnObject_preserves_invExt s' executingCore l m h)
-    (fun s' l m h => cancelLockOnObject_preserves_invExt s' executingCore l m h)
+    (fun s' k m h => releaseLock_preserves_invExt s' executingCore k m h)
+    (fun s' k m h => cancelLock_preserves_invExt s' executingCore k m h)
     hInv
     (cancelDonationOnCore_preserves_objects_invExt victim tcb _ hInvAcq)
 

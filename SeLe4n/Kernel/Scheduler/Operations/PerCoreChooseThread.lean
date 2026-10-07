@@ -32,12 +32,13 @@ loop.
 
 ## What this module proves
 
-* **SM5.A.2** `RunQueueLockId` + the cross-domain `SchedLockId` + the unified
-  `chooseThreadOnCoreLockSet` — the per-core run-queue lock identifier (total
-  order keyed by `CoreId` + the §4.4 `runQueueLockLevel`) **and** the unified
-  cross-domain lock identifier `SchedLockId` (object-domain `LockId` ⊕ run-queue
-  `RunQueueLockId`, with the plan §4.4 total order: every object lock precedes
-  every run-queue lock — `SchedLockId.object_lt_runQueue`).  The read-only
+* **SM5.A.2** the cross-domain `LockKey` + the unified
+  `chooseThreadOnCoreLockSet` — the per-core run-queue lock key
+  `LockKey.runQueue` (ordered by `CoreId`, at the §4.4 `LockKind.runQueue.level`)
+  inside the one cross-domain lock key `LockKey` (the table lock, the
+  object-domain `LockId`s, the run-queue and replenish-queue keys, with the
+  plan §4.4 total order: every object lock precedes every run-queue lock —
+  `LockKey.object_lt_runQueue`).  The read-only
   footprint of `chooseThreadOnCore c` is now the *complete* two-domain set
   `[(object objStore-table-lock, read), (runQueue c, read)]`: the object-store
   read lock guards the `st.objects.get?` TCB resolutions the selection performs,
@@ -68,327 +69,12 @@ axioms (`propext` / `Quot.sound` / `Classical.choice`).
 namespace SeLe4n.Kernel
 
 open SeLe4n.Model
-open SeLe4n.Kernel.Concurrency (numCores CoreId bootCoreId allCores)
+open SeLe4n.Kernel.Concurrency (numCores CoreId bootCoreId allCores
+  LockKey)
 
 -- ============================================================================
 -- §1  SM5.A.2 — Per-core run-queue lock identifier + chooseThread lock-set
 -- ============================================================================
-
-/-- WS-SM SM5.A.2: per-core run-queue lock identifier (plan §3.1 / §3.2's
-`LockId.runQueue c`).
-
-The per-core run queue is a `SchedulerState` field (`Vector RunQueue
-numCores`), **not** a kernel object, so it is *not* addressed by the SM0.I
-object-lock `LockId` hierarchy (which keys on `(LockKind, ObjId)`).  A
-run-queue lock is identified purely by its `CoreId`.  Keeping it a distinct
-typed identifier — rather than overloading the carefully-pinned 10-level
-SM0.I `LockKind` hierarchy (`level_strictMono` / `level_surjective` /
-`level_bounded`) with an eleventh "runQueue" kind — both preserves that
-pinning and faithfully matches the data model: run queues are per-core,
-indexed by `CoreId`, never by `ObjId`. -/
-structure RunQueueLockId where
-  /-- The core whose run-queue slot this lock guards. -/
-  core : CoreId
-  deriving DecidableEq, Repr
-
--- The `chooseThreadOnCore` lock-set footprint (`chooseThreadOnCoreLockSet`)
--- and its theorems are defined in §1b below — after both the `RunQueueLockId`
--- order *and* the unified cross-domain `SchedLockId` order it now ranges over.
--- (Post-audit cross-domain unification: the footprint includes the
--- object-store read lock that the `st.objects.get?` resolutions require, not
--- only the per-core run-queue lock; see §1b.)
-
-namespace RunQueueLockId
-
-/-- WS-SM SM5.A.2 (lock-order, post-audit): the total order on per-core
-run-queue locks, keyed by `CoreId` (the underlying `Fin numCores` order).  A
-proper lock identifier needs a total order for the deadlock-freedom argument
-(acquire in ascending order ⇒ no wait-cycle); this provides it within the
-run-queue-lock domain.
-
-The full SM3 integration — folding object `LockId`s and run-queue locks into a
-single `withLockSet` acquisition sequence with the *cross-domain* order of plan
-§4.4 ("TCB object-locks at level 3 are always acquired before any run-queue
-lock") — is SM5.B work, where the first mixed object+run-queue lock-set
-appears (`switchToThreadOnCore`).  This intra-domain order plus
-`runQueueLockLevel` are the SM5.A foundation SM5.B consumes; keeping them a
-self-contained typed order (rather than overloading the pinned SM0.I 10-level
-`LockKind` hierarchy) is the maintainer-chosen "order + defer to SM5.B"
-disposition. -/
-protected def le (l₁ l₂ : RunQueueLockId) : Prop := l₁.core ≤ l₂.core
-
-/-- WS-SM SM5.A.2: strict order on run-queue locks. -/
-protected def lt (l₁ l₂ : RunQueueLockId) : Prop := l₁.core < l₂.core
-
-instance : LE RunQueueLockId := ⟨RunQueueLockId.le⟩
-instance : LT RunQueueLockId := ⟨RunQueueLockId.lt⟩
-
-instance (a b : RunQueueLockId) : Decidable (a ≤ b) :=
-  inferInstanceAs (Decidable (a.core ≤ b.core))
-instance (a b : RunQueueLockId) : Decidable (a < b) :=
-  inferInstanceAs (Decidable (a.core < b.core))
-
-/-- SM5.A.2: reflexivity. -/
-theorem le_refl (l : RunQueueLockId) : l ≤ l := Nat.le_refl l.core.val
-
-/-- SM5.A.2: transitivity. -/
-theorem le_trans {a b c : RunQueueLockId} (h₁ : a ≤ b) (h₂ : b ≤ c) : a ≤ c :=
-  Nat.le_trans (show a.core.val ≤ b.core.val from h₁) (show b.core.val ≤ c.core.val from h₂)
-
-/-- SM5.A.2: antisymmetry (the `core` field determines the lock). -/
-theorem le_antisymm {a b : RunQueueLockId} (h₁ : a ≤ b) (h₂ : b ≤ a) : a = b := by
-  have hcore : a.core = b.core :=
-    Fin.ext (Nat.le_antisymm (show a.core.val ≤ b.core.val from h₁)
-      (show b.core.val ≤ a.core.val from h₂))
-  cases a; cases b; simp_all
-
-/-- SM5.A.2: totality — any two run-queue locks are comparable. -/
-theorem le_total (a b : RunQueueLockId) : a ≤ b ∨ b ≤ a := Nat.le_total a.core.val b.core.val
-
-/-- SM5.A.2: strict-order irreflexivity. -/
-theorem lt_irrefl (l : RunQueueLockId) : ¬ l < l := Nat.lt_irrefl l.core.val
-
-/-- SM5.A.2: strict-order asymmetry (the lock-ladder property the
-deadlock-freedom argument rests on). -/
-theorem lt_asymm {a b : RunQueueLockId} (h : a < b) : ¬ b < a :=
-  Nat.lt_asymm (show a.core.val < b.core.val from h)
-
-/-- WS-SM SM5.A.2 (plan §4.4 lock-order level): run-queue locks sit *after*
-every SM0.I object-lock level (`objStore`=0 .. `page`=9), hence `10`.  This
-encodes "object locks before run-queue locks": every object-lock level (≤ 9)
-is strictly below `runQueueLockLevel`.  The unified cross-domain order built on
-top of this level fact is `SchedLockId` (§1b); its runtime acquisition sequence
-(`withLockSet`) is SM5.B. -/
-def runQueueLockLevel : Nat := 10
-
-/-- SM5.A.2: every SM0.I object-lock level (0..9) is strictly below the
-run-queue lock level — the arithmetic foundation under the plan §4.4 "object
-locks acquired before run-queue locks" rule.  The order-theoretic form is
-`SchedLockId.object_lt_runQueue` (§1b). -/
-theorem objectLockLevels_lt_runQueueLockLevel : ∀ n : Nat, n ≤ 9 → n < runQueueLockLevel := by
-  intro n hn; unfold runQueueLockLevel; omega
-
-end RunQueueLockId
-
--- ============================================================================
--- §1a  WS-SM SM5.D.3 — Per-core replenish-queue lock identifier
--- ============================================================================
-
-/-- WS-SM SM5.D.3 (plan §3.4's `LockId.replenishQueue c`): per-core
-*replenish*-queue lock identifier.
-
-Like the run queue, the per-core CBS replenish queue (`replenishQueueOnCore c`)
-is a `SchedulerState` field (`Vector ReplenishQueue numCores`), **not** a kernel
-object, so it is identified purely by its `CoreId` and is *not* addressed by the
-SM0.I object-lock `LockId` hierarchy.  It is a distinct lockable resource from
-the run queue (a tick mutates both), so it carries its own typed identifier —
-keeping the pinned 10-level SM0.I `LockKind` hierarchy untouched while faithfully
-matching the per-core data model.  The SM5.D timer tick's lock-set
-(`timerTickOnCoreLockSet`) lists both the run-queue and the replenish-queue write
-locks (plan §3.4). -/
-structure ReplenishQueueLockId where
-  /-- The core whose replenish-queue slot this lock guards. -/
-  core : CoreId
-  deriving DecidableEq, Repr
-
-namespace ReplenishQueueLockId
-
-/-- WS-SM SM5.D.3: the total order on per-core replenish-queue locks, keyed by
-`CoreId` (mirrors `RunQueueLockId.le`).  The unified cross-domain order folding
-object, run-queue, and replenish-queue locks into one `withLockSet` acquisition
-sequence is `SchedLockId` (§1b). -/
-protected def le (l₁ l₂ : ReplenishQueueLockId) : Prop := l₁.core ≤ l₂.core
-
-/-- WS-SM SM5.D.3: strict order on replenish-queue locks. -/
-protected def lt (l₁ l₂ : ReplenishQueueLockId) : Prop := l₁.core < l₂.core
-
-instance : LE ReplenishQueueLockId := ⟨ReplenishQueueLockId.le⟩
-instance : LT ReplenishQueueLockId := ⟨ReplenishQueueLockId.lt⟩
-
-instance (a b : ReplenishQueueLockId) : Decidable (a ≤ b) :=
-  inferInstanceAs (Decidable (a.core ≤ b.core))
-instance (a b : ReplenishQueueLockId) : Decidable (a < b) :=
-  inferInstanceAs (Decidable (a.core < b.core))
-
-/-- SM5.D.3: reflexivity. -/
-theorem le_refl (l : ReplenishQueueLockId) : l ≤ l := Nat.le_refl l.core.val
-
-/-- SM5.D.3: transitivity. -/
-theorem le_trans {a b c : ReplenishQueueLockId} (h₁ : a ≤ b) (h₂ : b ≤ c) : a ≤ c :=
-  Nat.le_trans (show a.core.val ≤ b.core.val from h₁) (show b.core.val ≤ c.core.val from h₂)
-
-/-- SM5.D.3: antisymmetry (the `core` field determines the lock). -/
-theorem le_antisymm {a b : ReplenishQueueLockId} (h₁ : a ≤ b) (h₂ : b ≤ a) : a = b := by
-  have hcore : a.core = b.core :=
-    Fin.ext (Nat.le_antisymm (show a.core.val ≤ b.core.val from h₁)
-      (show b.core.val ≤ a.core.val from h₂))
-  cases a; cases b; simp_all
-
-/-- SM5.D.3: totality — any two replenish-queue locks are comparable. -/
-theorem le_total (a b : ReplenishQueueLockId) : a ≤ b ∨ b ≤ a := Nat.le_total a.core.val b.core.val
-
-/-- SM5.D.3: strict-order irreflexivity. -/
-theorem lt_irrefl (l : ReplenishQueueLockId) : ¬ l < l := Nat.lt_irrefl l.core.val
-
-/-- SM5.D.3: strict-order asymmetry. -/
-theorem lt_asymm {a b : ReplenishQueueLockId} (h : a < b) : ¬ b < a :=
-  Nat.lt_asymm (show a.core.val < b.core.val from h)
-
-/-- WS-SM SM5.D.3 (plan §4.4 lock-order level): replenish-queue locks sit *after*
-every SM0.I object-lock level (0..9) **and** after the run-queue lock level (10),
-hence `11`.  The unified cross-domain order built on top of this is `SchedLockId`
-(§1b: object < runQueue < replenishQueue); its runtime acquisition sequence is
-the SM5.D timer tick under `withLockSet`. -/
-def replenishQueueLockLevel : Nat := 11
-
-/-- SM5.D.3: the run-queue lock level (10) is strictly below the replenish-queue
-lock level (11) — the arithmetic foundation under "run-queue locks acquired
-before replenish-queue locks".  The order-theoretic form is
-`SchedLockId.runQueue_lt_replenishQueue` (§1b). -/
-theorem runQueueLockLevel_lt_replenishQueueLockLevel :
-    RunQueueLockId.runQueueLockLevel < replenishQueueLockLevel := by decide
-
-end ReplenishQueueLockId
-
--- ============================================================================
--- §1b  SM5.A.2 (cross-domain unification, plan §4.4) — SchedLockId + the
---      complete `chooseThreadOnCore` footprint (object-store + run-queue locks)
--- ============================================================================
-
-/-- WS-SM SM5.A.2 (cross-domain unification): the canonical object-store
-*table* lock, as an SM0.I `LockId`.  `chooseThreadOnCore` resolves every
-runnable thread's priority / deadline / domain through `st.objects.get?`
-(threaded into `chooseBestInBucket`), so the selection reads the RobinHood
-object store.  Per SM3.A.10 that table is guarded by the single table-level
-lock at the top of the SM0.I hierarchy (`LockKind.objStore`, level 0); a
-`.objStore` `LockId` routes to `SystemState.objStoreLock` regardless of its
-`objId`, so the canonical form carries `ObjId.sentinel`. -/
-def schedObjStoreLockId : Concurrency.LockId :=
-  ⟨Concurrency.LockKind.objStore, SeLe4n.ObjId.sentinel⟩
-
-/-- WS-SM SM5.A.2 (cross-domain unification, plan §4.4): the unified lock
-identifier spanning **both** lock domains the per-core scheduler touches — the
-SM0.I object-lock domain (`LockId`, kind levels 0..9) and the per-core
-run-queue domain (`RunQueueLockId`).  A single `withLockSet` acquisition
-sequence must order locks drawn from both domains; `SchedLockId` is that
-common order.
-
-Keeping the two domains as constructors of one sum — rather than adding an
-eleventh "runQueue" kind to the carefully-pinned 10-level SM0.I `LockKind`
-hierarchy (`level_surjective` / `level_bounded`) — preserves that pinning while
-giving the cross-domain total order plan §4.4 requires: **every object-domain
-lock is acquired before every run-queue lock** (`object_lt_runQueue`). -/
-inductive SchedLockId where
-  /-- An SM0.I object-domain lock (the `objStore` table lock, a per-object TCB
-  lock, …) keyed by `(LockKind, ObjId)`. -/
-  | object (l : Concurrency.LockId)
-  /-- A per-core run-queue lock. -/
-  | runQueue (r : RunQueueLockId)
-  /-- WS-SM SM5.D.3: a per-core replenish-queue lock (the SM5.D timer tick's
-  third lock domain — plan §3.4). -/
-  | replenishQueue (r : ReplenishQueueLockId)
-  deriving DecidableEq, Repr
-
-namespace SchedLockId
-
-/-- WS-SM SM5.A.2: the unified cross-domain order.  Object-domain locks compare
-by the SM0.I `LockId` lex order; run-queue locks by `CoreId`; and **every**
-object lock precedes **every** run-queue lock (plan §4.4 — object levels 0..9
-acquired before the notional run-queue level 10). -/
-protected def le : SchedLockId → SchedLockId → Prop
-  | .object l₁,        .object l₂        => l₁ ≤ l₂
-  | .object _,         .runQueue _       => True
-  | .object _,         .replenishQueue _ => True
-  | .runQueue _,       .object _         => False
-  | .runQueue r₁,      .runQueue r₂      => r₁.core.val ≤ r₂.core.val
-  | .runQueue _,       .replenishQueue _ => True
-  | .replenishQueue _, .object _         => False
-  | .replenishQueue _, .runQueue _       => False
-  | .replenishQueue r₁, .replenishQueue r₂ => r₁.core.val ≤ r₂.core.val
-
-/-- WS-SM SM5.A.2: strict cross-domain order. -/
-protected def lt (a b : SchedLockId) : Prop := SchedLockId.le a b ∧ ¬ SchedLockId.le b a
-
-instance decLeAux (a b : SchedLockId) : Decidable (SchedLockId.le a b) := by
-  cases a <;> cases b <;> simp only [SchedLockId.le] <;> infer_instance
-
-instance : LE SchedLockId := ⟨SchedLockId.le⟩
-instance : LT SchedLockId := ⟨SchedLockId.lt⟩
-
-instance (a b : SchedLockId) : Decidable (a ≤ b) := decLeAux a b
-instance (a b : SchedLockId) : Decidable (a < b) :=
-  inferInstanceAs (Decidable (SchedLockId.le a b ∧ ¬ SchedLockId.le b a))
-
-/-- SM5.A.2: reflexivity (reuses each domain's reflexivity). -/
-protected theorem le_refl (l : SchedLockId) : l ≤ l := by
-  cases l with
-  | object a => exact Concurrency.LockId.le_refl a
-  | runQueue r => exact RunQueueLockId.le_refl r
-  | replenishQueue r => exact ReplenishQueueLockId.le_refl r
-
-/-- SM5.A.2: transitivity across both domains (cross-domain edges go
-object→runQueue only, so no transitivity violation is possible). -/
-protected theorem le_trans {a b c : SchedLockId} (h₁ : a ≤ b) (h₂ : b ≤ c) : a ≤ c := by
-  cases a <;> cases b <;> cases c <;>
-    first
-      | exact Concurrency.LockId.le_trans _ _ _ h₁ h₂
-      | exact Nat.le_trans h₁ h₂
-      | exact True.intro
-      | exact (h₁ : False).elim
-      | exact (h₂ : False).elim
-
-/-- SM5.A.2: antisymmetry (the cross-domain edges are strict, so equal-pair
-hypotheses force the same domain). -/
-protected theorem le_antisymm {a b : SchedLockId} (h₁ : a ≤ b) (h₂ : b ≤ a) : a = b := by
-  cases a <;> cases b <;>
-    first
-      | exact congrArg SchedLockId.object (Concurrency.LockId.le_antisymm _ _ h₁ h₂)
-      | exact congrArg SchedLockId.runQueue (RunQueueLockId.le_antisymm h₁ h₂)
-      | exact congrArg SchedLockId.replenishQueue (ReplenishQueueLockId.le_antisymm h₁ h₂)
-      | exact (h₁ : False).elim
-      | exact (h₂ : False).elim
-
-/-- SM5.A.2: totality — any two locks (same or cross domain) are comparable. -/
-protected theorem le_total (a b : SchedLockId) : a ≤ b ∨ b ≤ a := by
-  cases a <;> cases b <;>
-    first
-      | exact Concurrency.LockId.le_total _ _
-      | exact RunQueueLockId.le_total _ _
-      | exact ReplenishQueueLockId.le_total _ _
-      | exact Or.inl True.intro
-      | exact Or.inr True.intro
-
-/-- SM5.A.2: strict-order irreflexivity. -/
-protected theorem lt_irrefl (l : SchedLockId) : ¬ l < l := fun h => h.2 h.1
-
-/-- SM5.A.2: strict-order asymmetry (the lock-ladder property the
-deadlock-freedom argument rests on). -/
-protected theorem lt_asymm {a b : SchedLockId} (h : a < b) : ¬ b < a := fun h' => h.2 h'.1
-
-/-- WS-SM SM5.A.2 (plan §4.4): every object-domain lock is strictly below every
-run-queue lock — "object locks acquired before run-queue locks", now a theorem
-on the unified order itself rather than only an arithmetic fact about the
-levels (`RunQueueLockId.objectLockLevels_lt_runQueueLockLevel`). -/
-theorem object_lt_runQueue (l : Concurrency.LockId) (r : RunQueueLockId) :
-    SchedLockId.object l < SchedLockId.runQueue r :=
-  ⟨True.intro, fun h => h⟩
-
-/-- WS-SM SM5.D.3 (plan §4.4): every object-domain lock is strictly below every
-replenish-queue lock — the object→replenish-queue cross-domain edge of the
-unified order. -/
-theorem object_lt_replenishQueue (l : Concurrency.LockId) (r : ReplenishQueueLockId) :
-    SchedLockId.object l < SchedLockId.replenishQueue r :=
-  ⟨True.intro, fun h => h⟩
-
-/-- WS-SM SM5.D.3 (plan §4.4): every run-queue lock is strictly below every
-replenish-queue lock — "run-queue locks acquired before replenish-queue locks",
-the third cross-domain edge that completes the object < runQueue < replenishQueue
-total order the SM5.D timer-tick lock-set is sorted by. -/
-theorem runQueue_lt_replenishQueue (q : RunQueueLockId) (r : ReplenishQueueLockId) :
-    SchedLockId.runQueue q < SchedLockId.replenishQueue r :=
-  ⟨True.intro, fun h => h⟩
-
-end SchedLockId
 
 -- ============================================================================
 -- WS-SM SM6.E / WS-RR RR2.4, generalised at WS-RR RR8.12 — a same-kind
@@ -401,7 +87,7 @@ end SchedLockId
 -- sequence.  The shape is shared by the `.tcbSuspend` cancellation footprint
 -- (SM6.E), the `.call` / `.reply` donation footprints (RR2.4 / RR2.10), the PIP
 -- chain walk's footprint (RR7.40) and the per-arm syscall-seam footprints
--- (RR8.12), so it lives here, with the `SchedLockId` order it is about, rather
+-- (RR8.12), so it lives here, with the `LockKey` order it is about, rather
 -- than in any one of them.
 --
 -- **RR8.12 replaced two fixed-arity spellings with one.**  `sortedSchedCorePair`
@@ -417,7 +103,7 @@ end SchedLockId
 /-- **WS-RR RR8.12**: a duplicate-free, `CoreId`-ascending segment of same-kind
 scheduler locks over a set of cores.
 
-`f` names the kind (`fun c => SchedLockId.runQueue ⟨c⟩` or the replenish-queue
+`f` names the kind (`fun c => LockKey.runQueue c` or the replenish-queue
 counterpart), and the cores are canonicalised through
 `Concurrency.canonicalCores`, so the segment is independent of the order and
 multiplicity the resolver discovered them in.  Every member is a **write**: a
@@ -426,14 +112,14 @@ footprint segment exists because the transition moves those cores' slots.
 The length bound is `numCores` rather than the supplied list's length
 (`schedCoreSegment_length_le`), which is what makes a segment resolved from a
 *walk* — a PIP chain, a reply stack — bounded without a separate argument. -/
-def schedCoreSegment (f : CoreId → SchedLockId) (cs : List CoreId) :
-    List (SchedLockId × Concurrency.AccessMode) :=
+def schedCoreSegment (f : CoreId → LockKey) (cs : List CoreId) :
+    List (LockKey × Concurrency.AccessMode) :=
   (Concurrency.canonicalCores cs).map (fun c => (f c, .write))
 
 /-- **WS-RR RR8.12**: every key of a segment is some supplied core's lock — the
 case analysis every ordering proof over a composite footprint runs. -/
-theorem schedCoreSegment_map_fst_mem {f : CoreId → SchedLockId} {cs : List CoreId}
-    {x : SchedLockId} (hx : x ∈ (schedCoreSegment f cs).map (·.1)) :
+theorem schedCoreSegment_map_fst_mem {f : CoreId → LockKey} {cs : List CoreId}
+    {x : LockKey} (hx : x ∈ (schedCoreSegment f cs).map (·.1)) :
     ∃ c ∈ cs, x = f c := by
   unfold schedCoreSegment at hx
   rw [List.map_map] at hx
@@ -445,10 +131,10 @@ core is in the set — the coverage half, and the direction a *false* footprint
 fails.
 
 `hInj` is discharged at each use by the constructor's own injectivity
-(`SchedLockId.runQueue.inj` / `.replenishQueue.inj` composed with the wrapper's
+(`LockKey.runQueue.inj` / `.replenishQueue.inj` composed with the wrapper's
 field projection); without it the reverse direction would hold for a `f` that
 collapsed two cores onto one lock, which is not a segment but an alias. -/
-theorem mem_schedCoreSegment_iff {f : CoreId → SchedLockId}
+theorem mem_schedCoreSegment_iff {f : CoreId → LockKey}
     (hInj : ∀ c d : CoreId, f c = f d → c = d) (cs : List CoreId) (c : CoreId) :
     (f c, Concurrency.AccessMode.write) ∈ schedCoreSegment f cs ↔ c ∈ cs := by
   unfold schedCoreSegment
@@ -462,7 +148,7 @@ theorem mem_schedCoreSegment_iff {f : CoreId → SchedLockId}
 
 /-- **WS-RR RR8.12**: a segment's keys ascend under any `CoreId`-monotone lock
 constructor — so the segment is its own acquisition sequence within its kind. -/
-theorem schedCoreSegment_pairwise_le (f : CoreId → SchedLockId) (cs : List CoreId)
+theorem schedCoreSegment_pairwise_le (f : CoreId → LockKey) (cs : List CoreId)
     (hMono : ∀ c d : CoreId, c ≤ d → f c ≤ f d) :
     ((schedCoreSegment f cs).map (·.1)).Pairwise (· ≤ ·) := by
   unfold schedCoreSegment
@@ -471,16 +157,16 @@ theorem schedCoreSegment_pairwise_le (f : CoreId → SchedLockId) (cs : List Cor
     (Concurrency.canonicalCores_pairwise_le cs)
 
 /-- **WS-RR RR8.12**: a segment is write-only. -/
-theorem schedCoreSegment_write_only (f : CoreId → SchedLockId) (cs : List CoreId) :
+theorem schedCoreSegment_write_only (f : CoreId → LockKey) (cs : List CoreId) :
     ∀ p ∈ schedCoreSegment f cs, p.2 = Concurrency.AccessMode.write := by
   intro p hp
   obtain ⟨_, _, rfl⟩ := List.mem_map.mp hp
   rfl
 
 /-- **WS-RR RR8.12**: a segment's keys are duplicate-free — the obligation
-`SchedLockSet.ofList?` refuses a footprint for, and the one a `dedup`-based
+`LockSet.ofList?` refuses a footprint for, and the one a `dedup`-based
 segment would have had to prove separately. -/
-theorem schedCoreSegment_keys_nodup {f : CoreId → SchedLockId}
+theorem schedCoreSegment_keys_nodup {f : CoreId → LockKey}
     (hInj : ∀ c d : CoreId, f c = f d → c = d) (cs : List CoreId) :
     ((schedCoreSegment f cs).map (·.1)).Nodup := by
   unfold schedCoreSegment
@@ -490,14 +176,14 @@ theorem schedCoreSegment_keys_nodup {f : CoreId → SchedLockId}
 
 /-- **WS-RR RR8.12**: a segment names at most one lock per core, however many
 cores the resolver supplied. -/
-theorem schedCoreSegment_length_le (f : CoreId → SchedLockId) (cs : List CoreId) :
+theorem schedCoreSegment_length_le (f : CoreId → LockKey) (cs : List CoreId) :
     (schedCoreSegment f cs).length ≤ Concurrency.numCores := by
   unfold schedCoreSegment
   rw [List.length_map]
   exact Concurrency.canonicalCores_length_le cs
 
 /-- **WS-RR RR8.12**: no cores, no segment. -/
-@[simp] theorem schedCoreSegment_nil (f : CoreId → SchedLockId) :
+@[simp] theorem schedCoreSegment_nil (f : CoreId → LockKey) :
     schedCoreSegment f [] = [] := by
   simp [schedCoreSegment]
 
@@ -507,7 +193,7 @@ The arm every `Option CoreId`-shaped footprint resolver reaches: a footprint
 that names at most one core of a kind — a deschedule's placed core, a wake's
 target — is the segment over that core's singleton set, and this is what says
 the segment has not quietly become something longer. -/
-@[simp] theorem schedCoreSegment_singleton (f : CoreId → SchedLockId) (c : CoreId) :
+@[simp] theorem schedCoreSegment_singleton (f : CoreId → LockKey) (c : CoreId) :
     schedCoreSegment f [c] = [(f c, Concurrency.AccessMode.write)] := by
   simp [schedCoreSegment, Concurrency.canonicalCores_singleton]
 
@@ -516,9 +202,9 @@ the statement that its argument is a set rather than a claim about it.
 
 A resolver that discovers a core twice, or discovers two cores in either order,
 declares one segment.  This is what retires a hand-written deduplication at a
-footprint; see `cancelIpcBlockingOnCoreSchedLockSet`, whose `if placed = some c`
+footprint; see `cancelIpcBlockingOnCoreLockSet`, whose `if placed = some c`
 branch existed only to remove a duplicate the canonical form never emits. -/
-theorem schedCoreSegment_congr (f : CoreId → SchedLockId) {cs ds : List CoreId}
+theorem schedCoreSegment_congr (f : CoreId → LockKey) {cs ds : List CoreId}
     (h : ∀ c, c ∈ cs ↔ c ∈ ds) : schedCoreSegment f cs = schedCoreSegment f ds := by
   unfold schedCoreSegment
   rw [Concurrency.canonicalCores_congr h]
@@ -527,13 +213,13 @@ theorem schedCoreSegment_congr (f : CoreId → SchedLockId) {cs ds : List CoreId
 `hInj` argument of `mem_schedCoreSegment_iff` and `schedCoreSegment_keys_nodup`
 at the run-queue segment. -/
 theorem runQueueLock_injective (c d : CoreId)
-    (h : SchedLockId.runQueue ⟨c⟩ = SchedLockId.runQueue ⟨d⟩) : c = d :=
-  congrArg RunQueueLockId.core (SchedLockId.runQueue.inj h)
+    (h : LockKey.runQueue c = LockKey.runQueue d) : c = d :=
+  LockKey.runQueue.inj h
 
 /-- **WS-RR RR8.12**: and the replenish-queue constructor. -/
 theorem replenishQueueLock_injective (c d : CoreId)
-    (h : SchedLockId.replenishQueue ⟨c⟩ = SchedLockId.replenishQueue ⟨d⟩) : c = d :=
-  congrArg ReplenishQueueLockId.core (SchedLockId.replenishQueue.inj h)
+    (h : LockKey.replenishQueue c = LockKey.replenishQueue d) : c = d :=
+  LockKey.replenishQueue.inj h
 
 /-- **WS-RR RR8.12**: a whole operation's scheduler-domain footprint — the
 object-store table write lock, then the run-queue segment, then the
@@ -551,13 +237,13 @@ The three segments are in the plan §4.4 cross-domain ascending order
 `object < runQueue < replenishQueue`, and each same-kind segment is
 `CoreId`-ascending and duplicate-free because `schedCoreSegment` canonicalises
 its core set.  So the list **is** the SM3.D acquisition sequence
-(`schedFootprintOfCores_pairwise_le`) and `SchedLockSet.ofList?` accepts it
+(`schedFootprintOfCores_pairwise_le`) and `LockSet.ofList?` accepts it
 (`schedFootprintOfCores_keys_nodup`).
 
 The two arguments are **sets**: a core named twice, or two cores a resolver
 discovered in descending order, contribute one member in ascending position.
 That is what retires the hand-written deduplication
-`cancelIpcBlockingOnCoreSchedLockSet` used to carry as an
+`cancelIpcBlockingOnCoreLockSet` used to carry as an
 `if placed = some c then … else … ++ [(runQueue ⟨c⟩, .write)]` — a question
 about a *set*, answered by an `if`-chain over its two possible elements, which
 is the shape RR8.12's first cut retired one level up.
@@ -569,7 +255,7 @@ footprint whose core arguments form a **set** — two or more of a kind, an
 constructor, because the ordering and the deduplication are then real questions
 and the ladder proof is the twenty-five-line one.  A footprint at a **fixed
 single** core of each kind is a literal: `wakeThreadLockSet`,
-`descheduleThreadLockSet` and `cancelBoundDonationOnCoreSchedLockSet` name at
+`descheduleThreadLockSet` and `cancelBoundDonationOnCoreLockSet` name at
 most one run queue and at most one replenish queue, so there is nothing to sort
 and nothing to merge, and their `_pairwise_le` is a two-element `simp`.
 `migrateSchedContextReplenishmentLockSet` is not this shape at all — it is a
@@ -590,10 +276,10 @@ list the non-interference surface already owns.  A footprint and a confinement
 claim that name different cores is the failure that arrangement makes
 unstateable. -/
 def schedFootprintOfCores (runCores replenishCores : List CoreId) :
-    List (SchedLockId × Concurrency.AccessMode) :=
-  (SchedLockId.object schedObjStoreLockId, .write) ::
-    (schedCoreSegment (fun c => SchedLockId.runQueue ⟨c⟩) runCores
-      ++ schedCoreSegment (fun c => SchedLockId.replenishQueue ⟨c⟩) replenishCores)
+    List (LockKey × Concurrency.AccessMode) :=
+  (LockKey.objStore, .write) ::
+    (schedCoreSegment (fun c => LockKey.runQueue c) runCores
+      ++ schedCoreSegment (fun c => LockKey.replenishQueue c) replenishCores)
 
 /-- **WS-RR RR8.12**: what a scheduler-domain footprint contains — the one
 characterisation its consumers read.
@@ -603,12 +289,12 @@ case analysis over the cons and the two segments: a second reading of the same
 three-way split is the duplication this constructor exists to close, one level
 down.  Everything below is an instance of it. -/
 theorem mem_schedFootprintOfCores_iff (runCores replenishCores : List CoreId)
-    (p : SchedLockId × Concurrency.AccessMode) :
+    (p : LockKey × Concurrency.AccessMode) :
     p ∈ schedFootprintOfCores runCores replenishCores ↔
-      p = (SchedLockId.object schedObjStoreLockId, Concurrency.AccessMode.write)
-        ∨ (∃ c ∈ runCores, p = (SchedLockId.runQueue ⟨c⟩, Concurrency.AccessMode.write))
+      p = (LockKey.objStore, Concurrency.AccessMode.write)
+        ∨ (∃ c ∈ runCores, p = (LockKey.runQueue c, Concurrency.AccessMode.write))
         ∨ (∃ c ∈ replenishCores,
-            p = (SchedLockId.replenishQueue ⟨c⟩, Concurrency.AccessMode.write)) := by
+            p = (LockKey.replenishQueue c, Concurrency.AccessMode.write)) := by
   unfold schedFootprintOfCores schedCoreSegment
   rw [List.mem_cons, List.mem_append]
   constructor
@@ -640,7 +326,7 @@ theorem schedFootprintOfCores_write_only (runCores replenishCores : List CoreId)
 every scheduler-domain footprint is a footprint of an operation that stores. -/
 theorem schedFootprintOfCores_contains_objStore_write
     (runCores replenishCores : List CoreId) :
-    (SchedLockId.object schedObjStoreLockId, Concurrency.AccessMode.write)
+    (LockKey.objStore, Concurrency.AccessMode.write)
       ∈ schedFootprintOfCores runCores replenishCores :=
   List.mem_cons_self ..
 
@@ -649,7 +335,7 @@ the core is in the run set — the coverage half, and the direction a *false*
 footprint fails. -/
 theorem mem_schedFootprintOfCores_runQueue_iff (runCores replenishCores : List CoreId)
     (c : CoreId) :
-    (SchedLockId.runQueue ⟨c⟩, Concurrency.AccessMode.write)
+    (LockKey.runQueue c, Concurrency.AccessMode.write)
         ∈ schedFootprintOfCores runCores replenishCores ↔ c ∈ runCores := by
   rw [mem_schedFootprintOfCores_iff]
   constructor
@@ -662,7 +348,7 @@ theorem mem_schedFootprintOfCores_runQueue_iff (runCores replenishCores : List C
 /-- **WS-RR RR8.12**: and a replenish core's replenish-queue write lock. -/
 theorem mem_schedFootprintOfCores_replenishQueue_iff
     (runCores replenishCores : List CoreId) (c : CoreId) :
-    (SchedLockId.replenishQueue ⟨c⟩, Concurrency.AccessMode.write)
+    (LockKey.replenishQueue c, Concurrency.AccessMode.write)
         ∈ schedFootprintOfCores runCores replenishCores ↔ c ∈ replenishCores := by
   rw [mem_schedFootprintOfCores_iff]
   constructor
@@ -691,22 +377,22 @@ theorem schedFootprintOfCores_subset
   · exact Or.inr (Or.inr ⟨c, hRep c hc, rfl⟩)
 
 /-- **WS-RR RR8.12**: a scheduler-domain footprint's keys ascend in the
-`SchedLockId` order — the full three-domain ladder
+`LockKey` order — the full three-domain ladder
 `object < runQueue < replenishQueue`, each same-kind segment `CoreId`-ascending.
 So the declared list is its own SM3.D acquisition sequence.
 
 Proved once here.  It was four copies before this cut. -/
 theorem schedFootprintOfCores_pairwise_le (runCores replenishCores : List CoreId) :
     ((schedFootprintOfCores runCores replenishCores).map (·.1)).Pairwise (· ≤ ·) := by
-  have hObjRQ : ∀ (c : CoreId), SchedLockId.object schedObjStoreLockId
-      ≤ SchedLockId.runQueue (⟨c⟩ : RunQueueLockId) :=
-    fun c => (SchedLockId.object_lt_runQueue _ _).1
-  have hObjRep : ∀ (c : CoreId), SchedLockId.object schedObjStoreLockId
-      ≤ SchedLockId.replenishQueue (⟨c⟩ : ReplenishQueueLockId) :=
-    fun c => (SchedLockId.object_lt_replenishQueue _ _).1
-  have hRQRep : ∀ (c d : CoreId), SchedLockId.runQueue (⟨c⟩ : RunQueueLockId)
-      ≤ SchedLockId.replenishQueue (⟨d⟩ : ReplenishQueueLockId) :=
-    fun c d => (SchedLockId.runQueue_lt_replenishQueue _ _).1
+  have hObjRQ : ∀ (c : CoreId), LockKey.objStore
+      ≤ LockKey.runQueue c :=
+    fun c => (LockKey.objStore_lt_runQueue _).1
+  have hObjRep : ∀ (c : CoreId), LockKey.objStore
+      ≤ LockKey.replenishQueue c :=
+    fun c => (LockKey.objStore_lt_replenishQueue _).1
+  have hRQRep : ∀ (c d : CoreId), LockKey.runQueue c
+      ≤ LockKey.replenishQueue d :=
+    fun c d => (LockKey.runQueue_lt_replenishQueue _ _).1
   unfold schedFootprintOfCores
   rw [List.map_cons, List.map_append, List.pairwise_cons]
   refine ⟨?_, ?_⟩
@@ -723,7 +409,7 @@ theorem schedFootprintOfCores_pairwise_le (runCores replenishCores : List CoreId
     exact hRQRep c d
 
 /-- **WS-RR RR8.12**: a scheduler-domain footprint's keys are duplicate-free —
-the obligation `SchedLockSet.ofList?` refuses a footprint for.
+the obligation `LockSet.ofList?` refuses a footprint for.
 
 Each segment is duplicate-free by canonicalisation, the two segments are
 disjoint because their keys carry different constructors, and the object key is
@@ -757,8 +443,8 @@ theorem schedFootprintOfCores_length_le (runCores replenishCores : List CoreId) 
       ≤ 1 + 2 * Concurrency.numCores := by
   unfold schedFootprintOfCores
   rw [List.length_cons, List.length_append]
-  have hRun := schedCoreSegment_length_le (fun c => SchedLockId.runQueue ⟨c⟩) runCores
-  have hRep := schedCoreSegment_length_le (fun c => SchedLockId.replenishQueue ⟨c⟩)
+  have hRun := schedCoreSegment_length_le (fun c => LockKey.runQueue c) runCores
+  have hRep := schedCoreSegment_length_le (fun c => LockKey.replenishQueue c)
     replenishCores
   omega
 
@@ -776,9 +462,9 @@ theorem schedFootprintOfCores_congr {run₁ run₂ rep₁ rep₂ : List CoreId}
 /-- WS-SM SM5.H.4 (lock-set): `migrateSchedContextReplenishment fromCore toCore`
 writes both cores' replenish-queue slots. -/
 def migrateSchedContextReplenishmentLockSet (fromCore toCore : CoreId) :
-    List (SchedLockId × Concurrency.AccessMode) :=
-  [ (SchedLockId.replenishQueue ⟨fromCore⟩, .write)
-  , (SchedLockId.replenishQueue ⟨toCore⟩, .write) ]
+    List (LockKey × Concurrency.AccessMode) :=
+  [ (LockKey.replenishQueue fromCore, .write)
+  , (LockKey.replenishQueue toCore, .write) ]
 
 /-- SM5.H.4: the migration footprint is the two replenish-queue write locks. -/
 @[simp] theorem migrateSchedContextReplenishmentLockSet_length (fromCore toCore : CoreId) :
@@ -799,7 +485,7 @@ theorem migrateSchedContextReplenishmentLockSet_keys_nodup (fromCore toCore : Co
   refine List.Pairwise.cons (fun a ha => ?_) (List.pairwise_singleton _ _)
   rw [List.mem_singleton] at ha; subst ha
   intro hEq
-  exact h (congrArg ReplenishQueueLockId.core (SchedLockId.replenishQueue.inj hEq))
+  exact h (LockKey.replenishQueue.inj hEq)
 
 /-- SM5.H.4 (plan §4.4 / SM3.D ladder): under the canonical core order
 `fromCore.val ≤ toCore.val`, the migration footprint's keys are ascending — a valid
@@ -834,9 +520,9 @@ theorem migrateSchedContextReplenishmentLockSet_size_le_maxLockSetSize (fromCore
 /-- WS-SM SM5.H.4 (lock-set): `migrateRunQueueOnAffinityChange fromCore toCore`
 writes both cores' run-queue slots. -/
 def migrateRunQueueOnAffinityChangeLockSet (fromCore toCore : CoreId) :
-    List (SchedLockId × Concurrency.AccessMode) :=
-  [ (SchedLockId.runQueue ⟨fromCore⟩, .write)
-  , (SchedLockId.runQueue ⟨toCore⟩, .write) ]
+    List (LockKey × Concurrency.AccessMode) :=
+  [ (LockKey.runQueue fromCore, .write)
+  , (LockKey.runQueue toCore, .write) ]
 
 /-- SM5.H.4: the run-queue-migration footprint is the two run-queue write locks. -/
 @[simp] theorem migrateRunQueueOnAffinityChangeLockSet_length (fromCore toCore : CoreId) :
@@ -859,20 +545,20 @@ replenishment migration), in plan §4.4 ascending order (object < runQueue <
 replenishQueue, then by `core.val`).  This is the footprint a `withLockSet`
 caller (the SM5.I `tcbSetAffinity` runtime path) acquires. -/
 def setThreadCpuAffinityWithMigrationLockSet (oldCore newCore : CoreId) :
-    List (SchedLockId × Concurrency.AccessMode) :=
+    List (LockKey × Concurrency.AccessMode) :=
   -- #5 (Codex P2 review): order the per-core run-queue / replenish-queue locks by
   -- core (lower-numbered core first) regardless of the old→new migration direction,
-  -- so the footprint's keys are `SchedLockId`-ascending **unconditionally** (a valid
+  -- so the footprint's keys are `LockKey`-ascending **unconditionally** (a valid
   -- `withLockSet` acquisition sequence — a concurrent opposite-direction migration
   -- acquires the same queue locks in the same order, so no reverse-direction
   -- deadlock; see `setThreadCpuAffinityWithMigrationLockSet_pairwise_le`).
   let loCore := if oldCore.val ≤ newCore.val then oldCore else newCore
   let hiCore := if oldCore.val ≤ newCore.val then newCore else oldCore
-  [ (SchedLockId.object schedObjStoreLockId, .write)
-  , (SchedLockId.runQueue ⟨loCore⟩, .write)
-  , (SchedLockId.runQueue ⟨hiCore⟩, .write)
-  , (SchedLockId.replenishQueue ⟨loCore⟩, .write)
-  , (SchedLockId.replenishQueue ⟨hiCore⟩, .write) ]
+  [ (LockKey.objStore, .write)
+  , (LockKey.runQueue loCore, .write)
+  , (LockKey.runQueue hiCore, .write)
+  , (LockKey.replenishQueue loCore, .write)
+  , (LockKey.replenishQueue hiCore, .write) ]
 
 /-- SM5.H.4: the composite footprint has the five cross-domain write locks. -/
 @[simp] theorem setThreadCpuAffinityWithMigrationLockSet_length (oldCore newCore : CoreId) :
@@ -889,7 +575,7 @@ theorem setThreadCpuAffinityWithMigrationLockSet_write_only (oldCore newCore : C
 /-- SM5.H.4: the composite footprint contains the object-store write lock (the
 affinity write). -/
 theorem setThreadCpuAffinityWithMigrationLockSet_contains_objStore_write (oldCore newCore : CoreId) :
-    (SchedLockId.object schedObjStoreLockId, Concurrency.AccessMode.write)
+    (LockKey.objStore, Concurrency.AccessMode.write)
       ∈ setThreadCpuAffinityWithMigrationLockSet oldCore newCore := by
   simp [setThreadCpuAffinityWithMigrationLockSet]
 
@@ -901,12 +587,12 @@ caller acquires them in canonical order and cannot deadlock against a concurrent
 opposite-direction migration. -/
 theorem setThreadCpuAffinityWithMigrationLockSet_pairwise_le (oldCore newCore : CoreId) :
     ((setThreadCpuAffinityWithMigrationLockSet oldCore newCore).map (·.1)).Pairwise (· ≤ ·) := by
-  have hObjRq : ∀ (r : RunQueueLockId), SchedLockId.object schedObjStoreLockId ≤ SchedLockId.runQueue r :=
-    fun r => (SchedLockId.object_lt_runQueue _ _).1
-  have hObjRpq : ∀ (r : ReplenishQueueLockId), SchedLockId.object schedObjStoreLockId ≤ SchedLockId.replenishQueue r :=
-    fun r => (SchedLockId.object_lt_replenishQueue _ _).1
-  have hRqRpq : ∀ (q : RunQueueLockId) (r : ReplenishQueueLockId),
-      SchedLockId.runQueue q ≤ SchedLockId.replenishQueue r := fun q r => (SchedLockId.runQueue_lt_replenishQueue _ _).1
+  have hObjRq : ∀ (r : CoreId), LockKey.objStore ≤ LockKey.runQueue r :=
+    fun r => (LockKey.objStore_lt_runQueue _).1
+  have hObjRpq : ∀ (r : CoreId), LockKey.objStore ≤ LockKey.replenishQueue r :=
+    fun r => (LockKey.objStore_lt_replenishQueue _).1
+  have hRqRpq : ∀ (q : CoreId) (r : CoreId),
+      LockKey.runQueue q ≤ LockKey.replenishQueue r := fun q r => (LockKey.runQueue_lt_replenishQueue _ _).1
   have hLoHi : (if oldCore.val ≤ newCore.val then oldCore else newCore).val
              ≤ (if oldCore.val ≤ newCore.val then newCore else oldCore).val := by
     by_cases hc : oldCore.val ≤ newCore.val
@@ -959,9 +645,9 @@ footprint of `chooseThreadOnCore c`.
 
 The footprint therefore declares a lock from *both* domains, in plan §4.4
 ascending order (object-domain lock first):
-`[(SchedLockId.object schedObjStoreLockId, .read), (SchedLockId.runQueue ⟨c⟩, .read)]`.
+`[(LockKey.objStore, .read), (LockKey.runQueue c, .read)]`.
 
-The object-store read lock (`schedObjStoreLockId`, the SM3.A.10 table-level
+The object-store read lock (`LockKey.objStore`, the SM3.A.10 table-level
 lock) is what makes the footprint sound under the SM5.B `withLockSet`
 integration: holding it read-locked prevents a concurrent retype / delete /
 write of a queued TCB from changing the selection (or turning it into
@@ -972,9 +658,9 @@ run-queue locks.  The cross-domain acquisition *order* is
 `chooseThreadOnCoreLockSet_object_before_runQueue`; the *runtime* acquisition
 wiring (`withLockSet`) is SM5.B. -/
 def chooseThreadOnCoreLockSet (c : CoreId) :
-    List (SchedLockId × Concurrency.AccessMode) :=
-  [ (SchedLockId.object schedObjStoreLockId, .read)
-  , (SchedLockId.runQueue ⟨c⟩, .read) ]
+    List (LockKey × Concurrency.AccessMode) :=
+  [ (LockKey.objStore, .read)
+  , (LockKey.runQueue c, .read) ]
 
 /-- SM5.A.2 (cross-domain): the footprint is the two-lock object-store +
 run-queue set. -/
@@ -995,22 +681,22 @@ is in the footprint, so the `st.objects.get?` TCB resolutions
 `chooseThreadOnCore` performs are guarded.  This is the lock the run-queue-only
 footprint omitted. -/
 theorem chooseThreadOnCoreLockSet_contains_objStore_read (c : CoreId) :
-    (SchedLockId.object schedObjStoreLockId, Concurrency.AccessMode.read)
+    (LockKey.objStore, Concurrency.AccessMode.read)
       ∈ chooseThreadOnCoreLockSet c := by
   simp [chooseThreadOnCoreLockSet]
 
 /-- SM5.A.2: the per-core run-queue read lock is in the footprint. -/
 theorem chooseThreadOnCoreLockSet_contains_runQueue_read (c : CoreId) :
-    (SchedLockId.runQueue ⟨c⟩, Concurrency.AccessMode.read)
+    (LockKey.runQueue c, Concurrency.AccessMode.read)
       ∈ chooseThreadOnCoreLockSet c := by
   simp [chooseThreadOnCoreLockSet]
 
 /-- SM5.A.2 (plan §4.4): inside the footprint the object-store lock is
 acquired *before* the run-queue lock — the cross-domain ascending order. -/
 theorem chooseThreadOnCoreLockSet_object_before_runQueue (c : CoreId) :
-    SchedLockId.object schedObjStoreLockId
-      < SchedLockId.runQueue (⟨c⟩ : RunQueueLockId) :=
-  SchedLockId.object_lt_runQueue _ _
+    LockKey.objStore
+      < LockKey.runQueue c :=
+  LockKey.objStore_lt_runQueue _
 
 /-- SM5.A.2: the footprint's projected keys are duplicate-free — the
 object-store lock and the run-queue lock are distinct (different
@@ -1026,14 +712,14 @@ The budget-aware selector reads the same per-core scheduler state as
 `chooseThreadOnCore` **plus** each candidate's SchedContext (via
 `hasSufficientBudget` → `st.getSchedContext?`) — but both the TCB resolutions
 and the SchedContext reads go through the *single* object store, so the
-table-level object-store read lock (`schedObjStoreLockId`) already guards them.
+table-level object-store read lock (`LockKey.objStore`) already guards them.
 The footprint therefore coincides with `chooseThreadOnCoreLockSet`:
-`[(SchedLockId.object schedObjStoreLockId, .read), (SchedLockId.runQueue ⟨c⟩, .read)]`.
+`[(LockKey.objStore, .read), (LockKey.runQueue c, .read)]`.
 The selector is production-reached (legacy `chooseThreadEffective` delegates to
 it), so it carries the same complete two-domain footprint contract as its
 non-budget sibling — closing the same under-locking gap on the budget path. -/
 def chooseThreadEffectiveOnCoreLockSet (c : CoreId) :
-    List (SchedLockId × Concurrency.AccessMode) :=
+    List (LockKey × Concurrency.AccessMode) :=
   chooseThreadOnCoreLockSet c
 
 /-- SM5.A §6: the budget selector's footprint is exactly the non-budget
@@ -1045,14 +731,14 @@ selector's (both read the object store + the per-core run queue). -/
 lock (guards both the TCB resolutions and the `hasSufficientBudget`
 SchedContext reads). -/
 theorem chooseThreadEffectiveOnCoreLockSet_contains_objStore_read (c : CoreId) :
-    (SchedLockId.object schedObjStoreLockId, Concurrency.AccessMode.read)
+    (LockKey.objStore, Concurrency.AccessMode.read)
       ∈ chooseThreadEffectiveOnCoreLockSet c :=
   chooseThreadOnCoreLockSet_contains_objStore_read c
 
 /-- SM5.A §6: the budget selector's footprint declares the per-core run-queue
 read lock. -/
 theorem chooseThreadEffectiveOnCoreLockSet_contains_runQueue_read (c : CoreId) :
-    (SchedLockId.runQueue ⟨c⟩, Concurrency.AccessMode.read)
+    (LockKey.runQueue c, Concurrency.AccessMode.read)
       ∈ chooseThreadEffectiveOnCoreLockSet c :=
   chooseThreadOnCoreLockSet_contains_runQueue_read c
 
@@ -1139,7 +825,7 @@ lock — guards the orthogonal `st.objects` read footprint, so it does not
 appear in this run-queue-write statement.) -/
 theorem chooseThreadOnCore_independent_of_write_off_lockSet
     (s : SystemState) (c c' : CoreId) (rq : RunQueue)
-    (h : SchedLockId.runQueue (⟨c'⟩ : RunQueueLockId)
+    (h : LockKey.runQueue c'
           ∉ (chooseThreadOnCoreLockSet c).map (·.1)) :
     chooseThreadOnCore
         { s with scheduler := s.scheduler.setRunQueueOnCore c' rq } c

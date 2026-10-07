@@ -974,10 +974,10 @@ theorem endpointCallOnCore_withLockSet_preserves_objects_invExt
     (withLockSet (lockSet_endpointCall caller cnRoot endpointId receiver? donatedSc? replyId?)
         executingCore (endpointCallOnCore endpointId caller msg executingCore) s).1.objects.invExt :=
   withLockSet_invariant_preserved _ executingCore _ s (fun st => st.objects.invExt) hObjInv
-    (fun l m s' h => acquireLockOnObject_preserves_invExt s' executingCore l m h)
+    (fun k m s' h => acquireLock_preserves_invExt s' executingCore k m h)
     (fun s' h => endpointCallOnCore_preserves_objects_invExt endpointId caller msg executingCore s' h)
-    (fun l m s' h => releaseLockOnObject_preserves_invExt s' executingCore l m h)
-    (fun l m s' h => cancelLockOnObject_preserves_invExt s' executingCore l m h)
+    (fun k m s' h => releaseLock_preserves_invExt s' executingCore k m h)
+    (fun k m s' h => cancelLock_preserves_invExt s' executingCore k m h)
 
 -- ============================================================================
 -- §5  Lookup-congruence for the dual-queue structural invariant

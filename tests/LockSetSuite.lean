@@ -207,7 +207,7 @@ open SeLe4n.Kernel.Concurrency
 
 example : LockSet.empty.pairs = [] := by decide
 example : LockSet.empty.size = 0 := by decide
-example : LockSet.empty.containsKey ⟨.tcb, ObjId.ofNat 1⟩ = false := by decide
+example : LockSet.empty.containsKey (.object ⟨.tcb, ObjId.ofNat 1⟩) = false := by decide
 -- lockAcquireSequence uses List.mergeSort whose internal `O(n log n)` recursion
 -- is opaque to `decide`'s kernel reduction.  `native_decide` compiles to
 -- native code and discharges the equality in microseconds with the same
@@ -216,37 +216,37 @@ example : (LockSet.empty.lockAcquireSequence = []) := by native_decide
 
 /-! ### Singleton lock-set -/
 
-example : (LockSet.singleton ⟨.tcb, ObjId.ofNat 1⟩ .write).pairs =
-    [(⟨.tcb, ObjId.ofNat 1⟩, .write)] := by decide
+example : (LockSet.singleton (.object ⟨.tcb, ObjId.ofNat 1⟩) .write).pairs =
+    [(.object ⟨.tcb, ObjId.ofNat 1⟩, .write)] := by decide
 
-example : (LockSet.singleton ⟨.endpoint, ObjId.ofNat 5⟩ .read).size = 1 := by decide
+example : (LockSet.singleton (.object ⟨.endpoint, ObjId.ofNat 5⟩) .read).size = 1 := by decide
 
-example : (LockSet.singleton ⟨.cnode, ObjId.ofNat 7⟩ .read).containsKey
-    ⟨.cnode, ObjId.ofNat 7⟩ = true := by decide
+example : (LockSet.singleton (.object ⟨.cnode, ObjId.ofNat 7⟩) .read).containsKey
+    (.object ⟨.cnode, ObjId.ofNat 7⟩) = true := by decide
 
 /-! ### Insert?  -/
 
-example : (LockSet.empty.insert? ⟨.tcb, ObjId.ofNat 1⟩ .write).isSome := by decide
+example : (LockSet.empty.insert? (.object ⟨.tcb, ObjId.ofNat 1⟩) .write).isSome := by decide
 
 example :
-    let S := LockSet.singleton ⟨.tcb, ObjId.ofNat 1⟩ .write
-    (S.insert? ⟨.tcb, ObjId.ofNat 1⟩ .read) = none := by decide
+    let S := LockSet.singleton (.object ⟨.tcb, ObjId.ofNat 1⟩) .write
+    (S.insert? (.object ⟨.tcb, ObjId.ofNat 1⟩) .read) = none := by decide
 
 example :
-    let S := LockSet.singleton ⟨.tcb, ObjId.ofNat 1⟩ .write
-    (S.insert? ⟨.endpoint, ObjId.ofNat 5⟩ .write).isSome := by decide
+    let S := LockSet.singleton (.object ⟨.tcb, ObjId.ofNat 1⟩) .write
+    (S.insert? (.object ⟨.endpoint, ObjId.ofNat 5⟩) .write).isSome := by decide
 
 /-! ### InsertOrMerge merges via lub (write dominates read) -/
 
 example :
-    let S := LockSet.singleton ⟨.tcb, ObjId.ofNat 1⟩ .read
-    (S.insertOrMerge ⟨.tcb, ObjId.ofNat 1⟩ .write).pairs =
-      [(⟨.tcb, ObjId.ofNat 1⟩, .write)] := by decide
+    let S := LockSet.singleton (.object ⟨.tcb, ObjId.ofNat 1⟩) .read
+    (S.insertOrMerge (.object ⟨.tcb, ObjId.ofNat 1⟩) .write).pairs =
+      [(.object ⟨.tcb, ObjId.ofNat 1⟩, .write)] := by decide
 
 example :
-    let S := LockSet.singleton ⟨.tcb, ObjId.ofNat 1⟩ .write
-    (S.insertOrMerge ⟨.tcb, ObjId.ofNat 1⟩ .read).pairs =
-      [(⟨.tcb, ObjId.ofNat 1⟩, .write)] := by decide
+    let S := LockSet.singleton (.object ⟨.tcb, ObjId.ofNat 1⟩) .write
+    (S.insertOrMerge (.object ⟨.tcb, ObjId.ofNat 1⟩) .read).pairs =
+      [(.object ⟨.tcb, ObjId.ofNat 1⟩, .write)] := by decide
 
 /-! ### AccessMode algebra (decidable) -/
 
@@ -271,16 +271,16 @@ The kind levels are: cnode=2, tcb=3, endpoint=4.  Expected sort:
 cnode/10 (read), tcb/5 (write), endpoint/20 (write). -/
 
 private def threeLockSet : LockSet :=
-  LockSet.empty.insertOrMerge ⟨.endpoint, ObjId.ofNat 20⟩ .write
-    |>.insertOrMerge ⟨.tcb, ObjId.ofNat 5⟩ .write
-    |>.insertOrMerge ⟨.cnode, ObjId.ofNat 10⟩ .read
+  LockSet.empty.insertOrMerge (.object ⟨.endpoint, ObjId.ofNat 20⟩) .write
+    |>.insertOrMerge (.object ⟨.tcb, ObjId.ofNat 5⟩) .write
+    |>.insertOrMerge (.object ⟨.cnode, ObjId.ofNat 10⟩) .read
 
 example : threeLockSet.size = 3 := by decide
 
 example : threeLockSet.lockAcquireSequence =
-    [(⟨.cnode, ObjId.ofNat 10⟩, .read),
-     (⟨.tcb, ObjId.ofNat 5⟩, .write),
-     (⟨.endpoint, ObjId.ofNat 20⟩, .write)] := by native_decide
+    [(.object ⟨.cnode, ObjId.ofNat 10⟩, .read),
+     (.object ⟨.tcb, ObjId.ofNat 5⟩, .write),
+     (.object ⟨.endpoint, ObjId.ofNat 20⟩, .write)] := by native_decide
 
 /-! ### Same kind, different ObjIds: sort by ObjId.val ascending.
 
@@ -288,14 +288,14 @@ Set: (tcb 7 write), (tcb 3 write), (tcb 5 write).
 Expected sort: tcb/3, tcb/5, tcb/7. -/
 
 private def threeTcbLockSet : LockSet :=
-  LockSet.empty.insertOrMerge ⟨.tcb, ObjId.ofNat 7⟩ .write
-    |>.insertOrMerge ⟨.tcb, ObjId.ofNat 3⟩ .write
-    |>.insertOrMerge ⟨.tcb, ObjId.ofNat 5⟩ .write
+  LockSet.empty.insertOrMerge (.object ⟨.tcb, ObjId.ofNat 7⟩) .write
+    |>.insertOrMerge (.object ⟨.tcb, ObjId.ofNat 3⟩) .write
+    |>.insertOrMerge (.object ⟨.tcb, ObjId.ofNat 5⟩) .write
 
 example : threeTcbLockSet.lockAcquireSequence =
-    [(⟨.tcb, ObjId.ofNat 3⟩, .write),
-     (⟨.tcb, ObjId.ofNat 5⟩, .write),
-     (⟨.tcb, ObjId.ofNat 7⟩, .write)] := by native_decide
+    [(.object ⟨.tcb, ObjId.ofNat 3⟩, .write),
+     (.object ⟨.tcb, ObjId.ofNat 5⟩, .write),
+     (.object ⟨.tcb, ObjId.ofNat 7⟩, .write)] := by native_decide
 
 /-! ### Lub-merging when the same key appears twice in input.
 
@@ -307,20 +307,20 @@ Order should not matter — read+write = write regardless of which
 is inserted first. -/
 
 example :
-    let S := LockSet.empty.insertOrMerge ⟨.tcb, ObjId.ofNat 5⟩ .read
-              |>.insertOrMerge ⟨.tcb, ObjId.ofNat 5⟩ .write
-    S.size = 1 ∧ S.pairs = [(⟨.tcb, ObjId.ofNat 5⟩, .write)] := by decide
+    let S := LockSet.empty.insertOrMerge (.object ⟨.tcb, ObjId.ofNat 5⟩) .read
+              |>.insertOrMerge (.object ⟨.tcb, ObjId.ofNat 5⟩) .write
+    S.size = 1 ∧ S.pairs = [(.object ⟨.tcb, ObjId.ofNat 5⟩, .write)] := by decide
 
 example :
-    let S := LockSet.empty.insertOrMerge ⟨.tcb, ObjId.ofNat 5⟩ .write
-              |>.insertOrMerge ⟨.tcb, ObjId.ofNat 5⟩ .read
-    S.size = 1 ∧ S.pairs = [(⟨.tcb, ObjId.ofNat 5⟩, .write)] := by decide
+    let S := LockSet.empty.insertOrMerge (.object ⟨.tcb, ObjId.ofNat 5⟩) .write
+              |>.insertOrMerge (.object ⟨.tcb, ObjId.ofNat 5⟩) .read
+    S.size = 1 ∧ S.pairs = [(.object ⟨.tcb, ObjId.ofNat 5⟩, .write)] := by decide
 
 -- read + read = read (no upgrade)
 example :
-    let S := LockSet.empty.insertOrMerge ⟨.tcb, ObjId.ofNat 5⟩ .read
-              |>.insertOrMerge ⟨.tcb, ObjId.ofNat 5⟩ .read
-    S.pairs = [(⟨.tcb, ObjId.ofNat 5⟩, .read)] := by decide
+    let S := LockSet.empty.insertOrMerge (.object ⟨.tcb, ObjId.ofNat 5⟩) .read
+              |>.insertOrMerge (.object ⟨.tcb, ObjId.ofNat 5⟩) .read
+    S.pairs = [(.object ⟨.tcb, ObjId.ofNat 5⟩, .read)] := by decide
 
 /-! ### Self-suspend (`callerTid = targetTcbTid`) collapses TCB locks.
 
@@ -341,8 +341,8 @@ example :
 example :
     let S := SeLe4n.Kernel.lockSet_tcbSuspendOnCore default ⟨5⟩ (ObjId.ofNat 10) ⟨5⟩
     S.lockAcquireSequence =
-      [(⟨.cnode, ObjId.ofNat 10⟩, .read),
-       (⟨.tcb, ObjId.ofNat 5⟩, .write)] := by native_decide
+      [(.object ⟨.cnode, ObjId.ofNat 10⟩, .read),
+       (.object ⟨.tcb, ObjId.ofNat 5⟩, .write)] := by native_decide
 
 /-! ### Reply with caller = reply-target collapses to two locks.
 
@@ -382,10 +382,10 @@ example :
     LockSet.lockAcquireSequence
       (lockSet_endpointCall ⟨5⟩ (ObjId.ofNat 10) (ObjId.ofNat 20)
         (some ⟨8⟩) none) =
-    [(⟨.cnode, ObjId.ofNat 10⟩, .read),
-     (⟨.tcb, ObjId.ofNat 5⟩, .write),
-     (⟨.tcb, ObjId.ofNat 8⟩, .write),
-     (⟨.endpoint, ObjId.ofNat 20⟩, .write)] := by native_decide
+    [(.object ⟨.cnode, ObjId.ofNat 10⟩, .read),
+     (.object ⟨.tcb, ObjId.ofNat 5⟩, .write),
+     (.object ⟨.tcb, ObjId.ofNat 8⟩, .write),
+     (.object ⟨.endpoint, ObjId.ofNat 20⟩, .write)] := by native_decide
 
 /-! ### endpointCall with donation: caller TCB 5 has SC 100,
 calling receiver TCB 8 (passive).  SC is donated, so SC lock
@@ -398,12 +398,12 @@ example :
     -- WS-OD OD3.5: a donating call also holds the state-level lock, for the
     -- `scThreadIndex` maintenance `donateSchedContext` ends in.  It is level 0,
     -- so the ladder puts it first.
-    [(⟨.objStore, ObjId.ofNat 0⟩, .write),
-     (⟨.cnode, ObjId.ofNat 10⟩, .read),
-     (⟨.tcb, ObjId.ofNat 5⟩, .write),
-     (⟨.tcb, ObjId.ofNat 8⟩, .write),
-     (⟨.endpoint, ObjId.ofNat 20⟩, .write),
-     (⟨.schedContext, ObjId.ofNat 100⟩, .write)] := by native_decide
+    [(.objStore, .write),
+     (.object ⟨.cnode, ObjId.ofNat 10⟩, .read),
+     (.object ⟨.tcb, ObjId.ofNat 5⟩, .write),
+     (.object ⟨.tcb, ObjId.ofNat 8⟩, .write),
+     (.object ⟨.endpoint, ObjId.ofNat 20⟩, .write),
+     (.object ⟨.schedContext, ObjId.ofNat 100⟩, .write)] := by native_decide
 
 /-! ### The suspend's optional members, at the two footprints that own them.
 
@@ -651,22 +651,22 @@ The `union_empty` `@[simp]` theorem gives this for free, but the
 runtime check ensures the `foldl` computation actually behaves
 identity on the empty right-argument. -/
 
-example : (LockSet.singleton ⟨.tcb, ObjId.ofNat 1⟩ .write).union LockSet.empty =
-    LockSet.singleton ⟨.tcb, ObjId.ofNat 1⟩ .write := by decide
+example : (LockSet.singleton (.object ⟨.tcb, ObjId.ofNat 1⟩) .write).union LockSet.empty =
+    LockSet.singleton (.object ⟨.tcb, ObjId.ofNat 1⟩) .write := by decide
 
 /-! ### Union of disjoint LockSets contains both keys. -/
 
 example :
-    let S1 := LockSet.singleton ⟨.tcb, ObjId.ofNat 1⟩ .write
-    let S2 := LockSet.singleton ⟨.endpoint, ObjId.ofNat 2⟩ .write
+    let S1 := LockSet.singleton (.object ⟨.tcb, ObjId.ofNat 1⟩) .write
+    let S2 := LockSet.singleton (.object ⟨.endpoint, ObjId.ofNat 2⟩) .write
     (S1.union S2).size = 2 := by decide
 
 /-! ### Union merges overlapping keys via lub. -/
 
 example :
-    let S1 := LockSet.singleton ⟨.tcb, ObjId.ofNat 1⟩ .read
-    let S2 := LockSet.singleton ⟨.tcb, ObjId.ofNat 1⟩ .write
-    (S1.union S2).pairs = [(⟨.tcb, ObjId.ofNat 1⟩, .write)] := by decide
+    let S1 := LockSet.singleton (.object ⟨.tcb, ObjId.ofNat 1⟩) .read
+    let S2 := LockSet.singleton (.object ⟨.tcb, ObjId.ofNat 1⟩) .write
+    (S1.union S2).pairs = [(.object ⟨.tcb, ObjId.ofNat 1⟩, .write)] := by decide
 
 -- ============================================================================
 -- §6c — Runtime exercise of lockSet_consistent_* on concrete args
@@ -768,11 +768,11 @@ already-sorted permutation, `lockAcquireSequence` returns the same. -/
 example :
     let S := lockSet_endpointCall ⟨5⟩ (ObjId.ofNat 10) (ObjId.ofNat 20)
               (some ⟨8⟩) none
-    let canonical : List (LockId × AccessMode) :=
-      [(⟨.cnode, ObjId.ofNat 10⟩, .read),
-       (⟨.tcb, ObjId.ofNat 5⟩, .write),
-       (⟨.tcb, ObjId.ofNat 8⟩, .write),
-       (⟨.endpoint, ObjId.ofNat 20⟩, .write)]
+    let canonical : List (LockKey × AccessMode) :=
+      [(.object ⟨.cnode, ObjId.ofNat 10⟩, .read),
+       (.object ⟨.tcb, ObjId.ofNat 5⟩, .write),
+       (.object ⟨.tcb, ObjId.ofNat 8⟩, .write),
+       (.object ⟨.endpoint, ObjId.ofNat 20⟩, .write)]
     canonical = S.lockAcquireSequence := by native_decide
 
 -- ============================================================================
@@ -902,7 +902,7 @@ private def runLockSetCoreChecks : IO Unit := do
     (decide (LockSet.empty.pairs = []))
   assertBool "LockSet.empty.size = 0"
     (decide (LockSet.empty.size = 0))
-  let tcb1 : LockId := ⟨.tcb, ObjId.ofNat 1⟩
+  let tcb1 : LockKey := (.object ⟨.tcb, ObjId.ofNat 1⟩)
   assertBool "containsKey on empty returns false"
     (decide (LockSet.empty.containsKey tcb1 = false))
   assertBool "singleton tcb1 write size = 1"
@@ -921,11 +921,11 @@ private def runLockSetAcquireSortChecks : IO Unit := do
   assertBool "endpointCall lockAcquireSequence length = 4 (no donation)"
     (decide (seq.length = 4))
   -- The sort is deterministic: cnode/10 (read), tcb/5 (write), tcb/8 (write), endpoint/20 (write).
-  let expected : List (LockId × AccessMode) :=
-    [(⟨.cnode, ObjId.ofNat 10⟩, .read),
-     (⟨.tcb, ObjId.ofNat 5⟩, .write),
-     (⟨.tcb, ObjId.ofNat 8⟩, .write),
-     (⟨.endpoint, ObjId.ofNat 20⟩, .write)]
+  let expected : List (LockKey × AccessMode) :=
+    [(.object ⟨.cnode, ObjId.ofNat 10⟩, .read),
+     (.object ⟨.tcb, ObjId.ofNat 5⟩, .write),
+     (.object ⟨.tcb, ObjId.ofNat 8⟩, .write),
+     (.object ⟨.endpoint, ObjId.ofNat 20⟩, .write)]
   assertBool "endpointCall lockAcquireSequence matches plan §4.5 expected order"
     (decide (seq = expected))
   -- Audit-pass-3: with donation, the SC is added and sorts last (level 7).
@@ -940,13 +940,13 @@ private def runLockSetAcquireSortChecks : IO Unit := do
   let seqDon := sDon.lockAcquireSequence
   assertBool "endpointCall (with donation) lock-set size = 6"
     (decide (sDon.size = 6))
-  let expectedDon : List (LockId × AccessMode) :=
+  let expectedDon : List (LockKey × AccessMode) :=
     [(stateLevelLock, .write),
-     (⟨.cnode, ObjId.ofNat 10⟩, .read),
-     (⟨.tcb, ObjId.ofNat 5⟩, .write),
-     (⟨.tcb, ObjId.ofNat 8⟩, .write),
-     (⟨.endpoint, ObjId.ofNat 20⟩, .write),
-     (⟨.schedContext, ObjId.ofNat 100⟩, .write)]
+     (.object ⟨.cnode, ObjId.ofNat 10⟩, .read),
+     (.object ⟨.tcb, ObjId.ofNat 5⟩, .write),
+     (.object ⟨.tcb, ObjId.ofNat 8⟩, .write),
+     (.object ⟨.endpoint, ObjId.ofNat 20⟩, .write),
+     (.object ⟨.schedContext, ObjId.ofNat 100⟩, .write)]
   assertBool "endpointCall (with donation) lockAcquireSequence: objStore first, SC last"
     (decide (seqDon = expectedDon))
 
@@ -1247,28 +1247,28 @@ private def runPerTransitionShapeChecks : IO Unit := do
 private def runLubMergeChecks : IO Unit := do
   IO.println "--- §9 Lub-merging on duplicate keys ---"
   -- read + write at same key → write
-  let s1 := LockSet.empty.insertOrMerge ⟨.tcb, ObjId.ofNat 5⟩ .read
-              |>.insertOrMerge ⟨.tcb, ObjId.ofNat 5⟩ .write
+  let s1 := LockSet.empty.insertOrMerge (.object ⟨.tcb, ObjId.ofNat 5⟩) .read
+              |>.insertOrMerge (.object ⟨.tcb, ObjId.ofNat 5⟩) .write
   assertBool "insertOrMerge read+write at same key gives single (write) entry"
-    (decide (s1.size = 1 ∧ s1.pairs = [(⟨.tcb, ObjId.ofNat 5⟩, .write)]))
+    (decide (s1.size = 1 ∧ s1.pairs = [(.object ⟨.tcb, ObjId.ofNat 5⟩, .write)]))
   -- write + read at same key → write (commutativity of lub)
-  let s2 := LockSet.empty.insertOrMerge ⟨.tcb, ObjId.ofNat 5⟩ .write
-              |>.insertOrMerge ⟨.tcb, ObjId.ofNat 5⟩ .read
+  let s2 := LockSet.empty.insertOrMerge (.object ⟨.tcb, ObjId.ofNat 5⟩) .write
+              |>.insertOrMerge (.object ⟨.tcb, ObjId.ofNat 5⟩) .read
   assertBool "insertOrMerge write+read at same key gives single (write) entry"
-    (decide (s2.size = 1 ∧ s2.pairs = [(⟨.tcb, ObjId.ofNat 5⟩, .write)]))
+    (decide (s2.size = 1 ∧ s2.pairs = [(.object ⟨.tcb, ObjId.ofNat 5⟩, .write)]))
   -- read + read at same key → read
-  let s3 := LockSet.empty.insertOrMerge ⟨.tcb, ObjId.ofNat 5⟩ .read
-              |>.insertOrMerge ⟨.tcb, ObjId.ofNat 5⟩ .read
+  let s3 := LockSet.empty.insertOrMerge (.object ⟨.tcb, ObjId.ofNat 5⟩) .read
+              |>.insertOrMerge (.object ⟨.tcb, ObjId.ofNat 5⟩) .read
   assertBool "insertOrMerge read+read at same key gives single (read) entry"
-    (decide (s3.pairs = [(⟨.tcb, ObjId.ofNat 5⟩, .read)]))
+    (decide (s3.pairs = [(.object ⟨.tcb, ObjId.ofNat 5⟩, .read)]))
   -- Self-suspend (callerTid = targetTcbTid) collapses TCB locks.
   let selfSuspend := SeLe4n.Kernel.lockSet_tcbSuspendOnCore default ⟨5⟩ (ObjId.ofNat 10) ⟨5⟩
   assertBool "tcbSuspend(caller=target) collapses to 2 locks (cnode + merged TCB)"
     (decide (selfSuspend.size = 2))
   assertBool "tcbSuspend(caller=target) merged TCB lock is write"
     (decide (selfSuspend.lockAcquireSequence =
-      [(⟨.cnode, ObjId.ofNat 10⟩, .read),
-       (⟨.tcb, ObjId.ofNat 5⟩, .write)]))
+      [(.object ⟨.cnode, ObjId.ofNat 10⟩, .read),
+       (.object ⟨.tcb, ObjId.ofNat 5⟩, .write)]))
   -- endpointReply(caller=replyTarget) collapses.
   let selfReply := lockSet_endpointReply ⟨5⟩ (ObjId.ofNat 10) ⟨5⟩ none none none none none none none none none
   assertBool "endpointReply(caller=replyTarget) collapses to 2 locks"
@@ -1503,14 +1503,14 @@ private def runLubMergeChecks : IO Unit := do
 
 private def runUnionChecks : IO Unit := do
   IO.println "--- §10 LockSet.union semantics ---"
-  let s1 := LockSet.singleton ⟨.tcb, ObjId.ofNat 1⟩ .write
-  let s2 := LockSet.singleton ⟨.endpoint, ObjId.ofNat 2⟩ .write
+  let s1 := LockSet.singleton (.object ⟨.tcb, ObjId.ofNat 1⟩) .write
+  let s2 := LockSet.singleton (.object ⟨.endpoint, ObjId.ofNat 2⟩) .write
   assertBool "union of disjoint LockSets has size 2"
     (decide ((s1.union s2).size = 2))
-  let s3 := LockSet.singleton ⟨.tcb, ObjId.ofNat 1⟩ .read
-  let s4 := LockSet.singleton ⟨.tcb, ObjId.ofNat 1⟩ .write
+  let s3 := LockSet.singleton (.object ⟨.tcb, ObjId.ofNat 1⟩) .read
+  let s4 := LockSet.singleton (.object ⟨.tcb, ObjId.ofNat 1⟩) .write
   assertBool "union of overlapping LockSets merges via lub"
-    (decide ((s3.union s4).pairs = [(⟨.tcb, ObjId.ofNat 1⟩, .write)]))
+    (decide ((s3.union s4).pairs = [(.object ⟨.tcb, ObjId.ofNat 1⟩, .write)]))
   assertBool "union with empty is identity"
     (decide (s1.union LockSet.empty = s1))
 
@@ -1639,12 +1639,12 @@ private def runQueueOwnerFootprintChecks : IO Unit := do
     (decide (queuedEp.size = bare.size + 1))
   assertBool "…and that member is the endpoint's WRITE lock, not a read"
     (queuedEp.pairs.any (fun p =>
-      decide (p = (⟨.endpoint, ObjId.ofNat 20⟩, AccessMode.write))))
+      decide (p = (.object ⟨.endpoint, ObjId.ofNat 20⟩, AccessMode.write))))
   assertBool "NEGATIVE: at `none` the footprint carries no endpoint lock at all"
     (decide (bare.pairs.all (fun p => p.fst.kind ≠ .endpoint)))
   assertBool "a notification-queued target contributes the notification lock instead"
     (queuedNtfn.pairs.any (fun p =>
-      decide (p = (⟨.notification, ObjId.ofNat 21⟩, AccessMode.write))))
+      decide (p = (.object ⟨.notification, ObjId.ofNat 21⟩, AccessMode.write))))
   -- The kinds the widened arm admits are exactly the two a queue owner can be.
   assertBool "the queue-owner member's kind is permitted on the widened arm"
     (queuedEp.pairs.all (fun p => decide (p.fst.kind ∈ permittedKinds .tcbSetPriority))
@@ -1713,18 +1713,18 @@ private def runAuditPass6FootprintChecks : IO Unit := do
     (decide (boundPri.size = unboundPri.size + 1))
   assertBool "P1: tcbSetPriority(.bound 50) contains schedContextLock ⟨50⟩ as write"
     (boundPri.pairs.any (fun p =>
-      decide (p = (⟨.schedContext, ObjId.ofNat 50⟩, .write))))
+      decide (p = (.object ⟨.schedContext, ObjId.ofNat 50⟩, .write))))
   -- P1 (tcbSetMCPriority): same shape.
   let boundMcp := lockSet_tcbSetMCPriority ⟨5⟩ (ObjId.ofNat 10) ⟨3⟩ (some ⟨50⟩) none
   assertBool "P1: tcbSetMCPriority(.bound) contains schedContextLock ⟨50⟩ as write"
     (boundMcp.pairs.any (fun p =>
-      decide (p = (⟨.schedContext, ObjId.ofNat 50⟩, .write))))
+      decide (p = (.object ⟨.schedContext, ObjId.ofNat 50⟩, .write))))
   -- P1 (tcbSetIPCBuffer): with target VSpaceRoot, contains read lock.
   let withVsr := lockSet_tcbSetIPCBuffer ⟨5⟩ (ObjId.ofNat 10) ⟨3⟩
                     (some (ObjId.ofNat 99)) none
   assertBool "P1: tcbSetIPCBuffer(some 99) contains vspaceRootLock 99 as read"
     (withVsr.pairs.any (fun p =>
-      decide (p = (⟨.vspaceRoot, ObjId.ofNat 99⟩, .read))))
+      decide (p = (.object ⟨.vspaceRoot, ObjId.ofNat 99⟩, .read))))
   assertBool "P1: tcbSetIPCBuffer(none) does NOT contain any vspaceRoot lock"
     (let noVsr := lockSet_tcbSetIPCBuffer ⟨5⟩ (ObjId.ofNat 10) ⟨3⟩ none none
      decide (noVsr.pairs.all (fun p => p.fst.kind ≠ .vspaceRoot)))
@@ -1732,7 +1732,7 @@ private def runAuditPass6FootprintChecks : IO Unit := do
   let svcReg := lockSet_serviceRegister ⟨5⟩ (ObjId.ofNat 10) (ObjId.ofNat 20)
   assertBool "P2: serviceRegister contains endpointLock 20 as read"
     (svcReg.pairs.any (fun p =>
-      decide (p = (⟨.endpoint, ObjId.ofNat 20⟩, .read))))
+      decide (p = (.object ⟨.endpoint, ObjId.ofNat 20⟩, .read))))
   assertBool "serviceRegister has exactly 4 locks (tcb + cnode + endpoint + registry)"
     (decide (svcReg.size = 4))
   -- Canonical-sort cross-check: the new SC entries in tcbSetPriority
@@ -1741,35 +1741,35 @@ private def runAuditPass6FootprintChecks : IO Unit := do
   -- expected sort places the SC last.
   let boundPriSeq := boundPri.lockAcquireSequence
   assertBool "P1: tcbSetPriority(.bound 50) canonical sort places SC at end (level 7)"
-    (decide (boundPriSeq.getLast? = some (⟨.schedContext, ObjId.ofNat 50⟩, .write)))
+    (decide (boundPriSeq.getLast? = some (.object ⟨.schedContext, ObjId.ofNat 50⟩, .write)))
   -- Similarly for setIPCBuffer: VSpaceRoot at level 8, sorts last.
   let ipcSeq := withVsr.lockAcquireSequence
   assertBool "P1: tcbSetIPCBuffer(some 99) canonical sort places VSpaceRoot at end (level 8)"
-    (decide (ipcSeq.getLast? = some (⟨.vspaceRoot, ObjId.ofNat 99⟩, .read)))
+    (decide (ipcSeq.getLast? = some (.object ⟨.vspaceRoot, ObjId.ofNat 99⟩, .read)))
   -- P2 canonical: endpoint at level 4, sorts after cnode(2) but before tcb(3).
   -- Actually wait — hierarchy is cnode=2 < tcb=3 < endpoint=4.  So endpoint is last.
   let svcRegSeq := svcReg.lockAcquireSequence
   assertBool "P2: serviceRegister canonical sort places endpoint at end (level 4)"
-    (decide (svcRegSeq.getLast? = some (⟨.endpoint, ObjId.ofNat 20⟩, .read)))
+    (decide (svcRegSeq.getLast? = some (.object ⟨.endpoint, ObjId.ofNat 20⟩, .read)))
 
 private def runCanonicalSortRuntimeChecks : IO Unit := do
   IO.println "--- §12 lockAcquireSequence canonical sort runtime ---"
   -- The sort is total and deterministic regardless of input order.
   -- Verify by constructing the same multiset in different orders and
   -- checking they produce the same lockAcquireSequence output.
-  let order1 := LockSet.empty.insertOrMerge ⟨.endpoint, ObjId.ofNat 20⟩ .write
-                  |>.insertOrMerge ⟨.tcb, ObjId.ofNat 5⟩ .write
-                  |>.insertOrMerge ⟨.cnode, ObjId.ofNat 10⟩ .read
-  let order2 := LockSet.empty.insertOrMerge ⟨.cnode, ObjId.ofNat 10⟩ .read
-                  |>.insertOrMerge ⟨.endpoint, ObjId.ofNat 20⟩ .write
-                  |>.insertOrMerge ⟨.tcb, ObjId.ofNat 5⟩ .write
-  let order3 := LockSet.empty.insertOrMerge ⟨.tcb, ObjId.ofNat 5⟩ .write
-                  |>.insertOrMerge ⟨.cnode, ObjId.ofNat 10⟩ .read
-                  |>.insertOrMerge ⟨.endpoint, ObjId.ofNat 20⟩ .write
-  let expected : List (LockId × AccessMode) :=
-    [(⟨.cnode, ObjId.ofNat 10⟩, .read),
-     (⟨.tcb, ObjId.ofNat 5⟩, .write),
-     (⟨.endpoint, ObjId.ofNat 20⟩, .write)]
+  let order1 := LockSet.empty.insertOrMerge (.object ⟨.endpoint, ObjId.ofNat 20⟩) .write
+                  |>.insertOrMerge (.object ⟨.tcb, ObjId.ofNat 5⟩) .write
+                  |>.insertOrMerge (.object ⟨.cnode, ObjId.ofNat 10⟩) .read
+  let order2 := LockSet.empty.insertOrMerge (.object ⟨.cnode, ObjId.ofNat 10⟩) .read
+                  |>.insertOrMerge (.object ⟨.endpoint, ObjId.ofNat 20⟩) .write
+                  |>.insertOrMerge (.object ⟨.tcb, ObjId.ofNat 5⟩) .write
+  let order3 := LockSet.empty.insertOrMerge (.object ⟨.tcb, ObjId.ofNat 5⟩) .write
+                  |>.insertOrMerge (.object ⟨.cnode, ObjId.ofNat 10⟩) .read
+                  |>.insertOrMerge (.object ⟨.endpoint, ObjId.ofNat 20⟩) .write
+  let expected : List (LockKey × AccessMode) :=
+    [(.object ⟨.cnode, ObjId.ofNat 10⟩, .read),
+     (.object ⟨.tcb, ObjId.ofNat 5⟩, .write),
+     (.object ⟨.endpoint, ObjId.ofNat 20⟩, .write)]
   assertBool "lockAcquireSequence: order1 produces canonical output"
     (decide (order1.lockAcquireSequence = expected))
   assertBool "lockAcquireSequence: order2 produces canonical output"
@@ -1777,13 +1777,13 @@ private def runCanonicalSortRuntimeChecks : IO Unit := do
   assertBool "lockAcquireSequence: order3 produces canonical output"
     (decide (order3.lockAcquireSequence = expected))
   -- Within-kind sort: ObjIds ascending.
-  let withinKind := LockSet.empty.insertOrMerge ⟨.tcb, ObjId.ofNat 7⟩ .write
-                      |>.insertOrMerge ⟨.tcb, ObjId.ofNat 3⟩ .write
-                      |>.insertOrMerge ⟨.tcb, ObjId.ofNat 5⟩ .write
-  let withinKindExpected : List (LockId × AccessMode) :=
-    [(⟨.tcb, ObjId.ofNat 3⟩, .write),
-     (⟨.tcb, ObjId.ofNat 5⟩, .write),
-     (⟨.tcb, ObjId.ofNat 7⟩, .write)]
+  let withinKind := LockSet.empty.insertOrMerge (.object ⟨.tcb, ObjId.ofNat 7⟩) .write
+                      |>.insertOrMerge (.object ⟨.tcb, ObjId.ofNat 3⟩) .write
+                      |>.insertOrMerge (.object ⟨.tcb, ObjId.ofNat 5⟩) .write
+  let withinKindExpected : List (LockKey × AccessMode) :=
+    [(.object ⟨.tcb, ObjId.ofNat 3⟩, .write),
+     (.object ⟨.tcb, ObjId.ofNat 5⟩, .write),
+     (.object ⟨.tcb, ObjId.ofNat 7⟩, .write)]
   assertBool "lockAcquireSequence: within-kind sort by ObjId ascending"
     (decide (withinKind.lockAcquireSequence = withinKindExpected))
 
@@ -1825,8 +1825,8 @@ private def runFstInjChecks : IO Unit := do
   -- exercise the contrapositive: two distinct pairs in a LockSet
   -- have distinct `fst` keys (since equal-fst would collapse them
   -- via insertOrMerge).
-  let p1 : LockId × AccessMode := (⟨.tcb, ObjId.ofNat 1⟩, .write)
-  let p2 : LockId × AccessMode := (⟨.endpoint, ObjId.ofNat 2⟩, .write)
+  let p1 : LockKey × AccessMode := (.object ⟨.tcb, ObjId.ofNat 1⟩, .write)
+  let p2 : LockKey × AccessMode := (.object ⟨.endpoint, ObjId.ofNat 2⟩, .write)
   let S := (LockSet.singleton p1.fst p1.snd).union (LockSet.singleton p2.fst p2.snd)
   assertBool "S contains p1"
     (decide (p1 ∈ S.pairs))
@@ -1961,7 +1961,7 @@ private def runPipChainStartChecks : IO Unit := do
                  (some ⟨8⟩) none
      match st with
      | none => true
-     | some tid => decide (ls.containsKey ⟨.tcb, ObjId.ofNat tid.toNat⟩ = true))
+     | some tid => decide (ls.containsKey (.object ⟨.tcb, ObjId.ofNat tid.toNat⟩) = true))
   assertBool "pipChainStart_endpointReply: chain-start callerTid is in static lockSet"
     (let st := pipChainStart_endpointReply ⟨5⟩ (ObjId.ofNat 10) ⟨7⟩
                  none none
@@ -1969,7 +1969,7 @@ private def runPipChainStartChecks : IO Unit := do
                  none none none none none none none none none
      match st with
      | none => true
-     | some tid => decide (ls.containsKey ⟨.tcb, ObjId.ofNat tid.toNat⟩ = true))
+     | some tid => decide (ls.containsKey (.object ⟨.tcb, ObjId.ofNat tid.toNat⟩) = true))
 
 def runLockSetChecks : IO Unit := do
   IO.println "WS-SM SM3.B — LockSet regression suite"

@@ -414,6 +414,9 @@ def acquireLockOnObject (s : SystemState) (core : CoreId)
   | .tcb | .endpoint | .notification | .cnode
   | .vspaceRoot | .untyped | .schedContext | .reply | .page =>
       updateObjectLockAt s l (mode.toAcquireOp core)
+  -- **WS-LS LS1.2**: no object lock has a scheduler-queue kind (a `LockKey.runQueue c`
+  -- does, and it is not a `LockId`); an id that spells one is refused, fail-closed.
+  | .runQueue | .replenishQueue => s
 
 /-- WS-SM SM3.C.2: `releaseLockOnObject` — the SM3.C.1 release
 primitive's per-object body.  Symmetric to `acquireLockOnObject`
@@ -428,6 +431,9 @@ def releaseLockOnObject (s : SystemState) (core : CoreId)
   | .tcb | .endpoint | .notification | .cnode
   | .vspaceRoot | .untyped | .schedContext | .reply | .page =>
       updateObjectLockAt s l (mode.toReleaseOp core)
+  -- **WS-LS LS1.2**: no object lock has a scheduler-queue kind (a `LockKey.runQueue c`
+  -- does, and it is not a `LockId`); an id that spells one is refused, fail-closed.
+  | .runQueue | .replenishQueue => s
 
 /-- **WS-LC LC4.1**: `cancelLockOnObject` — the per-object **withdrawal**.
 
@@ -452,6 +458,133 @@ def cancelLockOnObject (s : SystemState) (core : CoreId)
   | .tcb | .endpoint | .notification | .cnode
   | .vspaceRoot | .untyped | .schedContext | .reply | .page =>
       updateObjectLockAt s l (mode.toCancelOp core)
+  -- **WS-LS LS1.2**: no object lock has a scheduler-queue kind (a `LockKey.runQueue c`
+  -- does, and it is not a `LockId`); an id that spells one is refused, fail-closed.
+  | .runQueue | .replenishQueue => s
+
+-- ============================================================================
+-- §1b — WS-LS LS1.2: the per-key primitives
+-- ============================================================================
+
+/-- **WS-LS LS1.2**: advance the word a `LockKey` names by an acquire of `mode`
+on behalf of `core`.
+
+One primitive for every key a footprint can declare: the table lock is the
+`SystemState.objStoreLock` word; an object lock is SM3.C's own
+`acquireLockOnObject`, verbatim (fail-closed kind check, `.page` routing);
+the two scheduler keys advance the per-core words through the framing
+setters.  This is `acquireLock` (WS-RR RR7.39) moved to the lock layer
+with the table lock given its own arm, so `LockSet`'s fold and the scheduler
+bracket's fold are one fold.  LS3 deletes the words it writes. -/
+def acquireLock (s : SystemState) (core : CoreId) (k : LockKey) (mode : AccessMode) :
+    SystemState :=
+  match k with
+  | .objStore => { s with objStoreLock := s.objStoreLock.applyOp (mode.toAcquireOp core) }
+  | .object l => acquireLockOnObject s core l mode
+  | .runQueue c =>
+      s.setRunQueueLockOnCore c ((s.runQueueLockOnCore c).applyOp (mode.toAcquireOp core))
+  | .replenishQueue c =>
+      s.setReplenishQueueLockOnCore c
+        ((s.replenishQueueLockOnCore c).applyOp (mode.toAcquireOp core))
+
+/-- **WS-LS LS1.2**: the release, arm for arm. -/
+def releaseLock (s : SystemState) (core : CoreId) (k : LockKey) (mode : AccessMode) :
+    SystemState :=
+  match k with
+  | .objStore => { s with objStoreLock := s.objStoreLock.applyOp (mode.toReleaseOp core) }
+  | .object l => releaseLockOnObject s core l mode
+  | .runQueue c =>
+      s.setRunQueueLockOnCore c ((s.runQueueLockOnCore c).applyOp (mode.toReleaseOp core))
+  | .replenishQueue c =>
+      s.setReplenishQueueLockOnCore c
+        ((s.replenishQueueLockOnCore c).applyOp (mode.toReleaseOp core))
+
+/-- **WS-LS LS1.2**: the withdrawal, arm for arm. -/
+def cancelLock (s : SystemState) (core : CoreId) (k : LockKey) (mode : AccessMode) :
+    SystemState :=
+  match k with
+  | .objStore => { s with objStoreLock := s.objStoreLock.applyOp (mode.toCancelOp core) }
+  | .object l => cancelLockOnObject s core l mode
+  | .runQueue c =>
+      s.setRunQueueLockOnCore c ((s.runQueueLockOnCore c).applyOp (mode.toCancelOp core))
+  | .replenishQueue c =>
+      s.setReplenishQueueLockOnCore c
+        ((s.replenishQueueLockOnCore c).applyOp (mode.toCancelOp core))
+
+@[simp] theorem acquireLock_object (s : SystemState) (core : CoreId) (l : LockId)
+    (mode : AccessMode) : acquireLock s core (.object l) mode = acquireLockOnObject s core l mode :=
+  rfl
+@[simp] theorem releaseLock_object (s : SystemState) (core : CoreId) (l : LockId)
+    (mode : AccessMode) : releaseLock s core (.object l) mode = releaseLockOnObject s core l mode :=
+  rfl
+@[simp] theorem cancelLock_object (s : SystemState) (core : CoreId) (l : LockId)
+    (mode : AccessMode) : cancelLock s core (.object l) mode = cancelLockOnObject s core l mode :=
+  rfl
+
+/-- The table-lock arm is the `.objStore`-kind arm of the per-object primitive:
+one word, whichever spelling reached it. -/
+theorem acquireLock_objStore (s : SystemState) (core : CoreId) (oid : SeLe4n.ObjId)
+    (mode : AccessMode) :
+    acquireLock s core .objStore mode = acquireLockOnObject s core ⟨.objStore, oid⟩ mode := rfl
+theorem releaseLock_objStore (s : SystemState) (core : CoreId) (oid : SeLe4n.ObjId)
+    (mode : AccessMode) :
+    releaseLock s core .objStore mode = releaseLockOnObject s core ⟨.objStore, oid⟩ mode := rfl
+theorem cancelLock_objStore (s : SystemState) (core : CoreId) (oid : SeLe4n.ObjId)
+    (mode : AccessMode) :
+    cancelLock s core .objStore mode = cancelLockOnObject s core ⟨.objStore, oid⟩ mode := rfl
+
+/-- **WS-LS LS1.2**: the one word update every primitive is an instance of —
+`op` applied to the word `k` names.  The per-object arm is the per-object
+primitives' shared body (kind dispatch, fail-closed on the scheduler kinds).
+Stating the three primitives as its instances lets a frame argument that
+only needs "the op never enqueues `c`" be proved once. -/
+def applyLockOpOnObject (s : SystemState) (l : LockId) (op : RwLockOp) : SystemState :=
+  match l.kind with
+  | .objStore => { s with objStoreLock := s.objStoreLock.applyOp op }
+  | .tcb | .endpoint | .notification | .cnode
+  | .vspaceRoot | .untyped | .schedContext | .reply | .page => updateObjectLockAt s l op
+  | .runQueue | .replenishQueue => s
+
+def applyLockOp (s : SystemState) (k : LockKey) (op : RwLockOp) : SystemState :=
+  match k with
+  | .objStore => { s with objStoreLock := s.objStoreLock.applyOp op }
+  | .object l => applyLockOpOnObject s l op
+  | .runQueue c => s.setRunQueueLockOnCore c ((s.runQueueLockOnCore c).applyOp op)
+  | .replenishQueue c =>
+      s.setReplenishQueueLockOnCore c ((s.replenishQueueLockOnCore c).applyOp op)
+
+theorem acquireLockOnObject_eq_applyLockOpOnObject (s : SystemState) (core : CoreId)
+    (l : LockId) (m : AccessMode) :
+    acquireLockOnObject s core l m = applyLockOpOnObject s l (m.toAcquireOp core) := by
+  unfold acquireLockOnObject applyLockOpOnObject; cases l.kind <;> rfl
+
+theorem releaseLockOnObject_eq_applyLockOpOnObject (s : SystemState) (core : CoreId)
+    (l : LockId) (m : AccessMode) :
+    releaseLockOnObject s core l m = applyLockOpOnObject s l (m.toReleaseOp core) := by
+  unfold releaseLockOnObject applyLockOpOnObject; cases l.kind <;> rfl
+
+theorem cancelLockOnObject_eq_applyLockOpOnObject (s : SystemState) (core : CoreId)
+    (l : LockId) (m : AccessMode) :
+    cancelLockOnObject s core l m = applyLockOpOnObject s l (m.toCancelOp core) := by
+  unfold cancelLockOnObject applyLockOpOnObject; cases l.kind <;> rfl
+
+theorem acquireLock_eq_applyLockOp (s : SystemState) (core : CoreId) (k : LockKey)
+    (m : AccessMode) : acquireLock s core k m = applyLockOp s k (m.toAcquireOp core) := by
+  cases k with
+  | object l => exact acquireLockOnObject_eq_applyLockOpOnObject s core l m
+  | _ => rfl
+
+theorem releaseLock_eq_applyLockOp (s : SystemState) (core : CoreId) (k : LockKey)
+    (m : AccessMode) : releaseLock s core k m = applyLockOp s k (m.toReleaseOp core) := by
+  cases k with
+  | object l => exact releaseLockOnObject_eq_applyLockOpOnObject s core l m
+  | _ => rfl
+
+theorem cancelLock_eq_applyLockOp (s : SystemState) (core : CoreId) (k : LockKey)
+    (m : AccessMode) : cancelLock s core k m = applyLockOp s k (m.toCancelOp core) := by
+  cases k with
+  | object l => exact cancelLockOnObject_eq_applyLockOpOnObject s core l m
+  | _ => rfl
 
 /-- WS-SM SM3.A.10 / PR #870 round 7: the SystemState-level singleton's
 `objId` is decorative — the `.objStore` arms of `acquireLockOnObject` and
@@ -711,6 +844,7 @@ theorem acquireLockOnObject_preserves_objStoreLock_of_modeled
   | tcb | endpoint | notification | cnode
   | vspaceRoot | untyped | schedContext | reply | page =>
     all_goals exact updateObjectLockAt_preserves_objStoreLock s l _
+  | runQueue | replenishQueue => rfl
 
 /-- WS-SM SM3.C.8 foundation: releasing a per-object lock preserves
 the table-level `objStoreLock`.  Symmetric to the acquire form. -/
@@ -724,6 +858,7 @@ theorem releaseLockOnObject_preserves_objStoreLock_of_modeled
   | tcb | endpoint | notification | cnode
   | vspaceRoot | untyped | schedContext | reply | page =>
     all_goals exact updateObjectLockAt_preserves_objStoreLock s l _
+  | runQueue | replenishQueue => rfl
 
 /-- **WS-LC LC4.5**: and the withdrawal, the third sibling. -/
 theorem cancelLockOnObject_preserves_objStoreLock_of_modeled
@@ -736,6 +871,65 @@ theorem cancelLockOnObject_preserves_objStoreLock_of_modeled
   | tcb | endpoint | notification | cnode
   | vspaceRoot | untyped | schedContext | reply | page =>
     all_goals exact updateObjectLockAt_preserves_objStoreLock s l _
+  | runQueue | replenishQueue => rfl
+
+/-- **WS-LS LS1.2**: no per-object primitive touches the scheduler lock
+words — `updateObjectAt` writes `objects` only, and the `.objStore` arms
+write `objStoreLock` only.  This is the frame the per-key predicates
+(`keyHeld`, `keyQueued`) need for a scheduler key across an object-key
+step, the mirror image of `setRunQueueLockOnCore_objects`. -/
+theorem updateObjectAt_schedulerLocks (s : SystemState)
+    (oid : SeLe4n.ObjId) (f : KernelObject → KernelObject) :
+    (updateObjectAt s oid f).schedulerLocks = s.schedulerLocks := by
+  unfold updateObjectAt
+  cases s.objects.get? oid <;> rfl
+
+theorem updateObjectLockAt_schedulerLocks (s : SystemState)
+    (l : LockId) (op : RwLockOp) :
+    (updateObjectLockAt s l op).schedulerLocks = s.schedulerLocks := by
+  unfold updateObjectLockAt
+  cases LockId.lookup s l with
+  | none => rfl
+  | some _ => exact updateObjectAt_schedulerLocks s l.objId _
+
+theorem acquireLockOnObject_schedulerLocks (s : SystemState) (core : CoreId)
+    (l : LockId) (m : AccessMode) :
+    (acquireLockOnObject s core l m).schedulerLocks = s.schedulerLocks := by
+  unfold acquireLockOnObject
+  cases l.kind with
+  | objStore | runQueue | replenishQueue => rfl
+  | tcb | endpoint | notification | cnode
+  | vspaceRoot | untyped | schedContext | reply | page =>
+    all_goals exact updateObjectLockAt_schedulerLocks s l _
+
+theorem releaseLockOnObject_schedulerLocks (s : SystemState) (core : CoreId)
+    (l : LockId) (m : AccessMode) :
+    (releaseLockOnObject s core l m).schedulerLocks = s.schedulerLocks := by
+  unfold releaseLockOnObject
+  cases l.kind with
+  | objStore | runQueue | replenishQueue => rfl
+  | tcb | endpoint | notification | cnode
+  | vspaceRoot | untyped | schedContext | reply | page =>
+    all_goals exact updateObjectLockAt_schedulerLocks s l _
+
+theorem cancelLockOnObject_schedulerLocks (s : SystemState) (core : CoreId)
+    (l : LockId) (m : AccessMode) :
+    (cancelLockOnObject s core l m).schedulerLocks = s.schedulerLocks := by
+  unfold cancelLockOnObject
+  cases l.kind with
+  | objStore | runQueue | replenishQueue => rfl
+  | tcb | endpoint | notification | cnode
+  | vspaceRoot | untyped | schedContext | reply | page =>
+    all_goals exact updateObjectLockAt_schedulerLocks s l _
+
+theorem applyLockOpOnObject_schedulerLocks (s : SystemState) (l : LockId) (op : RwLockOp) :
+    (applyLockOpOnObject s l op).schedulerLocks = s.schedulerLocks := by
+  unfold applyLockOpOnObject
+  cases l.kind with
+  | objStore | runQueue | replenishQueue => rfl
+  | tcb | endpoint | notification | cnode
+  | vspaceRoot | untyped | schedContext | reply | page =>
+    all_goals exact updateObjectLockAt_schedulerLocks s l _
 
 /-- WS-SM SM7.B: `updateObjectAt` frames the TLB-shootdown state (a
 per-object store write).  Leaf of the SM7.B debt-(5) `withLockSet`
@@ -767,6 +961,7 @@ theorem acquireLockOnObject_tlbShootdown_eq (s : SystemState)
   | tcb | endpoint | notification | cnode
   | vspaceRoot | untyped | schedContext | reply | page =>
     all_goals exact updateObjectLockAt_tlbShootdown_eq s l _
+  | runQueue | replenishQueue => rfl
 
 /-- WS-SM SM7.B: releasing any lock frames the TLB-shootdown state
 (symmetric to the acquire form). -/
@@ -779,6 +974,7 @@ theorem releaseLockOnObject_tlbShootdown_eq (s : SystemState)
   | tcb | endpoint | notification | cnode
   | vspaceRoot | untyped | schedContext | reply | page =>
     all_goals exact updateObjectLockAt_tlbShootdown_eq s l _
+  | runQueue | replenishQueue => rfl
 
 /-- **WS-LC LC4.2**: and the withdrawal primitive. -/
 theorem cancelLockOnObject_tlbShootdown_eq (s : SystemState)
@@ -790,6 +986,7 @@ theorem cancelLockOnObject_tlbShootdown_eq (s : SystemState)
   | tcb | endpoint | notification | cnode
   | vspaceRoot | untyped | schedContext | reply | page =>
     all_goals exact updateObjectLockAt_tlbShootdown_eq s l _
+  | runQueue | replenishQueue => rfl
 
 /-- WS-SM SM7.B.8 foundation (substantive): `updateObjectAt` with a
 lock-only transformation `f` that preserves `objectType` preserves
@@ -844,9 +1041,9 @@ ascending).
 
 The signature carries the `core : CoreId` separately so the same
 core's identity is woven through every acquisition. -/
-def acquireAll (core : CoreId) (pairs : List (LockId × AccessMode))
+def acquireAll (core : CoreId) (pairs : List (LockKey × AccessMode))
     (s : SystemState) : SystemState :=
-  pairs.foldl (init := s) (fun st p => acquireLockOnObject st core p.fst p.snd)
+  pairs.foldl (init := s) (fun st p => acquireLock st core p.fst p.snd)
 
 /-- WS-SM SM3.C.1 helper: fold `releaseLockOnObject` over a list of
 `(LockId, AccessMode)` pairs.  This is the "shrinking phase" of
@@ -856,9 +1053,9 @@ def acquireAll (core : CoreId) (pairs : List (LockId × AccessMode))
 
 The reverse-order argument is supplied by the caller, not by this
 function. -/
-def releaseAll (core : CoreId) (pairs : List (LockId × AccessMode))
+def releaseAll (core : CoreId) (pairs : List (LockKey × AccessMode))
     (s : SystemState) : SystemState :=
-  pairs.foldl (init := s) (fun st p => releaseLockOnObject st core p.fst p.snd)
+  pairs.foldl (init := s) (fun st p => releaseLock st core p.fst p.snd)
 
 /-- **WS-LC LC4.1**: fold `cancelLockOnObject` over a list of
 `(LockId, AccessMode)` pairs — the **withdrawal** half of the shrinking
@@ -868,9 +1065,9 @@ Order is irrelevant here (a withdrawal at one lock cannot enable or
 disable a withdrawal at another), but the caller passes the same reversed
 sequence the release fold takes, so the two halves visit the footprint in
 one order and `unwindAll` reads as a single pass. -/
-def cancelAll (core : CoreId) (pairs : List (LockId × AccessMode))
+def cancelAll (core : CoreId) (pairs : List (LockKey × AccessMode))
     (s : SystemState) : SystemState :=
-  pairs.foldl (init := s) (fun st p => cancelLockOnObject st core p.fst p.snd)
+  pairs.foldl (init := s) (fun st p => cancelLock st core p.fst p.snd)
 
 /-- **WS-LC LC4.1**: the 2PL **shrinking phase** — withdraw, then release.
 
@@ -898,7 +1095,7 @@ hypothesis on the footprint and no resolvability hypothesis on the state:
 `cancelAll` establishes "no queued request from `core`" at every member,
 and **no release arm ever enqueues**, so `releaseAll` preserves it
 everywhere at once.  That is `unwindAll_leaves_no_queued_request`. -/
-def unwindAll (core : CoreId) (pairs : List (LockId × AccessMode))
+def unwindAll (core : CoreId) (pairs : List (LockKey × AccessMode))
     (s : SystemState) : SystemState :=
   releaseAll core pairs (cancelAll core pairs s)
 
@@ -914,17 +1111,17 @@ identity. -/
 
 /-- WS-SM SM3.C.1 helper: `acquireAll` on a cons unfolds to the head
 acquire followed by the tail acquire on the new state. -/
-@[simp] theorem acquireAll_cons (core : CoreId) (l : LockId) (m : AccessMode)
-    (rest : List (LockId × AccessMode)) (s : SystemState) :
-    acquireAll core ((l, m) :: rest) s =
-      acquireAll core rest (acquireLockOnObject s core l m) := rfl
+@[simp] theorem acquireAll_cons (core : CoreId) (k : LockKey) (m : AccessMode)
+    (rest : List (LockKey × AccessMode)) (s : SystemState) :
+    acquireAll core ((k, m) :: rest) s =
+      acquireAll core rest (acquireLock s core k m) := rfl
 
 /-- WS-SM SM3.C.1 helper: `releaseAll` on a cons unfolds to the head
 release followed by the tail release on the new state. -/
-@[simp] theorem releaseAll_cons (core : CoreId) (l : LockId) (m : AccessMode)
-    (rest : List (LockId × AccessMode)) (s : SystemState) :
-    releaseAll core ((l, m) :: rest) s =
-      releaseAll core rest (releaseLockOnObject s core l m) := rfl
+@[simp] theorem releaseAll_cons (core : CoreId) (k : LockKey) (m : AccessMode)
+    (rest : List (LockKey × AccessMode)) (s : SystemState) :
+    releaseAll core ((k, m) :: rest) s =
+      releaseAll core rest (releaseLock s core k m) := rfl
 
 /-- **WS-LC LC4.1**: `cancelAll` on the empty list is identity. -/
 @[simp] theorem cancelAll_nil (core : CoreId) (s : SystemState) :
@@ -932,51 +1129,103 @@ release followed by the tail release on the new state. -/
 
 /-- **WS-LC LC4.1**: `cancelAll` on a cons unfolds to the head withdrawal
 followed by the tail withdrawal on the new state. -/
-@[simp] theorem cancelAll_cons (core : CoreId) (l : LockId) (m : AccessMode)
-    (rest : List (LockId × AccessMode)) (s : SystemState) :
-    cancelAll core ((l, m) :: rest) s =
-      cancelAll core rest (cancelLockOnObject s core l m) := rfl
+@[simp] theorem cancelAll_cons (core : CoreId) (k : LockKey) (m : AccessMode)
+    (rest : List (LockKey × AccessMode)) (s : SystemState) :
+    cancelAll core ((k, m) :: rest) s =
+      cancelAll core rest (cancelLock s core k m) := rfl
 
 /-- **WS-LC LC4.1**: the shrinking phase on the empty list is identity —
 both halves are. -/
 @[simp] theorem unwindAll_nil (core : CoreId) (s : SystemState) :
     unwindAll core [] s = s := rfl
 
+/-- **WS-LS LS1.2**: no key primitive touches the object store's structure —
+the object arm is the per-object primitive's own preservation, and the other
+three arms write a lock word outside `objects`. -/
+theorem acquireLock_preserves_invExt (s : SystemState) (core : CoreId) (k : LockKey)
+    (m : AccessMode) (hInv : s.objects.invExt) : (acquireLock s core k m).objects.invExt := by
+  cases k with
+  | objStore => exact hInv
+  | object l => exact acquireLockOnObject_preserves_invExt s core l m hInv
+  | runQueue c => simpa [acquireLock] using hInv
+  | replenishQueue c => simpa [acquireLock] using hInv
+
+theorem releaseLock_preserves_invExt (s : SystemState) (core : CoreId) (k : LockKey)
+    (m : AccessMode) (hInv : s.objects.invExt) : (releaseLock s core k m).objects.invExt := by
+  cases k with
+  | objStore => exact hInv
+  | object l => exact releaseLockOnObject_preserves_invExt s core l m hInv
+  | runQueue c => simpa [releaseLock] using hInv
+  | replenishQueue c => simpa [releaseLock] using hInv
+
+theorem cancelLock_preserves_invExt (s : SystemState) (core : CoreId) (k : LockKey)
+    (m : AccessMode) (hInv : s.objects.invExt) : (cancelLock s core k m).objects.invExt := by
+  cases k with
+  | objStore => exact hInv
+  | object l => exact cancelLockOnObject_preserves_invExt s core l m hInv
+  | runQueue c => simpa [cancelLock] using hInv
+  | replenishQueue c => simpa [cancelLock] using hInv
+
+/-- **WS-LS LS1.2**: nor the TLB shootdown record. -/
+theorem acquireLock_tlbShootdown_eq (s : SystemState) (core : CoreId) (k : LockKey)
+    (m : AccessMode) : (acquireLock s core k m).tlbShootdown = s.tlbShootdown := by
+  cases k with
+  | objStore => rfl
+  | object l => exact acquireLockOnObject_tlbShootdown_eq s core l m
+  | runQueue c => rfl
+  | replenishQueue c => rfl
+
+theorem releaseLock_tlbShootdown_eq (s : SystemState) (core : CoreId) (k : LockKey)
+    (m : AccessMode) : (releaseLock s core k m).tlbShootdown = s.tlbShootdown := by
+  cases k with
+  | objStore => rfl
+  | object l => exact releaseLockOnObject_tlbShootdown_eq s core l m
+  | runQueue c => rfl
+  | replenishQueue c => rfl
+
+theorem cancelLock_tlbShootdown_eq (s : SystemState) (core : CoreId) (k : LockKey)
+    (m : AccessMode) : (cancelLock s core k m).tlbShootdown = s.tlbShootdown := by
+  cases k with
+  | objStore => rfl
+  | object l => exact cancelLockOnObject_tlbShootdown_eq s core l m
+  | runQueue c => rfl
+  | replenishQueue c => rfl
+
 /-- **WS-LC LC4.5**: the growing phase preserves the extension invariant. -/
 theorem acquireAll_preserves_invExt (core : CoreId)
-    (pairs : List (LockId × AccessMode)) (s : SystemState) (hInv : s.objects.invExt) :
+    (pairs : List (LockKey × AccessMode)) (s : SystemState) (hInv : s.objects.invExt) :
     (acquireAll core pairs s).objects.invExt := by
   induction pairs generalizing s with
   | nil => exact hInv
   | cons p rest ih =>
     obtain ⟨l, m⟩ := p
     rw [acquireAll_cons]
-    exact ih _ (acquireLockOnObject_preserves_invExt s core l m hInv)
+    exact ih _ (acquireLock_preserves_invExt s core l m hInv)
 
 /-- **WS-LC LC4.5**: so does each half of the shrinking phase. -/
 theorem releaseAll_preserves_invExt (core : CoreId)
-    (pairs : List (LockId × AccessMode)) (s : SystemState) (hInv : s.objects.invExt) :
+    (pairs : List (LockKey × AccessMode)) (s : SystemState) (hInv : s.objects.invExt) :
     (releaseAll core pairs s).objects.invExt := by
   induction pairs generalizing s with
   | nil => exact hInv
   | cons p rest ih =>
     obtain ⟨l, m⟩ := p
     rw [releaseAll_cons]
-    exact ih _ (releaseLockOnObject_preserves_invExt s core l m hInv)
+    exact ih _ (releaseLock_preserves_invExt s core l m hInv)
 
 theorem cancelAll_preserves_invExt (core : CoreId)
-    (pairs : List (LockId × AccessMode)) (s : SystemState) (hInv : s.objects.invExt) :
+    (pairs : List (LockKey × AccessMode)) (s : SystemState) (hInv : s.objects.invExt) :
     (cancelAll core pairs s).objects.invExt := by
   induction pairs generalizing s with
   | nil => exact hInv
   | cons p rest ih =>
     obtain ⟨l, m⟩ := p
     rw [cancelAll_cons]
-    exact ih _ (cancelLockOnObject_preserves_invExt s core l m hInv)
+    exact ih _ (cancelLock_preserves_invExt s core l m hInv)
 
 /-- **WS-LC LC4.5**: and hence the shrinking phase as a whole. -/
 theorem unwindAll_preserves_invExt (core : CoreId)
-    (pairs : List (LockId × AccessMode)) (s : SystemState) (hInv : s.objects.invExt) :
+    (pairs : List (LockKey × AccessMode)) (s : SystemState) (hInv : s.objects.invExt) :
     (unwindAll core pairs s).objects.invExt :=
   releaseAll_preserves_invExt core pairs _ (cancelAll_preserves_invExt core pairs s hInv)
 
@@ -988,7 +1237,7 @@ every `unwindAll_*` frame corollary composes through: a property that both
 `cancelAll` and `releaseAll` preserve is preserved by the shrinking phase,
 and the proof is this rewrite plus the two siblings. -/
 theorem unwindAll_eq_releaseAll_cancelAll (core : CoreId)
-    (pairs : List (LockId × AccessMode)) (s : SystemState) :
+    (pairs : List (LockKey × AccessMode)) (s : SystemState) :
     unwindAll core pairs s = releaseAll core pairs (cancelAll core pairs s) := rfl
 
 -- ============================================================================
@@ -1222,34 +1471,34 @@ theorem withLockSet_eq_decomposition {α : Type} (S : LockSet) (core : CoreId)
 
 /-- WS-SM SM7.B: the acquire fold frames the TLB-shootdown state. -/
 theorem acquireAll_tlbShootdown_eq (core : CoreId)
-    (pairs : List (LockId × AccessMode)) (s : SystemState) :
+    (pairs : List (LockKey × AccessMode)) (s : SystemState) :
     (acquireAll core pairs s).tlbShootdown = s.tlbShootdown := by
   induction pairs generalizing s with
   | nil => rfl
   | cons p rest ih =>
-    rw [acquireAll_cons, ih, acquireLockOnObject_tlbShootdown_eq]
+    rw [acquireAll_cons, ih, acquireLock_tlbShootdown_eq]
 
 /-- WS-SM SM7.B: the release fold frames the TLB-shootdown state. -/
 theorem releaseAll_tlbShootdown_eq (core : CoreId)
-    (pairs : List (LockId × AccessMode)) (s : SystemState) :
+    (pairs : List (LockKey × AccessMode)) (s : SystemState) :
     (releaseAll core pairs s).tlbShootdown = s.tlbShootdown := by
   induction pairs generalizing s with
   | nil => rfl
   | cons p rest ih =>
-    rw [releaseAll_cons, ih, releaseLockOnObject_tlbShootdown_eq]
+    rw [releaseAll_cons, ih, releaseLock_tlbShootdown_eq]
 
 /-- **WS-LC LC4.2**: the withdrawal fold frames the TLB-shootdown state. -/
 theorem cancelAll_tlbShootdown_eq (core : CoreId)
-    (pairs : List (LockId × AccessMode)) (s : SystemState) :
+    (pairs : List (LockKey × AccessMode)) (s : SystemState) :
     (cancelAll core pairs s).tlbShootdown = s.tlbShootdown := by
   induction pairs generalizing s with
   | nil => rfl
   | cons p rest ih =>
-    rw [cancelAll_cons, ih, cancelLockOnObject_tlbShootdown_eq]
+    rw [cancelAll_cons, ih, cancelLock_tlbShootdown_eq]
 
 /-- **WS-LC LC4.2**: so does the shrinking phase as a whole. -/
 theorem unwindAll_tlbShootdown_eq (core : CoreId)
-    (pairs : List (LockId × AccessMode)) (s : SystemState) :
+    (pairs : List (LockKey × AccessMode)) (s : SystemState) :
     (unwindAll core pairs s).tlbShootdown = s.tlbShootdown := by
   rw [unwindAll_eq_releaseAll_cancelAll, releaseAll_tlbShootdown_eq,
       cancelAll_tlbShootdown_eq]

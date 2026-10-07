@@ -640,8 +640,8 @@ stated once over an arbitrary root.  Two read extensions, then a write extension
 on a key the root already holds (a mode merge, which costs nothing —
 `LockSet.size_insertOrMerge_of_containsKey`), then two more extensions: at most
 the root's size plus four. -/
-private theorem suspend_reclaim_tail_bound (R : LockSet) (a b : LockId × AccessMode)
-    (l : LockId) (o₁ o₂ : Option (LockId × AccessMode)) (hR : R.size ≤ 13)
+private theorem suspend_reclaim_tail_bound (R : LockSet) (a b : LockKey × AccessMode)
+    (l : LockKey) (o₁ o₂ : Option (LockKey × AccessMode)) (hR : R.size ≤ 13)
     (hKey : (lockSetExtendOpt (lockSetExtendOpt R (some a)) (some b)).containsKey l = true) :
     (lockSetExtendOpt (lockSetExtendOpt (lockSetExtendOpt (lockSetExtendOpt
       (lockSetExtendOpt R (some a)) (some b)) (some (l, AccessMode.write))) o₁) o₂).size

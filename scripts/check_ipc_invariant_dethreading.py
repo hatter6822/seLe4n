@@ -341,7 +341,7 @@ MACHINERY_PINS = {
     ("SeLe4n/Testing/ReplyStackWriteCensus.lean", "run_cmd"): 1,
     # WS-RR RR8.12 Cut C5: the scheduler-footprint census, decided over the
     # elaborated environment.  TWO `run_cmd`s and no minting: the census itself
-    # (it derives the `SchedLockId` footprint family, reduces each member
+    # (it derives the `LockKey` footprint family, reduces each member
     # towards `schedFootprintOfCores` and reconciles consumption against the
     # exemption register in both directions), and its self-test, which decides
     # both branches of the shape check, the type half of the family test, and

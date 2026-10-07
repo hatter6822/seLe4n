@@ -35,7 +35,7 @@ footprint would be a delegation with no content — which is why Cut 7 and every
 cut after it omitted them — and that economy is sound exactly as long as the
 shape holds.  A footprint written any other way loses all five **silently**:
 
-* `_keys_nodup` is `SchedLockSet.ofList?`'s own obligation, so a footprint
+* `_keys_nodup` is `LockSet.ofList?`'s own obligation, so a footprint
   outside the shape can make the constructor **refuse**, and the resolver's arm
   then answers `none`.  That is an *undeclared* arm — which the bracket treats
   as "no exclusion established", so it is sound, and it drops the arm out of the
@@ -65,7 +65,7 @@ coverage.
 The universe is the `schedLockSet_`-prefixed definitions, which is the family
 `schedLockSetForSyscall` dispatches to.  The RR2.4 / RR2.10 **parametric**
 footprints (`wakeThreadLockSet`, `descheduleThreadLockSet`,
-`suspendThreadOnCoreSchedLockSet`, …) are deliberately outside it: their cores
+`suspendThreadOnCoreLockSet`, …) are deliberately outside it: their cores
 are *parameters* rather than values resolved from a state, several are literal
 two-element ladders at a fixed single core of each kind (where there is nothing
 to sort and nothing to merge), and they are related to the resolved family by
@@ -117,7 +117,7 @@ def resolverExemptions : List (Name × String) :=
        are the relation between the two") ]
 
 /-- Is this a scheduler-domain footprint declaration — a body-bearing constant
-named `schedLockSet_…` whose type ends in `List (SchedLockId × AccessMode)`?
+named `schedLockSet_…` whose type ends in `List (LockKey × AccessMode)`?
 
 The name test is on the **last component**, so a footprint is found wherever it
 is declared; the type test is what makes it a footprint rather than something
@@ -131,7 +131,7 @@ def isSchedFootprintDecl (env : Environment) (n : Name) : MetaM Bool := do
         if !SeLe4n.Testing.DeclarationKind.bodyBearing ci then return false
         forallTelescopeReducing ci.type fun _ result => do
           let expected ← mkAppM ``List
-            #[← mkAppM ``Prod #[mkConst ``SeLe4n.Kernel.SchedLockId,
+            #[← mkAppM ``Prod #[mkConst ``SeLe4n.Kernel.Concurrency.LockKey,
                                 mkConst ``SeLe4n.Kernel.Concurrency.AccessMode]]
           isDefEq result expected
     | none => return false
@@ -146,7 +146,7 @@ body builds, so the question "is this footprint the canonical ladder" would be
 unaskable.  `whnfUntil` stops at the head this contract names.
 
 There is deliberately **no arity test** beside it.  The applied term is the
-definition at its full telescope and its type is `List (SchedLockId × AccessMode)`,
+definition at its full telescope and its type is `List (LockKey × AccessMode)`,
 so a reduction that stops with `schedFootprintOfCores` as head has it fully
 applied by type-correctness: an arity condition there could only ever be true,
 and a condition no input can decide is indistinguishable from a wrong one. -/
@@ -160,7 +160,7 @@ def shapeViolation (env : Environment) (n : Name) : MetaM (Option String) := do
         return some "does not reduce to `schedFootprintOfCores` at its full arity — every \
           generic lemma the scheduler domain delegates to (`_write_only`, `_pairwise_le`, \
           `_keys_nodup`, `_subset`, `mem_…_iff`) is stated of that function, so a footprint \
-          outside the shape loses all five SILENTLY, and `SchedLockSet.ofList?` may then \
+          outside the shape loses all five SILENTLY, and `LockSet.ofList?` may then \
           refuse it and leave the arm undeclared"
     | some _ => return none
 
@@ -230,7 +230,7 @@ run_cmd Command.liftTermElabM do
   if violations.size != 0 then
     throwError "scheduler-footprint census: {violations.size} finding(s) over \
       {sorted.size} declared footprints:\n{String.intercalate "\n" violations.toList}"
-  logInfo s!"scheduler-footprint census: {sorted.size} declared SchedLockId footprints, \
+  logInfo s!"scheduler-footprint census: {sorted.size} declared LockKey footprints, \
     every one the canonical `schedFootprintOfCores` ladder at its full arity; \
     {sorted.size - unconsumed.size} consumed by `schedLockSetForSyscall`, \
     {unconsumed.size} registered as superseded"
@@ -250,22 +250,22 @@ Named out of the family (`censusPlanted…`, not `schedLockSet_…`) so the cens
 own run does not see it, and read by the self-test below through
 `shapeViolation` directly. -/
 private def censusPlantedCanonical (executingCore : SeLe4n.Kernel.Concurrency.CoreId) :
-    List (SeLe4n.Kernel.SchedLockId × SeLe4n.Kernel.Concurrency.AccessMode) :=
+    List (SeLe4n.Kernel.Concurrency.LockKey × SeLe4n.Kernel.Concurrency.AccessMode) :=
   SeLe4n.Kernel.schedFootprintOfCores [executingCore] []
 
 /-- A planted **non-canonical** one, carrying a member the canonical form also
 carries: the mutation that keeps the token and breaks the relation.  Every
 generic lemma the scheduler domain delegates to is unavailable for it, and
-`SchedLockSet.ofList?` has no `Nodup` proof to consume. -/
+`LockSet.ofList?` has no `Nodup` proof to consume. -/
 private def censusPlantedInlined (executingCore : SeLe4n.Kernel.Concurrency.CoreId) :
-    List (SeLe4n.Kernel.SchedLockId × SeLe4n.Kernel.Concurrency.AccessMode) :=
-  [(SeLe4n.Kernel.SchedLockId.runQueue ⟨executingCore⟩,
+    List (SeLe4n.Kernel.Concurrency.LockKey × SeLe4n.Kernel.Concurrency.AccessMode) :=
+  [(SeLe4n.Kernel.Concurrency.LockKey.runQueue executingCore,
     SeLe4n.Kernel.Concurrency.AccessMode.write)]
 
 /-- A planted **direct** namer: a definition whose own value mentions a real
 footprint.  `namedBy` must contain it. -/
 private def censusPlantedNamer :
-    List (SeLe4n.Kernel.SchedLockId × SeLe4n.Kernel.Concurrency.AccessMode) :=
+    List (SeLe4n.Kernel.Concurrency.LockKey × SeLe4n.Kernel.Concurrency.AccessMode) :=
   SeLe4n.Kernel.schedLockSet_notificationWaitOnCore SeLe4n.Kernel.Concurrency.bootCoreId
 
 /-- …and a planted **indirect** one, which names only the namer.
@@ -275,7 +275,7 @@ would put the footprint in this definition's set, and "consumed" would then mean
 *reached* rather than *dispatched to*, so a footprint no arm names could be
 counted as acquired because some helper mentions it. -/
 private def censusPlantedIndirectNamer :
-    List (SeLe4n.Kernel.SchedLockId × SeLe4n.Kernel.Concurrency.AccessMode) :=
+    List (SeLe4n.Kernel.Concurrency.LockKey × SeLe4n.Kernel.Concurrency.AccessMode) :=
   censusPlantedNamer
 
 /-- A planted constant carrying the family's **name** and not its **type**.
