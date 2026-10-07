@@ -49,11 +49,11 @@ enforcement, and scheduling.
 
 | Attribute | Value |
 |-----------|-------|
-| **Package version** | `0.36.67` (`lakefile.toml`) |
+| **Package version** | `0.36.68` (`lakefile.toml`) |
 | **Lean toolchain** | `v4.28.0` (`lean-toolchain`) |
-| **Production LoC** | 445,477 across 384 Lean files |
-| **Test LoC** | 89,896 across 72 Lean test suites |
-| **Proved declarations** | 15,002 theorem/lemma declarations (zero sorry/axiom) |
+| **Production LoC** | 444,617 across 384 Lean files |
+| **Test LoC** | 89,882 across 72 Lean test suites |
+| **Proved declarations** | 14,968 theorem/lemma declarations (zero sorry/axiom) |
 | **Target hardware** | Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A) |
 | **Latest audit** | pre-SM10 completeness audit at `v0.34.3` — [`UNFINISHED_SMP_WORK.md`](../planning/UNFINISHED_SMP_WORK.md), 171 confirmed findings. Prior baselines in [`docs/audits/`](../audits) |
 | **Active workstream** | **WS-BP (the bare-metal boot path)** — SM10.1's content, unblocked at v0.35.203; **BP0 (cross-implementation agreement) landed at v0.36.2** (§6.2.2), and **BP1 (aarch64 Lean object code) at v0.36.2** (§6.2.3), **BP2.1 (the Lean heap)** at v0.36.2 (§6.2.4), **BP2.2 (the kernel's Lean runtime, in Rust)** at v0.36.2 (§6.2.5), **BP2.3/BP2.4 (the library initializer, failing closed)** at v0.36.2 (§6.2.6), **BP2.6 (the boot map built from constants)** at v0.36.2 (§6.2.7), and **BP3 (the RPi5 deployment, which boots, and the proof-layer bundle of the state it installs)** at v0.36.2 (§6.2.8, §8.14.2), and **BP4.1/BP4.2 (the `lean_kernel_main` entry, and the install ordered before the secondaries by a type)** at v0.36.2 (§6.2.9), and **BP4.3/BP4.4 (the firmware's device tree reaching Lean, and the entry booting the deployment on the variant it describes)** at v0.36.2 (§6.2.10), and **BP4.5 (the image's loaded bytes cleaned to the Point of Unification before any thread can fetch)** at v0.36.2 (§6.2.11), and **BP4.6 (the verified board's RAM outside the kernel's extent mapped, and the boot map sealed before any secondary is released)** and **BP4.7 (that RAM handed to the root task as untypeds)** at v0.36.2 (§6.2.12), and **BP5.1 (the kernel image, a bare-metal binary entered at `_start` under `link.ld`)** and **BP5.2 (the Lean kernel linked into it, under `--gc-sections` from the archive lane's roots)** and **BP5.3 (the firmware's boot files, `kernel8.img` and `config.txt`, cut from that image and checked against it)** and **BP5.4 (its size and section map published with every CI run)** at v0.36.2 (§6.2.13), and **BP5.5 (the firmware's EL2 entry dropped to EL1, with the PSCI conduit following the entry level)** at v0.36.2 (§6.2.15), and **BP6 (every PE marks itself ready after its own per-PE runtime handshake and before it unmasks IRQs, and the boot halts unless every declared PE serves the kernel)** at v0.36.2 (§6.2.16), and **BP7.10 (the first gigabyte's RAM read off the firmware's account, and the constant boot map shrunk to the kernel's reserved extent)** at v0.36.3 (§6.2.17), and **BP7.1 slices 1–3 (frame capabilities, the untyped carve that mints them, and the untyped reset that returns their memory)** at v0.36.4, v0.36.5 and v0.36.6, slice 4a (child untypeds and subtree resets) at v0.36.8, the in-place VSpace-root refusal at v0.36.9, and slice 4b's VSpace-root carve at v0.36.10, `.tcbSetSpace` (a thread runs in a carved address space) at v0.36.11, intermediate page tables at v0.36.12, and every configured address space owning a table page at v0.36.13, which completes BP7.1 (§8.10.2a); BP7.2's user window and 16-bit hardware ASIDs at v0.36.14 and its physical-write ledger and translation install at v0.36.15; BP7.3–BP7.9 at v0.36.16–v0.36.22 (the whole trap frame saved, per-core restore staging, unblock-frame delivery, the live context restore, the delivered declassified badge, overflow message registers, lazily switched FP/SIMD state); and BP7.11 (the boot starts both initial threads, one per domain) at v0.36.23, which completes BP7; BP8.1's first slice (the image built for QEMU's `virt` — its device map from `src/board.rs`, its link script derived from `link.ld`, an arm64 Image header on `_start` — booted there at EL1 and at EL2 by `scripts/test_qemu.sh`) at v0.36.24, and its second (the Lean `virt` binding `SeLe4n/Platform/QemuVirt/` — its board check the RPi5 bridge's own coverage predicates, the RPi5 deployment's layout on it with every boot gate decided, and its own boot entry `lean_kernel_main_qemu_virt`, held by the boot-entry contract's table to its own approved call) at v0.36.25, and its third (the Lean-linked image booted by `scripts/test_qemu.sh --lean-kernel` on four PEs at EL1 and EL2 to every core's first idle dispatch, on every PR — §6.2.18) at v0.36.26, completing BP8.1, and BP8.2 (the four-PE bring-up gate, executed on every PR — §6.2.18) at v0.36.27. **WS-RR (SMP release readiness)** is complete (v0.34.26 → v0.35.203, RR0–RR8). SM10 (release closure → v1.0.0) follows WS-BP. See [`REGISTERED_DEBT.md`](../REGISTERED_DEBT.md) |
@@ -2548,7 +2548,8 @@ The H3 hardware binding targets **single-core operation** on Raspberry Pi 5:
      covering the dynamic chain-walk locking design:
      `withDynamicChainExtension` combinator (optimistic walk +
      verify, `ObjId.val` ascending discipline, bounded
-     retries), `dynamicChainHeld` predicate,
+     retries; deleted at WS-LS LS2.4, the chain being declared
+     statically since RR7.40), `dynamicChainHeld` predicate,
      `dynamic_chain_deadlock_free` theorem, the termination
      result — **three theorems**, not the one `walkAndAcquire_terminates`
      this paragraph used to name, which was never authored under that
@@ -2759,17 +2760,22 @@ The H3 hardware binding targets **single-core operation** on Raspberry Pi 5:
    footprint, and a caller reading `none` keeps whatever coarser
    serialisation it already has.
 
-   *And the live syscall seam acquires them* (WS-RR RR7.12,
-   `v0.34.65`).  `syscallDispatchCrossCoreEntry` runs its atomic step
-   inside the declared footprint — resolve, acquire, re-resolve at the
-   state the growing phase ended in, refuse on change, unwind — with
-   the operands read off the capability the entry's own decode
-   addresses (`abiEntryPlan_dispatches` ties the two) and a
-   single-level CSpace guard, since a deeper walk selects the target
-   through CNodes no declared footprint holds a lock on.  A syscall
-   with no declared footprint runs bit-identically to the pre-RR7.12
-   seam (`syscallDispatchCrossCoreBracketedStep_undeclared`), which is
-   what makes bracketing safe while most arms are undeclared.  The
+   *And the live syscall seam declares them* (WS-RR RR7.12,
+   `v0.34.65`; WS-LS LS2.4, `v0.36.68`).  `syscallDispatchCrossCoreEntry`
+   runs its atomic step as the seam's `BracketSpec`
+   (`syscallDispatchBracket`): the footprint is resolved from the
+   operands read off the capability the entry's own decode addresses
+   (`abiEntryPlan_dispatches` ties the two), under a single-level
+   CSpace guard, since a deeper walk selects the target through CNodes
+   no declared footprint holds a lock on; the record's `covers` field is
+   the proof that the footprint covers every write the step makes
+   (`syscallDispatchCrossCoreStep_coversWrites`), and the executed path
+   is the step by `rfl` (`syscallDispatchCrossCoreBracketedStep_run`).
+   The RR7.12 word-level bracket — resolve, acquire, re-resolve at the
+   state the growing phase ended in, refuse on change, unwind — is
+   deleted at LS2.4 with the lock words it wrote; the growing and
+   shrinking phases exist on the ghost lock table alone, where the
+   guard holds under the entry lock by construction.  The
    **per-core scheduler path** brackets too since WS-RR RR7.39
    (`v0.34.89`), which gave `SchedLockId` the state words it never had
    and made the revalidating bracket shared between the two domains.
@@ -2849,7 +2855,9 @@ The H3 hardware binding targets **single-core operation** on Raspberry Pi 5:
    **SM3.C.11 — dynamic PIP chain-walk locking**: the 3 PIP-invoking
    transitions (`.call`/`.reply`/`.replyRecv`) walk a blocking chain
    whose length is state-discovered, so no static lockSet can contain
-   the chain TCBs.  `withDynamicChainExtension` consumes the SM3.B
+   the chain TCBs.  `withDynamicChainExtension` (deleted at WS-LS
+   LS2.4; the chain's footprint is declared statically at the seams
+   since RR7.40) consumed the SM3.B
    `pipChainStart_<τ>` signal and walks the chain via `walkAndAcquire`
    (a fuel-bounded — `MAX_PIP_RETRIES = 64` — pure function returning a
    `WalkOutcome`).  The deadlock-freedom witness
@@ -2946,8 +2954,9 @@ The H3 hardware binding targets **single-core operation** on Raspberry Pi 5:
    growing phase genuinely establishes the `lockSetHeld` precondition.
    SM3.C.11.c gains conjunct-1 establishment
    (`chainLockSeq_acquire_establishes_pathHeld`) + the `blockingServer`
-   transport + the full-four-conjunct capstone
-   `withDynamicChainExtension_establishes_dynamicChainHeld`.  SM3.C.11.d
+   transport (the full-four-conjunct capstone over the runtime
+   combinator, `withDynamicChainExtension_establishes_dynamicChainHeld`,
+   went with the combinator at WS-LS LS2.4).  SM3.C.11.d
    gains the two-core deadlock-freedom theorems
    (`dynamic_chain_deadlock_free` / `dynamic_chain_no_mutual_wait`).
    Tests gain RAII-release, populated-state establishment,

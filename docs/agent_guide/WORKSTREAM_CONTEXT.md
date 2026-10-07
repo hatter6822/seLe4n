@@ -76,7 +76,7 @@ fields are as `docs/planning/SMP_FINE_LOCK_MIGRATION_PLAN.md` describes.
 **What new code must not do**: add a transition that reads or writes a `lock`
 field, `objStoreLock` or `schedulerLocks` (LS3 deletes them); add a consumer of
 `runBracketed`, `LockBracketOutcome`, `runUnderDeclaredLockSet` or
-`syscallBracketRefusalResult` (LS2 deletes them); reintroduce a second lock-key
+`syscallBracketRefusalResult` (deleted at LS2.4); reintroduce a second lock-key
 type beside `LockKey` (`Locks/LockKey.lean`; LS1.2 retired `SchedLockId` and
 `SchedLockSet` into `LockKey` and `LockSet`, so every footprint, object or
 scheduler, is one `LockSet` and the one bracket domain is
@@ -2123,38 +2123,43 @@ code may assume:
   scheduler domain — this heading read "the scheduler entries do not" until
   `v0.36.62`, which was true at RR7.12 and false from RR7.39 on).  `syscallDispatchCrossCoreEntry` runs its atomic step inside the
   footprint `lockSetForSyscall` declares for the operation its own registers
-  decode to — resolve, acquire, **re-resolve at the state the growing phase
-  ended in**, refuse on change, unwind — via
-  `syscallDispatchCrossCoreBracketedStep`
-  (`SeLe4n/Kernel/SyscallLockBracket.lean` holds the mechanism).  Four things
-  new code must respect.  (1) **The fallback is exactly the pre-RR7.12 seam**
-  (`syscallDispatchCrossCoreBracketedStep_undeclared`, definitional), which is
-  what makes bracketing safe while twenty-seven arms are still undeclared:
-  falling back is always sound, claiming a footprint that does not cover a write
-  never is.  (2) **The operands come from the entry's own decode**, tied by
+  decode to, via `syscallDispatchCrossCoreBracketedStep`
+  (`SeLe4n/Kernel/SyscallLockBracket.lean` holds the decode and the operands;
+  since **WS-LS LS2.4** the bracket is the seam's `BracketSpec`,
+  `syscallDispatchBracket` in `SyscallDispatchEntry.lean`, whose `covers`
+  field is `syscallDispatchCrossCoreStep_coversWrites`, and the executed path
+  is the step by `rfl` — the RR7.12 resolve / acquire / re-resolve / refuse /
+  unwind bracket is deleted with the lock words it wrote).  Four things
+  new code must respect.  (1) **The executed path is the step on every state**
+  (`syscallDispatchCrossCoreBracketedStep_run`, definitional): a declared
+  footprint is a proof obligation the record discharges, not a runtime branch,
+  so an undeclared arm and a declared one commit the same transition; claiming
+  a footprint that does not cover a write is what the record's type refuses.
+  (2) **The operands come from the entry's own decode**, tied by
   `abiEntryPlan_dispatches` — a footprint resolved from a decode the dispatch
   does not use is a footprint for a different operation.  (3) **A multi-level
   CSpace resolution declares nothing**: the footprint's only CNode member is the
   caller's root, a `LockSet` is capped at `maxLockSetSize` and a CSpace path is
   not, so a deeper walk selects the target through CNodes no declared lock
-  covers and the resolver refuses.  (4) **A refusal returns `.illegalState` and
-  commits nothing but the unwinding**
-  (`syscallDispatchCrossCoreBracketedStep_refused`); it is unreachable today,
-  since `modifyGetKernelState` is one global read-modify-write and the growing
-  phase writes nothing the resolver reads, and a dedicated `.lockContention`
-  becomes worth its ABI cost when the commit is partitioned.  The per-core scheduler path
+  covers and the resolver refuses.  (4) **There is no refusal arm**: the guard
+  the RR7.12 refusal answered holds by construction under the entry lock
+  (`BracketSpec.guard_of_unheld`, the ghost table starting all-free), and a
+  dedicated `.lockContention` becomes worth its ABI cost when Track D
+  partitions the commit and a real acquire can fail.  The per-core scheduler path
   brackets too since **WS-RR RR7.39** (v0.34.89), which gave `SchedLockId` the
   state words it never had (`SystemState.schedulerLocks`) and made the
-  revalidating bracket shared — `Concurrency.runBracketed`, of which RR7.12's
-  `runUnderDeclaredLockSet` is now definitionally the object-domain instance.  So
+  revalidating bracket shared (`Concurrency.runBracketed`, deleted at WS-LS
+  LS2.4 with `runUnderDeclaredLockSet`).  So
   the timer tick, the `.reschedule` SGI receiver and the secondary bring-up entry
   run inside the footprints SM5.B–G declared for them, with the write set proved
   inside the footprint on both steps (`perCoreRescheduleStep_coversWrites`,
   `perCoreTimerTickStep_coversWrites`).  Since WS-LS LS2.2 those three seams run
   `timerTickBracket` / `rescheduleBracket` (`SchedLockBracket.lean`), the
-  `BracketSpec`s whose `covers` field is that proof; the syscall and suspend
-  seams still run `runBracketed` / `withLockSet` until LS2.4, their coverage
-  proved since LS2.3 (`SyscallSeamCoverage.lean`).  Two things new
+  `BracketSpec`s whose `covers` field is that proof; since WS-LS LS2.4 the
+  syscall and suspend seams run `syscallDispatchBracket` /
+  `suspendThreadBracket` (`SyscallDispatchEntry.lean`), whose `covers` fields
+  are LS2.3's seam theorems (`SyscallSeamCoverage.lean`), so every
+  state-committing seam that brackets runs a `BracketSpec`.  Two things new
   code must respect.  (1)
   **The tick's footprint names every core's run-queue write lock**, not the boot
   core's and its own: the replenish drain and the bound-exhausted timeout both
@@ -2182,8 +2187,10 @@ code may assume:
   and a stale entry are each a build failure.  **Seven seams commit; five
   bracket** (WS-RR RR7.39 — the two syscall seams and, since it gave the
   scheduler domain a runtime, the three per-core scheduler entries; two before
-  it).  A body recorded `bracketed` must reach `runUnderDeclaredLockSet` or
-  `Concurrency.withLockSet`; one recorded `unbracketed` must carry a reason.  New
+  it).  A body recorded `bracketed` must reach `BracketSpec.run` (since WS-LS
+  LS2.4 the only bracket form; `Concurrency.withLockSet` writes lock words the
+  proofs no longer read and is not one); one recorded `unbracketed` must carry
+  a reason.  New
   code adding an `@[export]` that commits kernel state must classify it there —
   that is where the project's coverage figure is read off, and the two
   fault-delivery seams (`lean_handle_fault`, `lean_handle_unknown_syscall`) are
@@ -7235,12 +7242,12 @@ code may assume:
   propositions, not registrations.**
   `SeLe4n/Kernel/Concurrency/PhaseTheoremManifest.lean` registers one entry per
   phase SM0..SM10, each naming the theorem inventories that phase owns.  Those
-  inventories hold **1145 entries**, of which **925 are theorems**: the
-  inventories register a phase's whole surface, so 220 entries are `def`s —
+  inventories hold **1142 entries**, of which **918 are theorems**: the
+  inventories register a phase's whole surface, so 224 entries are `def`s —
   lock-set footprints, PIP chain-start markers, per-core invariant predicates,
   WCRT cost functions — and
   every inventory's construction macro proves only that the name *resolves*,
-  never that its type is a `Prop`.  **Quote 925, and quote it as theorems; 1145
+  never that its type is a `Prop`.  **Quote 918, and quote it as theorems; 1142
   is the entry count.**  A `List.length` cannot tell the two apart, so the
   propositionality census at the end of that module resolves each identifier
   against the environment and fails elaboration on drift.  **Eight of the eleven

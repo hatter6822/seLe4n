@@ -227,8 +227,8 @@ The dynamic chain extension needs a *footprint* rather than a raw key list,
 because holdership is a question about a footprint (`lockSetHeld`) and the
 extension now refuses to act on a chain it does not hold.  `none` is the honest
 answer for a list this domain cannot acquire correctly, and it is safe: the
-caller keeps whatever coarser serialisation it already has, exactly as the
-undeclared arm of the bracket does.  A walked chain never repeats a key
+caller keeps whatever coarser serialisation it already has, exactly as an
+undeclared footprint leaves it.  A walked chain never repeats a key
 (`chainLockSeq_keys_nodup`), so the arm is unreachable on a chain the walker
 produced and reachable only on a list nothing in the tree builds. -/
 def ofList? (pairs : List (LockKey × AccessMode)) : Option LockSet :=

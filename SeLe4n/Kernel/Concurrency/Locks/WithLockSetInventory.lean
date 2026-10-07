@@ -55,7 +55,7 @@ sub-tasks, and the WS-LS ghost bracket:
   with `run` / `runGhost` / `runGhost_kernel` (O1) / `runGhost_locks_of_unheld`
   (O3) / `guard` (O4) and the guard's two witnesses.
 * `.dynamicChain` — SM3.C.11 (`PipChainPath`, `walkStep`,
-  `walkAndAcquire`, `withDynamicChainExtension`, `dynamicChainHeld`,
+  `walkAndAcquire`, `chainLockSeq`, `dynamicChainHeld`,
   the `chainFollowsBlockingServer` predicate, the deadlock-freedom
   witness `walkAndAcquire_path_ascending_in_ObjId_if_terminated`, the
   producer-connection theorems `walkStep_extended_blockingServer` /
@@ -333,7 +333,7 @@ def withLockSetTheorems : List WithLockSetTheorem :=
       BracketSpec.not_guard_of_contended .ghostBracket,
     wlst! "RwLockState.acquire_not_grants_of_writerHeld: an acquire on a write-held lock is enqueued, not granted"
       RwLockState.acquire_not_grants_of_writerHeld .ghostBracket,
-    -- §5 dynamicChain (8 entries: SM3.C.11.a-e)
+    -- §5 dynamicChain (SM3.C.11.a-e)
     wlst! "MAX_PIP_RETRIES: bounded retry budget (=64)"
       MAX_PIP_RETRIES .dynamicChain,
     wlst! "MAX_PIP_RETRIES_pos: bound is positive"
@@ -344,10 +344,6 @@ def withLockSetTheorems : List WithLockSetTheorem :=
       walkStep .dynamicChain,
     wlst! "walkAndAcquire: fuel-bounded chain walker"
       walkAndAcquire .dynamicChain,
-    wlst! "withDynamicChainExtension: SM3.C.11.b chain-walk combinator"
-      withDynamicChainExtension .dynamicChain,
-    wlst! "withDynamicChainExtension_unfold: structural unfolding"
-      withDynamicChainExtension_unfold .dynamicChain,
     wlst! "dynamicChainHeld: SM3.C.11.c chain-held predicate"
       dynamicChainHeld .dynamicChain,
     wlst! "chainFollowsBlockingServer: adjacent-chain predicate (mathlib-free)"
@@ -374,8 +370,6 @@ def withLockSetTheorems : List WithLockSetTheorem :=
       acquireLockOnObject_preserves_blockingServer .dynamicChain,
     wlst! "acquireAll_preserves_blockingServer: SM3.C.11.c blockingServer frame (fold)"
       acquireAll_preserves_blockingServer .dynamicChain,
-    wlst! "withDynamicChainExtension_establishes_dynamicChainHeld: SM3.C.11.c capstone — all four conjuncts"
-      withDynamicChainExtension_establishes_dynamicChainHeld .dynamicChain,
     wlst! "dynamic_chain_deadlock_free: SM3.C.11.d two-core no mutual wait"
       dynamic_chain_deadlock_free .dynamicChain,
     wlst! "dynamic_chain_no_mutual_wait: SM3.C.11.d ¬(waitsFor ∧ waitsFor) form"
@@ -401,7 +395,7 @@ inventory fails this count witness at the Tier-3 surface check.
 worked instantiation and the five lock-insensitive-observer lemmas, which the
 pair form no longer needs), +20 `ghostBracket`. -/
 theorem withLockSetTheorems_count :
-    withLockSetTheorems.length = 111 := by decide
+    withLockSetTheorems.length = 108 := by decide
 
 /-- WS-SM SM3.C: 41 entries in the `combinator` category
 (audit-pass-1: +`updateObjectLockAt` + `updateObjectLockAt_preserves_objStoreLock`;
@@ -438,13 +432,15 @@ theorem withLockSetTheorems_ghostBracket_count :
     (withLockSetTheorems.filter (fun t => t.category == .ghostBracket)).length = 20 := by
   decide
 
-/-- WS-SM SM3.C: 23 entries in the `dynamicChain` category
+/-- WS-SM SM3.C: 20 entries in the `dynamicChain` category
 (audit-pass-2: +4 chain-establishment theorems wiring `dynamicChainHeld`
 to the walker; Group-B: +6 — conjunct-1 establishment, `blockingServer`
 frame/transport, the full capstone, and the SM3.C.11.d two-core
-deadlock-freedom theorems). -/
+deadlock-freedom theorems; **WS-LS LS2.4**: −3 — the runtime combinator
+`withDynamicChainExtension`, its unfolding and its capstone, deleted with the
+word-level bracket). -/
 theorem withLockSetTheorems_dynamicChain_count :
-    (withLockSetTheorems.filter (fun t => t.category == .dynamicChain)).length = 23 := by
+    (withLockSetTheorems.filter (fun t => t.category == .dynamicChain)).length = 20 := by
   decide
 
 /-- WS-SM SM3.C: per-category counts sum to the total. -/

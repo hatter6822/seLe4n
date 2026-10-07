@@ -66,9 +66,9 @@ that the footprint covers the step's writes, as one record.  The entry runs
 `BracketSpec.run`, which is the step and nothing else — since WS-LS LS2.2 the
 growing and shrinking phases live on the ghost lock table
 (`Concurrency/Locks/BracketSpec.lean`), where `runGhost_kernel` says the
-executed path is the kernel projection of the proven one.  The former
-revalidating bracket (`runBracketed`) still runs at the two syscall seams
-until their seam-level coverage lands (plan rows LS2.3 and LS2.4).
+executed path is the kernel projection of the proven one.  The two syscall
+seams run their own `BracketSpec`s since WS-LS LS2.4
+(`SyscallDispatchEntry.lean`); the former revalidating bracket is deleted.
 
 ## 3.  The write-set containment
 

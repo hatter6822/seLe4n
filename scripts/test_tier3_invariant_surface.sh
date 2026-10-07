@@ -4286,10 +4286,10 @@ run_check "INVARIANT" rg -n 'an unaligned virtual address inside a complete walk
 # is the relation (the drain adjacent to the commit and ahead of the SGIs; the
 # refusal arm's halt), and the negative refuses a seam that clears the I-cache
 # ledger and leaves the physical one.
-run_check "INVARIANT" rg -n '^       Architecture\.clearPhysicalWrites \(Architecture\.clearIcacheMaintenance st'"''"'\)\)$' SeLe4n/Kernel/SyscallDispatchEntry.lean
-run_negative_check "INVARIANT" rg -n '^       Architecture\.clearIcacheMaintenance st'"''"'\)$' SeLe4n/Kernel/SyscallDispatchEntry.lean
+run_check "INVARIANT" rg -n '^       Architecture\.clearPhysicalWrites \(Architecture\.clearIcacheMaintenance st'"''"'\)\)$' SeLe4n/Kernel/SyscallDispatchStep.lean
+run_negative_check "INVARIANT" rg -n '^       Architecture\.clearIcacheMaintenance st'"''"'\)$' SeLe4n/Kernel/SyscallDispatchStep.lean
 run_check "INVARIANT" rg -n -U '^  Platform\.FFI\.ffiSyscallReturnFrame [^\n]*\n([ \t]*\n)*  Platform\.FFI\.completePhysicalWrites result\.2\.2\.2\.2\.2\.2\.1\n  Concurrency\.fireCrossCoreSgis result\.2\.1$' SeLe4n/Kernel/SyscallDispatchEntry.lean
-run_check "INVARIANT" rg -n '^theorem syscallDispatchCrossCoreStep_drains_physicalWrites($|[ ({:\[\]])' SeLe4n/Kernel/SyscallDispatchEntry.lean
+run_check "INVARIANT" rg -n '^theorem syscallDispatchCrossCoreStep_drains_physicalWrites($|[ ({:\[\]])' SeLe4n/Kernel/SyscallDispatchStep.lean
 run_check "INVARIANT" rg -n '^theorem completePhysicalWrites_cons($|[ ({:\[\]])' SeLe4n/Platform/FFI.lean
 run_check "INVARIANT" rg -n '^  owed\.forM physicalWriteApply$' SeLe4n/Platform/FFI.lean
 run_check "INVARIANT" rg -n '^  ffiApplyPhysicalWrite w\.tag w\.addr w\.value$' SeLe4n/Platform/FFI.lean
@@ -4349,9 +4349,8 @@ run_check "INVARIANT" rg -n 'switching away then saves every register the thread
 # from, before the local reschedule; every entry hands the HAL the context the
 # committed state names, gated on the context-restore seam; the HAL commits it
 # into the in-flight frame with SPSR sanitised to EL0t.
-run_check "INVARIANT" rg -n -U '^      let stR := Architecture\.stageCallerReturnFor caller\? st'"'"' execCore outcome\n([ \t]*(--[^\n]*)?\n)*      let st'"''"' := PriorityInheritance\.settleResidencyOnCore\n        \(PriorityInheritance\.scheduleLocalSuccessorFrom caller\? stR execCore\) execCore$' SeLe4n/Kernel/SyscallDispatchEntry.lean
-run_check "INVARIANT" rg -n -U '^  let staged := PriorityInheritance\.settleResidencyOnCore\n    \(Architecture\.stageCallerReturn unwound unwound execCore outcome\) execCore$' SeLe4n/Kernel/SyscallDispatchEntry.lean
-run_check "INVARIANT" rg -n -U '^  \| Except\.error e =>\n([ \t]*(--[^\n]*)?\n)*      absurd hD \(Platform\.FFI\.syscallDispatchFromAbi_ne_error ' SeLe4n/Kernel/SyscallDispatchEntry.lean
+run_check "INVARIANT" rg -n -U '^      let stR := Architecture\.stageCallerReturnFor caller\? st'"'"' execCore outcome\n([ \t]*(--[^\n]*)?\n)*      let st'"''"' := PriorityInheritance\.settleResidencyOnCore\n        \(PriorityInheritance\.scheduleLocalSuccessorFrom caller\? stR execCore\) execCore$' SeLe4n/Kernel/SyscallDispatchStep.lean
+run_check "INVARIANT" rg -n -U '^  \| Except\.error e =>\n([ \t]*(--[^\n]*)?\n)*      absurd hD \(Platform\.FFI\.syscallDispatchFromAbi_ne_error ' SeLe4n/Kernel/SyscallDispatchStep.lean
 run_check "INVARIANT" rg -n -U '^  Platform\.FFI\.completeIcacheMaintenance result\.2\.2\.2\.2\.2\.1\n([ \t]*\n)*  Concurrency\.releaseSwitchedFpOwnerOnCore execCore\n([ \t]*\n)*  Platform\.FFI\.restoreTrapFrame result\.2\.2\.2\.2\.2\.2\.2\.1$' SeLe4n/Kernel/SyscallDispatchEntry.lean
 # PR #904 (v0.36.41): the translation rides with the commit, which installs it
 # only once the frame is replaced — never before a commit that may decline.
@@ -4709,9 +4708,14 @@ run_check "INVARIANT" rg -n '^def cspaceWalkPath($|[ ({:\[\]])' SeLe4n/Kernel/Ca
 run_check "INVARIANT" rg -n '^def cspaceWalkLockSet($|[ ({:\[\]])' SeLe4n/Kernel/Capability/CSpaceWalkFootprint.lean
 run_check "INVARIANT" rg -n '^theorem cspaceWalk_conflicts_with_delete($|[ ({:\[\]])' SeLe4n/Kernel/Capability/CSpaceWalkFootprint.lean
 run_check "INVARIANT" rg -n '^theorem lockSet_cspaceDelete_target_write_mem($|[ ({:\[\]])' SeLe4n/Kernel/Concurrency/Locks/LockSetTransitions.lean
-# The walk's footprint is acquired through RR7.12's bracket, not a private
-# coupling walk: coupling would abandon the SM0.I total order.
-run_check "INVARIANT" rg -n 'runUnderDeclaredLockSet \(declaredLockSetForCSpaceWalk' SeLe4n/Kernel/Capability/CSpaceWalkFootprint.lean
+# The walk's footprint is declared by a `BracketSpec` (WS-LS LS2.4), not acquired
+# by a private coupling walk: coupling would abandon the SM0.I total order.  The
+# relation: the record's `declared` field IS the walk's resolver, and its
+# executed path is the resolution (`_run`, by `rfl`).
+run_check "INVARIANT" rg -n '^def cspaceWalkBracket($|[ ({:\[\]])' SeLe4n/Kernel/Capability/CSpaceWalkFootprint.lean
+run_check "INVARIANT" rg -n '^  declared := declaredLockSetForCSpaceWalk rootId addr bitsRemaining$' SeLe4n/Kernel/Capability/CSpaceWalkFootprint.lean
+run_check "INVARIANT" rg -n '^theorem cspaceWalkBracket_run($|[ ({:\[\]])' SeLe4n/Kernel/Capability/CSpaceWalkFootprint.lean
+run_negative_check "INVARIANT" rg -n 'runUnderDeclaredLockSet|LockBracketOutcome' SeLe4n/Kernel/Capability/CSpaceWalkFootprint.lean
 # The live seam's root-only footprints are **complete**, not approximate:
 # `abiEntryGate` admits only a resolution whose root consumes every address bit,
 # and such a walk reads exactly its root.  Without these two the root-only
@@ -4747,13 +4751,14 @@ run_negative_check "INVARIANT" rg -n -U 'match st\.getCNode\? rootId with\n\s+\|
 # so acquiring the list as resolved walked the SM0.I ladder backwards against
 # any other operation naming both locks.  The relation: the domain's `sequence`
 # is the sort, and the sort is a `mergeSort` on the KEY.
-# WS-LS (lock-state separation): the two domains are one, so the one bracket domain's `sequence`
-# is the one sort over `LockKey`.
-run_check "INVARIANT" rg -n '^  sequence := LockSet\.lockAcquireSequence$' SeLe4n/Kernel/Concurrency/Locks/LockBracket.lean
+# WS-LS (lock-state separation): the two domains are one, and since LS2.4 the
+# one bracket is the ghost table's (`LockState.bracket`), whose growing phase is
+# over `S.lockAcquireSequence` -- the one sort over `LockKey`.
+run_check "INVARIANT" rg -n '^  unwindAll c S\.lockAcquireSequence\.reverse \(acquireAll c S\.lockAcquireSequence L\)$' SeLe4n/Kernel/Concurrency/Locks/BracketSpec.lean
 run_check "INVARIANT" rg -n -U 'def lockAcquireSequence \(pairs : List \(LockKey × AccessMode\)\) :\n    List \(LockKey × AccessMode\) :=\n  pairs\.mergeSort \(fun p₁ p₂ => decide \(p₁\.fst ≤ p₂\.fst\)\)' SeLe4n/Kernel/Concurrency/Locks/LockKey.lean
 run_check "INVARIANT" rg -n '^theorem lockAcquireSequence_ordered \(pairs : List \(LockKey × AccessMode\)\)' SeLe4n/Kernel/Concurrency/Locks/LockKey.lean
-# NEGATIVE: the pre-round domain, acquiring the declared list verbatim.
-run_negative_check "INVARIANT" rg -n '^  sequence := LockSet\.pairs$' SeLe4n/Kernel/Concurrency/Locks/LockBracket.lean
+# NEGATIVE: the pre-round shape, acquiring the declared list verbatim.
+run_negative_check "INVARIANT" rg -n 'acquireAll c S\.pairs' SeLe4n/Kernel/Concurrency/Locks/BracketSpec.lean
 # PR #892 review round 5: the Lean FDT walk must reach a top-level `FDT_END`,
 # and every partial exit is an error.  The relation is the verdict on the walk's
 # THIRD component: `true` accepts, `false` refuses, and a structurally invalid
@@ -4855,8 +4860,6 @@ import SeLe4n.Kernel.Scheduler.PriorityInheritance.ChainFootprint
 #check @SeLe4n.Platform.findMemoryRegPropertyChecked_eq_memoryNodeReg?
 #check @SeLe4n.Kernel.Concurrency.LockSet.lockAcquireSequence_ordered
 #check @SeLe4n.Kernel.Concurrency.LockSet.lockAcquireSequence_eq_pairs_of_pairwise_le
-#check @SeLe4n.Kernel.Concurrency.objectLockBracketDomain_sequence_ordered
-#check @SeLe4n.Kernel.PriorityInheritance.pipChainSchedExtension_acquires_in_ladder_order
 EOF'
 # The round's theorems resolve — the ceiling's two verdicts, the failed read's
 # membership, the interior-holds-a-CNode shape it rests on, and the conflict
@@ -4879,21 +4882,18 @@ run_negative_check "INVARIANT" rg -n 'Adopting it here is' SeLe4n/Kernel/Concurr
 run_check "INVARIANT" rg -n '^def pipChainSchedFootprint($|[ ({:\[\]])' SeLe4n/Kernel/Scheduler/PriorityInheritance/ChainFootprint.lean
 run_check "INVARIANT" rg -n '^theorem mem_pipChainSchedFootprint_runQueue($|[ ({:\[\]])' SeLe4n/Kernel/Scheduler/PriorityInheritance/ChainFootprint.lean
 run_check "INVARIANT" rg -n '^theorem propagatePipChainCrossCore_coversWrites($|[ ({:\[\]])' SeLe4n/Kernel/Scheduler/PriorityInheritance/ChainFootprint.lean
-run_check "INVARIANT" rg -n '^def runChainExtension($|[ ({:\[\]])' SeLe4n/Kernel/Concurrency/Locks/LockBracket.lean
+# WS-LS LS2.4: the runtime chain extensions (`runChainExtension`,
+# `withDynamicChainExtension`, `withPipChainSchedExtension`) are DELETED with the
+# word-level bracket.  The chain's footprint is declared statically at the seams
+# that walk it and covered by the seam's `BracketSpec`; what remains of the
+# dynamic chain is the walker, its lock sequence and the declaration's
+# resolvability for an acyclic chain.
+run_negative_check "INVARIANT" rg -n 'runChainExtension|withDynamicChainExtension' SeLe4n/Kernel/Concurrency/Locks/DynamicChainExtension.lean
+run_negative_check "INVARIANT" rg -n 'runChainExtension|withPipChainSchedExtension|runBracketed' SeLe4n/Kernel/Scheduler/PriorityInheritance/ChainFootprint.lean
+run_check "INVARIANT" rg -n '^def chainLockSeq($|[ ({:\[\]])' SeLe4n/Kernel/Concurrency/Locks/DynamicChainExtension.lean
+run_check "INVARIANT" rg -n '^theorem pipChainSchedFootprint_resolves($|[ ({:\[\]])' SeLe4n/Kernel/Scheduler/PriorityInheritance/ChainFootprint.lean
 # NEGATIVE: the object-domain chain walk must not re-spell acquire/act/unwind.
 run_negative_check "INVARIANT" rg -n 'let acquired := acquireAll caller chainLocks' SeLe4n/Kernel/Concurrency/Locks/DynamicChainExtension.lean
-# PR #892 review round 2: the chain extension acts only once the footprint is
-# HELD.  The relation, not the token: the holdership test is the statement
-# immediately after the acquire, and the action is applied inside its true
-# branch — a guard placed after the action, or a `D.held` consulted anywhere
-# else, keeps every token and protects nothing.
-run_check "INVARIANT" rg -n -U 'let acquired := D\.acquire caller \(D\.sequence S\) s\n  if D\.held caller S acquired then\n    let \(postAction, result\) := action acquired' SeLe4n/Kernel/Concurrency/Locks/LockBracket.lean
-# NEGATIVE: the pre-round shape — the action applied straight to the acquired
-# state with no holdership test between.
-run_negative_check "INVARIANT" rg -n -U 'let acquired := D\.acquire caller \(D\.sequence S\) s\n  let \(postAction, result\) := action acquired' SeLe4n/Kernel/Concurrency/Locks/LockBracket.lean
-# The object-domain walk hands the extension a FOOTPRINT built fail-closed, so
-# holdership is `lockSetHeld` over the chain rather than a re-spelled fold.
-run_check "INVARIANT" rg -n -U '^  \| \.terminated path =>\n(.*\n)*?      match LockSet\.ofList\? \(chainLockSeq path\) with\n      \| none => \(s, fallback\)\n      \| some S => runChainExtension objectLockBracketDomain caller S action fallback s' SeLe4n/Kernel/Concurrency/Locks/DynamicChainExtension.lean
 run_negative_check "INVARIANT" rg -n '\| dynamicPipChain' SeLe4n/Kernel/InformationFlow/FineLockFlow.lean
 # PR #887 review round 4: a region-scoped presence check is still a presence
 # check.  The scanners ask their questions of top-level STATEMENTS — the
@@ -5339,7 +5339,7 @@ run_check "INVARIANT" rg -n '^def shootdownCatchUpPerCoreInWindow($|[ ({:\[\]])'
 run_check "INVARIANT" rg -n '^theorem shootdownCatchUpPerCoreInWindow_preserves_foreign($|[ ({:\[\]])' SeLe4n/Kernel/Architecture/PerCoreTlbModel.lean
 run_check "INVARIANT" rg -n '^theorem shootdownCatchUpPerCoreInWindow_eq_catchUp($|[ ({:\[\]])' SeLe4n/Kernel/Architecture/PerCoreTlbModel.lean
 run_check "INVARIANT" rg -n 'shootdownCatchUpPerCoreInWindow st execCore collapsed' SeLe4n/Kernel/SyscallDispatchEntry.lean
-run_check "INVARIANT" rg -n 'Architecture\.shootdownRoundWindowFrom tlb0 st' SeLe4n/Kernel/SyscallDispatchEntry.lean
+run_check "INVARIANT" rg -n 'Architecture\.shootdownRoundWindowFrom tlb0 st' SeLe4n/Kernel/SyscallDispatchStep.lean
 run_check "INVARIANT" rg -n '^private def runRoundGenerationChecks($|[ ({:\[\]])' tests/SmpTlbShootdownSuite.lean
 # The 12th `proofLayerInvariantBundle` conjunct (`pendingBounded`) carried across
 # the transition the live catch-up seam runs.  A window drain deliberately leaves
@@ -5659,7 +5659,7 @@ run_check "INVARIANT" rg -n '_hAligned : paddr.toNat % SeLe4n.pageBytes = 0' SeL
 run_check "INVARIANT" rg -n 'paddr.toNat % pageBytes != 0 then .error .alignmentError' SeLe4n/Kernel/Architecture/VSpace.lean
 # The Architecture granule must not drift back to a second literal.
 run_check "INVARIANT" bash -c "! rg -q '^def pageBytes : Nat := 4096' SeLe4n/Kernel/Architecture/CacheInvalidation.lean"
-run_check "INVARIANT" rg -n 'clearIcacheMaintenance st' SeLe4n/Kernel/SyscallDispatchEntry.lean
+run_check "INVARIANT" rg -n 'clearIcacheMaintenance st' SeLe4n/Kernel/SyscallDispatchStep.lean
 run_check "INVARIANT" rg -n '^theorem pendingIcacheMaintenance_write_preserves_projection($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/Invariant/Operations.lean
 # SM7.D.2 the data-side clean-to-PoU obligation + its tripwire.
 run_check "INVARIANT" rg -n '^theorem kernelCodeWriteSites_complete($|[ ({:\[\]])' SeLe4n/Kernel/Architecture/PerCoreCacheModel.lean
@@ -7088,8 +7088,8 @@ run_check "INVARIANT" rg -n '^theorem lockAcquisition_modifies_trusted_object_an
 # list against a literal, which a third constructor would leave elaborating.
 run_negative_check "INVARIANT" rg -n 'Prod.fst\) = \[.taintTablePerKeyStore\]' SeLe4n/Kernel/InformationFlow/FineLockFlow.lean
 # WS-RR RR8.12 Cut C6h (`v0.35.181`): the syscall seam's scheduler-domain entry
-# is RETIRED — the seam brackets on `objectLockBracketDomain` over the unified
-# footprint now — so the constructor must not come back.
+# is RETIRED — the seam's bracket declares the unified footprint now — so the
+# constructor must not come back.
 run_negative_check "INVARIANT" rg -n 'syscallSeamSchedulerDomain' SeLe4n/Kernel/InformationFlow/FineLockFlow.lean
 # **WS-RR RR7.39** — the scheduler lock domain, with a runtime.
 #
@@ -7097,15 +7097,16 @@ run_negative_check "INVARIANT" rg -n 'syscallSeamSchedulerDomain' SeLe4n/Kernel/
 # for, so a bracket over a scheduler footprint could sort the list and acquire
 # nothing.  These anchors pin the runtime that closed it: the state words, the
 # per-key primitives whose object arm calls SM3.C's own, the fail-closed
-# footprint constructor, the shared bracket, and the write-set containment for
+# footprint constructor, the bracket, and the write-set containment for
 # both live steps.  WS-LS (lock-state separation): the scheduler keys are `LockKey` constructors
-# and the primitives, the footprint and the bracket domain are the lock layer's
-# own, so the anchors pin them there.
+# and the primitives and the footprint are the lock layer's own, so the anchors
+# pin them there; since LS2.4 the one bracket is the specification record and
+# the ghost table's trace (`BracketSpec`, `LockState.bracket`).
 run_check "INVARIANT" rg -n '^  schedulerLocks : SchedulerLockState' SeLe4n/Model/State.lean
 run_check "INVARIANT" rg -n '^def acquireLock($|[ ({:\[\]])' SeLe4n/Kernel/Concurrency/Locks/WithLockSet.lean
 run_check "INVARIANT" rg -n '^structure LockSet($|[ ({:\[\]])' SeLe4n/Kernel/Concurrency/Locks/LockSet.lean
-run_check "INVARIANT" rg -n '^def objectLockBracketDomain($|[ ({:\[\]])' SeLe4n/Kernel/Concurrency/Locks/LockBracket.lean
-run_check "INVARIANT" rg -n '^def runBracketed($|[ ({:\[\]])' SeLe4n/Kernel/Concurrency/Locks/LockBracket.lean
+run_check "INVARIANT" rg -n '^structure BracketSpec($|[ ({:\[\]])' SeLe4n/Kernel/Concurrency/Locks/BracketSpec.lean
+run_check "INVARIANT" rg -n '^def bracket \(c : CoreId\) \(S : LockSet\) \(L : LockState\) : LockState :=$' SeLe4n/Kernel/Concurrency/Locks/BracketSpec.lean
 run_check "INVARIANT" rg -n '^theorem perCoreRescheduleStep_coversWrites($|[ ({:\[\]])' SeLe4n/Kernel/SchedLockBracket.lean
 run_check "INVARIANT" rg -n '^theorem perCoreTimerTickStep_coversWrites($|[ ({:\[\]])' SeLe4n/Kernel/SchedLockBracket.lean
 # WS-LS (lock-state separation): the scheduler seams run a `BracketSpec` whose
@@ -7120,9 +7121,14 @@ run_check "INVARIANT" rg -n '\(rescheduleBracket coreId\)\.run' SeLe4n/Kernel/Se
 # The object arm of every scheduler primitive **is** SM3.C's own primitive:
 # one answer to "what does acquiring an object lock do".
 run_check "INVARIANT" rg -n '^  \| \.object l => acquireLockOnObject s core l mode$' SeLe4n/Kernel/Concurrency/Locks/WithLockSet.lean
-# RR7.12's bracket is now definitionally the object-domain instance of the
-# shared one — the derivation that stops the two from drifting.
-run_check "INVARIANT" rg -n '^theorem runUnderDeclaredLockSet_eq_runBracketed($|[ ({:\[\]])' SeLe4n/Kernel/SyscallLockBracket.lean
+# The syscall and suspend seams run a `BracketSpec` too (WS-LS LS2.4) — one
+# bracket for every seam, and the seam's step is the record's by `rfl`.
+run_check "INVARIANT" rg -n '^@\[inline\] def syscallDispatchBracket($|[ ({:\[\]])' SeLe4n/Kernel/SyscallDispatchEntry.lean
+run_check "INVARIANT" rg -n '^@\[inline\] def suspendThreadBracket($|[ ({:\[\]])' SeLe4n/Kernel/SyscallDispatchEntry.lean
+run_check "INVARIANT" rg -n '^theorem syscallDispatchCrossCoreBracketedStep_run($|[ ({:\[\]])' SeLe4n/Kernel/SyscallDispatchEntry.lean
+run_check "INVARIANT" rg -n '^theorem suspendThreadBracket_run($|[ ({:\[\]])' SeLe4n/Kernel/SyscallDispatchEntry.lean
+run_check "INVARIANT" rg -n '\(suspendThreadBracket vtid execCore\)\.run st$' SeLe4n/Kernel/SyscallDispatchEntry.lean
+run_negative_check "INVARIANT" rg -n 'Concurrency\.withLockSet|Concurrency\.lockSetForSyscall|runUnderDeclaredLockSet|runBracketed' SeLe4n/Kernel/SyscallDispatchEntry.lean
 # NEGATIVE: the scheduler bracket must not be a second, privately spelled
 # revalidating bracket.  Both seams run a specification, so neither
 # `timerTickBracket` nor `rescheduleBracket` may re-derive the acquire /
@@ -9397,11 +9403,12 @@ run_check "INVARIANT" rg -n 'lockSet_replyRecv \(all options\) size = maxLockSet
 # described one arm of thirty-five.  Three things get pinned: the entry's own
 # decode is named once and tied to what the dispatch runs; the operands are read
 # off the capability that decode addresses, under the single-level CSpace guard;
-# and the bracket revalidates after acquiring and refuses on change, with the
-# fail-closed fallback leaving undeclared syscalls bit-identical.
-# The outcome type and the revalidating bracket itself moved to `Concurrency`
-# at v0.34.89 — one bracket for both lock domains — and
-# `runUnderDeclaredLockSet` is now definitionally its object-domain instance.
+# and the bracket is a `BracketSpec` whose `covers` field is the seam's
+# coverage theorem (WS-LS LS2.3/LS2.4), so the record cannot be built for a
+# footprint the step writes outside of.  The revalidating word-level bracket
+# (`runUnderDeclaredLockSet`, over `runBracketed`), its outcome type, its
+# refusal result and the undeclared / refused equations are DELETED at LS2.4:
+# the executed path is the step on every state (`_run`, by `rfl`).
 run_check "INVARIANT" bash -lc 'source ~/.elan/env && lake env lean --stdin <<"EOF"
 import SeLe4n.Kernel.SyscallDispatchEntry
 open SeLe4n.Kernel
@@ -9414,20 +9421,14 @@ open SeLe4n.Kernel
 #check @abiEntryLockOperands_tcbSuspend_target_valid
 #check @declaredLockSetForAbiEntry
 #check @declaredLockSetForAbiEntry_binds_decode
-#check @SeLe4n.Kernel.Concurrency.LockBracketOutcome
-#check @SeLe4n.Kernel.Concurrency.runBracketed
-#check @SeLe4n.Kernel.Concurrency.objectLockBracketDomain
-#check @runUnderDeclaredLockSet_eq_runBracketed
-#check @runUnderDeclaredLockSet
-#check @runUnderDeclaredLockSet_undeclared
-#check @runUnderDeclaredLockSet_committed
-#check @runUnderDeclaredLockSet_refused
-#check @runUnderDeclaredLockSet_committed_eq_withLockSet
 #check @syscallDispatchCrossCoreStep
-#check @syscallBracketRefusalResult
+#check @syscallDispatchCrossCoreStep_coversWrites
+#check @syscallDispatchBracket
 #check @syscallDispatchCrossCoreBracketedStep
-#check @syscallDispatchCrossCoreBracketedStep_undeclared
-#check @syscallDispatchCrossCoreBracketedStep_refused
+#check @syscallDispatchCrossCoreBracketedStep_run
+#check @suspendSeamAction_coversWrites
+#check @suspendThreadBracket
+#check @suspendThreadBracket_run
 EOF'
 # The seam runs the BRACKETED step, not the bare one.  A relation, not a
 # presence: the bare step still exists (it is what the bracket wraps and what
@@ -9442,14 +9443,11 @@ run_negative_check "INVARIANT" rg -nU 'def syscallDispatchCrossCoreEntry[\s\S]*?
 # not cover the read selecting its own target.
 run_check "INVARIANT" rg -n 'rootCn.depth ≠ rootCn.guardWidth \+ rootCn.radixWidth' SeLe4n/Kernel/SyscallLockBracket.lean
 run_check "INVARIANT" rg -n 'ref.cnode ≠ tcb.cspaceRoot' SeLe4n/Kernel/SyscallLockBracket.lean
-# The guard has BOTH conditions.  Re-resolving alone would run the step on a
-# footprint the growing phase never obtained, since the growing phase runs its
-# action whether or not the acquisition was granted.
-#
-# The guard moved to the shared bracket at v0.34.89 — one revalidating bracket
-# for the object and scheduler domains — so this anchor now pins it for both
-# seams at once rather than for the syscall seam alone.
-run_check "INVARIANT" rg -n 'declared acquired = some S ∧ D.held lockCore S acquired' SeLe4n/Kernel/Concurrency/Locks/LockBracket.lean
+# The guard is the ghost table's (WS-LS LS2.1, O4): every declared member is
+# held after the growing phase over the table the entry started from.  Stated
+# once on the specification record, for every seam at once, and discharged
+# under the entry lock from the all-free table (`guard_of_unheld`).
+run_check "INVARIANT" rg -n -U 'def guard \(b : BracketSpec α\) \(c : CoreId\) \(s : LockedSystemState\) : Prop :=\n  ∀ S, b\.declared s\.kernel = some S →\n    \(LockState\.acquireAll c S\.lockAcquireSequence s\.locks\)\.heldAll c S\.pairs' SeLe4n/Kernel/Concurrency/Locks/BracketSpec.lean
 # NEGATIVE: neither seam may re-derive the guard privately.  A second spelling
 # of "resolve, acquire, re-resolve, refuse" is the one-question-two-answers
 # shape, and the two would drift at the first fix applied to only one of them.
@@ -9459,10 +9457,11 @@ run_negative_check "INVARIANT" rg -n 'declared acquired = some S' SeLe4n/Kernel/
 # identity for a non-holder, so a release-only unwind strands every contended
 # member queued on the acquiring core (WS-LC LC4).
 run_negative_check "INVARIANT" rg -n 'releaseAll lockCore' SeLe4n/Kernel/SyscallLockBracket.lean
-# The runtime witness: the bracket engages, takes the committed arm, returns the
-# unbracketed frame, and releases every member.
+# The runtime witness: the seam's record declares the decode's footprint, the
+# ghost bracket from the all-free table ends all-free, the executed path returns
+# the bare step's frame and writes no lock word.
 run_check "INVARIANT" rg -n 'runDeclaredFootprintBracketChecks' tests/SmpCrossCoreCallSuite.lean
-run_check "INVARIANT" rg -n 'the bracket takes the COMMITTED arm' tests/SmpCrossCoreCallSuite.lean
+run_check "INVARIANT" rg -n 'every declared member is unheld on the ghost table after the bracket' tests/SmpCrossCoreCallSuite.lean
 # WS-RR RR7.13: the gate that keeps RR7.12 true.  Every `@[export]` whose body
 # can reach a kernel-state commit is classified — bracketed, or unbracketed with
 # a recorded reason — and the SET is derived from the elaborated environment
@@ -9717,7 +9716,6 @@ run_check "INVARIANT" rg -n '^theorem syscallEntryChecked_implies_capability_hel
 run_check "INVARIANT" rg -n '^theorem syscallDispatchFromAbi_implies_capability_held($|[ ({:\[\]])' SeLe4n/Platform/FFI.lean
 run_check "INVARIANT" rg -n '^theorem declassifyStoreOnCore_state_log_independent($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/DeclassificationPerCore.lean
 run_check "INVARIANT" rg -n '^theorem donation_perCore_consistent \(st st. : SystemState\)' SeLe4n/Kernel/IPC/CrossCore/EndpointReplyRecvInvariant.lean
-run_check "INVARIANT" rg -n '^theorem runBracketed_chainExtension_composes($|[ ({:\[\]])' SeLe4n/Kernel/Scheduler/PriorityInheritance/ChainFootprint.lean
 run_check "INVARIANT" rg -n '^theorem lockSet_endpointReply_size_le \(a : ThreadId\) \(b : ObjId\) \(c : ThreadId\)' SeLe4n/Kernel/Concurrency/Locks/Deadlock.lean
 run_check "INVARIANT" rg -n '^theorem toDiscriminant_lt \(e : KernelError\) : toDiscriminant e < kernelErrorCount' SeLe4n/Kernel/Architecture/SyscallReturn.lean
 # The payoff: read-set disjoint from write-set means the operation cannot
@@ -14276,22 +14274,14 @@ import SeLe4n.Kernel.Concurrency.Locks.BracketSpec
 #check @SeLe4n.Kernel.Concurrency.WalkOutcome
 #check @SeLe4n.Kernel.Concurrency.walkStep
 #check @SeLe4n.Kernel.Concurrency.walkAndAcquire
-#check @SeLe4n.Kernel.Concurrency.withDynamicChainExtension
-#check @SeLe4n.Kernel.Concurrency.withDynamicChainExtension_unfold
--- PR #892 review round 2: the extension acts only once the chain is held.
-#check @SeLe4n.Kernel.Concurrency.runChainExtension_held
-#check @SeLe4n.Kernel.Concurrency.runChainExtension_refused
-#check @SeLe4n.Kernel.Concurrency.runChainExtension_empty
+-- WS-LS: the chain lock sequence; the runtime extension is deleted.
 #check @SeLe4n.Kernel.Concurrency.chainLockSeq_keys_nodup
 #check @SeLe4n.Kernel.Concurrency.chainLockSeq_sorted
 #check @SeLe4n.Kernel.Concurrency.chainLockSeq_lockAcquireSequence
-#check @SeLe4n.Kernel.Concurrency.withDynamicChainExtension_terminated
-#check @SeLe4n.Kernel.Concurrency.withDynamicChainExtension_terminated_refused
 #check @SeLe4n.Kernel.Concurrency.LockSet.ofList?
 #check @SeLe4n.Kernel.Concurrency.LockSet.ofList?_isSome_of_nodup
 #check @SeLe4n.Kernel.Concurrency.LockSet.ofList?_none_of_dup
-#check @SeLe4n.Kernel.PriorityInheritance.withPipChainSchedExtension_declared
-#check @SeLe4n.Kernel.PriorityInheritance.withPipChainSchedExtension_refused
+#check @SeLe4n.Kernel.PriorityInheritance.pipChainSchedFootprint_resolves
 #check @SeLe4n.Kernel.Concurrency.dynamicChainHeld
 #check @SeLe4n.Kernel.Concurrency.chainFollowsBlockingServer
 #check @SeLe4n.Kernel.Concurrency.walkStep_extended_increases_objId
@@ -14302,7 +14292,7 @@ import SeLe4n.Kernel.Concurrency.Locks.BracketSpec
 #check @SeLe4n.Kernel.Concurrency.walkAndAcquireAux_terminated_length_le
 #check @SeLe4n.Kernel.Concurrency.walkAndAcquire_terminated_length_bounded
 #check @SeLe4n.Kernel.Concurrency.walkAndAcquire_total
--- SM3.C.11.c (Group-B): conjunct-1 establishment + blockingServer transport + capstone.
+-- SM3.C.11.c (Group-B): conjunct-1 establishment + blockingServer transport.
 #check @SeLe4n.Kernel.Concurrency.chainLockSeq
 #check @SeLe4n.Kernel.Concurrency.chainLockSeq_acquire_establishes_pathHeld
 #check @SeLe4n.Kernel.Concurrency.blockingServer_eq_bind
@@ -14310,7 +14300,6 @@ import SeLe4n.Kernel.Concurrency.Locks.BracketSpec
 #check @SeLe4n.Kernel.Concurrency.acquireLockOnObject_preserves_blockingServer
 #check @SeLe4n.Kernel.Concurrency.acquireAll_preserves_blockingServer
 #check @SeLe4n.Kernel.Concurrency.chainFollowsBlockingServer_of_blockingServer_eq
-#check @SeLe4n.Kernel.Concurrency.withDynamicChainExtension_establishes_dynamicChainHeld
 -- SM3.C.11.d (Group-B): two-core deadlock-freedom.
 #check @SeLe4n.Kernel.Concurrency.coreWaitsForLock
 #check @SeLe4n.Kernel.Concurrency.dynamic_chain_deadlock_free
@@ -15754,7 +15743,6 @@ lake env lean /tmp/sm5d_surface.lean'
 # matching a stale spelling.
 run_check "INVARIANT" bash -lc 'source ~/.elan/env && lake env lean --stdin <<"EOF"
 import SeLe4n.Kernel.SchedLockBracket
-import SeLe4n.Kernel.Concurrency.Locks.LockBracket
 open SeLe4n.Kernel
 #check @SeLe4n.Model.SchedulerLockState
 #check @SeLe4n.Model.SystemState.runQueueLockOnCore
@@ -15769,7 +15757,7 @@ open SeLe4n.Kernel
 #check @Concurrency.LockSet.ofList?
 #check @Concurrency.LockSet.ofList?_none_of_dup
 #check @Concurrency.lockSetHeld
-#check @Concurrency.objectLockBracketDomain
+#check @Concurrency.LockState.bracket
 #check @declaredLockSetForTimerTick
 #check @declaredLockSetForReschedule
 #check @declaredLockSetForTimerTick_invalid_core
@@ -19477,7 +19465,7 @@ run_check "INVARIANT" rg -F -n 'def erasureWitnessViolations (env : Environment)
 run_check "INVARIANT" rg -F -n '    if !v.getUsedConstants.contains ``censusWitnessErasedTransformer then' SeLe4n/Testing/KernelTransitionReachabilityCensus.lean
 run_check "INVARIANT" rg -F -n '    erasureWitnessViolations env' SeLe4n/Testing/KernelTransitionReachabilityCensus.lean
 # (3) A RESULT TYPE THAT CARRIES STATE IS NOT ONE THAT MENTIONS IT.  A named
-# wrapper -- `TlbCacheJointState`, `IntermediateState`, `LockBracketOutcome` -- is
+# wrapper -- `TlbCacheJointState`, `IntermediateState`, `LockedSystemState` -- is
 # in the domain now, so a transition that rewrites a state held in a field cannot
 # sit outside both sides of the reconciliation.
 run_check "INVARIANT" rg -F -n 'partial def stateCarryingTypes (env : Environment)' SeLe4n/Testing/KernelTransitionReachabilityCensus.lean
@@ -21350,15 +21338,18 @@ run_check "INVARIANT" bash -lc 'rg -U -n "private def liveRetypeArm[^\n]*(\n([ \
 # domain, over ONE unified footprint spanning both.
 # ============================================================================
 #
-# The relation, not a presence check: the seam's bracket must name
-# `objectLockBracketDomain` and the unified resolver, because a bracket that
-# kept `runUnderDeclaredLockSet` would acquire the object footprint alone and the
-# scheduler writes would stay outside it — which is exactly what the retired
-# `UncoveredLockDomain.syscallSeamSchedulerDomain` recorded.
-run_check "INVARIANT" bash -lc 'rg -U -n "^def syscallDispatchCrossCoreBracketedStep[^\n]*(\n([ \t][^\n]*)?)*Concurrency.runBracketed objectLockBracketDomain" SeLe4n/Kernel/SyscallDispatchEntry.lean'
-run_check "INVARIANT" bash -lc 'rg -U -n "^def syscallDispatchCrossCoreBracketedStep[^\n]*(\n([ \t][^\n]*)?)*declaredUnifiedLockSetForAbiEntry ctx execCore syscallId" SeLe4n/Kernel/SyscallDispatchEntry.lean'
+# The relation, not a presence check: the seam's bracket record must declare
+# the UNIFIED resolver and carry the seam's coverage theorem as its `covers`
+# field (WS-LS LS2.4), because a record declaring the object footprint alone
+# would leave the scheduler writes outside it — which is exactly what the
+# retired `UncoveredLockDomain.syscallSeamSchedulerDomain` recorded — and the
+# seam's step must be that record, run.
+run_check "INVARIANT" bash -lc 'rg -U -n "^@\[inline\] def syscallDispatchBracket[^\n]*(\n([ \t][^\n]*)?)*  declared := declaredUnifiedLockSetForAbiEntry ctx execCore syscallId" SeLe4n/Kernel/SyscallDispatchEntry.lean'
+run_check "INVARIANT" bash -lc 'rg -U -n "^@\[inline\] def syscallDispatchBracket[^\n]*(\n([ \t][^\n]*)?)*    syscallDispatchCrossCoreStep_coversWrites ctx execCore syscallId" SeLe4n/Kernel/SyscallDispatchEntry.lean'
+run_check "INVARIANT" bash -lc 'rg -U -n "^@\[inline\] def syscallDispatchCrossCoreBracketedStep[^\n]*(\n([ \t][^\n]*)?)*  \(syscallDispatchBracket ctx execCore syscallId trapped\)\.run st" SeLe4n/Kernel/SyscallDispatchEntry.lean'
 # NEGATIVE: the object-domain-only bracket must not come back at the seam.
-run_negative_check "INVARIANT" bash -lc 'rg -U -n "^def syscallDispatchCrossCoreBracketedStep[^\n]*(\n([ \t][^\n]*)?)*runUnderDeclaredLockSet" SeLe4n/Kernel/SyscallDispatchEntry.lean'
+run_negative_check "INVARIANT" bash -lc 'rg -U -n "^@\[inline\] def syscallDispatchCrossCoreBracketedStep[^\n]*(\n([ \t][^\n]*)?)*runUnderDeclaredLockSet" SeLe4n/Kernel/SyscallDispatchEntry.lean'
+run_negative_check "INVARIANT" bash -lc 'rg -U -n "^@\[inline\] def syscallDispatchBracket[^\n]*(\n([ \t][^\n]*)?)*  declared := declaredLockSetForAbiEntry ctx" SeLe4n/Kernel/SyscallDispatchEntry.lean'
 # ONE footprint, not two brackets: the object domain's members are MERGED into
 # the scheduler footprint (`LockSet.union`, lock-state separation) rather than acquired by
 # a nested bracket, because the two domains are one set of lock words — the

@@ -58,8 +58,8 @@ the underlying modules.
   `lockSet_atomic_under_2pl` (SM3.C.7),
   `withLockSet_invariant_preserved` (SM3.C.8) — the last two over the
   pair since LS2.1.
-* `DynamicChainExtension` — `withDynamicChainExtension` (SM3.C.11)
-  for PIP-chain dynamic locking under the SM0.I total-order
+* `DynamicChainExtension` — the PIP chain walker and `chainLockSeq`
+  (SM3.C.11), the chain's footprint under the SM0.I total-order
   discipline.
 * `WithLockSetInventory` — SM3.C typed theorem inventory.
 

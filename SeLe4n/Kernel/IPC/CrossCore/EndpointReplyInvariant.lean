@@ -1454,8 +1454,7 @@ theorem endpointReceiveDualWithCapsOnCore_preserves_ipcInvariantFull_perCore
 -- the body-agnostic `lockSet_atomic_under_2pl`; this carries the substantive
 -- form.  (Audit IPC-2, `v0.36.49`: the `replyRecv` companion was stated about a
 -- two-leg composite the live arm never ran and is deleted with it; the live
--- `.replyRecv` runs under the syscall-wide bracket,
--- `runUnderDeclaredLockSet_committed_eq_withLockSet`.)
+-- `.replyRecv` runs under the syscall-wide bracket, `syscallDispatchBracket`.)
 -- ============================================================================
 
 /-- **WS-RR RR7.4** (**WS-LS LS2.1**: over the pair, hypothesis-free): under its

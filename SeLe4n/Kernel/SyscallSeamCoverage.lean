@@ -21,7 +21,8 @@
   delivery; it is unreachable once operands resolved, because the resolution
   the operands required is the resolution the fault would have failed.
 -/
-import SeLe4n.Kernel.SyscallDispatchEntry
+import SeLe4n.Kernel.SyscallDispatchStep
+import SeLe4n.Kernel.SyscallSchedFootprint
 import SeLe4n.Kernel.SyscallSchedContainment
 import SeLe4n.Kernel.IPC.Invariant.LookupCongruence
 

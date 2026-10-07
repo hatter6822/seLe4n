@@ -24,7 +24,8 @@
 import SeLe4n.Kernel.Capability.Operations
 import SeLe4n.Kernel.Concurrency.Locks.LockSetTransitions
 import SeLe4n.Kernel.Concurrency.Locks.Serializability
-import SeLe4n.Kernel.SyscallLockBracket
+import SeLe4n.Kernel.Concurrency.Locks.LockSetForSyscall
+import SeLe4n.Kernel.Concurrency.Locks.BracketSpec
 
 /-!
 # WS-RR RR7.41 — the interior of a CSpace walk
@@ -51,14 +52,17 @@ have to be maintained against every future capability operation.  The whole
 tree's deadlock freedom instead rests on one total order (SM0.I), and nothing
 else in the kernel departs from it.
 
-So the walk keeps the ladder and pays for it with a *revalidation* instead:
-resolve the path, acquire the read locks **sorted** into ladder order, re-resolve
-under them, and refuse if the path moved.  That is exactly RR7.12's discipline —
-`runUnderDeclaredLockSet` — applied to a footprint discovered by a walk rather
-than read off an argument, and it is available precisely because the bracket was
-already generic in how its footprint is resolved.  The exclusion obtained is the
-same one coupling would give (§3), and the acquisition order is the one the rest
-of the kernel uses.
+So the walk keeps the ladder: the footprint is resolved from the path and
+**sorted** into ladder order by the domain, and the walk's bracket (§4) is a
+`BracketSpec` whose footprint is discovered by a walk rather than read off an
+argument — the bracket is generic in how its footprint is resolved.  The
+exclusion obtained is the same one coupling would give (§3), and the acquisition
+order is the one the rest of the kernel uses.  **WS-LS LS2.4**: the word-level
+revalidating bracket RR7.12 ran here (resolve, acquire, re-resolve under the
+locks, refuse if the path moved) is deleted with the lock words; the footprint
+is a proof obligation over the ghost lock table, and the path's reads are
+protected by the guard the executed bracket runs under (`BracketSpec.guard`),
+not by a re-resolution.
 
 Read locks, not write: a resolution reads the interior and writes nothing.  Two
 concurrent resolutions through the same CNode therefore do not exclude each
@@ -510,63 +514,32 @@ theorem declaredLockSetForCSpaceWalk_single_level (rootId : SeLe4n.ObjId)
 -- §4  The bracket
 -- ============================================================================
 
-/-- **WS-RR RR7.41**: run a multi-level resolution inside the footprint its own
-walk declares.
+/-- **WS-RR RR7.41 / WS-LS LS2.4**: a multi-level resolution inside the footprint
+its own walk declares, as a `BracketSpec`.
 
-`runUnderDeclaredLockSet` — RR7.12's bracket, unchanged — at a `declared` that
-walks rather than reads an argument.  The revalidation is doing real work here,
-unlike at the per-core scheduler entries: the path is resolved by reads taken
-*before* the interior locks are held, so another core can redirect it in between,
-and the guard refuses exactly that.  A refusal commits nothing but the unwinding
-(`runUnderDeclaredLockSet_refused`).
+`declared` walks rather than reads an argument (`declaredLockSetForCSpaceWalk`,
+§2), `step` is the resolution, and `covers` is `footprintCoversWrites_refl`: a
+resolution reads the interior and writes nothing, so every footprint covers it
+and the read locks it declares are there for the conflict with a structural
+writer (`cspaceWalk_conflicts_with_delete`, §3), not for a write of its own.
 
 This is the mechanism a CPtr-resolving footprint adopts to cover its interior; it
 is not yet what `lockSetForSyscall`'s arms run, which still name the root alone
 and whose ABI seam refuses a multi-level walk outright. -/
-def resolveCapAddressUnderWalkLocks (lockCore : CoreId) (rootId : SeLe4n.ObjId)
-    (addr : SeLe4n.CPtr) (bitsRemaining : Nat) (st : SystemState) :
-    Concurrency.LockBracketOutcome (Except KernelError SlotRef) :=
-  runUnderDeclaredLockSet (declaredLockSetForCSpaceWalk rootId addr bitsRemaining) lockCore
-    (fun s => (resolveCapAddress rootId addr bitsRemaining s, s)) st
+def cspaceWalkBracket (rootId : SeLe4n.ObjId) (addr : SeLe4n.CPtr) (bitsRemaining : Nat) :
+    Concurrency.BracketSpec (Except KernelError SlotRef) where
+  declared := declaredLockSetForCSpaceWalk rootId addr bitsRemaining
+  step := fun s => (resolveCapAddress rootId addr bitsRemaining s, s)
+  inv := fun _ => True
+  covers := fun st _ _ _ => footprintCoversWrites_refl _ st
 
-/-- **WS-RR RR7.41**: on the committed arm the bracket returns exactly the
-resolution `resolveCapAddress` computes on the acquired state — bracketing
-changes which locks are held, never what the walk resolves to. -/
-theorem resolveCapAddressUnderWalkLocks_committed (lockCore : CoreId)
-    (rootId : SeLe4n.ObjId) (addr : SeLe4n.CPtr) (bitsRemaining : Nat)
-    (st : SystemState) (S : LockSet)
-    (hDecl : declaredLockSetForCSpaceWalk rootId addr bitsRemaining st = some S)
-    (hGuard : declaredLockSetForCSpaceWalk rootId addr bitsRemaining
-        (Concurrency.acquireAll lockCore S.lockAcquireSequence st) = some S ∧
-      Concurrency.lockSetHeld lockCore S
-        (Concurrency.acquireAll lockCore S.lockAcquireSequence st)) :
-    resolveCapAddressUnderWalkLocks lockCore rootId addr bitsRemaining st
-      = .committed
-          (resolveCapAddress rootId addr bitsRemaining
-             (Concurrency.acquireAll lockCore S.lockAcquireSequence st),
-           Concurrency.unwindAll lockCore S.lockAcquireSequence.reverse
-             (Concurrency.acquireAll lockCore S.lockAcquireSequence st)) :=
-  runUnderDeclaredLockSet_committed _ lockCore _ st S hDecl hGuard
-
-/-- **WS-RR RR7.41 (the guard has content here)**: the bracket refuses when the
-walk resolved a different path under its own locks than it did before them.
-
-At the per-core scheduler entries the revalidation is vacuous by construction
-(the footprint is a function of the core id).  Here it is the substance: the
-interior CNodes are discovered by reads the interior locks do not yet protect, so
-a concurrent `cspaceDelete` between the walk and the acquire moves the path, and
-this is the arm that catches it.  A refusal commits nothing but the unwinding. -/
-theorem resolveCapAddressUnderWalkLocks_refused (lockCore : CoreId)
-    (rootId : SeLe4n.ObjId) (addr : SeLe4n.CPtr) (bitsRemaining : Nat)
-    (st : SystemState) (S : LockSet)
-    (hDecl : declaredLockSetForCSpaceWalk rootId addr bitsRemaining st = some S)
-    (hGuard : ¬ (declaredLockSetForCSpaceWalk rootId addr bitsRemaining
-        (Concurrency.acquireAll lockCore S.lockAcquireSequence st) = some S ∧
-      Concurrency.lockSetHeld lockCore S
-        (Concurrency.acquireAll lockCore S.lockAcquireSequence st))) :
-    resolveCapAddressUnderWalkLocks lockCore rootId addr bitsRemaining st
-      = .refused (Concurrency.unwindAll lockCore S.lockAcquireSequence.reverse
-          (Concurrency.acquireAll lockCore S.lockAcquireSequence st)) :=
-  runUnderDeclaredLockSet_refused _ lockCore _ st S hDecl hGuard
+/-- **WS-RR RR7.41**: the bracket returns exactly the resolution
+`resolveCapAddress` computes — bracketing declares which locks the walk is
+under, never what the walk resolves to.  `rfl`, because `BracketSpec.run` is
+the step. -/
+theorem cspaceWalkBracket_run (rootId : SeLe4n.ObjId) (addr : SeLe4n.CPtr)
+    (bitsRemaining : Nat) (st : SystemState) :
+    (cspaceWalkBracket rootId addr bitsRemaining).run st
+      = (resolveCapAddress rootId addr bitsRemaining st, st) := rfl
 
 end SeLe4n.Kernel

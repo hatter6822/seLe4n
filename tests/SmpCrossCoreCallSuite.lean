@@ -1171,10 +1171,10 @@ private def bracketStepFn (st : SystemState) :=
     (syscallId := 20) (x0 := 1) (x1 := 0) (x2 := 0) (x3 := 0) (x4 := 0) (x5 := 0)
     (ipcBufferAddr := 0) (elr := 0) (spsr := 0) (spEl0 := 0) (x30 := 0) st
 
-/-- Which arm of the bracket this entry takes, as the bracket itself computes
-it — `syscallDispatchCrossCoreBracketedStep` is this `match`ed and flattened. -/
-private def bracketOutcome (st : SystemState) :=
-  runUnderDeclaredLockSet bracketDecl bootCoreId bracketStepFn st
+/-- The seam's bracket at those same words (WS-LS LS2.4). -/
+private def bracketSpec :=
+  syscallDispatchBracket harnessLabelingContext bootCoreId
+    (syscallId := 20) (trapped := { (default : Architecture.TrapContext) with x0 := 1 })
 
 private def bracketRun (st : SystemState) :=
   syscallDispatchCrossCoreBracketedStep harnessLabelingContext bootCoreId
@@ -1301,57 +1301,52 @@ private def runDeclaredFootprintBracketChecks : IO Unit := do
           decide (ops.caller = tid)
         | none => false)
      | none => false)
-  -- **The committed arm is taken.** The guard passes on an uncontended state,
-  -- so the syscall runs bracketed rather than being refused — the check that
-  -- would have caught a bracket that engages and then always declines.
-  assertBool "the guard PASSES on an uncontended state (the committed arm is taken)"
-    (match bracketDecl bracketState with
+  -- **The seam's bracket declares this footprint** (WS-LS LS2.4): the record's
+  -- `declared` field at this state is the unified footprint the decode
+  -- resolves, so the coverage proof the record carries is about this set.
+  assertBool "the seam's bracket declares the decode's unified footprint"
+    (decide (bracketSpec.declared bracketState
+      = declaredUnifiedLockSetForAbiEntry harnessLabelingContext bootCoreId
+          (syscallId := 20) (x0 := 1) (x1 := 0) (x2 := 0) (x3 := 0) (x4 := 0) (x5 := 0)
+          bracketState))
+  -- **The ghost bracket starts and ends all-free** (plan O3): run the proven
+  -- path from the unheld table and every declared member is unheld after —
+  -- the acquire and the release both happened on the ghost table, and the
+  -- next syscall on these objects is not blocked by this one.
+  assertBool "every declared member is unheld on the ghost table after the bracket"
+    (match bracketSpec.declared bracketState with
      | some fp =>
-       let acquired := Concurrency.acquireAll bootCoreId fp.lockAcquireSequence bracketState
-       decide (bracketDecl acquired = some fp) &&
-       decide (Concurrency.lockSetHeld bootCoreId fp acquired)
+       let ghost := (bracketSpec.runGhost bootCoreId ⟨bracketState, Concurrency.LockState.unheld⟩).2
+       fp.pairs.all (fun p =>
+         decide (ghost.locks p.1 = Concurrency.RwLockState.unheld))
      | none => false)
-  -- **Which arm**, stated directly rather than inferred from the outcome: the
-  -- committed one. Comparing outcome frames would not settle it — a syscall
-  -- that legitimately errors returns the same `.illegalState` frame a refusal
-  -- does, so a bracket that always declined would look identical.
-  assertBool "the bracket takes the COMMITTED arm (not `undeclared`, not `refused`)"
-    (match bracketOutcome bracketState with
-     | .committed _ => true
-     | _ => false)
-  -- NEGATIVE: and neither of the other two.
-  assertBool "NEGATIVE: the bracket neither falls back nor refuses here"
-    (match bracketOutcome bracketState with
-     | .undeclared _ => false
-     | .refused _ => false
-     | .committed _ => true)
   -- **Bracketing does not change what the syscall returns.** The declared
-  -- footprint is exclusion, not semantics: the growing and shrinking phases
-  -- write lock words and nothing else, so the caller's frame is the frame the
-  -- unbracketed step produced.
+  -- footprint is a proof obligation, not semantics: the executed path is the
+  -- step (`syscallDispatchCrossCoreBracketedStep_run`), so the caller's frame
+  -- is the frame the bare step produced.
   assertBool "the bracketed step returns the unbracketed step's frame"
     (let br := bracketRun bracketState
      let ba := bracketStepFn bracketState
      decide (br.1.1.tagWord = ba.1.1.tagWord) &&
      decide (br.1.1.mailboxFrame.x0 = ba.1.1.mailboxFrame.x0) &&
      decide (br.1.1.mailboxFrame.x1 = ba.1.1.mailboxFrame.x1))
-  -- The bracket leaves nothing held: the shrinking phase runs on the committed
-  -- path too, so the next syscall on these objects is not blocked by this one.
-  assertBool "every declared member is released after the bracketed step"
+  -- The executed path writes no lock word: the step commits the same object
+  -- store and scheduler whether or not a footprint is declared, and the
+  -- seam's lock words stay as they were.
+  assertBool "the bracketed step leaves every declared member's lock word untouched"
     (match bracketDecl bracketState with
      | some fp =>
        fp.pairs.all (fun p =>
          decide (¬ Concurrency.keyHeld bootCoreId p.1 p.2 (bracketRun bracketState).2))
      | none => false)
-  -- The fallback: an UNDECLARED syscall runs bit-identically to the unbracketed
-  -- step, which is what makes landing the bracket safe ahead of the remaining
-  -- declarations.
+  -- An UNDECLARED syscall runs the same step as a declared one: the footprint
+  -- is a proof obligation, not a runtime branch.
   assertBool "an undeclared syscall's bracketed step IS the unbracketed step"
-    -- The equality itself is `syscallDispatchCrossCoreBracketedStep_undeclared`,
-    -- which is definitional; what a runtime check can add is that the fallback
-    -- path is the one this state actually takes, and that the two agree on the
-    -- word the ABI returns.
-    (have _h := @syscallDispatchCrossCoreBracketedStep_undeclared
+    -- The equality itself is `syscallDispatchCrossCoreBracketedStep_run`,
+    -- which is definitional on every state; what a runtime check can add is
+    -- that this state declares nothing, and that the two agree on the word the
+    -- ABI returns.
+    (have _h := @syscallDispatchCrossCoreBracketedStep_run
      decide (undeclaredDecl bracketState = none) &&
      decide ((undeclaredRun bracketState).1.1.tagWord
                = (undeclaredBare bracketState).1.1.tagWord))

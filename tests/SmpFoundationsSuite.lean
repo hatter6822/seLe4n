@@ -847,14 +847,7 @@ private def runPipChainFootprintChecks : IO Unit := do
       decide ((SeLe4n.Kernel.PriorityInheritance.pipChainVisited st t1 n).length ≤ n)))
   assertBool "a zero-fuel walk visits nobody, so declares an empty footprint"
     (decide (SeLe4n.Kernel.PriorityInheritance.pipChainVisited st t1 0 = []))
-  -- 7. The extension acquires and hands the locks back.
-  let outcome := SeLe4n.Kernel.PriorityInheritance.withPipChainSchedExtension
-    c0 t1 4 (fun s => (s, ())) () st
-  assertBool "the chain extension leaves every scheduler lock word unheld again"
-    (SeLe4n.Kernel.Concurrency.allCores.all (fun c =>
-      decide (outcome.1.runQueueLockOnCore c
-        = SeLe4n.Kernel.Concurrency.RwLockState.unheld)))
-  -- 8. **PR #892 review round 5**: a chain that DESCENDS in `ObjId`.  A blocking
+  -- 7. **PR #892 review round 5**: a chain that DESCENDS in `ObjId`.  A blocking
   --    chain follows the blocking graph, which is not ordered by object id -- a
   --    higher-numbered thread blocking on a lower-numbered one is an ordinary
   --    state, and `pipChainVisited` has no ascending guard to refuse it.  The
@@ -1018,16 +1011,16 @@ private def runCSpaceWalkFootprintChecks : IO Unit := do
   assertBool "the walk footprint declares read locks only"
     ((SeLe4n.Kernel.cspaceWalkLockSet root addr 32 st).pairs.all
       (fun p => decide (p.2 = SeLe4n.Kernel.Concurrency.AccessMode.read)))
-  -- 6. The bracket over it is RR7.12's, unchanged -- the acquisition order is the
-  --    SM0.I ladder, which a hand-over-hand coupling walk would have abandoned.
-  let outcome := SeLe4n.Kernel.resolveCapAddressUnderWalkLocks
-    SeLe4n.Kernel.Concurrency.bootCoreId root addr 32 st
+  -- 6. The bracket over it is a `BracketSpec` (WS-LS LS2.4): its declared
+  --    footprint is the walk's, sorted into the SM0.I ladder by the domain
+  --    (which a hand-over-hand coupling walk would have abandoned), and its
+  --    executed path is the resolution and nothing else.
+  let bracket := SeLe4n.Kernel.cspaceWalkBracket root addr 32
+  assertBool "the walk bracket declares the walk's own footprint"
+    (decide (bracket.declared st = SeLe4n.Kernel.declaredLockSetForCSpaceWalk root addr 32 st))
   assertBool "the bracketed resolution returns the resolution's own verdict"
-    (match outcome.value? with
-     | some r => decide (r.toOption = (SeLe4n.Kernel.resolveCapAddress root addr 32
-         (SeLe4n.Kernel.Concurrency.acquireAll SeLe4n.Kernel.Concurrency.bootCoreId
-           (SeLe4n.Kernel.cspaceWalkLockSet root addr 32 st).lockAcquireSequence st)).toOption)
-     | none => false)
+    (decide ((bracket.run st).1.toOption
+      = (SeLe4n.Kernel.resolveCapAddress root addr 32 st).toOption))
 
 private def runSchedLockDomainChecks : IO Unit := do
   -- **WS-RR RR7.39**: the scheduler lock domain, and the bracket the three

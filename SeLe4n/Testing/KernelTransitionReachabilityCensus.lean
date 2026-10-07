@@ -408,7 +408,7 @@ partial def stateCarryingTypes (env : Environment)
 `Prop` and is **not** in the domain, while `SystemState → Except KernelError
 SystemState` is.  Since `v0.35.125` it asks whether the result **carries** state
 rather than whether it mentions `SystemState`, so a named wrapper —
-`TlbCacheJointState`, `IntermediateState`, `LockBracketOutcome` — counts; see
+`TlbCacheJointState`, `IntermediateState`, `LockedSystemState` — counts; see
 `stateCarryingTypes` for the derivation and for what the first two measurements of
 it got wrong.  The test over-approximates — an `Option SystemState` resolver and a
 pure reader that returns its argument both qualify — and that is the safe direction
@@ -999,6 +999,11 @@ def nonExecutedTransitionsPlain : List Name :=
   , `SeLe4n.Kernel.Architecture.shootdownRound
   , `SeLe4n.Kernel.Architecture.shootdownRoundPerCore
   , `SeLe4n.Kernel.Architecture.stageCancelledIpcFrame
+  -- WS-LS LS2.4: the two-state return-frame staging, kept as the statement
+  -- `syscallDispatchCrossCoreStep_drains_physicalWrites` is written against;
+  -- the seam runs `stageCallerReturnFor` over the caller it captured.  Its
+  -- last executed reader was the deleted refusal result.
+  , `SeLe4n.Kernel.Architecture.stageCallerReturn
   , `SeLe4n.Kernel.Architecture.stageTimeoutFrame
   , `SeLe4n.Kernel.Architecture.timerInterruptHandler
   , `SeLe4n.Kernel.Architecture.tlbFlushByPage
@@ -1021,14 +1026,17 @@ def nonExecutedTransitionsPlain : List Name :=
   -- WS-LS LS2.2: `BracketSpec.run` is what the scheduler seams execute (so
   -- the record's step field is reached through it); the ghost path is the
   -- proofs', and the pair's kernel half is a projection, not a transition.
-  -- `LockBracketOutcome.state` is the word-level outcome's projection, which
-  -- no seam reads once the scheduler seams run the specification; LS2.4
-  -- deletes it with `runBracketed`.
   , `SeLe4n.Kernel.Concurrency.BracketSpec.runGhost
   , `SeLe4n.Kernel.Concurrency.KernelTransitionInstance.action
   , `SeLe4n.Kernel.Concurrency.KernelTransitionInstance.ofWithLockSet
-  , `SeLe4n.Kernel.Concurrency.LockBracketOutcome.state
   , `SeLe4n.Kernel.Concurrency.LockedSystemState.kernel
+  -- WS-LS LS2.4: the word-level lock layer is the proofs' alone.  The suspend
+  -- seam was its last executed reader (`withLockSet` at `suspend_thread_cross_core`,
+  -- SM3.C.9); every seam runs a `BracketSpec` now, whose executed path writes
+  -- no lock word, and LS3 deletes the layer with the fields it writes.
+  , `SeLe4n.Kernel.Concurrency.acquireAll
+  , `SeLe4n.Kernel.Concurrency.acquireLock
+  , `SeLe4n.Kernel.Concurrency.acquireLockOnObject
   -- WS-LS LS1.2: the one word update the three per-key primitives are each
   -- proved equal to (`acquireLock_eq_applyLockOp` and siblings), so the
   -- never-enqueues frames are proved once.  Nothing runs it: the primitives
@@ -1038,14 +1046,22 @@ def nonExecutedTransitionsPlain : List Name :=
   , `SeLe4n.Kernel.Concurrency.applyLockOpOnObject
   , `SeLe4n.Kernel.Concurrency.applySequential
   , `SeLe4n.Kernel.Concurrency.applySequentialWithLockSet
+  , `SeLe4n.Kernel.Concurrency.cancelAll
+  , `SeLe4n.Kernel.Concurrency.cancelLock
+  , `SeLe4n.Kernel.Concurrency.cancelLockOnObject
   , `SeLe4n.Kernel.Concurrency.commitSort
   , `SeLe4n.Kernel.Concurrency.insertByCommitTime
   , `SeLe4n.Kernel.Concurrency.objStoreWriteInstance
   , `SeLe4n.Kernel.Concurrency.readOnlyInstance
-  , `SeLe4n.Kernel.Concurrency.runChainExtension
+  , `SeLe4n.Kernel.Concurrency.releaseAll
+  , `SeLe4n.Kernel.Concurrency.releaseLock
+  , `SeLe4n.Kernel.Concurrency.releaseLockOnObject
   , `SeLe4n.Kernel.Concurrency.setObjStoreLockAction
   , `SeLe4n.Kernel.Concurrency.setSchedulerAction
-  , `SeLe4n.Kernel.Concurrency.withDynamicChainExtension
+  , `SeLe4n.Kernel.Concurrency.unwindAll
+  , `SeLe4n.Kernel.Concurrency.updateObjectAt
+  , `SeLe4n.Kernel.Concurrency.updateObjectLockAt
+  , `SeLe4n.Kernel.Concurrency.withLockSet
   , `SeLe4n.Kernel.Concurrency.withLockSetGhost
   , `SeLe4n.Kernel.Internal.lifecycleRetypeObject
   , `SeLe4n.Kernel.Lifecycle.Suspend.cancelBoundDonation
@@ -1069,7 +1085,6 @@ def nonExecutedTransitionsPlain : List Name :=
   -- `scheduleLocalSuccessorFrom`, over the caller they captured before the
   -- transition, so the pre-state is not kept alive to read it.
   , `SeLe4n.Kernel.PriorityInheritance.scheduleLocalSuccessor
-  , `SeLe4n.Kernel.PriorityInheritance.withPipChainSchedExtension
   , `SeLe4n.Kernel.SchedContext.PriorityManagement.migrateRunQueueBucket
   , `SeLe4n.Kernel.SchedContext.PriorityManagement.setMCPriorityOp
   , `SeLe4n.Kernel.SchedContext.PriorityManagement.setPriorityOp
@@ -1094,6 +1109,10 @@ def nonExecutedTransitionsPlain : List Name :=
   , `SeLe4n.Kernel.cspaceRevokeCdtStreaming
   , `SeLe4n.Kernel.cspaceRevokeCdtStrict
   , `SeLe4n.Kernel.cspaceRevokeCdtTransactional
+  -- WS-LS LS2.4: the STAGED CSpace walk's bracket (`CSpaceWalkFootprint.lean`
+  -- §4), which no committing seam runs; its predecessor
+  -- `resolveCapAddressUnderWalkLocks` was pinned here for the same reason.
+  , `SeLe4n.Kernel.cspaceWalkBracket
   , `SeLe4n.Kernel.declassifyRun
   , `SeLe4n.Kernel.declassifyStore
   , `SeLe4n.Kernel.declassifyStoreFromCore
@@ -1141,21 +1160,11 @@ def nonExecutedTransitionsPlain : List Name :=
   , `SeLe4n.Kernel.processReplenishmentsDue
   , `SeLe4n.Kernel.purgedAndRestored
   , `SeLe4n.Kernel.registerInterface
-  -- WS-RR RR8.12 Cut C6h (`v0.35.181`): RR7.12's object-domain bracket at the
-  -- ABI seam, superseded there by `Concurrency.runBracketed schedulerLock\
-  -- BracketDomain` over `declaredUnifiedLockSetForAbiEntry` — the two domains
-  -- write the same lock words, so nesting two brackets would take the
-  -- object-store table lock twice.  Its remaining reader is the STAGED CSpace
-  -- walk (`withCSpaceWalkLocks`), which no committing seam runs; the
-  -- export-commit census still names it a bracket form, so a body that reaches
-  -- it counts as bracketed.
-  , `SeLe4n.Kernel.runUnderDeclaredLockSet
   , `SeLe4n.Kernel.removeRunnable
   , `SeLe4n.Kernel.removeRunnableValid
   , `SeLe4n.Kernel.replenishScOnCore
   , `SeLe4n.Kernel.replyRecvPostPopState
   , `SeLe4n.Kernel.replyTransferOnCore
-  , `SeLe4n.Kernel.resolveCapAddressUnderWalkLocks
   , `SeLe4n.Kernel.restoreIncomingContext
   , `SeLe4n.Kernel.restoreIncomingContextChecked
   , `SeLe4n.Kernel.restoredAndConsumed
@@ -1210,6 +1219,10 @@ def nonExecutedTransitionsPlain : List Name :=
   , `SeLe4n.Model.storeObjectChecked
   , `SeLe4n.Model.storeObjectKindChecked
   , `SeLe4n.Model.storeServiceState
+  -- WS-LS LS2.4: the scheduler lock-word setters are reached only by the
+  -- word-level lock layer above, which no committing export runs any more.
+  , `SeLe4n.Model.SystemState.setReplenishQueueLockOnCore
+  , `SeLe4n.Model.SystemState.setRunQueueLockOnCore
   , `SeLe4n.Platform.Boot.applyMachineConfigChecked
   , `SeLe4n.Platform.Boot.bootFromPlatformCheckedWithIdleThreads
   , `SeLe4n.Platform.Boot.bootFromPlatformUnchecked

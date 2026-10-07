@@ -8345,7 +8345,7 @@ private def runDeclaredFootprintChecks : IO Unit := do
   --
   -- WS-RR RR8.12 Cut C6h (`v0.35.181`): **one**, from two.  The syscall seam's
   -- scheduler-domain entry is deleted — `syscallDispatchCrossCoreBracketedStep`
-  -- brackets on `objectLockBracketDomain` over the unified
+  -- runs the seam's `BracketSpec` over the unified
   -- `declaredUnifiedLockSetForAbiEntry`, whose `LockKey` members name the
   -- run-queue and replenish-queue locks a `LockSet` could not express, and each
   -- of the sixteen declared arms carries a coverage proof.

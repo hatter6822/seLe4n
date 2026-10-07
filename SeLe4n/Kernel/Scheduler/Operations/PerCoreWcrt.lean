@@ -133,7 +133,7 @@ outside a declared footprint is the *syscall* seam's scheduler writes:
 `lockSetForSyscall` returns a `LockSet`, whose `LockId` cannot name a run-queue
 lock at all, so an `endpointSend`'s receiver wake was still uncovered.  That was
 `UncoveredLockDomain.syscallSeamSchedulerDomain`, closed at WS-RR RR8.12 Cut C6h
-(`v0.35.181`): the seam brackets on `objectLockBracketDomain` over the unified
+(`v0.35.181`): the seam's bracket declares the unified
 `declaredUnifiedLockSetForAbiEntry`, so the live WCRT is the global entry lock's
 for the arms neither domain declares and the declared footprint's for the rest.
 

@@ -5,9 +5,9 @@
     "url": "https://github.com/hatter6822/seLe4n",
     "head": {
       "branch": "local/cv0",
-      "commit_sha": "d5c1b84f115134a921a279cee7dbcbc666f07360",
-      "tree_sha": "43ceae487d6b05d1071e3546fbbf74d66c64c986",
-      "committed_at_utc": "2026-10-07T12:56:47+00:00"
+      "commit_sha": "fb599ca5adb3a78ca7aaadbb693af843eaddcf85",
+      "tree_sha": "2214496d91641a030497e87ed62280cb20025bf9",
+      "committed_at_utc": "2026-10-07T15:28:52+00:00"
     }
   },
   "source_sync": {
@@ -17,20 +17,20 @@
       "tests/**/*.lean"
     ],
     "digest_algorithm": "sha256",
-    "source_digest": "30f6e102a257f228f0885ec1e59583743c7105973fe1488fa98d346e2f1599cc"
+    "source_digest": "da20c4e65f6188fa929d9f573582d3c51490bace0b912ce849eea97ecf43163d"
   },
   "summary": {
     "module_count": 456,
-    "declaration_count": 24583
+    "declaration_count": 24539
   },
   "readme_sync": {
-    "version": "0.36.67",
+    "version": "0.36.68",
     "lean_toolchain": "v4.28.0",
     "production_files": 384,
-    "production_loc": 445477,
+    "production_loc": 444617,
     "test_files": 72,
-    "test_loc": 89896,
-    "proved_theorem_lemma_decls": 15002,
+    "test_loc": 89882,
+    "proved_theorem_lemma_decls": 14968,
     "hardware_target": "Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A)"
   },
   "modules": [
@@ -29892,13 +29892,13 @@
     {
       "module": "SeLe4n.Kernel.Capability.CSpaceWalkFootprint",
       "path": "SeLe4n/Kernel/Capability/CSpaceWalkFootprint.lean",
-      "declaration_count": 21,
+      "declaration_count": 20,
       "declarations": [
         {
           "kind": "def",
           "name": "cspaceWalkPath",
           "full_name": "SeLe4n.Kernel.cspaceWalkPath",
-          "line": 115,
+          "line": 119,
           "called": [
             "SeLe4n.CPtr",
             "SeLe4n.Model.SystemState",
@@ -29912,7 +29912,7 @@
           "kind": "theorem",
           "name": "cspaceWalkPath_head",
           "full_name": "SeLe4n.Kernel.cspaceWalkPath_head",
-          "line": 149,
+          "line": 153,
           "called": [
             "SeLe4n.CPtr",
             "SeLe4n.Kernel.cspaceWalkPath",
@@ -29926,7 +29926,7 @@
           "kind": "theorem",
           "name": "cspaceWalkPath_zero",
           "full_name": "SeLe4n.Kernel.cspaceWalkPath_zero",
-          "line": 172,
+          "line": 176,
           "called": [
             "SeLe4n.CPtr",
             "SeLe4n.Kernel.cspaceWalkPath",
@@ -29938,7 +29938,7 @@
           "kind": "theorem",
           "name": "cspaceWalkPath_no_root",
           "full_name": "SeLe4n.Kernel.cspaceWalkPath_no_root",
-          "line": 180,
+          "line": 184,
           "called": [
             "SeLe4n.CPtr",
             "SeLe4n.Kernel.cspaceWalkPath",
@@ -29951,7 +29951,7 @@
           "kind": "theorem",
           "name": "cspaceWalkPath_cons",
           "full_name": "SeLe4n.Kernel.cspaceWalkPath_cons",
-          "line": 191,
+          "line": 195,
           "called": [
             "SeLe4n.CPtr",
             "SeLe4n.Kernel.cspaceWalkPath",
@@ -29964,7 +29964,7 @@
           "kind": "theorem",
           "name": "cspaceWalkPath_dropLast_cnode",
           "full_name": "SeLe4n.Kernel.cspaceWalkPath_dropLast_cnode",
-          "line": 220,
+          "line": 224,
           "called": [
             "SeLe4n.CPtr",
             "SeLe4n.Kernel.cspaceWalkPath",
@@ -29979,7 +29979,7 @@
           "kind": "def",
           "name": "cspaceWalkKeyLock",
           "full_name": "SeLe4n.Kernel.cspaceWalkKeyLock",
-          "line": 284,
+          "line": 288,
           "called": [
             "SeLe4n.Kernel.Concurrency.AccessMode",
             "SeLe4n.Kernel.Concurrency.LockKey",
@@ -29994,7 +29994,7 @@
           "kind": "def",
           "name": "cspaceWalkLockSet",
           "full_name": "SeLe4n.Kernel.cspaceWalkLockSet",
-          "line": 300,
+          "line": 304,
           "called": [
             "SeLe4n.CPtr",
             "SeLe4n.Kernel.Concurrency.LockSet",
@@ -30009,7 +30009,7 @@
           "kind": "def",
           "name": "declaredLockSetForCSpaceWalk",
           "full_name": "SeLe4n.Kernel.declaredLockSetForCSpaceWalk",
-          "line": 321,
+          "line": 325,
           "called": [
             "SeLe4n.CPtr",
             "SeLe4n.Kernel.Concurrency.LockSet",
@@ -30024,7 +30024,7 @@
           "kind": "theorem",
           "name": "declaredLockSetForCSpaceWalk_some_size_le",
           "full_name": "SeLe4n.Kernel.declaredLockSetForCSpaceWalk_some_size_le",
-          "line": 330,
+          "line": 334,
           "called": [
             "SeLe4n.CPtr",
             "SeLe4n.Kernel.Concurrency.LockSet",
@@ -30039,7 +30039,7 @@
           "kind": "theorem",
           "name": "declaredLockSetForCSpaceWalk_of_le",
           "full_name": "SeLe4n.Kernel.declaredLockSetForCSpaceWalk_of_le",
-          "line": 344,
+          "line": 348,
           "called": [
             "SeLe4n.CPtr",
             "SeLe4n.Kernel.Concurrency.maxLockSetSize",
@@ -30053,7 +30053,7 @@
           "kind": "theorem",
           "name": "declaredLockSetForCSpaceWalk_none_of_gt",
           "full_name": "SeLe4n.Kernel.declaredLockSetForCSpaceWalk_none_of_gt",
-          "line": 355,
+          "line": 359,
           "called": [
             "SeLe4n.CPtr",
             "SeLe4n.Kernel.Concurrency.maxLockSetSize",
@@ -30067,7 +30067,7 @@
           "kind": "theorem",
           "name": "mem_cspaceWalkLockSet_cnode",
           "full_name": "SeLe4n.Kernel.mem_cspaceWalkLockSet_cnode",
-          "line": 364,
+          "line": 368,
           "called": [
             "SeLe4n.CPtr",
             "SeLe4n.Kernel.Concurrency.AccessMode",
@@ -30085,7 +30085,7 @@
           "kind": "theorem",
           "name": "mem_cspaceWalkLockSet_missing",
           "full_name": "SeLe4n.Kernel.mem_cspaceWalkLockSet_missing",
-          "line": 380,
+          "line": 384,
           "called": [
             "SeLe4n.CPtr",
             "SeLe4n.Kernel.Concurrency.AccessMode",
@@ -30103,7 +30103,7 @@
           "kind": "theorem",
           "name": "cspaceWalk_conflicts_with_delete",
           "full_name": "SeLe4n.Kernel.cspaceWalk_conflicts_with_delete",
-          "line": 409,
+          "line": 413,
           "called": [
             "SeLe4n.CPtr",
             "SeLe4n.Kernel.Concurrency.AccessMode",
@@ -30128,7 +30128,7 @@
           "kind": "theorem",
           "name": "cspaceWalkPath_single_level",
           "full_name": "SeLe4n.Kernel.cspaceWalkPath_single_level",
-          "line": 459,
+          "line": 463,
           "called": [
             "SeLe4n.CPtr",
             "SeLe4n.Kernel.cspaceWalkPath",
@@ -30142,7 +30142,7 @@
           "kind": "theorem",
           "name": "cspaceWalkLockSet_single_level",
           "full_name": "SeLe4n.Kernel.cspaceWalkLockSet_single_level",
-          "line": 481,
+          "line": 485,
           "called": [
             "SeLe4n.CPtr",
             "SeLe4n.Kernel.Concurrency.AccessMode",
@@ -30160,7 +30160,7 @@
           "kind": "theorem",
           "name": "declaredLockSetForCSpaceWalk_single_level",
           "full_name": "SeLe4n.Kernel.declaredLockSetForCSpaceWalk_single_level",
-          "line": 496,
+          "line": 500,
           "called": [
             "SeLe4n.CPtr",
             "SeLe4n.Kernel.Concurrency.LockSet.size",
@@ -30176,59 +30176,29 @@
         },
         {
           "kind": "def",
-          "name": "resolveCapAddressUnderWalkLocks",
-          "full_name": "SeLe4n.Kernel.resolveCapAddressUnderWalkLocks",
-          "line": 526,
+          "name": "cspaceWalkBracket",
+          "full_name": "SeLe4n.Kernel.cspaceWalkBracket",
+          "line": 529,
           "called": [
             "SeLe4n.CPtr",
-            "SeLe4n.Kernel.Concurrency.CoreId",
-            "SeLe4n.Kernel.Concurrency.LockBracketOutcome",
+            "SeLe4n.Kernel.Concurrency.BracketSpec",
             "SeLe4n.Kernel.declaredLockSetForCSpaceWalk",
+            "SeLe4n.Kernel.footprintCoversWrites_refl",
             "SeLe4n.Kernel.resolveCapAddress",
-            "SeLe4n.Kernel.runUnderDeclaredLockSet",
             "SeLe4n.Model.KernelError",
             "SeLe4n.Model.SlotRef",
-            "SeLe4n.Model.SystemState",
             "SeLe4n.ObjId"
           ]
         },
         {
           "kind": "theorem",
-          "name": "resolveCapAddressUnderWalkLocks_committed",
-          "full_name": "SeLe4n.Kernel.resolveCapAddressUnderWalkLocks_committed",
-          "line": 535,
+          "name": "cspaceWalkBracket_run",
+          "full_name": "SeLe4n.Kernel.cspaceWalkBracket_run",
+          "line": 540,
           "called": [
             "SeLe4n.CPtr",
-            "SeLe4n.Kernel.Concurrency.CoreId",
-            "SeLe4n.Kernel.Concurrency.LockSet",
-            "SeLe4n.Kernel.Concurrency.LockSet.lockAcquireSequence",
-            "SeLe4n.Kernel.Concurrency.acquireAll",
-            "SeLe4n.Kernel.Concurrency.lockSetHeld",
-            "SeLe4n.Kernel.Concurrency.unwindAll",
-            "SeLe4n.Kernel.declaredLockSetForCSpaceWalk",
+            "SeLe4n.Kernel.cspaceWalkBracket",
             "SeLe4n.Kernel.resolveCapAddress",
-            "SeLe4n.Kernel.resolveCapAddressUnderWalkLocks",
-            "SeLe4n.Kernel.runUnderDeclaredLockSet_committed",
-            "SeLe4n.Model.SystemState",
-            "SeLe4n.ObjId"
-          ]
-        },
-        {
-          "kind": "theorem",
-          "name": "resolveCapAddressUnderWalkLocks_refused",
-          "full_name": "SeLe4n.Kernel.resolveCapAddressUnderWalkLocks_refused",
-          "line": 559,
-          "called": [
-            "SeLe4n.CPtr",
-            "SeLe4n.Kernel.Concurrency.CoreId",
-            "SeLe4n.Kernel.Concurrency.LockSet",
-            "SeLe4n.Kernel.Concurrency.LockSet.lockAcquireSequence",
-            "SeLe4n.Kernel.Concurrency.acquireAll",
-            "SeLe4n.Kernel.Concurrency.lockSetHeld",
-            "SeLe4n.Kernel.Concurrency.unwindAll",
-            "SeLe4n.Kernel.declaredLockSetForCSpaceWalk",
-            "SeLe4n.Kernel.resolveCapAddressUnderWalkLocks",
-            "SeLe4n.Kernel.runUnderDeclaredLockSet_refused",
             "SeLe4n.Model.SystemState",
             "SeLe4n.ObjId"
           ]
@@ -40560,20 +40530,20 @@
     {
       "module": "SeLe4n.Kernel.Concurrency.Locks.DynamicChainExtension",
       "path": "SeLe4n/Kernel/Concurrency/Locks/DynamicChainExtension.lean",
-      "declaration_count": 52,
+      "declaration_count": 47,
       "declarations": [
         {
           "kind": "def",
           "name": "MAX_PIP_RETRIES",
           "full_name": "SeLe4n.Kernel.Concurrency.MAX_PIP_RETRIES",
-          "line": 150,
+          "line": 149,
           "called": []
         },
         {
           "kind": "theorem",
           "name": "MAX_PIP_RETRIES_pos",
           "full_name": "SeLe4n.Kernel.Concurrency.MAX_PIP_RETRIES_pos",
-          "line": 153,
+          "line": 152,
           "called": [
             "SeLe4n.Kernel.Concurrency.MAX_PIP_RETRIES"
           ]
@@ -40582,7 +40552,7 @@
           "kind": "structure",
           "name": "PipChainPath",
           "full_name": "SeLe4n.Kernel.Concurrency.PipChainPath",
-          "line": 166,
+          "line": 165,
           "called": [
             "SeLe4n.ThreadId"
           ]
@@ -40591,7 +40561,7 @@
           "kind": "def",
           "name": "singleton",
           "full_name": "SeLe4n.Kernel.Concurrency.PipChainPath.singleton",
-          "line": 181,
+          "line": 180,
           "called": [
             "SeLe4n.Kernel.Concurrency.PipChainPath",
             "SeLe4n.ThreadId"
@@ -40601,7 +40571,7 @@
           "kind": "theorem",
           "name": "singleton_startTid",
           "full_name": "SeLe4n.Kernel.Concurrency.PipChainPath.singleton_startTid",
-          "line": 186,
+          "line": 185,
           "called": [
             "SeLe4n.Kernel.Concurrency.PipChainPath",
             "SeLe4n.Kernel.Concurrency.PipChainPath.singleton",
@@ -40612,7 +40582,7 @@
           "kind": "theorem",
           "name": "singleton_path",
           "full_name": "SeLe4n.Kernel.Concurrency.PipChainPath.singleton_path",
-          "line": 189,
+          "line": 188,
           "called": [
             "SeLe4n.Kernel.Concurrency.PipChainPath",
             "SeLe4n.Kernel.Concurrency.PipChainPath.singleton",
@@ -40623,7 +40593,7 @@
           "kind": "def",
           "name": "length",
           "full_name": "SeLe4n.Kernel.Concurrency.PipChainPath.length",
-          "line": 193,
+          "line": 192,
           "called": [
             "SeLe4n.Kernel.Concurrency.PipChainPath"
           ]
@@ -40632,7 +40602,7 @@
           "kind": "theorem",
           "name": "singleton_length",
           "full_name": "SeLe4n.Kernel.Concurrency.PipChainPath.singleton_length",
-          "line": 195,
+          "line": 194,
           "called": [
             "SeLe4n.Kernel.Concurrency.PipChainPath.length",
             "SeLe4n.Kernel.Concurrency.PipChainPath.singleton",
@@ -40643,7 +40613,7 @@
           "kind": "inductive",
           "name": "WalkOutcome",
           "full_name": "SeLe4n.Kernel.Concurrency.WalkOutcome",
-          "line": 215,
+          "line": 214,
           "called": [
             "SeLe4n.Kernel.Concurrency.PipChainPath"
           ]
@@ -40652,7 +40622,7 @@
           "kind": "def",
           "name": "walkStep",
           "full_name": "SeLe4n.Kernel.Concurrency.walkStep",
-          "line": 262,
+          "line": 260,
           "called": [
             "SeLe4n.Kernel.Concurrency.PipChainPath",
             "SeLe4n.Kernel.Concurrency.WalkOutcome",
@@ -40664,7 +40634,7 @@
           "kind": "def",
           "name": "walkAndAcquire",
           "full_name": "SeLe4n.Kernel.Concurrency.walkAndAcquire",
-          "line": 302,
+          "line": 300,
           "called": [
             "SeLe4n.Kernel.Concurrency.MAX_PIP_RETRIES",
             "SeLe4n.Kernel.Concurrency.PipChainPath",
@@ -40679,7 +40649,7 @@
           "kind": "def",
           "name": "walkAndAcquire.walkAndAcquireAux",
           "full_name": "SeLe4n.Kernel.Concurrency.walkAndAcquire.walkAndAcquireAux",
-          "line": 306,
+          "line": 304,
           "called": [
             "SeLe4n.Kernel.Concurrency.PipChainPath",
             "SeLe4n.Kernel.Concurrency.WalkOutcome",
@@ -40691,7 +40661,7 @@
           "kind": "def",
           "name": "chainFollowsBlockingServer",
           "full_name": "SeLe4n.Kernel.Concurrency.chainFollowsBlockingServer",
-          "line": 331,
+          "line": 329,
           "called": [
             "SeLe4n.Kernel.PriorityInheritance.blockingServer",
             "SeLe4n.Model.SystemState",
@@ -40702,7 +40672,7 @@
           "kind": "instance",
           "name": "chainFollowsBlockingServer_decidable",
           "full_name": "SeLe4n.Kernel.Concurrency.chainFollowsBlockingServer_decidable",
-          "line": 341,
+          "line": 339,
           "called": [
             "SeLe4n.Kernel.Concurrency.chainFollowsBlockingServer",
             "SeLe4n.Kernel.PriorityInheritance.blockingServer",
@@ -40714,7 +40684,7 @@
           "kind": "theorem",
           "name": "chainFollowsBlockingServer_singleton",
           "full_name": "SeLe4n.Kernel.Concurrency.chainFollowsBlockingServer_singleton",
-          "line": 357,
+          "line": 355,
           "called": [
             "SeLe4n.Kernel.Concurrency.chainFollowsBlockingServer",
             "SeLe4n.Model.SystemState",
@@ -40725,7 +40695,7 @@
           "kind": "def",
           "name": "dynamicChainHeld",
           "full_name": "SeLe4n.Kernel.Concurrency.dynamicChainHeld",
-          "line": 387,
+          "line": 385,
           "called": [
             "SeLe4n.Kernel.Concurrency.CoreId",
             "SeLe4n.Kernel.Concurrency.PipChainPath",
@@ -40738,7 +40708,7 @@
           "kind": "def",
           "name": "chainLockSeq",
           "full_name": "SeLe4n.Kernel.Concurrency.chainLockSeq",
-          "line": 408,
+          "line": 415,
           "called": [
             "SeLe4n.Kernel.Concurrency.AccessMode",
             "SeLe4n.Kernel.Concurrency.LockKey",
@@ -40747,43 +40717,10 @@
           ]
         },
         {
-          "kind": "def",
-          "name": "withDynamicChainExtension",
-          "full_name": "SeLe4n.Kernel.Concurrency.withDynamicChainExtension",
-          "line": 453,
-          "called": [
-            "SeLe4n.Kernel.Concurrency.CoreId",
-            "SeLe4n.Kernel.Concurrency.LockSet.ofList?",
-            "SeLe4n.Kernel.Concurrency.chainLockSeq",
-            "SeLe4n.Kernel.Concurrency.objectLockBracketDomain",
-            "SeLe4n.Kernel.Concurrency.runChainExtension",
-            "SeLe4n.Kernel.Concurrency.walkAndAcquire",
-            "SeLe4n.Model.SystemState",
-            "SeLe4n.ThreadId"
-          ]
-        },
-        {
-          "kind": "theorem",
-          "name": "withDynamicChainExtension_unfold",
-          "full_name": "SeLe4n.Kernel.Concurrency.withDynamicChainExtension_unfold",
-          "line": 478,
-          "called": [
-            "SeLe4n.Kernel.Concurrency.CoreId",
-            "SeLe4n.Kernel.Concurrency.LockSet.ofList?",
-            "SeLe4n.Kernel.Concurrency.chainLockSeq",
-            "SeLe4n.Kernel.Concurrency.objectLockBracketDomain",
-            "SeLe4n.Kernel.Concurrency.runChainExtension",
-            "SeLe4n.Kernel.Concurrency.walkAndAcquire",
-            "SeLe4n.Kernel.Concurrency.withDynamicChainExtension",
-            "SeLe4n.Model.SystemState",
-            "SeLe4n.ThreadId"
-          ]
-        },
-        {
           "kind": "theorem",
           "name": "chainLockSeq_keys_nodup",
           "full_name": "SeLe4n.Kernel.Concurrency.chainLockSeq_keys_nodup",
-          "line": 495,
+          "line": 423,
           "called": [
             "SeLe4n.Kernel.Concurrency.LockId",
             "SeLe4n.Kernel.Concurrency.LockKey",
@@ -40798,7 +40735,7 @@
           "kind": "theorem",
           "name": "chainLockSeq_sorted",
           "full_name": "SeLe4n.Kernel.Concurrency.chainLockSeq_sorted",
-          "line": 513,
+          "line": 441,
           "called": [
             "SeLe4n.Kernel.Concurrency.LockId",
             "SeLe4n.Kernel.Concurrency.PipChainPath",
@@ -40809,7 +40746,7 @@
           "kind": "theorem",
           "name": "chainLockSeq_lockAcquireSequence",
           "full_name": "SeLe4n.Kernel.Concurrency.chainLockSeq_lockAcquireSequence",
-          "line": 530,
+          "line": 457,
           "called": [
             "SeLe4n.Kernel.Concurrency.LockSet.lockAcquireSequence",
             "SeLe4n.Kernel.Concurrency.LockSet.lockAcquireSequence_canonical",
@@ -40820,63 +40757,9 @@
         },
         {
           "kind": "theorem",
-          "name": "withDynamicChainExtension_terminated",
-          "full_name": "SeLe4n.Kernel.Concurrency.withDynamicChainExtension_terminated",
-          "line": 548,
-          "called": [
-            "SeLe4n.Kernel.Concurrency.CoreId",
-            "SeLe4n.Kernel.Concurrency.LockSet.ofList?_isSome_of_nodup",
-            "SeLe4n.Kernel.Concurrency.PipChainPath",
-            "SeLe4n.Kernel.Concurrency.acquireAll",
-            "SeLe4n.Kernel.Concurrency.chainLockSeq",
-            "SeLe4n.Kernel.Concurrency.chainLockSeq_keys_nodup",
-            "SeLe4n.Kernel.Concurrency.chainLockSeq_lockAcquireSequence",
-            "SeLe4n.Kernel.Concurrency.lockSetHeld",
-            "SeLe4n.Kernel.Concurrency.objectLockBracketDomain",
-            "SeLe4n.Kernel.Concurrency.objectLockBracketDomain_acquire",
-            "SeLe4n.Kernel.Concurrency.objectLockBracketDomain_sequence",
-            "SeLe4n.Kernel.Concurrency.objectLockBracketDomain_unwind",
-            "SeLe4n.Kernel.Concurrency.runChainExtension_held",
-            "SeLe4n.Kernel.Concurrency.unwindAll",
-            "SeLe4n.Kernel.Concurrency.walkAndAcquire",
-            "SeLe4n.Kernel.Concurrency.withDynamicChainExtension",
-            "SeLe4n.Model.SystemState",
-            "SeLe4n.ThreadId",
-            "SeLe4n.ThreadId.toNat"
-          ]
-        },
-        {
-          "kind": "theorem",
-          "name": "withDynamicChainExtension_terminated_refused",
-          "full_name": "SeLe4n.Kernel.Concurrency.withDynamicChainExtension_terminated_refused",
-          "line": 577,
-          "called": [
-            "SeLe4n.Kernel.Concurrency.CoreId",
-            "SeLe4n.Kernel.Concurrency.LockSet.ofList?_isSome_of_nodup",
-            "SeLe4n.Kernel.Concurrency.PipChainPath",
-            "SeLe4n.Kernel.Concurrency.acquireAll",
-            "SeLe4n.Kernel.Concurrency.chainLockSeq",
-            "SeLe4n.Kernel.Concurrency.chainLockSeq_keys_nodup",
-            "SeLe4n.Kernel.Concurrency.chainLockSeq_lockAcquireSequence",
-            "SeLe4n.Kernel.Concurrency.lockSetHeld",
-            "SeLe4n.Kernel.Concurrency.objectLockBracketDomain",
-            "SeLe4n.Kernel.Concurrency.objectLockBracketDomain_acquire",
-            "SeLe4n.Kernel.Concurrency.objectLockBracketDomain_sequence",
-            "SeLe4n.Kernel.Concurrency.objectLockBracketDomain_unwind",
-            "SeLe4n.Kernel.Concurrency.runChainExtension_refused",
-            "SeLe4n.Kernel.Concurrency.unwindAll",
-            "SeLe4n.Kernel.Concurrency.walkAndAcquire",
-            "SeLe4n.Kernel.Concurrency.withDynamicChainExtension",
-            "SeLe4n.Model.SystemState",
-            "SeLe4n.ThreadId",
-            "SeLe4n.ThreadId.toNat"
-          ]
-        },
-        {
-          "kind": "theorem",
           "name": "walkStep_extended_increases_objId",
           "full_name": "SeLe4n.Kernel.Concurrency.walkStep_extended_increases_objId",
-          "line": 610,
+          "line": 474,
           "called": [
             "SeLe4n.Kernel.Concurrency.PipChainPath",
             "SeLe4n.Kernel.Concurrency.walkStep",
@@ -40887,7 +40770,7 @@
           "kind": "theorem",
           "name": "pairwise_append_singleton_of_last",
           "full_name": "SeLe4n.Kernel.Concurrency.pairwise_append_singleton_of_last",
-          "line": 651,
+          "line": 515,
           "called": [
             "SeLe4n.ThreadId",
             "SeLe4n.ThreadId.toNat"
@@ -40898,7 +40781,7 @@
           "kind": "theorem",
           "name": "walkStep_preserves_ascending",
           "full_name": "SeLe4n.Kernel.Concurrency.walkStep_preserves_ascending",
-          "line": 704,
+          "line": 568,
           "called": [
             "SeLe4n.Kernel.Concurrency.PipChainPath",
             "SeLe4n.Kernel.Concurrency.pairwise_append_singleton_of_last",
@@ -40912,7 +40795,7 @@
           "kind": "theorem",
           "name": "walkStep_terminated_path_unchanged",
           "full_name": "SeLe4n.Kernel.Concurrency.walkStep_terminated_path_unchanged",
-          "line": 718,
+          "line": 582,
           "called": [
             "SeLe4n.Kernel.Concurrency.PipChainPath",
             "SeLe4n.Kernel.Concurrency.walkStep",
@@ -40924,7 +40807,7 @@
           "kind": "theorem",
           "name": "walkAndAcquire_path_ascending_in_ObjId_if_terminated",
           "full_name": "SeLe4n.Kernel.Concurrency.walkAndAcquire_path_ascending_in_ObjId_if_terminated",
-          "line": 748,
+          "line": 612,
           "called": [
             "SeLe4n.Kernel.Concurrency.PipChainPath",
             "SeLe4n.Kernel.Concurrency.PipChainPath.singleton",
@@ -40941,7 +40824,7 @@
           "kind": "theorem",
           "name": "walkStep_extended_length",
           "full_name": "SeLe4n.Kernel.Concurrency.walkStep_extended_length",
-          "line": 801,
+          "line": 665,
           "called": [
             "SeLe4n.Kernel.Concurrency.PipChainPath",
             "SeLe4n.Kernel.Concurrency.PipChainPath.length",
@@ -40955,7 +40838,7 @@
           "kind": "theorem",
           "name": "walkAndAcquireAux_terminated_length_le",
           "full_name": "SeLe4n.Kernel.Concurrency.walkAndAcquireAux_terminated_length_le",
-          "line": 827,
+          "line": 691,
           "called": [
             "SeLe4n.Kernel.Concurrency.PipChainPath",
             "SeLe4n.Kernel.Concurrency.PipChainPath.length",
@@ -40970,7 +40853,7 @@
           "kind": "theorem",
           "name": "walkAndAcquire_terminated_length_bounded",
           "full_name": "SeLe4n.Kernel.Concurrency.walkAndAcquire_terminated_length_bounded",
-          "line": 863,
+          "line": 727,
           "called": [
             "SeLe4n.Kernel.Concurrency.MAX_PIP_RETRIES",
             "SeLe4n.Kernel.Concurrency.PipChainPath",
@@ -40986,7 +40869,7 @@
           "kind": "theorem",
           "name": "walkAndAcquire_total",
           "full_name": "SeLe4n.Kernel.Concurrency.walkAndAcquire_total",
-          "line": 877,
+          "line": 741,
           "called": [
             "SeLe4n.Kernel.Concurrency.PipChainPath.singleton",
             "SeLe4n.Kernel.Concurrency.walkAndAcquire.walkAndAcquireAux",
@@ -40998,7 +40881,7 @@
           "kind": "theorem",
           "name": "walkStep_extended_blockingServer",
           "full_name": "SeLe4n.Kernel.Concurrency.walkStep_extended_blockingServer",
-          "line": 904,
+          "line": 770,
           "called": [
             "SeLe4n.Kernel.Concurrency.PipChainPath",
             "SeLe4n.Kernel.Concurrency.walkStep",
@@ -41010,7 +40893,7 @@
           "kind": "theorem",
           "name": "chainFollowsBlockingServer_append_of_getLast",
           "full_name": "SeLe4n.Kernel.Concurrency.chainFollowsBlockingServer_append_of_getLast",
-          "line": 932,
+          "line": 798,
           "called": [
             "SeLe4n.Kernel.Concurrency.chainFollowsBlockingServer",
             "SeLe4n.Kernel.PriorityInheritance.blockingServer",
@@ -41023,7 +40906,7 @@
           "kind": "theorem",
           "name": "walkStep_extended_preserves_chain",
           "full_name": "SeLe4n.Kernel.Concurrency.walkStep_extended_preserves_chain",
-          "line": 964,
+          "line": 830,
           "called": [
             "SeLe4n.Kernel.Concurrency.PipChainPath",
             "SeLe4n.Kernel.Concurrency.chainFollowsBlockingServer",
@@ -41038,7 +40921,7 @@
           "kind": "theorem",
           "name": "walkAndAcquire_terminated_followsChain",
           "full_name": "SeLe4n.Kernel.Concurrency.walkAndAcquire_terminated_followsChain",
-          "line": 981,
+          "line": 847,
           "called": [
             "SeLe4n.Kernel.Concurrency.PipChainPath",
             "SeLe4n.Kernel.Concurrency.PipChainPath.singleton",
@@ -41055,7 +40938,7 @@
           "kind": "theorem",
           "name": "walkAndAcquire_terminated_satisfies_path_structure",
           "full_name": "SeLe4n.Kernel.Concurrency.walkAndAcquire_terminated_satisfies_path_structure",
-          "line": 1035,
+          "line": 899,
           "called": [
             "SeLe4n.Kernel.Concurrency.PipChainPath",
             "SeLe4n.Kernel.Concurrency.PipChainPath.singleton",
@@ -41072,7 +40955,7 @@
           "kind": "theorem",
           "name": "threadId_toObjId_ne_of_toNat_lt",
           "full_name": "SeLe4n.Kernel.Concurrency.threadId_toObjId_ne_of_toNat_lt",
-          "line": 1061,
+          "line": 924,
           "called": [
             "SeLe4n.ObjId.ofNat",
             "SeLe4n.ObjId.toNat",
@@ -41084,7 +40967,7 @@
           "kind": "theorem",
           "name": "chainLockSeq_acquire_establishes_pathHeld",
           "full_name": "SeLe4n.Kernel.Concurrency.chainLockSeq_acquire_establishes_pathHeld",
-          "line": 1081,
+          "line": 944,
           "called": [
             "SeLe4n.Kernel.Concurrency.AccessMode",
             "SeLe4n.Kernel.Concurrency.CoreId",
@@ -41108,7 +40991,7 @@
           "kind": "def",
           "name": "tcbReplyServer",
           "full_name": "SeLe4n.Kernel.Concurrency.tcbReplyServer",
-          "line": 1127,
+          "line": 990,
           "called": [
             "SeLe4n.Model.KernelObject",
             "SeLe4n.ThreadId"
@@ -41118,7 +41001,7 @@
           "kind": "theorem",
           "name": "objects_getElem?_eq_get?",
           "full_name": "SeLe4n.Kernel.Concurrency.objects_getElem?_eq_get?",
-          "line": 1138,
+          "line": 1001,
           "called": [
             "SeLe4n.Kernel.RobinHood.RHTable.get?",
             "SeLe4n.Model.SystemState",
@@ -41129,7 +41012,7 @@
           "kind": "theorem",
           "name": "blockingServer_eq_bind",
           "full_name": "SeLe4n.Kernel.Concurrency.blockingServer_eq_bind",
-          "line": 1143,
+          "line": 1006,
           "called": [
             "SeLe4n.Kernel.Concurrency.objects_getElem?_eq_get?",
             "SeLe4n.Kernel.Concurrency.tcbReplyServer",
@@ -41145,7 +41028,7 @@
           "kind": "theorem",
           "name": "tcbReplyServer_updateLock",
           "full_name": "SeLe4n.Kernel.Concurrency.tcbReplyServer_updateLock",
-          "line": 1153,
+          "line": 1016,
           "called": [
             "SeLe4n.Kernel.Concurrency.RwLockOp",
             "SeLe4n.Kernel.Concurrency.tcbReplyServer",
@@ -41157,7 +41040,7 @@
           "kind": "theorem",
           "name": "acquireLockOnObject_preserves_blockingServer",
           "full_name": "SeLe4n.Kernel.Concurrency.acquireLockOnObject_preserves_blockingServer",
-          "line": 1161,
+          "line": 1024,
           "called": [
             "SeLe4n.Kernel.Concurrency.AccessMode",
             "SeLe4n.Kernel.Concurrency.AccessMode.toAcquireOp",
@@ -41184,7 +41067,7 @@
           "kind": "theorem",
           "name": "acquireLock_preserves_blockingServer",
           "full_name": "SeLe4n.Kernel.Concurrency.acquireLock_preserves_blockingServer",
-          "line": 1200,
+          "line": 1063,
           "called": [
             "SeLe4n.Kernel.Concurrency.AccessMode",
             "SeLe4n.Kernel.Concurrency.CoreId",
@@ -41202,7 +41085,7 @@
           "kind": "theorem",
           "name": "acquireAll_preserves_blockingServer",
           "full_name": "SeLe4n.Kernel.Concurrency.acquireAll_preserves_blockingServer",
-          "line": 1211,
+          "line": 1074,
           "called": [
             "SeLe4n.Kernel.Concurrency.AccessMode",
             "SeLe4n.Kernel.Concurrency.CoreId",
@@ -41221,7 +41104,7 @@
           "kind": "theorem",
           "name": "chainFollowsBlockingServer_of_blockingServer_eq",
           "full_name": "SeLe4n.Kernel.Concurrency.chainFollowsBlockingServer_of_blockingServer_eq",
-          "line": 1230,
+          "line": 1093,
           "called": [
             "SeLe4n.Kernel.Concurrency.chainFollowsBlockingServer",
             "SeLe4n.Kernel.PriorityInheritance.blockingServer",
@@ -41230,35 +41113,10 @@
           ]
         },
         {
-          "kind": "theorem",
-          "name": "withDynamicChainExtension_establishes_dynamicChainHeld",
-          "full_name": "SeLe4n.Kernel.Concurrency.withDynamicChainExtension_establishes_dynamicChainHeld",
-          "line": 1256,
-          "called": [
-            "SeLe4n.Kernel.Concurrency.CoreId",
-            "SeLe4n.Kernel.Concurrency.PipChainPath",
-            "SeLe4n.Kernel.Concurrency.PipChainPath.singleton",
-            "SeLe4n.Kernel.Concurrency.RwLockState.unheld",
-            "SeLe4n.Kernel.Concurrency.acquireAll",
-            "SeLe4n.Kernel.Concurrency.acquireAll_preserves_blockingServer",
-            "SeLe4n.Kernel.Concurrency.chainFollowsBlockingServer_of_blockingServer_eq",
-            "SeLe4n.Kernel.Concurrency.chainLockSeq",
-            "SeLe4n.Kernel.Concurrency.chainLockSeq_acquire_establishes_pathHeld",
-            "SeLe4n.Kernel.Concurrency.dynamicChainHeld",
-            "SeLe4n.Kernel.Concurrency.walkAndAcquire.walkAndAcquireAux",
-            "SeLe4n.Kernel.Concurrency.walkAndAcquire_terminated_satisfies_path_structure",
-            "SeLe4n.Kernel.RobinHood.RHTable.get?",
-            "SeLe4n.Kernel.RobinHood.RHTable.invExt",
-            "SeLe4n.Model.SystemState",
-            "SeLe4n.ThreadId",
-            "SeLe4n.ThreadId.toObjId"
-          ]
-        },
-        {
           "kind": "def",
           "name": "coreWaitsForLock",
           "full_name": "SeLe4n.Kernel.Concurrency.coreWaitsForLock",
-          "line": 1290,
+          "line": 1120,
           "called": [
             "SeLe4n.Kernel.Concurrency.LockId",
             "SeLe4n.ObjId"
@@ -41268,7 +41126,7 @@
           "kind": "theorem",
           "name": "dynamic_chain_deadlock_free",
           "full_name": "SeLe4n.Kernel.Concurrency.dynamic_chain_deadlock_free",
-          "line": 1303,
+          "line": 1133,
           "called": [
             "SeLe4n.Kernel.Concurrency.LockId",
             "SeLe4n.Kernel.Concurrency.coreWaitsForLock",
@@ -41279,7 +41137,7 @@
           "kind": "theorem",
           "name": "dynamic_chain_no_mutual_wait",
           "full_name": "SeLe4n.Kernel.Concurrency.dynamic_chain_no_mutual_wait",
-          "line": 1317,
+          "line": 1147,
           "called": [
             "SeLe4n.Kernel.Concurrency.LockId",
             "SeLe4n.Kernel.Concurrency.coreWaitsForLock",
@@ -41513,322 +41371,6 @@
           "called": [
             "SeLe4n.Kernel.Concurrency.LockId",
             "SeLe4n.Kernel.Concurrency.LockId.le_total"
-          ]
-        }
-      ]
-    },
-    {
-      "module": "SeLe4n.Kernel.Concurrency.Locks.LockBracket",
-      "path": "SeLe4n/Kernel/Concurrency/Locks/LockBracket.lean",
-      "declaration_count": 26,
-      "declarations": [
-        {
-          "kind": "inductive",
-          "name": "LockBracketOutcome",
-          "full_name": "SeLe4n.Kernel.Concurrency.LockBracketOutcome",
-          "line": 67,
-          "called": [
-            "SeLe4n.Model.SystemState"
-          ]
-        },
-        {
-          "kind": "structure",
-          "name": "LockBracketDomain",
-          "full_name": "SeLe4n.Kernel.Concurrency.LockBracketDomain",
-          "line": 83,
-          "called": [
-            "SeLe4n.Kernel.Concurrency.CoreId",
-            "SeLe4n.Model.SystemState"
-          ]
-        },
-        {
-          "kind": "def",
-          "name": "runBracketed",
-          "full_name": "SeLe4n.Kernel.Concurrency.runBracketed",
-          "line": 124,
-          "called": [
-            "SeLe4n.Kernel.Concurrency.CoreId",
-            "SeLe4n.Kernel.Concurrency.LockBracketDomain",
-            "SeLe4n.Kernel.Concurrency.LockBracketOutcome",
-            "SeLe4n.Model.SystemState"
-          ]
-        },
-        {
-          "kind": "theorem",
-          "name": "runBracketed_undeclared",
-          "full_name": "SeLe4n.Kernel.Concurrency.runBracketed_undeclared",
-          "line": 146,
-          "called": [
-            "SeLe4n.Kernel.Concurrency.CoreId",
-            "SeLe4n.Kernel.Concurrency.LockBracketDomain",
-            "SeLe4n.Kernel.Concurrency.runBracketed",
-            "SeLe4n.Model.SystemState"
-          ]
-        },
-        {
-          "kind": "theorem",
-          "name": "runBracketed_committed",
-          "full_name": "SeLe4n.Kernel.Concurrency.runBracketed_committed",
-          "line": 156,
-          "called": [
-            "SeLe4n.Kernel.Concurrency.CoreId",
-            "SeLe4n.Kernel.Concurrency.LockBracketDomain",
-            "SeLe4n.Kernel.Concurrency.runBracketed",
-            "SeLe4n.Model.SystemState"
-          ]
-        },
-        {
-          "kind": "theorem",
-          "name": "runBracketed_refused",
-          "full_name": "SeLe4n.Kernel.Concurrency.runBracketed_refused",
-          "line": 177,
-          "called": [
-            "SeLe4n.Kernel.Concurrency.CoreId",
-            "SeLe4n.Kernel.Concurrency.LockBracketDomain",
-            "SeLe4n.Kernel.Concurrency.runBracketed",
-            "SeLe4n.Model.SystemState"
-          ]
-        },
-        {
-          "kind": "def",
-          "name": "LockBracketOutcome.state",
-          "full_name": "SeLe4n.Kernel.Concurrency.LockBracketOutcome.state",
-          "line": 197,
-          "called": [
-            "SeLe4n.Kernel.Concurrency.LockBracketOutcome",
-            "SeLe4n.Model.SystemState"
-          ]
-        },
-        {
-          "kind": "def",
-          "name": "LockBracketOutcome.value?",
-          "full_name": "SeLe4n.Kernel.Concurrency.LockBracketOutcome.value?",
-          "line": 207,
-          "called": [
-            "SeLe4n.Kernel.Concurrency.LockBracketOutcome"
-          ]
-        },
-        {
-          "kind": "theorem",
-          "name": "LockBracketOutcome.state_undeclared",
-          "full_name": "SeLe4n.Kernel.Concurrency.LockBracketOutcome.state_undeclared",
-          "line": 212,
-          "called": [
-            "SeLe4n.Kernel.Concurrency.LockBracketOutcome",
-            "SeLe4n.Kernel.Concurrency.LockBracketOutcome.state",
-            "SeLe4n.Model.SystemState"
-          ]
-        },
-        {
-          "kind": "theorem",
-          "name": "LockBracketOutcome.state_refused",
-          "full_name": "SeLe4n.Kernel.Concurrency.LockBracketOutcome.state_refused",
-          "line": 215,
-          "called": [
-            "SeLe4n.Kernel.Concurrency.LockBracketOutcome",
-            "SeLe4n.Kernel.Concurrency.LockBracketOutcome.state",
-            "SeLe4n.Model.SystemState"
-          ]
-        },
-        {
-          "kind": "theorem",
-          "name": "LockBracketOutcome.state_committed",
-          "full_name": "SeLe4n.Kernel.Concurrency.LockBracketOutcome.state_committed",
-          "line": 218,
-          "called": [
-            "SeLe4n.Kernel.Concurrency.LockBracketOutcome",
-            "SeLe4n.Kernel.Concurrency.LockBracketOutcome.state",
-            "SeLe4n.Model.SystemState"
-          ]
-        },
-        {
-          "kind": "theorem",
-          "name": "LockBracketOutcome.value?_undeclared",
-          "full_name": "SeLe4n.Kernel.Concurrency.LockBracketOutcome.value?_undeclared",
-          "line": 221,
-          "called": [
-            "SeLe4n.Kernel.Concurrency.LockBracketOutcome",
-            "SeLe4n.Kernel.Concurrency.LockBracketOutcome.value?",
-            "SeLe4n.Model.SystemState"
-          ]
-        },
-        {
-          "kind": "theorem",
-          "name": "LockBracketOutcome.value?_refused",
-          "full_name": "SeLe4n.Kernel.Concurrency.LockBracketOutcome.value?_refused",
-          "line": 224,
-          "called": [
-            "SeLe4n.Kernel.Concurrency.LockBracketOutcome",
-            "SeLe4n.Kernel.Concurrency.LockBracketOutcome.value?",
-            "SeLe4n.Model.SystemState"
-          ]
-        },
-        {
-          "kind": "theorem",
-          "name": "LockBracketOutcome.value?_committed",
-          "full_name": "SeLe4n.Kernel.Concurrency.LockBracketOutcome.value?_committed",
-          "line": 227,
-          "called": [
-            "SeLe4n.Kernel.Concurrency.LockBracketOutcome",
-            "SeLe4n.Kernel.Concurrency.LockBracketOutcome.value?",
-            "SeLe4n.Model.SystemState"
-          ]
-        },
-        {
-          "kind": "theorem",
-          "name": "runBracketed_undeclared_state",
-          "full_name": "SeLe4n.Kernel.Concurrency.runBracketed_undeclared_state",
-          "line": 233,
-          "called": [
-            "SeLe4n.Kernel.Concurrency.CoreId",
-            "SeLe4n.Kernel.Concurrency.LockBracketDomain",
-            "SeLe4n.Kernel.Concurrency.runBracketed",
-            "SeLe4n.Kernel.Concurrency.runBracketed_undeclared",
-            "SeLe4n.Model.SystemState"
-          ]
-        },
-        {
-          "kind": "def",
-          "name": "runChainExtension",
-          "full_name": "SeLe4n.Kernel.Concurrency.runChainExtension",
-          "line": 278,
-          "called": [
-            "SeLe4n.Kernel.Concurrency.CoreId",
-            "SeLe4n.Kernel.Concurrency.LockBracketDomain",
-            "SeLe4n.Model.SystemState"
-          ]
-        },
-        {
-          "kind": "theorem",
-          "name": "runChainExtension_held",
-          "full_name": "SeLe4n.Kernel.Concurrency.runChainExtension_held",
-          "line": 290,
-          "called": [
-            "SeLe4n.Kernel.Concurrency.CoreId",
-            "SeLe4n.Kernel.Concurrency.LockBracketDomain",
-            "SeLe4n.Kernel.Concurrency.runChainExtension",
-            "SeLe4n.Model.SystemState"
-          ]
-        },
-        {
-          "kind": "theorem",
-          "name": "runChainExtension_refused",
-          "full_name": "SeLe4n.Kernel.Concurrency.runChainExtension_refused",
-          "line": 304,
-          "called": [
-            "SeLe4n.Kernel.Concurrency.CoreId",
-            "SeLe4n.Kernel.Concurrency.LockBracketDomain",
-            "SeLe4n.Kernel.Concurrency.runChainExtension",
-            "SeLe4n.Model.SystemState"
-          ]
-        },
-        {
-          "kind": "theorem",
-          "name": "runChainExtension_empty",
-          "full_name": "SeLe4n.Kernel.Concurrency.runChainExtension_empty",
-          "line": 315,
-          "called": [
-            "SeLe4n.Kernel.Concurrency.CoreId",
-            "SeLe4n.Kernel.Concurrency.LockBracketDomain",
-            "SeLe4n.Kernel.Concurrency.runChainExtension",
-            "SeLe4n.Model.SystemState"
-          ]
-        },
-        {
-          "kind": "def",
-          "name": "objectLockBracketDomain",
-          "full_name": "SeLe4n.Kernel.Concurrency.objectLockBracketDomain",
-          "line": 337,
-          "called": [
-            "SeLe4n.Kernel.Concurrency.AccessMode",
-            "SeLe4n.Kernel.Concurrency.LockBracketDomain",
-            "SeLe4n.Kernel.Concurrency.LockKey",
-            "SeLe4n.Kernel.Concurrency.LockSet",
-            "SeLe4n.Kernel.Concurrency.LockSet.lockAcquireSequence",
-            "SeLe4n.Kernel.Concurrency.acquireAll",
-            "SeLe4n.Kernel.Concurrency.lockSetHeld",
-            "SeLe4n.Kernel.Concurrency.lockSetHeld_decidable",
-            "SeLe4n.Kernel.Concurrency.unwindAll"
-          ]
-        },
-        {
-          "kind": "theorem",
-          "name": "objectLockBracketDomain_sequence",
-          "full_name": "SeLe4n.Kernel.Concurrency.objectLockBracketDomain_sequence",
-          "line": 347,
-          "called": [
-            "SeLe4n.Kernel.Concurrency.LockBracketDomain",
-            "SeLe4n.Kernel.Concurrency.LockSet",
-            "SeLe4n.Kernel.Concurrency.LockSet.lockAcquireSequence",
-            "SeLe4n.Kernel.Concurrency.objectLockBracketDomain"
-          ]
-        },
-        {
-          "kind": "theorem",
-          "name": "objectLockBracketDomain_sequence_ordered",
-          "full_name": "SeLe4n.Kernel.Concurrency.objectLockBracketDomain_sequence_ordered",
-          "line": 353,
-          "called": [
-            "SeLe4n.Kernel.Concurrency.LockBracketDomain",
-            "SeLe4n.Kernel.Concurrency.LockSet",
-            "SeLe4n.Kernel.Concurrency.LockSet.lockAcquireSequence_ordered",
-            "SeLe4n.Kernel.Concurrency.objectLockBracketDomain"
-          ]
-        },
-        {
-          "kind": "theorem",
-          "name": "objectLockBracketDomain_sequence_eq_pairs",
-          "full_name": "SeLe4n.Kernel.Concurrency.objectLockBracketDomain_sequence_eq_pairs",
-          "line": 359,
-          "called": [
-            "SeLe4n.Kernel.Concurrency.LockBracketDomain",
-            "SeLe4n.Kernel.Concurrency.LockSet",
-            "SeLe4n.Kernel.Concurrency.LockSet.lockAcquireSequence_eq_pairs_of_pairwise_le",
-            "SeLe4n.Kernel.Concurrency.objectLockBracketDomain"
-          ]
-        },
-        {
-          "kind": "theorem",
-          "name": "objectLockBracketDomain_acquire",
-          "full_name": "SeLe4n.Kernel.Concurrency.objectLockBracketDomain_acquire",
-          "line": 364,
-          "called": [
-            "SeLe4n.Kernel.Concurrency.AccessMode",
-            "SeLe4n.Kernel.Concurrency.CoreId",
-            "SeLe4n.Kernel.Concurrency.LockBracketDomain",
-            "SeLe4n.Kernel.Concurrency.LockKey",
-            "SeLe4n.Kernel.Concurrency.acquireAll",
-            "SeLe4n.Kernel.Concurrency.objectLockBracketDomain",
-            "SeLe4n.Model.SystemState"
-          ]
-        },
-        {
-          "kind": "theorem",
-          "name": "objectLockBracketDomain_unwind",
-          "full_name": "SeLe4n.Kernel.Concurrency.objectLockBracketDomain_unwind",
-          "line": 368,
-          "called": [
-            "SeLe4n.Kernel.Concurrency.AccessMode",
-            "SeLe4n.Kernel.Concurrency.CoreId",
-            "SeLe4n.Kernel.Concurrency.LockBracketDomain",
-            "SeLe4n.Kernel.Concurrency.LockKey",
-            "SeLe4n.Kernel.Concurrency.objectLockBracketDomain",
-            "SeLe4n.Kernel.Concurrency.unwindAll",
-            "SeLe4n.Model.SystemState"
-          ]
-        },
-        {
-          "kind": "theorem",
-          "name": "objectLockBracketDomain_held",
-          "full_name": "SeLe4n.Kernel.Concurrency.objectLockBracketDomain_held",
-          "line": 372,
-          "called": [
-            "SeLe4n.Kernel.Concurrency.CoreId",
-            "SeLe4n.Kernel.Concurrency.LockBracketDomain",
-            "SeLe4n.Kernel.Concurrency.LockSet",
-            "SeLe4n.Kernel.Concurrency.lockSetHeld",
-            "SeLe4n.Kernel.Concurrency.objectLockBracketDomain",
-            "SeLe4n.Model.SystemState"
           ]
         }
       ]
@@ -63990,9 +63532,6 @@
             "SeLe4n.Kernel.Concurrency.walkStep",
             "SeLe4n.Kernel.Concurrency.walkStep_extended_blockingServer",
             "SeLe4n.Kernel.Concurrency.walkStep_extended_increases_objId",
-            "SeLe4n.Kernel.Concurrency.withDynamicChainExtension",
-            "SeLe4n.Kernel.Concurrency.withDynamicChainExtension_establishes_dynamicChainHeld",
-            "SeLe4n.Kernel.Concurrency.withDynamicChainExtension_unfold",
             "SeLe4n.Kernel.Concurrency.withLockSet",
             "SeLe4n.Kernel.Concurrency.withLockSetGhost",
             "SeLe4n.Kernel.Concurrency.withLockSetGhost_empty",
@@ -64020,7 +63559,7 @@
           "kind": "theorem",
           "name": "withLockSetTheorems_count",
           "full_name": "SeLe4n.Kernel.Concurrency.withLockSetTheorems_count",
-          "line": 403,
+          "line": 397,
           "called": [
             "SeLe4n.Kernel.Concurrency.withLockSetTheorems"
           ]
@@ -64029,7 +63568,7 @@
           "kind": "theorem",
           "name": "withLockSetTheorems_combinator_count",
           "full_name": "SeLe4n.Kernel.Concurrency.withLockSetTheorems_combinator_count",
-          "line": 411,
+          "line": 405,
           "called": [
             "SeLe4n.Kernel.Concurrency.withLockSetTheorems"
           ]
@@ -64038,7 +63577,7 @@
           "kind": "theorem",
           "name": "withLockSetTheorems_held_count",
           "full_name": "SeLe4n.Kernel.Concurrency.withLockSetTheorems_held_count",
-          "line": 418,
+          "line": 412,
           "called": [
             "SeLe4n.Kernel.Concurrency.withLockSetTheorems"
           ]
@@ -64047,7 +63586,7 @@
           "kind": "theorem",
           "name": "withLockSetTheorems_ordering_count",
           "full_name": "SeLe4n.Kernel.Concurrency.withLockSetTheorems_ordering_count",
-          "line": 423,
+          "line": 417,
           "called": [
             "SeLe4n.Kernel.Concurrency.withLockSetTheorems"
           ]
@@ -64056,7 +63595,7 @@
           "kind": "theorem",
           "name": "withLockSetTheorems_atomicity_count",
           "full_name": "SeLe4n.Kernel.Concurrency.withLockSetTheorems_atomicity_count",
-          "line": 432,
+          "line": 426,
           "called": [
             "SeLe4n.Kernel.Concurrency.withLockSetTheorems"
           ]
@@ -64065,7 +63604,7 @@
           "kind": "theorem",
           "name": "withLockSetTheorems_ghostBracket_count",
           "full_name": "SeLe4n.Kernel.Concurrency.withLockSetTheorems_ghostBracket_count",
-          "line": 437,
+          "line": 431,
           "called": [
             "SeLe4n.Kernel.Concurrency.withLockSetTheorems"
           ]
@@ -64074,7 +63613,7 @@
           "kind": "theorem",
           "name": "withLockSetTheorems_dynamicChain_count",
           "full_name": "SeLe4n.Kernel.Concurrency.withLockSetTheorems_dynamicChain_count",
-          "line": 446,
+          "line": 442,
           "called": [
             "SeLe4n.Kernel.Concurrency.withLockSetTheorems"
           ]
@@ -64083,7 +63622,7 @@
           "kind": "theorem",
           "name": "withLockSetTheorems_partition_sum",
           "full_name": "SeLe4n.Kernel.Concurrency.withLockSetTheorems_partition_sum",
-          "line": 451,
+          "line": 447,
           "called": [
             "SeLe4n.Kernel.Concurrency.withLockSetTheorems"
           ]
@@ -64092,7 +63631,7 @@
           "kind": "theorem",
           "name": "withLockSetTheorems_identifiers_nodup",
           "full_name": "SeLe4n.Kernel.Concurrency.withLockSetTheorems_identifiers_nodup",
-          "line": 466,
+          "line": 462,
           "called": [
             "SeLe4n.Kernel.Concurrency.WithLockSetTheorem",
             "SeLe4n.Kernel.Concurrency.WithLockSetTheorem.identifier",
@@ -64104,7 +63643,7 @@
           "kind": "theorem",
           "name": "withLockSetTheorems_descriptions_nodup",
           "full_name": "SeLe4n.Kernel.Concurrency.withLockSetTheorems_descriptions_nodup",
-          "line": 473,
+          "line": 469,
           "called": [
             "SeLe4n.Kernel.Concurrency.WithLockSetTheorem",
             "SeLe4n.Kernel.Concurrency.WithLockSetTheorem.description",
@@ -88615,7 +88154,7 @@
           "kind": "theorem",
           "name": "endpointReplyOnCore_observer_atomic",
           "full_name": "SeLe4n.Kernel.endpointReplyOnCore_observer_atomic",
-          "line": 1467,
+          "line": 1466,
           "called": [
             "SeLe4n.Kernel.Concurrency.CoreId",
             "SeLe4n.Kernel.Concurrency.LockedSystemState",
@@ -88635,7 +88174,7 @@
           "kind": "theorem",
           "name": "endpointReplyOnCore_preserves_schedulerInvariantBase_smp",
           "full_name": "SeLe4n.Kernel.endpointReplyOnCore_preserves_schedulerInvariantBase_smp",
-          "line": 1536,
+          "line": 1535,
           "called": [
             "SeLe4n.Kernel.Concurrency.CoreId",
             "SeLe4n.Kernel.RobinHood.RHTable.invExt",
@@ -88665,7 +88204,7 @@
           "kind": "theorem",
           "name": "endpointReplyOnCore_preserves_capabilityInvariantBundle",
           "full_name": "SeLe4n.Kernel.endpointReplyOnCore_preserves_capabilityInvariantBundle",
-          "line": 1580,
+          "line": 1579,
           "called": [
             "SeLe4n.Kernel.Concurrency.CoreId",
             "SeLe4n.Kernel.RobinHood.RHTable.invExt",
@@ -246222,13 +245761,13 @@
     {
       "module": "SeLe4n.Kernel.Scheduler.PriorityInheritance.ChainFootprint",
       "path": "SeLe4n/Kernel/Scheduler/PriorityInheritance/ChainFootprint.lean",
-      "declaration_count": 27,
+      "declaration_count": 21,
       "declarations": [
         {
           "kind": "def",
           "name": "pipChainHomeCores",
           "full_name": "SeLe4n.Kernel.PriorityInheritance.pipChainHomeCores",
-          "line": 86,
+          "line": 85,
           "called": [
             "SeLe4n.Kernel.Concurrency.CoreId",
             "SeLe4n.Kernel.Concurrency.canonicalCores",
@@ -246241,7 +245780,7 @@
           "kind": "theorem",
           "name": "pipChainHomeCores_nodup",
           "full_name": "SeLe4n.Kernel.PriorityInheritance.pipChainHomeCores_nodup",
-          "line": 91,
+          "line": 90,
           "called": [
             "SeLe4n.Kernel.Concurrency.canonicalCores_nodup",
             "SeLe4n.Kernel.PriorityInheritance.pipChainHomeCores",
@@ -246253,7 +245792,7 @@
           "kind": "theorem",
           "name": "mem_pipChainHomeCores",
           "full_name": "SeLe4n.Kernel.PriorityInheritance.mem_pipChainHomeCores",
-          "line": 97,
+          "line": 96,
           "called": [
             "SeLe4n.Kernel.Concurrency.mem_canonicalCores",
             "SeLe4n.Kernel.PriorityInheritance.pipChainHomeCores",
@@ -246266,7 +245805,7 @@
           "kind": "theorem",
           "name": "pipChainHomeCores_mem",
           "full_name": "SeLe4n.Kernel.PriorityInheritance.pipChainHomeCores_mem",
-          "line": 104,
+          "line": 103,
           "called": [
             "SeLe4n.Kernel.Concurrency.CoreId",
             "SeLe4n.Kernel.Concurrency.mem_canonicalCores",
@@ -246280,7 +245819,7 @@
           "kind": "theorem",
           "name": "pipChainHomeCores_length_le",
           "full_name": "SeLe4n.Kernel.PriorityInheritance.pipChainHomeCores_length_le",
-          "line": 111,
+          "line": 110,
           "called": [
             "SeLe4n.Kernel.Concurrency.canonicalCores_length_le",
             "SeLe4n.Kernel.Concurrency.numCores",
@@ -246293,7 +245832,7 @@
           "kind": "def",
           "name": "pipChainSchedFootprint",
           "full_name": "SeLe4n.Kernel.PriorityInheritance.pipChainSchedFootprint",
-          "line": 125,
+          "line": 124,
           "called": [
             "SeLe4n.Kernel.Concurrency.AccessMode",
             "SeLe4n.Kernel.Concurrency.LockKey",
@@ -246309,7 +245848,7 @@
           "kind": "theorem",
           "name": "pipChainSchedFootprint_write_only",
           "full_name": "SeLe4n.Kernel.PriorityInheritance.pipChainSchedFootprint_write_only",
-          "line": 132,
+          "line": 131,
           "called": [
             "SeLe4n.Kernel.Concurrency.AccessMode",
             "SeLe4n.Kernel.PriorityInheritance.pipChainSchedFootprint",
@@ -246322,7 +245861,7 @@
           "kind": "theorem",
           "name": "mem_pipChainSchedFootprint_tcb",
           "full_name": "SeLe4n.Kernel.PriorityInheritance.mem_pipChainSchedFootprint_tcb",
-          "line": 140,
+          "line": 139,
           "called": [
             "SeLe4n.Kernel.Concurrency.AccessMode",
             "SeLe4n.Kernel.Concurrency.LockKey",
@@ -246337,7 +245876,7 @@
           "kind": "theorem",
           "name": "mem_pipChainSchedFootprint_runQueue",
           "full_name": "SeLe4n.Kernel.PriorityInheritance.mem_pipChainSchedFootprint_runQueue",
-          "line": 149,
+          "line": 148,
           "called": [
             "SeLe4n.Kernel.Concurrency.AccessMode",
             "SeLe4n.Kernel.Concurrency.LockKey",
@@ -246353,7 +245892,7 @@
           "kind": "theorem",
           "name": "pipChainSchedFootprint_length",
           "full_name": "SeLe4n.Kernel.PriorityInheritance.pipChainSchedFootprint_length",
-          "line": 163,
+          "line": 162,
           "called": [
             "SeLe4n.Kernel.Concurrency.LockKey",
             "SeLe4n.Kernel.Concurrency.numCores",
@@ -246367,7 +245906,7 @@
           "kind": "theorem",
           "name": "pipChainSchedFootprint_key_shape",
           "full_name": "SeLe4n.Kernel.PriorityInheritance.pipChainSchedFootprint_key_shape",
-          "line": 177,
+          "line": 176,
           "called": [
             "SeLe4n.Kernel.Concurrency.LockKey",
             "SeLe4n.Kernel.Concurrency.LockKind",
@@ -246382,7 +245921,7 @@
           "kind": "theorem",
           "name": "pipChainSchedFootprint_keys_nodup",
           "full_name": "SeLe4n.Kernel.PriorityInheritance.pipChainSchedFootprint_keys_nodup",
-          "line": 197,
+          "line": 196,
           "called": [
             "SeLe4n.Kernel.Concurrency.LockId",
             "SeLe4n.Kernel.Concurrency.LockKey",
@@ -246401,7 +245940,7 @@
           "kind": "theorem",
           "name": "pipChainSchedFootprint_pairwise_le",
           "full_name": "SeLe4n.Kernel.PriorityInheritance.pipChainSchedFootprint_pairwise_le",
-          "line": 230,
+          "line": 229,
           "called": [
             "SeLe4n.Kernel.Concurrency.LockKey",
             "SeLe4n.Kernel.Concurrency.LockKey.object_lt_runQueue",
@@ -246419,7 +245958,7 @@
           "kind": "def",
           "name": "pipChainVisited",
           "full_name": "SeLe4n.Kernel.PriorityInheritance.pipChainVisited",
-          "line": 275,
+          "line": 274,
           "called": [
             "SeLe4n.Kernel.PriorityInheritance.blockingServer",
             "SeLe4n.Model.SystemState",
@@ -246430,7 +245969,7 @@
           "kind": "theorem",
           "name": "pipChainVisited_zero",
           "full_name": "SeLe4n.Kernel.PriorityInheritance.pipChainVisited_zero",
-          "line": 282,
+          "line": 281,
           "called": [
             "SeLe4n.Kernel.PriorityInheritance.pipChainVisited",
             "SeLe4n.Model.SystemState",
@@ -246441,7 +245980,7 @@
           "kind": "theorem",
           "name": "pipChainVisited_succ",
           "full_name": "SeLe4n.Kernel.PriorityInheritance.pipChainVisited_succ",
-          "line": 285,
+          "line": 284,
           "called": [
             "SeLe4n.Kernel.PriorityInheritance.blockingServer",
             "SeLe4n.Kernel.PriorityInheritance.pipChainVisited",
@@ -246453,7 +245992,7 @@
           "kind": "theorem",
           "name": "pipChainVisited_length_le",
           "full_name": "SeLe4n.Kernel.PriorityInheritance.pipChainVisited_length_le",
-          "line": 294,
+          "line": 293,
           "called": [
             "SeLe4n.Kernel.PriorityInheritance.blockingServer",
             "SeLe4n.Kernel.PriorityInheritance.pipChainVisited",
@@ -246466,7 +246005,7 @@
           "kind": "theorem",
           "name": "pipBoostWithWake_coversWrites",
           "full_name": "SeLe4n.Kernel.PriorityInheritance.pipBoostWithWake_coversWrites",
-          "line": 316,
+          "line": 315,
           "called": [
             "SeLe4n.Kernel.Concurrency.CoreId",
             "SeLe4n.Kernel.PriorityInheritance.pipBoostWithWake",
@@ -246485,7 +246024,7 @@
           "kind": "theorem",
           "name": "pipChainVisited_boost_eq",
           "full_name": "SeLe4n.Kernel.PriorityInheritance.pipChainVisited_boost_eq",
-          "line": 334,
+          "line": 333,
           "called": [
             "SeLe4n.Kernel.Concurrency.CoreId",
             "SeLe4n.Kernel.PriorityInheritance.blockingServer",
@@ -246504,7 +246043,7 @@
           "kind": "theorem",
           "name": "propagatePipChainCrossCore_coversWrites",
           "full_name": "SeLe4n.Kernel.PriorityInheritance.propagatePipChainCrossCore_coversWrites",
-          "line": 361,
+          "line": 360,
           "called": [
             "SeLe4n.Kernel.Concurrency.CoreId",
             "SeLe4n.Kernel.PriorityInheritance.blockingServer",
@@ -246531,101 +246070,10 @@
           ]
         },
         {
-          "kind": "def",
-          "name": "withPipChainSchedExtension",
-          "full_name": "SeLe4n.Kernel.PriorityInheritance.withPipChainSchedExtension",
-          "line": 452,
-          "called": [
-            "SeLe4n.Kernel.Concurrency.CoreId",
-            "SeLe4n.Kernel.Concurrency.LockSet.ofList?",
-            "SeLe4n.Kernel.Concurrency.objectLockBracketDomain",
-            "SeLe4n.Kernel.Concurrency.runChainExtension",
-            "SeLe4n.Kernel.PriorityInheritance.pipChainSchedFootprint",
-            "SeLe4n.Kernel.PriorityInheritance.pipChainVisited",
-            "SeLe4n.Model.SystemState",
-            "SeLe4n.ThreadId"
-          ]
-        },
-        {
           "kind": "theorem",
-          "name": "withPipChainSchedExtension_undeclared",
-          "full_name": "SeLe4n.Kernel.PriorityInheritance.withPipChainSchedExtension_undeclared",
-          "line": 466,
-          "called": [
-            "SeLe4n.Kernel.Concurrency.CoreId",
-            "SeLe4n.Kernel.Concurrency.LockSet.ofList?",
-            "SeLe4n.Kernel.PriorityInheritance.pipChainSchedFootprint",
-            "SeLe4n.Kernel.PriorityInheritance.pipChainVisited",
-            "SeLe4n.Kernel.PriorityInheritance.withPipChainSchedExtension",
-            "SeLe4n.Model.SystemState",
-            "SeLe4n.ThreadId"
-          ]
-        },
-        {
-          "kind": "theorem",
-          "name": "withPipChainSchedExtension_declared",
-          "full_name": "SeLe4n.Kernel.PriorityInheritance.withPipChainSchedExtension_declared",
-          "line": 485,
-          "called": [
-            "SeLe4n.Kernel.Concurrency.CoreId",
-            "SeLe4n.Kernel.Concurrency.LockSet",
-            "SeLe4n.Kernel.Concurrency.LockSet.lockAcquireSequence",
-            "SeLe4n.Kernel.Concurrency.LockSet.ofList?",
-            "SeLe4n.Kernel.Concurrency.acquireAll",
-            "SeLe4n.Kernel.Concurrency.lockSetHeld",
-            "SeLe4n.Kernel.Concurrency.objectLockBracketDomain",
-            "SeLe4n.Kernel.Concurrency.runChainExtension_held",
-            "SeLe4n.Kernel.Concurrency.unwindAll",
-            "SeLe4n.Kernel.PriorityInheritance.pipChainSchedFootprint",
-            "SeLe4n.Kernel.PriorityInheritance.pipChainVisited",
-            "SeLe4n.Kernel.PriorityInheritance.withPipChainSchedExtension",
-            "SeLe4n.Model.SystemState",
-            "SeLe4n.ThreadId"
-          ]
-        },
-        {
-          "kind": "theorem",
-          "name": "withPipChainSchedExtension_refused",
-          "full_name": "SeLe4n.Kernel.PriorityInheritance.withPipChainSchedExtension_refused",
-          "line": 502,
-          "called": [
-            "SeLe4n.Kernel.Concurrency.CoreId",
-            "SeLe4n.Kernel.Concurrency.LockSet",
-            "SeLe4n.Kernel.Concurrency.LockSet.lockAcquireSequence",
-            "SeLe4n.Kernel.Concurrency.LockSet.ofList?",
-            "SeLe4n.Kernel.Concurrency.acquireAll",
-            "SeLe4n.Kernel.Concurrency.lockSetHeld",
-            "SeLe4n.Kernel.Concurrency.objectLockBracketDomain",
-            "SeLe4n.Kernel.Concurrency.runChainExtension_refused",
-            "SeLe4n.Kernel.Concurrency.unwindAll",
-            "SeLe4n.Kernel.PriorityInheritance.pipChainSchedFootprint",
-            "SeLe4n.Kernel.PriorityInheritance.pipChainVisited",
-            "SeLe4n.Kernel.PriorityInheritance.withPipChainSchedExtension",
-            "SeLe4n.Model.SystemState",
-            "SeLe4n.ThreadId"
-          ]
-        },
-        {
-          "kind": "theorem",
-          "name": "pipChainSchedExtension_acquires_in_ladder_order",
-          "full_name": "SeLe4n.Kernel.PriorityInheritance.pipChainSchedExtension_acquires_in_ladder_order",
-          "line": 529,
-          "called": [
-            "SeLe4n.Kernel.Concurrency.LockBracketDomain",
-            "SeLe4n.Kernel.Concurrency.LockSet.ofList?",
-            "SeLe4n.Kernel.Concurrency.objectLockBracketDomain",
-            "SeLe4n.Kernel.Concurrency.objectLockBracketDomain_sequence_ordered",
-            "SeLe4n.Kernel.PriorityInheritance.pipChainSchedFootprint",
-            "SeLe4n.Kernel.PriorityInheritance.pipChainVisited",
-            "SeLe4n.Model.SystemState",
-            "SeLe4n.ThreadId"
-          ]
-        },
-        {
-          "kind": "theorem",
-          "name": "withPipChainSchedExtension_resolves",
-          "full_name": "SeLe4n.Kernel.PriorityInheritance.withPipChainSchedExtension_resolves",
-          "line": 548,
+          "name": "pipChainSchedFootprint_resolves",
+          "full_name": "SeLe4n.Kernel.PriorityInheritance.pipChainSchedFootprint_resolves",
+          "line": 443,
           "called": [
             "SeLe4n.Kernel.Concurrency.LockSet.ofList?",
             "SeLe4n.Kernel.Concurrency.LockSet.ofList?_isSome_of_nodup",
@@ -246634,20 +246082,6 @@
             "SeLe4n.Kernel.PriorityInheritance.pipChainVisited",
             "SeLe4n.Model.SystemState",
             "SeLe4n.ThreadId"
-          ]
-        },
-        {
-          "kind": "theorem",
-          "name": "runBracketed_chainExtension_composes",
-          "full_name": "SeLe4n.Kernel.PriorityInheritance.runBracketed_chainExtension_composes",
-          "line": 572,
-          "called": [
-            "SeLe4n.Kernel.Concurrency.CoreId",
-            "SeLe4n.Kernel.Concurrency.LockBracketDomain",
-            "SeLe4n.Kernel.Concurrency.runBracketed",
-            "SeLe4n.Kernel.Concurrency.runBracketed_committed",
-            "SeLe4n.Kernel.Concurrency.runChainExtension",
-            "SeLe4n.Model.SystemState"
           ]
         }
       ]
@@ -257764,7 +257198,7 @@
     {
       "module": "SeLe4n.Kernel.SyscallDispatchEntry",
       "path": "SeLe4n/Kernel/SyscallDispatchEntry.lean",
-      "declaration_count": 31,
+      "declaration_count": 29,
       "declarations": [
         {
           "kind": "def",
@@ -257889,9 +257323,346 @@
         },
         {
           "kind": "def",
+          "name": "syscallDispatchBracket",
+          "full_name": "SeLe4n.Kernel.syscallDispatchBracket",
+          "line": 494,
+          "called": [
+            "SeLe4n.Kernel.Architecture.ICacheInvalidation",
+            "SeLe4n.Kernel.Architecture.PhysicalWrite",
+            "SeLe4n.Kernel.Architecture.RestoreTarget",
+            "SeLe4n.Kernel.Architecture.SyscallOutcome",
+            "SeLe4n.Kernel.Architecture.TlbInvalidation",
+            "SeLe4n.Kernel.Architecture.TrapContext",
+            "SeLe4n.Kernel.Concurrency.BracketSpec",
+            "SeLe4n.Kernel.Concurrency.CoreId",
+            "SeLe4n.Kernel.Concurrency.SgiKind",
+            "SeLe4n.Kernel.LabelingContext",
+            "SeLe4n.Kernel.declaredUnifiedLockSetForAbiEntry",
+            "SeLe4n.Kernel.queueHeadBlockedConsistent",
+            "SeLe4n.Kernel.syscallDispatchCrossCoreStep",
+            "SeLe4n.Kernel.syscallDispatchCrossCoreStep_coversWrites",
+            "SeLe4n.ThreadId"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "syscallDispatchCrossCoreBracketedStep",
+          "full_name": "SeLe4n.Kernel.syscallDispatchCrossCoreBracketedStep",
+          "line": 513,
+          "called": [
+            "SeLe4n.Kernel.Architecture.ICacheInvalidation",
+            "SeLe4n.Kernel.Architecture.PhysicalWrite",
+            "SeLe4n.Kernel.Architecture.RestoreTarget",
+            "SeLe4n.Kernel.Architecture.SyscallOutcome",
+            "SeLe4n.Kernel.Architecture.TlbInvalidation",
+            "SeLe4n.Kernel.Architecture.TrapContext",
+            "SeLe4n.Kernel.Concurrency.CoreId",
+            "SeLe4n.Kernel.Concurrency.SgiKind",
+            "SeLe4n.Kernel.LabelingContext",
+            "SeLe4n.Kernel.syscallDispatchBracket",
+            "SeLe4n.Model.SystemState",
+            "SeLe4n.ThreadId"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "syscallDispatchCrossCoreBracketedStep_run",
+          "full_name": "SeLe4n.Kernel.syscallDispatchCrossCoreBracketedStep_run",
+          "line": 527,
+          "called": [
+            "SeLe4n.Kernel.Architecture.TrapContext",
+            "SeLe4n.Kernel.Concurrency.CoreId",
+            "SeLe4n.Kernel.LabelingContext",
+            "SeLe4n.Kernel.syscallDispatchCrossCoreBracketedStep",
+            "SeLe4n.Kernel.syscallDispatchCrossCoreStep",
+            "SeLe4n.Model.SystemState"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "overflowWordsOrFaulted",
+          "full_name": "SeLe4n.Kernel.overflowWordsOrFaulted",
+          "line": 544,
+          "called": [
+            "SeLe4n.Kernel.Architecture.IpcBufferRead.wordsOfBatches",
+            "SeLe4n.Kernel.Architecture.SyscallOutcome",
+            "SeLe4n.Kernel.Architecture.SyscallOutcome.tagWord",
+            "SeLe4n.PAddr"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "overflowWordsOrFaulted_addrs",
+          "full_name": "SeLe4n.Kernel.overflowWordsOrFaulted_addrs",
+          "line": 553,
+          "called": [
+            "SeLe4n.Kernel.Architecture.IpcBufferRead.expandRuns_wordRuns",
+            "SeLe4n.Kernel.Architecture.IpcBufferRead.wordRuns",
+            "SeLe4n.Kernel.Architecture.IpcBufferRead.wordsOfBatches_length",
+            "SeLe4n.Kernel.overflowWordsOrFaulted",
+            "SeLe4n.PAddr"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "readCallerOverflowWords",
+          "full_name": "SeLe4n.Kernel.readCallerOverflowWords",
+          "line": 594,
+          "called": [
+            "SeLe4n.Kernel.Architecture.IpcBufferRead.callerOverflowAddrs",
+            "SeLe4n.Kernel.Architecture.IpcBufferRead.wordRuns",
+            "SeLe4n.Kernel.Concurrency.CoreId",
+            "SeLe4n.Kernel.overflowWordsOrFaulted",
+            "SeLe4n.PAddr",
+            "SeLe4n.PAddr.toNat",
+            "SeLe4n.Platform.FFI.ffiReadUserWords",
+            "SeLe4n.Platform.FFI.getKernelState"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "syscallEntryContextOrFaulted",
+          "full_name": "SeLe4n.Kernel.syscallEntryContextOrFaulted",
+          "line": 613,
+          "called": [
+            "SeLe4n.Kernel.Architecture.SyscallOutcome",
+            "SeLe4n.Kernel.Architecture.SyscallOutcome.tagWord",
+            "SeLe4n.Kernel.Architecture.TrapContext"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "syscallDispatchCrossCoreEntry",
+          "full_name": "SeLe4n.Kernel.syscallDispatchCrossCoreEntry",
+          "line": 668,
+          "called": [
+            "SeLe4n.Kernel.Architecture.IpcBufferRead.syncUserWords",
+            "SeLe4n.Kernel.Architecture.registerFileOfTrapContext",
+            "SeLe4n.Kernel.Architecture.saveCapturedSyscallFrame",
+            "SeLe4n.Kernel.Concurrency.currentCoreId",
+            "SeLe4n.Kernel.Concurrency.fireCrossCoreSgis",
+            "SeLe4n.Kernel.Concurrency.recordCommittedCurrentThreadHw",
+            "SeLe4n.Kernel.Concurrency.releaseSwitchedFpOwnerOnCore",
+            "SeLe4n.Kernel.completeShootdownRounds",
+            "SeLe4n.Kernel.readCallerOverflowWords",
+            "SeLe4n.Kernel.syscallDispatchCrossCoreBracketedStep",
+            "SeLe4n.Kernel.syscallEntryContextOrFaulted",
+            "SeLe4n.Platform.FFI.completeIcacheMaintenance",
+            "SeLe4n.Platform.FFI.completePhysicalWrites",
+            "SeLe4n.Platform.FFI.ffiSyscallReturnFrame",
+            "SeLe4n.Platform.FFI.ffiTrapContext",
+            "SeLe4n.Platform.FFI.getKernelLabelingContext",
+            "SeLe4n.Platform.FFI.modifyGetKernelState",
+            "SeLe4n.Platform.FFI.restoreTrapFrame"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "syscallDispatchCrossCoreEntry_def",
+          "full_name": "SeLe4n.Kernel.syscallDispatchCrossCoreEntry_def",
+          "line": 760,
+          "called": [
+            "SeLe4n.Kernel.Architecture.IpcBufferRead.syncUserWords",
+            "SeLe4n.Kernel.Architecture.registerFileOfTrapContext",
+            "SeLe4n.Kernel.Architecture.saveCapturedSyscallFrame",
+            "SeLe4n.Kernel.Concurrency.currentCoreId",
+            "SeLe4n.Kernel.Concurrency.fireCrossCoreSgis",
+            "SeLe4n.Kernel.Concurrency.recordCommittedCurrentThreadHw",
+            "SeLe4n.Kernel.Concurrency.releaseSwitchedFpOwnerOnCore",
+            "SeLe4n.Kernel.completeShootdownRounds",
+            "SeLe4n.Kernel.readCallerOverflowWords",
+            "SeLe4n.Kernel.syscallDispatchCrossCoreBracketedStep",
+            "SeLe4n.Kernel.syscallDispatchCrossCoreEntry",
+            "SeLe4n.Kernel.syscallEntryContextOrFaulted",
+            "SeLe4n.Platform.FFI.completeIcacheMaintenance",
+            "SeLe4n.Platform.FFI.completePhysicalWrites",
+            "SeLe4n.Platform.FFI.ffiSyscallReturnFrame",
+            "SeLe4n.Platform.FFI.ffiTrapContext",
+            "SeLe4n.Platform.FFI.getKernelLabelingContext",
+            "SeLe4n.Platform.FFI.modifyGetKernelState",
+            "SeLe4n.Platform.FFI.restoreTrapFrame"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "vacatedCore_next_syscall_rejected",
+          "full_name": "SeLe4n.Kernel.vacatedCore_next_syscall_rejected",
+          "line": 807,
+          "called": [
+            "SeLe4n.Kernel.Architecture.errorFrame",
+            "SeLe4n.Kernel.Concurrency.CoreId",
+            "SeLe4n.Kernel.LabelingContext",
+            "SeLe4n.Kernel.PriorityInheritance.scheduleLocalSuccessor",
+            "SeLe4n.Model.SchedulerState.currentOnCore",
+            "SeLe4n.Model.SystemState",
+            "SeLe4n.Platform.FFI.syscallDispatchFromAbi",
+            "SeLe4n.Platform.FFI.syscallDispatchFromAbi_illegalState_when_no_current"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "suspendThreadBracket",
+          "full_name": "SeLe4n.Kernel.suspendThreadBracket",
+          "line": 842,
+          "called": [
+            "SeLe4n.Kernel.Concurrency.BracketSpec",
+            "SeLe4n.Kernel.Concurrency.CoreId",
+            "SeLe4n.Kernel.Concurrency.SgiKind",
+            "SeLe4n.Kernel.Lifecycle.Suspend.suspendThreadOnCore",
+            "SeLe4n.Kernel.PriorityInheritance.scheduleLocalSuccessorFrom",
+            "SeLe4n.Kernel.reschedulePendingSnapshot",
+            "SeLe4n.Kernel.rescheduleSgisFromFlags",
+            "SeLe4n.Kernel.suspendSeamAction_coversWrites",
+            "SeLe4n.Kernel.unifiedLockSetForSyscall",
+            "SeLe4n.Platform.FFI.KernelError.toUInt32",
+            "SeLe4n.ValidThreadId"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "suspendThreadBracket_run",
+          "full_name": "SeLe4n.Kernel.suspendThreadBracket_run",
+          "line": 872,
+          "called": [
+            "SeLe4n.Kernel.Concurrency.CoreId",
+            "SeLe4n.Kernel.Concurrency.SgiKind",
+            "SeLe4n.Kernel.Lifecycle.Suspend.suspendThreadOnCore",
+            "SeLe4n.Kernel.PriorityInheritance.scheduleLocalSuccessorFrom",
+            "SeLe4n.Kernel.reschedulePendingSnapshot",
+            "SeLe4n.Kernel.rescheduleSgisFromFlags",
+            "SeLe4n.Kernel.suspendThreadBracket",
+            "SeLe4n.Model.SchedulerState",
+            "SeLe4n.Model.SchedulerState.currentOnCore",
+            "SeLe4n.Model.SystemState",
+            "SeLe4n.Platform.FFI.KernelError.toUInt32",
+            "SeLe4n.ValidThreadId"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "suspendThreadCrossCoreStep",
+          "full_name": "SeLe4n.Kernel.suspendThreadCrossCoreStep",
+          "line": 927,
+          "called": [
+            "SeLe4n.Kernel.Concurrency.CoreId",
+            "SeLe4n.Kernel.Concurrency.SgiKind",
+            "SeLe4n.Kernel.isIdleThreadId",
+            "SeLe4n.Kernel.suspendThreadBracket",
+            "SeLe4n.Model.SystemState",
+            "SeLe4n.Platform.FFI.KernelError.toUInt32",
+            "SeLe4n.ThreadId",
+            "SeLe4n.ThreadId.ofNat",
+            "SeLe4n.ThreadId.toNat",
+            "SeLe4n.ThreadId.toValid?"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "suspendThreadCrossCoreStep_idle_refused",
+          "full_name": "SeLe4n.Kernel.suspendThreadCrossCoreStep_idle_refused",
+          "line": 957,
+          "called": [
+            "SeLe4n.Kernel.Concurrency.CoreId",
+            "SeLe4n.Kernel.Concurrency.SgiKind",
+            "SeLe4n.Kernel.isIdleThreadId",
+            "SeLe4n.Kernel.suspendThreadCrossCoreStep",
+            "SeLe4n.Model.SystemState",
+            "SeLe4n.Platform.FFI.KernelError.toUInt32",
+            "SeLe4n.ThreadId.ofNat",
+            "SeLe4n.ThreadId.toNat",
+            "SeLe4n.ThreadId.toValid?_some_val_eq"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "suspendThreadCrossCoreStep_sentinel_refused",
+          "full_name": "SeLe4n.Kernel.suspendThreadCrossCoreStep_sentinel_refused",
+          "line": 972,
+          "called": [
+            "SeLe4n.Kernel.Concurrency.CoreId",
+            "SeLe4n.Kernel.Concurrency.SgiKind",
+            "SeLe4n.Kernel.suspendThreadCrossCoreStep",
+            "SeLe4n.Model.SystemState",
+            "SeLe4n.Platform.FFI.KernelError.toUInt32"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "suspendThreadCrossCoreDrainedStep",
+          "full_name": "SeLe4n.Kernel.suspendThreadCrossCoreDrainedStep",
+          "line": 984,
+          "called": [
+            "SeLe4n.Kernel.Architecture.ICacheInvalidation",
+            "SeLe4n.Kernel.Architecture.PhysicalWrite",
+            "SeLe4n.Kernel.Architecture.clearIcacheMaintenance",
+            "SeLe4n.Kernel.Architecture.clearPhysicalWrites",
+            "SeLe4n.Kernel.Concurrency.CoreId",
+            "SeLe4n.Kernel.Concurrency.SgiKind",
+            "SeLe4n.Kernel.suspendThreadCrossCoreStep",
+            "SeLe4n.Model.SystemState"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "suspendThreadCrossCoreDrainedStep_idle_refused",
+          "full_name": "SeLe4n.Kernel.suspendThreadCrossCoreDrainedStep_idle_refused",
+          "line": 996,
+          "called": [
+            "SeLe4n.Kernel.Concurrency.CoreId",
+            "SeLe4n.Kernel.Concurrency.SgiKind",
+            "SeLe4n.Kernel.isIdleThreadId",
+            "SeLe4n.Kernel.suspendThreadCrossCoreDrainedStep",
+            "SeLe4n.Kernel.suspendThreadCrossCoreStep_idle_refused",
+            "SeLe4n.Model.SystemState",
+            "SeLe4n.Platform.FFI.KernelError.toUInt32",
+            "SeLe4n.ThreadId.ofNat",
+            "SeLe4n.ThreadId.toNat"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "suspendThreadCrossCoreEntry",
+          "full_name": "SeLe4n.Kernel.suspendThreadCrossCoreEntry",
+          "line": 1012,
+          "called": [
+            "SeLe4n.Kernel.Concurrency.currentCoreId",
+            "SeLe4n.Kernel.Concurrency.fireCrossCoreSgis",
+            "SeLe4n.Kernel.suspendThreadCrossCoreDrainedStep",
+            "SeLe4n.Platform.FFI.completeIcacheMaintenance",
+            "SeLe4n.Platform.FFI.completePhysicalWrites",
+            "SeLe4n.Platform.FFI.modifyGetKernelState"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "rescheduleSgisFromFlags_recordSyscallRefusal_eq",
+          "full_name": "SeLe4n.Kernel.rescheduleSgisFromFlags_recordSyscallRefusal_eq",
+          "line": 1038,
+          "called": [
+            "SeLe4n.Kernel.Concurrency.CoreId",
+            "SeLe4n.Kernel.Concurrency.numCores",
+            "SeLe4n.Kernel.LabelingContext",
+            "SeLe4n.Kernel.rescheduleSgisFromFlags",
+            "SeLe4n.Model.KernelError",
+            "SeLe4n.Model.SchedulerState",
+            "SeLe4n.Model.SystemState",
+            "SeLe4n.Platform.FFI.recordSyscallRefusal",
+            "SeLe4n.Platform.FFI.recordSyscallRefusal_scheduler_eq",
+            "SeLe4n.ThreadId"
+          ]
+        }
+      ]
+    },
+    {
+      "module": "SeLe4n.Kernel.SyscallDispatchStep",
+      "path": "SeLe4n/Kernel/SyscallDispatchStep.lean",
+      "declaration_count": 3,
+      "declarations": [
+        {
+          "kind": "def",
           "name": "syscallDispatchCrossCoreStep",
           "full_name": "SeLe4n.Kernel.syscallDispatchCrossCoreStep",
-          "line": 480,
+          "line": 54,
           "called": [
             "SeLe4n.Kernel.Architecture.ICacheInvalidation",
             "SeLe4n.Kernel.Architecture.PhysicalWrite",
@@ -257924,7 +257695,7 @@
           "kind": "theorem",
           "name": "syscallDispatchCrossCoreStep_of_ok",
           "full_name": "SeLe4n.Kernel.syscallDispatchCrossCoreStep_of_ok",
-          "line": 524,
+          "line": 98,
           "called": [
             "SeLe4n.Kernel.Architecture.SyscallOutcome",
             "SeLe4n.Kernel.Architecture.clearIcacheMaintenance",
@@ -257950,7 +257721,7 @@
           "kind": "theorem",
           "name": "syscallDispatchCrossCoreStep_drains_physicalWrites",
           "full_name": "SeLe4n.Kernel.syscallDispatchCrossCoreStep_drains_physicalWrites",
-          "line": 556,
+          "line": 130,
           "called": [
             "SeLe4n.Kernel.Architecture.stageCallerReturn",
             "SeLe4n.Kernel.Concurrency.CoreId",
@@ -257963,343 +257734,19 @@
             "SeLe4n.Platform.FFI.syscallDispatchFromAbi",
             "SeLe4n.Platform.FFI.syscallDispatchFromAbi_total"
           ]
-        },
-        {
-          "kind": "def",
-          "name": "syscallBracketRefusalResult",
-          "full_name": "SeLe4n.Kernel.syscallBracketRefusalResult",
-          "line": 599,
-          "called": [
-            "SeLe4n.Kernel.Architecture.ICacheInvalidation",
-            "SeLe4n.Kernel.Architecture.PhysicalWrite",
-            "SeLe4n.Kernel.Architecture.RestoreTarget",
-            "SeLe4n.Kernel.Architecture.SyscallOutcome",
-            "SeLe4n.Kernel.Architecture.TlbInvalidation",
-            "SeLe4n.Kernel.Architecture.errorFrame",
-            "SeLe4n.Kernel.Architecture.restoreTargetOnCore",
-            "SeLe4n.Kernel.Architecture.stageCallerReturn",
-            "SeLe4n.Kernel.Concurrency.CoreId",
-            "SeLe4n.Kernel.Concurrency.SgiKind",
-            "SeLe4n.Kernel.PriorityInheritance.settleResidencyOnCore",
-            "SeLe4n.Model.SchedulerState.currentOnCore",
-            "SeLe4n.Model.SystemState",
-            "SeLe4n.ThreadId"
-          ]
-        },
-        {
-          "kind": "def",
-          "name": "syscallDispatchCrossCoreBracketedStep",
-          "full_name": "SeLe4n.Kernel.syscallDispatchCrossCoreBracketedStep",
-          "line": 646,
-          "called": [
-            "SeLe4n.Kernel.Architecture.ICacheInvalidation",
-            "SeLe4n.Kernel.Architecture.PhysicalWrite",
-            "SeLe4n.Kernel.Architecture.RestoreTarget",
-            "SeLe4n.Kernel.Architecture.SyscallOutcome",
-            "SeLe4n.Kernel.Architecture.TlbInvalidation",
-            "SeLe4n.Kernel.Architecture.TrapContext",
-            "SeLe4n.Kernel.Concurrency.CoreId",
-            "SeLe4n.Kernel.Concurrency.SgiKind",
-            "SeLe4n.Kernel.Concurrency.objectLockBracketDomain",
-            "SeLe4n.Kernel.Concurrency.runBracketed",
-            "SeLe4n.Kernel.LabelingContext",
-            "SeLe4n.Kernel.declaredUnifiedLockSetForAbiEntry",
-            "SeLe4n.Kernel.syscallBracketRefusalResult",
-            "SeLe4n.Kernel.syscallDispatchCrossCoreStep",
-            "SeLe4n.Model.SystemState",
-            "SeLe4n.ThreadId"
-          ]
-        },
-        {
-          "kind": "theorem",
-          "name": "syscallDispatchCrossCoreBracketedStep_undeclared",
-          "full_name": "SeLe4n.Kernel.syscallDispatchCrossCoreBracketedStep_undeclared",
-          "line": 671,
-          "called": [
-            "SeLe4n.Kernel.Architecture.TrapContext",
-            "SeLe4n.Kernel.Concurrency.CoreId",
-            "SeLe4n.Kernel.Concurrency.runBracketed_undeclared",
-            "SeLe4n.Kernel.LabelingContext",
-            "SeLe4n.Kernel.declaredUnifiedLockSetForAbiEntry",
-            "SeLe4n.Kernel.syscallDispatchCrossCoreBracketedStep",
-            "SeLe4n.Kernel.syscallDispatchCrossCoreStep",
-            "SeLe4n.Model.SystemState"
-          ]
-        },
-        {
-          "kind": "theorem",
-          "name": "syscallDispatchCrossCoreBracketedStep_refused",
-          "full_name": "SeLe4n.Kernel.syscallDispatchCrossCoreBracketedStep_refused",
-          "line": 690,
-          "called": [
-            "SeLe4n.Kernel.Architecture.TrapContext",
-            "SeLe4n.Kernel.Concurrency.CoreId",
-            "SeLe4n.Kernel.Concurrency.LockSet",
-            "SeLe4n.Kernel.Concurrency.LockSet.lockAcquireSequence",
-            "SeLe4n.Kernel.Concurrency.acquireAll",
-            "SeLe4n.Kernel.Concurrency.lockSetHeld",
-            "SeLe4n.Kernel.Concurrency.runBracketed_refused",
-            "SeLe4n.Kernel.Concurrency.unwindAll",
-            "SeLe4n.Kernel.LabelingContext",
-            "SeLe4n.Kernel.declaredUnifiedLockSetForAbiEntry",
-            "SeLe4n.Kernel.syscallBracketRefusalResult",
-            "SeLe4n.Kernel.syscallDispatchCrossCoreBracketedStep",
-            "SeLe4n.Model.SystemState"
-          ]
-        },
-        {
-          "kind": "def",
-          "name": "overflowWordsOrFaulted",
-          "full_name": "SeLe4n.Kernel.overflowWordsOrFaulted",
-          "line": 717,
-          "called": [
-            "SeLe4n.Kernel.Architecture.IpcBufferRead.wordsOfBatches",
-            "SeLe4n.Kernel.Architecture.SyscallOutcome",
-            "SeLe4n.Kernel.Architecture.SyscallOutcome.tagWord",
-            "SeLe4n.PAddr"
-          ]
-        },
-        {
-          "kind": "theorem",
-          "name": "overflowWordsOrFaulted_addrs",
-          "full_name": "SeLe4n.Kernel.overflowWordsOrFaulted_addrs",
-          "line": 726,
-          "called": [
-            "SeLe4n.Kernel.Architecture.IpcBufferRead.expandRuns_wordRuns",
-            "SeLe4n.Kernel.Architecture.IpcBufferRead.wordRuns",
-            "SeLe4n.Kernel.Architecture.IpcBufferRead.wordsOfBatches_length",
-            "SeLe4n.Kernel.overflowWordsOrFaulted",
-            "SeLe4n.PAddr"
-          ]
-        },
-        {
-          "kind": "def",
-          "name": "readCallerOverflowWords",
-          "full_name": "SeLe4n.Kernel.readCallerOverflowWords",
-          "line": 767,
-          "called": [
-            "SeLe4n.Kernel.Architecture.IpcBufferRead.callerOverflowAddrs",
-            "SeLe4n.Kernel.Architecture.IpcBufferRead.wordRuns",
-            "SeLe4n.Kernel.Concurrency.CoreId",
-            "SeLe4n.Kernel.overflowWordsOrFaulted",
-            "SeLe4n.PAddr",
-            "SeLe4n.PAddr.toNat",
-            "SeLe4n.Platform.FFI.ffiReadUserWords",
-            "SeLe4n.Platform.FFI.getKernelState"
-          ]
-        },
-        {
-          "kind": "def",
-          "name": "syscallEntryContextOrFaulted",
-          "full_name": "SeLe4n.Kernel.syscallEntryContextOrFaulted",
-          "line": 786,
-          "called": [
-            "SeLe4n.Kernel.Architecture.SyscallOutcome",
-            "SeLe4n.Kernel.Architecture.SyscallOutcome.tagWord",
-            "SeLe4n.Kernel.Architecture.TrapContext"
-          ]
-        },
-        {
-          "kind": "def",
-          "name": "syscallDispatchCrossCoreEntry",
-          "full_name": "SeLe4n.Kernel.syscallDispatchCrossCoreEntry",
-          "line": 841,
-          "called": [
-            "SeLe4n.Kernel.Architecture.IpcBufferRead.syncUserWords",
-            "SeLe4n.Kernel.Architecture.registerFileOfTrapContext",
-            "SeLe4n.Kernel.Architecture.saveCapturedSyscallFrame",
-            "SeLe4n.Kernel.Concurrency.currentCoreId",
-            "SeLe4n.Kernel.Concurrency.fireCrossCoreSgis",
-            "SeLe4n.Kernel.Concurrency.recordCommittedCurrentThreadHw",
-            "SeLe4n.Kernel.Concurrency.releaseSwitchedFpOwnerOnCore",
-            "SeLe4n.Kernel.completeShootdownRounds",
-            "SeLe4n.Kernel.readCallerOverflowWords",
-            "SeLe4n.Kernel.syscallDispatchCrossCoreBracketedStep",
-            "SeLe4n.Kernel.syscallEntryContextOrFaulted",
-            "SeLe4n.Platform.FFI.completeIcacheMaintenance",
-            "SeLe4n.Platform.FFI.completePhysicalWrites",
-            "SeLe4n.Platform.FFI.ffiSyscallReturnFrame",
-            "SeLe4n.Platform.FFI.ffiTrapContext",
-            "SeLe4n.Platform.FFI.getKernelLabelingContext",
-            "SeLe4n.Platform.FFI.modifyGetKernelState",
-            "SeLe4n.Platform.FFI.restoreTrapFrame"
-          ]
-        },
-        {
-          "kind": "theorem",
-          "name": "syscallDispatchCrossCoreEntry_def",
-          "full_name": "SeLe4n.Kernel.syscallDispatchCrossCoreEntry_def",
-          "line": 933,
-          "called": [
-            "SeLe4n.Kernel.Architecture.IpcBufferRead.syncUserWords",
-            "SeLe4n.Kernel.Architecture.registerFileOfTrapContext",
-            "SeLe4n.Kernel.Architecture.saveCapturedSyscallFrame",
-            "SeLe4n.Kernel.Concurrency.currentCoreId",
-            "SeLe4n.Kernel.Concurrency.fireCrossCoreSgis",
-            "SeLe4n.Kernel.Concurrency.recordCommittedCurrentThreadHw",
-            "SeLe4n.Kernel.Concurrency.releaseSwitchedFpOwnerOnCore",
-            "SeLe4n.Kernel.completeShootdownRounds",
-            "SeLe4n.Kernel.readCallerOverflowWords",
-            "SeLe4n.Kernel.syscallDispatchCrossCoreBracketedStep",
-            "SeLe4n.Kernel.syscallDispatchCrossCoreEntry",
-            "SeLe4n.Kernel.syscallEntryContextOrFaulted",
-            "SeLe4n.Platform.FFI.completeIcacheMaintenance",
-            "SeLe4n.Platform.FFI.completePhysicalWrites",
-            "SeLe4n.Platform.FFI.ffiSyscallReturnFrame",
-            "SeLe4n.Platform.FFI.ffiTrapContext",
-            "SeLe4n.Platform.FFI.getKernelLabelingContext",
-            "SeLe4n.Platform.FFI.modifyGetKernelState",
-            "SeLe4n.Platform.FFI.restoreTrapFrame"
-          ]
-        },
-        {
-          "kind": "theorem",
-          "name": "vacatedCore_next_syscall_rejected",
-          "full_name": "SeLe4n.Kernel.vacatedCore_next_syscall_rejected",
-          "line": 980,
-          "called": [
-            "SeLe4n.Kernel.Architecture.errorFrame",
-            "SeLe4n.Kernel.Concurrency.CoreId",
-            "SeLe4n.Kernel.LabelingContext",
-            "SeLe4n.Kernel.PriorityInheritance.scheduleLocalSuccessor",
-            "SeLe4n.Model.SchedulerState.currentOnCore",
-            "SeLe4n.Model.SystemState",
-            "SeLe4n.Platform.FFI.syscallDispatchFromAbi",
-            "SeLe4n.Platform.FFI.syscallDispatchFromAbi_illegalState_when_no_current"
-          ]
-        },
-        {
-          "kind": "def",
-          "name": "suspendThreadCrossCoreStep",
-          "full_name": "SeLe4n.Kernel.suspendThreadCrossCoreStep",
-          "line": 1039,
-          "called": [
-            "SeLe4n.Kernel.Concurrency.CoreId",
-            "SeLe4n.Kernel.Concurrency.SgiKind",
-            "SeLe4n.Kernel.Concurrency.lockSetForSyscall",
-            "SeLe4n.Kernel.Concurrency.withLockSet",
-            "SeLe4n.Kernel.Lifecycle.Suspend.suspendThreadOnCore",
-            "SeLe4n.Kernel.PriorityInheritance.scheduleLocalSuccessorFrom",
-            "SeLe4n.Kernel.isIdleThreadId",
-            "SeLe4n.Kernel.reschedulePendingSnapshot",
-            "SeLe4n.Kernel.rescheduleSgisFromFlags",
-            "SeLe4n.Model.SchedulerState",
-            "SeLe4n.Model.SchedulerState.currentOnCore",
-            "SeLe4n.Model.SystemState",
-            "SeLe4n.Platform.FFI.KernelError.toUInt32",
-            "SeLe4n.ThreadId",
-            "SeLe4n.ThreadId.ofNat",
-            "SeLe4n.ThreadId.toNat",
-            "SeLe4n.ThreadId.toValid?"
-          ]
-        },
-        {
-          "kind": "theorem",
-          "name": "suspendThreadCrossCoreStep_idle_refused",
-          "full_name": "SeLe4n.Kernel.suspendThreadCrossCoreStep_idle_refused",
-          "line": 1114,
-          "called": [
-            "SeLe4n.Kernel.Concurrency.CoreId",
-            "SeLe4n.Kernel.Concurrency.SgiKind",
-            "SeLe4n.Kernel.isIdleThreadId",
-            "SeLe4n.Kernel.suspendThreadCrossCoreStep",
-            "SeLe4n.Model.SystemState",
-            "SeLe4n.Platform.FFI.KernelError.toUInt32",
-            "SeLe4n.ThreadId.ofNat",
-            "SeLe4n.ThreadId.toNat",
-            "SeLe4n.ThreadId.toValid?_some_val_eq"
-          ]
-        },
-        {
-          "kind": "theorem",
-          "name": "suspendThreadCrossCoreStep_sentinel_refused",
-          "full_name": "SeLe4n.Kernel.suspendThreadCrossCoreStep_sentinel_refused",
-          "line": 1129,
-          "called": [
-            "SeLe4n.Kernel.Concurrency.CoreId",
-            "SeLe4n.Kernel.Concurrency.SgiKind",
-            "SeLe4n.Kernel.suspendThreadCrossCoreStep",
-            "SeLe4n.Model.SystemState",
-            "SeLe4n.Platform.FFI.KernelError.toUInt32"
-          ]
-        },
-        {
-          "kind": "def",
-          "name": "suspendThreadCrossCoreDrainedStep",
-          "full_name": "SeLe4n.Kernel.suspendThreadCrossCoreDrainedStep",
-          "line": 1141,
-          "called": [
-            "SeLe4n.Kernel.Architecture.ICacheInvalidation",
-            "SeLe4n.Kernel.Architecture.PhysicalWrite",
-            "SeLe4n.Kernel.Architecture.clearIcacheMaintenance",
-            "SeLe4n.Kernel.Architecture.clearPhysicalWrites",
-            "SeLe4n.Kernel.Concurrency.CoreId",
-            "SeLe4n.Kernel.Concurrency.SgiKind",
-            "SeLe4n.Kernel.suspendThreadCrossCoreStep",
-            "SeLe4n.Model.SystemState"
-          ]
-        },
-        {
-          "kind": "theorem",
-          "name": "suspendThreadCrossCoreDrainedStep_idle_refused",
-          "full_name": "SeLe4n.Kernel.suspendThreadCrossCoreDrainedStep_idle_refused",
-          "line": 1153,
-          "called": [
-            "SeLe4n.Kernel.Concurrency.CoreId",
-            "SeLe4n.Kernel.Concurrency.SgiKind",
-            "SeLe4n.Kernel.isIdleThreadId",
-            "SeLe4n.Kernel.suspendThreadCrossCoreDrainedStep",
-            "SeLe4n.Kernel.suspendThreadCrossCoreStep_idle_refused",
-            "SeLe4n.Model.SystemState",
-            "SeLe4n.Platform.FFI.KernelError.toUInt32",
-            "SeLe4n.ThreadId.ofNat",
-            "SeLe4n.ThreadId.toNat"
-          ]
-        },
-        {
-          "kind": "def",
-          "name": "suspendThreadCrossCoreEntry",
-          "full_name": "SeLe4n.Kernel.suspendThreadCrossCoreEntry",
-          "line": 1169,
-          "called": [
-            "SeLe4n.Kernel.Concurrency.currentCoreId",
-            "SeLe4n.Kernel.Concurrency.fireCrossCoreSgis",
-            "SeLe4n.Kernel.suspendThreadCrossCoreDrainedStep",
-            "SeLe4n.Platform.FFI.completeIcacheMaintenance",
-            "SeLe4n.Platform.FFI.completePhysicalWrites",
-            "SeLe4n.Platform.FFI.modifyGetKernelState"
-          ]
-        },
-        {
-          "kind": "theorem",
-          "name": "rescheduleSgisFromFlags_recordSyscallRefusal_eq",
-          "full_name": "SeLe4n.Kernel.rescheduleSgisFromFlags_recordSyscallRefusal_eq",
-          "line": 1195,
-          "called": [
-            "SeLe4n.Kernel.Concurrency.CoreId",
-            "SeLe4n.Kernel.Concurrency.numCores",
-            "SeLe4n.Kernel.LabelingContext",
-            "SeLe4n.Kernel.rescheduleSgisFromFlags",
-            "SeLe4n.Model.KernelError",
-            "SeLe4n.Model.SchedulerState",
-            "SeLe4n.Model.SystemState",
-            "SeLe4n.Platform.FFI.recordSyscallRefusal",
-            "SeLe4n.Platform.FFI.recordSyscallRefusal_scheduler_eq",
-            "SeLe4n.ThreadId"
-          ]
         }
       ]
     },
     {
       "module": "SeLe4n.Kernel.SyscallLockBracket",
       "path": "SeLe4n/Kernel/SyscallLockBracket.lean",
-      "declaration_count": 19,
+      "declaration_count": 13,
       "declarations": [
         {
           "kind": "def",
           "name": "abiEntryPlan",
           "full_name": "SeLe4n.Kernel.abiEntryPlan",
-          "line": 115,
+          "line": 113,
           "called": [
             "SeLe4n.Kernel.Architecture.RegisterDecode.decodeSyscallArgsFromState",
             "SeLe4n.Kernel.Architecture.tlbFillIpcBufferOnCore",
@@ -258319,7 +257766,7 @@
           "kind": "theorem",
           "name": "abiEntryPlan_dispatches",
           "full_name": "SeLe4n.Kernel.abiEntryPlan_dispatches",
-          "line": 143,
+          "line": 141,
           "called": [
             "SeLe4n.Kernel.Architecture.RegisterDecode.decodeSyscallArgsFromState",
             "SeLe4n.Kernel.Architecture.errorFrame",
@@ -258349,7 +257796,7 @@
           "kind": "theorem",
           "name": "abiEntryPlan_components",
           "full_name": "SeLe4n.Kernel.abiEntryPlan_components",
-          "line": 209,
+          "line": 207,
           "called": [
             "SeLe4n.Kernel.Architecture.RegisterDecode.decodeSyscallArgsFromState",
             "SeLe4n.Kernel.Architecture.tlbFillIpcBufferOnCore",
@@ -258373,7 +257820,7 @@
           "kind": "def",
           "name": "abiEntryGate",
           "full_name": "SeLe4n.Kernel.abiEntryGate",
-          "line": 285,
+          "line": 283,
           "called": [
             "SeLe4n.Kernel.SyscallGate",
             "SeLe4n.Kernel.resolveCapAddress",
@@ -258390,7 +257837,7 @@
           "kind": "theorem",
           "name": "abiEntryGate_cspaceRoot",
           "full_name": "SeLe4n.Kernel.abiEntryGate_cspaceRoot",
-          "line": 315,
+          "line": 313,
           "called": [
             "SeLe4n.Kernel.SyscallGate",
             "SeLe4n.Kernel.abiEntryGate",
@@ -258405,7 +257852,7 @@
           "kind": "theorem",
           "name": "abiEntryGate_components",
           "full_name": "SeLe4n.Kernel.abiEntryGate_components",
-          "line": 346,
+          "line": 344,
           "called": [
             "SeLe4n.Kernel.SyscallGate",
             "SeLe4n.Kernel.abiEntryGate",
@@ -258423,7 +257870,7 @@
           "kind": "def",
           "name": "abiEntryMessage",
           "full_name": "SeLe4n.Kernel.abiEntryMessage",
-          "line": 388,
+          "line": 386,
           "called": [
             "SeLe4n.Kernel.Architecture.RegisterDecode.extractMessageRegisters",
             "SeLe4n.Kernel.Architecture.SyscallArgDecode.decodeExtraCapAddrs",
@@ -258440,7 +257887,7 @@
           "kind": "def",
           "name": "abiEntryLockOperands",
           "full_name": "SeLe4n.Kernel.abiEntryLockOperands",
-          "line": 443,
+          "line": 441,
           "called": [
             "SeLe4n.Kernel.Architecture.RegisterDecode.extractMessageRegisters",
             "SeLe4n.Kernel.Architecture.SyscallArgDecode.decodeExtraCapAddrs",
@@ -258468,7 +257915,7 @@
           "kind": "def",
           "name": "declaredLockSetForAbiEntry",
           "full_name": "SeLe4n.Kernel.declaredLockSetForAbiEntry",
-          "line": 551,
+          "line": 549,
           "called": [
             "SeLe4n.Kernel.Concurrency.CoreId",
             "SeLe4n.Kernel.Concurrency.LockSet",
@@ -258483,7 +257930,7 @@
           "kind": "theorem",
           "name": "declaredLockSetForAbiEntry_binds_decode",
           "full_name": "SeLe4n.Kernel.declaredLockSetForAbiEntry_binds_decode",
-          "line": 567,
+          "line": 565,
           "called": [
             "SeLe4n.Kernel.Concurrency.CoreId",
             "SeLe4n.Kernel.Concurrency.LockSet",
@@ -258499,7 +257946,7 @@
           "kind": "theorem",
           "name": "abiEntryLockOperands_tcbSuspend_target_valid",
           "full_name": "SeLe4n.Kernel.abiEntryLockOperands_tcbSuspend_target_valid",
-          "line": 593,
+          "line": 591,
           "called": [
             "SeLe4n.Kernel.Concurrency.SyscallLockOperands",
             "SeLe4n.Kernel.Concurrency.SyscallLockOperands.ofThreadTarget",
@@ -258519,7 +257966,7 @@
           "kind": "theorem",
           "name": "abiEntryLockOperands_caller",
           "full_name": "SeLe4n.Kernel.abiEntryLockOperands_caller",
-          "line": 640,
+          "line": 638,
           "called": [
             "SeLe4n.Kernel.Concurrency.SyscallLockOperands",
             "SeLe4n.Kernel.abiEntryGate",
@@ -258534,7 +257981,7 @@
           "kind": "theorem",
           "name": "abiEntryLockOperands_gate_lookup",
           "full_name": "SeLe4n.Kernel.abiEntryLockOperands_gate_lookup",
-          "line": 668,
+          "line": 666,
           "called": [
             "SeLe4n.Kernel.Concurrency.SyscallLockOperands",
             "SeLe4n.Kernel.SyscallGate",
@@ -258547,103 +257994,6 @@
             "SeLe4n.Model.SystemState",
             "SeLe4n.Model.TCB",
             "SeLe4n.ThreadId"
-          ]
-        },
-        {
-          "kind": "def",
-          "name": "runUnderDeclaredLockSet",
-          "full_name": "SeLe4n.Kernel.runUnderDeclaredLockSet",
-          "line": 708,
-          "called": [
-            "SeLe4n.Kernel.Concurrency.CoreId",
-            "SeLe4n.Kernel.Concurrency.LockBracketOutcome",
-            "SeLe4n.Kernel.Concurrency.LockSet",
-            "SeLe4n.Kernel.Concurrency.objectLockBracketDomain",
-            "SeLe4n.Kernel.Concurrency.runBracketed",
-            "SeLe4n.Model.SystemState"
-          ]
-        },
-        {
-          "kind": "theorem",
-          "name": "runUnderDeclaredLockSet_eq_runBracketed",
-          "full_name": "SeLe4n.Kernel.runUnderDeclaredLockSet_eq_runBracketed",
-          "line": 716,
-          "called": [
-            "SeLe4n.Kernel.Concurrency.CoreId",
-            "SeLe4n.Kernel.Concurrency.LockSet",
-            "SeLe4n.Kernel.Concurrency.objectLockBracketDomain",
-            "SeLe4n.Kernel.Concurrency.runBracketed",
-            "SeLe4n.Kernel.runUnderDeclaredLockSet",
-            "SeLe4n.Model.SystemState"
-          ]
-        },
-        {
-          "kind": "theorem",
-          "name": "runUnderDeclaredLockSet_undeclared",
-          "full_name": "SeLe4n.Kernel.runUnderDeclaredLockSet_undeclared",
-          "line": 730,
-          "called": [
-            "SeLe4n.Kernel.Concurrency.CoreId",
-            "SeLe4n.Kernel.Concurrency.LockSet",
-            "SeLe4n.Kernel.Concurrency.objectLockBracketDomain",
-            "SeLe4n.Kernel.Concurrency.runBracketed_undeclared",
-            "SeLe4n.Kernel.runUnderDeclaredLockSet",
-            "SeLe4n.Model.SystemState"
-          ]
-        },
-        {
-          "kind": "theorem",
-          "name": "runUnderDeclaredLockSet_committed",
-          "full_name": "SeLe4n.Kernel.runUnderDeclaredLockSet_committed",
-          "line": 740,
-          "called": [
-            "SeLe4n.Kernel.Concurrency.CoreId",
-            "SeLe4n.Kernel.Concurrency.LockSet",
-            "SeLe4n.Kernel.Concurrency.LockSet.lockAcquireSequence",
-            "SeLe4n.Kernel.Concurrency.acquireAll",
-            "SeLe4n.Kernel.Concurrency.lockSetHeld",
-            "SeLe4n.Kernel.Concurrency.objectLockBracketDomain",
-            "SeLe4n.Kernel.Concurrency.runBracketed_committed",
-            "SeLe4n.Kernel.Concurrency.unwindAll",
-            "SeLe4n.Kernel.runUnderDeclaredLockSet",
-            "SeLe4n.Model.SystemState"
-          ]
-        },
-        {
-          "kind": "theorem",
-          "name": "runUnderDeclaredLockSet_refused",
-          "full_name": "SeLe4n.Kernel.runUnderDeclaredLockSet_refused",
-          "line": 760,
-          "called": [
-            "SeLe4n.Kernel.Concurrency.CoreId",
-            "SeLe4n.Kernel.Concurrency.LockSet",
-            "SeLe4n.Kernel.Concurrency.LockSet.lockAcquireSequence",
-            "SeLe4n.Kernel.Concurrency.acquireAll",
-            "SeLe4n.Kernel.Concurrency.lockSetHeld",
-            "SeLe4n.Kernel.Concurrency.objectLockBracketDomain",
-            "SeLe4n.Kernel.Concurrency.runBracketed_refused",
-            "SeLe4n.Kernel.Concurrency.unwindAll",
-            "SeLe4n.Kernel.runUnderDeclaredLockSet",
-            "SeLe4n.Model.SystemState"
-          ]
-        },
-        {
-          "kind": "theorem",
-          "name": "runUnderDeclaredLockSet_committed_eq_withLockSet",
-          "full_name": "SeLe4n.Kernel.runUnderDeclaredLockSet_committed_eq_withLockSet",
-          "line": 781,
-          "called": [
-            "SeLe4n.Kernel.Concurrency.CoreId",
-            "SeLe4n.Kernel.Concurrency.LockSet",
-            "SeLe4n.Kernel.Concurrency.LockSet.lockAcquireSequence",
-            "SeLe4n.Kernel.Concurrency.acquireAll",
-            "SeLe4n.Kernel.Concurrency.lockSetHeld",
-            "SeLe4n.Kernel.Concurrency.objectLockBracketDomain",
-            "SeLe4n.Kernel.Concurrency.runBracketed_committed",
-            "SeLe4n.Kernel.Concurrency.withLockSet",
-            "SeLe4n.Kernel.runUnderDeclaredLockSet",
-            "SeLe4n.Kernel.runUnderDeclaredLockSet_eq_runBracketed",
-            "SeLe4n.Model.SystemState"
           ]
         }
       ]
@@ -261434,7 +260784,7 @@
           "kind": "theorem",
           "name": "footprintCoversWrites_of_confinedToCore",
           "full_name": "SeLe4n.Kernel.footprintCoversWrites_of_confinedToCore",
-          "line": 41,
+          "line": 42,
           "called": [
             "SeLe4n.Kernel.Concurrency.AccessMode",
             "SeLe4n.Kernel.Concurrency.CoreId",
@@ -261450,7 +260800,7 @@
           "kind": "theorem",
           "name": "switchToThreadOnCore_coversWrites",
           "full_name": "SeLe4n.Kernel.switchToThreadOnCore_coversWrites",
-          "line": 59,
+          "line": 60,
           "called": [
             "SeLe4n.Kernel.Concurrency.AccessMode",
             "SeLe4n.Kernel.Concurrency.CoreId",
@@ -261469,7 +260819,7 @@
           "kind": "theorem",
           "name": "dropCurrentOnCore_coversWrites",
           "full_name": "SeLe4n.Kernel.dropCurrentOnCore_coversWrites",
-          "line": 69,
+          "line": 70,
           "called": [
             "SeLe4n.Kernel.Concurrency.AccessMode",
             "SeLe4n.Kernel.Concurrency.CoreId",
@@ -261487,7 +260837,7 @@
           "kind": "theorem",
           "name": "handleRescheduleSgiOnCore_coversWrites",
           "full_name": "SeLe4n.Kernel.handleRescheduleSgiOnCore_coversWrites",
-          "line": 77,
+          "line": 78,
           "called": [
             "SeLe4n.Kernel.Concurrency.AccessMode",
             "SeLe4n.Kernel.Concurrency.CoreId",
@@ -261505,7 +260855,7 @@
           "kind": "theorem",
           "name": "scheduleLocalSuccessorFrom_coversWrites",
           "full_name": "SeLe4n.Kernel.scheduleLocalSuccessorFrom_coversWrites",
-          "line": 88,
+          "line": 89,
           "called": [
             "SeLe4n.Kernel.Concurrency.AccessMode",
             "SeLe4n.Kernel.Concurrency.CoreId",
@@ -261523,7 +260873,7 @@
           "kind": "theorem",
           "name": "dispatchVacatedCore_coversWrites",
           "full_name": "SeLe4n.Kernel.dispatchVacatedCore_coversWrites",
-          "line": 102,
+          "line": 103,
           "called": [
             "SeLe4n.Kernel.Concurrency.AccessMode",
             "SeLe4n.Kernel.Concurrency.CoreId",
@@ -261540,7 +260890,7 @@
           "kind": "theorem",
           "name": "deferResidentElsewhere_coversWrites",
           "full_name": "SeLe4n.Kernel.deferResidentElsewhere_coversWrites",
-          "line": 116,
+          "line": 117,
           "called": [
             "SeLe4n.Kernel.Concurrency.AccessMode",
             "SeLe4n.Kernel.Concurrency.CoreId",
@@ -261565,7 +260915,7 @@
           "kind": "theorem",
           "name": "settleResidencyOnCore_coversWrites",
           "full_name": "SeLe4n.Kernel.settleResidencyOnCore_coversWrites",
-          "line": 141,
+          "line": 142,
           "called": [
             "SeLe4n.Kernel.Concurrency.AccessMode",
             "SeLe4n.Kernel.Concurrency.CoreId",
@@ -261584,7 +260934,7 @@
           "kind": "theorem",
           "name": "syscallCommitTail_coversWrites",
           "full_name": "SeLe4n.Kernel.syscallCommitTail_coversWrites",
-          "line": 155,
+          "line": 156,
           "called": [
             "SeLe4n.Kernel.Architecture.SyscallOutcome",
             "SeLe4n.Kernel.Architecture.clearIcacheMaintenance",
@@ -261612,7 +260962,7 @@
           "kind": "theorem",
           "name": "validThreadId_val_toValid?",
           "full_name": "SeLe4n.Kernel.validThreadId_val_toValid?",
-          "line": 181,
+          "line": 182,
           "called": [
             "SeLe4n.ThreadId",
             "SeLe4n.ThreadId.toValid?",
@@ -261623,7 +260973,7 @@
           "kind": "theorem",
           "name": "dispatchWithCapChecked_coversWrites",
           "full_name": "SeLe4n.Kernel.dispatchWithCapChecked_coversWrites",
-          "line": 197,
+          "line": 198,
           "called": [
             "SeLe4n.Kernel.Architecture.SyscallArgDecode.decodeExtraCapAddrs",
             "SeLe4n.Kernel.Architecture.stageDeliveredMessage_scheduler_eq",
@@ -261700,7 +261050,7 @@
           "kind": "theorem",
           "name": "dispatchSyscallChecked_coversWrites",
           "full_name": "SeLe4n.Kernel.dispatchSyscallChecked_coversWrites",
-          "line": 667,
+          "line": 668,
           "called": [
             "SeLe4n.Kernel.Concurrency.CoreId",
             "SeLe4n.Kernel.Concurrency.LockSet",
@@ -261740,7 +261090,7 @@
           "kind": "theorem",
           "name": "syscallDispatchCrossCoreStep_coversWrites",
           "full_name": "SeLe4n.Kernel.syscallDispatchCrossCoreStep_coversWrites",
-          "line": 731,
+          "line": 732,
           "called": [
             "SeLe4n.Kernel.Architecture.tlbFillIpcBufferOnCore_eq_setPerCoreTlb",
             "SeLe4n.Kernel.Concurrency.AccessMode",
@@ -261793,7 +261143,7 @@
           "kind": "theorem",
           "name": "suspendSeamAction_coversWrites",
           "full_name": "SeLe4n.Kernel.suspendSeamAction_coversWrites",
-          "line": 847,
+          "line": 848,
           "called": [
             "SeLe4n.Kernel.Concurrency.CoreId",
             "SeLe4n.Kernel.Concurrency.LockSet",
@@ -303369,7 +302719,7 @@
     {
       "module": "SeLe4n.Testing.ExportCommitDisciplineCensus",
       "path": "SeLe4n/Testing/ExportCommitDisciplineCensus.lean",
-      "declaration_count": 30,
+      "declaration_count": 29,
       "declarations": [
         {
           "kind": "def",
@@ -303382,7 +302732,7 @@
           "kind": "def",
           "name": "bracketForms",
           "full_name": "SeLe4n.Testing.ExportCommitDisciplineCensus.bracketForms",
-          "line": 92,
+          "line": 95,
           "called": []
         },
         {
@@ -303469,7 +302819,7 @@
           "kind": "def",
           "name": "commitDisciplineRegistry",
           "full_name": "SeLe4n.Testing.ExportCommitDisciplineCensus.commitDisciplineRegistry",
-          "line": 220,
+          "line": 219,
           "called": [
             "SeLe4n.Testing.ExportCommitDisciplineCensus.CommitDiscipline"
           ]
@@ -303478,7 +302828,7 @@
           "kind": "def",
           "name": "bracketedSeams",
           "full_name": "SeLe4n.Testing.ExportCommitDisciplineCensus.bracketedSeams",
-          "line": 277,
+          "line": 276,
           "called": [
             "SeLe4n.Testing.ExportCommitDisciplineCensus.commitDisciplineRegistry"
           ]
@@ -303487,26 +302837,14 @@
           "kind": "def",
           "name": "reconciliationViolations",
           "full_name": "SeLe4n.Testing.ExportCommitDisciplineCensus.reconciliationViolations",
-          "line": 295,
+          "line": 294,
           "called": []
-        },
-        {
-          "kind": "def",
-          "name": "censusWitnessBracketed",
-          "full_name": "SeLe4n.Testing.ExportCommitDisciplineCensus.censusWitnessBracketed",
-          "line": 319,
-          "called": [
-            "SeLe4n.Kernel.Concurrency.bootCoreId",
-            "SeLe4n.Kernel.runUnderDeclaredLockSet",
-            "SeLe4n.Platform.FFI.modifyGetKernelState"
-          ],
-          "private": true
         },
         {
           "kind": "def",
           "name": "censusWitnessSpec",
           "full_name": "SeLe4n.Testing.ExportCommitDisciplineCensus.censusWitnessSpec",
-          "line": 329,
+          "line": 318,
           "called": [
             "SeLe4n.Kernel.Concurrency.BracketSpec"
           ],
@@ -303516,7 +302854,7 @@
           "kind": "def",
           "name": "censusWitnessBracketedSpec",
           "full_name": "SeLe4n.Testing.ExportCommitDisciplineCensus.censusWitnessBracketedSpec",
-          "line": 335,
+          "line": 324,
           "called": [
             "SeLe4n.Kernel.Concurrency.BracketSpec.run",
             "SeLe4n.Platform.FFI.modifyGetKernelState",
@@ -303528,7 +302866,7 @@
           "kind": "def",
           "name": "censusWitnessGhostCommit",
           "full_name": "SeLe4n.Testing.ExportCommitDisciplineCensus.censusWitnessGhostCommit",
-          "line": 344,
+          "line": 333,
           "called": [
             "SeLe4n.Kernel.Concurrency.BracketSpec.runGhost",
             "SeLe4n.Kernel.Concurrency.LockState.unheld",
@@ -303542,7 +302880,7 @@
           "kind": "def",
           "name": "censusWitnessBareCommit",
           "full_name": "SeLe4n.Testing.ExportCommitDisciplineCensus.censusWitnessBareCommit",
-          "line": 353,
+          "line": 342,
           "called": [
             "SeLe4n.Platform.FFI.modifyGetKernelState"
           ],
@@ -303552,7 +302890,7 @@
           "kind": "def",
           "name": "censusWitnessCommitHelper",
           "full_name": "SeLe4n.Testing.ExportCommitDisciplineCensus.censusWitnessCommitHelper",
-          "line": 359,
+          "line": 348,
           "called": [
             "SeLe4n.Model.SystemState",
             "SeLe4n.Platform.FFI.initialiseKernelState"
@@ -303563,7 +302901,7 @@
           "kind": "def",
           "name": "censusWitnessIndirectCommit",
           "full_name": "SeLe4n.Testing.ExportCommitDisciplineCensus.censusWitnessIndirectCommit",
-          "line": 362,
+          "line": 351,
           "called": [
             "SeLe4n.Testing.ExportCommitDisciplineCensus.censusWitnessCommitHelper"
           ],
@@ -303573,7 +302911,7 @@
           "kind": "def",
           "name": "censusWitnessNoCommit",
           "full_name": "SeLe4n.Testing.ExportCommitDisciplineCensus.censusWitnessNoCommit",
-          "line": 366,
+          "line": 355,
           "called": [
             "SeLe4n.Platform.FFI.getKernelState"
           ],
@@ -303583,14 +302921,14 @@
           "kind": "def",
           "name": "exportResultTypes",
           "full_name": "SeLe4n.Testing.ExportCommitDisciplineCensus.exportResultTypes",
-          "line": 388,
+          "line": 377,
           "called": []
         },
         {
           "kind": "def",
           "name": "exportResultViolation",
           "full_name": "SeLe4n.Testing.ExportCommitDisciplineCensus.exportResultViolation",
-          "line": 393,
+          "line": 382,
           "called": [
             "SeLe4n.Testing.ExportCommitDisciplineCensus.exportResultTypes"
           ]
@@ -303599,7 +302937,7 @@
           "kind": "def",
           "name": "exportResultWitnessUnit",
           "full_name": "SeLe4n.Testing.ExportCommitDisciplineCensus.exportResultWitnessUnit",
-          "line": 419,
+          "line": 408,
           "called": [],
           "private": true
         },
@@ -303607,7 +302945,7 @@
           "kind": "def",
           "name": "exportResultWitnessScalar",
           "full_name": "SeLe4n.Testing.ExportCommitDisciplineCensus.exportResultWitnessScalar",
-          "line": 420,
+          "line": 409,
           "called": [],
           "private": true
         },
@@ -303615,7 +302953,7 @@
           "kind": "def",
           "name": "exportResultWitnessBoxed",
           "full_name": "SeLe4n.Testing.ExportCommitDisciplineCensus.exportResultWitnessBoxed",
-          "line": 421,
+          "line": 410,
           "called": [],
           "private": true
         },
@@ -303623,7 +302961,7 @@
           "kind": "def",
           "name": "exportResultWitnessPure",
           "full_name": "SeLe4n.Testing.ExportCommitDisciplineCensus.exportResultWitnessPure",
-          "line": 422,
+          "line": 411,
           "called": [],
           "private": true
         },
@@ -303631,7 +302969,7 @@
           "kind": "def",
           "name": "exportResultWitnessPureBoxed",
           "full_name": "SeLe4n.Testing.ExportCommitDisciplineCensus.exportResultWitnessPureBoxed",
-          "line": 423,
+          "line": 412,
           "called": [],
           "private": true
         },
@@ -303639,12 +302977,11 @@
           "kind": "def",
           "name": "exportResultWitnessIO",
           "full_name": "SeLe4n.Testing.ExportCommitDisciplineCensus.exportResultWitnessIO",
-          "line": 424,
+          "line": 413,
           "called": [
             "SeLe4n.Testing.ExportCommitDisciplineCensus.bracketForms",
             "SeLe4n.Testing.ExportCommitDisciplineCensus.bracketedSeams",
             "SeLe4n.Testing.ExportCommitDisciplineCensus.censusWitnessBareCommit",
-            "SeLe4n.Testing.ExportCommitDisciplineCensus.censusWitnessBracketed",
             "SeLe4n.Testing.ExportCommitDisciplineCensus.censusWitnessBracketedSpec",
             "SeLe4n.Testing.ExportCommitDisciplineCensus.censusWitnessGhostCommit",
             "SeLe4n.Testing.ExportCommitDisciplineCensus.censusWitnessIndirectCommit",
@@ -304982,7 +304319,7 @@
           "kind": "def",
           "name": "nonExecutedTransitionsPrivate",
           "full_name": "SeLe4n.Testing.KernelTransitionReachabilityCensus.nonExecutedTransitionsPrivate",
-          "line": 1250,
+          "line": 1233,
           "called": [
             "SeLe4n.Testing.ReplyStackWriteCensus.privateIn"
           ]
@@ -304991,7 +304328,7 @@
           "kind": "def",
           "name": "nonExecutedTransitions",
           "full_name": "SeLe4n.Testing.KernelTransitionReachabilityCensus.nonExecutedTransitions",
-          "line": 1295,
+          "line": 1278,
           "called": [
             "SeLe4n.Testing.KernelTransitionReachabilityCensus.nonExecutedTransitionsPlain",
             "SeLe4n.Testing.KernelTransitionReachabilityCensus.nonExecutedTransitionsPrivate"
@@ -305001,21 +304338,21 @@
           "kind": "def",
           "name": "standsBesideLive",
           "full_name": "SeLe4n.Testing.KernelTransitionReachabilityCensus.standsBesideLive",
-          "line": 1321,
+          "line": 1304,
           "called": []
         },
         {
           "kind": "def",
           "name": "reconciliationViolations",
           "full_name": "SeLe4n.Testing.KernelTransitionReachabilityCensus.reconciliationViolations",
-          "line": 1345,
+          "line": 1328,
           "called": []
         },
         {
           "kind": "def",
           "name": "pinSides",
           "full_name": "SeLe4n.Testing.KernelTransitionReachabilityCensus.pinSides",
-          "line": 1378,
+          "line": 1361,
           "called": [
             "SeLe4n.Testing.ReplyStackWriteCensus.conclusionOf"
           ]
@@ -305024,7 +304361,7 @@
           "kind": "def",
           "name": "pinRelatesPrograms",
           "full_name": "SeLe4n.Testing.KernelTransitionReachabilityCensus.pinRelatesPrograms",
-          "line": 1410,
+          "line": 1393,
           "called": [
             "SeLe4n.Testing.KernelTransitionReachabilityCensus.pinSides"
           ]
@@ -305033,7 +304370,7 @@
           "kind": "def",
           "name": "pinViolations",
           "full_name": "SeLe4n.Testing.KernelTransitionReachabilityCensus.pinViolations",
-          "line": 1423,
+          "line": 1406,
           "called": [
             "SeLe4n.Testing.KernelTransitionReachabilityCensus.pinRelatesPrograms"
           ]
@@ -305042,7 +304379,7 @@
           "kind": "theorem",
           "name": "pinWitnessConjunctionOfReflexivity",
           "full_name": "SeLe4n.Testing.KernelTransitionReachabilityCensus.pinWitnessConjunctionOfReflexivity",
-          "line": 1463,
+          "line": 1446,
           "called": [
             "SeLe4n.Kernel.cancelIpcBlockingOnCore",
             "SeLe4n.Kernel.cancelIpcBlockingReclaimed"
@@ -305052,7 +304389,7 @@
           "kind": "theorem",
           "name": "pinWitnessReflexiveOverBoth",
           "full_name": "SeLe4n.Testing.KernelTransitionReachabilityCensus.pinWitnessReflexiveOverBoth",
-          "line": 1471,
+          "line": 1454,
           "called": [
             "SeLe4n.Kernel.cancelIpcBlockingOnCore",
             "SeLe4n.Kernel.cancelIpcBlockingReclaimed"
@@ -305062,7 +304399,7 @@
           "kind": "theorem",
           "name": "pinWitnessBothOnOneSide",
           "full_name": "SeLe4n.Testing.KernelTransitionReachabilityCensus.pinWitnessBothOnOneSide",
-          "line": 1478,
+          "line": 1461,
           "called": [
             "SeLe4n.Kernel.cancelIpcBlockingOnCore",
             "SeLe4n.Kernel.cancelIpcBlockingReclaimed"
@@ -305072,7 +304409,7 @@
           "kind": "def",
           "name": "pinCheckWitnesses",
           "full_name": "SeLe4n.Testing.KernelTransitionReachabilityCensus.pinCheckWitnesses",
-          "line": 1483,
+          "line": 1466,
           "called": [
             "SeLe4n.Testing.KernelTransitionReachabilityCensus.pinWitnessBothOnOneSide",
             "SeLe4n.Testing.KernelTransitionReachabilityCensus.pinWitnessConjunctionOfReflexivity",
@@ -305083,7 +304420,7 @@
           "kind": "def",
           "name": "pinCheckWitnessViolations",
           "full_name": "SeLe4n.Testing.KernelTransitionReachabilityCensus.pinCheckWitnessViolations",
-          "line": 1495,
+          "line": 1478,
           "called": [
             "SeLe4n.Testing.KernelTransitionReachabilityCensus.carrierFixpointRefusalViolations",
             "SeLe4n.Testing.KernelTransitionReachabilityCensus.committingExports",
@@ -338725,15 +338062,14 @@
         },
         {
           "kind": "def",
-          "name": "bracketOutcome",
-          "full_name": "SeLe4n.Testing.SmpCrossCoreCall.bracketOutcome",
-          "line": 1176,
+          "name": "bracketSpec",
+          "full_name": "SeLe4n.Testing.SmpCrossCoreCall.bracketSpec",
+          "line": 1175,
           "called": [
+            "SeLe4n.Kernel.Architecture.TrapContext",
             "SeLe4n.Kernel.Concurrency.bootCoreId",
-            "SeLe4n.Kernel.runUnderDeclaredLockSet",
-            "SeLe4n.Model.SystemState",
-            "SeLe4n.Testing.SmpCrossCoreCall.bracketDecl",
-            "SeLe4n.Testing.SmpCrossCoreCall.bracketStepFn"
+            "SeLe4n.Kernel.harnessLabelingContext",
+            "SeLe4n.Kernel.syscallDispatchBracket"
           ],
           "private": true
         },
@@ -338824,18 +338160,20 @@
           "full_name": "SeLe4n.Testing.SmpCrossCoreCall.runDeclaredFootprintBracketChecks",
           "line": 1285,
           "called": [
-            "SeLe4n.Kernel.Concurrency.acquireAll",
+            "SeLe4n.Kernel.Concurrency.LockState.unheld",
+            "SeLe4n.Kernel.Concurrency.RwLockState.unheld",
             "SeLe4n.Kernel.Concurrency.bootCoreId",
             "SeLe4n.Kernel.Concurrency.keyHeld",
             "SeLe4n.Kernel.Concurrency.lockSetForSyscall",
-            "SeLe4n.Kernel.Concurrency.lockSetHeld",
             "SeLe4n.Kernel.abiEntryLockOperands",
-            "SeLe4n.Kernel.syscallDispatchCrossCoreBracketedStep_undeclared",
+            "SeLe4n.Kernel.declaredUnifiedLockSetForAbiEntry",
+            "SeLe4n.Kernel.harnessLabelingContext",
+            "SeLe4n.Kernel.syscallDispatchCrossCoreBracketedStep_run",
             "SeLe4n.Testing.SmpCrossCoreCall.assertBool",
             "SeLe4n.Testing.SmpCrossCoreCall.bracketDecl",
-            "SeLe4n.Testing.SmpCrossCoreCall.bracketOutcome",
             "SeLe4n.Testing.SmpCrossCoreCall.bracketPlan",
             "SeLe4n.Testing.SmpCrossCoreCall.bracketRun",
+            "SeLe4n.Testing.SmpCrossCoreCall.bracketSpec",
             "SeLe4n.Testing.SmpCrossCoreCall.bracketState",
             "SeLe4n.Testing.SmpCrossCoreCall.bracketStepFn",
             "SeLe4n.Testing.SmpCrossCoreCall.undeclaredBare",
@@ -338848,7 +338186,7 @@
           "kind": "def",
           "name": "bracketSchedDecl",
           "full_name": "SeLe4n.Testing.SmpCrossCoreCall.bracketSchedDecl",
-          "line": 1369,
+          "line": 1364,
           "called": [
             "SeLe4n.Kernel.Concurrency.LockSet",
             "SeLe4n.Kernel.Concurrency.bootCoreId",
@@ -338862,7 +338200,7 @@
           "kind": "def",
           "name": "undeclaredSchedDecl",
           "full_name": "SeLe4n.Testing.SmpCrossCoreCall.undeclaredSchedDecl",
-          "line": 1374,
+          "line": 1369,
           "called": [
             "SeLe4n.Kernel.Concurrency.LockSet",
             "SeLe4n.Kernel.Concurrency.bootCoreId",
@@ -338876,7 +338214,7 @@
           "kind": "def",
           "name": "bracketActiveVictimState",
           "full_name": "SeLe4n.Testing.SmpCrossCoreCall.bracketActiveVictimState",
-          "line": 1382,
+          "line": 1377,
           "called": [
             "SeLe4n.Kernel.RobinHood.RHTable.insert",
             "SeLe4n.Model.SystemState",
@@ -338891,7 +338229,7 @@
           "kind": "def",
           "name": "runAbiSchedFootprintChecks",
           "full_name": "SeLe4n.Testing.SmpCrossCoreCall.runAbiSchedFootprintChecks",
-          "line": 1387,
+          "line": 1382,
           "called": [
             "SeLe4n.Kernel.Concurrency.AccessMode",
             "SeLe4n.Kernel.Concurrency.LockKey",
@@ -338914,7 +338252,7 @@
           "kind": "def",
           "name": "bracketUnifiedDecl",
           "full_name": "SeLe4n.Testing.SmpCrossCoreCall.bracketUnifiedDecl",
-          "line": 1469,
+          "line": 1464,
           "called": [
             "SeLe4n.Kernel.Concurrency.LockSet",
             "SeLe4n.Kernel.Concurrency.bootCoreId",
@@ -338928,7 +338266,7 @@
           "kind": "def",
           "name": "undeclaredUnifiedDecl",
           "full_name": "SeLe4n.Testing.SmpCrossCoreCall.undeclaredUnifiedDecl",
-          "line": 1474,
+          "line": 1469,
           "called": [
             "SeLe4n.Kernel.Concurrency.LockSet",
             "SeLe4n.Kernel.Concurrency.bootCoreId",
@@ -338942,7 +338280,7 @@
           "kind": "def",
           "name": "runUnifiedBracketChecks",
           "full_name": "SeLe4n.Testing.SmpCrossCoreCall.runUnifiedBracketChecks",
-          "line": 1487,
+          "line": 1482,
           "called": [
             "SeLe4n.Kernel.Concurrency.AccessMode",
             "SeLe4n.Kernel.Concurrency.LockKey",
@@ -338967,7 +338305,7 @@
           "kind": "def",
           "name": "runSmpCrossCoreCallChecks",
           "full_name": "SeLe4n.Testing.SmpCrossCoreCall.runSmpCrossCoreCallChecks",
-          "line": 1568,
+          "line": 1563,
           "called": [
             "SeLe4n.Testing.SmpCrossCoreCall.runAbiSchedFootprintChecks",
             "SeLe4n.Testing.SmpCrossCoreCall.runBlockingChecks",
@@ -338985,7 +338323,7 @@
           "kind": "def",
           "name": "main",
           "full_name": "main",
-          "line": 1586,
+          "line": 1581,
           "called": [
             "SeLe4n.Testing.SmpCrossCoreCall.runSmpCrossCoreCallChecks"
           ]
@@ -341322,18 +340660,14 @@
             "SeLe4n.Kernel.Concurrency.LockKind",
             "SeLe4n.Kernel.Concurrency.LockSet.lockAcquireSequence",
             "SeLe4n.Kernel.Concurrency.LockSet.ofList?",
-            "SeLe4n.Kernel.Concurrency.RwLockState.unheld",
-            "SeLe4n.Kernel.Concurrency.allCores",
             "SeLe4n.Kernel.Concurrency.bootCoreId",
             "SeLe4n.Kernel.Concurrency.numCores",
             "SeLe4n.Kernel.PriorityInheritance.pipChainHomeCores",
             "SeLe4n.Kernel.PriorityInheritance.pipChainSchedFootprint",
             "SeLe4n.Kernel.PriorityInheritance.pipChainVisited",
-            "SeLe4n.Kernel.PriorityInheritance.withPipChainSchedExtension",
             "SeLe4n.Kernel.RobinHood.RHTable.insert",
             "SeLe4n.Kernel.determineTargetCore",
             "SeLe4n.Model.SystemState",
-            "SeLe4n.Model.SystemState.runQueueLockOnCore",
             "SeLe4n.ObjId.ofNat",
             "SeLe4n.Testing.SmpFoundations.assertBool",
             "SeLe4n.ThreadId",
@@ -341346,25 +340680,23 @@
           "kind": "def",
           "name": "runCSpaceWalkFootprintChecks",
           "full_name": "SeLe4n.Testing.SmpFoundations.runCSpaceWalkFootprintChecks",
-          "line": 902,
+          "line": 895,
           "called": [
             "SeLe4n.CPtr",
             "SeLe4n.CPtr.ofNat",
             "SeLe4n.Kernel.Concurrency.AccessMode",
             "SeLe4n.Kernel.Concurrency.AccessMode.conflicts",
-            "SeLe4n.Kernel.Concurrency.acquireAll",
-            "SeLe4n.Kernel.Concurrency.bootCoreId",
             "SeLe4n.Kernel.Concurrency.cnodeLock",
             "SeLe4n.Kernel.Concurrency.lockSet_cspaceDelete",
             "SeLe4n.Kernel.Concurrency.lockSet_lifecycleRetype",
             "SeLe4n.Kernel.Concurrency.maxLockSetSize",
             "SeLe4n.Kernel.Concurrency.stateLevelLock",
             "SeLe4n.Kernel.RobinHood.RHTable.insert",
+            "SeLe4n.Kernel.cspaceWalkBracket",
             "SeLe4n.Kernel.cspaceWalkLockSet",
             "SeLe4n.Kernel.cspaceWalkPath",
             "SeLe4n.Kernel.declaredLockSetForCSpaceWalk",
             "SeLe4n.Kernel.resolveCapAddress",
-            "SeLe4n.Kernel.resolveCapAddressUnderWalkLocks",
             "SeLe4n.Model.AccessRightSet.empty",
             "SeLe4n.Model.CNode",
             "SeLe4n.Model.SystemState",
@@ -341383,7 +340715,7 @@
           "kind": "def",
           "name": "runSchedLockDomainChecks",
           "full_name": "SeLe4n.Testing.SmpFoundations.runSchedLockDomainChecks",
-          "line": 1032,
+          "line": 1025,
           "called": [
             "SeLe4n.Kernel.Concurrency.CoreId",
             "SeLe4n.Kernel.Concurrency.LockKey",
@@ -341414,7 +340746,7 @@
           "kind": "def",
           "name": "runSecondaryKernelMainChecks",
           "full_name": "SeLe4n.Testing.SmpFoundations.runSecondaryKernelMainChecks",
-          "line": 1139,
+          "line": 1132,
           "called": [
             "SeLe4n.Kernel.Concurrency.coreIdOfUInt64?",
             "SeLe4n.Kernel.perCoreRescheduleStep",
@@ -341430,7 +340762,7 @@
           "kind": "def",
           "name": "runTlbiForSharingChecks",
           "full_name": "SeLe4n.Testing.SmpFoundations.runTlbiForSharingChecks",
-          "line": 1227,
+          "line": 1220,
           "called": [
             "SeLe4n.Kernel.Architecture.TlbInvalidation",
             "SeLe4n.Kernel.Architecture.TlbInvalidation.toAsid",
@@ -341446,7 +340778,7 @@
           "kind": "def",
           "name": "runIdleWaitChecks",
           "full_name": "SeLe4n.Testing.SmpFoundations.runIdleWaitChecks",
-          "line": 1276,
+          "line": 1269,
           "called": [
             "SeLe4n.Kernel.Concurrency.idleWait",
             "SeLe4n.Kernel.Concurrency.idleWaitBounded",
@@ -341460,7 +340792,7 @@
           "kind": "def",
           "name": "runPerCoreStatsChecks",
           "full_name": "SeLe4n.Testing.SmpFoundations.runPerCoreStatsChecks",
-          "line": 1299,
+          "line": 1292,
           "called": [
             "SeLe4n.Kernel.Concurrency.PerCoreStatsSnapshot",
             "SeLe4n.Kernel.Concurrency.allCores",
@@ -341482,7 +340814,7 @@
           "kind": "def",
           "name": "runSgiFfiBindingChecks",
           "full_name": "SeLe4n.Testing.SmpFoundations.runSgiFfiBindingChecks",
-          "line": 1381,
+          "line": 1374,
           "called": [
             "SeLe4n.Kernel.Concurrency.SgiKind",
             "SeLe4n.Kernel.Concurrency.SgiKind.all",
@@ -341495,7 +340827,7 @@
           "kind": "def",
           "name": "runFoundationsChecks",
           "full_name": "SeLe4n.Testing.SmpFoundations.runFoundationsChecks",
-          "line": 1410,
+          "line": 1403,
           "called": [
             "SeLe4n.Testing.SmpFoundations.runArchAssumptionAdditionalChecks",
             "SeLe4n.Testing.SmpFoundations.runArchAssumptionChecks",
@@ -341526,7 +340858,7 @@
           "kind": "def",
           "name": "main",
           "full_name": "main",
-          "line": 1441,
+          "line": 1434,
           "called": [
             "SeLe4n.Testing.SmpFoundations.runFoundationsChecks"
           ]
@@ -369485,6 +368817,13 @@
           "kind": "example",
           "name": "",
           "full_name": null,
+          "line": 284,
+          "called": []
+        },
+        {
+          "kind": "example",
+          "name": "",
+          "full_name": null,
           "line": 287,
           "called": []
         },
@@ -369492,14 +368831,14 @@
           "kind": "example",
           "name": "",
           "full_name": null,
-          "line": 290,
+          "line": 291,
           "called": []
         },
         {
           "kind": "example",
           "name": "",
           "full_name": null,
-          "line": 294,
+          "line": 302,
           "called": []
         },
         {
@@ -369527,126 +368866,119 @@
           "kind": "example",
           "name": "",
           "full_name": null,
-          "line": 314,
+          "line": 316,
           "called": []
         },
         {
           "kind": "example",
           "name": "",
           "full_name": null,
-          "line": 319,
+          "line": 323,
           "called": []
         },
         {
           "kind": "example",
           "name": "",
           "full_name": null,
-          "line": 326,
+          "line": 327,
           "called": []
         },
         {
           "kind": "example",
           "name": "",
           "full_name": null,
-          "line": 330,
+          "line": 338,
           "called": []
         },
         {
           "kind": "example",
           "name": "",
           "full_name": null,
-          "line": 341,
+          "line": 342,
           "called": []
         },
         {
           "kind": "example",
           "name": "",
           "full_name": null,
-          "line": 345,
+          "line": 346,
           "called": []
         },
         {
           "kind": "example",
           "name": "",
           "full_name": null,
-          "line": 349,
+          "line": 353,
           "called": []
         },
         {
           "kind": "example",
           "name": "",
           "full_name": null,
-          "line": 356,
+          "line": 370,
           "called": []
         },
         {
           "kind": "example",
           "name": "",
           "full_name": null,
-          "line": 373,
+          "line": 375,
           "called": []
         },
         {
           "kind": "example",
           "name": "",
           "full_name": null,
-          "line": 378,
+          "line": 380,
           "called": []
         },
         {
           "kind": "example",
           "name": "",
           "full_name": null,
-          "line": 383,
+          "line": 385,
           "called": []
         },
         {
           "kind": "example",
           "name": "",
           "full_name": null,
-          "line": 388,
+          "line": 391,
           "called": []
         },
         {
           "kind": "example",
           "name": "",
           "full_name": null,
-          "line": 394,
+          "line": 395,
           "called": []
         },
         {
           "kind": "example",
           "name": "",
           "full_name": null,
-          "line": 398,
+          "line": 401,
           "called": []
         },
         {
           "kind": "example",
           "name": "",
           "full_name": null,
-          "line": 404,
+          "line": 407,
           "called": []
         },
         {
           "kind": "example",
           "name": "",
           "full_name": null,
-          "line": 410,
-          "called": []
-        },
-        {
-          "kind": "example",
-          "name": "",
-          "full_name": null,
-          "line": 418,
+          "line": 415,
           "called": []
         },
         {
           "kind": "def",
           "name": "assertBool",
           "full_name": "SeLe4n.Testing.WithLockSet.assertBool",
-          "line": 428,
+          "line": 425,
           "called": [],
           "private": true
         },
@@ -369654,7 +368986,7 @@
           "kind": "def",
           "name": "runWithLockSetEmptyChecks",
           "full_name": "SeLe4n.Testing.WithLockSet.runWithLockSetEmptyChecks",
-          "line": 435,
+          "line": 432,
           "called": [
             "SeLe4n.Kernel.Concurrency.LockSet.empty",
             "SeLe4n.Kernel.Concurrency.RwLockState.unheld",
@@ -369669,7 +369001,7 @@
           "kind": "def",
           "name": "runAcquireReleasePrimitiveChecks",
           "full_name": "SeLe4n.Testing.WithLockSet.runAcquireReleasePrimitiveChecks",
-          "line": 446,
+          "line": 443,
           "called": [
             "SeLe4n.Kernel.Concurrency.RwLockState",
             "SeLe4n.Kernel.Concurrency.RwLockState.unheld",
@@ -369686,7 +369018,7 @@
           "kind": "def",
           "name": "runAcquireAllChecks",
           "full_name": "SeLe4n.Testing.WithLockSet.runAcquireAllChecks",
-          "line": 478,
+          "line": 475,
           "called": [
             "SeLe4n.Kernel.Concurrency.LockKey",
             "SeLe4n.Kernel.Concurrency.RwLockState",
@@ -369703,7 +369035,7 @@
           "kind": "def",
           "name": "runLockSetHeldChecks",
           "full_name": "SeLe4n.Testing.WithLockSet.runLockSetHeldChecks",
-          "line": 501,
+          "line": 498,
           "called": [
             "SeLe4n.Kernel.Concurrency.LockSet.empty",
             "SeLe4n.Kernel.Concurrency.LockSet.singleton",
@@ -369720,7 +369052,7 @@
           "kind": "def",
           "name": "runOrderingChecks",
           "full_name": "SeLe4n.Testing.WithLockSet.runOrderingChecks",
-          "line": 523,
+          "line": 520,
           "called": [
             "SeLe4n.Kernel.Concurrency.LockKey",
             "SeLe4n.Kernel.Concurrency.LockSet.empty",
@@ -369736,7 +369068,7 @@
           "kind": "def",
           "name": "runWithLockSetComputationChecks",
           "full_name": "SeLe4n.Testing.WithLockSet.runWithLockSetComputationChecks",
-          "line": 540,
+          "line": 537,
           "called": [
             "SeLe4n.Kernel.Concurrency.LockSet.empty",
             "SeLe4n.Kernel.Concurrency.RwLockState.unheld",
@@ -369751,7 +369083,7 @@
           "kind": "def",
           "name": "runDynamicChainChecks",
           "full_name": "SeLe4n.Testing.WithLockSet.runDynamicChainChecks",
-          "line": 552,
+          "line": 549,
           "called": [
             "SeLe4n.Kernel.Concurrency.MAX_PIP_RETRIES",
             "SeLe4n.Kernel.Concurrency.PipChainPath",
@@ -369769,7 +369101,7 @@
           "kind": "def",
           "name": "runInventoryChecks",
           "full_name": "SeLe4n.Testing.WithLockSet.runInventoryChecks",
-          "line": 601,
+          "line": 598,
           "called": [
             "SeLe4n.Kernel.Concurrency.withLockSetTheorems",
             "SeLe4n.Testing.WithLockSet.assertBool"
@@ -369780,7 +369112,7 @@
           "kind": "def",
           "name": "runStructuralPreservationChecks",
           "full_name": "SeLe4n.Testing.WithLockSet.runStructuralPreservationChecks",
-          "line": 640,
+          "line": 638,
           "called": [
             "SeLe4n.Kernel.Concurrency.RwLockState",
             "SeLe4n.Kernel.Concurrency.RwLockState.unheld",
@@ -369798,7 +369130,7 @@
           "kind": "def",
           "name": "runAuditPass1Checks",
           "full_name": "SeLe4n.Testing.WithLockSet.runAuditPass1Checks",
-          "line": 660,
+          "line": 658,
           "called": [
             "SeLe4n.Kernel.Concurrency.AccessMode",
             "SeLe4n.Kernel.Concurrency.AccessMode.toAcquireOp",
@@ -369821,7 +369153,7 @@
           "kind": "def",
           "name": "runIntegrationChecks",
           "full_name": "SeLe4n.Testing.WithLockSet.runIntegrationChecks",
-          "line": 694,
+          "line": 692,
           "called": [
             "SeLe4n.Kernel.Concurrency.LockKind",
             "SeLe4n.Kernel.Concurrency.RwLockState.unheld",
@@ -369844,7 +369176,7 @@
           "kind": "def",
           "name": "mkTcbReady",
           "full_name": "SeLe4n.Testing.WithLockSet.mkTcbReady",
-          "line": 768,
+          "line": 766,
           "called": [
             "SeLe4n.Model.TCB",
             "SeLe4n.ObjId.ofNat",
@@ -369857,7 +369189,7 @@
           "kind": "def",
           "name": "mkTcbBlockedOn",
           "full_name": "SeLe4n.Testing.WithLockSet.mkTcbBlockedOn",
-          "line": 774,
+          "line": 772,
           "called": [
             "SeLe4n.Model.TCB",
             "SeLe4n.ObjId.ofNat",
@@ -369870,7 +369202,7 @@
           "kind": "def",
           "name": "mkCNodeFixture",
           "full_name": "SeLe4n.Testing.WithLockSet.mkCNodeFixture",
-          "line": 779,
+          "line": 777,
           "called": [
             "SeLe4n.Model.CNode",
             "SeLe4n.UniqueSlotMap.empty"
@@ -369881,7 +369213,7 @@
           "kind": "def",
           "name": "chainState",
           "full_name": "SeLe4n.Testing.WithLockSet.chainState",
-          "line": 785,
+          "line": 783,
           "called": [
             "SeLe4n.Kernel.RobinHood.RHTable.insert",
             "SeLe4n.Model.SystemState",
@@ -369896,7 +369228,7 @@
           "kind": "def",
           "name": "cspaceMoveFixture",
           "full_name": "SeLe4n.Testing.WithLockSet.cspaceMoveFixture",
-          "line": 794,
+          "line": 792,
           "called": [
             "SeLe4n.Kernel.RobinHood.RHTable.insert",
             "SeLe4n.Model.SystemState",
@@ -369912,7 +369244,7 @@
           "kind": "def",
           "name": "runRaiiReleaseChecks",
           "full_name": "SeLe4n.Testing.WithLockSet.runRaiiReleaseChecks",
-          "line": 801,
+          "line": 799,
           "called": [
             "SeLe4n.Kernel.Concurrency.LockSet.singleton",
             "SeLe4n.Kernel.Concurrency.RwLockState.unheld",
@@ -369931,7 +369263,7 @@
           "kind": "def",
           "name": "runEstablishmentChecks",
           "full_name": "SeLe4n.Testing.WithLockSet.runEstablishmentChecks",
-          "line": 831,
+          "line": 829,
           "called": [
             "SeLe4n.Kernel.Concurrency.LockId",
             "SeLe4n.Kernel.Concurrency.acquireAll",
@@ -369956,7 +369288,7 @@
           "kind": "def",
           "name": "runObserverAtomicChecks",
           "full_name": "SeLe4n.Testing.WithLockSet.runObserverAtomicChecks",
-          "line": 861,
+          "line": 859,
           "called": [
             "SeLe4n.Kernel.Concurrency.LockSet.lockAcquireSequence",
             "SeLe4n.Kernel.Concurrency.LockSet.singleton",
@@ -369979,7 +369311,7 @@
           "kind": "def",
           "name": "runMultiStepChainChecks",
           "full_name": "SeLe4n.Testing.WithLockSet.runMultiStepChainChecks",
-          "line": 884,
+          "line": 882,
           "called": [
             "SeLe4n.Kernel.Concurrency.LockId",
             "SeLe4n.Kernel.Concurrency.acquireAll",
@@ -370001,7 +369333,7 @@
           "kind": "def",
           "name": "runGhostLockStateChecks",
           "full_name": "SeLe4n.Testing.WithLockSet.runGhostLockStateChecks",
-          "line": 936,
+          "line": 934,
           "called": [
             "SeLe4n.Kernel.Concurrency.AccessMode",
             "SeLe4n.Kernel.Concurrency.CoreId",
@@ -370023,7 +369355,7 @@
           "kind": "def",
           "name": "rescheduleFlagSpec",
           "full_name": "SeLe4n.Testing.WithLockSet.rescheduleFlagSpec",
-          "line": 979,
+          "line": 977,
           "called": [
             "SeLe4n.Kernel.Concurrency.BracketSpec",
             "SeLe4n.Kernel.Concurrency.bootCoreId",
@@ -370037,7 +369369,7 @@
           "kind": "def",
           "name": "runGhostBracketChecks",
           "full_name": "SeLe4n.Testing.WithLockSet.runGhostBracketChecks",
-          "line": 992,
+          "line": 990,
           "called": [
             "SeLe4n.Kernel.Concurrency.AccessMode",
             "SeLe4n.Kernel.Concurrency.BracketSpec.run",
@@ -370070,7 +369402,7 @@
           "kind": "def",
           "name": "runWithLockSetChecks",
           "full_name": "SeLe4n.Testing.WithLockSet.runWithLockSetChecks",
-          "line": 1048,
+          "line": 1046,
           "called": [
             "SeLe4n.Testing.WithLockSet.runAcquireAllChecks",
             "SeLe4n.Testing.WithLockSet.runAcquireReleasePrimitiveChecks",
@@ -370095,7 +369427,7 @@
           "kind": "def",
           "name": "main",
           "full_name": "main",
-          "line": 1073,
+          "line": 1071,
           "called": [
             "SeLe4n.Testing.WithLockSet.runWithLockSetChecks"
           ]

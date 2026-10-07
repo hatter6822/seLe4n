@@ -2601,8 +2601,8 @@ that `answeredReplyFrameAbove? st target` *occur* in the definition, and a membe
 occurring is not a member being a declared write at the mode the splice needs.
 
 Like every member of this family the resolution is on the pre-state, which is
-what `runUnderDeclaredLockSet` re-resolves and refuses on change (WS-RR RR7.12);
-the bracket, not the member, is where the two states are reconciled. -/
+the state the seam's `BracketSpec` declares at (WS-LS LS2.4); the bracket's
+coverage proof, not the member, is where the two states are reconciled. -/
 theorem lockSet_endpointReplyOnCore_covers_splicedFrameAbove
     (st : SystemState) (replier : SeLe4n.ThreadId) (cnodeRootObjId : SeLe4n.ObjId)
     (target : SeLe4n.ThreadId) (above : SeLe4n.ReplyId)

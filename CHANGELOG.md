@@ -1,3 +1,91 @@
+## v0.36.68 — WS-LS LS2.4: the syscall and suspend seams run the bracket specification; the word-level bracket is deleted
+
+**The syscall path stops resolving, acquiring, re-resolving and unwinding a
+footprint at runtime.**  `syscallDispatchCrossCoreEntry` and the raw
+`suspend_thread_cross_core` seam execute `BracketSpec.run` on
+`syscallDispatchBracket` / `suspendThreadBracket`
+(`SeLe4n/Kernel/SyscallDispatchEntry.lean`), which is the step and nothing
+else: `syscallDispatchCrossCoreBracketedStep_run` and `suspendThreadBracket_run`
+are `rfl`.  Every state-committing seam that brackets now runs a
+`BracketSpec`, so a footprint is a proof obligation the record discharges
+(`covers` is LS2.3's seam theorem) and never a runtime branch.
+`main_trace_smoke.expected` is unchanged.  The `heap-allocations-per-syscall`
+exerciser reads **387** per notification-signal round trip, unchanged: the
+deleted bracket was runtime-inert on these seams, and the lock words it
+touched are the LS3 cut.
+
+- **`syscallDispatchBracket ctx execCore syscallId trapped`**: `declared` is
+  `declaredUnifiedLockSetForAbiEntry` over the trapped context's six message
+  registers, `step` is `syscallDispatchCrossCoreStep` over the whole context,
+  `inv` is `st.objects.invExt ∧ queueHeadBlockedConsistent st`, `covers` is
+  `syscallDispatchCrossCoreStep_coversWrites`.  **`suspendThreadBracket vtid
+  execCore`**: `declared` is the unified `.tcbSuspend` footprint for the thread
+  on the executing core (or the victim, on a core running nothing) suspending
+  `vtid`, `step` the suspend and the local successor with the KSC-1 captures
+  first, `covers` `suspendSeamAction_coversWrites`.  Both are `@[inline]`, so
+  the executed path is the step's own application and no record is built at
+  runtime.  The suspend seam no longer calls `lockSetForSyscall` or
+  `withLockSet`.
+- **The step has its own module.**  `syscallDispatchCrossCoreStep`,
+  `_of_ok` and `_drains_physicalWrites` moved verbatim to
+  `SeLe4n/Kernel/SyscallDispatchStep.lean`, so `SyscallSeamCoverage.lean`
+  imports the step and `SyscallDispatchEntry.lean` imports the coverage —
+  the record needs the theorem and the theorem needs the step, and the two
+  modules could not import each other.
+- **Deleted**: `SeLe4n/Kernel/Concurrency/Locks/LockBracket.lean` whole
+  (`LockBracketOutcome`, `LockBracketDomain`, `runBracketed` and its three
+  equations, `runChainExtension` and its three, `objectLockBracketDomain` and
+  its two); `SyscallLockBracket.lean` §3 (`runUnderDeclaredLockSet` and its
+  four equations); `syscallBracketRefusalResult`,
+  `syscallDispatchCrossCoreBracketedStep_undeclared` / `_refused`;
+  `withDynamicChainExtension` with `_unfold`, `_terminated`,
+  `_terminated_refused` and the SM3.C.11.c capstone
+  `withDynamicChainExtension_establishes_dynamicChainHeld`
+  (`DynamicChainExtension.lean`; `chainLockSeq`, its three lemmas and the §9–§10
+  `acquireAll` transport stay); `ChainFootprint.lean` §5
+  (`withPipChainSchedExtension` with `_undeclared` / `_declared` / `_refused`,
+  `pipChainSchedExtension_acquires_in_ladder_order`,
+  `runBracketed_chainExtension_composes`), keeping
+  `withPipChainSchedExtension_resolves` as `pipChainSchedFootprint_resolves`;
+  `resolveCapAddressUnderWalkLocks` and its two equations
+  (`CSpaceWalkFootprint.lean` §4), replaced by **`cspaceWalkBracket`**, a
+  `BracketSpec` whose `covers` is `footprintCoversWrites_refl` (a resolution
+  writes nothing), with `cspaceWalkBracket_run` by `rfl`.  The chain
+  extensions go rather than become a ghost extension of `declared` (plan
+  §3.2): the chain's footprint is declared statically at the seams since
+  RR7.40 (`pipChainVisited`, `propagatePipChainCrossCore_coversWrites`), so a
+  runtime extension declared nothing the spec did not.
+- **The export-commit census has one bracket form.**  `bracketForms` is
+  `[BracketSpec.run]`: `Concurrency.withLockSet` is no longer a bracket (it
+  writes lock words the proofs no longer read), and the word-level witness
+  `censusWitnessBracketed` is deleted; `censusWitnessBracketedSpec` carries
+  the stale-registry negative.  The seven committing seams, five bracketed,
+  are unchanged.
+- **Consumers re-keyed**: `WithLockSetInventory` loses three `dynamicChain`
+  rows (23 → 20; 111 → 108 entries) and `PhaseTheoremManifest` SM3 follows
+  (439 → 436 entries, 288 → 286 theorems; 1142 entries / 918 theorems over
+  the sixteen inventories; `docs/smp_theorem_manifest.json` regenerated);
+  `KernelTransitionReachabilityCensus` drops six pins
+  (`LockBracketOutcome.state`, `runChainExtension`,
+  `withDynamicChainExtension`, `withPipChainSchedExtension`,
+  `runUnderDeclaredLockSet`, `resolveCapAddressUnderWalkLocks`);
+  `SmpCrossCoreCallSuite`'s refusal and committed-arm checks become the
+  record's `declared` at the entry state and the ghost bracket from the
+  all-free table ending all-free (`BracketSpec.runGhost`);
+  `SmpFoundationsSuite`'s walk check runs `cspaceWalkBracket`;
+  `WithLockSetSuite`'s `#check`s and counts; `scripts/store_reader_hygiene_baseline.txt`
+  re-anchored with its producer (it had also not been re-read at LS2.3's
+  `SlotConfinement` move); the Tier 3 anchors over the deleted surface
+  re-pointed at the records, the ghost `LockState.bracket` and the
+  `BracketSpec.guard` definition.
+- **Plan §6's no-object cell is recorded, not proved.**  The lemma "every key
+  a declared footprint names has an object" is false of a dangling
+  capability: `lockSetForSyscall`'s IPC arms name `ops.targetObject` without
+  reading it.  A key with no object is one the ghost table grants and the
+  step's own lookup refuses, on both paths; Track D treats it as free (§3.4).
+
+Refs: docs/planning/LOCK_STATE_SEPARATION_PLAN.md (row LS2.4, §3.2, §6).
+
 ## v0.36.67 — WS-LS LS2.3: the syscall and suspend seams' coverage, stated at the seam
 
 The two seams the plan's first draft claimed coverage theorems for now have

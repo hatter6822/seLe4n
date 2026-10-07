@@ -181,8 +181,6 @@ open SeLe4n.Kernel.Concurrency
 #check @WalkOutcome
 #check @walkStep
 #check @walkAndAcquire
-#check @withDynamicChainExtension
-#check @withDynamicChainExtension_unfold
 #check @dynamicChainHeld
 #check @chainFollowsBlockingServer
 #check @walkStep_extended_increases_objId
@@ -256,7 +254,6 @@ open SeLe4n.Kernel.Concurrency
 #check @acquireLockOnObject_preserves_blockingServer
 #check @acquireAll_preserves_blockingServer
 #check @chainFollowsBlockingServer_of_blockingServer_eq
-#check @withDynamicChainExtension_establishes_dynamicChainHeld
 #check @coreWaitsForLock
 #check @dynamic_chain_deadlock_free
 #check @dynamic_chain_no_mutual_wait
@@ -600,13 +597,14 @@ private def runDynamicChainChecks : IO Unit := do
 
 private def runInventoryChecks : IO Unit := do
   IO.println "--- §8 SM3.C — Inventory aggregator ---"
-  -- The inventory has 111 entries (Group-B: +5 held, +4 atomicity, +6
+  -- The inventory has 108 entries (Group-B: +5 held, +4 atomicity, +6
   -- dynamicChain; WS-LC LC4.7: +10 combinator, +2 atomicity for the
   -- withdrawal surface and the shrinking phase; WS-LS LS2.1: −7 atomicity for
   -- the retired lock-insensitivity machinery, +20 ghostBracket for the pair,
-  -- the ghost bracket and the bracket specification).
+  -- the ghost bracket and the bracket specification; WS-LS LS2.4: −3
+  -- dynamicChain for the deleted runtime chain-extension combinator).
   assertBool "the withLockSet inventory has its full entry count"
-    (decide (withLockSetTheorems.length = 111))
+    (decide (withLockSetTheorems.length = 108))
   -- Per-category counts.
   assertBool "withLockSetTheorems combinator category count"
     (decide ((withLockSetTheorems.filter
@@ -625,7 +623,7 @@ private def runInventoryChecks : IO Unit := do
       (fun t => t.category == .ghostBracket)).length = 20))
   assertBool "withLockSetTheorems dynamicChain category count"
     (decide ((withLockSetTheorems.filter
-      (fun t => t.category == .dynamicChain)).length = 23))
+      (fun t => t.category == .dynamicChain)).length = 20))
   -- Partition-sum is total.
   assertBool "withLockSetTheorems partition sum = total"
     (decide (

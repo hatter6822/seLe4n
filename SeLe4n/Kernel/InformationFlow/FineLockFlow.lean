@@ -3134,8 +3134,8 @@ rather than quietly leave a stale comment. -/
 inductive UncoveredLockDomain where
   -- **WS-RR RR8.12 Cut C6h (`v0.35.181`)**: `syscallSeamSchedulerDomain` is
   -- DELETED.  The syscall seam brackets on the scheduler domain now:
-  -- `syscallDispatchCrossCoreBracketedStep` runs `Concurrency.runBracketed
-  -- objectLockBracketDomain` over `declaredUnifiedLockSetForAbiEntry`, whose
+  -- `syscallDispatchCrossCoreBracketedStep` runs the seam's `BracketSpec`
+  -- (`syscallDispatchBracket`, WS-LS LS2.4) over `declaredUnifiedLockSetForAbiEntry`, whose
   -- `LockKey` members name the run-queue and replenish-queue locks the
   -- constructor said a `LockSet` could not express, and each of the sixteen
   -- declared arms carries a `schedLockSet_*_coversWrites` proof that reaches the
@@ -3202,10 +3202,10 @@ RR7.41 (the CSpace-walk interior).
 on each, and `cspaceWalk_conflicts_with_delete` proves what the root-only
 footprint could not: a `cspaceDelete` whose target lies on the path shares a
 conflicting lock with the resolution, so SM3.E's conflict order separates them.
-The acquisition is `runUnderDeclaredLockSet` over the sorted set rather than a
-hand-over-hand coupling walk — coupling would abandon the SM0.I total order the
-whole tree's deadlock freedom rests on, and the revalidating bracket buys the
-same exclusion while keeping it.  Two relations PR #892 review round 4 closed
+The footprint is declared as a sorted set (`cspaceWalkBracket`, a `BracketSpec`
+since WS-LS LS2.4) rather than acquired by a hand-over-hand coupling walk —
+coupling would abandon the SM0.I total order the whole tree's deadlock freedom
+rests on, and the declared footprint buys the same exclusion while keeping it.  Two relations PR #892 review round 4 closed
 in that mechanism: the declaration is **refused** above `maxLockSetSize`
 (`declaredLockSetForCSpaceWalk` answers `none` for a walk past the ceiling and
 the bracket falls back — a footprint the bound is false for is never claimed),
@@ -3218,12 +3218,12 @@ locks are nameable now that RR7.39 gave the scheduler domain a runtime:
 `PriorityInheritance.pipChainSchedFootprint` declares every visited thread's TCB
 write lock **and** its home core's run-queue write lock — two segments, because
 the `LockKey` ladder puts every object lock below every run-queue lock and
-per-member coupling would walk it backwards.  `withPipChainSchedExtension`
-acquires it through the shared `runChainExtension` — which acts only once the
-footprint is held and otherwise unwinds and returns the fallback (PR #892 review
-round 2) — and
+per-member coupling would walk it backwards.  The footprint is declared
+statically at the seams that walk the chain (the receive and reply footprints
+simulate the walk, `pipChainVisited`), and
 `propagatePipChainCrossCore_coversWrites` proves the walk writes nothing outside
-it.  The entry goes rather than narrows because the walk is now covered end to
+it; the runtime extension that acquired it (`withPipChainSchedExtension`, PR
+#892 review round 2) is deleted with the word-level bracket at WS-LS LS2.4.  The entry goes rather than narrows because the walk is now covered end to
 end; the inventory falls from four to three, which is the only reason it may.
 
 **The scheduler domain's entry is DELETED at v0.35.181 (WS-RR RR8.12 Cut C6h).**

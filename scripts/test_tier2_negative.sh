@@ -201,7 +201,7 @@ run_check_with_timeout "TRACE" lake exe lock_set_suite
 # the SM3.C.7/C.8 atomicity/invariant-preservation theorems
 # (`lockSet_atomic_under_2pl`, `withLockSet_invariant_preserved`),
 # the SM3.C.11 dynamic PIP-chain-walk machinery
-# (`withDynamicChainExtension`, `walkAndAcquire`, `dynamicChainHeld`,
+# (`chainLockSeq`, `walkAndAcquire`, `dynamicChainHeld`,
 # `walkAndAcquire_path_ascending_in_ObjId_if_terminated`), and the
 # 51-theorem SM3.C inventory aggregator.
 run_check_with_timeout "TRACE" lake exe with_lock_set_suite

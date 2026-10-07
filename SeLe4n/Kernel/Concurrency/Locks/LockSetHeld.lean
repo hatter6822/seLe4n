@@ -784,7 +784,7 @@ This is the multi-lock counterpart to
 SM3.C.8 metatheorem's `lockSetHeld` precondition rests on (the static lock set
 is genuinely acquired by the `withLockSet` growing phase) AND the SM3.C.11.c
 conjunct-1 producer (the dynamic chain's write locks are genuinely held after
-`withDynamicChainExtension`'s `acquireAll`).
+the `acquireAll` over `chainLockSeq`).
 
 Induction on the sequence:
 * the head lock is established by the single-lock establishment lemma, then

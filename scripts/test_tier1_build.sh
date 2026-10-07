@@ -80,8 +80,8 @@ run_check "BUILD" lake build SeLe4n.Testing.BootEntryContract
 # (transitive `getUsedConstants` reachability to a `kernelStateRef` write), and
 # reconciles it against a registry in both directions -- an unclassified
 # committing seam and a stale registry entry are each a failure.  A body
-# recorded as bracketed must reach `runUnderDeclaredLockSet` or
-# `Concurrency.withLockSet`; one recorded unbracketed must carry a reason.
+# recorded as bracketed must reach `BracketSpec.run`; one recorded
+# unbracketed must carry a reason.
 #
 # Building it IS the check.  Its witnesses -- a planted BARE-COMMIT body, a
 # commit reached only through a helper, and a read-only body -- keep it from
