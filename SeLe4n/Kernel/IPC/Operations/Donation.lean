@@ -1010,7 +1010,7 @@ went.
 
 The `_of_no_donation` sibling above says the hand-off moves *nothing* when the
 resolver declines; this says *where* it moves when it answers, which is what the
-replenish clause of `schedFootprintCoversWrites` needs.  Neither implies the
+replenish clause of `footprintCoversWrites` needs.  Neither implies the
 other, and both directions matter: the first keeps the empty segment exact, the
 second keeps the non-empty one true. -/
 theorem applyRendezvousCallDonation_replenishQueueOnCore_ne (st st'' : SystemState)

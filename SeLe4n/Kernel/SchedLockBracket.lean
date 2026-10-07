@@ -13,6 +13,7 @@
 
 import SeLe4n.Kernel.Scheduler.Operations.PerCoreChooseThread
 import SeLe4n.Kernel.Concurrency.Locks.LockBracket
+import SeLe4n.Kernel.Concurrency.Locks.BracketSpec
 import SeLe4n.Kernel.Concurrency.Runtime
 import SeLe4n.Kernel.Scheduler.Operations.PerCoreRunLoop
 
@@ -64,7 +65,7 @@ that "what does a revalidating 2PL bracket do" has one answer.
 
 A declared footprint that does not cover a write is a *false* footprint, and the
 2PL argument would then rest on exclusion the runtime never established.
-`schedFootprintCoversWrites` states the obligation as data — for every lock the
+`footprintCoversWrites` states the obligation as data — for every lock the
 footprint does **not** name, the state it guards is unchanged — and §4 discharges
 it for both live steps.
 
@@ -250,93 +251,17 @@ clock for a tick that never ran. -/
 -- ============================================================================
 -- §3  What the footprint must cover
 -- ============================================================================
-
-/-- **WS-RR RR7.39**: the write-set obligation a declared scheduler footprint
-carries — for every lock the footprint does **not** name, the state that lock
-guards is unchanged.
-
-Quantified over every core rather than over the cores the author had in mind, so
-an under-declared footprint makes the statement false rather than vacuous — the
-same shape as `preservesFieldsOutside` (RR7.19), which is what turned six
-`_modifiedFields` comments into six proof obligations and immediately found two
-omissions.
-
-The three clauses partition the state the scheduler domain guards: the object
-store, core `d`'s scheduling slots under its run-queue lock, and core `d`'s
-replenishment queue under its replenish-queue lock.
-
-The object clause is stated at **two** granularities because footprints come at
-two.  A scheduler entry declares the object-store *table* write lock, which
-covers every key at once; the RR7.40 PIP chain declares each visited thread's own
-`.tcb` lock instead, and nothing table-wide.  So the clause is discharged by
-either — the table lock present makes it vacuous, and otherwise every key whose
-own lock is absent must be unchanged.  Writing it as `st'.objects = st.objects`
-under the table lock alone (its RR7.39 form) would have been *false* of a
-per-object footprint rather than merely silent about it, so the generalisation
-is what lets one predicate serve both and keeps "what does covering mean" a
-single question. -/
-def schedFootprintCoversWrites (S : LockSet) (st st' : SystemState) : Prop :=
-  ((LockKey.objStore, AccessMode.write) ∉ S.pairs →
-      ∀ oid : SeLe4n.ObjId,
-        (LockKey.object ⟨Concurrency.LockKind.tcb, oid⟩, AccessMode.write) ∉ S.pairs →
-        st'.objects[oid]? = st.objects[oid]?) ∧
-  (∀ d : CoreId, (LockKey.runQueue d, AccessMode.write) ∉ S.pairs →
-      st'.scheduler.runQueueOnCore d = st.scheduler.runQueueOnCore d ∧
-      st'.scheduler.currentOnCore d = st.scheduler.currentOnCore d ∧
-      st'.scheduler.activeDomainOnCore d = st.scheduler.activeDomainOnCore d) ∧
-  (∀ d : CoreId, (LockKey.replenishQueue d, AccessMode.write) ∉ S.pairs →
-      st'.scheduler.replenishQueueOnCore d = st.scheduler.replenishQueueOnCore d)
-
-/-- **WS-RR RR7.39**: a footprint covers a step that changes nothing. -/
-theorem schedFootprintCoversWrites_refl (S : LockSet) (st : SystemState) :
-    schedFootprintCoversWrites S st st :=
-  ⟨fun _ _ _ => rfl, fun _ _ => ⟨rfl, rfl, rfl⟩, fun _ _ => rfl⟩
-
-/-- A footprint covers a step that writes only a core's reschedule-pending flag
-(the KSC-1 accumulator): no clause of the coverage reads it. -/
-theorem schedFootprintCoversWrites_clearReschedulePendingOnCore (S : LockSet)
-    (st : SystemState) (c : CoreId) :
-    schedFootprintCoversWrites S st (st.clearReschedulePendingOnCore c) :=
-  ⟨fun _ _ _ => rfl, fun _ _ => ⟨rfl, rfl, rfl⟩, fun _ _ => rfl⟩
-
-/-- **WS-RR RR8.12 Cut C6h**: coverage is MONOTONE in the footprint.
-
-A footprint that names more locks covers at least what a smaller one covers,
-because every clause of `schedFootprintCoversWrites` is of the form *"a lock the
-footprint does **not** name guards state the step did not change"* — so widening
-the footprint only ever discharges more of those antecedents.
-
-This is what lets a per-arm coverage theorem, stated over the arm's own
-scheduler footprint, reach the **unified** footprint the syscall seam actually
-acquires (`unifiedLockSetForSyscall`, which merges the object domain's members
-in).  Without it the family would have to be restated at the unified footprint,
-which is one question with two answers.  **WS-LS LS1.2**: the inclusion is over
-the **write** members, because a merge keeps a write a write but may raise a
-read, and the write members are all the predicate reads.
-
-Over-declaring is the safe direction for coverage and **not** free in general:
-lock contention is an observable channel (SM8.D's CC-5), which is why the
-footprints themselves are narrowed per arm rather than widened to `allCores`.
-What this theorem says is only that the *proof obligation* travels upward, not
-that a wider footprint is a better one. -/
-theorem schedFootprintCoversWrites_mono (S U : LockSet) (st st' : SystemState)
-    (hSub : ∀ l, (l, AccessMode.write) ∈ S.pairs → (l, AccessMode.write) ∈ U.pairs)
-    (h : schedFootprintCoversWrites S st st') :
-    schedFootprintCoversWrites U st st' := by
-  obtain ⟨hObj, hRun, hRepl⟩ := h
-  refine ⟨?_, ?_, ?_⟩
-  · intro hTable oid hTcb
-    exact hObj (fun hMem => hTable (hSub _ hMem)) oid (fun hMem => hTcb (hSub _ hMem))
-  · intro d hd
-    exact hRun d (fun hMem => hd (hSub _ hMem))
-  · intro d hd
-    exact hRepl d (fun hMem => hd (hSub _ hMem))
+-- `footprintCoversWrites` and its `_refl` / `_clearReschedulePendingOnCore` /
+-- `_mono` lemmas moved to `Concurrency/Locks/BracketSpec.lean` at **WS-LS
+-- LS2.1** (they are the obligation every `BracketSpec` carries, scheduler-domain
+-- or not); `footprintCoversWrites_of_cores` stays here because it is stated
+-- over `schedFootprintOfCores`.
 
 /-- **WS-RR RR8.12 Cut C6a**: a canonical footprint covers a step confined to
 its own two core lists.
 
 The one bridge every declared syscall arm's coverage proof is an instance of.
-`schedFootprintCoversWrites`'s three clauses are discharged in three different
+`footprintCoversWrites`'s three clauses are discharged in three different
 ways and only one of them is per-arm work:
 
 * the **object** clause is vacuous, because `schedFootprintOfCores` always names
@@ -355,7 +280,7 @@ Stated over the two core lists rather than over a `LockSet`, with the
 footprint's `pairs` given by hypothesis, so it applies to a footprint however it
 was constructed — and `SchedFootprintCensus` is what makes "however it was
 constructed" mean "the canonical ladder" for every member of the family. -/
-theorem schedFootprintCoversWrites_of_cores (S : LockSet)
+theorem footprintCoversWrites_of_cores (S : LockSet)
     (runCores replenishCores : List CoreId) (st st' : SystemState)
     (hS : S.pairs = schedFootprintOfCores runCores replenishCores)
     (hRun : ∀ d : CoreId, d ∉ runCores →
@@ -364,7 +289,7 @@ theorem schedFootprintCoversWrites_of_cores (S : LockSet)
       st'.scheduler.activeDomainOnCore d = st.scheduler.activeDomainOnCore d)
     (hRepl : ∀ d : CoreId, d ∉ replenishCores →
       st'.scheduler.replenishQueueOnCore d = st.scheduler.replenishQueueOnCore d) :
-    schedFootprintCoversWrites S st st' := by
+    footprintCoversWrites S st st' := by
   refine ⟨?_, ?_, ?_⟩
   · intro hAbsent
     exact absurd (hS ▸ schedFootprintOfCores_contains_objStore_write runCores replenishCores)
@@ -461,14 +386,14 @@ bracket acquires is not a *false* footprint: the exclusion the 2PL argument rest
 on is exclusion the entry actually established. -/
 theorem perCoreRescheduleStep_coversWrites (st : SystemState) (coreId : UInt64)
     (h : coreId.toNat < numCores) :
-    schedFootprintCoversWrites
+    footprintCoversWrites
       ⟨handleRescheduleSgiOnCoreLockSet ⟨coreId.toNat, h⟩,
         switchToThreadOnCoreLockSet_keys_nodup _⟩
       st (perCoreRescheduleStep st coreId) := by
   rcases perCoreRescheduleStep_id_or_switch st coreId h with
     hId | hClr | ⟨tid, st', hSw, hEq⟩ | hDrop
-  · rw [hId]; exact schedFootprintCoversWrites_refl _ _
-  · rw [hClr]; exact schedFootprintCoversWrites_clearReschedulePendingOnCore _ _ _
+  · rw [hId]; exact footprintCoversWrites_refl _ _
+  · rw [hClr]; exact footprintCoversWrites_clearReschedulePendingOnCore _ _ _
   · rw [hEq]
     refine ⟨?_, ?_, ?_⟩
     · -- the object lock IS declared, so this clause has no content

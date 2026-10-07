@@ -162,15 +162,15 @@ example (replier target : SeLe4n.ThreadId) (msg : IpcMessage) (executingCore : C
   endpointReplyOnCore_remote_wake replier target msg executingCore st st' tcb ep expected
     targetTcb' hSz1 hSz2 hLk hIpc hStore hTcb' hRemote
 
-/-- SM6.C: the reply is a single 2PL-atomic step under its lock-set. -/
+/-- SM6.C (WS-LS LS2.1: over the pair): the reply is a single 2PL-atomic step
+under its lock-set — the ghost bracket's value is the bare transition's. -/
 example (replier target : SeLe4n.ThreadId) (cnRoot : SeLe4n.ObjId) (msg : IpcMessage)
     (executingCore : CoreId) (donatedSc? : Option SeLe4n.SchedContextId)
     (donatedOwner? : Option SeLe4n.ThreadId) (s : SystemState) :
-    (withLockSet (lockSet_endpointReply replier cnRoot target donatedSc? donatedOwner? none none none none none none none)
-        executingCore (endpointReplyOnCore replier target msg executingCore) s).2
-      = (endpointReplyOnCore replier target msg executingCore
-          (acquireAll executingCore
-            (lockSet_endpointReply replier cnRoot target donatedSc? donatedOwner? none none none none none none none).lockAcquireSequence s)).2 := by
+    (withLockSetGhost (lockSet_endpointReply replier cnRoot target donatedSc? donatedOwner? none none none none none none none)
+        executingCore (endpointReplyOnCore replier target msg executingCore)
+        ⟨s, LockState.unheld⟩).2
+      = (endpointReplyOnCore replier target msg executingCore s).2 := by
   rw [endpointReplyOnCore_atomic_under_lockSet]
 
 /-- SM6.C.8: a cross-core reply unblocking a high caller is invisible on every core. -/

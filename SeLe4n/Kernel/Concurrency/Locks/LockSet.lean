@@ -611,7 +611,7 @@ private theorem mem_union_fold_of_not_key (suffix : List (LockKey × AccessMode)
 
 /-- **WS-LS LS1.2**: a **write** member of the left operand survives the union —
 a merge only raises a mode (`AccessMode.lub`), so a write stays a write.  This
-is the direction `schedFootprintCoversWrites_mono` reads: coverage is stated
+is the direction `footprintCoversWrites_mono` reads: coverage is stated
 over the write members a footprint names. -/
 theorem mem_union_write_of_mem_write (S₁ S₂ : LockSet) (l : LockKey)
     (h : (l, AccessMode.write) ∈ S₁.pairs) :

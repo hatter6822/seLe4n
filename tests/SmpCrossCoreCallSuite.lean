@@ -174,15 +174,15 @@ example (endpointId : SeLe4n.ObjId) (caller : SeLe4n.ThreadId) (msg : IpcMessage
     receiver recvTcb0 recvTcb'' st' st'' st4 st5 hSz1 hSz2 hObj hHead hPop hStore hCallerStore
     hLink hTcb'' hRemote
 
-/-- SM6.A.9: the call is a single 2PL-atomic step under its lock-set. -/
+/-- SM6.A.9 (WS-LS LS2.1: over the pair): the call is a single 2PL-atomic step
+under its lock-set — the ghost bracket's value is the bare transition's. -/
 example (endpointId cnRoot : SeLe4n.ObjId) (caller : SeLe4n.ThreadId) (msg : IpcMessage)
     (executingCore : CoreId) (receiver? : Option SeLe4n.ThreadId)
     (donatedSc? : Option SeLe4n.SchedContextId) (s : SystemState) :
-    (withLockSet (lockSet_endpointCall caller cnRoot endpointId receiver? donatedSc?)
-        executingCore (endpointCallOnCore endpointId caller msg executingCore) s).2
-      = (endpointCallOnCore endpointId caller msg executingCore
-          (acquireAll executingCore
-            (lockSet_endpointCall caller cnRoot endpointId receiver? donatedSc?).lockAcquireSequence s)).2 := by
+    (withLockSetGhost (lockSet_endpointCall caller cnRoot endpointId receiver? donatedSc?)
+        executingCore (endpointCallOnCore endpointId caller msg executingCore)
+        ⟨s, LockState.unheld⟩).2
+      = (endpointCallOnCore endpointId caller msg executingCore s).2 := by
   rw [endpointCallOnCore_atomic_under_lockSet]
 
 /-- SM6.A.7: a cross-core call between high principals is invisible to a low observer. -/
@@ -1562,7 +1562,7 @@ private def runUnifiedBracketChecks : IO Unit := do
   --     `tests/SmpInformationFlowSuite.lean`, where `FineLockFlow` is in scope.)
   assertBool "(f) the per-arm coverage claim reaches the set the bracket acquires"
     (have _h := @SeLe4n.Kernel.unifiedLockSetForSyscall_coversWrites
-     have _m := @SeLe4n.Kernel.schedFootprintCoversWrites_mono
+     have _m := @SeLe4n.Kernel.footprintCoversWrites_mono
      true)
 
 def runSmpCrossCoreCallChecks : IO Unit := do

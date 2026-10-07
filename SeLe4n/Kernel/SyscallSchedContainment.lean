@@ -35,7 +35,7 @@ writes hands out exclusion the runtime never established.
 
 ## The split, and why it is semantic rather than convenient
 
-`schedFootprintCoversWrites`'s replenish clause is a different *proposition* for
+`footprintCoversWrites`'s replenish clause is a different *proposition* for
 the two halves of the family.  Where an arm's replenish segment is `[]` — it
 moves no scheduling context — the clause is a **whole-state frame**: the
 transition writes no core's replenishment at all.  Where the segment names
@@ -51,7 +51,7 @@ fourth cut already built its exactness frame
 
 ## How each proof goes
 
-One application of `schedFootprintCoversWrites_of_cores` (`SchedLockBracket.lean`),
+One application of `footprintCoversWrites_of_cores` (`SchedLockBracket.lean`),
 which discharges the object clause structurally — a canonical footprint always
 names the object-store table write lock — and reduces the other two to the arm's
 own SM8.B confinement result and its own replenish frame.  Both exist for every
@@ -71,18 +71,18 @@ open SeLe4n.Kernel.Concurrency (CoreId AccessMode
 /-- **WS-RR RR8.12 Cut C6a**: SM8.B confinement supplies the run-queue clause.
 
 `observableSlotsConfinedToCores` covers six per-core slots and
-`schedFootprintCoversWrites`'s run-queue clause asks for three of them, so the
+`footprintCoversWrites`'s run-queue clause asks for three of them, so the
 bridge is a projection — stated once rather than spelled at every arm, and the
 reason the replenish clause is *not* here: the replenish queue is not one of the
 six, which is exactly why every donating arm carries a frame of its own. -/
-theorem schedFootprintCoversWrites_of_confined (S : LockSet)
+theorem footprintCoversWrites_of_confined (S : LockSet)
     (runCores replenishCores : List CoreId) (st st' : SystemState)
     (hS : S.pairs = schedFootprintOfCores runCores replenishCores)
     (hConf : observableSlotsConfinedToCores st st' runCores)
     (hRepl : ∀ d : CoreId, d ∉ replenishCores →
       st'.scheduler.replenishQueueOnCore d = st.scheduler.replenishQueueOnCore d) :
-    schedFootprintCoversWrites S st st' :=
-  schedFootprintCoversWrites_of_cores S runCores replenishCores st st' hS
+    footprintCoversWrites S st st' :=
+  footprintCoversWrites_of_cores S runCores replenishCores st st' hS
     (fun d hd => ⟨hConf.runQueue d hd, hConf.current d hd, hConf.activeDomain d hd⟩)
     hRepl
 
@@ -99,9 +99,9 @@ theorem schedLockSet_notificationWaitOnCore_coversWrites
     (notificationId : SeLe4n.ObjId) (waiter : SeLe4n.ThreadId) (executingCore : CoreId)
     (st : SystemState) (S : LockSet)
     (hS : LockSet.ofList? (schedLockSet_notificationWaitOnCore executingCore) = some S) :
-    schedFootprintCoversWrites S st
+    footprintCoversWrites S st
       (notificationWaitOnCore notificationId waiter executingCore st).1 :=
-  schedFootprintCoversWrites_of_confined S [executingCore] [] st _
+  footprintCoversWrites_of_confined S [executingCore] [] st _
     (LockSet.ofList?_pairs hS)
     (notificationWaitOnCore_confinedToCores notificationId waiter executingCore st)
     (fun d _ => notificationWaitOnCore_replenishQueueOnCore notificationId waiter
@@ -118,9 +118,9 @@ theorem schedLockSet_notificationSignalBoundOnCore_coversWrites
     (st : SystemState) (S : LockSet) (hObjInv : st.objects.invExt)
     (hS : LockSet.ofList? (schedLockSet_notificationSignalBoundOnCore st notificationId)
       = some S) :
-    schedFootprintCoversWrites S st
+    footprintCoversWrites S st
       (notificationSignalBoundOnCore notificationId badge executingCore st).1 :=
-  schedFootprintCoversWrites_of_confined S (notificationSignalBoundWriteSet st notificationId)
+  footprintCoversWrites_of_confined S (notificationSignalBoundWriteSet st notificationId)
     [] st _ (LockSet.ofList?_pairs hS)
     (notificationSignalBoundOnCore_confinedToCores notificationId badge executingCore st hObjInv)
     (fun d _ => notificationSignalBoundOnCore_replenishQueueOnCore notificationId badge
@@ -142,10 +142,10 @@ theorem schedLockSet_endpointSendOnCore_coversWrites (ctx : LabelingContext)
     (hObjInv : st.objects.invExt)
     (hS : LockSet.ofList? (schedLockSet_endpointSendOnCore st endpointId executingCore)
       = some S) :
-    schedFootprintCoversWrites S st
+    footprintCoversWrites S st
       (endpointSendCrossCoreDispatchChecked ctx endpointId sender msg endpointRights
         receiverSlotBase executingCore st).1 :=
-  schedFootprintCoversWrites_of_confined S (endpointSendWriteSet st endpointId executingCore)
+  footprintCoversWrites_of_confined S (endpointSendWriteSet st endpointId executingCore)
     [] st _ (LockSet.ofList?_pairs hS)
     (endpointSendCrossCoreDispatchChecked_confinedToCores ctx endpointId sender msg
       endpointRights receiverSlotBase executingCore st hObjInv)
@@ -163,8 +163,8 @@ theorem schedLockSet_resumeThreadOnCore_coversWrites (st st' : SystemState)
     (hStep : Lifecycle.Suspend.resumeThreadOnCore st vtid executingCore = .ok (st', sgi))
     (hS : LockSet.ofList? (schedLockSet_resumeThreadOnCore st vtid executingCore)
       = some S) :
-    schedFootprintCoversWrites S st st' :=
-  schedFootprintCoversWrites_of_confined S (resumeThreadOnCoreWriteSet st vtid executingCore)
+    footprintCoversWrites S st st' :=
+  footprintCoversWrites_of_confined S (resumeThreadOnCoreWriteSet st vtid executingCore)
     [] st st' (LockSet.ofList?_pairs hS)
     (resumeThreadOnCore_confinedToCores st st' vtid executingCore sgi hStep)
     (fun d _ => resumeThreadOnCore_replenishQueueOnCore st st' vtid executingCore sgi d hStep)
@@ -182,8 +182,8 @@ theorem schedLockSet_setPriorityOnCore_coversWrites (st st' : SystemState)
       newPriority executingCore = .ok (st', sgi))
     (hS : LockSet.ofList?
       (schedLockSet_priorityControlOnCore st vTargetTid.val executingCore) = some S) :
-    schedFootprintCoversWrites S st st' :=
-  schedFootprintCoversWrites_of_confined S
+    footprintCoversWrites S st st' :=
+  footprintCoversWrites_of_confined S
     (priorityControlWriteSet st vTargetTid.val executingCore) [] st st'
     (LockSet.ofList?_pairs hS)
     (setPriorityOnCore_confinedToCores st st' vCallerTid vTargetTid newPriority executingCore
@@ -200,8 +200,8 @@ theorem schedLockSet_setMCPriorityOnCore_coversWrites (st st' : SystemState)
       newMCP executingCore = .ok (st', sgi))
     (hS : LockSet.ofList?
       (schedLockSet_priorityControlOnCore st vTargetTid.val executingCore) = some S) :
-    schedFootprintCoversWrites S st st' :=
-  schedFootprintCoversWrites_of_confined S
+    footprintCoversWrites S st st' :=
+  footprintCoversWrites_of_confined S
     (priorityControlWriteSet st vTargetTid.val executingCore) [] st st'
     (LockSet.ofList?_pairs hS)
     (setMCPriorityOnCore_confinedToCores st st' vCallerTid vTargetTid newMCP executingCore
@@ -232,8 +232,8 @@ theorem schedLockSet_schedContextBindOnCore_coversWrites (st st' : SystemState)
     (hStep : SchedContextOps.schedContextBind vScId vThreadId st = .ok ((), st'))
     (hS : LockSet.ofList? (schedLockSet_schedContextBindOnCore st vThreadId.val)
       = some S) :
-    schedFootprintCoversWrites S st st' :=
-  schedFootprintCoversWrites_of_confined S (schedContextBindWriteSet st vThreadId.val) []
+    footprintCoversWrites S st st' :=
+  footprintCoversWrites_of_confined S (schedContextBindWriteSet st vThreadId.val) []
     st st' (LockSet.ofList?_pairs hS)
     (schedContextBind_confinedToCores vScId vThreadId st st' hObjInv hStep)
     (fun d _ => schedContextBind_replenishQueueOnCore st st' vScId vThreadId d hStep)
@@ -255,8 +255,8 @@ theorem schedLockSet_suspendThreadOnCore_coversWrites (st st' : SystemState)
     (hStep : Lifecycle.Suspend.suspendThreadOnCore st vtid executingCore = .ok (st', sgi))
     (hS : LockSet.ofList? (schedLockSet_suspendThreadOnCore st vtid executingCore)
       = some S) :
-    schedFootprintCoversWrites S st st' :=
-  schedFootprintCoversWrites_of_confined S (suspendThreadOnCoreWriteSet st vtid executingCore)
+    footprintCoversWrites S st st' :=
+  footprintCoversWrites_of_confined S (suspendThreadOnCoreWriteSet st vtid executingCore)
     (suspendThreadReplenishCores st vtid executingCore) st st'
     (LockSet.ofList?_pairs hS)
     (suspendThreadOnCore_confinedToCores st st' vtid executingCore sgi hStep)
@@ -283,10 +283,10 @@ theorem schedLockSet_endpointCallOnCore_coversWrites (endpointId : SeLe4n.ObjId)
     (S : LockSet) (hObjInv : st.objects.invExt)
     (hS : LockSet.ofList? (schedLockSet_endpointCallOnCore endpointId caller msg
       endpointRights receiverSlotBase executingCore st) = some S) :
-    schedFootprintCoversWrites S st
+    footprintCoversWrites S st
       (endpointCallCrossCoreDispatch endpointId caller msg endpointRights receiverSlotBase
         executingCore st).1 :=
-  schedFootprintCoversWrites_of_confined S
+  footprintCoversWrites_of_confined S
     (endpointCallDispatchWriteSet endpointId caller msg endpointRights receiverSlotBase
       executingCore st)
     (endpointCallDispatchReplenishCores endpointId caller msg endpointRights receiverSlotBase
@@ -324,8 +324,8 @@ theorem schedLockSet_replyTransferOnCore_coversWrites (replier callerTid : SeLe4
       msg executingCore st) = some S)
     (hStep : replyTransferOnCore replier callerTid mi regs msg executingCore st
       = .ok ((), st')) :
-    schedFootprintCoversWrites S st st' :=
-  schedFootprintCoversWrites_of_confined S
+    footprintCoversWrites S st st' :=
+  footprintCoversWrites_of_confined S
     (replyTransferWriteSet replier callerTid mi regs msg executingCore st)
     (replyTransferReplenishCores replier callerTid msg executingCore st) st st'
     (LockSet.ofList?_pairs hS)
@@ -355,8 +355,8 @@ theorem schedLockSet_endpointReplyRecvOnCore_coversWrites (endpointId : SeLe4n.O
       prevCaller msg receiverCspaceRoot receiverSlotBase executingCore st) = some S)
     (hStep : endpointReplyRecvOnCore endpointId receiver replyId prevCaller msg receiverCspaceRoot
         receiverSlotBase executingCore st = .ok (summary, st')) :
-    schedFootprintCoversWrites S st st' :=
-  schedFootprintCoversWrites_of_confined S
+    footprintCoversWrites S st st' :=
+  footprintCoversWrites_of_confined S
     (endpointReplyRecvWriteSet endpointId receiver replyId prevCaller msg receiverCspaceRoot
       receiverSlotBase executingCore st)
     (replyRecvHandoffReplenishCores endpointId receiver replyId prevCaller msg receiverCspaceRoot
@@ -391,8 +391,8 @@ theorem schedLockSet_endpointReceiveOnCore_coversWrites (endpointId : SeLe4n.Obj
     (hLeg : endpointReceiveDualWithCapsOnCore endpointId receiver replyId receiverCspaceRoot
       receiverSlotBase executingCore st = (st1, .ok (dequeued, summary, sgi)))
     (hDon : applyReceiveRendezvousDonation st1 receiver dequeued = .ok stDon) :
-    schedFootprintCoversWrites S st stDon :=
-  schedFootprintCoversWrites_of_confined S
+    footprintCoversWrites S st stDon :=
+  footprintCoversWrites_of_confined S
     (endpointReceiveDualWriteSet st endpointId executingCore)
     (endpointReceiveHandoffReplenishCores st endpointId receiver) st stDon
     (LockSet.ofList?_pairs hS)
@@ -413,7 +413,7 @@ theorem schedLockSet_endpointReceiveOnCore_coversWrites (endpointId : SeLe4n.Obj
 -- ============================================================================
 --
 -- Every coverage theorem above is *proved*, so none of them can be wrong.  What
--- they could all be is **vacuous**, if `schedFootprintCoversWrites` held of any
+-- they could all be is **vacuous**, if `footprintCoversWrites` held of any
 -- footprint whatever.  These two say it does not, one clause each, and they are
 -- what makes the claims above measurements rather than notation.  (No count here:
 -- a hand-kept figure beside a growing family drifts on contact, and this one
@@ -426,11 +426,11 @@ The direction the whole family exists for: a footprint that omits a core the
 transition writes is false, and everything built on it — the 2PL serialisation
 results, `boundedWait_under_2pl`, the CC-5 contention bound — is then *silent*
 about that core rather than conservative. -/
-theorem not_schedFootprintCoversWrites_of_runQueue_moved (S : LockSet)
+theorem not_footprintCoversWrites_of_runQueue_moved (S : LockSet)
     (st st' : SystemState) (d : CoreId)
     (hAbsent : (LockKey.runQueue d, AccessMode.write) ∉ S.pairs)
     (hMoved : st'.scheduler.runQueueOnCore d ≠ st.scheduler.runQueueOnCore d) :
-    ¬ schedFootprintCoversWrites S st st' :=
+    ¬ footprintCoversWrites S st st' :=
   fun h => hMoved (h.2.1 d hAbsent).1
 
 /-- **Cut C6a**: and an under-declared replenish segment is refuted the same way.
@@ -439,11 +439,11 @@ Stated separately because it is the clause SM8.B's confinement cannot supply —
 `observableSlotsConfinedToCores` covers six per-core slots and the replenish
 queue is not one of them — so an arm whose replenish frame were missing would
 have no route to the obligation at all rather than a weaker one. -/
-theorem not_schedFootprintCoversWrites_of_replenish_moved (S : LockSet)
+theorem not_footprintCoversWrites_of_replenish_moved (S : LockSet)
     (st st' : SystemState) (d : CoreId)
     (hAbsent : (LockKey.replenishQueue d, AccessMode.write) ∉ S.pairs)
     (hMoved : st'.scheduler.replenishQueueOnCore d ≠ st.scheduler.replenishQueueOnCore d) :
-    ¬ schedFootprintCoversWrites S st st' :=
+    ¬ footprintCoversWrites S st st' :=
   fun h => hMoved (h.2.2 d hAbsent)
 
 -- ============================================================================
@@ -472,8 +472,8 @@ theorem schedLockSet_schedContextConfigureOnCore_coversWrites (st st' : SystemSt
       domain st = .ok ((), st'))
     (hS : LockSet.ofList? (schedLockSet_schedContextConfigureOnCore st vScId.val)
       = some S) :
-    schedFootprintCoversWrites S st st' :=
-  schedFootprintCoversWrites_of_confined S (schedContextConfigureWriteSet st vScId.val)
+    footprintCoversWrites S st st' :=
+  footprintCoversWrites_of_confined S (schedContextConfigureWriteSet st vScId.val)
     (schedContextConfigureReplenishCores st vScId.val) st st'
     (LockSet.ofList?_pairs hS)
     (schedContextConfigure_confinedToCores vScId budget period priority deadline domain st st'
@@ -493,8 +493,8 @@ theorem schedLockSet_schedContextUnbindOnCore_coversWrites (st st' : SystemState
     (hStep : SchedContextOps.schedContextUnbindOnCore vScId executingCore st = .ok (st', sgi))
     (hS : LockSet.ofList?
       (schedLockSet_schedContextUnbindOnCore st vScId.val executingCore) = some S) :
-    schedFootprintCoversWrites S st st' :=
-  schedFootprintCoversWrites_of_confined S
+    footprintCoversWrites S st st' :=
+  footprintCoversWrites_of_confined S
     (schedContextUnbindOnCoreWriteSet st vScId.val executingCore)
     (schedContextUnbindReplenishCores st vScId.val) st st'
     (LockSet.ofList?_pairs hS)
@@ -519,8 +519,8 @@ theorem schedLockSet_setThreadCpuAffinityOnCore_coversWrites (st st' : SystemSta
     (hStep : setThreadCpuAffinityWithMigration st tid affinity executingCore = .ok (st', sgi))
     (hS : LockSet.ofList? (schedLockSet_setThreadCpuAffinityOnCore st tid affinity)
       = some S) :
-    schedFootprintCoversWrites S st st' :=
-  schedFootprintCoversWrites_of_confined S (setThreadCpuAffinityWriteSet st tid affinity)
+    footprintCoversWrites S st st' :=
+  footprintCoversWrites_of_confined S (setThreadCpuAffinityWriteSet st tid affinity)
     (setThreadCpuAffinityReplenishCores st tid affinity) st st'
     (LockSet.ofList?_pairs hS)
     (setThreadCpuAffinityWithMigration_confinedToCores st st' tid affinity executingCore sgi
@@ -555,8 +555,8 @@ theorem schedLockSet_lifecycleRetypeOnCore_coversWrites (executingCore : CoreId)
     (hStep : lifecycleRetypeDirectWithCleanupShootdownPerCoreIcache executingCore authCap
       target newObj st = .ok ((), st'))
     (hS : LockSet.ofList? (schedLockSet_lifecycleRetypeOnCore st target) = some S) :
-    schedFootprintCoversWrites S st st' :=
-  schedFootprintCoversWrites_of_confined S (lifecycleRetypeWriteSet st target)
+    footprintCoversWrites S st st' :=
+  footprintCoversWrites_of_confined S (lifecycleRetypeWriteSet st target)
     (lifecycleRetypeReplenishCores st target) st st'
     (LockSet.ofList?_pairs hS)
     (lifecycleRetypeDirectWithCleanupShootdownPerCoreIcache_confinedToCores executingCore

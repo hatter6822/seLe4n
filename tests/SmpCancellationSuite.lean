@@ -204,12 +204,11 @@ open SeLe4n.Testing
 #check @cancelIpcBlockingOnCore_preserves_ipcInvariant
 #check @cancelDonationOnCore_preserves_ipcInvariant
 #check @descheduleThread_preserves_ipcInvariant
-#check @updateObjectLockAt_getTcb?_ipcState
 #check @acquireLockOnObject_preserves_invExt
 #check @releaseLockOnObject_preserves_invExt
 #check @cancelLockOnObject_preserves_invExt
-#check @cancellationObserver_acquireInsensitiveOn
-#check @cancellationObserver_unwindInsensitiveOn
+-- WS-LS LS2.1: the `cancellationObserver_*InsensitiveOn` pair is gone with the
+-- guarded capstone; the observer capstone is over the pair, hypothesis-free.
 #check @cancelIpcBlockingOnCore_observer_atomic
 #check @cancelIpcBlockingOnCore_bootPlaced_state_eq
 #check @descheduleThread_fully_descheduled
@@ -626,31 +625,31 @@ example (stPost : SystemState) (holder : SeLe4n.ThreadId)
     placedCoreOf? (descheduleUnboundHolder st stPost victim tcb) holder = none :=
   descheduleUnboundHolder_holder_unplaced st stPost victim tcb holder hW hUnique
 
-/-- SM6.E.2: the single-core atomicity theorem applies (2PL bracket shape). -/
+/-- SM6.E.2 (WS-LS LS2.1: over the pair): the single-core atomicity theorem
+applies (ghost 2PL bracket shape) — the teardown on the kernel half, the
+bracket's trace on the lock half. -/
 example :
-    withLockSet (lockSet_cancelIpcBlocking victim blEp blN r? rdSc? dh? hEp? hNb? bhR? oc? rh? fa? sb?) ec
-        (fun st => (cancelIpcBlocking st victim tcb, ())) s
-      = (unwindAll ec
-          (lockSet_cancelIpcBlocking victim blEp blN r? rdSc? dh? hEp? hNb? bhR? oc? rh? fa? sb?).lockAcquireSequence.reverse
-          (cancelIpcBlocking
-            (acquireAll ec
-              (lockSet_cancelIpcBlocking victim blEp blN r? rdSc? dh? hEp? hNb? bhR? oc? rh? fa? sb?).lockAcquireSequence s)
-            victim tcb),
+    withLockSetGhost (lockSet_cancelIpcBlocking victim blEp blN r? rdSc? dh? hEp? hNb? bhR? oc? rh? fa? sb?) ec
+        (fun st => (cancelIpcBlocking st victim tcb, ())) ⟨s, LockState.unheld⟩
+      = (⟨cancelIpcBlocking s victim tcb,
+          LockState.bracket ec
+            (lockSet_cancelIpcBlocking victim blEp blN r? rdSc? dh? hEp? hNb? bhR? oc? rh? fa? sb?)
+            LockState.unheld⟩,
          ()) :=
   cancelIpcBlocking_atomic_under_lockSet victim tcb ec blEp blN r? rdSc? dh? hEp? hNb?
-    bhR? oc? rh? fa? sb? s
+    bhR? oc? rh? fa? sb? ⟨s, LockState.unheld⟩
 
-/-- SM6.E.4: the donation atomicity companion applies (dispatcher form). -/
+/-- SM6.E.4 (WS-LS LS2.1: over the pair): the donation atomicity companion
+applies (dispatcher form). -/
 example :
-    withLockSet (lockSet_cancelDonation victim sc? ot? dh1? dh2? doc?) ec
-        (cancelDonationOnCore victim tcb) s
-      = (unwindAll ec
-          (lockSet_cancelDonation victim sc? ot? dh1? dh2? doc?).lockAcquireSequence.reverse
-          (cancelDonationOnCore victim tcb
-            (acquireAll ec (lockSet_cancelDonation victim sc? ot? dh1? dh2? doc?).lockAcquireSequence s)).1,
-         (cancelDonationOnCore victim tcb
-            (acquireAll ec (lockSet_cancelDonation victim sc? ot? dh1? dh2? doc?).lockAcquireSequence s)).2) :=
-  cancelDonationOnCore_atomic_under_lockSet victim tcb ec sc? ot? dh1? dh2? doc? s
+    withLockSetGhost (lockSet_cancelDonation victim sc? ot? dh1? dh2? doc?) ec
+        (cancelDonationOnCore victim tcb) ⟨s, LockState.unheld⟩
+      = (⟨(cancelDonationOnCore victim tcb s).1,
+          LockState.bracket ec (lockSet_cancelDonation victim sc? ot? dh1? dh2? doc?)
+            LockState.unheld⟩,
+         (cancelDonationOnCore victim tcb s).2) :=
+  cancelDonationOnCore_atomic_under_lockSet victim tcb ec sc? ot? dh1? dh2? doc?
+    ⟨s, LockState.unheld⟩
 
 /-- SM6.E.1: `objects.invExt` transports through the cross-core cancellation. -/
 example (hInv : st.objects.invExt) :
@@ -1184,19 +1183,20 @@ private def runDispatcherEdgeChecks : IO Unit := do
       && (match stG.getTcb? victimTid with
           | some t => t == tcbU
           | none => false))
-  -- `withLockSet` bracket: the business outcome equals the bare transition's
-  -- (locks acquired and released around the same pure step — operational
-  -- witness of `cancelIpcBlockingOnCore_atomic_under_lockSet`).
+  -- Ghost `withLockSetGhost` bracket (WS-LS LS2.1): the business outcome equals
+  -- the bare transition's — the lock trace lands in the lock half of the pair,
+  -- the same pure step runs on the kernel half (operational witness of
+  -- `cancelIpcBlockingOnCore_atomic_under_lockSet`).
   match stCallBlocked? with
   | some st =>
       let tcb := victimTcb st
       let bare := cancelIpcBlockingOnCore victimTid tcb bootCoreId st
-      let bracketed := withLockSet (lockSet_cancelIpcBlockingOnCore st victimTid)
-        bootCoreId (cancelIpcBlockingOnCore victimTid tcb bootCoreId) st
-      assertBool "withLockSet bracket returns the same SGI decision"
+      let bracketed := withLockSetGhost (lockSet_cancelIpcBlockingOnCore st victimTid)
+        bootCoreId (cancelIpcBlockingOnCore victimTid tcb bootCoreId) ⟨st, LockState.unheld⟩
+      assertBool "withLockSetGhost bracket returns the same SGI decision"
         (decide (bracketed.2 = bare.2))
-      assertBool "withLockSet bracket commits the same victim teardown"
-        (match bracketed.1.getTcb? victimTid, bare.1.getTcb? victimTid with
+      assertBool "withLockSetGhost bracket commits the same victim teardown"
+        (match bracketed.1.kernel.getTcb? victimTid, bare.1.getTcb? victimTid with
          | some a, some b => decide (a.ipcState = b.ipcState ∧ a.ipcState = .ready)
          | _, _ => false)
   | none => assertBool "setup: bracket fixture available" false

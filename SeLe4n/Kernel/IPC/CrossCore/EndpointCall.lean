@@ -1012,12 +1012,14 @@ theorem endpointCallWithCaps_lockSet_correct
 -- ============================================================================
 
 /-- WS-SM SM6.A.9 (`endpointCall_atomic_under_lockSet`, plan §3.4 / Theorem
-2.1.10): under its `endpointCall` lock-set the cross-core transition is a
-single two-phase-locked atomic step — wrapping `endpointCallOnCore` in
-`withLockSet` decomposes deterministically into the acquire fold, the
-transition, and the release fold. No partial intermediate is observable to a
-lock-insensitive observer (`lockSet_observer_atomic`); this is the operational
-atomicity the `ipcInvariantFull_perCore` preservation (SM6.D) rests on. -/
+2.1.10; **WS-LS LS2.1**: over the pair): under its `endpointCall` lock-set the
+cross-core transition is a single two-phase-locked atomic step — wrapping
+`endpointCallOnCore` in the ghost bracket decomposes deterministically into the
+transition on the kernel half and the bracket's lock trace (growing phase, then
+shrinking phase) on the lock half.  `rfl` since LS2.1: the phases write the lock
+table and the action writes the kernel state, so no partial intermediate exists
+for any observer (`lockSet_observer_atomic`); this is the operational atomicity
+the `ipcInvariantFull_perCore` preservation (SM6.D) rests on. -/
 theorem endpointCallOnCore_atomic_under_lockSet
     (endpointId : SeLe4n.ObjId) (caller : SeLe4n.ThreadId) (msg : IpcMessage)
     (executingCore : CoreId) (cnRoot : SeLe4n.ObjId)
@@ -1026,17 +1028,13 @@ theorem endpointCallOnCore_atomic_under_lockSet
     -- reply object so the server-first `linkServerStashedReply` write is inside
     -- the 2PL bracket; the decomposition is generic over the footprint.
     (replyId? : Option SeLe4n.ReplyId := none)
-    (s : SystemState) :
-    withLockSet (lockSet_endpointCall caller cnRoot endpointId receiver? donatedSc? replyId?)
+    (s : LockedSystemState) :
+    withLockSetGhost (lockSet_endpointCall caller cnRoot endpointId receiver? donatedSc? replyId?)
         executingCore (endpointCallOnCore endpointId caller msg executingCore) s
-      = (unwindAll executingCore
-          (lockSet_endpointCall caller cnRoot endpointId receiver? donatedSc? replyId?).lockAcquireSequence.reverse
-          (endpointCallOnCore endpointId caller msg executingCore
-            (acquireAll executingCore
-              (lockSet_endpointCall caller cnRoot endpointId receiver? donatedSc? replyId?).lockAcquireSequence s)).1,
-         (endpointCallOnCore endpointId caller msg executingCore
-            (acquireAll executingCore
-              (lockSet_endpointCall caller cnRoot endpointId receiver? donatedSc? replyId?).lockAcquireSequence s)).2) :=
+      = (⟨(endpointCallOnCore endpointId caller msg executingCore s.kernel).1,
+          LockState.bracket executingCore
+            (lockSet_endpointCall caller cnRoot endpointId receiver? donatedSc? replyId?) s.locks⟩,
+         (endpointCallOnCore endpointId caller msg executingCore s.kernel).2) :=
   lockSet_atomic_under_2pl _ executingCore _ s
 
 -- ============================================================================

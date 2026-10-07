@@ -11,6 +11,7 @@ import SeLe4n.Kernel.Concurrency.Locks.WithLockSet
 import SeLe4n.Kernel.Concurrency.Locks.LockSetHeld
 import SeLe4n.Kernel.Concurrency.Locks.LockSet2PL
 import SeLe4n.Kernel.Concurrency.Locks.DynamicChainExtension
+import SeLe4n.Kernel.Concurrency.Locks.BracketSpec
 import SeLe4n.PackedString
 
 /-!
@@ -21,8 +22,8 @@ inventory with size and per-category witnesses.  Mirrors the
 SM3.A `PerObjectLockInventory.lean` and SM3.B
 `LockSetInventory.lean` patterns.
 
-The inventory has five categories matching the plan §5.3
-sub-tasks:
+The inventory has six categories — five matching the plan §5.3
+sub-tasks, and the WS-LS ghost bracket:
 
 * `.combinator` — SM3.C.1 / C.2 (`withLockSet`,
   `acquireLockOnObject` / `releaseLockOnObject`,
@@ -44,12 +45,15 @@ sub-tasks:
   `lockSet_released_in_reverse`,
   `releaseOrder_eq_acquireOrder_reverse`).
 * `.atomicity` — SM3.C.7 / C.8 (`withLockSet_three_phase_decomposition`,
-  `lockSet_atomic_under_2pl`, `lockSet_invariant_preserved`,
-  `withLockSet_invariant_preserved`, the worked instantiation
-  `acquireAll_preserves_objStoreLock_wf`,
+  `lockSet_atomic_under_2pl`, `withLockSet_invariant_preserved`,
+  `lockSet_observer_atomic` — over the pair since **WS-LS LS2.1** —
   `acquireLockOnObject_objStore_establishes_lockHeld`,
   `acquireLockOnObject_objStore_release_roundtrip`,
   `withLockSet_satisfies_strict_2PL`, `withLockSet_computation`).
+* `.ghostBracket` — **WS-LS LS2.1** (`Locks/BracketSpec.lean`): `withLockSetGhost`
+  and its projections, `LockState.bracket` and its round trip, `BracketSpec`
+  with `run` / `runGhost` / `runGhost_kernel` (O1) / `runGhost_locks_of_unheld`
+  (O3) / `guard` (O4) and the guard's two witnesses.
 * `.dynamicChain` — SM3.C.11 (`PipChainPath`, `walkStep`,
   `walkAndAcquire`, `withDynamicChainExtension`, `dynamicChainHeld`,
   the `chainFollowsBlockingServer` predicate, the deadlock-freedom
@@ -85,6 +89,9 @@ inductive WithLockSetCategory where
   | atomicity
   /-- Dynamic PIP-chain-walk machinery (SM3.C.11). -/
   | dynamicChain
+  /-- **WS-LS LS2.1**: the bracket as a specification over the ghost lock
+      state (`Locks/BracketSpec.lean`). -/
+  | ghostBracket
   deriving Repr, DecidableEq, Inhabited
 
 /-- WS-SM SM3.C: a theorem entry in the SM3.C inventory.
@@ -269,16 +276,12 @@ def withLockSetTheorems : List WithLockSetTheorem :=
     wlst! "releaseOrder_eq_acquireOrder_reverse: structural duality"
       releaseOrder_eq_acquireOrder_reverse .ordering,
     -- §4 atomicity (5 entries: SM3.C.7 + SM3.C.8 + aggregates)
-    wlst! "withLockSet_three_phase_decomposition: SM3.C.7 — atomic decomposition"
+    wlst! "withLockSet_three_phase_decomposition: SM3.C.7 — atomic decomposition (over the pair)"
       withLockSet_three_phase_decomposition .atomicity,
     wlst! "lockSet_atomic_under_2pl: SM3.C.7 — Thm 2.1.10 operational form"
       lockSet_atomic_under_2pl .atomicity,
-    wlst! "lockSet_invariant_preserved: SM3.C.8 — Corollary 2.1.11 (acquire-fold form)"
-      lockSet_invariant_preserved .atomicity,
     wlst! "withLockSet_invariant_preserved: SM3.C.8 — full 2PL invariant preservation"
       withLockSet_invariant_preserved .atomicity,
-    wlst! "acquireAll_preserves_objStoreLock_wf: SM3.C.8 worked instantiation (lever is dischargeable)"
-      acquireAll_preserves_objStoreLock_wf .atomicity,
     wlst! "acquireLockOnObject_objStore_establishes_lockHeld: substantive acquire-grants (audit-pass-1 Comment 7)"
       acquireLockOnObject_objStore_establishes_lockHeld .atomicity,
     wlst! "acquireLockOnObject_objStore_release_roundtrip: clean round-trip (audit-pass-1 Comment 4)"
@@ -287,18 +290,49 @@ def withLockSetTheorems : List WithLockSetTheorem :=
       withLockSet_satisfies_strict_2PL .atomicity,
     wlst! "withLockSet_computation: canonical 'what does withLockSet compute' form"
       withLockSet_computation .atomicity,
-    wlst! "acquireAll_lockInsensitive: SM3.C.7 acquire fold invisible to lock-insensitive observer"
-      acquireAll_lockInsensitive .atomicity,
-    wlst! "releaseAll_lockInsensitive: SM3.C.7 release fold invisible to lock-insensitive observer"
-      releaseAll_lockInsensitive .atomicity,
-    wlst! "cancelAll_lockInsensitive: WS-LC withdrawal fold invisible to the same observer"
-      cancelAll_lockInsensitive .atomicity,
-    wlst! "unwindAll_lockInsensitive: WS-LC the whole shrinking phase is invisible"
-      unwindAll_lockInsensitive .atomicity,
-    wlst! "withLockSet_unwind_invisible: SM3.C.7 observational form (the shrinking phase contributes nothing)"
-      withLockSet_unwind_invisible .atomicity,
-    wlst! "lockSet_observer_atomic: SM3.C.7 Thm 2.1.10 observer-atomicity capstone"
+    wlst! "lockSet_observer_atomic: SM3.C.7 Thm 2.1.10 observer-atomicity capstone (hypothesis-free over the pair)"
       lockSet_observer_atomic .atomicity,
+    -- WS-LS LS2.1 ghostBracket (20): the bracket as a specification over the ghost lock state
+    wlst! "withLockSetGhost: the ghost bracket — the action on the kernel half, the trace on the table"
+      withLockSetGhost .ghostBracket,
+    wlst! "withLockSetGhost_eq_decomposition: the bracket's result, decomposed"
+      withLockSetGhost_eq_decomposition .ghostBracket,
+    wlst! "withLockSetGhost_fst_kernel: the kernel half of the result is the action's"
+      withLockSetGhost_fst_kernel .ghostBracket,
+    wlst! "withLockSetGhost_fst_locks: the lock half of the result is the bracket's trace"
+      withLockSetGhost_fst_locks .ghostBracket,
+    wlst! "withLockSetGhost_snd: the value returned is the action's"
+      withLockSetGhost_snd .ghostBracket,
+    wlst! "withLockSetGhost_empty: the empty footprint's bracket leaves the table alone"
+      withLockSetGhost_empty .ghostBracket,
+    wlst! "withLockSetGhost_locks_of_unheld: O3 at the bracket — all-free in, all-free out"
+      withLockSetGhost_locks_of_unheld .ghostBracket,
+    wlst! "LockState.bracket: the lock trace one bracket applies"
+      LockState.bracket .ghostBracket,
+    wlst! "LockState.bracketDeclared: the trace given what was declared"
+      LockState.bracketDeclared .ghostBracket,
+    wlst! "LockState.bracket_unheld: O3 at the footprint — the round trip"
+      LockState.bracket_unheld .ghostBracket,
+    wlst! "LockState.acquireAll_unheld_heldAll_pairs: O3 at the footprint — the growing phase holds every member"
+      LockState.acquireAll_unheld_heldAll_pairs .ghostBracket,
+    wlst! "BracketSpec.run: the executed bracket — the step and nothing else"
+      BracketSpec.run .ghostBracket,
+    wlst! "BracketSpec.runGhost: the proven bracket — the step beside the ghost table"
+      BracketSpec.runGhost .ghostBracket,
+    wlst! "BracketSpec.runGhost_kernel: O1 — the executed path is the kernel projection of the proven one"
+      BracketSpec.runGhost_kernel .ghostBracket,
+    wlst! "BracketSpec.runGhost_locks_of_unheld: O3 at the spec"
+      BracketSpec.runGhost_locks_of_unheld .ghostBracket,
+    wlst! "BracketSpec.runGhost_eq_withLockSetGhost: withLockSet is runGhost of a constant declaration"
+      BracketSpec.runGhost_eq_withLockSetGhost .ghostBracket,
+    wlst! "BracketSpec.guard: O4 — what the HAL's resolve-acquire-re-resolve loop must establish"
+      BracketSpec.guard .ghostBracket,
+    wlst! "BracketSpec.guard_of_unheld: under the entry lock every bracket runs its step held"
+      BracketSpec.guard_of_unheld .ghostBracket,
+    wlst! "BracketSpec.not_guard_of_contended: the load-bearing negative — a write-held member refuses the guard"
+      BracketSpec.not_guard_of_contended .ghostBracket,
+    wlst! "RwLockState.acquire_not_grants_of_writerHeld: an acquire on a write-held lock is enqueued, not granted"
+      RwLockState.acquire_not_grants_of_writerHeld .ghostBracket,
     -- §5 dynamicChain (8 entries: SM3.C.11.a-e)
     wlst! "MAX_PIP_RETRIES: bounded retry budget (=64)"
       MAX_PIP_RETRIES .dynamicChain,
@@ -362,9 +396,12 @@ establishment + `blockingServer` frame/transport + the full
 `dynamicChainHeld` capstone + the SM3.C.11.d two-core deadlock-freedom
 theorems).
 A regression that adds a new SM3.C theorem without updating the
-inventory fails this count witness at the Tier-3 surface check. -/
+inventory fails this count witness at the Tier-3 surface check.
+**WS-LS LS2.1**: 98 → 111 — −7 atomicity (the acquire-fold invariant form, its
+worked instantiation and the five lock-insensitive-observer lemmas, which the
+pair form no longer needs), +20 `ghostBracket`. -/
 theorem withLockSetTheorems_count :
-    withLockSetTheorems.length = 98 := by decide
+    withLockSetTheorems.length = 111 := by decide
 
 /-- WS-SM SM3.C: 41 entries in the `combinator` category
 (audit-pass-1: +`updateObjectLockAt` + `updateObjectLockAt_preserves_objStoreLock`;
@@ -387,12 +424,18 @@ theorem withLockSetTheorems_ordering_count :
     (withLockSetTheorems.filter (fun t => t.category == .ordering)).length = 3 := by
   decide
 
-/-- WS-SM SM3.C: 13 entries in the `atomicity` category
+/-- WS-SM SM3.C: 8 entries in the `atomicity` category
 (audit-pass-1: −tautology +`acquireLockOnObject_objStore_establishes_lockHeld`
 +`acquireLockOnObject_objStore_release_roundtrip`; Group-B: +4 SM3.C.7
-observational-atomicity theorems). -/
+observational-atomicity theorems; **WS-LS LS2.1**: −7, see
+`withLockSetTheorems_count`). -/
 theorem withLockSetTheorems_atomicity_count :
-    (withLockSetTheorems.filter (fun t => t.category == .atomicity)).length = 15 := by
+    (withLockSetTheorems.filter (fun t => t.category == .atomicity)).length = 8 := by
+  decide
+
+/-- **WS-LS LS2.1**: 20 entries in the `ghostBracket` category. -/
+theorem withLockSetTheorems_ghostBracket_count :
+    (withLockSetTheorems.filter (fun t => t.category == .ghostBracket)).length = 20 := by
   decide
 
 /-- WS-SM SM3.C: 23 entries in the `dynamicChain` category
@@ -410,7 +453,8 @@ theorem withLockSetTheorems_partition_sum :
     (withLockSetTheorems.filter (fun t => t.category == .held)).length +
     (withLockSetTheorems.filter (fun t => t.category == .ordering)).length +
     (withLockSetTheorems.filter (fun t => t.category == .atomicity)).length +
-    (withLockSetTheorems.filter (fun t => t.category == .dynamicChain)).length =
+    (withLockSetTheorems.filter (fun t => t.category == .dynamicChain)).length +
+    (withLockSetTheorems.filter (fun t => t.category == .ghostBracket)).length =
     withLockSetTheorems.length := by decide
 
 /-- WS-SM SM3.C: every inventory identifier is unique.  Kernel-checked, never

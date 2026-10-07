@@ -24,7 +24,7 @@ import SeLe4n.Kernel.SchedLockBracket
 
 `timerTickOnCoreCompleteLockSet c` names the object-store table write lock,
 **every** core's run-queue write lock, and core `c`'s replenish-queue write lock.
-So `schedFootprintCoversWrites` has content in exactly one clause: no core's
+So `footprintCoversWrites` has content in exactly one clause: no core's
 replenish queue other than `c`'s may move.
 
 That single obligation is the whole of what the footprint claims beyond what it
@@ -144,7 +144,7 @@ object-store table lock and every core's run-queue lock — and the third is
 acquires is not a *false* footprint. -/
 theorem perCoreTimerTickStep_coversWrites (st : SystemState) (coreId : UInt64)
     (h : coreId.toNat < numCores) :
-    schedFootprintCoversWrites
+    footprintCoversWrites
       ⟨timerTickOnCoreCompleteLockSet ⟨coreId.toNat, h⟩,
         timerTickOnCoreCompleteLockSet_keys_nodup _⟩
       st (perCoreTimerTickStep st coreId).1 := by
@@ -164,7 +164,7 @@ theorem perCoreTimerTickStep_coversWrites (st : SystemState) (coreId : UInt64)
 state, so its containment is the plain step's. -/
 theorem perCoreTimerTickStepWithClockAdvance_coversWrites (st : SystemState)
     (coreId : UInt64) (h : coreId.toNat < numCores) :
-    schedFootprintCoversWrites
+    footprintCoversWrites
       ⟨timerTickOnCoreCompleteLockSet ⟨coreId.toNat, h⟩,
         timerTickOnCoreCompleteLockSet_keys_nodup _⟩
       st (perCoreTimerTickStepWithClockAdvance st coreId).2 :=

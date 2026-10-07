@@ -6995,7 +6995,7 @@ run_check "INVARIANT" rg -n '^theorem syscallEntryUnderRevalidatedLockSetModel_r
 run_check "INVARIANT" rg -n '^theorem revalidationRefusalReachable($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/FineLockFlow.lean
 # NEGATIVE: the guard must not go back to re-deriving the observed state from `s`,
 # which is what made its refusal unreachable.
-run_negative_check "INVARIANT" rg -n '\(lockSetAcquiredState S lockCore s\) = some S' \
+run_negative_check "INVARIANT" rg -n 'lockSetHeld lockCore S \(.*acquireAll lockCore S\.lockAcquireSequence s\)' \
   SeLe4n/Kernel/InformationFlow/FineLockFlow.lean
 # The resolution may not leave the CNode the footprint read-locks: a `LockSet` is
 # capped at `maxLockSetSize`, a CSpace path is not, so deeper paths fail closed.
@@ -7016,7 +7016,7 @@ run_check "INVARIANT" rg -n 'decode through a write cap resolves a real footprin
 run_check "INVARIANT" rg -n '^def continueFromAcquired($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/FineLockFlow.lean
 run_check "INVARIANT" rg -n '^theorem withLockSet_eq_continueFromAcquired($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/FineLockFlow.lean
 run_check "INVARIANT" rg -n '^def syscallEntryFromAcquired($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/FineLockFlow.lean
-run_check "INVARIANT" rg -n '^theorem syscallEntryUnderLockSet_eq_fromAcquired($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/FineLockFlow.lean
+run_check "INVARIANT" rg -n '^theorem syscallEntryUnderLockSet_fst($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/FineLockFlow.lean
 run_check "INVARIANT" rg -n '^theorem syscallEntryUnderRevalidatedLockSet_not_refines_in_general($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/FineLockFlow.lean
 # NEGATIVE: a general refinement against the plain bracket would re-assert the
 # defect — it held only while the action was being run from `s`.
@@ -7189,11 +7189,11 @@ run_check "INVARIANT" rg -n 'NEGATIVE: the pre-acquire state does not hold the f
 # refuses for the wrong reason.
 run_negative_check "INVARIANT" rg -n '\{ suspendEntryState with' tests/SmpInformationFlowSuite.lean
 run_negative_check "INVARIANT" rg -n 'syscallEntryUnderDeclaredLockSet ctx sid callerTid targetTid' SeLe4n/Kernel/InformationFlow/FineLockFlow.lean
-# The 2PL bracket's grant condition is a checked fact in BOTH directions: the
-# growing phase grants an uncontended footprint and provably does not grant a
-# contended one, so the contract cannot silently claim mutual exclusion again.
-run_check "INVARIANT" rg -n '^theorem lockSetAcquiredState_grants_when_free($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/FineLockFlow.lean
-run_check "INVARIANT" rg -n '^theorem lockSetAcquiredState_does_not_grant_when_contended($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/FineLockFlow.lean
+# The bracket's guard is a checked fact in BOTH directions: the growing phase
+# over a free ghost table holds every declared member and provably does not
+# over a contended one, so the contract cannot silently claim mutual exclusion.
+run_check "INVARIANT" rg -n '^theorem guard_of_unheld($|[ ({:\[\]])' SeLe4n/Kernel/Concurrency/Locks/BracketSpec.lean
+run_check "INVARIANT" rg -n '^theorem not_guard_of_contended($|[ ({:\[\]])' SeLe4n/Kernel/Concurrency/Locks/BracketSpec.lean
 # The CC-5 run requires DISTINCT enqueue steps, so the per-execution capacity
 # figure follows for every accepted run rather than for well-behaved ones.
 run_check "INVARIANT" rg -n 'enqueueSteps.Nodup' SeLe4n/Kernel/InformationFlow/FineLockFlow.lean
@@ -14104,6 +14104,7 @@ import SeLe4n.Kernel.Concurrency.Locks.DynamicChainExtension
 import SeLe4n.Kernel.Concurrency.Locks.WithLockSetInventory
 import SeLe4n.Kernel.Scheduler.PriorityInheritance.ChainFootprint
 import SeLe4n.Kernel.Concurrency.Locks.Refinement
+import SeLe4n.Kernel.Concurrency.Locks.BracketSpec
 
 -- SM3.C.1: withLockSet combinator + unfolding lemmas.
 #check @SeLe4n.Kernel.Concurrency.withLockSet
@@ -14167,12 +14168,10 @@ import SeLe4n.Kernel.Concurrency.Locks.Refinement
 #check @SeLe4n.Kernel.Concurrency.releaseOrder_eq_acquireOrder_reverse
 #check @SeLe4n.Kernel.Concurrency.lockSet_acquired_in_order
 #check @SeLe4n.Kernel.Concurrency.lockSet_released_in_reverse
--- SM3.C.7/C.8 atomicity/invariant-preservation theorems.
+-- SM3.C.7/C.8 atomicity/invariant-preservation theorems (ghost-bracket cut: over the pair).
 #check @SeLe4n.Kernel.Concurrency.withLockSet_three_phase_decomposition
 #check @SeLe4n.Kernel.Concurrency.lockSet_atomic_under_2pl
-#check @SeLe4n.Kernel.Concurrency.lockSet_invariant_preserved
 #check @SeLe4n.Kernel.Concurrency.withLockSet_invariant_preserved
-#check @SeLe4n.Kernel.Concurrency.acquireAll_preserves_objStoreLock_wf
 -- SM3.C.8 audit-pass-1 (Comment 7): substantive acquire-grants theorems.
 #check @SeLe4n.Kernel.Concurrency.acquireLockOnObject_objStore_establishes_lockHeld
 #check @SeLe4n.Kernel.Concurrency.acquireLockOnObject_objStore_release_roundtrip
@@ -14187,15 +14186,11 @@ import SeLe4n.Kernel.Concurrency.Locks.Refinement
 #check @SeLe4n.Kernel.Concurrency.acquireAll_establishes_lockHeld_of_distinct_present_unheld
 #check @SeLe4n.Kernel.Concurrency.acquireAll_establishes_lockSetHeld
 #check @SeLe4n.Kernel.Concurrency.lockAcquireSequence_distinct_objId_of_resolves
--- SM3.C.7 (Group-B): observational atomicity (lock-insensitive observer).
-#check @SeLe4n.Kernel.Concurrency.AcquireInsensitive
-#check @SeLe4n.Kernel.Concurrency.UnwindInsensitive
-#check @SeLe4n.Kernel.Concurrency.acquireAll_lockInsensitive
-#check @SeLe4n.Kernel.Concurrency.releaseAll_lockInsensitive
-#check @SeLe4n.Kernel.Concurrency.cancelAll_lockInsensitive
-#check @SeLe4n.Kernel.Concurrency.unwindAll_lockInsensitive
-#check @SeLe4n.Kernel.Concurrency.withLockSet_unwind_invisible
+-- SM3.C.7 (Group-B): observational atomicity — ghost-bracket cut: hypothesis-free over
+-- the pair; the lock-insensitive-observer machinery it needed is gone.
 #check @SeLe4n.Kernel.Concurrency.lockSet_observer_atomic
+#check @SeLe4n.Kernel.Concurrency.threadIpcStateObserver
+#check @SeLe4n.Kernel.Concurrency.notificationDeliveryObserver
 -- The shrinking phase withdraws before it releases, and the payoff that
 -- makes the old "released is not fully unwound" caveat false.
 #check @SeLe4n.Kernel.Concurrency.AccessMode.toCancelOp
@@ -14222,6 +14217,38 @@ import SeLe4n.Kernel.Concurrency.Locks.Refinement
 #check @SeLe4n.Kernel.Concurrency.LockState.unwindAll_not_queued
 #check @SeLe4n.Kernel.Concurrency.LockState.acquireAll_unwindAll_unheld
 #check @SeLe4n.Kernel.Concurrency.LockState.applySeq_unheld_key_refines
+-- The bracket as a specification over the ghost lock state (Locks/BracketSpec.lean).
+#check @SeLe4n.Kernel.Concurrency.LockedSystemState
+#check @SeLe4n.Kernel.Concurrency.LockState.bracket
+#check @SeLe4n.Kernel.Concurrency.LockState.bracketDeclared
+#check @SeLe4n.Kernel.Concurrency.LockState.bracket_unheld
+#check @SeLe4n.Kernel.Concurrency.LockState.acquireAll_unheld_heldAll_pairs
+#check @SeLe4n.Kernel.Concurrency.withLockSetGhost
+#check @SeLe4n.Kernel.Concurrency.withLockSetGhost_eq_decomposition
+#check @SeLe4n.Kernel.Concurrency.withLockSetGhost_fst_kernel
+#check @SeLe4n.Kernel.Concurrency.withLockSetGhost_fst_locks
+#check @SeLe4n.Kernel.Concurrency.withLockSetGhost_snd
+#check @SeLe4n.Kernel.Concurrency.withLockSetGhost_empty
+#check @SeLe4n.Kernel.Concurrency.withLockSetGhost_locks_of_unheld
+#check @SeLe4n.Kernel.Concurrency.BracketSpec
+#check @SeLe4n.Kernel.Concurrency.BracketSpec.run
+#check @SeLe4n.Kernel.Concurrency.BracketSpec.runGhost
+#check @SeLe4n.Kernel.Concurrency.BracketSpec.runGhost_kernel
+#check @SeLe4n.Kernel.Concurrency.BracketSpec.runGhost_fst
+#check @SeLe4n.Kernel.Concurrency.BracketSpec.runGhost_locks
+#check @SeLe4n.Kernel.Concurrency.BracketSpec.runGhost_undeclared
+#check @SeLe4n.Kernel.Concurrency.BracketSpec.runGhost_declared
+#check @SeLe4n.Kernel.Concurrency.BracketSpec.runGhost_eq_withLockSetGhost
+#check @SeLe4n.Kernel.Concurrency.BracketSpec.runGhost_locks_of_unheld
+#check @SeLe4n.Kernel.Concurrency.BracketSpec.run_covers
+#check @SeLe4n.Kernel.Concurrency.BracketSpec.guard
+#check @SeLe4n.Kernel.Concurrency.BracketSpec.guard_of_unheld
+#check @SeLe4n.Kernel.Concurrency.BracketSpec.not_guard_of_contended
+#check @SeLe4n.Kernel.Concurrency.RwLockState.acquire_not_grants_of_writerHeld
+#check @SeLe4n.Kernel.footprintCoversWrites
+#check @SeLe4n.Kernel.footprintCoversWrites_refl
+#check @SeLe4n.Kernel.footprintCoversWrites_clearReschedulePendingOnCore
+#check @SeLe4n.Kernel.footprintCoversWrites_mono
 #check @SeLe4n.Kernel.Concurrency.RwLockState.applyOp_cancel_of_not_queued
 #check @SeLe4n.Model.LockId.lookup_object_eq
 -- SM3.C.11 dynamic chain walker + deadlock-freedom witness.
@@ -14402,6 +14429,7 @@ EOF'
 # Surface anchors verify every SM3.E public symbol survives renames at
 # elaboration time.  SM3.E.8: `#check` of the major theorems.
 run_check "INVARIANT" bash -lc 'source ~/.elan/env && lake build SeLe4n.Kernel.Concurrency.Locks.SerializabilityInventory'
+# shellcheck disable=SC2016
 run_check "INVARIANT" bash -lc 'source ~/.elan/env && lake env lean --stdin <<"EOF"
 import SeLe4n.Kernel.Concurrency.LockSet
 import SeLe4n.Kernel.Concurrency.Locks.Serializability
@@ -14488,24 +14516,15 @@ import SeLe4n.Kernel.Concurrency.Locks.SerializabilityInventory
 #check @SeLe4n.Kernel.Concurrency.singleCore_invariant_preservation
 #check @SeLe4n.Kernel.Concurrency.singleCore_proof_preservation
 #check @SeLe4n.Kernel.Concurrency.withLockSet_growing_phase_establishes_lockSetHeld
-#check @SeLe4n.Kernel.Concurrency.acquireLockOnObject_preserves_objStoreLock_wf
-#check @SeLe4n.Kernel.Concurrency.releaseLockOnObject_preserves_objStoreLock_wf
-#check @SeLe4n.Kernel.Concurrency.withLockSet_preserves_objStoreLock_wf
 #check @SeLe4n.Kernel.Concurrency.releaseLockOnObject_preserves_invExt
-#check @SeLe4n.Kernel.Concurrency.updateObjectLockAt_preserves_objectType_at
-#check @SeLe4n.Kernel.Concurrency.acquireLockOnObject_preserves_objectType_at
-#check @SeLe4n.Kernel.Concurrency.releaseLockOnObject_preserves_objectType_at
-#check @SeLe4n.Kernel.Concurrency.withLockSet_preserves_objectType_at
-#check @SeLe4n.Kernel.Concurrency.ActionPiCongr
-#check @SeLe4n.Kernel.Concurrency.applySequential_piCongr
+-- The atomicity bridge of the ghost-bracket cut: over the pair, hypothesis-free, and
+-- as a kernel-state equality (`applySequentialWithLockSet_kernel`).
 #check @SeLe4n.Kernel.Concurrency.withLockSet_observation_eq_action
 #check @SeLe4n.Kernel.Concurrency.applySequentialWithLockSet
+#check @SeLe4n.Kernel.Concurrency.applySequentialWithLockSet_nil
+#check @SeLe4n.Kernel.Concurrency.applySequentialWithLockSet_cons
+#check @SeLe4n.Kernel.Concurrency.applySequentialWithLockSet_kernel
 #check @SeLe4n.Kernel.Concurrency.applySequentialWithLockSet_observation
-#check @SeLe4n.Kernel.Concurrency.acquireLockOnObject_preserves_scheduler
-#check @SeLe4n.Kernel.Concurrency.releaseLockOnObject_preserves_scheduler
-#check @SeLe4n.Kernel.Concurrency.schedulerObserver_acquireInsensitive
-#check @SeLe4n.Kernel.Concurrency.schedulerObserver_unwindInsensitive
-#check @SeLe4n.Kernel.Concurrency.withLockSet_observation_scheduler_witness
 #check @SeLe4n.Kernel.Concurrency.ActionObsCongr
 #check @SeLe4n.Kernel.Concurrency.ActionPreservesInvExt
 #check @SeLe4n.Kernel.Concurrency.KernelTransitionInstance.wellBehavedObs
@@ -15741,7 +15760,7 @@ open SeLe4n.Kernel
 #check @timerTickUnderDeclaredLockSet
 #check @rescheduleUnderDeclaredLockSet
 #check @timerTickUnderDeclaredLockSet_invalid_core
-#check @schedFootprintCoversWrites
+#check @footprintCoversWrites
 #check @perCoreRescheduleStep_coversWrites
 #check @perCoreTimerTickStep_coversWrites
 #check @allCoreRunQueueLockSegment
@@ -21065,8 +21084,8 @@ run_check "INVARIANT" rg -F -n 'run_check "BUILD" lake build SeLe4n.Testing.Sche
 # arm a footprint and C4b wired the seam to the resolver; this is the coverage,
 # which the numbering rule's semantic half puts before the bracket rather than
 # after it.
-run_check "INVARIANT" rg -n '^theorem schedFootprintCoversWrites_of_cores \(S : LockSet\)' SeLe4n/Kernel/SchedLockBracket.lean
-run_check "INVARIANT" rg -n '^theorem schedFootprintCoversWrites_of_confined \(S : LockSet\)' SeLe4n/Kernel/SyscallSchedContainment.lean
+run_check "INVARIANT" rg -n '^theorem footprintCoversWrites_of_cores \(S : LockSet\)' SeLe4n/Kernel/SchedLockBracket.lean
+run_check "INVARIANT" rg -n '^theorem footprintCoversWrites_of_confined \(S : LockSet\)' SeLe4n/Kernel/SyscallSchedContainment.lean
 # One application per arm.  The bridge discharges the object clause structurally
 # -- a canonical footprint always names the object-store table write lock -- and
 # reduces the other two to the arm's own SM8.B confinement result and its own
@@ -21083,12 +21102,12 @@ run_check "INVARIANT" rg -n '^theorem schedLockSet_suspendThreadOnCore_coversWri
 # obligation held of any footprint whatever.  These two say it does not, one
 # clause each -- and the replenish one is the clause SM8.B's confinement cannot
 # supply, the replenish queue not being one of its six per-core slots.
-run_check "INVARIANT" rg -n '^theorem not_schedFootprintCoversWrites_of_runQueue_moved($|[ ({:\[\]])' SeLe4n/Kernel/SyscallSchedContainment.lean
-run_check "INVARIANT" rg -n '^theorem not_schedFootprintCoversWrites_of_replenish_moved($|[ ({:\[\]])' SeLe4n/Kernel/SyscallSchedContainment.lean
+run_check "INVARIANT" rg -n '^theorem not_footprintCoversWrites_of_runQueue_moved($|[ ({:\[\]])' SeLe4n/Kernel/SyscallSchedContainment.lean
+run_check "INVARIANT" rg -n '^theorem not_footprintCoversWrites_of_replenish_moved($|[ ({:\[\]])' SeLe4n/Kernel/SyscallSchedContainment.lean
 # ...and no arm's coverage may be discharged by the no-op lemma, which holds of
 # EVERY footprint: that is the token-preserving weakening this family admits, and
 # it would turn eight measurements into eight tautologies.
-run_negative_check "INVARIANT" rg -F -n 'schedFootprintCoversWrites_refl' SeLe4n/Kernel/SyscallSchedContainment.lean
+run_negative_check "INVARIANT" rg -F -n 'footprintCoversWrites_refl' SeLe4n/Kernel/SyscallSchedContainment.lean
 # Staged, and built by CI on every PR through the staged anchor: a proof links
 # into no image, and every proof here consumes a confinement theorem from the
 # staged `NonInterferenceCrossCore`.
@@ -21303,7 +21322,7 @@ run_negative_check "INVARIANT" rg -n 'liftObjectFootprint|unifiedObjectResidue|c
 # SCHEDULER footprint, reaches the UNIFIED one the bracket acquires — so the
 # sixteen theorems are not restated at a second footprint.
 run_check "INVARIANT" rg -n '^theorem unifiedLockSetForSyscall_coversWrites($|[ ({:\[\]])' SeLe4n/Kernel/SyscallSchedFootprint.lean
-run_check "INVARIANT" bash -lc 'rg -U -n "^theorem schedFootprintCoversWrites_mono[^\n]*(\n([ \t][^\n]*)?)*hSub : ∀ l, \(l, AccessMode.write\) ∈ S.pairs → \(l, AccessMode.write\) ∈ U.pairs" SeLe4n/Kernel/SchedLockBracket.lean'
+run_check "INVARIANT" bash -lc 'rg -U -n "^theorem footprintCoversWrites_mono[^\n]*(\n([ \t][^\n]*)?)*hSub : ∀ l, \(l, AccessMode.write\) ∈ S.pairs → \(l, AccessMode.write\) ∈ U.pairs" SeLe4n/Kernel/Concurrency/Locks/BracketSpec.lean'
 # And the membership it is built from, in BOTH directions — a unified footprint
 # that dropped a scheduler member would make every coverage claim about it false.
 run_check "INVARIANT" rg -n '^theorem mem_unifiedLockSetForSyscall_of_sched($|[ ({:\[\]])' SeLe4n/Kernel/SyscallSchedFootprint.lean

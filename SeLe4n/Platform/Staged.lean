@@ -152,7 +152,7 @@ import SeLe4n.Kernel.Concurrency.PhaseTheoremManifest
 -- + SM3.C `withLockSet` 2PL combinator + per-object acquire/release
 -- primitives + `lockSetHeld` predicate + 2PL discipline theorems
 -- (`lockSet_acquired_in_order`, `lockSet_released_in_reverse`,
--- `lockSet_atomic_under_2pl`, `lockSet_invariant_preserved`) + SM3.C.11
+-- `lockSet_atomic_under_2pl`, `withLockSet_invariant_preserved`) + SM3.C.11
 -- dynamic PIP-chain-walk machinery + 51-theorem SM3.C inventory + SM3.D
 -- deadlock-freedom (`deadlockFreedom_under_2pl_and_ordering`,
 -- `waitGraph_acyclic_under_2pl`, `boundedWait_under_2pl`) + 66-theorem

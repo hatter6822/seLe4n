@@ -2947,12 +2947,13 @@ theorem lockSet_tcbSuspendOnCore_covers_reclaimSecondPop (st : SystemState)
 -- ============================================================================
 
 /-- WS-SM SM6.E.2 (plan §5 `cancelIpcBlocking_atomic_under_lockSet`, Theorem
-2.1.10): under its `cancelIpcBlocking` lock-set the single-core cancellation
-teardown is a single two-phase-locked atomic step — wrapping it in
-`withLockSet` decomposes deterministically into the acquire fold, the
-teardown, and the release fold.  No partially-torn-down victim (dequeued but
-IPC fields uncleared, or reply link half-severed) is observable to a
-lock-insensitive observer. -/
+2.1.10; **WS-LS LS2.1**: over the pair): under its `cancelIpcBlocking` lock-set
+the single-core cancellation teardown is a single two-phase-locked atomic step
+— wrapping it in the ghost bracket decomposes deterministically into the
+teardown on the kernel half and the bracket's lock trace on the lock half.
+`rfl` since LS2.1: the phases write the lock table and the action writes the
+kernel state, so no partially-torn-down victim (dequeued but IPC fields
+uncleared, or reply link half-severed) exists for any observer. -/
 theorem cancelIpcBlocking_atomic_under_lockSet
     (victim : SeLe4n.ThreadId) (tcb : TCB) (executingCore : CoreId)
     (blEp blN : Option SeLe4n.ObjId) (consumedReplyId : Option SeLe4n.ReplyId)
@@ -2967,21 +2968,19 @@ theorem cancelIpcBlocking_atomic_under_lockSet
     (reclaimHead? frameAbove? : Option SeLe4n.ReplyId)
     -- **WS-HP HP3.1**: the frame below the cut, which the splice re-links.
     (splicedBelow? : Option SeLe4n.ReplyId)
-    (s : SystemState) :
-    withLockSet (lockSet_cancelIpcBlocking victim blEp blN consumedReplyId rdSc dhTid holderEp holderNb belowHeadReply? outerCaller? reclaimHead? frameAbove? splicedBelow?)
+    (s : LockedSystemState) :
+    withLockSetGhost (lockSet_cancelIpcBlocking victim blEp blN consumedReplyId rdSc dhTid holderEp holderNb belowHeadReply? outerCaller? reclaimHead? frameAbove? splicedBelow?)
         executingCore (fun st => (cancelIpcBlocking st victim tcb, ())) s
-      = (unwindAll executingCore
-          (lockSet_cancelIpcBlocking victim blEp blN consumedReplyId rdSc dhTid holderEp holderNb belowHeadReply? outerCaller? reclaimHead? frameAbove? splicedBelow?).lockAcquireSequence.reverse
-          (cancelIpcBlocking
-            (acquireAll executingCore
-              (lockSet_cancelIpcBlocking victim blEp blN consumedReplyId rdSc dhTid holderEp holderNb belowHeadReply? outerCaller? reclaimHead? frameAbove? splicedBelow?).lockAcquireSequence s)
-            victim tcb),
+      = (⟨cancelIpcBlocking s.kernel victim tcb,
+          LockState.bracket executingCore
+            (lockSet_cancelIpcBlocking victim blEp blN consumedReplyId rdSc dhTid holderEp holderNb belowHeadReply? outerCaller? reclaimHead? frameAbove? splicedBelow?) s.locks⟩,
          ()) :=
   lockSet_atomic_under_2pl _ executingCore _ s
 
-/-- WS-SM SM6.E.2 (companion): the cross-core cancellation composite is
-likewise a single 2PL-atomic step under the same lock-set — the surfaced SGI
-is computed inside the bracket and fired by the runtime after the commit. -/
+/-- WS-SM SM6.E.2 (companion; **WS-LS LS2.1**: over the pair): the cross-core
+cancellation composite is likewise a single 2PL-atomic step under the same
+lock-set — the surfaced SGI is computed inside the bracket and fired by the
+runtime after the commit. -/
 theorem cancelIpcBlockingOnCore_atomic_under_lockSet
     (victim : SeLe4n.ThreadId) (tcb : TCB) (executingCore : CoreId)
     (blEp blN : Option SeLe4n.ObjId) (consumedReplyId : Option SeLe4n.ReplyId)
@@ -2996,24 +2995,21 @@ theorem cancelIpcBlockingOnCore_atomic_under_lockSet
     (reclaimHead? frameAbove? : Option SeLe4n.ReplyId)
     -- **WS-HP HP3.1**: the frame below the cut, which the splice re-links.
     (splicedBelow? : Option SeLe4n.ReplyId)
-    (s : SystemState) :
-    withLockSet (lockSet_cancelIpcBlocking victim blEp blN consumedReplyId rdSc dhTid holderEp holderNb belowHeadReply? outerCaller? reclaimHead? frameAbove? splicedBelow?)
+    (s : LockedSystemState) :
+    withLockSetGhost (lockSet_cancelIpcBlocking victim blEp blN consumedReplyId rdSc dhTid holderEp holderNb belowHeadReply? outerCaller? reclaimHead? frameAbove? splicedBelow?)
         executingCore (cancelIpcBlockingOnCore victim tcb executingCore) s
-      = (unwindAll executingCore
-          (lockSet_cancelIpcBlocking victim blEp blN consumedReplyId rdSc dhTid holderEp holderNb belowHeadReply? outerCaller? reclaimHead? frameAbove? splicedBelow?).lockAcquireSequence.reverse
-          (cancelIpcBlockingOnCore victim tcb executingCore
-            (acquireAll executingCore
-              (lockSet_cancelIpcBlocking victim blEp blN consumedReplyId rdSc dhTid holderEp holderNb belowHeadReply? outerCaller? reclaimHead? frameAbove? splicedBelow?).lockAcquireSequence s)).1,
-         (cancelIpcBlockingOnCore victim tcb executingCore
-            (acquireAll executingCore
-              (lockSet_cancelIpcBlocking victim blEp blN consumedReplyId rdSc dhTid holderEp holderNb belowHeadReply? outerCaller? reclaimHead? frameAbove? splicedBelow?).lockAcquireSequence s)).2) :=
+      = (⟨(cancelIpcBlockingOnCore victim tcb executingCore s.kernel).1,
+          LockState.bracket executingCore
+            (lockSet_cancelIpcBlocking victim blEp blN consumedReplyId rdSc dhTid holderEp holderNb belowHeadReply? outerCaller? reclaimHead? frameAbove? splicedBelow?) s.locks⟩,
+         (cancelIpcBlockingOnCore victim tcb executingCore s.kernel).2) :=
   lockSet_atomic_under_2pl _ executingCore _ s
 
 /-- WS-SM SM6.E.4 (plan §5 `cancelDonation_atomic_under_lockSet`, Theorem
-2.1.10): under its `cancelDonation` lock-set the single-core donation
-cancellation is a single 2PL-atomic step.  The adapter returns the pre-state
-on an error so the bracket's release fold applies to a well-defined state on
-every path. -/
+2.1.10; **WS-LS LS2.1**: over the pair): under its `cancelDonation` lock-set
+the single-core donation cancellation is a single 2PL-atomic step — `rfl`,
+because the phases write the lock table and the action writes the kernel
+state.  The adapter returns the pre-state on an error so the kernel half is a
+well-defined state on every path. -/
 theorem cancelDonation_atomic_under_lockSet
     (victim : SeLe4n.ThreadId) (tcb : TCB) (executingCore : CoreId)
     (bindingScId : Option SeLe4n.SchedContextId)
@@ -3021,32 +3017,27 @@ theorem cancelDonation_atomic_under_lockSet
     -- WS-OD (`v0.35.4`): at the pop's arity.
     (headReplyId belowHeadReplyId : Option SeLe4n.ReplyId)
     (outerCallerTid : Option SeLe4n.ThreadId)
-    (s : SystemState) :
-    withLockSet (lockSet_cancelDonation victim bindingScId donatedOriginalOwnerTid
+    (s : LockedSystemState) :
+    withLockSetGhost (lockSet_cancelDonation victim bindingScId donatedOriginalOwnerTid
             headReplyId belowHeadReplyId outerCallerTid)
         executingCore
         (fun st => match cancelDonation st victim tcb with
           | .ok st' => (st', Except.ok ())
           | .error e => (st, Except.error e)) s
-      = (unwindAll executingCore
-          (lockSet_cancelDonation victim bindingScId donatedOriginalOwnerTid
-            headReplyId belowHeadReplyId outerCallerTid).lockAcquireSequence.reverse
-          ((fun st => match cancelDonation st victim tcb with
+      = (⟨((fun st => match cancelDonation st victim tcb with
             | .ok st' => (st', Except.ok ())
-            | .error e => (st, Except.error e))
-            (acquireAll executingCore
-              (lockSet_cancelDonation victim bindingScId donatedOriginalOwnerTid
-            headReplyId belowHeadReplyId outerCallerTid).lockAcquireSequence s)).1,
+            | .error e => (st, Except.error e)) s.kernel).1,
+          LockState.bracket executingCore
+            (lockSet_cancelDonation victim bindingScId donatedOriginalOwnerTid
+              headReplyId belowHeadReplyId outerCallerTid) s.locks⟩,
          ((fun st => match cancelDonation st victim tcb with
             | .ok st' => (st', Except.ok ())
-            | .error e => (st, Except.error e))
-            (acquireAll executingCore
-              (lockSet_cancelDonation victim bindingScId donatedOriginalOwnerTid
-            headReplyId belowHeadReplyId outerCallerTid).lockAcquireSequence s)).2) :=
+            | .error e => (st, Except.error e)) s.kernel).2) :=
   lockSet_atomic_under_2pl _ executingCore _ s
 
-/-- WS-SM SM6.E.4 (companion): the per-core donation-cancellation dispatcher
-is likewise a single 2PL-atomic step under the same lock-set. -/
+/-- WS-SM SM6.E.4 (companion; **WS-LS LS2.1**: over the pair): the per-core
+donation-cancellation dispatcher is likewise a single 2PL-atomic step under the
+same lock-set. -/
 theorem cancelDonationOnCore_atomic_under_lockSet
     (victim : SeLe4n.ThreadId) (tcb : TCB) (executingCore : CoreId)
     (bindingScId : Option SeLe4n.SchedContextId)
@@ -3054,21 +3045,15 @@ theorem cancelDonationOnCore_atomic_under_lockSet
     -- WS-OD (`v0.35.4`): at the pop's arity.
     (headReplyId belowHeadReplyId : Option SeLe4n.ReplyId)
     (outerCallerTid : Option SeLe4n.ThreadId)
-    (s : SystemState) :
-    withLockSet (lockSet_cancelDonation victim bindingScId donatedOriginalOwnerTid
+    (s : LockedSystemState) :
+    withLockSetGhost (lockSet_cancelDonation victim bindingScId donatedOriginalOwnerTid
             headReplyId belowHeadReplyId outerCallerTid)
         executingCore (cancelDonationOnCore victim tcb) s
-      = (unwindAll executingCore
-          (lockSet_cancelDonation victim bindingScId donatedOriginalOwnerTid
-            headReplyId belowHeadReplyId outerCallerTid).lockAcquireSequence.reverse
-          (cancelDonationOnCore victim tcb
-            (acquireAll executingCore
-              (lockSet_cancelDonation victim bindingScId donatedOriginalOwnerTid
-            headReplyId belowHeadReplyId outerCallerTid).lockAcquireSequence s)).1,
-         (cancelDonationOnCore victim tcb
-            (acquireAll executingCore
-              (lockSet_cancelDonation victim bindingScId donatedOriginalOwnerTid
-            headReplyId belowHeadReplyId outerCallerTid).lockAcquireSequence s)).2) :=
+      = (⟨(cancelDonationOnCore victim tcb s.kernel).1,
+          LockState.bracket executingCore
+            (lockSet_cancelDonation victim bindingScId donatedOriginalOwnerTid
+              headReplyId belowHeadReplyId outerCallerTid) s.locks⟩,
+         (cancelDonationOnCore victim tcb s.kernel).2) :=
   lockSet_atomic_under_2pl _ executingCore _ s
 
 -- ============================================================================
@@ -4450,16 +4435,19 @@ theorem suspendThreadOnCore_local_no_sgi (st st' : SystemState)
 end Lifecycle.Suspend
 
 -- ============================================================================
--- §14  SM6.E — observational atomicity of the cancellation (SM3.C.7 guarded)
+-- §14  SM6.E — observational atomicity of the cancellation (SM3.C.7)
 -- ============================================================================
 -- The §8/§9 atomicity theorems record the 2PL 3-phase shape structurally;
 -- this section gives the *observational* content for the cancellation's
--- decisive business observable: the victim's `ipcState`.  Lock acquire /
--- release write only per-object `lock` fields (`updateObjectLockAt`), so an
--- `ipcState` observer — guarded by the store invariant `invExt`, which the
--- lock writes preserve — sees exactly the cancellation's own transition
--- through the whole `withLockSet` bracket, never a lock-machinery
--- intermediate (`lockSet_observer_atomic_on`, the SM3.C.7 guarded capstone).
+-- decisive business observables: the victim's `ipcState` and, on the
+-- donation side, its `schedContextBinding`.  **WS-LS LS2.1**: the bracket is
+-- stated over `LockedSystemState`, whose lock half the growing and shrinking
+-- phases write and whose kernel half only the action writes, so an observer
+-- of the kernel state sees exactly the cancellation's own transition through
+-- the whole bracket — `lockSet_observer_atomic`, hypothesis-free.  The
+-- `invExt`-guarded insensitivity lemmas the word-level bracket needed
+-- (`cancellationObserver_*InsensitiveOn` and the binding twins) are gone with
+-- the guarded capstone they fed.
 
 -- WS-LC LC4.7: the per-primitive `invExt` preservation lemmas that stood here
 -- are gone.  This file carried a *third* copy of them — `LockSetHeld` and
@@ -4467,54 +4455,20 @@ end Lifecycle.Suspend
 -- are in each other's import closure.  They now live once, beside
 -- `updateObjectLockAt` in `WithLockSet`, which all three import.
 
--- **WS-RR RR7.4**: the two lock-write stability lemmas that stood here —
--- `updateObjectLockAt_getTcb?_ipcState` and its `schedContextBinding` twin —
--- moved to `Locks/WithLockSet.lean`, beside `updateObjectLockAt` itself.  RR7.4
--- gives the same observer treatment to the five remaining SM6 transitions and
--- each of them needs the TCB-`ipcState` lemma; a copy per file is exactly the
--- duplication WS-LC LC4.7 removed for the `invExt` preservation family.
-
 /-- WS-SM SM6.E: the cancellation's decisive business observable — the
 victim's `ipcState` (the field the teardown transitions and the wake/suspend
 race would corrupt). -/
 def cancellationVictimIpcStateObserver (victim : SeLe4n.ThreadId) :=
   threadIpcStateObserver victim
 
-/-- **WS-RR RR7.4**: the victim-`ipcState` observer reads only the object
-store, and a lock-field-only write leaves it alone — the two facts the shared
-`lockPrimitives_insensitiveOn_of_objectStoreObserver` needs. -/
-theorem cancellationObserver_insensitiveOn (core : CoreId)
-    (victim : SeLe4n.ThreadId) :
-    AcquireInsensitiveOn (fun s => s.objects.invExt) core
-      (cancellationVictimIpcStateObserver victim) ∧
-    UnwindInsensitiveOn (fun s => s.objects.invExt) core
-      (cancellationVictimIpcStateObserver victim) :=
-  threadIpcStateObserver_insensitiveOn core victim
-
-/-- WS-SM SM6.E: the victim-`ipcState` observer is `invExt`-guardedly
-acquire-insensitive — every lock acquire is a lock-field-only write. -/
-theorem cancellationObserver_acquireInsensitiveOn (core : CoreId)
-    (victim : SeLe4n.ThreadId) :
-    AcquireInsensitiveOn (fun s => s.objects.invExt) core
-      (cancellationVictimIpcStateObserver victim) :=
-  (cancellationObserver_insensitiveOn core victim).1
-
-/-- WS-SM SM6.E: the victim-`ipcState` observer is `invExt`-guardedly
-release-insensitive. -/
-theorem cancellationObserver_unwindInsensitiveOn (core : CoreId)
-    (victim : SeLe4n.ThreadId) :
-    UnwindInsensitiveOn (fun s => s.objects.invExt) core
-      (cancellationVictimIpcStateObserver victim) :=
-  (cancellationObserver_insensitiveOn core victim).2
-
-/-- WS-SM SM6.E (observational atomicity, plan §5.3 for the cancellation):
-under the cancellation's declared 2PL lock-set the victim-`ipcState`
-observer sees exactly the cancellation transition — the acquire fold shows
-it the pre-state view and the release fold is invisible; no lock-machinery
-intermediate is ever observable.  Instantiates the SM3.C.7 guarded capstone
-(`lockSet_observer_atomic_on`) at the `invExt` guard, discharged by the lock
-primitives' own store-invariant stability and the cancellation's `invExt`
-preservation. -/
+/-- WS-SM SM6.E (observational atomicity, plan §5.3 for the cancellation;
+**WS-LS LS2.1**: over the pair, hypothesis-free): under the cancellation's
+declared 2PL lock-set the victim-`ipcState` observer sees exactly the
+cancellation transition through the whole bracket; no lock-machinery
+intermediate is ever observable.  The `invExt` hypothesis and the acquire-fold
+conjunct (the observer unchanged by the growing phase) are dropped because the
+growing phase no longer touches the kernel state — a strengthening (plan O6):
+instantiates `lockSet_observer_atomic` directly. -/
 theorem cancelIpcBlockingOnCore_observer_atomic
     (victim : SeLe4n.ThreadId) (tcb : TCB) (executingCore : CoreId)
     (blEp blN : Option SeLe4n.ObjId) (consumedReplyId : Option SeLe4n.ReplyId)
@@ -4526,78 +4480,26 @@ theorem cancelIpcBlockingOnCore_observer_atomic
     (reclaimHead? frameAbove? : Option SeLe4n.ReplyId)
     -- **WS-HP HP3.1**: the frame below the cut, which the splice re-links.
     (splicedBelow? : Option SeLe4n.ReplyId)
-    (s : SystemState) (hInv : s.objects.invExt) :
+    (s : LockedSystemState) :
     cancellationVictimIpcStateObserver victim
-        (acquireAll executingCore
-          (lockSet_cancelIpcBlocking victim blEp blN
-            consumedReplyId rdSc dhTid holderEp holderNb belowHeadReply? outerCaller? reclaimHead? frameAbove? splicedBelow?).lockAcquireSequence s)
-      = cancellationVictimIpcStateObserver victim s
-    ∧ cancellationVictimIpcStateObserver victim
-        (withLockSet (lockSet_cancelIpcBlocking victim blEp blN consumedReplyId rdSc dhTid holderEp holderNb belowHeadReply? outerCaller? reclaimHead? frameAbove? splicedBelow?)
-          executingCore (cancelIpcBlockingOnCore victim tcb executingCore) s).1
+        (withLockSetGhost (lockSet_cancelIpcBlocking victim blEp blN consumedReplyId rdSc dhTid holderEp holderNb belowHeadReply? outerCaller? reclaimHead? frameAbove? splicedBelow?)
+          executingCore (cancelIpcBlockingOnCore victim tcb executingCore) s).1.kernel
       = cancellationVictimIpcStateObserver victim
-          (cancelIpcBlockingOnCore victim tcb executingCore
-            (acquireAll executingCore
-              (lockSet_cancelIpcBlocking victim blEp blN
-                consumedReplyId rdSc dhTid holderEp holderNb belowHeadReply? outerCaller? reclaimHead? frameAbove? splicedBelow?).lockAcquireSequence s)).1 := by
-  have hAcqStable : ∀ (s' : SystemState) k m, s'.objects.invExt →
-      (acquireLock s' executingCore k m).objects.invExt :=
-    fun s' k m h => acquireLock_preserves_invExt s' executingCore k m h
-  have hInvAcq : (acquireAll executingCore
-      (lockSet_cancelIpcBlocking victim blEp blN
-        consumedReplyId rdSc dhTid holderEp holderNb belowHeadReply? outerCaller? reclaimHead? frameAbove? splicedBelow?).lockAcquireSequence s).objects.invExt :=
-    (acquireAll_lockInsensitiveOn _ executingCore _
-      (cancellationObserver_acquireInsensitiveOn executingCore victim) hAcqStable
-      _ s hInv).2
-  exact lockSet_observer_atomic_on _ executingCore _ s
-    (fun st => st.objects.invExt)
-    (cancellationVictimIpcStateObserver victim)
-    (cancellationObserver_acquireInsensitiveOn executingCore victim)
-    (cancellationObserver_unwindInsensitiveOn executingCore victim)
-    hAcqStable
-    (fun s' k m h => releaseLock_preserves_invExt s' executingCore k m h)
-    (fun s' k m h => cancelLock_preserves_invExt s' executingCore k m h)
-    hInv
-    (cancelIpcBlockingOnCore_preserves_objects_invExt victim tcb executingCore _ hInvAcq)
+          (cancelIpcBlockingOnCore victim tcb executingCore s.kernel).1 :=
+  lockSet_observer_atomic _ executingCore _ s _
 
 /-- Audit closure (F3ii): the cancellation's donation-side decisive
 observable — the victim's `schedContextBinding`. -/
 def cancellationVictimBindingObserver (victim : SeLe4n.ThreadId) :=
   fun s : SystemState => (s.getTcb? victim).map TCB.schedContextBinding
 
-/-- **WS-RR RR7.4**: the binding observer's two facts, as above. -/
-theorem cancellationBindingObserver_insensitiveOn (core : CoreId)
-    (victim : SeLe4n.ThreadId) :
-    AcquireInsensitiveOn (fun s => s.objects.invExt) core
-      (cancellationVictimBindingObserver victim) ∧
-    UnwindInsensitiveOn (fun s => s.objects.invExt) core
-      (cancellationVictimBindingObserver victim) :=
-  lockPrimitives_insensitiveOn_of_objectStoreObserver core _
-    (fun _ _ h => by simp only [cancellationVictimBindingObserver,
-      SystemState.getTcb?, h])
-    (fun s l op hExt =>
-      updateObjectLockAt_getTcb?_schedContextBinding s l op victim hExt)
-
-/-- The binding observer is `invExt`-guardedly acquire-insensitive. -/
-theorem cancellationBindingObserver_acquireInsensitiveOn (core : CoreId)
-    (victim : SeLe4n.ThreadId) :
-    AcquireInsensitiveOn (fun s => s.objects.invExt) core
-      (cancellationVictimBindingObserver victim) :=
-  (cancellationBindingObserver_insensitiveOn core victim).1
-
-/-- The binding observer is `invExt`-guardedly release-insensitive. -/
-theorem cancellationBindingObserver_unwindInsensitiveOn (core : CoreId)
-    (victim : SeLe4n.ThreadId) :
-    UnwindInsensitiveOn (fun s => s.objects.invExt) core
-      (cancellationVictimBindingObserver victim) :=
-  (cancellationBindingObserver_insensitiveOn core victim).2
-
-/-- Audit closure (F3ii): the **donation-side observer capstone** — the 2PL
-machinery around `cancelDonationOnCore` is invisible to the cancellation's
-donation observable (the victim's `schedContextBinding`): the acquire phase
-changes nothing the observer sees, and the bracketed run shows exactly the
-transition's own effect.  The `schedContextBinding` mirror of
-`cancelIpcBlockingOnCore_observer_atomic`. -/
+/-- Audit closure (F3ii; **WS-LS LS2.1**: over the pair, hypothesis-free): the
+**donation-side observer capstone** — the 2PL machinery around
+`cancelDonationOnCore` is invisible to the cancellation's donation observable
+(the victim's `schedContextBinding`): the bracketed run shows exactly the
+transition's own effect.  The `invExt` hypothesis and the acquire-fold
+conjunct are dropped as in `cancelIpcBlockingOnCore_observer_atomic`, whose
+`schedContextBinding` mirror this is. -/
 theorem cancelDonationOnCore_observer_atomic
     (victim : SeLe4n.ThreadId) (tcb : TCB) (executingCore : CoreId)
     (bindingScId : Option SeLe4n.SchedContextId)
@@ -4605,40 +4507,14 @@ theorem cancelDonationOnCore_observer_atomic
     -- WS-OD (`v0.35.4`): at the pop's arity.
     (headReplyId belowHeadReplyId : Option SeLe4n.ReplyId)
     (outerCallerTid : Option SeLe4n.ThreadId)
-    (s : SystemState) (hInv : s.objects.invExt) :
+    (s : LockedSystemState) :
     cancellationVictimBindingObserver victim
-        (acquireAll executingCore
-          (lockSet_cancelDonation victim bindingScId donatedOwner
-            headReplyId belowHeadReplyId outerCallerTid).lockAcquireSequence s)
-      = cancellationVictimBindingObserver victim s
-    ∧ cancellationVictimBindingObserver victim
-        (withLockSet (lockSet_cancelDonation victim bindingScId donatedOwner
+        (withLockSetGhost (lockSet_cancelDonation victim bindingScId donatedOwner
             headReplyId belowHeadReplyId outerCallerTid)
-          executingCore (cancelDonationOnCore victim tcb) s).1
+          executingCore (cancelDonationOnCore victim tcb) s).1.kernel
       = cancellationVictimBindingObserver victim
-          (cancelDonationOnCore victim tcb
-            (acquireAll executingCore
-              (lockSet_cancelDonation victim bindingScId donatedOwner
-            headReplyId belowHeadReplyId outerCallerTid).lockAcquireSequence s)).1 := by
-  have hAcqStable : ∀ (s' : SystemState) k m, s'.objects.invExt →
-      (acquireLock s' executingCore k m).objects.invExt :=
-    fun s' k m h => acquireLock_preserves_invExt s' executingCore k m h
-  have hInvAcq : (acquireAll executingCore
-      (lockSet_cancelDonation victim bindingScId donatedOwner
-            headReplyId belowHeadReplyId outerCallerTid).lockAcquireSequence s).objects.invExt :=
-    (acquireAll_lockInsensitiveOn _ executingCore _
-      (cancellationBindingObserver_acquireInsensitiveOn executingCore victim) hAcqStable
-      _ s hInv).2
-  exact lockSet_observer_atomic_on _ executingCore _ s
-    (fun st => st.objects.invExt)
-    (cancellationVictimBindingObserver victim)
-    (cancellationBindingObserver_acquireInsensitiveOn executingCore victim)
-    (cancellationBindingObserver_unwindInsensitiveOn executingCore victim)
-    hAcqStable
-    (fun s' k m h => releaseLock_preserves_invExt s' executingCore k m h)
-    (fun s' k m h => cancelLock_preserves_invExt s' executingCore k m h)
-    hInv
-    (cancelDonationOnCore_preserves_objects_invExt victim tcb _ hInvAcq)
+          (cancelDonationOnCore victim tcb s.kernel).1 :=
+  lockSet_observer_atomic _ executingCore _ s _
 
 -- ============================================================================
 -- §15  SM6.E — boot-instance bridges + placement/affinity corollaries

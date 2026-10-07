@@ -392,7 +392,7 @@ theorem setThreadCpuAffinityWithMigration_replenishQueueOnCore_of_no_context
 /-- **WS-RR RR8.12 Cut C6b: the `.tcbSetAffinity` arm's exactness frame.**
 
 Keyed on the footprint's own replenish segment rather than on a resolution, which
-is what a coverage proof consumes: `schedFootprintCoversWrites`'s replenish clause
+is what a coverage proof consumes: `footprintCoversWrites`'s replenish clause
 asks "unchanged at every core the footprint does not name", and a
 resolution-conditional frame answers a different question that the consumer then
 has to case-split to reach.  The `none` arm is
@@ -2552,7 +2552,7 @@ IS the scheduler footprint — no widening, no reordering, definitionally. -/
 /-- **Cut C6h**: every member the SCHEDULER domain declared is in the unified
 footprint.
 
-The direction the coverage family needs: `schedFootprintCoversWrites` is stated
+The direction the coverage family needs: `footprintCoversWrites` is stated
 of the scheduler footprint, and it is the unified one the bracket acquires, so a
 claim about the first has to reach the second.  Write membership is enough — the
 predicate's three clauses are all of the form "a lock the footprint does **not**
@@ -2605,7 +2605,7 @@ over `schedLockSetForSyscall`'s answer; what the bracket acquires is
 `unifiedLockSetForSyscall`'s, which is that footprint with the object
 domain's members merged in.  `mem_unifiedLockSetForSyscall_of_sched` says every
 write member of the first is one of the second, and coverage is monotone upward
-(`schedFootprintCoversWrites_mono`), so the claim travels without being restated
+(`footprintCoversWrites_mono`), so the claim travels without being restated
 — which is what keeps "what does this arm's footprint cover" a single question.
 
 Stated once and generically rather than sixteen times at the arms: an instance
@@ -2616,9 +2616,9 @@ theorem unifiedLockSetForSyscall_coversWrites (sid : SyscallId)
     (S U : LockSet) (st₀ st₁ : SystemState)
     (hSched : schedLockSetForSyscall sid ops executingCore st = some S)
     (hU : unifiedLockSetForSyscall sid ops executingCore st = some U)
-    (hCover : schedFootprintCoversWrites S st₀ st₁) :
-    schedFootprintCoversWrites U st₀ st₁ :=
-  schedFootprintCoversWrites_mono S U st₀ st₁
+    (hCover : footprintCoversWrites S st₀ st₁) :
+    footprintCoversWrites U st₀ st₁ :=
+  footprintCoversWrites_mono S U st₀ st₁
     (fun l hl => mem_unifiedLockSetForSyscall_of_sched sid ops executingCore st S U l
       hSched hU hl)
     hCover

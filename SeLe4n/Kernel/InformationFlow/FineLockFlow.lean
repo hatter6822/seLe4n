@@ -12,6 +12,7 @@
 
 import SeLe4n.Kernel.InformationFlow.CovertChannelPerCore
 import SeLe4n.Kernel.Concurrency.Locks.LockSetForSyscall
+import SeLe4n.Kernel.Concurrency.Locks.BracketSpec
 
 /-!
 # WS-SM SM8.D — information flow under fine locks
@@ -2082,101 +2083,35 @@ theorem applySyscallTaint_preserves_proofLayerInvariantBundle (plan : TaintPlan)
     Architecture.proofLayerInvariantBundle (applySyscallTaint plan pre post) :=
   Architecture.proofLayerInvariantBundle_setDeclassificationTaint post _ h
 
-/-- SM8.D.5: the state the guarded entry is actually run in — the pre-state
-after the 2PL growing phase.  Named because every §5 hypothesis is stated
-against it: the entry does not see `s`, it sees this. -/
-def lockSetAcquiredState (S : LockSet) (lockCore : CoreId) (s : SystemState) : SystemState :=
-  SeLe4n.Kernel.Concurrency.acquireAll lockCore S.lockAcquireSequence s
+/-- SM8.D.5 (**WS-LS LS2.1**: over the pair): **the 2PL-bracketed live syscall
+entry** — the shape SM3.C.9 installs at the `@[export]` bodies: take the
+declared footprint in the executing core's name, run the
+information-flow-checked entry, release.
 
-/-- SM8.D.5: the object-store lock set, the one `LockSet` whose grant condition
-is a single field read.  Used by the two grant lemmas below as the smallest
-witness that says something about `acquireAll` rather than about one primitive. -/
-private def objStoreLockSet : LockSet :=
-  LockSet.singleton .objStore .write
+**What the bracket does and does not provide.**  The bracket is
+`withLockSetGhost` over `LockedSystemState`: the growing phase writes the
+**ghost lock table** (`s.locks`, by `LockState.bracket`) and the entry runs on
+the **kernel half** (`s.kernel`), so by type the lock trace never touches a
+kernel object.  The growing phase folds SM2.C's `tryAcquire*`, which
+*enqueues* a core when the lock is already held rather than granting it, and
+the bracket runs its action regardless — a pure total state transformer has no
+way to block.  So the growing phase declares a footprint and advances the
+table; it does **not** by itself establish mutual exclusion.  Exclusion is the
+bracket's **guard** (`BracketSpec.guard`): established under the entry lock by
+`BracketSpec.guard_of_unheld`, and refuted under contention by its
+load-bearing negative `BracketSpec.not_guard_of_contended` (the ghost forms
+of this file's former `lockSetAcquiredState_grants_when_free` and
+`lockSetAcquiredState_does_not_grant_when_contended`, retired by LS2.1).
 
-/-- SM8.D.5 (**the acquire phase grants when the lock is free**): on a state
-whose object-store lock is unheld, the growing phase really does leave the
-footprint held in the acquiring core's name.
-
-This is the half of SM3's `withLockSet` contract that is true unconditionally of
-nothing — it needs the pre-state to be uncontended, and saying so is the point. -/
-theorem lockSetAcquiredState_grants_when_free (s : SystemState) (lockCore : CoreId)
-    (hFree : s.objStoreLock = SeLe4n.Kernel.Concurrency.RwLockState.unheld) :
-    SeLe4n.Kernel.Concurrency.lockSetHeld lockCore objStoreLockSet
-      (lockSetAcquiredState objStoreLockSet lockCore s) := by
-  intro p hp
-  unfold objStoreLockSet at hp
-  rw [LockSet.singleton_pairs] at hp
-  simp only [List.mem_singleton] at hp
-  subst hp
-  show SeLe4n.Kernel.Concurrency.keyHeld lockCore .objStore .write _
-  rw [SeLe4n.Kernel.Concurrency.keyHeld_objStore]
-  show (SeLe4n.Kernel.Concurrency.acquireAll lockCore objStoreLockSet.lockAcquireSequence
-    s).objStoreLock.coreHolds lockCore .write
-  unfold objStoreLockSet
-  rw [LockSet.lockAcquireSequence_singleton]
-  show (SeLe4n.Kernel.Concurrency.acquireLock s lockCore .objStore .write).objStoreLock.coreHolds
-    lockCore .write
-  show (s.objStoreLock.applyOp (AccessMode.write.toAcquireOp lockCore)).coreHolds lockCore .write
-  rw [hFree]
-  show (SeLe4n.Kernel.Concurrency.RwLockState.unheld.applyOp
-    (.tryAcquireWrite lockCore)).writerHeld = some lockCore
-  rfl
-
-/-- SM8.D.5 (**the load-bearing negative**): and it does **not** grant when the
-lock is already write-held by another core — the acquirer is *queued*, and
-`withLockSet` runs its action anyway.
-
-This is the fact SM3's `withLockSet` docstring elided when it said the action
-"sees a state where every lock in `S` has been acquired in the core's name".  It
-is not a defect in the security argument — §5 never uses exclusion — but a
-contract that is false under contention is worth stating as a theorem rather
-than leaving for a reader to discover. -/
-theorem lockSetAcquiredState_does_not_grant_when_contended (s : SystemState)
-    (lockCore holder : CoreId) (hNe : holder ≠ lockCore)
-    (hHeld : s.objStoreLock = { writerHeld := some holder, readers := [], waiters := [] }) :
-    ¬ SeLe4n.Kernel.Concurrency.lockSetHeld lockCore objStoreLockSet
-        (lockSetAcquiredState objStoreLockSet lockCore s) := by
-  intro hAll
-  have hOne := hAll (.objStore, .write)
-    (by unfold objStoreLockSet; rw [LockSet.singleton_pairs]; simp)
-  rw [SeLe4n.Kernel.Concurrency.keyHeld_objStore] at hOne
-  rw [show (lockSetAcquiredState objStoreLockSet lockCore s).objStoreLock
-        = s.objStoreLock.applyOp (AccessMode.write.toAcquireOp lockCore) from by
-      unfold lockSetAcquiredState objStoreLockSet
-      rw [LockSet.lockAcquireSequence_singleton]
-      rfl] at hOne
-  rw [hHeld] at hOne
-  -- The acquire enqueues rather than granting, so the writer is still `holder`.
-  have hW : (({ writerHeld := some holder, readers := [], waiters := [] } :
-      SeLe4n.Kernel.Concurrency.RwLockState).applyOp
-        (AccessMode.write.toAcquireOp lockCore)).writerHeld = some lockCore := hOne
-  rw [show (AccessMode.write.toAcquireOp lockCore)
-        = SeLe4n.Kernel.Concurrency.RwLockOp.tryAcquireWrite lockCore from rfl] at hW
-  unfold SeLe4n.Kernel.Concurrency.RwLockState.applyOp at hW
-  simp only [SeLe4n.Kernel.Concurrency.RwLockState.coreInvolved, List.not_mem_nil,
-    List.map_nil, false_or, or_false, Option.some.injEq, Option.isSome_some, ne_eq,
-    not_true_eq_false, or_self] at hW
-  rw [if_neg hNe] at hW
-  exact hNe (Option.some.inj hW)
-
-/-- SM8.D.5: **the 2PL-bracketed live syscall entry** — the shape SM3.C.9
-installs at the `@[export]` bodies: take the declared footprint in the executing
-core's name, run the information-flow-checked entry, release.
-
-**What the bracket does and does not provide.**  `acquireAll` folds SM2.C's
-`tryAcquire*`, which *enqueues* a core when the lock is already held rather than
-granting it, and `withLockSet` runs its action regardless — a pure total state
-transformer has no way to block.  So the growing phase declares a footprint and
-advances the lock words; it does **not** by itself establish mutual exclusion.
-`lockSetAcquiredState_grants_when_free` and its load-bearing negative
-`lockSetAcquiredState_does_not_grant_when_contended` pin both directions.
-
-The §5 results do not rest on exclusion: they are frame arguments about lock
-writes being invisible, so they hold whether the acquisition granted or queued —
-which is precisely why the SM3.C.9 migration is a change of concurrency control
-and not of the security argument.  Live exclusion today comes from the SM5.I
-global kernel-entry ticket lock, not from this bracket.
+The §5 results do not rest on exclusion: they are statements about the kernel
+half, which the lock phases do not touch, so they hold whether the acquisition
+granted or queued — which is precisely why the SM3.C.9 migration is a change of
+concurrency control and not of the security argument.  Before LS2.1 the phases
+wrote lock words into kernel objects and every §5 theorem carried an `invExt`
+guard so that §1 could show those writes invisible; over the pair the kernel
+half of the result *is* the entry's (`syscallEntryUnderLockSet_fst`, `rfl`),
+and those guards are gone.  Live exclusion today comes from the SM5.I global
+kernel-entry ticket lock, not from this bracket.
 
 `lockCore` and `executingCore` are separate parameters on purpose.  They are
 the same core on the live path (the trapping core takes the locks its own
@@ -2186,19 +2121,25 @@ the migration's intermediate states, where a coarser bracket may be taken by
 one core on behalf of a transition attributed to another. -/
 def syscallEntryUnderLockSet (ctx : LabelingContext) (S : LockSet) (lockCore : CoreId)
     (layout : SeLe4n.SyscallRegisterLayout) (executingCore : CoreId) (regCount : Nat)
-    (s : SystemState) : SystemState × Except KernelError Unit :=
-  SeLe4n.Kernel.Concurrency.withLockSet S lockCore
+    (s : SeLe4n.Kernel.Concurrency.LockedSystemState) :
+    SeLe4n.Kernel.Concurrency.LockedSystemState × Except KernelError Unit :=
+  SeLe4n.Kernel.Concurrency.withLockSetGhost S lockCore
     (commitKernelAction (syscallEntryChecked ctx layout executingCore regCount)) s
 
-/-- SM8.D.5: the bracket's three phases, exposed. -/
+/-- SM8.D.5 (**WS-LS LS2.1**): the kernel half of the bracket's result is the
+committed entry at `s.kernel` — the state the growing phase hands the entry
+**is** the kernel half it was given, because the growing phase writes only the
+table.  Before LS2.1 this exposed the three word-level phases
+(`unwindAll … (commitKernelAction … (acquireAll … s)).1`); over the pair the
+lock trace sits in `.locks` (`withLockSetGhost_fst_locks`) and this is `rfl`.
+The value half is `withLockSetGhost_snd`. -/
 theorem syscallEntryUnderLockSet_fst (ctx : LabelingContext) (S : LockSet) (lockCore : CoreId)
     (layout : SeLe4n.SyscallRegisterLayout) (executingCore : CoreId) (regCount : Nat)
-    (s : SystemState) :
-    (syscallEntryUnderLockSet ctx S lockCore layout executingCore regCount s).1
-      = SeLe4n.Kernel.Concurrency.unwindAll lockCore S.lockAcquireSequence.reverse
-          (commitKernelAction (syscallEntryChecked ctx layout executingCore regCount)
-            (lockSetAcquiredState S lockCore s)).1 :=
-  SeLe4n.Kernel.Concurrency.withLockSet_fst _ _ _ _
+    (s : SeLe4n.Kernel.Concurrency.LockedSystemState) :
+    (syscallEntryUnderLockSet ctx S lockCore layout executingCore regCount s).1.kernel
+      = (commitKernelAction (syscallEntryChecked ctx layout executingCore regCount)
+          s.kernel).1 :=
+  SeLe4n.Kernel.Concurrency.withLockSetGhost_fst_kernel _ _ _ _
 
 /-- SM8.D.5 (**the headline, at the core the entry runs on**): a 2PL-bracketed
 live syscall entry is non-interfering on **every core** exactly when the
@@ -2213,47 +2154,30 @@ vacuous for it.  Pinned there, "non-interfering on every core" would be a
 conclusion about transitions the live SMP path does not take.
 
 The bracket itself contributes nothing at any core: its growing and shrinking
-phases are lock writes, invisible by §1 (`lockWritesOnly_preserves_onCore`), and
-their confinement rides through by SM8.B.4's `acquireAll_confinedToCore` /
-`releaseAll_confinedToCore`.  So the SM3.C.9 migration does not weaken the
+phases write the ghost table and the kernel half is the entry's own output
+(`syscallEntryUnderLockSet_fst`).  So the SM3.C.9 migration does not weaken the
 information-flow guarantee — the hypotheses are exactly the ones the
-*unbracketed* per-core statement takes, relocated to the state the entry is run
-in. -/
+*unbracketed* per-core statement takes, at the kernel half the entry is run on.
+
+**WS-LS LS2.1 (strengthened).**  Dropped `hInv : s.objects.invExt` and
+`hOutInv : st'.objects.invExt`: both existed only so that §1 could show the
+word-level lock writes of the growing and shrinking phases invisible
+(`acquireAll_lockWritesOnly`, `unwindAll_lockWritesOnly`); over the pair there
+are no such writes. -/
 theorem syscallEntryUnderLockSet_preserves_projectionOnCore_atCore (ctx : LabelingContext)
     (observer : IfObserver) (S : LockSet) (lockCore : CoreId)
     (layout : SeLe4n.SyscallRegisterLayout) (executingCore : CoreId) (regCount : Nat)
-    (s st' : SystemState) (c' : CoreId) (hInv : s.objects.invExt) (hOutInv : st'.objects.invExt)
-    (hOk : syscallEntryChecked ctx layout executingCore regCount
-        (lockSetAcquiredState S lockCore s) = .ok ((), st'))
+    (s : SeLe4n.Kernel.Concurrency.LockedSystemState) (st' : SystemState) (c' : CoreId)
+    (hOk : syscallEntryChecked ctx layout executingCore regCount s.kernel = .ok ((), st'))
     (hProjOn : projectStateOnCore ctx observer st' c'
-        = projectStateOnCore ctx observer (lockSetAcquiredState S lockCore s) c')
-    (hConfined : observableSlotsConfinedToCore (lockSetAcquiredState S lockCore s) st' c') :
+        = projectStateOnCore ctx observer s.kernel c')
+    (hConfined : observableSlotsConfinedToCore s.kernel st' c') :
     lowEquivalent_smp ctx observer
-      (syscallEntryUnderLockSet ctx S lockCore layout executingCore regCount s).1 s := by
-  have hAcqInv : (lockSetAcquiredState S lockCore s).objects.invExt :=
-    SeLe4n.Kernel.Concurrency.acquireAll_preserves_invExt lockCore S.lockAcquireSequence s hInv
-  have hCommit : (commitKernelAction (syscallEntryChecked ctx layout executingCore regCount)
-      (lockSetAcquiredState S lockCore s)) = (st', .ok ()) :=
-    commitKernelAction_ok _ _ _ _ hOk
-  rw [syscallEntryUnderLockSet_fst, hCommit]
-  refine lowEquivalent_smp_of_projectionOnCore_and_confinement ctx observer
-    (c' := c') ?_ ?_
-  · -- The release phase and the acquire phase are lock writes, so both are
-    -- invisible on *every* core by §1 — which is why generalising the core costs
-    -- nothing here that the boot form was not already paying.
-    calc projectStateOnCore ctx observer
-          (SeLe4n.Kernel.Concurrency.unwindAll lockCore S.lockAcquireSequence.reverse st') c'
-        = projectStateOnCore ctx observer st' c' :=
-          lockWritesOnly_preserves_projectionOnCore ctx observer c'
-            (unwindAll_lockWritesOnly lockCore S.lockAcquireSequence.reverse st' hOutInv)
-      _ = projectStateOnCore ctx observer (lockSetAcquiredState S lockCore s) c' := hProjOn
-      _ = projectStateOnCore ctx observer s c' :=
-          lockWritesOnly_preserves_projectionOnCore ctx observer c'
-            (acquireAll_lockWritesOnly lockCore S.lockAcquireSequence s hInv)
-  · exact observableSlotsConfinedToCore_trans
-      (acquireAll_confinedToCore lockCore S.lockAcquireSequence s c')
-      (observableSlotsConfinedToCore_trans hConfined
-        (unwindAll_confinedToCore lockCore _ st' c'))
+      (syscallEntryUnderLockSet ctx S lockCore layout executingCore regCount s).1.kernel
+      s.kernel := by
+  rw [syscallEntryUnderLockSet_fst, commitKernelAction_ok _ _ _ _ hOk]
+  exact lowEquivalent_smp_of_projectionOnCore_and_confinement ctx observer
+    (c' := c') hProjOn hConfined
 
 /-- SM8.D.5 (**the headline**): a 2PL-bracketed live syscall entry is
 non-interfering on **every core** exactly when the operation it dispatches is.
@@ -2261,83 +2185,89 @@ non-interfering on **every core** exactly when the operation it dispatches is.
 The boot-core instance of `…_atCore`: `projectState` is the boot core's view, so
 a whole-projection hypothesis discharges the per-core premise there and nowhere
 else.  Kept as its own statement because it is the form the boot-pinned
-`syscallEntryChecked_preserves_projection` feeds directly. -/
+`syscallEntryChecked_preserves_projection` feeds directly.
+
+**WS-LS LS2.1 (strengthened).**  Over the pair; dropped `hInv` and `hOutInv`
+(the word-level lock-write invisibility guards) as in `…_atCore`. -/
 theorem syscallEntryUnderLockSet_preserves_projectionOnCore (ctx : LabelingContext)
     (observer : IfObserver) (S : LockSet) (lockCore : CoreId)
     (layout : SeLe4n.SyscallRegisterLayout) (executingCore : CoreId) (regCount : Nat)
-    (s st' : SystemState) (hInv : s.objects.invExt) (hOutInv : st'.objects.invExt)
-    (hOk : syscallEntryChecked ctx layout executingCore regCount
-        (lockSetAcquiredState S lockCore s) = .ok ((), st'))
+    (s : SeLe4n.Kernel.Concurrency.LockedSystemState) (st' : SystemState)
+    (hOk : syscallEntryChecked ctx layout executingCore regCount s.kernel = .ok ((), st'))
     (hDispatchProj : ∀ (decoded : SyscallDecodeResult) (tid : SeLe4n.ThreadId)
         (stPost : SystemState),
         dispatchSyscallChecked ctx decoded tid executingCore
             (SeLe4n.Kernel.Architecture.tlbFillIpcBufferOnCore
-              (lockSetAcquiredState S lockCore s) executingCore tid decoded.overflowCount)
+              s.kernel executingCore tid decoded.overflowCount)
               = .ok ((), stPost) →
         projectState ctx observer stPost
           = projectState ctx observer
               (SeLe4n.Kernel.Architecture.tlbFillIpcBufferOnCore
-                (lockSetAcquiredState S lockCore s) executingCore tid decoded.overflowCount))
-    (hConfined : observableSlotsConfinedToCore (lockSetAcquiredState S lockCore s) st'
-        bootCoreId) :
+                s.kernel executingCore tid decoded.overflowCount))
+    (hConfined : observableSlotsConfinedToCore s.kernel st' bootCoreId) :
     lowEquivalent_smp ctx observer
-      (syscallEntryUnderLockSet ctx S lockCore layout executingCore regCount s).1 s := by
+      (syscallEntryUnderLockSet ctx S lockCore layout executingCore regCount s).1.kernel
+      s.kernel := by
   refine syscallEntryUnderLockSet_preserves_projectionOnCore_atCore ctx observer S lockCore
-    layout executingCore regCount s st' bootCoreId hInv hOutInv hOk ?_ hConfined
+    layout executingCore regCount s st' bootCoreId hOk ?_ hConfined
   rw [projectStateOnCore_bootCore, projectStateOnCore_bootCore]
   exact syscallEntryChecked_preserves_projection ctx observer layout executingCore regCount
     _ st' hOk hDispatchProj
 
-/-- SM8.D.5 (**fail-closed, sharpened**): a refused syscall under fine locks
-moves lock words and **nothing else**.
+/-- SM8.D.5 (**fail-closed, sharpened**; **WS-LS LS2.1**: over the pair): a
+refused syscall under fine locks moves the ghost lock table and **nothing
+else** — the kernel half comes back *identical*, and the refusal is reported
+unchanged through the bracket.
 
 The unbracketed fail-closed theorems (`…_denied_preserves_state`) conclude the
-state is *identical*.  That claim does not survive the bracket, and saying so is
-the point of this theorem rather than a caveat on it: the growing and shrinking
-phases wrote real lock words (`KernelObject.updateLock_not_identity`).  What
-survives is `lockWritesOnly`, and §1 is why that is the same guarantee where it
-counts — see the corollary below, which is the refused syscall's
-non-interference statement with no hypothesis on the observer at all. -/
+state is identical.  Before LS2.1 that claim did not survive the bracket,
+because the growing and shrinking phases wrote real lock words into kernel
+objects (`KernelObject.updateLock_not_identity`), and what survived was the
+weaker `lockWritesOnly`.  Over the pair the lock trace lives in `.locks`
+(`withLockSetGhost_fst_locks`) and the kernel half is the committed entry's
+input (`commitKernelAction_error`), so the identity is recovered on the kernel
+half — which is what the result is stated as, never as an identity of the
+whole pair: the table moved (`LockState.bracket`), and a refusal must still
+be a bracket.
+
+**WS-LS LS2.1 (strengthened).**  The first conjunct is sharpened from
+`lockWritesOnly s …` to kernel-half equality, and `hInv : s.objects.invExt`
+(the word-level lock-write invisibility guard) is dropped. -/
 theorem syscallEntryUnderLockSet_failClosed (ctx : LabelingContext) (S : LockSet)
     (lockCore : CoreId) (layout : SeLe4n.SyscallRegisterLayout) (executingCore : CoreId)
-    (regCount : Nat) (s : SystemState) (e : KernelError) (hInv : s.objects.invExt)
-    (hDenied : syscallEntryChecked ctx layout executingCore regCount
-        (lockSetAcquiredState S lockCore s) = .error e) :
-    lockWritesOnly s (syscallEntryUnderLockSet ctx S lockCore layout executingCore regCount s).1
+    (regCount : Nat) (s : SeLe4n.Kernel.Concurrency.LockedSystemState) (e : KernelError)
+    (hDenied : syscallEntryChecked ctx layout executingCore regCount s.kernel = .error e) :
+    (syscallEntryUnderLockSet ctx S lockCore layout executingCore regCount s).1.kernel
+        = s.kernel
       ∧ (syscallEntryUnderLockSet ctx S lockCore layout executingCore regCount s).2
           = .error e := by
-  have hAcqInv : (lockSetAcquiredState S lockCore s).objects.invExt :=
-    SeLe4n.Kernel.Concurrency.acquireAll_preserves_invExt lockCore S.lockAcquireSequence s hInv
   have hCommit : (commitKernelAction (syscallEntryChecked ctx layout executingCore regCount)
-      (lockSetAcquiredState S lockCore s)) = (lockSetAcquiredState S lockCore s, .error e) :=
+      s.kernel) = (s.kernel, .error e) :=
     commitKernelAction_error _ _ _ hDenied
   constructor
   · rw [syscallEntryUnderLockSet_fst, hCommit]
-    exact lockWritesOnly_trans (acquireAll_lockWritesOnly lockCore S.lockAcquireSequence s hInv)
-      (unwindAll_lockWritesOnly lockCore _ _ hAcqInv)
-  · show (SeLe4n.Kernel.Concurrency.withLockSet S lockCore _ s).2 = _
-    rw [SeLe4n.Kernel.Concurrency.withLockSet_snd]
-    show (commitKernelAction (syscallEntryChecked ctx layout executingCore regCount)
-      (lockSetAcquiredState S lockCore s)).2 = _
+  · show (commitKernelAction (syscallEntryChecked ctx layout executingCore regCount)
+      s.kernel).2 = _
     rw [hCommit]
 
 /-- SM8.D.5: and therefore a refused syscall is invisible to every observer on
-every core — the guarantee the literal state equality was standing in for,
-recovered from the weaker `lockWritesOnly` conclusion with no extra
-hypothesis. -/
+every core — the guarantee the literal state equality was standing in for.
+Before LS2.1 this was recovered from the weaker `lockWritesOnly` conclusion by
+§1; over the pair it is the kernel-half equality read through the observer.
+
+**WS-LS LS2.1 (strengthened).**  Dropped `hInv : s.objects.invExt`. -/
 theorem syscallEntryUnderLockSet_failClosed_invisible (ctx : LabelingContext) (S : LockSet)
     (lockCore : CoreId) (layout : SeLe4n.SyscallRegisterLayout) (executingCore : CoreId)
-    (regCount : Nat) (s : SystemState) (e : KernelError) (L : SecurityLabel)
-    (hInv : s.objects.invExt)
-    (hDenied : syscallEntryChecked ctx layout executingCore regCount
-        (lockSetAcquiredState S lockCore s) = .error e) :
+    (regCount : Nat) (s : SeLe4n.Kernel.Concurrency.LockedSystemState) (e : KernelError)
+    (L : SecurityLabel)
+    (hDenied : syscallEntryChecked ctx layout executingCore regCount s.kernel = .error e) :
     ∀ c : CoreId,
       ObservableState.onCore ctx c L
-          (syscallEntryUnderLockSet ctx S lockCore layout executingCore regCount s).1
-        = ObservableState.onCore ctx c L s :=
-  fun c => lockWritesOnly_preserves_onCore ctx c L
-    (syscallEntryUnderLockSet_failClosed ctx S lockCore layout executingCore regCount s e
-      hInv hDenied).1
+          (syscallEntryUnderLockSet ctx S lockCore layout executingCore regCount s).1.kernel
+        = ObservableState.onCore ctx c L s.kernel :=
+  fun c => by
+    rw [(syscallEntryUnderLockSet_failClosed ctx S lockCore layout executingCore regCount s e
+      hDenied).1]
 
 /-- SM8.D.5 (**the witness**): *secure information flow under fine locks*, as
 one statement.
@@ -2352,55 +2282,45 @@ executing cores, and for a subject at any integrity:
 3. **integrity, seLe4n's authority direction** — likewise under the order the
    kernel ships with;
 4. **the bracket's own contribution is nil** — the acquire and release phases
-   add no write to (2) or (3) and no observation to (1), which is what
-   `withLockSet_noUnpermittedWrite` and §1 supply.
+   add no write to (2) or (3) and no observation to (1): over the pair they
+   write the ghost table alone (`syscallEntryUnderLockSet_fst`).
 
-Every hypothesis is a property of the *guarded entry at the state it is run
-in*.  There is no hypothesis about the lock set — not about which objects it
-names, not about whether those objects are observable, not about contention —
-and that absence is the result: fine-grained locking is information-flow
-transparent, so SM3.C.9's migration is a change of concurrency control and not
-of the security argument. -/
+Every hypothesis is a property of the *guarded entry at the kernel half it is
+run on*.  There is no hypothesis about the lock set — not about which objects
+it names, not about whether those objects are observable, not about
+contention — and that absence is the result: fine-grained locking is
+information-flow transparent, so SM3.C.9's migration is a change of
+concurrency control and not of the security argument.
+
+**WS-LS LS2.1 (strengthened).**  Over the pair; dropped `hInv : s.objects.invExt`
+and `hOutInv : st'.objects.invExt`, which existed only to carry (1)–(3)
+across the word-level lock writes (`withLockSet_noUnpermittedWrite`, §1). -/
 theorem secureInformationFlow_underFineLocks_atCore (ctx : LabelingContext) (L : SecurityLabel)
     (subject : SecurityLabel) (S : LockSet) (lockCore : CoreId)
     (layout : SeLe4n.SyscallRegisterLayout) (executingCore : CoreId) (regCount : Nat)
-    (s st' : SystemState) (c' : CoreId) (hInv : s.objects.invExt) (hOutInv : st'.objects.invExt)
-    (hOk : syscallEntryChecked ctx layout executingCore regCount
-        (lockSetAcquiredState S lockCore s) = .ok ((), st'))
+    (s : SeLe4n.Kernel.Concurrency.LockedSystemState) (st' : SystemState) (c' : CoreId)
+    (hOk : syscallEntryChecked ctx layout executingCore regCount s.kernel = .ok ((), st'))
     (hProjOn : projectStateOnCore ctx (IfObserver.ofLabel L) st' c'
-        = projectStateOnCore ctx (IfObserver.ofLabel L)
-            (lockSetAcquiredState S lockCore s) c')
-    (hConfined : observableSlotsConfinedToCore (lockSetAcquiredState S lockCore s) st' c')
-    (hBiba : noUnpermittedWrite (bibaWritePermitted ctx subject)
-        (lockSetAcquiredState S lockCore s) st')
-    (hAuthority : noUnpermittedWrite (authorityWritePermitted ctx subject)
-        (lockSetAcquiredState S lockCore s) st') :
+        = projectStateOnCore ctx (IfObserver.ofLabel L) s.kernel c')
+    (hConfined : observableSlotsConfinedToCore s.kernel st' c')
+    (hBiba : noUnpermittedWrite (bibaWritePermitted ctx subject) s.kernel st')
+    (hAuthority : noUnpermittedWrite (authorityWritePermitted ctx subject) s.kernel st') :
     (∀ c : CoreId,
         ObservableState.onCore ctx c L
-            (syscallEntryUnderLockSet ctx S lockCore layout executingCore regCount s).1
-          = ObservableState.onCore ctx c L s) ∧
-      noUnpermittedWrite (bibaWritePermitted ctx subject) s
-        (syscallEntryUnderLockSet ctx S lockCore layout executingCore regCount s).1 ∧
-      noUnpermittedWrite (authorityWritePermitted ctx subject) s
-        (syscallEntryUnderLockSet ctx S lockCore layout executingCore regCount s).1 := by
+            (syscallEntryUnderLockSet ctx S lockCore layout executingCore regCount s).1.kernel
+          = ObservableState.onCore ctx c L s.kernel) ∧
+      noUnpermittedWrite (bibaWritePermitted ctx subject) s.kernel
+        (syscallEntryUnderLockSet ctx S lockCore layout executingCore regCount s).1.kernel ∧
+      noUnpermittedWrite (authorityWritePermitted ctx subject) s.kernel
+        (syscallEntryUnderLockSet ctx S lockCore layout executingCore regCount s).1.kernel := by
   have hCommit : (commitKernelAction (syscallEntryChecked ctx layout executingCore regCount)
-      (lockSetAcquiredState S lockCore s)) = (st', .ok ()) :=
+      s.kernel) = (st', .ok ()) :=
     commitKernelAction_ok _ _ _ _ hOk
   refine ⟨syscallEntryUnderLockSet_preserves_projectionOnCore_atCore ctx (IfObserver.ofLabel L) S
-    lockCore layout executingCore regCount s st' c' hInv hOutInv hOk hProjOn hConfined, ?_, ?_⟩
+    lockCore layout executingCore regCount s st' c' hOk hProjOn hConfined, ?_, ?_⟩
   <;> rw [syscallEntryUnderLockSet_fst, hCommit]
-  · exact noUnpermittedWrite_trans
-      (lockWritesOnly_noUnpermittedWrite _
-        (acquireAll_lockWritesOnly lockCore S.lockAcquireSequence s hInv))
-      (noUnpermittedWrite_trans hBiba
-        (lockWritesOnly_noUnpermittedWrite _
-          (unwindAll_lockWritesOnly lockCore _ st' hOutInv)))
-  · exact noUnpermittedWrite_trans
-      (lockWritesOnly_noUnpermittedWrite _
-        (acquireAll_lockWritesOnly lockCore S.lockAcquireSequence s hInv))
-      (noUnpermittedWrite_trans hAuthority
-        (lockWritesOnly_noUnpermittedWrite _
-          (unwindAll_lockWritesOnly lockCore _ st' hOutInv)))
+  · exact hBiba
+  · exact hAuthority
 
 /-- SM8.D.5: the boot-core instance of the combined witness.
 
@@ -2408,39 +2328,38 @@ Kept because a caller holding the boot-pinned whole-projection fact
 (`syscallEntryChecked_preserves_projection`) can discharge its premise directly;
 `…_atCore` is the form an ordinary SMP success path needs, since a syscall
 executing on a secondary core writes that core's slots and cannot satisfy
-boot-core confinement. -/
+boot-core confinement.
+
+**WS-LS LS2.1 (strengthened).**  Over the pair; dropped `hInv` and `hOutInv`
+as in `…_atCore`. -/
 theorem secureInformationFlow_underFineLocks (ctx : LabelingContext) (L : SecurityLabel)
     (subject : SecurityLabel) (S : LockSet) (lockCore : CoreId)
     (layout : SeLe4n.SyscallRegisterLayout) (executingCore : CoreId) (regCount : Nat)
-    (s st' : SystemState) (hInv : s.objects.invExt) (hOutInv : st'.objects.invExt)
-    (hOk : syscallEntryChecked ctx layout executingCore regCount
-        (lockSetAcquiredState S lockCore s) = .ok ((), st'))
+    (s : SeLe4n.Kernel.Concurrency.LockedSystemState) (st' : SystemState)
+    (hOk : syscallEntryChecked ctx layout executingCore regCount s.kernel = .ok ((), st'))
     (hDispatchProj : ∀ (decoded : SyscallDecodeResult) (tid : SeLe4n.ThreadId)
         (stPost : SystemState),
         dispatchSyscallChecked ctx decoded tid executingCore
             (SeLe4n.Kernel.Architecture.tlbFillIpcBufferOnCore
-              (lockSetAcquiredState S lockCore s) executingCore tid decoded.overflowCount)
+              s.kernel executingCore tid decoded.overflowCount)
               = .ok ((), stPost) →
         projectState ctx (IfObserver.ofLabel L) stPost
           = projectState ctx (IfObserver.ofLabel L)
               (SeLe4n.Kernel.Architecture.tlbFillIpcBufferOnCore
-                (lockSetAcquiredState S lockCore s) executingCore tid decoded.overflowCount))
-    (hConfined : observableSlotsConfinedToCore (lockSetAcquiredState S lockCore s) st'
-        bootCoreId)
-    (hBiba : noUnpermittedWrite (bibaWritePermitted ctx subject)
-        (lockSetAcquiredState S lockCore s) st')
-    (hAuthority : noUnpermittedWrite (authorityWritePermitted ctx subject)
-        (lockSetAcquiredState S lockCore s) st') :
+                s.kernel executingCore tid decoded.overflowCount))
+    (hConfined : observableSlotsConfinedToCore s.kernel st' bootCoreId)
+    (hBiba : noUnpermittedWrite (bibaWritePermitted ctx subject) s.kernel st')
+    (hAuthority : noUnpermittedWrite (authorityWritePermitted ctx subject) s.kernel st') :
     (∀ c : CoreId,
         ObservableState.onCore ctx c L
-            (syscallEntryUnderLockSet ctx S lockCore layout executingCore regCount s).1
-          = ObservableState.onCore ctx c L s) ∧
-      noUnpermittedWrite (bibaWritePermitted ctx subject) s
-        (syscallEntryUnderLockSet ctx S lockCore layout executingCore regCount s).1 ∧
-      noUnpermittedWrite (authorityWritePermitted ctx subject) s
-        (syscallEntryUnderLockSet ctx S lockCore layout executingCore regCount s).1 := by
+            (syscallEntryUnderLockSet ctx S lockCore layout executingCore regCount s).1.kernel
+          = ObservableState.onCore ctx c L s.kernel) ∧
+      noUnpermittedWrite (bibaWritePermitted ctx subject) s.kernel
+        (syscallEntryUnderLockSet ctx S lockCore layout executingCore regCount s).1.kernel ∧
+      noUnpermittedWrite (authorityWritePermitted ctx subject) s.kernel
+        (syscallEntryUnderLockSet ctx S lockCore layout executingCore regCount s).1.kernel := by
   refine secureInformationFlow_underFineLocks_atCore ctx L subject S lockCore layout
-    executingCore regCount s st' bootCoreId hInv hOutInv hOk ?_ hConfined hBiba hAuthority
+    executingCore regCount s st' bootCoreId hOk ?_ hConfined hBiba hAuthority
   rw [projectStateOnCore_bootCore, projectStateOnCore_bootCore]
   exact syscallEntryChecked_preserves_projection ctx (IfObserver.ofLabel L) layout executingCore
     regCount _ st' hOk hDispatchProj
@@ -2451,35 +2370,23 @@ witness reaches for, and the one §6's evidence table is stated over.
 
 Strictly the same result: `syscallEntryChecked_preserves_projection` is what
 turns the dispatch-level hypothesis into this one, so having both is not
-redundancy but the two places a caller's evidence can come from. -/
+redundancy but the two places a caller's evidence can come from.
+
+**WS-LS LS2.1 (strengthened).**  Over the pair; dropped `hInv` and `hOutInv`
+(the word-level `acquireAll_preserves_projection` /
+`unwindAll_preserves_projection` guards). -/
 theorem syscallEntryUnderLockSet_preserves_projectionOnCore_of_entry (ctx : LabelingContext)
     (observer : IfObserver) (S : LockSet) (lockCore : CoreId)
     (layout : SeLe4n.SyscallRegisterLayout) (executingCore : CoreId) (regCount : Nat)
-    (s st' : SystemState) (hInv : s.objects.invExt) (hOutInv : st'.objects.invExt)
-    (hOk : syscallEntryChecked ctx layout executingCore regCount
-        (lockSetAcquiredState S lockCore s) = .ok ((), st'))
-    (hProj : projectState ctx observer st'
-        = projectState ctx observer (lockSetAcquiredState S lockCore s))
-    (hConfined : observableSlotsConfinedToCore (lockSetAcquiredState S lockCore s) st'
-        bootCoreId) :
+    (s : SeLe4n.Kernel.Concurrency.LockedSystemState) (st' : SystemState)
+    (hOk : syscallEntryChecked ctx layout executingCore regCount s.kernel = .ok ((), st'))
+    (hProj : projectState ctx observer st' = projectState ctx observer s.kernel)
+    (hConfined : observableSlotsConfinedToCore s.kernel st' bootCoreId) :
     lowEquivalent_smp ctx observer
-      (syscallEntryUnderLockSet ctx S lockCore layout executingCore regCount s).1 s := by
-  have hCommit : (commitKernelAction (syscallEntryChecked ctx layout executingCore regCount)
-      (lockSetAcquiredState S lockCore s)) = (st', .ok ()) :=
-    commitKernelAction_ok _ _ _ _ hOk
-  rw [syscallEntryUnderLockSet_fst, hCommit]
-  refine lowEquivalent_smp_of_projection_and_confinement ctx observer ?_ ?_
-  · calc projectState ctx observer
-          (SeLe4n.Kernel.Concurrency.unwindAll lockCore S.lockAcquireSequence.reverse st')
-        = projectState ctx observer st' :=
-          unwindAll_preserves_projection ctx observer lockCore _ st' hOutInv
-      _ = projectState ctx observer (lockSetAcquiredState S lockCore s) := hProj
-      _ = projectState ctx observer s :=
-          acquireAll_preserves_projection ctx observer lockCore S.lockAcquireSequence s hInv
-  · exact observableSlotsConfinedToCore_trans
-      (acquireAll_confinedToCore lockCore S.lockAcquireSequence s bootCoreId)
-      (observableSlotsConfinedToCore_trans hConfined
-        (unwindAll_confinedToCore lockCore _ st' bootCoreId))
+      (syscallEntryUnderLockSet ctx S lockCore layout executingCore regCount s).1.kernel
+      s.kernel := by
+  rw [syscallEntryUnderLockSet_fst, commitKernelAction_ok _ _ _ _ hOk]
+  exact lowEquivalent_smp_of_projection_and_confinement ctx observer hProj hConfined
 
 -- ----------------------------------------------------------------------------
 -- SM8.D.5 — at the one footprint SM3.C.9 has declared
@@ -3439,13 +3346,15 @@ theorem taintPerKeyStore_blocks_fineLockDiscipline
   | nil => rw [hEmpty] at h; simp at h
   | cons a rest => simp [fineLockDisciplineComplete, hEmpty]
 
-/-- SM8.D.5: the 2PL-bracketed live entry **over the declared footprint** —
-`declaredLockSetForEntry`'s output, bracketed, or `none` where no footprint is
-declared for the operation the entry will run. -/
+/-- SM8.D.5 (**WS-LS LS2.1**: over the pair): the 2PL-bracketed live entry
+**over the declared footprint** — `declaredLockSetForEntry`'s output at the
+kernel half, bracketed, or `none` where no footprint is declared for the
+operation the entry will run. -/
 def syscallEntryUnderDeclaredLockSet (ctx : LabelingContext) (lockCore : CoreId)
     (layout : SeLe4n.SyscallRegisterLayout) (executingCore : CoreId) (regCount : Nat)
-    (s : SystemState) : Option (SystemState × Except KernelError Unit) :=
-  (declaredLockSetForEntry ctx layout executingCore regCount s).map
+    (s : SeLe4n.Kernel.Concurrency.LockedSystemState) :
+    Option (SeLe4n.Kernel.Concurrency.LockedSystemState × Except KernelError Unit) :=
+  (declaredLockSetForEntry ctx layout executingCore regCount s.kernel).map
     (fun S => syscallEntryUnderLockSet ctx S lockCore layout executingCore regCount s)
 
 /-- SM8.D.5: the bracket's **action and shrinking phases**, run from a state in
@@ -3473,23 +3382,21 @@ be transported to the plain one without unfolding either. -/
 theorem withLockSet_eq_continueFromAcquired {α : Type} (S : LockSet) (lockCore : CoreId)
     (action : SystemState → SystemState × α) (s : SystemState) :
     SeLe4n.Kernel.Concurrency.withLockSet S lockCore action s
-      = continueFromAcquired S lockCore action (lockSetAcquiredState S lockCore s) := rfl
+      = continueFromAcquired S lockCore action
+          (SeLe4n.Kernel.Concurrency.acquireAll lockCore S.lockAcquireSequence s) := rfl
 
-/-- SM8.D.5: the guarded entry, continued from the state the growing phase ended
-in. -/
+/-- SM8.D.5: the guarded entry, continued from the state the word-level growing
+phase ended in.  **WS-LS LS2.1**: this is the word-level bracket's
+continuation and stays beside the revalidated bracket (which is executed at
+the suspend seam until LS2.2); its decomposition `…_eq_fromAcquired` against
+`syscallEntryUnderLockSet` is retired with that bracket's move to the pair,
+where the kernel half the entry runs on *is* the pre-state's
+(`syscallEntryUnderLockSet_fst`). -/
 def syscallEntryFromAcquired (ctx : LabelingContext) (S : LockSet) (lockCore : CoreId)
     (layout : SeLe4n.SyscallRegisterLayout) (executingCore : CoreId) (regCount : Nat)
     (acquired : SystemState) : SystemState × Except KernelError Unit :=
   continueFromAcquired S lockCore
     (commitKernelAction (syscallEntryChecked ctx layout executingCore regCount)) acquired
-
-/-- SM8.D.5: and the same decomposition at the entry. -/
-theorem syscallEntryUnderLockSet_eq_fromAcquired (ctx : LabelingContext) (S : LockSet)
-    (lockCore : CoreId) (layout : SeLe4n.SyscallRegisterLayout) (executingCore : CoreId)
-    (regCount : Nat) (s : SystemState) :
-    syscallEntryUnderLockSet ctx S lockCore layout executingCore regCount s
-      = syscallEntryFromAcquired ctx S lockCore layout executingCore regCount
-          (lockSetAcquiredState S lockCore s) := rfl
 
 /-- SM8.D.5 (**why the shrinking phase needs a withdrawal**): a release by a
 core that is not a holder is the identity, so it cannot remove that core's
@@ -3538,13 +3445,13 @@ deterministic transition can express, and a refused syscall here is invisible
 anyway (`syscallEntryUnderLockSet_failClosed_invisible`).
 
 **The observed state is an input, not a computation.**  An earlier cut
-re-resolved at `lockSetAcquiredState S lockCore s`, which is derived from the
-very same immutable `s` — so the only writer it could see was the acquire
-itself, and the acquire writes nothing the resolver reads.  The refusal branch
-was therefore unreachable, and a guard whose refusal cannot happen does not
-model the race it was added for.  `observed` is now supplied: in this pure model
-a caller passes `lockSetAcquiredState S lockCore s`
-(`syscallEntryUnderRevalidatedLockSet_model`), and a caller modelling a
+re-resolved at `acquireAll lockCore S.lockAcquireSequence s`, which is derived
+from the very same immutable `s` — so the only writer it could see was the
+acquire itself, and the acquire writes nothing the resolver reads.  The refusal
+branch was therefore unreachable, and a guard whose refusal cannot happen does
+not model the race it was added for.  `observed` is now supplied: in this pure
+model a caller passes `acquireAll lockCore S.lockAcquireSequence s`
+(`syscallEntryUnderRevalidatedLockSetModel`), and a caller modelling a
 concurrent kernel passes that state plus whatever other cores committed —
 which is exactly the interleaving a single-state transition cannot manufacture
 for itself.  `revalidationRefusalReachable` exhibits a refusal.
@@ -3621,7 +3528,8 @@ def syscallEntryUnderRevalidatedLockSet (ctx : LabelingContext) (lockCore : Core
         S.lockAcquireSequence.reverse observed)
 
 /-- SM8.D.5: the instance this pure model can run — the growing phase ends at
-`lockSetAcquiredState`, because no other core can commit in between.
+`acquireAll lockCore S.lockAcquireSequence s` (the word-level growing phase),
+because no other core can commit in between.
 
 Kept as a named definition so the model's own reading is a *choice of `observed`*
 rather than the only shape the bracket has.  `revalidationRefusalReachable` is the
@@ -3633,7 +3541,7 @@ def syscallEntryUnderRevalidatedLockSetModel (ctx : LabelingContext) (lockCore :
   | none => .undeclared
   | some S =>
     syscallEntryUnderRevalidatedLockSet ctx lockCore layout executingCore regCount s
-      (lockSetAcquiredState S lockCore s)
+      (SeLe4n.Kernel.Concurrency.acquireAll lockCore S.lockAcquireSequence s)
 
 /-- SM8.D.5: when the revalidated bracket runs, the footprint it holds **is** the
 footprint the guarded entry's own decode resolves at the state that entry sees.
@@ -3665,7 +3573,7 @@ theorem syscallEntryUnderRevalidatedLockSet_footprint_stable (ctx : LabelingCont
 the growing phase ended, nothing is bracketed and nothing is run.
 
 Stated over an arbitrary `observed`, so the hypothesis is satisfiable: it is the
-foreign commit the earlier `lockSetAcquiredState`-derived form could not express.
+foreign commit the earlier `acquireAll`-derived form could not express.
 `revalidationRefusalReachable` discharges it on concrete states. -/
 theorem syscallEntryUnderRevalidatedLockSet_refuses_on_change (ctx : LabelingContext)
     (lockCore : CoreId) (layout : SeLe4n.SyscallRegisterLayout) (executingCore : CoreId)
@@ -3777,7 +3685,8 @@ This carries `lockSetHeld` as a hypothesis, so the conclusion is about a state
 that really could be a post-growing-phase one: every declared lock is still held
 in `lockCore`'s name, and the refusal is attributable to the foreign commit
 alone.  That is the shape the suite's fixture is now built to satisfy — the
-observed state is `lockSetAcquiredState`'s output with a lock-preserving
+observed state is the word-level growing phase's output
+(`acquireAll lockCore S.lockAcquireSequence s`) with a lock-preserving
 capability replacement applied on top. -/
 theorem syscallEntryUnderRevalidatedLockSet_refuses_on_change_while_held
     (ctx : LabelingContext) (lockCore : CoreId)
@@ -3824,14 +3733,26 @@ theorem syscallEntryUnderRevalidatedLockSet_not_refines_in_general :
       regCount s observed r h
   exact ⟨S, hRes, hEq⟩
 
-/-- SM8.D.5: the model instance refines the plain bracket too, so choosing
-`observed` does not change what a committed entry runs. -/
+/-- SM8.D.5: the model instance refines the plain word-level bracket at the
+declared footprint, so choosing `observed` does not change what a committed
+entry runs.
+
+**WS-LS LS2.1.**  Before this row the conclusion was
+`syscallEntryUnderDeclaredLockSet … s = some r`, which unfolded to exactly
+this: the declared footprint exists and `r` is `withLockSet` of the committed
+entry at it.  The named bracket now lives over the pair, so the word-level
+bracket the model continues from is named directly; the content is
+unchanged.  Relating the model to the ghost bracket's kernel half is the
+word-level/ghost refinement the plan schedules after the seams switch, not a
+fact this row can state. -/
 theorem syscallEntryUnderRevalidatedLockSetModel_refines (ctx : LabelingContext)
     (lockCore : CoreId) (layout : SeLe4n.SyscallRegisterLayout) (executingCore : CoreId)
     (regCount : Nat) (s : SystemState) (r : SystemState × Except KernelError Unit)
     (h : syscallEntryUnderRevalidatedLockSetModel ctx lockCore layout executingCore regCount s
       = .committed r) :
-    syscallEntryUnderDeclaredLockSet ctx lockCore layout executingCore regCount s = some r := by
+    ∃ S, declaredLockSetForEntry ctx layout executingCore regCount s = some S ∧
+      r = SeLe4n.Kernel.Concurrency.withLockSet S lockCore
+        (commitKernelAction (syscallEntryChecked ctx layout executingCore regCount)) s := by
   unfold syscallEntryUnderRevalidatedLockSetModel at h
   cases hRes : declaredLockSetForEntry ctx layout executingCore regCount s with
   | none => rw [hRes] at h; exact absurd h (by simp)
@@ -3843,10 +3764,7 @@ theorem syscallEntryUnderRevalidatedLockSetModel_refines (ctx : LabelingContext)
         regCount s _ r h
     rw [hRes] at hRes'
     cases Option.some.inj hRes'
-    unfold syscallEntryUnderDeclaredLockSet
-    rw [hRes, hEq]
-    exact congrArg some
-      (syscallEntryUnderLockSet_eq_fromAcquired ctx S lockCore layout executingCore regCount s).symm
+    exact ⟨S, rfl, hEq.trans (withLockSet_eq_continueFromAcquired S lockCore _ s).symm⟩
 
 /-- SM8.D.5 (**fail-closed**): every syscall other than `.tcbSuspend` is
 undeclared, so no footprint is bracketed and the caller keeps its existing
@@ -3855,19 +3773,22 @@ bracketed entry — the property that stops a future cut from silently bracketin
 an operation whose coverage proof does not exist yet. -/
 theorem syscallEntryUnderDeclaredLockSet_undeclared (ctx : LabelingContext) (lockCore : CoreId)
     (layout : SeLe4n.SyscallRegisterLayout) (executingCore : CoreId) (regCount : Nat)
-    (s : SystemState) (tid : SeLe4n.ThreadId) (decoded : SyscallDecodeResult)
-    (hDec : entryDecode ctx layout executingCore regCount s = some (tid, decoded))
+    (s : SeLe4n.Kernel.Concurrency.LockedSystemState) (tid : SeLe4n.ThreadId)
+    (decoded : SyscallDecodeResult)
+    (hDec : entryDecode ctx layout executingCore regCount s.kernel = some (tid, decoded))
     (hSid : decoded.syscallId ≠ .tcbSuspend) :
     syscallEntryUnderDeclaredLockSet ctx lockCore layout executingCore regCount s = none := by
   unfold syscallEntryUnderDeclaredLockSet
-  rw [declaredLockSetForEntry_undeclared ctx layout executingCore regCount s tid decoded hDec hSid]
+  rw [declaredLockSetForEntry_undeclared ctx layout executingCore regCount s.kernel tid decoded
+    hDec hSid]
   rfl
 
 /-- SM8.D.5: and nothing is bracketed where the entry itself would refuse —
 the bracket never runs ahead of a decode that does not exist. -/
 theorem syscallEntryUnderDeclaredLockSet_no_decode (ctx : LabelingContext) (lockCore : CoreId)
     (layout : SeLe4n.SyscallRegisterLayout) (executingCore : CoreId) (regCount : Nat)
-    (s : SystemState) (h : entryDecode ctx layout executingCore regCount s = none) :
+    (s : SeLe4n.Kernel.Concurrency.LockedSystemState)
+    (h : entryDecode ctx layout executingCore regCount s.kernel = none) :
     syscallEntryUnderDeclaredLockSet ctx lockCore layout executingCore regCount s = none := by
   unfold syscallEntryUnderDeclaredLockSet declaredLockSetForEntry
   rw [h]
@@ -3885,22 +3806,21 @@ actually install. -/
 theorem suspendUnderDeclaredLockSet_preserves_projectionOnCore_atCore (ctx : LabelingContext)
     (observer : IfObserver) (S : LockSet) (lockCore : CoreId)
     (layout : SeLe4n.SyscallRegisterLayout) (executingCore : CoreId)
-    (regCount : Nat) (s st' : SystemState) (c' : CoreId) (hInv : s.objects.invExt)
-    (hOutInv : st'.objects.invExt)
-    (hFootprint : declaredLockSetForEntry ctx layout executingCore regCount s = some S)
-    (hOk : syscallEntryChecked ctx layout executingCore regCount
-        (lockSetAcquiredState S lockCore s) = .ok ((), st'))
+    (regCount : Nat) (s : SeLe4n.Kernel.Concurrency.LockedSystemState) (st' : SystemState)
+    (c' : CoreId)
+    (hFootprint : declaredLockSetForEntry ctx layout executingCore regCount s.kernel = some S)
+    (hOk : syscallEntryChecked ctx layout executingCore regCount s.kernel = .ok ((), st'))
     (hProjOn : projectStateOnCore ctx observer st' c'
-        = projectStateOnCore ctx observer (lockSetAcquiredState S lockCore s) c')
-    (hConfined : observableSlotsConfinedToCore (lockSetAcquiredState S lockCore s) st' c') :
+        = projectStateOnCore ctx observer s.kernel c')
+    (hConfined : observableSlotsConfinedToCore s.kernel st' c') :
     ∃ r, syscallEntryUnderDeclaredLockSet ctx lockCore layout executingCore regCount s = some r ∧
-      lowEquivalent_smp ctx observer r.1 s := by
+      lowEquivalent_smp ctx observer r.1.kernel s.kernel := by
   refine ⟨syscallEntryUnderLockSet ctx S lockCore layout executingCore regCount s, ?_, ?_⟩
   · unfold syscallEntryUnderDeclaredLockSet
     rw [hFootprint]
     rfl
   · exact syscallEntryUnderLockSet_preserves_projectionOnCore_atCore ctx observer S lockCore
-      layout executingCore regCount s st' c' hInv hOutInv hOk hProjOn hConfined
+      layout executingCore regCount s st' c' hOk hProjOn hConfined
 
 /-- SM8.D.5: the boot-core instance of the declared-footprint headline.
 
@@ -3912,42 +3832,43 @@ premise directly. -/
 theorem suspendUnderDeclaredLockSet_preserves_projectionOnCore (ctx : LabelingContext)
     (observer : IfObserver) (S : LockSet) (lockCore : CoreId)
     (layout : SeLe4n.SyscallRegisterLayout) (executingCore : CoreId)
-    (regCount : Nat) (s st' : SystemState) (hInv : s.objects.invExt)
-    (hOutInv : st'.objects.invExt)
-    (hFootprint : declaredLockSetForEntry ctx layout executingCore regCount s = some S)
-    (hOk : syscallEntryChecked ctx layout executingCore regCount
-        (lockSetAcquiredState S lockCore s) = .ok ((), st'))
-    (hProj : projectState ctx observer st'
-        = projectState ctx observer (lockSetAcquiredState S lockCore s))
-    (hConfined : observableSlotsConfinedToCore (lockSetAcquiredState S lockCore s) st'
-        bootCoreId) :
+    (regCount : Nat) (s : SeLe4n.Kernel.Concurrency.LockedSystemState) (st' : SystemState)
+    (hFootprint : declaredLockSetForEntry ctx layout executingCore regCount s.kernel = some S)
+    (hOk : syscallEntryChecked ctx layout executingCore regCount s.kernel = .ok ((), st'))
+    (hProj : projectState ctx observer st' = projectState ctx observer s.kernel)
+    (hConfined : observableSlotsConfinedToCore s.kernel st' bootCoreId) :
     ∃ r, syscallEntryUnderDeclaredLockSet ctx lockCore layout executingCore regCount s = some r ∧
-      lowEquivalent_smp ctx observer r.1 s := by
+      lowEquivalent_smp ctx observer r.1.kernel s.kernel := by
   refine suspendUnderDeclaredLockSet_preserves_projectionOnCore_atCore ctx observer S lockCore
-    layout executingCore regCount s st' bootCoreId hInv hOutInv hFootprint hOk ?_ hConfined
+    layout executingCore regCount s st' bootCoreId hFootprint hOk ?_ hConfined
   rw [projectStateOnCore_bootCore, projectStateOnCore_bootCore]
   exact hProj
 
 /-- SM8.D.5: the fail-closed half at the declared footprint — a refused suspend
-moves lock words and nothing else, and is invisible on every core. -/
+moves the ghost lock table and nothing else (the kernel half is identical),
+and is invisible on every core.
+
+**WS-LS LS2.1 (strengthened).**  Over the pair; the middle conjunct is
+sharpened from `lockWritesOnly s r.1` to `r.1.kernel = s.kernel`, and
+`hInv : s.objects.invExt` is dropped. -/
 theorem suspendUnderDeclaredLockSet_failClosed_invisible (ctx : LabelingContext) (S : LockSet)
     (lockCore : CoreId)
     (layout : SeLe4n.SyscallRegisterLayout) (executingCore : CoreId) (regCount : Nat)
-    (s : SystemState) (e : KernelError) (L : SecurityLabel) (hInv : s.objects.invExt)
-    (hFootprint : declaredLockSetForEntry ctx layout executingCore regCount s = some S)
-    (hDenied : syscallEntryChecked ctx layout executingCore regCount
-        (lockSetAcquiredState S lockCore s) = .error e) :
+    (s : SeLe4n.Kernel.Concurrency.LockedSystemState) (e : KernelError) (L : SecurityLabel)
+    (hFootprint : declaredLockSetForEntry ctx layout executingCore regCount s.kernel = some S)
+    (hDenied : syscallEntryChecked ctx layout executingCore regCount s.kernel = .error e) :
     ∃ r, syscallEntryUnderDeclaredLockSet ctx lockCore layout executingCore regCount s = some r ∧
-      lockWritesOnly s r.1 ∧
-      ∀ c : CoreId, ObservableState.onCore ctx c L r.1 = ObservableState.onCore ctx c L s := by
+      r.1.kernel = s.kernel ∧
+      ∀ c : CoreId,
+        ObservableState.onCore ctx c L r.1.kernel = ObservableState.onCore ctx c L s.kernel := by
   refine ⟨syscallEntryUnderLockSet ctx S lockCore layout executingCore regCount s, ?_, ?_, ?_⟩
   · unfold syscallEntryUnderDeclaredLockSet
     rw [hFootprint]
     rfl
   · exact (syscallEntryUnderLockSet_failClosed ctx S lockCore layout executingCore regCount s e
-      hInv hDenied).1
+      hDenied).1
   · exact syscallEntryUnderLockSet_failClosed_invisible ctx S lockCore layout executingCore
-      regCount s e L hInv hDenied
+      regCount s e L hDenied
 
 /-- SM8.D.5 (**the resolved footprint is the suspend footprint**): a declared
 footprint resolves only through `suspendFootprintOf`, at the caller and target the
@@ -4148,26 +4069,29 @@ def FineLockClaimId.evidenceProp : FineLockClaimId → Prop
       -- migration cares.  A boot-pinned arm here would keep elaborating if
       -- `…_atCore` regressed to the boot form, which is what a claim inventory
       -- exists to prevent.
+      --
+      -- WS-LS LS2.1: over the pair, with no `invExt` guard on either side —
+      -- the bracket writes the ghost table, so there is no lock write for a
+      -- guard to make invisible.  Stated here so a regression that re-grows
+      -- the guard is a type error at the inventory.
       ∀ (ctx : LabelingContext) (observer : IfObserver) (S : LockSet) (lockCore : CoreId)
         (layout : SeLe4n.SyscallRegisterLayout) (executingCore : CoreId) (regCount : Nat)
-        (s st' : SystemState) (c' : CoreId), s.objects.invExt → st'.objects.invExt →
-        syscallEntryChecked ctx layout executingCore regCount
-            (lockSetAcquiredState S lockCore s) = .ok ((), st') →
-        projectStateOnCore ctx observer st' c'
-          = projectStateOnCore ctx observer (lockSetAcquiredState S lockCore s) c' →
-        observableSlotsConfinedToCore (lockSetAcquiredState S lockCore s) st' c' →
+        (s : SeLe4n.Kernel.Concurrency.LockedSystemState) (st' : SystemState) (c' : CoreId),
+        syscallEntryChecked ctx layout executingCore regCount s.kernel = .ok ((), st') →
+        projectStateOnCore ctx observer st' c' = projectStateOnCore ctx observer s.kernel c' →
+        observableSlotsConfinedToCore s.kernel st' c' →
         lowEquivalent_smp ctx observer
-          (syscallEntryUnderLockSet ctx S lockCore layout executingCore regCount s).1 s
+          (syscallEntryUnderLockSet ctx S lockCore layout executingCore regCount s).1.kernel
+          s.kernel
   | .failClosedUnderFineLocks =>
       ∀ (ctx : LabelingContext) (S : LockSet) (lockCore : CoreId)
         (layout : SeLe4n.SyscallRegisterLayout) (executingCore : CoreId) (regCount : Nat)
-        (s : SystemState) (e : KernelError) (L : SecurityLabel), s.objects.invExt →
-        syscallEntryChecked ctx layout executingCore regCount
-            (lockSetAcquiredState S lockCore s) = .error e →
+        (s : SeLe4n.Kernel.Concurrency.LockedSystemState) (e : KernelError) (L : SecurityLabel),
+        syscallEntryChecked ctx layout executingCore regCount s.kernel = .error e →
         ∀ c : CoreId,
           ObservableState.onCore ctx c L
-              (syscallEntryUnderLockSet ctx S lockCore layout executingCore regCount s).1
-            = ObservableState.onCore ctx c L s
+              (syscallEntryUnderLockSet ctx S lockCore layout executingCore regCount s).1.kernel
+            = ObservableState.onCore ctx c L s.kernel
   | .contentionChannelRegistered =>
       ∀ (maxDelay : Nat) (e : SeLe4n.Kernel.Concurrency.RwLockExecution),
         SeLe4n.Kernel.Concurrency.FairTrace e maxDelay →
@@ -4236,14 +4160,13 @@ def fineLockClaimEvidence : (id : FineLockClaimId) → id.evidenceProp
       fun _α ctx subject S core action s hInv hActionInv hAction =>
         authorityIntegrity_underLockSet ctx subject S core action s hInv hActionInv hAction
   | .secureFlowUnderFineLocks =>
-      fun ctx observer S lockCore layout executingCore regCount s st' c' hInv hOutInv hOk hProjOn
-        hConfined =>
+      fun ctx observer S lockCore layout executingCore regCount s st' c' hOk hProjOn hConfined =>
         syscallEntryUnderLockSet_preserves_projectionOnCore_atCore ctx observer S lockCore
-          layout executingCore regCount s st' c' hInv hOutInv hOk hProjOn hConfined
+          layout executingCore regCount s st' c' hOk hProjOn hConfined
   | .failClosedUnderFineLocks =>
-      fun ctx S lockCore layout executingCore regCount s e L hInv hDenied =>
+      fun ctx S lockCore layout executingCore regCount s e L hDenied =>
         syscallEntryUnderLockSet_failClosed_invisible ctx S lockCore layout executingCore
-          regCount s e L hInv hDenied
+          regCount s e L hDenied
   | .contentionChannelRegistered =>
       fun maxDelay e hFair hInit c m kEnq hQueued hWithin hNoCancel =>
         ⟨(acceptedCovertChannel_lockContention_bounded maxDelay e hFair hInit c m kEnq hQueued

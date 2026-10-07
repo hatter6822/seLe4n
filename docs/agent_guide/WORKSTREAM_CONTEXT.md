@@ -56,7 +56,7 @@ them) and `writeReg` takes a `UInt64`; a register file is built with
 read on the entry/exit path; build a saved context from `TrapContext` through
 `ofWords` and the existing writers instead.
 
-### WS-LS Lock state separated from kernel state — IN FLIGHT (registered v0.36.60; LS0.1 v0.36.62; LS1.1 v0.36.63; LS1.2 v0.36.64; runs beside WS-CV, before WS-CB)
+### WS-LS Lock state separated from kernel state — IN FLIGHT (registered v0.36.60; LS0.1 v0.36.62; LS1.1 v0.36.63; LS1.2 v0.36.64; LS2.1 v0.36.65; runs beside WS-CV, before WS-CB)
 
 The lock words leave the kernel state: a ghost `LockState` (one total function
 over one `LockKey` type) sits beside `SystemState` in `LockedSystemState`, a
@@ -80,7 +80,13 @@ field, `objStoreLock` or `schedulerLocks` (LS3 deletes them); add a consumer of
 type beside `LockKey` (`Locks/LockKey.lean`; LS1.2 retired `SchedLockId` and
 `SchedLockSet` into `LockKey` and `LockSet`, so every footprint, object or
 scheduler, is one `LockSet` and the one bracket domain is
-`objectLockBracketDomain`).
+`objectLockBracketDomain`); state a new 2PL, atomicity or serializability
+result over the word-level `withLockSet` (since LS2.1 those results are over
+`LockedSystemState` and `withLockSetGhost` in `Locks/BracketSpec.lean` /
+`LockSet2PL.lean` / `Serializability.lean`, where the bracket's kernel
+projection is the action by `rfl`; a new bracketed seam is a `BracketSpec`
+whose `covers` field is its coverage theorem, and LS2.2 points the exported
+bodies at `BracketSpec.run`).
 
 ### WS-CB Hierarchical constant-bandwidth servers — PLANNED (registered v0.34.49; opens after WS-CV)
 
@@ -5175,11 +5181,11 @@ code may assume:
   theorem, and those are staged.  Four things new code must respect.
 
   (1) **One bridge, and the three clauses are discharged three different ways.**
-  `schedFootprintCoversWrites_of_cores` (production, beside the obligation) makes
+  `footprintCoversWrites_of_cores` (production, beside the obligation) makes
   the **object** clause structural — `schedFootprintOfCores` always names the
   object-store table write lock, a scheduler footprint being a footprint of an
   operation that stores — and reduces the rest to two hypotheses;
-  `schedFootprintCoversWrites_of_confined` (staged) supplies the **run-queue**
+  `footprintCoversWrites_of_confined` (staged) supplies the **run-queue**
   clause from the arm's own `observableSlotsConfinedToCores`.  The **replenish**
   clause has no such bridge and cannot: confinement covers six per-core slots and
   the replenish queue is not one of them, which is exactly why every donating arm
@@ -5200,7 +5206,7 @@ code may assume:
   module carries the refutations that say the obligation is not held by every
   footprint — one per clause, and the replenish one is the sharper because it is
   the clause no confinement result can reach.  A Tier 3 negative refuses
-  `schedFootprintCoversWrites_refl` anywhere in the module: discharging an arm
+  `footprintCoversWrites_refl` anywhere in the module: discharging an arm
   with the no-op lemma is the token-preserving weakening this family admits, and
   it would turn eight measurements into eight tautologies.
 
@@ -5217,7 +5223,7 @@ code may assume:
   things new code must respect.
 
   (1) **An arm's `_ne` frame is keyed on its own replenish segment.**
-  `schedFootprintCoversWrites`'s clause asks *unchanged at every core the
+  `footprintCoversWrites`'s clause asks *unchanged at every core the
   footprint does not name*; a frame keyed on a resolution — "`c` is not this
   SchedContext's replenish home", "`c` is not this thread's target core" —
   answers a different question that every consumer must then case-split to reach,
@@ -5286,7 +5292,7 @@ code may assume:
   `[cc]`, `faultReplyApplyOnCore_confinedToCores` at `faultReplyApplyCores`,
   `faultReplyOnCore_confinedToCores` at `faultReplyWriteSet`, and the arm's at
   `replyTransferWriteSet` — so the coverage theorem is one application of
-  `schedFootprintCoversWrites_of_confined` and not a second reading of the seam.
+  `footprintCoversWrites_of_confined` and not a second reading of the seam.
   The `regs` conjunct is what made two machine frames load-bearing and missing
   (`applyFaultRestart_machine_eq`, `faultAbandonOnCore_machine_eq`): a fault
   outcome writes the *thread's* saved context, never the executing core's bank.
@@ -5375,7 +5381,7 @@ code may assume:
   and two for giving back.
 
   (3) **A claim travels to a superset rather than being restated at it.**
-  `schedFootprintCoversWrites_mono` is why the sixteen per-arm coverage theorems
+  `footprintCoversWrites_mono` is why the sixteen per-arm coverage theorems
   are not re-proved over the unified footprint: every clause of the predicate is
   of the form *"a lock the footprint does **not** name"*, so a superset only
   discharges more antecedents.  Read the direction carefully — it is about the

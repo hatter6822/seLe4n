@@ -35,11 +35,13 @@ audit-pass-3 atomicity-bridge and observational-serializability closures):
 * `.serializability` — `commitSort` (the serialization order) + `serialEquivalent`
   (SM3.E.2) + `serializability_under_2pl` (SM3.E.3, Theorem 2.1.10) +
   conflict-consistency of the sort.
-* `.preservation` — `singleCore_proof_preservation` (SM3.E.6, Corollary 2.1.11) +
-  the §8b/§8c non-vacuous instantiations (objStoreLock.wf + objectType).
+* `.preservation` — `singleCore_proof_preservation` (SM3.E.6, Corollary 2.1.11),
+  over the pair since **WS-LS LS2.1** (the §8b/§8c non-vacuous instantiations
+  witnessed lock-insensitivity hypotheses the pair form no longer takes).
 * `.atomicityBridge` — `withLockSet_observation_eq_action` +
-  `applySequentialWithLockSet_observation` (SM3.E.2 grounding, §9) + the §9b
-  concrete scheduler-observer non-vacuity witness.
+  `applySequentialWithLockSet_kernel` / `_observation` (SM3.E.2 grounding, §9),
+  hypothesis-free over the pair since LS2.1 (the §9b scheduler-observer
+  non-vacuity witness went with the hypotheses).
 * `.observational` — `serializability_under_2pl_obs` covering write/write on
   distinct objects up to `objStoreEquiv` (SM3.E.3/E.5, §10).
 
@@ -70,8 +72,8 @@ inductive SerializabilityCategory where
   | serializability
   /-- Single-core proof preservation (SM3.E.6, Corollary 2.1.11). -/
   | preservation
-  /-- Atomicity bridge: `applySequential` models the `withLockSet` execution
-      under a lock-insensitive observer (SM3.E.2 grounding, §9). -/
+  /-- Atomicity bridge: `applySequential` models the bracketed execution's
+      kernel half, for every observer (SM3.E.2 grounding, §9). -/
   | atomicityBridge
   /-- Observational serializability covering write/write on distinct objects
       (SM3.E.3/E.5 up to `objStoreEquiv`, §10). -/
@@ -274,51 +276,26 @@ def serializabilityTheorems : List SerializabilityTheorem :=
       outOfOrderCommute_of_conflictsCommitOrdered .serializability,
     serlt! "serializability_under_2pl_of_conflicts_ordered — grounded Theorem 2.1.10 (honest under-2PL)"
       serializability_under_2pl_of_conflicts_ordered .serializability,
-    -- §7 preservation (6)
-    serlt! "singleCore_invariant_preservation — SM3.E.6 Cor 2.1.11 invariant form"
+    -- §8 preservation (4) — WS-LS LS2.1: the two metatheorems are over the pair
+    -- and hypothesis-free; the §8b/§8c non-vacuity witnesses for the dropped
+    -- lock-insensitivity hypotheses are gone with them.
+    serlt! "singleCore_invariant_preservation — SM3.E.6 Cor 2.1.11 invariant form (over the pair)"
       singleCore_invariant_preservation .preservation,
-    serlt! "singleCore_proof_preservation — SM3.E.6 Cor 2.1.11 pre→post meta-theorem"
+    serlt! "singleCore_proof_preservation — SM3.E.6 Cor 2.1.11 pre→post meta-theorem (over the pair)"
       singleCore_proof_preservation .preservation,
-    serlt! "acquireLockOnObject_preserves_objStoreLock_wf — per-step lock-insensitivity (acquire)"
-      acquireLockOnObject_preserves_objStoreLock_wf .preservation,
-    serlt! "releaseLockOnObject_preserves_objStoreLock_wf — per-step lock-insensitivity (release)"
-      releaseLockOnObject_preserves_objStoreLock_wf .preservation,
-    serlt! "withLockSet_preserves_objStoreLock_wf — NON-VACUOUS Cor 2.1.11 witness on a real invariant"
-      withLockSet_preserves_objStoreLock_wf .preservation,
-    serlt! "withLockSet_growing_phase_establishes_lockSetHeld — lockSetHeld is a consequence"
+    serlt! "withLockSet_growing_phase_establishes_lockSetHeld — lockSetHeld is a consequence (word-level)"
       withLockSet_growing_phase_establishes_lockSetHeld .preservation,
-    -- §8c preservation (5 more) — SECOND real invariant: kind-discipline (objectType)
     serlt! "releaseLockOnObject_preserves_invExt — release preserves the RHTable invExt"
       releaseLockOnObject_preserves_invExt .preservation,
-    serlt! "updateObjectLockAt_preserves_objectType_at — lock update preserves objectType at a key"
-      updateObjectLockAt_preserves_objectType_at .preservation,
-    serlt! "acquireLockOnObject_preserves_objectType_at — acquire preserves objectType (kind-discipline)"
-      acquireLockOnObject_preserves_objectType_at .preservation,
-    serlt! "releaseLockOnObject_preserves_objectType_at — release preserves objectType (kind-discipline)"
-      releaseLockOnObject_preserves_objectType_at .preservation,
-    serlt! "withLockSet_preserves_objectType_at — SECOND Cor 2.1.11 witness (kind-discipline, invExt-dependent)"
-      withLockSet_preserves_objectType_at .preservation,
-    -- §9 atomicityBridge (10)
-    serlt! "ActionPiCongr — an action respects a lock-insensitive observer"
-      ActionPiCongr .atomicityBridge,
-    serlt! "applySequential_piCongr — the fold respects a lock-insensitive observer"
-      applySequential_piCongr .atomicityBridge,
-    serlt! "withLockSet_observation_eq_action — withLockSet is observationally the bare action (SM3.C.7)"
+    -- §9 atomicityBridge (4) — WS-LS LS2.1: over the pair, hypothesis-free
+    serlt! "withLockSet_observation_eq_action — the bracket is observationally the bare action (SM3.C.7)"
       withLockSet_observation_eq_action .atomicityBridge,
-    serlt! "applySequentialWithLockSet — the real withLockSet-wrapped execution shape"
+    serlt! "applySequentialWithLockSet — the real bracketed execution shape, over the pair"
       applySequentialWithLockSet .atomicityBridge,
-    serlt! "applySequentialWithLockSet_observation — applySequential models the withLockSet execution"
+    serlt! "applySequentialWithLockSet_kernel — the bracketed execution's kernel half is applySequential"
+      applySequentialWithLockSet_kernel .atomicityBridge,
+    serlt! "applySequentialWithLockSet_observation — applySequential models the bracketed execution"
       applySequentialWithLockSet_observation .atomicityBridge,
-    serlt! "acquireLockOnObject_preserves_scheduler — acquire leaves the scheduler field untouched (§9b)"
-      acquireLockOnObject_preserves_scheduler .atomicityBridge,
-    serlt! "releaseLockOnObject_preserves_scheduler — release leaves the scheduler field untouched (§9b)"
-      releaseLockOnObject_preserves_scheduler .atomicityBridge,
-    serlt! "schedulerObserver_acquireInsensitive — concrete acquire-insensitive observer (non-vacuity)"
-      schedulerObserver_acquireInsensitive .atomicityBridge,
-    serlt! "schedulerObserver_unwindInsensitive — concrete release-insensitive observer (non-vacuity)"
-      schedulerObserver_unwindInsensitive .atomicityBridge,
-    serlt! "withLockSet_observation_scheduler_witness — bridge applied non-vacuously to a scheduler write"
-      withLockSet_observation_scheduler_witness .atomicityBridge,
     -- §10 observational (18)
     serlt! "ActionObsCongr — an action is an objStoreEquiv-congruence on invExt states"
       ActionObsCongr .observational,
@@ -357,9 +334,11 @@ def serializabilityTheorems : List SerializabilityTheorem :=
     serlt! "objStoreWriteInstance_actionsCommuteObs — writes to distinct objects commute observationally"
       objStoreWriteInstance_actionsCommuteObs .observational]
 
-/-- WS-SM SM3.E: the inventory has exactly 111 entries. -/
+/-- WS-SM SM3.E: the inventory has exactly 98 entries (**WS-LS LS2.1**: 111 → 98 —
+the §8b/§8c and §9b non-vacuity witnesses for the dropped lock-insensitivity
+hypotheses are gone, `applySequentialWithLockSet_kernel` is new). -/
 theorem serializabilityTheorems_count :
-    serializabilityTheorems.length = 111 := by decide
+    serializabilityTheorems.length = 98 := by decide
 
 /-- WS-SM SM3.E: 5 entries in `model`. -/
 theorem serializabilityTheorems_model_count :
@@ -385,13 +364,13 @@ theorem serializabilityTheorems_acyclicity_count :
 theorem serializabilityTheorems_serializability_count :
     (serializabilityTheorems.filter (fun t => t.category == .serializability)).length = 22 := by decide
 
-/-- WS-SM SM3.E: 11 entries in `preservation`. -/
+/-- WS-SM SM3.E: 4 entries in `preservation`. -/
 theorem serializabilityTheorems_preservation_count :
-    (serializabilityTheorems.filter (fun t => t.category == .preservation)).length = 11 := by decide
+    (serializabilityTheorems.filter (fun t => t.category == .preservation)).length = 4 := by decide
 
-/-- WS-SM SM3.E: 10 entries in `atomicityBridge`. -/
+/-- WS-SM SM3.E: 4 entries in `atomicityBridge`. -/
 theorem serializabilityTheorems_atomicityBridge_count :
-    (serializabilityTheorems.filter (fun t => t.category == .atomicityBridge)).length = 10 := by decide
+    (serializabilityTheorems.filter (fun t => t.category == .atomicityBridge)).length = 4 := by decide
 
 /-- WS-SM SM3.E: 18 entries in `observational`. -/
 theorem serializabilityTheorems_observational_count :

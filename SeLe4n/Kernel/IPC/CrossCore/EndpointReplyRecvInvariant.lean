@@ -1380,7 +1380,7 @@ stages took.
 
 The `_of_no_donation` sibling above says the arm migrates *nothing* where all
 three hand-offs decline; this says *where* it migrates when they answer, which is
-what the replenish clause of `schedFootprintCoversWrites` needs.  Each stage's own
+what the replenish clause of `footprintCoversWrites` needs.  Each stage's own
 `_ne` is stated at the very sub-segment the definition appends at that stage — the
 pop's pair, the block path's pair, the re-donation's pair — so this proof is the
 composition `replyRecvHandoffReplenishCores_eq_of_legs` already names rather than a
@@ -1699,13 +1699,17 @@ theorem endpointReplyRecvOnCore_preserves_objects_invExt (endpointId : SeLe4n.Ob
                   (applyReceiveLegPipHandoff_preserves_objects_invExt _ _ _ _ _ hInv3))
 
 open SeLe4n.Kernel.Concurrency in
-/-- **Audit IPC-2**: under the `.replyRecv` footprint the live ReplyRecv is
-observationally atomic to any thread's IPC state — the field both legs write.
+/-- **Audit IPC-2** (**WS-LS LS2.1**: over the pair, hypothesis-free): under the
+`.replyRecv` footprint the live ReplyRecv is observationally atomic to any
+thread's IPC state — the field both legs write.
 
 The transition is `Kernel`-shaped (a failure carries no state), so the 2PL
 bracket runs its state-threading form: the post-state on success, the input
 state on failure.  The lock-set arguments are the full `lockSet_replyRecv`
-arity, so the claim covers every footprint the arm can declare. -/
+arity, so the claim covers every footprint the arm can declare.  The `invExt`
+hypothesis and the acquire-fold conjunct are dropped because the growing phase
+no longer touches the kernel state — a strengthening (plan O6);
+`endpointReplyRecvOnCore_preserves_objects_invExt` above stands on its own. -/
 theorem endpointReplyRecvOnCore_observer_atomic
     (endpointId : SeLe4n.ObjId) (receiver prevCaller : SeLe4n.ThreadId) (msg : IpcMessage)
     (replyId : SeLe4n.ReplyId) (receiverCspaceRoot : SeLe4n.ObjId)
@@ -1722,7 +1726,7 @@ theorem endpointReplyRecvOnCore_observer_atomic
     (preReturnOuterCaller? : Option SeLe4n.ThreadId)
     (answeredFrameAbove? answeredFrameBelow? : Option SeLe4n.ReplyId)
     (originRecipient? : Option SeLe4n.ThreadId)
-    (s : SystemState) (hInv : s.objects.invExt) :
+    (s : LockedSystemState) :
     let S := lockSet_replyRecv receiver cnRoot prevCaller endpointId newSender? donatedSc?
       donatedOwner? (some replyId) installsCaps donationServer? redonatedSc?
       belowHeadReply? outerCaller? queueNeighbour? redonationOldHead? donatedHead?
@@ -1733,27 +1737,10 @@ theorem endpointReplyRecvOnCore_observer_atomic
           receiverCspaceRoot receiverSlotBase executingCore s' with
         | .ok (r, s'') => (s'', .ok r)
         | .error e => (s', .error e)
-    threadIpcStateObserver observed
-        (acquireAll executingCore S.lockAcquireSequence s)
-      = threadIpcStateObserver observed s
-    ∧ threadIpcStateObserver observed (withLockSet S executingCore action s).1
-      = threadIpcStateObserver observed
-          (action (acquireAll executingCore S.lockAcquireSequence s)).1 := by
+    threadIpcStateObserver observed (withLockSetGhost S executingCore action s).1.kernel
+      = threadIpcStateObserver observed (action s.kernel).1 := by
   intro S action
-  refine lockSet_observer_atomic_of_objectStoreObserver S executingCore action s _
-    (threadIpcStateObserver_insensitiveOn executingCore observed) hInv ?_
-  intro s' h
-  show (match endpointReplyRecvOnCore endpointId receiver replyId prevCaller msg
-          receiverCspaceRoot receiverSlotBase executingCore s' with
-        | .ok (r, s'') => (s'', Except.ok r)
-        | .error e => (s', .error e)).1.objects.invExt
-  cases hStep : endpointReplyRecvOnCore endpointId receiver replyId prevCaller msg
-      receiverCspaceRoot receiverSlotBase executingCore s' with
-  | error e => exact h
-  | ok pair =>
-    obtain ⟨r, s''⟩ := pair
-    exact endpointReplyRecvOnCore_preserves_objects_invExt endpointId receiver replyId
-      prevCaller msg receiverCspaceRoot receiverSlotBase executingCore s' s'' r h hStep
+  exact lockSet_observer_atomic S executingCore action s _
 
 
 end SeLe4n.Kernel

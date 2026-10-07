@@ -123,27 +123,18 @@ open SeLe4n.Kernel.Concurrency
 #check @singleCore_invariant_preservation
 #check @singleCore_proof_preservation
 #check @withLockSet_growing_phase_establishes_lockSetHeld
-#check @acquireLockOnObject_preserves_objStoreLock_wf
-#check @releaseLockOnObject_preserves_objStoreLock_wf
-#check @withLockSet_preserves_objStoreLock_wf
 #check @releaseLockOnObject_preserves_invExt
-#check @updateObjectLockAt_preserves_objectType_at
-#check @acquireLockOnObject_preserves_objectType_at
-#check @releaseLockOnObject_preserves_objectType_at
-#check @withLockSet_preserves_objectType_at
 
-/-! ## SM3.E.2 — Atomicity bridge (applySequential models the withLockSet execution) -/
-#check @ActionPiCongr
-#check @applySequential_piCongr
+/-! ## SM3.E.2 — Atomicity bridge (applySequential models the bracketed execution;
+**WS-LS LS2.1**: over the pair `LockedSystemState`, hypothesis-free) -/
+#check @LockedSystemState
+#check @withLockSetGhost
 #check @withLockSet_observation_eq_action
 #check @applySequentialWithLockSet
+#check @applySequentialWithLockSet_nil
+#check @applySequentialWithLockSet_cons
+#check @applySequentialWithLockSet_kernel
 #check @applySequentialWithLockSet_observation
--- §9b concrete non-vacuity witness (scheduler observer)
-#check @acquireLockOnObject_preserves_scheduler
-#check @releaseLockOnObject_preserves_scheduler
-#check @schedulerObserver_acquireInsensitive
-#check @schedulerObserver_unwindInsensitive
-#check @withLockSet_observation_scheduler_witness
 
 /-! ## SM3.E.3/E.5 — Observational serializability (covers write/write) -/
 #check @ActionObsCongr
@@ -292,27 +283,31 @@ example (s : SystemState) (f₁ f₂ : KernelObject → KernelObject) (hExt : s.
 /-! ## SM3.E.6 — single-core proof preservation on a REAL (non-trivial) invariant -/
 
 -- NON-VACUOUS witness: the genuine `objStoreLock.wf` invariant (a real SM2.C/SM3.C
--- invariant — NOT the trivial `True`) transfers through the 2PL `withLockSet`
--- wrapper, given the action preserves it.  This proves the SM3.E.6 lever is a
--- usable tool, not a vacuous false-anchor.
+-- invariant — NOT the trivial `True`) transfers through the ghost bracket
+-- (**WS-LS LS2.1**: over the pair, from the all-free table), given the action
+-- preserves it.  No lock-insensitivity is assumed or discharged: the bracket's
+-- phases write the lock table, so there is nothing for the invariant to survive.
 example (core : CoreId) (op : SystemState → SystemState × Unit) (s : SystemState)
     (hwf : s.objStoreLock.wf)
     (hAction : ∀ s', s'.objStoreLock.wf → (op s').1.objStoreLock.wf) :
-    (withLockSet lsW5 core op s).1.objStoreLock.wf :=
-  withLockSet_preserves_objStoreLock_wf lsW5 core op s hwf hAction
+    (withLockSetGhost lsW5 core op ⟨s, LockState.unheld⟩).1.kernel.objStoreLock.wf :=
+  singleCore_invariant_preservation lsW5 core op ⟨s, LockState.unheld⟩
+    (fun st => st.objStoreLock.wf) hwf hAction
 
--- And the underlying lock-insensitivity is genuinely discharged (not assumed):
--- acquiring/releasing any lock preserves objStoreLock.wf.
-example (s : SystemState) (core : CoreId) (l : LockId) (m : AccessMode)
-    (h : s.objStoreLock.wf) : (acquireLockOnObject s core l m).objStoreLock.wf :=
-  acquireLockOnObject_preserves_objStoreLock_wf s core l m h
+-- The pre→post form on a real postcondition: the action's write is what the
+-- bracketed kernel half shows.
+example (core : CoreId) (s : SystemState) (sch : SchedulerState) :
+    (withLockSetGhost lsW5 core (fun st => (setSchedulerAction sch st, ()))
+      ⟨s, LockState.unheld⟩).1.kernel.scheduler = sch :=
+  singleCore_proof_preservation lsW5 core (fun st => (setSchedulerAction sch st, ()))
+    ⟨s, LockState.unheld⟩ (fun _ => True) (fun st => st.scheduler = sch)
+    trivial (fun _ _ => rfl)
 
 -- The trivial `True` invariant remains inhabited too (the metatheorem is total).
-example (core : CoreId) (op : SystemState → SystemState × Unit) (s : SystemState) :
-    (fun _ => True) (withLockSet lsW5 core op s).1 :=
+example (core : CoreId) (op : SystemState → SystemState × Unit) (s : LockedSystemState) :
+    (fun _ => True) (withLockSetGhost lsW5 core op s).1.kernel :=
   singleCore_proof_preservation lsW5 core op s (fun _ => True) (fun _ => True)
-    trivial (fun _ _ _ _ => trivial) (fun _ _ => trivial) (fun _ _ _ _ => trivial)
-    (fun _ _ _ _ => trivial)
+    trivial (fun _ _ => trivial)
 
 /-! ## SM3.E.3 — conflict-graph orientation completeness (uses the conflict relation) -/
 
@@ -343,27 +338,30 @@ example (interleaved : List KernelTransitionInstance) (s : SystemState)
 
 /-! ## SM3.E.2 — atomicity bridge: applySequential models the withLockSet execution -/
 
--- A withLockSet-wrapped schedule, observed lock-insensitively (every action a
--- π-congruence), equals the bare applySequential model — the formal grounding
--- that `applySequential` faithfully represents the real `withLockSet` execution.
+-- A bracketed schedule, observed by ANY observer of the kernel state, equals the
+-- bare applySequential model — the formal grounding that `applySequential`
+-- faithfully represents the real bracketed execution.  **WS-LS LS2.1**: over
+-- the pair the bridge takes no insensitivity or congruence hypothesis.
 example (β : Type) (π : SystemState → β)
-    (hAcq : ∀ c : CoreId, AcquireInsensitive c π)
-    (hRel : ∀ c : CoreId, UnwindInsensitive c π)
-    (sched : List KernelTransitionInstance)
-    (hCongr : ∀ τ ∈ sched, ActionPiCongr π τ.action) (s : SystemState) :
-    π (applySequentialWithLockSet sched s) = π (applySequential sched s) :=
-  applySequentialWithLockSet_observation π hAcq hRel sched hCongr s
+    (sched : List KernelTransitionInstance) (s : SystemState) :
+    π (applySequentialWithLockSet sched ⟨s, LockState.unheld⟩).kernel
+      = π (applySequential sched s) :=
+  applySequentialWithLockSet_observation π sched ⟨s, LockState.unheld⟩
 
--- §9b NON-VACUITY: the scheduler projection is a CONCRETE non-trivial observer
--- that discharges both insensitivity hypotheses — so the bridge above is not
--- vacuous.  A scheduler write wrapped in the full withLockSet 2PL machinery has
--- its effect (= sch) correctly observed, the lock folds invisible.
+-- The bridge in its strongest form: the kernel half of the bracketed schedule
+-- IS the bare model, as a state equality.
+example (sched : List KernelTransitionInstance) (s : LockedSystemState) :
+    (applySequentialWithLockSet sched s).kernel = applySequential sched s.kernel :=
+  applySequentialWithLockSet_kernel sched s
+
+-- A scheduler write inside the bracket has its effect (= sch) observed on the
+-- kernel half, the lock trace invisible — the single-transition bridge at a
+-- concrete observer.
 example (S : LockSet) (core : CoreId) (sch : SchedulerState) (s : SystemState) :
-    (withLockSet S core (fun st => (setSchedulerAction sch st, ())) s).1.scheduler = sch :=
-  withLockSet_observation_scheduler_witness S core sch s
-
-example (core : CoreId) : AcquireInsensitive core (fun s => s.scheduler) :=
-  schedulerObserver_acquireInsensitive core
+    (withLockSetGhost S core (fun st => (setSchedulerAction sch st, ()))
+      ⟨s, LockState.unheld⟩).1.kernel.scheduler = sch :=
+  withLockSet_observation_eq_action S core (setSchedulerAction sch)
+    ⟨s, LockState.unheld⟩ (fun st => st.scheduler)
 
 /-! ## SM3.E.3/E.5 — OBSERVATIONAL serializability on a real write/write schedule -/
 
@@ -401,8 +399,10 @@ example (s : SystemState) (hExt : s.objects.invExt) :
 /-! ## SM3.E.6 — second real-invariant witness: the kind-discipline (objectType) invariant -/
 
 -- The kind-discipline invariant (every object's objectType tag preserved relative
--- to s₀) survives the withLockSet wrapper when the action preserves it — a real,
--- invExt-dependent invariant class (NOT the trivial True).
+-- to s₀) survives the ghost bracket when the action preserves it — a real,
+-- invExt-dependent invariant class (NOT the trivial True).  **WS-LS LS2.1**: the
+-- same lever as the first witness, `withLockSet_invariant_preserved`, with no
+-- per-primitive kind-discipline lemma left to feed it.
 example (core : CoreId) (op : SystemState → SystemState × Unit) (s s₀ : SystemState)
     (hInv : s.objects.invExt ∧
       ∀ k, Option.map KernelObject.objectType (s.objects.get? k)
@@ -412,10 +412,15 @@ example (core : CoreId) (op : SystemState → SystemState × Unit) (s s₀ : Sys
         = Option.map KernelObject.objectType (s₀.objects.get? k)) →
       ((op s').1.objects.invExt ∧ ∀ k, Option.map KernelObject.objectType ((op s').1.objects.get? k)
         = Option.map KernelObject.objectType (s₀.objects.get? k))) :
-    (withLockSet lsW5 core op s).1.objects.invExt ∧
-    ∀ k, Option.map KernelObject.objectType ((withLockSet lsW5 core op s).1.objects.get? k)
+    (withLockSetGhost lsW5 core op ⟨s, LockState.unheld⟩).1.kernel.objects.invExt ∧
+    ∀ k, Option.map KernelObject.objectType
+        ((withLockSetGhost lsW5 core op ⟨s, LockState.unheld⟩).1.kernel.objects.get? k)
       = Option.map KernelObject.objectType (s₀.objects.get? k) :=
-  withLockSet_preserves_objectType_at lsW5 core op s s₀ hInv hAction
+  withLockSet_invariant_preserved lsW5 core op ⟨s, LockState.unheld⟩
+    (fun st => st.objects.invExt ∧
+      ∀ k, Option.map KernelObject.objectType (st.objects.get? k)
+        = Option.map KernelObject.objectType (s₀.objects.get? k))
+    hInv hAction
 
 -- ============================================================================
 -- §4 — Runtime assertions
@@ -479,8 +484,11 @@ private def runCommitSortChecks : IO Unit := do
 
 private def runInventoryChecks : IO Unit := do
   IO.println "--- §5 SM3.E — inventory counts ---"
-  assertBool "serializabilityTheorems.length = 111"
-    (decide (serializabilityTheorems.length = 111))
+  -- WS-LS LS2.1: −7 preservation and −7 atomicityBridge for the retired
+  -- lock-insensitivity machinery, +1 atomicityBridge for
+  -- `applySequentialWithLockSet_kernel` (111 → 98).
+  assertBool "serializabilityTheorems.length = 98"
+    (decide (serializabilityTheorems.length = 98))
   assertBool "model count = 5"
     (decide ((serializabilityTheorems.filter (fun t => t.category == .model)).length = 5))
   assertBool "conflict count = 7"
@@ -493,10 +501,10 @@ private def runInventoryChecks : IO Unit := do
     (decide ((serializabilityTheorems.filter (fun t => t.category == .acyclicity)).length = 9))
   assertBool "serializability count = 22"
     (decide ((serializabilityTheorems.filter (fun t => t.category == .serializability)).length = 22))
-  assertBool "preservation count = 11"
-    (decide ((serializabilityTheorems.filter (fun t => t.category == .preservation)).length = 11))
-  assertBool "atomicityBridge count = 10"
-    (decide ((serializabilityTheorems.filter (fun t => t.category == .atomicityBridge)).length = 10))
+  assertBool "preservation count = 4"
+    (decide ((serializabilityTheorems.filter (fun t => t.category == .preservation)).length = 4))
+  assertBool "atomicityBridge count = 4"
+    (decide ((serializabilityTheorems.filter (fun t => t.category == .atomicityBridge)).length = 4))
   assertBool "observational count = 18"
     (decide ((serializabilityTheorems.filter (fun t => t.category == .observational)).length = 18))
 

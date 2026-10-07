@@ -227,15 +227,15 @@ example (notificationId : SeLe4n.ObjId) (badge : SeLe4n.Badge) (executingCore : 
   notificationSignalOnCore_remote_wake notificationId badge executingCore st ntfn waiter rest
     waiterTcb'' st' st'' hObj hWaiters hStore hMsg hTcb'' hRemote
 
-/-- SM6.B.4: the signal is a single 2PL-atomic step under its lock-set. -/
+/-- SM6.B.4 (WS-LS LS2.1: over the pair): the signal is a single 2PL-atomic
+step under its lock-set — the ghost bracket's value is the bare transition's. -/
 example (notificationId cnRoot : SeLe4n.ObjId) (badge : SeLe4n.Badge)
     (signaller : SeLe4n.ThreadId) (executingCore : CoreId)
     (waiter? : Option SeLe4n.ThreadId) (s : SystemState) :
-    (withLockSet (lockSet_notificationSignal signaller cnRoot notificationId waiter?)
-        executingCore (notificationSignalOnCore notificationId badge executingCore) s).2
-      = (notificationSignalOnCore notificationId badge executingCore
-          (acquireAll executingCore
-            (lockSet_notificationSignal signaller cnRoot notificationId waiter?).lockAcquireSequence s)).2 := by
+    (withLockSetGhost (lockSet_notificationSignal signaller cnRoot notificationId waiter?)
+        executingCore (notificationSignalOnCore notificationId badge executingCore)
+        ⟨s, LockState.unheld⟩).2
+      = (notificationSignalOnCore notificationId badge executingCore s).2 := by
   rw [notificationSignalOnCore_atomic_under_lockSet]
 
 /-- SM6.B.7: a cross-core signal between high principals is invisible on every core. -/

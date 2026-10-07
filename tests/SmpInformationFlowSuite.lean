@@ -1203,9 +1203,11 @@ open SeLe4n.Kernel.Concurrency (CoreId bootCoreId allCores)
 #check @commitKernelAction_error
 #check @commitKernelAction_lockWritesOnly_of_error
 #check @syscallEntryChecked_preserves_projection
-#check @lockSetAcquiredState
-#check @lockSetAcquiredState_grants_when_free
-#check @lockSetAcquiredState_does_not_grant_when_contended
+-- WS-LS LS2.1: the bracket is over the pair; the grant lemmas' ghost forms.
+#check @SeLe4n.Kernel.Concurrency.LockedSystemState
+#check @SeLe4n.Kernel.Concurrency.withLockSetGhost
+#check @SeLe4n.Kernel.Concurrency.BracketSpec.guard_of_unheld
+#check @SeLe4n.Kernel.Concurrency.BracketSpec.not_guard_of_contended
 #check @syscallEntryUnderLockSet
 #check @syscallEntryUnderLockSet_fst
 #check @syscallEntryUnderLockSet_preserves_projectionOnCore
@@ -1241,7 +1243,6 @@ open SeLe4n.Kernel.Concurrency (CoreId bootCoreId allCores)
 #check @continueFromAcquired
 #check @withLockSet_eq_continueFromAcquired
 #check @syscallEntryFromAcquired
-#check @syscallEntryUnderLockSet_eq_fromAcquired
 #check @syscallEntryUnderRevalidatedLockSetModel
 #check @syscallEntryUnderRevalidatedLockSetModel_refines
 #check @revalidationRefusalReachable
@@ -2758,16 +2759,16 @@ example (ctx : LabelingContext) (subject : SecurityLabel)
       (SeLe4n.Kernel.Concurrency.withLockSet S core action s).1 :=
   authorityIntegrity_underLockSet ctx subject S core action s hInv hActionInv hAction
 
--- SM8.D.5: a refused bracketed syscall writes lock words and nothing else — the
--- sharpened fail-closed statement.
+-- SM8.D.5 (WS-LS LS2.1: over the pair): a refused bracketed syscall writes the
+-- ghost lock table and nothing else — the kernel half is identical.  The
+-- sharpened fail-closed statement, with no `invExt` guard.
 example (ctx : LabelingContext) (S : SeLe4n.Kernel.Concurrency.LockSet) (lockCore : CoreId)
     (layout : SeLe4n.SyscallRegisterLayout) (executingCore : CoreId) (regCount : Nat)
-    (s : SystemState) (e : KernelError) (hInv : s.objects.invExt)
-    (hDenied : syscallEntryChecked ctx layout executingCore regCount
-        (lockSetAcquiredState S lockCore s) = .error e) :
-    lockWritesOnly s
-      (syscallEntryUnderLockSet ctx S lockCore layout executingCore regCount s).1 :=
-  (syscallEntryUnderLockSet_failClosed ctx S lockCore layout executingCore regCount s e hInv
+    (s : SeLe4n.Kernel.Concurrency.LockedSystemState) (e : KernelError)
+    (hDenied : syscallEntryChecked ctx layout executingCore regCount s.kernel = .error e) :
+    (syscallEntryUnderLockSet ctx S lockCore layout executingCore regCount s).1.kernel
+      = s.kernel :=
+  (syscallEntryUnderLockSet_failClosed ctx S lockCore layout executingCore regCount s e
     hDenied).1
 
 -- SM8.D.5: the declared-footprint entry is `none` for every undeclared syscall,
@@ -2775,9 +2776,9 @@ example (ctx : LabelingContext) (S : SeLe4n.Kernel.Concurrency.LockSet) (lockCor
 -- and "undeclared" is a property of the syscall the entry's own registers
 -- **decode to**, not of an argument supplied alongside them.
 example (ctx : LabelingContext) (lockCore : CoreId) (layout : SeLe4n.SyscallRegisterLayout)
-    (executingCore : CoreId) (regCount : Nat) (s : SystemState) (tid : SeLe4n.ThreadId)
-    (decoded : SyscallDecodeResult)
-    (hDec : entryDecode ctx layout executingCore regCount s = some (tid, decoded))
+    (executingCore : CoreId) (regCount : Nat) (s : SeLe4n.Kernel.Concurrency.LockedSystemState)
+    (tid : SeLe4n.ThreadId) (decoded : SyscallDecodeResult)
+    (hDec : entryDecode ctx layout executingCore regCount s.kernel = some (tid, decoded))
     (h : decoded.syscallId ≠ .tcbSuspend) :
     syscallEntryUnderDeclaredLockSet ctx lockCore layout executingCore regCount s = none :=
   syscallEntryUnderDeclaredLockSet_undeclared ctx lockCore layout executingCore regCount s
@@ -2786,8 +2787,8 @@ example (ctx : LabelingContext) (lockCore : CoreId) (layout : SeLe4n.SyscallRegi
 -- SM8.D.5: and where the entry would refuse before decoding at all, nothing is
 -- bracketed — the bracket never runs ahead of a decode that does not exist.
 example (ctx : LabelingContext) (lockCore : CoreId) (layout : SeLe4n.SyscallRegisterLayout)
-    (executingCore : CoreId) (regCount : Nat) (s : SystemState)
-    (h : entryDecode ctx layout executingCore regCount s = none) :
+    (executingCore : CoreId) (regCount : Nat) (s : SeLe4n.Kernel.Concurrency.LockedSystemState)
+    (h : entryDecode ctx layout executingCore regCount s.kernel = none) :
     syscallEntryUnderDeclaredLockSet ctx lockCore layout executingCore regCount s = none :=
   syscallEntryUnderDeclaredLockSet_no_decode ctx lockCore layout executingCore regCount s h
 
@@ -7369,8 +7370,8 @@ The lock set is the §4.4 two-lock declaration promoted to a `LockSet`, so the
 bracket takes a write lock on an object the low observer **can** see and a read
 lock on the CNode the redaction probe uses.  The entry is refused (core 2 is
 idle, so there is no caller to decode), which is the case that makes the
-sharpened fail-closed statement observable: the bracket still wrote lock
-words. -/
+sharpened fail-closed statement observable: the bracket still advanced the
+ghost lock table (WS-LS LS2.1), and the kernel half came back identical. -/
 private def fineLockSet : SeLe4n.Kernel.Concurrency.LockSet :=
   { pairs := lockPairs, hUniqueKeys := by decide }
 
@@ -7389,12 +7390,18 @@ in the fixture's own band moves. -/
 private def fineLockEntryLabeling : LabelingContext :=
   { niLabeling with separatedThreads := some (highCurrent, lowCurrent) }
 
-private def bracketAcquiredState : SystemState :=
-  lockSetAcquiredState fineLockSet c1 niState
+/-- WS-LS LS2.1: the ghost table the growing phase ends in, from all-free — the
+lock half the bracket hands the shrinking phase, beside a kernel half the
+growing phase does not touch (`withLockSetGhost`).  Replaces the former
+`lockSetAcquiredState` fixture, whose lock words lived in the objects. -/
+private def bracketAcquiredLocks : SeLe4n.Kernel.Concurrency.LockState :=
+  SeLe4n.Kernel.Concurrency.LockState.acquireAll c1 fineLockSet.lockAcquireSequence
+    SeLe4n.Kernel.Concurrency.LockState.unheld
 
-private def bracketedEntryResult : SystemState × Except KernelError Unit :=
+private def bracketedEntryResult :
+    SeLe4n.Kernel.Concurrency.LockedSystemState × Except KernelError Unit :=
   syscallEntryUnderLockSet fineLockEntryLabeling fineLockSet c1 SeLe4n.arm64DefaultLayout c2 32
-    niState
+    ⟨niState, SeLe4n.Kernel.Concurrency.LockState.unheld⟩
 
 /-- The §7.6 projected endpoint, under the entry labelling. -/
 private def entryProjectedEndpoint (c : CoreId) (L : SecurityLabel) (st : SystemState) :
@@ -7421,16 +7428,21 @@ private def runFineLockEntryChecks : IO Unit := do
     (decide (isInsecureDefaultContext
       { niLabeling with separatedThreads := some (⟨0⟩, highCurrent) } = true))
   assertBool "core 2 is idle, so the entry has no caller to decode"
-    (decide (niState.scheduler.currentOnCore c2 = none) &&
-     decide (bracketAcquiredState.scheduler.currentOnCore c2 = none))
-  -- NEGATIVE FIRST: mid-bracket, the lock words really are held.
+    (decide (niState.scheduler.currentOnCore c2 = none))
+  -- NEGATIVE FIRST: mid-bracket, the ghost table really holds the footprint
+  -- (WS-LS LS2.1: in the table, not in the objects' lock words).
   assertBool "NEGATIVE: mid-bracket the endpoint is write-held and the CNode read-held"
-    (decide ((rawLock bracketAcquiredState lowEndpoint).writerHeld = some c1) &&
-     decide ((rawLock bracketAcquiredState probeCNode).readers = [c1]))
-  assertBool "…yet mid-bracket every object's lock-erased content is unchanged"
-    (niState.objectIndex.all (fun oid =>
-      (bracketAcquiredState.objects[oid]?).map KernelObject.eraseLock
-        == (niState.objects[oid]?).map KernelObject.eraseLock))
+    (decide ((bracketAcquiredLocks (.object lowEndpointLock)).writerHeld = some c1) &&
+     decide ((bracketAcquiredLocks
+       (.object { kind := .cnode, objId := probeCNode })).readers = [c1]))
+  -- …and the growing phase holds EVERY declared member, with no object-presence
+  -- hypothesis: a ghost lock exists for every key (O3, first half).  The former
+  -- "lock-erased content unchanged mid-bracket" comparison is retired: the
+  -- kernel half mid-bracket IS `niState`, by type.
+  assertBool "…and the growing phase holds every declared member (acquireAll_unheld_heldAll_pairs)"
+    (have _h : bracketAcquiredLocks.heldAll c1 fineLockSet.pairs :=
+      SeLe4n.Kernel.Concurrency.LockState.acquireAll_unheld_heldAll_pairs c1 fineLockSet
+     true)
   -- The entry is refused, and the refusal is reported unchanged through the bracket.
   assertBool "the bracketed entry is refused"
     (match bracketedEntryResult.2 with | .error _ => true | .ok _ => false)
@@ -7438,55 +7450,61 @@ private def runFineLockEntryChecks : IO Unit := do
     (match bracketedEntryResult.2 with
      | .error e => decide (e = KernelError.illegalState)
      | .ok _ => false)
-  -- The sharpened fail-closed conclusion, computed: lock words only.
+  -- The sharpened fail-closed conclusion, computed: the kernel half is
+  -- untouched (WS-LS LS2.1 — the bracket wrote the ghost table alone).
   assertBool "the refused syscall left every object's lock-erased content untouched"
     (niState.objectIndex.all (fun oid =>
-      (bracketedEntryResult.1.objects[oid]?).map KernelObject.eraseLock
+      (bracketedEntryResult.1.kernel.objects[oid]?).map KernelObject.eraseLock
         == (niState.objects[oid]?).map KernelObject.eraseLock))
   assertBool "…and every non-object field with it"
-    (decide (bracketedEntryResult.1.objectIndex = niState.objectIndex) &&
-     decide (bracketedEntryResult.1.scheduler.currentOnCore c0
+    (decide (bracketedEntryResult.1.kernel.objectIndex = niState.objectIndex) &&
+     decide (bracketedEntryResult.1.kernel.scheduler.currentOnCore c0
        = niState.scheduler.currentOnCore c0) &&
-     decide (bracketedEntryResult.1.machine.timer = niState.machine.timer))
+     decide (bracketedEntryResult.1.kernel.machine.timer = niState.machine.timer))
+  -- The lock half round-trips to all-free (O3).  `LockState` is a function, so
+  -- this is the theorem rather than a `decide`.
+  assertBool "…and the ghost table is all-free again after the bracket (theorem)"
+    (have _h : bracketedEntryResult.1.locks = SeLe4n.Kernel.Concurrency.LockState.unheld :=
+      SeLe4n.Kernel.Concurrency.withLockSetGhost_locks_of_unheld fineLockSet c1 _
+        ⟨niState, SeLe4n.Kernel.Concurrency.LockState.unheld⟩ rfl
+     true)
   -- …which is exactly enough: the observer's view is unchanged on every core.
   assertBool "the refused syscall is invisible on every core, at both clearances"
     (allCores.all (fun c =>
       lowEquivalentSliceOnCoreCheckWithRegs fineLockEntryLabeling c lowLabel
-        bracketedEntryResult.1 niState &&
+        bracketedEntryResult.1.kernel niState &&
       lowEquivalentSliceOnCoreCheckWithRegs fineLockEntryLabeling c highLabel
-        bracketedEntryResult.1 niState))
+        bracketedEntryResult.1.kernel niState))
   assertBool "…and the projected object at the LOCKED endpoint is identical"
     (allCores.all (fun c =>
-      entryProjectedEndpoint c lowLabel bracketedEntryResult.1
+      entryProjectedEndpoint c lowLabel bracketedEntryResult.1.kernel
         == entryProjectedEndpoint c lowLabel niState))
   assertBool "syscallEntryUnderLockSet_failClosed_invisible applies (theorem)"
-    (have _h : ∀ (st : SystemState) (e : KernelError), st.objects.invExt →
-        syscallEntryChecked fineLockEntryLabeling SeLe4n.arm64DefaultLayout c2 32
-            (lockSetAcquiredState fineLockSet c1 st) = .error e →
+    (have _h : ∀ (s : SeLe4n.Kernel.Concurrency.LockedSystemState) (e : KernelError),
+        syscallEntryChecked fineLockEntryLabeling SeLe4n.arm64DefaultLayout c2 32 s.kernel
+          = .error e →
         ∀ c : CoreId,
           ObservableState.onCore fineLockEntryLabeling c lowLabel
               (syscallEntryUnderLockSet fineLockEntryLabeling fineLockSet c1
-                SeLe4n.arm64DefaultLayout c2 32 st).1
-            = ObservableState.onCore fineLockEntryLabeling c lowLabel st :=
-      fun st e hInv hDenied => syscallEntryUnderLockSet_failClosed_invisible
-        fineLockEntryLabeling fineLockSet c1 SeLe4n.arm64DefaultLayout c2 32 st e lowLabel hInv
+                SeLe4n.arm64DefaultLayout c2 32 s).1.kernel
+            = ObservableState.onCore fineLockEntryLabeling c lowLabel s.kernel :=
+      fun s e hDenied => syscallEntryUnderLockSet_failClosed_invisible
+        fineLockEntryLabeling fineLockSet c1 SeLe4n.arm64DefaultLayout c2 32 s e lowLabel
         hDenied
      true)
   assertBool "…and so does the success-path headline (theorem)"
-    (have _h : ∀ (st st' : SystemState), st.objects.invExt → st'.objects.invExt →
-        syscallEntryChecked fineLockEntryLabeling SeLe4n.arm64DefaultLayout c2 32
-            (lockSetAcquiredState fineLockSet c1 st) = .ok ((), st') →
+    (have _h : ∀ (s : SeLe4n.Kernel.Concurrency.LockedSystemState) (st' : SystemState),
+        syscallEntryChecked fineLockEntryLabeling SeLe4n.arm64DefaultLayout c2 32 s.kernel
+          = .ok ((), st') →
         projectState fineLockEntryLabeling niLowObserver st'
-          = projectState fineLockEntryLabeling niLowObserver
-              (lockSetAcquiredState fineLockSet c1 st) →
-        observableSlotsConfinedToCore (lockSetAcquiredState fineLockSet c1 st) st' bootCoreId →
+          = projectState fineLockEntryLabeling niLowObserver s.kernel →
+        observableSlotsConfinedToCore s.kernel st' bootCoreId →
         lowEquivalent_smp fineLockEntryLabeling niLowObserver
           (syscallEntryUnderLockSet fineLockEntryLabeling fineLockSet c1
-            SeLe4n.arm64DefaultLayout c2 32 st).1 st :=
-      fun st st' hInv hOutInv hOk hProj hConfined =>
+            SeLe4n.arm64DefaultLayout c2 32 s).1.kernel s.kernel :=
+      fun s st' hOk hProj hConfined =>
         syscallEntryUnderLockSet_preserves_projectionOnCore_of_entry fineLockEntryLabeling
-          niLowObserver fineLockSet c1 SeLe4n.arm64DefaultLayout c2 32 st st' hInv hOutInv hOk
-          hProj hConfined
+          niLowObserver fineLockSet c1 SeLe4n.arm64DefaultLayout c2 32 s st' hOk hProj hConfined
      true)
 
 
@@ -7511,20 +7529,19 @@ private def successEntryState : SystemState :=
   { niState with
       objects := niState.objects.insert highCurrent.toObjId (.tcb hiCallerTcb) }
 
-/-- The state the guarded entry is actually run in — after the 2PL growing
-phase.  Every §7.8 hypothesis is stated against this, because that is what the
-bracket hands the entry. -/
-private def successAcquiredState : SystemState :=
-  lockSetAcquiredState fineLockSet c1 successEntryState
-
-private def successEntryResult : SystemState × Except KernelError Unit :=
+/-- WS-LS LS2.1: the bracket over the pair.  The kernel half the guarded entry
+is run on is `successEntryState` itself — the growing phase writes the ghost
+table, not the objects — so every §7.8 hypothesis is stated against the
+fixture state directly, and the former `successAcquiredState` is retired. -/
+private def successEntryResult :
+    SeLe4n.Kernel.Concurrency.LockedSystemState × Except KernelError Unit :=
   syscallEntryUnderLockSet fineLockEntryLabeling fineLockSet c1 SeLe4n.arm64DefaultLayout c1 32
-    successEntryState
+    ⟨successEntryState, SeLe4n.Kernel.Concurrency.LockState.unheld⟩
 
 /-- The guarded entry's own outcome, so §7.8 can report the dispatch result
 separately from the bracket's. -/
 private def successGuardedOutcome : Except KernelError (Unit × SystemState) :=
-  syscallEntryChecked fineLockEntryLabeling SeLe4n.arm64DefaultLayout c1 32 successAcquiredState
+  syscallEntryChecked fineLockEntryLabeling SeLe4n.arm64DefaultLayout c1 32 successEntryState
 
 /-- §7.8  SM8.D.5 — the **success** path, end to end. -/
 private def runFineLockSuccessPathChecks : IO Unit := do
@@ -7544,7 +7561,7 @@ private def runFineLockSuccessPathChecks : IO Unit := do
   -- NEGATIVE: the successful syscall really did mutate the state — otherwise
   -- the invisibility below would be a no-op rather than a projection result.
   assertBool "NEGATIVE: the caller is now blocked on the high endpoint"
-    (match successEntryResult.1.getTcb? highCurrent with
+    (match successEntryResult.1.kernel.getTcb? highCurrent with
      | some tcb => decide (tcb.ipcState = .blockedOnReceive highEndpoint)
      | none => false)
   assertBool "NEGATIVE: …and it was `.ready` before, so the transition is real"
@@ -7552,54 +7569,60 @@ private def runFineLockSuccessPathChecks : IO Unit := do
      | some tcb => decide (tcb.ipcState = .ready)
      | none => false)
   assertBool "NEGATIVE: the high endpoint's receive queue grew"
-    (match successEntryResult.1.objects[highEndpoint]? with
+    (match successEntryResult.1.kernel.objects[highEndpoint]? with
      | some (.endpoint ep) => decide (ep.receiveQ.head = some highCurrent)
      | _ => false)
   -- …yet the LOW observer sees nothing of it, on every core.
   assertBool "the low observer's view is unchanged on every core"
     (allCores.all (fun c =>
       lowEquivalentSliceOnCoreCheckWithRegs fineLockEntryLabeling c lowLabel
-        successEntryResult.1 successEntryState))
+        successEntryResult.1.kernel successEntryState))
   assertBool "…including the projected objects at the locked endpoint and CNode"
     (allCores.all (fun c =>
-      (entryProjectedEndpoint c lowLabel successEntryResult.1
+      (entryProjectedEndpoint c lowLabel successEntryResult.1.kernel
         == entryProjectedEndpoint c lowLabel successEntryState) &&
-      ((ObservableState.onCore fineLockEntryLabeling c lowLabel successEntryResult.1).objects
-          probeCNode
+      ((ObservableState.onCore fineLockEntryLabeling c lowLabel
+          successEntryResult.1.kernel).objects probeCNode
         == (ObservableState.onCore fineLockEntryLabeling c lowLabel successEntryState).objects
           probeCNode)))
   -- NEGATIVE: the HIGH observer *does* see the difference, so the low
   -- observer's blindness is the label filter's doing and not a no-op.
   assertBool "NEGATIVE: the HIGH observer's view of the caller DID move"
-    (!((ObservableState.onCore fineLockEntryLabeling c1 highLabel successEntryResult.1).objects
-         highCurrent.toObjId
+    (!((ObservableState.onCore fineLockEntryLabeling c1 highLabel
+          successEntryResult.1.kernel).objects highCurrent.toObjId
        == (ObservableState.onCore fineLockEntryLabeling c1 highLabel successEntryState).objects
          highCurrent.toObjId))
-  -- The bracket's own contribution: lock words only, and the refuter agrees.
-  assertBool "the acquire phase passes the lock-only refuter"
-    (lockWritesOnlyCheck successEntryState successAcquiredState)
+  -- The bracket's own contribution (WS-LS LS2.1): the ghost table only, and it
+  -- round-trips to all-free (O3).  `LockState` is a function, so by theorem.
+  assertBool "the bracket's lock half round-trips to all-free (theorem)"
+    (have _h : successEntryResult.1.locks = SeLe4n.Kernel.Concurrency.LockState.unheld :=
+      SeLe4n.Kernel.Concurrency.withLockSetGhost_locks_of_unheld fineLockSet c1 _
+        ⟨successEntryState, SeLe4n.Kernel.Concurrency.LockState.unheld⟩ rfl
+     true)
   -- The refuter is index+kind level by construction (`KernelObject` has no
   -- `DecidableEq`), so a same-kind mutation passes it.  Saying so is the point:
   -- the load-bearing negatives for "the syscall moved something" are the raw
   -- `ipcState` and endpoint-queue assertions above, not this.
   assertBool "the refuter is index+kind level, so the syscall passes it as well"
-    (lockWritesOnlyCheck successAcquiredState successEntryResult.1)
+    (lockWritesOnlyCheck successEntryState successEntryResult.1.kernel)
   assertBool "NEGATIVE: …but it genuinely refutes an index change"
     (!(lockWritesOnlyCheck successEntryState { successEntryState with objectIndex := [] }))
   -- The theorem, applied at this very fixture: its hypotheses are satisfiable.
+  -- WS-LS LS2.1: no `invExt` premise on either side any more.
   assertBool "the success-path headline applies here (theorem)"
-    (have _h : ∀ st' : SystemState, successEntryState.objects.invExt → st'.objects.invExt →
+    (have _h : ∀ st' : SystemState,
         syscallEntryChecked fineLockEntryLabeling SeLe4n.arm64DefaultLayout c1 32
-            successAcquiredState = .ok ((), st') →
+            successEntryState = .ok ((), st') →
         projectState fineLockEntryLabeling niLowObserver st'
-          = projectState fineLockEntryLabeling niLowObserver successAcquiredState →
-        observableSlotsConfinedToCore successAcquiredState st' bootCoreId →
-        lowEquivalent_smp fineLockEntryLabeling niLowObserver successEntryResult.1
+          = projectState fineLockEntryLabeling niLowObserver successEntryState →
+        observableSlotsConfinedToCore successEntryState st' bootCoreId →
+        lowEquivalent_smp fineLockEntryLabeling niLowObserver successEntryResult.1.kernel
           successEntryState :=
-      fun st' hInv hOutInv hOk hProj hConfined =>
+      fun st' hOk hProj hConfined =>
         syscallEntryUnderLockSet_preserves_projectionOnCore_of_entry fineLockEntryLabeling
-          niLowObserver fineLockSet c1 SeLe4n.arm64DefaultLayout c1 32 successEntryState st'
-          hInv hOutInv hOk hProj hConfined
+          niLowObserver fineLockSet c1 SeLe4n.arm64DefaultLayout c1 32
+          ⟨successEntryState, SeLe4n.Kernel.Concurrency.LockState.unheld⟩ st' hOk hProj
+          hConfined
      true)
 
 /-- §7.7  SM8.D — the phase's claim inventory, and its evidence. -/
@@ -7720,10 +7743,10 @@ asReader={decide (c1 ∈ (readerContendedExecution.stateAt 3).readers)}"
 biba={bibaWritePermitted fineLockLabeling untrustedSubject lowEndpoint} \
 authority={authorityWritePermitted fineLockLabeling untrustedSubject lowEndpoint}"
   , s!"[smp-fine-lock] bracketed entry refused: {traceRefusedOutcome} \
-lockOnly={lockWritesOnlyCheck niState bracketedEntryResult.1}"
+lockOnly={lockWritesOnlyCheck niState bracketedEntryResult.1.kernel}"
   , s!"[smp-fine-lock] bracketed entry succeeded: {traceSuccessOutcome} \
 lowInvisible={allCores.all (fun c => lowEquivalentSliceOnCoreCheckWithRegs
-  fineLockEntryLabeling c lowLabel successEntryResult.1 successEntryState)}"
+  fineLockEntryLabeling c lowLabel successEntryResult.1.kernel successEntryState)}"
   , s!"[smp-fine-lock] declared footprints: \
 tcbSuspend={(SeLe4n.Kernel.Concurrency.lockSetForSyscall .tcbSuspend
       (.ofThreadTarget lowCurrent highCurrent)
@@ -7800,7 +7823,7 @@ none of the declared locks, which meant the refusal could have been the
 `lockSetHeld` guard firing rather than the resolution change. -/
 private def suspendAcquiredState : SystemState :=
   match suspendDeclaredFootprint with
-  | some S => lockSetAcquiredState S c1 suspendEntryState
+  | some S => SeLe4n.Kernel.Concurrency.acquireAll c1 S.lockAcquireSequence suspendEntryState
   | none => suspendEntryState
 
 /-- The state the growing phase ends in when **another core committed** during
@@ -8127,7 +8150,8 @@ private def runDeclaredFootprintChecks : IO Unit := do
      decide ((declaredLockSetForEntry fineLockEntryLabeling SeLe4n.arm64DefaultLayout c1 32
         successEntryState) = none) &&
      decide ((syscallEntryUnderDeclaredLockSet fineLockEntryLabeling c1
-        SeLe4n.arm64DefaultLayout c1 32 successEntryState).isNone))
+        SeLe4n.arm64DefaultLayout c1 32
+        ⟨successEntryState, SeLe4n.Kernel.Concurrency.LockState.unheld⟩).isNone))
   -- NEGATIVE: where the entry itself would refuse, nothing is bracketed at all.
   -- Core 3 runs no thread in the fixture, so the decode never happens.
   assertBool "NEGATIVE: no current thread on the core means no decode and no bracket"
@@ -8135,14 +8159,16 @@ private def runDeclaredFootprintChecks : IO Unit := do
      decide ((entryDecode fineLockEntryLabeling SeLe4n.arm64DefaultLayout c3 32
         successEntryState) = none) &&
      decide ((syscallEntryUnderDeclaredLockSet fineLockEntryLabeling c1
-        SeLe4n.arm64DefaultLayout c3 32 successEntryState).isNone))
+        SeLe4n.arm64DefaultLayout c3 32
+        ⟨successEntryState, SeLe4n.Kernel.Concurrency.LockState.unheld⟩).isNone))
   -- The growing phase grants only when the footprint is uncontended.  The
-  -- negative is the review finding: `withLockSet` runs its action either way, so
+  -- negative is the review finding: the bracket runs its action either way, so
   -- "the action sees every lock held" is a claim with a precondition, not a
-  -- property of the bracket.
+  -- property of the bracket.  WS-LS LS2.1: stated at the ghost table as the
+  -- bracket's guard — established from all-free, refuted under contention.
   assertBool "the acquire phase grants an uncontended footprint, and NOT a contended one"
-    (have _g := @lockSetAcquiredState_grants_when_free
-     have _n := @lockSetAcquiredState_does_not_grant_when_contended
+    (have _g := @SeLe4n.Kernel.Concurrency.BracketSpec.guard_of_unheld
+     have _n := @SeLe4n.Kernel.Concurrency.BracketSpec.not_guard_of_contended
      true)
   -- The CNode member of the footprint is the CALLER's CSpace root — the one
   -- capability resolution reads — not the victim's.  The fixture gives the two
@@ -8238,7 +8264,7 @@ private def runDeclaredFootprintChecks : IO Unit := do
      have _u := @syscallEntryUnderRevalidatedLockSet_refused_unwinds
      have _f := @syscallEntryUnderRevalidatedLockSet_not_refines_in_general
      have _c := @withLockSet_eq_continueFromAcquired
-     have _a := @syscallEntryUnderLockSet_eq_fromAcquired
+     have _a := @syscallEntryUnderLockSet_fst
      have _m := @syscallEntryUnderRevalidatedLockSetModel_refines
      true)
   -- The multi-level CSpace guard: the footprint read-locks the caller's ROOT

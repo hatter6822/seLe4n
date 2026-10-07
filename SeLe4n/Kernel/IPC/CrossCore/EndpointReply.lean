@@ -2867,12 +2867,14 @@ theorem endpointReplyOnCore_replay_rejected
 -- ============================================================================
 
 /-- WS-SM SM6.C (`endpointReply_atomic_under_lockSet`, plan §3.4 / Theorem
-2.1.10): under its `endpointReply` lock-set the cross-core transition is a single
-two-phase-locked atomic step — wrapping `endpointReplyOnCore` in `withLockSet`
-decomposes deterministically into the acquire fold, the transition, and the
-release fold.  No partial intermediate is observable to a lock-insensitive
-observer; this is the operational atomicity the per-core IPC invariant
-preservation (SM6.D) rests on. -/
+2.1.10; **WS-LS LS2.1**: over the pair): under its `endpointReply` lock-set the
+cross-core transition is a single two-phase-locked atomic step — wrapping
+`endpointReplyOnCore` in the ghost bracket decomposes deterministically into the
+transition on the kernel half and the bracket's lock trace on the lock half.
+`rfl` since LS2.1: the phases write the lock table and the action writes the
+kernel state, so no partial intermediate exists for any observer; this is the
+operational atomicity the per-core IPC invariant preservation (SM6.D) rests
+on. -/
 theorem endpointReplyOnCore_atomic_under_lockSet
     (replier target : SeLe4n.ThreadId) (msg : IpcMessage) (executingCore : CoreId)
     (cnRoot : SeLe4n.ObjId) (donatedSc? : Option SeLe4n.SchedContextId)
@@ -2890,24 +2892,16 @@ theorem endpointReplyOnCore_atomic_under_lockSet
     (answeredFrameBelow? : Option SeLe4n.ReplyId)
     -- **WS-HP HP10.6**: and at the origin-recipient arity.
     (originRecipient? : Option SeLe4n.ThreadId)
-    (s : SystemState) :
-    withLockSet (lockSet_endpointReply replier cnRoot target donatedSc? donatedOwner?
+    (s : LockedSystemState) :
+    withLockSetGhost (lockSet_endpointReply replier cnRoot target donatedSc? donatedOwner?
         replyId? belowHeadReply? outerCaller? donatedHead? answeredFrameAbove? answeredFrameBelow? originRecipient?)
         executingCore (endpointReplyOnCore replier target msg executingCore) s
-      = (unwindAll executingCore
-          (lockSet_endpointReply replier cnRoot target donatedSc? donatedOwner?
-            replyId? belowHeadReply? outerCaller? donatedHead?
-            answeredFrameAbove? answeredFrameBelow? originRecipient?).lockAcquireSequence.reverse
-          (endpointReplyOnCore replier target msg executingCore
-            (acquireAll executingCore
-              (lockSet_endpointReply replier cnRoot target donatedSc? donatedOwner?
-            replyId? belowHeadReply? outerCaller? donatedHead?
-            answeredFrameAbove? answeredFrameBelow? originRecipient?).lockAcquireSequence s)).1,
-         (endpointReplyOnCore replier target msg executingCore
-            (acquireAll executingCore
-              (lockSet_endpointReply replier cnRoot target donatedSc? donatedOwner?
-            replyId? belowHeadReply? outerCaller? donatedHead?
-            answeredFrameAbove? answeredFrameBelow? originRecipient?).lockAcquireSequence s)).2) :=
+      = (⟨(endpointReplyOnCore replier target msg executingCore s.kernel).1,
+          LockState.bracket executingCore
+            (lockSet_endpointReply replier cnRoot target donatedSc? donatedOwner?
+              replyId? belowHeadReply? outerCaller? donatedHead?
+              answeredFrameAbove? answeredFrameBelow? originRecipient?) s.locks⟩,
+         (endpointReplyOnCore replier target msg executingCore s.kernel).2) :=
   lockSet_atomic_under_2pl _ executingCore _ s
 
 -- ============================================================================
@@ -4632,7 +4626,7 @@ theorem receivePreReturnReplenishCores_eq_migration (st stClean : SystemState)
 
 /-- **WS-RR RR8.12 Cut C6e (the exactness frame)**: the pre-receive donation return
 writes no replenish queue outside `receivePreReturnReplenishCores` — the FOOTPRINT's
-own segment, and the block-path half of what `schedFootprintCoversWrites` asks of
+own segment, and the block-path half of what `footprintCoversWrites` asks of
 both receiving arms.
 
 Both branches are the step's own: with no loan the migration is the identity and the

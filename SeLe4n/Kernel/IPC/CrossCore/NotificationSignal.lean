@@ -863,43 +863,38 @@ theorem notificationSignalOnCore_perCore_consistent
 -- ============================================================================
 
 /-- WS-SM SM6.B.4 (`notificationWait_atomic_under_lockSet`, plan §3.4 / Theorem
-2.1.10): under its `notificationWait` lock-set the cross-core transition is a
-single two-phase-locked atomic step — wrapping `notificationWaitOnCore` in
-`withLockSet` decomposes deterministically into the acquire fold, the transition,
-and the release fold.  No partial intermediate is observable to a lock-insensitive
-observer; this is the operational atomicity the per-core IPC invariant
-preservation (SM6.D) rests on. -/
+2.1.10; **WS-LS LS2.1**: over the pair): under its `notificationWait` lock-set
+the cross-core transition is a single two-phase-locked atomic step — wrapping
+`notificationWaitOnCore` in the ghost bracket decomposes deterministically into
+the transition on the kernel half and the bracket's lock trace on the lock half.
+`rfl` since LS2.1: the phases write the lock table and the action writes the
+kernel state, so no partial intermediate exists for any observer; this is the
+operational atomicity the per-core IPC invariant preservation (SM6.D) rests
+on. -/
 theorem notificationWaitOnCore_atomic_under_lockSet
     (notificationId : SeLe4n.ObjId) (caller : SeLe4n.ThreadId) (executingCore : CoreId)
-    (cnRoot : SeLe4n.ObjId) (s : SystemState) :
-    withLockSet (lockSet_notificationWait caller cnRoot notificationId) executingCore
+    (cnRoot : SeLe4n.ObjId) (s : LockedSystemState) :
+    withLockSetGhost (lockSet_notificationWait caller cnRoot notificationId) executingCore
         (notificationWaitOnCore notificationId caller executingCore) s
-      = (unwindAll executingCore
-          (lockSet_notificationWait caller cnRoot notificationId).lockAcquireSequence.reverse
-          (notificationWaitOnCore notificationId caller executingCore
-            (acquireAll executingCore
-              (lockSet_notificationWait caller cnRoot notificationId).lockAcquireSequence s)).1,
-         (notificationWaitOnCore notificationId caller executingCore
-            (acquireAll executingCore
-              (lockSet_notificationWait caller cnRoot notificationId).lockAcquireSequence s)).2) :=
+      = (⟨(notificationWaitOnCore notificationId caller executingCore s.kernel).1,
+          LockState.bracket executingCore
+            (lockSet_notificationWait caller cnRoot notificationId) s.locks⟩,
+         (notificationWaitOnCore notificationId caller executingCore s.kernel).2) :=
   lockSet_atomic_under_2pl _ executingCore _ s
 
-/-- WS-SM SM6.B.4 (companion): the cross-core `notificationSignal` is likewise a
-single 2PL-atomic step under its `notificationSignal` lock-set. -/
+/-- WS-SM SM6.B.4 (companion; **WS-LS LS2.1**: over the pair): the cross-core
+`notificationSignal` is likewise a single 2PL-atomic step under its
+`notificationSignal` lock-set — `rfl`, for the same reason. -/
 theorem notificationSignalOnCore_atomic_under_lockSet
     (notificationId : SeLe4n.ObjId) (badge : SeLe4n.Badge) (executingCore : CoreId)
     (signaller : SeLe4n.ThreadId) (cnRoot : SeLe4n.ObjId)
-    (waiter? : Option SeLe4n.ThreadId) (s : SystemState) :
-    withLockSet (lockSet_notificationSignal signaller cnRoot notificationId waiter?) executingCore
+    (waiter? : Option SeLe4n.ThreadId) (s : LockedSystemState) :
+    withLockSetGhost (lockSet_notificationSignal signaller cnRoot notificationId waiter?) executingCore
         (notificationSignalOnCore notificationId badge executingCore) s
-      = (unwindAll executingCore
-          (lockSet_notificationSignal signaller cnRoot notificationId waiter?).lockAcquireSequence.reverse
-          (notificationSignalOnCore notificationId badge executingCore
-            (acquireAll executingCore
-              (lockSet_notificationSignal signaller cnRoot notificationId waiter?).lockAcquireSequence s)).1,
-         (notificationSignalOnCore notificationId badge executingCore
-            (acquireAll executingCore
-              (lockSet_notificationSignal signaller cnRoot notificationId waiter?).lockAcquireSequence s)).2) :=
+      = (⟨(notificationSignalOnCore notificationId badge executingCore s.kernel).1,
+          LockState.bracket executingCore
+            (lockSet_notificationSignal signaller cnRoot notificationId waiter?) s.locks⟩,
+         (notificationSignalOnCore notificationId badge executingCore s.kernel).2) :=
   lockSet_atomic_under_2pl _ executingCore _ s
 
 -- ============================================================================

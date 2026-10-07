@@ -1018,8 +1018,15 @@ def nonExecutedTransitionsPlain : List Name :=
   , `SeLe4n.Kernel.Architecture.vspaceMapPageCheckedWithFlushPlatform
   , `SeLe4n.Kernel.Architecture.writeRegisterState
   , `SeLe4n.Kernel.Architecture.writeRestartFrameToTcb
+  , `SeLe4n.Kernel.Concurrency.BracketSpec.run
+  , `SeLe4n.Kernel.Concurrency.BracketSpec.runGhost
+  -- WS-LS LS2.1: the bracket record's step is a field the seams run through
+  -- `run`/`runGhost` (LS2.2 switches them); the pair's kernel half is a
+  -- projection, not a transition.
+  , `SeLe4n.Kernel.Concurrency.BracketSpec.step
   , `SeLe4n.Kernel.Concurrency.KernelTransitionInstance.action
   , `SeLe4n.Kernel.Concurrency.KernelTransitionInstance.ofWithLockSet
+  , `SeLe4n.Kernel.Concurrency.LockedSystemState.kernel
   -- WS-LS LS1.2: the one word update the three per-key primitives are each
   -- proved equal to (`acquireLock_eq_applyLockOp` and siblings), so the
   -- never-enqueues frames are proved once.  Nothing runs it: the primitives
@@ -1037,6 +1044,7 @@ def nonExecutedTransitionsPlain : List Name :=
   , `SeLe4n.Kernel.Concurrency.setObjStoreLockAction
   , `SeLe4n.Kernel.Concurrency.setSchedulerAction
   , `SeLe4n.Kernel.Concurrency.withDynamicChainExtension
+  , `SeLe4n.Kernel.Concurrency.withLockSetGhost
   , `SeLe4n.Kernel.Internal.lifecycleRetypeObject
   , `SeLe4n.Kernel.Lifecycle.Suspend.cancelBoundDonation
   , `SeLe4n.Kernel.Lifecycle.Suspend.cancelDonatedDonation
@@ -1120,7 +1128,6 @@ def nonExecutedTransitionsPlain : List Name :=
   , `SeLe4n.Kernel.lifecycleRetypeWithCleanupShootdownPerCore
   , `SeLe4n.Kernel.lifecycleRetypeWithCleanupShootdownPerCoreIcache
   , `SeLe4n.Kernel.lifecycleRevokeDeleteRetype
-  , `SeLe4n.Kernel.lockSetAcquiredState
   , `SeLe4n.Kernel.notificationPurgeBody
   , `SeLe4n.Kernel.notificationSignal
   , `SeLe4n.Kernel.notificationSignalBound

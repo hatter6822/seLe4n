@@ -1458,9 +1458,12 @@ theorem endpointReceiveDualWithCapsOnCore_preserves_ipcInvariantFull_perCore
 -- `runUnderDeclaredLockSet_committed_eq_withLockSet`.)
 -- ============================================================================
 
-/-- **WS-RR RR7.4**: under its declared footprint the cross-core reply is
-observationally atomic — the whole 2PL bracket is invisible to any thread's IPC
-state, the field the reply writes on the answered caller. -/
+/-- **WS-RR RR7.4** (**WS-LS LS2.1**: over the pair, hypothesis-free): under its
+declared footprint the cross-core reply is observationally atomic — the whole
+2PL bracket is invisible to any thread's IPC state, the field the reply writes
+on the answered caller.  The `invExt` hypothesis and the acquire-fold conjunct
+are dropped because the growing phase no longer touches the kernel state — a
+strengthening (plan O6). -/
 theorem endpointReplyOnCore_observer_atomic
     (replier target : SeLe4n.ThreadId) (msg : IpcMessage) (executingCore : CoreId)
     (cnRoot : SeLe4n.ObjId) (donatedSc? : Option SeLe4n.SchedContextId)
@@ -1483,28 +1486,15 @@ theorem endpointReplyOnCore_observer_atomic
     (answeredFrameBelow? : Option SeLe4n.ReplyId)
     -- **WS-HP HP10.6**: and at the origin-recipient arity.
     (originRecipient? : Option SeLe4n.ThreadId)
-    (s : SystemState) (hInv : s.objects.invExt) :
+    (s : LockedSystemState) :
     threadIpcStateObserver observed
-        (acquireAll executingCore
-          (lockSet_endpointReply replier cnRoot target donatedSc?
-            donatedOwner? replyId belowHeadReply? outerCaller? donatedHead?
-            answeredFrameAbove? answeredFrameBelow? originRecipient?).lockAcquireSequence s)
-      = threadIpcStateObserver observed s
-    ∧ threadIpcStateObserver observed
-        (withLockSet
+        (withLockSetGhost
           (lockSet_endpointReply replier cnRoot target donatedSc? donatedOwner? replyId
             belowHeadReply? outerCaller? donatedHead? answeredFrameAbove? answeredFrameBelow? originRecipient?)
-          executingCore (endpointReplyOnCore replier target msg executingCore) s).1
+          executingCore (endpointReplyOnCore replier target msg executingCore) s).1.kernel
       = threadIpcStateObserver observed
-          (endpointReplyOnCore replier target msg executingCore
-            (acquireAll executingCore
-              (lockSet_endpointReply replier cnRoot target donatedSc?
-                donatedOwner? replyId belowHeadReply? outerCaller? donatedHead?
-                answeredFrameAbove? answeredFrameBelow? originRecipient?).lockAcquireSequence s)).1 :=
-  lockSet_observer_atomic_of_objectStoreObserver _ executingCore _ s _
-    (threadIpcStateObserver_insensitiveOn executingCore observed) hInv
-    (fun s' h => endpointReplyOnCore_preserves_objects_invExt replier target msg
-      executingCore s' h)
+          (endpointReplyOnCore replier target msg executingCore s.kernel).1 :=
+  lockSet_observer_atomic _ executingCore _ s _
 
 -- ============================================================================
 -- §11  WS-RR RR8.16 (`v0.35.199`) — the reply leg's two cross-subsystem bundles

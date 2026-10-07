@@ -598,7 +598,13 @@ and does not mean" caveat used to disclaim. -/
 #check @SeLe4n.Kernel.Concurrency.lockQueued
 #check @SeLe4n.Kernel.Concurrency.unwindAll_leaves_no_queued_request
 #check @SeLe4n.Kernel.Concurrency.rwLock_release_then_cancel_not_queued
-#check @SeLe4n.Kernel.Concurrency.UnwindInsensitive
+-- **WS-LS LS2.1**: the shrinking phase is applied to the ghost table alone, so
+-- what used to need an unwind-insensitive observer is the lock half of the
+-- bracket's result by type, and the table round-trips from all-free.
+#check @SeLe4n.Kernel.Concurrency.LockState.unwindAll
+#check @SeLe4n.Kernel.Concurrency.LockState.bracket
+#check @SeLe4n.Kernel.Concurrency.withLockSetGhost_fst_locks
+#check @SeLe4n.Kernel.Concurrency.LockState.bracket_unheld
 
 /-! ## WS-LC LC5 — the timed execution.
 
@@ -853,8 +859,8 @@ def runSmpSurfaceAnchorChecks : IO Unit := do
   -- The SM3.E inventory size witness reached and evaluates (the 8 major-theorem
   -- `#check` anchors above are elaboration-time gates; this exercises the
   -- runtime path of the SM3.E inventory aggregator).
-  assertBool "SM3.E inventory has 111 entries"
-    (decide (SeLe4n.Kernel.Concurrency.serializabilityTheorems.length = 111))
+  assertBool "SM3.E inventory has 98 entries"
+    (decide (SeLe4n.Kernel.Concurrency.serializabilityTheorems.length = 98))
 
   IO.println "--- §8 WS-SM SM8 — the information-flow headline surface ---"
   -- The plan (§5 SM8.E.1) names this file as the SM8 anchor home, and SM8.E.1

@@ -11,6 +11,7 @@ import SeLe4n.Kernel.Concurrency.LockSet
 import SeLe4n.Kernel.Concurrency.Locks.WithLockSet
 import SeLe4n.Kernel.Concurrency.Locks.LockSetHeld
 import SeLe4n.Kernel.Concurrency.Locks.LockSet2PL
+import SeLe4n.Kernel.Concurrency.Locks.BracketSpec
 import SeLe4n.Kernel.Concurrency.Locks.DynamicChainExtension
 import SeLe4n.Kernel.Concurrency.Locks.WithLockSetInventory
 
@@ -44,6 +45,13 @@ The suite exercises four families of checks:
   graphs, and the SM3.C inventory aggregator's count witnesses
   run at `lake exe with_lock_set_suite` and assert via
   `assertBool`.
+
+* **The ghost bracket** (**WS-LS LS2.1**).  `BracketSpec.lean`'s pair
+  `LockedSystemState`, the ghost bracket `withLockSetGhost` and the
+  `BracketSpec` obligations O1 / O3 / O4 are anchored, instantiated by
+  `example`, and executed on a real transition footprint
+  (`runGhostBracketChecks`), including the load-bearing negative: a
+  declared member another core holds for writing is not granted.
 -/
 
 namespace SeLe4n.Testing.WithLockSet
@@ -110,7 +118,6 @@ open SeLe4n.Kernel.Concurrency
 
 #check @withLockSet_three_phase_decomposition
 #check @lockSet_atomic_under_2pl
-#check @lockSet_invariant_preserved
 #check @withLockSet_invariant_preserved
 #check @withLockSet_satisfies_strict_2PL
 #check @withLockSet_computation
@@ -198,14 +205,47 @@ open SeLe4n.Kernel.Concurrency
 #check @updateObjectLockAt_lookup_self
 #check @LockId.lookup_eq_of_objects_getElem?_eq
 
-/-! ## SM3.C.7 observational atomicity (lock-insensitive observer) -/
+/-! ## SM3.C.7 observational atomicity (**WS-LS LS2.1**: hypothesis-free over the pair) -/
 
-#check @AcquireInsensitive
-#check @UnwindInsensitive
-#check @acquireAll_lockInsensitive
-#check @releaseAll_lockInsensitive
-#check @withLockSet_unwind_invisible
 #check @lockSet_observer_atomic
+
+/-! ## WS-LS LS2.1 — the pair, the ghost bracket and the bracket specification -/
+
+#check @LockedSystemState
+#check @LockedSystemState.kernel
+#check @LockedSystemState.locks
+#check @SeLe4n.Kernel.footprintCoversWrites
+#check @SeLe4n.Kernel.footprintCoversWrites_refl
+#check @SeLe4n.Kernel.footprintCoversWrites_clearReschedulePendingOnCore
+#check @SeLe4n.Kernel.footprintCoversWrites_mono
+#check @LockState.bracket
+#check @LockState.bracketDeclared
+#check @LockState.bracket_empty
+#check @LockState.bracket_unheld
+#check @LockState.bracketDeclared_unheld
+#check @LockState.acquireAll_unheld_heldAll_pairs
+#check @withLockSetGhost
+#check @withLockSetGhost_eq_decomposition
+#check @withLockSetGhost_fst_kernel
+#check @withLockSetGhost_fst_locks
+#check @withLockSetGhost_snd
+#check @withLockSetGhost_empty
+#check @withLockSetGhost_locks_of_unheld
+#check @BracketSpec
+#check @BracketSpec.run
+#check @BracketSpec.runGhost
+#check @BracketSpec.runGhost_kernel
+#check @BracketSpec.runGhost_fst
+#check @BracketSpec.runGhost_locks
+#check @BracketSpec.runGhost_undeclared
+#check @BracketSpec.runGhost_declared
+#check @BracketSpec.runGhost_eq_withLockSetGhost
+#check @BracketSpec.runGhost_locks_of_unheld
+#check @BracketSpec.run_covers
+#check @BracketSpec.guard
+#check @BracketSpec.guard_of_unheld
+#check @BracketSpec.not_guard_of_contended
+#check @RwLockState.acquire_not_grants_of_writerHeld
 
 /-! ## SM3.C.11.c/d dynamic chain — conjunct-1, capstone, deadlock-freedom -/
 
@@ -231,6 +271,7 @@ open SeLe4n.Kernel.Concurrency
 #check @withLockSetTheorems_held_count
 #check @withLockSetTheorems_ordering_count
 #check @withLockSetTheorems_atomicity_count
+#check @withLockSetTheorems_ghostBracket_count
 #check @withLockSetTheorems_dynamicChain_count
 #check @withLockSetTheorems_partition_sum
 #check @withLockSetTheorems_identifiers_nodup
@@ -320,6 +361,65 @@ example {α : Type} (S : LockSet) (core : CoreId)
       let (postAction, result) := action acquired
       let unwound := unwindAll core ordered.reverse postAction
       (unwound, result) := withLockSet_unfold S core action s
+
+/-! ## §3.3 WS-LS LS2.1 — the ghost bracket and the bracket specification
+
+Compile-time instantiations of `BracketSpec.lean`'s obligations and of the
+SM3.C theorems restated over the pair: each is applied at a concrete
+`LockedSystemState` from the all-free table, so the statement is inhabited
+with no hypothesis left to assume. -/
+
+-- O1: the executed path is the kernel projection of the proven one.
+example {α : Type} (b : BracketSpec α) (c : CoreId) (s : LockedSystemState) :
+    (b.runGhost c s).2.kernel = (b.run s.kernel).2 :=
+  BracketSpec.runGhost_kernel b c s
+
+-- O3: from the all-free table the proven bracket returns to it.
+example {α : Type} (b : BracketSpec α) (c : CoreId) (st : SystemState) :
+    (b.runGhost c ⟨st, LockState.unheld⟩).2.locks = LockState.unheld :=
+  BracketSpec.runGhost_locks_of_unheld b c ⟨st, LockState.unheld⟩ rfl
+
+-- O4 under the entry lock: the guard holds from the all-free table.
+example {α : Type} (b : BracketSpec α) (c : CoreId) (st : SystemState) :
+    b.guard c ⟨st, LockState.unheld⟩ :=
+  BracketSpec.guard_of_unheld b c ⟨st, LockState.unheld⟩ rfl
+
+-- O3 at the ghost bracket.
+example {α : Type} (S : LockSet) (core : CoreId)
+    (action : SystemState → SystemState × α) (st : SystemState) :
+    (withLockSetGhost S core action ⟨st, LockState.unheld⟩).1.locks = LockState.unheld :=
+  withLockSetGhost_locks_of_unheld S core action ⟨st, LockState.unheld⟩ rfl
+
+-- The lock trace of one bracket round-trips the all-free table.
+example (c : CoreId) (S : LockSet) : LockState.bracket c S LockState.unheld = LockState.unheld :=
+  LockState.bracket_unheld c S
+
+-- The growing phase from the all-free table holds every declared member.
+example (c : CoreId) (S : LockSet) :
+    (LockState.acquireAll c S.lockAcquireSequence LockState.unheld).heldAll c S.pairs :=
+  LockState.acquireAll_unheld_heldAll_pairs c S
+
+-- SM3.C.7 over the pair, hypothesis-free: any observer of the kernel state
+-- sees the action's image and nothing of the bracket.
+example {α β : Type} (S : LockSet) (core : CoreId)
+    (action : SystemState → SystemState × α) (st : SystemState) (π : SystemState → β) :
+    π (withLockSetGhost S core action ⟨st, LockState.unheld⟩).1.kernel = π (action st).1 :=
+  lockSet_observer_atomic S core action ⟨st, LockState.unheld⟩ π
+
+-- SM3.C.8 over the pair: an invariant the action preserves survives the bracket.
+example {α : Type} (S : LockSet) (core : CoreId)
+    (action : SystemState → SystemState × α) (st : SystemState)
+    (post : SystemState → Prop) (hPre : post st)
+    (hAction : ∀ s', post s' → post (action s').1) :
+    post (withLockSetGhost S core action ⟨st, LockState.unheld⟩).1.kernel :=
+  withLockSet_invariant_preserved S core action ⟨st, LockState.unheld⟩ post hPre hAction
+
+-- SM3.C.7 three-phase decomposition and computation witness over the pair.
+example {α : Type} (S : LockSet) (core : CoreId)
+    (action : SystemState → SystemState × α) (s : LockedSystemState) :
+    withLockSetGhost S core action s =
+      (⟨(action s.kernel).1, LockState.bracket core S s.locks⟩, (action s.kernel).2) :=
+  withLockSet_computation S core action s
 
 -- ============================================================================
 -- §4 — Runtime assertions
@@ -500,11 +600,13 @@ private def runDynamicChainChecks : IO Unit := do
 
 private def runInventoryChecks : IO Unit := do
   IO.println "--- §8 SM3.C — Inventory aggregator ---"
-  -- The inventory has 98 entries (Group-B: +5 held, +4 atomicity, +6
+  -- The inventory has 111 entries (Group-B: +5 held, +4 atomicity, +6
   -- dynamicChain; WS-LC LC4.7: +10 combinator, +2 atomicity for the
-  -- withdrawal surface and the shrinking phase).
+  -- withdrawal surface and the shrinking phase; WS-LS LS2.1: −7 atomicity for
+  -- the retired lock-insensitivity machinery, +20 ghostBracket for the pair,
+  -- the ghost bracket and the bracket specification).
   assertBool "the withLockSet inventory has its full entry count"
-    (decide (withLockSetTheorems.length = 98))
+    (decide (withLockSetTheorems.length = 111))
   -- Per-category counts.
   assertBool "withLockSetTheorems combinator category count"
     (decide ((withLockSetTheorems.filter
@@ -517,7 +619,10 @@ private def runInventoryChecks : IO Unit := do
       (fun t => t.category == .ordering)).length = 3))
   assertBool "withLockSetTheorems atomicity category count"
     (decide ((withLockSetTheorems.filter
-      (fun t => t.category == .atomicity)).length = 15))
+      (fun t => t.category == .atomicity)).length = 8))
+  assertBool "withLockSetTheorems ghostBracket category count"
+    (decide ((withLockSetTheorems.filter
+      (fun t => t.category == .ghostBracket)).length = 20))
   assertBool "withLockSetTheorems dynamicChain category count"
     (decide ((withLockSetTheorems.filter
       (fun t => t.category == .dynamicChain)).length = 23))
@@ -528,6 +633,7 @@ private def runInventoryChecks : IO Unit := do
       (withLockSetTheorems.filter (fun t => t.category == .held)).length +
       (withLockSetTheorems.filter (fun t => t.category == .ordering)).length +
       (withLockSetTheorems.filter (fun t => t.category == .atomicity)).length +
+      (withLockSetTheorems.filter (fun t => t.category == .ghostBracket)).length +
       (withLockSetTheorems.filter (fun t => t.category == .dynamicChain)).length =
       withLockSetTheorems.length))
 
@@ -866,6 +972,78 @@ private def runGhostLockStateChecks : IO Unit := do
     (decide (LockKey.ofLockId ⟨.objStore, ⟨3⟩⟩ = LockKey.ofLockId ⟨.objStore, ⟨9⟩⟩ ∧
       LockKey.ofLockId ⟨.tcb, ⟨3⟩⟩ ≠ LockKey.ofLockId ⟨.tcb, ⟨9⟩⟩))
 
+/-- **WS-LS LS2.1**: a bracket specification over the `notificationWait`
+footprint whose step clears the executing core's reschedule-pending flag —
+the one write `footprintCoversWrites` never reads, so the coverage obligation
+is discharged by the library lemma rather than assumed. -/
+private def rescheduleFlagSpec : BracketSpec Nat :=
+  { declared := fun _ =>
+      some (lockSet_notificationWait ⟨5⟩ (SeLe4n.ObjId.ofNat 10) (SeLe4n.ObjId.ofNat 20))
+    step := fun st => (7, st.clearReschedulePendingOnCore bootCoreId)
+    covers := fun st S _ =>
+      SeLe4n.Kernel.footprintCoversWrites_clearReschedulePendingOnCore S st bootCoreId }
+
+/-- **WS-LS LS2.1**: the ghost bracket executes — the kernel half is the
+action's, the value is the action's, the table is all-free after the bracket
+while the growing phase alone held every declared member — and the
+load-bearing negative: a member another core holds for writing is not
+granted by the growing phase. -/
+private def runGhostBracketChecks : IO Unit := do
+  IO.println "--- WS-LS LS2.1 — ghost bracket: withLockSetGhost / BracketSpec ---"
+  let c0 : CoreId := bootCoreId
+  let c1 : CoreId := ⟨1, by decide⟩
+  let nwSet := lockSet_notificationWait ⟨5⟩ (SeLe4n.ObjId.ofNat 10) (SeLe4n.ObjId.ofNat 20)
+  assertBool "ghost bracket: the footprint declares three members"
+    (decide (nwSet.pairs.length = 3))
+  -- The action inserts TCB 5: a kernel write an observer can see.
+  let observe : SystemState → Option KernelObjectType :=
+    fun st => (st.objects.get? (ThreadId.ofNat 5).toObjId).map KernelObject.objectType
+  let action : SystemState → SystemState × Nat := fun st =>
+    ({ st with objects := st.objects.insert (ThreadId.ofNat 5).toObjId (.tcb (mkTcbReady 5)) },
+     42)
+  let s₀ : LockedSystemState := ⟨default, LockState.unheld⟩
+  let result := withLockSetGhost nwSet c0 action s₀
+  assertBool "ghost bracket: the kernel half is the action's state (observer)"
+    (decide (observe result.1.kernel = observe (action s₀.kernel).1))
+  assertBool "ghost bracket: the action's write is visible on the kernel half"
+    (decide (observe result.1.kernel = some KernelObjectType.tcb))
+  assertBool "ghost bracket: the kernel half carries no lock-word write (objStoreLock)"
+    (decide (result.1.kernel.objStoreLock = (action s₀.kernel).1.objStoreLock))
+  assertBool "ghost bracket: the value is the action's"
+    (decide (result.2 = 42))
+  -- O3 at runtime: nothing is held after the bracket, and every key is free.
+  assertBool "ghost bracket: ¬ heldAll after the bracket"
+    (decide (¬ result.1.locks.heldAll c0 nwSet.pairs))
+  assertBool "ghost bracket: every declared key is unheld after the bracket"
+    (nwSet.pairs.all fun p => result.1.locks p.fst == RwLockState.unheld)
+  -- O4 at runtime: the growing phase alone held every member at its mode.
+  assertBool "ghost bracket: acquireAll from unheld holds every declared member"
+    (decide ((LockState.acquireAll c0 nwSet.lockAcquireSequence LockState.unheld).heldAll
+      c0 nwSet.pairs))
+  -- The spec's proven form agrees with its executed form and returns the table.
+  let ghost := rescheduleFlagSpec.runGhost c0 s₀
+  assertBool "BracketSpec.runGhost: value is the step's"
+    (decide (ghost.1 = 7 ∧ ghost.1 = (rescheduleFlagSpec.run s₀.kernel).1))
+  assertBool "BracketSpec.runGhost: kernel half is the executed path's (objStoreLock)"
+    (decide (ghost.2.kernel.objStoreLock = (rescheduleFlagSpec.run s₀.kernel).2.objStoreLock))
+  assertBool "BracketSpec.runGhost: table returns to unheld at every declared key"
+    (nwSet.pairs.all fun p => ghost.2.locks p.fst == RwLockState.unheld)
+  -- The negative: core 1 holds the caller's TCB lock for writing, so core 0's
+  -- growing phase enqueues rather than grants — the guard is false.
+  let kT : LockKey := .object ⟨.tcb, (ThreadId.ofNat 5).toObjId⟩
+  assertBool "ghost bracket negative: the contended key is a declared write member"
+    (decide ((kT, AccessMode.write) ∈ nwSet.pairs))
+  let contendedTable : LockState := fun k =>
+    if k = kT then { writerHeld := some c1, readers := [], waiters := [] }
+    else RwLockState.unheld
+  let grown := LockState.acquireAll c0 nwSet.lockAcquireSequence contendedTable
+  assertBool "ghost bracket negative: ¬ heldAll when another core holds a member"
+    (decide (¬ grown.heldAll c0 nwSet.pairs))
+  assertBool "ghost bracket negative: the contender is queued at the held key, not granted"
+    (decide (grown.queued c0 kT ∧ ¬ grown.held c0 kT .write))
+  assertBool "ghost bracket negative: the other members were still granted"
+    (nwSet.pairs.all fun p => p.fst == kT || decide (grown.held c0 p.fst p.snd))
+
 def runWithLockSetChecks : IO Unit := do
   IO.println "WS-SM SM3.C — withLockSet 2PL discipline regression suite"
   IO.println "========================================================="
@@ -885,6 +1063,7 @@ def runWithLockSetChecks : IO Unit := do
   runMultiStepChainChecks
   runInventoryChecks
   runGhostLockStateChecks
+  runGhostBracketChecks
   IO.println "========================================================="
   IO.println "All SM3.C withLockSet checks PASS."
 

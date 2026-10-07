@@ -1,3 +1,78 @@
+## v0.36.65 — WS-LS LS2.1: the bracket as a specification over the ghost lock state
+
+Nothing the compiled kernel runs changes; `main_trace_smoke.expected` is
+unchanged.  The bracket is now a `BracketSpec` over the pair
+`LockedSystemState`, and the 2PL, observer, serializability and fine-lock
+non-interference results are stated over it.
+
+- **`Locks/BracketSpec.lean`** (new): `LockedSystemState` (the kernel state
+  beside the ghost `LockState`); `footprintCoversWrites`, moved from
+  `SchedLockBracket.lean` where it was `schedFootprintCoversWrites`, with its
+  `_refl` / `_clearReschedulePendingOnCore` / `_mono` (the `_of_cores` bridge
+  stays with the scheduler ladder); `LockState.bracket` / `bracketDeclared`,
+  the one lock trace a bracket applies, with `bracket_unheld` and
+  `acquireAll_unheld_heldAll_pairs` (obligation O3 at the footprint, no
+  object-presence hypothesis); `withLockSetGhost`, the ghost form of
+  `withLockSet` (the action runs on the kernel half, the trace goes to the
+  table; LS3.1 renames it `withLockSet`); `BracketSpec {declared, step,
+  covers}` with `run` (the step and nothing else), `runGhost` (the step beside
+  the table), `runGhost_kernel` — **O1, `rfl`**: the executed path is the
+  kernel projection of the proven one — `runGhost_locks_of_unheld` (O3),
+  `runGhost_eq_withLockSetGhost`, and `guard` (**O4**) with
+  `guard_of_unheld` (under the entry lock every bracket runs its step held)
+  and `not_guard_of_contended` (a write-held member refuses the guard; the
+  ghost form of SM8.D.5's load-bearing negative), on the per-key
+  `RwLockState.acquire_not_grants_of_writerHeld`.
+- **Restated over the pair, names kept, hypotheses dropped (O6
+  strengthenings)**: `withLockSet_three_phase_decomposition`,
+  `lockSet_atomic_under_2pl`, `withLockSet_computation` (`rfl`);
+  `lockSet_observer_atomic` for *every* observer with no hypothesis (the
+  `_on` and `_of_objectStoreObserver` forms collapse into it);
+  `withLockSet_invariant_preserved`, `singleCore_invariant_preservation`,
+  `singleCore_proof_preservation` without the three per-primitive
+  insensitivity premises; `withLockSet_observation_eq_action` and
+  `applySequentialWithLockSet_observation` without the observer and
+  `π`-congruence premises, and the bridge in its strongest form,
+  `applySequentialWithLockSet_kernel` (the bracketed execution's kernel half
+  *is* `applySequential`); the eight `*_atomic_under_lockSet` and seven
+  `*_observer_atomic` IPC theorems (the `invExt` guard and the acquire-fold
+  conjunct dropped); `endpointCallOnCore_withLockSet_preserves_objects_invExt`;
+  FineLockFlow's `syscallEntryUnderLockSet`, `syscallEntryUnderDeclaredLockSet`
+  and their non-interference family without `invExt` on either side, with
+  `syscallEntryUnderLockSet_failClosed` and
+  `suspendUnderDeclaredLockSet_failClosed_invisible` **sharpened** from
+  `lockWritesOnly` back to kernel-half equality (a refused entry leaves the
+  kernel state identical; only the ghost table moved);
+  `syscallEntryUnderLockSet_eq_fromAcquired` is `syscallEntryUnderLockSet_fst`
+  over the pair, and `syscallEntryUnderRevalidatedLockSetModel_refines` now
+  names the word-level bracket it refines (the model continues from the
+  acquired words; its relation to the ghost bracket is LS3.1's).
+- **Deleted, with nothing left to prove**: `AcquireInsensitive` /
+  `UnwindInsensitive` and their `invExt`-guarded `On` forms, the per-fold
+  invisibility lemmas, `withLockSet_unwind_invisible`,
+  `lockPrimitives_insensitiveOn_of_objectStoreObserver`, the two observer
+  insensitivity facts, `lockSet_observer_atomic_on` /
+  `_of_objectStoreObserver`; `lockSet_invariant_preserved` and
+  `acquireAll_preserves_objStoreLock_wf`; Serializability §8b/§8c/§9b
+  (`withLockSet_preserves_objStoreLock_wf`, `withLockSet_preserves_objectType_at`,
+  `withLockSet_observation_scheduler_witness` and their per-primitive feeders),
+  `ActionPiCongr`, `applySequential_piCongr`; FineLockFlow's
+  `lockSetAcquiredState` and its two grant lemmas; Cancellation's six
+  insensitivity lemmas; WithLockSet.lean's three orphaned
+  `updateObjectLockAt_get*` field-stability lemmas.  Inventories: SM3.C
+  98 → 111 (−7 atomicity, +20 `ghostBracket`), SM3.E 111 → 98; SM3
+  propositions 293 → 288, so `smp_inventoried_theorem_count` 925 → 920 over
+  the same 1145 entries (`docs/smp_theorem_manifest.json` regenerated).
+- **Kept until the seams switch**: the word-level `withLockSet` (the suspend
+  seam at `SyscallDispatchEntry.lean` executes it until LS2.2) and the
+  word-level growing-phase facts (`acquireAll_establishes_lockSetHeld` and
+  its feeders, LockSet2PL §5b), retired with the words at LS3.1.
+- Reachability census: `withLockSetGhost`, `BracketSpec.run`,
+  `BracketSpec.runGhost`, the `BracketSpec.step` field and the
+  `LockedSystemState.kernel` projection registered as non-executed;
+  `lockSetAcquiredState` removed.  Tier 3 anchors re-pointed; the store-reader baseline follows the
+  predicate to its new file.  Plan row LS2.1 done.
+
 ## v0.36.64 — WS-LS LS1.2: one lock key, one footprint type, one bracket domain
 
 Nothing the compiled kernel runs changes; `main_trace_smoke.expected` is

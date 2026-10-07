@@ -222,7 +222,7 @@ def smpPhaseTheoremManifest : List PhaseTheoremEntry :=
                       "withLockSetTheorems", "deadlockTheorems",
                       "serializabilityTheorems"],
       entryCount := 439,
-      theoremCount := 293 },
+      theoremCount := 288 },
     { phase := .perCoreState,
       label := "SM4 — per-core state",
       kind := .assumptionLedger,
@@ -345,7 +345,7 @@ theorem smpPhase_verifiedLockPrimitives_entryCount_eq_inventories :
   decide
 
 /-- SM3's registered **entry** count is the sum of its five SM3.A–E
-    inventories' lengths.  Of those 439 entries, 293 are propositions. -/
+    inventories' lengths.  Of those 439 entries, 288 are propositions. -/
 theorem smpPhase_perObjectLocks_entryCount_eq_inventories :
     smpPhaseEntryCount .perObjectLocks
       = Model.perObjectLockTheorems.length + lockSetTheorems.length
@@ -412,10 +412,10 @@ here is written twice. -/
     summands are each pinned to a real inventory length above.  Changing any
     inventory changes this number, and the Tier-0 gate fails until the
     manifest and `docs/smp_theorem_manifest.json` agree with the tree. -/
-theorem smp_inventoried_theorem_count : smpInventoriedTheoremCount = 925 := by
+theorem smp_inventoried_theorem_count : smpInventoriedTheoremCount = 920 := by
   decide
 
-/-- Entries in the same inventories: 1145, of which 220 are `def`s rather than
+/-- Entries in the same inventories: 1145, of which 225 are `def`s rather than
     proofs.  Kept beside the theorem count so the gap is a number a reader can
     see, not a caveat they have to be told. -/
 theorem smp_inventoried_entry_count : smpInventoriedEntryCount = 1145 := by
@@ -425,7 +425,7 @@ theorem smp_inventoried_entry_count : smpInventoriedEntryCount = 1145 := by
     1111 as a theorem count, which this module did until `v0.34.27` — is a
     visible edit rather than a silent one. -/
 theorem smp_inventoried_theorem_count_lt_entry_count :
-    smpInventoriedTheoremCount + 220 = smpInventoriedEntryCount := by
+    smpInventoriedTheoremCount + 225 = smpInventoriedEntryCount := by
   decide
 
 /-- The total is the sum of the two phases that carry inventories today.

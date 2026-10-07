@@ -305,8 +305,7 @@ instance lockSetHeld_decidable (c : CoreId) (S : LockSet)
 /-- WS-SM SM3.C.4: monotone form — if `lockSetHeld` for the
 extended set holds, then the same holds for the base set.
 
-Used by SM3.C.8's `lockSet_invariant_preserved` aggregator: the
-SMP-migrated theorem's precondition `lockSetHeld c (lockSet τ
+The SMP-migrated theorem's precondition `lockSetHeld c (lockSet τ
 args) s` implies `lockSetHeld c S s` for any sub-set `S` of the
 declared transition footprint. -/
 theorem lockSetHeld_subset (c : CoreId) (S₁ S₂ : LockSet)

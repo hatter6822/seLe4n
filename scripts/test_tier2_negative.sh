@@ -199,7 +199,7 @@ run_check_with_timeout "TRACE" lake exe lock_set_suite
 # for Corollary 2.1.11), the SM3.C.5/C.6 ordering theorems
 # (`lockSet_acquired_in_order`, `lockSet_released_in_reverse`),
 # the SM3.C.7/C.8 atomicity/invariant-preservation theorems
-# (`lockSet_atomic_under_2pl`, `lockSet_invariant_preserved`),
+# (`lockSet_atomic_under_2pl`, `withLockSet_invariant_preserved`),
 # the SM3.C.11 dynamic PIP-chain-walk machinery
 # (`withDynamicChainExtension`, `walkAndAcquire`, `dynamicChainHeld`,
 # `walkAndAcquire_path_ascending_in_ObjId_if_terminated`), and the

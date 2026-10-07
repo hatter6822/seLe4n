@@ -49,11 +49,11 @@ enforcement, and scheduling.
 
 | Attribute | Value |
 |-----------|-------|
-| **Package version** | `0.36.64` (`lakefile.toml`) |
+| **Package version** | `0.36.65` (`lakefile.toml`) |
 | **Lean toolchain** | `v4.28.0` (`lean-toolchain`) |
-| **Production LoC** | 444,621 across 376 Lean files |
-| **Test LoC** | 89,670 across 72 Lean test suites |
-| **Proved declarations** | 14,989 theorem/lemma declarations (zero sorry/axiom) |
+| **Production LoC** | 443,741 across 377 Lean files |
+| **Test LoC** | 89,889 across 72 Lean test suites |
+| **Proved declarations** | 14,963 theorem/lemma declarations (zero sorry/axiom) |
 | **Target hardware** | Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A) |
 | **Latest audit** | pre-SM10 completeness audit at `v0.34.3` — [`UNFINISHED_SMP_WORK.md`](../planning/UNFINISHED_SMP_WORK.md), 171 confirmed findings. Prior baselines in [`docs/audits/`](../audits) |
 | **Active workstream** | **WS-BP (the bare-metal boot path)** — SM10.1's content, unblocked at v0.35.203; **BP0 (cross-implementation agreement) landed at v0.36.2** (§6.2.2), and **BP1 (aarch64 Lean object code) at v0.36.2** (§6.2.3), **BP2.1 (the Lean heap)** at v0.36.2 (§6.2.4), **BP2.2 (the kernel's Lean runtime, in Rust)** at v0.36.2 (§6.2.5), **BP2.3/BP2.4 (the library initializer, failing closed)** at v0.36.2 (§6.2.6), **BP2.6 (the boot map built from constants)** at v0.36.2 (§6.2.7), and **BP3 (the RPi5 deployment, which boots, and the proof-layer bundle of the state it installs)** at v0.36.2 (§6.2.8, §8.14.2), and **BP4.1/BP4.2 (the `lean_kernel_main` entry, and the install ordered before the secondaries by a type)** at v0.36.2 (§6.2.9), and **BP4.3/BP4.4 (the firmware's device tree reaching Lean, and the entry booting the deployment on the variant it describes)** at v0.36.2 (§6.2.10), and **BP4.5 (the image's loaded bytes cleaned to the Point of Unification before any thread can fetch)** at v0.36.2 (§6.2.11), and **BP4.6 (the verified board's RAM outside the kernel's extent mapped, and the boot map sealed before any secondary is released)** and **BP4.7 (that RAM handed to the root task as untypeds)** at v0.36.2 (§6.2.12), and **BP5.1 (the kernel image, a bare-metal binary entered at `_start` under `link.ld`)** and **BP5.2 (the Lean kernel linked into it, under `--gc-sections` from the archive lane's roots)** and **BP5.3 (the firmware's boot files, `kernel8.img` and `config.txt`, cut from that image and checked against it)** and **BP5.4 (its size and section map published with every CI run)** at v0.36.2 (§6.2.13), and **BP5.5 (the firmware's EL2 entry dropped to EL1, with the PSCI conduit following the entry level)** at v0.36.2 (§6.2.15), and **BP6 (every PE marks itself ready after its own per-PE runtime handshake and before it unmasks IRQs, and the boot halts unless every declared PE serves the kernel)** at v0.36.2 (§6.2.16), and **BP7.10 (the first gigabyte's RAM read off the firmware's account, and the constant boot map shrunk to the kernel's reserved extent)** at v0.36.3 (§6.2.17), and **BP7.1 slices 1–3 (frame capabilities, the untyped carve that mints them, and the untyped reset that returns their memory)** at v0.36.4, v0.36.5 and v0.36.6, slice 4a (child untypeds and subtree resets) at v0.36.8, the in-place VSpace-root refusal at v0.36.9, and slice 4b's VSpace-root carve at v0.36.10, `.tcbSetSpace` (a thread runs in a carved address space) at v0.36.11, intermediate page tables at v0.36.12, and every configured address space owning a table page at v0.36.13, which completes BP7.1 (§8.10.2a); BP7.2's user window and 16-bit hardware ASIDs at v0.36.14 and its physical-write ledger and translation install at v0.36.15; BP7.3–BP7.9 at v0.36.16–v0.36.22 (the whole trap frame saved, per-core restore staging, unblock-frame delivery, the live context restore, the delivered declassified badge, overflow message registers, lazily switched FP/SIMD state); and BP7.11 (the boot starts both initial threads, one per domain) at v0.36.23, which completes BP7; BP8.1's first slice (the image built for QEMU's `virt` — its device map from `src/board.rs`, its link script derived from `link.ld`, an arm64 Image header on `_start` — booted there at EL1 and at EL2 by `scripts/test_qemu.sh`) at v0.36.24, and its second (the Lean `virt` binding `SeLe4n/Platform/QemuVirt/` — its board check the RPi5 bridge's own coverage predicates, the RPi5 deployment's layout on it with every boot gate decided, and its own boot entry `lean_kernel_main_qemu_virt`, held by the boot-entry contract's table to its own approved call) at v0.36.25, and its third (the Lean-linked image booted by `scripts/test_qemu.sh --lean-kernel` on four PEs at EL1 and EL2 to every core's first idle dispatch, on every PR — §6.2.18) at v0.36.26, completing BP8.1, and BP8.2 (the four-PE bring-up gate, executed on every PR — §6.2.18) at v0.36.27. **WS-RR (SMP release readiness)** is complete (v0.34.26 → v0.35.203, RR0–RR8). SM10 (release closure → v1.0.0) follows WS-BP. See [`REGISTERED_DEBT.md`](../REGISTERED_DEBT.md) |
@@ -2016,11 +2016,12 @@ The H3 hardware binding targets **single-core operation** on Raspberry Pi 5:
    not claim the core holds nothing there — a core holding a
    write lock, unwound at a member declared read, keeps the
    writer bit, and ruling that out needs the growing phase's mode
-   agreement threaded through.  The insensitivity predicate is
+   agreement threaded through.  The insensitivity predicate was
    named for the phase rather than one of its halves
-   (`UnwindInsensitive`, two clauses), so no capstone can demand
-   one operation's invisibility and silently ignore the other's;
-   and the bracket stays projection-invisible, so the golden
+   (`UnwindInsensitive`, two clauses, retired at WS-LS LS2.1 with
+   the lock words' invisibility machinery), so no capstone could
+   demand one operation's invisibility and silently ignore the
+   other's; and the bracket stays projection-invisible, so the golden
    trace is byte-identical and the SM8 information-flow results
    carry across unchanged.  The strict-2PL and serializability
    results are untouched: both are statements about acquire and
@@ -2690,24 +2691,30 @@ The H3 hardware binding targets **single-core operation** on Raspberry Pi 5:
    `lockSet_released_in_reverse` (the release order is descending).
 
    **SM3.C.7 — `lockSet_atomic_under_2pl`** (Theorem 2.1.10
-   operational form): the `withLockSet` result is the action's
-   output on the post-acquire state, composed with the release fold —
-   no external observer can interleave with the action phase.
+   operational form; since WS-LS LS2.1 stated over the pair
+   `LockedSystemState` and the ghost bracket `withLockSetGhost`,
+   `Locks/BracketSpec.lean`): the bracket's result is the action's
+   output on the kernel half beside the bracket's lock trace on the
+   ghost table — no external observer can interleave with the action
+   phase, and `lockSet_observer_atomic` says so for *every* observer of
+   the kernel state with no hypothesis, because the growing and
+   shrinking phases change the table alone, by type.  (Before LS2.1
+   the phases wrote lock words into kernel objects and the observer
+   had to be lock-insensitive.)
 
-   **SM3.C.8 — `lockSet_invariant_preserved`** (Corollary 2.1.11):
-   the *substantive* metatheorem (not a tautology).  Proves by
-   induction on the canonical acquisition sequence that the acquire
-   fold preserves any lock-insensitive invariant.  The lock-
-   insensitivity hypothesis is discharged structurally for the
-   kind-discipline invariant class by the foundation lemmas
-   `acquireLockOnObject_preserves_objStoreLock_of_modeled`,
-   `releaseLockOnObject_preserves_objStoreLock_of_modeled`, and
-   `updateObjectAt_preserves_objectType_at` (which threads the
-   RHTable extension invariant through `getElem?_insert_self` /
-   `getElem?_insert_ne` to show the kind tag at every key is
-   preserved).  `withLockSet_invariant_preserved` composes the
-   acquire-fold + action + release-fold preservation into the full
-   closure that SM4..SM6 phase migrations consume.
+   **SM3.C.8 — `withLockSet_invariant_preserved`** (Corollary 2.1.11;
+   over the pair since LS2.1): a kernel invariant the bare action
+   preserves is preserved by the bracketed action.  Before LS2.1 the
+   corollary took three lock-insensitivity hypotheses and an
+   acquire-fold form (`lockSet_invariant_preserved`) carried the growing
+   phase, discharged for the kind-discipline class by the foundation
+   lemmas `acquireLockOnObject_preserves_objStoreLock_of_modeled`,
+   `releaseLockOnObject_preserves_objStoreLock_of_modeled` and
+   `updateObjectAt_preserves_objectType_at`; over the pair the
+   hypotheses are dropped (a strengthening) and the acquire-fold form has
+   no state to be about, so it is deleted.  The lever is what it always
+   was: every single-core kernel-transition theorem lifts to the
+   bracketed form with its own proof (SM3.E.6).
 
    **SM3.C.9 — `@[export]` body migration**: DEFERRED at SM3.C.  At
    that point the kernel was modelled single-core, so wrapping each
@@ -2923,12 +2930,14 @@ The H3 hardware binding targets **single-core operation** on Raspberry Pi 5:
 
    **Group-B deferred-gap closure** (post-landing audit): the gaps
    provable within SM3.C's abstract scope (i.e. not gated on the SM5+
-   per-core FFI seam) are closed.  SM3.C.7 gains the observational-
-   atomicity theorems (`AcquireInsensitive` / `ReleaseInsensitive`
-   observer predicates, `acquireAll_lockInsensitive` /
-   `releaseAll_lockInsensitive`, `withLockSet_release_invisible`, and
-   the `lockSet_observer_atomic` capstone) — a lock-insensitive observer
-   sees exactly the action's effect, the 2PL machinery invisible.
+   per-core FFI seam) are closed.  SM3.C.7 gained the observational-
+   atomicity theorems (the `AcquireInsensitive` / `UnwindInsensitive`
+   observer predicates, the per-fold invisibility lemmas and the
+   `lockSet_observer_atomic` capstone) — a lock-insensitive observer
+   sees exactly the action's effect, the 2PL machinery invisible.  WS-LS
+   LS2.1 retired the predicates and the per-fold lemmas: over the pair
+   the capstone is `rfl` for every observer, so there is nothing left for
+   an observer to be insensitive to.
    SM3.C.8 gains the *establishment* lemmas
    (`acquireLockOnObject_establishes_lockHeld_modeled`, the multi-lock
    `acquireAll_establishes_lockHeld_of_distinct_present_unheld`, and the
@@ -4174,10 +4183,14 @@ alongside the latent inventory (closing SMP-H3).
      dependent, and conflict-serializability is an observational
      property, so this is faithful).
    - **SM3.E.6 — `singleCore_proof_preservation` (Corollary 2.1.11)**:
-     the pre→post meta-theorem lifting single-core theorems to SMP under
-     the `lockSetHeld` precondition (a *consequence* of `withLockSet`,
-     via `withLockSet_growing_phase_establishes_lockSetHeld`), reusing
-     SM3.C.8's `withLockSet_invariant_preserved`.
+     the pre→post meta-theorem lifting single-core theorems to SMP,
+     reusing SM3.C.8's `withLockSet_invariant_preserved`.  Over the pair
+     since WS-LS LS2.1 and hypothesis-free: the single-core argument's
+     "no other core mutates the footprint" is the bracket's guard
+     (`BracketSpec.guard`, obligation O4), established under the entry
+     lock by `guard_of_unheld`; the word-level
+     `withLockSet_growing_phase_establishes_lockSetHeld` stays beside it
+     until LS3.1.
    - **SM3.E (audit-pass-3) — atomicity bridge + observational
      serializability + second Cor 2.1.11 instantiation**: closes the
      three gaps the initial landing documented as deferred but did not
@@ -4190,7 +4203,7 @@ alongside the latent inventory (closing SMP-H3).
      structural headline reorders via `Eq`, which write/write pairs do
      not satisfy), threading `invExt` through the `commitSort` reorder;
      `objStoreWriteInstance` is the canonical covered instance.
-     (c) `withLockSet_preserves_objectType_at` proves the 2PL machinery
+     (c) `withLockSet_preserves_objectType_at` proved the 2PL machinery
      preserves a second real invariant (per-key kind-tag equality bundled
      with `invExt`), demonstrating the Cor 2.1.11 lever generalises
      beyond `objStoreLock.wf`.
@@ -4198,13 +4211,17 @@ alongside the latent inventory (closing SMP-H3).
      comprehensive `#print axioms` sweep over all 106 inventory theorems
      confirmed they are axiom-clean.  The §9 bridge's `AcquireInsensitive`
      / `ReleaseInsensitive` hypotheses had no concrete witness (unlike
-     §8b/§8c/§10), so §9b exhibits the `scheduler` projection as a genuine
-     non-trivial observer discharging both unconditionally
-     (`schedulerObserver_acquireInsensitive` / `_releaseInsensitive` via
-     `acquireLockOnObject_preserves_scheduler` / `release…`) and applies the
-     bridge non-vacuously (`withLockSet_observation_scheduler_witness`: a
-     scheduler write through the full 2PL machinery is observed `= sch`).
+     §8b/§8c/§10), so §9b exhibited the `scheduler` projection as a genuine
+     non-trivial observer discharging both unconditionally and applied the
+     bridge non-vacuously (`withLockSet_observation_scheduler_witness`).
      Inventory 106 → 111.
+   - **WS-LS LS2.1 — the bridge and the lever over the pair**: the §9
+     bridge is `applySequentialWithLockSet_kernel` — the bracketed
+     execution's kernel half *is* `applySequential`, as a state equality —
+     and `withLockSet_observation_eq_action` /
+     `applySequentialWithLockSet_observation` hold for every observer with
+     no hypothesis; §8b, §8c and §9b, which witnessed the dropped
+     lock-insensitivity hypotheses, are deleted (inventory 111 → 98).
    - **SM3.E.7/E.8 — tests**: `tests/SerializabilitySuite.lean`
      (60+ surface anchors + 18 decidable examples + 6 theorem-application
      witnesses + 27 runtime assertions) + 8 major-theorem `#check`
@@ -6707,7 +6724,7 @@ retired the `uniqueWaiters` state-level slot to a structural witness on
   arms are here plus `.tcbSuspend`, whose `_ne` frame RR8.12's fourth cut already
   built.  Eight proved theorems cannot be wrong and could be vacuous, so the
   module carries a refutation per clause, and a Tier 3 negative refuses
-  `schedFootprintCoversWrites_refl` inside it: discharging an arm with the no-op
+  `footprintCoversWrites_refl` inside it: discharging an arm with the no-op
   lemma is the token-preserving weakening this family admits.
 
   **And the first three core-naming segments are covered** (WS-RR RR8.12 Cut C6b,
@@ -6753,7 +6770,7 @@ retired the `uniqueWaiters` state-level slot to a structural witness on
   derives, plus two machine frames the `regs` conjunct needs
   (`applyFaultRestart_machine_eq`, `faultAbandonOnCore_machine_eq`), make
   `schedLockSet_replyTransferOnCore_coversWrites` one application of
-  `schedFootprintCoversWrites_of_confined`.  The abandon's appended core is a
+  `footprintCoversWrites_of_confined`.  The abandon's appended core is a
   *duplicate* of one the dispatch already names — measured in
   `tests/FaultHandlingSuite.lean` §7c since Cut C3a, and asserted since this cut —
   so the arm's declaration is derived from the arm rather than tightened to that
@@ -8913,10 +8930,12 @@ the deferred `withLockSet` migration installs at the `@[export]` bodies, and its
 non-interference statement takes exactly the hypotheses the unbracketed per-core
 statement takes — **no hypothesis about the lock set at all**, which is the
 result: fine-grained locking is a change of concurrency control, not of the
-security argument.  The fail-closed statement is the one thing that genuinely
-weakens: a refused syscall no longer leaves the state *identical*, because the
-bracket wrote lock words, so it concludes `lockWritesOnly` — and the observer's
-view is unchanged on every core all the same.
+security argument.  Since WS-LS LS2.1 the bracket runs over the
+`LockedSystemState` pair: the entry runs on the kernel half and the growing and
+shrinking phases write only the ghost lock table, so the fail-closed statement
+concludes that the kernel half is *identical* and the observer's view is
+unchanged on every core — the `lockWritesOnly` weakening the word-level bracket
+needed is gone.
 
 The bound is **conditional**, and the model says so: it holds under the SM2.C
 release-delay (`FairTrace`) assumption, which nothing in the kernel establishes,

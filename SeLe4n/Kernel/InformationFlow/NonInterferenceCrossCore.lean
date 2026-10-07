@@ -1760,7 +1760,7 @@ theorem endpointReplyCrossCoreDispatch_crossCoreNonInterference (ctx : LabelingC
 -- `faultReplyApplyCores`, the fault reply's at `faultReplyWriteSet`, and the
 -- seam's at `replyTransferWriteSet` — each stated at the write set that
 -- *definition* derives, so the coverage theorem in `SyscallSchedContainment` is
--- one application of `schedFootprintCoversWrites_of_confined` rather than a
+-- one application of `footprintCoversWrites_of_confined` rather than a
 -- second reading of the seam.
 
 /-- **Cut C6d**: installing a restart frame is per-core silent.  The frame goes

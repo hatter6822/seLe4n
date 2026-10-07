@@ -15,6 +15,7 @@ import SeLe4n.Kernel.Concurrency.Locks.WithLockSet
 import SeLe4n.Kernel.Concurrency.Locks.LockSetHeld
 import SeLe4n.Kernel.Concurrency.Locks.LockSet2PL
 import SeLe4n.Kernel.Concurrency.Locks.LockState
+import SeLe4n.Kernel.Concurrency.Locks.BracketSpec
 import SeLe4n.Kernel.Concurrency.Locks.DynamicChainExtension
 import SeLe4n.Kernel.Concurrency.Locks.WithLockSetInventory
 import SeLe4n.Kernel.Concurrency.Locks.Deadlock
@@ -49,10 +50,14 @@ the underlying modules.
   (SM3.C.2) + `KernelObject.updateLock` helper.
 * `LockSetHeld` — `lockHeld` / `lockSetHeld` predicates
   (SM3.C.4) — the SMP-migration precondition for Corollary 2.1.11.
+* `BracketSpec` — **WS-LS LS2.1**: `LockedSystemState`, the ghost bracket
+  `withLockSetGhost`, `BracketSpec` with `run` / `runGhost` and the
+  coverage predicate `footprintCoversWrites`.
 * `LockSet2PL` — 2PL discipline theorems: `lockSet_acquired_in_order`
   (SM3.C.5), `lockSet_released_in_reverse` (SM3.C.6),
   `lockSet_atomic_under_2pl` (SM3.C.7),
-  `lockSet_invariant_preserved` (SM3.C.8).
+  `withLockSet_invariant_preserved` (SM3.C.8) — the last two over the
+  pair since LS2.1.
 * `DynamicChainExtension` — `withDynamicChainExtension` (SM3.C.11)
   for PIP-chain dynamic locking under the SM0.I total-order
   discipline.
