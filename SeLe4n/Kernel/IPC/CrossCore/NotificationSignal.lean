@@ -122,6 +122,20 @@ def notificationSignalOnCore (notificationId : SeLe4n.ObjId) (badge : SeLe4n.Bad
       if (st.getObject? notificationId).isSome then (st, .error .invalidCapability)
       else (st, .error .objectNotFound)
 
+/-- WS-ZA ZA1.6: a signal with no waiter, as an update of the notification's
+cell: the badge merged into the pending one, the state `.active`, the queue
+empty.  `RHTable.modify` hands it the cell exclusively, so the notification and
+its `some` badge cell are rewritten where they are. -/
+@[inline] def signalPendingObject (badge : SeLe4n.Badge) : KernelObject → KernelObject
+  | .notification n =>
+      .notification { n with
+        state := .active
+        waitingThreads := SeLe4n.NoDupList.empty
+        pendingBadge := some (match n.pendingBadge with
+          | some existing => SeLe4n.Badge.bor existing badge
+          | none => SeLe4n.Badge.ofNatMasked badge.toNat) }
+  | o => o
+
 /-- WS-ZA ZA1.1: the compiled `notificationSignalOnCore`.  A signal with no
 waiter stores the badge through the pure store `withObjectStored`, which cannot
 fail, so the pre-state is not held across the write for a refusal that cannot
@@ -151,6 +165,10 @@ def notificationSignalOnCoreImpl (notificationId : SeLe4n.ObjId) (badge : SeLe4n
                   ((wakeThread st'' waiter executingCore).1,
                    .ok (wakeThread st'' waiter executingCore).2)
       | none =>
+          if storeLeavesIndexAndTypes st notificationId .notification then
+            ({ st with objects := st.objects.modify notificationId (signalPendingObject badge) },
+             .ok none)
+          else
           let mergedBadge : SeLe4n.Badge :=
             match ntfn.pendingBadge with
             | some existing => SeLe4n.Badge.bor existing badge
@@ -169,9 +187,16 @@ def notificationSignalOnCoreImpl (notificationId : SeLe4n.ObjId) (badge : SeLe4n
   funext notificationId badge executingCore st
   unfold notificationSignalOnCore notificationSignalOnCoreImpl
   split
-  · split
+  · next ntfn hN =>
+    split
     · rfl
-    · simp only [SystemState.storeObject_eq_withObjectStored]
+    · by_cases hL : storeLeavesIndexAndTypes st notificationId .notification = true
+      · rw [if_pos hL,
+          SeLe4n.Kernel.RobinHood.RHTable.modify_of_get? ((SystemState.getNotification?_eq_some_iff _ _ _).mp hN)]
+        simp only [storeObject_eq_impl, storeObjectImpl, KernelObject.objectType, hL, ↓reduceIte]
+        rfl
+      · rw [if_neg hL]
+        simp only [SystemState.storeObject_eq_withObjectStored]
   · rfl
 
 /-- WS-SM SM6.B.1 (plan §3.1): notification wait across cores.

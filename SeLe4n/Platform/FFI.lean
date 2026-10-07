@@ -1121,8 +1121,12 @@ def updateKernelState (f : SystemState → SystemState) : BaseIO Unit :=
     them live.  With the lock in place, SMP returns to the default decision #7
     states (`CmdlineConfig::default` has `smp_enabled: true`), which was gated on
     exactly this phase.  See WS-SM SM7
-    §"Kernel-entry serialisation". -/
-def modifyGetKernelState {α : Type} (f : SystemState → α × SystemState) : BaseIO α :=
+    §"Kernel-entry serialisation".
+
+    Inlined (WS-ZA ZA1.5), so each entry's step runs on the taken state
+    directly: as a call it took the step as a closure, which boxed every
+    scalar argument the entry captured. -/
+@[inline] def modifyGetKernelState {α : Type} (f : SystemState → α × SystemState) : BaseIO α :=
   kernelStateRef.modifyGet f
 
 /-- WS-RC R2.A.2: Install a fresh `LabelingContext` into the
