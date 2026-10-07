@@ -1,3 +1,40 @@
+## v0.36.72 — WS-ZA registered: where the 118 allocations per syscall come from, and the plan to remove them
+
+**Every heap allocation of the continuing syscall round trip is attributed.**
+A debug build of the HAL heap recorded the return address and size of each
+allocation across the `heap-allocations-per-syscall` exerciser's
+`NotificationSignal`; 117 of the 118 were captured and matched to their line
+in the generated C.  A second round trip on the same boot also reads 118, so
+none is a first-touch cost, and none comes from the lock model.
+
+- **55 are register-context sites WS-CV's rows already remove** (the per-trap
+  context object, the boxed argument words and the entry closure, the two
+  `TrapContext` conversions, the TCB and register-file copies taken because
+  the TCB and the core bank share one object, the step's nested result
+  tuple).  The trace also shows `restoreTargetOnCore` computed twice per
+  syscall; CV4.5's one commit record computes it once.
+- **62 are the dispatcher's own.**  The largest finding is a cost, not a
+  count: `dispatchSyscallChecked` keeps the pre-state alive across the arm
+  for the taint step (`applySyscallTaint (syscallTaintPlan st tid decoded) st
+  stPost`), so every table the arm writes is shared and the runtime copies
+  its whole slot array: three `O(capacity)` copies per signal, at any object
+  count.  Also: each `RHTable.insert` allocates three objects (the entry, its
+  `some`, the loop's pair); `storeObject` writes four tables to update one
+  object in place; the operand capability is resolved four times (once by
+  the gate, three times by the taint planner); `== some tid` comparisons
+  build the `some`.
+- **The plan** ([`docs/planning/ZERO_ALLOCATION_SYSCALL_PLAN.md`](docs/planning/ZERO_ALLOCATION_SYSCALL_PLAN.md))
+  removes them in four phases: ZA1 ownership and the object table, ZA2 the
+  dispatcher's values, ZA3 the three entries WS-CV's plan keeps (the commit
+  record, the entry's pair, the object re-wrap), ZA4 more scenarios and an
+  exerciser that fails on a non-zero reading.  The specification functions
+  stay as they are; each faster implementation is an `@[csimp]` replacement
+  proven equal to the one it replaces.
+
+Registered in `docs/REGISTERED_DEBT.md`'s workstream index and
+`docs/agent_guide/WORKSTREAM_CONTEXT.md`.  No code changes; the reading is
+still 118.
+
 ## v0.36.71 — the allocation exerciser refuses a stale Lean archive; first reading of the separated lock state: 112
 
 **The `heap-allocations-per-syscall` exerciser had been measuring the kernel
