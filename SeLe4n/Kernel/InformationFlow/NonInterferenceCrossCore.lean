@@ -3462,8 +3462,163 @@ theorem schedContextBind_crossCoreNonInterference (ctx : LabelingContext)
   crossCoreNonInterference_ofCores ctx observer hne
     (schedContextBind_confinedToCores vScId vThreadId st st' hObjInv hStep) hShared
 
+/-- The waiter-side chain re-walk writes only the cores its write set names. -/
+theorem repropagateFromWaiter_confinedToCores (st : SystemState) (tid : SeLe4n.ThreadId)
+    (ec : CoreId) (fuel : Nat) :
+    observableSlotsConfinedToCores st
+      (PriorityInheritance.repropagateFromWaiter st tid ec fuel)
+      (waiterChainWriteSet st tid ec fuel) := by
+  unfold PriorityInheritance.repropagateFromWaiter waiterChainWriteSet
+  cases blockingServer st tid with
+  | none => exact observableSlotsConfinedToCores_of_eq _ rfl
+  | some server =>
+    exact propagatePipChainCrossCore_confinedToCores _ _ st server
+
+/-- A priority write keeps every thread's affinity and IPC state — the two
+fields a home core and a blocking edge are read from. -/
+theorem updatePrioritySource_tcbChainFields (st : SystemState) (tid : SeLe4n.ThreadId)
+    (tcb : TCB) (p : SeLe4n.Priority) (hInv : st.objects.invExt) (t : SeLe4n.ThreadId) :
+    ((SchedContext.PriorityManagement.updatePrioritySource st tid tcb p).getTcb? t).map
+        (fun x => (x.cpuAffinity, x.ipcState)) =
+      (st.getTcb? t).map (fun x => (x.cpuAffinity, x.ipcState)) := by
+  unfold SchedContext.PriorityManagement.updatePrioritySource
+  split
+  · rename_i scId _
+    have hInv1 := SystemState.updateSchedContext_preserves_objects_invExt st scId
+      (fun sc => { sc with priority := p }) hInv
+    by_cases h : tid.toObjId = t.toObjId
+    · have ht : tid = t := ThreadId.toObjId_injective _ _ h
+      subst ht
+      rw [SystemState.updateTcb_getTcb?_self _ _ _ hInv1,
+        SystemState.updateSchedContext_getTcb? _ _ _ hInv]
+      cases st.getTcb? tid <;> rfl
+    · rw [SystemState.updateTcb_getTcb?_ne _ _ _ hInv1 _ h,
+        SystemState.updateSchedContext_getTcb? _ _ _ hInv]
+  · by_cases h : tid.toObjId = t.toObjId
+    · have ht : tid = t := ThreadId.toObjId_injective _ _ h
+      subst ht
+      rw [SystemState.updateTcb_getTcb?_self _ _ _ hInv]
+      cases st.getTcb? tid <;> rfl
+    · rw [SystemState.updateTcb_getTcb?_ne _ _ _ hInv _ h]
+
+/-- Re-storing a thread's TCB with the same affinity and IPC state keeps every
+thread's pair of chain fields — the MCP ceiling write is one. -/
+theorem insertTcb_tcbChainFields (st result : SystemState) (tid0 : SeLe4n.ThreadId)
+    (t0 t' : TCB) (hInv : st.objects.invExt)
+    (hOld : st.objects.get? tid0.toObjId = some (.tcb t0))
+    (hAff : t'.cpuAffinity = t0.cpuAffinity) (hIpc : t'.ipcState = t0.ipcState)
+    (hObj : result.objects = st.objects.insert tid0.toObjId (.tcb t')) (t : SeLe4n.ThreadId) :
+    (result.getTcb? t).map (fun x => (x.cpuAffinity, x.ipcState)) =
+      (st.getTcb? t).map (fun x => (x.cpuAffinity, x.ipcState)) := by
+  unfold SystemState.getTcb?
+  rw [hObj]
+  simp only [RHTable_getElem?_eq_get?]
+  rw [RHTable_getElem?_insert st.objects tid0.toObjId (.tcb t') hInv t.toObjId]
+  by_cases hk : tid0.toObjId == t.toObjId
+  · simp only [hk, if_pos]
+    have hkey : st.objects.get? t.toObjId = some (.tcb t0) := by
+      have : t.toObjId = tid0.toObjId := (eq_of_beq hk).symm
+      rw [this]; exact hOld
+    rw [hkey]
+    simp [hAff, hIpc]
+  · simp only [hk, if_neg, Bool.not_eq_true]
+
+/-- The configure propagation tail keeps every thread's affinity and IPC state:
+its two writes set the bound thread's priority and domain, and the re-bucket
+touches the scheduler only. -/
+theorem schedContextConfigureBoundPropagate_tcbChainFields (stStored : SystemState)
+    (scId : SeLe4n.SchedContextId) (boundTid : SeLe4n.ThreadId) (boundTcb : TCB)
+    (hBound : stStored.getTcb? boundTid = some boundTcb) (priority domain : Nat)
+    (hInv : stStored.objects.invExt) (t : SeLe4n.ThreadId) :
+    ((SchedContextOps.schedContextConfigureBoundPropagate stStored scId boundTid boundTcb hBound
+        priority domain).getTcb? t).map (fun x => (x.cpuAffinity, x.ipcState)) =
+      (stStored.getTcb? t).map (fun x => (x.cpuAffinity, x.ipcState)) := by
+  have hRaw : ∀ (s : SystemState) (cur : TCB), s.getTcb? boundTid = some cur →
+      s.objects.get? boundTid.toObjId = some (.tcb cur) := fun s cur h => by
+    rw [← RHTable_getElem?_eq_get?]; exact (SystemState.getTcb?_eq_some_iff s boundTid cur).mp h
+  have hW := insertTcb_tcbChainFields stStored
+    { stStored with objects := (stStored.objects.insert boundTid.toObjId
+        (.tcb { boundTcb with priority := ⟨priority⟩ })) }
+    boundTid boundTcb { boundTcb with priority := ⟨priority⟩ } hInv (hRaw _ _ hBound) rfl rfl rfl
+  have hInvW := RobinHood.RHTable.insert_preserves_invExt stStored.objects
+    boundTid.toObjId (.tcb { boundTcb with priority := ⟨priority⟩ }) hInv
+  unfold SchedContextOps.schedContextConfigureBoundPropagate
+  dsimp only [SystemState.rewriteObject]
+  by_cases hPrioEq : boundTcb.priority.val = priority ∨
+      ¬ SchedContextOps.schedContextConfigurePropagates boundTcb scId
+  · rw [if_pos hPrioEq]
+    try dsimp only []
+    split
+    · rename_i cur hCur _
+      split
+      · rfl
+      · exact insertTcb_tcbChainFields stStored _ boundTid cur { cur with domain := ⟨domain⟩ }
+          hInv (hRaw _ _ hCur) rfl rfl rfl t
+    · rfl
+  · rw [if_neg hPrioEq]
+    try dsimp only []
+    by_cases hMem : boundTid ∈ stStored.scheduler.runQueueOnCore
+        (determineTargetCore { stStored with objects := (stStored.objects.insert boundTid.toObjId
+          (.tcb { boundTcb with priority := ⟨priority⟩ })) } boundTid)
+    · rw [if_pos hMem]
+      split
+      · rename_i cur hCur _
+        split
+        · exact hW t
+        · exact (insertTcb_tcbChainFields _ _ boundTid cur { cur with domain := ⟨domain⟩ }
+            hInvW (hRaw _ _ hCur) rfl rfl rfl t).trans (hW t)
+      · exact hW t
+    · rw [if_neg hMem]
+      split
+      · rename_i cur hCur _
+        split
+        · exact hW t
+        · exact (insertTcb_tcbChainFields _ _ boundTid cur { cur with domain := ⟨domain⟩ }
+            hInvW (hRaw _ _ hCur) rfl rfl rfl t).trans (hW t)
+      · exact hW t
+
+/-- After a configure's SchedContext store and propagation, the bound thread's
+chain names the pre-state's cores: neither write moves a home core or a blocking
+edge, and the key-change flag is a scheduler write. -/
+theorem waiterChainWriteSet_configurePropagate (st stStored : SystemState)
+    (scId : SeLe4n.SchedContextId) (boundTid : SeLe4n.ThreadId) (boundTcb : TCB)
+    (hBound : stStored.getTcb? boundTid = some boundTcb) (priority domain : Nat)
+    (k : SeLe4n.Priority × SeLe4n.Deadline × SeLe4n.DomainId) (ec : CoreId) (fuel : Nat)
+    (hInvSt : st.objects.invExt) (hInvStored : stStored.objects.invExt)
+    (hGet : ∀ t, stStored.getTcb? t = st.getTcb? t) :
+    waiterChainWriteSet (markKeyChangeFor (SchedContextOps.schedContextConfigureBoundPropagate
+        stStored scId boundTid boundTcb hBound priority domain) boundTid k) boundTid ec fuel =
+      waiterChainWriteSet st boundTid ec fuel := by
+  have hXInv : (markKeyChangeFor (SchedContextOps.schedContextConfigureBoundPropagate
+      stStored scId boundTid boundTcb hBound priority domain) boundTid k).objects.invExt := by
+    rw [markKeyChangeFor_objects]
+    exact SchedContextOps.schedContextConfigureBoundPropagate_preserves_objects_invExt
+      _ _ _ _ _ _ _ hInvStored
+  obtain ⟨hH, hE⟩ := PriorityInheritance.chainShape_of_tcbFields _ st (fun t => by
+    rw [SystemState.getTcb?_congr_at (st := SchedContextOps.schedContextConfigureBoundPropagate
+        stStored scId boundTid boundTcb hBound priority domain)
+        (st' := markKeyChangeFor (SchedContextOps.schedContextConfigureBoundPropagate
+          stStored scId boundTid boundTcb hBound priority domain) boundTid k)
+        (tid := t) (by rw [markKeyChangeFor_objects]), ← hGet t]
+    exact schedContextConfigureBoundPropagate_tcbChainFields stStored scId boundTid boundTcb
+      hBound priority domain hInvStored t)
+  exact PriorityInheritance.waiterChainWriteSet_congr _ st boundTid ec fuel hXInv hInvSt hH hE
+
+/-- A step that ends in the waiter-side chain re-walk writes its prefix's cores
+and the chain's. -/
+theorem observableSlotsConfinedToCores_repropagate {st X : SystemState}
+    {tid : SeLe4n.ThreadId} {ec : CoreId} {fuel : Nat} {cs W : List CoreId}
+    (hX : observableSlotsConfinedToCores st X cs) (hW : waiterChainWriteSet X tid ec fuel = W) :
+    observableSlotsConfinedToCores st (PriorityInheritance.repropagateFromWaiter X tid ec fuel)
+      (cs ++ W) := by
+  subst hW
+  exact observableSlotsConfinedToCores_trans hX
+    (repropagateFromWaiter_confinedToCores X tid ec fuel)
+
 /-- SM8.B.2 (**the live `.schedContextConfigure` bound**): a configure writes no
-core outside its subject's home core.
+core outside its subject's home core and, when that thread is reply-blocked, the
+cores of the inheritance chain its propagated priority re-walks
+(`schedContextConfigureWriteSet`).
 
 Two scheduler writes, and only one of them is confined-relevant: the
 replenish-queue purge is outside the six observable slots, so it is per-core
@@ -3474,14 +3629,17 @@ reconfigured SchedContext (`storeObject_schedContext_determineTargetCore_eq`) an
 the TCB **priority** insert, which is not a migration.
 
 The `boundThread = none` and `getTcb? = none` arms perform no scheduling work at
-all, and the trailing domain propagation is an object write. -/
+all, and the trailing domain propagation is an object write.  The chain re-walk
+runs last; its write set is read from the pre-state because neither the store nor
+the propagation moves a home core or a blocking edge
+(`waiterChainWriteSet_configurePropagate`). -/
 theorem schedContextConfigure_confinedToCores (vScId : SeLe4n.ValidObjId)
     (budget period priority deadline domain : Nat) (st st' : SystemState)
     (hObjInv : st.objects.invExt)
     (hStep : SchedContextOps.schedContextConfigure vScId budget period priority deadline domain st
       = .ok ((), st')) :
-    observableSlotsConfinedToCores st st' (schedContextWriteSet st vScId.val) := by
-  unfold SchedContextOps.schedContextConfigure schedContextWriteSet
+    observableSlotsConfinedToCores st st' (schedContextConfigureWriteSet st vScId.val) := by
+  unfold SchedContextOps.schedContextConfigure schedContextConfigureWriteSet schedContextWriteSet
     SchedContextOps.schedContextBoundThread? at *
   split at hStep
   · exact absurd hStep (by simp)
@@ -3552,6 +3710,18 @@ theorem schedContextConfigure_confinedToCores (vScId : SeLe4n.ValidObjId)
               rw [Except.ok.injEq, Prod.mk.injEq] at hStep
               obtain ⟨-, hs⟩ := hStep
               subst hs
+              -- The chain re-walk last: its cores are the pre-state chain's,
+              -- because the store and the propagation move no home core and no
+              -- blocking edge.
+              have hGetSt : ∀ t, stStored.getTcb? t = st.getTcb? t := fun t =>
+                storeObject_schedContextAt_getTcb?_eq
+                  (SchedContextOps.purgeReplenishmentOnCore st
+                    (SchedContextOps.schedContextReplenishHome st sc) ⟨vScId.val.toNat⟩)
+                  stStored (SeLe4n.SchedContextId.ofObjId vScId.val) sc _ (by exact hSc)
+                  (by exact hObjInv) (by exact hStore) t
+              refine observableSlotsConfinedToCores_repropagate ?_
+                (waiterChainWriteSet_configurePropagate st stStored _ boundTid boundTcb _ priority
+                  domain _ _ _ hObjInv hInvStored hGetSt)
               unfold SchedContextOps.schedContextConfigureBoundPropagate
               -- The prefix common to every arm: replenish purge then the SC
               -- store, neither of which is confined-relevant.
@@ -3633,14 +3803,15 @@ theorem schedContextConfigure_confinedToCores (vScId : SeLe4n.ValidObjId)
     · exact absurd hStep (by simp)
 
 /-- SM8.B.2 (**the live `.schedContextConfigure` non-interference**): a configure
-is invisible on every core outside its subject's home core. -/
+is invisible on every core outside its subject's home core and the cores of the
+inheritance chain it re-walks. -/
 theorem schedContextConfigure_crossCoreNonInterference (ctx : LabelingContext)
     (observer : IfObserver) (vScId : SeLe4n.ValidObjId)
     (budget period priority deadline domain : Nat) (st st' : SystemState) (c : CoreId)
     (hObjInv : st.objects.invExt)
     (hStep : SchedContextOps.schedContextConfigure vScId budget period priority deadline domain st
       = .ok ((), st'))
-    (hne : c ∉ schedContextWriteSet st vScId.val)
+    (hne : c ∉ schedContextConfigureWriteSet st vScId.val)
     (hShared : sharedViewUnchanged ctx observer st st') :
     projectStateOnCore ctx observer st' c = projectStateOnCore ctx observer st c :=
   crossCoreNonInterference_ofCores ctx observer hne
@@ -3757,11 +3928,42 @@ theorem priorityUpdateAndMigrate_confinedToCores (st : SystemState)
     (updatePrioritySource_confinedToCores st tid tcb p)
     (migrateRunQueueBucketOnCore_confinedToCores _ tid p home)
 
+/-- The state a priority change re-walks the chain from agrees with the
+pre-state on every home core and every blocking edge, so the
+re-walk's write set is the one the pre-state names. -/
+theorem priorityChangeMid_chainShape (base : SystemState) (tid : SeLe4n.ThreadId) (tcb : TCB)
+    (p : SeLe4n.Priority) (home : CoreId)
+    (k : SeLe4n.Priority × SeLe4n.Deadline × SeLe4n.DomainId) (ec : CoreId) (fuel : Nat)
+    (hInv : base.objects.invExt) :
+    waiterChainWriteSet (markKeyChangeFor
+        (SchedContext.PriorityManagement.migrateRunQueueBucketOnCore
+          (SchedContext.PriorityManagement.updatePrioritySource base tid tcb p) tid p home) tid k)
+        tid ec fuel = waiterChainWriteSet base tid ec fuel := by
+  generalize hMid : markKeyChangeFor
+      (SchedContext.PriorityManagement.migrateRunQueueBucketOnCore
+        (SchedContext.PriorityManagement.updatePrioritySource base tid tcb p) tid p home) tid k
+    = mid
+  have hObj : mid.objects =
+      (SchedContext.PriorityManagement.updatePrioritySource base tid tcb p).objects := by
+    rw [← hMid, markKeyChangeFor_objects]
+    unfold SchedContext.PriorityManagement.migrateRunQueueBucketOnCore
+    split <;> rfl
+  have hMidInv : mid.objects.invExt := by
+    rw [hObj]
+    exact SchedContext.PriorityManagement.updatePrioritySource_preserves_objects_invExt
+      base tid tcb p hInv
+  obtain ⟨hHome, hEdge⟩ := PriorityInheritance.chainShape_of_tcbFields mid base (fun t => by
+    rw [SystemState.getTcb?_congr_at (st := SchedContext.PriorityManagement.updatePrioritySource
+      base tid tcb p) (st' := mid) (tid := t) (by rw [hObj])]
+    exact updatePrioritySource_tcbChainFields base tid tcb p hInv t)
+  exact PriorityInheritance.waiterChainWriteSet_congr mid base tid ec fuel hMidInv hInv hHome hEdge
+
 /-- SM8.B.2: the priority ops' **whole** state effect writes the target's home
-core and the executing core, and nothing else.
+core, the executing core, and — when the target is reply-blocked — the cores of
+the inheritance chain it re-walks, and nothing else.
 
 Stated against the named effect `applyPriorityChangeOnCore` rather than its
-three composed steps, and over a base-state *variable*. Both matter: written
+composed steps, and over a base-state *variable*. Both matter: written
 out inline, the composition's metavariables (base state, TCB, home core) have to
 be recovered by unifying a `migrateRunQueueBucketOnCore (updatePrioritySource …)
 …` pattern against a fully-expanded mid-state, which does not terminate at any
@@ -3772,14 +3974,33 @@ theorem applyPriorityChangeOnCore_confinedToCores (base st' : SystemState)
     (tid : SeLe4n.ThreadId) (tcb : TCB) (p : SeLe4n.Priority)
     (executingCore : CoreId) (shouldPreempt : Bool)
     (sgi : Option (CoreId × Concurrency.SgiKind))
+    (hObjInv : base.objects.invExt)
     (hStep : SchedContext.PriorityManagement.applyPriorityChangeOnCore base tid tcb p
       executingCore shouldPreempt = .ok (st', sgi)) :
-    observableSlotsConfinedToCores base st' [determineTargetCore base tid, executingCore] :=
-  observableSlotsConfinedToCores_trans
-    (observableSlotsConfinedToCores_then_flagOnly
-      (priorityUpdateAndMigrate_confinedToCores base tid tcb p (determineTargetCore base tid))
-      (markKeyChangeFor_confinedToCores _ tid (effectiveSchedParams base tcb)))
-    (priorityRescheduleOnCore_confinedToCores _ st' _ executingCore shouldPreempt sgi hStep)
+    observableSlotsConfinedToCores base st'
+      ([determineTargetCore base tid, executingCore] ++
+        waiterChainWriteSet base tid executingCore base.objectIndex.length) := by
+  have hA := observableSlotsConfinedToCores_then_flagOnly
+    (priorityUpdateAndMigrate_confinedToCores base tid tcb p (determineTargetCore base tid))
+    (markKeyChangeFor_confinedToCores _ tid (effectiveSchedParams base tcb))
+  have hW := priorityChangeMid_chainShape base tid tcb p (determineTargetCore base tid)
+    (effectiveSchedParams base tcb) executingCore base.objectIndex.length hObjInv
+  unfold SchedContext.PriorityManagement.applyPriorityChangeOnCore at hStep
+  generalize hMid : markKeyChangeFor
+      (SchedContext.PriorityManagement.migrateRunQueueBucketOnCore
+        (SchedContext.PriorityManagement.updatePrioritySource base tid tcb p) tid p
+        (determineTargetCore base tid)) tid (effectiveSchedParams base tcb) = mid at hStep hA hW
+  have hB := repropagateFromWaiter_confinedToCores mid tid executingCore base.objectIndex.length
+  rw [hW] at hB
+  have hC := priorityRescheduleOnCore_confinedToCores _ st' _ executingCore shouldPreempt sgi hStep
+  refine observableSlotsConfinedToCores_mono ?_
+    (observableSlotsConfinedToCores_trans (observableSlotsConfinedToCores_trans hA hB) hC)
+  intro c hc
+  simp only [List.mem_append, List.mem_cons, List.not_mem_nil, or_false] at hc ⊢
+  rcases hc with (hc | hc) | hc
+  · exact Or.inl (Or.inl hc)
+  · exact Or.inr hc
+  · exact Or.inl (Or.inr hc)
 
 -- WS-RR RR8.12 Cut C3b-i (`v0.35.167`): `priorityControlWriteSet` moved to the
 -- production `SeLe4n/Kernel/SyscallSchedFootprint.lean`, beside
@@ -3796,6 +4017,7 @@ home-core bridge is needed. -/
 theorem setPriorityOnCore_confinedToCores (st st' : SystemState)
     (vCallerTid vTargetTid : SeLe4n.ValidThreadId) (newPriority : SeLe4n.Priority)
     (executingCore : CoreId) (sgi : Option (CoreId × Concurrency.SgiKind))
+    (hObjInv : st.objects.invExt)
     (hStep : SchedContext.PriorityManagement.setPriorityOnCore st vCallerTid vTargetTid
       newPriority executingCore = .ok (st', sgi)) :
     observableSlotsConfinedToCores st st'
@@ -3809,7 +4031,7 @@ theorem setPriorityOnCore_confinedToCores (st st' : SystemState)
       · next targetTcb hTarget =>
         simp only [] at hStep
         exact applyPriorityChangeOnCore_confinedToCores st st' vTargetTid.val targetTcb
-          newPriority executingCore _ sgi hStep
+          newPriority executingCore _ sgi hObjInv hStep
       · exact absurd hStep (by simp)
   · exact absurd hStep (by simp)
 
@@ -3819,6 +4041,7 @@ theorem setPriorityOnCore_crossCoreNonInterference (ctx : LabelingContext)
     (observer : IfObserver) (st st' : SystemState)
     (vCallerTid vTargetTid : SeLe4n.ValidThreadId) (newPriority : SeLe4n.Priority)
     (executingCore c : CoreId) (sgi : Option (CoreId × Concurrency.SgiKind))
+    (hObjInv : st.objects.invExt)
     (hStep : SchedContext.PriorityManagement.setPriorityOnCore st vCallerTid vTargetTid
       newPriority executingCore = .ok (st', sgi))
     (hne : c ∉ priorityControlWriteSet st vTargetTid.val executingCore)
@@ -3826,7 +4049,7 @@ theorem setPriorityOnCore_crossCoreNonInterference (ctx : LabelingContext)
     projectStateOnCore ctx observer st' c = projectStateOnCore ctx observer st c :=
   crossCoreNonInterference_ofCores ctx observer hne
     (setPriorityOnCore_confinedToCores st st' vCallerTid vTargetTid newPriority
-      executingCore sgi hStep) hShared
+      executingCore sgi hObjInv hStep) hShared
 
 /-- SM8.B.2 (**the live `.tcbSetMCPriority` bound**): capping a thread's maximum
 controlled priority writes no core outside the target's home and the executing
@@ -3877,15 +4100,39 @@ theorem setMCPriorityOnCore_confinedToCores (st st' : SystemState)
           -- metavariable sends `whnf` into the fully-expanded 27-field mid-state
           -- record. Deferred, `?r` is fixed first by the second leg and both
           -- close by `rfl`.
+          have hRaw : st.objects.get? vTargetTid.val.toObjId = some (.tcb targetTcb) := by
+            rw [← RHTable_getElem?_eq_get?]
+            exact (SystemState.getTcb?_eq_some_iff st vTargetTid.val targetTcb).mp hTarget
+          -- The ceiling store moves no home core and no blocking edge, so the
+          -- chain the change re-walks names the pre-state's cores.
+          have hChain : ∀ (o : KernelObject) (t' : TCB) (ec : CoreId) (fuel : Nat), o = .tcb t' →
+              t'.cpuAffinity = targetTcb.cpuAffinity → t'.ipcState = targetTcb.ipcState →
+              waiterChainWriteSet
+                { st with objects := st.objects.insert vTargetTid.val.toObjId o }
+                vTargetTid.val ec fuel =
+              waiterChainWriteSet st vTargetTid.val ec fuel := by
+            rintro o t' ec fuel rfl hAff hIpc
+            have hInvR := SeLe4n.Kernel.RobinHood.RHTable.insert_preserves_invExt
+              st.objects vTargetTid.val.toObjId (.tcb t') hObjInv
+            obtain ⟨hH, hE⟩ := PriorityInheritance.chainShape_of_tcbFields _ st
+              (insertTcb_tcbChainFields st
+                { st with objects := st.objects.insert vTargetTid.val.toObjId (.tcb t') }
+                vTargetTid.val targetTcb t' hObjInv hRaw hAff hIpc rfl)
+            exact PriorityInheritance.waiterChainWriteSet_congr _ st vTargetTid.val ec fuel
+              hInvR hObjInv hH hE
           refine observableSlotsConfinedToCores_mono ?_
             (observableSlotsConfinedToCores_trans (hSilent _ ?_ ?_)
               (applyPriorityChangeOnCore_confinedToCores _ st' vTargetTid.val _ newMCP
-                executingCore true sgi hStep))
+                executingCore true sgi
+                (SeLe4n.Kernel.RobinHood.RHTable.insert_preserves_invExt _ _ _ hObjInv) hStep))
           · intro c hc
-            simp only [List.nil_append, List.mem_cons, List.not_mem_nil, or_false] at hc ⊢
-            rcases hc with hc | hc
-            · exact Or.inl (hc ▸ hHome _ _ rfl rfl)
-            · exact Or.inr hc
+            simp only [List.nil_append, List.mem_append, List.mem_cons, List.not_mem_nil,
+              or_false] at hc ⊢
+            rcases hc with (hc | hc) | hc
+            · exact Or.inl (Or.inl (hc ▸ hHome _ _ rfl rfl))
+            · exact Or.inl (Or.inr hc)
+            · rw [hChain _ { targetTcb with maxControlledPriority := newMCP } _ _ rfl rfl rfl] at hc
+              exact Or.inr hc
           · rfl
           · rfl
         · rw [Except.ok.injEq, Prod.mk.injEq] at hStep

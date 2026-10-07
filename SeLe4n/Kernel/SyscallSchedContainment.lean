@@ -176,7 +176,7 @@ the target's effective band exactly as `.tcbSetPriority`'s base change can. -/
 theorem schedLockSet_setPriorityOnCore_coversWrites (st st' : SystemState)
     (vCallerTid vTargetTid : SeLe4n.ValidThreadId) (newPriority : SeLe4n.Priority)
     (executingCore : CoreId) (sgi : Option (CoreId × Concurrency.SgiKind))
-    (S : SchedLockSet)
+    (S : SchedLockSet) (hObjInv : st.objects.invExt)
     (hStep : SchedContext.PriorityManagement.setPriorityOnCore st vCallerTid vTargetTid
       newPriority executingCore = .ok (st', sgi))
     (hS : SchedLockSet.ofList?
@@ -186,7 +186,7 @@ theorem schedLockSet_setPriorityOnCore_coversWrites (st st' : SystemState)
     (priorityControlWriteSet st vTargetTid.val executingCore) [] st st'
     (SchedLockSet.ofList?_pairs hS)
     (setPriorityOnCore_confinedToCores st st' vCallerTid vTargetTid newPriority executingCore
-      sgi hStep)
+      sgi hObjInv hStep)
     (fun d _ => setPriorityOnCore_replenishQueueOnCore st st' vCallerTid vTargetTid newPriority
       executingCore sgi d hStep)
 
@@ -459,8 +459,10 @@ theorem not_schedFootprintCoversWrites_of_replenish_moved (S : SchedLockSet)
 /-- **WS-RR RR8.12 Cut C6b**: `.schedContextConfigure`'s footprint covers its
 writes.
 
-A reconfiguration rewrites the reservation and re-queues its replenishment on the
-bound thread's home, and nothing else — and the unresolved arm is not a gap but a
+A reconfiguration rewrites the reservation, re-queues its replenishment on the
+bound thread's home and, when that thread is reply-blocked, re-walks the
+inheritance chain its propagated priority feeds, and nothing else — and the
+unresolved arm is not a gap but a
 refusal, since the transition's own branch errors there. -/
 theorem schedLockSet_schedContextConfigureOnCore_coversWrites (st st' : SystemState)
     (vScId : SeLe4n.ValidObjId) (budget period priority deadline domain : Nat)
@@ -470,7 +472,7 @@ theorem schedLockSet_schedContextConfigureOnCore_coversWrites (st st' : SystemSt
     (hS : SchedLockSet.ofList? (schedLockSet_schedContextConfigureOnCore st vScId.val)
       = some S) :
     schedFootprintCoversWrites S st st' :=
-  schedFootprintCoversWrites_of_confined S (schedContextWriteSet st vScId.val)
+  schedFootprintCoversWrites_of_confined S (schedContextConfigureWriteSet st vScId.val)
     (schedContextConfigureReplenishCores st vScId.val) st st'
     (SchedLockSet.ofList?_pairs hS)
     (schedContextConfigure_confinedToCores vScId budget period priority deadline domain st st'
