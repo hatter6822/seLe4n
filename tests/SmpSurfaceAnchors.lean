@@ -15,6 +15,7 @@ import SeLe4n.Kernel.Concurrency.Locks.TicketLockRefinement
 import SeLe4n.Kernel.Concurrency.Locks.RwLock
 import SeLe4n.Kernel.Concurrency.Locks.RwLockRefinement
 import SeLe4n.Kernel.Concurrency.Locks.QueuedRwLockRefinement
+import SeLe4n.Kernel.Concurrency.Locks.Refinement
 import SeLe4n.Kernel.Concurrency.LockSet
 import SeLe4n.Platform.FFI
 import SeLe4n.Kernel.InformationFlow.ObservableStatePerCore
@@ -476,6 +477,8 @@ example (abs : SeLe4n.Kernel.Concurrency.RwLockState)
     SeLe4n.Kernel.Concurrency.queuedBlock abs conc (.cancel c) [.heldLoad c, .requestLoad c] :=
   .cancel_noRequest abs conc c h₁ h₂ h₃
 #check @SeLe4n.Kernel.Concurrency.queuedRwLock_refines_rwLockSpec
+-- The ghost lock state is refined key by key through the same chain (Locks/Refinement.lean §4).
+#check @SeLe4n.Kernel.Concurrency.LockState.applySeq_unheld_key_refines
 #check @SeLe4n.Kernel.Concurrency.queuedRwLock_admits_in_spec_order
 
 -- ============================================================================

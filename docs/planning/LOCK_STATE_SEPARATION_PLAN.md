@@ -2,7 +2,8 @@
 
 > **Workstream**: WS-LS (the lock words leave the kernel state; the bracket
 > becomes a ghost the compiled kernel never runs)
-> **Status**: **IN FLIGHT** — registered at `v0.36.60`; LS0.1 at `v0.36.62`.
+> **Status**: **IN FLIGHT** — registered at `v0.36.60`; LS0.1 at `v0.36.62`;
+> LS1.1 at `v0.36.63` (the ghost module beside the per-object layer).
 > Decided by the maintainer on 2026-10-07 ("separate by type"; "if there is a
 > better option, go that route" — §2 records the option taken and the ones
 > not).  Runs beside WS-CV (disjoint files: WS-CV owns the register context
@@ -204,6 +205,12 @@ New module `SeLe4n/Kernel/Concurrency/Locks/LockState.lean`:
   so the per-key chain `queuedRwLock_refines_rwLockSpec` lifts to "the ghost
   op sequence a bracket applies to key `k` is a `RwLockOp` list the per-lock
   refinement covers" — one lemma, no change to the 4,263-line file.
+- `LockKind.objStore` stays a kind until LS3.1: the per-object primitives
+  dispatch on it, and `LockKey.ofLockId` folds every `.objStore`-kind `LockId`
+  onto the `objStore` constructor meanwhile, so the ghost has one spelling of
+  the table lock while the words still have many.  LS3.1 deletes the kind with
+  the word it named (the ladder becomes nine object levels under the table
+  key), and `ofLockId` becomes `LockKey.object`.
 
 ### 3.2 The bracket (LS2)
 
@@ -317,7 +324,8 @@ documentation (§4's per-row list) and its Tier 3 anchor sweep (§7), and runs
 
 | Row | Does | Done when |
 |---|---|---|
-| LS1.1 | `LockKey`, its order, `LockState` and the per-key ops and folds; `lockSetHeld` over `LockState`; the ghost theorems of §3.1 restated; the refinement lift lemma.  `LockSet` re-keyed over `LockKey`; `SchedLockSet` and `SchedLockId` retired into it, the sixteen arms' declarations re-keyed. | `lake build SeLe4n` green with the old brackets still in place beside the new module (nothing runs it yet); the Tier 2 lock suites that test the ghost semantics (`with_lock_set_suite`'s acquire/unwind cases, `lock_set_suite`) execute against `LockState`. |
+| LS1.1 (**done `v0.36.63`**) | `LockKey`, its order, `LockState` and the per-key ops and folds (`SeLe4n/Kernel/Concurrency/Locks/LockState.lean`); `heldAll` over `LockState`; the ghost theorems of §3.1 restated (`acquireAll_unheld_held`, `unwindAll_not_queued`, `acquireAll_unwindAll_unheld`, `lockAcquireSequence_ordered`); the refinement lift lemma (`applySeq_unheld_key_refines`, obligation O5, through `applySeq_key`; stated in `Locks/Refinement.lean`, the staged bridge hub, so the ghost module itself pulls no bridge into the production closure).  Split from the re-keying (LS1.2) when the row started: the ghost compiles alone beside the per-object layer, and the re-keying touches every footprint declaration (249 `LockId × AccessMode` sites in 19 files at this head), so each row lands as its own cut. | Done: `lake build SeLe4n` green with the old brackets untouched; `with_lock_set_suite` executes acquire, contention, withdrawal and unwind against `LockState` (eleven runtime checks) and `#check`s every new name; Tier 3 pins the ten load-bearing ones. |
+| LS1.2 | `LockSet` re-keyed over `LockKey` (`pairs : List (LockKey × AccessMode)`, `lockAcquireSequence` pointed at §3.1's sort, `lockSetHeld c S L` over `LockState` beside the per-object form until LS3); `SchedLockSet` and `SchedLockId` retired into it, `canonicalSchedLockOfObject` and its four congruences deleted with them, the sixteen arms' declarations (`SyscallSchedContainment.lean:77-551`) and the unified footprint (`SyscallSchedFootprint.lean`) re-keyed, not re-proved; the two Tier 1 footprint censuses re-keyed.  The old brackets fold over `LockKey` through the primitives `schedAcquireLock` dispatches today, so `runBracketed` keeps running until LS2.2. | `lake build SeLe4n` green; `rg -n 'SchedLockId\|SchedLockSet' SeLe4n tests scripts` empty; `main_trace_smoke.expected` unchanged; `lock_set_suite` and `smp_foundations_suite` execute against the re-keyed set. |
 
 ### LS2 — the bracket (§3.2): the seams switch, the old bracket is deleted
 
@@ -335,7 +343,9 @@ documentation (§4's per-row list) and its Tier 3 anchor sweep (§7), and runs
 | LS3.3 | The debt row `REGISTERED_DEBT.md:217` closed with its proof name; the second exerciser reading and image size; the spec passages §7 names, `CLAIM_EVIDENCE_INDEX.md` rows 113–130 and §8 row 227 re-read against the tree. | Acceptance §1.1 met and recorded. |
 | LS3.4 | `SMP_FINE_LOCK_MIGRATION_PLAN.md` Track D re-pointed per §3.4; the CBS plan's lock-set rows (§4.12 and the resolver table at `HIERARCHICAL_CBS_PLAN.md:1533-1537`) re-read for `LockKey`; this plan moved to `docs/dev_history/planning/` and its `WORKSTREAM_CONTEXT.md` section to the closed file. | WS-LS closed in the workstream registry. |
 
-Rows are sequential; no two run in parallel.  LS2.1 and LS2.2 are two rows
+Rows are sequential; no two run in parallel.  LS1.1 and LS1.2 are two rows
+because the ghost compiles alone and the re-keying is a sweep of every
+declaration site; LS2.1 and LS2.2 are two rows
 because each compiles alone (LS2.1 adds beside the old bracket; LS2.2
 switches and deletes); LS3.1 cannot precede LS2.2 (the old bracket writes
 the fields it deletes).
@@ -346,9 +356,9 @@ the fields it deletes).
 |---|---|---|
 | O1 | `BracketSpec.runGhost_kernel : (b.runGhost c s).2.kernel = (b.run s.kernel).2` — `rfl`. The executed path is the kernel projection of the proven one. | LS2.1 |
 | O2 | `BracketSpec.covers` for each of the four seams, from the four existing coverage theorems §3.2 names, re-keyed. | LS2.2 |
-| O3 | `runGhost_locks_of_unheld : s.locks = .unheld → (b.runGhost c s).2.locks = .unheld` and `lockSetHeld c S (acquireAll c S.lockAcquireSequence .unheld)` — under the entry lock every entry starts free and ends free, and the step ran held; the refusal arm's replacement. | LS1.1, LS2.1 |
+| O3 | `runGhost_locks_of_unheld : s.locks = .unheld → (b.runGhost c s).2.locks = .unheld` and `lockSetHeld c S (acquireAll c S.lockAcquireSequence .unheld)` — under the entry lock every entry starts free and ends free, and the step ran held; the refusal arm's replacement. | LS1.1 over the pair list (`LockState.acquireAll_unheld_held`, `LockState.acquireAll_unwindAll_unheld`), LS2.1 at the spec |
 | O4 | The ghost bracket's guard as a hypothesis for Track D: `declared s.kernel = some S ∧ lockSetHeld c S (acquireAll …)` is what the HAL's resolve–acquire–re-resolve loop must establish; stated once, consumed by no kernel code. | LS2.1 |
-| O5 | The refinement lift of §3.1. | LS1.1 |
+| O5 | The refinement lift of §3.1. | LS1.1 (`LockState.applySeq_unheld_key_refines`, in `Locks/Refinement.lean` beside the bridges, which are staged) |
 | O6 | Every restated 2PL, serializability, deadlock-grounding and NI theorem keeps its name or is renamed with its anchor; none is weakened (a statement that drops a hypothesis is recorded as strengthened, with the hypothesis named). | every row |
 
 ## 6. Risks, and decisions deliberately not taken

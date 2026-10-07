@@ -364,7 +364,7 @@ inductive RwLockOp where
   | releaseWrite    (core : CoreId)
   /-- `core` withdraws its queued acquisition request (if it has one). -/
   | cancel          (core : CoreId)
-  deriving Repr
+  deriving Repr, DecidableEq
 
 /-- Is this operation a withdrawal?
 
@@ -760,6 +760,24 @@ theorem RwLockState.applyOp_cancel_of_promotes (s : RwLockState) (c : CoreId)
     s.applyOp (.cancel c) = (s.withdraw c).promoteWaitersOnWriterRelease := by
   unfold RwLockState.applyOp
   simp [h]
+
+/-- **WS-LS LS1.1**: a withdrawal by a core with nothing queued is the identity
+— the filter removes nothing and the guard, whose first conjunct is that very
+membership, does not promote.  A holder is never queued (INV-R4), so this is
+the fact that lets a bracket's shrinking phase withdraw first unconditionally:
+at a member the growing phase was *granted*, the withdrawal changes nothing. -/
+theorem RwLockState.applyOp_cancel_of_not_queued (s : RwLockState) (c : CoreId)
+    (h : c ∉ s.waiters.map Prod.fst) : s.applyOp (.cancel c) = s := by
+  have hNo : s.cancelPromotes c = false := by
+    unfold RwLockState.cancelPromotes
+    simp [h]
+  rw [RwLockState.applyOp_cancel_of_not_promotes s c hNo]
+  unfold RwLockState.withdraw
+  have hKeep : s.waiters.filter (fun w => w.1 ≠ c) = s.waiters := by
+    apply List.filter_eq_self.mpr
+    intro w hw
+    exact decide_eq_true (fun hEq => h (List.mem_map.mpr ⟨w, hw, hEq⟩))
+  rw [hKeep]
 
 /-- `cancelPromotes`, in its three-conjunct form. -/
 theorem RwLockState.cancelPromotes_iff (s : RwLockState) (c : CoreId) :

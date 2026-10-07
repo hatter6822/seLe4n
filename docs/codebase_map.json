@@ -5,9 +5,9 @@
     "url": "https://github.com/hatter6822/seLe4n",
     "head": {
       "branch": "local/cv0",
-      "commit_sha": "c57af2bee26015d8141cc6011fcb165f1bb2d0ff",
-      "tree_sha": "7b50ba5bb123c4abee795f8f07540f0eca89de49",
-      "committed_at_utc": "2026-10-07T06:43:04+00:00"
+      "commit_sha": "a370203066ce1c729c653b069e974af9018e01ab",
+      "tree_sha": "fc7e8bd81f5305591fd565c696946446b4f87030",
+      "committed_at_utc": "2026-10-07T08:01:13+00:00"
     }
   },
   "source_sync": {
@@ -17,20 +17,20 @@
       "tests/**/*.lean"
     ],
     "digest_algorithm": "sha256",
-    "source_digest": "2611aba2ff91709743fa5a87ccbb092fc0b71276c6909cdfabc6f5975d5e720e"
+    "source_digest": "87c58284f11ef1d3c21391112f620aabf02cc13853e35401b9ce02c5be44f360"
   },
   "summary": {
-    "module_count": 447,
-    "declaration_count": 24470
+    "module_count": 448,
+    "declaration_count": 24565
   },
   "readme_sync": {
-    "version": "0.36.62",
+    "version": "0.36.63",
     "lean_toolchain": "v4.28.0",
-    "production_files": 375,
-    "production_loc": 443815,
+    "production_files": 376,
+    "production_loc": 444575,
     "test_files": 72,
-    "test_loc": 89587,
-    "proved_theorem_lemma_decls": 14902,
+    "test_loc": 89662,
+    "proved_theorem_lemma_decls": 14964,
     "hardware_target": "Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A)"
   },
   "modules": [
@@ -48678,6 +48678,1182 @@
       ]
     },
     {
+      "module": "SeLe4n.Kernel.Concurrency.Locks.LockState",
+      "path": "SeLe4n/Kernel/Concurrency/Locks/LockState.lean",
+      "declaration_count": 93,
+      "declarations": [
+        {
+          "kind": "inductive",
+          "name": "LockKey",
+          "full_name": "SeLe4n.Kernel.Concurrency.LockKey",
+          "line": 77,
+          "called": [
+            "SeLe4n.Kernel.Concurrency.CoreId",
+            "SeLe4n.Kernel.Concurrency.LockId"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "le",
+          "full_name": "SeLe4n.Kernel.Concurrency.LockKey.le",
+          "line": 95,
+          "called": [
+            "SeLe4n.Kernel.Concurrency.LockKey"
+          ]
+        },
+        {
+          "kind": "instance",
+          "name": "decLe",
+          "full_name": "SeLe4n.Kernel.Concurrency.LockKey.decLe",
+          "line": 110,
+          "called": [
+            "SeLe4n.Kernel.Concurrency.LockKey",
+            "SeLe4n.Kernel.Concurrency.LockKey.le"
+          ]
+        },
+        {
+          "kind": "instance",
+          "name": "instLE",
+          "full_name": "SeLe4n.Kernel.Concurrency.LockKey.instLE",
+          "line": 113,
+          "called": [
+            "SeLe4n.Kernel.Concurrency.LockKey",
+            "SeLe4n.Kernel.Concurrency.LockKey.le"
+          ]
+        },
+        {
+          "kind": "instance",
+          "name": "instLT",
+          "full_name": "SeLe4n.Kernel.Concurrency.LockKey.instLT",
+          "line": 114,
+          "called": [
+            "SeLe4n.Kernel.Concurrency.LockKey"
+          ]
+        },
+        {
+          "kind": "instance",
+          "name": "",
+          "full_name": null,
+          "line": 115,
+          "called": []
+        },
+        {
+          "kind": "instance",
+          "name": "",
+          "full_name": null,
+          "line": 116,
+          "called": []
+        },
+        {
+          "kind": "theorem",
+          "name": "le_refl",
+          "full_name": "SeLe4n.Kernel.Concurrency.LockKey.le_refl",
+          "line": 120,
+          "called": [
+            "SeLe4n.Kernel.Concurrency.LockId.le_refl",
+            "SeLe4n.Kernel.Concurrency.LockKey"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "le_trans",
+          "full_name": "SeLe4n.Kernel.Concurrency.LockKey.le_trans",
+          "line": 129,
+          "called": [
+            "SeLe4n.Kernel.Concurrency.LockId.le_trans",
+            "SeLe4n.Kernel.Concurrency.LockKey"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "le_antisymm",
+          "full_name": "SeLe4n.Kernel.Concurrency.LockKey.le_antisymm",
+          "line": 140,
+          "called": [
+            "SeLe4n.Kernel.Concurrency.LockId.le_antisymm",
+            "SeLe4n.Kernel.Concurrency.LockKey"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "le_total",
+          "full_name": "SeLe4n.Kernel.Concurrency.LockKey.le_total",
+          "line": 152,
+          "called": [
+            "SeLe4n.Kernel.Concurrency.LockId.le_total",
+            "SeLe4n.Kernel.Concurrency.LockKey"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "lt_iff",
+          "full_name": "SeLe4n.Kernel.Concurrency.LockKey.lt_iff",
+          "line": 162,
+          "called": [
+            "SeLe4n.Kernel.Concurrency.LockKey"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "ofLockId",
+          "full_name": "SeLe4n.Kernel.Concurrency.LockKey.ofLockId",
+          "line": 173,
+          "called": [
+            "SeLe4n.Kernel.Concurrency.LockId",
+            "SeLe4n.Kernel.Concurrency.LockKey",
+            "SeLe4n.Kernel.Concurrency.LockKind"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "ofLockId_objStore",
+          "full_name": "SeLe4n.Kernel.Concurrency.LockKey.ofLockId_objStore",
+          "line": 176,
+          "called": [
+            "SeLe4n.Kernel.Concurrency.LockKey.ofLockId",
+            "SeLe4n.Kernel.Concurrency.LockKind",
+            "SeLe4n.ObjId"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "ofLockId_of_ne",
+          "full_name": "SeLe4n.Kernel.Concurrency.LockKey.ofLockId_of_ne",
+          "line": 180,
+          "called": [
+            "SeLe4n.Kernel.Concurrency.LockId",
+            "SeLe4n.Kernel.Concurrency.LockKey",
+            "SeLe4n.Kernel.Concurrency.LockKey.ofLockId",
+            "SeLe4n.Kernel.Concurrency.LockKind"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "SeLe4n.Kernel.Concurrency.LockKind.eq_objStore_of_level_eq_zero",
+          "full_name": "SeLe4n.Kernel.Concurrency.LockKind.eq_objStore_of_level_eq_zero",
+          "line": 186,
+          "called": [
+            "SeLe4n.Kernel.Concurrency.LockKind",
+            "SeLe4n.Kernel.Concurrency.LockKind.level"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "ofLockId_le_of_le",
+          "full_name": "SeLe4n.Kernel.Concurrency.LockKey.ofLockId_le_of_le",
+          "line": 193,
+          "called": [
+            "SeLe4n.Kernel.Concurrency.LockId",
+            "SeLe4n.Kernel.Concurrency.LockKey.ofLockId",
+            "SeLe4n.Kernel.Concurrency.LockKey.ofLockId_of_ne",
+            "SeLe4n.Kernel.Concurrency.LockKind",
+            "SeLe4n.Kernel.Concurrency.LockKind.eq_objStore_of_level_eq_zero",
+            "SeLe4n.Kernel.Concurrency.LockKind.level"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "ofLockId_inj",
+          "full_name": "SeLe4n.Kernel.Concurrency.LockKey.ofLockId_inj",
+          "line": 210,
+          "called": [
+            "SeLe4n.Kernel.Concurrency.LockId",
+            "SeLe4n.Kernel.Concurrency.LockKey",
+            "SeLe4n.Kernel.Concurrency.LockKey.ofLockId",
+            "SeLe4n.Kernel.Concurrency.LockKey.ofLockId_of_ne",
+            "SeLe4n.Kernel.Concurrency.LockKind"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "lockAcquireSequence",
+          "full_name": "SeLe4n.Kernel.Concurrency.lockAcquireSequence",
+          "line": 229,
+          "called": [
+            "SeLe4n.Kernel.Concurrency.AccessMode",
+            "SeLe4n.Kernel.Concurrency.LockKey"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "leKey_bool_trans",
+          "full_name": "SeLe4n.Kernel.Concurrency.leKey_bool_trans",
+          "line": 233,
+          "called": [
+            "SeLe4n.Kernel.Concurrency.AccessMode",
+            "SeLe4n.Kernel.Concurrency.LockKey",
+            "SeLe4n.Kernel.Concurrency.LockKey.le_trans"
+          ],
+          "private": true
+        },
+        {
+          "kind": "theorem",
+          "name": "leKey_bool_total",
+          "full_name": "SeLe4n.Kernel.Concurrency.leKey_bool_total",
+          "line": 238,
+          "called": [
+            "SeLe4n.Kernel.Concurrency.AccessMode",
+            "SeLe4n.Kernel.Concurrency.LockKey",
+            "SeLe4n.Kernel.Concurrency.LockKey.le_total"
+          ],
+          "private": true
+        },
+        {
+          "kind": "theorem",
+          "name": "lockAcquireSequence_ordered",
+          "full_name": "SeLe4n.Kernel.Concurrency.lockAcquireSequence_ordered",
+          "line": 245,
+          "called": [
+            "SeLe4n.Kernel.Concurrency.AccessMode",
+            "SeLe4n.Kernel.Concurrency.LockKey",
+            "SeLe4n.Kernel.Concurrency.leKey_bool_total",
+            "SeLe4n.Kernel.Concurrency.leKey_bool_trans",
+            "SeLe4n.Kernel.Concurrency.lockAcquireSequence"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "lockAcquireSequence_perm",
+          "full_name": "SeLe4n.Kernel.Concurrency.lockAcquireSequence_perm",
+          "line": 252,
+          "called": [
+            "SeLe4n.Kernel.Concurrency.AccessMode",
+            "SeLe4n.Kernel.Concurrency.LockKey",
+            "SeLe4n.Kernel.Concurrency.lockAcquireSequence"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "mem_lockAcquireSequence",
+          "full_name": "SeLe4n.Kernel.Concurrency.mem_lockAcquireSequence",
+          "line": 256,
+          "called": [
+            "SeLe4n.Kernel.Concurrency.AccessMode",
+            "SeLe4n.Kernel.Concurrency.LockKey",
+            "SeLe4n.Kernel.Concurrency.lockAcquireSequence"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "lockAcquireSequence_nodup_keys",
+          "full_name": "SeLe4n.Kernel.Concurrency.lockAcquireSequence_nodup_keys",
+          "line": 262,
+          "called": [
+            "SeLe4n.Kernel.Concurrency.AccessMode",
+            "SeLe4n.Kernel.Concurrency.LockKey",
+            "SeLe4n.Kernel.Concurrency.lockAcquireSequence",
+            "SeLe4n.Kernel.Concurrency.lockAcquireSequence_perm"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "LockState",
+          "full_name": "SeLe4n.Kernel.Concurrency.LockState",
+          "line": 279,
+          "called": [
+            "SeLe4n.Kernel.Concurrency.LockKey",
+            "SeLe4n.Kernel.Concurrency.RwLockState"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "unheld",
+          "full_name": "SeLe4n.Kernel.Concurrency.LockState.unheld",
+          "line": 284,
+          "called": [
+            "SeLe4n.Kernel.Concurrency.LockState",
+            "SeLe4n.Kernel.Concurrency.RwLockState.unheld"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "unheld_apply",
+          "full_name": "SeLe4n.Kernel.Concurrency.LockState.unheld_apply",
+          "line": 286,
+          "called": [
+            "SeLe4n.Kernel.Concurrency.LockKey",
+            "SeLe4n.Kernel.Concurrency.LockState.unheld",
+            "SeLe4n.Kernel.Concurrency.RwLockState.unheld"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "update",
+          "full_name": "SeLe4n.Kernel.Concurrency.LockState.update",
+          "line": 289,
+          "called": [
+            "SeLe4n.Kernel.Concurrency.LockKey",
+            "SeLe4n.Kernel.Concurrency.LockState",
+            "SeLe4n.Kernel.Concurrency.RwLockState"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "update_self",
+          "full_name": "SeLe4n.Kernel.Concurrency.LockState.update_self",
+          "line": 292,
+          "called": [
+            "SeLe4n.Kernel.Concurrency.LockKey",
+            "SeLe4n.Kernel.Concurrency.LockState",
+            "SeLe4n.Kernel.Concurrency.LockState.update",
+            "SeLe4n.Kernel.Concurrency.RwLockState"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "update_ne",
+          "full_name": "SeLe4n.Kernel.Concurrency.LockState.update_ne",
+          "line": 296,
+          "called": [
+            "SeLe4n.Kernel.Concurrency.LockKey",
+            "SeLe4n.Kernel.Concurrency.LockState",
+            "SeLe4n.Kernel.Concurrency.LockState.update",
+            "SeLe4n.Kernel.Concurrency.RwLockState"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "applyOp",
+          "full_name": "SeLe4n.Kernel.Concurrency.LockState.applyOp",
+          "line": 301,
+          "called": [
+            "SeLe4n.Kernel.Concurrency.LockKey",
+            "SeLe4n.Kernel.Concurrency.LockState",
+            "SeLe4n.Kernel.Concurrency.RwLockOp"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "applyOp_self",
+          "full_name": "SeLe4n.Kernel.Concurrency.LockState.applyOp_self",
+          "line": 304,
+          "called": [
+            "SeLe4n.Kernel.Concurrency.LockKey",
+            "SeLe4n.Kernel.Concurrency.LockState",
+            "SeLe4n.Kernel.Concurrency.LockState.update_self",
+            "SeLe4n.Kernel.Concurrency.RwLockOp"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "applyOp_ne",
+          "full_name": "SeLe4n.Kernel.Concurrency.LockState.applyOp_ne",
+          "line": 307,
+          "called": [
+            "SeLe4n.Kernel.Concurrency.LockKey",
+            "SeLe4n.Kernel.Concurrency.LockState",
+            "SeLe4n.Kernel.Concurrency.LockState.update_ne",
+            "SeLe4n.Kernel.Concurrency.RwLockOp"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "acquire",
+          "full_name": "SeLe4n.Kernel.Concurrency.LockState.acquire",
+          "line": 311,
+          "called": [
+            "SeLe4n.Kernel.Concurrency.AccessMode",
+            "SeLe4n.Kernel.Concurrency.AccessMode.toAcquireOp",
+            "SeLe4n.Kernel.Concurrency.CoreId",
+            "SeLe4n.Kernel.Concurrency.LockKey",
+            "SeLe4n.Kernel.Concurrency.LockState"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "release",
+          "full_name": "SeLe4n.Kernel.Concurrency.LockState.release",
+          "line": 315,
+          "called": [
+            "SeLe4n.Kernel.Concurrency.AccessMode",
+            "SeLe4n.Kernel.Concurrency.AccessMode.toReleaseOp",
+            "SeLe4n.Kernel.Concurrency.CoreId",
+            "SeLe4n.Kernel.Concurrency.LockKey",
+            "SeLe4n.Kernel.Concurrency.LockState"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "cancel",
+          "full_name": "SeLe4n.Kernel.Concurrency.LockState.cancel",
+          "line": 319,
+          "called": [
+            "SeLe4n.Kernel.Concurrency.AccessMode",
+            "SeLe4n.Kernel.Concurrency.AccessMode.toCancelOp",
+            "SeLe4n.Kernel.Concurrency.CoreId",
+            "SeLe4n.Kernel.Concurrency.LockKey",
+            "SeLe4n.Kernel.Concurrency.LockState"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "held",
+          "full_name": "SeLe4n.Kernel.Concurrency.LockState.held",
+          "line": 323,
+          "called": [
+            "SeLe4n.Kernel.Concurrency.AccessMode",
+            "SeLe4n.Kernel.Concurrency.CoreId",
+            "SeLe4n.Kernel.Concurrency.LockKey",
+            "SeLe4n.Kernel.Concurrency.LockState"
+          ]
+        },
+        {
+          "kind": "instance",
+          "name": "",
+          "full_name": null,
+          "line": 326,
+          "called": []
+        },
+        {
+          "kind": "def",
+          "name": "queued",
+          "full_name": "SeLe4n.Kernel.Concurrency.LockState.queued",
+          "line": 330,
+          "called": [
+            "SeLe4n.Kernel.Concurrency.CoreId",
+            "SeLe4n.Kernel.Concurrency.LockKey",
+            "SeLe4n.Kernel.Concurrency.LockState"
+          ]
+        },
+        {
+          "kind": "instance",
+          "name": "",
+          "full_name": null,
+          "line": 333,
+          "called": []
+        },
+        {
+          "kind": "def",
+          "name": "heldAll",
+          "full_name": "SeLe4n.Kernel.Concurrency.LockState.heldAll",
+          "line": 338,
+          "called": [
+            "SeLe4n.Kernel.Concurrency.AccessMode",
+            "SeLe4n.Kernel.Concurrency.CoreId",
+            "SeLe4n.Kernel.Concurrency.LockKey",
+            "SeLe4n.Kernel.Concurrency.LockState"
+          ]
+        },
+        {
+          "kind": "instance",
+          "name": "",
+          "full_name": null,
+          "line": 341,
+          "called": []
+        },
+        {
+          "kind": "def",
+          "name": "applySeq",
+          "full_name": "SeLe4n.Kernel.Concurrency.LockState.applySeq",
+          "line": 351,
+          "called": [
+            "SeLe4n.Kernel.Concurrency.LockKey",
+            "SeLe4n.Kernel.Concurrency.LockState",
+            "SeLe4n.Kernel.Concurrency.RwLockOp"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "applySeq_nil",
+          "full_name": "SeLe4n.Kernel.Concurrency.LockState.applySeq_nil",
+          "line": 354,
+          "called": [
+            "SeLe4n.Kernel.Concurrency.LockState"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "applySeq_cons",
+          "full_name": "SeLe4n.Kernel.Concurrency.LockState.applySeq_cons",
+          "line": 356,
+          "called": [
+            "SeLe4n.Kernel.Concurrency.LockKey",
+            "SeLe4n.Kernel.Concurrency.LockState",
+            "SeLe4n.Kernel.Concurrency.RwLockOp"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "applySeq_append",
+          "full_name": "SeLe4n.Kernel.Concurrency.LockState.applySeq_append",
+          "line": 360,
+          "called": [
+            "SeLe4n.Kernel.Concurrency.LockKey",
+            "SeLe4n.Kernel.Concurrency.LockState",
+            "SeLe4n.Kernel.Concurrency.LockState.applySeq",
+            "SeLe4n.Kernel.Concurrency.RwLockOp"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "acquireOps",
+          "full_name": "SeLe4n.Kernel.Concurrency.LockState.acquireOps",
+          "line": 365,
+          "called": [
+            "SeLe4n.Kernel.Concurrency.AccessMode",
+            "SeLe4n.Kernel.Concurrency.CoreId",
+            "SeLe4n.Kernel.Concurrency.LockKey",
+            "SeLe4n.Kernel.Concurrency.RwLockOp"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "releaseOps",
+          "full_name": "SeLe4n.Kernel.Concurrency.LockState.releaseOps",
+          "line": 369,
+          "called": [
+            "SeLe4n.Kernel.Concurrency.AccessMode",
+            "SeLe4n.Kernel.Concurrency.CoreId",
+            "SeLe4n.Kernel.Concurrency.LockKey",
+            "SeLe4n.Kernel.Concurrency.RwLockOp"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "cancelOps",
+          "full_name": "SeLe4n.Kernel.Concurrency.LockState.cancelOps",
+          "line": 373,
+          "called": [
+            "SeLe4n.Kernel.Concurrency.AccessMode",
+            "SeLe4n.Kernel.Concurrency.CoreId",
+            "SeLe4n.Kernel.Concurrency.LockKey",
+            "SeLe4n.Kernel.Concurrency.RwLockOp"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "acquireAll",
+          "full_name": "SeLe4n.Kernel.Concurrency.LockState.acquireAll",
+          "line": 378,
+          "called": [
+            "SeLe4n.Kernel.Concurrency.AccessMode",
+            "SeLe4n.Kernel.Concurrency.CoreId",
+            "SeLe4n.Kernel.Concurrency.LockKey",
+            "SeLe4n.Kernel.Concurrency.LockState"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "releaseAll",
+          "full_name": "SeLe4n.Kernel.Concurrency.LockState.releaseAll",
+          "line": 383,
+          "called": [
+            "SeLe4n.Kernel.Concurrency.AccessMode",
+            "SeLe4n.Kernel.Concurrency.CoreId",
+            "SeLe4n.Kernel.Concurrency.LockKey",
+            "SeLe4n.Kernel.Concurrency.LockState"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "cancelAll",
+          "full_name": "SeLe4n.Kernel.Concurrency.LockState.cancelAll",
+          "line": 387,
+          "called": [
+            "SeLe4n.Kernel.Concurrency.AccessMode",
+            "SeLe4n.Kernel.Concurrency.CoreId",
+            "SeLe4n.Kernel.Concurrency.LockKey",
+            "SeLe4n.Kernel.Concurrency.LockState"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "unwindAll",
+          "full_name": "SeLe4n.Kernel.Concurrency.LockState.unwindAll",
+          "line": 392,
+          "called": [
+            "SeLe4n.Kernel.Concurrency.AccessMode",
+            "SeLe4n.Kernel.Concurrency.CoreId",
+            "SeLe4n.Kernel.Concurrency.LockKey",
+            "SeLe4n.Kernel.Concurrency.LockState",
+            "SeLe4n.Kernel.Concurrency.LockState.cancelAll",
+            "SeLe4n.Kernel.Concurrency.LockState.releaseAll"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "acquireAll_nil",
+          "full_name": "SeLe4n.Kernel.Concurrency.LockState.acquireAll_nil",
+          "line": 395,
+          "called": [
+            "SeLe4n.Kernel.Concurrency.CoreId",
+            "SeLe4n.Kernel.Concurrency.LockState",
+            "SeLe4n.Kernel.Concurrency.LockState.acquireAll"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "releaseAll_nil",
+          "full_name": "SeLe4n.Kernel.Concurrency.LockState.releaseAll_nil",
+          "line": 396,
+          "called": [
+            "SeLe4n.Kernel.Concurrency.CoreId",
+            "SeLe4n.Kernel.Concurrency.LockState",
+            "SeLe4n.Kernel.Concurrency.LockState.releaseAll"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "cancelAll_nil",
+          "full_name": "SeLe4n.Kernel.Concurrency.LockState.cancelAll_nil",
+          "line": 397,
+          "called": [
+            "SeLe4n.Kernel.Concurrency.CoreId",
+            "SeLe4n.Kernel.Concurrency.LockState",
+            "SeLe4n.Kernel.Concurrency.LockState.cancelAll"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "acquireAll_cons",
+          "full_name": "SeLe4n.Kernel.Concurrency.LockState.acquireAll_cons",
+          "line": 399,
+          "called": [
+            "SeLe4n.Kernel.Concurrency.AccessMode",
+            "SeLe4n.Kernel.Concurrency.CoreId",
+            "SeLe4n.Kernel.Concurrency.LockKey",
+            "SeLe4n.Kernel.Concurrency.LockState",
+            "SeLe4n.Kernel.Concurrency.LockState.acquireAll"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "releaseAll_cons",
+          "full_name": "SeLe4n.Kernel.Concurrency.LockState.releaseAll_cons",
+          "line": 402,
+          "called": [
+            "SeLe4n.Kernel.Concurrency.AccessMode",
+            "SeLe4n.Kernel.Concurrency.CoreId",
+            "SeLe4n.Kernel.Concurrency.LockKey",
+            "SeLe4n.Kernel.Concurrency.LockState",
+            "SeLe4n.Kernel.Concurrency.LockState.releaseAll"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "cancelAll_cons",
+          "full_name": "SeLe4n.Kernel.Concurrency.LockState.cancelAll_cons",
+          "line": 405,
+          "called": [
+            "SeLe4n.Kernel.Concurrency.AccessMode",
+            "SeLe4n.Kernel.Concurrency.CoreId",
+            "SeLe4n.Kernel.Concurrency.LockKey",
+            "SeLe4n.Kernel.Concurrency.LockState",
+            "SeLe4n.Kernel.Concurrency.LockState.cancelAll"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "acquireAll_eq_applySeq",
+          "full_name": "SeLe4n.Kernel.Concurrency.LockState.acquireAll_eq_applySeq",
+          "line": 410,
+          "called": [
+            "SeLe4n.Kernel.Concurrency.AccessMode",
+            "SeLe4n.Kernel.Concurrency.CoreId",
+            "SeLe4n.Kernel.Concurrency.LockKey",
+            "SeLe4n.Kernel.Concurrency.LockState",
+            "SeLe4n.Kernel.Concurrency.LockState.acquireAll",
+            "SeLe4n.Kernel.Concurrency.LockState.acquireAll_cons",
+            "SeLe4n.Kernel.Concurrency.LockState.acquireOps",
+            "SeLe4n.Kernel.Concurrency.LockState.applySeq_cons"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "releaseAll_eq_applySeq",
+          "full_name": "SeLe4n.Kernel.Concurrency.LockState.releaseAll_eq_applySeq",
+          "line": 416,
+          "called": [
+            "SeLe4n.Kernel.Concurrency.AccessMode",
+            "SeLe4n.Kernel.Concurrency.CoreId",
+            "SeLe4n.Kernel.Concurrency.LockKey",
+            "SeLe4n.Kernel.Concurrency.LockState",
+            "SeLe4n.Kernel.Concurrency.LockState.applySeq_cons",
+            "SeLe4n.Kernel.Concurrency.LockState.releaseAll",
+            "SeLe4n.Kernel.Concurrency.LockState.releaseAll_cons",
+            "SeLe4n.Kernel.Concurrency.LockState.releaseOps"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "cancelAll_eq_applySeq",
+          "full_name": "SeLe4n.Kernel.Concurrency.LockState.cancelAll_eq_applySeq",
+          "line": 422,
+          "called": [
+            "SeLe4n.Kernel.Concurrency.AccessMode",
+            "SeLe4n.Kernel.Concurrency.CoreId",
+            "SeLe4n.Kernel.Concurrency.LockKey",
+            "SeLe4n.Kernel.Concurrency.LockState",
+            "SeLe4n.Kernel.Concurrency.LockState.applySeq_cons",
+            "SeLe4n.Kernel.Concurrency.LockState.cancelAll",
+            "SeLe4n.Kernel.Concurrency.LockState.cancelAll_cons",
+            "SeLe4n.Kernel.Concurrency.LockState.cancelOps"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "bracketOps",
+          "full_name": "SeLe4n.Kernel.Concurrency.LockState.bracketOps",
+          "line": 430,
+          "called": [
+            "SeLe4n.Kernel.Concurrency.AccessMode",
+            "SeLe4n.Kernel.Concurrency.CoreId",
+            "SeLe4n.Kernel.Concurrency.LockKey",
+            "SeLe4n.Kernel.Concurrency.LockState.acquireOps",
+            "SeLe4n.Kernel.Concurrency.LockState.cancelOps",
+            "SeLe4n.Kernel.Concurrency.LockState.releaseOps",
+            "SeLe4n.Kernel.Concurrency.RwLockOp"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "unwindAll_acquireAll_eq_applySeq",
+          "full_name": "SeLe4n.Kernel.Concurrency.LockState.unwindAll_acquireAll_eq_applySeq",
+          "line": 433,
+          "called": [
+            "SeLe4n.Kernel.Concurrency.AccessMode",
+            "SeLe4n.Kernel.Concurrency.CoreId",
+            "SeLe4n.Kernel.Concurrency.LockKey",
+            "SeLe4n.Kernel.Concurrency.LockState",
+            "SeLe4n.Kernel.Concurrency.LockState.acquireAll",
+            "SeLe4n.Kernel.Concurrency.LockState.acquireAll_eq_applySeq",
+            "SeLe4n.Kernel.Concurrency.LockState.applySeq_append",
+            "SeLe4n.Kernel.Concurrency.LockState.bracketOps",
+            "SeLe4n.Kernel.Concurrency.LockState.cancelAll_eq_applySeq",
+            "SeLe4n.Kernel.Concurrency.LockState.releaseAll_eq_applySeq",
+            "SeLe4n.Kernel.Concurrency.LockState.unwindAll"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "keyOps",
+          "full_name": "SeLe4n.Kernel.Concurrency.LockState.keyOps",
+          "line": 440,
+          "called": [
+            "SeLe4n.Kernel.Concurrency.LockKey",
+            "SeLe4n.Kernel.Concurrency.RwLockOp"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "keyOps_nil",
+          "full_name": "SeLe4n.Kernel.Concurrency.LockState.keyOps_nil",
+          "line": 443,
+          "called": [
+            "SeLe4n.Kernel.Concurrency.LockKey",
+            "SeLe4n.Kernel.Concurrency.LockState.keyOps"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "keyOps_cons_self",
+          "full_name": "SeLe4n.Kernel.Concurrency.LockState.keyOps_cons_self",
+          "line": 445,
+          "called": [
+            "SeLe4n.Kernel.Concurrency.LockKey",
+            "SeLe4n.Kernel.Concurrency.LockState.keyOps",
+            "SeLe4n.Kernel.Concurrency.RwLockOp"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "keyOps_cons_ne",
+          "full_name": "SeLe4n.Kernel.Concurrency.LockState.keyOps_cons_ne",
+          "line": 449,
+          "called": [
+            "SeLe4n.Kernel.Concurrency.LockKey",
+            "SeLe4n.Kernel.Concurrency.LockState.keyOps",
+            "SeLe4n.Kernel.Concurrency.RwLockOp"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "keyOps_append",
+          "full_name": "SeLe4n.Kernel.Concurrency.LockState.keyOps_append",
+          "line": 454,
+          "called": [
+            "SeLe4n.Kernel.Concurrency.LockKey",
+            "SeLe4n.Kernel.Concurrency.LockState.keyOps",
+            "SeLe4n.Kernel.Concurrency.RwLockOp"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "applySeq_key",
+          "full_name": "SeLe4n.Kernel.Concurrency.LockState.applySeq_key",
+          "line": 462,
+          "called": [
+            "SeLe4n.Kernel.Concurrency.LockKey",
+            "SeLe4n.Kernel.Concurrency.LockState",
+            "SeLe4n.Kernel.Concurrency.LockState.applyOp_ne",
+            "SeLe4n.Kernel.Concurrency.LockState.applyOp_self",
+            "SeLe4n.Kernel.Concurrency.LockState.applySeq_cons",
+            "SeLe4n.Kernel.Concurrency.LockState.keyOps",
+            "SeLe4n.Kernel.Concurrency.LockState.keyOps_cons_ne",
+            "SeLe4n.Kernel.Concurrency.LockState.keyOps_cons_self",
+            "SeLe4n.Kernel.Concurrency.RwLockOp",
+            "SeLe4n.Kernel.Concurrency.RwLockState.applyOp"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "applySeq_of_not_mem",
+          "full_name": "SeLe4n.Kernel.Concurrency.LockState.applySeq_of_not_mem",
+          "line": 474,
+          "called": [
+            "SeLe4n.Kernel.Concurrency.LockKey",
+            "SeLe4n.Kernel.Concurrency.LockState",
+            "SeLe4n.Kernel.Concurrency.LockState.applySeq_key",
+            "SeLe4n.Kernel.Concurrency.LockState.keyOps",
+            "SeLe4n.Kernel.Concurrency.RwLockOp"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "mem_keyOps_map",
+          "full_name": "SeLe4n.Kernel.Concurrency.LockState.mem_keyOps_map",
+          "line": 489,
+          "called": [
+            "SeLe4n.Kernel.Concurrency.AccessMode",
+            "SeLe4n.Kernel.Concurrency.LockKey",
+            "SeLe4n.Kernel.Concurrency.LockState.keyOps",
+            "SeLe4n.Kernel.Concurrency.RwLockOp"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "keyOps_map_of_nodup",
+          "full_name": "SeLe4n.Kernel.Concurrency.LockState.keyOps_map_of_nodup",
+          "line": 503,
+          "called": [
+            "SeLe4n.Kernel.Concurrency.AccessMode",
+            "SeLe4n.Kernel.Concurrency.LockKey",
+            "SeLe4n.Kernel.Concurrency.LockState.keyOps",
+            "SeLe4n.Kernel.Concurrency.LockState.keyOps_cons_ne",
+            "SeLe4n.Kernel.Concurrency.LockState.keyOps_cons_self",
+            "SeLe4n.Kernel.Concurrency.RwLockOp"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "keyOps_map_of_not_mem",
+          "full_name": "SeLe4n.Kernel.Concurrency.LockState.keyOps_map_of_not_mem",
+          "line": 532,
+          "called": [
+            "SeLe4n.Kernel.Concurrency.AccessMode",
+            "SeLe4n.Kernel.Concurrency.LockKey",
+            "SeLe4n.Kernel.Concurrency.LockState.keyOps",
+            "SeLe4n.Kernel.Concurrency.RwLockOp"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "keyOps_acquireOps_of_nodup",
+          "full_name": "SeLe4n.Kernel.Concurrency.LockState.keyOps_acquireOps_of_nodup",
+          "line": 543,
+          "called": [
+            "SeLe4n.Kernel.Concurrency.AccessMode",
+            "SeLe4n.Kernel.Concurrency.AccessMode.toAcquireOp",
+            "SeLe4n.Kernel.Concurrency.CoreId",
+            "SeLe4n.Kernel.Concurrency.LockKey",
+            "SeLe4n.Kernel.Concurrency.LockState.acquireOps",
+            "SeLe4n.Kernel.Concurrency.LockState.keyOps",
+            "SeLe4n.Kernel.Concurrency.LockState.keyOps_map_of_nodup"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "keyOps_cancelOps_of_nodup",
+          "full_name": "SeLe4n.Kernel.Concurrency.LockState.keyOps_cancelOps_of_nodup",
+          "line": 548,
+          "called": [
+            "SeLe4n.Kernel.Concurrency.AccessMode",
+            "SeLe4n.Kernel.Concurrency.AccessMode.toCancelOp",
+            "SeLe4n.Kernel.Concurrency.CoreId",
+            "SeLe4n.Kernel.Concurrency.LockKey",
+            "SeLe4n.Kernel.Concurrency.LockState.cancelOps",
+            "SeLe4n.Kernel.Concurrency.LockState.keyOps",
+            "SeLe4n.Kernel.Concurrency.LockState.keyOps_map_of_nodup",
+            "SeLe4n.Kernel.Concurrency.RwLockOp"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "keyOps_releaseOps_of_nodup",
+          "full_name": "SeLe4n.Kernel.Concurrency.LockState.keyOps_releaseOps_of_nodup",
+          "line": 553,
+          "called": [
+            "SeLe4n.Kernel.Concurrency.AccessMode",
+            "SeLe4n.Kernel.Concurrency.AccessMode.toReleaseOp",
+            "SeLe4n.Kernel.Concurrency.CoreId",
+            "SeLe4n.Kernel.Concurrency.LockKey",
+            "SeLe4n.Kernel.Concurrency.LockState.keyOps",
+            "SeLe4n.Kernel.Concurrency.LockState.keyOps_map_of_nodup",
+            "SeLe4n.Kernel.Concurrency.LockState.releaseOps"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "keyOps_acquireOps_of_not_mem",
+          "full_name": "SeLe4n.Kernel.Concurrency.LockState.keyOps_acquireOps_of_not_mem",
+          "line": 559,
+          "called": [
+            "SeLe4n.Kernel.Concurrency.AccessMode",
+            "SeLe4n.Kernel.Concurrency.AccessMode.toAcquireOp",
+            "SeLe4n.Kernel.Concurrency.CoreId",
+            "SeLe4n.Kernel.Concurrency.LockKey",
+            "SeLe4n.Kernel.Concurrency.LockState.acquireOps",
+            "SeLe4n.Kernel.Concurrency.LockState.keyOps",
+            "SeLe4n.Kernel.Concurrency.LockState.keyOps_map_of_not_mem"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "keyOps_cancelOps_of_not_mem",
+          "full_name": "SeLe4n.Kernel.Concurrency.LockState.keyOps_cancelOps_of_not_mem",
+          "line": 563,
+          "called": [
+            "SeLe4n.Kernel.Concurrency.AccessMode",
+            "SeLe4n.Kernel.Concurrency.AccessMode.toCancelOp",
+            "SeLe4n.Kernel.Concurrency.CoreId",
+            "SeLe4n.Kernel.Concurrency.LockKey",
+            "SeLe4n.Kernel.Concurrency.LockState.cancelOps",
+            "SeLe4n.Kernel.Concurrency.LockState.keyOps",
+            "SeLe4n.Kernel.Concurrency.LockState.keyOps_map_of_not_mem"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "keyOps_releaseOps_of_not_mem",
+          "full_name": "SeLe4n.Kernel.Concurrency.LockState.keyOps_releaseOps_of_not_mem",
+          "line": 567,
+          "called": [
+            "SeLe4n.Kernel.Concurrency.AccessMode",
+            "SeLe4n.Kernel.Concurrency.AccessMode.toReleaseOp",
+            "SeLe4n.Kernel.Concurrency.CoreId",
+            "SeLe4n.Kernel.Concurrency.LockKey",
+            "SeLe4n.Kernel.Concurrency.LockState.keyOps",
+            "SeLe4n.Kernel.Concurrency.LockState.keyOps_map_of_not_mem",
+            "SeLe4n.Kernel.Concurrency.LockState.releaseOps"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "mem_keyOps_cancelOps",
+          "full_name": "SeLe4n.Kernel.Concurrency.LockState.mem_keyOps_cancelOps",
+          "line": 572,
+          "called": [
+            "SeLe4n.Kernel.Concurrency.AccessMode",
+            "SeLe4n.Kernel.Concurrency.AccessMode.toCancelOp",
+            "SeLe4n.Kernel.Concurrency.CoreId",
+            "SeLe4n.Kernel.Concurrency.LockKey",
+            "SeLe4n.Kernel.Concurrency.LockState.cancelOps",
+            "SeLe4n.Kernel.Concurrency.LockState.keyOps",
+            "SeLe4n.Kernel.Concurrency.LockState.mem_keyOps_map",
+            "SeLe4n.Kernel.Concurrency.RwLockOp"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "mem_keyOps_releaseOps",
+          "full_name": "SeLe4n.Kernel.Concurrency.LockState.mem_keyOps_releaseOps",
+          "line": 577,
+          "called": [
+            "SeLe4n.Kernel.Concurrency.AccessMode",
+            "SeLe4n.Kernel.Concurrency.AccessMode.toReleaseOp",
+            "SeLe4n.Kernel.Concurrency.CoreId",
+            "SeLe4n.Kernel.Concurrency.LockKey",
+            "SeLe4n.Kernel.Concurrency.LockState.keyOps",
+            "SeLe4n.Kernel.Concurrency.LockState.mem_keyOps_map",
+            "SeLe4n.Kernel.Concurrency.LockState.releaseOps",
+            "SeLe4n.Kernel.Concurrency.RwLockOp"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "acquireAll_held_of_free",
+          "full_name": "SeLe4n.Kernel.Concurrency.LockState.acquireAll_held_of_free",
+          "line": 589,
+          "called": [
+            "SeLe4n.Kernel.Concurrency.AccessMode",
+            "SeLe4n.Kernel.Concurrency.CoreId",
+            "SeLe4n.Kernel.Concurrency.LockKey",
+            "SeLe4n.Kernel.Concurrency.LockState",
+            "SeLe4n.Kernel.Concurrency.LockState.acquireAll",
+            "SeLe4n.Kernel.Concurrency.LockState.acquireAll_eq_applySeq",
+            "SeLe4n.Kernel.Concurrency.LockState.applySeq_key",
+            "SeLe4n.Kernel.Concurrency.LockState.keyOps_acquireOps_of_nodup",
+            "SeLe4n.Kernel.Concurrency.RwLockState.coreHolds",
+            "SeLe4n.Kernel.Concurrency.RwLockState.unheld",
+            "SeLe4n.Kernel.Concurrency.RwLockState.unheld_acquire_grants"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "acquireAll_unheld_held",
+          "full_name": "SeLe4n.Kernel.Concurrency.LockState.acquireAll_unheld_held",
+          "line": 602,
+          "called": [
+            "SeLe4n.Kernel.Concurrency.AccessMode",
+            "SeLe4n.Kernel.Concurrency.CoreId",
+            "SeLe4n.Kernel.Concurrency.LockKey",
+            "SeLe4n.Kernel.Concurrency.LockState.acquireAll",
+            "SeLe4n.Kernel.Concurrency.LockState.acquireAll_held_of_free",
+            "SeLe4n.Kernel.Concurrency.LockState.unheld"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "foldl_cancel_not_queued",
+          "full_name": "SeLe4n.Kernel.Concurrency.LockState.foldl_cancel_not_queued",
+          "line": 608,
+          "called": [
+            "SeLe4n.Kernel.Concurrency.CoreId",
+            "SeLe4n.Kernel.Concurrency.RwLockOp",
+            "SeLe4n.Kernel.Concurrency.RwLockState",
+            "SeLe4n.Kernel.Concurrency.RwLockState.applyOp",
+            "SeLe4n.Kernel.Concurrency.rwLock_cancel_not_queued"
+          ],
+          "private": true
+        },
+        {
+          "kind": "theorem",
+          "name": "foldl_release_preserves_not_queued",
+          "full_name": "SeLe4n.Kernel.Concurrency.LockState.foldl_release_preserves_not_queued",
+          "line": 623,
+          "called": [
+            "SeLe4n.Kernel.Concurrency.AccessMode",
+            "SeLe4n.Kernel.Concurrency.AccessMode.toReleaseOp",
+            "SeLe4n.Kernel.Concurrency.CoreId",
+            "SeLe4n.Kernel.Concurrency.RwLockOp",
+            "SeLe4n.Kernel.Concurrency.RwLockState",
+            "SeLe4n.Kernel.Concurrency.RwLockState.applyOp",
+            "SeLe4n.Kernel.Concurrency.rwLock_release_preserves_not_queued"
+          ],
+          "private": true
+        },
+        {
+          "kind": "theorem",
+          "name": "cancelAll_not_queued",
+          "full_name": "SeLe4n.Kernel.Concurrency.LockState.cancelAll_not_queued",
+          "line": 638,
+          "called": [
+            "SeLe4n.Kernel.Concurrency.AccessMode",
+            "SeLe4n.Kernel.Concurrency.CoreId",
+            "SeLe4n.Kernel.Concurrency.LockKey",
+            "SeLe4n.Kernel.Concurrency.LockState",
+            "SeLe4n.Kernel.Concurrency.LockState.applySeq_key",
+            "SeLe4n.Kernel.Concurrency.LockState.cancelAll",
+            "SeLe4n.Kernel.Concurrency.LockState.cancelAll_eq_applySeq",
+            "SeLe4n.Kernel.Concurrency.LockState.cancelOps",
+            "SeLe4n.Kernel.Concurrency.LockState.foldl_cancel_not_queued",
+            "SeLe4n.Kernel.Concurrency.LockState.keyOps",
+            "SeLe4n.Kernel.Concurrency.LockState.mem_keyOps_cancelOps",
+            "SeLe4n.Kernel.Concurrency.RwLockOp"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "releaseAll_preserves_not_queued",
+          "full_name": "SeLe4n.Kernel.Concurrency.LockState.releaseAll_preserves_not_queued",
+          "line": 656,
+          "called": [
+            "SeLe4n.Kernel.Concurrency.AccessMode",
+            "SeLe4n.Kernel.Concurrency.CoreId",
+            "SeLe4n.Kernel.Concurrency.LockKey",
+            "SeLe4n.Kernel.Concurrency.LockState",
+            "SeLe4n.Kernel.Concurrency.LockState.applySeq_key",
+            "SeLe4n.Kernel.Concurrency.LockState.foldl_release_preserves_not_queued",
+            "SeLe4n.Kernel.Concurrency.LockState.mem_keyOps_releaseOps",
+            "SeLe4n.Kernel.Concurrency.LockState.releaseAll",
+            "SeLe4n.Kernel.Concurrency.LockState.releaseAll_eq_applySeq"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "unwindAll_not_queued",
+          "full_name": "SeLe4n.Kernel.Concurrency.LockState.unwindAll_not_queued",
+          "line": 671,
+          "called": [
+            "SeLe4n.Kernel.Concurrency.AccessMode",
+            "SeLe4n.Kernel.Concurrency.CoreId",
+            "SeLe4n.Kernel.Concurrency.LockKey",
+            "SeLe4n.Kernel.Concurrency.LockState",
+            "SeLe4n.Kernel.Concurrency.LockState.cancelAll_not_queued",
+            "SeLe4n.Kernel.Concurrency.LockState.releaseAll_preserves_not_queued",
+            "SeLe4n.Kernel.Concurrency.LockState.unwindAll"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "bracket_key_roundtrip",
+          "full_name": "SeLe4n.Kernel.Concurrency.LockState.bracket_key_roundtrip",
+          "line": 677,
+          "called": [
+            "SeLe4n.Kernel.Concurrency.AccessMode",
+            "SeLe4n.Kernel.Concurrency.AccessMode.toAcquireOp",
+            "SeLe4n.Kernel.Concurrency.AccessMode.toReleaseOp",
+            "SeLe4n.Kernel.Concurrency.CoreId",
+            "SeLe4n.Kernel.Concurrency.RwLockOp",
+            "SeLe4n.Kernel.Concurrency.RwLockState",
+            "SeLe4n.Kernel.Concurrency.RwLockState.applyOp",
+            "SeLe4n.Kernel.Concurrency.RwLockState.applyOp_cancel_of_not_queued",
+            "SeLe4n.Kernel.Concurrency.RwLockState.coreInvolved",
+            "SeLe4n.Kernel.Concurrency.RwLockState.unheld",
+            "SeLe4n.Kernel.Concurrency.RwLockState.unheld_acquire_release_roundtrip"
+          ],
+          "private": true
+        },
+        {
+          "kind": "theorem",
+          "name": "acquireAll_unwindAll_unheld",
+          "full_name": "SeLe4n.Kernel.Concurrency.LockState.acquireAll_unwindAll_unheld",
+          "line": 692,
+          "called": [
+            "SeLe4n.Kernel.Concurrency.AccessMode",
+            "SeLe4n.Kernel.Concurrency.CoreId",
+            "SeLe4n.Kernel.Concurrency.LockKey",
+            "SeLe4n.Kernel.Concurrency.LockState.acquireAll",
+            "SeLe4n.Kernel.Concurrency.LockState.applySeq_key",
+            "SeLe4n.Kernel.Concurrency.LockState.bracketOps",
+            "SeLe4n.Kernel.Concurrency.LockState.bracket_key_roundtrip",
+            "SeLe4n.Kernel.Concurrency.LockState.keyOps_acquireOps_of_nodup",
+            "SeLe4n.Kernel.Concurrency.LockState.keyOps_acquireOps_of_not_mem",
+            "SeLe4n.Kernel.Concurrency.LockState.keyOps_append",
+            "SeLe4n.Kernel.Concurrency.LockState.keyOps_cancelOps_of_nodup",
+            "SeLe4n.Kernel.Concurrency.LockState.keyOps_cancelOps_of_not_mem",
+            "SeLe4n.Kernel.Concurrency.LockState.keyOps_releaseOps_of_nodup",
+            "SeLe4n.Kernel.Concurrency.LockState.keyOps_releaseOps_of_not_mem",
+            "SeLe4n.Kernel.Concurrency.LockState.unheld",
+            "SeLe4n.Kernel.Concurrency.LockState.unheld_apply",
+            "SeLe4n.Kernel.Concurrency.LockState.unwindAll",
+            "SeLe4n.Kernel.Concurrency.LockState.unwindAll_acquireAll_eq_applySeq"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "applySeq_unheld_key_refines",
+          "full_name": "SeLe4n.Kernel.Concurrency.LockState.applySeq_unheld_key_refines",
+          "line": 730,
+          "called": [
+            "SeLe4n.Kernel.Concurrency.ListQueuedBlocks",
+            "SeLe4n.Kernel.Concurrency.LockKey",
+            "SeLe4n.Kernel.Concurrency.LockState.applySeq_key",
+            "SeLe4n.Kernel.Concurrency.LockState.keyOps",
+            "SeLe4n.Kernel.Concurrency.LockState.unheld",
+            "SeLe4n.Kernel.Concurrency.LockState.unheld_apply",
+            "SeLe4n.Kernel.Concurrency.QueuedRwLockConcrete.unheld",
+            "SeLe4n.Kernel.Concurrency.QueuedRwLockOp",
+            "SeLe4n.Kernel.Concurrency.RwLockOp",
+            "SeLe4n.Kernel.Concurrency.RwLockState.unheld",
+            "SeLe4n.Kernel.Concurrency.queuedFoldBlock",
+            "SeLe4n.Kernel.Concurrency.queuedRwLock_refines_rwLockSpec",
+            "SeLe4n.Kernel.Concurrency.queuedSim"
+          ]
+        }
+      ]
+    },
+    {
       "module": "SeLe4n.Kernel.Concurrency.Locks.QueuedRwLockRefinement",
       "path": "SeLe4n/Kernel/Concurrency/Locks/QueuedRwLockRefinement.lean",
       "declaration_count": 180,
@@ -51730,7 +52906,7 @@
     {
       "module": "SeLe4n.Kernel.Concurrency.Locks.RwLock",
       "path": "SeLe4n/Kernel/Concurrency/Locks/RwLock.lean",
-      "declaration_count": 344,
+      "declaration_count": 345,
       "declarations": [
         {
           "kind": "def",
@@ -52021,9 +53197,23 @@
         },
         {
           "kind": "theorem",
+          "name": "RwLockState.applyOp_cancel_of_not_queued",
+          "full_name": "SeLe4n.Kernel.Concurrency.RwLockState.applyOp_cancel_of_not_queued",
+          "line": 769,
+          "called": [
+            "SeLe4n.Kernel.Concurrency.CoreId",
+            "SeLe4n.Kernel.Concurrency.RwLockState",
+            "SeLe4n.Kernel.Concurrency.RwLockState.applyOp",
+            "SeLe4n.Kernel.Concurrency.RwLockState.applyOp_cancel_of_not_promotes",
+            "SeLe4n.Kernel.Concurrency.RwLockState.cancelPromotes",
+            "SeLe4n.Kernel.Concurrency.RwLockState.withdraw"
+          ]
+        },
+        {
+          "kind": "theorem",
           "name": "RwLockState.cancelPromotes_iff",
           "full_name": "SeLe4n.Kernel.Concurrency.RwLockState.cancelPromotes_iff",
-          "line": 765,
+          "line": 783,
           "called": [
             "SeLe4n.Kernel.Concurrency.CoreId",
             "SeLe4n.Kernel.Concurrency.RwLockState",
@@ -52036,7 +53226,7 @@
           "kind": "theorem",
           "name": "RwLockState.headIsReader_iff_takeWhile_ne_nil",
           "full_name": "SeLe4n.Kernel.Concurrency.RwLockState.headIsReader_iff_takeWhile_ne_nil",
-          "line": 774,
+          "line": 792,
           "called": [
             "SeLe4n.Kernel.Concurrency.AccessMode",
             "SeLe4n.Kernel.Concurrency.RwLockState",
@@ -52047,7 +53237,7 @@
           "kind": "theorem",
           "name": "RwLockState.promoteWaitersOnWriterRelease_of_headIsReader",
           "full_name": "SeLe4n.Kernel.Concurrency.RwLockState.promoteWaitersOnWriterRelease_of_headIsReader",
-          "line": 787,
+          "line": 805,
           "called": [
             "SeLe4n.Kernel.Concurrency.AccessMode",
             "SeLe4n.Kernel.Concurrency.RwLockState",
@@ -52059,7 +53249,7 @@
           "kind": "def",
           "name": "RwLockState.cancelRun",
           "full_name": "SeLe4n.Kernel.Concurrency.RwLockState.cancelRun",
-          "line": 806,
+          "line": 824,
           "called": [
             "SeLe4n.Kernel.Concurrency.AccessMode",
             "SeLe4n.Kernel.Concurrency.CoreId",
@@ -52072,7 +53262,7 @@
           "kind": "theorem",
           "name": "RwLockState.cancelRun_ne_nil_of_promotes",
           "full_name": "SeLe4n.Kernel.Concurrency.RwLockState.cancelRun_ne_nil_of_promotes",
-          "line": 812,
+          "line": 830,
           "called": [
             "SeLe4n.Kernel.Concurrency.CoreId",
             "SeLe4n.Kernel.Concurrency.RwLockState",
@@ -52086,7 +53276,7 @@
           "kind": "theorem",
           "name": "RwLockState.cancelRun_of_not_promotes",
           "full_name": "SeLe4n.Kernel.Concurrency.RwLockState.cancelRun_of_not_promotes",
-          "line": 822,
+          "line": 840,
           "called": [
             "SeLe4n.Kernel.Concurrency.CoreId",
             "SeLe4n.Kernel.Concurrency.RwLockState",
@@ -52098,7 +53288,7 @@
           "kind": "theorem",
           "name": "RwLockState.applyOp_cancel_writerHeld",
           "full_name": "SeLe4n.Kernel.Concurrency.RwLockState.applyOp_cancel_writerHeld",
-          "line": 830,
+          "line": 848,
           "called": [
             "SeLe4n.Kernel.Concurrency.CoreId",
             "SeLe4n.Kernel.Concurrency.RwLockState",
@@ -52114,7 +53304,7 @@
           "kind": "theorem",
           "name": "RwLockState.applyOp_cancel_readers",
           "full_name": "SeLe4n.Kernel.Concurrency.RwLockState.applyOp_cancel_readers",
-          "line": 842,
+          "line": 860,
           "called": [
             "SeLe4n.Kernel.Concurrency.CoreId",
             "SeLe4n.Kernel.Concurrency.RwLockState",
@@ -52131,7 +53321,7 @@
           "kind": "theorem",
           "name": "RwLockState.applyOp_cancel_waiters",
           "full_name": "SeLe4n.Kernel.Concurrency.RwLockState.applyOp_cancel_waiters",
-          "line": 855,
+          "line": 873,
           "called": [
             "SeLe4n.Kernel.Concurrency.CoreId",
             "SeLe4n.Kernel.Concurrency.RwLockState",
@@ -52150,7 +53340,7 @@
           "kind": "theorem",
           "name": "RwLockState.applyOp_cancel_waiters_sublist_filter",
           "full_name": "SeLe4n.Kernel.Concurrency.RwLockState.applyOp_cancel_waiters_sublist_filter",
-          "line": 873,
+          "line": 891,
           "called": [
             "SeLe4n.Kernel.Concurrency.CoreId",
             "SeLe4n.Kernel.Concurrency.RwLockState",
@@ -52162,7 +53352,7 @@
           "kind": "theorem",
           "name": "RwLockState.applyOp_cancel_waiters_sublist",
           "full_name": "SeLe4n.Kernel.Concurrency.RwLockState.applyOp_cancel_waiters_sublist",
-          "line": 879,
+          "line": 897,
           "called": [
             "SeLe4n.Kernel.Concurrency.CoreId",
             "SeLe4n.Kernel.Concurrency.RwLockState",
@@ -52174,7 +53364,7 @@
           "kind": "theorem",
           "name": "RwLockState.mem_cancelRun",
           "full_name": "SeLe4n.Kernel.Concurrency.RwLockState.mem_cancelRun",
-          "line": 885,
+          "line": 903,
           "called": [
             "SeLe4n.Kernel.Concurrency.AccessMode",
             "SeLe4n.Kernel.Concurrency.CoreId",
@@ -52190,7 +53380,7 @@
           "kind": "theorem",
           "name": "RwLockState.mem_cancelRun_of_mem_take",
           "full_name": "SeLe4n.Kernel.Concurrency.RwLockState.mem_cancelRun_of_mem_take",
-          "line": 904,
+          "line": 922,
           "called": [
             "SeLe4n.Kernel.Concurrency.AccessMode",
             "SeLe4n.Kernel.Concurrency.CoreId",
@@ -52205,7 +53395,7 @@
           "kind": "theorem",
           "name": "RwLockState.mem_applyOp_cancel_waiters",
           "full_name": "SeLe4n.Kernel.Concurrency.RwLockState.mem_applyOp_cancel_waiters",
-          "line": 917,
+          "line": 935,
           "called": [
             "SeLe4n.Kernel.Concurrency.AccessMode",
             "SeLe4n.Kernel.Concurrency.CoreId",
@@ -52221,7 +53411,7 @@
           "kind": "theorem",
           "name": "RwLockState.not_mem_applyOp_cancel_waiters",
           "full_name": "SeLe4n.Kernel.Concurrency.RwLockState.not_mem_applyOp_cancel_waiters",
-          "line": 934,
+          "line": 952,
           "called": [
             "SeLe4n.Kernel.Concurrency.AccessMode",
             "SeLe4n.Kernel.Concurrency.CoreId",
@@ -52234,7 +53424,7 @@
           "kind": "theorem",
           "name": "RwLockState.mem_readers_applyOp_cancel_of_mem",
           "full_name": "SeLe4n.Kernel.Concurrency.RwLockState.mem_readers_applyOp_cancel_of_mem",
-          "line": 944,
+          "line": 962,
           "called": [
             "SeLe4n.Kernel.Concurrency.CoreId",
             "SeLe4n.Kernel.Concurrency.RwLockState",
@@ -52246,7 +53436,7 @@
           "kind": "theorem",
           "name": "RwLockState.applyOp_cancel_readers_length",
           "full_name": "SeLe4n.Kernel.Concurrency.RwLockState.applyOp_cancel_readers_length",
-          "line": 951,
+          "line": 969,
           "called": [
             "SeLe4n.Kernel.Concurrency.CoreId",
             "SeLe4n.Kernel.Concurrency.RwLockState",
@@ -52259,7 +53449,7 @@
           "kind": "theorem",
           "name": "RwLockState.wf_writerReadersExclusion",
           "full_name": "SeLe4n.Kernel.Concurrency.RwLockState.wf_writerReadersExclusion",
-          "line": 961,
+          "line": 979,
           "called": [
             "SeLe4n.Kernel.Concurrency.RwLockState",
             "SeLe4n.Kernel.Concurrency.RwLockState.wf",
@@ -52270,7 +53460,7 @@
           "kind": "theorem",
           "name": "RwLockState.wf_readersNodup",
           "full_name": "SeLe4n.Kernel.Concurrency.RwLockState.wf_readersNodup",
-          "line": 966,
+          "line": 984,
           "called": [
             "SeLe4n.Kernel.Concurrency.RwLockState",
             "SeLe4n.Kernel.Concurrency.RwLockState.wf"
@@ -52280,7 +53470,7 @@
           "kind": "theorem",
           "name": "RwLockState.wf_waitersCoresNodup",
           "full_name": "SeLe4n.Kernel.Concurrency.RwLockState.wf_waitersCoresNodup",
-          "line": 971,
+          "line": 989,
           "called": [
             "SeLe4n.Kernel.Concurrency.RwLockState",
             "SeLe4n.Kernel.Concurrency.RwLockState.wf"
@@ -52290,7 +53480,7 @@
           "kind": "theorem",
           "name": "RwLockState.wf_waitersDisjointFromHolders",
           "full_name": "SeLe4n.Kernel.Concurrency.RwLockState.wf_waitersDisjointFromHolders",
-          "line": 976,
+          "line": 994,
           "called": [
             "SeLe4n.Kernel.Concurrency.RwLockState",
             "SeLe4n.Kernel.Concurrency.RwLockState.waitersDisjointFromHolders_iff",
@@ -52301,7 +53491,7 @@
           "kind": "theorem",
           "name": "RwLockState.wf_fifoAdmissionDiscipline",
           "full_name": "SeLe4n.Kernel.Concurrency.RwLockState.wf_fifoAdmissionDiscipline",
-          "line": 981,
+          "line": 999,
           "called": [
             "SeLe4n.Kernel.Concurrency.RwLockState",
             "SeLe4n.Kernel.Concurrency.RwLockState.fifoAdmissionDiscipline_iff",
@@ -52312,7 +53502,7 @@
           "kind": "theorem",
           "name": "RwLockState.wf_writerHeld_no_readers",
           "full_name": "SeLe4n.Kernel.Concurrency.RwLockState.wf_writerHeld_no_readers",
-          "line": 987,
+          "line": 1005,
           "called": [
             "SeLe4n.Kernel.Concurrency.CoreId",
             "SeLe4n.Kernel.Concurrency.RwLockState",
@@ -52324,7 +53514,7 @@
           "kind": "theorem",
           "name": "RwLockState.wf_calm_iff_waiters_empty",
           "full_name": "SeLe4n.Kernel.Concurrency.RwLockState.wf_calm_iff_waiters_empty",
-          "line": 997,
+          "line": 1015,
           "called": [
             "SeLe4n.Kernel.Concurrency.RwLockState",
             "SeLe4n.Kernel.Concurrency.RwLockState.wf",
@@ -52335,7 +53525,7 @@
           "kind": "theorem",
           "name": "rwLock_writer_readers_exclusion",
           "full_name": "SeLe4n.Kernel.Concurrency.rwLock_writer_readers_exclusion",
-          "line": 1028,
+          "line": 1046,
           "called": [
             "SeLe4n.Kernel.Concurrency.RwLockState",
             "SeLe4n.Kernel.Concurrency.RwLockState.wf",
@@ -52346,7 +53536,7 @@
           "kind": "theorem",
           "name": "rwLock_reader_multiplicity",
           "full_name": "SeLe4n.Kernel.Concurrency.rwLock_reader_multiplicity",
-          "line": 1049,
+          "line": 1067,
           "called": [
             "SeLe4n.Kernel.Concurrency.CoreId",
             "SeLe4n.Kernel.Concurrency.RwLockState",
@@ -52360,7 +53550,7 @@
           "kind": "theorem",
           "name": "RwLockState.wf_writer_not_in_readers",
           "full_name": "SeLe4n.Kernel.Concurrency.RwLockState.wf_writer_not_in_readers",
-          "line": 1071,
+          "line": 1089,
           "called": [
             "SeLe4n.Kernel.Concurrency.CoreId",
             "SeLe4n.Kernel.Concurrency.RwLockState",
@@ -52372,7 +53562,7 @@
           "kind": "theorem",
           "name": "RwLockState.not_coreInvolved_iff",
           "full_name": "SeLe4n.Kernel.Concurrency.RwLockState.not_coreInvolved_iff",
-          "line": 1079,
+          "line": 1097,
           "called": [
             "SeLe4n.Kernel.Concurrency.CoreId",
             "SeLe4n.Kernel.Concurrency.RwLockState",
@@ -52383,7 +53573,7 @@
           "kind": "theorem",
           "name": "nodup_map_fst_append_singleton",
           "full_name": "SeLe4n.Kernel.Concurrency.nodup_map_fst_append_singleton",
-          "line": 1098,
+          "line": 1116,
           "called": [
             "SeLe4n.Kernel.Concurrency.AccessMode",
             "SeLe4n.Kernel.Concurrency.CoreId"
@@ -52394,7 +53584,7 @@
           "kind": "theorem",
           "name": "wf_after_enqueue_read",
           "full_name": "SeLe4n.Kernel.Concurrency.wf_after_enqueue_read",
-          "line": 1120,
+          "line": 1138,
           "called": [
             "SeLe4n.Kernel.Concurrency.AccessMode",
             "SeLe4n.Kernel.Concurrency.CoreId",
@@ -52411,7 +53601,7 @@
           "kind": "theorem",
           "name": "wf_after_enqueue_write",
           "full_name": "SeLe4n.Kernel.Concurrency.wf_after_enqueue_write",
-          "line": 1155,
+          "line": 1173,
           "called": [
             "SeLe4n.Kernel.Concurrency.AccessMode",
             "SeLe4n.Kernel.Concurrency.CoreId",
@@ -52428,7 +53618,7 @@
           "kind": "theorem",
           "name": "wf_after_direct_acquire_read",
           "full_name": "SeLe4n.Kernel.Concurrency.wf_after_direct_acquire_read",
-          "line": 1183,
+          "line": 1201,
           "called": [
             "SeLe4n.Kernel.Concurrency.CoreId",
             "SeLe4n.Kernel.Concurrency.RwLockState",
@@ -52444,7 +53634,7 @@
           "kind": "theorem",
           "name": "wf_after_direct_acquire_write",
           "full_name": "SeLe4n.Kernel.Concurrency.wf_after_direct_acquire_write",
-          "line": 1226,
+          "line": 1244,
           "called": [
             "SeLe4n.Kernel.Concurrency.CoreId",
             "SeLe4n.Kernel.Concurrency.RwLockState",
@@ -52460,7 +53650,7 @@
           "kind": "theorem",
           "name": "rwLock_tryAcquireRead_preserves_wf",
           "full_name": "SeLe4n.Kernel.Concurrency.rwLock_tryAcquireRead_preserves_wf",
-          "line": 1270,
+          "line": 1288,
           "called": [
             "SeLe4n.Kernel.Concurrency.CoreId",
             "SeLe4n.Kernel.Concurrency.RwLockState",
@@ -52477,7 +53667,7 @@
           "kind": "theorem",
           "name": "rwLock_tryAcquireWrite_preserves_wf",
           "full_name": "SeLe4n.Kernel.Concurrency.rwLock_tryAcquireWrite_preserves_wf",
-          "line": 1309,
+          "line": 1327,
           "called": [
             "SeLe4n.Kernel.Concurrency.CoreId",
             "SeLe4n.Kernel.Concurrency.RwLockState",
@@ -52494,7 +53684,7 @@
           "kind": "theorem",
           "name": "rwLock_promoteWaitersIfReadersEmpty_preserves_wf",
           "full_name": "SeLe4n.Kernel.Concurrency.rwLock_promoteWaitersIfReadersEmpty_preserves_wf",
-          "line": 1353,
+          "line": 1371,
           "called": [
             "SeLe4n.Kernel.Concurrency.RwLockState",
             "SeLe4n.Kernel.Concurrency.RwLockState.promoteWaitersIfReadersEmpty",
@@ -52506,7 +53696,7 @@
           "kind": "theorem",
           "name": "nodup_takeWhile_map_fst",
           "full_name": "SeLe4n.Kernel.Concurrency.nodup_takeWhile_map_fst",
-          "line": 1397,
+          "line": 1415,
           "called": [
             "SeLe4n.Kernel.Concurrency.AccessMode",
             "SeLe4n.Kernel.Concurrency.CoreId"
@@ -52517,7 +53707,7 @@
           "kind": "theorem",
           "name": "nodup_dropWhile_map_fst",
           "full_name": "SeLe4n.Kernel.Concurrency.nodup_dropWhile_map_fst",
-          "line": 1406,
+          "line": 1424,
           "called": [
             "SeLe4n.Kernel.Concurrency.AccessMode",
             "SeLe4n.Kernel.Concurrency.CoreId"
@@ -52528,7 +53718,7 @@
           "kind": "theorem",
           "name": "takeWhile_dropWhile_disjoint_map_fst",
           "full_name": "SeLe4n.Kernel.Concurrency.takeWhile_dropWhile_disjoint_map_fst",
-          "line": 1418,
+          "line": 1436,
           "called": [
             "SeLe4n.Kernel.Concurrency.AccessMode",
             "SeLe4n.Kernel.Concurrency.CoreId"
@@ -52539,7 +53729,7 @@
           "kind": "theorem",
           "name": "rwLock_promoteWaitersOnWriterRelease_preserves_wf",
           "full_name": "SeLe4n.Kernel.Concurrency.rwLock_promoteWaitersOnWriterRelease_preserves_wf",
-          "line": 1445,
+          "line": 1463,
           "called": [
             "SeLe4n.Kernel.Concurrency.AccessMode",
             "SeLe4n.Kernel.Concurrency.RwLockState",
@@ -52559,7 +53749,7 @@
           "kind": "theorem",
           "name": "nodup_filter",
           "full_name": "SeLe4n.Kernel.Concurrency.nodup_filter",
-          "line": 1585,
+          "line": 1603,
           "called": [
             "SeLe4n.Kernel.Concurrency.CoreId"
           ],
@@ -52569,7 +53759,7 @@
           "kind": "def",
           "name": "RwLockState.wfPartial",
           "full_name": "SeLe4n.Kernel.Concurrency.RwLockState.wfPartial",
-          "line": 1603,
+          "line": 1621,
           "called": [
             "SeLe4n.Kernel.Concurrency.RwLockState",
             "SeLe4n.Kernel.Concurrency.RwLockState.waitersDisjointFromHolders",
@@ -52580,7 +53770,7 @@
           "kind": "instance",
           "name": "RwLockState.decidableWfPartial",
           "full_name": "SeLe4n.Kernel.Concurrency.RwLockState.decidableWfPartial",
-          "line": 1610,
+          "line": 1628,
           "called": [
             "SeLe4n.Kernel.Concurrency.RwLockState",
             "SeLe4n.Kernel.Concurrency.RwLockState.wfPartial"
@@ -52590,7 +53780,7 @@
           "kind": "theorem",
           "name": "RwLockState.wf_implies_wfPartial",
           "full_name": "SeLe4n.Kernel.Concurrency.RwLockState.wf_implies_wfPartial",
-          "line": 1616,
+          "line": 1634,
           "called": [
             "SeLe4n.Kernel.Concurrency.RwLockState",
             "SeLe4n.Kernel.Concurrency.RwLockState.wf",
@@ -52601,7 +53791,7 @@
           "kind": "theorem",
           "name": "RwLockState.wfPartial_to_wf",
           "full_name": "SeLe4n.Kernel.Concurrency.RwLockState.wfPartial_to_wf",
-          "line": 1621,
+          "line": 1639,
           "called": [
             "SeLe4n.Kernel.Concurrency.RwLockState",
             "SeLe4n.Kernel.Concurrency.RwLockState.fifoAdmissionDiscipline_iff",
@@ -52613,7 +53803,7 @@
           "kind": "theorem",
           "name": "rwLock_promoteWaitersOnWriterRelease_preserves_wf_partial",
           "full_name": "SeLe4n.Kernel.Concurrency.rwLock_promoteWaitersOnWriterRelease_preserves_wf_partial",
-          "line": 1639,
+          "line": 1657,
           "called": [
             "SeLe4n.Kernel.Concurrency.AccessMode",
             "SeLe4n.Kernel.Concurrency.RwLockState",
@@ -52635,7 +53825,7 @@
           "kind": "theorem",
           "name": "rwLock_promoteWaitersIfReadersEmpty_preserves_wf_partial",
           "full_name": "SeLe4n.Kernel.Concurrency.rwLock_promoteWaitersIfReadersEmpty_preserves_wf_partial",
-          "line": 1758,
+          "line": 1776,
           "called": [
             "SeLe4n.Kernel.Concurrency.AccessMode",
             "SeLe4n.Kernel.Concurrency.RwLockState",
@@ -52656,7 +53846,7 @@
           "kind": "theorem",
           "name": "rwLock_releaseRead_preserves_wf",
           "full_name": "SeLe4n.Kernel.Concurrency.rwLock_releaseRead_preserves_wf",
-          "line": 1893,
+          "line": 1911,
           "called": [
             "SeLe4n.Kernel.Concurrency.CoreId",
             "SeLe4n.Kernel.Concurrency.RwLockState",
@@ -52675,7 +53865,7 @@
           "kind": "theorem",
           "name": "rwLock_releaseWrite_preserves_wf",
           "full_name": "SeLe4n.Kernel.Concurrency.rwLock_releaseWrite_preserves_wf",
-          "line": 1942,
+          "line": 1960,
           "called": [
             "SeLe4n.Kernel.Concurrency.CoreId",
             "SeLe4n.Kernel.Concurrency.RwLockState",
@@ -52693,7 +53883,7 @@
           "kind": "theorem",
           "name": "rwLock_withdraw_preserves_wf",
           "full_name": "SeLe4n.Kernel.Concurrency.rwLock_withdraw_preserves_wf",
-          "line": 1999,
+          "line": 2017,
           "called": [
             "SeLe4n.Kernel.Concurrency.CoreId",
             "SeLe4n.Kernel.Concurrency.RwLockState",
@@ -52708,7 +53898,7 @@
           "kind": "theorem",
           "name": "rwLock_promoteReaderRun_preserves_wf",
           "full_name": "SeLe4n.Kernel.Concurrency.rwLock_promoteReaderRun_preserves_wf",
-          "line": 2048,
+          "line": 2066,
           "called": [
             "SeLe4n.Kernel.Concurrency.AccessMode",
             "SeLe4n.Kernel.Concurrency.RwLockState",
@@ -52731,7 +53921,7 @@
           "kind": "theorem",
           "name": "rwLock_cancel_preserves_wf",
           "full_name": "SeLe4n.Kernel.Concurrency.rwLock_cancel_preserves_wf",
-          "line": 2115,
+          "line": 2133,
           "called": [
             "SeLe4n.Kernel.Concurrency.CoreId",
             "SeLe4n.Kernel.Concurrency.RwLockState",
@@ -52750,7 +53940,7 @@
           "kind": "theorem",
           "name": "rwLock_wf_invariant",
           "full_name": "SeLe4n.Kernel.Concurrency.rwLock_wf_invariant",
-          "line": 2144,
+          "line": 2162,
           "called": [
             "SeLe4n.Kernel.Concurrency.RwLockState",
             "SeLe4n.Kernel.Concurrency.RwLockState.applyOp",
@@ -52766,7 +53956,7 @@
           "kind": "theorem",
           "name": "rwLock_tryAcquireRead_preserves_wf_alias",
           "full_name": "SeLe4n.Kernel.Concurrency.rwLock_tryAcquireRead_preserves_wf_alias",
-          "line": 2161,
+          "line": 2179,
           "called": [
             "SeLe4n.Kernel.Concurrency.CoreId",
             "SeLe4n.Kernel.Concurrency.RwLockState",
@@ -52779,7 +53969,7 @@
           "kind": "theorem",
           "name": "rwLock_releaseRead_preserves_wf_alias",
           "full_name": "SeLe4n.Kernel.Concurrency.rwLock_releaseRead_preserves_wf_alias",
-          "line": 2167,
+          "line": 2185,
           "called": [
             "SeLe4n.Kernel.Concurrency.CoreId",
             "SeLe4n.Kernel.Concurrency.RwLockState",
@@ -52792,7 +53982,7 @@
           "kind": "theorem",
           "name": "rwLock_tryAcquireWrite_preserves_wf_alias",
           "full_name": "SeLe4n.Kernel.Concurrency.rwLock_tryAcquireWrite_preserves_wf_alias",
-          "line": 2173,
+          "line": 2191,
           "called": [
             "SeLe4n.Kernel.Concurrency.CoreId",
             "SeLe4n.Kernel.Concurrency.RwLockState",
@@ -52805,7 +53995,7 @@
           "kind": "theorem",
           "name": "rwLock_releaseWrite_preserves_wf_alias",
           "full_name": "SeLe4n.Kernel.Concurrency.rwLock_releaseWrite_preserves_wf_alias",
-          "line": 2179,
+          "line": 2197,
           "called": [
             "SeLe4n.Kernel.Concurrency.CoreId",
             "SeLe4n.Kernel.Concurrency.RwLockState",
@@ -52818,7 +54008,7 @@
           "kind": "theorem",
           "name": "rwLock_applyOp_deterministic",
           "full_name": "SeLe4n.Kernel.Concurrency.rwLock_applyOp_deterministic",
-          "line": 2198,
+          "line": 2216,
           "called": [
             "SeLe4n.Kernel.Concurrency.RwLockOp",
             "SeLe4n.Kernel.Concurrency.RwLockState",
@@ -52829,7 +54019,7 @@
           "kind": "theorem",
           "name": "rwLock_promoteWaitersOnWriterRelease_deterministic",
           "full_name": "SeLe4n.Kernel.Concurrency.rwLock_promoteWaitersOnWriterRelease_deterministic",
-          "line": 2206,
+          "line": 2224,
           "called": [
             "SeLe4n.Kernel.Concurrency.RwLockState",
             "SeLe4n.Kernel.Concurrency.RwLockState.promoteWaitersOnWriterRelease"
@@ -52839,7 +54029,7 @@
           "kind": "theorem",
           "name": "rwLock_promoteWaitersIfReadersEmpty_deterministic",
           "full_name": "SeLe4n.Kernel.Concurrency.rwLock_promoteWaitersIfReadersEmpty_deterministic",
-          "line": 2214,
+          "line": 2232,
           "called": [
             "SeLe4n.Kernel.Concurrency.RwLockState",
             "SeLe4n.Kernel.Concurrency.RwLockState.promoteWaitersIfReadersEmpty"
@@ -52849,7 +54039,7 @@
           "kind": "theorem",
           "name": "rwLock_fifo_admission",
           "full_name": "SeLe4n.Kernel.Concurrency.rwLock_fifo_admission",
-          "line": 2247,
+          "line": 2265,
           "called": [
             "SeLe4n.Kernel.Concurrency.AccessMode",
             "SeLe4n.Kernel.Concurrency.RwLockState",
@@ -52861,7 +54051,7 @@
           "kind": "theorem",
           "name": "rwLock_fifo_admission_readers_empty",
           "full_name": "SeLe4n.Kernel.Concurrency.rwLock_fifo_admission_readers_empty",
-          "line": 2276,
+          "line": 2294,
           "called": [
             "SeLe4n.Kernel.Concurrency.AccessMode",
             "SeLe4n.Kernel.Concurrency.RwLockState",
@@ -52873,7 +54063,7 @@
           "kind": "theorem",
           "name": "rwLock_promote_subset_of_waiters",
           "full_name": "SeLe4n.Kernel.Concurrency.rwLock_promote_subset_of_waiters",
-          "line": 2300,
+          "line": 2318,
           "called": [
             "SeLe4n.Kernel.Concurrency.AccessMode",
             "SeLe4n.Kernel.Concurrency.CoreId",
@@ -52886,7 +54076,7 @@
           "kind": "theorem",
           "name": "rwLock_promote_is_sublist_of_waiters",
           "full_name": "SeLe4n.Kernel.Concurrency.rwLock_promote_is_sublist_of_waiters",
-          "line": 2313,
+          "line": 2331,
           "called": [
             "SeLe4n.Kernel.Concurrency.RwLockState",
             "SeLe4n.Kernel.Concurrency.RwLockState.promoteWaitersOnWriterRelease",
@@ -52897,7 +54087,7 @@
           "kind": "theorem",
           "name": "rwLock_promote_pair_in_drop",
           "full_name": "SeLe4n.Kernel.Concurrency.rwLock_promote_pair_in_drop",
-          "line": 2335,
+          "line": 2353,
           "called": [
             "SeLe4n.Kernel.Concurrency.AccessMode",
             "SeLe4n.Kernel.Concurrency.CoreId",
@@ -52910,7 +54100,7 @@
           "kind": "theorem",
           "name": "rwLock_promote_preserves_order",
           "full_name": "SeLe4n.Kernel.Concurrency.rwLock_promote_preserves_order",
-          "line": 2349,
+          "line": 2367,
           "called": [
             "SeLe4n.Kernel.Concurrency.AccessMode",
             "SeLe4n.Kernel.Concurrency.CoreId",
@@ -52923,7 +54113,7 @@
           "kind": "theorem",
           "name": "nodup_subset_length_le",
           "full_name": "SeLe4n.Kernel.Concurrency.nodup_subset_length_le",
-          "line": 2363,
+          "line": 2381,
           "called": [],
           "private": true
         },
@@ -52931,7 +54121,7 @@
           "kind": "theorem",
           "name": "nodup_corelist_length_bound",
           "full_name": "SeLe4n.Kernel.Concurrency.nodup_corelist_length_bound",
-          "line": 2388,
+          "line": 2406,
           "called": [
             "SeLe4n.Kernel.Concurrency.CoreId",
             "SeLe4n.Kernel.Concurrency.nodup_subset_length_le",
@@ -52943,7 +54133,7 @@
           "kind": "theorem",
           "name": "writer_not_in_waiters",
           "full_name": "SeLe4n.Kernel.Concurrency.writer_not_in_waiters",
-          "line": 2399,
+          "line": 2417,
           "called": [
             "SeLe4n.Kernel.Concurrency.CoreId",
             "SeLe4n.Kernel.Concurrency.RwLockState",
@@ -52956,7 +54146,7 @@
           "kind": "theorem",
           "name": "rwLock_bounded_wait_read",
           "full_name": "SeLe4n.Kernel.Concurrency.rwLock_bounded_wait_read",
-          "line": 2422,
+          "line": 2440,
           "called": [
             "SeLe4n.Kernel.Concurrency.RwLockState",
             "SeLe4n.Kernel.Concurrency.RwLockState.wf",
@@ -52971,7 +54161,7 @@
           "kind": "theorem",
           "name": "rwLock_bounded_wait_write",
           "full_name": "SeLe4n.Kernel.Concurrency.rwLock_bounded_wait_write",
-          "line": 2483,
+          "line": 2501,
           "called": [
             "SeLe4n.Kernel.Concurrency.RwLockState",
             "SeLe4n.Kernel.Concurrency.RwLockState.wf",
@@ -52983,7 +54173,7 @@
           "kind": "theorem",
           "name": "rwLock_release_acquire_pairing_read",
           "full_name": "SeLe4n.Kernel.Concurrency.rwLock_release_acquire_pairing_read",
-          "line": 2506,
+          "line": 2524,
           "called": [
             "SeLe4n.Kernel.Concurrency.AtomicLocation.rwLockStateOf",
             "SeLe4n.Kernel.Concurrency.MemoryEvent",
@@ -52998,7 +54188,7 @@
           "kind": "theorem",
           "name": "rwLock_release_acquire_pairing_write",
           "full_name": "SeLe4n.Kernel.Concurrency.rwLock_release_acquire_pairing_write",
-          "line": 2530,
+          "line": 2548,
           "called": [
             "SeLe4n.Kernel.Concurrency.AtomicLocation.rwLockStateOf",
             "SeLe4n.Kernel.Concurrency.MemoryEvent",
@@ -53014,7 +54204,7 @@
           "kind": "theorem",
           "name": "rwLock_release_acquire_happensBefore_read",
           "full_name": "SeLe4n.Kernel.Concurrency.rwLock_release_acquire_happensBefore_read",
-          "line": 2549,
+          "line": 2567,
           "called": [
             "SeLe4n.Kernel.Concurrency.AtomicLocation.rwLockStateOf",
             "SeLe4n.Kernel.Concurrency.MemoryEvent",
@@ -53031,7 +54221,7 @@
           "kind": "theorem",
           "name": "rwLock_reader_batching",
           "full_name": "SeLe4n.Kernel.Concurrency.rwLock_reader_batching",
-          "line": 2584,
+          "line": 2602,
           "called": [
             "SeLe4n.Kernel.Concurrency.AccessMode",
             "SeLe4n.Kernel.Concurrency.CoreId",
@@ -53043,7 +54233,7 @@
           "kind": "theorem",
           "name": "rwLock_reader_batching_admits_at_least_one",
           "full_name": "SeLe4n.Kernel.Concurrency.rwLock_reader_batching_admits_at_least_one",
-          "line": 2607,
+          "line": 2625,
           "called": [
             "SeLe4n.Kernel.Concurrency.AccessMode",
             "SeLe4n.Kernel.Concurrency.CoreId",
@@ -53056,7 +54246,7 @@
           "kind": "theorem",
           "name": "rwLock_reader_batching_exact_count",
           "full_name": "SeLe4n.Kernel.Concurrency.rwLock_reader_batching_exact_count",
-          "line": 2632,
+          "line": 2650,
           "called": [
             "SeLe4n.Kernel.Concurrency.AccessMode",
             "SeLe4n.Kernel.Concurrency.CoreId",
@@ -53069,7 +54259,7 @@
           "kind": "theorem",
           "name": "rwLock_writer_safety_under_reader_acquire",
           "full_name": "SeLe4n.Kernel.Concurrency.rwLock_writer_safety_under_reader_acquire",
-          "line": 2684,
+          "line": 2702,
           "called": [
             "SeLe4n.Kernel.Concurrency.AccessMode",
             "SeLe4n.Kernel.Concurrency.CoreId",
@@ -53082,7 +54272,7 @@
           "kind": "theorem",
           "name": "rwLock_no_writer_starvation",
           "full_name": "SeLe4n.Kernel.Concurrency.rwLock_no_writer_starvation",
-          "line": 2711,
+          "line": 2729,
           "called": [
             "SeLe4n.Kernel.Concurrency.AccessMode",
             "SeLe4n.Kernel.Concurrency.CoreId",
@@ -53097,21 +54287,21 @@
           "kind": "abbrev",
           "name": "RwLockEncoded",
           "full_name": "SeLe4n.Kernel.Concurrency.RwLockEncoded",
-          "line": 2743,
+          "line": 2761,
           "called": []
         },
         {
           "kind": "def",
           "name": "writerBitPos",
           "full_name": "SeLe4n.Kernel.Concurrency.writerBitPos",
-          "line": 2746,
+          "line": 2764,
           "called": []
         },
         {
           "kind": "def",
           "name": "writerBit",
           "full_name": "SeLe4n.Kernel.Concurrency.writerBit",
-          "line": 2749,
+          "line": 2767,
           "called": [
             "SeLe4n.Kernel.Concurrency.writerBitPos"
           ]
@@ -53120,7 +54310,7 @@
           "kind": "def",
           "name": "readerMask",
           "full_name": "SeLe4n.Kernel.Concurrency.readerMask",
-          "line": 2752,
+          "line": 2770,
           "called": [
             "SeLe4n.Kernel.Concurrency.writerBit"
           ]
@@ -53129,7 +54319,7 @@
           "kind": "def",
           "name": "encodeRwLock",
           "full_name": "SeLe4n.Kernel.Concurrency.encodeRwLock",
-          "line": 2757,
+          "line": 2775,
           "called": [
             "SeLe4n.Kernel.Concurrency.RwLockEncoded",
             "SeLe4n.Kernel.Concurrency.writerBit"
@@ -53139,7 +54329,7 @@
           "kind": "def",
           "name": "decodeRwLock",
           "full_name": "SeLe4n.Kernel.Concurrency.decodeRwLock",
-          "line": 2764,
+          "line": 2782,
           "called": [
             "SeLe4n.Kernel.Concurrency.RwLockEncoded",
             "SeLe4n.Kernel.Concurrency.writerBit"
@@ -53149,7 +54339,7 @@
           "kind": "theorem",
           "name": "rwLock_encode_decode_roundtrip",
           "full_name": "SeLe4n.Kernel.Concurrency.rwLock_encode_decode_roundtrip",
-          "line": 2776,
+          "line": 2794,
           "called": [
             "SeLe4n.Kernel.Concurrency.decodeRwLock",
             "SeLe4n.Kernel.Concurrency.encodeRwLock",
@@ -53160,7 +54350,7 @@
           "kind": "theorem",
           "name": "rwLock_decode_encode_roundtrip",
           "full_name": "SeLe4n.Kernel.Concurrency.rwLock_decode_encode_roundtrip",
-          "line": 2796,
+          "line": 2814,
           "called": [
             "SeLe4n.Kernel.Concurrency.RwLockEncoded",
             "SeLe4n.Kernel.Concurrency.decodeRwLock",
@@ -53172,7 +54362,7 @@
           "kind": "theorem",
           "name": "rwLock_encode_writer_bit_set",
           "full_name": "SeLe4n.Kernel.Concurrency.rwLock_encode_writer_bit_set",
-          "line": 2807,
+          "line": 2825,
           "called": [
             "SeLe4n.Kernel.Concurrency.encodeRwLock",
             "SeLe4n.Kernel.Concurrency.writerBit"
@@ -53182,7 +54372,7 @@
           "kind": "theorem",
           "name": "rwLock_encode_writer_bit_clear",
           "full_name": "SeLe4n.Kernel.Concurrency.rwLock_encode_writer_bit_clear",
-          "line": 2815,
+          "line": 2833,
           "called": [
             "SeLe4n.Kernel.Concurrency.encodeRwLock",
             "SeLe4n.Kernel.Concurrency.writerBit"
@@ -53192,7 +54382,7 @@
           "kind": "theorem",
           "name": "rwLock_reader_count_no_overflow_under_numCores",
           "full_name": "SeLe4n.Kernel.Concurrency.rwLock_reader_count_no_overflow_under_numCores",
-          "line": 2835,
+          "line": 2853,
           "called": [
             "SeLe4n.Kernel.Concurrency.numCores",
             "SeLe4n.Kernel.Concurrency.writerBit",
@@ -53203,7 +54393,7 @@
           "kind": "inductive",
           "name": "RwLockKernelStep",
           "full_name": "SeLe4n.Kernel.Concurrency.RwLockKernelStep",
-          "line": 2866,
+          "line": 2884,
           "called": [
             "SeLe4n.Kernel.Concurrency.CoreId",
             "SeLe4n.Kernel.Concurrency.RwLockState",
@@ -53214,7 +54404,7 @@
           "kind": "inductive",
           "name": "RwLockReachable",
           "full_name": "SeLe4n.Kernel.Concurrency.RwLockReachable",
-          "line": 2890,
+          "line": 2908,
           "called": [
             "SeLe4n.Kernel.Concurrency.RwLockKernelStep",
             "SeLe4n.Kernel.Concurrency.RwLockState",
@@ -53225,7 +54415,7 @@
           "kind": "theorem",
           "name": "rwLock_reader_multiplicity_reachable",
           "full_name": "SeLe4n.Kernel.Concurrency.rwLock_reader_multiplicity_reachable",
-          "line": 2908,
+          "line": 2926,
           "called": [
             "SeLe4n.Kernel.Concurrency.RwLockReachable",
             "SeLe4n.Kernel.Concurrency.RwLockState",
@@ -53239,7 +54429,7 @@
           "kind": "theorem",
           "name": "RwLockReachable_implies_wf",
           "full_name": "SeLe4n.Kernel.Concurrency.RwLockReachable_implies_wf",
-          "line": 2922,
+          "line": 2940,
           "called": [
             "SeLe4n.Kernel.Concurrency.RwLockReachable",
             "SeLe4n.Kernel.Concurrency.RwLockState",
@@ -53256,7 +54446,7 @@
           "kind": "structure",
           "name": "RwLockExecution",
           "full_name": "SeLe4n.Kernel.Concurrency.RwLockExecution",
-          "line": 2944,
+          "line": 2962,
           "called": [
             "SeLe4n.Kernel.Concurrency.RwLockOp",
             "SeLe4n.Kernel.Concurrency.RwLockReachable",
@@ -53267,14 +54457,14 @@
           "kind": "def",
           "name": "elapsedBetween",
           "full_name": "SeLe4n.Kernel.Concurrency.elapsedBetween",
-          "line": 2984,
+          "line": 3002,
           "called": []
         },
         {
           "kind": "theorem",
           "name": "elapsedBetween_le",
           "full_name": "SeLe4n.Kernel.Concurrency.elapsedBetween_le",
-          "line": 2993,
+          "line": 3011,
           "called": [
             "SeLe4n.Kernel.Concurrency.elapsedBetween"
           ]
@@ -53283,7 +54473,7 @@
           "kind": "theorem",
           "name": "elapsedBetween_ge",
           "full_name": "SeLe4n.Kernel.Concurrency.elapsedBetween_ge",
-          "line": 3020,
+          "line": 3038,
           "called": [
             "SeLe4n.Kernel.Concurrency.elapsedBetween"
           ]
@@ -53292,7 +54482,7 @@
           "kind": "def",
           "name": "RwLockExecution.elapsed",
           "full_name": "SeLe4n.Kernel.Concurrency.RwLockExecution.elapsed",
-          "line": 3046,
+          "line": 3064,
           "called": [
             "SeLe4n.Kernel.Concurrency.RwLockExecution",
             "SeLe4n.Kernel.Concurrency.elapsedBetween"
@@ -53302,7 +54492,7 @@
           "kind": "def",
           "name": "RwLockExecution.BoundedCriticalSection",
           "full_name": "SeLe4n.Kernel.Concurrency.RwLockExecution.BoundedCriticalSection",
-          "line": 3057,
+          "line": 3075,
           "called": [
             "SeLe4n.Kernel.Concurrency.RwLockExecution"
           ]
@@ -53311,7 +54501,7 @@
           "kind": "def",
           "name": "RwLockExecution.CostedCriticalSection",
           "full_name": "SeLe4n.Kernel.Concurrency.RwLockExecution.CostedCriticalSection",
-          "line": 3063,
+          "line": 3081,
           "called": [
             "SeLe4n.Kernel.Concurrency.RwLockExecution"
           ]
@@ -53320,7 +54510,7 @@
           "kind": "theorem",
           "name": "RwLockExecution.elapsed_le",
           "full_name": "SeLe4n.Kernel.Concurrency.RwLockExecution.elapsed_le",
-          "line": 3068,
+          "line": 3086,
           "called": [
             "SeLe4n.Kernel.Concurrency.RwLockExecution",
             "SeLe4n.Kernel.Concurrency.RwLockExecution.BoundedCriticalSection",
@@ -53332,7 +54522,7 @@
           "kind": "theorem",
           "name": "RwLockExecution.elapsed_ge",
           "full_name": "SeLe4n.Kernel.Concurrency.RwLockExecution.elapsed_ge",
-          "line": 3074,
+          "line": 3092,
           "called": [
             "SeLe4n.Kernel.Concurrency.RwLockExecution",
             "SeLe4n.Kernel.Concurrency.RwLockExecution.CostedCriticalSection",
@@ -53344,7 +54534,7 @@
           "kind": "theorem",
           "name": "RwLockExecution.elapsed_unit_cost",
           "full_name": "SeLe4n.Kernel.Concurrency.RwLockExecution.elapsed_unit_cost",
-          "line": 3084,
+          "line": 3102,
           "called": [
             "SeLe4n.Kernel.Concurrency.RwLockExecution",
             "SeLe4n.Kernel.Concurrency.RwLockExecution.elapsed",
@@ -53356,7 +54546,7 @@
           "kind": "theorem",
           "name": "RwLockExecution.initial_wf",
           "full_name": "SeLe4n.Kernel.Concurrency.RwLockExecution.initial_wf",
-          "line": 3096,
+          "line": 3114,
           "called": [
             "SeLe4n.Kernel.Concurrency.RwLockExecution",
             "SeLe4n.Kernel.Concurrency.RwLockReachable_implies_wf",
@@ -53367,7 +54557,7 @@
           "kind": "def",
           "name": "RwLockExecution.stateAt",
           "full_name": "SeLe4n.Kernel.Concurrency.RwLockExecution.stateAt",
-          "line": 3101,
+          "line": 3119,
           "called": [
             "SeLe4n.Kernel.Concurrency.RwLockExecution",
             "SeLe4n.Kernel.Concurrency.RwLockState",
@@ -53378,7 +54568,7 @@
           "kind": "def",
           "name": "RwLockExecution.finalState",
           "full_name": "SeLe4n.Kernel.Concurrency.RwLockExecution.finalState",
-          "line": 3105,
+          "line": 3123,
           "called": [
             "SeLe4n.Kernel.Concurrency.RwLockExecution",
             "SeLe4n.Kernel.Concurrency.RwLockExecution.stateAt",
@@ -53389,7 +54579,7 @@
           "kind": "theorem",
           "name": "RwLockExecution.stateAt_zero",
           "full_name": "SeLe4n.Kernel.Concurrency.RwLockExecution.stateAt_zero",
-          "line": 3110,
+          "line": 3128,
           "called": [
             "SeLe4n.Kernel.Concurrency.RwLockExecution",
             "SeLe4n.Kernel.Concurrency.RwLockExecution.stateAt"
@@ -53399,7 +54589,7 @@
           "kind": "theorem",
           "name": "RwLockExecution.stateAt_length",
           "full_name": "SeLe4n.Kernel.Concurrency.RwLockExecution.stateAt_length",
-          "line": 3115,
+          "line": 3133,
           "called": [
             "SeLe4n.Kernel.Concurrency.RwLockExecution",
             "SeLe4n.Kernel.Concurrency.RwLockExecution.finalState",
@@ -53410,7 +54600,7 @@
           "kind": "theorem",
           "name": "RwLockExecution.stateAt_of_ge_length",
           "full_name": "SeLe4n.Kernel.Concurrency.RwLockExecution.stateAt_of_ge_length",
-          "line": 3123,
+          "line": 3141,
           "called": [
             "SeLe4n.Kernel.Concurrency.RwLockExecution",
             "SeLe4n.Kernel.Concurrency.RwLockExecution.finalState",
@@ -53421,7 +54611,7 @@
           "kind": "theorem",
           "name": "RwLockExecution.stateAt_succ",
           "full_name": "SeLe4n.Kernel.Concurrency.RwLockExecution.stateAt_succ",
-          "line": 3134,
+          "line": 3152,
           "called": [
             "SeLe4n.Kernel.Concurrency.RwLockExecution",
             "SeLe4n.Kernel.Concurrency.RwLockExecution.stateAt"
@@ -53431,7 +54621,7 @@
           "kind": "def",
           "name": "RwLockExecution.noCancelIn",
           "full_name": "SeLe4n.Kernel.Concurrency.RwLockExecution.noCancelIn",
-          "line": 3158,
+          "line": 3176,
           "called": [
             "SeLe4n.Kernel.Concurrency.CoreId",
             "SeLe4n.Kernel.Concurrency.RwLockExecution",
@@ -53442,7 +54632,7 @@
           "kind": "theorem",
           "name": "RwLockExecution.noCancelIn.not_cancel_at",
           "full_name": "SeLe4n.Kernel.Concurrency.RwLockExecution.noCancelIn.not_cancel_at",
-          "line": 3164,
+          "line": 3182,
           "called": [
             "SeLe4n.Kernel.Concurrency.CoreId",
             "SeLe4n.Kernel.Concurrency.RwLockExecution",
@@ -53454,7 +54644,7 @@
           "kind": "theorem",
           "name": "RwLockExecution.noCancelIn.mono",
           "full_name": "SeLe4n.Kernel.Concurrency.RwLockExecution.noCancelIn.mono",
-          "line": 3172,
+          "line": 3190,
           "called": [
             "SeLe4n.Kernel.Concurrency.CoreId",
             "SeLe4n.Kernel.Concurrency.RwLockExecution",
@@ -53465,7 +54655,7 @@
           "kind": "theorem",
           "name": "RwLockExecution.noCancelIn_self",
           "full_name": "SeLe4n.Kernel.Concurrency.RwLockExecution.noCancelIn_self",
-          "line": 3178,
+          "line": 3196,
           "called": [
             "SeLe4n.Kernel.Concurrency.CoreId",
             "SeLe4n.Kernel.Concurrency.RwLockExecution",
@@ -53476,7 +54666,7 @@
           "kind": "def",
           "name": "RwLockExecution.cancelFree",
           "full_name": "SeLe4n.Kernel.Concurrency.RwLockExecution.cancelFree",
-          "line": 3190,
+          "line": 3208,
           "called": [
             "SeLe4n.Kernel.Concurrency.RwLockExecution"
           ]
@@ -53485,14 +54675,14 @@
           "kind": "instance",
           "name": "",
           "full_name": null,
-          "line": 3193,
+          "line": 3211,
           "called": []
         },
         {
           "kind": "theorem",
           "name": "RwLockExecution.cancelFree.noCancelIn",
           "full_name": "SeLe4n.Kernel.Concurrency.RwLockExecution.cancelFree.noCancelIn",
-          "line": 3197,
+          "line": 3215,
           "called": [
             "SeLe4n.Kernel.Concurrency.CoreId",
             "SeLe4n.Kernel.Concurrency.RwLockExecution",
@@ -53505,7 +54695,7 @@
           "kind": "theorem",
           "name": "RwLockExecution.stateAt_reachable",
           "full_name": "SeLe4n.Kernel.Concurrency.RwLockExecution.stateAt_reachable",
-          "line": 3209,
+          "line": 3227,
           "called": [
             "SeLe4n.Kernel.Concurrency.RwLockExecution",
             "SeLe4n.Kernel.Concurrency.RwLockExecution.stateAt",
@@ -53519,7 +54709,7 @@
           "kind": "theorem",
           "name": "RwLockExecution.stateAt_wf",
           "full_name": "SeLe4n.Kernel.Concurrency.RwLockExecution.stateAt_wf",
-          "line": 3237,
+          "line": 3255,
           "called": [
             "SeLe4n.Kernel.Concurrency.RwLockExecution",
             "SeLe4n.Kernel.Concurrency.RwLockExecution.stateAt",
@@ -53531,7 +54721,7 @@
           "kind": "theorem",
           "name": "idxOf_cons_of_ne",
           "full_name": "SeLe4n.Kernel.Concurrency.idxOf_cons_of_ne",
-          "line": 3257,
+          "line": 3275,
           "called": [],
           "private": true
         },
@@ -53539,7 +54729,7 @@
           "kind": "theorem",
           "name": "idxOf_filter_le",
           "full_name": "SeLe4n.Kernel.Concurrency.idxOf_filter_le",
-          "line": 3269,
+          "line": 3287,
           "called": [
             "SeLe4n.Kernel.Concurrency.idxOf_cons_of_ne"
           ],
@@ -53549,7 +54739,7 @@
           "kind": "theorem",
           "name": "idxOf_filter_lt",
           "full_name": "SeLe4n.Kernel.Concurrency.idxOf_filter_lt",
-          "line": 3296,
+          "line": 3314,
           "called": [
             "SeLe4n.Kernel.Concurrency.idxOf_cons_of_ne"
           ],
@@ -53559,7 +54749,7 @@
           "kind": "def",
           "name": "writerWaitDepth",
           "full_name": "SeLe4n.Kernel.Concurrency.writerWaitDepth",
-          "line": 3347,
+          "line": 3365,
           "called": [
             "SeLe4n.Kernel.Concurrency.AccessMode",
             "SeLe4n.Kernel.Concurrency.CoreId",
@@ -53570,7 +54760,7 @@
           "kind": "theorem",
           "name": "writerWaitDepth_simp",
           "full_name": "SeLe4n.Kernel.Concurrency.writerWaitDepth_simp",
-          "line": 3357,
+          "line": 3375,
           "called": [
             "SeLe4n.Kernel.Concurrency.AccessMode",
             "SeLe4n.Kernel.Concurrency.CoreId",
@@ -53582,7 +54772,7 @@
           "kind": "instance",
           "name": "instDecidableEqRwLockState_1",
           "full_name": "SeLe4n.Kernel.Concurrency.instDecidableEqRwLockState_1",
-          "line": 3373,
+          "line": 3391,
           "called": [
             "SeLe4n.Kernel.Concurrency.RwLockState"
           ]
@@ -53591,7 +54781,7 @@
           "kind": "theorem",
           "name": "idxOf_le_length_sub_one_pair",
           "full_name": "SeLe4n.Kernel.Concurrency.idxOf_le_length_sub_one_pair",
-          "line": 3380,
+          "line": 3398,
           "called": [
             "SeLe4n.Kernel.Concurrency.AccessMode",
             "SeLe4n.Kernel.Concurrency.CoreId"
@@ -53602,7 +54792,7 @@
           "kind": "theorem",
           "name": "writerWaitDepth_bounded",
           "full_name": "SeLe4n.Kernel.Concurrency.writerWaitDepth_bounded",
-          "line": 3411,
+          "line": 3429,
           "called": [
             "SeLe4n.Kernel.Concurrency.AccessMode",
             "SeLe4n.Kernel.Concurrency.CoreId",
@@ -53619,7 +54809,7 @@
           "kind": "def",
           "name": "RwLockState.isEffectiveRelease",
           "full_name": "SeLe4n.Kernel.Concurrency.RwLockState.isEffectiveRelease",
-          "line": 3449,
+          "line": 3467,
           "called": [
             "SeLe4n.Kernel.Concurrency.RwLockOp",
             "SeLe4n.Kernel.Concurrency.RwLockState"
@@ -53629,7 +54819,7 @@
           "kind": "instance",
           "name": "RwLockState.decidableIsEffectiveRelease",
           "full_name": "SeLe4n.Kernel.Concurrency.RwLockState.decidableIsEffectiveRelease",
-          "line": 3458,
+          "line": 3476,
           "called": [
             "SeLe4n.Kernel.Concurrency.RwLockOp",
             "SeLe4n.Kernel.Concurrency.RwLockState",
@@ -53640,7 +54830,7 @@
           "kind": "def",
           "name": "RwLockExecution.isEffectiveReleaseAt",
           "full_name": "SeLe4n.Kernel.Concurrency.RwLockExecution.isEffectiveReleaseAt",
-          "line": 3467,
+          "line": 3485,
           "called": [
             "SeLe4n.Kernel.Concurrency.RwLockExecution",
             "SeLe4n.Kernel.Concurrency.RwLockExecution.stateAt"
@@ -53650,7 +54840,7 @@
           "kind": "def",
           "name": "RwLockExecution.countEffectiveReleases",
           "full_name": "SeLe4n.Kernel.Concurrency.RwLockExecution.countEffectiveReleases",
-          "line": 3479,
+          "line": 3497,
           "called": [
             "SeLe4n.Kernel.Concurrency.RwLockExecution",
             "SeLe4n.Kernel.Concurrency.RwLockExecution.isEffectiveReleaseAt"
@@ -53660,7 +54850,7 @@
           "kind": "theorem",
           "name": "RwLockExecution.countEffectiveReleases_le_window",
           "full_name": "SeLe4n.Kernel.Concurrency.RwLockExecution.countEffectiveReleases_le_window",
-          "line": 3484,
+          "line": 3502,
           "called": [
             "SeLe4n.Kernel.Concurrency.RwLockExecution",
             "SeLe4n.Kernel.Concurrency.RwLockExecution.countEffectiveReleases",
@@ -53671,7 +54861,7 @@
           "kind": "theorem",
           "name": "wf_writer_implies_no_readers",
           "full_name": "SeLe4n.Kernel.Concurrency.wf_writer_implies_no_readers",
-          "line": 3500,
+          "line": 3518,
           "called": [
             "SeLe4n.Kernel.Concurrency.CoreId",
             "SeLe4n.Kernel.Concurrency.RwLockState",
@@ -53684,7 +54874,7 @@
           "kind": "theorem",
           "name": "waiters_nonempty_of_mem",
           "full_name": "SeLe4n.Kernel.Concurrency.waiters_nonempty_of_mem",
-          "line": 3506,
+          "line": 3524,
           "called": [
             "SeLe4n.Kernel.Concurrency.AccessMode",
             "SeLe4n.Kernel.Concurrency.CoreId",
@@ -53696,7 +54886,7 @@
           "kind": "theorem",
           "name": "wf_queued_writer_implies_holder",
           "full_name": "SeLe4n.Kernel.Concurrency.wf_queued_writer_implies_holder",
-          "line": 3515,
+          "line": 3533,
           "called": [
             "SeLe4n.Kernel.Concurrency.AccessMode",
             "SeLe4n.Kernel.Concurrency.CoreId",
@@ -53711,7 +54901,7 @@
           "kind": "theorem",
           "name": "nodup_of_nodup_map_fst_local",
           "full_name": "SeLe4n.Kernel.Concurrency.nodup_of_nodup_map_fst_local",
-          "line": 3529,
+          "line": 3547,
           "called": [
             "SeLe4n.Kernel.Concurrency.AccessMode",
             "SeLe4n.Kernel.Concurrency.CoreId"
@@ -53722,7 +54912,7 @@
           "kind": "theorem",
           "name": "waiters_nodup_of_wf",
           "full_name": "SeLe4n.Kernel.Concurrency.waiters_nodup_of_wf",
-          "line": 3545,
+          "line": 3563,
           "called": [
             "SeLe4n.Kernel.Concurrency.RwLockState",
             "SeLe4n.Kernel.Concurrency.RwLockState.wf",
@@ -53735,14 +54925,14 @@
           "kind": "theorem",
           "name": "filter_ne_length_of_nodup",
           "full_name": "SeLe4n.Kernel.Concurrency.filter_ne_length_of_nodup",
-          "line": 3555,
+          "line": 3573,
           "called": []
         },
         {
           "kind": "theorem",
           "name": "promote_readers_empty_writer_head",
           "full_name": "SeLe4n.Kernel.Concurrency.promote_readers_empty_writer_head",
-          "line": 3595,
+          "line": 3613,
           "called": [
             "SeLe4n.Kernel.Concurrency.AccessMode",
             "SeLe4n.Kernel.Concurrency.CoreId",
@@ -53755,7 +54945,7 @@
           "kind": "theorem",
           "name": "promote_readers_empty_noop_readers_nonempty",
           "full_name": "SeLe4n.Kernel.Concurrency.promote_readers_empty_noop_readers_nonempty",
-          "line": 3606,
+          "line": 3624,
           "called": [
             "SeLe4n.Kernel.Concurrency.RwLockState",
             "SeLe4n.Kernel.Concurrency.RwLockState.promoteWaitersIfReadersEmpty"
@@ -53766,7 +54956,7 @@
           "kind": "theorem",
           "name": "releaseRead_post_no_promote",
           "full_name": "SeLe4n.Kernel.Concurrency.releaseRead_post_no_promote",
-          "line": 3619,
+          "line": 3637,
           "called": [
             "SeLe4n.Kernel.Concurrency.CoreId",
             "SeLe4n.Kernel.Concurrency.RwLockState",
@@ -53782,7 +54972,7 @@
           "kind": "theorem",
           "name": "writerWaitDepth_releaseRead_no_promote_decreases",
           "full_name": "SeLe4n.Kernel.Concurrency.writerWaitDepth_releaseRead_no_promote_decreases",
-          "line": 3648,
+          "line": 3666,
           "called": [
             "SeLe4n.Kernel.Concurrency.AccessMode",
             "SeLe4n.Kernel.Concurrency.CoreId",
@@ -53800,7 +54990,7 @@
           "kind": "theorem",
           "name": "releaseRead_post_with_promote_setup",
           "full_name": "SeLe4n.Kernel.Concurrency.releaseRead_post_with_promote_setup",
-          "line": 3669,
+          "line": 3687,
           "called": [
             "SeLe4n.Kernel.Concurrency.CoreId",
             "SeLe4n.Kernel.Concurrency.RwLockState",
@@ -53816,7 +55006,7 @@
           "kind": "theorem",
           "name": "releaseWrite_post_with_promote_setup",
           "full_name": "SeLe4n.Kernel.Concurrency.releaseWrite_post_with_promote_setup",
-          "line": 3691,
+          "line": 3709,
           "called": [
             "SeLe4n.Kernel.Concurrency.CoreId",
             "SeLe4n.Kernel.Concurrency.RwLockState",
@@ -53830,7 +55020,7 @@
           "kind": "theorem",
           "name": "idxOf_cons_neq",
           "full_name": "SeLe4n.Kernel.Concurrency.idxOf_cons_neq",
-          "line": 3708,
+          "line": 3726,
           "called": [
             "SeLe4n.Kernel.Concurrency.AccessMode",
             "SeLe4n.Kernel.Concurrency.CoreId"
@@ -53841,7 +55031,7 @@
           "kind": "theorem",
           "name": "idxOf_eq_takeWhile_length_plus_dropWhile",
           "full_name": "SeLe4n.Kernel.Concurrency.idxOf_eq_takeWhile_length_plus_dropWhile",
-          "line": 3728,
+          "line": 3746,
           "called": [],
           "private": true
         },
@@ -53849,7 +55039,7 @@
           "kind": "theorem",
           "name": "not_mem_takeWhile_of_pred_false",
           "full_name": "SeLe4n.Kernel.Concurrency.not_mem_takeWhile_of_pred_false",
-          "line": 3745,
+          "line": 3763,
           "called": [
             "SeLe4n.Kernel.Concurrency.mem_takeWhile_implies_pred"
           ],
@@ -53859,7 +55049,7 @@
           "kind": "theorem",
           "name": "queued_writer_at_head_or_in_rest",
           "full_name": "SeLe4n.Kernel.Concurrency.queued_writer_at_head_or_in_rest",
-          "line": 3758,
+          "line": 3776,
           "called": [
             "SeLe4n.Kernel.Concurrency.AccessMode",
             "SeLe4n.Kernel.Concurrency.CoreId",
@@ -53873,7 +55063,7 @@
           "kind": "theorem",
           "name": "writerWaitDepth_monotone_under_effective_release",
           "full_name": "SeLe4n.Kernel.Concurrency.writerWaitDepth_monotone_under_effective_release",
-          "line": 3821,
+          "line": 3839,
           "called": [
             "SeLe4n.Kernel.Concurrency.AccessMode",
             "SeLe4n.Kernel.Concurrency.CoreId",
@@ -53900,7 +55090,7 @@
           "kind": "def",
           "name": "RwLockExecution.waiterAt",
           "full_name": "SeLe4n.Kernel.Concurrency.RwLockExecution.waiterAt",
-          "line": 4040,
+          "line": 4058,
           "called": [
             "SeLe4n.Kernel.Concurrency.AccessMode",
             "SeLe4n.Kernel.Concurrency.CoreId",
@@ -53912,7 +55102,7 @@
           "kind": "instance",
           "name": "RwLockExecution.decidableWaiterAt",
           "full_name": "SeLe4n.Kernel.Concurrency.RwLockExecution.decidableWaiterAt",
-          "line": 4045,
+          "line": 4063,
           "called": [
             "SeLe4n.Kernel.Concurrency.AccessMode",
             "SeLe4n.Kernel.Concurrency.CoreId",
@@ -53924,7 +55114,7 @@
           "kind": "def",
           "name": "RwLockExecution.holderAt",
           "full_name": "SeLe4n.Kernel.Concurrency.RwLockExecution.holderAt",
-          "line": 4053,
+          "line": 4071,
           "called": [
             "SeLe4n.Kernel.Concurrency.CoreId",
             "SeLe4n.Kernel.Concurrency.RwLockExecution",
@@ -53935,7 +55125,7 @@
           "kind": "instance",
           "name": "RwLockExecution.decidableHolderAt",
           "full_name": "SeLe4n.Kernel.Concurrency.RwLockExecution.decidableHolderAt",
-          "line": 4057,
+          "line": 4075,
           "called": [
             "SeLe4n.Kernel.Concurrency.CoreId",
             "SeLe4n.Kernel.Concurrency.RwLockExecution",
@@ -53946,7 +55136,7 @@
           "kind": "theorem",
           "name": "RwLockExecution.holderAt_succ_of_cancel",
           "full_name": "SeLe4n.Kernel.Concurrency.RwLockExecution.holderAt_succ_of_cancel",
-          "line": 4065,
+          "line": 4083,
           "called": [
             "SeLe4n.Kernel.Concurrency.CoreId",
             "SeLe4n.Kernel.Concurrency.RwLockExecution",
@@ -53961,7 +55151,7 @@
           "kind": "theorem",
           "name": "RwLockExecution.admitted_by_cancel",
           "full_name": "SeLe4n.Kernel.Concurrency.RwLockExecution.admitted_by_cancel",
-          "line": 4081,
+          "line": 4099,
           "called": [
             "SeLe4n.Kernel.Concurrency.AccessMode",
             "SeLe4n.Kernel.Concurrency.CoreId",
@@ -53980,7 +55170,7 @@
           "kind": "def",
           "name": "RwLockExecution.enqueueStep",
           "full_name": "SeLe4n.Kernel.Concurrency.RwLockExecution.enqueueStep",
-          "line": 4104,
+          "line": 4122,
           "called": [
             "SeLe4n.Kernel.Concurrency.AccessMode",
             "SeLe4n.Kernel.Concurrency.CoreId",
@@ -53992,7 +55182,7 @@
           "kind": "def",
           "name": "RwLockExecution.admissionStep",
           "full_name": "SeLe4n.Kernel.Concurrency.RwLockExecution.admissionStep",
-          "line": 4114,
+          "line": 4132,
           "called": [
             "SeLe4n.Kernel.Concurrency.CoreId",
             "SeLe4n.Kernel.Concurrency.RwLockExecution",
@@ -54003,7 +55193,7 @@
           "kind": "theorem",
           "name": "RwLockExecution.enqueueStep_characterization",
           "full_name": "SeLe4n.Kernel.Concurrency.RwLockExecution.enqueueStep_characterization",
-          "line": 4126,
+          "line": 4144,
           "called": [
             "SeLe4n.Kernel.Concurrency.AccessMode",
             "SeLe4n.Kernel.Concurrency.CoreId",
@@ -54016,7 +55206,7 @@
           "kind": "theorem",
           "name": "RwLockExecution.admissionStep_characterization",
           "full_name": "SeLe4n.Kernel.Concurrency.RwLockExecution.admissionStep_characterization",
-          "line": 4141,
+          "line": 4159,
           "called": [
             "SeLe4n.Kernel.Concurrency.CoreId",
             "SeLe4n.Kernel.Concurrency.RwLockExecution",
@@ -54028,7 +55218,7 @@
           "kind": "def",
           "name": "RwLockOp.coreOfOp",
           "full_name": "SeLe4n.Kernel.Concurrency.RwLockOp.coreOfOp",
-          "line": 4158,
+          "line": 4176,
           "called": [
             "SeLe4n.Kernel.Concurrency.CoreId",
             "SeLe4n.Kernel.Concurrency.RwLockOp"
@@ -54038,7 +55228,7 @@
           "kind": "def",
           "name": "RwLockOp.modeOfOp",
           "full_name": "SeLe4n.Kernel.Concurrency.RwLockOp.modeOfOp",
-          "line": 4179,
+          "line": 4197,
           "called": [
             "SeLe4n.Kernel.Concurrency.AccessMode",
             "SeLe4n.Kernel.Concurrency.RwLockOp"
@@ -54048,7 +55238,7 @@
           "kind": "theorem",
           "name": "tryAcquireRead_waiters_append_or_noop",
           "full_name": "SeLe4n.Kernel.Concurrency.tryAcquireRead_waiters_append_or_noop",
-          "line": 4192,
+          "line": 4210,
           "called": [
             "SeLe4n.Kernel.Concurrency.AccessMode",
             "SeLe4n.Kernel.Concurrency.CoreId",
@@ -54061,7 +55251,7 @@
           "kind": "theorem",
           "name": "tryAcquireWrite_waiters_append_or_noop",
           "full_name": "SeLe4n.Kernel.Concurrency.tryAcquireWrite_waiters_append_or_noop",
-          "line": 4207,
+          "line": 4225,
           "called": [
             "SeLe4n.Kernel.Concurrency.AccessMode",
             "SeLe4n.Kernel.Concurrency.CoreId",
@@ -54074,7 +55264,7 @@
           "kind": "theorem",
           "name": "releaseRead_waiters_sublist",
           "full_name": "SeLe4n.Kernel.Concurrency.releaseRead_waiters_sublist",
-          "line": 4225,
+          "line": 4243,
           "called": [
             "SeLe4n.Kernel.Concurrency.CoreId",
             "SeLe4n.Kernel.Concurrency.RwLockState",
@@ -54086,7 +55276,7 @@
           "kind": "theorem",
           "name": "releaseWrite_waiters_sublist",
           "full_name": "SeLe4n.Kernel.Concurrency.releaseWrite_waiters_sublist",
-          "line": 4246,
+          "line": 4264,
           "called": [
             "SeLe4n.Kernel.Concurrency.CoreId",
             "SeLe4n.Kernel.Concurrency.RwLockState",
@@ -54098,7 +55288,7 @@
           "kind": "theorem",
           "name": "release_waiters_sublist",
           "full_name": "SeLe4n.Kernel.Concurrency.release_waiters_sublist",
-          "line": 4262,
+          "line": 4280,
           "called": [
             "SeLe4n.Kernel.Concurrency.RwLockOp",
             "SeLe4n.Kernel.Concurrency.RwLockState",
@@ -54111,7 +55301,7 @@
           "kind": "theorem",
           "name": "acquire_waiters_super_or_eq",
           "full_name": "SeLe4n.Kernel.Concurrency.acquire_waiters_super_or_eq",
-          "line": 4276,
+          "line": 4294,
           "called": [
             "SeLe4n.Kernel.Concurrency.AccessMode",
             "SeLe4n.Kernel.Concurrency.RwLockOp",
@@ -54123,7 +55313,7 @@
           "kind": "theorem",
           "name": "idxOf_append_of_mem",
           "full_name": "SeLe4n.Kernel.Concurrency.idxOf_append_of_mem",
-          "line": 4298,
+          "line": 4316,
           "called": [
             "SeLe4n.Kernel.Concurrency.AccessMode",
             "SeLe4n.Kernel.Concurrency.CoreId"
@@ -54134,7 +55324,7 @@
           "kind": "theorem",
           "name": "drop_idxOf_eq_of_nodup",
           "full_name": "SeLe4n.Kernel.Concurrency.drop_idxOf_eq_of_nodup",
-          "line": 4310,
+          "line": 4328,
           "called": [],
           "private": true
         },
@@ -54142,7 +55332,7 @@
           "kind": "def",
           "name": "nodup_of_nodup_map_fst",
           "full_name": "SeLe4n.Kernel.Concurrency.nodup_of_nodup_map_fst",
-          "line": 4341,
+          "line": 4359,
           "called": [
             "SeLe4n.Kernel.Concurrency.AccessMode",
             "SeLe4n.Kernel.Concurrency.CoreId",
@@ -54154,7 +55344,7 @@
           "kind": "theorem",
           "name": "releaseRead_effective_post",
           "full_name": "SeLe4n.Kernel.Concurrency.releaseRead_effective_post",
-          "line": 4347,
+          "line": 4365,
           "called": [
             "SeLe4n.Kernel.Concurrency.CoreId",
             "SeLe4n.Kernel.Concurrency.RwLockState",
@@ -54166,7 +55356,7 @@
           "kind": "theorem",
           "name": "releaseRead_noop_post",
           "full_name": "SeLe4n.Kernel.Concurrency.releaseRead_noop_post",
-          "line": 4358,
+          "line": 4376,
           "called": [
             "SeLe4n.Kernel.Concurrency.CoreId",
             "SeLe4n.Kernel.Concurrency.RwLockState",
@@ -54178,7 +55368,7 @@
           "kind": "theorem",
           "name": "releaseWrite_effective_post",
           "full_name": "SeLe4n.Kernel.Concurrency.releaseWrite_effective_post",
-          "line": 4365,
+          "line": 4383,
           "called": [
             "SeLe4n.Kernel.Concurrency.CoreId",
             "SeLe4n.Kernel.Concurrency.RwLockState",
@@ -54191,7 +55381,7 @@
           "kind": "theorem",
           "name": "releaseWrite_noop_post",
           "full_name": "SeLe4n.Kernel.Concurrency.releaseWrite_noop_post",
-          "line": 4374,
+          "line": 4392,
           "called": [
             "SeLe4n.Kernel.Concurrency.CoreId",
             "SeLe4n.Kernel.Concurrency.RwLockState",
@@ -54203,7 +55393,7 @@
           "kind": "theorem",
           "name": "writerWaitDepth_unchanged_under_tryAcquireRead_queued",
           "full_name": "SeLe4n.Kernel.Concurrency.writerWaitDepth_unchanged_under_tryAcquireRead_queued",
-          "line": 4395,
+          "line": 4413,
           "called": [
             "SeLe4n.Kernel.Concurrency.AccessMode",
             "SeLe4n.Kernel.Concurrency.CoreId",
@@ -54219,7 +55409,7 @@
           "kind": "theorem",
           "name": "writerWaitDepth_unchanged_under_tryAcquireWrite_queued",
           "full_name": "SeLe4n.Kernel.Concurrency.writerWaitDepth_unchanged_under_tryAcquireWrite_queued",
-          "line": 4423,
+          "line": 4441,
           "called": [
             "SeLe4n.Kernel.Concurrency.AccessMode",
             "SeLe4n.Kernel.Concurrency.CoreId",
@@ -54235,7 +55425,7 @@
           "kind": "theorem",
           "name": "writerWaitDepth_unchanged_under_noneffective_release",
           "full_name": "SeLe4n.Kernel.Concurrency.writerWaitDepth_unchanged_under_noneffective_release",
-          "line": 4455,
+          "line": 4473,
           "called": [
             "SeLe4n.Kernel.Concurrency.CoreId",
             "SeLe4n.Kernel.Concurrency.RwLockOp",
@@ -54250,7 +55440,7 @@
           "kind": "theorem",
           "name": "mem_dropWhile_of_not_pred",
           "full_name": "SeLe4n.Kernel.Concurrency.mem_dropWhile_of_not_pred",
-          "line": 4486,
+          "line": 4504,
           "called": [],
           "private": true
         },
@@ -54258,7 +55448,7 @@
           "kind": "theorem",
           "name": "queued_writer_head_or_rest_basic",
           "full_name": "SeLe4n.Kernel.Concurrency.queued_writer_head_or_rest_basic",
-          "line": 4518,
+          "line": 4536,
           "called": [
             "SeLe4n.Kernel.Concurrency.AccessMode",
             "SeLe4n.Kernel.Concurrency.CoreId"
@@ -54269,7 +55459,7 @@
           "kind": "theorem",
           "name": "promoteOnWriterRelease_persistence",
           "full_name": "SeLe4n.Kernel.Concurrency.promoteOnWriterRelease_persistence",
-          "line": 4531,
+          "line": 4549,
           "called": [
             "SeLe4n.Kernel.Concurrency.AccessMode",
             "SeLe4n.Kernel.Concurrency.CoreId",
@@ -54283,7 +55473,7 @@
           "kind": "theorem",
           "name": "promoteIfReadersEmpty_persistence",
           "full_name": "SeLe4n.Kernel.Concurrency.promoteIfReadersEmpty_persistence",
-          "line": 4559,
+          "line": 4577,
           "called": [
             "SeLe4n.Kernel.Concurrency.AccessMode",
             "SeLe4n.Kernel.Concurrency.CoreId",
@@ -54297,7 +55487,7 @@
           "kind": "theorem",
           "name": "queued_writer_persists_or_admitted",
           "full_name": "SeLe4n.Kernel.Concurrency.queued_writer_persists_or_admitted",
-          "line": 4601,
+          "line": 4619,
           "called": [
             "SeLe4n.Kernel.Concurrency.AccessMode",
             "SeLe4n.Kernel.Concurrency.CoreId",
@@ -54320,7 +55510,7 @@
           "kind": "theorem",
           "name": "writerWaitDepth_non_increase_step_queued",
           "full_name": "SeLe4n.Kernel.Concurrency.writerWaitDepth_non_increase_step_queued",
-          "line": 4663,
+          "line": 4681,
           "called": [
             "SeLe4n.Kernel.Concurrency.AccessMode",
             "SeLe4n.Kernel.Concurrency.CoreId",
@@ -54349,7 +55539,7 @@
           "kind": "theorem",
           "name": "writerWaitDepth_strict_decrease_under_effective_release",
           "full_name": "SeLe4n.Kernel.Concurrency.writerWaitDepth_strict_decrease_under_effective_release",
-          "line": 4718,
+          "line": 4736,
           "called": [
             "SeLe4n.Kernel.Concurrency.AccessMode",
             "SeLe4n.Kernel.Concurrency.CoreId",
@@ -54366,7 +55556,7 @@
           "kind": "theorem",
           "name": "applyOp_preserves_waiter_order",
           "full_name": "SeLe4n.Kernel.Concurrency.applyOp_preserves_waiter_order",
-          "line": 4734,
+          "line": 4752,
           "called": [
             "SeLe4n.Kernel.Concurrency.AccessMode",
             "SeLe4n.Kernel.Concurrency.CoreId",
@@ -54392,7 +55582,7 @@
           "kind": "theorem",
           "name": "rwLock_fifo_admission_temporal_structural",
           "full_name": "SeLe4n.Kernel.Concurrency.rwLock_fifo_admission_temporal_structural",
-          "line": 4826,
+          "line": 4844,
           "called": [
             "SeLe4n.Kernel.Concurrency.AccessMode",
             "SeLe4n.Kernel.Concurrency.CoreId",
@@ -54407,7 +55597,7 @@
           "kind": "theorem",
           "name": "rwLock_bounded_wait_write_distinct_weak",
           "full_name": "SeLe4n.Kernel.Concurrency.rwLock_bounded_wait_write_distinct_weak",
-          "line": 4900,
+          "line": 4918,
           "called": [
             "SeLe4n.Kernel.Concurrency.AccessMode",
             "SeLe4n.Kernel.Concurrency.CoreId",
@@ -54422,7 +55612,7 @@
           "kind": "theorem",
           "name": "RwLockExecution.countEffectiveReleases_self",
           "full_name": "SeLe4n.Kernel.Concurrency.RwLockExecution.countEffectiveReleases_self",
-          "line": 4907,
+          "line": 4925,
           "called": [
             "SeLe4n.Kernel.Concurrency.RwLockExecution",
             "SeLe4n.Kernel.Concurrency.RwLockExecution.countEffectiveReleases"
@@ -54432,7 +55622,7 @@
           "kind": "theorem",
           "name": "RwLockExecution.countEffectiveReleases_succ",
           "full_name": "SeLe4n.Kernel.Concurrency.RwLockExecution.countEffectiveReleases_succ",
-          "line": 4914,
+          "line": 4932,
           "called": [
             "SeLe4n.Kernel.Concurrency.RwLockExecution",
             "SeLe4n.Kernel.Concurrency.RwLockExecution.countEffectiveReleases",
@@ -54443,7 +55633,7 @@
           "kind": "theorem",
           "name": "writerWaitDepth_release_count_bound_offset",
           "full_name": "SeLe4n.Kernel.Concurrency.writerWaitDepth_release_count_bound_offset",
-          "line": 4942,
+          "line": 4960,
           "called": [
             "SeLe4n.Kernel.Concurrency.AccessMode",
             "SeLe4n.Kernel.Concurrency.CoreId",
@@ -54463,7 +55653,7 @@
           "kind": "theorem",
           "name": "rwLock_bounded_wait_write_distinct",
           "full_name": "SeLe4n.Kernel.Concurrency.rwLock_bounded_wait_write_distinct",
-          "line": 5002,
+          "line": 5020,
           "called": [
             "SeLe4n.Kernel.Concurrency.AccessMode",
             "SeLe4n.Kernel.Concurrency.CoreId",
@@ -54480,7 +55670,7 @@
           "kind": "theorem",
           "name": "rwLock_writer_admitted_within_release_budget",
           "full_name": "SeLe4n.Kernel.Concurrency.rwLock_writer_admitted_within_release_budget",
-          "line": 5023,
+          "line": 5041,
           "called": [
             "SeLe4n.Kernel.Concurrency.AccessMode",
             "SeLe4n.Kernel.Concurrency.CoreId",
@@ -54496,7 +55686,7 @@
           "kind": "theorem",
           "name": "writerWaitDepth_componentBounded",
           "full_name": "SeLe4n.Kernel.Concurrency.writerWaitDepth_componentBounded",
-          "line": 5052,
+          "line": 5070,
           "called": [
             "SeLe4n.Kernel.Concurrency.AccessMode",
             "SeLe4n.Kernel.Concurrency.CoreId",
@@ -54512,7 +55702,7 @@
           "kind": "structure",
           "name": "FairTrace",
           "full_name": "SeLe4n.Kernel.Concurrency.FairTrace",
-          "line": 5093,
+          "line": 5111,
           "called": [
             "SeLe4n.Kernel.Concurrency.RwLockExecution",
             "SeLe4n.Kernel.Concurrency.RwLockExecution.stateAt"
@@ -54522,21 +55712,21 @@
           "kind": "def",
           "name": "MAX_RELEASE_DELAY",
           "full_name": "SeLe4n.Kernel.Concurrency.MAX_RELEASE_DELAY",
-          "line": 5131,
+          "line": 5149,
           "called": []
         },
         {
           "kind": "def",
           "name": "releaseBudgetCycles",
           "full_name": "SeLe4n.Kernel.Concurrency.releaseBudgetCycles",
-          "line": 5140,
+          "line": 5158,
           "called": []
         },
         {
           "kind": "theorem",
           "name": "releaseBudgetCycles_bounds_elapsed",
           "full_name": "SeLe4n.Kernel.Concurrency.releaseBudgetCycles_bounds_elapsed",
-          "line": 5148,
+          "line": 5166,
           "called": [
             "SeLe4n.Kernel.Concurrency.RwLockExecution",
             "SeLe4n.Kernel.Concurrency.RwLockExecution.BoundedCriticalSection",
@@ -54549,7 +55739,7 @@
           "kind": "theorem",
           "name": "releaseBudgetCycles_unit",
           "full_name": "SeLe4n.Kernel.Concurrency.releaseBudgetCycles_unit",
-          "line": 5154,
+          "line": 5172,
           "called": [
             "SeLe4n.Kernel.Concurrency.releaseBudgetCycles"
           ]
@@ -54558,7 +55748,7 @@
           "kind": "theorem",
           "name": "rwLock_writer_no_starvation_step",
           "full_name": "SeLe4n.Kernel.Concurrency.rwLock_writer_no_starvation_step",
-          "line": 5165,
+          "line": 5183,
           "called": [
             "SeLe4n.Kernel.Concurrency.AccessMode",
             "SeLe4n.Kernel.Concurrency.CoreId",
@@ -54573,7 +55763,7 @@
           "kind": "theorem",
           "name": "writer_at_head_promoted",
           "full_name": "SeLe4n.Kernel.Concurrency.writer_at_head_promoted",
-          "line": 5180,
+          "line": 5198,
           "called": [
             "SeLe4n.Kernel.Concurrency.AccessMode",
             "SeLe4n.Kernel.Concurrency.CoreId",
@@ -54585,7 +55775,7 @@
           "kind": "theorem",
           "name": "RwLockState.applyOp_preserves_wf",
           "full_name": "SeLe4n.Kernel.Concurrency.RwLockState.applyOp_preserves_wf",
-          "line": 5204,
+          "line": 5222,
           "called": [
             "SeLe4n.Kernel.Concurrency.RwLockOp",
             "SeLe4n.Kernel.Concurrency.RwLockState",
@@ -54598,7 +55788,7 @@
           "kind": "theorem",
           "name": "RwLockState.applyOp_noop_acquireRead",
           "full_name": "SeLe4n.Kernel.Concurrency.RwLockState.applyOp_noop_acquireRead",
-          "line": 5217,
+          "line": 5235,
           "called": [
             "SeLe4n.Kernel.Concurrency.CoreId",
             "SeLe4n.Kernel.Concurrency.RwLockState",
@@ -54610,7 +55800,7 @@
           "kind": "theorem",
           "name": "RwLockState.applyOp_noop_acquireWrite",
           "full_name": "SeLe4n.Kernel.Concurrency.RwLockState.applyOp_noop_acquireWrite",
-          "line": 5221,
+          "line": 5239,
           "called": [
             "SeLe4n.Kernel.Concurrency.CoreId",
             "SeLe4n.Kernel.Concurrency.RwLockState",
@@ -54622,7 +55812,7 @@
           "kind": "theorem",
           "name": "RwLockState.applyOp_noop_releaseRead",
           "full_name": "SeLe4n.Kernel.Concurrency.RwLockState.applyOp_noop_releaseRead",
-          "line": 5225,
+          "line": 5243,
           "called": [
             "SeLe4n.Kernel.Concurrency.CoreId",
             "SeLe4n.Kernel.Concurrency.RwLockState",
@@ -54633,7 +55823,7 @@
           "kind": "theorem",
           "name": "RwLockState.applyOp_noop_releaseWrite",
           "full_name": "SeLe4n.Kernel.Concurrency.RwLockState.applyOp_noop_releaseWrite",
-          "line": 5229,
+          "line": 5247,
           "called": [
             "SeLe4n.Kernel.Concurrency.CoreId",
             "SeLe4n.Kernel.Concurrency.RwLockState",
@@ -54644,7 +55834,7 @@
           "kind": "theorem",
           "name": "promoteWaitersIfReadersEmpty_noop",
           "full_name": "SeLe4n.Kernel.Concurrency.promoteWaitersIfReadersEmpty_noop",
-          "line": 5237,
+          "line": 5255,
           "called": [
             "SeLe4n.Kernel.Concurrency.RwLockState",
             "SeLe4n.Kernel.Concurrency.RwLockState.promoteWaitersIfReadersEmpty"
@@ -54654,7 +55844,7 @@
           "kind": "theorem",
           "name": "promoteIfReadersEmpty_eq_onWriterRelease",
           "full_name": "SeLe4n.Kernel.Concurrency.promoteIfReadersEmpty_eq_onWriterRelease",
-          "line": 5258,
+          "line": 5276,
           "called": [
             "SeLe4n.Kernel.Concurrency.RwLockState",
             "SeLe4n.Kernel.Concurrency.RwLockState.promoteWaitersIfReadersEmpty",
@@ -54665,7 +55855,7 @@
           "kind": "inductive",
           "name": "ConcreteRwLockOp",
           "full_name": "SeLe4n.Kernel.Concurrency.ConcreteRwLockOp",
-          "line": 5288,
+          "line": 5306,
           "called": [
             "SeLe4n.Kernel.Concurrency.CoreId"
           ]
@@ -54674,7 +55864,7 @@
           "kind": "def",
           "name": "concreteApplyOp",
           "full_name": "SeLe4n.Kernel.Concurrency.concreteApplyOp",
-          "line": 5316,
+          "line": 5334,
           "called": [
             "SeLe4n.Kernel.Concurrency.ConcreteRwLockOp",
             "SeLe4n.Kernel.Concurrency.readerMask",
@@ -54685,7 +55875,7 @@
           "kind": "inductive",
           "name": "AdmissionSequence",
           "full_name": "SeLe4n.Kernel.Concurrency.AdmissionSequence",
-          "line": 5336,
+          "line": 5354,
           "called": [
             "SeLe4n.Kernel.Concurrency.ConcreteRwLockOp",
             "SeLe4n.Kernel.Concurrency.CoreId"
@@ -54695,7 +55885,7 @@
           "kind": "inductive",
           "name": "opCorresponds",
           "full_name": "SeLe4n.Kernel.Concurrency.opCorresponds",
-          "line": 5375,
+          "line": 5393,
           "called": [
             "SeLe4n.Kernel.Concurrency.AdmissionSequence",
             "SeLe4n.Kernel.Concurrency.ConcreteRwLockOp",
@@ -54707,7 +55897,7 @@
           "kind": "theorem",
           "name": "concreteApplyOp_preserves_sim_load",
           "full_name": "SeLe4n.Kernel.Concurrency.concreteApplyOp_preserves_sim_load",
-          "line": 5489,
+          "line": 5507,
           "called": [
             "SeLe4n.Kernel.Concurrency.CoreId",
             "SeLe4n.Kernel.Concurrency.concreteApplyOp"
@@ -54717,7 +55907,7 @@
           "kind": "theorem",
           "name": "concreteApplyOp_preserves_sim_wfe",
           "full_name": "SeLe4n.Kernel.Concurrency.concreteApplyOp_preserves_sim_wfe",
-          "line": 5499,
+          "line": 5517,
           "called": [
             "SeLe4n.Kernel.Concurrency.CoreId",
             "SeLe4n.Kernel.Concurrency.concreteApplyOp"
@@ -54727,7 +55917,7 @@
           "kind": "theorem",
           "name": "concreteApplyOp_preserves_sim_sev",
           "full_name": "SeLe4n.Kernel.Concurrency.concreteApplyOp_preserves_sim_sev",
-          "line": 5508,
+          "line": 5526,
           "called": [
             "SeLe4n.Kernel.Concurrency.CoreId",
             "SeLe4n.Kernel.Concurrency.concreteApplyOp"
@@ -54737,7 +55927,7 @@
           "kind": "theorem",
           "name": "concreteApplyOp_preserves_sim_cas_acquire_read_fail",
           "full_name": "SeLe4n.Kernel.Concurrency.concreteApplyOp_preserves_sim_cas_acquire_read_fail",
-          "line": 5520,
+          "line": 5538,
           "called": [
             "SeLe4n.Kernel.Concurrency.CoreId",
             "SeLe4n.Kernel.Concurrency.concreteApplyOp"
@@ -54747,7 +55937,7 @@
           "kind": "theorem",
           "name": "concreteApplyOp_cas_acquire_read_success",
           "full_name": "SeLe4n.Kernel.Concurrency.concreteApplyOp_cas_acquire_read_success",
-          "line": 5532,
+          "line": 5550,
           "called": [
             "SeLe4n.Kernel.Concurrency.CoreId",
             "SeLe4n.Kernel.Concurrency.concreteApplyOp"
@@ -54757,7 +55947,7 @@
           "kind": "theorem",
           "name": "concreteApplyOp_preserves_sim_cas_acquire_write_fail",
           "full_name": "SeLe4n.Kernel.Concurrency.concreteApplyOp_preserves_sim_cas_acquire_write_fail",
-          "line": 5541,
+          "line": 5559,
           "called": [
             "SeLe4n.Kernel.Concurrency.CoreId",
             "SeLe4n.Kernel.Concurrency.concreteApplyOp"
@@ -54767,7 +55957,7 @@
           "kind": "theorem",
           "name": "concreteApplyOp_cas_acquire_write_success",
           "full_name": "SeLe4n.Kernel.Concurrency.concreteApplyOp_cas_acquire_write_success",
-          "line": 5550,
+          "line": 5568,
           "called": [
             "SeLe4n.Kernel.Concurrency.CoreId",
             "SeLe4n.Kernel.Concurrency.concreteApplyOp",
@@ -54778,7 +55968,7 @@
           "kind": "theorem",
           "name": "encodeRwLock_at_least_one_when_reader",
           "full_name": "SeLe4n.Kernel.Concurrency.encodeRwLock_at_least_one_when_reader",
-          "line": 5562,
+          "line": 5580,
           "called": [
             "SeLe4n.Kernel.Concurrency.CoreId",
             "SeLe4n.Kernel.Concurrency.RwLockState",
@@ -54789,7 +55979,7 @@
           "kind": "theorem",
           "name": "reader_at_head_promoted",
           "full_name": "SeLe4n.Kernel.Concurrency.reader_at_head_promoted",
-          "line": 5581,
+          "line": 5599,
           "called": [
             "SeLe4n.Kernel.Concurrency.AccessMode",
             "SeLe4n.Kernel.Concurrency.CoreId",
@@ -54801,7 +55991,7 @@
           "kind": "theorem",
           "name": "promote_noop_on_empty_waiters",
           "full_name": "SeLe4n.Kernel.Concurrency.promote_noop_on_empty_waiters",
-          "line": 5604,
+          "line": 5622,
           "called": [
             "SeLe4n.Kernel.Concurrency.RwLockState",
             "SeLe4n.Kernel.Concurrency.RwLockState.promoteWaitersOnWriterRelease"
@@ -54811,7 +56001,7 @@
           "kind": "theorem",
           "name": "tryAcquireRead_direct_acquire_shape",
           "full_name": "SeLe4n.Kernel.Concurrency.tryAcquireRead_direct_acquire_shape",
-          "line": 5624,
+          "line": 5642,
           "called": [
             "SeLe4n.Kernel.Concurrency.CoreId",
             "SeLe4n.Kernel.Concurrency.RwLockState",
@@ -54823,7 +56013,7 @@
           "kind": "theorem",
           "name": "tryAcquireWrite_direct_acquire_shape",
           "full_name": "SeLe4n.Kernel.Concurrency.tryAcquireWrite_direct_acquire_shape",
-          "line": 5653,
+          "line": 5671,
           "called": [
             "SeLe4n.Kernel.Concurrency.CoreId",
             "SeLe4n.Kernel.Concurrency.RwLockState",
@@ -54835,7 +56025,7 @@
           "kind": "theorem",
           "name": "find_smallest_le",
           "full_name": "SeLe4n.Kernel.Concurrency.find_smallest_le",
-          "line": 5681,
+          "line": 5699,
           "called": [],
           "private": true
         },
@@ -54843,7 +56033,7 @@
           "kind": "theorem",
           "name": "range_find?_le_of_satisfies",
           "full_name": "SeLe4n.Kernel.Concurrency.range_find?_le_of_satisfies",
-          "line": 5700,
+          "line": 5718,
           "called": [
             "SeLe4n.Kernel.Concurrency.find_smallest_le"
           ],
@@ -54853,7 +56043,7 @@
           "kind": "theorem",
           "name": "holderAt_zero_false",
           "full_name": "SeLe4n.Kernel.Concurrency.holderAt_zero_false",
-          "line": 5730,
+          "line": 5748,
           "called": [
             "SeLe4n.Kernel.Concurrency.CoreId",
             "SeLe4n.Kernel.Concurrency.RwLockExecution",
@@ -54867,7 +56057,7 @@
           "kind": "theorem",
           "name": "admissionStep_le_of_holder",
           "full_name": "SeLe4n.Kernel.Concurrency.admissionStep_le_of_holder",
-          "line": 5738,
+          "line": 5756,
           "called": [
             "SeLe4n.Kernel.Concurrency.CoreId",
             "SeLe4n.Kernel.Concurrency.RwLockExecution",
@@ -54883,7 +56073,7 @@
           "kind": "theorem",
           "name": "leave_waiters_implies_holder",
           "full_name": "SeLe4n.Kernel.Concurrency.leave_waiters_implies_holder",
-          "line": 5807,
+          "line": 5825,
           "called": [
             "SeLe4n.Kernel.Concurrency.AccessMode",
             "SeLe4n.Kernel.Concurrency.CoreId",
@@ -54904,7 +56094,7 @@
           "kind": "theorem",
           "name": "idxOf_lt_of_not_mem_drop",
           "full_name": "SeLe4n.Kernel.Concurrency.idxOf_lt_of_not_mem_drop",
-          "line": 5986,
+          "line": 6004,
           "called": [],
           "private": true
         },
@@ -54912,7 +56102,7 @@
           "kind": "theorem",
           "name": "promote_prefix_inclusion",
           "full_name": "SeLe4n.Kernel.Concurrency.promote_prefix_inclusion",
-          "line": 6014,
+          "line": 6032,
           "called": [
             "SeLe4n.Kernel.Concurrency.AccessMode",
             "SeLe4n.Kernel.Concurrency.CoreId",
@@ -54939,7 +56129,7 @@
           "kind": "theorem",
           "name": "c_in_waiters_through_admission",
           "full_name": "SeLe4n.Kernel.Concurrency.c_in_waiters_through_admission",
-          "line": 6190,
+          "line": 6208,
           "called": [
             "SeLe4n.Kernel.Concurrency.AccessMode",
             "SeLe4n.Kernel.Concurrency.CoreId",
@@ -54965,7 +56155,7 @@
           "kind": "theorem",
           "name": "rwLock_fifo_admission_temporal",
           "full_name": "SeLe4n.Kernel.Concurrency.rwLock_fifo_admission_temporal",
-          "line": 6344,
+          "line": 6362,
           "called": [
             "SeLe4n.Kernel.Concurrency.AccessMode",
             "SeLe4n.Kernel.Concurrency.CoreId",
@@ -54998,7 +56188,7 @@
           "kind": "theorem",
           "name": "queued_implies_holder_at_step",
           "full_name": "SeLe4n.Kernel.Concurrency.queued_implies_holder_at_step",
-          "line": 6702,
+          "line": 6720,
           "called": [
             "SeLe4n.Kernel.Concurrency.AccessMode",
             "SeLe4n.Kernel.Concurrency.CoreId",
@@ -55013,7 +56203,7 @@
           "kind": "theorem",
           "name": "find_latest_writer_non_holder",
           "full_name": "SeLe4n.Kernel.Concurrency.find_latest_writer_non_holder",
-          "line": 6720,
+          "line": 6738,
           "called": [
             "SeLe4n.Kernel.Concurrency.CoreId",
             "SeLe4n.Kernel.Concurrency.RwLockExecution",
@@ -55025,7 +56215,7 @@
           "kind": "theorem",
           "name": "fair_writer_release_witness",
           "full_name": "SeLe4n.Kernel.Concurrency.fair_writer_release_witness",
-          "line": 6768,
+          "line": 6786,
           "called": [
             "SeLe4n.Kernel.Concurrency.CoreId",
             "SeLe4n.Kernel.Concurrency.FairTrace",
@@ -55041,7 +56231,7 @@
           "kind": "theorem",
           "name": "find_latest_reader_non_member",
           "full_name": "SeLe4n.Kernel.Concurrency.find_latest_reader_non_member",
-          "line": 6832,
+          "line": 6850,
           "called": [
             "SeLe4n.Kernel.Concurrency.CoreId",
             "SeLe4n.Kernel.Concurrency.RwLockExecution",
@@ -55053,7 +56243,7 @@
           "kind": "theorem",
           "name": "fair_reader_release_witness",
           "full_name": "SeLe4n.Kernel.Concurrency.fair_reader_release_witness",
-          "line": 6865,
+          "line": 6883,
           "called": [
             "SeLe4n.Kernel.Concurrency.CoreId",
             "SeLe4n.Kernel.Concurrency.FairTrace",
@@ -55069,7 +56259,7 @@
           "kind": "theorem",
           "name": "fair_release_witness_in_window",
           "full_name": "SeLe4n.Kernel.Concurrency.fair_release_witness_in_window",
-          "line": 6930,
+          "line": 6948,
           "called": [
             "SeLe4n.Kernel.Concurrency.AccessMode",
             "SeLe4n.Kernel.Concurrency.CoreId",
@@ -55087,7 +56277,7 @@
           "kind": "theorem",
           "name": "rwLock_writer_liveness_existence",
           "full_name": "SeLe4n.Kernel.Concurrency.rwLock_writer_liveness_existence",
-          "line": 6974,
+          "line": 6992,
           "called": [
             "SeLe4n.Kernel.Concurrency.AccessMode",
             "SeLe4n.Kernel.Concurrency.CoreId",
@@ -55104,7 +56294,7 @@
           "kind": "theorem",
           "name": "rwLock_writer_liveness_count_bound",
           "full_name": "SeLe4n.Kernel.Concurrency.rwLock_writer_liveness_count_bound",
-          "line": 7017,
+          "line": 7035,
           "called": [
             "SeLe4n.Kernel.Concurrency.AccessMode",
             "SeLe4n.Kernel.Concurrency.CoreId",
@@ -55120,7 +56310,7 @@
           "kind": "theorem",
           "name": "queued_writer_persists_across_window",
           "full_name": "SeLe4n.Kernel.Concurrency.queued_writer_persists_across_window",
-          "line": 7043,
+          "line": 7061,
           "called": [
             "SeLe4n.Kernel.Concurrency.AccessMode",
             "SeLe4n.Kernel.Concurrency.CoreId",
@@ -55136,7 +56326,7 @@
           "kind": "theorem",
           "name": "writerWaitDepth_non_increase_across_offset",
           "full_name": "SeLe4n.Kernel.Concurrency.writerWaitDepth_non_increase_across_offset",
-          "line": 7116,
+          "line": 7134,
           "called": [
             "SeLe4n.Kernel.Concurrency.AccessMode",
             "SeLe4n.Kernel.Concurrency.CoreId",
@@ -55153,7 +56343,7 @@
           "kind": "theorem",
           "name": "writerWaitDepth_non_increase_across_window",
           "full_name": "SeLe4n.Kernel.Concurrency.writerWaitDepth_non_increase_across_window",
-          "line": 7164,
+          "line": 7182,
           "called": [
             "SeLe4n.Kernel.Concurrency.AccessMode",
             "SeLe4n.Kernel.Concurrency.CoreId",
@@ -55168,7 +56358,7 @@
           "kind": "theorem",
           "name": "rwLock_writer_liveness_bound_under_fairness",
           "full_name": "SeLe4n.Kernel.Concurrency.rwLock_writer_liveness_bound_under_fairness",
-          "line": 7197,
+          "line": 7215,
           "called": [
             "SeLe4n.Kernel.Concurrency.AccessMode",
             "SeLe4n.Kernel.Concurrency.CoreId",
@@ -55188,7 +56378,7 @@
           "kind": "def",
           "name": "fairTraceReaderBody",
           "full_name": "SeLe4n.Kernel.Concurrency.fairTraceReaderBody",
-          "line": 7233,
+          "line": 7251,
           "called": [
             "SeLe4n.Kernel.Concurrency.CoreId",
             "SeLe4n.Kernel.Concurrency.RwLockExecution",
@@ -55199,7 +56389,7 @@
           "kind": "instance",
           "name": "fairTraceReaderBody.decidable",
           "full_name": "SeLe4n.Kernel.Concurrency.fairTraceReaderBody.decidable",
-          "line": 7243,
+          "line": 7261,
           "called": [
             "SeLe4n.Kernel.Concurrency.CoreId",
             "SeLe4n.Kernel.Concurrency.RwLockExecution",
@@ -55210,7 +56400,7 @@
           "kind": "def",
           "name": "fairTraceWriterBody",
           "full_name": "SeLe4n.Kernel.Concurrency.fairTraceWriterBody",
-          "line": 7250,
+          "line": 7268,
           "called": [
             "SeLe4n.Kernel.Concurrency.CoreId",
             "SeLe4n.Kernel.Concurrency.RwLockExecution",
@@ -55221,7 +56411,7 @@
           "kind": "instance",
           "name": "fairTraceWriterBody.decidable",
           "full_name": "SeLe4n.Kernel.Concurrency.fairTraceWriterBody.decidable",
-          "line": 7260,
+          "line": 7278,
           "called": [
             "SeLe4n.Kernel.Concurrency.CoreId",
             "SeLe4n.Kernel.Concurrency.RwLockExecution",
@@ -55232,7 +56422,7 @@
           "kind": "def",
           "name": "fairTraceBoundedProp",
           "full_name": "SeLe4n.Kernel.Concurrency.fairTraceBoundedProp",
-          "line": 7280,
+          "line": 7298,
           "called": [
             "SeLe4n.Kernel.Concurrency.CoreId",
             "SeLe4n.Kernel.Concurrency.RwLockExecution",
@@ -55244,7 +56434,7 @@
           "kind": "instance",
           "name": "fairTraceBoundedProp.decidable",
           "full_name": "SeLe4n.Kernel.Concurrency.fairTraceBoundedProp.decidable",
-          "line": 7286,
+          "line": 7304,
           "called": [
             "SeLe4n.Kernel.Concurrency.RwLockExecution",
             "SeLe4n.Kernel.Concurrency.fairTraceBoundedProp"
@@ -55254,7 +56444,7 @@
           "kind": "theorem",
           "name": "fairTrace_iff_bounded",
           "full_name": "SeLe4n.Kernel.Concurrency.fairTrace_iff_bounded",
-          "line": 7299,
+          "line": 7317,
           "called": [
             "SeLe4n.Kernel.Concurrency.FairTrace",
             "SeLe4n.Kernel.Concurrency.RwLockExecution",
@@ -55268,7 +56458,7 @@
           "kind": "instance",
           "name": "FairTrace.decidable",
           "full_name": "SeLe4n.Kernel.Concurrency.FairTrace.decidable",
-          "line": 7366,
+          "line": 7384,
           "called": [
             "SeLe4n.Kernel.Concurrency.FairTrace",
             "SeLe4n.Kernel.Concurrency.RwLockExecution",
@@ -55279,7 +56469,7 @@
           "kind": "theorem",
           "name": "writerHeld_transition_implies_releaseWrite",
           "full_name": "SeLe4n.Kernel.Concurrency.writerHeld_transition_implies_releaseWrite",
-          "line": 7391,
+          "line": 7409,
           "called": [
             "SeLe4n.Kernel.Concurrency.CoreId",
             "SeLe4n.Kernel.Concurrency.RwLockOp",
@@ -55298,7 +56488,7 @@
           "kind": "theorem",
           "name": "reader_transition_implies_releaseRead",
           "full_name": "SeLe4n.Kernel.Concurrency.reader_transition_implies_releaseRead",
-          "line": 7508,
+          "line": 7526,
           "called": [
             "SeLe4n.Kernel.Concurrency.AccessMode",
             "SeLe4n.Kernel.Concurrency.CoreId",
@@ -55320,7 +56510,7 @@
           "kind": "theorem",
           "name": "release_transition_implies_effective_release_at_step",
           "full_name": "SeLe4n.Kernel.Concurrency.release_transition_implies_effective_release_at_step",
-          "line": 7626,
+          "line": 7644,
           "called": [
             "SeLe4n.Kernel.Concurrency.RwLockExecution",
             "SeLe4n.Kernel.Concurrency.RwLockExecution.stateAt",
@@ -55333,7 +56523,7 @@
           "kind": "theorem",
           "name": "fair_progress_one_step",
           "full_name": "SeLe4n.Kernel.Concurrency.fair_progress_one_step",
-          "line": 7664,
+          "line": 7682,
           "called": [
             "SeLe4n.Kernel.Concurrency.AccessMode",
             "SeLe4n.Kernel.Concurrency.CoreId",
@@ -55360,7 +56550,7 @@
           "kind": "theorem",
           "name": "rwLock_writer_liveness",
           "full_name": "SeLe4n.Kernel.Concurrency.rwLock_writer_liveness",
-          "line": 7809,
+          "line": 7827,
           "called": [
             "SeLe4n.Kernel.Concurrency.AccessMode",
             "SeLe4n.Kernel.Concurrency.CoreId",
@@ -55380,7 +56570,7 @@
           "kind": "theorem",
           "name": "rwLock_writer_admissionStep_bounded",
           "full_name": "SeLe4n.Kernel.Concurrency.rwLock_writer_admissionStep_bounded",
-          "line": 7938,
+          "line": 7956,
           "called": [
             "SeLe4n.Kernel.Concurrency.AccessMode",
             "SeLe4n.Kernel.Concurrency.CoreId",
@@ -55401,7 +56591,7 @@
           "kind": "def",
           "name": "RwLockExecution.admissionStepAfter",
           "full_name": "SeLe4n.Kernel.Concurrency.RwLockExecution.admissionStepAfter",
-          "line": 7988,
+          "line": 8006,
           "called": [
             "SeLe4n.Kernel.Concurrency.CoreId",
             "SeLe4n.Kernel.Concurrency.RwLockExecution",
@@ -55412,7 +56602,7 @@
           "kind": "theorem",
           "name": "RwLockExecution.admissionStepAfter_characterization",
           "full_name": "SeLe4n.Kernel.Concurrency.RwLockExecution.admissionStepAfter_characterization",
-          "line": 7995,
+          "line": 8013,
           "called": [
             "SeLe4n.Kernel.Concurrency.CoreId",
             "SeLe4n.Kernel.Concurrency.RwLockExecution",
@@ -55424,7 +56614,7 @@
           "kind": "theorem",
           "name": "RwLockExecution.queued_not_holder",
           "full_name": "SeLe4n.Kernel.Concurrency.RwLockExecution.queued_not_holder",
-          "line": 8007,
+          "line": 8025,
           "called": [
             "SeLe4n.Kernel.Concurrency.AccessMode",
             "SeLe4n.Kernel.Concurrency.CoreId",
@@ -55438,7 +56628,7 @@
           "kind": "theorem",
           "name": "rwLock_writer_admissionStepAfter_bounded",
           "full_name": "SeLe4n.Kernel.Concurrency.rwLock_writer_admissionStepAfter_bounded",
-          "line": 8023,
+          "line": 8041,
           "called": [
             "SeLe4n.Kernel.Concurrency.AccessMode",
             "SeLe4n.Kernel.Concurrency.CoreId",
@@ -55461,7 +56651,7 @@
           "kind": "def",
           "name": "queueWaitDepth",
           "full_name": "SeLe4n.Kernel.Concurrency.queueWaitDepth",
-          "line": 8081,
+          "line": 8099,
           "called": [
             "SeLe4n.Kernel.Concurrency.AccessMode",
             "SeLe4n.Kernel.Concurrency.CoreId",
@@ -55472,7 +56662,7 @@
           "kind": "theorem",
           "name": "queueWaitDepth_write",
           "full_name": "SeLe4n.Kernel.Concurrency.queueWaitDepth_write",
-          "line": 8084,
+          "line": 8102,
           "called": [
             "SeLe4n.Kernel.Concurrency.AccessMode",
             "SeLe4n.Kernel.Concurrency.CoreId",
@@ -55485,7 +56675,7 @@
           "kind": "def",
           "name": "readerWaitDepth",
           "full_name": "SeLe4n.Kernel.Concurrency.readerWaitDepth",
-          "line": 8089,
+          "line": 8107,
           "called": [
             "SeLe4n.Kernel.Concurrency.AccessMode",
             "SeLe4n.Kernel.Concurrency.CoreId",
@@ -55497,7 +56687,7 @@
           "kind": "theorem",
           "name": "readerWaitDepth_simp",
           "full_name": "SeLe4n.Kernel.Concurrency.readerWaitDepth_simp",
-          "line": 8092,
+          "line": 8110,
           "called": [
             "SeLe4n.Kernel.Concurrency.AccessMode",
             "SeLe4n.Kernel.Concurrency.CoreId",
@@ -55509,7 +56699,7 @@
           "kind": "theorem",
           "name": "queueWaitDepth_bounded",
           "full_name": "SeLe4n.Kernel.Concurrency.queueWaitDepth_bounded",
-          "line": 8102,
+          "line": 8120,
           "called": [
             "SeLe4n.Kernel.Concurrency.AccessMode",
             "SeLe4n.Kernel.Concurrency.CoreId",
@@ -55526,7 +56716,7 @@
           "kind": "theorem",
           "name": "readerWaitDepth_bounded",
           "full_name": "SeLe4n.Kernel.Concurrency.readerWaitDepth_bounded",
-          "line": 8128,
+          "line": 8146,
           "called": [
             "SeLe4n.Kernel.Concurrency.AccessMode",
             "SeLe4n.Kernel.Concurrency.CoreId",
@@ -55541,7 +56731,7 @@
           "kind": "theorem",
           "name": "queued_persists_or_admitted",
           "full_name": "SeLe4n.Kernel.Concurrency.queued_persists_or_admitted",
-          "line": 8143,
+          "line": 8161,
           "called": [
             "SeLe4n.Kernel.Concurrency.AccessMode",
             "SeLe4n.Kernel.Concurrency.CoreId",
@@ -55555,7 +56745,7 @@
           "kind": "theorem",
           "name": "reader_at_head_admitted_by_writer_release",
           "full_name": "SeLe4n.Kernel.Concurrency.reader_at_head_admitted_by_writer_release",
-          "line": 8164,
+          "line": 8182,
           "called": [
             "SeLe4n.Kernel.Concurrency.AccessMode",
             "SeLe4n.Kernel.Concurrency.CoreId",
@@ -55569,7 +56759,7 @@
           "kind": "theorem",
           "name": "RwLockExecution.distinct_steps_length_le",
           "full_name": "SeLe4n.Kernel.Concurrency.RwLockExecution.distinct_steps_length_le",
-          "line": 8181,
+          "line": 8199,
           "called": [
             "SeLe4n.Kernel.Concurrency.RwLockExecution",
             "SeLe4n.Kernel.Concurrency.nodup_subset_length_le"
@@ -55579,7 +56769,7 @@
           "kind": "theorem",
           "name": "writer_at_head_admitted_by_writer_release",
           "full_name": "SeLe4n.Kernel.Concurrency.writer_at_head_admitted_by_writer_release",
-          "line": 8193,
+          "line": 8211,
           "called": [
             "SeLe4n.Kernel.Concurrency.AccessMode",
             "SeLe4n.Kernel.Concurrency.CoreId",
@@ -55593,7 +56783,7 @@
           "kind": "theorem",
           "name": "not_mem_takeWhile_of_mem_dropWhile",
           "full_name": "SeLe4n.Kernel.Concurrency.not_mem_takeWhile_of_mem_dropWhile",
-          "line": 8242,
+          "line": 8260,
           "called": [],
           "private": true
         },
@@ -55601,7 +56791,7 @@
           "kind": "theorem",
           "name": "idxOf_cons_ne_mode",
           "full_name": "SeLe4n.Kernel.Concurrency.idxOf_cons_ne_mode",
-          "line": 8252,
+          "line": 8270,
           "called": [
             "SeLe4n.Kernel.Concurrency.AccessMode",
             "SeLe4n.Kernel.Concurrency.CoreId"
@@ -55612,7 +56802,7 @@
           "kind": "theorem",
           "name": "queued_at_head_or_in_rest",
           "full_name": "SeLe4n.Kernel.Concurrency.queued_at_head_or_in_rest",
-          "line": 8270,
+          "line": 8288,
           "called": [
             "SeLe4n.Kernel.Concurrency.AccessMode",
             "SeLe4n.Kernel.Concurrency.CoreId",
@@ -55626,7 +56816,7 @@
           "kind": "theorem",
           "name": "queueWaitDepth_releaseRead_no_promote_decreases",
           "full_name": "SeLe4n.Kernel.Concurrency.queueWaitDepth_releaseRead_no_promote_decreases",
-          "line": 8300,
+          "line": 8318,
           "called": [
             "SeLe4n.Kernel.Concurrency.AccessMode",
             "SeLe4n.Kernel.Concurrency.CoreId",
@@ -55644,7 +56834,7 @@
           "kind": "theorem",
           "name": "queueWaitDepth_monotone_under_effective_release",
           "full_name": "SeLe4n.Kernel.Concurrency.queueWaitDepth_monotone_under_effective_release",
-          "line": 8337,
+          "line": 8355,
           "called": [
             "SeLe4n.Kernel.Concurrency.AccessMode",
             "SeLe4n.Kernel.Concurrency.CoreId",
@@ -55670,7 +56860,7 @@
           "kind": "theorem",
           "name": "queueWaitDepth_monotone_under_effective_release_write",
           "full_name": "SeLe4n.Kernel.Concurrency.queueWaitDepth_monotone_under_effective_release_write",
-          "line": 8493,
+          "line": 8511,
           "called": [
             "SeLe4n.Kernel.Concurrency.AccessMode",
             "SeLe4n.Kernel.Concurrency.CoreId",
@@ -55687,7 +56877,7 @@
           "kind": "theorem",
           "name": "queueWaitDepth_unchanged_under_acquire_queued",
           "full_name": "SeLe4n.Kernel.Concurrency.queueWaitDepth_unchanged_under_acquire_queued",
-          "line": 8507,
+          "line": 8525,
           "called": [
             "SeLe4n.Kernel.Concurrency.AccessMode",
             "SeLe4n.Kernel.Concurrency.CoreId",
@@ -55703,7 +56893,7 @@
           "kind": "theorem",
           "name": "queueWaitDepth_unchanged_under_noneffective_release",
           "full_name": "SeLe4n.Kernel.Concurrency.queueWaitDepth_unchanged_under_noneffective_release",
-          "line": 8558,
+          "line": 8576,
           "called": [
             "SeLe4n.Kernel.Concurrency.AccessMode",
             "SeLe4n.Kernel.Concurrency.CoreId",
@@ -55719,7 +56909,7 @@
           "kind": "theorem",
           "name": "queueWaitDepth_non_increase_step_queued",
           "full_name": "SeLe4n.Kernel.Concurrency.queueWaitDepth_non_increase_step_queued",
-          "line": 8579,
+          "line": 8597,
           "called": [
             "SeLe4n.Kernel.Concurrency.AccessMode",
             "SeLe4n.Kernel.Concurrency.CoreId",
@@ -55746,7 +56936,7 @@
           "kind": "theorem",
           "name": "waiters_mode_unique",
           "full_name": "SeLe4n.Kernel.Concurrency.waiters_mode_unique",
-          "line": 8623,
+          "line": 8641,
           "called": [
             "SeLe4n.Kernel.Concurrency.AccessMode",
             "SeLe4n.Kernel.Concurrency.CoreId"
@@ -55757,7 +56947,7 @@
           "kind": "theorem",
           "name": "promoteIfReadersEmpty_writerHeld_ne",
           "full_name": "SeLe4n.Kernel.Concurrency.promoteIfReadersEmpty_writerHeld_ne",
-          "line": 8642,
+          "line": 8660,
           "called": [
             "SeLe4n.Kernel.Concurrency.AccessMode",
             "SeLe4n.Kernel.Concurrency.CoreId",
@@ -55770,7 +56960,7 @@
           "kind": "theorem",
           "name": "promoteOnWriterRelease_writerHeld_ne",
           "full_name": "SeLe4n.Kernel.Concurrency.promoteOnWriterRelease_writerHeld_ne",
-          "line": 8667,
+          "line": 8685,
           "called": [
             "SeLe4n.Kernel.Concurrency.AccessMode",
             "SeLe4n.Kernel.Concurrency.CoreId",
@@ -55783,7 +56973,7 @@
           "kind": "theorem",
           "name": "queued_reader_not_write_holder_after_step",
           "full_name": "SeLe4n.Kernel.Concurrency.queued_reader_not_write_holder_after_step",
-          "line": 8695,
+          "line": 8713,
           "called": [
             "SeLe4n.Kernel.Concurrency.AccessMode",
             "SeLe4n.Kernel.Concurrency.CoreId",
@@ -55804,7 +56994,7 @@
           "kind": "theorem",
           "name": "mem_promoted_reader_prefix",
           "full_name": "SeLe4n.Kernel.Concurrency.mem_promoted_reader_prefix",
-          "line": 8745,
+          "line": 8763,
           "called": [
             "SeLe4n.Kernel.Concurrency.AccessMode",
             "SeLe4n.Kernel.Concurrency.CoreId",
@@ -55816,7 +57006,7 @@
           "kind": "theorem",
           "name": "promoteIfReadersEmpty_readers_ne",
           "full_name": "SeLe4n.Kernel.Concurrency.promoteIfReadersEmpty_readers_ne",
-          "line": 8759,
+          "line": 8777,
           "called": [
             "SeLe4n.Kernel.Concurrency.AccessMode",
             "SeLe4n.Kernel.Concurrency.CoreId",
@@ -55830,7 +57020,7 @@
           "kind": "theorem",
           "name": "promoteOnWriterRelease_readers_ne",
           "full_name": "SeLe4n.Kernel.Concurrency.promoteOnWriterRelease_readers_ne",
-          "line": 8785,
+          "line": 8803,
           "called": [
             "SeLe4n.Kernel.Concurrency.AccessMode",
             "SeLe4n.Kernel.Concurrency.CoreId",
@@ -55844,7 +57034,7 @@
           "kind": "theorem",
           "name": "queued_writer_not_reader_after_step",
           "full_name": "SeLe4n.Kernel.Concurrency.queued_writer_not_reader_after_step",
-          "line": 8811,
+          "line": 8829,
           "called": [
             "SeLe4n.Kernel.Concurrency.AccessMode",
             "SeLe4n.Kernel.Concurrency.CoreId",
@@ -55866,7 +57056,7 @@
           "kind": "def",
           "name": "RwLockState.admits",
           "full_name": "SeLe4n.Kernel.Concurrency.RwLockState.admits",
-          "line": 8873,
+          "line": 8891,
           "called": [
             "SeLe4n.Kernel.Concurrency.AccessMode",
             "SeLe4n.Kernel.Concurrency.CoreId",
@@ -55877,7 +57067,7 @@
           "kind": "theorem",
           "name": "RwLockState.admits_read",
           "full_name": "SeLe4n.Kernel.Concurrency.RwLockState.admits_read",
-          "line": 8878,
+          "line": 8896,
           "called": [
             "SeLe4n.Kernel.Concurrency.AccessMode",
             "SeLe4n.Kernel.Concurrency.CoreId",
@@ -55889,7 +57079,7 @@
           "kind": "theorem",
           "name": "RwLockState.admits_write",
           "full_name": "SeLe4n.Kernel.Concurrency.RwLockState.admits_write",
-          "line": 8881,
+          "line": 8899,
           "called": [
             "SeLe4n.Kernel.Concurrency.AccessMode",
             "SeLe4n.Kernel.Concurrency.CoreId",
@@ -55901,7 +57091,7 @@
           "kind": "def",
           "name": "RwLockExecution.admittedAt",
           "full_name": "SeLe4n.Kernel.Concurrency.RwLockExecution.admittedAt",
-          "line": 8885,
+          "line": 8903,
           "called": [
             "SeLe4n.Kernel.Concurrency.AccessMode",
             "SeLe4n.Kernel.Concurrency.CoreId",
@@ -55913,7 +57103,7 @@
           "kind": "theorem",
           "name": "RwLockExecution.holderAt_of_admittedAt",
           "full_name": "SeLe4n.Kernel.Concurrency.RwLockExecution.holderAt_of_admittedAt",
-          "line": 8890,
+          "line": 8908,
           "called": [
             "SeLe4n.Kernel.Concurrency.AccessMode",
             "SeLe4n.Kernel.Concurrency.CoreId",
@@ -55927,7 +57117,7 @@
           "kind": "theorem",
           "name": "queued_persists_or_admitted_at_mode",
           "full_name": "SeLe4n.Kernel.Concurrency.queued_persists_or_admitted_at_mode",
-          "line": 8903,
+          "line": 8921,
           "called": [
             "SeLe4n.Kernel.Concurrency.AccessMode",
             "SeLe4n.Kernel.Concurrency.CoreId",
@@ -55944,7 +57134,7 @@
           "kind": "theorem",
           "name": "queued_persists_across_window_mode",
           "full_name": "SeLe4n.Kernel.Concurrency.queued_persists_across_window_mode",
-          "line": 8922,
+          "line": 8940,
           "called": [
             "SeLe4n.Kernel.Concurrency.AccessMode",
             "SeLe4n.Kernel.Concurrency.CoreId",
@@ -55962,7 +57152,7 @@
           "kind": "theorem",
           "name": "queueWaitDepth_non_increase_across_offset",
           "full_name": "SeLe4n.Kernel.Concurrency.queueWaitDepth_non_increase_across_offset",
-          "line": 8976,
+          "line": 8994,
           "called": [
             "SeLe4n.Kernel.Concurrency.AccessMode",
             "SeLe4n.Kernel.Concurrency.CoreId",
@@ -55979,7 +57169,7 @@
           "kind": "theorem",
           "name": "fair_release_witness_in_window_mode",
           "full_name": "SeLe4n.Kernel.Concurrency.fair_release_witness_in_window_mode",
-          "line": 9015,
+          "line": 9033,
           "called": [
             "SeLe4n.Kernel.Concurrency.AccessMode",
             "SeLe4n.Kernel.Concurrency.CoreId",
@@ -55999,7 +57189,7 @@
           "kind": "theorem",
           "name": "fair_progress_one_step_mode",
           "full_name": "SeLe4n.Kernel.Concurrency.fair_progress_one_step_mode",
-          "line": 9058,
+          "line": 9076,
           "called": [
             "SeLe4n.Kernel.Concurrency.AccessMode",
             "SeLe4n.Kernel.Concurrency.CoreId",
@@ -56023,7 +57213,7 @@
           "kind": "theorem",
           "name": "queueWaitDepth_pos_of_queued",
           "full_name": "SeLe4n.Kernel.Concurrency.queueWaitDepth_pos_of_queued",
-          "line": 9120,
+          "line": 9138,
           "called": [
             "SeLe4n.Kernel.Concurrency.AccessMode",
             "SeLe4n.Kernel.Concurrency.CoreId",
@@ -56038,7 +57228,7 @@
           "kind": "theorem",
           "name": "rwLock_queued_liveness",
           "full_name": "SeLe4n.Kernel.Concurrency.rwLock_queued_liveness",
-          "line": 9148,
+          "line": 9166,
           "called": [
             "SeLe4n.Kernel.Concurrency.AccessMode",
             "SeLe4n.Kernel.Concurrency.CoreId",
@@ -56058,7 +57248,7 @@
           "kind": "theorem",
           "name": "rwLock_reader_liveness",
           "full_name": "SeLe4n.Kernel.Concurrency.rwLock_reader_liveness",
-          "line": 9201,
+          "line": 9219,
           "called": [
             "SeLe4n.Kernel.Concurrency.AccessMode",
             "SeLe4n.Kernel.Concurrency.CoreId",
@@ -56076,7 +57266,7 @@
           "kind": "theorem",
           "name": "rwLock_queued_admissionStepAfter_bounded",
           "full_name": "SeLe4n.Kernel.Concurrency.rwLock_queued_admissionStepAfter_bounded",
-          "line": 9224,
+          "line": 9242,
           "called": [
             "SeLe4n.Kernel.Concurrency.AccessMode",
             "SeLe4n.Kernel.Concurrency.CoreId",
@@ -56099,7 +57289,7 @@
           "kind": "theorem",
           "name": "rwLock_reader_admissionStepAfter_bounded",
           "full_name": "SeLe4n.Kernel.Concurrency.rwLock_reader_admissionStepAfter_bounded",
-          "line": 9249,
+          "line": 9267,
           "called": [
             "SeLe4n.Kernel.Concurrency.AccessMode",
             "SeLe4n.Kernel.Concurrency.CoreId",
@@ -56118,7 +57308,7 @@
           "kind": "theorem",
           "name": "rwLock_queued_admissionStepAfter_bounded_write",
           "full_name": "SeLe4n.Kernel.Concurrency.rwLock_queued_admissionStepAfter_bounded_write",
-          "line": 9269,
+          "line": 9287,
           "called": [
             "SeLe4n.Kernel.Concurrency.AccessMode",
             "SeLe4n.Kernel.Concurrency.CoreId",
@@ -56137,7 +57327,7 @@
           "kind": "theorem",
           "name": "rwLock_cancel_removes_request",
           "full_name": "SeLe4n.Kernel.Concurrency.rwLock_cancel_removes_request",
-          "line": 9306,
+          "line": 9324,
           "called": [
             "SeLe4n.Kernel.Concurrency.AccessMode",
             "SeLe4n.Kernel.Concurrency.CoreId",
@@ -56150,7 +57340,7 @@
           "kind": "theorem",
           "name": "rwLock_cancel_leaves_other_requests",
           "full_name": "SeLe4n.Kernel.Concurrency.rwLock_cancel_leaves_other_requests",
-          "line": 9313,
+          "line": 9331,
           "called": [
             "SeLe4n.Kernel.Concurrency.AccessMode",
             "SeLe4n.Kernel.Concurrency.CoreId",
@@ -56163,7 +57353,7 @@
           "kind": "theorem",
           "name": "rwLock_cancel_preserves_waiter_order",
           "full_name": "SeLe4n.Kernel.Concurrency.rwLock_cancel_preserves_waiter_order",
-          "line": 9320,
+          "line": 9338,
           "called": [
             "SeLe4n.Kernel.Concurrency.AccessMode",
             "SeLe4n.Kernel.Concurrency.CoreId",
@@ -56177,7 +57367,7 @@
           "kind": "theorem",
           "name": "rwLock_cancel_admits_only_the_head_reader_run",
           "full_name": "SeLe4n.Kernel.Concurrency.rwLock_cancel_admits_only_the_head_reader_run",
-          "line": 9342,
+          "line": 9360,
           "called": [
             "SeLe4n.Kernel.Concurrency.CoreId",
             "SeLe4n.Kernel.Concurrency.RwLockState",
@@ -56191,7 +57381,7 @@
           "kind": "theorem",
           "name": "rwLock_cancel_nonhead_admits_no_one",
           "full_name": "SeLe4n.Kernel.Concurrency.rwLock_cancel_nonhead_admits_no_one",
-          "line": 9353,
+          "line": 9371,
           "called": [
             "SeLe4n.Kernel.Concurrency.CoreId",
             "SeLe4n.Kernel.Concurrency.RwLockState",
@@ -56206,7 +57396,7 @@
           "kind": "theorem",
           "name": "rwLock_cancel_does_not_increase_wait_depth",
           "full_name": "SeLe4n.Kernel.Concurrency.rwLock_cancel_does_not_increase_wait_depth",
-          "line": 9367,
+          "line": 9385,
           "called": [
             "SeLe4n.Kernel.Concurrency.AccessMode",
             "SeLe4n.Kernel.Concurrency.CoreId",
@@ -56221,7 +57411,7 @@
           "kind": "theorem",
           "name": "rwLock_cancel_not_effective_release",
           "full_name": "SeLe4n.Kernel.Concurrency.rwLock_cancel_not_effective_release",
-          "line": 9378,
+          "line": 9396,
           "called": [
             "SeLe4n.Kernel.Concurrency.CoreId",
             "SeLe4n.Kernel.Concurrency.RwLockState",
@@ -56232,7 +57422,7 @@
           "kind": "theorem",
           "name": "rwLock_writer_admitted_within_cycle_budget",
           "full_name": "SeLe4n.Kernel.Concurrency.rwLock_writer_admitted_within_cycle_budget",
-          "line": 9406,
+          "line": 9424,
           "called": [
             "SeLe4n.Kernel.Concurrency.AccessMode",
             "SeLe4n.Kernel.Concurrency.CoreId",
@@ -56254,7 +57444,7 @@
           "kind": "theorem",
           "name": "rwLock_queued_admitted_within_cycle_budget",
           "full_name": "SeLe4n.Kernel.Concurrency.rwLock_queued_admitted_within_cycle_budget",
-          "line": 9433,
+          "line": 9451,
           "called": [
             "SeLe4n.Kernel.Concurrency.AccessMode",
             "SeLe4n.Kernel.Concurrency.CoreId",
@@ -56276,7 +57466,7 @@
           "kind": "theorem",
           "name": "rwLock_writer_cycle_budget_at_unit_cost",
           "full_name": "SeLe4n.Kernel.Concurrency.rwLock_writer_cycle_budget_at_unit_cost",
-          "line": 9461,
+          "line": 9479,
           "called": [
             "SeLe4n.Kernel.Concurrency.AccessMode",
             "SeLe4n.Kernel.Concurrency.CoreId",
@@ -222107,7 +223297,6 @@
             "SeLe4n.Model.SchedulerState.currentOnCore",
             "SeLe4n.Model.SystemState",
             "SeLe4n.Model.TCB",
-            "SeLe4n.RegisterFile.beq_self",
             "SeLe4n.ThreadId",
             "SeLe4n.ThreadId.toObjId"
           ]
@@ -289429,7 +290618,6 @@
             "SeLe4n.Model.SystemState",
             "SeLe4n.Model.SystemState.updateTcb",
             "SeLe4n.ThreadId",
-            "SeLe4n.ThreadId.toNat",
             "SeLe4n.arm64DefaultLayout",
             "SeLe4n.writeReg"
           ]
@@ -305726,6 +306914,7 @@
             "SeLe4n.PAddr.ofNat",
             "SeLe4n.RegName",
             "SeLe4n.RegValue",
+            "SeLe4n.RegisterFile.withGprs",
             "SeLe4n.Testing.AbiRoundtripSuite.encodeLittleEndian",
             "SeLe4n.Testing.BootstrapBuilder.build",
             "SeLe4n.Testing.BootstrapBuilder.empty",
@@ -311378,6 +312567,7 @@
           "full_name": "SeLe4n.Testing.DecodingSuite.rd009_decodeSyscallArgsIntegration",
           "line": 183,
           "called": [
+            "SeLe4n.CPtr",
             "SeLe4n.CPtr.ofNat",
             "SeLe4n.Kernel.Architecture.RegisterDecode.decodeSyscallArgs",
             "SeLe4n.Kernel.Architecture.RegisterDecode.encodeCapPtr",
@@ -311834,6 +313024,7 @@
             "SeLe4n.PAddr.ofNat",
             "SeLe4n.RegName",
             "SeLe4n.RegValue",
+            "SeLe4n.RegisterFile.withGprs",
             "SeLe4n.Testing.BootstrapBuilder.build",
             "SeLe4n.Testing.BootstrapBuilder.empty",
             "SeLe4n.Testing.BootstrapBuilder.withCurrent",
@@ -311953,6 +313144,7 @@
             "SeLe4n.RegName",
             "SeLe4n.RegValue",
             "SeLe4n.RegisterFile",
+            "SeLe4n.RegisterFile.withGprs",
             "SeLe4n.Testing.DecodingSuite.expect",
             "SeLe4n.arm64DefaultLayout"
           ],
@@ -325984,6 +327176,8 @@
             "SeLe4n.Model.SystemState",
             "SeLe4n.ObjId",
             "SeLe4n.RegName",
+            "SeLe4n.RegValue",
+            "SeLe4n.RegisterFile.withGprs",
             "SeLe4n.Slot.ofNat",
             "SeLe4n.Testing.BootstrapBuilder.buildChecked",
             "SeLe4n.Testing.BootstrapBuilder.empty",
@@ -326083,6 +327277,7 @@
             "SeLe4n.Model.AccessRightSet.ofList",
             "SeLe4n.ObjId",
             "SeLe4n.RegName",
+            "SeLe4n.RegValue",
             "SeLe4n.RegisterFile.withGprs",
             "SeLe4n.ReplyId.ofNat",
             "SeLe4n.Slot.ofNat",
@@ -334657,7 +335852,6 @@
             "SeLe4n.Kernel.Concurrency.CoreId",
             "SeLe4n.Kernel.switchToThreadOnCore",
             "SeLe4n.Model.SystemState",
-            "SeLe4n.RegValue",
             "SeLe4n.ThreadId"
           ],
           "private": true
@@ -367812,83 +369006,48 @@
     {
       "module": "tests.WithLockSetSuite",
       "path": "tests/WithLockSetSuite.lean",
-      "declaration_count": 37,
+      "declaration_count": 38,
       "declarations": [
         {
           "kind": "example",
           "name": "",
           "full_name": null,
-          "line": 216,
+          "line": 247,
           "called": []
         },
         {
           "kind": "example",
           "name": "",
           "full_name": null,
-          "line": 219,
+          "line": 250,
           "called": []
         },
         {
           "kind": "example",
           "name": "",
           "full_name": null,
-          "line": 223,
+          "line": 254,
           "called": []
         },
         {
           "kind": "example",
           "name": "",
           "full_name": null,
-          "line": 234,
+          "line": 265,
           "called": []
         },
         {
           "kind": "example",
           "name": "",
           "full_name": null,
-          "line": 237,
+          "line": 268,
           "called": []
         },
         {
           "kind": "example",
           "name": "",
           "full_name": null,
-          "line": 240,
-          "called": []
-        },
-        {
-          "kind": "example",
-          "name": "",
-          "full_name": null,
-          "line": 243,
-          "called": []
-        },
-        {
-          "kind": "example",
-          "name": "",
-          "full_name": null,
-          "line": 248,
-          "called": []
-        },
-        {
-          "kind": "example",
-          "name": "",
-          "full_name": null,
-          "line": 255,
-          "called": []
-        },
-        {
-          "kind": "example",
-          "name": "",
-          "full_name": null,
-          "line": 259,
-          "called": []
-        },
-        {
-          "kind": "example",
-          "name": "",
-          "full_name": null,
-          "line": 270,
+          "line": 271,
           "called": []
         },
         {
@@ -367902,21 +369061,56 @@
           "kind": "example",
           "name": "",
           "full_name": null,
-          "line": 278,
+          "line": 279,
           "called": []
         },
         {
           "kind": "example",
           "name": "",
           "full_name": null,
-          "line": 285,
+          "line": 286,
+          "called": []
+        },
+        {
+          "kind": "example",
+          "name": "",
+          "full_name": null,
+          "line": 290,
+          "called": []
+        },
+        {
+          "kind": "example",
+          "name": "",
+          "full_name": null,
+          "line": 301,
+          "called": []
+        },
+        {
+          "kind": "example",
+          "name": "",
+          "full_name": null,
+          "line": 305,
+          "called": []
+        },
+        {
+          "kind": "example",
+          "name": "",
+          "full_name": null,
+          "line": 309,
+          "called": []
+        },
+        {
+          "kind": "example",
+          "name": "",
+          "full_name": null,
+          "line": 316,
           "called": []
         },
         {
           "kind": "def",
           "name": "assertBool",
           "full_name": "SeLe4n.Testing.WithLockSet.assertBool",
-          "line": 298,
+          "line": 329,
           "called": [],
           "private": true
         },
@@ -367924,7 +369118,7 @@
           "kind": "def",
           "name": "runWithLockSetEmptyChecks",
           "full_name": "SeLe4n.Testing.WithLockSet.runWithLockSetEmptyChecks",
-          "line": 305,
+          "line": 336,
           "called": [
             "SeLe4n.Kernel.Concurrency.LockSet.empty",
             "SeLe4n.Kernel.Concurrency.RwLockState.unheld",
@@ -367939,7 +369133,7 @@
           "kind": "def",
           "name": "runAcquireReleasePrimitiveChecks",
           "full_name": "SeLe4n.Testing.WithLockSet.runAcquireReleasePrimitiveChecks",
-          "line": 316,
+          "line": 347,
           "called": [
             "SeLe4n.Kernel.Concurrency.RwLockState",
             "SeLe4n.Kernel.Concurrency.RwLockState.unheld",
@@ -367956,7 +369150,7 @@
           "kind": "def",
           "name": "runAcquireAllChecks",
           "full_name": "SeLe4n.Testing.WithLockSet.runAcquireAllChecks",
-          "line": 348,
+          "line": 379,
           "called": [
             "SeLe4n.Kernel.Concurrency.LockId",
             "SeLe4n.Kernel.Concurrency.RwLockState",
@@ -367974,7 +369168,7 @@
           "kind": "def",
           "name": "runLockSetHeldChecks",
           "full_name": "SeLe4n.Testing.WithLockSet.runLockSetHeldChecks",
-          "line": 371,
+          "line": 402,
           "called": [
             "SeLe4n.Kernel.Concurrency.LockSet.empty",
             "SeLe4n.Kernel.Concurrency.LockSet.singleton",
@@ -367991,7 +369185,7 @@
           "kind": "def",
           "name": "runOrderingChecks",
           "full_name": "SeLe4n.Testing.WithLockSet.runOrderingChecks",
-          "line": 393,
+          "line": 424,
           "called": [
             "SeLe4n.Kernel.Concurrency.LockId",
             "SeLe4n.Kernel.Concurrency.LockSet.empty",
@@ -368007,7 +369201,7 @@
           "kind": "def",
           "name": "runWithLockSetComputationChecks",
           "full_name": "SeLe4n.Testing.WithLockSet.runWithLockSetComputationChecks",
-          "line": 410,
+          "line": 441,
           "called": [
             "SeLe4n.Kernel.Concurrency.LockSet.empty",
             "SeLe4n.Kernel.Concurrency.RwLockState.unheld",
@@ -368022,7 +369216,7 @@
           "kind": "def",
           "name": "runDynamicChainChecks",
           "full_name": "SeLe4n.Testing.WithLockSet.runDynamicChainChecks",
-          "line": 422,
+          "line": 453,
           "called": [
             "SeLe4n.Kernel.Concurrency.MAX_PIP_RETRIES",
             "SeLe4n.Kernel.Concurrency.PipChainPath",
@@ -368040,7 +369234,7 @@
           "kind": "def",
           "name": "runInventoryChecks",
           "full_name": "SeLe4n.Testing.WithLockSet.runInventoryChecks",
-          "line": 471,
+          "line": 502,
           "called": [
             "SeLe4n.Kernel.Concurrency.withLockSetTheorems",
             "SeLe4n.Testing.WithLockSet.assertBool"
@@ -368051,7 +369245,7 @@
           "kind": "def",
           "name": "runStructuralPreservationChecks",
           "full_name": "SeLe4n.Testing.WithLockSet.runStructuralPreservationChecks",
-          "line": 504,
+          "line": 535,
           "called": [
             "SeLe4n.Kernel.Concurrency.RwLockState",
             "SeLe4n.Kernel.Concurrency.RwLockState.unheld",
@@ -368069,7 +369263,7 @@
           "kind": "def",
           "name": "runAuditPass1Checks",
           "full_name": "SeLe4n.Testing.WithLockSet.runAuditPass1Checks",
-          "line": 524,
+          "line": 555,
           "called": [
             "SeLe4n.Kernel.Concurrency.AccessMode",
             "SeLe4n.Kernel.Concurrency.AccessMode.toAcquireOp",
@@ -368092,7 +369286,7 @@
           "kind": "def",
           "name": "runIntegrationChecks",
           "full_name": "SeLe4n.Testing.WithLockSet.runIntegrationChecks",
-          "line": 558,
+          "line": 589,
           "called": [
             "SeLe4n.Kernel.Concurrency.LockKind",
             "SeLe4n.Kernel.Concurrency.RwLockState.unheld",
@@ -368114,7 +369308,7 @@
           "kind": "def",
           "name": "mkTcbReady",
           "full_name": "SeLe4n.Testing.WithLockSet.mkTcbReady",
-          "line": 632,
+          "line": 663,
           "called": [
             "SeLe4n.Model.TCB",
             "SeLe4n.ObjId.ofNat",
@@ -368127,7 +369321,7 @@
           "kind": "def",
           "name": "mkTcbBlockedOn",
           "full_name": "SeLe4n.Testing.WithLockSet.mkTcbBlockedOn",
-          "line": 638,
+          "line": 669,
           "called": [
             "SeLe4n.Model.TCB",
             "SeLe4n.ObjId.ofNat",
@@ -368140,7 +369334,7 @@
           "kind": "def",
           "name": "mkCNodeFixture",
           "full_name": "SeLe4n.Testing.WithLockSet.mkCNodeFixture",
-          "line": 643,
+          "line": 674,
           "called": [
             "SeLe4n.Model.CNode",
             "SeLe4n.UniqueSlotMap.empty"
@@ -368151,7 +369345,7 @@
           "kind": "def",
           "name": "chainState",
           "full_name": "SeLe4n.Testing.WithLockSet.chainState",
-          "line": 649,
+          "line": 680,
           "called": [
             "SeLe4n.Kernel.RobinHood.RHTable.insert",
             "SeLe4n.Model.SystemState",
@@ -368166,7 +369360,7 @@
           "kind": "def",
           "name": "cspaceMoveFixture",
           "full_name": "SeLe4n.Testing.WithLockSet.cspaceMoveFixture",
-          "line": 658,
+          "line": 689,
           "called": [
             "SeLe4n.Kernel.RobinHood.RHTable.insert",
             "SeLe4n.Model.SystemState",
@@ -368182,7 +369376,7 @@
           "kind": "def",
           "name": "runRaiiReleaseChecks",
           "full_name": "SeLe4n.Testing.WithLockSet.runRaiiReleaseChecks",
-          "line": 665,
+          "line": 696,
           "called": [
             "SeLe4n.Kernel.Concurrency.LockSet.singleton",
             "SeLe4n.Kernel.Concurrency.RwLockState.unheld",
@@ -368201,7 +369395,7 @@
           "kind": "def",
           "name": "runEstablishmentChecks",
           "full_name": "SeLe4n.Testing.WithLockSet.runEstablishmentChecks",
-          "line": 695,
+          "line": 726,
           "called": [
             "SeLe4n.Kernel.Concurrency.LockId",
             "SeLe4n.Kernel.Concurrency.acquireAll",
@@ -368226,7 +369420,7 @@
           "kind": "def",
           "name": "runObserverAtomicChecks",
           "full_name": "SeLe4n.Testing.WithLockSet.runObserverAtomicChecks",
-          "line": 725,
+          "line": 756,
           "called": [
             "SeLe4n.Kernel.Concurrency.LockSet.lockAcquireSequence",
             "SeLe4n.Kernel.Concurrency.LockSet.singleton",
@@ -368249,7 +369443,7 @@
           "kind": "def",
           "name": "runMultiStepChainChecks",
           "full_name": "SeLe4n.Testing.WithLockSet.runMultiStepChainChecks",
-          "line": 748,
+          "line": 779,
           "called": [
             "SeLe4n.Kernel.Concurrency.LockId",
             "SeLe4n.Kernel.Concurrency.acquireAll",
@@ -368269,15 +369463,38 @@
         },
         {
           "kind": "def",
+          "name": "runGhostLockStateChecks",
+          "full_name": "SeLe4n.Testing.WithLockSet.runGhostLockStateChecks",
+          "line": 831,
+          "called": [
+            "SeLe4n.Kernel.Concurrency.AccessMode",
+            "SeLe4n.Kernel.Concurrency.CoreId",
+            "SeLe4n.Kernel.Concurrency.LockKey",
+            "SeLe4n.Kernel.Concurrency.LockKey.ofLockId",
+            "SeLe4n.Kernel.Concurrency.LockState.acquireAll",
+            "SeLe4n.Kernel.Concurrency.LockState.bracketOps",
+            "SeLe4n.Kernel.Concurrency.LockState.keyOps",
+            "SeLe4n.Kernel.Concurrency.LockState.unheld",
+            "SeLe4n.Kernel.Concurrency.LockState.unwindAll",
+            "SeLe4n.Kernel.Concurrency.RwLockState.unheld",
+            "SeLe4n.Kernel.Concurrency.bootCoreId",
+            "SeLe4n.Kernel.Concurrency.lockAcquireSequence",
+            "SeLe4n.Testing.WithLockSet.assertBool"
+          ],
+          "private": true
+        },
+        {
+          "kind": "def",
           "name": "runWithLockSetChecks",
           "full_name": "SeLe4n.Testing.WithLockSet.runWithLockSetChecks",
-          "line": 796,
+          "line": 870,
           "called": [
             "SeLe4n.Testing.WithLockSet.runAcquireAllChecks",
             "SeLe4n.Testing.WithLockSet.runAcquireReleasePrimitiveChecks",
             "SeLe4n.Testing.WithLockSet.runAuditPass1Checks",
             "SeLe4n.Testing.WithLockSet.runDynamicChainChecks",
             "SeLe4n.Testing.WithLockSet.runEstablishmentChecks",
+            "SeLe4n.Testing.WithLockSet.runGhostLockStateChecks",
             "SeLe4n.Testing.WithLockSet.runIntegrationChecks",
             "SeLe4n.Testing.WithLockSet.runInventoryChecks",
             "SeLe4n.Testing.WithLockSet.runLockSetHeldChecks",
@@ -368294,7 +369511,7 @@
           "kind": "def",
           "name": "main",
           "full_name": "main",
-          "line": 819,
+          "line": 894,
           "called": [
             "SeLe4n.Testing.WithLockSet.runWithLockSetChecks"
           ]

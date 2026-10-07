@@ -14,6 +14,7 @@ import SeLe4n.Kernel.Concurrency.Locks.LockSetInventory
 import SeLe4n.Kernel.Concurrency.Locks.WithLockSet
 import SeLe4n.Kernel.Concurrency.Locks.LockSetHeld
 import SeLe4n.Kernel.Concurrency.Locks.LockSet2PL
+import SeLe4n.Kernel.Concurrency.Locks.LockState
 import SeLe4n.Kernel.Concurrency.Locks.DynamicChainExtension
 import SeLe4n.Kernel.Concurrency.Locks.WithLockSetInventory
 import SeLe4n.Kernel.Concurrency.Locks.Deadlock

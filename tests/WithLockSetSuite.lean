@@ -119,6 +119,36 @@ open SeLe4n.Kernel.Concurrency
 #check @acquireLockOnObject_objStore_establishes_lockHeld
 #check @acquireLockOnObject_objStore_release_roundtrip
 
+/-! ## WS-LS LS1.1 — the ghost lock state beside the per-object layer -/
+#check @LockKey
+#check @LockKey.le_refl
+#check @LockKey.le_trans
+#check @LockKey.le_antisymm
+#check @LockKey.le_total
+#check @LockKey.ofLockId
+#check @LockKey.ofLockId_le_of_le
+#check @LockKey.ofLockId_inj
+#check @lockAcquireSequence_ordered
+#check @lockAcquireSequence_perm
+#check @lockAcquireSequence_nodup_keys
+#check @LockState
+#check @LockState.unheld
+#check @LockState.acquire
+#check @LockState.release
+#check @LockState.cancel
+#check @LockState.acquireAll
+#check @LockState.unwindAll
+#check @LockState.applySeq
+#check @LockState.keyOps
+#check @LockState.applySeq_key
+#check @LockState.heldAll
+#check @LockState.acquireAll_held_of_free
+#check @LockState.acquireAll_unheld_held
+#check @LockState.cancelAll_not_queued
+#check @LockState.unwindAll_not_queued
+#check @LockState.acquireAll_unwindAll_unheld
+#check @RwLockState.applyOp_cancel_of_not_queued
+
 /-! ## SM3.C.8 — Substantive structural-preservation lemmas -/
 
 #check @KernelObject.updateLock_preserves_objectType
@@ -793,6 +823,49 @@ private def runMultiStepChainChecks : IO Unit := do
     (decide ((chainA.map (·.fst.objId.val)).all (fun a =>
       (chainB.map (·.fst.objId.val)).all (fun b => a ≠ b))))
 
+
+/-- **WS-LS LS1.1**: the ghost table executes the lock semantics the per-object
+words did — the Tier 2 half of "nothing is lost when the words leave the
+state".  Two cores and a three-member footprint spanning all three key arms. -/
+private def runGhostLockStateChecks : IO Unit := do
+  IO.println "--- WS-LS LS1.1 — ghost LockState: acquire, contend, unwind ---"
+  let c0 : CoreId := bootCoreId
+  let c1 : CoreId := ⟨1, by decide⟩
+  let kT : LockKey := .object ⟨.tcb, ⟨7⟩⟩
+  let kR : LockKey := .runQueue c0
+  let declared : List (LockKey × AccessMode) := [(kR, .write), (kT, .read), (.objStore, .read)]
+  let seq := lockAcquireSequence declared
+  assertBool "ghost: lockAcquireSequence sorts objStore, object, runQueue"
+    (decide (seq.map (·.fst) = [.objStore, kT, kR]))
+  let held := LockState.acquireAll c0 seq LockState.unheld
+  assertBool "ghost: acquireAll from unheld holds every member"
+    (decide (held.heldAll c0 declared))
+  assertBool "ghost: a key outside the footprint stays unheld"
+    (decide (held (.replenishQueue c1) = RwLockState.unheld))
+  -- A second core contending for the write-held run-queue lock is queued, not granted.
+  let contended := held.acquire c1 kR .write
+  assertBool "ghost: contended write acquire queues the second core"
+    (decide (contended.queued c1 kR ∧ ¬ contended.held c1 kR .write))
+  assertBool "ghost: the holder still holds under contention"
+    (decide (contended.held c0 kR .write))
+  -- The queued core withdraws; the first core unwinds; every key is free again.
+  let withdrawn := contended.cancel c1 kR .write
+  assertBool "ghost: cancel withdraws the queued request"
+    (decide (¬ withdrawn.queued c1 kR))
+  let after := LockState.unwindAll c0 seq.reverse withdrawn
+  assertBool "ghost: unwindAll returns every member to unheld"
+    (decide (declared.all fun p => after p.fst == RwLockState.unheld))
+  assertBool "ghost: unwindAll leaves the core unqueued at every member"
+    (decide (∀ p ∈ declared, ¬ after.queued c0 p.fst))
+  -- The per-key reading: the trace at kR is exactly its own ops.
+  let ops := LockState.bracketOps c0 seq
+  assertBool "ghost: keyOps at the run-queue key is acquire, cancel, release"
+    (decide (LockState.keyOps kR ops =
+      [.tryAcquireWrite c0, .cancel c0, .releaseWrite c0]))
+  assertBool "ghost: ofLockId folds every objStore spelling onto one key"
+    (decide (LockKey.ofLockId ⟨.objStore, ⟨3⟩⟩ = LockKey.ofLockId ⟨.objStore, ⟨9⟩⟩ ∧
+      LockKey.ofLockId ⟨.tcb, ⟨3⟩⟩ ≠ LockKey.ofLockId ⟨.tcb, ⟨9⟩⟩))
+
 def runWithLockSetChecks : IO Unit := do
   IO.println "WS-SM SM3.C — withLockSet 2PL discipline regression suite"
   IO.println "========================================================="
@@ -811,6 +884,7 @@ def runWithLockSetChecks : IO Unit := do
   runObserverAtomicChecks
   runMultiStepChainChecks
   runInventoryChecks
+  runGhostLockStateChecks
   IO.println "========================================================="
   IO.println "All SM3.C withLockSet checks PASS."
 

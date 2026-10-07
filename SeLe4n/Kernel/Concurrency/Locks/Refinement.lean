@@ -10,6 +10,7 @@
 import SeLe4n.Kernel.Concurrency.Locks.TicketLockRefinement
 import SeLe4n.Kernel.Concurrency.Locks.RwLockRefinement
 import SeLe4n.Kernel.Concurrency.Locks.QueuedRwLockRefinement
+import SeLe4n.Kernel.Concurrency.Locks.LockState
 
 /-!
 # WS-RR RR7.24 — the lock-refinement methodology, in one place
@@ -169,3 +170,31 @@ theorem queuedFoldBlock_eq_foldBlock (conc : QueuedRwLockConcrete)
       = foldBlock (fun s op => (s.applyOp op).1) conc blk := rfl
 
 end SeLe4n.Kernel.Concurrency.Refinement
+
+namespace SeLe4n.Kernel.Concurrency.LockState
+
+-- ============================================================================
+-- §4  The ghost lock state is refined key by key (WS-LS LS1.1, obligation O5)
+-- ============================================================================
+
+/-- **WS-LS LS1.1 (obligation O5)**: the deployed lock refines the ghost, key
+by key.
+
+`queuedRwLock_refines_rwLockSpec` relates any `RwLockOp` list run from
+`RwLockState.unheld` to the `QueuedRwLock` block sequence that implements it.
+A `LockState` is a product of independent cells, and `applySeq_key` says the
+cell at `k` after any op sequence is exactly the fold of that key's own ops
+(`keyOps`) from its own start — so the per-lock theorem applies to each key
+of any bracket (`bracketOps`) unchanged.  This is the whole lift: one lemma,
+and no change to the 4,263-line refinement file.  Track D's HAL lock sequence
+is the `blocks` here; what it must establish is `hChain`. -/
+theorem applySeq_unheld_key_refines (ops : List (LockKey × RwLockOp)) (k : LockKey)
+    (blocks : List (List QueuedRwLockOp))
+    (hChain : ListQueuedBlocks RwLockState.unheld QueuedRwLockConcrete.unheld
+      (keyOps k ops) blocks) :
+    queuedSim (unheld.applySeq ops k)
+      (queuedFoldBlock QueuedRwLockConcrete.unheld blocks.flatten) := by
+  rw [applySeq_key, unheld_apply]
+  exact queuedRwLock_refines_rwLockSpec (keyOps k ops) blocks hChain
+
+end LockState

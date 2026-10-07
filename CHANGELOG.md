@@ -1,3 +1,52 @@
+## v0.36.63 — WS-LS LS1.1: the ghost lock state, beside the per-object layer
+
+Nothing the compiled kernel runs changes; `main_trace_smoke.expected` is
+unchanged.  The new module is in the production import closure (imported by
+`Locks/LockBracket.lean`, the bracket LS2 replaces, and by the
+`Concurrency/LockSet` hub) and no seam reaches it yet — LS2 switches the seams.
+
+- **`SeLe4n/Kernel/Concurrency/Locks/LockState.lean` (new).**  `LockKey`
+  (`objStore | object LockId | runQueue CoreId | replenishQueue CoreId`) with a
+  decidable total order that extends `LockId`'s (`LockKey.ofLockId_le_of_le`)
+  and places every object lock before every scheduler lock, as `SchedLockId`'s
+  did; `LockKey.ofLockId` folds every `.objStore`-kind `LockId` onto the one
+  table key.  `LockState := LockKey → RwLockState`, total, with `acquire` /
+  `release` / `cancel` as point updates through `RwLockState.applyOp` and the
+  folds `acquireAll` / `releaseAll` / `cancelAll` / `unwindAll`; `held`,
+  `queued`, `heldAll` (the ghost `lockSetHeld`); one sort,
+  `lockAcquireSequence`, over `LockKey` pairs.
+- **The per-key reading.**  `applySeq` is the common form of every fold and
+  `applySeq_key` says what a sequence does to one key is the fold of that
+  key's own ops (`keyOps`) over its own cell.  Every theorem below goes
+  through it.
+- **The ghost forms of the per-object theorems**, each with fewer
+  hypotheses: `acquireAll_unheld_held` (was `acquireAll_establishes_lockSetHeld`,
+  which needed `objects.invExt` and a present object of the right kind at every
+  member — a ghost lock exists for every key), `unwindAll_not_queued` (was
+  `unwindAll_leaves_no_queued_request`, no `invExt`), and the bracket round
+  trip `acquireAll_unwindAll_unheld`: from all-free, a duplicate-free footprint
+  is granted, withdrawn as a no-op and released back to all-free (obligation
+  O3's two halves over the pair list; LS2.1 states them at the spec).
+- **The refinement lift (obligation O5)**, in `Locks/Refinement.lean` §4 with
+  the bridges it lifts (staged with them, like the bridges — a proof no image
+  links).  `LockState.applySeq_unheld_key_refines`:
+  the trace any op sequence applies to one key is an `RwLockOp` list from
+  `unheld`, which `queuedRwLock_refines_rwLockSpec` already covers, so the
+  deployed `QueuedRwLock` refines the ghost key by key — one lemma, no change
+  to `QueuedRwLockRefinement.lean`.
+- **`RwLock.lean`**: `RwLockState.applyOp_cancel_of_not_queued` (a withdrawal
+  by a core with nothing queued is the identity — the fact behind the
+  round trip); `RwLockOp` derives `DecidableEq`.
+- **Tests.**  `with_lock_set_suite` gains eleven runtime checks that execute
+  the ghost (sort order across the three key arms, acquire from free, a
+  second core's contended write queued and withdrawn, unwind back to free,
+  the per-key trace, the table-key fold) and `#check`s every new name; Tier 3
+  pins the ten load-bearing ones.
+- **Plan.**  LS1.1 split from the re-keying, now LS1.2, when the row started:
+  the ghost compiles alone and the re-keying touches 249 `LockId × AccessMode`
+  sites in 19 files, so each lands as its own cut.  §3.1 records that
+  `LockKind.objStore` stays a kind until LS3.1 deletes it with the word.
+
 ## v0.36.62 — WS-LS LS0.1: the lock model's share of a syscall, attributed by function
 
 Documentation and measurement only; nothing in the model or the kernel changes.

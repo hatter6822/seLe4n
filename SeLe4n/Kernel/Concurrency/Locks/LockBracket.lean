@@ -13,6 +13,7 @@
 -- at the scheduler domain.
 
 import SeLe4n.Kernel.Concurrency.Locks.LockSetHeld
+import SeLe4n.Kernel.Concurrency.Locks.LockState
 
 /-!
 # WS-RR RR7.39 — one bracket, two domains

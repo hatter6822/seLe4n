@@ -14099,6 +14099,7 @@ import SeLe4n.Kernel.Concurrency.Locks.LockSet2PL
 import SeLe4n.Kernel.Concurrency.Locks.DynamicChainExtension
 import SeLe4n.Kernel.Concurrency.Locks.WithLockSetInventory
 import SeLe4n.Kernel.Scheduler.PriorityInheritance.ChainFootprint
+import SeLe4n.Kernel.Concurrency.Locks.Refinement
 
 -- SM3.C.1: withLockSet combinator + unfolding lemmas.
 #check @SeLe4n.Kernel.Concurrency.withLockSet
@@ -14206,6 +14207,18 @@ import SeLe4n.Kernel.Scheduler.PriorityInheritance.ChainFootprint
 #check @SeLe4n.Kernel.Concurrency.cancelLockOnObject_withdraws
 #check @SeLe4n.Kernel.Concurrency.cancelAll_leaves_no_queued_request
 #check @SeLe4n.Kernel.Concurrency.unwindAll_leaves_no_queued_request
+-- The ghost lock state (Locks/LockState.lean): its order, its folds and the refinement lift.
+#check @SeLe4n.Kernel.Concurrency.LockKey
+#check @SeLe4n.Kernel.Concurrency.LockKey.le_total
+#check @SeLe4n.Kernel.Concurrency.LockKey.ofLockId_le_of_le
+#check @SeLe4n.Kernel.Concurrency.lockAcquireSequence_ordered
+#check @SeLe4n.Kernel.Concurrency.LockState
+#check @SeLe4n.Kernel.Concurrency.LockState.applySeq_key
+#check @SeLe4n.Kernel.Concurrency.LockState.acquireAll_unheld_held
+#check @SeLe4n.Kernel.Concurrency.LockState.unwindAll_not_queued
+#check @SeLe4n.Kernel.Concurrency.LockState.acquireAll_unwindAll_unheld
+#check @SeLe4n.Kernel.Concurrency.LockState.applySeq_unheld_key_refines
+#check @SeLe4n.Kernel.Concurrency.RwLockState.applyOp_cancel_of_not_queued
 #check @SeLe4n.Model.LockId.lookup_object_eq
 -- SM3.C.11 dynamic chain walker + deadlock-freedom witness.
 #check @SeLe4n.Kernel.Concurrency.MAX_PIP_RETRIES
