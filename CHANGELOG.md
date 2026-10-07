@@ -1,3 +1,52 @@
+## v0.36.62 — WS-LS LS0.1: the lock model's share of a syscall, attributed by function
+
+Documentation and measurement only; nothing in the model or the kernel changes.
+
+- **The reading (LS0.1).**  CV0's `heap-allocations-per-syscall` exerciser at
+  the CV1.1 head: **387** allocations per notification-signal round trip,
+  image 8,884,824 bytes.  The symbolised trace (debug instrumentation, not
+  committed) attributes them by the function that allocated; the lock model's
+  rows, which WS-LS deletes, are:
+
+  | Function | Sites |
+  |---|---|
+  | `RHTable.insertLoop` / `insertNoResize` specialised at `storeObject` (the reinsert of every object the bracket's `updateObjectAt` rewrites, twice per member; the syscall's own stores are the remainder) | 48 + 5 + 3 |
+  | `LockId.lookup` | 24 |
+  | `KernelObject.updateLock` | 18 |
+  | `lockSet_replyRecv` (the footprint resolver's arms, attributed to the nearest preceding symbol) | 18 |
+  | `syscallBracketRefusalResult` (the same attribution: the refusal arm is compiled beside the bracket's committing path) | 17 + 1 |
+  | `resolveCapAddress` (the footprint resolution's walks; the syscall's own resolution is `syscallResolveCap`, 3) | 16 |
+  | `LockSet.insertOrMerge`'s `List.mapTR` | 12 + 6 |
+  | `schedCancelAll`'s fold | 10 + 8 |
+  | `updateObjectAt` | 9 + 3 |
+  | `RwLockState.applyOp`, `promoteWaitersIfReadersEmpty`, `decidableCoreInvolved` | 8 + 4 + 3 |
+  | `resolveReplyRecvReply` | 6 |
+  | `schedLockHeld` (decidable), `liftObjectFootprint`, the `mergeSort` of the acquisition sequence | 6 + 6 + 6 |
+  | `releaseLockOnObject`, `acquireLockOnObject`, `suspendFootprintOf`, `SchedLockSet`'s `DecidableEq`, `List.dropWhile` | 5 + 4 + 4 + 8 + 4 |
+  | `abiEntryLockOperands`, `lockSetForSyscall`, `withLockSet`, `schedCoreSegment`, `syscallDispatchCrossCoreBracketedStep`, `SchedLockSet.ofList?`, the sort module's initialiser | 2 + 2 + 2 + 2 + 2 + 1 + 1 |
+
+  About **250 of the 387** — the plan's §1 said "about 180", read at 572
+  before the object reinserts were separated from the store's own; the
+  reinserts the lock writes cause are the largest single row.  Of the rest:
+  `writeFfiRegistersToTcb` 8 and `setGprOfByte` 3 (the argument spill's TCB
+  copies, CV3/CV4), `syscallDispatchCrossCoreStep` 8 (the result tuples,
+  CV4.5), `decodeSyscallArgsFromState` 6 + 3, `ipcBufferWalkPlan` 6,
+  `threadTranslationOperands` 6, `CNode.lookup` 6, `restoreTargetOnCore` 3,
+  and two rows no plan owns yet: **ten `String.fromBytes`** and **eight
+  big-integer divisions** per syscall, plus one `Repr` of the trap context
+  and one of the decoded arguments — strings and a `Nat` division built on
+  the committing path, to be traced to their call sites by the next
+  allocation row.
+- **Prose corrected** (found by the WS-LS audit): `WORKSTREAM_CONTEXT.md`'s
+  bracket heading and its RR7.11 bullet, and `CLAIM_EVIDENCE_INDEX.md`'s
+  "fine locks are not deployed" row, said the per-core scheduler entries
+  bracket nothing; they have since RR7.39 (`v0.34.89`).
+  `scripts/test_tier1_build.sh`'s census comment said two seams bracket; five
+  do.
+- **Registered**: the serializability theorems' commutation premise is
+  discharged by no coverage theorem (`docs/REGISTERED_DEBT.md` table C, owner
+  fine-lock Track D).
+
 ## v0.36.61 — WS-CV CV1.1: the register file is thirty-five machine words
 
 `SeLe4n.RegisterFile` is now the ARM64 trap frame's own layout — `x0`–`x30`,

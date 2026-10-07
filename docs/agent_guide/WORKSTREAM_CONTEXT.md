@@ -56,7 +56,7 @@ them) and `writeReg` takes a `UInt64`; a register file is built with
 read on the entry/exit path; build a saved context from `TrapContext` through
 `ofWords` and the existing writers instead.
 
-### WS-LS Lock state separated from kernel state — PLANNED (registered v0.36.60; runs beside WS-CV, before WS-CB)
+### WS-LS Lock state separated from kernel state — IN FLIGHT (registered v0.36.60; LS0.1 v0.36.62; runs beside WS-CV, before WS-CB)
 
 The lock words leave the kernel state: a ghost `LockState` (one total function
 over one `LockKey` type) sits beside `SystemState` in `LockedSystemState`, a
@@ -67,8 +67,8 @@ fields, `objStoreLock`, `schedulerLocks` and the bracket's refusal arm are
 deleted, and the 2PL, deadlock-freedom, serializability and refinement results
 keep describing the executed path.  Plan:
 [`docs/planning/LOCK_STATE_SEPARATION_PLAN.md`](../planning/LOCK_STATE_SEPARATION_PLAN.md)
-(phases LS0–LS3).  Why: about 180 of the 426 heap allocations per syscall
-measured after CV0 are the bracket, which rewrites lock words no hardware
+(phases LS0–LS3).  Why: about 250 of the 387 heap allocations per syscall
+measured after CV1.1 (LS0.1's reading) are the bracket, which rewrites lock words no hardware
 reads (the kernel-entry ticket lock is the exclusion).
 
 **What new code must assume until WS-LS lands**: the brackets and the lock
@@ -2103,8 +2103,10 @@ code may assume:
   (`OD3.5 raised the ceiling to 11`).  New code
   must not quote a numeric syscall WCRT for this kernel; measuring `tCs` on the
   target is an acceptance criterion of RR7.39–RR7.41 and fine-lock Track D.
-- **The syscall seam brackets; the scheduler entries do not** (WS-RR RR7.12,
-  v0.34.65).  `syscallDispatchCrossCoreEntry` runs its atomic step inside the
+- **The syscall seam brackets, and so do the three per-core scheduler entries**
+  (WS-RR RR7.12, v0.34.65; the scheduler entries since RR7.39, v0.34.89, on the
+  scheduler domain — this heading read "the scheduler entries do not" until
+  `v0.36.62`, which was true at RR7.12 and false from RR7.39 on).  `syscallDispatchCrossCoreEntry` runs its atomic step inside the
   footprint `lockSetForSyscall` declares for the operation its own registers
   decode to — resolve, acquire, **re-resolve at the state the growing phase
   ended in**, refuse on change, unwind — via
@@ -2178,7 +2180,8 @@ code may assume:
   `lockSetForSyscall_undeclared_none` enforces.  Declaring is not bracketing, and RR7.12
   (v0.34.65) closed the gap at the syscall seam: the eight declared arms now run
   inside their footprints there, the twenty-seven undeclared ones run exactly as
-  before, and the per-core scheduler entries still bracket nothing.  Three things new code must respect.  (1) `.send` and `.call` answer
+  before, and the per-core scheduler entries bracket on the scheduler domain
+  since RR7.39 (v0.34.89).  Three things new code must respect.  (1) `.send` and `.call` answer
   `none` without a **message**: whether the footprint includes the receiver's
   CSpace root and the state-level lock is a property of what the message carries,
   so defaulting to the capless shape would declare a footprint that omits the two

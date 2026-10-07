@@ -2,7 +2,7 @@
 
 > **Workstream**: WS-LS (the lock words leave the kernel state; the bracket
 > becomes a ghost the compiled kernel never runs)
-> **Status**: **PLANNED** — registered at `v0.36.60`; no sub-task started.
+> **Status**: **IN FLIGHT** — registered at `v0.36.60`; LS0.1 at `v0.36.62`.
 > Decided by the maintainer on 2026-10-07 ("separate by type"; "if there is a
 > better option, go that route" — §2 records the option taken and the ones
 > not).  Runs beside WS-CV (disjoint files: WS-CV owns the register context
@@ -48,15 +48,19 @@ that writes lock words into the kernel state and never reaches the hardware:
   (`lock_bridge.rs:228`) and its Lean wrappers (`Concurrency/LockBridge.lean`)
   are reached by no transition (`Platform/Staged.lean:130` and tests only).
 - Measured on the local `heap-allocations-per-syscall` exerciser (one
-  notification-signal round trip, QEMU `virt`): 426 allocations per syscall
-  after CV0, of which about 180 are the bracket, by caller: `LockId.lookup`,
-  `lockSet_notificationSignal`, `KernelObject.updateLock`, `insertOrMerge`,
-  `RwLockState`, the sort and the dedup, `updateObjectLockAt`, and the
-  footprint resolution's own `resolveCapAddress` walks.
+  notification-signal round trip, QEMU `virt`), LS0.1's reading at
+  `v0.36.62`: **387** allocations per syscall after CV1.1, of which about
+  **250** are the bracket, by function (the table is the `v0.36.62`
+  CHANGELOG entry): the object reinserts its `updateObjectAt` causes (56),
+  `LockId.lookup` (24), `KernelObject.updateLock` (18), the footprint
+  resolver's arms and `resolveCapAddress` walks (about 40), `insertOrMerge`
+  and the acquisition sort (24), the scheduler domain's folds and
+  decidables (about 30), `RwLockState` (15), the refusal arm compiled beside
+  the committing path (18), and the per-lock primitives.
 
 Under the entry lock every acquire is granted and every release restores the
 word, so the bracket's net effect on the state is nothing; its cost is about
-forty percent of the allocations per syscall, a bigger object for every kind,
+two thirds of the allocations per syscall, a bigger object for every kind,
 and a refusal arm (`syscallBracketRefusalResult`, `SyscallDispatchEntry.lean:598`)
 that stages an `illegalState` frame to the caller if a lock word is ever found
 held at entry — an outcome only corrupt bookkeeping can produce.
@@ -307,7 +311,7 @@ documentation (§4's per-row list) and its Tier 3 anchor sweep (§7), and runs
 
 | Row | Does | Done when |
 |---|---|---|
-| LS0.1 | Reads CV0's exerciser delta and the symbolised trace at the plan's head and attributes every site to its function; records the image size.  Fixes the three prose inconsistencies found while auditing: `WORKSTREAM_CONTEXT.md:2081,2156` and `CLAIM_EVIDENCE_INDEX.md:227` say the scheduler entries bracket nothing (they have since RR7.39, `SchedLockBracket.lean:204,212`); `scripts/test_tier1_build.sh:89` says two seams bracket (five do). | The attributed table is in the CHANGELOG entry; §1's figure is replaced by the reading, or confirmed. |
+| LS0.1 (**done `v0.36.62`**) | Reads CV0's exerciser delta and the symbolised trace at the plan's head and attributes every site to its function; records the image size.  Fixes the three prose inconsistencies found while auditing: `WORKSTREAM_CONTEXT.md:2081,2156` and `CLAIM_EVIDENCE_INDEX.md:227` say the scheduler entries bracket nothing (they have since RR7.39, `SchedLockBracket.lean:204,212`); `scripts/test_tier1_build.sh:89` says two seams bracket (five do). | The attributed table is in the CHANGELOG entry; §1's figure is replaced by the reading, or confirmed.  Done: 387 per syscall, about 250 the bracket's (the reinserts its lock writes cause were under the store's row at the 572 reading); image 8,884,824 bytes; the three prose sites fixed; the serializability-premise debt row registered. |
 
 ### LS1 — the ghost lock state (§3.1): the kernel state is untouched
 

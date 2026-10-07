@@ -86,7 +86,8 @@ run_check "BUILD" lake build SeLe4n.Testing.BootEntryContract
 # Building it IS the check.  Its witnesses -- a planted BARE-COMMIT body, a
 # commit reached only through a helper, and a read-only body -- keep it from
 # passing vacuously, and the bare-commit one is the shape the row exists to
-# catch.  Today: seven committing seams, two of them bracketed.
+# catch.  Today: seven committing seams, five of them bracketed (the syscall
+# seam, the suspend seam and the three per-core scheduler entries).
 run_check "BUILD" lake build SeLe4n.Testing.ExportCommitDisciplineCensus
 
 # WS-BP BP2.2: the kernel's Lean runtime answers a few primitives without an
