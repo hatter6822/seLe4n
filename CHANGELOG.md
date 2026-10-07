@@ -47,22 +47,24 @@ record when any input changed during the build.
 The builder's object cache was keyed on the toolchain, compiler and flags
 only, so after a shim-header edit a warm cache reused objects compiled
 against the old header while the record named the new one; the cache is
-now keyed on the same configuration digests the record holds
-(`config_digests`).  And a syscall the kernel refused returns an ordinary
+now keyed on the shim headers as well (`header_digests`).  And a syscall the kernel refused returns an ordinary
 frame with its status in the `x1` label, which the exerciser accepted as
 the measured signal; it now requires label 0 and prints no reading
 otherwise (checked under QEMU with an invalid message-info word: the gate
 fails, naming label `0xfff20`).
 
-**Fixed: the record named only some of the files the builder reads.**  Its
-configuration set was a hand list (the toolchain pin, Lake's configuration,
-the builder itself), so an edit to a gate the builder imports
-(`check_kernel_entry_exports.py`, which decides `libsele4n.roots.ld`) or to
-`staged_module_allowlist.txt` left an old archive fresh.  The set is now
-derived from the builder (`builder_files`): every module it loaded from the
-tree, transitive imports included, and every tree path a constant of any of
-those modules names outside `.lake/` (so the FP/SIMD gate's `fp_context.S`
-and the HAL sources the entry-export gate scans are recorded too).
+**Fixed: the record named only some of the files the build depends on,
+so it now names the whole tree.**  Its inputs were a list (sources, toolchain
+pin, Lake configuration, the builder), and each review round found a file
+the list missed: an imported gate, the staged-module allowlist, a source a
+gate reads through its own constant, the Cargo manifests behind the provider
+checks.  No list can be shown complete, so there is none: the record holds
+the git tree of the whole working tree (`tree_digest`: `git add -A` into a
+scratch copy of the index, then `git write-tree`), and `--check-fresh` refuses
+any difference.  Any edit makes the archive stale, which the incremental
+rebuild absorbs.  The object cache, which reused an object whenever it was
+newer than its C, now keys each object on its C's content, so a file
+restored with an old timestamp is recompiled.
 
 ## v0.36.71 — the allocation exerciser refuses a stale Lean archive; first reading of the separated lock state: 112
 

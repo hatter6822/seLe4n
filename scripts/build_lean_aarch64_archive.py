@@ -56,15 +56,14 @@ Output (under `.lake/build/aarch64-unknown-none-softfloat/`):
                            link below and of the kernel image's link (BP5.2),
                            which reads this same file
   stdlib-c/<githash>/      the regenerated stdlib C, cached per toolchain
-  obj/                     the objects (rebuilt when their C or the flags move)
-  libsele4n.provenance     what this archive was built from: the SHA-256 of
-                           every package module's `.lean` source, the
-                           toolchain pin and the Lake configuration, every
-                           tree file the builder loads or names
-                           (`builder_files`), and of the archive and roots
-                           script themselves.  Written
+  obj/                     the objects, each keyed on its C's content and
+                           all on the toolchain, flags and shim headers
+  libsele4n.provenance     what this archive was built from: the git tree
+                           of the whole working tree (`tree_digest`, no
+                           list of inputs), and the SHA-256 of the archive
+                           and roots script themselves.  Written
                            only when every check passed; `--check-fresh`
-                           re-hashes the same files and refuses on any
+                           recomputes both and refuses on any
                            difference, so an image linked from it is the tree
                            it claims to be
 
@@ -104,10 +103,6 @@ UNRESOLVED_REPORT = OUT_DIR / "libsele4n.unresolved"
 # WS-BP BP5.2: the link's roots, as the linker script both links read.
 ROOTS_SCRIPT = OUT_DIR / "libsele4n.roots.ld"
 PROVENANCE = OUT_DIR / "libsele4n.provenance"
-# What Lake reads besides the sources: the toolchain pin and Lake's
-# configuration, which decide the C.  What THIS builder reads is derived from
-# the builder itself (`builder_files`), never listed.
-LAKE_CONFIG = ("lean-toolchain", "lakefile.toml", "lake-manifest.json")
 HAL_BUILD_SCRIPT = REPO / "rust/sele4n-hal/build.rs"
 SHIM_INCLUDE = REPO / "rust/sele4n-hal/lean_include"
 STAGED_ALLOWLIST = SCRIPTS / "staged_module_allowlist.txt"
@@ -459,8 +454,9 @@ def compile_one(item: tuple[str, Path], tc: dict[str, str], flags: list[str]) ->
     if named != module:
         raise Refused(f"{source} is the C of {named!r}, not of {module}")
     target, diag = object_path(module), diagnostics_path(module)
-    if (target.is_file() and diag.is_file()
-            and target.stat().st_mtime >= source.stat().st_mtime):
+    key, key_file = hashlib.sha256(text.encode()).hexdigest(), target.with_suffix(".o.key")
+    if (target.is_file() and diag.is_file() and key_file.is_file()
+            and key_file.read_text() == key):
         return
     partial = target.with_suffix(".o.partial")
     result = run([tc["clang"], *flags, "-c", str(source), "-o", str(partial)])
@@ -470,6 +466,7 @@ def compile_one(item: tuple[str, Path], tc: dict[str, str], flags: list[str]) ->
                       + "\n".join(unexplained[:10]))
     diag.write_text(result.stderr)
     partial.replace(target)
+    key_file.write_text(key)
 
 
 def diagnostic_census(modules: list[str]) -> dict[str, int]:
@@ -844,64 +841,55 @@ def file_digest(path: Path) -> str | None:
     return hashlib.sha256(path.read_bytes()).hexdigest()
 
 
-def config_digests() -> dict[str, str | None]:
-    """The digest of every input that is not a module's own source: the build
-    configuration and the headers every object is compiled against.  It keys
-    the object cache (`prepare_objects`) as well as the record, so an object
-    is reused only under the configuration the record will name."""
-    paths = list(LAKE_CONFIG) + [str(f.relative_to(REPO)) for f in builder_files()]
-    return {path: file_digest(REPO / path) for path in sorted(set(paths))}
+def header_digests() -> dict[str, str | None]:
+    """The digest of every header the compile reads besides the toolchain's
+    (`SHIM_INCLUDE`): with the toolchain, the compiler and the flags, what an
+    object depends on besides its own C (`object_cache_stamp`)."""
+    return {str(h.relative_to(REPO)): file_digest(h)
+            for h in sorted(SHIM_INCLUDE.rglob("*")) if h.is_file()}
 
 
-def builder_files() -> list[Path]:
-    """Every tree file this builder's behaviour depends on, derived from the
-    builder rather than listed: each module it loaded from the tree (itself
-    and the gates it imports, transitively), and each tree path a module-level
-    constant of any of those modules names outside the build output -- a file
-    (present or not, so a deletion is recorded) or every file under a
-    directory.  A directory a loaded module lives in, and the tree root, are
-    where the constants are spelled from, not inputs."""
-    modules = [m for m in list(sys.modules.values())
-               if getattr(m, "__file__", None) and Path(m.__file__).resolve().is_relative_to(REPO)]
-    files = {Path(m.__file__).resolve() for m in modules}
-    roots = {REPO} | {f.parent for f in files}
-    for module in modules:
-        for value in list(vars(module).values()):
-            if not isinstance(value, Path):
-                continue
-            value = value.resolve()
-            if value in roots or not value.is_relative_to(REPO) or value.is_relative_to(REPO / ".lake"):
-                continue
-            files |= {f for f in value.rglob("*") if f.is_file()} if value.is_dir() else {value}
-    return sorted(files)
-
-
-def input_digests(package: list[str]) -> dict[str, str | None]:
-    """The digest of every file the archive is compiled from.
-
-    A module that joins or leaves the closure does so through an import line
-    in a module already recorded, so re-hashing the recorded sources detects
-    a closure change as well as an edit."""
-    modules = {m.replace(".", "/") + ".lean": file_digest(REPO / (m.replace(".", "/") + ".lean"))
-               for m in package}
-    return dict(sorted({**modules, **config_digests()}.items()))
+def tree_digest() -> str | None:
+    """The identity of the working tree: `git write-tree` over a scratch copy
+    of the index after `git add -A`, so every tracked file and every untracked
+    file git does not ignore is named at its current content.  Nothing is
+    listed: whatever the build reads in the tree, a change to it changes this.
+    `None` when git cannot answer (no checkout), which no record matches."""
+    git = ["git", "-C", str(REPO)]
+    located = subprocess.run([*git, "rev-parse", "--git-path", "index"],
+                             capture_output=True, text=True)
+    if located.returncode != 0:
+        return None
+    index = Path(located.stdout.strip())
+    index = index if index.is_absolute() else REPO / index
+    with tempfile.TemporaryDirectory() as scratch:
+        scratch_index = Path(scratch) / "index"
+        if index.is_file():
+            shutil.copyfile(index, scratch_index)
+        env = {**os.environ, "GIT_INDEX_FILE": str(scratch_index)}
+        if subprocess.run([*git, "add", "-A", "--", "."], env=env,
+                          capture_output=True).returncode != 0:
+            return None
+        tree = subprocess.run([*git, "write-tree"], env=env, capture_output=True, text=True)
+    return tree.stdout.strip() if tree.returncode == 0 and tree.stdout.strip() else None
 
 
 def object_cache_stamp(tc: dict[str, str], flags: list[str],
-                       config: dict[str, str | None]) -> str:
-    """What an object in the cache was compiled under: the toolchain, the
-    compiler, the flags and `config_digests`."""
+                       headers: dict[str, str | None]) -> str:
+    """What every object in the cache was compiled under: the toolchain, the
+    compiler, the flags and `header_digests`.  Each object is further keyed on
+    its own C (`compile_one`)."""
     return hashlib.sha256("\n".join([tc["githash"], tc["clang"], *flags,
-                                      json.dumps(config, sort_keys=True)]).encode()).hexdigest()
+                                      json.dumps(headers, sort_keys=True)]).encode()).hexdigest()
 
 
-def provenance_record(inputs: dict[str, str | None]) -> dict[str, dict[str, str | None]]:
-    """The inputs the archive was compiled from and the outputs it is.  The
-    inputs are passed in: `build` reads them before it compiles anything, so a
-    source edited while the build runs is recorded as it was compiled, not as
-    it is when the build ends."""
+def provenance_record(tree: str | None) -> dict:
+    """The tree the archive was built from and the outputs it is.  The tree is
+    passed in: `build` reads it before it compiles anything, so a file edited
+    while the build runs is recorded as it was, not as it is when the build
+    ends."""
     outputs = [ARCHIVE, ROOTS_SCRIPT]
-    return {"inputs": inputs,
+    return {"tree": tree,
             "outputs": {str(out.relative_to(REPO)): file_digest(out) for out in outputs}}
 
 
@@ -917,9 +905,11 @@ def stale_files(then: object, now: object, section: str) -> list[str]:
 
 
 def stale_entries(recorded: dict, current: dict) -> list[str]:
-    """`stale_files` over both sections of a build record."""
-    return [entry for section in ("inputs", "outputs")
-            for entry in stale_files(recorded.get(section), current.get(section), section)]
+    """Why a build record does not describe the current tree and outputs: a
+    different (or unrecorded) tree, and `stale_files` over the outputs."""
+    tree = recorded.get("tree")
+    differs = [] if isinstance(tree, str) and tree and tree == current.get("tree") else ["<working tree>"]
+    return differs + stale_files(recorded.get("outputs"), current.get("outputs"), "outputs")
 
 
 def check_fresh() -> int:
@@ -933,18 +923,14 @@ def check_fresh() -> int:
     except json.JSONDecodeError as exc:
         print(f"FAIL: {PROVENANCE.relative_to(REPO)} is unreadable ({exc})")
         return 1
-    inputs = recorded.get("inputs") if isinstance(recorded, dict) else None
-    package = [p.removesuffix(".lean").replace("/", ".") for p in (inputs or {})
-               if p.endswith(".lean")]
     stale = stale_entries(recorded if isinstance(recorded, dict) else {},
-                          provenance_record(input_digests(package)))
+                          provenance_record(tree_digest()))
     if stale:
-        print(f"FAIL: {ARCHIVE.relative_to(REPO)} is stale: {len(stale)} input or output file(s) "
-              f"differ from its build record (first: {', '.join(stale[:5])}); "
+        print(f"FAIL: {ARCHIVE.relative_to(REPO)} is stale: {len(stale)} difference(s) "
+              f"from its build record (first: {', '.join(stale[:5])}); "
               "run scripts/test_lean_aarch64_archive.sh")
         return 1
-    print(f"OK: {ARCHIVE.relative_to(REPO)} was built from the current tree "
-          f"({len(package)} package modules)")
+    print(f"OK: {ARCHIVE.relative_to(REPO)} was built from the current tree")
     return 0
 
 
@@ -956,7 +942,10 @@ def build(jobs: int) -> int:
     package, stdlib = classify_closure(closure, lake_modules(), staged_modules())
     print(f"[2/8] closure: {len(package)} package + {len(stdlib)} stdlib modules "
           f"(elaborator and Lake agree; no staged, testing or Lean.* module)")
-    inputs = input_digests(package)
+    tree = tree_digest()
+    if tree is None:
+        print("FAIL: git cannot name the working tree, so no build record can describe it")
+        return 1
     check_config((Path(tc["prefix"]) / "include/lean/config.h").read_text(),
                  (SHIM_INCLUDE / "lean/config.h").read_text())
     print("[3/8] allocator configuration: toolchain config.h with LEAN_MIMALLOC -> LEAN_SMALL_ALLOCATOR")
@@ -964,7 +953,7 @@ def build(jobs: int) -> int:
     parallel(lambda m: generate_one_stdlib_c(m, tc), stdlib, jobs)
     print(f"[4/8] C: Lake `c` facet for the package, regenerated stdlib C cached under {tc['githash'][:12]}")
     flags = compile_flags(tc)
-    prepare_objects(object_cache_stamp(tc, flags, {p: inputs[p] for p in config_digests()}))
+    prepare_objects(object_cache_stamp(tc, flags, header_digests()))
     sources = [(m, package_c(m)) for m in package] + [(m, stdlib_c(m, tc)) for m in stdlib]
     parallel(lambda item: compile_one(item, tc, flags), sources, jobs)
     build_archive(package + stdlib, tc)
@@ -1023,12 +1012,11 @@ def build(jobs: int) -> int:
     print("[8/8] FP/SIMD register operands: " + ("none" if status == 0 else "FOUND"))
     if status != 0:
         return status
-    changed = stale_files(inputs, input_digests(package), "inputs")
-    if changed:
-        print(f"FAIL: {len(changed)} input file(s) changed while the archive was built "
-              f"(first: {changed[0]}); no provenance record written, so the archive is stale")
+    if tree_digest() != tree:
+        print("FAIL: the working tree changed while the archive was built; "
+              "no provenance record written, so the archive is stale")
         return 1
-    PROVENANCE.write_text(json.dumps(provenance_record(inputs), indent=1, sort_keys=True) + "\n")
+    PROVENANCE.write_text(json.dumps(provenance_record(tree), indent=1, sort_keys=True) + "\n")
     print(f"provenance -> {PROVENANCE.relative_to(REPO)}")
     return 0
 
@@ -1250,41 +1238,29 @@ def self_test() -> int:
            {"-mgeneral-regs-only", "-mabi=aapcs-soft", "-ffreestanding", "-nostdlibinc", "-Werror"}
            <= set(compile_flags({"prefix": "/t"})))
 
-    then = {"inputs": {"SeLe4n.lean": "a", "lean-toolchain": "t"},
-            "outputs": {"libsele4n.a": "x"}}
+    then = {"tree": "t1", "outputs": {"libsele4n.a": "x"}}
     expect("an unchanged tree is fresh", stale_entries(then, json.loads(json.dumps(then))) == [])
-    expect("the record holds the inputs read before the build, not the tree's",
-           provenance_record({"SeLe4n.lean": "before"})["inputs"] == {"SeLe4n.lean": "before"})
+    expect("the record holds the tree read before the build, not the tree's now",
+           provenance_record("before")["tree"] == "before")
+    expect("a changed tree is stale", stale_entries(then, {**then, "tree": "t2"}) == ["<working tree>"])
+    expect("a tree git cannot name is never fresh",
+           stale_entries({**then, "tree": None}, {**then, "tree": None}) != [])
+    expect("a rebuilt archive is stale against the old record", stale_entries(
+        then, {**then, "outputs": {"libsele4n.a": "y"}}) == ["libsele4n.a"])
+    expect("an empty record is never fresh", stale_entries({}, then) != [])
+    expect("a record of an absent output is never fresh", stale_entries(
+        {"tree": "t", "outputs": {"libsele4n.a": None}},
+        {"tree": "t", "outputs": {"libsele4n.a": None}}) != [])
     stamp_tc = {"githash": "g", "clang": "c"}
     expect("the object cache is keyed on the headers",
            object_cache_stamp(stamp_tc, ["-O2"], {"h.h": "a"})
            != object_cache_stamp(stamp_tc, ["-O2"], {"h.h": "b"}))
-    expect("every tree file the builder loads or names is recorded",
-           {"scripts/build_lean_aarch64_archive.py", "scripts/check_kernel_entry_exports.py",
-            "scripts/check_fp_simd_free_objects.py", "scripts/staged_module_allowlist.txt",
-            str(Path(fp_gate.FP_CONTEXT_SOURCE).resolve().relative_to(REPO))}
-           <= set(config_digests()))
-    expect("build output is not an input", not any(p.startswith(".lake/") for p in config_digests()))
     expect("every shim header keys the object cache",
-           all(str(h.relative_to(REPO)) in config_digests()
+           all(str(h.relative_to(REPO)) in header_digests()
                for h in SHIM_INCLUDE.rglob("*") if h.is_file()))
-    expect("an input edited while the build ran is caught",
-           stale_files({"SeLe4n.lean": "before"}, {"SeLe4n.lean": "after"}, "inputs")
-           == ["SeLe4n.lean"])
-    expect("an edited source is stale", stale_entries(
-        then, {**then, "inputs": {**then["inputs"], "SeLe4n.lean": "b"}}) == ["SeLe4n.lean"])
-    expect("a deleted source is stale", stale_entries(
-        then, {**then, "inputs": {"SeLe4n.lean": None, "lean-toolchain": "t"}}) == ["SeLe4n.lean"])
-    expect("a moved toolchain pin is stale", stale_entries(
-        then, {**then, "inputs": {**then["inputs"], "lean-toolchain": "u"}}) == ["lean-toolchain"])
-    expect("a rebuilt archive is stale against the old record", stale_entries(
-        then, {**then, "outputs": {"libsele4n.a": "y"}}) == ["libsele4n.a"])
-    expect("a header added since the build is stale", stale_entries(
-        then, {**then, "inputs": {**then["inputs"], "lean/extra.h": "h"}}) == ["lean/extra.h (new)"])
-    expect("an empty record is never fresh", stale_entries({}, then) != [])
-    expect("a record of an absent file is never fresh", stale_entries(
-        {"inputs": {"X.lean": None}, "outputs": {"libsele4n.a": None}},
-        {"inputs": {"X.lean": None}, "outputs": {"libsele4n.a": None}}) != [])
+    live_tree = tree_digest()
+    expect("git names this working tree", isinstance(live_tree, str) and len(live_tree) >= 40)
+    expect("the tree's name is stable", tree_digest() == live_tree)
 
     for failure in failures:
         print(f"FAIL self-test: {failure}")
