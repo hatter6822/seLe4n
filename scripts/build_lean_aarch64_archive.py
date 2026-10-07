@@ -102,8 +102,12 @@ UNRESOLVED_REPORT = OUT_DIR / "libsele4n.unresolved"
 # WS-BP BP5.2: the link's roots, as the linker script both links read.
 ROOTS_SCRIPT = OUT_DIR / "libsele4n.roots.ld"
 PROVENANCE = OUT_DIR / "libsele4n.provenance"
-# The configuration every module's C depends on besides its own source.
-BUILD_CONFIG = ("lean-toolchain", "lakefile.toml", "lake-manifest.json")
+# The configuration every module's C and object depends on besides its own
+# source: the toolchain pin and Lake's configuration, which decide the C, and
+# this builder, which decides the flags and the closure.  The headers the
+# compile reads (`SHIM_INCLUDE`) are added by `provenance_record`, read from the tree.
+BUILD_CONFIG = ("lean-toolchain", "lakefile.toml", "lake-manifest.json",
+                "scripts/build_lean_aarch64_archive.py")
 HAL_BUILD_SCRIPT = REPO / "rust/sele4n-hal/build.rs"
 SHIM_INCLUDE = REPO / "rust/sele4n-hal/lean_include"
 STAGED_ALLOWLIST = SCRIPTS / "staged_module_allowlist.txt"
@@ -846,15 +850,17 @@ def provenance_record(package: list[str]) -> dict[str, dict[str, str | None]]:
     A module that joins or leaves the closure does so through an import line
     in a module already recorded, so re-hashing the recorded sources detects
     a closure change as well as an edit."""
-    inputs = [m.replace(".", "/") + ".lean" for m in package] + list(BUILD_CONFIG)
+    inputs = ([m.replace(".", "/") + ".lean" for m in package] + list(BUILD_CONFIG)
+              + [str(h.relative_to(REPO)) for h in sorted(SHIM_INCLUDE.rglob("*")) if h.is_file()])
     outputs = [ARCHIVE, ROOTS_SCRIPT]
     return {"inputs": {path: file_digest(REPO / path) for path in sorted(inputs)},
             "outputs": {str(out.relative_to(REPO)): file_digest(out) for out in outputs}}
 
 
 def stale_entries(recorded: dict, current: dict) -> list[str]:
-    """Every recorded file whose digest differs now; a recorded section or
-    file the current reading lacks counts as different."""
+    """Every recorded file whose digest differs now, and every file the current
+    reading has that the record lacks (a header added beside the shim); a
+    recorded section or file the current reading lacks counts as different."""
     stale: list[str] = []
     for section in ("inputs", "outputs"):
         then, now = recorded.get(section), current.get(section)
@@ -863,6 +869,7 @@ def stale_entries(recorded: dict, current: dict) -> list[str]:
             continue
         stale += [path for path, digest in sorted(then.items())
                   if digest is None or now.get(path) != digest]
+        stale += [f"{path} (new)" for path in sorted(set(now) - set(then))]
     return stale
 
 
@@ -883,8 +890,8 @@ def check_fresh() -> int:
     stale = stale_entries(recorded if isinstance(recorded, dict) else {},
                           provenance_record(package))
     if stale:
-        print(f"FAIL: {ARCHIVE.relative_to(REPO)} is stale: {len(stale)} recorded file(s) "
-              f"changed since it was built (first: {', '.join(stale[:5])}); "
+        print(f"FAIL: {ARCHIVE.relative_to(REPO)} is stale: {len(stale)} input or output file(s) "
+              f"differ from its build record (first: {', '.join(stale[:5])}); "
               "run scripts/test_lean_aarch64_archive.sh")
         return 1
     print(f"OK: {ARCHIVE.relative_to(REPO)} was built from the current tree "
@@ -1198,6 +1205,8 @@ def self_test() -> int:
         then, {**then, "inputs": {**then["inputs"], "lean-toolchain": "u"}}) == ["lean-toolchain"])
     expect("a rebuilt archive is stale against the old record", stale_entries(
         then, {**then, "outputs": {"libsele4n.a": "y"}}) == ["libsele4n.a"])
+    expect("a header added since the build is stale", stale_entries(
+        then, {**then, "inputs": {**then["inputs"], "lean/extra.h": "h"}}) == ["lean/extra.h (new)"])
     expect("an empty record is never fresh", stale_entries({}, then) != [])
     expect("a record of an absent file is never fresh", stale_entries(
         {"inputs": {"X.lean": None}, "outputs": {"libsele4n.a": None}},

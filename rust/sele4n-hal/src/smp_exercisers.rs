@@ -1362,14 +1362,14 @@ const ROUND_TRIP_ESR: u64 = 0x15 << 26;
 /// The badge signalled.
 #[cfg(feature = "hw_target")]
 const ROUND_TRIP_BADGE: u64 = 1;
-/// `SPSR_EL1` of the frame: `EL1h` with every DAIF bit set — the mode the
-/// bring-up runs in.  A frame not taken from EL0 saves nothing into a thread
-/// (`saveTrapFrameOnCore`), and a restore over an EL1 frame on a core that has
-/// not handed itself to the idle wait is declined (`trap::restore_commit`), so
-/// the round trip leaves this core's bring-up, its translation and its FP/SIMD
-/// trap as they were.
+/// `SPSR_EL1` of the frame: `EL0t` with DAIF clear, the state a thread's `SVC`
+/// is taken from.  The mode is what makes the round trip a thread's syscall:
+/// `trapFromEl0` admits only `M[3:0] = 0`, so an EL0 frame is saved into the
+/// running thread and the core's register bank (`saveTrapFrameOnCore`) and the
+/// thread is restored over the frame on the way out (`trap::restore_commit`),
+/// which is the work every syscall from userspace does and an EL1 frame skips.
 #[cfg(feature = "hw_target")]
-const ROUND_TRIP_SPSR: u64 = 0x3C5;
+const ROUND_TRIP_SPSR: u64 = 0;
 
 /// The executing core's heap-allocation counter (`lean_heap`'s
 /// `allocations_by_core`), or `None` if the heap cannot be read.
@@ -1450,9 +1450,16 @@ fn heap_allocations_per_syscall() -> Option<bool> {
             false
         }
     };
-    if restored {
+    // The restore installed the resumed thread's translation and set the
+    // FP/SIMD trap for it.  This core goes on with its bring-up, so both go
+    // back: the boot tables (whose kernel window every address space shares,
+    // so the bring-up never stopped running) and the armed trap the boot
+    // prologue leaves (`CPACR_EL1 = 0`).
+    crate::user_translation::install_translation(crate::user_translation::Translation::Kernel);
+    crate::fp_context::set_trap_for_resume(false);
+    if !restored {
         crate::kprintln!(
-            "[smp-test] FAIL: heap-allocations-per-syscall: the round trip replaced the bring-up frame"
+            "[smp-test] FAIL: heap-allocations-per-syscall: the round trip resumed no thread"
         );
         return Some(false);
     }

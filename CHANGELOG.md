@@ -14,19 +14,28 @@ unaffected: its archive lane builds the archive and boots it in one job.
 - **Provenance** (`scripts/build_lean_aarch64_archive.py`): a build that
   passes every check writes `libsele4n.provenance`, the SHA-256 of each
   package module's `.lean` source, `lean-toolchain`, `lakefile.toml`,
-  `lake-manifest.json`, the archive and the roots script, uploaded with the
+  `lake-manifest.json`, the builder itself, every header under the HAL's
+  `lean_include` shim, the archive and the roots script, uploaded with the
   archive by the CI archive lane.  A build deletes
   the record before it starts, so a refused build leaves none.
-  `--check-fresh` re-hashes the recorded files and refuses on any difference,
+  `--check-fresh` re-hashes the recorded files and refuses on any difference
+  or on an input the record lacks (a header added since the build),
   an absent record or an unreadable one.  Closure changes are covered,
   because a module joins the closure through an import in a recorded file.
-  Self-test cases: an edited, deleted or re-pinned input, a rebuilt archive,
-  an empty record and a record of absent files (88 cases).
+  Self-test cases: an edited, deleted, added or re-pinned input, a rebuilt
+  archive, an empty record and a record of absent files (89 cases).
 - **The consumer** (`scripts/qemu_boot_lib.sh`): `--lean-kernel` calls
   `--check-fresh` before linking and fails, rather than skips, on a stale
   archive.  Tested by breaking the relation: appending a comment to
   `SeLe4n/Model/State.lean` makes the check name that file and refuse.
-- **The reading** (archive rebuilt at v0.36.70's tree): **112** heap
+- **The round trip is a thread's syscall** (`smp_exercisers.rs`): the frame
+  was `EL1h` (`SPSR_EL1 = 0x3C5`), which `trapFromEl0` refuses, so
+  `saveTrapFrameOnCore` saved nothing and the thread was never restored over
+  the frame, while every syscall from userspace does both.  The frame is now
+  `EL0t`; the driver requires the restore and then reinstalls the boot
+  tables and the armed FP/SIMD trap the bring-up runs under.  With the save
+  and the restore counted the reading is **118** (EL0 frame, v0.36.71 tree).
+- **The EL1-frame reading** (archive rebuilt at v0.36.70's tree): **112** heap
   allocations per notification-signal round trip, down from 572 at the
   baseline and 387 at CV1.1.  Kernel image 8,398,880 bytes (8,884,824 at
   CV1.1).  The symbolised trace attributes 111 of them, and **no site is
