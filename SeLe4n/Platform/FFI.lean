@@ -3371,8 +3371,9 @@ opaque ffiRestoreCommit : UInt32 → UInt64 → UInt64 → BaseIO Unit
 
 /-- **WS-BP BP7.4: install what a core resumes** — a thread's context, staged
     in one call (`Architecture.trapContextOfRegisterFile`), then its translation
-    and the commit; the idle loop under the kernel's translation; or nothing. -/
-def restoreTrapFrame : SeLe4n.Kernel.Architecture.RestoreTarget → BaseIO Unit
+    and the commit; the idle loop under the kernel's translation; or nothing.
+    Inlined, so the entry matches the target it computed (WS-ZA ZA3.1). -/
+@[inline] def restoreTrapFrame : SeLe4n.Kernel.Architecture.RestoreTarget → BaseIO Unit
   | .user ctx tableBase asid fpLive => do
     ffiRestoreStageContext (SeLe4n.Kernel.Architecture.trapContextOfRegisterFile ctx)
     ffiRestoreCommit (if fpLive then 2 else 0) tableBase asid

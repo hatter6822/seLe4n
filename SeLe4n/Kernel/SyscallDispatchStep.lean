@@ -50,8 +50,11 @@ is a property of this function now.
 The diffs are taken against **this function's own input**, which under the
 bracket is the state the growing phase ended in.  That is what keeps the runtime
 half honest: the growing phase's writes are lock words, and pokes derived
-against a base that already carries them describe the state the action saw. -/
-def syscallDispatchCrossCoreStep (ctx : LabelingContext) (execCore : CoreId)
+against a base that already carries them describe the state the action saw.
+
+Inlined into the entry (WS-ZA ZA3.2), so the entry reads each component of the
+result where it is computed and the nested tuple is never built. -/
+@[inline] def syscallDispatchCrossCoreStep (ctx : LabelingContext) (execCore : CoreId)
     (syscallId : UInt32) (x0 x1 x2 x3 x4 x5 : UInt64)
     (ipcBufferAddr elr spsr spEl0 x30 : UInt64) (st : SystemState) :
     (Architecture.SyscallOutcome × List (CoreId × SgiKind) × List CoreId ×

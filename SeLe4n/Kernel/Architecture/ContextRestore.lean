@@ -81,6 +81,30 @@ def stageCallerReturnFor (caller? : Option SeLe4n.ThreadId) (post : SystemState)
   | .blocks => post
   | .faulted => post
 
+/-- `stageCallerReturnFor` as compiled: the current-thread test through
+`Option.isEqSome`, so it builds no `some tid` and no equality closure.
+WS-ZA ZA2.2. -/
+def stageCallerReturnForImpl (caller? : Option SeLe4n.ThreadId) (post : SystemState)
+    (c : CoreId) : SyscallOutcome → SystemState
+  | .returns f =>
+    match caller? with
+    | some tid =>
+      let s1 := writeReturnFrameToTcb post tid f
+      if (post.scheduler.currentOnCore c).isEqSome tid then
+        { s1 with machine := s1.machine.setRegsOnCore c (stageFrameRegs (s1.machine.regsOnCore c) f) }
+      else s1
+    | none => post
+  | .blocks => post
+  | .faulted => post
+
+@[csimp] theorem stageCallerReturnFor_eq_impl :
+    @stageCallerReturnFor = @stageCallerReturnForImpl := by
+  funext caller? post c o
+  have hEq : ∀ (cur : Option SeLe4n.ThreadId) (tid : SeLe4n.ThreadId),
+      (cur.isEqSome tid = true) = (cur = some tid) := by
+    intro cur tid; cases cur <;> simp [Option.isEqSome]
+  cases o <;> cases caller? <;> simp only [stageCallerReturnFor, stageCallerReturnForImpl, hEq]
+
 /-- `stageCallerReturnFor` with the caller read off the pre-state. -/
 def stageCallerReturn (pre post : SystemState) (c : CoreId) (o : SyscallOutcome) :
     SystemState :=
@@ -177,6 +201,26 @@ def restoreTargetOnCore (st : SystemState) (c : CoreId) : RestoreTarget :=
         .user tcb.registerContext ops.1 ops.2 (fpLiveFor st c tid)
       | none => .none
   | none => .idle
+
+/-- `restoreTargetOnCore` as compiled: the translation words handed straight to
+the `.user` constructor (`threadTranslationOperandsK`), so a caller that
+matches the target, and a target built, cost no pair and no boxed words.
+WS-ZA ZA3.1. -/
+@[inline] def restoreTargetOnCoreImpl (st : SystemState) (c : CoreId) : RestoreTarget :=
+  match st.scheduler.currentOnCore c with
+  | some tid =>
+    if SeLe4n.Kernel.isIdleThreadId tid then .idle
+    else
+      match st.getTcb? tid with
+      | some tcb =>
+        threadTranslationOperandsK st tid fun tableBase asid =>
+          .user tcb.registerContext tableBase asid (fpLiveFor st c tid)
+      | none => .none
+  | none => .idle
+
+@[csimp] theorem restoreTargetOnCore_eq_impl : @restoreTargetOnCore = @restoreTargetOnCoreImpl := by
+  funext st c
+  simp only [restoreTargetOnCore, restoreTargetOnCoreImpl, threadTranslationOperandsK_eq]
 
 /-- An idle current thread resumes the wait loop, whatever its record holds. -/
 theorem restoreTargetOnCore_idle (st : SystemState) (c : CoreId) (tid : SeLe4n.ThreadId)
