@@ -60,8 +60,9 @@ the builder itself), so an edit to a gate the builder imports
 (`check_kernel_entry_exports.py`, which decides `libsele4n.roots.ld`) or to
 `staged_module_allowlist.txt` left an old archive fresh.  The set is now
 derived from the builder (`builder_files`): every module it loaded from the
-tree, transitive imports included, and every tree path its constants name
-outside `.lake/`.
+tree, transitive imports included, and every tree path a constant of any of
+those modules names outside `.lake/` (so the FP/SIMD gate's `fp_context.S`
+and the HAL sources the entry-export gate scans are recorded too).
 
 ## v0.36.71 — the allocation exerciser refuses a stale Lean archive; first reading of the separated lock state: 112
 

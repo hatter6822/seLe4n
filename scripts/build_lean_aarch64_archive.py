@@ -856,17 +856,23 @@ def config_digests() -> dict[str, str | None]:
 def builder_files() -> list[Path]:
     """Every tree file this builder's behaviour depends on, derived from the
     builder rather than listed: each module it loaded from the tree (itself
-    and the gates it imports), and each tree path a module-level constant
-    names outside the build output -- a file (present or not, so a deletion
-    is recorded) or every file under a directory.  `REPO` and `SCRIPTS` are
-    the roots the constants are spelled from, not inputs."""
-    files = {Path(m.__file__).resolve() for m in list(sys.modules.values())
-             if getattr(m, "__file__", None) and Path(m.__file__).resolve().is_relative_to(REPO)}
-    for value in list(globals().values()):
-        if (not isinstance(value, Path) or value in (REPO, SCRIPTS)
-                or not value.is_relative_to(REPO) or value.is_relative_to(REPO / ".lake")):
-            continue
-        files |= {f for f in value.rglob("*") if f.is_file()} if value.is_dir() else {value}
+    and the gates it imports, transitively), and each tree path a module-level
+    constant of any of those modules names outside the build output -- a file
+    (present or not, so a deletion is recorded) or every file under a
+    directory.  A directory a loaded module lives in, and the tree root, are
+    where the constants are spelled from, not inputs."""
+    modules = [m for m in list(sys.modules.values())
+               if getattr(m, "__file__", None) and Path(m.__file__).resolve().is_relative_to(REPO)]
+    files = {Path(m.__file__).resolve() for m in modules}
+    roots = {REPO} | {f.parent for f in files}
+    for module in modules:
+        for value in list(vars(module).values()):
+            if not isinstance(value, Path):
+                continue
+            value = value.resolve()
+            if value in roots or not value.is_relative_to(REPO) or value.is_relative_to(REPO / ".lake"):
+                continue
+            files |= {f for f in value.rglob("*") if f.is_file()} if value.is_dir() else {value}
     return sorted(files)
 
 
@@ -1255,7 +1261,8 @@ def self_test() -> int:
            != object_cache_stamp(stamp_tc, ["-O2"], {"h.h": "b"}))
     expect("every tree file the builder loads or names is recorded",
            {"scripts/build_lean_aarch64_archive.py", "scripts/check_kernel_entry_exports.py",
-            "scripts/check_fp_simd_free_objects.py", "scripts/staged_module_allowlist.txt"}
+            "scripts/check_fp_simd_free_objects.py", "scripts/staged_module_allowlist.txt",
+            str(Path(fp_gate.FP_CONTEXT_SOURCE).resolve().relative_to(REPO))}
            <= set(config_digests()))
     expect("build output is not an input", not any(p.startswith(".lake/") for p in config_digests()))
     expect("every shim header keys the object cache",
