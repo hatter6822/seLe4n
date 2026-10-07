@@ -1,3 +1,29 @@
+## v0.36.60 — WS-LS registered: lock state separated from kernel state (plan only)
+
+Documentation only; nothing in the model or the kernel changes.
+
+- **The plan.**  `docs/planning/LOCK_STATE_SEPARATION_PLAN.md` (phases
+  LS0–LS3).  Every committed entry today runs its transition inside a lock
+  bracket that rewrites lock words into the object store and never reaches
+  the hardware — about 180 of the 426 heap allocations per syscall measured
+  after CV0, for no exclusion (the kernel-entry ticket lock is the exclusion).
+  The maintainer chose to separate the lock state from the kernel state by
+  type: a ghost `LockState` (one total function over one `LockKey` type) beside
+  `SystemState`, a `BracketSpec` whose proof field is the footprint's coverage
+  and whose kernel projection is the transition by `rfl`, and the compiled seam
+  running the transition alone.  The lock fields, `objStoreLock`,
+  `schedulerLocks`, the per-object lock plumbing and the bracket's refusal arm
+  are deleted; the 2PL, deadlock, serializability and refinement results keep
+  describing the executed path.  The plan records the three refinements over
+  the options note (a total ghost table so the per-object layer is deleted not
+  restated; coverage as a record field the export census reads by construction;
+  the refusal arm retired because the ghost acquire models the blocking FIFO
+  lock) and the options not taken.
+- **Found while auditing, recorded in the plan for LS0.1**: three prose sites
+  still say the scheduler entries bracket nothing (they have since RR7.39), and
+  the serializability theorems' commutation premise is discharged by no
+  coverage theorem (a Track D obligation, to be registered as debt).
+
 ## v0.36.59 — WS-CV CV0: count the kernel heap's allocations per syscall
 
 Opens WS-CV (`docs/planning/CONTEXT_BY_VALUE_PLAN.md`) with its baseline phase;

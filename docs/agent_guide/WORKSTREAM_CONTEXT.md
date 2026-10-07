@@ -55,6 +55,30 @@ a theorem needing equality of register files states it field-wise or through
 deleted or rewritten by CV1/CV2; build a saved context from `TrapContext`
 through `ofWords` and the existing writers instead.
 
+### WS-LS Lock state separated from kernel state — PLANNED (registered v0.36.60; runs beside WS-CV, before WS-CB)
+
+The lock words leave the kernel state: a ghost `LockState` (one total function
+over one `LockKey` type) sits beside `SystemState` in `LockedSystemState`, a
+seam runs its transition through a `BracketSpec` whose proof field is the
+footprint's coverage, and the bracket's kernel projection is the transition by
+`rfl` — so the compiled kernel runs the transition alone, the twelve `lock`
+fields, `objStoreLock`, `schedulerLocks` and the bracket's refusal arm are
+deleted, and the 2PL, deadlock-freedom, serializability and refinement results
+keep describing the executed path.  Plan:
+[`docs/planning/LOCK_STATE_SEPARATION_PLAN.md`](../planning/LOCK_STATE_SEPARATION_PLAN.md)
+(phases LS0–LS3).  Why: about 180 of the 426 heap allocations per syscall
+measured after CV0 are the bracket, which rewrites lock words no hardware
+reads (the kernel-entry ticket lock is the exclusion).
+
+**What new code must assume until WS-LS lands**: the brackets and the lock
+fields are as `docs/planning/SMP_FINE_LOCK_MIGRATION_PLAN.md` describes.
+**What new code must not do**: add a transition that reads or writes a `lock`
+field, `objStoreLock` or `schedulerLocks` (LS3 deletes them); add a consumer of
+`runBracketed`, `LockBracketOutcome`, `runUnderDeclaredLockSet` or
+`syscallBracketRefusalResult` (LS2 deletes them); declare a new footprint over
+`SchedLockId` (LS1 retires it into `LockKey`) — declare it as a `LockSet`
+member and let LS1 re-key it.
+
 ### WS-CB Hierarchical constant-bandwidth servers — PLANNED (registered v0.34.49; opens after WS-CV)
 
 A `SchedContext` will be able to contain other scheduling contexts: a *server*
