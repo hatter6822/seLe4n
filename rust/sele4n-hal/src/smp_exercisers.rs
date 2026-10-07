@@ -1346,14 +1346,21 @@ fn per_core_stats() -> Option<bool> {
 
 /// The syscall the round trip issues: `NotificationSignal` (`SyscallId` 14),
 /// which continues its caller — no switch, no block — when nobody waits.
+#[cfg(feature = "hw_target")]
 const ROUND_TRIP_SYSCALL: u64 = 14;
 /// Its capability address: slot 4 of the QEMU `virt` root task's CNode, the
 /// interrupt notification (`Platform/QemuVirt/Deployment.lean`,
 /// `qemuVirtRootTaskCNode`).
+#[cfg(feature = "hw_target")]
 const ROUND_TRIP_CPTR: u64 = 4;
 /// Its `MessageInfo`: one message register (the badge, in `x2`).
+#[cfg(feature = "hw_target")]
 const ROUND_TRIP_MSG_INFO: u64 = 1;
+/// `ESR_EL1` of an `SVC` from AArch64 (exception class `0x15`).
+#[cfg(feature = "hw_target")]
+const ROUND_TRIP_ESR: u64 = 0x15 << 26;
 /// The badge signalled.
+#[cfg(feature = "hw_target")]
 const ROUND_TRIP_BADGE: u64 = 1;
 /// `SPSR_EL1` of the frame: `EL1h` with every DAIF bit set — the mode the
 /// bring-up runs in.  A frame not taken from EL0 saves nothing into a thread
@@ -1361,6 +1368,7 @@ const ROUND_TRIP_BADGE: u64 = 1;
 /// not handed itself to the idle wait is declined (`trap::restore_commit`), so
 /// the round trip leaves this core's bring-up, its translation and its FP/SIMD
 /// trap as they were.
+#[cfg(feature = "hw_target")]
 const ROUND_TRIP_SPSR: u64 = 0x3C5;
 
 /// The executing core's heap-allocation counter (`lean_heap`'s
@@ -1372,8 +1380,9 @@ fn own_heap_allocations(core: usize) -> Option<u64> {
 
 /// **WS-CV CV0.1**: the heap allocations one syscall round trip makes, through
 /// the Lean kernel, on the boot core.  The driver publishes a frame carrying a
-/// `NotificationSignal` as the in-flight frame and dispatches it through the
-/// syscall seam (`svc_dispatch::dispatch_svc`), as the `SVC` arm does, reading
+/// `NotificationSignal` as the in-flight frame, classifies its syndrome and
+/// dispatches it through the syscall seam (`svc_dispatch::dispatch_svc`), as
+/// the `SVC` arm does, reading
 /// this core's own heap counter before and after with IRQs masked across both
 /// reads — the heap is one for every core, and a tick taken in between would
 /// charge its own allocations to the syscall.  The number is evidence, read by
@@ -1388,7 +1397,7 @@ fn heap_allocations_per_syscall() -> Option<bool> {
         sp_el0: 0,
         elr_el1: 0,
         spsr_el1: ROUND_TRIP_SPSR,
-        esr_el1: 0x15 << 26,
+        esr_el1: ROUND_TRIP_ESR,
         far_el1: 0,
         tpidr_el0: 0,
         reserved: 0,
@@ -1402,7 +1411,13 @@ fn heap_allocations_per_syscall() -> Option<bool> {
     let before = own_heap_allocations(core);
     let (dispatched, restored) = {
         let _in_flight = crate::trap::InFlightFrame::publish(&mut frame);
-        let dispatched = crate::svc_dispatch::dispatch_svc(ROUND_TRIP_SYSCALL as u32, &args);
+        // The `SVC` arm's own order: the classification, then the dispatch.
+        let class = crate::trap::classify_synchronous_exception(ROUND_TRIP_ESR);
+        let dispatched = if class == crate::trap::sync_class::SVC {
+            crate::svc_dispatch::dispatch_svc(ROUND_TRIP_SYSCALL as u32, &args)
+        } else {
+            Err(crate::svc_dispatch::DispatchError::InvalidSyscallId)
+        };
         (dispatched, crate::trap::take_restored())
     };
     let after = own_heap_allocations(core);

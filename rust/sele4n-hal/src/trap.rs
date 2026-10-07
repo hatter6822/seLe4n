@@ -890,7 +890,7 @@ fn halt_on_kernel_abort(frame: &TrapFrame, esr: u64) -> ! {
 /// twice.
 #[cfg(feature = "hw_target")]
 #[inline]
-fn classify_synchronous_exception(esr: u64) -> u32 {
+pub(crate) fn classify_synchronous_exception(esr: u64) -> u32 {
     let core_id = crate::per_cpu::current_core_id_from_tpidr();
     if crate::lean_ready::lean_ready(core_id as usize) {
         extern "C" {
@@ -924,7 +924,7 @@ fn classify_synchronous_exception(esr: u64) -> u32 {
 /// hardware.
 #[cfg(not(feature = "hw_target"))]
 #[inline]
-fn classify_synchronous_exception(esr: u64) -> u32 {
+pub(crate) fn classify_synchronous_exception(esr: u64) -> u32 {
     classify_synchronous_exception_mirror(esr)
 }
 
