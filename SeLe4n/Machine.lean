@@ -1047,6 +1047,26 @@ instance : Inhabited MachineState where
     (v : RegisterFile) : MachineState :=
   { ms with coreRegs := ms.coreRegs.set c.val v c.isLt }
 
+/-- WS-CV CV3.1: core `c`'s register file rewritten by `f` in its slot.  The
+bank's array takes the file out of the slot before `f` runs (`Array.modify`),
+so on an exclusively owned machine `f` receives the file's only reference and
+an `f` that rebuilds its argument writes it in place. -/
+@[inline] def MachineState.modifyRegsOnCore (ms : MachineState) (c : CoreId)
+    (f : RegisterFile → RegisterFile) : MachineState :=
+  { ms with coreRegs := ⟨ms.coreRegs.toArray.modify c.val f, by simp⟩ }
+
+/-- The rewrite is the write of `f` applied to the file the core holds. -/
+theorem MachineState.modifyRegsOnCore_eq (ms : MachineState) (c : CoreId)
+    (f : RegisterFile → RegisterFile) :
+    ms.modifyRegsOnCore c f = ms.setRegsOnCore c (f (ms.regsOnCore c)) := by
+  simp only [MachineState.modifyRegsOnCore, MachineState.setRegsOnCore,
+    MachineState.regsOnCore]
+  congr 1
+  apply Vector.ext
+  intro j hj
+  simp [Array.getElem_modify, Vector.getElem_set, Vector.get]
+  split <;> simp_all
+
 /-- **WS-BP BP7.9**: the thread whose FP/SIMD state core `c`'s registers hold. -/
 @[inline] def MachineState.fpOwnerOnCore (ms : MachineState) (c : CoreId) : Option ThreadId :=
   ms.fpOwner.get c

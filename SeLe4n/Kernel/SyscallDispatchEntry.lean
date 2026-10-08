@@ -489,10 +489,11 @@ caller trapped with, whole (`v0.36.47` audit): the step reads the six message
 registers, the IPC buffer (`x6`) and the fault window (`pc`, `pstate`, `sp`,
 `x30`) off it here, so the closure the entry hands
 `Platform.FFI.modifyGetKernelState` captures one object rather than eleven
-boxed `UInt64`s.  Inlined, with `BracketSpec.run`, so the executed path is the
+boxed `UInt64`s.  It is the core's in-flight object (WS-CV CV3.1), read here
+and never kept: the state receives its words through the save's copy.  Inlined, with `BracketSpec.run`, so the executed path is the
 step's own application and the record is never built at runtime. -/
 @[inline] def syscallDispatchBracket (ctx : LabelingContext) (execCore : CoreId)
-    (syscallId : UInt32) (trapped : SeLe4n.RegisterFile) :
+    (syscallId : UInt32) (trapped : Architecture.InFlightContext) :
     BracketSpec (Architecture.SyscallOutcome × List (CoreId × SgiKind) × List CoreId ×
       List Architecture.TlbInvalidation × (Nat × Nat) ×
       List Architecture.ICacheInvalidation × List Architecture.PhysicalWrite ×
@@ -511,7 +512,7 @@ step's own application and the record is never built at runtime. -/
 /-- The step the seam commits: the syscall bracket, run.  Kept under the name
 the entry, its definitional marker and the suites call. -/
 @[inline] def syscallDispatchCrossCoreBracketedStep (ctx : LabelingContext)
-    (execCore : CoreId) (syscallId : UInt32) (trapped : SeLe4n.RegisterFile)
+    (execCore : CoreId) (syscallId : UInt32) (trapped : Architecture.InFlightContext)
     (st : SystemState) :
     (Architecture.SyscallOutcome × List (CoreId × SgiKind) × List CoreId ×
       List Architecture.TlbInvalidation × (Nat × Nat) ×
@@ -525,7 +526,7 @@ pre-state, declared footprint or not, is what subsumes the old bracket's
 `_undeclared` fallback and `_refused` negative: there is no arm on which the
 seam commits anything but the step. -/
 theorem syscallDispatchCrossCoreBracketedStep_run (ctx : LabelingContext)
-    (execCore : CoreId) (syscallId : UInt32) (trapped : SeLe4n.RegisterFile)
+    (execCore : CoreId) (syscallId : UInt32) (trapped : Architecture.InFlightContext)
     (st : SystemState) :
     syscallDispatchCrossCoreBracketedStep ctx execCore syscallId trapped st
       = syscallDispatchCrossCoreStep ctx execCore syscallId
@@ -540,8 +541,10 @@ than runs — is a HAL defect the hardware never produces (it halts on a refused
 run instead), and the answer is to fail closed exactly as
 `syscallEntryContextOrFaulted` does: the `.faulted` tag, on which the entry
 commits nothing and the trap layer halts the PE.  Pure, so the host suite runs
-the decode and that arm (`tests/SyscallDispatchSuite.lean`). -/
-def overflowWordsOrFaulted (addrs : List SeLe4n.PAddr) (runs : List (SeLe4n.PAddr × Nat))
+the decode and that arm (`tests/SyscallDispatchSuite.lean`).  Inlined with
+`readCallerOverflowWords` into the entry, so the entry's match on the answer
+is a match on the decode and no `Except` is built (WS-ZA). -/
+@[inline] def overflowWordsOrFaulted (addrs : List SeLe4n.PAddr) (runs : List (SeLe4n.PAddr × Nat))
     (batches : List ByteArray) : Except UInt64 (List (SeLe4n.PAddr × UInt64)) :=
   match Architecture.IpcBufferRead.wordsOfBatches runs batches with
   | some ws => .ok (addrs.zip ws)
@@ -563,6 +566,19 @@ theorem overflowWordsOrFaulted_addrs (addrs : List SeLe4n.PAddr) (batches : List
     rw [Architecture.IpcBufferRead.expandRuns_wordRuns] at hLen
     exact List.map_fst_zip (Nat.le_of_eq hLen.symm)
   · cases h
+
+/-- **Each run crosses as one `ByteArray`, read in order.**  The loop of
+`readCallerOverflowWords`, written as a recursion over the runs rather than a
+`mapM` over a lambda: a lambda that captures nothing compiles to a closure
+built once at module initialisation, and that closure would keep the
+`ffi_read_user_words` call — present only in the kernel archive — reachable in
+every host executable linking this module. -/
+def readWordRuns : List (SeLe4n.PAddr × Nat) → BaseIO (List ByteArray)
+  | [] => pure []
+  | run :: rest => do
+      let batch ← Platform.FFI.ffiReadUserWords run.1.toNat.toUInt64 run.2.toUInt64
+      let batches ← readWordRuns rest
+      pure (batch :: batches)
 
 /-- **WS-BP BP7.8: the sender's message registers past the fourth, read from
 RAM.**  The decode reads a syscall's overflow message registers out of the
@@ -591,7 +607,7 @@ runs name exactly the addresses the loop read, in order
 (`expandRuns_wordRuns`), and never leave a page
 (`wordRuns_within_page`), so the HAL's run bound is never the kernel's own
 refusal. -/
-def readCallerOverflowWords (execCore : CoreId) (msgInfo : UInt64) :
+@[inline] def readCallerOverflowWords (execCore : CoreId) (msgInfo : UInt64) :
     BaseIO (Except UInt64 (List (SeLe4n.PAddr × UInt64))) := do
   let st ← Platform.FFI.getKernelState
   match st.scheduler.currentOnCore execCore with
@@ -599,8 +615,7 @@ def readCallerOverflowWords (execCore : CoreId) (msgInfo : UInt64) :
   | some tid =>
       let addrs := Architecture.IpcBufferRead.callerOverflowAddrs st tid msgInfo
       let runs := Architecture.IpcBufferRead.wordRuns addrs
-      let batches ← runs.mapM fun run =>
-        Platform.FFI.ffiReadUserWords run.1.toNat.toUInt64 run.2.toUInt64
+      let batches ← readWordRuns runs
       pure (overflowWordsOrFaulted addrs runs batches)
 
 /-- **The context the syscall entry dispatches on, or the outcome it answers
@@ -609,9 +624,12 @@ dispatches (`rust/sele4n-hal/src/trap.rs`), so an entry the HAL hands no context
 is a kernel defect, and the answer is to fail closed: `.faulted` with no state
 read, no state committed and no restore staged, on which the trap layer halts
 the PE (`halt_after_delivered_syscall_fault`).  Pure, so the host suite runs the
-arm no hardware path reaches (`tests/SyscallDispatchSuite.lean`). -/
-def syscallEntryContextOrFaulted :
-    Option SeLe4n.RegisterFile → Except UInt64 SeLe4n.RegisterFile
+arm no hardware path reaches (`tests/SyscallDispatchSuite.lean`).  Inlined, so
+the entry's match on its answer is a match on the HAL's `Option` and no
+`Except` is built (WS-CV CV3.1: the HAL's `some` is persistent, so its cell
+cannot be reused for one). -/
+@[inline] def syscallEntryContextOrFaulted :
+    Option Architecture.InFlightContext → Except UInt64 Architecture.InFlightContext
   | some trapped => .ok trapped
   | none => .error Architecture.SyscallOutcome.faulted.tagWord
 
@@ -685,11 +703,10 @@ def syscallDispatchCrossCoreEntry (syscallId : UInt32) : BaseIO UInt64 := do
   -- handler always publishes its frame before it dispatches, so an entry with
   -- none is a kernel defect and fails closed (`syscallEntryContextOrFaulted`):
   -- `.faulted` with no restore staged, on which the trap layer halts the PE.
-  let trapped ← Platform.FFI.ffiTrapContext
-  let trapped ← match syscallEntryContextOrFaulted trapped with
+  let frame ← Platform.FFI.ffiTrapContext
+  let trapped ← match syscallEntryContextOrFaulted frame with
     | .ok trapped => pure trapped
     | .error tag => return tag
-  let frame := some trapped
   let msgInfo := trapped.x1
   -- **WS-BP BP7.8**: the sender's overflow message registers, read from RAM
   -- and synced into the model in the atomic step, so the decode reads what the
@@ -763,11 +780,10 @@ theorem syscallDispatchCrossCoreEntry_def (syscallId : UInt32) :
       (do
         let ctx ← Platform.FFI.getKernelLabelingContext
         let execCore ← Concurrency.currentCoreId
-        let trapped ← Platform.FFI.ffiTrapContext
-        let trapped ← match syscallEntryContextOrFaulted trapped with
+        let frame ← Platform.FFI.ffiTrapContext
+        let trapped ← match syscallEntryContextOrFaulted frame with
           | .ok trapped => pure trapped
           | .error tag => return tag
-        let frame := some trapped
         let msgInfo := trapped.x1
         let words ← match ← readCallerOverflowWords execCore msgInfo with
           | .ok words => pure words

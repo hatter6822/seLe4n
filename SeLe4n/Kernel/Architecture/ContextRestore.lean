@@ -81,37 +81,20 @@ def stageCallerReturnFor (caller? : Option SeLe4n.ThreadId) (post : SystemState)
   | .blocks => post
   | .faulted => post
 
-/-- Two register files are equal: the same object, or equal word for word. -/
-@[inline] def sameRegisterFile (a b : SeLe4n.RegisterFile) : Bool :=
-  withPtrEq a b (fun _ => decide (a = b)) (fun h => decide_eq_true h)
-
-theorem sameRegisterFile_iff (a b : SeLe4n.RegisterFile) :
-    sameRegisterFile a b = true ↔ a = b := by
-  simp [sameRegisterFile, withPtrEq]
-
-/-- The staging of a current caller whose bank holds its saved context — the
-case after every syscall entry, which saves the trapped frame into both: the
-staged file is built once and stored in both places.  Otherwise the two are
-staged separately, as specified. -/
+/-- The staging of a current caller, as compiled: the frame written into the
+caller's saved context in its object slot (`writeReturnFrameToTcb`) and into
+the core's bank in its slot (`modifyRegsOnCore`).  Each holder keeps a file of
+its own — the save writes one into each (`saveCapturedFrameImpl`) — so on an
+exclusively owned state both are staged in place and nothing is allocated. -/
 @[inline] def stageCurrentCallerReturn (post : SystemState) (c : CoreId)
     (tid : SeLe4n.ThreadId) (f : SyscallReturnFrame) : SystemState :=
-  match post.getTcb? tid with
-  | some tcb =>
-    if sameRegisterFile (post.machine.regsOnCore c) tcb.registerContext then
-      let staged := tcb.registerContext.stageReturnFrame f
-      let s1 := post.updateTcb tid fun t => { t with registerContext := staged }
-      { s1 with machine := s1.machine.setRegsOnCore c staged }
-    else
-      let s1 := writeReturnFrameToTcb post tid f
-      { s1 with machine := s1.machine.setRegsOnCore c (stageFrameRegs (s1.machine.regsOnCore c) f) }
-  | none =>
-    let s1 := writeReturnFrameToTcb post tid f
-    { s1 with machine := s1.machine.setRegsOnCore c (stageFrameRegs (s1.machine.regsOnCore c) f) }
+  let s1 := writeReturnFrameToTcb post tid f
+  { s1 with machine := s1.machine.modifyRegsOnCore c (stageFrameRegs · f) }
 
 /-- `stageCallerReturnFor` as compiled: the current-thread test through
 `Option.isEqSome`, so it builds no `some tid` and no equality closure
-(WS-ZA ZA2.2), and a current caller staged once for both its context and the
-bank (`stageCurrentCallerReturn`). -/
+(WS-ZA ZA2.2), and a current caller's context and bank each staged in its
+slot (`stageCurrentCallerReturn`). -/
 def stageCallerReturnForImpl (caller? : Option SeLe4n.ThreadId) (post : SystemState)
     (c : CoreId) : SyscallOutcome → SystemState
   | .returns f =>
@@ -129,17 +112,7 @@ theorem stageCurrentCallerReturn_eq (post : SystemState) (c : CoreId)
     stageCurrentCallerReturn post c tid f =
       let s1 := writeReturnFrameToTcb post tid f
       { s1 with machine := s1.machine.setRegsOnCore c (stageFrameRegs (s1.machine.regsOnCore c) f) } := by
-  unfold stageCurrentCallerReturn
-  split
-  · next tcb hTcb =>
-    split
-    · next hBank =>
-      rw [sameRegisterFile_iff] at hBank
-      simp only [writeReturnFrameToTcb, SystemState.updateTcb_machine]
-      rw [SystemState.updateTcb_eq_of_some hTcb, SystemState.updateTcb_eq_of_some hTcb, hBank]
-      rfl
-    · rfl
-  · rfl
+  simp only [stageCurrentCallerReturn, MachineState.modifyRegsOnCore_eq]
 
 @[csimp] theorem stageCallerReturnFor_eq_impl :
     @stageCallerReturnFor = @stageCallerReturnForImpl := by

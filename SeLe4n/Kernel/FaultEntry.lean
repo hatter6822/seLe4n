@@ -349,8 +349,8 @@ does: nothing is read, nothing is committed, no restore is staged, and the
 trap layer, finding no restored frame, halts the PE.  Pure, so the host suite
 runs that arm and checks the decode word for word
 (`tests/FaultHandlingSuite.lean` §6g). -/
-def faultEntryFrame? (esr far : UInt64) : Option SeLe4n.RegisterFile →
-    Option (SeLe4n.RegisterFile × ExceptionContext × FaultRegisterWindow)
+def faultEntryFrame? (esr far : UInt64) : Option Architecture.InFlightContext →
+    Option (Architecture.InFlightContext × ExceptionContext × FaultRegisterWindow)
   | none => none
   | some c =>
       some (c,
@@ -361,7 +361,7 @@ def faultEntryFrame? (esr far : UInt64) : Option SeLe4n.RegisterFile →
 /-- The decode, word for word: the saved frame is the context itself,
 the exception context carries the trap's syndrome words beside the context's
 `ELR_EL1` and `SPSR_EL1`, and the window is `x0`–`x7`, `SP_EL0` and `x30`. -/
-theorem faultEntryFrame?_some (esr far : UInt64) (c : SeLe4n.RegisterFile) :
+theorem faultEntryFrame?_some (esr far : UInt64) (c : Architecture.InFlightContext) :
     faultEntryFrame? esr far (some c) =
       some (c,
             { esr := esr, elr := c.pc, spsr := c.pstate, far := far },

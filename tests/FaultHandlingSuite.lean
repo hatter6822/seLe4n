@@ -1048,7 +1048,7 @@ private def runEntryFrameDecodeChecks : IO Unit := do
   assertBool "RegisterFile.word is 0 past the layout, byte-aliased indices included"
     (sampleTrapFrame.word 35 == 0 && sampleTrapFrame.word 256 == 0 &&
       sampleTrapFrame.word 290 == 0)
-  match faultEntryFrame? esr far (some sampleTrapFrame) with
+  match faultEntryFrame? esr far (some (Architecture.InFlightContext.ofRegisterFile sampleTrapFrame)) with
   | none => assertBool "a published context decodes" false
   | some (frame, ectx, w) =>
       assertBool "the exception context carries the trap's syndrome words"
@@ -1060,10 +1060,10 @@ private def runEntryFrameDecodeChecks : IO Unit := do
       assertBool "the window's sp is SP_EL0 and its lr is x30"
         (w.sp == sampleTrapFrame.sp && w.lr == sampleTrapFrame.x30)
       assertBool "the frame saved into the core and the TCB is the context's register file"
-        (frame == sampleTrapFrame)
+        (frame.snapshot == sampleTrapFrame)
       assertBool "the window agrees with the saved frame word for word"
-        ((List.range 8).all (fun i => (w.gprAt i).toNat == (frame.gpr ⟨i⟩).val) &&
-          w.sp.toNat == frame.sp.toNat && w.lr.toNat == (frame.gpr ⟨30⟩).val &&
+        ((List.range 8).all (fun i => (w.gprAt i).toNat == (frame.snapshot.gpr ⟨i⟩).val) &&
+          w.sp.toNat == frame.sp.toNat && w.lr.toNat == (frame.snapshot.gpr ⟨30⟩).val &&
           ectx.elr.toNat == frame.pc.toNat)
       -- The decoded window drives the same delivery the fifteen-scalar entry
       -- drove: the step on it delivers, and the recorded context is the window.
@@ -2082,24 +2082,25 @@ private def runResidentFrameChecks : IO Unit := do
     { stRunning with scheduler := vacatedSched,
                      machine := stRunning.machine.setResidentOnCore c0 (some faulter) }
   let live : SeLe4n.RegisterFile := SeLe4n.RegisterFile.withGprs 0x9004 0x7000 (fun _ => 0xAB)
+  let liveIn := Architecture.InFlightContext.ofRegisterFile live
   let stalePc := savedPcOf stResident faulter
   assertBool "the faulter's saved context is stale before the trap"
     (stalePc != some 0x9004)
   assertBool "RETIRED: the current-slot save drops the vacated core's frame"
     (savedPcOf (Architecture.saveTrapFrameOnCore stResident c0 live) faulter == stalePc)
   assertBool "LIVE: the frame is saved into the resident thread"
-    (savedPcOf (Architecture.saveCapturedTrapFrame stResident c0 (some live)) faulter
+    (savedPcOf (Architecture.saveCapturedTrapFrame stResident c0 (some liveIn)) faulter
       == some 0x9004)
   assertBool "LIVE: a syscall's frame is rewound to its SVC, so it is re-issued"
-    (savedPcOf (Architecture.saveCapturedSyscallFrame stResident c0 (some live)) faulter
+    (savedPcOf (Architecture.saveCapturedSyscallFrame stResident c0 (some liveIn)) faulter
       == some 0x9000)
   assertBool "CONTROL: with no resident thread the frame has no owner and nothing is saved"
     (savedPcOf (Architecture.saveCapturedTrapFrame
       { stResident with machine := stResident.machine.setResidentOnCore c0 none } c0
-      (some live)) faulter == stalePc)
+      (some liveIn)) faulter == stalePc)
   assertBool "CONTROL: a frame taken at EL1 is never a thread's"
     (savedPcOf (Architecture.saveCapturedTrapFrame stResident c0
-      (some { live with pstate := ⟨5⟩ })) faulter == stalePc)
+      (some { liveIn with pstate := ⟨5⟩ })) faulter == stalePc)
   -- PR #904 review (`v0.36.41`): the destroy path refuses a thread some core
   -- still holds as its resident, because that core's next entry saves its frame
   -- into the TCB stored under the id — a retype would hand it to a new thread.

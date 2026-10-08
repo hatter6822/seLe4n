@@ -27,7 +27,7 @@ When a cut lands, update the row's status/version here and write the detail in
 `CHANGELOG.md` and `docs/REGISTERED_DEBT.md`.  A row that grows past one line
 of summary is a sign the narrative belongs in those files instead.
 
-### WS-CV The register context by value — IN FLIGHT (registered v0.36.50; CV0 landed v0.36.59; CV1.1 v0.36.61; CV2.1 v0.36.73; opens before WS-CB)
+### WS-CV The register context by value — IN FLIGHT (registered v0.36.50; CV0 landed v0.36.59; CV1.1 v0.36.61; CV2.1 v0.36.73; CV3.1–CV3.4 and the save-and-stage half of CV4.4 v0.36.74; opens before WS-CB)
 
 The TCB's `registerContext`, the per-core register banks and the Lean boundary
 become one structure: `SeLe4n.RegisterFile` takes `Architecture.TrapContext`'s
@@ -51,12 +51,14 @@ is the thirty-five `UInt64` words of the trap frame with decidable (lawful)
 equality; `RegisterFile.gpr` is a view (`x0`–`x30` as `RegValue`, `0` past
 them) and `writeReg` takes a `UInt64`; a register file is built with
 `RegisterFile.withGprs` / `ofWords` or a structure literal of its words.
-Since CV2.1 the boundary type is `RegisterFile` itself: the entries save the
-object `Platform.FFI.ffiTrapContext` hands over and the restore stages the
-thread's own file.  **What new code must not do**: make the HAL reuse or keep
-a reference to the object it hands over before CV3.1's `snapshotInto` exists
-(a save stores that object as it is), or add a `RegValue`-typed register read
-on the entry/exit path.
+Since CV3.1 `Platform.FFI.ffiTrapContext` answers the core's persistent
+`Architecture.InFlightContext` (a non-heap object the core's next trap
+rewrites), and the entries copy its words into the state through the save
+(`InFlightContext.snapshotInto`); the TCB's context and the core's bank each
+hold a file of their own, written in their slots.  **What new code must not
+do**: store an `InFlightContext` anywhere that outlives the entry, make the
+TCB and the bank share one file (a shared file is copied on the next write),
+or add a `RegValue`-typed register read on the entry/exit path.
 
 ### WS-LS Lock state separated from kernel state — IN FLIGHT (registered v0.36.60; LS0.1 v0.36.62; LS1.1 v0.36.63; LS1.2 v0.36.64; LS2.1 v0.36.65; LS2.2 v0.36.66; LS2.3 v0.36.67; LS2.4 v0.36.68; LS2.5 v0.36.69; LS3.1 v0.36.70; runs beside WS-CV, before WS-CB)
 
@@ -107,13 +109,13 @@ syscall-level resolver alone; a new
 declared arm adds its `case` to `dispatchWithCapChecked_coversWrites` in the
 same cut, or the seam theorem does not elaborate).
 
-### WS-ZA A syscall that allocates nothing — IN FLIGHT (registered v0.36.72; ZA1 and most of ZA2 v0.36.73; runs beside WS-CV, before WS-CB)
+### WS-ZA A syscall that allocates nothing — IN FLIGHT (registered v0.36.72; ZA1 and most of ZA2 v0.36.73; 9 at v0.36.74; runs beside WS-CV, before WS-CB)
 
 The continuing syscall round trip makes no heap allocation.  At `v0.36.71` it
 makes 118: 55 are register-context sites WS-CV's rows already remove, 62 are
 the dispatcher's own, and one is outside the traced window.  The plan's §2
 attributes every site to the row that removes it.  At `v0.36.73` the signal
-round trip makes 13 (the plan's §1 names each).  Plan:
+round trip makes 13, and 9 at `v0.36.74` (the plan's §1 names each).  Plan:
 [`docs/planning/ZERO_ALLOCATION_SYSCALL_PLAN.md`](../planning/ZERO_ALLOCATION_SYSCALL_PLAN.md)
 (phases ZA1–ZA4).
 

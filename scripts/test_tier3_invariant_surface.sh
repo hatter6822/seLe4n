@@ -4670,10 +4670,11 @@ run_check "INVARIANT" rg -n -U '^    syscallDispatchCrossCoreBracketedStep ctx e
 # id alone, and the Lean side reads every other argument from the context it
 # takes whole.  Capture and restore are one call each, not one per word.
 run_check "INVARIANT" rg -n '^    fn lean_syscall_dispatch_cross_core\(syscall_id: u32\) -> u64;$' rust/sele4n-hal/src/svc_dispatch.rs
-run_check "INVARIANT" rg -n '^  let trapped ← Platform\.FFI\.ffiTrapContext$' SeLe4n/Kernel/SyscallDispatchEntry.lean
-# WS-CV CV2.1: the HAL hands the register file over and the restore borrows
-# the thread's own, so no conversion runs either way.
-run_check "INVARIANT" rg -n '^opaque ffiTrapContext : BaseIO \(Option SeLe4n\.RegisterFile\)$' SeLe4n/Platform/FFI.lean
+run_check "INVARIANT" rg -n '^  let frame ← Platform\.FFI\.ffiTrapContext$' SeLe4n/Kernel/SyscallDispatchEntry.lean
+# WS-CV CV2.1/CV3.1: the HAL hands the core's persistent in-flight context
+# over and the restore borrows the thread's own, so no conversion runs either
+# way and the in-flight object's type keeps it out of the state.
+run_check "INVARIANT" rg -n '^opaque ffiTrapContext : BaseIO \(Option Kernel\.Architecture\.InFlightContext\)$' SeLe4n/Platform/FFI.lean
 run_check "INVARIANT" rg -n '^opaque ffiRestoreStageContext : \(@& SeLe4n\.RegisterFile\) → BaseIO Unit$' SeLe4n/Platform/FFI.lean
 run_negative_check "INVARIANT" rg -n 'for i in \[0:SeLe4n\.Kernel\.Architecture\.trapFrameWordCount\]' SeLe4n/Platform/FFI.lean
 # PR #887 review round 3, the review of the round-2 head.  (5) A not-ready
@@ -7670,7 +7671,7 @@ run_check "INVARIANT" rg -n '^theorem fpAccessOnCore_saves_owner($|[ ({:\[\]])' 
 # retired readings beside the live ones.
 run_check "INVARIANT" rg -n '^  resident : _root_\.Vector \(Option ThreadId\) numCores :=$' SeLe4n/Machine.lean
 run_check "INVARIANT" rg -n -U '^def saveVacatedFrameOnCore[^\n]*(\n([ \t][^\n]*)?)*    \| none, some tid =>\n      match st\.getTcb\? tid with\n      \| some _ => st\.updateTcb tid fun t => \{ t with registerContext := saved \}$' SeLe4n/Kernel/Architecture/TrapFrameSave.lean
-run_check "INVARIANT" rg -n '^  \| some rf => saveVacatedFrameOnCore \(saveTrapFrameOnCore st c rf\) c rf \(restartAtSvc rf\)$' SeLe4n/Kernel/Architecture/TrapFrameSave.lean
+run_check "INVARIANT" rg -n -U '^  \| some ic =>\n    let rf := ic\.snapshot\n    saveVacatedFrameOnCore \(saveTrapFrameOnCore st c rf\) c rf \(restartAtSvc rf\)$' SeLe4n/Kernel/Architecture/TrapFrameSave.lean
 run_check "INVARIANT" rg -n '^  let st2 := deferResidentElsewhere \(dispatchVacatedCore st c\) c$' SeLe4n/Kernel/Scheduler/PriorityInheritance/PerCore.lean
 run_check "INVARIANT" rg -n '^theorem deferResidentElsewhere_current_not_elsewhere($|[ ({:\[\]])' SeLe4n/Kernel/Scheduler/PriorityInheritance/PerCore.lean
 run_check "INVARIANT" rg -n 'settleResidencyAt' SeLe4n/Kernel/PerCoreRescheduleEntry.lean

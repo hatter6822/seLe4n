@@ -8,6 +8,7 @@
 -/
 
 import SeLe4n.Model.State
+import SeLe4n.Kernel.Architecture.InFlightContext
 
 /-!
 # WS-BP BP7.3 — the whole outgoing frame, saved at every kernel entry
@@ -24,8 +25,9 @@ outgoing thread from that bank (`saveOutgoingContextOnCore`), so a thread
 switched out and back in would have resumed with another state.
 
 `saveTrapFrameOnCore` is the fix: at every kernel entry that can switch threads,
-the whole frame — handed over by the HAL in one call as a `SeLe4n.RegisterFile`,
-whose fields are the `TrapFrame` layout — is written into **both** the executing core's bank and the
+the whole frame — handed over by the HAL in one call as the core's persistent
+`InFlightContext`, whose fields are the `TrapFrame` layout, and copied out of it
+(`InFlightContext.snapshot`) — is written into **both** the executing core's bank and the
 current thread's `registerContext`, so `contextMatchesCurrentOnCore` holds on
 the state the transition runs on and a switch saves exactly the registers the
 thread trapped with.
@@ -118,45 +120,27 @@ theorem restartAtSvc_pc_toNat (rf : SeLe4n.RegisterFile) (h : 4 ≤ rf.pc.toNat)
   rw [UInt64.toNat_sub_of_le _ _ (by simpa [UInt64.le_iff_toNat_le] using h)]
   rfl
 
-/-- **The save an entry performs**: the captured frame, if the HAL published
-one (`Platform.FFI.ffiTrapContext`); a handler with no frame saves nothing.
-The current thread's frame is `saveTrapFrameOnCore`'s; a vacated core's is the
-resident thread's (`saveVacatedFrameOnCore`). -/
+/-- **The save an entry performs**: the frame the HAL handed over, if it
+published one (`Platform.FFI.ffiTrapContext`); a handler with no frame saves
+nothing.  The words are copied out of the in-flight object (`snapshot`), which
+the core's next trap rewrites.  The current thread's frame is
+`saveTrapFrameOnCore`'s; a vacated core's is the resident thread's
+(`saveVacatedFrameOnCore`). -/
 def saveCapturedTrapFrame (st : SystemState) (c : CoreId) :
-    Option SeLe4n.RegisterFile → SystemState
+    Option InFlightContext → SystemState
   | none => st
-  | some rf => saveVacatedFrameOnCore (saveTrapFrameOnCore st c rf) c rf rf
+  | some ic =>
+    let rf := ic.snapshot
+    saveVacatedFrameOnCore (saveTrapFrameOnCore st c rf) c rf rf
 
 /-- **The syscall entry's save**: `saveCapturedTrapFrame`, with a vacated core's
 frame rewound to the `SVC` (`restartAtSvc`). -/
 def saveCapturedSyscallFrame (st : SystemState) (c : CoreId) :
-    Option SeLe4n.RegisterFile → SystemState
+    Option InFlightContext → SystemState
   | none => st
-  | some rf => saveVacatedFrameOnCore (saveTrapFrameOnCore st c rf) c rf (restartAtSvc rf)
-
-/-- WS-ZA: the compiled `saveCapturedSyscallFrame`.  The rewound frame is a
-new register file, so it is built only on the path that records it — a
-vacated core's syscall — rather than on every syscall. -/
-def saveCapturedSyscallFrameImpl (st : SystemState) (c : CoreId) :
-    Option SeLe4n.RegisterFile → SystemState
-  | none => st
-  | some rf =>
-    let st1 := saveTrapFrameOnCore st c rf
-    if trapFromEl0 rf then
-      match st1.scheduler.currentOnCore c, st1.machine.residentOnCore c with
-      | none, some tid =>
-        match st1.getTcb? tid with
-        | some _ => st1.updateTcb tid fun t => { t with registerContext := restartAtSvc rf }
-        | none => st1
-      | _, _ => st1
-    else st1
-
-@[csimp] theorem saveCapturedSyscallFrame_eq_impl :
-    @saveCapturedSyscallFrame = @saveCapturedSyscallFrameImpl := by
-  funext st c f
-  cases f with
-  | none => rfl
-  | some rf => rfl
+  | some ic =>
+    let rf := ic.snapshot
+    saveVacatedFrameOnCore (saveTrapFrameOnCore st c rf) c rf (restartAtSvc rf)
 
 /-- A core with a current thread saves nothing through the vacated path. -/
 theorem saveVacatedFrameOnCore_of_current (st : SystemState) (c : CoreId)
@@ -269,5 +253,124 @@ theorem saveTrapFrameOnCore_saves (st : SystemState) (c : CoreId)
   refine ⟨by simp, ?_⟩
   show (st.updateTcb tid fun t => { t with registerContext := rf }).getTcb? tid = _
   rw [SystemState.updateTcb_getTcb?_self st tid _ hInv, hTcb]; rfl
+
+/-- `trapFromEl0` of the snapshot, read from the in-flight object's field. -/
+@[inline] def InFlightContext.fromEl0 (ic : @& InFlightContext) : Bool :=
+  ic.pstate % 16 == 0
+
+theorem trapFromEl0_snapshot (ic : InFlightContext) :
+    trapFromEl0 ic.snapshot = ic.fromEl0 := rfl
+
+/-- WS-CV CV3.1: a TCB whose saved context is rewritten with the in-flight
+words (`snapshotInto`), rewound to the `SVC` when `rewind` is set. -/
+@[inline] def saveInFlightIntoTcb (ic : @& InFlightContext) (rewind : Bool) (t : TCB) : TCB :=
+  let rf := ic.snapshotInto t.registerContext
+  { t with registerContext := if rewind then restartAtSvc rf else rf }
+
+/-- WS-CV CV3.1: **the compiled save.**  The words are written into the
+register files the state already owns — the thread's context in its object
+slot (`modifyObject`) and the core's bank in its slot (`modifyRegsOnCore`) —
+rather than into a new file, so on an exclusively owned state each holder's
+file is written in place and the save allocates nothing.  The two holders keep
+one file each: a file both held would be shared, and `snapshotInto` would copy
+it.  `rewind` selects the syscall entry's rewound vacated-core save. -/
+def saveCapturedFrameImpl (rewind : Bool) (st : SystemState) (c : CoreId) :
+    Option InFlightContext → SystemState
+  | none => st
+  | some ic =>
+    if ic.fromEl0 then
+      match st.scheduler.currentOnCore c with
+      | some tid =>
+        match st.getTcb? tid with
+        | some _ =>
+          let st1 := st.modifyObject tid.toObjId (SystemState.mapTcbObject (saveInFlightIntoTcb ic false))
+          { st1 with machine := st1.machine.modifyRegsOnCore c ic.snapshotInto }
+        | none => st
+      | none =>
+        match st.machine.residentOnCore c with
+        | some tid => st.updateTcb tid (saveInFlightIntoTcb ic rewind)
+        | none => st
+    else st
+
+/-- `saveCapturedTrapFrame` as compiled. -/
+def saveCapturedTrapFrameImpl (st : SystemState) (c : CoreId) :
+    Option InFlightContext → SystemState :=
+  saveCapturedFrameImpl false st c
+
+/-- `saveCapturedSyscallFrame` as compiled. -/
+def saveCapturedSyscallFrameImpl (st : SystemState) (c : CoreId) :
+    Option InFlightContext → SystemState :=
+  saveCapturedFrameImpl true st c
+
+theorem saveInFlightIntoTcb_eq (ic : InFlightContext) (rewind : Bool) :
+    saveInFlightIntoTcb ic rewind = fun t =>
+      { t with registerContext := if rewind then restartAtSvc ic.snapshot else ic.snapshot } := by
+  funext t; simp only [saveInFlightIntoTcb, InFlightContext.snapshotInto_eq]
+
+/-- The compiled save is the specified one, for either rewind. -/
+theorem saveCapturedFrameImpl_eq (rewind : Bool) (st : SystemState) (c : CoreId)
+    (ic : InFlightContext) :
+    saveCapturedFrameImpl rewind st c (some ic) =
+      let rf := ic.snapshot
+      saveVacatedFrameOnCore (saveTrapFrameOnCore st c rf) c rf
+        (if rewind then restartAtSvc rf else rf) := by
+  by_cases hEl0 : ic.fromEl0 = true
+  · cases hCur : st.scheduler.currentOnCore c with
+    | some tid =>
+      show _ = saveVacatedFrameOnCore _ _ _ _
+      rw [saveVacatedFrameOnCore_of_current _ c _ _ tid
+        (by rw [saveTrapFrameOnCore_scheduler, hCur])]
+      unfold saveCapturedFrameImpl saveTrapFrameOnCore
+      dsimp only
+      rw [if_pos hEl0, trapFromEl0_snapshot, if_pos hEl0, hCur]
+      dsimp only
+      cases hT : st.getTcb? tid with
+      | some t =>
+        have hx := (SystemState.getTcb?_eq_some_iff st tid t).mp hT
+        have hMod : st.modifyObject tid.toObjId
+            (SystemState.mapTcbObject (saveInFlightIntoTcb ic false)) =
+            st.updateTcb tid (saveInFlightIntoTcb ic false) := by
+          rw [SystemState.updateTcb_eq_impl]; unfold SystemState.updateTcbImpl; rw [hx]
+        dsimp only
+        rw [hMod, saveInFlightIntoTcb_eq, MachineState.modifyRegsOnCore_eq,
+          InFlightContext.snapshotInto_eq]
+        rfl
+      | none => rfl
+    | none =>
+      show _ = saveVacatedFrameOnCore _ _ _ _
+      rw [saveTrapFrameOnCore_of_idle st c _ hCur]
+      unfold saveCapturedFrameImpl saveVacatedFrameOnCore
+      dsimp only
+      rw [if_pos hEl0, trapFromEl0_snapshot, if_pos hEl0, hCur]
+      dsimp only
+      cases hRes : st.machine.residentOnCore c with
+      | some tid =>
+        dsimp only
+        rw [saveInFlightIntoTcb_eq]
+        cases hT : st.getTcb? tid with
+        | some t => rfl
+        | none => exact SystemState.updateTcb_eq_self_of_none hT _
+      | none => rfl
+  · have hF : ic.fromEl0 = false := by simpa using hEl0
+    show _ = saveVacatedFrameOnCore _ _ _ _
+    rw [saveTrapFrameOnCore_of_not_el0 st c _ (by rw [trapFromEl0_snapshot, hF])]
+    unfold saveCapturedFrameImpl saveVacatedFrameOnCore
+    dsimp only
+    rw [trapFromEl0_snapshot, hF]
+    rfl
+
+@[csimp] theorem saveCapturedTrapFrame_eq_impl :
+    @saveCapturedTrapFrame = @saveCapturedTrapFrameImpl := by
+  funext st c f
+  cases f with
+  | none => rfl
+  | some ic => exact (saveCapturedFrameImpl_eq false st c ic).symm
+
+@[csimp] theorem saveCapturedSyscallFrame_eq_impl :
+    @saveCapturedSyscallFrame = @saveCapturedSyscallFrameImpl := by
+  funext st c f
+  cases f with
+  | none => rfl
+  | some ic => exact (saveCapturedFrameImpl_eq true st c ic).symm
 
 end SeLe4n.Kernel.Architecture

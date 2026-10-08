@@ -94,14 +94,31 @@ def fpContextOfSeed (seed : UInt64) : SeLe4n.FpContext :=
 
 /-! ## The save path over the context handed over
 
-The Rust side builds trap 1's object (`trapContextOfSeed`), saves it into a
-probe state's current thread (`saveProbeCapturedSyscallFrame`), builds trap 2's
-in a fresh object as `ffi_trap_context` does, and reads the thread's saved
-context back (`saveProbeContextWord`): every word is trap 1's.  The save stores
-the object it is handed, which is sound while the HAL builds one per trap; the
-per-core reused object and the copy that makes reuse sound arrive together in
-WS-CV CV3.1, and CV3.4 restores the write-into-the-same-object half of the
-test over them. -/
+The Rust side builds trap 1's in-flight context (`inFlightContextOfSeed`),
+saves it into a probe state's current thread (`saveProbeCapturedSyscallFrame`),
+writes trap 2's words into the **same object** — what the HAL does to a core's
+persistent object on its next trap (WS-CV CV3.1) — and reads the thread's saved
+context back (`saveProbeContextWord`): every word is trap 1's, because the save
+copies the words (`InFlightContext.snapshotInto`) rather than keeping the
+object. -/
+
+/-- An in-flight context the Lean side built: word `i` is `seed + i · 0x0101`,
+as `trapContextOfSeed`. -/
+@[export sele4n_probe_in_flight_context_of_seed]
+def inFlightContextOfSeed (seed : UInt64) : SeLe4n.Kernel.Architecture.InFlightContext :=
+  .ofRegisterFile (trapContextOfSeed seed)
+
+/-- `snapshotInto`, compiled: the context's words written into `rf`, in `rf`'s
+own object when the caller handed over its only reference.  Both owned. -/
+@[export sele4n_probe_snapshot_into]
+def snapshotIntoProbe (c : SeLe4n.Kernel.Architecture.InFlightContext)
+    (rf : SeLe4n.RegisterFile) : SeLe4n.RegisterFile :=
+  c.snapshotInto rf
+
+/-- `snapshot`, compiled: the context's words as a register file.  Owned. -/
+@[export sele4n_probe_snapshot]
+def snapshotProbe (c : SeLe4n.Kernel.Architecture.InFlightContext) : SeLe4n.RegisterFile :=
+  c.snapshot
 
 /-- The probe state: one TCB, id `tid`, current on the boot core and in no run
 queue (dequeue-on-dispatch), nothing else.  Built from the model's own
@@ -127,7 +144,8 @@ def saveProbeState (tid : UInt64) : SeLe4n.Model.SystemState :=
 `saveCapturedSyscallFrame` over the context handed over, as the entry binds
 `ffiTrapContext`'s answer.  Both arguments owned. -/
 @[export sele4n_probe_save_captured_syscall_frame]
-def saveProbeCapturedSyscallFrame (st : SeLe4n.Model.SystemState) (c : SeLe4n.RegisterFile) :
+def saveProbeCapturedSyscallFrame (st : SeLe4n.Model.SystemState)
+    (c : SeLe4n.Kernel.Architecture.InFlightContext) :
     SeLe4n.Model.SystemState :=
   saveCapturedSyscallFrame st SeLe4n.Kernel.Concurrency.bootCoreId
     (some c)

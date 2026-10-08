@@ -604,18 +604,24 @@ opaque ffiCurrentCoreId : BaseIO UInt64
 -- ============================================================================
 
 /-- **WS-BP BP7.3: the whole context the executing PE trapped with**, handed
-over in one call as the model's register file — `some` the in-flight trap
-frame's thirty-five context words (`SeLe4n.RegisterFile`, whose fields are the
-`TrapFrame` layout: `x0`–`x30`, `SP_EL0`, `ELR_EL1`, `SPSR_EL1`, `TPIDR_EL0`)
-when a trap handler published its frame (`trap::InFlightFrame`), `none`
-otherwise (an entry called outside a trap handler).  Read once, before the
-atomic step, so the save and the transition see one frame.  The HAL builds a
-fresh object per call and keeps no reference to it, so the kernel holds the
-only one and a save stores it as it is.
+over in one call — `some` the in-flight trap frame's thirty-five context words
+(`Kernel.Architecture.InFlightContext`, whose fields are the `TrapFrame`
+layout: `x0`–`x30`, `SP_EL0`, `ELR_EL1`, `SPSR_EL1`, `TPIDR_EL0`) when a trap
+handler published its frame (`trap::InFlightFrame`), `none` otherwise (an
+entry called outside a trap handler).  Read once, before the atomic step, so
+the save and the transition see one frame.
+
+**WS-CV CV3.1: nothing is allocated.**  The HAL writes the words into the
+executing core's persistent object and answers the core's persistent `some`
+around it (`trap::InFlightContextObjects`); both live outside the heap with a
+reference count of `0`, so the compiled Lean's `lean_inc` / `lean_dec` leave
+them alone and no update reuses them in place.  The core's next trap rewrites
+the object, so the type keeps it out of the state: the save copies its words
+(`InFlightContext.snapshotInto`).
 
 Rust: `ffi_trap_context` in `sele4n-hal/src/ffi.rs`. -/
 @[extern "ffi_trap_context"]
-opaque ffiTrapContext : BaseIO (Option SeLe4n.RegisterFile)
+opaque ffiTrapContext : BaseIO (Option Kernel.Architecture.InFlightContext)
 
 -- ============================================================================
 -- WS-SM SM1.I.3 — Per-core IDLE thread FFI declarations
