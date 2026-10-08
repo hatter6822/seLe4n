@@ -93,7 +93,7 @@ theorem notificationSignalBoundCrossCoreDispatchChecked_error_state (ctx : Label
 case), refusing in the state it was handed.  Its refusals all precede its
 writes, so the state on a refusal is the one the arm was handed
 (`notificationSignalCheckedArmR_eq`). -/
-def notificationSignalCheckedArmR (ctx : LabelingContext) (decoded : SyscallDecodeResult)
+@[inline] def notificationSignalCheckedArmR (ctx : LabelingContext) (decoded : SyscallDecodeResult)
     (tid : SeLe4n.ThreadId) (executingCore : Concurrency.CoreId) (cap : Capability) :
     RefusalCarrying Unit :=
   fun st =>
@@ -252,7 +252,7 @@ theorem signalTaintStep_eq (st : SystemState) (tid : SeLe4n.ThreadId)
 `syscallResolveCap`'s idle-object check, the rights gate, then
 `notificationSignalCheckedArmR` and the taint step, every refusal carrying the
 state it was handed (`signalOperandArmThenTaintR_eq`). -/
-@[noinline] def signalResolvedArmThenTaintR (ctx : LabelingContext)
+@[inline] def signalResolvedArmThenTaintR (ctx : LabelingContext)
     (decoded : SyscallDecodeResult) (tid : SeLe4n.ThreadId)
     (executingCore : Concurrency.CoreId) (requiredRight : AccessRight)
     (taintCase : SignalTaintCase) (sink : SeLe4n.ObjId)
@@ -321,7 +321,7 @@ theorem threadId_isEqSome_iff (current : Option SeLe4n.ThreadId) (tid : SeLe4n.T
 resolves its operand once, for the gate and the taint plan alike, and takes
 `signalResolvedArmThenTaintR`, whose every refusal precedes its first write; every other syscall takes `RefusalCarrying.ofKernel` of the
 specification. -/
-def dispatchSyscallCheckedR (ctx : LabelingContext)
+@[inline] def dispatchSyscallCheckedR (ctx : LabelingContext)
     (decoded : SyscallDecodeResult) (tid : SeLe4n.ThreadId)
     (executingCore : Concurrency.CoreId) : RefusalCarrying Unit :=
   fun st =>
@@ -332,7 +332,7 @@ def dispatchSyscallCheckedR (ctx : LabelingContext)
       | some (.tcb tcb) =>
         match st.getObject? tcb.cspaceRoot with
         | some (.cnode rootCn) =>
-          resolveCapAddressK tcb.cspaceRoot decoded.capAddr rootCn.depth st
+          resolveCapAddressKUnrolled tcb.cspaceRoot decoded.capAddr rootCn.depth st
             (fun e => .error (e, st))
             (fun cnode slot =>
               signalOperandArmThenTaintR ctx decoded tid executingCore
@@ -366,7 +366,7 @@ theorem dispatchSyscallCheckedR_eq (ctx : LabelingContext)
         split
         · next tcb hTcb' rootCn hRoot =>
           simp only [hTcb, hRoot]
-          rw [resolveCapAddressK_eq]
+          rw [resolveCapAddressKUnrolled_eq, resolveCapAddressK_eq]
           rcases hRef : resolveCapAddress tcb.cspaceRoot decoded.capAddr rootCn.depth st with
             e | ref
           · simp only [dispatchCheckedArmThenTaint, hSig, syscallChecksTargetFirst,
@@ -402,7 +402,7 @@ theorem dispatchSyscallCheckedR_eq (ctx : LabelingContext)
 overflow words fills no TLB entry (`tlbFillIpcBufferOnCore_zero`), so such a
 call hands the dispatcher the entry's own state and `dispatchSyscallCheckedR`
 refuses in it.  A call with overflow words keeps the specification's form. -/
-def syscallEntryCheckedR (ctx : LabelingContext)
+@[inline] def syscallEntryCheckedR (ctx : LabelingContext)
     (layout : SeLe4n.SyscallRegisterLayout)
     (executingCore : Concurrency.CoreId)
     (regCount : Nat := 32) : RefusalCarrying Unit :=

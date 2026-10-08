@@ -143,12 +143,20 @@ its `some` badge cell are rewritten where they are. -/
             pendingBadge := some (SeLe4n.Badge.ofNatMasked badge.toNat) }
   | o => o
 
+/-- The pending-badge write, `st.modifyObject notificationId (signalPendingObject
+badge)`, compiled as its own function so `modifyObject` is specialised over the
+update here: inlined into a large entry, the specialiser can leave the update
+as a closure (a heap cell per signal).  WS-ZA. -/
+@[noinline] def storeSignalPending (st : SystemState) (notificationId : SeLe4n.ObjId)
+    (badge : SeLe4n.Badge) : SystemState :=
+  st.modifyObject notificationId (signalPendingObject badge)
+
 /-- WS-ZA ZA1.1: the compiled `notificationSignalOnCore`.  A signal with no
 waiter stores the badge through the pure store `withObjectStored`, which cannot
 fail, so the pre-state is not held across the write for a refusal that cannot
 happen (`ZERO_ALLOCATION_SYSCALL_PLAN.md` D1).  The waiter path is the
 specification's; its refusal after the notification store is ZA2.3's. -/
-def notificationSignalOnCoreImpl (notificationId : SeLe4n.ObjId) (badge : SeLe4n.Badge)
+@[inline] def notificationSignalOnCoreImpl (notificationId : SeLe4n.ObjId) (badge : SeLe4n.Badge)
     (executingCore : CoreId) (st : SystemState) :
     SystemState × Except KernelError (Option (CoreId × SgiKind)) :=
   match st.getNotification? notificationId with
@@ -173,7 +181,7 @@ def notificationSignalOnCoreImpl (notificationId : SeLe4n.ObjId) (badge : SeLe4n
                    .ok (wakeThread st'' waiter executingCore).2)
       | none =>
           if storeLeavesIndexAndTypes st notificationId .notification then
-            (st.modifyObject notificationId (signalPendingObject badge),
+            (storeSignalPending st notificationId badge,
              .ok none)
           else
           let mergedBadge : SeLe4n.Badge :=
@@ -198,7 +206,7 @@ def notificationSignalOnCoreImpl (notificationId : SeLe4n.ObjId) (badge : SeLe4n
     split
     · rfl
     · by_cases hL : storeLeavesIndexAndTypes st notificationId .notification = true
-      · rw [if_pos hL, SystemState.modifyObject,
+      · rw [if_pos hL, storeSignalPending, SystemState.modifyObject,
           SeLe4n.Kernel.RobinHood.RHTable.modify_of_get? ((SystemState.getNotification?_eq_some_iff _ _ _).mp hN)]
         simp only [storeObject_eq_impl, storeObjectImpl, KernelObject.objectType, hL, ↓reduceIte]
         cases hp : ntfn.pendingBadge <;> simp only [signalPendingObject, hp]

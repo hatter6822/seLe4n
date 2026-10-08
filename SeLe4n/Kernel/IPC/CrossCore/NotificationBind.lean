@@ -39,7 +39,7 @@ bound-delivery path the bound TCB is dequeued from its endpoint
 (`endpointQueueRemoveDual`), delivered the badge, and woken cross-core
 (`wakeThread`, surfacing the optional `.reschedule` SGI); otherwise the unchanged
 cross-core `notificationSignalOnCore` runs. -/
-def notificationSignalBoundOnCore (notificationId : SeLe4n.ObjId) (badge : SeLe4n.Badge)
+@[inline] def notificationSignalBoundOnCore (notificationId : SeLe4n.ObjId) (badge : SeLe4n.Badge)
     (executingCore : CoreId) (st : SystemState) :
     SystemState × Except KernelError (Option (CoreId × SgiKind)) :=
   match boundDeliveryTarget? st notificationId with

@@ -3044,7 +3044,7 @@ the refusal arms read that state instead of keeping `stRegs` alive across the
 dispatch; a syscall that checks before it writes then owns the state it writes
 (`ZERO_ALLOCATION_SYSCALL_PLAN.md` D1).  Equal to the specification through
 `syscallEntryCheckedR_eq`. -/
-def syscallDispatchFromAbiImpl
+@[inline] def syscallDispatchFromAbiImpl
     (ctx : LabelingContext)
     (executingCore : SeLe4n.Kernel.Concurrency.CoreId)
     (syscallId : UInt32)
