@@ -1715,45 +1715,50 @@ pub unsafe fn trap_context_of_lean(
     unsafe { scalar_words_of_lean(o) }
 }
 
-/// A Lean `Option SeLe4n.RegisterFile`: `none` is `lean_box(0)`, `some c`
-/// is constructor tag `1` with one object field holding `c`
-/// (`trap_context_to_lean`) — the encoding the compiled Lean switches on with
-/// `lean_obj_tag`.  Owned by the caller.
+/// `ffi_trap_context` over the given slots and objects (the testable form): the
+/// context of the frame published in `slots[core]`, as a Lean `Option
+/// InFlightContext` — `none` (`lean_box(0)`) when no frame is published, else
+/// core `core`'s persistent `some` around its context object, rewritten with
+/// the frame's words (`trap::InFlightContextObjects::publish`).  Allocates
+/// nothing.
+///
+/// # Safety
+///
+/// As for `InFlightContextObjects::publish`: the caller is core `core`'s own
+/// kernel entry (or a test that is the only user of `objects`), and nothing
+/// else uses core `core`'s objects for the duration of the call.
 #[must_use]
-pub fn trap_context_option_to_lean(
-    words: Option<&crate::trap::TrapContextWords>,
-) -> crate::lean_runtime::Obj {
-    match words {
-        Some(words) => {
-            let some = crate::lean_runtime::alloc_ctor(1, 1, 0);
-            // SAFETY: `some` is a fresh constructor with one object field.
-            unsafe { crate::lean_runtime::ctor_set(some, 0, trap_context_to_lean(words)) };
-            some
-        }
-        None => crate::lean_runtime::boxed(0),
-    }
-}
-
-/// `ffi_trap_context` over the given slots (the testable form): the context of
-/// the frame published in `slots[core]`, as a Lean `Option RegisterFile`.
-#[must_use]
-pub fn ffi_trap_context_in(
+pub unsafe fn ffi_trap_context_in(
     slots: &crate::trap::InFlightSlots,
+    objects: &crate::trap::InFlightContextObjects,
     core: usize,
 ) -> crate::lean_runtime::Obj {
-    trap_context_option_to_lean(crate::trap::in_flight_context_in(slots, core).as_ref())
+    crate::trap::in_flight_context_in(slots, core)
+        // SAFETY: forwarded from this function's contract.
+        .and_then(|words| unsafe { objects.publish(core, &words) })
+        .unwrap_or(crate::lean_runtime::boxed(0))
 }
 
 /// **WS-BP BP7.3**: the executing PE's in-flight context, in one call — Lean
-/// `some` an `SeLe4n.RegisterFile` inside a trap handler
+/// `some` a `Kernel.Architecture.InFlightContext` inside a trap handler
 /// (`trap::InFlightFrame`), `none` otherwise.  The Lean entry saves the
-/// outgoing context only from a published frame.
+/// outgoing context only from a published frame.  **WS-CV CV3.1**: the `some`
+/// and the context are the core's persistent objects, so nothing is allocated.
 ///
 /// Lean binding: `SeLe4n.Platform.FFI.ffiTrapContext`.
 #[no_mangle]
 pub extern "C" fn ffi_trap_context() -> crate::lean_runtime::Obj {
     let core = crate::per_cpu::current_core_id_from_tpidr() as usize;
-    ffi_trap_context_in(crate::trap::in_flight_frames(), core)
+    // SAFETY: this is core `core`'s own kernel entry — the core reads its own
+    // id — running with IRQs masked and never nested, so nothing else uses the
+    // core's objects during the call.
+    unsafe {
+        ffi_trap_context_in(
+            crate::trap::in_flight_frames(),
+            crate::trap::in_flight_context_objects(),
+            core,
+        )
+    }
 }
 
 /// `ffi_restore_stage_context` over the given staging buffers (the testable
@@ -2279,40 +2284,89 @@ mod tests {
         assert!(read_user_words_lean(ram_page + 4, 1, covered).is_none());
     }
 
+    /// `ffi_trap_context`'s `Option` encoding, which the compiled Lean
+    /// switches on with `lean_obj_tag`: no published frame is `none`
+    /// (`lean_box(0)`); a published frame is `some` — tag `1`, one object
+    /// field — holding the frame's 35 words in layout order, each at its
+    /// own offset (every register of the frame is distinct, so a word read
+    /// from the wrong position fails).  **WS-CV CV3.1**: both objects are the
+    /// core's persistent ones — non-heap headers (`m_rc = 0`, `m_cs_sz` 288
+    /// and 16), unchanged by `lean_dec`, the same two objects on every trap,
+    /// and no allocation made (the monotone counter, which an object
+    /// allocated and freed inside the call would still advance).
     #[test]
-    fn ffi_trap_context_encodes_the_published_frame_as_a_lean_option() {
+    fn ffi_trap_context_answers_the_cores_persistent_objects() {
         let slots = fresh_slots();
-        let none = ffi_trap_context_in(&slots, 1);
+        let objects = crate::trap::InFlightContextObjects::new();
+        // SAFETY: this test is the only user of `objects`.
+        let none = unsafe { ffi_trap_context_in(&slots, &objects, 1) };
         assert!(crate::lean_runtime::is_scalar(none));
         assert_eq!(none, crate::lean_runtime::boxed(0));
 
         let mut frame = distinct_frame();
         let expected = crate::trap::trap_frame_context(&frame);
+        let before = crate::lean_runtime::allocations();
         let some = {
             let _g = crate::trap::InFlightFrame::publish_in(&slots, 1, &mut frame);
-            ffi_trap_context_in(&slots, 1)
+            // SAFETY: this test is the only user of `objects`.
+            unsafe { ffi_trap_context_in(&slots, &objects, 1) }
         };
+        assert_eq!(
+            crate::lean_runtime::allocations(),
+            before,
+            "nothing allocated"
+        );
         assert!(!crate::lean_runtime::is_scalar(some));
-        // SAFETY: `some` is the live `Option` cell just built.
+        let context = objects.context_object(1).expect("core 1 has an object");
+        // SAFETY: `some` and `context` are core 1's persistent objects.
         unsafe {
             let header = crate::lean_runtime::header_ref(some);
-            assert_eq!((header.tag, header.other), (1, 1));
-            let context = crate::lean_runtime::ctor_get(some, 0);
-            assert_eq!(trap_context_of_lean(context), Some(expected));
+            assert_eq!(
+                (header.rc, header.cs_sz, header.tag, header.other),
+                (0, 16, 1, 1)
+            );
+            assert_eq!(crate::lean_runtime::ctor_get(some, 0), context);
+            let header = crate::lean_runtime::header_ref(context);
+            assert_eq!(
+                (header.rc, header.cs_sz, header.tag, header.other),
+                (0, 288, 0, 0)
+            );
+            let words: crate::trap::TrapContextWords =
+                core::array::from_fn(|i| crate::lean_runtime::ctor_get_u64(context, 8 * i));
+            assert_eq!(words, expected);
             assert_eq!(crate::lean_runtime::ctor_get_u64(context, 8 * 7), 0x1007);
-            assert_eq!(crate::lean_runtime::ctor_get_u64(context, 8 * 31), 0x101F);
-            assert_eq!(crate::lean_runtime::ctor_get_u64(context, 8 * 32), 0x1020);
             assert_eq!(
                 crate::lean_runtime::ctor_get_u64(context, 8 * 33),
                 0x2000_0000
             );
-            assert_eq!(crate::lean_runtime::ctor_get_u64(context, 8 * 34), 0x1022);
+            // Persistence: the compiled Lean's `lean_dec` leaves both alone.
             crate::lean_runtime::dec(some);
+            crate::lean_runtime::dec(context);
+            assert_eq!(crate::lean_runtime::header_ref(some).rc, 0);
+            assert_eq!(crate::lean_runtime::header_ref(context).rc, 0);
         }
-        // Another core's slot is not this core's.
+
+        // The next trap on the core rewrites the same object.
+        let mut frame2 = distinct_frame();
+        frame2.gprs[7] = 0x7777;
+        let again = {
+            let _g = crate::trap::InFlightFrame::publish_in(&slots, 1, &mut frame2);
+            // SAFETY: this test is the only user of `objects`.
+            unsafe { ffi_trap_context_in(&slots, &objects, 1) }
+        };
+        assert_eq!(again, some);
+        // SAFETY: `context` is core 1's persistent object.
+        let rewritten = unsafe { crate::lean_runtime::ctor_get_u64(context, 8 * 7) };
+        assert_eq!(rewritten, 0x7777);
+
+        // Another core's slot and objects are not this core's.
+        // SAFETY: this test is the only user of `objects`.
+        let other = unsafe { ffi_trap_context_in(&slots, &objects, 0) };
+        assert_eq!(other, crate::lean_runtime::boxed(0));
+        assert_ne!(objects.context_object(0), Some(context));
         assert_eq!(
-            ffi_trap_context_in(&slots, 0),
-            crate::lean_runtime::boxed(0)
+            objects.context_object(crate::svc_dispatch::RETURN_FRAME_CORES),
+            None
         );
     }
 

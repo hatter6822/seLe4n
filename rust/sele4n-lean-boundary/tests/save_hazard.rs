@@ -7,21 +7,15 @@
 
 //! **The two-trap hazard, through the compiled save path.**
 //!
-//! Trap 1's context is saved into a thread by the syscall entry's save
-//! (`saveCapturedSyscallFrame`); trap 2's context is a second object; the
-//! thread's saved context is read back.
+//! Trap 1's in-flight context is saved into a thread by the syscall entry's
+//! save (`saveCapturedSyscallFrame`); trap 2's words are then written into the
+//! **same object**, as the HAL rewrites a core's persistent in-flight object on
+//! its next trap (WS-CV CV3.1); the thread's saved context is read back.
 //!
-//! Until WS-CV CV1.1 the saved register file kept the general-purpose
-//! registers as a closure over the trap object, so a per-core object reused
-//! for trap 2 would have rewritten trap 1's saved registers.  CV1.1 made the
-//! save a copy into a new 35-word file; CV2.1 made the boundary type that file
-//! itself, so the save stores the object it is handed — sound because the HAL
-//! builds a fresh object per trap and keeps no reference (`ffi_trap_context`).
-//! This test therefore pins the save over fresh objects: trap 1's words are
-//! saved word for word, and trap 2's object reaches none of them.  CV3.1 is
-//! the row that reuses one object per core, together with the copy that makes
-//! reuse sound (`snapshotInto`), and CV3.4 restores the write-into-the-same-
-//! object half of this test over it.
+//! The save must copy the words (`InFlightContext.snapshotInto`), never keep
+//! the object: a save that stored it would show trap 2's words here.  Until
+//! WS-CV CV1.1 the saved register file kept the general-purpose registers as a
+//! closure over the trap object, which is the same failure.
 
 #![cfg(sele4n_lean_host_archive)]
 
@@ -45,8 +39,8 @@ fn trap2_words() -> Vec<u64> {
 }
 
 #[test]
-fn a_saved_context_is_the_trap_it_was_saved_from() {
-    let trap1 = Object::trap_context_of_seed(TRAP1_SEED);
+fn a_saved_context_survives_its_object_being_rewritten() {
+    let trap1 = Object::in_flight_context_of_seed(TRAP1_SEED);
     let trap1_words: Vec<u64> = (0..TRAP_CONTEXT_WORDS)
         .map(|i| trap1.u64_at(8 * i))
         .collect();
@@ -74,17 +68,15 @@ fn a_saved_context_is_the_trap_it_was_saved_from() {
         "nothing saved yet"
     );
     let st = st.save_captured_syscall_frame(&trap1);
-    drop(trap1);
 
-    // Trap 2 arrives in a fresh object, as `ffi_trap_context` builds one.
-    let trap2 = Object::trap_context_of_seed(0);
+    // Trap 2 arrives in the same object, as the core's next trap writes it.
     for (i, w) in trap2_expected.iter().enumerate() {
-        trap2.set_u64_at(8 * i, *w);
+        trap1.set_u64_at(8 * i, *w);
     }
 
     for (i, (t1, t2)) in trap1_words.iter().zip(&trap2_expected).enumerate() {
         let saved = st.saved_context_word(TID, i as u64);
-        assert_eq!(trap2.u64_at(8 * i), *t2, "trap 2's word {i} is written");
+        assert_eq!(trap1.u64_at(8 * i), *t2, "trap 2's word {i} is written");
         assert_eq!(saved, *t1, "word {i} is trap 1's, saved word for word");
     }
 }

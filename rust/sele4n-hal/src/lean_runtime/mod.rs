@@ -48,6 +48,12 @@
 
 mod mem;
 
+/// Successful allocations in this test thread's heap so far — the monotone
+/// counter a check that an operation allocates nothing reads (an object
+/// allocated and freed inside the operation still advances it).
+#[cfg(test)]
+pub use mem::allocations;
+
 pub mod apply;
 pub mod array;
 pub mod io;

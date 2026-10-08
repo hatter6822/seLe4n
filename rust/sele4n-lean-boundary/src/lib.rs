@@ -122,6 +122,22 @@ pub mod lean {
         fn sele4n_probe_trap_context_of_seed(seed: u64) -> RawObj;
         /// # Safety
         ///
+        /// The module must be initialised; the object answered is owned by
+        /// the caller.
+        fn sele4n_probe_in_flight_context_of_seed(seed: u64) -> RawObj;
+        /// # Safety
+        ///
+        /// `c` must be an owned reference to a live `InFlightContext` and `rf`
+        /// to a live `RegisterFile`, both consumed; the file answered is owned
+        /// by the caller.
+        fn sele4n_probe_snapshot_into(c: RawObj, rf: RawObj) -> RawObj;
+        /// # Safety
+        ///
+        /// `c` must be an owned reference to a live `InFlightContext`,
+        /// consumed; the file answered is owned by the caller.
+        fn sele4n_probe_snapshot(c: RawObj) -> RawObj;
+        /// # Safety
+        ///
         /// `c` must be an owned reference to a live `Option RegisterFile` —
         /// the boxed scalar `0` or a tag-1 cell holding a `RegisterFile` —
         /// which the probe consumes.
@@ -149,8 +165,8 @@ pub mod lean {
         /// # Safety
         ///
         /// `st` must be an owned reference to a live `SystemState` and `c` to
-        /// a live `RegisterFile`, both consumed; the state answered is owned
-        /// by the caller.
+        /// a live `InFlightContext`, both consumed; the state answered is
+        /// owned by the caller.
         fn sele4n_probe_save_captured_syscall_frame(st: RawObj, c: RawObj) -> RawObj;
         /// # Safety
         ///
@@ -324,6 +340,40 @@ pub mod lean {
             initialize();
             // SAFETY: an owned object is answered.
             Self(unsafe { sele4n_probe_trap_context_of_seed(seed) })
+        }
+
+        /// An in-flight context built by the Lean side: word `i` is
+        /// `seed + i · 0x0101` (`inFlightContextOfSeed`).
+        #[must_use]
+        pub fn in_flight_context_of_seed(seed: u64) -> Self {
+            initialize();
+            // SAFETY: an owned object is answered.
+            Self(unsafe { sele4n_probe_in_flight_context_of_seed(seed) })
+        }
+
+        /// `InFlightContext.snapshotInto self dest`: `self`'s words written
+        /// into `dest`, which is consumed — in `dest`'s own object when this
+        /// is its only reference.
+        #[must_use]
+        pub fn snapshot_into(&self, dest: Object) -> Self {
+            // SAFETY: the probe consumes both references and answers an owned
+            // file.
+            Self(unsafe { sele4n_probe_snapshot_into(self.handed_over(), dest.into_raw()) })
+        }
+
+        /// `InFlightContext.snapshot self`: `self`'s words as a register file.
+        #[must_use]
+        pub fn snapshot(&self) -> Self {
+            // SAFETY: the probe consumes the reference and answers an owned
+            // file.
+            Self(unsafe { sele4n_probe_snapshot(self.handed_over()) })
+        }
+
+        /// The object's address, to tell whether two references, held at
+        /// different times, name one object.
+        #[must_use]
+        pub fn addr(&self) -> usize {
+            self.0 as usize
         }
 
         /// Word `i` of an `Option RegisterFile`, or every bit set for `none`.

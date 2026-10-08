@@ -1,3 +1,41 @@
+## v0.36.74 — WS-CV CV3: each core's trap context is a persistent object, saved and staged in place: 13 → 9 heap allocations per signal round trip
+
+**The continuing `NotificationSignal` round trip allocates 9 times, down from
+13**, read on a fresh archive by the `heap-allocations-per-syscall` exerciser
+(second round trip; the first reads 14).
+
+- **The in-flight context (CV3.1).**  `ffiTrapContext` answers the executing
+  core's persistent `Architecture.InFlightContext` and its persistent `some`
+  (`trap::InFlightContextObjects`: non-heap headers, `m_rc = 0`, rewritten by
+  the core's next trap), so handing a trap's context over allocates nothing.
+  The new type has the register file's 35 fields and no field of the state
+  has it, so the state cannot keep the object: the save copies its words
+  (`InFlightContext.snapshotInto`, proven equal to `snapshot`).
+- **The save and the stage in place (CV4.4's save-and-stage half, by a
+  different construction).**  The TCB's context and the core's bank each keep
+  a file of their own, written in its slot (`modifyObject`,
+  `MachineState.modifyRegsOnCore`), so neither is shared with the other and
+  both are written in place on save and on stage.  `saveCapturedFrameImpl`
+  and `stageCurrentCallerReturn` are proven equal to the specified save and
+  stage (`@[csimp]`); the pointer-equality staging of `v0.36.73` is retired.
+- **Cells the persistent object exposed.**  The entry's `Except` around the
+  context, the overflow read's `Except` and the record of the committed
+  current thread had each reused the fresh trap object's cell; each is now
+  matched where it is built (`@[inline]`), so none is allocated.
+- **Tests (CV3.2–CV3.4).**  HAL unit test: both objects' headers, persistence
+  under `lean_dec`, the same object on the next trap, and the monotone
+  allocation counter unchanged.  `InFlightContextObjects::publish` and
+  `ffi_trap_context_in` are `unsafe fn`s whose contract is that only core
+  `core`'s own, non-nesting entry uses its objects during the call; the
+  `Sync` cells are sound only under it.  Boundary tests: the compiled `snapshotInto`
+  writes an owned destination in place and copies a shared one, `snapshot`
+  answers a new object, and the save-hazard test's write-into-the-same-object
+  half is restored (`a_saved_context_survives_its_object_being_rewritten`).
+- **Plan.**  The by-address acceptance in `trap_context_of_lean` is not built:
+  the restore takes a `RegisterFile`, which the in-flight object is not.
+
+Refs: docs/planning/CONTEXT_BY_VALUE_PLAN.md, docs/planning/ZERO_ALLOCATION_SYSCALL_PLAN.md
+
 ## v0.36.73 — WS-ZA ZA1 and the signal path's ZA2, with WS-CV CV2.1: 118 → 13 heap allocations per signal round trip
 
 **The continuing `NotificationSignal` round trip allocates 13 times, down from

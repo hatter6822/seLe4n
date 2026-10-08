@@ -41,6 +41,7 @@
 /// register. A nested exception (e.g., SError during data-abort handling)
 /// would otherwise mutate the live ESR/FAR before the outer handler reads
 /// them, producing incorrect classification and fault-address reports.
+use core::cell::UnsafeCell;
 use core::sync::atomic::{AtomicBool, AtomicPtr, AtomicU64, AtomicU8, Ordering};
 
 #[repr(C, align(16))]
@@ -182,6 +183,137 @@ pub fn in_flight_context_in(slots: &InFlightSlots, core: usize) -> Option<TrapCo
     // `core` writes slot `core`.
     let frame = unsafe { &*ptr };
     Some(trap_frame_context(frame))
+}
+
+/// **WS-CV CV3.1**: one core's in-flight context as a Lean object — the
+/// header and the thirty-five words of a `Kernel.Architecture.InFlightContext`
+/// (tag `0`, no object fields, `8 · 35` scalar bytes, word `i` at `8 · i`).
+#[repr(C, align(8))]
+struct InFlightContextCell {
+    header: crate::lean_runtime::LeanObject,
+    words: TrapContextWords,
+}
+
+/// One core's `some` around its context object: tag `1`, one object field.
+#[repr(C, align(8))]
+struct InFlightSomeCell {
+    header: crate::lean_runtime::LeanObject,
+    context: crate::lean_runtime::Obj,
+}
+
+/// **WS-CV CV3.1: each core's persistent in-flight context and the `some`
+/// around it**, the objects `ffi::ffi_trap_context` answers, so a trap hands
+/// its context to the Lean kernel without allocating.
+///
+/// Both live outside the heap with `lean_set_non_heap_header`'s header
+/// (`lean.h` 4.28): `m_rc = 0`, so `lean_inc` and `lean_dec` leave them alone
+/// and `lean_is_exclusive` is false, so compiled Lean never frees them or
+/// writes into them in place; and `m_cs_sz` the object's byte size, which a
+/// non-heap object carries there because no allocator page records it — 288
+/// for the context, 16 for the `some`.
+///
+/// Core `c`'s objects are written only by core `c`, in `publish`, which its
+/// Lean entry calls once (`ffiTrapContext`) before reading them; Lean entries
+/// on one core never nest — an exception taken from EL1 halts before any entry
+/// runs (`halt_if_kernel_origin`), handlers run with IRQs masked, and the
+/// kernel-entry lock is not reentrant — so the object is never rewritten while
+/// an entry reads it.  Nothing reads it after its entry returns: the Lean type
+/// keeps it out of the kernel state, whose save copies its words.
+pub struct InFlightContextObjects {
+    contexts: [UnsafeCell<InFlightContextCell>; crate::svc_dispatch::RETURN_FRAME_CORES],
+    somes: [UnsafeCell<InFlightSomeCell>; crate::svc_dispatch::RETURN_FRAME_CORES],
+}
+
+// SAFETY: core `c`'s cells are written and read only by core `c`, inside its
+// own non-nesting kernel entries (the type's documentation); no two cores
+// touch one cell.
+unsafe impl Sync for InFlightContextObjects {}
+
+/// The byte size of a core's context object.
+pub const IN_FLIGHT_CONTEXT_OBJECT_BYTES: usize = core::mem::size_of::<InFlightContextCell>();
+const _: () = assert!(IN_FLIGHT_CONTEXT_OBJECT_BYTES == 288);
+/// The byte size of a core's `some` object.
+pub const IN_FLIGHT_SOME_OBJECT_BYTES: usize = core::mem::size_of::<InFlightSomeCell>();
+const _: () = assert!(IN_FLIGHT_SOME_OBJECT_BYTES == 16);
+
+impl InFlightContextObjects {
+    /// Every core's objects, headers set, words zero.
+    #[must_use]
+    pub const fn new() -> Self {
+        InFlightContextObjects {
+            contexts: [const {
+                UnsafeCell::new(InFlightContextCell {
+                    header: crate::lean_runtime::LeanObject {
+                        rc: 0,
+                        cs_sz: IN_FLIGHT_CONTEXT_OBJECT_BYTES as u16,
+                        other: 0,
+                        tag: 0,
+                    },
+                    words: [0; TRAP_FRAME_CONTEXT_WORDS as usize],
+                })
+            }; crate::svc_dispatch::RETURN_FRAME_CORES],
+            somes: [const {
+                UnsafeCell::new(InFlightSomeCell {
+                    header: crate::lean_runtime::LeanObject {
+                        rc: 0,
+                        cs_sz: IN_FLIGHT_SOME_OBJECT_BYTES as u16,
+                        other: 1,
+                        tag: 1,
+                    },
+                    context: core::ptr::null_mut(),
+                })
+            }; crate::svc_dispatch::RETURN_FRAME_CORES],
+        }
+    }
+
+    /// Core `core`'s context object, or `None` past the last core.
+    #[must_use]
+    pub fn context_object(&self, core: usize) -> Option<crate::lean_runtime::Obj> {
+        Some(self.contexts.get(core)?.get().cast())
+    }
+
+    /// Write `words` into core `core`'s context object and answer the core's
+    /// `some` around it — a Lean `Option InFlightContext` — or `None` past the
+    /// last core.  Allocates nothing.
+    ///
+    /// # Safety
+    ///
+    /// The caller is core `core`'s own kernel entry (or a test that is the
+    /// only user of `self`), and nothing reads or writes core `core`'s objects
+    /// for the duration of the call: two concurrent calls for one core would
+    /// race on its cells.  The trap path meets this because an entry runs
+    /// only on its own core, with IRQs masked, and does not nest.
+    pub unsafe fn publish(
+        &self,
+        core: usize,
+        words: &TrapContextWords,
+    ) -> Option<crate::lean_runtime::Obj> {
+        let context = self.contexts.get(core)?.get();
+        let some = self.somes.get(core)?.get();
+        // SAFETY: the caller is the only user of core `core`'s cells for the
+        // call (this function's contract); the pointers come from `self`'s
+        // live cells.
+        unsafe {
+            (*context).words = *words;
+            (*some).context = context.cast();
+        }
+        Some(some.cast())
+    }
+}
+
+impl Default for InFlightContextObjects {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+/// Every core's in-flight context objects.
+static IN_FLIGHT_CONTEXT_OBJECTS: InFlightContextObjects = InFlightContextObjects::new();
+
+/// The per-core in-flight context objects, for `ffi::ffi_trap_context`.
+#[must_use]
+pub fn in_flight_context_objects() -> &'static InFlightContextObjects {
+    &IN_FLIGHT_CONTEXT_OBJECTS
 }
 
 /// The slots every handler publishes into, for the FFI entry that reads the

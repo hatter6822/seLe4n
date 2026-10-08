@@ -529,7 +529,7 @@ core for, and the core it yields is the one the verified step used. -/
 raw id names — nothing when the id names no core, exactly as the verified steps
 refuse it. -/
 def saveCapturedTrapFrameAt (st : SeLe4n.Model.SystemState) (coreId : UInt64)
-    (frame : Option SeLe4n.RegisterFile) : SeLe4n.Model.SystemState :=
+    (frame : Option Architecture.InFlightContext) : SeLe4n.Model.SystemState :=
   match coreIdOfUInt64? coreId with
   | some c => Architecture.saveCapturedTrapFrame st c frame
   | none => st
@@ -538,7 +538,7 @@ def saveCapturedTrapFrameAt (st : SeLe4n.Model.SystemState) (coreId : UInt64)
 exception is an `SVC` — a vacated core's frame is rewound to the `SVC`
 (`Architecture.saveCapturedSyscallFrame`), so the resident thread re-issues it. -/
 def saveCapturedSyscallFrameAt (st : SeLe4n.Model.SystemState) (coreId : UInt64)
-    (frame : Option SeLe4n.RegisterFile) : SeLe4n.Model.SystemState :=
+    (frame : Option Architecture.InFlightContext) : SeLe4n.Model.SystemState :=
   match coreIdOfUInt64? coreId with
   | some c => Architecture.saveCapturedSyscallFrame st c frame
   | none => st
@@ -616,8 +616,11 @@ id anywhere near `2 ^ 64 - 1`.  It is defence in depth against a corrupted
 committed state, and defence in depth that throws its verdict away is not
 defence at all.  Halting the core instead — the other fail-closed answer — is an
 SM10.1 decision, because that is where the mirror is *read*; it is registered
-rather than pre-empted here. -/
-def recordCommittedCurrentThreadHw
+rather than pre-empted here.
+
+Inlined, so an entry's `some (c, cur?)` is matched where it is built and never
+allocated (WS-ZA). -/
+@[inline] def recordCommittedCurrentThreadHw
     (r : Option (CoreId × Option SeLe4n.ThreadId)) : BaseIO Unit :=
   match r with
   | none => pure ()
