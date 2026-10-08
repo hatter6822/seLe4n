@@ -1288,6 +1288,17 @@ theorem word_writeReg (rf : RegisterFile) (r : RegName) (v : UInt64) (i : Nat) :
       unfold Kernel.Architecture.trapFrameWordCount at hi; omega
     rw [RegisterFile.word_of_ge _ i hi, if_neg hr, RegisterFile.word_of_ge _ i hi]
 
+/-- Writing a register the value it already holds is the identity (WS-ZA). -/
+theorem writeReg_of_word_eq (rf : RegisterFile) (r : RegName) (v : UInt64)
+    (h : rf.word r.val = v) : writeReg rf r v = rf := by
+  rw [writeReg_eq_ofWords]
+  conv => rhs; rw [← RegisterFile.ofWords_word rf]
+  apply RegisterFile.ofWords_congr
+  intro i _
+  split
+  · next hc => rw [hc.1, h]
+  · rfl
+
 /-- A write to the zero register, or past it, changes nothing. -/
 theorem writeReg_of_ge (rf : RegisterFile) (r : RegName) (v : UInt64) (h : ¬ r.val < 31) :
     writeReg rf r v = rf := by

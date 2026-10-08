@@ -1930,6 +1930,80 @@ def writeFfiRegistersToTcb
     let rf := writeReg rf layout.syscallNumReg syscallId.toUInt64
     { tcb with registerContext := rf }
 
+/-- WS-ZA: the argument spill as a TCB update — `writeFfiRegistersToTcb`'s
+function, named so its compiled form can apply it without calling the
+definition it replaces. -/
+def ffiRegisterSpill (syscallId : UInt32) (x0 x1 x2 x3 x4 x5 : UInt64) (tcb : TCB) : TCB :=
+  let layout := SeLe4n.arm64DefaultLayout
+  let rf := tcb.registerContext
+  let rf := writeReg rf layout.capPtrReg     x0
+  let rf := writeReg rf layout.msgInfoReg    x1
+  let rf := writeReg rf ⟨2⟩                  x2
+  let rf := writeReg rf ⟨3⟩                  x3
+  let rf := writeReg rf ⟨4⟩                  x4
+  let rf := writeReg rf ⟨5⟩                  x5
+  let rf := writeReg rf layout.syscallNumReg syscallId.toUInt64
+  { tcb with registerContext := rf }
+
+theorem writeFfiRegistersToTcb_eq_updateTcb (st : SystemState) (tid : SeLe4n.ThreadId)
+    (syscallId : UInt32) (x0 x1 x2 x3 x4 x5 : UInt64) :
+    writeFfiRegistersToTcb st tid syscallId x0 x1 x2 x3 x4 x5 =
+      st.updateTcb tid (ffiRegisterSpill syscallId x0 x1 x2 x3 x4 x5) := rfl
+
+/-- WS-ZA: the register file already holds the spill — `x0`–`x5` and the
+syscall number in `x7`, read by field. -/
+@[inline] def ffiRegistersHeld (rf : SeLe4n.RegisterFile) (syscallId : UInt32)
+    (x0 x1 x2 x3 x4 x5 : UInt64) : Bool :=
+  rf.x0 == x0 && rf.x1 == x1 && rf.x2 == x2 && rf.x3 == x3 && rf.x4 == x4 &&
+    rf.x5 == x5 && rf.x7 == syscallId.toUInt64
+
+/-- A spill the context already holds leaves the TCB as it is. -/
+theorem ffiRegisterSpill_of_held (syscallId : UInt32) (x0 x1 x2 x3 x4 x5 : UInt64)
+    (tcb : TCB) (h : ffiRegistersHeld tcb.registerContext syscallId x0 x1 x2 x3 x4 x5 = true) :
+    ffiRegisterSpill syscallId x0 x1 x2 x3 x4 x5 tcb = tcb := by
+  simp only [ffiRegistersHeld, Bool.and_eq_true, beq_iff_eq] at h
+  obtain ⟨⟨⟨⟨⟨⟨h0, h1⟩, h2⟩, h3⟩, h4⟩, h5⟩, h7⟩ := h
+  have hw : ∀ (rf : SeLe4n.RegisterFile) (r : RegName) (v : UInt64),
+      rf.word r.val = v → writeReg rf r v = rf := writeReg_of_word_eq
+  unfold ffiRegisterSpill
+  dsimp only
+  rw [hw _ SeLe4n.arm64DefaultLayout.capPtrReg _ (by exact h0),
+    hw _ SeLe4n.arm64DefaultLayout.msgInfoReg _ (by exact h1), hw _ ⟨2⟩ _ (by exact h2),
+    hw _ ⟨3⟩ _ (by exact h3), hw _ ⟨4⟩ _ (by exact h4), hw _ ⟨5⟩ _ (by exact h5),
+    hw _ SeLe4n.arm64DefaultLayout.syscallNumReg _ (by exact h7)]
+
+/-- WS-ZA: the compiled `writeFfiRegistersToTcb`.  Since every entry saves
+the whole trapped frame first, the thread's context already holds the words
+the spill writes, and the spill is then the state itself (when the object
+table is below its resize threshold, where the insert it specifies is the
+identity): no register file is copied and no slot rewritten.  Otherwise the
+spill runs as specified. -/
+def writeFfiRegistersToTcbImpl (st : SystemState) (tid : SeLe4n.ThreadId)
+    (syscallId : UInt32) (x0 x1 x2 x3 x4 x5 : UInt64) : SystemState :=
+  match st.getTcb? tid with
+  | some t =>
+    if !(st.objects.size * 4 ≥ st.objects.capacity * 3) &&
+        ffiRegistersHeld t.registerContext syscallId x0 x1 x2 x3 x4 x5 then st
+    else st.updateTcb tid (ffiRegisterSpill syscallId x0 x1 x2 x3 x4 x5)
+  | none => st.updateTcb tid (ffiRegisterSpill syscallId x0 x1 x2 x3 x4 x5)
+
+@[csimp] theorem writeFfiRegistersToTcb_eq_impl :
+    @writeFfiRegistersToTcb = @writeFfiRegistersToTcbImpl := by
+  funext st tid syscallId x0 x1 x2 x3 x4 x5
+  rw [writeFfiRegistersToTcb_eq_updateTcb]
+  unfold writeFfiRegistersToTcbImpl
+  split
+  · next t hx =>
+    split
+    · next hc =>
+      simp only [Bool.and_eq_true, Bool.not_eq_true', decide_eq_false_iff_not] at hc
+      have hObj : st.objects.get? tid.toObjId = some (.tcb t) :=
+        (SystemState.getTcb?_eq_some_iff st tid t).mp hx
+      rw [SystemState.updateTcb_eq_of_some hx, ffiRegisterSpill_of_held _ _ _ _ _ _ _ t hc.2,
+        SeLe4n.Kernel.RobinHood.RHTable.insert_eq_self_of_get? _ _ _ hc.1 hObj]
+    · rfl
+  · rfl
+
 /-- WS-RC R2.B.1 helper: Read the syscall return value from a thread's
     `x0` register, per AAPCS64.
 

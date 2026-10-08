@@ -134,6 +134,30 @@ def saveCapturedSyscallFrame (st : SystemState) (c : CoreId) :
   | none => st
   | some rf => saveVacatedFrameOnCore (saveTrapFrameOnCore st c rf) c rf (restartAtSvc rf)
 
+/-- WS-ZA: the compiled `saveCapturedSyscallFrame`.  The rewound frame is a
+new register file, so it is built only on the path that records it — a
+vacated core's syscall — rather than on every syscall. -/
+def saveCapturedSyscallFrameImpl (st : SystemState) (c : CoreId) :
+    Option SeLe4n.RegisterFile → SystemState
+  | none => st
+  | some rf =>
+    let st1 := saveTrapFrameOnCore st c rf
+    if trapFromEl0 rf then
+      match st1.scheduler.currentOnCore c, st1.machine.residentOnCore c with
+      | none, some tid =>
+        match st1.getTcb? tid with
+        | some _ => st1.updateTcb tid fun t => { t with registerContext := restartAtSvc rf }
+        | none => st1
+      | _, _ => st1
+    else st1
+
+@[csimp] theorem saveCapturedSyscallFrame_eq_impl :
+    @saveCapturedSyscallFrame = @saveCapturedSyscallFrameImpl := by
+  funext st c f
+  cases f with
+  | none => rfl
+  | some rf => rfl
+
 /-- A core with a current thread saves nothing through the vacated path. -/
 theorem saveVacatedFrameOnCore_of_current (st : SystemState) (c : CoreId)
     (rf saved : SeLe4n.RegisterFile) (tid : SeLe4n.ThreadId)
