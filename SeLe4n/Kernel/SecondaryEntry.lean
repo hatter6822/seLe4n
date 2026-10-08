@@ -153,7 +153,7 @@ ledger in its atomic step and performs it before the restore. -/
 theorem secondaryKernelMain_def (coreId : UInt64) :
     secondaryKernelMain coreId =
       (do
-        let frame ← Platform.FFI.captureTrapFrame
+        let frame ← Platform.FFI.ffiTrapContext
         let record ← Platform.FFI.modifyGetKernelState (fun st =>
           let st' := ((rescheduleBracket coreId).run
             (Concurrency.saveCapturedTrapFrameAt st coreId frame)).2

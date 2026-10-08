@@ -130,12 +130,11 @@ open SeLe4n.Testing
 #check @faultEntryFrame?
 #check @faultEntryFrame?_none
 -- The register file is 35 machine words: the by-byte word read, its
--- round trip through the trap context, and the restore path's identity.
-#check @Kernel.Architecture.TrapContext.wordOfByte
-#check @Kernel.Architecture.TrapContext.word_of_ge
+-- round trip through its words, and the capture's identity.
+#check @SeLe4n.RegisterFile.wordOfByte
+#check @SeLe4n.RegisterFile.word_of_ge
 #check @SeLe4n.RegisterFile.word_ofWords
 #check @SeLe4n.RegisterFile.ofWords_word
-#check @Kernel.Architecture.registerFileOfTrapContext_trapContextOfRegisterFile
 #check @faultEntryStep_not_dispatchable
 -- Audit round: the trap-frame window the entry spills, and the ABI v3 label range.
 #check @SeLe4n.Model.FaultRegisterWindow
@@ -1021,7 +1020,7 @@ private def runEntryWindowChecks : IO Unit := do
 
 /-- A whole trap context whose every word is distinguishable: `xN = 0x100 + N`,
 `sp = 0x7770`, `pc = 0x4_0004`, `pstate = 0x3C0`, `x30 = 0xBEEF`. -/
-private def sampleTrapContext : Kernel.Architecture.TrapContext :=
+private def sampleTrapFrame : SeLe4n.RegisterFile :=
   { x0 := 0x100, x1 := 0x101, x2 := 0x102, x3 := 0x103, x4 := 0x104, x5 := 0x105,
     x6 := 0x106, x7 := 0x107, x8 := 0x108, x9 := 0x109, x10 := 0x10A, x11 := 0x10B,
     x12 := 0x10C, x13 := 0x10D, x14 := 0x10E, x15 := 0x10F, x16 := 0x110, x17 := 0x111,
@@ -1039,29 +1038,29 @@ private def runEntryFrameDecodeChecks : IO Unit := do
     ((faultEntryFrame? esr far none).isNone)
   -- `v0.36.47` audit: the by-index word read is the by-name field, and `0` past
   -- the layout — including indices whose low byte names a register (256, 290),
-  -- which the bound test in `TrapContext.word` must refuse before the byte match.
-  assertBool "TrapContext.word reads x0..x29 by index"
-    ((List.range 30).all fun i => sampleTrapContext.word i == UInt64.ofNat (0x100 + i))
-  assertBool "TrapContext.word reads x30, sp, pc, pstate and tpidr at words 30..34"
-    (sampleTrapContext.word 30 == 0xBEEF && sampleTrapContext.word 31 == 0x7770 &&
-      sampleTrapContext.word 32 == 0x4_0004 && sampleTrapContext.word 33 == 0x3C0 &&
-      sampleTrapContext.word 34 == 0x5555)
-  assertBool "TrapContext.word is 0 past the layout, byte-aliased indices included"
-    (sampleTrapContext.word 35 == 0 && sampleTrapContext.word 256 == 0 &&
-      sampleTrapContext.word 290 == 0)
-  match faultEntryFrame? esr far (some sampleTrapContext) with
+  -- which the bound test in `RegisterFile.word` must refuse before the byte match.
+  assertBool "RegisterFile.word reads x0..x29 by index"
+    ((List.range 30).all fun i => sampleTrapFrame.word i == UInt64.ofNat (0x100 + i))
+  assertBool "RegisterFile.word reads x30, sp, pc, pstate and tpidr at words 30..34"
+    (sampleTrapFrame.word 30 == 0xBEEF && sampleTrapFrame.word 31 == 0x7770 &&
+      sampleTrapFrame.word 32 == 0x4_0004 && sampleTrapFrame.word 33 == 0x3C0 &&
+      sampleTrapFrame.word 34 == 0x5555)
+  assertBool "RegisterFile.word is 0 past the layout, byte-aliased indices included"
+    (sampleTrapFrame.word 35 == 0 && sampleTrapFrame.word 256 == 0 &&
+      sampleTrapFrame.word 290 == 0)
+  match faultEntryFrame? esr far (some sampleTrapFrame) with
   | none => assertBool "a published context decodes" false
   | some (frame, ectx, w) =>
       assertBool "the exception context carries the trap's syndrome words"
         (ectx.esr == esr && ectx.far == far)
       assertBool "…and the context's ELR_EL1 and SPSR_EL1"
-        (ectx.elr == sampleTrapContext.pc && ectx.spsr == sampleTrapContext.pstate)
+        (ectx.elr == sampleTrapFrame.pc && ectx.spsr == sampleTrapFrame.pstate)
       assertBool "the window is x0..x7, in order"
         (w.gprs == #[0x100, 0x101, 0x102, 0x103, 0x104, 0x105, 0x106, 0x107])
       assertBool "the window's sp is SP_EL0 and its lr is x30"
-        (w.sp == sampleTrapContext.sp && w.lr == sampleTrapContext.x30)
+        (w.sp == sampleTrapFrame.sp && w.lr == sampleTrapFrame.x30)
       assertBool "the frame saved into the core and the TCB is the context's register file"
-        (frame == Kernel.Architecture.registerFileOfTrapContext sampleTrapContext)
+        (frame == sampleTrapFrame)
       assertBool "the window agrees with the saved frame word for word"
         ((List.range 8).all (fun i => (w.gprAt i).toNat == (frame.gpr ⟨i⟩).val) &&
           w.sp.toNat == frame.sp.toNat && w.lr.toNat == (frame.gpr ⟨30⟩).val &&

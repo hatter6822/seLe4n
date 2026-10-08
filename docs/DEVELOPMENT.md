@@ -165,7 +165,7 @@ mismatch too.
 **The boundary layout test needs both toolchains.** `rust/sele4n-lean-boundary`
 links the host Lean archives Lake builds (`SeLe4n:static` and the test-only
 probes' `SeLe4nBoundaryProbes:static`) with the toolchain's `libleanshared`,
-and executes that the compiled `Architecture.TrapContext` and `FpContext` place
+and executes that the compiled `SeLe4n.RegisterFile` and `FpContext` place
 field `i` at scalar offset `8 · i` — where `ffi.rs` reads and writes it — in
 both directions, with a distinct value in every word.  `test_rust.sh` excludes
 the crate from its `cargo test --all` (a Lean-less lane) and the Tier 1 lane

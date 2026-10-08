@@ -440,7 +440,7 @@ frame whose word `i` is `0x1000 + i`, taken from EL0 with the carry flag set. -/
 private def trapWords (i : Nat) : UInt64 :=
   if i = Architecture.trapFramePstateWord then 0x2000_0000 else 0x1000 + i.toUInt64
 
-private def savedFrame : RegisterFile := Architecture.registerFileOfTrapWords trapWords
+private def savedFrame : RegisterFile := RegisterFile.ofWords trapWords
 
 /-- The saved context of `tid`, or the default file when it has no TCB. -/
 private def savedContextOf (st : SystemState) (tid : SeLe4n.ThreadId) : RegisterFile :=
@@ -549,7 +549,7 @@ private def runContextRestoreChecks : IO Unit := do
     (switchOkAnd staged bootCoreId tidA (fun st' =>
       match Architecture.restoreTargetOnCore st' bootCoreId with
       | .user c _ _ _ =>
-        let staged := Architecture.trapWordsOfRegisterFile c Architecture.trapFrameTpidrWord
+        let staged := c.word Architecture.trapFrameTpidrWord
         staged == (savedContextOf st' tidA).tpidr && staged != 0x1022
       | _ => false))
   assertBool "the outgoing thread keeps its thread pointer for its next resume"
@@ -559,29 +559,25 @@ private def runContextRestoreChecks : IO Unit := do
   assertBool "a core running nothing resumes the idle loop, not the frame it trapped from"
     (restoresIdle (Architecture.restoreTargetOnCore stPreempt core1))
   assertBool "the trap words of a context read back as that context"
-    (Architecture.registerFileOfTrapWords (Architecture.trapWordsOfRegisterFile savedFrame) == savedFrame)
+    (RegisterFile.ofWords savedFrame.word == savedFrame)
   -- v0.36.47: the boundary representation.  Every register of `savedFrame`
   -- holds a distinct value (word `i` is `0x1000 + i`, `pstate` apart), so a
   -- field read from the wrong position fails here rather than passing by
-  -- coincidence: the context built from the file holds each word at its layout
-  -- index and under its field name, and reads back as the file.
-  let ctx := Architecture.trapContextOfRegisterFile savedFrame
-  assertBool "the context built from a register file holds each layout word at its index"
-    ((List.range Architecture.trapFrameWordCount).all fun i => ctx.word i == trapWords i)
-  assertBool "the context's named fields are the layout's positions"
-    (ctx.x0 == 0x1000 && ctx.x7 == 0x1007 && ctx.x30 == 0x101E && ctx.sp == 0x101F &&
-     ctx.pc == 0x1020 && ctx.pstate == 0x2000_0000 && ctx.tpidr == 0x1022)
-  assertBool "the context read back as a register file is the file it was built from"
-    (Architecture.registerFileOfTrapContext ctx == savedFrame)
-  assertBool "a context read as a register file and rebuilt is the same context"
-    (Architecture.trapContextOfRegisterFile (Architecture.registerFileOfTrapContext ctx) == ctx)
+  -- coincidence: the register file the HAL hands over holds each word at its
+  -- layout index and under its field name.
+  assertBool "the register file holds each layout word at its index"
+    ((List.range Architecture.trapFrameWordCount).all fun i => savedFrame.word i == trapWords i)
+  assertBool "the register file's named fields are the layout's positions"
+    (savedFrame.x0 == 0x1000 && savedFrame.x7 == 0x1007 && savedFrame.x30 == 0x101E &&
+     savedFrame.sp == 0x101F && savedFrame.pc == 0x1020 && savedFrame.pstate == 0x2000_0000 &&
+     savedFrame.tpidr == 0x1022)
   -- A context the HAL would hand over with distinct words everywhere (no two
-  -- registers alike, high bit set) survives the round trip through `Nat`.
-  let handed := Architecture.TrapContext.ofWords fun i => 0x8000_0000_0000_0100 + i.toUInt64 * 0x11
-  assertBool "a handed-over context survives the Nat round trip word for word"
-    (Architecture.trapContextOfRegisterFile (Architecture.registerFileOfTrapContext handed) == handed &&
-     (Architecture.registerFileOfTrapContext handed).pc == ⟨0x8000_0000_0000_0100 + 32 * 0x11⟩ &&
-     (Architecture.registerFileOfTrapContext handed).gpr ⟨31⟩ == ⟨0⟩)
+  -- registers alike, high bit set) survives the round trip through its words.
+  let handed := RegisterFile.ofWords fun i => 0x8000_0000_0000_0100 + i.toUInt64 * 0x11
+  assertBool "a handed-over context survives the word round trip word for word"
+    (RegisterFile.ofWords handed.word == handed &&
+     handed.pc == ⟨0x8000_0000_0000_0100 + 32 * 0x11⟩ &&
+     handed.gpr ⟨31⟩ == ⟨0⟩)
 
 def runSmpSwitchToThreadChecks : IO Unit := do
   IO.println "WS-SM SM5.B — Per-core switchToThread suite"

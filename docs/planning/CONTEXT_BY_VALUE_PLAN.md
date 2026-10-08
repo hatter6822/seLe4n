@@ -2,7 +2,7 @@
 
 > **Workstream**: WS-CV (one fixed-width register context, stored by value,
 > handed over by reference)
-> **Status**: **IN FLIGHT** — registered at `v0.36.50`; CV0 landed at `v0.36.59`, CV1.1 at `v0.36.61`.
+> **Status**: **IN FLIGHT** — registered at `v0.36.50`; CV0 landed at `v0.36.59`, CV1.1 at `v0.36.61`, CV2.1 and CV2.2 at `v0.36.73` (the save stores the object `ffiTrapContext` hands over, which the HAL builds fresh per trap, so the hazard test's write-into-the-same-object half waits for CV3.4).
 > Opens **before WS-CB** (maintainer's decision, 2026-10-05): a representation
 > change is cheapest with the fewest consumers, and WS-CB adds consumers of the
 > saved context (budget-expiry preemption saves and restores it).  Its one
@@ -176,8 +176,9 @@ allocation), and the HAL hands its in-flight context over as a
   unchanged across the call; Rust unit test, CV3.3).
 - The two-trap hazard test (CV0.2, flipped at CV1.1 — earlier than the CV3.4
   the plan scheduled, because the 35-word carrier made the save a copy before
-  the in-flight object existed; CV3.4 retypes the probe and keeps the
-  assertion): two traps on one core,
+  the in-flight object existed; CV2.1 suspends its reuse half, since the save
+  then stores the fresh object the HAL hands over, and CV3.4 restores it over
+  the reused object and `snapshotInto`): two traps on one core,
   the first's context saved into a TCB **through the real save path** —
   `saveCapturedSyscallFrame`, called by a pure `BoundaryProbes` export on a
   probe state, since the host lane links no HAL (§3.6) — the second's words
@@ -542,7 +543,7 @@ sub-task as the definition they cover, or in the lower-numbered row it cites.
 | CV3.1 | `Architecture.InFlightContext`, `snapshotInto` (a full-field update, in place on an exclusively owned destination), the derived `snapshot`, `snapshotInto_word`; `ffiTrapContext : BaseIO (Option InFlightContext)` — the `some` being the core's persistent wrapper (§3.4), so the binding allocates nothing per trap — replacing CV2.1's temporary `Option RegisterFile` binding, with `syscallEntryContextOrFaulted` matching the `Option` directly in place of building an `Except` around the context (its `.ok` in §1.1's table goes); the entry wrappers on it — the wrappers hand the `InFlightContext` to `syscallDispatchCrossCoreBracketedStep`, which is `@[specialize]`d over its step and reads the argument words from the context's fields, so the seventeen `lean_box_uint64` and two closures of §1.1's table, `syscallWindow`'s eight boxes and the entry action's closure (`modifyGetKernelState` specialised over its action the same way) are gone, and the plan decodes the argument words from the object's fields instead of spilling them into the TCB and looking them up; `SystemState` stays free of the type; **in the same row as the HAL objects it binds to**, since the Lean binding promises a persistent wrapper the CV2 HAL does not have and the HAL objects have no Lean reader before the binding: `trap::InFlightContextObjects`, the per-core persistent object and wrapper, initialised at runtime bring-up with the non-heap header of §3.4 (`lean_set_non_heap_header`, the byte size in `m_cs_sz`), `ffi_trap_context` writing the core's object and returning its wrapper without allocating, `trap_context_of_lean` accepting the executing core's object by address (consumes CV2.1) | Lean; `rust/sele4n-hal/src/trap.rs`, `ffi.rs`, `lean_runtime/` |
 | CV3.2 | The cross-language test extended: `snapshotInto` writes the words into the object it is given and `snapshot` yields a different one with the same words; the probes export both | `rust/sele4n-lean-boundary/` |
 | CV3.3 | Rust unit tests: both headers read back through `lean.h`'s accessors (`m_rc = 0`, `m_cs_sz` 288 and 16, the tags and field counts of §3.4); persistence after `lean_dec`, zero allocations across `ffi_trap_context` read from CV0.1's monotone `allocations` counter (§3.4; the live census cannot see an allocation freed before return), by-address acceptance, refusal of another core's object | `ffi.rs` tests |
-| CV3.4 | CV0.2's hazard test (already flipped at CV1.1, `v0.36.61`, when the save became a copy) retyped: the save probe retyped over `InFlightContext` (trap 1's object is the one the probe hands to `saveCapturedSyscallFrame`, whose `snapshotInto` copies its words into the TCB's context), trap 2's words written into the same object, the TCB read back — the saved context is trap 1's, word for word; it is the acceptance test of D3 (§1.1) and fails if the save site skips `snapshotInto` or stores the wrong context (consumes CV0.2, CV3.1) | boundary crate |
+| CV3.4 | CV0.2's hazard test (already flipped at CV1.1, `v0.36.61`, when the save became a copy; its reuse half suspended at CV2.1, `v0.36.73`, when the save began storing the HAL's fresh object) retyped and its reuse half restored: the save probe retyped over `InFlightContext` (trap 1's object is the one the probe hands to `saveCapturedSyscallFrame`, whose `snapshotInto` copies its words into the TCB's context), trap 2's words written into the same object, the TCB read back — the saved context is trap 1's, word for word; it is the acceptance test of D3 (§1.1) and fails if the save site skips `snapshotInto` or stores the wrong context (consumes CV0.2, CV3.1) | boundary crate |
 | CV3.5 | QEMU `virt` four-PE boot (Tier 4 lane) green with the persistent objects: every core traps, snapshots, restores | CI |
 
 ### CV4 — restore borrows, return frame updates in place (§3.5)

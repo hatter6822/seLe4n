@@ -604,21 +604,18 @@ opaque ffiCurrentCoreId : BaseIO UInt64
 -- ============================================================================
 
 /-- **WS-BP BP7.3: the whole context the executing PE trapped with**, handed
-over in one call — `some` the in-flight trap frame's thirty-five context words
-(`Architecture.TrapContext`, the `TrapFrame` layout: `x0`–`x30`, `SP_EL0`,
-`ELR_EL1`, `SPSR_EL1`, `TPIDR_EL0`) when a trap handler published its frame
-(`trap::InFlightFrame`), `none` otherwise.
+over in one call as the model's register file — `some` the in-flight trap
+frame's thirty-five context words (`SeLe4n.RegisterFile`, whose fields are the
+`TrapFrame` layout: `x0`–`x30`, `SP_EL0`, `ELR_EL1`, `SPSR_EL1`, `TPIDR_EL0`)
+when a trap handler published its frame (`trap::InFlightFrame`), `none`
+otherwise (an entry called outside a trap handler).  Read once, before the
+atomic step, so the save and the transition see one frame.  The HAL builds a
+fresh object per call and keeps no reference to it, so the kernel holds the
+only one and a save stores it as it is.
 
 Rust: `ffi_trap_context` in `sele4n-hal/src/ffi.rs`. -/
 @[extern "ffi_trap_context"]
-opaque ffiTrapContext : BaseIO (Option SeLe4n.Kernel.Architecture.TrapContext)
-
-/-- **WS-BP BP7.3: the whole context the executing PE trapped with**, as the
-model's register file, or `none` when no frame is published (an entry called
-outside a trap handler).  Read once, before the atomic step, so the save and
-the transition see one frame. -/
-def captureTrapFrame : BaseIO (Option SeLe4n.RegisterFile) := do
-  return (← ffiTrapContext).map SeLe4n.Kernel.Architecture.registerFileOfTrapContext
+opaque ffiTrapContext : BaseIO (Option SeLe4n.RegisterFile)
 
 -- ============================================================================
 -- WS-SM SM1.I.3 — Per-core IDLE thread FFI declarations
@@ -3343,12 +3340,12 @@ def installThreadTranslation (st : SystemState) (tid : SeLe4n.ThreadId) : BaseIO
   ffiInstallTranslation ops.1 ops.2
 
 /-- **WS-BP BP7.4**: stage the context the executing PE resumes (the
-`captureTrapFrame` layout) in its per-core staging buffer, all thirty-five
+`ffiTrapContext` layout) in its per-core staging buffer, all thirty-five
 words in one call.  Nothing reaches the trap frame until `ffiRestoreCommit`.
 
 Rust: `ffi_restore_stage_context` in `sele4n-hal/src/ffi.rs`. -/
 @[extern "ffi_restore_stage_context"]
-opaque ffiRestoreStageContext : (@& SeLe4n.Kernel.Architecture.TrapContext) → BaseIO Unit
+opaque ffiRestoreStageContext : (@& SeLe4n.RegisterFile) → BaseIO Unit
 
 /-- **WS-BP BP7.4**: commit the staged context into the executing PE's in-flight
     trap frame — kind `0` a thread at EL0 (its processor state sanitised to
@@ -3370,12 +3367,13 @@ opaque ffiRestoreStageContext : (@& SeLe4n.Kernel.Architecture.TrapContext) → 
 opaque ffiRestoreCommit : UInt32 → UInt64 → UInt64 → BaseIO Unit
 
 /-- **WS-BP BP7.4: install what a core resumes** — a thread's context, staged
-    in one call (`Architecture.trapContextOfRegisterFile`), then its translation
+    in one call that borrows the thread's own register file (`ffiRestoreStageContext`,
+    no copy), then its translation
     and the commit; the idle loop under the kernel's translation; or nothing.
     Inlined, so the entry matches the target it computed (WS-ZA ZA3.1). -/
 @[inline] def restoreTrapFrame : SeLe4n.Kernel.Architecture.RestoreTarget → BaseIO Unit
   | .user ctx tableBase asid fpLive => do
-    ffiRestoreStageContext (SeLe4n.Kernel.Architecture.trapContextOfRegisterFile ctx)
+    ffiRestoreStageContext ctx
     ffiRestoreCommit (if fpLive then 2 else 0) tableBase asid
   | .idle => ffiRestoreCommit 1 0 0
   | .none => pure ()

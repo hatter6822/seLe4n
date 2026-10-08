@@ -5,7 +5,7 @@
 # This is free software, and you are welcome to redistribute it
 # under certain conditions. See: https://github.com/hatter6822/seLe4n/blob/main/LICENSE
 #
-# The boundary layout test: the compiled Lean's `Architecture.TrapContext`
+# The boundary layout test: the compiled Lean's `SeLe4n.RegisterFile`
 # (35 `UInt64` fields) and `FpContext` (66) place field `i` at scalar offset
 # `8 · i`, where the HAL reads and writes it — executed across the language
 # boundary, in both directions, by `rust/sele4n-lean-boundary`.

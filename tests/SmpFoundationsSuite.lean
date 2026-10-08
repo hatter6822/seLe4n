@@ -369,7 +369,7 @@ example (coreId : UInt64) :
 example (coreId : UInt64) :
     SeLe4n.Kernel.secondaryKernelMain coreId
       = (do
-          let frame ← SeLe4n.Platform.FFI.captureTrapFrame
+          let frame ← SeLe4n.Platform.FFI.ffiTrapContext
           let record ← SeLe4n.Platform.FFI.modifyGetKernelState (fun st =>
             let st' := ((SeLe4n.Kernel.rescheduleBracket coreId).run
               (SeLe4n.Kernel.Concurrency.saveCapturedTrapFrameAt st coreId frame)).2

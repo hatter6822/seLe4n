@@ -492,7 +492,7 @@ registers, the IPC buffer (`x6`) and the fault window (`pc`, `pstate`, `sp`,
 boxed `UInt64`s.  Inlined, with `BracketSpec.run`, so the executed path is the
 step's own application and the record is never built at runtime. -/
 @[inline] def syscallDispatchBracket (ctx : LabelingContext) (execCore : CoreId)
-    (syscallId : UInt32) (trapped : Architecture.TrapContext) :
+    (syscallId : UInt32) (trapped : SeLe4n.RegisterFile) :
     BracketSpec (Architecture.SyscallOutcome × List (CoreId × SgiKind) × List CoreId ×
       List Architecture.TlbInvalidation × (Nat × Nat) ×
       List Architecture.ICacheInvalidation × List Architecture.PhysicalWrite ×
@@ -511,7 +511,7 @@ step's own application and the record is never built at runtime. -/
 /-- The step the seam commits: the syscall bracket, run.  Kept under the name
 the entry, its definitional marker and the suites call. -/
 @[inline] def syscallDispatchCrossCoreBracketedStep (ctx : LabelingContext)
-    (execCore : CoreId) (syscallId : UInt32) (trapped : Architecture.TrapContext)
+    (execCore : CoreId) (syscallId : UInt32) (trapped : SeLe4n.RegisterFile)
     (st : SystemState) :
     (Architecture.SyscallOutcome × List (CoreId × SgiKind) × List CoreId ×
       List Architecture.TlbInvalidation × (Nat × Nat) ×
@@ -525,7 +525,7 @@ pre-state, declared footprint or not, is what subsumes the old bracket's
 `_undeclared` fallback and `_refused` negative: there is no arm on which the
 seam commits anything but the step. -/
 theorem syscallDispatchCrossCoreBracketedStep_run (ctx : LabelingContext)
-    (execCore : CoreId) (syscallId : UInt32) (trapped : Architecture.TrapContext)
+    (execCore : CoreId) (syscallId : UInt32) (trapped : SeLe4n.RegisterFile)
     (st : SystemState) :
     syscallDispatchCrossCoreBracketedStep ctx execCore syscallId trapped st
       = syscallDispatchCrossCoreStep ctx execCore syscallId
@@ -611,7 +611,7 @@ read, no state committed and no restore staged, on which the trap layer halts
 the PE (`halt_after_delivered_syscall_fault`).  Pure, so the host suite runs the
 arm no hardware path reaches (`tests/SyscallDispatchSuite.lean`). -/
 def syscallEntryContextOrFaulted :
-    Option Architecture.TrapContext → Except UInt64 Architecture.TrapContext
+    Option SeLe4n.RegisterFile → Except UInt64 SeLe4n.RegisterFile
   | some trapped => .ok trapped
   | none => .error Architecture.SyscallOutcome.faulted.tagWord
 
@@ -689,7 +689,7 @@ def syscallDispatchCrossCoreEntry (syscallId : UInt32) : BaseIO UInt64 := do
   let trapped ← match syscallEntryContextOrFaulted trapped with
     | .ok trapped => pure trapped
     | .error tag => return tag
-  let frame := some (Architecture.registerFileOfTrapContext trapped)
+  let frame := some trapped
   let msgInfo := trapped.x1
   -- **WS-BP BP7.8**: the sender's overflow message registers, read from RAM
   -- and synced into the model in the atomic step, so the decode reads what the
@@ -767,7 +767,7 @@ theorem syscallDispatchCrossCoreEntry_def (syscallId : UInt32) :
         let trapped ← match syscallEntryContextOrFaulted trapped with
           | .ok trapped => pure trapped
           | .error tag => return tag
-        let frame := some (Architecture.registerFileOfTrapContext trapped)
+        let frame := some trapped
         let msgInfo := trapped.x1
         let words ← match ← readCallerOverflowWords execCore msgInfo with
           | .ok words => pure words

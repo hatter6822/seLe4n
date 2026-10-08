@@ -13,7 +13,7 @@ name = "SeLe4n"
 
 # The boundary-layout probes (`SeLe4n/Testing/BoundaryProbes.lean`): test-only
 # `@[export]`s that `rust/sele4n-lean-boundary` links, beside `SeLe4n:static`,
-# to execute the compiled layout of `TrapContext` and `FpContext` against the
+# to execute the compiled layout of `RegisterFile` and `FpContext` against the
 # HAL's offsets on the host (`scripts/test_lean_boundary_layout.sh`).  A
 # library of its own so the probes stay outside `SeLe4n.lean`'s import closure
 # — nothing here reaches the kernel's archive.

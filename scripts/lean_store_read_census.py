@@ -110,12 +110,16 @@ _TABLE_OPS = {
     "getByEntry": "read",
     "insert": "write",
     "insertNoResize": "write",
+    "insertNoResizeImpl": "write",
+    "modify": "write",
+    "modifyImpl": "write",
     "erase": "write",
     "set": "write",
     "fold": "sweep",
     "toList": "sweep",
     "filter": "sweep",
     "contains": "other",
+    "holds": "other",
     "empty": "other",
     "ofList": "other",
     "resize": "other",
@@ -1557,6 +1561,12 @@ ACCESSOR_BODIES = {
     ("SeLe4n/Model/State.lean", d): "live object-store write primitive"
     for d in ("storeObject", "storeObjectKindChecked")
 } | {
+    # The compiled forms of the store and the TCB update (`@[csimp]`, each
+    # proven equal to the definition it replaces): the in-place write reads
+    # the stored entry to decide whether the index and type rows change.
+    ("SeLe4n/Model/State.lean", d): "live object-store write primitive, compiled form"
+    for d in ("storeLeavesIndexAndTypes", "storeObjectImpl", "updateTcbImpl")
+} | {
     # The frozen object store -- `FrozenSystemState.objects`, which holds the
     # live `TCB` / `Reply` / `SchedContext` records verbatim.
     ("SeLe4n/Model/FrozenState.lean", "FrozenSystemState." + d):
@@ -1590,6 +1600,10 @@ ACCESSOR_BODIES = {
 WRITE_PRIMITIVE_BODIES = {
     ("SeLe4n/Model/State.lean", "storeObject"):
         "the object-store write: the insert plus its bookkeeping",
+    ("SeLe4n/Model/State.lean", "storeObjectImpl"):
+        "`storeObject`'s compiled form (`@[csimp]`): the insert, and the index and type rows only when they change",
+    ("SeLe4n/Model/State.lean", "modifyObject"):
+        "the in-place object update (`RHTable.modify`) the compiled `updateTcb` and in-place stores run through",
     ("SeLe4n/Model/State.lean", "rewriteObject"):
         "the proof-carrying in-place rewrite: the bare insert under `rewriteAdmissible`",
     ("SeLe4n/Model/Builder.lean", "createObject"):

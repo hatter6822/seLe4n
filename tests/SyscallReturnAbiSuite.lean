@@ -1208,7 +1208,7 @@ restore target, exactly as `syscallDispatchCrossCoreEntry` commits them. -/
 private def entryStepOn (ctx : LabelingContext) (core : SeLe4n.Kernel.Concurrency.CoreId)
     (syscallId : Nat) (msgInfoRaw capPtr x2 : UInt64) (st : SystemState) :=
   SeLe4n.Kernel.syscallDispatchCrossCoreBracketedStep ctx core syscallId.toUInt32
-    { (default : Kernel.Architecture.TrapContext) with x0 := capPtr, x1 := msgInfoRaw, x2 := x2 }
+    { (default : SeLe4n.RegisterFile) with x0 := capPtr, x1 := msgInfoRaw, x2 := x2 }
     st
 
 /-- The end-to-end run: wait on the boot core, declassify-signal from core 1,

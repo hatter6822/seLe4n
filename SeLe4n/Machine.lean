@@ -569,7 +569,7 @@ word.  A structure whose fields are all `UInt64` compiles to a single
 constructor object with no object fields and `8 · 66` scalar bytes, field `i` at
 byte offset `8 · i` — the layout `rust/sele4n-hal/src/ffi.rs` reads and writes
 (`FP_CONTEXT_SCALAR_BYTES`).  The layout is pinned the same way as
-`Architecture.TrapContext`'s: `ofWords` applies the constructor *positionally*
+`RegisterFile`'s: `ofWords` applies the constructor *positionally*
 while `word` reads by field *name*, so `word_ofWords` proves declared position
 `i` is layout word `i`; the HAL refuses an object of any other allocated size;
 and `rust/sele4n-lean-boundary` executes the compiled layout against the

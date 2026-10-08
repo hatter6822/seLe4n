@@ -5180,21 +5180,21 @@ seL4's memory-as-authority kind: `FrameObject` (`base : PAddr`, `isDevice`,
   trap frame for a handler's duration (`trap::InFlightFrame`), and every
   state-committing trap entry — the syscall seam, the fault and unknown-syscall
   entries, the timer tick, the `.reschedule` receiver — reads it
-  (`Platform.FFI.captureTrapFrame`: `x0`–`x30`, `SP_EL0`, `ELR_EL1`, `SPSR_EL1`,
-  and since v0.36.30 `TPIDR_EL0`; since v0.36.47 in one FFI call each way, as
-  the fixed-width `Architecture.TrapContext` — `ffiTrapContext` in,
-  `ffiRestoreStageContext` out — with the Lean-internal encode/decode round
-  trip proved (`TrapContext.word_ofWords`, `TrapContext.ofWords_word`,
-  and `registerFileOfTrapContext_trapContextOfRegisterFile`, both with no
-  hypothesis since WS-CV CV1.1 (`v0.36.61`), `RegisterFile` being the same
-  thirty-five `UInt64` words as the context, so the word bound is the type
-  rather than a carried predicate — agreeing
-  on the thirty-five registers the layout carries; the HAL masks `SPSR_EL1`
+  (`Platform.FFI.ffiTrapContext`: `x0`–`x30`, `SP_EL0`, `ELR_EL1`, `SPSR_EL1`,
+  and since v0.36.30 `TPIDR_EL0`; since v0.36.47 in one FFI call each way,
+  and since WS-CV CV2.1 (`v0.36.73`) as the model's own `SeLe4n.RegisterFile`
+  — `ffiTrapContext` in, a fresh object per trap that the HAL keeps no
+  reference to, saved as it is, and the thread's own file borrowed by
+  `ffiRestoreStageContext` out, so no conversion runs either way — with the Lean-internal encode/decode round trip proved
+  (`RegisterFile.word_ofWords`, `RegisterFile.ofWords_word`, with no
+  hypothesis since WS-CV CV1.1 (`v0.36.61`), the word bound being the type
+  rather than a carried predicate) on the thirty-five registers the layout
+  carries; the HAL masks `SPSR_EL1`
   to the condition flags at the commit, so the cross-language trip is not the
-  identity on `pstate`), the by-index read `TrapContext.word` a bound test
+  identity on `pstate`), the by-index read `RegisterFile.word` a bound test
   and a byte-indexed `match` (`wordOfByte`) the C compiler lowers to a jump
   table rather than a walk of boxed-`Nat` compares, the bracketed syscall
-  step handed the whole `TrapContext` rather than eleven boxed scalars, the
+  step handed the whole register file rather than eleven boxed scalars, the
   layout pinned on the Lean side by the positional `ofWords` against the
   by-name `word` and on the Rust side by `const` assertions and the HAL
   reading the staged object only after the kernel heap reports a live
@@ -5205,7 +5205,7 @@ seL4's memory-as-authority kind: `FrameObject` (`base : PAddr`, `isDevice`,
   catches (`rust/sele4n-lean-boundary`, run by Tier 1 through
   `scripts/test_lean_boundary_layout.sh`: an object built at the HAL's offsets
   with a distinct value in every word is read by the compiled Lean's
-  `TrapContext.word`, and one the compiled Lean built is read back at those
+  `RegisterFile.word`, and one the compiled Lean built is read back at those
   offsets, in a process linking the compiled host archive and the toolchain's
   runtime; swapping two fields together with `word` and `ofWords` fails it);
   the syscall seam
@@ -5317,7 +5317,7 @@ seL4's memory-as-authority kind: `FrameObject` (`base : PAddr`, `isDevice`,
   and a load two where it was 67; the encode/decode round trip is proved
   (`FpContext.ofWords_word`, `FpContext.word_ofWords`,
   `FpContext.ofWords_congr`; `FpContext.default_word` for the fresh thread's
-  all-zero context), the layout is pinned as `TrapContext`'s is (the
+  all-zero context), the layout is pinned as `RegisterFile`'s is (the
   positional `ofWords` against the by-name `word`; `const` assertions on the
   HAL's `FP_CONTEXT_SCALAR_BYTES` of 528 and the exact-size refusal of
   `fp_context_of_lean` at the constructor's 536 bytes, halting every PE on

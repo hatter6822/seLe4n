@@ -84,9 +84,9 @@ const _: () = assert!(core::mem::offset_of!(TrapFrame, tpidr_el0) == 288);
 /// **WS-BP BP7.3: the number of words a thread's context occupies in a trap
 /// frame** — `x0`–`x30`, `SP_EL0`, `ELR_EL1`, `SPSR_EL1`, `TPIDR_EL0`.  The
 /// Lean kernel receives all of them in one call ([`in_flight_context`],
-/// `Architecture.TrapContext`, `trapFrameWordCount`).
+/// `SeLe4n.RegisterFile`, `trapFrameWordCount`).
 pub const TRAP_FRAME_CONTEXT_WORDS: u32 = 35;
-// The Lean `Architecture.TrapContext` has exactly this many `UInt64` fields
+// The Lean `SeLe4n.RegisterFile` has exactly this many `UInt64` fields
 // (`trapFrameWordCount`); the compiler checks the pin, no scanner does.
 const _: () = assert!(TRAP_FRAME_CONTEXT_WORDS == 35);
 

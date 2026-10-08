@@ -495,8 +495,8 @@ private def sd036_entryWithoutContext_faults : IO Unit := do
       | .error tag => tag == faulted && tag == 2
       | .ok _ => false)
     "an entry with no published context must answer the .faulted tag (2)"
-  let c : Kernel.Architecture.TrapContext :=
-    Kernel.Architecture.TrapContext.ofWords fun i => 0x2000 + i.toUInt64
+  let c : SeLe4n.RegisterFile :=
+    SeLe4n.RegisterFile.ofWords fun i => 0x2000 + i.toUInt64
   expect "sd036b_some_is_the_context_itself"
     (match syscallEntryContextOrFaulted (some c) with
       | .ok c' => c' == c && c'.x7 == 0x2007 && c'.tpidr == 0x2022

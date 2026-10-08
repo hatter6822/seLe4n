@@ -10,10 +10,10 @@
 //! `SeLe4n/Testing/BoundaryProbes.lean`, reachable from a Rust test.
 //!
 //! The two contexts that cross the Lean boundary whole — the general-purpose
-//! `Architecture.TrapContext` (35 `UInt64` fields) and the FP/SIMD `FpContext`
+//! `SeLe4n.RegisterFile` (35 `UInt64` fields) and the FP/SIMD `FpContext`
 //! (66) — are read and written by the HAL at scalar offset `8 · i` for field
 //! `i` (`rust/sele4n-hal/src/ffi.rs`, `scalar_words_to_lean` /
-//! `scalar_words_of_lean`).  The Lean proofs (`TrapContext.word_ofWords`,
+//! `scalar_words_of_lean`).  The Lean proofs (`RegisterFile.word_ofWords`,
 //! `FpContext.word_ofWords`) pin that declared position `i` is layout word
 //! `i`, and the HAL's exact-size refusal catches a field added or removed on
 //! one side; neither reaches a same-size permutation applied consistently on
@@ -107,12 +107,12 @@ pub mod lean {
         // SeLe4n/Testing/BoundaryProbes.lean — the compiled Lean.
         /// # Safety
         ///
-        /// `c` must be an owned reference to a live `TrapContext`, which the
+        /// `c` must be an owned reference to a live `RegisterFile`, which the
         /// probe consumes; the module must be initialised.
         fn sele4n_probe_trap_context_word(c: RawObj, i: u64) -> u64;
         /// # Safety
         ///
-        /// `c` must be an owned reference to a live `TrapContext`, consumed;
+        /// `c` must be an owned reference to a live `RegisterFile`, consumed;
         /// the object answered is owned by the caller.
         fn sele4n_probe_trap_context_round_trip(c: RawObj) -> RawObj;
         /// # Safety
@@ -122,8 +122,8 @@ pub mod lean {
         fn sele4n_probe_trap_context_of_seed(seed: u64) -> RawObj;
         /// # Safety
         ///
-        /// `c` must be an owned reference to a live `Option TrapContext` —
-        /// the boxed scalar `0` or a tag-1 cell holding a `TrapContext` —
+        /// `c` must be an owned reference to a live `Option RegisterFile` —
+        /// the boxed scalar `0` or a tag-1 cell holding a `RegisterFile` —
         /// which the probe consumes.
         fn sele4n_probe_option_trap_context_word(c: RawObj, i: u64) -> u64;
         /// # Safety
@@ -149,7 +149,7 @@ pub mod lean {
         /// # Safety
         ///
         /// `st` must be an owned reference to a live `SystemState` and `c` to
-        /// a live `TrapContext`, both consumed; the state answered is owned
+        /// a live `RegisterFile`, both consumed; the state answered is owned
         /// by the caller.
         fn sele4n_probe_save_captured_syscall_frame(st: RawObj, c: RawObj) -> RawObj;
         /// # Safety
@@ -301,14 +301,14 @@ pub mod lean {
             self.0
         }
 
-        /// `TrapContext.word self i`, read by the compiled Lean.
+        /// `RegisterFile.word self i`, read by the compiled Lean.
         #[must_use]
         pub fn trap_context_word(&self, i: u64) -> u64 {
             // SAFETY: the probe consumes the reference handed over.
             unsafe { sele4n_probe_trap_context_word(self.handed_over(), i) }
         }
 
-        /// `trapContextOfRegisterFile (registerFileOfTrapContext self)`, a
+        /// `RegisterFile.ofWords self.word`, a
         /// fresh object the compiled Lean built.
         #[must_use]
         pub fn trap_context_round_trip(self) -> Self {
@@ -317,7 +317,7 @@ pub mod lean {
             Self(unsafe { sele4n_probe_trap_context_round_trip(self.into_raw()) })
         }
 
-        /// `TrapContext.ofWords fun i => seed + i · 0x0101`, built by the
+        /// `RegisterFile.ofWords fun i => seed + i · 0x0101`, built by the
         /// compiled Lean.
         #[must_use]
         pub fn trap_context_of_seed(seed: u64) -> Self {
@@ -326,7 +326,7 @@ pub mod lean {
             Self(unsafe { sele4n_probe_trap_context_of_seed(seed) })
         }
 
-        /// Word `i` of an `Option TrapContext`, or every bit set for `none`.
+        /// Word `i` of an `Option RegisterFile`, or every bit set for `none`.
         #[must_use]
         pub fn option_trap_context_word(&self, i: u64) -> u64 {
             // SAFETY: the probe consumes the reference handed over.

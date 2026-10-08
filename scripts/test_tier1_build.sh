@@ -32,7 +32,7 @@ run_check "BUILD" lake build SeLe4n:static
 run_check "BUILD" "${SCRIPT_DIR}/check_kernel_entry_exports.py" --self-test
 run_check "BUILD" "${SCRIPT_DIR}/check_kernel_entry_exports.py"
 
-# The boundary layout test: the compiled Lean's `TrapContext` and `FpContext`
+# The boundary layout test: the compiled Lean's `RegisterFile` and `FpContext`
 # place field `i` at scalar offset `8 · i`, where the HAL reads and writes it.
 # The proofs pin that declared position `i` is layout word `i` and the HAL
 # refuses an object of any other size; neither reaches a same-size permutation
