@@ -569,7 +569,7 @@ word.  A structure whose fields are all `UInt64` compiles to a single
 constructor object with no object fields and `8 · 66` scalar bytes, field `i` at
 byte offset `8 · i` — the layout `rust/sele4n-hal/src/ffi.rs` reads and writes
 (`FP_CONTEXT_SCALAR_BYTES`).  The layout is pinned the same way as
-`Architecture.TrapContext`'s: `ofWords` applies the constructor *positionally*
+`RegisterFile`'s: `ofWords` applies the constructor *positionally*
 while `word` reads by field *name*, so `word_ofWords` proves declared position
 `i` is layout word `i`; the HAL refuses an object of any other allocated size;
 and `rust/sele4n-lean-boundary` executes the compiled layout against the
@@ -1287,6 +1287,17 @@ theorem word_writeReg (rf : RegisterFile) (r : RegName) (v : UInt64) (i : Nat) :
   · have hr : ¬ (i = r.val ∧ r.val < 31) := by
       unfold Kernel.Architecture.trapFrameWordCount at hi; omega
     rw [RegisterFile.word_of_ge _ i hi, if_neg hr, RegisterFile.word_of_ge _ i hi]
+
+/-- Writing a register the value it already holds is the identity (WS-ZA). -/
+theorem writeReg_of_word_eq (rf : RegisterFile) (r : RegName) (v : UInt64)
+    (h : rf.word r.val = v) : writeReg rf r v = rf := by
+  rw [writeReg_eq_ofWords]
+  conv => rhs; rw [← RegisterFile.ofWords_word rf]
+  apply RegisterFile.ofWords_congr
+  intro i _
+  split
+  · next hc => rw [hc.1, h]
+  · rfl
 
 /-- A write to the zero register, or past it, changes nothing. -/
 theorem writeReg_of_ge (rf : RegisterFile) (r : RegName) (v : UInt64) (h : ¬ r.val < 31) :

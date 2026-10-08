@@ -212,4 +212,38 @@ theorem threadTranslationOperands_cases (st : SystemState) (tid : SeLe4n.ThreadI
     · left; rfl
   · left; rfl
 
+/-- `threadTranslationOperands` in continuation form: the two words go to `k`,
+so a caller builds neither the pair nor its boxed words
+(`threadTranslationOperandsK_eq`).  WS-ZA ZA3.1. -/
+@[inline] def threadTranslationOperandsK {α : Type} (st : SystemState) (tid : SeLe4n.ThreadId)
+    (k : UInt64 → UInt64 → α) : α :=
+  match st.getTcb? tid with
+  | some tcb =>
+    match st.getVSpaceRoot? tcb.vspaceRoot with
+    | some root =>
+      match root.tableBase with
+      | some base =>
+        if root.asid.toNat = 0 then k 0 0
+        else k base.toNat.toUInt64 root.asid.toNat.toUInt64
+      | none => k 0 0
+    | none => k 0 0
+  | none => k 0 0
+
+theorem threadTranslationOperandsK_eq {α : Type} (st : SystemState) (tid : SeLe4n.ThreadId)
+    (k : UInt64 → UInt64 → α) :
+    threadTranslationOperandsK st tid k =
+      k (threadTranslationOperands st tid).1 (threadTranslationOperands st tid).2 := by
+  unfold threadTranslationOperandsK threadTranslationOperands
+  cases st.getTcb? tid with
+  | none => rfl
+  | some tcb =>
+    simp only []
+    cases st.getVSpaceRoot? tcb.vspaceRoot with
+    | none => rfl
+    | some root =>
+      simp only []
+      cases root.tableBase with
+      | none => rfl
+      | some base => by_cases hA : root.asid.toNat = 0 <;> simp [hA]
+
 end SeLe4n.Kernel.Architecture

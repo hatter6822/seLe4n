@@ -4354,7 +4354,7 @@ run_check "INVARIANT" rg -n -U '^  \| Except\.error e =>\n([ \t]*(--[^\n]*)?\n)*
 run_check "INVARIANT" rg -n -U '^  Platform\.FFI\.completeIcacheMaintenance result\.2\.2\.2\.2\.2\.1\n([ \t]*\n)*  Concurrency\.releaseSwitchedFpOwnerOnCore execCore\n([ \t]*\n)*  Platform\.FFI\.restoreTrapFrame result\.2\.2\.2\.2\.2\.2\.2\.1$' SeLe4n/Kernel/SyscallDispatchEntry.lean
 # PR #904 (v0.36.41): the translation rides with the commit, which installs it
 # only once the frame is replaced — never before a commit that may decline.
-run_check "INVARIANT" rg -n -U '^    ffiRestoreStageContext \(SeLe4n\.Kernel\.Architecture\.trapContextOfRegisterFile ctx\)\n    ffiRestoreCommit \(if fpLive then 2 else 0\) tableBase asid$' SeLe4n/Platform/FFI.lean
+run_check "INVARIANT" rg -n -U '^    ffiRestoreStageContext ctx\n    ffiRestoreCommit \(if fpLive then 2 else 0\) tableBase asid$' SeLe4n/Platform/FFI.lean
 run_check "INVARIANT" rg -n '^  \| \.idle => ffiRestoreCommit 1 0 0$' SeLe4n/Platform/FFI.lean
 run_negative_check "INVARIANT" rg -n 'ffiInstallTranslation (tableBase asid|0 0)' SeLe4n/Platform/FFI.lean
 # WS-BP BP7.6: the restore is live — no seam flag gates it, and none of the
@@ -4671,6 +4671,10 @@ run_check "INVARIANT" rg -n -U '^    syscallDispatchCrossCoreBracketedStep ctx e
 # takes whole.  Capture and restore are one call each, not one per word.
 run_check "INVARIANT" rg -n '^    fn lean_syscall_dispatch_cross_core\(syscall_id: u32\) -> u64;$' rust/sele4n-hal/src/svc_dispatch.rs
 run_check "INVARIANT" rg -n '^  let trapped ← Platform\.FFI\.ffiTrapContext$' SeLe4n/Kernel/SyscallDispatchEntry.lean
+# WS-CV CV2.1: the HAL hands the register file over and the restore borrows
+# the thread's own, so no conversion runs either way.
+run_check "INVARIANT" rg -n '^opaque ffiTrapContext : BaseIO \(Option SeLe4n\.RegisterFile\)$' SeLe4n/Platform/FFI.lean
+run_check "INVARIANT" rg -n '^opaque ffiRestoreStageContext : \(@& SeLe4n\.RegisterFile\) → BaseIO Unit$' SeLe4n/Platform/FFI.lean
 run_negative_check "INVARIANT" rg -n 'for i in \[0:SeLe4n\.Kernel\.Architecture\.trapFrameWordCount\]' SeLe4n/Platform/FFI.lean
 # PR #887 review round 3, the review of the round-2 head.  (5) A not-ready
 # core that takes an EL0 abort halts — a frame would be `eret`ed back into the
@@ -8147,7 +8151,6 @@ run_check "INVARIANT" rg -n -F -- 'frame.tpidr_el0 = 0;' rust/sele4n-hal/src/tra
 run_check "INVARIANT" rg -n '^def Kernel\.Architecture\.trapFrameWordCount : Nat := 35$' SeLe4n/Machine.lean
 run_check "INVARIANT" rg -n '^def Kernel\.Architecture\.trapFrameTpidrWord : Nat := 34$' SeLe4n/Machine.lean
 run_check "INVARIANT" rg -n '^  \| 34 => rf\.tpidr$' SeLe4n/Machine.lean
-run_check "INVARIANT" rg -n -U '^@\[inline\] def trapWordsOfRegisterFile \(rf : SeLe4n\.RegisterFile\) \(i : Nat\) : UInt64 :=\n  rf\.word i$' SeLe4n/Kernel/Architecture/ContextRestore.lean
 run_check "INVARIANT" rg -n -U '^  tpidr : UInt64 := 0\n  deriving DecidableEq, Inhabited$' SeLe4n/Machine.lean
 run_check "INVARIANT" rg -n -F -- 'the incoming thread resumes with its own thread pointer, not the outgoing thread' tests/SmpSwitchToThreadSuite.lean
 #

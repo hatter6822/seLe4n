@@ -104,6 +104,12 @@ DECLARED_TAINT_WRITERS = {
     "SeLe4n.Kernel.applyTaintClears",
     "SeLe4n.Kernel.applyOrigination",
     "SeLe4n.Kernel.applySyscallTaint",
+    # WS-ZA: the apply step as the compiled dispatchers run it -- given the
+    # pre-state fields it reads (`applySyscallTaintAfter_pre` says the two
+    # agree), and the signal arm's step over its own taint case
+    # (`signalTaintStep_eq`).
+    "SeLe4n.Kernel.applySyscallTaintAfter",
+    "SeLe4n.Kernel.signalTaintStep",
 }
 
 # **`v0.35.60`: the FROZEN propagation surface, as mirrors.**
@@ -152,6 +158,11 @@ DECLARED_TAINT_CONSUMERS = {
     # API.
     "SeLe4n.Kernel.dispatchSyscallChecked",
     "SeLe4n.Kernel.dispatchSyscall",
+    # WS-ZA: the arm-then-apply steps inside the checked dispatchers' compiled
+    # forms, each form proven equal to the dispatcher it replaces
+    # (`dispatchSyscallChecked_eq_impl`; the refusal-carrying signal arm's).
+    "SeLe4n.Kernel.dispatchCheckedArmThenTaint",
+    "SeLe4n.Kernel.signalResolvedArmThenTaintR",
     "SeLe4n.Kernel.TaintTable.empty",
     # PR #873 round 16: the builder's provenance seed.  The one-writer rule
     # governs the **propagation** surface -- within a running system only
@@ -175,6 +186,9 @@ DECLARED_TAINT_CONSUMERS = {
 # everything else must route through it or leave the field alone.
 DECLARED_FIELD_WRITERS = {
     "SeLe4n.Kernel.applySyscallTaint",
+    # The same apply step in its compiled forms (see `DECLARED_TAINT_WRITERS`).
+    "SeLe4n.Kernel.applySyscallTaintAfter",
+    "SeLe4n.Kernel.signalTaintStep",
 }
 
 CONTENT_CHANNELS = [

@@ -144,7 +144,7 @@ the invocation-coupled residual), then fires the recovered cross-core
 `.reschedule` SGIs.  See the module docstring. -/
 @[export lean_per_core_timer_tick]
 def perCoreTimerTickEntry (coreId : UInt64) : BaseIO Unit := do
-  let frame ← Platform.FFI.captureTrapFrame
+  let frame ← Platform.FFI.ffiTrapContext
   let r ← Platform.FFI.modifyGetKernelState (fun st =>
     let (sgisAndFlag, post) := (timerTickBracket coreId).run
       (Concurrency.saveCapturedTrapFrameAt st coreId frame)
@@ -181,7 +181,7 @@ can record work that is skipped or performed late by another core's entry. -/
 theorem perCoreTimerTickEntry_def (coreId : UInt64) :
     perCoreTimerTickEntry coreId =
       (do
-        let frame ← Platform.FFI.captureTrapFrame
+        let frame ← Platform.FFI.ffiTrapContext
         let r ← Platform.FFI.modifyGetKernelState (fun st =>
           let (sgisAndFlag, post) := (timerTickBracket coreId).run
             (Concurrency.saveCapturedTrapFrameAt st coreId frame)

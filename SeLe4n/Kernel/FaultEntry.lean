@@ -349,21 +349,21 @@ does: nothing is read, nothing is committed, no restore is staged, and the
 trap layer, finding no restored frame, halts the PE.  Pure, so the host suite
 runs that arm and checks the decode word for word
 (`tests/FaultHandlingSuite.lean` §6g). -/
-def faultEntryFrame? (esr far : UInt64) : Option Architecture.TrapContext →
+def faultEntryFrame? (esr far : UInt64) : Option SeLe4n.RegisterFile →
     Option (SeLe4n.RegisterFile × ExceptionContext × FaultRegisterWindow)
   | none => none
   | some c =>
-      some (Architecture.registerFileOfTrapContext c,
+      some (c,
             { esr := esr, elr := c.pc, spsr := c.pstate, far := far },
             { gprs := #[c.x0, c.x1, c.x2, c.x3, c.x4, c.x5, c.x6, c.x7],
               sp := c.sp, lr := c.x30 })
 
-/-- The decode, word for word: the saved frame is the context's register file,
+/-- The decode, word for word: the saved frame is the context itself,
 the exception context carries the trap's syndrome words beside the context's
 `ELR_EL1` and `SPSR_EL1`, and the window is `x0`–`x7`, `SP_EL0` and `x30`. -/
-theorem faultEntryFrame?_some (esr far : UInt64) (c : Architecture.TrapContext) :
+theorem faultEntryFrame?_some (esr far : UInt64) (c : SeLe4n.RegisterFile) :
     faultEntryFrame? esr far (some c) =
-      some (Architecture.registerFileOfTrapContext c,
+      some (c,
             { esr := esr, elr := c.pc, spsr := c.pstate, far := far },
             { gprs := #[c.x0, c.x1, c.x2, c.x3, c.x4, c.x5, c.x6, c.x7],
               sp := c.sp, lr := c.x30 }) := rfl
@@ -496,7 +496,7 @@ core runs does.  Both are inert on the ordinary path — the owner is the curren
 thread or nobody, and the recorded thread is the one already recorded. -/
 @[export lean_handle_fp_access]
 def fpAccessEntry (coreId : UInt64) : BaseIO Unit := do
-  let frame ← Platform.FFI.captureTrapFrame
+  let frame ← Platform.FFI.ffiTrapContext
   let live ← Concurrency.captureOwnedFp coreId
   let r ← Platform.FFI.modifyGetKernelState (fun st0 =>
     let st := Concurrency.saveCapturedTrapFrameAt st0 coreId frame
@@ -517,7 +517,7 @@ switch, fails here. -/
 theorem fpAccessEntry_def (coreId : UInt64) :
     fpAccessEntry coreId =
       (do
-        let frame ← Platform.FFI.captureTrapFrame
+        let frame ← Platform.FFI.ffiTrapContext
         let live ← Concurrency.captureOwnedFp coreId
         let r ← Platform.FFI.modifyGetKernelState (fun st0 =>
           let st := Concurrency.saveCapturedTrapFrameAt st0 coreId frame

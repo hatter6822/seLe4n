@@ -1455,6 +1455,42 @@ def applySyscallTaint (plan : TaintPlan) (pre post : SystemState) : SystemState 
               plan.edges
               post.declassificationTaint)) }
 
+/-- WS-ZA ZA1.1: **the taint step over what it reads of the pre-state**, read
+before the arm runs.
+
+`applySyscallTaint` reads three fields of the pre-state — the audit epoch and
+log (through `newlyRecordedEvents`) and the taint table.  A dispatcher that
+passes the whole pre-state to it after the arm keeps that state alive across
+the arm, so every table the arm writes is shared and the runtime copies it
+whole.  Passing the three fields instead lets the dispatcher release the
+state before the arm (`applySyscallTaintAfter_pre` says the two agree). -/
+def applySyscallTaintAfter (plan : TaintPlan) (preEpoch : Nat)
+    (preLog : DeclassificationAuditLog) (preTaint : TaintTable)
+    (post : SystemState) : SystemState :=
+  let origins :=
+    if plan.originates then
+      originationTags plan.noRelease
+        (if preEpoch = post.declassificationAuditEpoch then
+          post.declassificationAuditLog.drop preLog.length
+        else [])
+    else []
+  { post with
+      declassificationTaint :=
+        applyOrigination
+          (origins.filter (fun p => !(plan.cleared ++ plan.bypassed).contains p.1))
+          (applyTaintClears plan.cleared
+            (applyTaintFlow
+              (applyOrigination origins preTaint)
+              plan.edges
+              post.declassificationTaint)) }
+
+/-- WS-ZA ZA1.1: given the pre-state's own fields, the early-read form is the
+taint step. -/
+@[simp] theorem applySyscallTaintAfter_pre (plan : TaintPlan) (pre post : SystemState) :
+    applySyscallTaintAfter plan pre.declassificationAuditEpoch
+        pre.declassificationAuditLog pre.declassificationTaint post =
+      applySyscallTaint plan pre post := rfl
+
 /-- WS-SM SM9.D.7 (**the frame**): the taint write touches the taint table and
 nothing else.
 

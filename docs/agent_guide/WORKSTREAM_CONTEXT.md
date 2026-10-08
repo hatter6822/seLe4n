@@ -27,7 +27,7 @@ When a cut lands, update the row's status/version here and write the detail in
 `CHANGELOG.md` and `docs/REGISTERED_DEBT.md`.  A row that grows past one line
 of summary is a sign the narrative belongs in those files instead.
 
-### WS-CV The register context by value — IN FLIGHT (registered v0.36.50; CV0 landed v0.36.59; CV1.1 v0.36.61; opens before WS-CB)
+### WS-CV The register context by value — IN FLIGHT (registered v0.36.50; CV0 landed v0.36.59; CV1.1 v0.36.61; CV2.1 v0.36.73; opens before WS-CB)
 
 The TCB's `registerContext`, the per-core register banks and the Lean boundary
 become one structure: `SeLe4n.RegisterFile` takes `Architecture.TrapContext`'s
@@ -51,10 +51,12 @@ is the thirty-five `UInt64` words of the trap frame with decidable (lawful)
 equality; `RegisterFile.gpr` is a view (`x0`–`x30` as `RegValue`, `0` past
 them) and `writeReg` takes a `UInt64`; a register file is built with
 `RegisterFile.withGprs` / `ofWords` or a structure literal of its words.
-**What new code must not do**: add a consumer of `registerFileOfTrapContext`
-/ `trapContextOfRegisterFile` (deleted by CV2) or a `RegValue`-typed register
-read on the entry/exit path; build a saved context from `TrapContext` through
-`ofWords` and the existing writers instead.
+Since CV2.1 the boundary type is `RegisterFile` itself: the entries save the
+object `Platform.FFI.ffiTrapContext` hands over and the restore stages the
+thread's own file.  **What new code must not do**: make the HAL reuse or keep
+a reference to the object it hands over before CV3.1's `snapshotInto` exists
+(a save stores that object as it is), or add a `RegValue`-typed register read
+on the entry/exit path.
 
 ### WS-LS Lock state separated from kernel state — IN FLIGHT (registered v0.36.60; LS0.1 v0.36.62; LS1.1 v0.36.63; LS1.2 v0.36.64; LS2.1 v0.36.65; LS2.2 v0.36.66; LS2.3 v0.36.67; LS2.4 v0.36.68; LS2.5 v0.36.69; LS3.1 v0.36.70; runs beside WS-CV, before WS-CB)
 
@@ -105,12 +107,13 @@ syscall-level resolver alone; a new
 declared arm adds its `case` to `dispatchWithCapChecked_coversWrites` in the
 same cut, or the seam theorem does not elaborate).
 
-### WS-ZA A syscall that allocates nothing — PLANNED (registered v0.36.72; runs beside WS-CV, before WS-CB)
+### WS-ZA A syscall that allocates nothing — IN FLIGHT (registered v0.36.72; ZA1 and most of ZA2 v0.36.73; runs beside WS-CV, before WS-CB)
 
 The continuing syscall round trip makes no heap allocation.  At `v0.36.71` it
 makes 118: 55 are register-context sites WS-CV's rows already remove, 62 are
 the dispatcher's own, and one is outside the traced window.  The plan's §2
-attributes every site to the row that removes it.  Plan:
+attributes every site to the row that removes it.  At `v0.36.73` the signal
+round trip makes 13 (the plan's §1 names each).  Plan:
 [`docs/planning/ZERO_ALLOCATION_SYSCALL_PLAN.md`](../planning/ZERO_ALLOCATION_SYSCALL_PLAN.md)
 (phases ZA1–ZA4).
 
@@ -1607,10 +1610,10 @@ preempted between a compare and its branch with the wrong condition.  (2) **The
 HAL publishes the in-flight frame** for a handler's duration
 (`trap::InFlightFrame`, withdrawn on drop, a nested handler restoring the one it
 displaced), and the Lean entry reads it whole, in one call, before its atomic step
-(`Platform.FFI.captureTrapFrame` over `ffiTrapContext`, `trap::TRAP_FRAME_CONTEXT_WORDS`: `x0`–`x30`,
+(`Platform.FFI.ffiTrapContext`, `trap::TRAP_FRAME_CONTEXT_WORDS`: `x0`–`x30`,
 `SP_EL0`, `ELR_EL1`, `SPSR_EL1`, and since v0.36.30 `TPIDR_EL0`, which EL0
 writes with no trap — until then a thread read the previous thread's value;
-since v0.36.47 as the 35-field `Architecture.TrapContext` in one call each way,
+since v0.36.47 in one call each way, since v0.36.73 as the 35-field `SeLe4n.RegisterFile` itself,
 and the compiled layout — field `i` at scalar offset `8 · i`, where the HAL
 reads it — is **executed** by `rust/sele4n-lean-boundary` through
 `scripts/test_lean_boundary_layout.sh` in Tier 1, linking the compiled host

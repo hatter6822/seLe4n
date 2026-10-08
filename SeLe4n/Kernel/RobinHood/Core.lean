@@ -437,6 +437,105 @@ protected theorem RHTable.insertNoResize_capacity [BEq α] [Hashable α] [Lawful
     (t : RHTable α β) (k : α) (v : β) :
     (t.insertNoResize k v).capacity = t.capacity := rfl
 
+/-- WS-ZA ZA1.2: the slot of `k` on its probe chain, as a bare index — the
+same walk as `findLoop`, answering `capacity` (never a valid index) where
+`findLoop` answers `none`, so it allocates nothing.  `insertLoop` reaches the
+same slot without writing anything before it (`insertLoop_of_findIdxLoop_lt`). -/
+def findIdxLoop [BEq α] (fuel : Nat) (idx : Nat) (k : α) (d : Nat)
+    (slots : Array (Option (RHEntry α β)))
+    (capacity : Nat) (hLen : slots.size = capacity)
+    (hCapPos : 0 < capacity) : Nat :=
+  match fuel with
+  | 0 => capacity
+  | fuel' + 1 =>
+    let i := idx % capacity
+    have hIdx : i < slots.size := hLen ▸ Nat.mod_lt _ hCapPos
+    match slots[i] with
+    | none => capacity
+    | some e =>
+      if e.key == k then i
+      else if e.dist < d then capacity
+      else findIdxLoop fuel' (i + 1) k (d + 1) slots capacity hLen hCapPos
+
+/-- WS-ZA ZA1.2: the entry update `insertLoop` performs on a present key. -/
+@[inline] def RHEntry.withValue (v : β) : Option (RHEntry α β) → Option (RHEntry α β)
+  | some e => some { e with value := v }
+  | none => none
+
+/-- WS-ZA ZA1.2: when the probe finds `k`, `insertLoop` is an in-place update of
+that one slot and reports no new key — on every table, well-formed or not. -/
+theorem insertLoop_of_findIdxLoop_lt [BEq α] [Hashable α]
+    (fuel : Nat) (idx : Nat) (k : α) (v : β) (d : Nat)
+    (slots : Array (Option (RHEntry α β)))
+    (capacity : Nat) (hLen : slots.size = capacity) (hCapPos : 0 < capacity)
+    (h : findIdxLoop fuel idx k d slots capacity hLen hCapPos < capacity) :
+    insertLoop fuel idx k v d slots capacity hLen hCapPos =
+      (slots.modify (findIdxLoop fuel idx k d slots capacity hLen hCapPos)
+        (RHEntry.withValue v), false) := by
+  induction fuel generalizing idx d with
+  | zero => simp [findIdxLoop] at h
+  | succ n ih =>
+    unfold findIdxLoop at h ⊢
+    unfold insertLoop
+    dsimp only at h ⊢
+    split at h
+    · next => simp at h
+    · next e hSome =>
+      by_cases hk : (e.key == k) = true
+      · simp only [hk, ↓reduceIte]
+        refine Prod.ext ?_ rfl
+        apply Array.ext
+        · simp
+        · intro j h1 h2
+          simp only [Array.getElem_modify, Array.getElem_set]
+          split
+          · next hj => subst hj; simp [hSome, RHEntry.withValue]
+          · rfl
+      · simp only [hk, Bool.false_eq_true, ↓reduceIte] at h ⊢
+        by_cases hd : e.dist < d
+        · simp [hd] at h
+        · simp only [hd, ↓reduceIte] at h ⊢
+          exact ih _ _ h
+
+
+/-- WS-ZA ZA1.2: the compiled `insertNoResize`.  A present key is updated in its
+slot through `Array.modify`, which takes the entry out of the array before
+rebuilding it, so on an exclusively owned table the slot, its `some` and the
+table record are all reused in place and nothing is allocated; an absent key
+runs the specification's loop.  The absent branch spells that loop out rather
+than calling `insertNoResize`, which this definition replaces in compiled code. -/
+def RHTable.insertNoResizeImpl [BEq α] [Hashable α] [LawfulBEq α]
+    (t : RHTable α β) (k : α) (v : β) : RHTable α β :=
+  let start := idealIndex k t.capacity t.hCapPos
+  let i := findIdxLoop t.capacity start k 0 t.slots t.capacity t.hSlotsLen t.hCapPos
+  if i < t.capacity then
+    { t with
+        slots     := t.slots.modify i (RHEntry.withValue v)
+        hSlotsLen := by rw [Array.size_modify]; exact t.hSlotsLen }
+  else
+    let result := insertLoop t.capacity start k v 0
+      t.slots t.capacity t.hSlotsLen t.hCapPos
+    { slots     := result.1
+      size      := if result.2 then t.size + 1 else t.size
+      capacity  := t.capacity
+      hCapGe4   := t.hCapGe4
+      hSlotsLen := by
+        show (insertLoop t.capacity start k v 0 t.slots t.capacity t.hSlotsLen t.hCapPos).1.size
+             = t.capacity
+        rw [insertLoop_preserves_len]; exact t.hSlotsLen }
+
+@[csimp] theorem RHTable.insertNoResize_eq_impl :
+    @RHTable.insertNoResize = @RHTable.insertNoResizeImpl := by
+  funext α β _ _ _ t k v
+  unfold RHTable.insertNoResize RHTable.insertNoResizeImpl
+  dsimp only
+  by_cases h : findIdxLoop t.capacity (idealIndex k t.capacity t.hCapPos) k 0 t.slots
+      t.capacity t.hSlotsLen t.hCapPos < t.capacity
+  · rw [if_pos h]
+    simp only [insertLoop_of_findIdxLoop_lt _ _ k v 0 t.slots t.capacity t.hSlotsLen t.hCapPos h,
+      Bool.false_eq_true, ↓reduceIte]
+  · rw [if_neg h]
+
 /-- N1-G3: Resize the table by doubling capacity and re-inserting all entries. -/
 def RHTable.resize [BEq α] [Hashable α] [LawfulBEq α] (t : RHTable α β) : RHTable α β :=
   let newCap := t.capacity * 2
@@ -479,6 +578,202 @@ def RHTable.insert [BEq α] [Hashable α] [LawfulBEq α] (t : RHTable α β) (k 
     : RHTable α β :=
   let t' := if t.size * 4 ≥ t.capacity * 3 then t.resize else t
   t'.insertNoResize k v
+
+/-- WS-ZA ZA1.4: the lookup is the probe's slot, read: `findIdxLoop` answers
+`capacity`, past the array, exactly where `getLoop` answers `none`. -/
+theorem getLoop_eq_findIdxLoop [BEq α] [Hashable α]
+    (fuel idx : Nat) (k : α) (d : Nat)
+    (slots : Array (Option (RHEntry α β)))
+    (capacity : Nat) (hLen : slots.size = capacity) (hCapPos : 0 < capacity) :
+    getLoop fuel idx k d slots capacity hLen hCapPos =
+      (slots[findIdxLoop fuel idx k d slots capacity hLen hCapPos]?).join.map RHEntry.value := by
+  induction fuel generalizing idx d with
+  | zero => simp [findIdxLoop, getLoop, hLen]
+  | succ n ih =>
+    unfold findIdxLoop getLoop
+    dsimp only
+    split
+    · next hNone => simp [hLen]
+    · next e hSome =>
+      by_cases hk : (e.key == k) = true
+      · simp only [hk, ↓reduceIte]
+        rw [Array.getElem?_eq_getElem (by rw [hLen]; exact Nat.mod_lt _ hCapPos), hSome]
+        rfl
+      · simp only [hk, Bool.false_eq_true, ↓reduceIte]
+        by_cases hd : e.dist < d
+        · simp [hd, hLen]
+        · simp only [hd, ↓reduceIte]
+          exact ih _ _
+
+/-- WS-ZA ZA1.4: `k` already holds `v` and the table is below its resize
+threshold, so inserting `v` at `k` changes nothing (`insert_eq_self_of_holds`).
+One probe, the slot read in place: it allocates nothing. -/
+def RHTable.holds [BEq α] [Hashable α] [BEq β] (t : RHTable α β) (k : α) (v : β) : Bool :=
+  if t.size * 4 ≥ t.capacity * 3 then false
+  else
+    let i := findIdxLoop t.capacity (idealIndex k t.capacity t.hCapPos) k 0 t.slots
+      t.capacity t.hSlotsLen t.hCapPos
+    if h : i < t.slots.size then
+      match t.slots[i] with
+      | some e => e.value == v
+      | none => false
+    else false
+
+/-- WS-ZA ZA1.4: an insert of what the table already holds is the table. -/
+theorem RHTable.insert_eq_self_of_holds [BEq α] [Hashable α] [LawfulBEq α] [BEq β] [LawfulBEq β]
+    (t : RHTable α β) (k : α) (v : β) (h : t.holds k v = true) : t.insert k v = t := by
+  unfold RHTable.holds at h
+  split at h
+  · simp at h
+  · next hNo =>
+    unfold RHTable.insert
+    rw [if_neg hNo, RHTable.insertNoResize_eq_impl]
+    unfold RHTable.insertNoResizeImpl
+    dsimp only at h ⊢
+    split at h
+    · next hi =>
+      rw [if_pos (by have := t.hSlotsLen; omega)]
+      split at h
+      · next e he =>
+        have hv : e.value = v := by simpa using h
+        have hs : t.slots.modify (findIdxLoop t.capacity (idealIndex k t.capacity t.hCapPos) k 0
+            t.slots t.capacity t.hSlotsLen t.hCapPos) (RHEntry.withValue v) = t.slots := by
+          apply Array.ext
+          · simp
+          · intro j h1 h2
+            simp only [Array.getElem_modify]
+            split
+            · next hj => subst hj; simp [he, RHEntry.withValue, ← hv]
+            · rfl
+        cases t
+        simp only [RHTable.mk.injEq] at hs ⊢
+        exact ⟨hs, trivial, trivial⟩
+      · simp at h
+    · simp at h
+
+/-- WS-ZA ZA1.4: a key that holds a value is present. -/
+theorem RHTable.contains_of_holds [BEq α] [Hashable α] [LawfulBEq α] [BEq β]
+    (t : RHTable α β) (k : α) (v : β) (h : t.holds k v = true) : t.contains k = true := by
+  unfold RHTable.holds at h
+  split at h
+  · simp at h
+  · dsimp only at h
+    split at h
+    · next hi =>
+      unfold RHTable.contains RHTable.get?
+      rw [getLoop_eq_findIdxLoop, Array.getElem?_eq_getElem hi]
+      split at h
+      · next e he => rw [he]; rfl
+      · simp at h
+    · simp at h
+
+/-- WS-ZA ZA1.6: **update the value at `k` in place.**  The specification is the
+lookup then the insert; compiled (`modify_eq_impl`), a table below its resize
+threshold takes the entry out of its slot with `Array.modify`, applies `f` and
+puts it back, so on an exclusively owned table the slot's `some`, the entry and
+the value `f` receives are all exclusive: an `f` that rebuilds its argument's
+constructor reuses it, and nothing is allocated. -/
+def RHTable.modify [BEq α] [Hashable α] [LawfulBEq α] (t : RHTable α β) (k : α)
+    (f : β → β) : RHTable α β :=
+  match t.get? k with
+  | some v => t.insert k (f v)
+  | none => t
+
+/-- WS-ZA ZA1.6: the entry update `RHTable.modify` performs. -/
+@[inline] def RHEntry.mapValue (f : β → β) : Option (RHEntry α β) → Option (RHEntry α β)
+  | some e => some { e with value := f e.value }
+  | none => none
+
+/-- WS-ZA ZA1.6: the compiled `RHTable.modify`, specialised so the update `f`
+is compiled in at each call site rather than passed as a closure.  A call, not
+inlined: the caller releases the record it projected the table from before the
+call, so the table arrives exclusive (inlined, the branch that answers the table
+unchanged kept that record alive across the write). -/
+@[specialize] def RHTable.modifyImpl [BEq α] [Hashable α] [LawfulBEq α] (t : RHTable α β) (k : α)
+    (f : β → β) : RHTable α β :=
+  if t.size * 4 ≥ t.capacity * 3 then
+    match t.get? k with
+    | some v => t.insert k (f v)
+    | none => t
+  else
+    let i := findIdxLoop t.capacity (idealIndex k t.capacity t.hCapPos) k 0 t.slots
+      t.capacity t.hSlotsLen t.hCapPos
+    if i < t.capacity then
+      { t with
+          slots     := t.slots.modify i (RHEntry.mapValue f)
+          hSlotsLen := by rw [Array.size_modify]; exact t.hSlotsLen }
+    else t
+
+@[csimp] theorem RHTable.modify_eq_impl :
+    @RHTable.modify = @RHTable.modifyImpl := by
+  funext α β _ _ _ t k f
+  unfold RHTable.modify RHTable.modifyImpl
+  by_cases hNo : t.size * 4 ≥ t.capacity * 3
+  · rw [if_pos hNo]
+  · rw [if_neg hNo]
+    dsimp only
+    have hGet : t.get? k = (t.slots[findIdxLoop t.capacity (idealIndex k t.capacity t.hCapPos) k 0
+        t.slots t.capacity t.hSlotsLen t.hCapPos]?).join.map RHEntry.value :=
+      getLoop_eq_findIdxLoop _ _ _ _ _ _ _ _
+    by_cases hi : findIdxLoop t.capacity (idealIndex k t.capacity t.hCapPos) k 0
+          t.slots t.capacity t.hSlotsLen t.hCapPos < t.capacity
+    · rw [if_pos hi]
+      have hi' : findIdxLoop t.capacity (idealIndex k t.capacity t.hCapPos) k 0
+          t.slots t.capacity t.hSlotsLen t.hCapPos < t.slots.size := by
+        rw [t.hSlotsLen]; exact hi
+      rw [Array.getElem?_eq_getElem hi'] at hGet
+      rcases hE : t.slots[findIdxLoop t.capacity (idealIndex k t.capacity t.hCapPos) k 0
+          t.slots t.capacity t.hSlotsLen t.hCapPos] with _ | e
+      · rw [hE] at hGet
+        simp at hGet
+        simp only [hGet]
+        have hs : t.slots.modify (findIdxLoop t.capacity (idealIndex k t.capacity t.hCapPos) k 0
+            t.slots t.capacity t.hSlotsLen t.hCapPos) (RHEntry.mapValue f) = t.slots := by
+          apply Array.ext
+          · simp
+          · intro j h1 h2
+            simp only [Array.getElem_modify]
+            split
+            · next hj => subst hj; simp [hE, RHEntry.mapValue]
+            · rfl
+        cases t
+        simp only at hs ⊢
+        simp only [hs]
+      · rw [hE] at hGet
+        simp at hGet
+        simp only [hGet]
+        unfold RHTable.insert
+        rw [if_neg hNo, RHTable.insertNoResize_eq_impl]
+        unfold RHTable.insertNoResizeImpl
+        dsimp only
+        rw [if_pos hi]
+        have hs : t.slots.modify (findIdxLoop t.capacity (idealIndex k t.capacity t.hCapPos) k 0
+            t.slots t.capacity t.hSlotsLen t.hCapPos) (RHEntry.withValue (f e.value)) =
+            t.slots.modify (findIdxLoop t.capacity (idealIndex k t.capacity t.hCapPos) k 0
+            t.slots t.capacity t.hSlotsLen t.hCapPos) (RHEntry.mapValue f) := by
+          apply Array.ext
+          · simp
+          · intro j h1 h2
+            simp only [Array.getElem_modify]
+            split
+            · next hj => subst hj; simp [hE, RHEntry.mapValue, RHEntry.withValue]
+            · rfl
+        cases t
+        simp only [RHTable.mk.injEq] at hs ⊢
+        exact ⟨hs, trivial, trivial⟩
+    · rw [if_neg hi]
+      have hNone : t.slots[findIdxLoop t.capacity (idealIndex k t.capacity t.hCapPos) k 0
+          t.slots t.capacity t.hSlotsLen t.hCapPos]? = none :=
+        Array.getElem?_eq_none (by rw [t.hSlotsLen]; omega)
+      rw [hNone] at hGet
+      simp at hGet
+      simp only [hGet]
+
+/-- WS-ZA ZA1.6: `modify` of a present key is the insert of its new value. -/
+theorem RHTable.modify_of_get? [BEq α] [Hashable α] [LawfulBEq α] {t : RHTable α β} {k : α}
+    {v : β} (h : t.get? k = some v) (f : β → β) : t.modify k f = t.insert k (f v) := by
+  unfold RHTable.modify; rw [h]
+
 
 /-- N1-D3: `insertNoResize` increases size by at most 1. -/
 theorem RHTable.insertNoResize_size_le [BEq α] [Hashable α] [LawfulBEq α]

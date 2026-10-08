@@ -9,7 +9,7 @@
 //! `8 · i`** — executed, in both directions, for both contexts.
 //!
 //! The HAL's side of the layout is a pair of constants it `const`-asserts
-//! (`rust/sele4n-hal/src/ffi.rs`: 35 words / 288 bytes for `TrapContext`, 66
+//! (`rust/sele4n-hal/src/ffi.rs`: 35 words / 288 bytes for `RegisterFile`, 66
 //! words / 536 bytes for `FpContext`); the same numbers are the pins here,
 //! and the object the compiled Lean builds is held to them.  Every word of
 //! every context is distinct, so a word read from the wrong position fails.
@@ -23,7 +23,7 @@
 
 use sele4n_lean_boundary::lean::Object;
 
-/// `trap::TRAP_FRAME_CONTEXT_WORDS`, the HAL's `TrapContext` word count.
+/// `trap::TRAP_FRAME_CONTEXT_WORDS`, the HAL's `RegisterFile` word count.
 const TRAP_CONTEXT_WORDS: usize = 35;
 /// `fp_context::FP_CONTEXT_WORDS`, the HAL's `FpContext` word count.
 const FP_CONTEXT_WORDS: usize = 66;
@@ -46,10 +46,10 @@ fn assert_scalar_ctor_shape(o: &Object, words: usize) {
 }
 
 // --------------------------------------------------------------------------
-// TrapContext
+// RegisterFile
 // --------------------------------------------------------------------------
 
-/// Rust → Lean: an object built at the HAL's offsets reads, by `TrapContext.word`
+/// Rust → Lean: an object built at the HAL's offsets reads, by `RegisterFile.word`
 /// in the compiled Lean, as the HAL's words — `word i` is what was put at
 /// `8 · i`, and nothing past the layout.
 #[test]
@@ -78,7 +78,7 @@ fn trap_context_round_trips_through_the_kernels_conversions() {
     }
 }
 
-/// Lean → Rust: an object the compiled Lean built (`TrapContext.ofWords`)
+/// Lean → Rust: an object the compiled Lean built (`RegisterFile.ofWords`)
 /// holds word `i` at offset `8 · i`, where the HAL reads it, and is exactly
 /// the HAL's 288 bytes — the direction that needs no object Rust wrote.
 #[test]
@@ -91,7 +91,7 @@ fn trap_context_the_lean_side_built_reads_at_the_hals_offsets() {
     }
 }
 
-/// The `Option TrapContext` encoding `ffiTrapContext` answers: `none` is the
+/// The `Option RegisterFile` encoding `ffiTrapContext` answers: `none` is the
 /// boxed scalar `0`, `some c` a tag-1 constructor with one object field
 /// holding `c` — and the compiled Lean reads `c`'s words through it.
 #[test]

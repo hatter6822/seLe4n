@@ -296,7 +296,7 @@ is the statement for this transition, resting on the per-core window
 handler and its fold. -/
 def completeShootdownRounds (changed : List Concurrency.CoreId)
     (ops : List Architecture.TlbInvalidation)
-    (window : Nat × Nat)
+    (windowFrom windowTo : Nat)
     (execCore : Concurrency.CoreId) : BaseIO Unit := do
   if changed.isEmpty then
     pure ()
@@ -309,7 +309,7 @@ def completeShootdownRounds (changed : List Concurrency.CoreId)
     acquireShootdownRoundLockServicingSelf execCore
     -- WS-SM SM7.F.3 (PR #854 review P1): the round identity the HARDWARE
     -- side runs under is allocated HERE — under the round lock — and is
-    -- deliberately NOT the model's commit-time `window.2`.
+    -- deliberately NOT the model's commit-time `windowTo`.
     --
     -- The acknowledgment test is monotone (`acked_gen >= gen`), so this
     -- generation has to order the round against the rounds whose acks
@@ -334,7 +334,7 @@ def completeShootdownRounds (changed : List Concurrency.CoreId)
     -- `0 >= 0` would pass with nothing serviced).  The Rust side fails
     -- closed if the counter wraps.
     --
-    -- The model window (`window`) keeps its own generations and still
+    -- The model window (`windowFrom`, `windowTo`) keeps its own generations and still
     -- keys the catch-up drain below — the two identities answer
     -- different questions and are intentionally independent.  A commit
     -- that opened two model rounds (the retype's destroyed + installed
@@ -417,7 +417,7 @@ def completeShootdownRounds (changed : List Concurrency.CoreId)
     -- per-core refinement.
     Platform.FFI.modifyGetKernelState (fun st =>
       ((), Architecture.shootdownCatchUpPerCoreInWindow st execCore collapsed
-        window.1 window.2))
+        windowFrom windowTo))
     -- PR #854 review: the release is **after** the catch-up commit, so the
     -- lock brackets every access `shootdownRoundLock_release_acquire` names
     -- as `e_crit` — the operand publication, the posted queues, and the
@@ -458,9 +458,9 @@ of the runtime bracket at the definition level (the state-diff half is
 `shootdownChangedTargets_nil_of_eq`); the trace fixture's
 byte-identity across the SM7.B landing rests on it. -/
 theorem completeShootdownRounds_nil
-    (ops : List Architecture.TlbInvalidation) (window : Nat × Nat)
+    (ops : List Architecture.TlbInvalidation) (windowFrom windowTo : Nat)
     (execCore : Concurrency.CoreId) :
-    completeShootdownRounds [] ops window execCore = pure () := rfl
+    completeShootdownRounds [] ops windowFrom windowTo execCore = pure () := rfl
 
 /-- **WS-LS LS2.4: the syscall seam's bracket.**
 
@@ -492,7 +492,7 @@ registers, the IPC buffer (`x6`) and the fault window (`pc`, `pstate`, `sp`,
 boxed `UInt64`s.  Inlined, with `BracketSpec.run`, so the executed path is the
 step's own application and the record is never built at runtime. -/
 @[inline] def syscallDispatchBracket (ctx : LabelingContext) (execCore : CoreId)
-    (syscallId : UInt32) (trapped : Architecture.TrapContext) :
+    (syscallId : UInt32) (trapped : SeLe4n.RegisterFile) :
     BracketSpec (Architecture.SyscallOutcome × List (CoreId × SgiKind) × List CoreId ×
       List Architecture.TlbInvalidation × (Nat × Nat) ×
       List Architecture.ICacheInvalidation × List Architecture.PhysicalWrite ×
@@ -511,7 +511,7 @@ step's own application and the record is never built at runtime. -/
 /-- The step the seam commits: the syscall bracket, run.  Kept under the name
 the entry, its definitional marker and the suites call. -/
 @[inline] def syscallDispatchCrossCoreBracketedStep (ctx : LabelingContext)
-    (execCore : CoreId) (syscallId : UInt32) (trapped : Architecture.TrapContext)
+    (execCore : CoreId) (syscallId : UInt32) (trapped : SeLe4n.RegisterFile)
     (st : SystemState) :
     (Architecture.SyscallOutcome × List (CoreId × SgiKind) × List CoreId ×
       List Architecture.TlbInvalidation × (Nat × Nat) ×
@@ -525,7 +525,7 @@ pre-state, declared footprint or not, is what subsumes the old bracket's
 `_undeclared` fallback and `_refused` negative: there is no arm on which the
 seam commits anything but the step. -/
 theorem syscallDispatchCrossCoreBracketedStep_run (ctx : LabelingContext)
-    (execCore : CoreId) (syscallId : UInt32) (trapped : Architecture.TrapContext)
+    (execCore : CoreId) (syscallId : UInt32) (trapped : SeLe4n.RegisterFile)
     (st : SystemState) :
     syscallDispatchCrossCoreBracketedStep ctx execCore syscallId trapped st
       = syscallDispatchCrossCoreStep ctx execCore syscallId
@@ -611,7 +611,7 @@ read, no state committed and no restore staged, on which the trap layer halts
 the PE (`halt_after_delivered_syscall_fault`).  Pure, so the host suite runs the
 arm no hardware path reaches (`tests/SyscallDispatchSuite.lean`). -/
 def syscallEntryContextOrFaulted :
-    Option Architecture.TrapContext → Except UInt64 Architecture.TrapContext
+    Option SeLe4n.RegisterFile → Except UInt64 SeLe4n.RegisterFile
   | some trapped => .ok trapped
   | none => .error Architecture.SyscallOutcome.faulted.tagWord
 
@@ -689,7 +689,7 @@ def syscallDispatchCrossCoreEntry (syscallId : UInt32) : BaseIO UInt64 := do
   let trapped ← match syscallEntryContextOrFaulted trapped with
     | .ok trapped => pure trapped
     | .error tag => return tag
-  let frame := some (Architecture.registerFileOfTrapContext trapped)
+  let frame := some trapped
   let msgInfo := trapped.x1
   -- **WS-BP BP7.8**: the sender's overflow message registers, read from RAM
   -- and synced into the model in the atomic step, so the decode reads what the
@@ -718,7 +718,8 @@ def syscallDispatchCrossCoreEntry (syscallId : UInt32) : BaseIO UInt64 := do
   Concurrency.fireCrossCoreSgis result.2.1
   -- WS-SM SM7.B: run the shootdown round(s) this commit posted (inert
   -- when the syscall touched no pending-shootdown queue).
-  completeShootdownRounds result.2.2.1 result.2.2.2.1 result.2.2.2.2.1 execCore
+  completeShootdownRounds result.2.2.1 result.2.2.2.1 result.2.2.2.2.1.1
+    result.2.2.2.2.1.2 execCore
   -- WS-SM SM7.D.1: emit the instruction-cache maintenance this commit
   -- recorded.  Ordered *after* the shootdown round so the translations are
   -- already retired everywhere when the instruction lines fetched through them
@@ -766,7 +767,7 @@ theorem syscallDispatchCrossCoreEntry_def (syscallId : UInt32) :
         let trapped ← match syscallEntryContextOrFaulted trapped with
           | .ok trapped => pure trapped
           | .error tag => return tag
-        let frame := some (Architecture.registerFileOfTrapContext trapped)
+        let frame := some trapped
         let msgInfo := trapped.x1
         let words ← match ← readCallerOverflowWords execCore msgInfo with
           | .ok words => pure words
@@ -779,7 +780,8 @@ theorem syscallDispatchCrossCoreEntry_def (syscallId : UInt32) :
         Platform.FFI.ffiSyscallReturnFrame frame.x0 frame.x1 frame.x2 frame.x3 frame.x4 frame.x5
         Platform.FFI.completePhysicalWrites result.2.2.2.2.2.2.1
         Concurrency.fireCrossCoreSgis result.2.1
-        completeShootdownRounds result.2.2.1 result.2.2.2.1 result.2.2.2.2.1 execCore
+        completeShootdownRounds result.2.2.1 result.2.2.2.1 result.2.2.2.2.1.1
+          result.2.2.2.2.1.2 execCore
         Platform.FFI.completeIcacheMaintenance result.2.2.2.2.2.1
         Concurrency.releaseSwitchedFpOwnerOnCore execCore
         Platform.FFI.restoreTrapFrame result.2.2.2.2.2.2.2.1

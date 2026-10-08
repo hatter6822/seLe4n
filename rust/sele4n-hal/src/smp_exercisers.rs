@@ -1389,8 +1389,23 @@ fn own_heap_allocations(core: usize) -> Option<u64> {
 /// review (the plan's baseline and its CV5.1 re-reading); the verdict is only
 /// that both reads happened, the counter did not go back, and the round trip
 /// returned a frame.
+///
+/// The round trip runs twice (WS-ZA).  The first call is the first write to
+/// objects the boot built, which the boot's own state still shares, so it
+/// copies them once; the second is the steady state every later syscall sees,
+/// and is the number the plan records.  Both are printed.
 #[cfg(feature = "hw_target")]
 fn heap_allocations_per_syscall() -> Option<bool> {
+    if heap_allocations_round_trip(" (first call)") != Some(true) {
+        return Some(false);
+    }
+    heap_allocations_round_trip("")
+}
+
+/// One measured round trip of `heap_allocations_per_syscall`; `which` labels
+/// its printed lines.
+#[cfg(feature = "hw_target")]
+fn heap_allocations_round_trip(which: &str) -> Option<bool> {
     let core = crate::per_cpu::current_core_id_from_tpidr() as usize;
     let mut frame = crate::trap::TrapFrame {
         gprs: [0; 31],
@@ -1434,7 +1449,7 @@ fn heap_allocations_per_syscall() -> Option<bool> {
         // returns, measures the syscall the gate names.
         Ok(crate::svc_dispatch::SvcOutcome::Frame(regs)) if regs[1] >> 9 == 0 => {
             crate::kprintln!(
-                "[smp-test] heap-allocations-per-syscall: core {core}: returned x0={:#x} x1={:#x}",
+                "[smp-test] heap-allocations-per-syscall: core {core}{which}: returned x0={:#x} x1={:#x}",
                 regs[0],
                 regs[1]
             );
@@ -1483,7 +1498,7 @@ fn heap_allocations_per_syscall() -> Option<bool> {
         return Some(false);
     }
     crate::kprintln!(
-        "[smp-test] heap-allocations-per-syscall: core {core}: before={before} after={after} \
+        "[smp-test] heap-allocations-per-syscall: core {core}{which}: before={before} after={after} \
          delta={}",
         after - before
     );

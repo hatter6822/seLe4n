@@ -1685,6 +1685,25 @@ theorem SystemState.objects_get?_eq_objectEntry? (st : SystemState) (id : SeLe4n
 
 abbrev Kernel := SeLe4n.KernelM SystemState KernelError
 
+/-- WS-ZA ZA1.3: a kernel computation whose refusal carries the state it was
+refused in.  `Kernel` drops the state on `.error`, so a caller that answers a
+refusal from the state it started with must keep that state alive across the
+computation, and every table the computation writes is then shared and copied
+whole.  A computation proven equal to `RefusalCarrying.ofKernel k` refuses in
+exactly the state it was handed, so its caller can read that state off the
+refusal instead of keeping its own (`ZERO_ALLOCATION_SYSCALL_PLAN.md` D1). -/
+abbrev RefusalCarrying (α : Type) :=
+  SystemState → Except (KernelError × SystemState) (α × SystemState)
+
+/-- WS-ZA ZA1.3: the specification of a refusal-carrying computation — `k`,
+with the state it was handed attached to each refusal.  Compiled, it keeps
+that state alive across `k`; a faster form proven equal to it does not. -/
+def RefusalCarrying.ofKernel (k : Kernel α) : RefusalCarrying α :=
+  fun st =>
+    match k st with
+    | .error e => .error (e, st)
+    | .ok r => .ok r
+
 def lookupObject (id : SeLe4n.ObjId) : Kernel KernelObject :=
   fun st =>
     match st.objects[id]? with
@@ -1811,6 +1830,75 @@ def storeObject (id : SeLe4n.ObjId) (obj : KernelObject) : Kernel Unit :=
           | .vspaceRoot newRoot => cleared.insert newRoot.asid id
           | _ => cleared
     })
+
+/-- WS-ZA ZA1.4: **the store changes only `objects`.**  The key is in the object
+index and already has the new object's type, neither the old nor the new object
+is a VSpace root, and both side tables are below their resize threshold — the
+case of every store to an existing object of the same kind, which is every store
+a syscall makes to an object it did not create.  It reads the new object's type
+only, so a caller asks it before building the object. -/
+@[inline] def storeLeavesIndexAndTypes (st : SystemState) (id : SeLe4n.ObjId)
+    (ty : KernelObjectType) : Bool :=
+  ty != .vspaceRoot &&
+  st.objectIndexSet.table.holds id () &&
+  st.lifecycle.objectTypes.holds id ty &&
+  (match st.objects[id]? with | some (.vspaceRoot _) => false | _ => true)
+
+/-- WS-ZA ZA1.4: the compiled `storeObject`.  When the store changes only
+`objects` (`storeLeavesIndexAndTypes`), only `objects` is written: one record
+update over an exclusively owned state, so the object table is written in place
+and the index, type and ASID tables are neither probed again nor rebuilt (the
+specification rebuilds the lifecycle record, which shares its type table with
+the old one and so copies it whole).  Otherwise it runs the specification's
+body, spelled out because this definition replaces `storeObject` in compiled
+code. -/
+def storeObjectImpl (id : SeLe4n.ObjId) (obj : KernelObject) : Kernel Unit :=
+  fun st =>
+    if storeLeavesIndexAndTypes st id obj.objectType then
+      .ok ((), { st with objects := st.objects.insert id obj })
+    else
+    .ok ((), {
+      st with
+        objects := st.objects.insert id obj
+        objectIndex := if st.objectIndexSet.contains id then st.objectIndex
+                       else id :: st.objectIndex
+        objectIndexSet := st.objectIndexSet.insert id
+        lifecycle := {
+          objectTypes := st.lifecycle.objectTypes.insert id obj.objectType
+        }
+        asidTable :=
+          let cleared := match st.objects[id]? with
+            | some (.vspaceRoot oldRoot) => st.asidTable.erase oldRoot.asid
+            | _ => st.asidTable
+          match obj with
+          | .vspaceRoot newRoot => cleared.insert newRoot.asid id
+          | _ => cleared
+    })
+
+@[csimp] theorem storeObject_eq_impl : @storeObject = @storeObjectImpl := by
+  funext id obj st
+  unfold storeObject storeObjectImpl
+  by_cases h : storeLeavesIndexAndTypes st id obj.objectType = true
+  · rw [if_pos h]
+    simp only [storeLeavesIndexAndTypes, Bool.and_eq_true] at h
+    obtain ⟨⟨⟨hNew, hSet⟩, hTy⟩, hOld⟩ := h
+    have hNew' : ∀ r, obj ≠ .vspaceRoot r := by
+      intro r hr; subst hr; simp [KernelObject.objectType] at hNew
+    have hOld' : ∀ r, st.objects[id]? ≠ some (.vspaceRoot r) := by
+      intro r hr; rw [hr] at hOld; simp at hOld
+    have hC : st.objectIndexSet.contains id = true :=
+      RHTable.contains_of_holds _ _ _ hSet
+    have hI : st.objectIndexSet.insert id = st.objectIndexSet := by
+      unfold RHSet.insert; rw [RHTable.insert_eq_self_of_holds _ _ _ hSet]
+    have hT := RHTable.insert_eq_self_of_holds _ _ _ hTy
+    simp only [hC, ↓reduceIte, hI, hT]
+  · rw [if_neg h]
+
+/-- WS-ZA ZA1.4: a store that changes only `objects` is that one write. -/
+theorem storeObject_eq_of_leaves {st : SystemState} {id : SeLe4n.ObjId} {obj : KernelObject}
+    (h : storeLeavesIndexAndTypes st id obj.objectType = true) :
+    storeObject id obj st = .ok ((), { st with objects := st.objects.insert id obj }) := by
+  rw [storeObject_eq_impl]; unfold storeObjectImpl; rw [if_pos h]
 
 /-- Lookup at the just-inserted ObjId returns the inserted object.  Mirrors
 `storeObject_objects_eq` but is phrased in terms of `result.objects.get?` so
@@ -4751,8 +4839,9 @@ theorem getTcb?_eq_none_iff (st : SystemState) (tid : SeLe4n.ThreadId) :
           exact absurd (Option.some.inj hEq) (hNotTcb t)
         · rfl
 
-/-- Read a capability from a typed slot reference. -/
-def lookupSlotCap (st : SystemState) (ref : SlotRef) : Option Capability :=
+/-- Read a capability from a typed slot reference.  Inlined, so a caller that
+matches the result builds no `some` (WS-ZA ZA2.5). -/
+@[inline] def lookupSlotCap (st : SystemState) (ref : SlotRef) : Option Capability :=
   match lookupCNode st ref.cnode with
   | none => none
   | some cn => cn.lookup ref.slot
@@ -5595,6 +5684,46 @@ theorem updateTcb_eq_self_of_none {st : SystemState} {tid : SeLe4n.ThreadId}
     st.updateTcb tid f = st := by
   unfold updateTcb
   rw [getTcbWitnessed?_eq_none h]
+
+/-- WS-ZA ZA1.6: **the object at `id` updated in its slot**, the state record
+written in place.  Specialised at each call site, so `f` is compiled in and the
+state record is the one this function received: the caller's own record update,
+inlined among its other reads of the state, is where the compiler stops reusing
+it. -/
+@[specialize] def modifyObject (st : SystemState) (id : SeLe4n.ObjId)
+    (f : KernelObject → KernelObject) : SystemState :=
+  { st with objects := st.objects.modify id f }
+
+/-- WS-ZA ZA1.6: the object update a TCB update performs. -/
+@[inline] def mapTcbObject (f : TCB → TCB) : KernelObject → KernelObject
+  | .tcb t => .tcb (f t)
+  | o => o
+
+/-- WS-ZA ZA1.6: the compiled `updateTcb` — the TCB updated in its slot
+(`RHTable.modify`), so on an exclusively owned state neither the TCB nor its
+`KernelObject` cell is rebuilt.  Specialised, so the update is compiled in and
+no closure carries it; a call, so the caller's state arrives exclusive. -/
+@[specialize] def updateTcbImpl (st : SystemState) (tid : SeLe4n.ThreadId) (f : TCB → TCB) :
+    SystemState :=
+  match st.objects[tid.toObjId]? with
+  | some (.tcb _) => st.modifyObject tid.toObjId (mapTcbObject f)
+  | _ => st
+
+@[csimp] theorem updateTcb_eq_impl : @updateTcb = @updateTcbImpl := by
+  funext st tid f
+  unfold updateTcbImpl
+  split
+  · next t hx =>
+    unfold modifyObject
+    rw [updateTcb_eq_of_some ((getTcb?_eq_some_iff st tid t).mpr hx),
+      RHTable.modify_of_get? hx]
+    rfl
+  · next hx =>
+    apply updateTcb_eq_self_of_none
+    unfold getTcb?
+    split
+    · next t ht => exact absurd ht (hx t)
+    · rfl
 
 /-- **`v0.35.183` (register row 63)**: `updateTcb` reads and writes the object
 table and nothing else, so two states that agree on it agree after the update.

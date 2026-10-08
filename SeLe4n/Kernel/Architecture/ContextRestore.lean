@@ -81,6 +81,75 @@ def stageCallerReturnFor (caller? : Option SeLe4n.ThreadId) (post : SystemState)
   | .blocks => post
   | .faulted => post
 
+/-- Two register files are equal: the same object, or equal word for word. -/
+@[inline] def sameRegisterFile (a b : SeLe4n.RegisterFile) : Bool :=
+  withPtrEq a b (fun _ => decide (a = b)) (fun h => decide_eq_true h)
+
+theorem sameRegisterFile_iff (a b : SeLe4n.RegisterFile) :
+    sameRegisterFile a b = true ↔ a = b := by
+  simp [sameRegisterFile, withPtrEq]
+
+/-- The staging of a current caller whose bank holds its saved context — the
+case after every syscall entry, which saves the trapped frame into both: the
+staged file is built once and stored in both places.  Otherwise the two are
+staged separately, as specified. -/
+@[inline] def stageCurrentCallerReturn (post : SystemState) (c : CoreId)
+    (tid : SeLe4n.ThreadId) (f : SyscallReturnFrame) : SystemState :=
+  match post.getTcb? tid with
+  | some tcb =>
+    if sameRegisterFile (post.machine.regsOnCore c) tcb.registerContext then
+      let staged := tcb.registerContext.stageReturnFrame f
+      let s1 := post.updateTcb tid fun t => { t with registerContext := staged }
+      { s1 with machine := s1.machine.setRegsOnCore c staged }
+    else
+      let s1 := writeReturnFrameToTcb post tid f
+      { s1 with machine := s1.machine.setRegsOnCore c (stageFrameRegs (s1.machine.regsOnCore c) f) }
+  | none =>
+    let s1 := writeReturnFrameToTcb post tid f
+    { s1 with machine := s1.machine.setRegsOnCore c (stageFrameRegs (s1.machine.regsOnCore c) f) }
+
+/-- `stageCallerReturnFor` as compiled: the current-thread test through
+`Option.isEqSome`, so it builds no `some tid` and no equality closure
+(WS-ZA ZA2.2), and a current caller staged once for both its context and the
+bank (`stageCurrentCallerReturn`). -/
+def stageCallerReturnForImpl (caller? : Option SeLe4n.ThreadId) (post : SystemState)
+    (c : CoreId) : SyscallOutcome → SystemState
+  | .returns f =>
+    match caller? with
+    | some tid =>
+      if (post.scheduler.currentOnCore c).isEqSome tid then
+        stageCurrentCallerReturn post c tid f
+      else writeReturnFrameToTcb post tid f
+    | none => post
+  | .blocks => post
+  | .faulted => post
+
+theorem stageCurrentCallerReturn_eq (post : SystemState) (c : CoreId)
+    (tid : SeLe4n.ThreadId) (f : SyscallReturnFrame) :
+    stageCurrentCallerReturn post c tid f =
+      let s1 := writeReturnFrameToTcb post tid f
+      { s1 with machine := s1.machine.setRegsOnCore c (stageFrameRegs (s1.machine.regsOnCore c) f) } := by
+  unfold stageCurrentCallerReturn
+  split
+  · next tcb hTcb =>
+    split
+    · next hBank =>
+      rw [sameRegisterFile_iff] at hBank
+      simp only [writeReturnFrameToTcb, SystemState.updateTcb_machine]
+      rw [SystemState.updateTcb_eq_of_some hTcb, SystemState.updateTcb_eq_of_some hTcb, hBank]
+      rfl
+    · rfl
+  · rfl
+
+@[csimp] theorem stageCallerReturnFor_eq_impl :
+    @stageCallerReturnFor = @stageCallerReturnForImpl := by
+  funext caller? post c o
+  have hEq : ∀ (cur : Option SeLe4n.ThreadId) (tid : SeLe4n.ThreadId),
+      (cur.isEqSome tid = true) = (cur = some tid) := by
+    intro cur tid; cases cur <;> simp [Option.isEqSome]
+  cases o <;> cases caller? <;>
+    simp only [stageCallerReturnFor, stageCallerReturnForImpl, hEq, stageCurrentCallerReturn_eq]
+
 /-- `stageCallerReturnFor` with the caller read off the pre-state. -/
 def stageCallerReturn (pre post : SystemState) (c : CoreId) (o : SyscallOutcome) :
     SystemState :=
@@ -178,6 +247,26 @@ def restoreTargetOnCore (st : SystemState) (c : CoreId) : RestoreTarget :=
       | none => .none
   | none => .idle
 
+/-- `restoreTargetOnCore` as compiled: the translation words handed straight to
+the `.user` constructor (`threadTranslationOperandsK`), so a caller that
+matches the target, and a target built, cost no pair and no boxed words.
+WS-ZA ZA3.1. -/
+@[inline] def restoreTargetOnCoreImpl (st : SystemState) (c : CoreId) : RestoreTarget :=
+  match st.scheduler.currentOnCore c with
+  | some tid =>
+    if SeLe4n.Kernel.isIdleThreadId tid then .idle
+    else
+      match st.getTcb? tid with
+      | some tcb =>
+        threadTranslationOperandsK st tid fun tableBase asid =>
+          .user tcb.registerContext tableBase asid (fpLiveFor st c tid)
+      | none => .none
+  | none => .idle
+
+@[csimp] theorem restoreTargetOnCore_eq_impl : @restoreTargetOnCore = @restoreTargetOnCoreImpl := by
+  funext st c
+  simp only [restoreTargetOnCore, restoreTargetOnCoreImpl, threadTranslationOperandsK_eq]
+
 /-- An idle current thread resumes the wait loop, whatever its record holds. -/
 theorem restoreTargetOnCore_idle (st : SystemState) (c : CoreId) (tid : SeLe4n.ThreadId)
     (hCur : st.scheduler.currentOnCore c = some tid)
@@ -193,59 +282,5 @@ theorem restoreTargetOnCore_user (st : SystemState) (c : CoreId) (tid : SeLe4n.T
       .user tcb.registerContext (threadTranslationOperands st tid).1
         (threadTranslationOperands st tid).2 (fpLiveFor st c tid) := by
   simp [restoreTargetOnCore, hCur, hIdle, hTcb]
-
-/-- **The words a context occupies in the trap frame**: the register file's own
-words, in the layout `SeLe4n.RegisterFile` declares. -/
-@[inline] def trapWordsOfRegisterFile (rf : SeLe4n.RegisterFile) (i : Nat) : UInt64 :=
-  rf.word i
-
-/-- **Save then restore is the identity**: the register file a context's words
-describe is that context — the file holds machine words, so nothing narrows. -/
-@[simp] theorem registerFileOfTrapWords_trapWordsOfRegisterFile (rf : SeLe4n.RegisterFile) :
-    registerFileOfTrapWords (trapWordsOfRegisterFile rf) = rf :=
-  SeLe4n.RegisterFile.ofWords_word rf
-
-/-- **The context the HAL installs**, as the boundary carries it: the register
-file's thirty-five layout words in one `TrapContext` (`Platform.FFI.restoreTrapFrame`
-hands it to the HAL in one call). -/
-def trapContextOfRegisterFile (rf : SeLe4n.RegisterFile) : TrapContext :=
-  TrapContext.ofWords (trapWordsOfRegisterFile rf)
-
-/-- **The bulk restore stages exactly the words the layout names** — word `i` of
-the context handed over is `trapWordsOfRegisterFile rf i`, for every word of the
-layout. -/
-@[simp] theorem trapContextOfRegisterFile_word (rf : SeLe4n.RegisterFile) (i : Nat)
-    (h : i < trapFrameWordCount) :
-    (trapContextOfRegisterFile rf).word i = trapWordsOfRegisterFile rf i :=
-  TrapContext.word_ofWords _ i h
-
-/-- The words of the register file some words describe are those words, on the
-layout. -/
-theorem trapWordsOfRegisterFile_registerFileOfTrapWords (w : Nat → UInt64) (i : Nat)
-    (h : i < trapFrameWordCount) :
-    trapWordsOfRegisterFile (registerFileOfTrapWords w) i = w i :=
-  SeLe4n.RegisterFile.word_ofWords w i h
-
-/-- **Save then restore is the identity on the boundary representation**: a
-context the HAL handed over, read as the model's register file and handed back,
-is the same thirty-five words.  The words the HAL then installs are these, with
-`SPSR_EL1` masked to the condition flags at the commit
-(`rust/sele4n-hal/src/trap.rs`, `sanitise_user_spsr`), so the cross-language trip
-is the identity on every word but `pstate`. -/
-@[simp] theorem trapContextOfRegisterFile_registerFileOfTrapContext (c : TrapContext) :
-    trapContextOfRegisterFile (registerFileOfTrapContext c) = c := by
-  rw [trapContextOfRegisterFile, registerFileOfTrapContext]
-  exact (TrapContext.ofWords_congr _ _ fun i h =>
-    trapWordsOfRegisterFile_registerFileOfTrapWords c.word i h).trans (TrapContext.ofWords_word c)
-
-/-- **Restore then save is the identity**: the context handed to the HAL, read
-back as the model's register file, is the file that was restored — every one of
-its thirty-five registers, with no hypothesis.  The HAL masks `pstate` to the
-condition flags at the commit, so the cross-language trip is not the identity on
-`pstate`. -/
-@[simp] theorem registerFileOfTrapContext_trapContextOfRegisterFile (rf : SeLe4n.RegisterFile) :
-    registerFileOfTrapContext (trapContextOfRegisterFile rf) = rf := by
-  rw [trapContextOfRegisterFile, registerFileOfTrapContext_ofWords]
-  exact SeLe4n.RegisterFile.ofWords_word rf
 
 end SeLe4n.Kernel.Architecture

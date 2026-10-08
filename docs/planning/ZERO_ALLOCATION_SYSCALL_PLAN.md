@@ -2,7 +2,10 @@
 
 > **Workstream**: WS-ZA (every heap allocation on the continuing syscall round
 > trip is removed; seL4 allocates none).
-> **Status**: **PLANNED** — registered at `v0.36.72`.  Asked for by the
+> **Status**: **IN FLIGHT** — registered at `v0.36.72`; at `v0.36.73` ZA1.1–ZA1.6
+> landed with ZA2.1–ZA2.3 and the signal path's parts of ZA2.4 and ZA2.5,
+> beside WS-CV CV2.1–CV2.2, as one PR (the rows were measured one at a time
+> on the signal round trip, which read 118 → 13).  Asked for by the
 > maintainer on 2026-10-07 ("get the allocation number down to 0").
 > Runs beside WS-CV: WS-CV keeps the register-context sites its plan already
 > owns (`CONTEXT_BY_VALUE_PLAN.md` §1.1, first table); this plan owns every
@@ -20,7 +23,14 @@ image, `rust/sele4n-hal/src/smp_exercisers.rs`) runs one continuing
 `NotificationSignal` from an EL0 frame on core 0 with IRQs masked and reads
 the per-core heap counter across it.  At the audited cut it reads **118**.
 A second round trip on the same boot also reads 118, so every allocation is
-paid per syscall; none is a first-touch cost.
+paid per syscall; none is a first-touch cost.  Since `v0.36.73` the exerciser
+runs two round trips and reports the second (the first also reads boot-built
+objects for the first time): **13** at `v0.36.73`.  The 13: the per-trap
+context object and its `some` (CV3.1), one return-frame copy of the context
+the TCB and the core bank share (CV4.4), the overflow-word cell, the decode
+record and its argument array (five), the arm's result cells (two), the
+return frame and its outcome (two), and the restore target crossing the
+commit (ZA3.1).
 
 **Acceptance**: the exerciser reads **0** for every scenario of ZA4.1, and
 from ZA4.3 on it fails on any non-zero delta (a check on the kernel's
@@ -59,7 +69,7 @@ removes them.
 |---|---|---|---|
 | `copy_expand_array` 3 (280 bytes: a 32-slot table) | the slot arrays of `objects`, `objectIndexSet` and `lifecycle.objectTypes`, copied whole at the arm's `storeObject` | **the pre-state is kept alive across the arm**, so every table the arm writes is shared and copied: `dispatchSyscallChecked` passes `st` to `applySyscallTaint (syscallTaintPlan st tid decoded) st stPost` after the arm (`API.lean:4727`, again at `:5265`), and the arm's error branches return `st` after its first write (`NotificationSignal.lean:89–94`, `:112–113`).  The copy is `O(capacity)` per table per syscall: on a full object table it is the dominant cost of the syscall, not only an allocation | ZA1.1 |
 | `insertLoop` 3 per insert × the arm's 3 inserts, `insertNoResize` 3 | per `RHTable.insert`: the new `RHEntry` (32 bytes), its `some` (16), the loop's `Array × Bool` result (24); on a size-changing path the table record (32) | `insertLoop` (`RobinHood/Core.lean:130–160`) reads `slots[i]`, which shares the entry it then rebuilds, and returns a pair | ZA1.2 |
-| `storeObject` 3 | the state record (216), the lifecycle record, the `KernelObject` wrapper | `storeObject` (`Model/State.lean:1795–1813`) rewrites four tables for any object, including an in-place update of an object whose key, type and ASID role are unchanged | ZA1.3 |
+| `storeObject` 3 | the state record (216), the lifecycle record, the `KernelObject` wrapper | `storeObject` (`Model/State.lean:1795–1813`) rewrites four tables for any object, including an in-place update of an object whose key, type and ASID role are unchanged | ZA1.4 |
 | `resolveCapAddress` 8, `CNode.lookup` 4, `syscallResolveCap` 1 | `Except`/`SlotRef`/`Option` results of the CSpace walk | **the operand is resolved four times**: once by the gate, then three more times by the taint plan (`contentFlowEdges`, `contentFlowClears`, `contentFlowBypassed`, each through `syscallOperandCap?`, `TaintPropagation.lean:519–528`) | ZA2.1 |
 | `dispatchSyscallChecked` 4 | the `SyscallGate` record (48), `some tid` for `currentOnCore executingCore ≠ some tid` (`API.lean:4702`), an `instDecidableEq` closure, one record (64) | value built to be compared; equality through a closure | ZA2.2 |
 | `notificationSignalOnCore` 3, `decodeNotificationSignalArgs` 1, `clearWokenReceiverStash` 2 | the `Notification` record (40), `some mergedBadge`, the `.notification` wrapper; the decoded-args record; the stash's `Option` round trip | object rebuilt instead of updated in place; an `Option` field written `some` on every signal | ZA2.3 |
@@ -123,7 +133,10 @@ archive and recorded, every tier its files reach green.
 |---|---|---|
 | ZA1.1 | **The pre-state is released before the arm.**  `dispatchSyscallChecked` (both sites, `API.lean:4727`, `:5265`) binds the taint plan and the three pre-state reads `applySyscallTaint` makes (`declassificationAuditEpoch`, the audit log's length, `declassificationTaint`; `TaintPropagation.lean:1257–1260`, `:1439–1453`) before running the arm; `applySyscallTaint` gains a form over those captures, `applySyscallTaintCaptured`, with `applySyscallTaint_eq_captured` proving the two equal, so the theorems at `API.lean:6595`, `:6619`, `:6753` are untouched.  The notification arm's refusals move before its first write (D1).  Then the generated C of the arm is read for any remaining shared write (another retainer is fixed in this row, not deferred).  Expected: the three slot-array copies gone at every table size | `Kernel/API.lean`, `InformationFlow/TaintPropagation.lean`, `IPC/CrossCore/NotificationSignal.lean` |
 | ZA1.2 | **`RHTable` writes in place.**  `RHTable.modify` (take the slot's entry out with `Array.modify`, update, put back; the present-key case of an insert) and an `insert` implementation that probes for the key first — present: `modify`; absent: the displacement loop returning the array alone (the size grows by one, known before the loop) — registered `@[csimp]` against today's `insert`, with `insertImpl_eq_insert`.  `RHTable.modify` is the primitive WS-CV's CV4.4 `modifyTcbExclusive` uses | `Kernel/RobinHood/Core.lean`, `RobinHood/Bridge.lean` (the `modify` lemmas) |
-| ZA1.3 | **`storeObject` writes only what changes.**  When the key is present, the object type unchanged and neither the old nor the new object a VSpace root, only `objects` changes: `storeObject_eq_of_inPlace` proves the other three fields equal, and a `@[csimp]` implementation takes that branch (one probe instead of four tables) | `Model/State.lean` |
+| ZA1.3 | **A refusal carries the state it was refused in.**  ZA1.1 left one retainer: `syscallDispatchFromAbi` (`Platform/FFI.lean`) answers a refused syscall from the register-spilled state (the cap-fault delivery and the refusal record), and `Kernel` drops the state on `.error`, so that state stays shared across the whole dispatch and every table the syscall writes is copied whole.  `RefusalCarrying α := SystemState → Except (KernelError × SystemState) (α × SystemState)` (`Model/State.lean`) and `RefusalCarrying.ofKernel`, which attaches the input state to each refusal.  `syscallEntryCheckedR`, `dispatchSyscallCheckedR`, `signalArmThenTaintR` and `notificationSignalCheckedArmR` (`Kernel/RefusalCarryingDispatch.lean`) each proven `= ofKernel` of the specification; the signal on a call with no overflow words checks before it writes, every other path is `ofKernel` of the specification.  `syscallDispatchFromAbiImpl` reads the refusal's state, `@[csimp]` against the specification.  Decision (2026-10-07): where a syscall's refusal today follows a write, the syscall is restructured so its checks precede its first write and the refusal reports the state it was refused in; the IPC-buffer TLB fill, the one write before the checks, stays on a refused call.  Each later syscall joins `dispatchSyscallCheckedR` with its own equality | `Model/State.lean`, `Kernel/RefusalCarryingDispatch.lean`, `Platform/FFI.lean` |
+| ZA1.4 | **`storeObject` writes only what changes.**  When the key is present, the object type unchanged and neither the old nor the new object a VSpace root, only `objects` changes: `storeObject_eq_of_inPlace` proves the other three fields equal, and a `@[csimp]` implementation takes that branch (one probe instead of four tables) | `Model/State.lean` |
+| ZA1.5 | **The entry step takes the state.**  `modifyGetKernelState` is inlined, so each entry's step runs on the state taken out of the kernel's cell and no closure carries it | `Platform/FFI.lean` |
+| ZA1.6 | **Objects update in their slot.**  `RHTable.modify` (`@[csimp]` to an implementation that takes the slot's entry out with `Array.modify`, applies `f` and puts it back), `SystemState.modifyObject`, and `updateTcb` compiled through them, so on an exclusively owned state neither the object nor its `KernelObject` cell is rebuilt | `RobinHood/Core.lean`, `Model/State.lean`, `IPC/CrossCore/NotificationSignal.lean` |
 
 ### ZA2 — the dispatcher's own values (no dependency on WS-CV)
 

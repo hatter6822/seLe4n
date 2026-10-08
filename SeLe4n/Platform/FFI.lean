@@ -7,6 +7,7 @@
   under certain conditions. See: https://github.com/hatter6822/seLe4n/blob/main/LICENSE
 -/
 import SeLe4n.Kernel.API
+import SeLe4n.Kernel.RefusalCarryingDispatch
 import SeLe4n.Kernel.Architecture.SyscallReturn
 import SeLe4n.Kernel.Lifecycle.Suspend
 import SeLe4n.Platform.Boot
@@ -603,21 +604,18 @@ opaque ffiCurrentCoreId : BaseIO UInt64
 -- ============================================================================
 
 /-- **WS-BP BP7.3: the whole context the executing PE trapped with**, handed
-over in one call — `some` the in-flight trap frame's thirty-five context words
-(`Architecture.TrapContext`, the `TrapFrame` layout: `x0`–`x30`, `SP_EL0`,
-`ELR_EL1`, `SPSR_EL1`, `TPIDR_EL0`) when a trap handler published its frame
-(`trap::InFlightFrame`), `none` otherwise.
+over in one call as the model's register file — `some` the in-flight trap
+frame's thirty-five context words (`SeLe4n.RegisterFile`, whose fields are the
+`TrapFrame` layout: `x0`–`x30`, `SP_EL0`, `ELR_EL1`, `SPSR_EL1`, `TPIDR_EL0`)
+when a trap handler published its frame (`trap::InFlightFrame`), `none`
+otherwise (an entry called outside a trap handler).  Read once, before the
+atomic step, so the save and the transition see one frame.  The HAL builds a
+fresh object per call and keeps no reference to it, so the kernel holds the
+only one and a save stores it as it is.
 
 Rust: `ffi_trap_context` in `sele4n-hal/src/ffi.rs`. -/
 @[extern "ffi_trap_context"]
-opaque ffiTrapContext : BaseIO (Option SeLe4n.Kernel.Architecture.TrapContext)
-
-/-- **WS-BP BP7.3: the whole context the executing PE trapped with**, as the
-model's register file, or `none` when no frame is published (an entry called
-outside a trap handler).  Read once, before the atomic step, so the save and
-the transition see one frame. -/
-def captureTrapFrame : BaseIO (Option SeLe4n.RegisterFile) := do
-  return (← ffiTrapContext).map SeLe4n.Kernel.Architecture.registerFileOfTrapContext
+opaque ffiTrapContext : BaseIO (Option SeLe4n.RegisterFile)
 
 -- ============================================================================
 -- WS-SM SM1.I.3 — Per-core IDLE thread FFI declarations
@@ -1120,8 +1118,12 @@ def updateKernelState (f : SystemState → SystemState) : BaseIO Unit :=
     them live.  With the lock in place, SMP returns to the default decision #7
     states (`CmdlineConfig::default` has `smp_enabled: true`), which was gated on
     exactly this phase.  See WS-SM SM7
-    §"Kernel-entry serialisation". -/
-def modifyGetKernelState {α : Type} (f : SystemState → α × SystemState) : BaseIO α :=
+    §"Kernel-entry serialisation".
+
+    Inlined (WS-ZA ZA1.5), so each entry's step runs on the taken state
+    directly: as a call it took the step as a closure, which boxed every
+    scalar argument the entry captured. -/
+@[inline] def modifyGetKernelState {α : Type} (f : SystemState → α × SystemState) : BaseIO α :=
   kernelStateRef.modifyGet f
 
 /-- WS-RC R2.A.2: Install a fresh `LabelingContext` into the
@@ -1927,6 +1929,80 @@ def writeFfiRegistersToTcb
     let rf := writeReg rf ⟨5⟩                  x5
     let rf := writeReg rf layout.syscallNumReg syscallId.toUInt64
     { tcb with registerContext := rf }
+
+/-- WS-ZA: the argument spill as a TCB update — `writeFfiRegistersToTcb`'s
+function, named so its compiled form can apply it without calling the
+definition it replaces. -/
+def ffiRegisterSpill (syscallId : UInt32) (x0 x1 x2 x3 x4 x5 : UInt64) (tcb : TCB) : TCB :=
+  let layout := SeLe4n.arm64DefaultLayout
+  let rf := tcb.registerContext
+  let rf := writeReg rf layout.capPtrReg     x0
+  let rf := writeReg rf layout.msgInfoReg    x1
+  let rf := writeReg rf ⟨2⟩                  x2
+  let rf := writeReg rf ⟨3⟩                  x3
+  let rf := writeReg rf ⟨4⟩                  x4
+  let rf := writeReg rf ⟨5⟩                  x5
+  let rf := writeReg rf layout.syscallNumReg syscallId.toUInt64
+  { tcb with registerContext := rf }
+
+theorem writeFfiRegistersToTcb_eq_updateTcb (st : SystemState) (tid : SeLe4n.ThreadId)
+    (syscallId : UInt32) (x0 x1 x2 x3 x4 x5 : UInt64) :
+    writeFfiRegistersToTcb st tid syscallId x0 x1 x2 x3 x4 x5 =
+      st.updateTcb tid (ffiRegisterSpill syscallId x0 x1 x2 x3 x4 x5) := rfl
+
+/-- WS-ZA: the register file already holds the spill — `x0`–`x5` and the
+syscall number in `x7`, read by field. -/
+@[inline] def ffiRegistersHeld (rf : SeLe4n.RegisterFile) (syscallId : UInt32)
+    (x0 x1 x2 x3 x4 x5 : UInt64) : Bool :=
+  rf.x0 == x0 && rf.x1 == x1 && rf.x2 == x2 && rf.x3 == x3 && rf.x4 == x4 &&
+    rf.x5 == x5 && rf.x7 == syscallId.toUInt64
+
+/-- A spill the context already holds leaves the TCB as it is. -/
+theorem ffiRegisterSpill_of_held (syscallId : UInt32) (x0 x1 x2 x3 x4 x5 : UInt64)
+    (tcb : TCB) (h : ffiRegistersHeld tcb.registerContext syscallId x0 x1 x2 x3 x4 x5 = true) :
+    ffiRegisterSpill syscallId x0 x1 x2 x3 x4 x5 tcb = tcb := by
+  simp only [ffiRegistersHeld, Bool.and_eq_true, beq_iff_eq] at h
+  obtain ⟨⟨⟨⟨⟨⟨h0, h1⟩, h2⟩, h3⟩, h4⟩, h5⟩, h7⟩ := h
+  have hw : ∀ (rf : SeLe4n.RegisterFile) (r : RegName) (v : UInt64),
+      rf.word r.val = v → writeReg rf r v = rf := writeReg_of_word_eq
+  unfold ffiRegisterSpill
+  dsimp only
+  rw [hw _ SeLe4n.arm64DefaultLayout.capPtrReg _ (by exact h0),
+    hw _ SeLe4n.arm64DefaultLayout.msgInfoReg _ (by exact h1), hw _ ⟨2⟩ _ (by exact h2),
+    hw _ ⟨3⟩ _ (by exact h3), hw _ ⟨4⟩ _ (by exact h4), hw _ ⟨5⟩ _ (by exact h5),
+    hw _ SeLe4n.arm64DefaultLayout.syscallNumReg _ (by exact h7)]
+
+/-- WS-ZA: the compiled `writeFfiRegistersToTcb`.  Since every entry saves
+the whole trapped frame first, the thread's context already holds the words
+the spill writes, and the spill is then the state itself (when the object
+table is below its resize threshold, where the insert it specifies is the
+identity): no register file is copied and no slot rewritten.  Otherwise the
+spill runs as specified. -/
+def writeFfiRegistersToTcbImpl (st : SystemState) (tid : SeLe4n.ThreadId)
+    (syscallId : UInt32) (x0 x1 x2 x3 x4 x5 : UInt64) : SystemState :=
+  match st.getTcb? tid with
+  | some t =>
+    if !(st.objects.size * 4 ≥ st.objects.capacity * 3) &&
+        ffiRegistersHeld t.registerContext syscallId x0 x1 x2 x3 x4 x5 then st
+    else st.updateTcb tid (ffiRegisterSpill syscallId x0 x1 x2 x3 x4 x5)
+  | none => st.updateTcb tid (ffiRegisterSpill syscallId x0 x1 x2 x3 x4 x5)
+
+@[csimp] theorem writeFfiRegistersToTcb_eq_impl :
+    @writeFfiRegistersToTcb = @writeFfiRegistersToTcbImpl := by
+  funext st tid syscallId x0 x1 x2 x3 x4 x5
+  rw [writeFfiRegistersToTcb_eq_updateTcb]
+  unfold writeFfiRegistersToTcbImpl
+  split
+  · next t hx =>
+    split
+    · next hc =>
+      simp only [Bool.and_eq_true, Bool.not_eq_true', decide_eq_false_iff_not] at hc
+      have hObj : st.objects.get? tid.toObjId = some (.tcb t) :=
+        (SystemState.getTcb?_eq_some_iff st tid t).mp hx
+      rw [SystemState.updateTcb_eq_of_some hx, ffiRegisterSpill_of_held _ _ _ _ _ _ _ t hc.2,
+        SeLe4n.Kernel.RobinHood.RHTable.insert_eq_self_of_get? _ _ _ hc.1 hObj]
+    · rfl
+  · rfl
 
 /-- WS-RC R2.B.1 helper: Read the syscall return value from a thread's
     `x0` register, per AAPCS64.
@@ -2931,6 +3007,50 @@ def syscallDispatchFromAbi
                    recordSyscallRefusal ctx executingCore syscallId tid ke x0 stRegs)
       | .ok ((), st') => .ok (syscallReturnOutcome syscallId st' tid, st')
 
+/-- WS-ZA ZA1.3: the compiled `syscallDispatchFromAbi`.  The entry runs as
+`syscallEntryCheckedR`, whose refusal carries the state it was refused in, so
+the refusal arms read that state instead of keeping `stRegs` alive across the
+dispatch; a syscall that checks before it writes then owns the state it writes
+(`ZERO_ALLOCATION_SYSCALL_PLAN.md` D1).  Equal to the specification through
+`syscallEntryCheckedR_eq`. -/
+def syscallDispatchFromAbiImpl
+    (ctx : LabelingContext)
+    (executingCore : SeLe4n.Kernel.Concurrency.CoreId)
+    (syscallId : UInt32)
+    (x0 x1 x2 x3 x4 x5 : UInt64)
+    (ipcBufferAddr : UInt64)
+    (elr spsr spEl0 x30 : UInt64) : Kernel Architecture.SyscallOutcome :=
+  fun st =>
+    match (st.scheduler.currentOnCore executingCore) with
+    | none => .ok (.returns (Architecture.errorFrame .illegalState), st)
+    | some tid =>
+      let layout := SeLe4n.arm64DefaultLayout
+      match syscallEntryCheckedR ctx layout executingCore 32
+          (writeFfiRegistersToTcb st tid syscallId x0 x1 x2 x3 x4 x5) with
+      | .error (ke, stRefused) =>
+          match syscallCapFaultOf layout stRefused tid ke with
+          | some fault =>
+              .ok (.faulted,
+                   deliverSyscallCapFault ctx executingCore stRefused tid fault
+                     (syscallWindow syscallId x0 x1 x2 x3 x4 x5 ipcBufferAddr spEl0 x30)
+                     elr spsr)
+          | none =>
+              .ok (.returns (Architecture.errorFrame ke),
+                   recordSyscallRefusal ctx executingCore syscallId tid ke x0 stRefused)
+      | .ok ((), st') => .ok (syscallReturnOutcome syscallId st' tid, st')
+
+@[csimp] theorem syscallDispatchFromAbi_eq_impl :
+    @syscallDispatchFromAbi = @syscallDispatchFromAbiImpl := by
+  funext ctx executingCore syscallId x0 x1 x2 x3 x4 x5 ipcBufferAddr elr spsr spEl0 x30 st
+  simp only [syscallDispatchFromAbiImpl, syscallEntryCheckedR_eq, RefusalCarrying.ofKernel]
+  unfold syscallDispatchFromAbi
+  split
+  · rfl
+  · next tid _ =>
+    simp only []
+    rcases syscallEntryChecked ctx SeLe4n.arm64DefaultLayout executingCore 32
+        (writeFfiRegistersToTcb st tid syscallId x0 x1 x2 x3 x4 x5) with _ | ⟨⟨⟩, st'⟩ <;> rfl
+
 -- ============================================================================
 -- AN9-D (DEF-C-M04): suspendThread atomicity bracket
 -- ============================================================================
@@ -3294,12 +3414,12 @@ def installThreadTranslation (st : SystemState) (tid : SeLe4n.ThreadId) : BaseIO
   ffiInstallTranslation ops.1 ops.2
 
 /-- **WS-BP BP7.4**: stage the context the executing PE resumes (the
-`captureTrapFrame` layout) in its per-core staging buffer, all thirty-five
+`ffiTrapContext` layout) in its per-core staging buffer, all thirty-five
 words in one call.  Nothing reaches the trap frame until `ffiRestoreCommit`.
 
 Rust: `ffi_restore_stage_context` in `sele4n-hal/src/ffi.rs`. -/
 @[extern "ffi_restore_stage_context"]
-opaque ffiRestoreStageContext : (@& SeLe4n.Kernel.Architecture.TrapContext) → BaseIO Unit
+opaque ffiRestoreStageContext : (@& SeLe4n.RegisterFile) → BaseIO Unit
 
 /-- **WS-BP BP7.4**: commit the staged context into the executing PE's in-flight
     trap frame — kind `0` a thread at EL0 (its processor state sanitised to
@@ -3321,11 +3441,13 @@ opaque ffiRestoreStageContext : (@& SeLe4n.Kernel.Architecture.TrapContext) → 
 opaque ffiRestoreCommit : UInt32 → UInt64 → UInt64 → BaseIO Unit
 
 /-- **WS-BP BP7.4: install what a core resumes** — a thread's context, staged
-    in one call (`Architecture.trapContextOfRegisterFile`), then its translation
-    and the commit; the idle loop under the kernel's translation; or nothing. -/
-def restoreTrapFrame : SeLe4n.Kernel.Architecture.RestoreTarget → BaseIO Unit
+    in one call that borrows the thread's own register file (`ffiRestoreStageContext`,
+    no copy), then its translation
+    and the commit; the idle loop under the kernel's translation; or nothing.
+    Inlined, so the entry matches the target it computed (WS-ZA ZA3.1). -/
+@[inline] def restoreTrapFrame : SeLe4n.Kernel.Architecture.RestoreTarget → BaseIO Unit
   | .user ctx tableBase asid fpLive => do
-    ffiRestoreStageContext (SeLe4n.Kernel.Architecture.trapContextOfRegisterFile ctx)
+    ffiRestoreStageContext ctx
     ffiRestoreCommit (if fpLive then 2 else 0) tableBase asid
   | .idle => ffiRestoreCommit 1 0 0
   | .none => pure ()

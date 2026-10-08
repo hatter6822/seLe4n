@@ -150,7 +150,7 @@ unwound state to project — the committed state is the step's.  See the module
 docstring. -/
 @[export lean_per_core_reschedule]
 def perCoreRescheduleEntry (coreId : UInt64) : BaseIO Unit := do
-  let frame ← Platform.FFI.captureTrapFrame
+  let frame ← Platform.FFI.ffiTrapContext
   let record ← Platform.FFI.modifyGetKernelState (fun st =>
     let st' := ((rescheduleBracket coreId).run
       (Concurrency.saveCapturedTrapFrameAt st coreId frame)).2
@@ -183,7 +183,7 @@ restore — as every state-committing entry does. -/
 theorem perCoreRescheduleEntry_def (coreId : UInt64) :
     perCoreRescheduleEntry coreId =
       (do
-        let frame ← Platform.FFI.captureTrapFrame
+        let frame ← Platform.FFI.ffiTrapContext
         let record ← Platform.FFI.modifyGetKernelState (fun st =>
           let st' := ((rescheduleBracket coreId).run
             (Concurrency.saveCapturedTrapFrameAt st coreId frame)).2

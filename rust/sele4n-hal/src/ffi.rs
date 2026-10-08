@@ -1584,7 +1584,7 @@ pub extern "C" fn cache_ic_maintenance(
 // scalar offset `8 · i` — the layout the compiled Lean reads with
 // `lean_ctor_get_uint64` and writes with `lean_ctor_set_uint64`.  Two contexts
 // cross the boundary in that shape, the general-purpose
-// `Architecture.TrapContext` (35 words) and the FP/SIMD `FpContext` (66
+// `SeLe4n.RegisterFile` (35 words) and the FP/SIMD `FpContext` (66
 // words), and the question "is this object a constructor of exactly that
 // shape" has the one owner below, `scalar_words_of_lean`.
 
@@ -1664,7 +1664,7 @@ pub unsafe fn scalar_words_of_lean<const N: usize>(
     }))
 }
 
-/// **The scalar bytes of the Lean `Architecture.TrapContext` constructor**: a
+/// **The scalar bytes of the Lean `SeLe4n.RegisterFile` constructor**: a
 /// structure of [`TRAP_FRAME_CONTEXT_WORDS`](crate::trap::TRAP_FRAME_CONTEXT_WORDS)
 /// `UInt64` fields, in the scalar-words shape above.
 pub const TRAP_CONTEXT_SCALAR_BYTES: usize = 8 * crate::trap::TRAP_FRAME_CONTEXT_WORDS as usize;
@@ -1674,13 +1674,13 @@ const _: () =
     assert!(TRAP_CONTEXT_SCALAR_BYTES == 8 * crate::trap::TRAP_FRAME_CONTEXT_WORDS as usize);
 const _: () = assert!(TRAP_CONTEXT_SCALAR_BYTES == 280);
 
-/// A Lean `Architecture.TrapContext` holding `words`.
+/// A Lean `SeLe4n.RegisterFile` holding `words`.
 #[must_use]
 pub fn trap_context_to_lean(words: &crate::trap::TrapContextWords) -> crate::lean_runtime::Obj {
     scalar_words_to_lean(words)
 }
 
-/// The bytes a Lean `Architecture.TrapContext` object occupies: its header and
+/// The bytes a Lean `SeLe4n.RegisterFile` object occupies: its header and
 /// [`TRAP_CONTEXT_SCALAR_BYTES`] scalar bytes, no object fields.
 ///
 /// The exact-size refusal in [`trap_context_of_lean`] is sound because this is
@@ -1688,7 +1688,7 @@ pub fn trap_context_to_lean(words: &crate::trap::TrapContextWords) -> crate::lea
 /// [`OBJECT_SIZE_DELTA`](crate::lean_heap::OBJECT_SIZE_DELTA) (8) up to
 /// [`MAX_SMALL_OBJECT_SIZE`](crate::lean_heap::MAX_SMALL_OBJECT_SIZE) (4096),
 /// and `lean_alloc_ctor(0, 0, 280)` asks for exactly 288 bytes, so the
-/// allocator records 288 for a `TrapContext` and a different class for any
+/// allocator records 288 for a `RegisterFile` and a different class for any
 /// object of another size.  The compiler checks the two facts.
 pub const TRAP_CONTEXT_OBJECT_BYTES: usize =
     scalar_words_object_bytes(crate::trap::TRAP_FRAME_CONTEXT_WORDS as usize);
@@ -1697,9 +1697,9 @@ const _: () =
     assert!(TRAP_CONTEXT_OBJECT_BYTES.is_multiple_of(crate::lean_heap::OBJECT_SIZE_DELTA));
 const _: () = assert!(TRAP_CONTEXT_OBJECT_BYTES <= crate::lean_heap::MAX_SMALL_OBJECT_SIZE);
 
-/// The words of the Lean `Architecture.TrapContext` `o`, or `None` when `o` is
+/// The words of the Lean `SeLe4n.RegisterFile` `o`, or `None` when `o` is
 /// not a constructor of that shape — [`scalar_words_of_lean`] at the
-/// context's 35 words, so a `TrapContext` is refused at any allocated size but
+/// context's 35 words, so a `RegisterFile` is refused at any allocated size but
 /// [`TRAP_CONTEXT_OBJECT_BYTES`].
 ///
 /// # Safety
@@ -1715,7 +1715,7 @@ pub unsafe fn trap_context_of_lean(
     unsafe { scalar_words_of_lean(o) }
 }
 
-/// A Lean `Option Architecture.TrapContext`: `none` is `lean_box(0)`, `some c`
+/// A Lean `Option SeLe4n.RegisterFile`: `none` is `lean_box(0)`, `some c`
 /// is constructor tag `1` with one object field holding `c`
 /// (`trap_context_to_lean`) — the encoding the compiled Lean switches on with
 /// `lean_obj_tag`.  Owned by the caller.
@@ -1735,7 +1735,7 @@ pub fn trap_context_option_to_lean(
 }
 
 /// `ffi_trap_context` over the given slots (the testable form): the context of
-/// the frame published in `slots[core]`, as a Lean `Option TrapContext`.
+/// the frame published in `slots[core]`, as a Lean `Option RegisterFile`.
 #[must_use]
 pub fn ffi_trap_context_in(
     slots: &crate::trap::InFlightSlots,
@@ -1745,7 +1745,7 @@ pub fn ffi_trap_context_in(
 }
 
 /// **WS-BP BP7.3**: the executing PE's in-flight context, in one call — Lean
-/// `some` an `Architecture.TrapContext` inside a trap handler
+/// `some` an `SeLe4n.RegisterFile` inside a trap handler
 /// (`trap::InFlightFrame`), `none` otherwise.  The Lean entry saves the
 /// outgoing context only from a published frame.
 ///
@@ -1757,7 +1757,7 @@ pub extern "C" fn ffi_trap_context() -> crate::lean_runtime::Obj {
 }
 
 /// `ffi_restore_stage_context` over the given staging buffers (the testable
-/// form): stage the Lean `TrapContext` `context` into `staging[core]`, or
+/// form): stage the Lean `RegisterFile` `context` into `staging[core]`, or
 /// **halt every PE** (`gic::halt_all`) on an object of any other shape or a
 /// refused stage.
 ///
@@ -1782,7 +1782,7 @@ pub unsafe fn ffi_restore_stage_context_in(
 
 /// **WS-BP BP7.4**: stage the executing PE's whole resume context
 /// (`trap::restore_stage_context_in`), from the borrowed Lean
-/// `Architecture.TrapContext` `context`.  A context of any other shape, or a
+/// `SeLe4n.RegisterFile` `context`.  A context of any other shape, or a
 /// refused stage, is a kernel defect, so it **halts every PE** rather than
 /// resuming a context that was not staged.
 ///
@@ -1790,7 +1790,7 @@ pub unsafe fn ffi_restore_stage_context_in(
 /// `ffi_fp_stage_context` are the two Lean-called entries in this file that
 /// take an object pointer.  It is not an `unsafe fn` because the C ABI cannot
 /// express one and compiled Lean is its only caller; the contract is the
-/// binding's `@&` type — a live `TrapContext`, borrowed for the call — and the
+/// binding's `@&` type — a live `RegisterFile`, borrowed for the call — and the
 /// dereference is gated by the heap's liveness record in
 /// `trap_context_of_lean`, so no value of the parameter type is read before
 /// the heap vouches for it.
@@ -1800,7 +1800,7 @@ pub extern "C" fn ffi_restore_stage_context(
     context: crate::lean_runtime::Obj,
 ) -> crate::lean_runtime::Obj {
     let core = crate::per_cpu::current_core_id_from_tpidr() as usize;
-    // SAFETY: the Lean binding's argument is a borrowed `TrapContext`, live
+    // SAFETY: the Lean binding's argument is a borrowed `RegisterFile`, live
     // for the duration of this call.
     unsafe { ffi_restore_stage_context_in(crate::trap::restore_staging(), core, context) }
 }
@@ -2106,7 +2106,7 @@ mod tests {
     use super::*;
 
     /// The bulk context boundary loses nothing: words marshalled into a Lean
-    /// `TrapContext` read back as the same words, at offsets `8 · i`, and the
+    /// `RegisterFile` read back as the same words, at offsets `8 · i`, and the
     /// object has the constructor shape the compiled Lean allocates
     /// (`lean_alloc_ctor(0, 0, 280)`).
     #[test]
@@ -2114,7 +2114,7 @@ mod tests {
         let words: crate::trap::TrapContextWords =
             core::array::from_fn(|i| 0x0123_4567_89AB_CDEF ^ ((i as u64) << 56) ^ i as u64);
         let o = trap_context_to_lean(&words);
-        // SAFETY: `o` is the live `TrapContext` just built.
+        // SAFETY: `o` is the live `RegisterFile` just built.
         unsafe {
             let header = crate::lean_runtime::header_ref(o);
             assert_eq!((header.tag, header.other), (0, 0));
@@ -2130,7 +2130,7 @@ mod tests {
         }
     }
 
-    /// A boundary object that is not a `TrapContext`'s shape is refused, not
+    /// A boundary object that is not a `RegisterFile`'s shape is refused, not
     /// read: a scalar, another constructor tag, a constructor with object
     /// fields.
     #[test]
@@ -2148,7 +2148,7 @@ mod tests {
         }
     }
 
-    /// A tag-0 constructor with no object fields — the header a `TrapContext`
+    /// A tag-0 constructor with no object fields — the header a `RegisterFile`
     /// carries — but fewer scalar bytes is refused on its allocated size, not
     /// read past its end: the header alone cannot tell the two apart.  The
     /// one-word-short case is the boundary: a 280-byte object (header plus 272
@@ -2397,7 +2397,7 @@ mod tests {
 
     /// An object that is not an `FpContext`'s shape is refused, not read: a
     /// scalar, another constructor tag, a constructor with object fields —
-    /// and a `TrapContext`, the other scalar-words context, on its size.
+    /// and a `RegisterFile`, the other scalar-words context, on its size.
     #[test]
     fn an_fp_context_of_another_shape_is_refused() {
         // SAFETY: each argument is a scalar or a live object built here.
@@ -2518,7 +2518,7 @@ mod tests {
     }
 
     /// A refused object halts rather than staging anything: here a
-    /// `TrapContext`, the other scalar-words context, refused on its size.
+    /// `RegisterFile`, the other scalar-words context, refused on its size.
     #[test]
     #[should_panic(expected = "fail-closed halt reached")]
     fn ffi_fp_stage_context_halts_on_a_refused_object() {

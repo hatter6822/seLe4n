@@ -5,6 +5,8 @@
   SPDX-License-Identifier: GPL-3.0-or-later
 -/
 import Lean.Elab.Command
+import Lean.Compiler.CSimpAttr
+import Lean.Compiler.ImplementedByAttr
 import SeLe4n
 import SeLe4n.Platform.Staged
 import SeLe4n.Testing.DeclarationKind
@@ -548,7 +550,13 @@ constants it mentions are still followed.  Deciding that needs `Meta.isProof` at
 every argument of every application in the closure, which is a type inference per
 node over thousands of constants; the residue is an over-approximation of *live*,
 which makes the census demand **less**, and it is named here rather than left for a
-reader to find. -/
+reader to find.
+
+**A compiled replacement is a call** (WS-ZA).  A `@[csimp]` lemma `f = fImpl`
+makes the compiler run `fImpl` wherever `f` is called, and `@[implemented_by]`
+does the same by attribute, so neither `fImpl` occurs in any committing body
+though it is exactly what runs.  The walk follows both edges from the
+compiler's own tables, so the replacement is live when what it replaces is. -/
 partial def liveClosure (env : Environment) (roots : List Name)
     (fuel : Nat := liveClosureFuel) : Option NameSet :=
   go roots {} fuel
@@ -572,9 +580,13 @@ where
         let seen := seen.insert c
         if isErasedConstant env c then go rest seen fuel'
         else
+          -- What the compiler runs in `c`'s place is reached with it: its
+          -- `@[csimp]` replacement and its `@[implemented_by]` target.
+          let compiled := ((Lean.Compiler.CSimp.ext.getState env).map.find? c).toList ++
+            (Lean.Compiler.getImplementedBy? env c).toList
           match (env.find? c).bind (·.value? (allowOpaque := true)) with
-          | none => go rest seen fuel'
-          | some v => go (v.getUsedConstants.toList ++ rest) seen fuel'
+          | none => go (compiled ++ rest) seen fuel'
+          | some v => go (compiled ++ v.getUsedConstants.toList ++ rest) seen fuel'
 
 /-- An alias for the state itself, used NESTED under a result constructor.
 
