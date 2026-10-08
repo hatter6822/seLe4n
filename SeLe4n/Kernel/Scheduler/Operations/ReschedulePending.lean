@@ -339,18 +339,6 @@ theorem rescheduleSgisFromFlags_nil_of_eq (v : Vector Bool numCores) :
   markKeyChangeFor_extract_frame (fun s => s.tlb) st tid k
     (fun _ _ => by first | rfl | simp [SystemState.markReschedulePendingOnCore])
 
-@[simp] theorem markKeyChangeFor_objStoreLock (st : SystemState) (tid : SeLe4n.ThreadId)
-    (k : SeLe4n.Priority × SeLe4n.Deadline × SeLe4n.DomainId) :
-    (markKeyChangeFor st tid k).objStoreLock = st.objStoreLock :=
-  markKeyChangeFor_extract_frame (fun s => s.objStoreLock) st tid k
-    (fun _ _ => by first | rfl | simp [SystemState.markReschedulePendingOnCore])
-
-@[simp] theorem markKeyChangeFor_schedulerLocks (st : SystemState) (tid : SeLe4n.ThreadId)
-    (k : SeLe4n.Priority × SeLe4n.Deadline × SeLe4n.DomainId) :
-    (markKeyChangeFor st tid k).schedulerLocks = st.schedulerLocks :=
-  markKeyChangeFor_extract_frame (fun s => s.schedulerLocks) st tid k
-    (fun _ _ => by first | rfl | simp [SystemState.markReschedulePendingOnCore])
-
 @[simp] theorem markKeyChangeFor_declassificationAuditLog (st : SystemState) (tid : SeLe4n.ThreadId)
     (k : SeLe4n.Priority × SeLe4n.Deadline × SeLe4n.DomainId) :
     (markKeyChangeFor st tid k).declassificationAuditLog = st.declassificationAuditLog :=
@@ -581,16 +569,6 @@ theorem markKeyChangeFor_reschedulePendingOnCore_mono (st : SystemState)
 @[simp] theorem markKeyChangeFrom_tlb (pre st : SystemState) (tid : SeLe4n.ThreadId) :
     (markKeyChangeFrom pre st tid).tlb = st.tlb :=
   markKeyChangeFrom_extract_frame (fun s => s.tlb) pre st tid
-    (fun _ _ => by first | rfl | simp [SystemState.markReschedulePendingOnCore])
-
-@[simp] theorem markKeyChangeFrom_objStoreLock (pre st : SystemState) (tid : SeLe4n.ThreadId) :
-    (markKeyChangeFrom pre st tid).objStoreLock = st.objStoreLock :=
-  markKeyChangeFrom_extract_frame (fun s => s.objStoreLock) pre st tid
-    (fun _ _ => by first | rfl | simp [SystemState.markReschedulePendingOnCore])
-
-@[simp] theorem markKeyChangeFrom_schedulerLocks (pre st : SystemState) (tid : SeLe4n.ThreadId) :
-    (markKeyChangeFrom pre st tid).schedulerLocks = st.schedulerLocks :=
-  markKeyChangeFrom_extract_frame (fun s => s.schedulerLocks) pre st tid
     (fun _ _ => by first | rfl | simp [SystemState.markReschedulePendingOnCore])
 
 @[simp] theorem markKeyChangeFrom_declassificationAuditLog (pre st : SystemState) (tid : SeLe4n.ThreadId) :

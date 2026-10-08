@@ -152,7 +152,7 @@ import SeLe4n.Kernel.Concurrency.PhaseTheoremManifest
 -- + SM3.C `withLockSet` 2PL combinator + per-object acquire/release
 -- primitives + `lockSetHeld` predicate + 2PL discipline theorems
 -- (`lockSet_acquired_in_order`, `lockSet_released_in_reverse`,
--- `lockSet_atomic_under_2pl`, `lockSet_invariant_preserved`) + SM3.C.11
+-- `lockSet_atomic_under_2pl`, `withLockSet_invariant_preserved`) + SM3.C.11
 -- dynamic PIP-chain-walk machinery + 51-theorem SM3.C inventory + SM3.D
 -- deadlock-freedom (`deadlockFreedom_under_2pl_and_ordering`,
 -- `waitGraph_acyclic_under_2pl`, `boundedWait_under_2pl`) + 66-theorem
@@ -273,8 +273,8 @@ import SeLe4n.Platform.RPi5.RuntimeContractPerCore
 -- WS-SM SM5 §3.1, §5).  The selection function
 -- `chooseThreadOnCore` itself is production-reached (the legacy
 -- `chooseThread` delegates to it, SM5.A.5); this module collects the
--- forward-looking SM5.A theorems: the `RunQueueLockId` + the cross-domain
--- `SchedLockId` (object-lock ⊕ run-queue, plan §4.4 order) + the complete
+-- forward-looking SM5.A theorems: the `LockKey.runQueue` arm + the cross-domain
+-- `LockKey` (object-lock ⊕ run-queue, plan §4.4 order) + the complete
 -- two-domain `chooseThreadOnCoreLockSet` (SM5.A.2), the per-core-independence frame +
 -- corollaries (SM5.A.3), idle-fallback completeness
 -- (`chooseThreadOnCore_ok_of_runnableTCBs` / `_none_no_eligible` /
@@ -320,7 +320,7 @@ import SeLe4n.Kernel.Scheduler.Operations.PerCoreWake
 -- theorem fails the inventory's elaboration here.
 import SeLe4n.Kernel.Scheduler.Operations.CrossCoreWakeInventory
 -- WS-SM SM5.D: the per-core timer-tick theorem surface — the SM5.D.3 cross-domain
--- lock-set (`timerTickOnCoreLockSet` over the `SchedLockId` extended with the
+-- lock-set (`timerTickOnCoreLockSet` over the `LockKey` extended with the
 -- replenish-queue domain) + WCRT bound, SM5.D.6 domain rotation, SM5.D.4 CBS
 -- replenishment + cross-core wake (`cbsReplenish_can_wake_remote_core`), SM5.D.5
 -- budget tick + the IPC-timeout objects-`invExt` preservation chain, and the
@@ -441,14 +441,6 @@ import SeLe4n.Kernel.Scheduler.Operations.PerCoreCbsInventory
 -- `timerTickOnCore_preserves_perCoreCbsInvariant` (affinity-consistency supplied as the
 -- placement-gated input).  The SM5.I per-core run loop is the runtime exerciser.
 import SeLe4n.Kernel.Scheduler.Operations.PerCoreTickCbsPreservation
-import SeLe4n.Kernel.Scheduler.Operations.SchedLockTimerContainment
--- WS-RR RR8.12 Cut C6a: the syscall arms' scheduler-domain write-set
--- containment -- the proof that each arm's declared footprint is not a FALSE
--- one, so the bracket at the syscall seam (Cut C6c) acquires an exclusion the
--- runtime establishes rather than one nobody proved.  Staged because every
--- proof consumes an SM8.B confinement theorem and those live in
--- `InformationFlow/NonInterferenceCrossCore`, which is staged.
-import SeLe4n.Kernel.SyscallSchedContainment
 -- WS-SM SM5.I (affinity discharge): the live per-core timer tick preserves
 -- replenish-queue affinity-consistency.  Strengthens the perCoreCbsInvariant
 -- aggregate (timerTickOnCore_preserves_perCoreCbsInvariant_discharged) — the carried

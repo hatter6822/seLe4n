@@ -1016,14 +1016,14 @@ private def stAffinityFp : SystemState :=
       (ReplenishQueue.empty.insert scId0 5000) }
 
 /-- Does a scheduler-domain footprint name this core's replenish-queue write lock? -/
-private def hasReplenishWriteLock (fp : List (SchedLockId × Concurrency.AccessMode))
+private def hasReplenishWriteLock (fp : List (LockKey × Concurrency.AccessMode))
     (c : CoreId) : Bool :=
-  decide ((SchedLockId.replenishQueue ⟨c⟩, Concurrency.AccessMode.write) ∈ fp)
+  decide ((LockKey.replenishQueue c, Concurrency.AccessMode.write) ∈ fp)
 
 /-- ...and this core's run-queue write lock? -/
-private def hasRunQueueWriteLock (fp : List (SchedLockId × Concurrency.AccessMode))
+private def hasRunQueueWriteLock (fp : List (LockKey × Concurrency.AccessMode))
     (c : CoreId) : Bool :=
-  decide ((SchedLockId.runQueue ⟨c⟩, Concurrency.AccessMode.write) ∈ fp)
+  decide ((LockKey.runQueue c, Concurrency.AccessMode.write) ∈ fp)
 
 /-- §4.5 **WS-RR RR8.12 Cut C3b-i — the live `.tcbSetAffinity` arm's resolved
 scheduler-domain footprint.**

@@ -529,9 +529,8 @@ private def chain10RegisterDecodeMultiSyscall : IO Unit := do
         vspaceRoot := ⟨20⟩
         ipcBuffer := (SeLe4n.VAddr.ofNat 4096)
         ipcState := .ready
-        registerContext := {  -- x0=0 (capPtr for slot 0), x1=0 (msgInfo), x7=0 (send)
-          pc := ⟨0x1000⟩, sp := ⟨0x8000⟩,
-          gpr := fun _ => ⟨0⟩ }  -- send syscall, capAddr=0
+        -- x0=0 (capPtr for slot 0), x1=0 (msgInfo), x7=0 (send)
+        registerContext := SeLe4n.RegisterFile.withGprs 0x1000 0x8000 (fun _ => 0)  -- send syscall, capAddr=0
       })
       |>.withObject receiverId (.tcb {
         tid := ⟨301⟩
@@ -541,12 +540,11 @@ private def chain10RegisterDecodeMultiSyscall : IO Unit := do
         vspaceRoot := ⟨20⟩
         ipcBuffer := (SeLe4n.VAddr.ofNat 8192)
         ipcState := .ready
-        registerContext := {  -- x0=1 (capPtr for slot 1), x1=0 (msgInfo), x7=1 (receive)
-          pc := ⟨0x1000⟩, sp := ⟨0x8000⟩,
-          gpr := fun r =>
-            if r.val == 0 then ⟨1⟩       -- capAddr = CPtr 1 (receive cap)
-            else if r.val == 7 then ⟨1⟩  -- syscallId = receive (1)
-            else ⟨0⟩ }
+        -- x0=1 (capPtr for slot 1), x1=0 (msgInfo), x7=1 (receive)
+        registerContext := SeLe4n.RegisterFile.withGprs 0x1000 0x8000 (fun r =>
+            if r == 0 then 1       -- capAddr = CPtr 1 (receive cap)
+            else if r == 7 then 1  -- syscallId = receive (1)
+            else 0)
       })
       |>.withObject epId (.endpoint {})
       |>.withObject cnodeId (.cnode {
@@ -615,9 +613,8 @@ private def chain11RegisterDecodeIpcTransfer : IO Unit := do
         vspaceRoot := ⟨20⟩
         ipcBuffer := (SeLe4n.VAddr.ofNat 4096)
         ipcState := .ready
-        registerContext := {  -- x0=0 (capPtr), x1=0 (msgInfo), x7=0 (send)
-          pc := ⟨0x1000⟩, sp := ⟨0x8000⟩,
-          gpr := fun _ => ⟨0⟩ }
+        -- x0=0 (capPtr), x1=0 (msgInfo), x7=0 (send)
+        registerContext := SeLe4n.RegisterFile.withGprs 0x1000 0x8000 (fun _ => 0)
       })
       |>.withObject epId (.endpoint {})
       |>.withObject cnodeId (.cnode {
@@ -2765,7 +2762,7 @@ private def buildSyscallState (syscallNum : Nat) (capAddr : Nat)
   let tid : SeLe4n.ThreadId := ⟨500⟩
   let cnodeId : SeLe4n.ObjId := ⟨501⟩
   let vsId : SeLe4n.ObjId := ⟨502⟩
-  let regFile := fun (r : SeLe4n.RegName) =>
+  let regFile : SeLe4n.RegName → SeLe4n.RegValue := fun r =>
     let v := if r.val == 0 then capAddr
              else if r.val == 7 then syscallNum
              else match args.find? (fun (idx, _) => idx == r.val) with
@@ -2777,7 +2774,7 @@ private def buildSyscallState (syscallNum : Nat) (capAddr : Nat)
         tid := tid, priority := ⟨50⟩, domain := ⟨0⟩,
         cspaceRoot := cnodeId, vspaceRoot := vsId,
         ipcBuffer := (SeLe4n.VAddr.ofNat 4096), ipcState := .ready,
-        registerContext := { pc := ⟨0x1000⟩, sp := ⟨0x8000⟩, gpr := regFile }
+        registerContext := SeLe4n.RegisterFile.withGprs 0x1000 0x8000 (fun i => (regFile ⟨i⟩).val.toUInt64)
     })
     |>.withObject targetId (match extraObjects with | (_, obj) :: _ => obj | [] => .endpoint {})
     |>.withObject cnodeId (.cnode {
@@ -3029,7 +3026,7 @@ private def chain31SyscallReply : IO Unit := do
   let vsId : SeLe4n.ObjId := ⟨502⟩
   let tid : SeLe4n.ThreadId := ⟨500⟩
   -- The reply cap targets the blocked sender via .replyCap
-  let regFile := fun (r : SeLe4n.RegName) =>
+  let regFile : SeLe4n.RegName → SeLe4n.RegValue := fun r =>
     if r.val == 0 then ⟨0⟩       -- capAddr: slot 0 (reply cap)
     else if r.val == 7 then ⟨3⟩  -- syscallId: reply
     else ⟨0⟩
@@ -3039,7 +3036,7 @@ private def chain31SyscallReply : IO Unit := do
           tid := tid, priority := ⟨50⟩, domain := ⟨0⟩,
           cspaceRoot := cnodeId, vspaceRoot := vsId,
           ipcBuffer := (SeLe4n.VAddr.ofNat 4096), ipcState := .ready,
-          registerContext := { pc := ⟨0x1000⟩, sp := ⟨0x8000⟩, gpr := regFile }
+          registerContext := SeLe4n.RegisterFile.withGprs 0x1000 0x8000 (fun i => (regFile ⟨i⟩).val.toUInt64)
       })
       |>.withObject senderId (.tcb {
           tid := ⟨503⟩, priority := ⟨40⟩, domain := ⟨0⟩,
@@ -3047,7 +3044,7 @@ private def chain31SyscallReply : IO Unit := do
           ipcBuffer := (SeLe4n.VAddr.ofNat 8192),
           ipcState := .blockedOnReply epId (some tid),
           replyObject := some (SeLe4n.ReplyId.ofNat 505),
-          registerContext := { pc := ⟨0x1000⟩, sp := ⟨0x8000⟩, gpr := fun _ => ⟨0⟩ }
+          registerContext := SeLe4n.RegisterFile.withGprs 0x1000 0x8000 (fun _ => 0)
       })
       -- WS-SM SM6.D: the Reply object the replier's reply cap resolves to — its
       -- caller is the blocked sender, so the live `.reply` dispatch resolves

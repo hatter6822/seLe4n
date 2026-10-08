@@ -408,7 +408,7 @@ partial def stateCarryingTypes (env : Environment)
 `Prop` and is **not** in the domain, while `SystemState → Except KernelError
 SystemState` is.  Since `v0.35.125` it asks whether the result **carries** state
 rather than whether it mentions `SystemState`, so a named wrapper —
-`TlbCacheJointState`, `IntermediateState`, `LockBracketOutcome` — counts; see
+`TlbCacheJointState`, `IntermediateState`, `LockedSystemState` — counts; see
 `stateCarryingTypes` for the derivation and for what the first two measurements of
 it got wrong.  The test over-approximates — an `Option SystemState` resolver and a
 pure reader that returns its argument both qualify — and that is the safe direction
@@ -999,6 +999,11 @@ def nonExecutedTransitionsPlain : List Name :=
   , `SeLe4n.Kernel.Architecture.shootdownRound
   , `SeLe4n.Kernel.Architecture.shootdownRoundPerCore
   , `SeLe4n.Kernel.Architecture.stageCancelledIpcFrame
+  -- WS-LS LS2.4: the two-state return-frame staging, kept as the statement
+  -- `syscallDispatchCrossCoreStep_drains_physicalWrites` is written against;
+  -- the seam runs `stageCallerReturnFor` over the caller it captured.  Its
+  -- last executed reader was the deleted refusal result.
+  , `SeLe4n.Kernel.Architecture.stageCallerReturn
   , `SeLe4n.Kernel.Architecture.stageTimeoutFrame
   , `SeLe4n.Kernel.Architecture.timerInterruptHandler
   , `SeLe4n.Kernel.Architecture.tlbFlushByPage
@@ -1018,26 +1023,23 @@ def nonExecutedTransitionsPlain : List Name :=
   , `SeLe4n.Kernel.Architecture.vspaceMapPageCheckedWithFlushPlatform
   , `SeLe4n.Kernel.Architecture.writeRegisterState
   , `SeLe4n.Kernel.Architecture.writeRestartFrameToTcb
+  -- WS-LS LS2.2: `BracketSpec.run` is what the scheduler seams execute (so
+  -- the record's step field is reached through it); the ghost path is the
+  -- proofs', and the pair's kernel half is a projection, not a transition.
+  , `SeLe4n.Kernel.Concurrency.BracketSpec.runGhost
   , `SeLe4n.Kernel.Concurrency.KernelTransitionInstance.action
   , `SeLe4n.Kernel.Concurrency.KernelTransitionInstance.ofWithLockSet
+  , `SeLe4n.Kernel.Concurrency.LockedSystemState.kernel
   , `SeLe4n.Kernel.Concurrency.applySequential
   , `SeLe4n.Kernel.Concurrency.applySequentialWithLockSet
   , `SeLe4n.Kernel.Concurrency.commitSort
   , `SeLe4n.Kernel.Concurrency.insertByCommitTime
   , `SeLe4n.Kernel.Concurrency.objStoreWriteInstance
-  -- WS-RR RR8.12 Cut C6h (`v0.35.181`): the OBJECT domain's bracket instance.
-  -- The syscall seam moved to `schedulerLockBracketDomain` over the unified
-  -- footprint, so nothing a committing `@[export]` reaches acquires through this
-  -- one any more.  Not retired: it is the domain `runUnderDeclaredLockSet` is an
-  -- instance of, and the CSpace-walk bracket that still reads it is STAGED, so
-  -- no runtime path executes it.  It becomes live again when that surface is
-  -- promoted, or when a second object-domain seam is bracketed.
-  , `SeLe4n.Kernel.Concurrency.objectLockBracketDomain
   , `SeLe4n.Kernel.Concurrency.readOnlyInstance
-  , `SeLe4n.Kernel.Concurrency.runChainExtension
-  , `SeLe4n.Kernel.Concurrency.setObjStoreLockAction
   , `SeLe4n.Kernel.Concurrency.setSchedulerAction
-  , `SeLe4n.Kernel.Concurrency.withDynamicChainExtension
+  , `SeLe4n.Kernel.Concurrency.setTlbAction
+  , `SeLe4n.Kernel.Concurrency.updateObjectAt
+  , `SeLe4n.Kernel.Concurrency.withLockSet
   , `SeLe4n.Kernel.Internal.lifecycleRetypeObject
   , `SeLe4n.Kernel.Lifecycle.Suspend.cancelBoundDonation
   , `SeLe4n.Kernel.Lifecycle.Suspend.cancelDonatedDonation
@@ -1060,7 +1062,6 @@ def nonExecutedTransitionsPlain : List Name :=
   -- `scheduleLocalSuccessorFrom`, over the caller they captured before the
   -- transition, so the pre-state is not kept alive to read it.
   , `SeLe4n.Kernel.PriorityInheritance.scheduleLocalSuccessor
-  , `SeLe4n.Kernel.PriorityInheritance.withPipChainSchedExtension
   , `SeLe4n.Kernel.SchedContext.PriorityManagement.migrateRunQueueBucket
   , `SeLe4n.Kernel.SchedContext.PriorityManagement.setMCPriorityOp
   , `SeLe4n.Kernel.SchedContext.PriorityManagement.setPriorityOp
@@ -1076,7 +1077,6 @@ def nonExecutedTransitionsPlain : List Name :=
   , `SeLe4n.Kernel.cleanupPreReceiveDonation
   , `SeLe4n.Kernel.cleanupPreReceiveDonation_never_errors_under_ipcInvariantFull
   , `SeLe4n.Kernel.commitKernelAction
-  , `SeLe4n.Kernel.continueFromAcquired
   , `SeLe4n.Kernel.cspaceLookupMultiLevel
   , `SeLe4n.Kernel.cspaceLookupPath
   , `SeLe4n.Kernel.cspaceMutate
@@ -1085,6 +1085,10 @@ def nonExecutedTransitionsPlain : List Name :=
   , `SeLe4n.Kernel.cspaceRevokeCdtStreaming
   , `SeLe4n.Kernel.cspaceRevokeCdtStrict
   , `SeLe4n.Kernel.cspaceRevokeCdtTransactional
+  -- WS-LS LS2.4: the STAGED CSpace walk's bracket (`CSpaceWalkFootprint.lean`
+  -- §4), which no committing seam runs; its predecessor
+  -- `resolveCapAddressUnderWalkLocks` was pinned here for the same reason.
+  , `SeLe4n.Kernel.cspaceWalkBracket
   , `SeLe4n.Kernel.declassifyRun
   , `SeLe4n.Kernel.declassifyStore
   , `SeLe4n.Kernel.declassifyStoreFromCore
@@ -1121,7 +1125,6 @@ def nonExecutedTransitionsPlain : List Name :=
   , `SeLe4n.Kernel.lifecycleRetypeWithCleanupShootdownPerCore
   , `SeLe4n.Kernel.lifecycleRetypeWithCleanupShootdownPerCoreIcache
   , `SeLe4n.Kernel.lifecycleRevokeDeleteRetype
-  , `SeLe4n.Kernel.lockSetAcquiredState
   , `SeLe4n.Kernel.notificationPurgeBody
   , `SeLe4n.Kernel.notificationSignal
   , `SeLe4n.Kernel.notificationSignalBound
@@ -1133,21 +1136,11 @@ def nonExecutedTransitionsPlain : List Name :=
   , `SeLe4n.Kernel.processReplenishmentsDue
   , `SeLe4n.Kernel.purgedAndRestored
   , `SeLe4n.Kernel.registerInterface
-  -- WS-RR RR8.12 Cut C6h (`v0.35.181`): RR7.12's object-domain bracket at the
-  -- ABI seam, superseded there by `Concurrency.runBracketed schedulerLock\
-  -- BracketDomain` over `declaredUnifiedLockSetForAbiEntry` — the two domains
-  -- write the same lock words, so nesting two brackets would take the
-  -- object-store table lock twice.  Its remaining reader is the STAGED CSpace
-  -- walk (`withCSpaceWalkLocks`), which no committing seam runs; the
-  -- export-commit census still names it a bracket form, so a body that reaches
-  -- it counts as bracketed.
-  , `SeLe4n.Kernel.runUnderDeclaredLockSet
   , `SeLe4n.Kernel.removeRunnable
   , `SeLe4n.Kernel.removeRunnableValid
   , `SeLe4n.Kernel.replenishScOnCore
   , `SeLe4n.Kernel.replyRecvPostPopState
   , `SeLe4n.Kernel.replyTransferOnCore
-  , `SeLe4n.Kernel.resolveCapAddressUnderWalkLocks
   , `SeLe4n.Kernel.restoreIncomingContext
   , `SeLe4n.Kernel.restoreIncomingContextChecked
   , `SeLe4n.Kernel.restoredAndConsumed
@@ -1165,7 +1158,7 @@ def nonExecutedTransitionsPlain : List Name :=
   , `SeLe4n.Kernel.scheduleEffective
   , `SeLe4n.Kernel.scheduleOrIdleOnCore
   , `SeLe4n.Kernel.serviceRegisterDependency
-  , `SeLe4n.Kernel.setObjectLockAt
+  , `SeLe4n.Kernel.setLockAt
   , `SeLe4n.Kernel.setThreadCpuAffinityOp
   , `SeLe4n.Kernel.storeServiceEntry
   , `SeLe4n.Kernel.storeTcbIpcState_fromTcb
@@ -1176,11 +1169,8 @@ def nonExecutedTransitionsPlain : List Name :=
   , `SeLe4n.Kernel.switchDomainChecked
   , `SeLe4n.Kernel.syncThreadStates
   , `SeLe4n.Kernel.syscallEntry
-  , `SeLe4n.Kernel.syscallEntryFromAcquired
   , `SeLe4n.Kernel.syscallEntryUnderDeclaredLockSet
   , `SeLe4n.Kernel.syscallEntryUnderLockSet
-  , `SeLe4n.Kernel.syscallEntryUnderRevalidatedLockSet
-  , `SeLe4n.Kernel.syscallEntryUnderRevalidatedLockSetModel
   , `SeLe4n.Kernel.syscallLookupReplyId
   , `SeLe4n.Kernel.timeoutAwareReceive
   , `SeLe4n.Kernel.timerTick
@@ -1232,7 +1222,9 @@ literal can spell, so each is built with the compiler's own mangling through
 `ReplyStackWriteCensus.privateIn`.  Eight of these are that census's own planted
 witnesses, which enter this domain because this module imports it for
 `isAuxiliary`; they are deliberately not executed, and their presence here is
-the derivation working rather than noise to carve out.  One more is **this**
+the derivation working rather than noise to carve out.  One is the export
+commit-discipline census's planted `BracketSpec` (its step is the identity),
+which enters for the same reason.  One more is **this**
 census's own, planted above so the `opaque` arm of its domain is decided by
 something on this tree; the control beside it is deliberately absent, since its
 result type is not `SystemState` and a widening that admitted it would fail
@@ -1255,6 +1247,8 @@ def nonExecutedTransitionsPrivate : List Name :=
   , privateIn `SeLe4n.Testing.ReplyStackWriteCensus `SeLe4n.Testing.ReplyStackWriteCensus.censusWitnessSplitWriter
   , privateIn `SeLe4n.Testing.ReplyStackWriteCensus `SeLe4n.Testing.ReplyStackWriteCensus.eq_1
   , privateIn `SeLe4n.Testing.ReplyStackWriteCensus `SeLe4n.Testing.ReplyStackWriteCensus.eq_censusWitnessUserNamed
+  , privateIn `SeLe4n.Testing.ExportCommitDisciplineCensus
+      `SeLe4n.Testing.ExportCommitDisciplineCensus.censusWitnessSpec
   , privateIn `SeLe4n.Testing.KernelTransitionReachabilityCensus
       `SeLe4n.Testing.KernelTransitionReachabilityCensus.censusWitnessAliasedTransformer
   , privateIn `SeLe4n.Testing.KernelTransitionReachabilityCensus

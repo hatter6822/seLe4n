@@ -33,7 +33,7 @@ over `wakeThreadLockSet`.
 
 * **SM5.C.3** `wakeThreadLockSet` + `handleRescheduleSgiOnCoreLockSet` — the
   cross-domain (object-store + per-core run-queue **write**) footprints of the
-  wake and of the target-core SGI handler, over SM5.A's unified `SchedLockId`,
+  wake and of the target-core SGI handler, over SM5.A's unified `LockKey`,
   in plan §4.4 ascending order (object lock before run-queue lock).
 * **SM5.C.9** `determineTargetCore_*` — a bound thread wakes onto its affinity
   core; an unbound thread (and the boot-time TCB default `cpuAffinity = none`)
@@ -92,7 +92,8 @@ Axiom-clean: every theorem depends only on the standard foundational axioms
 namespace SeLe4n.Kernel
 
 open SeLe4n.Model
-open SeLe4n.Kernel.Concurrency (numCores CoreId bootCoreId allCores SgiKind)
+open SeLe4n.Kernel.Concurrency (numCores CoreId bootCoreId allCores SgiKind
+  LockKey)
 
 -- ============================================================================
 -- §1  SM5.C.3 — Cross-domain lock-set footprints (wake + SGI handler)
@@ -100,19 +101,19 @@ open SeLe4n.Kernel.Concurrency (numCores CoreId bootCoreId allCores SgiKind)
 
 /-- WS-SM SM5.C.3 (cross-domain, plan §3.3 / §4.4): the **complete** lock-set
 footprint of `wakeThread`'s state effect (`enqueueRunnableOnCore target tid`),
-over SM5.A's unified `SchedLockId`.
+over SM5.A's unified `LockKey`.
 
 `enqueueRunnableOnCore` mutates *both* lock domains:
 
 * the RobinHood **object store** (write): it resolves `tid`'s TCB via `getTcb?`
   *and* writes the woken thread's `ipcState := .ready` back via `objects.insert`.
   Per SM3.A.10 the store is guarded by the single table-level lock at the top of
-  the SM0.I hierarchy (`schedObjStoreLockId`), here taken in **write** mode; and
+  the SM0.I hierarchy (`LockKey.objStore`), here taken in **write** mode; and
 * the **target** core's per-core run-queue slot (write): it inserts `tid`.
 
 So the footprint is the two-lock set in plan §4.4 ascending order (object lock
 first):
-`[(SchedLockId.object schedObjStoreLockId, .write), (SchedLockId.runQueue ⟨target⟩, .write)]`.
+`[(LockKey.objStore, .write), (LockKey.runQueue target, .write)]`.
 
 **Why the table lock rather than `(LockId.tcb tid, .write)` (plan §3.3's
 sketch).**  Identical to the SM5.B rationale: the `ipcState := .ready` save is an
@@ -125,9 +126,9 @@ The cross-domain order is `wakeThreadLockSet_object_before_runQueue`; the runtim
 `withLockSet` acquisition (in the ascending order certified by
 `wakeThreadLockSet_pairwise_le`) is SM5.C's dispatch-loop / SM5.D work. -/
 def wakeThreadLockSet (target : CoreId) :
-    List (SchedLockId × Concurrency.AccessMode) :=
-  [ (SchedLockId.object schedObjStoreLockId, .write)
-  , (SchedLockId.runQueue ⟨target⟩, .write) ]
+    List (LockKey × Concurrency.AccessMode) :=
+  [ (LockKey.objStore, .write)
+  , (LockKey.runQueue target, .write) ]
 
 /-- SM5.C.3: the wake footprint is the two-lock object-store + run-queue set. -/
 @[simp] theorem wakeThreadLockSet_length (target : CoreId) :
@@ -145,38 +146,38 @@ theorem wakeThreadLockSet_write_only (target : CoreId) :
 /-- SM5.C.3: the object-store **write** lock is in the wake footprint — it guards
 both the `getTcb?` resolution and the `ipcState := .ready` save. -/
 theorem wakeThreadLockSet_contains_objStore_write (target : CoreId) :
-    (SchedLockId.object schedObjStoreLockId, Concurrency.AccessMode.write)
+    (LockKey.objStore, Concurrency.AccessMode.write)
       ∈ wakeThreadLockSet target := by
   simp [wakeThreadLockSet]
 
 /-- SM5.C.3: the target core's run-queue **write** lock is in the wake
 footprint — it guards the insert of the woken thread. -/
 theorem wakeThreadLockSet_contains_runQueue_write (target : CoreId) :
-    (SchedLockId.runQueue ⟨target⟩, Concurrency.AccessMode.write)
+    (LockKey.runQueue target, Concurrency.AccessMode.write)
       ∈ wakeThreadLockSet target := by
   simp [wakeThreadLockSet]
 
 /-- SM5.C.3 (plan §4.4): inside the wake footprint the object-store lock is
 acquired *before* the run-queue lock — the cross-domain ascending order. -/
 theorem wakeThreadLockSet_object_before_runQueue (target : CoreId) :
-    SchedLockId.object schedObjStoreLockId
-      < SchedLockId.runQueue (⟨target⟩ : RunQueueLockId) :=
-  SchedLockId.object_lt_runQueue _ _
+    LockKey.objStore
+      < LockKey.runQueue target :=
+  LockKey.objStore_lt_runQueue _
 
 /-- SM5.C.3: the wake footprint's projected keys are duplicate-free. -/
 theorem wakeThreadLockSet_keys_nodup (target : CoreId) :
     ((wakeThreadLockSet target).map (·.1)).Nodup := by
   simp [wakeThreadLockSet]
 
-/-- SM5.C.3 (plan §4.4): the wake footprint's keys form a `SchedLockId`-ascending
+/-- SM5.C.3 (plan §4.4): the wake footprint's keys form a `LockKey`-ascending
 acquisition sequence — they are `Pairwise (· ≤ ·)`, so the canonical `withLockSet`
 acquisition is the list itself (the wake's contribution to cross-core
 deadlock-freedom via the SM3.D ladder). -/
 theorem wakeThreadLockSet_pairwise_le (target : CoreId) :
     ((wakeThreadLockSet target).map (·.1)).Pairwise (· ≤ ·) := by
-  have hle : SchedLockId.object schedObjStoreLockId
-      ≤ SchedLockId.runQueue (⟨target⟩ : RunQueueLockId) :=
-    (SchedLockId.object_lt_runQueue _ _).1
+  have hle : LockKey.objStore
+      ≤ LockKey.runQueue target :=
+    (LockKey.objStore_lt_runQueue _).1
   simp only [wakeThreadLockSet, List.map_cons, List.map_nil]
   exact List.Pairwise.cons
     (fun a ha => by rcases List.mem_singleton.mp ha with rfl; exact hle)
@@ -189,7 +190,7 @@ write footprint) on core `c`; the switch's write footprint subsumes the
 selection's read footprint, so the handler's footprint *is* the switch's
 (`switchToThreadOnCoreLockSet c`): the object-store + run-queue write locks. -/
 def handleRescheduleSgiOnCoreLockSet (c : CoreId) :
-    List (SchedLockId × Concurrency.AccessMode) :=
+    List (LockKey × Concurrency.AccessMode) :=
   switchToThreadOnCoreLockSet c
 
 /-- SM5.C.5: the SGI-handler footprint coincides with the switch footprint. -/

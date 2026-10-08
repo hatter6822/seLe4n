@@ -820,7 +820,7 @@ theorem objectIdsUnique_empty : objectIdsUnique [] = true := by
     be classified. -/
 def endpointReferencesReservedIdleSlot (ep : Endpoint) : Bool :=
   match ep with
-  | ⟨sendQ, receiveQ, _lock⟩ =>
+  | ⟨sendQ, receiveQ⟩ =>
     sendQ.head.any SeLe4n.Kernel.isIdleThreadId ||
     sendQ.tail.any SeLe4n.Kernel.isIdleThreadId ||
     receiveQ.head.any SeLe4n.Kernel.isIdleThreadId ||
@@ -833,7 +833,7 @@ def endpointReferencesReservedIdleSlot (ep : Endpoint) : Bool :=
     and no capability can reach the idle TCB to clear it. -/
 def notificationReferencesReservedIdleSlot (notif : Notification) : Bool :=
   match notif with
-  | ⟨_state, waitingThreads, _pendingBadge, boundTCB, _lock⟩ =>
+  | ⟨_state, waitingThreads, _pendingBadge, boundTCB⟩ =>
     !waitingThreads.all (fun t => !SeLe4n.Kernel.isIdleThreadId t) ||
     boundTCB.any SeLe4n.Kernel.isIdleThreadId
 
@@ -841,7 +841,7 @@ def notificationReferencesReservedIdleSlot (notif : Notification) : Bool :=
     (`capTargetsReservedIdleObject`). -/
 def cnodeReferencesReservedIdleSlot (cn : CNode) : Bool :=
   match cn with
-  | ⟨_depth, _guardWidth, _guardValue, _radixWidth, slots, _lock⟩ =>
+  | ⟨_depth, _guardWidth, _guardValue, _radixWidth, slots⟩ =>
     slots.toList.any (fun s => SeLe4n.Kernel.capTargetsReservedIdleObject s.2)
 
 /-- PR #889 review round 8: every field of a boot **TCB** that can hold an
@@ -867,7 +867,7 @@ def cnodeReferencesReservedIdleSlot (cn : CNode) : Bool :=
     * `priority`, `domain`, `ipcBuffer` (a virtual address), `ipcState`,
       `threadState`, `timeSlice`, `deadline`, `registerContext`,
       `faultHandler` (a CPtr into the thread's own CSpace, not an id),
-      `maxControlledPriority`, `pipBoost`, `timedOut`, `lock`,
+      `maxControlledPriority`, `pipBoost`, `timedOut`,
       `cpuAffinity` (a core) and `pendingFault` (addresses, syndromes and a
       register window) hold no id. -/
 def tcbReferencesReservedIdleSlot (tcb : TCB) : Bool :=
@@ -875,7 +875,7 @@ def tcbReferencesReservedIdleSlot (tcb : TCB) : Bool :=
   | ⟨tid, _priority, _domain, cspaceRoot, vspaceRoot, _ipcBuffer, _ipcState, _threadState,
      _timeSlice, _deadline, queuePrev, queuePPrev, queueNext, pendingMessage, _registerContext,
      _faultHandler, boundNotification, schedContextBinding, timeoutBudget,
-     _maxControlledPriority, _pipBoost, _timedOut, _lock, _cpuAffinity, replyObject,
+     _maxControlledPriority, _pipBoost, _timedOut, _cpuAffinity, replyObject,
      pendingReceiveReply, _pendingFault, _fpContext⟩ =>
     SeLe4n.Kernel.isIdleThreadId tid ||
     SeLe4n.Kernel.isIdleObjId cspaceRoot || SeLe4n.Kernel.isIdleObjId vspaceRoot ||
@@ -925,29 +925,29 @@ theorem tcbReferencesReservedIdleSlot_def (tcb : TCB) :
   rfl
 
 /-- PR #889 review round 8: a **VSpace root** — an ASID, a virtual-to-physical
-    map, its table's physical base (WS-BP BP7.1 slice 4b), its tables, its
-    mapping epochs (PR #904 review) and a lock — holds no
+    map, its table's physical base (WS-BP BP7.1 slice 4b), its tables
+    and its mapping epochs (PR #904 review) — holds no
     object, thread or scheduling-context id.  The answer is by inspection of the
     constructor's fields, and the pattern fails when a field is added. -/
 def vspaceRootReferencesReservedIdleSlot (vsr : VSpaceRoot) : Bool :=
   match vsr with
-  | ⟨_asid, _mappings, _tableBase, _tables, _mappingEpochs, _lock⟩ => false
+  | ⟨_asid, _mappings, _tableBase, _tables, _mappingEpochs⟩ => false
 
-/-- **WS-BP BP7.1**: a **frame** — a physical address, a memory kind, a mapping
-    epoch counter (PR #904 review) and a lock —
+/-- **WS-BP BP7.1**: a **frame** — a physical address, a memory kind
+    and a mapping epoch counter (PR #904 review) —
     holds no object, thread or scheduling-context id.  By inspection of the
     constructor's fields, pinned by arity like the VSpace root above. -/
 def frameReferencesReservedIdleSlot (f : FrameObject) : Bool :=
   match f with
-  | ⟨_base, _isDevice, _mapEpoch, _lock⟩ => false
+  | ⟨_base, _isDevice, _mapEpoch⟩ => false
 
-/-- **WS-BP BP7.1 (`v0.36.12`)**: a **page table** holds its physical base, the
-    root it is installed in (an object id — which is why it is not `false` by
-    inspection) and a lock.  A configured page table is refused outright
+/-- **WS-BP BP7.1 (`v0.36.12`)**: a **page table** holds its physical base
+    and the root it is installed in (an object id — which is why it is not `false` by
+    inspection).  A configured page table is refused outright
     (`bootSafeObjectCheck`), so this arm only has to say where the id sits. -/
 def pageTableReferencesReservedIdleSlot (p : PageTableObject) : Bool :=
   match p with
-  | ⟨_base, installedIn, _lock⟩ =>
+  | ⟨_base, installedIn⟩ =>
     installedIn.any (fun i => SeLe4n.Kernel.isIdleObjId i.root)
 
 /-- PR #889 review round 8 (the round-6 check, pinned by arity): a boot
@@ -957,7 +957,7 @@ def pageTableReferencesReservedIdleSlot (p : PageTableObject) : Bool :=
     both. -/
 def untypedReferencesReservedIdleSlot (ut : UntypedObject) : Bool :=
   match ut with
-  | ⟨_regionBase, _regionSize, _watermark, children, _isDevice, parent, _lock⟩ =>
+  | ⟨_regionBase, _regionSize, _watermark, children, _isDevice, parent⟩ =>
     children.any (fun child => SeLe4n.Kernel.isIdleObjId child.objId) ||
     parent.any SeLe4n.Kernel.isIdleObjId
 
@@ -968,7 +968,7 @@ def untypedReferencesReservedIdleSlot (ut : UntypedObject) : Bool :=
 def schedContextReferencesReservedIdleSlot (sc : SchedContext) : Bool :=
   match sc with
   | ⟨scId, _budget, _period, _priority, _deadline, _domain, _budgetRemaining, _periodStart,
-     _replenishments, boundThread, scReply, donationOrigin, _isActive, _lock⟩ =>
+     _replenishments, boundThread, scReply, donationOrigin, _isActive⟩ =>
     SeLe4n.Kernel.isIdleObjId scId.toObjId ||
     boundThread.any SeLe4n.Kernel.isIdleThreadId ||
     scReply.any (fun rid => SeLe4n.Kernel.isIdleObjId rid.toObjId) ||
@@ -984,7 +984,7 @@ def schedContextReferencesReservedIdleSlot (sc : SchedContext) : Bool :=
     (a reply object id) or the scheduling context this frame heads. -/
 def replyReferencesReservedIdleSlot (r : Reply) : Bool :=
   match r with
-  | ⟨replyId, caller, prev, next, _lock⟩ =>
+  | ⟨replyId, caller, prev, next⟩ =>
     SeLe4n.Kernel.isIdleObjId replyId.toObjId ||
     caller.any SeLe4n.Kernel.isIdleThreadId ||
     prev.any (fun p => SeLe4n.Kernel.isIdleObjId p.toObjId) ||
@@ -1671,7 +1671,7 @@ a new `VSpaceRoot` field is that checker's to classify, in its own module. -/
 /-- A boot **endpoint** is inert: both intrusive queues empty. -/
 def bootSafeEndpointCheck (ep : Endpoint) : Bool :=
   match ep with
-  | ⟨_sendQ, _receiveQ, _lock⟩ =>
+  | ⟨_sendQ, _receiveQ⟩ =>
     ep.sendQ.head.isNone && ep.sendQ.tail.isNone &&
     ep.receiveQ.head.isNone && ep.receiveQ.tail.isNone
 
@@ -1686,7 +1686,7 @@ def bootSafeEndpointCheck (ep : Endpoint) : Bool :=
     reservation's `notificationReferencesReservedIdleSlot`. -/
 def bootSafeNotificationCheck (notif : Notification) : Bool :=
   match notif with
-  | ⟨_state, _waitingThreads, _pendingBadge, _boundTCB, _lock⟩ =>
+  | ⟨_state, _waitingThreads, _pendingBadge, _boundTCB⟩ =>
     decide (notif.state = .idle) && notif.waitingThreads.isEmpty &&
     notif.pendingBadge.isNone
 
@@ -1730,7 +1730,7 @@ def bootSafeCapCheck (cap : Capability) : Bool :=
     slots, read back per lookup by `RHTable.fold_and_true_of_get?`. -/
 def bootSafeCnodeCheck (cn : CNode) : Bool :=
   match cn with
-  | ⟨_depth, _guardWidth, _guardValue, _radixWidth, _slots, _lock⟩ =>
+  | ⟨_depth, _guardWidth, _guardValue, _radixWidth, _slots⟩ =>
     decide (cn.slots.size ≤ cn.slotCount) &&
     decide (cn.depth ≤ maxCSpaceDepth) &&
     decide (cn.bitsConsumed > 0 → cn.bitsConsumed ≤ cn.depth ∧ 0 < cn.bitsConsumed ∧ cn.guardBounded) &&
@@ -1777,7 +1777,7 @@ theorem bootSafeCnodeCheck_caps {cn : CNode}
     address-space fields (`cspaceRoot`, `vspaceRoot`, `ipcBuffer`,
     `boundNotification`, `faultHandler`) are the deployment's to choose;
     `tid` is pinned to the slot by `PlatformConfig.wellFormed`; `pipBoost`,
-    `timedOut`, `registerContext`, `lock` and `pendingFault` are zero-valued
+    `timedOut`, `registerContext` and `pendingFault` are zero-valued
     by their own defaults and a config that sets them describes a thread mid
     flight, which `threadState = .Inactive` already excludes. -/
 def bootSafeTcbCheck (tcb : TCB) : Bool :=
@@ -1785,7 +1785,7 @@ def bootSafeTcbCheck (tcb : TCB) : Bool :=
   | ⟨_tid, _priority, _domain, _cspaceRoot, _vspaceRoot, _ipcBuffer, _ipcState, _threadState,
      _timeSlice, _deadline, _queuePrev, _queuePPrev, _queueNext, _pendingMessage,
      _registerContext, _faultHandler, _boundNotification, _schedContextBinding, _timeoutBudget,
-     _maxControlledPriority, _pipBoost, _timedOut, _lock, _cpuAffinity, _replyObject,
+     _maxControlledPriority, _pipBoost, _timedOut, _cpuAffinity, _replyObject,
      _pendingReceiveReply, _pendingFault, _fpContext⟩ =>
     tcb.pendingMessage.isNone && decide (tcb.ipcState = .ready) &&
     tcb.queueNext.isNone && tcb.queuePrev.isNone && tcb.queuePPrev.isNone &&
@@ -1814,8 +1814,7 @@ def bootSafeTcbCheck (tcb : TCB) : Bool :=
     a chain the boot did not build.  Its region and device flag are the
     deployment's description of memory it owns (bounded by
     `untypedPlacementRespected`), what it may *not* record is a reserved idle
-    slot (`untypedReferencesReservedIdleSlot`), and `lock` is unheld by its
-    own default, as every boot object's is.  The pattern is the pin: a new
+    slot (`untypedReferencesReservedIdleSlot`).  The pattern is the pin: a new
     field is classified here rather than inheriting an accept.
 
     Until the `v0.36.2` audit this arm was `true` — the one boot object whose
@@ -1823,7 +1822,7 @@ def bootSafeTcbCheck (tcb : TCB) : Bool :=
     invariant `watermark ≤ regionSize` was established nowhere at boot. -/
 def bootSafeUntypedCheck (ut : UntypedObject) : Bool :=
   match ut with
-  | ⟨_regionBase, _regionSize, _watermark, _children, _isDevice, _parent, _lock⟩ =>
+  | ⟨_regionBase, _regionSize, _watermark, _children, _isDevice, _parent⟩ =>
     ut.watermark == 0 && ut.children.isEmpty && ut.parent.isNone
 
 @[simp] theorem bootSafeUntypedCheck_def (ut : UntypedObject) :
@@ -1843,7 +1842,7 @@ def bootSafeUntypedCheck (ut : UntypedObject) : Bool :=
 def bootSafeSchedContextCheck (sc : SchedContext) : Bool :=
   match sc with
   | ⟨_scId, _budget, _period, _priority, _deadline, _domain, _budgetRemaining, _periodStart,
-     _replenishments, _boundThread, _scReply, _donationOrigin, _isActive, _lock⟩ =>
+     _replenishments, _boundThread, _scReply, _donationOrigin, _isActive⟩ =>
     sc.period.isPositive &&
     decide (sc.budget.val ≤ sc.period.val) &&
     decide (sc.budgetRemaining.val ≤ sc.budget.val) &&
@@ -1875,7 +1874,7 @@ def bootSafeSchedContextCheck (sc : SchedContext) : Bool :=
     `PlatformConfig.wellFormed`. -/
 def bootSafeReplyCheck (r : Reply) : Bool :=
   match r with
-  | ⟨_replyId, _caller, _prev, _next, _lock⟩ => r.isFree
+  | ⟨_replyId, _caller, _prev, _next⟩ => r.isFree
 
 @[simp] theorem bootSafeReplyCheck_def (r : Reply) :
     bootSafeReplyCheck r = (r.caller.isNone && r.prev.isNone && r.next.isNone) := rfl
@@ -4084,7 +4083,7 @@ def tcbAffinityDeclared (cores : List SeLe4n.Kernel.Concurrency.CoreId) (tcb : T
   | ⟨_tid, _priority, _domain, _cspaceRoot, _vspaceRoot, _ipcBuffer, _ipcState, _threadState,
      _timeSlice, _deadline, _queuePrev, _queuePPrev, _queueNext, _pendingMessage,
      _registerContext, _faultHandler, _boundNotification, _schedContextBinding, _timeoutBudget,
-     _maxControlledPriority, _pipBoost, _timedOut, _lock, _cpuAffinity, _replyObject,
+     _maxControlledPriority, _pipBoost, _timedOut, _cpuAffinity, _replyObject,
      _pendingReceiveReply, _pendingFault, _fpContext⟩ =>
     match tcb.cpuAffinity with
     | some c => cores.contains c

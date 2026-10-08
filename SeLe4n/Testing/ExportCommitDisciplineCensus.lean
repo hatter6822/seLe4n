@@ -27,8 +27,9 @@ The subject is every `@[export]` declaration whose body can reach a kernel-state
 commit, and the question is whether that commit runs inside a lock bracket.  The
 answers are two, and both are legitimate:
 
-* **bracketed** — the body reaches `runUnderDeclaredLockSet` or
-  `Concurrency.withLockSet`, so its transition runs inside a declared footprint;
+* **bracketed** — the body reaches `BracketSpec.run` (WS-LS LS2.2), so its
+  transition is a `BracketSpec`'s step, which cannot be built without the proof
+  that its declared footprint covers the step's writes;
 * **unbracketed** — it commits without one, which is *sound* (the SM5.I global
   kernel-entry ticket lock still serialises every commit) but is the state
   RR7.12 exists to shrink.  It is admitted only with a **recorded reason**.
@@ -78,20 +79,40 @@ def commitPrimitives : List Name :=
 
 /-- The bracket forms a committing body may run its transition inside.
 
-`runUnderDeclaredLockSet` is RR7.12's revalidated bracket at the ABI seam and
-`Concurrency.runBracketed` is the shared definition underneath it (WS-RR RR7.39),
-which the scheduler entries reach through `timerTickUnderDeclaredLockSet` /
-`rescheduleUnderDeclaredLockSet`; `Concurrency.withLockSet` is SM3's plain one,
-which the raw `suspend_thread_cross_core` seam has used since SM3.C.9.
-
-`runBracketed` alone would suffice for both revalidating seams — RR7.12's is
-definitionally an instance of it — but naming the seam-level form too keeps this
-list readable as *what a reviewer will find in a body*, and a body reaching
-either is bracketed by the same argument. -/
+`Concurrency.BracketSpec.run` is the bracket record's executed path (WS-LS
+LS2.2): a seam that reaches it runs a `BracketSpec`, which cannot be built
+without the proof that its declared footprint covers its step's writes, so the
+type answers "is a footprint declared" and "is it proved to cover" by
+construction — the three per-core scheduler entries reach it through
+`timerTickBracket` / `rescheduleBracket`, the syscall seam through
+`syscallDispatchBracket` and the raw suspend seam through
+`suspendThreadBracket` (WS-LS LS2.4).  It is the only form: the two word-level
+brackets the syscall seams ran until LS2.4 (`runUnderDeclaredLockSet`, RR7.12's
+revalidated bracket over `Concurrency.runBracketed`, and SM3's plain
+`Concurrency.withLockSet`) are deleted there, so a seam that reaches
+`withLockSet` is not bracketed — it writes lock words the proofs no longer
+read. -/
 def bracketForms : List Name :=
-  [ `SeLe4n.Kernel.runUnderDeclaredLockSet
-  , `SeLe4n.Kernel.Concurrency.runBracketed
-  , `SeLe4n.Kernel.Concurrency.withLockSet ]
+  [ `SeLe4n.Kernel.Concurrency.BracketSpec.run ]
+
+/-- The ghost lock table's operations.  **No state-committing export may reach
+any of them** (WS-LS LS2.2): the ghost bracket `BracketSpec.runGhost` and the
+table's per-key and fold operations exist for the proofs, and a seam that ran
+one would be writing a lock trace the compiled kernel has no words for.  The
+census refuses a committing body that reaches one, whatever its recorded
+discipline, so the day a seam is pointed at `runGhost` is a build failure. -/
+def ghostForms : List Name :=
+  [ `SeLe4n.Kernel.Concurrency.BracketSpec.runGhost
+  , `SeLe4n.Kernel.Concurrency.withLockSet
+  , `SeLe4n.Kernel.Concurrency.LockState.bracket
+  , `SeLe4n.Kernel.Concurrency.LockState.bracketDeclared
+  , `SeLe4n.Kernel.Concurrency.LockState.acquire
+  , `SeLe4n.Kernel.Concurrency.LockState.release
+  , `SeLe4n.Kernel.Concurrency.LockState.cancel
+  , `SeLe4n.Kernel.Concurrency.LockState.acquireAll
+  , `SeLe4n.Kernel.Concurrency.LockState.releaseAll
+  , `SeLe4n.Kernel.Concurrency.LockState.cancelAll
+  , `SeLe4n.Kernel.Concurrency.LockState.unwindAll ]
 
 /-- How an exported seam commits. -/
 inductive CommitDiscipline where
@@ -146,6 +167,10 @@ def commitsState (env : Environment) (n : Name) : Bool :=
 def runsBracketed (env : Environment) (n : Name) : Bool :=
   reachesAny env bracketForms n
 
+/-- `true` when `n` can reach the ghost lock table (WS-LS LS2.2). -/
+def runsGhost (env : Environment) (n : Name) : Bool :=
+  reachesAny env ghostForms n
+
 /-- Why `n`'s recorded discipline does not match what its body reaches; `[]`
 when it does.
 
@@ -157,11 +182,16 @@ of the kernel is covered, and an out-of-date one understates progress as
 silently as it overstates it. -/
 def disciplineViolations (env : Environment) (n : Name) (declared : CommitDiscipline) :
     List String :=
+  (if runsGhost env n then
+    [s!"`{n}` commits kernel state and its body reaches the ghost lock table \
+        (`BracketSpec.runGhost` or a `LockState` operation); the ghost bracket is the \
+        proofs' alone — a seam runs `BracketSpec.run`"]
+   else []) ++
   match declared with
   | .bracketed =>
       if runsBracketed env n then []
-      else [s!"`{n}` is recorded as running inside a lock bracket, and its body reaches \
-              neither `runUnderDeclaredLockSet` nor `Concurrency.withLockSet`"]
+      else [s!"`{n}` is recorded as running inside a lock bracket, and its body does not \
+              reach `BracketSpec.run`"]
   | .unbracketed reason =>
       if reason.isEmpty then
         [s!"`{n}` is recorded as committing unbracketed with an empty reason; an unbracketed \
@@ -194,11 +224,11 @@ def commitDisciplineRegistry : List (Name × CommitDiscipline) :=
     -- declared arms and falling back — bit-identically — for the rest.
   , (`SeLe4n.Kernel.syscallDispatchCrossCoreEntry, .bracketed)
     -- WS-RR RR7.39: the three per-core scheduler entries.  They commit run-queue
-    -- and replenish-queue state, which lives in the `SchedLockId` domain rather
+    -- and replenish-queue state, which lives in the `LockKey` domain rather
     -- than the object-lock domain a `LockSet` names — so RR7.39 gave that domain
-    -- a runtime (`SystemState.schedulerLocks`, the `SchedLockId` primitives, the
-    -- `SchedLockSet` footprint type) and an instance of the shared bracket, and
-    -- these three now acquire the footprints SM5.B–G declared for them.
+    -- a runtime and an instance of the shared bracket, and WS-LS LS2.2 made each
+    -- a `BracketSpec` (`timerTickBracket`, `rescheduleBracket`) whose proof
+    -- field is the footprint's coverage; the entries run `BracketSpec.run`.
   , (`SeLe4n.Kernel.perCoreTimerTickEntry, .bracketed)
   , (`SeLe4n.Kernel.perCoreRescheduleEntry, .bracketed)
     -- Bring-up *is* the reschedule entry (`secondaryKernelMain_eq_perCoreRescheduleEntry`,
@@ -284,14 +314,27 @@ Each plants the shape the plan names: a body that commits with no bracket at
 all, one that commits through a helper (so the walk must be transitive rather
 than one level deep), and one that commits nothing. -/
 
-/-- Commits inside RR7.12's bracket. -/
-private def censusWitnessBracketed : BaseIO Unit := do
+/-- Commits inside a bracket record (WS-LS LS2.2's executed form). -/
+private def censusWitnessSpec : SeLe4n.Kernel.Concurrency.BracketSpec Unit where
+  declared := fun _ => none
+  step := fun s => ((), s)
+  inv := fun _ => True
+  covers := fun _ _ _ h => nomatch h
+
+private def censusWitnessBracketedSpec : BaseIO Unit := do
   let _ ← SeLe4n.Platform.FFI.modifyGetKernelState (fun st =>
-    match SeLe4n.Kernel.runUnderDeclaredLockSet (fun _ => none) SeLe4n.Kernel.Concurrency.bootCoreId
-        (fun s => ((), s)) st with
-    | .undeclared r => r
-    | .committed r => r
-    | .refused u => ((), u))
+    let (v, st') := censusWitnessSpec.run st
+    (v, st'))
+  pure ()
+
+/-- **The ghost commit this gate refuses** (WS-LS LS2.2): a state-committing
+body that runs the proven bracket, writing a lock trace the kernel has no
+words for.  Held against `ghostForms` whatever discipline is recorded. -/
+private def censusWitnessGhostCommit : BaseIO Unit := do
+  let _ ← SeLe4n.Platform.FFI.modifyGetKernelState (fun st =>
+    let (v, s') := censusWitnessSpec.runGhost SeLe4n.Kernel.Concurrency.bootCoreId
+      ⟨st, SeLe4n.Kernel.Concurrency.LockState.unheld⟩
+    (v, s'.kernel))
   pure ()
 
 /-- **The bare commit the plan asks this gate to catch**: a state-committing
@@ -379,7 +422,7 @@ run_cmd Command.liftTermElabM do
       environment, so a seam defined in a module only it imports would read as absent"
   -- The subjects exist: a census whose commit primitives or bracket forms had
   -- been renamed would classify everything as non-committing and pass.
-  for n in commitPrimitives ++ bracketForms do
+  for n in commitPrimitives ++ bracketForms ++ ghostForms do
     unless (env.find? n).isSome do
       throwError "export-commit census: `{n}` is not a declaration of this environment, so \
         the property this census decides does not exist"
@@ -391,8 +434,21 @@ run_cmd Command.liftTermElabM do
       walk is not transitive"
   if commitsState env ``censusWitnessNoCommit then
     throwError "export-commit census: a body that only reads the state is seen to commit"
-  unless (disciplineViolations env ``censusWitnessBracketed .bracketed).isEmpty do
-    throwError "export-commit census: the bracketed witness was refused as bracketed"
+  unless (disciplineViolations env ``censusWitnessBracketedSpec .bracketed).isEmpty do
+    throwError "export-commit census: a body running `BracketSpec.run` was refused as bracketed"
+  -- WS-LS LS2.2, the relation broken: the same record run on the ghost path
+  -- is refused under every discipline, and a body that never touches the
+  -- table is not.
+  if (disciplineViolations env ``censusWitnessGhostCommit .bracketed).isEmpty then
+    throwError "export-commit census: a commit through `BracketSpec.runGhost` was ACCEPTED \
+      — the ghost bracket is the proofs' alone, and the gate does not refuse it"
+  if (disciplineViolations env ``censusWitnessGhostCommit (.unbracketed "recorded")).isEmpty then
+    throwError "export-commit census: a commit through `BracketSpec.runGhost` was accepted \
+      under an unbracketed record"
+  if runsGhost env ``censusWitnessBracketedSpec then
+    throwError "export-commit census: `BracketSpec.run` is seen to reach the ghost table"
+  if runsGhost env ``censusWitnessBareCommit then
+    throwError "export-commit census: a bare commit is seen to reach the ghost table"
   if (disciplineViolations env ``censusWitnessBareCommit .bracketed).isEmpty then
     throwError "export-commit census: a BARE COMMIT was accepted as bracketed — the gate \
       does not detect the shape it exists for"
@@ -400,7 +456,7 @@ run_cmd Command.liftTermElabM do
     throwError "export-commit census: a bare commit was refused even with a recorded reason"
   if (disciplineViolations env ``censusWitnessBareCommit (.unbracketed "")).isEmpty then
     throwError "export-commit census: an unbracketed record with an empty reason was accepted"
-  if (disciplineViolations env ``censusWitnessBracketed (.unbracketed "stale")).isEmpty then
+  if (disciplineViolations env ``censusWitnessBracketedSpec (.unbracketed "stale")).isEmpty then
     throwError "export-commit census: a bracketed body recorded as unbracketed was accepted — \
       the registry may understate coverage silently"
   -- The derived-set reconciliation, on synthetic inputs.  Planting a committing

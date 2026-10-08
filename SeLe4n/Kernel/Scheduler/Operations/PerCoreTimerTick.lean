@@ -27,7 +27,7 @@ SM5.D theorem surface that the runtime ISR (SM5.D.1) and SM5.I per-core
 invariant suite will consume:
 
 * **§1 — SM5.D.3** the cross-domain lock-set footprint (`timerTickOnCoreLockSet`
-  over SM5.A's `SchedLockId` extended with the SM5.D.3 replenish-queue domain:
+  over SM5.A's `LockKey` extended with the SM5.D.3 replenish-queue domain:
   object-store + run-queue + replenish-queue *write* locks, plan §3.4 / §4.4
   ascending order) + the WCRT-bounding size witness (SM5.D.7).
 * **§2 — SM5.D.6** per-core non-boundary domain decrement: `decrementDomainTimeOnCore`
@@ -65,14 +65,15 @@ zero sorries.
 namespace SeLe4n.Kernel
 
 open SeLe4n.Model
-open SeLe4n.Kernel.Concurrency (numCores CoreId bootCoreId allCores SgiKind)
+open SeLe4n.Kernel.Concurrency (numCores CoreId bootCoreId allCores SgiKind
+  LockKey)
 
 -- ============================================================================
 -- §1  SM5.D.3 — Cross-domain lock-set footprint (+ SM5.D.7 WCRT size bound)
 -- ============================================================================
 
 /-- WS-SM SM5.D.3 (cross-domain, plan §3.4 / §4.4): the **static** timer-proper
-lock-set footprint of `timerTickOnCore c`, over SM5.A's `SchedLockId` (extended at
+lock-set footprint of `timerTickOnCore c`, over SM5.A's `LockKey` (extended at
 SM5.D.3 with the replenish-queue domain).
 
 The tick's *own* writes (the SM5.D.4 replenishment, SM5.D.6 domain accounting,
@@ -80,7 +81,7 @@ SM5.D.5 budget tick on its non-timeout branches, and the SM5.D.2 reschedule) tou
 three lock domains on core `c`:
 * the RobinHood **object store** (write): CBS refills + budget/time-slice writes +
   the context save/restore on preemption all `objects.insert`.  Per SM3.A.10 the
-  store is guarded by the single table-level lock (`schedObjStoreLockId`), in
+  store is guarded by the single table-level lock (`LockKey.objStore`), in
   **write** mode — which subsumes plan §3.4's "all TCB locks for threads whose
   SchedContext is bound to `c`" (the per-thread set), exactly the SM5.B/C
   table-lock rationale (RHTable structural safety is table-granularity);
@@ -90,8 +91,8 @@ three lock domains on core `c`:
   replenishment insert.
 
 So the static footprint is the three-lock set in plan §4.4 ascending order
-(object < runQueue < replenishQueue):
-`[(object schedObjStoreLockId, .write), (runQueue ⟨c⟩, .write), (replenishQueue ⟨c⟩, .write)]`.
+(objStore < runQueue < replenishQueue):
+`[(objStore, .write), (runQueue c, .write), (replenishQueue c, .write)]`.
 
 **Dynamic wake extension (the honest footprint caveat).**  This static set is
 **not** the *complete* footprint.  Two of the tick's arms wake a thread on the
@@ -117,10 +118,10 @@ The cross-domain acquisition order is certified by `timerTickOnCoreLockSet_pairw
 (static) / `timerTickOnCoreCompleteLockSet_pairwise_le` (complete); the runtime
 acquisition is `SeLe4n/Kernel/SchedLockBracket.lean` (RR7.39). -/
 def timerTickOnCoreLockSet (c : CoreId) :
-    List (SchedLockId × Concurrency.AccessMode) :=
-  [ (SchedLockId.object schedObjStoreLockId, .write)
-  , (SchedLockId.runQueue ⟨c⟩, .write)
-  , (SchedLockId.replenishQueue ⟨c⟩, .write) ]
+    List (LockKey × Concurrency.AccessMode) :=
+  [ (LockKey.objStore, .write)
+  , (LockKey.runQueue c, .write)
+  , (LockKey.replenishQueue c, .write) ]
 
 /-- SM5.D.3: the tick footprint is the three-lock object-store + run-queue +
 replenish-queue set. -/
@@ -139,19 +140,19 @@ theorem timerTickOnCoreLockSet_write_only (c : CoreId) :
 the CBS / budget / context-save object writes — and subsumes the dynamic per-TCB
 lock set). -/
 theorem timerTickOnCoreLockSet_contains_objStore_write (c : CoreId) :
-    (SchedLockId.object schedObjStoreLockId, Concurrency.AccessMode.write)
+    (LockKey.objStore, Concurrency.AccessMode.write)
       ∈ timerTickOnCoreLockSet c := by
   simp [timerTickOnCoreLockSet]
 
 /-- SM5.D.3: core `c`'s run-queue **write** lock is in the tick footprint. -/
 theorem timerTickOnCoreLockSet_contains_runQueue_write (c : CoreId) :
-    (SchedLockId.runQueue ⟨c⟩, Concurrency.AccessMode.write)
+    (LockKey.runQueue c, Concurrency.AccessMode.write)
       ∈ timerTickOnCoreLockSet c := by
   simp [timerTickOnCoreLockSet]
 
 /-- SM5.D.3: core `c`'s replenish-queue **write** lock is in the tick footprint. -/
 theorem timerTickOnCoreLockSet_contains_replenishQueue_write (c : CoreId) :
-    (SchedLockId.replenishQueue ⟨c⟩, Concurrency.AccessMode.write)
+    (LockKey.replenishQueue c, Concurrency.AccessMode.write)
       ∈ timerTickOnCoreLockSet c := by
   simp [timerTickOnCoreLockSet]
 
@@ -161,21 +162,21 @@ theorem timerTickOnCoreLockSet_keys_nodup (c : CoreId) :
     ((timerTickOnCoreLockSet c).map (·.1)).Nodup := by
   simp [timerTickOnCoreLockSet]
 
-/-- SM5.D.3 (plan §4.4): the tick footprint's keys form a `SchedLockId`-ascending
+/-- SM5.D.3 (plan §4.4): the tick footprint's keys form a `LockKey`-ascending
 acquisition sequence (`Pairwise (· ≤ ·)`) — object before run-queue before
 replenish-queue — so the canonical `withLockSet` acquisition is the list itself
 (the tick's contribution to the SM3.D deadlock-freedom ladder). -/
 theorem timerTickOnCoreLockSet_pairwise_le (c : CoreId) :
     ((timerTickOnCoreLockSet c).map (·.1)).Pairwise (· ≤ ·) := by
-  have hObjRq : SchedLockId.object schedObjStoreLockId
-      ≤ SchedLockId.runQueue (⟨c⟩ : RunQueueLockId) :=
-    (SchedLockId.object_lt_runQueue _ _).1
-  have hObjRpq : SchedLockId.object schedObjStoreLockId
-      ≤ SchedLockId.replenishQueue (⟨c⟩ : ReplenishQueueLockId) :=
-    (SchedLockId.object_lt_replenishQueue _ _).1
-  have hRqRpq : SchedLockId.runQueue (⟨c⟩ : RunQueueLockId)
-      ≤ SchedLockId.replenishQueue (⟨c⟩ : ReplenishQueueLockId) :=
-    (SchedLockId.runQueue_lt_replenishQueue _ _).1
+  have hObjRq : LockKey.objStore
+      ≤ LockKey.runQueue c :=
+    (LockKey.objStore_lt_runQueue _).1
+  have hObjRpq : LockKey.objStore
+      ≤ LockKey.replenishQueue c :=
+    (LockKey.objStore_lt_replenishQueue _).1
+  have hRqRpq : LockKey.runQueue c
+      ≤ LockKey.replenishQueue c :=
+    (LockKey.runQueue_lt_replenishQueue _ _).1
   simp only [timerTickOnCoreLockSet, List.map_cons, List.map_nil]
   refine List.Pairwise.cons ?_ (List.Pairwise.cons ?_ (List.Pairwise.cons ?_ List.Pairwise.nil))
   · intro a ha
@@ -221,8 +222,8 @@ cannot name before it runs.
 
 `allCores` is `List.finRange numCores`, so the segment is already sorted and
 duplicate-free, and its length is exactly `numCores`. -/
-def allCoreRunQueueLockSegment : List (SchedLockId × Concurrency.AccessMode) :=
-  allCores.map (fun d => (SchedLockId.runQueue ⟨d⟩, .write))
+def allCoreRunQueueLockSegment : List (LockKey × Concurrency.AccessMode) :=
+  allCores.map (fun d => (LockKey.runQueue d, .write))
 
 /-- **WS-RR RR7.39**: the segment's length is the core count. -/
 @[simp] theorem allCoreRunQueueLockSegment_length :
@@ -231,7 +232,7 @@ def allCoreRunQueueLockSegment : List (SchedLockId × Concurrency.AccessMode) :=
 
 /-- **WS-RR RR7.39**: every core's run-queue write lock is in the segment. -/
 theorem mem_allCoreRunQueueLockSegment (d : CoreId) :
-    (SchedLockId.runQueue ⟨d⟩, Concurrency.AccessMode.write)
+    (LockKey.runQueue d, Concurrency.AccessMode.write)
       ∈ allCoreRunQueueLockSegment :=
   List.mem_map.mpr ⟨d, Concurrency.mem_allCores d, rfl⟩
 
@@ -245,9 +246,9 @@ theorem allCoreRunQueueLockSegment_write_only :
 /-- **WS-RR RR7.39**: the segment names run-queue locks and nothing else — the
 fact that separates it from the object and replenish keys in the nodup and
 ordering proofs below. -/
-theorem allCoreRunQueueLockSegment_keys_runQueue {k : SchedLockId}
+theorem allCoreRunQueueLockSegment_keys_runQueue {k : LockKey}
     (hk : k ∈ allCoreRunQueueLockSegment.map (·.1)) :
-    ∃ d : CoreId, k = SchedLockId.runQueue ⟨d⟩ := by
+    ∃ d : CoreId, k = LockKey.runQueue d := by
   obtain ⟨p, hp, rfl⟩ := List.mem_map.mp hk
   obtain ⟨d, _, rfl⟩ := List.mem_map.mp hp
   exact ⟨d, rfl⟩
@@ -311,7 +312,7 @@ locked at finer than table granularity, which is the SM3.A.10 representation
 cut.  It is an optimisation to make *there*, not the correctness fix to make
 here. -/
 def timerTickOnCoreTimeoutDynamicLockSet :
-    List (SchedLockId × Concurrency.AccessMode) :=
+    List (LockKey × Concurrency.AccessMode) :=
   allCoreRunQueueLockSegment
 
 /-- **WS-RR RR7.39**: the dynamic timeout extension is every core's run-queue
@@ -329,7 +330,7 @@ theorem timerTickOnCoreTimeoutDynamicLockSet_write_only :
 thread — the statement the pre-RR7.39 single-boot-core set could not make, and
 the one the tick's target-aware wakes need. -/
 theorem timerTickOnCoreTimeoutDynamicLockSet_covers_any_target (d : CoreId) :
-    (SchedLockId.runQueue ⟨d⟩, Concurrency.AccessMode.write)
+    (LockKey.runQueue d, Concurrency.AccessMode.write)
       ∈ timerTickOnCoreTimeoutDynamicLockSet :=
   mem_allCoreRunQueueLockSegment d
 
@@ -349,9 +350,9 @@ over-approximation: the only replenish-queue writers the tick reaches are
 `replenishOnCore st c` (which inserts into it).  A wake moves a thread between
 *run* queues; it does not move a replenishment. -/
 def timerTickOnCoreCompleteLockSet (c : CoreId) :
-    List (SchedLockId × Concurrency.AccessMode) :=
-  (SchedLockId.object schedObjStoreLockId, .write) ::
-    (allCoreRunQueueLockSegment ++ [(SchedLockId.replenishQueue ⟨c⟩, .write)])
+    List (LockKey × Concurrency.AccessMode) :=
+  (LockKey.objStore, .write) ::
+    (allCoreRunQueueLockSegment ++ [(LockKey.replenishQueue c, .write)])
 
 /-- SM5.D.3: the complete footprint contains the static timer-proper footprint. -/
 theorem timerTickOnCoreCompleteLockSet_contains_static (c : CoreId) :
@@ -374,8 +375,8 @@ theorem timerTickOnCoreCompleteLockSet_contains_timeout (c : CoreId) :
 /-- **WS-RR RR7.39 (the widening is free)**: any two cores' complete tick
 footprints already share the object-store **table** write lock.
 
-`schedObjStoreLockId` names `SystemState.objStoreLock` — a single word, not a
-per-core one — so two ticks on distinct cores exclude each other on it whatever
+`LockKey.objStore` is a single key of the ghost lock table, not a per-core
+one — so two ticks on distinct cores exclude each other on it whatever
 their run-queue segments contain.  That is why widening the run-queue segment
 from two locks to every core (see `timerTickOnCoreTimeoutDynamicLockSet`) costs
 no achievable concurrency: the ticks were already fully serialised against one
@@ -388,7 +389,7 @@ state-dependent one, and a comment cannot be checked. -/
 theorem timerTickOnCoreCompleteLockSet_serialises_pairwise (c d : CoreId) :
     ∃ p, p ∈ timerTickOnCoreCompleteLockSet c ∧ p ∈ timerTickOnCoreCompleteLockSet d ∧
       p.2 = Concurrency.AccessMode.write :=
-  ⟨(SchedLockId.object schedObjStoreLockId, .write),
+  ⟨(LockKey.objStore, .write),
     List.mem_cons_self, List.mem_cons_self, rfl⟩
 
 /-- SM5.D.3: every lock in the complete footprint is acquired in **write** mode. -/
@@ -417,11 +418,11 @@ theorem timerTickOnCoreCompleteLockSet_keys_nodup (c : CoreId) :
     · exact absurd (List.mem_singleton.mp hRep) (by simp)
   · refine List.nodup_append.2 ⟨?_, List.pairwise_singleton _ _, ?_⟩
     · -- the segment's keys are `allCores` under an injective map
-      have hInj : Function.Injective (fun d : CoreId => SchedLockId.runQueue ⟨d⟩) := by
+      have hInj : Function.Injective (fun d : CoreId => LockKey.runQueue d) := by
         intro a b hab
-        exact congrArg RunQueueLockId.core (SchedLockId.runQueue.inj hab)
+        exact LockKey.runQueue.inj hab
       have hKeys : allCoreRunQueueLockSegment.map (·.1)
-          = allCores.map (fun d : CoreId => SchedLockId.runQueue ⟨d⟩) := by
+          = allCores.map (fun d : CoreId => LockKey.runQueue d) := by
         simp [allCoreRunQueueLockSegment, List.map_map, Function.comp]
       rw [hKeys]
       exact List.Pairwise.map _ (fun _ _ h he => h (hInj he)) Concurrency.allCores_nodup
@@ -431,7 +432,7 @@ theorem timerTickOnCoreCompleteLockSet_keys_nodup (c : CoreId) :
       simp
 
 /-- SM5.D.3 (plan §4.4): the complete footprint's keys form a
-`SchedLockId`-ascending acquisition sequence — object < every run queue (in
+`LockKey`-ascending acquisition sequence — object < every run queue (in
 `CoreId`-ascending order) < replenishQueue ⟨c⟩ — the tick's contribution to the
 SM3.D deadlock-freedom ladder. -/
 theorem timerTickOnCoreCompleteLockSet_pairwise_le (c : CoreId) :
@@ -443,13 +444,13 @@ theorem timerTickOnCoreCompleteLockSet_pairwise_le (c : CoreId) :
   · intro a ha
     rcases List.mem_append.mp ha with hSeg | hRep
     · obtain ⟨_, rfl⟩ := allCoreRunQueueLockSegment_keys_runQueue hSeg
-      exact (SchedLockId.object_lt_runQueue _ _).1
+      exact (LockKey.objStore_lt_runQueue _).1
     · rw [List.mem_singleton.mp hRep]
-      exact (SchedLockId.object_lt_replenishQueue _ _).1
+      exact (LockKey.objStore_lt_replenishQueue _).1
   · intro a ha b hb
     obtain ⟨_, rfl⟩ := allCoreRunQueueLockSegment_keys_runQueue ha
     rw [List.mem_singleton.mp hb]
-    exact (SchedLockId.runQueue_lt_replenishQueue _ _).1
+    exact (LockKey.runQueue_lt_replenishQueue _ _).1
 
 /-- WS-SM SM5.D.7 (WCRT bound, complete footprint): the complete
 over-approximated footprint — object + `numCores` run queues + one replenish

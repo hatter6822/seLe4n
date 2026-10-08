@@ -953,14 +953,16 @@ theorem endpointCallOnCore_establishes_blockedOnReplyHasTarget
 -- §4  SM6.A.9 — invariant preservation *through* the 2PL lock bracket
 -- ============================================================================
 
-/-- WS-SM SM6.A.9 (atomicity, invariant form): under its `withLockSet` bracket
-the cross-core endpoint call preserves object-store integrity **through the
-entire 2PL acquire/release fold**, not merely the bare action.  Composes the
-bare-action `endpointCallOnCore_preserves_objects_invExt` with the lock-acquire /
-lock-release insensitivity of `invExt` via the SM3.C.8 metatheorem
-`withLockSet_invariant_preserved`.  This is the substantive content behind
-"atomic under lock-set": no lock-bookkeeping step of the bracket disturbs the
-object-store well-formedness the transition relies on. -/
+/-- WS-SM SM6.A.9 (atomicity, invariant form; **WS-LS LS2.1**: over the pair):
+under its 2PL bracket the cross-core endpoint call preserves object-store
+integrity **through the entire bracket**, not merely the bare action.  Composes
+the bare-action `endpointCallOnCore_preserves_objects_invExt` with the SM3.C.8
+metatheorem `withLockSet_invariant_preserved`.  Before LS2.1 this also took the
+lock primitives' `invExt` stability, because the word-level phases rewrote
+kernel objects; over the pair the phases write only the lock half, so the
+action's own preservation is the whole obligation.  This is the substantive
+content behind "atomic under lock-set": no lock-bookkeeping step of the bracket
+disturbs the object-store well-formedness the transition relies on. -/
 theorem endpointCallOnCore_withLockSet_preserves_objects_invExt
     (endpointId : SeLe4n.ObjId) (caller : SeLe4n.ThreadId) (msg : IpcMessage)
     (executingCore : CoreId) (cnRoot : SeLe4n.ObjId)
@@ -970,14 +972,11 @@ theorem endpointCallOnCore_withLockSet_preserves_objects_invExt
     -- preservation fold is generic over the lock set, so this strictly
     -- generalizes the prior `replyId? = none` statement to the runtime footprint.
     (replyId? : Option SeLe4n.ReplyId := none)
-    (s : SystemState) (hObjInv : s.objects.invExt) :
+    (s : LockedSystemState) (hObjInv : s.kernel.objects.invExt) :
     (withLockSet (lockSet_endpointCall caller cnRoot endpointId receiver? donatedSc? replyId?)
-        executingCore (endpointCallOnCore endpointId caller msg executingCore) s).1.objects.invExt :=
+        executingCore (endpointCallOnCore endpointId caller msg executingCore) s).1.kernel.objects.invExt :=
   withLockSet_invariant_preserved _ executingCore _ s (fun st => st.objects.invExt) hObjInv
-    (fun l m s' h => acquireLockOnObject_preserves_invExt s' executingCore l m h)
     (fun s' h => endpointCallOnCore_preserves_objects_invExt endpointId caller msg executingCore s' h)
-    (fun l m s' h => releaseLockOnObject_preserves_invExt s' executingCore l m h)
-    (fun l m s' h => cancelLockOnObject_preserves_invExt s' executingCore l m h)
 
 -- ============================================================================
 -- §5  Lookup-congruence for the dual-queue structural invariant
@@ -2896,39 +2895,32 @@ theorem endpointCallOnCore_preserves_ipcInvariantFull_perCore
 -- substantive form, at the observable the rendezvous actually writes.
 -- ============================================================================
 
-/-- **WS-RR RR7.4**: under its declared footprint the cross-core endpoint call is
-observationally atomic — the acquire fold shows every thread's IPC state exactly
-as the pre-state had it, and the bracketed run shows exactly the transition's own
-effect.  No partially-locked intermediate — a caller already blocked while the
-receiver has not yet been woken, say — is ever observable.
+/-- **WS-RR RR7.4** (**WS-LS LS2.1**: over the pair, hypothesis-free): under its
+declared footprint the cross-core endpoint call is observationally atomic — the
+bracketed run shows every thread's IPC state exactly as the transition's own
+effect leaves it.  No partially-locked intermediate — a caller already blocked
+while the receiver has not yet been woken, say — is ever observable.
 
 Stated for **every** thread, so it covers the receiver (the decisive observer
 the finding names), the caller, and any bystander, without a judgement call
-about which participant the rendezvous's decisive observable is. -/
+about which participant the rendezvous's decisive observable is.
+
+The `invExt` hypothesis and the acquire-fold conjunct (the observer unchanged
+by the growing phase) are dropped because the growing phase no longer touches
+the kernel state — a strengthening (plan O6). -/
 theorem endpointCallOnCore_observer_atomic
     (endpointId : SeLe4n.ObjId) (caller : SeLe4n.ThreadId) (msg : IpcMessage)
     (executingCore : CoreId) (cnRoot : SeLe4n.ObjId)
     (receiver? : Option SeLe4n.ThreadId) (donatedSc? : Option SeLe4n.SchedContextId)
     (replyId? : Option SeLe4n.ReplyId) (observed : SeLe4n.ThreadId)
-    (s : SystemState) (hInv : s.objects.invExt) :
+    (s : LockedSystemState) :
     threadIpcStateObserver observed
-        (acquireAll executingCore
-          (lockSet_endpointCall caller cnRoot endpointId receiver? donatedSc?
-            replyId?).lockAcquireSequence s)
-      = threadIpcStateObserver observed s
-    ∧ threadIpcStateObserver observed
         (withLockSet (lockSet_endpointCall caller cnRoot endpointId receiver? donatedSc?
             replyId?)
-          executingCore (endpointCallOnCore endpointId caller msg executingCore) s).1
+          executingCore (endpointCallOnCore endpointId caller msg executingCore) s).1.kernel
       = threadIpcStateObserver observed
-          (endpointCallOnCore endpointId caller msg executingCore
-            (acquireAll executingCore
-              (lockSet_endpointCall caller cnRoot endpointId receiver? donatedSc?
-                replyId?).lockAcquireSequence s)).1 :=
-  lockSet_observer_atomic_of_objectStoreObserver _ executingCore _ s _
-    (threadIpcStateObserver_insensitiveOn executingCore observed) hInv
-    (fun s' h => endpointCallOnCore_preserves_objects_invExt endpointId caller msg
-      executingCore s' h)
+          (endpointCallOnCore endpointId caller msg executingCore s.kernel).1 :=
+  lockSet_observer_atomic _ executingCore _ s _
 
 
 end SeLe4n.Kernel

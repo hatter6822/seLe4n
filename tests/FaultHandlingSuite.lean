@@ -13,7 +13,6 @@ import SeLe4n.Kernel.IPC.Invariant.FaultProgress
 import SeLe4n.Kernel.InformationFlow.FaultFlow
 import SeLe4n.Kernel.Architecture.ExceptionModel
 import SeLe4n.Kernel.FaultEntry
-import SeLe4n.Kernel.Architecture.RegisterContextBounded
 import SeLe4n.Testing.StateBuilder
 
 /-!
@@ -130,19 +129,13 @@ open SeLe4n.Testing
 #check @faultEntry
 #check @faultEntryFrame?
 #check @faultEntryFrame?_none
--- `v0.36.47` audit (the `Nat`-backed register file row): the by-byte word read,
--- the carried word bound, its preservation by the entries' saves and the SVC
--- seam's spill, and the restore path's discharge of it under the predicate.
+-- The register file is 35 machine words: the by-byte word read, its
+-- round trip through the trap context, and the restore path's identity.
 #check @Kernel.Architecture.TrapContext.wordOfByte
 #check @Kernel.Architecture.TrapContext.word_of_ge
-#check @Kernel.Architecture.registerContextsWordBounded
-#check @Kernel.Architecture.saveCapturedTrapFrameAt_preserves_registerContextsWordBounded
-#check @Kernel.Architecture.saveCapturedSyscallFrameAt_preserves_registerContextsWordBounded
-#check @Kernel.Architecture.writeFfiRegistersToTcb_preserves_registerContextsWordBounded
-#check @Kernel.Architecture.writeFaultRegistersToTcb_preserves_registerContextsWordBounded
-#check @Kernel.Architecture.switchToThreadOnCore_preserves_registerContextsWordBounded
-#check @Kernel.Architecture.restoreTargetOnCore_user_roundTrip
-#check @Kernel.Architecture.registerContextsWordBounded_default
+#check @SeLe4n.RegisterFile.word_ofWords
+#check @SeLe4n.RegisterFile.ofWords_word
+#check @Kernel.Architecture.registerFileOfTrapContext_trapContextOfRegisterFile
 #check @faultEntryStep_not_dispatchable
 -- Audit round: the trap-frame window the entry spills, and the ABI v3 label range.
 #check @SeLe4n.Model.FaultRegisterWindow
@@ -311,8 +304,7 @@ private def mkTcb (tid : Nat) (prio : Nat) (aff : Option CoreId)
     vspaceRoot := vsRoot, ipcBuffer := SeLe4n.VAddr.ofNat 4096, ipcState := .ready,
     threadState := .Ready, cpuAffinity := aff, faultHandler := fh,
     registerContext :=
-      { pc := ⟨0⟩, sp := ⟨0x7000⟩,
-        gpr := fun r => if r.val = 30 then ⟨0xF00D⟩ else ⟨r.val * 100⟩ } }
+      SeLe4n.RegisterFile.withGprs 0 0x7000 (fun r => if r = 30 then 0xF00D else (r * 100).toUInt64) }
 
 /-- The 4-core fault workload's pre-state. -/
 private def stFault : SystemState :=
@@ -393,7 +385,7 @@ private def pendingFaultOf (st : SystemState) (tid : SeLe4n.ThreadId) : Option T
   (st.getTcb? tid).bind (·.pendingFault)
 
 private def savedPcOf (st : SystemState) (tid : SeLe4n.ThreadId) : Option Nat :=
-  (st.getTcb? tid).map (·.registerContext.pc.val)
+  (st.getTcb? tid).map (·.registerContext.pc.toNat)
 
 private def deliveredMessageOf (st : SystemState) (tid : SeLe4n.ThreadId) : Option IpcMessage :=
   (st.getTcb? tid).bind (·.pendingMessage)
@@ -969,7 +961,7 @@ private def runEntryWindowChecks : IO Unit := do
         ((List.range 8).all (fun i =>
             (stE.getTcb? faulter).map (·.registerContext.gpr ⟨i⟩ |>.val) ==
               some (trapWindow.gprAt i).toNat) &&
-          (stE.getTcb? faulter).map (·.registerContext.sp.val) == some trapWindow.sp.toNat &&
+          (stE.getTcb? faulter).map (·.registerContext.sp.toNat) == some trapWindow.sp.toNat &&
           (stE.getTcb? faulter).map (·.registerContext.gpr ⟨30⟩ |>.val) ==
             some trapWindow.lr.toNat)
       assertBool "…while the mirror's other registers are untouched"
@@ -994,7 +986,7 @@ private def runEntryWindowChecks : IO Unit := do
               (stR.getTcb? faulter).map (·.registerContext.gpr ⟨i⟩ |>.val) ==
                 some (trapWindow.gprAt i).toNat))
           assertBool "the resume reinstalls the trap frame's sp and lr"
-            ((stR.getTcb? faulter).map (·.registerContext.sp.val) == some trapWindow.sp.toNat &&
+            ((stR.getTcb? faulter).map (·.registerContext.sp.toNat) == some trapWindow.sp.toNat &&
               (stR.getTcb? faulter).map (·.registerContext.gpr ⟨30⟩ |>.val) ==
                 some trapWindow.lr.toNat)
       | (_, .error e) =>
@@ -1014,7 +1006,7 @@ private def runEntryWindowChecks : IO Unit := do
           (pendingFaultOf stK faulter).isNone &&
           deliveredMessageOf stK handler == deliveredMessageOf stRecv handler)
       assertBool "…and does not even spill: the current thread's registers are untouched"
-        ((stK.getTcb? faulter).map (·.registerContext.sp.val) == some 0x7000)
+        ((stK.getTcb? faulter).map (·.registerContext.sp.toNat) == some 0x7000)
       let kernelAbortCtx : ExceptionContext :=
         { esr := UInt64.ofNat ((0x25 <<< 26) ||| 0x7), elr := 0xFFFF_0000_0000_1000,
           spsr := 0x3C0, far := 0xFFFF_0000_DEAD_0000 }
@@ -1072,8 +1064,8 @@ private def runEntryFrameDecodeChecks : IO Unit := do
         (frame == Kernel.Architecture.registerFileOfTrapContext sampleTrapContext)
       assertBool "the window agrees with the saved frame word for word"
         ((List.range 8).all (fun i => (w.gprAt i).toNat == (frame.gpr ⟨i⟩).val) &&
-          w.sp.toNat == frame.sp.val && w.lr.toNat == (frame.gpr ⟨30⟩).val &&
-          ectx.elr.toNat == frame.pc.val)
+          w.sp.toNat == frame.sp.toNat && w.lr.toNat == (frame.gpr ⟨30⟩).val &&
+          ectx.elr.toNat == frame.pc.toNat)
       -- The decoded window drives the same delivery the fifteen-scalar entry
       -- drove: the step on it delivers, and the recorded context is the window.
       match handlerRecvOnCore1 stRunning with
@@ -1490,7 +1482,7 @@ private def runRestartChecks : IO Unit := do
       assertBool "the restart does NOT resume at the faulting instruction"
         (savedPcOf stR faulter != some 0x4_0000)
       assertBool "the reply's MR9 becomes the stack pointer"
-        ((stR.getTcb? faulter).map (·.registerContext.sp.val) == some 0x7FF0)
+        ((stR.getTcb? faulter).map (·.registerContext.sp.toNat) == some 0x7FF0)
       assertBool "the reply's MR10 becomes the link register"
         ((stR.getTcb? faulter).map (·.registerContext.gpr ⟨30⟩ |>.val) == some 0xABBA)
       assertBool "the reply's MR0-MR7 become the argument window"
@@ -1538,9 +1530,9 @@ private def replyCapH : Capability :=
 
 /-- WS-RR RR8.12 Cut C3a: does a scheduler-domain footprint name this core's run-queue
 write lock? -/
-private def hasRunQueueWriteLock (fp : List (SchedLockId × Concurrency.AccessMode))
+private def hasRunQueueWriteLock (fp : List (LockKey × Concurrency.AccessMode))
     (c : CoreId) : Bool :=
-  decide ((SchedLockId.runQueue ⟨c⟩, Concurrency.AccessMode.write) ∈ fp)
+  decide ((LockKey.runQueue c, Concurrency.AccessMode.write) ∈ fp)
 
 /-- WS-RR RR4.14/RR4.15: the seam under test — a fault handler answers through
 the **ordinary reply syscall**, which is the only reply a handler has.  Before
@@ -2090,7 +2082,7 @@ private def runResidentFrameChecks : IO Unit := do
   let stResident : SystemState :=
     { stRunning with scheduler := vacatedSched,
                      machine := stRunning.machine.setResidentOnCore c0 (some faulter) }
-  let live : SeLe4n.RegisterFile := { pc := ⟨0x9004⟩, sp := ⟨0x7000⟩, gpr := fun _ => ⟨0xAB⟩ }
+  let live : SeLe4n.RegisterFile := SeLe4n.RegisterFile.withGprs 0x9004 0x7000 (fun _ => 0xAB)
   let stalePc := savedPcOf stResident faulter
   assertBool "the faulter's saved context is stale before the trap"
     (stalePc != some 0x9004)

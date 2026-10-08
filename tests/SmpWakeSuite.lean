@@ -262,8 +262,8 @@ example (st : SystemState) (targetTid : SeLe4n.ThreadId) (c : CoreId) (st' : Sys
 
 /-- SM5.C.3: the wake lock-set acquires the object lock before the run-queue lock. -/
 example (target : CoreId) :
-    SchedLockId.object schedObjStoreLockId
-      < SchedLockId.runQueue (⟨target⟩ : RunQueueLockId) :=
+    LockKey.objStore
+      < LockKey.runQueue target :=
   wakeThreadLockSet_object_before_runQueue target
 
 /-- SM5.C.11: a wake emits at most one SGI. -/
@@ -565,13 +565,13 @@ private def runLockSetChecks : IO Unit := do
   assertBool "wakeThreadLockSet core1 has both domain locks (length 2)"
     (decide ((wakeThreadLockSet core1).length = 2))
   assertBool "wake footprint contains the object-store WRITE lock"
-    (decide ((SchedLockId.object schedObjStoreLockId, AccessMode.write)
+    (decide ((LockKey.objStore, AccessMode.write)
               ∈ wakeThreadLockSet core1))
   assertBool "wake footprint contains core 1's run-queue WRITE lock"
-    (decide ((SchedLockId.runQueue ⟨core1⟩, AccessMode.write) ∈ wakeThreadLockSet core1))
+    (decide ((LockKey.runQueue core1, AccessMode.write) ∈ wakeThreadLockSet core1))
   assertBool "wake footprint acquires the object lock before the run-queue lock (§4.4)"
-    (decide (SchedLockId.object schedObjStoreLockId
-              < SchedLockId.runQueue (⟨core1⟩ : RunQueueLockId)))
+    (decide (LockKey.objStore
+              < LockKey.runQueue core1))
   assertBool "wake footprint keys are duplicate-free"
     (decide (((wakeThreadLockSet core1).map (·.1)).Nodup))
   assertBool "every core's wake footprint has both domain locks"

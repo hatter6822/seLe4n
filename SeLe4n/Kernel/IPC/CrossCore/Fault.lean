@@ -880,7 +880,7 @@ core is derived, nothing is a parameter, and the branch is the seam's own
 predicate `threadHasPendingFault`. -/
 def schedLockSet_replyTransferOnCore (replier callerTid : SeLe4n.ThreadId) (mi : MessageInfo)
     (regs : Array SeLe4n.RegValue) (msg : IpcMessage) (executingCore : CoreId)
-    (st : SystemState) : List (SchedLockId × Concurrency.AccessMode) :=
+    (st : SystemState) : List (LockKey × Concurrency.AccessMode) :=
   schedFootprintOfCores (replyTransferWriteSet replier callerTid mi regs msg executingCore st)
     (replyTransferReplenishCores replier callerTid msg executingCore st)
 
@@ -975,7 +975,7 @@ theorem schedLockSet_replyTransferOnCore_contains_abandon_runQueue_write
     (hDisp : endpointReplyCrossCoreDispatch replier callerTid IpcMessage.empty executingCore st
       = (st', .ok sgi))
     (hAbandon : decodeFaultReply tf.fault tf.context mi regs = .abandon) :
-    (SchedLockId.runQueue ⟨determineTargetCore st' callerTid⟩, Concurrency.AccessMode.write)
+    (LockKey.runQueue (determineTargetCore st' callerTid), Concurrency.AccessMode.write)
       ∈ schedLockSet_replyTransferOnCore replier callerTid mi regs msg executingCore st := by
   have hHas : threadHasPendingFault st callerTid = true := by
     simp [threadHasPendingFault, hTcb, hFault]

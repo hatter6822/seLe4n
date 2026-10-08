@@ -25,7 +25,8 @@ preservation, the SchedContext hand-off catalogue (`PerCoreDonationStep`,
 `schedLockSet_endpointReplyRecvOnCore`.  The composed transition's
 `ipcInvariantFull` preservation is `endpointReplyRecvOnCore_preserves_ipcInvariantFull`
 (`IPC/Invariant/DispatchPayoff.lean`), and its per-core confinement and
-non-interference are `endpointReplyRecvOnCore_confinedToCores` /
+non-interference are `endpointReplyRecvOnCore_confinedToCores`
+(`SlotConfinement/IpcArms.lean`, production since WS-LS LS2.3) /
 `endpointReplyRecvOnCore_crossCoreNonInterference`
 (`InformationFlow/NonInterferenceCrossCore.lean`).
 -/
@@ -33,7 +34,8 @@ non-interference are `endpointReplyRecvOnCore_confinedToCores` /
 namespace SeLe4n.Kernel
 
 open SeLe4n.Model
-open SeLe4n.Kernel.Concurrency (bootCoreId)
+open SeLe4n.Kernel.Concurrency (bootCoreId
+  LockKey)
 
 /-- The step is the identity when the holder *is* the receiver: the receive leg's
 new donation goes to `tid`, so a holder that is the receiver regains a
@@ -919,7 +921,7 @@ theorem schedLockSet_endpointReplyRecvOnCore_contains_prevCaller_runQueue_write
     (endpointId : SeLe4n.ObjId) (receiver : SeLe4n.ThreadId) (replyId : SeLe4n.ReplyId)
     (prevCaller : SeLe4n.ThreadId) (msg : IpcMessage) (receiverCspaceRoot : SeLe4n.ObjId)
     (receiverSlotBase : SeLe4n.Slot) (executingCore : Concurrency.CoreId) (st : SystemState) :
-    (SchedLockId.runQueue ⟨determineTargetCore st prevCaller⟩, Concurrency.AccessMode.write)
+    (LockKey.runQueue (determineTargetCore st prevCaller), Concurrency.AccessMode.write)
       ∈ schedLockSet_endpointReplyRecvOnCore endpointId receiver replyId prevCaller msg
           receiverCspaceRoot receiverSlotBase executingCore st := by
   refine (mem_schedFootprintOfCores_runQueue_iff _ _ _).mpr ?_
@@ -937,7 +939,7 @@ theorem schedLockSet_endpointReplyRecvOnCore_covers_receiveLeg
     (hReply : endpointReplyOnCore receiver prevCaller msg executingCore st = (st1, .ok sgi))
     (hPop : replyRecvPopDonation replyId prevCaller st1 = .ok (returned?, st1p)) :
     ∀ c ∈ endpointReceiveDualWriteSet st1p endpointId executingCore,
-      (SchedLockId.runQueue ⟨c⟩, Concurrency.AccessMode.write)
+      (LockKey.runQueue c, Concurrency.AccessMode.write)
         ∈ schedLockSet_endpointReplyRecvOnCore endpointId receiver replyId prevCaller msg
             receiverCspaceRoot receiverSlotBase executingCore st := by
   intro c hc
@@ -1018,7 +1020,7 @@ theorem schedLockSet_endpointReplyRecvOnCore_covers_preReturnMigration
 /-- **WS-RR RR8.12 Cut C2 (coverage, the re-donation)**: on a receive leg that
 dequeues a `Call` after the pop handed a context back, the footprint covers WS-OD
 OD3.6's donation footprint member for member — hence, by
-`applyCallDonationOnCoreSchedLockSet_covers_migration`, the SM5.H migration's two
+`applyCallDonationOnCoreLockSet_covers_migration`, the SM5.H migration's two
 replenish-queue write locks — at the cores the donation **actually** resolves, on the
 post-deschedule state it runs on, under the donation's OWN resolver
 (`applyRendezvousCallDonation_ok_migrates` is the licence that those are the
@@ -1040,7 +1042,7 @@ theorem schedLockSet_endpointReplyRecvOnCore_covers_postReceiveDonation
     (hCall : rendezvousDequeuedCall st2 nextThread = true)
     (hDon : callDonationSchedContext? (replyRecvHolderDeschedule receiver holder st2)
         nextThread receiver = some scId) :
-    ∀ p ∈ applyCallDonationOnCoreSchedLockSet
+    ∀ p ∈ applyCallDonationOnCoreLockSet
              (determineTargetCore (replyRecvHolderDeschedule receiver holder st2) nextThread)
              (determineTargetCore (replyRecvHolderDeschedule receiver holder st2) receiver),
       p ∈ schedLockSet_endpointReplyRecvOnCore endpointId receiver replyId prevCaller msg
@@ -1089,7 +1091,7 @@ theorem schedLockSet_endpointReplyRecvOnCore_no_replenishQueue_of_no_donation
     (hReply : endpointReplyOnCore receiver prevCaller msg executingCore st = (st1, .ok sgi))
     (hPop : replyRecvPopDonation replyId prevCaller st1 = .ok (none, st1p))
     (hPre : receivePreReturn? st1p endpointId receiver = none) (c : Concurrency.CoreId) :
-    (SchedLockId.replenishQueue ⟨c⟩, Concurrency.AccessMode.write)
+    (LockKey.replenishQueue c, Concurrency.AccessMode.write)
       ∉ schedLockSet_endpointReplyRecvOnCore endpointId receiver replyId prevCaller msg
           receiverCspaceRoot receiverSlotBase executingCore st := by
   intro hMem
@@ -1379,7 +1381,7 @@ stages took.
 
 The `_of_no_donation` sibling above says the arm migrates *nothing* where all
 three hand-offs decline; this says *where* it migrates when they answer, which is
-what the replenish clause of `schedFootprintCoversWrites` needs.  Each stage's own
+what the replenish clause of `footprintCoversWrites` needs.  Each stage's own
 `_ne` is stated at the very sub-segment the definition appends at that stage — the
 pop's pair, the block path's pair, the re-donation's pair — so this proof is the
 composition `replyRecvHandoffReplenishCores_eq_of_legs` already names rather than a
@@ -1698,13 +1700,17 @@ theorem endpointReplyRecvOnCore_preserves_objects_invExt (endpointId : SeLe4n.Ob
                   (applyReceiveLegPipHandoff_preserves_objects_invExt _ _ _ _ _ hInv3))
 
 open SeLe4n.Kernel.Concurrency in
-/-- **Audit IPC-2**: under the `.replyRecv` footprint the live ReplyRecv is
-observationally atomic to any thread's IPC state — the field both legs write.
+/-- **Audit IPC-2** (**WS-LS LS2.1**: over the pair, hypothesis-free): under the
+`.replyRecv` footprint the live ReplyRecv is observationally atomic to any
+thread's IPC state — the field both legs write.
 
 The transition is `Kernel`-shaped (a failure carries no state), so the 2PL
 bracket runs its state-threading form: the post-state on success, the input
 state on failure.  The lock-set arguments are the full `lockSet_replyRecv`
-arity, so the claim covers every footprint the arm can declare. -/
+arity, so the claim covers every footprint the arm can declare.  The `invExt`
+hypothesis and the acquire-fold conjunct are dropped because the growing phase
+no longer touches the kernel state — a strengthening (plan O6);
+`endpointReplyRecvOnCore_preserves_objects_invExt` above stands on its own. -/
 theorem endpointReplyRecvOnCore_observer_atomic
     (endpointId : SeLe4n.ObjId) (receiver prevCaller : SeLe4n.ThreadId) (msg : IpcMessage)
     (replyId : SeLe4n.ReplyId) (receiverCspaceRoot : SeLe4n.ObjId)
@@ -1721,7 +1727,7 @@ theorem endpointReplyRecvOnCore_observer_atomic
     (preReturnOuterCaller? : Option SeLe4n.ThreadId)
     (answeredFrameAbove? answeredFrameBelow? : Option SeLe4n.ReplyId)
     (originRecipient? : Option SeLe4n.ThreadId)
-    (s : SystemState) (hInv : s.objects.invExt) :
+    (s : LockedSystemState) :
     let S := lockSet_replyRecv receiver cnRoot prevCaller endpointId newSender? donatedSc?
       donatedOwner? (some replyId) installsCaps donationServer? redonatedSc?
       belowHeadReply? outerCaller? queueNeighbour? redonationOldHead? donatedHead?
@@ -1732,27 +1738,10 @@ theorem endpointReplyRecvOnCore_observer_atomic
           receiverCspaceRoot receiverSlotBase executingCore s' with
         | .ok (r, s'') => (s'', .ok r)
         | .error e => (s', .error e)
-    threadIpcStateObserver observed
-        (acquireAll executingCore S.lockAcquireSequence s)
-      = threadIpcStateObserver observed s
-    ∧ threadIpcStateObserver observed (withLockSet S executingCore action s).1
-      = threadIpcStateObserver observed
-          (action (acquireAll executingCore S.lockAcquireSequence s)).1 := by
+    threadIpcStateObserver observed (withLockSet S executingCore action s).1.kernel
+      = threadIpcStateObserver observed (action s.kernel).1 := by
   intro S action
-  refine lockSet_observer_atomic_of_objectStoreObserver S executingCore action s _
-    (threadIpcStateObserver_insensitiveOn executingCore observed) hInv ?_
-  intro s' h
-  show (match endpointReplyRecvOnCore endpointId receiver replyId prevCaller msg
-          receiverCspaceRoot receiverSlotBase executingCore s' with
-        | .ok (r, s'') => (s'', Except.ok r)
-        | .error e => (s', .error e)).1.objects.invExt
-  cases hStep : endpointReplyRecvOnCore endpointId receiver replyId prevCaller msg
-      receiverCspaceRoot receiverSlotBase executingCore s' with
-  | error e => exact h
-  | ok pair =>
-    obtain ⟨r, s''⟩ := pair
-    exact endpointReplyRecvOnCore_preserves_objects_invExt endpointId receiver replyId
-      prevCaller msg receiverCspaceRoot receiverSlotBase executingCore s' s'' r h hStep
+  exact lockSet_observer_atomic S executingCore action s _
 
 
 end SeLe4n.Kernel

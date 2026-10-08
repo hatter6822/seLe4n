@@ -27,7 +27,7 @@ When a cut lands, update the row's status/version here and write the detail in
 `CHANGELOG.md` and `docs/REGISTERED_DEBT.md`.  A row that grows past one line
 of summary is a sign the narrative belongs in those files instead.
 
-### WS-CV The register context by value — PLANNED (registered v0.36.50; opens before WS-CB)
+### WS-CV The register context by value — IN FLIGHT (registered v0.36.50; CV0 landed v0.36.59; CV1.1 v0.36.61; opens before WS-CB)
 
 The TCB's `registerContext`, the per-core register banks and the Lean boundary
 become one structure: `SeLe4n.RegisterFile` takes `Architecture.TrapContext`'s
@@ -46,14 +46,80 @@ have rewritten other threads' saved registers, and the entry/exit path made
 about forty heap allocations per syscall; a representation change is cheapest
 before WS-CB adds consumers of the saved context.
 
-**What new code must assume until WS-CV lands**: `RegisterFile.gpr` is a
-function and `RegisterFile`'s `BEq` is not lawful (`RegisterFile.not_lawfulBEq`);
-a theorem needing equality of register files states it field-wise or through
-`RegisterFile.ext`.  **What new code must not do**: add a consumer of
-`registerFileOfTrapContext` / `trapContextOfRegisterFile` or a new
-`RegisterFile` literal with a `gpr := fun …` lambda outside tests — both are
-deleted or rewritten by CV1/CV2; build a saved context from `TrapContext`
-through `ofWords` and the existing writers instead.
+**What new code must assume until WS-CV lands**: since CV1.1 `RegisterFile`
+is the thirty-five `UInt64` words of the trap frame with decidable (lawful)
+equality; `RegisterFile.gpr` is a view (`x0`–`x30` as `RegValue`, `0` past
+them) and `writeReg` takes a `UInt64`; a register file is built with
+`RegisterFile.withGprs` / `ofWords` or a structure literal of its words.
+**What new code must not do**: add a consumer of `registerFileOfTrapContext`
+/ `trapContextOfRegisterFile` (deleted by CV2) or a `RegValue`-typed register
+read on the entry/exit path; build a saved context from `TrapContext` through
+`ofWords` and the existing writers instead.
+
+### WS-LS Lock state separated from kernel state — IN FLIGHT (registered v0.36.60; LS0.1 v0.36.62; LS1.1 v0.36.63; LS1.2 v0.36.64; LS2.1 v0.36.65; LS2.2 v0.36.66; LS2.3 v0.36.67; LS2.4 v0.36.68; LS2.5 v0.36.69; LS3.1 v0.36.70; runs beside WS-CV, before WS-CB)
+
+The lock words leave the kernel state: a ghost `LockState` (one total function
+over one `LockKey` type) sits beside `SystemState` in `LockedSystemState`, a
+seam runs its transition through a `BracketSpec` whose proof field is the
+footprint's coverage, and the bracket's kernel projection is the transition by
+`rfl` — so the compiled kernel runs the transition alone, the twelve `lock`
+fields, `objStoreLock`, `schedulerLocks` and the bracket's refusal arm are
+deleted, and the 2PL, deadlock-freedom, serializability and refinement results
+keep describing the executed path.  Plan:
+[`docs/planning/LOCK_STATE_SEPARATION_PLAN.md`](../planning/LOCK_STATE_SEPARATION_PLAN.md)
+(phases LS0–LS3).  Why: about 250 of the 387 heap allocations per syscall
+measured after CV1.1 (LS0.1's reading) are the bracket, which rewrites lock words no hardware
+reads (the kernel-entry ticket lock is the exclusion).
+
+**What new code must assume until WS-LS lands**: since LS3.1 no kernel object
+and no `SystemState` field carries lock state; the only lock state is the ghost
+`LockState` (`Locks/LockState.lean`) in `LockedSystemState`, and
+`LockKind.objStore` survives until LS3.3 only because `LockKey.kind` and the
+`permittedKinds` lemmas read it.
+**What new code must not do**: reintroduce a lock word into the kernel state
+(a `lock : RwLockState` field, `objStoreLock` or `schedulerLocks`, deleted at
+LS3.1), or a revalidated-entry model beside `BracketSpec` (retired at LS3.1,
+plan §2 item 3); add a consumer of
+`runBracketed`, `LockBracketOutcome`, `runUnderDeclaredLockSet` or
+`syscallBracketRefusalResult` (deleted at LS2.4); reintroduce a second lock-key
+type beside `LockKey` (`Locks/LockKey.lean`; LS1.2 retired `SchedLockId` and
+`SchedLockSet` into `LockKey` and `LockSet`, so every footprint, object or
+scheduler, is one `LockSet` and the one bracket domain is
+`objectLockBracketDomain`); state a new 2PL, atomicity or serializability
+result over `SystemState` alone (since LS2.1 those results are over
+`LockedSystemState` and `withLockSet` in `Locks/BracketSpec.lean` /
+`LockSet2PL.lean` / `Serializability.lean`, where the bracket's kernel
+projection is the action by `rfl`; a new bracketed seam is a `BracketSpec`
+whose `covers` field is its coverage theorem; since LS2.2 the timer tick, the
+reschedule receiver and the secondary bring-up run `timerTickBracket` /
+`rescheduleBracket` through `BracketSpec.run`; since LS2.3 the syscall and
+suspend seams' coverage theorems exist — `SyscallSeamCoverage.lean`'s
+`syscallDispatchCrossCoreStep_coversWrites` and `suspendSeamAction_coversWrites`,
+with `SyscallSchedContainment` and the SM8.B confinement family promoted to
+production as `SlotConfinement.*`; since LS2.4 the two seams run
+`syscallDispatchBracket` / `suspendThreadBracket` through `BracketSpec.run`
+and the word-level bracket is deleted; since LS2.5 every resolved scheduler
+footprint sits beside its transition, the constructor in
+`Scheduler/SchedFootprint.lean` and `SyscallSchedFootprint.lean` holding the
+syscall-level resolver alone; a new
+declared arm adds its `case` to `dispatchWithCapChecked_coversWrites` in the
+same cut, or the seam theorem does not elaborate).
+
+### WS-ZA A syscall that allocates nothing — PLANNED (registered v0.36.72; runs beside WS-CV, before WS-CB)
+
+The continuing syscall round trip makes no heap allocation.  At `v0.36.71` it
+makes 118: 55 are register-context sites WS-CV's rows already remove, 62 are
+the dispatcher's own, and one is outside the traced window.  The plan's §2
+attributes every site to the row that removes it.  Plan:
+[`docs/planning/ZERO_ALLOCATION_SYSCALL_PLAN.md`](../planning/ZERO_ALLOCATION_SYSCALL_PLAN.md)
+(phases ZA1–ZA4).
+
+**What new code on the syscall path must assume**: the plan's rules D1–D5.
+No state value is used after a later state is built from it (an arm checks
+every failure before its first write); a function on the path returns the
+state, a scalar or nothing; a comparison builds no value to compare against;
+a faster implementation is an `@[csimp]` replacement proven equal to the
+specification function it replaces.
 
 ### WS-CB Hierarchical constant-bandwidth servers — PLANNED (registered v0.34.49; opens after WS-CV)
 
@@ -2078,37 +2144,49 @@ code may assume:
   (`OD3.5 raised the ceiling to 11`).  New code
   must not quote a numeric syscall WCRT for this kernel; measuring `tCs` on the
   target is an acceptance criterion of RR7.39–RR7.41 and fine-lock Track D.
-- **The syscall seam brackets; the scheduler entries do not** (WS-RR RR7.12,
-  v0.34.65).  `syscallDispatchCrossCoreEntry` runs its atomic step inside the
+- **The syscall seam brackets, and so do the three per-core scheduler entries**
+  (WS-RR RR7.12, v0.34.65; the scheduler entries since RR7.39, v0.34.89, on the
+  scheduler domain — this heading read "the scheduler entries do not" until
+  `v0.36.62`, which was true at RR7.12 and false from RR7.39 on).  `syscallDispatchCrossCoreEntry` runs its atomic step inside the
   footprint `lockSetForSyscall` declares for the operation its own registers
-  decode to — resolve, acquire, **re-resolve at the state the growing phase
-  ended in**, refuse on change, unwind — via
-  `syscallDispatchCrossCoreBracketedStep`
-  (`SeLe4n/Kernel/SyscallLockBracket.lean` holds the mechanism).  Four things
-  new code must respect.  (1) **The fallback is exactly the pre-RR7.12 seam**
-  (`syscallDispatchCrossCoreBracketedStep_undeclared`, definitional), which is
-  what makes bracketing safe while twenty-seven arms are still undeclared:
-  falling back is always sound, claiming a footprint that does not cover a write
-  never is.  (2) **The operands come from the entry's own decode**, tied by
+  decode to, via `syscallDispatchCrossCoreBracketedStep`
+  (`SeLe4n/Kernel/SyscallLockBracket.lean` holds the decode and the operands;
+  since **WS-LS LS2.4** the bracket is the seam's `BracketSpec`,
+  `syscallDispatchBracket` in `SyscallDispatchEntry.lean`, whose `covers`
+  field is `syscallDispatchCrossCoreStep_coversWrites`, and the executed path
+  is the step by `rfl` — the RR7.12 resolve / acquire / re-resolve / refuse /
+  unwind bracket is deleted with the lock words it wrote).  Four things
+  new code must respect.  (1) **The executed path is the step on every state**
+  (`syscallDispatchCrossCoreBracketedStep_run`, definitional): a declared
+  footprint is a proof obligation the record discharges, not a runtime branch,
+  so an undeclared arm and a declared one commit the same transition; claiming
+  a footprint that does not cover a write is what the record's type refuses.
+  (2) **The operands come from the entry's own decode**, tied by
   `abiEntryPlan_dispatches` — a footprint resolved from a decode the dispatch
   does not use is a footprint for a different operation.  (3) **A multi-level
   CSpace resolution declares nothing**: the footprint's only CNode member is the
   caller's root, a `LockSet` is capped at `maxLockSetSize` and a CSpace path is
   not, so a deeper walk selects the target through CNodes no declared lock
-  covers and the resolver refuses.  (4) **A refusal returns `.illegalState` and
-  commits nothing but the unwinding**
-  (`syscallDispatchCrossCoreBracketedStep_refused`); it is unreachable today,
-  since `modifyGetKernelState` is one global read-modify-write and the growing
-  phase writes nothing the resolver reads, and a dedicated `.lockContention`
-  becomes worth its ABI cost when the commit is partitioned.  The per-core scheduler path
+  covers and the resolver refuses.  (4) **There is no refusal arm**: the guard
+  the RR7.12 refusal answered holds by construction under the entry lock
+  (`BracketSpec.guard_of_unheld`, the ghost table starting all-free), and a
+  dedicated `.lockContention` becomes worth its ABI cost when Track D
+  partitions the commit and a real acquire can fail.  The per-core scheduler path
   brackets too since **WS-RR RR7.39** (v0.34.89), which gave `SchedLockId` the
   state words it never had (`SystemState.schedulerLocks`) and made the
-  revalidating bracket shared — `Concurrency.runBracketed`, of which RR7.12's
-  `runUnderDeclaredLockSet` is now definitionally the object-domain instance.  So
+  revalidating bracket shared (`Concurrency.runBracketed`, deleted at WS-LS
+  LS2.4 with `runUnderDeclaredLockSet`).  So
   the timer tick, the `.reschedule` SGI receiver and the secondary bring-up entry
   run inside the footprints SM5.B–G declared for them, with the write set proved
   inside the footprint on both steps (`perCoreRescheduleStep_coversWrites`,
-  `perCoreTimerTickStep_coversWrites`).  Two things new code must respect.  (1)
+  `perCoreTimerTickStep_coversWrites`).  Since WS-LS LS2.2 those three seams run
+  `timerTickBracket` / `rescheduleBracket` (`SchedLockBracket.lean`), the
+  `BracketSpec`s whose `covers` field is that proof; since WS-LS LS2.4 the
+  syscall and suspend seams run `syscallDispatchBracket` /
+  `suspendThreadBracket` (`SyscallDispatchEntry.lean`), whose `covers` fields
+  are LS2.3's seam theorems (`SyscallSeamCoverage.lean`), so every
+  state-committing seam that brackets runs a `BracketSpec`.  Two things new
+  code must respect.  (1)
   **The tick's footprint names every core's run-queue write lock**, not the boot
   core's and its own: the replenish drain and the bound-exhausted timeout both
   wake via `determineTargetCore`, so the two-lock segment was a *false* footprint
@@ -2135,8 +2213,10 @@ code may assume:
   and a stale entry are each a build failure.  **Seven seams commit; five
   bracket** (WS-RR RR7.39 — the two syscall seams and, since it gave the
   scheduler domain a runtime, the three per-core scheduler entries; two before
-  it).  A body recorded `bracketed` must reach `runUnderDeclaredLockSet` or
-  `Concurrency.withLockSet`; one recorded `unbracketed` must carry a reason.  New
+  it).  A body recorded `bracketed` must reach `BracketSpec.run` (since WS-LS
+  LS2.4 the only bracket form; `Concurrency.withLockSet` writes lock words the
+  proofs no longer read and is not one); one recorded `unbracketed` must carry
+  a reason.  New
   code adding an `@[export]` that commits kernel state must classify it there —
   that is where the project's coverage figure is read off, and the two
   fault-delivery seams (`lean_handle_fault`, `lean_handle_unknown_syscall`) are
@@ -2153,7 +2233,8 @@ code may assume:
   `lockSetForSyscall_undeclared_none` enforces.  Declaring is not bracketing, and RR7.12
   (v0.34.65) closed the gap at the syscall seam: the eight declared arms now run
   inside their footprints there, the twenty-seven undeclared ones run exactly as
-  before, and the per-core scheduler entries still bracket nothing.  Three things new code must respect.  (1) `.send` and `.call` answer
+  before, and the per-core scheduler entries bracket on the scheduler domain
+  since RR7.39 (v0.34.89).  Three things new code must respect.  (1) `.send` and `.call` answer
   `none` without a **message**: whether the footprint includes the receiver's
   CSpace root and the state-level lock is a property of what the message carries,
   so defaulting to the capless shape would declare a footprint that omits the two
@@ -4756,7 +4837,9 @@ code may assume:
   because their own modules cannot name a `SchedLockId`** (WS-RR RR8.12 Cut
   C3b-i, `v0.35.167`).  `schedLockSet_resumeThreadOnCore`,
   `schedLockSet_priorityControlOnCore` and
-  `schedLockSet_setThreadCpuAffinityOnCore` (`SeLe4n/Kernel/SyscallSchedFootprint.lean`)
+  `schedLockSet_setThreadCpuAffinityOnCore` (`Lifecycle/ResumeFootprint.lean`,
+  `SchedContext/PriorityControlFootprint.lean`, `Scheduler/Operations/AffinityFootprint.lean`
+  since WS-LS LS2.5; `SyscallSchedFootprint.lean` before)
   are the live `.tcbResume`, `.tcbSetPriority` / `.tcbSetMCPriority` and
   `.tcbSetAffinity` arms' scheduler-domain footprints — **inert** until the
   bracket cut.  Six things new code must respect.  (1) **Placement is a fact
@@ -4901,7 +4984,7 @@ code may assume:
   `threadOccupiedCores` and the two retype write sets moved to production with
   tombstones — their lemma family and the confinement theorems stay staged, being
   about the destroy sweep's confinement, which is that module's question — and
-  `SyscallSchedFootprint.lean` imports `Lifecycle/Invariant/RetypeReservation.lean`
+  `SyscallSchedFootprint.lean` (now `Lifecycle/Operations/RetypeFootprint.lean`) imports `Lifecycle/Invariant/RetypeReservation.lean`
   for the reference sweep's frame.  `maxLockSetSize` is unmoved.  **`.tcbSuspend`
   is the one arm left**, and it is a cut of its own: its run segment re-runs a
   seven-stage pipeline and its replenish segment two migrations read at
@@ -5140,16 +5223,17 @@ code may assume:
   **the coverage lands before the bracket**, which is the numbering rule's
   semantic half: a bracket acquiring a footprint nobody proved covers the writes
   hands out exclusion the runtime never established.
-  `SeLe4n/Kernel/SyscallSchedContainment.lean` is staged, for the reason
-  `SchedLockTimerContainment` is — every proof consumes an SM8.B confinement
-  theorem, and those are staged.  Four things new code must respect.
+  `SeLe4n/Kernel/SyscallSchedContainment.lean` is production since WS-LS
+  LS2.3, when the SM8.B confinement predicate and theorems every proof consumes
+  moved into `SeLe4n/Kernel/SlotConfinement/` (the timer tick's coverage chain,
+  which consumes none, since LS2.2).  Four things new code must respect.
 
   (1) **One bridge, and the three clauses are discharged three different ways.**
-  `schedFootprintCoversWrites_of_cores` (production, beside the obligation) makes
+  `footprintCoversWrites_of_cores` (production, beside the obligation) makes
   the **object** clause structural — `schedFootprintOfCores` always names the
   object-store table write lock, a scheduler footprint being a footprint of an
   operation that stores — and reduces the rest to two hypotheses;
-  `schedFootprintCoversWrites_of_confined` (staged) supplies the **run-queue**
+  `footprintCoversWrites_of_confined` (production since LS2.3) supplies the **run-queue**
   clause from the arm's own `observableSlotsConfinedToCores`.  The **replenish**
   clause has no such bridge and cannot: confinement covers six per-core slots and
   the replenish queue is not one of them, which is exactly why every donating arm
@@ -5170,7 +5254,7 @@ code may assume:
   module carries the refutations that say the obligation is not held by every
   footprint — one per clause, and the replenish one is the sharper because it is
   the clause no confinement result can reach.  A Tier 3 negative refuses
-  `schedFootprintCoversWrites_refl` anywhere in the module: discharging an arm
+  `footprintCoversWrites_refl` anywhere in the module: discharging an arm
   with the no-op lemma is the token-preserving weakening this family admits, and
   it would turn eight measurements into eight tautologies.
 
@@ -5187,7 +5271,7 @@ code may assume:
   things new code must respect.
 
   (1) **An arm's `_ne` frame is keyed on its own replenish segment.**
-  `schedFootprintCoversWrites`'s clause asks *unchanged at every core the
+  `footprintCoversWrites`'s clause asks *unchanged at every core the
   footprint does not name*; a frame keyed on a resolution — "`c` is not this
   SchedContext's replenish home", "`c` is not this thread's target core" —
   answers a different question that every consumer must then case-split to reach,
@@ -5256,7 +5340,7 @@ code may assume:
   `[cc]`, `faultReplyApplyOnCore_confinedToCores` at `faultReplyApplyCores`,
   `faultReplyOnCore_confinedToCores` at `faultReplyWriteSet`, and the arm's at
   `replyTransferWriteSet` — so the coverage theorem is one application of
-  `schedFootprintCoversWrites_of_confined` and not a second reading of the seam.
+  `footprintCoversWrites_of_confined` and not a second reading of the seam.
   The `regs` conjunct is what made two machine frames load-bearing and missing
   (`applyFaultRestart_machine_eq`, `faultAbandonOnCore_machine_eq`): a fault
   outcome writes the *thread's* saved context, never the executing core's bank.
@@ -5345,7 +5429,7 @@ code may assume:
   and two for giving back.
 
   (3) **A claim travels to a superset rather than being restated at it.**
-  `schedFootprintCoversWrites_mono` is why the sixteen per-arm coverage theorems
+  `footprintCoversWrites_mono` is why the sixteen per-arm coverage theorems
   are not re-proved over the unified footprint: every clause of the predicate is
   of the form *"a lock the footprint does **not** name"*, so a superset only
   discharges more antecedents.  Read the direction carefully — it is about the
@@ -7186,12 +7270,12 @@ code may assume:
   propositions, not registrations.**
   `SeLe4n/Kernel/Concurrency/PhaseTheoremManifest.lean` registers one entry per
   phase SM0..SM10, each naming the theorem inventories that phase owns.  Those
-  inventories hold **1145 entries**, of which **925 are theorems**: the
-  inventories register a phase's whole surface, so 220 entries are `def`s —
+  inventories hold **1142 entries**, of which **918 are theorems**: the
+  inventories register a phase's whole surface, so 224 entries are `def`s —
   lock-set footprints, PIP chain-start markers, per-core invariant predicates,
   WCRT cost functions — and
   every inventory's construction macro proves only that the name *resolves*,
-  never that its type is a `Prop`.  **Quote 925, and quote it as theorems; 1145
+  never that its type is a `Prop`.  **Quote 918, and quote it as theorems; 1142
   is the entry count.**  A `List.length` cannot tell the two apart, so the
   propositionality census at the end of that module resolves each identifier
   against the environment and fails elaboration on drift.  **Eight of the eleven

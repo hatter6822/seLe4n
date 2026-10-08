@@ -890,7 +890,7 @@ fn halt_on_kernel_abort(frame: &TrapFrame, esr: u64) -> ! {
 /// twice.
 #[cfg(feature = "hw_target")]
 #[inline]
-fn classify_synchronous_exception(esr: u64) -> u32 {
+pub(crate) fn classify_synchronous_exception(esr: u64) -> u32 {
     let core_id = crate::per_cpu::current_core_id_from_tpidr();
     if crate::lean_ready::lean_ready(core_id as usize) {
         extern "C" {
@@ -906,10 +906,11 @@ fn classify_synchronous_exception(esr: u64) -> u32 {
         // SAFETY: `lean_classify_synchronous_exception` is the C-callable
         // wrapper the Lean compiler emits for
         // `Kernel.classifySynchronousExceptionExport`.  It takes a `u64` and
-        // returns a `u32` and reads no kernel state.  It does allocate: the
-        // generated C builds an `ExceptionContext` on the Lean heap, outside
-        // the kernel-entry lock, which is why the heap keeps its own lock
-        // (`lean_heap.rs`, the concurrency note).  This core's Lean runtime is
+        // returns a `u32`, reads no kernel state and allocates nothing: it
+        // classifies the `ESR_EL1` word itself
+        // (`classifySynchronousExceptionOfEsr`), so its generated C touches
+        // neither the Lean heap nor any object's reference count, outside the
+        // kernel-entry lock as it is.  This core's Lean runtime is
         // initialized — the `lean_ready` gate just checked — so entering the
         // symbol is within the runtime's contract.
         unsafe { lean_classify_synchronous_exception(esr) }
@@ -923,7 +924,7 @@ fn classify_synchronous_exception(esr: u64) -> u32 {
 /// hardware.
 #[cfg(not(feature = "hw_target"))]
 #[inline]
-fn classify_synchronous_exception(esr: u64) -> u32 {
+pub(crate) fn classify_synchronous_exception(esr: u64) -> u32 {
     classify_synchronous_exception_mirror(esr)
 }
 

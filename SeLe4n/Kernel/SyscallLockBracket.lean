@@ -7,11 +7,12 @@
   under certain conditions. See: https://github.com/hatter6822/seLe4n/blob/main/LICENSE
 -/
 
--- WS-RR RR7.12: PRODUCTION.  The declared-footprint bracket the live syscall
--- seam runs.  `SeLe4n/Kernel/SyscallDispatchEntry.lean` is the consumer.
+-- WS-RR RR7.12: PRODUCTION.  The entry's own decode and the operands the live
+-- syscall seam's footprint is resolved from.  `SeLe4n/Kernel/SyscallDispatchEntry.lean`
+-- is the consumer; since WS-LS LS2.4 the bracket that runs the dispatch inside
+-- the footprint is the seam's `BracketSpec` there (`syscallDispatchBracket`).
 
 import SeLe4n.Kernel.Concurrency.Locks.LockSetForSyscall
-import SeLe4n.Kernel.Concurrency.Locks.LockBracket
 import SeLe4n.Platform.FFI
 
 /-!
@@ -61,23 +62,22 @@ its target into `SyscallLockOperands`.  It is fail-closed four times over:
 
 `none` at any step means no operands, hence no footprint, hence the fallback.
 
-## 3.  The revalidated bracket
+## 3.  The bracket
 
-`dispatchUnderDeclaredLockSet` resolves the footprint, acquires it, **re-resolves
-at the state the growing phase ended in**, and refuses on any change; on a match
-it runs the dispatch from that state and unwinds.  With no footprint declared it
-runs the dispatch unbracketed — bit-identical to the pre-RR7.12 seam
-(`dispatchUnderDeclaredLockSet_undeclared_eq_unbracketed`), which is what makes
-this cut safe to land ahead of the remaining twenty-seven declarations.
-
-Why re-resolve: the footprint's own CNode read lock is *in the set it returns*,
-so it is acquired strictly after the read it protects.  Under the SM5.I global
-kernel-entry lock no other core can commit in between — which is why this is not
-a live defect today — but the guard is installed with the bracket rather than
-after it, so removing that global lock does not silently open the window.
+The bracket that runs the dispatch inside this footprint is the seam's
+`BracketSpec` (`syscallDispatchBracket`, `SyscallDispatchEntry.lean`, WS-LS
+LS2.4): `declared` is `declaredUnifiedLockSetForAbiEntry` over the decode above,
+`step` is the seam's atomic step, and `covers` is
+`syscallDispatchCrossCoreStep_coversWrites` (WS-LS LS2.3).  The word-level
+revalidating bracket this module carried until then (`runUnderDeclaredLockSet`:
+resolve, acquire, re-resolve at the acquired state, refuse on change, unwind)
+is deleted with the lock words it wrote.  The footprint is a proof obligation
+over the ghost lock table, not a runtime acquire, so there is nothing to
+re-resolve and no refusal arm; a syscall whose footprint is undeclared runs the
+same step as one whose footprint is.  The guard the refusal answered holds by
+construction under the entry lock (`BracketSpec.guard_of_unheld`).
 `SeLe4n/Kernel/InformationFlow/FineLockFlow.lean` carries the staged model of
-this shape and the theorems about its information-flow behaviour; this is the
-production instance at the ABI seam.
+the revalidating shape and the theorems about its information-flow behaviour.
 
 ## What this does *not* change
 
@@ -93,9 +93,7 @@ namespace SeLe4n.Kernel
 
 open SeLe4n
 open SeLe4n.Model
-open SeLe4n.Kernel.Concurrency (CoreId LockSet lockSetForSyscall SyscallLockOperands
-  withLockSet acquireAll unwindAll lockSetHeld LockBracketOutcome runBracketed
-  objectLockBracketDomain)
+open SeLe4n.Kernel.Concurrency (CoreId LockSet lockSetForSyscall SyscallLockOperands)
 
 -- ============================================================================
 -- §1  The entry's own decode, named once
@@ -200,6 +198,63 @@ theorem abiEntryPlan_dispatches (ctx : LabelingContext) (executingCore : CoreId)
             Bool.false_eq_true, if_false]
           rfl
 
+/-- **WS-LS LS2.3**: the plan, component by component — the caller is the
+executing core's current thread, the decode is of the caller's spilled register
+file at the spilled state, and the state the dispatch runs on is that spilled
+state with the IPC-buffer window filled (which touches the per-core TLB alone,
+`tlbFillIpcBufferOnCore_eq_setPerCoreTlb`).  What the seam coverage proof
+reads to carry a claim from the dispatch state back to the entry state. -/
+theorem abiEntryPlan_components (ctx : LabelingContext) (executingCore : CoreId)
+    (syscallId : UInt32) (x0 x1 x2 x3 x4 x5 : UInt64) (st : SystemState)
+    (tid : SeLe4n.ThreadId) (decoded : SyscallDecodeResult) (stFilled : SystemState)
+    (h : abiEntryPlan ctx executingCore syscallId x0 x1 x2 x3 x4 x5 st
+          = some (tid, decoded, stFilled)) :
+    st.scheduler.currentOnCore executingCore = some tid ∧
+      ∃ tcb : TCB,
+        (Platform.FFI.writeFfiRegistersToTcb st tid syscallId x0 x1 x2 x3 x4 x5).getObject?
+            tid.toObjId = some (.tcb tcb) ∧
+        SeLe4n.Kernel.Architecture.RegisterDecode.decodeSyscallArgsFromState
+          (Platform.FFI.writeFfiRegistersToTcb st tid syscallId x0 x1 x2 x3 x4 x5) tid
+          SeLe4n.arm64DefaultLayout tcb.registerContext 32 = .ok decoded ∧
+        stFilled = SeLe4n.Kernel.Architecture.tlbFillIpcBufferOnCore
+          (Platform.FFI.writeFfiRegistersToTcb st tid syscallId x0 x1 x2 x3 x4 x5)
+          executingCore tid decoded.overflowCount := by
+  unfold abiEntryPlan at h
+  by_cases hCtx : isInsecureDefaultContext ctx
+  · rw [if_pos hCtx] at h; exact absurd h (by simp)
+  · rw [if_neg hCtx] at h
+    cases hCur : st.scheduler.currentOnCore executingCore with
+    | none => rw [hCur] at h; exact absurd h (by simp)
+    | some tid' =>
+      rw [hCur] at h
+      simp only at h
+      cases hRegs : lookupThreadRegisterContext tid'
+          (Platform.FFI.writeFfiRegistersToTcb st tid' syscallId x0 x1 x2 x3 x4 x5) with
+      | error e => rw [hRegs] at h; exact absurd h (by simp)
+      | ok regsPair =>
+        obtain ⟨regs, _⟩ := regsPair
+        rw [hRegs] at h
+        simp only at h
+        cases hDec : SeLe4n.Kernel.Architecture.RegisterDecode.decodeSyscallArgsFromState
+            (Platform.FFI.writeFfiRegistersToTcb st tid' syscallId x0 x1 x2 x3 x4 x5)
+            tid' SeLe4n.arm64DefaultLayout regs 32 with
+        | error e => rw [hDec] at h; exact absurd h (by simp)
+        | ok decoded' =>
+          rw [hDec] at h
+          simp only [Option.some.injEq, Prod.mk.injEq] at h
+          obtain ⟨hTid, hDecoded, hFilled⟩ := h
+          subst hTid; subst hDecoded; subst hFilled
+          refine ⟨rfl, ?_⟩
+          unfold lookupThreadRegisterContext at hRegs
+          split at hRegs
+          · rename_i tcb hTcb
+            simp only [Except.ok.injEq, Prod.mk.injEq] at hRegs
+            obtain ⟨hR, _⟩ := hRegs
+            subst hR
+            exact ⟨tcb, hTcb, hDec, rfl⟩
+          · exact absurd hRegs (by simp)
+          · exact absurd hRegs (by simp)
+
 -- ============================================================================
 -- §2  The operands, from the capability the decode addresses
 -- ============================================================================
@@ -251,7 +306,7 @@ TCB it returns is the one the state holds at the caller.
 Needed by the scheduler domain, which reads a receiver's `cspaceRoot` off the
 state rather than off the gate: `schedLockSet_endpointReplyRecvOnCore` takes the
 root the capability installation walks, the live `.replyRecv` arm hands it
-`gate.cspaceRoot`, and `declaredSchedLockSetForAbiEntry` resolves it through
+`gate.cspaceRoot`, and `declaredSchedulerLockSetForAbiEntry` resolves it through
 `st.getTcb? ops.caller`.  This is what makes those one lookup rather than two
 readings of the same question — the shape that would let the footprint name a
 root the transition does not install through. -/
@@ -279,6 +334,41 @@ theorem abiEntryGate_cspaceRoot (decoded : SyscallDecodeResult) (tid : SeLe4n.Th
               subst hT
               subst hG
               exact ⟨rfl, rfl, rfl⟩
+
+/-- **WS-LS LS2.3**: the gate, field by field — the caller's TCB, its root
+CNode, and the `SyscallGate` `dispatchSyscallChecked` builds from the two.
+
+`abiEntryGate_cspaceRoot` reads two fields off it; the seam coverage proof
+needs the whole record, because the dispatch builds its own gate from the same
+two lookups and the operands' lookup has to be shown to be *that* gate's. -/
+theorem abiEntryGate_components (decoded : SyscallDecodeResult) (tid : SeLe4n.ThreadId)
+    (s : SystemState) (tcb : TCB) (gate : SyscallGate)
+    (h : abiEntryGate decoded tid s = some (tcb, gate)) :
+    s.getTcb? tid = some tcb ∧
+      ∃ rootCn : CNode, s.getCNode? tcb.cspaceRoot = some rootCn ∧
+        gate = { callerId := tid, cspaceRoot := tcb.cspaceRoot,
+                 capAddr := decoded.capAddr, capDepth := rootCn.depth,
+                 requiredRight := syscallRequiredRight decoded.syscallId } := by
+  unfold abiEntryGate at h
+  cases hTcb : s.getTcb? tid with
+  | none => rw [hTcb] at h; exact absurd h (by simp)
+  | some tcb' =>
+      rw [hTcb] at h
+      simp only at h
+      split at h
+      · exact absurd h (by simp)
+      · rename_i rootCn hRoot
+        split at h
+        · exact absurd h (by simp)
+        · split at h
+          · exact absurd h (by simp)
+          · rename_i ref hRef
+            split at h
+            · exact absurd h (by simp)
+            · obtain ⟨hT, hG⟩ := Prod.mk.injEq .. ▸ Option.some.inj h
+              subst hT
+              subst hG
+              exact ⟨rfl, rootCn, hRoot, rfl⟩
 
 /-- **WS-RR RR7.12**: the message a sending arm's footprint is a function of.
 
@@ -326,10 +416,10 @@ dispatch arm names:
   object it answers first, resolved through `resolveReplyRecvReply`.
 
 **WS-RR RR8.12 Cut C4b: it serves BOTH domains, and that is one builder rather
-than two.**  `declaredSchedLockSetForAbiEntry`
-(`SyscallSchedFootprint.lean` §14) reads this record too, so a second builder
+than two.**  `declaredSchedulerLockSetForAbiEntry`
+(`SyscallSchedFootprint.lean` §2) reads this record too, so a second builder
 would be the shape that lets one domain's footprint be acquired around the other
-domain's transition — `declaredSchedLockSetForAbiEntry_shares_decode` is the
+domain's transition — `declaredSchedulerLockSetForAbiEntry_shares_decode` is the
 statement that it is not.  Two things follow.  Four arms above gained the
 operands the *scheduler* footprints read and the object domain ignores, so their
 object-domain answers are byte-identical to the pre-C4b ones: `.call` the
@@ -361,7 +451,10 @@ def abiEntryLockOperands (decoded : SyscallDecodeResult) (tid : SeLe4n.ThreadId)
           match (SeLe4n.ThreadId.ofNat objId.toNat).toValid? with
           | none => none
           | some valid => some (.ofThreadTarget tid valid.val)
-      | .send, .object epId => some (.ofObjectTarget tid epId (some (abiEntryMessage decoded gate cap s)))
+      | .send, .object epId =>
+          some { SyscallLockOperands.ofObjectTarget tid epId
+                   (some (abiEntryMessage decoded gate cap s)) with
+                 extraCapAddrs := Architecture.SyscallArgDecode.decodeExtraCapAddrs decoded }
       -- **WS-RR RR8.12 Cut C4b**: `.call` additionally carries the invoked
       -- capability's **rights** and the receiver's **slot base**, which are what
       -- the arm's SCHEDULER-domain footprint needs — `endpointCallDispatchWriteSet`
@@ -372,12 +465,14 @@ def abiEntryLockOperands (decoded : SyscallDecodeResult) (tid : SeLe4n.ThreadId)
           some { caller := tid, targetObject := some epId,
                  message := some (abiEntryMessage decoded gate cap s),
                  endpointRights := some cap.rights,
-                 receiverSlotBase := some decoded.capRecvSlot }
+                 receiverSlotBase := some decoded.capRecvSlot,
+                 extraCapAddrs := Architecture.SyscallArgDecode.decodeExtraCapAddrs decoded }
       | .receive, .object epId =>
           match resolveRecvReplyId gate decoded s with
           | .error _ => none
           | .ok replyId? =>
-              some { caller := tid, targetObject := some epId, targetReply := replyId? }
+              some { caller := tid, targetObject := some epId, targetReply := replyId?,
+                     receiverSlotBase := some decoded.capRecvSlot }
       | .notificationSignal, .object nId => some (.ofObjectTarget tid nId)
       | .notificationWait, .object nId => some (.ofObjectTarget tid nId)
       -- **Cut C4b**: `.reply` carries the message the live arm builds and the
@@ -565,110 +660,28 @@ theorem abiEntryLockOperands_caller (decoded : SyscallDecodeResult)
           | exact absurd h (by simp)
           | simp_all
 
--- ============================================================================
--- §3  The revalidated bracket
--- ============================================================================
-
-/-- **WS-RR RR7.12**: run the ABI seam's step inside its declared footprint,
-revalidating — the object domain's instance of RR7.39's shared bracket.
-
-`runBracketed` at `objectLockBracketDomain` and nothing else, so the acquire /
-re-resolve / refuse / commit / unwind discipline this seam runs is the *same
-definition* the per-core scheduler entries run
-(`SeLe4n/Kernel/SchedLockBracket.lean`).  RR7.39 made it shared: a second
-revalidating bracket, spelled out beside this one over a different domain, would
-be one question with two answers, and the two would drift at the first fix
-applied to only one of them.
-
-What the domain record supplies — `LockSet.lockAcquireSequence`, `acquireAll`,
-`unwindAll`, `lockSetHeld` — is exactly what this definition used to name
-inline; the reasoning about *why* those five steps are the right ones lives with
-the shared bracket. -/
-def runUnderDeclaredLockSet {α : Type} (declared : SystemState → Option LockSet)
-    (lockCore : CoreId) (step : SystemState → α × SystemState) (st : SystemState) :
-    LockBracketOutcome α :=
-  runBracketed objectLockBracketDomain declared lockCore step st
-
-/-- **WS-RR RR7.39**: the ABI seam's bracket **is** the shared bracket at the
-object domain.  Definitional, and stated so a future cut cannot quietly give
-this seam a private copy again. -/
-theorem runUnderDeclaredLockSet_eq_runBracketed {α : Type}
-    (declared : SystemState → Option LockSet) (lockCore : CoreId)
-    (step : SystemState → α × SystemState) (st : SystemState) :
-    runUnderDeclaredLockSet declared lockCore step st
-      = runBracketed objectLockBracketDomain declared lockCore step st := rfl
-
-/-- **WS-RR RR7.12 (the fallback is exactly today's behaviour)**: with no
-footprint declared, the bracket is the bare step.
-
-This is what makes installing the bracket safe ahead of the remaining
-twenty-seven declarations: every syscall whose footprint is still `none` runs
-bit-identically to the pre-RR7.12 seam, on the pre-state, with no lock written.
-Definitional, so a refactor that starts acquiring *something* on the undeclared
-path stops this elaborating. -/
-@[simp] theorem runUnderDeclaredLockSet_undeclared {α : Type}
-    (declared : SystemState → Option LockSet) (lockCore : CoreId)
-    (step : SystemState → α × SystemState) (st : SystemState)
-    (h : declared st = none) :
-    runUnderDeclaredLockSet declared lockCore step st = .undeclared (step st) :=
-  SeLe4n.Kernel.Concurrency.runBracketed_undeclared objectLockBracketDomain
-    declared lockCore step st h
-
-/-- **WS-RR RR7.12**: on the committed arm the step ran from the **acquired**
-state and the returned state is that step's post-state, unwound. -/
-theorem runUnderDeclaredLockSet_committed {α : Type}
-    (declared : SystemState → Option LockSet) (lockCore : CoreId)
-    (step : SystemState → α × SystemState) (st : SystemState) (S : LockSet)
-    (hDecl : declared st = some S)
-    (hGuard : declared (acquireAll lockCore S.lockAcquireSequence st) = some S ∧
-      lockSetHeld lockCore S (acquireAll lockCore S.lockAcquireSequence st)) :
-    runUnderDeclaredLockSet declared lockCore step st
-      = .committed ((step (acquireAll lockCore S.lockAcquireSequence st)).1,
-          unwindAll lockCore S.lockAcquireSequence.reverse
-            (step (acquireAll lockCore S.lockAcquireSequence st)).2) :=
-  SeLe4n.Kernel.Concurrency.runBracketed_committed objectLockBracketDomain
-    declared lockCore step st S hDecl hGuard
-
-/-- **WS-RR RR7.12 (a refusal commits nothing but the unwinding)**: the state a
-refusal carries is the pre-state with the footprint acquired and then unwound —
-the step never ran, so no transition was committed.
-
-The load-bearing negative.  A guard that refused *after* running the step would
-be worse than no guard at all: the operation would have committed on a
-resolution the guard judged stale. -/
-theorem runUnderDeclaredLockSet_refused {α : Type}
-    (declared : SystemState → Option LockSet) (lockCore : CoreId)
-    (step : SystemState → α × SystemState) (st : SystemState) (S : LockSet)
-    (hDecl : declared st = some S)
-    (hGuard : ¬ (declared (acquireAll lockCore S.lockAcquireSequence st) = some S ∧
-      lockSetHeld lockCore S (acquireAll lockCore S.lockAcquireSequence st))) :
-    runUnderDeclaredLockSet declared lockCore step st
-      = .refused (unwindAll lockCore S.lockAcquireSequence.reverse
-          (acquireAll lockCore S.lockAcquireSequence st)) :=
-  SeLe4n.Kernel.Concurrency.runBracketed_refused objectLockBracketDomain
-    declared lockCore step st S hDecl hGuard
-
-/-- **WS-RR RR7.12**: the bracket's committed arm **is** `withLockSet` at the
-acquired state.
-
-The tie back to SM3: every 2PL, serializability and observer-atomicity theorem
-`withLockSet` carries is about this composition, so a caller reading
-`.committed` is reading the state those theorems describe.  A revalidating
-bracket cannot simply *be* `withLockSet` — it has to look at the acquired state
-before deciding — but its accepting path is the same acquire / act / unwind, and
-this says so definitionally. -/
-theorem runUnderDeclaredLockSet_committed_eq_withLockSet {α : Type}
-    (declared : SystemState → Option LockSet) (lockCore : CoreId)
-    (step : SystemState → SystemState × α) (st : SystemState) (S : LockSet)
-    (hDecl : declared st = some S)
-    (hGuard : declared (acquireAll lockCore S.lockAcquireSequence st) = some S ∧
-      lockSetHeld lockCore S (acquireAll lockCore S.lockAcquireSequence st)) :
-    runUnderDeclaredLockSet declared lockCore
-        (fun s => ((step s).2, (step s).1)) st
-      = .committed ((withLockSet S lockCore step st).2, (withLockSet S lockCore step st).1) := by
-  rw [runUnderDeclaredLockSet_eq_runBracketed,
-    SeLe4n.Kernel.Concurrency.runBracketed_committed objectLockBracketDomain
-      declared lockCore (fun s => ((step s).2, (step s).1)) st S hDecl hGuard]
-  rfl
+/-- **WS-LS LS2.3**: resolved operands come from a resolved gate and a
+successful rights-gated lookup of the capability the decode addresses, at the
+very state the operands are read at (the lookup is read-only). -/
+theorem abiEntryLockOperands_gate_lookup (decoded : SyscallDecodeResult)
+    (tid : SeLe4n.ThreadId) (s : SystemState) (ops : SyscallLockOperands)
+    (h : abiEntryLockOperands decoded tid s = some ops) :
+    ∃ (tcb : TCB) (gate : SyscallGate) (cap : Capability),
+      abiEntryGate decoded tid s = some (tcb, gate) ∧
+      syscallLookupCap gate s = .ok (cap, s) := by
+  unfold abiEntryLockOperands at h
+  cases hGate : abiEntryGate decoded tid s with
+  | none => rw [hGate] at h; exact absurd h (by simp)
+  | some pair =>
+    obtain ⟨tcb, gate⟩ := pair
+    rw [hGate] at h
+    simp only at h
+    cases hLk : syscallLookupCap gate s with
+    | error e => rw [hLk] at h; exact absurd h (by simp)
+    | ok capPair =>
+      obtain ⟨cap, s'⟩ := capPair
+      have hS := syscallLookupCap_preserves_state gate s s' cap hLk
+      subst hS
+      exact ⟨tcb, gate, cap, rfl, hLk⟩
 
 end SeLe4n.Kernel

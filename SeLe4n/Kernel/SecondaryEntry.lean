@@ -155,8 +155,8 @@ theorem secondaryKernelMain_def (coreId : UInt64) :
       (do
         let frame ← Platform.FFI.captureTrapFrame
         let record ← Platform.FFI.modifyGetKernelState (fun st =>
-          let st' := (rescheduleUnderDeclaredLockSet coreId
-            (Concurrency.saveCapturedTrapFrameAt st coreId frame)).state
+          let st' := ((rescheduleBracket coreId).run
+            (Concurrency.saveCapturedTrapFrameAt st coreId frame)).2
       |> (PriorityInheritance.settleResidencyAt · coreId)
           (((Concurrency.coreIdOfUInt64? coreId).map
             (fun c => (c, st'.scheduler.currentOnCore c)),

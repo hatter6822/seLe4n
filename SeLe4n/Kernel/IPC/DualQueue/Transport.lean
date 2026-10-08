@@ -73,6 +73,62 @@ theorem endpointQueuePopHead_scheduler_eq
                       ((storeTcbQueueLinks_scheduler_eq _ _ nextTid none (some QueuePPrev.endpointHead) nextTcb.queueNext hLink).trans
                         (storeObject_scheduler_eq _ _ endpointId _ hStore))
 
+/-- `endpointQueuePopHead` leaves the machine registers untouched. -/
+theorem endpointQueuePopHead_machine_eq
+    (endpointId : SeLe4n.ObjId) (isReceiveQ : Bool) (st st' : SystemState)
+    (tid : SeLe4n.ThreadId)
+    (hStep : endpointQueuePopHead endpointId isReceiveQ st = .ok (tid, _headTcb, st')) :
+    st'.machine = st.machine := by
+  unfold endpointQueuePopHead SystemState.getObject? at hStep
+  cases hObj : st.objects[endpointId]? with
+  | none => simp [hObj] at hStep
+  | some obj => cases obj with
+    | tcb _ | cnode _ | notification _ | vspaceRoot _ | untyped _ | schedContext _ | reply _ | frame _ | pageTable _ => simp [hObj] at hStep
+    | endpoint ep =>
+      simp only [hObj] at hStep; revert hStep
+      cases hHead : (if isReceiveQ then ep.receiveQ else ep.sendQ).head with
+      | none => simp
+      | some headTid =>
+        simp only []
+        cases hLookup : lookupTcb st headTid with
+        | none => simp
+        | some headTcb =>
+          simp only []
+          -- PR #873 round 11: the send-queue message-presence guard --
+          -- a head that fails it errors, so it is not this `.ok`.
+          split
+          · simp
+          cases hStore : storeObject endpointId _ st with
+          | error e => simp
+          | ok pair => simp only []; cases hNext : headTcb.queueNext with
+            | none =>
+              simp only []
+              cases hFinal : storeTcbQueueLinks pair.2 headTid none none none with
+              | error e => simp
+              | ok st3 =>
+                simp only [Except.ok.injEq, Prod.mk.injEq]
+                intro ⟨_, _, hEq⟩; subst hEq
+                exact (storeTcbQueueLinks_machine_eq _ _ headTid none none none hFinal).trans
+                  (storeObject_machine_eq _ _ endpointId _ hStore)
+            | some nextTid =>
+              simp only []
+              cases hLookupNext : lookupTcb pair.2 nextTid with
+              | none => simp
+              | some nextTcb =>
+                simp only []
+                cases hLink : storeTcbQueueLinks pair.2 nextTid none (some QueuePPrev.endpointHead) nextTcb.queueNext with
+                | error e => simp
+                | ok st2 =>
+                  simp only []
+                  cases hFinal : storeTcbQueueLinks st2 headTid none none none with
+                  | error e => simp
+                  | ok st3 =>
+                    simp only [Except.ok.injEq, Prod.mk.injEq]
+                    intro ⟨_, _, hEq⟩; subst hEq
+                    exact (storeTcbQueueLinks_machine_eq _ _ headTid none none none hFinal).trans
+                      ((storeTcbQueueLinks_machine_eq _ _ nextTid none (some QueuePPrev.endpointHead) nextTcb.queueNext hLink).trans
+                        (storeObject_machine_eq _ _ endpointId _ hStore))
+
 /-- WS-F1: endpointQueuePopHead backward-preserves endpoints at oid ≠ endpointId. -/
 theorem endpointQueuePopHead_endpoint_backward_ne
     (endpointId : SeLe4n.ObjId) (isReceiveQ : Bool) (st st' : SystemState)
@@ -601,6 +657,56 @@ theorem endpointQueueEnqueue_scheduler_eq
                     exact (storeTcbQueueLinks_scheduler_eq _ _ tid _ _ _ hStep).trans
                       ((storeTcbQueueLinks_scheduler_eq _ _ tailTid _ _ _ hLink1).trans
                         (storeObject_scheduler_eq _ _ endpointId _ hStore))
+
+
+/-- `endpointQueueEnqueue` leaves the machine registers untouched. -/
+theorem endpointQueueEnqueue_machine_eq
+    (endpointId : SeLe4n.ObjId) (isReceiveQ : Bool)
+    (tid : SeLe4n.ThreadId) (st st' : SystemState)
+    (hStep : endpointQueueEnqueue endpointId isReceiveQ tid st = .ok st') :
+    st'.machine = st.machine := by
+  unfold endpointQueueEnqueue SystemState.getObject? at hStep
+  cases hObj : st.objects[endpointId]? with
+  | none => simp [hObj] at hStep
+  | some obj => cases obj with
+    | tcb _ | cnode _ | notification _ | vspaceRoot _ | untyped _ | schedContext _ | reply _ | frame _ | pageTable _ => simp [hObj] at hStep
+    | endpoint ep =>
+      simp only [hObj] at hStep
+      cases hLookup : lookupTcb st tid with
+      | none => simp [hLookup] at hStep
+      | some tcb =>
+        simp only [hLookup] at hStep
+        split at hStep
+        · simp at hStep
+        · split at hStep
+          · simp at hStep
+          · revert hStep
+            cases hTail : (if isReceiveQ then ep.receiveQ else ep.sendQ).tail with
+            | none =>
+              cases hStore : storeObject endpointId _ st with
+              | error e => simp
+              | ok pair =>
+                simp only []
+                intro hStep
+                exact (storeTcbQueueLinks_machine_eq _ _ tid _ _ _ hStep).trans
+                  (storeObject_machine_eq _ _ endpointId _ hStore)
+            | some tailTid =>
+              cases hLookupTail : lookupTcb st tailTid with
+              | none => simp [hLookupTail]
+              | some tailTcb =>
+                simp only [hLookupTail]
+                cases hStore : storeObject endpointId _ st with
+                | error e => simp
+                | ok pair =>
+                  simp only []
+                  cases hLink1 : storeTcbQueueLinks pair.2 tailTid tailTcb.queuePrev tailTcb.queuePPrev (some tid) with
+                  | error e => simp
+                  | ok st2 =>
+                    simp only []
+                    intro hStep
+                    exact (storeTcbQueueLinks_machine_eq _ _ tid _ _ _ hStep).trans
+                      ((storeTcbQueueLinks_machine_eq _ _ tailTid _ _ _ hLink1).trans
+                        (storeObject_machine_eq _ _ endpointId _ hStore))
 
 /-- WS-F1: endpointQueueEnqueue backward-preserves endpoints at oid ≠ endpointId. -/
 theorem endpointQueueEnqueue_endpoint_backward_ne

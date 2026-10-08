@@ -267,8 +267,9 @@ audit:
   and `distCorrect_after_set` helpers.
 - **Algorithmic improvements** (V7-G/I): `CNodeRadix.toList` from O(n²) to O(n).
   Boot-time key uniqueness checks from O(n²) to O(n) via `Std.HashSet`.
-- **`native_decide` elimination** (V7-E): `RegisterFile.not_lawfulBEq` now uses
-  kernel-reducible `decide` instead of `native_decide`.
+- **`native_decide` elimination** (V7-E): the register-file witnesses used
+  kernel-reducible `decide` instead of `native_decide` (the witness itself
+  retired with the 35-word `RegisterFile` at WS-CV CV1.1).
 
 ## 9. Canonical references
 

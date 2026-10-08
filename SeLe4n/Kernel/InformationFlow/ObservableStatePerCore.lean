@@ -43,13 +43,12 @@ the missing structure around it:
   follows: the observer learns the global projection's shared fragment
   paired with core `c`'s per-core fragment — all of it, and nothing beyond.
 * **The decidable fragment** (§4).  Observable-state equality is *not*
-  decidable — five components are functions over unbounded domains and the
-  sixth (`machineRegs`) contains `RegisterFile.gpr`, whose structural `BEq`
-  is provably not lawful (`RegisterFile.not_lawfulBEq`).  §4 carves out the
-  fragment that *is* decidable, adds the finer register-aware check that
-  carries the ARM64 structural comparison as far as computation allows,
-  proves both sound refuters, and proves both **strict** so no caller can
-  mistake either for full equality.
+  decidable — five components are functions over unbounded domains; the
+  sixth (`machineRegs`) is decidable, `RegisterFile` being thirty-five
+  machine words.  §4 carves out the fragment that *is* decidable, adds the
+  finer register-aware check that compares the banks exactly, proves both
+  sound refuters, and proves both **strict** so no caller can mistake either
+  for full equality.
 * **Per-core independence** (§5).  The read set of the per-core observable
   state is characterised exactly: the six shared state components
   (`objects`, `services`, `irqHandlers`, `objectIndex`,
@@ -562,10 +561,9 @@ theorem onCore_congr_of_globalProjection
 --   * five components are functions over unbounded domains — `objects`
 --     (`ObjId → …`), `services` and `serviceRegistry` (`ServiceId → …`),
 --     `irqHandlers` (`Irq → …`) and `memory` (`PAddr → …`);
---   * `machineRegs` carries a `RegisterFile`, whose `gpr : RegName →
---     RegValue` component makes even its structural `BEq` non-lawful — see
---     `RegisterFile.not_lawfulBEq`, which exhibits two register files that
---     compare equal yet differ.
+--   * `machineRegs` carries a `RegisterFile`, which is decidable (thirty-five
+--     machine words), so the register bank is the one component the finer
+--     check below compares exactly.
 --
 -- What *is* decidable is the fragment below: the five per-core scheduler
 -- components (all with `DecidableEq`) plus the register bank's
@@ -640,19 +638,19 @@ theorem perCoreSlice_erases_register_content :
             services := fun _ => false, activeDomain := ⟨0⟩, irqHandlers := fun _ => none,
             objectIndex := [], domainTimeRemaining := 0, domainSchedule := [],
             domainScheduleIndex := 0,
-            machineRegs := some { pc := ⟨0⟩, sp := ⟨0⟩, gpr := fun _ => ⟨0⟩ },
+            machineRegs := some { pc := 0, sp := 0 },
             memory := fun _ => none, serviceRegistry := fun _ => none },
           { objects := fun _ => none, runnable := [], current := none,
             services := fun _ => false, activeDomain := ⟨0⟩, irqHandlers := fun _ => none,
             objectIndex := [], domainTimeRemaining := 0, domainSchedule := [],
             domainScheduleIndex := 0,
-            machineRegs := some { pc := ⟨1⟩, sp := ⟨0⟩, gpr := fun _ => ⟨0⟩ },
+            machineRegs := some { pc := 1, sp := 0 },
             memory := fun _ => none, serviceRegistry := fun _ => none },
           rfl, ?_⟩
   intro h
   have hval : (0 : Nat) = 1 :=
     congrArg (fun (o : Option RegisterFile) =>
-      match o with | some rf => rf.pc.val | none => 0) h
+      match o with | some rf => rf.pc.toNat | none => 0) h
   exact absurd hval (by decide)
 
 /-- SM8.A.3 (strictness, shared half): the slice carries no shared component,
@@ -700,9 +698,9 @@ that instance for.  The check below is therefore strictly finer than
 `lowEquivalentSliceOnCore` while remaining computable.
 
 It is **not** a decision procedure for observable equality, and cannot be made
-one: `RegisterFile`'s `BEq` is not lawful (`RegisterFile.not_lawfulBEq`), so
-`= true` does not imply the banks are equal, and the shared components are
-still absent.  Its guarantee is one-directional and stated as such below. -/
+one: the register banks are compared exactly (`machineRegs_beq_iff`), but the
+shared components are still absent.  Its guarantee is one-directional and
+stated as such below. -/
 
 /-- `Option RegisterFile`'s structural comparison is reflexive (it inherits
 `RegisterFile.beq_self`), which is what makes the finer check sound. -/
@@ -738,21 +736,15 @@ theorem lowEquivalentSliceOnCoreCheckWithRegs_le_slice (ctx : LabelingContext) (
   simp only [lowEquivalentSliceOnCoreCheckWithRegs, Bool.and_eq_true, decide_eq_true_eq] at h
   exact h.1
 
-/-- SM8.A.3 (the finer check is still strict): `RegisterFile`'s comparison is
-not lawful, so even the register-aware check accepts states whose banks differ.
-Two banks agreeing on `pc`, `sp` and all 32 architectural GPRs but differing at
-an out-of-range index compare equal — the same counterexample class as
-`RegisterFile.not_lawfulBEq`.  No computable check can close this: the `gpr`
-field is a function over an unbounded index type. -/
-theorem machineRegs_beq_not_injective :
-    ∃ rf₁ rf₂ : RegisterFile, (rf₁ == rf₂) = true ∧ rf₁ ≠ rf₂ := by
-  refine ⟨{ pc := ⟨0⟩, sp := ⟨0⟩, gpr := fun _ => ⟨0⟩ },
-          { pc := ⟨0⟩, sp := ⟨0⟩, gpr := fun r => if r.val = 32 then ⟨1⟩ else ⟨0⟩ },
-          by decide, ?_⟩
-  intro h
-  have hgpr : (0 : Nat) = 1 :=
-    congrArg (fun rf : RegisterFile => (rf.gpr ⟨32⟩).val) h
-  exact absurd hgpr (by decide)
+/-- SM8.A.3 (the register bank's comparison is exact): `RegisterFile` is
+thirty-five machine words with decidable equality, so `Option RegisterFile`'s
+structural comparison decides equality of the banks.  The finer check is still
+strict as a whole — the shared components are functions over unbounded
+domains and stay absent from it — but the register component it compares is
+compared exactly. -/
+theorem machineRegs_beq_iff (o₁ o₂ : Option RegisterFile) :
+    (o₁ == o₂) = true ↔ o₁ = o₂ :=
+  beq_iff_eq
 
 -- ============================================================================
 -- §5  SM8.A.4 — per-core independence (the read set of the per-core view)
@@ -1128,14 +1120,11 @@ theorem memoryAddressObservable_monotone (ctx : LabelingContext) {L₁ L₂ : Se
 /-! ### Object-content refinement across clearances -/
 
 /-- The observer-filtered CNode that `projectKernelObject` produces in its
-`.cnode` arm, named so the slot-level lemmas below have a handle.
-
-The `lock` erasure mirrors `projectKernelObject`'s (WS-SM SM8.B.4): an
-`RwLockState` is a set of core identities, and carrying it into the projection
-would re-open the placement channel SM5.B closed on `TCB.cpuAffinity`. -/
+`.cnode` arm, named so the slot-level lemmas below have a handle.  (The
+CNode carries no lock word since WS-LS LS3.1, so there is nothing to erase
+beside the slot filter.) -/
 def projectCNode (ctx : LabelingContext) (observer : IfObserver) (cn : CNode) : CNode :=
-  { cn with lock := SeLe4n.Kernel.Concurrency.RwLockState.unheld,
-            slots := cn.slots.filter (fun _ cap => capTargetObservable ctx observer cap.target) }
+  { cn with slots := cn.slots.filter (fun _ cap => capTargetObservable ctx observer cap.target) }
 
 /-- Definition-pinning: `projectKernelObject`'s `.cnode` arm **is**
 `projectCNode`, so the slot lemmas below are statements about the live
@@ -1197,28 +1186,27 @@ structure cnodeVisibilityLe (cn₁ cn₂ : CNode) : Prop where
   guardWidth : cn₁.guardWidth = cn₂.guardWidth
   guardValue : cn₁.guardValue = cn₂.guardValue
   radixWidth : cn₁.radixWidth = cn₂.radixWidth
-  lock : cn₁.lock = cn₂.lock
   lookup : ∀ slot cap, cn₁.lookup slot = some cap → cn₂.lookup slot = some cap
 
 theorem cnodeVisibilityLe_refl (cn : CNode) : cnodeVisibilityLe cn cn :=
-  ⟨rfl, rfl, rfl, rfl, rfl, fun _ _ h => h⟩
+  ⟨rfl, rfl, rfl, rfl, fun _ _ h => h⟩
 
 theorem cnodeVisibilityLe_trans {cn₁ cn₂ cn₃ : CNode}
     (h₁ : cnodeVisibilityLe cn₁ cn₂) (h₂ : cnodeVisibilityLe cn₂ cn₃) :
     cnodeVisibilityLe cn₁ cn₃ :=
   ⟨h₁.depth.trans h₂.depth, h₁.guardWidth.trans h₂.guardWidth,
    h₁.guardValue.trans h₂.guardValue, h₁.radixWidth.trans h₂.radixWidth,
-   h₁.lock.trans h₂.lock, fun slot cap h => h₂.lookup slot cap (h₁.lookup slot cap h)⟩
+   fun slot cap h => h₂.lookup slot cap (h₁.lookup slot cap h)⟩
 
 /-- SM8.A.5: the field list of `cnodeVisibilityLe` is **exhaustive** — two
-CNodes ordered by it whose slot maps agree are equal.  A sixth non-slot field
+CNodes ordered by it whose slot maps agree are equal.  A fifth non-slot field
 added to `CNode` makes this proof fail, which is how the relation learns it has
 to grow. -/
 theorem eq_of_cnodeVisibilityLe_of_slots_eq {cn₁ cn₂ : CNode}
     (h : cnodeVisibilityLe cn₁ cn₂) (hSlots : cn₁.slots = cn₂.slots) : cn₁ = cn₂ := by
-  obtain ⟨d₁, gw₁, gv₁, rw₁, s₁, lk₁⟩ := cn₁
-  obtain ⟨d₂, gw₂, gv₂, rw₂, s₂, lk₂⟩ := cn₂
-  obtain ⟨hd, hgw, hgv, hrw, hlk, _⟩ := h
+  obtain ⟨d₁, gw₁, gv₁, rw₁, s₁⟩ := cn₁
+  obtain ⟨d₂, gw₂, gv₂, rw₂, s₂⟩ := cn₂
+  obtain ⟨hd, hgw, hgv, hrw, _⟩ := h
   simp_all
 
 /-- SM8.A.5: the visibility order on a **projected kernel object**.
@@ -1281,7 +1269,7 @@ theorem projectCNode_visibilityLe_monotone (ctx : LabelingContext) {L₁ L₂ : 
     (hFlow : securityFlowsTo L₁ L₂ = true) (cn : CNode) :
     cnodeVisibilityLe (projectCNode ctx (IfObserver.ofLabel L₁) cn)
       (projectCNode ctx (IfObserver.ofLabel L₂) cn) :=
-  ⟨rfl, rfl, rfl, rfl, rfl,
+  ⟨rfl, rfl, rfl, rfl,
    fun slot cap h => projectCNode_lookup_monotone ctx hFlow cn slot cap h⟩
 
 /-- SM8.A.5: the whole object projection is monotone in the clearance.  This is

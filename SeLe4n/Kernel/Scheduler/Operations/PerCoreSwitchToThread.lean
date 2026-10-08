@@ -29,8 +29,8 @@ runtime `withLockSet` acquisition over `switchToThreadOnCoreLockSet`.
 ## What this module proves
 
 * **SM5.B.2** `switchToThreadOnCoreLockSet` — the *complete* two-domain
-  cross-domain footprint over SM5.A's `SchedLockId`: the object-store **write**
-  lock (`schedObjStoreLockId`, guarding the `getTcb?` resolutions *and* the
+  cross-domain footprint over SM5.A's `LockKey`: the object-store **write**
+  lock (`LockKey.objStore`, guarding the `getTcb?` resolutions *and* the
   preempted thread's register-context save) plus the per-core run-queue
   **write** lock (guarding the re-enqueue / dequeue / current-set).  The
   cross-domain order (object lock before run-queue lock, plan §4.4) is
@@ -70,14 +70,15 @@ Axiom-clean: every theorem depends only on the standard foundational axioms
 namespace SeLe4n.Kernel
 
 open SeLe4n.Model
-open SeLe4n.Kernel.Concurrency (numCores CoreId bootCoreId allCores)
+open SeLe4n.Kernel.Concurrency (numCores CoreId bootCoreId allCores
+  LockKey)
 
 -- ============================================================================
 -- §1  SM5.B.2 — Cross-domain lock-set footprint of `switchToThreadOnCore`
 -- ============================================================================
 
 /-- WS-SM SM5.B.2 (cross-domain, plan §3.2 / §4.4): the **complete** lock-set
-footprint of `switchToThreadOnCore c tid`, over SM5.A's unified `SchedLockId`.
+footprint of `switchToThreadOnCore c tid`, over SM5.A's unified `LockKey`.
 
 `switchToThreadOnCore` touches *both* lock domains, and — unlike the read-only
 `chooseThreadOnCore` — it **mutates** both:
@@ -86,13 +87,13 @@ footprint of `switchToThreadOnCore c tid`, over SM5.A's unified `SchedLockId`.
   `getTcb?` *and* writes the preempted thread's saved register context back via
   `objects.insert` (`preemptCurrentOnCore`).  Per SM3.A.10 the store is guarded
   by the single table-level lock at the top of the SM0.I hierarchy
-  (`schedObjStoreLockId`), here taken in **write** mode; and
+  (`LockKey.objStore`), here taken in **write** mode; and
 * core `c`'s per-core **run-queue** slot (write): it re-enqueues the preempted
   thread, dequeues `tid`, and sets the current thread.
 
 So the footprint is the two-lock set in plan §4.4 ascending order (object lock
 first):
-`[(SchedLockId.object schedObjStoreLockId, .write), (SchedLockId.runQueue ⟨c⟩, .write)]`.
+`[(LockKey.objStore, .write), (LockKey.runQueue c, .write)]`.
 
 **Why the table lock rather than `(LockId.tcb tid, .write)` (plan §3.2's
 sketch).** The switch writes *two* TCBs — `tid` (read for affinity + context
@@ -104,7 +105,7 @@ cross-domain under-locking class SM5.A's audit (PR #804) closed for
 
 Crucially, the save is an `RHTable.insert`, and **SM3.A.10 guards the RobinHood
 object store's structural concurrency-safety at *table* granularity, not
-per-object** (`SystemState.objStoreLock` = `LockKind.objStore`, level 0): a
+per-object** (the `LockKey.objStore` table key, level 0): a
 concurrent insert can relocate slots along the probe sequence, so per-object
 TCB locks would not protect the table structure.  The object-store **table**
 write lock is therefore the *sound* discipline (and it subsumes the dynamic
@@ -119,12 +120,12 @@ existing key does not relocate); that is a tracked **post-SM5 optimization**,
 not an SM5.B regression.  The per-core *run-queue* lock, by contrast, is
 genuinely per-core, so switches on distinct cores never contend on it.  The
 runtime `withLockSet` acquisition over this footprint — in the ascending
-`SchedLockId` order certified by `switchToThreadOnCoreLockSet_pairwise_le` — is
+`LockKey` order certified by `switchToThreadOnCoreLockSet_pairwise_le` — is
 SM5.C work. -/
 def switchToThreadOnCoreLockSet (c : CoreId) :
-    List (SchedLockId × Concurrency.AccessMode) :=
-  [ (SchedLockId.object schedObjStoreLockId, .write)
-  , (SchedLockId.runQueue ⟨c⟩, .write) ]
+    List (LockKey × Concurrency.AccessMode) :=
+  [ (LockKey.objStore, .write)
+  , (LockKey.runQueue c, .write) ]
 
 /-- SM5.B.2: the footprint is the two-lock object-store + run-queue set. -/
 @[simp] theorem switchToThreadOnCoreLockSet_length (c : CoreId) :
@@ -144,14 +145,14 @@ theorem switchToThreadOnCoreLockSet_write_only (c : CoreId) :
 both the `getTcb?` resolutions *and* the preempted thread's register-context
 save (the write a `LockId.tcb tid`-only set would miss). -/
 theorem switchToThreadOnCoreLockSet_contains_objStore_write (c : CoreId) :
-    (SchedLockId.object schedObjStoreLockId, Concurrency.AccessMode.write)
+    (LockKey.objStore, Concurrency.AccessMode.write)
       ∈ switchToThreadOnCoreLockSet c := by
   simp [switchToThreadOnCoreLockSet]
 
 /-- SM5.B.2: the per-core run-queue **write** lock is in the footprint — it
 guards the re-enqueue / dequeue / current-set on core `c`. -/
 theorem switchToThreadOnCoreLockSet_contains_runQueue_write (c : CoreId) :
-    (SchedLockId.runQueue ⟨c⟩, Concurrency.AccessMode.write)
+    (LockKey.runQueue c, Concurrency.AccessMode.write)
       ∈ switchToThreadOnCoreLockSet c := by
   simp [switchToThreadOnCoreLockSet]
 
@@ -159,9 +160,9 @@ theorem switchToThreadOnCoreLockSet_contains_runQueue_write (c : CoreId) :
 *before* the run-queue lock — the cross-domain ascending order that, with the
 SM0.I within-domain order, gives the SM3.D deadlock-freedom argument. -/
 theorem switchToThreadOnCoreLockSet_object_before_runQueue (c : CoreId) :
-    SchedLockId.object schedObjStoreLockId
-      < SchedLockId.runQueue (⟨c⟩ : RunQueueLockId) :=
-  SchedLockId.object_lt_runQueue _ _
+    LockKey.objStore
+      < LockKey.runQueue c :=
+  LockKey.objStore_lt_runQueue _
 
 /-- SM5.B.2: the footprint's projected keys are duplicate-free (object lock vs
 run-queue lock are distinct constructors), mirroring SM3.B's
@@ -833,19 +834,19 @@ theorem switchToThreadOnCore_establishes_contextMatchesCurrentOnCore
 -- ============================================================================
 
 /-- WS-SM SM5.B.2 (plan §4.4): the lock-set's projected keys form a
-**`SchedLockId`-ascending acquisition sequence** — they are `Pairwise (· ≤ ·)`.
+**`LockKey`-ascending acquisition sequence** — they are `Pairwise (· ≤ ·)`.
 The `withLockSet` discipline (SM3.C) acquires a lock-set in ascending lock order;
 this theorem certifies `switchToThreadOnCoreLockSet` is already in that order
 (object lock before run-queue lock), so its canonical acquisition sequence is the
-list itself.  Combined with the SchedLockId total order (SM5.A) and SM3.D's
+list itself.  Combined with the LockKey total order (SM5.A) and SM3.D's
 ladder argument, this is the per-core switch's contribution to cross-core
 deadlock-freedom.  (The two-element list needs no runtime sort; the dynamic
-acquisition over a `SchedLockId` `LockSet` is wired by SM5.C's dispatch loop.) -/
+acquisition over a `LockKey` `LockSet` is wired by SM5.C's dispatch loop.) -/
 theorem switchToThreadOnCoreLockSet_pairwise_le (c : CoreId) :
     ((switchToThreadOnCoreLockSet c).map (·.1)).Pairwise (· ≤ ·) := by
-  have hle : SchedLockId.object schedObjStoreLockId
-      ≤ SchedLockId.runQueue (⟨c⟩ : RunQueueLockId) :=
-    (SchedLockId.object_lt_runQueue _ _).1
+  have hle : LockKey.objStore
+      ≤ LockKey.runQueue c :=
+    (LockKey.objStore_lt_runQueue _).1
   simp only [switchToThreadOnCoreLockSet, List.map_cons, List.map_nil]
   exact List.Pairwise.cons
     (fun a ha => by rcases List.mem_singleton.mp ha with rfl; exact hle)

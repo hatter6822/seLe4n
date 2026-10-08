@@ -18,11 +18,11 @@ import SeLe4n.Kernel.SchedLockBracket
 /-!
 # WS-RR RR7.40 — the dynamic PIP chain, over a domain that can name its locks
 
-SM3.C.11 built the chain walker and `withDynamicChainExtension`, which acquires
-**each chain member's TCB write lock**.  That was every lock the object domain
-could name.  What the walk actually writes is more: `updatePipBoostOnCore` writes
+SM3.C.11 built the chain walker, whose footprint was **each chain member's TCB
+write lock** (`chainLockSeq`).  That was every lock the object domain could
+name.  What the walk actually writes is more: `updatePipBoostOnCore` writes
 the member's TCB *and* migrates its run-queue bucket on **its own home core**, so
-the footprint owed a per-member `SchedLockId.runQueue` write lock that `LockSet`
+the footprint owed a per-member `LockKey.runQueue` write lock that `LockSet`
 had no constructor for.  That is what `UncoveredLockDomain.dynamicPipChain`
 recorded, and RR7.39 removed the obstacle by giving the scheduler domain a
 runtime.
@@ -30,7 +30,7 @@ runtime.
 ## Why two segments rather than hand-over-hand per member
 
 The natural reading of "extend the held set as each member is discovered" is to
-take that member's two locks together before moving on.  The `SchedLockId` order
+take that member's two locks together before moving on.  The `LockKey` order
 forbids it: it is `object < runQueue < replenishQueue`, so **every** object lock
 precedes **every** run-queue lock, and interleaving them per member would walk
 the ladder backwards at the second member.  The footprint is therefore two
@@ -64,7 +64,7 @@ namespace SeLe4n.Kernel.PriorityInheritance
 open SeLe4n.Model
 open SeLe4n.Kernel
 open SeLe4n.Kernel.Concurrency (CoreId AccessMode allCores numCores LockKind LockId
-  runChainExtension runChainExtension_held runChainExtension_refused)
+  LockKey LockSet)
 
 -- ============================================================================
 -- §1  The footprint
@@ -113,7 +113,7 @@ theorem pipChainHomeCores_length_le (s : SystemState) (visited : List SeLe4n.Thr
 
 /-- **WS-RR RR7.40**: the PIP chain walk's scheduler-domain footprint.
 
-Two segments in `SchedLockId` order: every visited thread's TCB **write** lock,
+Two segments in `LockKey` order: every visited thread's TCB **write** lock,
 then every home core's run-queue **write** lock.  The first covers the boost
 itself (`updatePipBoostOnCore` rewrites the member's `pipBoost`), the second the
 bucket migration (`setRunQueueOnCore` at that member's home core).
@@ -122,9 +122,9 @@ Both are `.write`: the walk reads a member's priority in order to rewrite it, an
 a read lock would let a concurrent writer change the value between the read and
 the store. -/
 def pipChainSchedFootprint (s : SystemState) (visited : List SeLe4n.ThreadId) :
-    List (SchedLockId × AccessMode) :=
-  visited.map (fun t => (SchedLockId.object ⟨LockKind.tcb, t.toObjId⟩, AccessMode.write))
-    ++ schedCoreSegment (fun c => SchedLockId.runQueue ⟨c⟩)
+    List (LockKey × AccessMode) :=
+  visited.map (fun t => (LockKey.object ⟨LockKind.tcb, t.toObjId⟩, AccessMode.write))
+    ++ schedCoreSegment (fun c => LockKey.runQueue c)
         (visited.map (determineTargetCore s))
 
 /-- **WS-RR RR7.40**: every lock in the chain footprint is a **write** lock. -/
@@ -138,7 +138,7 @@ theorem pipChainSchedFootprint_write_only (s : SystemState) (visited : List SeLe
 /-- **WS-RR RR7.40**: a visited thread's TCB write lock is in the footprint. -/
 theorem mem_pipChainSchedFootprint_tcb (s : SystemState) (visited : List SeLe4n.ThreadId)
     (t : SeLe4n.ThreadId) (ht : t ∈ visited) :
-    (SchedLockId.object ⟨LockKind.tcb, t.toObjId⟩, AccessMode.write)
+    (LockKey.object ⟨LockKind.tcb, t.toObjId⟩, AccessMode.write)
       ∈ pipChainSchedFootprint s visited :=
   List.mem_append_left _ (List.mem_map.mpr ⟨t, ht, rfl⟩)
 
@@ -147,7 +147,7 @@ the footprint — the member the object domain could not name, and the whole rea
 this footprint exists. -/
 theorem mem_pipChainSchedFootprint_runQueue (s : SystemState) (visited : List SeLe4n.ThreadId)
     (t : SeLe4n.ThreadId) (ht : t ∈ visited) :
-    (SchedLockId.runQueue ⟨determineTargetCore s t⟩, AccessMode.write)
+    (LockKey.runQueue (determineTargetCore s t), AccessMode.write)
       ∈ pipChainSchedFootprint s visited :=
   List.mem_append_right _
     ((mem_schedCoreSegment_iff runQueueLock_injective _ (determineTargetCore s t)).mpr
@@ -164,7 +164,7 @@ theorem pipChainSchedFootprint_length (s : SystemState) (visited : List SeLe4n.T
       ≤ visited.length + numCores := by
   simp only [pipChainSchedFootprint, List.length_append, List.length_map]
   exact Nat.add_le_add_left
-    (schedCoreSegment_length_le (fun c => SchedLockId.runQueue ⟨c⟩) _) _
+    (schedCoreSegment_length_le (fun c => LockKey.runQueue c) _) _
 
 -- ============================================================================
 -- §2  Ordering and uniqueness
@@ -174,10 +174,10 @@ theorem pipChainSchedFootprint_length (s : SystemState) (visited : List SeLe4n.T
 home core's run-queue lock — the case analysis every ordering and uniqueness
 proof below runs. -/
 theorem pipChainSchedFootprint_key_shape {s : SystemState}
-    {visited : List SeLe4n.ThreadId} {k : SchedLockId}
+    {visited : List SeLe4n.ThreadId} {k : LockKey}
     (hk : k ∈ (pipChainSchedFootprint s visited).map (·.1)) :
-    (∃ t ∈ visited, k = SchedLockId.object ⟨LockKind.tcb, t.toObjId⟩) ∨
-      (∃ c ∈ pipChainHomeCores s visited, k = SchedLockId.runQueue ⟨c⟩) := by
+    (∃ t ∈ visited, k = LockKey.object ⟨LockKind.tcb, t.toObjId⟩) ∨
+      (∃ c ∈ pipChainHomeCores s visited, k = LockKey.runQueue c) := by
   obtain ⟨p, hp, rfl⟩ := List.mem_map.mp hk
   rcases List.mem_append.mp hp with h | h
   · obtain ⟨t, ht, rfl⟩ := List.mem_map.mp h
@@ -192,7 +192,7 @@ The `visited.Nodup` hypothesis is the chain's acyclicity, which the walker
 establishes by refusing a non-ascending step (`walkStep`'s `next.toNat >
 lastTid.toNat` guard).  The run-queue segment needs no hypothesis — it is a
 filter of `allCores` — and the two segments are disjoint because their keys are
-different `SchedLockId` constructors. -/
+different `LockKey` constructors. -/
 theorem pipChainSchedFootprint_keys_nodup (s : SystemState) (visited : List SeLe4n.ThreadId)
     (hNodup : visited.Nodup) :
     ((pipChainSchedFootprint s visited).map (·.1)).Nodup := by
@@ -201,11 +201,11 @@ theorem pipChainSchedFootprint_keys_nodup (s : SystemState) (visited : List SeLe
   · -- the TCB segment: an injective image of a duplicate-free list
     rw [List.map_map]
     have hInj : ∀ a b : SeLe4n.ThreadId,
-        (SchedLockId.object ⟨LockKind.tcb, a.toObjId⟩ : SchedLockId)
-          = SchedLockId.object ⟨LockKind.tcb, b.toObjId⟩ → a = b := by
+        (LockKey.object ⟨LockKind.tcb, a.toObjId⟩ : LockKey)
+          = LockKey.object ⟨LockKind.tcb, b.toObjId⟩ → a = b := by
       intro a b hab
       have hOid : a.toObjId = b.toObjId :=
-        congrArg Concurrency.LockId.objId (SchedLockId.object.inj hab)
+        congrArg Concurrency.LockId.objId (LockKey.object.inj hab)
       exact SeLe4n.ThreadId.toObjId_injective a b hOid
     exact List.Pairwise.map _ (fun a b h he => h (hInj a b he)) hNodup
   · -- the run-queue segment: the shared segment's own uniqueness (WS-RR RR8.12)
@@ -217,13 +217,13 @@ theorem pipChainSchedFootprint_keys_nodup (s : SystemState) (visited : List SeLe
     obtain ⟨c, _, rfl⟩ := schedCoreSegment_map_fst_mem hb
     simp
 
-/-- **WS-RR RR7.40**: the footprint's keys form a `SchedLockId`-ascending
+/-- **WS-RR RR7.40**: the footprint's keys form a `LockKey`-ascending
 acquisition sequence, given that the walk's path is `ObjId`-ascending.
 
 The `hAsc` hypothesis is exactly what `walkAndAcquire` guarantees on a terminated
 walk (`walkAndAcquire_path_ascending_in_ObjId_if_terminated`), so a chain the
 walker accepts has an ordered footprint and a chain it refuses declares none.
-Across the two segments the ordering is free: `SchedLockId.object_lt_runQueue`
+Across the two segments the ordering is free: `LockKey.object_lt_runQueue`
 puts every object lock below every run-queue lock, which is why the footprint has
 to be two segments rather than per-member pairs. -/
 theorem pipChainSchedFootprint_pairwise_le (s : SystemState) (visited : List SeLe4n.ThreadId)
@@ -234,8 +234,8 @@ theorem pipChainSchedFootprint_pairwise_le (s : SystemState) (visited : List SeL
   · -- within the TCB segment: the SM0.I `LockId` order at equal kind is by ObjId
     rw [List.map_map]
     refine List.Pairwise.map _ (fun a b hab => ?_) hAsc
-    show (SchedLockId.object ⟨LockKind.tcb, a.toObjId⟩ : SchedLockId)
-      ≤ SchedLockId.object ⟨LockKind.tcb, b.toObjId⟩
+    show (LockKey.object ⟨LockKind.tcb, a.toObjId⟩ : LockKey)
+      ≤ LockKey.object ⟨LockKind.tcb, b.toObjId⟩
     -- SM0.I's `LockId` order is lexicographic: equal kind, then `objId.val`.
     exact Or.inr ⟨rfl, Nat.le_of_lt hab⟩
   · -- within the run-queue segment: `CoreId`-ascending, from `allCores`.
@@ -250,7 +250,7 @@ theorem pipChainSchedFootprint_pairwise_le (s : SystemState) (visited : List SeL
     rw [List.map_map] at ha
     obtain ⟨_, _, rfl⟩ := List.mem_map.mp ha
     obtain ⟨c, _, rfl⟩ := schedCoreSegment_map_fst_mem hb
-    exact (SchedLockId.object_lt_runQueue _ _).1
+    exact (LockKey.object_lt_runQueue _ _).1
 
 
 -- ============================================================================
@@ -419,171 +419,34 @@ theorem propagatePipChainCrossCore_coversWrites (s : SystemState)
 
 
 -- ============================================================================
--- §5  The extension
+-- §5  The declaration resolves
 -- ============================================================================
-
-/-- **WS-RR RR7.40**: run the PIP chain walk inside the footprint the chain
-declares.
-
-`runChainExtension` at `schedulerLockBracketDomain` — the *same* definition
-`withDynamicChainExtension` runs at the object domain, so "acquire a discovered
-chain, act, unwind" has one answer and the two differ only in which locks they
-name.  What this one names that the object-domain form could not is each member's
-home-core run-queue write lock.
-
-The footprint is resolved from `pipChainVisited` at the pre-state, which is the
-walk the transition itself performs; `propagatePipChainCrossCore_coversWrites` is
-the proof that the resolution covers what the transition writes.
-
-`SchedLockSet.ofList?` is the fail-closed step: a chain that revisits a thread —
-which `blockingAcyclic` forbids — names one lock twice, so no footprint is
-declared, and the caller keeps whatever coarser serialisation it already has.
-Accepting the duplicated list and acquiring it anyway is the one shape this must
-not take: a read-acquire counted twice leaves a reader the symmetric unwind
-never removes.
-
-What `ofList?` does **not** check is the order, and it does not need to (PR #892
-review round 5): the domain sorts (`SchedLockSet.lockAcquireSequence`), so a
-chain resolved in any order is acquired along the SM0.I ladder.  Before that it
-did need to, and nothing did — a chain descending in `ObjId`, which is any chain
-where a higher-numbered thread blocks on a lower-numbered one, was acquired
-backwards. -/
-def withPipChainSchedExtension {α : Type} (caller : CoreId)
-    (startTid : SeLe4n.ThreadId) (fuel : Nat)
-    (action : SystemState → SystemState × α) (fallback : α) (s : SystemState) :
-    SystemState × α :=
-  match SchedLockSet.ofList? (pipChainSchedFootprint s (pipChainVisited s startTid fuel)) with
-  | none => (s, fallback)
-  | some S =>
-      runChainExtension schedulerLockBracketDomain caller S action fallback s
-
-/-- **WS-RR RR7.40**: with no footprint declared — a chain whose keys repeat —
-the extension commits nothing and acquires nothing.
-
-The fail-closed arm, stated so a refactor that started acquiring a duplicated
-list has to break it. -/
-theorem withPipChainSchedExtension_undeclared {α : Type} (caller : CoreId)
-    (startTid : SeLe4n.ThreadId) (fuel : Nat)
-    (action : SystemState → SystemState × α) (fallback : α) (s : SystemState)
-    (h : SchedLockSet.ofList? (pipChainSchedFootprint s (pipChainVisited s startTid fuel))
-          = none) :
-    withPipChainSchedExtension caller startTid fuel action fallback s = (s, fallback) := by
-  unfold withPipChainSchedExtension
-  rw [h]
-
-/-- **WS-RR RR7.40 / PR #892 review round 2**: on a declared footprint the
-growing phase **granted**, the extension is acquire / act / unwind over exactly
-the chain's locks.
-
-**PR #892 review round 5**: over the chain's locks *in ladder order*.  The
-sequence is `S.lockAcquireSequence` — the domain's canonical sort — not the
-resolved list, because a blocking chain descends in `ObjId` whenever a
-higher-numbered thread blocks on a lower-numbered one and acquiring it as
-resolved would walk the SM0.I ladder backwards.  `pipChainSchedExtension_acquires_in_ladder_order`
-is what that buys, with no hypothesis on the chain. -/
-theorem withPipChainSchedExtension_declared {α : Type} (caller : CoreId)
-    (startTid : SeLe4n.ThreadId) (fuel : Nat)
-    (action : SystemState → SystemState × α) (fallback : α) (s : SystemState)
-    (S : SchedLockSet)
-    (h : SchedLockSet.ofList? (pipChainSchedFootprint s (pipChainVisited s startTid fuel))
-          = some S)
-    (hHeld : schedLockSetHeld caller S (schedAcquireAll caller S.lockAcquireSequence s)) :
-    withPipChainSchedExtension caller startTid fuel action fallback s
-      = (schedUnwindAll caller S.lockAcquireSequence.reverse
-           (action (schedAcquireAll caller S.lockAcquireSequence s)).1,
-         (action (schedAcquireAll caller S.lockAcquireSequence s)).2) := by
-  unfold withPipChainSchedExtension
-  rw [h]
-  exact runChainExtension_held schedulerLockBracketDomain caller S action fallback s hHeld
-
-/-- **PR #892 review round 2 (the load-bearing negative)**: a declared footprint
-the growing phase did **not** grant is unwound and the action never runs. -/
-theorem withPipChainSchedExtension_refused {α : Type} (caller : CoreId)
-    (startTid : SeLe4n.ThreadId) (fuel : Nat)
-    (action : SystemState → SystemState × α) (fallback : α) (s : SystemState)
-    (S : SchedLockSet)
-    (h : SchedLockSet.ofList? (pipChainSchedFootprint s (pipChainVisited s startTid fuel))
-          = some S)
-    (hNot : ¬ schedLockSetHeld caller S (schedAcquireAll caller S.lockAcquireSequence s)) :
-    withPipChainSchedExtension caller startTid fuel action fallback s
-      = (schedUnwindAll caller S.lockAcquireSequence.reverse
-           (schedAcquireAll caller S.lockAcquireSequence s), fallback) := by
-  unfold withPipChainSchedExtension
-  rw [h]
-  exact runChainExtension_refused schedulerLockBracketDomain caller S action fallback s hNot
-
-/-- **PR #892 review round 5 (the payoff)**: the chain extension acquires in
-`SchedLockId`-ascending order — the SM0.I ladder — for **every** chain, with no
-hypothesis about the order the walk discovered it in.
-
-This is what `pipChainSchedFootprint_pairwise_le` could not say.  That theorem
-takes the walk's path being `ObjId`-ascending as a hypothesis, and nothing at
-this call site discharged it: `pipChainVisited` follows `blockingServer`
-unconditionally, so a chain in which thread 10 blocks on thread 5 resolved to
-`[tcb 10, tcb 5]` and `ofList?` accepted it — its check is key-uniqueness, which
-that list satisfies.  The acquisition then took `tcb 10` before `tcb 5` while
-any other operation naming both takes them the other way round: a lock-order
-inversion, and a deadlock.  Sorting in the domain removes the hypothesis
-entirely rather than adding a guard that a future resolver has to remember. -/
-theorem pipChainSchedExtension_acquires_in_ladder_order (s : SystemState)
-    (startTid : SeLe4n.ThreadId) (fuel : Nat) :
-    ∀ S ∈ SchedLockSet.ofList? (pipChainSchedFootprint s (pipChainVisited s startTid fuel)),
-      (schedulerLockBracketDomain.sequence S).Pairwise (fun p₁ p₂ => p₁.fst ≤ p₂.fst) :=
-  fun S _ => schedulerLockBracketDomain_sequence_ordered S
 
 /-- **WS-RR RR7.40 (the declaration resolves for an acyclic chain)**: a walk that
 visits each thread once declares a footprint.
 
 The `Nodup` hypothesis is the chain's acyclicity, the property `blockingAcyclic`
-maintains — so the fail-closed arm above is reachable only for a chain the
-kernel's own invariants already exclude, and the extension acquires on every
-well-formed one.
+maintains — so `LockSet.ofList?`'s fail-closed `none` is reachable only for a
+chain the kernel's own invariants already exclude, and every well-formed chain
+declares.  Ordering is the domain's, by sorting
+(`LockSet.lockAcquireSequence`): `pipChainVisited` follows `blockingServer`
+wherever the blocking graph goes, so a chain in which thread 10 blocks on
+thread 5 resolves to `[tcb 10, tcb 5]`, and it is the sort, not a guard at
+this site, that puts the footprint on the SM0.I ladder (PR #892 review round 5).
 
-**PR #892 review round 5**: this used to credit `walkStep`'s ascending guard as
-well.  That guard belongs to `walkAndAcquire`, the object-domain hand-over-hand
-walker, and `pipChainVisited` — the walk this footprint is resolved from — has
-none: it follows `blockingServer` wherever the blocking graph goes.  Acyclicity
-is what makes the keys distinct; ordering is the domain's, by sorting. -/
-theorem withPipChainSchedExtension_resolves (s : SystemState)
+**WS-LS LS2.4**: the runtime extension that acquired this footprint
+(`withPipChainSchedExtension`, over `runChainExtension` at the object domain) is
+deleted with the word-level bracket; the footprint is declared statically at
+the seams that walk the chain (`SyscallSchedFootprint`), and
+`propagatePipChainCrossCore_coversWrites` (§4) is the proof the seam's
+`BracketSpec` carries that the walk writes nothing outside it. -/
+theorem pipChainSchedFootprint_resolves (s : SystemState)
     (startTid : SeLe4n.ThreadId) (fuel : Nat)
     (hNodup : (pipChainVisited s startTid fuel).Nodup) :
-    (SchedLockSet.ofList? (pipChainSchedFootprint s (pipChainVisited s startTid fuel))).isSome
+    (LockSet.ofList? (pipChainSchedFootprint s (pipChainVisited s startTid fuel))).isSome
       = true := by
-  rw [SchedLockSet.ofList?_isSome_of_nodup
+  rw [LockSet.ofList?_isSome_of_nodup
     (pipChainSchedFootprint_keys_nodup s _ hNodup)]
   rfl
-
-/-- **WS-RR RR7.40 (the extension composes with the declared bracket)**: a
-chain extension nested inside `runBracketed` runs on the bracket's acquired
-state and returns through the bracket's unwind.
-
-The two are not alternatives.  A declared footprint is resolved before its own
-locks are held, so the bracket revalidates; a walked chain is discovered by the
-walk's own reads, so it does not.  A caller that needs both — the RR7.12 syscall
-seam invoking a PIP walk — takes the declared bracket outside and the chain
-extension inside, and this says the composition is the bracket's committed arm
-with the extension as its step.
-
-Stated at the generic bracket so it holds at either domain, and so a future
-consumer cannot compose them in the other order (a bracket *inside* a chain
-extension would acquire a footprint resolved while the chain's locks are already
-held, which the ladder forbids). -/
-theorem runBracketed_chainExtension_composes {α : Type}
-    (D : Concurrency.LockBracketDomain)
-    (declared : SystemState → Option D.Footprint) (lockCore : CoreId)
-    (chain : D.Footprint) (action : SystemState → SystemState × α) (fallback : α)
-    (st : SystemState) (S : D.Footprint)
-    (hDecl : declared st = some S)
-    (hGuard : declared (D.acquire lockCore (D.sequence S) st) = some S ∧
-      D.held lockCore S (D.acquire lockCore (D.sequence S) st)) :
-    Concurrency.runBracketed D declared lockCore
-        (fun s => let r := runChainExtension D lockCore chain action fallback s; (r.2, r.1)) st
-      = .committed
-          ((runChainExtension D lockCore chain action fallback
-              (D.acquire lockCore (D.sequence S) st)).2,
-           D.unwind lockCore (D.sequence S).reverse
-             (runChainExtension D lockCore chain action fallback
-               (D.acquire lockCore (D.sequence S) st)).1) :=
-  Concurrency.runBracketed_committed D declared lockCore _ st S hDecl hGuard
 
 end SeLe4n.Kernel.PriorityInheritance

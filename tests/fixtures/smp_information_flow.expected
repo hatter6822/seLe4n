@@ -11,7 +11,7 @@
 [smp-information-flow] signal on a low notification: low reads the same badge on every core false (expected false)
 [smp-information-flow] remote wake of a visible thread: home core 2, confined there true, deschedule dual confined true
 [smp-information-flow] rendezvous call write set: [2, 0], send write set: [2]
-[smp-information-flow] lock acquired on an object low can see: raw writer true, projected unheld on every core true
+[smp-information-flow] lock acquired on an object low can see: ghost writer true, projection unchanged on every core true
 [smp-information-flow] non-interference coverage: 35 per-core lifts, 31 with derived confinement, 4 catch-all
 [smp-information-flow] cross-core inventory: 32 transitions, 25 live arms, 23 remote writers
 [smp-information-flow] enforcement boundary: canonical 52 = 13 policy-gated + 35 capability-only + 4 read-only

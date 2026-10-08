@@ -364,7 +364,7 @@ inductive RwLockOp where
   | releaseWrite    (core : CoreId)
   /-- `core` withdraws its queued acquisition request (if it has one). -/
   | cancel          (core : CoreId)
-  deriving Repr
+  deriving Repr, DecidableEq
 
 /-- Is this operation a withdrawal?
 
@@ -760,6 +760,24 @@ theorem RwLockState.applyOp_cancel_of_promotes (s : RwLockState) (c : CoreId)
     s.applyOp (.cancel c) = (s.withdraw c).promoteWaitersOnWriterRelease := by
   unfold RwLockState.applyOp
   simp [h]
+
+/-- **WS-LS LS1.1**: a withdrawal by a core with nothing queued is the identity
+— the filter removes nothing and the guard, whose first conjunct is that very
+membership, does not promote.  A holder is never queued (INV-R4), so this is
+the fact that lets a bracket's shrinking phase withdraw first unconditionally:
+at a member the growing phase was *granted*, the withdrawal changes nothing. -/
+theorem RwLockState.applyOp_cancel_of_not_queued (s : RwLockState) (c : CoreId)
+    (h : c ∉ s.waiters.map Prod.fst) : s.applyOp (.cancel c) = s := by
+  have hNo : s.cancelPromotes c = false := by
+    unfold RwLockState.cancelPromotes
+    simp [h]
+  rw [RwLockState.applyOp_cancel_of_not_promotes s c hNo]
+  unfold RwLockState.withdraw
+  have hKeep : s.waiters.filter (fun w => w.1 ≠ c) = s.waiters := by
+    apply List.filter_eq_self.mpr
+    intro w hw
+    exact decide_eq_true (fun hEq => h (List.mem_map.mpr ⟨w, hw, hEq⟩))
+  rw [hKeep]
 
 /-- `cancelPromotes`, in its three-conjunct form. -/
 theorem RwLockState.cancelPromotes_iff (s : RwLockState) (c : CoreId) :
@@ -9476,5 +9494,145 @@ theorem rwLock_writer_cycle_budget_at_unit_cost
   refine ⟨a, h_eq, ?_⟩
   rw [e.elapsed_unit_cost h_unit] at h_le
   omega
+
+-- ============================================================================
+-- §Z — Mode-indexed ops and the per-word holder predicate
+-- ============================================================================
+--
+-- These five names are what the ghost lock table (`Locks/LockState.lean`)
+-- needs from the word-level transition system: the op a declared footprint
+-- member turns into, and what it means for a core to hold one word.  They sat
+-- in the per-object lock layer (`WithLockSet.lean`, `LockSetHeld.lean`) until
+-- WS-LS LS3.1 deleted that layer with the lock fields it operated on.
+
+/-- WS-SM SM3.C.2: convert an `AccessMode` to the matching `RwLockOp`
+constructor for **acquire** transitions — what `applyOp` consumes when the
+kernel acquires a lock in the declared mode. -/
+@[inline] def AccessMode.toAcquireOp (m : AccessMode) (core : CoreId) :
+    RwLockOp :=
+  match m with
+  | .read  => .tryAcquireRead core
+  | .write => .tryAcquireWrite core
+
+/-- WS-SM SM3.C.2: convert an `AccessMode` to the matching `RwLockOp`
+constructor for **release** transitions.  Symmetric counterpart to
+`toAcquireOp`. -/
+@[inline] def AccessMode.toReleaseOp (m : AccessMode) (core : CoreId) :
+    RwLockOp :=
+  match m with
+  | .read  => .releaseRead core
+  | .write => .releaseWrite core
+
+/-- **WS-LC LC4.1**: the **withdrawal** op for a declared footprint member.
+
+Third sibling of `toAcquireOp` / `toReleaseOp`, and the one that does not
+branch: `RwLockOp.cancel` carries no mode, because a queued request is
+withdrawn whatever mode it was queued in.  The `AccessMode` argument is
+taken anyway so the three conversions have one signature and the three
+folds over a `List (LockKey × AccessMode)` sequence can share it.
+
+A withdrawal is not a release: it admits nobody
+(`RwLockState.applyOp_cancel_readers` / `_writerHeld` are `rfl`), so it
+cannot break exclusion, and it costs the waiters behind it nothing. -/
+@[inline] def AccessMode.toCancelOp (_m : AccessMode) (core : CoreId) :
+    RwLockOp :=
+  .cancel core
+
+/-- **WS-LC LC4.1**: the withdrawal op does not depend on the mode.
+
+Stated rather than left to `rfl` at use sites: it is the reason the
+shrinking phase needs no mode-agreement hypothesis, and a future
+mode-sensitive withdrawal would have to break this theorem to exist. -/
+@[simp] theorem AccessMode.toCancelOp_eq_cancel (m : AccessMode) (core : CoreId) :
+    m.toCancelOp core = .cancel core := rfl
+
+/-- WS-SM SM3.C.4: core `c` holds the word `s` in mode `mode`.
+
+* `.read`: the core is in `readers` OR holds the writer lock (a write holder
+  dominates read access).
+* `.write`: the core is the writer (`writerHeld = some c`). -/
+def RwLockState.coreHolds (s : RwLockState) (c : CoreId)
+    (mode : AccessMode) : Prop :=
+  match mode with
+  | .read => c ∈ s.readers ∨ s.writerHeld = some c
+  | .write => s.writerHeld = some c
+
+/-- WS-SM SM3.C.4: `RwLockState.coreHolds` is decidable. -/
+instance RwLockState.coreHolds_decidable (s : RwLockState) (c : CoreId)
+    (mode : AccessMode) : Decidable (s.coreHolds c mode) := by
+  unfold RwLockState.coreHolds
+  cases mode <;> exact inferInstance
+
+/-- WS-SM SM3.C.4 audit-pass-1: acquiring an **unheld** word GRANTS ownership —
+the post-state satisfies `coreHolds core mode`.  On an available word
+`applyOp .tryAcquire*` takes the grant branch, not the enqueue branch, because
+`unheld` has no holder and no queued waiter. -/
+theorem RwLockState.unheld_acquire_grants (core : CoreId) (mode : AccessMode) :
+    (RwLockState.unheld.applyOp (mode.toAcquireOp core)).coreHolds core mode := by
+  cases mode with
+  | read =>
+      show (RwLockState.unheld.applyOp (.tryAcquireRead core)).coreHolds core .read
+      unfold RwLockState.applyOp RwLockState.coreInvolved RwLockState.unheld
+      simp only [RwLockState.coreHolds]
+      simp
+  | write =>
+      show (RwLockState.unheld.applyOp (.tryAcquireWrite core)).coreHolds core .write
+      unfold RwLockState.applyOp RwLockState.coreInvolved RwLockState.unheld
+      simp only [RwLockState.coreHolds]
+      simp
+
+/-- WS-SM SM3.C.4 audit-pass-1: acquiring then releasing an **unheld** word
+returns it to `unheld` — no waiter leak.  The acquire granted, so the
+symmetric release finds the core as the holder and removes it, with the
+waiter promotions no-ops on the empty queue. -/
+theorem RwLockState.unheld_acquire_release_roundtrip (core : CoreId)
+    (mode : AccessMode) :
+    (RwLockState.unheld.applyOp (mode.toAcquireOp core)).applyOp
+      (mode.toReleaseOp core) = RwLockState.unheld := by
+  cases mode with
+  | read =>
+      show (RwLockState.unheld.applyOp (.tryAcquireRead core)).applyOp
+        (.releaseRead core) = RwLockState.unheld
+      unfold RwLockState.applyOp RwLockState.coreInvolved RwLockState.unheld
+      simp [RwLockState.promoteWaitersIfReadersEmpty]
+  | write =>
+      show (RwLockState.unheld.applyOp (.tryAcquireWrite core)).applyOp
+        (.releaseWrite core) = RwLockState.unheld
+      unfold RwLockState.applyOp RwLockState.coreInvolved RwLockState.unheld
+      simp [RwLockState.promoteWaitersOnWriterRelease]
+
+/-- A withdrawal leaves the withdrawing core with no queued request —
+unconditionally, and by computation.
+
+`applyOp`'s cancel arm removes the withdrawer (`RwLockState.withdraw`, a
+`filter (·.1 ≠ core)`) before it hands the head's turn on, and the promotion
+only ever drops more from the head
+(`applyOp_cancel_waiters_sublist_filter`), so this is the filter's own
+specification.  No `wf` hypothesis: the arm has no enabling guard.  (Moved
+here from the per-object lock layer at WS-LS LS3.1; the ghost lock table's
+`cancelAll_not_queued` is its fold.) -/
+theorem rwLock_cancel_not_queued (l : RwLockState) (c : CoreId) :
+    c ∉ (l.applyOp (.cancel c)).waiters.map Prod.fst := by
+  intro hMem
+  obtain ⟨w, hw, hEq⟩ := List.mem_map.mp hMem
+  have hw' := (RwLockState.applyOp_cancel_waiters_sublist_filter l c).subset hw
+  exact (of_decide_eq_true (List.mem_filter.mp hw').2) hEq
+
+/-- No release ever enqueues.
+
+Both release arms either no-op or drop a prefix of `waiters` by promotion
+(`release_waiters_sublist`), so a core absent from the queue before a
+release is absent after it — whichever core released, and in whichever
+mode.  This is what lets the ghost table's release fold carry an absence
+established by the withdrawal fold past every member. -/
+theorem rwLock_release_preserves_not_queued (l : RwLockState) (c releaser : CoreId)
+    (m : AccessMode) (h : c ∉ l.waiters.map Prod.fst) :
+    c ∉ (l.applyOp (m.toReleaseOp releaser)).waiters.map Prod.fst := by
+  have hSub : (l.applyOp (m.toReleaseOp releaser)).waiters.Sublist l.waiters := by
+    refine release_waiters_sublist l _ ?_
+    cases m with
+    | read => exact Or.inl ⟨releaser, rfl⟩
+    | write => exact Or.inr ⟨releaser, rfl⟩
+  exact fun hMem => h (hSub.map Prod.fst |>.subset hMem)
 
 end SeLe4n.Kernel.Concurrency

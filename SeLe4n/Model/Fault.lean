@@ -196,17 +196,17 @@ exception entry, which is the only place they exist — the register file has
 no PSTATE field and its `pc` is not written by the trap path. -/
 def ofRegisterFile (rf : SeLe4n.RegisterFile) (faultIP spsr : UInt64) : FaultContext :=
   { faultIP := faultIP
-    sp      := rf.sp.val.toUInt64
-    lr      := (rf.gpr ⟨30⟩).val.toUInt64
+    sp      := rf.sp
+    lr      := rf.x30
     spsr    := spsr
-    gprs    := (Array.range gprWindow).map (fun i => (rf.gpr ⟨i⟩).val.toUInt64) }
+    gprs    := (Array.range gprWindow).map rf.word }
 
 /-- WS-RR RR4.4: the `x0`-`x7` window built by `ofRegisterFile` reads back
 register for register — the property the unknown-syscall message needs for a
 handler to emulate the trapped call. -/
 theorem ofRegisterFile_gprAt (rf : SeLe4n.RegisterFile) (faultIP spsr : UInt64)
     (i : Nat) (hi : i < gprWindow) :
-    (ofRegisterFile rf faultIP spsr).gprAt i = (rf.gpr ⟨i⟩).val.toUInt64 := by
+    (ofRegisterFile rf faultIP spsr).gprAt i = rf.word i := by
   simp [ofRegisterFile, gprAt, hi]
 
 /-- WS-RR RR4.4: and the window is exactly `gprWindow` wide, so `gprAt`'s
@@ -257,42 +257,87 @@ namespace FaultRegisterWindow
 /-- Total read of the `x0`-`x7` window, zero beyond what was supplied. -/
 def gprAt (w : FaultRegisterWindow) (i : Nat) : UInt64 := w.gprs[i]?.getD 0
 
-/-- Spill the window into a saved register file: `x0`-`x7` and `x30` into the
-GPR map, `SP_EL0` into `sp`.  Every other register — `pc` included, which the
+/-- Spill the window into a saved register file: `x0`-`x7` and `x30` from the
+window, `SP_EL0` into `sp`.  Every other register — `pc` included, which the
 exception entry carries separately as `ELR_EL1` — is left as it was. -/
 def spill (w : FaultRegisterWindow) (rf : SeLe4n.RegisterFile) : SeLe4n.RegisterFile :=
   { rf with
-    sp  := ⟨w.sp.toNat⟩
-    gpr := fun r =>
-      if r.val < FaultContext.gprWindow then ⟨(w.gprAt r.val).toNat⟩
-      else if r.val = 30 then ⟨w.lr.toNat⟩
-      else rf.gpr r }
+    x0 := w.gprAt 0, x1 := w.gprAt 1, x2 := w.gprAt 2, x3 := w.gprAt 3,
+    x4 := w.gprAt 4, x5 := w.gprAt 5, x6 := w.gprAt 6, x7 := w.gprAt 7,
+    x30 := w.lr, sp := w.sp }
 
 /-- The spill leaves the saved `pc` alone — the restart address is the
 syndrome's `ELR_EL1`, threaded separately, never a register-file read. -/
 @[simp] theorem spill_pc (w : FaultRegisterWindow) (rf : SeLe4n.RegisterFile) :
     (w.spill rf).pc = rf.pc := rfl
 
-/-- The spill keeps a word-bounded file word-bounded: every register it writes
-is a `UInt64` read as a `Nat`, and the rest read through. -/
-theorem spill_wordBounded (w : FaultRegisterWindow) (rf : SeLe4n.RegisterFile)
-    (hB : rf.wordBounded) : (w.spill rf).wordBounded := by
-  obtain ⟨hPc, _, hPs, hTp, hGpr⟩ := hB
-  refine ⟨hPc, SeLe4n.RegValue.valid_of_uint64 _, hPs, hTp, fun r hr => ?_⟩
-  show SeLe4n.RegValue.valid (if r.val < FaultContext.gprWindow then ⟨(w.gprAt r.val).toNat⟩
-    else if r.val = 30 then ⟨w.lr.toNat⟩ else rf.gpr r)
-  split
-  · exact SeLe4n.RegValue.valid_of_uint64 _
-  · split
-    · exact SeLe4n.RegValue.valid_of_uint64 _
-    · exact hGpr r hr
+/-- Word `i` of a spilled file: the window's `x0`-`x7`, `x30` and `SP_EL0`, and
+the file underneath everywhere else. -/
+theorem spill_word (w : FaultRegisterWindow) (rf : SeLe4n.RegisterFile) (i : Nat) :
+    (w.spill rf).word i =
+      if i < FaultContext.gprWindow then w.gprAt i
+      else if i = 30 then w.lr
+      else if i = SeLe4n.Kernel.Architecture.trapFrameSpWord then w.sp
+      else rf.word i := by
+  by_cases hi : i < SeLe4n.Kernel.Architecture.trapFrameWordCount
+  · match i, hi with
+    | 0, _ => rfl
+    | 1, _ => rfl
+    | 2, _ => rfl
+    | 3, _ => rfl
+    | 4, _ => rfl
+    | 5, _ => rfl
+    | 6, _ => rfl
+    | 7, _ => rfl
+    | 8, _ => rfl
+    | 9, _ => rfl
+    | 10, _ => rfl
+    | 11, _ => rfl
+    | 12, _ => rfl
+    | 13, _ => rfl
+    | 14, _ => rfl
+    | 15, _ => rfl
+    | 16, _ => rfl
+    | 17, _ => rfl
+    | 18, _ => rfl
+    | 19, _ => rfl
+    | 20, _ => rfl
+    | 21, _ => rfl
+    | 22, _ => rfl
+    | 23, _ => rfl
+    | 24, _ => rfl
+    | 25, _ => rfl
+    | 26, _ => rfl
+    | 27, _ => rfl
+    | 28, _ => rfl
+    | 29, _ => rfl
+    | 30, _ => rfl
+    | 31, _ => rfl
+    | 32, _ => rfl
+    | 33, _ => rfl
+    | 34, _ => rfl
+    | n + 35, h => exact absurd h (by unfold SeLe4n.Kernel.Architecture.trapFrameWordCount; omega)
+  · have h8 : ¬ i < FaultContext.gprWindow := by
+      unfold FaultContext.gprWindow SeLe4n.Kernel.Architecture.trapFrameWordCount at *; omega
+    have hNe30 : i ≠ 30 := by unfold SeLe4n.Kernel.Architecture.trapFrameWordCount at hi; omega
+    have hLt31 : i ≠ SeLe4n.Kernel.Architecture.trapFrameSpWord := by
+      unfold SeLe4n.Kernel.Architecture.trapFrameWordCount SeLe4n.Kernel.Architecture.trapFrameSpWord at *
+      omega
+    rw [if_neg h8, if_neg hNe30, if_neg hLt31, SeLe4n.RegisterFile.word_of_ge _ i hi,
+      SeLe4n.RegisterFile.word_of_ge _ i hi]
 
 /-- A register outside the window and the link register reads through to the
 file underneath — the spill overwrites exactly what the trap frame carries. -/
 theorem spill_gpr_outside (w : FaultRegisterWindow) (rf : SeLe4n.RegisterFile)
     (r : SeLe4n.RegName) (hLo : ¬ r.val < FaultContext.gprWindow) (hLr : r.val ≠ 30) :
     (w.spill rf).gpr r = rf.gpr r := by
-  simp [spill, hLo, hLr]
+  unfold SeLe4n.RegisterFile.gpr
+  split
+  · rename_i h
+    have hLt31 : r.val ≠ SeLe4n.Kernel.Architecture.trapFrameSpWord := by
+      unfold SeLe4n.Kernel.Architecture.trapFrameSpWord; omega
+    rw [spill_word, if_neg hLo, if_neg hLr, if_neg hLt31]
+  · rfl
 
 /-- **The context a delivery builds from a spilled file is the window** — the
 words the hardware saved, not whatever the mirror held before.  This is the
@@ -305,23 +350,20 @@ theorem ofRegisterFile_spill (w : FaultRegisterWindow) (rf : SeLe4n.RegisterFile
       { faultIP := faultIP, sp := w.sp, lr := w.lr, spsr := spsr,
         gprs := (Array.range FaultContext.gprWindow).map w.gprAt } := by
   unfold FaultContext.ofRegisterFile
-  refine FaultContext.mk.injEq _ _ _ _ _ _ _ _ _ _ |>.mpr ⟨rfl, ?_, ?_, rfl, ?_⟩
-  · simp [spill]
-  · simp [spill, FaultContext.gprWindow]
-  · apply Array.ext'
-    simp only [Array.toList_map, Array.toList_range]
-    apply List.map_congr_left
-    intro i hi
-    rw [List.mem_range] at hi
-    simp [spill, hi]
+  refine FaultContext.mk.injEq _ _ _ _ _ _ _ _ _ _ |>.mpr ⟨rfl, rfl, rfl, rfl, ?_⟩
+  apply Array.ext'
+  simp only [Array.toList_map, Array.toList_range]
+  apply List.map_congr_left
+  intro i hi
+  rw [List.mem_range] at hi
+  rw [spill_word, if_pos hi]
 
 /-- The pointwise form of `ofRegisterFile_spill`, in the shape the message
 encoder reads (`FaultContext.gprAt`). -/
 theorem ofRegisterFile_spill_gprAt (w : FaultRegisterWindow) (rf : SeLe4n.RegisterFile)
     (faultIP spsr : UInt64) (i : Nat) (hi : i < FaultContext.gprWindow) :
     (FaultContext.ofRegisterFile (w.spill rf) faultIP spsr).gprAt i = w.gprAt i := by
-  rw [FaultContext.ofRegisterFile_gprAt _ _ _ i hi]
-  simp [spill, hi]
+  rw [FaultContext.ofRegisterFile_gprAt _ _ _ i hi, spill_word, if_pos hi]
 
 end FaultRegisterWindow
 

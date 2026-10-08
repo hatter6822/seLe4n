@@ -25,7 +25,7 @@ Seven categories matching the plan §3.4/§4.4/§5 sub-tasks:
 
 * `.lockSet` — SM5.D.3/§4.4 cross-domain lock-set footprints (static + the
   bound-exhausted dynamic / complete over-approximations) and the
-  `SchedLockId` object < run-queue < replenish-queue order.
+  `LockKey` object < run-queue < replenish-queue order.
 * `.domain` — SM5.D.6 domain accounting (`decrementDomainTimeOnCore` in-tick +
   the full `switchDomainOnCore` / `scheduleDomainOnCore` re-dispatch).
 * `.replenish` — SM5.D.4 CBS replenishment + cross-core wake.
@@ -47,7 +47,7 @@ open SeLe4n.Kernel.Concurrency
 
 /-- WS-SM SM5.D: category tag for the SM5.D theorem inventory. -/
 inductive PerCoreTimerCategory where
-  /-- SM5.D.3/§4.4 lock-set footprints + SchedLockId order. -/
+  /-- SM5.D.3/§4.4 lock-set footprints + LockKey order. -/
   | lockSet
   /-- SM5.D.6 domain accounting + re-dispatch. -/
   | domain
@@ -124,7 +124,7 @@ def perCoreTimerTheorems : List PerCoreTimerTheorem :=
       timerTickOnCoreLockSet_contains_replenishQueue_write .lockSet,
     pctt! "timerTickOnCoreLockSet_keys_nodup: footprint keys are duplicate-free"
       timerTickOnCoreLockSet_keys_nodup .lockSet,
-    pctt! "timerTickOnCoreLockSet_pairwise_le: canonical SchedLockId-ascending acquisition order"
+    pctt! "timerTickOnCoreLockSet_pairwise_le: canonical LockKey-ascending acquisition order"
       timerTickOnCoreLockSet_pairwise_le .lockSet,
     pctt! "timerTickOnCoreLockSet_size_le_maxLockSetSize: SM5.D.7 WCRT size bound"
       timerTickOnCoreLockSet_size_le_maxLockSetSize .lockSet,
@@ -144,14 +144,14 @@ def perCoreTimerTheorems : List PerCoreTimerTheorem :=
       timerTickOnCoreCompleteLockSet_write_only .lockSet,
     pctt! "timerTickOnCoreCompleteLockSet_keys_nodup: complete footprint keys duplicate-free"
       timerTickOnCoreCompleteLockSet_keys_nodup .lockSet,
-    pctt! "timerTickOnCoreCompleteLockSet_pairwise_le: complete footprint SchedLockId-ascending"
+    pctt! "timerTickOnCoreCompleteLockSet_pairwise_le: complete footprint LockKey-ascending"
       timerTickOnCoreCompleteLockSet_pairwise_le .lockSet,
     pctt! "timerTickOnCoreCompleteLockSet_size_le_maxLockSetSize: complete footprint WCRT size bound"
       timerTickOnCoreCompleteLockSet_size_le_maxLockSetSize .lockSet,
-    pctt! "SchedLockId.object_lt_replenishQueue: SM5.D.3/§4.4 object lock before replenish-queue lock"
-      SchedLockId.object_lt_replenishQueue .lockSet,
-    pctt! "SchedLockId.runQueue_lt_replenishQueue: SM5.D.3/§4.4 run-queue lock before replenish-queue lock"
-      SchedLockId.runQueue_lt_replenishQueue .lockSet,
+    pctt! "LockKey.object_lt_replenishQueue: SM5.D.3/§4.4 object lock before replenish-queue lock"
+      LockKey.object_lt_replenishQueue .lockSet,
+    pctt! "LockKey.runQueue_lt_replenishQueue: SM5.D.3/§4.4 run-queue lock before replenish-queue lock"
+      LockKey.runQueue_lt_replenishQueue .lockSet,
     -- ── .domain ──
     pctt! "decrementDomainTimeOnCore_decrements: non-boundary domain-time decrement (pure, no rotation)"
       decrementDomainTimeOnCore_decrements .domain,

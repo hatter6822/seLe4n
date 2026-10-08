@@ -28,9 +28,9 @@ driver**.  On each per-core timer interrupt the entry now:
 
 1. reads the live kernel `SystemState` and, **atomically** (one
    `modifyGetKernelState`), runs the verified
-   `Kernel.perCoreTimerTickStepWithClockAdvance` **inside the footprint this
-   core declares** (WS-RR RR7.39 — `timerTickUnderDeclaredLockSet`) — the
-   run-loop step
+   `Kernel.perCoreTimerTickStepWithClockAdvance` **through the bracket this
+   core declares** (WS-RR RR7.39 / WS-LS LS2.2 — `timerTickBracket`, whose
+   proof field is the footprint's coverage) — the run-loop step
    (`perCoreTimerTickStep`: fail-closed `coreId` decode composing the
    boot-core-only shared-clock advance `tickClockedState` — the
    single-authority `machine.timer` tick the CBS/timeout due-checks read —
@@ -74,23 +74,29 @@ against us.  Until v0.32.142 this paragraph said the lock was owed, and SMP was
 off by default for that reason; with the lock live the default returns to
 decision #7's `smp_enabled: true`.
 
-## WS-RR RR7.39 — the declared footprint, acquired
+## WS-RR RR7.39 / WS-LS LS2.2 — the declared footprint, as a bracket record
 
-The `SchedLockId`-level bracket this paragraph used to owe as "the SM3.C
+The `LockKey`-level bracket this paragraph used to owe as "the SM3.C
 combinator's cross-domain extension (tracked SM5.I closure target)" is
-`SeLe4n/Kernel/SchedLockBracket.lean`, and this entry runs it.  The step executes
-inside `timerTickOnCoreCompleteLockSet` at the core the argument decodes to —
+`SeLe4n/Kernel/SchedLockBracket.lean`, and this entry runs it: `timerTickBracket`
+declares `timerTickOnCoreCompleteLockSet` at the core the argument decodes to —
 resolved from that same decode, so a footprint is declared exactly when there is
-a step to bracket — and the bracket is `runBracketed`, the *same* definition the
-ABI seam runs.
+a step to bracket — and carries, as its proof field,
+`perCoreTimerTickStepWithClockAdvance_coversWrites`: the record cannot be built
+for a footprint the step writes outside of.  (RR7.39 also corrected the
+footprint itself: its run-queue segment named the boot core where the tick's
+target-aware wakes can enqueue on any core.  See
+`timerTickOnCoreTimeoutDynamicLockSet`.)
 
-Two consequences for this body.  A **refused** bracket yields no value, so the
-entry advances neither the shadow clock nor any SGI: a tick that did not run pokes
-nobody.  And the footprint is not a *false* one —
-`perCoreTimerTickStep_coversWrites` proves the step's writes lie inside it, which
-is what makes acquiring it mean anything.  (RR7.39 also corrected the footprint
-itself: its run-queue segment named the boot core where the tick's target-aware
-wakes can enqueue on any core.  See `timerTickOnCoreTimeoutDynamicLockSet`.)
+What the entry executes is `BracketSpec.run`, which is the step and nothing
+else (`timerTickBracket_run`, `rfl`): since LS2.2 no lock word exists on the
+executed path, the growing and shrinking phases live on the ghost lock table
+(`BracketSpec.runGhost`), and `runGhost_kernel` says the executed path is the
+kernel projection of the proven one.  The refusal arm RR7.39's word-level
+bracket carried — a tick that did not run poked nobody — is gone with the
+words: under the kernel-entry lock every bracket runs its step held
+(`BracketSpec.guard_of_unheld`), so there is no refusal to report and the
+`Option` the body used to thread is gone.
 
 ## Lean → Rust ABI contract
 
@@ -128,36 +134,30 @@ C-callable seam (`@[export lean_per_core_timer_tick]`) the Rust per-core CNTP IS
 (`timer::per_core_timer_tick_isr`) invokes on each per-core timer interrupt.
 
 Atomically runs the verified `perCoreTimerTickStepWithClockAdvance` against the
-live kernel state **inside the footprint this core declares** (WS-RR RR7.39),
-advances the HAL's `TICK_COUNT` shadow **iff the bracket committed and the step
-advanced the model clock** (the flag is definitionally the `machine.timer`
-delta — `perCoreTimerTickStepWithClockAdvance_flag_def` — so the shadow cannot
-drift from the model on any arm, failed entries included; PR #880 follow-up
-closing the invocation-coupled residual), then fires the recovered cross-core
-`.reschedule` SGIs.
-
-A refused bracket produces no value (`LockBracketOutcome.value? = none`), so it
-advances no clock and fires no SGI — fail-closed, because a tick that did not run
-must not poke a remote core.  See the module docstring. -/
+live kernel state **through the bracket this core declares** (WS-RR RR7.39 /
+WS-LS LS2.2: `timerTickBracket`, run as `BracketSpec.run`, which is the step),
+advances the HAL's `TICK_COUNT` shadow **iff the step advanced the model
+clock** (the flag is definitionally the `machine.timer` delta —
+`perCoreTimerTickStepWithClockAdvance_flag_def` — so the shadow cannot drift
+from the model on any arm, failed entries included; PR #880 follow-up closing
+the invocation-coupled residual), then fires the recovered cross-core
+`.reschedule` SGIs.  See the module docstring. -/
 @[export lean_per_core_timer_tick]
 def perCoreTimerTickEntry (coreId : UInt64) : BaseIO Unit := do
   let frame ← Platform.FFI.captureTrapFrame
   let r ← Platform.FFI.modifyGetKernelState (fun st =>
-    let outcome := timerTickUnderDeclaredLockSet coreId
+    let (sgisAndFlag, post) := (timerTickBracket coreId).run
       (Concurrency.saveCapturedTrapFrameAt st coreId frame)
-    let st' := PriorityInheritance.settleResidencyAt outcome.state coreId
-    ((outcome.value?,
+    let st' := PriorityInheritance.settleResidencyAt post coreId
+    ((sgisAndFlag,
       (Concurrency.coreIdOfUInt64? coreId).map
         (fun c => (c, st'.scheduler.currentOnCore c)),
       Concurrency.restoreTargetAt st' coreId,
       (st'.pendingPhysicalWrites, st'.pendingIcacheMaintenance)),
       Architecture.clearIcacheMaintenance (Architecture.clearPhysicalWrites st')))
   Platform.FFI.completePhysicalWrites r.2.2.2.1
-  match r.1 with
-  | some sgisAndFlag =>
-      if sgisAndFlag.2 then Platform.FFI.ffiTimerAdvanceTickCount
-      Concurrency.fireCrossCoreSgis sgisAndFlag.1
-  | none => pure ()
+  if r.1.2 then Platform.FFI.ffiTimerAdvanceTickCount
+  Concurrency.fireCrossCoreSgis r.1.1
   Platform.FFI.completeIcacheMaintenance r.2.2.2.2
   Concurrency.releaseSwitchedFpOwner coreId
   Platform.FFI.restoreTrapFrame r.2.2.1
@@ -165,11 +165,11 @@ def perCoreTimerTickEntry (coreId : UInt64) : BaseIO Unit := do
 
 /-- **WS-SM SM5.I** structural marker: `perCoreTimerTickEntry` unfolds to the
 bracketed-step-then-shadow-advance-then-fire-SGIs driver.  Pins the entry's body
-shape (atomic `modifyGetKernelState` over `timerTickUnderDeclaredLockSet`, the
-commit-coupled `ffiTimerAdvanceTickCount` on the clock-advance flag of a
-*committed* outcome, then `fireCrossCoreSgis`) so a refactor that drops the SGI
-firing, the state commit, the shadow advance — or, since WS-RR RR7.39, the
-declared-footprint bracket — breaks this marker at elaboration; combined with the
+shape (atomic `modifyGetKernelState` over `(timerTickBracket coreId).run`, the
+commit-coupled `ffiTimerAdvanceTickCount` on the step's clock-advance flag,
+then `fireCrossCoreSgis`) so a refactor that drops the SGI firing, the state
+commit, the shadow advance — or, since WS-RR RR7.39, the declared-footprint
+bracket — breaks this marker at elaboration; combined with the
 `@[export]` attribute (which the Rust `lean_per_core_timer_tick` extern resolves
 against) and the `build.rs` Check-5 scanner, the seam cannot regress silently.
 
@@ -183,21 +183,18 @@ theorem perCoreTimerTickEntry_def (coreId : UInt64) :
       (do
         let frame ← Platform.FFI.captureTrapFrame
         let r ← Platform.FFI.modifyGetKernelState (fun st =>
-          let outcome := timerTickUnderDeclaredLockSet coreId
+          let (sgisAndFlag, post) := (timerTickBracket coreId).run
             (Concurrency.saveCapturedTrapFrameAt st coreId frame)
-          let st' := PriorityInheritance.settleResidencyAt outcome.state coreId
-          ((outcome.value?,
+          let st' := PriorityInheritance.settleResidencyAt post coreId
+          ((sgisAndFlag,
             (Concurrency.coreIdOfUInt64? coreId).map
               (fun c => (c, st'.scheduler.currentOnCore c)),
             Concurrency.restoreTargetAt st' coreId,
             (st'.pendingPhysicalWrites, st'.pendingIcacheMaintenance)),
             Architecture.clearIcacheMaintenance (Architecture.clearPhysicalWrites st')))
         Platform.FFI.completePhysicalWrites r.2.2.2.1
-        match r.1 with
-        | some sgisAndFlag =>
-            if sgisAndFlag.2 then Platform.FFI.ffiTimerAdvanceTickCount
-            Concurrency.fireCrossCoreSgis sgisAndFlag.1
-        | none => pure ()
+        if r.1.2 then Platform.FFI.ffiTimerAdvanceTickCount
+        Concurrency.fireCrossCoreSgis r.1.1
         Platform.FFI.completeIcacheMaintenance r.2.2.2.2
         Concurrency.releaseSwitchedFpOwner coreId
         Platform.FFI.restoreTrapFrame r.2.2.1

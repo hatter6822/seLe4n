@@ -73,7 +73,8 @@ def SeLe4n.Model.SystemState.activeDomainOnCore (s : SeLe4n.Model.SystemState)
 namespace SeLe4n.Kernel
 
 open SeLe4n.Model
-open SeLe4n.Kernel.Concurrency (numCores CoreId bootCoreId)
+open SeLe4n.Kernel.Concurrency (numCores CoreId bootCoreId
+  LockKey)
 
 -- ============================================================================
 -- §1  SM5.G.2 — `advanceDomainOnCore`: pure per-core domain rotation
@@ -577,15 +578,15 @@ theorem advanceDomainOnCore_perCore_independence (st : SystemState) (c₁ c₂ :
 
 The rotation writes **only** core `c`'s per-core domain triple (`activeDomain` /
 `domainTimeRemaining` / `domainScheduleIndex` slots), which are guarded by core
-`c`'s per-core scheduler lock — the run-queue lock `SchedLockId.runQueue ⟨c⟩`
+`c`'s per-core scheduler lock — the run-queue lock `LockKey.runQueue c`
 (SM5.A.2).  It reads no object store, so its footprint is the single core-`c`
 run-queue WRITE lock.  This footprint structurally pins the rotation to core `c`:
 disjoint cores have disjoint footprints
 (`advanceDomainOnCoreLockSet_disjoint_of_ne`), the structural counterpart of the
 `advanceDomainOnCore_independent_of_other_core` semantic frame. -/
 def advanceDomainOnCoreLockSet (c : CoreId) :
-    List (SchedLockId × Concurrency.AccessMode) :=
-  [ (SchedLockId.runQueue ⟨c⟩, .write) ]
+    List (LockKey × Concurrency.AccessMode) :=
+  [ (LockKey.runQueue c, .write) ]
 
 /-- SM5.G.5: the footprint is the single per-core run-queue lock. -/
 @[simp] theorem advanceDomainOnCoreLockSet_length (c : CoreId) :
@@ -601,7 +602,7 @@ theorem advanceDomainOnCoreLockSet_write_only (c : CoreId) :
 
 /-- SM5.G.5: the per-core run-queue write lock is in the rotation's footprint. -/
 theorem advanceDomainOnCoreLockSet_contains_runQueue_write (c : CoreId) :
-    (SchedLockId.runQueue ⟨c⟩, Concurrency.AccessMode.write)
+    (LockKey.runQueue c, Concurrency.AccessMode.write)
       ∈ advanceDomainOnCoreLockSet c := by
   simp [advanceDomainOnCoreLockSet]
 
@@ -616,14 +617,13 @@ core `c` is **not** in core `c'`'s rotation footprint (`c ≠ c'`).  Disjoint co
 domain rotations touch disjoint locks — so they never contend, the lock-discipline
 counterpart of `advanceDomainOnCore_independent_of_other_core`. -/
 theorem advanceDomainOnCoreLockSet_disjoint_of_ne (c c' : CoreId) (h : c ≠ c') :
-    SchedLockId.runQueue (⟨c⟩ : RunQueueLockId)
+    LockKey.runQueue c
       ∉ (advanceDomainOnCoreLockSet c').map (·.1) := by
   simp only [advanceDomainOnCoreLockSet, List.map_cons, List.map_nil, List.mem_cons,
     List.not_mem_nil, or_false]
   intro heq
   injection heq with hrq
-  injection hrq with hcore
-  exact h hcore
+  exact h hrq
 
 -- ============================================================================
 -- §7  SM5.G completion (audit-pass-1)
@@ -747,8 +747,8 @@ theorem advanceDomainOnCoreLockSet_pairwise_le (c : CoreId) :
 /-- WS-SM SM5.G.5 (footprint soundness): the rotation's write set is **contained in
 core `c`'s per-core scheduler state**.  It leaves the object store untouched and every
 *other* core `c'`'s scheduler slots untouched — so the only state it writes is core
-`c`'s domain triple, which the run-queue lock `SchedLockId.runQueue ⟨c⟩` guards (the
-per-core scheduler lock, per SM5.A's `RunQueueLockId`).  This is the formal content
+`c`'s domain triple, which the run-queue lock `LockKey.runQueue c` guards (the
+per-core scheduler lock, per SM5.A's `LockKey.runQueue`).  This is the formal content
 behind the `advanceDomainOnCoreLockSet` declaration: nothing outside the footprint's
 lock scope is modified. -/
 theorem advanceDomainOnCore_frames_outside_core (st : SystemState) (c c' : CoreId)

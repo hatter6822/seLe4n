@@ -51,7 +51,7 @@ inductive PerCoreWcrtCategory where
   | rpi5Bound
   /-- SM5.J.3 the per-operation WCRT bounds + exact values. -/
   | perOp
-  /-- SM5.J bridge between the static SchedLockId `WCRT_lockSet` and the
+  /-- SM5.J bridge between the static LockKey `WCRT_lockSet` and the
   execution-sensitive LockId-domain `Concurrency.WCRT` / `totalWaitCost`. -/
   | executionBridge
   /-- SM5.J.4 no-thread-starves-under-SMP liveness. -/

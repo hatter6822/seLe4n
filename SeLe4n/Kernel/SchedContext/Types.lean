@@ -8,11 +8,6 @@
 -/
 
 import SeLe4n.Prelude
--- WS-SM SM3.A.6: per-SchedContext lock field needs the RwLock state type
--- from SM2.C.  Only the types-only module is imported (not the
--- `Locks.RwLock` specification and its proofs); it depends only on
--- `Concurrency.Types`.
-import SeLe4n.Kernel.Concurrency.Locks.RwLockState
 
 /-! # SchedContext Types — WS-Z Phase Z1
 
@@ -232,16 +227,6 @@ structure SchedContext where
       a loan no boot state has made. -/
   donationOrigin : Option SeLe4n.ThreadId := none
   isActive : Bool := false
-  /-- WS-SM SM3.A.6: per-SchedContext reader-writer lock state.  Default
-      `RwLockState.unheld` means a freshly-allocated SchedContext starts
-      with its lock available.  CBS operations that mutate budget /
-      replenishments (`timerTickBudget`, `applyRefill`,
-      `schedContextBind`, `schedContextUnbind`, donation paths) acquire
-      in write mode; observation paths (read-only budget queries) acquire
-      in read mode.  See
-      WS-SM SM3.A.6. -/
-  lock : SeLe4n.Kernel.Concurrency.RwLockState :=
-    SeLe4n.Kernel.Concurrency.RwLockState.unheld
 deriving Repr
 
 -- ============================================================================
@@ -441,15 +426,7 @@ instance : BEq SchedContextBinding where
 -- ============================================================================
 
 /-- Manual BEq for SchedContext — field-wise comparison.
-Non-lawful due to List comparison semantics.
-
-**WS-SM SM3.A audit-pass-7**: extended to include the per-SchedContext
-`lock : RwLockState` field added in SM3.A.6.  Without this conjunct,
-two SchedContexts that differ only in their lock state would
-compare equal — masking SM3.A.11 invariant regressions in any
-caller that relies on `==` for object/state comparison (including
-`BEq KernelObject`'s dispatch on the `.schedContext` variant).
-`RwLockState` derives `DecidableEq`, so its `==` agrees with `=`. -/
+Non-lawful due to List comparison semantics. -/
 instance : BEq SchedContext where
   beq a b :=
     a.scId == b.scId && a.budget == b.budget && a.period == b.period &&
@@ -463,9 +440,6 @@ instance : BEq SchedContext where
     -- write that records or clears the loan's owner is visible to every caller
     -- that compares with `==`, including the frozen surface's differential.
     a.donationOrigin == b.donationOrigin &&
-    a.isActive == b.isActive &&
-    -- WS-SM SM3.A audit-pass-7: per-SchedContext lock state participates
-    -- in structural equality so lock-state regressions are not masked.
-    a.lock == b.lock
+    a.isActive == b.isActive
 
 end SeLe4n.Kernel

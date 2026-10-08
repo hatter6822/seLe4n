@@ -146,9 +146,14 @@ def extractInstructionSyndrome (esr : UInt64) : UInt64 :=
       kernel itself faulted (`kernelAbort`; review round, PR #887)
     - EC 0x22: PC alignment fault
     - EC 0x26: SP alignment fault
-    - All others: Unknown/unmodeled -/
-def classifySynchronousException (ectx : ExceptionContext) : SynchronousExceptionClass :=
-  let ec := extractExceptionClass ectx.esr
+    - All others: Unknown/unmodeled
+
+    The classification reads the `ESR_EL1` word alone, so it is stated over
+    the word: the HAL's classifier export calls this form and builds no
+    `ExceptionContext` (WS-CV CV0.4); `classifySynchronousException` is it on
+    a context's `esr`, by definition. -/
+def classifySynchronousExceptionOfEsr (esr : UInt64) : SynchronousExceptionClass :=
+  let ec := extractExceptionClass esr
   if ec = 0x15 then .svc
   else if ec = 0x24 then .dataAbort
   else if ec = 0x20 then .instrAbort
@@ -158,12 +163,18 @@ def classifySynchronousException (ectx : ExceptionContext) : SynchronousExceptio
   else if ec = 0x07 then .fpAccess
   else .unknownReason
 
+/-- AG3-C: Classify a synchronous exception from its context — the `ESR_EL1`
+    classification (`classifySynchronousExceptionOfEsr`) of the context's
+    `esr`, by definition. -/
+def classifySynchronousException (ectx : ExceptionContext) : SynchronousExceptionClass :=
+  classifySynchronousExceptionOfEsr ectx.esr
+
 /-- Review round (PR #887): the two current-EL abort syndromes classify as a
 kernel abort — never as a user fault. -/
 theorem classifySynchronousException_currentEl_abort (ectx : ExceptionContext)
     (h : extractExceptionClass ectx.esr = 0x25 ∨ extractExceptionClass ectx.esr = 0x21) :
     classifySynchronousException ectx = .kernelAbort := by
-  unfold classifySynchronousException
+  unfold classifySynchronousException classifySynchronousExceptionOfEsr
   rcases h with h | h <;> simp [h]
 
 /-- AG3-C: Classification is total — every ESR value produces a valid class. -/
@@ -219,7 +230,7 @@ theorem faultOfExceptionContext_eq_none_iff (ectx : ExceptionContext) :
 theorem classifySynchronousException_fpAccess (ectx : ExceptionContext)
     (h : extractExceptionClass ectx.esr = 0x07) :
     classifySynchronousException ectx = .fpAccess := by
-  unfold classifySynchronousException
+  unfold classifySynchronousException classifySynchronousExceptionOfEsr
   simp [h]
 
 /-- **WS-BP BP7.9**: and an FP/SIMD access is never turned into a fault — the

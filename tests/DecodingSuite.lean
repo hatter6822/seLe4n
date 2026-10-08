@@ -187,13 +187,13 @@ private def rd009_decodeSyscallArgsIntegration : IO Unit := do
   let syscallVal : SyscallId := .send  -- toNat = 0
   -- Construct register file: default (all zeros), then write specific registers
   let rf := (default : RegisterFile)
-    |> (writeReg · ⟨0⟩ (encodeCapPtr (CPtr.ofNat capPtrVal)))   -- x0 = capPtr
-    |> (writeReg · ⟨1⟩ (encodeMsgInfo msgInfoVal))               -- x1 = msgInfo
-    |> (writeReg · ⟨2⟩ ⟨100⟩)                                    -- x2 = msgReg0
-    |> (writeReg · ⟨3⟩ ⟨200⟩)                                    -- x3 = msgReg1
-    |> (writeReg · ⟨4⟩ ⟨300⟩)                                    -- x4 = msgReg2
-    |> (writeReg · ⟨5⟩ ⟨400⟩)                                    -- x5 = msgReg3
-    |> (writeReg · ⟨7⟩ (encodeSyscallId syscallVal))             -- x7 = syscallNum
+    |> (writeReg · ⟨0⟩ (encodeCapPtr (CPtr.ofNat capPtrVal)).val.toUInt64)   -- x0 = capPtr
+    |> (writeReg · ⟨1⟩ (encodeMsgInfo msgInfoVal).val.toUInt64)               -- x1 = msgInfo
+    |> (writeReg · ⟨2⟩ 100)                                    -- x2 = msgReg0
+    |> (writeReg · ⟨3⟩ 200)                                    -- x3 = msgReg1
+    |> (writeReg · ⟨4⟩ 300)                                    -- x4 = msgReg2
+    |> (writeReg · ⟨5⟩ 400)                                    -- x5 = msgReg3
+    |> (writeReg · ⟨7⟩ (encodeSyscallId syscallVal).val.toUInt64)             -- x7 = syscallNum
   let result := decodeSyscallArgs arm64DefaultLayout rf 32
   expect "integration ok" result.isOk
   match result with
@@ -612,7 +612,7 @@ private def buildIpcDecodeState
         tid := tid, priority := ⟨50⟩, domain := ⟨0⟩,
         cspaceRoot := cnodeId, vspaceRoot := vsId,
         ipcBuffer := ipcBufferVA, ipcState := .ready,
-        registerContext := { pc := ⟨0x1000⟩, sp := ⟨0x8000⟩, gpr := regFile }
+        registerContext := SeLe4n.RegisterFile.withGprs 0x1000 0x8000 (fun i => (regFile ⟨i⟩).val.toUInt64)
     })
     |>.withObject cnodeId (.cnode {
         depth := 4, guardWidth := 0, guardValue := 0, radixWidth := 4,
@@ -732,7 +732,7 @@ private def ak4a06_sizeInvariant : IO Unit := do
 private def ak4a07_legacyBackwardCompat : IO Unit := do
   let regFile : SeLe4n.RegName → SeLe4n.RegValue := fun r =>
     if r.val == 7 then ⟨4⟩ else ⟨0⟩  -- syscallId=4 (cspaceMint)
-  let rf : SeLe4n.RegisterFile := { pc := ⟨0⟩, sp := ⟨0⟩, gpr := regFile }
+  let rf : SeLe4n.RegisterFile := SeLe4n.RegisterFile.withGprs 0 0 (fun i => (regFile ⟨i⟩).val.toUInt64)
   match decodeSyscallArgs SeLe4n.arm64DefaultLayout rf 32 with
   | .ok decoded =>
     expect "legacy ok" true

@@ -1223,7 +1223,7 @@ private def declassifiedBadgeRun (ctx : LabelingContext) :
     SyscallId.notificationWait.toNat 0 capPtrValue.toUInt64 0 twoThreadState
   let (r2, st2) := entryStepOn ctx core1 SyscallId.declassifySignal.toNat 1
     capPtrValue.toUInt64 declassBadge.toUInt64 st1
-  let st3 := (SeLe4n.Kernel.rescheduleUnderDeclaredLockSet 0 st2).state
+  let st3 := ((SeLe4n.Kernel.rescheduleBracket 0).run st2).2
   (r1.1, r2.1, r2.2.1, st2.declassificationAuditLog,
     (SeLe4n.Kernel.Concurrency.restoreTargetAt st3 0).deliveredFrame?)
 

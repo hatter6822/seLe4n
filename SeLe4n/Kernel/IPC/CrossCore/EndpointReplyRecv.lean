@@ -41,7 +41,8 @@ proofs are in `IPC/CrossCore/EndpointReplyRecvInvariant.lean`.
 namespace SeLe4n.Kernel
 
 open SeLe4n.Model
-open SeLe4n.Kernel.Concurrency (bootCoreId)
+open SeLe4n.Kernel.Concurrency (bootCoreId
+  LockKey)
 
 /-- **WS-RM (`v0.35.6`): the pop half**, and the half that must run *before* the
 receive leg.
@@ -591,7 +592,7 @@ def endpointReplyRecvWriteSet (endpointId : SeLe4n.ObjId) (receiver : SeLe4n.Thr
 -- to the dynamic extension: `endpointReplyRecvWriteSet` re-runs the spine to the state
 -- each walk starts from and appends `pipChainWriteSet` there, so every run queue
 -- either walk re-buckets is a static member, bounded by the object count rather
--- than by a constant (a `SchedLockSet` carries no cardinality bound).  What the
+-- than by a constant (a `LockSet` carries no cardinality bound).  What the
 -- `pipChainStart_replyRecv*` obligations still add, through
 -- `PriorityInheritance.pipChainSchedFootprint`, is the object domain's per-member
 -- TCB write lock, which no scheduler footprint can name.  (`v0.35.162` recorded
@@ -682,7 +683,7 @@ def schedLockSet_endpointReplyRecvOnCore (endpointId : SeLe4n.ObjId)
     (receiver : SeLe4n.ThreadId) (replyId : SeLe4n.ReplyId) (prevCaller : SeLe4n.ThreadId)
     (msg : IpcMessage) (receiverCspaceRoot : SeLe4n.ObjId) (receiverSlotBase : SeLe4n.Slot)
     (executingCore : Concurrency.CoreId) (st : SystemState) :
-    List (SchedLockId × Concurrency.AccessMode) :=
+    List (LockKey × Concurrency.AccessMode) :=
   schedFootprintOfCores
     (endpointReplyRecvWriteSet endpointId receiver replyId prevCaller msg receiverCspaceRoot
       receiverSlotBase executingCore st)

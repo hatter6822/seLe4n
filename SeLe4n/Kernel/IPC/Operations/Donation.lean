@@ -429,7 +429,7 @@ replenishment migration from the donor's home core to the donee's.
 `donorHome` / `doneeHome` are the migration's endpoints, resolved by the caller
 from the **pre**-state (`determineTargetCore st caller` /
 `determineTargetCore st receiver`).  Resolving them outside is what lets the
-`withLockSet` bracket declare and acquire the two `SchedLockId.replenishQueue`
+`withLockSet` bracket declare and acquire the two `LockKey.replenishQueue`
 write locks *before* the transition runs — the SM3.B discipline the cross-core
 lock-set follows for every donation-carrying syscall — and the rebinding itself
 never touches a `cpuAffinity`, so a pre-state reading is the same reading the
@@ -1010,7 +1010,7 @@ went.
 
 The `_of_no_donation` sibling above says the hand-off moves *nothing* when the
 resolver declines; this says *where* it moves when it answers, which is what the
-replenish clause of `schedFootprintCoversWrites` needs.  Neither implies the
+replenish clause of `footprintCoversWrites` needs.  Neither implies the
 other, and both directions matter: the first keeps the empty segment exact, the
 second keeps the non-empty one true. -/
 theorem applyRendezvousCallDonation_replenishQueueOnCore_ne (st st'' : SystemState)
@@ -1271,8 +1271,9 @@ def applyReceiveLegPipHandoff (st : SystemState) (receiver dequeued : SeLe4n.Thr
 
 /- **WS-RR RR8.12 Cut 8b (`v0.35.145`)**: relocated from the staged
 `InformationFlow/NonInterferenceCrossCore.lean`, beside the step it describes, so
-a production scheduler footprint can read it.  Its confinement theorem stays
-there.  The `SeLe4n.Kernel` namespace is unchanged, so nothing is renamed. -/
+a production scheduler footprint can read it.  Its confinement theorem is in
+the production `SlotConfinement/Legs.lean` since WS-LS LS2.3.  The
+`SeLe4n.Kernel` namespace is unchanged, so nothing is renamed. -/
 /-- **WS-OD OD3.14: the cores the receive leg's hand-off may write.**
 
 Unlike the receive arm's `receiveRendezvousHandoffWriteSet`, this one *is*

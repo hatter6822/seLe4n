@@ -935,7 +935,7 @@ chain's return likewise), and it is what keeps `cancelIpcBlocking` an
 objects-only write — see `cancelIpcBlocking_scheduler_eq`.
 
 The **source** core is resolved from the pre-state so the `withLockSet` bracket
-can declare the `SchedLockId.replenishQueue` write locks before the transition
+can declare the `LockKey.replenishQueue` write locks before the transition
 runs; neither the teardown nor the return writes a `cpuAffinity`, so a pre-state
 reading is the reading the post-state would give.  A shared home core is a
 definitional no-op (`migrateSchedContextReplenishment_noop`), so on one core this
@@ -1004,10 +1004,10 @@ and the transition that writes it cannot name different cores.
 
 It lives here, beside the transition, rather than in the resolved-footprint
 module, because both of the *parametric* footprints over this step
-(`cancelIpcBlockingOnCoreSchedLockSet`, `suspendThreadOnCoreSchedLockSet`) must
+(`cancelIpcBlockingOnCoreLockSet`, `suspendThreadOnCoreLockSet`) must
 name it too and neither can see that module — *when a question has one owner and
 an asker that cannot see it, the owner is in the wrong layer* (`v0.35.59`).  It
-mentions no `SchedLockId`, so nothing about it belongs above this layer. -/
+mentions no `LockKey`, so nothing about it belongs above this layer. -/
 def cancelIpcBlockingReplenishCores (st : SystemState) (victim : SeLe4n.ThreadId)
     (tcb : TCB) : List CoreId :=
   match Lifecycle.Suspend.cancelledCallerDonation? st victim tcb with

@@ -8,20 +8,21 @@
 -/
 
 import SeLe4n.Kernel.Concurrency.Locks.Kind
+import SeLe4n.Kernel.Concurrency.Locks.LockKey
 import SeLe4n.Kernel.Concurrency.Locks.RwLock
 
 /-!
 # WS-SM SM3.B — `LockSet`, lock-acquisition ordering, and canonical sort
 
 This module introduces the SM3.B abstract lock-set type — a well-formed
-list of `(LockId × AccessMode)` pairs with unique `LockId` keys — and
+list of `(LockKey × AccessMode)` pairs with unique `LockKey` keys — and
 the canonical `lockAcquireSequence` sort that sorts a `LockSet` by
-`LockId` ascending.  Three substantive theorems follow:
+`LockKey` ascending.  Three substantive theorems follow:
 
 * `lockAcquireSequence_ordered` (SM3.B.6) — the sort produces a list
-  whose adjacent `LockId`s are `≤`-ordered.  Lifts `mergeSort`'s
-  `pairwise_mergeSort` lemma against the `LockId` total order
-  (`LockId.le_total`, `LockId.le_trans`).
+  whose adjacent `LockKey`s are `≤`-ordered.  Lifts `mergeSort`'s
+  `pairwise_mergeSort` lemma against the `LockKey` total order
+  (`LockKey.le_total`, `LockKey.le_trans`).
 * `lockAcquireSequence_complete` (SM3.B.7) — every element of the
   source `LockSet` appears in the sorted output.  Lifts
   `mergeSort`'s `mem_mergeSort` lemma.
@@ -30,18 +31,18 @@ the canonical `lockAcquireSequence` sort that sorts a `LockSet` by
   underlying list.  The proof factors through key uniqueness
   (the `hUniqueKeys` field): two sorted permutations of the same
   underlying multiset agree position-by-position because the
-  `LockId` keys are pairwise distinct.
+  `LockKey` keys are pairwise distinct.
 
 ## Design rationale: `LockSet` vs `Finset`
 
-The plan §3.4 uses `Finset (LockId × AccessMode)` for the lock-set
+The plan §3.4 uses `Finset (LockKey × AccessMode)` for the lock-set
 type.  seLe4n is mathlib-free (core Lean only), so `Finset` is
 unavailable; the equivalent structural shape is a `List` carrying a
 `Nodup` witness on the underlying keys.
 
 The well-formedness predicate `(pairs.map (·.fst)).Nodup` enforces
 **plan §3.5's key-uniqueness invariant**: a single `LockSet` cannot
-declare both read and write modes for the same `LockId` —
+declare both read and write modes for the same `LockKey` —
 ambiguous declarations are resolved at *insertion* time via
 `AccessMode.lub` (write dominates read), so a `LockSet` is always
 canonical with respect to its declared modes.
@@ -68,9 +69,9 @@ namespace SeLe4n.Kernel.Concurrency
 /-- WS-SM SM3.B: least-upper-bound on `AccessMode`.
 
 `write` dominates `read` — a `LockSet` that declares both `read` and
-`write` on the same `LockId` collapses to `write` (the conservative
+`write` on the same `LockKey` collapses to `write` (the conservative
 choice).  Used at `LockSet.insertOrMerge` to discharge the
-key-uniqueness invariant when the same `LockId` is inserted twice
+key-uniqueness invariant when the same `LockKey` is inserted twice
 with different modes. -/
 def AccessMode.lub : AccessMode → AccessMode → AccessMode
   | .write, _       => .write
@@ -149,8 +150,8 @@ theorem AccessMode.conflicts_symm (m₁ m₂ : AccessMode) :
 
 /-- WS-SM SM3.B: the abstract lock-set type.
 
-A `LockSet` is a list of `(LockId × AccessMode)` pairs with the
-structural invariant that the projected `LockId` keys are pairwise
+A `LockSet` is a list of `(LockKey × AccessMode)` pairs with the
+structural invariant that the projected `LockKey` keys are pairwise
 distinct.  This enforces plan §3.5's claim that "a lock can't have
 two modes declared in the same lock-set" by construction —
 constructors that would violate the invariant either reject or
@@ -164,9 +165,9 @@ The mathlib-free design encodes the key-uniqueness invariant as a
 `NoDupList`-based notification waiter list (which carries a
 `hNodup : val.Nodup` proof). -/
 structure LockSet where
-  /-- The list of `(LockId × AccessMode)` declarations. -/
-  pairs : List (LockId × AccessMode)
-  /-- WS-SM SM3.B well-formedness: each `LockId` key appears at most
+  /-- The list of `(LockKey × AccessMode)` declarations. -/
+  pairs : List (LockKey × AccessMode)
+  /-- WS-SM SM3.B well-formedness: each `LockKey` key appears at most
       once.  Enforces plan §3.5's key-uniqueness invariant by
       construction. -/
   hUniqueKeys : (pairs.map (·.fst)).Nodup
@@ -209,33 +210,33 @@ def empty : LockSet :=
 @[simp] theorem empty_pairs : empty.pairs = [] := rfl
 
 /-- WS-SM SM3.B: singleton `LockSet` — a transition holding exactly one lock. -/
-def singleton (l : LockId) (m : AccessMode) : LockSet :=
+def singleton (l : LockKey) (m : AccessMode) : LockSet :=
   { pairs := [(l, m)],
     hUniqueKeys := by
       simp only [List.map_cons, List.map_nil]
       exact List.Pairwise.cons (fun _ h => by cases h) List.Pairwise.nil }
 
-@[simp] theorem singleton_pairs (l : LockId) (m : AccessMode) :
+@[simp] theorem singleton_pairs (l : LockKey) (m : AccessMode) :
     (singleton l m).pairs = [(l, m)] := rfl
 
 /-- **PR #892 review round 2 (the fail-closed constructor)**: build a `LockSet`
 from a declared list, refusing one whose keys repeat — the object-domain twin
-of `SchedLockSet.ofList?`.
+of `LockSet.ofList?`.
 
 The dynamic chain extension needs a *footprint* rather than a raw key list,
 because holdership is a question about a footprint (`lockSetHeld`) and the
 extension now refuses to act on a chain it does not hold.  `none` is the honest
 answer for a list this domain cannot acquire correctly, and it is safe: the
-caller keeps whatever coarser serialisation it already has, exactly as the
-undeclared arm of the bracket does.  A walked chain never repeats a key
+caller keeps whatever coarser serialisation it already has, exactly as an
+undeclared footprint leaves it.  A walked chain never repeats a key
 (`chainLockSeq_keys_nodup`), so the arm is unreachable on a chain the walker
 produced and reachable only on a list nothing in the tree builds. -/
-def ofList? (pairs : List (LockId × AccessMode)) : Option LockSet :=
+def ofList? (pairs : List (LockKey × AccessMode)) : Option LockSet :=
   if h : (pairs.map (·.fst)).Nodup then some ⟨pairs, h⟩ else none
 
 /-- **PR #892 review round 2**: an accepted footprint carries exactly the list
 it was built from. -/
-theorem ofList?_pairs {pairs : List (LockId × AccessMode)} {S : LockSet}
+theorem ofList?_pairs {pairs : List (LockKey × AccessMode)} {S : LockSet}
     (h : ofList? pairs = some S) : S.pairs = pairs := by
   unfold ofList? at h
   by_cases hN : (pairs.map (·.fst)).Nodup
@@ -244,12 +245,12 @@ theorem ofList?_pairs {pairs : List (LockId × AccessMode)} {S : LockSet}
   · rw [dif_neg hN] at h; exact absurd h (by simp)
 
 /-- **PR #892 review round 2**: a duplicate-free list always yields a footprint. -/
-theorem ofList?_isSome_of_nodup {pairs : List (LockId × AccessMode)}
+theorem ofList?_isSome_of_nodup {pairs : List (LockKey × AccessMode)}
     (h : (pairs.map (·.fst)).Nodup) : ofList? pairs = some ⟨pairs, h⟩ := by
   unfold ofList?; rw [dif_pos h]
 
 /-- **PR #892 review round 2**: a list with duplicate keys yields no footprint. -/
-theorem ofList?_none_of_dup {pairs : List (LockId × AccessMode)}
+theorem ofList?_none_of_dup {pairs : List (LockKey × AccessMode)}
     (h : ¬ (pairs.map (·.fst)).Nodup) : ofList? pairs = none := by
   unfold ofList?; rw [dif_neg h]
 
@@ -257,19 +258,19 @@ theorem ofList?_none_of_dup {pairs : List (LockId × AccessMode)}
 the underlying `pairs` list.  Signature follows the Lean 4
 `Membership` convention: the collection comes first, the element
 comes second. -/
-def Mem (S : LockSet) (p : LockId × AccessMode) : Prop :=
+def Mem (S : LockSet) (p : LockKey × AccessMode) : Prop :=
   p ∈ S.pairs
 
-instance : Membership (LockId × AccessMode) LockSet := ⟨Mem⟩
+instance : Membership (LockKey × AccessMode) LockSet := ⟨Mem⟩
 
-@[simp] theorem mem_def (p : LockId × AccessMode) (S : LockSet) :
+@[simp] theorem mem_def (p : LockKey × AccessMode) (S : LockSet) :
     p ∈ S ↔ p ∈ S.pairs := Iff.rfl
 
-@[simp] theorem mem_empty (p : LockId × AccessMode) : ¬ p ∈ empty := by
+@[simp] theorem mem_empty (p : LockKey × AccessMode) : ¬ p ∈ empty := by
   intro h; cases h
 
-@[simp] theorem mem_singleton (l : LockId) (m : AccessMode)
-    (p : LockId × AccessMode) :
+@[simp] theorem mem_singleton (l : LockKey) (m : AccessMode)
+    (p : LockKey × AccessMode) :
     p ∈ singleton l m ↔ p = (l, m) := by
   show p ∈ [(l, m)] ↔ p = (l, m)
   simp
@@ -280,17 +281,17 @@ def size (S : LockSet) : Nat := S.pairs.length
 
 @[simp] theorem size_empty : empty.size = 0 := rfl
 
-@[simp] theorem size_singleton (l : LockId) (m : AccessMode) :
+@[simp] theorem size_singleton (l : LockKey) (m : AccessMode) :
     (singleton l m).size = 1 := rfl
 
-/-- WS-SM SM3.B: check whether a `LockId` is present in a `LockSet`. -/
-def containsKey (l : LockId) (S : LockSet) : Bool :=
+/-- WS-SM SM3.B: check whether a `LockKey` is present in a `LockSet`. -/
+def containsKey (l : LockKey) (S : LockSet) : Bool :=
   S.pairs.any (fun p => decide (p.fst = l))
 
-@[simp] theorem containsKey_empty (l : LockId) :
+@[simp] theorem containsKey_empty (l : LockKey) :
     containsKey l empty = false := rfl
 
-theorem containsKey_iff (l : LockId) (S : LockSet) :
+theorem containsKey_iff (l : LockKey) (S : LockSet) :
     containsKey l S = true ↔ ∃ m, (l, m) ∈ S := by
   constructor
   · intro h
@@ -307,15 +308,15 @@ theorem containsKey_iff (l : LockId) (S : LockSet) :
     rw [containsKey, List.any_eq_true]
     exact ⟨(l, m), hmem, decide_eq_true rfl⟩
 
-/-- WS-SM SM3.B: try to insert a fresh `(LockId, AccessMode)` pair
-into a `LockSet`.  Returns `none` if the `LockId` is already
+/-- WS-SM SM3.B: try to insert a fresh `(LockKey, AccessMode)` pair
+into a `LockSet`.  Returns `none` if the `LockKey` is already
 present (the caller should use `insertOrMerge` instead for the
 merge-via-`lub` semantics).
 
 The strict form is used by tests that want to assert no key is
 duplicated; the merging form is used by production lockSet
 assembly. -/
-def insert? (l : LockId) (m : AccessMode) (S : LockSet) : Option LockSet :=
+def insert? (l : LockKey) (m : AccessMode) (S : LockSet) : Option LockSet :=
   if h : containsKey l S = true then
     none
   else
@@ -334,15 +335,15 @@ def insert? (l : LockId) (m : AccessMode) (S : LockSet) : Option LockSet :=
           (fun a' ha' hEq => hNotMem (hEq ▸ ha')) S.hUniqueKeys
     }
 
-/-- WS-SM SM3.B: insert a `(LockId, AccessMode)` pair, merging modes
-via `AccessMode.lub` if the `LockId` is already present.
+/-- WS-SM SM3.B: insert a `(LockKey, AccessMode)` pair, merging modes
+via `AccessMode.lub` if the `LockKey` is already present.
 
 This is the production insertion: when a transition's `lockSet`
 declares both `read` and `write` over the same path (e.g. a
 cap-lookup branch reads the CNode but a write-branch also writes
 it), the union picks `write` (the conservative bound).  Per plan
 §4.1, "the lock-set is the union over all paths". -/
-def insertOrMerge (l : LockId) (m : AccessMode) (S : LockSet) : LockSet :=
+def insertOrMerge (l : LockKey) (m : AccessMode) (S : LockSet) : LockSet :=
   match h : containsKey l S with
   | true  =>
       -- Replace the existing entry with the lub'd mode.
@@ -395,7 +396,7 @@ state actually declares.
 
 Stated as an equation rather than `≤`: the merge changes the mode, never the
 cardinality, and a `≤` would leave "did it shrink?" unanswered. -/
-theorem size_insertOrMerge_of_containsKey (S : LockSet) (l : LockId) (m : AccessMode)
+theorem size_insertOrMerge_of_containsKey (S : LockSet) (l : LockKey) (m : AccessMode)
     (h : S.containsKey l = true) :
     (S.insertOrMerge l m).size = S.size := by
   unfold insertOrMerge size
@@ -404,7 +405,7 @@ theorem size_insertOrMerge_of_containsKey (S : LockSet) (l : LockId) (m : Access
   · next heq => rw [h] at heq; exact absurd heq (by simp)
 
 /-- WS-OD OD3.7: and the complementary case — a fresh key adds exactly one. -/
-theorem size_insertOrMerge_of_not_containsKey (S : LockSet) (l : LockId) (m : AccessMode)
+theorem size_insertOrMerge_of_not_containsKey (S : LockSet) (l : LockKey) (m : AccessMode)
     (h : S.containsKey l = false) :
     (S.insertOrMerge l m).size = S.size + 1 := by
   unfold insertOrMerge size
@@ -437,8 +438,8 @@ The disjunction has three branches:
 
 Used by SM3.B.4's per-transition `lockSet_consistent_*` proofs
 (via `lockSetOfList_mem_inv`) and by `union_mem_inv` below. -/
-theorem insertOrMerge_mem (S : LockSet) (l : LockId) (m : AccessMode)
-    (p : LockId × AccessMode)
+theorem insertOrMerge_mem (S : LockSet) (l : LockKey) (m : AccessMode)
+    (p : LockKey × AccessMode)
     (hMem : p ∈ (S.insertOrMerge l m).pairs) :
     p = (l, m) ∨ p.fst = l ∨ p ∈ S.pairs := by
   unfold LockSet.insertOrMerge at hMem
@@ -470,7 +471,7 @@ caller building a set from a list needs is that every key it supplied is named,
 and the mode it gets back is at least the one it put in.  The `write`-specific
 form is `mem_insertOrMerge_write_self`; this is the general one, and is what
 `lockSetOfList_mem_of_mem` folds. -/
-theorem mem_insertOrMerge_self (S : LockSet) (l : LockId) (m : AccessMode) :
+theorem mem_insertOrMerge_self (S : LockSet) (l : LockKey) (m : AccessMode) :
     ∃ m', (l, m') ∈ (S.insertOrMerge l m).pairs := by
   unfold LockSet.insertOrMerge
   split
@@ -493,8 +494,8 @@ prepend branch keeps it in the tail.  This is what lets a per-object lock declar
 by an *inner* footprint remain a declared member after an outer `lockSetExtendOpt`
 adds a *different* lock (e.g. the stashed reply lock surviving the WithCaps
 destination-CNode extension). -/
-theorem mem_insertOrMerge_of_mem_of_ne (S : LockSet) (l : LockId) (m : AccessMode)
-    (p : LockId × AccessMode) (hMem : p ∈ S.pairs) (hNe : p.fst ≠ l) :
+theorem mem_insertOrMerge_of_mem_of_ne (S : LockSet) (l : LockKey) (m : AccessMode)
+    (p : LockKey × AccessMode) (hMem : p ∈ S.pairs) (hNe : p.fst ≠ l) :
     p ∈ (S.insertOrMerge l m).pairs := by
   unfold LockSet.insertOrMerge
   split
@@ -514,8 +515,8 @@ the prepend branch keeps it in the tail.  The mode-aware strengthening of
 `mem_insertOrMerge_of_mem_of_ne` — no key-distinctness side-condition — powering
 the write-coverage membership families (`lockSet_tcbSuspend_*_write_mem`,
 `lockSet_cancelIpcBlocking_*_write_mem`, …). -/
-theorem mem_insertOrMerge_write_of_mem_write (S : LockSet) (l : LockId)
-    (m : AccessMode) (l' : LockId)
+theorem mem_insertOrMerge_write_of_mem_write (S : LockSet) (l : LockKey)
+    (m : AccessMode) (l' : LockKey)
     (hMem : (l', AccessMode.write) ∈ S.pairs) :
     (l', AccessMode.write) ∈ (S.insertOrMerge l m).pairs := by
   unfold LockSet.insertOrMerge
@@ -543,7 +544,7 @@ Needed because a footprint built as "an existing set, plus a state-level write"
 (`lockSet_declassifySignal`) must be able to name that write as a declared
 member without first proving the inner set does not already carry the key —
 which is the whole point of composing footprints rather than rewriting them. -/
-theorem mem_insertOrMerge_write_self (S : LockSet) (l : LockId) :
+theorem mem_insertOrMerge_write_self (S : LockSet) (l : LockKey) :
     (l, AccessMode.write) ∈ (S.insertOrMerge l AccessMode.write).pairs := by
   unfold LockSet.insertOrMerge
   split
@@ -570,15 +571,15 @@ behaviour: keys present in S₂ but not in S₁ are added directly;
 keys present in both have their modes merged, so the resulting
 pair's `fst` matches an S₂ key but its `snd` may differ from
 S₂'s. -/
-theorem union_mem_inv (S₁ S₂ : LockSet) (p : LockId × AccessMode)
+theorem union_mem_inv (S₁ S₂ : LockSet) (p : LockKey × AccessMode)
     (hMem : p ∈ (S₁.union S₂).pairs) :
     p ∈ S₁.pairs ∨ ∃ p' ∈ S₂.pairs, p.fst = p'.fst := by
   unfold union at hMem
   exact union_mem_inv_aux S₂.pairs S₁ p hMem
 where
   union_mem_inv_aux :
-      ∀ (suffix : List (LockId × AccessMode)) (acc : LockSet)
-        (p : LockId × AccessMode),
+      ∀ (suffix : List (LockKey × AccessMode)) (acc : LockSet)
+        (p : LockKey × AccessMode),
         p ∈ (suffix.foldl (init := acc)
           (fun a q => a.insertOrMerge q.fst q.snd)).pairs →
         p ∈ acc.pairs ∨ ∃ p' ∈ suffix, p.fst = p'.fst
@@ -595,15 +596,79 @@ where
         obtain ⟨p', hp'Mem, hp'Eq⟩ := hInRest
         exact ⟨p', List.mem_cons_of_mem _ hp'Mem, hp'Eq⟩
 
+/-- **WS-LS LS1.2**: a member the fold has not yet reached keeps every member
+whose key it never inserts. -/
+private theorem mem_union_fold_of_not_key (suffix : List (LockKey × AccessMode))
+    (acc : LockSet) (p : LockKey × AccessMode) (hMem : p ∈ acc.pairs)
+    (hNe : ∀ q ∈ suffix, q.fst ≠ p.fst) :
+    p ∈ (suffix.foldl (init := acc) (fun a q => a.insertOrMerge q.fst q.snd)).pairs := by
+  induction suffix generalizing acc with
+  | nil => exact hMem
+  | cons q rest ih =>
+    simp only [List.foldl_cons]
+    exact ih _ (mem_insertOrMerge_of_mem_of_ne acc q.fst q.snd p hMem
+      (Ne.symm (hNe q List.mem_cons_self))) (fun r hr => hNe r (List.mem_cons_of_mem _ hr))
+
+/-- **WS-LS LS1.2**: a **write** member of the left operand survives the union —
+a merge only raises a mode (`AccessMode.lub`), so a write stays a write.  This
+is the direction `footprintCoversWrites_mono` reads: coverage is stated
+over the write members a footprint names. -/
+theorem mem_union_write_of_mem_write (S₁ S₂ : LockSet) (l : LockKey)
+    (h : (l, AccessMode.write) ∈ S₁.pairs) :
+    (l, AccessMode.write) ∈ (S₁.union S₂).pairs := by
+  unfold union
+  exact aux S₂.pairs S₁ l h
+where
+  aux : ∀ (suffix : List (LockKey × AccessMode)) (acc : LockSet) (l : LockKey),
+      (l, AccessMode.write) ∈ acc.pairs →
+      (l, AccessMode.write)
+        ∈ (suffix.foldl (init := acc) (fun a q => a.insertOrMerge q.fst q.snd)).pairs
+  | [], _, _, h => h
+  | q :: rest, acc, l, h => by
+      simp only [List.foldl_cons]
+      exact aux rest _ l (mem_insertOrMerge_write_of_mem_write acc q.fst q.snd l h)
+
+/-- **WS-LS LS1.2**: a member of the right operand is in the union at its own
+mode, or at `write` when the left operand already named its key at `write`. -/
+theorem mem_union_of_mem_right (S₁ S₂ : LockSet) (l : LockKey) (m : AccessMode)
+    (h : (l, m) ∈ S₂.pairs) :
+    (l, m) ∈ (S₁.union S₂).pairs ∨ (l, AccessMode.write) ∈ (S₁.union S₂).pairs := by
+  unfold union
+  exact aux S₂.pairs S₂.hUniqueKeys S₁ l m h
+where
+  aux : ∀ (suffix : List (LockKey × AccessMode)), (suffix.map (·.fst)).Nodup →
+      ∀ (acc : LockSet) (l : LockKey) (m : AccessMode), (l, m) ∈ suffix →
+      (l, m) ∈ (suffix.foldl (init := acc) (fun a q => a.insertOrMerge q.fst q.snd)).pairs ∨
+      (l, AccessMode.write)
+        ∈ (suffix.foldl (init := acc) (fun a q => a.insertOrMerge q.fst q.snd)).pairs
+  | [], _, _, _, _, h => absurd h List.not_mem_nil
+  | q :: rest, hNodup, acc, l, m, h => by
+      simp only [List.foldl_cons]
+      simp only [List.map_cons, List.nodup_cons] at hNodup
+      rcases List.mem_cons.mp h with hEq | hRest
+      · subst hEq
+        have hNe : ∀ r ∈ rest, r.fst ≠ l := fun r hr hEq =>
+          hNodup.1 (List.mem_map.mpr ⟨r, hr, hEq⟩)
+        cases m with
+        | write =>
+            exact Or.inr (mem_union_fold_of_not_key rest _ _
+              (mem_insertOrMerge_write_self acc l) hNe)
+        | read =>
+            obtain ⟨m', hm'⟩ := mem_insertOrMerge_self acc l AccessMode.read
+            cases m' with
+            | read => exact Or.inl (mem_union_fold_of_not_key rest _ _ hm' hNe)
+            | write => exact Or.inr (mem_union_fold_of_not_key rest _ _ hm' hNe)
+      · exact aux rest hNodup.2 _ l m hRest
+
 -- ============================================================================
 -- SM3.B.5..B.8 — canonical sort (`lockAcquireSequence`)
 -- ============================================================================
 
 /-- WS-SM SM3.B.5: canonical acquisition sequence — the underlying
-pairs sorted by `LockId` ascending.
+pairs sorted by `LockKey` ascending.
 
 The comparator returns `true` iff `p₁.fst ≤ p₂.fst` (Bool-form for
-`List.mergeSort`).  Two pairs sharing the same `LockId` cannot
+`List.mergeSort`).  Two pairs sharing the same `LockKey` cannot
 appear in a well-formed `LockSet` (`hUniqueKeys`), so the comparator
 never sees a true tie — but `mergeSort` is stable for tied keys
 anyway, so the result is deterministic regardless.
@@ -611,83 +676,54 @@ anyway, so the result is deterministic regardless.
 This is the input that `withLockSet` (SM3.C.1) folds to acquire
 locks in ascending order, then folds in reverse to release in
 descending order. -/
-def lockAcquireSequence (S : LockSet) : List (LockId × AccessMode) :=
-  S.pairs.mergeSort (fun p₁ p₂ => decide (p₁.fst ≤ p₂.fst))
+def lockAcquireSequence (S : LockSet) : List (LockKey × AccessMode) :=
+  Concurrency.lockAcquireSequence S.pairs
 
 @[simp] theorem lockAcquireSequence_empty :
     lockAcquireSequence empty = [] := by
-  simp [lockAcquireSequence, empty]
+  simp [lockAcquireSequence, Concurrency.lockAcquireSequence, empty]
 
-@[simp] theorem lockAcquireSequence_singleton (l : LockId) (m : AccessMode) :
+@[simp] theorem lockAcquireSequence_singleton (l : LockKey) (m : AccessMode) :
     lockAcquireSequence (singleton l m) = [(l, m)] := by
-  simp [lockAcquireSequence, singleton]
+  simp [lockAcquireSequence, Concurrency.lockAcquireSequence, singleton]
 
--- ============================================================================
--- SM3.B.6 — `lockAcquireSequence_ordered`
--- ============================================================================
-
-/-- WS-SM SM3.B helper: the comparator used by `lockAcquireSequence`
-is transitive on Bool-form. -/
-private theorem leLockId_bool_trans (a b c : LockId × AccessMode) :
-    decide (a.fst ≤ b.fst) = true →
-    decide (b.fst ≤ c.fst) = true →
-    decide (a.fst ≤ c.fst) = true := by
-  intro hab hbc
-  have hab' : a.fst ≤ b.fst := of_decide_eq_true hab
-  have hbc' : b.fst ≤ c.fst := of_decide_eq_true hbc
-  exact decide_eq_true (LockId.le_trans _ _ _ hab' hbc')
-
-/-- WS-SM SM3.B helper: the comparator used by `lockAcquireSequence`
-is total on Bool-form. -/
-private theorem leLockId_bool_total (a b : LockId × AccessMode) :
-    (decide (a.fst ≤ b.fst) || decide (b.fst ≤ a.fst)) = true := by
-  rcases LockId.le_total a.fst b.fst with h | h
-  · simp [decide_eq_true h]
-  · simp [decide_eq_true h]
-
-/-- WS-SM SM3.B.6 (plan §3.5): the canonical sort produces a list
-whose adjacent `LockId`s are `≤`-ordered.
-
-Discharged via `List.pairwise_mergeSort` applied to `LockId`'s
-total order (transitivity from `LockId.le_trans`, totality from
-`LockId.le_total`).  This is the cornerstone witness that SM3.C's
-`withLockSet` consumes to discharge "acquires in lock-ID order"
-without further argument. -/
+/-- WS-SM SM3.B.6 (plan §3.4): the acquisition sequence is sorted —
+adjacent keys are `≤`-ordered.  **WS-LS LS1.2**: the one sort is
+`Concurrency.lockAcquireSequence` over `LockKey` (`Locks/LockKey.lean`), so
+this is its `_ordered` at the footprint's pairs.  This is the cornerstone
+witness that SM3.C's `withLockSet` consumes to discharge "acquires in lock
+order" without further argument. -/
 theorem lockAcquireSequence_ordered (S : LockSet) :
-    (lockAcquireSequence S).Pairwise (fun p₁ p₂ => p₁.fst ≤ p₂.fst) := by
-  -- Start from `pairwise_mergeSort` on the Bool comparator.
-  have hPairBool : List.Pairwise
-      (fun p₁ p₂ => decide (p₁.fst ≤ p₂.fst) = true)
-      (lockAcquireSequence S) :=
-    List.pairwise_mergeSort
-      (le := fun p₁ p₂ => decide (p₁.fst ≤ p₂.fst))
-      leLockId_bool_trans leLockId_bool_total S.pairs
-  -- Lift `decide _ = true` to the underlying Prop.
-  exact hPairBool.imp (fun h => of_decide_eq_true h)
+    (lockAcquireSequence S).Pairwise (fun p₁ p₂ => p₁.fst ≤ p₂.fst) :=
+  Concurrency.lockAcquireSequence_ordered S.pairs
 
--- ============================================================================
--- SM3.B.7 — `lockAcquireSequence_complete`
--- ============================================================================
+/-- **WS-LS LS1.2**: a footprint declared in ascending order is acquired
+exactly as it lists (`Concurrency.lockAcquireSequence_eq_of_pairwise_le` at the
+footprint's pairs). -/
+theorem lockAcquireSequence_eq_pairs_of_pairwise_le (S : LockSet)
+    (h : (S.pairs.map (·.fst)).Pairwise (· ≤ ·)) :
+    lockAcquireSequence S = S.pairs :=
+  Concurrency.lockAcquireSequence_eq_of_pairwise_le S.pairs h
 
 /-- WS-SM SM3.B.7 (plan §5.2.SM3.B.7): every element of the source
 `LockSet` appears in the sorted output, and vice versa.  Lifts
 `List.mem_mergeSort`. -/
 theorem lockAcquireSequence_complete (S : LockSet)
-    (p : LockId × AccessMode) :
+    (p : LockKey × AccessMode) :
     p ∈ S ↔ p ∈ lockAcquireSequence S := by
-  simp only [mem_def, lockAcquireSequence, List.mem_mergeSort]
+  simp only [mem_def, lockAcquireSequence, Concurrency.mem_lockAcquireSequence]
 
 /-- WS-SM SM3.B: forward direction of `_complete` for compatibility
 with the plan's signature. -/
 theorem lockAcquireSequence_complete_forward (S : LockSet)
-    (p : LockId × AccessMode) (hmem : p ∈ S) :
+    (p : LockKey × AccessMode) (hmem : p ∈ S) :
     p ∈ lockAcquireSequence S :=
   (lockAcquireSequence_complete S p).mp hmem
 
 /-- WS-SM SM3.B: the sort is a permutation of the input. -/
 theorem lockAcquireSequence_perm (S : LockSet) :
-    (lockAcquireSequence S).Perm S.pairs := by
-  exact List.mergeSort_perm S.pairs _
+    (lockAcquireSequence S).Perm S.pairs :=
+  Concurrency.lockAcquireSequence_perm S.pairs
 
 /-- WS-SM SM3.B: the sort preserves length. -/
 theorem lockAcquireSequence_length (S : LockSet) :
@@ -753,7 +789,7 @@ the same `fst` key are equal.
 Defined inside `namespace LockSet`, so the fully-qualified name is
 `SeLe4n.Kernel.Concurrency.LockSet.fst_inj_at_pairs`. -/
 theorem fst_inj_at_pairs (S : LockSet)
-    {p₁ p₂ : LockId × AccessMode}
+    {p₁ p₂ : LockKey × AccessMode}
     (h₁ : p₁ ∈ S.pairs) (h₂ : p₂ ∈ S.pairs)
     (hfst : p₁.fst = p₂.fst) : p₁ = p₂ :=
   list_fst_inj_of_nodup_keys S.pairs S.hUniqueKeys h₁ h₂ hfst
@@ -775,7 +811,7 @@ We discharge by induction on the length, exploiting that
 and that sorted permutations of a list with distinct keys are
 identical position-by-position. -/
 theorem lockAcquireSequence_canonical (S : LockSet)
-    (l' : List (LockId × AccessMode))
+    (l' : List (LockKey × AccessMode))
     (hPerm : l'.Perm S.pairs)
     (hSorted : l'.Pairwise (fun p₁ p₂ => p₁.fst ≤ p₂.fst)) :
     l' = lockAcquireSequence S := by
@@ -804,9 +840,9 @@ where
   Then they are structurally equal.
 
   Proof by induction on `l₁` (then case-split on `l₂`); the inductive
-  step uses antisymmetry of `LockId.le` plus Nodup-of-keys to force
+  step uses antisymmetry of `LockKey.le` plus Nodup-of-keys to force
   heads to agree. -/
-  uniq_sorted_perm_aux : ∀ {l₁ l₂ : List (LockId × AccessMode)},
+  uniq_sorted_perm_aux : ∀ {l₁ l₂ : List (LockKey × AccessMode)},
       l₁.Perm l₂ →
       l₁.Pairwise (fun p₁ p₂ => p₁.fst ≤ p₂.fst) →
       (l₁.map (·.fst)).Nodup →
@@ -860,7 +896,7 @@ where
         have hba_le : b.fst ≤ a.fst :=
           (List.rel_of_pairwise_cons hS2) ha_in_l₂'
         -- Antisymmetry: a.fst = b.fst.
-        have hKeyEq : a.fst = b.fst := LockId.le_antisymm _ _ hab_le hba_le
+        have hKeyEq : a.fst = b.fst := LockKey.le_antisymm hab_le hba_le
         -- But the Nodup of keys on (a :: l₁') says a.fst ∉ l₁'.map (·.fst).
         have hNodup1_head : a.fst ∉ l₁'.map (·.fst) := by
           have h := hNodup1

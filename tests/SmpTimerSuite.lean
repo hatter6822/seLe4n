@@ -45,10 +45,10 @@ open SeLe4n.Testing
 #check @scheduleDomainOnCore
 
 -- SM5.D.3 cross-domain lock-set (+ replenish-queue lock domain).
-#check @ReplenishQueueLockId
-#check @ReplenishQueueLockId.replenishQueueLockLevel
-#check @SchedLockId.object_lt_replenishQueue
-#check @SchedLockId.runQueue_lt_replenishQueue
+#check @LockKey.replenishQueue
+#check @LockKind.replenishQueue.level
+#check @LockKey.object_lt_replenishQueue
+#check @LockKey.runQueue_lt_replenishQueue
 #check @timerTickOnCoreLockSet
 #check @timerTickOnCoreLockSet_length
 #check @timerTickOnCoreLockSet_write_only
@@ -235,9 +235,9 @@ example (st : SystemState) (c : CoreId) (st' : SystemState) (sgis : List (CoreId
 
 /-- SM5.D.3 (plan §4.4): the tick lock-set acquires object < run-queue < replenish-queue. -/
 example (c : CoreId) :
-    SchedLockId.runQueue (⟨c⟩ : RunQueueLockId)
-      < SchedLockId.replenishQueue (⟨c⟩ : ReplenishQueueLockId) :=
-  SchedLockId.runQueue_lt_replenishQueue _ _
+    LockKey.runQueue c
+      < LockKey.replenishQueue c :=
+  LockKey.runQueue_lt_replenishQueue _ _
 
 /-- SM5.D.5/.6 (B1): the per-core tick preserves per-core current-thread validity
 UNCONDITIONALLY (idle / not-preempted / preempted all discharge). -/
@@ -357,11 +357,11 @@ private def runLockSetChecks : IO Unit := do
   assertBool "tick lock-set has exactly 3 locks"
     ((timerTickOnCoreLockSet bootCoreId).length == 3)
   assertBool "tick lock-set contains the object-store write lock"
-    ((timerTickOnCoreLockSet bootCoreId).contains (SchedLockId.object schedObjStoreLockId, .write))
+    ((timerTickOnCoreLockSet bootCoreId).contains (LockKey.objStore, .write))
   assertBool "tick lock-set contains the run-queue write lock"
-    ((timerTickOnCoreLockSet bootCoreId).contains (SchedLockId.runQueue ⟨bootCoreId⟩, .write))
+    ((timerTickOnCoreLockSet bootCoreId).contains (LockKey.runQueue bootCoreId, .write))
   assertBool "tick lock-set contains the replenish-queue write lock"
-    ((timerTickOnCoreLockSet bootCoreId).contains (SchedLockId.replenishQueue ⟨bootCoreId⟩, .write))
+    ((timerTickOnCoreLockSet bootCoreId).contains (LockKey.replenishQueue bootCoreId, .write))
   assertBool "tick lock-set is write-only (no read locks)"
     ((timerTickOnCoreLockSet bootCoreId).all (fun p => p.2 == .write))
   assertBool "tick lock-set keys are duplicate-free"
@@ -385,7 +385,7 @@ private def runWcrtChecks : IO Unit := do
     (decide ((timerTickOnCoreLockSet bootCoreId).length
       = 3))  -- `timerTickOnCoreLockSet_length`, executed
   assertBool "object-domain locks acquired before run-queue locks (level 9 < 10)"
-    (decide (RunQueueLockId.runQueueLockLevel < ReplenishQueueLockId.replenishQueueLockLevel))
+    (decide (LockKind.runQueue.level < LockKind.replenishQueue.level))
 
 /-- §3.3 SM5.D.6: a non-expired domain time decrements by one. -/
 private def runDomainDecrementChecks : IO Unit := do

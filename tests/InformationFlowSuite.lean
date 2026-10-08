@@ -1382,16 +1382,17 @@ def runInformationFlowChecks : IO Unit := do
   -- over `SystemState` (pinned by `SystemState.eq_of_fieldEq_all`, an
   -- elaboration-time fact this runtime count merely mirrors).
   -- WS-BP BP7.2 (v0.36.15): 28, with the physical-write ledger.
-  expect "StateField enum has 28 variants, one per SystemState field"
+  -- WS-LS (v0.36.70): 26, the two kernel-state lock fields deleted.
+  expect "StateField enum has 26 variants, one per SystemState field"
     ([ SeLe4n.Kernel.StateField.machine, .objects, .objectIndex, .objectIndexSet,
        .services, .scheduler, .irqHandlers, .lifecycle,
        .asidTable, .interfaceRegistry, .serviceRegistry,
        .cdt, .cdtSlotNode, .cdtNodeSlot, .cdtNextNode,
        .scThreadIndex, .tlb,
-       .objStoreLock, .schedulerLocks, .tlbShootdown,
+       .tlbShootdown,
        .perCoreTlb, .perCoreICache, .pendingIcacheMaintenance, .pendingPhysicalWrites,
        .declassificationAuditLog, .declassificationAuditEpoch,
-       .declassificationRefusals, .declassificationTaint ].length = 28)
+       .declassificationRefusals, .declassificationTaint ].length = 26)
   expect "StateField is total over SystemState (eq_of_fieldEq_all elaborates)"
     (have _ := @SeLe4n.Kernel.SystemState.eq_of_fieldEq_all; true)
   -- AM4 audit remediation: field-set catalog extended from 10 to 11

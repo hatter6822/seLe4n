@@ -8412,6 +8412,13 @@ theorem storeTcbIpcState_scheduler_eq
     st'.scheduler = st.scheduler :=
   modifyTcb_scheduler_eq hStep
 
+/-- `storeTcbIpcState` leaves the machine registers untouched (it writes only the
+target TCB's `ipcState`). -/
+theorem storeTcbIpcState_machine_eq (st st' : SystemState) (tid : SeLe4n.ThreadId)
+    (ipc : ThreadIpcState) (hStep : storeTcbIpcState st tid ipc = .ok st') :
+    st'.machine = st.machine :=
+  modifyTcb_machine_eq hStep
+
 /-- WS-E3/H-09: `storeTcbIpcState` preserves endpoint objects. -/
 theorem storeTcbIpcState_preserves_endpoint
     (st st' : SystemState)

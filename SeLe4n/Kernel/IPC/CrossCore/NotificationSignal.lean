@@ -408,7 +408,7 @@ No replenish segment: a signal moves no scheduling context, so the set is the
 run-queue side alone.  On the badge-accumulation path and on every fail-closed
 arm the write set is empty and the footprint is the table lock by itself. -/
 def schedLockSet_notificationSignalOnCore (st : SystemState) (notificationId : SeLe4n.ObjId) :
-    List (SchedLockId × Concurrency.AccessMode) :=
+    List (LockKey × Concurrency.AccessMode) :=
   schedFootprintOfCores (notificationSignalWriteSet st notificationId) []
 
 /-- **WS-RR RR8.12**: the scheduler-domain footprint of a cross-core
@@ -422,14 +422,14 @@ stated at `[executingCore]`).  So the footprint is state-independent, which is
 why — unlike the signal's — it takes no `SystemState`; the object-domain
 `lockSet_notificationWaitOnCore` is state-independent for the same reason. -/
 def schedLockSet_notificationWaitOnCore (executingCore : CoreId) :
-    List (SchedLockId × Concurrency.AccessMode) :=
+    List (LockKey × Concurrency.AccessMode) :=
   schedFootprintOfCores [executingCore] []
 
 /-- **WS-RR RR8.12**: the wait footprint names the executing core's run-queue
 write lock — the one the block path's `removeRunnableOnCore` writes under. -/
 theorem schedLockSet_notificationWaitOnCore_contains_executing_runQueue_write
     (executingCore : CoreId) :
-    (SchedLockId.runQueue ⟨executingCore⟩, Concurrency.AccessMode.write)
+    (LockKey.runQueue executingCore, Concurrency.AccessMode.write)
       ∈ schedLockSet_notificationWaitOnCore executingCore :=
   (mem_schedFootprintOfCores_runQueue_iff _ _ executingCore).mpr (by simp)
 
@@ -438,7 +438,7 @@ merely sound but *exact* on this arm — the negative half, and the one a widene
 footprint would fail. -/
 theorem schedLockSet_notificationWaitOnCore_no_other_runQueue
     (executingCore d : CoreId) (hne : d ≠ executingCore) :
-    (SchedLockId.runQueue ⟨d⟩, Concurrency.AccessMode.write)
+    (LockKey.runQueue d, Concurrency.AccessMode.write)
       ∉ schedLockSet_notificationWaitOnCore executingCore := by
   rw [schedLockSet_notificationWaitOnCore, mem_schedFootprintOfCores_runQueue_iff]
   simpa using hne
@@ -449,7 +449,7 @@ theorem schedLockSet_notificationSignalOnCore_contains_waiter_runQueue_write
     (ntfn : Notification) (rest : SeLe4n.NoDupList SeLe4n.ThreadId)
     (hN : st.getNotification? notificationId = some ntfn)
     (hT : ntfn.waitingThreads.tail? = some (waiter, rest)) :
-    (SchedLockId.runQueue ⟨determineTargetCore st waiter⟩, Concurrency.AccessMode.write)
+    (LockKey.runQueue (determineTargetCore st waiter), Concurrency.AccessMode.write)
       ∈ schedLockSet_notificationSignalOnCore st notificationId := by
   refine (mem_schedFootprintOfCores_runQueue_iff _ _ _).mpr ?_
   unfold notificationSignalWriteSet
@@ -650,7 +650,7 @@ existing entry is replaced by `(l, oldMode.lub .write) = (l, .write)` (write is
 the `AccessMode.lub` top).  So `(l, .write)` is a member of the result
 unconditionally — the structural fact behind "both ends of the signal binding are
 write-locked". -/
-theorem self_write_mem_insertOrMerge (S : LockSet) (l : LockId) :
+theorem self_write_mem_insertOrMerge (S : LockSet) (l : LockKey) :
     (l, AccessMode.write) ∈ (S.insertOrMerge l AccessMode.write).pairs := by
   unfold LockSet.insertOrMerge
   split
@@ -863,43 +863,38 @@ theorem notificationSignalOnCore_perCore_consistent
 -- ============================================================================
 
 /-- WS-SM SM6.B.4 (`notificationWait_atomic_under_lockSet`, plan §3.4 / Theorem
-2.1.10): under its `notificationWait` lock-set the cross-core transition is a
-single two-phase-locked atomic step — wrapping `notificationWaitOnCore` in
-`withLockSet` decomposes deterministically into the acquire fold, the transition,
-and the release fold.  No partial intermediate is observable to a lock-insensitive
-observer; this is the operational atomicity the per-core IPC invariant
-preservation (SM6.D) rests on. -/
+2.1.10; **WS-LS LS2.1**: over the pair): under its `notificationWait` lock-set
+the cross-core transition is a single two-phase-locked atomic step — wrapping
+`notificationWaitOnCore` in the ghost bracket decomposes deterministically into
+the transition on the kernel half and the bracket's lock trace on the lock half.
+`rfl` since LS2.1: the phases write the lock table and the action writes the
+kernel state, so no partial intermediate exists for any observer; this is the
+operational atomicity the per-core IPC invariant preservation (SM6.D) rests
+on. -/
 theorem notificationWaitOnCore_atomic_under_lockSet
     (notificationId : SeLe4n.ObjId) (caller : SeLe4n.ThreadId) (executingCore : CoreId)
-    (cnRoot : SeLe4n.ObjId) (s : SystemState) :
+    (cnRoot : SeLe4n.ObjId) (s : LockedSystemState) :
     withLockSet (lockSet_notificationWait caller cnRoot notificationId) executingCore
         (notificationWaitOnCore notificationId caller executingCore) s
-      = (unwindAll executingCore
-          (lockSet_notificationWait caller cnRoot notificationId).lockAcquireSequence.reverse
-          (notificationWaitOnCore notificationId caller executingCore
-            (acquireAll executingCore
-              (lockSet_notificationWait caller cnRoot notificationId).lockAcquireSequence s)).1,
-         (notificationWaitOnCore notificationId caller executingCore
-            (acquireAll executingCore
-              (lockSet_notificationWait caller cnRoot notificationId).lockAcquireSequence s)).2) :=
+      = (⟨(notificationWaitOnCore notificationId caller executingCore s.kernel).1,
+          LockState.bracket executingCore
+            (lockSet_notificationWait caller cnRoot notificationId) s.locks⟩,
+         (notificationWaitOnCore notificationId caller executingCore s.kernel).2) :=
   lockSet_atomic_under_2pl _ executingCore _ s
 
-/-- WS-SM SM6.B.4 (companion): the cross-core `notificationSignal` is likewise a
-single 2PL-atomic step under its `notificationSignal` lock-set. -/
+/-- WS-SM SM6.B.4 (companion; **WS-LS LS2.1**: over the pair): the cross-core
+`notificationSignal` is likewise a single 2PL-atomic step under its
+`notificationSignal` lock-set — `rfl`, for the same reason. -/
 theorem notificationSignalOnCore_atomic_under_lockSet
     (notificationId : SeLe4n.ObjId) (badge : SeLe4n.Badge) (executingCore : CoreId)
     (signaller : SeLe4n.ThreadId) (cnRoot : SeLe4n.ObjId)
-    (waiter? : Option SeLe4n.ThreadId) (s : SystemState) :
+    (waiter? : Option SeLe4n.ThreadId) (s : LockedSystemState) :
     withLockSet (lockSet_notificationSignal signaller cnRoot notificationId waiter?) executingCore
         (notificationSignalOnCore notificationId badge executingCore) s
-      = (unwindAll executingCore
-          (lockSet_notificationSignal signaller cnRoot notificationId waiter?).lockAcquireSequence.reverse
-          (notificationSignalOnCore notificationId badge executingCore
-            (acquireAll executingCore
-              (lockSet_notificationSignal signaller cnRoot notificationId waiter?).lockAcquireSequence s)).1,
-         (notificationSignalOnCore notificationId badge executingCore
-            (acquireAll executingCore
-              (lockSet_notificationSignal signaller cnRoot notificationId waiter?).lockAcquireSequence s)).2) :=
+      = (⟨(notificationSignalOnCore notificationId badge executingCore s.kernel).1,
+          LockState.bracket executingCore
+            (lockSet_notificationSignal signaller cnRoot notificationId waiter?) s.locks⟩,
+         (notificationSignalOnCore notificationId badge executingCore s.kernel).2) :=
   lockSet_atomic_under_2pl _ executingCore _ s
 
 -- ============================================================================

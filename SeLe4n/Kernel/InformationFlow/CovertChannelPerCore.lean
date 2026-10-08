@@ -52,8 +52,8 @@ open SeLe4n.Kernel.Concurrency (CoreId bootCoreId)
 -- authority the kernel derives, as policy-gated (a `securityFlowsTo` check),
 -- capability-only (authority from capability possession) or read-only.  SMP
 -- adds exactly one operation to that surface: the SM3 two-phase-locking
--- bracket `withLockSet`, which every `@[export]` body wraps its transition in
--- once SM3.C.9 lands.
+-- bracket `withLockSet`, which every seam's `BracketSpec.run` is the
+-- executed projection of (WS-LS LS2).
 --
 -- Its class is **capability-only**, and for the same reason as `storeObject`'s
 -- and `lifecycleRetypeObject`'s: it is an internal building block invoked under
@@ -503,13 +503,14 @@ When core `c` spins on a lock held by core `c'`, the spin duration measures
 
 `modelVisible := false` is a proven fact, not an assertion:
 `withLockSet_preserves_projection` says the 2PL bracket leaves the observer's
-projection *identical*, with no hypothesis on the lock set — because
-`projectKernelObject` erases the per-object `lock` field (SM8.B.4).  Without
-that erasure the channel would also be a **state** channel: `RwLockState`
-carries `writerHeld`, `readers` and `waiters`, all core identities, so an
-observer that can see an object would read off which cores are operating on it —
-the placement channel WS-SM SM5.B closed on `TCB.cpuAffinity`, re-opened through
-another field.  What remains is timing, and timing only. -/
+projection *identical*, with no hypothesis on the lock set — because the lock
+state is the ghost table beside the kernel state (WS-LS LS3.1), which no
+projection reads.  Were it a word inside each object, the channel would also be
+a **state** channel: `RwLockState` carries `writerHeld`, `readers` and
+`waiters`, all core identities, so an observer that can see an object would
+read off which cores are operating on it — the placement channel WS-SM SM5.B
+closed on `TCB.cpuAffinity`, re-opened through another field.  What remains is
+timing, and timing only. -/
 def acceptedCovertChannel_lockContention : CovertChannel :=
   { channelId := 5
     name := "lock-contention timing"
@@ -711,15 +712,12 @@ apart: this fails if the entry is reclassified without the theorem changing. -/
 theorem acceptedCovertChannel_lockContention_is_timing_only
     {α : Type} (ctx : LabelingContext) (observer : IfObserver)
     (S : SeLe4n.Kernel.Concurrency.LockSet) (core : CoreId)
-    (action : SystemState → SystemState × α) (s : SystemState)
-    (hInv : s.objects.invExt)
-    (hActionInv : ∀ s', s'.objects.invExt → ((action s').1).objects.invExt)
-    (hAction : ∀ s', s'.objects.invExt →
-      projectState ctx observer (action s').1 = projectState ctx observer s') :
+    (action : SystemState → SystemState × α) (s : SeLe4n.Kernel.Concurrency.LockedSystemState)
+    (hAction : projectState ctx observer (action s.kernel).1 = projectState ctx observer s.kernel) :
     acceptedCovertChannel_lockContention.modelVisible = false ∧
-      projectState ctx observer (SeLe4n.Kernel.Concurrency.withLockSet S core action s).1
-        = projectState ctx observer s :=
-  ⟨rfl, withLockSet_preserves_projection ctx observer S core action s hInv hActionInv hAction⟩
+      projectState ctx observer (SeLe4n.Kernel.Concurrency.withLockSet S core action s).1.kernel
+        = projectState ctx observer s.kernel :=
+  ⟨rfl, withLockSet_preserves_projection ctx observer S core action s hAction⟩
 
 /-- SM8.B.8 (the CC-6 / CC-7 witnesses): both hardware-residency channels are
 registered `modelVisible := false`, and the SM8.A exclusion theorems are why. -/
@@ -1437,15 +1435,13 @@ def CovertChannelId.evidenceProp : CovertChannelId → Prop
   | .lockContention =>
       ∀ (ctx : LabelingContext) (observer : IfObserver)
         (S : SeLe4n.Kernel.Concurrency.LockSet) (core : CoreId)
-        (action : SystemState → SystemState × Unit) (s : SystemState),
-        s.objects.invExt →
-        (∀ s', s'.objects.invExt → ((action s').1).objects.invExt) →
-        (∀ s', s'.objects.invExt →
-          projectState ctx observer (action s').1 = projectState ctx observer s') →
+        (action : SystemState → SystemState × Unit)
+        (s : SeLe4n.Kernel.Concurrency.LockedSystemState),
+        projectState ctx observer (action s.kernel).1 = projectState ctx observer s.kernel →
         (covertChannelEntry .lockContention).modelVisible = false ∧
           projectState ctx observer
-              (SeLe4n.Kernel.Concurrency.withLockSet S core action s).1
-            = projectState ctx observer s
+              (SeLe4n.Kernel.Concurrency.withLockSet S core action s).1.kernel
+            = projectState ctx observer s.kernel
   | .tlbResidency =>
       ∀ (ctx : LabelingContext) (L : SecurityLabel) (s : SystemState) (c : CoreId)
         (vTlb : Vector TlbState SeLe4n.Kernel.Concurrency.numCores),
@@ -1501,9 +1497,8 @@ def covertChannelEvidence : (id : CovertChannelId) → id.evidenceProp
       acceptedCovertChannel_tcbMetadata_is_model_visible ctx c L s tid tcb hObs hLookup
   | .objectStoreMetadata => fun ctx c L s =>
       acceptedCovertChannel_objectStoreMetadata_is_model_visible ctx c L s
-  | .lockContention => fun ctx observer S core action s hInv hActionInv hAction =>
-      acceptedCovertChannel_lockContention_is_timing_only ctx observer S core action s
-        hInv hActionInv hAction
+  | .lockContention => fun ctx observer S core action s hAction =>
+      acceptedCovertChannel_lockContention_is_timing_only ctx observer S core action s hAction
   | .tlbResidency => fun ctx L s c vTlb =>
       let ⟨hTlb, _, hViewTlb, _⟩ :=
         acceptedCovertChannel_residency_excluded_from_view ctx L s c vTlb default
@@ -1757,8 +1752,9 @@ stating precisely rather than gesturing at:
   `notificationSignalOnCore`, `.tcbSuspend` → the `descheduleThread` leg), the
   premise is **false in general** — those transitions really do write a remote
   core.  What holds instead is the set-of-cores statement, and
-  `NonInterferenceCrossCore` proves it for each of them: the writes stay inside
-  a write set computed from the pre-state.
+  the production `SlotConfinement` modules prove it for each of them (the
+  writes stay inside a write set computed from the pre-state) and
+  `NonInterferenceCrossCore` turns each into the remote observer's statement.
 
   **Read that boundary precisely.**  Those write sets bound the *below-API
   transitions*, and the live dispatch is more than the transition: the `.call`

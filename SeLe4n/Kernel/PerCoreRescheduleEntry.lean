@@ -135,25 +135,25 @@ and the definitional body of the secondary-core bring-up entry
 (`secondaryKernelMain`).
 
 Atomically runs the verified `perCoreRescheduleStep` against the live kernel
-state (committing `handleRescheduleSgiOnCore`'s result) **inside the footprint
-this core declares** (**WS-RR RR7.39** — `rescheduleUnderDeclaredLockSet`, the
-object-store table write lock and this core's run-queue write lock), then records
+state (committing `handleRescheduleSgiOnCore`'s result) **through the bracket
+this core declares** (**WS-RR RR7.39** / **WS-LS LS2.2** — `rescheduleBracket`:
+the object-store table write lock and this core's run-queue write lock, with
+`perCoreRescheduleStep_coversWrites` as the record's proof field), then records
 the thread that step left running on this core in the HAL's per-core mirror
 (**WS-RR RR7.26**).  Both reads of the post-state happen inside the one atomic
 step, so the value recorded is the value committed.
 
-The bracket's three outcomes all carry a state, and `LockBracketOutcome.state` is
-the one definition that projects it — so a refused bracket records the *unwound*
-state, which is the pre-state with nothing committed but the lock withdrawal.
-`perCoreRescheduleStep_coversWrites` proves the step's writes lie inside the
-declared footprint, so the footprint is not a false one.  See the module
+What the entry executes is `BracketSpec.run`, which is the step and nothing
+else (`rescheduleBracket_run`, `rfl`): since LS2.2 the growing and shrinking
+phases live on the ghost lock table alone, so there is no refusal arm and no
+unwound state to project — the committed state is the step's.  See the module
 docstring. -/
 @[export lean_per_core_reschedule]
 def perCoreRescheduleEntry (coreId : UInt64) : BaseIO Unit := do
   let frame ← Platform.FFI.captureTrapFrame
   let record ← Platform.FFI.modifyGetKernelState (fun st =>
-    let st' := (rescheduleUnderDeclaredLockSet coreId
-      (Concurrency.saveCapturedTrapFrameAt st coreId frame)).state
+    let st' := ((rescheduleBracket coreId).run
+      (Concurrency.saveCapturedTrapFrameAt st coreId frame)).2
       |> (PriorityInheritance.settleResidencyAt · coreId)
     (((Concurrency.coreIdOfUInt64? coreId).map
       (fun c => (c, st'.scheduler.currentOnCore c)),
@@ -169,7 +169,7 @@ def perCoreRescheduleEntry (coreId : UInt64) : BaseIO Unit := do
 /-- **WS-SM SM5.C.5** structural marker: `perCoreRescheduleEntry` unfolds to
 the atomic commit of the bracketed reschedule step followed by the HAL
 current-thread record.  Pins the entry's body shape (a `modifyGetKernelState`
-over `rescheduleUnderDeclaredLockSet` returning the decoded core with its
+over `(rescheduleBracket coreId).run` returning the decoded core with its
 committed `currentOnCore`, then `recordCommittedCurrentThreadHw`) so a refactor
 that drops the state commit, drops the record, drops the declared-footprint
 bracket (**WS-RR RR7.39**), or inserts side effects the verified step does not
@@ -185,8 +185,8 @@ theorem perCoreRescheduleEntry_def (coreId : UInt64) :
       (do
         let frame ← Platform.FFI.captureTrapFrame
         let record ← Platform.FFI.modifyGetKernelState (fun st =>
-          let st' := (rescheduleUnderDeclaredLockSet coreId
-            (Concurrency.saveCapturedTrapFrameAt st coreId frame)).state
+          let st' := ((rescheduleBracket coreId).run
+            (Concurrency.saveCapturedTrapFrameAt st coreId frame)).2
       |> (PriorityInheritance.settleResidencyAt · coreId)
           (((Concurrency.coreIdOfUInt64? coreId).map
             (fun c => (c, st'.scheduler.currentOnCore c)),

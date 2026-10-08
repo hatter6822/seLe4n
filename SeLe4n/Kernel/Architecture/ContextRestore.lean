@@ -93,10 +93,12 @@ theorem stageCallerReturn_blocks (pre post : SystemState) (c : CoreId) :
 theorem stageCallerReturn_faulted (pre post : SystemState) (c : CoreId) :
     stageCallerReturn pre post c .faulted = post := rfl
 
-/-- The staging writes no scheduler state. -/
-theorem stageCallerReturn_scheduler (pre post : SystemState) (c : CoreId)
-    (o : SyscallOutcome) : (stageCallerReturn pre post c o).scheduler = post.scheduler := by
-  unfold stageCallerReturn stageCallerReturnFor
+/-- **WS-LS LS2.3**: staging a caller's result writes a register context and
+the core's bank, never the scheduler — whichever caller the seam captured. -/
+theorem stageCallerReturnFor_scheduler (caller? : Option SeLe4n.ThreadId)
+    (post : SystemState) (c : CoreId) (o : SyscallOutcome) :
+    (stageCallerReturnFor caller? post c o).scheduler = post.scheduler := by
+  unfold stageCallerReturnFor
   split
   · split
     · split
@@ -105,6 +107,11 @@ theorem stageCallerReturn_scheduler (pre post : SystemState) (c : CoreId)
     · rfl
   · rfl
   · rfl
+
+/-- The staging writes no scheduler state. -/
+theorem stageCallerReturn_scheduler (pre post : SystemState) (c : CoreId)
+    (o : SyscallOutcome) : (stageCallerReturn pre post c o).scheduler = post.scheduler :=
+  stageCallerReturnFor_scheduler _ post c o
 
 /-- **The payoff**: a caller still current on the core has its result in its
 saved context and in the bank. -/
@@ -187,54 +194,16 @@ theorem restoreTargetOnCore_user (st : SystemState) (c : CoreId) (tid : SeLe4n.T
         (threadTranslationOperands st tid).2 (fpLiveFor st c tid) := by
   simp [restoreTargetOnCore, hCur, hIdle, hTcb]
 
-/-- **The words a context occupies in the trap frame**, the inverse of
-`registerFileOfTrapWords` on the layout's thirty-five words. -/
-def trapWordsOfRegisterFile (rf : SeLe4n.RegisterFile) (i : Nat) : UInt64 :=
-  if i < 31 then (rf.gpr ⟨i⟩).val.toUInt64
-  else if i = trapFrameSpWord then rf.sp.val.toUInt64
-  else if i = trapFramePcWord then rf.pc.val.toUInt64
-  else if i = trapFramePstateWord then rf.pstate.val.toUInt64
-  else if i = trapFrameTpidrWord then rf.tpidr.val.toUInt64
-  else 0
+/-- **The words a context occupies in the trap frame**: the register file's own
+words, in the layout `SeLe4n.RegisterFile` declares. -/
+@[inline] def trapWordsOfRegisterFile (rf : SeLe4n.RegisterFile) (i : Nat) : UInt64 :=
+  rf.word i
 
-/-- **Save then restore is the identity on the layout's registers** — `pc`,
-`sp`, `pstate`, `tpidr` and `x0`–`x30` — for a context whose registers fit in
-64 bits.  The hypothesis is needed: `RegisterFile` holds unbounded `Nat`s and
-`trapWordsOfRegisterFile` narrows with `Nat.toUInt64`, which wraps.  A context
-the HAL handed over satisfies it (`registerFileOfTrapContext_wordBounded`), and
-`registerContextsWordBounded` carries it for every saved context and every
-core's bank, each register-context writer preserving it
-(`SeLe4n/Kernel/Architecture/RegisterContextBounded.lean`).  Nothing is said of `gpr ⟨31⟩` onward, which the layout does not carry and the
-read-back sets to `0`. -/
-theorem registerFileOfTrapWords_trapWordsOfRegisterFile (rf : SeLe4n.RegisterFile)
-    (hGpr : ∀ r : SeLe4n.RegName, r.val < 31 → (rf.gpr r).val < 2 ^ 64)
-    (hSp : rf.sp.val < 2 ^ 64) (hPc : rf.pc.val < 2 ^ 64) (hPs : rf.pstate.val < 2 ^ 64)
-    (hTp : rf.tpidr.val < 2 ^ 64) :
-    (registerFileOfTrapWords (trapWordsOfRegisterFile rf)).pc = rf.pc ∧
-    (registerFileOfTrapWords (trapWordsOfRegisterFile rf)).sp = rf.sp ∧
-    (registerFileOfTrapWords (trapWordsOfRegisterFile rf)).pstate = rf.pstate ∧
-    (registerFileOfTrapWords (trapWordsOfRegisterFile rf)).tpidr = rf.tpidr ∧
-    (∀ r : SeLe4n.RegName, r.val < 31 →
-      (registerFileOfTrapWords (trapWordsOfRegisterFile rf)).gpr r = rf.gpr r) := by
-  refine ⟨?_, ?_, ?_, ?_, ?_⟩
-  · simp only [registerFileOfTrapWords, trapWordsOfRegisterFile, trapFramePcWord, trapFrameSpWord,
-      trapFramePstateWord]
-    cases h : rf.pc; simp_all [Nat.toUInt64, Nat.mod_eq_of_lt]
-  · simp only [registerFileOfTrapWords, trapWordsOfRegisterFile, trapFramePcWord, trapFrameSpWord,
-      trapFramePstateWord]
-    cases h : rf.sp; simp_all [Nat.toUInt64, Nat.mod_eq_of_lt]
-  · simp only [registerFileOfTrapWords, trapWordsOfRegisterFile, trapFramePcWord, trapFrameSpWord,
-      trapFramePstateWord]
-    cases h : rf.pstate; simp_all [Nat.toUInt64, Nat.mod_eq_of_lt]
-  · simp only [registerFileOfTrapWords, trapWordsOfRegisterFile, trapFramePcWord, trapFrameSpWord,
-      trapFramePstateWord, trapFrameTpidrWord]
-    cases h : rf.tpidr; simp_all [Nat.toUInt64, Nat.mod_eq_of_lt]
-  · intro r hr
-    have hLt := hGpr r hr
-    simp only [registerFileOfTrapWords, trapWordsOfRegisterFile, hr, if_true]
-    cases h : rf.gpr r
-    rw [h] at hLt
-    simp_all [Nat.toUInt64, Nat.mod_eq_of_lt]
+/-- **Save then restore is the identity**: the register file a context's words
+describe is that context — the file holds machine words, so nothing narrows. -/
+@[simp] theorem registerFileOfTrapWords_trapWordsOfRegisterFile (rf : SeLe4n.RegisterFile) :
+    registerFileOfTrapWords (trapWordsOfRegisterFile rf) = rf :=
+  SeLe4n.RegisterFile.ofWords_word rf
 
 /-- **The context the HAL installs**, as the boundary carries it: the register
 file's thirty-five layout words in one `TrapContext` (`Platform.FFI.restoreTrapFrame`
@@ -251,54 +220,32 @@ layout. -/
   TrapContext.word_ofWords _ i h
 
 /-- The words of the register file some words describe are those words, on the
-layout: `UInt64 → Nat → UInt64` is the identity. -/
+layout. -/
 theorem trapWordsOfRegisterFile_registerFileOfTrapWords (w : Nat → UInt64) (i : Nat)
     (h : i < trapFrameWordCount) :
-    trapWordsOfRegisterFile (registerFileOfTrapWords w) i = w i := by
-  unfold trapWordsOfRegisterFile registerFileOfTrapWords
-  by_cases hi : i < 31
-  · simp [hi]
-  · have : i = 31 ∨ i = 32 ∨ i = 33 ∨ i = 34 := by unfold trapFrameWordCount at h; omega
-    rcases this with rfl | rfl | rfl | rfl <;>
-      simp [trapFrameSpWord, trapFramePcWord, trapFramePstateWord, trapFrameTpidrWord]
+    trapWordsOfRegisterFile (registerFileOfTrapWords w) i = w i :=
+  SeLe4n.RegisterFile.word_ofWords w i h
 
-/-- **Save then restore is the identity on the boundary representation**, with
-no hypothesis: a context the HAL handed over, read as the model's register file
-and handed back, is the same thirty-five words — `UInt64 → Nat → UInt64` loses
-nothing.  This is the Lean-internal decode/encode round trip; the words the HAL
-then installs are these, with `SPSR_EL1` masked to the condition flags at the
-commit (`rust/sele4n-hal/src/trap.rs`, `sanitise_user_spsr`), so the
-cross-language trip is the identity on every word but `pstate`. -/
+/-- **Save then restore is the identity on the boundary representation**: a
+context the HAL handed over, read as the model's register file and handed back,
+is the same thirty-five words.  The words the HAL then installs are these, with
+`SPSR_EL1` masked to the condition flags at the commit
+(`rust/sele4n-hal/src/trap.rs`, `sanitise_user_spsr`), so the cross-language trip
+is the identity on every word but `pstate`. -/
 @[simp] theorem trapContextOfRegisterFile_registerFileOfTrapContext (c : TrapContext) :
     trapContextOfRegisterFile (registerFileOfTrapContext c) = c := by
   rw [trapContextOfRegisterFile, registerFileOfTrapContext]
   exact (TrapContext.ofWords_congr _ _ fun i h =>
     trapWordsOfRegisterFile_registerFileOfTrapWords c.word i h).trans (TrapContext.ofWords_word c)
 
-/-- **Restore then save is the identity on the layout's registers** for a
-word-bounded file: the context handed to the HAL, read back as the model's
-register file, agrees with the file that was restored on `pc`, `sp`, `pstate`,
-`tpidr` and `x0`–`x30` — the thirty-five registers the layout carries; `gpr ⟨31⟩`
-onward is not carried and reads back as `0`.  The Lean-internal encode/decode
-direction of `registerFileOfTrapWords_trapWordsOfRegisterFile`, stated over the
-boundary representation; `wordBounded` is the per-context bound
-`registerContextsWordBounded` carries, and `restoreTargetOnCore_user_roundTrip`
-discharges it on the restore path from that predicate as a hypothesis on the
-state — preserved by every writer, not yet a bundle conjunct nor a boot-state
-theorem (the register-file row of `docs/REGISTERED_DEBT.md`).  The HAL masks `pstate` to the condition flags at
-the commit, so the cross-language trip is not the identity on `pstate`. -/
-theorem registerFileOfTrapContext_trapContextOfRegisterFile (rf : SeLe4n.RegisterFile)
-    (hB : rf.wordBounded) :
-    (registerFileOfTrapContext (trapContextOfRegisterFile rf)).pc = rf.pc ∧
-    (registerFileOfTrapContext (trapContextOfRegisterFile rf)).sp = rf.sp ∧
-    (registerFileOfTrapContext (trapContextOfRegisterFile rf)).pstate = rf.pstate ∧
-    (registerFileOfTrapContext (trapContextOfRegisterFile rf)).tpidr = rf.tpidr ∧
-    (∀ r : SeLe4n.RegName, r.val < 31 →
-      (registerFileOfTrapContext (trapContextOfRegisterFile rf)).gpr r = rf.gpr r) := by
-  obtain ⟨hPc, hSp, hPs, hTp, hGpr⟩ := hB
+/-- **Restore then save is the identity**: the context handed to the HAL, read
+back as the model's register file, is the file that was restored — every one of
+its thirty-five registers, with no hypothesis.  The HAL masks `pstate` to the
+condition flags at the commit, so the cross-language trip is not the identity on
+`pstate`. -/
+@[simp] theorem registerFileOfTrapContext_trapContextOfRegisterFile (rf : SeLe4n.RegisterFile) :
+    registerFileOfTrapContext (trapContextOfRegisterFile rf) = rf := by
   rw [trapContextOfRegisterFile, registerFileOfTrapContext_ofWords]
-  exact registerFileOfTrapWords_trapWordsOfRegisterFile rf
-    (fun r hr => hGpr r (by unfold SeLe4n.RegName.isValid SeLe4n.RegName.arm64GPRCount; omega))
-    hSp hPc hPs hTp
+  exact SeLe4n.RegisterFile.ofWords_word rf
 
 end SeLe4n.Kernel.Architecture

@@ -573,15 +573,43 @@ than two that have to be kept in step.  No replenish segment: a plain send
 carries no scheduling context (only `.call` donates), so `.send` writes no
 replenish queue on any path. -/
 def schedLockSet_endpointSendOnCore (st : SystemState) (endpointId : SeLe4n.ObjId)
-    (executingCore : CoreId) : List (SchedLockId × Concurrency.AccessMode) :=
+    (executingCore : CoreId) : List (LockKey × Concurrency.AccessMode) :=
   schedFootprintOfCores (endpointSendWriteSet st endpointId executingCore) []
+
+/-- **WS-LS LS2.3**: the write set reads the object store alone — the endpoint's
+receive queue and the receiver's home core — so two states with the same store
+give the same core list.  What lets the footprint be resolved before the arm's
+extra-capability resolution mints its derivation nodes (which writes the store's
+CDT but neither the endpoint nor any TCB). -/
+theorem endpointSendWriteSet_congr_objects {st st' : SystemState}
+    (h : st'.objects = st.objects) (endpointId : SeLe4n.ObjId) (executingCore : CoreId) :
+    endpointSendWriteSet st' endpointId executingCore
+      = endpointSendWriteSet st endpointId executingCore := by
+  unfold endpointSendWriteSet endpointCallReceiver?
+  rw [SystemState.getEndpoint?_frame h]
+  cases st.getEndpoint? endpointId with
+  | none => rfl
+  | some ep =>
+    simp only
+    cases ep.receiveQ.head with
+    | none => rfl
+    | some receiver =>
+      simp only
+      rw [determineTargetCore_congr st st' receiver (by rw [SystemState.getTcb?_frame h])]
+
+theorem schedLockSet_endpointSendOnCore_congr_objects {st st' : SystemState}
+    (h : st'.objects = st.objects) (endpointId : SeLe4n.ObjId) (executingCore : CoreId) :
+    schedLockSet_endpointSendOnCore st' endpointId executingCore
+      = schedLockSet_endpointSendOnCore st endpointId executingCore := by
+  unfold schedLockSet_endpointSendOnCore
+  rw [endpointSendWriteSet_congr_objects h]
 
 /-- **WS-RR RR8.12**: on the rendezvous path the footprint names the woken
 receiver's home core. -/
 theorem schedLockSet_endpointSendOnCore_contains_receiver_runQueue_write (st : SystemState)
     (endpointId : SeLe4n.ObjId) (executingCore : CoreId) (receiver : SeLe4n.ThreadId)
     (hRecv : endpointCallReceiver? st endpointId = some receiver) :
-    (SchedLockId.runQueue ⟨determineTargetCore st receiver⟩, Concurrency.AccessMode.write)
+    (LockKey.runQueue (determineTargetCore st receiver), Concurrency.AccessMode.write)
       ∈ schedLockSet_endpointSendOnCore st endpointId executingCore := by
   refine (mem_schedFootprintOfCores_runQueue_iff _ _ _).mpr ?_
   unfold endpointSendWriteSet
@@ -595,7 +623,7 @@ way. -/
 theorem schedLockSet_endpointSendOnCore_contains_executing_runQueue_write (st : SystemState)
     (endpointId : SeLe4n.ObjId) (executingCore : CoreId)
     (hRecv : endpointCallReceiver? st endpointId = none) :
-    (SchedLockId.runQueue ⟨executingCore⟩, Concurrency.AccessMode.write)
+    (LockKey.runQueue executingCore, Concurrency.AccessMode.write)
       ∈ schedLockSet_endpointSendOnCore st endpointId executingCore := by
   refine (mem_schedFootprintOfCores_runQueue_iff _ _ _).mpr ?_
   unfold endpointSendWriteSet

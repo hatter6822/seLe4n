@@ -167,19 +167,8 @@ run_check_with_timeout "TRACE" lake exe smp_surface_anchors
 # round-trips and the peek decoder algebra.
 run_check_with_timeout "TRACE" lake exe lock_bridge_suite
 
-# WS-SM SM3.A — Per-object lock field regression suite.  Surface
-# anchors + decidable examples + runtime structural assertions for the
-# per-object `lock : RwLockState` fields on every kernel-object struct
-# (TCB, Endpoint, CNode, Notification, UntypedObject, SchedContext,
-# VSpaceRoot) plus the ObjStore-level table lock on SystemState.
-# Covers the SM3.A.11 default-state theorems
-# (`default_objects_locks_unheld`, `default_objStoreLock_unheld`)
-# and the per-variant `objectLockOf` reduction lemmas.
-run_check_with_timeout "TRACE" lake exe per_object_lock_suite
-
 # WS-SM SM3.B — LockSet regression suite.  Exercises the SM3.B
-# `LockSet` type, `KernelObject.lockKind` projection,
-# `LockId.fromObject` / `LockId.lookup`, per-syscall `lockSet_<τ>`
+# `LockSet` type, per-syscall `lockSet_<τ>`
 # declarations, the `lockAcquireSequence` canonical sort and
 # ordered/complete/canonical theorems, `permittedKinds` plus the
 # per-transition `lockSet_consistent_<τ>` theorems, the audit-pass-5
@@ -190,21 +179,6 @@ run_check_with_timeout "TRACE" lake exe per_object_lock_suite
 # footprint extensions (SC + VSpaceRoot + endpoint locks), and the
 # 113-entry inventory aggregator (with the `chainStart` category).
 run_check_with_timeout "TRACE" lake exe lock_set_suite
-
-# WS-SM SM3.C — withLockSet 2PL discipline regression suite.
-# Exercises the SM3.C.1 `withLockSet` 2PL combinator + per-object
-# `acquireLockOnObject` / `releaseLockOnObject` primitives,
-# `KernelObject.updateLock` per-variant helper + 7 simp lemmas,
-# `lockHeld` / `lockSetHeld` predicates (SMP-migration precondition
-# for Corollary 2.1.11), the SM3.C.5/C.6 ordering theorems
-# (`lockSet_acquired_in_order`, `lockSet_released_in_reverse`),
-# the SM3.C.7/C.8 atomicity/invariant-preservation theorems
-# (`lockSet_atomic_under_2pl`, `lockSet_invariant_preserved`),
-# the SM3.C.11 dynamic PIP-chain-walk machinery
-# (`withDynamicChainExtension`, `walkAndAcquire`, `dynamicChainHeld`,
-# `walkAndAcquire_path_ascending_in_ObjId_if_terminated`), and the
-# 51-theorem SM3.C inventory aggregator.
-run_check_with_timeout "TRACE" lake exe with_lock_set_suite
 
 # WS-SM SM3.D — deadlock-freedom regression suite.  Exercises the SM3.D
 # abstract `KernelExecution` model, the 2PL + ordering hypotheses + the

@@ -407,7 +407,7 @@ theorem contextMatchesCurrent_of_regs_eq {st : SystemState} {tid : SeLe4n.Thread
     (hObj : st.objects[tid.toObjId]? = some (.tcb tcb))
     (hRegs : st.machine.regs = tcb.registerContext) :
     contextMatchesCurrent st := by
-  simp [contextMatchesCurrent, hCurr, hObj, hRegs, RegisterFile.beq_self]
+  simp [contextMatchesCurrent, hCurr, hObj, hRegs]
 
 -- ============================================================================
 -- WS-H6: Full scheduler invariant bundle

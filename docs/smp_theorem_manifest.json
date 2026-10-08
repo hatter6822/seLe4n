@@ -49,19 +49,9 @@
       "kind": "theoremInventory",
       "inventories": [
         {
-          "name": "perObjectLockTheorems",
-          "module": "SeLe4n/Model/Object/PerObjectLockInventory.lean",
-          "count": 43
-        },
-        {
           "name": "lockSetTheorems",
           "module": "SeLe4n/Kernel/Concurrency/Locks/LockSetInventory.lean",
-          "count": 121
-        },
-        {
-          "name": "withLockSetTheorems",
-          "module": "SeLe4n/Kernel/Concurrency/Locks/WithLockSetInventory.lean",
-          "count": 98
+          "count": 99
         },
         {
           "name": "deadlockTheorems",
@@ -71,11 +61,11 @@
         {
           "name": "serializabilityTheorems",
           "module": "SeLe4n/Kernel/Concurrency/Locks/SerializabilityInventory.lean",
-          "count": 111
+          "count": 96
         }
       ],
-      "entryCount": 439,
-      "theoremCount": 293
+      "entryCount": 261,
+      "theoremCount": 155
     },
     {
       "phase": "SM4",
@@ -188,10 +178,10 @@
       "theoremCount": 0
     }
   ],
-  "entryTotal": 1145,
-  "theoremTotal": 925,
+  "entryTotal": 967,
+  "theoremTotal": 787,
   "ledgerEntryTotal": 16,
-  "registeredEntryTotal": 1161,
-  "theoremInventoryCount": 14,
+  "registeredEntryTotal": 983,
+  "theoremInventoryCount": 12,
   "ledgerInventoryCount": 2
 }

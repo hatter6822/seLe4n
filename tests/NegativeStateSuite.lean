@@ -2650,9 +2650,9 @@ def runWSJ1DecodeChecks : IO Unit := do
   -- J1-NEG-15: decodeSyscallArgs with invalid syscall number in register → invalidSyscallNumber
   -- Write syscall number 99 into x7.
   let regsInvalidSyscall : SeLe4n.RegisterFile :=
-    { pc := ⟨0⟩, sp := ⟨0⟩, gpr := fun r =>
-        if r.val == 7 then ⟨99⟩  -- invalid syscall number
-        else ⟨0⟩ }
+    SeLe4n.RegisterFile.withGprs 0 0 (fun r =>
+        if r == 7 then 99  -- invalid syscall number
+        else 0)
   expectErr "J1 decodeSyscallArgs invalid syscall in register"
     (SeLe4n.Kernel.Architecture.RegisterDecode.decodeSyscallArgs SeLe4n.arm64DefaultLayout regsInvalidSyscall 32)
     .invalidSyscallNumber
@@ -2660,10 +2660,10 @@ def runWSJ1DecodeChecks : IO Unit := do
   -- J1-NEG-16: decodeSyscallArgs with malformed msgInfo in register → invalidMessageInfo
   -- Write an oversized length (127 > 120) into the msgInfo register (x1).
   let regsInvalidMsgInfo : SeLe4n.RegisterFile :=
-    { pc := ⟨0⟩, sp := ⟨0⟩, gpr := fun r =>
-        if r.val == 1 then ⟨127⟩  -- length=127 > maxMessageRegisters=120
-        else if r.val == 7 then ⟨0⟩  -- valid syscall (send)
-        else ⟨0⟩ }
+    SeLe4n.RegisterFile.withGprs 0 0 (fun r =>
+        if r == 1 then 127  -- length=127 > maxMessageRegisters=120
+        else if r == 7 then 0  -- valid syscall (send)
+        else 0)
   expectErr "J1 decodeSyscallArgs malformed msgInfo in register"
     (SeLe4n.Kernel.Architecture.RegisterDecode.decodeSyscallArgs SeLe4n.arm64DefaultLayout regsInvalidMsgInfo 32)
     .invalidMessageInfo
@@ -4213,7 +4213,7 @@ private def runX2RuntimeInvariantTests : IO Unit := do
         machine := x2Base.machine.setRegsOnCore
           SeLe4n.Kernel.Concurrency.bootCoreId x2Regs }
   let x2PcAfter : SystemState → Option Nat :=
-    fun st => (st.getTcb? x2Tid).map (·.registerContext.pc.val)
+    fun st => (st.getTcb? x2Tid).map (·.registerContext.pc.toNat)
   match SeLe4n.Kernel.timerTickChecked x2Live with
   | .error e =>
     throw <| IO.userError s!"timerTickChecked must succeed on a resolvable current thread, got {repr e}"

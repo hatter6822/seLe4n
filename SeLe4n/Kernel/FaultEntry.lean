@@ -101,17 +101,27 @@ Pure: it reads no kernel state and commits none, so it needs no entry lock —
 `trap.rs` calls it *before* taking one, to decide where to route.  It is
 still a Lean-emitted symbol, so `trap.rs` consults the per-core readiness
 gate first and classifies through its pinned mirror on a core whose runtime
-is not yet initialized (PR #887 review round 2). -/
+is not yet initialized (PR #887 review round 2).
+
+It classifies the word (`classifySynchronousExceptionOfEsr`), not a context
+built around it, so its compiled body allocates nothing: the one upcall that
+runs outside the entry lock on every synchronous exception does not touch the
+heap (WS-CV CV0.4). -/
 @[export lean_classify_synchronous_exception]
 def classifySynchronousExceptionExport (esr : UInt64) : UInt32 :=
-  syncExceptionClassTag (classifySynchronousException { esr := esr, elr := 0, spsr := 0, far := 0 })
+  syncExceptionClassTag (classifySynchronousExceptionOfEsr esr)
 
 /-- WS-RR RR4.25: the export is the classification, tagged — the structural
 marker that a refactor cannot quietly replace the body with a second table. -/
 theorem classifySynchronousExceptionExport_def (esr : UInt64) :
     classifySynchronousExceptionExport esr =
-      syncExceptionClassTag
-        (classifySynchronousException { esr := esr, elr := 0, spsr := 0, far := 0 }) := rfl
+      syncExceptionClassTag (classifySynchronousExceptionOfEsr esr) := rfl
+
+/-- The export classifies as the context form does on any context carrying the
+word: the routing decision and the delivery agree. -/
+theorem classifySynchronousExceptionExport_eq_context (ectx : ExceptionContext) :
+    classifySynchronousExceptionExport ectx.esr =
+      syncExceptionClassTag (classifySynchronousException ectx) := rfl
 
 /-- WS-RR RR4.25: classification reads the ESR alone — the other three
 syndrome words the export does not receive cannot change the answer, which is

@@ -10,7 +10,6 @@
 import SeLe4n.Model.State
 import SeLe4n.Kernel.Concurrency.Locks.Kind
 import SeLe4n.Kernel.Concurrency.Locks.LockSet
-import SeLe4n.Kernel.Concurrency.Locks.LockIdProjection
 
 /-!
 # WS-SM SM3.B.3 / B.4 — Per-transition `lockSet` declarations + `lockSet_consistent`
@@ -32,11 +31,11 @@ matters if a thread is blocked on the endpoint) declares the
 upper-bound, conservatively over-locking but never under-locking.
 Optional ObjIds enter via `Option ObjId` parameters: `none` means
 the transition does NOT touch that object; `some oid` adds the
-corresponding LockId to the set.
+corresponding LockKey to the set.
 
 The `lockSet_consistent` theorem (SM3.B.4) is the structural
-invariant: for every declared `(LockId, AccessMode)` in any
-`lockSet_<τ>`, the `LockId.kind` is in the transition's permitted
+invariant: for every declared `(LockKey, AccessMode)` in any
+`lockSet_<τ>`, the `LockKey.kind` is in the transition's permitted
 set of kinds.
 
 ## Design choice: post-resolution args
@@ -272,26 +271,26 @@ open SeLe4n
 open SeLe4n.Model
 
 -- ============================================================================
--- SM3.B helpers — common LockId constructors
+-- SM3.B helpers — common LockKey constructors
 -- ============================================================================
 
-/-- WS-SM SM3.B: build the LockId for a TCB at the given ThreadId. -/
-@[inline] def tcbLock (tid : ThreadId) : LockId :=
-  ⟨.tcb, tid.toObjId⟩
+/-- WS-SM SM3.B: build the LockKey for a TCB at the given ThreadId. -/
+@[inline] def tcbLock (tid : ThreadId) : LockKey :=
+  .object ⟨.tcb, tid.toObjId⟩
 
-/-- WS-SM SM3.B: build the LockId for a CNode at the given ObjId.
+/-- WS-SM SM3.B: build the LockKey for a CNode at the given ObjId.
 The ObjId here is post-resolution (typically the caller's CSpace
 root or a cap-lookup target). -/
-@[inline] def cnodeLock (oid : ObjId) : LockId :=
-  ⟨.cnode, oid⟩
+@[inline] def cnodeLock (oid : ObjId) : LockKey :=
+  .object ⟨.cnode, oid⟩
 
-/-- WS-SM SM3.B: build the LockId for an Endpoint at the given ObjId. -/
-@[inline] def endpointLock (oid : ObjId) : LockId :=
-  ⟨.endpoint, oid⟩
+/-- WS-SM SM3.B: build the LockKey for an Endpoint at the given ObjId. -/
+@[inline] def endpointLock (oid : ObjId) : LockKey :=
+  .object ⟨.endpoint, oid⟩
 
-/-- WS-SM SM3.B: build the LockId for a Notification at the given ObjId. -/
-@[inline] def notificationLock (oid : ObjId) : LockId :=
-  ⟨.notification, oid⟩
+/-- WS-SM SM3.B: build the LockKey for a Notification at the given ObjId. -/
+@[inline] def notificationLock (oid : ObjId) : LockKey :=
+  .object ⟨.notification, oid⟩
 
 /-- **WS-RR RR7.38**: the object whose wait queue a thread is linked into.
 
@@ -306,7 +305,7 @@ can target a queued thread to declare the same lock, which is what this
 resolver supplies.
 
 A `.ready` thread owns no entry here.  It may still sit in a per-core *run*
-queue, whose locks are `SchedLockId` rather than `LockId` and whose coverage is
+queue, whose locks are `LockKey` rather than `LockKey` and whose coverage is
 the separately registered scheduler domain — said here because the two are easy
 to conflate and only one of them is closed. -/
 inductive QueueOwner where
@@ -317,13 +316,13 @@ inductive QueueOwner where
   deriving DecidableEq, Repr
 
 /-- The lock a `QueueOwner` denotes. -/
-@[inline] def QueueOwner.lock : QueueOwner → LockId
-  | .endpoint oid => ⟨.endpoint, oid⟩
-  | .notification oid => ⟨.notification, oid⟩
+@[inline] def QueueOwner.lock : QueueOwner → LockKey
+  | .endpoint oid => endpointLock oid
+  | .notification oid => notificationLock oid
 
 /-- **WS-RR RR7.38**: a queue owner's kind is one of exactly two.
 
-This is why `QueueOwner` exists rather than a bare `Option LockId`: a `LockId`
+This is why `QueueOwner` exists rather than a bare `Option LockKey`: a `LockKey`
 carries an arbitrary kind, so a footprint parameterised by one could only be
 admitted by a `permittedKinds` arm listing *every* kind — the `.declassify`
 shape, honest there because the target really can be any object, and dishonest
@@ -332,7 +331,7 @@ else.  With the kind fixed by construction the eleven arms below admit exactly
 those two, and the fixed part of each footprint stays pinned. -/
 theorem QueueOwner.lock_kind (q : QueueOwner) :
     q.lock.kind = LockKind.endpoint ∨ q.lock.kind = LockKind.notification := by
-  cases q <;> simp [QueueOwner.lock]
+  cases q <;> simp [QueueOwner.lock, endpointLock, notificationLock]
 
 /-- **WS-RR RR7.38**: the queue owner of a TCB, read off its `ipcState`. -/
 @[inline] def queueOwnerOf? (tcb : TCB) : Option QueueOwner :=
@@ -352,35 +351,35 @@ thread that resolves to no TCB owns no queue membership, so `none`. -/
 /-- **WS-RR RR7.38**: the optional footprint member a queue owner contributes —
 its lock, in **write** mode, because the splice it protects writes the neighbour
 TCBs rather than reading them. -/
-@[inline] def queueOwnerMember (q : Option QueueOwner) : Option (LockId × AccessMode) :=
+@[inline] def queueOwnerMember (q : Option QueueOwner) : Option (LockKey × AccessMode) :=
   q.map (fun o => (o.lock, AccessMode.write))
 
-/-- WS-SM SM3.B: build the LockId for a SchedContext at the given
+/-- WS-SM SM3.B: build the LockKey for a SchedContext at the given
 SchedContextId. -/
-@[inline] def schedContextLock (scid : SchedContextId) : LockId :=
-  ⟨.schedContext, scid.toObjId⟩
+@[inline] def schedContextLock (scid : SchedContextId) : LockKey :=
+  .object ⟨.schedContext, scid.toObjId⟩
 
-/-- WS-SM SM6.D: build the LockId for a first-class Reply object at the given
+/-- WS-SM SM6.D: build the LockKey for a first-class Reply object at the given
 ReplyId.  The per-object reply lock serialises the single-use `reply.caller`
 write across cores — the 2PL footprint member for `.reply` / `.replyRecv` /
 `.receive` / `.call` (the syscalls that link or consume a Reply object). -/
-@[inline] def replyLock (rid : ReplyId) : LockId :=
-  ⟨.reply, rid.toObjId⟩
+@[inline] def replyLock (rid : ReplyId) : LockKey :=
+  .object ⟨.reply, rid.toObjId⟩
 
-/-- WS-SM SM3.B: build the LockId for a VSpaceRoot at the given ObjId. -/
-@[inline] def vspaceRootLock (oid : ObjId) : LockId :=
-  ⟨.vspaceRoot, oid⟩
+/-- WS-SM SM3.B: build the LockKey for a VSpaceRoot at the given ObjId. -/
+@[inline] def vspaceRootLock (oid : ObjId) : LockKey :=
+  .object ⟨.vspaceRoot, oid⟩
 
-/-- WS-SM SM3.B: build the LockId for an Untyped object at the given
+/-- WS-SM SM3.B: build the LockKey for an Untyped object at the given
 ObjId. -/
-@[inline] def untypedLock (oid : ObjId) : LockId :=
-  ⟨.untyped, oid⟩
+@[inline] def untypedLock (oid : ObjId) : LockKey :=
+  .object ⟨.untyped, oid⟩
 
-/-- **WS-BP BP7.1 (`v0.36.5`)**: build the LockId for a page frame at the given
+/-- **WS-BP BP7.1 (`v0.36.5`)**: build the LockKey for a page frame at the given
 ObjId — the lock hierarchy's `page` kind (level 9), which frame objects made
 real. -/
-@[inline] def pageLock (oid : ObjId) : LockId :=
-  ⟨.page, oid⟩
+@[inline] def pageLock (oid : ObjId) : LockKey :=
+  .object ⟨.page, oid⟩
 
 /-- **WS-BP BP7.1 slice 4 (`v0.36.8`)**: the lock of an object a carve creates —
 a child untyped's `untyped` lock, a frame's `page` lock, and since slice 4b
@@ -389,7 +388,7 @@ object's key, so its footprint names that key under the kind the key will hold,
 which is what serialises it against every later operation on the object.  Keyed
 on the carved **kind** rather than a flag, so a kind the carve gains names its
 own lock rather than falling into another's. -/
-@[inline] def carvedObjectLock (childKind : KernelObjectType) (oid : ObjId) : LockId :=
+@[inline] def carvedObjectLock (childKind : KernelObjectType) (oid : ObjId) : LockKey :=
   match childKind with
   | .untyped => untypedLock oid
   | .vspaceRoot => vspaceRootLock oid
@@ -398,36 +397,36 @@ own lock rather than falling into another's. -/
 /-- WS-SM SM3.A.10 / PR #870 round 7: **the SystemState-level lock**, as a
 declarable footprint member.
 
-`.objStore` is the one `LockKind` whose lock word lives on `SystemState`
-itself (`objStoreLock`, hierarchy level 0) rather than on an object —
-`acquireLockOnObject` and `lockHeld` dispatch on the kind and read/advance
-that field directly, ignoring the `objId`
-(`stateLevelLock_objId_irrelevant`).  It guards the RobinHood table's
+`.objStore` is the one `LockKind` that names no object: its key stands for
+the object store as a whole (hierarchy level 0), and since WS-LS LS3.1 it is
+a key of the ghost lock table like every other kind, with no word on
+`SystemState` behind it.  It guards the RobinHood table's
 structure and, by the SM3.A.10 convention this cut makes **structural**, the
 SystemState-level auxiliary structures: the declassification audit trail and
 its epoch, whose three accessors (`.declassify` append, `.auditRead` read,
 `.auditDrain` read-modify-write) now declare it instead of citing the
 convention in prose.  One canonical spelling, `ObjId 0`, so two footprints can
-never alias the singleton under different ids. -/
-@[inline] def stateLevelLock : LockId :=
-  ⟨.objStore, ObjId.ofNat 0⟩
+never alias the singleton under different ids.  **WS-LS LS1.2**: the one
+spelling is now `LockKey.objStore` itself. -/
+@[inline] def stateLevelLock : LockKey :=
+  .objStore
 
 
 -- ============================================================================
 -- SM3.B helpers — LockSet builders
 -- ============================================================================
 
-/-- WS-SM SM3.B: build a `LockSet` from a list of `(LockId, AccessMode)`
+/-- WS-SM SM3.B: build a `LockSet` from a list of `(LockKey, AccessMode)`
 pairs by folding `insertOrMerge` over the empty set.  Duplicate
 keys are merged via `AccessMode.lub` (write dominates read), so
 the result is well-formed by construction. -/
-def lockSetOfList (pairs : List (LockId × AccessMode)) : LockSet :=
+def lockSetOfList (pairs : List (LockKey × AccessMode)) : LockSet :=
   pairs.foldl (init := LockSet.empty)
     (fun acc p => acc.insertOrMerge p.fst p.snd)
 
 /-- WS-SM SM3.B: extend a `LockSet` with an optional pair.  `none`
 leaves it unchanged; `some (l, m)` does `insertOrMerge`. -/
-def lockSetExtendOpt (S : LockSet) (p : Option (LockId × AccessMode)) :
+def lockSetExtendOpt (S : LockSet) (p : Option (LockKey × AccessMode)) :
     LockSet :=
   match p with
   | none => S
@@ -437,7 +436,7 @@ def lockSetExtendOpt (S : LockSet) (p : Option (LockId × AccessMode)) :
 is identity, `some` is an `insertOrMerge` — covered by
 `mem_insertOrMerge_write_of_mem_write`). -/
 theorem mem_write_lockSetExtendOpt (S : LockSet)
-    (opt : Option (LockId × AccessMode)) (l' : LockId)
+    (opt : Option (LockKey × AccessMode)) (l' : LockKey)
     (hMem : (l', AccessMode.write) ∈ S.pairs) :
     (l', AccessMode.write) ∈ (lockSetExtendOpt S opt).pairs := by
   cases opt with
@@ -447,7 +446,7 @@ theorem mem_write_lockSetExtendOpt (S : LockSet)
 /-- WS-OD (`v0.35.4`): a key is present after an `insertOrMerge` of it, in
 whatever mode the merge settled on — the `containsKey` reading of
 `LockSet.mem_insertOrMerge_self`. -/
-theorem containsKey_insertOrMerge_self (S : LockSet) (l : LockId) (m : AccessMode) :
+theorem containsKey_insertOrMerge_self (S : LockSet) (l : LockKey) (m : AccessMode) :
     (S.insertOrMerge l m).containsKey l = true :=
   (LockSet.containsKey_iff l _).mpr (LockSet.mem_insertOrMerge_self S l m)
 
@@ -458,7 +457,7 @@ targets, leaving the others).  The mode-free companion of
 footprint's later member names a key an earlier one already holds
 (`LockSet.size_insertOrMerge_of_containsKey`). -/
 theorem containsKey_lockSetExtendOpt_of_containsKey (S : LockSet)
-    (opt : Option (LockId × AccessMode)) (l : LockId)
+    (opt : Option (LockKey × AccessMode)) (l : LockKey)
     (h : S.containsKey l = true) :
     (lockSetExtendOpt S opt).containsKey l = true := by
   cases opt with
@@ -819,7 +818,7 @@ so a push-less call is what the name says at full arity. -/
                  (cnodeLock cnodeRootObjId, .read),
                  (endpointLock endpointObjId, .write)])
               (receiverTid.map (fun rt => (tcbLock rt, .write))))
-            (none : Option (LockId × AccessMode)))
+            (none : Option (LockKey × AccessMode)))
           (replyId.map (fun rid => (replyLock rid, .write))) := rfl
 
 /-- WS-SM SM3.B.3: `lockSet` for `endpointReply` (syscall `.reply`).
@@ -1200,7 +1199,7 @@ the statement bounds. -/
                    (tcbLock replyTargetTid, .write),
                    (endpointLock endpointObjId, .write)])
                 (newSenderTid.map (fun st => (tcbLock st, .write))))
-              (none : Option (LockId × AccessMode)))
+              (none : Option (LockKey × AccessMode)))
             (donatedScHolderTid.map (fun ot => (tcbLock ot, .write))))
           (replyId.map (fun rid => (replyLock rid, .write))) := rfl
 
@@ -1394,13 +1393,13 @@ keep a destroyed object's predecessor and a downgrade behind it would report a
 chain that ended when the object did.
 
 Supplied by the caller rather than derived here, for the reason
-`lockSet_declassify` supplies its target lock: a `LockId` is `⟨kind, objId⟩` and
+`lockSet_declassify` supplies its target lock: a `LockKey` is `⟨kind, objId⟩` and
 the kind is a property of the state.  `none` is the unresolved shape and is
 definitionally the identity, so every pin taken before this member existed
 survives by `rfl`. -/
 def lockSet_lifecycleRetype (callerTid : ThreadId)
     (cnodeRootObjId : ObjId) (untypedObjId : ObjId)
-    (dstCnodeObjId : ObjId) (targetLock : Option LockId := none) : LockSet :=
+    (dstCnodeObjId : ObjId) (targetLock : Option LockKey := none) : LockSet :=
   lockSetExtendOpt
     (lockSetOfList
       [(tcbLock callerTid, .read),
@@ -1489,7 +1488,7 @@ def lockSet_vspaceUnifyInstruction (callerTid : ThreadId)
 `SystemState` field rather than on an object: it appends to
 `declassificationAuditLog`.  That field is no more a per-object lock subject
 than `tlbShootdown` is (SM7.B gave that one its own cross-domain
-`TlbShootdownLockId`), so the per-object footprint here covers only the two
+`TlbShootdownLockKey`), so the per-object footprint here covers only the two
 universal reads plus the state-level singleton.
 
 WS-SM SM9.C.8's `.declassifySignal` is the *data-carrying* declassification:
@@ -1523,7 +1522,7 @@ concurrently with one update lost.  Declaring the keys under their own locks is
 what makes the two sides meet on the same subject.
 
 The target's lock is supplied by the caller rather than derived here, because a
-`LockId` is `⟨kind, objId⟩` and the kind is a property of the *state* — the
+`LockKey` is `⟨kind, objId⟩` and the kind is a property of the *state* — the
 declassify capability names `.object targetId` of any kind.  `none` is the
 capless/unresolved shape and is definitionally the identity, so every pin taken
 before this member existed survives by `rfl`.
@@ -1533,9 +1532,8 @@ taint write at a CSpace root on this path.  The transition's other write is the
 audit-trail append — a `SystemState` field, not an object — and since PR #870
 round 7
 that write is declared through the **state-level lock** in write mode:
-`stateLevelLock` is SM3.A.10's `objStoreLock` singleton, whose acquire
-advances `SystemState.objStoreLock` directly, and it is the serialization
-subject for the SystemState-level auxiliary structures.  Without it, two
+`stateLevelLock` is the `.objStore` table key's singleton, and it is the
+serialization subject for the SystemState-level auxiliary structures.  Without it, two
 declassifications — or a declassification and an `.auditDrain` — from
 different callers had provably disjoint footprints while read-modify-writing
 the same trail, so SM3.C.9's fine locks would have admitted a lost append
@@ -1551,7 +1549,7 @@ leaves an audit entry naming an id that no longer resolves — a fidelity
 artefact, not an authority one, since the authority came from the
 capability. -/
 def lockSet_declassify (callerTid : ThreadId) (cnodeRootObjId : ObjId)
-    (targetLock : Option LockId := none) : LockSet :=
+    (targetLock : Option LockKey := none) : LockSet :=
   lockSetExtendOpt
     (lockSetOfList
       [(tcbLock callerTid, .write),
@@ -1719,7 +1717,7 @@ and the target half is stated at `some` because that is the shape the resolved
 dispatch builds — `none` is the unresolved footprint, which writes no
 origination because it names no target. -/
 theorem lockSet_declassify_originationKeys_write_mem
-    (callerTid : ThreadId) (cnodeRootObjId : ObjId) (targetLock : LockId) :
+    (callerTid : ThreadId) (cnodeRootObjId : ObjId) (targetLock : LockKey) :
     (tcbLock callerTid, AccessMode.write)
       ∈ (lockSet_declassify callerTid cnodeRootObjId (some targetLock)).pairs ∧
     (targetLock, AccessMode.write)
@@ -1750,7 +1748,7 @@ Stated at `some`, because `none` is the unresolved footprint that names no
 target and therefore clears nothing. -/
 theorem lockSet_lifecycleRetype_clearedKey_write_mem
     (callerTid : ThreadId) (cnodeRootObjId untypedObjId dstCnodeObjId : ObjId)
-    (targetLock : LockId) :
+    (targetLock : LockKey) :
     (targetLock, AccessMode.write)
       ∈ (lockSet_lifecycleRetype callerTid cnodeRootObjId untypedObjId dstCnodeObjId
           (some targetLock)).pairs := by
@@ -3618,7 +3616,7 @@ distinct from every per-object key). -/
 theorem lockSet_declassifySignal_extends_notificationSignal
     (callerTid : ThreadId) (cnodeRootObjId : ObjId) (notificationObjId : ObjId)
     (waiterTid : Option ThreadId) (boundEndpoint : Option ObjId)
-    (boundTcb : Option ThreadId) (l : LockId)
+    (boundTcb : Option ThreadId) (l : LockKey)
     (hMem : (l, AccessMode.write)
       ∈ (lockSet_notificationSignal callerTid cnodeRootObjId notificationObjId
           waiterTid boundEndpoint boundTcb).pairs) :
@@ -3822,7 +3820,7 @@ theorem serviceRegistry_footprints_share_serialization :
     ∀ (callerA : ThreadId) (rootA epA : ObjId)
       (callerB : ThreadId) (rootB : ObjId)
       (callerC : ThreadId) (rootC : ObjId)
-      (callerD : ThreadId) (rootD untypedD dstD : ObjId) (targetD : Option LockId),
+      (callerD : ThreadId) (rootD untypedD dstD : ObjId) (targetD : Option LockKey),
       (stateLevelLock, AccessMode.write)
         ∈ (lockSet_serviceRegister callerA rootA epA).pairs ∧
       (stateLevelLock, AccessMode.write)
@@ -4072,7 +4070,7 @@ def lockSet_tcbSetIPCBuffer (callerTid : ThreadId)
 `tcbLock targetTcbTid .write` in the base) and, for a SchedContext-bound target,
 migrates that SchedContext's pending replenishments to the new home core.  The
 replenishment migration relocates entries between the source/destination
-*replenish-queue* slots (SchedulerState fields, in SM5.A's separate `SchedLockId`
+*replenish-queue* slots (SchedulerState fields, in SM5.A's separate `LockKey`
 domain), but the bound SchedContext is included here as a `write` for the
 conservative kernel-object footprint — matching `lockSet_tcbSetPriority`'s shape.
 
@@ -4236,7 +4234,7 @@ topology, which cannot be statically pre-resolved from syscall args.
 Plan §4.1 acknowledges this case as "variable number of locks" and
 permits dynamic acquisition under the SM0.I hierarchy/ObjId total
 order discipline.  The plan's static lockSet contract
-(`Args → Finset (LockId × AccessMode)`) cannot include the chain
+(`Args → Finset (LockKey × AccessMode)`) cannot include the chain
 TCBs in its result; instead, we **expose the chain start point**
 as a separate hint via the `pipChainStart_<τ>` family below.
 
@@ -4268,7 +4266,7 @@ transition `<τ>` will invoke a PIP chain walk starting at
      `LockKind.tcb`-level locks (deadlock-freedom obligation).
    - Update `pipBoost` under the chain TCB's write lock, AND —
      WS-SM SM6.E (PR #831 review 3) — hold the member's home-core
-     `SchedLockId.runQueue` **write** lock for the same step: the
+     `LockKey.runQueue` **write** lock for the same step: the
      per-core boost (`updatePipBoostOnCore`, reached via
      `pipBoostWithWake` / `propagatePipChainCrossCore`) re-buckets
      the member's run queue on **its** home core, a
@@ -4412,7 +4410,7 @@ chain-start signal is exactly the captured server. -/
 
 /-- WS-SM SM3.B.4: per-transition set of permitted `LockKind`s.
 
-A transition's lock-set may only contain LockIds whose kind is in
+A transition's lock-set may only contain LockKeys whose kind is in
 this set.  The `lockSet_consistent` theorem (SM3.B.4) discharges
 this for every declared `lockSet_<τ>`.
 
@@ -4543,7 +4541,7 @@ def permittedKinds (sid : SyscallId) : List LockKind :=
   -- live arm takes `cap.target = .object targetId` and hands that id to
   -- `declassifyObjectFromCore`, which commits a `storeObject` at it; nothing
   -- narrows the object's *type*.  SM9.D.17 then gave `lockSet_declassify` a
-  -- `targetLock : Option LockId` for the origination key, and a `LockId` is
+  -- `targetLock : Option LockKey` for the origination key, and a `LockKey` is
   -- `⟨kind, objId⟩` with the kind read off the state — so a downgrade of an
   -- endpoint, a notification, a reply, a scheduling context, a VSpace root, an
   -- untyped region or a page frame contributes that kind to the resolved
@@ -4639,7 +4637,7 @@ def permittedKinds (sid : SyscallId) : List LockKind :=
   -- WS-SM SM5.H.4: `setThreadCpuAffinityOp` writes the target TCB's `cpuAffinity`
   -- and, for a SchedContext-bound target, migrates that SC's pending replenishments
   -- (so the bound SchedContext object is in the conservative kernel-object footprint;
-  -- the run-queue / replenish-queue slots are SM5.A's separate `SchedLockId` domain).
+  -- the run-queue / replenish-queue slots are SM5.A's separate `LockKey` domain).
   | .tcbSetAffinity =>
       [.tcb, .cnode, .schedContext, .endpoint, .notification]
   -- PR #887 review: `setThreadFaultHandlerOp` writes the target TCB's
@@ -4704,18 +4702,21 @@ theorem declaresStaticLockFootprint_false_iff (sid : SyscallId) :
 The honest reading of the widened `permittedKinds .declassify`, as a checked
 value rather than as a comment: the arm hands `cap.target = .object targetId`
 to a transition that commits a `storeObject` at it, so the target's kind is
-whatever the state says and nothing narrows it. -/
-theorem permittedKinds_declassify_admits_every_kind (k : LockKind) :
+whatever the state says and nothing narrows it — any *object* kind
+(`LockKind.isObjectKind`; the two scheduler-queue kinds name no object). -/
+theorem permittedKinds_declassify_admits_every_kind (k : LockKind)
+    (hObj : k.isObjectKind = true) :
     k ∈ permittedKinds .declassify := by
-  cases k <;> decide
+  cases k <;> first | decide | exact absurd hObj (by decide)
 
 /-- WS-SM SM3.B.4 (PR #873 round 7): **and the retype's inventory admits any
 re-purposed target**, for the same reason one theorem up — the arm reads
 `args.targetObj` from the decoded arguments and re-purposes an object whose kind
 the state, not the syscall, decides. -/
-theorem permittedKinds_lifecycleRetype_admits_every_kind (k : LockKind) :
+theorem permittedKinds_lifecycleRetype_admits_every_kind (k : LockKind)
+    (hObj : k.isObjectKind = true) :
     k ∈ permittedKinds .lifecycleRetype := by
-  cases k <;> decide
+  cases k <;> first | decide | exact absurd hObj (by decide)
 
 /-- WS-SM SM3.B.4 helper: `Decidable` `kind ∈ permittedKinds τ`. -/
 instance (k : LockKind) (sid : SyscallId) :
@@ -4738,12 +4739,12 @@ the statement is existential in the mode: what a caller needs is that the *key*
 is declared, and the mode a merge produces is at least the one it put in.  Needed
 by the CSpace-walk footprint, which builds its set from a walked list and must
 know every visited CNode is named. -/
-theorem lockSetOfList_mem_of_mem (input : List (LockId × AccessMode))
-    (l : LockId) (m : AccessMode) (hMem : (l, m) ∈ input) :
+theorem lockSetOfList_mem_of_mem (input : List (LockKey × AccessMode))
+    (l : LockKey) (m : AccessMode) (hMem : (l, m) ∈ input) :
     ∃ m', (l, m') ∈ (lockSetOfList input).pairs := by
   -- Strengthened over an arbitrary accumulator: once a key is in the
   -- accumulator it stays, and the fold reaches every input element.
-  suffices h : ∀ (suffix : List (LockId × AccessMode)) (acc : LockSet),
+  suffices h : ∀ (suffix : List (LockKey × AccessMode)) (acc : LockSet),
       ((l, m) ∈ suffix ∨ (∃ m', (l, m') ∈ acc.pairs)) →
       ∃ m', (l, m') ∈ (suffix.foldl
         (fun a p => a.insertOrMerge p.fst p.snd) acc).pairs by
@@ -4777,8 +4778,8 @@ This is the workhorse that drives `lockSet_consistent`: every
 `lockSetExtendOpt` extensions), and every element of the
 resulting `.pairs` traces back to either an input literal pair or
 an `Option`-extended pair. -/
-theorem lockSetOfList_mem_inv (input : List (LockId × AccessMode))
-    (p : LockId × AccessMode)
+theorem lockSetOfList_mem_inv (input : List (LockKey × AccessMode))
+    (p : LockKey × AccessMode)
     (hMem : p ∈ (lockSetOfList input).pairs) :
     ∃ p' ∈ input, p.fst = p'.fst := by
   -- Strengthen the induction: starting from any initial accumulator, every
@@ -4791,8 +4792,8 @@ theorem lockSetOfList_mem_inv (input : List (LockId × AccessMode))
     exact absurd hOld (by intro h; cases h)
 where
   lockSetOfList_mem_inv_aux :
-      ∀ (suffix : List (LockId × AccessMode)) (acc : LockSet)
-        (p : LockId × AccessMode),
+      ∀ (suffix : List (LockKey × AccessMode)) (acc : LockSet)
+        (p : LockKey × AccessMode),
         p ∈ (suffix.foldl (init := acc)
           (fun a q => a.insertOrMerge q.fst q.snd)).pairs →
         (∃ p' ∈ suffix, p.fst = p'.fst) ∨ p ∈ acc.pairs
@@ -4824,8 +4825,8 @@ where
 
 /-- WS-SM SM3.B.4 helper: `lockSetExtendOpt S (some p)` membership
 trace-back. -/
-theorem lockSetExtendOpt_mem_inv (S : LockSet) (p : Option (LockId × AccessMode))
-    (q : LockId × AccessMode)
+theorem lockSetExtendOpt_mem_inv (S : LockSet) (p : Option (LockKey × AccessMode))
+    (q : LockKey × AccessMode)
     (hMem : q ∈ (lockSetExtendOpt S p).pairs) :
     (∃ pp, p = some pp ∧ q.fst = pp.fst) ∨ q ∈ S.pairs := by
   cases p with
@@ -4851,7 +4852,7 @@ theorem lockSetExtendOpt_mem_inv (S : LockSet) (p : Option (LockId × AccessMode
 satisfies the kind-in-permitted invariant if both the base list
 and every extension pair satisfy it. -/
 theorem lockSet_consistent_of_extended_base
-    (base : List (LockId × AccessMode))
+    (base : List (LockKey × AccessMode))
     (permitted : List LockKind)
     (hBase : ∀ p ∈ base, p.fst.kind ∈ permitted) :
     ∀ p ∈ (lockSetOfList base).pairs, p.fst.kind ∈ permitted := by
@@ -4865,7 +4866,7 @@ theorem lockSet_consistent_of_extended_base
 `lockSetExtendOpt` with a kind-permitted optional pair preserves
 the kind-in-permitted invariant. -/
 theorem lockSet_consistent_extendOpt
-    (S : LockSet) (opt : Option (LockId × AccessMode))
+    (S : LockSet) (opt : Option (LockKey × AccessMode))
     (permitted : List LockKind)
     (hS : ∀ p ∈ S.pairs, p.fst.kind ∈ permitted)
     (hOpt : ∀ pp, opt = some pp → pp.fst.kind ∈ permitted) :
@@ -4879,8 +4880,8 @@ theorem lockSet_consistent_extendOpt
 /-- WS-SM SM3.B.4 builder: combine `lockSet_consistent_of_extended_base`
 with one `lockSet_consistent_extendOpt`. -/
 theorem lockSet_consistent_base_plus_opt
-    (base : List (LockId × AccessMode))
-    (opt : Option (LockId × AccessMode))
+    (base : List (LockKey × AccessMode))
+    (opt : Option (LockKey × AccessMode))
     (permitted : List LockKind)
     (hBase : ∀ p ∈ base, p.fst.kind ∈ permitted)
     (hOpt : ∀ pp, opt = some pp → pp.fst.kind ∈ permitted) :
@@ -4891,8 +4892,8 @@ theorem lockSet_consistent_base_plus_opt
 
 /-- WS-SM SM3.B.4 builder: combine with two optional extensions. -/
 theorem lockSet_consistent_base_plus_two_opts
-    (base : List (LockId × AccessMode))
-    (opt₁ opt₂ : Option (LockId × AccessMode))
+    (base : List (LockKey × AccessMode))
+    (opt₁ opt₂ : Option (LockKey × AccessMode))
     (permitted : List LockKind)
     (hBase : ∀ p ∈ base, p.fst.kind ∈ permitted)
     (hOpt₁ : ∀ pp, opt₁ = some pp → pp.fst.kind ∈ permitted)
@@ -4907,8 +4908,8 @@ theorem lockSet_consistent_base_plus_two_opts
 extensions.  Used by `lockSet_consistent_replyRecv` after audit-pass-3
 expanded `lockSet_replyRecv` with the `donatedScId` arg. -/
 theorem lockSet_consistent_base_plus_three_opts
-    (base : List (LockId × AccessMode))
-    (opt₁ opt₂ opt₃ : Option (LockId × AccessMode))
+    (base : List (LockKey × AccessMode))
+    (opt₁ opt₂ opt₃ : Option (LockKey × AccessMode))
     (permitted : List LockKind)
     (hBase : ∀ p ∈ base, p.fst.kind ∈ permitted)
     (hOpt₁ : ∀ pp, opt₁ = some pp → pp.fst.kind ∈ permitted)
@@ -4927,8 +4928,8 @@ lemma when audit-pass-3 gave it the `bindingScId` and
 `donatedScHolderTid` args (that footprint is retired at WS-OD
 `v0.35.4`; the builder stays for the other four-optional footprints). -/
 theorem lockSet_consistent_base_plus_four_opts
-    (base : List (LockId × AccessMode))
-    (opt₁ opt₂ opt₃ opt₄ : Option (LockId × AccessMode))
+    (base : List (LockKey × AccessMode))
+    (opt₁ opt₂ opt₃ opt₄ : Option (LockKey × AccessMode))
     (permitted : List LockKind)
     (hBase : ∀ p ∈ base, p.fst.kind ∈ permitted)
     (hOpt₁ : ∀ pp, opt₁ = some pp → pp.fst.kind ∈ permitted)
@@ -4946,8 +4947,8 @@ theorem lockSet_consistent_base_plus_four_opts
 the parametric suspend footprint's consistency lemma when SM6.E gave it the
 `consumedReplyId` arg (the reply-link teardown write lock). -/
 theorem lockSet_consistent_base_plus_five_opts
-    (base : List (LockId × AccessMode))
-    (opt₁ opt₂ opt₃ opt₄ opt₅ : Option (LockId × AccessMode))
+    (base : List (LockKey × AccessMode))
+    (opt₁ opt₂ opt₃ opt₄ opt₅ : Option (LockKey × AccessMode))
     (permitted : List LockKind)
     (hBase : ∀ p ∈ base, p.fst.kind ∈ permitted)
     (hOpt₁ : ∀ pp, opt₁ = some pp → pp.fst.kind ∈ permitted)
@@ -4967,8 +4968,8 @@ suspend footprint reached once the donation cancellation's `scThreadIndex` write
 declared the state-level lock, and the arity `lockSet_cancelDonation` has since
 WS-OD `v0.35.4`. -/
 theorem lockSet_consistent_base_plus_six_opts
-    (base : List (LockId × AccessMode))
-    (opt₁ opt₂ opt₃ opt₄ opt₅ opt₆ : Option (LockId × AccessMode))
+    (base : List (LockKey × AccessMode))
+    (opt₁ opt₂ opt₃ opt₄ opt₅ opt₆ : Option (LockKey × AccessMode))
     (permitted : List LockKind)
     (hBase : ∀ p ∈ base, p.fst.kind ∈ permitted)
     (hOpt₁ : ∀ pp, opt₁ = some pp → pp.fst.kind ∈ permitted)
@@ -4989,8 +4990,8 @@ theorem lockSet_consistent_base_plus_six_opts
 reaches once it declares the recorded server's TCB and the second SchedContext
 hand-off. -/
 theorem lockSet_consistent_base_plus_seven_opts
-    (base : List (LockId × AccessMode))
-    (opt₁ opt₂ opt₃ opt₄ opt₅ opt₆ opt₇ : Option (LockId × AccessMode))
+    (base : List (LockKey × AccessMode))
+    (opt₁ opt₂ opt₃ opt₄ opt₅ opt₆ opt₇ : Option (LockKey × AccessMode))
     (permitted : List LockKind)
     (hBase : ∀ p ∈ base, p.fst.kind ∈ permitted)
     (hOpt₁ : ∀ pp, opt₁ = some pp → pp.fst.kind ∈ permitted)
@@ -5012,8 +5013,8 @@ theorem lockSet_consistent_base_plus_seven_opts
 state-resolved cancellation footprint reaches once the reclaim's abort prefix
 declares the holder's endpoint and its two queue neighbours. -/
 theorem lockSet_consistent_base_plus_eight_opts
-    (base : List (LockId × AccessMode))
-    (opt₁ opt₂ opt₃ opt₄ opt₅ opt₆ opt₇ opt₈ : Option (LockId × AccessMode))
+    (base : List (LockKey × AccessMode))
+    (opt₁ opt₂ opt₃ opt₄ opt₅ opt₆ opt₇ opt₈ : Option (LockKey × AccessMode))
     (permitted : List LockKind)
     (hBase : ∀ p ∈ base, p.fst.kind ∈ permitted)
     (hOpt₁ : ∀ pp, opt₁ = some pp → pp.fst.kind ∈ permitted)
@@ -5039,8 +5040,8 @@ theorem lockSet_consistent_base_plus_eight_opts
 cancellation footprint reaches once the donation hand-back's `scThreadIndex`
 write declares the state-level lock. -/
 theorem lockSet_consistent_base_plus_nine_opts
-    (base : List (LockId × AccessMode))
-    (opt₁ opt₂ opt₃ opt₄ opt₅ opt₆ opt₇ opt₈ opt₉ : Option (LockId × AccessMode))
+    (base : List (LockKey × AccessMode))
+    (opt₁ opt₂ opt₃ opt₄ opt₅ opt₆ opt₇ opt₈ opt₉ : Option (LockKey × AccessMode))
     (permitted : List LockKind)
     (hBase : ∀ p ∈ base, p.fst.kind ∈ permitted)
     (hOpt₁ : ∀ pp, opt₁ = some pp → pp.fst.kind ∈ permitted)
@@ -5064,8 +5065,8 @@ theorem lockSet_consistent_base_plus_nine_opts
 /-- WS-OD OD3.7: ten optionals — the cancellation footprint's arity once the two
 below-head reads join it. -/
 theorem lockSet_consistent_base_plus_ten_opts
-    (base : List (LockId × AccessMode))
-    (opt₁ opt₂ opt₃ opt₄ opt₅ opt₆ opt₇ opt₈ opt₉ opt₁₀ : Option (LockId × AccessMode))
+    (base : List (LockKey × AccessMode))
+    (opt₁ opt₂ opt₃ opt₄ opt₅ opt₆ opt₇ opt₈ opt₉ opt₁₀ : Option (LockKey × AccessMode))
     (permitted : List LockKind)
     (hBase : ∀ p ∈ base, p.fst.kind ∈ permitted)
     (hOpt₁ : ∀ pp, opt₁ = some pp → pp.fst.kind ∈ permitted)
@@ -5090,8 +5091,8 @@ theorem lockSet_consistent_base_plus_ten_opts
 /-- WS-OD OD3.7: eleven optionals — the arity `lockSet_cancelIpcBlocking` reaches
 once the reclaim's two below-head reads are declared. -/
 theorem lockSet_consistent_base_plus_eleven_opts
-    (base : List (LockId × AccessMode))
-    (opt₁ opt₂ opt₃ opt₄ opt₅ opt₆ opt₇ opt₈ opt₉ opt₁₀ opt₁₁ : Option (LockId × AccessMode))
+    (base : List (LockKey × AccessMode))
+    (opt₁ opt₂ opt₃ opt₄ opt₅ opt₆ opt₇ opt₈ opt₉ opt₁₀ opt₁₁ : Option (LockKey × AccessMode))
     (permitted : List LockKind)
     (hBase : ∀ p ∈ base, p.fst.kind ∈ permitted)
     (hOpt₁ : ∀ pp, opt₁ = some pp → pp.fst.kind ∈ permitted)
@@ -5117,9 +5118,9 @@ theorem lockSet_consistent_base_plus_eleven_opts
 /-- WS-OD (`v0.35.4`): twelve optionals — `lockSet_replyRecv`'s arity once the
 re-donation's old head and the returned context's head are declared. -/
 theorem lockSet_consistent_base_plus_twelve_opts
-    (base : List (LockId × AccessMode))
+    (base : List (LockKey × AccessMode))
     (opt₁ opt₂ opt₃ opt₄ opt₅ opt₆ opt₇ opt₈ opt₉ opt₁₀ opt₁₁ opt₁₂ :
-      Option (LockId × AccessMode))
+      Option (LockKey × AccessMode))
     (permitted : List LockKind)
     (hBase : ∀ p ∈ base, p.fst.kind ∈ permitted)
     (hOpt₁ : ∀ pp, opt₁ = some pp → pp.fst.kind ∈ permitted)
@@ -5149,9 +5150,9 @@ theorem lockSet_consistent_base_plus_twelve_opts
 once the reclaim's head, the detached frame above the cancelled one and the
 below-head write are declared. -/
 theorem lockSet_consistent_base_plus_thirteen_opts
-    (base : List (LockId × AccessMode))
+    (base : List (LockKey × AccessMode))
     (opt₁ opt₂ opt₃ opt₄ opt₅ opt₆ opt₇ opt₈ opt₉ opt₁₀ opt₁₁ opt₁₂ opt₁₃ :
-      Option (LockId × AccessMode))
+      Option (LockKey × AccessMode))
     (permitted : List LockKind)
     (hBase : ∀ p ∈ base, p.fst.kind ∈ permitted)
     (hOpt₁ : ∀ pp, opt₁ = some pp → pp.fst.kind ∈ permitted)
@@ -5183,9 +5184,9 @@ theorem lockSet_consistent_base_plus_thirteen_opts
 predecessor, exactly as the family already was.  `lockSet_replyRecv` reaches
 seventeen once the invoking receiver's own pre-receive return is declared. -/
 theorem lockSet_consistent_base_plus_fourteen_opts
-    (base : List (LockId × AccessMode))
+    (base : List (LockKey × AccessMode))
     (opt₁ opt₂ opt₃ opt₄ opt₅ opt₆ opt₇ opt₈ opt₉ opt₁₀ opt₁₁ opt₁₂ opt₁₃ opt₁₄ :
-      Option (LockId × AccessMode))
+      Option (LockKey × AccessMode))
     (permitted : List LockKind)
     (hBase : ∀ p ∈ base, p.fst.kind ∈ permitted)
     (hOpt₁ : ∀ pp, opt₁ = some pp → pp.fst.kind ∈ permitted)
@@ -5212,9 +5213,9 @@ theorem lockSet_consistent_base_plus_fourteen_opts
 predecessor, exactly as the family already was.  `lockSet_replyRecv` reaches
 seventeen once the invoking receiver's own pre-receive return is declared. -/
 theorem lockSet_consistent_base_plus_fifteen_opts
-    (base : List (LockId × AccessMode))
+    (base : List (LockKey × AccessMode))
     (opt₁ opt₂ opt₃ opt₄ opt₅ opt₆ opt₇ opt₈ opt₉ opt₁₀ opt₁₁ opt₁₂ opt₁₃ opt₁₄ opt₁₅ :
-      Option (LockId × AccessMode))
+      Option (LockKey × AccessMode))
     (permitted : List LockKind)
     (hBase : ∀ p ∈ base, p.fst.kind ∈ permitted)
     (hOpt₁ : ∀ pp, opt₁ = some pp → pp.fst.kind ∈ permitted)
@@ -5242,9 +5243,9 @@ theorem lockSet_consistent_base_plus_fifteen_opts
 predecessor, exactly as the family already was.  `lockSet_replyRecv` reaches
 seventeen once the invoking receiver's own pre-receive return is declared. -/
 theorem lockSet_consistent_base_plus_sixteen_opts
-    (base : List (LockId × AccessMode))
+    (base : List (LockKey × AccessMode))
     (opt₁ opt₂ opt₃ opt₄ opt₅ opt₆ opt₇ opt₈ opt₉ opt₁₀ opt₁₁ opt₁₂ opt₁₃ opt₁₄ opt₁₅ opt₁₆ :
-      Option (LockId × AccessMode))
+      Option (LockKey × AccessMode))
     (permitted : List LockKind)
     (hBase : ∀ p ∈ base, p.fst.kind ∈ permitted)
     (hOpt₁ : ∀ pp, opt₁ = some pp → pp.fst.kind ∈ permitted)
@@ -5273,9 +5274,9 @@ theorem lockSet_consistent_base_plus_sixteen_opts
 predecessor, exactly as the family already was.  `lockSet_replyRecv` reaches
 seventeen once the invoking receiver's own pre-receive return is declared. -/
 theorem lockSet_consistent_base_plus_seventeen_opts
-    (base : List (LockId × AccessMode))
+    (base : List (LockKey × AccessMode))
     (opt₁ opt₂ opt₃ opt₄ opt₅ opt₆ opt₇ opt₈ opt₉ opt₁₀ opt₁₁ opt₁₂ opt₁₃ opt₁₄ opt₁₅ opt₁₆ opt₁₇ :
-      Option (LockId × AccessMode))
+      Option (LockKey × AccessMode))
     (permitted : List LockKind)
     (hBase : ∀ p ∈ base, p.fst.kind ∈ permitted)
     (hOpt₁ : ∀ pp, opt₁ = some pp → pp.fst.kind ∈ permitted)
@@ -5305,9 +5306,9 @@ theorem lockSet_consistent_base_plus_seventeen_opts
 the predecessor, exactly as the family already was.  `lockSet_replyRecv` reaches
 eighteen once the frame above the answered caller's reply object is declared. -/
 theorem lockSet_consistent_base_plus_eighteen_opts
-    (base : List (LockId × AccessMode))
+    (base : List (LockKey × AccessMode))
     (opt₁ opt₂ opt₃ opt₄ opt₅ opt₆ opt₇ opt₈ opt₉ opt₁₀ opt₁₁ opt₁₂ opt₁₃ opt₁₄ opt₁₅ opt₁₆ opt₁₇
-      opt₁₈ : Option (LockId × AccessMode))
+      opt₁₈ : Option (LockKey × AccessMode))
     (permitted : List LockKind)
     (hBase : ∀ p ∈ base, p.fst.kind ∈ permitted)
     (hOpt₁ : ∀ pp, opt₁ = some pp → pp.fst.kind ∈ permitted)
@@ -5338,8 +5339,8 @@ theorem lockSet_consistent_base_plus_eighteen_opts
 the removal's splice declares the frame **below** the answered reply beside the
 frame above it. -/
 theorem lockSet_consistent_base_plus_nineteen_opts
-    (base : List (LockId × AccessMode))
-    (opt₁ opt₂ opt₃ opt₄ opt₅ opt₆ opt₇ opt₈ opt₉ opt₁₀ opt₁₁ opt₁₂ opt₁₃ opt₁₄ opt₁₅ opt₁₆ opt₁₇ opt₁₈ opt₁₉ : Option (LockId × AccessMode))
+    (base : List (LockKey × AccessMode))
+    (opt₁ opt₂ opt₃ opt₄ opt₅ opt₆ opt₇ opt₈ opt₉ opt₁₀ opt₁₁ opt₁₂ opt₁₃ opt₁₄ opt₁₅ opt₁₆ opt₁₇ opt₁₈ opt₁₉ : Option (LockKey × AccessMode))
     (permitted : List LockKind)
     (hBase : ∀ p ∈ base, p.fst.kind ∈ permitted)
     (hOpt₁ : ∀ pp, opt₁ = some pp → pp.fst.kind ∈ permitted)
@@ -5370,8 +5371,8 @@ theorem lockSet_consistent_base_plus_nineteen_opts
 /-- **WS-HP HP10.6**: twenty, the arity `.replyRecv` reaches once the origin the
 reply leg's bottom-of-stack pop redirects to is declared. -/
 theorem lockSet_consistent_base_plus_twenty_opts
-    (base : List (LockId × AccessMode))
-    (opt₁ opt₂ opt₃ opt₄ opt₅ opt₆ opt₇ opt₈ opt₉ opt₁₀ opt₁₁ opt₁₂ opt₁₃ opt₁₄ opt₁₅ opt₁₆ opt₁₇ opt₁₈ opt₁₉ opt₂₀ : Option (LockId × AccessMode))
+    (base : List (LockKey × AccessMode))
+    (opt₁ opt₂ opt₃ opt₄ opt₅ opt₆ opt₇ opt₈ opt₉ opt₁₀ opt₁₁ opt₁₂ opt₁₃ opt₁₄ opt₁₅ opt₁₆ opt₁₇ opt₁₈ opt₁₉ opt₂₀ : Option (LockKey × AccessMode))
     (permitted : List LockKind)
     (hBase : ∀ p ∈ base, p.fst.kind ∈ permitted)
     (hOpt₁ : ∀ pp, opt₁ = some pp → pp.fst.kind ∈ permitted)
@@ -6073,7 +6074,12 @@ PR #873 round 7: stated over **every** `targetLock`, not only the default `none`
 for the same reason: the resolved footprint a fine-lock consumer acquires carries
 the re-purposed target, whose kind the state decides. -/
 theorem lockSet_consistent_lifecycleRetype (callerTid : ThreadId)
-    (cnRoot untypedId dstCn : ObjId) (targetLock : Option LockId := none) :
+    (cnRoot untypedId dstCn : ObjId) (targetLock : Option LockKey := none)
+    -- **WS-LS LS1.2**: the re-purposed target is an object, so its key has an
+    -- object kind; the two scheduler-queue kinds are on the ladder but name no
+    -- object.  Discharged by `cases` at the default `none`.
+    (hTarget : ∀ k, targetLock = some k → k.kind.isObjectKind = true := by
+      intro k h; cases h) :
     ∀ p ∈ (lockSet_lifecycleRetype callerTid cnRoot untypedId dstCn targetLock).pairs,
       p.fst.kind ∈ permittedKinds .lifecycleRetype :=
   lockSet_consistent_base_plus_opt _ _ _
@@ -6089,8 +6095,9 @@ theorem lockSet_consistent_lifecycleRetype (callerTid : ThreadId)
         rcases List.mem_cons.mp hMem with h | hMem
         · rw [h]; simp; decide
         exact absurd hMem (by intro h; cases h))
-    (by intro pp _
-        exact permittedKinds_lifecycleRetype_admits_every_kind pp.fst.kind)
+    (by intro pp hpp
+        obtain ⟨k, hk, rfl⟩ := Option.map_eq_some_iff.mp hpp
+        exact permittedKinds_lifecycleRetype_admits_every_kind k.kind (hTarget k hk))
 
 /-- **WS-BP BP7.1** — WS-SM SM3.B.4 for `.untypedRetype`. -/
 theorem lockSet_consistent_untypedRetype (callerTid : ThreadId)
@@ -6249,7 +6256,11 @@ theorem lockSet_consistent_serviceQuery (callerTid : ThreadId)
 
 /-- WS-SM SM3.B.4 for `.declassify` (SM8.C.9). -/
 theorem lockSet_consistent_declassify (callerTid : ThreadId)
-    (cnRoot : ObjId) (targetLock : Option LockId := none) :
+    (cnRoot : ObjId) (targetLock : Option LockKey := none)
+    -- **WS-LS LS1.2**: the declassified target is an object (see
+    -- `lockSet_consistent_lifecycleRetype`).
+    (hTarget : ∀ k, targetLock = some k → k.kind.isObjectKind = true := by
+      intro k h; cases h) :
     ∀ p ∈ (lockSet_declassify callerTid cnRoot targetLock).pairs,
       p.fst.kind ∈ permittedKinds .declassify :=
   -- PR #873 round 6: stated over **every** `targetLock`, not only the default
@@ -6267,8 +6278,9 @@ theorem lockSet_consistent_declassify (callerTid : ThreadId)
         rcases List.mem_cons.mp hMem with h | hMem
         · rw [h]; simp; decide
         exact absurd hMem (by intro h; cases h))
-    (by intro pp _
-        exact permittedKinds_declassify_admits_every_kind pp.fst.kind)
+    (by intro pp hpp
+        obtain ⟨k, hk, rfl⟩ := Option.map_eq_some_iff.mp hpp
+        exact permittedKinds_declassify_admits_every_kind k.kind (hTarget k hk))
 
 /-- WS-SM SM3.B.4 (PR #873 round 6): **and the members the transition itself
 takes are still exactly three.**

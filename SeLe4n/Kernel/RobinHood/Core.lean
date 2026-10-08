@@ -218,6 +218,77 @@ def RHTable.get? [BEq α] [Hashable α] [LawfulBEq α] (t : RHTable α β) (k : 
   let start := idealIndex k t.capacity t.hCapPos
   getLoop t.capacity start k 0 t.slots t.capacity t.hSlotsLen t.hCapPos
 
+/-- The lookup loop of `getLoop`, returning the slot that holds `k` as the
+table stores it rather than a fresh `some` around its value.  Compiled, the
+result is the array's own cell under a reference-count increment, so a lookup
+allocates nothing; `RHTable.get?` is compiled through it (`get?_eq_getByEntry`).
+Proofs reason about `getLoop`. -/
+def getEntryLoop [BEq α] [Hashable α]
+    (fuel : Nat) (idx : Nat) (k : α) (d : Nat)
+    (slots : Array (Option (RHEntry α β)))
+    (capacity : Nat) (hLen : slots.size = capacity)
+    (hCapPos : 0 < capacity)
+    : Option (RHEntry α β) :=
+  match fuel with
+  | 0 => none
+  | fuel' + 1 =>
+    let i := idx % capacity
+    have hIdx : i < slots.size := hLen ▸ Nat.mod_lt _ hCapPos
+    match slots[i] with
+    | none => none
+    | some e =>
+      if e.key == k then slots[i]
+      else if e.dist < d then none
+      else getEntryLoop fuel' (i + 1) k (d + 1) slots capacity hLen hCapPos
+
+theorem getLoop_eq_getEntryLoop [BEq α] [Hashable α]
+    (fuel : Nat) (idx : Nat) (k : α) (d : Nat)
+    (slots : Array (Option (RHEntry α β)))
+    (capacity : Nat) (hLen : slots.size = capacity)
+    (hCapPos : 0 < capacity) :
+    getLoop fuel idx k d slots capacity hLen hCapPos =
+      (getEntryLoop fuel idx k d slots capacity hLen hCapPos).map RHEntry.value := by
+  induction fuel generalizing idx d with
+  | zero => rfl
+  | succ fuel ih =>
+    simp only [getLoop, getEntryLoop]
+    split <;> rename_i h
+    · simp
+    · rw [h]
+      split
+      · rfl
+      · split
+        · rfl
+        · exact ih ..
+
+/-- The stored entry for `k`, if any: `getEntryLoop` from `k`'s ideal slot. -/
+def RHTable.getEntry? [BEq α] [Hashable α] (t : RHTable α β) (k : α) :
+    Option (RHEntry α β) :=
+  getEntryLoop t.capacity (idealIndex k t.capacity t.hCapPos) k 0 t.slots
+    t.capacity t.hSlotsLen t.hCapPos
+
+theorem RHTable.get?_eq_getEntry?_map [BEq α] [Hashable α] [LawfulBEq α]
+    (t : RHTable α β) (k : α) :
+    t.get? k = (t.getEntry? k).map RHEntry.value := by
+  simp only [RHTable.get?, RHTable.getEntry?, getLoop_eq_getEntryLoop]
+
+/-- `RHTable.get?` as the kernel runs it: the slot lookup, then its value.
+Inlined, the `some` it builds meets the caller's `match` and is never
+allocated. -/
+@[inline] def RHTable.getByEntry [BEq α] [Hashable α] [LawfulBEq α]
+    (t : RHTable α β) (k : α) : Option β :=
+  match getEntryLoop t.capacity (idealIndex k t.capacity t.hCapPos) k 0 t.slots
+      t.capacity t.hSlotsLen t.hCapPos with
+  | some e => some e.value
+  | none => none
+
+@[csimp] theorem RHTable.get?_eq_getByEntry :
+    @RHTable.get? = @RHTable.getByEntry := by
+  funext α β _ _ _ t k
+  simp only [RHTable.get?, RHTable.getByEntry, getLoop_eq_getEntryLoop]
+  cases getEntryLoop t.capacity (idealIndex k t.capacity t.hCapPos) k 0 t.slots
+      t.capacity t.hSlotsLen t.hCapPos <;> rfl
+
 /-- N1-E3: Membership test. -/
 def RHTable.contains [BEq α] [Hashable α] [LawfulBEq α] (t : RHTable α β) (k : α) : Bool :=
   (t.get? k).isSome

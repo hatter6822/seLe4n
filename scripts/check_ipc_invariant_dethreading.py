@@ -250,7 +250,7 @@ _MACHINERY = (
 # *fell* fails too, so an entry cannot rot into a standing exemption while
 # the file lives.  A pinned file absent from the tree is inert: deletion
 # removes the minting surface, and file existence is other gates' concern.
-# The reviewed occupants: thirteen theorem-inventory DSLs (a term-category
+# The reviewed occupants: eleven theorem-inventory DSLs (a term-category
 # `syntax` + `macro_rules` pair each), the manifest's two `census_entry`
 # term macros and its two `run_cmd` propositionality censuses, one local
 # tactic macro, one per-core NI name macro pair, and three `initialize`
@@ -265,8 +265,6 @@ MACHINERY_PINS = {
     ("SeLe4n/Kernel/Concurrency/Locks/LockSetInventory.lean", "syntax"): 1,
     ("SeLe4n/Kernel/Concurrency/Locks/SerializabilityInventory.lean", "macro_rules"): 1,
     ("SeLe4n/Kernel/Concurrency/Locks/SerializabilityInventory.lean", "syntax"): 1,
-    ("SeLe4n/Kernel/Concurrency/Locks/WithLockSetInventory.lean", "macro_rules"): 1,
-    ("SeLe4n/Kernel/Concurrency/Locks/WithLockSetInventory.lean", "syntax"): 1,
     ("SeLe4n/Kernel/Concurrency/PhaseTheoremManifest.lean", "macro"): 2,
     ("SeLe4n/Kernel/Concurrency/PhaseTheoremManifest.lean", "run_cmd"): 2,
     ("SeLe4n/Kernel/InformationFlow/NonInterferencePerCore.lean", "macro_rules"): 1,
@@ -287,8 +285,6 @@ MACHINERY_PINS = {
     ("SeLe4n/Kernel/Scheduler/Operations/PerCoreWcrtInventory.lean", "syntax"): 1,
     ("SeLe4n/Kernel/Scheduler/PriorityInheritance/PerCoreInventory.lean", "macro_rules"): 1,
     ("SeLe4n/Kernel/Scheduler/PriorityInheritance/PerCoreInventory.lean", "syntax"): 1,
-    ("SeLe4n/Model/Object/PerObjectLockInventory.lean", "macro_rules"): 1,
-    ("SeLe4n/Model/Object/PerObjectLockInventory.lean", "syntax"): 1,
     ("SeLe4n/Platform/FFI.lean", "initialize"): 2,
     # PR #889 review round 17: the boot entry's contract, decided over the
     # elaborated environment.  One `run_cmd`; it mints no declaration.
@@ -341,7 +337,7 @@ MACHINERY_PINS = {
     ("SeLe4n/Testing/ReplyStackWriteCensus.lean", "run_cmd"): 1,
     # WS-RR RR8.12 Cut C5: the scheduler-footprint census, decided over the
     # elaborated environment.  TWO `run_cmd`s and no minting: the census itself
-    # (it derives the `SchedLockId` footprint family, reduces each member
+    # (it derives the `LockKey` footprint family, reduces each member
     # towards `schedFootprintOfCores` and reconciles consumption against the
     # exemption register in both directions), and its self-test, which decides
     # both branches of the shape check, the type half of the family test, and

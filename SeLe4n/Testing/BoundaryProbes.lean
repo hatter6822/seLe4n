@@ -92,4 +92,56 @@ def fpContextRoundTrip (c : SeLe4n.FpContext) : SeLe4n.FpContext :=
 def fpContextOfSeed (seed : UInt64) : SeLe4n.FpContext :=
   SeLe4n.FpContext.ofWords fun i => seed + i.toUInt64 * 0x0101
 
+/-! ## The two-trap hazard: the save path over a context the HAL reuses
+
+The HAL writes each trap's words into a per-core context object; whether the
+kernel's save of trap 1 survives trap 2 being written into **the same object**
+is a property of the compiled save path, so it is executed here: the Rust side
+builds trap 1's object (`trapContextOfSeed`), saves it into a probe state's
+current thread (`saveProbeCapturedSyscallFrame`), overwrites the object's words
+with trap 2's (`sele4n_boundary_ctor_set_u64`, what the HAL does to a reused
+object) and reads the thread's saved context back (`saveProbeContextWord`).
+Today the register file keeps the general-purpose registers as a closure over
+the object (`registerFileOfTrapContext`), so words 0–30 read trap 2's after the
+overwrite while words 31–34, read when the file was built, stay trap 1's —
+the hazard the context-by-value workstream (WS-CV) removes. -/
+
+/-- The probe state: one TCB, id `tid`, current on the boot core and in no run
+queue (dequeue-on-dispatch), nothing else.  Built from the model's own
+constructors, since the test builder lives outside the archives the host test
+links. -/
+@[export sele4n_probe_save_state]
+def saveProbeState (tid : UInt64) : SeLe4n.Model.SystemState :=
+  let t : SeLe4n.ThreadId := ⟨tid.toNat⟩
+  let objs : List (SeLe4n.ObjId × SeLe4n.Model.KernelObject) :=
+    [(t.toObjId, .tcb
+      { tid := t, priority := ⟨0⟩, domain := ⟨0⟩,
+        cspaceRoot := ⟨0⟩, vspaceRoot := ⟨0⟩,
+        ipcBuffer := SeLe4n.VAddr.ofNat 0, ipcState := .ready,
+        threadState := .Running })]
+  { (default : SeLe4n.Model.SystemState) with
+    objects := SeLe4n.Kernel.RobinHood.RHTable.ofList objs
+    objectIndex := objs.map Prod.fst
+    objectIndexSet := SeLe4n.Kernel.RobinHood.RHSet.ofList (objs.map Prod.fst)
+    scheduler := (default : SeLe4n.Model.SchedulerState).setCurrentOnCore
+      SeLe4n.Kernel.Concurrency.bootCoreId (some t) }
+
+/-- The syscall entry's save on the boot core, of the context handed over —
+`saveCapturedSyscallFrame` over `registerFileOfTrapContext`, the binding the
+entry uses.  Both arguments owned. -/
+@[export sele4n_probe_save_captured_syscall_frame]
+def saveProbeCapturedSyscallFrame (st : SeLe4n.Model.SystemState) (c : TrapContext) :
+    SeLe4n.Model.SystemState :=
+  saveCapturedSyscallFrame st SeLe4n.Kernel.Concurrency.bootCoreId
+    (some (registerFileOfTrapContext c))
+
+/-- Word `i` of the context saved in thread `tid`'s TCB, at the trap frame's
+layout (`trapWordsOfRegisterFile`), or every bit set when `tid` has no TCB.
+Owned, as above. -/
+@[export sele4n_probe_saved_context_word]
+def saveProbeContextWord (st : SeLe4n.Model.SystemState) (tid i : UInt64) : UInt64 :=
+  match st.getTcb? ⟨tid.toNat⟩ with
+  | some tcb => trapWordsOfRegisterFile tcb.registerContext i.toNat
+  | none => 0xFFFF_FFFF_FFFF_FFFF
+
 end SeLe4n.Testing.BoundaryProbes

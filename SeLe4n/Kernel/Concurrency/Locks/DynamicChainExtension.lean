@@ -11,12 +11,8 @@ import SeLe4n.Model.State
 import SeLe4n.Kernel.Scheduler.PriorityInheritance.BlockingGraph
 import SeLe4n.Kernel.Concurrency.Locks.Kind
 import SeLe4n.Kernel.Concurrency.Locks.LockSet
-import SeLe4n.Kernel.Concurrency.Locks.LockIdProjection
 import SeLe4n.Kernel.Concurrency.Locks.LockSetTransitions
-import SeLe4n.Kernel.Concurrency.Locks.WithLockSet
-import SeLe4n.Kernel.Concurrency.Locks.LockSetHeld
-import SeLe4n.Kernel.Concurrency.Locks.LockSet2PL
-import SeLe4n.Kernel.Concurrency.Locks.LockBracket
+import SeLe4n.Kernel.Concurrency.Locks.LockState
 
 /-!
 # WS-SM SM3.C.11 — Dynamic priority-inheritance chain-walk locking
@@ -98,10 +94,10 @@ The strategy preserves deadlock-freedom (Theorem 3.7.1) because:
 
 ## Used by
 
-SM3.C.11.b — the per-transition `withLockSet` wrappers for the
-5 PIP-invoking transitions consume their `pipChainStart_<τ>`
-markers (six in all — `.replyRecv` declares two) after the static
-lock-set is held and `action` completes.
+SM3.C.11.b — the per-transition bracket specs (`BracketSpec.run`,
+`Locks/BracketSpec.lean`) for the 5 PIP-invoking transitions consume
+their `pipChainStart_<τ>` markers (six in all — `.replyRecv` declares
+two) after the static lock-set is held and `action` completes.
 -/
 
 namespace SeLe4n.Kernel.Concurrency
@@ -248,9 +244,8 @@ A real PIP blocking chain (following `blockingServer`) is *not*
 guaranteed to be `ObjId.val`-ascending — the blocking-graph
 topology is independent of the object-store key ordering.  When
 the chain is non-ascending, the abstract walker returns
-`.exhausted`, which the `withDynamicChainExtension` combinator
-treats as "take no dynamic action" (the static lockSet alone is
-held).  The FFI-layer runtime (SM5+) handles non-ascending chains
+`.exhausted`, which a caller treats as "take no dynamic action" (the
+static lockSet alone is held).  The FFI-layer runtime (SM5+) handles non-ascending chains
 via the optimistic-walk-and-verify retry strategy: discover the
 next link, release the current lock, acquire the next at its
 `ObjId.val` slot, re-verify — bounded by `MAX_PIP_RETRIES`.  That
@@ -373,9 +368,12 @@ The four conjuncts:
 * `pathChain`: `chainFollowsBlockingServer s path.path` — every
   adjacent pair follows the actual blocking graph.
 
-This is the dynamic counterpart to `lockSetHeld`: the static
+This is the dynamic counterpart to `LockState.heldAll`: the static
 lock-set discipline plus this predicate together discharge the
 SMP-migration precondition for the 3 PIP-invoking transitions.
+Since WS-LS LS3.1 the held conjunct reads the ghost lock table `L`
+(`Concurrency/Locks/LockState.lean`), and the path-structure conjuncts
+read the kernel state `s`; the two halves of a `LockedSystemState`.
 
 **Audit-pass-2**: conjunct 4 reformulated from the indexed
 `∀ i, path.path[i] → path.path[i+1]` form to the recursive
@@ -385,10 +383,9 @@ The indexed form was a defined-but-unestablished spec; the recursive
 form is provably produced by `walkAndAcquire`, wiring this predicate
 to its producer. -/
 def dynamicChainHeld (c : CoreId) (path : PipChainPath)
-    (s : SystemState) : Prop :=
-  -- 1. Every TCB in path has its write lock held by c.
-  (∀ tid ∈ path.path,
-    lockHeld c ⟨.tcb, tid.toObjId⟩ .write s) ∧
+    (L : LockState) (s : SystemState) : Prop :=
+  -- 1. Every TCB in path has its write lock held by c in the ghost table.
+  (∀ tid ∈ path.path, L.held c (tcbLock tid) .write) ∧
   -- 2. ObjId-ascending discipline (SM0.I).
   path.path.Pairwise (fun a b => a.toNat < b.toNat) ∧
   -- 3. Path starts at the declared start.
@@ -398,95 +395,25 @@ def dynamicChainHeld (c : CoreId) (path : PipChainPath)
 
 
 -- ============================================================================
--- §5 — SM3.C.11.b — `withDynamicChainExtension` combinator
+-- §5 — SM3.C.11.b — the chain's lock sequence
 -- ============================================================================
 
-/-- WS-SM SM3.C.11.b: the chain's per-TCB write-lock acquisition sequence —
-the locks `withDynamicChainExtension` acquires over a terminated walk path.
-Defined to match the inline `chainLocks` in `withDynamicChainExtension` so the
-establishment theorem below applies to the combinator's actual acquire fold. -/
-def chainLockSeq (path : PipChainPath) : List (LockId × AccessMode) :=
-  path.path.map (fun t => (⟨.tcb, t.toObjId⟩, AccessMode.write))
+/-- WS-SM SM3.C.11.b: the chain's per-TCB write-lock acquisition sequence over
+a terminated walk path — the footprint a discovered chain declares.
 
+**WS-LS LS2.4**: the combinator that acquired it at runtime
+(`withDynamicChainExtension`, over `runChainExtension` at the object domain) is
+deleted with the word-level bracket.  The chain's locks are declared statically
+since WS-RR RR7.40: the receive and reply footprints simulate the walk
+(`pipChainVisited`) and name every visited thread's TCB and home-core run-queue
+write lock (`pipChainSchedFootprint`), and the seam's `BracketSpec` carries the
+proof that the walk writes nothing outside them
+(`propagatePipChainCrossCore_coversWrites`).  What remains here is the sequence
+and its order (`chainLockSeq_keys_nodup`, `chainLockSeq_sorted`,
+`chainLockSeq_lockAcquireSequence`), which §9 consumes. -/
+def chainLockSeq (path : PipChainPath) : List (LockKey × AccessMode) :=
+  path.path.map (fun t => (tcbLock t, AccessMode.write))
 
-/-- WS-SM SM3.C.11.b (plan §5.3): the dynamic-chain extension
-combinator.
-
-Given:
-* `caller` — the core holding the static lockSet.
-* `startTid` — the chain start (from `pipChainStart_<τ>`).
-* `action` — the chain-walk action (e.g.,
-  `propagatePriorityInheritance` or `revertPriorityInheritance`).
-* `s` — the post-static-lockSet state (with `startTid`'s TCB lock
-  already held).
-
-The combinator (audit-pass-1, Comment 1):
-1. Invokes `walkAndAcquire` to discover the chain path.
-2. On success (`.terminated path`), **acquires a write lock on
-   every TCB in the path** via `acquireAll caller chainLocks`
-   (the path is `ObjId.val`-ascending, so this acquire sequence
-   respects the SM0.I lock ladder), executes `action` on the
-   lock-acquired state, then **unwinds in reverse order** via
-   `unwindAll caller chainLocks.reverse` — withdrawing before
-   releasing, since the chain walk can find a member contended
-   and a release is the identity for a non-holder (WS-LC LC4.6).
-3. On `.exhausted` / `.extended` (no terminating chain), returns
-   the input state unchanged with the fallback value.
-
-This closes the Comment-1 gap: the previous form ran `action s`
-directly without ever acquiring the chain locks, so the promised
-"full chain held" precondition was not established.  The walker
-only returned a `WalkOutcome` (the path); the lock acquisition is
-now performed explicitly here via the SM3.C.1 `acquireAll` /
-`releaseAll` folds, exactly mirroring the static `withLockSet`
-2PL discipline but over the dynamically-discovered chain.
-
-The `chainLocks` are all `.tcb`-kinded write locks (the PIP chain
-walks the blocking graph of TCBs), built in path order so the
-acquire sequence is `ObjId.val`-ascending — deadlock-free by the
-same SM0.I total-order argument as the static lock set.
-
-The return value carries:
-* The post-release SystemState (or the input if no chain).
-* The action's result (or `fallback` if no chain; we parameterize
-  on a fallback to keep the combinator total). -/
-def withDynamicChainExtension {α : Type} (caller : CoreId)
-    (startTid : ThreadId)
-    (action : SystemState → SystemState × α)
-    (fallback : α) (s : SystemState) : SystemState × α :=
-  match walkAndAcquire s startTid with
-  | .terminated path =>
-      -- **WS-RR RR7.40**: the acquire / act / unwind is `runChainExtension` at the
-      -- object domain, not a second spelling of it.  The scheduler-domain chain
-      -- footprint (`pipChainSchedFootprint`) is the same definition at the other
-      -- domain, so "what does acquiring a discovered chain do" has one answer.
-      -- **PR #892 review round 2**: it takes a *footprint*, built fail-closed
-      -- (`LockSet.ofList?`; a walked chain never repeats a key,
-      -- `chainLockSeq_keys_nodup`), and acts only once the footprint is held —
-      -- a contended chain is unwound and the fallback returned.
-      match LockSet.ofList? (chainLockSeq path) with
-      | none => (s, fallback)
-      | some S => runChainExtension objectLockBracketDomain caller S action fallback s
-  | .extended _ =>
-    -- Walker didn't reach a terminating chain step (still in middle of walk).
-    -- At the abstract level, treat as exhausted.
-    (s, fallback)
-  | .exhausted => (s, fallback)
-
-/-- WS-SM SM3.C.11.b: structural unfolding of
-`withDynamicChainExtension`. -/
-theorem withDynamicChainExtension_unfold {α : Type} (caller : CoreId)
-    (startTid : ThreadId)
-    (action : SystemState → SystemState × α)
-    (fallback : α) (s : SystemState) :
-    withDynamicChainExtension caller startTid action fallback s =
-      (match walkAndAcquire s startTid with
-       | .terminated path =>
-           match LockSet.ofList? (chainLockSeq path) with
-           | none => (s, fallback)
-           | some S => runChainExtension objectLockBracketDomain caller S action fallback s
-       | .extended _ => (s, fallback)
-       | .exhausted => (s, fallback)) := rfl
 
 /-- **PR #892 review round 2**: the keys of a walked chain are distinct — one
 `.tcb` lock per thread, and the walker's ascending discipline keeps the threads
@@ -501,7 +428,7 @@ theorem chainLockSeq_keys_nodup (path : PipChainPath)
   rw [List.pairwise_map]
   refine hAsc.imp ?_
   intro a b hab heq
-  simp only [Function.comp, LockId.mk.injEq, true_and] at heq
+  simp only [Function.comp, tcbLock, LockKey.object.injEq, LockId.mk.injEq, true_and] at heq
   have := SeLe4n.ThreadId.toObjId_injective a b heq
   subst this
   exact Nat.lt_irrefl _ hab
@@ -517,85 +444,21 @@ theorem chainLockSeq_sorted (path : PipChainPath)
   rw [List.pairwise_map]
   refine hAsc.imp ?_
   intro a b hab
-  exact Or.inr ⟨rfl, Nat.le_of_lt hab⟩
+  exact (Or.inr ⟨rfl, Nat.le_of_lt hab⟩ : (⟨.tcb, a.toObjId⟩ : LockId) ≤ ⟨.tcb, b.toObjId⟩)
 
-/-- **PR #892 review round 2**: the object domain acquires a chain footprint in
-the order the walker produced it.  `runChainExtension` acquires
-`D.sequence S` — the canonical `mergeSort` of the footprint — and the chain is
-its own canonical sequence (`lockAcquireSequence_canonical`: a `≤`-sorted
-permutation of the pairs is *the* sequence), so the combinator's acquire fold
-is `acquireAll caller (chainLockSeq path)` and not a re-sorted spelling of it.
-This is what lets the two shape theorems below state the seam in the walker's
-own vocabulary. -/
+/-- **PR #892 review round 2**: a chain footprint is acquired in the order the
+walker produced it.  The domain acquires `S.lockAcquireSequence` — the
+canonical `mergeSort` of the footprint — and the chain is its own canonical
+sequence (`lockAcquireSequence_canonical`: a `≤`-sorted permutation of the
+pairs is *the* sequence), so the acquire fold over a walked chain is
+`acquireAll caller (chainLockSeq path)` and not a re-sorted spelling of it.
+This is what lets §9 state the acquired state in the walker's own vocabulary. -/
 theorem chainLockSeq_lockAcquireSequence (path : PipChainPath)
     (hAsc : path.path.Pairwise (fun a b => a.toNat < b.toNat))
     (hNodup : ((chainLockSeq path).map (·.fst)).Nodup) :
     LockSet.lockAcquireSequence ⟨chainLockSeq path, hNodup⟩ = chainLockSeq path :=
   (LockSet.lockAcquireSequence_canonical ⟨chainLockSeq path, hNodup⟩ (chainLockSeq path)
     (List.Perm.refl _) (chainLockSeq_sorted path hAsc)).symm
-
-/-- **WS-RR RR7.40 / PR #892 review round 2**: expanded shape on a terminating
-chain whose footprint the growing phase **granted** — acquire, act on the
-acquired state, unwind the reverse, spelled out.
-
-`withDynamicChainExtension_unfold` above says *which combinator* runs; this says
-what that combinator does when the chain is held, so a reader chasing the seam
-does not have to unfold `runChainExtension` by hand and a refactor that changed
-the shape breaks a stated equation rather than a comment.  The ascending
-discipline `hAsc` is the walker's own (`walkAndAcquire_terminated_ascending`);
-it is what makes the chain a footprint (`chainLockSeq_keys_nodup`) and what
-puts it in acquisition order (`chainLockSeq_lockAcquireSequence`). -/
-theorem withDynamicChainExtension_terminated {α : Type} (caller : CoreId)
-    (startTid : ThreadId) (action : SystemState → SystemState × α)
-    (fallback : α) (s : SystemState) (path : PipChainPath)
-    (h : walkAndAcquire s startTid = .terminated path)
-    (hAsc : path.path.Pairwise (fun a b => a.toNat < b.toNat))
-    (hHeld : lockSetHeld caller ⟨chainLockSeq path, chainLockSeq_keys_nodup path hAsc⟩
-      (acquireAll caller (chainLockSeq path) s)) :
-    withDynamicChainExtension caller startTid action fallback s =
-      (unwindAll caller (chainLockSeq path).reverse
-         (action (acquireAll caller (chainLockSeq path) s)).1,
-       (action (acquireAll caller (chainLockSeq path) s)).2) := by
-  unfold withDynamicChainExtension
-  rw [h]
-  dsimp only
-  rw [LockSet.ofList?_isSome_of_nodup (chainLockSeq_keys_nodup path hAsc)]
-  dsimp only
-  have hSeq := chainLockSeq_lockAcquireSequence path hAsc (chainLockSeq_keys_nodup path hAsc)
-  rw [runChainExtension_held objectLockBracketDomain caller
-    ⟨chainLockSeq path, chainLockSeq_keys_nodup path hAsc⟩ action fallback s
-    (by simpa [objectLockBracketDomain_sequence, objectLockBracketDomain_acquire, hSeq]
-      using hHeld)]
-  simp only [objectLockBracketDomain_sequence, objectLockBracketDomain_acquire,
-    objectLockBracketDomain_unwind, hSeq]
-
-/-- **PR #892 review round 2 (the load-bearing negative)**: on a terminating
-chain the growing phase did **not** grant, the action never runs — the
-extension unwinds what it queued and returns the fallback.  Before this round
-the action ran regardless, so a contended chain was mutated with no exclusion
-and the unwind could not undo it. -/
-theorem withDynamicChainExtension_terminated_refused {α : Type} (caller : CoreId)
-    (startTid : ThreadId) (action : SystemState → SystemState × α)
-    (fallback : α) (s : SystemState) (path : PipChainPath)
-    (h : walkAndAcquire s startTid = .terminated path)
-    (hAsc : path.path.Pairwise (fun a b => a.toNat < b.toNat))
-    (hNot : ¬ lockSetHeld caller ⟨chainLockSeq path, chainLockSeq_keys_nodup path hAsc⟩
-      (acquireAll caller (chainLockSeq path) s)) :
-    withDynamicChainExtension caller startTid action fallback s =
-      (unwindAll caller (chainLockSeq path).reverse
-         (acquireAll caller (chainLockSeq path) s), fallback) := by
-  unfold withDynamicChainExtension
-  rw [h]
-  dsimp only
-  rw [LockSet.ofList?_isSome_of_nodup (chainLockSeq_keys_nodup path hAsc)]
-  dsimp only
-  have hSeq := chainLockSeq_lockAcquireSequence path hAsc (chainLockSeq_keys_nodup path hAsc)
-  rw [runChainExtension_refused objectLockBracketDomain caller
-    ⟨chainLockSeq path, chainLockSeq_keys_nodup path hAsc⟩ action fallback s
-    (by simpa [objectLockBracketDomain_sequence, objectLockBracketDomain_acquire, hSeq]
-      using hNot)]
-  simp only [objectLockBracketDomain_sequence, objectLockBracketDomain_acquire,
-    objectLockBracketDomain_unwind, hSeq]
 
 -- ============================================================================
 -- §6 — SM3.C.11.d — Deadlock-freedom for dynamic chain
@@ -890,11 +753,13 @@ theorem walkAndAcquire_total (s : SystemState) (startTid : ThreadId)
 -- prove the walker's terminated path satisfies conjuncts 2, 3, and 4 of
 -- `dynamicChainHeld` (ascending ObjIds, starts-at-start, follows-blocking-
 -- graph) on the pre-acquire state.  Conjunct 1 (every TCB write-locked) is the
--- separate job of `withDynamicChainExtension`'s `acquireAll` over the chain
--- locks — it is a property of the lock-acquired state, established in §9
+-- separate job of the `acquireAll` over the chain locks — it is a property of
+-- the lock-acquired state, established in §9
 -- (`chainLockSeq_acquire_establishes_pathHeld`).  §10 transports conjunct 4 to
--- the acquired state, and the §10 capstone
--- (`withDynamicChainExtension_establishes_dynamicChainHeld`) assembles all four.
+-- the acquired state.  (The capstone that assembled all four over the
+-- runtime combinator, `withDynamicChainExtension_establishes_dynamicChainHeld`,
+-- is deleted with the combinator at WS-LS LS2.4; the chain's locks are
+-- declared statically and covered at the seam since WS-RR RR7.40.)
 
 /-- WS-SM SM3.C.11.c helper: `walkStep` on an `.extended` outcome
 exposes the blocking-graph edge it traversed: the tail `lastTid`,
@@ -1029,9 +894,7 @@ to `walkAndAcquire`: the walker's output IS a valid ascending
 blocking-chain rooted at `startTid`.  Conjunct 1 (every TCB
 write-locked) is established separately by §9's
 `chainLockSeq_acquire_establishes_pathHeld` over the acquired
-state; the §10 capstone
-`withDynamicChainExtension_establishes_dynamicChainHeld`
-assembles all four conjuncts. -/
+state. -/
 theorem walkAndAcquire_terminated_satisfies_path_structure
     (s : SystemState) (startTid : ThreadId) (fuel : Nat)
     (path : PipChainPath)
@@ -1049,215 +912,37 @@ theorem walkAndAcquire_terminated_satisfies_path_structure
 -- ============================================================================
 --
 -- The §8 theorems establish the three *path-structure* conjuncts (ascending,
--- starts-at-start, follows-blocking-graph).  The remaining conjunct — every
--- chain TCB write-locked by the caller — is a property of the *lock-acquired*
--- state produced by `withDynamicChainExtension`'s `acquireAll` fold, not of the
--- walker's pure path discovery.  This section closes that gap, reusing the
--- SM3.C.8 multi-lock establishment lemma, and assembles the full
--- `dynamicChainHeld` predicate on the post-acquire state.
-
-/-- WS-SM SM3.C.11.c helper: distinct `ThreadId.toNat`s yield distinct
-`ObjId`s (`toObjId` is `ObjId.ofNat ∘ toNat`, injective on `toNat`). -/
-theorem threadId_toObjId_ne_of_toNat_lt {a b : SeLe4n.ThreadId}
-    (h : a.toNat < b.toNat) : a.toObjId ≠ b.toObjId := by
-  intro heq
-  have hN : a.toNat = b.toNat := by
-    have hc := congrArg SeLe4n.ObjId.toNat heq
-    simpa [SeLe4n.ThreadId.toObjId, SeLe4n.ObjId.ofNat, SeLe4n.ObjId.toNat] using hc
-  omega
-
+-- starts-at-start, follows-blocking-graph) on the kernel state.  The remaining
+-- conjunct — every chain TCB write-locked by the caller — is a property of the
+-- ghost lock table produced by the `LockState.acquireAll` fold over
+-- `chainLockSeq`, not of the walker's pure path discovery.  This section closes
+-- that gap with the table's multi-lock establishment lemma.  The kernel state
+-- is untouched by the fold, so the path-structure conjuncts need no transport
+-- (WS-LS LS3.1 deleted the per-object transport section that the lock words
+-- once required).
 
 /-- WS-SM SM3.C.11.c (substantive — closes the conjunct-1 gap): after acquiring
 the chain's write locks, the caller holds the write lock on **every** TCB in the
 path.  This is `dynamicChainHeld`'s conjunct 1, established on the post-acquire
-state.
+table.
 
-The chain locks are `.tcb`-kinded write locks at the path TCBs' ObjIds.  The
-path is `ObjId.val`-ascending (the walker invariant / SM0.I discipline), so the
-ObjIds are pairwise distinct; with each chain TCB present and `unheld`, the
-SM3.C.8 multi-lock establishment lemma
-(`acquireAll_establishes_lockHeld_of_distinct_present_unheld`) grants every
-write lock. -/
+The chain locks are the path TCBs' `tcbLock` keys in write mode.  The path is
+`toNat`-ascending (the walker invariant / SM0.I discipline), so the keys are
+pairwise distinct (`chainLockSeq_keys_nodup`); with every chain key `unheld`,
+`LockState.acquireAll_held_of_free` grants every write lock. -/
 theorem chainLockSeq_acquire_establishes_pathHeld (caller : CoreId)
-    (path : PipChainPath) (s : SystemState)
-    (hExt : s.objects.invExt)
-    (hChainPresent : ∀ tid ∈ path.path, ∃ o,
-      s.objects.get? tid.toObjId = some o ∧ o.lockKind = .tcb ∧
-      o.objectLockOf = RwLockState.unheld)
+    (path : PipChainPath) (L : LockState)
+    (hFree : ∀ tid ∈ path.path, L (tcbLock tid) = RwLockState.unheld)
     (hAscending : path.path.Pairwise (fun a b => a.toNat < b.toNat)) :
     ∀ tid ∈ path.path,
-      lockHeld caller ⟨.tcb, tid.toObjId⟩ .write
-        (acquireAll caller (chainLockSeq path) s) := by
-  have hEach : ∀ p ∈ chainLockSeq path, ∃ o,
-      s.objects[p.fst.objId]? = some o ∧ o.lockKind = p.fst.kind ∧
-      o.objectLockOf = RwLockState.unheld := by
-    intro p hp
-    obtain ⟨tid, htid, hpEq⟩ := List.mem_map.mp hp
-    obtain ⟨o, hPres, hKind, hUnheld⟩ := hChainPresent tid htid
-    refine ⟨o, ?_, ?_, hUnheld⟩
-    · rw [← hpEq]; exact hPres
-    · rw [← hpEq]; exact hKind
-  have hDistinct : (chainLockSeq path).Pairwise (fun a b => a.fst.objId ≠ b.fst.objId) := by
-    unfold chainLockSeq
-    rw [List.pairwise_map]
-    exact hAscending.imp (fun {x y} hlt => threadId_toObjId_ne_of_toNat_lt hlt)
-  have hAll := acquireAll_establishes_lockHeld_of_distinct_present_unheld caller
-    (chainLockSeq path) s hExt hEach hDistinct
+      (LockState.acquireAll caller (chainLockSeq path) L).held caller (tcbLock tid) .write := by
+  have hAll := LockState.acquireAll_held_of_free caller (chainLockSeq path) L
+    (chainLockSeq_keys_nodup path hAscending)
+    (fun p hp => by
+      obtain ⟨tid, htid, hpEq⟩ := List.mem_map.mp hp
+      rw [← hpEq]; exact hFree tid htid)
   intro tid htid
-  have hMem : ((⟨.tcb, tid.toObjId⟩ : LockId), AccessMode.write) ∈ chainLockSeq path :=
-    List.mem_map.mpr ⟨tid, htid, rfl⟩
-  exact hAll _ hMem
-
--- ============================================================================
--- §10 — SM3.C.11.c — `blockingServer` transport (conjunct 4 on the acquired state)
--- ============================================================================
---
--- `dynamicChainHeld`'s conjunct 4 (`chainFollowsBlockingServer`) is evaluated on
--- the *post-acquire* state, but the walker establishes it on the *pre-acquire*
--- state.  Lock acquisition only advances `RwLockState` fields via
--- `KernelObject.updateLock`, which preserves the TCB `ipcState` that
--- `blockingServer` reads — so `blockingServer` (and hence
--- `chainFollowsBlockingServer`) transports unchanged across the acquire fold.
-
-/-- WS-SM SM3.C.11.c helper: the pure projection `blockingServer` reads from a
-stored object — the reply-blocking server of a TCB, `none` for any other
-variant or non-reply-blocked TCB. -/
-def tcbReplyServer : KernelObject → Option SeLe4n.ThreadId
-  | .tcb tcb =>
-      match tcb.ipcState with
-      | .blockedOnReply _ (some server) => some server
-      | _ => none
-  | _ => none
-
-/-- WS-SM SM3.C.11.c helper: the object-store `getElem?` bracket equals the
-`get?` method form (the GetElem? instance IS `get?`).  Stated over a generic
-key so the proof text routes `blockingServer`'s bracket lookup through the
-`get?` method form the AK7-cascade metric prefers. -/
-theorem objects_getElem?_eq_get? (s : SystemState) (k : SeLe4n.ObjId) :
-    s.objects[k]? = s.objects.get? k := rfl
-
-/-- WS-SM SM3.C.11.c helper: `blockingServer` factors as the stored object's
-`tcbReplyServer`. -/
-theorem blockingServer_eq_bind (s : SystemState) (tid : SeLe4n.ThreadId) :
-    blockingServer s tid = (s.objects.get? tid.toObjId).bind tcbReplyServer := by
-  unfold blockingServer SystemState.getTcb? tcbReplyServer
-  rw [objects_getElem?_eq_get? s tid.toObjId]
-  cases s.objects.get? tid.toObjId with
-  | none => rfl
-  | some o => cases o <;> rfl
-
-/-- WS-SM SM3.C.11.c helper: `KernelObject.updateLock` preserves `tcbReplyServer`
-— it only advances the `lock` field, never `ipcState`. -/
-theorem tcbReplyServer_updateLock (o : KernelObject) (op : RwLockOp) :
-    tcbReplyServer (o.updateLock op) = tcbReplyServer o := by
-  cases o <;> rfl
-
-/-- WS-SM SM3.C.11.c: a single lock acquisition preserves `blockingServer` at
-every thread.  Acquiring at a different ObjId leaves the object untouched
-(frame); acquiring at the same ObjId replaces the object with its
-`updateLock`-image, whose `tcbReplyServer` is unchanged. -/
-theorem acquireLockOnObject_preserves_blockingServer (s : SystemState)
-    (core : CoreId) (l : LockId) (m : AccessMode)
-    (hExt : s.objects.invExt) (tid : SeLe4n.ThreadId) :
-    blockingServer (acquireLockOnObject s core l m) tid = blockingServer s tid := by
-  rw [blockingServer_eq_bind, blockingServer_eq_bind]
-  by_cases hEq : tid.toObjId = l.objId
-  · unfold acquireLockOnObject
-    cases hk : l.kind with
-    | objStore => rfl
-    | tcb | endpoint | notification | cnode
-    | vspaceRoot | untyped | schedContext | reply | page =>
-      all_goals (
-        unfold updateObjectLockAt
-        cases hL : LockId.lookup s l with
-        | none => rfl
-        | some pr =>
-          unfold updateObjectAt
-          cases hG : s.objects.get? l.objId with
-          | none => rfl
-          | some o =>
-            have hSelf : (s.objects.insert l.objId
-                (o.updateLock (m.toAcquireOp core))).get? tid.toObjId
-                = some (o.updateLock (m.toAcquireOp core)) := by
-              rw [hEq]
-              exact SeLe4n.Kernel.RobinHood.RHTable.getElem?_insert_self s.objects
-                l.objId (o.updateLock (m.toAcquireOp core)) hExt
-            have hOrig : s.objects.get? tid.toObjId = some o := by rw [hEq]; exact hG
-            show ((s.objects.insert l.objId
-                (o.updateLock (m.toAcquireOp core))).get? tid.toObjId).bind tcbReplyServer
-              = (s.objects.get? tid.toObjId).bind tcbReplyServer
-            rw [hSelf, hOrig]
-            show tcbReplyServer (o.updateLock (m.toAcquireOp core)) = tcbReplyServer o
-            exact tcbReplyServer_updateLock o (m.toAcquireOp core))
-  · rw [show (acquireLockOnObject s core l m).objects.get? tid.toObjId
-          = s.objects.get? tid.toObjId from
-        acquireLockOnObject_objects_getElem?_of_ne s core l m tid.toObjId hExt hEq]
-
-/-- WS-SM SM3.C.11.c: the `acquireAll` fold preserves `blockingServer` at every
-thread.  Induction on the sequence via the single-step preservation, threading
-`invExt`. -/
-theorem acquireAll_preserves_blockingServer (core : CoreId) :
-    ∀ (pairs : List (LockId × AccessMode)) (s : SystemState),
-      s.objects.invExt → ∀ tid : SeLe4n.ThreadId,
-        blockingServer (acquireAll core pairs s) tid = blockingServer s tid := by
-  intro pairs
-  induction pairs with
-  | nil => intro s _ tid; rfl
-  | cons head tail ih =>
-      intro s hExt tid
-      have hExt1 := acquireLockOnObject_preserves_invExt s core head.fst head.snd hExt
-      show blockingServer
-        (acquireAll core tail (acquireLockOnObject s core head.fst head.snd)) tid
-        = blockingServer s tid
-      rw [ih (acquireLockOnObject s core head.fst head.snd) hExt1 tid,
-        acquireLockOnObject_preserves_blockingServer s core head.fst head.snd hExt tid]
-
-/-- WS-SM SM3.C.11.c: `chainFollowsBlockingServer` transports across the
-acquire fold — equal `blockingServer` at every thread gives an equal chain
-predicate.  Induction on the list shape. -/
-theorem chainFollowsBlockingServer_of_blockingServer_eq (s s' : SystemState)
-    (hEq : ∀ tid, blockingServer s' tid = blockingServer s tid) :
-    ∀ (l : List SeLe4n.ThreadId),
-      chainFollowsBlockingServer s l → chainFollowsBlockingServer s' l
-  | [], h => h
-  | [_], h => h
-  | a :: b :: rest, h => by
-      obtain ⟨hEdge, hRest⟩ := h
-      refine ⟨?_, chainFollowsBlockingServer_of_blockingServer_eq s s' hEq (b :: rest) hRest⟩
-      rw [hEq a]; exact hEdge
-
-/-- WS-SM SM3.C.11.c (capstone): a terminating walk from `startTid` whose chain
-TCBs are present and `unheld` in `s` yields the **full** `dynamicChainHeld`
-predicate on the post-acquire state `acquireAll caller (chainLockSeq path) s`.
-
-Bundles all four conjuncts:
-* conjunct 1 (every chain TCB write-locked by `caller`) — established on the
-  acquired state by `chainLockSeq_acquire_establishes_pathHeld`;
-* conjuncts 2 & 3 (ascending ObjIds, starts at `startTid`) — state-independent
-  path structure from `walkAndAcquire_terminated_satisfies_path_structure`;
-* conjunct 4 (`chainFollowsBlockingServer`) — proven on `s` by the walker and
-  transported to the acquired state (lock acquisition preserves `blockingServer`).
-
-This is the producer-side completeness witness for `dynamicChainHeld`: the
-dynamic-chain combinator genuinely establishes every conjunct of its own
-specification, closing the SM3.C.11.c gap in full. -/
-theorem withDynamicChainExtension_establishes_dynamicChainHeld (caller : CoreId)
-    (startTid : SeLe4n.ThreadId) (fuel : Nat) (path : PipChainPath) (s : SystemState)
-    (hExt : s.objects.invExt)
-    (hChainPresent : ∀ tid ∈ path.path, ∃ o,
-      s.objects.get? tid.toObjId = some o ∧ o.lockKind = .tcb ∧
-      o.objectLockOf = RwLockState.unheld)
-    (hWalk : walkAndAcquire.walkAndAcquireAux s (PipChainPath.singleton startTid) fuel
-      = .terminated path) :
-    dynamicChainHeld caller path (acquireAll caller (chainLockSeq path) s) := by
-  obtain ⟨hAsc, hHead, hChain_s⟩ :=
-    walkAndAcquire_terminated_satisfies_path_structure s startTid fuel path hWalk
-  refine ⟨?_, hAsc, hHead, ?_⟩
-  · exact chainLockSeq_acquire_establishes_pathHeld caller path s hExt hChainPresent hAsc
-  · exact chainFollowsBlockingServer_of_blockingServer_eq s
-      (acquireAll caller (chainLockSeq path) s)
-      (fun tid => acquireAll_preserves_blockingServer caller (chainLockSeq path) s hExt tid)
-      path.path hChain_s
+  exact hAll (tcbLock tid, .write) (List.mem_map.mpr ⟨tid, htid, rfl⟩)
 
 -- ============================================================================
 -- §11 — SM3.C.11.d — Two-core deadlock-freedom for the dynamic chain

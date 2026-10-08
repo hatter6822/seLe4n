@@ -12,11 +12,9 @@
 import SeLe4n.Model.State
 import SeLe4n.Kernel.Concurrency.Locks.Kind
 import SeLe4n.Kernel.Concurrency.Locks.LockSet
-import SeLe4n.Kernel.Concurrency.Locks.LockIdProjection
 import SeLe4n.Kernel.Concurrency.Locks.LockSetTransitions
-import SeLe4n.Kernel.Concurrency.Locks.WithLockSet
-import SeLe4n.Kernel.Concurrency.Locks.LockSetHeld
 import SeLe4n.Kernel.Concurrency.Locks.LockSet2PL
+import SeLe4n.Kernel.Concurrency.Locks.BracketSpec
 import SeLe4n.Kernel.Concurrency.Locks.Deadlock
 
 /-!
@@ -38,7 +36,7 @@ about *schedules* — sequences of committed transition instances.  A
 * `core`        — the executing core,
 * `commitTime`  — the moment it releases its last lock (its commit point under
                   strict 2PL),
-* `acquireTime` — when it acquired each lock (`LockId → Nat`),
+* `acquireTime` — when it acquired each lock (`LockKey → Nat`),
 * `action`      — the pure business state transformation (the transition body;
                   lock acquire/release is `withLockSet`'s job, SM3.C, not the
                   action's).
@@ -65,8 +63,8 @@ commit-order schedule.
   holds all its locks until commit (no early release).
 * **SM3.E.5** ≥8 commutativity lemmas — non-conflicting operation pairs commute.
 * **SM3.E.6** `singleCore_proof_preservation` (Corollary 2.1.11) — every
-  single-core kernel-transition theorem lifts to the SMP form under the
-  `lockSetHeld` precondition, reusing SM3.C.8's structural-preservation lever.
+  single-core kernel-transition theorem lifts to the SMP form over the pair
+  (the bracket's phases write only the ghost lock table, WS-LS LS2.1).
 
 ## Relationship to SM3.D
 
@@ -111,7 +109,7 @@ structure KernelTransitionInstance where
   /-- The commit point (last-lock-release instant). -/
   commitTime : Nat
   /-- When each lock was acquired. -/
-  acquireTime : LockId → Nat
+  acquireTime : LockKey → Nat
   /-- The pure business state transformation (the transition body). -/
   action : SystemState → SystemState
 
@@ -151,7 +149,7 @@ their footprints both declare some `LockId` `l`, and the two declared modes
 conflict (`AccessMode.conflicts`, SM3.B — at least one is `.write`).  Two
 read-only accesses to the same lock do NOT conflict. -/
 def ktiSharesConflictingLock (τ₁ τ₂ : KernelTransitionInstance) : Prop :=
-  ∃ (l : LockId) (m₁ m₂ : AccessMode),
+  ∃ (l : LockKey) (m₁ m₂ : AccessMode),
     (l, m₁) ∈ τ₁.lockSet.pairs ∧ (l, m₂) ∈ τ₂.lockSet.pairs ∧
     AccessMode.conflicts m₁ m₂ = true
 
@@ -195,7 +193,7 @@ before `τ₂` when they share a conflicting lock `l` and `τ₁` commits no lat
 under strict 2PL `τ₁` holds `l` until its commit, so `τ₂` cannot acquire `l`
 before `τ₁` commits — hence the conflict is resolved in commit order. -/
 def conflictOrder (τ₁ τ₂ : KernelTransitionInstance) : Prop :=
-  ∃ (l : LockId) (m₁ m₂ : AccessMode),
+  ∃ (l : LockKey) (m₁ m₂ : AccessMode),
     (l, m₁) ∈ τ₁.lockSet.pairs ∧ (l, m₂) ∈ τ₂.lockSet.pairs ∧
     AccessMode.conflicts m₁ m₂ = true ∧
     τ₁.commitTime ≤ τ₂.acquireTime l
@@ -977,13 +975,13 @@ is why `lockSet_serviceQuery` carries the caller TCB in write mode; the
 read-only example here is the inner registry lookup.  Used to witness that
 reads commute with everything. -/
 def readOnlyInstance (S : LockSet) (core : CoreId) (commitTime : Nat)
-    (acquireTime : LockId → Nat) : KernelTransitionInstance :=
+    (acquireTime : LockKey → Nat) : KernelTransitionInstance :=
   { lockSet := S, core := core, commitTime := commitTime,
     acquireTime := acquireTime, action := id }
 
 /-- WS-SM SM3.E.5: a read-only transition's action is the identity. -/
 @[simp] theorem readOnlyInstance_action (S : LockSet) (core : CoreId)
-    (ct : Nat) (at_ : LockId → Nat) :
+    (ct : Nat) (at_ : LockKey → Nat) :
     (readOnlyInstance S core ct at_).action = id := rfl
 
 /-- WS-SM SM3.E.5 (the plan's `cspaceRead_commutes_with_cspaceRead` analog): a
@@ -991,23 +989,25 @@ read-only transition commutes with **any** transition.  Two reads of any objects
 (the canonical non-conflicting pair) commute, and a read commutes with a write of
 any other object.  Discharged from `actionsCommute_of_action_id_left`. -/
 theorem readOnlyInstance_actionsCommute (S : LockSet) (core : CoreId)
-    (ct : Nat) (at_ : LockId → Nat) (τ : KernelTransitionInstance) :
+    (ct : Nat) (at_ : LockKey → Nat) (τ : KernelTransitionInstance) :
     (readOnlyInstance S core ct at_).actionsCommute τ :=
   KernelTransitionInstance.actionsCommute_of_action_id_left rfl
 
 /-- WS-SM SM3.E.5: two read-only transitions commute (the `read/read`
 non-conflicting pair). -/
 theorem readOnlyInstance_actionsCommute_readOnly (S₁ S₂ : LockSet) (c₁ c₂ : CoreId)
-    (ct₁ ct₂ : Nat) (at₁ at₂ : LockId → Nat) :
+    (ct₁ ct₂ : Nat) (at₁ at₂ : LockKey → Nat) :
     (readOnlyInstance S₁ c₁ ct₁ at₁).actionsCommute (readOnlyInstance S₂ c₂ ct₂ at₂) :=
   readOnlyInstance_actionsCommute S₁ c₁ ct₁ at₁ _
 
 /-! ### §7b — Disjoint-subsystem (different-field) transitions commute (structural) -/
 
-/-- WS-SM SM3.E.5: a transition whose action writes only the table-level
-`objStoreLock` field (a pure object-store-lock-bookkeeping action). -/
-def setObjStoreLockAction (lk : RwLockState) : SystemState → SystemState :=
-  fun s => { s with objStoreLock := lk }
+/-- WS-SM SM3.E.5: a transition whose action writes only the `tlb` field
+(a pure TLB-bookkeeping action).  WS-LS LS3.1 deleted the `objStoreLock`
+field this witness used to write; the TLB field is another kernel field
+disjoint from the scheduler. -/
+def setTlbAction (t : TlbState) : SystemState → SystemState :=
+  fun s => { s with tlb := t }
 
 /-- WS-SM SM3.E.5: a transition whose action writes only the `scheduler`
 subsystem field. -/
@@ -1016,23 +1016,23 @@ def setSchedulerAction (sch : SchedulerState) : SystemState → SystemState :=
 
 /-- WS-SM SM3.E.5 (disjoint-subsystem commutativity, structural): two actions that
 write **different** SystemState record fields commute structurally.  Concretely,
-an object-store-lock action and a scheduler action touch disjoint record fields,
-so applying them in either order yields the identical state.  This witnesses
-"transitions operating on disjoint kernel subsystems commute" — a major class of
+a TLB action and a scheduler action touch disjoint record fields, so applying
+them in either order yields the identical state.  This witnesses "transitions
+operating on disjoint kernel subsystems commute" — a major class of
 non-conflicting pairs. -/
-theorem setObjStoreLock_setScheduler_commute (lk : RwLockState) (sch : SchedulerState)
+theorem setTlb_setScheduler_commute (t : TlbState) (sch : SchedulerState)
     (s : SystemState) :
-    setObjStoreLockAction lk (setSchedulerAction sch s)
-      = setSchedulerAction sch (setObjStoreLockAction lk s) := rfl
+    setTlbAction t (setSchedulerAction sch s)
+      = setSchedulerAction sch (setTlbAction t s) := rfl
 
 /-- WS-SM SM3.E.5: the disjoint-subsystem commute lifted to `actionsCommute` on
 the transition instances whose actions are the two field setters. -/
-theorem disjointField_actionsCommute (lk : RwLockState) (sch : SchedulerState)
-    (S₁ S₂ : LockSet) (c₁ c₂ : CoreId) (ct₁ ct₂ : Nat) (at₁ at₂ : LockId → Nat) :
-    (KernelTransitionInstance.mk S₁ c₁ ct₁ at₁ (setObjStoreLockAction lk)).actionsCommute
+theorem disjointField_actionsCommute (t : TlbState) (sch : SchedulerState)
+    (S₁ S₂ : LockSet) (c₁ c₂ : CoreId) (ct₁ ct₂ : Nat) (at₁ at₂ : LockKey → Nat) :
+    (KernelTransitionInstance.mk S₁ c₁ ct₁ at₁ (setTlbAction t)).actionsCommute
       (KernelTransitionInstance.mk S₂ c₂ ct₂ at₂ (setSchedulerAction sch)) := by
   intro s
-  exact (setObjStoreLock_setScheduler_commute lk sch s)
+  exact (setTlb_setScheduler_commute t sch s)
 
 /-! ### §7c — Write/write on different objects commute (observational) -/
 
@@ -1053,6 +1053,44 @@ theorem objStoreEquiv_symm {s₁ s₂ : SystemState} (h : objStoreEquiv s₁ s�
 theorem objStoreEquiv_trans {s₁ s₂ s₃ : SystemState}
     (h₁ : objStoreEquiv s₁ s₂) (h₂ : objStoreEquiv s₂ s₃) : objStoreEquiv s₁ s₃ :=
   fun k => (h₁ k).trans (h₂ k)
+
+/-- WS-SM SM3.E.5: the plain object-store write the commutativity workload is
+built from — apply `f` to the object stored at `oid`, the identity when `oid`
+is absent.  Until WS-LS LS3.1 it lived in `Locks/WithLockSet.lean` as the body
+of the per-object lock update; the lock words are gone, and this is the only
+store write the serializability model still folds. -/
+def updateObjectAt (s : SystemState) (oid : SeLe4n.ObjId)
+    (f : KernelObject → KernelObject) : SystemState :=
+  match s.objects.get? oid with
+  | some obj => { s with objects := s.objects.insert oid (f obj) }
+  | none => s
+
+/-- WS-SM SM3.E.5: closed-form characterisation of `updateObjectAt`'s effect on
+a lookup.  Looking up `k` after `updateObjectAt s oid f` returns `f`-mapped
+content at the target key `oid`, and the unchanged content at every other key.
+Unifies the present/absent branches: when `oid` is absent, `(s.get? oid).map f =
+none` agrees with the unchanged lookup. -/
+theorem updateObjectAt_get? (s : SystemState) (oid k : SeLe4n.ObjId)
+    (f : KernelObject → KernelObject) (hExt : s.objects.invExt) :
+    (updateObjectAt s oid f).objects.get? k
+      = if k = oid then (s.objects.get? oid).map f else s.objects.get? k := by
+  unfold updateObjectAt
+  by_cases hk : k = oid
+  · subst hk
+    rw [if_pos rfl]
+    cases hg : s.objects.get? k with
+    | none => simp [hg]
+    | some o =>
+        show (s.objects.insert k (f o)).get? k = (some o).map f
+        rw [SeLe4n.Kernel.RobinHood.RHTable.getElem?_insert_self s.objects k (f o) hExt]
+        rfl
+  · rw [if_neg hk]
+    cases hg : s.objects.get? oid with
+    | none => rfl
+    | some o =>
+        show (s.objects.insert oid (f o)).get? k = s.objects.get? k
+        exact SeLe4n.Kernel.RobinHood.RHTable.getElem?_insert_ne s.objects oid k (f o)
+          (by simp [Ne.symm hk]) hExt
 
 /-- WS-SM SM3.E.5: `updateObjectAt` preserves the RHTable extension invariant
 (the `insert` branch via `RHTable.insert_preserves_invExt`; the absent branch is
@@ -1100,503 +1138,125 @@ theorem updateObjectAt_objStoreEquiv_comm (s : SystemState)
 -- ============================================================================
 --
 -- The architectural lever that keeps WS-SM's proof cost tractable: every
--- existing single-core kernel-transition theorem lifts to the SMP form for free,
--- gated only by (a) the `lockSetHeld` precondition — established by the
--- `withLockSet` growing phase (SM3.C.8 `acquireAll_establishes_lockSetHeld`) —
--- and (b) lock-insensitivity of the invariant — discharged structurally per
--- invariant class (SM3.C.8 foundation lemmas).  The single-core proof of the
--- action itself is reused verbatim.
+-- existing single-core kernel-transition theorem lifts to the bracketed SMP
+-- form for free.  **WS-LS LS2.1**: over the pair the lift is by type — the
+-- bracket's phases write the lock table and the action alone writes the
+-- kernel half — so the lock-insensitivity hypotheses the two theorems below
+-- used to take (the invariant survives a single acquire, release and
+-- withdrawal at any key) are dropped, and the §8b / §8c worked instantiations
+-- that showed those hypotheses dischargeable (the table lock's
+-- well-formedness, the kind discipline) have nothing left to show and are
+-- deleted.  What the single-core proof still assumes — that no other core
+-- mutates the footprint while the step runs — is the bracket's guard
+-- (`BracketSpec.guard`), established under the entry lock by
+-- `BracketSpec.guard_of_unheld` and otherwise the HAL's to establish.
 
-/-- WS-SM SM3.E.6 (Corollary 2.1.11, invariant form): a single-core invariant
-preserved by a transition's action is preserved by the transition's
-`withLockSet`-wrapped SMP form, provided the invariant is lock-insensitive (the
-acquire and release folds preserve it).  This is the SM3.C.8
-`withLockSet_invariant_preserved` lever re-stated as the SM3.E.6 deliverable:
-the single-core preservation proof (`hAction`) transfers verbatim. -/
+/-- WS-SM SM3.E.6 (Corollary 2.1.11, invariant form; **WS-LS LS2.1**: over
+the pair, strengthened): a single-core invariant preserved by a transition's
+action is preserved by the transition's bracketed SMP form.  This is the
+SM3.C.8 `withLockSet_invariant_preserved` lever re-stated as the SM3.E.6
+deliverable: the single-core preservation proof (`hAction`) transfers
+verbatim. -/
 theorem singleCore_invariant_preservation {α : Type} (S : LockSet) (core : CoreId)
-    (action : SystemState → SystemState × α) (s : SystemState)
-    (inv : SystemState → Prop) (hPre : inv s)
-    (hAcq : ∀ (l : LockId) (m : AccessMode) (s' : SystemState),
-      inv s' → inv (acquireLockOnObject s' core l m))
-    (hAction : ∀ s', inv s' → inv (action s').1)
-    (hRel : ∀ (l : LockId) (m : AccessMode) (s' : SystemState),
-      inv s' → inv (releaseLockOnObject s' core l m))
-    -- WS-LC LC4.5: the shrinking phase withdraws before it releases.
-    (hCan : ∀ (l : LockId) (m : AccessMode) (s' : SystemState),
-      inv s' → inv (cancelLockOnObject s' core l m)) :
-    inv (withLockSet S core action s).1 :=
-  withLockSet_invariant_preserved S core action s inv hPre hAcq hAction hRel hCan
+    (action : SystemState → SystemState × α) (s : LockedSystemState)
+    (inv : SystemState → Prop) (hPre : inv s.kernel)
+    (hAction : ∀ s', inv s' → inv (action s').1) :
+    inv (withLockSet S core action s).1.kernel :=
+  withLockSet_invariant_preserved S core action s inv hPre hAction
 
 /-- WS-SM SM3.E.6 (Corollary 2.1.11, **pre→post** meta-theorem — the general
-form): if a single-core transition `op` establishes a postcondition `post` from a
-precondition `pre` (`hSingleCore`), then its `withLockSet`-wrapped SMP form
-establishes `post` from `pre`.
+form; **WS-LS LS2.1**: over the pair, strengthened): if a single-core
+transition `op` establishes a postcondition `post` from a precondition `pre`
+(`hSingleCore`), then its bracketed SMP form establishes `post` from `pre`.
 
-The three phases mirror `withLockSet`:
-* **growing** — `pre` is lock-insensitive (`hPreAcq`), so it survives the acquire
-  fold, and the action runs on a state satisfying `pre`;
-* **action** — the single-core theorem `hSingleCore` gives `post` on the action's
-  output (its proof is reused verbatim — this is the lever);
-* **shrinking** — `post` is lock-insensitive on both steps the phase takes
-  (`hPostCan`, `hPostRel`), so it survives the withdrawal fold and then the
-  release fold.  The withdrawal half is WS-LC LC4.5; every discharge in the
-  tree is the release form with one name changed.
-
+The action runs on `s.kernel`, which satisfies `pre`; the single-core theorem
+gives `post` on its output; the shrinking phase changes only the lock half.
 No re-proof of `op` is needed: the single-core argument applies because, under
-`lockSetHeld` (established by the growing phase, see
-`withLockSet_growing_phase_establishes_lockSetHeld`), no other core mutates the
-locked objects, exactly as the single-core proof assumes. -/
+the bracket's guard, no other core mutates the locked objects, exactly as the
+single-core proof assumes. -/
 theorem singleCore_proof_preservation {α : Type} (S : LockSet) (core : CoreId)
-    (op : SystemState → SystemState × α) (s : SystemState)
-    (pre post : SystemState → Prop) (hpre : pre s)
-    (hPreAcq : ∀ (l : LockId) (m : AccessMode) (s' : SystemState),
-      pre s' → pre (acquireLockOnObject s' core l m))
-    (hSingleCore : ∀ s', pre s' → post (op s').1)
-    (hPostRel : ∀ (l : LockId) (m : AccessMode) (s' : SystemState),
-      post s' → post (releaseLockOnObject s' core l m))
-    (hPostCan : ∀ (l : LockId) (m : AccessMode) (s' : SystemState),
-      post s' → post (cancelLockOnObject s' core l m)) :
-    post (withLockSet S core op s).1 := by
-  rw [withLockSet_fst]
-  -- Phase 1 (growing): `pre` survives the acquire fold.
-  have hPreAfter : pre (acquireAll core S.lockAcquireSequence s) :=
-    lockSet_invariant_preserved S core s pre hpre hPreAcq
-  -- Phase 2 (action): the single-core theorem establishes `post`.
-  have hPostAfterAction : post (op (acquireAll core S.lockAcquireSequence s)).1 :=
-    hSingleCore _ hPreAfter
-  -- Phase 3 (shrinking): `post` survives the withdrawal fold, then the release
-  -- fold (WS-LC LC4.5).
-  have hRelFold : ∀ (pairs : List (LockId × AccessMode)) (s₀ : SystemState),
-      post s₀ → post (releaseAll core pairs s₀) := by
-    intro pairs
-    induction pairs with
-    | nil => intro s₀ h; exact h
-    | cons head rest ih =>
-        intro s₀ h
-        show post (releaseAll core rest (releaseLockOnObject s₀ core head.fst head.snd))
-        exact ih _ (hPostRel head.fst head.snd s₀ h)
-  have hCanFold : ∀ (pairs : List (LockId × AccessMode)) (s₀ : SystemState),
-      post s₀ → post (cancelAll core pairs s₀) := by
-    intro pairs
-    induction pairs with
-    | nil => intro s₀ h; exact h
-    | cons head rest ih =>
-        intro s₀ h
-        show post (cancelAll core rest (cancelLockOnObject s₀ core head.fst head.snd))
-        exact ih _ (hPostCan head.fst head.snd s₀ h)
-  exact hRelFold S.lockAcquireSequence.reverse _
-    (hCanFold S.lockAcquireSequence.reverse _ hPostAfterAction)
-
-/-- WS-SM SM3.E.6: the `lockSetHeld` precondition the meta-theorem rests on is a
-**consequence** of `withLockSet`, not an external assumption.  When every lock in
-`S` resolves to a present, kind-matching, available (`unheld`) object in `s`, the
-`withLockSet` growing phase puts the entire lock set into the held state on the
-post-acquire state the action sees.  Lifts SM3.C.8's
-`acquireAll_establishes_lockSetHeld`. -/
-theorem withLockSet_growing_phase_establishes_lockSetHeld (S : LockSet)
-    (core : CoreId) (s : SystemState)
-    (hExt : s.objects.invExt)
-    (hEach : ∀ p ∈ S.pairs, ∃ o, s.objects[p.fst.objId]? = some o ∧
-        o.lockKind = p.fst.kind ∧ o.objectLockOf = RwLockState.unheld) :
-    lockSetHeld core S (acquireAll core S.lockAcquireSequence s) :=
-  acquireAll_establishes_lockSetHeld S core s hExt hEach
+    (op : SystemState → SystemState × α) (s : LockedSystemState)
+    (pre post : SystemState → Prop) (hpre : pre s.kernel)
+    (hSingleCore : ∀ s', pre s' → post (op s').1) :
+    post (withLockSet S core op s).1.kernel :=
+  hSingleCore s.kernel hpre
 
 -- ============================================================================
--- §8b — Worked NON-VACUOUS instantiation of SM3.E.6 on a real invariant
--- ============================================================================
---
--- `singleCore_proof_preservation` is a metatheorem; its lock-insensitivity
--- hypotheses are trivially dischargeable for the `True` invariant.  To prove the
--- lever is a USABLE tool (not a vacuous false-anchor), this section instantiates
--- it on the genuine, non-trivial table-level `objStoreLock.wf` invariant,
--- discharging the per-step lock-insensitivity via SM2.C's per-op wf-preservation.
-
-/-- WS-SM SM3.E.6 foundation: acquiring any lock preserves the well-formedness of
-the table-level `objStoreLock`.  The `.objStore` branch advances `objStoreLock`
-via `RwLockState.applyOp` (SM2.C's `rwLock_tryAcquire{Read,Write}_preserves_wf`);
-every modeled / N/A branch leaves `objStoreLock` untouched
-(`acquireLockOnObject_preserves_objStoreLock_of_modeled`).  This is the per-step
-lock-insensitivity witness for the `objStoreLock.wf` invariant class. -/
-theorem acquireLockOnObject_preserves_objStoreLock_wf (s : SystemState)
-    (core : CoreId) (l : LockId) (m : AccessMode) (h : s.objStoreLock.wf) :
-    (acquireLockOnObject s core l m).objStoreLock.wf := by
-  by_cases hKind : l.kind = .objStore
-  · unfold acquireLockOnObject
-    rw [hKind]
-    simp only
-    cases m with
-    | read => exact rwLock_tryAcquireRead_preserves_wf _ core h
-    | write => exact rwLock_tryAcquireWrite_preserves_wf _ core h
-  · rw [acquireLockOnObject_preserves_objStoreLock_of_modeled s core l m hKind]
-    exact h
-
-/-- WS-SM SM3.E.6 foundation: releasing any lock preserves `objStoreLock.wf`.
-Symmetric to the acquire form, using SM2.C's
-`rwLock_release{Read,Write}_preserves_wf` and
-`releaseLockOnObject_preserves_objStoreLock_of_modeled`. -/
-theorem releaseLockOnObject_preserves_objStoreLock_wf (s : SystemState)
-    (core : CoreId) (l : LockId) (m : AccessMode) (h : s.objStoreLock.wf) :
-    (releaseLockOnObject s core l m).objStoreLock.wf := by
-  by_cases hKind : l.kind = .objStore
-  · unfold releaseLockOnObject
-    rw [hKind]
-    simp only
-    cases m with
-    | read => exact rwLock_releaseRead_preserves_wf _ core h
-    | write => exact rwLock_releaseWrite_preserves_wf _ core h
-  · rw [releaseLockOnObject_preserves_objStoreLock_of_modeled s core l m hKind]
-    exact h
-
-/-- **WS-LC LC4.5**: and the withdrawal.  A withdrawal preserves INV-R for the
-same reason a release does — `rwLock_cancel_preserves_wf` (WS-LC LC1) — and the
-modeled kinds never touch the table-level word. -/
-theorem cancelLockOnObject_preserves_objStoreLock_wf (s : SystemState)
-    (core : CoreId) (l : LockId) (m : AccessMode) (h : s.objStoreLock.wf) :
-    (cancelLockOnObject s core l m).objStoreLock.wf := by
-  by_cases hKind : l.kind = .objStore
-  · unfold cancelLockOnObject
-    rw [hKind]
-    simp only
-    exact rwLock_cancel_preserves_wf _ core h
-  · rw [cancelLockOnObject_preserves_objStoreLock_of_modeled s core l m hKind]
-    exact h
-
-/-- WS-SM SM3.E.6 (NON-VACUOUS Corollary 2.1.11 witness): the table-level
-`objStoreLock.wf` invariant survives a `withLockSet`-wrapped transition whose
-action preserves it.  This instantiates `singleCore_proof_preservation` on the
-**real** `objStoreLock.wf` invariant (not the trivial `True`), discharging the
-lock-insensitivity hypotheses via the per-step wf-preservation lemmas above.
-
-It proves the SM3.E.6 metatheorem is a genuine lever, not a vacuous false-anchor:
-a non-trivial single-core invariant (the table lock's well-formedness, a real
-SM2.C/SM3.C invariant) transfers verbatim through the 2PL `withLockSet` wrapper.
-The single-core obligation reduces to `hActionWf` — the action's own
-wf-preservation, which is exactly the single-core theorem. -/
-theorem withLockSet_preserves_objStoreLock_wf {α : Type} (S : LockSet)
-    (core : CoreId) (op : SystemState → SystemState × α) (s : SystemState)
-    (hwf : s.objStoreLock.wf)
-    (hActionWf : ∀ s', s'.objStoreLock.wf → (op s').1.objStoreLock.wf) :
-    (withLockSet S core op s).1.objStoreLock.wf :=
-  singleCore_proof_preservation S core op s
-    (fun st => st.objStoreLock.wf) (fun st => st.objStoreLock.wf) hwf
-    (fun l m s' h => acquireLockOnObject_preserves_objStoreLock_wf s' core l m h)
-    hActionWf
-    (fun l m s' h => releaseLockOnObject_preserves_objStoreLock_wf s' core l m h)
-    (fun l m s' h => cancelLockOnObject_preserves_objStoreLock_wf s' core l m h)
-
--- ============================================================================
--- §8c — A SECOND non-vacuous Cor 2.1.11 witness: the kind-discipline invariant
--- ============================================================================
---
--- `withLockSet_preserves_objStoreLock_wf` (§8b) demonstrated the lever on one
--- real invariant whose preservation is `invExt`-free.  This section demonstrates
--- it on a SECOND real invariant — the **kind-discipline** invariant (every
--- object's `objectType` tag is preserved), the most important real invariant
--- class (`tcbStoredUnderTidObjId`, `cnodeKindConsistent`, … all dispatch on
--- `objectType`).  Its lock-insensitivity genuinely depends on `invExt` (the
--- RHTable insert/lookup characterisation), so the invariant is bundled with
--- `invExt` and threaded through — showing the lever works on the realistic,
--- `invExt`-dependent invariant class, not only the `invExt`-free table lock.
-
-/-- WS-SM SM3.E.6 foundation: `updateObjectLockAt` preserves the `objectType` tag
-at every key.  The kind-matched branch re-inserts `obj.updateLock op`, which
-preserves `objectType` (`KernelObject.updateLock_preserves_objectType`), so
-`updateObjectAt_preserves_objectType_at` applies; the fail-closed branch is the
-identity. -/
-theorem updateObjectLockAt_preserves_objectType_at (s : SystemState) (l : LockId)
-    (op : RwLockOp) (k : SeLe4n.ObjId) (hExt : s.objects.invExt) :
-    Option.map KernelObject.objectType ((updateObjectLockAt s l op).objects.get? k)
-      = Option.map KernelObject.objectType (s.objects.get? k) := by
-  unfold updateObjectLockAt
-  cases LockId.lookup s l with
-  | none => rfl
-  | some _ =>
-      exact updateObjectAt_preserves_objectType_at s l.objId k
-        (fun obj => obj.updateLock op) hExt
-        (fun o => KernelObject.updateLock_preserves_objectType o op)
-
-/-- WS-SM SM3.E.6 foundation: acquiring a lock preserves the `objectType` tag at
-every key.  The `.objStore` branch only touches `objStoreLock` (objects
-unchanged); the modeled branches route through
-`updateObjectLockAt_preserves_objectType_at`; `.reply`/`.page` are no-ops. -/
-theorem acquireLockOnObject_preserves_objectType_at (s : SystemState) (core : CoreId)
-    (l : LockId) (m : AccessMode) (k : SeLe4n.ObjId) (hExt : s.objects.invExt) :
-    Option.map KernelObject.objectType ((acquireLockOnObject s core l m).objects.get? k)
-      = Option.map KernelObject.objectType (s.objects.get? k) := by
-  unfold acquireLockOnObject
-  cases l.kind with
-  | objStore => rfl
-  | tcb | endpoint | notification | cnode
-  | vspaceRoot | untyped | schedContext | reply | page =>
-      all_goals exact updateObjectLockAt_preserves_objectType_at s l (m.toAcquireOp core) k hExt
-
-/-- WS-SM SM3.E.6 foundation: releasing a lock preserves the `objectType` tag at
-every key.  Symmetric to the acquire form. -/
-theorem releaseLockOnObject_preserves_objectType_at (s : SystemState) (core : CoreId)
-    (l : LockId) (m : AccessMode) (k : SeLe4n.ObjId) (hExt : s.objects.invExt) :
-    Option.map KernelObject.objectType ((releaseLockOnObject s core l m).objects.get? k)
-      = Option.map KernelObject.objectType (s.objects.get? k) := by
-  unfold releaseLockOnObject
-  cases l.kind with
-  | objStore => rfl
-  | tcb | endpoint | notification | cnode
-  | vspaceRoot | untyped | schedContext | reply | page =>
-      all_goals exact updateObjectLockAt_preserves_objectType_at s l (m.toReleaseOp core) k hExt
-
-/-- **WS-LC LC4.5**: and withdrawing one. -/
-theorem cancelLockOnObject_preserves_objectType_at (s : SystemState) (core : CoreId)
-    (l : LockId) (m : AccessMode) (k : SeLe4n.ObjId) (hExt : s.objects.invExt) :
-    Option.map KernelObject.objectType ((cancelLockOnObject s core l m).objects.get? k)
-      = Option.map KernelObject.objectType (s.objects.get? k) := by
-  unfold cancelLockOnObject
-  cases l.kind with
-  | objStore => rfl
-  | tcb | endpoint | notification | cnode
-  | vspaceRoot | untyped | schedContext | reply | page =>
-      all_goals exact updateObjectLockAt_preserves_objectType_at s l (m.toCancelOp core) k hExt
-
-/-- WS-SM SM3.E.6 (SECOND non-vacuous Cor 2.1.11 witness): the **kind-discipline**
-invariant — every object's `objectType` tag equals the reference state `s₀`'s —
-survives a `withLockSet`-wrapped transition whose action preserves it.
-
-This instantiates `singleCore_proof_preservation` on a genuinely
-`invExt`-dependent real-invariant class (bundling `invExt` with the kind-tag
-equality so the lock-insensitivity hypotheses are dischargeable).  Together with
-`withLockSet_preserves_objStoreLock_wf` (the `invExt`-free table lock), it shows
-the Corollary 2.1.11 lever transfers BOTH invariant flavours — the `invExt`-free
-field invariants and the `invExt`-dependent object-store-structural invariants
-(the dominant real-invariant class).  The single-core obligation reduces to
-`hAction` — the action's own kind-preservation, exactly the single-core theorem. -/
-theorem withLockSet_preserves_objectType_at {α : Type} (S : LockSet) (core : CoreId)
-    (op : SystemState → SystemState × α) (s s₀ : SystemState)
-    (hInv : s.objects.invExt ∧
-      ∀ k, Option.map KernelObject.objectType (s.objects.get? k)
-        = Option.map KernelObject.objectType (s₀.objects.get? k))
-    (hAction : ∀ s',
-      (s'.objects.invExt ∧
-        ∀ k, Option.map KernelObject.objectType (s'.objects.get? k)
-          = Option.map KernelObject.objectType (s₀.objects.get? k)) →
-      ((op s').1.objects.invExt ∧
-        ∀ k, Option.map KernelObject.objectType ((op s').1.objects.get? k)
-          = Option.map KernelObject.objectType (s₀.objects.get? k))) :
-    (withLockSet S core op s).1.objects.invExt ∧
-    ∀ k, Option.map KernelObject.objectType ((withLockSet S core op s).1.objects.get? k)
-      = Option.map KernelObject.objectType (s₀.objects.get? k) :=
-  singleCore_proof_preservation S core op s
-    (fun st => st.objects.invExt ∧
-      ∀ k, Option.map KernelObject.objectType (st.objects.get? k)
-        = Option.map KernelObject.objectType (s₀.objects.get? k))
-    (fun st => st.objects.invExt ∧
-      ∀ k, Option.map KernelObject.objectType (st.objects.get? k)
-        = Option.map KernelObject.objectType (s₀.objects.get? k))
-    hInv
-    (fun l m s' hpre => ⟨acquireLockOnObject_preserves_invExt s' core l m hpre.1,
-      fun k => by
-        rw [acquireLockOnObject_preserves_objectType_at s' core l m k hpre.1]; exact hpre.2 k⟩)
-    hAction
-    (fun l m s' hpost => ⟨releaseLockOnObject_preserves_invExt s' core l m hpost.1,
-      fun k => by
-        rw [releaseLockOnObject_preserves_objectType_at s' core l m k hpost.1]; exact hpost.2 k⟩)
-    (fun l m s' hpost => ⟨cancelLockOnObject_preserves_invExt s' core l m hpost.1,
-      fun k => by
-        rw [cancelLockOnObject_preserves_objectType_at s' core l m k hpost.1]; exact hpost.2 k⟩)
-
--- ============================================================================
--- §9 — Atomicity bridge: `applySequential` faithfully models the `withLockSet`
---      execution under a lock-insensitive observer (SM3.E.2 grounding)
+-- §9 — Atomicity bridge: `applySequential` faithfully models the bracketed
+--      execution (SM3.E.2 grounding)
 -- ============================================================================
 --
 -- The schedule model (§1) folds *bare business actions* (`applySequential`).
--- The real kernel runs each transition wrapped in `withLockSet` (SM3.C), which
--- additionally acquires/releases locks.  This section proves — rather than
--- merely asserts in prose — that the two agree under any lock-insensitive
--- observer `π` (a business-state projection): the lock machinery is invisible,
--- so `applySequential` of the business actions IS the observable net effect of
--- the `withLockSet`-wrapped execution.  This grounds the SM3.E model in the
--- SM3.C `withLockSet` semantics via SM3.C.7's `lockSet_observer_atomic`.
+-- The real kernel runs each transition inside a bracket, which additionally
+-- acquires and releases locks.  This section proves — rather than merely
+-- asserts in prose — that the two agree: the lock machinery is invisible, so
+-- `applySequential` of the business actions IS the kernel half of the
+-- bracketed execution.  **WS-LS LS2.1**: stated over the pair
+-- `LockedSystemState` and the ghost bracket `withLockSet`, where the
+-- bracket's phases write the lock table and the action writes the kernel
+-- state, so the agreement is `rfl` for every observer.  Before LS2.1 the
+-- phases wrote lock words into kernel objects and the bridge held only for a
+-- lock-insensitive observer whose actions were `π`-congruences
+-- (`ActionPiCongr`, `applySequential_piCongr`), with a §9b non-vacuity witness
+-- on the scheduler projection to show those hypotheses were satisfiable;
+-- all of that is dropped (a strengthening: no hypothesis remains to be
+-- satisfiable).
 
-/-- WS-SM SM3.E.2 (atomicity bridge): an action is a **`π`-congruence** when it
-respects the observer `π` — equal observations map to equal observations.  The
-business actions of kernel transitions are `π`-congruences for the business-state
-observer `π` (their effect on `π` depends only on the `π`-visible input). -/
-def ActionPiCongr {β : Type} (π : SystemState → β) (a : SystemState → SystemState) :
-    Prop :=
-  ∀ s₁ s₂, π s₁ = π s₂ → π (a s₁) = π (a s₂)
-
-/-- WS-SM SM3.E.2: the `applySequential` fold is a `π`-congruence when every
-action in the schedule is.  Equal observations of the start state yield equal
-observations of the end state.  Induction on the schedule. -/
-theorem applySequential_piCongr {β : Type} (π : SystemState → β) :
-    ∀ (l : List KernelTransitionInstance), (∀ τ ∈ l, ActionPiCongr π τ.action) →
-      ∀ s₁ s₂, π s₁ = π s₂ → π (applySequential l s₁) = π (applySequential l s₂)
-  | [], _, _, _, h => h
-  | τ :: rest, hCongr, s₁, s₂, h => by
-      rw [applySequential_cons, applySequential_cons]
-      exact applySequential_piCongr π rest
-        (fun x hx => hCongr x (List.mem_cons_of_mem _ hx))
-        (τ.action s₁) (τ.action s₂) (hCongr τ List.mem_cons_self s₁ s₂ h)
-
-/-- WS-SM SM3.E.2 (atomicity bridge — single transition): wrapping a business
-action in `withLockSet` is **observationally identical** to the bare action, for
-any lock-insensitive observer `π`.  The acquire/release lock machinery is
-invisible: `π (withLockSet S core (action, ()) s).1 = π (action s)`.
-
-Proof via SM3.C.7's `lockSet_observer_atomic`: the acquire fold is `π`-invisible
-(`π (acquireAll …) = π s`) and the release fold is `π`-invisible (so
-`π (withLockSet …).1 = π (action (acquireAll …))`); the action being a
-`π`-congruence then collapses `π (action (acquireAll …)) = π (action s)`.  This
-is the formal content behind "`applySequential` models the interleaved
-execution" — not an assumption but a theorem grounded in the SM3.C semantics. -/
+/-- WS-SM SM3.E.2 (atomicity bridge — single transition; **WS-LS LS2.1**: over
+the pair, hypothesis-free): bracketing a business action is **observationally
+identical** to the bare action, for every observer `π` of the kernel state.
+The lock machinery is invisible because it touches only the lock half:
+`π (withLockSet S core (action, ()) s).1.kernel = π (action s.kernel)`.
+This is the formal content behind "`applySequential` models the interleaved
+execution" — not an assumption but `rfl`. -/
 theorem withLockSet_observation_eq_action {β : Type} (S : LockSet) (core : CoreId)
-    (businessAction : SystemState → SystemState) (s : SystemState) (π : SystemState → β)
-    (hAcq : AcquireInsensitive core π) (hRel : UnwindInsensitive core π)
-    (hCongr : ActionPiCongr π businessAction) :
-    π (withLockSet S core (fun st => (businessAction st, ())) s).1 = π (businessAction s) := by
-  obtain ⟨hAcqEq, hRelEq⟩ :=
-    lockSet_observer_atomic S core (fun st => (businessAction st, ())) s π hAcq hRel
-  rw [hRelEq]
-  exact hCongr _ _ hAcqEq
+    (businessAction : SystemState → SystemState) (s : LockedSystemState)
+    (π : SystemState → β) :
+    π (withLockSet S core (fun st => (businessAction st, ())) s).1.kernel
+      = π (businessAction s.kernel) := rfl
 
-/-- WS-SM SM3.E.2 (atomicity bridge): a `withLockSet`-wrapped schedule — each
-transition's business action wrapped in its own `withLockSet`.  This is the
-*real* kernel execution shape (modulo the per-core seam SM5 adds); SM3.E proves
-its observable effect equals the bare `applySequential` model. -/
+/-- WS-SM SM3.E.2 (atomicity bridge): a bracketed schedule — each transition's
+business action inside its own bracket, the lock table threaded through.
+This is the *real* kernel execution shape (modulo the per-core seam SM5 adds);
+SM3.E proves its kernel half equals the bare `applySequential` model. -/
 def applySequentialWithLockSet (sched : List KernelTransitionInstance)
-    (s : SystemState) : SystemState :=
+    (s : LockedSystemState) : LockedSystemState :=
   sched.foldl
     (fun st τ => (withLockSet τ.lockSet τ.core (fun s' => (τ.action s', ())) st).1) s
 
-@[simp] theorem applySequentialWithLockSet_nil (s : SystemState) :
+@[simp] theorem applySequentialWithLockSet_nil (s : LockedSystemState) :
     applySequentialWithLockSet [] s = s := rfl
 
 @[simp] theorem applySequentialWithLockSet_cons (τ : KernelTransitionInstance)
-    (rest : List KernelTransitionInstance) (s : SystemState) :
+    (rest : List KernelTransitionInstance) (s : LockedSystemState) :
     applySequentialWithLockSet (τ :: rest) s =
       applySequentialWithLockSet rest
         (withLockSet τ.lockSet τ.core (fun s' => (τ.action s', ())) s).1 := rfl
 
-/-- WS-SM SM3.E.2 (atomicity bridge — full schedule): the lock-insensitive
-observation of a `withLockSet`-wrapped execution equals the observation of the
-bare `applySequential` model.  So the SM3.E serializability results about
-`applySequential` transfer verbatim to the real `withLockSet`-wrapped execution
-under any business-state observer `π` whose actions are `π`-congruences.
+/-- **WS-LS LS2.1**: the kernel half of a bracketed schedule is the bare
+`applySequential` model — the bridge in its strongest form, as a state
+equality rather than an observation.  Induction on the schedule; each step
+is `withLockSet_fst_kernel`. -/
+theorem applySequentialWithLockSet_kernel :
+    ∀ (sched : List KernelTransitionInstance) (s : LockedSystemState),
+      (applySequentialWithLockSet sched s).kernel = applySequential sched s.kernel
+  | [], _ => rfl
+  | τ :: rest, s => by
+      rw [applySequentialWithLockSet_cons, applySequential_cons,
+        applySequentialWithLockSet_kernel rest]
+      rfl
 
-Induction on the schedule: the single-transition bridge collapses the head's
-`withLockSet` to its bare action (up to `π`), the IH handles the tail, and
-`applySequential_piCongr` threads the head's `π`-equal post-states through the
-tail fold.  This closes the "`applySequential` models the interleaved execution"
-gap with a theorem rather than prose. -/
+/-- WS-SM SM3.E.2 (atomicity bridge — full schedule; **WS-LS LS2.1**: over the
+pair, hypothesis-free): every observation of a bracketed execution equals the
+observation of the bare `applySequential` model.  So the SM3.E serializability
+results about `applySequential` transfer verbatim to the real bracketed
+execution under any observer `π` of the kernel state.  This closes the
+"`applySequential` models the interleaved execution" gap with a theorem
+rather than prose. -/
 theorem applySequentialWithLockSet_observation {β : Type} (π : SystemState → β)
-    (hAcq : ∀ c : CoreId, AcquireInsensitive c π)
-    (hRel : ∀ c : CoreId, UnwindInsensitive c π) :
-    ∀ (sched : List KernelTransitionInstance),
-      (∀ τ ∈ sched, ActionPiCongr π τ.action) →
-      ∀ s, π (applySequentialWithLockSet sched s) = π (applySequential sched s)
-  | [], _, _ => rfl
-  | τ :: rest, hCongr, s => by
-      rw [applySequentialWithLockSet_cons, applySequential_cons]
-      have hW : π (withLockSet τ.lockSet τ.core (fun s' => (τ.action s', ())) s).1
-          = π (τ.action s) :=
-        withLockSet_observation_eq_action τ.lockSet τ.core τ.action s π
-          (hAcq τ.core) (hRel τ.core) (hCongr τ List.mem_cons_self)
-      rw [applySequentialWithLockSet_observation π hAcq hRel rest
-        (fun x hx => hCongr x (List.mem_cons_of_mem _ hx))]
-      exact applySequential_piCongr π rest
-        (fun x hx => hCongr x (List.mem_cons_of_mem _ hx)) _ _ hW
-
--- ============================================================================
--- §9b — Concrete NON-VACUOUS witness for the atomicity bridge
--- ============================================================================
---
--- §9's bridge takes `AcquireInsensitive` / `UnwindInsensitive` as hypotheses.
--- To prove the bridge is a usable result — not one resting on unsatisfiable
--- hypotheses — this section exhibits a genuine non-trivial business-state
--- observer (the `scheduler` projection) that discharges BOTH insensitivity
--- hypotheses unconditionally, and instantiates the bridge on a transition that
--- genuinely writes the scheduler: the bridge correctly reports the action's
--- effect (`= sch`) while the lock acquire/release machinery stays invisible.
--- Mirrors the concrete non-vacuity witnesses of §8b (objStoreLock.wf), §8c
--- (objectType), and §10 (write/write).
-
-/-- WS-SM SM3.E.2 foundation (plumbing): `updateObjectLockAt` leaves the
-`scheduler` subsystem field untouched — the kind-matched branch writes only the
-`objects` table (`updateObjectAt`), the fail-closed branch is the identity. -/
-private theorem updateObjectLockAt_preserves_scheduler (s : SystemState) (l : LockId)
-    (op : RwLockOp) : (updateObjectLockAt s l op).scheduler = s.scheduler := by
-  unfold updateObjectLockAt
-  cases LockId.lookup s l with
-  | none => rfl
-  | some _ => unfold updateObjectAt; cases s.objects.get? l.objId <;> rfl
-
-/-- WS-SM SM3.E.2 (atomicity-bridge non-vacuity foundation): acquiring a lock
-leaves the `scheduler` subsystem field untouched.  Every `acquireLockOnObject`
-branch touches only `objStoreLock` (`.objStore`), the `objects` table (modeled
-kinds, via `updateObjectLockAt`), or nothing (`.reply`/`.page`) — never
-`scheduler`. -/
-theorem acquireLockOnObject_preserves_scheduler (s : SystemState) (core : CoreId)
-    (l : LockId) (m : AccessMode) :
-    (acquireLockOnObject s core l m).scheduler = s.scheduler := by
-  unfold acquireLockOnObject
-  cases l.kind <;>
-    first
-      | rfl
-      | exact updateObjectLockAt_preserves_scheduler s l (m.toAcquireOp core)
-
-/-- WS-SM SM3.E.2 (atomicity-bridge non-vacuity foundation): releasing a lock
-leaves the `scheduler` subsystem field untouched.  Symmetric to the acquire
-form. -/
-theorem releaseLockOnObject_preserves_scheduler (s : SystemState) (core : CoreId)
-    (l : LockId) (m : AccessMode) :
-    (releaseLockOnObject s core l m).scheduler = s.scheduler := by
-  unfold releaseLockOnObject
-  cases l.kind <;>
-    first
-      | rfl
-      | exact updateObjectLockAt_preserves_scheduler s l (m.toReleaseOp core)
-
-/-- **WS-LC LC4.5**: and withdrawing one, the third sibling. -/
-theorem cancelLockOnObject_preserves_scheduler (s : SystemState) (core : CoreId)
-    (l : LockId) (m : AccessMode) :
-    (cancelLockOnObject s core l m).scheduler = s.scheduler := by
-  unfold cancelLockOnObject
-  cases l.kind <;>
-    first
-      | rfl
-      | exact updateObjectLockAt_preserves_scheduler s l (m.toCancelOp core)
-
-/-- WS-SM SM3.E.2 (CONCRETE non-vacuity witness): the `scheduler` projection is a
-genuine non-trivial business-state observer that is **acquire-insensitive** —
-discharging the `AcquireInsensitive` hypothesis of the §9 bridge for a real
-observer, proving the hypothesis is satisfiable (the bridge is not vacuous). -/
-theorem schedulerObserver_acquireInsensitive (core : CoreId) :
-    AcquireInsensitive core (fun s => s.scheduler) :=
-  fun s l m => acquireLockOnObject_preserves_scheduler s core l m
-
-/-- WS-SM SM3.E.2 (CONCRETE non-vacuity witness): the `scheduler` projection is
-insensitive to the **whole shrinking phase** — both the withdrawal and the
-release.  Together with `schedulerObserver_acquireInsensitive` this discharges
-both hypotheses of `withLockSet_observation_eq_action` for a real observer. -/
-theorem schedulerObserver_unwindInsensitive (core : CoreId) :
-    UnwindInsensitive core (fun s => s.scheduler) :=
-  ⟨fun s l m => releaseLockOnObject_preserves_scheduler s core l m,
-   fun s l m => cancelLockOnObject_preserves_scheduler s core l m⟩
-
-/-- WS-SM SM3.E.2 (the atomicity bridge applied NON-VACUOUSLY): a transition that
-writes the scheduler (`setSchedulerAction sch`), wrapped in the full `withLockSet`
-2PL lock machinery, has its scheduler effect correctly observed (`= sch`) — the
-acquire/release folds are invisible.  Instantiates the §9 bridge
-(`withLockSet_observation_eq_action`) on the concrete scheduler observer, proving
-the bridge is a usable result on a real (observer, action) pair, not a vacuous
-theorem resting on unsatisfiable insensitivity hypotheses. -/
-theorem withLockSet_observation_scheduler_witness (S : LockSet) (core : CoreId)
-    (sch : SchedulerState) (s : SystemState) :
-    (withLockSet S core (fun st => (setSchedulerAction sch st, ())) s).1.scheduler = sch :=
-  withLockSet_observation_eq_action S core (setSchedulerAction sch) s
-    (fun s => s.scheduler)
-    (schedulerObserver_acquireInsensitive core)
-    (schedulerObserver_unwindInsensitive core)
-    (fun _ _ _ => rfl)
-
+    (sched : List KernelTransitionInstance) (s : LockedSystemState) :
+    π (applySequentialWithLockSet sched s).kernel = π (applySequential sched s.kernel) := by
+  rw [applySequentialWithLockSet_kernel]
 -- ============================================================================
 -- §10 — Observational serializability: covers write/write on distinct objects
 -- ============================================================================
@@ -1663,7 +1323,7 @@ theorem updateObjectAt_actionPreservesInvExt (oid : SeLe4n.ObjId)
 /-- WS-SM SM3.E.5: an object-store-write transition is well-behaved (both
 conjuncts hold). -/
 theorem updateObjectAt_wellBehavedObs (S : LockSet) (core : CoreId) (ct : Nat)
-    (at_ : LockId → Nat) (oid : SeLe4n.ObjId) (f : KernelObject → KernelObject) :
+    (at_ : LockKey → Nat) (oid : SeLe4n.ObjId) (f : KernelObject → KernelObject) :
     KernelTransitionInstance.wellBehavedObs
       ⟨S, core, ct, at_, fun s => updateObjectAt s oid f⟩ :=
   ⟨updateObjectAt_actionObsCongr oid f, updateObjectAt_actionPreservesInvExt oid f⟩
@@ -1848,14 +1508,14 @@ transition instance whose business action writes object `oid` via `f`
 (`updateObjectAt`).  This is the shape every real write transition takes; the
 observational layer is built precisely so these are serializable. -/
 def objStoreWriteInstance (S : LockSet) (core : CoreId) (ct : Nat)
-    (at_ : LockId → Nat) (oid : SeLe4n.ObjId) (f : KernelObject → KernelObject) :
+    (at_ : LockKey → Nat) (oid : SeLe4n.ObjId) (f : KernelObject → KernelObject) :
     KernelTransitionInstance :=
   ⟨S, core, ct, at_, fun s => updateObjectAt s oid f⟩
 
 /-- WS-SM SM3.E.5: an object-store-write transition is observationally
 well-behaved. -/
 theorem objStoreWriteInstance_wellBehavedObs (S : LockSet) (core : CoreId) (ct : Nat)
-    (at_ : LockId → Nat) (oid : SeLe4n.ObjId) (f : KernelObject → KernelObject) :
+    (at_ : LockKey → Nat) (oid : SeLe4n.ObjId) (f : KernelObject → KernelObject) :
     KernelTransitionInstance.wellBehavedObs (objStoreWriteInstance S core ct at_ oid f) :=
   updateObjectAt_wellBehavedObs S core ct at_ oid f
 
@@ -1864,7 +1524,7 @@ observationally): two object-store-write transitions to **distinct** objects
 commute observationally — the canonical write/write case that structural
 commutation cannot capture.  Lifts `updateObjectAt_objStoreEquiv_comm`. -/
 theorem objStoreWriteInstance_actionsCommuteObs (S₁ S₂ : LockSet) (c₁ c₂ : CoreId)
-    (ct₁ ct₂ : Nat) (at₁ at₂ : LockId → Nat) (oid₁ oid₂ : SeLe4n.ObjId)
+    (ct₁ ct₂ : Nat) (at₁ at₂ : LockKey → Nat) (oid₁ oid₂ : SeLe4n.ObjId)
     (f₁ f₂ : KernelObject → KernelObject) (hNe : oid₁ ≠ oid₂) :
     KernelTransitionInstance.actionsCommuteObs
       (objStoreWriteInstance S₁ c₁ ct₁ at₁ oid₁ f₁)

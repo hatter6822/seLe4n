@@ -11,14 +11,6 @@ import SeLe4n.Prelude
 import SeLe4n.Machine
 import SeLe4n.Model.Object
 import SeLe4n.Model.State
--- WS-SM SM3.A audit-pass-6: pull the SM3.A theorem inventory into the
--- production import closure so `lake build` (default target) catches
--- regressions in the 34-entry aggregator at the production-build step,
--- not just at the Tier-3 invariant-surface or test-suite levels.  The
--- inventory has no run-time semantics (it is a documentation/audit
--- artifact); production reachability ensures CI cannot drop it
--- silently.
-import SeLe4n.Model.Object.PerObjectLockInventory
 import SeLe4n.Kernel.API
 -- WS-RR RR8.10: the cancellation's arm-complete IPC bundle and its cross-core
 -- lift.  Its three arm theorems live in three different modules, so the
@@ -35,7 +27,6 @@ import SeLe4n.Kernel.Architecture.RegisterDecode
 -- RegisterDecode / SyscallArgDecode.
 import SeLe4n.Kernel.Architecture.SyscallReturn
 import SeLe4n.Kernel.Architecture.TrapFrameSaveInvariant
-import SeLe4n.Kernel.Architecture.RegisterContextBounded
 -- WS-BP BP7.5: a switch resumes the incoming thread with the frame its TCB
 -- holds, so the timeout and cancellation frames RR7.14 stages are delivered.
 import SeLe4n.Kernel.Scheduler.Operations.ResumeDelivery
@@ -148,6 +139,23 @@ import SeLe4n.Kernel.Lifecycle.Invariant.RetypeReservation
 -- so without this line it would be outside every Tier 1 census's environment —
 -- the `v0.35.76` finding one file smaller.
 import SeLe4n.Kernel.SyscallSchedFootprint
+-- WS-LS LS2.5: the per-transition scheduler footprints, each beside its
+-- transition, and the constructor every one of them is an instance of.
+import SeLe4n.Kernel.Scheduler.SchedFootprint
+import SeLe4n.Kernel.Lifecycle.ResumeFootprint
+import SeLe4n.Kernel.SchedContext.PriorityControlFootprint
+import SeLe4n.Kernel.Scheduler.Operations.AffinityFootprint
+import SeLe4n.Kernel.SchedContext.SchedContextFootprint
+import SeLe4n.Kernel.Lifecycle.Operations.RetypeFootprint
+import SeLe4n.Kernel.IPC.CrossCore.SuspendFootprint
+-- WS-LS LS2.3: the syscall and suspend seams' footprint coverage — each
+-- declared footprint covers every object-store and scheduler write its seam
+-- performs (`syscallDispatchCrossCoreStep_coversWrites`,
+-- `suspendSeamAction_coversWrites`), built over the production per-arm
+-- containment (`SyscallSchedContainment`) and slot confinement
+-- (`SlotConfinement.*`), so the bracket's `hCover` is discharged at the seam
+-- rather than assumed.
+import SeLe4n.Kernel.SyscallSeamCoverage
 -- WS-SM SM7.B: the TLB shootdown protocol — `tlbShootdownLocal` /
 -- `tlbShootdownBroadcast` / `handleTlbShootdownReqOnCore`, the round
 -- composition with its quiescence capstone, Theorem 3.3.1

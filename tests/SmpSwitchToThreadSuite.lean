@@ -195,10 +195,10 @@ example (st : SystemState) (c : CoreId) (tid : SeLe4n.ThreadId) (st' : SystemSta
 
 /-- SM5.B.2: the lock-set acquires the object lock before the run-queue lock. -/
 example (c : CoreId) :
-    SchedLockId.object schedObjStoreLockId < SchedLockId.runQueue (⟨c⟩ : RunQueueLockId) :=
+    LockKey.objStore < LockKey.runQueue c :=
   switchToThreadOnCoreLockSet_object_before_runQueue c
 
-/-- SM5.B.2: the lock-set's keys form a `SchedLockId`-ascending acquisition sequence. -/
+/-- SM5.B.2: the lock-set's keys form a `LockKey`-ascending acquisition sequence. -/
 example (c : CoreId) :
     ((switchToThreadOnCoreLockSet c).map (·.1)).Pairwise (· ≤ ·) :=
   switchToThreadOnCoreLockSet_pairwise_le c
@@ -408,14 +408,14 @@ private def runLockSetChecks : IO Unit := do
   assertBool "switchToThreadOnCoreLockSet bootCoreId has both domain locks (length 2)"
     (decide ((switchToThreadOnCoreLockSet bootCoreId).length == 2))
   assertBool "footprint contains the object-store WRITE lock (guards getTcb? + save)"
-    (decide ((SchedLockId.object schedObjStoreLockId, AccessMode.write)
+    (decide ((LockKey.objStore, AccessMode.write)
               ∈ switchToThreadOnCoreLockSet bootCoreId))
   assertBool "footprint contains the boot core's run-queue WRITE lock"
-    (decide ((SchedLockId.runQueue ⟨bootCoreId⟩, AccessMode.write)
+    (decide ((LockKey.runQueue bootCoreId, AccessMode.write)
               ∈ switchToThreadOnCoreLockSet bootCoreId))
   assertBool "footprint acquires the object-store lock before the run-queue lock (§4.4)"
-    (decide (SchedLockId.object schedObjStoreLockId
-              < SchedLockId.runQueue (⟨bootCoreId⟩ : RunQueueLockId)))
+    (decide (LockKey.objStore
+              < LockKey.runQueue bootCoreId))
   assertBool "footprint keys are duplicate-free"
     (decide (((switchToThreadOnCoreLockSet bootCoreId).map (·.1)).Nodup))
   -- Every core's footprint has both domain locks.
@@ -550,7 +550,7 @@ private def runContextRestoreChecks : IO Unit := do
       match Architecture.restoreTargetOnCore st' bootCoreId with
       | .user c _ _ _ =>
         let staged := Architecture.trapWordsOfRegisterFile c Architecture.trapFrameTpidrWord
-        staged == (savedContextOf st' tidA).tpidr.val.toUInt64 && staged != 0x1022
+        staged == (savedContextOf st' tidA).tpidr && staged != 0x1022
       | _ => false))
   assertBool "the outgoing thread keeps its thread pointer for its next resume"
     (switchOkAnd staged bootCoreId tidA (fun st' => (savedContextOf st' tidP).tpidr == ⟨0x1022⟩))

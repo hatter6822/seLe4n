@@ -562,22 +562,25 @@ fn sharecommon_equality_implies_equal_hashes() {
             dec(o);
         }
         // The v0.36.2 audit: one value built two ways lands in two
-        // allocation classes — `nat_shiftl` reserves a limb its result does
-        // not use — and is one value to the sharing maximizer all the same.
-        // The class inequality is asserted so this is known to be the case
-        // the retired size-first comparison answered `false` on.
-        let by_product = nat::nat_big_mul(boxed(1 << 32), boxed(1 << 32));
-        let by_shift = nat::nat_shiftl(boxed(1), boxed(64));
-        assert!(!is_scalar(by_product) && !is_scalar(by_shift));
+        // allocation classes — `nat_pow` reserves limbs for its bound, past
+        // the builder's inline store, that its result does not use — and is
+        // one value to the sharing maximizer all the same.  The class
+        // inequality is asserted so this is known to be the case the retired
+        // size-first comparison answered `false` on.
+        let mut limbs = [0u64; 10];
+        limbs[9] = 1;
+        let by_limbs = nat::canonical(false, &limbs, false);
+        let by_pow = nat::nat_pow(boxed(2), boxed(576));
+        assert!(!is_scalar(by_limbs) && !is_scalar(by_pow));
         assert_ne!(
-            mem::usable_size(by_product as usize),
-            mem::usable_size(by_shift as usize),
+            mem::usable_size(by_limbs as usize),
+            mem::usable_size(by_pow as usize),
             "the two producers must reserve differently for this to decide"
         );
-        assert!(object::sharecommon_eq(by_product, by_shift));
+        assert!(object::sharecommon_eq(by_limbs, by_pow));
         assert_eq!(
-            object::sharecommon_hash(by_product),
-            object::sharecommon_hash(by_shift)
+            object::sharecommon_hash(by_limbs),
+            object::sharecommon_hash(by_pow)
         );
         // A constructor whose scalar part is not a whole word: its padding is
         // zeroed at allocation, so two builds of it agree byte for byte.
@@ -593,7 +596,7 @@ fn sharecommon_equality_implies_equal_hashes() {
         }
         assert!(object::sharecommon_eq(c1, c2));
         assert_eq!(object::sharecommon_hash(c1), object::sharecommon_hash(c2));
-        for o in [by_product, by_shift, c1, c2] {
+        for o in [by_limbs, by_pow, c1, c2] {
             dec(o);
         }
     }
@@ -790,6 +793,35 @@ fn every_scratch_buffer_is_returned() {
         dec(b);
     }
     assert_eq!(live(), before);
+}
+
+/// A big-number operation whose result is a scalar allocates nothing, and one
+/// whose result is big allocates exactly that object, while its limbs fit the
+/// builder's inline store: the kernel's capability-address arithmetic
+/// (`addr % 2 ^ 64`, `2 ^ guardWidth`) runs on every syscall.
+#[test]
+fn small_big_number_arithmetic_allocates_only_its_big_result() {
+    let word = nat::canonical(false, &[0, 1], false); // 2 ^ 64
+    let before = mem::allocations();
+    // SAFETY: borrowed numbers; owned results released.
+    unsafe {
+        let r = nat::nat_big_mod(boxed(4), word);
+        assert_eq!(unbox(r), 4);
+        let r = nat::nat_big_div(boxed(4), word);
+        assert_eq!(unbox(r), 0);
+        let r = nat::nat_pow(boxed(2), boxed(60));
+        assert_eq!(unbox(r), 1 << 60);
+        assert_eq!(mem::allocations(), before, "scalar results");
+        let r = nat::nat_big_sub(word, boxed(1));
+        assert!(!is_scalar(r));
+        assert_eq!(mem::allocations(), before + 1, "the big result alone");
+        dec(r);
+        let r = nat::nat_pow(boxed(2), boxed(64));
+        assert_eq!(mem::allocations(), before + 2, "the big result alone");
+        assert_eq!(nat::nat_big_cmp(r, word), core::cmp::Ordering::Equal);
+        dec(r);
+        dec(word);
+    }
 }
 
 #[test]

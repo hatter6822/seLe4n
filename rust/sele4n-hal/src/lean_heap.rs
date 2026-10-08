@@ -71,21 +71,20 @@
 //! One heap serves every core, behind a leaf [`TicketLock`](crate::ticket_lock::TicketLock).
 //! Most allocations happen inside the kernel-entry lock, which already admits
 //! one core at a time, but **not all of them**, so this lock is load-bearing
-//! rather than redundant.  Two callers allocate outside the entry lock while
-//! another core may be inside it, allocating:
+//! rather than redundant: **a secondary core's bring-up handshake**
+//! (`lean_ready.rs`'s `initialise_core_runtime`) allocates and frees a probe
+//! on this heap after the boot install, when other cores may already be
+//! serving kernel entries, allocating.
 //!
-//! * **the exception classifier** (`trap.rs`'s
-//!   `lean_classify_synchronous_exception`, listed in `build.rs`'s
-//!   `LEAN_UPCALLS_OUTSIDE_THE_ENTRY_LOCK`) runs on every core's synchronous
-//!   exception before any entry lock is taken, and its compiled body allocates
-//!   the `ExceptionContext` it classifies (`lean_alloc_ctor(0, 0, 32)` in the
-//!   generated C);
-//! * **a secondary core's bring-up handshake** (`lean_ready.rs`'s
-//!   `initialise_core_runtime`) allocates and frees a probe on this heap after
-//!   the boot install, when other cores may already be serving kernel entries.
+//! The other Lean upcall made outside the entry lock, the exception
+//! classifier (`trap.rs`'s `lean_classify_synchronous_exception`, listed in
+//! `build.rs`'s `LEAN_UPCALLS_OUTSIDE_THE_ENTRY_LOCK`), runs on every core's
+//! synchronous exception but allocates nothing: it classifies the `ESR_EL1`
+//! word (`classifySynchronousExceptionOfEsr`), and its generated C builds no
+//! object.
 //!
-//! Dropping the lock in favour of the entry lock would race both against the
-//! allocator's metadata.  It is a leaf: nothing is acquired while it is held,
+//! Dropping the lock in favour of the entry lock would race the bring-up probe
+//! against the allocator's metadata.  It is a leaf: nothing is acquired while it is held,
 //! and the wrappers release it before they halt.
 
 use core::cell::UnsafeCell;
@@ -98,6 +97,9 @@ pub const PAGE_SIZE: usize = 4096;
 pub const OBJECT_SIZE_DELTA: usize = 8;
 /// `LEAN_MAX_SMALL_OBJECT_SIZE` in `lean.h`: the largest small object.
 pub const MAX_SMALL_OBJECT_SIZE: usize = 4096;
+/// The cores whose allocations the heap counts apart: one slot per core the
+/// kernel serves (`smp::MAX_SECONDARY_CORES` secondaries and the boot core).
+pub const HEAP_COUNTED_CORES: usize = crate::smp::MAX_SECONDARY_CORES + 1;
 /// The number of small size classes, which is `lean_get_slot_idx`'s range.
 pub const SLOT_COUNT: usize = MAX_SMALL_OBJECT_SIZE / OBJECT_SIZE_DELTA;
 /// The largest arena, in pages, the page map can describe: a run's page count
@@ -277,6 +279,20 @@ pub struct HeapStats {
     pub pages: usize,
     /// Data pages no allocation owns.
     pub free_pages: usize,
+    /// Successful allocations since the heap was taken into service, per
+    /// allocating core — monotone, never decremented by a free, so a reading
+    /// taken before and after some code counts every allocation it made, even
+    /// one freed before it returned.  One heap serves every core, so a reader
+    /// measuring its own code reads its own core's slot.
+    pub allocations_by_core: [u64; HEAP_COUNTED_CORES],
+}
+
+impl HeapStats {
+    /// Successful allocations on every core.
+    #[must_use]
+    pub fn allocations(&self) -> u64 {
+        self.allocations_by_core.iter().sum()
+    }
 }
 
 /// The allocator over one arena.  `'a` is the lifetime of its metadata.
@@ -291,6 +307,10 @@ pub struct Heap<'a> {
     free_pages: usize,
     /// Per size class: the first small page with an allocatable object.
     partial: [u32; SLOT_COUNT],
+    /// `HeapStats::allocations_by_core`.
+    allocations_by_core: [u64; HEAP_COUNTED_CORES],
+    /// The core the next allocation is counted to ([`Heap::set_allocating_core`]).
+    allocating_core: usize,
 }
 
 /// The class size of slot `slot`.
@@ -355,6 +375,8 @@ impl<'a> Heap<'a> {
             free_hint: 0,
             free_pages: pages,
             partial: [NO_PAGE; SLOT_COUNT],
+            allocations_by_core: [0; HEAP_COUNTED_CORES],
+            allocating_core: 0,
         })
     }
 
@@ -401,6 +423,26 @@ impl<'a> Heap<'a> {
         HeapStats {
             pages: self.meta.len(),
             free_pages: self.free_pages,
+            allocations_by_core: self.allocations_by_core,
+        }
+    }
+
+    /// Count the allocations that follow to `core`, until the next call.  The
+    /// kernel heap sets it to the executing core on every access, under its
+    /// lock; a core outside [`HEAP_COUNTED_CORES`] is counted nowhere, which
+    /// no core the kernel serves is (`per_cpu`'s boot check holds every core
+    /// id below the core count).
+    pub fn set_allocating_core(&mut self, core: usize) {
+        self.allocating_core = core;
+    }
+
+    /// One successful allocation, counted to the allocating core.  Called at
+    /// exactly one point per allocation: `alloc_small`, and `alloc` only on
+    /// the arm it serves itself (it forwards every small request to
+    /// `alloc_small`, which counts it).
+    fn count_allocation(&mut self) {
+        if let Some(n) = self.allocations_by_core.get_mut(self.allocating_core) {
+            *n = n.wrapping_add(1);
         }
     }
 
@@ -597,6 +639,7 @@ impl<'a> Heap<'a> {
         if usize::from(entry.live) == slot_capacity(slot) {
             self.list_remove(slot, page);
         }
+        self.count_allocation();
         Ok(Some(self.page_addr(page) + (w * 64 + bit) * size))
     }
 
@@ -678,6 +721,7 @@ impl<'a> Heap<'a> {
         }
         let pages = size.div_ceil(PAGE_SIZE);
         let first = self.take_pages(pages, PageState::RunHead(pages))?;
+        self.count_allocation();
         Some(self.page_addr(first))
     }
 
@@ -957,7 +1001,10 @@ fn with_kernel_heap<R>(f: impl FnOnce(&mut Heap<'static>) -> R) -> Result<R, Ker
             unsafe { Heap::from_arena(start, len) }
         });
         match heap {
-            Ok(heap) => Ok(f(heap)),
+            Ok(heap) => {
+                heap.set_allocating_core(crate::per_cpu::current_core_id_from_tpidr() as usize);
+                Ok(f(heap))
+            }
             Err(e) => Err(KernelHeapError::Init(*e)),
         }
     })
@@ -1060,6 +1107,24 @@ pub fn kernel_heap_census() -> Result<KernelHeapCensus, KernelHeapError> {
         })
     })?
     .map_err(KernelHeapError::Fault)
+}
+
+/// The kernel heap's allocations on `core` since it was taken into service
+/// ([`HeapStats::allocations_by_core`]): the reading the
+/// `heap_allocations_per_syscall` exerciser takes before and after one syscall
+/// round trip.  `0` for a core outside [`HEAP_COUNTED_CORES`].
+///
+/// # Errors
+///
+/// `Init` if the arena cannot be taken into service.
+pub fn kernel_allocations_on(core: usize) -> Result<u64, KernelHeapError> {
+    with_kernel_heap(|heap| {
+        heap.stats()
+            .allocations_by_core
+            .get(core)
+            .copied()
+            .unwrap_or(0)
+    })
 }
 
 /// The fail-closed end of every Lean-facing heap call: the Lean runtime cannot
@@ -1621,6 +1686,41 @@ mod tests {
         );
     }
 
+    // -- the per-core allocation counter (WS-CV CV0.1) --------------------------
+
+    #[test]
+    fn every_successful_allocation_is_counted_once_to_its_core() {
+        let (mut meta, mut bits) = metadata(16);
+        let mut heap = heap(&mut meta, &mut bits);
+        let count = |h: &Heap<'_>| h.stats().allocations_by_core;
+        assert_eq!(count(&heap), [0; HEAP_COUNTED_CORES]);
+        let a = heap.alloc_small(40, 4).unwrap().unwrap();
+        assert_eq!(heap.stats().allocations(), 1, "a small allocation");
+        // `alloc` forwards a small request to `alloc_small`: counted once,
+        // not twice.
+        heap.set_allocating_core(2);
+        let b = heap.alloc(40, 8).unwrap();
+        assert_eq!(count(&heap)[0], 1);
+        assert_eq!(count(&heap)[2], 1, "a forwarded small request, once");
+        let run = heap.alloc(3 * PAGE_SIZE, PAGE_SIZE).unwrap();
+        assert_eq!(count(&heap)[2], 2, "a run, once");
+        // A refusal counts nothing; a free never decrements.
+        assert_eq!(heap.alloc_small(40, 3), Err(HeapFault::SlotMismatch));
+        assert_eq!(heap.alloc(8, 3), None);
+        assert_eq!(heap.alloc(64 * PAGE_SIZE, 8), None);
+        for addr in [a, b, run] {
+            heap.free(addr).unwrap();
+        }
+        ok(&heap);
+        assert_eq!(count(&heap), [1, 0, 2, 0]);
+        assert_eq!(heap.stats().allocations(), 3);
+        // A core outside the counted range is counted nowhere.
+        heap.set_allocating_core(HEAP_COUNTED_CORES);
+        let c = heap.alloc_small(8, 0).unwrap().unwrap();
+        assert_eq!(heap.stats().allocations(), 3);
+        heap.free_small(c).unwrap();
+    }
+
     // -- the kernel heap, over the host stand-in for `.lean_heap` ---------------
 
     #[test]
@@ -1632,6 +1732,10 @@ mod tests {
         // heap's invariants on the way.
         let two = kernel_heap_census().unwrap();
         assert_eq!(two.live_allocations, base.live_allocations + 2);
+        // WS-CV CV0.1: the executing core's counter saw both, and keeps them
+        // across the frees below (the host's executing core is the boot core).
+        let counted = kernel_allocations_on(0).unwrap();
+        assert!(counted >= 2);
         assert!(two.used_pages > base.used_pages || base.used_pages > 0);
         assert_eq!(two.pages, base.pages);
         let (start, len) = arena_extent();
@@ -1648,6 +1752,8 @@ mod tests {
             base.live_allocations,
             "the census sees the frees"
         );
+        assert_eq!(kernel_allocations_on(0).unwrap(), counted, "monotone");
+        assert_eq!(kernel_allocations_on(HEAP_COUNTED_CORES).unwrap(), 0);
         assert_eq!(
             kernel_alloc_small(40, 3),
             Err(KernelHeapError::Fault(HeapFault::SlotMismatch))

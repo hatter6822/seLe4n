@@ -65,7 +65,8 @@ dependency beyond Lean's foundational `propext` / `Quot.sound` /
 namespace SeLe4n.Kernel
 
 open SeLe4n.Model
-open SeLe4n.Kernel.Concurrency (CoreId bootCoreId allCores)
+open SeLe4n.Kernel.Concurrency (CoreId bootCoreId allCores
+  LockKey)
 
 -- ============================================================================
 -- §1  Per-core scheduler-invariant preservation (SM5.I consumption surface)
@@ -440,12 +441,12 @@ theorem idleThread_core_locality_forall (st : SystemState)
 /-- WS-SM SM5.E.3 (plan §4.4): the cross-domain lock-set footprint of
 `enqueueIdleThreadOnCore` — it WRITES the object store (the idle TCB insert) and
 core `c`'s run queue (the idle insert), so both are **write** locks over SM5.A's
-unified `SchedLockId` (object-store table lock before run-queue lock, the §4.4
+unified `LockKey` (object-store table lock before run-queue lock, the §4.4
 ascending order).  Mirrors SM5.C's `wakeThreadLockSet`. -/
 def enqueueIdleThreadOnCoreLockSet (c : CoreId) :
-    List (SchedLockId × Concurrency.AccessMode) :=
-  [ (SchedLockId.object schedObjStoreLockId, .write)
-  , (SchedLockId.runQueue ⟨c⟩, .write) ]
+    List (LockKey × Concurrency.AccessMode) :=
+  [ (LockKey.objStore, .write)
+  , (LockKey.runQueue c, .write) ]
 
 @[simp] theorem enqueueIdleThreadOnCoreLockSet_length (c : CoreId) :
     (enqueueIdleThreadOnCoreLockSet c).length = 2 := rfl
@@ -460,23 +461,23 @@ theorem enqueueIdleThreadOnCoreLockSet_write_only (c : CoreId) :
 /-- WS-SM SM5.E.3: the object-store write lock is in the idle-enqueue footprint
 (it guards the idle TCB insert). -/
 theorem enqueueIdleThreadOnCoreLockSet_contains_objStore_write (c : CoreId) :
-    (SchedLockId.object schedObjStoreLockId, Concurrency.AccessMode.write)
+    (LockKey.objStore, Concurrency.AccessMode.write)
       ∈ enqueueIdleThreadOnCoreLockSet c := by
   simp [enqueueIdleThreadOnCoreLockSet]
 
 /-- WS-SM SM5.E.3: core `c`'s run-queue write lock is in the idle-enqueue
 footprint (it guards the idle insert). -/
 theorem enqueueIdleThreadOnCoreLockSet_contains_runQueue_write (c : CoreId) :
-    (SchedLockId.runQueue ⟨c⟩, Concurrency.AccessMode.write)
+    (LockKey.runQueue c, Concurrency.AccessMode.write)
       ∈ enqueueIdleThreadOnCoreLockSet c := by
   simp [enqueueIdleThreadOnCoreLockSet]
 
 /-- WS-SM SM5.E.3 (plan §4.4): the object-store lock is acquired *before* the
 run-queue lock — the cross-domain ascending order. -/
 theorem enqueueIdleThreadOnCoreLockSet_object_before_runQueue (c : CoreId) :
-    SchedLockId.object schedObjStoreLockId
-      < SchedLockId.runQueue (⟨c⟩ : RunQueueLockId) :=
-  SchedLockId.object_lt_runQueue _ _
+    LockKey.objStore
+      < LockKey.runQueue c :=
+  LockKey.objStore_lt_runQueue _
 
 /-- WS-SM SM5.E.3: the idle-enqueue footprint's projected keys are
 duplicate-free. -/
@@ -484,15 +485,15 @@ theorem enqueueIdleThreadOnCoreLockSet_keys_nodup (c : CoreId) :
     ((enqueueIdleThreadOnCoreLockSet c).map (·.1)).Nodup := by
   simp [enqueueIdleThreadOnCoreLockSet]
 
-/-- WS-SM SM5.E.3 (plan §4.4): the footprint's keys form a `SchedLockId`-ascending
+/-- WS-SM SM5.E.3 (plan §4.4): the footprint's keys form a `LockKey`-ascending
 acquisition sequence (`Pairwise (· ≤ ·)`), so the canonical `withLockSet`
 acquisition is the list itself — the idle-enqueue's contribution to the SM3.D
 deadlock-freedom ladder. -/
 theorem enqueueIdleThreadOnCoreLockSet_pairwise_le (c : CoreId) :
     ((enqueueIdleThreadOnCoreLockSet c).map (·.1)).Pairwise (· ≤ ·) := by
-  have hle : SchedLockId.object schedObjStoreLockId
-      ≤ SchedLockId.runQueue (⟨c⟩ : RunQueueLockId) :=
-    (SchedLockId.object_lt_runQueue _ _).1
+  have hle : LockKey.objStore
+      ≤ LockKey.runQueue c :=
+    (LockKey.objStore_lt_runQueue _).1
   simp only [enqueueIdleThreadOnCoreLockSet, List.map_cons, List.map_nil]
   exact List.Pairwise.cons
     (fun a ha => by rcases List.mem_singleton.mp ha with rfl; exact hle)

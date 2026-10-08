@@ -47,12 +47,12 @@ open SeLe4n.Testing
 #check @chooseThread_eq_chooseThreadOnCore_bootCore
 
 -- SM5.A.2 lock-set (cross-domain unification):
-#check @RunQueueLockId
-#check @SchedLockId
-#check @schedObjStoreLockId
-#check @SchedLockId.le_total
-#check @SchedLockId.le_antisymm
-#check @SchedLockId.object_lt_runQueue
+#check @LockKey.runQueue
+#check @LockKey
+#check @LockKey.objStore
+#check @LockKey.le_total
+#check @LockKey.le_antisymm
+#check @LockKey.object_lt_runQueue
 #check @chooseThreadOnCoreLockSet
 #check @chooseThreadOnCoreLockSet_length
 #check @chooseThreadOnCoreLockSet_read_only
@@ -89,16 +89,16 @@ open SeLe4n.Testing
 #check @chooseThreadOnCore_preserves_wellFormed
 
 -- SM5.A.2 run-queue-lock total order (+ §4.4 level):
-#check @RunQueueLockId.le
-#check @RunQueueLockId.lt
-#check @RunQueueLockId.le_refl
-#check @RunQueueLockId.le_trans
-#check @RunQueueLockId.le_antisymm
-#check @RunQueueLockId.le_total
-#check @RunQueueLockId.lt_irrefl
-#check @RunQueueLockId.lt_asymm
-#check @RunQueueLockId.runQueueLockLevel
-#check @RunQueueLockId.objectLockLevels_lt_runQueueLockLevel
+#check @LockKey.le
+#check @LockKey.runQueue_le_runQueue_iff
+#check @LockKey.le_refl
+#check @LockKey.le_trans
+#check @LockKey.le_antisymm
+#check @LockKey.le_total
+#check @LockKey.lt_irrefl
+#check @LockKey.lt_asymm
+#check @LockKind.runQueue.level
+#check @LockKey.object_lt_runQueue
 
 -- Budget-aware companion (§6):
 #check @chooseThreadEffectiveOnCore
@@ -195,21 +195,21 @@ example (st : SystemState) (c : CoreId) (tid : SeLe4n.ThreadId) (selTcb : TCB)
   chooseThreadOnCore_selects_highest st c tid selTcb hwf hr hSel hSelTcb
 
 -- SM5.A.2: the run-queue-lock total order witnesses (decidable inhabitation).
-example : RunQueueLockId.runQueueLockLevel = 10 := rfl
-example (n : Nat) (h : n ≤ 9) : n < RunQueueLockId.runQueueLockLevel :=
-  RunQueueLockId.objectLockLevels_lt_runQueueLockLevel n h
+example : LockKind.runQueue.level = 10 := rfl
+example (n : Nat) (h : n ≤ 9) : n < LockKind.runQueue.level :=
+  Nat.lt_of_le_of_lt h (by decide)
 
--- SM5.A.2 (cross-domain unification): the unified `SchedLockId` order — every
+-- SM5.A.2 (cross-domain unification): the unified `LockKey` order — every
 -- object-domain lock precedes every run-queue lock (plan §4.4), and the order
 -- is total/antisymmetric across both domains.
-example (l : Concurrency.LockId) (r : RunQueueLockId) :
-    SchedLockId.object l < SchedLockId.runQueue r :=
-  SchedLockId.object_lt_runQueue l r
-example (a b : SchedLockId) : a ≤ b ∨ b ≤ a := SchedLockId.le_total a b
+example (l : Concurrency.LockId) (r : CoreId) :
+    LockKey.object l < LockKey.runQueue r :=
+  LockKey.object_lt_runQueue l r
+example (a b : LockKey) : a ≤ b ∨ b ≤ a := LockKey.le_total a b
 -- The complete footprint declares the object-store read lock, closing the
 -- run-queue-only under-locking gap the audit flagged.
 example (c : CoreId) :
-    (SchedLockId.object schedObjStoreLockId, AccessMode.read)
+    (LockKey.objStore, AccessMode.read)
       ∈ chooseThreadOnCoreLockSet c :=
   chooseThreadOnCoreLockSet_contains_objStore_read c
 
@@ -368,32 +368,32 @@ private def runLockSetChecks : IO Unit := do
   assertBool "chooseThreadOnCoreLockSet bootCoreId is read-only"
     (decide ((chooseThreadOnCoreLockSet bootCoreId).all (fun p => p.2 == AccessMode.read)))
   assertBool "footprint contains the object-store read lock (guards st.objects reads)"
-    (decide ((SchedLockId.object schedObjStoreLockId, AccessMode.read)
+    (decide ((LockKey.objStore, AccessMode.read)
               ∈ chooseThreadOnCoreLockSet bootCoreId))
   assertBool "footprint contains the boot core's run-queue read lock"
-    (decide ((SchedLockId.runQueue ⟨bootCoreId⟩, AccessMode.read)
+    (decide ((LockKey.runQueue bootCoreId, AccessMode.read)
               ∈ chooseThreadOnCoreLockSet bootCoreId))
   assertBool "footprint acquires the object-store lock before the run-queue lock (§4.4)"
-    (decide (SchedLockId.object schedObjStoreLockId
-              < SchedLockId.runQueue (⟨bootCoreId⟩ : RunQueueLockId)))
+    (decide (LockKey.objStore
+              < LockKey.runQueue bootCoreId))
   assertBool "every core's chooseThread footprint has both domain locks (length 2)"
     (allCores.all (fun c => decide ((chooseThreadOnCoreLockSet c).length = 2)))
-  -- SM5.A.2 lock-order: the cross-domain SchedLockId order is decidable and total.
-  assertBool "SchedLockId run-queue order is total over allCores"
+  -- SM5.A.2 lock-order: the cross-domain LockKey order is decidable and total.
+  assertBool "LockKey run-queue order is total over allCores"
     (allCores.all (fun a => allCores.all (fun b =>
-      decide ((SchedLockId.runQueue ⟨a⟩) ≤ (SchedLockId.runQueue ⟨b⟩))
-        || decide ((SchedLockId.runQueue ⟨b⟩) ≤ (SchedLockId.runQueue ⟨a⟩)))))
-  assertBool "run-queue lock order is total over allCores"
+      decide ((LockKey.runQueue a) ≤ (LockKey.runQueue b))
+        || decide ((LockKey.runQueue b) ≤ (LockKey.runQueue a)))))
+  assertBool "run-queue lock order agrees with the core order"
     (allCores.all (fun a => allCores.all (fun b =>
-      decide ((⟨a⟩ : RunQueueLockId) ≤ ⟨b⟩) || decide ((⟨b⟩ : RunQueueLockId) ≤ ⟨a⟩))))
+      decide (LockKey.runQueue a ≤ LockKey.runQueue b) == decide (a.val ≤ b.val))))
   assertBool "runQueueLockLevel (10) exceeds every object-lock level (0..9)"
-    ((List.range 10).all (fun n => decide (n < RunQueueLockId.runQueueLockLevel)))
+    ((List.range 10).all (fun n => decide (n < LockKind.runQueue.level)))
   -- SM5.A §6: the budget-aware selector carries the same complete footprint.
   assertBool "budget selector footprint equals the non-budget footprint"
     (decide (chooseThreadEffectiveOnCoreLockSet bootCoreId
               = chooseThreadOnCoreLockSet bootCoreId))
   assertBool "budget selector footprint contains the object-store read lock"
-    (decide ((SchedLockId.object schedObjStoreLockId, AccessMode.read)
+    (decide ((LockKey.objStore, AccessMode.read)
               ∈ chooseThreadEffectiveOnCoreLockSet bootCoreId))
 
 /-- §3.8: advanced scenarios — selector error path, EDF tie-break, and the

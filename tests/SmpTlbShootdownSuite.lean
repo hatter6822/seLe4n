@@ -458,7 +458,9 @@ open SeLe4n.Kernel.Concurrency
 #check @SeLe4n.Platform.FFI.ffiTlbiAll
 
 -- SM7.B debt-closure cut — per-descriptor handler operand mailbox (debt (1))
--- + the withLockSet pendingBounded carriage slice (debt (5)):
+-- + the withLockSet pendingBounded carriage slice (debt (5)); the bracket's
+-- kernel state is its action's by `rfl` (`withLockSet_fst_kernel`):
+#check @SeLe4n.Kernel.Concurrency.withLockSet_fst_kernel
 #check @SeLe4n.Kernel.publishShootdownOps
 #check @SeLe4n.Kernel.Concurrency.shootdownPublishBegin
 #check @SeLe4n.Kernel.Concurrency.shootdownPublishSlot
@@ -466,10 +468,6 @@ open SeLe4n.Kernel.Concurrency
 #check @SeLe4n.Platform.FFI.ffiShootdownPublishBegin
 #check @SeLe4n.Platform.FFI.ffiShootdownPublishSlot
 #check @SeLe4n.Platform.FFI.ffiShootdownPublishCommit
-#check @SeLe4n.Kernel.Concurrency.withLockSet_preserves_pendingBounded
-#check @SeLe4n.Kernel.Concurrency.withLockSet_tlbShootdown_eq
-#check @SeLe4n.Kernel.Concurrency.acquireLockOnObject_tlbShootdown_eq
-#check @SeLe4n.Kernel.Concurrency.releaseLockOnObject_tlbShootdown_eq
 
 -- SM7.C.1 per-core TLB mount + accessors (SM4.B path-a discipline):
 #check @SeLe4n.Model.SystemState.perCoreTlb
@@ -1920,7 +1918,8 @@ private def runDebtClosureChecks : IO Unit := do
   assertBool "withLockSet over a shootdown-framing action preserves pendingBounded"
     (decide (SeLe4n.Kernel.Architecture.pendingBounded
       ((SeLe4n.Kernel.Concurrency.withLockSet SeLe4n.Kernel.Concurrency.LockSet.empty
-        core0 (fun s => (s, ())) lockSt).1).tlbShootdown))
+        core0 (fun s => (s, ()))
+        ⟨lockSt, SeLe4n.Kernel.Concurrency.LockState.unheld⟩).1.kernel).tlbShootdown))
 
 -- ----------------------------------------------------------------------------
 -- §5.1  Per-core TLB model: accessors + local ops (SM7.C.1-C.3)

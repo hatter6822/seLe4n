@@ -140,6 +140,15 @@ qemu_build_image() {
             record_failure "BUILD" "--lean-kernel needs ${LEAN_ARCHIVE}; run scripts/test_lean_aarch64_archive.sh"
             finalize_report
         fi
+        # Nothing here rebuilds the archive, so an image linked from one built
+        # before the last Lean edit runs a kernel the tree no longer holds and
+        # every reading taken from it describes that older kernel.  The
+        # builder owns the provenance it wrote and decides freshness.
+        if [[ "${lean}" -eq 1 ]] \
+            && ! python3 "${REPO_ROOT}/scripts/build_lean_aarch64_archive.py" --check-fresh; then
+            record_failure "BUILD" "--lean-kernel refuses a stale ${LEAN_ARCHIVE}; run scripts/test_lean_aarch64_archive.sh"
+            finalize_report
+        fi
         log_section "BUILD" "Building the ${label} kernel image for QEMU virt (${features})..."
         if ! (cd "${RUST_DIR}" && cargo build --release --target "${RUST_TARGET}" -p sele4n-hal \
                 --features "${features}" --bin sele4n-kernel \

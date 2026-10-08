@@ -66,10 +66,10 @@ the same exclusion at a slightly different seam: the per-core IRQ handler
 it around its Lean call.  Until v0.32.142 this paragraph described the lock as
 owed, and SMP was off by default for that reason; with the lock live the default
 returns to decision #7's `smp_enabled: true`.  The finer-grained
-`timerTickOnCoreLockSet` (SM5.D.3) cross-domain footprint over `SchedLockId`
+`timerTickOnCoreLockSet` (SM5.D.3) cross-domain footprint over `LockKey`
 (object-store ⊕ run-queue ⊕ replenish-queue write locks, ascending per plan §4.4 —
 `timerTickOnCoreLockSet_pairwise_le`) certifies the 2PL acquisition order a future
-per-object-locked migration consumes; the `SchedLockId`-level `withLockSet` bracket
+per-object-locked migration consumes; the `LockKey`-level `withLockSet` bracket
 itself is the SM3.C combinator's cross-domain extension (tracked).
 
 ## Build reachability

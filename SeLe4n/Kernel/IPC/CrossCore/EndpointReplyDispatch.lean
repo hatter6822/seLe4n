@@ -111,7 +111,7 @@ caller from the **pre**-state (`holderHome` is where the context's *outgoing*
 bound thread's replenishments live, `ownerHome` where the incoming one's will —
 both `determineTargetCore`, which is the correct resolver for a replenish queue
 because that queue is keyed by affinity rather than by placement), so the `withLockSet` bracket can declare and
-acquire both `SchedLockId.replenishQueue` write locks before the transition
+acquire both `LockKey.replenishQueue` write locks before the transition
 runs; the return itself never touches a `cpuAffinity`
 (`returnDonatedSchedContext_getTcb?_cpuAffinity_eq`), so a pre-state reading is
 the post-state's. -/
@@ -296,9 +296,8 @@ identity.
 
 Relocated to production at **WS-RR RR8.12 Cut C3a**, beside the two home resolvers
 it sits with, so the production `.reply` write set can read it; its confinement
-theorem `applyReplyDonationOnCore_confinedToCores` stays in
-`InformationFlow/NonInterferenceCrossCore.lean`, because
-`observableSlotsConfinedToCores` is that module's predicate. -/
+theorem `applyReplyDonationOnCore_confinedToCores` is in the production
+`SlotConfinement/Legs.lean` since WS-LS LS2.3. -/
 def replyDonationDescheduleCores (st : SystemState) (rid : SeLe4n.ReplyId) : List CoreId :=
   match replyFrameHeadHolder? st rid with
   | none => []
@@ -835,7 +834,7 @@ def endpointReplyCrossCoreDispatch
               -- makes the affinity theorem's two home hypotheses hold by
               -- definition rather than by a transport lemma; the `withLockSet`
               -- bracket's pre-state reading of the same two
-              -- (`endpointReplyCrossCoreDispatchSchedLockSet`) agrees, because
+              -- (`endpointReplyCrossCoreDispatchLockSet`) agrees, because
               -- `endpointReplyOnCore` writes `ipcState` / queue links / the Reply
               -- object and never a `schedContextBinding` or a `cpuAffinity`.
               -- When the answered frame heads no context there is nothing to move
@@ -1011,9 +1010,10 @@ theorem endpointReply_donation_chain_length_bounded
 -- scheduler writes as outside the footprint the RR7.12 seam acquired (that entry is
 -- retired at Cut C6h, `v0.35.181`).  This
 -- section declares the DISPATCH's: the arm's SM8.B write set (relocated here from
--- the staged `InformationFlow/NonInterferenceCrossCore.lean`, whose confinement
--- theorem `endpointReplyCrossCoreDispatch_confinedToCores` is stated at it and
--- stays there) as the run segment, and the donation return's own two cores as the
+-- the staged `InformationFlow/NonInterferenceCrossCore.lean`; its confinement
+-- theorem `endpointReplyCrossCoreDispatch_confinedToCores` is in the production
+-- `SlotConfinement/IpcArms.lean` since WS-LS LS2.3) as the run segment, and the
+-- donation return's own two cores as the
 -- replenish segment.  The ARM the API runs is `replyTransferOnCore` — seL4's
 -- `doReplyTransfer` branch, one module up in `IPC/CrossCore/Fault.lean` — and its
 -- footprint is declared there, over this one at the message each branch hands the
@@ -1032,8 +1032,8 @@ pre-state unchanged.
 
 Relocated to production at **WS-RR RR8.12 Cut C3a**, beside the dispatch it mirrors,
 so the scheduler-domain footprint `schedLockSet_endpointReplyOnCore` can read it; its
-confinement theorem stays in `InformationFlow/NonInterferenceCrossCore.lean`, because
-`observableSlotsConfinedToCores` is that module's predicate. -/
+confinement theorem is in the production `SlotConfinement/IpcArms.lean` since
+WS-LS LS2.3. -/
 def endpointReplyDispatchWriteSet (replier target : SeLe4n.ThreadId) (msg : IpcMessage)
     (executingCore : CoreId) (st : SystemState) : List CoreId :=
   match endpointReplyOnCore replier target msg executingCore st with
@@ -1196,7 +1196,7 @@ construction.  Both mirror the dispatch's own control flow.
 the reversion really starts from, so every run queue it re-buckets is a static
 member here; what `pipChainStart_endpointReply`'s dynamic walker still adds is the
 object domain's per-member TCB write lock.  The RR2.10 parametric
-`endpointReplyCrossCoreDispatchSchedLockSet` is the shape this refines, and this
+`endpointReplyCrossCoreDispatchLockSet` is the shape this refines, and this
 footprint deliberately does **not** cover it member for member: that form declares
 the executing core's run queue on a justification that is false — the reversion
 re-buckets each member on its *home* core, and nothing in the dispatch writes the
@@ -1206,7 +1206,7 @@ donation-return footprint at the resolved cores — this one covers
 (`…_covers_donation`), and that is the relation the RR2.10 lemmas rest on. -/
 def schedLockSet_endpointReplyOnCore (replier target : SeLe4n.ThreadId) (msg : IpcMessage)
     (executingCore : CoreId) (st : SystemState) :
-    List (SchedLockId × Concurrency.AccessMode) :=
+    List (LockKey × Concurrency.AccessMode) :=
   schedFootprintOfCores (endpointReplyDispatchWriteSet replier target msg executingCore st)
     (endpointReplyDispatchReplenishCores replier target msg executingCore st)
 
@@ -1222,7 +1222,7 @@ theorem schedLockSet_endpointReplyOnCore_contains_target_runQueue_write
     (st st' : SystemState) (sgi : Option (CoreId × SgiKind))
     (hDisp : endpointReplyCrossCoreDispatch replier target msg executingCore st
       = (st', .ok sgi)) :
-    (SchedLockId.runQueue ⟨determineTargetCore st target⟩, Concurrency.AccessMode.write)
+    (LockKey.runQueue (determineTargetCore st target), Concurrency.AccessMode.write)
       ∈ schedLockSet_endpointReplyOnCore replier target msg executingCore st := by
   refine (mem_schedFootprintOfCores_runQueue_iff _ _ _).mpr ?_
   unfold endpointReplyCrossCoreDispatch at hDisp
@@ -1277,7 +1277,7 @@ theorem schedLockSet_endpointReplyOnCore_covers_deschedule (replier target : SeL
     (hRet : applyReplyDonationOnCore st1 rid targetV (replyDonationHolderHome st1 rid target)
       (replyDonationRecipientHome st1 rid target) = .ok st2)
     (hPlaced : c ∈ replyDonationDescheduleCores st1 rid) :
-    (SchedLockId.runQueue ⟨c⟩, Concurrency.AccessMode.write)
+    (LockKey.runQueue c, Concurrency.AccessMode.write)
       ∈ schedLockSet_endpointReplyOnCore replier target msg executingCore st := by
   refine (mem_schedFootprintOfCores_runQueue_iff _ _ _).mpr ?_
   unfold endpointReplyDispatchWriteSet
@@ -1323,9 +1323,9 @@ theorem schedLockSet_endpointReplyOnCore_covers_migration (replier target : SeLe
 
 /-- **WS-RR RR8.12 Cut C3a (coverage, the RR2.10 shape)**: with the holder placed
 on a core, the footprint covers the RR2.10 donation-return footprint
-`applyReplyDonationOnCoreSchedLockSet` at the resolved cores member for member —
+`applyReplyDonationOnCoreLockSet` at the resolved cores member for member —
 the deschedule's run-queue lock and the migration's two replenish-queue locks —
-which is the relation `endpointReplyCrossCoreDispatchSchedLockSet_covers_donation`
+which is the relation `endpointReplyCrossCoreDispatchLockSet_covers_donation`
 states for the parametric form. -/
 theorem schedLockSet_endpointReplyOnCore_covers_donation (replier target : SeLe4n.ThreadId)
     (msg : IpcMessage) (executingCore : CoreId) (st st1 st2 : SystemState)
@@ -1342,7 +1342,7 @@ theorem schedLockSet_endpointReplyOnCore_covers_donation (replier target : SeLe4
       (replyDonationRecipientHome st1 rid target) = .ok st2)
     (hHead : replyFrameHeadHolder? st1 rid = some (scId, holder))
     (hPlaced : c ∈ replyDonationDescheduleCores st1 rid) :
-    ∀ p ∈ applyReplyDonationOnCoreSchedLockSet c (replyDonationHolderHome st1 rid target)
+    ∀ p ∈ applyReplyDonationOnCoreLockSet c (replyDonationHolderHome st1 rid target)
              (replyDonationRecipientHome st1 rid target),
       p ∈ schedLockSet_endpointReplyOnCore replier target msg executingCore st := by
   have hSeg := endpointReplyDispatchReplenishCores_eq_of_return replier target msg executingCore
@@ -1350,7 +1350,7 @@ theorem schedLockSet_endpointReplyOnCore_covers_donation (replier target : SeLe4
   have hPair : replyDonationReturnReplenishCores st1 rid target
       = [replyDonationHolderHome st1 rid target, replyDonationRecipientHome st1 rid target] := by
     unfold replyDonationReturnReplenishCores; rw [hHead]
-  unfold applyReplyDonationOnCoreSchedLockSet schedLockSet_endpointReplyOnCore
+  unfold applyReplyDonationOnCoreLockSet schedLockSet_endpointReplyOnCore
   rw [hSeg, hPair]
   refine schedFootprintOfCores_subset (fun c' hc' => ?_) (fun _ h => h)
   simp only [List.mem_cons, List.not_mem_nil, or_false] at hc'
@@ -1371,7 +1371,7 @@ theorem schedLockSet_endpointReplyOnCore_no_replenishQueue_of_no_head
     (hReply : endpointReplyOnCore replier target msg executingCore st = (st1, .ok sgi))
     (hNoHead : ∀ rid, answeredReplyObject? st target = some rid →
       replyFrameHeadHolder? st1 rid = none) (c : CoreId) :
-    (SchedLockId.replenishQueue ⟨c⟩, Concurrency.AccessMode.write)
+    (LockKey.replenishQueue c, Concurrency.AccessMode.write)
       ∉ schedLockSet_endpointReplyOnCore replier target msg executingCore st := by
   intro hMem
   have := (mem_schedFootprintOfCores_replenishQueue_iff _ _ c).mp hMem

@@ -642,7 +642,7 @@ the two genuinely differ: on the bound-delivery path the woken thread is the
 Defined over `notificationSignalBoundWriteSet`, so the footprint and
 `notificationSignalBoundOnCore_confinedToCores` cannot name different cores. -/
 def schedLockSet_notificationSignalBoundOnCore (st : SystemState)
-    (notificationId : SeLe4n.ObjId) : List (SchedLockId × Concurrency.AccessMode) :=
+    (notificationId : SeLe4n.ObjId) : List (LockKey × Concurrency.AccessMode) :=
   schedFootprintOfCores (notificationSignalBoundWriteSet st notificationId) []
 
 /-- **WS-RR RR8.12**: on the bound-delivery path the footprint names the bound
@@ -655,7 +655,7 @@ run queue at all. -/
 theorem schedLockSet_notificationSignalBoundOnCore_contains_bound_runQueue_write
     (st : SystemState) (notificationId : SeLe4n.ObjId) (t : SeLe4n.ThreadId)
     (epId : SeLe4n.ObjId) (hTarget : boundDeliveryTarget? st notificationId = some (t, epId)) :
-    (SchedLockId.runQueue ⟨determineTargetCore st t⟩, Concurrency.AccessMode.write)
+    (LockKey.runQueue (determineTargetCore st t), Concurrency.AccessMode.write)
       ∈ schedLockSet_notificationSignalBoundOnCore st notificationId := by
   refine (mem_schedFootprintOfCores_runQueue_iff _ _ _).mpr ?_
   unfold notificationSignalBoundWriteSet

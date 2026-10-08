@@ -1919,13 +1919,13 @@ def writeFfiRegistersToTcb
     let rf := tcb.registerContext
     -- x0 → capPtrReg (= ⟨0⟩); x1 → msgInfoReg (= ⟨1⟩) — `decodeMsgInfo`
     -- decodes the msgInfo from this slot via `MessageInfo.decode`.
-    let rf := writeReg rf layout.capPtrReg     ⟨x0.toNat⟩
-    let rf := writeReg rf layout.msgInfoReg    ⟨x1.toNat⟩
-    let rf := writeReg rf ⟨2⟩                  ⟨x2.toNat⟩
-    let rf := writeReg rf ⟨3⟩                  ⟨x3.toNat⟩
-    let rf := writeReg rf ⟨4⟩                  ⟨x4.toNat⟩
-    let rf := writeReg rf ⟨5⟩                  ⟨x5.toNat⟩
-    let rf := writeReg rf layout.syscallNumReg ⟨syscallId.toNat⟩
+    let rf := writeReg rf layout.capPtrReg     x0
+    let rf := writeReg rf layout.msgInfoReg    x1
+    let rf := writeReg rf ⟨2⟩                  x2
+    let rf := writeReg rf ⟨3⟩                  x3
+    let rf := writeReg rf ⟨4⟩                  x4
+    let rf := writeReg rf ⟨5⟩                  x5
+    let rf := writeReg rf layout.syscallNumReg syscallId.toUInt64
     { tcb with registerContext := rf }
 
 /-- WS-RC R2.B.1 helper: Read the syscall return value from a thread's

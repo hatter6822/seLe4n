@@ -781,6 +781,75 @@ def resolveReplyRecvReply (gate : SyscallGate) (decoded : SyscallDecodeResult)
 -- Syscall soundness theorems
 -- ============================================================================
 
+/-- **WS-LS LS2.3**: the reply a `.replyRecv` resolves is one the state records
+an answered caller for — the resolver's own last check, read back out so the
+scheduler footprint's `replyAnsweredCaller?` read is the arm's. -/
+theorem resolveReplyRecvReply_answered (gate : SyscallGate) (decoded : SyscallDecodeResult)
+    (st : SystemState) (rid : SeLe4n.ReplyId) (prevCaller : SeLe4n.ThreadId)
+    (badge : Option SeLe4n.Badge)
+    (h : resolveReplyRecvReply gate decoded st = .ok (rid, prevCaller, badge)) :
+    replyAnsweredCaller? st rid = some prevCaller := by
+  unfold resolveReplyRecvReply at h
+  split at h
+  · exact absurd h (by simp)
+  · split at h
+    · exact absurd h (by simp)
+    · dsimp only at h
+      split at h
+      · exact absurd h (by simp)
+      · split at h
+        · exact absurd h (by simp)
+        · split at h
+          · rename_i hAns
+            simp only [Except.ok.injEq, Prod.mk.injEq] at h
+            obtain ⟨hR, hP, _⟩ := h
+            subst hR; subst hP
+            exact hAns
+          · exact absurd h (by simp)
+
+/-- **WS-LS LS2.3**: the rights-gated lookup succeeds only through a successful
+resolution of the same gate at the same state. -/
+theorem syscallLookupCap_resolve (gate : SyscallGate) (st : SystemState) (cap : Capability)
+    (h : syscallLookupCap gate st = .ok (cap, st)) :
+    syscallResolveCap gate st = .ok (cap, st) := by
+  unfold syscallLookupCap at h
+  split at h
+  · exact absurd h (by simp)
+  · rename_i cap' st' hRes
+    split at h
+    · simp only [Except.ok.injEq, Prod.mk.injEq] at h
+      obtain ⟨hC, hS⟩ := h
+      subst hC; subst hS
+      exact hRes
+    · exact absurd h (by simp)
+
+/-- **WS-LS LS2.3**: resolution reads the object store alone, so it answers the
+same at two states with the same store — the shape of the register spill and
+the IPC-buffer TLB fill between the seam's plan and its dispatch. -/
+theorem syscallResolveCap_congr_objects (gate : SyscallGate) (st₁ st₂ : SystemState)
+    (cap : Capability) (hObj : st₁.objects = st₂.objects)
+    (h : syscallResolveCap gate st₁ = .ok (cap, st₁)) :
+    syscallResolveCap gate st₂ = .ok (cap, st₂) := by
+  unfold syscallResolveCap at h ⊢
+  rw [resolveCapAddress_congr_objects st₁ st₂ hObj gate.capAddr gate.capDepth gate.cspaceRoot]
+    at h
+  cases hRef : resolveCapAddress gate.cspaceRoot gate.capAddr gate.capDepth st₂ with
+  | error e => rw [hRef] at h; exact absurd h (by simp)
+  | ok ref =>
+    rw [hRef] at h
+    simp only at h ⊢
+    rw [lookupSlotCap_congr_objects st₁ st₂ ref hObj] at h
+    cases hLk : SystemState.lookupSlotCap st₂ ref with
+    | none => rw [hLk] at h; exact absurd h (by simp)
+    | some cap' =>
+      rw [hLk] at h
+      simp only at h ⊢
+      by_cases hRes : capTargetsReservedIdleObject cap' = true
+      · rw [if_pos hRes] at h; exact absurd h (by simp)
+      · rw [if_neg hRes] at h ⊢
+        simp only [Except.ok.injEq, Prod.mk.injEq] at h
+        rw [h.1]
+
 /-- WS-H15c/A-42: If `syscallLookupCap` succeeds, the caller's CSpace root
 contains a valid capability at the specified address with the required right,
 and the state is unchanged (lookup is read-only). -/
@@ -1292,6 +1361,35 @@ theorem resolveExtraCapsGated_empty
   unfold resolveExtraCapsGated
   simp [resolveExtraCapsDetailed_empty]
 
+/-- **WS-LS LS2.3**: the resolution writes the derivation tree alone — every
+object and every scheduler slot is as it was.  (The derivation nodes it mints
+are what the transition that follows reads, which is why that transition runs
+from the resolved state and why `.call`'s scheduler footprint is read there.) -/
+theorem resolveExtraCaps_objects_scheduler_eq (cspaceRoot : SeLe4n.ObjId)
+    (capAddrs : Array SeLe4n.CPtr) (depth : Nat) (granted : Bool) (st : SystemState) :
+    (resolveExtraCaps cspaceRoot capAddrs depth granted st).2.objects = st.objects ∧
+      (resolveExtraCaps cspaceRoot capAddrs depth granted st).2.scheduler = st.scheduler := by
+  unfold resolveExtraCaps
+  split
+  · exact ⟨rfl, rfl⟩
+  · refine Array.foldl_induction
+      (motive := fun (_ : Nat) (acc : Array TransferCap × SystemState) =>
+        acc.2.objects = st.objects ∧ acc.2.scheduler = st.scheduler) ⟨rfl, rfl⟩ ?_
+    intro i acc hAcc
+    split
+    · exact hAcc
+    · split
+      · exact hAcc
+      · split
+        · exact hAcc
+        · rename_i node stNode hNode
+          unfold SystemState.ensureCdtNodeForSlotChecked at hNode
+          split at hNode
+          · cases hNode; exact hAcc
+          · split at hNode
+            · cases hNode; exact hAcc
+            · cases hNode
+
 /-- WS-AL AL7-A (cascades AK7-E): lift a raw `ThreadId` to `ValidThreadId`
 at the dispatch boundary. Returns `.error .invalidArgument` if the id
 is the reserved sentinel, otherwise `.ok` with the validated subtype.
@@ -1368,6 +1466,22 @@ theorem validateThreadIdArg_idle_refused (tid : SeLe4n.ThreadId)
   unfold validateThreadIdArg
   simp [h]
 
+/-- **WS-LS LS2.3**: a validated thread operand is the one `ThreadId.toValid?`
+promotes — what ties an arm's `ValidThreadId` to the footprint resolver's,
+which promotes the same raw id through the same function. -/
+theorem validateThreadIdArg_ok_toValid? (tid : SeLe4n.ThreadId)
+    (vtid : SeLe4n.ValidThreadId) (h : validateThreadIdArg tid = .ok vtid) :
+    tid.toValid? = some vtid := by
+  unfold validateThreadIdArg at h
+  split at h
+  · exact absurd h (by simp)
+  · split at h
+    · exact absurd h (by simp)
+    · rename_i hV
+      rw [hV]
+      injection h with h
+      rw [h]
+
 
 /-- WS-AL AL7-A (cascades AK7-E): lift a raw `SchedContextId` to
 `ValidSchedContextId` at the dispatch boundary. Mirrors
@@ -1389,6 +1503,26 @@ going through `SchedContextId.toObjId`). Rejects `ObjId.sentinel`. -/
     match oid.toValid? with
     | none => .error .invalidArgument
     | some v => .ok v
+
+/-- **WS-LS LS2.3**: a validated object operand carries the raw id it was
+promoted from — what ties an arm's `ValidObjId` to the footprint resolver's
+raw operand. -/
+theorem validateObjIdArg_ok_val (oid : SeLe4n.ObjId)
+    (void : SeLe4n.ValidObjId) (h : validateObjIdArg oid = .ok void) :
+    void.val = oid := by
+  unfold validateObjIdArg at h
+  split at h
+  · exact absurd h (by simp)
+  · split at h
+    · exact absurd h (by simp)
+    · rename_i hV
+      injection h with h
+      rw [← h]
+      unfold SeLe4n.ObjId.toValid? at hV
+      split at hV
+      · exact absurd hV (by simp)
+      · injection hV with hV
+        rw [← hV]
 
 /-- **PR #889 review round 11**: the object-operand sibling of
 `validateThreadIdArg_ok_not_reserved`.  Every live use of this validator today

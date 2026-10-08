@@ -15,6 +15,7 @@ import SeLe4n.Kernel.Concurrency.Locks.TicketLockRefinement
 import SeLe4n.Kernel.Concurrency.Locks.RwLock
 import SeLe4n.Kernel.Concurrency.Locks.RwLockRefinement
 import SeLe4n.Kernel.Concurrency.Locks.QueuedRwLockRefinement
+import SeLe4n.Kernel.Concurrency.Locks.Refinement
 import SeLe4n.Kernel.Concurrency.LockSet
 import SeLe4n.Platform.FFI
 import SeLe4n.Kernel.InformationFlow.ObservableStatePerCore
@@ -476,6 +477,8 @@ example (abs : SeLe4n.Kernel.Concurrency.RwLockState)
     SeLe4n.Kernel.Concurrency.queuedBlock abs conc (.cancel c) [.heldLoad c, .requestLoad c] :=
   .cancel_noRequest abs conc c h₁ h₂ h₃
 #check @SeLe4n.Kernel.Concurrency.queuedRwLock_refines_rwLockSpec
+-- The ghost lock state is refined key by key through the same chain (Locks/Refinement.lean §4).
+#check @SeLe4n.Kernel.Concurrency.LockState.applySeq_unheld_key_refines
 #check @SeLe4n.Kernel.Concurrency.queuedRwLock_admits_in_spec_order
 
 -- ============================================================================
@@ -587,15 +590,21 @@ example (abs : SeLe4n.Kernel.Concurrency.RwLockState)
 
 `releaseAll` is the identity for a core that is not a holder, so a
 release-only shrinking phase gave back the members the growing phase had
-granted and left the *contended* ones queued.  `unwindAll` is the phase, and
-`unwindAll_leaves_no_queued_request` is what the old "what 'released' does
-and does not mean" caveat used to disclaim. -/
-#check @SeLe4n.Kernel.Concurrency.unwindAll
-#check @SeLe4n.Kernel.Concurrency.unwindAll_eq_releaseAll_cancelAll
-#check @SeLe4n.Kernel.Concurrency.lockQueued
-#check @SeLe4n.Kernel.Concurrency.unwindAll_leaves_no_queued_request
-#check @SeLe4n.Kernel.Concurrency.rwLock_release_then_cancel_not_queued
-#check @SeLe4n.Kernel.Concurrency.UnwindInsensitive
+granted and left the *contended* ones queued.  `LockState.unwindAll` is the
+phase, and `LockState.unwindAll_not_queued` is what the old "what 'released'
+does and does not mean" caveat used to disclaim.
+
+**WS-LS LS2.1**: the shrinking phase is applied to the ghost table alone, so
+what used to need an unwind-insensitive observer is the lock half of the
+bracket's result by type, and the table round-trips from all-free. -/
+#check @SeLe4n.Kernel.Concurrency.LockState.unwindAll
+#check @SeLe4n.Kernel.Concurrency.LockState.queued
+#check @SeLe4n.Kernel.Concurrency.LockState.unwindAll_not_queued
+#check @SeLe4n.Kernel.Concurrency.rwLock_cancel_not_queued
+#check @SeLe4n.Kernel.Concurrency.rwLock_release_preserves_not_queued
+#check @SeLe4n.Kernel.Concurrency.LockState.bracket
+#check @SeLe4n.Kernel.Concurrency.withLockSet_fst_locks
+#check @SeLe4n.Kernel.Concurrency.LockState.bracket_unheld
 
 /-! ## WS-LC LC5 — the timed execution.
 
@@ -850,8 +859,8 @@ def runSmpSurfaceAnchorChecks : IO Unit := do
   -- The SM3.E inventory size witness reached and evaluates (the 8 major-theorem
   -- `#check` anchors above are elaboration-time gates; this exercises the
   -- runtime path of the SM3.E inventory aggregator).
-  assertBool "SM3.E inventory has 111 entries"
-    (decide (SeLe4n.Kernel.Concurrency.serializabilityTheorems.length = 111))
+  assertBool "SM3.E inventory has 96 entries"
+    (decide (SeLe4n.Kernel.Concurrency.serializabilityTheorems.length = 96))
 
   IO.println "--- §8 WS-SM SM8 — the information-flow headline surface ---"
   -- The plan (§5 SM8.E.1) names this file as the SM8 anchor home, and SM8.E.1
@@ -979,13 +988,12 @@ def runSmpSurfaceAnchorChecks : IO Unit := do
      have _q := @SeLe4n.Kernel.legacyLattice_canFlow_embed
      have _w := @SeLe4n.Kernel.linearOrder_is_not_faithful_to_legacy
      true)
-  -- WS-SM SM8.D: information flow under fine locks.  The headline is the
-  -- *factoring* — an observer's view is a function of an object's lock-erased
-  -- content — because that is what makes "the lock is invisible" a statement
-  -- about the field rather than about one operation.  The bound is the other
+  -- WS-SM SM8.D: information flow under fine locks.  The headline is that a
+  -- lock write is invisible by type: the lock table is ghost state beside the
+  -- kernel state, so a lock-only step leaves the kernel half unchanged (WS-LS).  The bound is the other
   -- half: CC-5 is accepted, not closed, and SM8.D says how much it carries.
   assertBool "fine-lock invisibility, the contention bound and the integrity twins resolve"
-    (have _p := @SeLe4n.Kernel.projectKernelObject_setLock
+    (have _p := @SeLe4n.Kernel.lockWritesOnly_preserves_projection
      have _i := @SeLe4n.Kernel.onCore_lock_indistinguishable
      have _l := @SeLe4n.Kernel.lockWritesOnly_preserves_onCore
      have _r := @SeLe4n.Kernel.readerMultiplicity_not_observable
@@ -1018,7 +1026,7 @@ def runSmpSurfaceAnchorChecks : IO Unit := do
      have _ge := @SeLe4n.Kernel.acceptedContentionCode_ge_two
      have _ac := @SeLe4n.Kernel.secureInformationFlow_underFineLocks_atCore
      have _ai := @SeLe4n.Kernel.authorityIntegrity_underLockSet
-     have _c : SeLe4n.Kernel.FineLockClaimId.all.length = 11 :=
+     have _c : SeLe4n.Kernel.FineLockClaimId.all.length = 9 :=
        SeLe4n.Kernel.fineLockClaims_count
      have _e := SeLe4n.Kernel.fineLockClaimEvidence
      true)
@@ -1114,7 +1122,6 @@ def runSmpSurfaceAnchorChecks : IO Unit := do
      have _mr := @SeLe4n.Kernel.Concurrency.lockSet_auditRead_stateLevel_read_mem
      have _mw := @SeLe4n.Kernel.Concurrency.lockSet_auditDrain_stateLevel_write_mem
      have _cp := @SeLe4n.Kernel.Concurrency.auditState_footprints_share_serialization
-     have _oi := @SeLe4n.Kernel.Concurrency.stateLevelLock_objId_irrelevant
      true)
   assertBool "SM9.A: drain under the configuration-derived dominance gate"
     (have _d := @SeLe4n.Kernel.auditDrainVisiblePrefix

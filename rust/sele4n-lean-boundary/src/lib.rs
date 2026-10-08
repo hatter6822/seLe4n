@@ -141,6 +141,22 @@ pub mod lean {
         /// The module must be initialised; the object answered is owned by
         /// the caller.
         fn sele4n_probe_fp_context_of_seed(seed: u64) -> RawObj;
+        /// # Safety
+        ///
+        /// The module must be initialised; the state answered is owned by the
+        /// caller.
+        fn sele4n_probe_save_state(tid: u64) -> RawObj;
+        /// # Safety
+        ///
+        /// `st` must be an owned reference to a live `SystemState` and `c` to
+        /// a live `TrapContext`, both consumed; the state answered is owned
+        /// by the caller.
+        fn sele4n_probe_save_captured_syscall_frame(st: RawObj, c: RawObj) -> RawObj;
+        /// # Safety
+        ///
+        /// `st` must be an owned reference to a live `SystemState`, which the
+        /// probe consumes.
+        fn sele4n_probe_saved_context_word(st: RawObj, tid: u64, i: u64) -> u64;
     }
 
     static RUNTIME: Once = Once::new();
@@ -239,6 +255,29 @@ pub mod lean {
             unsafe { sele4n_boundary_is_scalar(self.0) }
         }
 
+        /// Overwrite the scalar word at byte `offset` in place, whoever else
+        /// holds the object — what the HAL does to the per-core context
+        /// object it reuses for the next trap.
+        ///
+        /// # Panics
+        ///
+        /// When the word would lie outside the object's scalar area.
+        pub fn set_u64_at(&self, offset: usize, v: u64) {
+            assert!(
+                !self.is_scalar() && self.num_objs() == 0,
+                "a scalar-only constructor"
+            );
+            assert!(
+                offset.is_multiple_of(8) && offset + 8 <= self.byte_size() - 8,
+                "offset {offset}"
+            );
+            // SAFETY: a live constructor with no object fields whose scalar
+            // area holds the word at `offset` (checked above).
+            unsafe {
+                sele4n_boundary_ctor_set_u64(self.0, u32::try_from(offset).expect("offset"), v);
+            }
+        }
+
         /// A second owned reference to the same object.
         #[must_use]
         pub fn share(&self) -> Self {
@@ -317,6 +356,35 @@ pub mod lean {
             initialize();
             // SAFETY: an owned object is answered.
             Self(unsafe { sele4n_probe_fp_context_of_seed(seed) })
+        }
+
+        /// The save probe's state: thread `tid` current on the boot core,
+        /// built by the compiled Lean.
+        #[must_use]
+        pub fn save_probe_state(tid: u64) -> Self {
+            initialize();
+            // SAFETY: an owned object is answered.
+            Self(unsafe { sele4n_probe_save_state(tid) })
+        }
+
+        /// The syscall entry's save (`saveCapturedSyscallFrame`) of the
+        /// context `c` on the boot core of the state `self`; `c` is handed a
+        /// reference of its own, so the caller keeps the object.
+        #[must_use]
+        pub fn save_captured_syscall_frame(self, c: &Object) -> Self {
+            // SAFETY: the probe consumes both references and answers an owned
+            // state.
+            Self(unsafe {
+                sele4n_probe_save_captured_syscall_frame(self.into_raw(), c.handed_over())
+            })
+        }
+
+        /// Word `i` of thread `tid`'s saved context in the state `self`, or
+        /// every bit set when `tid` has no TCB.
+        #[must_use]
+        pub fn saved_context_word(&self, tid: u64, i: u64) -> u64 {
+            // SAFETY: the probe consumes the reference handed over.
+            unsafe { sele4n_probe_saved_context_word(self.handed_over(), tid, i) }
         }
     }
 }

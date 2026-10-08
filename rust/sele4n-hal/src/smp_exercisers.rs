@@ -1010,6 +1010,11 @@ pub fn run_on_boot_core(smp_enabled: bool) {
     if let Some(ok) = per_core_stats() {
         tally("per-core-stats", ok);
     }
+    // WS-CV CV0.1: the heap allocations of one syscall round trip, on the
+    // Lean-linked image only, like the counters above.
+    if let Some(ok) = heap_allocations_per_syscall() {
+        tally("heap-allocations-per-syscall", ok);
+    }
     crate::kprintln!("[smp-test] exercisers: {passed} passed, {failed} failed");
 }
 
@@ -1332,6 +1337,163 @@ fn per_core_stats() -> Option<bool> {
         "[smp-test] per-core-stats: not run (no Lean kernel linked; the reader and the verdict \
          are Lean's)"
     );
+    None
+}
+
+// ============================================================================
+// WS-CV CV0.1 — the heap allocations of one syscall round trip
+// ============================================================================
+
+/// The syscall the round trip issues: `NotificationSignal` (`SyscallId` 14),
+/// which continues its caller — no switch, no block — when nobody waits.
+#[cfg(feature = "hw_target")]
+const ROUND_TRIP_SYSCALL: u64 = 14;
+/// Its capability address: slot 4 of the QEMU `virt` root task's CNode, the
+/// interrupt notification (`Platform/QemuVirt/Deployment.lean`,
+/// `qemuVirtRootTaskCNode`).
+#[cfg(feature = "hw_target")]
+const ROUND_TRIP_CPTR: u64 = 4;
+/// Its `MessageInfo`: one message register (the badge, in `x2`).
+#[cfg(feature = "hw_target")]
+const ROUND_TRIP_MSG_INFO: u64 = 1;
+/// `ESR_EL1` of an `SVC` from AArch64 (exception class `0x15`).
+#[cfg(feature = "hw_target")]
+const ROUND_TRIP_ESR: u64 = 0x15 << 26;
+/// The badge signalled.
+#[cfg(feature = "hw_target")]
+const ROUND_TRIP_BADGE: u64 = 1;
+/// `SPSR_EL1` of the frame: `EL0t` with DAIF clear, the state a thread's `SVC`
+/// is taken from.  The mode is what makes the round trip a thread's syscall:
+/// `trapFromEl0` admits only `M[3:0] = 0`, so an EL0 frame is saved into the
+/// running thread and the core's register bank (`saveTrapFrameOnCore`) and the
+/// thread is restored over the frame on the way out (`trap::restore_commit`),
+/// which is the work every syscall from userspace does and an EL1 frame skips.
+#[cfg(feature = "hw_target")]
+const ROUND_TRIP_SPSR: u64 = 0;
+
+/// The executing core's heap-allocation counter (`lean_heap`'s
+/// `allocations_by_core`), or `None` if the heap cannot be read.
+#[cfg(feature = "hw_target")]
+fn own_heap_allocations(core: usize) -> Option<u64> {
+    crate::lean_heap::kernel_allocations_on(core).ok()
+}
+
+/// **WS-CV CV0.1**: the heap allocations one syscall round trip makes, through
+/// the Lean kernel, on the boot core.  The driver publishes a frame carrying a
+/// `NotificationSignal` as the in-flight frame, classifies its syndrome and
+/// dispatches it through the syscall seam (`svc_dispatch::dispatch_svc`), as
+/// the `SVC` arm does, reading
+/// this core's own heap counter before and after with IRQs masked across both
+/// reads — the heap is one for every core, and a tick taken in between would
+/// charge its own allocations to the syscall.  The number is evidence, read by
+/// review (the plan's baseline and its CV5.1 re-reading); the verdict is only
+/// that both reads happened, the counter did not go back, and the round trip
+/// returned a frame.
+#[cfg(feature = "hw_target")]
+fn heap_allocations_per_syscall() -> Option<bool> {
+    let core = crate::per_cpu::current_core_id_from_tpidr() as usize;
+    let mut frame = crate::trap::TrapFrame {
+        gprs: [0; 31],
+        sp_el0: 0,
+        elr_el1: 0,
+        spsr_el1: ROUND_TRIP_SPSR,
+        esr_el1: ROUND_TRIP_ESR,
+        far_el1: 0,
+        tpidr_el0: 0,
+        reserved: 0,
+    };
+    frame.gprs[0] = ROUND_TRIP_CPTR;
+    frame.gprs[1] = ROUND_TRIP_MSG_INFO;
+    frame.gprs[2] = ROUND_TRIP_BADGE;
+    frame.gprs[7] = ROUND_TRIP_SYSCALL;
+    let args = crate::svc_dispatch::SyscallArgs::from_trap_frame(&frame);
+    let saved_daif = crate::interrupts::disable_interrupts();
+    let before = own_heap_allocations(core);
+    let (dispatched, restored) = {
+        let _in_flight = crate::trap::InFlightFrame::publish(&mut frame);
+        // The `SVC` arm's own order: the classification, then the dispatch.
+        let class = crate::trap::classify_synchronous_exception(ROUND_TRIP_ESR);
+        let dispatched = if class == crate::trap::sync_class::SVC {
+            crate::svc_dispatch::dispatch_svc(ROUND_TRIP_SYSCALL as u32, &args)
+        } else {
+            Err(crate::svc_dispatch::DispatchError::InvalidSyscallId)
+        };
+        (dispatched, crate::trap::take_restored())
+    };
+    let after = own_heap_allocations(core);
+    crate::interrupts::restore_interrupts(saved_daif);
+    let (Some(before), Some(after)) = (before, after) else {
+        crate::kprintln!(
+            "[smp-test] FAIL: heap-allocations-per-syscall: the heap counter could not be read"
+        );
+        return Some(false);
+    };
+    let outcome = match dispatched {
+        // A refusal is an ordinary frame too, its status in the `x1` label
+        // (`error_frame_regs`): only label 0, the unit success a signal
+        // returns, measures the syscall the gate names.
+        Ok(crate::svc_dispatch::SvcOutcome::Frame(regs)) if regs[1] >> 9 == 0 => {
+            crate::kprintln!(
+                "[smp-test] heap-allocations-per-syscall: core {core}: returned x0={:#x} x1={:#x}",
+                regs[0],
+                regs[1]
+            );
+            true
+        }
+        Ok(crate::svc_dispatch::SvcOutcome::Frame(regs)) => {
+            crate::kprintln!(
+                "[smp-test] FAIL: heap-allocations-per-syscall: the signal was refused (x1 label {:#x})",
+                regs[1] >> 9
+            );
+            false
+        }
+        Ok(other) => {
+            crate::kprintln!(
+                "[smp-test] FAIL: heap-allocations-per-syscall: the round trip did not return: {other:?}"
+            );
+            false
+        }
+        Err(error) => {
+            crate::kprintln!(
+                "[smp-test] FAIL: heap-allocations-per-syscall: the round trip was refused: {error:?}"
+            );
+            false
+        }
+    };
+    // The restore installed the resumed thread's translation and set the
+    // FP/SIMD trap for it.  This core goes on with its bring-up, so both go
+    // back: the boot tables (whose kernel window every address space shares,
+    // so the bring-up never stopped running) and the armed trap the boot
+    // prologue leaves (`CPACR_EL1 = 0`).
+    crate::user_translation::install_translation(crate::user_translation::Translation::Kernel);
+    crate::fp_context::set_trap_for_resume(false);
+    if !restored {
+        crate::kprintln!(
+            "[smp-test] FAIL: heap-allocations-per-syscall: the round trip resumed no thread"
+        );
+        return Some(false);
+    }
+    if after < before {
+        crate::kprintln!(
+            "[smp-test] FAIL: heap-allocations-per-syscall: the counter went back ({before} -> {after})"
+        );
+        return Some(false);
+    }
+    if !outcome {
+        return Some(false);
+    }
+    crate::kprintln!(
+        "[smp-test] heap-allocations-per-syscall: core {core}: before={before} after={after} \
+         delta={}",
+        after - before
+    );
+    Some(true)
+}
+
+/// The HAL-only image links no Lean kernel, so there is no syscall to measure.
+#[cfg(not(feature = "hw_target"))]
+fn heap_allocations_per_syscall() -> Option<bool> {
+    crate::kprintln!("[smp-test] heap-allocations-per-syscall: not run (no Lean kernel linked)");
     None
 }
 

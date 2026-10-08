@@ -56,10 +56,20 @@ Output (under `.lake/build/aarch64-unknown-none-softfloat/`):
                            link below and of the kernel image's link (BP5.2),
                            which reads this same file
   stdlib-c/<githash>/      the regenerated stdlib C, cached per toolchain
-  obj/                     the objects (rebuilt when their C or the flags move)
+  obj/                     the objects, each keyed on its C's content and
+                           all on the toolchain, flags and shim headers
+  libsele4n.provenance     what this archive was built from: the git tree
+                           of the whole working tree (`tree_digest`, no
+                           list of inputs), and the SHA-256 of the archive
+                           and roots script themselves.  Written
+                           only when every check passed; `--check-fresh`
+                           recomputes both and refuses on any
+                           difference, so an image linked from it is the tree
+                           it claims to be
 
     build_lean_aarch64_archive.py [--jobs N]
     build_lean_aarch64_archive.py --self-test
+    build_lean_aarch64_archive.py --check-fresh
 """
 
 from __future__ import annotations
@@ -92,6 +102,7 @@ ARCHIVE = OUT_DIR / "libsele4n.a"
 UNRESOLVED_REPORT = OUT_DIR / "libsele4n.unresolved"
 # WS-BP BP5.2: the link's roots, as the linker script both links read.
 ROOTS_SCRIPT = OUT_DIR / "libsele4n.roots.ld"
+PROVENANCE = OUT_DIR / "libsele4n.provenance"
 HAL_BUILD_SCRIPT = REPO / "rust/sele4n-hal/build.rs"
 SHIM_INCLUDE = REPO / "rust/sele4n-hal/lean_include"
 STAGED_ALLOWLIST = SCRIPTS / "staged_module_allowlist.txt"
@@ -443,8 +454,9 @@ def compile_one(item: tuple[str, Path], tc: dict[str, str], flags: list[str]) ->
     if named != module:
         raise Refused(f"{source} is the C of {named!r}, not of {module}")
     target, diag = object_path(module), diagnostics_path(module)
-    if (target.is_file() and diag.is_file()
-            and target.stat().st_mtime >= source.stat().st_mtime):
+    key, key_file = hashlib.sha256(text.encode()).hexdigest(), target.with_suffix(".o.key")
+    if (target.is_file() and diag.is_file() and key_file.is_file()
+            and key_file.read_text() == key):
         return
     partial = target.with_suffix(".o.partial")
     result = run([tc["clang"], *flags, "-c", str(source), "-o", str(partial)])
@@ -454,6 +466,7 @@ def compile_one(item: tuple[str, Path], tc: dict[str, str], flags: list[str]) ->
                       + "\n".join(unexplained[:10]))
     diag.write_text(result.stderr)
     partial.replace(target)
+    key_file.write_text(key)
 
 
 def diagnostic_census(modules: list[str]) -> dict[str, int]:
@@ -821,13 +834,118 @@ def write_unresolved_report(classes: dict[str, list[str]]) -> None:
 # Driver
 # ---------------------------------------------------------------------------
 
+def file_digest(path: Path) -> str | None:
+    """SHA-256 of a file's bytes, or `None` when it does not exist."""
+    if not path.is_file():
+        return None
+    return hashlib.sha256(path.read_bytes()).hexdigest()
+
+
+def header_digests() -> dict[str, str | None]:
+    """The digest of every header the compile reads besides the toolchain's
+    (`SHIM_INCLUDE`): with the toolchain, the compiler and the flags, what an
+    object depends on besides its own C (`object_cache_stamp`)."""
+    return {str(h.relative_to(REPO)): file_digest(h)
+            for h in sorted(SHIM_INCLUDE.rglob("*")) if h.is_file()}
+
+
+def tree_digest() -> str | None:
+    """The identity of the working tree: `git write-tree` over a scratch copy
+    of the index after `git add -A`, so every tracked file and every untracked
+    file git does not ignore is named at its current content.  Nothing is
+    listed: whatever the build reads in the tree, a change to it changes this.
+    `None` when git cannot answer (no checkout), which no record matches."""
+    git = ["git", "-C", str(REPO)]
+    located = subprocess.run([*git, "rev-parse", "--git-path", "index"],
+                             capture_output=True, text=True)
+    if located.returncode != 0:
+        return None
+    index = Path(located.stdout.strip())
+    index = index if index.is_absolute() else REPO / index
+    with tempfile.TemporaryDirectory() as scratch:
+        scratch_index = Path(scratch) / "index"
+        if index.is_file():
+            shutil.copyfile(index, scratch_index)
+        env = {**os.environ, "GIT_INDEX_FILE": str(scratch_index)}
+        if subprocess.run([*git, "add", "-A", "--", "."], env=env,
+                          capture_output=True).returncode != 0:
+            return None
+        tree = subprocess.run([*git, "write-tree"], env=env, capture_output=True, text=True)
+    return tree.stdout.strip() if tree.returncode == 0 and tree.stdout.strip() else None
+
+
+def object_cache_stamp(tc: dict[str, str], flags: list[str],
+                       headers: dict[str, str | None]) -> str:
+    """What every object in the cache was compiled under: the toolchain, the
+    compiler, the flags and `header_digests`.  Each object is further keyed on
+    its own C (`compile_one`)."""
+    return hashlib.sha256("\n".join([tc["githash"], tc["clang"], *flags,
+                                      json.dumps(headers, sort_keys=True)]).encode()).hexdigest()
+
+
+def provenance_record(tree: str | None) -> dict:
+    """The tree the archive was built from and the outputs it is.  The tree is
+    passed in: `build` reads it before it compiles anything, so a file edited
+    while the build runs is recorded as it was, not as it is when the build
+    ends."""
+    outputs = [ARCHIVE, ROOTS_SCRIPT]
+    return {"tree": tree,
+            "outputs": {str(out.relative_to(REPO)): file_digest(out) for out in outputs}}
+
+
+def stale_files(then: object, now: object, section: str) -> list[str]:
+    """Every file of one recorded section whose digest differs now, and every
+    file the current reading has that the record lacks (a header added beside
+    the shim); a section unrecorded or unread counts as different."""
+    if not isinstance(then, dict) or not then or not isinstance(now, dict):
+        return [f"<{section} unrecorded>"]
+    return ([path for path, digest in sorted(then.items())
+             if digest is None or now.get(path) != digest]
+            + [f"{path} (new)" for path in sorted(set(now) - set(then))])
+
+
+def stale_entries(recorded: dict, current: dict) -> list[str]:
+    """Why a build record does not describe the current tree and outputs: a
+    different (or unrecorded) tree, and `stale_files` over the outputs."""
+    tree = recorded.get("tree")
+    differs = [] if isinstance(tree, str) and tree and tree == current.get("tree") else ["<working tree>"]
+    return differs + stale_files(recorded.get("outputs"), current.get("outputs"), "outputs")
+
+
+def check_fresh() -> int:
+    """Refuse an archive whose recorded inputs or outputs have changed."""
+    if not PROVENANCE.is_file():
+        print(f"FAIL: {PROVENANCE.relative_to(REPO)} is absent: the archive predates "
+              "provenance or its build failed; run scripts/test_lean_aarch64_archive.sh")
+        return 1
+    try:
+        recorded = json.loads(PROVENANCE.read_text())
+    except json.JSONDecodeError as exc:
+        print(f"FAIL: {PROVENANCE.relative_to(REPO)} is unreadable ({exc})")
+        return 1
+    stale = stale_entries(recorded if isinstance(recorded, dict) else {},
+                          provenance_record(tree_digest()))
+    if stale:
+        print(f"FAIL: {ARCHIVE.relative_to(REPO)} is stale: {len(stale)} difference(s) "
+              f"from its build record (first: {', '.join(stale[:5])}); "
+              "run scripts/test_lean_aarch64_archive.sh")
+        return 1
+    print(f"OK: {ARCHIVE.relative_to(REPO)} was built from the current tree")
+    return 0
+
+
 def build(jobs: int) -> int:
+    PROVENANCE.unlink(missing_ok=True)
     tc = toolchain()
     print(f"[1/8] toolchain {tc['version']} ({tc['githash'][:12]})")
     closure = elaborator_closure()
     package, stdlib = classify_closure(closure, lake_modules(), staged_modules())
     print(f"[2/8] closure: {len(package)} package + {len(stdlib)} stdlib modules "
           f"(elaborator and Lake agree; no staged, testing or Lean.* module)")
+    tree = tree_digest()
+    if tree is None:
+        print("FAIL: git cannot name the working tree, so no build record can describe it")
+        return 1
     check_config((Path(tc["prefix"]) / "include/lean/config.h").read_text(),
                  (SHIM_INCLUDE / "lean/config.h").read_text())
     print("[3/8] allocator configuration: toolchain config.h with LEAN_MIMALLOC -> LEAN_SMALL_ALLOCATOR")
@@ -835,7 +953,7 @@ def build(jobs: int) -> int:
     parallel(lambda m: generate_one_stdlib_c(m, tc), stdlib, jobs)
     print(f"[4/8] C: Lake `c` facet for the package, regenerated stdlib C cached under {tc['githash'][:12]}")
     flags = compile_flags(tc)
-    prepare_objects(hashlib.sha256("\n".join([tc["githash"], tc["clang"], *flags]).encode()).hexdigest())
+    prepare_objects(object_cache_stamp(tc, flags, header_digests()))
     sources = [(m, package_c(m)) for m in package] + [(m, stdlib_c(m, tc)) for m in stdlib]
     parallel(lambda item: compile_one(item, tc, flags), sources, jobs)
     build_archive(package + stdlib, tc)
@@ -892,7 +1010,15 @@ def build(jobs: int) -> int:
           f"the file the kernel image links")
     status = fp_gate.check([ARCHIVE], fp_gate.default_objdump())
     print("[8/8] FP/SIMD register operands: " + ("none" if status == 0 else "FOUND"))
-    return status
+    if status != 0:
+        return status
+    if tree_digest() != tree:
+        print("FAIL: the working tree changed while the archive was built; "
+              "no provenance record written, so the archive is stale")
+        return 1
+    PROVENANCE.write_text(json.dumps(provenance_record(tree), indent=1, sort_keys=True) + "\n")
+    print(f"provenance -> {PROVENANCE.relative_to(REPO)}")
+    return 0
 
 
 # ---------------------------------------------------------------------------
@@ -1112,6 +1238,30 @@ def self_test() -> int:
            {"-mgeneral-regs-only", "-mabi=aapcs-soft", "-ffreestanding", "-nostdlibinc", "-Werror"}
            <= set(compile_flags({"prefix": "/t"})))
 
+    then = {"tree": "t1", "outputs": {"libsele4n.a": "x"}}
+    expect("an unchanged tree is fresh", stale_entries(then, json.loads(json.dumps(then))) == [])
+    expect("the record holds the tree read before the build, not the tree's now",
+           provenance_record("before")["tree"] == "before")
+    expect("a changed tree is stale", stale_entries(then, {**then, "tree": "t2"}) == ["<working tree>"])
+    expect("a tree git cannot name is never fresh",
+           stale_entries({**then, "tree": None}, {**then, "tree": None}) != [])
+    expect("a rebuilt archive is stale against the old record", stale_entries(
+        then, {**then, "outputs": {"libsele4n.a": "y"}}) == ["libsele4n.a"])
+    expect("an empty record is never fresh", stale_entries({}, then) != [])
+    expect("a record of an absent output is never fresh", stale_entries(
+        {"tree": "t", "outputs": {"libsele4n.a": None}},
+        {"tree": "t", "outputs": {"libsele4n.a": None}}) != [])
+    stamp_tc = {"githash": "g", "clang": "c"}
+    expect("the object cache is keyed on the headers",
+           object_cache_stamp(stamp_tc, ["-O2"], {"h.h": "a"})
+           != object_cache_stamp(stamp_tc, ["-O2"], {"h.h": "b"}))
+    expect("every shim header keys the object cache",
+           all(str(h.relative_to(REPO)) in header_digests()
+               for h in SHIM_INCLUDE.rglob("*") if h.is_file()))
+    live_tree = tree_digest()
+    expect("git names this working tree", isinstance(live_tree, str) and len(live_tree) >= 40)
+    expect("the tree's name is stable", tree_digest() == live_tree)
+
     for failure in failures:
         print(f"FAIL self-test: {failure}")
     if failures:
@@ -1123,10 +1273,14 @@ def self_test() -> int:
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("--self-test", action="store_true")
+    parser.add_argument("--check-fresh", action="store_true",
+                        help="refuse unless the archive was built from the current tree")
     parser.add_argument("--jobs", type=int, default=os.cpu_count() or 1)
     args = parser.parse_args()
     if args.self_test:
         return self_test()
+    if args.check_fresh:
+        return check_fresh()
     try:
         return build(max(1, args.jobs))
     except (Refused, fp_gate.Unreadable) as exc:

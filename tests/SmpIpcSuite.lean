@@ -4444,16 +4444,16 @@ private def fpDelegatedState (base : SystemState) : Option SystemState := do
   okExcept (handleRescheduleSgiOnCore stCall2 c3)
 
 /-- How many replenish-queue write locks a footprint names. -/
-private def replenishMemberCount (fp : List (SchedLockId × Concurrency.AccessMode)) : Nat :=
-  (fp.filter (fun p => p.1 matches SchedLockId.replenishQueue _)).length
+private def replenishMemberCount (fp : List (LockKey × Concurrency.AccessMode)) : Nat :=
+  (fp.filter (fun p => p.1 matches LockKey.replenishQueue _)).length
 
-private def hasReplenishWrite (fp : List (SchedLockId × Concurrency.AccessMode)) (c : CoreId) :
+private def hasReplenishWrite (fp : List (LockKey × Concurrency.AccessMode)) (c : CoreId) :
     Bool :=
-  decide ((SchedLockId.replenishQueue ⟨c⟩, Concurrency.AccessMode.write) ∈ fp)
+  decide ((LockKey.replenishQueue c, Concurrency.AccessMode.write) ∈ fp)
 
-private def hasRunQueueWrite (fp : List (SchedLockId × Concurrency.AccessMode)) (c : CoreId) :
+private def hasRunQueueWrite (fp : List (LockKey × Concurrency.AccessMode)) (c : CoreId) :
     Bool :=
-  decide ((SchedLockId.runQueue ⟨c⟩, Concurrency.AccessMode.write) ∈ fp)
+  decide ((LockKey.runQueue c, Concurrency.AccessMode.write) ∈ fp)
 
 private def runReplyRecvFootprintChecks : IO Unit := do
   IO.println "--- §3.29 WS-RR RR8.12 Cut C2: the `.replyRecv` footprint's replenish segment ---"
@@ -4686,7 +4686,7 @@ private def runCallReplyFootprintChecks : IO Unit := do
       (hasRunQueueWrite fp c0 && hasRunQueueWrite fp c1 && hasReplenishWrite fp c0
         && hasReplenishWrite fp c1 && replenishMemberCount fp == 2)
     -- The RR2.4 parametric footprint at the resolved cores, computed beside it.
-    let param := endpointCallCrossCoreDispatchSchedLockSet c0 c1 c0 c1
+    let param := endpointCallCrossCoreDispatchLockSet c0 c1 c0 c1
     assertBool "(a) the derived footprint covers the RR2.4 parametric one at the resolved cores, member for member"
       (param.all (fun p => decide (p ∈ fp)))
     let (stCall, resCall) := endpointCallCrossCoreDispatch donEp donClient IpcMessage.empty
@@ -4713,7 +4713,7 @@ private def runCallReplyFootprintChecks : IO Unit := do
       (decide (segL = []) && replenishMemberCount fpL == 0)
     assertBool "(b) ...while the run segment still names the server's home and the caller's core"
       (hasRunQueueWrite fpL c0 && hasRunQueueWrite fpL c1)
-    let paramL := endpointCallCrossCoreDispatchSchedLockSet c0 c1 c0 c1
+    let paramL := endpointCallCrossCoreDispatchLockSet c0 c1 c0 c1
     assertBool "(b) NEGATIVE: the RR2.4 parametric shape declares two replenish locks on this state, the derived one none"
       (replenishMemberCount paramL == 2 && replenishMemberCount fpL == 0)
     let (stCallL, resL) := endpointCallCrossCoreDispatch donEp donClient IpcMessage.empty
@@ -5113,7 +5113,7 @@ because the destroy path has no scheduling effect at all. -/
 /-- The RETIRED reading: SM8.B's write set as a whole footprint, with no
 replenish segment.  Spelled here and nowhere else. -/
 private def runOnlyRetypeFootprint (st : SystemState) (target : SeLe4n.ObjId) :
-    List (SchedLockId × Concurrency.AccessMode) :=
+    List (LockKey × Concurrency.AccessMode) :=
   schedFootprintOfCores (lifecycleRetypeWriteSet st target) []
 
 /-- **WS-RR RR8.12 Cut C6g**: the arm the syscall dispatches, rather than the
@@ -5168,7 +5168,7 @@ private def runRetypeFootprintChecks : IO Unit := do
   --     two readings agree and both are the object-store lock alone.
   let fpEp := schedLockSet_lifecycleRetypeOnCore stSc donEp
   assertBool "(c) CONTROL: an endpoint target's footprint is the object-store write lock alone"
-    (decide (fpEp = [(SchedLockId.object schedObjStoreLockId, Concurrency.AccessMode.write)]))
+    (decide (fpEp = [(LockKey.objStore, Concurrency.AccessMode.write)]))
   assertBool "(c) CONTROL: ...which is exactly what the run-only reading gives too"
     (decide (fpEp = runOnlyRetypeFootprint stSc donEp))
   -- (d) WS-RR RR8.12 Cut C6g: COVERAGE, on the arm the syscall dispatches.  The

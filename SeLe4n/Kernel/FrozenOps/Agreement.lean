@@ -84,19 +84,18 @@ def frozenObjectAgrees (f : FrozenKernelObject) (l : KernelObject) : Bool :=
   | .schedContext a, .schedContext b => a == b
   | .reply a,        .reply b        => a == b
   -- PR #873 round 16: the two re-represented variants are **destructured**, not
-  -- sampled.  Listing the fields to compare is how `lock` came to be omitted --
-  -- both frozen structures carry it precisely so freezing preserves it, so a
-  -- frozen operation acquiring or releasing one differently from its live
+  -- sampled.  Listing the fields to compare is how a field (then `lock`) came to
+  -- be omitted, so a frozen operation that moved it differently from its live
   -- counterpart passed.  A binding here that goes unused is a field nobody
   -- compared, which the unused-variable linter reports; adding a field to
   -- either structure breaks this pattern until someone decides about it.
-  | .cnode (fc@⟨fd, fgw, fgv, frw, _fslots, flock⟩),
-    .cnode (lc@⟨ld, lgw, lgv, lrw, _lslots, llock⟩) =>
-      fd == ld && fgw == lgw && fgv == lgv && frw == lrw && flock == llock
+  | .cnode (fc@⟨fd, fgw, fgv, frw, _fslots⟩),
+    .cnode (lc@⟨ld, lgw, lgv, lrw, _lslots⟩) =>
+      fd == ld && fgw == lgw && fgv == lgv && frw == lrw
         && frozenCNodeSlotsAgree fc lc
-  | .vspaceRoot (fv@⟨fasid, _fm, fbase, ftables, _fepochs, flock⟩),
-    .vspaceRoot (lv@⟨lasid, _lm, lbase, ltables, _lepochs, llock⟩) =>
-      fasid == lasid && fbase == lbase && ftables == ltables && flock == llock
+  | .vspaceRoot (fv@⟨fasid, _fm, fbase, ftables, _fepochs⟩),
+    .vspaceRoot (lv@⟨lasid, _lm, lbase, ltables, _lepochs⟩) =>
+      fasid == lasid && fbase == lbase && ftables == ltables
         && frozenVSpaceMappingsAgree fv lv
   | _, _ => false
 

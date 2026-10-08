@@ -1122,7 +1122,7 @@ pipeline's arm selector re-reads the binding from the **post-teardown** TCB, so
 the `.donated` arm then fires and runs a *second* SchedContext teardown with a
 *second* replenishment migration, whose destination is `outer`'s home core.
 
-That is the whole reason `suspendThreadOnCoreSchedLockSet`'s replenish segment is
+That is the whole reason `suspendThreadOnCoreLockSet`'s replenish segment is
 a triple rather than a pair: the third core is not resolvable from the victim's
 pre-state binding, because at the pre-state the victim has none. -/
 theorem returnDonationToCancelledCaller_leaves_donated_at_depth_two

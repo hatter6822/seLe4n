@@ -380,7 +380,7 @@ theorem advanceTimerState_preserves_registerDecodeConsistent_smp
     hNonBootIdle
 
 theorem writeRegisterState_preserves_registerDecodeConsistent_smp
-    (reg : SeLe4n.RegName) (value : SeLe4n.RegValue) (st : SystemState)
+    (reg : SeLe4n.RegName) (value : UInt64) (st : SystemState)
     (hPre : Architecture.registerDecodeConsistent_smp st)
     (hNonBootIdle : ∀ c, c ≠ bootCoreId →
       (Architecture.writeRegisterState reg value st).scheduler.currentOnCore c = none) :

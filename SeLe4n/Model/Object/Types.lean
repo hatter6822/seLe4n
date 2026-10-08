@@ -16,16 +16,6 @@ import SeLe4n.Kernel.RobinHood
 import SeLe4n.Kernel.SchedContext.Types
 import SeLe4n.Model.Object.NoDupList
 import SeLe4n.Model.Object.UniqueSlotMap
--- WS-SM SM3.A.1..A.4/A.6..A.9: per-object lock state.  Every kernel-object
--- struct carries a `lock : RwLockState` field whose default `RwLockState.unheld`
--- means freshly-allocated objects start with the lock available.  Only the
--- SM2.C state types (`AccessMode`, `RwLockState`, `unheld`) are imported
--- here; the operational specification and its proofs (`Locks.RwLock`) stay
--- out of the model layer's import closure, and SM3.B..E import them where
--- they extract lock sets and prove deadlock-freedom (Theorem 2.1.9),
--- serializability (Theorem 2.1.10) and single-core proof preservation
--- (Corollary 2.1.11).
-import SeLe4n.Kernel.Concurrency.Locks.RwLockState
 
 namespace SeLe4n.Model
 
@@ -1060,20 +1050,6 @@ structure TCB where
       This eliminates the risk of sentinel collision with legitimate IPC data
       in register x0. -/
   timedOut : Bool := false
-  /-- WS-SM SM3.A.1: per-TCB reader-writer lock state.  Default
-      `RwLockState.unheld` means a freshly-allocated TCB starts with its lock
-      available.  Kernel transitions that mutate this TCB acquire the lock in
-      write mode; lookups (e.g., scheduler reads, `getTcb?`) acquire in read
-      mode.  See WS-SM SM3.A.1
-      for the per-object lock-field rollout, and SM2.C
-      (`Locks/RwLock.lean`) for the abstract operational spec the field
-      refines.  Refines bit 63 (writer) + bits 0..62 (readers) of the Rust
-      HAL's packed `AtomicU64` state — the layout both HAL locks share,
-      defined once in `rust/sele4n-hal/src/rw_lock.rs` and imported by
-      `queued_rw_lock.rs`, which is the lock `lock_bridge.rs` deploys
-      (WS-RR RR6.10). -/
-  lock : SeLe4n.Kernel.Concurrency.RwLockState :=
-    SeLe4n.Kernel.Concurrency.RwLockState.unheld
   /-- WS-SM SM5.B.4 (WS-SM SM5
       §3.2 / §5 SM5.B.4): CPU affinity — the core this thread is bound to.
       `none` means *unbound* (the thread may run on any core); `some c` pins
@@ -1313,14 +1289,9 @@ def queueSpliceNeighbors? (removed : TCB) :
     Option SeLe4n.ThreadId × Option SeLe4n.ThreadId :=
   (removed.queuePrev, removed.queueNext)
 
-/-- WS-H12c: Manual `BEq` for `TCB`. `DecidableEq` cannot be derived because
-`RegisterFile` contains a function field (`gpr : Nat → Nat`). Field-wise
-comparison uses the `BEq RegisterFile` instance from `Machine.lean`.
-
-**V7-F: WARNING — non-lawful BEq instance.** Inherits non-lawfulness from
-`BEq RegisterFile` via the `registerContext` field comparison. Safe for
-runtime testing but do NOT rely on `==` for propositional equality in proofs.
-See `TCB.not_lawfulBEq` and `RegisterFile.not_lawfulBEq`. -/
+/-- WS-H12c: Manual `BEq` for `TCB`: field-wise comparison, the saved
+`registerContext` by `RegisterFile`'s decidable equality.  Proofs that need
+propositional equality of TCBs use `TCB.ext`. -/
 instance : BEq TCB where
   beq a b :=
     a.tid == b.tid && a.priority == b.priority && a.domain == b.domain &&
@@ -1337,9 +1308,6 @@ instance : BEq TCB where
     a.maxControlledPriority == b.maxControlledPriority &&
     a.pipBoost == b.pipBoost &&
     a.timedOut == b.timedOut &&
-    -- WS-SM SM3.A.1: per-TCB lock state participates in structural equality.
-    -- `RwLockState` derives `DecidableEq`, so its `==` agrees with `=`.
-    a.lock == b.lock &&
     -- WS-SM SM5.B.4: per-TCB CPU affinity participates in structural equality.
     -- `Option CoreId` (`CoreId = Fin numCores`) derives `DecidableEq`, so its
     -- `==` agrees with `=`.
@@ -1559,44 +1527,11 @@ theorem TCB.pendingCapsDropped_bounded {t t' : TCB} (h : TCB.pendingCapsDropped 
   simp only [] at hrel
   exact ⟨hrel.1 ▸ hb.1, Nat.le_trans hrel.2 hb.2⟩
 
-/-- U2-N/U-M17: Negative `LawfulBEq` witness for `TCB`.
-    `BEq TCB` is field-wise comparison including `registerContext : RegisterFile`.
-    Since `RegisterFile.BEq` is not lawful (see `RegisterFile.not_lawfulBEq`),
-    `TCB.BEq` inherits the same limitation. This prevents accidental use of
-    `TCB` in proofs that assume `LawfulBEq`. -/
-theorem TCB.not_lawfulBEq : ¬ LawfulBEq TCB := by
-  intro h
-  have hEq := @LawfulBEq.eq_of_beq _ _ h
-  -- Construct two TCBs whose registerContext differs only on out-of-range GPR index 32
-  let f₁ : SeLe4n.RegName → SeLe4n.RegValue := fun _ => ⟨0⟩
-  let f₂ : SeLe4n.RegName → SeLe4n.RegValue := fun r => if r.val = 32 then ⟨1⟩ else ⟨0⟩
-  let r₁ : SeLe4n.RegisterFile := { pc := ⟨0⟩, sp := ⟨0⟩, gpr := f₁ }
-  let r₂ : SeLe4n.RegisterFile := { pc := ⟨0⟩, sp := ⟨0⟩, gpr := f₂ }
-  let oid : SeLe4n.ObjId := ⟨0⟩
-  let va : SeLe4n.VAddr := (SeLe4n.VAddr.ofNat 0)
-  let t₁ : TCB := {
-    tid := ⟨0⟩, priority := ⟨0⟩, domain := ⟨0⟩,
-    cspaceRoot := oid, vspaceRoot := oid, ipcBuffer := va, registerContext := r₁ }
-  let t₂ : TCB := {
-    tid := ⟨0⟩, priority := ⟨0⟩, domain := ⟨0⟩,
-    cspaceRoot := oid, vspaceRoot := oid, ipcBuffer := va, registerContext := r₂ }
-  have hBeq : (t₁ == t₂) = true := by decide
-  have hPropEq : t₁ = t₂ := hEq hBeq
-  have hNeq : t₁.registerContext.gpr ⟨32⟩ ≠ t₂.registerContext.gpr ⟨32⟩ := by decide
-  exact hNeq (by rw [hPropEq])
-
 /-- AK7-G (F-M05 / MEDIUM): Sanctioned extensionality lemma for `TCB`.
 
 Use this lemma instead of `==` in any proof that requires propositional
-equality of TCBs. `TCB.ext` requires each structural field to match —
-including the `registerContext : RegisterFile` function field — so the
-proof obligation covers the same surface as `a == b = true` but without
-the out-of-range-GPR trap that `TCB.not_lawfulBEq` exposes.
-
-Companion to `RegisterFile.ext` (Machine.lean). Together they close the
-proof gap cited in F-M05: non-lawful BEq remains available for test
-infrastructure, while proof-critical paths derive equality via explicit
-pointwise witnesses. -/
+equality of TCBs. `TCB.ext` requires each structural field to match,
+`registerContext` included.  Companion to `RegisterFile.ext` (Machine.lean). -/
 theorem TCB.ext {a b : TCB}
     (hTid : a.tid = b.tid) (hPrio : a.priority = b.priority) (hDom : a.domain = b.domain)
     (hCsp : a.cspaceRoot = b.cspaceRoot) (hVsp : a.vspaceRoot = b.vspaceRoot)
@@ -1612,8 +1547,6 @@ theorem TCB.ext {a b : TCB}
     (hMcp : a.maxControlledPriority = b.maxControlledPriority)
     (hPip : a.pipBoost = b.pipBoost)
     (hTo : a.timedOut = b.timedOut)
-    -- WS-SM SM3.A.1: extensionality covers the per-TCB lock field.
-    (hLock : a.lock = b.lock)
     -- WS-SM SM5.B.4: extensionality covers the per-TCB CPU-affinity field.
     (hCpuAff : a.cpuAffinity = b.cpuAffinity)
     -- WS-SM Reply objects: extensionality covers the per-TCB reply-object links.
@@ -1628,7 +1561,7 @@ theorem TCB.ext {a b : TCB}
   simp at *
   exact ⟨hTid, hPrio, hDom, hCsp, hVsp, hBuf, hIpc, hTs, hSlice, hDeadline,
          hQPrev, hQPPrev, hQNext, hPend, hRC, hFh, hBn, hSc, hTb, hMcp, hPip, hTo,
-         hLock, hCpuAff, hReply, hPendReply, hPendFault, hFp⟩
+         hCpuAff, hReply, hPendReply, hPendFault, hFp⟩
 
 /-- Intrusive FIFO queue metadata for endpoint wait queues.
 
@@ -2037,20 +1970,13 @@ Legacy WS-E3 fields (`state`, `queue`, `waitingReceiver`) and the
 `EndpointState` type have been removed — all IPC operations use the O(1)
 dual-queue path (`endpointSendDual`/`endpointReceiveDual`).
 
-WS-SM SM3.A.2: per-Endpoint lock field added.  Endpoint mutations in IPC
-transitions (`endpointSendDual`, `endpointReceiveDual`,
-`endpointCallDual`) acquire `lock` in write mode; lookups acquire in
-read mode.  The `RwLockState` `DecidableEq` instance preserves the
-derivation of `DecidableEq Endpoint`. -/
+WS-LS LS3.1: the endpoint's lock is a key of the ghost lock table
+(`Concurrency/Locks/LockState.lean`), not a field; IPC transitions
+(`endpointSendDual`, `endpointReceiveDual`, `endpointCallDual`) declare it in
+write mode and lookups in read mode. -/
 structure Endpoint where
   sendQ : IntrusiveQueue := {}
   receiveQ : IntrusiveQueue := {}
-  /-- WS-SM SM3.A.2: per-Endpoint reader-writer lock state.  Default
-      `RwLockState.unheld` means a freshly-allocated Endpoint starts with
-      its lock available.  See
-      WS-SM SM3.A.2. -/
-  lock : SeLe4n.Kernel.Concurrency.RwLockState :=
-    SeLe4n.Kernel.Concurrency.RwLockState.unheld
   deriving Repr, DecidableEq
 
 inductive NotificationState where
@@ -2129,14 +2055,6 @@ structure Notification where
       a pending badge.  Default `none` — a freshly-allocated notification is
       unbound, so every existing construction site is unaffected. -/
   boundTCB : Option SeLe4n.ThreadId := none
-  /-- WS-SM SM3.A.4: per-Notification reader-writer lock state.  Default
-      `RwLockState.unheld` means a freshly-allocated Notification starts
-      with its lock available.  `notificationSignal` / `notificationWait`
-      acquire in write mode; observation paths (e.g., `getNotification?`)
-      acquire in read mode.  See
-      WS-SM SM3.A.4. -/
-  lock : SeLe4n.Kernel.Concurrency.RwLockState :=
-    SeLe4n.Kernel.Concurrency.RwLockState.unheld
   deriving Repr, DecidableEq
 
 /-- WS-H13/H-01: Depth-aware CNode with compressed-path guard.
@@ -2162,15 +2080,6 @@ structure CNode where
   guardValue : Nat          -- expected guard value to match
   radixWidth : Nat          -- width of slot index in bits (2^radixWidth slots)
   slots      : SeLe4n.UniqueSlotMap Capability
-  /-- WS-SM SM3.A.3: per-CNode reader-writer lock state.  Default
-      `RwLockState.unheld` means a freshly-allocated CNode starts with its
-      lock available.  CSpace mutation paths (`cspaceMutate`, `cspaceCopy`,
-      `cspaceMove`, `cspaceDelete`, `cspaceRevoke`) acquire in write mode;
-      lookup paths (`cspaceLookupSlot`, `cspaceLookupPath`,
-      `resolveCapAddress`) acquire in read mode.  See
-      WS-SM SM3.A.3. -/
-  lock       : SeLe4n.Kernel.Concurrency.RwLockState :=
-    SeLe4n.Kernel.Concurrency.RwLockState.unheld
   deriving Repr
 
 /-- Maximum CSpace address width (matching ARM64 word size). -/
@@ -2225,14 +2134,6 @@ structure UntypedObject where
       untypeds and for any test that does not exercise multi-level
       retype chains. -/
   parent : Option SeLe4n.ObjId := none
-  /-- WS-SM SM3.A.9: per-UntypedObject reader-writer lock state.  Default
-      `RwLockState.unheld` means a freshly-allocated UntypedObject starts
-      with its lock available.  `retypeFromUntyped` and `untypedAllocate`
-      acquire in write mode; observation paths (watermark / freeSpace
-      reads) acquire in read mode.  See
-      WS-SM SM3.A.9. -/
-  lock : SeLe4n.Kernel.Concurrency.RwLockState :=
-    SeLe4n.Kernel.Concurrency.RwLockState.unheld
   deriving Repr, DecidableEq
 
 namespace UntypedObject

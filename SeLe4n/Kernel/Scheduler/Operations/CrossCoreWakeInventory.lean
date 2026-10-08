@@ -15,9 +15,8 @@ import SeLe4n.PackedString
 # WS-SM SM5.C — Theorem inventory
 
 Aggregates the SM5.C cross-core-wake substantive theorems into a single typed
-inventory with size and per-category witnesses.  Mirrors the SM3.A
-`PerObjectLockInventory.lean`, SM3.B `LockSetInventory.lean`, and SM3.C/D/E
-`Sm3*Inventory.lean` patterns (added at audit-pass-1 for SM3-parity rigour — the
+inventory with size and per-category witnesses.  Mirrors the SM3.B
+`LockSetInventory.lean` and SM3.D `DeadlockInventory.lean` patterns (added at audit-pass-1 for SM3-parity rigour — the
 lighter SM5.A/SM5.B precedent left it out; per the implement-the-improvement rule
 the maximally-rigorous option is taken here).
 
@@ -130,7 +129,7 @@ def crossCoreWakeTheorems : List CrossCoreWakeTheorem :=
       wakeThreadLockSet_object_before_runQueue .lockSet,
     ccwt! "wakeThreadLockSet_keys_nodup: footprint keys are duplicate-free"
       wakeThreadLockSet_keys_nodup .lockSet,
-    ccwt! "wakeThreadLockSet_pairwise_le: canonical SchedLockId-ascending acquisition order"
+    ccwt! "wakeThreadLockSet_pairwise_le: canonical LockKey-ascending acquisition order"
       wakeThreadLockSet_pairwise_le .lockSet,
     ccwt! "handleRescheduleSgiOnCoreLockSet: the SGI-handler footprint (= switch footprint)"
       handleRescheduleSgiOnCoreLockSet .lockSet,

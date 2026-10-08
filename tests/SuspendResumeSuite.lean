@@ -831,14 +831,14 @@ private def sr035_resumeFootprintNamesHomeAndExecutingCores : IO Unit := do
   expect "SR-035 precondition: B is homed on core 1, the syscall runs on core 0"
     (SeLe4n.Kernel.determineTargetCore st bTid == core1 && core1 != bootCore)
   expect "SR-035 the footprint names B's home core's run-queue write lock"
-    (decide ((SeLe4n.Kernel.SchedLockId.runQueue ⟨core1⟩,
+    (decide ((SeLe4n.Kernel.Concurrency.LockKey.runQueue core1,
       SeLe4n.Kernel.Concurrency.AccessMode.write) ∈ fp))
   expect "SR-035 ...and the executing core's, which the inline reschedule writes"
-    (decide ((SeLe4n.Kernel.SchedLockId.runQueue ⟨bootCore⟩,
+    (decide ((SeLe4n.Kernel.Concurrency.LockKey.runQueue bootCore,
       SeLe4n.Kernel.Concurrency.AccessMode.write) ∈ fp))
   expect "SR-035 ...and no replenish-queue write lock on any core"
     (SeLe4n.Kernel.Concurrency.allCores.all (fun c =>
-      !decide ((SeLe4n.Kernel.SchedLockId.replenishQueue ⟨c⟩,
+      !decide ((SeLe4n.Kernel.Concurrency.LockKey.replenishQueue c,
         SeLe4n.Kernel.Concurrency.AccessMode.write) ∈ fp)))
   match resumeThreadOnCore st vB bootCore with
   | .ok (st', _) =>

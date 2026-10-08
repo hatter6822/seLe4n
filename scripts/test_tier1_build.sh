@@ -80,13 +80,14 @@ run_check "BUILD" lake build SeLe4n.Testing.BootEntryContract
 # (transitive `getUsedConstants` reachability to a `kernelStateRef` write), and
 # reconciles it against a registry in both directions -- an unclassified
 # committing seam and a stale registry entry are each a failure.  A body
-# recorded as bracketed must reach `runUnderDeclaredLockSet` or
-# `Concurrency.withLockSet`; one recorded unbracketed must carry a reason.
+# recorded as bracketed must reach `BracketSpec.run`; one recorded
+# unbracketed must carry a reason.
 #
 # Building it IS the check.  Its witnesses -- a planted BARE-COMMIT body, a
 # commit reached only through a helper, and a read-only body -- keep it from
 # passing vacuously, and the bare-commit one is the shape the row exists to
-# catch.  Today: seven committing seams, two of them bracketed.
+# catch.  Today: seven committing seams, five of them bracketed (the syscall
+# seam, the suspend seam and the three per-core scheduler entries).
 run_check "BUILD" lake build SeLe4n.Testing.ExportCommitDisciplineCensus
 
 # WS-BP BP2.2: the kernel's Lean runtime answers a few primitives without an
@@ -127,7 +128,7 @@ run_check "BUILD" lake build SeLe4n.Testing.LockFootprintBoundCensus
 # `_subset` / `mem_..._iff`: they are stated once of `schedFootprintOfCores` and
 # inherited BECAUSE each footprint is that function applied to two core lists,
 # so a footprint written any other way loses all five silently -- and
-# `_keys_nodup` is `SchedLockSet.ofList?`'s own obligation, so the constructor
+# `_keys_nodup` is `LockSet.ofList?`'s own obligation, so the constructor
 # then refuses and the arm answers `none`, which is an undeclared arm rather
 # than a failure.  And a footprint the syscall resolver names nowhere is one
 # nobody acquires: Cut 8a-ii measured thirty-three of the family's forty-seven

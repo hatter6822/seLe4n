@@ -62,10 +62,11 @@ All theorems are proved with no dependency beyond Lean's foundational `propext` 
 `setThreadCpuAffinityWithMigration` (this module's SM5.H.4 composite: affinity
 write + replenishment migration + run-queue migration), and WS-SM SM6.E's
 per-core donated cancellation arm consumes `migrateSchedContextReplenishment`
-at the cancellation boundary.  This module stays staged via `Platform.Staged`
-only for its remaining proof-layer surface (the SM5.H.5 affinity invariant and
-its preservation family, whose production consumers are SM7+ work); the
-operations themselves are production (`Scheduler.Operations.Core`).
+at the cancellation boundary.  This module was staged via `Platform.Staged`
+for its proof-layer surface until **WS-LS LS2.2**, when the timer tick's
+coverage proof (`timerTickBracket`, `SchedLockBracket.lean`) pulled its
+replenish frames into the production closure; the operations themselves are
+production (`Scheduler.Operations.Core`).
 
 ## Naming erratum (plan §3.8)
 
@@ -84,7 +85,8 @@ wrongly forbid them.
 namespace SeLe4n.Kernel
 
 open SeLe4n.Model
-open SeLe4n.Kernel.Concurrency (numCores CoreId bootCoreId SgiKind)
+open SeLe4n.Kernel.Concurrency (numCores CoreId bootCoreId SgiKind
+  LockKey)
 
 -- ============================================================================
 -- §1  SM5.H.1 / SM5.H.5 — the per-core CBS replenish-queue predicates
@@ -120,7 +122,7 @@ discharging the SM5.H.6 pipeline-order future-ness from `sc.period > 0`.
 
 `replenishOnCore`, `replenishScOnCore`, the migration, and the composite are
 **production** defs in `Scheduler/Operations/Core.lean` (reached via the SM5.H.4
-`tcbSetAffinity` syscall); this staged module collects their theorem surface. -/
+`tcbSetAffinity` syscall); this module collects their theorem surface. -/
 
 /-- WS-SM SM5.H.2: scheduling a replenishment never touches the object store. -/
 @[simp] theorem replenishOnCore_objects (st : SystemState) (c : CoreId)
@@ -949,11 +951,11 @@ theorem setThreadCpuAffinityWithMigration_preserves_objects_invExt (st : SystemS
           exact hStInv
 
 -- ============================================================================
--- §10  SM5.H (A1) — lock-set footprints over `SchedLockId`
+-- §10  SM5.H (A1) — lock-set footprints over `LockKey`
 -- ============================================================================
 --
 -- Every SM5.H operation declares its cross-domain lock footprint over the SM5.A
--- `SchedLockId` order (object < runQueue < replenishQueue, plan §4.4, then by
+-- `LockKey` order (object < runQueue < replenishQueue, plan §4.4, then by
 -- `core.val` within a kind).  The migration / composite are the first SM5
 -- operations holding **two locks of the same kind** (`replenishQueue ⟨fromCore⟩`
 -- and `⟨toCore⟩`, / `runQueue` likewise); their ascending acquisition order (the
@@ -963,8 +965,8 @@ theorem setThreadCpuAffinityWithMigration_preserves_objects_invExt (st : SystemS
 
 /-- WS-SM SM5.H.2 (lock-set): `replenishOnCore c` writes only core `c`'s
 replenish-queue slot. -/
-def replenishOnCoreLockSet (c : CoreId) : List (SchedLockId × Concurrency.AccessMode) :=
-  [ (SchedLockId.replenishQueue ⟨c⟩, .write) ]
+def replenishOnCoreLockSet (c : CoreId) : List (LockKey × Concurrency.AccessMode) :=
+  [ (LockKey.replenishQueue c, .write) ]
 
 /-- SM5.H.2: the footprint is the single per-core replenish-queue write lock. -/
 @[simp] theorem replenishOnCoreLockSet_length (c : CoreId) :
@@ -978,7 +980,7 @@ theorem replenishOnCoreLockSet_write_only (c : CoreId) :
 
 /-- SM5.H.2: the footprint contains core `c`'s replenish-queue write lock. -/
 theorem replenishOnCoreLockSet_contains_replenishQueue_write (c : CoreId) :
-    (SchedLockId.replenishQueue ⟨c⟩, Concurrency.AccessMode.write) ∈ replenishOnCoreLockSet c := by
+    (LockKey.replenishQueue c, Concurrency.AccessMode.write) ∈ replenishOnCoreLockSet c := by
   simp [replenishOnCoreLockSet]
 
 /-- SM5.H.2: the footprint is within the SM3.D `maxLockSetSize` cap. -/
@@ -988,7 +990,7 @@ theorem replenishOnCoreLockSet_size_le_maxLockSetSize (c : CoreId) :
 
 -- WS-RR RR2.4: `migrateSchedContextReplenishmentLockSet` and its five lemmas
 -- moved to the production `Scheduler/Operations/PerCoreChooseThread.lean`,
--- beside the `SchedLockId` order they are stated in.  The migration is a live
+-- beside the `LockKey` order they are stated in.  The migration is a live
 -- operation on three reachable paths since RR2 (`.call` and `.reply` donation,
 -- `.tcbSuspend` cancellation), so the footprint their `withLockSet` brackets
 -- must cover cannot live in a staged module.  Same names, same namespace.
@@ -1336,7 +1338,7 @@ theorem ensureRunnable_replenishQueueOnCore (st : SystemState) (tid : SeLe4n.Thr
 --
 -- WS-SM SM5.H, relocated at **WS-RR RR8.12**: `wakeThread_replenishQueueOnCore`
 -- is declared in `Scheduler/Operations/PerCoreWake.lean`, beside `wakeThread`.
--- This module is staged, so the production IPC footprints that need the frame in
+-- This module was staged, so the production IPC footprints that need the frame in
 -- order to declare an empty replenish segment could not read it; the `_local`
 -- suffix was the signal that the owner was in the wrong layer.
 
