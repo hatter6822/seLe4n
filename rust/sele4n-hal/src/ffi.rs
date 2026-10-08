@@ -1721,14 +1721,21 @@ pub unsafe fn trap_context_of_lean(
 /// core `core`'s persistent `some` around its context object, rewritten with
 /// the frame's words (`trap::InFlightContextObjects::publish`).  Allocates
 /// nothing.
+///
+/// # Safety
+///
+/// As for `InFlightContextObjects::publish`: the caller is core `core`'s own
+/// kernel entry (or a test that is the only user of `objects`), and nothing
+/// else uses core `core`'s objects for the duration of the call.
 #[must_use]
-pub fn ffi_trap_context_in(
+pub unsafe fn ffi_trap_context_in(
     slots: &crate::trap::InFlightSlots,
     objects: &crate::trap::InFlightContextObjects,
     core: usize,
 ) -> crate::lean_runtime::Obj {
     crate::trap::in_flight_context_in(slots, core)
-        .and_then(|words| objects.publish(core, &words))
+        // SAFETY: forwarded from this function's contract.
+        .and_then(|words| unsafe { objects.publish(core, &words) })
         .unwrap_or(crate::lean_runtime::boxed(0))
 }
 
@@ -1742,11 +1749,16 @@ pub fn ffi_trap_context_in(
 #[no_mangle]
 pub extern "C" fn ffi_trap_context() -> crate::lean_runtime::Obj {
     let core = crate::per_cpu::current_core_id_from_tpidr() as usize;
-    ffi_trap_context_in(
-        crate::trap::in_flight_frames(),
-        crate::trap::in_flight_context_objects(),
-        core,
-    )
+    // SAFETY: this is core `core`'s own kernel entry — the core reads its own
+    // id — running with IRQs masked and never nested, so nothing else uses the
+    // core's objects during the call.
+    unsafe {
+        ffi_trap_context_in(
+            crate::trap::in_flight_frames(),
+            crate::trap::in_flight_context_objects(),
+            core,
+        )
+    }
 }
 
 /// `ffi_restore_stage_context` over the given staging buffers (the testable
@@ -2286,7 +2298,8 @@ mod tests {
     fn ffi_trap_context_answers_the_cores_persistent_objects() {
         let slots = fresh_slots();
         let objects = crate::trap::InFlightContextObjects::new();
-        let none = ffi_trap_context_in(&slots, &objects, 1);
+        // SAFETY: this test is the only user of `objects`.
+        let none = unsafe { ffi_trap_context_in(&slots, &objects, 1) };
         assert!(crate::lean_runtime::is_scalar(none));
         assert_eq!(none, crate::lean_runtime::boxed(0));
 
@@ -2295,7 +2308,8 @@ mod tests {
         let before = crate::lean_runtime::allocations();
         let some = {
             let _g = crate::trap::InFlightFrame::publish_in(&slots, 1, &mut frame);
-            ffi_trap_context_in(&slots, &objects, 1)
+            // SAFETY: this test is the only user of `objects`.
+            unsafe { ffi_trap_context_in(&slots, &objects, 1) }
         };
         assert_eq!(
             crate::lean_runtime::allocations(),
@@ -2337,7 +2351,8 @@ mod tests {
         frame2.gprs[7] = 0x7777;
         let again = {
             let _g = crate::trap::InFlightFrame::publish_in(&slots, 1, &mut frame2);
-            ffi_trap_context_in(&slots, &objects, 1)
+            // SAFETY: this test is the only user of `objects`.
+            unsafe { ffi_trap_context_in(&slots, &objects, 1) }
         };
         assert_eq!(again, some);
         // SAFETY: `context` is core 1's persistent object.
@@ -2345,10 +2360,9 @@ mod tests {
         assert_eq!(rewritten, 0x7777);
 
         // Another core's slot and objects are not this core's.
-        assert_eq!(
-            ffi_trap_context_in(&slots, &objects, 0),
-            crate::lean_runtime::boxed(0)
-        );
+        // SAFETY: this test is the only user of `objects`.
+        let other = unsafe { ffi_trap_context_in(&slots, &objects, 0) };
+        assert_eq!(other, crate::lean_runtime::boxed(0));
         assert_ne!(objects.context_object(0), Some(context));
         assert_eq!(
             objects.context_object(crate::svc_dispatch::RETURN_FRAME_CORES),

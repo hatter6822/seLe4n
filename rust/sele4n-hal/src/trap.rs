@@ -276,18 +276,23 @@ impl InFlightContextObjects {
     /// `some` around it — a Lean `Option InFlightContext` — or `None` past the
     /// last core.  Allocates nothing.
     ///
-    /// Called only by core `core`, from its own kernel entry, before that entry
-    /// reads the object (the type's documentation).
-    pub fn publish(
+    /// # Safety
+    ///
+    /// The caller is core `core`'s own kernel entry (or a test that is the
+    /// only user of `self`), and nothing reads or writes core `core`'s objects
+    /// for the duration of the call: two concurrent calls for one core would
+    /// race on its cells.  The trap path meets this because an entry runs
+    /// only on its own core, with IRQs masked, and does not nest.
+    pub unsafe fn publish(
         &self,
         core: usize,
         words: &TrapContextWords,
     ) -> Option<crate::lean_runtime::Obj> {
         let context = self.contexts.get(core)?.get();
         let some = self.somes.get(core)?.get();
-        // SAFETY: only core `core` writes or reads these cells, and no entry of
-        // that core is reading them now (the type's documentation); the
-        // pointers come from live statics.
+        // SAFETY: the caller is the only user of core `core`'s cells for the
+        // call (this function's contract); the pointers come from `self`'s
+        // live cells.
         unsafe {
             (*context).words = *words;
             (*some).context = context.cast();

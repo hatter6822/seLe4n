@@ -24,7 +24,10 @@
   matched where it is built (`@[inline]`), so none is allocated.
 - **Tests (CV3.2–CV3.4).**  HAL unit test: both objects' headers, persistence
   under `lean_dec`, the same object on the next trap, and the monotone
-  allocation counter unchanged.  Boundary tests: the compiled `snapshotInto`
+  allocation counter unchanged.  `InFlightContextObjects::publish` and
+  `ffi_trap_context_in` are `unsafe fn`s whose contract is that only core
+  `core`'s own, non-nesting entry uses its objects during the call; the
+  `Sync` cells are sound only under it.  Boundary tests: the compiled `snapshotInto`
   writes an owned destination in place and copies a shared one, `snapshot`
   answers a new object, and the save-hazard test's write-into-the-same-object
   half is restored (`a_saved_context_survives_its_object_being_rewritten`).
