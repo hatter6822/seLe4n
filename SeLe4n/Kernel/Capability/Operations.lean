@@ -365,8 +365,9 @@ theorem resolveCapAddressK_eq {α : Type} (addr : SeLe4n.CPtr) (st : SystemState
 /-- `resolveCapAddressK` with its first level unrolled: a CSpace whose root
 resolves the whole address (one level, the common case) reaches `onOk` in the
 caller's own body, so a caller that inlines it keeps its continuations' results
-unboxed; only a deeper CSpace enters the recursive form, whose result crosses
-a call (`resolveCapAddressKUnrolled_eq`).  WS-ZA. -/
+unboxed; only a deeper CSpace calls the recursive `resolveCapAddress`, whose
+`Except` is matched here, so no continuation is ever captured as a closure
+(`resolveCapAddressKUnrolled_eq`).  WS-ZA. -/
 @[inline] def resolveCapAddressKUnrolled {α : Type} (rootId : SeLe4n.ObjId) (addr : SeLe4n.CPtr)
     (bitsRemaining : Nat) (st : SystemState)
     (onErr : KernelError → α) (onOk : SeLe4n.ObjId → SeLe4n.Slot → α) : α :=
@@ -392,7 +393,9 @@ a call (`resolveCapAddressKUnrolled_eq`).  WS-ZA. -/
             | some cap =>
               match cap.target with
               | .object childId =>
-                resolveCapAddressK childId addr (bitsRemaining - consumed) st onErr onOk
+                match resolveCapAddress childId addr (bitsRemaining - consumed) st with
+                | .error e => onErr e
+                | .ok ref => onOk ref.cnode ref.slot
               | _ => onErr .invalidCapability
             | none => onErr .invalidCapability
     | none => onErr .objectNotFound
@@ -404,6 +407,7 @@ theorem resolveCapAddressKUnrolled_eq {α : Type} (rootId : SeLe4n.ObjId) (addr 
       resolveCapAddressK rootId addr bitsRemaining st onErr onOk := by
   rw [resolveCapAddressK]
   unfold resolveCapAddressKUnrolled
+  simp only [← resolveCapAddressK_eq]
   by_cases hZero : bitsRemaining = 0
   · simp only [hZero, ↓reduceIte, ↓reduceDIte]
   · simp only [hZero, ↓reduceIte, ↓reduceDIte]
