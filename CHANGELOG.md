@@ -1,3 +1,46 @@
+## v0.36.73 — WS-ZA ZA1 and the signal path's ZA2, with WS-CV CV2.1: 118 → 13 heap allocations per signal round trip
+
+**The continuing `NotificationSignal` round trip allocates 13 times, down from
+118.**  Each faster function is an `@[csimp]` implementation proven equal to the
+specification it replaces, so every theorem keeps citing the specification.
+Read on a fresh archive by the `heap-allocations-per-syscall` exerciser, which
+now runs two round trips and reports the second (the first also touches
+boot-built objects for the first time: 16).
+
+- **Ownership (ZA1.1–ZA1.6).**  The taint step's pre-state reads are taken
+  before the arm, so the arm owns every table it writes and no slot array is
+  copied whole; a refused syscall reports the state it was refused in, every
+  check preceding the first write (the maintainer's "checks before writes");
+  `storeObject` writes only the tables that change; objects and TCBs update in
+  their slot (`RHTable.modify`, `modifyObject`); the entry's step runs on the
+  state taken out of the kernel cell.
+- **The dispatcher's values (ZA2.1–ZA2.3, and ZA2.4/ZA2.5 on the signal
+  path).**  The operand capability is resolved once, in continuation form
+  (`resolveCapAddressK`); comparisons build nothing (`Option.isEqSome`); the
+  notification updates in place; the signal's taint step joins directly with
+  no plan record; the step's result tuple, restore operands and shootdown
+  window are read in place.
+- **The register file (WS-CV CV2.1, CV2.2).**  `Architecture.TrapContext` is
+  deleted: the HAL hands each trap's frame over as the model's
+  `RegisterFile` (the same 35 words) and the restore borrows the thread's own,
+  so neither conversion runs.  The argument spill is skipped when the saved
+  frame already holds it, the frame is rewound to the `SVC` only on the
+  vacated-core path that records it, and a current caller's return frame is
+  staged once for its context and the core bank.  The save-hazard test pins
+  the save over the fresh object the HAL builds per trap; its
+  write-into-the-same-object half returns with CV3.1's reused object (CV3.4).
+- **Gates.**  The store census classifies `RHTable.modify` and the in-place
+  writers and registers the compiled store primitives; the reachability census
+  follows `@[csimp]` and `@[implemented_by]` edges, so a compiled replacement
+  is live when what it replaces is (the unchecked dispatcher's unrun
+  `dispatchSyscallImpl` is deleted); content-flow coverage declares the
+  compiled taint steps.
+- **What remains (13)**: the per-trap context object and its `some` (CV3.1),
+  one return-frame copy (CV4.4), the overflow-word cell, the decode record and
+  its argument array, the arm's result cells, the return frame and outcome,
+  and the restore target crossing the commit (ZA3.1).  Plan:
+  [`docs/planning/ZERO_ALLOCATION_SYSCALL_PLAN.md`](docs/planning/ZERO_ALLOCATION_SYSCALL_PLAN.md).
+
 ## v0.36.72 — WS-ZA registered: where the 118 allocations per syscall come from, and the plan to remove them
 
 **Every heap allocation of the continuing syscall round trip is attributed.**

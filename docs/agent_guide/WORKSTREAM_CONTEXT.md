@@ -107,12 +107,13 @@ syscall-level resolver alone; a new
 declared arm adds its `case` to `dispatchWithCapChecked_coversWrites` in the
 same cut, or the seam theorem does not elaborate).
 
-### WS-ZA A syscall that allocates nothing — PLANNED (registered v0.36.72; runs beside WS-CV, before WS-CB)
+### WS-ZA A syscall that allocates nothing — IN FLIGHT (registered v0.36.72; ZA1 and most of ZA2 v0.36.73; runs beside WS-CV, before WS-CB)
 
 The continuing syscall round trip makes no heap allocation.  At `v0.36.71` it
 makes 118: 55 are register-context sites WS-CV's rows already remove, 62 are
 the dispatcher's own, and one is outside the traced window.  The plan's §2
-attributes every site to the row that removes it.  Plan:
+attributes every site to the row that removes it.  At `v0.36.73` the signal
+round trip makes 13 (the plan's §1 names each).  Plan:
 [`docs/planning/ZERO_ALLOCATION_SYSCALL_PLAN.md`](../planning/ZERO_ALLOCATION_SYSCALL_PLAN.md)
 (phases ZA1–ZA4).
 
