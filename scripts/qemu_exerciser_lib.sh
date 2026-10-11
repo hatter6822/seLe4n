@@ -210,9 +210,14 @@ for driver in drivers:
         readings = matches(r"\[smp-test\] heap-allocations-per-syscall: ([a-z-]+): core 0: before=(\d+) after=(\d+) delta=(\d+)")
         returned = matches(r"\[smp-test\] heap-allocations-per-syscall: ([a-z-]+): core 0: returned x0=0x[0-9a-f]+ x1=0x[0-9a-f]+")
         names = [m.group(1) for m in readings]
-        if not readings:
-            failures.append("heap-allocations-per-syscall: no steady reading on core 0")
-        for name in sorted(set(names) | {m.group(1) for m in returned}):
+        # The scenario set is pinned: a round trip renamed or dropped from
+        # `ROUND_TRIPS` (smp_exercisers.rs) must change this pin too, so the
+        # evidence cannot disappear while the gate stays green.
+        expected = {"signal", "signal-wide-badge", "wait-pending"}
+        observed = set(names) | {m.group(1) for m in returned}
+        if observed != expected:
+            failures.append(f"heap-allocations-per-syscall: scenarios {sorted(observed)} are not the pinned set {sorted(expected)}")
+        for name in sorted(observed | expected):
             if names.count(name) != 1 or [m.group(1) for m in returned].count(name) != 1:
                 failures.append(f"heap-allocations-per-syscall: {name}: expected one reading and one returned frame on core 0")
         for m in readings:
