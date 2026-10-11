@@ -1329,6 +1329,52 @@ def replenishOnCore (st : SystemState) (c : CoreId) (scId : SchedContextId)
   let rq := (st.scheduler.replenishQueueOnCore c).insert scId eligibleAt
   { st with scheduler := st.scheduler.setReplenishQueueOnCore c rq }
 
+/-- WS-ZA ZA4.3: an unbound thread's time slice ends on core `c`: the slice is
+reset to `configDefaultTimeSlice` and `tid` goes to the back of its priority
+band on core `c`'s run queue.  The timer tick's unbound arm when the slice runs
+out, and the yield syscall's unbound arm (`yieldChargeOnCore`): one definition,
+so a yield and an expired slice cannot come to disagree. -/
+@[inline] def sliceExpireOnCore (st : SystemState) (c : CoreId) (tid : SeLe4n.ThreadId)
+    (tcb : TCB) (hTcb : st.getTcb? tid = some tcb) : SystemState :=
+  let tcb' := { tcb with timeSlice := st.scheduler.configDefaultTimeSlice }
+  let st' := st.rewriteObject tid.toObjId (.tcb tcb')
+    (SystemState.rewriteAdmissible_tcb hTcb tcb')
+  let rq := (st'.scheduler.runQueueOnCore c).insert tid (tcb.boostedPriority)
+  { st' with scheduler := st'.scheduler.setRunQueueOnCore c rq }
+
+/-- WS-ZA ZA4.3: a bound thread's budget ends on core `c`, charging `ticks`
+against SchedContext `scId` (the timer tick charges `1` to a budget of at most
+one; the yield syscall charges the whole remaining budget, `seL4_Yield` under
+MCS).  Either way the budget reaches zero: the remaining budget is recorded as
+consumed and its refill scheduled one period on (`scheduleReplenishment`,
+`replenishOnCore`), the CBS deadline moves, `tid` is re-enqueued on core `c` at
+its insert priority (ineligible until the refill), and the IPC-blocked threads
+the SchedContext bounded time out (their remote-wake SGIs returned).  The timer
+tick's bound arm when the budget runs out, and the yield syscall's bound arm. -/
+@[inline] def budgetExhaustOnCore (st : SystemState) (c : CoreId) (tid : SeLe4n.ThreadId)
+    (scId : SchedContextId) (sc : SchedContext)
+    (hSc : st.getSchedContext? scId = some sc) (ticks : Nat) :
+    SystemState × List (CoreId × SgiKind) :=
+  let now := st.machine.timer
+  let consumedAmount : Budget := ⟨sc.budgetRemaining.val⟩
+  let sc' := consumeBudget sc ticks
+  let sc'' := scheduleReplenishment sc' now consumedAmount
+  let sc''' := cbsUpdateDeadline sc'' now true
+  let st' := st.rewriteObject scId.toObjId (.schedContext sc''')
+    (SystemState.rewriteAdmissible_schedContext hSc sc''')
+  -- WS-SM SM5.H.2: schedule the CBS replenishment via the named primitive
+  -- `replenishOnCore` (load-bearing — the live tick calls it, not merely proven
+  -- equal); `stReplenished` is defeq to the prior open-coded
+  -- `setReplenishQueueOnCore c ((replenishQueueOnCore c).insert scId (now+period))`.
+  let stReplenished := replenishOnCore st' c scId (now + sc.period.val)
+  let rqPreempt := (st'.scheduler.runQueueOnCore c).insert tid (resolveInsertPriority st' tid sc)
+  let st'' := { stReplenished with scheduler := stReplenished.scheduler.setRunQueueOnCore c rqPreempt }
+  -- PR #880 round 8: timeout wakes land on each thread's HOME core and
+  -- their remote-poke SGIs ride the result's second component.
+  let timedOut := timeoutBlockedThreads st'' scId c
+  ({ timedOut.1 with scheduler :=
+      timedOut.1.scheduler.setLastTimeoutErrorsOnCore c timedOut.2.1 }, timedOut.2.2)
+
 /-- WS-SM SM5.D.5 (per-core budget/time-slice tick): the per-core analogue of
 `timerTickBudget`.  Charges the current thread `tid` (with TCB `tcb`) one tick of
 budget on core `c`, returning `(updatedState, wasPreempted)`.
@@ -1366,12 +1412,7 @@ def timerTickBudgetOnCore (st : SystemState) (c : CoreId) (tid : SeLe4n.ThreadId
   match tcb.schedContextBinding with
   | .unbound =>
     if tcb.timeSlice ≤ 1 then
-      let tcb' := { tcb with timeSlice := st.scheduler.configDefaultTimeSlice }
-      let st' := st.rewriteObject tid.toObjId (.tcb tcb')
-        (SystemState.rewriteAdmissible_tcb hTcb tcb')
-      let rq := (st'.scheduler.runQueueOnCore c).insert tid (tcb.boostedPriority)
-      let st'' := { st' with scheduler := st'.scheduler.setRunQueueOnCore c rq }
-      .ok (st'', true, [])
+      .ok (sliceExpireOnCore st c tid tcb hTcb, true, [])
     else
       let tcb' := { tcb with timeSlice := tcb.timeSlice - 1 }
       .ok (st.rewriteObject tid.toObjId (.tcb tcb')
@@ -1380,26 +1421,8 @@ def timerTickBudgetOnCore (st : SystemState) (c : CoreId) (tid : SeLe4n.ThreadId
     match st.getSchedContextWitnessed? scId with
     | some ⟨sc, hSc⟩ =>
       if sc.budgetRemaining.val ≤ 1 then
-        let now := st.machine.timer
-        let consumedAmount : Budget := ⟨sc.budgetRemaining.val⟩
-        let sc' := consumeBudget sc 1
-        let sc'' := scheduleReplenishment sc' now consumedAmount
-        let sc''' := cbsUpdateDeadline sc'' now true
-        let st' := st.rewriteObject scId.toObjId (.schedContext sc''')
-          (SystemState.rewriteAdmissible_schedContext hSc sc''')
-        -- WS-SM SM5.H.2: schedule the CBS replenishment via the named primitive
-        -- `replenishOnCore` (load-bearing — the live tick calls it, not merely proven
-        -- equal); `stReplenished` is defeq to the prior open-coded
-        -- `setReplenishQueueOnCore c ((replenishQueueOnCore c).insert scId (now+period))`.
-        let stReplenished := replenishOnCore st' c scId (now + sc.period.val)
-        let rqPreempt := (st'.scheduler.runQueueOnCore c).insert tid (resolveInsertPriority st' tid sc)
-        let st'' := { stReplenished with scheduler := stReplenished.scheduler.setRunQueueOnCore c rqPreempt }
-        -- PR #880 round 8: timeout wakes land on each thread's HOME core and
-        -- their remote-poke SGIs ride the result's third component.
-        let (st''', timeoutErrors, timeoutSgis) := timeoutBlockedThreads st'' scId c
-        let st'''' := { st''' with scheduler :=
-          st'''.scheduler.setLastTimeoutErrorsOnCore c timeoutErrors }
-        .ok (st'''', true, timeoutSgis)
+        let r := budgetExhaustOnCore st c tid scId sc hSc 1
+        .ok (r.1, true, r.2)
       else
         let sc' := consumeBudget sc 1
         let st' := st.rewriteObject scId.toObjId (.schedContext sc')
@@ -1577,6 +1600,49 @@ def timerTickOnCore (st : SystemState) (c : CoreId) :
             | .ok st3 => .ok (st3, replenishSgis ++ timeoutSgis)
           else
             .ok (st2, replenishSgis ++ timeoutSgis)
+
+/-- WS-ZA ZA4.3: charge a yield to `tid`, current on core `c`.  Yield forfeits
+what is left of the caller's allotment (decided 2026-10-11; `seL4_Yield` under
+MCS): a thread bound to a SchedContext gives up its remaining budget until the
+refill (`budgetExhaustOnCore`, charging the whole remaining budget), and an
+unbound thread ends its time slice (`sliceExpireOnCore`).  Both are the timer
+tick's own exhausted arms, so a yield is exactly an allotment that ran out now.
+
+A definition over a parameter thread, like `timerTickChargeCurrentOnCore`, so
+the witnessed lookup's dependent match stays out of `yieldOnCore`'s match tree. -/
+def yieldChargeOnCore (st : SystemState) (c : CoreId) (tid : SeLe4n.ThreadId) :
+    Except KernelError (SystemState × List (CoreId × SgiKind)) :=
+  match st.getTcbWitnessed? tid with
+  | none => .error .schedulerInvariantViolation
+  | some ⟨tcb, hTcb⟩ =>
+    match tcb.schedContextBinding with
+    | .unbound => .ok (sliceExpireOnCore st c tid tcb hTcb, [])
+    | .bound scId | .donated scId _ =>
+      match st.getSchedContextWitnessed? scId with
+      | some ⟨sc, hSc⟩ => .ok (budgetExhaustOnCore st c tid scId sc hSc sc.budgetRemaining.val)
+      -- R5.E fail-closed, as the tick: unreachable under
+      -- `schedContextStoreConsistent`.
+      | none => .error .missingSchedContext
+
+/-- WS-ZA ZA4.3: the yield syscall on the executing core `c` (`SyscallId.yield`).
+The caller, `currentOnCore c`, forfeits its allotment (`yieldChargeOnCore`) and
+core `c` re-selects (`scheduleEffectiveOnCore`), the same pairing as a tick that
+preempts.  A bound caller with no budget left is ineligible until its refill,
+so a lower-priority thread runs; an unbound caller is behind every
+equal-priority thread already queued, and runs again at once only if it is the
+best eligible thread on core `c`.  Returns the timeout wakes' cross-core SGIs.
+A core with no current thread has no caller: `.illegalState`. -/
+def yieldOnCore (st : SystemState) (c : CoreId) :
+    Except KernelError (SystemState × List (CoreId × SgiKind)) :=
+  match st.scheduler.currentOnCore c with
+  | none => .error .illegalState
+  | some tid =>
+    match yieldChargeOnCore st c tid with
+    | .error e => .error e
+    | .ok (st', sgis) =>
+      match scheduleEffectiveOnCore st' c with
+      | .error e => .error e
+      | .ok st'' => .ok (st'', sgis)
 
 -- ─ SM5.D.6 (separate per-core domain-boundary re-dispatch, faithful to the
 --   single-core `switchDomain` / `scheduleDomain` split) ─

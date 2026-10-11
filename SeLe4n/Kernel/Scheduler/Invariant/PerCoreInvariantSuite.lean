@@ -3869,7 +3869,7 @@ theorem timerTickBudgetOnCore_preserves_allThreadsTimeSlicePositive
     {hW : st.getTcb? tid = some tcb}
     (hStep : timerTickBudgetOnCore st c tid tcb hW = .ok (st3, b, sgis))
     (h : allThreadsTimeSlicePositive st) : allThreadsTimeSlicePositive st3 := by
-  unfold timerTickBudgetOnCore at hStep
+  unfold timerTickBudgetOnCore budgetExhaustOnCore sliceExpireOnCore at hStep
   dsimp only [SystemState.rewriteObject] at hStep
   split at hStep
   · -- unbound
@@ -3999,7 +3999,7 @@ theorem timerTickBudgetOnCore_preserves_runQueueSafetyOnCore
   -- The bound/donated bodies are identical; both bind `scId`.  `boundAux`
   -- (below) factors them — it re-unfolds `timerTickBudgetOnCore`, so the
   -- `match`-aux is shared (no matcher mismatch).
-  unfold timerTickBudgetOnCore at hStep
+  unfold timerTickBudgetOnCore budgetExhaustOnCore sliceExpireOnCore at hStep
   dsimp only [SystemState.rewriteObject] at hStep
   split at hStep
   · -- unbound
