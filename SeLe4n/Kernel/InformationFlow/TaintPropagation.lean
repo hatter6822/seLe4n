@@ -326,7 +326,7 @@ message and a delivered badge.  Anything else an arm writes is out of scope by
 this definition — which is what makes `.cspaceMint`'s `.inert` classification a
 scope statement rather than the (false, for that arm) self-loop claim. -/
 def contentTrackedFields : List (String × String) :=
-  [("TCB", "pendingMessage"), ("Notification", "pendingBadge")]
+  [("TCB", "pendingMessage"), ("Notification", "pendingWord")]
 
 /-- WS-SM SM9.D.7 (**the accepted out-of-scope channel**): a capability's badge
 and rights are caller-supplied on a mint, and they are **not** tracked content.
@@ -1015,7 +1015,7 @@ have to stay in step.  Stated as an equality on the list rather than as prose:
 adding a third tracked field breaks this proof, and the fix is to give the
 predicate the matching branch, not to edit the expected list. -/
 theorem declassifyTargetHoldsContent_covers_every_tracked_field :
-    contentTrackedFields = [("TCB", "pendingMessage"), ("Notification", "pendingBadge")] := rfl
+    contentTrackedFields = [("TCB", "pendingMessage"), ("Notification", "pendingWord")] := rfl
 
 /-- WS-SM SM9.D.13a (PR #873 round 7): the bare downgrade's bypassed list, at the
 operand the arm reads.
