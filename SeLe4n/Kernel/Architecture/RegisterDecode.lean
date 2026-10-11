@@ -135,6 +135,15 @@ open SeLe4n.Model
 -- ============================================================================
 
 open SeLe4n.Kernel.Architecture.IpcBufferRead in
+/-- One overflow message word from the caller's IPC buffer, any internal
+    error collapsed to `.invalidMessageInfo` (matches seL4 convention). -/
+def readOverflowWord (st : SystemState) (tid : ThreadId) (i : Nat) :
+    Except KernelError UInt64 :=
+  match ipcBufferReadMr st tid i with
+  | .ok v => .ok v
+  | .error _ => .error .invalidMessageInfo
+
+open SeLe4n.Kernel.Architecture.IpcBufferRead in
 /-- AK4-A.3 (R-ABI-C01 / CRITICAL): Extended decode that merges IPC-buffer
     overflow slots into `msgRegs` for syscalls whose `msgInfo.length >
     inlineCount`.
@@ -177,19 +186,110 @@ def decodeSyscallArgsFromState
   else
     -- Merge overflow slots from the caller's IPC buffer.
     let overflowNeeded := totalLen - inlineSize
-    -- Read each overflow slot; collapse any internal error to
-    -- `.invalidMessageInfo` (matches seL4 convention).
-    let readOne (i : Nat) : Except KernelError UInt64 :=
-      match ipcBufferReadMr st tid i with
-      | .ok v => .ok v
-      | .error _ => .error .invalidMessageInfo
-    let overflowNats ← (List.range overflowNeeded).mapM readOne
+    let overflowNats ← (List.range overflowNeeded).mapM (readOverflowWord st tid)
     let overflowRegs : Array RegValue :=
       (overflowNats.map (fun w => (⟨w.toNat⟩ : RegValue))).toArray
     pure { base with
              msgRegs       := base.msgRegs ++ overflowRegs,
              inlineCount   := inlineSize,
              overflowCount := overflowNeeded }
+
+/-- Bound-checking the message registers in one `mapM` pass refuses with
+    `.invalidRegister` exactly when some register is out of bounds, and
+    otherwise reads them all. -/
+theorem listMapM_validateRegBound (rs : List RegName) (regs : RegisterFile)
+    (regCount : Nat) :
+    rs.mapM (fun r => (do validateRegBound r regCount; pure (readReg regs r) :
+        Except KernelError RegValue)) =
+      if rs.all (·.val < regCount) then .ok (rs.map (readReg regs))
+      else .error .invalidRegister := by
+  induction rs with
+  | nil => rfl
+  | cons r rs ih =>
+    simp only [List.mapM_cons, List.all_cons, List.map_cons]
+    rw [ih]
+    by_cases h : r.val < regCount
+    · simp only [validateRegBound, h, ↓reduceIte, decide_true, Bool.true_and]
+      split <;> rfl
+    · simp [validateRegBound, h, bind, Except.bind]
+
+/-- `listMapM_validateRegBound` over an array. -/
+theorem arrayMapM_validateRegBound (rs : Array RegName) (regs : RegisterFile)
+    (regCount : Nat) :
+    rs.mapM (fun r => (do validateRegBound r regCount; pure (readReg regs r) :
+        Except KernelError RegValue)) =
+      if rs.all (·.val < regCount) then .ok (rs.map (readReg regs))
+      else .error .invalidRegister := by
+  rcases rs with ⟨l⟩
+  rw [Array.mapM_eq_mapM_toList]
+  have hAll : (Array.mk l).all (·.val < regCount) = l.all (·.val < regCount) :=
+    List.all_toArray ..
+  rw [hAll, listMapM_validateRegBound]
+  split <;> simp [Functor.map, Except.map]
+
+/-- `decodeSyscallArgsFromState`'s overflow merge, from the inline decode. -/
+def mergeOverflowWords (st : SystemState) (tid : ThreadId)
+    (base : SyscallDecodeResult) : Except KernelError SyscallDecodeResult := do
+  let inlineSize := base.msgRegs.size
+  let overflowNeeded := base.msgInfo.length - inlineSize
+  let overflowNats ← (List.range overflowNeeded).mapM (readOverflowWord st tid)
+  let overflowRegs : Array RegValue :=
+    (overflowNats.map (fun w => (⟨w.toNat⟩ : RegValue))).toArray
+  pure { base with
+           msgRegs       := base.msgRegs ++ overflowRegs,
+           inlineCount   := inlineSize,
+           overflowCount := overflowNeeded }
+
+/-- `decodeSyscallArgsFromState`, building nothing a caller does not use.  The
+    register bounds are one test rather than a `mapM` pass that copies the
+    layout's register array, and the result is inlined, so a caller that reads
+    only some fields of the decode (the signal reads the operand, the syscall
+    number and the message length) builds neither the record nor the message
+    array (WS-ZA).  Proven equal by `decodeSyscallArgsFromState_eq_impl`. -/
+@[inline] def decodeSyscallArgsFromStateImpl
+    (st : SystemState) (tid : ThreadId)
+    (layout : SyscallRegisterLayout) (regs : RegisterFile)
+    (regCount : Nat := 32) : Except KernelError SyscallDecodeResult :=
+  if layout.capPtrReg.val < regCount ∧ layout.msgInfoReg.val < regCount ∧
+      layout.syscallNumReg.val < regCount ∧ layout.msgRegs.all (·.val < regCount) = true then
+    match decodeCapPtr (readReg regs layout.capPtrReg) with
+    | .error e => .error e
+    | .ok capAddr =>
+    match decodeMsgInfo (readReg regs layout.msgInfoReg) with
+    | .error e => .error e
+    | .ok msgInfo =>
+    match decodeSyscallId (readReg regs layout.syscallNumReg) with
+    | .error e => .error e
+    | .ok syscallId =>
+      let base : SyscallDecodeResult :=
+        { capAddr, msgInfo, syscallId, msgRegs := layout.msgRegs.map (readReg regs),
+          inlineCount := layout.msgRegs.size, overflowCount := 0 }
+      if msgInfo.length ≤ layout.msgRegs.size then .ok base
+      else mergeOverflowWords st tid base
+  else .error .invalidRegister
+
+@[csimp] theorem decodeSyscallArgsFromState_eq_impl :
+    @decodeSyscallArgsFromState = @decodeSyscallArgsFromStateImpl := by
+  funext st tid layout regs regCount
+  simp only [decodeSyscallArgsFromState, decodeSyscallArgsFromStateImpl, decodeSyscallArgs,
+    arrayMapM_validateRegBound]
+  by_cases h1 : layout.capPtrReg.val < regCount <;>
+  by_cases h2 : layout.msgInfoReg.val < regCount <;>
+  by_cases h3 : layout.syscallNumReg.val < regCount <;>
+  by_cases h4 : layout.msgRegs.all (·.val < regCount) = true <;>
+  simp only [validateRegBound, h1, h2, h3, h4, ↓reduceIte, and_self, and_true,
+    and_false, bind, Except.bind, pure, Except.pure, Bool.false_eq_true] <;>
+  try rfl
+  rcases decodeCapPtr (readReg regs layout.capPtrReg) with e | capAddr
+  · rfl
+  rcases decodeMsgInfo (readReg regs layout.msgInfoReg) with e | msgInfo
+  · rfl
+  rcases decodeSyscallId (readReg regs layout.syscallNumReg) with e | syscallId
+  · rfl
+  simp only [Array.size_map]
+  split
+  · rfl
+  · simp only [mergeOverflowWords, Array.size_map, bind, Except.bind, pure, Except.pure]
 
 -- ============================================================================
 -- Round-trip lemmas
@@ -532,8 +632,10 @@ theorem decodeSyscallArgsFromState_reads_only_caller
     intro i
     exact SeLe4n.Kernel.Architecture.IpcBufferRead.ipcBufferReadMr_reads_only_caller_tcb
             st st' tid i hTcb hVs hMem
+  have hWord : readOverflowWord st' tid = readOverflowWord st tid := by
+    funext i; simp only [readOverflowWord, hRead]
   unfold decodeSyscallArgsFromState
-  simp only [hRead]
+  simp only [hWord]
 
 /-- AK4-A.4: Size invariant — `msgRegs.size = inlineCount + overflowCount`
     on any successful state-aware decode. This is the downstream contract
@@ -574,5 +676,67 @@ theorem decodeSyscallArgsFromState_size_invariant
         have hOver : decoded.overflowCount
             = base.msgInfo.length - base.msgRegs.size := by rw [← hOk]
         rw [hSize, hInline, hOver, hMapLen]
+
+
+/-- The operand address and badge of a signal whose arguments all sit in
+    registers, read straight from the register file: `some` only when the
+    decode succeeds as a `notificationSignal` that merged no overflow words
+    and carries its badge in the first inline message register
+    (`decodeSyscallArgsFromState_of_signalOperandsOfRegs`).  Inlined and
+    matched at once, it builds nothing, so the entry routes the signal on it
+    before any decode record or message array exists. -/
+@[inline] def signalOperandsOfRegs? (layout : SyscallRegisterLayout) (regs : RegisterFile)
+    (regCount : Nat := 32) : Option (CPtr × Badge) :=
+  if layout.capPtrReg.val < regCount ∧ layout.msgInfoReg.val < regCount ∧
+      layout.syscallNumReg.val < regCount ∧ layout.msgRegs.all (·.val < regCount) = true then
+    match decodeCapPtr (readReg regs layout.capPtrReg) with
+    | .error _ => none
+    | .ok capAddr =>
+    match decodeMsgInfo (readReg regs layout.msgInfoReg) with
+    | .error _ => none
+    | .ok msgInfo =>
+      if (readReg regs layout.syscallNumReg).val = SyscallId.notificationSignal.toNat ∧
+          msgInfo.length ≤ layout.msgRegs.size then
+        if h0 : 0 < layout.msgRegs.size then
+          some (capAddr, Badge.ofNatMasked (readReg regs layout.msgRegs[0]).val)
+        else none
+      else none
+  else none
+
+theorem decodeSyscallArgsFromState_of_signalOperandsOfRegs
+    (st : SystemState) (tid : ThreadId)
+    (layout : SyscallRegisterLayout) (regs : RegisterFile) (regCount : Nat)
+    (capAddr : CPtr) (badge : Badge)
+    (h : signalOperandsOfRegs? layout regs regCount = some (capAddr, badge)) :
+    ∃ decoded, decodeSyscallArgsFromState st tid layout regs regCount = .ok decoded ∧
+      decoded.syscallId = .notificationSignal ∧ decoded.capAddr = capAddr ∧
+      decoded.overflowCount = 0 ∧
+      ∃ h0 : 0 < decoded.msgRegs.size,
+        badge = Badge.ofNatMasked (decoded.msgRegs[0]'h0).val := by
+  rw [decodeSyscallArgsFromState_eq_impl]
+  unfold signalOperandsOfRegs? at h
+  unfold decodeSyscallArgsFromStateImpl
+  split at h
+  · next hB =>
+    rw [if_pos hB]
+    rcases hC : decodeCapPtr (readReg regs layout.capPtrReg) with e | c
+    · simp only [hC] at h; cases h
+    rcases hM : decodeMsgInfo (readReg regs layout.msgInfoReg) with e | mi
+    · simp only [hC, hM] at h; cases h
+    simp only [hC, hM] at h
+    split at h
+    · next hS =>
+      split at h
+      · next h0 =>
+        cases h
+        have hId : decodeSyscallId (readReg regs layout.syscallNumReg) =
+            .ok .notificationSignal := by
+          simp only [decodeSyscallId, hS.1, SyscallId.ofNat_toNat]
+        simp only [hId, hS.2, ↓reduceIte]
+        exact ⟨_, rfl, rfl, rfl, rfl, by simpa only [Array.size_map] using h0,
+          by simp only [Array.getElem_map]⟩
+      · cases h
+    · cases h
+  · cases h
 
 end SeLe4n.Kernel.Architecture.RegisterDecode

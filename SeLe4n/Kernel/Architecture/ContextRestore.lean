@@ -256,4 +256,130 @@ theorem restoreTargetOnCore_user (st : SystemState) (c : CoreId) (tid : SeLe4n.T
         (threadTranslationOperands st tid).2 (fpLiveFor st c tid) := by
   simp [restoreTargetOnCore, hCur, hIdle, hTcb]
 
+/-! ### The target as words (WS-ZA ZA3.1)
+
+The entry hands the HAL a target's parts after the commit, and a part is a
+word or the thread's own register file: a `RestoreTarget` held across the
+commit is a heap cell, its parts are not.  Each part is read off the
+committed state by its own function, proven to be that part of
+`restoreTargetOnCore`. -/
+
+/-- The `ffiRestoreCommit` kind a target installs: `0` a thread with its
+FP/SIMD trap armed, `2` with it lifted, `1` the wait loop, and `3` nothing to
+install (`RestoreTarget.none`). -/
+def RestoreTarget.commitKind : RestoreTarget → UInt32
+  | .user _ _ _ fpLive => if fpLive then 2 else 0
+  | .idle => 1
+  | .none => 3
+
+/-- The context a target installs; the wait loop and the empty target install
+none, and read as the zero file. -/
+def RestoreTarget.context : RestoreTarget → SeLe4n.RegisterFile
+  | .user ctx _ _ _ => ctx
+  | _ => default
+
+/-- The `TTBR0_EL1` table operand a target installs (`0`, the kernel's own,
+for the wait loop). -/
+def RestoreTarget.tableBase : RestoreTarget → UInt64
+  | .user _ tableBase _ _ => tableBase
+  | _ => 0
+
+/-- The ASID operand a target installs (`0`, the kernel's, for the wait loop). -/
+def RestoreTarget.asid : RestoreTarget → UInt64
+  | .user _ _ asid _ => asid
+  | _ => 0
+
+/-- `(restoreTargetOnCore st c).commitKind`, with no target built. -/
+def restoreCommitKindOnCore (st : SystemState) (c : CoreId) : UInt32 :=
+  match st.scheduler.currentOnCore c with
+  | some tid =>
+    if SeLe4n.Kernel.isIdleThreadId tid then 1
+    else
+      match st.getTcb? tid with
+      | some _ => if fpLiveFor st c tid then 2 else 0
+      | none => 3
+  | none => 1
+
+/-- `(restoreTargetOnCore st c).context`, with no target built: the thread's
+own register file, shared, never copied. -/
+def restoreContextOnCore (st : SystemState) (c : CoreId) : SeLe4n.RegisterFile :=
+  match st.scheduler.currentOnCore c with
+  | some tid =>
+    if SeLe4n.Kernel.isIdleThreadId tid then default
+    else
+      match st.getTcb? tid with
+      | some tcb => tcb.registerContext
+      | none => default
+  | none => default
+
+/-- `(restoreTargetOnCore st c).tableBase`, with no target built. -/
+def restoreTableBaseOnCore (st : SystemState) (c : CoreId) : UInt64 :=
+  match st.scheduler.currentOnCore c with
+  | some tid =>
+    if SeLe4n.Kernel.isIdleThreadId tid then 0
+    else threadTranslationOperandsK st tid fun tableBase _ => tableBase
+  | none => 0
+
+/-- `(restoreTargetOnCore st c).asid`, with no target built. -/
+def restoreAsidOnCore (st : SystemState) (c : CoreId) : UInt64 :=
+  match st.scheduler.currentOnCore c with
+  | some tid =>
+    if SeLe4n.Kernel.isIdleThreadId tid then 0
+    else threadTranslationOperandsK st tid fun _ asid => asid
+  | none => 0
+
+/-- A thread with no TCB installs no translation: its operands are the
+kernel's `(0, 0)`. -/
+theorem threadTranslationOperands_of_getTcb?_none (st : SystemState) (tid : SeLe4n.ThreadId)
+    (h : st.getTcb? tid = none) : threadTranslationOperands st tid = (0, 0) := by
+  unfold threadTranslationOperands; rw [h]
+
+theorem restoreCommitKindOnCore_eq (st : SystemState) (c : CoreId) :
+    restoreCommitKindOnCore st c = (restoreTargetOnCore st c).commitKind := by
+  unfold restoreCommitKindOnCore restoreTargetOnCore
+  cases st.scheduler.currentOnCore c with
+  | none => rfl
+  | some tid =>
+    simp only []
+    split
+    · rfl
+    · cases st.getTcb? tid <;> rfl
+
+theorem restoreContextOnCore_eq (st : SystemState) (c : CoreId) :
+    restoreContextOnCore st c = (restoreTargetOnCore st c).context := by
+  unfold restoreContextOnCore restoreTargetOnCore
+  cases st.scheduler.currentOnCore c with
+  | none => rfl
+  | some tid =>
+    simp only []
+    split
+    · rfl
+    · cases st.getTcb? tid <;> rfl
+
+theorem restoreTableBaseOnCore_eq (st : SystemState) (c : CoreId) :
+    restoreTableBaseOnCore st c = (restoreTargetOnCore st c).tableBase := by
+  unfold restoreTableBaseOnCore restoreTargetOnCore
+  cases st.scheduler.currentOnCore c with
+  | none => rfl
+  | some tid =>
+    simp only [threadTranslationOperandsK_eq]
+    split
+    · rfl
+    · cases h : st.getTcb? tid
+      · simp [RestoreTarget.tableBase, threadTranslationOperands_of_getTcb?_none st tid h]
+      · rfl
+
+theorem restoreAsidOnCore_eq (st : SystemState) (c : CoreId) :
+    restoreAsidOnCore st c = (restoreTargetOnCore st c).asid := by
+  unfold restoreAsidOnCore restoreTargetOnCore
+  cases st.scheduler.currentOnCore c with
+  | none => rfl
+  | some tid =>
+    simp only [threadTranslationOperandsK_eq]
+    split
+    · rfl
+    · cases h : st.getTcb? tid
+      · simp [RestoreTarget.asid, threadTranslationOperands_of_getTcb?_none st tid h]
+      · rfl
+
 end SeLe4n.Kernel.Architecture

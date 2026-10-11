@@ -2087,6 +2087,31 @@ def syscallReturnOutcome (syscallId : UInt32) (st : SystemState)
       ((SyscallId.ofNat? syscallId.toNat).map Architecture.syscallReturnShape).getD .unit
     .returns (Architecture.frameForShape shape (Architecture.readReturnFrame st tid))
 
+/-- `syscallReturnOutcome` as compiled: a `.unit` shape answers the shared
+static `.returns .zero` (`frameForShape_unit`), so the staged registers are
+read, and a frame built, only for a value shape.  A returning `.unit` syscall
+allocates no outcome (WS-ZA ZA2.5). -/
+def syscallReturnOutcomeImpl (syscallId : UInt32) (st : SystemState)
+    (tid : SeLe4n.ThreadId) : Architecture.SyscallOutcome :=
+  let blocked :=
+    match st.getTcb? tid with
+    | some tcb => Architecture.ipcStateBlocksReturn tcb.ipcState
+    | none => false
+  if blocked then
+    .blocks
+  else
+    match ((SyscallId.ofNat? syscallId.toNat).map Architecture.syscallReturnShape).getD .unit with
+    | .unit => .returns .zero
+    | shape => .returns (Architecture.frameForShape shape (Architecture.readReturnFrame st tid))
+
+@[csimp] theorem syscallReturnOutcome_eq_impl :
+    @syscallReturnOutcome = @syscallReturnOutcomeImpl := by
+  funext syscallId st tid
+  unfold syscallReturnOutcome syscallReturnOutcomeImpl
+  generalize ((SyscallId.ofNat? syscallId.toNat).map Architecture.syscallReturnShape).getD .unit
+    = shape
+  cases shape <;> rfl
+
 /-! ### WS-RA RA.B.5a — the blocking arm returns no frame (plan §10)
 
 `syscallReturnOutcome`'s body is one `if`, so each direction below is close to
@@ -3019,7 +3044,7 @@ the refusal arms read that state instead of keeping `stRegs` alive across the
 dispatch; a syscall that checks before it writes then owns the state it writes
 (`ZERO_ALLOCATION_SYSCALL_PLAN.md` D1).  Equal to the specification through
 `syscallEntryCheckedR_eq`. -/
-def syscallDispatchFromAbiImpl
+@[inline] def syscallDispatchFromAbiImpl
     (ctx : LabelingContext)
     (executingCore : SeLe4n.Kernel.Concurrency.CoreId)
     (syscallId : UInt32)
@@ -3457,6 +3482,40 @@ opaque ffiRestoreCommit : UInt32 → UInt64 → UInt64 → BaseIO Unit
     ffiRestoreCommit (if fpLive then 2 else 0) tableBase asid
   | .idle => ffiRestoreCommit 1 0 0
   | .none => pure ()
+
+/-- **`restoreTrapFrame` from a target's parts** (`RestoreTarget.commitKind`,
+`.context`, `.tableBase`, `.asid`): kind `3` installs nothing, kind `1` the
+wait loop, and a thread's kind stages its context first.  An entry reads the
+parts off the state it committed (`Architecture.restoreCommitKindOnCore` and
+its siblings), so no target crosses the commit as a heap cell (WS-ZA ZA3.1);
+`restoreTrapFrameParts_eq` is the equality with `restoreTrapFrame`. -/
+@[inline] def restoreTrapFrameParts (kind : UInt32) (ctx : SeLe4n.RegisterFile)
+    (tableBase asid : UInt64) : BaseIO Unit :=
+  if kind = 3 then pure ()
+  else if kind = 1 then ffiRestoreCommit 1 0 0
+  else do
+    ffiRestoreStageContext ctx
+    ffiRestoreCommit kind tableBase asid
+
+theorem restoreTrapFrameParts_eq (t : SeLe4n.Kernel.Architecture.RestoreTarget) :
+    restoreTrapFrameParts t.commitKind t.context t.tableBase t.asid = restoreTrapFrame t := by
+  cases t with
+  | user ctx tableBase asid fpLive => cases fpLive <;> rfl
+  | idle => rfl
+  | none => rfl
+
+/-- `restoreTrapFrame` of the target the committed state names for core `c`,
+from its parts read off that state. -/
+theorem restoreTrapFrameParts_onCore (st : SystemState) (c : Concurrency.CoreId) :
+    restoreTrapFrameParts (SeLe4n.Kernel.Architecture.restoreCommitKindOnCore st c)
+        (SeLe4n.Kernel.Architecture.restoreContextOnCore st c)
+        (SeLe4n.Kernel.Architecture.restoreTableBaseOnCore st c)
+        (SeLe4n.Kernel.Architecture.restoreAsidOnCore st c) =
+      restoreTrapFrame (SeLe4n.Kernel.Architecture.restoreTargetOnCore st c) := by
+  rw [SeLe4n.Kernel.Architecture.restoreCommitKindOnCore_eq,
+    SeLe4n.Kernel.Architecture.restoreContextOnCore_eq,
+    SeLe4n.Kernel.Architecture.restoreTableBaseOnCore_eq,
+    SeLe4n.Kernel.Architecture.restoreAsidOnCore_eq, restoreTrapFrameParts_eq]
 
 -- ============================================================================
 -- WS-BP BP7.9 — the lazy FP/SIMD switch

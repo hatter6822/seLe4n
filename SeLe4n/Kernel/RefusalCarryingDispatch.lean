@@ -92,14 +92,17 @@ theorem notificationSignalBoundCrossCoreDispatchChecked_error_state (ctx : Label
 /-- The checked signal arm (`dispatchWithCapChecked`'s `.notificationSignal`
 case), refusing in the state it was handed.  Its refusals all precede its
 writes, so the state on a refusal is the one the arm was handed
-(`notificationSignalCheckedArmR_eq`). -/
-def notificationSignalCheckedArmR (ctx : LabelingContext) (decoded : SyscallDecodeResult)
+(`notificationSignalCheckedArmR_eq`).  It takes the decode's signal arguments
+rather than the decode, so a caller that reads the badge straight from the
+register file builds no message array. -/
+@[inline] def notificationSignalCheckedArmR (ctx : LabelingContext)
+    (sigArgs : Except KernelError Architecture.SyscallArgDecode.NotificationSignalArgs)
     (tid : SeLe4n.ThreadId) (executingCore : Concurrency.CoreId) (cap : Capability) :
     RefusalCarrying Unit :=
   fun st =>
     match cap.target with
     | .object notifId =>
-        match Architecture.SyscallArgDecode.decodeNotificationSignalArgs decoded with
+        match sigArgs with
         | .error e => .error (e, st)
         | .ok args =>
             let woken? := (boundDeliveryTarget? st notifId).map (·.1)
@@ -117,9 +120,12 @@ def notificationSignalCheckedArmR (ctx : LabelingContext) (decoded : SyscallDeco
 theorem notificationSignalCheckedArmR_eq (ctx : LabelingContext)
     (decoded : SyscallDecodeResult) (tid : SeLe4n.ThreadId)
     (executingCore : Concurrency.CoreId) (gate : SyscallGate) (cap : Capability)
-    (hSig : decoded.syscallId = .notificationSignal) :
-    notificationSignalCheckedArmR ctx decoded tid executingCore cap =
+    (sigArgs : Except KernelError Architecture.SyscallArgDecode.NotificationSignalArgs)
+    (hSig : decoded.syscallId = .notificationSignal)
+    (hArgs : sigArgs = Architecture.SyscallArgDecode.decodeNotificationSignalArgs decoded) :
+    notificationSignalCheckedArmR ctx sigArgs tid executingCore cap =
       RefusalCarrying.ofKernel (dispatchWithCapChecked ctx decoded tid executingCore gate cap) := by
+  subst hArgs
   funext st
   simp only [notificationSignalCheckedArmR, RefusalCarrying.ofKernel, dispatchWithCapChecked,
     dispatchCapabilityOnly, hSig]
@@ -252,15 +258,15 @@ theorem signalTaintStep_eq (st : SystemState) (tid : SeLe4n.ThreadId)
 `syscallResolveCap`'s idle-object check, the rights gate, then
 `notificationSignalCheckedArmR` and the taint step, every refusal carrying the
 state it was handed (`signalOperandArmThenTaintR_eq`). -/
-@[noinline] def signalResolvedArmThenTaintR (ctx : LabelingContext)
-    (decoded : SyscallDecodeResult) (tid : SeLe4n.ThreadId)
+@[inline] def signalResolvedArmThenTaintR (ctx : LabelingContext)
+    (sigArgs : Except KernelError Architecture.SyscallArgDecode.NotificationSignalArgs) (tid : SeLe4n.ThreadId)
     (executingCore : Concurrency.CoreId) (requiredRight : AccessRight)
     (taintCase : SignalTaintCase) (sink : SeLe4n.ObjId)
     (preTaint : TaintTable) (cap : Capability) : RefusalCarrying Unit :=
   fun st =>
     if SeLe4n.Kernel.capTargetsReservedIdleObject cap then .error (.invalidCapability, st)
     else if cap.hasRight requiredRight then
-      match notificationSignalCheckedArmR ctx decoded tid executingCore cap st with
+      match notificationSignalCheckedArmR ctx sigArgs tid executingCore cap st with
       | .error refusal => .error refusal
       | .ok ((), stPost) =>
           .ok ((), signalTaintStep taintCase sink tid preTaint stPost)
@@ -269,14 +275,14 @@ state it was handed (`signalOperandArmThenTaintR_eq`). -/
 /-- The signal's slot check, then `signalResolvedArmThenTaintR` on the
 capability found.  Inlined, so the slot read builds no `some`. -/
 @[inline] def signalOperandArmThenTaintR (ctx : LabelingContext)
-    (decoded : SyscallDecodeResult) (tid : SeLe4n.ThreadId)
+    (sigArgs : Except KernelError Architecture.SyscallArgDecode.NotificationSignalArgs) (tid : SeLe4n.ThreadId)
     (executingCore : Concurrency.CoreId) (requiredRight : AccessRight)
     (preTaint : TaintTable) (operand : Option Capability) : RefusalCarrying Unit :=
   fun st =>
     match operand with
     | none => .error (.invalidCapability, st)
     | some cap =>
-        signalResolvedArmThenTaintR ctx decoded tid executingCore requiredRight
+        signalResolvedArmThenTaintR ctx sigArgs tid executingCore requiredRight
           (signalTaintCaseOfCap st cap) (signalTaintSinkOfCap cap) preTaint cap st
 
 theorem signalOperandArmThenTaintR_eq (ctx : LabelingContext)
@@ -284,9 +290,11 @@ theorem signalOperandArmThenTaintR_eq (ctx : LabelingContext)
     (executingCore : Concurrency.CoreId) (gate : SyscallGate)
     (preEpoch : Nat) (preLog : DeclassificationAuditLog)
     (preTaint : TaintTable) (st : SystemState) (ref : CSpaceAddr)
+    (sigArgs : Except KernelError Architecture.SyscallArgDecode.NotificationSignalArgs)
     (hSig : decoded.syscallId = .notificationSignal)
+    (hArgs : sigArgs = Architecture.SyscallArgDecode.decodeNotificationSignalArgs decoded)
     (hRef : resolveCapAddress gate.cspaceRoot gate.capAddr gate.capDepth st = .ok ref) :
-    signalOperandArmThenTaintR ctx decoded tid executingCore gate.requiredRight
+    signalOperandArmThenTaintR ctx sigArgs tid executingCore gate.requiredRight
         preTaint (SystemState.lookupSlotCap st ref) st =
       RefusalCarrying.ofKernel (dispatchCheckedArmThenTaint ctx decoded tid executingCore gate
         (signalTaintPlanOf st tid decoded (SystemState.lookupSlotCap st ref))
@@ -303,7 +311,8 @@ theorem signalOperandArmThenTaintR_eq (ctx : LabelingContext)
     · simp only [hIdle, ↓reduceIte]
     · by_cases hRight : cap.hasRight gate.requiredRight = true
       · simp only [hIdle, hRight, ↓reduceIte, Bool.false_eq_true]
-        rw [notificationSignalCheckedArmR_eq ctx decoded tid executingCore gate cap hSig]
+        rw [notificationSignalCheckedArmR_eq ctx decoded tid executingCore gate cap sigArgs hSig
+          hArgs]
         simp only [RefusalCarrying.ofKernel]
         rcases dispatchWithCapChecked ctx decoded tid executingCore gate cap st with
           _ | ⟨⟨⟩, stPost⟩ <;> rfl
@@ -317,92 +326,96 @@ theorem threadId_isEqSome_iff (current : Option SeLe4n.ThreadId) (tid : SeLe4n.T
   | none => simp [Option.isEqSome]
   | some cur => simp [Option.isEqSome]
 
-/-- `dispatchSyscallChecked`, refusing in the state it was handed.  The signal
-resolves its operand once, for the gate and the taint plan alike, and takes
-`signalResolvedArmThenTaintR`, whose every refusal precedes its first write; every other syscall takes `RefusalCarrying.ofKernel` of the
-specification. -/
-def dispatchSyscallCheckedR (ctx : LabelingContext)
-    (decoded : SyscallDecodeResult) (tid : SeLe4n.ThreadId)
+/-- `dispatchSyscallChecked` on a decoded signal, refusing in the state it was
+handed.  It resolves its operand once, for the gate and the taint plan alike,
+and takes `signalOperandArmThenTaintR`, whose every refusal precedes its first
+write (`dispatchSignalCheckedR_eq`).  It reads the decode only through the
+operand address and the signal's arguments, so the entry hands it both straight
+from the register file and builds no decode record. -/
+@[inline] def dispatchSignalCheckedR (ctx : LabelingContext)
+    (capAddr : SeLe4n.CPtr)
+    (sigArgs : Except KernelError Architecture.SyscallArgDecode.NotificationSignalArgs)
+    (tid : SeLe4n.ThreadId)
     (executingCore : Concurrency.CoreId) : RefusalCarrying Unit :=
   fun st =>
-    if decoded.syscallId = .notificationSignal then
-      if !(st.scheduler.currentOnCore executingCore).isEqSome tid then .error (.illegalState, st)
-      else
-      match st.getObject? tid.toObjId with
-      | some (.tcb tcb) =>
-        match st.getObject? tcb.cspaceRoot with
-        | some (.cnode rootCn) =>
-          resolveCapAddressK tcb.cspaceRoot decoded.capAddr rootCn.depth st
-            (fun e => .error (e, st))
-            (fun cnode slot =>
-              signalOperandArmThenTaintR ctx decoded tid executingCore
-                (syscallRequiredRight decoded.syscallId) st.declassificationTaint
-                (SystemState.lookupSlotCap st { cnode := cnode, slot := slot }) st)
-        | some _ => .error (.invalidCapability, st)
-        | none   => .error (.objectNotFound, st)
-      | some _ => .error (.illegalState, st)
-      | none   => .error (.objectNotFound, st)
+    if !(st.scheduler.currentOnCore executingCore).isEqSome tid then .error (.illegalState, st)
     else
-      RefusalCarrying.ofKernel (dispatchSyscallChecked ctx decoded tid executingCore) st
+    match st.getObject? tid.toObjId with
+    | some (.tcb tcb) =>
+      match st.getObject? tcb.cspaceRoot with
+      | some (.cnode rootCn) =>
+        resolveCapAddressKUnrolled tcb.cspaceRoot capAddr rootCn.depth st
+          (fun e => .error (e, st))
+          (fun cnode slot =>
+            signalOperandArmThenTaintR ctx sigArgs tid executingCore
+              (syscallRequiredRight .notificationSignal) st.declassificationTaint
+              (SystemState.lookupSlotCap st { cnode := cnode, slot := slot }) st)
+      | some _ => .error (.invalidCapability, st)
+      | none   => .error (.objectNotFound, st)
+    | some _ => .error (.illegalState, st)
+    | none   => .error (.objectNotFound, st)
 
-theorem dispatchSyscallCheckedR_eq (ctx : LabelingContext)
-    (decoded : SyscallDecodeResult) (tid : SeLe4n.ThreadId)
-    (executingCore : Concurrency.CoreId) :
-    dispatchSyscallCheckedR ctx decoded tid executingCore =
+theorem dispatchSignalCheckedR_eq (ctx : LabelingContext)
+    (decoded : SyscallDecodeResult)
+    (sigArgs : Except KernelError Architecture.SyscallArgDecode.NotificationSignalArgs)
+    (tid : SeLe4n.ThreadId) (executingCore : Concurrency.CoreId)
+    (hSig : decoded.syscallId = .notificationSignal)
+    (hArgs : sigArgs = Architecture.SyscallArgDecode.decodeNotificationSignalArgs decoded) :
+    dispatchSignalCheckedR ctx decoded.capAddr sigArgs tid executingCore =
       RefusalCarrying.ofKernel (dispatchSyscallChecked ctx decoded tid executingCore) := by
   funext st
-  by_cases hSig : decoded.syscallId = .notificationSignal
-  · rw [dispatchSyscallChecked_eq_impl]
-    simp only [dispatchSyscallCheckedR, hSig, ↓reduceIte, RefusalCarrying.ofKernel,
-      dispatchSyscallCheckedImpl]
-    by_cases hCur : st.scheduler.currentOnCore executingCore = some tid
-    · have hIs : (st.scheduler.currentOnCore executingCore).isEqSome tid = true :=
-        (threadId_isEqSome_iff _ _).2 hCur
-      have hNot : ¬ (st.scheduler.currentOnCore executingCore ≠ some tid) := fun h => h hCur
-      rw [if_neg (by simp only [hIs, Bool.not_true, Bool.false_eq_true, not_false_eq_true]),
-        if_neg hNot]
+  rw [dispatchSyscallChecked_eq_impl]
+  simp only [dispatchSignalCheckedR, hSig, RefusalCarrying.ofKernel,
+    dispatchSyscallCheckedImpl]
+  by_cases hCur : st.scheduler.currentOnCore executingCore = some tid
+  · have hIs : (st.scheduler.currentOnCore executingCore).isEqSome tid = true :=
+      (threadId_isEqSome_iff _ _).2 hCur
+    have hNot : ¬ (st.scheduler.currentOnCore executingCore ≠ some tid) := fun h => h hCur
+    rw [if_neg (by simp only [hIs, Bool.not_true, Bool.false_eq_true, not_false_eq_true]),
+      if_neg hNot]
+    split
+    · next hTcb =>
       split
-      · next hTcb =>
-        split
-        · next tcb hTcb' rootCn hRoot =>
-          simp only [hTcb, hRoot]
-          rw [resolveCapAddressK_eq]
-          rcases hRef : resolveCapAddress tcb.cspaceRoot decoded.capAddr rootCn.depth st with
-            e | ref
-          · simp only [dispatchCheckedArmThenTaint, hSig, syscallChecksTargetFirst,
-              Bool.false_eq_true, ↓reduceIte, syscallInvoke, syscallLookupCap,
-              syscallResolveCap, hRef]
-          · have hOperand : syscallOperandCap? st tid decoded.capAddr =
-                SystemState.lookupSlotCap st ref := by
-              simp only [SystemState.getObject?_eq_getElem] at hTcb hRoot
-              simp only [syscallOperandCap?, SystemState.getTcb?, SystemState.getCNode?, hTcb,
-                hRoot, hRef]
-            simp only []
-            rw [syscallTaintPlan_eq_signalTaintPlanOf st tid decoded hSig, hOperand]
-            have hArm := signalOperandArmThenTaintR_eq ctx decoded tid executingCore
-              { callerId := tid, cspaceRoot := tcb.cspaceRoot, capAddr := decoded.capAddr,
-                capDepth := rootCn.depth, requiredRight := syscallRequiredRight decoded.syscallId }
-              st.declassificationAuditEpoch st.declassificationAuditLog st.declassificationTaint
-              st ref hSig hRef
-            simp only [hSig, RefusalCarrying.ofKernel] at hArm
-            exact hArm
-        · next hRoot => simp only [hTcb, hRoot]
-        · next hRoot => simp only [hTcb, hRoot]
-      · next hTcb => simp only [hTcb]
-      · next hTcb => simp only [hTcb]
-    · have hIs : (st.scheduler.currentOnCore executingCore).isEqSome tid = false := by
-        cases h : (st.scheduler.currentOnCore executingCore).isEqSome tid
-        · rfl
-        · exact absurd ((threadId_isEqSome_iff _ _).1 h) hCur
-      rw [if_pos (by simp only [hIs, Bool.not_false]), if_pos hCur]
-  · simp only [dispatchSyscallCheckedR, hSig, ↓reduceIte]
+      · next tcb hTcb' rootCn hRoot =>
+        simp only [hTcb, hRoot]
+        rw [resolveCapAddressKUnrolled_eq, resolveCapAddressK_eq]
+        rcases hRef : resolveCapAddress tcb.cspaceRoot decoded.capAddr rootCn.depth st with
+          e | ref
+        · simp only [dispatchCheckedArmThenTaint, hSig, syscallChecksTargetFirst,
+            Bool.false_eq_true, ↓reduceIte, syscallInvoke, syscallLookupCap,
+            syscallResolveCap, hRef]
+        · have hOperand : syscallOperandCap? st tid decoded.capAddr =
+              SystemState.lookupSlotCap st ref := by
+            simp only [SystemState.getObject?_eq_getElem] at hTcb hRoot
+            simp only [syscallOperandCap?, SystemState.getTcb?, SystemState.getCNode?, hTcb,
+              hRoot, hRef]
+          simp only []
+          rw [syscallTaintPlan_eq_signalTaintPlanOf st tid decoded hSig, hOperand]
+          have hArm := signalOperandArmThenTaintR_eq ctx decoded tid executingCore
+            { callerId := tid, cspaceRoot := tcb.cspaceRoot, capAddr := decoded.capAddr,
+              capDepth := rootCn.depth, requiredRight := syscallRequiredRight decoded.syscallId }
+            st.declassificationAuditEpoch st.declassificationAuditLog st.declassificationTaint
+            st ref sigArgs hSig hArgs hRef
+          simp only [hSig, RefusalCarrying.ofKernel] at hArm
+          exact hArm
+      · next hRoot => simp only [hTcb, hRoot]
+      · next hRoot => simp only [hTcb, hRoot]
+    · next hTcb => simp only [hTcb]
+    · next hTcb => simp only [hTcb]
+  · have hIs : (st.scheduler.currentOnCore executingCore).isEqSome tid = false := by
+      cases h : (st.scheduler.currentOnCore executingCore).isEqSome tid
+      · rfl
+      · exact absurd ((threadId_isEqSome_iff _ _).1 h) hCur
+    rw [if_pos (by simp only [hIs, Bool.not_false]), if_pos hCur]
 
 /-- `syscallEntryChecked`, refusing in the state it was handed
-(`syscallEntryCheckedR_eq`).  The decode writes nothing, and a call with no
-overflow words fills no TLB entry (`tlbFillIpcBufferOnCore_zero`), so such a
-call hands the dispatcher the entry's own state and `dispatchSyscallCheckedR`
-refuses in it.  A call with overflow words keeps the specification's form. -/
-def syscallEntryCheckedR (ctx : LabelingContext)
+(`syscallEntryCheckedR_eq`).  A signal whose arguments all sit in registers
+is routed on the register file itself (`signalOperandsOfRegs?`), before any
+decode record exists: the decode writes nothing and such a call fills no TLB
+entry (`tlbFillIpcBufferOnCore_zero`), so `dispatchSignalCheckedR` is handed
+the entry's own state and refuses in it.  Every other call keeps the
+specification's form. -/
+@[inline] def syscallEntryCheckedR (ctx : LabelingContext)
     (layout : SeLe4n.SyscallRegisterLayout)
     (executingCore : Concurrency.CoreId)
     (regCount : Nat := 32) : RefusalCarrying Unit :=
@@ -416,14 +429,12 @@ def syscallEntryCheckedR (ctx : LabelingContext)
       -- two cells this match never needs.
       match st.getObject? tid.toObjId with
       | some (.tcb tcb) =>
-        match SeLe4n.Kernel.Architecture.RegisterDecode.decodeSyscallArgsFromState
-                st tid layout tcb.registerContext regCount with
-        | .error e => .error (e, st)
-        | .ok decoded =>
-          if decoded.overflowCount = 0 then
-            dispatchSyscallCheckedR ctx decoded tid executingCore st
-          else
-            RefusalCarrying.ofKernel (syscallEntryChecked ctx layout executingCore regCount) st
+        match SeLe4n.Kernel.Architecture.RegisterDecode.signalOperandsOfRegs?
+                layout tcb.registerContext regCount with
+        | some (capAddr, badge) =>
+          dispatchSignalCheckedR ctx capAddr (.ok { badge }) tid executingCore st
+        | none =>
+          RefusalCarrying.ofKernel (syscallEntryChecked ctx layout executingCore regCount) st
       | some _ => .error (.illegalState, st)
       | none => .error (.objectNotFound, st)
 
@@ -446,16 +457,22 @@ theorem syscallEntryCheckedR_eq (ctx : LabelingContext)
         have hRegs : lookupThreadRegisterContext tid st = .ok (tcb.registerContext, st) := by
           simp only [lookupThreadRegisterContext, hObj]
         split
-        · next e hDec => simp only [RefusalCarrying.ofKernel, syscallEntryChecked, hCtx, hCur,
-            hRegs, hDec, Bool.false_eq_true, ↓reduceIte]
-        · next decoded hDec =>
-          split
-          · next hZero =>
-            rw [dispatchSyscallCheckedR_eq]
-            simp only [RefusalCarrying.ofKernel, syscallEntryChecked, hCtx, hCur, hRegs, hDec,
-              hZero, Bool.false_eq_true, ↓reduceIte,
-              SeLe4n.Kernel.Architecture.tlbFillIpcBufferOnCore_zero]
-          · rfl
+        · next capAddr badge hSigRegs =>
+          obtain ⟨decoded, hDec, hSig, hCap, hZero, h0, hBadge⟩ :=
+            SeLe4n.Kernel.Architecture.RegisterDecode.decodeSyscallArgsFromState_of_signalOperandsOfRegs
+              st tid layout tcb.registerContext regCount capAddr badge hSigRegs
+          subst hCap
+          have hArgs : (.ok { badge } : Except KernelError
+                Architecture.SyscallArgDecode.NotificationSignalArgs) =
+              Architecture.SyscallArgDecode.decodeNotificationSignalArgs decoded := by
+            simp only [Architecture.SyscallArgDecode.decodeNotificationSignalArgs,
+              Architecture.SyscallArgDecode.requireMsgReg, h0, ↓reduceDIte, hBadge, bind,
+              Except.bind, pure, Except.pure]
+          rw [dispatchSignalCheckedR_eq ctx decoded _ tid executingCore hSig hArgs]
+          simp only [RefusalCarrying.ofKernel, syscallEntryChecked, hCtx, hCur, hRegs, hDec,
+            hZero, Bool.false_eq_true, ↓reduceIte,
+            SeLe4n.Kernel.Architecture.tlbFillIpcBufferOnCore_zero]
+        · rfl
       · next o hNot hObj =>
         have hRegs : lookupThreadRegisterContext tid st = .error .illegalState := by
           unfold lookupThreadRegisterContext; rw [hObj]

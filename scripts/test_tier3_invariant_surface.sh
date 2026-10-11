@@ -4309,12 +4309,12 @@ run_check "INVARIANT" rg -n '^  pstate : UInt64 := 0$' SeLe4n/Machine.lean
 run_check "INVARIANT" rg -n '^  rf\.pstate % 16 == 0$' SeLe4n/Kernel/Architecture/TrapFrameSave.lean
 # PR #904 (v0.36.41): the syscall entry's save rewinds a vacated core's frame to
 # its SVC, so the resident thread re-issues the syscall its deschedule interrupted.
-run_check "INVARIANT" rg -n '^        \(Architecture\.saveCapturedSyscallFrame st execCore frame\) words\)$' SeLe4n/Kernel/SyscallDispatchEntry.lean
+run_check "INVARIANT" rg -n '^          \(Architecture\.saveCapturedSyscallFrame st execCore frame\) words\)$' SeLe4n/Kernel/SyscallDispatchEntry.lean
 run_negative_check "INVARIANT" rg -n 'Architecture\.saveCapturedTrapFrame st execCore frame' SeLe4n/Kernel/SyscallDispatchEntry.lean
 # WS-BP BP7.8: the sender's overflow words are read from RAM and synced into the
 # model before the decode, at the seam and in its structural marker.
 run_check "INVARIANT" rg -n '^  let words ← match ← readCallerOverflowWords execCore msgInfo with$' SeLe4n/Kernel/SyscallDispatchEntry.lean
-run_check "INVARIANT" rg -n '^      \(Architecture\.IpcBufferRead\.syncUserWords$' SeLe4n/Kernel/SyscallDispatchEntry.lean
+run_check "INVARIANT" rg -n '^        \(Architecture\.IpcBufferRead\.syncUserWords$' SeLe4n/Kernel/SyscallDispatchEntry.lean
 run_check "INVARIANT" rg -n -U '^      let st := Concurrency\.saveCapturedTrapFrameAt st0 coreId \(some frame\)\n      let \(sgis, st.\) := faultEntryStep lctx st ectx w coreId$' SeLe4n/Kernel/FaultEntry.lean
 run_check "INVARIANT" rg -n -U '^      let st := Concurrency\.saveCapturedSyscallFrameAt st0 coreId \(some frame\)\n      let \(sgis, st.\) := unknownSyscallEntryStep lctx st ectx w coreId$' SeLe4n/Kernel/FaultEntry.lean
 run_check "INVARIANT" rg -n '^      \(Concurrency\.saveCapturedTrapFrameAt st coreId frame\)\)\.2$' SeLe4n/Kernel/PerCoreRescheduleEntry.lean
@@ -4351,7 +4351,7 @@ run_check "INVARIANT" rg -n 'switching away then saves every register the thread
 # into the in-flight frame with SPSR sanitised to EL0t.
 run_check "INVARIANT" rg -n -U '^      let stR := Architecture\.stageCallerReturnFor caller\? st'"'"' execCore outcome\n([ \t]*(--[^\n]*)?\n)*      let st'"''"' := PriorityInheritance\.settleResidencyOnCore\n        \(PriorityInheritance\.scheduleLocalSuccessorFrom caller\? stR execCore\) execCore$' SeLe4n/Kernel/SyscallDispatchStep.lean
 run_check "INVARIANT" rg -n -U '^  \| Except\.error e =>\n([ \t]*(--[^\n]*)?\n)*      absurd hD \(Platform\.FFI\.syscallDispatchFromAbi_ne_error ' SeLe4n/Kernel/SyscallDispatchStep.lean
-run_check "INVARIANT" rg -n -U '^  Platform\.FFI\.completeIcacheMaintenance result\.2\.2\.2\.2\.2\.1\n([ \t]*\n)*  Concurrency\.releaseSwitchedFpOwnerOnCore execCore\n([ \t]*\n)*  Platform\.FFI\.restoreTrapFrame result\.2\.2\.2\.2\.2\.2\.2\.1$' SeLe4n/Kernel/SyscallDispatchEntry.lean
+run_check "INVARIANT" rg -n -U '^  Platform\.FFI\.completeIcacheMaintenance result\.2\.2\.2\.2\.2\.1\n([ \t]*\n)*  Concurrency\.releaseSwitchedFpOwnerOnCore execCore\n([ \t]*\n)*  Platform\.FFI\.restoreTrapFrameParts restoreKind restoreContext restoreTableBase restoreAsid$' SeLe4n/Kernel/SyscallDispatchEntry.lean
 # PR #904 (v0.36.41): the translation rides with the commit, which installs it
 # only once the frame is replaced — never before a commit that may decline.
 run_check "INVARIANT" rg -n -U '^    ffiRestoreStageContext ctx\n    ffiRestoreCommit \(if fpLive then 2 else 0\) tableBase asid$' SeLe4n/Platform/FFI.lean
@@ -4665,7 +4665,7 @@ run_check "INVARIANT" rg -n '^          match syscallResolveCap gate st with' Se
 run_negative_check "INVARIANT" rg -n 'match syscallLookupCap gate st with' SeLe4n/Platform/FFI.lean
 run_check "INVARIANT" rg -n '\(faultDeliverOnCoreChecked ctx stW tid fault fctx executingCore\)\.1' SeLe4n/Platform/FFI.lean
 run_negative_check "INVARIANT" rg -n 'faultDeliverOnCore ctx stW' SeLe4n/Platform/FFI.lean
-run_check "INVARIANT" rg -n -U '^    syscallDispatchCrossCoreBracketedStep ctx execCore syscallId trapped\n      \(Architecture\.IpcBufferRead\.syncUserWords$' SeLe4n/Kernel/SyscallDispatchEntry.lean
+run_check "INVARIANT" rg -n -U '^      let r := syscallDispatchCrossCoreBracketedStep ctx execCore syscallId trapped\n        \(Architecture\.IpcBufferRead\.syncUserWords$' SeLe4n/Kernel/SyscallDispatchEntry.lean
 # The syscall's arguments cross the boundary once: the HAL passes the validated
 # id alone, and the Lean side reads every other argument from the context it
 # takes whole.  Capture and restore are one call each, not one per word.
@@ -7727,7 +7727,7 @@ run_check "INVARIANT" rg -n -U '^  Concurrency\.fireCrossCoreSgis r\.1\.1\n  Pla
 run_check "INVARIANT" rg -n -U '      \(st.\.pendingPhysicalWrites, st.\.pendingIcacheMaintenance\)\),\n      Architecture\.clearIcacheMaintenance \(Architecture\.clearPhysicalWrites st.\)\)\)\n  Platform\.FFI\.completePhysicalWrites record\.2\.2\.1\n  Platform\.FFI\.completeIcacheMaintenance record\.2\.2\.2$' SeLe4n/Kernel/PerCoreRescheduleEntry.lean
 run_check "INVARIANT" rg -n -U '    \(suspendThreadCrossCoreDrainedStep tid execCore\)\n  Platform\.FFI\.completePhysicalWrites result\.2\.1\n  Concurrency\.fireCrossCoreSgis result\.1\.2\n  Platform\.FFI\.completeIcacheMaintenance result\.2\.2$' SeLe4n/Kernel/SyscallDispatchEntry.lean
 run_check "INVARIANT" rg -n '^theorem suspendThreadCrossCoreDrainedStep_idle_refused($|[ ({:\[\]])' SeLe4n/Kernel/SyscallDispatchEntry.lean
-run_check "INVARIANT" rg -n -U '^  Concurrency\.releaseSwitchedFpOwnerOnCore execCore\n([ \t]*\n)*  Platform\.FFI\.restoreTrapFrame result\.2\.2\.2\.2\.2\.2\.2\.1$' SeLe4n/Kernel/SyscallDispatchEntry.lean
+run_check "INVARIANT" rg -n -U '^  Concurrency\.releaseSwitchedFpOwnerOnCore execCore\n([ \t]*\n)*  Platform\.FFI\.restoreTrapFrameParts restoreKind restoreContext restoreTableBase restoreAsid$' SeLe4n/Kernel/SyscallDispatchEntry.lean
 # The FP routines keep an output section of their own in the linked image.
 run_check "INVARIANT" rg -n -U '^    \.text\.sele4n_fp_context : ALIGN\(16\) \{\n        KEEP\(\*\(\.text\.sele4n_fp_context\)\)' rust/sele4n-hal/link.ld
 # ...and the image check decides executable-in-text by address, not by name.
@@ -9347,7 +9347,7 @@ EOF'
 # presence: the bare step still exists (it is what the bracket wraps and what
 # the undeclared fallback runs), so a file-wide search for its name proves
 # nothing -- what matters is which one `modifyGetKernelState` is handed.
-run_check "INVARIANT" rg -nU 'def syscallDispatchCrossCoreEntry[\s\S]*?modifyGetKernelState fun st =>\n    syscallDispatchCrossCoreBracketedStep' SeLe4n/Kernel/SyscallDispatchEntry.lean
+run_check "INVARIANT" rg -nU 'def syscallDispatchCrossCoreEntry[\s\S]*?modifyGetKernelState fun st =>\n      let r := syscallDispatchCrossCoreBracketedStep' SeLe4n/Kernel/SyscallDispatchEntry.lean
 run_negative_check "INVARIANT" rg -nU 'def syscallDispatchCrossCoreEntry[\s\S]*?modifyGetKernelState \(fun st =>' SeLe4n/Kernel/SyscallDispatchEntry.lean
 # The single-level CSpace guard: a multi-level resolution selects the target
 # through interior CNodes no declared footprint holds a lock on, and a `LockSet`

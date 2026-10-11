@@ -150,4 +150,22 @@ theorem syscallDispatchCrossCoreStep_drains_physicalWrites (ctx : LabelingContex
   · simp
   · rfl
 
+/-- **WS-ZA ZA3.1 (the target is the committed state's)**: the restore target
+the step reports is the one its committed state names for the executing core.
+The commit drains two ledgers the target never reads, so an entry may read the
+target's parts off the committed state instead of carrying the target across
+the commit. -/
+theorem syscallDispatchCrossCoreStep_restoreTarget (ctx : LabelingContext)
+    (execCore : CoreId) (syscallId : UInt32)
+    (x0 x1 x2 x3 x4 x5 ipcBufferAddr elr spsr spEl0 x30 : UInt64) (st : SystemState) :
+    (syscallDispatchCrossCoreStep ctx execCore syscallId x0 x1 x2 x3 x4 x5
+        ipcBufferAddr elr spsr spEl0 x30 st).1.2.2.2.2.2.2.2.1 =
+      Architecture.restoreTargetOnCore
+        (syscallDispatchCrossCoreStep ctx execCore syscallId x0 x1 x2 x3 x4 x5
+          ipcBufferAddr elr spsr spEl0 x30 st).2 execCore := by
+  obtain ⟨outcome, st', h⟩ := Platform.FFI.syscallDispatchFromAbi_total ctx execCore syscallId
+    x0 x1 x2 x3 x4 x5 ipcBufferAddr elr spsr spEl0 x30 st
+  rw [syscallDispatchCrossCoreStep_of_ok h]
+  rfl
+
 end SeLe4n.Kernel

@@ -1,3 +1,39 @@
+## v0.36.75 — WS-ZA: the signal round trip allocates nothing (9 → 0 heap allocations)
+
+**The continuing `NotificationSignal` round trip makes no heap allocation**,
+down from 9, read on a fresh archive by the `heap-allocations-per-syscall`
+exerciser (second round trip; the first after boot reads 5).  Every fast form
+is proven equal to the specification it replaces; no theorem statement changed.
+
+- **Return outcome and restore target (ZA2.5, ZA3.1 for the syscall entry).**
+  A unit-shape syscall's outcome is the static `.returns .zero`
+  (`syscallReturnOutcome_eq_impl`).  The restore target crosses the inlined
+  commit as four words read off the committed state
+  (`restoreCommitKindOnCore`, `restoreContextOnCore`, `restoreTableBaseOnCore`,
+  `restoreAsidOnCore`, each proven equal to its field of `restoreTargetOnCore`)
+  and `restoreTrapFrameParts` stages and commits from them.
+- **The signal arm fused into the entry.**  The arm, the dispatcher and the
+  entry are inlined, the cap resolver's first level is unrolled
+  (`resolveCapAddressKUnrolled`, its deeper levels calling the first-order
+  `resolveCapAddress` so no error continuation is captured), and the
+  notification's pending-badge write is one out-of-line store
+  (`storeSignalPending`), so the arm's result cells cancel.
+- **The signal routed on the register file.**  The entry reads a signal whose
+  arguments all sit in registers straight from the register file
+  (`signalOperandsOfRegs?`: operand address and badge) and hands them to
+  `dispatchSignalCheckedR`, which replaces `dispatchSyscallCheckedR`; every
+  other call takes the specification's form.  No decode record or message
+  array is built (`decodeSyscallArgsFromState_of_signalOperandsOfRegs`,
+  `dispatchSignalCheckedR_eq`, `syscallEntryCheckedR_eq`).
+- **The decode without the array copy.**  `decodeSyscallArgsFromState` gains
+  a `@[csimp]` form that bound-checks the message registers in one test
+  instead of a `mapM` that copied the layout's register array
+  (`decodeSyscallArgsFromState_eq_impl`); the overflow word read is the named
+  `readOverflowWord`.
+- **Docs.**  The plan's §1 and rows ZA1.3 and ZA3.1, the workstream context
+  and the debt index record the reading; ZA4 measures the other syscalls and
+  entries before the zero becomes a project rule.
+
 ## v0.36.74 — WS-CV CV3: each core's trap context is a persistent object, saved and staged in place: 13 → 9 heap allocations per signal round trip
 
 **The continuing `NotificationSignal` round trip allocates 9 times, down from

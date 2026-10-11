@@ -714,10 +714,19 @@ def syscallDispatchCrossCoreEntry (syscallId : UInt32) : BaseIO UInt64 := do
   let words ← match ← readCallerOverflowWords execCore msgInfo with
     | .ok words => pure words
     | .error tag => return tag
-  let result ← Platform.FFI.modifyGetKernelState fun st =>
-    syscallDispatchCrossCoreBracketedStep ctx execCore syscallId trapped
-      (Architecture.IpcBufferRead.syncUserWords
-        (Architecture.saveCapturedSyscallFrame st execCore frame) words)
+  -- **WS-ZA ZA3.1**: the restore target's parts are read off the committed
+  -- state inside the atomic step (`syscallDispatchCrossCoreStep_restoreTarget`:
+  -- the target the step reports is that state's), so what crosses the commit
+  -- is words and the thread's own register file, never a target record.
+  let (result, restoreKind, restoreContext, restoreTableBase, restoreAsid) ←
+    Platform.FFI.modifyGetKernelState fun st =>
+      let r := syscallDispatchCrossCoreBracketedStep ctx execCore syscallId trapped
+        (Architecture.IpcBufferRead.syncUserWords
+          (Architecture.saveCapturedSyscallFrame st execCore frame) words)
+      ((r.1, Architecture.restoreCommitKindOnCore r.2 execCore,
+          Architecture.restoreContextOnCore r.2 execCore,
+          Architecture.restoreTableBaseOnCore r.2 execCore,
+          Architecture.restoreAsidOnCore r.2 execCore), r.2)
   -- WS-RA (plan §3.3): publish the return frame into this core's mailbox
   -- immediately after the commit — `dispatch_svc` reads it back inside the
   -- same `with_kernel_entry` critical section.  A `blocks` outcome publishes
@@ -751,7 +760,7 @@ def syscallDispatchCrossCoreEntry (syscallId : UInt32) : BaseIO UInt64 := do
   -- current thread's saved context and translation, or the idle wait loop —
   -- into the in-flight trap frame, last, after every memory and TLB effect the
   -- commit owed.
-  Platform.FFI.restoreTrapFrame result.2.2.2.2.2.2.2.1
+  Platform.FFI.restoreTrapFrameParts restoreKind restoreContext restoreTableBase restoreAsid
   -- **WS-RR RR7.26**: record on the HAL what this commit left running on the
   -- executing core, so `ffi::PER_CPU_CURRENT_THREAD` follows the verified
   -- scheduler rather than lagging it.  The value was read inside the atomic
@@ -788,10 +797,15 @@ theorem syscallDispatchCrossCoreEntry_def (syscallId : UInt32) :
         let words ← match ← readCallerOverflowWords execCore msgInfo with
           | .ok words => pure words
           | .error tag => return tag
-        let result ← Platform.FFI.modifyGetKernelState fun st =>
-          syscallDispatchCrossCoreBracketedStep ctx execCore syscallId trapped
-            (Architecture.IpcBufferRead.syncUserWords
-              (Architecture.saveCapturedSyscallFrame st execCore frame) words)
+        let (result, restoreKind, restoreContext, restoreTableBase, restoreAsid) ←
+          Platform.FFI.modifyGetKernelState fun st =>
+            let r := syscallDispatchCrossCoreBracketedStep ctx execCore syscallId trapped
+              (Architecture.IpcBufferRead.syncUserWords
+                (Architecture.saveCapturedSyscallFrame st execCore frame) words)
+            ((r.1, Architecture.restoreCommitKindOnCore r.2 execCore,
+                Architecture.restoreContextOnCore r.2 execCore,
+                Architecture.restoreTableBaseOnCore r.2 execCore,
+                Architecture.restoreAsidOnCore r.2 execCore), r.2)
         let frame := result.1.mailboxFrame
         Platform.FFI.ffiSyscallReturnFrame frame.x0 frame.x1 frame.x2 frame.x3 frame.x4 frame.x5
         Platform.FFI.completePhysicalWrites result.2.2.2.2.2.2.1
@@ -800,7 +814,8 @@ theorem syscallDispatchCrossCoreEntry_def (syscallId : UInt32) :
           result.2.2.2.2.1.2 execCore
         Platform.FFI.completeIcacheMaintenance result.2.2.2.2.2.1
         Concurrency.releaseSwitchedFpOwnerOnCore execCore
-        Platform.FFI.restoreTrapFrame result.2.2.2.2.2.2.2.1
+        Platform.FFI.restoreTrapFrameParts restoreKind restoreContext restoreTableBase
+          restoreAsid
         Concurrency.recordCommittedCurrentThreadHw (some (execCore, result.2.2.2.2.2.2.2.2))
         pure result.1.tagWord) := rfl
 

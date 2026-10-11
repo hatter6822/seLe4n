@@ -362,6 +362,62 @@ theorem resolveCapAddressK_eq {α : Type} (addr : SeLe4n.CPtr) (st : SystemState
                   | object childId => exact ih _ (by omega) _
                   | _ => rfl
 
+/-- `resolveCapAddressK` with its first level unrolled: a CSpace whose root
+resolves the whole address (one level, the common case) reaches `onOk` in the
+caller's own body, so a caller that inlines it keeps its continuations' results
+unboxed; only a deeper CSpace calls the recursive `resolveCapAddress`, whose
+`Except` is matched here, so no continuation is ever captured as a closure
+(`resolveCapAddressKUnrolled_eq`).  WS-ZA. -/
+@[inline] def resolveCapAddressKUnrolled {α : Type} (rootId : SeLe4n.ObjId) (addr : SeLe4n.CPtr)
+    (bitsRemaining : Nat) (st : SystemState)
+    (onErr : KernelError → α) (onOk : SeLe4n.ObjId → SeLe4n.Slot → α) : α :=
+  if bitsRemaining = 0 then onErr .illegalState
+  else
+    match st.getCNode? rootId with
+    | some cn =>
+      let consumed := cn.guardWidth + cn.radixWidth
+      if consumed = 0 then onErr .illegalState
+      else if bitsRemaining < consumed then onErr .illegalState
+      else
+        let maskedAddr := addr.toNat % SeLe4n.machineWordMax
+        let shiftedAddr := maskedAddr >>> (bitsRemaining - consumed)
+        let radixMask := 2 ^ cn.radixWidth
+        let slotIndex := shiftedAddr % radixMask
+        let guardExtracted := (shiftedAddr / radixMask) % (2 ^ cn.guardWidth)
+        if guardExtracted ≠ cn.guardValue then onErr .invalidCapability
+        else
+          let slot := SeLe4n.Slot.ofNat slotIndex
+          if bitsRemaining - consumed = 0 then onOk rootId slot
+          else
+            match cn.lookup slot with
+            | some cap =>
+              match cap.target with
+              | .object childId =>
+                match resolveCapAddress childId addr (bitsRemaining - consumed) st with
+                | .error e => onErr e
+                | .ok ref => onOk ref.cnode ref.slot
+              | _ => onErr .invalidCapability
+            | none => onErr .invalidCapability
+    | none => onErr .objectNotFound
+
+theorem resolveCapAddressKUnrolled_eq {α : Type} (rootId : SeLe4n.ObjId) (addr : SeLe4n.CPtr)
+    (bitsRemaining : Nat) (st : SystemState)
+    (onErr : KernelError → α) (onOk : SeLe4n.ObjId → SeLe4n.Slot → α) :
+    resolveCapAddressKUnrolled rootId addr bitsRemaining st onErr onOk =
+      resolveCapAddressK rootId addr bitsRemaining st onErr onOk := by
+  rw [resolveCapAddressK]
+  unfold resolveCapAddressKUnrolled
+  simp only [← resolveCapAddressK_eq]
+  by_cases hZero : bitsRemaining = 0
+  · simp only [hZero, ↓reduceIte, ↓reduceDIte]
+  · simp only [hZero, ↓reduceIte, ↓reduceDIte]
+    cases st.getCNode? rootId with
+    | none => rfl
+    | some cn =>
+      by_cases hCons : cn.guardWidth + cn.radixWidth = 0
+      · simp only [hCons, ↓reduceIte, ↓reduceDIte]
+      · simp only [hCons, ↓reduceIte, ↓reduceDIte]
+
 /-- WS-H13/H-01 (deliverable 9): `resolveCapAddress` returns `.error .illegalState`
 when called with zero bits remaining. -/
 theorem resolveCapAddress_zero_bits

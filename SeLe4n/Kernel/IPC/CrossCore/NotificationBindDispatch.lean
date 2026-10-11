@@ -49,7 +49,7 @@ the badge **directly into the bound TCB**, a second sink beyond the notification
 Without the receiver gate a policy permitting a high signaler → high notification
 but denying flow to a *low* bound TCB would be bypassed (codex review #3): the badge
 would leak to the low receiver.  Fail-closed with `.flowDenied` on either denial. -/
-def notificationSignalBoundCrossCoreDispatchChecked (ctx : LabelingContext)
+@[inline] def notificationSignalBoundCrossCoreDispatchChecked (ctx : LabelingContext)
     (notificationId : SeLe4n.ObjId) (signaler : SeLe4n.ThreadId) (badge : SeLe4n.Badge)
     (executingCore : CoreId)
     (st : SystemState) : SystemState × Except KernelError (Option (CoreId × SgiKind)) :=
