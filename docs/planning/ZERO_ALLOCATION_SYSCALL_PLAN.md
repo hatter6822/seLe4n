@@ -199,14 +199,14 @@ theorems; it lands with them.  No `sorry`, no axiom, no `implemented_by`.
 
 ## 6. Risks, and decisions deliberately not taken
 
-- **R1 Big words.**  `Badge`, `CPtr` and the message words are `Nat`-backed;
-  a value `≥ 2^63` is a heap number in Lean's runtime, so a high-bit operand
+- **R1 Big words.**  `CPtr` and the message words are `Nat`-backed; a value
+  `≥ 2^63` is a heap number in Lean's runtime, so a high-bit operand
   allocates whatever this plan does.  CV4.3 removes it for message words.
-  For badges and capability pointers ZA4.1's high-bit scenarios measure it,
-  and the row ZA4.2 adds for it carries the type change (the word as a
-  `UInt64` field), before ZA4.3 makes a non-zero reading fail.  `Badge` holds
-  a `UInt64` since `v0.36.77`; `CPtr` is still `Nat`-backed, and the
-  scenario that sends a capability address `≥ 2^63` lands with its row.
+  For capability pointers the row that changes the type (the word as a
+  `UInt64` field) lands with the scenario that sends a capability address
+  `≥ 2^63`, before ZA4.3 makes a non-zero reading fail.  `Badge` was the
+  third such type and holds a `UInt64` since `v0.36.77` (ZA4.2, measured by
+  ZA4.1's wide-badge scenario).
 - **R2 Type changes cost proofs.**  `pendingBadge` (ZA2.3) is the one model
   type this plan changes at its cut; a row that finds another `Option` field
   written `some` on the path decides it the same way in its own row.
