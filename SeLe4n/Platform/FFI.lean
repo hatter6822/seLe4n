@@ -3082,6 +3082,103 @@ dispatch; a syscall that checks before it writes then owns the state it writes
     rcases syscallEntryChecked ctx SeLe4n.arm64DefaultLayout executingCore 32
         (writeFfiRegistersToTcb st tid syscallId x0 x1 x2 x3 x4 x5) with _ | ⟨⟨⟩, st'⟩ <;> rfl
 
+/-- WS-ZA ZA4: a returning caller's boundary words, read off its post-state:
+`syscallReturnOutcome`'s words (`returnOutcomeWords_eq`) with a value shape's
+frame read register by register, so neither the frame nor the outcome is
+built. -/
+@[inline] def returnOutcomeWords (syscallId : UInt32) (st : SystemState)
+    (tid : SeLe4n.ThreadId) : UInt64 × UInt64 × UInt64 × UInt64 × UInt64 × UInt64 × UInt64 :=
+  match st.getTcb? tid with
+  | some tcb =>
+      if Architecture.ipcStateBlocksReturn tcb.ipcState then (1, 0, 0, 0, 0, 0, 0)
+      else
+        match ((SyscallId.ofNat? syscallId.toNat).map Architecture.syscallReturnShape).getD
+            .unit with
+        | .unit => (0, 0, 0, 0, 0, 0, 0)
+        | _ =>
+            (0, tcb.registerContext.x0, tcb.registerContext.x1, tcb.registerContext.x2,
+             tcb.registerContext.x3, tcb.registerContext.x4, tcb.registerContext.x5)
+  | none => (0, 0, 0, 0, 0, 0, 0)
+
+theorem returnOutcomeWords_eq (syscallId : UInt32) (st : SystemState) (tid : SeLe4n.ThreadId) :
+    (syscallReturnOutcome syscallId st tid).words = returnOutcomeWords syscallId st tid := by
+  unfold syscallReturnOutcome returnOutcomeWords
+  cases hT : st.getTcb? tid with
+  | none =>
+    simp only [Bool.false_eq_true, ↓reduceIte, Architecture.SyscallOutcome.words,
+      Architecture.SyscallOutcome.tagWord, Architecture.SyscallOutcome.mailboxFrame,
+      Architecture.readReturnFrame, hT]
+    generalize ((SyscallId.ofNat? syscallId.toNat).map Architecture.syscallReturnShape).getD
+      .unit = shape
+    cases shape <;> rfl
+  | some tcb =>
+    simp only []
+    by_cases hB : Architecture.ipcStateBlocksReturn tcb.ipcState = true
+    · simp [hB, Architecture.SyscallOutcome.words, Architecture.SyscallOutcome.tagWord,
+        Architecture.SyscallOutcome.mailboxFrame, Architecture.SyscallReturnFrame.zero]
+    · simp only [hB, Bool.false_eq_true, ↓reduceIte, Architecture.SyscallOutcome.words,
+        Architecture.SyscallOutcome.tagWord, Architecture.SyscallOutcome.mailboxFrame,
+        Architecture.readReturnFrame, hT]
+      generalize ((SyscallId.ofNat? syscallId.toNat).map Architecture.syscallReturnShape).getD
+        .unit = shape
+      cases shape <;>
+        simp [Architecture.frameForShape, Architecture.SyscallReturnFrame.zero,
+          SeLe4n.RegisterFile.gpr, SeLe4n.RegisterFile.word, SeLe4n.RegisterFile.wordOfByte,
+          Architecture.trapFrameWordCount]
+
+/-- WS-ZA ZA4: `syscallDispatchFromAbi` with its outcome as the boundary's words
+(`syscallDispatchFromAbiWords_eq`).  Inlined into the step, each branch hands
+its words on as scalars, so no outcome is built. -/
+@[inline] def syscallDispatchFromAbiWords
+    (ctx : LabelingContext)
+    (executingCore : SeLe4n.Kernel.Concurrency.CoreId)
+    (syscallId : UInt32)
+    (x0 x1 x2 x3 x4 x5 : UInt64)
+    (ipcBufferAddr : UInt64)
+    (elr spsr spEl0 x30 : UInt64) (st : SystemState) :
+    (UInt64 × UInt64 × UInt64 × UInt64 × UInt64 × UInt64 × UInt64) × SystemState :=
+    match (st.scheduler.currentOnCore executingCore) with
+    | none => ((Architecture.SyscallOutcome.returns (Architecture.errorFrame .illegalState)).words, st)
+    | some tid =>
+      let layout := SeLe4n.arm64DefaultLayout
+      match syscallEntryCheckedR ctx layout executingCore 32
+          (writeFfiRegistersToTcb st tid syscallId x0 x1 x2 x3 x4 x5) with
+      | .error (ke, stRefused) =>
+          match syscallCapFaultOf layout stRefused tid ke with
+          | some fault =>
+              (Architecture.SyscallOutcome.faulted.words,
+               deliverSyscallCapFault ctx executingCore stRefused tid fault
+                 (syscallWindow syscallId x0 x1 x2 x3 x4 x5 ipcBufferAddr spEl0 x30)
+                 elr spsr)
+          | none =>
+              ((Architecture.SyscallOutcome.returns (Architecture.errorFrame ke)).words,
+               recordSyscallRefusal ctx executingCore syscallId tid ke x0 stRefused)
+      | .ok ((), st') => (returnOutcomeWords syscallId st' tid, st')
+
+theorem syscallDispatchFromAbiWords_eq
+    (ctx : LabelingContext) (executingCore : SeLe4n.Kernel.Concurrency.CoreId)
+    (syscallId : UInt32) (x0 x1 x2 x3 x4 x5 ipcBufferAddr elr spsr spEl0 x30 : UInt64)
+    (st st' : SystemState) (o : Architecture.SyscallOutcome)
+    (h : syscallDispatchFromAbi ctx executingCore syscallId x0 x1 x2 x3 x4 x5 ipcBufferAddr
+      elr spsr spEl0 x30 st = .ok (o, st')) :
+    syscallDispatchFromAbiWords ctx executingCore syscallId x0 x1 x2 x3 x4 x5 ipcBufferAddr
+      elr spsr spEl0 x30 st = (o.words, st') := by
+  rw [syscallDispatchFromAbi_eq_impl] at h
+  unfold syscallDispatchFromAbiImpl at h
+  unfold syscallDispatchFromAbiWords
+  dsimp only at h ⊢
+  split at h
+  · next hC => (try rw [hC]); cases h; rfl
+  · next tid hC =>
+    split at h
+    · next ke stRefused hE =>
+      split at h
+      · next fault hF => cases h; rfl
+      · next hF => cases h; rfl
+    · next st'' hE =>
+      cases h
+      rw [returnOutcomeWords_eq]
+
 -- ============================================================================
 -- AN9-D (DEF-C-M04): suspendThread atomicity bracket
 -- ============================================================================

@@ -1527,6 +1527,15 @@ def mailboxFrame : SyscallOutcome → SyscallReturnFrame
   | .blocks    => .zero
   | .faulted   => .zero
 
+/-- WS-ZA ZA4: **what the boundary reads of an outcome**: its tag and its
+mailbox frame's six words.  The live entry carries these words across the
+commit instead of the outcome, so a value-returning syscall builds neither the
+outcome nor its frame. -/
+@[inline] def words (o : SyscallOutcome) :
+    UInt64 × UInt64 × UInt64 × UInt64 × UInt64 × UInt64 × UInt64 :=
+  (o.tagWord, o.mailboxFrame.x0, o.mailboxFrame.x1, o.mailboxFrame.x2, o.mailboxFrame.x3,
+   o.mailboxFrame.x4, o.mailboxFrame.x5)
+
 end SyscallOutcome
 
 /-- Does the caller's post-state IPC state mean the syscall **blocked**?

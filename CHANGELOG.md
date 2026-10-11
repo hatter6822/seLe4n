@@ -1,3 +1,41 @@
+## v0.36.76 — WS-ZA ZA4: a wait that consumes a pending badge allocates nothing (48 → 0 heap allocations)
+
+**A `NotificationWait` that consumes a pending badge makes no heap
+allocation**, on the first call and in steady state, down from 48, read on a
+fresh archive by the `heap-allocations-per-syscall` exerciser.  The signal
+round trip still reads 0.  Every fast form is proven equal to the
+specification it replaces; no theorem statement changed.
+
+- **Exerciser scenarios (ZA4.1).**  The exerciser now also measures a signal
+  with a badge `≥ 2^63` and a wait on a notification holding a pending badge.
+  The wide-badge signal reads 4, its heap numbers (the plan's R1; the badge
+  becomes a machine word in its own ZA4.2 row).
+- **The wait routed on the register file.**  `registerRoutedSyscall`
+  replaces `signalOperandsOfRegs?`: a signal or a wait whose arguments all
+  sit in registers is read straight from the register file and handed to
+  `dispatchSignalCheckedR` or `dispatchWaitCheckedR`, both instances of one
+  `dispatchOperandCheckedR`; every other call takes the specification's form
+  (`decodeSyscallArgsFromState_of_routedSignal`, `_of_routedWait`,
+  `dispatchWaitCheckedR_eq`, `syscallEntryCheckedR_eq`).
+- **The consumed notification written in its slot.**  When the wait consumes
+  a pending badge and the write keeps the object table's layout
+  (`RHTable.findsInPlace`: the key is present and the table is under its
+  resize threshold, so every other key reads as before,
+  `RHTable.get?_insert_ne_of_findsInPlace`), the notification and the woken
+  TCB are each rewritten in place by one out-of-line store
+  (`storeWaitConsumed`); otherwise the specification runs
+  (`notificationWaitOnCore_eq_impl`).  The wait's taint step takes the
+  capability, not a `some` of it.
+- **The outcome as seven words.**  The step answers the outcome's tag and its
+  six return words (`SyscallOutcome.words`,
+  `syscallDispatchCrossCoreBracketedStepWords`, `@[csimp]` against the words of
+  the bracketed step), and the caller's return is staged from the words into
+  its saved context and the core's bank (`stageCallerReturnWords`,
+  `stageCallerReturnFor_eq_words`), so no return frame record or `.returns`
+  cell is built.
+- **Docs.**  The plan's §1 and rows ZA1.3 and ZA4.2, the workstream context and
+  the debt index record the reading.
+
 ## v0.36.75 — WS-ZA: the signal round trip allocates nothing (9 → 0 heap allocations)
 
 **The continuing `NotificationSignal` round trip makes no heap allocation**,

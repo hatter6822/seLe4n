@@ -119,6 +119,7 @@ _TABLE_OPS = {
     "toList": "sweep",
     "filter": "sweep",
     "contains": "other",
+    "findsInPlace": "other",
     "holds": "other",
     "empty": "other",
     "ofList": "other",

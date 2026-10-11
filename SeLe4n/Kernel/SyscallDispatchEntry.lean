@@ -533,6 +533,44 @@ theorem syscallDispatchCrossCoreBracketedStep_run (ctx : LabelingContext)
           trapped.x0 trapped.x1 trapped.x2 trapped.x3 trapped.x4 trapped.x5
           trapped.x6 trapped.pc trapped.pstate trapped.sp trapped.x30 st := rfl
 
+/-- WS-ZA ZA4: **the bracketed step with its outcome as the boundary's words**
+(`Architecture.SyscallOutcome.words`): the outcome's tag and mailbox frame in
+its place, the rest of the result the step's.  It is the step by definition;
+compiled, it is `syscallDispatchCrossCoreStepWords`, where no outcome is built
+(`syscallDispatchCrossCoreBracketedStepWords_eq_impl`), so a value-returning
+syscall hands the boundary its words without a frame or an outcome. -/
+def syscallDispatchCrossCoreBracketedStepWords (ctx : LabelingContext)
+    (execCore : CoreId) (syscallId : UInt32) (trapped : Architecture.InFlightContext)
+    (st : SystemState) :
+    (UInt64 × UInt64 × UInt64 × UInt64 × UInt64 × UInt64 × UInt64 ×
+      List (CoreId × SgiKind) × List CoreId ×
+      List Architecture.TlbInvalidation × (Nat × Nat) ×
+      List Architecture.ICacheInvalidation × List Architecture.PhysicalWrite ×
+      Architecture.RestoreTarget × Option SeLe4n.ThreadId) × SystemState :=
+  let r := syscallDispatchCrossCoreBracketedStep ctx execCore syscallId trapped st
+  ((r.1.1.words.1, r.1.1.words.2.1, r.1.1.words.2.2.1, r.1.1.words.2.2.2.1,
+    r.1.1.words.2.2.2.2.1, r.1.1.words.2.2.2.2.2.1, r.1.1.words.2.2.2.2.2.2, r.1.2), r.2)
+
+/-- WS-ZA ZA4: the compiled `syscallDispatchCrossCoreBracketedStepWords`. -/
+@[inline] def syscallDispatchCrossCoreBracketedStepWordsImpl (ctx : LabelingContext)
+    (execCore : CoreId) (syscallId : UInt32) (trapped : Architecture.InFlightContext)
+    (st : SystemState) :
+    (UInt64 × UInt64 × UInt64 × UInt64 × UInt64 × UInt64 × UInt64 ×
+      List (CoreId × SgiKind) × List CoreId ×
+      List Architecture.TlbInvalidation × (Nat × Nat) ×
+      List Architecture.ICacheInvalidation × List Architecture.PhysicalWrite ×
+      Architecture.RestoreTarget × Option SeLe4n.ThreadId) × SystemState :=
+  syscallDispatchCrossCoreStepWords ctx execCore syscallId
+    trapped.x0 trapped.x1 trapped.x2 trapped.x3 trapped.x4 trapped.x5
+    trapped.x6 trapped.pc trapped.pstate trapped.sp trapped.x30 st
+
+@[csimp] theorem syscallDispatchCrossCoreBracketedStepWords_eq_impl :
+    @syscallDispatchCrossCoreBracketedStepWords =
+      @syscallDispatchCrossCoreBracketedStepWordsImpl := by
+  funext ctx execCore syscallId trapped st
+  unfold syscallDispatchCrossCoreBracketedStepWords syscallDispatchCrossCoreBracketedStepWordsImpl
+  rw [syscallDispatchCrossCoreStepWords_eq, syscallDispatchCrossCoreBracketedStep_run]
+
 /-- **The sender's overflow words, from the batches the HAL answered**
 (`v0.36.47` audit): each run's `ByteArray` decoded to its `n` words
 (`IpcBufferRead.wordsOfBatches`) and zipped back onto the addresses the runs
@@ -718,9 +756,13 @@ def syscallDispatchCrossCoreEntry (syscallId : UInt32) : BaseIO UInt64 := do
   -- state inside the atomic step (`syscallDispatchCrossCoreStep_restoreTarget`:
   -- the target the step reports is that state's), so what crosses the commit
   -- is words and the thread's own register file, never a target record.
-  let (result, restoreKind, restoreContext, restoreTableBase, restoreAsid) ←
+  -- **WS-ZA ZA4**: the outcome crosses the same way, as its tag and its
+  -- mailbox frame's words (`syscallDispatchCrossCoreBracketedStepWords`), so
+  -- a value-returning syscall builds neither its outcome nor its frame.
+  let ((tag, w0, w1, w2, w3, w4, w5, rest), restoreKind, restoreContext, restoreTableBase,
+      restoreAsid) ←
     Platform.FFI.modifyGetKernelState fun st =>
-      let r := syscallDispatchCrossCoreBracketedStep ctx execCore syscallId trapped
+      let r := syscallDispatchCrossCoreBracketedStepWords ctx execCore syscallId trapped
         (Architecture.IpcBufferRead.syncUserWords
           (Architecture.saveCapturedSyscallFrame st execCore frame) words)
       ((r.1, Architecture.restoreCommitKindOnCore r.2 execCore,
@@ -732,27 +774,26 @@ def syscallDispatchCrossCoreEntry (syscallId : UInt32) : BaseIO UInt64 := do
   -- same `with_kernel_entry` critical section.  A `blocks` outcome publishes
   -- the zero frame, which the Rust side never reads (the tag below says no
   -- frame exists for the caller — RA.C.9).
-  let frame := result.1.mailboxFrame
-  Platform.FFI.ffiSyscallReturnFrame frame.x0 frame.x1 frame.x2 frame.x3 frame.x4 frame.x5
+  Platform.FFI.ffiSyscallReturnFrame w0 w1 w2 w3 w4 w5
   -- **WS-BP BP7.2**: make physical memory agree with the committed address
   -- spaces — the descriptor stores, page zeroings and ASID invalidations the
   -- transition recorded, read and cleared in the atomic step above.  First,
   -- before any core is poked and before the shootdown round: a remote core
   -- must not refill its TLB from a descriptor the model has already cleared,
   -- and a carved page must be zero before anything can name it.
-  Platform.FFI.completePhysicalWrites result.2.2.2.2.2.2.1
-  Concurrency.fireCrossCoreSgis result.2.1
+  Platform.FFI.completePhysicalWrites rest.2.2.2.2.2.1
+  Concurrency.fireCrossCoreSgis rest.1
   -- WS-SM SM7.B: run the shootdown round(s) this commit posted (inert
   -- when the syscall touched no pending-shootdown queue).
-  completeShootdownRounds result.2.2.1 result.2.2.2.1 result.2.2.2.2.1.1
-    result.2.2.2.2.1.2 execCore
+  completeShootdownRounds rest.2.1 rest.2.2.1 rest.2.2.2.1.1
+    rest.2.2.2.1.2 execCore
   -- WS-SM SM7.D.1: emit the instruction-cache maintenance this commit
   -- recorded.  Ordered *after* the shootdown round so the translations are
   -- already retired everywhere when the instruction lines fetched through them
   -- are dropped.  The operand is the model's own — the ledger was read and
   -- cleared in the atomic step above, so it is emitted exactly once and never
   -- stranded into the next syscall.  Inert when nothing was owed.
-  Platform.FFI.completeIcacheMaintenance result.2.2.2.2.2.1
+  Platform.FFI.completeIcacheMaintenance rest.2.2.2.2.1
   -- **WS-BP BP7.9**: a thread whose FP/SIMD values this core holds and which
   -- the committed state no longer runs here has them saved into its TCB first.
   Concurrency.releaseSwitchedFpOwnerOnCore execCore
@@ -767,13 +808,13 @@ def syscallDispatchCrossCoreEntry (syscallId : UInt32) : BaseIO UInt64 := do
   -- step above (after `scheduleLocalSuccessor`, so it is the successor
   -- when the syscall vacated the core), and a syscall that left the core
   -- vacated clears the mirror rather than leaving it naming a blocked caller.
-  Concurrency.recordCommittedCurrentThreadHw (some (execCore, result.2.2.2.2.2.2.2.2))
+  Concurrency.recordCommittedCurrentThreadHw (some (execCore, rest.2.2.2.2.2.2.2))
   -- WS-RA: the export's scalar return is the outcome tag (0 = the mailbox
   -- frame is the caller's return; 1 = the caller blocked, no frame; 2 = the
   -- caller faulted at the seam, no frame — PR #887 review round 5; since WS-BP
   -- BP7.6 the trap layer resumes the context restore staged, and halts only
   -- when none was).
-  pure result.1.tagWord
+  pure tag
 
 /-- **WS-SM SM6.A** structural marker: `syscallDispatchCrossCoreEntry` unfolds to
 the read-context / read-core / commit-dispatch / fire-SGIs / record-current /
@@ -797,27 +838,27 @@ theorem syscallDispatchCrossCoreEntry_def (syscallId : UInt32) :
         let words ← match ← readCallerOverflowWords execCore msgInfo with
           | .ok words => pure words
           | .error tag => return tag
-        let (result, restoreKind, restoreContext, restoreTableBase, restoreAsid) ←
+        let ((tag, w0, w1, w2, w3, w4, w5, rest), restoreKind, restoreContext,
+            restoreTableBase, restoreAsid) ←
           Platform.FFI.modifyGetKernelState fun st =>
-            let r := syscallDispatchCrossCoreBracketedStep ctx execCore syscallId trapped
+            let r := syscallDispatchCrossCoreBracketedStepWords ctx execCore syscallId trapped
               (Architecture.IpcBufferRead.syncUserWords
                 (Architecture.saveCapturedSyscallFrame st execCore frame) words)
             ((r.1, Architecture.restoreCommitKindOnCore r.2 execCore,
                 Architecture.restoreContextOnCore r.2 execCore,
                 Architecture.restoreTableBaseOnCore r.2 execCore,
                 Architecture.restoreAsidOnCore r.2 execCore), r.2)
-        let frame := result.1.mailboxFrame
-        Platform.FFI.ffiSyscallReturnFrame frame.x0 frame.x1 frame.x2 frame.x3 frame.x4 frame.x5
-        Platform.FFI.completePhysicalWrites result.2.2.2.2.2.2.1
-        Concurrency.fireCrossCoreSgis result.2.1
-        completeShootdownRounds result.2.2.1 result.2.2.2.1 result.2.2.2.2.1.1
-          result.2.2.2.2.1.2 execCore
-        Platform.FFI.completeIcacheMaintenance result.2.2.2.2.2.1
+        Platform.FFI.ffiSyscallReturnFrame w0 w1 w2 w3 w4 w5
+        Platform.FFI.completePhysicalWrites rest.2.2.2.2.2.1
+        Concurrency.fireCrossCoreSgis rest.1
+        completeShootdownRounds rest.2.1 rest.2.2.1 rest.2.2.2.1.1
+          rest.2.2.2.1.2 execCore
+        Platform.FFI.completeIcacheMaintenance rest.2.2.2.2.1
         Concurrency.releaseSwitchedFpOwnerOnCore execCore
         Platform.FFI.restoreTrapFrameParts restoreKind restoreContext restoreTableBase
           restoreAsid
-        Concurrency.recordCommittedCurrentThreadHw (some (execCore, result.2.2.2.2.2.2.2.2))
-        pure result.1.tagWord) := rfl
+        Concurrency.recordCommittedCurrentThreadHw (some (execCore, rest.2.2.2.2.2.2.2))
+        pure tag) := rfl
 
 /-- **WS-SM SM8.B** (PR #861 review rounds 39/41): the gating argument's
 "rejection, not misattribution" half, as a theorem rather than as prose.

@@ -1344,13 +1344,55 @@ fn per_core_stats() -> Option<bool> {
 // WS-CV CV0.1 — the heap allocations of one syscall round trip
 // ============================================================================
 
-/// The syscall the round trip issues: `NotificationSignal` (`SyscallId` 14),
-/// which continues its caller — no switch, no block — when nobody waits.
+/// One round trip the driver measures: a continuing syscall on the root task's
+/// interrupt notification (slot 4 of the QEMU `virt` root task's CNode,
+/// `Platform/QemuVirt/Deployment.lean`, `qemuVirtRootTaskCNode`), which
+/// continues its caller — no switch, no block.
 #[cfg(feature = "hw_target")]
-const ROUND_TRIP_SYSCALL: u64 = 14;
-/// Its capability address: slot 4 of the QEMU `virt` root task's CNode, the
-/// interrupt notification (`Platform/QemuVirt/Deployment.lean`,
-/// `qemuVirtRootTaskCNode`).
+struct RoundTrip {
+    /// The name its printed lines carry.
+    name: &'static str,
+    /// The `SyscallId` in `x7`.
+    syscall: u64,
+    /// The badge in `x2` (the one inline message register; unread by a wait).
+    badge: u64,
+    /// A signal of this badge issued first and not measured, so a wait finds
+    /// the badge pending and consumes it without blocking.
+    primed: Option<u64>,
+}
+
+/// `NotificationSignal` (`SyscallId` 14).
+#[cfg(feature = "hw_target")]
+const SIGNAL: u64 = 14;
+/// `NotificationWait` (`SyscallId` 15).
+#[cfg(feature = "hw_target")]
+const WAIT: u64 = 15;
+
+/// The round trips measured (WS-ZA ZA4.1): the signal, a signal whose badge
+/// does not fit a scalar `Nat` (`≥ 2^63`), and a wait that consumes a pending
+/// badge.
+#[cfg(feature = "hw_target")]
+const ROUND_TRIPS: [RoundTrip; 3] = [
+    RoundTrip {
+        name: "signal",
+        syscall: SIGNAL,
+        badge: 1,
+        primed: None,
+    },
+    RoundTrip {
+        name: "signal-wide-badge",
+        syscall: SIGNAL,
+        badge: 1 << 63,
+        primed: None,
+    },
+    RoundTrip {
+        name: "wait-pending",
+        syscall: WAIT,
+        badge: 0,
+        primed: Some(1),
+    },
+];
+/// The capability address every round trip names: the interrupt notification.
 #[cfg(feature = "hw_target")]
 const ROUND_TRIP_CPTR: u64 = 4;
 /// Its `MessageInfo`: one message register (the badge, in `x2`).
@@ -1359,9 +1401,6 @@ const ROUND_TRIP_MSG_INFO: u64 = 1;
 /// `ESR_EL1` of an `SVC` from AArch64 (exception class `0x15`).
 #[cfg(feature = "hw_target")]
 const ROUND_TRIP_ESR: u64 = 0x15 << 26;
-/// The badge signalled.
-#[cfg(feature = "hw_target")]
-const ROUND_TRIP_BADGE: u64 = 1;
 /// `SPSR_EL1` of the frame: `EL0t` with DAIF clear, the state a thread's `SVC`
 /// is taken from.  The mode is what makes the round trip a thread's syscall:
 /// `trapFromEl0` admits only `M[3:0] = 0`, so an EL0 frame is saved into the
@@ -1378,34 +1417,54 @@ fn own_heap_allocations(core: usize) -> Option<u64> {
     crate::lean_heap::kernel_allocations_on(core).ok()
 }
 
-/// **WS-CV CV0.1**: the heap allocations one syscall round trip makes, through
-/// the Lean kernel, on the boot core.  The driver publishes a frame carrying a
-/// `NotificationSignal` as the in-flight frame, classifies its syndrome and
-/// dispatches it through the syscall seam (`svc_dispatch::dispatch_svc`), as
-/// the `SVC` arm does, reading
+/// **WS-CV CV0.1, WS-ZA ZA4.1**: the heap allocations of continuing syscall
+/// round trips through the Lean kernel, on the boot core.  For each of
+/// `ROUND_TRIPS` the driver publishes a frame carrying the syscall as the
+/// in-flight frame, classifies its syndrome and dispatches it through the
+/// syscall seam (`svc_dispatch::dispatch_svc`), as the `SVC` arm does, reading
 /// this core's own heap counter before and after with IRQs masked across both
 /// reads — the heap is one for every core, and a tick taken in between would
-/// charge its own allocations to the syscall.  The number is evidence, read by
-/// review (the plan's baseline and its CV5.1 re-reading); the verdict is only
-/// that both reads happened, the counter did not go back, and the round trip
-/// returned a frame.
+/// charge its own allocations to the syscall.  The numbers are evidence, read
+/// by review; the verdict is only that both reads happened, the counter did
+/// not go back, and the round trip returned a success frame.
 ///
-/// The round trip runs twice (WS-ZA).  The first call is the first write to
-/// objects the boot built, which the boot's own state still shares, so it
-/// copies them once; the second is the steady state every later syscall sees,
-/// and is the number the plan records.  Both are printed.
+/// Each round trip runs twice.  The first call is the first write to objects
+/// the boot built, which the boot's own state still shares, so it copies them
+/// once; the second is the steady state every later syscall sees, and is the
+/// number the plan records.  Both are printed.
 #[cfg(feature = "hw_target")]
 fn heap_allocations_per_syscall() -> Option<bool> {
-    if heap_allocations_round_trip(" (first call)") != Some(true) {
-        return Some(false);
+    for trip in &ROUND_TRIPS {
+        for which in [" (first call)", ""] {
+            if let Some(badge) = trip.primed {
+                let prime = RoundTrip {
+                    name: trip.name,
+                    syscall: SIGNAL,
+                    badge,
+                    primed: None,
+                };
+                if dispatch_round_trip(&prime).0.is_none() {
+                    crate::kprintln!(
+                        "[smp-test] FAIL: heap-allocations-per-syscall: {}: the priming signal failed",
+                        trip.name
+                    );
+                    return Some(false);
+                }
+            }
+            if heap_allocations_round_trip(trip, which) != Some(true) {
+                return Some(false);
+            }
+        }
     }
-    heap_allocations_round_trip("")
+    Some(true)
 }
 
-/// One measured round trip of `heap_allocations_per_syscall`; `which` labels
-/// its printed lines.
+/// Dispatch one round trip through the syscall seam with IRQs masked, reading
+/// this core's heap counter before and after: the returned frame's registers
+/// when it returned a success frame (printing why not otherwise), and the two
+/// readings.
 #[cfg(feature = "hw_target")]
-fn heap_allocations_round_trip(which: &str) -> Option<bool> {
+fn dispatch_round_trip(trip: &RoundTrip) -> (Option<[u64; 6]>, Option<u64>, Option<u64>) {
     let core = crate::per_cpu::current_core_id_from_tpidr() as usize;
     let mut frame = crate::trap::TrapFrame {
         gprs: [0; 31],
@@ -1419,8 +1478,8 @@ fn heap_allocations_round_trip(which: &str) -> Option<bool> {
     };
     frame.gprs[0] = ROUND_TRIP_CPTR;
     frame.gprs[1] = ROUND_TRIP_MSG_INFO;
-    frame.gprs[2] = ROUND_TRIP_BADGE;
-    frame.gprs[7] = ROUND_TRIP_SYSCALL;
+    frame.gprs[2] = trip.badge;
+    frame.gprs[7] = trip.syscall;
     let args = crate::svc_dispatch::SyscallArgs::from_trap_frame(&frame);
     let saved_daif = crate::interrupts::disable_interrupts();
     let before = own_heap_allocations(core);
@@ -1429,7 +1488,7 @@ fn heap_allocations_round_trip(which: &str) -> Option<bool> {
         // The `SVC` arm's own order: the classification, then the dispatch.
         let class = crate::trap::classify_synchronous_exception(ROUND_TRIP_ESR);
         let dispatched = if class == crate::trap::sync_class::SVC {
-            crate::svc_dispatch::dispatch_svc(ROUND_TRIP_SYSCALL as u32, &args)
+            crate::svc_dispatch::dispatch_svc(trip.syscall as u32, &args)
         } else {
             Err(crate::svc_dispatch::DispatchError::InvalidSyscallId)
         };
@@ -1437,44 +1496,6 @@ fn heap_allocations_round_trip(which: &str) -> Option<bool> {
     };
     let after = own_heap_allocations(core);
     crate::interrupts::restore_interrupts(saved_daif);
-    let (Some(before), Some(after)) = (before, after) else {
-        crate::kprintln!(
-            "[smp-test] FAIL: heap-allocations-per-syscall: the heap counter could not be read"
-        );
-        return Some(false);
-    };
-    let outcome = match dispatched {
-        // A refusal is an ordinary frame too, its status in the `x1` label
-        // (`error_frame_regs`): only label 0, the unit success a signal
-        // returns, measures the syscall the gate names.
-        Ok(crate::svc_dispatch::SvcOutcome::Frame(regs)) if regs[1] >> 9 == 0 => {
-            crate::kprintln!(
-                "[smp-test] heap-allocations-per-syscall: core {core}{which}: returned x0={:#x} x1={:#x}",
-                regs[0],
-                regs[1]
-            );
-            true
-        }
-        Ok(crate::svc_dispatch::SvcOutcome::Frame(regs)) => {
-            crate::kprintln!(
-                "[smp-test] FAIL: heap-allocations-per-syscall: the signal was refused (x1 label {:#x})",
-                regs[1] >> 9
-            );
-            false
-        }
-        Ok(other) => {
-            crate::kprintln!(
-                "[smp-test] FAIL: heap-allocations-per-syscall: the round trip did not return: {other:?}"
-            );
-            false
-        }
-        Err(error) => {
-            crate::kprintln!(
-                "[smp-test] FAIL: heap-allocations-per-syscall: the round trip was refused: {error:?}"
-            );
-            false
-        }
-    };
     // The restore installed the resumed thread's translation and set the
     // FP/SIMD trap for it.  This core goes on with its bring-up, so both go
     // back: the boot tables (whose kernel window every address space shares,
@@ -1482,23 +1503,70 @@ fn heap_allocations_round_trip(which: &str) -> Option<bool> {
     // prologue leaves (`CPACR_EL1 = 0`).
     crate::user_translation::install_translation(crate::user_translation::Translation::Kernel);
     crate::fp_context::set_trap_for_resume(false);
+    let name = trip.name;
+    let regs = match dispatched {
+        // A refusal is an ordinary frame too, its status in the `x1` label
+        // (`error_frame_regs`): only label 0, the success, measures the
+        // syscall the gate names.
+        Ok(crate::svc_dispatch::SvcOutcome::Frame(regs)) if regs[1] >> 9 == 0 => Some(regs),
+        Ok(crate::svc_dispatch::SvcOutcome::Frame(regs)) => {
+            crate::kprintln!(
+                "[smp-test] FAIL: heap-allocations-per-syscall: {name}: refused (x1 label {:#x})",
+                regs[1] >> 9
+            );
+            None
+        }
+        Ok(other) => {
+            crate::kprintln!(
+                "[smp-test] FAIL: heap-allocations-per-syscall: {name}: did not return: {other:?}"
+            );
+            None
+        }
+        Err(error) => {
+            crate::kprintln!(
+                "[smp-test] FAIL: heap-allocations-per-syscall: {name}: refused: {error:?}"
+            );
+            None
+        }
+    };
     if !restored {
         crate::kprintln!(
-            "[smp-test] FAIL: heap-allocations-per-syscall: the round trip resumed no thread"
+            "[smp-test] FAIL: heap-allocations-per-syscall: {name}: resumed no thread"
+        );
+        return (None, before, after);
+    }
+    (regs, before, after)
+}
+
+/// One measured round trip of `heap_allocations_per_syscall`; `which` labels
+/// its printed lines.
+#[cfg(feature = "hw_target")]
+fn heap_allocations_round_trip(trip: &RoundTrip, which: &str) -> Option<bool> {
+    let core = crate::per_cpu::current_core_id_from_tpidr() as usize;
+    let name = trip.name;
+    let (regs, before, after) = dispatch_round_trip(trip);
+    let (Some(before), Some(after)) = (before, after) else {
+        crate::kprintln!(
+            "[smp-test] FAIL: heap-allocations-per-syscall: {name}: the heap counter could not be read"
         );
         return Some(false);
-    }
+    };
+    let Some(regs) = regs else {
+        return Some(false);
+    };
+    crate::kprintln!(
+        "[smp-test] heap-allocations-per-syscall: {name}: core {core}{which}: returned x0={:#x} x1={:#x}",
+        regs[0],
+        regs[1]
+    );
     if after < before {
         crate::kprintln!(
-            "[smp-test] FAIL: heap-allocations-per-syscall: the counter went back ({before} -> {after})"
+            "[smp-test] FAIL: heap-allocations-per-syscall: {name}: the counter went back ({before} -> {after})"
         );
-        return Some(false);
-    }
-    if !outcome {
         return Some(false);
     }
     crate::kprintln!(
-        "[smp-test] heap-allocations-per-syscall: core {core}{which}: before={before} after={after} \
+        "[smp-test] heap-allocations-per-syscall: {name}: core {core}{which}: before={before} after={after} \
          delta={}",
         after - before
     );

@@ -279,6 +279,155 @@ def notificationWaitOnCore (notificationId : SeLe4n.ObjId) (waiter : SeLe4n.Thre
       if (st.getObject? notificationId).isSome then (st, .error .invalidCapability)
       else (st, .error .objectNotFound)
 
+/-- WS-ZA ZA4: a wait consuming its notification's pending badge, as an update
+of the notification's cell: idle, no waiters, no badge.  One constructor, so
+`RHTable.modify` rewrites the cell where it stands. -/
+@[inline] def waitConsumedObject : KernelObject → KernelObject
+  | .notification n =>
+      .notification { n with
+        state := .idle, waitingThreads := SeLe4n.NoDupList.empty, pendingBadge := none }
+  | o => o
+
+/-- WS-ZA ZA4: the badge-consume path's two writes, each made in its slot: the
+notification consumed and the waiter made ready.  Compiled as its own function
+so each update is specialised in rather than carried as a closure. -/
+@[noinline] def storeWaitConsumed (st : SystemState) (notificationId : SeLe4n.ObjId)
+    (waiter : SeLe4n.ThreadId) : SystemState :=
+  (st.modifyObject notificationId waitConsumedObject).updateTcb waiter
+    (fun t => { t with ipcState := .ready })
+
+/-- WS-ZA ZA4: **the badge-consume path writes only the two objects' slots.**
+The waiter is an unreserved TCB, both stores change only `objects`
+(`storeLeavesIndexAndTypes`), and the notification's store rewrites its key
+where it stands (`RHTable.findsInPlace`), so the waiter's lookup after it is
+its lookup before. -/
+@[inline] def waitConsumesInPlace (st : SystemState) (notificationId : SeLe4n.ObjId)
+    (waiter : SeLe4n.ThreadId) : Bool :=
+  !waiter.isReserved &&
+  storeLeavesIndexAndTypes st notificationId .notification &&
+  st.objects.findsInPlace notificationId &&
+  storeLeavesIndexAndTypes st waiter.toObjId .tcb &&
+  (st.getTcb? waiter).isSome
+
+/-- WS-ZA ZA4: the compiled `notificationWaitOnCore`.  A wait that consumes a
+pending badge and writes only the two objects' slots (`waitConsumesInPlace`)
+makes both writes in place and holds no pre-state across them: every refusal
+the specification could answer on that path is ruled out by the guard
+(`notificationWaitOnCore_eq_impl`).  Every other path is the specification's,
+spelled out because this definition replaces it in compiled code. -/
+def notificationWaitOnCoreImpl (notificationId : SeLe4n.ObjId) (waiter : SeLe4n.ThreadId)
+    (executingCore : CoreId) (st : SystemState) :
+    SystemState × Except KernelError (Option SeLe4n.Badge) :=
+  match st.getNotification? notificationId with
+  | some ntfn =>
+      match ntfn.pendingBadge with
+      | some badge =>
+          if waitConsumesInPlace st notificationId waiter then
+            (storeWaitConsumed st notificationId waiter, .ok (some badge))
+          else
+          let ntfn' : Notification :=
+            { state := .idle, waitingThreads := SeLe4n.NoDupList.empty, pendingBadge := none, boundTCB := ntfn.boundTCB }
+          match storeObject notificationId (.notification ntfn') st with
+          | .error e => (st, .error e)
+          | .ok ((), st') =>
+              match storeTcbIpcState st' waiter .ready with
+              | .error e => (st, .error e)
+              | .ok st'' => (st'', .ok (some badge))
+      | none =>
+          match lookupTcb st waiter with
+          | none => (st, .error .objectNotFound)
+          | some tcb =>
+              if tcb.ipcState = .blockedOnNotification notificationId then
+                (st, .error .alreadyWaiting)
+              else
+                match ntfn.waitingThreads.consWithGuard? waiter with
+                | none => (st, .error .alreadyWaiting)
+                | some wt' =>
+                    let ntfn' : Notification := {
+                      state := .waiting
+                      waitingThreads := wt'
+                      pendingBadge := none
+                      boundTCB := ntfn.boundTCB
+                    }
+                    match storeObject notificationId (.notification ntfn') st with
+                    | .error e => (st, .error e)
+                    | .ok ((), st') =>
+                        match storeTcbIpcStateAndMessage_fromTcb st' waiter tcb
+                            (.blockedOnNotification notificationId) none with
+                        | .error e => (st, .error e)
+                        | .ok st'' => (removeRunnableOnCore st'' waiter executingCore, .ok none)
+  | none =>
+      if (st.getObject? notificationId).isSome then (st, .error .invalidCapability)
+      else (st, .error .objectNotFound)
+
+/-- WS-ZA ZA4: the guarded badge-consume path is the specification's. -/
+theorem notificationWaitOnCore_consume_eq (notificationId : SeLe4n.ObjId)
+    (waiter : SeLe4n.ThreadId) (st : SystemState) (ntfn : Notification)
+    (hN : st.getNotification? notificationId = some ntfn)
+    (hG : waitConsumesInPlace st notificationId waiter = true) :
+    (match storeObject notificationId (.notification
+        { state := .idle, waitingThreads := SeLe4n.NoDupList.empty, pendingBadge := none,
+          boundTCB := ntfn.boundTCB }) st with
+      | .error _ => none
+      | .ok ((), st') =>
+          match storeTcbIpcState st' waiter .ready with
+          | .error _ => none
+          | .ok st'' => some st'') = some (storeWaitConsumed st notificationId waiter) := by
+  have hNo := (SystemState.getNotification?_eq_some_iff _ _ _).mp hN
+  simp only [waitConsumesInPlace, Bool.and_eq_true, Bool.not_eq_true'] at hG
+  obtain ⟨⟨⟨⟨hRes, hLeaveN⟩, hIn⟩, hLeaveT⟩, hTcbB⟩ := hG
+  obtain ⟨tcb, hT⟩ : ∃ tcb, st.objects[waiter.toObjId]? = some (.tcb tcb) := by
+    obtain ⟨t, h⟩ := Option.isSome_iff_exists.mp hTcbB
+    exact ⟨t, (SystemState.getTcb?_eq_some_iff _ _ _).mp h⟩
+  have hNe : notificationId ≠ waiter.toObjId := by
+    intro h; rw [h, hT] at hNo; cases hNo
+  rw [storeObject_eq_of_leaves (by simpa only [KernelObject.objectType] using hLeaveN)]
+  simp only []
+  have hT1 : (st.objects.insert notificationId (.notification
+      { state := .idle, waitingThreads := SeLe4n.NoDupList.empty, pendingBadge := none,
+        boundTCB := ntfn.boundTCB }))[waiter.toObjId]? = some (.tcb tcb) := by
+    show SeLe4n.Kernel.RobinHood.RHTable.get? _ _ = _
+    rw [SeLe4n.Kernel.RobinHood.RHTable.get?_insert_ne_of_findsInPlace _ _ hIn hNe]
+    exact hT
+  have hLook : lookupTcb { st with objects := st.objects.insert notificationId (.notification
+      { state := .idle, waitingThreads := SeLe4n.NoDupList.empty, pendingBadge := none,
+        boundTCB := ntfn.boundTCB }) } waiter = some tcb := by
+    simp only [lookupTcb, hRes, Bool.false_eq_true, ↓reduceIte]
+    exact (SystemState.getTcb?_eq_some_iff _ _ _).mpr hT1
+  simp only [storeTcbIpcState, modifyTcb, hLook]
+  rw [storeObject_eq_of_leaves (by
+    simp only [storeLeavesIndexAndTypes, KernelObject.objectType] at hLeaveT ⊢
+    rw [hT1]; rw [hT] at hLeaveT; exact hLeaveT)]
+  simp only [Option.some.injEq]
+  unfold storeWaitConsumed SystemState.modifyObject
+  rw [SeLe4n.Kernel.RobinHood.RHTable.modify_of_get? hNo]
+  rw [SystemState.updateTcb_eq_of_some ((SystemState.getTcb?_eq_some_iff _ _ _).mpr hT1)]
+  rfl
+
+@[csimp] theorem notificationWaitOnCore_eq_impl :
+    @notificationWaitOnCore = @notificationWaitOnCoreImpl := by
+  funext notificationId waiter executingCore st
+  unfold notificationWaitOnCore notificationWaitOnCoreImpl
+  split
+  · next ntfn hN =>
+    split
+    · next badge hB =>
+      split
+      · next hG =>
+        have h := notificationWaitOnCore_consume_eq notificationId waiter st ntfn hN hG
+        revert h
+        split
+        · intro h; cases h
+        · next st' h1 =>
+          split
+          · intro h; cases h
+          · next st'' h2 =>
+            intro h; cases h
+            simp only [h1, h2]
+      · rfl
+    · rfl
+  · rfl
+
 -- ============================================================================
 -- §2  Pre-resolution helpers + state-resolved lock-sets (plan §3.1)
 -- ============================================================================
