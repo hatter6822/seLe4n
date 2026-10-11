@@ -969,6 +969,27 @@ def restoreIncomingContextOnCore (st : SystemState) (c : CoreId)
       { st with machine := st.machine.setRegsOnCore c inTcb.registerContext }
   | none => st
 
+/-- WS-ZA ZA4: **the compiled restore.**  The incoming thread's words are
+written into the file the core's bank already owns (`modifyRegsOnCore`,
+`RegisterFile.overwriteWith`) rather than the bank taking the thread's file:
+a file both held would be shared, and the next trap's save into either
+(`InFlightContext.snapshotInto`) would copy it. -/
+def restoreIncomingContextOnCoreImpl (st : SystemState) (c : CoreId)
+    (tid : SeLe4n.ThreadId) : SystemState :=
+  match st.getTcb? tid with
+  | some inTcb =>
+      let m := st.machine.modifyRegsOnCore c (SeLe4n.RegisterFile.overwriteWith inTcb.registerContext)
+      { st with machine := m }
+  | none => st
+
+@[csimp] theorem restoreIncomingContextOnCore_eq_impl :
+    @restoreIncomingContextOnCore = @restoreIncomingContextOnCoreImpl := by
+  funext st c tid
+  unfold restoreIncomingContextOnCore restoreIncomingContextOnCoreImpl
+  split
+  · simp only [MachineState.modifyRegsOnCore_eq, SeLe4n.RegisterFile.overwriteWith_eq]
+  · rfl
+
 /-- WS-SM SM5.I: the per-core restore leaves the scheduler unchanged. -/
 @[simp] theorem restoreIncomingContextOnCore_scheduler (st : SystemState) (c : CoreId)
     (tid : SeLe4n.ThreadId) : (restoreIncomingContextOnCore st c tid).scheduler = st.scheduler := by

@@ -204,17 +204,26 @@ for driver in drivers:
         if len(set(sgis_by_core.values())) != len(sgis_by_core):
             failures.append(f"per-core-stats: two cores report one SGI count ({sgis_by_core}), so a wrong slot could not be told from the right one")
     elif driver == "heap-allocations-per-syscall":
-        # WS-CV CV0.1: the number is evidence, read by review; the gate holds
-        # only that both reads happened on the boot core, the delta is their
-        # difference, and the round trip returned a frame.
-        readings = matches(r"\[smp-test\] heap-allocations-per-syscall: core 0: before=(\d+) after=(\d+) delta=(\d+)")
-        returned = matches(r"\[smp-test\] heap-allocations-per-syscall: core 0: returned x0=0x[0-9a-f]+ x1=0x[0-9a-f]+")
-        if len(readings) != 1 or len(returned) != 1:
-            failures.append(f"heap-allocations-per-syscall: expected one reading and one returned frame on core 0, found {len(readings)} and {len(returned)}")
-        else:
-            before, after, delta = (int(g) for g in readings[0].groups())
+        # WS-CV CV0.1, WS-ZA ZA4.1: the numbers are evidence, read by review;
+        # the gate holds only that each round trip's steady reading happened
+        # on the boot core, once, after a returned frame, and is a delta.
+        readings = matches(r"\[smp-test\] heap-allocations-per-syscall: ([a-z-]+): core 0: before=(\d+) after=(\d+) delta=(\d+)")
+        returned = matches(r"\[smp-test\] heap-allocations-per-syscall: ([a-z-]+): core 0: returned x0=0x[0-9a-f]+ x1=0x[0-9a-f]+")
+        names = [m.group(1) for m in readings]
+        # The scenario set is pinned: a round trip renamed or dropped from
+        # `ROUND_TRIPS` (smp_exercisers.rs) must change this pin too, so the
+        # evidence cannot disappear while the gate stays green.
+        expected = {"signal", "signal-wide-badge", "wait-pending"}
+        observed = set(names) | {m.group(1) for m in returned}
+        if observed != expected:
+            failures.append(f"heap-allocations-per-syscall: scenarios {sorted(observed)} are not the pinned set {sorted(expected)}")
+        for name in sorted(observed | expected):
+            if names.count(name) != 1 or [m.group(1) for m in returned].count(name) != 1:
+                failures.append(f"heap-allocations-per-syscall: {name}: expected one reading and one returned frame on core 0")
+        for m in readings:
+            before, after, delta = (int(g) for g in m.groups()[1:])
             if after < before or delta != after - before:
-                failures.append(f"heap-allocations-per-syscall: the reading is not a delta: {readings[0].group(0)!r}")
+                failures.append(f"heap-allocations-per-syscall: the reading is not a delta: {m.group(0)!r}")
     else:
         failures.append(f"unknown driver {driver!r}")
 for failure in failures:

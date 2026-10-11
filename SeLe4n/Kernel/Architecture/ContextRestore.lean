@@ -123,6 +123,55 @@ theorem stageCurrentCallerReturn_eq (post : SystemState) (c : CoreId)
   cases o <;> cases caller? <;>
     simp only [stageCallerReturnFor, stageCallerReturnForImpl, hEq, stageCurrentCallerReturn_eq]
 
+/-- WS-ZA ZA4: a return frame's six words written into `x0`-`x5`
+(`stageReturnFrame` of the frame they make).  A call, so the file arrives as
+an owned argument and an exclusive one is written in place. -/
+def stageReturnWords (rf : SeLe4n.RegisterFile) (w0 w1 w2 w3 w4 w5 : UInt64) :
+    SeLe4n.RegisterFile :=
+  { rf with x0 := w0, x1 := w1, x2 := w2, x3 := w3, x4 := w4, x5 := w5 }
+
+/-- WS-ZA ZA4: `TCB.withReturnFrame` from the frame's six words.  A call, so
+the TCB arrives owned and its context is handed on with one reference. -/
+def _root_.SeLe4n.Model.TCB.withReturnWords (t : TCB) (w0 w1 w2 w3 w4 w5 : UInt64) : TCB :=
+  { t with registerContext := stageReturnWords t.registerContext w0 w1 w2 w3 w4 w5 }
+
+/-- WS-ZA ZA4: `stageCallerReturnFor` from the outcome's boundary words
+(`SyscallOutcome.words`, `stageCallerReturnFor_eq_words`): a returning
+caller's frame is written from the six words straight into its saved context
+and, when it is current, the core's bank, each in its slot, so no frame
+record is passed.  A call, not inlined, so the state arrives exclusive: inlined
+into the entry, the branches that answer `post` unchanged kept it alive across
+the writes. -/
+@[noinline] def stageCallerReturnWords (caller? : Option SeLe4n.ThreadId) (post : SystemState)
+    (c : CoreId) (tag w0 w1 w2 w3 w4 w5 : UInt64) : SystemState :=
+  if tag = 0 then
+    match caller? with
+    | some tid =>
+      -- The current-thread test reads `post` before either write, so the
+      -- writes find the state exclusive.
+      if (post.scheduler.currentOnCore c).isEqSome tid then
+        let s1 := post.updateTcb tid (TCB.withReturnWords · w0 w1 w2 w3 w4 w5)
+        let m := s1.machine.modifyRegsOnCore c (stageReturnWords · w0 w1 w2 w3 w4 w5)
+        { s1 with machine := m }
+      else
+        post.updateTcb tid (TCB.withReturnWords · w0 w1 w2 w3 w4 w5)
+    | none => post
+  else post
+
+theorem stageCallerReturnFor_eq_words (caller? : Option SeLe4n.ThreadId) (post : SystemState)
+    (c : CoreId) (o : SyscallOutcome) :
+    stageCallerReturnFor caller? post c o =
+      stageCallerReturnWords caller? post c o.words.1 o.words.2.1 o.words.2.2.1
+        o.words.2.2.2.1 o.words.2.2.2.2.1 o.words.2.2.2.2.2.1 o.words.2.2.2.2.2.2 := by
+  rw [stageCallerReturnFor_eq_impl]
+  cases o <;> cases caller? <;>
+    simp only [stageCallerReturnForImpl, stageCallerReturnWords, SyscallOutcome.words,
+      SyscallOutcome.tagWord, SyscallOutcome.mailboxFrame, ↓reduceIte, stageCurrentCallerReturn,
+      writeReturnFrameToTcb, SeLe4n.Model.TCB.withReturnFrame, stageFrameRegs,
+      SeLe4n.RegisterFile.stageReturnFrame, stageReturnWords,
+      SeLe4n.Model.TCB.withReturnWords] <;>
+    simp
+
 /-- `stageCallerReturnFor` with the caller read off the pre-state. -/
 def stageCallerReturn (pre post : SystemState) (c : CoreId) (o : SyscallOutcome) :
     SystemState :=

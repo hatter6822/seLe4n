@@ -774,6 +774,112 @@ theorem RHTable.modify_of_get? [BEq α] [Hashable α] [LawfulBEq α] {t : RHTabl
     {v : β} (h : t.get? k = some v) (f : β → β) : t.modify k f = t.insert k (f v) := by
   unfold RHTable.modify; rw [h]
 
+/-- WS-ZA ZA4: `findIdxLoop` reads a slot only through its key and distance. -/
+theorem findIdxLoop_congr [BEq α] (fuel idx : Nat) (k : α) (d : Nat)
+    (s s' : Array (Option (RHEntry α β))) (capacity : Nat)
+    (hLen : s.size = capacity) (hLen' : s'.size = capacity) (hCapPos : 0 < capacity)
+    (h : ∀ j (h1 : j < s.size) (h2 : j < s'.size),
+      s[j].map (fun e => (e.key, e.dist)) = s'[j].map (fun e => (e.key, e.dist))) :
+    findIdxLoop fuel idx k d s capacity hLen hCapPos =
+      findIdxLoop fuel idx k d s' capacity hLen' hCapPos := by
+  induction fuel generalizing idx d with
+  | zero => rfl
+  | succ n ih =>
+    unfold findIdxLoop
+    dsimp only
+    have h1 : idx % capacity < s.size := by rw [hLen]; exact Nat.mod_lt _ hCapPos
+    have h2 : idx % capacity < s'.size := by rw [hLen']; exact Nat.mod_lt _ hCapPos
+    have hj := h (idx % capacity) h1 h2
+    revert hj
+    cases hA : s[idx % capacity] <;> cases hB : s'[idx % capacity] <;> intro hj
+    · rfl
+    · simp at hj
+    · simp at hj
+    · next e e' =>
+      simp only [Option.map_some, Option.some.injEq, Prod.mk.injEq] at hj
+      simp only [hj.1, hj.2]
+      split
+      · rfl
+      · split
+        · rfl
+        · exact ih _ _
+
+/-- WS-ZA ZA4: the slot `findIdxLoop` lands on holds the key it probed for. -/
+theorem findIdxLoop_key [BEq α] (fuel idx : Nat) (k : α) (d : Nat)
+    (s : Array (Option (RHEntry α β))) (capacity : Nat)
+    (hLen : s.size = capacity) (hCapPos : 0 < capacity)
+    (h : findIdxLoop fuel idx k d s capacity hLen hCapPos < capacity) :
+    ∃ e, s[findIdxLoop fuel idx k d s capacity hLen hCapPos]? = some (some e) ∧
+      (e.key == k) = true := by
+  induction fuel generalizing idx d with
+  | zero => simp [findIdxLoop] at h
+  | succ n ih =>
+    have h1 : idx % capacity < s.size := by rw [hLen]; exact Nat.mod_lt _ hCapPos
+    unfold findIdxLoop at h ⊢
+    dsimp only at h ⊢
+    revert h
+    cases hA : s[idx % capacity] <;> intro h
+    · simp at h
+    · next e =>
+      by_cases hk : (e.key == k) = true
+      · simp only [hk, ↓reduceIte]
+        exact ⟨e, by rw [Array.getElem?_eq_getElem h1, hA], hk⟩
+      · simp only [hk, Bool.false_eq_true, ↓reduceIte] at h ⊢
+        by_cases hd : e.dist < d
+        · simp [hd] at h
+        · simp only [hd, ↓reduceIte] at h ⊢
+          exact ih _ _ h
+
+/-- WS-ZA ZA4: rewriting one slot's value leaves every probe where it was. -/
+theorem findIdxLoop_modify_withValue [BEq α] (fuel idx : Nat) (k : α) (d : Nat)
+    (s : Array (Option (RHEntry α β))) (i : Nat) (v : β) (capacity : Nat)
+    (hLen' : (s.modify i (RHEntry.withValue v)).size = capacity)
+    (hCapPos : 0 < capacity) :
+    findIdxLoop fuel idx k d (s.modify i (RHEntry.withValue v)) capacity hLen' hCapPos =
+      findIdxLoop fuel idx k d s capacity (by rw [← hLen', Array.size_modify]) hCapPos :=
+  findIdxLoop_congr _ _ _ _ _ _ _ _ _ _ (by
+    intro j h1 h2
+    simp only [Array.getElem_modify]
+    split
+    · next hj => subst hj; cases s[i] <;> rfl
+    · rfl)
+
+/-- WS-ZA ZA4: **an insert that rewrites its key where it stands**: no resize
+is due and the probe finds `k`, so the insert changes that one slot's value
+(`insertLoop_of_findIdxLoop_lt`), on every table, well-formed or not. -/
+def RHTable.findsInPlace [BEq α] [Hashable α] (t : RHTable α β) (k : α) : Bool :=
+  !decide (t.size * 4 ≥ t.capacity * 3) &&
+  decide (findIdxLoop t.capacity (idealIndex k t.capacity t.hCapPos) k 0 t.slots
+    t.capacity t.hSlotsLen t.hCapPos < t.capacity)
+
+/-- WS-ZA ZA4: an insert that rewrites its key in place leaves every other key's
+lookup as it was.  No `invExt`: only the one slot's value moves, and a probe
+reads slots through their keys and distances. -/
+theorem RHTable.get?_insert_ne_of_findsInPlace [BEq α] [Hashable α] [LawfulBEq α]
+    {t : RHTable α β} {k : α} (k' : α) (v : β) (h : t.findsInPlace k = true)
+    (hNe : k ≠ k') : (t.insert k v).get? k' = t.get? k' := by
+  unfold RHTable.findsInPlace at h
+  simp only [Bool.and_eq_true, Bool.not_eq_true', decide_eq_false_iff_not,
+    decide_eq_true_eq] at h
+  obtain ⟨hNo, hFound⟩ := h
+  obtain ⟨e, he, hek⟩ := findIdxLoop_key _ _ _ _ _ _ _ _ hFound
+  unfold RHTable.insert
+  rw [if_neg hNo, RHTable.insertNoResize_eq_impl]
+  unfold RHTable.insertNoResizeImpl
+  dsimp only
+  rw [if_pos hFound]
+  unfold RHTable.get?
+  simp only [getLoop_eq_findIdxLoop]
+  rw [findIdxLoop_modify_withValue]
+  by_cases hji : findIdxLoop t.capacity (idealIndex k t.capacity t.hCapPos) k 0 t.slots
+      t.capacity t.hSlotsLen t.hCapPos = findIdxLoop t.capacity (idealIndex k' t.capacity t.hCapPos)
+      k' 0 t.slots t.capacity t.hSlotsLen t.hCapPos
+  · obtain ⟨e', he', hek'⟩ := findIdxLoop_key _ _ _ _ _ _ _ _ (hji ▸ hFound)
+    rw [← hji, he] at he'
+    cases he'
+    exact absurd ((beq_iff_eq.1 hek).symm.trans (beq_iff_eq.1 hek')) hNe
+  · rw [Array.getElem?_modify, if_neg hji]
+
 
 /-- N1-D3: `insertNoResize` increases size by at most 1. -/
 theorem RHTable.insertNoResize_size_le [BEq α] [Hashable α] [LawfulBEq α]

@@ -168,4 +168,56 @@ theorem syscallDispatchCrossCoreStep_restoreTarget (ctx : LabelingContext)
   rw [syscallDispatchCrossCoreStep_of_ok h]
   rfl
 
+/-- WS-ZA ZA4: **the step with its outcome as the boundary's words**: what the
+live entry reads of the outcome (`SyscallOutcome.words`) in its place, the
+rest of the result as the step's (`syscallDispatchCrossCoreStepWords_eq`).
+Inlined into the entry, each dispatch branch hands its words on as scalars and
+the caller's frame is staged from them (`stageCallerReturnWords`), so a
+value-returning syscall builds neither its outcome nor its frame. -/
+@[inline] def syscallDispatchCrossCoreStepWords (ctx : LabelingContext) (execCore : CoreId)
+    (syscallId : UInt32) (x0 x1 x2 x3 x4 x5 : UInt64)
+    (ipcBufferAddr elr spsr spEl0 x30 : UInt64) (st : SystemState) :
+    (UInt64 × UInt64 × UInt64 × UInt64 × UInt64 × UInt64 × UInt64 ×
+      List (CoreId × SgiKind) × List CoreId ×
+      List Architecture.TlbInvalidation × (Nat × Nat) ×
+      List Architecture.ICacheInvalidation × List Architecture.PhysicalWrite ×
+      Architecture.RestoreTarget × Option SeLe4n.ThreadId) × SystemState :=
+  let caller? := st.scheduler.currentOnCore execCore
+  let pending0 := reschedulePendingSnapshot st
+  let tlb0 := st.tlbShootdown
+  match Platform.FFI.syscallDispatchFromAbiWords ctx execCore syscallId x0 x1 x2 x3 x4 x5
+      ipcBufferAddr elr spsr spEl0 x30 st with
+  | ((tag, w0, w1, w2, w3, w4, w5), st') =>
+      let stR := Architecture.stageCallerReturnWords caller? st' execCore tag w0 w1 w2 w3 w4 w5
+      let st'' := PriorityInheritance.settleResidencyOnCore
+        (PriorityInheritance.scheduleLocalSuccessorFrom caller? stR execCore) execCore
+      ((tag, w0, w1, w2, w3, w4, w5,
+        rescheduleSgisFromFlags pending0 st''.scheduler.reschedulePending,
+        Architecture.shootdownChangedTargetsFrom tlb0 st'',
+        Architecture.shootdownPostedOpsFrom tlb0 st'',
+        Architecture.shootdownRoundWindowFrom tlb0 st'',
+        st''.pendingIcacheMaintenance,
+        st''.pendingPhysicalWrites,
+        Architecture.restoreTargetOnCore st'' execCore,
+        st''.scheduler.currentOnCore execCore),
+       Architecture.clearPhysicalWrites (Architecture.clearIcacheMaintenance st''))
+
+theorem syscallDispatchCrossCoreStepWords_eq (ctx : LabelingContext)
+    (execCore : CoreId) (syscallId : UInt32)
+    (x0 x1 x2 x3 x4 x5 ipcBufferAddr elr spsr spEl0 x30 : UInt64) (st : SystemState) :
+    syscallDispatchCrossCoreStepWords ctx execCore syscallId x0 x1 x2 x3 x4 x5
+        ipcBufferAddr elr spsr spEl0 x30 st =
+      let r := syscallDispatchCrossCoreStep ctx execCore syscallId x0 x1 x2 x3 x4 x5
+        ipcBufferAddr elr spsr spEl0 x30 st
+      ((r.1.1.words.1, r.1.1.words.2.1, r.1.1.words.2.2.1, r.1.1.words.2.2.2.1,
+        r.1.1.words.2.2.2.2.1, r.1.1.words.2.2.2.2.2.1, r.1.1.words.2.2.2.2.2.2, r.1.2), r.2) := by
+  obtain ⟨outcome, st', h⟩ := Platform.FFI.syscallDispatchFromAbi_total ctx execCore syscallId
+    x0 x1 x2 x3 x4 x5 ipcBufferAddr elr spsr spEl0 x30 st
+  rw [syscallDispatchCrossCoreStep_of_ok h]
+  unfold syscallDispatchCrossCoreStepWords
+  rw [Platform.FFI.syscallDispatchFromAbiWords_eq ctx execCore syscallId x0 x1 x2 x3 x4 x5
+    ipcBufferAddr elr spsr spEl0 x30 st st' outcome h]
+  simp only [Architecture.stageCallerReturnFor_eq_words]
+  rfl
+
 end SeLe4n.Kernel
