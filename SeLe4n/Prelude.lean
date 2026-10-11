@@ -720,28 +720,17 @@ theorem CPtr.isWord64Bounded_eq_isWord64Dec (ptr : CPtr) :
 theorem Slot.isWord64Bounded_eq_isWord64Dec (slot : Slot) :
     Slot.isWord64Bounded slot = isWord64Dec slot.val := rfl
 
--- AN2-A / H-13: Badge constructor is now `private` to force every external
--- consumer through a smart constructor (`ofNatMasked`, `ofNat`, `zero`, or
--- `ofUInt64Pair`). Direct `Badge.mk n` calls outside the `Badge` namespace
--- are rejected by the elaborator. Proof-side destructuring (when strictly
--- necessary) goes through the private `Badge.mkUnsafeForProof` helper below.
+-- AN2-A / H-13: Badge constructor is `private` to force every external
+-- consumer through a smart constructor (`ofWord`, `ofNatMasked`, `ofNat`,
+-- `zero`, or `ofUInt64Pair`). Direct `Badge.mk` calls outside the `Badge`
+-- namespace are rejected by the elaborator.
 -- Pattern matches `AccessRightSet` (AJ2-A) and `CapDerivationTree`.
 --
--- Historical safety layers retained:
--- 1. `Badge.valid` predicate: `b.val < 2^64` — used in proof obligations
--- 2. `Badge.ofNatMasked`: truncates to word size at construction
--- 3. `cspaceMint` (Operations.lean): uses masked badge from decoded syscall
--- 4. IPC message delivery: badge comes from stored Capability (already masked)
--- 5. Rust ABI: `Badge` is `u64` — hardware truncation at FFI boundary
--- BadgeOverflowSuite.lean (AG9-E) validates round-trip Nat↔UInt64 safety.
---
--- AK7-K (F-L2 / LOW) — seL4 badge-64-bit compatibility note:
--- seL4's badge field is exactly 64 bits wide (`seL4_Word` on 64-bit
--- platforms). Our `Badge.val : Nat` model widens this to unbounded Nat
--- for proof ergonomics, with `Badge.valid` asserting the hardware bound.
--- The Rust side (`sele4n-types::Badge`) uses `u64` directly; the
--- Nat↔UInt64 conversion at the FFI boundary (validated by
--- `BadgeOverflowSuite`) discharges the bound obligation.
+-- WS-ZA ZA4.2: the badge is a `UInt64` word, exactly seL4's 64-bit badge
+-- (`seL4_Word`), so the hardware bound holds by type (`valid_of_word`) and the
+-- Rust side's `u64` crosses the FFI boundary unchanged.  `Badge.val` reads the
+-- word as a `Nat` for proofs; `Badge.ofNatMasked` reduces a `Nat` modulo
+-- `2^64`.  BadgeOverflowSuite.lean (AG9-E) validates the Nat/UInt64 round trip.
 
 /-- Endpoint or notification badge value.
     WS-F5/D1a: Values are logically bounded to `machineWordBits` (64) bits.

@@ -1,3 +1,32 @@
+## v0.36.77 — WS-ZA ZA4.2: badges are machine words; a wide-badge signal allocates nothing (4 → 0)
+
+**A `NotificationSignal` with a badge `≥ 2^63` makes no heap allocation**,
+down from 4, read on a fresh, untraced archive by the
+`heap-allocations-per-syscall` exerciser.  The signal round trip and the wait
+that consumes a pending badge still read 0; the signal's first call after boot
+reads 2 (3 before).
+
+- **`Badge` holds a `UInt64`** (the plan's R1).  A `Nat` at or above `2^63` is
+  a heap number in Lean's runtime, so a wide badge allocated on decode, merge
+  and return.  `Badge.val` reads the word back as a `Nat`, every badge is
+  valid by its type (`Badge.valid_of_word`), `Badge.bor` is the word's OR,
+  and `Badge.ofNatMasked` reduces modulo `2^64` as before.  The register
+  decode reads the badge word with `readRegWord`; the wait's return frame
+  carries the word itself (`returnFrameOfBadge`, `returnFrameOfMessage`).
+  The test-only `Badge.mkUnsafeForProof` is removed.
+- **The pending badge as a flag and a word** (plan row ZA2.3).  An `Option`
+  around a machine word is a boxed cell, so every signal that left a badge
+  pending allocated once the badge was a word.  `Notification` now holds
+  `hasPendingBadge : Bool` and `pendingWord : Badge`, scalar fields the
+  signal rewrites in place (`signalPendingObject`, one constructor), and
+  `Notification.pendingBadge : Option Badge` is derived from them, so every
+  read, invariant and theorem about it keeps its statement.  The flag is
+  kept rather than read off `state = .active`, so the derived view equals the
+  old field on every notification.  Write sites set both fields.
+- **Trace fixture.**  `main_trace_smoke.expected` prints a badge as
+  `{ word := 123 }` (was `{ val := 123 }`): the derived `Repr` names the new
+  field; the values are unchanged.
+
 ## v0.36.76 — WS-ZA ZA4: a wait that consumes a pending badge allocates nothing (48 → 0 heap allocations)
 
 **A `NotificationWait` that consumes a pending badge makes no heap
