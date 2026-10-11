@@ -689,6 +689,16 @@ inductive RegisterRoutedSyscall where
   | wait (capAddr : CPtr)
   | viaDecode
 
+/-- WS-ZA ZA4.2: register `r`'s word, as `readReg` reads it, without the
+`RegValue` number — a word `≥ 2^63` as a number is a heap object. -/
+@[inline] def readRegWord (rf : RegisterFile) (r : RegName) : UInt64 :=
+  if r.val < 31 then rf.word r.val else 0
+
+theorem readReg_val_eq_word (rf : RegisterFile) (r : RegName) :
+    (readReg rf r).val = (readRegWord rf r).toNat := by
+  unfold readReg readRegWord RegisterFile.gpr
+  split <;> rfl
+
 /-- The routed syscall a register file names, read straight from the
     registers: `signal`/`wait` only when the decode succeeds as that syscall
     with no overflow words merged, and carries the same operands
@@ -708,7 +718,7 @@ inductive RegisterRoutedSyscall where
       if msgInfo.length ≤ layout.msgRegs.size then
         if (readReg regs layout.syscallNumReg).val = SyscallId.notificationSignal.toNat then
           if h0 : 0 < layout.msgRegs.size then
-            .signal capAddr (Badge.ofNatMasked (readReg regs layout.msgRegs[0]).val)
+            .signal capAddr (Badge.ofWord (readRegWord regs layout.msgRegs[0]))
           else .viaDecode
         else if (readReg regs layout.syscallNumReg).val = SyscallId.notificationWait.toNat then
           .wait capAddr
@@ -767,7 +777,7 @@ theorem decodeSyscallArgsFromState_of_routedSignal
           cases h
           refine ⟨_, decodeSyscallArgsFromState_of_routed st tid layout regs regCount _ mi _
             hB hC hM hLen hS, rfl, rfl, rfl, by simpa only [Array.size_map] using h0,
-            by simp only [Array.getElem_map]⟩
+            by simp only [Array.getElem_map, readReg_val_eq_word, Badge.ofWord_eq_ofNatMasked]⟩
         · cases h
       · split at h <;> cases h
     · cases h

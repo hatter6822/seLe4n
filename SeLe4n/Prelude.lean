@@ -753,19 +753,26 @@ theorem Slot.isWord64Bounded_eq_isWord64Dec (slot : Slot) :
     `ofUInt64Pair`). -/
 structure Badge where
   private mk ::
-  val : Nat
+  /-- The badge's machine word.  WS-ZA ZA4.2: a `UInt64`, so a badge of any
+  value is a scalar — a `Nat` field made a heap number of every badge
+  `≥ 2^63`, and a signal carrying one allocated. -/
+  word : UInt64
 deriving DecidableEq, Repr
 
 /-- AN2-A / H-13: Manual `Inhabited` instance — `deriving Inhabited` requires
-    a public constructor. The default value is the zero badge (`⟨0⟩`). -/
+    a public constructor. The default value is the zero badge. -/
 instance : Inhabited Badge := ⟨⟨0⟩⟩
 
-/-- WS-G1: Hash instance for HashMap/HashSet keying. Delegates to Nat hash.
+/-- WS-G1: Hash instance for HashMap/HashSet keying: the word itself, which is
+    `hash` of the badge's value (`Nat`'s hash is the value as a word).
     BEq is already provided by DecidableEq via instBEqOfDecidableEq. -/
 @[inline] instance : Hashable Badge where
-  hash a := hash a.val
+  hash a := hash a.word
 
 namespace Badge
+
+/-- The badge's value as a number. -/
+@[inline] def val (badge : Badge) : Nat := badge.word.toNat
 
 /-- Projection helper kept explicit for migration ergonomics. -/
 @[inline] def toNat (badge : Badge) : Nat := badge.val
@@ -776,13 +783,10 @@ namespace Badge
 /-- WS-F5/D1a: Decidable validity check for runtime use. -/
 @[inline] def isValid (badge : Badge) : Bool := badge.val < machineWordMax
 
-/-- AN2-A / H-13: Proof-internal destructuring helper — use ONLY inside
-    `Badge` proof machinery where a non-masked constructor is needed to
-    witness `Badge.mk n` equalities (e.g. `congrArg Badge.mk`). Never call
-    this from operational code — callers should use `ofNatMasked` or
-    `ofNat`. Kept `private` so external modules cannot bypass the
-    smart-constructor discipline. -/
-@[inline] private def mkUnsafeForProof (n : Nat) : Badge := ⟨n⟩
+/-- WS-ZA ZA4.2: every badge is valid — its value is a machine word's. -/
+theorem valid_of_word (badge : Badge) : badge.valid := by
+  unfold valid val machineWordMax machineWordBits
+  exact badge.word.toNat_lt
 
 /-- AN2-A / H-13: Canonical zero badge (valid by construction). -/
 @[inline] def zero : Badge := ⟨0⟩
@@ -790,106 +794,106 @@ namespace Badge
 /-- AN2-A / H-13: `Badge.zero` is always valid. The zero badge is
     the canonical "no-badge" sentinel used by the kernel ABI when
     a capability is minted without a caller-supplied badge. -/
-theorem zero_valid : Badge.zero.valid := by
-  unfold valid zero machineWordMax machineWordBits
-  decide
+theorem zero_valid : Badge.zero.valid := valid_of_word _
 
 /-- AN2-A / H-13: `Badge.zero.toNat = 0` (projection of the canonical
     zero badge). -/
 @[simp] theorem zero_toNat : Badge.zero.toNat = 0 := rfl
+
+/-- WS-ZA ZA4.2: the badge holding a machine word, as a register carries it. -/
+@[inline] def ofWord (w : UInt64) : Badge := ⟨w⟩
+
+@[simp] theorem ofWord_val (w : UInt64) : (ofWord w).val = w.toNat := rfl
 
 /-- AN2-A / H-13: Construct a badge from a `Nat` that is already
     word-bounded, carrying the bound as a proof. Prefer this over
     `ofNatMasked` when the caller has a pre-validated input (e.g. decoded
     from a `UInt64`). -/
 @[inline] def ofNat (n : Nat) (_h : n < machineWordMax := by decide) : Badge :=
-  ⟨n⟩
+  ⟨UInt64.ofNat n⟩
 
 /-- AN2-A / H-13: `Badge.ofNat n h` produces a badge whose underlying
     value is exactly `n` (no masking). -/
 @[simp] theorem ofNat_toNat (n : Nat) (h : n < machineWordMax) :
-    (Badge.ofNat n h).toNat = n := rfl
+    (Badge.ofNat n h).toNat = n := by
+  unfold Badge.ofNat toNat val
+  rw [UInt64.toNat_ofNat']
+  exact Nat.mod_eq_of_lt (by simpa [machineWordMax, machineWordBits] using h)
 
 /-- AN2-A / H-13: `Badge.ofNat n h` is valid — the bound `h` is the
     witness. -/
 theorem ofNat_valid (n : Nat) (h : n < machineWordMax) :
-    (Badge.ofNat n h).valid := h
+    (Badge.ofNat n h).valid := valid_of_word _
 
 /-- WS-F5/D1a: Construct a badge with word-size truncation, matching seL4's
     silent word-truncation semantics on 64-bit platforms. -/
-@[inline] def ofNatMasked (n : Nat) : Badge := ⟨n % machineWordMax⟩
+@[inline] def ofNatMasked (n : Nat) : Badge := ⟨UInt64.ofNat n⟩
 
-/-- WS-F5/D1b: Bitwise OR combiner for badge accumulation. Masks the result
-    to machine word size, matching seL4 notification signal semantics.
+/-- `ofNatMasked`'s value: the number reduced to a word. -/
+theorem ofNatMasked_val (n : Nat) : (ofNatMasked n).val = n % machineWordMax := by
+  unfold ofNatMasked val machineWordMax machineWordBits
+  exact UInt64.toNat_ofNat'
 
-    **AC3-C / I-04 — Unbounded intermediate note**: The expression `a.val ||| b.val`
-    computes the bitwise OR on unbounded Lean `Nat`. The intermediate result may
-    exceed `machineWordMax` (2^64) in the abstract model even though hardware
-    notification words are 64-bit. `ofNatMasked` (defined above) applies
-    `% machineWordMax` to truncate to 64 bits, and the `bor_valid` theorem
-    (below) proves the result satisfies the `valid` predicate. For hardware
-    deployment, the platform binding layer must ensure all `Badge` values
-    entering the model are already within 64-bit range, making the intermediate
-    unboundedness a no-op. -/
-@[inline] def bor (a b : Badge) : Badge := ofNatMasked (a.val ||| b.val)
+/-- WS-ZA ZA4.2: a word's badge is the masked badge of its value. -/
+theorem ofWord_eq_ofNatMasked (w : UInt64) : ofWord w = ofNatMasked w.toNat := by
+  unfold ofWord ofNatMasked
+  rw [UInt64.ofNat_toNat]
+
+/-- WS-F5/D1b: Bitwise OR combiner for badge accumulation, on the words, as
+    seL4's notification word ORs a signal's badge in.  The OR of two words is a
+    word, so nothing is truncated (`bor_eq_ofNatMasked`: the masked OR of the
+    values, the specification's form). -/
+@[inline] def bor (a b : Badge) : Badge := ⟨a.word ||| b.word⟩
+
+/-- WS-ZA ZA4.2: `bor` is the masked OR of the badges' values. -/
+theorem bor_eq_ofNatMasked (a b : Badge) : bor a b = ofNatMasked (a.val ||| b.val) := by
+  unfold bor ofNatMasked val
+  rw [← UInt64.toNat_or, UInt64.ofNat_toNat]
 
 /-- WS-F5/D1a: `ofNatMasked` always produces a valid badge. -/
-theorem ofNatMasked_valid (n : Nat) : (ofNatMasked n).valid := by
-  simp [ofNatMasked, valid, machineWordMax]
-  exact Nat.mod_lt n (by decide)
+theorem ofNatMasked_valid (n : Nat) : (ofNatMasked n).valid := valid_of_word _
 
 /-- WS-F5/D1b: `bor` preserves validity — OR of two word-bounded values
     is word-bounded. -/
-theorem bor_valid (a b : Badge) : (bor a b).valid :=
-  ofNatMasked_valid (a.val ||| b.val)
+theorem bor_valid (a b : Badge) : (bor a b).valid := valid_of_word _
 
 /-- WS-F5/D1b: Badge OR is commutative. -/
 theorem bor_comm (a b : Badge) : bor a b = bor b a := by
-  simp [bor, ofNatMasked, Nat.or_comm]
+  unfold bor
+  rw [UInt64.or_comm]
 
 /-- WS-F5/D1b: Badge OR is idempotent. -/
 theorem bor_idempotent (a : Badge) : bor a a = ofNatMasked a.val := by
-  simp [bor, Nat.or_self]
+  unfold bor ofNatMasked val
+  rw [UInt64.or_self, UInt64.ofNat_toNat]
 
 /-- R6-B: `ofNatMasked` with a small literal that fits in one word is
     identity — the modulus is a no-op. -/
 theorem ofNatMasked_lt_eq {n : Nat} (h : n < machineWordMax) :
     (ofNatMasked n).val = n := by
-  unfold ofNatMasked machineWordMax machineWordBits
+  rw [ofNatMasked_val]
   exact Nat.mod_eq_of_lt h
 
-/-- AN2-E / H-12: OR two pre-bounded `UInt64` values and lift the result
-    into `Badge`. The bitwise OR is performed on `UInt64` (64-bit bounded)
-    so the intermediate value never exceeds `2^64` — this forecloses the
-    unbounded-intermediate concern flagged by audit H-12 (present in the
-    pre-AN2-E `bor` composition when a caller passes un-masked `Nat`
-    badges).
-
-    Production paths ingesting values from the Rust ABI (where badges are
-    `u64`) should prefer this constructor over `bor` + `ofNatMasked`. -/
+/-- AN2-E / H-12: OR two `UInt64` values into a `Badge`: the OR is on the
+    words, so the value never exceeds `2^64` (audit H-12). -/
 @[inline] def ofUInt64Pair (a b : UInt64) : Badge :=
-  ⟨(a ||| b).toNat⟩
+  ⟨a ||| b⟩
 
-/-- AN2-E / H-12: The intermediate value in `ofUInt64Pair` is always
-    `< 2^64`, so the resulting badge is `valid` by construction — no
-    truncation occurs. -/
-theorem ofUInt64Pair_valid (a b : UInt64) : (ofUInt64Pair a b).valid := by
-  unfold ofUInt64Pair valid machineWordMax machineWordBits
-  exact (a ||| b).toNat_lt
+/-- AN2-E / H-12: `ofUInt64Pair` is valid by construction — no truncation
+    occurs. -/
+theorem ofUInt64Pair_valid (a b : UInt64) : (ofUInt64Pair a b).valid := valid_of_word _
 
-/-- AN2-E / H-12: `ofUInt64Pair` is commutative — matches the commutative
-    `Badge.bor` (pre-AN2-E `Nat`-level OR) on `UInt64`-bounded inputs. -/
+/-- AN2-E / H-12: `ofUInt64Pair` is commutative. -/
 theorem ofUInt64Pair_comm (a b : UInt64) :
     ofUInt64Pair a b = ofUInt64Pair b a := by
   unfold ofUInt64Pair
-  congr 1
-  simp [UInt64.or_comm]
+  rw [UInt64.or_comm]
 
 /-- AN2-E / H-12: `ofUInt64Pair` with a zero argument projects the other
     argument's `toNat` directly. -/
 theorem ofUInt64Pair_zero_right (a : UInt64) :
     (ofUInt64Pair a 0).toNat = a.toNat := by
-  unfold ofUInt64Pair toNat
+  unfold ofUInt64Pair toNat val
   simp
 
 instance : ToString Badge where
@@ -1711,18 +1715,16 @@ theorem Slot.ext {a b : Slot} (h : a.val = b.val) : a = b := by
 
 /-- R6-B: Badge.ofNatMasked roundtrip — construct then project (mod). -/
 theorem Badge.toNat_ofNatMasked (n : Nat) :
-    (Badge.ofNatMasked n).toNat = n % machineWordMax := rfl
+    (Badge.ofNatMasked n).toNat = n % machineWordMax := Badge.ofNatMasked_val n
 /-- R6-B: Badge.ofNatMasked of a valid badge is identity. -/
-theorem Badge.ofNatMasked_toNat (b : Badge) (h : b.valid) :
+theorem Badge.ofNatMasked_toNat (b : Badge) (_h : b.valid) :
     Badge.ofNatMasked b.toNat = b := by
-  unfold Badge.ofNatMasked Badge.toNat Badge.valid machineWordMax machineWordBits at *
-  exact congrArg Badge.mk (Nat.mod_eq_of_lt h)
+  rw [Badge.toNat, Badge.val, ← Badge.ofWord_eq_ofNatMasked]; rfl
 /-- WS-H14d: Badge injectivity (val-level). -/
 theorem Badge.val_injective {a b : Badge} (h : a.val = b.val) : a = b := by
-  cases a; cases b; simp_all
+  cases a; cases b; simp only [Badge.val] at h; rw [UInt64.toNat_inj.mp h]
 /-- WS-H14d: Badge extensionality. -/
-theorem Badge.ext {a b : Badge} (h : a.val = b.val) : a = b := by
-  cases a; cases b; simp_all
+theorem Badge.ext {a b : Badge} (h : a.val = b.val) : a = b := Badge.val_injective h
 
 /-- WS-H14d: ASID roundtrip — construct then project. -/
 theorem ASID.toNat_ofNat (n : Nat) : (ASID.ofNat n).toNat = n := rfl
