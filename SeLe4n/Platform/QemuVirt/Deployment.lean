@@ -25,6 +25,9 @@ the root task holding one untyped over all the RAM outside the kernel's extent.
 | root task VSpace (ASID 1, pool page 0) | `4` | boot |
 | interrupt notification (every SPI signals it) | `5` | boot |
 | untyped over `[0x5000_0000, 0x8000_0000)` | `6` | boot |
+| exerciser partner TCB (`.Inactive` until resumed) | `7` | boot |
+| exerciser endpoint | `8` | boot |
+| exerciser reply object | `9` | boot |
 | untrusted initial TCB (the upper witness, pinned to core 1) | `0x10_0000` | untrusted |
 | its CNode | `0x10_0001` | untrusted |
 | its VSpace (ASID 2, pool page 1) | `0x10_0002` | untrusted |
@@ -57,6 +60,18 @@ def qemuVirtRootTaskVSpaceId : SeLe4n.ObjId := ⟨4⟩
 def qemuVirtInterruptNotificationId : SeLe4n.ObjId := ⟨5⟩
 /-- The root task's untyped over the RAM outside the kernel's extent. -/
 def qemuVirtRootTaskUntypedId : SeLe4n.ObjId := ⟨6⟩
+/-- **WS-ZA ZA4.1**: a second boot-domain thread for the allocation exerciser.
+    The root task cannot make a thread, an endpoint or a reply object itself
+    (untyped retype carves frames, page tables, untypeds and address spaces
+    only), so the scenarios that need a partner — a send that finds a receiver
+    waiting, a call answered by a reply, a wait woken by a signal — have their
+    objects configured here.  The thread shares the root task's CSpace and
+    address space and stays `.Inactive` until the exerciser resumes it. -/
+def qemuVirtPartnerTcbId : SeLe4n.ObjId := ⟨7⟩
+/-- The endpoint the partner scenarios rendezvous on. -/
+def qemuVirtExerciserEndpointId : SeLe4n.ObjId := ⟨8⟩
+/-- The reply object a call's receiver answers through. -/
+def qemuVirtExerciserReplyId : SeLe4n.ObjId := ⟨9⟩
 /-- The untrusted domain's initial TCB — the upper separation witness. -/
 def qemuVirtUntrustedTcbId : SeLe4n.ObjId := ⟨qemuVirtUpperDomainBase⟩
 /-- Its CNode. -/
@@ -89,14 +104,19 @@ theorem qemuVirtRootTaskUntyped_region :
       qemuVirtBootRamExtensions := rfl
 
 /-- The root task's CNode: its own TCB, CNode and VSpace, the interrupt
-    notification and the untyped. -/
+    notification, the untyped, and the allocation exerciser's partner thread,
+    endpoint and reply object (slot 9 is left free for the reply capability
+    the exerciser mints from slot 8). -/
 def qemuVirtRootTaskCNode : CNode :=
   rpi5InitialCNode
     [ (SeLe4n.Slot.ofNat 1, rpi5InitialCap qemuVirtRootTaskTcbId [.read, .write, .grant, .grantReply])
     , (SeLe4n.Slot.ofNat 2, rpi5InitialCap qemuVirtRootTaskCNodeId [.read, .write, .grant, .grantReply])
     , (SeLe4n.Slot.ofNat 3, rpi5InitialCap qemuVirtRootTaskVSpaceId [.read, .write])
     , (SeLe4n.Slot.ofNat 4, rpi5InitialCap qemuVirtInterruptNotificationId [.read, .write])
-    , (SeLe4n.Slot.ofNat 5, rpi5InitialCap qemuVirtRootTaskUntypedId [.read, .write, .retype]) ]
+    , (SeLe4n.Slot.ofNat 5, rpi5InitialCap qemuVirtRootTaskUntypedId [.read, .write, .retype])
+    , (SeLe4n.Slot.ofNat 6, rpi5InitialCap qemuVirtPartnerTcbId [.read, .write, .grant, .grantReply])
+    , (SeLe4n.Slot.ofNat 7, rpi5InitialCap qemuVirtExerciserEndpointId [.read, .write, .grant, .grantReply])
+    , (SeLe4n.Slot.ofNat 8, rpi5InitialCap qemuVirtExerciserReplyId [.read, .write, .grant]) ]
 
 /-- The untrusted thread's CNode: its own objects and nothing of the boot
     domain's. -/
@@ -134,6 +154,16 @@ private def notificationEntry (id : SeLe4n.ObjId) : ObjectEntry :=
     hSlots := fun _ h => nomatch h
     hMappings := fun _ h => nomatch h }
 
+private def endpointEntry (id : SeLe4n.ObjId) : ObjectEntry :=
+  { id := id, obj := .endpoint {}
+    hSlots := fun _ h => nomatch h
+    hMappings := fun _ h => nomatch h }
+
+private def replyEntry (id : SeLe4n.ObjId) : ObjectEntry :=
+  { id := id, obj := .reply (SeLe4n.Kernel.Reply.empty (SeLe4n.ReplyId.ofObjId id))
+    hSlots := fun _ h => nomatch h
+    hMappings := fun _ h => nomatch h }
+
 /-- The deployment's initial objects. -/
 def qemuVirtInitialObjects : List ObjectEntry :=
   [ tcbEntry qemuVirtRootTaskTcbId
@@ -142,6 +172,10 @@ def qemuVirtInitialObjects : List ObjectEntry :=
   , vspaceEntry qemuVirtRootTaskVSpaceId (SeLe4n.ASID.ofNat 1) 0
   , notificationEntry qemuVirtInterruptNotificationId
   , untypedEntry qemuVirtRootTaskUntypedId qemuVirtRootTaskUntyped
+  , tcbEntry qemuVirtPartnerTcbId
+      (rpi5InitialThread qemuVirtPartnerTcbId qemuVirtRootTaskCNodeId qemuVirtRootTaskVSpaceId)
+  , endpointEntry qemuVirtExerciserEndpointId
+  , replyEntry qemuVirtExerciserReplyId
   , tcbEntry qemuVirtUntrustedTcbId qemuVirtUntrustedThread
   , cnodeEntry qemuVirtUntrustedCNodeId qemuVirtUntrustedCNode
   , vspaceEntry qemuVirtUntrustedVSpaceId (SeLe4n.ASID.ofNat 2) 1 ]

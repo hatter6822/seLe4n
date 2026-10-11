@@ -206,20 +206,23 @@ for driver in drivers:
     elif driver == "heap-allocations-per-syscall":
         # WS-CV CV0.1, WS-ZA ZA4.1: the numbers are evidence, read by review;
         # the gate holds only that each round trip's steady reading happened
-        # on the boot core, once, after a returned frame, and is a delta.
+        # on the boot core, once, after the round trip returned a frame or
+        # blocked as it should, and is a delta.
         readings = matches(r"\[smp-test\] heap-allocations-per-syscall: ([a-z-]+): core 0: before=(\d+) after=(\d+) delta=(\d+)")
-        returned = matches(r"\[smp-test\] heap-allocations-per-syscall: ([a-z-]+): core 0: returned x0=0x[0-9a-f]+ x1=0x[0-9a-f]+")
+        returned = matches(r"\[smp-test\] heap-allocations-per-syscall: ([a-z-]+): core 0: (?:returned x0=0x[0-9a-f]+ x1=0x[0-9a-f]+|blocked, the other thread restored)$")
         names = [m.group(1) for m in readings]
         # The scenario set is pinned: a round trip renamed or dropped from
-        # `ROUND_TRIPS` (smp_exercisers.rs) must change this pin too, so the
+        # `ROUND_TRIPS` or `PARTNER_SCENARIOS` (smp_exercisers.rs) must change this pin too, so the
         # evidence cannot disappear while the gate stays green.
-        expected = {"signal", "signal-wide-badge", "wait-pending"}
+        expected = {"signal", "signal-wide-badge", "wait-pending",
+                    "receive-blocks", "send-to-receiver", "wait-blocks", "signal-to-waiter",
+                    "receive-for-call", "call", "reply"}
         observed = set(names) | {m.group(1) for m in returned}
         if observed != expected:
             failures.append(f"heap-allocations-per-syscall: scenarios {sorted(observed)} are not the pinned set {sorted(expected)}")
         for name in sorted(observed | expected):
             if names.count(name) != 1 or [m.group(1) for m in returned].count(name) != 1:
-                failures.append(f"heap-allocations-per-syscall: {name}: expected one reading and one returned frame on core 0")
+                failures.append(f"heap-allocations-per-syscall: {name}: expected one reading and one returned or blocked round trip on core 0")
         for m in readings:
             before, after, delta = (int(g) for g in m.groups()[1:])
             if after < before or delta != after - before:
