@@ -326,7 +326,7 @@ private def untypedEntry (id : SeLe4n.ObjId) (ut : UntypedObject) : ObjectEntry 
 private def notificationEntry (id : SeLe4n.ObjId) : ObjectEntry :=
   { id := id
     obj := .notification
-      { state := .idle, waitingThreads := SeLe4n.NoDupList.empty, pendingBadge := none }
+      { state := .idle, waitingThreads := SeLe4n.NoDupList.empty, hasPendingBadge := false, pendingWord := SeLe4n.Badge.zero }
     hSlots := fun _ h => nomatch h
     hMappings := fun _ h => nomatch h }
 

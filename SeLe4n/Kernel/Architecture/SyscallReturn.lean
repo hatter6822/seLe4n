@@ -530,7 +530,7 @@ staging site, so the synthesis cannot drift between sites.
 installed by this delivery's transfer, `0` for paths that run none. -/
 def returnFrameOfMessage (msg : IpcMessage) (installedCaps overflow : Nat) :
     SyscallReturnFrame :=
-  { x0 := ((msg.badge.map Badge.val).getD 0).toUInt64
+  { x0 := (msg.badge.map Badge.word).getD 0
     x1 := (returnMessageInfo msg installedCaps overflow).encode.toUInt64
     x2 := ((msg.registers[0]?.map RegValue.val).getD 0).toUInt64
     x3 := ((msg.registers[1]?.map RegValue.val).getD 0).toUInt64
@@ -540,7 +540,7 @@ def returnFrameOfMessage (msg : IpcMessage) (installedCaps overflow : Nat) :
 /-- A badge-only frame — `.notificationWait`'s shape: the badge in `x0`,
 success `MessageInfo` (all-zero word) in `x1`, no message registers. -/
 def returnFrameOfBadge (b : Badge) : SyscallReturnFrame :=
-  { x0 := b.val.toUInt64 }
+  { x0 := b.word }
 
 -- ============================================================================
 -- §4b  Staging a frame into a register context (RA.B.1's pure core)

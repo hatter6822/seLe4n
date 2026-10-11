@@ -63,7 +63,7 @@ def probeBaseState (threadCount : Nat) : SystemState :=
   let allEntries :=
     (probeEndpointId, KernelObject.endpoint {}) ::
     (probeNotificationId, KernelObject.notification {
-      state := .idle, waitingThreads := SeLe4n.NoDupList.empty, pendingBadge := none }) ::
+      state := .idle, waitingThreads := SeLe4n.NoDupList.empty, hasPendingBadge := false, pendingWord := SeLe4n.Badge.zero }) ::
     (probeCNodeId, cnodeObj) ::
     threadEntries
   let runnableThreads : List SeLe4n.ThreadId :=

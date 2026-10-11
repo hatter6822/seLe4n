@@ -121,7 +121,7 @@ def bootstrapState : SystemState :=
     |>.withObject ⟨11⟩ (.cnode (CNode.mk' 3 0 0 3))
     |>.withObject ⟨20⟩ (.vspaceRoot { asid := ⟨1⟩, mappings := {} })
     |>.withObject demoEndpoint (.endpoint {})
-    |>.withObject demoNotification (.notification { state := .idle, waitingThreads := SeLe4n.NoDupList.empty, pendingBadge := none })
+    |>.withObject demoNotification (.notification { state := .idle, waitingThreads := SeLe4n.NoDupList.empty, hasPendingBadge := false, pendingWord := SeLe4n.Badge.zero })
     |>.withObject demoUntyped (.untyped {
       regionBase := (SeLe4n.PAddr.ofNat 0x100000)
       regionSize := 16384
@@ -2124,7 +2124,7 @@ private def runEndpointLifecycleTrace (counter : IO.Ref Nat) (st1 : SystemState)
           -- B2: Delete endpoint via lifecycleRetypeObject (direct retype)
           -- Retype endpoint to a fresh notification (effectively deleting it)
           let newObj : KernelObject := .notification {
-            state := .idle, waitingThreads := SeLe4n.NoDupList.empty, pendingBadge := none }
+            state := .idle, waitingThreads := SeLe4n.NoDupList.empty, hasPendingBadge := false, pendingWord := SeLe4n.Badge.zero }
           match SeLe4n.Kernel.Internal.lifecycleRetypeObject lcAuthSlot lcEpId newObj stBlk2 with
           | .error err =>
               IO.println s!"[ELC-002] lifecycle retype-delete error: {reprStr err}"
@@ -3354,7 +3354,7 @@ private def buildParameterizedTopology
   -- Add an idle endpoint and an idle notification for IPC invariant coverage.
   let ipcObjects : List (SeLe4n.ObjId × KernelObject) :=
     [ (⟨4000⟩, .endpoint {})
-    , (⟨4001⟩, .notification { state := .idle, waitingThreads := SeLe4n.NoDupList.empty, pendingBadge := none })
+    , (⟨4001⟩, .notification { state := .idle, waitingThreads := SeLe4n.NoDupList.empty, hasPendingBadge := false, pendingWord := SeLe4n.Badge.zero })
     ]
   let allObjects := threads ++ [(⟨2000⟩, cnodeObj)] ++ vspaceRoots ++ ipcObjects
   let runnableThreads : List SeLe4n.ThreadId :=

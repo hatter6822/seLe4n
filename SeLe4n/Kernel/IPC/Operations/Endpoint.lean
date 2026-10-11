@@ -8124,7 +8124,7 @@ def notificationSignal (notificationId : SeLe4n.ObjId) (badge : SeLe4n.Badge) : 
             let ntfn' : Notification := {
               state := nextState
               waitingThreads := rest
-              pendingBadge := none
+              hasPendingBadge := false, pendingWord := SeLe4n.Badge.zero
               boundTCB := ntfn.boundTCB
             }
             match storeObject notificationId (.notification ntfn') st with
@@ -8157,7 +8157,7 @@ def notificationSignal (notificationId : SeLe4n.ObjId) (badge : SeLe4n.Badge) : 
             let ntfn' : Notification := {
               state := .active
               waitingThreads := SeLe4n.NoDupList.empty
-              pendingBadge := some mergedBadge
+              hasPendingBadge := true, pendingWord := mergedBadge
               boundTCB := ntfn.boundTCB
             }
             storeObject notificationId (.notification ntfn') st
@@ -8188,7 +8188,7 @@ def notificationWait
         match ntfn.pendingBadge with
         | some badge =>
             let ntfn' : Notification :=
-              { state := .idle, waitingThreads := SeLe4n.NoDupList.empty, pendingBadge := none,
+              { state := .idle, waitingThreads := SeLe4n.NoDupList.empty, hasPendingBadge := false, pendingWord := SeLe4n.Badge.zero,
                 boundTCB := ntfn.boundTCB }
             match storeObject notificationId (.notification ntfn') st with
             | .error e => .error e
@@ -8222,7 +8222,7 @@ def notificationWait
                       let ntfn' : Notification := {
                         state := .waiting
                         waitingThreads := wt'
-                        pendingBadge := none
+                        hasPendingBadge := false, pendingWord := SeLe4n.Badge.zero
                         boundTCB := ntfn.boundTCB
                       }
                       match storeObject notificationId (.notification ntfn') st with
@@ -8626,7 +8626,7 @@ theorem notificationWait_badge_path_notification
       | some b =>
         simp only [hBadge] at hStep
         let newNtfn : Notification :=
-          { state := .idle, waitingThreads := SeLe4n.NoDupList.empty, pendingBadge := none,
+          { state := .idle, waitingThreads := SeLe4n.NoDupList.empty, hasPendingBadge := false, pendingWord := SeLe4n.Badge.zero,
             boundTCB := ntfn.boundTCB }
         revert hStep
         cases hStore : storeObject notifId (.notification newNtfn) st with
@@ -8683,7 +8683,7 @@ theorem notificationWait_wait_path_notification
         revert hStep
         cases hStore : storeObject notifId (.notification
             { state := .idle, waitingThreads := SeLe4n.NoDupList.empty,
-              pendingBadge := none, boundTCB := ntfn.boundTCB }) st with
+              hasPendingBadge := false, pendingWord := SeLe4n.Badge.zero, boundTCB := ntfn.boundTCB }) st with
         | error e => simp
         | ok pair =>
           simp only []
@@ -8717,7 +8717,7 @@ theorem notificationWait_wait_path_notification
                 ((SeLe4n.NoDupList.consWithGuard?_eq_some_iff waiter
                   ntfn.waitingThreads wt').mp hCons).2
               let ntfn' : Notification :=
-                { state := .waiting, waitingThreads := wt', pendingBadge := none,
+                { state := .waiting, waitingThreads := wt', hasPendingBadge := false, pendingWord := SeLe4n.Badge.zero,
                   boundTCB := ntfn.boundTCB }
               revert hStep
               cases hStore : storeObject notifId (.notification ntfn') st with

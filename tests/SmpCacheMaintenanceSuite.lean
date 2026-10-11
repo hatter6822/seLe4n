@@ -666,7 +666,7 @@ private def runLiveRetypeChecks : IO Unit := do
     match SeLe4n.Kernel.lifecycleRetypeDirectWithCleanupShootdownPerCoreIcache
         core0 epCap retypeEp
         (.notification { state := .idle, waitingThreads := SeLe4n.NoDupList.empty,
-                         pendingBadge := none })  -- WS-BP BP7.1: an in-place retype never mints `.untyped`
+                         hasPendingBadge := false, pendingWord := SeLe4n.Badge.zero })  -- WS-BP BP7.1: an in-place retype never mints `.untyped`
         stEp with
     | .error e => assertBool s!"the live retype seam commits (got {repr e})" false
     | .ok ((), stPost) => do

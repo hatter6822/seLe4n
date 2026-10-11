@@ -380,7 +380,7 @@ def frozenNotificationSignal (notificationId : SeLe4n.ObjId)
         | some (waiter, rest) =>
             let nextState : NotificationState := if rest.val.isEmpty then .idle else .waiting
             let ntfn' : Notification := {
-              state := nextState, waitingThreads := rest, pendingBadge := none,
+              state := nextState, waitingThreads := rest, hasPendingBadge := false, pendingWord := SeLe4n.Badge.zero,
               boundTCB := ntfn.boundTCB }
             match frozenWithObjectStored st notificationId (.notification ntfn') with
             | .ok st' =>
@@ -423,7 +423,7 @@ def frozenNotificationSignal (notificationId : SeLe4n.ObjId)
               | none => SeLe4n.Badge.ofNatMasked badge.toNat
             let ntfn' : Notification := {
               state := .active, waitingThreads := SeLe4n.NoDupList.empty,
-              pendingBadge := some mergedBadge, boundTCB := ntfn.boundTCB }
+              hasPendingBadge := true, pendingWord := mergedBadge, boundTCB := ntfn.boundTCB }
             match frozenWithObjectStored st notificationId (.notification ntfn') with
             | .ok stored =>
                 -- Stored on the notification: it now holds the badge, so it
@@ -449,7 +449,7 @@ def frozenNotificationWait (notificationId : SeLe4n.ObjId)
         | some badge =>
             let ntfn' : Notification :=
               { state := .idle, waitingThreads := SeLe4n.NoDupList.empty,
-                pendingBadge := none, boundTCB := ntfn.boundTCB }
+                hasPendingBadge := false, pendingWord := SeLe4n.Badge.zero, boundTCB := ntfn.boundTCB }
             match frozenWithObjectStored st notificationId (.notification ntfn') with
             | .ok st' =>
                 -- **No enqueue here** (PR #873 round 17).  The waiter on this
@@ -486,7 +486,7 @@ def frozenNotificationWait (notificationId : SeLe4n.ObjId)
                       let ntfn' : Notification := {
                         state := .waiting
                         waitingThreads := wt'
-                        pendingBadge := none
+                        hasPendingBadge := false, pendingWord := SeLe4n.Badge.zero
                         boundTCB := ntfn.boundTCB }
                       match frozenWithObjectStored st notificationId (.notification ntfn') with
                       | .ok st' =>

@@ -182,7 +182,7 @@ theorem storeObject_endpoint_preserves_badgeWellFormed
            st st' oid _ hCap hObjInv hStore (fun cn h => by cases h)⟩
 
 /-- WS-F5/D1d: `notificationSignal` preserves `badgeWellFormed`.
-Wake path: stores `pendingBadge := none`. Merge path: stores `Badge.bor` or
+Wake path: stores `hasPendingBadge := false, pendingWord := SeLe4n.Badge.zero`. Merge path: stores `Badge.bor` or
 `Badge.ofNatMasked` — both word-bounded. -/
 theorem notificationSignal_preserves_badgeWellFormed
     (st st' : SystemState) (notificationId : SeLe4n.ObjId) (badge : SeLe4n.Badge)
@@ -225,7 +225,7 @@ theorem notificationSignal_preserves_badgeWellFormed
         exact ⟨storeObject_notification_preserves_notificationBadgesWellFormed
                  st st' notificationId _ hNtfn hObjInv hStep
                  (fun b hb => by
-                   simp only [Option.some.injEq] at hb; subst hb
+                   simp only [Notification.pendingBadge_mk_true, Option.some.injEq] at hb; subst hb
                    cases hPending : ntfnSrc.pendingBadge with
                    | some existing => exact SeLe4n.Badge.bor_valid existing badge
                    | none => exact SeLe4n.Badge.ofNatMasked_valid badge.toNat),
@@ -234,7 +234,7 @@ theorem notificationSignal_preserves_badgeWellFormed
     | _ => simp [hObjSrc] at hStep
 
 /-- WS-F5/D1d: `notificationWait` preserves `badgeWellFormed`.
-Consume path: stores `pendingBadge := none`. Block path: stores notification
+Consume path: stores `hasPendingBadge := false, pendingWord := SeLe4n.Badge.zero`. Block path: stores notification
 with waiter prepended (badges unchanged). -/
 theorem notificationWait_preserves_badgeWellFormed
     (st st' : SystemState) (notificationId : SeLe4n.ObjId) (waiter : SeLe4n.ThreadId)
@@ -438,7 +438,7 @@ theorem notificationSignal_preserves_notificationWaiterConsistent
         revert hStep
         cases hStore : storeObject notificationId
             (.notification { state := if rest.val.isEmpty then .idle else .waiting,
-                             waitingThreads := rest, pendingBadge := none, boundTCB := ntfn.boundTCB }) st with
+                             waitingThreads := rest, hasPendingBadge := false, pendingWord := SeLe4n.Badge.zero, boundTCB := ntfn.boundTCB }) st with
         | error e => simp
         | ok pair =>
           simp only []
@@ -446,7 +446,7 @@ theorem notificationSignal_preserves_notificationWaiterConsistent
           have hConsist1 := storeObject_notification_preserves_notificationWaiterConsistent
             st pair.2 notificationId ntfn
             { state := if rest.val.isEmpty then .idle else .waiting,
-              waitingThreads := rest, pendingBadge := none, boundTCB := ntfn.boundTCB }
+              waitingThreads := rest, hasPendingBadge := false, pendingWord := SeLe4n.Badge.zero, boundTCB := ntfn.boundTCB }
             hConsist hObjInv hObj hStore
             (fun tid hMem => by
               show tid ∈ ntfn.waitingThreads.val
@@ -496,7 +496,7 @@ theorem notificationSignal_preserves_notificationWaiterConsistent
         exact storeObject_notification_preserves_notificationWaiterConsistent
           st st' notificationId ntfn
           { state := .active, waitingThreads := SeLe4n.NoDupList.empty,
-            pendingBadge := some (match ntfn.pendingBadge with
+            hasPendingBadge := true, pendingWord := (match ntfn.pendingBadge with
               | some existing => SeLe4n.Badge.bor existing badge
               | none => SeLe4n.Badge.ofNatMasked badge.toNat), boundTCB := ntfn.boundTCB }
           hConsist hObjInv hObj hStep

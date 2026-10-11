@@ -83,7 +83,7 @@ def notificationSignalOnCore (notificationId : SeLe4n.ObjId) (badge : SeLe4n.Bad
           let ntfn' : Notification := {
             state := nextState
             waitingThreads := rest
-            pendingBadge := none
+            hasPendingBadge := false, pendingWord := SeLe4n.Badge.zero
             boundTCB := ntfn.boundTCB
           }
           match storeObject notificationId (.notification ntfn') st with
@@ -106,7 +106,7 @@ def notificationSignalOnCore (notificationId : SeLe4n.ObjId) (badge : SeLe4n.Bad
           let ntfn' : Notification := {
             state := .active
             waitingThreads := SeLe4n.NoDupList.empty
-            pendingBadge := some mergedBadge
+            hasPendingBadge := true, pendingWord := mergedBadge
             boundTCB := ntfn.boundTCB
           }
           match storeObject notificationId (.notification ntfn') st with
@@ -124,23 +124,16 @@ def notificationSignalOnCore (notificationId : SeLe4n.ObjId) (badge : SeLe4n.Bad
 
 /-- WS-ZA ZA1.6: a signal with no waiter, as an update of the notification's
 cell: the badge merged into the pending one, the state `.active`, the queue
-empty.  `RHTable.modify` hands it the cell exclusively, so the notification and
-its `some` badge cell are rewritten where they are. -/
+empty.  `RHTable.modify` hands it the cell exclusively, and the pending flag and
+word are scalar fields of the notification, so one constructor rewrites the
+cell where it is and nothing is allocated. -/
 @[inline] def signalPendingObject (badge : SeLe4n.Badge) : KernelObject → KernelObject
   | .notification n =>
-      -- One constructor per branch, so the pending badge's `some` is rebuilt
-      -- from the one it replaces.
-      match n.pendingBadge with
-      | some existing =>
-          .notification { n with
-            state := .active
-            waitingThreads := SeLe4n.NoDupList.empty
-            pendingBadge := some (SeLe4n.Badge.bor existing badge) }
-      | none =>
-          .notification { n with
-            state := .active
-            waitingThreads := SeLe4n.NoDupList.empty
-            pendingBadge := some (SeLe4n.Badge.ofNatMasked badge.toNat) }
+      .notification { n with
+        state := .active
+        waitingThreads := SeLe4n.NoDupList.empty
+        hasPendingBadge := true
+        pendingWord := if n.hasPendingBadge then SeLe4n.Badge.bor n.pendingWord badge else badge }
   | o => o
 
 /-- The pending-badge write, `st.modifyObject notificationId (signalPendingObject
@@ -167,7 +160,7 @@ specification's; its refusal after the notification store is ZA2.3's. -/
           let ntfn' : Notification := {
             state := nextState
             waitingThreads := rest
-            pendingBadge := none
+            hasPendingBadge := false, pendingWord := SeLe4n.Badge.zero
             boundTCB := ntfn.boundTCB
           }
           match storeObject notificationId (.notification ntfn') st with
@@ -191,7 +184,7 @@ specification's; its refusal after the notification store is ZA2.3's. -/
           (st.withObjectStored notificationId (.notification {
               state := .active
               waitingThreads := SeLe4n.NoDupList.empty
-              pendingBadge := some mergedBadge
+              hasPendingBadge := true, pendingWord := mergedBadge
               boundTCB := ntfn.boundTCB }), .ok none)
   | none =>
       if (st.getObject? notificationId).isSome then (st, .error .invalidCapability)
@@ -209,7 +202,9 @@ specification's; its refusal after the notification store is ZA2.3's. -/
       · rw [if_pos hL, storeSignalPending, SystemState.modifyObject,
           SeLe4n.Kernel.RobinHood.RHTable.modify_of_get? ((SystemState.getNotification?_eq_some_iff _ _ _).mp hN)]
         simp only [storeObject_eq_impl, storeObjectImpl, KernelObject.objectType, hL, ↓reduceIte]
-        cases hp : ntfn.pendingBadge <;> simp only [signalPendingObject, hp]
+        cases hp : ntfn.hasPendingBadge <;>
+          simp only [signalPendingObject, Notification.pendingBadge, hp, ↓reduceIte,
+            Bool.false_eq_true, SeLe4n.Badge.ofNatMasked_toNat badge (SeLe4n.Badge.valid_of_word badge)]
       · rw [if_neg hL]
         simp only [SystemState.storeObject_eq_withObjectStored]
   · rfl
@@ -234,7 +229,7 @@ def notificationWaitOnCore (notificationId : SeLe4n.ObjId) (waiter : SeLe4n.Thre
       match ntfn.pendingBadge with
       | some badge =>
           let ntfn' : Notification :=
-            { state := .idle, waitingThreads := SeLe4n.NoDupList.empty, pendingBadge := none, boundTCB := ntfn.boundTCB }
+            { state := .idle, waitingThreads := SeLe4n.NoDupList.empty, hasPendingBadge := false, pendingWord := SeLe4n.Badge.zero, boundTCB := ntfn.boundTCB }
           match storeObject notificationId (.notification ntfn') st with
           | .error e => (st, .error e)
           | .ok ((), st') =>
@@ -254,7 +249,7 @@ def notificationWaitOnCore (notificationId : SeLe4n.ObjId) (waiter : SeLe4n.Thre
                     let ntfn' : Notification := {
                       state := .waiting
                       waitingThreads := wt'
-                      pendingBadge := none
+                      hasPendingBadge := false, pendingWord := SeLe4n.Badge.zero
                       boundTCB := ntfn.boundTCB
                     }
                     match storeObject notificationId (.notification ntfn') st with
@@ -285,7 +280,7 @@ of the notification's cell: idle, no waiters, no badge.  One constructor, so
 @[inline] def waitConsumedObject : KernelObject → KernelObject
   | .notification n =>
       .notification { n with
-        state := .idle, waitingThreads := SeLe4n.NoDupList.empty, pendingBadge := none }
+        state := .idle, waitingThreads := SeLe4n.NoDupList.empty, hasPendingBadge := false, pendingWord := SeLe4n.Badge.zero }
   | o => o
 
 /-- WS-ZA ZA4: the badge-consume path's two writes, each made in its slot: the
@@ -326,7 +321,7 @@ def notificationWaitOnCoreImpl (notificationId : SeLe4n.ObjId) (waiter : SeLe4n.
             (storeWaitConsumed st notificationId waiter, .ok (some badge))
           else
           let ntfn' : Notification :=
-            { state := .idle, waitingThreads := SeLe4n.NoDupList.empty, pendingBadge := none, boundTCB := ntfn.boundTCB }
+            { state := .idle, waitingThreads := SeLe4n.NoDupList.empty, hasPendingBadge := false, pendingWord := SeLe4n.Badge.zero, boundTCB := ntfn.boundTCB }
           match storeObject notificationId (.notification ntfn') st with
           | .error e => (st, .error e)
           | .ok ((), st') =>
@@ -346,7 +341,7 @@ def notificationWaitOnCoreImpl (notificationId : SeLe4n.ObjId) (waiter : SeLe4n.
                     let ntfn' : Notification := {
                       state := .waiting
                       waitingThreads := wt'
-                      pendingBadge := none
+                      hasPendingBadge := false, pendingWord := SeLe4n.Badge.zero
                       boundTCB := ntfn.boundTCB
                     }
                     match storeObject notificationId (.notification ntfn') st with
@@ -366,7 +361,7 @@ theorem notificationWaitOnCore_consume_eq (notificationId : SeLe4n.ObjId)
     (hN : st.getNotification? notificationId = some ntfn)
     (hG : waitConsumesInPlace st notificationId waiter = true) :
     (match storeObject notificationId (.notification
-        { state := .idle, waitingThreads := SeLe4n.NoDupList.empty, pendingBadge := none,
+        { state := .idle, waitingThreads := SeLe4n.NoDupList.empty, hasPendingBadge := false, pendingWord := SeLe4n.Badge.zero,
           boundTCB := ntfn.boundTCB }) st with
       | .error _ => none
       | .ok ((), st') =>
@@ -384,13 +379,13 @@ theorem notificationWaitOnCore_consume_eq (notificationId : SeLe4n.ObjId)
   rw [storeObject_eq_of_leaves (by simpa only [KernelObject.objectType] using hLeaveN)]
   simp only []
   have hT1 : (st.objects.insert notificationId (.notification
-      { state := .idle, waitingThreads := SeLe4n.NoDupList.empty, pendingBadge := none,
+      { state := .idle, waitingThreads := SeLe4n.NoDupList.empty, hasPendingBadge := false, pendingWord := SeLe4n.Badge.zero,
         boundTCB := ntfn.boundTCB }))[waiter.toObjId]? = some (.tcb tcb) := by
     show SeLe4n.Kernel.RobinHood.RHTable.get? _ _ = _
     rw [SeLe4n.Kernel.RobinHood.RHTable.get?_insert_ne_of_findsInPlace _ _ hIn hNe]
     exact hT
   have hLook : lookupTcb { st with objects := st.objects.insert notificationId (.notification
-      { state := .idle, waitingThreads := SeLe4n.NoDupList.empty, pendingBadge := none,
+      { state := .idle, waitingThreads := SeLe4n.NoDupList.empty, hasPendingBadge := false, pendingWord := SeLe4n.Badge.zero,
         boundTCB := ntfn.boundTCB }) } waiter = some tcb := by
     simp only [lookupTcb, hRes, Bool.false_eq_true, ↓reduceIte]
     exact (SystemState.getTcb?_eq_some_iff _ _ _).mpr hT1
@@ -715,7 +710,7 @@ theorem notificationSignalOnCore_waiter_eq
     (hWaiters : ntfn.waitingThreads.tail? = some (waiter, rest))
     (hStore : storeObject notificationId (.notification
         { state := if rest.val.isEmpty then .idle else .waiting,
-          waitingThreads := rest, pendingBadge := none, boundTCB := ntfn.boundTCB }) st = .ok ((), st'))
+          waitingThreads := rest, hasPendingBadge := false, pendingWord := SeLe4n.Badge.zero, boundTCB := ntfn.boundTCB }) st = .ok ((), st'))
     (hMsg : storeTcbIpcStateAndMessage st' waiter .ready
         (some { IpcMessage.empty with badge := some badge }) = .ok st'') :
     notificationSignalOnCore notificationId badge executingCore st
@@ -736,7 +731,7 @@ theorem notificationSignalOnCore_noWaiter_eq
     (hWaiters : ntfn.waitingThreads.tail? = none)
     (hStore : storeObject notificationId (.notification
         { state := .active, waitingThreads := SeLe4n.NoDupList.empty,
-          pendingBadge := some (match ntfn.pendingBadge with
+          hasPendingBadge := true, pendingWord := (match ntfn.pendingBadge with
             | some existing => SeLe4n.Badge.bor existing badge
             | none => SeLe4n.Badge.ofNatMasked badge.toNat), boundTCB := ntfn.boundTCB }) st = .ok ((), st')) :
     notificationSignalOnCore notificationId badge executingCore st = (st', .ok none) := by
@@ -767,7 +762,7 @@ theorem notificationSignalOnCore_remote_wake
     (hWaiters : ntfn.waitingThreads.tail? = some (waiter, rest))
     (hStore : storeObject notificationId (.notification
         { state := if rest.val.isEmpty then .idle else .waiting,
-          waitingThreads := rest, pendingBadge := none, boundTCB := ntfn.boundTCB }) st = .ok ((), st'))
+          waitingThreads := rest, hasPendingBadge := false, pendingWord := SeLe4n.Badge.zero, boundTCB := ntfn.boundTCB }) st = .ok ((), st'))
     (hMsg : storeTcbIpcStateAndMessage st' waiter .ready
         (some { IpcMessage.empty with badge := some badge }) = .ok st'')
     (hTcb'' : st''.getTcb? waiter = some waiterTcb'')
@@ -792,7 +787,7 @@ theorem notificationSignalOnCore_no_sgi_if_local_waiter
     (hWaiters : ntfn.waitingThreads.tail? = some (waiter, rest))
     (hStore : storeObject notificationId (.notification
         { state := if rest.val.isEmpty then .idle else .waiting,
-          waitingThreads := rest, pendingBadge := none, boundTCB := ntfn.boundTCB }) st = .ok ((), st'))
+          waitingThreads := rest, hasPendingBadge := false, pendingWord := SeLe4n.Badge.zero, boundTCB := ntfn.boundTCB }) st = .ok ((), st'))
     (hMsg : storeTcbIpcStateAndMessage st' waiter .ready
         (some { IpcMessage.empty with badge := some badge }) = .ok st'')
     (hLocal : determineTargetCore st'' waiter = executingCore) :
@@ -813,7 +808,7 @@ theorem notificationSignalOnCore_noWaiter_no_sgi
     (hWaiters : ntfn.waitingThreads.tail? = none)
     (hStore : storeObject notificationId (.notification
         { state := .active, waitingThreads := SeLe4n.NoDupList.empty,
-          pendingBadge := some (match ntfn.pendingBadge with
+          hasPendingBadge := true, pendingWord := (match ntfn.pendingBadge with
             | some existing => SeLe4n.Badge.bor existing badge
             | none => SeLe4n.Badge.ofNatMasked badge.toNat), boundTCB := ntfn.boundTCB }) st = .ok ((), st')) :
     (notificationSignalOnCore notificationId badge executingCore st).2 = .ok none := by
@@ -1083,7 +1078,7 @@ theorem notificationSignalOnCore_perCore_consistent
     (hWaiters : ntfn.waitingThreads.tail? = some (waiter, rest))
     (hStore : storeObject notificationId (.notification
         { state := if rest.val.isEmpty then .idle else .waiting,
-          waitingThreads := rest, pendingBadge := none, boundTCB := ntfn.boundTCB }) st = .ok ((), st'))
+          waitingThreads := rest, hasPendingBadge := false, pendingWord := SeLe4n.Badge.zero, boundTCB := ntfn.boundTCB }) st = .ok ((), st'))
     (hMsg : storeTcbIpcStateAndMessage st' waiter .ready
         (some { IpcMessage.empty with badge := some badge }) = .ok st'')
     (hOther : determineTargetCore st'' waiter ≠ c') :
@@ -1199,7 +1194,7 @@ theorem notificationSignalOnCore_remaining_waiters
     (hWaiters : ntfn.waitingThreads.tail? = some (waiter, rest))
     (hStore : storeObject notificationId (.notification
         { state := if rest.val.isEmpty then .idle else .waiting,
-          waitingThreads := rest, pendingBadge := none, boundTCB := ntfn.boundTCB }) st = .ok ((), st'))
+          waitingThreads := rest, hasPendingBadge := false, pendingWord := SeLe4n.Badge.zero, boundTCB := ntfn.boundTCB }) st = .ok ((), st'))
     (hMsg : storeTcbIpcStateAndMessage st' waiter .ready
         (some { IpcMessage.empty with badge := some badge }) = .ok st'')
     (hObjInv : st.objects.invExt) :
@@ -1218,12 +1213,12 @@ theorem notificationSignalOnCore_remaining_waiters
     storeTcbIpcStateAndMessage_getTcb?_ipcState st' st'' waiter .ready _ hInv' hMsg
   have hNtfn' : st'.objects[notificationId]? = some (.notification
       { state := if rest.val.isEmpty then .idle else .waiting,
-        waitingThreads := rest, pendingBadge := none, boundTCB := ntfn.boundTCB }) :=
+        waitingThreads := rest, hasPendingBadge := false, pendingWord := SeLe4n.Badge.zero, boundTCB := ntfn.boundTCB }) :=
     storeObject_objects_eq st st' notificationId _ hObjInv hStore
   have hNe : notificationId ≠ waiter.toObjId :=
     notification_ne_waiter_of_store st' st'' notificationId waiter _ .ready _ hNtfn' hMsg
   refine ⟨{ state := if rest.val.isEmpty then .idle else .waiting,
-            waitingThreads := rest, pendingBadge := none, boundTCB := ntfn.boundTCB }, ?_, rfl, ?_, rfl, rfl⟩
+            waitingThreads := rest, hasPendingBadge := false, pendingWord := SeLe4n.Badge.zero, boundTCB := ntfn.boundTCB }, ?_, rfl, ?_, rfl, rfl⟩
   · rw [notificationSignalOnCore_waiter_eq notificationId badge executingCore st ntfn
           waiter rest st' st'' hObj hWaiters hStore hMsg]
     show (wakeThread st'' waiter executingCore).1.objects[notificationId]?
@@ -1280,7 +1275,7 @@ theorem notificationSignalOnCore_remote_wake_preState
     (hWaiters : ntfn.waitingThreads.tail? = some (waiter, rest))
     (hStore : storeObject notificationId (.notification
         { state := if rest.val.isEmpty then .idle else .waiting,
-          waitingThreads := rest, pendingBadge := none, boundTCB := ntfn.boundTCB }) st = .ok ((), st'))
+          waitingThreads := rest, hasPendingBadge := false, pendingWord := SeLe4n.Badge.zero, boundTCB := ntfn.boundTCB }) st = .ok ((), st'))
     (hMsg : storeTcbIpcStateAndMessage st' waiter .ready
         (some { IpcMessage.empty with badge := some badge }) = .ok st'')
     (hTcb'' : st''.getTcb? waiter = some waiterTcb'')
@@ -1340,7 +1335,7 @@ theorem notificationWaitOnCore_badge_eq
     (hObj : st.objects[notificationId]? = some (.notification ntfn))
     (hBadge : ntfn.pendingBadge = some badge)
     (hStore : storeObject notificationId (.notification
-        { state := .idle, waitingThreads := SeLe4n.NoDupList.empty, pendingBadge := none, boundTCB := ntfn.boundTCB }) st
+        { state := .idle, waitingThreads := SeLe4n.NoDupList.empty, hasPendingBadge := false, pendingWord := SeLe4n.Badge.zero, boundTCB := ntfn.boundTCB }) st
         = .ok ((), st'))
     (hTcb : storeTcbIpcState st' waiter .ready = .ok st'') :
     notificationWaitOnCore notificationId waiter executingCore st = (st'', .ok (some badge)) := by
@@ -1363,7 +1358,7 @@ theorem notificationWaitOnCore_block_eq
     (hNotWaiting : ¬ (tcb.ipcState = .blockedOnNotification notificationId))
     (hCons : ntfn.waitingThreads.consWithGuard? waiter = some wt')
     (hStore : storeObject notificationId (.notification
-        { state := .waiting, waitingThreads := wt', pendingBadge := none, boundTCB := ntfn.boundTCB }) st = .ok ((), st'))
+        { state := .waiting, waitingThreads := wt', hasPendingBadge := false, pendingWord := SeLe4n.Badge.zero, boundTCB := ntfn.boundTCB }) st = .ok ((), st'))
     (hTcb : storeTcbIpcStateAndMessage_fromTcb st' waiter tcb
         (.blockedOnNotification notificationId) none = .ok st'') :
     notificationWaitOnCore notificationId waiter executingCore st
@@ -1387,7 +1382,7 @@ theorem notificationWaitOnCore_perCore_blocking
     (hNotWaiting : ¬ (tcb.ipcState = .blockedOnNotification notificationId))
     (hCons : ntfn.waitingThreads.consWithGuard? waiter = some wt')
     (hStore : storeObject notificationId (.notification
-        { state := .waiting, waitingThreads := wt', pendingBadge := none, boundTCB := ntfn.boundTCB }) st = .ok ((), st'))
+        { state := .waiting, waitingThreads := wt', hasPendingBadge := false, pendingWord := SeLe4n.Badge.zero, boundTCB := ntfn.boundTCB }) st = .ok ((), st'))
     (hTcb : storeTcbIpcStateAndMessage_fromTcb st' waiter tcb
         (.blockedOnNotification notificationId) none = .ok st'') :
     waiter ∉ (notificationWaitOnCore notificationId waiter executingCore st).1.scheduler.runQueueOnCore executingCore ∧

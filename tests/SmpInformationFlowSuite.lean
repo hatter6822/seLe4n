@@ -4044,7 +4044,7 @@ private def lowNotification : SeLe4n.ObjId := ⟨1017⟩
 /-- The SM8.B fixture: `probeState` plus one high and one low notification, so a
 real `notificationSignal` can be run on each. -/
 private def idleNotification : Notification :=
-  { state := .idle, waitingThreads := SeLe4n.NoDupList.empty, pendingBadge := none }
+  { state := .idle, waitingThreads := SeLe4n.NoDupList.empty, hasPendingBadge := false, pendingWord := SeLe4n.Badge.zero }
 
 private def niState : SystemState :=
   { probeState with
@@ -4316,7 +4316,7 @@ private def waitingNotificationState : SystemState :=
       objects := rendezvousState.objects.insert highNotification
         (.notification { state := .waiting
                          waitingThreads := ⟨[crossCoreWaiter], by simp⟩
-                         pendingBadge := none
+                         hasPendingBadge := false, pendingWord := SeLe4n.Badge.zero
                          boundTCB := none })
       -- The victim must genuinely occupy core 2's run queue, or the composed
       -- cancellation's home-core removal is a no-op and §5.2b's negative — that
@@ -4513,7 +4513,7 @@ private def boundNotificationState : SystemState :=
           highNotification
             (.notification { state := .idle
                              waitingThreads := ⟨[], by simp⟩
-                             pendingBadge := none
+                             hasPendingBadge := false, pendingWord := SeLe4n.Badge.zero
                              boundTCB := some boundTcbThread }) }
 
 private def boundSignalPost : SystemState :=
@@ -5696,7 +5696,7 @@ private def declassTargetB : SeLe4n.ObjId := ⟨1019⟩
 
 private def declassPayload (badge : Nat) : KernelObject :=
   .notification { state := .active, waitingThreads := SeLe4n.NoDupList.empty,
-                  pendingBadge := some (SeLe4n.Badge.ofNatMasked badge) }
+                  hasPendingBadge := true, pendingWord := (SeLe4n.Badge.ofNatMasked badge) }
 
 /-- WS-SM SM9.D.13a: **the plan a `.declassify` runs.**
 
@@ -10054,7 +10054,7 @@ private def runDeclassifiedSignalDeliveryChecks : IO Unit := do
        { declassSignalState with
            objects := declassSignalState.objects.insert highNotification
              (.notification { state := .idle, waitingThreads := ⟨[], by simp⟩,
-                              pendingBadge := none, boundTCB := none }) }
+                              hasPendingBadge := false, pendingWord := SeLe4n.Badge.zero, boundTCB := none }) }
      decide (declassifiedSignalReceiver? noWaiterState highNotification = none) &&
      (match notificationSignalDeclassifiedOnCore signalDeclassContext launderingDeclPolicy
          highNotification (SeLe4n.Badge.ofNatMasked 0x5C) signalCore noWaiterState with
@@ -10332,7 +10332,7 @@ private def declassNoWaiterState : SystemState :=
   { declassSignalState with
       objects := declassSignalState.objects.insert highNotification
         (.notification { state := .idle, waitingThreads := ⟨[], by simp⟩,
-                         pendingBadge := none, boundTCB := none }) }
+                         hasPendingBadge := false, pendingWord := SeLe4n.Badge.zero, boundTCB := none }) }
 
 /-- §11.8  SM9.C.1 (PR #872 review) — the plain-waiter gate: a no-op on
 checked-admitted waiters, honest about what its refusal discloses, and
@@ -10618,7 +10618,7 @@ private def boundDeliveryState : SystemState :=
       objects := rendezvousState.objects.insert highNotification
         (.notification { state := .active
                          waitingThreads := ⟨[], by simp⟩
-                         pendingBadge := some (SeLe4n.Badge.ofNatMasked 0x7B)
+                         hasPendingBadge := true, pendingWord := (SeLe4n.Badge.ofNatMasked 0x7B)
                          boundTCB := some crossCoreReceiver }) }
 
 /-- The live per-core entry, run on that state: the fixture's high thread issues

@@ -544,7 +544,7 @@ private def fo013c_cspaceDeleteRefusesInstalledTableCap : IO Unit := do
 
 /-- FO-014: frozenNotificationSignal — accumulate badge on idle notification -/
 private def fo014_notificationSignal : IO Unit := do
-  let ntfn : Notification := { state := .idle, waitingThreads := SeLe4n.NoDupList.empty, pendingBadge := none }
+  let ntfn : Notification := { state := .idle, waitingThreads := SeLe4n.NoDupList.empty, hasPendingBadge := false, pendingWord := SeLe4n.Badge.zero }
   -- The signaller is a live TCB: the badge's provenance is read from it, so an
   -- unresolvable one is refused rather than defaulted or invented (SM9.D audit).
   let fst := mkFrozenState [(⟨5⟩, .notification ntfn), (⟨3⟩, .tcb (mkTcb 3))]
@@ -559,7 +559,7 @@ private def fo014_notificationSignal : IO Unit := do
 
 /-- FO-015: frozenNotificationWait — consume pending badge -/
 private def fo015_notificationWait : IO Unit := do
-  let ntfn : Notification := { state := .active, waitingThreads := SeLe4n.NoDupList.empty, pendingBadge := some (Badge.ofNatMasked 42) }
+  let ntfn : Notification := { state := .active, waitingThreads := SeLe4n.NoDupList.empty, hasPendingBadge := true, pendingWord := (Badge.ofNatMasked 42) }
   let waiterTcb := mkTcb 2
   let fst := mkFrozenState [(⟨5⟩, .notification ntfn), (⟨2⟩, .tcb waiterTcb)]
   match frozenNotificationWait ⟨5⟩ ⟨2⟩ fst with
@@ -750,7 +750,7 @@ private def frozenProvenanceFollowsContent : IO Unit := do
   let receiverTcb := mkTcb 4
   let ep : Endpoint := { sendQ := {}, receiveQ := {} }
   let ntfn : Notification := { state := .idle, waitingThreads := SeLe4n.NoDupList.empty,
-                               pendingBadge := none }
+                               hasPendingBadge := false, pendingWord := SeLe4n.Badge.zero }
   let base := mkFrozenState [
     (⟨3⟩, .tcb senderTcb), (⟨4⟩, .tcb receiverTcb),
     (⟨10⟩, .endpoint ep), (⟨5⟩, .notification ntfn)
@@ -802,7 +802,7 @@ private def frozenDeliveryIsHonest : IO Unit := do
   -- cleared `pendingBadge` and readied the waiter while storing no message, so
   -- the badge vanished — while the flow below recorded it as delivered.
   let ntfn : Notification :=
-    { state := .idle, waitingThreads := SeLe4n.NoDupList.empty, pendingBadge := none }
+    { state := .idle, waitingThreads := SeLe4n.NoDupList.empty, hasPendingBadge := false, pendingWord := SeLe4n.Badge.zero }
   let base := mkFrozenState
     [(⟨4⟩, .tcb (mkTcb 4)), (⟨6⟩, .tcb (mkTcb 6)), (⟨5⟩, .notification ntfn)]
   -- Wait first, so the signal below takes the *waiter* branch.
@@ -839,9 +839,9 @@ private def frozenDeliveryIsHonest : IO Unit := do
   -- snapshot could report a predecessor the badge never had.  Losing a link
   -- makes the analysis miss a chain; inventing one makes it name a false origin.
   let idle : Notification :=
-    { state := .idle, waitingThreads := SeLe4n.NoDupList.empty, pendingBadge := none }
+    { state := .idle, waitingThreads := SeLe4n.NoDupList.empty, hasPendingBadge := false, pendingWord := SeLe4n.Badge.zero }
   let other : Notification :=
-    { state := .idle, waitingThreads := SeLe4n.NoDupList.empty, pendingBadge := none }
+    { state := .idle, waitingThreads := SeLe4n.NoDupList.empty, hasPendingBadge := false, pendingWord := SeLe4n.Badge.zero }
   let fstSg := mkFrozenState [(⟨5⟩, .notification idle), (⟨8⟩, .notification other)]
   expect "FO-023: an absent signaller is refused, not defaulted"
     (match frozenNotificationSignal ⟨5⟩ ⟨7⟩ (Badge.ofNatMasked 9) fstSg with
@@ -938,7 +938,7 @@ private def frozenBoundNotificationDelivery : IO Unit := do
   -- notification has no ordinary waiter — the live bound-delivery shape.
   let ep : Endpoint := { sendQ := {}, receiveQ := { head := some bound, tail := some bound } }
   let ntfn : Notification :=
-    { state := .idle, waitingThreads := SeLe4n.NoDupList.empty, pendingBadge := none,
+    { state := .idle, waitingThreads := SeLe4n.NoDupList.empty, hasPendingBadge := false, pendingWord := SeLe4n.Badge.zero,
       boundTCB := some bound }
   let boundTcb : TCB :=
     { mkTcb 42 with ipcState := .blockedOnReceive epId, queuePPrev := some .endpointHead }
@@ -1199,7 +1199,7 @@ private def differentialNotificationSignalAgrees : IO Unit := do
   let badge := SeLe4n.Badge.ofNatMasked 77
   let ep : Endpoint := { sendQ := {}, receiveQ := { head := some diffA, tail := some diffA } }
   let ntfn : Notification :=
-    { state := .idle, waitingThreads := SeLe4n.NoDupList.empty, pendingBadge := none,
+    { state := .idle, waitingThreads := SeLe4n.NoDupList.empty, hasPendingBadge := false, pendingWord := SeLe4n.Badge.zero,
       boundTCB := some diffA }
   let boundTcb : TCB := { diffTcb 62 with ipcState := .blockedOnReceive diffEpId, queuePPrev := some .endpointHead }
   let ist := diffAddTcb (diffAddTcb (diffAddNotification
@@ -1221,7 +1221,7 @@ so the consuming branch runs rather than the blocking one. -/
 private def differentialNotificationWaitAgrees : IO Unit := do
   let ntfn : Notification :=
     { state := .active, waitingThreads := SeLe4n.NoDupList.empty,
-      pendingBadge := some (SeLe4n.Badge.ofNatMasked 9) }
+      hasPendingBadge := true, pendingWord := (SeLe4n.Badge.ofNatMasked 9) }
   let ist := diffAddTcb
     (diffAddNotification (diffAddCSpace mkEmptyIntermediateState [(SeLe4n.Slot.ofNat 0, diffObjCap diffNotifId)])
       diffNotifId ntfn) (diffTcb 62)
@@ -1263,7 +1263,7 @@ private def differentialNotificationWaitParksAgrees : IO Unit := do
   let held : IpcMessage := { registers := #[⟨11⟩], caps := #[], badge := none }
   let ntfn : Notification :=
     { state := .idle, waitingThreads := SeLe4n.NoDupList.empty,
-      pendingBadge := none }
+      hasPendingBadge := false, pendingWord := SeLe4n.Badge.zero }
   let ist := diffAddTcb
     (diffAddNotification (diffAddCSpace mkEmptyIntermediateState [(SeLe4n.Slot.ofNat 0, diffObjCap diffNotifId)])
       diffNotifId ntfn) { diffTcb 62 with pendingMessage := some held }
@@ -1286,7 +1286,7 @@ which FO-038's unbound fixture could not see (PR #886 review). -/
 private def differentialNotificationWaitParksBoundAgrees : IO Unit := do
   let ntfn : Notification :=
     { state := .idle, waitingThreads := SeLe4n.NoDupList.empty,
-      pendingBadge := none, boundTCB := some diffA }
+      hasPendingBadge := false, pendingWord := SeLe4n.Badge.zero, boundTCB := some diffA }
   let ist := diffAddTcb
     (diffAddNotification (diffAddCSpace mkEmptyIntermediateState [(SeLe4n.Slot.ofNat 0, diffObjCap diffNotifId)])
       diffNotifId ntfn) (diffTcb 62)
@@ -1308,7 +1308,7 @@ not endpoint-parked). -/
 private def differentialNotificationWaitConsumesBoundAgrees : IO Unit := do
   let ntfn : Notification :=
     { state := .active, waitingThreads := SeLe4n.NoDupList.empty,
-      pendingBadge := some (SeLe4n.Badge.ofNatMasked 9), boundTCB := some diffA }
+      hasPendingBadge := true, pendingWord := (SeLe4n.Badge.ofNatMasked 9), boundTCB := some diffA }
   let ist := diffAddTcb
     (diffAddNotification (diffAddCSpace mkEmptyIntermediateState [(SeLe4n.Slot.ofNat 0, diffObjCap diffNotifId)])
       diffNotifId ntfn) (diffTcb 62)
@@ -2059,7 +2059,7 @@ private def differentialTaintedSignalAgrees : IO Unit := do
   let badge := SeLe4n.Badge.ofNatMasked 77
   let ep : Endpoint := { sendQ := {}, receiveQ := { head := some diffA, tail := some diffA } }
   let ntfn : Notification :=
-    { state := .idle, waitingThreads := SeLe4n.NoDupList.empty, pendingBadge := none,
+    { state := .idle, waitingThreads := SeLe4n.NoDupList.empty, hasPendingBadge := false, pendingWord := SeLe4n.Badge.zero,
       boundTCB := some diffA }
   let boundTcb : TCB := { diffTcb 62 with ipcState := .blockedOnReceive diffEpId, queuePPrev := some .endpointHead }
   let ist0 := diffAddTcb (diffAddTcb (diffAddNotification
@@ -3047,7 +3047,7 @@ private def differentialWakeAtUnqueuedPriorityAgrees : IO Unit := do
   let badge := SeLe4n.Badge.ofNatMasked 77
   let ep : Endpoint := { sendQ := {}, receiveQ := { head := some diffA, tail := some diffA } }
   let ntfn : Notification :=
-    { state := .idle, waitingThreads := SeLe4n.NoDupList.empty, pendingBadge := none,
+    { state := .idle, waitingThreads := SeLe4n.NoDupList.empty, hasPendingBadge := false, pendingWord := SeLe4n.Badge.zero,
       boundTCB := some diffA }
   -- Priority 5: `diffTcb 63`, the only runnable thread, is at 0, so nothing put
   -- a bucket here and the wake is the first thing that needs one.
@@ -3163,7 +3163,7 @@ private def differentialComparisonHasBite : IO Unit := do
   let badge := SeLe4n.Badge.ofNatMasked 77
   let ep : Endpoint := { sendQ := {}, receiveQ := { head := some diffA, tail := some diffA } }
   let ntfn : Notification :=
-    { state := .idle, waitingThreads := SeLe4n.NoDupList.empty, pendingBadge := none,
+    { state := .idle, waitingThreads := SeLe4n.NoDupList.empty, hasPendingBadge := false, pendingWord := SeLe4n.Badge.zero,
       boundTCB := some diffA }
   let boundTcb : TCB := { diffTcb 62 with ipcState := .blockedOnReceive diffEpId, queuePPrev := some .endpointHead }
   let ist := diffAddTcb (diffAddTcb (diffAddNotification

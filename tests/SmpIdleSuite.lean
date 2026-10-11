@@ -645,7 +645,7 @@ private def runBootValidationParityChecks : IO Unit := do
     { irqTable := [],
       initialObjects := [ { id := (idleThreadId ⟨0, by decide⟩).toObjId,
                             obj := .notification { state := .idle, waitingThreads := SeLe4n.NoDupList.empty,
-                                                   pendingBadge := none },
+                                                   hasPendingBadge := false, pendingWord := SeLe4n.Badge.zero },
                             hSlots := fun _ h => KernelObject.noConfusion h,
                             hMappings := fun _ h => KernelObject.noConfusion h } ] }
   assertBool "NEGATIVE: an object at an idle slot fails the config validator"
@@ -706,7 +706,7 @@ private def runBootValidationParityChecks : IO Unit := do
   -- references the slot; bound to an ordinary thread it does not.
   let ntfnBoundTo (t : SeLe4n.ThreadId) : KernelObject :=
     .notification { state := .idle, waitingThreads := SeLe4n.NoDupList.empty,
-                    pendingBadge := none, boundTCB := some t }
+                    hasPendingBadge := false, pendingWord := SeLe4n.Badge.zero, boundTCB := some t }
   assertBool "NEGATIVE: a boot notification bound to an idle thread references the slot"
     (SeLe4n.Platform.Boot.bootObjectReferencesReservedIdleSlot
         (ntfnBoundTo (idleThreadId ⟨0, by decide⟩)) == true)
@@ -936,7 +936,7 @@ private def runBootValidationParityChecks : IO Unit := do
     { irqTable := [],
       initialObjects := [ { id := SeLe4n.ObjId.ofNat (idleThreadIdBase - 1),
                             obj := .notification { state := .idle, waitingThreads := SeLe4n.NoDupList.empty,
-                                                   pendingBadge := none },
+                                                   hasPendingBadge := false, pendingWord := SeLe4n.Badge.zero },
                             hSlots := fun _ h => KernelObject.noConfusion h,
                             hMappings := fun _ h => KernelObject.noConfusion h } ] }
   assertBool "the same object just below the idle range is accepted"
@@ -1029,7 +1029,7 @@ private def runObjectBudgetChecks : IO Unit := do
     (List.range n).map fun i =>
       { id := ⟨SeLe4n.Kernel.idleThreadIdBase + SeLe4n.Kernel.Concurrency.numCores + i⟩,
         obj := .notification { state := .idle, waitingThreads := SeLe4n.NoDupList.empty,
-                               pendingBadge := none },
+                               hasPendingBadge := false, pendingWord := SeLe4n.Badge.zero },
         hSlots := fun _ h => KernelObject.noConfusion h,
         hMappings := fun _ h => KernelObject.noConfusion h }
   let atCap : SeLe4n.Platform.Boot.PlatformConfig :=
