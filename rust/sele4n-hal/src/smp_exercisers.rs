@@ -1428,14 +1428,16 @@ fn own_heap_allocations(core: usize) -> Option<u64> {
 /// by review; the verdict is only that both reads happened, the counter did
 /// not go back, and the round trip returned a success frame.
 ///
-/// Each round trip runs twice.  The first call is the first write to objects
-/// the boot built, which the boot's own state still shares, so it copies them
-/// once; the second is the steady state every later syscall sees, and is the
-/// number the plan records.  Both are printed.
+/// Each round trip runs twice; the second call is the steady state every later
+/// syscall sees, and is the number the plan records.  Only the first round
+/// trip's first call is measured as well: it is the first write to objects the
+/// boot built, which the boot's own state still shares, so it copies them once.
+/// A later round trip's first call follows the earlier ones on the same
+/// objects, so it is no first touch and runs unmeasured.
 #[cfg(feature = "hw_target")]
 fn heap_allocations_per_syscall() -> Option<bool> {
-    for trip in &ROUND_TRIPS {
-        for which in [" (first call)", ""] {
+    for (index, trip) in ROUND_TRIPS.iter().enumerate() {
+        for first in [true, false] {
             if let Some(badge) = trip.primed {
                 let prime = RoundTrip {
                     name: trip.name,
@@ -1451,6 +1453,17 @@ fn heap_allocations_per_syscall() -> Option<bool> {
                     return Some(false);
                 }
             }
+            if first && index != 0 {
+                if dispatch_round_trip(trip).0.is_none() {
+                    crate::kprintln!(
+                        "[smp-test] FAIL: heap-allocations-per-syscall: {}: the unmeasured first call failed",
+                        trip.name
+                    );
+                    return Some(false);
+                }
+                continue;
+            }
+            let which = if first { " (first call)" } else { "" };
             if heap_allocations_round_trip(trip, which) != Some(true) {
                 return Some(false);
             }

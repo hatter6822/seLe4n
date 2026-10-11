@@ -1,13 +1,17 @@
 ## v0.36.76 — WS-ZA ZA4: a wait that consumes a pending badge allocates nothing (48 → 0 heap allocations)
 
 **A `NotificationWait` that consumes a pending badge makes no heap
-allocation**, on the first call and in steady state, down from 48, read on a
-fresh archive by the `heap-allocations-per-syscall` exerciser.  The signal
-round trip still reads 0.  Every fast form is proven equal to the
+allocation** in steady state, down from 48, read on a fresh archive by the
+`heap-allocations-per-syscall` exerciser.  The signal round trip still reads 0
+(3 on the first call after boot, down from 5, the one first call the exerciser
+measures:
+a later scenario's first call follows the earlier ones on the same objects,
+so it runs unmeasured).  Every fast form is proven equal to the
 specification it replaces; no theorem statement changed.
 
 - **Exerciser scenarios (ZA4.1).**  The exerciser now also measures a signal
-  with a badge `≥ 2^63` and a wait on a notification holding a pending badge.
+  with a badge `≥ 2^63` and a wait on a notification holding a pending badge;
+  its verifier holds the log to the pinned scenario set.
   The wide-badge signal reads 4, its heap numbers (the plan's R1; the badge
   becomes a machine word in its own ZA4.2 row).
 - **The wait routed on the register file.**  `registerRoutedSyscall`
@@ -33,6 +37,14 @@ specification it replaces; no theorem statement changed.
   its saved context and the core's bank (`stageCallerReturnWords`,
   `stageCallerReturnFor_eq_words`), so no return frame record or `.returns`
   cell is built.
+- **A switched-in thread's registers written into the core's own file.**
+  The scheduler's restore gave the core's bank the incoming thread's own
+  register file, so after any switch the two held one file and the next trap's
+  save copied it (288 bytes): an untraced build read 1 for the steady signal
+  whenever a timer tick switched threads between the two calls, which the
+  traced builds' timing had hidden.  `restoreIncomingContextOnCoreImpl` writes
+  the words into the bank's file in place (`RegisterFile.overwriteWith`,
+  `restoreIncomingContextOnCore_eq_impl`).
 - **Docs.**  The plan's §1 and rows ZA1.3 and ZA4.2, the workstream context and
   the debt index record the reading.
 

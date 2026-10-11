@@ -38,12 +38,17 @@ inlined commit as words, the signal arm and the first resolution level are
 inlined into the entry, and the entry routes a signal whose arguments all sit in
 registers on the register file itself (now `registerRoutedSyscall`), before any
 decode record or message array exists.  At `v0.36.76` (ZA4.1, ZA4.2 for the
-wait) a notification wait that consumes a pending badge reads **0** on the
-first call and in steady state, down from 48: the entry routes it on the
+wait) a notification wait that consumes a pending badge reads **0** in steady
+state, down from 48 (only the first scenario's first call is measured, being
+the one first touch of the boot's objects): the entry routes it on the
 register file as it routes a signal, the consumed notification and the woken
 TCB are written in their slots, and the step answers the outcome as its seven
 boundary words, so no return frame record is built.  A signal with a badge
-`≥ 2^63` reads 4, its heap numbers (R1).
+`≥ 2^63` reads 4, its heap numbers (R1).  The scheduler's restore of a
+switched-in thread now writes its words into the core's own register file
+(`restoreIncomingContextOnCore_eq_impl`): it had shared the thread's file with
+the bank, so a syscall after a thread switch copied it once, which only an
+untraced build showed.
 
 **Acceptance**: the exerciser reads **0** for every scenario of ZA4.1, and
 from ZA4.3 on it fails on any non-zero delta (a check on the kernel's

@@ -1055,6 +1055,22 @@ an `f` that rebuilds its argument writes it in place. -/
     (f : RegisterFile → RegisterFile) : MachineState :=
   { ms with coreRegs := ⟨ms.coreRegs.toArray.modify c.val f, by simp⟩ }
 
+/-- WS-ZA ZA4: **`src`'s words written into `rf`** — `src` itself
+(`RegisterFile.overwriteWith_eq`), built in `rf`'s object when `rf` is the only
+reference to it, so a holder that owns its file takes another file's words
+without sharing it.  The test on `x0` keeps `rf`'s constructor live for the
+compiler to reuse, as `InFlightContext.snapshotInto` does. -/
+def RegisterFile.overwriteWith (src : @& RegisterFile) (rf : RegisterFile) : RegisterFile :=
+  if rf.x0 = src.x0 then { rf with x1 := src.x1, x2 := src.x2, x3 := src.x3, x4 := src.x4, x5 := src.x5, x6 := src.x6, x7 := src.x7, x8 := src.x8, x9 := src.x9, x10 := src.x10, x11 := src.x11, x12 := src.x12, x13 := src.x13, x14 := src.x14, x15 := src.x15, x16 := src.x16, x17 := src.x17, x18 := src.x18, x19 := src.x19, x20 := src.x20, x21 := src.x21, x22 := src.x22, x23 := src.x23, x24 := src.x24, x25 := src.x25, x26 := src.x26, x27 := src.x27, x28 := src.x28, x29 := src.x29, x30 := src.x30, sp := src.sp, pc := src.pc, pstate := src.pstate, tpidr := src.tpidr }
+  else { rf with x0 := src.x0, x1 := src.x1, x2 := src.x2, x3 := src.x3, x4 := src.x4, x5 := src.x5, x6 := src.x6, x7 := src.x7, x8 := src.x8, x9 := src.x9, x10 := src.x10, x11 := src.x11, x12 := src.x12, x13 := src.x13, x14 := src.x14, x15 := src.x15, x16 := src.x16, x17 := src.x17, x18 := src.x18, x19 := src.x19, x20 := src.x20, x21 := src.x21, x22 := src.x22, x23 := src.x23, x24 := src.x24, x25 := src.x25, x26 := src.x26, x27 := src.x27, x28 := src.x28, x29 := src.x29, x30 := src.x30, sp := src.sp, pc := src.pc, pstate := src.pstate, tpidr := src.tpidr }
+
+theorem RegisterFile.overwriteWith_eq (src rf : RegisterFile) :
+    RegisterFile.overwriteWith src rf = src := by
+  unfold RegisterFile.overwriteWith
+  split
+  · next h => cases rf; cases src; simp only at h; subst h; rfl
+  · rfl
+
 /-- The rewrite is the write of `f` applied to the file the core holds. -/
 theorem MachineState.modifyRegsOnCore_eq (ms : MachineState) (c : CoreId)
     (f : RegisterFile → RegisterFile) :
