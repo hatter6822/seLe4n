@@ -55,7 +55,7 @@ signal and the wait still read 0, and the signal's first call after boot reads
 2.
 
 **Acceptance**: the exerciser reads **0** for every scenario of ZA4.1, and
-from ZA4.10 on it fails on any non-zero delta (a check on the kernel's
+from ZA4.12 on it fails on any non-zero delta (a check on the kernel's
 behaviour, not on prose).  Every row records its reading in `CHANGELOG.md`,
 taken on an archive whose provenance record matches the tree
 (`build_lean_aarch64_archive.py --check-fresh`).
@@ -111,6 +111,27 @@ The rows sum to 62.
   computed twice, three table inserts to update one object in place.
   Removing the duplicates removes allocations and work together.
 - **No allocation comes from the lock model** (WS-LS) or from a first touch.
+
+### 2.4 The IPC and blocking paths (ZA4.1's re-trace)
+
+Traced at `v0.36.77` on top of ZA4.1's scenarios, core 0 only, steady state
+(the traced build reads a few more than the untraced one: 112/110/209/121
+against 100/102/190/112).  Each class is the row that owns it.
+
+| Class (sites) | receive blocks | send to receiver | call | reply | Row |
+|---|---|---|---|---|---|
+| Run queue: `RunQueue.insert`/`remove` rebuild a bucket `List`, the `membership` set, the `threadPriority` table and `flat`; `setRunQueueOnCore` rebuilds the per-core array | 33 | 21 | 53 | 21 | ZA4.5 |
+| Object store: `storeObjectImpl` → `RHTable.insert` instead of `modify` on the IPC arms | 15 | 17 | 33 | 21 | ZA4.7 |
+| Entry and decode: `syscallEntryChecked`'s message array, `ipcBufferWalkPlan`, the taint plan and edges, `dispatchWithCapChecked`, `resolveExtraCaps`, `snapshotInto` | 13 | 20 | 25 | 22 | ZA4.9 |
+| Shared arrays copied whole (`copy_expand_array`) | 12 | 9 | 21 | 10 | the row whose write shares them |
+| Endpoint queue and transfer (`endpointQueueEnqueue`/`PopHead`, the message record) | 12 | 12 | 13 | 1 | ZA4.7 |
+| Capability resolution (`resolveCapAddress`, `syscallOperandCap?`) | 11 | 11 | 11 | 11 | ZA4.9 (ZA2.1's form) |
+| Priority inheritance: `waitersOf` scans every object and builds a `List` | 0 | 0 | 16 | 13 | ZA4.6 |
+| TCB record rebuilt (`tcbWithQueueLinks`, `enqueueRunnableOnCore`, `storeTcbIpcStateAndMessage`) | 3 | 5 | 15 | 6 | ZA4.7 |
+| `lookupTcb`'s `Option` | 7 | 3 | 8 | 1 | ZA4.7 (D2) |
+
+`waitersOf` (`PriorityInheritance/BlockingGraph.lean:42`) is also a time
+cost: every call and reply walks the whole object index.
 
 ## 3. Design
 
@@ -189,19 +210,21 @@ remove §2.1's 55 sites.  ZA3 consumes CV4.5.
 | ZA4.2 | The rows ZA4.1 adds, each read to zero.  Done for the pending-badge wait at `v0.36.76`: `registerRoutedSyscall` routes it to `dispatchWaitCheckedR`; the consumed notification is written in its slot when `RHTable.findsInPlace` shows the write keeps the table's layout (`notificationWaitOnCore_eq_impl`); `syscallDispatchCrossCoreBracketedStepWords` answers the outcome's tag and six return words, staged by `stageCallerReturnWords`.  Done for the wide-badge signal at `v0.36.77`: `Badge` holds a `UInt64` (R1), the register decode reads it with `readRegWord`, a signal with no waiter merges into the pending word in place (`signalPendingObject`), and the wait returns the word itself (`returnFrameOfBadge`) | per row |
 | ZA4.3 | **A yield syscall** (`SyscallId.yield`, 41; seL4 MCS `seL4_Yield`), on the executing core.  Decision (2026-10-11): yield forfeits the budget.  A caller bound to a SchedContext gives up its remaining budget until its next refill, through the same function the timer's budget-exhausted arm uses (factored out of `timerTickBudgetOnCore` and proven to leave that arm unchanged); an unbound caller goes to the back of its priority queue with a fresh time slice.  The per-core non-interference and invariant-preservation theorems land in the same row as the arm.  The exerciser gains the yield scenario, read to zero | `Model/Object/Types.lean`, `Scheduler/Operations/Core.lean`, `Kernel/API.lean`, the per-syscall tables (lock sets, taint class, return shape, frozen agreement), `rust/sele4n-abi`, `rust/sele4n-sys`, `smp_exercisers.rs` |
 | ZA4.4 | **Notification waiters link through the TCB.**  Decision (2026-10-11): `Notification.waitingThreads : List ThreadId` becomes head and tail fields linked through the waiting TCBs' queue links, as endpoint queues are; the notification invariants restated over the intrusive queue (R2).  Wait that blocks and signal that wakes a waiter read to zero | `Model/Object/Types.lean`, `IPC/CrossCore/Notification*.lean`, the notification invariants |
-| ZA4.5 | **IPC copies registers.**  Decision (2026-10-11): send, receive, call, reply and reply-receive copy the sender's message words straight from its register file into the receiver's, with no message record or word array on the path; the `IpcMessage` specification stays, the copy proven equal to it (D5).  The endpoint scenarios read to zero | `IPC/DualQueue/*`, `IPC/Operations/Endpoint.lean`, `Kernel/API.lean`, `Platform/FFI.lean` |
-| ZA4.6 | **Capability pointers are machine words** (R1): `CPtr` holds a `UInt64`, the decode reads it with `readRegWord`, the theorems restated (R2).  The exerciser gains a capability address `≥ 2^63`, read to zero | `Prelude.lean`, `Capability/Operations.lean`, the decode, `smp_exercisers.rs` |
-| ZA4.7 | **Every other syscall** joins the entry's register-file routing (ZA1.3) and is read to zero; a site no earlier row owns is fixed here | per site |
-| ZA4.8 | **Every other kernel entry.**  Decision (2026-10-11): the zero rule covers every entry, not only syscalls.  The timer tick, the IRQ entry and the fault entry take ZA3.1's form; the exerciser drives each and reads it to zero | `SyscallDispatchEntry.lean`, `Platform/FFI.lean`, `rust/sele4n-hal/src/ffi.rs`, `smp_exercisers.rs` |
-| ZA4.9 | **The first entry after boot allocates nothing**: boot ends by making every object the kernel state holds exclusively owned (one copy, at boot), so the first entry finds nothing shared.  First call after boot reads zero | `Platform/Boot.lean`, `Platform/FFI.lean` |
-| ZA4.10 | **The rule is enforced**: the exerciser fails on a non-zero delta for every scenario and every entry, and `CLAUDE.md` gains the standing rule that a kernel entry allocates nothing | `smp_exercisers.rs`, `scripts/qemu_exerciser_lib.sh`, `CLAUDE.md` |
-| ZA4.11 | Closure: the reading recorded in `CHANGELOG.md`, `WORKSTREAM_CONTEXT.md` section moved to the closed-workstream file, this plan archived | docs |
+| ZA4.5 | **The run queue links through the TCB**, as seL4's `tcbSchedNext`/`tcbSchedPrev` with a priority bitmap: a bucket is a head and tail per priority, a thread's links and band are TCB fields, and `RunQueue`'s `byPriority` lists, `membership` set, `threadPriority` table and `flat` list are replaced by them (R2: the scheduler invariants restated over the intrusive queue, `flat` kept as a derived view where a theorem reads it).  Enqueue, dequeue and rotate write two or three TCB fields in place | `Scheduler/RunQueue.lean`, `Model/State.lean`, the scheduler invariants |
+| ZA4.6 | **Priority inheritance without a scan**: the threads blocked on a server are reached through a queue linked through their TCBs (the same links as ZA4.4), so the maximum waiter priority is computed from that queue and `waitersOf` becomes a derived view proven equal to it; no object-index walk and no `List` on call or reply | `Scheduler/PriorityInheritance/*`, `Model/Object/Types.lean` |
+| ZA4.7 | **IPC copies registers.**  Decision (2026-10-11): send, receive, call, reply and reply-receive copy the sender's message words straight from its register file into the receiver's, with no message record or word array on the path; the `IpcMessage` specification stays, the copy proven equal to it (D5).  The IPC arms' object writes go through `RHTable.modify` (ZA1.6), the TCB fields are written in place instead of the record rebuilt, and `lookupTcb` takes the continuation form (D2) (§2.4's rows for this class).  The endpoint scenarios read to zero | `IPC/DualQueue/*`, `IPC/Operations/Endpoint.lean`, `Kernel/API.lean`, `Platform/FFI.lean` |
+| ZA4.8 | **Capability pointers are machine words** (R1): `CPtr` holds a `UInt64`, the decode reads it with `readRegWord`, the theorems restated (R2).  The exerciser gains a capability address `≥ 2^63`, read to zero | `Prelude.lean`, `Capability/Operations.lean`, the decode, `smp_exercisers.rs` |
+| ZA4.9 | **Every other syscall** joins the entry's register-file routing (ZA1.3) and is read to zero; a site no earlier row owns is fixed here | per site |
+| ZA4.10 | **Every other kernel entry.**  Decision (2026-10-11): the zero rule covers every entry, not only syscalls.  The timer tick, the IRQ entry and the fault entry take ZA3.1's form; the exerciser drives each and reads it to zero | `SyscallDispatchEntry.lean`, `Platform/FFI.lean`, `rust/sele4n-hal/src/ffi.rs`, `smp_exercisers.rs` |
+| ZA4.11 | **The first entry after boot allocates nothing**: boot ends by making every object the kernel state holds exclusively owned (one copy, at boot), so the first entry finds nothing shared.  First call after boot reads zero | `Platform/Boot.lean`, `Platform/FFI.lean` |
+| ZA4.12 | **The rule is enforced**: the exerciser fails on a non-zero delta for every scenario and every entry, and `CLAUDE.md` gains the standing rule that a kernel entry allocates nothing | `smp_exercisers.rs`, `scripts/qemu_exerciser_lib.sh`, `CLAUDE.md` |
+| ZA4.13 | Closure: the reading recorded in `CHANGELOG.md`, `WORKSTREAM_CONTEXT.md` section moved to the closed-workstream file, this plan archived | docs |
 
 ## 5. Proof obligations
 
 Every row keeps the specification functions and their theorems unchanged and
 adds one equality per replaced function (`@[csimp]`), or one capture lemma
-(ZA1.1, ZA2.1).  A row that changes a model type (R2: ZA2.3, ZA4.4, ZA4.6) restates the
+(ZA1.1, ZA2.1).  A row that changes a model type (R2: ZA2.3, ZA4.4, ZA4.5, ZA4.6, ZA4.8) restates the
 theorems over it and lands with them.  No `sorry`, no axiom, no `implemented_by`.
 
 ## 6. Risks, and decisions deliberately not taken
@@ -211,13 +234,13 @@ theorems over it and lands with them.  No `sorry`, no axiom, no `implemented_by`
   allocates whatever this plan does.  CV4.3 removes it for message words.
   For badges and capability pointers ZA4.1's high-bit scenarios measure it,
   and the row ZA4.2 adds for it carries the type change (the word as a
-  `UInt64` field), before ZA4.10 makes a non-zero reading fail.  `Badge` holds
-  a `UInt64` since `v0.36.77`; `CPtr` follows in ZA4.6 with its scenario.
+  `UInt64` field), before ZA4.12 makes a non-zero reading fail.  `Badge` holds
+  a `UInt64` since `v0.36.77`; `CPtr` follows in ZA4.8 with its scenario.
 - **R2 Type changes cost proofs.**  Decision (2026-10-11): where a model
   type's shape forces an allocation on the path (an `Option` field written
   `some`, a list or array built per call), the type changes and the row that
   changes it restates the theorems over the new type.  `pendingBadge` (ZA2.3)
-  was the first; ZA4.4 and ZA4.6 are the next.
+  was the first; ZA4.4, ZA4.5, ZA4.6 and ZA4.8 are the next.
 - **R3 `@[csimp]` hides the fast path from proofs.**  The equality is the
   contract; the specification stays the reference and the host test suites
   run the compiled path.
