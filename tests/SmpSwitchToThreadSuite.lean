@@ -85,7 +85,7 @@ open SeLe4n.Testing
 #check @switchToThreadOnCore_establishes_queueCurrentConsistentOnCore
 #check @switchToThreadOnCore_establishes_currentThreadValidOnCore
 #check @preemptCurrentOnCore_getTcb?_incoming
-#check @switchToThreadOnCore_objects_eq_preempt
+#check @switchToThreadOnCore_objectsAgreeOffRunLinks_preempt
 
 -- §3c acquisition-order completeness (SM5.B.2):
 #check @switchToThreadOnCoreLockSet_pairwise_le
@@ -186,12 +186,12 @@ example (st : SystemState) (c : CoreId) (tid : SeLe4n.ThreadId) (st' : SystemSta
     currentThreadValidOnCore st' c :=
   switchToThreadOnCore_establishes_currentThreadValidOnCore st c tid st' hInv h
 
-/-- SM5.B (object frame): the switch's object footprint is exactly the preempt's
+/-- SM5.B (object frame): off the run-queue links, the switch's object footprint is the preempt's
 (which writes at most the preempted thread's TCB). -/
 example (st : SystemState) (c : CoreId) (tid : SeLe4n.ThreadId) (st' : SystemState)
     (h : switchToThreadOnCore st c tid = .ok st') :
-    st'.objects = (preemptCurrentOnCore st c tid).objects :=
-  switchToThreadOnCore_objects_eq_preempt st c tid st' h
+    st'.objectsAgreeOffRunLinks (preemptCurrentOnCore st c tid) :=
+  switchToThreadOnCore_objectsAgreeOffRunLinks_preempt st c tid st' h
 
 /-- SM5.B.2: the lock-set acquires the object lock before the run-queue lock. -/
 example (c : CoreId) :

@@ -543,8 +543,8 @@ example (c : CoreId) (h1 : placedCoreOf? st victim = some c)
 example (c : CoreId) (h1 : placedCoreOf? st victim = some c)
     (h2 : st.scheduler.currentOnCore c = some victim)
     (h3 : c ≠ ec) :
-    (cancelIpcBlockingOnCore victim tcb ec st).1.objects
-      = (cancelIpcBlocking st victim tcb).objects :=
+    (cancelIpcBlockingOnCore victim tcb ec st).1.objectsAgreeOffRunLinks
+      (cancelIpcBlocking st victim tcb) :=
   -- WS-OD OD1.7, re-keyed at `v0.35.158`: one projection deeper — the per-core
   -- locality conjunct split into a run-queue half and a current-slot half, both
   -- conditioned on the core the reclaim's holder deschedule writes.
@@ -586,7 +586,7 @@ example (c : CoreId) (h1 : placedCoreOf? st victim = some c)
 #check @descheduleUnboundHolder
 #check @descheduleUnboundHolder_of_no_donation
 #check @descheduleUnboundHolder_objectsAgreeOffRunLinks
-#check @descheduleUnboundHolder_getTcb?
+#check @descheduleUnboundHolder_onlyObjectsSchedulerDiffer
 #check @descheduleUnboundHolder_determineTargetCore
 #check @descheduleUnboundHolder_replenishQueueOnCore
 #check @descheduleUnboundHolder_machine_eq

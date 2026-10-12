@@ -139,8 +139,8 @@ def perCoreIdleTheorems : List PerCoreIdleTheorem :=
     -- ── SM5.E.3 enqueue op + frame / membership / preservation (.enqueue) ──
     pcit! "enqueueIdleThreadOnCore: make core c's idle thread run-queue-resident (SM5.E.3)"
       enqueueIdleThreadOnCore .enqueue,
-    pcit! "enqueueIdleThreadOnCore_objects: the enqueue's object-store write (definitional)"
-      enqueueIdleThreadOnCore_objects .enqueue,
+    pcit! "enqueueIdleThreadOnCore_objectsAgreeOffRunLinks: the enqueue's object-store write, off the run-queue links"
+      enqueueIdleThreadOnCore_objectsAgreeOffRunLinks .enqueue,
     pcit! "enqueueIdleThreadOnCore_scheduler: the enqueue's scheduler write (definitional)"
       enqueueIdleThreadOnCore_scheduler .enqueue,
     pcit! "enqueueIdleThreadOnCore_runQueueOnCore_self: core c's run queue gains the idle thread"

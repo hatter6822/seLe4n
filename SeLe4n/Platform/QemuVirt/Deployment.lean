@@ -296,7 +296,7 @@ theorem qemuVirtBoundPlatformConfig_idleBoot :
         qemuVirtBoundPlatformConfig =
       .ok qemuVirtDeploymentIdleState :=
   bootFromPlatformCheckedWithIdleThreadsFor_map_ok _ _ _ qemuVirtBoundPlatformConfig_checked
-    qemuVirtBoundPlatformConfig_affinities
+    qemuVirtBoundPlatformConfig_affinities PlatformBinding.declaredCores_nodup
 
 private theorem qemuVirtBoundPlatformConfig_idleBoot_allCores :
     bootFromPlatformCheckedWithIdleThreads qemuVirtBoundPlatformConfig =

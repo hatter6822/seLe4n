@@ -42,7 +42,9 @@ transition you actually called.
 `FrozenKernelObject` re-represents exactly two variants: `.cnode` (slots become
 a `CNodeRadix`) and `.vspaceRoot` (mappings become a `FrozenMap`).  The other six
 reuse the runtime types verbatim, so agreement on them is *equality*, with no
-observation to choose and therefore no field anyone can forget to include.  The
+observation to choose and therefore no field anyone can forget to include — save
+a TCB's run-queue links, which represent the live run queue and are compared as
+that queue (below).  The
 two re-represented variants are compared through their lookups, in both
 directions, so neither a missing entry nor an invented one passes.
 -/
@@ -77,7 +79,11 @@ def frozenVSpaceMappingsAgree (f : FrozenVSpaceRoot) (l : VSpaceRoot) : Bool :=
 agreement on the two re-represented ones; a kind mismatch is a disagreement. -/
 def frozenObjectAgrees (f : FrozenKernelObject) (l : KernelObject) : Bool :=
   match f, l with
-  | .tcb a,          .tcb b          => a == b
+  -- WS-ZA ZA4.5: a TCB is compared off its run-queue links.  The links are the
+  -- live run queue's representation — where on its core's queue the thread
+  -- sits — and the frozen surface represents its queue in `byPriority`
+  -- instead; `frozenStateAgrees` compares the two queues directly.
+  | .tcb a,          .tcb b          => a.withoutRunLinks == b.withoutRunLinks
   | .endpoint a,     .endpoint b     => a == b
   | .notification a, .notification b => a == b
   | .untyped a,      .untyped b      => a == b

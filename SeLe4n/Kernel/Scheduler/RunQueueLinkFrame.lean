@@ -720,6 +720,56 @@ theorem runRequeueOnCore_runQueueOnCore_ne (st : SystemState) (c c' : CoreId) (t
     (st.runRequeueOnCore c t p).scheduler.runQueueOnCore c' = st.scheduler.runQueueOnCore c' := by
   simp [runRequeueOnCore_scheduler, SchedulerState.setRunQueueOnCore_runQueueOnCore_ne _ _ _ _ h]
 
+theorem runUnlinkLinks_objects_invExtK (st : SystemState) (t : SeLe4n.ThreadId)
+    (pv nx bpv bnx : Nat) (hK : st.objects.invExtK) :
+    (st.runUnlinkLinks t pv nx bpv bnx).objects.invExtK :=
+  mapTcbInPlace_objects_invExtK _ _ _ (updateTcbAtCode_objects_invExtK _ _ _
+    (updateTcbAtCode_objects_invExtK _ _ _ (updateTcbAtCode_objects_invExtK _ _ _
+      (updateTcbAtCode_objects_invExtK _ _ _ hK))))
+
+theorem runRemoveOnCore_objects_invExtK (st : SystemState) (c : CoreId) (t : SeLe4n.ThreadId)
+    (hK : st.objects.invExtK) : (st.runRemoveOnCore c t).objects.invExtK := by
+  rw [runRemoveOnCore_objects]
+  split
+  · exact runUnlinkLinks_objects_invExtK _ _ _ _ _ _ hK
+  · exact hK
+
+/-- Storing one object at one key over two stores that agree off the run-queue
+links keeps them agreeing. -/
+theorem objectsAgreeOffRunLinks.withObjectStored {a b : SystemState}
+    (h : objectsAgreeOffRunLinks a b) (ha : a.objects.invExt) (hb : b.objects.invExt)
+    (k : SeLe4n.ObjId) (o : KernelObject) :
+    objectsAgreeOffRunLinks (a.withObjectStored k o) (b.withObjectStored k o) := fun x => by
+  rw [withObjectStored_objects, withObjectStored_objects]
+  simp only [RHTable_getElem?_eq_get?]
+  by_cases hx : k = x
+  · subst hx
+    rw [RHTable.getElem?_insert_self _ _ _ ha, RHTable.getElem?_insert_self _ _ _ hb]
+  · have hNe : ¬((k == x) = true) := fun e => hx (eq_of_beq e)
+    rw [RHTable.getElem?_insert_ne _ _ _ _ hNe ha, RHTable.getElem?_insert_ne _ _ _ _ hNe hb]
+    have := h x
+    simp only [RHTable_getElem?_eq_get?] at this
+    exact this
+
+/-- Clearing the run-queue links keeps an object's kind. -/
+@[simp] theorem _root_.SeLe4n.Model.KernelObject.objectType_withoutRunLinks (o : KernelObject) :
+    o.withoutRunLinks.objectType = o.objectType := by
+  cases o <;> rfl
+
+/-- The lifecycle's kind table is untouched and every object keeps its kind, so
+the metadata stays consistent with the store. -/
+theorem onlyObjectsSchedulerDiffer.objectTypeMetadataConsistent {a b : SystemState}
+    (h : onlyObjectsSchedulerDiffer b a) (hA : objectsAgreeOffRunLinks b a)
+    (hC : SystemState.objectTypeMetadataConsistent a) :
+    SystemState.objectTypeMetadataConsistent b := by
+  intro oid
+  have hL : b.lifecycle = a.lifecycle := by rw [h]
+  have e := congrArg (Option.map KernelObject.objectType) (hA oid)
+  simp only [Option.map_map, Function.comp_def, KernelObject.objectType_withoutRunLinks] at e
+  unfold lookupObjectTypeMeta at *
+  rw [hL, e]
+  exact hC oid
+
 end SeLe4n.Model.SystemState
 
 namespace SeLe4n.Model.SystemState

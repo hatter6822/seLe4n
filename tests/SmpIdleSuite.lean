@@ -60,7 +60,7 @@ open SeLe4n.Testing
 
 -- SM5.E.3 enqueue op + frame / membership / preservation:
 #check @enqueueIdleThreadOnCore
-#check @enqueueIdleThreadOnCore_objects
+#check @enqueueIdleThreadOnCore_objectsAgreeOffRunLinks
 #check @enqueueIdleThreadOnCore_scheduler
 #check @enqueueIdleThreadOnCore_runQueueOnCore_self
 #check @enqueueIdleThreadOnCore_runQueueOnCore_ne
@@ -244,7 +244,7 @@ example (st : SystemState) (c : CoreId) (hInv : st.objects.invExt)
 -- PR #889 review: the installed idle TCB is the *queued* form (`.Ready`), which
 -- is what the enqueue surface stores and what the locality theorem reads.
 example (st : SystemState) (c c' : CoreId) (h : c ≠ c')
-    (hIdleTcb : st.getTcb? (idleThreadId c) = some (queuedIdleThread c))
+    (hIdleTcb : idleTcbResidentOnCore st c)
     (hAff : runQueueAffinityConsistentOnCore st c') :
     idleThreadId c ∉ (st.scheduler.runQueueOnCore c').toList :=
   idleThread_core_locality st c c' h hIdleTcb hAff

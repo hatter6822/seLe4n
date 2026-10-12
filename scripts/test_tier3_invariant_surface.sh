@@ -3165,8 +3165,9 @@ run_check "INVARIANT" rg -n '^theorem timerTickChargeCurrentOnCore_none\b' SeLe4
 # The decidable preemption predicate is stated over the witness, as the tick is.
 run_check "INVARIANT" bash -lc 'rg -U -n "^def timerTickBudgetOnCorePreempts \(st : SystemState\) \(c : CoreId\) \(tid : SeLe4n\.ThreadId\)\n    \(tcb : TCB\) \(hTcb : st\.getTcb\? tid = some tcb\) : Prop :=" SeLe4n/Kernel/Scheduler/Operations/PerCoreTimerTick.lean'
 # The idle enqueue is a STORE -- the key may hold nothing, and a store is what
-# registers a new object in the index -- with the run-queue write beside it.
-run_check "INVARIANT" bash -lc 'rg -U -n "^def enqueueIdleThreadOnCore \(st : SystemState\) \(c : CoreId\) : SystemState :=\n  \{ st\.withObjectStored \(idleThreadId c\)\.toObjId \(KernelObject\.tcb \(queuedIdleThread c\)\) with" SeLe4n/Kernel/Scheduler/Operations/IdleEnqueue.lean'
+# registers a new object in the index -- between the run-queue link writes:
+# unlink any earlier placement, store the idle TCB, link it in.
+run_check "INVARIANT" bash -lc 'rg -U -n "^def enqueueIdleThreadOnCore \(st : SystemState\) \(c : CoreId\) : SystemState :=\n  \(\(st\.runRemoveOnCore c \(idleThreadId c\)\)\.withObjectStored \(idleThreadId c\)\.toObjId\n      \(KernelObject\.tcb \(queuedIdleThread c\)\)\)\.runEnqueueOnCore c \(idleThreadId c\)" SeLe4n/Kernel/Scheduler/Operations/IdleEnqueue.lean'
 run_negative_check "INVARIANT" bash -lc 'rg -U -n "^def enqueueIdleThreadOnCore \(st : SystemState\)[^\n]*(\n([ \t][^\n]*)?)*objects\.insert" SeLe4n/Kernel/Scheduler/Operations/IdleEnqueue.lean'
 # The timer suite charges a thread the fixture STORES and resolves it through
 # the witnessed lookup; a TCB fabricated beside the state cannot be charged.
@@ -12753,6 +12754,7 @@ import SeLe4n.Platform.RPi5.Contract
 #check @SeLe4n.Platform.Boot.bootAffinitiesDeclared_allCores
 #check @SeLe4n.Platform.Boot.bootFromPlatformCheckedWithIdleThreadsFor_ok_affinitiesDeclared
 #check @SeLe4n.Platform.Boot.bootFromPlatformCheckedWithIdleThreadsFor_undeclared_affinity_refused
+#check @SeLe4n.Platform.Boot.bootFromPlatformCheckedWithIdleThreadsFor_ok_nodup
 -- PR #889 review round 7: a boot TCB is stored under its own thread id; the
 -- hardware entry is fixed at the RPi5 binding, which supplies the machine
 -- configuration and the boot VSpace root.
@@ -14934,7 +14936,7 @@ open SeLe4n.Kernel.Concurrency
 #check @switchToThreadOnCore_establishes_queueCurrentConsistentOnCore
 #check @switchToThreadOnCore_establishes_currentThreadValidOnCore
 #check @preemptCurrentOnCore_getTcb?_incoming
-#check @switchToThreadOnCore_objects_eq_preempt
+#check @switchToThreadOnCore_objectsAgreeOffRunLinks_preempt
 
 -- §3c acquisition-order completeness (SM5.B.2).
 #check @switchToThreadOnCoreLockSet_pairwise_le
@@ -15543,7 +15545,7 @@ open SeLe4n.Kernel
 #check @createIdleThread_tid
 -- SM5.E.3 enqueue op + frame / membership / preservation.
 #check @enqueueIdleThreadOnCore
-#check @enqueueIdleThreadOnCore_objects
+#check @enqueueIdleThreadOnCore_objectsAgreeOffRunLinks
 #check @enqueueIdleThreadOnCore_scheduler
 #check @enqueueIdleThreadOnCore_runQueueOnCore_self
 #check @enqueueIdleThreadOnCore_runQueueOnCore_ne

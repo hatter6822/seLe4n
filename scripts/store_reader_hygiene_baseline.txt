@@ -2334,7 +2334,6 @@ STORE_WRITE_SPEC_SITE=SeLe4n/Kernel/Scheduler/Operations/Core.lean|objects_inser
 STORE_WRITE_SPEC_SITE=SeLe4n/Kernel/Scheduler/Operations/Core.lean|preemptCurrentOnCore_objects_frame|1
 STORE_WRITE_SPEC_SITE=SeLe4n/Kernel/Scheduler/Operations/Core.lean|threadInactiveFlagConsistent_save_and_reenqueue|1
 STORE_WRITE_SPEC_SITE=SeLe4n/Kernel/Scheduler/Operations/Core.lean|threadPlacedOnSomeCore_save_and_reenqueue|2
-STORE_WRITE_SPEC_SITE=SeLe4n/Kernel/Scheduler/Operations/IdleEnqueue.lean|enqueueIdleThreadOnCore_objects|1
 STORE_WRITE_SPEC_SITE=SeLe4n/Kernel/Scheduler/Operations/InitialThreadStart.lean|allTablesInvExtK_objects_insert|1
 STORE_WRITE_SPEC_SITE=SeLe4n/Kernel/Scheduler/Operations/InitialThreadStart.lean|startInitialThreadOnCore_cases|4
 STORE_WRITE_SPEC_SITE=SeLe4n/Kernel/Scheduler/Operations/InitialThreadStart.lean|startInitialThreadOnCore_eq|3

@@ -773,8 +773,10 @@ theorem enqueueIdleThreadOnCore_preserves_schedulerInvariantStructural_smp
   · exact fun c' hc => enqueueIdleThreadOnCore_runQueueOnCore_ne st c₀ c' hc
   · intro t hsome
     by_cases hEq : t = idleThreadId c₀
-    · subst hEq; rw [enqueueIdleThreadOnCore_getTcb?_self st c₀ hInv]; rfl
-    · rw [enqueueIdleThreadOnCore_getTcb?_ne st c₀ t hInv hEq]; exact hsome
+    · subst hEq
+      obtain ⟨i, hi, _⟩ := enqueueIdleThreadOnCore_getTcb?_self st c₀ hInv
+      rw [hi]; rfl
+    · rw [enqueueIdleThreadOnCore_getTcb?_ne_isSome st c₀ t hInv hEq]; exact hsome
 
 -- ── §3.7  Per-core CBS replenishment (`replenishOnCore`) ──
 
@@ -1307,13 +1309,15 @@ theorem enqueueIdleThreadOnCore_preserves_schedulerInvariantStructuralReg_smp
   intro c'
   refine contextMatchesCurrentOnCore_frame_at
     (enqueueIdleThreadOnCore_currentOnCore st c₀ c')
-    rfl ?_ (hPre c').1.2.1 (hPre c').2
+    (by rw [enqueueIdleThreadOnCore_machine]) ?_ (hPre c').1.2.1 (hPre c').2
   intro tid tcb hcur htcb
   -- `tid = current c' ≠ idleThreadId c₀`, so the enqueue's only object write frames it.
   have hne : tid ≠ idleThreadId c₀ := by
     intro he; subst he; exact hNotCurAny c' hcur
-  refine ⟨tcb, ?_, RegisterFile.beq_self _⟩
-  rw [enqueueIdleThreadOnCore_getTcb?_ne st c₀ tid hInv hne]; exact htcb
+  obtain ⟨t', ht', hw⟩ := enqueueIdleThreadOnCore_getTcb?_ne_fwd st c₀ tid hInv hne htcb
+  refine ⟨t', ht', ?_⟩
+  rw [TCB.proj_eq_of_withoutRunLinks_eq TCB.registerContext hw]
+  exact RegisterFile.beq_self _
 
 -- ============================================================================
 -- §4.4  The Nodup-extended structural invariant (`runQueueUniqueOnCore` 6th conjunct)
@@ -4662,8 +4666,12 @@ the idle TCB (`createIdleThread c`, `timeSlice` the positive TCB default). -/
 theorem enqueueIdleThreadOnCore_preserves_allThreadsTimeSlicePositive (st : SystemState)
     (c : CoreId) (hInv : st.objects.invExt) (h : allThreadsTimeSlicePositive st) :
     allThreadsTimeSlicePositive (enqueueIdleThreadOnCore st c) :=
-  allThreadsTimeSlicePositive_of_insert_pos hInv (enqueueIdleThreadOnCore_objects st c)
-    (by show 0 < 5; decide) h
+  allThreadsTimeSlicePositive_of_objectsAgreeOffRunLinks
+    (enqueueIdleThreadOnCore_objectsAgreeOffRunLinks st c hInv)
+    (allThreadsTimeSlicePositive_of_insert_pos hInv
+      (SystemState.withObjectStored_objects st (idleThreadId c).toObjId
+        (KernelObject.tcb (queuedIdleThread c)))
+      (by show 0 < 5; decide) h)
 
 /-- `switchDomainOnCore` preserves `allThreadsTimeSlicePositive` — its only object
 write is the outgoing register-context save (`saveOutgoingContextOnCore`); the

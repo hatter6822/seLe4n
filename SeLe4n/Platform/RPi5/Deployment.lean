@@ -731,7 +731,7 @@ theorem rpi5BoundPlatformConfigAt_idleBoot (v : BCM2712Config) (hv : v.Admissibl
         (rpi5BoundPlatformConfigAt v) =
       .ok (rpi5DeploymentIdleStateAt v) :=
   bootFromPlatformCheckedWithIdleThreadsFor_map_ok _ _ _ (rpi5BoundPlatformConfigAt_checked v hv)
-    (rpi5BoundPlatformConfigAt_affinities v hv)
+    (rpi5BoundPlatformConfigAt_affinities v hv) PlatformBinding.declaredCores_nodup
 
 /-- ...and in its all-cores spelling, which the idle boot's characterisations
     are stated in — the RPi5 binding declares every model core. -/
