@@ -319,6 +319,17 @@ theorem purgeReplenishmentFromAllCores_preserves_replenishQueueEntriesBound_smp
 -- expensive scheduler-context proof; the extra field pushes it past the default
 -- budget.  Raised here rather than restructured because the cost is structural
 -- (field count), not a proof-search pathology.
+/-- A SchedContext rewrite then a TCB update keeps the object store's invariant
+(the two writes are plain inserts). -/
+private theorem rewrite_updateTcb_objects_invExt (st0 : SystemState) (id : SeLe4n.ObjId)
+    (sc' : SchedContext) (h : st0.rewriteAdmissible id (.schedContext sc'))
+    (tid : ThreadId) (t : TCB) (f : TCB → TCB)
+    (hInv : st0.objects.invExt) (hT : st0.getTcb? tid = some t) :
+    ((st0.rewriteObject id (.schedContext sc') h).updateTcb tid f).objects.invExt := by
+  rw [SystemState.updateTcb_after_rewriteObject_schedContext_objects st0 id sc' h tid t f hInv hT]
+  exact (st0.objects.insert _ _).insert_preserves_invExt _ _
+    (st0.objects.insert_preserves_invExt _ _ hInv)
+
 set_option maxHeartbeats 800000 in
 /-- **The `schedContextUnbind` characterisation**: a successful unbind read a
 SchedContext bound to `tid` and produced exactly one of two shapes — the main
@@ -335,10 +346,11 @@ private theorem schedContextUnbind_ok_char
     ∃ sc, st.getSchedContext? (SchedContextId.ofObjId vScId.val) = some sc ∧
     ∃ tid, sc.boundThread = some tid ∧
     ((∃ tcb, st.getTcb? tid = some tcb ∧
-        st'.objects = (st.objects.insert vScId.val
+        st'.objectsAgreeOffRunLinks { st with objects := ((st.objects.insert vScId.val
             (.schedContext { sc with boundThread := none, isActive := false,
                                      donationOrigin := none })).insert
-            tid.toObjId (.tcb { tcb with schedContextBinding := SchedContextBinding.unbound }) ∧
+            tid.toObjId (.tcb { tcb with schedContextBinding := SchedContextBinding.unbound })) } ∧
+        st'.objects.invExt ∧
         (∀ c, st'.scheduler.replenishQueueOnCore c
           = if determineTargetCore st tid = c
             then ReplenishQueue.remove (st.scheduler.replenishQueueOnCore c)
@@ -372,14 +384,21 @@ private theorem schedContextUnbind_ok_char
           | true => rw [hD] at h; simp at h
         simp only [hNotDon, Bool.false_eq_true, if_false] at h
         cases h
-        refine Or.inl ⟨tcb, rfl, ?_, ?_⟩
-        · -- objects: the scheduler stage is a scheduler-only update of the
+        refine Or.inl ⟨tcb, rfl, ?_, ?_, ?_⟩
+        · -- objects: the current-slot stage is a scheduler-only update of the
           -- pre-state, so the two typed writes over it reduce to the double
-          -- insert whatever the stage's scheduler is -- no split needed -- and
-          -- the purge's object component is definitionally the identity.
+          -- insert whatever the stage's scheduler is -- no split needed; the
+          -- run-queue stage writes only run-queue links (WS-ZA ZA4.5), and the
+          -- purge's object component is definitionally the identity.
+          intro x
           simp only [markKeyChangeFor_objects, purgeReplenishmentOnCore_objects]
-          exact SystemState.updateTcb_after_rewriteObject_schedContext_objects
-            _ vScId.val _ _ tid tcb _ hObjInv hTcb
+          rw [schedContextUnbindQueueStage_objectsAgreeOffRunLinks _ _ _ _ _ x]
+          exact congrArg (fun o => (o[x]?).map KernelObject.withoutRunLinks)
+            (SystemState.updateTcb_after_rewriteObject_schedContext_objects
+              _ vScId.val _ _ tid tcb _ hObjInv hTcb)
+        · rw [markKeyChangeFor_objects]
+          refine schedContextUnbindQueueStage_objects_invExt _ _ _ _ _ ?_
+          exact rewrite_updateTcb_objects_invExt _ _ _ _ tid tcb _ hObjInv hTcb
         · -- the replenish queue: only the final home-core purge touches it.
           intro c
           by_cases hHome : determineTargetCore st tid = c
@@ -503,6 +522,31 @@ private theorem sc_insert_read_frame
     getTcb?_insert_schedContext_eq st st' scId0 sc0 sc' hInv hScOld hObj t
   exact determineTargetCore_congr st st' t (by rw [hgt])
 
+/-- The unbind main arm's read frame: the double insert's, carried across the
+run-queue link writes (WS-ZA ZA4.5). -/
+private theorem unbind_main_read_frame (st st' : SystemState) {vScId : SeLe4n.ObjId}
+    (sc : SchedContext) (tid : ThreadId) (tcb : TCB) (hInv : st.objects.invExt)
+    (hScOld : st.objects.get? vScId = some (KernelObject.schedContext sc))
+    (hTcbOld : st.objects.get? tid.toObjId = some (KernelObject.tcb tcb))
+    (hA : st'.objectsAgreeOffRunLinks { st with objects := ((st.objects.insert vScId
+            (.schedContext { sc with boundThread := none, isActive := false,
+                                     donationOrigin := none })).insert
+            tid.toObjId (.tcb { tcb with schedContextBinding := SchedContextBinding.unbound })) }) :
+    (∀ scId, scId ≠ SchedContextId.ofObjId vScId → st'.getSchedContext? scId = st.getSchedContext? scId) ∧
+    (st'.getSchedContext? (SchedContextId.ofObjId vScId) =
+      some { sc with boundThread := none, isActive := false, donationOrigin := none }) ∧
+    (∀ t, determineTargetCore st' t = determineTargetCore st t) := by
+  obtain ⟨hOff, hSelf, hTgt⟩ := double_insert_read_frame st
+    ({ st with objects := st.objects.insert vScId (KernelObject.schedContext
+        { sc with boundThread := none, isActive := false, donationOrigin := none }) })
+    (SchedContextId.ofObjId vScId) sc
+    { sc with boundThread := none, isActive := false, donationOrigin := none }
+    tid tcb { tcb with schedContextBinding := SchedContextBinding.unbound }
+    hInv hScOld hTcbOld rfl rfl (st' := { st with objects := ((st.objects.insert vScId (.schedContext { sc with boundThread := none, isActive := false, donationOrigin := none })).insert tid.toObjId (.tcb { tcb with schedContextBinding := SchedContextBinding.unbound })) }) rfl
+  exact ⟨fun scId hNe => (hA.getSchedContext? scId).trans (hOff scId hNe),
+    (hA.getSchedContext? _).trans hSelf,
+    fun t => (determineTargetCore_of_objectsAgreeOffRunLinks hA t).trans (hTgt t)⟩
+
 /-- **The `schedContextBind` characterisation**: a successful bind read an
 *unbound* SchedContext and an existing TCB, and produced exactly the two-insert
 object write — the SchedContext bound to the thread, the TCB bound to the
@@ -516,13 +560,14 @@ private theorem schedContextBind_ok_char
     ∃ sc, st.getSchedContext? (SchedContextId.ofObjId vScId.val) = some sc ∧
       sc.boundThread = none ∧
     ∃ tcb, st.getTcb? vThreadId.val = some tcb ∧
-      st'.objects = (st.objects.insert vScId.val
+      st'.objectsAgreeOffRunLinks { st with objects := ((st.objects.insert vScId.val
           (.schedContext { sc with boundThread := some vThreadId.val,
                                    donationOrigin := none })).insert
           vThreadId.val.toObjId
           (.tcb { tcb with
             schedContextBinding := SchedContextBinding.bound ⟨vScId.val.toNat⟩,
-            priority := sc.priority }) ∧
+            priority := sc.priority })) } ∧
+      st'.objects.invExt ∧
       (∀ c, st'.scheduler.replenishQueueOnCore c = st.scheduler.replenishQueueOnCore c) := by
   simp only [schedContextBind] at h
   cases hSc : st.getSchedContext? (SchedContextId.ofObjId vScId.val) with
@@ -568,12 +613,28 @@ private theorem schedContextBind_ok_char
             rw [SystemState.updateTcb_after_rewriteObject_schedContext st vScId.val _ _
               vThreadId.val tcb _ hObjInv hTcb] at h
             cases h
-            refine ⟨?_, ?_⟩
-            · -- objects: both rebucket arms share the double-insert store, and
+            refine ⟨?_, ?_, ?_⟩
+            · -- objects: both rebucket arms move the thread through its TCB
+              -- run-queue links over the double-insert store (WS-ZA ZA4.5), and
               -- the reschedule-pending hook writes no object.
+              intro x
               simp only [markKeyChangeFor_objects]
-              repeat' split
-              all_goals rfl
+              split
+              · exact SystemState.runRequeueOnCore_objectsAgreeOffRunLinks _ _ _ _ x
+              · split
+                · exact SystemState.runEnqueueOnCore_objectsAgreeOffRunLinks _ _ _ _ x
+                · rfl
+            · simp only [markKeyChangeFor_objects]
+              split
+              · exact SystemState.runRequeueOnCore_objects_invExt _ _ _ _
+                  ((st.objects.insert _ _).insert_preserves_invExt _ _
+                    (st.objects.insert_preserves_invExt _ _ hObjInv))
+              · split
+                · exact SystemState.runEnqueueOnCore_objects_invExt _ _ _ _
+                    ((st.objects.insert _ _).insert_preserves_invExt _ _
+                      (st.objects.insert_preserves_invExt _ _ hObjInv))
+                · exact (st.objects.insert _ _).insert_preserves_invExt _ _
+                    (st.objects.insert_preserves_invExt _ _ hObjInv)
             · -- the replenish queues: the rebucket writes a run queue (and the
               -- placement arm a reschedule-pending flag) only.
               intro c
@@ -596,22 +657,26 @@ private theorem schedContextBind_read_frame
     (∀ t, determineTargetCore st' t = determineTargetCore st t) ∧
     (∃ sc, st.getSchedContext? (SchedContextId.ofObjId vScId.val) = some sc ∧
         sc.boundThread = none) := by
-  obtain ⟨sc, hSc, hBT, tcb, hTcb, hObjEq, hQEq⟩ :=
+  obtain ⟨sc, hSc, hBT, tcb, hTcb, hA, _, hQEq⟩ :=
     schedContextBind_ok_char vScId vThreadId st st' hObjInv h
   have hScRaw : st.objects.get? vScId.val = some (KernelObject.schedContext sc) :=
     (getSchedContext?_eq_some_iff st _ sc).mp hSc
   have hTcbRaw : st.objects.get? vThreadId.val.toObjId = some (KernelObject.tcb tcb) :=
     (getTcb?_eq_some_iff st _ tcb).mp hTcb
+  -- The frame is the double insert's; the bind's run-queue link writes are
+  -- invisible to every reading below (WS-ZA ZA4.5).
   obtain ⟨hOff, _, hTgt⟩ := double_insert_read_frame st
     ({ st with objects := st.objects.insert vScId.val (KernelObject.schedContext
         { sc with boundThread := some vThreadId.val, donationOrigin := none }) })
-    st' (SchedContextId.ofObjId vScId.val) sc
+    { st with objects := (st.objects.insert vScId.val (KernelObject.schedContext { sc with boundThread := some vThreadId.val, donationOrigin := none })).insert vThreadId.val.toObjId (KernelObject.tcb { tcb with schedContextBinding := SchedContextBinding.bound ⟨vScId.val.toNat⟩, priority := sc.priority }) }
+    (SchedContextId.ofObjId vScId.val) sc
     { sc with boundThread := some vThreadId.val, donationOrigin := none }
     vThreadId.val tcb
     { tcb with schedContextBinding := SchedContextBinding.bound ⟨vScId.val.toNat⟩,
                priority := sc.priority }
-    hObjInv hScRaw hTcbRaw rfl rfl hObjEq
-  exact ⟨hQEq, hOff, hTgt, sc, hSc, hBT⟩
+    hObjInv hScRaw hTcbRaw rfl rfl rfl
+  exact ⟨hQEq, fun scId hNe => (hA.getSchedContext? scId).trans (hOff scId hNe),
+    fun t => (determineTargetCore_of_objectsAgreeOffRunLinks hA t).trans (hTgt t), sc, hSc, hBT⟩
 
 /-- **The live `.schedContextBind` arm preserves affinity-consistency** — the
 first of the two theorems whose absence the pre-SM10 audit registered.
@@ -666,30 +731,28 @@ theorem schedContextBind_preserves_replenishQueueEntriesBound_smp
   · exact ⟨sc₀, by rw [hOff scId₀ hEqK]; exact hSc₀, tid₀, hTid₀⟩
 
 /-- `schedContextBind` preserves the object store's extended invariant — its
-whole object footprint is two plain inserts. -/
+object footprint is two plain inserts and the run-queue link writes. -/
 theorem schedContextBind_preserves_objects_invExt
     (vScId : ValidObjId) (vThreadId : ValidThreadId) (st st' : SystemState)
     (hObjInv : st.objects.invExt)
     (h : schedContextBind vScId vThreadId st = .ok ((), st')) :
     st'.objects.invExt := by
-  obtain ⟨sc, _, _, tcb, _, hObjEq, _⟩ := schedContextBind_ok_char vScId vThreadId st st' hObjInv h
-  rw [hObjEq]
-  exact (st.objects.insert _ _).insert_preserves_invExt _ _
-    (st.objects.insert_preserves_invExt _ _ hObjInv)
+  obtain ⟨_, _, _, _, _, _, hInv', _⟩ := schedContextBind_ok_char vScId vThreadId st st' hObjInv h
+  exact hInv'
 
 /-- `schedContextUnbind` preserves the object store's extended invariant — two
-plain inserts on the main arm, one on the sweep arm (the purges are
-scheduler-only writes, already erased by the characterisation). -/
+plain inserts and the run-queue link writes on the main arm, one insert on the
+sweep arm (the purges are scheduler-only writes, already erased by the
+characterisation). -/
 theorem schedContextUnbind_preserves_objects_invExt
     (vScId : ValidObjId) (st st' : SystemState)
     (hObjInv : st.objects.invExt)
     (h : schedContextUnbind vScId st = .ok ((), st')) :
     st'.objects.invExt := by
   obtain ⟨sc, _, tid, _, hArm⟩ := schedContextUnbind_ok_char vScId st st' hObjInv h
-  rcases hArm with ⟨tcb, _, hObjEq, _⟩ | ⟨_, hObjEq, _⟩ <;> rw [hObjEq]
-  · exact (st.objects.insert _ _).insert_preserves_invExt _ _
-      (st.objects.insert_preserves_invExt _ _ hObjInv)
-  · exact st.objects.insert_preserves_invExt _ _ hObjInv
+  rcases hArm with ⟨tcb, _, _, hInv', _⟩ | ⟨_, hObjEq, _⟩
+  · exact hInv'
+  · rw [hObjEq]; exact st.objects.insert_preserves_invExt _ _ hObjInv
 
 /-- **`schedContextUnbind` preserves affinity-consistency** — with *no*
 orphan-freedom hypothesis: the entry class whose obligation the unbind changes
@@ -705,17 +768,13 @@ theorem schedContextUnbind_preserves_replenishQueueAffinityConsistent_smp
   obtain ⟨sc, hSc, tid, hBT, hArm⟩ := schedContextUnbind_ok_char vScId st st' hObjInv h
   have hScRaw : st.objects.get? vScId.val = some (KernelObject.schedContext sc) :=
     (getSchedContext?_eq_some_iff st _ sc).mp hSc
-  rcases hArm with ⟨tcb, hTcb, hObjEq, hQEq⟩ | ⟨hTcb, hObjEq, hQEq⟩
+  rcases hArm with ⟨tcb, hTcb, hA, _, hQEq⟩ | ⟨hTcb, hObjEq, hQEq⟩
   · -- main arm: double insert + home-core purge.
     have hTcbRaw : st.objects.get? tid.toObjId = some (KernelObject.tcb tcb) :=
       (getTcb?_eq_some_iff st _ tcb).mp hTcb
-    obtain ⟨hOff, hSelf, hTgt⟩ := double_insert_read_frame st
-      ({ st with objects := st.objects.insert vScId.val (KernelObject.schedContext
-          { sc with boundThread := none, isActive := false, donationOrigin := none }) })
-      st' (SchedContextId.ofObjId vScId.val) sc
-      { sc with boundThread := none, isActive := false, donationOrigin := none }
-      tid tcb { tcb with schedContextBinding := SchedContextBinding.unbound }
-      hObjInv hScRaw hTcbRaw rfl rfl hObjEq
+    -- The frame is the double insert's; the unbind's run-queue link writes are
+    -- invisible to every reading below (WS-ZA ZA4.5).
+    obtain ⟨hOff, hSelf, hTgt⟩ := unbind_main_read_frame st st' sc tid tcb hObjInv hScRaw hTcbRaw hA
     intro c scId₀ t hMem sc₀ hSc₀ tid₀ hTid₀
     rw [hQEq c] at hMem
     by_cases hEqK : scId₀ = SchedContextId.ofObjId vScId.val
@@ -758,17 +817,11 @@ theorem schedContextUnbind_preserves_replenishQueueEntriesBound_smp
   obtain ⟨sc, hSc, tid, hBT, hArm⟩ := schedContextUnbind_ok_char vScId st st' hObjInv h
   have hScRaw : st.objects.get? vScId.val = some (KernelObject.schedContext sc) :=
     (getSchedContext?_eq_some_iff st _ sc).mp hSc
-  rcases hArm with ⟨tcb, hTcb, hObjEq, hQEq⟩ | ⟨hTcb, hObjEq, hQEq⟩
+  rcases hArm with ⟨tcb, hTcb, hA, _, hQEq⟩ | ⟨hTcb, hObjEq, hQEq⟩
   · -- main arm.
     have hTcbRaw : st.objects.get? tid.toObjId = some (KernelObject.tcb tcb) :=
       (getTcb?_eq_some_iff st _ tcb).mp hTcb
-    obtain ⟨hOff, _, _⟩ := double_insert_read_frame st
-      ({ st with objects := st.objects.insert vScId.val (KernelObject.schedContext
-          { sc with boundThread := none, isActive := false, donationOrigin := none }) })
-      st' (SchedContextId.ofObjId vScId.val) sc
-      { sc with boundThread := none, isActive := false, donationOrigin := none }
-      tid tcb { tcb with schedContextBinding := SchedContextBinding.unbound }
-      hObjInv hScRaw hTcbRaw rfl rfl hObjEq
+    obtain ⟨hOff, _, _⟩ := unbind_main_read_frame st st' sc tid tcb hObjInv hScRaw hTcbRaw hA
     intro c scId₀ t hMem
     rw [hQEq c] at hMem
     by_cases hHome : determineTargetCore st tid = c

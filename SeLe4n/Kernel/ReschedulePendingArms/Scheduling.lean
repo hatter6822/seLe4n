@@ -56,20 +56,6 @@ theorem priorityRescheduleOnCore_stepCovers (e : CoreId) (st st' : SystemState)
   · rw [hEq]; exact stepCovers_refl e st
   · exact handleRescheduleSgiOnCore_stepCovers e st st' hInv hH
 
-/-- A run-queue re-key of a queued thread adds no member. -/
-theorem mem_runQueue_reKey {s : SchedulerState} {h c : CoreId} {x t : SeLe4n.ThreadId}
-    {p : SeLe4n.Priority} (hMem : x ∈ s.runQueueOnCore h)
-    (ht : t ∈ (s.setRunQueueOnCore h (((s.runQueueOnCore h).remove x).insert x p)).runQueueOnCore c) :
-    t ∈ s.runQueueOnCore c := by
-  by_cases hc : h = c
-  · subst hc
-    rw [SchedulerState.setRunQueueOnCore_runQueueOnCore_self, RunQueue.mem_insert,
-      RunQueue.mem_remove] at ht
-    rcases ht with ⟨ht, _⟩ | rfl
-    · exact ht
-    · exact hMem
-  · rwa [SchedulerState.setRunQueueOnCore_runQueueOnCore_ne _ h c _ hc] at ht
-
 /-- **One boost update covers**: the boost write on the holder ends in the key
 hook, and the re-bucket keeps the queue's membership. -/
 theorem updatePipBoostOnCore_stepCovers (e c : CoreId) (st : SystemState)
@@ -348,24 +334,31 @@ theorem keyWriteSlotFrame_insertTcb {tid : SeLe4n.ThreadId} {pre s : SystemState
   · rw [insertObjects_getElem_ne s _ _ oid hne hInv]; exact hK.1 oid hne
   · rw [insertObjects_getElem_self s _ _ hInv] at hs; cases hs
 
-/-- Re-keying a queued `tid` in place keeps the frame. -/
-theorem keyWriteSlotFrame_reKey {tid : SeLe4n.ThreadId} {pre s : SystemState}
+/-- Re-keying a queued `tid` through its TCB run-queue links keeps the frame:
+the links are no key input (WS-ZA ZA4.5). -/
+theorem keyWriteSlotFrame_runRequeue {tid : SeLe4n.ThreadId} {pre s : SystemState}
     (h : keyWriteSlotFrame tid pre s) (c : CoreId) (p : SeLe4n.Priority)
     (hMem : tid ∈ s.scheduler.runQueueOnCore c) :
-    keyWriteSlotFrame tid pre { s with scheduler := (s.scheduler.setRunQueueOnCore c
-      (((s.scheduler.runQueueOnCore c).remove tid).insert tid p)) } := by
+    keyWriteSlotFrame tid pre (s.runRequeueOnCore c tid p) := by
   obtain ⟨hK, hRq, hCur, hFl, hInv⟩ := h
-  refine ⟨hK, fun c' t ht => hRq c' t ?_, fun c' => ?_, fun c' => ?_, hInv⟩
-  · by_cases hcc : c = c'
+  refine ⟨hK.trans_keyInputsEq (keyInputsEq_of_objectsAgreeOffRunLinks
+      (SystemState.runRequeueOnCore_objectsAgreeOffRunLinks _ c tid _)),
+    fun c' t ht => hRq c' t ?_, fun c' => ?_, fun c' => ?_,
+    SystemState.runRequeueOnCore_objects_invExt _ _ _ _ hInv⟩
+  · rw [SystemState.runRequeueOnCore_scheduler] at ht
+    by_cases hcc : c = c'
     · subst hcc
       rw [SchedulerState.setRunQueueOnCore_runQueueOnCore_self, RunQueue.mem_insert,
         RunQueue.mem_remove] at ht
       rcases ht with ⟨ht, _⟩ | rfl
       · exact ht
       · exact hMem
-    · rwa [SchedulerState.setRunQueueOnCore_runQueueOnCore_ne _ c c' _ hcc] at ht
-  · rw [SchedulerState.setRunQueueOnCore_currentOnCore]; exact hCur c'
-  · rw [SchedulerState.setRunQueueOnCore_reschedulePendingOnCore]; exact hFl c'
+    · rwa [SchedulerState.setRunQueueOnCore_runQueueOnCore_ne _ c c' _ hcc,
+        SchedulerState.setRunQueueEndsOnCore_runQueueOnCore] at ht
+  · rw [SystemState.runRequeueOnCore_scheduler, SchedulerState.setRunQueueOnCore_currentOnCore,
+      SchedulerState.setRunQueueEndsOnCore_currentOnCore]; exact hCur c'
+  · rw [SystemState.runRequeueOnCore_scheduler, SchedulerState.setRunQueueOnCore_reschedulePendingOnCore,
+      SchedulerState.setRunQueueEndsOnCore_reschedulePendingOnCore]; exact hFl c'
 
 /-- Configure's bound-thread propagation is a key write on the bound thread. -/
 theorem schedContextConfigureBoundPropagate_keyWriteSlotFrame (stStored : SystemState)
@@ -384,18 +377,18 @@ theorem schedContextConfigureBoundPropagate_keyWriteSlotFrame (stStored : System
     · split
       · exact h0
       · split
-        · rename_i hMem; exact keyWriteSlotFrame_reKey (keyWriteSlotFrame_insertTcb h0) _ _ hMem
+        · rename_i hMem; exact keyWriteSlotFrame_runRequeue (keyWriteSlotFrame_insertTcb h0) _ _ hMem
         · exact keyWriteSlotFrame_insertTcb h0
     · apply keyWriteSlotFrame_insertTcb
       split
       · exact h0
       · split
-        · rename_i hMem; exact keyWriteSlotFrame_reKey (keyWriteSlotFrame_insertTcb h0) _ _ hMem
+        · rename_i hMem; exact keyWriteSlotFrame_runRequeue (keyWriteSlotFrame_insertTcb h0) _ _ hMem
         · exact keyWriteSlotFrame_insertTcb h0
   · split
     · exact h0
     · split
-      · rename_i hMem; exact keyWriteSlotFrame_reKey (keyWriteSlotFrame_insertTcb h0) _ _ hMem
+      · rename_i hMem; exact keyWriteSlotFrame_runRequeue (keyWriteSlotFrame_insertTcb h0) _ _ hMem
       · exact keyWriteSlotFrame_insertTcb h0
 
 /-- **Configure covers.**  The context's deadline write is read only by the
@@ -627,38 +620,53 @@ theorem yieldOnCore_stepCovers (st st' : SystemState) (e : CoreId)
 
 /-! ### Scheduling-context bind and unbind -/
 
-/-- Writing one core's run queue leaves every other core's. -/
-theorem mem_runQueue_set_ne {s : SchedulerState} {h c : CoreId} {t : SeLe4n.ThreadId}
-    {q : RunQueue} (hc : h ≠ c) (ht : t ∈ (s.setRunQueueOnCore h q).runQueueOnCore c) :
-    t ∈ s.runQueueOnCore c := by
-  rwa [SchedulerState.setRunQueueOnCore_runQueueOnCore_ne _ h c _ hc] at ht
+/-- A re-key through the TCB run-queue links keeps every core's membership and
+slot, and drops no flag (WS-ZA ZA4.5). -/
+theorem runRequeue_slots (S : SystemState) (h c : CoreId) (x : SeLe4n.ThreadId)
+    (p : SeLe4n.Priority) (hMem : x ∈ S.scheduler.runQueueOnCore h) :
+    (∀ t, t ∈ (S.runRequeueOnCore h x p).scheduler.runQueueOnCore c →
+      t ∈ S.scheduler.runQueueOnCore c) ∧
+    (S.runRequeueOnCore h x p).scheduler.currentOnCore c = S.scheduler.currentOnCore c ∧
+    (S.runRequeueOnCore h x p).scheduler.reschedulePendingOnCore c =
+      S.scheduler.reschedulePendingOnCore c := by
+  rw [SystemState.runRequeueOnCore_scheduler]
+  refine ⟨fun t ht => ?_, by simp, by simp⟩
+  by_cases hc : h = c
+  · subst hc
+    rw [SchedulerState.setRunQueueOnCore_runQueueOnCore_self, RunQueue.mem_insert,
+      RunQueue.mem_remove] at ht
+    rcases ht with ⟨ht, _⟩ | rfl
+    · exact ht
+    · exact hMem
+  · rwa [SchedulerState.setRunQueueOnCore_runQueueOnCore_ne _ h c _ hc,
+      SchedulerState.setRunQueueEndsOnCore_runQueueOnCore] at ht
 
-theorem keyInputsEqExcept_of_objects_eq {tid : SeLe4n.ThreadId} {a b c : SystemState}
-    (h : keyInputsEqExcept tid a b) (hc : c.objects = b.objects) : keyInputsEqExcept tid a c := by
-  unfold keyInputsEqExcept; rw [hc]; exact h
-
-/-- Inserting into one core's queue and flagging that core keeps every core
-flagged or slot-unchanged. -/
-theorem insertMark_slots (s : SchedulerState) (h c : CoreId) (q : RunQueue) :
-    ((s.setRunQueueOnCore h q).markReschedulePendingOnCore h).reschedulePendingOnCore c = true ∨
-      ((∀ t, t ∈ ((s.setRunQueueOnCore h q).markReschedulePendingOnCore h).runQueueOnCore c →
-          t ∈ s.runQueueOnCore c) ∧
-        ((s.setRunQueueOnCore h q).markReschedulePendingOnCore h).currentOnCore c = s.currentOnCore c) := by
+/-- A placement through the TCB run-queue links, flagging its core, keeps every
+other core's membership and slot, and drops no flag (WS-ZA ZA4.5). -/
+theorem runEnqueueMark_slots (S : SystemState) (s0 : SchedulerState) (h c : CoreId)
+    (x : SeLe4n.ThreadId) (p : SeLe4n.Priority) (hS : S.scheduler = s0) :
+    ((S.runEnqueueOnCore h x p).markReschedulePendingOnCore h).scheduler.reschedulePendingOnCore c = true ∨
+      ((∀ t, t ∈ ((S.runEnqueueOnCore h x p).markReschedulePendingOnCore h).scheduler.runQueueOnCore c →
+          t ∈ s0.runQueueOnCore c) ∧
+        ((S.runEnqueueOnCore h x p).markReschedulePendingOnCore h).scheduler.currentOnCore c =
+          s0.currentOnCore c) := by
+  subst hS
+  simp only [SystemState.markReschedulePendingOnCore, SystemState.runEnqueueOnCore_scheduler]
   by_cases hh : h = c
   · subst hh; exact Or.inl (SchedulerState.markReschedulePendingOnCore_reschedulePendingOnCore_self _ _)
-  · refine Or.inr ⟨fun t ht => ?_, ?_⟩
-    · rw [SchedulerState.markReschedulePendingOnCore_runQueueOnCore] at ht
-      exact mem_runQueue_set_ne hh ht
-    · rw [SchedulerState.markReschedulePendingOnCore_currentOnCore,
-        SchedulerState.setRunQueueOnCore_currentOnCore]
+  · refine Or.inr ⟨fun t ht => ?_, by simp⟩
+    rwa [SchedulerState.markReschedulePendingOnCore_runQueueOnCore,
+      SchedulerState.setRunQueueOnCore_runQueueOnCore_ne _ h c _ hh,
+      SchedulerState.setRunQueueEndsOnCore_runQueueOnCore] at ht
 
-theorem insertMark_flag_mono (s : SchedulerState) (h c : CoreId) (q : RunQueue)
-    (hF : s.reschedulePendingOnCore c = true) :
-    ((s.setRunQueueOnCore h q).markReschedulePendingOnCore h).reschedulePendingOnCore c = true := by
+theorem runEnqueueMark_flag_mono (S : SystemState) (h c : CoreId) (x : SeLe4n.ThreadId)
+    (p : SeLe4n.Priority) (hF : S.scheduler.reschedulePendingOnCore c = true) :
+    ((S.runEnqueueOnCore h x p).markReschedulePendingOnCore h).scheduler.reschedulePendingOnCore c = true := by
+  simp only [SystemState.markReschedulePendingOnCore, SystemState.runEnqueueOnCore_scheduler]
   by_cases hh : h = c
   · subst hh; exact SchedulerState.markReschedulePendingOnCore_reschedulePendingOnCore_self _ _
-  · rw [SchedulerState.markReschedulePendingOnCore_reschedulePendingOnCore_ne _ _ _ hh,
-      SchedulerState.setRunQueueOnCore_reschedulePendingOnCore]; exact hF
+  · rw [SchedulerState.markReschedulePendingOnCore_reschedulePendingOnCore_ne _ _ _ hh]
+    simpa using hF
 
 /-- **Bind covers.**  The context write keeps its deadline, the thread's binding
 and priority write ends in the key hook, and the one placement that grows a
@@ -701,36 +709,47 @@ theorem schedContextBind_stepCovers (st st' : SystemState) (vScId : SeLe4n.Valid
           (fun t => { t with
             schedContextBinding := (SchedContextBinding.bound ⟨vScId.val.toNat⟩),
             priority := sc.priority }) hInv1
-        refine ⟨stepCovers_markKeyChangeFor hT (keyInputsEqExcept_of_objects_eq hK2 ?_) ?_ ?_, ?_⟩
-        · dsimp only []; split
-          · rfl
-          · split <;> rfl
+        -- The queue stage moves the thread through its TCB run-queue links
+        -- (WS-ZA ZA4.5), which no key input reads.
+        refine ⟨stepCovers_markKeyChangeFor hT
+          (hK2.trans_keyInputsEq (keyInputsEq_of_objectsAgreeOffRunLinks ?_)) ?_ ?_, ?_⟩
+        · intro x
+          dsimp only []
+          split
+          · exact SystemState.runRequeueOnCore_objectsAgreeOffRunLinks _ _ _ _ x
+          · split
+            · exact SystemState.runEnqueueOnCore_objectsAgreeOffRunLinks _ _ _ _ x
+            · rfl
         · intro c hc
           dsimp only []
           split
           · rename_i hMem
-            simp only [SystemState.updateTcb_scheduler, SystemState.rewriteObject_scheduler] at hMem ⊢
-            exact Or.inr ⟨fun t ht => mem_runQueue_reKey hMem ht,
-              SchedulerState.setRunQueueOnCore_currentOnCore _ _ _ _⟩
+            obtain ⟨hR, hC, _⟩ := runRequeue_slots _ _ c _ _ hMem
+            simp only [SystemState.updateTcb_scheduler, SystemState.rewriteObject_scheduler] at hR hC
+            exact Or.inr ⟨hR, hC⟩
           · split
-            · simp only [SystemState.updateTcb_scheduler, SystemState.rewriteObject_scheduler]
-              exact insertMark_slots _ _ _ _
+            · exact runEnqueueMark_slots _ _ _ c _ _
+                (by simp only [SystemState.updateTcb_scheduler, SystemState.rewriteObject_scheduler])
             · simp only [SystemState.updateTcb_scheduler, SystemState.rewriteObject_scheduler]
               exact Or.inr ⟨fun t ht => ht, trivial⟩
         · intro c _ hF
           dsimp only []
           split
-          · simp only [SystemState.updateTcb_scheduler, SystemState.rewriteObject_scheduler,
-              SchedulerState.setRunQueueOnCore_reschedulePendingOnCore]; exact hF
+          · rename_i hMem
+            obtain ⟨_, _, hFl⟩ := runRequeue_slots _ _ c _ _ hMem
+            rw [hFl]
+            simp only [SystemState.updateTcb_scheduler, SystemState.rewriteObject_scheduler]; exact hF
           · split
-            · simp only [SystemState.updateTcb_scheduler, SystemState.rewriteObject_scheduler]
-              exact insertMark_flag_mono _ _ _ _ hF
+            · exact runEnqueueMark_flag_mono _ _ _ _ _
+                (by simp only [SystemState.updateTcb_scheduler, SystemState.rewriteObject_scheduler]; exact hF)
             · simp only [SystemState.updateTcb_scheduler, SystemState.rewriteObject_scheduler]; exact hF
         · rw [markKeyChangeFor_objects]
           dsimp only []
           split
-          · exact hInv2
-          · split <;> exact hInv2
+          · exact SystemState.runRequeueOnCore_objects_invExt _ _ _ _ hInv2
+          · split
+            · exact SystemState.runEnqueueOnCore_objects_invExt _ _ _ _ hInv2
+            · exact hInv2
       · contradiction
     · contradiction
   · contradiction
@@ -745,35 +764,10 @@ def schedSlotsCovered (s0 s1 : SchedulerState) : Prop :=
 def schedFlagsMono (s0 s1 : SchedulerState) : Prop :=
   ∀ c, s0.reschedulePendingOnCore c = true → s1.reschedulePendingOnCore c = true
 
-theorem schedSlotsCovered_trans {a b d : SchedulerState} (h₁ : schedSlotsCovered a b)
-    (h₂ : schedSlotsCovered b d) (hM : schedFlagsMono b d) : schedSlotsCovered a d := by
-  intro c
-  rcases h₂ c with h | ⟨hRq₂, hCur₂⟩
-  · exact Or.inl h
-  rcases h₁ c with h | ⟨hRq₁, hCur₁⟩
-  · exact Or.inl (hM c h)
-  · exact Or.inr ⟨fun t ht => hRq₁ t (hRq₂ t ht), hCur₂.trans hCur₁⟩
-
-theorem schedFlagsMono_trans {a b d : SchedulerState} (h₁ : schedFlagsMono a b)
-    (h₂ : schedFlagsMono b d) : schedFlagsMono a d := fun c h => h₂ c (h₁ c h)
-
 theorem schedSlotsCovered_refl (s : SchedulerState) : schedSlotsCovered s s :=
   fun _ => Or.inr ⟨fun _ h => h, rfl⟩
 
 theorem schedFlagsMono_refl (s : SchedulerState) : schedFlagsMono s s := fun _ h => h
-
-theorem schedSlotsCovered_reKey (s : SchedulerState) (h : CoreId) (x : SeLe4n.ThreadId)
-    (p : SeLe4n.Priority) (hMem : x ∈ s.runQueueOnCore h) :
-    schedSlotsCovered s (s.setRunQueueOnCore h (((s.runQueueOnCore h).remove x).insert x p)) ∧
-      schedFlagsMono s (s.setRunQueueOnCore h (((s.runQueueOnCore h).remove x).insert x p)) :=
-  ⟨fun _ => Or.inr ⟨fun _ ht => mem_runQueue_reKey hMem ht,
-    SchedulerState.setRunQueueOnCore_currentOnCore _ _ _ _⟩,
-   fun c hF => by rw [SchedulerState.setRunQueueOnCore_reschedulePendingOnCore]; exact hF⟩
-
-theorem schedSlotsCovered_insertMark (s : SchedulerState) (h : CoreId) (q : RunQueue) :
-    schedSlotsCovered s ((s.setRunQueueOnCore h q).markReschedulePendingOnCore h) ∧
-      schedFlagsMono s ((s.setRunQueueOnCore h q).markReschedulePendingOnCore h) :=
-  ⟨fun c => insertMark_slots s h c q, fun c hF => insertMark_flag_mono s h c q hF⟩
 
 theorem schedSlotsCovered_clearMark (s : SchedulerState) (r : CoreId) (v : Option SeLe4n.ThreadId) :
     schedSlotsCovered s ((s.setCurrentOnCore r v).markReschedulePendingOnCore r) ∧
@@ -819,31 +813,47 @@ theorem unbindClear_covered (s : SchedulerState) (r? : Option CoreId) :
   | none => exact ⟨schedSlotsCovered_refl s, schedFlagsMono_refl s⟩
   | some r => exact schedSlotsCovered_clearMark s r none
 
-theorem unbindRebucket_covered (s0 : SchedulerState) (home : CoreId) (tid : SeLe4n.ThreadId)
-    (p : SeLe4n.Priority) (wasCurrent : Bool) :
-    schedSlotsCovered s0 (if tid ∈ s0.runQueueOnCore home then
-        s0.setRunQueueOnCore home (((s0.runQueueOnCore home).remove tid).insert tid p)
-      else if wasCurrent then
-        (s0.setRunQueueOnCore home (((s0.runQueueOnCore home).remove tid).insert tid p))
-          |>.markReschedulePendingOnCore home
-      else s0) ∧
-    schedFlagsMono s0 (if tid ∈ s0.runQueueOnCore home then
-        s0.setRunQueueOnCore home (((s0.runQueueOnCore home).remove tid).insert tid p)
-      else if wasCurrent then
-        (s0.setRunQueueOnCore home (((s0.runQueueOnCore home).remove tid).insert tid p))
-          |>.markReschedulePendingOnCore home
-      else s0) := by
+/-- Unbind's run-queue stage through the TCB links keeps every core flagged or
+slot-unchanged against any scheduler record equal to its input's (WS-ZA ZA4.5). -/
+theorem unbindQueueStage_slots (S : SystemState) (s0 : SchedulerState) (hS : S.scheduler = s0)
+    (home : CoreId) (tid : SeLe4n.ThreadId) (p : SeLe4n.Priority) (wasCurrent : Bool)
+    (c : CoreId) :
+    (SchedContextOps.schedContextUnbindQueueStage S home tid p wasCurrent).scheduler.reschedulePendingOnCore c
+        = true ∨
+      ((∀ t, t ∈ (SchedContextOps.schedContextUnbindQueueStage S home tid p wasCurrent).scheduler.runQueueOnCore c →
+          t ∈ s0.runQueueOnCore c) ∧
+        (SchedContextOps.schedContextUnbindQueueStage S home tid p wasCurrent).scheduler.currentOnCore c =
+          s0.currentOnCore c) := by
+  subst hS
+  unfold SchedContextOps.schedContextUnbindQueueStage
   split
-  · rename_i hMem; exact schedSlotsCovered_reKey s0 home tid p hMem
+  · rename_i hMem
+    obtain ⟨hR, hC, _⟩ := runRequeue_slots S home c tid p hMem
+    exact Or.inr ⟨hR, hC⟩
   · split
-    · exact schedSlotsCovered_insertMark s0 home _
-    · exact ⟨schedSlotsCovered_refl s0, schedFlagsMono_refl s0⟩
+    · exact runEnqueueMark_slots S _ home c tid p rfl
+    · exact Or.inr ⟨fun _ h => h, rfl⟩
+
+theorem unbindQueueStage_flag_mono (S : SystemState) (home : CoreId) (tid : SeLe4n.ThreadId)
+    (p : SeLe4n.Priority) (wasCurrent : Bool) (c : CoreId)
+    (hF : S.scheduler.reschedulePendingOnCore c = true) :
+    (SchedContextOps.schedContextUnbindQueueStage S home tid p wasCurrent).scheduler.reschedulePendingOnCore c
+      = true := by
+  unfold SchedContextOps.schedContextUnbindQueueStage
+  split
+  · rename_i hMem
+    rw [(runRequeue_slots S home c tid p hMem).2.2]; exact hF
+  · split
+    · exact runEnqueueMark_flag_mono S home c tid p hF
+    · exact hF
 
 /-- Unbind's object tail — the context write keeps its deadline, the binding
-write is the bound thread's key write, the purge is a replenish-queue write —
-ends in the key hook. -/
+write is the bound thread's key write, the run-queue stage moves only TCB
+run-queue links (flagging the core it places on), the purge is a
+replenish-queue write — ends in the key hook. -/
 theorem unbindTail_stepCovers (e : CoreId) (st1 : SystemState) (vScId : SeLe4n.ValidObjId)
     (sc : SchedContext) (tid : SeLe4n.ThreadId) (tcb : TCB) (home : CoreId)
+    (prio : SeLe4n.Priority) (wasCurrent : Bool)
     (hInv : st1.objects.invExt)
     (hSc : st1.objects[vScId.val]? = some (.schedContext sc))
     (hT : st1.getTcb? tid = some tcb)
@@ -851,13 +861,17 @@ theorem unbindTail_stepCovers (e : CoreId) (st1 : SystemState) (vScId : SeLe4n.V
       { sc with boundThread := none, isActive := false, donationOrigin := none })) :
     stepCovers e st1 (markKeyChangeFor
       { SchedContextOps.purgeReplenishmentOnCore
-          ((st1.rewriteObject vScId.val _ hAdm).updateTcb tid fun t =>
-            { t with schedContextBinding := SchedContextBinding.unbound })
+          (SchedContextOps.schedContextUnbindQueueStage
+            ((st1.rewriteObject vScId.val _ hAdm).updateTcb tid fun t =>
+              { t with schedContextBinding := SchedContextBinding.unbound })
+            home tid prio wasCurrent)
           home ⟨vScId.val.toNat⟩ with
         scThreadIndex := scThreadIndexRemove
           (SchedContextOps.purgeReplenishmentOnCore
-            ((st1.rewriteObject vScId.val _ hAdm).updateTcb tid fun t =>
-              { t with schedContextBinding := SchedContextBinding.unbound })
+            (SchedContextOps.schedContextUnbindQueueStage
+              ((st1.rewriteObject vScId.val _ hAdm).updateTcb tid fun t =>
+                { t with schedContextBinding := SchedContextBinding.unbound })
+              home tid prio wasCurrent)
             home ⟨vScId.val.toNat⟩).scThreadIndex ⟨vScId.val.toNat⟩ tid }
       tid (effectiveSchedParams st1 tcb)) := by
   have hK1 : keyInputsEq st1 (st1.rewriteObject vScId.val _ hAdm) :=
@@ -868,16 +882,21 @@ theorem unbindTail_stepCovers (e : CoreId) (st1 : SystemState) (vScId : SeLe4n.V
   have hK2 := keyInputsEq.trans_keyInputsEqExcept hK1
     (keyInputsEqExcept_updateTcb (f := fun t => { t with
       schedContextBinding := SchedContextBinding.unbound }) hInv1 (by rw [hT1]; rfl))
-  refine stepCovers_markKeyChangeFor hT (keyInputsEqExcept_of_objects_eq hK2 ?_)
-    (fun c _ => Or.inr ⟨fun t ht => ?_, ?_⟩) (fun c _ hF => ?_)
-  · exact SchedContextOps.purgeReplenishmentOnCore_objects _ home ⟨vScId.val.toNat⟩
+  refine stepCovers_markKeyChangeFor hT
+    (hK2.trans_keyInputsEq (keyInputsEq_of_objectsAgreeOffRunLinks
+      (SystemState.objectsAgreeOffRunLinks.trans
+        (SystemState.objectsAgreeOffRunLinks.of_objects_eq
+          (SchedContextOps.purgeReplenishmentOnCore_objects _ home ⟨vScId.val.toNat⟩))
+        (SchedContextOps.schedContextUnbindQueueStage_objectsAgreeOffRunLinks _ _ _ _ _))))
+    (fun c _ => ?_) (fun c _ hF => ?_)
   · simp only [SchedContextOps.purgeReplenishmentOnCore_runQueueOnCore,
-      SystemState.updateTcb_scheduler, SystemState.rewriteObject_scheduler] at ht
-    exact ht
-  · simp only [SchedContextOps.purgeReplenishmentOnCore_currentOnCore,
-      SystemState.updateTcb_scheduler, SystemState.rewriteObject_scheduler]
-  · simp [SchedContextOps.purgeReplenishmentOnCore, SystemState.updateTcb_scheduler,
-      SystemState.rewriteObject_scheduler, hF]
+      SchedContextOps.purgeReplenishmentOnCore_currentOnCore,
+      SchedContextOps.purgeReplenishmentOnCore_reschedulePendingOnCore]
+    exact unbindQueueStage_slots _ _
+      (by simp only [SystemState.updateTcb_scheduler, SystemState.rewriteObject_scheduler]) _ _ _ _ c
+  · simp only [SchedContextOps.purgeReplenishmentOnCore_reschedulePendingOnCore]
+    exact unbindQueueStage_flag_mono _ _ _ _ _ c
+      (by simp only [SystemState.updateTcb_scheduler, SystemState.rewriteObject_scheduler]; exact hF)
 
 /-- **Unbind covers.**  The running core's slot clear and the home-core
 re-bucket flag the cores whose slots grow or move; the rest is the object tail. -/
@@ -899,20 +918,18 @@ theorem schedContextUnbind_stepCovers (st st' : SystemState) (vScId : SeLe4n.Val
         · contradiction
         · cases hStep
           constructor
-          · refine stepCovers_trans ?_ (unbindTail_stepCovers e _ vScId sc tid tcb _ ?_ ?_ ?_ _)
-            · apply stepCovers_of_schedSlots
-              · exact schedSlotsCovered_trans (unbindClear_covered _ _).1
-                  (unbindRebucket_covered _ _ _ _ _).1 (unbindRebucket_covered _ _ _ _ _).2
-              · exact schedFlagsMono_trans (unbindClear_covered _ _).2
-                  (unbindRebucket_covered _ _ _ _ _).2
+          · refine stepCovers_trans ?_ (unbindTail_stepCovers e _ vScId sc tid tcb _ _ _ ?_ ?_ ?_ _)
+            · exact stepCovers_of_schedSlots _ _ (unbindClear_covered _ _).1
+                (unbindClear_covered _ _).2
             · exact hObjInv
             · exact hScRaw
             · exact hT
           · rw [markKeyChangeFor_objects]
             dsimp only []
             rw [SchedContextOps.purgeReplenishmentOnCore_objects]
-            refine SystemState.updateTcb_preserves_objects_invExt _ _ _
-              (SystemState.rewriteObject_preserves_objects_invExt _ _ _ _ ?_)
+            refine SchedContextOps.schedContextUnbindQueueStage_objects_invExt _ _ _ _ _
+              (SystemState.updateTcb_preserves_objects_invExt _ _ _
+                (SystemState.rewriteObject_preserves_objects_invExt _ _ _ _ ?_))
             exact hObjInv
       · cases hStep
         have hAdm : st.rewriteAdmissible vScId.val (.schedContext

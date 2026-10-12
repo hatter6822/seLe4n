@@ -85,6 +85,21 @@ theorem markKeyChangeFor_preserves_ipcInvariantFull (st : SystemState)
   ipcInvariantFull_of_flagOnlyWrite (markKeyChangeFor_objects _ _ _)
     (markKeyChangeFor_runQueueOnCore _ _ _) (markKeyChangeFor_currentOnCore _ _ _) h
 
+/-- A reschedule-pending mark writes a flag and nothing else. -/
+theorem markReschedulePendingOnCore_preserves_ipcInvariantFull (st : SystemState)
+    (c : CoreId) (h : ipcInvariantFull st) :
+    ipcInvariantFull (st.markReschedulePendingOnCore c) :=
+  ipcInvariantFull_of_flagOnlyWrite (s1 := st) rfl
+    (fun _ => by simp [SystemState.markReschedulePendingOnCore])
+    (fun _ => by simp [SystemState.markReschedulePendingOnCore]) h
+
+/-- The scheduling-context thread index is read by no conjunct. -/
+theorem ipcInvariantFull_withScThreadIndex (st : SystemState)
+    (idx : SeLe4n.Kernel.RobinHood.RHTable SeLe4n.SchedContextId (List SeLe4n.ThreadId))
+    (h : ipcInvariantFull st) :
+    ipcInvariantFull { st with scThreadIndex := idx } :=
+  ipcInvariantFull_of_flagOnlyWrite (s1 := st) rfl (fun _ => rfl) (fun _ => rfl) h
+
 /-- The pre-state form of the hook writes a flag or nothing. -/
 theorem markKeyChangeFrom_preserves_ipcInvariantFull (pre st : SystemState)
     (tid : SeLe4n.ThreadId) (h : ipcInvariantFull st) :
@@ -1816,30 +1831,34 @@ theorem storeObject_schedContextContentUpdate_preserves_ipcInvariantFull
       hInv.passiveServerIdle)
     hCap hInv
 
-/-- Re-keying a queued thread's run-queue bucket in place preserves the whole
-bundle: membership survives the remove/insert pair, `current` and objects are
-untouched. -/
-theorem ipcInvariantFull_of_runQueueReKey (st : SystemState) (c : CoreId)
+/-- Re-keying a queued thread's run-queue bucket through its TCB run-queue
+links preserves the whole bundle: membership survives the remove/insert pair,
+`current` is untouched, and the objects agree off the run-queue links
+(WS-ZA ZA4.5). -/
+theorem ipcInvariantFull_of_runRequeueOnCore (st : SystemState) (c : CoreId)
     (tid : SeLe4n.ThreadId) (p : SeLe4n.Priority)
-    (hInv : ipcInvariantFull st)
-    (hMem : tid ∈ st.scheduler.runQueueOnCore c) :
-    ipcInvariantFull { st with scheduler := st.scheduler.setRunQueueOnCore c (((st.scheduler.runQueueOnCore c).remove tid).insert tid p) } := by
-  refine ipcInvariantFull_of_getElem_eq (s1 := st) (fun oid => rfl) ?_ hInv
+    (hInv : ipcInvariantFull st) :
+    ipcInvariantFull (st.runRequeueOnCore c tid p) := by
+  have hA := SystemState.runRequeueOnCore_objectsAgreeOffRunLinks st c tid p
+  refine ipcInvariantFull_of_objectsAgreeOffRunLinks hA ?_ hInv
   refine passiveServerIdle_of_frame
     (passiveServerIdleFrame_of_backward_monotone (st := st)
-      (fun t tcb' h => ⟨tcb', h, rfl, rfl⟩)
-      (fun y hy => ?_) (by simp))
+      (fun t tcb' h => ?_) (fun y hy => ?_) (by simp))
     hInv.passiveServerIdle
-  show y ∈ (st.scheduler.setRunQueueOnCore c (((st.scheduler.runQueueOnCore c).remove tid).insert tid p)).runQueueOnCore Concurrency.bootCoreId
-  by_cases hcc : c = Concurrency.bootCoreId
-  · subst hcc
-    rw [SchedulerState.setRunQueueOnCore_runQueueOnCore_self]
-    rw [RunQueue.mem_insert, RunQueue.mem_remove]
-    by_cases hEq : y = tid
-    · exact Or.inr hEq
-    · exact Or.inl ⟨hy, hEq⟩
-  · rw [SchedulerState.setRunQueueOnCore_runQueueOnCore_ne _ c Concurrency.bootCoreId _ hcc]
-    exact hy
+  · obtain ⟨tcb, h0, e⟩ := hA.get_tcb' h
+    exact ⟨tcb, h0, (TCB.proj_eq_of_withoutRunLinks_eq (·.ipcState) e).symm,
+      (TCB.proj_eq_of_withoutRunLinks_eq (·.schedContextBinding) e).symm⟩
+  · rw [SystemState.runRequeueOnCore_scheduler]
+    by_cases hcc : c = Concurrency.bootCoreId
+    · subst hcc
+      rw [SchedulerState.setRunQueueOnCore_runQueueOnCore_self]
+      rw [RunQueue.mem_insert, RunQueue.mem_remove]
+      by_cases hEq : y = tid
+      · exact Or.inr hEq
+      · exact Or.inl ⟨hy, hEq⟩
+    · rw [SchedulerState.setRunQueueOnCore_runQueueOnCore_ne _ c Concurrency.bootCoreId _ hcc,
+        SchedulerState.setRunQueueEndsOnCore_runQueueOnCore]
+      exact hy
 
 /-- Domain alignment over any base state: a no-op or a one-TCB rewrite of a
 field no conjunct reads. -/
@@ -1905,21 +1924,21 @@ theorem schedContextConfigureBoundPropagate_preserves_ipcInvariantFull
     by_cases hMem : boundTid ∈ stStored.scheduler.runQueueOnCore
         (determineTargetCore { stStored with objects := stStored.objects.insert boundTid.toObjId (.tcb { boundTcb with priority := ⟨priority⟩ }) } boundTid)
     · rw [if_pos hMem]
-      have hInvR := ipcInvariantFull_of_runQueueReKey
+      have hInvR := ipcInvariantFull_of_runRequeueOnCore
         { stStored with objects := stStored.objects.insert boundTid.toObjId (.tcb { boundTcb with priority := ⟨priority⟩ }) }
         (determineTargetCore { stStored with objects := stStored.objects.insert boundTid.toObjId (.tcb { boundTcb with priority := ⟨priority⟩ }) } boundTid)
         boundTid
         (match boundTcb.pipBoost with
           | none => ⟨priority⟩
           | some boostPri => ⟨Nat.max priority boostPri.val⟩)
-        hInvW hMem
+        hInvW
+      -- The re-key relinked the thread's run-queue fields, so the domain step
+      -- reads the re-keyed record (WS-ZA ZA4.5).
       split
       · rename_i currentTcb hCur _
-        have hCEq : { boundTcb with priority := ⟨priority⟩ } = currentTcb :=
-          Option.some.inj (hSomeW.symm.trans hCur)
-        subst hCEq
         exact domainAlignStep_preserves_ipcInvariantFull _ boundTid _ domain
-          _ hObjInvW hInvR hAtW
+          _ (SystemState.runRequeueOnCore_objects_invExt _ _ _ _ hObjInvW) hInvR
+          ((SystemState.getTcb?_eq_some_iff _ _ _).mp hCur)
       · exact hInvR
     · rw [if_neg hMem]
       split
@@ -2395,29 +2414,14 @@ theorem schedContextBind_preserves_ipcInvariantFull
               rfl rfl rfl rfl rfl rfl rfl rfl
               (Or.inl ⟨hUnbound, rfl, hFree, rfl, hNotOwner, hNoOther⟩)
               hPassive2
-            -- The key-change hook at the bind's end writes a flag or nothing.
-            refine markKeyChangeFor_preserves_ipcInvariantFull _ _ _ ?_
+            -- The key-change hook at the bind's end writes a flag or nothing,
+            -- and the thread index is read by no conjunct.
+            refine markKeyChangeFor_preserves_ipcInvariantFull _ _ _
+              (ipcInvariantFull_withScThreadIndex _ _ ?_)
             split
-            · rename_i hMem
-              refine ipcInvariantFull_of_getElem_eq
-                (s1 := { st with objects := (st.objects.insert vScId.val (.schedContext { sc with boundThread := some vThreadId.val, donationOrigin := none })).insert vThreadId.val.toObjId (.tcb { tcb with schedContextBinding := .bound ⟨vScId.val.toNat⟩, priority := sc.priority }) })
-                (fun oid => rfl) ?_ hInv2
-              refine passiveServerIdle_of_frame
-                (passiveServerIdleFrame_of_backward_monotone
-                  (st := { st with objects := (st.objects.insert vScId.val (.schedContext { sc with boundThread := some vThreadId.val, donationOrigin := none })).insert vThreadId.val.toObjId (.tcb { tcb with schedContextBinding := .bound ⟨vScId.val.toNat⟩, priority := sc.priority }) })
-                  (fun t tcb'' h => ⟨tcb'', h, rfl, rfl⟩)
-                  (fun y hy => ?_) (by simp))
-                hInv2.passiveServerIdle
-              by_cases hcc : determineTargetCore { st with objects := (st.objects.insert vScId.val (.schedContext { sc with boundThread := some vThreadId.val, donationOrigin := none })).insert vThreadId.val.toObjId (.tcb { tcb with schedContextBinding := .bound ⟨vScId.val.toNat⟩, priority := sc.priority }) } vThreadId.val = Concurrency.bootCoreId
-              · rw [show (Concurrency.bootCoreId : CoreId) = determineTargetCore { st with objects := (st.objects.insert vScId.val (.schedContext { sc with boundThread := some vThreadId.val, donationOrigin := none })).insert vThreadId.val.toObjId (.tcb { tcb with schedContextBinding := .bound ⟨vScId.val.toNat⟩, priority := sc.priority }) } vThreadId.val from hcc.symm]
-                rw [SchedulerState.setRunQueueOnCore_runQueueOnCore_self]
-                rw [RunQueue.mem_insert, RunQueue.mem_remove]
-                by_cases hEq : y = vThreadId.val
-                · exact Or.inr hEq
-                · exact Or.inl ⟨by rw [show (determineTargetCore { st with objects := (st.objects.insert vScId.val (.schedContext { sc with boundThread := some vThreadId.val, donationOrigin := none })).insert vThreadId.val.toObjId (.tcb { tcb with schedContextBinding := .bound ⟨vScId.val.toNat⟩, priority := sc.priority }) } vThreadId.val : CoreId) = Concurrency.bootCoreId from hcc]; exact hy, hEq⟩
-              · rw [SchedulerState.setRunQueueOnCore_runQueueOnCore_ne _ _ _ _
-                  (fun h => hcc h)]
-                exact hy
+            · -- The re-bucket arm: a re-key through the TCB run-queue links
+              -- (WS-ZA ZA4.5).
+              exact ipcInvariantFull_of_runRequeueOnCore _ _ _ _ hInv2
             · -- **WS-RR RR8.12 Cut B2 (`v0.35.182`)**: the two remaining arms — the
               -- placement of a parked runnable thread, and the identity.  The
               -- placement is the re-bucket arm's argument with the *remove*
@@ -2426,6 +2430,8 @@ theorem schedContextBind_preserves_ipcInvariantFull
               -- write, so the bundle survives for the same reason.
               split
               · rename_i hPark
+                refine markReschedulePendingOnCore_preserves_ipcInvariantFull _ _
+                  (ipcInvariantFull_runEnqueueOnCore _ _ _ _ ?_)
                 refine ipcInvariantFull_of_getElem_eq
                   (s1 := { st with objects := (st.objects.insert vScId.val (.schedContext { sc with boundThread := some vThreadId.val, donationOrigin := none })).insert vThreadId.val.toObjId (.tcb { tcb with schedContextBinding := .bound ⟨vScId.val.toNat⟩, priority := sc.priority }) })
                   (fun oid => rfl) ?_ hInv2
@@ -2437,27 +2443,15 @@ theorem schedContextBind_preserves_ipcInvariantFull
                   hInv2.passiveServerIdle
                 by_cases hcc : determineTargetCore { st with objects := (st.objects.insert vScId.val (.schedContext { sc with boundThread := some vThreadId.val, donationOrigin := none })).insert vThreadId.val.toObjId (.tcb { tcb with schedContextBinding := .bound ⟨vScId.val.toNat⟩, priority := sc.priority }) } vThreadId.val = Concurrency.bootCoreId
                 · rw [show (Concurrency.bootCoreId : CoreId) = determineTargetCore { st with objects := (st.objects.insert vScId.val (.schedContext { sc with boundThread := some vThreadId.val, donationOrigin := none })).insert vThreadId.val.toObjId (.tcb { tcb with schedContextBinding := .bound ⟨vScId.val.toNat⟩, priority := sc.priority }) } vThreadId.val from hcc.symm]
-                  rw [SchedulerState.markReschedulePendingOnCore_runQueueOnCore,
-                    SchedulerState.setRunQueueOnCore_runQueueOnCore_self]
+                  rw [SchedulerState.setRunQueueOnCore_runQueueOnCore_self]
                   rw [RunQueue.mem_insert]
                   refine Or.inl ?_
                   rw [show (determineTargetCore { st with objects := (st.objects.insert vScId.val (.schedContext { sc with boundThread := some vThreadId.val, donationOrigin := none })).insert vThreadId.val.toObjId (.tcb { tcb with schedContextBinding := .bound ⟨vScId.val.toNat⟩, priority := sc.priority }) } vThreadId.val : CoreId) = Concurrency.bootCoreId from hcc]
                   exact hy
-                · rw [SchedulerState.markReschedulePendingOnCore_runQueueOnCore,
-                    SchedulerState.setRunQueueOnCore_runQueueOnCore_ne _ _ _ _
+                · rw [SchedulerState.setRunQueueOnCore_runQueueOnCore_ne _ _ _ _
                     (fun h => hcc h)]
                   exact hy
-              · rename_i hPark
-                exact ipcInvariantFull_of_getElem_eq
-                  (s1 := { st with objects := (st.objects.insert vScId.val (.schedContext { sc with boundThread := some vThreadId.val, donationOrigin := none })).insert vThreadId.val.toObjId (.tcb { tcb with schedContextBinding := .bound ⟨vScId.val.toNat⟩, priority := sc.priority }) })
-                  (fun oid => rfl)
-                  (passiveServerIdle_of_frame
-                    (passiveServerIdleFrame_of_backward_monotone
-                      (st := { st with objects := (st.objects.insert vScId.val (.schedContext { sc with boundThread := some vThreadId.val, donationOrigin := none })).insert vThreadId.val.toObjId (.tcb { tcb with schedContextBinding := .bound ⟨vScId.val.toNat⟩, priority := sc.priority }) })
-                      (fun t tcb'' h => ⟨tcb'', h, rfl, rfl⟩)
-                      (fun y hy => hy) rfl)
-                    hInv2.passiveServerIdle)
-                  hInv2
+              · exact hInv2
           · contradiction
       · contradiction
   · contradiction
@@ -2875,8 +2869,6 @@ demoted thread's `passiveServerIdle` exemption is the `hAllowedIpc` fact. -/
 private theorem schedContextUnbindTail_preserves_ipcInvariantFull
     (stA : SystemState) (scObj : SeLe4n.ObjId) (tid : SeLe4n.ThreadId)
     (sc : SeLe4n.Kernel.SchedContext) (tcb : TCB)
-    (c : CoreId) (scIdT : SeLe4n.SchedContextId)
-    (idx : RobinHood.RHTable SeLe4n.SchedContextId (List SeLe4n.ThreadId))
     (h : stA.rewriteAdmissible scObj
       (.schedContext { sc with boundThread := none, isActive := false, donationOrigin := none }))
     (hObjInvA : stA.objects.invExt) (hInvA : ipcInvariantFull stA)
@@ -2884,11 +2876,9 @@ private theorem schedContextUnbindTail_preserves_ipcInvariantFull
     (hPreT : stA.objects[tid.toObjId]? = some (.tcb tcb))
     (hBoundEq : sc.boundThread = some tid)
     (hAllowedIpc : passiveServerIdleAllowed tcb.ipcState) :
-    ipcInvariantFull { SchedContextOps.purgeReplenishmentOnCore
-      ((stA.rewriteObject scObj
+    ipcInvariantFull ((stA.rewriteObject scObj
           (.schedContext { sc with boundThread := none, isActive := false, donationOrigin := none })
-          h).updateTcb tid (fun t => { t with schedContextBinding := .unbound }))
-      c scIdT with scThreadIndex := idx } := by
+          h).updateTcb tid (fun t => { t with schedContextBinding := .unbound })) := by
   -- `v0.35.71`: the two typed writes, reduced to the double insert the levers
   -- below are stated over.
   rw [SystemState.updateTcb_after_rewriteObject_schedContext stA scObj _ h tid tcb _ hObjInvA
@@ -2939,14 +2929,44 @@ private theorem schedContextUnbindTail_preserves_ipcInvariantFull
     rfl rfl rfl rfl rfl rfl rfl rfl
     (Or.inr ⟨rfl, hBoundEq, rfl⟩)
     hPassive3
-  have hInv4 := purgeReplenishmentOnCore_preserves_ipcInvariantFull _ c scIdT hInv3
-  refine ipcInvariantFull_of_objects_scheduler_eq ?_ ?_ hInv4
+  refine ipcInvariantFull_of_objects_scheduler_eq ?_ ?_ hInv3
   · rfl
   · rfl
 
-/-- The scheduler stage of the unbind — current-clear plus optional re-bucket
-— preserves the bundle: the demoted thread's exemption is the `hAllowedIpc`
-fact, every other thread's boot-core placement is monotone. -/
+/-- A bare insert into a run queue keeps the bundle: membership only grows. -/
+theorem ipcInvariantFull_of_runQueueInsert (S : SystemState) (c : CoreId)
+    (t : SeLe4n.ThreadId) (p : SeLe4n.Priority) (h : ipcInvariantFull S) :
+    ipcInvariantFull { S with scheduler := S.scheduler.setRunQueueOnCore c ((S.scheduler.runQueueOnCore c).insert t p) } := by
+  refine ipcInvariantFull_of_getElem_eq (s1 := S) (fun oid => rfl) ?_ h
+  refine passiveServerIdle_of_frame
+    (passiveServerIdleFrame_of_backward_monotone (st := S)
+      (fun t tcb'' h => ⟨tcb'', h, rfl, rfl⟩) (fun y hy => ?_) (by simp))
+    h.passiveServerIdle
+  show y ∈ (S.scheduler.setRunQueueOnCore c _).runQueueOnCore Concurrency.bootCoreId
+  by_cases hc : c = Concurrency.bootCoreId
+  · subst hc
+    rw [SchedulerState.setRunQueueOnCore_runQueueOnCore_self, RunQueue.mem_insert]
+    exact Or.inl hy
+  · rw [SchedulerState.setRunQueueOnCore_runQueueOnCore_ne _ _ _ _ hc]
+    exact hy
+
+/-- The unbind's run-queue stage keeps the bundle: a re-key keeps membership, a
+placement only grows it, both through the TCB run-queue links (WS-ZA ZA4.5). -/
+theorem schedContextUnbindQueueStage_preserves_ipcInvariantFull (T : SystemState)
+    (home : CoreId) (tid : SeLe4n.ThreadId) (prio : SeLe4n.Priority) (wasCurrent : Bool)
+    (h : ipcInvariantFull T) :
+    ipcInvariantFull (SchedContextOps.schedContextUnbindQueueStage T home tid prio wasCurrent) := by
+  unfold SchedContextOps.schedContextUnbindQueueStage
+  split
+  · exact ipcInvariantFull_of_runRequeueOnCore _ _ _ _ h
+  · split
+    · exact markReschedulePendingOnCore_preserves_ipcInvariantFull _ _
+        (ipcInvariantFull_runEnqueueOnCore _ _ _ _ (ipcInvariantFull_of_runQueueInsert _ _ _ _ h))
+    · exact h
+
+/-- The current-slot stage of the unbind preserves the bundle: the demoted
+thread's exemption is the `hAllowedIpc` fact, every other thread's boot-core
+placement is monotone. -/
 private theorem unbindSchedulerStage_preserves_ipcInvariantFull
     (st stA : SystemState) (tid : SeLe4n.ThreadId) (tcb : TCB)
     (hInv : ipcInvariantFull st)
@@ -3011,6 +3031,9 @@ theorem schedContextUnbind_preserves_ipcInvariantFull
           (SchedContextId.ofObjId vScId.val) sc).mp hSc
         have hTcbRaw := (SystemState.getTcb?_eq_some_iff st tid tcb).mp hTcb
         have hAllowedIpc := hBoundAllowed sc tid tcb hScRaw hBound hTcbRaw
+        -- The current-slot stage, then the two object writes, then the
+        -- run-queue stage through the TCB run-queue links (WS-ZA ZA4.5), the
+        -- home-core purge, the index write and the key-change hook.
         cases hRC : runningCoreOf? st tid with
         | some rc =>
           have hCurRC : st.scheduler.currentOnCore rc = some tid := by
@@ -3018,86 +3041,40 @@ theorem schedContextUnbind_preserves_ipcInvariantFull
             simpa using this
           rw [hRC] at hStep
           simp only [Option.isSome_some] at hStep
-          have hStage : ipcInvariantFull { st with scheduler := (st.scheduler.setCurrentOnCore rc none).setRunQueueOnCore (determineTargetCore st tid) ((((st.scheduler.setCurrentOnCore rc none).runQueueOnCore (determineTargetCore st tid)).remove tid).insert tid (TCB.boostedPriority { tcb with schedContextBinding := .unbound })) } := by
+          have hStage : ipcInvariantFull { st with scheduler := (st.scheduler.setCurrentOnCore rc none).markReschedulePendingOnCore rc } := by
             refine unbindSchedulerStage_preserves_ipcInvariantFull st _ tid tcb hInv rfl
               hTcbRaw hAllowedIpc ?_ ?_
-            · intro t htne hm
-              by_cases hcc : determineTargetCore st tid = Concurrency.bootCoreId
-              · rw [show (Concurrency.bootCoreId : CoreId) = determineTargetCore st tid
-                  from hcc.symm]
-                rw [SchedulerState.setRunQueueOnCore_runQueueOnCore_self,
-                  RunQueue.mem_insert, RunQueue.mem_remove,
-                  SchedulerState.setCurrentOnCore_runQueueOnCore]
-                exact Or.inl ⟨by rw [hcc]; exact hm, htne⟩
-              · rw [SchedulerState.setRunQueueOnCore_runQueueOnCore_ne _ _ _ _ hcc,
-                  SchedulerState.setCurrentOnCore_runQueueOnCore]
-                exact hm
+            · intro t _ hm
+              rw [SchedulerState.markReschedulePendingOnCore_runQueueOnCore,
+                SchedulerState.setCurrentOnCore_runQueueOnCore]
+              exact hm
             · intro t htne _
               by_cases hrb : rc = Concurrency.bootCoreId
               · rw [← hrb, hCurRC]
                 exact fun h => htne (Option.some.inj h).symm
               · intro hpre
-                have hA : ((st.scheduler.setCurrentOnCore rc none).setRunQueueOnCore (determineTargetCore st tid) ((((st.scheduler.setCurrentOnCore rc none).runQueueOnCore (determineTargetCore st tid)).remove tid).insert tid (TCB.boostedPriority { tcb with schedContextBinding := .unbound }))).currentOnCore Concurrency.bootCoreId = some t := by
-                  rw [SchedulerState.setRunQueueOnCore_currentOnCore,
-                    SchedulerState.setCurrentOnCore_currentOnCore_ne _ _ _ _ hrb]
-                  exact hpre
                 rename_i hcur
-                exact hcur hA
-          split at hStep
-          all_goals
-            cases hStep
-          -- The key-change hook at the unbind's end writes a flag or nothing;
-          -- the stage's own marks (the cleared slot's core, and the placed
-          -- thread's home) move no run queue and no current slot either.
-          all_goals
-            refine markKeyChangeFor_preserves_ipcInvariantFull _ _ _ ?_
-          all_goals
-            refine schedContextUnbindTail_preserves_ipcInvariantFull _ vScId.val tid sc tcb
-              _ _ _ _ hObjInv ?_ hScRaw hTcbRaw hBound hAllowedIpc
-          all_goals
-            refine ipcInvariantFull_of_flagOnlyWrite ?_ ?_ ?_ hStage
-          all_goals first
-            | rfl
-            | (intro c'
-               simp only [↓reduceIte,
-                 SchedulerState.setRunQueueOnCore_markReschedulePendingOnCore,
-                 SchedulerState.markReschedulePendingOnCore_runQueueOnCore,
-                 SchedulerState.markReschedulePendingOnCore_currentOnCore])
+                exact hcur (by
+                  rw [SchedulerState.markReschedulePendingOnCore_currentOnCore,
+                    SchedulerState.setCurrentOnCore_currentOnCore_ne _ _ _ _ hrb]
+                  exact hpre)
+          cases hStep
+          exact markKeyChangeFor_preserves_ipcInvariantFull _ _ _
+            (ipcInvariantFull_withScThreadIndex _ _
+              (purgeReplenishmentOnCore_preserves_ipcInvariantFull _ _ _
+                (schedContextUnbindQueueStage_preserves_ipcInvariantFull _ _ _ _ _
+                  (schedContextUnbindTail_preserves_ipcInvariantFull _ vScId.val tid sc tcb
+                    _ hObjInv hStage hScRaw hTcbRaw hBound hAllowedIpc))))
         | none =>
           rw [hRC] at hStep
           simp only [Option.isSome_none] at hStep
-          split at hStep
-          · rename_i hMem
-            cases hStep
-            have hStage : ipcInvariantFull { st with scheduler := st.scheduler.setRunQueueOnCore (determineTargetCore st tid) (((st.scheduler.runQueueOnCore (determineTargetCore st tid)).remove tid).insert tid (TCB.boostedPriority { tcb with schedContextBinding := .unbound })) } := by
-              refine unbindSchedulerStage_preserves_ipcInvariantFull st _ tid tcb hInv rfl
-                hTcbRaw hAllowedIpc ?_ ?_
-              · intro t htne hm
-                by_cases hcc : determineTargetCore st tid = Concurrency.bootCoreId
-                · rw [show (Concurrency.bootCoreId : CoreId) = determineTargetCore st tid
-                    from hcc.symm]
-                  rw [SchedulerState.setRunQueueOnCore_runQueueOnCore_self,
-                    RunQueue.mem_insert, RunQueue.mem_remove]
-                  exact Or.inl ⟨by rw [hcc]; exact hm, htne⟩
-                · rw [SchedulerState.setRunQueueOnCore_runQueueOnCore_ne _ _ _ _ hcc]
-                  exact hm
-              · intro t _ hcur
-                intro hpre
-                exact hcur (by rw [SchedulerState.setRunQueueOnCore_currentOnCore]; exact hpre)
-            refine markKeyChangeFor_preserves_ipcInvariantFull _ _ _ ?_
-            exact schedContextUnbindTail_preserves_ipcInvariantFull _ vScId.val tid sc tcb
-              _ _ _ _ hObjInv hStage hScRaw hTcbRaw hBound hAllowedIpc
-          · split at hStep
-            all_goals first
-              -- `wasCurrent` is `false` on this arm, so its `if` has one live branch
-              | exact absurd ‹false = true› (by simp)
-              | (cases hStep
-                 refine markKeyChangeFor_preserves_ipcInvariantFull _ _ _ ?_
-                 exact schedContextUnbindTail_preserves_ipcInvariantFull _ vScId.val tid sc tcb
-                   _ _ _ _ hObjInv
-                   (unbindSchedulerStage_preserves_ipcInvariantFull st _ tid tcb hInv rfl
-                     hTcbRaw hAllowedIpc (fun t _ hm => hm) (fun t _ hcur => hcur))
-                   hScRaw hTcbRaw hBound hAllowedIpc)
+          cases hStep
+          exact markKeyChangeFor_preserves_ipcInvariantFull _ _ _
+            (ipcInvariantFull_withScThreadIndex _ _
+              (purgeReplenishmentOnCore_preserves_ipcInvariantFull _ _ _
+                (schedContextUnbindQueueStage_preserves_ipcInvariantFull _ _ _ _ _
+                  (schedContextUnbindTail_preserves_ipcInvariantFull _ vScId.val tid sc tcb
+                    _ hObjInv hInv hScRaw hTcbRaw hBound hAllowedIpc))))
       · rename_i hTcbNone
         dsimp only [SystemState.rewriteObject] at hStep
         cases hStep

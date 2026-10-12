@@ -662,6 +662,64 @@ the core's ends are the enqueue's over the dequeued state. -/
   rw [SchedulerState.setRunQueueOnCore_setRunQueueEndsOnCore, SchedulerState.setRunQueueOnCore_setRunQueueOnCore,
     SchedulerState.setRunQueueEndsOnCore_setRunQueueEndsOnCore]
 
+/-! A run-queue link write writes only its own core's queue and ends: every
+other observable per-core slot reads through. -/
+
+@[simp] theorem runEnqueueOnCore_currentOnCore (st : SystemState) (c : CoreId) (t : SeLe4n.ThreadId)
+    (p : SeLe4n.Priority) (c' : CoreId) :
+    (st.runEnqueueOnCore c t p).scheduler.currentOnCore c' = st.scheduler.currentOnCore c' := by
+  simp [runEnqueueOnCore_scheduler]
+
+@[simp] theorem runEnqueueOnCore_activeDomainOnCore (st : SystemState) (c : CoreId) (t : SeLe4n.ThreadId)
+    (p : SeLe4n.Priority) (c' : CoreId) :
+    (st.runEnqueueOnCore c t p).scheduler.activeDomainOnCore c' = st.scheduler.activeDomainOnCore c' := by
+  simp [runEnqueueOnCore_scheduler]
+
+@[simp] theorem runEnqueueOnCore_domainTimeRemainingOnCore (st : SystemState) (c : CoreId) (t : SeLe4n.ThreadId)
+    (p : SeLe4n.Priority) (c' : CoreId) :
+    (st.runEnqueueOnCore c t p).scheduler.domainTimeRemainingOnCore c' = st.scheduler.domainTimeRemainingOnCore c' := by
+  simp [runEnqueueOnCore_scheduler]
+
+@[simp] theorem runEnqueueOnCore_domainScheduleIndexOnCore (st : SystemState) (c : CoreId) (t : SeLe4n.ThreadId)
+    (p : SeLe4n.Priority) (c' : CoreId) :
+    (st.runEnqueueOnCore c t p).scheduler.domainScheduleIndexOnCore c' = st.scheduler.domainScheduleIndexOnCore c' := by
+  simp [runEnqueueOnCore_scheduler]
+
+@[simp] theorem runEnqueueOnCore_reschedulePendingOnCore (st : SystemState) (c : CoreId) (t : SeLe4n.ThreadId)
+    (p : SeLe4n.Priority) (c' : CoreId) :
+    (st.runEnqueueOnCore c t p).scheduler.reschedulePendingOnCore c' = st.scheduler.reschedulePendingOnCore c' := by
+  simp [runEnqueueOnCore_scheduler]
+
+@[simp] theorem runRequeueOnCore_currentOnCore (st : SystemState) (c : CoreId) (t : SeLe4n.ThreadId)
+    (p : SeLe4n.Priority) (c' : CoreId) :
+    (st.runRequeueOnCore c t p).scheduler.currentOnCore c' = st.scheduler.currentOnCore c' := by
+  simp [runRequeueOnCore_scheduler]
+
+@[simp] theorem runRequeueOnCore_activeDomainOnCore (st : SystemState) (c : CoreId) (t : SeLe4n.ThreadId)
+    (p : SeLe4n.Priority) (c' : CoreId) :
+    (st.runRequeueOnCore c t p).scheduler.activeDomainOnCore c' = st.scheduler.activeDomainOnCore c' := by
+  simp [runRequeueOnCore_scheduler]
+
+@[simp] theorem runRequeueOnCore_domainTimeRemainingOnCore (st : SystemState) (c : CoreId) (t : SeLe4n.ThreadId)
+    (p : SeLe4n.Priority) (c' : CoreId) :
+    (st.runRequeueOnCore c t p).scheduler.domainTimeRemainingOnCore c' = st.scheduler.domainTimeRemainingOnCore c' := by
+  simp [runRequeueOnCore_scheduler]
+
+@[simp] theorem runRequeueOnCore_domainScheduleIndexOnCore (st : SystemState) (c : CoreId) (t : SeLe4n.ThreadId)
+    (p : SeLe4n.Priority) (c' : CoreId) :
+    (st.runRequeueOnCore c t p).scheduler.domainScheduleIndexOnCore c' = st.scheduler.domainScheduleIndexOnCore c' := by
+  simp [runRequeueOnCore_scheduler]
+
+@[simp] theorem runRequeueOnCore_reschedulePendingOnCore (st : SystemState) (c : CoreId) (t : SeLe4n.ThreadId)
+    (p : SeLe4n.Priority) (c' : CoreId) :
+    (st.runRequeueOnCore c t p).scheduler.reschedulePendingOnCore c' = st.scheduler.reschedulePendingOnCore c' := by
+  simp [runRequeueOnCore_scheduler]
+
+theorem runRequeueOnCore_runQueueOnCore_ne (st : SystemState) (c c' : CoreId) (t : SeLe4n.ThreadId)
+    (p : SeLe4n.Priority) (h : c ≠ c') :
+    (st.runRequeueOnCore c t p).scheduler.runQueueOnCore c' = st.scheduler.runQueueOnCore c' := by
+  simp [runRequeueOnCore_scheduler, SchedulerState.setRunQueueOnCore_runQueueOnCore_ne _ _ _ _ h]
+
 end SeLe4n.Model.SystemState
 
 namespace SeLe4n.Model.SystemState

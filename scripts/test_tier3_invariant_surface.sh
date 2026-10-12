@@ -3341,12 +3341,12 @@ run_check "INVARIANT" bash -lc 'rg -U -n "^def schedContextBind[^\n]*(\n([ \t][^
 # SchedContext rewrite runs OVER THE STAGE under that witness, the TCB through
 # the typed rewrite after it, and the TCB-missing arm rewrites at `st`.
 run_check "INVARIANT" bash -lc 'rg -U -n "^def schedContextUnbind[^\n]*(\n([ \t][^\n]*)?)*    match st\.getSchedContextWitnessed\? \(SchedContextId\.ofObjId vScId\.val\) with\n    \| some ⟨sc, hSc⟩ =>" SeLe4n/Kernel/SchedContext/Operations.lean'
-run_check "INVARIANT" bash -lc 'rg -U -n "^def schedContextUnbind[^\n]*(\n([ \t][^\n]*)?)*          let st1 : SystemState := \{ st with scheduler := sched1 \}(\n([ \t][^\n]*)?)*          let st2 := st1\.rewriteObject vScId\.val \(KernelObject\.schedContext updatedSc\)\n            \(SystemState\.rewriteAdmissible_schedContext hSc updatedSc\)(\n([ \t][^\n]*)?)*          let st3 := st2\.updateTcb tid fun t =>\n            \{ t with schedContextBinding := SchedContextBinding\.unbound \}" SeLe4n/Kernel/SchedContext/Operations.lean'
+run_check "INVARIANT" bash -lc 'rg -U -n "^def schedContextUnbind[^\n]*(\n([ \t][^\n]*)?)*          let st1 : SystemState := \{ st with scheduler := sched0 \}(\n([ \t][^\n]*)?)*          let st2 := st1\.rewriteObject vScId\.val \(KernelObject\.schedContext updatedSc\)\n            \(SystemState\.rewriteAdmissible_schedContext hSc updatedSc\)(\n([ \t][^\n]*)?)*          let st3 := st2\.updateTcb tid fun t =>\n            \{ t with schedContextBinding := SchedContextBinding\.unbound \}" SeLe4n/Kernel/SchedContext/Operations.lean'
 run_check "INVARIANT" bash -lc 'rg -U -n "^def schedContextUnbind[^\n]*(\n([ \t][^\n]*)?)*        \| none =>(\n([ \t][^\n]*)?)*          let st1 := st\.rewriteObject vScId\.val \(KernelObject\.schedContext updatedSc\)\n            \(SystemState\.rewriteAdmissible_schedContext hSc updatedSc\)" SeLe4n/Kernel/SchedContext/Operations.lean'
 # NEGATIVE: neither binding operation resolves the SchedContext bare, and the
 # unbind's writes do not bypass the scheduler stage.
 run_negative_check "INVARIANT" bash -lc 'rg -U -n "^def schedContext(Bind|Unbind)[^\n]*(\n([ \t][^\n]*)?)*match st\.getSchedContext\? \(SchedContextId\.ofObjId vScId\.val\) with" SeLe4n/Kernel/SchedContext/Operations.lean'
-run_negative_check "INVARIANT" bash -lc 'rg -U -n "^def schedContextUnbind[^\n]*(\n([ \t][^\n]*)?)*let st1 : SystemState := \{ st with scheduler := sched1 \}(\n([ \t][^\n]*)?)*let st2 := st\.rewriteObject" SeLe4n/Kernel/SchedContext/Operations.lean'
+run_negative_check "INVARIANT" bash -lc 'rg -U -n "^def schedContextUnbind[^\n]*(\n([ \t][^\n]*)?)*let st1 : SystemState := \{ st with scheduler := sched0 \}(\n([ \t][^\n]*)?)*let st2 := st\.rewriteObject" SeLe4n/Kernel/SchedContext/Operations.lean'
 # The budget transfer: the source under its lookup's witness, the target
 # through the typed rewrite over the rewritten state -- the self-yield guard
 # is what makes the second key a different one.
