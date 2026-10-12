@@ -83,8 +83,8 @@ open SeLe4n.Kernel.Architecture
 open SeLe4n.Kernel.Lifecycle.Suspend
 
 /-- **WS-BP BP7.5: a switch resumes the incoming thread with the frame its TCB
-holds.**  The switch's only object write is the outgoing thread's context save
-(`switchToThreadOnCore_getTcb?_ne_current`), so the incoming thread's context —
+holds.**  The switch's only object write off the run-queue links is the
+outgoing thread's context save (`switchToThreadOnCore_getTcb?_ne_current`), so the incoming thread's context —
 whatever an earlier transition staged into it — is what the committed state's
 restore target carries. -/
 theorem switchToThreadOnCore_delivers_readReturnFrame (st : SystemState) (c : CoreId)
@@ -94,11 +94,12 @@ theorem switchToThreadOnCore_delivers_readReturnFrame (st : SystemState) (c : Co
     (hIdle : isIdleThreadId tid = false)
     (h : switchToThreadOnCore st c tid = .ok st') :
     (restoreTargetOnCore st' c).deliveredFrame? = some (readReturnFrame st tid) := by
-  have hSame : st'.getTcb? tid = st.getTcb? tid :=
-    switchToThreadOnCore_getTcb?_ne_current st c tid tid st' hInv hNe h
+  have hSame := switchToThreadOnCore_getTcb?_ne_current st c tid tid st' hInv hNe h
+  rw [hTcb] at hSame
+  obtain ⟨t', h', hE⟩ := TCB.exists_of_map_withoutRunLinks_eq hSame
   have hCur := switchToThreadOnCore_sets_current st c tid st' h
-  rw [restoreTargetOnCore_deliveredFrame st' c tid tcb hCur hIdle (hSame.trans hTcb)]
-  simp [readReturnFrame, hSame]
+  rw [restoreTargetOnCore_deliveredFrame st' c tid t' hCur hIdle h']
+  simp only [readReturnFrame, h', hTcb, TCB.proj_eq_of_withoutRunLinks_eq TCB.registerContext hE]
 
 /-- **The cancellation half**: a thread `cancelIpcBlocking` restored, once
 switched to, resumes reading `.ipcCancelled`. -/

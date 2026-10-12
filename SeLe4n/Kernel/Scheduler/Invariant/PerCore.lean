@@ -2359,6 +2359,15 @@ theorem allThreadsTimeSlicePositive_of_objects_eq {st st' : SystemState}
   rw [getTcb?_congr_objects hObj] at htcb
   exact h tid tcb htcb
 
+/-- WS-ZA ZA4.5: the same past the run-queue links — a slice is not a link. -/
+theorem allThreadsTimeSlicePositive_of_objectsAgreeOffRunLinks {st st' : SystemState}
+    (hA : st'.objectsAgreeOffRunLinks st) (h : allThreadsTimeSlicePositive st) :
+    allThreadsTimeSlicePositive st' := by
+  intro tid tcb' htcb
+  obtain ⟨tcb, h0, hE⟩ := hA.getTcb?_some' htcb
+  rw [TCB.proj_eq_of_withoutRunLinks_eq TCB.timeSlice hE]
+  exact h tid tcb h0
+
 /-- General frame lemma: `allThreadsTimeSlicePositive` is preserved by any
 transition whose object writes preserve every thread's `timeSlice` field.  Every
 SM5 transition *except* the budget tick satisfies this (writes to `ipcState` /

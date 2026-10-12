@@ -678,6 +678,18 @@ theorem keyInputsEq_storeObject {st st' : SystemState} {oid : SeLe4n.ObjId}
 theorem keyInputsEq_with_scheduler (st : SystemState) (s : SchedulerState) :
     keyInputsEq st { st with scheduler := s } := fun _ => rfl
 
+/-- WS-ZA ZA4.5: clearing a TCB's run-queue links moves no key input. -/
+theorem keyInputsOf_map_withoutRunLinks (o : Option KernelObject) :
+    keyInputsOf (o.map KernelObject.withoutRunLinks) = keyInputsOf o := by
+  rcases o with _ | o
+  · rfl
+  · cases o <;> rfl
+
+/-- WS-ZA ZA4.5: the run-queue links are no key input. -/
+theorem keyInputsEq_of_objectsAgreeOffRunLinks {pre post : SystemState}
+    (h : post.objectsAgreeOffRunLinks pre) : keyInputsEq pre post := fun oid => by
+  rw [← keyInputsOf_map_withoutRunLinks, h oid, keyInputsOf_map_withoutRunLinks]
+
 /-- A TCB's five key fields. -/
 def tcbKeyFields (t : TCB) :
     SeLe4n.Priority × SeLe4n.Deadline × SchedContextBinding × Option SeLe4n.Priority ×

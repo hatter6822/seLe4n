@@ -1988,6 +1988,45 @@ theorem ipcInvariantFull_of_descheduleFrame
   ipcInvariantFull_of_objectsAgreeOffRunLinks hA
     (passiveServerIdle_of_frame hFrame hInv.passiveServerIdle) hInv
 
+/-- WS-ZA ZA4.5: a step that writes only run-queue links in TCBs and leaves the
+boot core's queue membership and `current` slot as they were keeps the bundle —
+no conjunct reads a run-queue link, and `passiveServerIdle` reads the boot
+core's queue and slot. -/
+theorem ipcInvariantFull_of_runLinkView {s1 s2 : SystemState}
+    (hA : s2.objectsAgreeOffRunLinks s1)
+    (hQ : ∀ y, y ∈ s2.scheduler.runQueueOnCore bootCoreId ↔
+      y ∈ s1.scheduler.runQueueOnCore bootCoreId)
+    (hC : s2.scheduler.currentOnCore bootCoreId = s1.scheduler.currentOnCore bootCoreId)
+    (h : ipcInvariantFull s1) : ipcInvariantFull s2 :=
+  ipcInvariantFull_of_objectsAgreeOffRunLinks hA (fun tid tcb' hT hU hNQ hNC => by
+    obtain ⟨t0, h0, hE⟩ := hA.get_tcb' hT
+    rw [TCB.proj_eq_of_withoutRunLinks_eq TCB.ipcState hE]
+    exact h.passiveServerIdle tid t0 h0
+      (by rw [← TCB.proj_eq_of_withoutRunLinks_eq TCB.schedContextBinding hE]; exact hU)
+      (fun hm => hNQ ((hQ tid).mpr hm)) (by rw [← hC]; exact hNC)) h
+
+/-- WS-ZA ZA4.5: an enqueue through the threads keeps the bundle whenever the
+bare queue insert does. -/
+theorem ipcInvariantFull_runEnqueueOnCore (S : SystemState) (c : CoreId)
+    (t : SeLe4n.ThreadId) (p : SeLe4n.Priority)
+    (h : ipcInvariantFull { S with
+      scheduler := S.scheduler.setRunQueueOnCore c
+        ((S.scheduler.runQueueOnCore c).insert t p) }) :
+    ipcInvariantFull (S.runEnqueueOnCore c t p) := by
+  refine ipcInvariantFull_of_runLinkView (s1 := { S with
+      scheduler := S.scheduler.setRunQueueOnCore c ((S.scheduler.runQueueOnCore c).insert t p) })
+    (SystemState.runEnqueueOnCore_objectsAgreeOffRunLinks S c t p) (fun y => ?_) ?_ h
+  · show y ∈ (S.runEnqueueOnCore c t p).scheduler.runQueueOnCore bootCoreId ↔
+      y ∈ (S.scheduler.setRunQueueOnCore c _).runQueueOnCore bootCoreId
+    by_cases hc : c = bootCoreId
+    · subst hc
+      rw [SystemState.runEnqueueOnCore_runQueueOnCore_self,
+        SchedulerState.setRunQueueOnCore_runQueueOnCore_self]
+    · rw [SystemState.runEnqueueOnCore_runQueueOnCore_ne _ _ _ _ _ hc,
+        SchedulerState.setRunQueueOnCore_runQueueOnCore_ne _ _ _ _ hc]
+  · simp only [SystemState.runEnqueueOnCore_scheduler, SchedulerState.setRunQueueOnCore_currentOnCore,
+      SchedulerState.setRunQueueEndsOnCore_currentOnCore]
+
 /-- **WS-RR RR2.5**: `applyReplyDonation` preserves the whole twenty-conjunct IPC
 bundle — the return (`returnDonatedSchedContext_preserves_ipcInvariantFull`)
 followed by the **holder's** deschedule.

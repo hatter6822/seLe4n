@@ -84,6 +84,15 @@ theorem TCB.map_proj_eq_of_map_withoutRunLinks_eq {α : Type _} {a b : Option TC
     | none => cases h
     | some t => exact congrArg some (TCB.proj_eq_of_withoutRunLinks_eq f (Option.some.inj h) hf)
 
+/-- A lookup that agrees off the run-queue links with `some t` is `some` of a
+TCB agreeing with `t` there. -/
+theorem TCB.exists_of_map_withoutRunLinks_eq {a : Option TCB} {t : TCB}
+    (h : a.map TCB.withoutRunLinks = (some t).map TCB.withoutRunLinks) :
+    ∃ t', a = some t' ∧ t'.withoutRunLinks = t.withoutRunLinks := by
+  cases a with
+  | none => cases h
+  | some t' => exact ⟨t', rfl, Option.some.inj h⟩
+
 /-- A TCB rewrite that reads no run-queue field: rewriting those fields first
 changes nothing off them. -/
 def TCB.RunLinksBlind (f : TCB → TCB) : Prop :=
@@ -313,6 +322,19 @@ theorem getTcb?_isSome (tid : SeLe4n.ThreadId) :
   have := congrArg Option.isSome (h.getTcb? tid)
   simpa using this
 
+/-- A thread resolving in `st` resolves in `st'` to a TCB agreeing off its
+run-queue fields. -/
+theorem getTcb?_some {tid : SeLe4n.ThreadId} {t : TCB} (ht : st.getTcb? tid = some t) :
+    ∃ t', st'.getTcb? tid = some t' ∧ t'.withoutRunLinks = t.withoutRunLinks := by
+  obtain ⟨t', h', e⟩ := h.get_tcb ((getTcb?_eq_some_iff st tid t).mp ht)
+  exact ⟨t', (getTcb?_eq_some_iff st' tid t').mpr h', e⟩
+
+/-- The same, from `st'` back to `st`. -/
+theorem getTcb?_some' {tid : SeLe4n.ThreadId} {t' : TCB} (ht : st'.getTcb? tid = some t') :
+    ∃ t, st.getTcb? tid = some t ∧ t'.withoutRunLinks = t.withoutRunLinks := by
+  obtain ⟨t, h₀, e⟩ := h.get_tcb' ((getTcb?_eq_some_iff st' tid t').mp ht)
+  exact ⟨t, (getTcb?_eq_some_iff st tid t).mpr h₀, e⟩
+
 /-- Scheduling contexts read the same in both stores. -/
 theorem getSchedContext? (scId : SeLe4n.SchedContextId) :
     st'.getSchedContext? scId = st.getSchedContext? scId := by
@@ -490,6 +512,17 @@ theorem runRemoveOnCore_onlyObjectsSchedulerDiffer (st : SystemState) (c : CoreI
   unfold runRemoveOnCore; dsimp only; split
   · exact .withScheduler (.withScheduler (runUnlinkLinks_onlyObjectsSchedulerDiffer _ _ _ _ _ _) _) _
   · exact .withScheduler (.refl _) _
+
+/-- A run-queue write leaves the machine where it was. -/
+@[simp] theorem runEnqueueOnCore_machine (st : SystemState) (c : CoreId) (t : SeLe4n.ThreadId)
+    (p : SeLe4n.Priority) : (st.runEnqueueOnCore c t p).machine = st.machine := by
+  have h := runEnqueueOnCore_onlyObjectsSchedulerDiffer st c t p
+  unfold onlyObjectsSchedulerDiffer at h; rw [h]
+
+@[simp] theorem runRemoveOnCore_machine (st : SystemState) (c : CoreId) (t : SeLe4n.ThreadId) :
+    (st.runRemoveOnCore c t).machine = st.machine := by
+  have h := runRemoveOnCore_onlyObjectsSchedulerDiffer st c t
+  unfold onlyObjectsSchedulerDiffer at h; rw [h]
 
 -- ============================================================================
 -- What each run-queue write does to the scheduler

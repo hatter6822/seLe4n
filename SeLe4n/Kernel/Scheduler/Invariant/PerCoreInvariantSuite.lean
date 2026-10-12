@@ -1044,8 +1044,8 @@ theorem scheduleOrIdleOnCore_preserves_schedulerInvariantStructuralReg_smp
 -- ── §4.2  Switch register-bank preservation ──
 
 /-- WS-SM SM5.I (register-bank sibling frame): the switch's `getTcb?` register-
-context characterisation (via `switchToThreadOnCore_objects_eq_preempt` and the
-preempt's `registerContext` write). -/
+context characterisation (via `switchToThreadOnCore_objectsAgreeOffRunLinks_preempt`
+and the preempt's `registerContext` write). -/
 theorem switchToThreadOnCore_getTcb?_regContext (st : SystemState) (c₀ : CoreId)
     (tid t : SeLe4n.ThreadId) (tcb : TCB) (st' : SystemState) (hInv : st.objects.invExt)
     (h : switchToThreadOnCore st c₀ tid = .ok st') (ht : st.getTcb? t = some tcb) :
@@ -1053,11 +1053,10 @@ theorem switchToThreadOnCore_getTcb?_regContext (st : SystemState) (c₀ : CoreI
       (tcb'.registerContext = tcb.registerContext ∨
         (st.scheduler.currentOnCore c₀ = some t ∧
           tcb'.registerContext = st.machine.regsOnCore c₀)) := by
-  have hobj := switchToThreadOnCore_objects_eq_preempt st c₀ tid st' h
-  have hgt : st'.getTcb? t = (preemptCurrentOnCore st c₀ tid).getTcb? t := by
-    unfold SystemState.getTcb?; rw [hobj]
-  rw [hgt]
-  exact preemptCurrentOnCore_getTcb?_regContext st c₀ tid t tcb hInv ht
+  obtain ⟨t1, h1, hR⟩ := preemptCurrentOnCore_getTcb?_regContext st c₀ tid t tcb hInv ht
+  obtain ⟨t', h', hE⟩ :=
+    (switchToThreadOnCore_objectsAgreeOffRunLinks_preempt st c₀ tid st' h).getTcb?_some h1
+  exact ⟨t', h', by rw [TCB.proj_eq_of_withoutRunLinks_eq TCB.registerContext hE]; exact hR⟩
 
 /-- WS-SM SM5.I (register-bank payoff): the per-core switch on `c₀` preserves
 `contextMatchesCurrentOnCore` on every sibling core (same idempotent-save argument
@@ -1351,7 +1350,7 @@ theorem preemptCurrentOnCore_preserves_runQueueUniqueOnCore_self (st : SystemSta
   · split
     · exact hN
     · split
-      · simp only [SchedulerState.setRunQueueOnCore_runQueueOnCore_self]
+      · rw [SystemState.runEnqueueOnCore_runQueueOnCore_self]
         exact RunQueue.insert_preserves_toList_nodup _ _ _ hN
       · exact hN
 
@@ -1796,7 +1795,7 @@ theorem switchToThreadOnCore_preserves_schedulerInvariantStructuralRegNodup_smp
     · rw [if_pos hAff, Except.ok.injEq] at h
       subst h
       simp only [SchedulerState.setCurrentOnCore_runQueueOnCore,
-        restoreIncomingContextOnCoreUnlessCurrent_scheduler,
+        restoreIncomingContextOnCoreUnlessCurrent_scheduler, SystemState.runRemoveOnCore_scheduler,
         SchedulerState.setRunQueueOnCore_runQueueOnCore_self]
       exact RunQueue.remove_preserves_toList_nodup _ tid
         (preemptCurrentOnCore_preserves_runQueueUniqueOnCore_self st c₀ tid (hPre c₀).2)
@@ -4637,18 +4636,21 @@ theorem preemptCurrentOnCore_preserves_allThreadsTimeSlicePositive (st : SystemS
         -- the saved TCB is `{ prevTcb with registerContext := … }`, whose
         -- `timeSlice` is `prevTcb`'s — positive by `h` on the preempted thread.
         dsimp only [SystemState.rewriteObject]
-        exact allThreadsTimeSlicePositive_of_insert_pos hInv rfl (h prevTid prevTcb hprev) h
+        exact allThreadsTimeSlicePositive_of_objectsAgreeOffRunLinks
+          (SystemState.runEnqueueOnCore_objectsAgreeOffRunLinks _ _ _ _)
+          (allThreadsTimeSlicePositive_of_insert_pos hInv rfl (h prevTid prevTcb hprev) h)
       · exact h
 
 /-- `switchToThreadOnCore` preserves `allThreadsTimeSlicePositive` — its only
-object write is the preempt's register-context save (its objects equal the
-preempt's, via `switchToThreadOnCore_objects_eq_preempt`). -/
+object write off the run-queue links is the preempt's register-context save (via
+`switchToThreadOnCore_objectsAgreeOffRunLinks_preempt`). -/
 theorem switchToThreadOnCore_preserves_allThreadsTimeSlicePositive (st : SystemState)
     (c : CoreId) (tid : SeLe4n.ThreadId) (st' : SystemState) (hInv : st.objects.invExt)
     (hStep : switchToThreadOnCore st c tid = .ok st')
     (h : allThreadsTimeSlicePositive st) :
     allThreadsTimeSlicePositive st' :=
-  allThreadsTimeSlicePositive_of_objects_eq (switchToThreadOnCore_objects_eq_preempt st c tid st' hStep)
+  allThreadsTimeSlicePositive_of_objectsAgreeOffRunLinks
+    (switchToThreadOnCore_objectsAgreeOffRunLinks_preempt st c tid st' hStep)
     (preemptCurrentOnCore_preserves_allThreadsTimeSlicePositive st c tid hInv h)
 
 /-- `handleRescheduleSgiOnCore` preserves `allThreadsTimeSlicePositive` — it either

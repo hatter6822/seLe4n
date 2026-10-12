@@ -2494,7 +2494,9 @@ theorem preemptCurrentOnCore_preserves_ipcInvariantFull (st : SystemState)
     · rename_i prevTid _ hPrev
       split
       · rename_i prevTcb hPrevTcb _
-        -- The in-place rewrite IS the insert; the proof below is stated over it.
+        -- The in-place rewrite IS the insert; the re-enqueue's link writes are
+        -- read by no conjunct, so the proof below is stated over the bare insert.
+        refine ipcInvariantFull_runEnqueueOnCore _ c prevTid _ ?_
         dsimp only [SystemState.rewriteObject]
         have hPreRaw := (SystemState.getTcb?_eq_some_iff st prevTid prevTcb).mp hPrevTcb
         have hAt := insertObjects_getElem_self st prevTid.toObjId
@@ -2545,7 +2547,7 @@ theorem preemptCurrentOnCore_prev_mem (st : SystemState) (c : CoreId)
   dsimp only []
   rw [if_neg hne, SystemState.getTcbWitnessed?_eq_some hPT]
   dsimp only []
-  rw [SchedulerState.setRunQueueOnCore_runQueueOnCore_self]
+  rw [SystemState.runEnqueueOnCore_runQueueOnCore_self]
   exact (RunQueue.mem_insert _ _ _ _).mpr (Or.inr rfl)
 
 /-- `switchToThreadOnCore` preserves the whole bundle.  Objects move only in
@@ -2565,13 +2567,19 @@ theorem switchToThreadOnCore_preserves_ipcInvariantFull (st : SystemState)
       dsimp only [] at hStep
       cases hStep
       have hP := preemptCurrentOnCore_preserves_ipcInvariantFull st c tid hObjInv hInv
-      refine ipcInvariantFull_of_getElem_eq
+      have hA : ((preemptCurrentOnCore st c tid).runRemoveOnCore c tid).objectsAgreeOffRunLinks
+          (preemptCurrentOnCore st c tid) := SystemState.runRemoveOnCore_objectsAgreeOffRunLinks _ _ _
+      refine ipcInvariantFull_of_objectsAgreeOffRunLinks
         (s1 := preemptCurrentOnCore st c tid)
-        (fun oid => by
-          simp only [restoreIncomingContextOnCoreUnlessCurrent_objects]) ?_ hP
-      intro t tcb'' hT hU hQ hC
-      simp only [restoreIncomingContextOnCoreUnlessCurrent_objects] at hT
-      simp only [restoreIncomingContextOnCoreUnlessCurrent_scheduler] at hQ hC
+        (.trans (.of_objects_eq (restoreIncomingContextOnCoreUnlessCurrent_objects _ _ _)) hA) ?_ hP
+      intro t tcb₀ hT₀ hU₀ hQ hC
+      simp only [restoreIncomingContextOnCoreUnlessCurrent_objects] at hT₀
+      obtain ⟨tcb'', hT, hE⟩ := hA.get_tcb' hT₀
+      have hU : tcb''.schedContextBinding = .unbound := by
+        rw [← TCB.proj_eq_of_withoutRunLinks_eq TCB.schedContextBinding hE]; exact hU₀
+      rw [TCB.proj_eq_of_withoutRunLinks_eq TCB.ipcState hE]
+      simp only [restoreIncomingContextOnCoreUnlessCurrent_scheduler,
+        SystemState.runRemoveOnCore_scheduler] at hQ hC
       by_cases hcc : c = Concurrency.bootCoreId
       · subst hcc
         rw [SchedulerState.setCurrentOnCore_currentOnCore_self] at hC
@@ -2602,8 +2610,11 @@ theorem switchToThreadOnCore_preserves_ipcInvariantFull (st : SystemState)
                 cases this
         exact hP.passiveServerIdle t tcb'' hT hU hQpre hCpre
       · rw [SchedulerState.setCurrentOnCore_runQueueOnCore,
-          SchedulerState.setRunQueueOnCore_runQueueOnCore_ne _ _ _ _ hcc] at hQ
-        rw [SchedulerState.setCurrentOnCore_currentOnCore_ne _ _ _ _ hcc] at hC
+          SchedulerState.setRunQueueOnCore_runQueueOnCore_ne _ _ _ _ hcc,
+          SchedulerState.setRunQueueEndsOnCore_runQueueOnCore] at hQ
+        rw [SchedulerState.setCurrentOnCore_currentOnCore_ne _ _ _ _ hcc,
+          SchedulerState.setRunQueueOnCore_currentOnCore,
+          SchedulerState.setRunQueueEndsOnCore_currentOnCore] at hC
         exact hP.passiveServerIdle t tcb'' hT hU hQ hC
     · contradiction
   · contradiction

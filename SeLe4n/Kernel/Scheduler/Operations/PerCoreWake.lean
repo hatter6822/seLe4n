@@ -957,8 +957,9 @@ theorem handleRescheduleSgiOnCore_notification_backward (st : SystemState) (c : 
 
 /-- WS-SM SM5.F.6 (PR #811 P2-5 support): the SGI handler frames out **any** thread
 that is not core `c`'s current thread.  The idle / keep-current branches are the
-identity; the dispatch branch is a `switchToThreadOnCore` whose only TCB write is the
-preempted (current) thread's register-context save (`switchToThreadOnCore_getTcb?_ne_current`).
+identity; the dispatch branch is a `switchToThreadOnCore` whose only TCB write off the
+run-queue links is the preempted (current) thread's register-context save
+(`switchToThreadOnCore_getTcb?_ne_current`).
 In particular the resumed thread of `resumeThreadOnCore` — never the executing core's
 current, since it was `.Inactive` — retains its `threadState := .Ready` across the inline
 local reschedule.  Routes through the typed `getTcb?` accessor (AK7-clean). -/
@@ -966,12 +967,13 @@ theorem handleRescheduleSgiOnCore_getTcb?_ne_current (st : SystemState) (c : Cor
     (tid : SeLe4n.ThreadId) (st' : SystemState) (hInv : st.objects.invExt)
     (hNe : st.scheduler.currentOnCore c ≠ some tid)
     (h : handleRescheduleSgiOnCore st c = .ok st') :
-    st'.getTcb? tid = st.getTcb? tid := by
+    (st'.getTcb? tid).map TCB.withoutRunLinks = (st.getTcb? tid).map TCB.withoutRunLinks := by
   unfold handleRescheduleSgiOnCore at h
   split at h
   · exact absurd h (by simp)
   · split at h
-    · rw [Except.ok.injEq] at h; subst h; exact preemptCurrentOnCore_getTcb?_ne_current st c _ tid hInv hNe
+    · rw [Except.ok.injEq] at h; subst h
+      exact preemptCurrentOnCore_getTcb?_ne_current st c _ tid hInv hNe
     · rw [Except.ok.injEq] at h; subst h; rfl
   · split at h
     · split at h

@@ -52,7 +52,8 @@ theorem preemptCurrentOnCore_stepCovers (e : CoreId) (st : SystemState)
           exact keyInputsEq_trans
             (keyInputsEq_rewriteObject (SystemState.rewriteAdmissible_tcb h _) hInv
               (by rw [hO]; rfl))
-            (keyInputsEq_with_scheduler _ _)
+            (keyInputsEq_of_objectsAgreeOffRunLinks
+              (SystemState.runEnqueueOnCore_objectsAgreeOffRunLinks _ _ _ _))
   · intro c hc; exact preemptCurrentOnCore_runQueueOnCore_ne st e incoming c (Ne.symm hc)
   · intro c _; exact preemptCurrentOnCore_currentOnCore st e incoming c
   · intro c _ hp
@@ -94,11 +95,12 @@ theorem switchToThreadOnCore_stepCovers (e : CoreId) (st st' : SystemState)
       subst h
       refine stepCovers_trans (preemptCurrentOnCore_stepCovers e st tid hInv)
         (stepCovers_of_local_slots ?_ ?_)
-      · apply keyInputsEq_of_objects_eq
-        simp
+      · exact keyInputsEq_of_objectsAgreeOffRunLinks
+          (.trans (.of_objects_eq (by simp)) (SystemState.runRemoveOnCore_objectsAgreeOffRunLinks
+            (preemptCurrentOnCore st e tid) e tid))
       · intro c hc
         have hne : e ≠ c := Ne.symm hc
-        simp [hne]
+        simp [hne, SystemState.runRemoveOnCore_scheduler]
     · cases h
 
 /-- Clearing the executing core's own flag covers. -/

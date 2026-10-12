@@ -913,7 +913,8 @@ theorem preemptCurrentOnCore_domainTimeRemainingOnCore (st : SystemState) (c c' 
       = st.scheduler.domainTimeRemainingOnCore c' := by
   simp only [preemptCurrentOnCore]; repeat' split
   all_goals first | rfl | simp only [SchedulerState.setCurrentOnCore_domainTimeRemainingOnCore,
-      SchedulerState.setRunQueueOnCore_domainTimeRemainingOnCore]
+      SchedulerState.setRunQueueOnCore_domainTimeRemainingOnCore, SystemState.runEnqueueOnCore_scheduler,
+      SystemState.rewriteObject_scheduler, SchedulerState.setRunQueueEndsOnCore_domainTimeRemainingOnCore]
 
 theorem preemptCurrentOnCore_domainScheduleIndexOnCore (st : SystemState) (c c' : CoreId)
     (tid : SeLe4n.ThreadId) :
@@ -921,7 +922,8 @@ theorem preemptCurrentOnCore_domainScheduleIndexOnCore (st : SystemState) (c c' 
       = st.scheduler.domainScheduleIndexOnCore c' := by
   simp only [preemptCurrentOnCore]; repeat' split
   all_goals first | rfl | simp only [SchedulerState.setCurrentOnCore_domainScheduleIndexOnCore,
-      SchedulerState.setRunQueueOnCore_domainScheduleIndexOnCore]
+      SchedulerState.setRunQueueOnCore_domainScheduleIndexOnCore, SystemState.runEnqueueOnCore_scheduler,
+      SystemState.rewriteObject_scheduler, SchedulerState.setRunQueueEndsOnCore_domainScheduleIndexOnCore]
 
 theorem switchToThreadOnCore_domainTimeRemainingOnCore (st st' : SystemState) (c c' : CoreId)
     (tid : SeLe4n.ThreadId) (h : switchToThreadOnCore st c tid = .ok st') :
@@ -934,7 +936,8 @@ theorem switchToThreadOnCore_domainTimeRemainingOnCore (st st' : SystemState) (c
        subst h
        simp only [restoreIncomingContextOnCoreUnlessCurrent_scheduler,
          SchedulerState.setCurrentOnCore_domainTimeRemainingOnCore,
-         SchedulerState.setRunQueueOnCore_domainTimeRemainingOnCore,
+         SchedulerState.setRunQueueOnCore_domainTimeRemainingOnCore, SystemState.runRemoveOnCore_scheduler,
+         SchedulerState.setRunQueueEndsOnCore_domainTimeRemainingOnCore,
          preemptCurrentOnCore_domainTimeRemainingOnCore])
     | exact absurd h (by simp)
 
@@ -949,7 +952,8 @@ theorem switchToThreadOnCore_domainScheduleIndexOnCore (st st' : SystemState) (c
        subst h
        simp only [restoreIncomingContextOnCoreUnlessCurrent_scheduler,
          SchedulerState.setCurrentOnCore_domainScheduleIndexOnCore,
-         SchedulerState.setRunQueueOnCore_domainScheduleIndexOnCore,
+         SchedulerState.setRunQueueOnCore_domainScheduleIndexOnCore, SystemState.runRemoveOnCore_scheduler,
+         SchedulerState.setRunQueueEndsOnCore_domainScheduleIndexOnCore,
          preemptCurrentOnCore_domainScheduleIndexOnCore])
     | exact absurd h (by simp)
 

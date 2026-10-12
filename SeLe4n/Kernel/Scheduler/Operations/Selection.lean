@@ -1497,13 +1497,13 @@ def preemptCurrentOnCore (st : SystemState) (c : SeLe4n.Kernel.Concurrency.CoreI
     else
       match st.getTcbWitnessed? prevTid with
       | some ⟨prevTcb, h⟩ =>
-        let reenqueuedRq := (st.scheduler.runQueueOnCore c).insert prevTid (prevTcb.boostedPriority)
         -- The context save is an in-place rewrite (the lookup is its witness);
-        -- the re-enqueue is the scheduler write beside it.
-        { st.rewriteObject prevTid.toObjId
+        -- the re-enqueue then writes the thread's run-queue links in its TCB
+        -- (WS-ZA ZA4.5, `runEnqueueOnCore`).
+        (st.rewriteObject prevTid.toObjId
             (.tcb { prevTcb with registerContext := st.machine.regsOnCore c })
-            (SystemState.rewriteAdmissible_tcb h _) with
-          scheduler := st.scheduler.setRunQueueOnCore c reenqueuedRq }
+            (SystemState.rewriteAdmissible_tcb h _)).runEnqueueOnCore c prevTid
+          prevTcb.boostedPriority
       | none => st
 
 /-- WS-SM SM5.B.3 (frame): `preemptCurrentOnCore` never writes *any* core's
@@ -1525,7 +1525,7 @@ theorem preemptCurrentOnCore_currentOnCore (st : SystemState) (c : CoreId)
   · split
     · rfl
     · split
-      · simp
+      · simp [SystemState.rewriteObject_scheduler]
       · rfl
 
 /-- WS-SM SM5.B.1 (plan §3.2): per-core context switch to `tid` on core `c`.
@@ -1581,8 +1581,7 @@ def switchToThreadOnCore (st : SystemState) (c : SeLe4n.Kernel.Concurrency.CoreI
   | some tidTcb =>
     if affinityAdmitsCore tidTcb c then
       let stPreempt := preemptCurrentOnCore st c tid
-      let dequeuedRq := (stPreempt.scheduler.runQueueOnCore c).remove tid
-      let stDequeued := { stPreempt with scheduler := stPreempt.scheduler.setRunQueueOnCore c dequeuedRq }
+      let stDequeued := stPreempt.runRemoveOnCore c tid
       -- WS-SM SM5.B (PR #814 review P2-1, self-switch guard): restore `tid`'s
       -- context into core `c`'s bank UNLESS `tid` is already current — a running
       -- thread's live registers in `regsOnCore c` are authoritative, and

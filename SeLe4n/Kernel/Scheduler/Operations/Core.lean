@@ -2245,6 +2245,26 @@ theorem objects_insert_tcb_frame (st : SystemState) (k : SeLe4n.ObjId)
       (fun hEq => hOid (eq_of_beq hEq).symm) hObjInv] at hObj'
     exact ⟨tcb', hObj', rfl, rfl⟩
 
+/-- WS-ZA ZA4.5: an enqueue through the threads places exactly as the bare
+queue insert does — the TCB links and the core's ends are not read by
+placement. -/
+theorem threadPlacedOnSomeCore_runEnqueueOnCore (S : SystemState) (c : CoreId)
+    (t u : SeLe4n.ThreadId) (p : SeLe4n.Priority) :
+    threadPlacedOnSomeCore (S.runEnqueueOnCore c t p) u
+      = threadPlacedOnSomeCore
+          { S with
+              scheduler := S.scheduler.setRunQueueOnCore c
+                ((S.scheduler.runQueueOnCore c).insert t p) } u := by
+  refine threadPlacedOnSomeCore_congr _ _ u (fun c' => ?_) (fun c' => ?_)
+  · simp only [SystemState.runEnqueueOnCore_scheduler,
+      SchedulerState.setRunQueueOnCore_currentOnCore,
+      SchedulerState.setRunQueueEndsOnCore_currentOnCore]
+  · rw [SystemState.runEnqueueOnCore_scheduler]
+    by_cases hc : c = c'
+    · subst hc; simp only [SchedulerState.setRunQueueOnCore_runQueueOnCore_self]
+    · simp only [SchedulerState.setRunQueueOnCore_runQueueOnCore_ne _ _ _ _ hc,
+        SchedulerState.setRunQueueEndsOnCore_runQueueOnCore]
+
 /-- **WS-RR RR7.36**: saving the outgoing thread's registers and re-enqueueing it
 on the core it was running on leaves every thread's *placement* unchanged.  The
 outgoing thread swaps running for queued — both are placed — and no other
@@ -2254,10 +2274,14 @@ theorem threadPlacedOnSomeCore_save_and_reenqueue
     (saved : KernelObject) (prio : SeLe4n.Priority)
     (hCur : st.scheduler.currentOnCore c = some prevTid) :
     threadPlacedOnSomeCore
+      (({ st with objects := st.objects.insert prevTid.toObjId saved } : SystemState
+        ).runEnqueueOnCore c prevTid prio) u
+      = threadPlacedOnSomeCore st u := by
+  rw [threadPlacedOnSomeCore_runEnqueueOnCore]
+  show threadPlacedOnSomeCore
       { st with objects := st.objects.insert prevTid.toObjId saved,
                 scheduler := st.scheduler.setRunQueueOnCore c
-                  ((st.scheduler.runQueueOnCore c).insert prevTid prio) } u
-      = threadPlacedOnSomeCore st u := by
+                  ((st.scheduler.runQueueOnCore c).insert prevTid prio) } u = _
   by_cases hu : u = prevTid
   · subst hu
     have hRun : threadRunningOnSomeCore st u = true :=
@@ -2298,14 +2322,17 @@ theorem threadInactiveFlagConsistent_save_and_reenqueue
     (hIpc : saved.ipcState = prevTcb.ipcState)
     (h : threadInactiveFlagConsistent st) :
     threadInactiveFlagConsistent
-      { st with objects := st.objects.insert prevTid.toObjId (.tcb saved),
-                scheduler := st.scheduler.setRunQueueOnCore c
-                  ((st.scheduler.runQueueOnCore c).insert prevTid prio) } := by
+      (({ st with objects := st.objects.insert prevTid.toObjId (.tcb saved) } : SystemState
+        ).runEnqueueOnCore c prevTid prio) := by
   refine threadInactiveFlagConsistent_of_frame st _ ?_ ?_ h
   · intro oid tcb' hObj
-    exact objects_insert_tcb_frame st prevTid.toObjId saved prevTcb hObjInv
-      ((SystemState.getTcb?_eq_some_iff st prevTid prevTcb).mp hPrevObj)
-      hState hIpc oid tcb' hObj
+    obtain ⟨t0, h0, hE⟩ :=
+      (SystemState.runEnqueueOnCore_objectsAgreeOffRunLinks _ c prevTid prio).get_tcb' hObj
+    obtain ⟨tcb, hT, hS, hI⟩ := objects_insert_tcb_frame st prevTid.toObjId saved prevTcb
+      hObjInv ((SystemState.getTcb?_eq_some_iff st prevTid prevTcb).mp hPrevObj)
+      hState hIpc oid t0 h0
+    exact ⟨tcb, hT, (TCB.proj_eq_of_withoutRunLinks_eq TCB.threadState hE).trans hS,
+      (TCB.proj_eq_of_withoutRunLinks_eq TCB.ipcState hE).trans hI⟩
   · intro u
     exact threadPlacedOnSomeCore_save_and_reenqueue st c prevTid u _ prio hCur
 
@@ -2367,6 +2394,36 @@ theorem threadPlacedOnSomeCore_updateTcb (st : SystemState) (tid u : SeLe4n.Thre
     threadPlacedOnSomeCore (st.updateTcb tid f) u = threadPlacedOnSomeCore st u :=
   threadPlacedOnSomeCore_of_scheduler_eq st _ u (SystemState.updateTcb_scheduler _ _ _)
 
+/-- WS-ZA ZA4.5: the dispatch step dequeues through the threads
+(`runRemoveOnCore`); placement reads only the queues and the `current` slots,
+so it places exactly as the bare queue removal does. -/
+theorem threadPlacedOnSomeCore_runRemove_dispatch (st : SystemState) (c : CoreId)
+    (tid u : SeLe4n.ThreadId) :
+    threadPlacedOnSomeCore
+      { st.runRemoveOnCore c tid with scheduler :=
+          (st.runRemoveOnCore c tid).scheduler.setCurrentOnCore c (some tid) } u
+      = threadPlacedOnSomeCore
+      { st with scheduler :=
+          (st.scheduler.setRunQueueOnCore c
+            ((st.scheduler.runQueueOnCore c).remove tid)).setCurrentOnCore c (some tid) } u := by
+  refine threadPlacedOnSomeCore_congr _ _ u (fun c' => ?_) (fun c' => ?_)
+  · show ((st.runRemoveOnCore c tid).scheduler.setCurrentOnCore c (some tid)).currentOnCore c'
+      = ((st.scheduler.setRunQueueOnCore c _).setCurrentOnCore c (some tid)).currentOnCore c'
+    rw [SystemState.runRemoveOnCore_scheduler]
+    by_cases hc : c = c'
+    · subst hc; simp only [SchedulerState.setCurrentOnCore_currentOnCore_self]
+    · simp only [SchedulerState.setCurrentOnCore_currentOnCore_ne _ _ _ _ hc,
+        SchedulerState.setRunQueueOnCore_currentOnCore,
+        SchedulerState.setRunQueueEndsOnCore_currentOnCore]
+  · show (u ∈ ((st.runRemoveOnCore c tid).scheduler.setCurrentOnCore c (some tid)).runQueueOnCore c')
+      ↔ (u ∈ ((st.scheduler.setRunQueueOnCore c _).setCurrentOnCore c (some tid)).runQueueOnCore c')
+    rw [SystemState.runRemoveOnCore_scheduler, SchedulerState.setCurrentOnCore_runQueueOnCore,
+      SchedulerState.setCurrentOnCore_runQueueOnCore]
+    by_cases hc : c = c'
+    · subst hc; simp only [SchedulerState.setRunQueueOnCore_runQueueOnCore_self]
+    · simp only [SchedulerState.setRunQueueOnCore_runQueueOnCore_ne _ _ _ _ hc,
+        SchedulerState.setRunQueueEndsOnCore_runQueueOnCore]
+
 /-- **WS-RR RR8.12 (Cut 4)**: the dispatch step leaves every **other** thread's
 placement where it was — given the one it displaces is queued somewhere.
 
@@ -2380,10 +2437,10 @@ theorem threadPlacedOnSomeCore_dispatch_ne (st : SystemState) (c : CoreId)
     (hOutgoing : st.scheduler.currentOnCore c = some u →
       threadQueuedOnSomeCore st u = true) :
     threadPlacedOnSomeCore
-      { st with scheduler :=
-          (st.scheduler.setRunQueueOnCore c
-            ((st.scheduler.runQueueOnCore c).remove tid)).setCurrentOnCore c (some tid) } u
+      { st.runRemoveOnCore c tid with scheduler :=
+          (st.runRemoveOnCore c tid).scheduler.setCurrentOnCore c (some tid) } u
       = threadPlacedOnSomeCore st u := by
+  rw [threadPlacedOnSomeCore_runRemove_dispatch]
   have hCur' : ∀ c' : CoreId,
       ((st.scheduler.setRunQueueOnCore c
         ((st.scheduler.runQueueOnCore c).remove tid)).setCurrentOnCore c
@@ -2432,11 +2489,10 @@ now current.  No hypothesis: the step *is* the placement. -/
 theorem threadPlacedOnSomeCore_dispatch_self (st : SystemState) (c : CoreId)
     (tid : SeLe4n.ThreadId) :
     threadPlacedOnSomeCore
-      { st with scheduler :=
-          (st.scheduler.setRunQueueOnCore c
-            ((st.scheduler.runQueueOnCore c).remove tid)).setCurrentOnCore c (some tid) } tid
+      { st.runRemoveOnCore c tid with scheduler :=
+          (st.runRemoveOnCore c tid).scheduler.setCurrentOnCore c (some tid) } tid
       = true := by
-  rw [threadPlacedOnSomeCore_eq_true_iff]
+  rw [threadPlacedOnSomeCore_runRemove_dispatch, threadPlacedOnSomeCore_eq_true_iff]
   refine Or.inl ⟨c, ?_⟩
   show ((st.scheduler.setRunQueueOnCore c _).setCurrentOnCore c (some tid)).currentOnCore c
     = some tid
@@ -2456,11 +2512,13 @@ theorem threadInactiveFlagConsistent_dispatch (st : SystemState) (c : CoreId)
       inferThreadState st tid tcb ≠ .Inactive)
     (h : threadInactiveFlagConsistent st) :
     threadInactiveFlagConsistent
-      { st with scheduler :=
-          (st.scheduler.setRunQueueOnCore c
-            ((st.scheduler.runQueueOnCore c).remove tid)).setCurrentOnCore c (some tid) } :=
+      { st.runRemoveOnCore c tid with scheduler :=
+          (st.runRemoveOnCore c tid).scheduler.setCurrentOnCore c (some tid) } :=
   threadInactiveFlagConsistent_of_frame_placing st _ tid
-    (fun _oid tcb' hObj => ⟨tcb', hObj, rfl, rfl⟩)
+    (fun _oid _tcb' hObj =>
+      let ⟨t0, h0, hE⟩ := (SystemState.runRemoveOnCore_objectsAgreeOffRunLinks st c tid).get_tcb' hObj
+      ⟨t0, h0, TCB.proj_eq_of_withoutRunLinks_eq TCB.threadState hE,
+        TCB.proj_eq_of_withoutRunLinks_eq TCB.ipcState hE⟩)
     (fun u hu => threadPlacedOnSomeCore_dispatch_ne st c tid u hu (hOutgoing u hu))
     (threadPlacedOnSomeCore_dispatch_self st c tid) hActive h
 
@@ -2510,12 +2568,16 @@ theorem preemptCurrentOnCore_objects_frame (st : SystemState) (c : CoreId)
     · split
       · rename_i prevTcb hPrev hW
         intro hObj
-        have hObj' : (st.objects.insert prevTid.toObjId
+        obtain ⟨t0, h0, hE⟩ :=
+          (SystemState.runEnqueueOnCore_objectsAgreeOffRunLinks _ c prevTid _).get_tcb' hObj
+        have h0' : (st.objects.insert prevTid.toObjId
             (.tcb { prevTcb with registerContext := st.machine.regsOnCore c }))[oid]?
-            = some (.tcb tcb') := hObj
-        exact objects_insert_tcb_frame st prevTid.toObjId
+            = some (.tcb t0) := h0
+        obtain ⟨tcb, hT, hS, hI⟩ := objects_insert_tcb_frame st prevTid.toObjId
           { prevTcb with registerContext := st.machine.regsOnCore c } prevTcb hObjInv
-          ((SystemState.getTcb?_eq_some_iff st prevTid prevTcb).mp hPrev) rfl rfl oid tcb' hObj'
+          ((SystemState.getTcb?_eq_some_iff st prevTid prevTcb).mp hPrev) rfl rfl oid t0 h0'
+        exact ⟨tcb, hT, (TCB.proj_eq_of_withoutRunLinks_eq TCB.threadState hE).trans hS,
+          (TCB.proj_eq_of_withoutRunLinks_eq TCB.ipcState hE).trans hI⟩
       · intro hObj; exact ⟨tcb', hObj, rfl, rfl⟩
 
 
@@ -2544,14 +2606,10 @@ theorem switchToThreadOnCore_preserves_threadInactiveFlagConsistent
   · split at hStep
     · -- The success arm.  Name the four intermediate states.
       have hEq : st' = { (restoreIncomingContextOnCoreUnlessCurrent
-            { preemptCurrentOnCore st c tid with
-                scheduler := (preemptCurrentOnCore st c tid).scheduler.setRunQueueOnCore c
-                  (((preemptCurrentOnCore st c tid).scheduler.runQueueOnCore c).remove tid) }
+            ((preemptCurrentOnCore st c tid).runRemoveOnCore c tid)
             c tid) with
           scheduler := (restoreIncomingContextOnCoreUnlessCurrent
-            { preemptCurrentOnCore st c tid with
-                scheduler := (preemptCurrentOnCore st c tid).scheduler.setRunQueueOnCore c
-                  (((preemptCurrentOnCore st c tid).scheduler.runQueueOnCore c).remove tid) }
+            ((preemptCurrentOnCore st c tid).runRemoveOnCore c tid)
             c tid).scheduler.setCurrentOnCore c (some tid) } := by
         exact (Except.ok.inj hStep).symm
       subst hEq
@@ -2572,8 +2630,7 @@ theorem switchToThreadOnCore_preserves_threadInactiveFlagConsistent
         dsimp only
         rw [if_neg (by simpa using hu), SystemState.getTcbWitnessed?_eq_some hPrev]
         dsimp only
-        show u ∈ (st.scheduler.setRunQueueOnCore c _).runQueueOnCore c
-        rw [SchedulerState.setRunQueueOnCore_runQueueOnCore_self, RunQueue.mem_insert]
+        rw [SystemState.runEnqueueOnCore_runQueueOnCore_self, RunQueue.mem_insert]
         exact Or.inr rfl
       have hActiveP : ∀ tcb, (preemptCurrentOnCore st c tid).getTcb? tid = some tcb →
           inferThreadState (preemptCurrentOnCore st c tid) tid tcb ≠ .Inactive := by
@@ -2616,39 +2673,29 @@ below so the two placement directions (a placed thread stays placed; an unplaced
 one stays unplaced) read one equation rather than each re-deriving the shape. -/
 theorem switchToThreadOnCore_ok_scheduler (st st' : SystemState) (c : CoreId)
     (tid : SeLe4n.ThreadId) (hStep : switchToThreadOnCore st c tid = .ok st') :
-    st'.scheduler = ({ preemptCurrentOnCore st c tid with
-        scheduler := ((preemptCurrentOnCore st c tid).scheduler.setRunQueueOnCore c
-          (((preemptCurrentOnCore st c tid).scheduler.runQueueOnCore c).remove tid)).setCurrentOnCore
+    st'.scheduler = ({ (preemptCurrentOnCore st c tid).runRemoveOnCore c tid with
+        scheduler := ((preemptCurrentOnCore st c tid).runRemoveOnCore c tid).scheduler.setCurrentOnCore
             c (some tid) } : SystemState).scheduler := by
   unfold switchToThreadOnCore at hStep
   split at hStep
   · split at hStep
     · have hEq : st' = { (restoreIncomingContextOnCoreUnlessCurrent
-            { preemptCurrentOnCore st c tid with
-                scheduler := (preemptCurrentOnCore st c tid).scheduler.setRunQueueOnCore c
-                  (((preemptCurrentOnCore st c tid).scheduler.runQueueOnCore c).remove tid) }
+            ((preemptCurrentOnCore st c tid).runRemoveOnCore c tid)
             c tid) with
           scheduler := (restoreIncomingContextOnCoreUnlessCurrent
-            { preemptCurrentOnCore st c tid with
-                scheduler := (preemptCurrentOnCore st c tid).scheduler.setRunQueueOnCore c
-                  (((preemptCurrentOnCore st c tid).scheduler.runQueueOnCore c).remove tid) }
+            ((preemptCurrentOnCore st c tid).runRemoveOnCore c tid)
             c tid).scheduler.setCurrentOnCore c (some tid) } := by
         exact (Except.ok.inj hStep).symm
       subst hEq
       -- The switch's scheduler is the dispatch shape over the preempted state.
       have hSched : ({ (restoreIncomingContextOnCoreUnlessCurrent
-            { preemptCurrentOnCore st c tid with
-                scheduler := (preemptCurrentOnCore st c tid).scheduler.setRunQueueOnCore c
-                  (((preemptCurrentOnCore st c tid).scheduler.runQueueOnCore c).remove tid) }
+            ((preemptCurrentOnCore st c tid).runRemoveOnCore c tid)
             c tid) with
           scheduler := (restoreIncomingContextOnCoreUnlessCurrent
-            { preemptCurrentOnCore st c tid with
-                scheduler := (preemptCurrentOnCore st c tid).scheduler.setRunQueueOnCore c
-                  (((preemptCurrentOnCore st c tid).scheduler.runQueueOnCore c).remove tid) }
+            ((preemptCurrentOnCore st c tid).runRemoveOnCore c tid)
             c tid).scheduler.setCurrentOnCore c (some tid) } : SystemState).scheduler
-          = ({ preemptCurrentOnCore st c tid with
-                scheduler := ((preemptCurrentOnCore st c tid).scheduler.setRunQueueOnCore c
-                  (((preemptCurrentOnCore st c tid).scheduler.runQueueOnCore c).remove tid)).setCurrentOnCore
+          = ({ (preemptCurrentOnCore st c tid).runRemoveOnCore c tid with
+                scheduler := ((preemptCurrentOnCore st c tid).runRemoveOnCore c tid).scheduler.setCurrentOnCore
                     c (some tid) } : SystemState).scheduler := by
         show (restoreIncomingContextOnCoreUnlessCurrent _ c tid).scheduler.setCurrentOnCore
           c (some tid) = _
@@ -2692,8 +2739,7 @@ theorem switchToThreadOnCore_preserves_threadPlacedOnSomeCore
       dsimp only
       rw [if_neg (by simpa using hu), SystemState.getTcbWitnessed?_eq_some hPrev]
       dsimp only
-      show u ∈ (st.scheduler.setRunQueueOnCore c _).runQueueOnCore c
-      rw [SchedulerState.setRunQueueOnCore_runQueueOnCore_self, RunQueue.mem_insert]
+      rw [SystemState.runEnqueueOnCore_runQueueOnCore_self, RunQueue.mem_insert]
       exact Or.inr rfl
 
 /-- **`v0.35.158`**: the other direction — a context switch keeps an
@@ -2754,7 +2800,7 @@ theorem preemptCurrentOnCore_mem_runQueueOnCore_self (st : SystemState) (c : Cor
             = (st.scheduler.runQueueOnCore c).insert prev ptcb.boostedPriority := by
           unfold preemptCurrentOnCore; rw [hCur]; dsimp only
           rw [if_neg hEq, SystemState.getTcbWitnessed?_eq_some hPT]
-          exact SchedulerState.setRunQueueOnCore_runQueueOnCore_self _ _ _
+          exact SystemState.runEnqueueOnCore_runQueueOnCore_self _ _ _ _
         rw [hRq, RunQueue.mem_insert] at h
         rcases h with h | h
         · exact Or.inl h
@@ -2772,17 +2818,15 @@ theorem switchToThreadOnCore_preserves_not_dispatchable_onCore
     u ∉ st'.scheduler.runQueueOnCore c ∧ st'.scheduler.currentOnCore c ≠ some u := by
   rw [switchToThreadOnCore_ok_scheduler st st' c tid hStep]
   refine ⟨?_, ?_⟩
-  · show u ∉ (((preemptCurrentOnCore st c tid).scheduler.setRunQueueOnCore c
-        (((preemptCurrentOnCore st c tid).scheduler.runQueueOnCore c).remove tid)).setCurrentOnCore
+  · show u ∉ (((preemptCurrentOnCore st c tid).runRemoveOnCore c tid).scheduler.setCurrentOnCore
           c (some tid)).runQueueOnCore c
-    rw [SchedulerState.setCurrentOnCore_runQueueOnCore,
+    rw [SchedulerState.setCurrentOnCore_runQueueOnCore, SystemState.runRemoveOnCore_scheduler,
       SchedulerState.setRunQueueOnCore_runQueueOnCore_self, RunQueue.mem_remove]
     rintro ⟨hm, -⟩
     rcases preemptCurrentOnCore_mem_runQueueOnCore_self st c tid u hm with h | h
     · exact hQ h
     · exact hC h
-  · show (((preemptCurrentOnCore st c tid).scheduler.setRunQueueOnCore c
-        (((preemptCurrentOnCore st c tid).scheduler.runQueueOnCore c).remove tid)).setCurrentOnCore
+  · show (((preemptCurrentOnCore st c tid).runRemoveOnCore c tid).scheduler.setCurrentOnCore
           c (some tid)).currentOnCore c ≠ some u
     rw [SchedulerState.setCurrentOnCore_currentOnCore_self]
     intro h; exact hu (Option.some.inj h).symm

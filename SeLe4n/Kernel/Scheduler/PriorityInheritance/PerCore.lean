@@ -1128,8 +1128,10 @@ theorem resumeThreadOnCore_sets_threadState (st : SystemState) (vtid : SeLe4n.Va
       simp only [Except.ok.injEq, Prod.mk.injEq] at h
       obtain ⟨hst4, _⟩ := h
       subst hst4
-      rw [handleRescheduleSgiOnCore_getTcb?_ne_current _ ec vtid.val st4 hst3inv hst3cur hH]
-      exact ⟨t3, hst3get, hst3ready⟩
+      have hM := handleRescheduleSgiOnCore_getTcb?_ne_current _ ec vtid.val st4 hst3inv hst3cur hH
+      rw [hst3get] at hM
+      obtain ⟨t4, h4, hE⟩ := TCB.exists_of_map_withoutRunLinks_eq hM
+      exact ⟨t4, h4, (TCB.proj_eq_of_withoutRunLinks_eq TCB.threadState hE).trans hst3ready⟩
   · -- REMOTE: the result is the enqueued state `st3` directly.
     simp only [Bool.not_eq_true] at hLoc
     simp only [hLoc, Bool.false_eq_true, if_false] at h
