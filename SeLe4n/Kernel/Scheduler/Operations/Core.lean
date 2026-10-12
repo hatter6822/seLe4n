@@ -1372,6 +1372,57 @@ out the SchedContext's IPC-blocked threads (`budgetExhaustOnCore`). -/
   let rqPreempt := (st'.scheduler.runQueueOnCore c).insert tid (resolveInsertPriority st' tid sc)
   { stReplenished with scheduler := stReplenished.scheduler.setRunQueueOnCore c rqPreempt }
 
+/-- WS-ZA ZA4.3: the compiled `sliceExpireOnCore`.  The TCB is written in its
+slot (`modifyObject`), so a state the caller owns has neither the TCB nor the
+object table rebuilt; proven equal to the specification
+(`sliceExpireOnCore_eq_impl`). -/
+@[inline] def sliceExpireOnCoreImpl (st : SystemState) (c : CoreId) (tid : SeLe4n.ThreadId)
+    (tcb : TCB) (_hTcb : st.getTcb? tid = some tcb) : SystemState :=
+  let slice := st.scheduler.configDefaultTimeSlice
+  let st' := st.modifyObject tid.toObjId (SystemState.mapTcbObject fun t => { t with timeSlice := slice })
+  let rq := (st'.scheduler.runQueueOnCore c).insert tid (tcb.boostedPriority)
+  { st' with scheduler := st'.scheduler.setRunQueueOnCore c rq }
+
+@[csimp] theorem sliceExpireOnCore_eq_impl : @sliceExpireOnCore = @sliceExpireOnCoreImpl := by
+  funext st c tid tcb hTcb
+  have hx := (SystemState.getTcb?_eq_some_iff st tid tcb).mp hTcb
+  unfold sliceExpireOnCore sliceExpireOnCoreImpl SystemState.modifyObject
+    SystemState.rewriteObject
+  simp only [RobinHood.RHTable.modify_of_get? hx]
+  rfl
+
+/-- WS-ZA ZA4.3: the object update a SchedContext update performs, as
+`mapTcbObject` is a TCB's. -/
+@[inline] def mapSchedContextObject (f : SchedContext → SchedContext) :
+    KernelObject → KernelObject
+  | .schedContext sc => .schedContext (f sc)
+  | o => o
+
+/-- WS-ZA ZA4.3: the compiled `spendBudgetOnCore`.  The SchedContext is written
+in its slot, and the insert priority is read off the state before the refill
+is queued on it, so no state is read after a later one is built from it
+(`ZERO_ALLOCATION_SYSCALL_PLAN.md` D1); proven equal to the specification
+(`spendBudgetOnCore_eq_impl`). -/
+@[inline] def spendBudgetOnCoreImpl (st : SystemState) (c : CoreId) (tid : SeLe4n.ThreadId)
+    (scId : SchedContextId) (sc : SchedContext)
+    (_hSc : st.getSchedContext? scId = some sc) (ticks : Nat) : SystemState :=
+  let now := st.machine.timer
+  let consumedAmount : Budget := ⟨sc.budgetRemaining.val⟩
+  let st' := st.modifyObject scId.toObjId (mapSchedContextObject fun s =>
+    cbsUpdateDeadline (scheduleReplenishment (consumeBudget s ticks) now consumedAmount) now true)
+  let prio := resolveInsertPriority st' tid sc
+  let stReplenished := replenishOnCore st' c scId (now + sc.period.val)
+  let rqPreempt := (stReplenished.scheduler.runQueueOnCore c).insert tid prio
+  { stReplenished with scheduler := stReplenished.scheduler.setRunQueueOnCore c rqPreempt }
+
+@[csimp] theorem spendBudgetOnCore_eq_impl : @spendBudgetOnCore = @spendBudgetOnCoreImpl := by
+  funext st c tid scId sc hSc ticks
+  have hx := (SystemState.getSchedContext?_eq_some_iff st scId sc).mp hSc
+  unfold spendBudgetOnCore spendBudgetOnCoreImpl SystemState.modifyObject
+    SystemState.rewriteObject
+  simp only [RobinHood.RHTable.modify_of_get? hx]
+  rfl
+
 /-- A bound thread's budget runs out on the timer tick: the budget is spent
 (`spendBudgetOnCore`) and the IPC-blocked threads the SchedContext bounded time
 out, their remote-wake SGIs returned. -/
