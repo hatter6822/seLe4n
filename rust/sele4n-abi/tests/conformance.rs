@@ -1144,10 +1144,10 @@ fn kernel_error_variant_count() {
 /// DeclassifySignal at 33; PR #887's review round added TcbSetFaultHandler at
 /// 34; WS-RR RR8.16 added CspaceRevoke at 35; WS-BP BP7.1 added UntypedRetype at
 /// 36, UntypedReset at 37, TcbSetSpace at 38, and PageTableMap / PageTableUnmap
-/// at 39 and 40).
+/// at 39 and 40; WS-ZA ZA4.3 added Yield at 41).
 #[test]
 fn syscall_id_variant_count() {
-    const SYSCALL_COUNT: u64 = 41;
+    const SYSCALL_COUNT: u64 = 42;
     assert_eq!(SyscallId::COUNT, SYSCALL_COUNT as usize);
     for i in 0..SYSCALL_COUNT {
         assert!(
@@ -1292,7 +1292,8 @@ fn sched_context_boundary() {
     assert_eq!(SyscallId::from_u64(20).unwrap(), SyscallId::TcbSuspend);
 }
 
-/// AA1-B-5: COUNT is updated to 41 (WS-BP BP7.1 added UntypedRetype,
+/// AA1-B-5: COUNT is updated to 42 (WS-ZA ZA4.3 added Yield, on top of
+/// WS-BP BP7.1's UntypedRetype,
 /// UntypedReset, TcbSetSpace, PageTableMap and PageTableUnmap, on top of
 /// WS-RR RR8.16's CspaceRevoke, on top of
 /// PR #887's review round's TcbSetFaultHandler, WS-SM SM9.C.8's
@@ -1301,7 +1302,7 @@ fn sched_context_boundary() {
 /// MintReplyCap).
 #[test]
 fn syscall_count_updated() {
-    assert_eq!(SyscallId::COUNT, 41);
+    assert_eq!(SyscallId::COUNT, 42);
 }
 
 /// AA1-B-6: SchedContext syscalls require Write access (API.lean:381-383).
@@ -1632,7 +1633,6 @@ fn page_table_roundtrip() {
     let unmap = SyscallId::from_u64(40).expect("PageTableUnmap must exist");
     assert_eq!(unmap, SyscallId::PageTableUnmap);
     assert_eq!(unmap.required_right(), AccessRight::Write);
-    assert_eq!(SyscallId::COUNT, 41);
 }
 
 /// WS-SM SM6.B: TcbBindNotification roundtrip (discriminant 26).
@@ -1694,14 +1694,24 @@ fn declassify_roundtrip() {
     assert_eq!(sid.required_right(), AccessRight::Write);
 }
 
-/// D6-D5: Boundary — discriminant 41 is out of range for SyscallId
+/// D6-D5: Boundary — discriminant 42 is out of range for SyscallId
 /// (WS-BP BP7.1 added PageTableMap and PageTableUnmap, moving the boundary
-/// from 39 to 41).
+/// from 39 to 41; WS-ZA ZA4.3 added Yield, moving it to 42).
 #[test]
 fn syscall_boundary() {
-    assert!(SyscallId::from_u64(40).is_some()); // Last valid
-    assert!(SyscallId::from_u64(41).is_none()); // First invalid
-    assert_eq!(SyscallId::COUNT, 41);
+    assert!(SyscallId::from_u64(41).is_some()); // Last valid
+    assert!(SyscallId::from_u64(42).is_none()); // First invalid
+    assert_eq!(SyscallId::COUNT, 42);
+}
+
+/// WS-ZA ZA4.3: Yield roundtrip (discriminant 41).  `seL4_Yield` under MCS:
+/// invokes no capability and takes no message registers, so the wrapper
+/// sends an empty message info.
+#[test]
+fn yield_roundtrip() {
+    let sid = SyscallId::from_u64(41).expect("Yield must exist");
+    assert_eq!(sid, SyscallId::Yield);
+    assert_eq!(sid.to_u64(), 41);
 }
 
 /// WS-SM SM9.A.6: AuditRead roundtrip (discriminant 31).
@@ -2025,6 +2035,8 @@ fn syscall_return_shape(sid: SyscallId) -> ReturnShape {
         // WS-BP BP7.1: installing or removing a page table returns nothing.
         | SyscallId::PageTableMap
         | SyscallId::PageTableUnmap
+        // WS-ZA ZA4.3: a yield returns nothing.
+        | SyscallId::Yield
         | SyscallId::LifecycleRetype
         | SyscallId::VSpaceMap
         | SyscallId::VSpaceUnmap
@@ -2489,6 +2501,8 @@ fn wrapper_lengths_clear_prefilter_minimums() {
     assert_clears("page_table_map", SyscallId::PageTableMap);
     let _ = sele4n_sys::vspace::page_table_unmap(cap);
     assert_clears("page_table_unmap", SyscallId::PageTableUnmap);
+    let _ = sele4n_sys::sched_context::yield_now();
+    assert_clears("yield_now", SyscallId::Yield);
 
     let _ = sele4n_sys::vspace::vspace_map_read_only(
         cap,

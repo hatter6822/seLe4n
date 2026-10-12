@@ -463,6 +463,18 @@ theorem notificationWaitOnCore_crossCoreNonInterference (ctx : LabelingContext)
   crossCoreNonInterference_ofCores ctx observer (by simpa using hne)
     (notificationWaitOnCore_confinedToCores notificationId waiter executingCore st) hShared
 
+/-- WS-ZA ZA4.3 (**the live `.yield` arm, cross-core**): a yield is invisible to
+every core but the caller's own — unconditionally on the per-core side, with
+the shared half as the only premise. -/
+theorem yieldOnCore_crossCoreNonInterference (ctx : LabelingContext)
+    (observer : IfObserver) (executingCore c : CoreId) (st st' : SystemState)
+    (hStep : yieldOnCore st executingCore = .ok st')
+    (hne : c ≠ executingCore)
+    (hShared : sharedViewUnchanged ctx observer st st') :
+    projectStateOnCore ctx observer st' c = projectStateOnCore ctx observer st c :=
+  crossCoreNonInterference_ofCores ctx observer (by simpa using hne)
+    (yieldOnCore_confinedToCores st st' executingCore hStep) hShared
+
 /-- SM8.B.2 (SM6.A, **the two-core case**): a cross-core endpoint call is
 invisible to any core that is neither the receiver's home core nor the caller's
 own core. -/
@@ -1234,6 +1246,10 @@ inductive CrossCoreTransition where
   writes no core: its whole state effect is the audit trail and its epoch,
   neither of which is a per-core field. -/
   | auditDrainDispatch
+  /-- WS-ZA ZA4.3 — the **live** `.yield` arm, run by both dispatchers' guard
+  ahead of the caller's CSpace lookup. Takes the executing core and writes only
+  that core: the caller's charge and re-enqueue and the scheduling point there. -/
+  | yieldDispatch
   deriving DecidableEq, Repr
 
 def CrossCoreTransition.all : List CrossCoreTransition :=
@@ -1249,7 +1265,7 @@ def CrossCoreTransition.all : List CrossCoreTransition :=
    .vspaceMapDispatch, .vspaceUnmapDispatch, .untypedResetDispatch,
    .cspaceDeleteDispatch, .cspaceRevokeDispatch, .lifecycleRetypeDispatch,
    .declassifyDispatch, .declassifySignalDispatch,
-   .auditReadDispatch, .auditDrainDispatch]
+   .auditReadDispatch, .auditDrainDispatch, .yieldDispatch]
 
 /-- SM8.B.2: **`all` really is all of them.**
 
@@ -1330,8 +1346,9 @@ def crossCoreNiTheorem : CrossCoreTransition → String
       niName! auditReadDispatch_crossCoreNonInterference
   | .auditDrainDispatch =>
       niName! auditDrainDispatch_crossCoreNonInterference
+  | .yieldDispatch => niName! yieldOnCore_crossCoreNonInterference
 
-theorem crossCoreNiTheorem_count : CrossCoreTransition.all.length = 32 := by rfl
+theorem crossCoreNiTheorem_count : CrossCoreTransition.all.length = 33 := by rfl
 
 /-- SM8.B.2: **which entries are the arms the live syscall dispatch actually
 reaches**, as opposed to the below-API transitions they are built from.
@@ -1405,9 +1422,10 @@ def crossCoreTransitionIsLiveArm : CrossCoreTransition → Bool
   | .auditReadDispatch => true
   | .auditDrainDispatch => true
   | .lifecycleRetypeDispatch => true
+  | .yieldDispatch => true
 
 theorem crossCoreTransitionIsLiveArm_count :
-    (CrossCoreTransition.all.filter crossCoreTransitionIsLiveArm).length = 25 := by decide
+    (CrossCoreTransition.all.filter crossCoreTransitionIsLiveArm).length = 26 := by decide
 
 -- The check is quadratic in the inventory and linear in each theorem name, and
 -- round 35's three entries (one of them 76 characters) pushed it past the
@@ -1504,6 +1522,7 @@ def crossCoreLiveArmSyscall : CrossCoreTransition → Option SyscallId
   | .auditReadDispatch => some .auditRead
   | .auditDrainDispatch => some .auditDrain
   | .lifecycleRetypeDispatch => some .lifecycleRetype
+  | .yieldDispatch => some .yield
 
 /-- SM8.B.2: the evidence backing each live-arm classification. -/
 def crossCoreLiveArmEvidence : CrossCoreTransition → LiveArmEvidence
@@ -1553,6 +1572,7 @@ def crossCoreLiveArmEvidence : CrossCoreTransition → LiveArmEvidence
   | .auditDrainDispatch => .delegationProof .auditDrain syscallDelegates_auditDrain
   | .lifecycleRetypeDispatch =>
       .delegationProof .lifecycleRetype syscallDelegates_lifecycleRetype
+  | .yieldDispatch => .delegationProof .yield syscallDelegates_yield
 
 /-- SM8.B.2 (**the tie is checked, not assumed**): a delegation-backed entry
 names the syscall its own transition belongs to. Round 11's example — the
@@ -1589,7 +1609,7 @@ def crossCoreLiveArmDelegationBacked : List CrossCoreTransition :=
     crossCoreTransitionIsLiveArm t && (crossCoreLiveArmEvidence t).isDelegationBacked)
 
 theorem crossCoreLiveArmDelegationBacked_count :
-    crossCoreLiveArmDelegationBacked.length = 17 := by decide
+    crossCoreLiveArmDelegationBacked.length = 18 := by decide
 
 /-- SM8.B.2: and the residual — the live arms still resting on a human reading
 of `API.lean`, which is the state every one of the three drifts occurred in. -/
@@ -1647,6 +1667,8 @@ def crossCoreTransitionWritesRemote : CrossCoreTransition → Bool
   | .declassifySignalDispatch => true
   | .auditReadDispatch => false
   | .auditDrainDispatch => false
+  -- WS-ZA ZA4.3: the yield writes only the core it runs on
+  | .yieldDispatch => false
 
 theorem crossCoreTransitionWritesRemote_count :
     (CrossCoreTransition.all.filter crossCoreTransitionWritesRemote).length = 23 := by decide

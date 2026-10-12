@@ -311,6 +311,14 @@ def enforcementBoundary : List EnforcementClass :=
   -- is which page an address space's walk passes through, never data.
   , .capabilityOnly "pageTableMap"
   , .capabilityOnly "pageTableUnmap"
+  -- **WS-ZA ZA4.3**: the yield (`seL4_Yield` under MCS).  It invokes no
+  -- capability at all: its authority is being the thread current on the
+  -- executing core, which the dispatcher checks first.  Listed with the
+  -- capability-only operations because, like them, it needs no flow check — it
+  -- writes the caller's own allotment and the executing core's queues, the
+  -- writes the timer tick makes when that allotment runs out, and carries no
+  -- data across a label boundary.
+  , .capabilityOnly "yieldOnCore"
   -- WS-SM SM6.B: notification-binding capability-only operations (seL4
   -- NotificationBind / UnbindNotification — mutate the boundTCB ⇄ boundNotification
   -- relation; gated by the TCB capability, not an information-flow policy)
@@ -445,6 +453,7 @@ def syscallIdToEnforcementName : SyscallId → String
   | .tcbSetSpace => "setThreadSpace"
   | .pageTableMap => "pageTableMap"
   | .pageTableUnmap => "pageTableUnmap"
+  | .yield => "yieldOnCore"
   | .tcbBindNotification => "bindNotification"
   | .tcbUnbindNotification => "unbindNotification"
   | .mintReplyCap => "mintReplyCapWithCdt"

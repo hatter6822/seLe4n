@@ -184,7 +184,7 @@ theorem validThreadId_val_toValid? (v : SeLe4n.ValidThreadId) :
   unfold SeLe4n.ThreadId.toValid?
   rw [dif_neg v.property]
 
-/-- **The sixteen declared arms are covered by the footprint the resolver
+/-- **The seventeen declared arms are covered by the footprint the resolver
 declares for them**, at the operands the ABI entry resolves.
 
 One `cases` over the syscall id: the twenty-five undeclared arms are closed by
@@ -206,10 +206,18 @@ theorem dispatchWithCapChecked_coversWrites (ctx : LabelingContext)
     (hSched : schedLockSetForSyscall decoded.syscallId ops e st = some S)
     (hDisp : dispatchWithCapChecked ctx decoded tid e gate cap st = .ok ((), st')) :
     footprintCoversWrites S st st' := by
+  -- WS-ZA ZA4.3: a yield never reaches this tier (`dispatchYield` runs first).
+  have hY : decoded.syscallId ≠ .yield := by
+    intro hY
+    unfold dispatchWithCapChecked dispatchCapabilityOnly at hDisp
+    rw [hY] at hDisp
+    simp only at hDisp
+    cases hDisp
   have hTable : (LockKey.objStore, AccessMode.write) ∈ S.pairs :=
     schedLockSetForSyscall_contains_objStore_write decoded.syscallId ops e st S hSched
   obtain ⟨hTcb, rootCn, hRoot, hGateEq⟩ := abiEntryGate_components decoded tid st tcb gate hGate
   unfold abiEntryLockOperands at hOps
+  rw [if_neg hY] at hOps
   rw [hGate] at hOps
   simp only at hOps
   rw [hLk] at hOps
@@ -217,6 +225,7 @@ theorem dispatchWithCapChecked_coversWrites (ctx : LabelingContext)
   unfold dispatchWithCapChecked dispatchCapabilityOnly at hDisp
   cases hId : decoded.syscallId <;> rw [hId] at hOps hSched hDisp <;> simp only at hDisp
   all_goals try (simp only [schedLockSetForSyscall, reduceCtorEq] at hSched; done)
+  case yield => exact absurd hId hY
   -- ---- `.tcbSuspend` ------------------------------------------------------
   case tcbSuspend =>
     cases hT : cap.target <;> rw [hT] at hOps <;> simp only [reduceCtorEq] at hOps
@@ -673,7 +682,23 @@ theorem dispatchSyscallChecked_coversWrites (ctx : LabelingContext)
     (hSched : schedLockSetForSyscall decoded.syscallId ops e st = some S)
     (hDisp : dispatchSyscallChecked ctx decoded tid e st = .ok ((), st')) :
     footprintCoversWrites S st st' := by
-  obtain ⟨tcb, gate, cap, hGate, hLk⟩ := abiEntryLockOperands_gate_lookup decoded tid st ops hOps
+  -- WS-ZA ZA4.3: the capability-free yield runs before any lookup, under its
+  -- own footprint.
+  by_cases hY : decoded.syscallId = .yield
+  · rw [hY] at hSched
+    simp only [schedLockSetForSyscall] at hSched
+    unfold dispatchSyscallChecked at hDisp
+    split at hDisp
+    · exact absurd hDisp (by simp)
+    · simp only [dispatchYield] at hDisp
+      split at hDisp
+      · exact absurd hDisp (by simp)
+      · rename_i stY hYieldOk
+        simp only [Except.ok.injEq, Prod.mk.injEq, true_and] at hDisp
+        subst hDisp
+        exact schedLockSet_yieldOnCore_coversWrites e st stY S hSched hYieldOk
+  obtain ⟨tcb, gate, cap, hGate, hLk⟩ :=
+    abiEntryLockOperands_gate_lookup decoded tid st ops hY hOps
   obtain ⟨hTcb, rootCn, hRoot, hGateEq⟩ := abiEntryGate_components decoded tid st tcb gate hGate
   have hTcbObj : st.getObject? tid.toObjId = some (.tcb tcb) :=
     (SystemState.getTcb?_eq_some_iff st tid tcb).mp hTcb
@@ -690,7 +715,8 @@ theorem dispatchSyscallChecked_coversWrites (ctx : LabelingContext)
   unfold dispatchSyscallChecked at hDisp
   split at hDisp
   · exact absurd hDisp (by simp)
-  · rw [hTcbObj] at hDisp
+  · simp only at hDisp
+    rw [hTcbObj] at hDisp
     simp only at hDisp
     rw [hRootObj] at hDisp
     simp only at hDisp
@@ -799,8 +825,12 @@ theorem syscallDispatchCrossCoreStep_coversWrites (ctx : LabelingContext) (e : C
     have hNoFault : Platform.FFI.syscallCapFaultOf SeLe4n.arm64DefaultLayout
         (Platform.FFI.writeFfiRegistersToTcb st tid syscallId x0 x1 x2 x3 x4 x5) tid ke
           = none := by
+      -- WS-ZA ZA4.3: a yield has no capability-fault phase.
+      by_cases hY : decoded.syscallId = .yield
+      · exact Platform.FFI.syscallCapFaultOf_none_of_no_fault_phase SeLe4n.arm64DefaultLayout _
+          tid ke tcb decoded hTcbRegs hDec (by rw [hY]; rfl)
       obtain ⟨tcbF, gate, cap, hGate, hLk⟩ :=
-        abiEntryLockOperands_gate_lookup decoded tid stFilled ops hOps
+        abiEntryLockOperands_gate_lookup decoded tid stFilled ops hY hOps
       obtain ⟨hTcbF, rootCn, hRoot, hGateEq⟩ :=
         abiEntryGate_components decoded tid stFilled tcbF gate hGate
       have hTcbRegs' :

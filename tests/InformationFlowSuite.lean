@@ -867,8 +867,8 @@ def runInformationFlowChecks : IO Unit := do
   -- beside it is the single-CNode primitive that composite opens with, and
   -- naming *that* one would be a boundary entry for an inner step while the
   -- seam a capability actually reaches is the composite).
-  expect "enforcement boundary: total 52 classified operations"
-    (SeLe4n.Kernel.enforcementBoundary.length == 52)
+  expect "enforcement boundary: total 53 classified operations"
+    (SeLe4n.Kernel.enforcementBoundary.length == 53)
 
   -- Verify enforcement boundary: denied flows produce errors
   let deniedSendResult := SeLe4n.Kernel.endpointSendDualChecked secretSenderCtx ⟨10⟩ ⟨1⟩ testMsg default default publicEndpointState
@@ -1449,12 +1449,14 @@ def runInformationFlowChecks : IO Unit := do
   -- WS-RR RR8.16 (`v0.35.190`): 27 → 28 with `cspaceRevokeCdt`, capability-only
   -- because the `.cspaceRevoke` arm's authority is the invoked CNode's write
   -- right and no information-flow policy is consulted.
-  expect "enforcement boundary has 35 capability-only"
-    (coCount = 35)
+  -- WS-ZA ZA4.3: 35 → 36 with `yieldOnCore`, which invokes no capability and
+  -- consults no flow policy.
+  expect "enforcement boundary has 36 capability-only"
+    (coCount = 36)
   expect "enforcement boundary has 4 read-only"
     (roCount = 4)
-  expect "enforcement boundary total is 52"
-    (boundary.length = 52)
+  expect "enforcement boundary total is 53"
+    (boundary.length = 53)
 
   IO.println "enforcement boundary completeness verified"
 
@@ -1554,8 +1556,8 @@ def runInformationFlowChecks : IO Unit := do
   IO.println "default labeling context insecurity verified"
 
   -- V6-L: Extended boundary matches canonical
-  expect "enforcementBoundaryExtended has 52 entries"
-    (SeLe4n.Kernel.enforcementBoundaryExtended.length = 52)
+  expect "enforcementBoundaryExtended has 53 entries"
+    (SeLe4n.Kernel.enforcementBoundaryExtended.length = 53)
   expect "extended boundary matches canonical length"
     (SeLe4n.Kernel.enforcementBoundaryExtended.length = SeLe4n.Kernel.enforcementBoundary.length)
 

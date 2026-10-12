@@ -293,6 +293,8 @@ def chainNeutralConstructors : List (Name × String) :=
       "`{ tcb with maxControlledPriority := _ }`, then the capped base priority through `frozenWriteBasePriority`; no chain field in either")
   , (`SeLe4n.Kernel.FrozenOps.frozenTimerTickBudget,
       "rebuilds a SchedContext for its budget accounting; `scReply` is untouched")
+  , (`SeLe4n.Kernel.spendBudgetOnCore,
+      "rebuilds a SchedContext for its budget accounting (`consumeBudget`, `scheduleReplenishment`, `cbsUpdateDeadline`); `scReply` is untouched")
     -- ---------------------------------------------------------------------
     -- Reached through a helper, which is what the frontier started following
     -- at `v0.35.13`.  Each of these composes `Model.linkReply` and touches no

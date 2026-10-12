@@ -16,6 +16,7 @@ import SeLe4n.Kernel.Scheduler.Operations.PerCoreDispatch
 import SeLe4n.Kernel.Scheduler.Operations.PerCoreIdle
 import SeLe4n.Kernel.Scheduler.Operations.PerCoreDomain
 import SeLe4n.Kernel.Scheduler.Operations.PerCoreTimerTick
+import SeLe4n.Kernel.Scheduler.Operations.PerCoreScheduleFrames
 import SeLe4n.Kernel.Scheduler.Operations.PerCoreCbs
 import SeLe4n.Kernel.Scheduler.Operations.PerCoreTickCbsPreservation
 import SeLe4n.Kernel.Scheduler.Operations.PerCoreTickCbsAffinity
@@ -596,75 +597,6 @@ theorem wakeThread_preserves_schedulerInvariantStructural_smp
 
 -- ── §3.3  Per-core budget-aware dispatch (`scheduleEffectiveOnCore`) ──
 
-/-- WS-SM SM5.I (frame helper): the idle fallback frames every *sibling* core's
-`current` slot — both arms (idle dispatch / `current = none`) write only core
-`c`'s slot. -/
-theorem idleFallbackOnCore_currentOnCore_ne (st : SystemState) (c c' : CoreId)
-    (h : c ≠ c') :
-    (idleFallbackOnCore st c).scheduler.currentOnCore c' = st.scheduler.currentOnCore c' := by
-  unfold idleFallbackOnCore
-  split
-  · simp only [dispatchIdleOnCore, SchedulerState.setCurrentOnCore_currentOnCore_ne _ _ _ _ h,
-      restoreIncomingContextOnCore_scheduler, SchedulerState.setRunQueueOnCore_currentOnCore]
-  · simp only [SchedulerState.setCurrentOnCore_currentOnCore_ne _ _ _ _ h]
-
-/-- WS-SM SM5.I (frame helper): the idle fallback frames every *sibling* core's
-run queue. -/
-theorem idleFallbackOnCore_runQueueOnCore_ne (st : SystemState) (c c' : CoreId)
-    (h : c ≠ c') :
-    (idleFallbackOnCore st c).scheduler.runQueueOnCore c' = st.scheduler.runQueueOnCore c' := by
-  unfold idleFallbackOnCore
-  split
-  · simp only [dispatchIdleOnCore, SchedulerState.setCurrentOnCore_runQueueOnCore,
-      restoreIncomingContextOnCore_scheduler, SchedulerState.setRunQueueOnCore_runQueueOnCore_ne _ _ _ _ h]
-  · simp only [SchedulerState.setCurrentOnCore_runQueueOnCore]
-
-/-- WS-SM SM5.I.8 (other-core frame for the dispatcher): a per-core dispatch on
-core `c` leaves every *sibling* core's `current` and `runQueue` slots untouched.
-The dispatch's only scheduler writes are core `c`'s `setRunQueueOnCore` (dequeue)
-and `setCurrentOnCore`; `saveOutgoingContextOnCore` / `restoreIncomingContext`
-leave the scheduler structure intact (they touch only the object store /
-`machine.regs`).  Proved over all OK branches (idle fallback + thread dispatch);
-the error branch is impossible under `hStep`. -/
-theorem scheduleEffectiveOnCore_independent_of_other_core (st : SystemState)
-    (c c' : CoreId) (st' : SystemState) (hcc : c ≠ c')
-    (hStep : scheduleEffectiveOnCore st c = .ok st') :
-    st'.scheduler.currentOnCore c' = st.scheduler.currentOnCore c'
-      ∧ st'.scheduler.runQueueOnCore c' = st.scheduler.runQueueOnCore c' := by
-  unfold scheduleEffectiveOnCore at hStep
-  cases hCh : chooseThreadEffectiveOnCore st c with
-  | error e => rw [hCh] at hStep; simp at hStep
-  | ok res =>
-    rw [hCh] at hStep
-    cases res with
-    | none =>
-      simp only [Except.ok.injEq] at hStep; subst hStep
-      refine ⟨?_, ?_⟩
-      · rw [SystemState.clearReschedulePendingOnCore_scheduler,
-          SchedulerState.clearReschedulePendingOnCore_currentOnCore,
-          idleFallbackOnCore_currentOnCore_ne _ c c' hcc, saveOutgoingContextOnCore_scheduler_eq]
-      · rw [SystemState.clearReschedulePendingOnCore_scheduler,
-          SchedulerState.clearReschedulePendingOnCore_runQueueOnCore,
-          idleFallbackOnCore_runQueueOnCore_ne _ c c' hcc, saveOutgoingContextOnCore_scheduler_eq]
-    | some tid =>
-      cases hTcb : st.getTcb? tid with
-      | none => simp [hTcb] at hStep
-      | some tcb =>
-        simp only [hTcb] at hStep
-        split at hStep
-        · simp only [Except.ok.injEq] at hStep; subst hStep
-          refine ⟨?_, ?_⟩
-          · simp only [SchedulerState.clearReschedulePendingOnCore_currentOnCore,
-              SchedulerState.setCurrentOnCore_currentOnCore_ne _ _ _ _ hcc,
-              restoreIncomingContextOnCore_scheduler, SchedulerState.setRunQueueOnCore_currentOnCore,
-              saveOutgoingContextOnCore_scheduler_eq]
-          · simp only [SchedulerState.clearReschedulePendingOnCore_runQueueOnCore,
-              SchedulerState.setCurrentOnCore_runQueueOnCore,
-              restoreIncomingContextOnCore_scheduler,
-              SchedulerState.setRunQueueOnCore_runQueueOnCore_ne _ _ _ _ hcc,
-              saveOutgoingContextOnCore_scheduler_eq]
-        · simp at hStep
-
 /-- WS-SM SM5.I.8: the per-core budget-aware dispatch `scheduleEffectiveOnCore`
 preserves the structural SMP invariant.  On the operated core `c₀` the dispatch
 *establishes* all four structural conjuncts (dequeue-on-dispatch consistency +
@@ -1009,46 +941,6 @@ theorem crossSubsystemInvariant_smp_dominates_structural {st : SystemState}
 
 -- ── §4.1  Dispatch register-bank sibling frames ──
 
-/-- WS-SM SM5.I (register-bank sibling frame): the idle fallback on core `c` leaves
-every *sibling* core's register bank untouched — both arms write at most core
-`c`'s bank (`dispatchIdle`'s restore) or nothing (`current = none`). -/
-theorem idleFallbackOnCore_machine_regsOnCore_ne (st : SystemState) (c c' : CoreId)
-    (h : c ≠ c') :
-    (idleFallbackOnCore st c).machine.regsOnCore c' = st.machine.regsOnCore c' := by
-  unfold idleFallbackOnCore
-  split
-  · show (restoreIncomingContextOnCore _ c (idleThreadId c)).machine.regsOnCore c' = _
-    exact restoreIncomingContextOnCore_regsOnCore_ne _ c c' (idleThreadId c) h
-  · rfl
-
-/-- WS-SM SM5.I (register-bank sibling frame): a per-core dispatch on core `c₀`
-leaves every *sibling* core's register bank untouched — the only machine write is
-the restore's `setRegsOnCore c₀`. -/
-theorem scheduleEffectiveOnCore_machine_regsOnCore_ne (st : SystemState) (c₀ c' : CoreId)
-    (st' : SystemState) (hcc : c₀ ≠ c') (hStep : scheduleEffectiveOnCore st c₀ = .ok st') :
-    st'.machine.regsOnCore c' = st.machine.regsOnCore c' := by
-  unfold scheduleEffectiveOnCore at hStep
-  cases hCh : chooseThreadEffectiveOnCore st c₀ with
-  | error e => rw [hCh] at hStep; simp at hStep
-  | ok res =>
-    rw [hCh] at hStep
-    cases res with
-    | none =>
-      simp only [Except.ok.injEq] at hStep; subst hStep
-      rw [SystemState.clearReschedulePendingOnCore_machine,
-        idleFallbackOnCore_machine_regsOnCore_ne _ c₀ c' hcc, saveOutgoingContextOnCore_machine]
-    | some tid =>
-      cases hTcb : st.getTcb? tid with
-      | none => simp [hTcb] at hStep
-      | some tcb =>
-        simp only [hTcb] at hStep
-        split at hStep
-        · simp only [Except.ok.injEq] at hStep; subst hStep
-          show (restoreIncomingContextOnCore _ c₀ tid).machine.regsOnCore c' = _
-          rw [restoreIncomingContextOnCore_regsOnCore_ne _ c₀ c' tid hcc]
-          show (saveOutgoingContextOnCore st c₀).machine.regsOnCore c' = _
-          rw [saveOutgoingContextOnCore_machine]
-        · simp at hStep
 
 /-- WS-SM SM5.I (register-bank sibling frame): a per-core dispatch on core `c₀`
 either leaves any thread's saved register context unchanged, or — when that thread
@@ -3869,7 +3761,7 @@ theorem timerTickBudgetOnCore_preserves_allThreadsTimeSlicePositive
     {hW : st.getTcb? tid = some tcb}
     (hStep : timerTickBudgetOnCore st c tid tcb hW = .ok (st3, b, sgis))
     (h : allThreadsTimeSlicePositive st) : allThreadsTimeSlicePositive st3 := by
-  unfold timerTickBudgetOnCore budgetExhaustOnCore sliceExpireOnCore at hStep
+  unfold timerTickBudgetOnCore budgetExhaustOnCore spendBudgetOnCore sliceExpireOnCore at hStep
   dsimp only [SystemState.rewriteObject] at hStep
   split at hStep
   · -- unbound
@@ -3999,7 +3891,7 @@ theorem timerTickBudgetOnCore_preserves_runQueueSafetyOnCore
   -- The bound/donated bodies are identical; both bind `scId`.  `boundAux`
   -- (below) factors them — it re-unfolds `timerTickBudgetOnCore`, so the
   -- `match`-aux is shared (no matcher mismatch).
-  unfold timerTickBudgetOnCore budgetExhaustOnCore sliceExpireOnCore at hStep
+  unfold timerTickBudgetOnCore budgetExhaustOnCore spendBudgetOnCore sliceExpireOnCore at hStep
   dsimp only [SystemState.rewriteObject] at hStep
   split at hStep
   · -- unbound

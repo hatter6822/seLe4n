@@ -70,7 +70,7 @@ open SeLe4n.Kernel.Concurrency (SyscallLockOperands)
 /-- **WS-RR RR8.12 Cut C4: the scheduler-domain footprint the live syscall seam
 declares**, at the decoded arm and the operands that arm's capability names.
 
-Sixteen arms declare; the other nineteen answer `none`.  Each declared arm is
+Seventeen arms declare; the other twenty-five answer `none`.  Each declared arm is
 `LockSet.ofList?` of its own resolved footprint, and that constructor's
 `Nodup` obligation is `schedFootprintOfCores_keys_nodup` — so it provably never
 refuses a footprint this kernel declares, which the per-arm `_isSome_iff`
@@ -147,6 +147,9 @@ def schedLockSetForSyscall (sid : SyscallId) (ops : SyscallLockOperands)
         LockSet.ofList? (schedLockSet_notificationSignalBoundOnCore st nId)
   | .notificationWait =>
       LockSet.ofList? (schedLockSet_notificationWaitOnCore executingCore)
+  -- **WS-ZA ZA4.3**: a yield invokes no capability, so it reads no operand.
+  | .yield =>
+      LockSet.ofList? (schedLockSet_yieldOnCore executingCore)
   | .send =>
       ops.targetObject.bind fun epId =>
         LockSet.ofList? (schedLockSet_endpointSendOnCore st epId executingCore)
@@ -218,7 +221,7 @@ footprint without listing it here breaks
 still answers `none` is refused by that arm's own `_isSome_iff`, which states
 the exact operands under which it declares.
 
-There are `SyscallId.count = 41` arms; **sixteen** declare and twenty-five
+There are `SyscallId.count = 42` arms; **seventeen** declare and twenty-five
 answer `none`.  *Which* of those twenty-five write a scheduler slot at all is this
 enumeration's own open question — the arms above are the ones WS-RR RR8.12's
 sequence identified, and a twenty-sixth found to write one is a footprint to
@@ -240,7 +243,8 @@ def declaredSchedFootprintSyscall : SyscallId → Bool
   | .schedContextConfigure | .schedContextBind | .schedContextUnbind
   | .lifecycleRetype
   | .notificationSignal | .notificationWait
-  | .send | .receive | .call | .reply | .replyRecv => true
+  | .send | .receive | .call | .reply | .replyRecv
+  | .yield => true
   | .cspaceMint | .cspaceCopy | .cspaceMove | .cspaceDelete | .cspaceRevoke
   | .untypedRetype | .untypedReset
   | .mintReplyCap
@@ -288,6 +292,14 @@ core's run-queue lock and nothing the state or the operands can withhold. -/
     (ops : SyscallLockOperands) (executingCore : CoreId) (st : SystemState) :
     (schedLockSetForSyscall .notificationWait ops executingCore st).isSome := by
   simp [schedLockSetForSyscall, LockSet.ofList?, schedLockSet_notificationWaitOnCore,
+    schedFootprintOfCores_keys_nodup]
+
+/-- **WS-ZA ZA4.3**: `.yield` declares unconditionally, as `.notificationWait`
+does: it reads no operand and its footprint is fixed by the executing core. -/
+@[simp] theorem schedLockSetForSyscall_yield_isSome
+    (ops : SyscallLockOperands) (executingCore : CoreId) (st : SystemState) :
+    (schedLockSetForSyscall .yield ops executingCore st).isSome := by
+  simp [schedLockSetForSyscall, LockSet.ofList?, schedLockSet_yieldOnCore,
     schedFootprintOfCores_keys_nodup]
 
 /-- The four object-directed arms declare exactly when the operand naming the
@@ -415,7 +427,7 @@ theorem schedLockSetForSyscall_replyRecv_isSome_iff
                   schedFootprintOfCores_keys_nodup]
 
 /-- **WS-LS LS2.3**: every scheduler footprint names the object-store table
-write lock — each of the sixteen arms is `schedFootprintOfCores` of its own
+write lock — each of the seventeen arms is `schedFootprintOfCores` of its own
 core lists, and that constructor leads with the table lock
 (`schedFootprintOfCores_contains_objStore_write`).  What makes the object
 clause of `footprintCoversWrites` vacuous at the syscall seam, so the arms'
@@ -437,7 +449,7 @@ theorem schedLockSetForSyscall_contains_objStore_write (sid : SyscallId)
       schedLockSet_notificationSignalBoundOnCore, schedLockSet_notificationWaitOnCore,
       schedLockSet_endpointSendOnCore, schedLockSet_endpointReceiveOnCore,
       schedLockSet_endpointCallOnCore, schedLockSet_replyTransferOnCore,
-      schedLockSet_endpointReplyRecvOnCore]
+      schedLockSet_endpointReplyRecvOnCore, schedLockSet_yieldOnCore]
     exact schedFootprintOfCores_contains_objStore_write _ _
 
 -- ============================================================================
@@ -598,7 +610,7 @@ executing core (`resumeThreadOnCoreWriteSet`, `priorityControlWriteSet`, …);
 the others (`.tcbSetAffinity`, the two SchedContext arms directed at an object,
 `.lifecycleRetype`, the rendezvous paths of the IPC arms) name only the
 cores the arm moves, so the seam adds the lock its own tail needs rather than
-widening sixteen per-arm sets for a write that is not theirs.  No replenish
+widening seventeen per-arm sets for a write that is not theirs.  No replenish
 member is added: the tail's scheduling points move no scheduling context
 (`handleRescheduleSgiOnCore_replenishQueueOnCore`,
 `deferResidentElsewhere`'s legs likewise). -/
@@ -739,9 +751,9 @@ is one of the second, and coverage is monotone upward
 (`footprintCoversWrites_mono`), so the claim travels without being restated
 — which is what keeps "what does this arm's footprint cover" a single question.
 
-Stated once and generically rather than sixteen times at the arms: an instance
-per arm would be sixteen copies of one application, and the next declared arm
-would owe a seventeenth.  **WS-LS LS2.3** discharges `hCover` at the seam
+Stated once and generically rather than seventeen times at the arms: an instance
+per arm would be seventeen copies of one application, and the next declared arm
+would owe an eighteenth.  **WS-LS LS2.3** discharges `hCover` at the seam
 (`SyscallSeamCoverage.lean`) rather than assuming it. -/
 theorem unifiedLockSetForSyscall_coversWrites (sid : SyscallId)
     (ops : Concurrency.SyscallLockOperands) (executingCore : CoreId) (st : SystemState)

@@ -5122,6 +5122,24 @@ seL4's memory-as-authority kind: `FrameObject` (`base : PAddr`, `isDevice`,
   nowhere, which `.pageTableMap` installs again.
   The root is the truth and a table's record a pointer (`pageTableInstallLive`):
   a stale record reads as installed nowhere.  Witness: §5k.
+- **Yield** (`v0.36.78`, `.yield` syscall 41, no capability — seL4 MCS's
+  `seL4_Yield`; `yieldOnCore` in `Scheduler/Operations/Core.lean`).  The
+  caller forfeits what is left of its allotment on the core it runs on.  A
+  caller bound to a SchedContext (or running on a donated one) gives up its
+  remaining budget until the next refill: the budget is charged in full, the
+  refill is scheduled one period on and the CBS deadline moves
+  (`spendBudgetOnCore`, the part of the timer's budget-exhausted arm the two
+  share).  An unbound caller ends its time slice and goes to the back of its
+  priority queue with a fresh slice (`sliceExpireOnCore`, the timer's
+  slice-expired arm).  The core then re-selects (`scheduleEffectiveOnCore`).
+  The forfeit times out no IPC: a server yielding on a client's donated budget
+  leaves the client's call standing, and only a budget that runs out on the
+  timer aborts the calls it bounded.  Both dispatchers run the yield from a
+  guard ahead of the caller's CSpace lookup (`syscallDelegates_yield`), so a
+  yield never raises a capability fault.  Payoffs:
+  `yieldOnCore_preserves_ipcInvariantFull`, `yieldOnCore_stepCovers`,
+  `schedLockSet_yieldOnCore_coversWrites` (it locks only its own core),
+  `yieldOnCore_confinedToCores`, `yieldOnCore_crossCoreNonInterference`.
 - **Every configured address space owns a table page** (`v0.36.13`).  The
   binding reserves a table-page pool (`MachineConfig.bootTablePool`; on the
   RPi5 `link.ld`'s `.boot_table_pool`, the last sixteen pages of the kernel's

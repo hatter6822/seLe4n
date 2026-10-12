@@ -3438,7 +3438,7 @@ theorem refusalLedger_occupancy_is_not_a_covert_channel
     -- the seam delivers as a fault.  Every declassifying syscall discharges
     -- this by `syscallCapFaultOf_none_of_no_fault_phase`: `capFaultReceivePhase?`
     -- answers `none` for exactly the syscalls the refusal seam records
-    -- (`capFaultReceivePhase?_none_iff_records`), which is the partition this
+    -- (`capFaultReceivePhase?_none_iff_records_or_capabilityFree`), which is the partition this
     -- theorem rests on — a recorded refusal stays in the ledger, and the
     -- capability-fault arm, which blocks the caller instead of framing `ke`,
     -- carries what it carries under the fault-flow policy (`FaultFlow`), not

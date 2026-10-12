@@ -12,6 +12,7 @@ import SeLe4n.Kernel.IPC.CrossCore.DispatchInvariant
 import SeLe4n.Kernel.IPC.CrossCore.EndpointReplyDispatchInvariant
 import SeLe4n.Kernel.IPC.Invariant.FaultPreservation
 import SeLe4n.Kernel.IPC.Invariant.Reachability
+import SeLe4n.Kernel.IPC.Invariant.YieldPreservation
 
 /-!
 # The dispatch-tier `ipcInvariantFull` payoffs
@@ -34,7 +35,9 @@ module builds on is production.  CI builds this module on every PR through
 The hypothesis surface is `syscallDispatchQuiescence`: `ipcReachable` (the
 state-shaped preconditions of the whole de-threaded family), the running
 caller's shape, and the per-arm facts the RR3.15–RR3.21 packs need — every
-field a pre-state fact, so nothing is bound on the post-state.
+field a pre-state fact, so nothing is bound on the post-state.  The yield
+syscall resolves no capability, so it has no pack: its premise
+(`hYieldReach`) is `ipcReachable`, again a pre-state fact.
 -/
 
 namespace SeLe4n.Kernel
@@ -1180,12 +1183,24 @@ theorem dispatchSyscall_preserves_ipcInvariantFull
     (hPack : ∀ (gate : SyscallGate) (cap : Capability),
       syscallLookupCap gate st = .ok (cap, st) →
       syscallDispatchQuiescence decoded tid executingCore gate cap st)
+    (hYieldReach : decoded.syscallId = .yield → ipcReachable st)
     (hStep : dispatchSyscall decoded tid executingCore st = .ok ((), st')) :
     ipcInvariantFull st' := by
   -- The caller/core guard passed (a success implies it), so discharge it.
   have hCur := dispatchSyscall_ok_caller_current decoded tid executingCore st st' hStep
   unfold dispatchSyscall SystemState.getObject? at hStep
   simp only [hCur, ne_eq, not_true_eq_false, ↓reduceIte] at hStep
+  -- WS-ZA ZA4.3: the capability-free yield runs before any lookup.
+  by_cases hY : decoded.syscallId = .yield
+  · simp only [hY, ↓reduceIte, dispatchYield] at hStep
+    have hReach := hYieldReach hY
+    split at hStep
+    · cases hStep
+    · rename_i hYieldOk
+      cases hStep
+      exact yieldOnCore_preserves_ipcInvariantFull st executingCore _
+        hReach.objects_invExt hReach.ipcInvariantFull hYieldOk
+  simp only [hY, ↓reduceIte] at hStep
   cases hT : st.objects[tid.toObjId]? with
   | none => simp only [hT] at hStep; cases hStep
   | some obj =>
@@ -1688,12 +1703,24 @@ theorem dispatchSyscallChecked_preserves_ipcInvariantFull
     (hPack : ∀ (gate : SyscallGate) (cap : Capability),
       syscallResolveCap gate st = .ok (cap, st) →
       checkedSyscallDispatchQuiescence decoded tid executingCore gate cap st)
+    (hYieldReach : decoded.syscallId = .yield → ipcReachable st)
     (hStep : dispatchSyscallChecked ctx decoded tid executingCore st = .ok ((), st')) :
     ipcInvariantFull st' := by
   -- The caller/core guard passed (a success implies it), so discharge it.
   have hCur := dispatchSyscallChecked_ok_caller_current ctx decoded tid executingCore st st' hStep
   unfold dispatchSyscallChecked SystemState.getObject? at hStep
   simp only [hCur, ne_eq, not_true_eq_false, ↓reduceIte] at hStep
+  -- WS-ZA ZA4.3: the capability-free yield runs before any lookup.
+  by_cases hY : decoded.syscallId = .yield
+  · simp only [hY, ↓reduceIte, dispatchYield] at hStep
+    have hReach := hYieldReach hY
+    split at hStep
+    · cases hStep
+    · rename_i hYieldOk
+      cases hStep
+      exact yieldOnCore_preserves_ipcInvariantFull st executingCore _
+        hReach.objects_invExt hReach.ipcInvariantFull hYieldOk
+  simp only [hY, ↓reduceIte] at hStep
   cases hT : st.objects[tid.toObjId]? with
   | none => simp only [hT] at hStep; cases hStep
   | some obj =>

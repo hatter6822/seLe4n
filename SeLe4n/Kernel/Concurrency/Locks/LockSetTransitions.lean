@@ -4653,6 +4653,12 @@ def permittedKinds (sid : SyscallId) : List LockKind :=
   -- (a `page` lock) and the address space it installs in.
   | .pageTableMap | .pageTableUnmap =>
       [.tcb, .cnode, .page, .vspaceRoot]
+  -- **WS-ZA ZA4.3**: a yield writes the caller's TCB (a fresh time slice) or its
+  -- SchedContext (the forfeited budget), and the timeouts the exhausted budget
+  -- fires write the timed-out threads, the endpoints they leave and the TCBs on
+  -- the priority-inheritance chain they release.
+  | .yield =>
+      [.tcb, .schedContext, .endpoint]
   -- WS-SM SM6.B: bind/unbind a notification to a TCB.  Both the notification
   -- (write — `boundTCB`) and the bound TCB (write — `boundNotification`) are in
   -- the footprint, plus the CNode (read) covering the capability resolution.
@@ -4676,6 +4682,13 @@ is stated over, so the inventory's coverage claim names the set it actually
 covers instead of an off-by-one against `SyscallId.count`. -/
 def declaresStaticLockFootprint : SyscallId → Bool
   | .cspaceRevoke | .untypedReset => false
+  -- **WS-ZA ZA4.3**: a yield that exhausts a budget times out every IPC wait the
+  -- SchedContext bounded (`timeoutBlockedThreads`, the timer tick's own arm),
+  -- and each timeout walks the priority-inheritance chain it releases — a set
+  -- the state discovers, as the tick's is.  Its scheduler-domain footprint is
+  -- declared (`schedLockSetForSyscall`), and that footprint holds the
+  -- object-store write lock, which covers every object it writes.
+  | .yield => false
   | .send | .receive | .call | .reply | .replyRecv
   | .notificationSignal | .notificationWait
   | .cspaceMint | .cspaceCopy | .cspaceMove | .cspaceDelete | .mintReplyCap
@@ -4688,13 +4701,14 @@ def declaresStaticLockFootprint : SyscallId → Bool
   | .tcbBindNotification | .tcbUnbindNotification
   | .declassify | .declassifySignal | .auditRead | .auditDrain => true
 
-/-- **The exemption is exactly two arms**, each an unbounded state-discovered
-walk — `.cspaceRevoke`'s derivation tree and `.untypedReset`'s VSpace roots — so
-a third undeclared syscall is a decision somebody has to write down rather than
-a number that quietly moves. -/
+/-- **The exemption is exactly three arms**, each an unbounded state-discovered
+walk — `.cspaceRevoke`'s derivation tree, `.untypedReset`'s VSpace roots and
+`.yield`'s timeouts with the inheritance chains they release — so a fourth
+undeclared syscall is a decision somebody has to write down rather than a number
+that quietly moves. -/
 theorem declaresStaticLockFootprint_false_iff (sid : SyscallId) :
     declaresStaticLockFootprint sid = false ↔
-      sid = .cspaceRevoke ∨ sid = .untypedReset := by
+      sid = .cspaceRevoke ∨ sid = .untypedReset ∨ sid = .yield := by
   cases sid <;> simp [declaresStaticLockFootprint]
 
 /-- WS-SM SM3.B.4 (PR #873 round 6): **the kind inventory admits any target.**

@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
-//! SchedContext operations — configure, bind, unbind.
+//! SchedContext operations — configure, bind, unbind — and the yield.
 //!
 //! Lean: `SeLe4n/Kernel/API.lean` — `apiSchedContextConfigure`,
 //! `apiSchedContextBind`, `apiSchedContextUnbind`. Added in WS-Z Phase Z5.
@@ -93,5 +93,24 @@ pub fn sched_context_unbind(sc_cap: CPtr) -> KernelResult<SyscallResponse> {
         msg_info: MessageInfo::new_const(0, 0, 0),
         msg_regs: [0; 4],
         syscall_id: SyscallId::SchedContextUnbind,
+    })
+}
+
+/// Give up the rest of the caller's allotment — seL4's `seL4_Yield` under MCS.
+///
+/// A thread bound to a scheduling context forfeits its remaining budget until
+/// the next refill; an unbound thread ends its time slice and goes behind the
+/// threads of its own priority.  The kernel then chooses again on the calling
+/// core.  Invokes no capability: the capability address and message registers
+/// are ignored.
+///
+/// Lean: `yieldOnCore` (Scheduler/Operations/Core.lean), WS-ZA ZA4.3.
+#[inline]
+pub fn yield_now() -> KernelResult<SyscallResponse> {
+    invoke_syscall(SyscallRequest {
+        cap_addr: CPtr::from(0u64),
+        msg_info: MessageInfo::new_const(0, 0, 0),
+        msg_regs: [0; 4],
+        syscall_id: SyscallId::Yield,
     })
 }

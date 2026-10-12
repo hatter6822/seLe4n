@@ -1397,6 +1397,9 @@ const TCB_RESUME: u64 = 21;
 /// `MintReplyCap` (`SyscallId` 28).
 #[cfg(feature = "hw_target")]
 const MINT_REPLY_CAP: u64 = 28;
+/// `Yield` (`SyscallId` 41).
+#[cfg(feature = "hw_target")]
+const YIELD: u64 = 41;
 
 /// The root task's CNode slots the round trips name.
 #[cfg(feature = "hw_target")]
@@ -1428,10 +1431,12 @@ const fn signal(name: &'static str, badge: u64) -> RoundTrip {
 }
 
 /// The round trips one thread makes alone (WS-ZA ZA4.1): the signal, a signal
-/// whose badge does not fit a scalar `Nat` (`≥ 2^63`), and a wait that
-/// consumes a pending badge.  Each continues its caller.
+/// whose badge does not fit a scalar `Nat` (`≥ 2^63`), a wait that consumes a
+/// pending badge, and a yield (WS-ZA ZA4.3), which invokes no capability: the
+/// root task is unbound and alone on its core while these run, so it ends its
+/// time slice and is chosen again.  Each continues its caller.
 #[cfg(feature = "hw_target")]
-const ROUND_TRIPS: [RoundTrip; 3] = [
+const ROUND_TRIPS: [RoundTrip; 4] = [
     signal("signal", 1),
     signal("signal-wide-badge", 1 << 63),
     RoundTrip {
@@ -1441,6 +1446,15 @@ const ROUND_TRIPS: [RoundTrip; 3] = [
         msg_len: 1,
         msg: [0, 0],
         primed: Some(1),
+        blocks: false,
+    },
+    RoundTrip {
+        name: "yield",
+        syscall: YIELD,
+        cptr: 0,
+        msg_len: 0,
+        msg: [0, 0],
+        primed: None,
         blocks: false,
     },
 ];

@@ -2573,6 +2573,9 @@ inductive SyscallId where
                            -- (seL4_ARM_PageTable_Map), through `pageTableMap`
   | pageTableUnmap         -- WS-BP BP7.1 (`v0.36.12`): take one out
                            -- (seL4_ARM_PageTable_Unmap), through `pageTableUnmap`
+  | yield                  -- WS-ZA ZA4.3: give up the rest of the caller's budget or
+                           -- time slice (seL4_Yield under MCS), through `yieldOnCore`;
+                           -- invokes no capability
   deriving Repr, DecidableEq, Inhabited
 
 namespace SyscallId
@@ -2621,9 +2624,10 @@ namespace SyscallId
   | .tcbSetSpace           => 38
   | .pageTableMap          => 39
   | .pageTableUnmap        => 40
+  | .yield                 => 41
 
 /-- Total number of modeled syscalls. -/
-def count : Nat := 41
+def count : Nat := 42
 
 /-- Decode a natural number to a syscall identifier.
     Returns `none` for values outside the modeled set. -/
@@ -2669,6 +2673,7 @@ def count : Nat := 41
   | 38 => some .tcbSetSpace
   | 39 => some .pageTableMap
   | 40 => some .pageTableUnmap
+  | 41 => some .yield
   | _  => none
 
 instance : ToString SyscallId where
@@ -2714,6 +2719,7 @@ instance : ToString SyscallId where
     | .tcbSetSpace           => "tcbSetSpace"
     | .pageTableMap          => "pageTableMap"
     | .pageTableUnmap        => "pageTableUnmap"
+    | .yield                 => "yield"
 
 /-- AC4-D/IF-01: Exhaustive list of all SyscallId variants. Used by the enforcement
     boundary completeness witness to ensure every syscall is classified. The
@@ -2732,7 +2738,7 @@ def all : List SyscallId :=
   , .mintReplyCap, .vspaceUnifyInstruction, .declassify
   , .auditRead, .auditDrain, .declassifySignal, .tcbSetFaultHandler
   , .cspaceRevoke, .untypedRetype, .untypedReset, .tcbSetSpace
-  , .pageTableMap, .pageTableUnmap ]
+  , .pageTableMap, .pageTableUnmap, .yield ]
 
 /-- AC4-D: Compile-time check — `all` has exactly `count` elements.
     Fails at compile time if a variant is added to the inductive but not to `all`. -/
@@ -2764,9 +2770,9 @@ theorem toNat_ofNat {n : Nat} {s : SyscallId} (h : SyscallId.ofNat? n = some s) 
   | 14 | 15 | 16 | 17 | 18 | 19
   | 20 | 21 | 22 | 23 | 24 | 25
   | 26 | 27 | 28 | 29 | 30
-  | 31 | 32 | 33 | 34 | 35 | 36 | 37 | 38 | 39 | 40 =>
+  | 31 | 32 | 33 | 34 | 35 | 36 | 37 | 38 | 39 | 40 | 41 =>
     intro s h; simp [ofNat?] at h; subst h; rfl
-  | n + 41 => intro s h; simp [ofNat?] at h
+  | n + 42 => intro s h; simp [ofNat?] at h
 
 /-- Injectivity: the toNat encoding is injective. -/
 theorem toNat_injective {a b : SyscallId} (h : a.toNat = b.toNat) : a = b := by

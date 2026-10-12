@@ -341,7 +341,7 @@ def lockSetForSyscall (sid : SyscallId) (ops : SyscallLockOperands)
   | .serviceRegister | .serviceRevoke | .serviceQuery
   | .schedContextConfigure | .schedContextBind | .schedContextUnbind
   | .tcbResume | .tcbSetPriority | .tcbSetMCPriority
-  | .tcbSetIPCBuffer | .tcbSetAffinity | .tcbSetFaultHandler | .tcbSetSpace | .pageTableMap | .pageTableUnmap
+  | .tcbSetIPCBuffer | .tcbSetAffinity | .tcbSetFaultHandler | .tcbSetSpace | .pageTableMap | .pageTableUnmap | .yield
   | .tcbBindNotification | .tcbUnbindNotification
   | .declassify
   -- WS-SM SM9.C.8: `.declassifySignal` is undeclared here for the same reason,
@@ -1171,7 +1171,7 @@ mechanically closed. The other direction — listing an arm that still answers
 and pre-state under which its arm declares, so an arm that had quietly become
 unconditionally `none` could not satisfy its own `iff`.
 
-There are `SyscallId.count = 41` arms; eight are declared and thirty-three
+There are `SyscallId.count = 42` arms; eight are declared and thirty-four
 answer `none`. -/
 def declaredFootprintSyscall : SyscallId → Bool
   | .tcbSuspend
@@ -1194,7 +1194,7 @@ def declaredFootprintSyscall : SyscallId → Bool
   | .serviceRegister | .serviceRevoke | .serviceQuery
   | .schedContextConfigure | .schedContextBind | .schedContextUnbind
   | .tcbResume | .tcbSetPriority | .tcbSetMCPriority
-  | .tcbSetIPCBuffer | .tcbSetAffinity | .tcbSetFaultHandler | .tcbSetSpace | .pageTableMap | .pageTableUnmap
+  | .tcbSetIPCBuffer | .tcbSetAffinity | .tcbSetFaultHandler | .tcbSetSpace | .pageTableMap | .pageTableUnmap | .yield
   | .tcbBindNotification | .tcbUnbindNotification
   | .declassify | .declassifySignal
   | .auditRead | .auditDrain => false

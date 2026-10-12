@@ -483,9 +483,17 @@ theorem dispatchSyscallChecked_stepCovers {ctx : LabelingContext}
   unfold dispatchSyscallChecked at h
   split at h
   · cases h
+  -- WS-ZA ZA4.3: the capability-free yield runs before any lookup.
+  by_cases hY : decoded.syscallId = .yield
+  · simp only [hY, ↓reduceIte, dispatchYield] at h
+    split at h
+    · cases h
+    · rename_i hYieldOk
+      cases h
+      exact yieldOnCore_stepCovers st _ e hInv hBi hYieldOk
+  simp only [hY, ↓reduceIte] at h
   split at h <;> try (cases h; done)
   split at h <;> try (cases h; done)
-  dsimp only at h
   cases hTF : syscallChecksTargetFirst decoded.syscallId <;>
     simp only [hTF, Bool.false_eq_true, ↓reduceIte] at h
   all_goals

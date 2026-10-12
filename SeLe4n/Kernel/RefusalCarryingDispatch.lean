@@ -547,6 +547,7 @@ theorem dispatchOperandCheckedR_eq (ctx : LabelingContext)
     (executingCore : Concurrency.CoreId)
     (arm : TaintTable → Option Capability → RefusalCarrying Unit)
     (hFirst : syscallChecksTargetFirst decoded.syscallId = false)
+    (hNotYield : decoded.syscallId ≠ .yield)
     (hArm : ∀ (st : SystemState) (tcb : TCB) (rootCn : CNode) (ref : CSpaceAddr),
       st.getObject? tid.toObjId = some (.tcb tcb) →
       st.getObject? tcb.cspaceRoot = some (.cnode rootCn) →
@@ -567,7 +568,7 @@ theorem dispatchOperandCheckedR_eq (ctx : LabelingContext)
       (threadId_isEqSome_iff _ _).2 hCur
     have hNot : ¬ (st.scheduler.currentOnCore executingCore ≠ some tid) := fun h => h hCur
     rw [if_neg (by simp only [hIs, Bool.not_true, Bool.false_eq_true, not_false_eq_true]),
-      if_neg hNot]
+      if_neg hNot, if_neg hNotYield]
     split
     · next tcb hTcb =>
       split
@@ -621,6 +622,7 @@ theorem dispatchSignalCheckedR_eq (ctx : LabelingContext)
     dispatchSignalCheckedR ctx decoded.capAddr sigArgs tid executingCore =
       RefusalCarrying.ofKernel (dispatchSyscallChecked ctx decoded tid executingCore) := by
   apply dispatchOperandCheckedR_eq ctx decoded tid executingCore _ (by rw [hSig]; rfl)
+    (by rw [hSig]; decide)
   intro st tcb rootCn ref hTcb hRoot hRef
   rw [syscallTaintPlan_eq_signalTaintPlanOf st tid decoded hSig,
     syscallOperandCap?_of_resolved st tid _ tcb rootCn ref hTcb hRoot hRef]
@@ -646,6 +648,7 @@ theorem dispatchWaitCheckedR_eq (ctx : LabelingContext)
     dispatchWaitCheckedR ctx decoded.capAddr tid executingCore =
       RefusalCarrying.ofKernel (dispatchSyscallChecked ctx decoded tid executingCore) := by
   apply dispatchOperandCheckedR_eq ctx decoded tid executingCore _ (by rw [hWait]; rfl)
+    (by rw [hWait]; decide)
   intro st tcb rootCn ref hTcb hRoot hRef
   have hArm := waitOperandArmThenTaintR_eq ctx decoded tid executingCore
     { callerId := tid, cspaceRoot := tcb.cspaceRoot, capAddr := decoded.capAddr,
@@ -682,6 +685,12 @@ specification's form. -/
           dispatchSignalCheckedR ctx capAddr (.ok { badge }) tid executingCore st
         | .wait capAddr =>
           dispatchWaitCheckedR ctx capAddr tid executingCore st
+        -- WS-ZA ZA4.3: a yield reads no operand and checks nothing a write
+        -- precedes, so a refusal is in the entry's own state.
+        | .yield =>
+          match yieldOnCore st executingCore with
+          | .error e => .error (e, st)
+          | .ok st' => .ok ((), st')
         | .viaDecode =>
           RefusalCarrying.ofKernel (syscallEntryChecked ctx layout executingCore regCount) st
       | some _ => .error (.illegalState, st)
@@ -730,6 +739,15 @@ theorem syscallEntryCheckedR_eq (ctx : LabelingContext)
           simp only [RefusalCarrying.ofKernel, syscallEntryChecked, hCtx, hCur, hRegs, hDec,
             hZero, Bool.false_eq_true, ↓reduceIte,
             SeLe4n.Kernel.Architecture.tlbFillIpcBufferOnCore_zero]
+        · next hYieldRegs =>
+          obtain ⟨decoded, hDec, hYield, hZero⟩ :=
+            SeLe4n.Kernel.Architecture.RegisterDecode.decodeSyscallArgsFromState_of_routedYield
+              st tid layout tcb.registerContext regCount hYieldRegs
+          simp only [RefusalCarrying.ofKernel, syscallEntryChecked, hCtx, hCur, hRegs, hDec,
+            hZero, Bool.false_eq_true, ↓reduceIte,
+            SeLe4n.Kernel.Architecture.tlbFillIpcBufferOnCore_zero,
+            dispatchSyscallChecked, hYield, ne_eq, not_true_eq_false, dispatchYield]
+          cases yieldOnCore st executingCore <;> rfl
         · rfl
       · next o hNot hObj =>
         have hRegs : lookupThreadRegisterContext tid st = .error .illegalState := by

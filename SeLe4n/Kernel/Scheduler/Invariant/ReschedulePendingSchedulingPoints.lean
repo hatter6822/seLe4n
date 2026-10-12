@@ -254,4 +254,49 @@ theorem syscallCommitTail_stepCovers (e : CoreId) (caller? : Option SeLe4n.Threa
     (settleResidencyOnCore_stepCovers e _
       (scheduleLocalSuccessorFrom_preserves_objects_invExt e caller? _ hStageInv))
 
+/-- Saving the outgoing thread's registers writes `registerContext`, which is
+no key input, and leaves the scheduler alone. -/
+theorem saveOutgoingContextOnCore_stepCovers (e : CoreId) (st : SystemState)
+    (hInv : st.objects.invExt) :
+    stepCovers e st (saveOutgoingContextOnCore st e) := by
+  apply stepCovers_of_scheduler_eq _ (saveOutgoingContextOnCore_scheduler st e)
+  unfold saveOutgoingContextOnCore
+  split
+  · exact keyInputsEq_refl st
+  · exact keyInputsEq_updateTcb hInv (fun _ => rfl)
+
+/-- **The per-core scheduling point covers**: it saves a register context and
+moves one thread between core `e`'s queue and its `current` slot, clearing
+core `e`'s flag; no remote slot, key or flag moves. -/
+theorem scheduleEffectiveOnCore_stepCovers (e : CoreId) (st st' : SystemState)
+    (hInv : st.objects.invExt) (h : scheduleEffectiveOnCore st e = .ok st') :
+    stepCovers e st st' := by
+  have hS := saveOutgoingContextOnCore_stepCovers e st hInv
+  unfold scheduleEffectiveOnCore at h
+  split at h
+  · cases h
+  · cases h
+    refine stepCovers_trans hS (stepCovers_of_local_slots
+      (keyInputsEq_of_objects_eq (by simp [SystemState.clearReschedulePendingOnCore])) ?_)
+    intro c hc
+    have hne : e ≠ c := Ne.symm hc
+    simp only [SystemState.clearReschedulePendingOnCore,
+      SchedulerState.clearReschedulePendingOnCore_runQueueOnCore,
+      SchedulerState.clearReschedulePendingOnCore_currentOnCore,
+      SchedulerState.clearReschedulePendingOnCore_reschedulePendingOnCore_ne _ _ _ hne]
+    unfold idleFallbackOnCore
+    split
+    · simp [dispatchIdleOnCore, hne]
+    · simp [hne]
+  · split at h
+    · split at h
+      · cases h
+        refine stepCovers_trans hS (stepCovers_of_local_slots
+          (keyInputsEq_of_objects_eq (by simp)) ?_)
+        intro c hc
+        have hne : e ≠ c := Ne.symm hc
+        simp [hne]
+      · cases h
+    · cases h
+
 end SeLe4n.Kernel

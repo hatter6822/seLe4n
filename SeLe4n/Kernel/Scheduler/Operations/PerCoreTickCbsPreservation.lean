@@ -348,7 +348,7 @@ theorem timerTickBudgetOnCore_machine (st : SystemState) (c : CoreId) (tid : SeL
     {hW : st.getTcb? tid = some tcb}
     (hStep : timerTickBudgetOnCore st c tid tcb hW = .ok (st', b, sgis)) :
     st'.machine = st.machine := by
-  unfold timerTickBudgetOnCore budgetExhaustOnCore sliceExpireOnCore at hStep
+  unfold timerTickBudgetOnCore budgetExhaustOnCore spendBudgetOnCore sliceExpireOnCore at hStep
   dsimp only [SystemState.rewriteObject] at hStep
   split at hStep
   · -- unbound: both time-slice arms are object/scheduler writes
@@ -546,7 +546,7 @@ theorem timerTickBudgetOnCore_preserves_replenishmentPipelineOrderOnCore
     rw [timerTickBudgetOnCore_machine st c tid tcb st' b hStep]
   match hB : tcb.schedContextBinding with
   | .unbound =>
-      simp only [timerTickBudgetOnCore, budgetExhaustOnCore, sliceExpireOnCore, SystemState.rewriteObject, hB] at hStep
+      simp only [timerTickBudgetOnCore, sliceExpireOnCore, SystemState.rewriteObject, hB] at hStep
       split at hStep <;>
         · simp only [Except.ok.injEq, Prod.mk.injEq] at hStep
           obtain ⟨hst, _⟩ := hStep; subst hst
@@ -565,12 +565,12 @@ theorem timerTickBudgetOnCore_preserves_replenishmentPipelineOrderOnCore
               exact replenishOnCore_preserves_replenishmentPipelineOrderOnCore st c scId _ hPipe
                 (by have := hPeriod scId sc hSc; omega)
             · exact replenishOnCore_preserves_replenishmentPipelineOrderOnCore_ne st c c' scId _ hcc hPipe
-          · simp only [timerTickBudgetOnCore, budgetExhaustOnCore, sliceExpireOnCore, SystemState.rewriteObject, hB, SystemState.getSchedContextWitnessed?_eq_some hSc, if_neg hBud, Except.ok.injEq,
+          · simp only [timerTickBudgetOnCore, budgetExhaustOnCore, spendBudgetOnCore, SystemState.rewriteObject, hB, SystemState.getSchedContextWitnessed?_eq_some hSc, if_neg hBud, Except.ok.injEq,
               Prod.mk.injEq] at hStep
             obtain ⟨hst, _⟩ := hStep; subst hst
             exact pipeline_frame_of_queue_timer_eq st _ c' rfl hM hPipe
       | none =>
-          simp only [timerTickBudgetOnCore, budgetExhaustOnCore, sliceExpireOnCore, hB, SystemState.getSchedContextWitnessed?_eq_none hSc] at hStep
+          simp only [timerTickBudgetOnCore, hB, SystemState.getSchedContextWitnessed?_eq_none hSc] at hStep
           exact absurd hStep (by simp)
   | .donated scId owner =>
       match hSc : st.getSchedContext? scId with
@@ -586,12 +586,12 @@ theorem timerTickBudgetOnCore_preserves_replenishmentPipelineOrderOnCore
               exact replenishOnCore_preserves_replenishmentPipelineOrderOnCore st c scId _ hPipe
                 (by have := hPeriod scId sc hSc; omega)
             · exact replenishOnCore_preserves_replenishmentPipelineOrderOnCore_ne st c c' scId _ hcc hPipe
-          · simp only [timerTickBudgetOnCore, budgetExhaustOnCore, sliceExpireOnCore, SystemState.rewriteObject, hB, SystemState.getSchedContextWitnessed?_eq_some hSc, if_neg hBud, Except.ok.injEq,
+          · simp only [timerTickBudgetOnCore, budgetExhaustOnCore, spendBudgetOnCore, SystemState.rewriteObject, hB, SystemState.getSchedContextWitnessed?_eq_some hSc, if_neg hBud, Except.ok.injEq,
               Prod.mk.injEq] at hStep
             obtain ⟨hst, _⟩ := hStep; subst hst
             exact pipeline_frame_of_queue_timer_eq st _ c' rfl hM hPipe
       | none =>
-          simp only [timerTickBudgetOnCore, budgetExhaustOnCore, sliceExpireOnCore, hB, SystemState.getSchedContextWitnessed?_eq_none hSc] at hStep
+          simp only [timerTickBudgetOnCore, hB, SystemState.getSchedContextWitnessed?_eq_none hSc] at hStep
           exact absurd hStep (by simp)
 
 /-- WS-SM SM5.I (pipeline-order, headline): the **live per-core timer tick**

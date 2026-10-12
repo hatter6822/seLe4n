@@ -225,6 +225,9 @@ def contentFlowClass : SyscallId → ContentFlowClass
   | .tcbSetSpace => .inert
   | .pageTableMap => .inert
   | .pageTableUnmap => .inert
+  -- WS-ZA ZA4.3: a yield moves no content; it charges the caller's budget
+  -- and re-selects on the executing core.
+  | .yield => .inert
   | .tcbBindNotification => .inert
   | .tcbUnbindNotification => .inert
   | .schedContextBind => .inert
@@ -292,7 +295,7 @@ def syscallRecordsDeclassification : SyscallId → Bool
   | .vspaceMap | .vspaceUnmap | .vspaceUnifyInstruction => false
   | .lifecycleRetype | .untypedRetype | .untypedReset => false
   | .tcbSuspend | .tcbResume | .tcbSetPriority | .tcbSetMCPriority => false
-  | .tcbSetIPCBuffer | .tcbSetAffinity | .tcbSetFaultHandler | .tcbSetSpace | .pageTableMap | .pageTableUnmap => false
+  | .tcbSetIPCBuffer | .tcbSetAffinity | .tcbSetFaultHandler | .tcbSetSpace | .pageTableMap | .pageTableUnmap | .yield => false
   | .tcbBindNotification | .tcbUnbindNotification => false
   | .schedContextBind | .schedContextUnbind | .schedContextConfigure => false
   | .serviceRegister | .serviceRevoke | .serviceQuery => false
@@ -326,7 +329,7 @@ message and a delivered badge.  Anything else an arm writes is out of scope by
 this definition — which is what makes `.cspaceMint`'s `.inert` classification a
 scope statement rather than the (false, for that arm) self-loop claim. -/
 def contentTrackedFields : List (String × String) :=
-  [("TCB", "pendingMessage"), ("Notification", "pendingBadge")]
+  [("TCB", "pendingMessage"), ("Notification", "pendingWord")]
 
 /-- WS-SM SM9.D.7 (**the accepted out-of-scope channel**): a capability's badge
 and rights are caller-supplied on a mint, and they are **not** tracked content.
@@ -867,7 +870,7 @@ def contentFlowEdges (st : SystemState) (tid : SeLe4n.ThreadId)
     | .vspaceMap | .vspaceUnmap | .serviceRegister | .serviceRevoke | .serviceQuery
     | .schedContextConfigure | .schedContextBind | .schedContextUnbind
     | .tcbSuspend | .tcbResume | .tcbSetPriority | .tcbSetMCPriority
-    | .tcbSetIPCBuffer | .tcbSetAffinity | .tcbSetFaultHandler | .tcbSetSpace | .pageTableMap | .pageTableUnmap | .tcbBindNotification
+    | .tcbSetIPCBuffer | .tcbSetAffinity | .tcbSetFaultHandler | .tcbSetSpace | .pageTableMap | .pageTableUnmap | .yield | .tcbBindNotification
     | .tcbUnbindNotification | .mintReplyCap | .vspaceUnifyInstruction
     | .declassify | .auditRead | .auditDrain => []
 
@@ -1015,7 +1018,7 @@ have to stay in step.  Stated as an equality on the list rather than as prose:
 adding a third tracked field breaks this proof, and the fix is to give the
 predicate the matching branch, not to edit the expected list. -/
 theorem declassifyTargetHoldsContent_covers_every_tracked_field :
-    contentTrackedFields = [("TCB", "pendingMessage"), ("Notification", "pendingBadge")] := rfl
+    contentTrackedFields = [("TCB", "pendingMessage"), ("Notification", "pendingWord")] := rfl
 
 /-- WS-SM SM9.D.13a (PR #873 round 7): the bare downgrade's bypassed list, at the
 operand the arm reads.
@@ -1044,7 +1047,7 @@ def declassifyBypassedTargets (st : SystemState) (tid : SeLe4n.ThreadId)
   | .vspaceMap | .vspaceUnmap | .serviceRegister | .serviceRevoke | .serviceQuery
   | .schedContextConfigure | .schedContextBind | .schedContextUnbind
   | .tcbSuspend | .tcbResume | .tcbSetPriority | .tcbSetMCPriority
-  | .tcbSetIPCBuffer | .tcbSetAffinity | .tcbSetFaultHandler | .tcbSetSpace | .pageTableMap | .pageTableUnmap | .tcbBindNotification
+  | .tcbSetIPCBuffer | .tcbSetAffinity | .tcbSetFaultHandler | .tcbSetSpace | .pageTableMap | .pageTableUnmap | .yield | .tcbBindNotification
   | .tcbUnbindNotification | .mintReplyCap | .vspaceUnifyInstruction
   | .auditRead | .auditDrain => []
 
@@ -1080,7 +1083,7 @@ def contentFlowBypassed (st : SystemState) (tid : SeLe4n.ThreadId)
     | .vspaceMap | .vspaceUnmap | .serviceRegister | .serviceRevoke | .serviceQuery
     | .schedContextConfigure | .schedContextBind | .schedContextUnbind
     | .tcbSuspend | .tcbResume | .tcbSetPriority | .tcbSetMCPriority
-    | .tcbSetIPCBuffer | .tcbSetAffinity | .tcbSetFaultHandler | .tcbSetSpace | .pageTableMap | .pageTableUnmap | .tcbBindNotification
+    | .tcbSetIPCBuffer | .tcbSetAffinity | .tcbSetFaultHandler | .tcbSetSpace | .pageTableMap | .pageTableUnmap | .yield | .tcbBindNotification
     | .tcbUnbindNotification | .mintReplyCap | .vspaceUnifyInstruction
     | .declassify | .auditRead | .auditDrain => []
 
@@ -1152,7 +1155,7 @@ def contentFlowClears (st : SystemState) (tid : SeLe4n.ThreadId)
     | .vspaceMap | .vspaceUnmap | .serviceRegister | .serviceRevoke | .serviceQuery
     | .schedContextConfigure | .schedContextBind | .schedContextUnbind
     | .tcbSuspend | .tcbResume | .tcbSetPriority | .tcbSetMCPriority
-    | .tcbSetIPCBuffer | .tcbSetAffinity | .tcbSetFaultHandler | .tcbSetSpace | .pageTableMap | .pageTableUnmap | .tcbBindNotification
+    | .tcbSetIPCBuffer | .tcbSetAffinity | .tcbSetFaultHandler | .tcbSetSpace | .pageTableMap | .pageTableUnmap | .yield | .tcbBindNotification
     | .tcbUnbindNotification | .mintReplyCap | .vspaceUnifyInstruction
     | .declassify | .auditRead | .auditDrain => []
 
@@ -1559,6 +1562,15 @@ theorem applySyscallTaint_inert (pre post : SystemState) :
             post.declassificationTaint)) } = post
   simp [planOriginationTags, TaintPlan.inert, applyOrigination, applyTaintClears,
     applyTaintFlow]
+
+/-- WS-ZA ZA4.3: a yield's plan is the inert plan — it moves no content, records
+no declassification and names no bypassed target — so the taint step leaves the
+committed state as it is (`applySyscallTaint_inert`). -/
+theorem syscallTaintPlan_yield (st : SystemState) (tid : SeLe4n.ThreadId)
+    (decoded : SyscallDecodeResult) (h : decoded.syscallId = .yield) :
+    syscallTaintPlan st tid decoded = TaintPlan.inert := by
+  simp [syscallTaintPlan, contentFlowClass, syscallRecordsDeclassification,
+    declassifyBypassedTargets, h, TaintPlan.inert]
 
 -- ----------------------------------------------------------------------------
 -- WS-SM SM9.D.17: per-step key frames, stated next to the steps they frame.

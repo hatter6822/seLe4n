@@ -2013,6 +2013,8 @@ def frozenOpCoverage : SyscallId → Bool
   | .tcbSetSpace => false            -- WS-BP BP7.1 (`v0.36.11`): production object-store op; no frozen-phase variant defined
   | .pageTableMap => false           -- WS-BP BP7.1 (`v0.36.12`): translation-table install; the frozen phase models no page-table objects' installs
   | .pageTableUnmap => false         -- WS-BP BP7.1 (`v0.36.12`): ditto
+  | .yield => false                  -- WS-ZA ZA4.3: per-core scheduler op (charges the executing core's
+                                     -- caller, replenish and run queues), like `.tcbSetAffinity`
   | .tcbBindNotification => false    -- WS-SM SM6.B: production object-store op; no frozen-phase variant defined
   | .tcbUnbindNotification => false  -- WS-SM SM6.B: ditto
   | .mintReplyCap => false           -- PR #822 Phase H: structural cap insertion (like cspaceCopy); builder-only, no frozen-phase variant
