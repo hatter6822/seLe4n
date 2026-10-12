@@ -444,23 +444,6 @@ theorem chooseBestRunnableBy_always_ok
     | none => exact ih _
     | some obj => cases obj <;> exact ih _
 
-/-- WS-SM SM8.B: the same, for the budget-aware scan the live SGI handler
-reaches (`chooseThreadEffectiveOnCore` → `handleRescheduleSgiOnCore`). -/
-theorem chooseBestRunnableEffective_always_ok
-    (st : SystemState) (eligible : TCB → Bool) :
-    ∀ (list : List SeLe4n.ThreadId)
-      (best : Option (SeLe4n.ThreadId × SeLe4n.Priority × SeLe4n.Deadline)),
-      ∃ r, chooseBestRunnableEffective st eligible list best = .ok r := by
-  intro list
-  induction list with
-  | nil => intro best; exact ⟨best, rfl⟩
-  | cons hd tl ih =>
-    intro best
-    unfold chooseBestRunnableEffective
-    cases st.getTcb? hd with
-    | none => exact ih _
-    | some _ => exact ih _
-
 /-- SM5.A.4 helper: the result of a fold (from any `best`) over a list of
 genuine TCBs whose recorded candidate is `some (rt, _, _)` has `rt ∈ list`
 or `rt` was already the recorded `best`.  Specialised to `best = none`

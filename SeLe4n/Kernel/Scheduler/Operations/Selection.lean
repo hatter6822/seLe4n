@@ -11,6 +11,34 @@ import SeLe4n.Kernel.Scheduler.Invariant
 import SeLe4n.Kernel.Concurrency.Sgi
 import SeLe4n.Kernel.Scheduler.IdleThread
 
+namespace SeLe4n.Model.SchedulerState
+
+open SeLe4n.Kernel.Concurrency (CoreId)
+
+/-- WS-ZA ZA4.5: core `c`'s run queue rewritten by `f` in its slot.  The
+per-core array takes the queue out of the slot before `f` runs
+(`Array.modify`), so on an exclusively owned scheduler `f` receives the queue's
+only reference and writes its tables in place; `setRunQueueOnCore` of `f` of
+the slot reads the queue while the slot still holds it, and every table `f`
+writes is then copied.  Proven equal (`modifyRunQueueOnCore_eq`). -/
+@[inline] def modifyRunQueueOnCore (s : SchedulerState) (c : CoreId)
+    (f : SeLe4n.Kernel.RunQueue → SeLe4n.Kernel.RunQueue) : SchedulerState :=
+  { s with runQueue := ⟨s.runQueue.toArray.modify c.val f, by simp⟩ }
+
+theorem modifyRunQueueOnCore_eq (s : SchedulerState) (c : CoreId)
+    (f : SeLe4n.Kernel.RunQueue → SeLe4n.Kernel.RunQueue) :
+    s.modifyRunQueueOnCore c f = s.setRunQueueOnCore c (f (s.runQueueOnCore c)) := by
+  unfold modifyRunQueueOnCore setRunQueueOnCore runQueueOnCore
+  congr 1
+  apply Vector.ext
+  intro i hi
+  simp only [Vector.getElem_mk, Array.getElem_modify, Vector.getElem_set, Vector.get]
+  split
+  · subst_vars; rfl
+  · rfl
+
+end SeLe4n.Model.SchedulerState
+
 namespace SeLe4n.Kernel
 
 open SeLe4n.Model
@@ -657,6 +685,24 @@ def chooseBestRunnableEffective
       -- (`chooseBestRunnableEffective_eq_chooseBestRunnableBy`).
       | _ => chooseBestRunnableEffective st eligible rest best
 
+/-- WS-SM SM8.B: the budget-aware scan never fails; it is the scan the live
+SGI handler reaches (`chooseThreadEffectiveOnCore` → `handleRescheduleSgiOnCore`),
+and a run-queue entry that resolves to no TCB is skipped. -/
+theorem chooseBestRunnableEffective_always_ok
+    (st : SystemState) (eligible : TCB → Bool) :
+    ∀ (list : List SeLe4n.ThreadId)
+      (best : Option (SeLe4n.ThreadId × SeLe4n.Priority × SeLe4n.Deadline)),
+      ∃ r, chooseBestRunnableEffective st eligible list best = .ok r := by
+  intro list
+  induction list with
+  | nil => intro best; exact ⟨best, rfl⟩
+  | cons hd tl ih =>
+    intro best
+    unfold chooseBestRunnableEffective
+    cases st.getTcb? hd with
+    | none => exact ih _
+    | some _ => exact ih _
+
 /-- Z4-D/E: SchedContext-aware domain-filtered selection. -/
 def chooseBestRunnableInDomainEffective
     (st : SystemState)
@@ -788,6 +834,93 @@ def chooseThreadEffectiveOnCore (st : SystemState) (c : CoreId) :
   | .error e => .error e
   | .ok none => .ok none
   | .ok (some (tid, _, _)) => .ok (some tid)
+
+/-- WS-ZA ZA4.5: **the selection scan with the best candidate in scalars.**
+`chooseBestRunnableEffective` carries the best candidate as an
+`Option (ThreadId × Priority × Deadline)` and returns it in an `Except`, so each
+improvement builds a record and the result two more; this scan carries whether
+a candidate was found and its thread, priority and deadline as separate
+arguments and returns only the chosen thread's code, `0` for none and `t + 1`
+for `t` (`chooseBestRunnableEffectiveCode_eq`). -/
+def chooseBestRunnableEffectiveCode (st : SystemState) (eligible : TCB → Bool) :
+    List SeLe4n.ThreadId → Bool → SeLe4n.ThreadId → SeLe4n.Priority → SeLe4n.Deadline → Nat
+  | [], found, bt, _, _ => if found then bt.val + 1 else 0
+  | tid :: rest, found, bt, bp, bd =>
+      match st.getTcb? tid with
+      | some tcb =>
+          if eligible tcb && hasSufficientBudget st tcb then
+            let pd := resolveEffectivePrioDeadline st tcb
+            if !found || isBetterCandidate bp bd pd.1 pd.2 then
+              chooseBestRunnableEffectiveCode st eligible rest true tid pd.1 pd.2
+            else chooseBestRunnableEffectiveCode st eligible rest found bt bp bd
+          else chooseBestRunnableEffectiveCode st eligible rest found bt bp bd
+      | none => chooseBestRunnableEffectiveCode st eligible rest found bt bp bd
+
+/-- The code of the thread a selection result names: `0` for none (or a failed
+scan, which `chooseBestRunnableEffective_always_ok` rules out), `t + 1` for `t`. -/
+def selectionCode :
+    Except KernelError (Option (SeLe4n.ThreadId × SeLe4n.Priority × SeLe4n.Deadline)) → Nat
+  | .ok (some (t, _, _)) => t.val + 1
+  | _ => 0
+
+theorem chooseBestRunnableEffectiveCode_eq (st : SystemState) (eligible : TCB → Bool)
+    (l : List SeLe4n.ThreadId) (found : Bool) (bt : SeLe4n.ThreadId) (bp : SeLe4n.Priority)
+    (bd : SeLe4n.Deadline) :
+    chooseBestRunnableEffectiveCode st eligible l found bt bp bd =
+      selectionCode (chooseBestRunnableEffective st eligible l
+        (if found then some (bt, bp, bd) else none)) := by
+  induction l generalizing found bt bp bd with
+  | nil => cases found <;> rfl
+  | cons tid rest ih =>
+    unfold chooseBestRunnableEffectiveCode chooseBestRunnableEffective
+    cases hT : st.getTcb? tid with
+    | none => simp only [ih]
+    | some tcb =>
+      simp only
+      by_cases hE : (eligible tcb && hasSufficientBudget st tcb) = true
+      · rw [if_pos hE, if_pos hE]
+        cases found
+        · simp only [Bool.not_false, Bool.true_or, if_true, ih]; rfl
+        · simp only [Bool.not_true, Bool.false_or, if_true]
+          split
+          · rw [ih]; simp only [if_true]
+          · rw [ih]; simp only [if_true]
+      · rw [if_neg hE, if_neg hE, ih]
+
+/-- WS-ZA ZA4.5: core `c`'s selection as a thread code, the bucket-first scan of
+`chooseBestInBucketEffective` run through `chooseBestRunnableEffectiveCode`
+(`chooseThreadEffectiveOnCore_eq_code`). -/
+def chooseThreadEffectiveOnCoreCode (st : SystemState) (c : CoreId) : Nat :=
+  let rq := st.scheduler.runQueueOnCore c
+  let dom := st.scheduler.activeDomainOnCore c
+  match chooseBestRunnableEffectiveCode st (fun tcb => tcb.domain == dom)
+      rq.maxPriorityBucket false default default default with
+  | 0 => chooseBestRunnableEffectiveCode st (fun tcb => tcb.domain == dom)
+      rq.toList false default default default
+  | k => k
+
+theorem chooseThreadEffectiveOnCore_eq_code (st : SystemState) (c : CoreId) :
+    chooseThreadEffectiveOnCore st c =
+      match chooseThreadEffectiveOnCoreCode st c with
+      | 0 => .ok none
+      | k + 1 => .ok (some ⟨k⟩) := by
+  unfold chooseThreadEffectiveOnCore chooseBestInBucketEffective chooseThreadEffectiveOnCoreCode
+    chooseBestRunnableInDomainEffective
+  simp only [chooseBestRunnableEffectiveCode_eq, Bool.false_eq_true, if_false]
+  obtain ⟨r1, h1⟩ := chooseBestRunnableEffective_always_ok st
+    (fun tcb => tcb.domain == st.scheduler.activeDomainOnCore c)
+    (st.scheduler.runQueueOnCore c).maxPriorityBucket none
+  rw [h1]
+  cases r1 with
+  | some r => obtain ⟨t, p, d⟩ := r; rfl
+  | none =>
+    obtain ⟨r2, h2⟩ := chooseBestRunnableEffective_always_ok st
+      (fun tcb => tcb.domain == st.scheduler.activeDomainOnCore c)
+      (st.scheduler.runQueueOnCore c).toList none
+    rw [h2]
+    cases r2 with
+    | some r => obtain ⟨t, p, d⟩ := r; rfl
+    | none => rfl
 
 /-- Z4-D/E: SchedContext-aware thread selection.
 

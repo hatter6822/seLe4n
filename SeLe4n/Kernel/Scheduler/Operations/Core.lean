@@ -1044,6 +1044,29 @@ def saveOutgoingContextOnCore (st : SystemState) (c : CoreId) : SystemState :=
       -- One TCB rewritten in place through the lookup that is its own witness.
       st.updateTcb outTid fun outTcb => { outTcb with registerContext := st.machine.regsOnCore c }
 
+/-- WS-ZA ZA4.5: **the compiled save.**  The core's words are written into
+the file the outgoing TCB already owns (`RegisterFile.overwriteWith`), read off
+the machine before the object store is written, so the write's closure holds
+the core's file rather than the whole state (which would leave the object
+table shared, and the table and the TCB copied), and the TCB and the core never
+share a file for the next restore to copy.  Proven equal
+(`saveOutgoingContextOnCore_eq_impl`). -/
+def saveOutgoingContextOnCoreImpl (st : SystemState) (c : CoreId) : SystemState :=
+  match st.scheduler.currentOnCore c with
+  | none => st
+  | some outTid =>
+      let regs := st.machine.regsOnCore c
+      st.updateTcb outTid fun outTcb =>
+        { outTcb with registerContext := RegisterFile.overwriteWith regs outTcb.registerContext }
+
+@[csimp] theorem saveOutgoingContextOnCore_eq_impl :
+    @saveOutgoingContextOnCore = @saveOutgoingContextOnCoreImpl := by
+  funext st c
+  unfold saveOutgoingContextOnCore saveOutgoingContextOnCoreImpl
+  split
+  · rfl
+  · simp only [RegisterFile.overwriteWith_eq]
+
 /-- WS-SM SM5.D (frame): the per-core context save writes only the object
 store — the scheduler state passes through untouched on every arm. -/
 @[simp] theorem saveOutgoingContextOnCore_scheduler (st : SystemState) (c : CoreId) :
@@ -1208,6 +1231,41 @@ def scheduleEffectiveOnCore (st : SystemState) (c : CoreId) :
           else
             .error .schedulerInvariantViolation
       | _ => .error .schedulerInvariantViolation
+
+/-- WS-ZA ZA4.5: the compiled `scheduleEffectiveOnCore`.  The selection is a
+thread code (`chooseThreadEffectiveOnCoreCode`), so no candidate record,
+`Option` or `Except` is built for it, and the dispatched thread leaves core
+`c`'s run queue in the queue's own slot
+(`modifyRunQueueOnCore`), so the queue's tables are written in place rather
+than copied.  Proven equal (`scheduleEffectiveOnCore_eq_impl`). -/
+def scheduleEffectiveOnCoreImpl (st : SystemState) (c : CoreId) :
+    Except KernelError SystemState :=
+  match chooseThreadEffectiveOnCoreCode st c with
+  | 0 =>
+      .ok ((idleFallbackOnCore (saveOutgoingContextOnCore st c) c).clearReschedulePendingOnCore c)
+  | k + 1 =>
+      let tid : SeLe4n.ThreadId := ⟨k⟩
+      match st.getTcb? tid with
+      | some tcb =>
+          if tid ∈ (st.scheduler.runQueueOnCore c) ∧
+              tcb.domain = (st.scheduler.activeDomainOnCore c) then
+            let stSaved := saveOutgoingContextOnCore st c
+            let stDequeued := { stSaved with scheduler :=
+              stSaved.scheduler.modifyRunQueueOnCore c (·.remove tid) }
+            let stRestored := restoreIncomingContextOnCore stDequeued c tid
+            .ok { stRestored with scheduler := (stRestored.scheduler.setCurrentOnCore c (some tid))
+              |>.clearReschedulePendingOnCore c }
+          else
+            .error .schedulerInvariantViolation
+      | _ => .error .schedulerInvariantViolation
+
+@[csimp] theorem scheduleEffectiveOnCore_eq_impl :
+    @scheduleEffectiveOnCore = @scheduleEffectiveOnCoreImpl := by
+  funext st c
+  unfold scheduleEffectiveOnCore scheduleEffectiveOnCoreImpl
+  rw [chooseThreadEffectiveOnCore_eq_code]
+  cases chooseThreadEffectiveOnCoreCode st c <;>
+    simp only [SchedulerState.modifyRunQueueOnCore_eq]
 
 /-- WS-SM SM5.E (deprecated alias).  The idle dispatch is now folded directly into
 `scheduleEffectiveOnCore` (its `none` branch runs core `c`'s idle thread when
@@ -1380,15 +1438,15 @@ object table rebuilt; proven equal to the specification
     (tcb : TCB) (_hTcb : st.getTcb? tid = some tcb) : SystemState :=
   let slice := st.scheduler.configDefaultTimeSlice
   let st' := st.modifyObject tid.toObjId (SystemState.mapTcbObject fun t => { t with timeSlice := slice })
-  let rq := (st'.scheduler.runQueueOnCore c).insert tid (tcb.boostedPriority)
-  { st' with scheduler := st'.scheduler.setRunQueueOnCore c rq }
+  let prio := tcb.boostedPriority
+  { st' with scheduler := st'.scheduler.modifyRunQueueOnCore c (·.insert tid prio) }
 
 @[csimp] theorem sliceExpireOnCore_eq_impl : @sliceExpireOnCore = @sliceExpireOnCoreImpl := by
   funext st c tid tcb hTcb
   have hx := (SystemState.getTcb?_eq_some_iff st tid tcb).mp hTcb
   unfold sliceExpireOnCore sliceExpireOnCoreImpl SystemState.modifyObject
     SystemState.rewriteObject
-  simp only [RobinHood.RHTable.modify_of_get? hx]
+  simp only [RobinHood.RHTable.modify_of_get? hx, SchedulerState.modifyRunQueueOnCore_eq]
   rfl
 
 /-- WS-ZA ZA4.3: the object update a SchedContext update performs, as
@@ -1412,15 +1470,15 @@ is queued on it, so no state is read after a later one is built from it
     cbsUpdateDeadline (scheduleReplenishment (consumeBudget s ticks) now consumedAmount) now true)
   let prio := resolveInsertPriority st' tid sc
   let stReplenished := replenishOnCore st' c scId (now + sc.period.val)
-  let rqPreempt := (stReplenished.scheduler.runQueueOnCore c).insert tid prio
-  { stReplenished with scheduler := stReplenished.scheduler.setRunQueueOnCore c rqPreempt }
+  { stReplenished with scheduler :=
+      stReplenished.scheduler.modifyRunQueueOnCore c (·.insert tid prio) }
 
 @[csimp] theorem spendBudgetOnCore_eq_impl : @spendBudgetOnCore = @spendBudgetOnCoreImpl := by
   funext st c tid scId sc hSc ticks
   have hx := (SystemState.getSchedContext?_eq_some_iff st scId sc).mp hSc
   unfold spendBudgetOnCore spendBudgetOnCoreImpl SystemState.modifyObject
     SystemState.rewriteObject
-  simp only [RobinHood.RHTable.modify_of_get? hx]
+  simp only [RobinHood.RHTable.modify_of_get? hx, SchedulerState.modifyRunQueueOnCore_eq]
   rfl
 
 /-- A bound thread's budget runs out on the timer tick: the budget is spent
