@@ -2008,7 +2008,7 @@ theorem endpointReceiveDual_preserves_projection
                   st1 st2 sender _ _ hSenderObjHigh hObjInv1 hIpc
               have hProjEns := ensureRunnable_preserves_projection ctx observer st2 sender hSenderHigh
               have hObjInvEns : (ensureRunnable st2 sender).objects.invExt := by
-                rw [ensureRunnable_preserves_objects]; exact hObjInv2
+                exact ensureRunnable_objects_invExt _ _ hObjInv2
               -- AK1-D: atomic (.ready, senderMsg) receiver update
               cases hPend : storeTcbIpcStateAndMessage (ensureRunnable st2 sender) receiver .ready
                   senderTcb.pendingMessage with
@@ -2183,7 +2183,7 @@ theorem endpointReply_preserves_projection
           | some rid =>
             simp only [hRO] at hStep
             have hObjInvMid : (ensureRunnable stMid target).objects.invExt := by
-              rw [ensureRunnable_preserves_objects]
+              apply ensureRunnable_objects_invExt
               exact storeTcbIpcStateAndMessage_preserves_objects_invExt st stMid target _ _
                 hObjInv hStore
             have hIdxMid : ∀ oid,
@@ -2316,7 +2316,7 @@ theorem endpointCall_preserves_projection
                 st1 st2 receiver _ _ hRecvObjHigh hObjInv1 hTcbStore
             have hProjEns := ensureRunnable_preserves_projection ctx observer st2 receiver hRecvHigh
             have hObjInvEns : (ensureRunnable st2 receiver).objects.invExt := by
-              rw [ensureRunnable_preserves_objects]; exact hObjInv2
+              exact ensureRunnable_objects_invExt _ _ hObjInv2
             -- WS-SM SM6.D (#7.3 fold): thread objectIndexSet-completeness/invExt to st3.
             -- PopHead / storeTcbIpcStateAndMessage / ensureRunnable only mutate existing keys.
             obtain ⟨hIdxPop, hObjSetPop⟩ :=
@@ -2520,7 +2520,7 @@ theorem endpointReplyRecv_preserves_projection
           have hProjEns := ensureRunnable_preserves_projection ctx observer stReply replyTarget
               hReplyTargetHigh
           have hObjInvEns : (ensureRunnable stReply replyTarget).objects.invExt := by
-            rw [ensureRunnable_preserves_objects]; exact hObjInvReply
+            exact ensureRunnable_objects_invExt _ _ hObjInvReply
           -- Transfer endpoint objects from the intermediate state back to st: the
           -- store only rewrites replyTarget's slot to a `.tcb`, so an `.endpoint`
           -- witness at endpointId transports (forcing endpointId ≠ replyTarget.toObjId).
@@ -2528,7 +2528,7 @@ theorem endpointReplyRecv_preserves_projection
               (ensureRunnable stReply replyTarget).objects[endpointId]? = some (.endpoint ep') →
               st.objects[endpointId]? = some (.endpoint ep') := by
             intro ep' hEp'
-            rw [ensureRunnable_preserves_objects stReply replyTarget] at hEp'
+            rw [(ensureRunnable_objectsAgreeOffRunLinks stReply replyTarget).get_endpoint_iff] at hEp'
             by_cases hEq : endpointId = replyTarget.toObjId
             · obtain ⟨t1, hT1⟩ := storeTcbIpcStateAndMessage_tcb_exists_at_target st stReply
                 replyTarget _ _ hObjInv hStore
@@ -2552,6 +2552,7 @@ theorem endpointReplyRecv_preserves_projection
               objectObservable ctx observer nextTid'.toObjId = false := by
             intro ep' sender' senderTcb' nextTid' hEp' hHead hSenderTcb hNext
             replace hEp' := hEpBackMid ep' hEp'
+            run_links_back (ensureRunnable_objectsAgreeOffRunLinks stReply replyTarget) at senderTcb' hSenderTcb
             by_cases hSenderNe : sender'.toObjId = replyTarget.toObjId
             · -- sender at same ObjId as replyTarget — queueNext preserved
               unfold storeTcbIpcStateAndMessage modifyTcb at hStore; simp only [hLookup] at hStore
@@ -2560,17 +2561,16 @@ theorem endpointReplyRecv_preserves_projection
               | error e => simp [hStObj] at hStore
               | ok pair =>
                 simp only [hStObj, Except.ok.injEq] at hStore; subst hStore
-                have hTcbMid : (ensureRunnable pair.2 replyTarget).objects[sender'.toObjId]? =
+                have hTcbMid : pair.2.objects[sender'.toObjId]? =
                     some (.tcb { tcb with ipcState := .ready, pendingMessage := some replyMsg }) := by
-                  rw [ensureRunnable_preserves_objects pair.2 replyTarget, hSenderNe]
+                  rw [hSenderNe]
                   exact storeObject_objects_eq st pair.2 replyTarget.toObjId _ hObjInv hStObj
                 rw [hTcbMid] at hSenderTcb; cases hSenderTcb
                 have hOrigTcb := lookupTcb_some_objects st replyTarget tcb hLookup
                 rw [← hSenderNe] at hOrigTcb
                 exact hSendQueueNextHigh ep' sender' tcb nextTid' hEp' hHead hOrigTcb hNext
-            · have hSenderObj : (ensureRunnable stReply replyTarget).objects[sender'.toObjId]? =
+            · have hSenderObj : stReply.objects[sender'.toObjId]? =
                   st.objects[sender'.toObjId]? := by
-                rw [ensureRunnable_preserves_objects stReply replyTarget]
                 exact storeTcbIpcStateAndMessage_preserves_objects_ne st stReply replyTarget _ _
                     sender'.toObjId hSenderNe hObjInv hStore
               rw [hSenderObj] at hSenderTcb

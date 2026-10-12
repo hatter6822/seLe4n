@@ -499,10 +499,11 @@ import SeLe4n.Kernel.IPC.CrossCore.EndpointCallNI
 import SeLe4n.Kernel.IPC.CrossCore.EndpointCallNiPerCore
 -- WS-SM SM6.A.1: cross-core endpoint-call IPC invariant preservation —
 -- `endpointCallOnCore` preserves `objects.invExt` and the `ipcInvariant`
--- notification well-formedness, via the object-invisibility keystone
--- (`enqueueRunnableOnCore_objects_getElem_eq_of_ready`: the receiver wake's
+-- notification well-formedness, via the wake keystone
+-- (`enqueueRunnableOnCore_objectsAgreeOffRunLinks_of_ready`: the receiver wake's
 -- `ipcState := .ready` write is a no-op on the already-ready rendezvous
--- receiver) composed with the single-core per-step preservation lemmas.
+-- receiver, and its other writes are run-queue links) composed with the
+-- single-core per-step preservation lemmas.
 import SeLe4n.Kernel.IPC.CrossCore.EndpointCallInvariant
 -- WS-SM SM6.A: cross-core endpoint call — WithCaps + donation + live FFI seam.
 -- `endpointCallWithCapsOnCore` (cross-core endpointCallWithCaps), the full

@@ -499,9 +499,9 @@ theorem restoreToReadyOnCore_pipBoost_recomputed (st : SystemState) (c : CoreId)
     exact ⟨_, hSt2Tcb, rfl⟩
   · have hFresh : runnableOnSomeCore (restoreToReadyMidState st tid) tid = false := by
       simpa using hRun
-    refine ⟨{ t1 with pipBoost := computeMaxWaiterPriority (restoreToReady st tid) tid, ipcState := .ready }, ?_, rfl⟩
-    exact enqueueRunnableOnCore_makes_ready (restoreToReadyMidState st tid) c tid
+    obtain ⟨t', h', ht⟩ := enqueueRunnableOnCore_makes_ready (restoreToReadyMidState st tid) c tid
       { t1 with pipBoost := computeMaxWaiterPriority (restoreToReady st tid) tid } hSt2Tcb hInv2 hFresh
+    exact ⟨t', h', TCB.proj_eq_of_withoutRunLinks_eq TCB.pipBoost ht⟩
 
 -- §5b  SM5.F.6 — restoreToReadyWithWake (cross-core resume wake)
 
@@ -1102,8 +1102,8 @@ theorem resumeThreadOnCore_sets_threadState (st : SystemState) (vtid : SeLe4n.Va
       exact ⟨tm, hmid, hmidReady⟩
     · have hFresh : runnableOnSomeCore (markKeyChangeFrom st (resumeReadyMidState st vtid.val) vtid.val) vtid.val = false := by
         simpa using hRun
-      exact ⟨{ tm with ipcState := .ready },
-        SeLe4n.Kernel.enqueueRunnableOnCore_makes_ready _ _ _ tm hmid hmidInv hFresh, hmidReady⟩
+      obtain ⟨t', h', ht⟩ := SeLe4n.Kernel.enqueueRunnableOnCore_makes_ready _ _ _ tm hmid hmidInv hFresh
+      exact ⟨t', h', (TCB.proj_eq_of_withoutRunLinks_eq TCB.threadState ht).trans hmidReady⟩
   obtain ⟨t3, hst3get, hst3ready⟩ := hst3
   -- `tid` is not `ec`'s current in `st3` (the resume prefix preserves `currentOnCore`).
   have hst3cur : (enqueueRunnableOnCore (markKeyChangeFrom st (resumeReadyMidState st vtid.val) vtid.val)
@@ -1245,8 +1245,8 @@ theorem restoreToReadyWithWake_sets_threadState (st : SystemState) (tid : Thread
   · rw [SeLe4n.Kernel.enqueueRunnableOnCore_eq_self_of_runnable _ _ _ hRun]
     exact ⟨tm, hmid, hmidReady⟩
   · have hFresh : runnableOnSomeCore (resumeReadyMidState st tid) tid = false := by simpa using hRun
-    exact ⟨{ tm with ipcState := .ready },
-      SeLe4n.Kernel.enqueueRunnableOnCore_makes_ready _ _ _ tm hmid hmidInv hFresh, hmidReady⟩
+    obtain ⟨t', h', ht⟩ := SeLe4n.Kernel.enqueueRunnableOnCore_makes_ready _ _ _ tm hmid hmidInv hFresh
+    exact ⟨t', h', (TCB.proj_eq_of_withoutRunLinks_eq TCB.threadState ht).trans hmidReady⟩
 
 -- ============================================================================
 -- §12  SM5.F.4 — cross-core wake dispatch (the SM6 runtime firing layer)

@@ -150,13 +150,46 @@ theorem ipcStateQueueMembershipConsistent_of_objects_eq
   | .blockedOnReply _ _ => trivial
   | .blockedOnNotification _ => trivial
 
+/-- WS-ZA ZA4.5: a write that changes nothing but TCB run-queue links keeps
+`ipcStateQueueMembershipConsistent` — it reads IPC states, endpoint queues and
+`queueNext` links, none of them a run-queue field. -/
+theorem ipcStateQueueMembershipConsistent_of_objectsAgreeOffRunLinks {st st' : SystemState}
+    (h : SystemState.objectsAgreeOffRunLinks st' st)
+    (hInv : ipcStateQueueMembershipConsistent st) :
+    ipcStateQueueMembershipConsistent st' := by
+  intro tid tcb hTcb
+  run_links_back h at tcb hTcb
+  have hPre := hInv tid tcb hTcb
+  have reach : ∀ {A : Prop},
+      (A ∨ ∃ (prev : SeLe4n.ThreadId) (prevTcb : TCB),
+        st.objects[prev.toObjId]? = some (.tcb prevTcb) ∧ prevTcb.queueNext = some tid) →
+      (A ∨ ∃ (prev : SeLe4n.ThreadId) (prevTcb : TCB),
+        st'.objects[prev.toObjId]? = some (.tcb prevTcb) ∧ prevTcb.queueNext = some tid) :=
+    fun hReach =>
+    hReach.elim Or.inl (fun ⟨prev, prevTcb, hPrev, hNext⟩ => by
+      run_links_fwd h at prevTcb hPrev
+      exact Or.inr ⟨prev, prevTcb, hPrev, hNext⟩)
+  match hIpc : tcb.ipcState with
+  | .blockedOnSend epId =>
+    simp only [hIpc] at hPre; obtain ⟨ep, hEp, hReach⟩ := hPre
+    exact ⟨ep, h.get_endpoint_iff.mpr hEp, reach hReach⟩
+  | .blockedOnReceive epId =>
+    simp only [hIpc] at hPre; obtain ⟨ep, hEp, hReach⟩ := hPre
+    exact ⟨ep, h.get_endpoint_iff.mpr hEp, reach hReach⟩
+  | .blockedOnCall epId =>
+    simp only [hIpc] at hPre; obtain ⟨ep, hEp, hReach⟩ := hPre
+    exact ⟨ep, h.get_endpoint_iff.mpr hEp, reach hReach⟩
+  | .ready => trivial
+  | .blockedOnReply _ _ => trivial
+  | .blockedOnNotification _ => trivial
+
 /-- ensureRunnable preserves ipcStateQueueMembershipConsistent. -/
 theorem ensureRunnable_preserves_ipcStateQueueMembershipConsistent
     (st : SystemState) (tid : SeLe4n.ThreadId)
     (hInv : ipcStateQueueMembershipConsistent st) :
     ipcStateQueueMembershipConsistent (ensureRunnable st tid) :=
-  ipcStateQueueMembershipConsistent_of_objects_eq st (ensureRunnable st tid)
-    (fun x => congrArg (·.get? x) (ensureRunnable_preserves_objects st tid)) hInv
+  ipcStateQueueMembershipConsistent_of_objectsAgreeOffRunLinks
+    (ensureRunnable_objectsAgreeOffRunLinks st tid) hInv
 
 /-- removeRunnable preserves ipcStateQueueMembershipConsistent. -/
 theorem removeRunnable_preserves_ipcStateQueueMembershipConsistent
@@ -702,7 +735,7 @@ theorem endpointReply_preserves_ipcStateQueueMembershipConsistent
                       (fun epId => by intro h; cases h) hMsg
                 -- PR #827 #3 fold: peel the atomic consume (no-op when unlinked).
                 have hObjInvMid : (ensureRunnable st1 target).objects.invExt := by
-                  rw [ensureRunnable_preserves_objects]
+                  apply ensureRunnable_objects_invExt
                   have hMsg' := hMsg
                   rw [storeTcbIpcStateAndMessage_fromTcb_eq hLookup] at hMsg'
                   exact storeTcbIpcStateAndMessage_preserves_objects_invExt

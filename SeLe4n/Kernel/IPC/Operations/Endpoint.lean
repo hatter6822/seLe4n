@@ -9,6 +9,7 @@
 
 import SeLe4n.Model.State
 import SeLe4n.Kernel.Scheduler.Operations.ReschedulePending
+import SeLe4n.Kernel.Scheduler.RunQueueLinkFrame
 
 /-! # AN3-E.5 (IPC-M09) — `cleanupPreReceiveDonation` co-location banner.
 
@@ -529,14 +530,14 @@ def ensureRunnable (st : SystemState) (tid : SeLe4n.ThreadId) : SystemState :=
     -- same identity fall-through, so migration is semantics-preserving.
     match st.getTcb? tid with
     | some tcb =>
-        { st with
-            scheduler := (st.scheduler.setRunQueueOnCore bootCoreId
-              ((st.scheduler.runQueueOnCore bootCoreId).insert tid tcb.boostedPriority))
-              -- The reschedule-SGI accumulator (KSC-1): the boot-core instance
-              -- of `enqueueRunnableOnCore`'s mark, so the wake paths' bridge
-              -- `wakeThread_bootCore_eq_ensureRunnable` stays an equation.
-              |>.markReschedulePendingOnCore bootCoreId
-        }
+        -- WS-ZA ZA4.5: the enqueue writes the thread's run-queue links
+        -- (`runEnqueueOnCore`).
+        let st' := st.runEnqueueOnCore bootCoreId tid tcb.boostedPriority
+        { st' with
+            -- The reschedule-SGI accumulator (KSC-1): the boot-core instance
+            -- of `enqueueRunnableOnCore`'s mark, so the wake paths' bridge
+            -- `wakeThread_bootCore_eq_ensureRunnable` stays an equation.
+            scheduler := st'.scheduler.markReschedulePendingOnCore bootCoreId }
     | none => st
 
 def lookupTcb (st : SystemState) (tid : SeLe4n.ThreadId) : Option TCB :=
@@ -1590,15 +1591,12 @@ theorem of_objects_eq {st st' : SystemState} (h : st'.objects = st.objects) :
     sameSchedContextBindings st st' :=
   fun _ tcb' hObj => ⟨tcb', h ▸ hObj, rfl⟩
 
-/-- **WS-RR RR8.12 Cut C1**: the pointwise form of `of_objects_eq` — a step invisible
-to every object-store lookup preserves all bindings.  The cross-core `wakeThread` of
-an already-`.ready` thread is such a step (`wakeThread_objects_getElem_eq_of_ready`)
-without its table being *equal* to the pre-state's, which the whole-table form cannot
-see. -/
-theorem of_objects_getElem_eq {st st' : SystemState}
-    (h : ∀ oid : SeLe4n.ObjId, st'.objects[oid]? = st.objects[oid]?) :
-    sameSchedContextBindings st st' :=
-  fun tid tcb' hObj => ⟨tcb', by rw [← h tid.toObjId]; exact hObj, rfl⟩
+/-- WS-ZA ZA4.5: a step writing only run-queue links preserves all bindings. -/
+theorem of_objectsAgreeOffRunLinks {st st' : SystemState} (h : st'.objectsAgreeOffRunLinks st) :
+    sameSchedContextBindings st st' := by
+  intro tid tcb' hObj
+  run_links_back h at tcb' hObj
+  exact ⟨tcb', hObj, rfl⟩
 
 /-- **WS-RR RR8.12 Cut C1**: a post-state `lookupTcb` pulls back to a pre-state
 `lookupTcb` at the same thread with an equal binding — the frame read through the
@@ -8487,24 +8485,42 @@ theorem removeRunnable_preserves_objects
     (removeRunnable st tid).objects = st.objects := by
   rfl
 
-/-- WS-E3/H-09: `ensureRunnable` only modifies the scheduler; all objects are preserved. -/
-theorem ensureRunnable_preserves_objects
-    (st : SystemState)
-    (tid : SeLe4n.ThreadId) :
-    (ensureRunnable st tid).objects = st.objects := by
+/-- WS-ZA ZA4.5: `ensureRunnable` writes the scheduler and the run-queue links
+of the threads it touches, and nothing else. -/
+theorem ensureRunnable_onlyObjectsSchedulerDiffer (st : SystemState) (tid : SeLe4n.ThreadId) :
+    SystemState.onlyObjectsSchedulerDiffer (ensureRunnable st tid) st := by
   unfold ensureRunnable
   split
-  · rfl
-  · split <;> rfl
+  · exact .refl _
+  · split
+    · exact .withScheduler (SystemState.runEnqueueOnCore_onlyObjectsSchedulerDiffer _ _ _ _) _
+    · exact .refl _
+
+/-- WS-ZA ZA4.5: `ensureRunnable` changes no object off the run-queue links
+(was `ensureRunnable_preserves_objects` while the links lived in the scheduler). -/
+theorem ensureRunnable_objectsAgreeOffRunLinks (st : SystemState) (tid : SeLe4n.ThreadId) :
+    SystemState.objectsAgreeOffRunLinks (ensureRunnable st tid) st := by
+  unfold ensureRunnable
+  split
+  · exact .refl _
+  · split
+    · exact SystemState.runEnqueueOnCore_objectsAgreeOffRunLinks _ _ _ _
+    · exact .refl _
+
+theorem ensureRunnable_objects_invExt (st : SystemState) (tid : SeLe4n.ThreadId)
+    (hInv : st.objects.invExt) : (ensureRunnable st tid).objects.invExt := by
+  unfold ensureRunnable
+  split
+  · exact hInv
+  · split
+    · exact SystemState.runEnqueueOnCore_objects_invExt _ _ _ _ hInv
+    · exact hInv
 
 /-- TPI-D1: ensureRunnable preserves objectIndexSet (only modifies scheduler). -/
 theorem ensureRunnable_preserves_objectIndexSet
     (st : SystemState) (tid : SeLe4n.ThreadId) :
     (ensureRunnable st tid).objectIndexSet = st.objectIndexSet := by
-  unfold ensureRunnable
-  split
-  · rfl
-  · split <;> rfl
+  rw [ensureRunnable_onlyObjectsSchedulerDiffer st tid]
 
 /-- TPI-D1: ensureRunnable preserves objectIndexSetComplete. -/
 theorem ensureRunnable_preserves_objectIndexSetComplete
@@ -8514,7 +8530,7 @@ theorem ensureRunnable_preserves_objectIndexSetComplete
   intro oid hNe
   rw [ensureRunnable_preserves_objectIndexSet st tid]
   apply hComplete
-  rwa [ensureRunnable_preserves_objects st tid] at hNe
+  exact fun e => hNe ((ensureRunnable_objectsAgreeOffRunLinks st tid).get_none_iff.mpr e)
 
 /-- TPI-D1: ensureRunnable preserves objectIndexSet.table.invExt. -/
 theorem ensureRunnable_preserves_objectIndexSet_invExt

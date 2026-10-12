@@ -76,13 +76,13 @@ theorem endpointCall_preserves_ipcInvariant
             have hObjInv2 := storeTcbIpcStateAndMessage_preserves_objects_invExt pair.2.2 st2 pair.1 .ready (some msg) hObjInv1 hMsg
             have hInv2 := storeTcbIpcStateAndMessage_preserves_ipcInvariant pair.2.2 st2 pair.1 .ready (some msg) hInv1 hObjInv1 hMsg
             have hInv3 : ipcInvariant (ensureRunnable st2 pair.1) :=
-              fun oid ntfn h => hInv2 oid ntfn (by rwa [ensureRunnable_preserves_objects] at h)
+              fun oid ntfn h => hInv2 oid ntfn ((ensureRunnable_objectsAgreeOffRunLinks _ _).get_notification_iff.mp h)
             -- AK1-C (I-M01): storeTcbIpcStateAndMessage replaces storeTcbIpcState to atomically clear caller's pendingMessage
             cases hIpc : storeTcbIpcStateAndMessage (ensureRunnable st2 pair.1) caller (.blockedOnReply endpointId (some pair.1)) none with
             | error e => simp [hIpc] at hStep
             | ok st4 =>
               simp only [hIpc] at hStep
-              have hObjInvEns : (ensureRunnable st2 pair.1).objects.invExt := by rwa [ensureRunnable_preserves_objects]
+              have hObjInvEns : (ensureRunnable st2 pair.1).objects.invExt := ensureRunnable_objects_invExt _ _ (by assumption)
               have hInv4 := storeTcbIpcStateAndMessage_preserves_ipcInvariant _ st4 caller _ none hInv3 hObjInvEns hIpc
               have hObjInv4 := storeTcbIpcStateAndMessage_preserves_objects_invExt _ st4 caller _ none hObjInvEns hIpc
               -- WS-SM SM6.D (#7.3 fold): thread the server-first reply link
@@ -147,7 +147,7 @@ theorem endpointCall_preserves_schedulerInvariantBundle
             simp only [hMsg] at hStep
             have hSchedMsg := storeTcbIpcStateAndMessage_scheduler_eq pair.2.2 st2 pair.1 .ready (some msg) hMsg
             have hObjInvMsg := storeTcbIpcStateAndMessage_preserves_objects_invExt pair.2.2 st2 pair.1 .ready (some msg) hObjInvPop hMsg
-            have hObjInvEns : (ensureRunnable st2 pair.1).objects.invExt := by rwa [ensureRunnable_preserves_objects]
+            have hObjInvEns : (ensureRunnable st2 pair.1).objects.invExt := ensureRunnable_objects_invExt _ _ (by assumption)
             -- AK1-C (I-M01): storeTcbIpcStateAndMessage replaces storeTcbIpcState to atomically clear caller's pendingMessage
             cases hIpc : storeTcbIpcStateAndMessage (ensureRunnable st2 pair.1) caller (.blockedOnReply endpointId (some pair.1)) none with
             | error e => simp [hIpc] at hStep
@@ -176,7 +176,8 @@ theorem endpointCall_preserves_schedulerInvariantBundle
                     rwa [← hNeTid] at h
                   · exact ⟨tcb1, (storeTcbIpcStateAndMessage_preserves_objects_ne pair.2.2 st2 pair.1 .ready (some msg) x.toObjId hNeTid hObjInvPop hMsg) ▸ hTcb1⟩
                 rcases hTcb2 with ⟨tcb2, hTcb2⟩
-                exact ⟨tcb2, by rw [storeTcbIpcStateAndMessage_preserves_objects_ne _ st4 caller _ none x.toObjId hNeCaller hObjInvEns hIpc, ensureRunnable_preserves_objects]; exact hTcb2⟩
+                rw [storeTcbIpcStateAndMessage_preserves_objects_ne _ st4 caller _ none x.toObjId hNeCaller hObjInvEns hIpc]
+                exact (ensureRunnable_objectsAgreeOffRunLinks _ _).exists_tcb_iff.mpr ⟨tcb2, hTcb2⟩
               -- WS-SM SM6.D (#7.3 fold): thread the server-first reply link.  Generalise
               -- over the final state `S` (`st4` or the fold; both share `st4`'s scheduler),
               -- proving the bundle from a scheduler-equality to `st4` and a current-TCB
@@ -324,7 +325,7 @@ theorem endpointCall_preserves_ipcSchedulerContractPredicates
             simp only [hMsg] at hStep
             have hSchedMsg := storeTcbIpcStateAndMessage_scheduler_eq pair.2.2 st2 pair.1 .ready (some msg) hMsg
             have hObjInvMsg := storeTcbIpcStateAndMessage_preserves_objects_invExt pair.2.2 st2 pair.1 .ready (some msg) hObjInv1 hMsg
-            have hObjInvEns : (ensureRunnable st2 pair.1).objects.invExt := by rwa [ensureRunnable_preserves_objects]
+            have hObjInvEns : (ensureRunnable st2 pair.1).objects.invExt := ensureRunnable_objects_invExt _ _ (by assumption)
             -- AK1-C (I-M01): storeTcbIpcStateAndMessage replaces storeTcbIpcState to atomically clear caller's pendingMessage
             cases hIpc : storeTcbIpcStateAndMessage (ensureRunnable st2 pair.1) caller (.blockedOnReply endpointId (some pair.1)) none with
             | error e => simp [hIpc] at hStep
@@ -366,7 +367,8 @@ theorem endpointCall_preserves_ipcSchedulerContractPredicates
                 by_cases hNeCaller : tid = caller
                 · subst hNeCaller; exact absurd hRun' (removeRunnable_not_mem_self st4 _)
                 · have hNeCallerObjId : tid.toObjId ≠ caller.toObjId := fun h => hNeCaller (threadId_toObjId_injective h)
-                  rw [storeTcbIpcStateAndMessage_preserves_objects_ne _ st4 caller _ none tid.toObjId hNeCallerObjId hObjInvEns hIpc, ensureRunnable_preserves_objects] at hTcb'
+                  rw [storeTcbIpcStateAndMessage_preserves_objects_ne _ st4 caller _ none tid.toObjId hNeCallerObjId hObjInvEns hIpc] at hTcb'
+                  run_links_back (ensureRunnable_objectsAgreeOffRunLinks _ _) at tcb' hTcb'
                   by_cases hNeRecv : tid.toObjId = pair.1.toObjId
                   · exact storeTcbIpcStateAndMessage_ipcState_eq pair.2.2 st2 pair.1 .ready (some msg) hObjInv1 hMsg tcb' (hNeRecv ▸ hTcb')
                   · have hTcbPre := (storeTcbIpcStateAndMessage_preserves_objects_ne pair.2.2 st2 pair.1 .ready (some msg) tid.toObjId hNeRecv hObjInv1 hMsg).symm.trans hTcb'
@@ -382,7 +384,8 @@ theorem endpointCall_preserves_ipcSchedulerContractPredicates
                 by_cases hNeCaller : tid = caller
                 · subst hNeCaller; exact removeRunnable_not_mem_self st4 _
                 · have hNeCallerObjId : tid.toObjId ≠ caller.toObjId := fun h => hNeCaller (threadId_toObjId_injective h)
-                  rw [storeTcbIpcStateAndMessage_preserves_objects_ne _ st4 caller _ none tid.toObjId hNeCallerObjId hObjInvEns hIpc, ensureRunnable_preserves_objects] at hTcb'
+                  rw [storeTcbIpcStateAndMessage_preserves_objects_ne _ st4 caller _ none tid.toObjId hNeCallerObjId hObjInvEns hIpc] at hTcb'
+                  run_links_back (ensureRunnable_objectsAgreeOffRunLinks _ _) at tcb' hTcb'
                   by_cases hNeRecv : tid.toObjId = pair.1.toObjId
                   · have := storeTcbIpcStateAndMessage_ipcState_eq pair.2.2 st2 pair.1 .ready (some msg) hObjInv1 hMsg tcb' (hNeRecv ▸ hTcb')
                     rw [this] at hIpcState'; cases hIpcState'
@@ -400,7 +403,8 @@ theorem endpointCall_preserves_ipcSchedulerContractPredicates
                 by_cases hNeCaller : tid = caller
                 · subst hNeCaller; exact removeRunnable_not_mem_self st4 _
                 · have hNeCallerObjId : tid.toObjId ≠ caller.toObjId := fun h => hNeCaller (threadId_toObjId_injective h)
-                  rw [storeTcbIpcStateAndMessage_preserves_objects_ne _ st4 caller _ none tid.toObjId hNeCallerObjId hObjInvEns hIpc, ensureRunnable_preserves_objects] at hTcb'
+                  rw [storeTcbIpcStateAndMessage_preserves_objects_ne _ st4 caller _ none tid.toObjId hNeCallerObjId hObjInvEns hIpc] at hTcb'
+                  run_links_back (ensureRunnable_objectsAgreeOffRunLinks _ _) at tcb' hTcb'
                   by_cases hNeRecv : tid.toObjId = pair.1.toObjId
                   · have := storeTcbIpcStateAndMessage_ipcState_eq pair.2.2 st2 pair.1 .ready (some msg) hObjInv1 hMsg tcb' (hNeRecv ▸ hTcb')
                     rw [this] at hIpcState'; cases hIpcState'
@@ -418,7 +422,8 @@ theorem endpointCall_preserves_ipcSchedulerContractPredicates
                 by_cases hNeCaller : tid = caller
                 · subst hNeCaller; exact removeRunnable_not_mem_self st4 _
                 · have hNeCallerObjId : tid.toObjId ≠ caller.toObjId := fun h => hNeCaller (threadId_toObjId_injective h)
-                  rw [storeTcbIpcStateAndMessage_preserves_objects_ne _ st4 caller _ none tid.toObjId hNeCallerObjId hObjInvEns hIpc, ensureRunnable_preserves_objects] at hTcb'
+                  rw [storeTcbIpcStateAndMessage_preserves_objects_ne _ st4 caller _ none tid.toObjId hNeCallerObjId hObjInvEns hIpc] at hTcb'
+                  run_links_back (ensureRunnable_objectsAgreeOffRunLinks _ _) at tcb' hTcb'
                   by_cases hNeRecv : tid.toObjId = pair.1.toObjId
                   · have := storeTcbIpcStateAndMessage_ipcState_eq pair.2.2 st2 pair.1 .ready (some msg) hObjInv1 hMsg tcb' (hNeRecv ▸ hTcb')
                     rw [this] at hIpcState'; cases hIpcState'
@@ -436,7 +441,8 @@ theorem endpointCall_preserves_ipcSchedulerContractPredicates
                 by_cases hNeCaller : tid = caller
                 · subst hNeCaller; exact removeRunnable_not_mem_self st4 _
                 · have hNeCallerObjId : tid.toObjId ≠ caller.toObjId := fun h => hNeCaller (threadId_toObjId_injective h)
-                  rw [storeTcbIpcStateAndMessage_preserves_objects_ne _ st4 caller _ none tid.toObjId hNeCallerObjId hObjInvEns hIpc, ensureRunnable_preserves_objects] at hTcb'
+                  rw [storeTcbIpcStateAndMessage_preserves_objects_ne _ st4 caller _ none tid.toObjId hNeCallerObjId hObjInvEns hIpc] at hTcb'
+                  run_links_back (ensureRunnable_objectsAgreeOffRunLinks _ _) at tcb' hTcb'
                   by_cases hNeRecv : tid.toObjId = pair.1.toObjId
                   · have := storeTcbIpcStateAndMessage_ipcState_eq pair.2.2 st2 pair.1 .ready (some msg) hObjInv1 hMsg tcb' (hNeRecv ▸ hTcb')
                     rw [this] at hIpcState'; cases hIpcState'
@@ -454,7 +460,8 @@ theorem endpointCall_preserves_ipcSchedulerContractPredicates
                 by_cases hNeCaller : tid = caller
                 · subst hNeCaller; exact removeRunnable_not_mem_self st4 _
                 · have hNeCallerObjId : tid.toObjId ≠ caller.toObjId := fun h => hNeCaller (threadId_toObjId_injective h)
-                  rw [storeTcbIpcStateAndMessage_preserves_objects_ne _ st4 caller _ none tid.toObjId hNeCallerObjId hObjInvEns hIpc, ensureRunnable_preserves_objects] at hTcb'
+                  rw [storeTcbIpcStateAndMessage_preserves_objects_ne _ st4 caller _ none tid.toObjId hNeCallerObjId hObjInvEns hIpc] at hTcb'
+                  run_links_back (ensureRunnable_objectsAgreeOffRunLinks _ _) at tcb' hTcb'
                   by_cases hNeRecv : tid.toObjId = pair.1.toObjId
                   · have := storeTcbIpcStateAndMessage_ipcState_eq pair.2.2 st2 pair.1 .ready (some msg) hObjInv1 hMsg tcb' (hNeRecv ▸ hTcb')
                     rw [this] at hIpcState'; cases hIpcState'

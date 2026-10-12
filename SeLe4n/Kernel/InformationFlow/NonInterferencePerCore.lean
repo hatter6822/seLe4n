@@ -640,7 +640,10 @@ discipline a theorem instead of a convention. -/
 nothing else. -/
 theorem ensureRunnable_confinedToBootCore (st : SystemState) (tid : SeLe4n.ThreadId) :
     observableSlotsConfinedToCore st (ensureRunnable st tid) bootCoreId := by
-  refine ⟨?_, ?_, ?_, ?_, ?_, ?_⟩ <;> intro c hc <;>
+  have hD := ensureRunnable_onlyObjectsSchedulerDiffer st tid
+  unfold SystemState.onlyObjectsSchedulerDiffer at hD
+  have hM : (ensureRunnable st tid).machine = st.machine := by rw [hD]
+  refine ⟨?_, ?_, ?_, ?_, ?_, fun c _ => by rw [hM]⟩ <;> intro c hc <;>
     unfold ensureRunnable <;>
     (split
      · rfl

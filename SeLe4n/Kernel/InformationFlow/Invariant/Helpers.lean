@@ -275,33 +275,61 @@ theorem removeRunnable_preserves_projection
       projectServiceRegistry ctx observer st := funext fun _ => rfl
   simp only [projectState, hObj, hRun, hCur, hSvc, hDom, hIrq, hIdx, hDTR, hDS, hDSI, hMR, hMem, hSvcReg]
 
+/-- WS-ZA ZA4.5: the projection strips every run-queue field from a TCB, so two
+stores agreeing off those fields project equally. -/
+theorem projectObjects_of_objectsAgreeOffRunLinks
+    (ctx : LabelingContext) (observer : IfObserver) {st st' : SystemState}
+    (h : st'.objectsAgreeOffRunLinks st) :
+    projectObjects ctx observer st' = projectObjects ctx observer st := by
+  funext oid
+  unfold projectObjects SystemState.getObject?
+  split
+  · cases e : st.objects[oid]? with
+    | none => rw [h.get_none_iff.mpr e]
+    | some o => cases o with
+      | tcb t =>
+        obtain ⟨t', _, _, _, _, _, _, ht', rfl⟩ := h.get_tcb_fwd e
+        rw [ht']; rfl
+      | _ => rw [h.get_of_not_tcb (fun _ e => KernelObject.noConfusion e) e]
+  · rfl
+
 /-- Adding a non-observable thread to runnable preserves low-equivalence projection. -/
 theorem ensureRunnable_preserves_projection
     (ctx : LabelingContext) (observer : IfObserver)
     (st : SystemState) (tid : SeLe4n.ThreadId)
     (hTidHigh : threadObservable ctx observer tid = false) :
     projectState ctx observer (ensureRunnable st tid) = projectState ctx observer st := by
+  have hObj := projectObjects_of_objectsAgreeOffRunLinks ctx observer
+    (ensureRunnable_objectsAgreeOffRunLinks st tid)
   -- AN10-B: post-migration `ensureRunnable` reads via `getTcb?`.
-  unfold ensureRunnable
+  unfold ensureRunnable at hObj ⊢
   split
   · rfl
   · rename_i hNotMem
     cases hTcb : st.getTcb? tid with
     | none => rfl
     | some tcb =>
-          show projectState ctx observer
-              { st with scheduler := (st.scheduler.setRunQueueOnCore bootCoreId
-                  ((st.scheduler.runQueueOnCore bootCoreId).insert tid tcb.boostedPriority))
-                  |>.markReschedulePendingOnCore bootCoreId } =
-              projectState ctx observer st
-          -- setRunQueueOnCore frames every projection except projectRunnable.
+          simp only [hNotMem, hTcb, if_false] at hObj
+          have hD := SystemState.runEnqueueOnCore_onlyObjectsSchedulerDiffer st bootCoreId tid
+            tcb.boostedPriority
+          unfold SystemState.onlyObjectsSchedulerDiffer at hD
+          dsimp only
+          rw [hD] at hObj ⊢
+          -- the enqueue frames every projection except the objects (equal off
+          -- run-queue fields) and projectRunnable.
           simp only [projectState, projectCurrent, projectActiveDomain, projectDomainTimeRemaining,
-            projectDomainScheduleIndex, projectMachineRegs,
-            SchedulerState.markReschedulePendingOnCore_currentOnCore, SchedulerState.setRunQueueOnCore_currentOnCore, SchedulerState.markReschedulePendingOnCore_activeDomainOnCore, SchedulerState.setRunQueueOnCore_activeDomainOnCore,
+            projectDomainScheduleIndex, projectMachineRegs, hObj,
+            SystemState.runEnqueueOnCore_scheduler,
+            SchedulerState.markReschedulePendingOnCore_currentOnCore, SchedulerState.setRunQueueOnCore_currentOnCore,
+            SchedulerState.setRunQueueEndsOnCore_currentOnCore,
+            SchedulerState.markReschedulePendingOnCore_activeDomainOnCore, SchedulerState.setRunQueueOnCore_activeDomainOnCore,
+            SchedulerState.setRunQueueEndsOnCore_activeDomainOnCore,
             SchedulerState.markReschedulePendingOnCore_domainTimeRemainingOnCore, SchedulerState.setRunQueueOnCore_domainTimeRemainingOnCore,
-            SchedulerState.markReschedulePendingOnCore_domainScheduleIndexOnCore, SchedulerState.setRunQueueOnCore_domainScheduleIndexOnCore]
+            SchedulerState.setRunQueueEndsOnCore_domainTimeRemainingOnCore,
+            SchedulerState.markReschedulePendingOnCore_domainScheduleIndexOnCore, SchedulerState.setRunQueueOnCore_domainScheduleIndexOnCore,
+            SchedulerState.setRunQueueEndsOnCore_domainScheduleIndexOnCore]
           congr 1
-          simp only [projectRunnable, SchedulerState.runnable,
+          simp only [projectRunnable, SchedulerState.runnable, SystemState.runEnqueueOnCore_scheduler,
             SchedulerState.markReschedulePendingOnCore_runQueueOnCore, SchedulerState.setRunQueueOnCore_runQueueOnCore_self]
           exact RunQueue.toList_filter_insert_neg _ _ _ _ hTidHigh hNotMem
 

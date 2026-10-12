@@ -264,21 +264,6 @@ theorem determineTargetCore_admits_thread (st : SystemState) (tid : SeLe4n.Threa
 -- §3  SM5.C.1 — `enqueueRunnableOnCore` (preservation, membership, frame)
 -- ============================================================================
 
-/-- WS-SM SM5.C.1 (preservation): `enqueueRunnableOnCore` preserves the
-RobinHood object-store invariant.  Its only object-store write is the woken
-thread's `ipcState := .ready` save (an `insert` at an existing key), which
-preserves `invExt`; the non-TCB branch is the identity. -/
-theorem enqueueRunnableOnCore_preserves_objects_invExt (st : SystemState)
-    (c : CoreId) (tid : SeLe4n.ThreadId) (hInv : st.objects.invExt) :
-    (enqueueRunnableOnCore st c tid).objects.invExt := by
-  cases hTcb : st.getTcb? tid with
-  | none => simp only [enqueueRunnableOnCore, SystemState.getTcbWitnessed?_eq_none hTcb]; exact hInv
-  | some tcb =>
-      simp only [enqueueRunnableOnCore, SystemState.getTcbWitnessed?_eq_some hTcb]
-      split
-      · exact hInv
-      · exact RHTable_insert_preserves_invExt st.objects _ _ hInv
-
 /-- WS-SM SM5.C.1 (preservation): `enqueueRunnableOnCore` preserves core `c`'s
 run-queue well-formedness — the only run-queue mutation is the re-enqueue
 (`insert`), which preserves `RunQueue.wellFormed`; the non-TCB branch leaves the
@@ -287,14 +272,11 @@ theorem enqueueRunnableOnCore_preserves_runQueueOnCore_wellFormed (st : SystemSt
     (c : CoreId) (tid : SeLe4n.ThreadId)
     (hwf : (st.scheduler.runQueueOnCore c).wellFormed) :
     ((enqueueRunnableOnCore st c tid).scheduler.runQueueOnCore c).wellFormed := by
-  cases hTcb : st.getTcb? tid with
-  | none => simp only [enqueueRunnableOnCore, SystemState.getTcbWitnessed?_eq_none hTcb]; exact hwf
-  | some tcb =>
-      simp only [enqueueRunnableOnCore, SystemState.getTcbWitnessed?_eq_some hTcb]
-      split
-      · exact hwf
-      · simp only [SchedulerState.markReschedulePendingOnCore_runQueueOnCore, SchedulerState.setRunQueueOnCore_runQueueOnCore_self]
-        exact RunQueue.insert_preserves_wellFormed _ hwf _ _
+  rcases enqueueRunnableOnCore_scheduler_cases st c tid with h | ⟨E, p, h⟩ <;> rw [h]
+  · exact hwf
+  · simp only [SchedulerState.markReschedulePendingOnCore_runQueueOnCore,
+      SchedulerState.setRunQueueOnCore_runQueueOnCore_self]
+    exact RunQueue.insert_preserves_wellFormed _ hwf _ _
 
 /-- WS-SM SM5.C.1 (membership): the woken thread is a member of core `c`'s run
 queue immediately after `enqueueRunnableOnCore` (when it resolves to a TCB).
@@ -303,39 +285,63 @@ theorem enqueueRunnableOnCore_mem_runQueueOnCore (st : SystemState) (c : CoreId)
     (tid : SeLe4n.ThreadId) (tcb : TCB) (hTcb : st.getTcb? tid = some tcb)
     (hFresh : runnableOnSomeCore st tid = false) :
     tid ∈ ((enqueueRunnableOnCore st c tid).scheduler.runQueueOnCore c).toList := by
-  simp only [enqueueRunnableOnCore, SystemState.getTcbWitnessed?_eq_some hTcb, hFresh, Bool.false_eq_true, if_false,
-    SchedulerState.markReschedulePendingOnCore_runQueueOnCore, SchedulerState.setRunQueueOnCore_runQueueOnCore_self]
+  obtain ⟨E, hE⟩ := enqueueRunnableOnCore_scheduler_of_fresh st c tid tcb hTcb hFresh
+  simp only [hE, SchedulerState.markReschedulePendingOnCore_runQueueOnCore,
+    SchedulerState.setRunQueueOnCore_runQueueOnCore_self]
   rw [RunQueue.mem_toList_iff_mem]
   exact (RunQueue.mem_insert _ _ _ _).mpr (Or.inr rfl)
+
+/-- WS-ZA ZA4.5: on a thread that resolves to a TCB and is not yet runnable, core
+`c`'s run queue after the enqueue is the old one with the thread inserted at its
+boosted priority. -/
+theorem enqueueRunnableOnCore_runQueueOnCore_of_fresh (st : SystemState) (c : CoreId)
+    (tid : SeLe4n.ThreadId) (tcb : TCB) (hTcb : st.getTcb? tid = some tcb)
+    (hFresh : runnableOnSomeCore st tid = false) :
+    (enqueueRunnableOnCore st c tid).scheduler.runQueueOnCore c =
+      (st.scheduler.runQueueOnCore c).insert tid tcb.boostedPriority := by
+  obtain ⟨E, hE⟩ := enqueueRunnableOnCore_scheduler_of_fresh st c tid tcb hTcb hFresh
+  rw [hE, SchedulerState.markReschedulePendingOnCore_runQueueOnCore,
+    SchedulerState.setRunQueueOnCore_runQueueOnCore_self]
 
 /-- WS-SM SM5.C.1 (IPC↔scheduler coherence): the woken thread has `ipcState =
 .ready` after `enqueueRunnableOnCore` — so its run-queue membership satisfies
 `runnableThreadIpcReady` and it is no longer flagged `blockedOn*`.  This is the
 field the per-core IPC↔scheduler invariants gate run-queue membership on; the
-wake establishing it is why enqueuing a freshly-woken thread is invariant-safe. -/
+wake establishing it is why enqueuing a freshly-woken thread is invariant-safe.
+The post-state TCB is `{ tcb with ipcState := .ready }` off its run-queue
+fields, which the enqueue sets (WS-ZA ZA4.5). -/
 theorem enqueueRunnableOnCore_makes_ready (st : SystemState) (c : CoreId)
     (tid : SeLe4n.ThreadId) (tcb : TCB)
     (hTcb : st.getTcb? tid = some tcb) (hInv : st.objects.invExt)
     (hFresh : runnableOnSomeCore st tid = false) :
-    (enqueueRunnableOnCore st c tid).getTcb? tid = some { tcb with ipcState := .ready } := by
-  simp only [enqueueRunnableOnCore, SystemState.getTcbWitnessed?_eq_some hTcb, hFresh, Bool.false_eq_true, if_false,
-    SystemState.getTcb?_eq_some_iff, RHTable_getElem?_eq_get?, SystemState.rewriteObject_objects]
-  exact RHTable_get?_insert_self st.objects tid.toObjId _ hInv
+    ∃ t', (enqueueRunnableOnCore st c tid).getTcb? tid = some t' ∧
+      t'.withoutRunLinks = ({ tcb with ipcState := .ready } : TCB).withoutRunLinks := by
+  have hM : ({ st with objects := (st.objects.insert tid.toObjId
+      (.tcb { tcb with ipcState := .ready })) } : SystemState).getTcb? tid
+        = some { tcb with ipcState := .ready } := by
+    simp only [SystemState.getTcb?_eq_some_iff, RHTable_getElem?_eq_get?]
+    exact RHTable_get?_insert_self st.objects tid.toObjId _ hInv
+  have h := (enqueueRunnableOnCore_objectsAgree_marked st c tid tcb hTcb hFresh).getTcb? tid
+  rw [hM] at h
+  cases e : (enqueueRunnableOnCore st c tid).getTcb? tid with
+  | none => rw [e] at h; cases h
+  | some t' => rw [e] at h; exact ⟨t', rfl, Option.some.inj h⟩
 
 /-- WS-SM SM5.C.1 (audit-pass-2, woken-thread field frame): `enqueueRunnableOnCore`
 changes **only** the `ipcState` field of the woken thread — every other field
 (`priority`, `domain`, `cpuAffinity`, `threadState`, `registerContext`,
 `schedContextBinding`, `pipBoost`, …) is preserved.  The post-state TCB is
-exactly `{ tcb with ipcState := .ready }`, which differs from the pre-state TCB
-in `ipcState` alone (a record-update of a single field).
+`{ tcb with ipcState := .ready }`, which differs from the pre-state TCB
+in `ipcState` alone off its run-queue fields (WS-ZA ZA4.5: the enqueue also
+writes the thread's run-queue links).
 
 This is the "the wake does not silently corrupt thread state" guarantee: the
 only mutation the wake makes to the woken thread is clearing its scheduler-visible
 IPC block — it cannot, e.g., change the thread's CPU affinity (which would be a
 placement leak) or its priority (which would be a scheduling exploit).  Stated as
 the four security-relevant projections that callers / NI-reasoning depend on
-(`priority` / `domain` / `cpuAffinity` / `threadState`); the full record equality
-to `{ tcb with ipcState := .ready }` is `enqueueRunnableOnCore_makes_ready`. -/
+(`priority` / `domain` / `cpuAffinity` / `threadState`); the record equality
+to `{ tcb with ipcState := .ready }` off run-queue fields is `enqueueRunnableOnCore_makes_ready`. -/
 theorem enqueueRunnableOnCore_preserves_woken_thread_fields (st : SystemState)
     (c : CoreId) (tid : SeLe4n.ThreadId) (tcb : TCB)
     (hTcb : st.getTcb? tid = some tcb) (hInv : st.objects.invExt)
@@ -343,8 +349,11 @@ theorem enqueueRunnableOnCore_preserves_woken_thread_fields (st : SystemState)
     ∃ tcb', (enqueueRunnableOnCore st c tid).getTcb? tid = some tcb' ∧
       tcb'.priority = tcb.priority ∧ tcb'.domain = tcb.domain ∧
       tcb'.cpuAffinity = tcb.cpuAffinity ∧ tcb'.threadState = tcb.threadState :=
-  ⟨{ tcb with ipcState := .ready },
-    enqueueRunnableOnCore_makes_ready st c tid tcb hTcb hInv hFresh, rfl, rfl, rfl, rfl⟩
+  let ⟨t', h, ht⟩ := enqueueRunnableOnCore_makes_ready st c tid tcb hTcb hInv hFresh
+  ⟨t', h, TCB.proj_eq_of_withoutRunLinks_eq TCB.priority ht,
+    TCB.proj_eq_of_withoutRunLinks_eq TCB.domain ht,
+    TCB.proj_eq_of_withoutRunLinks_eq TCB.cpuAffinity ht,
+    TCB.proj_eq_of_withoutRunLinks_eq TCB.threadState ht⟩
 
 /-- WS-SM SM5.C.1 (cross-core frame): `enqueueRunnableOnCore` on core `c` leaves
 every *other* core's run-queue slot (`c' ≠ c`) untouched — it writes only core
@@ -353,13 +362,10 @@ theorem enqueueRunnableOnCore_runQueueOnCore_ne (st : SystemState) (c c' : CoreI
     (tid : SeLe4n.ThreadId) (h : c ≠ c') :
     (enqueueRunnableOnCore st c tid).scheduler.runQueueOnCore c'
       = st.scheduler.runQueueOnCore c' := by
-  cases hTcb : st.getTcb? tid with
-  | none => simp only [enqueueRunnableOnCore, SystemState.getTcbWitnessed?_eq_none hTcb]
-  | some tcb =>
-      simp only [enqueueRunnableOnCore, SystemState.getTcbWitnessed?_eq_some hTcb]
-      split
-      · rfl
-      · exact SchedulerState.setRunQueueOnCore_runQueueOnCore_ne st.scheduler c c' _ h
+  rcases enqueueRunnableOnCore_scheduler_cases st c tid with h' | ⟨E, p, h'⟩ <;> rw [h']
+  simp only [SchedulerState.markReschedulePendingOnCore_runQueueOnCore,
+    SchedulerState.setRunQueueOnCore_runQueueOnCore_ne _ _ _ _ h,
+    SchedulerState.setRunQueueEndsOnCore_runQueueOnCore]
 
 /-- WS-SM SM5.C.1 (no-current frame): `enqueueRunnableOnCore` never writes any
 core's `current` slot — it only saves the woken thread's IPC state (objects) and
@@ -369,38 +375,54 @@ theorem enqueueRunnableOnCore_currentOnCore (st : SystemState) (c : CoreId)
     (tid : SeLe4n.ThreadId) (c' : CoreId) :
     (enqueueRunnableOnCore st c tid).scheduler.currentOnCore c'
       = st.scheduler.currentOnCore c' := by
-  cases hTcb : st.getTcb? tid with
-  | none => simp only [enqueueRunnableOnCore, SystemState.getTcbWitnessed?_eq_none hTcb]
-  | some tcb =>
-      simp only [enqueueRunnableOnCore, SystemState.getTcbWitnessed?_eq_some hTcb]
-      split
-      · rfl
-      · simp only [SchedulerState.markReschedulePendingOnCore_currentOnCore, SchedulerState.setRunQueueOnCore_currentOnCore]
+  rcases enqueueRunnableOnCore_scheduler_cases st c tid with h | ⟨E, p, h⟩ <;> rw [h]
+  simp only [SchedulerState.markReschedulePendingOnCore_currentOnCore,
+    SchedulerState.setRunQueueOnCore_currentOnCore, SchedulerState.setRunQueueEndsOnCore_currentOnCore]
 
 /-- WS-SM SM5.C.1 (per-thread frame): `enqueueRunnableOnCore tid` leaves every
-*other* thread's `getTcb?` lookup unchanged — its only object-store write is at
-key `tid.toObjId`.  Proved through the typed `getTcb?` accessor + the
-`.get?`-method form of `RHTable.getElem?_insert_ne` (no raw `[·]?` bracket in
-the proof source — AK7-clean). -/
+*other* thread's `getTcb?` lookup unchanged off its run-queue fields — its only
+other object write is the `.ready` mark at key `tid.toObjId`; the run-queue
+link writes touch the woken thread's queue neighbours' links alone (WS-ZA
+ZA4.5).  Proved through the typed `getTcb?` accessor + the `.get?`-method form
+of `RHTable.getElem?_insert_ne`. -/
 theorem enqueueRunnableOnCore_getTcb?_ne (st : SystemState) (c : CoreId)
     (tid other : SeLe4n.ThreadId) (hInv : st.objects.invExt) (hNe : other ≠ tid) :
-    (enqueueRunnableOnCore st c tid).getTcb? other = st.getTcb? other := by
+    ((enqueueRunnableOnCore st c tid).getTcb? other).map TCB.withoutRunLinks
+      = (st.getTcb? other).map TCB.withoutRunLinks := by
   cases hTcb : st.getTcb? tid with
   | none => simp only [enqueueRunnableOnCore, SystemState.getTcbWitnessed?_eq_none hTcb]
   | some tcb =>
-      have hNeT : tid ≠ other := fun he => hNe he.symm
+    cases hR : runnableOnSomeCore st tid
+    · rw [(enqueueRunnableOnCore_objectsAgree_marked st c tid tcb hTcb hR).getTcb? other]
       have hNeO : ¬ (tid.toObjId == other.toObjId) = true := fun he =>
-        hNeT (ThreadId.toObjId_injective _ _ (by simpa using he))
-      -- Reduce the `enqueueRunnableOnCore` match (via `hTcb`) *before* unfolding
-      -- `getTcb?` — unfolding `getTcb?` in one combined `simp` would also rewrite
-      -- the `st.getTcb? tid` discriminant inside `enqueueRunnableOnCore`, so
-      -- `hTcb` could not fire on it.
-      simp only [enqueueRunnableOnCore, SystemState.getTcbWitnessed?_eq_some hTcb]
-      split
-      · rfl
-      · simp only [SystemState.getTcb?, RHTable_getElem?_eq_get?, SystemState.rewriteObject_objects]
-        rw [RobinHood.RHTable.getElem?_insert_ne st.objects tid.toObjId other.toObjId
-          _ hNeO hInv]
+        hNe (ThreadId.toObjId_injective _ _ (by simpa using he)).symm
+      simp only [SystemState.getTcb?, RHTable_getElem?_eq_get?]
+      rw [RobinHood.RHTable.getElem?_insert_ne st.objects tid.toObjId other.toObjId _ hNeO hInv]
+    · simp only [enqueueRunnableOnCore, SystemState.getTcbWitnessed?_eq_some hTcb, hR, if_true]
+
+/-- WS-ZA ZA4.5: a thread other than the woken one that resolves after the
+enqueue resolved before, to a TCB agreeing off run-queue fields. -/
+theorem enqueueRunnableOnCore_getTcb?_ne_back (st : SystemState) (c : CoreId)
+    (tid other : SeLe4n.ThreadId) (hInv : st.objects.invExt) (hNe : other ≠ tid) {t' : TCB}
+    (h : (enqueueRunnableOnCore st c tid).getTcb? other = some t') :
+    ∃ t, st.getTcb? other = some t ∧ t'.withoutRunLinks = t.withoutRunLinks := by
+  have e := enqueueRunnableOnCore_getTcb?_ne st c tid other hInv hNe
+  rw [h] at e
+  cases e' : st.getTcb? other with
+  | none => rw [e'] at e; cases e
+  | some t => rw [e'] at e; exact ⟨t, rfl, Option.some.inj e⟩
+
+/-- WS-ZA ZA4.5: ...and one that resolved before still resolves. -/
+theorem enqueueRunnableOnCore_getTcb?_ne_fwd (st : SystemState) (c : CoreId)
+    (tid other : SeLe4n.ThreadId) (hInv : st.objects.invExt) (hNe : other ≠ tid) {t : TCB}
+    (h : st.getTcb? other = some t) :
+    ∃ t', (enqueueRunnableOnCore st c tid).getTcb? other = some t' ∧
+      t'.withoutRunLinks = t.withoutRunLinks := by
+  have e := enqueueRunnableOnCore_getTcb?_ne st c tid other hInv hNe
+  rw [h] at e
+  cases e' : (enqueueRunnableOnCore st c tid).getTcb? other with
+  | none => rw [e'] at e; cases e
+  | some t' => rw [e'] at e; exact ⟨t', rfl, Option.some.inj e⟩
 
 /-- WS-SM SM5.C.1 (fail-closed): a `tid` that does not resolve to a TCB makes
 `enqueueRunnableOnCore` the identity — a corrupted run-queue entry is never
@@ -530,27 +552,32 @@ theorem wakeThread_preserves_objects_invExt (st : SystemState)
   rw [wakeThread_state_eq_enqueue]
   exact enqueueRunnableOnCore_preserves_objects_invExt st (determineTargetCore st tid) tid hInv
 
-/-- WS-SM SM6.A/SM6.B (object-invisibility keystone): `enqueueRunnableOnCore` of a
-thread that is **already `.ready`** is invisible to every object-store lookup.
-The only object the wake writes is the woken TCB, with `ipcState := .ready` — but
-it is already `.ready`, so the inserted value equals the one already stored.  This
-is why the cross-core receiver / waiter wake preserves every *objects-only*
-invariant on a rendezvous / signal-wake path (the woken thread was set `.ready` by
-the preceding store).  (Lives here, beside `wakeThread`, so both the SM6.A
-endpoint-call and SM6.B notification cross-core invariant proofs share it without
-either pulling the other's heavy invariant module into the production closure.) -/
-theorem enqueueRunnableOnCore_objects_getElem_eq_of_ready
+/-- WS-SM SM6.A/SM6.B (object-invisibility keystone), restated for WS-ZA ZA4.5:
+`enqueueRunnableOnCore` of a thread that is **already `.ready`** changes the
+object store only off the run-queue links.  Its writes are the woken TCB with
+`ipcState := .ready` — already `.ready`, so the inserted value equals the one
+stored — and that TCB's run-queue links, which no reader outside the run queue
+sees.  This is why the cross-core receiver / waiter wake preserves every
+*objects-only* invariant on a rendezvous / signal-wake path (the woken thread was
+set `.ready` by the preceding store).  (Lives here, beside `wakeThread`, so both
+the SM6.A endpoint-call and SM6.B notification cross-core invariant proofs share
+it without either pulling the other's heavy invariant module into the
+production closure.) -/
+theorem enqueueRunnableOnCore_objectsAgreeOffRunLinks_of_ready
     (st : SystemState) (c : CoreId) (tid : SeLe4n.ThreadId) (tcb : TCB)
     (hTcb : st.getTcb? tid = some tcb) (hReady : tcb.ipcState = .ready)
-    (hInv : st.objects.invExt) (oid : SeLe4n.ObjId) :
-    (enqueueRunnableOnCore st c tid).objects[oid]? = st.objects[oid]? := by
+    (hInv : st.objects.invExt) :
+    (enqueueRunnableOnCore st c tid).objectsAgreeOffRunLinks st := by
   have hObjTcb := (SystemState.getTcb?_eq_some_iff st tid tcb).mp hTcb
   have hVal : (KernelObject.tcb { tcb with ipcState := .ready }) = .tcb tcb := by rw [← hReady]
   unfold enqueueRunnableOnCore
   simp only [SystemState.getTcbWitnessed?_eq_some hTcb]
   split
-  · rfl
-  · show (st.objects.insert tid.toObjId (.tcb { tcb with ipcState := .ready }))[oid]?
+  · exact .refl _
+  · refine SystemState.objectsAgreeOffRunLinks.congr rfl rfl
+      ((SystemState.runEnqueueOnCore_objectsAgreeOffRunLinks _ c tid _).trans
+        (.of_getElem_eq fun oid => ?_))
+    show (st.objects.insert tid.toObjId (.tcb { tcb with ipcState := .ready }))[oid]?
         = st.objects[oid]?
     rw [hVal]
     by_cases hEq : oid = tid.toObjId
@@ -563,15 +590,15 @@ theorem enqueueRunnableOnCore_objects_getElem_eq_of_ready
         (by simp only [beq_iff_eq]; exact fun h => hEq h.symm) hInv
 
 /-- WS-SM SM6.A/SM6.B (keystone, wake form): the cross-core `wakeThread` of an
-already-`.ready` thread is invisible to every object-store lookup. -/
-theorem wakeThread_objects_getElem_eq_of_ready
+already-`.ready` thread changes the object store only off the run-queue links. -/
+theorem wakeThread_objectsAgreeOffRunLinks_of_ready
     (st : SystemState) (tid : SeLe4n.ThreadId) (ec : CoreId) (tcb : TCB)
     (hTcb : st.getTcb? tid = some tcb) (hReady : tcb.ipcState = .ready)
-    (hInv : st.objects.invExt) (oid : SeLe4n.ObjId) :
-    (wakeThread st tid ec).1.objects[oid]? = st.objects[oid]? := by
+    (hInv : st.objects.invExt) :
+    (wakeThread st tid ec).1.objectsAgreeOffRunLinks st := by
   rw [wakeThread_state_eq_enqueue]
-  exact enqueueRunnableOnCore_objects_getElem_eq_of_ready st (determineTargetCore st tid) tid tcb
-    hTcb hReady hInv oid
+  exact enqueueRunnableOnCore_objectsAgreeOffRunLinks_of_ready st (determineTargetCore st tid) tid
+    tcb hTcb hReady hInv
 
 /-- WS-SM SM5.C.2 (preservation): a wake preserves the target core's run-queue
 well-formedness. -/
@@ -603,20 +630,14 @@ theorem wakeThread_independent_of_other_core (st : SystemState)
     enqueueRunnableOnCore_currentOnCore st (determineTargetCore st tid) tid c'⟩
 
 /-- WS-SM SM6.D (#7.3b): `enqueueRunnableOnCore` leaves `objectIndexSet` untouched — it
-does a raw `objects.insert` at the already-present `tid` plus a scheduler write, but no
-index/lifecycle update (the `{ st with objects, scheduler }` record-update keeps
-`objectIndexSet`). -/
+writes the object store (an `insert` at the already-present `tid` and in-place link
+rewrites) and the scheduler, but no index/lifecycle update. -/
 theorem enqueueRunnableOnCore_objectIndexSet_eq (st : SystemState) (c : CoreId)
     (tid : SeLe4n.ThreadId) :
     (enqueueRunnableOnCore st c tid).objectIndexSet = st.objectIndexSet := by
-  -- The case split precedes the unfold: the witnessed lookup's type mentions
-  -- `st.getTcb? tid`, so a `cases` over the unfolded match cannot generalise it.
-  cases hTcb : st.getTcb? tid with
-  | none => rw [enqueueRunnableOnCore_no_tcb_noop st c tid hTcb]
-  | some tcb =>
-    unfold enqueueRunnableOnCore
-    rw [SystemState.getTcbWitnessed?_eq_some hTcb]
-    by_cases h : runnableOnSomeCore st tid <;> simp [h, SystemState.rewriteObject_objectIndexSet]
+  have h := enqueueRunnableOnCore_onlyObjectsSchedulerDiffer st c tid
+  unfold SystemState.onlyObjectsSchedulerDiffer at h
+  rw [h]
 
 /-- WS-SM SM6.D (#7.3b): `wakeThread` leaves `objectIndexSet` untouched. -/
 theorem wakeThread_objectIndexSet_eq (st : SystemState) (tid : SeLe4n.ThreadId) (ec : CoreId) :
@@ -624,8 +645,9 @@ theorem wakeThread_objectIndexSet_eq (st : SystemState) (tid : SeLe4n.ThreadId) 
   rw [wakeThread_state_eq_enqueue]; exact enqueueRunnableOnCore_objectIndexSet_eq st _ tid
 
 /-- WS-SM SM6.D (#7.3b): a wake of an already-`.ready` thread preserves
-`objectIndexSetComplete` — its objects are pointwise unchanged
-(`wakeThread_objects_getElem_eq_of_ready`) and the index is untouched. -/
+`objectIndexSetComplete` — its objects agree off run-queue fields
+(`wakeThread_objectsAgreeOffRunLinks_of_ready`), so the occupied keys are the
+same, and the index is untouched. -/
 theorem wakeThread_preserves_objectIndexSetComplete_of_ready (st : SystemState)
     (tid : SeLe4n.ThreadId) (ec : CoreId) (tcb : TCB)
     (hTcb : st.getTcb? tid = some tcb) (hReady : tcb.ipcState = .ready)
@@ -633,8 +655,8 @@ theorem wakeThread_preserves_objectIndexSetComplete_of_ready (st : SystemState)
     objectIndexSetComplete (wakeThread st tid ec).1 := by
   intro oid hoid
   rw [wakeThread_objectIndexSet_eq]
-  exact hComplete oid
-    (by rwa [wakeThread_objects_getElem_eq_of_ready st tid ec tcb hTcb hReady hInv oid] at hoid)
+  exact hComplete oid fun h => hoid
+    ((wakeThread_objectsAgreeOffRunLinks_of_ready st tid ec tcb hTcb hReady hInv).get_none_iff.mpr h)
 
 /-- WS-SM SM6.D (#7.3b): a wake preserves `objectIndexSet.table.invExt` (the index is
 untouched). -/
@@ -1033,12 +1055,7 @@ theorem wakeThread_replenishQueueOnCore (st : SystemState)
       = st.scheduler.replenishQueueOnCore c := by
   show (enqueueRunnableOnCore st (determineTargetCore st tid) tid).scheduler.replenishQueueOnCore c
       = st.scheduler.replenishQueueOnCore c
-  unfold enqueueRunnableOnCore
-  split
-  · split
-    · rfl
-    · simp [SeLe4n.Model.SchedulerState.setRunQueueOnCore_replenishQueueOnCore]
-  · rfl
+  exact enqueueRunnableOnCore_replenishQueueOnCore st _ tid c
 
 /-- WS-SM (PR #880 round 7): the SGI handler never touches any core's replenish
 queue — the CBS frame that lets `timerTickOnCore`'s local replenish-wake
@@ -1591,10 +1608,10 @@ instance (st : SystemState) (targetTid : SeLe4n.ThreadId) (affinity : Option Cor
 
 /-- WS-SM SM5.C.1 (preservation helper): `enqueueRunnableOnCore` preserves
 TCB-resolvability of *any* thread.  A thread `t` that resolved to a TCB before
-the wake still resolves to one after — the only object write is at `tid`'s key,
-and it writes a TCB (`{tcb with ipcState := .ready}`), so neither the `t = tid`
-case (the new value is still a TCB) nor the `t ≠ tid` case (framed out) can lose
-resolvability.  Routes through the typed `getTcb?` accessor (AK7-clean). -/
+the wake still resolves to one after — the `.ready` mark writes a TCB at `tid`'s
+key and the link writes rewrite TCBs in place, so neither the `t = tid` case
+(the new value is still a TCB) nor the `t ≠ tid` case (framed out off run-queue
+fields) can lose resolvability.  Routes through the typed `getTcb?` accessor (AK7-clean). -/
 theorem enqueueRunnableOnCore_getTcb?_isSome (st : SystemState) (c : CoreId)
     (tid t : SeLe4n.ThreadId) (tcb : TCB) (hInv : st.objects.invExt)
     (hres : st.getTcb? t = some tcb) :
@@ -1607,10 +1624,14 @@ theorem enqueueRunnableOnCore_getTcb?_isSome (st : SystemState) (c : CoreId)
       by_cases hEq : t = tid
       · subst hEq
         -- `tid` resolves to a TCB pre-wake; post-wake it is `{tcb with ipcState := .ready}`.
-        exact ⟨_, enqueueRunnableOnCore_makes_ready st c t tcb hres hInv hFresh⟩
-      · -- `t ≠ tid`: framed out, so the lookup is unchanged.
-        rw [enqueueRunnableOnCore_getTcb?_ne st c tid t hInv hEq]
-        exact ⟨tcb, hres⟩
+        obtain ⟨t', h', _⟩ := enqueueRunnableOnCore_makes_ready st c t tcb hres hInv hFresh
+        exact ⟨t', h'⟩
+      · -- `t ≠ tid`: framed out off run-queue fields, so the lookup still resolves.
+        have h := enqueueRunnableOnCore_getTcb?_ne st c tid t hInv hEq
+        rw [hres] at h
+        cases e : (enqueueRunnableOnCore st c tid).getTcb? t with
+        | none => rw [e] at h; cases h
+        | some t' => exact ⟨t', rfl⟩
 
 /-- WS-SM SM5.C.1 (preservation, SM4.C `currentThreadValidOnCore`): a wake
 preserves current-thread validity on **every** core `c'`.  The wake never writes
@@ -1687,8 +1708,8 @@ theorem enqueueRunnableOnCore_preserves_queueCurrentConsistentOnCore_self
               -- Single-placement reject: the wake is the identity, run queue unchanged.
               rw [enqueueRunnableOnCore_eq_self_of_runnable st c tid hFresh]; exact hcons
           | false =>
-              simp only [enqueueRunnableOnCore, SystemState.getTcbWitnessed?_eq_some hTcb, hFresh, Bool.false_eq_true, if_false,
-                SchedulerState.markReschedulePendingOnCore_runQueueOnCore, SchedulerState.setRunQueueOnCore_runQueueOnCore_self]
+              rw [enqueueRunnableOnCore_runQueueOnCore_of_fresh _ _ _ _ hTcb hFresh]
+              dsimp only
               -- Goal: `cur ∉ ((rq).insert tid prio).toList`.  Reduce both the goal
               -- and `hcons` to `RunQueue`-membership and use `mem_insert`.
               rw [RunQueue.mem_toList_iff_mem] at hcons
@@ -1753,26 +1774,26 @@ theorem enqueueRunnableOnCore_preserves_runnableThreadIpcReady (st : SystemState
           rw [enqueueRunnableOnCore_no_tcb_noop st c t hOrig] at hTcb
           rw [hOrig] at hTcb; exact absurd hTcb (by simp)
       | some origTcb =>
-          have hReady := enqueueRunnableOnCore_makes_ready st c t origTcb hOrig hInv hFresh
+          obtain ⟨t', hReady, ht⟩ := enqueueRunnableOnCore_makes_ready st c t origTcb hOrig hInv hFresh
           rw [hTcb] at hReady
-          -- `some tcb = some {origTcb with ipcState := .ready}` ⇒ tcb.ipcState = .ready.
+          -- `tcb` is `{origTcb with ipcState := .ready}` off its run-queue fields.
           injection hReady with hEqTcb
-          rw [hEqTcb]
+          subst hEqTcb
+          exact TCB.proj_eq_of_withoutRunLinks_eq TCB.ipcState ht
     · -- A non-woken thread: framed TCB + membership came from the pre-queue.
-      rw [enqueueRunnableOnCore_getTcb?_ne st c wtid t hInv hEq] at hTcb
+      obtain ⟨t₀, hT₀, ht⟩ := enqueueRunnableOnCore_getTcb?_ne_back st c wtid t hInv hEq hTcb
       -- Reduce post-queue membership to pre-queue membership (drop the `= wtid` arm).
       have hMemPre : t ∈ (st.scheduler.runQueueOnCore c).toList := by
         cases hOrig : st.getTcb? wtid with
         | none =>
             rw [enqueueRunnableOnCore_no_tcb_noop st c wtid hOrig] at hMem; exact hMem
         | some origTcb =>
-            simp only [enqueueRunnableOnCore, SystemState.getTcbWitnessed?_eq_some hOrig, hFresh, Bool.false_eq_true, if_false,
-              SchedulerState.markReschedulePendingOnCore_runQueueOnCore, SchedulerState.setRunQueueOnCore_runQueueOnCore_self] at hMem
+            rw [enqueueRunnableOnCore_runQueueOnCore_of_fresh _ _ _ _ hOrig hFresh] at hMem
             rw [RunQueue.mem_toList_iff_mem] at hMem ⊢
             rcases (RunQueue.mem_insert _ wtid _ t).mp hMem with hOld | hEqW
             · exact hOld
             · exact absurd hEqW hEq
-      exact hpre t tcb hTcb hMemPre
+      exact (TCB.proj_eq_of_withoutRunLinks_eq TCB.ipcState ht).trans (hpre t t₀ hT₀ hMemPre)
 
 /-- WS-SM SM5.C.1 (SM4.D `blockedOn*NotRunnable_perCore` preservation, generic
 form): a thread that is `blockedOn*` after the wake is not in core `c`'s run
@@ -1784,12 +1805,12 @@ This single lemma is parameterised over the block-state extractor so all five
 `blockedOnSend/Receive/Call/Reply/Notification` conjuncts reduce to it. -/
 private theorem enqueueRunnableOnCore_preserves_blockedNotRunnable_aux
     (st : SystemState) (c : CoreId) (wtid : SeLe4n.ThreadId) (hInv : st.objects.invExt)
-    (P : TCB → Prop)
-    (hPnotReady : ∀ tcb : TCB, P tcb → tcb.ipcState ≠ .ready)
+    (P : ThreadIpcState → Prop)
+    (hPnotReady : ∀ s : ThreadIpcState, P s → s ≠ .ready)
     (hpre : ∀ (t : SeLe4n.ThreadId) (tcb : TCB),
-      st.getTcb? t = some tcb → P tcb → t ∉ (st.scheduler.runQueueOnCore c).toList) :
+      st.getTcb? t = some tcb → P tcb.ipcState → t ∉ (st.scheduler.runQueueOnCore c).toList) :
     ∀ (t : SeLe4n.ThreadId) (tcb : TCB),
-      (enqueueRunnableOnCore st c wtid).getTcb? t = some tcb → P tcb →
+      (enqueueRunnableOnCore st c wtid).getTcb? t = some tcb → P tcb.ipcState →
       t ∉ ((enqueueRunnableOnCore st c wtid).scheduler.runQueueOnCore c).toList := by
   cases hFresh : runnableOnSomeCore st wtid with
   | true =>
@@ -1805,24 +1826,25 @@ private theorem enqueueRunnableOnCore_preserves_blockedNotRunnable_aux
           rw [enqueueRunnableOnCore_no_tcb_noop st c t hOrig] at hTcb
           rw [hOrig] at hTcb; exact absurd hTcb (by simp)
       | some origTcb =>
-          have hReady := enqueueRunnableOnCore_makes_ready st c t origTcb hOrig hInv hFresh
+          obtain ⟨t', hReady, ht⟩ := enqueueRunnableOnCore_makes_ready st c t origTcb hOrig hInv hFresh
           rw [hTcb] at hReady
           injection hReady with hEqTcb
-          exact hPnotReady tcb hP (by rw [hEqTcb])
+          subst hEqTcb
+          exact hPnotReady _ hP (TCB.proj_eq_of_withoutRunLinks_eq TCB.ipcState ht)
     · -- Non-woken thread: framed TCB + run-queue membership; reduce to the pre-state.
-      rw [enqueueRunnableOnCore_getTcb?_ne st c wtid t hInv hEq] at hTcb
+      obtain ⟨t₀, hT₀, ht⟩ := enqueueRunnableOnCore_getTcb?_ne_back st c wtid t hInv hEq hTcb
+      rw [TCB.proj_eq_of_withoutRunLinks_eq TCB.ipcState ht] at hP
       have hMemPre : t ∈ (st.scheduler.runQueueOnCore c).toList := by
         cases hOrig : st.getTcb? wtid with
         | none =>
             rw [enqueueRunnableOnCore_no_tcb_noop st c wtid hOrig] at hMem; exact hMem
         | some origTcb =>
-            simp only [enqueueRunnableOnCore, SystemState.getTcbWitnessed?_eq_some hOrig, hFresh, Bool.false_eq_true, if_false,
-              SchedulerState.markReschedulePendingOnCore_runQueueOnCore, SchedulerState.setRunQueueOnCore_runQueueOnCore_self] at hMem
+            rw [enqueueRunnableOnCore_runQueueOnCore_of_fresh _ _ _ _ hOrig hFresh] at hMem
             rw [RunQueue.mem_toList_iff_mem] at hMem ⊢
             rcases (RunQueue.mem_insert _ wtid _ t).mp hMem with hOld | hEqW
             · exact hOld
             · exact absurd hEqW hEq
-      exact hpre t tcb hTcb hP hMemPre
+      exact hpre t t₀ hT₀ hP hMemPre
 
 /-- WS-SM SM5.C.1: `blockedOnSendNotRunnable_perCore` preservation. -/
 theorem enqueueRunnableOnCore_preserves_blockedOnSendNotRunnable (st : SystemState)
@@ -1831,8 +1853,8 @@ theorem enqueueRunnableOnCore_preserves_blockedOnSendNotRunnable (st : SystemSta
     blockedOnSendNotRunnable_perCore (enqueueRunnableOnCore st c wtid) c := by
   intro t tcb ep hTcb hBlocked
   exact enqueueRunnableOnCore_preserves_blockedNotRunnable_aux st c wtid hInv
-    (fun tc => ∃ e, tc.ipcState = .blockedOnSend e)
-    (fun tc ⟨e, he⟩ => by rw [he]; simp)
+    (fun s => ∃ e, s = .blockedOnSend e)
+    (fun s ⟨e, he⟩ => by rw [he]; simp)
     (fun t' tc' hTc' ⟨e', he'⟩ => hpre t' tc' e' hTc' he')
     t tcb hTcb ⟨ep, hBlocked⟩
 
@@ -1843,8 +1865,8 @@ theorem enqueueRunnableOnCore_preserves_blockedOnReceiveNotRunnable (st : System
     blockedOnReceiveNotRunnable_perCore (enqueueRunnableOnCore st c wtid) c := by
   intro t tcb ep hTcb hBlocked
   exact enqueueRunnableOnCore_preserves_blockedNotRunnable_aux st c wtid hInv
-    (fun tc => ∃ e, tc.ipcState = .blockedOnReceive e)
-    (fun tc ⟨e, he⟩ => by rw [he]; simp)
+    (fun s => ∃ e, s = .blockedOnReceive e)
+    (fun s ⟨e, he⟩ => by rw [he]; simp)
     (fun t' tc' hTc' ⟨e', he'⟩ => hpre t' tc' e' hTc' he')
     t tcb hTcb ⟨ep, hBlocked⟩
 
@@ -1855,8 +1877,8 @@ theorem enqueueRunnableOnCore_preserves_blockedOnCallNotRunnable (st : SystemSta
     blockedOnCallNotRunnable_perCore (enqueueRunnableOnCore st c wtid) c := by
   intro t tcb ep hTcb hBlocked
   exact enqueueRunnableOnCore_preserves_blockedNotRunnable_aux st c wtid hInv
-    (fun tc => ∃ e, tc.ipcState = .blockedOnCall e)
-    (fun tc ⟨e, he⟩ => by rw [he]; simp)
+    (fun s => ∃ e, s = .blockedOnCall e)
+    (fun s ⟨e, he⟩ => by rw [he]; simp)
     (fun t' tc' hTc' ⟨e', he'⟩ => hpre t' tc' e' hTc' he')
     t tcb hTcb ⟨ep, hBlocked⟩
 
@@ -1868,8 +1890,8 @@ theorem enqueueRunnableOnCore_preserves_blockedOnReplyNotRunnable (st : SystemSt
     blockedOnReplyNotRunnable_perCore (enqueueRunnableOnCore st c wtid) c := by
   intro t tcb ep rt hTcb hBlocked
   exact enqueueRunnableOnCore_preserves_blockedNotRunnable_aux st c wtid hInv
-    (fun tc => ∃ e r, tc.ipcState = .blockedOnReply e r)
-    (fun tc ⟨e, r, he⟩ => by rw [he]; simp)
+    (fun s => ∃ e r, s = .blockedOnReply e r)
+    (fun s ⟨e, r, he⟩ => by rw [he]; simp)
     (fun t' tc' hTc' ⟨e', r', he'⟩ => hpre t' tc' e' r' hTc' he')
     t tcb hTcb ⟨ep, rt, hBlocked⟩
 
@@ -1880,8 +1902,8 @@ theorem enqueueRunnableOnCore_preserves_blockedOnNotificationNotRunnable (st : S
     blockedOnNotificationNotRunnable_perCore (enqueueRunnableOnCore st c wtid) c := by
   intro t tcb ntfn hTcb hBlocked
   exact enqueueRunnableOnCore_preserves_blockedNotRunnable_aux st c wtid hInv
-    (fun tc => ∃ n, tc.ipcState = .blockedOnNotification n)
-    (fun tc ⟨n, hn⟩ => by rw [hn]; simp)
+    (fun s => ∃ n, s = .blockedOnNotification n)
+    (fun s ⟨n, hn⟩ => by rw [hn]; simp)
     (fun t' tc' hTc' ⟨n', hn'⟩ => hpre t' tc' n' hTc' hn')
     t tcb hTcb ⟨ntfn, hBlocked⟩
 
@@ -1974,8 +1996,7 @@ theorem enqueueRunnableOnCore_preserves_runQueueUniqueOnCore (st : SystemState)
       cases hFresh : runnableOnSomeCore st tid with
       | true => rw [enqueueRunnableOnCore_eq_self_of_runnable st c tid hFresh]; exact hnd
       | false =>
-        simp only [enqueueRunnableOnCore, SystemState.getTcbWitnessed?_eq_some hTcb, hFresh, Bool.false_eq_true, if_false,
-          SchedulerState.markReschedulePendingOnCore_runQueueOnCore, SchedulerState.setRunQueueOnCore_runQueueOnCore_self]
+        rw [enqueueRunnableOnCore_runQueueOnCore_of_fresh _ _ _ _ hTcb hFresh]
         exact RunQueue.insert_preserves_toList_nodup _ _ _ hnd
   · rw [enqueueRunnableOnCore_runQueueOnCore_ne st c c' tid hcc]; exact hnd
 
@@ -2047,14 +2068,14 @@ theorem enqueueRunnableOnCore_preserves_runnableThreadsAreTCBsOnCore_anyCore (st
       | true => rw [enqueueRunnableOnCore_eq_self_of_runnable st c tid hFresh]; exact h
       | false =>
         intro t ht
-        simp only [enqueueRunnableOnCore, SystemState.getTcbWitnessed?_eq_some hTcb, hFresh, Bool.false_eq_true, if_false,
-          SchedulerState.markReschedulePendingOnCore_runQueueOnCore, SchedulerState.setRunQueueOnCore_runQueueOnCore_self] at ht
+        rw [enqueueRunnableOnCore_runQueueOnCore_of_fresh _ _ _ _ hTcb hFresh] at ht
         rw [RunQueue.mem_toList_iff_mem] at ht
         rcases (RunQueue.mem_insert _ _ _ _).mp ht with hold | heq
         · obtain ⟨tcbt, htcbt⟩ := h t ((RunQueue.mem_toList_iff_mem _ _).mpr hold)
           exact enqueueRunnableOnCore_getTcb?_isSome st c tid t tcbt hInv htcbt
         · subst heq
-          exact ⟨_, enqueueRunnableOnCore_makes_ready st c t tcb hTcb hInv hFresh⟩
+          obtain ⟨t', h', _⟩ := enqueueRunnableOnCore_makes_ready st c t tcb hTcb hInv hFresh
+          exact ⟨t', h'⟩
   · intro t ht
     rw [enqueueRunnableOnCore_runQueueOnCore_ne st c c' tid hcc] at ht
     obtain ⟨tcbt, htcbt⟩ := h t ht
@@ -2100,8 +2121,9 @@ theorem wakeThread_preserves_runnableThreadsAreTCBsOnCore (st : SystemState)
 -- Concurrency` resolves to `SeLe4n.Kernel.Concurrency` (not a doubly-nested one).
 /-- **WS-RR RR8.12: a wake is not a migration.**
 
-`enqueueRunnableOnCore` writes exactly one TCB field (`ipcState := .ready`,
-`enqueueRunnableOnCore_makes_ready`) and the run queue, while
+`enqueueRunnableOnCore` writes one TCB field outside the run-queue links
+(`ipcState := .ready`, `enqueueRunnableOnCore_makes_ready`), those links, and the
+run queue, while
 `determineTargetCore` reads `cpuAffinity` alone.  So the core *any* thread would
 be woken onto is the same before and after *any* wake.
 
@@ -2125,9 +2147,11 @@ theorem enqueueRunnableOnCore_determineTargetCore_eq (st : SystemState) (c : Cor
         | true =>
             rw [enqueueRunnableOnCore_eq_self_of_runnable st c x hFresh, hTcb]
         | false =>
-            rw [enqueueRunnableOnCore_makes_ready st c x tcb hTcb hInv hFresh]
-            simp
-  · rw [enqueueRunnableOnCore_getTcb?_ne st c tid x hInv hEq]
+            obtain ⟨t', h', ht⟩ := enqueueRunnableOnCore_makes_ready st c x tcb hTcb hInv hFresh
+            rw [h']
+            exact congrArg some (TCB.proj_eq_of_withoutRunLinks_eq (·.cpuAffinity) ht)
+  · exact TCB.map_proj_eq_of_map_withoutRunLinks_eq (·.cpuAffinity)
+      (enqueueRunnableOnCore_getTcb?_ne st c tid x hInv hEq)
 
 /-- **WS-RR RR8.12**: and neither is the cross-core wake that wraps it.
 

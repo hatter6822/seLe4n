@@ -1430,7 +1430,7 @@ cross-core signal the **observable** notification heads its queue with the woken
 head's successor, holds no pending badge, and — under
 `notificationWaiterConsistent`, whose successor link never names the head — no
 longer heads it with the woken thread.  The cross-core waiter wake
-(`wakeThread`) is object-invisible (the waiter was just set `.ready`, so the
+(`wakeThread`) is invisible off run-queue links (the waiter was just set `.ready`, so the
 wake's identical-value re-insert agrees on every object lookup), so reading the
 notification back through the wake yields the notification the signal stored. -/
 theorem notificationSignalOnCore_remaining_waiters
@@ -1466,9 +1466,9 @@ theorem notificationSignalOnCore_remaining_waiters
           waiter st' st'' hObj hWaiters hStore hMsg]
     show (wakeThread st'' waiter executingCore).1.objects[notificationId]?
       = some (.notification _)
-    rw [wakeThread_objects_getElem_eq_of_ready st'' waiter executingCore wTcb hwGet hwReady
-          hInv'' notificationId,
-        storeTcbIpcStateAndMessage_preserves_objects_ne st' st'' waiter .ready _ notificationId
+    refine (wakeThread_objectsAgreeOffRunLinks_of_ready st'' waiter executingCore wTcb hwGet hwReady
+      hInv'').get_notification_iff.mpr ?_
+    rw [storeTcbIpcStateAndMessage_preserves_objects_ne st' st'' waiter .ready _ notificationId
           hNe hInv' hMsg]
     exact hNtfn'
   · rw [Notification.withHeadPopped_waitHead]

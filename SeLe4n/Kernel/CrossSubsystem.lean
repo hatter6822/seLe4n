@@ -1822,15 +1822,13 @@ theorem storeDonationHeadPop_preservesFieldsOutside_ipc
 
 theorem ensureRunnable_preservesFieldsOutside (st : SystemState) (tid : SeLe4n.ThreadId) :
     preservesFieldsOutside ipcEndpointOp_modifiedFields st (ensureRunnable st tid) := by
-  unfold ensureRunnable
-  split
-  · exact preservesFieldsOutside_refl _ _
-  · split
-    · intro f hf
-      cases f <;> first
-        | rfl
-        | exact (hf (by decide)).elim
-    · exact preservesFieldsOutside_refl _ _
+  have h := ensureRunnable_onlyObjectsSchedulerDiffer st tid
+  unfold SystemState.onlyObjectsSchedulerDiffer at h
+  intro f hf
+  rw [h]
+  cases f <;> first
+    | rfl
+    | exact (hf (by decide)).elim
 
 theorem removeRunnable_preservesFieldsOutside (st : SystemState) (tid : SeLe4n.ThreadId) :
     preservesFieldsOutside ipcEndpointOp_modifiedFields st (removeRunnable st tid) := by

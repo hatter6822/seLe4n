@@ -23,12 +23,12 @@ import SeLe4n.Kernel.Concurrency.Locks.Serializability
 
 `endpointCallOnCore` preserves the kernel's IPC invariants.  The structural
 content is the **keystone** that the cross-core receiver wake
-(`wakeThread`/`enqueueRunnableOnCore`) is *object-invisible* on the rendezvous
+(`wakeThread`/`enqueueRunnableOnCore`) is *invisible off run-queue links* on the rendezvous
 path: the receiver was already set `.ready` by the preceding
 `storeTcbIpcStateAndMessage`, so the wake's `ipcState := .ready` write inserts
-the *same* value it found — every object-store **lookup** is unchanged (the
-Robin-Hood array representation may differ, so this is pointwise `[·]?`
-agreement, not structural object equality; see the §5 congruences).
+the *same* value it found, and its other writes are TCB run-queue links (WS-ZA
+ZA4.5) — every object-store **lookup** agrees off those links
+(`objectsAgreeOffRunLinks`; see the §5 congruences).
 
 The cross-core operation differs from the single-core `endpointCall` only in the
 scheduler placement of the woken receiver / blocked caller.  Fourteen of the
@@ -76,12 +76,13 @@ beside that transition, not in whichever module first needed it.* -/
 
 
 -- ============================================================================
--- §2  Keystone: the cross-core receiver wake is object-invisible
+-- §2  Keystone: the cross-core receiver wake is invisible off run-queue links
 -- ============================================================================
 
 -- WS-SM SM6.A.1 (keystone): `enqueueRunnableOnCore` / `wakeThread` of an
--- already-`.ready` thread is invisible to every object-store lookup
--- (`{enqueueRunnableOnCore,wakeThread}_objects_getElem_eq_of_ready`).  These
+-- already-`.ready` thread agrees with its pre-state at every object-store
+-- lookup off TCB run-queue links
+-- (`{enqueueRunnableOnCore,wakeThread}_objectsAgreeOffRunLinks_of_ready`).  These
 -- moved to `Scheduler.Operations.PerCoreWake` (beside `wakeThread`) so the SM6.A
 -- endpoint-call and SM6.B notification cross-core invariant proofs both share
 -- them without either side's heavy invariant module entering the other's
@@ -145,7 +146,8 @@ theorem endpointCallOnCore_preserves_ipcInvariant
             storeTcbIpcStateAndMessage_getTcb?_ipcState pair.2.2 st2 pair.1 .ready (some msg) hObj1 hMsg
           have hInvW : ipcInvariant (wakeThread st2 pair.1 executingCore).1 :=
             fun oid ntfn h => hInv2 oid ntfn
-              (by rwa [wakeThread_objects_getElem_eq_of_ready st2 pair.1 executingCore tr hTrGet hTrReady hObj2 oid] at h)
+              ((wakeThread_objectsAgreeOffRunLinks_of_ready st2 pair.1 executingCore tr hTrGet hTrReady
+                hObj2).get_notification_iff.mp h)
           have hObjW := wakeThread_preserves_objects_invExt st2 pair.1 executingCore hObj2
           cases hCS : storeTcbIpcStateAndMessage (wakeThread st2 pair.1 executingCore).1 caller
               (.blockedOnReply endpointId (some pair.1)) none with
@@ -167,8 +169,8 @@ theorem endpointCallOnCore_preserves_ipcInvariant
 
 open SeLe4n.Model.SystemState in
 /-- IPC de-threading D2 (per-core): the cross-core `wakeThread` of an already-`.ready`
-thread frames the third clause — it is object-invisible
-(`wakeThread_objects_getElem_eq_of_ready`).  Used for the receiver wake on
+thread frames the third clause — its objects agree off run-queue fields
+(`wakeThread_objectsAgreeOffRunLinks_of_ready`).  Used for the receiver wake on
 `endpointCallOnCore`'s rendezvous path (the receiver is `.ready` from the preceding
 message store). -/
 theorem wakeThread_preserves_blockedOnReplyHasReplyObject_of_ready
@@ -176,10 +178,9 @@ theorem wakeThread_preserves_blockedOnReplyHasReplyObject_of_ready
     (hWGet : st.getTcb? wtid = some wtcb) (hWReady : wtcb.ipcState = .ready)
     (hObjInv : st.objects.invExt)
     (hInv : blockedOnReplyHasReplyObject st) :
-    blockedOnReplyHasReplyObject (wakeThread st wtid ec).1 := by
-  intro tid tcb ep rt hTcb hBlk
-  rw [wakeThread_objects_getElem_eq_of_ready st wtid ec wtcb hWGet hWReady hObjInv tid.toObjId] at hTcb
-  exact hInv tid tcb ep rt hTcb hBlk
+    blockedOnReplyHasReplyObject (wakeThread st wtid ec).1 :=
+  blockedOnReplyHasReplyObject_of_objectsAgreeOffRunLinks
+    (wakeThread_objectsAgreeOffRunLinks_of_ready st wtid ec wtcb hWGet hWReady hObjInv) hInv
 
 open SeLe4n.Model.SystemState in
 /-- IPC de-threading D2 (per-core): `endpointCallOnCore` **establishes** the third clause
@@ -265,10 +266,9 @@ theorem wakeThread_preserves_blockedOnReplyHasTarget_of_ready
     (st : SystemState) (wtid : SeLe4n.ThreadId) (ec : CoreId) (wtcb : TCB)
     (hWGet : st.getTcb? wtid = some wtcb) (hWReady : wtcb.ipcState = .ready)
     (hObjInv : st.objects.invExt) (hInv : blockedOnReplyHasTarget st) :
-    blockedOnReplyHasTarget (wakeThread st wtid ec).1 := by
-  intro tid tcb ep rt hTcb hBlk
-  rw [wakeThread_objects_getElem_eq_of_ready st wtid ec wtcb hWGet hWReady hObjInv tid.toObjId] at hTcb
-  exact hInv tid tcb ep rt hTcb hBlk
+    blockedOnReplyHasTarget (wakeThread st wtid ec).1 :=
+  blockedOnReplyHasTarget_of_objectsAgreeOffRunLinks
+    (wakeThread_objectsAgreeOffRunLinks_of_ready st wtid ec wtcb hWGet hWReady hObjInv) hInv
 
 -- IPC de-threading D8 (cross-core receive/reply prep): the scheduler-op frames for the
 -- lookup-only conjuncts whose `removeRunnableOnCore`/`wakeThread` frames were not yet built
@@ -303,11 +303,9 @@ theorem wakeThread_preserves_donationOwnerUnique_of_ready
     (st : SystemState) (wtid : SeLe4n.ThreadId) (ec : CoreId) (wtcb : TCB)
     (hWGet : st.getTcb? wtid = some wtcb) (hWReady : wtcb.ipcState = .ready)
     (hObjInv : st.objects.invExt) (hInv : donationOwnerUnique st) :
-    donationOwnerUnique (wakeThread st wtid ec).1 := by
-  intro tid1 tid2 tcb1 tcb2 scId1 scId2 owner h1 h2 hB1 hB2
-  rw [wakeThread_objects_getElem_eq_of_ready st wtid ec wtcb hWGet hWReady hObjInv tid1.toObjId] at h1
-  rw [wakeThread_objects_getElem_eq_of_ready st wtid ec wtcb hWGet hWReady hObjInv tid2.toObjId] at h2
-  exact hInv tid1 tid2 tcb1 tcb2 scId1 scId2 owner h1 h2 hB1 hB2
+    donationOwnerUnique (wakeThread st wtid ec).1 :=
+  donationOwnerUnique_of_readViewAgreement
+    (.of_objectsAgreeOffRunLinks (wakeThread_objectsAgreeOffRunLinks_of_ready st wtid ec wtcb hWGet hWReady hObjInv)) hInv
 
 /-! ### WS-RR RR8.16 (`v0.35.189`) — `wakeThread_sameSchedContextBindings_of_ready` moved
 
@@ -325,10 +323,8 @@ theorem wakeThread_timeoutBudgetFrame_of_ready
     (st : SystemState) (wtid : SeLe4n.ThreadId) (ec : CoreId) (wtcb : TCB)
     (hWGet : st.getTcb? wtid = some wtcb) (hWReady : wtcb.ipcState = .ready)
     (hObjInv : st.objects.invExt) :
-    timeoutBudgetFrame st (wakeThread st wtid ec).1 := by
-  intro y tcY hY
-  rw [wakeThread_objects_getElem_eq_of_ready st wtid ec wtcb hWGet hWReady hObjInv y.toObjId] at hY
-  exact ⟨tcY, hY, rfl⟩
+    timeoutBudgetFrame st (wakeThread st wtid ec).1 :=
+  .of_objectsAgreeOffRunLinks (wakeThread_objectsAgreeOffRunLinks_of_ready st wtid ec wtcb hWGet hWReady hObjInv)
 
 open SeLe4n.Model.SystemState in
 /-- D6 (per-core): `wakeThread` frames the SchedContext/owner side forward when the woken thread
@@ -338,12 +334,7 @@ theorem wakeThread_donationOwnerFrame_of_ready
     (hWGet : st.getTcb? wtid = some wtcb) (hWReady : wtcb.ipcState = .ready)
     (hObjInv : st.objects.invExt) :
     donationOwnerFrame st (wakeThread st wtid ec).1 :=
-  ⟨fun scId sc hSc => by
-     rw [wakeThread_objects_getElem_eq_of_ready st wtid ec wtcb hWGet hWReady hObjInv scId.toObjId]; exact hSc,
-   fun owner ownerTcb hOwner hU hR =>
-     ⟨ownerTcb, by
-       rw [wakeThread_objects_getElem_eq_of_ready st wtid ec wtcb hWGet hWReady hObjInv owner.toObjId]; exact hOwner,
-       hU, hR⟩⟩
+  .of_objectsAgreeOffRunLinks (wakeThread_objectsAgreeOffRunLinks_of_ready st wtid ec wtcb hWGet hWReady hObjInv)
 
 open SeLe4n.Model.SystemState in
 /-- D6 (per-core): `wakeThread` frames `passiveServerIdle` when the woken thread is already
@@ -358,9 +349,8 @@ theorem wakeThread_passiveServerIdleFrame_of_ready
     (hObjInv : st.objects.invExt) :
     passiveServerIdleFrame st (wakeThread st wtid ec).1 := by
   refine ⟨fun tid tcb' hTcb' hUnbound' hNotInQ' hNotCurrent' _ => ?_⟩
-  have hObjEq : (wakeThread st wtid ec).1.objects[tid.toObjId]? = st.objects[tid.toObjId]? :=
-    wakeThread_objects_getElem_eq_of_ready st wtid ec wtcb hWGet hWReady hObjInv tid.toObjId
-  refine ⟨tcb', by rw [← hObjEq]; exact hTcb', hUnbound', ?_, ?_, rfl⟩
+  run_links_back (wakeThread_objectsAgreeOffRunLinks_of_ready st wtid ec wtcb hWGet hWReady hObjInv) at tcb' hTcb'
+  refine ⟨_, hTcb', hUnbound', ?_, ?_, rfl⟩
   · intro hIn
     exact hNotInQ' (enqueueRunnableOnCore_mem_old st (determineTargetCore st wtid) bootCoreId wtid tid hIn)
   · rwa [show (wakeThread st wtid ec).1 = enqueueRunnableOnCore st (determineTargetCore st wtid) wtid from rfl,
@@ -557,7 +547,7 @@ mirror of `endpointCall_preserves_blockedThreadsPendingMessageConsistent`, and
 what replaces the bundle's threaded `hWtpmn'`.
 
 Rendezvous: pop the receiver (queue links only) + complete it `.ready` (outside
-the conjunct's scope) + `wakeThread` it (object-invisible on a `.ready` thread) +
+the conjunct's scope) + `wakeThread` it (invisible off run-queue links on a `.ready` thread) +
 set the caller `.blockedOnReply` (also outside scope) + stash the reply (link
 fields only) + `removeRunnableOnCore` (scheduler only).  Block: enqueue the
 caller + set it `.blockedOnCall` **carrying** the message, which is exactly the
@@ -595,8 +585,8 @@ theorem endpointCallOnCore_preserves_blockedThreadsPendingMessageConsistent
         | ok st'' =>
           simp only
           show blockedThreadsPendingMessageConsistent (removeRunnableOnCore st'' caller executingCore)
-          refine blockedThreadsPendingMessageConsistent_of_getElem_eq
-            (fun oid => by rw [removeRunnableOnCore_preserves_objects]) ?_
+          refine blockedThreadsPendingMessageConsistent_of_readViewAgreement
+            (.of_getElem_eq (fun oid => by rw [removeRunnableOnCore_preserves_objects])) ?_
           exact storeTcbIpcStateAndMessage_preserves_blockedThreadsPendingMessageConsistent
             st' st'' caller (.blockedOnCall endpointId) (some msg) hObj1 hMsg hInv1 (by simp)
     | some _ =>
@@ -620,9 +610,9 @@ theorem endpointCallOnCore_preserves_blockedThreadsPendingMessageConsistent
           have hObjW := wakeThread_preserves_objects_invExt st2 pair.1 executingCore hObj2
           have hInvW : blockedThreadsPendingMessageConsistent
               (wakeThread st2 pair.1 executingCore).1 :=
-            blockedThreadsPendingMessageConsistent_of_getElem_eq
-              (fun oid => wakeThread_objects_getElem_eq_of_ready st2 pair.1 executingCore tr
-                hTrGet hTrReady hObj2 oid) hInv2
+            blockedThreadsPendingMessageConsistent_of_readViewAgreement
+              (.of_objectsAgreeOffRunLinks (wakeThread_objectsAgreeOffRunLinks_of_ready st2 pair.1 executingCore tr
+                hTrGet hTrReady hObj2)) hInv2
           cases hCS : storeTcbIpcStateAndMessage (wakeThread st2 pair.1 executingCore).1 caller
               (.blockedOnReply endpointId (some pair.1)) none with
           | error e => simp only; exact hInv
@@ -640,8 +630,8 @@ theorem endpointCallOnCore_preserves_blockedThreadsPendingMessageConsistent
               simp only
               show blockedThreadsPendingMessageConsistent
                 (removeRunnableOnCore st5 caller executingCore)
-              refine blockedThreadsPendingMessageConsistent_of_getElem_eq
-                (fun oid => by rw [removeRunnableOnCore_preserves_objects]) ?_
+              refine blockedThreadsPendingMessageConsistent_of_readViewAgreement
+                (.of_getElem_eq (fun oid => by rw [removeRunnableOnCore_preserves_objects])) ?_
               exact linkServerStashedReply_preserves_blockedThreadsPendingMessageConsistent
                 st4 st5 caller pair.1 hObjInv4 hLink hInv4
 
@@ -654,7 +644,7 @@ bundle's threaded `hRCLRecip'`.
 Blocking branch: a pure linkage frame (the caller becomes `.blockedOnCall`, never
 linked).  Rendezvous branch: a frame up to the link — pop, ready the receiver (the
 `receiveQ` head, hence `.blockedOnReceive` and so unlinked), wake it on its home
-core (object-invisible on a `.ready` thread), block the caller `.blockedOnReply`
+core (invisible off run-queue links on a `.ready` thread), block the caller `.blockedOnReply`
 (unlinked by `hCallerNotReply`) — then `linkServerStashedReply` creates exactly one
 reciprocal edge, its `.blockedOnReply` obligation *derived* from the store that
 precedes it. -/
@@ -728,9 +718,9 @@ theorem endpointCallOnCore_preserves_replyCallerLinkageReciprocal
           obtain ⟨tr, hTrGet, hTrReady⟩ :=
             storeTcbIpcStateAndMessage_getTcb?_ipcState pair.2.2 st2 pair.1 .ready (some msg) hObj1 hMsg
           have hObjW := wakeThread_preserves_objects_invExt st2 pair.1 executingCore hObj2
-          have hF3 := hF2.trans (replyLinkageFrame.of_getElem_eq
-            (fun oid => wakeThread_objects_getElem_eq_of_ready st2 pair.1 executingCore tr
-              hTrGet hTrReady hObj2 oid))
+          have hF3 := hF2.trans (replyLinkageFrame.of_objectsAgreeOffRunLinks
+            (wakeThread_objectsAgreeOffRunLinks_of_ready st2 pair.1 executingCore tr
+              hTrGet hTrReady hObj2))
           cases hCS : storeTcbIpcStateAndMessage (wakeThread st2 pair.1 executingCore).1 caller
               (.blockedOnReply endpointId (some pair.1)) none with
           | error e => simp only; exact hInv
@@ -858,7 +848,7 @@ theorem endpointCallOnCore_donationOwnerFrame
             have hF4 := storeTcbIpcStateAndMessage_donationOwnerFrame (wakeThread st2 pair.1 executingCore).1 st4 caller
               (.blockedOnReply endpointId (some pair.1)) none
               (fun tcb hTcb_w ep' rt => by
-                rw [wakeThread_objects_getElem_eq_of_ready st2 pair.1 executingCore tr hTrGet hTrReady hObj2 caller.toObjId] at hTcb_w
+                run_links_back (wakeThread_objectsAgreeOffRunLinks_of_ready st2 pair.1 executingCore tr hTrGet hTrReady hObj2) at tcb hTcb_w
                 by_cases hCR : caller.toObjId = pair.1.toObjId
                 · have hReady := storeTcbIpcStateAndMessage_ipcState_eq pair.2.2 st2 pair.1 .ready (some msg)
                     hObj1 hMsg tcb (hCR ▸ hTcb_w)
@@ -986,7 +976,7 @@ theorem endpointCallOnCore_withLockSet_preserves_objects_invExt
 *only* through `objects[·]?` lookups — never the scheduler, machine, or
 per-core state.  Hence any two states whose object lookups agree pointwise
 satisfy them interchangeably.  These congruences are what let the cross-core
-wake (object-invisible on a `.ready` thread) and `removeRunnableOnCore`
+wake (invisible off run-queue links on a `.ready` thread) and `removeRunnableOnCore`
 (object-store frame) carry the dual-queue invariant for free: neither touches
 an object lookup, so neither can disturb a lookup-only predicate.  (Distinct
 from the existing `*_of_objects_eq` family, which needs *structural* object
@@ -995,7 +985,7 @@ Robin-Hood re-insert of an identical value may differ in array representation
 while agreeing on every lookup.)
 
 The congruence lemmas themselves (`QueueNextPath_of_getElem_eq` …
-`dualQueueSystemInvariant_of_getElem_eq`, and the full per-conjunct family
+`dualQueueSystemInvariant_of_readViewAgreement`, and the full per-conjunct family
 covering all twenty `ipcInvariantFull` conjuncts) live in the **production**
 module `SeLe4n.Kernel.IPC.Invariant.LookupCongruence`; this staged file
 consumes them via import. -/
@@ -1010,8 +1000,8 @@ theorem removeRunnableOnCore_preserves_dualQueueSystemInvariant
     (st : SystemState) (tid : SeLe4n.ThreadId) (c : CoreId)
     (h : dualQueueSystemInvariant st) :
     dualQueueSystemInvariant (removeRunnableOnCore st tid c) :=
-  dualQueueSystemInvariant_of_getElem_eq
-    (fun _ => by rw [removeRunnableOnCore_preserves_objects]) h
+  dualQueueSystemInvariant_of_readViewAgreement
+    (.of_getElem_eq (fun _ => by rw [removeRunnableOnCore_preserves_objects])) h
 
 /-- The cross-core wake of an already-`.ready` thread preserves the dual-queue
 invariant: the wake's `ipcState := .ready` re-insert is object-lookup-invisible
@@ -1022,15 +1012,15 @@ theorem wakeThread_preserves_dualQueueSystemInvariant_of_ready
     (hObjInv : st.objects.invExt)
     (h : dualQueueSystemInvariant st) :
     dualQueueSystemInvariant (wakeThread st tid ec).1 :=
-  dualQueueSystemInvariant_of_getElem_eq
-    (fun oid => wakeThread_objects_getElem_eq_of_ready st tid ec tcb hTcb hReady hObjInv oid) h
+  dualQueueSystemInvariant_of_readViewAgreement
+    (.of_objectsAgreeOffRunLinks (wakeThread_objectsAgreeOffRunLinks_of_ready st tid ec tcb hTcb hReady hObjInv)) h
 
 /-- WS-SM SM6.A.1: the cross-core endpoint call preserves the **dual-queue
 system invariant** (endpoint queue well-formedness + TCB-queue link integrity +
 chain acyclicity).  Mirrors the single-core
 `endpointCall_preserves_dualQueueSystemInvariant`, with the receiver wake
 discharged through the lookup-only congruence (the receiver is `.ready` after
-the message store, so `wakeThread` is object-invisible) and the caller
+the message store, so `wakeThread` is invisible off run-queue links) and the caller
 deschedule through `removeRunnableOnCore`'s object-store frame.  The freshness
 side-conditions (`hFreshCaller`, `hSendTailFresh`) are exactly those the
 single-core theorem requires for the no-receiver enqueue. -/
@@ -1126,7 +1116,7 @@ theorem endpointCallOnCore_preserves_dualQueueSystemInvariant
 -- WS-SM SM6.D / IPC de-threading D8: cross-core RECEIVE bundle establishers.
 -- `endpointReceiveDualOnCore` mirrors the single-core `endpointReceiveDual` (the
 -- Call-rendezvous leg is identical; the Send-rendezvous swaps `ensureRunnable` →
--- the object-invisible `wakeThread`, and the block leg swaps `removeRunnable` →
+-- the invisible off run-queue links `wakeThread`, and the block leg swaps `removeRunnable` →
 -- `removeRunnableOnCore`).  These reuse the single-core per-step lemmas + the
 -- cross-core scheduler-op frames above.
 -- ============================================================================
@@ -1246,7 +1236,7 @@ theorem endpointReceiveDualOnCore_preserves_dualQueueSystemInvariant
           cleanupPreReceiveDonationMigrated_preserves_objects_invExt st stClean' receiver
             hObjInv hChecked
         have hInvClean : dualQueueSystemInvariant stClean' :=
-          dualQueueSystemInvariant_of_getElem_eq hObjEq
+          dualQueueSystemInvariant_of_readViewAgreement (.of_getElem_eq hObjEq)
             (cleanupPreReceiveDonation_preserves_dualQueueSystemInvariant st receiver hObjInv hInv)
         have hFreshReceiverClean : ∀ (epId : SeLe4n.ObjId) (ep : Endpoint),
             stClean'.objects[epId]? = some (.endpoint ep) →
@@ -1328,14 +1318,14 @@ theorem wakeThread_preserves_endpointQueueNoDup_of_ready
     (hObjInv : st.objects.invExt)
     (h : endpointQueueNoDup st) :
     endpointQueueNoDup (wakeThread st tid ec).1 :=
-  endpointQueueNoDup_of_objects_eq st _
-    (fun oid => wakeThread_objects_getElem_eq_of_ready st tid ec tcb hTcb hReady hObjInv oid) h
+  endpointQueueNoDup_of_objectsAgreeOffRunLinks
+    (wakeThread_objectsAgreeOffRunLinks_of_ready st tid ec tcb hTcb hReady hObjInv) h
 
 /-- WS-SM SM6.A.1 / IPC de-threading D8: the cross-core endpoint call preserves
 `endpointQueueNoDup`. Mirrors `endpointCallOnCore_preserves_dualQueueSystemInvariant`,
 threading the noDup chain alongside the dual-queue side-conditions the per-step noDup
 lemmas require (the enqueue/pop lemmas key K-1 self-loop-freedom off the post-state
-`dualQueueSystemInvariant`). The receiver wake is object-invisible (`.ready`), the caller
+`dualQueueSystemInvariant`). The receiver wake is invisible off run-queue links (`.ready`), the caller
 deschedule is a scheduler op. -/
 theorem endpointCallOnCore_preserves_endpointQueueNoDup
     (endpointId : SeLe4n.ObjId) (caller : SeLe4n.ThreadId) (msg : IpcMessage)
@@ -1453,15 +1443,15 @@ theorem wakeThread_preserves_ipcStateQueueMembershipConsistent_of_ready
     (hObjInv : st.objects.invExt)
     (h : ipcStateQueueMembershipConsistent st) :
     ipcStateQueueMembershipConsistent (wakeThread st tid ec).1 :=
-  ipcStateQueueMembershipConsistent_of_objects_eq st _
-    (fun oid => wakeThread_objects_getElem_eq_of_ready st tid ec tcb hTcb hReady hObjInv oid) h
+  ipcStateQueueMembershipConsistent_of_objectsAgreeOffRunLinks
+    (wakeThread_objectsAgreeOffRunLinks_of_ready st tid ec tcb hTcb hReady hObjInv) h
 
 /-- WS-SM SM6.A.1 / IPC de-threading D8: the cross-core endpoint call preserves
 `ipcStateQueueMembershipConsistent`. Mirrors the single-core
 `endpointCall_preserves_ipcStateQueueMembershipConsistent`: the rendezvous pop yields
 membership-except-head (the head is the `.blockedOnReceive` receiveQ head by `hQHBC`), the
 head is set `.ready` (its obligation collapses to `True`, restoring full membership), the wake
-is object-invisible, the caller is set `.blockedOnCall` and its sendQ membership is recovered
+is invisible off run-queue links, the caller is set `.blockedOnCall` and its sendQ membership is recovered
 from `endpointQueueEnqueue_thread_reachable`; the deschedule is a scheduler op. -/
 theorem endpointCallOnCore_preserves_ipcStateQueueMembershipConsistent
     (endpointId : SeLe4n.ObjId) (caller : SeLe4n.ThreadId) (msg : IpcMessage)
@@ -1622,8 +1612,8 @@ theorem wakeThread_preserves_queueNextBlockingConsistent_of_ready
     (hObjInv : st.objects.invExt)
     (h : queueNextBlockingConsistent st) :
     queueNextBlockingConsistent (wakeThread st tid ec).1 :=
-  queueNextBlockingConsistent_of_objects_eq st (wakeThread st tid ec).1
-    (fun oid => wakeThread_objects_getElem_eq_of_ready st tid ec tcb hTcb hReady hObjInv oid) h
+  queueNextBlockingConsistent_of_objectsAgreeOffRunLinks
+    (wakeThread_objectsAgreeOffRunLinks_of_ready st tid ec tcb hTcb hReady hObjInv) h
 
 /-- IPC de-threading D4 Slice 2c: `removeRunnableOnCore` frames `queueHeadBlockedConsistent`
 (object-store frame — `objects` unchanged). -/
@@ -1653,12 +1643,8 @@ theorem wakeThread_preserves_queueHeadBlockedConsistent_of_ready
     (hObjInv : st.objects.invExt)
     (h : queueHeadBlockedConsistent st) :
     queueHeadBlockedConsistent (wakeThread st tid ec).1 :=
-  queueHeadBlockedConsistent_of_endpoint_tcb_backward st (wakeThread st tid ec).1
-    (fun eid _ hEp => by
-      rwa [wakeThread_objects_getElem_eq_of_ready st tid ec tcb hTcb hReady hObjInv eid] at hEp)
-    (fun y _ hY => ⟨_, by
-      rwa [wakeThread_objects_getElem_eq_of_ready st tid ec tcb hTcb hReady hObjInv y.toObjId] at hY,
-      rfl⟩) h
+  queueHeadBlockedConsistent_of_readViewAgreement
+    (.of_objectsAgreeOffRunLinks (wakeThread_objectsAgreeOffRunLinks_of_ready st tid ec tcb hTcb hReady hObjInv)) h
 
 /-- IPC de-threading D4 Slice 2c: the cross-core wake of an already-`.ready` thread preserves
 `queueNextTargetBlocked` (object-lookup-invisible §2 keystone; lookup-only invariant). -/
@@ -1668,8 +1654,8 @@ theorem wakeThread_preserves_queueNextTargetBlocked_of_ready
     (hObjInv : st.objects.invExt)
     (h : queueNextTargetBlocked st) :
     queueNextTargetBlocked (wakeThread st tid ec).1 :=
-  queueNextTargetBlocked_of_objects_eq st (wakeThread st tid ec).1
-    (fun oid => wakeThread_objects_getElem_eq_of_ready st tid ec tcb hTcb hReady hObjInv oid) h
+  queueNextTargetBlocked_of_objectsAgreeOffRunLinks
+    (wakeThread_objectsAgreeOffRunLinks_of_ready st tid ec tcb hTcb hReady hObjInv) h
 
 open SeLe4n.Model.SystemState in
 /-- IPC de-threading D4 Slice 2b: the cross-core endpoint call **establishes**
@@ -1680,7 +1666,7 @@ open SeLe4n.Model.SystemState in
 `.ready` store + caller `.blockedOnReply` store [`queueNextBlockingMatch` catch-all] +
 `linkServerStashedReply`), with the receiver wake framed by
 `wakeThread_preserves_queueNextBlockingConsistent_of_ready` (the receiver is `.ready`
-after its message store, so the wake is object-invisible) and the caller deschedule by
+after its message store, so the wake is invisible off run-queue links) and the caller deschedule by
 `removeRunnableOnCore`'s object-store frame.  `hFreshCaller` / `hSendTailFresh` are the
 no-receiver-enqueue side-conditions inherited from the dual-queue step. -/
 theorem endpointCallOnCore_preserves_queueNextBlockingConsistent
@@ -1908,15 +1894,15 @@ theorem endpointCallOnCore_preserves_queueNextTargetBlocked
                 some (.tcb callerTcbW) :=
               (SystemState.getTcb?_eq_some_iff _ caller callerTcbW).mp hCallerWGet
             have hCallerReadyW : callerTcbW.ipcState = .ready := by
-              have hMem2 : st2.objects[caller.toObjId]? = some (.tcb callerTcbW) := by
-                rw [← wakeThread_objects_getElem_eq_of_ready st2 pair.1 executingCore tr hTrGet hTrReady
-                  hObj2 caller.toObjId]; exact hCallerMemW
-              have hMemPop : pair.2.2.objects[caller.toObjId]? = some (.tcb callerTcbW) := by
+              obtain ⟨c2, hMem2, hc2⟩ := (wakeThread_objectsAgreeOffRunLinks_of_ready st2 pair.1
+                executingCore tr hTrGet hTrReady hObj2).get_tcb' hCallerMemW
+              have hMemPop : pair.2.2.objects[caller.toObjId]? = some (.tcb c2) := by
                 rw [← storeTcbIpcStateAndMessage_preserves_objects_ne pair.2.2 st2 pair.1 _ (some msg)
                   caller.toObjId hCallerNeReceiver hObj1 hMsg]; exact hMem2
               obtain ⟨stC, hStC, hIpcSt⟩ := endpointQueuePopHead_tcb_ipcState_backward endpointId true st
-                pair.2.2 pair.1 caller callerTcbW hObjInv hPop hMemPop
-              rw [← hIpcSt]; exact hCallerReady stC hStC
+                pair.2.2 pair.1 caller c2 hObjInv hPop hMemPop
+              rw [TCB.proj_eq_of_withoutRunLinks_eq TCB.ipcState hc2, ← hIpcSt]
+              exact hCallerReady stC hStC
             have hCallerNotBlocked : (∀ ep, callerTcbW.ipcState ≠ .blockedOnReceive ep) ∧
                 (∀ ep, callerTcbW.ipcState ≠ .blockedOnSend ep) ∧
                 (∀ ep, callerTcbW.ipcState ≠ .blockedOnCall ep) :=
@@ -2017,9 +2003,9 @@ theorem endpointCallOnCore_preserves_queueHeadBlockedConsistent
           have hQHBCW := wakeThread_preserves_queueHeadBlockedConsistent_of_ready
             st2 pair.1 executingCore tr hTrGet hTrReady hObj2 hQHBC2
           have hObjW := wakeThread_preserves_objects_invExt st2 pair.1 executingCore hObj2
-          have hP1TcbW : ∃ t, (wakeThread st2 pair.1 executingCore).1.objects[pair.1.toObjId]? = some (.tcb t) := by
-            rw [wakeThread_objects_getElem_eq_of_ready st2 pair.1 executingCore tr hTrGet hTrReady hObj2 pair.1.toObjId]
-            exact ⟨tr, (SystemState.getTcb?_eq_some_iff st2 pair.1 tr).mp hTrGet⟩
+          have hP1TcbW : ∃ t, (wakeThread st2 pair.1 executingCore).1.objects[pair.1.toObjId]? = some (.tcb t) :=
+            (wakeThread_objectsAgreeOffRunLinks_of_ready st2 pair.1 executingCore tr hTrGet hTrReady hObj2).exists_tcb_iff.mpr
+              ⟨tr, (SystemState.getTcb?_eq_some_iff st2 pair.1 tr).mp hTrGet⟩
           cases hCS : storeTcbIpcStateAndMessage (wakeThread st2 pair.1 executingCore).1 caller
               (.blockedOnReply endpointId (some pair.1)) none with
           | error e => simp only; exact hQHBC
@@ -2038,15 +2024,15 @@ theorem endpointCallOnCore_preserves_queueHeadBlockedConsistent
               (SystemState.getTcb?_eq_some_iff _ caller callerTcbW).mp hCallerWGet
             -- caller's st-side TCB (transported backward through wake + receiver-store + pop).
             have hCallerStBack : ∃ stC, st.getTcb? caller = some stC ∧ stC.ipcState = callerTcbW.ipcState := by
-              have hMem2 : st2.objects[caller.toObjId]? = some (.tcb callerTcbW) := by
-                rw [← wakeThread_objects_getElem_eq_of_ready st2 pair.1 executingCore tr hTrGet hTrReady
-                  hObj2 caller.toObjId]; exact hCallerMemW
-              have hMemPop : pair.2.2.objects[caller.toObjId]? = some (.tcb callerTcbW) := by
+              obtain ⟨c2, hMem2, hc2⟩ := (wakeThread_objectsAgreeOffRunLinks_of_ready st2 pair.1
+                executingCore tr hTrGet hTrReady hObj2).get_tcb' hCallerMemW
+              have hMemPop : pair.2.2.objects[caller.toObjId]? = some (.tcb c2) := by
                 rw [← storeTcbIpcStateAndMessage_preserves_objects_ne pair.2.2 st2 pair.1 _ (some msg)
                   caller.toObjId hCallerNeReceiver hObj1 hMsg]; exact hMem2
               obtain ⟨stC, hStC, hIpcSt⟩ := endpointQueuePopHead_tcb_ipcState_backward endpointId true st
-                pair.2.2 pair.1 caller callerTcbW hObjInv hPop hMemPop
-              exact ⟨stC, (SystemState.getTcb?_eq_some_iff st caller stC).mpr hStC, hIpcSt⟩
+                pair.2.2 pair.1 caller c2 hObjInv hPop hMemPop
+              exact ⟨stC, (SystemState.getTcb?_eq_some_iff st caller stC).mpr hStC,
+                hIpcSt.trans (TCB.proj_eq_of_withoutRunLinks_eq TCB.ipcState hc2).symm⟩
             obtain ⟨stC, hStCMem, hStCIpc⟩ := hCallerStBack
             -- caller is not a head of any queue at the caller-store pre-state (the wake state).
             have hCallerNotHead : ∀ (epId' : SeLe4n.ObjId) (ep' : Endpoint),
@@ -2057,14 +2043,12 @@ theorem endpointCallOnCore_preserves_queueHeadBlockedConsistent
               · have hBlocked := (hQHBCW epId' ep' caller callerTcbW hEpW hCallerMemW).1 hHd
                 rw [← hStCIpc] at hBlocked
                 exact hCallerNotRecv stC hStCMem epId' hBlocked
-              · rw [wakeThread_objects_getElem_eq_of_ready st2 pair.1 executingCore tr hTrGet hTrReady
-                  hObj2 epId'] at hEpW
+              · rw [(wakeThread_objectsAgreeOffRunLinks_of_ready st2 pair.1 executingCore tr hTrGet hTrReady hObj2).get_endpoint_iff] at hEpW
                 have hEpNeP1 : epId' ≠ pair.1.toObjId := by
                   intro h; rw [h] at hEpW
                   obtain ⟨t, hP1⟩ := hP1TcbW
-                  rw [wakeThread_objects_getElem_eq_of_ready st2 pair.1 executingCore tr hTrGet hTrReady
-                    hObj2 pair.1.toObjId] at hP1
-                  rw [hP1] at hEpW; cases hEpW
+                  obtain ⟨t0, hP1', _⟩ := (wakeThread_objectsAgreeOffRunLinks_of_ready st2 pair.1 executingCore tr hTrGet hTrReady hObj2).get_tcb' hP1
+                  rw [hP1'] at hEpW; cases hEpW
                 have hEpPop : pair.2.2.objects[epId']? = some (.endpoint ep') := by
                   rw [← storeTcbIpcStateAndMessage_preserves_objects_ne pair.2.2 st2 pair.1 _ (some msg)
                     epId' hEpNeP1 hObj1 hMsg]; exact hEpW
@@ -2111,13 +2095,9 @@ theorem wakeThread_preserves_endpointQueueTailBlockedConsistent_of_ready
     (hTcb : st.getTcb? tid = some tcb) (hReady : tcb.ipcState = .ready)
     (hObjInv : st.objects.invExt)
     (h : endpointQueueTailBlockedConsistent st) :
-    endpointQueueTailBlockedConsistent (wakeThread st tid ec).1 := by
-  refine endpointQueueTailBlockedConsistent_of_endpoint_tcb_backward st (wakeThread st tid ec).1 ?_ ?_ h
-  · intro eid ep hEp
-    rwa [wakeThread_objects_getElem_eq_of_ready st tid ec tcb hTcb hReady hObjInv eid] at hEp
-  · intro y tcb' hY
-    rw [wakeThread_objects_getElem_eq_of_ready st tid ec tcb hTcb hReady hObjInv y.toObjId] at hY
-    exact ⟨tcb', hY, rfl⟩
+    endpointQueueTailBlockedConsistent (wakeThread st tid ec).1 :=
+  endpointQueueTailBlockedConsistent_of_readViewAgreement
+    (.of_objectsAgreeOffRunLinks (wakeThread_objectsAgreeOffRunLinks_of_ready st tid ec tcb hTcb hReady hObjInv)) h
 
 open SeLe4n.Model.SystemState in
 /-- IPC de-threading D4 Slice 2b: the cross-core endpoint call **establishes**
@@ -2129,7 +2109,7 @@ branch: receiveQ pop [popped head not a post-pop tail via core (a)
 `endpointQueuePopHead_popped_not_tail`] + receiver `.ready` store + caller `.blockedOnReply`
 store [caller fresh ⇒ not a post-pop tail] + `linkServerStashedReply`), with the receiver wake
 framed by `wakeThread_preserves_endpointQueueTailBlockedConsistent_of_ready` (the receiver is
-`.ready` after its message store, so the wake is object-invisible) and the caller deschedule by
+`.ready` after its message store, so the wake is invisible off run-queue links) and the caller deschedule by
 `removeRunnableOnCore`'s object-store frame. -/
 theorem endpointCallOnCore_preserves_endpointQueueTailBlockedConsistent
     (endpointId : SeLe4n.ObjId) (caller : SeLe4n.ThreadId) (msg : IpcMessage)
@@ -2205,7 +2185,8 @@ theorem endpointCallOnCore_preserves_endpointQueueTailBlockedConsistent
               (wakeThread st2 pair.1 executingCore).1.objects[epId]? = some (.endpoint e) →
               e.receiveQ.tail ≠ some caller ∧ e.sendQ.tail ≠ some caller := by
             intro epId e hE
-            rw [wakeThread_objects_getElem_eq_of_ready st2 pair.1 executingCore tr hTrGet hTrReady hObjInv2 epId] at hE
+            rw [(wakeThread_objectsAgreeOffRunLinks_of_ready st2 pair.1 executingCore tr hTrGet hTrReady
+              hObjInv2).get_endpoint_iff] at hE
             exact hCallerNotTailPop epId e
               (storeTcbIpcStateAndMessage_endpoint_backward pair.2.2 st2 pair.1 .ready (some msg) epId e hObjInv1 hMsg hE)
           cases hCS : storeTcbIpcStateAndMessage (wakeThread st2 pair.1 executingCore).1 caller
@@ -2235,8 +2216,8 @@ theorem endpointCallOnCore_preserves_endpointQueueTailBlockedConsistent
 /-! `allPendingMessagesBounded` and `badgeWellFormed` are likewise lookup-only,
 so the cross-core scheduler steps frame them; the message stores reuse the
 single-core per-step lemmas (the payload is bounded by the entry guards).
-The pointwise-lookup congruences (`allPendingMessagesBounded_of_getElem_eq`,
-`badgeWellFormed_of_getElem_eq`) are imported from the production
+The pointwise-lookup congruences (`allPendingMessagesBounded_of_readViewAgreement`,
+`badgeWellFormed_of_objectsAgreeOffRunLinks`) are imported from the production
 `SeLe4n.Kernel.IPC.Invariant.LookupCongruence`. -/
 
 /-- `removeRunnableOnCore` frames pending-message boundedness. -/
@@ -2244,16 +2225,16 @@ theorem removeRunnableOnCore_preserves_allPendingMessagesBounded
     (st : SystemState) (tid : SeLe4n.ThreadId) (c : CoreId)
     (h : allPendingMessagesBounded st) :
     allPendingMessagesBounded (removeRunnableOnCore st tid c) :=
-  allPendingMessagesBounded_of_getElem_eq
-    (fun _ => by rw [removeRunnableOnCore_preserves_objects]) h
+  allPendingMessagesBounded_of_readViewAgreement
+    (.of_getElem_eq (fun _ => by rw [removeRunnableOnCore_preserves_objects])) h
 
 /-- `removeRunnableOnCore` frames badge well-formedness. -/
 theorem removeRunnableOnCore_preserves_badgeWellFormed
     (st : SystemState) (tid : SeLe4n.ThreadId) (c : CoreId)
     (h : badgeWellFormed st) :
     badgeWellFormed (removeRunnableOnCore st tid c) :=
-  badgeWellFormed_of_getElem_eq
-    (fun _ => by rw [removeRunnableOnCore_preserves_objects]) h
+  badgeWellFormed_of_objectsAgreeOffRunLinks
+    (.of_getElem_eq (fun _ => by rw [removeRunnableOnCore_preserves_objects])) h
 
 /-- The ready-thread cross-core wake frames pending-message boundedness. -/
 theorem wakeThread_preserves_allPendingMessagesBounded_of_ready
@@ -2262,8 +2243,8 @@ theorem wakeThread_preserves_allPendingMessagesBounded_of_ready
     (hObjInv : st.objects.invExt)
     (h : allPendingMessagesBounded st) :
     allPendingMessagesBounded (wakeThread st tid ec).1 :=
-  allPendingMessagesBounded_of_getElem_eq
-    (fun oid => wakeThread_objects_getElem_eq_of_ready st tid ec tcb hTcb hReady hObjInv oid) h
+  allPendingMessagesBounded_of_readViewAgreement
+    (.of_objectsAgreeOffRunLinks (wakeThread_objectsAgreeOffRunLinks_of_ready st tid ec tcb hTcb hReady hObjInv)) h
 
 /-- The ready-thread cross-core wake frames badge well-formedness. -/
 theorem wakeThread_preserves_badgeWellFormed_of_ready
@@ -2272,8 +2253,8 @@ theorem wakeThread_preserves_badgeWellFormed_of_ready
     (hObjInv : st.objects.invExt)
     (h : badgeWellFormed st) :
     badgeWellFormed (wakeThread st tid ec).1 :=
-  badgeWellFormed_of_getElem_eq
-    (fun oid => wakeThread_objects_getElem_eq_of_ready st tid ec tcb hTcb hReady hObjInv oid) h
+  badgeWellFormed_of_objectsAgreeOffRunLinks
+    (wakeThread_objectsAgreeOffRunLinks_of_ready st tid ec tcb hTcb hReady hObjInv) h
 
 /-- WS-SM SM6.A.1: the cross-core endpoint call preserves badge well-formedness.
 The message stores write a TCB (never a notification/CNode), so they frame the
@@ -2439,13 +2420,14 @@ open SeLe4n.Model.SystemState in
 /-- WS-SM SM6.A.1 (D3): the cross-core endpoint call **preserves**
 `pendingReceiveReplyWellFormed`.  The cross-core analogue of
 `endpointCall_preserves_pendingReceiveReplyWellFormed`: the receiver wake is
-object-invisible (the receiver is `.ready` post-deliver, so `wakeThread` reinserts
-the same value — `wakeThread_objects_getElem_eq_of_ready`), and the per-core
+invisible off run-queue fields (the receiver is `.ready` post-deliver, so
+`wakeThread` writes only run-queue links —
+`wakeThread_objectsAgreeOffRunLinks_of_ready`), and the per-core
 deschedule frames objects, so the same object-level reasoning carries.  The
 server-waiting branch routes through the shared
 `linkServerStashedReply_preserves_pendingReceiveReplyWellFormed` crux frame, with
 `hC1Other`/`hC2` discharged from the post-pop PRR by framing the deliver/block stores
-(stash-preserving) and the object-invisible wake.  `hCallerNotRecv` prevents the
+(stash-preserving) and the invisible off run-queue links wake.  `hCallerNotRecv` prevents the
 caller's block-store from stranding a stash. -/
 theorem endpointCallOnCore_preserves_pendingReceiveReplyWellFormed
     (endpointId : SeLe4n.ObjId) (caller : SeLe4n.ThreadId) (msg : IpcMessage)
@@ -2508,11 +2490,11 @@ theorem endpointCallOnCore_preserves_pendingReceiveReplyWellFormed
         | ok st2 =>
           simp only
           have hObjInv2 := storeTcbIpcStateAndMessage_preserves_objects_invExt pair.2.2 st2 pair.1 _ _ hObjInv1 hMsg
-          -- the receiver is `.ready` at `st2`, so the wake is object-invisible.
+          -- the receiver is `.ready` at `st2`, so the wake is invisible off run-queue links.
           obtain ⟨tr, hTrGet, hTrReady⟩ :=
             storeTcbIpcStateAndMessage_getTcb?_ipcState pair.2.2 st2 pair.1 .ready (some msg) hObjInv1 hMsg
-          have hWakeObjEq : ∀ oid, (wakeThread st2 pair.1 executingCore).1.objects[oid]? = st2.objects[oid]? :=
-            fun oid => wakeThread_objects_getElem_eq_of_ready st2 pair.1 executingCore tr hTrGet hTrReady hObjInv2 oid
+          have hWA := wakeThread_objectsAgreeOffRunLinks_of_ready st2 pair.1 executingCore tr hTrGet
+            hTrReady hObjInv2
           have hObjW := wakeThread_preserves_objects_invExt st2 pair.1 executingCore hObjInv2
           cases hCS : storeTcbIpcStateAndMessage (wakeThread st2 pair.1 executingCore).1 caller
               (.blockedOnReply endpointId (some pair.1)) none with
@@ -2536,14 +2518,17 @@ theorem endpointCallOnCore_preserves_pendingReceiveReplyWellFormed
                 obtain ⟨tcW, hTcW, hStashW, hIpcW⟩ :=
                   storeTcbIpcStateAndMessage_getTcb?_backward (wakeThread st2 pair.1 executingCore).1 st4 caller _ none hObjW hCS y tcY hY4
                 -- wakeThread st2 → st2 (objects-invisible).
-                have hTc2 : st2.getTcb? y = some tcW := by
-                  unfold getTcb? at hTcW ⊢; rwa [hWakeObjEq] at hTcW
+                obtain ⟨tW2, hTc2, hW2⟩ : ∃ t, st2.getTcb? y = some t ∧
+                    tcW.withoutRunLinks = t.withoutRunLinks := by
+                  obtain ⟨t, h, e⟩ := hWA.get_tcb' ((getTcb?_eq_some_iff _ _ _).mp hTcW)
+                  exact ⟨t, (getTcb?_eq_some_iff _ _ _).mpr h, e⟩
                 -- st2 → pair.2.2 (deliver store, target `pair.1`).
                 obtain ⟨tc0, hTc0, hStash0, hIpc0⟩ :=
-                  storeTcbIpcStateAndMessage_getTcb?_backward pair.2.2 st2 pair.1 _ (some msg) hObjInv1 hMsg y tcW hTc2
-                refine ⟨tc0, hTc0, hStash0.trans hStashW, ?_⟩
+                  storeTcbIpcStateAndMessage_getTcb?_backward pair.2.2 st2 pair.1 _ (some msg) hObjInv1 hMsg y tW2 hTc2
+                refine ⟨tc0, hTc0, hStash0.trans
+                  ((TCB.proj_eq_of_withoutRunLinks_eq TCB.pendingReceiveReply hW2).symm.trans hStashW), ?_⟩
                 intro hyP hyC
-                rw [hIpc0 hyP, hIpcW hyC]
+                rw [hIpc0 hyP, ← TCB.proj_eq_of_withoutRunLinks_eq TCB.ipcState hW2, hIpcW hyC]
               -- The deliver/block stores' target slots each held a TCB pre-store.
               have hDelivTarget : ∃ t, pair.2.2.objects[pair.1.toObjId]? = some (.tcb t) := by
                 unfold storeTcbIpcStateAndMessage modifyTcb at hMsg
@@ -2564,16 +2549,14 @@ theorem endpointCallOnCore_preserves_pendingReceiveReplyWellFormed
                 rw [getReply?_eq_some_iff]
                 have hStep1 : st2.objects[r'.toObjId]? = pair.2.2.objects[r'.toObjId]? :=
                   storeTcbIpcStateAndMessage_preserves_objects_ne pair.2.2 st2 pair.1 _ (some msg) r'.toObjId hNe2 hObjInv1 hMsg
-                have hStep2 : (wakeThread st2 pair.1 executingCore).1.objects[r'.toObjId]? = st2.objects[r'.toObjId]? :=
-                  hWakeObjEq r'.toObjId
+                have hRobj2 : (wakeThread st2 pair.1 executingCore).1.objects[r'.toObjId]? = some (.reply rr) :=
+                  hWA.get_of_not_tcb (fun _ e => KernelObject.noConfusion e) (by rw [hStep1]; exact hRobj)
                 have hNe4 : r'.toObjId ≠ caller.toObjId := by
                   intro hEq; obtain ⟨tc0c, hcObj⟩ := hBlockTarget
-                  have hRobj2 : (wakeThread st2 pair.1 executingCore).1.objects[r'.toObjId]? = some (.reply rr) := by
-                    rw [hStep2, hStep1]; exact hRobj
                   rw [hEq, hcObj] at hRobj2; cases hRobj2
                 have hStep3 : st4.objects[r'.toObjId]? = (wakeThread st2 pair.1 executingCore).1.objects[r'.toObjId]? :=
                   storeTcbIpcStateAndMessage_preserves_objects_ne (wakeThread st2 pair.1 executingCore).1 st4 caller _ none r'.toObjId hNe4 hObjW hCS
-                rw [hStep3, hStep2, hStep1]; exact hRobj
+                rw [hStep3]; exact hRobj2
               -- Apply the shared `linkServerStashedReply` crux frame from the post-pop PRR.
               have hP5 : pendingReceiveReplyWellFormed st5 := by
                 refine linkServerStashedReply_preserves_pendingReceiveReplyWellFormed st4 st5 caller pair.1 hObjInv4 ?_ ?_ hLink
@@ -2667,11 +2650,11 @@ theorem endpointCallOnCore_preserves_ipcInvariantFull
     endpointCallOnCore_preserves_blockedThreadsPendingMessageConsistent endpointId caller msg
       executingCore st hObjInv hInv.blockedThreadsPendingMessageConsistent,
     -- IPC de-threading D8: endpointQueueNoDup **established** from the pre-state (cross-core
-    -- enqueue/pop + the object-invisible wake + scheduler-op deschedule).
+    -- enqueue/pop + the invisible off run-queue links wake + scheduler-op deschedule).
     endpointCallOnCore_preserves_endpointQueueNoDup endpointId caller msg executingCore st
       hInv.endpointQueueNoDup hInv.2.1 hObjInv hFreshCaller hSendTailFresh,
     -- IPC de-threading D8: ipcStateQueueMembershipConsistent **established** from the pre-state
-    -- (rendezvous pop-except-head + head→.ready + object-invisible wake; block enqueue-reachable).
+    -- (rendezvous pop-except-head + head→.ready + invisible off run-queue links wake; block enqueue-reachable).
     endpointCallOnCore_preserves_ipcStateQueueMembershipConsistent endpointId caller msg executingCore st
       hInv hObjInv hFreshCaller hSendTailFresh,
     -- IPC de-threading D4 Slice 2b: queueNext **established** from the pre-state (cross-core enqueue-establish).
@@ -2706,13 +2689,13 @@ theorem endpointCallOnCore_preserves_ipcInvariantFull
       (endpointCallOnCore_sameSchedContextBindings endpointId caller msg executingCore st hObjInv)
       hInv.donationOwnerUnique,
     -- IPC de-threading D4 Slice 2b: tail-blocked **established** from the pre-state (cross-core
-    -- enqueue/pop-establish via cores (a)+(c); wake + deschedule are object-invisible frames).
+    -- enqueue/pop-establish via cores (a)+(c); wake + deschedule are invisible off run-queue links frames).
     endpointCallOnCore_preserves_endpointQueueTailBlockedConsistent endpointId caller msg executingCore
       st hInv.endpointQueueTailBlockedConsistent hInv.2.1 hInv.queueHeadBlockedConsistent hObjInv
       hFreshCaller,
     -- IPC de-threading D4 Slice 2c: queueNextTargetBlocked **established** from the pre-state — the
     -- rendezvous pop frames qNTB, the no-incoming receiver/caller stores preserve it (wake is
-    -- object-invisible), and the block leg is the fused enqueue+`.blockedOnCall` keystone.
+    -- invisible off run-queue links), and the block leg is the fused enqueue+`.blockedOnCall` keystone.
     endpointCallOnCore_preserves_queueNextTargetBlocked endpointId caller msg executingCore st
       hInv.queueNextTargetBlocked hInv.2.1 hInv.endpointQueueTailBlockedConsistent hObjInv hCallerReady
       hFreshCaller hSendTailFresh⟩

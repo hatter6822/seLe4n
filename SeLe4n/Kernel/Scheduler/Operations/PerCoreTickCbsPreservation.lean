@@ -250,9 +250,9 @@ theorem timerTickOnCore_preserves_replenishQueueValidOnCore (st : SystemState) (
 run queue). -/
 theorem ensureRunnable_machine (st : SystemState) (tid : SeLe4n.ThreadId) :
     (ensureRunnable st tid).machine = st.machine := by
-  unfold ensureRunnable; split
-  · rfl
-  · split <;> rfl
+  have h := ensureRunnable_onlyObjectsSchedulerDiffer st tid
+  unfold SystemState.onlyObjectsSchedulerDiffer at h
+  rw [h]
 
 /-- WS-SM SM5.I: `saveOutgoingContextOnCore` leaves the machine unchanged (it saves
 the register context *into* the outgoing TCB; it reads `machine.regs` but writes

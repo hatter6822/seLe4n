@@ -784,6 +784,26 @@ cross-field frames in both directions. -/
 @[simp] theorem setRunQueueOnCore_runQueueEndsOnCore (s : SchedulerState) (c c' : CoreId) (v : SeLe4n.Kernel.RunQueue) :
     (s.setRunQueueOnCore c v).runQueueEndsOnCore c' = s.runQueueEndsOnCore c' := by
   simp [SchedulerState.setRunQueueOnCore, SchedulerState.runQueueEndsOnCore]
+/-- Writing a core's ends back unchanged is the identity. -/
+@[simp] theorem setRunQueueEndsOnCore_runQueueEndsOnCore_get (s : SchedulerState) (c : CoreId) :
+    s.setRunQueueEndsOnCore c (s.runQueueEndsOnCore c) = s := by
+  unfold SchedulerState.setRunQueueEndsOnCore SchedulerState.runQueueEndsOnCore
+  cases s; simp [Vector.get]
+/-- The later of two writes to one core's ends wins. -/
+@[simp] theorem setRunQueueEndsOnCore_setRunQueueEndsOnCore (s : SchedulerState) (c : CoreId)
+    (v w : SeLe4n.Kernel.RunQueueEnds) :
+    (s.setRunQueueEndsOnCore c v).setRunQueueEndsOnCore c w = s.setRunQueueEndsOnCore c w := by
+  simp [SchedulerState.setRunQueueEndsOnCore]
+/-- The later of two writes to one core's queue wins. -/
+@[simp] theorem setRunQueueOnCore_setRunQueueOnCore (s : SchedulerState) (c : CoreId)
+    (v w : SeLe4n.Kernel.RunQueue) :
+    (s.setRunQueueOnCore c v).setRunQueueOnCore c w = s.setRunQueueOnCore c w := by
+  simp [SchedulerState.setRunQueueOnCore]
+/-- Queue and ends writes commute (ends written first, the normal form). -/
+theorem setRunQueueOnCore_setRunQueueEndsOnCore (s : SchedulerState) (c c' : CoreId)
+    (v : SeLe4n.Kernel.RunQueue) (e : SeLe4n.Kernel.RunQueueEnds) :
+    (s.setRunQueueOnCore c v).setRunQueueEndsOnCore c' e =
+      (s.setRunQueueEndsOnCore c' e).setRunQueueOnCore c v := rfl
 @[simp] theorem setReplenishQueueOnCore_runQueueEndsOnCore (s : SchedulerState) (c c' : CoreId) (v : SeLe4n.Kernel.ReplenishQueue) :
     (s.setReplenishQueueOnCore c v).runQueueEndsOnCore c' = s.runQueueEndsOnCore c' := by
   simp [SchedulerState.setReplenishQueueOnCore, SchedulerState.runQueueEndsOnCore]

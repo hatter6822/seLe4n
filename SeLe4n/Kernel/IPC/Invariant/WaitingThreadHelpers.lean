@@ -60,7 +60,7 @@ theorem ensureRunnable_preserves_blockedThreadsPendingMessageConsistent
     (hInv : blockedThreadsPendingMessageConsistent st) :
     blockedThreadsPendingMessageConsistent (ensureRunnable st tid) := by
   intro tid' tcb' hObj
-  rw [ensureRunnable_preserves_objects] at hObj
+  run_links_back ensureRunnable_objectsAgreeOffRunLinks st tid at tcb' hObj
   exact hInv tid' tcb' hObj
 
 /-- `storeObject` at a non-TCB-target ID preserves `blockedThreadsPendingMessageConsistent`

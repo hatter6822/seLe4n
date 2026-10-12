@@ -26,7 +26,7 @@ import SeLe4n.Kernel.IPC.Invariant.CapTransferBundle
 cross-core reply differs from its single-core form only in the *scheduler*
 placement of the woken caller; `ipcInvariant` is **lookup-only** (it reads the
 state solely through `objects[·]?`), so the cross-core caller wake (`wakeThread`,
-object-invisible on the already-`.ready` caller — the SM6.A/SM6.B object-
+invisible off run-queue links on the already-`.ready` caller — the SM6.A/SM6.B object-
 invisibility keystone) cannot disturb it.  The reply store step reuses the
 single-core per-step preservation lemmas verbatim.
 
@@ -179,7 +179,8 @@ theorem endpointReplyOnCore_preserves_ipcInvariant
       storeTcbIpcStateAndMessage_getTcb?_ipcState st st' target .ready (some msg) hObjInv hStore'
     have hWakeInv : ipcInvariant (wakeThread st' target executingCore).1 :=
       fun oid ntfn h => hInv1 oid ntfn
-        (by rwa [wakeThread_objects_getElem_eq_of_ready st' target executingCore tr hGet hReady hObjInv1 oid] at h)
+        ((wakeThread_objectsAgreeOffRunLinks_of_ready st' target executingCore tr hGet hReady
+          hObjInv1).get_notification_iff.mp h)
     rcases hTail with ⟨_, hEq⟩ | ⟨rid, _, hCons⟩
     · rw [hEq]; exact hWakeInv
     · -- PR #827 #3 fold: the consume touches only a `.reply` and a `.tcb` slot.
@@ -295,7 +296,7 @@ theorem endpointReplyOnCore_post_agrees
                   obtain ⟨⟨⟩, stOC⟩ := pr
                   right
                   have hInvEns : (ensureRunnable st' target).objects.invExt := by
-                    rw [ensureRunnable_preserves_objects]; exact hObjInv1
+                    exact ensureRunnable_objects_invExt _ _ hObjInv1
                   have hInvWake : (wakeThread st' target executingCore).1.objects.invExt :=
                     wakeThread_preserves_objects_invExt st' target executingCore hObjInv1
                   obtain ⟨r1, hCons1⟩ :=
@@ -326,7 +327,7 @@ theorem endpointReplyOnCore_donationOwnerFrameExcept
     hPre | ⟨expected, r1, hStep1, hAgree⟩
   · rw [hPre]; exact donationOwnerFrameExcept.refl st target
   · exact (endpointReply_donationOwnerFrameExcept st r1 expected target msg hObjInv
-      hStep1).trans (donationOwnerFrameExcept.of_getElem_eq hAgree.objects)
+      hStep1).trans (donationOwnerFrameExcept.of_objectsAgreeOffRunLinks hAgree.objects)
 
 open SeLe4n.Model.SystemState in
 /-- WS-RR RR3.12: the cross-core reply writes no `schedContextBinding` — the
@@ -341,8 +342,7 @@ theorem endpointReplyOnCore_sameSchedContextBindings
   · rw [hPre]; exact sameSchedContextBindings.refl st
   · refine (endpointReply_sameSchedContextBindings st r1 expected target msg hObjInv
       hStep1).trans ?_
-    intro tid tcb' hTcb'
-    exact ⟨tcb', by rw [← hAgree.objects]; exact hTcb', rfl⟩
+    exact sameSchedContextBindings.of_objectsAgreeOffRunLinks hAgree.objects
 
 open SeLe4n.Model.SystemState in
 /-- WS-RR RR3.12: the cross-core reply establishes the bundle **relaxed at the
@@ -367,7 +367,7 @@ theorem endpointReplyOnCore_preserves_ipcInvariantFullExceptDonationOwner
   rcases endpointReplyOnCore_post_agrees replier target msg executingCore st hObjInv with
     hPre | ⟨expected, r1, hStep1, hAgree⟩
   · rw [hPre]; exact ipcInvariantFullExceptDonationOwner_of_full target hInv
-  · exact ipcInvariantFullExceptDonationOwner_of_getElem_eq hAgree.objects hPsi'
+  · exact ipcInvariantFullExceptDonationOwner_of_objectsAgreeOffRunLinks hAgree.objects hPsi'
       (endpointReply_preserves_ipcInvariantFullExceptDonationOwner st r1 expected target msg
         hInv hObjInv hAllBudgetsNone hStep1)
 
@@ -399,7 +399,7 @@ theorem endpointReplyOnCore_preserves_ipcInvariantFull
   rcases endpointReplyOnCore_post_agrees replier target msg executingCore st hObjInv with
     hPre | ⟨expected, r1, hStep1, hAgree⟩
   · rw [hPre]; exact hInv
-  · exact ipcInvariantFull_of_getElem_eq hAgree.objects hPsi'
+  · exact ipcInvariantFull_of_objectsAgreeOffRunLinks hAgree.objects hPsi'
       (endpointReply_preserves_ipcInvariantFull st r1 expected target msg hInv hObjInv
         hAllBudgetsNone hNoDonationOwnedBy hStep1)
 
@@ -720,7 +720,7 @@ theorem endpointReceiveDualOnCore_post_agrees
                     (wakeThread_offSchedulerAgrees_of_ready st2 sender executingCore tr
                       hTrGet hTrReady hObjInv2)
                 have hInvEns : (ensureRunnable st2 sender).objects.invExt := by
-                  rw [ensureRunnable_preserves_objects]; exact hObjInv2
+                  exact ensureRunnable_objects_invExt _ _ hObjInv2
                 have hInvWake : (wakeThread st2 sender executingCore).1.objects.invExt :=
                   wakeThread_preserves_objects_invExt st2 sender executingCore hObjInv2
                 obtain ⟨st4SC, hStore2SC, hAgree4⟩ :=
@@ -778,22 +778,30 @@ theorem endpointReceiveDualOnCore_post_agrees
             have hInv2' : st2'.objects.invExt :=
               storeTcbIpcStateAndMessage_preserves_objects_invExt st1' st2' receiver _ _ hInv1'
                 hStore1'
-            have hGetEq : st2.getTcb? receiver = st2'.getTcb? receiver :=
-              (getTcb?_congr_getElem hRel2.objects receiver).symm
             cases hGetR' : st2'.getTcb? receiver with
             | none =>
+              have hGetR : st2.getTcb? receiver = none := by
+                have hSome := hRel2.objects.getTcb?_isSome receiver
+                rw [hGetR'] at hSome
+                cases e : st2.getTcb? receiver with
+                | none => rfl
+                | some _ => rw [e] at hSome; cases hSome
               right
               refine ⟨receiver, removeRunnable st2 receiver, ?_, ?_⟩
               · unfold endpointReceiveDual SystemState.getObject?
-                simp only [hEpRaw, hHead, hChecked, hEnq, hStore1, hGetEq.trans hGetR']
+                simp only [hEpRaw, hHead, hChecked, hEnq, hStore1, hGetR]
               · exact (removeRunnable_offSchedulerAgrees st2 receiver).symm.trans
                   (hRel2.trans (removeRunnableOnCore_offSchedulerAgrees st2' receiver executingCore))
-            | some rTcb =>
+            | some rTcb' =>
+              obtain ⟨rTcb, hObjR, hEqR⟩ :=
+                hRel2.objects.get_tcb' ((SystemState.getTcb?_eq_some_iff _ _ _).mp hGetR')
+              have hGetR : st2.getTcb? receiver = some rTcb :=
+                (SystemState.getTcb?_eq_some_iff _ _ _).mpr hObjR
               simp only
               split
               · next hValid =>
                 cases hStash' : storeObject receiver.toObjId
-                    (.tcb { rTcb with pendingReceiveReply := replyId }) st2' with
+                    (.tcb { rTcb' with pendingReceiveReply := replyId }) st2' with
                 | error e => left; rfl
                 | ok pStash' =>
                   obtain ⟨⟨⟩, stStashed'⟩ := pStash'
@@ -802,12 +810,15 @@ theorem endpointReceiveDualOnCore_post_agrees
                     (.tcb { rTcb with pendingReceiveReply := replyId })
                   refine ⟨receiver, removeRunnable stStashed receiver, ?_, ?_⟩
                   · unfold endpointReceiveDual SystemState.getObject?
-                    simp only [hEpRaw, hHead, hChecked, hEnq, hStore1, hGetEq.trans hGetR',
+                    simp only [hEpRaw, hHead, hChecked, hEnq, hStore1, hGetR,
                       if_pos hValid, hStash]
-                  · exact (removeRunnable_offSchedulerAgrees stStashed receiver).symm.trans
-                      ((storeObject_offSchedulerAgrees _ _ hRel2 hInv2 hInv2' hStash hStash').trans
+                  · refine (removeRunnable_offSchedulerAgrees stStashed receiver).symm.trans
+                      ((storeObject_offSchedulerAgrees_of_agree _ ?_ hRel2 hInv2 hInv2' hStash
+                        hStash').trans
                         (removeRunnableOnCore_offSchedulerAgrees stStashed' receiver
                           executingCore))
+                    rw [TCB.eq_withRunLinks_of_withoutRunLinks_eq hEqR]
+                    rfl
               · left; rfl
 
 -- ============================================================================
@@ -860,7 +871,7 @@ theorem endpointReceiveDualOnCore_preserves_ipcInvariantFull
   rcases endpointReceiveDualOnCore_post_agrees endpointId receiver replyId executingCore st
     hObjInv with hPre | ⟨sender, r1, hStep1, hAgree⟩
   · rw [hPre]; exact hInv
-  · exact ipcInvariantFull_of_getElem_eq hAgree.objects hPsi'
+  · exact ipcInvariantFull_of_objectsAgreeOffRunLinks hAgree.objects hPsi'
       (endpointReceiveDual_preserves_ipcInvariantFull endpointId receiver sender replyId st r1
         hInv hObjInv hStackValid
         hAllBudgetsNone
@@ -1036,35 +1047,36 @@ theorem endpointReplyOnCore_tcb_backward
       (some msg) hObjInv hStore'
     obtain ⟨tr, hTrGet, hTrReady⟩ :=
       storeTcbIpcStateAndMessage_getTcb?_ipcState st st' target .ready (some msg) hObjInv hStore'
-    have hWakeEq : ∀ oid : SeLe4n.ObjId,
-        (wakeThread st' target executingCore).1.objects[oid]? = st'.objects[oid]? :=
-      fun oid => wakeThread_objects_getElem_eq_of_ready st' target executingCore tr
-        hTrGet hTrReady hObjInv1 oid
+    have hWA := wakeThread_objectsAgreeOffRunLinks_of_ready st' target executingCore tr
+      hTrGet hTrReady hObjInv1
     rcases hTail with ⟨_, hPostEq⟩ | ⟨rid, _, hCons⟩
     · rw [hPostEq] at hTcb'
       have hRaw' := (getTcb?_eq_some_iff _ tid tcb').mp hTcb'
-      rw [hWakeEq] at hRaw'
+      obtain ⟨tw, hRaw, hE⟩ := hWA.get_tcb' hRaw'
       obtain ⟨ty, hty, hStash, hBudget, hDisj⟩ :=
         storeTcbIpcStateAndMessage_tcb_backward_fields st st' target .ready (some msg)
-          hObjInv hStore' tid.toObjId tcb' hRaw'
-      refine ⟨ty, (getTcb?_eq_some_iff st tid ty).mpr hty, hStash, hBudget, ?_⟩
+          hObjInv hStore' tid.toObjId tw hRaw
+      refine ⟨ty, (getTcb?_eq_some_iff st tid ty).mpr hty,
+        (TCB.proj_eq_of_withoutRunLinks_eq TCB.pendingReceiveReply hE).trans hStash,
+        (TCB.proj_eq_of_withoutRunLinks_eq TCB.timeoutBudget hE).trans hBudget, ?_⟩
       rcases hDisj with rfl | hReady
-      · exact Or.inr ⟨rfl, rfl⟩
-      · exact Or.inl hReady
+      · exact Or.inr ⟨TCB.proj_eq_of_withoutRunLinks_eq TCB.ipcState hE, TCB.proj_eq_of_withoutRunLinks_eq TCB.pendingMessage hE⟩
+      · exact Or.inl ((TCB.proj_eq_of_withoutRunLinks_eq TCB.ipcState hE).trans hReady)
     · have hInvWake : (wakeThread st' target executingCore).1.objects.invExt :=
         wakeThread_preserves_objects_invExt st' target executingCore hObjInv1
       have hRaw' := (getTcb?_eq_some_iff _ tid tcb').mp hTcb'
       obtain ⟨t1, hT1, hIpc1, hPend1, hStash1, hBudget1⟩ :=
         removeCallerReplyFrame_tcb_fields_backward _ _ target rid hInvWake hCons tid.toObjId tcb' hRaw'
-      rw [hWakeEq] at hT1
+      obtain ⟨tw, hTw, hE⟩ := hWA.get_tcb' hT1
       obtain ⟨ty, hty, hStash, hBudget, hDisj⟩ :=
         storeTcbIpcStateAndMessage_tcb_backward_fields st st' target .ready (some msg)
-          hObjInv hStore' tid.toObjId t1 hT1
-      refine ⟨ty, (getTcb?_eq_some_iff st tid ty).mpr hty, hStash1.trans hStash,
-        hBudget1.trans hBudget, ?_⟩
+          hObjInv hStore' tid.toObjId tw hTw
+      refine ⟨ty, (getTcb?_eq_some_iff st tid ty).mpr hty,
+        hStash1.trans ((TCB.proj_eq_of_withoutRunLinks_eq TCB.pendingReceiveReply hE).trans hStash),
+        hBudget1.trans ((TCB.proj_eq_of_withoutRunLinks_eq TCB.timeoutBudget hE).trans hBudget), ?_⟩
       rcases hDisj with rfl | hReady
-      · exact Or.inr ⟨hIpc1, hPend1⟩
-      · exact Or.inl (hIpc1.trans hReady)
+      · exact Or.inr ⟨hIpc1.trans (TCB.proj_eq_of_withoutRunLinks_eq TCB.ipcState hE), hPend1.trans (TCB.proj_eq_of_withoutRunLinks_eq TCB.pendingMessage hE)⟩
+      · exact Or.inl (hIpc1.trans ((TCB.proj_eq_of_withoutRunLinks_eq TCB.ipcState hE).trans hReady))
 
 open SeLe4n.Model.SystemState in
 /-- SM6.D transport (T2): every endpoint observable after
@@ -1089,26 +1101,23 @@ theorem endpointReplyOnCore_endpoint_backward
       (some msg) hObjInv hStore'
     obtain ⟨tr, hTrGet, hTrReady⟩ :=
       storeTcbIpcStateAndMessage_getTcb?_ipcState st st' target .ready (some msg) hObjInv hStore'
-    have hWakeEq : ∀ oid : SeLe4n.ObjId,
-        (wakeThread st' target executingCore).1.objects[oid]? = st'.objects[oid]? :=
-      fun oid => wakeThread_objects_getElem_eq_of_ready st' target executingCore tr
-        hTrGet hTrReady hObjInv1 oid
+    have hWA := wakeThread_objectsAgreeOffRunLinks_of_ready st' target executingCore tr
+      hTrGet hTrReady hObjInv1
     rcases hTail with ⟨_, hPostEq⟩ | ⟨rid, _, hCons⟩
-    · rw [hPostEq, hWakeEq] at hEp
+    · rw [hPostEq] at hEp
       exact storeTcbIpcStateAndMessage_endpoint_backward st st' target .ready (some msg)
-        oid ep hObjInv hStore' hEp
+        oid ep hObjInv hStore' (hWA.get_endpoint_iff.mp hEp)
     · have hInvWake : (wakeThread st' target executingCore).1.objects.invExt :=
         wakeThread_preserves_objects_invExt st' target executingCore hObjInv1
       have hEpWake := (removeCallerReplyFrame_nonTcbNonReply_agree _ _ target rid
         hInvWake hCons oid (.endpoint ep) (fun _ => by simp) (fun _ => by simp)).mp hEp
-      rw [hWakeEq] at hEpWake
       exact storeTcbIpcStateAndMessage_endpoint_backward st st' target .ready (some msg)
-        oid ep hObjInv hStore' hEpWake
+        oid ep hObjInv hStore' (hWA.get_endpoint_iff.mp hEpWake)
 
 open SeLe4n.Model.SystemState in
 /-- SM6.D transport (T3): the reply leg preserves `replyIdEstablishFresh` —
-the reply store rewrites only the woken caller (stash-invisible), the wake is
-lookup-invisible, and the folded consume can only *free* a reply. -/
+the reply store rewrites only the woken caller (stash-invisible), the wake
+writes only run-queue links, and the folded consume can only *free* a reply. -/
 theorem endpointReplyOnCore_preserves_replyIdEstablishFresh
     (replier target : SeLe4n.ThreadId) (msg : IpcMessage) (executingCore : CoreId)
     (st : SystemState) (rid : SeLe4n.ReplyId)
@@ -1124,19 +1133,19 @@ theorem endpointReplyOnCore_preserves_replyIdEstablishFresh
       (some msg) hObjInv hStore'
     obtain ⟨tr, hTrGet, hTrReady⟩ :=
       storeTcbIpcStateAndMessage_getTcb?_ipcState st st' target .ready (some msg) hObjInv hStore'
-    have hWakeEq : ∀ oid : SeLe4n.ObjId,
-        (wakeThread st' target executingCore).1.objects[oid]? = st'.objects[oid]? :=
-      fun oid => wakeThread_objects_getElem_eq_of_ready st' target executingCore tr
-        hTrGet hTrReady hObjInv1 oid
+    have hWA := wakeThread_objectsAgreeOffRunLinks_of_ready st' target executingCore tr
+      hTrGet hTrReady hObjInv1
     have hFresh' := storeTcbIpcStateAndMessage_preserves_replyIdEstablishFresh st st' target
       .ready (some msg) rid hObjInv hFresh hStore'
     have hFreshW : replyIdEstablishFresh (wakeThread st' target executingCore).1 rid := by
       obtain ⟨⟨r, hr, hrc⟩, hUn⟩ := hFresh'
       refine ⟨⟨r, ?_, hrc⟩, ?_⟩
-      · rw [getReply?_eq_some_iff] at hr ⊢; rw [hWakeEq]; exact hr
+      · rw [getReply?_eq_some_iff] at hr ⊢; exact hWA.get_reply_iff.mpr hr
       · intro t tcb0 hT hS
-        rw [getTcb?_eq_some_iff, hWakeEq] at hT
-        exact hUn t tcb0 ((getTcb?_eq_some_iff st' t tcb0).mpr hT) hS
+        rw [getTcb?_eq_some_iff] at hT
+        obtain ⟨t0, h0, hE⟩ := hWA.get_tcb' hT
+        exact hUn t t0 ((getTcb?_eq_some_iff st' t t0).mpr h0)
+          (by rw [← TCB.proj_eq_of_withoutRunLinks_eq TCB.pendingReceiveReply hE]; exact hS)
     rcases hTail with ⟨_, hPostEq⟩ | ⟨rid', _, hCons⟩
     · rw [hPostEq]; exact hFreshW
     · have hInvWake : (wakeThread st' target executingCore).1.objects.invExt :=
@@ -1217,17 +1226,16 @@ theorem endpointReplyOnCore_reuse_freshens
             obtain ⟨tr, hTrGet, hTrReady⟩ :=
               storeTcbIpcStateAndMessage_getTcb?_ipcState st st' target .ready (some msg)
                 hObjInv hStore'
-            have hWakeEq : ∀ oid : SeLe4n.ObjId,
-                (wakeThread st' target executingCore).1.objects[oid]? = st'.objects[oid]? :=
-              fun oid => wakeThread_objects_getElem_eq_of_ready st' target executingCore tr
-                hTrGet hTrReady hObjInv1 oid
+            have hWA := wakeThread_objectsAgreeOffRunLinks_of_ready st' target executingCore tr
+              hTrGet hTrReady hObjInv1
             have hInvWake : (wakeThread st' target executingCore).1.objects.invExt :=
               wakeThread_preserves_objects_invExt st' target executingCore hObjInv1
             have hNeSlot : target.toObjId ≠ rid.toObjId :=
               getTcb?_getReply?_slot_ne st target rid tcb r hTcbT hGetR
             have hRWake : (wakeThread st' target executingCore).1.getReply? rid = some r := by
               rw [getReply?_eq_some_iff]
-              rw [hWakeEq, storeTcbIpcStateAndMessage_preserves_objects_ne st st' target .ready
+              refine hWA.get_reply_iff.mpr ?_
+              rw [storeTcbIpcStateAndMessage_preserves_objects_ne st st' target .ready
                 (some msg) rid.toObjId (fun h => hNeSlot h.symm) hObjInv hStore']
               exact (getReply?_eq_some_iff st rid r).mp hGetR
             exact removeCallerReplyFrame_getReply?_free _ target rid r hInvWake hRWake stC hCons

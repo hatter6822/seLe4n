@@ -194,7 +194,6 @@ open SeLe4n.Model
 #check @SeLe4n.Kernel.Lifecycle.Suspend.restoreToReady_invExt
 #check @SeLe4n.Kernel.Lifecycle.Suspend.restoreToReady_blockingServer_subgraph
 #check @SeLe4n.Kernel.Lifecycle.Suspend.restoreToReady_preserves_blockingAcyclic
-#check @SeLe4n.Kernel.Lifecycle.Suspend.ensureRunnable_objects_eq
 #check @SeLe4n.Kernel.Lifecycle.Suspend.ensureRunnable_objectIndex_eq
 #check @SeLe4n.Kernel.Lifecycle.Suspend.ensureRunnable_blockingServer_eq
 #check @SeLe4n.Kernel.Lifecycle.Suspend.ensureRunnable_preserves_computeMaxWaiterPriority

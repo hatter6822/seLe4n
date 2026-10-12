@@ -7540,7 +7540,7 @@ private theorem bootCoreIdleQueue_priorityOf :
 /-- **WS-BP BP7.11**: **what a boot leaves, for the bundle to be read off** —
     every object boot-shaped, the untouched fields their defaults, the ASID
     table consistent, the untypeds disjoint, the scheduler the default one but
-    for its run queues, and the boot core's queue boot-sound
+    for its run queues (ghost queues and concrete ends), and the boot core's queue boot-sound
     (`Kernel.runQueueBootSound`: distinct members, each a stored TCB with a
     positive time slice and no inherited boost, bucketed at its own priority).
 
@@ -7555,8 +7555,9 @@ def bootStartShape (ist : IntermediateState) : Prop :=
   bootQuiescentFields ist.state ∧
   Architecture.asidTableConsistent ist.state ∧
   Kernel.untypedRegionsDisjoint ist.state ∧
-  (∃ rq rp, ist.state.scheduler =
-    { (default : SystemState).scheduler with runQueue := rq, reschedulePending := rp }) ∧
+  (∃ rq re rp, ist.state.scheduler =
+    { (default : SystemState).scheduler with
+      runQueue := rq, runQueueEnds := re, reschedulePending := rp }) ∧
   Kernel.runQueueBootSound ist.state bootCoreId
 
 /-- **WS-BP BP7.11**: **the proof-layer bundle of any state of boot shape.**
@@ -7565,7 +7566,7 @@ def bootStartShape (ist : IntermediateState) : Prop :=
     the rest is passed through. -/
 theorem proofLayerInvariantBundle_of_bootStartShape (ist : IntermediateState)
     (h : bootStartShape ist) : Architecture.proofLayerInvariantBundle ist.state := by
-  obtain ⟨hShape, hFields, hAsid, hUntyped, ⟨rq, rp, hSch⟩, hNodup, hQueue⟩ := h
+  obtain ⟨hShape, hFields, hAsid, hUntyped, ⟨rq, re, rp, hSch⟩, hNodup, hQueue⟩ := h
   have hCur : ist.state.scheduler.currentOnCore bootCoreId = none := by
     rw [hSch]; exact (default_state_perCoreInitialized bootCoreId).1
   have hRunnableTcb : ∀ tid, tid ∈ ist.state.scheduler.runnable →
@@ -7645,7 +7646,8 @@ theorem bootFromPlatformCheckedWithIdleThreadsFor_bootStartShape
       foldl_enqueueIdleThread_preserves_asidTableConsistent cores base
         (bootFromPlatformChecked_ok_asidTableConsistent config base hChecked)
         (fun c _ r hr => by rw [hFresh c] at hr; cases hr),
-      ?_, ⟨rq, (default : SystemState).scheduler.reschedulePending, hSch⟩, ?_, ?_⟩
+      ?_, ⟨rq, (default : SystemState).scheduler.runQueueEnds,
+        (default : SystemState).scheduler.reschedulePending, hSch⟩, ?_, ?_⟩
     · -- Every object: the checked boot's, or an idle TCB.
       intro oid obj hObj
       rcases foldl_enqueueIdleThread_objects_cases cores base oid obj hObj with

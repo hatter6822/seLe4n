@@ -88,6 +88,42 @@ theorem notificationWaiterConsistent_frame {st st' : SystemState}
     rw [hTa] at hTa'; cases hTa'
     exact .next hRa' ((hBlockedPre a ta oid hTa hBa).trans hTa) hNx
 
+/-- WS-ZA ZA4.5: a step that writes nothing but run-queue links keeps the
+queues consistent — every clause reads notifications and the TCBs' IPC state and
+notification links, none of which a run-queue write touches. -/
+theorem notificationWaiterConsistent_of_objectsAgreeOffRunLinks {st st' : SystemState}
+    (h : st'.objectsAgreeOffRunLinks st) (hInv : notificationWaiterConsistent st) :
+    notificationWaiterConsistent st' := by
+  have reach : ∀ {n t}, notificationQueueReaches st n t → notificationQueueReaches st' n t := by
+    intro n t hR
+    induction hR with
+    | head hN hH => exact .head (h.get_notification_iff.mpr hN) hH
+    | @next a b ta _ hTa hNx ih =>
+      run_links_fwd h at ta hTa
+      exact .next ih hTa hNx
+  refine ⟨fun oid ntfn hN => ?_, fun tid tcb oid hT hB => ?_, fun tid tcb oid hT hB => ?_⟩
+  · obtain ⟨hIff, hHead, hTail⟩ := hInv.1 oid ntfn (h.get_notification_iff.mp hN)
+    refine ⟨hIff, fun hd hh => ?_, fun t ht => ?_⟩
+    · obtain ⟨tcb, hT, hB⟩ := hHead hd hh
+      run_links_fwd h at tcb hT
+      exact ⟨_, hT, hB⟩
+    · obtain ⟨tcb, hT, hB, hN'⟩ := hTail t ht
+      run_links_fwd h at tcb hT
+      exact ⟨_, hT, hB, hN'⟩
+  · run_links_back h at tcb hT
+    obtain ⟨ntfn, hN, hPrev, hTail, hNext⟩ := hInv.2.1 tid tcb oid hT hB
+    refine ⟨ntfn, h.get_notification_iff.mpr hN, ?_, hTail, ?_⟩
+    · rcases hPrev with hp | ⟨a, ta, ha, hTa, hBa, hNa⟩
+      · exact Or.inl hp
+      · run_links_fwd h at ta hTa
+        exact Or.inr ⟨a, _, ha, hTa, hBa, hNa⟩
+    · intro b hb
+      obtain ⟨hne, tb, hTb, hBb, hPb⟩ := hNext b hb
+      run_links_fwd h at tb hTb
+      exact ⟨hne, _, hTb, hBb, hPb⟩
+  · run_links_back h at tcb hT
+    exact reach (hInv.2.2 tid tcb oid hT hB)
+
 /-- One object written, at a key that holds a TCB blocked on no notification
 before the write and after it: the queues are untouched. -/
 theorem notificationWaiterConsistent_of_unblocked_tcb_write {st st' : SystemState}

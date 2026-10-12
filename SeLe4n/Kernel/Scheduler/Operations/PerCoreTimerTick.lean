@@ -794,16 +794,6 @@ theorem cbsReplenish_can_wake_remote_core (st : SystemState) (execCore : CoreId)
 --      path already does.  Tracked against SM5.F per-core PIP.
 -- ────────────────────────────────────────────────────────────────────────
 
-/-- WS-SM SM5.D.5 (local helper): `ensureRunnable` writes only the run queue, so
-the object store is unchanged.  (The codebase's `ensureRunnable_objects_eq` lives
-in the `Lifecycle.Suspend` namespace, not in this module's import closure; a thin
-local copy keeps the dependency footprint minimal.) -/
-private theorem ensureRunnable_objects_eq_local (st : SystemState) (tid : SeLe4n.ThreadId) :
-    (ensureRunnable st tid).objects = st.objects := by
-  unfold ensureRunnable; split
-  · rfl
-  · split <;> rfl
-
 /-- WS-SM SM5.D.5 (preservation): `revertPriorityInheritance` preserves the
 object-store invariant — each fuel step is an `updatePipBoost` (a single TCB
 `insert`, `invExt`-preserving). -/
@@ -1246,12 +1236,12 @@ scheduler unchanged. -/
   unfold refillSchedContext; exact SystemState.updateSchedContext_machine _ _ _
 
 /-- WS-SM SM5.C: `enqueueRunnableOnCore` leaves the machine state unchanged
-(it writes only the object store and a run-queue slot). -/
+(it writes only the object store and the scheduler). -/
 @[simp] theorem enqueueRunnableOnCore_machine_eq (st : SystemState) (c : CoreId)
     (tid : SeLe4n.ThreadId) : (enqueueRunnableOnCore st c tid).machine = st.machine := by
-  unfold enqueueRunnableOnCore; split
-  · split <;> rfl
-  · rfl
+  have h := enqueueRunnableOnCore_onlyObjectsSchedulerDiffer st c tid
+  unfold SystemState.onlyObjectsSchedulerDiffer at h
+  rw [h]
 
 /-- WS-SM SM5.C: `enqueueRunnableOnCore` leaves every core's `lastTimeoutErrors`
 slot unchanged. -/
@@ -1259,12 +1249,10 @@ theorem enqueueRunnableOnCore_lastTimeoutErrorsOnCore (st : SystemState) (c : Co
     (tid : SeLe4n.ThreadId) (c' : CoreId) :
     (enqueueRunnableOnCore st c tid).scheduler.lastTimeoutErrorsOnCore c'
       = st.scheduler.lastTimeoutErrorsOnCore c' := by
-  unfold enqueueRunnableOnCore; split
-  · split
-    · rfl
-    · simp only [SchedulerState.markReschedulePendingOnCore_lastTimeoutErrorsOnCore,
-        SchedulerState.setRunQueueOnCore_lastTimeoutErrorsOnCore]
-  · rfl
+  rcases enqueueRunnableOnCore_scheduler_cases st c tid with h | ⟨E, p, h⟩ <;> rw [h]
+  simp only [SchedulerState.markReschedulePendingOnCore_lastTimeoutErrorsOnCore,
+    SchedulerState.setRunQueueOnCore_lastTimeoutErrorsOnCore,
+    SchedulerState.setRunQueueEndsOnCore_lastTimeoutErrorsOnCore]
 
 /-- WS-SM SM5.D.4: `processOneReplenishmentOnCore` leaves the machine unchanged. -/
 theorem processOneReplenishmentOnCore_machine_eq (st : SystemState) (ec : CoreId)

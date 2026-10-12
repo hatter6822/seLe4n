@@ -83,13 +83,14 @@ theorem storeObject_nonCNode_preserves_capabilityBadgesWellFormed
   · exact hInv oid cn slot cap badge ((storeObject_objects_ne st st' targetId oid obj hEq hObjInv hStore).symm.trans hObj) hLookup hBadge
 
 /-- WS-F5/D1d: `ensureRunnable` preserves `badgeWellFormed`.
-Only modifies `scheduler.runQueue`, never the object store. -/
+It writes only the scheduler and run-queue links; badges live in notifications
+and CNodes. -/
 theorem ensureRunnable_preserves_badgeWellFormed
     (st : SystemState) (tid : SeLe4n.ThreadId) (hInv : badgeWellFormed st) :
-    badgeWellFormed (ensureRunnable st tid) := by
-  unfold ensureRunnable; split
-  · exact hInv
-  · split <;> exact hInv
+    badgeWellFormed (ensureRunnable st tid) :=
+  have h := ensureRunnable_objectsAgreeOffRunLinks st tid
+  ⟨fun oid ntfn badge hN => hInv.1 oid ntfn badge (h.get_notification_iff.mp hN),
+   fun oid cn slot cap badge hC => hInv.2 oid cn slot cap badge (h.get_cnode_iff.mp hC)⟩
 
 /-- WS-F5/D1d: `removeRunnable` preserves `badgeWellFormed`.
 Only modifies `scheduler`, never the object store. -/
@@ -366,13 +367,14 @@ theorem notificationSignal_preserves_notificationWaiterConsistent
                 (lookupTcb_some_not_reserved _ _ _ hLk1)]
             have hNW : notificationId ≠ waiter.toObjId := by
               intro e; rw [e, hHT] at hObj; cases hObj
-            refine notificationWaiterConsistent_of_headPop hConsist hObj hWaiters hHT ?_ ?_ ?_
-            · rw [ensureRunnable_preserves_objects, hO1 _ hNW, ← hSucc]
+            refine notificationWaiterConsistent_of_objectsAgreeOffRunLinks
+              (ensureRunnable_objectsAgreeOffRunLinks _ _)
+              (notificationWaiterConsistent_of_headPop hConsist hObj hWaiters hHT ?_ ?_ ?_)
+            · rw [hO1 _ hNW, ← hSucc]
               exact storeObject_objects_eq st pair.2 notificationId _ hObjInv hStore
-            · exact ⟨_, by rw [ensureRunnable_preserves_objects]; exact hT1,
-                fun oid h => by cases h⟩
+            · exact ⟨_, hT1, fun oid h => by cases h⟩
             · intro x hx hxw
-              rw [ensureRunnable_preserves_objects, hO1 _ hxw]
+              rw [hO1 _ hxw]
               exact storeObject_objects_ne st pair.2 notificationId x _ hx hObjInv hStore
       | none =>
         simp only [hWaiters] at hStep

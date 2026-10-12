@@ -87,15 +87,10 @@ theorem enqueueRunnableOnCore_projectRunnableOnCore_high (ctx : LabelingContext)
   unfold projectRunnableOnCore
   by_cases hcc : c' = c
   · subst hcc
-    cases hTcb : st.getTcb? tid with
-    | none => simp only [enqueueRunnableOnCore, SystemState.getTcbWitnessed?_eq_none hTcb]
-    | some tcb =>
-      simp only [enqueueRunnableOnCore, SystemState.getTcbWitnessed?_eq_some hTcb]
-      split
-      · rfl
-      · rw [SchedulerState.markReschedulePendingOnCore_runQueueOnCore,
-          SchedulerState.setRunQueueOnCore_runQueueOnCore_self]
-        exact RunQueue.toList_filter_insert_neg' _ tid _ _ hHigh
+    rcases enqueueRunnableOnCore_scheduler_cases st c' tid with h | ⟨E, p, h⟩ <;> rw [h]
+    rw [SchedulerState.markReschedulePendingOnCore_runQueueOnCore,
+      SchedulerState.setRunQueueOnCore_runQueueOnCore_self]
+    exact RunQueue.toList_filter_insert_neg' _ tid _ _ hHigh
   · rw [enqueueRunnableOnCore_runQueueOnCore_ne st c c' tid (fun e => hcc e.symm)]
 
 /-- SM6.A.7: removing a **high** thread from *any* core's run queue leaves every

@@ -143,12 +143,11 @@ theorem endpointReplyOnCore_donationChain_cases
           · rw [hT1] at h; cases h
           · rw [hTargetObj] at h; cases h
         · rw [hStNe oid hk]
-    have hWakeObjs : ∀ oid : SeLe4n.ObjId,
-        (wakeThread st' target executingCore).1.objects[oid]? = st'.objects[oid]? :=
-      wakeThread_objects_getElem_eq_of_ready st' target executingCore tr hTrGet hTrReady hObjInv1
+    have hWA := wakeThread_objectsAgreeOffRunLinks_of_ready st' target executingCore tr hTrGet
+      hTrReady hObjInv1
     have hFrameWake : donationChainFrame st' (wakeThread st' target executingCore).1 :=
       donationChainFrame.of_no_chain_object_write
-        (fun oid _ => by rw [hWakeObjs oid]) (fun oid _ => by rw [hWakeObjs oid])
+        (fun _ _ => hWA.get_reply_iff) (fun _ _ => hWA.get_schedContext_iff)
     have hChainWake : donationChainWellFormed (wakeThread st' target executingCore).1 :=
       donationChainWellFormed_of_frame (hFrameStore.trans hFrameWake) hChain
     have hInvWake : (wakeThread st' target executingCore).1.objects.invExt :=
@@ -163,11 +162,12 @@ theorem endpointReplyOnCore_donationChain_cases
         -- not the answered caller's, which the store rewrote.
         have hRObj : (wakeThread st' target executingCore).1.objects[rid.toObjId]?
             = some (.reply r) := (SystemState.getReply?_eq_some_iff _ rid r).mp hR
+        have hRObj' := hWA.get_reply_iff.mp hRObj
         have hRidNe : rid.toObjId ≠ target.toObjId := by
-          intro hx; rw [hx, hWakeObjs, hT1] at hRObj; cases hRObj
+          intro hx; rw [hx, hT1] at hRObj'; cases hRObj'
         have hRPre : st.getReply? rid = some r := by
-          rw [SystemState.getReply?_eq_some_iff, ← hStNe rid.toObjId hRidNe, ← hWakeObjs]
-          exact hRObj
+          rw [SystemState.getReply?_eq_some_iff, ← hStNe rid.toObjId hRidNe]
+          exact hRObj'
         exact Or.inr ⟨tcb, rid, r, scId, hLk, hRO, hRPre, hNext,
           removeCallerReplyFrame_head_getReply?_next _ target rid r scId hInvWake hR hNext _ hRun,
           removeCallerReplyFrame_head_preserves_donationChainWellFormedExcept _ _ target rid r scId

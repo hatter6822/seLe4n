@@ -1887,16 +1887,15 @@ theorem ipcUnwrapCaps_getSchedContext?_eq (msg : IpcMessage)
   · rw [ipcUnwrapCaps_preserves_objects_ne msg receiverRoot slotBase grantRight st st' summary
       scId.toObjId hRoot hObjInv hStep]
 
-/-- `v0.35.161`: waking an already-`.ready` thread is object-invisible, so it frames
-every SchedContext resolution — the shape the receive leg's plain-`Send` wake has,
+/-- `v0.35.161`: waking an already-`.ready` thread writes only TCB run-queue links,
+so it frames every SchedContext resolution — the shape the receive leg's plain-`Send` wake has,
 the sender having just been stored `.ready`. -/
 theorem wakeThread_getSchedContext?_eq_of_ready (st : SystemState)
     (tid : SeLe4n.ThreadId) (ec : CoreId) (tcb : TCB) (scId : SeLe4n.SchedContextId)
     (hTcb : st.getTcb? tid = some tcb) (hReady : tcb.ipcState = .ready)
     (hInv : st.objects.invExt) :
     (wakeThread st tid ec).1.getSchedContext? scId = st.getSchedContext? scId := by
-  unfold SystemState.getSchedContext?
-  rw [wakeThread_objects_getElem_eq_of_ready st tid ec tcb hTcb hReady hInv]
+  exact (wakeThread_objectsAgreeOffRunLinks_of_ready st tid ec tcb hTcb hReady hInv).getSchedContext? scId
 
 -- ============================================================================
 -- §12 SM6.A.4 — Per-core caller blocking (plan §3.2 steps 5–6)
@@ -2170,16 +2169,17 @@ theorem endpointCallOnCore_cdt_eq
 
 open SeLe4n.Model.SystemState in
 /-- D6 (per-core): a `wakeThread` of a `.ready` thread preserves every TCB's binding (its state
-effect is `enqueueRunnableOnCore` — a scheduler-only step that leaves the object store
-pointwise-unchanged for a `.ready` target). -/
+effect is `enqueueRunnableOnCore`, which for a `.ready` target writes only TCB run-queue
+links). -/
 theorem wakeThread_sameSchedContextBindings_of_ready
     (st : SystemState) (wtid : SeLe4n.ThreadId) (ec : CoreId) (wtcb : TCB)
     (hWGet : st.getTcb? wtid = some wtcb) (hWReady : wtcb.ipcState = .ready)
     (hObjInv : st.objects.invExt) :
     sameSchedContextBindings st (wakeThread st wtid ec).1 := by
   intro y tcY hY
-  rw [wakeThread_objects_getElem_eq_of_ready st wtid ec wtcb hWGet hWReady hObjInv y.toObjId] at hY
-  exact ⟨tcY, hY, rfl⟩
+  obtain ⟨t, h, e⟩ :=
+    (wakeThread_objectsAgreeOffRunLinks_of_ready st wtid ec wtcb hWGet hWReady hObjInv).get_tcb' hY
+  exact ⟨t, h, (TCB.proj_eq_of_withoutRunLinks_eq TCB.schedContextBinding e).symm⟩
 
 /-! **WS-RR RR8.16 (`v0.35.189`)**: the D6 binding frame below was relocated here
 from the staged `EndpointCallInvariant.lean` rather than re-proved.  It is what

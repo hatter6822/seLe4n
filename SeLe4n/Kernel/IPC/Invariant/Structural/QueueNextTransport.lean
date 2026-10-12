@@ -199,6 +199,91 @@ theorem endpointQueueHeadDisjoint_of_objects_eq {st st' : SystemState}
   endpointQueueHeadDisjoint_of_endpointBackward
     (fun _ _ hEp => by rw [← hObjs]; exact hEp) h
 
+/-! ### Steps that write nothing but run-queue links
+
+WS-ZA ZA4.5: the run queue links through TCB fields that no dual-queue clause
+reads, so every conjunct of `dualQueueSystemInvariant` carries across a step
+that agrees with its pre-state off those fields. -/
+
+theorem QueueNextPath_of_objectsAgreeOffRunLinks {st st' : SystemState}
+    (h : st'.objectsAgreeOffRunLinks st) {a b : SeLe4n.ThreadId}
+    (hp : QueueNextPath st' a b) : QueueNextPath st a b := by
+  induction hp with
+  | single x y tcbA hObj hNext =>
+    run_links_back h at tcbA hObj
+    exact .single x y tcbA hObj hNext
+  | cons x y z tcbA hObj hNext _ ih =>
+    run_links_back h at tcbA hObj
+    exact .cons x y z tcbA hObj hNext ih
+
+theorem tcbQueueChainAcyclic_of_objectsAgreeOffRunLinks {st st' : SystemState}
+    (h : st'.objectsAgreeOffRunLinks st) (hAcyclic : tcbQueueChainAcyclic st) :
+    tcbQueueChainAcyclic st' :=
+  fun tid hp => hAcyclic tid (QueueNextPath_of_objectsAgreeOffRunLinks h hp)
+
+theorem queuePPrevAgreesWithPrev_of_objectsAgreeOffRunLinks {st st' : SystemState}
+    (h : st'.objectsAgreeOffRunLinks st) (hPP : queuePPrevAgreesWithPrev st) :
+    queuePPrevAgreesWithPrev st' := by
+  intro tid tcb hT
+  run_links_back h at tcb hT
+  exact hPP tid tcb hT
+
+theorem endpointQueueHeadDisjoint_of_objectsAgreeOffRunLinks {st st' : SystemState}
+    (h : st'.objectsAgreeOffRunLinks st) (hHD : endpointQueueHeadDisjoint st) :
+    endpointQueueHeadDisjoint st' :=
+  endpointQueueHeadDisjoint_of_endpointBackward (fun _ _ hEp => h.get_endpoint_iff.mp hEp) hHD
+
+theorem intrusiveQueueWellFormed_of_objectsAgreeOffRunLinks {st st' : SystemState}
+    (h : st'.objectsAgreeOffRunLinks st) {q : IntrusiveQueue}
+    (hWf : intrusiveQueueWellFormed q st) : intrusiveQueueWellFormed q st' := by
+  obtain ⟨hHT, hHead, hTail⟩ := hWf
+  refine ⟨hHT, fun hd hh => ?_, fun tl ht => ?_⟩
+  · obtain ⟨t, hT, hp, hpp⟩ := hHead hd hh
+    run_links_fwd h at t hT
+    exact ⟨_, hT, hp, hpp⟩
+  · obtain ⟨t, hT, hn⟩ := hTail tl ht
+    run_links_fwd h at t hT
+    exact ⟨_, hT, hn⟩
+
+theorem tcbQueueLinkIntegrity_of_objectsAgreeOffRunLinks {st st' : SystemState}
+    (h : st'.objectsAgreeOffRunLinks st) (hL : tcbQueueLinkIntegrity st) :
+    tcbQueueLinkIntegrity st' := by
+  constructor
+  · intro a tA hA b hN
+    run_links_back h at tA hA
+    obtain ⟨tB, hB, hP⟩ := hL.1 a tA hA b hN
+    run_links_fwd h at tB hB
+    exact ⟨_, hB, hP⟩
+  · intro b tB hB a hP
+    run_links_back h at tB hB
+    obtain ⟨tA, hA, hN⟩ := hL.2 b tB hB a hP
+    run_links_fwd h at tA hA
+    exact ⟨_, hA, hN⟩
+
+theorem dualQueueEndpointWellFormed_of_objectsAgreeOffRunLinks {st st' : SystemState}
+    (h : st'.objectsAgreeOffRunLinks st) (epId : SeLe4n.ObjId)
+    (hWf : dualQueueEndpointWellFormed epId st) : dualQueueEndpointWellFormed epId st' := by
+  unfold dualQueueEndpointWellFormed at hWf ⊢
+  cases hObj : st'.objects[epId]? with
+  | none => trivial
+  | some obj => cases obj with
+    | endpoint ep =>
+        rw [h.get_endpoint_iff.mp hObj] at hWf
+        exact ⟨intrusiveQueueWellFormed_of_objectsAgreeOffRunLinks h hWf.1,
+               intrusiveQueueWellFormed_of_objectsAgreeOffRunLinks h hWf.2⟩
+    | _ => trivial
+
+theorem dualQueueSystemInvariant_of_objectsAgreeOffRunLinks {st st' : SystemState}
+    (h : st'.objectsAgreeOffRunLinks st) (hInv : dualQueueSystemInvariant st) :
+    dualQueueSystemInvariant st' := by
+  obtain ⟨hEp, hLink, hAcyclic, hPP, hHD⟩ := hInv
+  exact ⟨fun epId ep hObj => dualQueueEndpointWellFormed_of_objectsAgreeOffRunLinks h epId
+      (hEp epId ep (h.get_endpoint_iff.mp hObj)),
+    tcbQueueLinkIntegrity_of_objectsAgreeOffRunLinks h hLink,
+    tcbQueueChainAcyclic_of_objectsAgreeOffRunLinks h hAcyclic,
+    queuePPrevAgreesWithPrev_of_objectsAgreeOffRunLinks h hPP,
+    endpointQueueHeadDisjoint_of_objectsAgreeOffRunLinks h hHD⟩
+
 /-- **PR #897 review**: a `storeObject` of a non-endpoint object carries the fifth
 conjunct — at the stored key the post-state holds that object, which is not an
 endpoint, and every other key agrees. -/
@@ -385,12 +470,8 @@ theorem storeTcbQueueLinks_preserves_queuePPrevAgreesWithPrev
 theorem ensureRunnable_preserves_intrusiveQueueWellFormed
     (st : SystemState) (tid : SeLe4n.ThreadId)
     (q : IntrusiveQueue) (hWf : intrusiveQueueWellFormed q st) :
-    intrusiveQueueWellFormed q (ensureRunnable st tid) := by
-  obtain ⟨hHT, hHead, hTail⟩ := hWf
-  exact ⟨hHT,
-    fun hd h => let ⟨t, ht, hp, hpp⟩ := hHead hd h;
-      ⟨t, by rwa [ensureRunnable_preserves_objects], hp, hpp⟩,
-    fun tl h => let ⟨t, ht, hn⟩ := hTail tl h; ⟨t, by rwa [ensureRunnable_preserves_objects], hn⟩⟩
+    intrusiveQueueWellFormed q (ensureRunnable st tid) :=
+  intrusiveQueueWellFormed_of_objectsAgreeOffRunLinks (ensureRunnable_objectsAgreeOffRunLinks st tid) hWf
 
 /-- WS-H5: removeRunnable preserves intrusiveQueueWellFormed. -/
 theorem removeRunnable_preserves_intrusiveQueueWellFormed
@@ -406,14 +487,8 @@ theorem removeRunnable_preserves_intrusiveQueueWellFormed
 /-- WS-H5: ensureRunnable preserves tcbQueueLinkIntegrity. -/
 theorem ensureRunnable_preserves_tcbQueueLinkIntegrity
     (st : SystemState) (tid : SeLe4n.ThreadId) (h : tcbQueueLinkIntegrity st) :
-    tcbQueueLinkIntegrity (ensureRunnable st tid) := by
-  constructor
-  · intro a tA hA b hN; rw [ensureRunnable_preserves_objects] at hA
-    obtain ⟨tB, hB, hP⟩ := h.1 a tA hA b hN
-    exact ⟨tB, by rw [ensureRunnable_preserves_objects]; exact hB, hP⟩
-  · intro b tB hB a hP; rw [ensureRunnable_preserves_objects] at hB
-    obtain ⟨tA, hA, hN⟩ := h.2 b tB hB a hP
-    exact ⟨tA, by rw [ensureRunnable_preserves_objects]; exact hA, hN⟩
+    tcbQueueLinkIntegrity (ensureRunnable st tid) :=
+  tcbQueueLinkIntegrity_of_objectsAgreeOffRunLinks (ensureRunnable_objectsAgreeOffRunLinks st tid) h
 
 /-- WS-H5: removeRunnable preserves tcbQueueLinkIntegrity. -/
 theorem removeRunnable_preserves_tcbQueueLinkIntegrity
@@ -431,16 +506,9 @@ theorem removeRunnable_preserves_tcbQueueLinkIntegrity
 theorem ensureRunnable_preserves_dualQueueEndpointWellFormed
     (st : SystemState) (tid : SeLe4n.ThreadId) (epId : SeLe4n.ObjId)
     (hWf : dualQueueEndpointWellFormed epId st) :
-    dualQueueEndpointWellFormed epId (ensureRunnable st tid) := by
-  unfold dualQueueEndpointWellFormed at hWf ⊢; rw [ensureRunnable_preserves_objects]
-  cases hObjCase : st.objects[epId]? with
-  | none => trivial
-  | some obj => cases obj with
-    | tcb _ | cnode _ | vspaceRoot _ | notification _ | untyped _ | schedContext _ | reply _ | frame _ | pageTable _ => trivial
-    | endpoint ep =>
-        simp only [hObjCase] at hWf
-        exact ⟨ensureRunnable_preserves_intrusiveQueueWellFormed st tid ep.sendQ hWf.1,
-               ensureRunnable_preserves_intrusiveQueueWellFormed st tid ep.receiveQ hWf.2⟩
+    dualQueueEndpointWellFormed epId (ensureRunnable st tid) :=
+  dualQueueEndpointWellFormed_of_objectsAgreeOffRunLinks
+    (ensureRunnable_objectsAgreeOffRunLinks st tid) epId hWf
 
 /-- WS-H5: removeRunnable preserves dualQueueEndpointWellFormed. -/
 theorem removeRunnable_preserves_dualQueueEndpointWellFormed
@@ -461,14 +529,9 @@ theorem removeRunnable_preserves_dualQueueEndpointWellFormed
 theorem ensureRunnable_preserves_dualQueueSystemInvariant
     (st : SystemState) (tid : SeLe4n.ThreadId)
     (hInv : dualQueueSystemInvariant st) :
-    dualQueueSystemInvariant (ensureRunnable st tid) := by
-  obtain ⟨hEp, hLink, hAcyclic, hPP, hHD⟩ := hInv
-  refine ⟨?_, ensureRunnable_preserves_tcbQueueLinkIntegrity st tid hLink,
-    tcbQueueChainAcyclic_of_objects_eq (ensureRunnable_preserves_objects st tid) hAcyclic,
-    queuePPrevAgreesWithPrev_of_objects_eq (ensureRunnable_preserves_objects st tid) hPP,
-    endpointQueueHeadDisjoint_of_objects_eq (ensureRunnable_preserves_objects st tid) hHD⟩
-  intro epId ep hObj; rw [ensureRunnable_preserves_objects] at hObj
-  exact ensureRunnable_preserves_dualQueueEndpointWellFormed st tid epId (hEp epId ep hObj)
+    dualQueueSystemInvariant (ensureRunnable st tid) :=
+  dualQueueSystemInvariant_of_objectsAgreeOffRunLinks
+    (ensureRunnable_objectsAgreeOffRunLinks st tid) hInv
 
 /-- WS-H5: removeRunnable preserves dualQueueSystemInvariant. -/
 theorem removeRunnable_preserves_dualQueueSystemInvariant
@@ -1167,7 +1230,7 @@ theorem endpointReply_preserves_dualQueueSystemInvariant
                 have hInvER := ensureRunnable_preserves_dualQueueSystemInvariant st1 target hInv1
                 -- PR #827 #3 fold: peel the atomic consume (no-op when unlinked).
                 have hObjInvMid : (ensureRunnable st1 target).objects.invExt := by
-                  rw [ensureRunnable_preserves_objects]
+                  apply ensureRunnable_objects_invExt
                   exact storeTcbIpcStateAndMessage_preserves_objects_invExt
                     st st1 target .ready (some msg) hObjInv hStore
                 cases hRO : tcb.replyObject with

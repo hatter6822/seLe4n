@@ -111,7 +111,7 @@ open SeLe4n.Testing
 -- SM6.A.1 IPC invariant preservation:
 #check @endpointCallOnCore_preserves_objects_invExt
 #check @endpointCallOnCore_preserves_ipcInvariant
-#check @enqueueRunnableOnCore_objects_getElem_eq_of_ready
+#check @enqueueRunnableOnCore_objectsAgreeOffRunLinks_of_ready
 
 -- SM6.A.1 full IPC-invariant-bundle preservation (dual-queue + bounds + badges
 -- derived; the lookup-only congruences that carry them):
@@ -119,7 +119,7 @@ open SeLe4n.Testing
 #check @endpointCallOnCore_preserves_allPendingMessagesBounded
 #check @endpointCallOnCore_preserves_badgeWellFormed
 #check @endpointCallOnCore_preserves_ipcInvariantFull
-#check @dualQueueSystemInvariant_of_getElem_eq
+#check @dualQueueSystemInvariant_of_readViewAgreement
 
 -- SM6.A.6/.9 lock-set membership + invariant preservation through the 2PL bracket:
 #check @lockSet_endpointCall_caller_tcb_write_mem

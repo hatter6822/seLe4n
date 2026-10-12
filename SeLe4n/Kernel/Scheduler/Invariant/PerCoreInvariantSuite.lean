@@ -169,24 +169,30 @@ def schedulerInvariantStructural_smp (st : SystemState) : Prop :=
   ∀ c : CoreId, schedulerInvariantStructural_perCore st c
 
 /-- The reschedule-SGI accumulator (KSC-1): a write that touches only the
-reschedule-pending flags — objects, every run queue and every current slot
-unchanged — carries the structural per-core invariant across. -/
+reschedule-pending flags and the threads' run-queue links — objects equal off
+those links, every run queue and every current slot unchanged — carries the
+structural per-core invariant across. -/
 theorem schedulerInvariantStructural_perCore_of_flagOnlyWrite {s1 s2 : SystemState}
-    (hObj : s2.objects = s1.objects)
+    (hA : s2.objectsAgreeOffRunLinks s1)
     (hRq : ∀ c, s2.scheduler.runQueueOnCore c = s1.scheduler.runQueueOnCore c)
     (hCur : ∀ c, s2.scheduler.currentOnCore c = s1.scheduler.currentOnCore c)
     {c : CoreId} (h : schedulerInvariantStructural_perCore s1 c) :
     schedulerInvariantStructural_perCore s2 c := by
   obtain ⟨hQ, hV, hT, hW⟩ := h
-  have hGet : ∀ t, s2.getTcb? t = s1.getTcb? t := fun t => by
-    unfold SystemState.getTcb?; rw [hObj]
+  -- WS-ZA ZA4.5: the run-queue links may move; whether a thread resolves does not.
+  have hGet : ∀ t, (∃ tcb, s1.getTcb? t = some tcb) → ∃ tcb, s2.getTcb? t = some tcb :=
+    fun t h => Option.isSome_iff_exists.mp
+      ((hA.getTcb?_isSome t).trans (Option.isSome_iff_exists.mpr h))
   refine ⟨?_, ?_, ?_, ?_⟩
   · unfold queueCurrentConsistentOnCore at hQ ⊢; rw [hCur, hRq]; exact hQ
-  · unfold currentThreadValidOnCore at hV ⊢; simp only [hCur, hGet]; exact hV
+  · unfold currentThreadValidOnCore at hV ⊢
+    rw [hCur]
+    cases hc : s1.scheduler.currentOnCore c with
+    | none => trivial
+    | some t => rw [hc] at hV; exact hGet t hV
   · intro t ht
     rw [hRq] at ht
-    obtain ⟨tcb, htcb⟩ := hT t ht
-    exact ⟨tcb, by rw [hGet]; exact htcb⟩
+    exact hGet t (hT t ht)
   · unfold runQueueOnCoreWellFormed at hW ⊢; rw [hRq]; exact hW
 
 /-- KSC-1: clearing a core's reschedule-pending flag (a scheduling point's last
@@ -194,7 +200,7 @@ write) preserves the structural SMP invariant. -/
 theorem clearReschedulePendingOnCore_preserves_schedulerInvariantStructural_smp
     (st : SystemState) (c : CoreId) (h : schedulerInvariantStructural_smp st) :
     schedulerInvariantStructural_smp (st.clearReschedulePendingOnCore c) := fun c' =>
-  schedulerInvariantStructural_perCore_of_flagOnlyWrite (s1 := st) rfl
+  schedulerInvariantStructural_perCore_of_flagOnlyWrite (s1 := st) (.of_objects_eq rfl)
     (fun _ => by simp) (fun _ => by simp) (h c')
 
 -- Per-conjunct projections from the structural per-core aggregate.
@@ -415,24 +421,39 @@ def schedulerInvariantStructuralReg_smp (st : SystemState) : Prop :=
 
 /-- KSC-1: the flag-only transfer for the register-bank-extended invariant. -/
 theorem schedulerInvariantStructuralReg_perCore_of_flagOnlyWrite {s1 s2 : SystemState}
-    (hObj : s2.objects = s1.objects) (hMach : s2.machine = s1.machine)
+    (hA : s2.objectsAgreeOffRunLinks s1) (hMach : s2.machine = s1.machine)
     (hRq : ∀ c, s2.scheduler.runQueueOnCore c = s1.scheduler.runQueueOnCore c)
     (hCur : ∀ c, s2.scheduler.currentOnCore c = s1.scheduler.currentOnCore c)
     {c : CoreId} (h : schedulerInvariantStructuralReg_perCore s1 c) :
     schedulerInvariantStructuralReg_perCore s2 c := by
   obtain ⟨hS, hC⟩ := h
-  have hGet : ∀ t, s2.getTcb? t = s1.getTcb? t := fun t => by
-    unfold SystemState.getTcb?; rw [hObj]
-  refine ⟨schedulerInvariantStructural_perCore_of_flagOnlyWrite hObj hRq hCur hS, ?_⟩
+  refine ⟨schedulerInvariantStructural_perCore_of_flagOnlyWrite hA hRq hCur hS, ?_⟩
   unfold contextMatchesCurrentOnCore at hC ⊢
-  simp only [hCur, hGet, hMach]; exact hC
+  rw [hCur, hMach]
+  cases hc : s1.scheduler.currentOnCore c with
+  | none => trivial
+  | some t =>
+    rw [hc] at hC
+    dsimp only at hC ⊢
+    -- The saved registers read past the run-queue links.
+    have e := TCB.map_proj_eq_of_map_withoutRunLinks_eq TCB.registerContext (hA.getTcb? t)
+    cases h2 : s2.getTcb? t with
+    | none => trivial
+    | some t2 =>
+      cases h1 : s1.getTcb? t with
+      | none => rw [h1, h2] at e; cases e
+      | some t1 =>
+        rw [h1, h2, Option.map_some, Option.map_some, Option.some.injEq] at e
+        rw [h1] at hC
+        dsimp only
+        rw [e]; exact hC
 
 /-- KSC-1: clearing a reschedule-pending flag preserves the register-bank-extended
 structural SMP invariant. -/
 theorem clearReschedulePendingOnCore_preserves_schedulerInvariantStructuralReg_smp
     (st : SystemState) (c : CoreId) (h : schedulerInvariantStructuralReg_smp st) :
     schedulerInvariantStructuralReg_smp (st.clearReschedulePendingOnCore c) := fun c' =>
-  schedulerInvariantStructuralReg_perCore_of_flagOnlyWrite (s1 := st) rfl rfl
+  schedulerInvariantStructuralReg_perCore_of_flagOnlyWrite (s1 := st) (.of_objects_eq rfl) rfl
     (fun _ => by simp) (fun _ => by simp) (h c')
 
 theorem schedulerInvariantStructuralReg_perCore_to_structural
@@ -539,9 +560,7 @@ theorem enqueueRunnableOnCore_preserves_runnableThreadsAreTCBsOnCore
             have hx' : x ∈ ((st.scheduler.runQueueOnCore c).insert tid
                 (tcb.boostedPriority)).toList := by
               have h2 := hx
-              simp only [enqueueRunnableOnCore, SystemState.getTcbWitnessed?_eq_some hTcb, hFresh, Bool.false_eq_true, if_false,
-                SchedulerState.markReschedulePendingOnCore_runQueueOnCore,
-                SchedulerState.setRunQueueOnCore_runQueueOnCore_self] at h2
+              rw [enqueueRunnableOnCore_runQueueOnCore_of_fresh st c tid tcb hTcb hFresh] at h2
               exact h2
             rcases (RunQueue.mem_insert _ _ _ _).mp ((RunQueue.mem_toList_iff_mem _ _).mp hx') with
               hold | heq
@@ -1184,9 +1203,10 @@ theorem enqueueRunnableOnCore_getTcb?_regContext (st : SystemState) (c : CoreId)
         refine ⟨tcb, ?_, rfl⟩
         rw [enqueueRunnableOnCore_eq_self_of_runnable st c other hFresh]; exact ht
     | false =>
-        exact ⟨{ tcb with ipcState := .ready },
-          enqueueRunnableOnCore_makes_ready st c other tcb ht hInv hFresh, rfl⟩
-  · exact ⟨tcb, by rw [enqueueRunnableOnCore_getTcb?_ne st c tid other hInv hot]; exact ht, rfl⟩
+        obtain ⟨t', h', e⟩ := enqueueRunnableOnCore_makes_ready st c other tcb ht hInv hFresh
+        exact ⟨t', h', TCB.proj_eq_of_withoutRunLinks_eq TCB.registerContext e⟩
+  · obtain ⟨t', h', e⟩ := enqueueRunnableOnCore_getTcb?_ne_fwd st c tid other hInv hot ht
+    exact ⟨t', h', TCB.proj_eq_of_withoutRunLinks_eq TCB.registerContext e⟩
 
 /-- WS-SM SM5.I.8 (register-bank payoff): the pure per-core domain rotation
 preserves the register-bank-extended structural SMP invariant — it touches no
@@ -1346,13 +1366,13 @@ def schedulerInvariantStructuralRegNodup_smp (st : SystemState) : Prop :=
 
 /-- KSC-1: the flag-only transfer for the Nodup-extended invariant. -/
 theorem schedulerInvariantStructuralRegNodup_perCore_of_flagOnlyWrite {s1 s2 : SystemState}
-    (hObj : s2.objects = s1.objects) (hMach : s2.machine = s1.machine)
+    (hA : s2.objectsAgreeOffRunLinks s1) (hMach : s2.machine = s1.machine)
     (hRq : ∀ c, s2.scheduler.runQueueOnCore c = s1.scheduler.runQueueOnCore c)
     (hCur : ∀ c, s2.scheduler.currentOnCore c = s1.scheduler.currentOnCore c)
     {c : CoreId} (h : schedulerInvariantStructuralRegNodup_perCore s1 c) :
     schedulerInvariantStructuralRegNodup_perCore s2 c := by
   obtain ⟨hR, hU⟩ := h
-  refine ⟨schedulerInvariantStructuralReg_perCore_of_flagOnlyWrite hObj hMach hRq hCur hR, ?_⟩
+  refine ⟨schedulerInvariantStructuralReg_perCore_of_flagOnlyWrite hA hMach hRq hCur hR, ?_⟩
   unfold runQueueUniqueOnCore at hU ⊢; rw [hRq]; exact hU
 
 /-- KSC-1: clearing a reschedule-pending flag preserves the Nodup-extended
@@ -1360,7 +1380,7 @@ structural SMP invariant. -/
 theorem clearReschedulePendingOnCore_preserves_schedulerInvariantStructuralRegNodup_smp
     (st : SystemState) (c : CoreId) (h : schedulerInvariantStructuralRegNodup_smp st) :
     schedulerInvariantStructuralRegNodup_smp (st.clearReschedulePendingOnCore c) := fun c' =>
-  schedulerInvariantStructuralRegNodup_perCore_of_flagOnlyWrite (s1 := st) rfl rfl
+  schedulerInvariantStructuralRegNodup_perCore_of_flagOnlyWrite (s1 := st) (.of_objects_eq rfl) rfl
     (fun _ => by simp) (fun _ => by simp) (h c')
 
 /-- KSC-1: `markKeyChangeFor` (the key-change writer) only ever raises
@@ -1370,7 +1390,7 @@ theorem markKeyChangeFor_preserves_schedulerInvariantStructuralRegNodup_smp
     (h : schedulerInvariantStructuralRegNodup_smp st) :
     schedulerInvariantStructuralRegNodup_smp (markKeyChangeFor st tid k) := fun c' =>
   schedulerInvariantStructuralRegNodup_perCore_of_flagOnlyWrite
-    (markKeyChangeFor_objects st tid k) (markKeyChangeFor_machine st tid k)
+    (.of_objects_eq (markKeyChangeFor_objects st tid k)) (markKeyChangeFor_machine st tid k)
     (fun _ => markKeyChangeFor_runQueueOnCore st tid k _)
     (fun _ => markKeyChangeFor_currentOnCore st tid k _) (h c')
 
@@ -1658,32 +1678,27 @@ theorem enqueueRunnableOnCore_preserves_allThreadsTimeSlicePositive
   refine allThreadsTimeSlicePositive_frame ?_ h
   intro x tcb' hx
   by_cases hxtid : x = tid
-  · rw [hxtid] at hx ⊢
-    cases hTcb : st.getTcb? tid with
+  · subst hxtid
+    cases hTcb : st.getTcb? x with
     | none =>
       exfalso
-      rw [enqueueRunnableOnCore_no_tcb_noop st c₀ tid hTcb] at hx
-      rw [hTcb] at hx; exact absurd hx (by simp)
+      rw [enqueueRunnableOnCore_no_tcb_noop st c₀ x hTcb, hTcb] at hx
+      exact absurd hx (by simp)
     | some tcb =>
       refine ⟨tcb, rfl, ?_⟩
-      by_cases hrun : runnableOnSomeCore st tid = true
-      · have heq : enqueueRunnableOnCore st c₀ tid = st := by
-          simp only [enqueueRunnableOnCore, SystemState.getTcbWitnessed?_eq_some hTcb, hrun, if_true]
-        rw [heq, hTcb, Option.some.injEq] at hx
-        rw [← hx]
-      · rw [Bool.not_eq_true] at hrun
-        have hpost : (enqueueRunnableOnCore st c₀ tid).getTcb? tid
-            = some { tcb with ipcState := .ready } := by
-          simp only [enqueueRunnableOnCore, SystemState.getTcbWitnessed?_eq_some hTcb]
-          split
-          · rename_i hr; rw [hrun] at hr; exact absurd hr (by simp)
-          · simp only [SystemState.getTcb?, RHTable_getElem?_eq_get?, SystemState.rewriteObject_objects]
-            rw [RobinHood.RHTable.getElem?_insert_self st.objects tid.toObjId
-              (.tcb { tcb with ipcState := .ready }) hInv]
-        rw [hpost, Option.some.injEq] at hx
-        rw [← hx]
-  · rw [enqueueRunnableOnCore_getTcb?_ne st c₀ tid x hInv hxtid] at hx
-    exact ⟨tcb', hx, rfl⟩
+      cases hrun : runnableOnSomeCore st x with
+      | true =>
+        rw [enqueueRunnableOnCore_eq_self_of_runnable st c₀ x hrun, hTcb, Option.some.injEq] at hx
+        rw [hx]
+      | false =>
+        -- The wake marks the thread `.ready` and writes its run-queue links;
+        -- neither is its slice.
+        obtain ⟨t', h', e⟩ := enqueueRunnableOnCore_makes_ready st c₀ x tcb hTcb hInv hrun
+        rw [h', Option.some.injEq] at hx
+        subst hx
+        exact TCB.proj_eq_of_withoutRunLinks_eq TCB.timeSlice e
+  · obtain ⟨t, hT, e⟩ := enqueueRunnableOnCore_getTcb?_ne_back st c₀ tid x hInv hxtid hx
+    exact ⟨t, hT, TCB.proj_eq_of_withoutRunLinks_eq TCB.timeSlice e⟩
 
 theorem enqueueRunnableOnCore_preserves_schedulerInvariantStructuralRegNodup_smp
     (st : SystemState) (c₀ : CoreId) (tid : SeLe4n.ThreadId)
@@ -1698,15 +1713,11 @@ theorem enqueueRunnableOnCore_preserves_schedulerInvariantStructuralRegNodup_smp
     (fun c' hc => enqueueRunnableOnCore_runQueueOnCore_ne st c₀ c' tid hc)
   -- operated core: the wake is a `RunQueue.insert`.
   unfold runQueueUniqueOnCore
-  cases hTcb : st.getTcb? tid with
-  | none => simp only [enqueueRunnableOnCore, SystemState.getTcbWitnessed?_eq_none hTcb]; exact (hPre c₀).2
-  | some tcb =>
-      simp only [enqueueRunnableOnCore, SystemState.getTcbWitnessed?_eq_some hTcb]
-      split
-      · exact (hPre c₀).2
-      · simp only [SchedulerState.markReschedulePendingOnCore_runQueueOnCore,
-          SchedulerState.setRunQueueOnCore_runQueueOnCore_self]
-        exact RunQueue.insert_preserves_toList_nodup _ _ _ (hPre c₀).2
+  rcases enqueueRunnableOnCore_scheduler_cases st c₀ tid with h | ⟨E, p, h⟩ <;> rw [h]
+  · exact (hPre c₀).2
+  · simp only [SchedulerState.markReschedulePendingOnCore_runQueueOnCore,
+      SchedulerState.setRunQueueOnCore_runQueueOnCore_self]
+    exact RunQueue.insert_preserves_toList_nodup _ _ _ (hPre c₀).2
 
 theorem wakeThread_preserves_schedulerInvariantStructuralRegNodup_smp
     (st : SystemState) (tid : SeLe4n.ThreadId) (executingCore : CoreId)
@@ -2282,73 +2293,107 @@ theorem processReplenishmentsDueOnCore_preserves_schedulerInvariantStructuralReg
 -- ── §8.3b  The IPC timeout-path base preservation (ensureRunnable / timeoutThread
 --           / timeoutBlockedThreads), feeding the budget phase of the tick ──
 
+/-- WS-ZA ZA4.5: `ensureRunnable` is the identity, or it inserts a resolving,
+unqueued thread into the boot core's run queue (ghost queue and concrete ends)
+and marks the boot core for rescheduling. -/
+theorem ensureRunnable_scheduler_cases (st : SystemState) (tid : SeLe4n.ThreadId) :
+    (ensureRunnable st tid).scheduler = st.scheduler ∨
+      ∃ (tcb : TCB) (E : RunQueueEnds), st.getTcb? tid = some tcb ∧
+        (ensureRunnable st tid).scheduler =
+          ((st.scheduler.setRunQueueEndsOnCore bootCoreId E).setRunQueueOnCore bootCoreId
+            ((st.scheduler.runQueueOnCore bootCoreId).insert tid tcb.boostedPriority)
+            ).markReschedulePendingOnCore bootCoreId := by
+  unfold ensureRunnable
+  split
+  · exact Or.inl rfl
+  · split
+    · rename_i tcb htcb
+      exact Or.inr ⟨tcb, SystemState.runEnqueueEnds st bootCoreId tid tcb.boostedPriority, htcb,
+        by simp only [SystemState.runEnqueueOnCore_scheduler]⟩
+    · exact Or.inl rfl
+
 /-- WS-SM SM5.I.8 (timeout atom): `ensureRunnable` preserves the base safety
 invariant on every core, given the enqueued thread is not the boot core's current
 thread (so the boot `queueCurrentConsistent` survives the insert).  `ensureRunnable`
-writes only the boot run queue (objects unchanged), so siblings frame and boot
+writes only the boot run queue (objects equal off run-queue links), so siblings frame and boot
 takes a `RunQueue.insert`. -/
 theorem ensureRunnable_preserves_schedulerInvariantStructuralRegNodup_smp
     (st : SystemState) (tid : SeLe4n.ThreadId) (_hInv : st.objects.invExt)
     (hNotCur : st.scheduler.currentOnCore bootCoreId ≠ some tid)
     (hPre : schedulerInvariantStructuralRegNodup_smp st) :
     schedulerInvariantStructuralRegNodup_smp (ensureRunnable st tid) := by
-  unfold ensureRunnable
-  split
-  · exact hPre
-  · split
-    · rename_i tcb htcb
-      intro c'
-      by_cases hc : c' = bootCoreId
-      · subst hc
-        obtain ⟨⟨⟨hQCC, hCTV, hRAT, hWf⟩, hCtx⟩, hNod⟩ := hPre bootCoreId
-        refine ⟨⟨⟨?_, ?_, ?_, ?_⟩, ?_⟩, ?_⟩
-        · -- queueCurrentConsistent on boot: current ∉ (oldRq.insert tid)
-          simp only [queueCurrentConsistentOnCore,
-            SchedulerState.markReschedulePendingOnCore_currentOnCore, SchedulerState.setRunQueueOnCore_currentOnCore,
-            SchedulerState.markReschedulePendingOnCore_runQueueOnCore, SchedulerState.setRunQueueOnCore_runQueueOnCore_self]
-          simp only [queueCurrentConsistentOnCore] at hQCC
-          cases hcur : st.scheduler.currentOnCore bootCoreId with
-          | none => exact trivial
-          | some t =>
-              rw [hcur] at hQCC
-              intro hmem
-              rcases (RunQueue.mem_insert _ tid _ t).mp
-                ((RunQueue.mem_toList_iff_mem _ t).mp hmem) with hold | heq
-              · exact hQCC ((RunQueue.mem_toList_iff_mem _ t).mpr hold)
-              · exact hNotCur (by rw [hcur, heq])
-        · -- currentThreadValid: current + objects unchanged
-          simp only [currentThreadValidOnCore, SchedulerState.markReschedulePendingOnCore_currentOnCore, SchedulerState.setRunQueueOnCore_currentOnCore]
-          exact hCTV
-        · -- runnableThreadsAreTCBs: members are old TCBs ∪ {tid}, objects unchanged
-          intro t hmem
-          simp only [SchedulerState.markReschedulePendingOnCore_runQueueOnCore, SchedulerState.setRunQueueOnCore_runQueueOnCore_self] at hmem
+  intro c'
+  have hD := ensureRunnable_onlyObjectsSchedulerDiffer st tid
+  unfold SystemState.onlyObjectsSchedulerDiffer at hD
+  have hM : (ensureRunnable st tid).machine = st.machine := by rw [hD]
+  -- The enqueue's run-queue link writes are invisible to the invariant: argue on
+  -- the pre-state objects under the post-state scheduler.
+  refine schedulerInvariantStructuralRegNodup_perCore_of_flagOnlyWrite
+    (s1 := { st with scheduler := (ensureRunnable st tid).scheduler })
+    (ensureRunnable_objectsAgreeOffRunLinks st tid) hM (fun _ => rfl) (fun _ => rfl) ?_
+  rcases ensureRunnable_scheduler_cases st tid with h | ⟨tcb, E, htcb, h⟩ <;> rw [h]
+  · exact hPre c'
+  by_cases hc : c' = bootCoreId
+  · subst hc
+    obtain ⟨⟨⟨hQCC, hCTV, hRAT, hWf⟩, hCtx⟩, hNod⟩ := hPre bootCoreId
+    refine ⟨⟨⟨?_, ?_, ?_, ?_⟩, ?_⟩, ?_⟩
+    · -- queueCurrentConsistent on boot: current ∉ (oldRq.insert tid)
+      simp only [queueCurrentConsistentOnCore,
+        SchedulerState.markReschedulePendingOnCore_currentOnCore, SchedulerState.setRunQueueOnCore_currentOnCore,
+        SchedulerState.setRunQueueEndsOnCore_currentOnCore,
+        SchedulerState.markReschedulePendingOnCore_runQueueOnCore, SchedulerState.setRunQueueOnCore_runQueueOnCore_self]
+      simp only [queueCurrentConsistentOnCore] at hQCC
+      cases hcur : st.scheduler.currentOnCore bootCoreId with
+      | none => exact trivial
+      | some t =>
+          rw [hcur] at hQCC
+          intro hmem
           rcases (RunQueue.mem_insert _ tid _ t).mp
             ((RunQueue.mem_toList_iff_mem _ t).mp hmem) with hold | heq
-          · exact hRAT t ((RunQueue.mem_toList_iff_mem _ t).mpr hold)
-          · exact ⟨tcb, by rw [heq]; exact htcb⟩
-        · -- runQueueWellFormed: insert preserves
-          simp only [runQueueOnCoreWellFormed, SchedulerState.markReschedulePendingOnCore_runQueueOnCore, SchedulerState.setRunQueueOnCore_runQueueOnCore_self]
-          exact RunQueue.insert_preserves_wellFormed _ hWf _ _
-        · -- contextMatches: current + regs + objects unchanged
-          refine contextMatchesCurrentOnCore_frame_at ?_ rfl
-            (fun t tcb' _ ht => ⟨tcb', ht, RegisterFile.beq_self _⟩) hCTV hCtx
-          simp only [SchedulerState.markReschedulePendingOnCore_currentOnCore, SchedulerState.setRunQueueOnCore_currentOnCore]
-        · -- Nodup: insert preserves
-          simp only [runQueueUniqueOnCore, SchedulerState.markReschedulePendingOnCore_runQueueOnCore, SchedulerState.setRunQueueOnCore_runQueueOnCore_self]
-          exact RunQueue.insert_preserves_toList_nodup _ _ _ hNod
-      · -- sibling c' ≠ boot: run queue + current framed, objects unchanged
-        refine ⟨⟨?_, ?_⟩, ?_⟩
-        · refine schedulerInvariantStructural_perCore_frame ?_ ?_ ?_ (hPre c').1.1
-          · simp only [SchedulerState.markReschedulePendingOnCore_currentOnCore, SchedulerState.setRunQueueOnCore_currentOnCore]
-          · simp only [SchedulerState.markReschedulePendingOnCore_runQueueOnCore, SchedulerState.setRunQueueOnCore_runQueueOnCore_ne _ _ _ _ (Ne.symm hc)]
-          · exact fun _ hh => hh
-        · refine contextMatchesCurrentOnCore_frame_at ?_ rfl
-            (fun t tcb' _ ht => ⟨tcb', ht, RegisterFile.beq_self _⟩) ((hPre c').1.1.2.1) ((hPre c').1.2)
-          · simp only [SchedulerState.markReschedulePendingOnCore_currentOnCore, SchedulerState.setRunQueueOnCore_currentOnCore]
-        · exact (runQueueUniqueOnCore_frame
-            (by simp only [SchedulerState.markReschedulePendingOnCore_runQueueOnCore, SchedulerState.setRunQueueOnCore_runQueueOnCore_ne _ _ _ _ (Ne.symm hc)])).mpr
-            (hPre c').2
-    · exact hPre
+          · exact hQCC ((RunQueue.mem_toList_iff_mem _ t).mpr hold)
+          · exact hNotCur (by rw [hcur, heq])
+    · -- currentThreadValid: current + objects unchanged
+      simp only [currentThreadValidOnCore, SchedulerState.markReschedulePendingOnCore_currentOnCore,
+        SchedulerState.setRunQueueOnCore_currentOnCore, SchedulerState.setRunQueueEndsOnCore_currentOnCore]
+      exact hCTV
+    · -- runnableThreadsAreTCBs: members are old TCBs ∪ {tid}, objects unchanged
+      intro t hmem
+      simp only [SchedulerState.markReschedulePendingOnCore_runQueueOnCore,
+        SchedulerState.setRunQueueOnCore_runQueueOnCore_self] at hmem
+      rcases (RunQueue.mem_insert _ tid _ t).mp
+        ((RunQueue.mem_toList_iff_mem _ t).mp hmem) with hold | heq
+      · exact hRAT t ((RunQueue.mem_toList_iff_mem _ t).mpr hold)
+      · exact ⟨tcb, by rw [heq]; exact htcb⟩
+    · -- runQueueWellFormed: insert preserves
+      simp only [runQueueOnCoreWellFormed, SchedulerState.markReschedulePendingOnCore_runQueueOnCore,
+        SchedulerState.setRunQueueOnCore_runQueueOnCore_self]
+      exact RunQueue.insert_preserves_wellFormed _ hWf _ _
+    · -- contextMatches: current + regs + objects unchanged
+      refine contextMatchesCurrentOnCore_frame_at ?_ rfl
+        (fun t tcb' _ ht => ⟨tcb', ht, RegisterFile.beq_self _⟩) hCTV hCtx
+      simp only [SchedulerState.markReschedulePendingOnCore_currentOnCore,
+        SchedulerState.setRunQueueOnCore_currentOnCore, SchedulerState.setRunQueueEndsOnCore_currentOnCore]
+    · -- Nodup: insert preserves
+      simp only [runQueueUniqueOnCore, SchedulerState.markReschedulePendingOnCore_runQueueOnCore,
+        SchedulerState.setRunQueueOnCore_runQueueOnCore_self]
+      exact RunQueue.insert_preserves_toList_nodup _ _ _ hNod
+  · -- sibling c' ≠ boot: run queue + current framed, objects unchanged
+    have hCur : (((st.scheduler.setRunQueueEndsOnCore bootCoreId E).setRunQueueOnCore bootCoreId
+        ((st.scheduler.runQueueOnCore bootCoreId).insert tid tcb.boostedPriority)
+        ).markReschedulePendingOnCore bootCoreId).currentOnCore c' = st.scheduler.currentOnCore c' := by
+      simp only [SchedulerState.markReschedulePendingOnCore_currentOnCore,
+        SchedulerState.setRunQueueOnCore_currentOnCore, SchedulerState.setRunQueueEndsOnCore_currentOnCore]
+    have hRq : (((st.scheduler.setRunQueueEndsOnCore bootCoreId E).setRunQueueOnCore bootCoreId
+        ((st.scheduler.runQueueOnCore bootCoreId).insert tid tcb.boostedPriority)
+        ).markReschedulePendingOnCore bootCoreId).runQueueOnCore c' = st.scheduler.runQueueOnCore c' := by
+      simp only [SchedulerState.markReschedulePendingOnCore_runQueueOnCore,
+        SchedulerState.setRunQueueOnCore_runQueueOnCore_ne _ _ _ _ (Ne.symm hc),
+        SchedulerState.setRunQueueEndsOnCore_runQueueOnCore]
+    refine ⟨⟨?_, ?_⟩, ?_⟩
+    · exact schedulerInvariantStructural_perCore_frame hCur hRq (fun _ hh => hh) (hPre c').1.1
+    · exact contextMatchesCurrentOnCore_frame_at hCur rfl
+        (fun t tcb' _ ht => ⟨tcb', ht, RegisterFile.beq_self _⟩) ((hPre c').1.1.2.1) ((hPre c').1.2)
+    · exact (runQueueUniqueOnCore_frame hRq).mpr (hPre c').2
 
 /-- WS-SM SM5.I.8 (reusable object atom): inserting a TCB whose `registerContext`
 equals the displaced TCB's at the same key preserves the base safety invariant.
@@ -2706,15 +2751,6 @@ theorem endpointQueueRemove_preserves_schedulerInvariantStructuralRegNodup_smp
   · intro _c x txcb _hcur htcb
     exact endpointQueueRemove_getTcb?_upToReg endpointId isReceiveQ tid st st' hInv hStep x txcb htcb
 
-/-- `ensureRunnable` leaves the object store untouched (it writes only the boot
-run queue).  Thin local copy — the `Lifecycle.Suspend` original is outside this
-module's import closure (mirrors `PerCoreTimerTick`'s `_local` copy). -/
-private theorem ensureRunnable_objects_eq_local (st : SystemState) (tid : SeLe4n.ThreadId) :
-    (ensureRunnable st tid).objects = st.objects := by
-  unfold ensureRunnable; split
-  · rfl
-  · split <;> rfl
-
 open SeLe4n.Kernel.PriorityInheritance in
 /-- WS-OD OD1.2: the timeout's object-only prefix preserves the register-nodup
 scheduler bundle.  `hNotCur` is what pays for the TCB store: the staged
@@ -2976,17 +3012,40 @@ theorem runQueue_frame_preserves_runQueueSafetyOnCore (st st' : SystemState) (c 
   · show runQueueUniqueOnCore st'.scheduler c
     simp only [runQueueUniqueOnCore, hrq]; exact hNd
 
+/-- WS-ZA ZA4.5: an insert into core `c`'s run queue of a thread that resolves
+in the post-state, with every resolving thread still resolving, preserves the
+run-queue safety bundle there. -/
+theorem runQueue_insert_preserves_runQueueSafetyOnCore (st st' : SystemState) (c : CoreId)
+    (tid : SeLe4n.ThreadId) (p : SeLe4n.Priority)
+    (hrq : st'.scheduler.runQueueOnCore c = (st.scheduler.runQueueOnCore c).insert tid p)
+    (hSome : ∀ x : SeLe4n.ThreadId, (st.getTcb? x).isSome → (st'.getTcb? x).isSome)
+    (hNew : (st'.getTcb? tid).isSome)
+    (h : runQueueSafetyOnCore st c) : runQueueSafetyOnCore st' c := by
+  obtain ⟨hRat, hWf, hNd⟩ := h
+  refine ⟨?_, ?_, ?_⟩
+  · intro t ht
+    rw [hrq] at ht
+    rcases (RunQueue.mem_insert _ tid _ t).mp ((RunQueue.mem_toList_iff_mem _ t).mp ht) with
+      hold | heq
+    · obtain ⟨tcbt, htcbt⟩ := hRat t ((RunQueue.mem_toList_iff_mem _ t).mpr hold)
+      exact Option.isSome_iff_exists.mp (hSome t (by simp [htcbt]))
+    · subst heq; exact Option.isSome_iff_exists.mp hNew
+  · show runQueueOnCoreWellFormed st'.scheduler c
+    simp only [runQueueOnCoreWellFormed, hrq]
+    exact RunQueue.insert_preserves_wellFormed _ hWf _ _
+  · show runQueueUniqueOnCore st'.scheduler c
+    simp only [runQueueUniqueOnCore, hrq]
+    exact RunQueue.insert_preserves_toList_nodup _ _ _ hNd
+
 /-- `ensureRunnable` frames core `c`'s run queue when `c ≠ bootCoreId` (it writes
 only the boot run queue). -/
 theorem ensureRunnable_runQueueOnCore_ne (st : SystemState) (tid : SeLe4n.ThreadId)
     (c : CoreId) (hc : c ≠ bootCoreId) :
     (ensureRunnable st tid).scheduler.runQueueOnCore c = st.scheduler.runQueueOnCore c := by
-  unfold ensureRunnable
-  split
-  · rfl
-  · split
-    · simp only [SchedulerState.markReschedulePendingOnCore_runQueueOnCore, SchedulerState.setRunQueueOnCore_runQueueOnCore_ne _ _ _ _ (Ne.symm hc)]
-    · rfl
+  rcases ensureRunnable_scheduler_cases st tid with h | ⟨_, E, _, h⟩ <;> rw [h]
+  simp only [SchedulerState.markReschedulePendingOnCore_runQueueOnCore,
+    SchedulerState.setRunQueueOnCore_runQueueOnCore_ne _ _ _ _ (Ne.symm hc),
+    SchedulerState.setRunQueueEndsOnCore_runQueueOnCore]
 
 /-- WS-SM SM5.I.8: `ensureRunnable` preserves the qcc-free run-queue safety bundle
 on core `c`.  Objects are untouched (`getTcb?` fixed); on `bootCoreId` the
@@ -2995,32 +3054,19 @@ TCB); on any other core the run queue is framed. -/
 theorem ensureRunnable_preserves_runQueueSafetyOnCore (st : SystemState)
     (tid : SeLe4n.ThreadId) (c : CoreId) (h : runQueueSafetyOnCore st c) :
     runQueueSafetyOnCore (ensureRunnable st tid) c := by
+  have hSome : ∀ x : SeLe4n.ThreadId, (st.getTcb? x).isSome →
+      ((ensureRunnable st tid).getTcb? x).isSome := fun x hx => by
+    rw [(ensureRunnable_objectsAgreeOffRunLinks st tid).getTcb?_isSome]; exact hx
   by_cases hc : c = bootCoreId
   · subst hc
-    unfold ensureRunnable
-    split
-    · exact h
-    · split
-      · rename_i tcb htcb
-        obtain ⟨hRat, hWf, hNd⟩ := h
-        refine ⟨?_, ?_, ?_⟩
-        · intro t ht
-          simp only [SchedulerState.markReschedulePendingOnCore_runQueueOnCore, SchedulerState.setRunQueueOnCore_runQueueOnCore_self] at ht
-          rcases (RunQueue.mem_insert _ tid _ t).mp
-            ((RunQueue.mem_toList_iff_mem _ t).mp ht) with hold | heq
-          · exact hRat t ((RunQueue.mem_toList_iff_mem _ t).mpr hold)
-          · exact ⟨tcb, by rw [heq]; exact htcb⟩
-        · show runQueueOnCoreWellFormed _ bootCoreId
-          simp only [runQueueOnCoreWellFormed, SchedulerState.markReschedulePendingOnCore_runQueueOnCore, SchedulerState.setRunQueueOnCore_runQueueOnCore_self]
-          exact RunQueue.insert_preserves_wellFormed _ hWf _ _
-        · show runQueueUniqueOnCore _ bootCoreId
-          simp only [runQueueUniqueOnCore, SchedulerState.markReschedulePendingOnCore_runQueueOnCore, SchedulerState.setRunQueueOnCore_runQueueOnCore_self]
-          exact RunQueue.insert_preserves_toList_nodup _ _ _ hNd
-      · exact h
+    rcases ensureRunnable_scheduler_cases st tid with hS | ⟨tcb, E, htcb, hS⟩
+    · exact runQueue_frame_preserves_runQueueSafetyOnCore st _ bootCoreId (by rw [hS]) hSome h
+    · refine runQueue_insert_preserves_runQueueSafetyOnCore st _ bootCoreId tid
+        tcb.boostedPriority ?_ hSome (hSome tid (by rw [htcb]; rfl)) h
+      rw [hS, SchedulerState.markReschedulePendingOnCore_runQueueOnCore,
+        SchedulerState.setRunQueueOnCore_runQueueOnCore_self]
   · exact runQueue_frame_preserves_runQueueSafetyOnCore st _ c
-      (ensureRunnable_runQueueOnCore_ne st tid c hc)
-      (fun x hx => by rw [show (ensureRunnable st tid).getTcb? x = st.getTcb? x from by
-        unfold SystemState.getTcb?; rw [ensureRunnable_objects_eq_local]]; exact hx) h
+      (ensureRunnable_runQueueOnCore_ne st tid c hc) hSome h
 
 /-- WS-SM (PR #880 round 8): `enqueueRunnableOnCore` preserves the qcc-free
 run-queue safety bundle on **every** core `c` — a sibling core's queue is framed;
@@ -3039,35 +3085,15 @@ theorem enqueueRunnableOnCore_preserves_runQueueSafetyOnCore (st : SystemState)
     | true => rw [enqueueRunnableOnCore_eq_self_of_runnable st tc tid hFresh]; exact h
     | false =>
       have hSome : ∀ x : SeLe4n.ThreadId, (st.getTcb? x).isSome →
-          ((enqueueRunnableOnCore st tc tid).getTcb? x).isSome := by
-        intro x hx
-        by_cases hxt : x = tid
-        · subst hxt
-          rw [enqueueRunnableOnCore_makes_ready st tc x tcb hTcb hInv hFresh]
-          exact rfl
-        · rw [enqueueRunnableOnCore_getTcb?_ne st tc tid x hInv hxt]; exact hx
+          ((enqueueRunnableOnCore st tc tid).getTcb? x).isSome := fun x hx => by
+        obtain ⟨t, ht⟩ := Option.isSome_iff_exists.mp hx
+        obtain ⟨t', ht'⟩ := enqueueRunnableOnCore_getTcb?_isSome st tc tid x t hInv ht
+        rw [ht']; rfl
       by_cases hc : c = tc
       · subst hc
-        obtain ⟨hRat, hWf, hNd⟩ := h
-        refine ⟨?_, ?_, ?_⟩
-        · intro t ht
-          simp only [enqueueRunnableOnCore, SystemState.getTcbWitnessed?_eq_some hTcb, hFresh, Bool.false_eq_true, if_false,
-            SchedulerState.markReschedulePendingOnCore_runQueueOnCore,
-            SchedulerState.setRunQueueOnCore_runQueueOnCore_self] at ht
-          rcases (RunQueue.mem_insert _ tid _ t).mp
-            ((RunQueue.mem_toList_iff_mem _ t).mp ht) with hold | heq
-          · obtain ⟨tcbt, htcbt⟩ := hRat t ((RunQueue.mem_toList_iff_mem _ t).mpr hold)
-            have hs := hSome t (by simp [htcbt])
-            cases h' : (enqueueRunnableOnCore st c tid).getTcb? t with
-            | none => rw [h'] at hs; exact absurd hs (by simp)
-            | some tcb' => exact ⟨tcb', rfl⟩
-          · exact ⟨_, by rw [heq]; exact enqueueRunnableOnCore_makes_ready st c tid tcb hTcb hInv hFresh⟩
-        · show runQueueOnCoreWellFormed _ c
-          simp only [runQueueOnCoreWellFormed]
-          exact enqueueRunnableOnCore_preserves_runQueueOnCore_wellFormed st c tid hWf
-        · show runQueueUniqueOnCore _ c
-          simp only [runQueueUniqueOnCore]
-          exact enqueueRunnableOnCore_preserves_runQueueUniqueOnCore st c c tid hNd
+        exact runQueue_insert_preserves_runQueueSafetyOnCore st _ c tid tcb.boostedPriority
+          (enqueueRunnableOnCore_runQueueOnCore_of_fresh st c tid tcb hTcb hFresh) hSome
+          (hSome tid (by rw [hTcb]; rfl)) h
       · exact runQueue_frame_preserves_runQueueSafetyOnCore st _ c
           (enqueueRunnableOnCore_runQueueOnCore_ne st tc c tid (fun he => hc he.symm))
           hSome h
@@ -4148,21 +4174,6 @@ theorem timerTickOnCorePrepared_preserves_runnableThreadsAreTCBsOnCore (st : Sys
 
 -- ── §8.3e  Prepared-phase discharge — `contextMatchesCurrentOnCore` (register bank) ──
 
-/-- A wake keeps any pre-state thread resolvable with an unchanged
-`registerContext` (it changes only the woken thread's `ipcState`). -/
-theorem enqueueRunnableOnCore_getTcb?_upToReg (st : SystemState) (c : CoreId)
-    (tid x : SeLe4n.ThreadId) (t : TCB) (hInv : st.objects.invExt)
-    (hres : st.getTcb? x = some t) :
-    ∃ t', (enqueueRunnableOnCore st c tid).getTcb? x = some t' ∧
-      t.registerContext = t'.registerContext := by
-  cases hFresh : runnableOnSomeCore st tid with
-  | true => rw [enqueueRunnableOnCore_eq_self_of_runnable st c tid hFresh]; exact ⟨t, hres, rfl⟩
-  | false =>
-    by_cases hEq : x = tid
-    · subst hEq
-      exact ⟨_, enqueueRunnableOnCore_makes_ready st c x t hres hInv hFresh, rfl⟩
-    · rw [enqueueRunnableOnCore_getTcb?_ne st c tid x hInv hEq]; exact ⟨t, hres, rfl⟩
-
 /-- A wake keeps a non-TCB slot non-resolvable (it cannot turn a non-TCB into a
 TCB). -/
 theorem enqueueRunnableOnCore_getTcb?_eq_none (st : SystemState) (c : CoreId)
@@ -4173,7 +4184,11 @@ theorem enqueueRunnableOnCore_getTcb?_eq_none (st : SystemState) (c : CoreId)
   | false =>
     by_cases hEq : x = tid
     · subst hEq; rw [enqueueRunnableOnCore_no_tcb_noop st c x hres]; exact hres
-    · rw [enqueueRunnableOnCore_getTcb?_ne st c tid x hInv hEq]; exact hres
+    · have e := enqueueRunnableOnCore_getTcb?_ne st c tid x hInv hEq
+      rw [hres] at e
+      cases h' : (enqueueRunnableOnCore st c tid).getTcb? x with
+      | none => rfl
+      | some _ => rw [h'] at e; cases e
 
 /-- WS-SM SM5.I.8 (preservation, SM4.C `contextMatchesCurrentOnCore`): a wake on
 core `c` preserves the register-bank match on **every** core `c'` — it writes no
@@ -4194,10 +4209,10 @@ theorem enqueueRunnableOnCore_preserves_contextMatchesCurrentOnCore_anyCore (st 
     | some curTcb =>
       simp only [hCurTcb] at h
       obtain ⟨t', ht', hreg⟩ :=
-        enqueueRunnableOnCore_getTcb?_upToReg st c tid cur curTcb hInv hCurTcb
+        enqueueRunnableOnCore_getTcb?_regContext st c tid cur curTcb hInv hCurTcb
       rw [ht']
       show (st.machine.regsOnCore c' == t'.registerContext) = true
-      rw [← hreg]; exact h
+      rw [hreg]; exact h
 
 /-- WS-SM SM5.I.8: a wake preserves the register-bank match on every core `c'`. -/
 theorem wakeThread_preserves_contextMatchesCurrentOnCore (st : SystemState)
@@ -4426,12 +4441,10 @@ theorem enqueueRunnableOnCore_configDefaultTimeSlice (st : SystemState) (c : Cor
     (tid : SeLe4n.ThreadId) :
     (enqueueRunnableOnCore st c tid).scheduler.configDefaultTimeSlice
       = st.scheduler.configDefaultTimeSlice := by
-  unfold enqueueRunnableOnCore
-  split
-  · split
-    · rfl
-    · simp
-  · rfl
+  rcases enqueueRunnableOnCore_scheduler_cases st c tid with h | ⟨E, p, h⟩ <;> rw [h]
+  simp only [SchedulerState.markReschedulePendingOnCore_configDefaultTimeSlice,
+    SchedulerState.setRunQueueOnCore_configDefaultTimeSlice,
+    SchedulerState.setRunQueueEndsOnCore_configDefaultTimeSlice]
 
 /-- `configDefaultTimeSlice` is preserved by the cross-core wake (its state
 component is a `enqueueRunnableOnCore` at the target core). -/

@@ -11301,7 +11301,7 @@ run_negative_check "INVARIANT" rg -n "^def sameSchedContextBindings \(st st' : S
 run_check "INVARIANT" rg -n '^theorem donationBudgetTransfer_of_sameSchedContextBindings($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/Defs.lean
 run_check "INVARIANT" rg -n '^theorem donationOwnerUnique_of_sameSchedContextBindings($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/Defs.lean
 run_check "INVARIANT" rg -n "^theorem lookupTcb_backward \{st st' : SystemState\} \(h : sameSchedContextBindings st st'\)" SeLe4n/Kernel/IPC/Operations/Endpoint.lean
-run_check "INVARIANT" rg -n "^theorem of_objects_getElem_eq \{st st' : SystemState\}" SeLe4n/Kernel/IPC/Operations/Endpoint.lean
+run_check "INVARIANT" rg -n "^theorem of_objectsAgreeOffRunLinks \{st st' : SystemState\}" SeLe4n/Kernel/IPC/Operations/Endpoint.lean
 run_check "INVARIANT" rg -n '^theorem lookupTcb_some_toValid\?$' SeLe4n/Kernel/IPC/Operations/Endpoint.lean
 # The receive leg's binding frames -- single-core (extracted from the two theorems
 # that inlined the whole composition) and the cross-core leg the live arm runs.
@@ -16035,7 +16035,7 @@ open SeLe4n.Kernel
 #check @getTcb?_insert_schedContext_eq
 #check @getSchedContext?_boundThread_insert_schedContext
 -- per-op determineTargetCore + boundThread frames.
-#check @enqueueRunnableOnCore_determineTargetCore
+#check @enqueueRunnableOnCore_determineTargetCore_eq
 #check @refillSchedContext_boundThread
 #check @scheduleEffectiveOnCore_determineTargetCore
 #check @processReplenishmentsDueOnCore_determineTargetCore

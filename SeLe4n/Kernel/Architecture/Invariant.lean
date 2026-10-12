@@ -954,7 +954,7 @@ neither of which is term size or proof budget, so neither is fixable by raising
   which is precisely what fails here.  No amount of unfolding can bridge it.
 
 Each is bridged by a congruence lemma the codebase already carries
-(`dualQueueSystemInvariant_of_getElem_eq`, `blockingAcyclic_frame`,
+(`dualQueueSystemInvariant_of_readViewAgreement`, `blockingAcyclic_frame`,
 `serviceNontrivialPath_of_services_eq`), so the carriage below is composition
 rather than new proof.
 
@@ -970,8 +970,8 @@ private theorem ipcInvariantFull_setPerCoreTlb {st : SystemState}
     ipcInvariantFull { st with perCoreTlb := t } := by
   obtain ⟨c1, c2, c3, c4, c5, c6, c7, c8, c9, c10,
           c11, c12, c13, c14, c15, c16, c17, c18, c19, c20⟩ := h
-  exact ⟨c1, dualQueueSystemInvariant_of_getElem_eq (s1 := st)
-           (s2 := { st with perCoreTlb := t }) (fun _ => rfl) c2,
+  exact ⟨c1, dualQueueSystemInvariant_of_readViewAgreement (s1 := st)
+           (s2 := { st with perCoreTlb := t }) (.of_getElem_eq (fun _ => rfl)) c2,
          c3, c4, c5, c6, c7, c8, c9, c10,
          c11, c12, c13, c14, c15, c16, c17, c18, c19, c20⟩
 
@@ -1021,9 +1021,9 @@ private theorem ipcInvariantFull_setDeclassificationAuditLog {st : SystemState}
       { st with declassificationAuditLog := log, declassificationAuditEpoch := epoch } := by
   obtain ⟨c1, c2, c3, c4, c5, c6, c7, c8, c9, c10,
           c11, c12, c13, c14, c15, c16, c17, c18, c19, c20⟩ := h
-  exact ⟨c1, dualQueueSystemInvariant_of_getElem_eq (s1 := st)
+  exact ⟨c1, dualQueueSystemInvariant_of_readViewAgreement (s1 := st)
            (s2 := { st with declassificationAuditLog := log,
-                            declassificationAuditEpoch := epoch }) (fun _ => rfl) c2,
+                            declassificationAuditEpoch := epoch }) (.of_getElem_eq (fun _ => rfl)) c2,
          c3, c4, c5, c6, c7, c8, c9, c10,
          c11, c12, c13, c14, c15, c16, c17, c18, c19, c20⟩
 
@@ -1121,8 +1121,8 @@ private theorem ipcInvariantFull_setDeclassificationRefusals {st : SystemState}
     ipcInvariantFull { st with declassificationRefusals := L } := by
   obtain ⟨c1, c2, c3, c4, c5, c6, c7, c8, c9, c10,
           c11, c12, c13, c14, c15, c16, c17, c18, c19, c20⟩ := h
-  exact ⟨c1, dualQueueSystemInvariant_of_getElem_eq (s1 := st)
-           (s2 := { st with declassificationRefusals := L }) (fun _ => rfl) c2,
+  exact ⟨c1, dualQueueSystemInvariant_of_readViewAgreement (s1 := st)
+           (s2 := { st with declassificationRefusals := L }) (.of_getElem_eq (fun _ => rfl)) c2,
          c3, c4, c5, c6, c7, c8, c9, c10,
          c11, c12, c13, c14, c15, c16, c17, c18, c19, c20⟩
 
@@ -1196,8 +1196,8 @@ private theorem ipcInvariantFull_setDeclassificationTaint {st : SystemState}
     ipcInvariantFull { st with declassificationTaint := T } := by
   obtain ⟨c1, c2, c3, c4, c5, c6, c7, c8, c9, c10,
           c11, c12, c13, c14, c15, c16, c17, c18, c19, c20⟩ := h
-  exact ⟨c1, dualQueueSystemInvariant_of_getElem_eq (s1 := st)
-           (s2 := { st with declassificationTaint := T }) (fun _ => rfl) c2,
+  exact ⟨c1, dualQueueSystemInvariant_of_readViewAgreement (s1 := st)
+           (s2 := { st with declassificationTaint := T }) (.of_getElem_eq (fun _ => rfl)) c2,
          c3, c4, c5, c6, c7, c8, c9, c10,
          c11, c12, c13, c14, c15, c16, c17, c18, c19, c20⟩
 

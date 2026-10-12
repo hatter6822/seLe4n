@@ -236,7 +236,7 @@ example (st : SystemState) (tid : SeLe4n.ThreadId) (tcb : TCB)
 
 /-- SM5.C.1 (audit-pass-2): `enqueueRunnableOnCore` preserves the woken thread's
     security-relevant fields (`priority` / `domain` / `cpuAffinity` /
-    `threadState`); only `ipcState` changes. -/
+    `threadState`); only `ipcState` and its run-queue links change. -/
 example (st : SystemState) (c : CoreId) (tid : SeLe4n.ThreadId) (tcb : TCB)
     (hTcb : st.getTcb? tid = some tcb) (hInv : st.objects.invExt)
     (hFresh : runnableOnSomeCore st tid = false) :

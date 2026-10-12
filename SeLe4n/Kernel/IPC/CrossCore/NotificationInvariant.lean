@@ -27,7 +27,7 @@ object-store integrity (`objects.invExt`) and the IPC `ipcInvariant`
 (notification well-formedness).  Each cross-core operation differs from its
 single-core form only in the *scheduler* placement of the woken waiter / blocked
 caller; `ipcInvariant` is **lookup-only** (it reads the state solely through
-`objects[·]?`), so the cross-core receiver wake (`wakeThread`, object-invisible
+`objects[·]?`), so the cross-core receiver wake (`wakeThread`, invisible off run-queue links
 on the already-`.ready` waiter — the §2 keystone of `EndpointCallInvariant`) and
 the per-core deschedule (`removeRunnableOnCore`, an object-store frame) cannot
 disturb it.  The notification-store / TCB-store steps reuse the single-core
@@ -194,7 +194,8 @@ theorem notificationSignalOnCore_preserves_ipcInvariant
             storeTcbIpcStateAndMessage_getTcb?_ipcState pair.2 st'' waiter .ready _ hObjInv1 hTcb
           show ipcInvariant (wakeThread st'' waiter executingCore).1
           exact fun oid ntfn' h => hInv2 oid ntfn'
-            (by rwa [wakeThread_objects_getElem_eq_of_ready st'' waiter executingCore tr hTrGet hTrReady hObj2 oid] at h)
+            ((wakeThread_objectsAgreeOffRunLinks_of_ready st'' waiter executingCore tr hTrGet hTrReady
+              hObj2).get_notification_iff.mp h)
 
 /-- WS-SM SM6.B.1: the cross-core notification wait preserves the IPC
 `ipcInvariant`.  Mirrors `notificationWait_preserves_ipcInvariant`, with the
@@ -576,7 +577,7 @@ theorem notificationSignalOnCore_preserves_ipcInvariantFull
   rcases notificationSignalOnCore_post_agrees notificationId badge executingCore st hObjInv with
     hPre | ⟨r1, hStep1, hAgree⟩
   · rw [hPre]; exact hInv
-  · exact ipcInvariantFull_of_getElem_eq hAgree.objects hPsi'
+  · exact ipcInvariantFull_of_objectsAgreeOffRunLinks hAgree.objects hPsi'
       (notificationSignal_preserves_ipcInvariantFull st r1 notificationId badge hInv hObjInv
         hNWC hAllBudgetsNone hStep1)
 
@@ -608,7 +609,7 @@ theorem notificationWaitOnCore_preserves_ipcInvariantFull
   rcases notificationWaitOnCore_post_agrees notificationId waiter executingCore st hObjInv with
     hPre | ⟨r1, result, hStep1, hAgree⟩
   · rw [hPre]; exact hInv
-  · exact ipcInvariantFull_of_getElem_eq hAgree.objects hPsi'
+  · exact ipcInvariantFull_of_objectsAgreeOffRunLinks hAgree.objects hPsi'
       (notificationWait_preserves_ipcInvariantFull st r1 notificationId waiter result hInv hObjInv
         hWaiterNotRecv
         (fun tcb hRaw => hWaiterNotReply tcb ((getTcb?_eq_some_iff st waiter tcb).mpr hRaw))

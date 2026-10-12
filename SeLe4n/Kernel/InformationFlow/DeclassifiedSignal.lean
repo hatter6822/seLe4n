@@ -134,10 +134,9 @@ object store and the scheduler, and neither is the trail. -/
     (c : CoreId) (tid : SeLe4n.ThreadId) :
     (enqueueRunnableOnCore st c tid).declassificationAuditLog =
       st.declassificationAuditLog := by
-  unfold enqueueRunnableOnCore
-  split
-  · split <;> rfl
-  · rfl
+  have h := enqueueRunnableOnCore_onlyObjectsSchedulerDiffer st c tid
+  unfold SystemState.onlyObjectsSchedulerDiffer at h
+  rw [h]
 
 /-- WS-SM SM9.C.1: the cross-core wake leaves the trail alone. -/
 @[simp] theorem wakeThread_declassificationAuditLog_eq (st : SystemState)

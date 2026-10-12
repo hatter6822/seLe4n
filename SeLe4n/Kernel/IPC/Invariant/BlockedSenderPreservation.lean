@@ -247,12 +247,15 @@ theorem enqueueRunnableOnCore_blockedSenderShrinks (st : SystemState) (c : CoreI
             rw [enqueueRunnableOnCore_no_tcb_noop st c other hPre] at hGet
             exact absurd (hPre.symm.trans hGet) (by simp)
         | some tcb =>
-            rw [enqueueRunnableOnCore_makes_ready st c other tcb hPre hInv hFresh] at hGet
-            have : t'.ipcState = ThreadIpcState.ready := by
-              simp only [Option.some.injEq] at hGet; rw [← hGet]
+            obtain ⟨t₁, h₁, ht⟩ := enqueueRunnableOnCore_makes_ready st c other tcb hPre hInv hFresh
+            rw [h₁, Option.some.injEq] at hGet
+            subst hGet
+            have : t₁.ipcState = ThreadIpcState.ready :=
+              TCB.proj_eq_of_withoutRunLinks_eq TCB.ipcState ht
             rcases hB with h | h <;> rw [this] at h <;> exact absurd h (by simp)
-      · rw [enqueueRunnableOnCore_getTcb?_ne st c tid other hInv hEq] at hGet
-        exact ⟨t', by unfold lookupTcb; rw [if_neg hNotRes]; exact hGet, hB⟩
+      · obtain ⟨t, hT, ht⟩ := enqueueRunnableOnCore_getTcb?_ne_back st c tid other hInv hEq hGet
+        refine ⟨t, by unfold lookupTcb; rw [if_neg hNotRes]; exact hT, ?_⟩
+        rwa [← TCB.proj_eq_of_withoutRunLinks_eq TCB.ipcState ht]
 
 /-- WS-RR RR8.16: and so does the cross-core wake, which is that enqueue on the
 woken thread's home core. -/

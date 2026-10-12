@@ -4854,50 +4854,16 @@ private theorem enqueueRunnableOnCore_preserves_ipcInvariantFull
       rw [SystemState.getTcbWitnessed?_eq_none hLk]
       exact hInv
   | some tcb =>
-      unfold enqueueRunnableOnCore
-      rw [SystemState.getTcbWitnessed?_eq_some hLk]
-      dsimp only [SystemState.rewriteObject]
-      split
-      · exact hInv
-      · have hSame : ({ tcb with ipcState := .ready } : TCB) = tcb := by
-          have h1 := hReady tcb hLk
-          cases tcb
-          simp_all
-        rw [hSame]
-        have hPre : st.objects[tid.toObjId]? = some (.tcb tcb) :=
-          (SystemState.getTcb?_eq_some_iff st tid tcb).mp hLk
-        have hEq : ∀ oid : SeLe4n.ObjId,
-            ({ st with objects := st.objects.insert tid.toObjId (.tcb tcb), scheduler := (st.scheduler.setRunQueueOnCore c ((st.scheduler.runQueueOnCore c).insert tid (tcb.boostedPriority))).markReschedulePendingOnCore c } : SystemState).objects[oid]? = st.objects[oid]? := by
-          intro oid
-          show (st.objects.insert tid.toObjId (.tcb tcb))[oid]? = st.objects[oid]?
-          by_cases hK : oid = tid.toObjId
-          · subst hK
-            simp only [RHTable_getElem?_eq_get?]
-            rw [RobinHood.RHTable.getElem?_insert_self st.objects tid.toObjId _ hObjInv]
-            rw [← RHTable_getElem?_eq_get?]
-            exact hPre.symm
-          · simp only [RHTable_getElem?_eq_get?]
-            exact RobinHood.RHTable.getElem?_insert_ne st.objects tid.toObjId oid _
-              (by simp; exact fun h => hK h.symm) hObjInv
-        refine ipcInvariantFull_of_getElem_eq hEq ?_ hInv
-        intro t tcbT hT hUnb hNQ hNC
-        rw [hEq] at hT
-        rw [show ({ st with objects := st.objects.insert tid.toObjId (.tcb tcb), scheduler := (st.scheduler.setRunQueueOnCore c ((st.scheduler.runQueueOnCore c).insert tid (tcb.boostedPriority))).markReschedulePendingOnCore c } : SystemState).scheduler.currentOnCore Concurrency.bootCoreId = st.scheduler.currentOnCore Concurrency.bootCoreId from by simp] at hNC
-        have hNQ' : t ∉ st.scheduler.runQueueOnCore Concurrency.bootCoreId := by
-          intro hMem
-          apply hNQ
-          show t ∈ ({ st with objects := st.objects.insert tid.toObjId (.tcb tcb), scheduler := (st.scheduler.setRunQueueOnCore c ((st.scheduler.runQueueOnCore c).insert tid (tcb.boostedPriority))).markReschedulePendingOnCore c } : SystemState).scheduler.runQueueOnCore Concurrency.bootCoreId
-          by_cases hc : c = Concurrency.bootCoreId
-          · subst hc
-            show t ∈ ((st.scheduler.setRunQueueOnCore Concurrency.bootCoreId ((st.scheduler.runQueueOnCore Concurrency.bootCoreId).insert tid (tcb.boostedPriority))).markReschedulePendingOnCore Concurrency.bootCoreId).runQueueOnCore Concurrency.bootCoreId
-            rw [SchedulerState.markReschedulePendingOnCore_runQueueOnCore,
-              SchedulerState.setRunQueueOnCore_runQueueOnCore_self]
-            exact (RunQueue.mem_insert _ _ _ _).mpr (Or.inl hMem)
-          · show t ∈ ((st.scheduler.setRunQueueOnCore c ((st.scheduler.runQueueOnCore c).insert tid (tcb.boostedPriority))).markReschedulePendingOnCore c).runQueueOnCore Concurrency.bootCoreId
-            rw [SchedulerState.markReschedulePendingOnCore_runQueueOnCore,
-              SchedulerState.setRunQueueOnCore_runQueueOnCore_ne _ _ _ _ hc]
-            exact hMem
-        exact hInv.passiveServerIdle t tcbT hT hUnb hNQ' hNC
+      -- The `.ready` mark re-stores the value already there, so the objects
+      -- agree off run-queue fields; the queue only grows.
+      have hA := enqueueRunnableOnCore_objectsAgreeOffRunLinks_of_ready st c tid tcb hLk
+        (hReady tcb hLk) hObjInv
+      refine ipcInvariantFull_of_objectsAgreeOffRunLinks hA ?_ hInv
+      intro t tcbT hT hUnb hNQ hNC
+      run_links_back hA at tcbT hT
+      refine hInv.passiveServerIdle t tcbT hT hUnb ?_ ?_
+      · exact fun hMem => hNQ (enqueueRunnableOnCore_mem_old st c Concurrency.bootCoreId tid t hMem)
+      · rwa [enqueueRunnableOnCore_currentOnCore] at hNC
 
 private theorem resumeReadyMidState_objects_invExt
     (st : SystemState) (tid : SeLe4n.ThreadId) (hObjInv : st.objects.invExt) :
@@ -4936,18 +4902,6 @@ private theorem resumeReadyMidState_getTcb_ready
       rw [hEq tid.toObjId] at hPre1
       exact hQ.ready t ((SystemState.getTcb?_eq_some_iff st tid t).mpr hPre1)
 
-private theorem enqueueRunnableOnCore_objects_invExt
-    (st : SystemState) (c : CoreId) (tid : SeLe4n.ThreadId)
-    (hObjInv : st.objects.invExt) :
-    (enqueueRunnableOnCore st c tid).objects.invExt := by
-  unfold enqueueRunnableOnCore
-  dsimp only []
-  split
-  · split
-    · exact hObjInv
-    · exact RHTable_insert_preserves_invExt _ _ _ hObjInv
-  · exact hObjInv
-
 /-- The full per-core resume (live once the context-restore seam flips). -/
 theorem resumeThreadOnCore_preserves_ipcInvariantFull
     (st st' : SystemState) (vtid : SeLe4n.ValidThreadId) (ec : CoreId)
@@ -4976,7 +4930,7 @@ theorem resumeThreadOnCore_preserves_ipcInvariantFull
           (determineTargetCore st vtid.val) vtid.val hMidInv
           (by rw [markKeyChangeFrom_getTcb?]
               exact resumeReadyMidState_getTcb_ready st vtid.val hObjInv hQ) hMid
-        have hEnqInv := enqueueRunnableOnCore_objects_invExt
+        have hEnqInv := enqueueRunnableOnCore_preserves_objects_invExt
           (markKeyChangeFrom st (Lifecycle.Suspend.resumeReadyMidState st vtid.val) vtid.val)
           (determineTargetCore st vtid.val) vtid.val hMidInv
         split at hStep

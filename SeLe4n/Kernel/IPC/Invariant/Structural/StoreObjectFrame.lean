@@ -488,7 +488,7 @@ theorem endpointReceiveDual_preserves_dualQueueSystemInvariant
                 have hObjInv2 := storeTcbIpcStateAndMessage_preserves_objects_invExt
                   pair.2.2 st2 pair.1 .ready none hObjInv1 hStore
                 have hObjInvEns : (ensureRunnable st2 pair.1).objects.invExt :=
-                  ensureRunnable_preserves_objects st2 pair.1 ▸ hObjInv2
+                  ensureRunnable_objects_invExt st2 pair.1 hObjInv2
                 exact storeTcbIpcStateAndMessage_preserves_dualQueueSystemInvariant
                   (ensureRunnable st2 pair.1) _ receiver .ready pair.2.1.pendingMessage hObjInvEns hMsg
                   (ensureRunnable_preserves_dualQueueSystemInvariant _ _
@@ -655,8 +655,7 @@ theorem endpointReplyRecv_preserves_dualQueueSystemInvariant
                   ep.sendQ.head ≠ some receiver ∧ ep.sendQ.tail ≠ some receiver ∧
                   ep.receiveQ.head ≠ some receiver ∧ ep.receiveQ.tail ≠ some receiver := by
                 intro epId ep hEp
-                rw [show (ensureRunnable st1 replyTarget).objects = st1.objects from
-                  ensureRunnable_preserves_objects st1 replyTarget] at hEp
+                rw [(ensureRunnable_objectsAgreeOffRunLinks st1 replyTarget).get_endpoint_iff] at hEp
                 exact hFreshReceiver epId ep
                   (storeTcbIpcStateAndMessage_endpoint_backward st st1 replyTarget .ready (some msg) epId ep hObjInv hMsg hEp)
               have hRecvTailFresh' : ∀ (ep : Endpoint) (tailTid : SeLe4n.ThreadId),
@@ -669,8 +668,7 @@ theorem endpointReplyRecv_preserves_dualQueueSystemInvariant
                     (epId' = endpointId →
                       ep'.sendQ.tail ≠ some tailTid) := by
                 intro ep tailTid hEp hTail epId' ep' hEp'
-                rw [show (ensureRunnable st1 replyTarget).objects = st1.objects from
-                  ensureRunnable_preserves_objects st1 replyTarget] at hEp hEp'
+                rw [(ensureRunnable_objectsAgreeOffRunLinks st1 replyTarget).get_endpoint_iff] at hEp hEp'
                 exact hRecvTailFresh ep tailTid
                   (storeTcbIpcStateAndMessage_endpoint_backward st st1 replyTarget .ready (some msg) endpointId ep hObjInv hMsg hEp)
                   hTail epId' ep'
@@ -678,7 +676,7 @@ theorem endpointReplyRecv_preserves_dualQueueSystemInvariant
               have hObjInv1 := storeTcbIpcStateAndMessage_preserves_objects_invExt
                 st st1 replyTarget .ready (some msg) hObjInv hMsg
               have hObjInvEns1 : (ensureRunnable st1 replyTarget).objects.invExt :=
-                ensureRunnable_preserves_objects st1 replyTarget ▸ hObjInv1
+                ensureRunnable_objects_invExt st1 replyTarget hObjInv1
               -- PR #827 #3 fold: peel the atomic consume (no-op when unlinked).
               cases hRO : tcb.replyObject with
               | none =>
@@ -791,7 +789,7 @@ theorem endpointCall_preserves_dualQueueSystemInvariant
             have hObjInvSt2 := storeTcbIpcStateAndMessage_preserves_objects_invExt
               pair.2.2 st2 pair.1 .ready (some msg) hObjInvPop1 hStore1
             have hObjInvEns2 : (ensureRunnable st2 pair.1).objects.invExt :=
-              ensureRunnable_preserves_objects st2 pair.1 ▸ hObjInvSt2
+              ensureRunnable_objects_invExt st2 pair.1 hObjInvSt2
             have hInv3 := ensureRunnable_preserves_dualQueueSystemInvariant st2 pair.1 hInv2
             -- AK1-C (I-M01): storeTcbIpcStateAndMessage atomically clears caller's pendingMessage
             cases hStore2 : storeTcbIpcStateAndMessage (ensureRunnable st2 pair.1) caller
@@ -961,20 +959,36 @@ theorem storeTcbQueueLinks_preserves_contextMatchesCurrent
           rw [hTcbObj] at hObj; cases hObj
           exact ⟨{ tcb with queuePrevCode := SeLe4n.ThreadId.optCode prev, queuePPrevCode := QueuePPrev.optCode pprev, queueNextCode := SeLe4n.ThreadId.optCode next }, rfl, rfl⟩)
 
+/-- WS-ZA ZA4.5: a step writing only run-queue links, keeping the boot core's
+current thread and the machine registers, keeps the saved context matching. -/
+theorem contextMatchesCurrent_of_objectsAgreeOffRunLinks {st st' : SystemState}
+    (h : st'.objectsAgreeOffRunLinks st)
+    (hCur : st'.scheduler.currentOnCore bootCoreId = st.scheduler.currentOnCore bootCoreId)
+    (hRegs : st'.machine.regs = st.machine.regs) (hInv : contextMatchesCurrent st) :
+    contextMatchesCurrent st' := by
+  unfold contextMatchesCurrent at hInv ⊢
+  rw [hCur, hRegs]
+  cases hc : st.scheduler.currentOnCore bootCoreId with
+  | none => trivial
+  | some t =>
+    rw [hc] at hInv
+    dsimp only at hInv ⊢
+    cases hO : st'.objects[t.toObjId]? with
+    | none => trivial
+    | some o => cases o with
+      | tcb tcb' =>
+        run_links_back h at tcb' hO
+        rw [hO] at hInv; exact hInv
+      | _ => trivial
+
 /-- WS-H12c: `ensureRunnable` preserves `contextMatchesCurrent`. -/
 theorem ensureRunnable_preserves_contextMatchesCurrent
     (st : SystemState) (tid : SeLe4n.ThreadId)
     (hInv : contextMatchesCurrent st) :
-    contextMatchesCurrent (ensureRunnable st tid) := by
-  -- AN10-B: post-migration `ensureRunnable` reads via `getTcb?`.
-  unfold ensureRunnable
-  split
-  · exact hInv
-  · cases hTcb : st.getTcb? tid with
-    | none => exact hInv
-    | some tcb =>
-      -- setRunQueueOnCore preserves current/objects/machine, so contextMatchesCurrent is framed.
-      simpa only [contextMatchesCurrent, SchedulerState.markReschedulePendingOnCore_currentOnCore, SchedulerState.setRunQueueOnCore_currentOnCore] using hInv
+    contextMatchesCurrent (ensureRunnable st tid) :=
+  contextMatchesCurrent_of_objectsAgreeOffRunLinks (ensureRunnable_objectsAgreeOffRunLinks st tid)
+    (ensureRunnable_scheduler_current st tid)
+    (congrArg (fun s => s.machine.regs) (ensureRunnable_onlyObjectsSchedulerDiffer st tid)) hInv
 
 /-- WS-H12c: `removeRunnable` preserves `contextMatchesCurrent`. -/
 theorem removeRunnable_preserves_contextMatchesCurrent
@@ -1001,7 +1015,7 @@ theorem ensureRunnable_preserves_pendingMessagesSatisfy
     (hInv : pendingMessagesSatisfy P st) :
     pendingMessagesSatisfy P (ensureRunnable st tid) := by
   intro t tcb msg hObj hMsg
-  rw [ensureRunnable_preserves_objects] at hObj
+  run_links_back ensureRunnable_objectsAgreeOffRunLinks st tid at tcb hObj
   exact hInv t tcb msg hObj hMsg
 
 /-- WS-H12e: ensureRunnable preserves allPendingMessagesBounded — the boundedness
@@ -1789,7 +1803,7 @@ theorem endpointReply_preserves_allPendingMessagesBounded
                         st st1 target _ _ (by intro m hm; cases hm; exact hMsgBounded)
                         hObjInv hStore hInv)
                   have hObjInvMid : (ensureRunnable st1 target).objects.invExt := by
-                    rw [ensureRunnable_preserves_objects]
+                    apply ensureRunnable_objects_invExt
                     exact storeTcbIpcStateAndMessage_preserves_objects_invExt
                       st st1 target .ready (some msg) hObjInv hStore
                   -- PR #827 #3 fold: peel the atomic consume (no-op when unlinked).
@@ -1959,7 +1973,7 @@ theorem endpointReply_preserves_badgeWellFormed
                 have hMid : badgeWellFormed (ensureRunnable st1 target) :=
                   ensureRunnable_preserves_badgeWellFormed st1 target hInv1
                 have hObjInvMid : (ensureRunnable st1 target).objects.invExt := by
-                  rw [ensureRunnable_preserves_objects]
+                  apply ensureRunnable_objects_invExt
                   exact storeTcbIpcStateAndMessage_preserves_objects_invExt
                     st st1 target .ready (some msg) hObjInv hStore
                 -- PR #827 #3 fold: peel the atomic consume (no-op when unlinked).
@@ -2135,10 +2149,10 @@ theorem endpointReply_preserves_notificationWaiterConsistent
                 rw [hIpc] at h; cases h)
               (fun oid h => by cases h)
             have hMid : notificationWaiterConsistent (ensureRunnable st1 target) :=
-              notificationWaiterConsistent_of_objects_eq
-                (ensureRunnable_preserves_objects st1 target) hConsist1
+              notificationWaiterConsistent_of_objectsAgreeOffRunLinks
+                (ensureRunnable_objectsAgreeOffRunLinks st1 target) hConsist1
             have hObjInvMid : (ensureRunnable st1 target).objects.invExt := by
-              rw [ensureRunnable_preserves_objects]
+              apply ensureRunnable_objects_invExt
               exact storeTcbIpcStateAndMessage_preserves_objects_invExt
                 st st1 target .ready (some msg) hObjInv hStore
             -- PR #827 #3 fold: peel the atomic consume (no-op when unlinked).
@@ -2373,7 +2387,7 @@ theorem endpointReceiveDual_preserves_pendingMessagesSatisfy
               have hObjInv2 := storeTcbIpcStateAndMessage_preserves_objects_invExt stPop st2 sender _ _ hObjInv1 hStore
               have hInv3 := ensureRunnable_preserves_pendingMessagesSatisfy st2 sender hInv2
               have hObjInv3 : (ensureRunnable st2 sender).objects.invExt := by
-                rw [ensureRunnable_preserves_objects]; exact hObjInv2
+                exact ensureRunnable_objects_invExt _ _ hObjInv2
               -- AK1-D: atomic (.ready, senderMsg) receiver update
               cases hPend : storeTcbIpcStateAndMessage (ensureRunnable st2 sender) receiver .ready senderTcb.pendingMessage with
               | error e => simp [hPend] at hStep
@@ -2546,7 +2560,7 @@ theorem endpointReceiveDual_preserves_badgeWellFormed
               have hObjInv2 := storeTcbIpcStateAndMessage_preserves_objects_invExt stPop st2 sender _ _ hObjInv1 hStore
               have hInv3 := ensureRunnable_preserves_badgeWellFormed st2 sender hInv2
               have hObjInv3 : (ensureRunnable st2 sender).objects.invExt := by
-                rw [ensureRunnable_preserves_objects]; exact hObjInv2
+                exact ensureRunnable_objects_invExt _ _ hObjInv2
               -- AK1-D: atomic (.ready, senderMsg) receiver update
               cases hPend : storeTcbIpcStateAndMessage (ensureRunnable st2 sender) receiver .ready senderTcb.pendingMessage with
               | error e => simp [hPend] at hStep
@@ -2655,7 +2669,7 @@ theorem endpointCall_preserves_allPendingMessagesBounded
             have hObjInv2 := storeTcbIpcStateAndMessage_preserves_objects_invExt stPop st2 receiver _ _ hObjInv1 hStore
             have hInv3 := ensureRunnable_preserves_allPendingMessagesBounded st2 receiver hInv2
             have hObjInv3 : (ensureRunnable st2 receiver).objects.invExt := by
-              rw [ensureRunnable_preserves_objects]; exact hObjInv2
+              exact ensureRunnable_objects_invExt _ _ hObjInv2
             -- AK1-C (I-M01): storeTcbIpcStateAndMessage atomically clears caller's pendingMessage
             cases hIpc : storeTcbIpcStateAndMessage (ensureRunnable st2 receiver) caller (.blockedOnReply endpointId (some receiver)) none with
             | error e => simp [hIpc] at hStep
@@ -2736,7 +2750,7 @@ theorem endpointCall_preserves_badgeWellFormed
             have hObjInv2 := storeTcbIpcStateAndMessage_preserves_objects_invExt stPop st2 receiver _ _ hObjInv1 hStore
             have hInv3 := ensureRunnable_preserves_badgeWellFormed st2 receiver hInv2
             have hObjInv3 : (ensureRunnable st2 receiver).objects.invExt := by
-              rw [ensureRunnable_preserves_objects]; exact hObjInv2
+              exact ensureRunnable_objects_invExt _ _ hObjInv2
             -- AK1-C (I-M01): storeTcbIpcStateAndMessage atomically clears caller's pendingMessage
             cases hIpc : storeTcbIpcStateAndMessage (ensureRunnable st2 receiver) caller (.blockedOnReply endpointId (some receiver)) none with
             | error e => simp [hIpc] at hStep
@@ -2815,7 +2829,7 @@ theorem endpointReplyRecv_preserves_allPendingMessagesBounded
             have hObjInv1 := storeTcbIpcStateAndMessage_preserves_objects_invExt st st1 replyTarget _ _ hObjInv hStore
             have hInv2 := ensureRunnable_preserves_allPendingMessagesBounded st1 replyTarget hInv1
             have hObjInv2 : (ensureRunnable st1 replyTarget).objects.invExt := by
-              rw [ensureRunnable_preserves_objects]; exact hObjInv1
+              exact ensureRunnable_objects_invExt _ _ hObjInv1
             -- PR #827 #3 fold: peel the atomic consume (no-op when unlinked).
             cases hRO : tcb.replyObject with
             | none =>
@@ -2884,7 +2898,7 @@ theorem endpointReplyRecv_preserves_badgeWellFormed
             have hObjInv1 := storeTcbIpcStateAndMessage_preserves_objects_invExt st st1 replyTarget _ _ hObjInv hStore
             have hInv2 := ensureRunnable_preserves_badgeWellFormed st1 replyTarget hInv1
             have hObjInv2 : (ensureRunnable st1 replyTarget).objects.invExt := by
-              rw [ensureRunnable_preserves_objects]; exact hObjInv1
+              exact ensureRunnable_objects_invExt _ _ hObjInv1
             -- PR #827 #3 fold: peel the atomic consume (no-op when unlinked).
             cases hRO : tcb.replyObject with
             | none =>

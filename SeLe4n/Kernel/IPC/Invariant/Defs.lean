@@ -1784,6 +1784,26 @@ theorem pendingReceiveReplyWellFormed_of_objects_eq {st st' : SystemState}
   unfold pendingReceiveReplyWellFormed SystemState.getTcb? SystemState.getReply? at h ⊢
   rw [hObjs]; exact h
 
+/-- WS-ZA ZA4.5: the stash reads TCBs' IPC state and stash field and Reply
+objects, none of which a run-queue write touches. -/
+theorem pendingReceiveReplyWellFormed_of_objectsAgreeOffRunLinks {st st' : SystemState}
+    (hA : st'.objectsAgreeOffRunLinks st) (h : pendingReceiveReplyWellFormed st) :
+    pendingReceiveReplyWellFormed st' := by
+  have back : ∀ {t : SeLe4n.ThreadId} {tcb' : TCB}, st'.getTcb? t = some tcb' →
+      ∃ tcb, st.getTcb? t = some tcb ∧ tcb'.ipcState = tcb.ipcState ∧
+        tcb'.pendingReceiveReply = tcb.pendingReceiveReply := by
+    intro t tcb' hT
+    have hT' := (SystemState.getTcb?_eq_some_iff _ t tcb').mp hT
+    run_links_back hA at tcb' hT'
+    exact ⟨tcb', (SystemState.getTcb?_eq_some_iff _ t tcb').mpr hT', rfl, rfl⟩
+  refine ⟨fun tid tcb' rid hT hP => ?_, fun t1 t2 c1 c2 rid h1 h2 p1 p2 => ?_⟩
+  · obtain ⟨tcb, hT0, hI, hP0⟩ := back hT
+    obtain ⟨⟨ep, hEp⟩, ⟨r, hr, hc⟩⟩ := h.1 tid tcb rid hT0 (hP0 ▸ hP)
+    exact ⟨⟨ep, hI.trans hEp⟩, ⟨r, (hA.getReply? rid).trans hr, hc⟩⟩
+  · obtain ⟨d1, h1', _, q1⟩ := back h1
+    obtain ⟨d2, h2', _, q2⟩ := back h2
+    exact h.2 t1 t2 d1 d2 rid h1' h2' (q1 ▸ p1) (q2 ▸ p2)
+
 /-- WS-SM SM6.E: `ipcInvariant` reads only the object store, so any
 transition that leaves the object store unchanged frames it (the cross-core
 deschedule, the replenishment migration, per-core scheduler-queue edits). -/
@@ -2170,6 +2190,21 @@ def ipcStateQueueConsistent (st : SystemState) : Prop :=
         ∃ ep, st.objects[epId]? = some (.endpoint ep)
     | _ => True
 
+/-- WS-ZA ZA4.5: a step writing only run-queue links keeps every blocked
+thread's endpoint. -/
+theorem ipcStateQueueConsistent_of_objectsAgreeOffRunLinks {st st' : SystemState}
+    (hA : st'.objectsAgreeOffRunLinks st) (h : ipcStateQueueConsistent st) :
+    ipcStateQueueConsistent st' := by
+  intro tid tcb hT
+  run_links_back hA at tcb hT
+  have hPre := h tid tcb hT
+  revert hPre
+  dsimp only
+  split <;> intro hPre
+  all_goals first
+    | trivial
+    | (obtain ⟨ep, hEp⟩ := hPre; exact ⟨ep, hA.get_endpoint_iff.mpr hEp⟩)
+
 -- ============================================================================
 -- V3-G (M-PRF-5): blockedThreadsPendingMessageConsistent invariant
 -- (Definition moved above ipcInvariantFull for forward-reference resolution)
@@ -2535,6 +2570,13 @@ theorem trans {st st' st'' : SystemState}
 theorem of_objects_eq {st st' : SystemState} (hEq : st'.objects = st.objects) :
     timeoutBudgetFrame st st' :=
   fun _ tcb' h => ⟨tcb', by rw [hEq] at h; exact h, rfl⟩
+
+/-- WS-ZA ZA4.5: a step writing only run-queue links frames every budget. -/
+theorem of_objectsAgreeOffRunLinks {st st' : SystemState} (h : st'.objectsAgreeOffRunLinks st) :
+    timeoutBudgetFrame st st' := by
+  intro tid tcb' hObj
+  run_links_back h at tcb' hObj
+  exact ⟨tcb', hObj, rfl⟩
 
 end timeoutBudgetFrame
 
@@ -4904,6 +4946,17 @@ theorem of_objects_eq {st st' : SystemState} (hObjs : st'.objects = st.objects) 
   ⟨fun _ _ => by rw [hObjs], fun _ tcb' h => ⟨tcb', by rw [hObjs] at h; exact h, rfl⟩,
    fun _ tcb _ h _ => ⟨tcb, by rw [hObjs]; exact h, rfl, fun ep rt hb => ⟨ep, rt, hb⟩⟩⟩
 
+/-- WS-ZA ZA4.5: a step writing only run-queue links keeps every reply link. -/
+theorem of_objectsAgreeOffRunLinks {st st' : SystemState} (h : st'.objectsAgreeOffRunLinks st) :
+    replyLinkageFrame st st' := by
+  refine ⟨fun rid _ => ?_, fun tid tcb' hT => ?_, fun tid tcb _ hT _ => ?_⟩
+  · exact ⟨fun ⟨r, hr, hc⟩ => ⟨r, h.get_reply_iff.mp hr, hc⟩,
+      fun ⟨r, hr, hc⟩ => ⟨r, h.get_reply_iff.mpr hr, hc⟩⟩
+  · run_links_back h at tcb' hT
+    exact ⟨tcb', hT, rfl⟩
+  · run_links_fwd h at tcb hT
+    exact ⟨_, hT, rfl, fun ep rt hb => ⟨ep, rt, hb⟩⟩
+
 /-- The pointwise form, for steps whose object map agrees key by key rather than
 definitionally. -/
 theorem of_getElem_eq {st st' : SystemState}
@@ -5198,6 +5251,13 @@ theorem of_objects_eq {st st' : SystemState}
     (hEq : st'.objects = st.objects) : donationOwnerFrame st st' :=
   ⟨fun scId sc h => by rw [hEq]; exact h,
    fun owner ownerTcb h hU hR => ⟨ownerTcb, by rw [hEq]; exact h, hU, hR⟩⟩
+
+/-- WS-ZA ZA4.5: a step writing only run-queue links frames every owner. -/
+theorem of_objectsAgreeOffRunLinks {st st' : SystemState} (h : st'.objectsAgreeOffRunLinks st) :
+    donationOwnerFrame st st' := by
+  refine ⟨fun scId sc hSc => h.get_schedContext_iff.mpr hSc, fun owner ownerTcb hT hU hR => ?_⟩
+  run_links_fwd h at ownerTcb hT
+  exact ⟨_, hT, hU, hR⟩
 
 end donationOwnerFrame
 
@@ -5545,6 +5605,13 @@ theorem of_objects_eq {st st' : SystemState} {woken : SeLe4n.ThreadId}
     (hEq : st'.objects = st.objects) : donationOwnerFrameExcept st st' woken :=
   ⟨fun _ _ h => by rw [hEq]; exact h,
    fun _ tcb h => ⟨tcb, by rw [hEq]; exact h, rfl, Or.inr rfl⟩⟩
+
+/-- WS-ZA ZA4.5: a step writing only run-queue links frames every owner. -/
+theorem of_objectsAgreeOffRunLinks {st st' : SystemState} {woken : SeLe4n.ThreadId}
+    (h : st'.objectsAgreeOffRunLinks st) : donationOwnerFrameExcept st st' woken := by
+  refine ⟨fun _ _ hSc => h.get_schedContext_iff.mpr hSc, fun _ tcb hT => ?_⟩
+  run_links_fwd h at tcb hT
+  exact ⟨_, hT, rfl, Or.inr rfl⟩
 
 /-- The pointwise form: object lookups that agree everywhere frame trivially.  This
 is the shape a cross-core transition's `OffSchedulerAgrees` supplies. -/

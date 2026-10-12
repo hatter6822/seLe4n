@@ -103,16 +103,16 @@ theorem capabilityInvariantBundle_of_storeTcbAndEnsureRunnable
     cdtPredicates_through_reply_path st st1 target ipc msg hBounded hComp hAcyclic hObjInv hTcb
   have hDepth1 : cspaceDepthConsistent st1 := by
     intro cnodeId cn hCn1; exact hDepthPre cnodeId cn (hCnodeBackward cnodeId cn hCn1)
-  have hDepthE := cspaceDepthConsistent_of_objects_eq st1 _ hDepth1
-    (ensureRunnable_preserves_objects st1 target)
+  have hDepthE := cspaceDepthConsistent_of_objectsAgreeOffRunLinks
+    (ensureRunnable_objectsAgreeOffRunLinks st1 target) hDepth1
   have hObjInv1 := storeTcbIpcStateAndMessage_preserves_objects_invExt st st1 target ipc msg hObjInv hTcb
   have hObjInvE : (ensureRunnable st1 target).objects.invExt :=
-    (ensureRunnable_preserves_objects st1 target) ▸ hObjInv1
+    (ensureRunnable_objects_invExt st1 target) hObjInv1
   -- WS-RC R4.A.6: cspaceSlotUnique conjunct removed from bundle; the
   -- predicate is structurally trivial.
   exact ⟨cspaceLookupSound_holds _,
     hBndE, hCompE, hAcyclicE, hDepthE, hObjInvE,
-    replyCapPointsToValidReply_of_objects_eq (ensureRunnable_preserves_objects st1 target)
+    replyCapPointsToValidReply_of_objectsAgreeOffRunLinks (ensureRunnable_objectsAgreeOffRunLinks st1 target)
       (storeTcbIpcStateAndMessage_preserves_replyCapPointsToValidReply
         st st1 target ipc msg tcb hRCPV hObjInv hTcb hLookup)⟩
 

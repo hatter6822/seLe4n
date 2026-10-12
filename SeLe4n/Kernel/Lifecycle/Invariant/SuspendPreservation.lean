@@ -1194,52 +1194,39 @@ theorem restoreToReady_preserves_blockingAcyclic
   · exact restoreToReady_blockingServer_subgraph st tid hObjInv
   · exact congrArg List.length (restoreToReady_objectIndex_eq st tid)
 
-/-- WS-RC R5.B.2 / Phase Q1: `ensureRunnable` doesn't change `objects`. -/
-theorem ensureRunnable_objects_eq
-    (st : SystemState) (tid : SeLe4n.ThreadId) :
-    (ensureRunnable st tid).objects = st.objects := by
-  unfold ensureRunnable
-  split
-  · rfl
-  · split <;> rfl
-
 /-- WS-RC R5.B.2 / Phase Q1: `ensureRunnable` preserves the object index. -/
 theorem ensureRunnable_objectIndex_eq
     (st : SystemState) (tid : SeLe4n.ThreadId) :
-    (ensureRunnable st tid).objectIndex = st.objectIndex := by
-  unfold ensureRunnable
-  split
-  · rfl
-  · split <;> rfl
+    (ensureRunnable st tid).objectIndex = st.objectIndex :=
+  by
+  have h := ensureRunnable_onlyObjectsSchedulerDiffer st tid
+  unfold SystemState.onlyObjectsSchedulerDiffer at h
+  rw [h]
 
 /-- WS-RC R5.B.2 / Phase Q1: `ensureRunnable` preserves `blockingServer` at
-    every thread (since it doesn't touch `objects`). -/
+    every thread — it writes only run-queue links, and a blocking edge is read
+    from the thread's IPC state. -/
 theorem ensureRunnable_blockingServer_eq
     (st : SystemState) (tid : SeLe4n.ThreadId) :
     ∀ t : SeLe4n.ThreadId,
       PriorityInheritance.blockingServer (ensureRunnable st tid) t
-        = PriorityInheritance.blockingServer st t := by
-  intro t
-  unfold PriorityInheritance.blockingServer
-  rw [SystemState.getTcb?_congr_at
-        (show (ensureRunnable st tid).objects[t.toObjId]? = st.objects[t.toObjId]? from
-          congrArg (fun o => o[t.toObjId]?) (ensureRunnable_objects_eq st tid))]
+        = PriorityInheritance.blockingServer st t :=
+  fun t => PriorityInheritance.blockingServer_of_objectsAgreeOffRunLinks st _ t
+    (ensureRunnable_objectsAgreeOffRunLinks st tid)
 
 -- ============================================================================
 -- WS-RC R5.B.2 / Phase Q2: computeMaxWaiterPriority frame for ensureRunnable
 -- ============================================================================
 
 /-- WS-RC R5.B.2 / Phase Q2: `ensureRunnable` preserves
-    `computeMaxWaiterPriority`.  Proof: `ensureRunnable` doesn't change
-    `objects` or `objectIndex`; apply Phase P1's
-    `computeMaxWaiterPriority_frame`. -/
+    `computeMaxWaiterPriority`: it writes only run-queue links and keeps the
+    object index, and the waiter fold reads neither. -/
 theorem ensureRunnable_preserves_computeMaxWaiterPriority
     (st : SystemState) (tid : SeLe4n.ThreadId) (target : SeLe4n.ThreadId) :
     PriorityInheritance.computeMaxWaiterPriority (ensureRunnable st tid) target
       = PriorityInheritance.computeMaxWaiterPriority st target := by
-  apply PriorityInheritance.computeMaxWaiterPriority_frame
-  · exact ensureRunnable_objects_eq st tid
-  · exact ensureRunnable_objectIndex_eq st tid
+  exact PriorityInheritance.computeMaxWaiterPriority_of_objectsAgreeOffRunLinks st _ target
+    (ensureRunnable_objectsAgreeOffRunLinks st tid) (ensureRunnable_objectIndex_eq st tid)
 
 -- ============================================================================
 -- WS-RC R5.B.2 / Phase Q2: restoreIncomingContext helper frames

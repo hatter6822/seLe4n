@@ -179,18 +179,28 @@ theorem startInitialThread_preserves_bootStartShape (ist : IntermediateState)
     (tid : SeLe4n.ThreadId) (hStart : initialThreadStartable ist.state tid = true)
     (h : bootStartShape ist) : bootStartShape (startInitialThread ist tid) := by
   have hInv := ist.hAllTables.1.1
-  obtain ⟨hShape, hFields, hAsid, hUntyped, ⟨rq, rp, hSch⟩, hQueue⟩ := h
-  have hFrame := startInitialThreadOnCore_frame ist.state tid hInv
+  obtain ⟨hShape, hFields, hAsid, hUntyped, ⟨rq, re, rp, hSch⟩, hQueue⟩ := h
+  have hFrame := startInitialThreadOnCore_frame ist.state tid
   refine ⟨?_, ?_, ?_, ?_, ?_, ?_⟩
   · intro oid obj hObj
     rcases startInitialThreadOnCore_objects_cases ist.state tid hInv oid obj hObj with
-      hB | ⟨t, hT, rfl | rfl⟩
+      hB | ⟨t, t', hT, rfl, he⟩
     · exact hShape oid obj hB
-    all_goals
-      obtain ⟨h1, h2, h3, h4, h5, h6, h7⟩ := hShape oid _ hT
+    · obtain ⟨h1, h2, h3, h4, h5, h6, h7⟩ := hShape oid _ hT
       refine ⟨?_, ?_, ?_, ?_, ?_, ?_, ?_⟩ <;> intro x hx <;> cases hx
       obtain ⟨t1, t2, t3, t4, t5, t6, t7, t8, t9⟩ := h4 t rfl
-      exact ⟨t1, by first | exact t2 | rfl, t3, t4, t5, t6, t7, t8, t9⟩
+      -- The start writes the thread's state, its IPC state (to `.ready`) and
+      -- its run-queue links; every shape field reads past all three.
+      rcases he with he | he | he <;>
+      exact ⟨(TCB.proj_eq_of_withoutRunLinks_eq TCB.pendingMessage he).trans t1,
+        (TCB.proj_eq_of_withoutRunLinks_eq TCB.ipcState he).trans (by first | exact t2 | rfl),
+        (TCB.proj_eq_of_withoutRunLinks_eq TCB.queueNext he).trans t3,
+        (TCB.proj_eq_of_withoutRunLinks_eq TCB.queuePrev he).trans t4,
+        (TCB.proj_eq_of_withoutRunLinks_eq TCB.queuePPrev he).trans t5,
+        (TCB.proj_eq_of_withoutRunLinks_eq TCB.timeoutBudget he).trans t6,
+        (TCB.proj_eq_of_withoutRunLinks_eq TCB.schedContextBinding he).trans t7,
+        (TCB.proj_eq_of_withoutRunLinks_eq TCB.replyObject he).trans t8,
+        (TCB.proj_eq_of_withoutRunLinks_eq TCB.pendingReceiveReply he).trans t9⟩
   · show bootQuiescentFields (startInitialThreadOnCore ist.state tid)
     rw [hFrame]; exact hFields
   · show Architecture.asidTableConsistent (startInitialThreadOnCore ist.state tid)
@@ -203,18 +213,19 @@ theorem startInitialThread_preserves_bootStartShape (ist : IntermediateState)
         (fun t hc => by cases hc) hRoot, hAsidEq⟩
     · intro oid root hRoot
       rcases startInitialThreadOnCore_objects_cases ist.state tid hInv oid _ hRoot with
-        hB | ⟨_, _, hc | hc⟩
+        hB | ⟨_, _, _, hc, _⟩
       · rw [hFrame]; exact hA2 oid root hB
-      all_goals cases hc
+      · cases hc
   · show Kernel.untypedRegionsDisjoint (startInitialThreadOnCore ist.state tid)
     refine untypedRegionsDisjoint_of_untyped_subset hUntyped ?_
     intro oid ut hObj
     rcases startInitialThreadOnCore_objects_cases ist.state tid hInv oid _ hObj with
-      hB | ⟨_, _, hc | hc⟩
+      hB | ⟨_, _, _, hc, _⟩
     · exact hB
-    all_goals cases hc
-  · obtain ⟨rq', rp', hrq'⟩ := startInitialThreadOnCore_scheduler_runQueueOnly ist.state tid
-    refine ⟨rq', rp', ?_⟩
+    · cases hc
+  · obtain ⟨rq', re', rp', hrq'⟩ :=
+      startInitialThreadOnCore_scheduler_runQueueOnly ist.state tid
+    refine ⟨rq', re', rp', ?_⟩
     show (startInitialThreadOnCore ist.state tid).scheduler = _
     rw [hrq', hSch]
   · exact startInitialThreadOnCore_preserves_runQueueBootSound hStart hInv bootCoreId hQueue
@@ -262,7 +273,7 @@ theorem bootFromPlatformCheckedStartedFor_currentOnCore
     (h : bootFromPlatformCheckedStartedFor cores config = .ok ist)
     (c : SeLe4n.Kernel.Concurrency.CoreId) :
     ist.state.scheduler.currentOnCore c = none := by
-  obtain ⟨_, _, _, _, ⟨rq, rp, hSch⟩, _⟩ :=
+  obtain ⟨_, _, _, _, ⟨rq, re, rp, hSch⟩, _⟩ :=
     bootFromPlatformCheckedStartedFor_bootStartShape cores hNodup config ist h
   rw [hSch]
   exact (default_state_perCoreInitialized c).1
@@ -337,7 +348,7 @@ theorem startInitialThreads_machine :
   exact startInitialThreads_induct (fun i => i.state.machine = ist.state.machine)
     (fun i t _ hP => by
       show (startInitialThreadOnCore i.state t).machine = _
-      rw [startInitialThreadOnCore_frame i.state t i.hAllTables.1.1]; exact hP)
+      rw [startInitialThreadOnCore_frame i.state t]; exact hP)
     L ist ist' h rfl
 
 /-- **WS-BP BP7.11** (frame): every object that is not a TCB is where the idle

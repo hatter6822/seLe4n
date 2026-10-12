@@ -56,15 +56,22 @@ theorem queueNextBlockingConsistent_of_objects_eq
   rw [hLk] at hA hB
   exact hInv a b tcbA tcbB hA hB hN
 
+/-- WS-ZA ZA4.5: a write that changes nothing but TCB run-queue links keeps
+`queueNextBlockingConsistent` (it reads `queueNext` and IPC states). -/
+theorem queueNextBlockingConsistent_of_objectsAgreeOffRunLinks {st st' : SystemState}
+    (h : SystemState.objectsAgreeOffRunLinks st' st) (hInv : queueNextBlockingConsistent st) :
+    queueNextBlockingConsistent st' := by
+  intro a b tcbA tcbB hA hB hN
+  run_links_back h at tcbA hA
+  run_links_back h at tcbB hB
+  exact hInv a b tcbA tcbB hA hB hN
+
 theorem ensureRunnable_preserves_queueNextBlockingConsistent
     (st : SystemState) (tid : SeLe4n.ThreadId)
     (hInv : queueNextBlockingConsistent st) :
-    queueNextBlockingConsistent (ensureRunnable st tid) := by
-  apply queueNextBlockingConsistent_of_objects_eq st (ensureRunnable st tid)
-  · intro x; unfold ensureRunnable; split
-    · rfl
-    · split <;> rfl
-  · exact hInv
+    queueNextBlockingConsistent (ensureRunnable st tid) :=
+  queueNextBlockingConsistent_of_objectsAgreeOffRunLinks
+    (ensureRunnable_objectsAgreeOffRunLinks st tid) hInv
 
 theorem removeRunnable_preserves_queueNextBlockingConsistent
     (st : SystemState) (tid : SeLe4n.ThreadId)
@@ -309,8 +316,8 @@ theorem ensureRunnable_preserves_queueHeadBlockedConsistent
     (hInv : queueHeadBlockedConsistent st) :
     queueHeadBlockedConsistent (ensureRunnable st tid) := by
   intro epId ep hd tcb hEp hTcb
-  rw [show (ensureRunnable st tid).objects = st.objects from
-    ensureRunnable_preserves_objects st tid] at hEp hTcb
+  rw [(ensureRunnable_objectsAgreeOffRunLinks st tid).get_endpoint_iff] at hEp
+  run_links_back ensureRunnable_objectsAgreeOffRunLinks st tid at tcb hTcb
   exact hInv epId ep hd tcb hEp hTcb
 
 /-- removeRunnable preserves queueHeadBlockedConsistent (doesn't change objects). -/
@@ -1013,8 +1020,8 @@ theorem ensureRunnable_preserves_endpointQueueTailBlockedConsistent
     (hInv : endpointQueueTailBlockedConsistent st) :
     endpointQueueTailBlockedConsistent (ensureRunnable st tid) := by
   intro epId ep tl tcb hEp hTcb
-  rw [show (ensureRunnable st tid).objects = st.objects from
-    ensureRunnable_preserves_objects st tid] at hEp hTcb
+  rw [(ensureRunnable_objectsAgreeOffRunLinks st tid).get_endpoint_iff] at hEp
+  run_links_back ensureRunnable_objectsAgreeOffRunLinks st tid at tcb hTcb
   exact hInv epId ep tl tcb hEp hTcb
 
 /-- removeRunnable preserves endpointQueueTailBlockedConsistent (doesn't change objects). -/
@@ -1594,16 +1601,23 @@ theorem queueNextTargetBlocked_of_tcb_links_backward
   rw [hIpcA, hIpcB] at hPre
   exact hPre
 
+/-- WS-ZA ZA4.5: a write that changes nothing but TCB run-queue links keeps
+`queueNextTargetBlocked`. -/
+theorem queueNextTargetBlocked_of_objectsAgreeOffRunLinks {st st' : SystemState}
+    (h : SystemState.objectsAgreeOffRunLinks st' st) (hInv : queueNextTargetBlocked st) :
+    queueNextTargetBlocked st' := by
+  intro a b tcbA tcbB hA hB hN
+  run_links_back h at tcbA hA
+  run_links_back h at tcbB hB
+  exact hInv a b tcbA tcbB hA hB hN
+
 /-- `ensureRunnable` frames `queueNextTargetBlocked` (objects unchanged). -/
 theorem ensureRunnable_preserves_queueNextTargetBlocked
     (st : SystemState) (tid : SeLe4n.ThreadId)
     (hInv : queueNextTargetBlocked st) :
-    queueNextTargetBlocked (ensureRunnable st tid) := by
-  apply queueNextTargetBlocked_of_objects_eq st (ensureRunnable st tid)
-  · intro x; unfold ensureRunnable; split
-    · rfl
-    · split <;> rfl
-  · exact hInv
+    queueNextTargetBlocked (ensureRunnable st tid) :=
+  queueNextTargetBlocked_of_objectsAgreeOffRunLinks
+    (ensureRunnable_objectsAgreeOffRunLinks st tid) hInv
 
 /-- `removeRunnable` frames `queueNextTargetBlocked` (objects unchanged). -/
 theorem removeRunnable_preserves_queueNextTargetBlocked
@@ -2268,7 +2282,8 @@ theorem ensureRunnable_preserves_noIncoming
     ∀ (a : SeLe4n.ThreadId) (tcbA : TCB),
       (ensureRunnable st tid).objects[a.toObjId]? = some (.tcb tcbA) → tcbA.queueNext ≠ some t :=
   queueNext_noIncoming_of_backward st (ensureRunnable st tid) t
-    (fun y tcb' h => ⟨tcb', by rw [ensureRunnable_preserves_objects] at h; exact h, rfl⟩) hNoInc
+    (fun _ _ h => let ⟨t, ht, e⟩ := (ensureRunnable_objectsAgreeOffRunLinks st tid).get_tcb' h
+      ⟨t, ht, (congrArg TCB.queueNext e).symm⟩) hNoInc
 
 /-- `storeObject` of a non-TCB object preserves "no thread links to `t`" (it never touches a TCB). -/
 theorem storeObject_nonTcb_preserves_noIncoming

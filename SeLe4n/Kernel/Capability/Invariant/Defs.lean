@@ -159,6 +159,15 @@ theorem replyCapPointsToValidReply_of_objects_eq {st st' : SystemState}
   unfold replyCapPointsToValidReply SystemState.getReply? at h ⊢
   rw [hObjs]; exact h
 
+/-- WS-ZA ZA4.5: a step writing only run-queue links keeps every reply cap
+backed — CNodes and Reply objects are not TCBs. -/
+theorem replyCapPointsToValidReply_of_objectsAgreeOffRunLinks {st st' : SystemState}
+    (hA : st'.objectsAgreeOffRunLinks st) (h : replyCapPointsToValidReply st) :
+    replyCapPointsToValidReply st' := by
+  intro oid cn slot cap rid hCn hLk hT
+  rw [hA.getReply? rid]
+  exact h oid cn slot cap rid (hA.get_cnode_iff.mp hCn) hLk hT
+
 /-- Composed capability invariant bundle entrypoint.
 
 The active lifecycle slice extends the M2 foundation bundle with security-meaningful
@@ -776,6 +785,26 @@ theorem cdtCompleteness_of_objects_nodeSlot_eq
   rw [hObjEq]
   exact hComp nodeId ref hNS
 
+/-- WS-ZA ZA4.5: the three object-reading capability predicates carry across a
+step that writes only run-queue links (CNodes are not TCBs, and a key is
+occupied in one store exactly when it is in the other). -/
+theorem cspaceSlotCountBounded_of_objectsAgreeOffRunLinks {st st' : SystemState}
+    (hA : st'.objectsAgreeOffRunLinks st) (hBounded : cspaceSlotCountBounded st) :
+    cspaceSlotCountBounded st' :=
+  fun cnodeId cn hObj => hBounded cnodeId cn (hA.get_cnode_iff.mp hObj)
+
+theorem cdtCompleteness_of_objectsAgreeOffRunLinks {st st' : SystemState}
+    (hA : st'.objectsAgreeOffRunLinks st) (hComp : cdtCompleteness st)
+    (hNodeSlotEq : st'.cdtNodeSlot = st.cdtNodeSlot) : cdtCompleteness st' := by
+  intro nodeId ref hNS
+  rw [hNodeSlotEq] at hNS
+  exact fun hNone => hComp nodeId ref hNS (hA.get_none_iff.mp hNone)
+
+theorem cspaceDepthConsistent_of_objectsAgreeOffRunLinks {st st' : SystemState}
+    (hA : st'.objectsAgreeOffRunLinks st) (hDepth : cspaceDepthConsistent st) :
+    cspaceDepthConsistent st' :=
+  fun cnodeId cn hObj => hDepth cnodeId cn (hA.get_cnode_iff.mp hObj)
+
 /-- WS-H4: Transfer cdtCompleteness through storeObject. After storeObject,
 objects may change but every key that was non-none stays non-none. -/
 theorem cdtCompleteness_of_storeObject
@@ -1172,20 +1201,14 @@ private theorem cdtPredicates_through_handshake_path
         have hEq := Except.ok.inj hTcb; subst hEq
         exact cdtCompleteness_of_storeObject st1 pair.2 target.toObjId _ hComp1 hObjInv1 hS
           (storeObject_cdtNodeSlot_eq st1 pair.2 target.toObjId _ hS).1
-  have hEnsNS : (ensureRunnable st2 target).cdtNodeSlot = st2.cdtNodeSlot := by
-    unfold ensureRunnable
-    split
-    · rfl
-    · split
-      · rfl
-      · rfl
-  have hEnsCdt : (ensureRunnable st2 target).cdt = st.cdt := by
-    unfold ensureRunnable; split
-    · rw [hCdt2, hCdt1]
-    · split <;> rw [hCdt2, hCdt1]
-  exact ⟨cspaceSlotCountBounded_of_objects_eq st2 _ hBnd2 (ensureRunnable_preserves_objects st2 target),
-    cdtCompleteness_of_objects_nodeSlot_eq st2 _ hComp2
-      (ensureRunnable_preserves_objects st2 target) hEnsNS,
+  have hEns := ensureRunnable_onlyObjectsSchedulerDiffer st2 target
+  unfold SystemState.onlyObjectsSchedulerDiffer at hEns
+  have hEnsNS : (ensureRunnable st2 target).cdtNodeSlot = st2.cdtNodeSlot := by rw [hEns]
+  have hEnsCdt : (ensureRunnable st2 target).cdt = st.cdt := by rw [hEns]; rw [hCdt2, hCdt1]
+  exact ⟨cspaceSlotCountBounded_of_objectsAgreeOffRunLinks
+      (ensureRunnable_objectsAgreeOffRunLinks st2 target) hBnd2,
+    cdtCompleteness_of_objectsAgreeOffRunLinks
+      (ensureRunnable_objectsAgreeOffRunLinks st2 target) hComp2 hEnsNS,
     cdtAcyclicity_of_cdt_eq st _ hAcyclic hEnsCdt⟩
 
 /-- WS-H4: Transfer WS-H4 predicates through reply path.
@@ -1225,18 +1248,12 @@ theorem cdtPredicates_through_reply_path
         simp only [hS] at hTcb; have hEq := Except.ok.inj hTcb; subst hEq
         exact cdtCompleteness_of_storeObject st pair.2 target.toObjId _ hComp hObjInv hS
           (storeObject_cdtNodeSlot_eq st pair.2 target.toObjId _ hS).1
-  have hEnsNS : (ensureRunnable st1 target).cdtNodeSlot = st1.cdtNodeSlot := by
-    unfold ensureRunnable
-    split
-    · rfl
-    · split
-      · rfl
-      · rfl
-  have hEnsCdt : (ensureRunnable st1 target).cdt = st.cdt := by
-    unfold ensureRunnable; split
-    · rw [hCdt1]
-    · split <;> rw [hCdt1]
-  exact ⟨cspaceSlotCountBounded_of_objects_eq st1 _ hBnd1 (ensureRunnable_preserves_objects st1 target),
-    cdtCompleteness_of_objects_nodeSlot_eq st1 _ hComp1
-      (ensureRunnable_preserves_objects st1 target) hEnsNS,
+  have hEns := ensureRunnable_onlyObjectsSchedulerDiffer st1 target
+  unfold SystemState.onlyObjectsSchedulerDiffer at hEns
+  have hEnsNS : (ensureRunnable st1 target).cdtNodeSlot = st1.cdtNodeSlot := by rw [hEns]
+  have hEnsCdt : (ensureRunnable st1 target).cdt = st.cdt := by rw [hEns]; rw [hCdt1]
+  exact ⟨cspaceSlotCountBounded_of_objectsAgreeOffRunLinks
+      (ensureRunnable_objectsAgreeOffRunLinks st1 target) hBnd1,
+    cdtCompleteness_of_objectsAgreeOffRunLinks
+      (ensureRunnable_objectsAgreeOffRunLinks st1 target) hComp1 hEnsNS,
     cdtAcyclicity_of_cdt_eq st _ hAcyclic hEnsCdt⟩

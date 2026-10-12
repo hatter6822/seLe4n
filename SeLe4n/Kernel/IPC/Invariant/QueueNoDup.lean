@@ -127,13 +127,23 @@ theorem endpointQueueNoDup_of_objects_eq
   have ⟨hK1, hK2⟩ := hInv oid ep hEp
   exact ⟨fun tid tcb hTcb => by rw [hLk] at hTcb; exact hK1 tid tcb hTcb, hK2⟩
 
-/-- ensureRunnable preserves endpointQueueNoDup (scheduler only, objects unchanged). -/
+/-- WS-ZA ZA4.5: a write that changes nothing but TCB run-queue links keeps
+`endpointQueueNoDup` (it reads endpoints and `queueNext`). -/
+theorem endpointQueueNoDup_of_objectsAgreeOffRunLinks {st st' : SystemState}
+    (h : SystemState.objectsAgreeOffRunLinks st' st) (hInv : endpointQueueNoDup st) :
+    endpointQueueNoDup st' := by
+  intro oid ep hEp
+  have ⟨hK1, hK2⟩ := hInv oid ep (h.get_endpoint_iff.mp hEp)
+  refine ⟨fun tid tcb hTcb => ?_, hK2⟩
+  run_links_back h at tcb hTcb
+  exact hK1 tid tcb hTcb
+
+/-- ensureRunnable preserves endpointQueueNoDup (its object writes are run-queue links). -/
 theorem ensureRunnable_preserves_endpointQueueNoDup
     (st : SystemState) (tid : SeLe4n.ThreadId)
     (hInv : endpointQueueNoDup st) :
     endpointQueueNoDup (ensureRunnable st tid) :=
-  endpointQueueNoDup_of_objects_eq st (ensureRunnable st tid)
-    (fun x => congrArg (·.get? x) (ensureRunnable_preserves_objects st tid)) hInv
+  endpointQueueNoDup_of_objectsAgreeOffRunLinks (ensureRunnable_objectsAgreeOffRunLinks st tid) hInv
 
 /-- removeRunnable preserves endpointQueueNoDup (scheduler only, objects unchanged). -/
 theorem removeRunnable_preserves_endpointQueueNoDup
@@ -515,7 +525,7 @@ theorem endpointReply_preserves_endpointQueueNoDup
                       st st1 target tcb .ready (some msg) hInv hObjInv hLookup hMsg
                 -- PR #827 #3 fold: peel the atomic consume (no-op when unlinked).
                 have hObjInvMid : (ensureRunnable st1 target).objects.invExt := by
-                  rw [ensureRunnable_preserves_objects]
+                  apply ensureRunnable_objects_invExt
                   have hMsg' := hMsg
                   rw [storeTcbIpcStateAndMessage_fromTcb_eq hLookup] at hMsg'
                   exact storeTcbIpcStateAndMessage_preserves_objects_invExt

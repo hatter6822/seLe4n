@@ -327,10 +327,11 @@ theorem ensureRunnable_mem_old_onCore (st : SystemState) (tid0 x : SeLe4n.Thread
   · split
     · by_cases hc : bootCoreId = c
       · subst hc
-        simp only [SchedulerState.markReschedulePendingOnCore_runQueueOnCore, SchedulerState.setRunQueueOnCore_runQueueOnCore_self]
-        rw [RunQueue.mem_insert]
+        rw [SchedulerState.markReschedulePendingOnCore_runQueueOnCore,
+          SystemState.runEnqueueOnCore_runQueueOnCore_self, RunQueue.mem_insert]
         exact Or.inl hMem
-      · rw [SchedulerState.markReschedulePendingOnCore_runQueueOnCore, SchedulerState.setRunQueueOnCore_runQueueOnCore_ne _ _ _ _ hc]
+      · rw [SchedulerState.markReschedulePendingOnCore_runQueueOnCore,
+          SystemState.runEnqueueOnCore_runQueueOnCore_ne _ _ _ _ _ hc]
         exact hMem
     · exact hMem
 
@@ -342,7 +343,9 @@ theorem ensureRunnable_passiveServerIdleFrameOnCore
     (st : SystemState) (tid0 : SeLe4n.ThreadId) {c : CoreId} :
     passiveServerIdleFrameOnCore st (ensureRunnable st tid0) c := by
   refine ⟨fun tid tcb' hTcb' hUnbound' hNotInQ' hNotCurrent' _ => ?_⟩
-  rw [getTcb?_congr_objects (ensureRunnable_preserves_objects st tid0) tid] at hTcb'
+  have hRaw := (SystemState.getTcb?_eq_some_iff _ tid tcb').mp hTcb'
+  run_links_back ensureRunnable_objectsAgreeOffRunLinks st tid0 at tcb' hRaw
+  replace hTcb' := (SystemState.getTcb?_eq_some_iff _ tid tcb').mpr hRaw
   refine ⟨tcb', hTcb', hUnbound', ?_, ?_, rfl⟩
   · exact fun hIn => hNotInQ' (ensureRunnable_mem_old_onCore st tid0 tid c hIn)
   · rwa [ensureRunnable_currentOnCore st tid0 c] at hNotCurrent'
@@ -853,7 +856,7 @@ theorem endpointReceiveDual_passiveServerIdleFrameOnCore
                 storeTcbIpcStateAndMessage_preserves_objects_invExt pair.2.2 st2 pair.1 _ none hObjInvPop hMsg
               have hF2 := hF1.trans (storeTcbIpcStateAndMessage_passiveServerIdleFrameOnCore pair.2.2 st2 pair.1
                 .ready none (Or.inl (Or.inl rfl)) hObjInvPop hMsg)
-              have hObjInvEns : (ensureRunnable st2 pair.1).objects.invExt := by rwa [ensureRunnable_preserves_objects]
+              have hObjInvEns : (ensureRunnable st2 pair.1).objects.invExt := ensureRunnable_objects_invExt _ _ (by assumption)
               have hF3 := hF2.trans (ensureRunnable_passiveServerIdleFrameOnCore st2 pair.1)
               revert hStep
               cases hPend : storeTcbIpcStateAndMessage (ensureRunnable st2 pair.1) receiver .ready _ with
@@ -969,7 +972,7 @@ theorem endpointCall_passiveServerIdleFrameOnCore
             have hObjInv2 := storeTcbIpcStateAndMessage_preserves_objects_invExt pair.2.2 st2 pair.1 _ _ hObjInv1 hMsg
             have hF2 := storeTcbIpcStateAndMessage_passiveServerIdleFrameOnCore (c := c) pair.2.2 st2 pair.1 .ready (some msg)
               (Or.inl (Or.inl rfl)) hObjInv1 hMsg
-            have hObjInvEns : (ensureRunnable st2 pair.1).objects.invExt := by rwa [ensureRunnable_preserves_objects]
+            have hObjInvEns : (ensureRunnable st2 pair.1).objects.invExt := ensureRunnable_objects_invExt _ _ (by assumption)
             have hF3 := ensureRunnable_passiveServerIdleFrameOnCore (c := c) st2 pair.1
             cases hIpc : storeTcbIpcStateAndMessage (ensureRunnable st2 pair.1) caller (.blockedOnReply endpointId (some pair.1)) none with
             | error e => simp [hIpc] at hStep
@@ -1059,13 +1062,13 @@ theorem endpointReplyRecv_passiveServerIdleFrameOnCore
             have hObjInvR := storeTcbIpcStateAndMessage_preserves_objects_invExt st stReplied replyTarget _ _ hObjInv hMsg
             have hF1 := (storeTcbIpcStateAndMessage_passiveServerIdleFrameOnCore (c := c) st stReplied replyTarget .ready (some msg)
               (Or.inl (Or.inl rfl)) hObjInv hMsg).trans (ensureRunnable_passiveServerIdleFrameOnCore stReplied replyTarget)
-            have hObjInvE : (ensureRunnable stReplied replyTarget).objects.invExt := by rwa [ensureRunnable_preserves_objects]
+            have hObjInvE : (ensureRunnable stReplied replyTarget).objects.invExt := ensureRunnable_objects_invExt _ _ (by assumption)
             have hReceiverReadyE : ∀ (t : TCB),
                 (ensureRunnable stReplied replyTarget).getTcb? receiver = some t →
                 t.ipcState = .ready := by
               intro t hT
               have hTRaw := (getTcb?_eq_some_iff _ receiver t).mp hT
-              rw [ensureRunnable_preserves_objects] at hTRaw
+              run_links_back (ensureRunnable_objectsAgreeOffRunLinks _ _) at t hTRaw
               by_cases hRT : receiver = replyTarget
               · exact storeTcbIpcStateAndMessage_ipcState_eq st stReplied replyTarget .ready (some msg)
                   hObjInv hMsg t (hRT ▸ hTRaw)
@@ -1155,7 +1158,7 @@ theorem endpointReply_passiveServerIdleFrameOnCore
                 (Or.inl (Or.inl rfl)) hObjInv hMsg).trans
                 (ensureRunnable_passiveServerIdleFrameOnCore st'' target)
             have hObjInvMid : (ensureRunnable st'' target).objects.invExt := by
-              rw [ensureRunnable_preserves_objects]
+              apply ensureRunnable_objects_invExt
               exact storeTcbIpcStateAndMessage_preserves_objects_invExt st st'' target .ready (some msg) hObjInv hMsg
             cases hRO : tcb.replyObject with
             | none =>
@@ -1451,44 +1454,22 @@ theorem endpointReplyRecv_preserves_ipcInvariantFull_perCore
 -- whole-bundle closures for the cross-core notification/reply/receive
 -- transitions.
 
-/-- SM6.D.2 micro-frame (cross-core): `enqueueRunnableOnCore` only *adds* `tid`
-to core `c`'s run queue — it never removes any thread from any core's queue.
-So every pre-state run-queue member is preserved. -/
-theorem enqueueRunnableOnCore_mem_old (st : SystemState) (c c' : CoreId)
-    (tid x : SeLe4n.ThreadId)
-    (hMem : x ∈ st.scheduler.runQueueOnCore c') :
-    x ∈ (enqueueRunnableOnCore st c tid).scheduler.runQueueOnCore c' := by
-  cases hTcb : st.getTcb? tid with
-  | none => simp only [enqueueRunnableOnCore, SystemState.getTcbWitnessed?_eq_none hTcb]; exact hMem
-  | some tcb =>
-    simp only [enqueueRunnableOnCore, SystemState.getTcbWitnessed?_eq_some hTcb]
-    split
-    · exact hMem
-    · by_cases hcc : c' = c
-      · subst hcc
-        simp only [SchedulerState.markReschedulePendingOnCore_runQueueOnCore,
-          SchedulerState.setRunQueueOnCore_runQueueOnCore_self]
-        exact (RunQueue.mem_insert _ _ _ _).mpr (Or.inl hMem)
-      · rw [SchedulerState.markReschedulePendingOnCore_runQueueOnCore,
-          SchedulerState.setRunQueueOnCore_runQueueOnCore_ne st.scheduler c c' _ (Ne.symm hcc)]
-        exact hMem
-
 open SeLe4n.Model.SystemState in
 /-- SM6.D.2 micro-frame (cross-core): `wakeThread` of an already-`.ready`
-thread frames every core's slice — the object map is element-wise
-unchanged, every core's `current` is untouched, and the wake only *adds*
-the woken thread to its home core's run queue. -/
+thread frames every core's slice — the object map agrees off TCB
+run-queue fields, every core's `current` is untouched, and the wake only
+*adds* the woken thread to its home core's run queue. -/
 theorem wakeThread_passiveServerIdleFrameOnCore_of_ready
     (st : SystemState) (wtid : SeLe4n.ThreadId) (ec : CoreId) (wtcb : TCB) {c : CoreId}
     (hWGet : st.getTcb? wtid = some wtcb) (hWReady : wtcb.ipcState = .ready)
     (hObjInv : st.objects.invExt) :
     passiveServerIdleFrameOnCore st (wakeThread st wtid ec).1 c := by
   refine ⟨fun tid tcb' hTcb' hUnbound' hNotInQ' hNotCurrent' _ => ?_⟩
-  have hGetEq : (wakeThread st wtid ec).1.getTcb? tid = st.getTcb? tid := by
-    unfold SystemState.getTcb?
-    rw [wakeThread_objects_getElem_eq_of_ready st wtid ec wtcb hWGet hWReady hObjInv tid.toObjId]
-  rw [hGetEq] at hTcb'
-  refine ⟨tcb', hTcb', hUnbound', ?_, ?_, rfl⟩
+  obtain ⟨t, hT, e⟩ := (wakeThread_objectsAgreeOffRunLinks_of_ready st wtid ec wtcb hWGet hWReady
+    hObjInv).get_tcb' ((SystemState.getTcb?_eq_some_iff _ _ _).mp hTcb')
+  refine ⟨t, (SystemState.getTcb?_eq_some_iff _ _ _).mpr hT,
+    (TCB.proj_eq_of_withoutRunLinks_eq TCB.schedContextBinding e).symm.trans hUnbound', ?_, ?_,
+    (TCB.proj_eq_of_withoutRunLinks_eq TCB.ipcState e).symm⟩
   · intro hIn
     exact hNotInQ' (enqueueRunnableOnCore_mem_old st (determineTargetCore st wtid) c wtid tid hIn)
   · rwa [show (wakeThread st wtid ec).1 = enqueueRunnableOnCore st (determineTargetCore st wtid) wtid from rfl,

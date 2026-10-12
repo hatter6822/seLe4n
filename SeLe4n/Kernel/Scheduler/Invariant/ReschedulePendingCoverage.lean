@@ -320,6 +320,16 @@ theorem effectiveSchedParams_congr {st st' : SystemState} {a b : TCB}
     (t : SeLe4n.ThreadId) :
     schedKeyView { st with scheduler := s } t = schedKeyView st t := rfl
 
+/-- WS-ZA ZA4.5: the run-queue links are no thread's key. -/
+theorem schedKeyView_of_objectsAgreeOffRunLinks {st st' : SystemState}
+    (h : st'.objectsAgreeOffRunLinks st) (t : SeLe4n.ThreadId) :
+    schedKeyView st' t = schedKeyView st t := by
+  unfold schedKeyView
+  simp only [effectiveSchedParams_of_objectsAgreeOffRunLinks st st' _ h]
+  exact TCB.map_proj_eq_of_map_withoutRunLinks_eq (fun tcb =>
+    ((effectiveSchedParams st tcb).1, (effectiveSchedParams st tcb).2.1.val,
+      (effectiveSchedParams st tcb).2.2)) (h.getTcb? t)
+
 /-- A key-preserving TCB rewrite moves no thread's key. -/
 theorem schedKeyView_rewriteObject_tcb {st : SystemState} {tid : SeLe4n.ThreadId}
     {tcb t' : TCB} (hOld : st.getTcb? tid = some tcb)
@@ -370,38 +380,37 @@ woken TCB's rewrite only marks it `.ready`). -/
 theorem enqueueRunnableOnCore_covers (e c : CoreId) (st : SystemState)
     (tid : SeLe4n.ThreadId) (hInv : st.objects.invExt) :
     reschedulePendingCovers e st (enqueueRunnableOnCore st c tid) := by
-  unfold enqueueRunnableOnCore
-  cases hT : st.getTcbWitnessed? tid with
-  | none => exact reschedulePendingCovers_refl e st
-  | some p =>
-    obtain ⟨tcb, hw⟩ := p
-    simp only
-    split
-    · exact reschedulePendingCovers_refl e st
-    · apply reschedulePendingCovers_of_frame
-      · intro t
-        exact (schedKeyView_scheduler _ _ t).trans
-          (schedKeyView_rewriteObject_tcb hw _ hInv (schedKeyFieldsEq_ipcState tcb _) t)
+  cases hTcb : st.getTcb? tid with
+  | none =>
+    rw [enqueueRunnableOnCore_no_tcb_noop st c tid hTcb]; exact reschedulePendingCovers_refl e st
+  | some tcb =>
+    cases hFresh : runnableOnSomeCore st tid with
+    | true =>
+      rw [enqueueRunnableOnCore_eq_self_of_runnable st c tid hFresh]
+      exact reschedulePendingCovers_refl e st
+    | false =>
+      obtain ⟨E, hE⟩ := enqueueRunnableOnCore_scheduler_of_fresh st c tid tcb hTcb hFresh
+      apply reschedulePendingCovers_of_frame
+      · -- The `.ready` mark moves no key, and the run-queue links are no key.
+        intro t
+        exact (schedKeyView_of_objectsAgreeOffRunLinks
+          (enqueueRunnableOnCore_objectsAgree_marked st c tid tcb hTcb hFresh) t).trans
+          (schedKeyView_rewriteObject_tcb hTcb (SystemState.rewriteAdmissible_tcb hTcb _) hInv
+            (schedKeyFieldsEq_ipcState tcb _) t)
       · intro c' _
         by_cases hc : c = c'
-        · subst hc; left; simp
-        · right; simp [hc]
+        · subst hc; left; rw [hE]; simp
+        · right; rw [hE]; simp [hc]
 
 theorem enqueueRunnableOnCore_monotone (e c : CoreId) (st : SystemState)
     (tid : SeLe4n.ThreadId) :
     reschedulePendingMonotone e st (enqueueRunnableOnCore st c tid) := by
   intro c' _ hF
-  unfold enqueueRunnableOnCore
-  cases st.getTcbWitnessed? tid with
-  | none => exact hF
-  | some p =>
-    obtain ⟨tcb, hw⟩ := p
-    simp only
-    split
-    · exact hF
-    · by_cases hc : c = c'
-      · subst hc; simp
-      · simp [hc, hF]
+  rcases enqueueRunnableOnCore_scheduler_cases st c tid with h | ⟨E, p, h⟩ <;> rw [h]
+  · exact hF
+  · by_cases hc : c = c'
+    · subst hc; simp
+    · simp [hc, hF]
 
 /-- The removal covers: a queue removal stales nothing, and clearing the
 current slot raises the flag. -/

@@ -75,7 +75,7 @@ theorem ensureRunnable_mem_self
   unfold ensureRunnable
   split
   · assumption
-  · simp only [hTcbTyped, SchedulerState.markReschedulePendingOnCore_runQueueOnCore, SchedulerState.setRunQueueOnCore_runQueueOnCore_self]
+  · simp only [hTcbTyped, SchedulerState.markReschedulePendingOnCore_runQueueOnCore, SystemState.runEnqueueOnCore_scheduler, SchedulerState.setRunQueueOnCore_runQueueOnCore_self]
     rw [RunQueue.mem_insert]
     exact Or.inr rfl
 
@@ -87,7 +87,7 @@ theorem ensureRunnable_mem_old
   split
   · exact hMem
   · split
-    · simp only [SchedulerState.markReschedulePendingOnCore_runQueueOnCore, SchedulerState.setRunQueueOnCore_runQueueOnCore_self]
+    · simp only [SchedulerState.markReschedulePendingOnCore_runQueueOnCore, SystemState.runEnqueueOnCore_scheduler, SchedulerState.setRunQueueOnCore_runQueueOnCore_self]
       rw [RunQueue.mem_insert]; exact Or.inl hMem
     · exact hMem
 
@@ -103,7 +103,7 @@ theorem ensureRunnable_runnable_mem_old
   · rename_i hNotMem
     split
     · rename_i tcb hTcb
-      simp only [SchedulerState.runnable, SchedulerState.markReschedulePendingOnCore_runQueueOnCore, SchedulerState.setRunQueueOnCore_runQueueOnCore_self]
+      simp only [SchedulerState.runnable, SchedulerState.markReschedulePendingOnCore_runQueueOnCore, SystemState.runEnqueueOnCore_scheduler, SchedulerState.setRunQueueOnCore_runQueueOnCore_self]
       rw [RunQueue.toList_insert_not_mem _ _ _ hNotMem]
       exact List.mem_append_left _ hMem
     · exact hMem
@@ -118,7 +118,7 @@ theorem ensureRunnable_nodup
   · rename_i hNotMem
     split
     · rename_i tcb hTcb
-      simp only [SchedulerState.runnable, SchedulerState.markReschedulePendingOnCore_runQueueOnCore, SchedulerState.setRunQueueOnCore_runQueueOnCore_self]
+      simp only [SchedulerState.runnable, SchedulerState.markReschedulePendingOnCore_runQueueOnCore, SystemState.runEnqueueOnCore_scheduler, SchedulerState.setRunQueueOnCore_runQueueOnCore_self]
       rw [RunQueue.toList_insert_not_mem _ _ _ hNotMem]
       have hNotFlat : tid ∉ st.scheduler.runnable :=
         RunQueue.not_mem_toList_of_not_mem _ _ hNotMem
@@ -153,7 +153,7 @@ theorem ensureRunnable_inserts_at_effective_priority
     (SystemState.getTcb?_eq_some_iff st tid tcb).mpr hTcb
   unfold ensureRunnable
   rw [if_neg hNotMem]
-  simp only [hTcbTyped, SchedulerState.markReschedulePendingOnCore_runQueueOnCore, SchedulerState.setRunQueueOnCore_runQueueOnCore_self]
+  simp only [hTcbTyped, SchedulerState.markReschedulePendingOnCore_runQueueOnCore, SystemState.runEnqueueOnCore_scheduler, SchedulerState.setRunQueueOnCore_runQueueOnCore_self]
 
 /-- AK1-E (I-M03): PIP-boosted threads are inserted at their boosted
     priority (not their base priority) when awakened via `ensureRunnable`.
@@ -210,7 +210,7 @@ theorem ensureRunnable_mem_reverse
   · rename_i hNotMem
     split at hMem
     · -- TCB case: runnable = (rq.insert tid prio).toList
-      simp only [SchedulerState.runnable, SchedulerState.markReschedulePendingOnCore_runQueueOnCore, SchedulerState.setRunQueueOnCore_runQueueOnCore_self,
+      simp only [SchedulerState.runnable, SchedulerState.markReschedulePendingOnCore_runQueueOnCore, SystemState.runEnqueueOnCore_scheduler, SchedulerState.setRunQueueOnCore_runQueueOnCore_self,
         RunQueue.mem_toList_iff_mem, RunQueue.mem_insert] at hMem ⊢
       exact hMem
     · exact .inl hMem

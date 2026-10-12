@@ -8,6 +8,7 @@
 -/
 
 import SeLe4n.Model.State
+import SeLe4n.Kernel.RobinHood.Invariant.MapValueAt
 
 /-!
 # The run queue's links in the threads (WS-ZA ZA4.5)
@@ -118,21 +119,68 @@ theorem runLinkOn_of_objects {st st' : SystemState} (h : st'.objects = st.object
     (c : CoreId) (t : SeLe4n.ThreadId) : st'.runLinkOn c t = st.runLinkOn c t :=
   runLinkOn_of_getTcb? (getTcb?_frame h t) c
 
+/-- The object with a TCB rewritten through `g`; every other kind as is. -/
+def _root_.SeLe4n.Model.KernelObject.mapTcb (g : TCB → TCB) : KernelObject → KernelObject
+  | .tcb x => .tcb (g x)
+  | o => o
+
+/-- WS-ZA ZA4.5: rewrite thread `t`'s TCB through `g` **in its slot**
+(`RHTable.mapValueAt`): no probe, no resize, no key moved, so the frame holds
+on every object table (`objects_mapTcbInPlace`).  The run queue's link writes
+go through it; a key holding no TCB is left as it is. -/
+def mapTcbInPlace (st : SystemState) (t : SeLe4n.ThreadId) (g : TCB → TCB) : SystemState :=
+  { st with objects := st.objects.mapValueAt t.toObjId (KernelObject.mapTcb g) }
+
+theorem objects_mapTcbInPlace (st : SystemState) (t : SeLe4n.ThreadId) (g : TCB → TCB)
+    (x : SeLe4n.ObjId) :
+    (st.mapTcbInPlace t g).objects[x]? =
+      if t.toObjId == x then (st.objects[x]?).map (KernelObject.mapTcb g) else st.objects[x]? := by
+  simp only [mapTcbInPlace, RHTable_getElem?_eq_get?]
+  exact RHTable.get?_mapValueAt _ _ _ _
+
+theorem mapTcbInPlace_getTcb?_self (st : SystemState) (t : SeLe4n.ThreadId) (g : TCB → TCB) :
+    (st.mapTcbInPlace t g).getTcb? t = (st.getTcb? t).map g := by
+  unfold getTcb?
+  rw [objects_mapTcbInPlace, if_pos (beq_self_eq_true _)]
+  cases st.objects[t.toObjId]? with
+  | none => rfl
+  | some o => cases o <;> rfl
+
+theorem mapTcbInPlace_getTcb?_ne (st : SystemState) (t : SeLe4n.ThreadId) (g : TCB → TCB)
+    (y : SeLe4n.ThreadId) (hNe : t.toObjId ≠ y.toObjId) :
+    (st.mapTcbInPlace t g).getTcb? y = st.getTcb? y := by
+  unfold getTcb?
+  rw [objects_mapTcbInPlace, if_neg (by simpa using hNe)]
+
+@[simp] theorem mapTcbInPlace_scheduler (st : SystemState) (t : SeLe4n.ThreadId) (g : TCB → TCB) :
+    (st.mapTcbInPlace t g).scheduler = st.scheduler := rfl
+
+theorem mapTcbInPlace_objects_invExt (st : SystemState) (t : SeLe4n.ThreadId) (g : TCB → TCB)
+    (hInv : st.objects.invExt) : (st.mapTcbInPlace t g).objects.invExt :=
+  RHTable.mapValueAt_invExt _ _ _ hInv
+
+theorem mapTcbInPlace_getTcb?_isSome (st : SystemState) (t : SeLe4n.ThreadId) (g : TCB → TCB)
+    (y : SeLe4n.ThreadId) :
+    ((st.mapTcbInPlace t g).getTcb? y).isSome = (st.getTcb? y).isSome := by
+  by_cases hy : y = t
+  · subst hy; rw [mapTcbInPlace_getTcb?_self]; cases st.getTcb? y <;> rfl
+  · rw [mapTcbInPlace_getTcb?_ne _ _ _ _ (fun e => hy (SeLe4n.ThreadId.toObjId_injective _ _ e).symm)]
+
 /-- Rewriting a thread's TCB rewrites its entry and no other thread's. -/
-theorem runLinkOn_updateTcb_self (st : SystemState) (t : SeLe4n.ThreadId) (f : TCB → TCB)
-    (hInv : st.objects.invExt) (c : CoreId) :
-    (st.updateTcb t f).runLinkOn c t =
+theorem runLinkOn_mapTcbInPlace_self (st : SystemState) (t : SeLe4n.ThreadId) (f : TCB → TCB)
+    (c : CoreId) :
+    (st.mapTcbInPlace t f).runLinkOn c t =
       match st.getTcb? t with
       | some tcb => (f tcb).runLinkOn c
       | none => RunQueue.RunQueueLink.none := by
   unfold runLinkOn
-  rw [updateTcb_getTcb?_self st t f hInv]
+  rw [mapTcbInPlace_getTcb?_self st t f]
   cases st.getTcb? t <;> rfl
 
-theorem runLinkOn_updateTcb_ne (st : SystemState) (t : SeLe4n.ThreadId) (f : TCB → TCB)
-    (hInv : st.objects.invExt) (c : CoreId) {y : SeLe4n.ThreadId} (hy : y ≠ t) :
-    (st.updateTcb t f).runLinkOn c y = st.runLinkOn c y :=
-  runLinkOn_of_getTcb? (updateTcb_getTcb?_ne st t f hInv y
+theorem runLinkOn_mapTcbInPlace_ne (st : SystemState) (t : SeLe4n.ThreadId) (f : TCB → TCB)
+    (c : CoreId) {y : SeLe4n.ThreadId} (hy : y ≠ t) :
+    (st.mapTcbInPlace t f).runLinkOn c y = st.runLinkOn c y :=
+  runLinkOn_of_getTcb? (mapTcbInPlace_getTcb?_ne st t f y
     (fun e => hy (SeLe4n.ThreadId.toObjId_injective _ _ e).symm)) c
 
 /-- WS-ZA ZA4.5: core `c`'s run queue and the threads agree — the core's ends
@@ -167,39 +215,39 @@ theorem runLinkOn_queued_unique {st : SystemState} {c c' : CoreId} {t : SeLe4n.T
 /-- A rewrite of a TCB that acts on its entry in core `c`'s queue through `G`
 rewrites the entry `runLinkOn` reads through `G`, at that thread only.  `G`
 keeps the empty entry, so a thread that is no TCB keeps reading empty. -/
-theorem runLinkOn_updateTcb_map (st : SystemState) (y : SeLe4n.ThreadId) (g : TCB → TCB)
-    (hInv : st.objects.invExt) (c : CoreId) (G : RunQueueLink → RunQueueLink)
+theorem runLinkOn_mapTcbInPlace_map (st : SystemState) (y : SeLe4n.ThreadId) (g : TCB → TCB)
+    (c : CoreId) (G : RunQueueLink → RunQueueLink)
     (hg : ∀ tcb, (g tcb).runLinkOn c = G (tcb.runLinkOn c))
     (hG : G RunQueue.RunQueueLink.none = RunQueue.RunQueueLink.none) (x : SeLe4n.ThreadId) :
-    (st.updateTcb y g).runLinkOn c x = if x = y then G (st.runLinkOn c x) else st.runLinkOn c x := by
+    (st.mapTcbInPlace y g).runLinkOn c x = if x = y then G (st.runLinkOn c x) else st.runLinkOn c x := by
   by_cases hx : x = y
   · subst hx
-    rw [if_pos rfl, runLinkOn_updateTcb_self st x g hInv c]
+    rw [if_pos rfl, runLinkOn_mapTcbInPlace_self st x g c]
     unfold runLinkOn
     cases st.getTcb? x with
     | none => exact hG.symm
     | some tcb => exact hg tcb
-  · rw [if_neg hx, runLinkOn_updateTcb_ne st y g hInv c hx]
+  · rw [if_neg hx, runLinkOn_mapTcbInPlace_ne st y g c hx]
 
 /-- Rewrite the TCB a link code names (`LinkedQueue.decode`); nothing for the
 code `0`, which names no thread. -/
 def updateTcbAtCode (st : SystemState) (k : Nat) (g : TCB → TCB) : SystemState :=
-  if k = 0 then st else st.updateTcb (decode k) g
+  if k = 0 then st else st.mapTcbInPlace (decode k) g
 
 theorem updateTcbAtCode_objects_invExt (st : SystemState) (k : Nat) (g : TCB → TCB)
     (hInv : st.objects.invExt) : (st.updateTcbAtCode k g).objects.invExt := by
   unfold updateTcbAtCode; split
   · exact hInv
-  · exact updateTcb_preserves_objects_invExt _ _ _ hInv
+  · exact mapTcbInPlace_objects_invExt _ _ _ hInv
 
 theorem updateTcbAtCode_scheduler (st : SystemState) (k : Nat) (g : TCB → TCB) :
     (st.updateTcbAtCode k g).scheduler = st.scheduler := by
   unfold updateTcbAtCode; split
   · rfl
-  · exact updateTcb_scheduler _ _ _
+  · exact mapTcbInPlace_scheduler _ _ _
 
 theorem runLinkOn_updateTcbAtCode_map (st : SystemState) (k : Nat) (g : TCB → TCB)
-    (hInv : st.objects.invExt) (c : CoreId) (G : RunQueueLink → RunQueueLink)
+    (c : CoreId) (G : RunQueueLink → RunQueueLink)
     (hg : ∀ tcb, (g tcb).runLinkOn c = G (tcb.runLinkOn c))
     (hG : G RunQueue.RunQueueLink.none = RunQueue.RunQueueLink.none) (x : SeLe4n.ThreadId) :
     (st.updateTcbAtCode k g).runLinkOn c x =
@@ -207,7 +255,7 @@ theorem runLinkOn_updateTcbAtCode_map (st : SystemState) (k : Nat) (g : TCB → 
   unfold updateTcbAtCode
   by_cases hk : k = 0
   · subst hk; rw [if_pos rfl, if_neg (code_ne_zero x)]
-  · rw [if_neg hk, runLinkOn_updateTcb_map st _ g hInv c G hg hG x]
+  · rw [if_neg hk, runLinkOn_mapTcbInPlace_map st _ g c G hg hG x]
     by_cases hx : code x = k
     · rw [if_pos hx, if_pos (by rw [← hx, decode_code])]
     · rw [if_neg hx, if_neg (fun e => hx (by rw [e]; exact (RunQueue.code_eq_iff _ _).mpr ⟨hk, rfl⟩))]
@@ -304,7 +352,7 @@ def runAppendLinks (st : SystemState) (c : CoreId) (t : SeLe4n.ThreadId)
     (p : SeLe4n.Priority) : SystemState :=
   let e := st.scheduler.runQueueEndsOnCore c
   let btail := (RunQueue.endsOf e.buckets p).tail
-  let st1 := st.updateTcb t (fun x => { x with
+  let st1 := st.mapTcbInPlace t (fun x => { x with
     runCoreCode := c.val + 1, runPrio := p, runPrevCode := e.tail, runNextCode := 0,
     runBucketPrevCode := btail, runBucketNextCode := 0 })
   let st2 := st1.updateTcbAtCode e.tail (fun x => { x with runNextCode := code t })
@@ -340,7 +388,7 @@ def runEnqueueOnCore (st : SystemState) (c : CoreId) (t : SeLe4n.ThreadId)
 
 theorem runAppendLinks_scheduler (st : SystemState) (c : CoreId) (t : SeLe4n.ThreadId)
     (p : SeLe4n.Priority) : (st.runAppendLinks c t p).scheduler = st.scheduler := by
-  simp only [runAppendLinks, updateTcbAtCode_scheduler, updateTcb_scheduler]
+  simp only [runAppendLinks, updateTcbAtCode_scheduler, mapTcbInPlace_scheduler]
 
 theorem runAppendOnCore_runQueueOnCore (st : SystemState) (c c' : CoreId) (t : SeLe4n.ThreadId)
     (p : SeLe4n.Priority) :
@@ -373,7 +421,27 @@ theorem runAppendLinks_objects_invExt (st : SystemState) (c : CoreId) (t : SeLe4
     (p : SeLe4n.Priority) (hInv : st.objects.invExt) :
     (st.runAppendLinks c t p).objects.invExt :=
   updateTcbAtCode_objects_invExt _ _ _ (updateTcbAtCode_objects_invExt _ _ _
-    (updateTcb_preserves_objects_invExt _ _ _ hInv))
+    (mapTcbInPlace_objects_invExt _ _ _ hInv))
+
+/-- The in-place link writes keep the kernel-level table invariant: they
+rewrite a resident value, so the size and capacity are unchanged. -/
+theorem mapTcbInPlace_objects_invExtK (st : SystemState) (t : SeLe4n.ThreadId) (g : TCB → TCB)
+    (hK : st.objects.invExtK) : (st.mapTcbInPlace t g).objects.invExtK :=
+  ⟨RHTable.mapValueAt_invExt _ _ _ hK.1,
+   by simp only [mapTcbInPlace, RHTable.mapValueAt_size, RHTable.mapValueAt_capacity]; exact hK.2.1,
+   by simp only [mapTcbInPlace, RHTable.mapValueAt_capacity]; exact hK.2.2⟩
+
+theorem updateTcbAtCode_objects_invExtK (st : SystemState) (k : Nat) (g : TCB → TCB)
+    (hK : st.objects.invExtK) : (st.updateTcbAtCode k g).objects.invExtK := by
+  unfold updateTcbAtCode; split
+  · exact hK
+  · exact mapTcbInPlace_objects_invExtK _ _ _ hK
+
+theorem runAppendLinks_objects_invExtK (st : SystemState) (c : CoreId) (t : SeLe4n.ThreadId)
+    (p : SeLe4n.Priority) (hK : st.objects.invExtK) :
+    (st.runAppendLinks c t p).objects.invExtK :=
+  updateTcbAtCode_objects_invExtK _ _ _ (updateTcbAtCode_objects_invExtK _ _ _
+    (mapTcbInPlace_objects_invExtK _ _ _ hK))
 
 theorem runAppendOnCore_objects (st : SystemState) (c : CoreId) (t : SeLe4n.ThreadId)
     (p : SeLe4n.Priority) : (st.runAppendOnCore c t p).objects = (st.runAppendLinks c t p).objects :=
@@ -395,7 +463,7 @@ theorem runAppendOnCore_runQueueEndsOnCore (st : SystemState) (c c' : CoreId)
 joining thread's TCB entry, then the forward links of the queue's and the
 bucket's old last threads. -/
 theorem runAppendLinks_runLinkOn (st : SystemState) (c : CoreId) (t : SeLe4n.ThreadId)
-    (p : SeLe4n.Priority) (hInv : st.objects.invExt) (c' : CoreId) (x : SeLe4n.ThreadId) :
+    (p : SeLe4n.Priority) (c' : CoreId) (x : SeLe4n.ThreadId) :
     (st.runAppendLinks c t p).runLinkOn c' x =
       let e := st.scheduler.runQueueEndsOnCore c
       let btail := (RunQueue.endsOf e.buckets p).tail
@@ -409,20 +477,13 @@ theorem runAppendLinks_runLinkOn (st : SystemState) (c : CoreId) (t : SeLe4n.Thr
       let L2 := if code x = e.tail then RunQueueLink.withNextIfQueued (code t) L1 else L1
       if code x = btail then RunQueueLink.withBucketNextIfQueued (code t) L2 else L2 := by
   unfold runAppendLinks
-  have h1 := updateTcb_preserves_objects_invExt st t (fun x => { x with
-    runCoreCode := c.val + 1, runPrio := p,
-    runPrevCode := (st.scheduler.runQueueEndsOnCore c).tail, runNextCode := 0,
-    runBucketPrevCode := (RunQueue.endsOf (st.scheduler.runQueueEndsOnCore c).buckets p).tail,
-    runBucketNextCode := 0 }) hInv
-  have h2 := updateTcbAtCode_objects_invExt _ (st.scheduler.runQueueEndsOnCore c).tail
-    (fun x => { x with runNextCode := code t }) h1
-  rw [runLinkOn_updateTcbAtCode_map _ _ _ h2 c' _ (fun tcb => TCB.runLinkOn_setBucketNext tcb _ c')
+  rw [runLinkOn_updateTcbAtCode_map _ _ _ c' _ (fun tcb => TCB.runLinkOn_setBucketNext tcb _ c')
       (RunQueueLink.withBucketNextIfQueued_none _),
-    runLinkOn_updateTcbAtCode_map _ _ _ h1 c' _ (fun tcb => TCB.runLinkOn_setNext tcb _ c')
+    runLinkOn_updateTcbAtCode_map _ _ _ c' _ (fun tcb => TCB.runLinkOn_setNext tcb _ c')
       (RunQueueLink.withNextIfQueued_none _)]
   by_cases hx : x = t
-  · subst hx; rw [runLinkOn_updateTcb_self _ _ _ hInv]; simp only [if_true]
-  · rw [runLinkOn_updateTcb_ne _ _ _ hInv _ hx]; simp only [hx, if_false]
+  · subst hx; rw [runLinkOn_mapTcbInPlace_self _ _ _]; simp only [if_true]
+  · rw [runLinkOn_mapTcbInPlace_ne _ _ _ _ hx]; simp only [hx, if_false]
 
 theorem _root_.SeLe4n.Model.RunQueueLink.withNextIfQueued_of_not_queued {l : RunQueueLink}
     (h : l.queued = false) (v : Nat) : RunQueueLink.withNextIfQueued v l = l := by
@@ -448,7 +509,7 @@ theorem _root_.SeLe4n.Model.SchedulerState.setRunQueueOnCore_runQueueOnCore
 /-- WS-ZA ZA4.5: enqueueing a TCB that is on no other core's queue keeps every
 core's queue in agreement with the threads. -/
 theorem runEnqueueOnCore_refined {st : SystemState} {c : CoreId} {t : SeLe4n.ThreadId}
-    {p : SeLe4n.Priority} (hR : st.runQueueRefined) (hInv : st.objects.invExt)
+    {p : SeLe4n.Priority} (hR : st.runQueueRefined) 
     (hT : (st.getTcb? t).isSome)
     (hOther : ∀ c', c' ≠ c → (st.scheduler.runQueueOnCore c').contains t = false) :
     (st.runEnqueueOnCore c t p).runQueueRefined := by
@@ -477,7 +538,7 @@ theorem runEnqueueOnCore_refined {st : SystemState} {c : CoreId} {t : SeLe4n.Thr
           runAppendOnCore_runQueueOnCore]
         exact (hR c').1
     · rw [runLinkOn_withScheduler, runAppendOnCore_runLinkOn,
-        runAppendLinks_runLinkOn st c t p hInv c' x]
+        runAppendLinks_runLinkOn st c t p c' x]
       have hE := (hR c).1
       have hT0 : (st.scheduler.runQueueEndsOnCore c).tail = (st.scheduler.runQueueOnCore c).tail := by
         rw [hE]; rfl
@@ -574,21 +635,21 @@ def runUnlinkLinks (st : SystemState) (t : SeLe4n.ThreadId) (pv nx bpv bnx : Nat
   let st2 := st1.updateTcbAtCode nx (fun y => { y with runPrevCode := pv })
   let st3 := st2.updateTcbAtCode bpv (fun y => { y with runBucketNextCode := bnx })
   let st4 := st3.updateTcbAtCode bnx (fun y => { y with runBucketPrevCode := bpv })
-  st4.updateTcb t (fun y => { y with runCoreCode := 0 })
+  st4.mapTcbInPlace t (fun y => { y with runCoreCode := 0 })
 
 theorem runUnlinkLinks_scheduler (st : SystemState) (t : SeLe4n.ThreadId) (pv nx bpv bnx : Nat) :
     (st.runUnlinkLinks t pv nx bpv bnx).scheduler = st.scheduler := by
-  simp only [runUnlinkLinks, updateTcbAtCode_scheduler, updateTcb_scheduler]
+  simp only [runUnlinkLinks, updateTcbAtCode_scheduler, mapTcbInPlace_scheduler]
 
 theorem runUnlinkLinks_objects_invExt (st : SystemState) (t : SeLe4n.ThreadId)
     (pv nx bpv bnx : Nat) (hInv : st.objects.invExt) :
     (st.runUnlinkLinks t pv nx bpv bnx).objects.invExt :=
-  updateTcb_preserves_objects_invExt _ _ _ (updateTcbAtCode_objects_invExt _ _ _
+  mapTcbInPlace_objects_invExt _ _ _ (updateTcbAtCode_objects_invExt _ _ _
     (updateTcbAtCode_objects_invExt _ _ _ (updateTcbAtCode_objects_invExt _ _ _
       (updateTcbAtCode_objects_invExt _ _ _ hInv))))
 
 theorem runUnlinkLinks_runLinkOn (st : SystemState) (t : SeLe4n.ThreadId) (pv nx bpv bnx : Nat)
-    (hInv : st.objects.invExt) (c : CoreId) (y : SeLe4n.ThreadId) :
+    (c : CoreId) (y : SeLe4n.ThreadId) :
     (st.runUnlinkLinks t pv nx bpv bnx).runLinkOn c y =
       if y = t then RunQueue.RunQueueLink.none else
       let L1 := if code y = pv then RunQueueLink.withNextIfQueued nx (st.runLinkOn c y)
@@ -596,20 +657,16 @@ theorem runUnlinkLinks_runLinkOn (st : SystemState) (t : SeLe4n.ThreadId) (pv nx
       let L2 := if code y = nx then RunQueueLink.withPrevIfQueued pv L1 else L1
       let L3 := if code y = bpv then RunQueueLink.withBucketNextIfQueued bnx L2 else L2
       if code y = bnx then RunQueueLink.withBucketPrevIfQueued bpv L3 else L3 := by
-  have h1 := updateTcbAtCode_objects_invExt st pv (fun y => { y with runNextCode := nx }) hInv
-  have h2 := updateTcbAtCode_objects_invExt _ nx (fun y => { y with runPrevCode := pv }) h1
-  have h3 := updateTcbAtCode_objects_invExt _ bpv (fun y => { y with runBucketNextCode := bnx }) h2
-  have h4 := updateTcbAtCode_objects_invExt _ bnx (fun y => { y with runBucketPrevCode := bpv }) h3
   unfold runUnlinkLinks
-  rw [runLinkOn_updateTcb_map _ _ _ h4 c (fun _ => RunQueue.RunQueueLink.none)
+  rw [runLinkOn_mapTcbInPlace_map _ _ _ c (fun _ => RunQueue.RunQueueLink.none)
       (fun tcb => TCB.runLinkOn_clearCore tcb c) rfl,
-    runLinkOn_updateTcbAtCode_map _ _ _ h3 c _ (fun tcb => TCB.runLinkOn_setBucketPrev tcb _ c)
+    runLinkOn_updateTcbAtCode_map _ _ _ c _ (fun tcb => TCB.runLinkOn_setBucketPrev tcb _ c)
       (RunQueueLink.withBucketPrevIfQueued_none _),
-    runLinkOn_updateTcbAtCode_map _ _ _ h2 c _ (fun tcb => TCB.runLinkOn_setBucketNext tcb _ c)
+    runLinkOn_updateTcbAtCode_map _ _ _ c _ (fun tcb => TCB.runLinkOn_setBucketNext tcb _ c)
       (RunQueueLink.withBucketNextIfQueued_none _),
-    runLinkOn_updateTcbAtCode_map _ _ _ h1 c _ (fun tcb => TCB.runLinkOn_setPrev tcb _ c)
+    runLinkOn_updateTcbAtCode_map _ _ _ c _ (fun tcb => TCB.runLinkOn_setPrev tcb _ c)
       (RunQueueLink.withPrevIfQueued_none _),
-    runLinkOn_updateTcbAtCode_map _ _ _ hInv c _ (fun tcb => TCB.runLinkOn_setNext tcb _ c)
+    runLinkOn_updateTcbAtCode_map _ _ _ c _ (fun tcb => TCB.runLinkOn_setNext tcb _ c)
       (RunQueueLink.withNextIfQueued_none _)]
 
 /-- The ends of a queue once the thread with links `pv`, `nx`, `bpv`, `bnx` at
@@ -641,7 +698,7 @@ def runRemoveOnCore (st : SystemState) (c : CoreId) (t : SeLe4n.ThreadId) : Syst
 /-- WS-ZA ZA4.5: dequeueing keeps every core's queue in agreement with the
 threads. -/
 theorem runRemoveOnCore_refined {st : SystemState} {c : CoreId} {t : SeLe4n.ThreadId}
-    (hR : st.runQueueRefined) (hInv : st.objects.invExt) :
+    (hR : st.runQueueRefined) :
     (st.runRemoveOnCore c t).runQueueRefined := by
   unfold runRemoveOnCore
   by_cases hq : (st.runLinkOn c t).queued = true
@@ -662,12 +719,12 @@ theorem runRemoveOnCore_refined {st : SystemState} {c : CoreId} {t : SeLe4n.Thre
     obtain ⟨hLk, hBk, hHd, hTl, hSz, hMx⟩ := (st.scheduler.runQueueOnCore c).remove_fields hc
     generalize hrq : st.scheduler.runQueueOnCore c = rq at *
     generalize hx : RunQueue.linkOf rq.links t = x at *
-    have hInv5 := runUnlinkLinks_objects_invExt st t x.prev x.next x.bucketPrev x.bucketNext hInv
+
     -- the links of core `c`'s queue after the dequeue
     have hlinks : ∀ y, (st.runUnlinkLinks t x.prev x.next x.bucketPrev x.bucketNext).runLinkOn c y =
         (rq.remove t).queuedLink y := by
       intro y
-      rw [runUnlinkLinks_runLinkOn _ _ _ _ _ _ hInv, RunQueue.queuedLink, hLk,
+      rw [runUnlinkLinks_runLinkOn _ _ _ _ _ _, RunQueue.queuedLink, hLk,
         RunQueue.linkOf_unlinkLinks rq.links_invExtK t _ _ _ _ c1 c2 c3 c4 y]
       by_cases hy : y = t
       · subst hy; simp
@@ -713,7 +770,7 @@ theorem runRemoveOnCore_refined {st : SystemState} {c : CoreId} {t : SeLe4n.Thre
         exact hlinks y
       · rw [SchedulerState.setRunQueueOnCore_runQueueOnCore_ne _ _ _ _ (Ne.symm h),
           SchedulerState.setRunQueueEndsOnCore_runQueueOnCore, runUnlinkLinks_scheduler,
-          ← (hR c').2 y, runUnlinkLinks_runLinkOn _ _ _ _ _ _ hInv]
+          ← (hR c').2 y, runUnlinkLinks_runLinkOn _ _ _ _ _ _]
         have hoff : ∀ {z : SeLe4n.ThreadId}, rq.contains z = true →
             (st.runLinkOn c' z).queued = false := by
           intro z hz
@@ -754,34 +811,23 @@ theorem runRemoveOnCore_runQueueOnCore_ne (st : SystemState) (c c' : CoreId) (t 
   · rfl
 
 theorem updateTcbAtCode_getTcb?_isSome (st : SystemState) (k : Nat) (g : TCB → TCB)
-    (hInv : st.objects.invExt) (t : SeLe4n.ThreadId) :
+    (t : SeLe4n.ThreadId) :
     ((st.updateTcbAtCode k g).getTcb? t).isSome = (st.getTcb? t).isSome := by
   unfold updateTcbAtCode
   split
   · rfl
   · by_cases h : decode k = t
-    · subst h; rw [updateTcb_getTcb?_self _ _ _ hInv]; cases st.getTcb? (decode k) <;> rfl
-    · rw [updateTcb_getTcb?_ne _ _ _ hInv _
+    · subst h; rw [mapTcbInPlace_getTcb?_self _ _ _]; cases st.getTcb? (decode k) <;> rfl
+    · rw [mapTcbInPlace_getTcb?_ne _ _ _ _
         (fun e => h (SeLe4n.ThreadId.toObjId_injective _ _ e))]
 
-theorem updateTcb_getTcb?_isSome' (st : SystemState) (t : SeLe4n.ThreadId) (g : TCB → TCB)
-    (hInv : st.objects.invExt) (y : SeLe4n.ThreadId) :
-    ((st.updateTcb t g).getTcb? y).isSome = (st.getTcb? y).isSome := by
-  by_cases hy : t = y
-  · subst hy; rw [updateTcb_getTcb?_self _ _ _ hInv]; cases st.getTcb? t <;> rfl
-  · rw [updateTcb_getTcb?_ne _ _ _ hInv _ (fun e => hy (SeLe4n.ThreadId.toObjId_injective _ _ e))]
-
 theorem runUnlinkLinks_getTcb?_isSome (st : SystemState) (t : SeLe4n.ThreadId) (pv nx bpv bnx : Nat)
-    (hInv : st.objects.invExt) (y : SeLe4n.ThreadId) :
+    (y : SeLe4n.ThreadId) :
     ((st.runUnlinkLinks t pv nx bpv bnx).getTcb? y).isSome = (st.getTcb? y).isSome := by
-  have h1 := updateTcbAtCode_objects_invExt st pv (fun y => { y with runNextCode := nx }) hInv
-  have h2 := updateTcbAtCode_objects_invExt _ nx (fun y => { y with runPrevCode := pv }) h1
-  have h3 := updateTcbAtCode_objects_invExt _ bpv (fun y => { y with runBucketNextCode := bnx }) h2
-  have h4 := updateTcbAtCode_objects_invExt _ bnx (fun y => { y with runBucketPrevCode := bpv }) h3
   unfold runUnlinkLinks
-  rw [updateTcb_getTcb?_isSome' _ _ _ h4, updateTcbAtCode_getTcb?_isSome _ _ _ h3,
-    updateTcbAtCode_getTcb?_isSome _ _ _ h2, updateTcbAtCode_getTcb?_isSome _ _ _ h1,
-    updateTcbAtCode_getTcb?_isSome _ _ _ hInv]
+  rw [mapTcbInPlace_getTcb?_isSome, updateTcbAtCode_getTcb?_isSome,
+    updateTcbAtCode_getTcb?_isSome, updateTcbAtCode_getTcb?_isSome,
+    updateTcbAtCode_getTcb?_isSome _ _ _]
 
 theorem runRemoveOnCore_objects (st : SystemState) (c : CoreId) (t : SeLe4n.ThreadId) :
     (st.runRemoveOnCore c t).objects =
@@ -792,12 +838,12 @@ theorem runRemoveOnCore_objects (st : SystemState) (c : CoreId) (t : SeLe4n.Thre
   unfold runRemoveOnCore; dsimp only; split <;> rfl
 
 theorem runRemoveOnCore_getTcb?_isSome (st : SystemState) (c : CoreId) (t y : SeLe4n.ThreadId)
-    (hInv : st.objects.invExt) :
+    :
     ((st.runRemoveOnCore c t).getTcb? y).isSome = (st.getTcb? y).isSome := by
   by_cases hq : (st.runLinkOn c t).queued = true
   · have h := runRemoveOnCore_objects st c t
     rw [if_pos hq] at h
-    rw [getTcb?_frame h, runUnlinkLinks_getTcb?_isSome _ _ _ _ _ _ hInv]
+    rw [getTcb?_frame h, runUnlinkLinks_getTcb?_isSome _ _ _ _ _ _]
   · have h := runRemoveOnCore_objects st c t
     rw [if_neg hq] at h
     rw [getTcb?_frame h]
@@ -843,7 +889,7 @@ theorem runRotateOnCore_runQueueOnCore_ne (st : SystemState) (c c' : CoreId) (t 
 /-- WS-ZA ZA4.5: rotation keeps every core's queue in agreement with the
 threads. -/
 theorem runRotateOnCore_refined {st : SystemState} {c : CoreId} {t : SeLe4n.ThreadId}
-    (hR : st.runQueueRefined) (hInv : st.objects.invExt) :
+    (hR : st.runQueueRefined) :
     (st.runRotateOnCore c t).runQueueRefined := by
   unfold runRotateOnCore
   by_cases hq : (st.runLinkOn c t).queued = true
@@ -852,10 +898,10 @@ theorem runRotateOnCore_refined {st : SystemState} {c : CoreId} {t : SeLe4n.Thre
       rw [← (hR c).contains]; exact hq
     have hL : st.runLinkOn c t = RunQueue.linkOf (st.scheduler.runQueueOnCore c).links t :=
       (hR c).link_of_mem (((st.scheduler.runQueueOnCore c).mem_toList_iff_mem t).mpr hc)
-    have hR1 := runRemoveOnCore_refined (c := c) (t := t) hR hInv
-    have hInv1 := runRemoveOnCore_objects_invExt st c t hInv
+    have hR1 := runRemoveOnCore_refined (c := c) (t := t) hR
+
     have hT : ((st.runRemoveOnCore c t).getTcb? t).isSome := by
-      rw [runRemoveOnCore_getTcb?_isSome _ _ _ _ hInv]
+      rw [runRemoveOnCore_getTcb?_isSome _ _ _ _]
       obtain ⟨tcb, h, _⟩ := (hR c).tcb_of_contains hc
       rw [h]; rfl
     have hOther : ∀ c', c' ≠ c →
@@ -866,7 +912,7 @@ theorem runRotateOnCore_refined {st : SystemState} {c : CoreId} {t : SeLe4n.Thre
       cases hq2 : (st.runLinkOn c' t).queued
       · rfl
       · exact absurd (runLinkOn_queued_unique hq1 hq2).symm h
-    have hE := runEnqueueOnCore_refined (p := (st.runLinkOn c t).prio) hR1 hInv1 hT hOther
+    have hE := runEnqueueOnCore_refined (p := (st.runLinkOn c t).prio) hR1 hT hOther
     have hG : ((st.runRemoveOnCore c t).runEnqueueOnCore c t (st.runLinkOn c t).prio).scheduler.runQueueOnCore c
         = (st.scheduler.runQueueOnCore c).rotateToBack t := by
       rw [runEnqueueOnCore_runQueueOnCore_self, runRemoveOnCore_runQueueOnCore_self, hL,
