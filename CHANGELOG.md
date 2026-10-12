@@ -1,3 +1,48 @@
+## v0.36.78 — WS-ZA ZA4.1 and ZA4.3: a yield syscall that forfeits the allotment; the exerciser measures IPC, blocking and yield
+
+**`SyscallId.yield` (41, no capability; seL4 MCS's `seL4_Yield`) gives up
+what is left of the caller's allotment on the core it runs on.**  A caller
+bound to a SchedContext, or running on a donated one, forfeits its remaining
+budget until the next refill (`spendBudgetOnCore`, the part of the timer's
+budget-exhausted arm the two now share); an unbound caller goes to the back
+of its priority queue with a fresh time slice (`sliceExpireOnCore`, the
+timer's slice-expired arm).  The core then re-selects.  A yield times out no
+IPC: a server yielding on a client's donated budget leaves the call standing.
+Both dispatchers run it ahead of the CSpace lookup, so it never raises a
+capability fault.
+
+- **Proofs in the same row.**  `yieldOnCore_preserves_ipcInvariantFull`,
+  `yieldOnCore_stepCovers`, `schedLockSet_yieldOnCore_coversWrites` (it
+  locks only its own core), `yieldOnCore_confinedToCores` and
+  `yieldOnCore_crossCoreNonInterference`.  The timer's exhausted arms are
+  restated through the two named functions and proven unchanged.
+- **The run queue carries its bucket invariant** (`RunQueue.bucket_wf`: every
+  thread in a priority bucket is a member recorded at that priority), so
+  picking the next thread on a core is proven never to fail
+  (`chooseThreadEffectiveOnCore_ne_error`, `scheduleEffectiveOnCore_ne_error`).
+  The `hwf` well-formedness hypothesis is retired from the selection,
+  idle, worst-case response, cancellation and fault-progress theorems, and
+  `runQueuesWellFormed`, its preservation lemmas and
+  `chooseThreadOnCore_some_mem_of_schedulerInvariant` are deleted.
+- **Allocations.**  A refused yield reports the state it was handed
+  (`yieldOnCoreR`, proven equal to `yieldOnCore`), so the path no longer keeps
+  the input state alive and the tables it writes are not shared; the charge
+  writes the TCB and the SchedContext in place (`sliceExpireOnCoreImpl`,
+  `spendBudgetOnCoreImpl`, each `@[csimp]` with its equality).  The yield
+  reads 49 (61 when first wired); every remaining site is the scheduling
+  point's run queue, selection and switch, owned by plan row ZA4.5.
+- **The exerciser measures IPC and blocking** (ZA4.1): the QEMU `virt`
+  deployment configures a partner thread, an endpoint and a reply object, and
+  the exerciser reads receive-that-blocks 100, send to a waiting receiver
+  102, wait-that-blocks 55, signal to a waiter 58, receive holding a reply
+  capability 107, call 190 and reply 112.  Signal, wide-badge signal and the
+  wait that consumes a pending badge still read 0.
+- **Plan.**  `ZERO_ALLOCATION_SYSCALL_PLAN.md` gains the IPC paths'
+  allocations by class (§2.4) with the yield's table, and rows for the
+  decided design: yield forfeits the budget, IPC copies registers, waiters
+  and the run queue link through the TCB, and the zero rule covers every
+  entry including the first after boot.
+
 ## v0.36.77 — WS-ZA ZA4.2: badges are machine words; a wide-badge signal allocates nothing (4 → 0)
 
 **A `NotificationSignal` with a badge `≥ 2^63` makes no heap allocation**,

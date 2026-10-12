@@ -119,7 +119,10 @@ round trip makes 13, 9 at `v0.36.74` (the plan's §1 names each), and 0 at
 `v0.36.75`.  At `v0.36.76` a wait that consumes a pending badge reads 0 too
 (48 before).  At `v0.36.77` a signal with a badge `≥ 2^63` reads 0 (4
 before): `Badge` holds a machine word and the notification keeps its pending
-badge as a flag and a word.  ZA4 measures the other syscalls and entries.  Plan:
+badge as a flag and a word.  At `v0.36.78` the yield syscall (ZA4.3) reads 49,
+all of them the scheduling point's run queue, selection and switch (ZA4.5);
+its own charge and refusals allocate nothing.  ZA4 measures the other
+syscalls and entries.  Plan:
 [`docs/planning/ZERO_ALLOCATION_SYSCALL_PLAN.md`](../planning/ZERO_ALLOCATION_SYSCALL_PLAN.md)
 (phases ZA1–ZA4).
 
@@ -1696,10 +1699,10 @@ always and into the core bank only while the caller is still current
 (`stageCallerReturn_stages_switched_out`) — the bank then belongs to the
 successor.  (3) **The fault progress theorem sees through the successor**, and
 what that needs is the executing core's queue well-formed where the successor is
-chosen (`handleRescheduleSgiOnCore_preserves_not_dispatchable`).  It is taken of
-the **pre**-state (`runQueuesWellFormed`, every core) and carried across the
-spill and the delivery by `faultDeliverOnCoreChecked_preserves_runQueuesWellFormed`,
-never stated of the delivered state, which no caller holds.  (4) **One path,
+chosen (`handleRescheduleSgiOnCore_preserves_not_dispatchable`).  Since ZA4.3
+that well-formedness is a field of the run queue itself (`RunQueue.bucket_wf`),
+so no theorem takes it as a hypothesis and none has to carry it across the
+spill and the delivery.  (4) **One path,
 not two**: with the gate gone there is no inert arm for a theorem to be stated
 over, so a result about an entry is a result about the program the hardware
 runs; a new entry does not grow a `…Live` twin.
