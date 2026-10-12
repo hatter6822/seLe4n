@@ -1774,7 +1774,9 @@ theorem bootSafeCnodeCheck_caps {cn : CNode}
     references, and `threadState = .Inactive` (it is neither current nor
     queued, so `inferThreadState` classifies it `.Inactive` and the stored
     field must agree, or the checked boot installs a `threadStateConsistent`
-    violation).
+    violation), and on no run queue (`runCoreCode = 0`, WS-ZA ZA4.5: a thread's
+    run-queue membership lives in its own TCB, so a boot TCB naming a core
+    would claim a place on that core's queue the queue does not give it).
 
     Unconstrained, and why: the scheduling parameters (`priority`, `domain`,
     `timeSlice`, `deadline`, `maxControlledPriority`, `cpuAffinity`) and the
@@ -1786,7 +1788,10 @@ theorem bootSafeCnodeCheck_caps {cn : CNode}
     flight, which `threadState = .Inactive` already excludes.  The
     notification-queue links (`ntfnPrevCode`, `ntfnNextCode`) are read only
     while the thread is blocked on a notification, which `ipcState = .ready`
-    excludes, and the wait that blocks it writes both. -/
+    excludes, and the wait that blocks it writes both; the other run-queue
+    fields (`runPrio`, `runPrevCode`, `runNextCode`, `runBucketPrevCode`,
+    `runBucketNextCode`) likewise are read only while `runCoreCode` names a
+    core, and the enqueue that sets it writes them all. -/
 def bootSafeTcbCheck (tcb : TCB) : Bool :=
   match tcb with
   | ⟨_tid, _priority, _domain, _cspaceRoot, _vspaceRoot, _ipcBuffer, _ipcState, _threadState,
@@ -1801,7 +1806,8 @@ def bootSafeTcbCheck (tcb : TCB) : Bool :=
     decide (tcb.schedContextBinding = .unbound) &&
     tcb.replyObject.isNone &&
     tcb.pendingReceiveReply.isNone &&
-    decide (tcb.threadState = .Inactive)
+    decide (tcb.threadState = .Inactive) &&
+    decide (tcb.runCoreCode = 0)
 
 @[simp] theorem bootSafeTcbCheck_def (tcb : TCB) :
     bootSafeTcbCheck tcb =
@@ -1811,7 +1817,8 @@ def bootSafeTcbCheck (tcb : TCB) : Bool :=
        decide (tcb.schedContextBinding = .unbound) &&
        tcb.replyObject.isNone &&
        tcb.pendingReceiveReply.isNone &&
-       decide (tcb.threadState = .Inactive)) := rfl
+       decide (tcb.threadState = .Inactive) &&
+       decide (tcb.runCoreCode = 0)) := rfl
 
 /-- A boot **untyped** region is *pristine*: nothing has been carved from it
     and it descends from nothing.  `watermark = 0` and `children = []`,
@@ -1977,7 +1984,7 @@ private theorem bootSafeObjectCheck_sound_core (obj : KernelObject)
       tcb.schedContextBinding = .unbound ∧
       tcb.replyObject = none ∧
       tcb.pendingReceiveReply = none ∧
-      tcb.threadState = .Inactive) ∧
+      tcb.threadState = .Inactive ∧ tcb.runCoreCode = 0) ∧
     -- WS-BP BP3.2: a configured VSpaceRoot is a thread's — admitted iff
     -- bootSafeUserVSpaceRoot (a user ASID, no mappings)
     (∀ vs, obj = .vspaceRoot vs →
@@ -2031,10 +2038,10 @@ private theorem bootSafeObjectCheck_sound_core (obj : KernelObject)
   | tcb tcb =>
     simp only [bootSafeObjectCheck, bootSafeTcbCheck_def, Bool.and_eq_true,
       decide_eq_true_eq] at h
-    obtain ⟨⟨⟨⟨⟨⟨⟨⟨⟨h1, h2⟩, h3⟩, h4⟩, h4b⟩, h5⟩, h6⟩, h7⟩, h8⟩, h9⟩ := h
+    obtain ⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨h1, h2⟩, h3⟩, h4⟩, h4b⟩, h5⟩, h6⟩, h7⟩, h8⟩, h9⟩, hRun⟩ := h
     exact ⟨fun _ he => by injection he, fun _ he => by injection he,
            fun _ he => by injection he,
-           fun _ he => by injection he; subst_vars; exact ⟨Option.eq_none_of_isNone h1, h2, Option.eq_none_of_isNone h3, Option.eq_none_of_isNone h4, Option.eq_none_of_isNone h4b, Option.eq_none_of_isNone h5, h6, Option.eq_none_of_isNone h7, Option.eq_none_of_isNone h8, h9⟩,
+           fun _ he => by injection he; subst_vars; exact ⟨Option.eq_none_of_isNone h1, h2, Option.eq_none_of_isNone h3, Option.eq_none_of_isNone h4, Option.eq_none_of_isNone h4b, Option.eq_none_of_isNone h5, h6, Option.eq_none_of_isNone h7, Option.eq_none_of_isNone h8, h9, hRun⟩,
            fun _ he => by injection he, fun _ he => by injection he,
            fun _ he => by injection he, fun _ he => by injection he⟩
   | vspaceRoot vsr =>
@@ -2126,7 +2133,7 @@ theorem bootSafeObjectCheck_sound (obj : KernelObject)
       tcb.schedContextBinding = .unbound ∧
       tcb.replyObject = none ∧
       tcb.pendingReceiveReply = none ∧
-      tcb.threadState = .Inactive) ∧
+      tcb.threadState = .Inactive ∧ tcb.runCoreCode = 0) ∧
     (∀ vs, obj = .vspaceRoot vs →
       SeLe4n.Platform.RPi5.VSpaceBoot.bootSafeUserVSpaceRoot vs) ∧
     (∀ sc, obj = .schedContext sc →
@@ -4502,7 +4509,7 @@ theorem bootFromPlatformCheckedWithIdleThreadsFor_ok_nodup
     rw [hChecked] at h
     simp only [Except.bind] at h
     split at h
-    · simp [hNd] at h
+    · simp at h
     · cases h
 
 /-- **PR #889 review round 15**: the contrapositive, as the refusal — a config
@@ -5261,7 +5268,9 @@ def bootSafeObject (obj : KernelObject) : Prop :=
     tcb.replyObject = none ∧
     tcb.pendingReceiveReply = none ∧
     -- PR #889 review: neither current nor queued at boot ⟹ `.Inactive`.
-    tcb.threadState = .Inactive) ∧
+    tcb.threadState = .Inactive ∧
+    -- WS-ZA ZA4.5: and on no core's run queue, whose membership the TCB holds.
+    tcb.runCoreCode = 0) ∧
   -- WS-BP BP3.2: a configured VSpaceRoot is a thread's — admitted iff
   -- bootSafeUserVSpaceRoot (a user ASID, no mappings)
   (∀ vs, obj = .vspaceRoot vs →
@@ -6740,7 +6749,7 @@ theorem bootFromPlatformChecked_ok_tcb_bootSafeFields (config : PlatformConfig)
       tcb.schedContextBinding = .unbound ∧
       tcb.replyObject = none ∧
       tcb.pendingReceiveReply = none ∧
-      tcb.threadState = .Inactive := by
+      tcb.threadState = .Inactive ∧ tcb.runCoreCode = 0 := by
   obtain ⟨_, hSafe, hShape⟩ := bootFromPlatformChecked_ok_shape config ist h
   have hPlain : (bootFromPlatform config).state.objects[oid]? = some (KernelObject.tcb tcb) := by
     rcases hShape with ⟨_, rfl⟩ | ⟨entry, _, rfl⟩
@@ -6777,7 +6786,7 @@ theorem bootFromPlatformChecked_ok_tcb_inactive (config : PlatformConfig)
     (hObj : ist.state.objects[oid]? = some (KernelObject.tcb tcb)) :
     tcb.threadState = .Inactive ∧ tcb.ipcState = .ready :=
   let hTcb := bootFromPlatformChecked_ok_tcb_bootSafeFields config ist h oid tcb hObj
-  ⟨hTcb.2.2.2.2.2.2.2.2.2, hTcb.2.1⟩
+  ⟨hTcb.2.2.2.2.2.2.2.2.2.1, hTcb.2.1⟩
 
 /-- **PR #889 review**: on the plain checked boot no thread is current and no
     thread is queued — the two `inferThreadState` tests, both `false`. -/

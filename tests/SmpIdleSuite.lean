@@ -838,6 +838,20 @@ private def runBootValidationParityChecks : IO Unit := do
      SeLe4n.Platform.Boot.bootSafeObjectCheck
        (.tcb { tcbWithTid ⟨9⟩ with queuePPrevCode := 1 }) == false &&
      SeLe4n.Platform.Boot.bootSafeObjectCheck (.tcb (tcbWithTid ⟨9⟩)) == true)
+  -- WS-ZA ZA4.5: run-queue membership lives in the TCB, so a boot TCB naming a
+  -- core claims a queue place the queue never gave it.
+  assertBool "NEGATIVE: a boot TCB on a run queue fails the boot-safety check"
+    (SeLe4n.Platform.Boot.bootSafeObjectCheck
+       (.tcb { tcbWithTid ⟨9⟩ with runCoreCode := 1 }) == false)
+  -- WS-ZA ZA4.5: a core list naming a core twice is refused before any idle
+  -- thread is placed.
+  match SeLe4n.Platform.Boot.bootFromPlatformCheckedWithIdleThreadsFor [core0, core0]
+      ownIdCfg with
+  | .error e =>
+      assertBool "NEGATIVE: a core list naming a core twice is refused"
+        (e == SeLe4n.Platform.Boot.duplicateBootCoreError)
+  | .ok _ =>
+      assertBool "NEGATIVE: a core list naming a core twice must not boot" false
   let idleLinkCfg : SeLe4n.Platform.Boot.PlatformConfig :=
     { irqTable := [], initialObjects := [entryAt 9 (linkedTo idle0Tid)] }
   match SeLe4n.Platform.Boot.bootFromPlatformCheckedWithIdleThreads idleLinkCfg with
