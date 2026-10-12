@@ -17961,8 +17961,8 @@ run_check "INVARIANT" rg -n '^theorem cancelledCallerDonation\?_blockedOnReply' 
 run_check "INVARIANT" bash -lc 'rg -U -n "^theorem switchToThreadOnCore_preserves_threadPlacedOnSomeCore[^\n]*(\n([ \t][^\n]*)?)*\(hTcb : \(st\.getTcb\? u\)\.isSome\)" SeLe4n/Kernel/Scheduler/Operations/Core.lean'
 run_check "INVARIANT" bash -lc 'rg -U -n "^theorem switchToThreadOnCore_preserves_unplaced[^\n]*(\n([ \t][^\n]*)?)*threadPlacedOnSomeCore st. u = false := by" SeLe4n/Kernel/Scheduler/Operations/Core.lean'
 run_negative_check "INVARIANT" bash -lc 'rg -U -n "^theorem switchToThreadOnCore_preserves_unplaced[^\n]*(\n([ \t][^\n]*)?)*getTcb\?" SeLe4n/Kernel/Scheduler/Operations/Core.lean'
-run_check "INVARIANT" bash -lc 'rg -U -n "^theorem handleRescheduleSgiOnCore_preserves_unplaced[^\n]*(\n([ \t][^\n]*)?)*chooseThreadEffectiveOnCore_some_mem_runQueueOnCore st c tid hwf hChoose" SeLe4n/Kernel/IPC/CrossCore/Cancellation.lean'
-run_check "INVARIANT" bash -lc 'rg -U -n "^theorem suspendRescheduleOnCore_preserves_unplaced[^\n]*(\n([ \t][^\n]*)?)*handleRescheduleSgiOnCore_preserves_unplaced st st. ec u hwf hH h" SeLe4n/Kernel/IPC/CrossCore/Cancellation.lean'
+run_check "INVARIANT" bash -lc 'rg -U -n "^theorem handleRescheduleSgiOnCore_preserves_unplaced[^\n]*(\n([ \t][^\n]*)?)*chooseThreadEffectiveOnCore_some_mem_runQueueOnCore st c tid hChoose" SeLe4n/Kernel/IPC/CrossCore/Cancellation.lean'
+run_check "INVARIANT" bash -lc 'rg -U -n "^theorem suspendRescheduleOnCore_preserves_unplaced[^\n]*(\n([ \t][^\n]*)?)*handleRescheduleSgiOnCore_preserves_unplaced st st. ec u hH h" SeLe4n/Kernel/IPC/CrossCore/Cancellation.lean'
 # The walk frames live beside the walk, so the payoff can reach them: this
 # module imports `IPC.CrossCore.Fault`, which imports `Cancellation`, so the
 # second asker could not have reached an answer stated in `FaultProgress.lean`.
