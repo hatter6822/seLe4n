@@ -640,7 +640,7 @@ theorem endpointCall_preserves_objects_invExt
                 simp only [hLink, Except.ok.injEq, Prod.mk.injEq] at hStep
                 obtain ⟨_, hEq⟩ := hStep; subst hEq
                 have hObjInv5 := linkServerStashedReply_preserves_objects_invExt st4 st5 caller pair.1 hObjInvIpc hLink
-                rwa [removeRunnable_preserves_objects]
+                exact removeRunnable_objects_invExt _ _ (by assumption)
       | none =>
         cases hEnq : endpointQueueEnqueue endpointId false caller st with
         | error e => simp [hHead, hEnq] at hStep
@@ -653,7 +653,7 @@ theorem endpointCall_preserves_objects_invExt
             simp only [hMsg, Except.ok.injEq, Prod.mk.injEq] at hStep
             obtain ⟨_, hEq⟩ := hStep; subst hEq
             have hObjInvMsg := storeTcbIpcStateAndMessage_preserves_objects_invExt st1 st2 caller _ (some msg) hObjInv1 hMsg
-            rwa [removeRunnable_preserves_objects]
+            exact removeRunnable_objects_invExt _ _ (by assumption)
 
 -- ============================================================================
 -- M3-E4: endpointCallWithCaps preservation

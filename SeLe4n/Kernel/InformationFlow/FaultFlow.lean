@@ -159,7 +159,8 @@ theorem faultSuspendOnCore_preserves_projection (ctx : LabelingContext)
       rw [SystemState.updateTcb_eq_of_some hT]
       have hProj := projectObjects_insert_high ctx observer (removeRunnableOnCore st tid c)
         ({ removeRunnableOnCore st tid c with objects := (removeRunnableOnCore st tid c).objects.insert tid.toObjId (KernelObject.tcb { tcb with threadState := .Inactive }) } : SystemState)
-        tid (KernelObject.tcb { tcb with threadState := .Inactive }) rfl hHighObj hObjInv
+        tid (KernelObject.tcb { tcb with threadState := .Inactive }) rfl hHighObj
+          (removeRunnableOnCore_objects_invExt st tid c hObjInv)
       rw [← removeRunnableOnCore_preserves_projection ctx observer st tid c hHigh]
       -- `congr 1` discharges the twelve unchanged projections by `rfl` and the
       -- object projection from `hProj` (which it finds by `assumption`).
@@ -181,8 +182,7 @@ theorem faultDeliverOnCoreChecked_denied_preserves_projection (ctx : LabelingCon
     projectState ctx observer (faultDeliverOnCoreChecked ctx st tid f fctx c).1
       = projectState ctx observer st := by
   have hSuspObj : (faultSuspendOnCore st tid c).objects.invExt := by
-    unfold faultSuspendOnCore
-    exact SystemState.updateTcb_preserves_objects_invExt _ _ _ hObjInv
+    exact faultSuspendOnCore_preserves_objects_invExt st tid c hObjInv
   rw [faultDeliverOnCoreChecked_flow_denied ctx st tid f fctx c tgt hRes hDeny]
   simp only
   rw [recordPendingFault_preserves_projection ctx observer _ tid _ hHighObj hSuspObj]

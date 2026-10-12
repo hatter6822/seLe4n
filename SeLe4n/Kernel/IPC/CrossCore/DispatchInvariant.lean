@@ -160,16 +160,19 @@ theorem endpointCallOnCore_rendezvous_post_ipcState
   rw [hEq]
   constructor
   · intro tcb hTcb
-    rw [removeRunnableOnCore_getTcb?] at hTcb
+    obtain ⟨t5, hT5, hR⟩ := (removeRunnableOnCore_objectsAgreeOffRunLinks st5 caller executingCore).get_tcb'
+      ((getTcb?_eq_some_iff _ caller tcb).mp hTcb)
     obtain ⟨tcb4, hTcb4, hIpcEq⟩ := linkServerStashedReply_tcb_ipcState_backward st4 st5
-      caller receiver caller tcb hInv4 hLink ((getTcb?_eq_some_iff st5 caller tcb).mp hTcb)
+      caller receiver caller t5 hInv4 hLink hT5
     have : tcb4 = callerTcb4 :=
       Option.some.inj (((getTcb?_eq_some_iff st4 caller tcb4).mpr hTcb4).symm.trans hCaller4)
-    exact ⟨endpointId, some receiver, by rw [← hIpcEq, this]; exact hCallerBlocked⟩
+    exact ⟨endpointId, some receiver, by
+      rw [TCB.proj_eq_of_withoutRunLinks_eq TCB.ipcState hR, ← hIpcEq, this]; exact hCallerBlocked⟩
   · intro tcb hTcb
-    rw [removeRunnableOnCore_getTcb?] at hTcb
+    obtain ⟨t5, hT5, hR⟩ := (removeRunnableOnCore_objectsAgreeOffRunLinks st5 caller executingCore).get_tcb'
+      ((getTcb?_eq_some_iff _ receiver tcb).mp hTcb)
     obtain ⟨tcb4, hTcb4, hIpcEq⟩ := linkServerStashedReply_tcb_ipcState_backward st4 st5
-      caller receiver receiver tcb hInv4 hLink ((getTcb?_eq_some_iff st5 receiver tcb).mp hTcb)
+      caller receiver receiver t5 hInv4 hLink hT5
     obtain ⟨tcbW, hTcbW, _, hIpcW⟩ := storeTcbIpcStateAndMessage_getTcb?_backward
       (wakeThread st'' receiver executingCore).1 st4 caller
       (.blockedOnReply endpointId (some receiver)) none hWakeInv hCallerStore receiver tcb4
@@ -178,7 +181,8 @@ theorem endpointCallOnCore_rendezvous_post_ipcState
     obtain ⟨tW, hTcbW'', hE⟩ := hWA.get_tcb' hTcbW
     have : tW = recvTcb'' :=
       Option.some.inj (((getTcb?_eq_some_iff _ _ _).mpr hTcbW'').symm.trans hRecv'')
-    rw [← hIpcEq, ← hIpcW (Ne.symm hNe), TCB.proj_eq_of_withoutRunLinks_eq TCB.ipcState hE, this]
+    rw [TCB.proj_eq_of_withoutRunLinks_eq TCB.ipcState hR, ← hIpcEq, ← hIpcW (Ne.symm hNe),
+      TCB.proj_eq_of_withoutRunLinks_eq TCB.ipcState hE, this]
     exact hRecvReady
 
 

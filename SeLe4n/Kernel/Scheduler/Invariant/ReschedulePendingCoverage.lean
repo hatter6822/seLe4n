@@ -417,8 +417,10 @@ current slot raises the flag. -/
 theorem removeRunnableOnCore_covers (e : CoreId) (st : SystemState)
     (tid : SeLe4n.ThreadId) (c : CoreId) :
     reschedulePendingCovers e st (removeRunnableOnCore st tid c) := by
-  apply reschedulePendingCovers_of_frame (fun t => schedKeyView_scheduler _ _ t)
+  apply reschedulePendingCovers_of_frame (fun t => schedKeyView_of_objectsAgreeOffRunLinks
+    (removeRunnableOnCore_objectsAgreeOffRunLinks st tid c) t)
   intro c' _
+  rw [removeRunnableOnCore_scheduler]
   by_cases hc : c = c'
   · subst hc
     by_cases hcur : st.scheduler.currentOnCore c = some tid

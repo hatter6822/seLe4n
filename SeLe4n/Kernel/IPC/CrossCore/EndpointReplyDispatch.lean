@@ -534,15 +534,15 @@ theorem applyReplyDonationOnCore_machine_eq
     exact returnDonatedSchedContext_machine_eq st st' holderVtid.val scId
       (replyDonationRecipient st scId targetVtid.val) n hRet
 
-/-- WS-RR RR2.9 (frame): the cross-core donation return commits exactly the
-single-core return's object store — neither the migration nor the deschedule
-writes an object.
+/-- WS-RR RR2.9 (frame): the cross-core donation return commits the
+single-core return's object store off the run-queue links — the migration
+writes no object and the deschedule writes only run-queue links (WS-ZA ZA4.5).
 
 **WS-HP HP4.3**: the `none` arm names the head-driven trigger
 (`answeredFrameHeadContext?`) rather than the binding-driven resolver it
 replaces, and the `some` arm's return is stated at the holder-as-source,
 answered-caller-as-destination argument order the trigger produces. -/
-theorem applyReplyDonationOnCore_objects_eq
+theorem applyReplyDonationOnCore_objects_frame
     (st st'' : SystemState) (rid : SeLe4n.ReplyId) (targetVtid : SeLe4n.ValidThreadId)
     (holderHome ownerHome : CoreId)
     (h : applyReplyDonationOnCore st rid targetVtid holderHome ownerHome = .ok st'') :
@@ -551,12 +551,13 @@ theorem applyReplyDonationOnCore_objects_eq
         (newOwner? : Option SeLe4n.ThreadId) (st' : SystemState),
         returnDonatedSchedContext st holder scId
           (replyDonationRecipient st scId targetVtid.val) newOwner? = .ok st' ∧
-        st''.objects = st'.objects := by
+        st''.objectsAgreeOffRunLinks st' := by
   rcases applyReplyDonationOnCore_ok_decompose st st'' rid targetVtid holderHome ownerHome h with ⟨hNone, hEq⟩ | ⟨scId, holderVtid, n, st', _, _, hRet, hEq⟩
   · exact Or.inl ⟨hNone, by rw [hEq]⟩
   · refine Or.inr ⟨scId, holderVtid.val, n, st', hRet, ?_⟩
-    rw [hEq, descheduleAtPlacement_preserves_objects,
-      migrateSchedContextReplenishment_objects]
+    rw [hEq]
+    exact (descheduleAtPlacement_objectsAgreeOffRunLinks _ _).trans
+      (.of_objects_eq (migrateSchedContextReplenishment_objects _ _ _ _))
 
 -- ============================================================================
 -- §1b  WS-RR RR2.9 — the reply path preserves the SM5.H affinity invariant
@@ -706,7 +707,7 @@ theorem applyReplyDonationOnCore_preserves_replenishQueueAffinityConsistent_smp
     intro c
     exact (replenishQueueAffinityConsistentOnCore_frame
         (descheduleAtPlacement_replenishQueueOnCore _ _ _)
-        (descheduleAtPlacement_preserves_objects _ _)).mpr
+        (descheduleAtPlacement_objectsAgreeOffRunLinks _ _)).mpr
       (returnDonatedSchedContext_migrate_preserves_replenishQueueAffinityConsistent_smp
         st st' holderVtid.val scId (replyDonationRecipient st scId targetVtid.val)
         holderHome ownerHome hObjInv hCons

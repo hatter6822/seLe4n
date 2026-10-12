@@ -1832,8 +1832,10 @@ theorem ensureRunnable_preservesFieldsOutside (st : SystemState) (tid : SeLe4n.T
 
 theorem removeRunnable_preservesFieldsOutside (st : SystemState) (tid : SeLe4n.ThreadId) :
     preservesFieldsOutside ipcEndpointOp_modifiedFields st (removeRunnable st tid) := by
-  unfold removeRunnable
+  have h := removeRunnable_onlyObjectsSchedulerDiffer st tid
+  unfold SystemState.onlyObjectsSchedulerDiffer at h
   intro f hf
+  rw [h]
   cases f <;> first
     | rfl
     | exact (hf (by decide)).elim

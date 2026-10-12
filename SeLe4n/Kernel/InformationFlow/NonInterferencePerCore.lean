@@ -653,7 +653,9 @@ theorem ensureRunnable_confinedToBootCore (st : SystemState) (tid : SeLe4n.Threa
 boot core's current slot; every other core is untouched. -/
 theorem removeRunnable_confinedToBootCore (st : SystemState) (tid : SeLe4n.ThreadId) :
     observableSlotsConfinedToCore st (removeRunnable st tid) bootCoreId := by
-  refine ⟨?_, ?_, ?_, ?_, ?_, ?_⟩ <;> intro c hc <;> simp [removeRunnable, Ne.symm hc]
+  have hM := removeRunnable_machine_eq st tid
+  refine ⟨?_, ?_, ?_, ?_, ?_, fun c _ => by rw [hM]⟩ <;> intro c hc <;>
+    simp [removeRunnable, Ne.symm hc]
 
 /-- `setCurrentThread` writes the boot core's current slot. -/
 theorem setCurrentThread_confinedToBootCore (st st' : SystemState)

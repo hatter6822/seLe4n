@@ -2022,6 +2022,14 @@ theorem determineTargetCore_congr (st st' : SystemState) (tid : SeLe4n.ThreadId)
       have hAff : t'.cpuAffinity = t.cpuAffinity := by rw [hT', hT] at h; simpa using h
       simp [determineTargetCore, hT', hT, hAff]
 
+/-- WS-ZA ZA4.5: a step that writes only run-queue links moves no thread's home
+core — `determineTargetCore` reads `cpuAffinity`, which is off the links. -/
+theorem determineTargetCore_of_objectsAgreeOffRunLinks {st st' : SystemState}
+    (h : st'.objectsAgreeOffRunLinks st) (tid : SeLe4n.ThreadId) :
+    determineTargetCore st' tid = determineTargetCore st tid :=
+  determineTargetCore_congr st st' tid
+    (TCB.map_proj_eq_of_map_withoutRunLinks_eq (·.cpuAffinity) (h.getTcb? tid))
+
 -- ============================================================================
 -- The placement primitives — a removal at a core, at a pre-resolved placement,
 -- and at the placement the state resolves
@@ -2053,15 +2061,42 @@ The single-core `removeRunnable` (bootCore-pinned) is exactly the `bootCoreId`
 instance — see `removeRunnableOnCore_bootCoreId`. -/
 def removeRunnableOnCore (st : SystemState) (tid : SeLe4n.ThreadId) (c : CoreId) :
     SystemState :=
-  { st with
-      scheduler := ((st.scheduler.setRunQueueOnCore c
+  -- WS-ZA ZA4.5: the dequeue unlinks the thread's run-queue links in the TCBs.
+  st.runDescheduleOnCore c tid
+
+/-- WS-ZA ZA4.5: the dequeue writes only the object store (the run-queue links
+of the dequeued thread and its neighbours) and the scheduler. -/
+theorem removeRunnableOnCore_onlyObjectsSchedulerDiffer (st : SystemState)
+    (tid : SeLe4n.ThreadId) (c : CoreId) :
+    (removeRunnableOnCore st tid c).onlyObjectsSchedulerDiffer st :=
+  SystemState.runDescheduleOnCore_onlyObjectsSchedulerDiffer st c tid
+
+/-- WS-ZA ZA4.5: the dequeue changes no object off the run-queue links (was
+`removeRunnableOnCore_preserves_objects` while the links lived in the
+scheduler). -/
+theorem removeRunnableOnCore_objectsAgreeOffRunLinks (st : SystemState)
+    (tid : SeLe4n.ThreadId) (c : CoreId) :
+    (removeRunnableOnCore st tid c).objectsAgreeOffRunLinks st :=
+  SystemState.runDescheduleOnCore_objectsAgreeOffRunLinks st c tid
+
+/-- WS-ZA ZA4.5: what the dequeue does to the scheduler — core `c`'s ghost
+queue loses `tid`, its concrete ends are the unlinked ends, and its `current`
+slot is cleared if `tid` held it. -/
+theorem removeRunnableOnCore_scheduler (st : SystemState) (tid : SeLe4n.ThreadId)
+    (c : CoreId) :
+    (removeRunnableOnCore st tid c).scheduler =
+      SchedulerState.markReschedulePendingOnCoreIf
+        (((st.scheduler.setRunQueueEndsOnCore c (st.runRemoveEnds c tid)).setRunQueueOnCore c
           ((st.scheduler.runQueueOnCore c).remove tid)).setCurrentOnCore c
           (if (st.scheduler.currentOnCore c) = some tid then none
             else (st.scheduler.currentOnCore c)))
-          -- The reschedule-SGI accumulator (KSC-1): exactly when the `current`
-          -- slot changes (the diff's slot rule); a pure queue removal stales
-          -- nothing, so it flags nothing.
-          |>.markReschedulePendingOnCoreIf c (st.scheduler.currentOnCore c == some tid) }
+        c (st.scheduler.currentOnCore c == some tid) :=
+  SystemState.runDescheduleOnCore_scheduler st c tid
+
+theorem removeRunnableOnCore_objects_invExt (st : SystemState) (tid : SeLe4n.ThreadId)
+    (c : CoreId) (hInv : st.objects.invExt) :
+    (removeRunnableOnCore st tid c).objects.invExt :=
+  SystemState.runDescheduleOnCore_objects_invExt st c tid hInv
 
 /-- **WS-RR RR8.6**: remove `tid` from a placement its caller has already
 resolved — `descheduleAtPlacement`'s body, split out so a transition that must
@@ -2121,10 +2156,6 @@ survive it. -/
   simp [removeRunnableOnCore]
 
 
-/-- `removeRunnableOnCore` touches only the scheduler — every object is preserved. -/
-theorem removeRunnableOnCore_preserves_objects (st : SystemState)
-    (tid : SeLe4n.ThreadId) (c : CoreId) :
-    (removeRunnableOnCore st tid c).objects = st.objects := rfl
 
 /-- **WS-RR RR8.16** (`v0.35.200`): ...and neither CDT table, for the same
 reason.  Stated beside the object frame because the capability bundle reads
@@ -2133,14 +2164,27 @@ this removal. -/
 @[simp] theorem removeRunnableOnCore_cdt (st : SystemState)
     (tid : SeLe4n.ThreadId) (c : CoreId) :
     (removeRunnableOnCore st tid c).cdt = st.cdt
-      ∧ (removeRunnableOnCore st tid c).cdtNodeSlot = st.cdtNodeSlot := ⟨rfl, rfl⟩
+      ∧ (removeRunnableOnCore st tid c).cdtNodeSlot = st.cdtNodeSlot := by
+  have h := removeRunnableOnCore_onlyObjectsSchedulerDiffer st tid c
+  unfold SystemState.onlyObjectsSchedulerDiffer at h
+  rw [h]; exact ⟨rfl, rfl⟩
 
-/-- The step writes no object, at either branch. -/
-@[simp] theorem descheduleAtPlacement_preserves_objects (st : SystemState)
-    (tid : SeLe4n.ThreadId) : (descheduleAtPlacement st tid).objects = st.objects := by
+/-- The step writes no object off the run-queue links, at either branch
+(WS-ZA ZA4.5; was an object-store equality while the links lived in the
+scheduler). -/
+theorem descheduleAtPlacement_objectsAgreeOffRunLinks (st : SystemState)
+    (tid : SeLe4n.ThreadId) : (descheduleAtPlacement st tid).objectsAgreeOffRunLinks st := by
   unfold descheduleAtPlacement descheduleAt
   split
-  · exact removeRunnableOnCore_preserves_objects _ _ _
+  · exact removeRunnableOnCore_objectsAgreeOffRunLinks _ _ _
+  · exact .refl _
+
+/-- ...and it writes only the object store and the scheduler. -/
+theorem descheduleAtPlacement_onlyObjectsSchedulerDiffer (st : SystemState)
+    (tid : SeLe4n.ThreadId) : (descheduleAtPlacement st tid).onlyObjectsSchedulerDiffer st := by
+  unfold descheduleAtPlacement descheduleAt
+  split
+  · exact removeRunnableOnCore_onlyObjectsSchedulerDiffer _ _ _
   · rfl
 
 /-- **WS-RR RR8.12 Cut C6e**: and so it keeps object-store integrity — the form
@@ -2150,7 +2194,10 @@ Stated here rather than re-derived: it was spelled inline at three sites in
 theorem descheduleAtPlacement_preserves_objects_invExt (st : SystemState)
     (tid : SeLe4n.ThreadId) (hInv : st.objects.invExt) :
     (descheduleAtPlacement st tid).objects.invExt := by
-  rw [descheduleAtPlacement_preserves_objects]; exact hInv
+  unfold descheduleAtPlacement descheduleAt
+  split
+  · exact removeRunnableOnCore_objects_invExt _ _ _ hInv
+  · exact hInv
 
 /-- **WS-RR RR8.16** (`v0.35.199`): ...and it writes neither capability-derivation
 table, at either branch.
@@ -2164,19 +2211,17 @@ transition. -/
 @[simp] theorem descheduleAtPlacement_cdtNodeSlot (st : SystemState)
     (tid : SeLe4n.ThreadId) :
     (descheduleAtPlacement st tid).cdtNodeSlot = st.cdtNodeSlot := by
-  unfold descheduleAtPlacement descheduleAt
-  split
-  · simp only [removeRunnableOnCore]
-  · rfl
+  have h := descheduleAtPlacement_onlyObjectsSchedulerDiffer st tid
+  unfold SystemState.onlyObjectsSchedulerDiffer at h
+  rw [h]
 
 /-- ...and the derivation tree itself (`v0.35.199`). -/
 @[simp] theorem descheduleAtPlacement_cdt (st : SystemState)
     (tid : SeLe4n.ThreadId) :
     (descheduleAtPlacement st tid).cdt = st.cdt := by
-  unfold descheduleAtPlacement descheduleAt
-  split
-  · simp only [removeRunnableOnCore]
-  · rfl
+  have h := descheduleAtPlacement_onlyObjectsSchedulerDiffer st tid
+  unfold SystemState.onlyObjectsSchedulerDiffer at h
+  rw [h]
 
 /-- WS-RR RR8.11: ...and hence moves no thread's home core.  Stated beside the
 object frame it is derived from, because the SM5.H replenish-affinity invariant
@@ -2184,10 +2229,9 @@ reads `determineTargetCore` at whichever thread a scheduling context is bound to
 and the cancellation composite ends in this removal. -/
 @[simp] theorem descheduleAtPlacement_determineTargetCore (st : SystemState)
     (tid x : SeLe4n.ThreadId) :
-    determineTargetCore (descheduleAtPlacement st tid) x = determineTargetCore st x := by
-  refine determineTargetCore_congr st _ x ?_
-  unfold SystemState.getTcb?
-  rw [descheduleAtPlacement_preserves_objects]
+    determineTargetCore (descheduleAtPlacement st tid) x = determineTargetCore st x :=
+  determineTargetCore_of_objectsAgreeOffRunLinks
+    (descheduleAtPlacement_objectsAgreeOffRunLinks st tid) x
 
 
 /-- **WS-RR RR8.12**: the bare removal moves no thread's home core either.
@@ -2200,10 +2244,9 @@ assuming the two coincide.  The sibling of
 composes. -/
 @[simp] theorem removeRunnableOnCore_determineTargetCore (st : SystemState)
     (tid x : SeLe4n.ThreadId) (c : CoreId) :
-    determineTargetCore (removeRunnableOnCore st tid c) x = determineTargetCore st x := by
-  refine determineTargetCore_congr st _ x ?_
-  unfold SystemState.getTcb?
-  rw [removeRunnableOnCore_preserves_objects]
+    determineTargetCore (removeRunnableOnCore st tid c) x = determineTargetCore st x :=
+  determineTargetCore_of_objectsAgreeOffRunLinks
+    (removeRunnableOnCore_objectsAgreeOffRunLinks st tid c) x
 
 
 /-- `placedCoreOf?` reads exactly two per-core scheduler slices, so a step that
@@ -2295,10 +2338,9 @@ reply path's donation return composes this step, and its `machine` frame reaches
 back to the return through it. -/
 @[simp] theorem descheduleAtPlacement_machine_eq (st : SystemState)
     (tid : SeLe4n.ThreadId) : (descheduleAtPlacement st tid).machine = st.machine := by
-  unfold descheduleAtPlacement descheduleAt
-  split
-  · simp only [removeRunnableOnCore]
-  · rfl
+  have h := descheduleAtPlacement_onlyObjectsSchedulerDiffer st tid
+  unfold SystemState.onlyObjectsSchedulerDiffer at h
+  rw [h]
 
 /-- ...and no replenish queue, at either branch.  All three facts are proved HERE
 rather than at each consumer: a caller that re-derives them per core is how the
@@ -2313,10 +2355,13 @@ after the transition stopped using it. -/
   · exact removeRunnableOnCore_replenishQueueOnCore _ _ _ _
   · rfl
 
-/-- `removeRunnableOnCore` preserves every `getTcb?` lookup (objects unchanged). -/
+/-- `removeRunnableOnCore` preserves every `getTcb?` lookup off the run-queue
+links (WS-ZA ZA4.5). -/
 theorem removeRunnableOnCore_getTcb? (st : SystemState)
     (tid : SeLe4n.ThreadId) (c : CoreId) (x : SeLe4n.ThreadId) :
-    (removeRunnableOnCore st tid c).getTcb? x = st.getTcb? x := rfl
+    ((removeRunnableOnCore st tid c).getTcb? x).map TCB.withoutRunLinks
+      = (st.getTcb? x).map TCB.withoutRunLinks :=
+  (removeRunnableOnCore_objectsAgreeOffRunLinks st tid c).getTcb? x
 
 /-- `removeRunnableOnCore` writes core `c`'s run-queue slot to `remove tid`. -/
 @[simp] theorem removeRunnableOnCore_runQueueOnCore_self (st : SystemState)
@@ -2403,7 +2448,10 @@ theorem enqueueRunnableOnCore_machineEq (st : SystemState) (c : CoreId)
 
 /-- `removeRunnableOnCore` leaves every core's machine registers untouched. -/
 theorem removeRunnableOnCore_machine_eq (st : SystemState) (tid : SeLe4n.ThreadId)
-    (c : CoreId) : (removeRunnableOnCore st tid c).machine = st.machine := rfl
+    (c : CoreId) : (removeRunnableOnCore st tid c).machine = st.machine := by
+  have h := removeRunnableOnCore_onlyObjectsSchedulerDiffer st tid c
+  unfold SystemState.onlyObjectsSchedulerDiffer at h
+  rw [h]
 
 /-- `removeRunnableOnCore` leaves every core's active-domain slot untouched. -/
 theorem removeRunnableOnCore_activeDomainOnCore (st : SystemState) (tid : SeLe4n.ThreadId)

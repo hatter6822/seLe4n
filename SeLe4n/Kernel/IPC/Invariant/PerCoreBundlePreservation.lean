@@ -376,7 +376,9 @@ theorem removeRunnable_passiveServerIdleFrameOnCore
       tcb.schedContextBinding ≠ .unbound ∨ passiveServerIdleAllowed tcb.ipcState) :
     passiveServerIdleFrameOnCore st (removeRunnable st removed) c := by
   refine ⟨fun tid tcb' hTcb' hUnbound' hNotInQ' hNotCurrent' hNA => ?_⟩
-  rw [getTcb?_congr_objects (removeRunnable_preserves_objects st removed) tid] at hTcb'
+  rw [SystemState.getTcb?_eq_some_iff] at hTcb'
+  run_links_back (removeRunnable_objectsAgreeOffRunLinks st removed) at tcb' hTcb'
+  rw [← SystemState.getTcb?_eq_some_iff] at hTcb'
   by_cases hEq : tid = removed
   · subst hEq
     rcases hRemoved tcb' hTcb' with hB | hA
@@ -1487,7 +1489,7 @@ theorem removeRunnableOnCore_passiveServerIdleFrame
       tcb.schedContextBinding ≠ .unbound ∨ passiveServerIdleAllowed tcb.ipcState) :
     passiveServerIdleFrame st (removeRunnableOnCore st removed c) := by
   refine ⟨fun tid tcb' hTcb' hUnbound' hNotInQ' hNotCurrent' hNA => ?_⟩
-  rw [removeRunnableOnCore_preserves_objects st removed c] at hTcb'
+  run_links_back (removeRunnableOnCore_objectsAgreeOffRunLinks st removed c) at tcb' hTcb'
   by_cases hEq : tid = removed
   · subst hEq
     rcases hRemoved tcb' hTcb' with hB | hA
@@ -1535,7 +1537,9 @@ theorem removeRunnableOnCore_passiveServerIdleFrameOnCore
       tcb.schedContextBinding ≠ .unbound ∨ passiveServerIdleAllowed tcb.ipcState) :
     passiveServerIdleFrameOnCore st (removeRunnableOnCore st removed oc) c := by
   refine ⟨fun tid tcb' hTcb' hUnbound' hNotInQ' hNotCurrent' hNA => ?_⟩
-  rw [getTcb?_congr_objects (removeRunnableOnCore_preserves_objects st removed oc) tid] at hTcb'
+  rw [SystemState.getTcb?_eq_some_iff] at hTcb'
+  run_links_back (removeRunnableOnCore_objectsAgreeOffRunLinks st removed oc) at tcb' hTcb'
+  rw [← SystemState.getTcb?_eq_some_iff] at hTcb'
   by_cases hEq : tid = removed
   · subst hEq
     rcases hRemoved tcb' hTcb' with hB | hA

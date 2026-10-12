@@ -477,12 +477,8 @@ theorem ensureRunnable_preserves_intrusiveQueueWellFormed
 theorem removeRunnable_preserves_intrusiveQueueWellFormed
     (st : SystemState) (tid : SeLe4n.ThreadId)
     (q : IntrusiveQueue) (hWf : intrusiveQueueWellFormed q st) :
-    intrusiveQueueWellFormed q (removeRunnable st tid) := by
-  obtain ⟨hHT, hHead, hTail⟩ := hWf
-  exact ⟨hHT,
-    fun hd h => let ⟨t, ht, hp, hpp⟩ := hHead hd h;
-      ⟨t, by rwa [removeRunnable_preserves_objects], hp, hpp⟩,
-    fun tl h => let ⟨t, ht, hn⟩ := hTail tl h; ⟨t, by rwa [removeRunnable_preserves_objects], hn⟩⟩
+    intrusiveQueueWellFormed q (removeRunnable st tid) :=
+  intrusiveQueueWellFormed_of_objectsAgreeOffRunLinks (removeRunnable_objectsAgreeOffRunLinks st tid) hWf
 
 /-- WS-H5: ensureRunnable preserves tcbQueueLinkIntegrity. -/
 theorem ensureRunnable_preserves_tcbQueueLinkIntegrity
@@ -493,14 +489,8 @@ theorem ensureRunnable_preserves_tcbQueueLinkIntegrity
 /-- WS-H5: removeRunnable preserves tcbQueueLinkIntegrity. -/
 theorem removeRunnable_preserves_tcbQueueLinkIntegrity
     (st : SystemState) (tid : SeLe4n.ThreadId) (h : tcbQueueLinkIntegrity st) :
-    tcbQueueLinkIntegrity (removeRunnable st tid) := by
-  constructor
-  · intro a tA hA b hN; rw [removeRunnable_preserves_objects] at hA
-    obtain ⟨tB, hB, hP⟩ := h.1 a tA hA b hN
-    exact ⟨tB, by rw [removeRunnable_preserves_objects]; exact hB, hP⟩
-  · intro b tB hB a hP; rw [removeRunnable_preserves_objects] at hB
-    obtain ⟨tA, hA, hN⟩ := h.2 b tB hB a hP
-    exact ⟨tA, by rw [removeRunnable_preserves_objects]; exact hA, hN⟩
+    tcbQueueLinkIntegrity (removeRunnable st tid) :=
+  tcbQueueLinkIntegrity_of_objectsAgreeOffRunLinks (removeRunnable_objectsAgreeOffRunLinks st tid) h
 
 /-- WS-H5: ensureRunnable preserves dualQueueEndpointWellFormed. -/
 theorem ensureRunnable_preserves_dualQueueEndpointWellFormed
@@ -514,16 +504,9 @@ theorem ensureRunnable_preserves_dualQueueEndpointWellFormed
 theorem removeRunnable_preserves_dualQueueEndpointWellFormed
     (st : SystemState) (tid : SeLe4n.ThreadId) (epId : SeLe4n.ObjId)
     (hWf : dualQueueEndpointWellFormed epId st) :
-    dualQueueEndpointWellFormed epId (removeRunnable st tid) := by
-  unfold dualQueueEndpointWellFormed at hWf ⊢; rw [removeRunnable_preserves_objects]
-  cases hObjCase : st.objects[epId]? with
-  | none => trivial
-  | some obj => cases obj with
-    | tcb _ | cnode _ | vspaceRoot _ | notification _ | untyped _ | schedContext _ | reply _ | frame _ | pageTable _ => trivial
-    | endpoint ep =>
-        simp only [hObjCase] at hWf
-        exact ⟨removeRunnable_preserves_intrusiveQueueWellFormed st tid ep.sendQ hWf.1,
-               removeRunnable_preserves_intrusiveQueueWellFormed st tid ep.receiveQ hWf.2⟩
+    dualQueueEndpointWellFormed epId (removeRunnable st tid) :=
+  dualQueueEndpointWellFormed_of_objectsAgreeOffRunLinks
+    (removeRunnable_objectsAgreeOffRunLinks st tid) epId hWf
 
 /-- WS-H5: ensureRunnable preserves dualQueueSystemInvariant. -/
 theorem ensureRunnable_preserves_dualQueueSystemInvariant
@@ -537,14 +520,9 @@ theorem ensureRunnable_preserves_dualQueueSystemInvariant
 theorem removeRunnable_preserves_dualQueueSystemInvariant
     (st : SystemState) (tid : SeLe4n.ThreadId)
     (hInv : dualQueueSystemInvariant st) :
-    dualQueueSystemInvariant (removeRunnable st tid) := by
-  obtain ⟨hEp, hLink, hAcyclic, hPP, hHD⟩ := hInv
-  refine ⟨?_, removeRunnable_preserves_tcbQueueLinkIntegrity st tid hLink,
-    tcbQueueChainAcyclic_of_objects_eq (removeRunnable_preserves_objects st tid) hAcyclic,
-    queuePPrevAgreesWithPrev_of_objects_eq (removeRunnable_preserves_objects st tid) hPP,
-    endpointQueueHeadDisjoint_of_objects_eq (removeRunnable_preserves_objects st tid) hHD⟩
-  intro epId ep hObj; rw [removeRunnable_preserves_objects] at hObj
-  exact removeRunnable_preserves_dualQueueEndpointWellFormed st tid epId (hEp epId ep hObj)
+    dualQueueSystemInvariant (removeRunnable st tid) :=
+  dualQueueSystemInvariant_of_objectsAgreeOffRunLinks
+    (removeRunnable_objectsAgreeOffRunLinks st tid) hInv
 
 -- ---- Frame lemma: storeObject for TCB preserves queue well-formedness ----
 -- storeTcbIpcState / storeTcbIpcStateAndMessage / storeTcbPendingMessage all

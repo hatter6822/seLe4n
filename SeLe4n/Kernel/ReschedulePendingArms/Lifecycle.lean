@@ -109,9 +109,13 @@ theorem descheduleAt_stepCovers (e : CoreId) (st : SystemState) (tid : SeLe4n.Th
   | none => exact stepCovers_refl e st
   | some c => exact ⟨removeRunnableOnCore_covers e st tid c, removeRunnableOnCore_monotone e st tid c⟩
 
-theorem descheduleAt_objects (st : SystemState) (tid : SeLe4n.ThreadId) (placed : Option CoreId) :
-    (descheduleAt st tid placed).objects = st.objects := by
-  unfold descheduleAt; cases placed <;> rfl
+theorem descheduleAt_objects_invExt (st : SystemState) (tid : SeLe4n.ThreadId)
+    (placed : Option CoreId) (hInv : st.objects.invExt) :
+    (descheduleAt st tid placed).objects.invExt := by
+  unfold descheduleAt
+  cases placed with
+  | none => exact hInv
+  | some c => exact removeRunnableOnCore_objects_invExt st tid c hInv
 
 /-- The reclaim-complete teardown covers: the teardown, the replenishment
 migration, and the unbound holder's deschedule. -/
@@ -169,8 +173,8 @@ theorem suspendThreadOnCore_stepCovers (st st' : SystemState) (vtid : SeLe4n.Val
     · contradiction
     have h1 := cancelIpcBlockingReclaimed_stepCovers e st vtid.val tcb hInv
     have h1Inv : (cancelIpcBlockingReclaimed vtid.val tcb st).objects.invExt := by
-      rw [cancelIpcBlockingReclaimed_objects]
-      exact Lifecycle.Suspend.cancelIpcBlocking_preserves_objects_invExt st vtid.val tcb hInv
+      exact cancelIpcBlockingReclaimed_objects_invExt vtid.val tcb st
+        (Lifecycle.Suspend.cancelIpcBlocking_preserves_objects_invExt st vtid.val tcb hInv)
     cases hB : PriorityInheritance.blockingServer st vtid.val
     case' none =>
       rw [hB] at hStep
@@ -199,7 +203,7 @@ theorem suspendThreadOnCore_stepCovers (st st' : SystemState) (vtid : SeLe4n.Val
           exact ⟨stepCovers_trans h1 a, b⟩
       have h4 := stepCovers_trans h3 (descheduleAt_stepCovers e s3 vtid.val (placedCoreOf? st vtid.val))
       have h4Inv : (descheduleAt s3 vtid.val (placedCoreOf? st vtid.val)).objects.invExt := by
-        rw [descheduleAt_objects]; exact h3Inv
+        exact descheduleAt_objects_invExt _ _ _ h3Inv
       have h5 := stepCovers_trans h4 (stepCovers_of_keys_sched
         (clearPendingState_keyInputsEq _ vtid.val h4Inv) (SystemState.updateTcb_scheduler _ _ _))
       have h5Inv : (Lifecycle.Suspend.clearPendingStateValid

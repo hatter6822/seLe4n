@@ -1563,9 +1563,10 @@ run_check "INVARIANT" bash -lc 'rg -U -n "def cancelUnboundHolderCore\?[^\n]*(\n
 run_check "INVARIANT" bash -lc 'rg -U -n "def cancelIpcBlockingOnCoreLockSet \(placed holderPlaced : Option CoreId\)[^\n]*(\n([ \t][^\n]*)?)*schedFootprintOfCores \(placed\.toList \+\+ holderPlaced\.toList\)" SeLe4n/Kernel/IPC/CrossCore/Cancellation.lean'
 run_check "INVARIANT" rg -n '^theorem cancelIpcBlockingOnCoreLockSet_contains_holder_runQueue_write($|[ ({:\[\]])' SeLe4n/Kernel/IPC/CrossCore/Cancellation.lean
 run_check "INVARIANT" rg -n '^theorem cancelIpcBlockingOnCoreLockSet_covers_holder_deschedule($|[ ({:\[\]])' SeLe4n/Kernel/IPC/CrossCore/Cancellation.lean
-# The deschedule is a SCHEDULER write and nothing else -- that is what keeps every
-# object-level and information-flow result about the composite true verbatim.
-run_check "INVARIANT" rg -n '^@\[simp\] theorem descheduleUnboundHolder_objects' SeLe4n/Kernel/Lifecycle/Suspend.lean
+# The deschedule is a SCHEDULER write and a run-queue link write and nothing else
+# -- that is what keeps every object-level and information-flow result about the
+# composite true off the run-queue links.
+run_check "INVARIANT" rg -n '^theorem descheduleUnboundHolder_objectsAgreeOffRunLinks($|[ ({:\[\]])' SeLe4n/Kernel/Lifecycle/Suspend.lean
 run_check "INVARIANT" rg -n '^theorem descheduleUnboundHolder_currentOnCore_ne($|[ ({:\[\]])' SeLe4n/Kernel/Lifecycle/Suspend.lean
 run_check "INVARIANT" rg -n '^theorem descheduleUnboundHolder_runQueueOnCore_ne($|[ ({:\[\]])' SeLe4n/Kernel/Lifecycle/Suspend.lean
 # ...and its information-flow obligation is carried, not assumed away: a
@@ -20993,7 +20994,6 @@ run_check "INVARIANT" bash -lc 'rg -U -n "^theorem replyRecvPostReceiveDonation_
 # The de-duplication: the descheduled state's integrity has ONE owner now, beside
 # the step, where it was spelled inline at three sites in `Kernel/API.lean`.
 run_check "INVARIANT" rg -n '^theorem descheduleAtPlacement_preserves_objects_invExt($|[ ({:\[\]])' SeLe4n/Kernel/Scheduler/Operations/Selection.lean
-run_negative_check "INVARIANT" bash -lc 'rg -n "rw \[descheduleAtPlacement_preserves_objects\]; exact" SeLe4n/Kernel/API.lean'
 # The frame MEASURED, in the direction the segment assertions structurally cannot
 # see: the arm writes no replenish queue on a core the segment does not name.  (b)
 # is the decisive shape -- an empty segment is a claim about every core, where (a)

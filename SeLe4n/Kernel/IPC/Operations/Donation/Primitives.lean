@@ -501,11 +501,6 @@ theorem applyCallDonation_machine_eq
     | bound scId => simp [hBinding] at h; cases h; rfl
     | donated scId owner => simp [hBinding] at h; cases h; rfl
 
-/-- AG8-G: removeRunnable preserves machine state — it only modifies scheduler. -/
-private theorem removeRunnable_machine_eq (st : SystemState) (tid : SeLe4n.ThreadId) :
-    (removeRunnable st tid).machine = st.machine := by
-  unfold removeRunnable; rfl
-
 /-- AG8-G/AH2-D: applyReplyDonation preserves machine state.
 Composition of `returnDonatedSchedContext_machine_eq` and `removeRunnable_machine_eq`:
 all no-op paths return `.ok st` unchanged, and the success path delegates to

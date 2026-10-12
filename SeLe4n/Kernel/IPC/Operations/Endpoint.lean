@@ -105,19 +105,11 @@ finding ID, the affected site, and the remediation applied.
   AK10 documentation closure).
 -/
 
-/-- WS-G4/F-P02: O(1) amortized remove via RunQueue. -/
+/-- WS-G4/F-P02: O(1) remove.  WS-ZA ZA4.5: the boot-core instance of
+`removeRunnableOnCore` — both are `runDescheduleOnCore`, so the bridge
+`removeRunnableOnCore_bootCoreId` stays a definitional equality. -/
 def removeRunnable (st : SystemState) (tid : SeLe4n.ThreadId) : SystemState :=
-  { st with
-      scheduler := ((st.scheduler.setRunQueueOnCore bootCoreId
-          ((st.scheduler.runQueueOnCore bootCoreId).remove tid)).setCurrentOnCore bootCoreId
-          (if (st.scheduler.currentOnCore bootCoreId) = some tid then none
-            else (st.scheduler.currentOnCore bootCoreId)))
-          -- The reschedule-SGI accumulator (KSC-1): the boot-core instance of
-          -- `removeRunnableOnCore`'s mark, so the bridge
-          -- `removeRunnableOnCore_bootCoreId` stays a definitional equality.
-          |>.markReschedulePendingOnCoreIf bootCoreId
-            (st.scheduler.currentOnCore bootCoreId == some tid)
-  }
+  st.runDescheduleOnCore bootCoreId tid
 
 /-- WS-SM SM8.B (PR #861 review round 17): **does core `c` hold this thread at
 all** — in its run queue, or as its current thread?
@@ -149,14 +141,8 @@ deletion that is not on file and that nothing else wants. -/
 def removeRunnableStepOnCore (tid : SeLe4n.ThreadId) (st : SystemState)
     (c : SeLe4n.Kernel.Concurrency.CoreId) : SystemState :=
   if threadOccupiesCore st tid c then
-    { st with
-        scheduler := ((st.scheduler.setRunQueueOnCore c
-            ((st.scheduler.runQueueOnCore c).remove tid)).setCurrentOnCore c
-            (if (st.scheduler.currentOnCore c) = some tid then none
-              else (st.scheduler.currentOnCore c)))
-            -- The reschedule-SGI accumulator (KSC-1): flagged exactly when
-            -- the `current` slot changes, as `removeRunnableOnCore`.
-            |>.markReschedulePendingOnCoreIf c (st.scheduler.currentOnCore c == some tid) }
+    -- The same body as `removeRunnableOnCore` (WS-ZA ZA4.5).
+    st.runDescheduleOnCore c tid
   else st
 
 /-- WS-SM SM8.B: the guard is exactly "this core holds the thread", so an
@@ -357,33 +343,49 @@ theorem removeRunnableFromAllCores_toList_subset (st : SystemState)
   · rw [RunQueue.toList_remove] at h; exact (List.mem_filter.mp h).1
   · exact h
 
-/-- WS-SM SM8.B: the sweep is scheduler-only — every other field frames, by
-induction over the core list rather than by reducing it. -/
+/-- WS-ZA ZA4.5: one step of the sweep writes only the object store (run-queue
+links) and the scheduler, at either guard branch. -/
+theorem removeRunnableStepOnCore_onlyObjectsSchedulerDiffer (tid : SeLe4n.ThreadId)
+    (st : SystemState) (c : SeLe4n.Kernel.Concurrency.CoreId) :
+    (removeRunnableStepOnCore tid st c).onlyObjectsSchedulerDiffer st := by
+  unfold removeRunnableStepOnCore
+  split
+  · exact SystemState.runDescheduleOnCore_onlyObjectsSchedulerDiffer _ _ _
+  · exact .refl _
+
+theorem removeRunnableStepOnCore_objectsAgreeOffRunLinks (tid : SeLe4n.ThreadId)
+    (st : SystemState) (c : SeLe4n.Kernel.Concurrency.CoreId) :
+    (removeRunnableStepOnCore tid st c).objectsAgreeOffRunLinks st := by
+  unfold removeRunnableStepOnCore
+  split
+  · exact SystemState.runDescheduleOnCore_objectsAgreeOffRunLinks _ _ _
+  · exact .refl _
+
+theorem removeRunnableStepOnCore_objects_invExt (tid : SeLe4n.ThreadId)
+    (st : SystemState) (c : SeLe4n.Kernel.Concurrency.CoreId) (hInv : st.objects.invExt) :
+    (removeRunnableStepOnCore tid st c).objects.invExt := by
+  unfold removeRunnableStepOnCore
+  split
+  · exact SystemState.runDescheduleOnCore_objects_invExt _ _ _ hInv
+  · exact hInv
+
+/-- WS-SM SM8.B: the sweep writes only the object store and the scheduler, and
+the store only on run-queue links (WS-ZA ZA4.5) — by induction over the core
+list rather than by reducing it. -/
 theorem foldl_removeRunnableStepOnCore_frame
     (cs : List SeLe4n.Kernel.Concurrency.CoreId) (tid : SeLe4n.ThreadId) :
     ∀ st : SystemState,
-      (cs.foldl (removeRunnableStepOnCore tid) st).objects = st.objects
-      ∧ (cs.foldl (removeRunnableStepOnCore tid) st).lifecycle = st.lifecycle
-      ∧ (cs.foldl (removeRunnableStepOnCore tid) st).machine = st.machine
-      ∧ (cs.foldl (removeRunnableStepOnCore tid) st).tlbShootdown = st.tlbShootdown := by
+      (cs.foldl (removeRunnableStepOnCore tid) st).onlyObjectsSchedulerDiffer st
+      ∧ (cs.foldl (removeRunnableStepOnCore tid) st).objectsAgreeOffRunLinks st
+      ∧ (st.objects.invExt → (cs.foldl (removeRunnableStepOnCore tid) st).objects.invExt) := by
   induction cs with
-  | nil => intro _; exact ⟨rfl, rfl, rfl, rfl⟩
+  | nil => intro st; exact ⟨.refl _, .refl _, id⟩
   | cons d ds ih =>
     intro st
-    obtain ⟨h1, h2, h3, h4⟩ := ih (removeRunnableStepOnCore tid st d)
-    -- The step frames all four fields in *both* guard branches: the taken one
-    -- writes only `scheduler`, the untaken one writes nothing.
-    have hStep : ∀ (s : SystemState) (e : SeLe4n.Kernel.Concurrency.CoreId),
-        (removeRunnableStepOnCore tid s e).objects = s.objects
-        ∧ (removeRunnableStepOnCore tid s e).lifecycle = s.lifecycle
-        ∧ (removeRunnableStepOnCore tid s e).machine = s.machine
-        ∧ (removeRunnableStepOnCore tid s e).tlbShootdown = s.tlbShootdown := by
-      intro s e
-      unfold removeRunnableStepOnCore
-      split <;> exact ⟨rfl, rfl, rfl, rfl⟩
-    obtain ⟨g1, g2, g3, g4⟩ := hStep st d
-    exact ⟨by rw [List.foldl_cons, h1, g1], by rw [List.foldl_cons, h2, g2],
-           by rw [List.foldl_cons, h3, g3], by rw [List.foldl_cons, h4, g4]⟩
+    obtain ⟨h1, h2, h3⟩ := ih (removeRunnableStepOnCore tid st d)
+    exact ⟨h1.trans (removeRunnableStepOnCore_onlyObjectsSchedulerDiffer tid st d),
+      h2.trans (removeRunnableStepOnCore_objectsAgreeOffRunLinks tid st d),
+      fun hInv => h3 (removeRunnableStepOnCore_objects_invExt tid st d hInv)⟩
 
 /-- WS-SM SM8.B (PR #861 review round 35): the sweep leaves every core's **domain**
 slots alone.
@@ -469,30 +471,52 @@ theorem foldl_removeRunnableStepOnCore_replenishQueueOnCore
       = st.scheduler.domainScheduleIndexOnCore c :=
   (foldl_removeRunnableStepOnCore_domain_frame _ tid st c).2.2
 
-@[simp] theorem removeRunnableFromAllCores_objects (st : SystemState)
+theorem removeRunnableFromAllCores_onlyObjectsSchedulerDiffer (st : SystemState)
     (tid : SeLe4n.ThreadId) :
-    (removeRunnableFromAllCores st tid).objects = st.objects :=
+    (removeRunnableFromAllCores st tid).onlyObjectsSchedulerDiffer st :=
   (foldl_removeRunnableStepOnCore_frame _ tid st).1
+
+/-- WS-ZA ZA4.5: the sweep changes no object off the run-queue links (was
+`removeRunnableFromAllCores_objects`, an object-store equality). -/
+theorem removeRunnableFromAllCores_objectsAgreeOffRunLinks (st : SystemState)
+    (tid : SeLe4n.ThreadId) :
+    (removeRunnableFromAllCores st tid).objectsAgreeOffRunLinks st :=
+  (foldl_removeRunnableStepOnCore_frame _ tid st).2.1
+
+theorem removeRunnableFromAllCores_objects_invExt (st : SystemState)
+    (tid : SeLe4n.ThreadId) (hInv : st.objects.invExt) :
+    (removeRunnableFromAllCores st tid).objects.invExt :=
+  (foldl_removeRunnableStepOnCore_frame _ tid st).2.2 hInv
 
 @[simp] theorem removeRunnableFromAllCores_lifecycle (st : SystemState)
     (tid : SeLe4n.ThreadId) :
-    (removeRunnableFromAllCores st tid).lifecycle = st.lifecycle :=
-  (foldl_removeRunnableStepOnCore_frame _ tid st).2.1
+    (removeRunnableFromAllCores st tid).lifecycle = st.lifecycle := by
+  rw [removeRunnableFromAllCores_onlyObjectsSchedulerDiffer st tid]
 
 @[simp] theorem removeRunnableFromAllCores_machine (st : SystemState)
     (tid : SeLe4n.ThreadId) :
-    (removeRunnableFromAllCores st tid).machine = st.machine :=
-  (foldl_removeRunnableStepOnCore_frame _ tid st).2.2.1
+    (removeRunnableFromAllCores st tid).machine = st.machine := by
+  rw [removeRunnableFromAllCores_onlyObjectsSchedulerDiffer st tid]
 
 @[simp] theorem removeRunnableFromAllCores_tlbShootdown (st : SystemState)
     (tid : SeLe4n.ThreadId) :
-    (removeRunnableFromAllCores st tid).tlbShootdown = st.tlbShootdown :=
-  (foldl_removeRunnableStepOnCore_frame _ tid st).2.2.2
+    (removeRunnableFromAllCores st tid).tlbShootdown = st.tlbShootdown := by
+  rw [removeRunnableFromAllCores_onlyObjectsSchedulerDiffer st tid]
 
 /-- WS-SM SM7.B: `removeRunnable` is scheduler-only — the TLB-shootdown
 state is framed (`pendingBounded` bundle-carriage leaf). -/
 theorem removeRunnable_tlbShootdown_eq (st : SystemState) (tid : SeLe4n.ThreadId) :
-    (removeRunnable st tid).tlbShootdown = st.tlbShootdown := rfl
+    (removeRunnable st tid).tlbShootdown = st.tlbShootdown := by
+  have h := SystemState.runDescheduleOnCore_onlyObjectsSchedulerDiffer st bootCoreId tid
+  unfold SystemState.onlyObjectsSchedulerDiffer at h
+  unfold removeRunnable; rw [h]
+
+/-- AG8-G: `removeRunnable` preserves machine state. -/
+theorem removeRunnable_machine_eq (st : SystemState) (tid : SeLe4n.ThreadId) :
+    (removeRunnable st tid).machine = st.machine := by
+  have h := SystemState.runDescheduleOnCore_onlyObjectsSchedulerDiffer st bootCoreId tid
+  unfold SystemState.onlyObjectsSchedulerDiffer at h
+  unfold removeRunnable; rw [h]
 
 /-- AN10 residual closure (H7): typed entry-point for `removeRunnable` that
 documents the production-path discipline at the type system. Production
@@ -548,6 +572,16 @@ def lookupTcb (st : SystemState) (tid : SeLe4n.ThreadId) : Option TCB :=
     -- `getTcb?` plus the reserved-id refusal, and spelling the store read a
     -- second time here is how the two could come to disagree.
     st.getTcb? tid
+
+/-- WS-ZA ZA4.5: two stores agreeing off the run-queue links look every thread
+up to the same TCB off those links. -/
+theorem lookupTcb_map_of_objectsAgreeOffRunLinks {s1 s2 : SystemState}
+    (h : s2.objectsAgreeOffRunLinks s1) (tid : SeLe4n.ThreadId) :
+    (lookupTcb s2 tid).map TCB.withoutRunLinks = (lookupTcb s1 tid).map TCB.withoutRunLinks := by
+  unfold lookupTcb
+  cases hr : tid.isReserved
+  · simp only [Bool.false_eq_true, ↓reduceIte]; exact h.getTcb? tid
+  · rfl
 
 /-- WS-RR RR3.12: a successful `lookupTcb` witnesses that the tid is not reserved —
 the half of `lookupTcb`'s guard that lets a lookup be *re-established* in another
@@ -8478,12 +8512,33 @@ theorem storeTcbIpcStateAndMessage_preserves_notification
   · rw [storeTcbIpcStateAndMessage_preserves_objects_ne st st' tid ipc msg notifId hEq hObjInv hStep]
     exact hNtfn
 
-/-- `removeRunnable` only modifies the scheduler; all objects are preserved. -/
-theorem removeRunnable_preserves_objects
-    (st : SystemState)
-    (tid : SeLe4n.ThreadId) :
-    (removeRunnable st tid).objects = st.objects := by
-  rfl
+/-- WS-ZA ZA4.5: `removeRunnable` writes the scheduler and the run-queue links
+of the dequeued thread and its neighbours, and nothing else. -/
+theorem removeRunnable_onlyObjectsSchedulerDiffer (st : SystemState) (tid : SeLe4n.ThreadId) :
+    SystemState.onlyObjectsSchedulerDiffer (removeRunnable st tid) st :=
+  SystemState.runDescheduleOnCore_onlyObjectsSchedulerDiffer st bootCoreId tid
+
+/-- WS-ZA ZA4.5: `removeRunnable` changes no object off the run-queue links
+(was `removeRunnable_preserves_objects` while the links lived in the
+scheduler). -/
+theorem removeRunnable_objectsAgreeOffRunLinks (st : SystemState) (tid : SeLe4n.ThreadId) :
+    SystemState.objectsAgreeOffRunLinks (removeRunnable st tid) st :=
+  SystemState.runDescheduleOnCore_objectsAgreeOffRunLinks st bootCoreId tid
+
+theorem removeRunnable_objects_invExt (st : SystemState) (tid : SeLe4n.ThreadId)
+    (hInv : st.objects.invExt) : (removeRunnable st tid).objects.invExt :=
+  SystemState.runDescheduleOnCore_objects_invExt st bootCoreId tid hInv
+
+/-- WS-ZA ZA4.5: what `removeRunnable` does to the scheduler. -/
+theorem removeRunnable_scheduler (st : SystemState) (tid : SeLe4n.ThreadId) :
+    (removeRunnable st tid).scheduler =
+      SchedulerState.markReschedulePendingOnCoreIf
+        (((st.scheduler.setRunQueueEndsOnCore bootCoreId (st.runRemoveEnds bootCoreId tid)).setRunQueueOnCore
+          bootCoreId ((st.scheduler.runQueueOnCore bootCoreId).remove tid)).setCurrentOnCore bootCoreId
+          (if st.scheduler.currentOnCore bootCoreId = some tid then none
+            else st.scheduler.currentOnCore bootCoreId))
+        bootCoreId (st.scheduler.currentOnCore bootCoreId == some tid) :=
+  SystemState.runDescheduleOnCore_scheduler st bootCoreId tid
 
 /-- WS-ZA ZA4.5: `ensureRunnable` writes the scheduler and the run-queue links
 of the threads it touches, and nothing else. -/
@@ -8716,7 +8771,9 @@ theorem notificationWaitPark_preserves_objects_invExt {notifId : SeLe4n.ObjId}
               split at h2
               · cases h2
               · next st3 h3 =>
-                cases h2; exact storeObject_preserves_objects_invExt st1 st2 _ _ hI1 h3
+                cases h2
+                exact removeRunnable_objects_invExt _ _
+                  (storeObject_preserves_objects_invExt st1 st2 _ _ hI1 h3)
   · cases h
   · cases h
 
@@ -8832,7 +8889,7 @@ theorem notificationWaitPark_wait_path_notification
                 have hN2 := modifyTcb_preserves_notification notifId _ hInv1 hTcb hN1
                 simp only [Except.ok.injEq, Prod.mk.injEq] at hStep
                 rw [← hStep.2]
-                exact hN2
+                exact (removeRunnable_objectsAgreeOffRunLinks st2 waiter).get_notification_iff.mpr hN2
 
 /-- WS-ZA ZA4.4: a committed wait is a park that consumed a badge, or a park
 that blocked followed by the link-in. -/
@@ -9038,9 +9095,12 @@ theorem notificationWaitPark_block_objects {st st' : SystemState} {nid : SeLe4n.
       lookupTcb st waiter = some tcb ∧
       tcb.ipcState ≠ .blockedOnNotification nid ∧
       st'.objects[nid]? = some (.notification (ntfn.withWaiterAppended waiter)) ∧
-      st'.objects[waiter.toObjId]? = some (.tcb { tcb with
-        ipcState := .blockedOnNotification nid, pendingMessage := none }) ∧
-      (∀ x, x ≠ nid → x ≠ waiter.toObjId → st'.objects[x]? = st.objects[x]?) := by
+      (∃ t', st'.objects[waiter.toObjId]? = some (.tcb t') ∧
+        t'.withoutRunLinks = ({ tcb with
+          ipcState := .blockedOnNotification nid, pendingMessage := none } : TCB).withoutRunLinks) ∧
+      (∀ x, x ≠ nid → x ≠ waiter.toObjId →
+        (st'.objects[x]?).map KernelObject.withoutRunLinks =
+          (st.objects[x]?).map KernelObject.withoutRunLinks) := by
   unfold notificationWaitPark SystemState.getObject? at h
   cases hObj : st.objects[nid]? with
   | none => simp [hObj] at h
@@ -9083,11 +9143,11 @@ theorem notificationWaitPark_block_objects {st st' : SystemState} {nid : SeLe4n.
                 unfold storeTcbIpcStateAndMessage at hTcb
                 obtain ⟨tcb', hLk2, _, hW2, hO2⟩ := modifyTcb_objects hInv1 hTcb
                 rw [hLookup'] at hLk2; cases hLk2
-                refine ⟨ntfn, tcb, rfl, hBadge, rfl, hBlocked, ?_, ?_, fun x hx hxw => ?_⟩
-                · rw [removeRunnable_preserves_objects, hO2 _ hNW]; exact hN1
-                · rw [removeRunnable_preserves_objects]; exact hW2
-                · rw [removeRunnable_preserves_objects, hO2 _ hxw,
-                    storeObject_objects_ne st st1 nid x _ hx hObjInv hStore]
+                have hA := removeRunnable_objectsAgreeOffRunLinks st2 waiter
+                refine ⟨ntfn, tcb, rfl, hBadge, rfl, hBlocked, ?_, hA.get_tcb hW2,
+                  fun x hx hxw => ?_⟩
+                · exact hA.get_notification_iff.mpr (by rw [hO2 _ hNW]; exact hN1)
+                · rw [hA x, hO2 _ hxw, storeObject_objects_ne st st1 nid x _ hx hObjInv hStore]
 
 /-- WS-ZA ZA4.4: a park that consumed a badge, read off by key: the notification
 is rewritten idle with an empty queue, the waiter is made ready, and no other

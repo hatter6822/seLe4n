@@ -143,9 +143,8 @@ theorem notificationWaitOnCore_preserves_objects_invExt
               | error e => simp only; exact hObjInv
               | ok st'' =>
                 simp only
-                show (removeRunnableOnCore st'' waiter executingCore).objects.invExt
-                rw [removeRunnableOnCore_preserves_objects]
-                exact linkNtfnWaiter_preserves_objects_invExt hObj2 hLink
+                exact removeRunnableOnCore_objects_invExt _ _ _
+                  (linkNtfnWaiter_preserves_objects_invExt hObj2 hLink)
 
 -- ============================================================================
 -- §2  `ipcInvariant` (notification well-formedness) preservation
@@ -258,9 +257,8 @@ theorem notificationWaitOnCore_preserves_ipcInvariant
               | ok st'' =>
                 simp only
                 have hInv3 := linkNtfnWaiter_preserves_ipcInvariant hObj2 hLink hInv2
-                show ipcInvariant (removeRunnableOnCore st'' waiter executingCore)
-                exact fun oid ntfn' h => hInv3 oid ntfn'
-                  (by rwa [removeRunnableOnCore_preserves_objects] at h)
+                exact ipcInvariant_of_objectsAgreeOffRunLinks
+                  (removeRunnableOnCore_objectsAgreeOffRunLinks st'' waiter executingCore) hInv3
 
 -- ============================================================================
 -- §3  SM6.D: per-core passive-server frames for the cross-core transitions
@@ -536,7 +534,7 @@ theorem notificationWaitOnCore_post_agrees
                 simp only
                 obtain ⟨r1, hL1, hAg⟩ := linkNtfnWaiter_offSchedulerAgrees waiter ntfn.waitTail
                   (removeRunnable_offSchedulerAgrees st2 waiter).symm
-                  (by rw [removeRunnable_preserves_objects]; exact hObj2) hObj2 hLink
+                  (removeRunnable_objects_invExt st2 waiter hObj2) hObj2 hLink
                 refine ⟨r1, none, ?_, hAg.trans
                   (removeRunnableOnCore_offSchedulerAgrees st'' waiter executingCore)⟩
                 have hTail : notificationWaitTail? st notificationId = ntfn.waitTail := by

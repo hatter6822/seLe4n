@@ -995,12 +995,13 @@ theorem removeRunnable_preserves_contextMatchesCurrent
     (st : SystemState) (tid : SeLe4n.ThreadId)
     (hInv : contextMatchesCurrent st) :
     contextMatchesCurrent (removeRunnable st tid) := by
-  simp only [removeRunnable, contextMatchesCurrent,
-    SchedulerState.markReschedulePendingOnCoreIf_currentOnCore,
-    SchedulerState.setCurrentOnCore_currentOnCore_self]
   by_cases hEq : (st.scheduler.currentOnCore bootCoreId) = some tid
-  · rw [if_pos hEq]; trivial
-  · rw [if_neg hEq]; exact hInv
+  · unfold contextMatchesCurrent
+    rw [removeRunnable_scheduler_current, if_pos hEq]; trivial
+  · exact contextMatchesCurrent_of_objectsAgreeOffRunLinks
+      (removeRunnable_objectsAgreeOffRunLinks st tid)
+      (by rw [removeRunnable_scheduler_current, if_neg hEq])
+      (congrArg (fun s => s.machine.regs) (removeRunnable_onlyObjectsSchedulerDiffer st tid)) hInv
 
 -- ============================================================================
 -- WS-H12e: allPendingMessagesBounded preservation (frame lemmas)
@@ -1034,7 +1035,7 @@ theorem removeRunnable_preserves_pendingMessagesSatisfy
     (hInv : pendingMessagesSatisfy P st) :
     pendingMessagesSatisfy P (removeRunnable st tid) := by
   intro t tcb msg hObj hMsg
-  rw [removeRunnable_preserves_objects] at hObj
+  run_links_back (removeRunnable_objectsAgreeOffRunLinks _ _) at tcb hObj
   exact hInv t tcb msg hObj hMsg
 
 /-- WS-H12e: removeRunnable preserves allPendingMessagesBounded — the boundedness

@@ -1813,6 +1813,12 @@ theorem ipcInvariant_of_objects_eq {st st' : SystemState}
   intro oid ntfn hL
   exact h oid ntfn (hObjs ▸ hL)
 
+/-- WS-ZA ZA4.5: a step that writes only run-queue links keeps every
+notification. -/
+theorem ipcInvariant_of_objectsAgreeOffRunLinks {st st' : SystemState}
+    (hA : st'.objectsAgreeOffRunLinks st) (h : ipcInvariant st) : ipcInvariant st' :=
+  fun oid ntfn hL => h oid ntfn (hA.get_notification_iff.mp hL)
+
 -- ============================================================================
 -- WS-SM SM6.D (#7.1 fold): upstream reply-link / server-first-stash frames.
 --
@@ -4444,6 +4450,12 @@ theorem of_no_chain_object_write {st st' : SystemState}
       obtain ⟨sc, hSc', hH⟩ := schedContextStackHead?_eq_some_iff.mp hPost
       rw [(hSc oid sc).mp hSc']
       simp [hH]
+
+/-- WS-ZA ZA4.5: a step that writes only run-queue links frames the chain — it
+writes no Reply and no SchedContext. -/
+theorem of_objectsAgreeOffRunLinks {st st' : SystemState} (h : st'.objectsAgreeOffRunLinks st) :
+    donationChainFrame st st' :=
+  of_no_chain_object_write (fun _ _ => h.get_reply_iff) (fun _ _ => h.get_schedContext_iff)
 
 end donationChainFrame
 

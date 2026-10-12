@@ -243,7 +243,7 @@ theorem endpointSendDualOnCore_stepCovers (e : CoreId) {endpointId : SeLe4n.ObjI
           have hF2 := storeTcbIpcStateAndMessage_keyFrame hInv1 hBlk
           have hInv2 := storeTcbIpcStateAndMessage_preserves_objects_invExt _ _ _ _ _ hInv1 hBlk
           exact ⟨stepCovers_trans (hF1.trans hF2).stepCovers
-            (removeRunnableOnCore_stepCovers e st2 sender executingCore), hInv2⟩
+            (removeRunnableOnCore_stepCovers e st2 sender executingCore), removeRunnableOnCore_objects_invExt st2 sender executingCore hInv2⟩
   · split <;> exact ⟨stepCovers_refl e st, hInv⟩
 
 /-- Installing transferred capabilities writes CNodes and the CDT only. -/
@@ -423,7 +423,7 @@ theorem endpointReceiveDualOnCore_stepCovers (e : CoreId) {endpointId : SeLe4n.O
             have hF2 := hF1.trans (storeTcbIpcStateAndMessage_keyFrame hF1.2.2 hBlk)
             have hPre := stepCovers_trans hC hF2.stepCovers
             split
-            · exact ⟨stepCovers_trans hPre (removeRunnableOnCore_stepCovers e _ _ _), hF2.2.2⟩
+            · exact ⟨stepCovers_trans hPre (removeRunnableOnCore_stepCovers e _ _ _), removeRunnableOnCore_objects_invExt _ _ _ hF2.2.2⟩
             · rename_i rTcb hT
               split
               · split
@@ -432,7 +432,7 @@ theorem endpointReceiveDualOnCore_stepCovers (e : CoreId) {endpointId : SeLe4n.O
                   have hF3 := storeObject_tcbKeyKeeping_keyFrame hF2.2.2
                     ((SystemState.getTcb?_eq_some_iff _ _ _).mp hT) hS rfl
                   exact ⟨stepCovers_trans (stepCovers_trans hPre hF3.stepCovers)
-                    (removeRunnableOnCore_stepCovers e _ _ _), hF3.2.2⟩
+                    (removeRunnableOnCore_stepCovers e _ _ _), removeRunnableOnCore_objects_invExt _ _ _ hF3.2.2⟩
               · exact hRefl
   · split <;> exact hRefl
 
@@ -690,7 +690,7 @@ theorem endpointCallOnCore_stepCovers (e : CoreId) {endpointId : SeLe4n.ObjId}
             · rename_i st5 hLink
               have hF5 := hF4.trans (linkServerStashedReply_keyFrame hF4.2.2 hLink)
               exact ⟨stepCovers_trans (stepCovers_trans (stepCovers_trans hF2.stepCovers hW)
-                hF5.stepCovers) (removeRunnableOnCore_stepCovers e _ _ _), hF5.2.2⟩
+                hF5.stepCovers) (removeRunnableOnCore_stepCovers e _ _ _), removeRunnableOnCore_objects_invExt _ _ _ hF5.2.2⟩
     · split
       · exact hRefl
       · rename_i st1 hEnq
@@ -700,7 +700,7 @@ theorem endpointCallOnCore_stepCovers (e : CoreId) {endpointId : SeLe4n.ObjId}
         · rename_i st2 hBlk
           have hF2 := hF1.trans (storeTcbIpcStateAndMessage_keyFrame hF1.2.2 hBlk)
           exact ⟨stepCovers_trans hF2.stepCovers (removeRunnableOnCore_stepCovers e _ _ _),
-            hF2.2.2⟩
+            removeRunnableOnCore_objects_invExt _ _ _ hF2.2.2⟩
   · split <;> exact hRefl
 
 theorem endpointCallWithCapsOnCore_stepCovers (e : CoreId) {endpointId : SeLe4n.ObjId}
@@ -870,8 +870,8 @@ theorem applyReplyDonationOnCore_stepCovers (e : CoreId) {st st' : SystemState}
           (migrateSchedContextReplenishment_stepCovers e _ _ _ _))
           (descheduleAt_stepCovers e _ _ _), ?_⟩
         unfold descheduleAtPlacement
-        rw [descheduleAt_objects, migrateSchedContextReplenishment_objects]
-        exact h1Inv
+        exact descheduleAt_objects_invExt _ _ _
+          (by rw [migrateSchedContextReplenishment_objects]; exact h1Inv)
     · cases h
 
 /-- The live reply covers on every outcome: the reply leg, the donation
@@ -944,9 +944,11 @@ theorem faultReplyOnCore_stepCovers (e : CoreId) {replier faulted : SeLe4n.Threa
     · unfold faultAbandonOnCore
       refine ⟨stepCovers_trans (stepCovers_trans hR
         (removeRunnableOnCore_stepCovers e st1 faulted (determineTargetCore st1 faulted))) ?_,
-        SystemState.updateTcb_preserves_objects_invExt _ _ _ (by exact hRInv)⟩
+        SystemState.updateTcb_preserves_objects_invExt _ _ _
+          (removeRunnableOnCore_objects_invExt _ _ _ hRInv)⟩
       apply capabilityKeyFrame.stepCovers
-      exact updateTcb_keyFrame _ faulted (fun _ => rfl) (by exact hRInv)
+      exact updateTcb_keyFrame _ faulted (fun _ => rfl)
+        (removeRunnableOnCore_objects_invExt _ _ _ hRInv)
 
 /-- The checked reply transfer covers on its `.ok`. -/
 theorem replyTransferOnCoreChecked_stepCovers (e : CoreId) {ctx : LabelingContext}
@@ -1278,7 +1280,7 @@ theorem notificationWaitOnCore_stepCovers (e : CoreId) {notificationId : SeLe4n.
               · rename_i st4 hLink
                 have hF3 := hF2.trans (linkNtfnWaiter_keyFrame hF2.2.2 hLink)
                 exact ⟨stepCovers_trans hF3.stepCovers (removeRunnableOnCore_stepCovers e _ _ _),
-                  hF3.2.2⟩
+                  removeRunnableOnCore_objects_invExt _ _ _ hF3.2.2⟩
   · split <;> exact hRefl
 
 theorem notificationWaitCrossCoreDispatchChecked_stepCovers (e : CoreId) {ctx : LabelingContext}
@@ -1307,7 +1309,7 @@ theorem applyRendezvousCallDonation_stepCovers (e : CoreId) {st st' : SystemStat
 theorem descheduleAtPlacement_stepCovers (e : CoreId) (st : SystemState) (tid : SeLe4n.ThreadId)
     (hInv : st.objects.invExt) :
     stepCovers e st (descheduleAtPlacement st tid) ∧ (descheduleAtPlacement st tid).objects.invExt :=
-  ⟨descheduleAt_stepCovers e _ _ _, by unfold descheduleAtPlacement; rw [descheduleAt_objects]; exact hInv⟩
+  ⟨descheduleAt_stepCovers e _ _ _, by unfold descheduleAtPlacement; exact descheduleAt_objects_invExt _ _ _ hInv⟩
 
 theorem replyRecvPopDonation_stepCovers (e : CoreId) {rid : SeLe4n.ReplyId}
     {target : SeLe4n.ThreadId} {st st' : SystemState}

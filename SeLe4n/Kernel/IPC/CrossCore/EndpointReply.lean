@@ -3256,9 +3256,7 @@ theorem endpointReceiveDualOnCore_preserves_objects_invExt
               receiver _ _ hObjInv1 hS1
             cases hGetR : st2.getTcb? receiver with
             | none =>
-                show (removeRunnableOnCore st2 receiver executingCore).objects.invExt
-                rw [removeRunnableOnCore_preserves_objects]
-                exact hObjInv2
+                exact removeRunnableOnCore_objects_invExt _ _ _ hObjInv2
             | some rTcb =>
               simp only
               split
@@ -3267,10 +3265,9 @@ theorem endpointReceiveDualOnCore_preserves_objects_invExt
                 | error e => simp only; exact hObjInv
                 | ok pStash =>
                   obtain ⟨⟨⟩, stStashed⟩ := pStash
-                  show (removeRunnableOnCore stStashed receiver executingCore).objects.invExt
-                  rw [removeRunnableOnCore_preserves_objects]
-                  exact storeObject_preserves_objects_invExt st2 stStashed receiver.toObjId _
-                    hObjInv2 hStash
+                  exact removeRunnableOnCore_objects_invExt _ _ _
+                    (storeObject_preserves_objects_invExt st2 stStashed receiver.toObjId _
+                      hObjInv2 hStash)
               · exact hObjInv
 
 /-- **WS-RR RR8.12 (frame)**: a cross-core receive that **rendezvouses** moves no
@@ -4095,8 +4092,7 @@ theorem removeRunnableOnCore_preserves_replenishQueueAffinityConsistent_smp
     replenishQueueAffinityConsistent_smp (removeRunnableOnCore st tid c) :=
   (replenishQueueAffinityConsistent_smp_congr
     (fun c' => removeRunnableOnCore_replenishQueueOnCore st tid c c')
-    (fun scId => by
-      unfold SystemState.getSchedContext?; rw [removeRunnableOnCore_preserves_objects])
+    (fun scId => (removeRunnableOnCore_objectsAgreeOffRunLinks st tid c).getSchedContext? scId)
     (fun x => removeRunnableOnCore_determineTargetCore st tid x c)).mpr h
 
 /-- **`v0.35.161` (register row 57): the cross-core receive leg leaves the replenish

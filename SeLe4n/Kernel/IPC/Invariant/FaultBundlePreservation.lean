@@ -75,7 +75,7 @@ theorem faultSuspendOnCore_preserves_schedulerInvariantBase_smp (st : SystemStat
     (by
       unfold faultSuspendOnCore
       exact SystemState.updateTcb_kindPreservingWrite _ tid _
-        hObjInv)
+        (removeRunnableOnCore_objects_invExt st tid c hObjInv))
 
 /-- **WS-RR RR8.16** (`v0.35.200`): ...and the capability bundle. -/
 theorem faultSuspendOnCore_preserves_capabilityInvariantBundle (st : SystemState)
@@ -99,7 +99,7 @@ theorem faultAbandonOnCore_preserves_schedulerInvariantBase_smp (st : SystemStat
     (by
       unfold faultAbandonOnCore
       exact SystemState.updateTcb_kindPreservingWrite _ tid _
-        hObjInv)
+        (removeRunnableOnCore_objects_invExt st tid c hObjInv))
 
 /-- **WS-RR RR8.16** (`v0.35.200`): ...and the capability bundle. -/
 theorem faultAbandonOnCore_preserves_capabilityInvariantBundle (st : SystemState)

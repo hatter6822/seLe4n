@@ -9,6 +9,7 @@
 
 import SeLe4n.Kernel.IPC.Invariant.LookupCongruence
 import SeLe4n.Kernel.IPC.Invariant.DonationPreservation
+import SeLe4n.Kernel.IPC.Invariant.PerCoreBundlePreservation
 import SeLe4n.Kernel.Architecture.SyscallReturn
 import SeLe4n.Kernel.Architecture.PerCoreCacheModel
 import SeLe4n.Kernel.Architecture.IpcBufferValidation
@@ -5179,40 +5180,11 @@ private theorem removeRunnableOnCore_preserves_ipcInvariantFull
     (hReady : ∀ tcbX : TCB, st.getTcb? tid = some tcbX → tcbX.ipcState = .ready)
     (hInv : ipcInvariantFull st) :
     ipcInvariantFull (removeRunnableOnCore st tid c) := by
-  refine ipcInvariantFull_of_getElem_eq (s1 := st) (fun oid => rfl) ?_ hInv
-  intro t tcbT hT hUnb hNQ hNC
-  by_cases hTv : t = tid
-  · subst hTv
-    have := hReady tcbT ((SystemState.getTcb?_eq_some_iff st t tcbT).mpr hT)
-    exact Or.inl this
-  · have hNQ' : t ∉ st.scheduler.runQueueOnCore Concurrency.bootCoreId := by
-      intro hMem
-      apply hNQ
-      show t ∈ ((st.scheduler.setRunQueueOnCore c ((st.scheduler.runQueueOnCore c).remove tid)).setCurrentOnCore c (if (st.scheduler.currentOnCore c) = some tid then none else (st.scheduler.currentOnCore c))).runQueueOnCore Concurrency.bootCoreId
-      rw [SchedulerState.setCurrentOnCore_runQueueOnCore]
-      by_cases hc : c = Concurrency.bootCoreId
-      · subst hc
-        rw [SchedulerState.setRunQueueOnCore_runQueueOnCore_self]
-        exact (RunQueue.mem_remove _ _ _).mpr ⟨hMem, hTv⟩
-      · rw [SchedulerState.setRunQueueOnCore_runQueueOnCore_ne _ _ _ _ hc]
-        exact hMem
-    have hNC' : st.scheduler.currentOnCore Concurrency.bootCoreId ≠ some t := by
-      intro hCur
-      by_cases hc : c = Concurrency.bootCoreId
-      · subst hc
-        by_cases hEq : st.scheduler.currentOnCore Concurrency.bootCoreId = some tid
-        · rw [hEq] at hCur
-          exact hTv (Option.some.inj hCur).symm
-        · apply hNC
-          show ((st.scheduler.setRunQueueOnCore Concurrency.bootCoreId ((st.scheduler.runQueueOnCore Concurrency.bootCoreId).remove tid)).setCurrentOnCore Concurrency.bootCoreId (if (st.scheduler.currentOnCore Concurrency.bootCoreId) = some tid then none else (st.scheduler.currentOnCore Concurrency.bootCoreId))).currentOnCore Concurrency.bootCoreId = some t
-          rw [SchedulerState.setCurrentOnCore_currentOnCore_self, if_neg hEq]
-          exact hCur
-      · apply hNC
-        show ((st.scheduler.setRunQueueOnCore c ((st.scheduler.runQueueOnCore c).remove tid)).setCurrentOnCore c (if (st.scheduler.currentOnCore c) = some tid then none else (st.scheduler.currentOnCore c))).currentOnCore Concurrency.bootCoreId = some t
-        rw [SchedulerState.setCurrentOnCore_currentOnCore_ne _ _ _ _ hc,
-          SchedulerState.setRunQueueOnCore_currentOnCore]
-        exact hCur
-    exact hInv.passiveServerIdle t tcbT hT hUnb hNQ' hNC'
+  refine ipcInvariantFull_of_descheduleFrame st _ hInv
+    (removeRunnableOnCore_objectsAgreeOffRunLinks st tid c)
+    (removeRunnableOnCore_passiveServerIdleFrame st tid c (fun tcb h => Or.inr ?_))
+  rw [hReady tcb ((SystemState.getTcb?_eq_some_iff st tid tcb).mpr h)]
+  exact Or.inl rfl
 
 /-- Under the quiescent field shape the pending-state clear rewrites every
 field to the value it already holds — pointwise inert. -/
@@ -5620,13 +5592,16 @@ private theorem suspendDescheduleTail_shape
   · unfold descheduleAt
     cases placed with
     | none => exact hObjInvD
-    | some c => exact hObjInvD
+    | some c => exact removeRunnableOnCore_objects_invExt stD tid c hObjInvD
   · intro tcbX hX
-    apply hShape
     unfold descheduleAt at hX
     cases placed with
-    | none => exact hX
-    | some c => exact hX
+    | none => exact hShape tcbX hX
+    | some c =>
+      have hX' := (SystemState.getTcb?_eq_some_iff _ tid tcbX).mp hX
+      clear hX
+      run_links_back (removeRunnableOnCore_objectsAgreeOffRunLinks stD tid c) at tcbX hX'
+      exact hShape tcbX ((SystemState.getTcb?_eq_some_iff stD tid tcbX).mpr hX')
 
 /-- `.tcbSuspend` (dispatch arm): the whole per-core suspension pipeline —
 cancel (inert on a quiescent victim), PIP revert (empty for a `.ready`

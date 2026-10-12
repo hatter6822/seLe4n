@@ -95,7 +95,7 @@ private theorem removeRunnableOnCore_preserves_bundle
       tcb.schedContextBinding ≠ .unbound ∨ passiveServerIdleAllowed tcb.ipcState)
     (hInv : ipcInvariantFull st) :
     ipcInvariantFull (removeRunnableOnCore st tid c) :=
-  ipcInvariantFull_of_getElem_eq (s1 := st) (fun _ => rfl)
+  ipcInvariantFull_of_objectsAgreeOffRunLinks (removeRunnableOnCore_objectsAgreeOffRunLinks st tid c)
     (passiveServerIdle_of_frame
       (removeRunnableOnCore_passiveServerIdleFrame st tid c
         (fun tcb hTcb => hAllowed tcb ((SystemState.getTcb?_eq_some_iff st tid tcb).mpr hTcb)))
@@ -127,7 +127,7 @@ theorem faultSuspendOnCore_preserves_ipcInvariantFull
       rw [SystemState.updateTcb_eq_of_some hT]
       exact insertObjects_tcbFieldUpdate_preserves_ipcInvariantFull
           (removeRunnableOnCore st tid c) tid tcb
-          { tcb with threadState := .Inactive } hObjInv hInvR
+          { tcb with threadState := .Inactive } (removeRunnableOnCore_objects_invExt st tid c hObjInv) hInvR
           ((SystemState.getTcb?_eq_some_iff _ tid tcb).mp hT)
           rfl rfl rfl rfl rfl rfl rfl rfl rfl
 
@@ -164,7 +164,7 @@ theorem faultAbandonOnCore_preserves_ipcInvariantFull
       rw [SystemState.updateTcb_eq_of_some hT]
       exact insertObjects_tcbFieldUpdate_preserves_ipcInvariantFull
           (removeRunnableOnCore st tid c) tid tcb
-          { tcb with threadState := .Inactive, pendingFault := none } hObjInv hInvR
+          { tcb with threadState := .Inactive, pendingFault := none } (removeRunnableOnCore_objects_invExt st tid c hObjInv) hInvR
           ((SystemState.getTcb?_eq_some_iff _ tid tcb).mp hT)
           rfl rfl rfl rfl rfl rfl rfl rfl rfl
 
@@ -592,12 +592,10 @@ rewrite. -/
 theorem faultAbandonOnCore_donationChainFrame (st : SystemState)
     (tid : SeLe4n.ThreadId) (c : CoreId) (hObjInv : st.objects.invExt) :
     donationChainFrame st (faultAbandonOnCore st tid c) := by
-  have hObjsR : (removeRunnableOnCore st tid c).objects = st.objects :=
-    removeRunnableOnCore_preserves_objects st tid c
   have hFrameR : donationChainFrame st (removeRunnableOnCore st tid c) :=
-    donationChainFrame.of_objects_eq hObjsR
-  have hInvR : (removeRunnableOnCore st tid c).objects.invExt := by
-    rw [hObjsR]; exact hObjInv
+    donationChainFrame.of_objectsAgreeOffRunLinks (removeRunnableOnCore_objectsAgreeOffRunLinks st tid c)
+  have hInvR : (removeRunnableOnCore st tid c).objects.invExt :=
+    removeRunnableOnCore_objects_invExt st tid c hObjInv
   refine hFrameR.trans ?_
   unfold faultAbandonOnCore
   cases hT : (removeRunnableOnCore st tid c).getTcb? tid with

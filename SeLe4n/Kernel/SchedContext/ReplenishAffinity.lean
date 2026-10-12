@@ -142,12 +142,12 @@ only core `c`'s replenish queue plus the object store (via `getSchedContext?` an
 agrees on the predicate. -/
 theorem replenishQueueAffinityConsistentOnCore_frame {st st' : SystemState} {c : CoreId}
     (hRepl : st'.scheduler.replenishQueueOnCore c = st.scheduler.replenishQueueOnCore c)
-    (hObj : st'.objects = st.objects) :
+    (hObj : st'.objectsAgreeOffRunLinks st) :
     replenishQueueAffinityConsistentOnCore st' c ↔
     replenishQueueAffinityConsistentOnCore st c :=
   replenishQueueAffinityConsistentOnCore_congr hRepl
-    (fun scId => by unfold SystemState.getSchedContext?; rw [hObj])
-    (fun tid => by unfold determineTargetCore SystemState.getTcb?; rw [hObj])
+    (fun scId => hObj.getSchedContext? scId)
+    (fun tid => determineTargetCore_of_objectsAgreeOffRunLinks hObj tid)
 
 /-- WS-RR (bind/unbind affinity closure) — transfer form: affinity-consistency
 on core `c` reads the queue's entries, each SchedContext's `boundThread`
@@ -207,8 +207,8 @@ theorem replenishQueueAffinityConsistent_smp_frame {st st' : SystemState}
       = st.scheduler.replenishQueueOnCore c)
     (hObj : st'.objects = st.objects) :
     replenishQueueAffinityConsistent_smp st' ↔ replenishQueueAffinityConsistent_smp st :=
-  ⟨fun h c => (replenishQueueAffinityConsistentOnCore_frame (hRepl c) hObj).mp (h c),
-   fun h c => (replenishQueueAffinityConsistentOnCore_frame (hRepl c) hObj).mpr (h c)⟩
+  ⟨fun h c => (replenishQueueAffinityConsistentOnCore_frame (hRepl c) (.of_objects_eq hObj)).mp (h c),
+   fun h c => (replenishQueueAffinityConsistentOnCore_frame (hRepl c) (.of_objects_eq hObj)).mpr (h c)⟩
 
 /-- **`v0.35.185` (register row 63): the retype's store preserves the SM5.H
 replenish-affinity invariant.**
@@ -610,7 +610,7 @@ theorem migrateSchedContextReplenishment_preserves_affinityConsistentOnCore_othe
     replenishQueueAffinityConsistentOnCore (migrateSchedContextReplenishment st scId fromCore toCore) c' :=
   (replenishQueueAffinityConsistentOnCore_frame
     (migrateSchedContextReplenishment_replenishQueueOnCore_other st scId fromCore toCore c' hFrom hTo)
-    (migrateSchedContextReplenishment_objects st scId fromCore toCore)).mpr hCons
+    (.of_objects_eq (migrateSchedContextReplenishment_objects st scId fromCore toCore))).mpr hCons
 
 /-- WS-RR RR2.3: the migration preserves affinity consistency on **every** core,
 given the source core's non-`scId` entries stay put (`hConsFrom`), the

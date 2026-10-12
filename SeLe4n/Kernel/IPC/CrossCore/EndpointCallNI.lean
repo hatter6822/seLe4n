@@ -81,13 +81,22 @@ theorem removeRunnableOnCore_preserves_projection
     -- definitionally unchanged by a deschedule on another core, so those
     -- `congr` subgoals close by `rfl`; only the run-queue and current-thread
     -- slots need their explicit frame lemmas.
-    have hMach : (removeRunnableOnCore st tid c).machine = st.machine := rfl
+    have hMach : (removeRunnableOnCore st tid c).machine = st.machine :=
+      removeRunnableOnCore_machine_eq st tid c
+    have hObj := projectObjects_of_objectsAgreeOffRunLinks ctx observer
+      (removeRunnableOnCore_objectsAgreeOffRunLinks st tid c)
+    have hS := removeRunnableOnCore_scheduler st tid c
+    have hD := removeRunnableOnCore_onlyObjectsSchedulerDiffer st tid c
+    unfold SystemState.onlyObjectsSchedulerDiffer at hD
     simp only [projectState]
     congr 1 <;>
       first
-        | rfl
+        | exact hObj
         | simp only [projectRunnable, projectCurrent, projectMachineRegs,
-            SchedulerState.runnable, hRQ, hCur, hMach]
+            SchedulerState.runnable, hRQ, hCur, hMach]; done
+        | (rw [hD]; rfl)
+        | (rw [hD]; simp [hS, projectActiveDomain, projectDomainTimeRemaining,
+            projectDomainSchedule, projectDomainScheduleIndex])
 
 /-- WS-SM SM6.A.7: enqueuing a **non-observable** thread onto *any* core's run
 queue (the receiver wake) preserves the low-observer projection.  The

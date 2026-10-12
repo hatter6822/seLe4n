@@ -772,7 +772,7 @@ theorem schedContextMigration_consistent
   intro c
   rw [replenishQueueAffinityConsistentOnCore_frame
         (migrateRunQueueOnAffinityChange_replenishQueueOnCore _ _ _ _ c)
-        (migrateRunQueueOnAffinityChange_objects _ _ _ _)]
+        (.of_objects_eq (migrateRunQueueOnAffinityChange_objects _ _ _ _))]
   exact schedContextReplMigration_consistent st targetTid (determineTargetCore stSet targetTid)
     tcb scId sc affinity stSet hTcb hInv hBind hSc hBound hUnique hCons hSet rfl c
 

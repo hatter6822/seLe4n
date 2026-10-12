@@ -235,11 +235,12 @@ theorem descheduleThread_sgi_eq (st : SystemState) (tid : SeLe4n.ThreadId)
     (executingCore : CoreId) :
     (descheduleThread st tid executingCore).2 = descheduleSgi? st tid executingCore := rfl
 
-/-- WS-SM SM6.E: `descheduleThread` never touches `objects`. -/
-theorem descheduleThread_objects_eq (st : SystemState) (tid : SeLe4n.ThreadId)
+/-- WS-SM SM6.E: `descheduleThread` touches no object off the run-queue links
+(WS-ZA ZA4.5). -/
+theorem descheduleThread_objectsAgreeOffRunLinks (st : SystemState) (tid : SeLe4n.ThreadId)
     (executingCore : CoreId) :
-    (descheduleThread st tid executingCore).1.objects = st.objects :=
-  descheduleAtPlacement_preserves_objects st tid
+    (descheduleThread st tid executingCore).1.objectsAgreeOffRunLinks st :=
+  descheduleAtPlacement_objectsAgreeOffRunLinks st tid
 
 /-- WS-SM SM6.E: a victim **actively current on a remote core** — the core the
 state places it on — surfaces a `.reschedule` SGI targeting that core: the poke
@@ -566,15 +567,16 @@ theorem cancelIpcBlockingOnCore_state_eq_of_no_donation (victim : SeLe4n.ThreadI
       = descheduleAtPlacement (cancelIpcBlocking st victim tcb) victim := by
   rw [cancelIpcBlockingOnCore_state_eq, cancelIpcBlockingReclaimed_of_no_donation victim tcb st h]
 
-/-- WS-SM SM6.E: the cross-core cancellation's **object-level** effect is
-exactly the single-core `cancelIpcBlocking`'s — the deschedule touches only
-the scheduler. -/
-theorem cancelIpcBlockingOnCore_objects_eq (victim : SeLe4n.ThreadId) (tcb : TCB)
+/-- WS-SM SM6.E: the cross-core cancellation's **object-level** effect is the
+single-core `cancelIpcBlocking`'s off the run-queue links — the deschedules
+write only the scheduler and those links (WS-ZA ZA4.5). -/
+theorem cancelIpcBlockingOnCore_objectsAgreeOffRunLinks (victim : SeLe4n.ThreadId) (tcb : TCB)
     (executingCore : CoreId) (st : SystemState) :
-    (cancelIpcBlockingOnCore victim tcb executingCore st).1.objects
-      = (cancelIpcBlocking st victim tcb).objects := by
-  rw [cancelIpcBlockingOnCore_state_eq, descheduleAtPlacement_preserves_objects,
-    cancelIpcBlockingReclaimed_objects]
+    (cancelIpcBlockingOnCore victim tcb executingCore st).1.objectsAgreeOffRunLinks
+      (cancelIpcBlocking st victim tcb) := by
+  rw [cancelIpcBlockingOnCore_state_eq]
+  exact (descheduleAtPlacement_objectsAgreeOffRunLinks _ _).trans
+    (cancelIpcBlockingReclaimed_objectsAgreeOffRunLinks victim tcb st)
 
 -- `v0.35.158`: `cancelIpcBlockingOnCore_eq_descheduleThread` — the composite
 -- **is** `descheduleThread` on the reclaim's post-state, stated over the
@@ -3115,8 +3117,10 @@ theorem cancelIpcBlockingOnCore_preserves_objects_invExt
     (victim : SeLe4n.ThreadId) (tcb : TCB) (executingCore : CoreId)
     (st : SystemState) (hInv : st.objects.invExt) :
     (cancelIpcBlockingOnCore victim tcb executingCore st).1.objects.invExt := by
-  rw [cancelIpcBlockingOnCore_objects_eq]
-  exact cancelIpcBlocking_preserves_objects_invExt st victim tcb hInv
+  rw [cancelIpcBlockingOnCore_state_eq]
+  exact descheduleAtPlacement_preserves_objects_invExt _ _
+    (cancelIpcBlockingReclaimed_objects_invExt victim tcb st
+      (cancelIpcBlocking_preserves_objects_invExt st victim tcb hInv))
 
 -- `v0.35.164`: `cancelBoundDonationOnCore_preserves_objects_invExt` moved to
 -- `Lifecycle/Operations/CleanupPreservation.lean` with the definition.
@@ -3148,7 +3152,7 @@ theorem descheduleThread_preserves_ipcInvariant
     (st : SystemState) (tid : SeLe4n.ThreadId) (executingCore : CoreId)
     (hIpc : ipcInvariant st) :
     ipcInvariant (descheduleThread st tid executingCore).1 :=
-  ipcInvariant_of_objects_eq (descheduleThread_objects_eq st tid executingCore) hIpc
+  ipcInvariant_of_objectsAgreeOffRunLinks (descheduleThread_objectsAgreeOffRunLinks st tid executingCore) hIpc
 
 /-- WS-SM SM6.E: the cross-core cancellation preserves `ipcInvariant` — the
 object-level effect is exactly the single-core teardown's
@@ -3159,8 +3163,8 @@ theorem cancelIpcBlockingOnCore_preserves_ipcInvariant
     (victim : SeLe4n.ThreadId) (tcb : TCB) (executingCore : CoreId)
     (st : SystemState) (hInv : st.objects.invExt) (hIpc : ipcInvariant st) :
     ipcInvariant (cancelIpcBlockingOnCore victim tcb executingCore st).1 :=
-  ipcInvariant_of_objects_eq
-    (cancelIpcBlockingOnCore_objects_eq victim tcb executingCore st)
+  ipcInvariant_of_objectsAgreeOffRunLinks
+    (cancelIpcBlockingOnCore_objectsAgreeOffRunLinks victim tcb executingCore st)
     (cancelIpcBlocking_preserves_ipcInvariant st victim tcb hInv hIpc)
 
 /-- WS-SM SM6.E.3: `cancelBoundDonationOnCore` preserves `ipcInvariant` — the
@@ -3317,9 +3321,10 @@ fully correct across the core boundary:
      was WS-OD OD1.7's *wake*, a run-queue insert on the holder's home core,
      and only the run-queue half carried the exclusion; a removal can clear a
      current slot too, so both halves carry it now;
-4. **Object-level fidelity** — the object store is exactly the single-core
+4. **Object-level fidelity** — the object store is the single-core
    `cancelIpcBlocking` teardown's (endpoint/notification dequeue, reply-link
-   consume, TCB IPC-field clear), so every single-core teardown theorem
+   consume, TCB IPC-field clear) off the run-queue links the deschedules
+   rewrite (WS-ZA ZA4.5), so every single-core teardown theorem
    (e.g. `cancelIpcBlocking_preserves_objects_invExt` and the
    `suspendThread_transientWindowInvariant` shape) transports to the
    cross-core composite unchanged.
@@ -3354,8 +3359,8 @@ theorem cancellation_cross_core_correct
             ≠ some c' →
           (cancelIpcBlockingOnCore victim tcb executingCore st).1.scheduler.currentOnCore c'
             = st.scheduler.currentOnCore c')
-    ∧ (cancelIpcBlockingOnCore victim tcb executingCore st).1.objects
-        = (cancelIpcBlocking st victim tcb).objects := by
+    ∧ (cancelIpcBlockingOnCore victim tcb executingCore st).1.objectsAgreeOffRunLinks
+        (cancelIpcBlocking st victim tcb) := by
   have hPost := cancelIpcBlockingOnCore_placedCoreOf?_of_some victim tcb st c hPlaced
   refine ⟨?_, ?_, ?_, ?_, ?_, ?_⟩
   · -- (1) remote poke
@@ -3397,7 +3402,7 @@ theorem cancellation_cross_core_correct
     rw [descheduleUnboundHolder_currentOnCore_ne _ _ victim tcb c' hPark,
         cancelIpcBlockingMigrated_currentOnCore, cancelIpcBlocking_scheduler_eq]; rfl
   · -- (4) object-level fidelity
-    exact cancelIpcBlockingOnCore_objects_eq victim tcb executingCore st
+    exact cancelIpcBlockingOnCore_objectsAgreeOffRunLinks victim tcb executingCore st
 
 -- ============================================================================
 -- §12  SM6.E — Scheduler-domain (`LockKey`) lock footprints
@@ -4772,13 +4777,15 @@ theorem cancelIpcBlocking_ipcInvariantStage (st : SystemState) (tid : SeLe4n.Thr
 
 /-- **WS-RR RR8.12**: and so is the teardown with its reclaim completed — the
 reclaim's migration and holder deschedule write only scheduler state
-(`cancelIpcBlockingReclaimed_objects`), so the stage is the bare teardown's
+(`cancelIpcBlockingReclaimed_objectsAgreeOffRunLinks`), so the stage is the bare teardown's
 followed by an object-store-preserving one. -/
 theorem cancelIpcBlockingReclaimed_ipcInvariantStage (st : SystemState)
     (tid : SeLe4n.ThreadId) (tcb : TCB) :
     IpcInvariantStage st (cancelIpcBlockingReclaimed tid tcb st) :=
   IpcInvariantStage.trans (cancelIpcBlocking_ipcInvariantStage st tid tcb)
-    (IpcInvariantStage.of_objects_eq (cancelIpcBlockingReclaimed_objects tid tcb st))
+    ⟨cancelIpcBlockingReclaimed_objects_invExt tid tcb st,
+     fun _ h => ipcInvariant_of_objectsAgreeOffRunLinks
+      (cancelIpcBlockingReclaimed_objectsAgreeOffRunLinks tid tcb st) h⟩
 
 /-- WS-RR RR2.17: the cross-core priority-inheritance revert is a stage — it
 writes `pipBoost` and run-queue buckets, never a notification. -/
@@ -4831,7 +4838,9 @@ theorem cancelSuspendDonation_ipcInvariantStage (st st' : SystemState)
 /-- WS-RR RR2.17: the per-core deschedule is a stage — it writes no object. -/
 theorem removeRunnableOnCore_ipcInvariantStage (st : SystemState) (tid : SeLe4n.ThreadId)
     (c : CoreId) : IpcInvariantStage st (removeRunnableOnCore st tid c) :=
-  IpcInvariantStage.of_objects_eq (removeRunnableOnCore_preserves_objects st tid c)
+  ⟨removeRunnableOnCore_objects_invExt st tid c,
+   fun _ h => ipcInvariant_of_objectsAgreeOffRunLinks
+    (removeRunnableOnCore_objectsAgreeOffRunLinks st tid c) h⟩
 
 /-- WS-RR RR2.17: the pending-state clear is a stage — it writes one TCB. -/
 theorem clearPendingState_ipcInvariantStage (st : SystemState) (tid : SeLe4n.ThreadId) :

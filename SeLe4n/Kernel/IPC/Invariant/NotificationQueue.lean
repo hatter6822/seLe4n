@@ -307,9 +307,13 @@ theorem notificationWaiterConsistent_of_append {st st' : SystemState}
       ∃ tt, st'.objects[t.toObjId]? = some (.tcb tt) ∧ tt.ipcState = ttcb.ipcState ∧
         tt.ntfnPrev = ttcb.ntfnPrev ∧ tt.ntfnNext = some w)
     (hPostO : ∀ x, x ≠ nid → x ≠ w.toObjId →
-      (∀ t, ntfn.waitTail = some t → x ≠ t.toObjId) → st'.objects[x]? = st.objects[x]?) :
+      (∀ t, ntfn.waitTail = some t → x ≠ t.toObjId) →
+      (st'.objects[x]?).map KernelObject.withoutRunLinks =
+        (st.objects[x]?).map KernelObject.withoutRunLinks) :
     notificationWaiterConsistent st' := by
   obtain ⟨tw, hTw, hBw, hPw, hNw⟩ := hPostW
+  have hNotTcb : ∀ n : Notification, ∀ t, KernelObject.notification n ≠ .tcb t :=
+    fun _ _ e => KernelObject.noConfusion e
   obtain ⟨hIff, hHeadC, hTailC⟩ := hInv.1 nid ntfn hN
   have hNeW : ∀ (x : SeLe4n.ThreadId) (tx : TCB) (oid : SeLe4n.ObjId),
       st.objects[x.toObjId]? = some (.tcb tx) → tx.ipcState = .blockedOnNotification oid →
@@ -332,8 +336,11 @@ theorem notificationWaiterConsistent_of_append {st st' : SystemState}
     · have h1 : x.toObjId ≠ nid := by intro e; rw [e, hN] at hx; cases hx
       have h3 : ∀ t, ntfn.waitTail = some t → x.toObjId ≠ t.toObjId := by
         intro t ht; exact hInj x t (fun e => hxt (e ▸ ht))
-      refine ⟨tx, by rw [hPostO _ h1 (hInj x w hxw) h3]; exact hx, rfl, rfl,
-        fun _ => rfl, fun h => absurd h hxt⟩
+      obtain ⟨t', hT', ht⟩ := KernelObject.map_withoutRunLinks_tcb
+        (hPostO _ h1 (hInj x w hxw) h3) hx
+      exact ⟨t', hT', TCB.proj_eq_of_withoutRunLinks_eq TCB.ipcState ht,
+        TCB.proj_eq_of_withoutRunLinks_eq TCB.ntfnPrev ht,
+        fun _ => TCB.proj_eq_of_withoutRunLinks_eq TCB.ntfnNext ht, fun h => absurd h hxt⟩
   have hBwd : ∀ (x : SeLe4n.ThreadId) (t' : TCB), x ≠ w →
       st'.objects[x.toObjId]? = some (.tcb t') →
       ∃ tx, st.objects[x.toObjId]? = some (.tcb tx) := by
@@ -343,7 +350,9 @@ theorem notificationWaiterConsistent_of_append {st st' : SystemState}
     · have h1 : x.toObjId ≠ nid := by intro e; rw [e, hPostN] at hx; cases hx
       have h3 : ∀ t, ntfn.waitTail = some t → x.toObjId ≠ t.toObjId := by
         intro t ht; exact hInj x t (fun e => hxt (e ▸ ht))
-      exact ⟨t', by rw [← hPostO _ h1 (hInj x w hxw) h3]; exact hx⟩
+      obtain ⟨tx, hTx, _⟩ := KernelObject.map_withoutRunLinks_tcb
+        (hPostO _ h1 (hInj x w hxw) h3).symm hx
+      exact ⟨tx, hTx⟩
   have hTailNe : ∀ (x : SeLe4n.ThreadId) (tx : TCB) (oid : SeLe4n.ObjId),
       st.objects[x.toObjId]? = some (.tcb tx) → tx.ipcState = .blockedOnNotification oid →
       oid ≠ nid → ntfn.waitTail ≠ some x := by
@@ -372,7 +381,8 @@ theorem notificationWaiterConsistent_of_append {st st' : SystemState}
         obtain ⟨t', hT', _⟩ := hCorr t tt (hNeW t tt nid hTt hBt) hTt
         rw [e, hT'] at hPn; cases hPn
       have hPn' : st.objects[oid]? = some (.notification n) := by
-        rwa [hPostO oid hO hOW hOT] at hPn
+        exact KernelObject.map_withoutRunLinks_of_not_tcb (hPostO oid hO hOW hOT).symm hPn
+          (hNotTcb n)
       obtain ⟨hIff2, hH2, hT2⟩ := hInv.1 oid n hPn'
       refine ⟨hIff2, fun x hx => ?_, fun x hx => ?_⟩
       · obtain ⟨tx, hTx, hBx⟩ := hH2 x hx
@@ -438,7 +448,8 @@ theorem notificationWaiterConsistent_of_append {st st' : SystemState}
           intro t ht e
           obtain ⟨tt, hTt, _, _⟩ := hTailC t ht
           rw [e, hTt] at hN0; cases hN0
-        refine ⟨n0, by rw [hPostO oid hON hOW hOT]; exact hN0, ?_, ?_, fun b hb => ?_⟩
+        refine ⟨n0, KernelObject.map_withoutRunLinks_of_not_tcb (hPostO oid hON hOW hOT) hN0
+          (hNotTcb n0), ?_, ?_, fun b hb => ?_⟩
         · rcases hPrev with hh | ⟨a, ta, ha, hTa, hBa, hNa⟩
           · exact Or.inl hh
           · obtain ⟨a', hA', hAI, _, hANe, _⟩ := hCorr a ta (hNeW a ta oid hTa hBa) hTa
@@ -464,7 +475,8 @@ theorem notificationWaiterConsistent_of_append {st st' : SystemState}
             intro t ht e
             obtain ⟨tt, hTt, _, _⟩ := hTailC t ht
             rw [e, hTt] at hN1; cases hN1
-          exact .head (by rw [hPostO o hO hOW hOT]; exact hN1) hH1
+          exact .head (KernelObject.map_withoutRunLinks_of_not_tcb (hPostO o hO hOW hOT) hN1
+            (hNotTcb _)) hH1
       · obtain ⟨ta', hTa', hBa⟩ := notificationQueueReaches_blocked hInv hRa
         rw [hTa] at hTa'; cases hTa'
         have hat : ntfn.waitTail ≠ some a := by

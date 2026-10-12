@@ -150,8 +150,8 @@ theorem removeRunnable_preserves_endpointQueueNoDup
     (st : SystemState) (tid : SeLe4n.ThreadId)
     (hInv : endpointQueueNoDup st) :
     endpointQueueNoDup (removeRunnable st tid) :=
-  endpointQueueNoDup_of_objects_eq st (removeRunnable st tid)
-    (fun x => congrArg (·.get? x) (removeRunnable_preserves_objects st tid)) hInv
+  endpointQueueNoDup_of_objectsAgreeOffRunLinks
+    (removeRunnable_objectsAgreeOffRunLinks st tid) hInv
 
 /-- Storing a TCB (via storeTcbIpcStateAndMessage) preserves endpointQueueNoDup.
 K-2 preserved because endpoint objects are unchanged by TCB stores.

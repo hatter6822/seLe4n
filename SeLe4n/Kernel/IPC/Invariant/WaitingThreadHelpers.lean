@@ -51,7 +51,7 @@ theorem removeRunnable_preserves_blockedThreadsPendingMessageConsistent
     (hInv : blockedThreadsPendingMessageConsistent st) :
     blockedThreadsPendingMessageConsistent (removeRunnable st tid) := by
   intro tid' tcb' hObj
-  rw [removeRunnable_preserves_objects] at hObj
+  run_links_back (removeRunnable_objectsAgreeOffRunLinks _ _) at tcb' hObj
   exact hInv tid' tcb' hObj
 
 /-- `ensureRunnable` only modifies the scheduler; objects are unchanged. -/

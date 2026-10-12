@@ -799,6 +799,20 @@ def rendezvousDequeuedCall (st : SystemState) (dequeued : SeLe4n.ThreadId) : Boo
       | _                   => false
   | none => false
 
+/-- WS-ZA ZA4.5: the rendezvous guard reads a thread's `ipcState`, which is off
+the run-queue links. -/
+theorem rendezvousDequeuedCall_of_objectsAgreeOffRunLinks {s1 s2 : SystemState}
+    (h : s2.objectsAgreeOffRunLinks s1) (t : SeLe4n.ThreadId) :
+    rendezvousDequeuedCall s2 t = rendezvousDequeuedCall s1 t := by
+  have hm := TCB.map_proj_eq_of_map_withoutRunLinks_eq (·.ipcState)
+    (lookupTcb_map_of_objectsAgreeOffRunLinks h t)
+  unfold rendezvousDequeuedCall
+  cases e2 : lookupTcb s2 t <;> cases e1 : lookupTcb s1 t <;> rw [e1, e2] at hm <;>
+    first
+      | rfl
+      | (simp at hm; done)
+      | (simp only [Option.map_some, Option.some.injEq] at hm; simp only [hm])
+
 /-- **WS-OD OD3.6**: the guarded step — donate when the rendezvous dequeued a
 `Call`, and otherwise change nothing.  This is what a receiving arm calls. -/
 def applyReceiveRendezvousDonation (st : SystemState)

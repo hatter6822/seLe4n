@@ -1304,29 +1304,40 @@ donated. -/
   unfold descheduleUnboundHolder cancelUnboundHolder?
   rw [h]
 
-/-- `v0.35.158`: the deschedule step writes no object. -/
-@[simp] theorem descheduleUnboundHolder_objects (stPre stPost : SystemState)
+/-- `v0.35.158`: the deschedule step writes no object off the run-queue links
+(WS-ZA ZA4.5; an object-store equality while the links lived in the scheduler). -/
+theorem descheduleUnboundHolder_objectsAgreeOffRunLinks (stPre stPost : SystemState)
     (victim : SeLe4n.ThreadId) (tcb : TCB) :
-    (descheduleUnboundHolder stPre stPost victim tcb).objects = stPost.objects := by
+    (descheduleUnboundHolder stPre stPost victim tcb).objectsAgreeOffRunLinks stPost := by
   unfold descheduleUnboundHolder
   split
-  · rfl
-  · exact descheduleAtPlacement_preserves_objects _ _
+  · exact .refl _
+  · exact descheduleAtPlacement_objectsAgreeOffRunLinks _ _
 
-/-- `v0.35.158`: ...hence every TCB lookup is the post-teardown state's. -/
-@[simp] theorem descheduleUnboundHolder_getTcb? (stPre stPost : SystemState)
-    (victim : SeLe4n.ThreadId) (tcb : TCB) (x : SeLe4n.ThreadId) :
-    (descheduleUnboundHolder stPre stPost victim tcb).getTcb? x = stPost.getTcb? x := by
-  unfold SystemState.getTcb?
-  rw [descheduleUnboundHolder_objects]
+/-- ...and writes only the object store and the scheduler. -/
+theorem descheduleUnboundHolder_onlyObjectsSchedulerDiffer (stPre stPost : SystemState)
+    (victim : SeLe4n.ThreadId) (tcb : TCB) :
+    (descheduleUnboundHolder stPre stPost victim tcb).onlyObjectsSchedulerDiffer stPost := by
+  unfold descheduleUnboundHolder
+  split
+  · exact .refl _
+  · exact descheduleAtPlacement_onlyObjectsSchedulerDiffer _ _
+
+theorem descheduleUnboundHolder_objects_invExt (stPre stPost : SystemState)
+    (victim : SeLe4n.ThreadId) (tcb : TCB) (hInv : stPost.objects.invExt) :
+    (descheduleUnboundHolder stPre stPost victim tcb).objects.invExt := by
+  unfold descheduleUnboundHolder
+  split
+  · exact hInv
+  · exact descheduleAtPlacement_preserves_objects_invExt _ _ hInv
 
 /-- `v0.35.158`: ...and every home-core resolution. -/
 @[simp] theorem descheduleUnboundHolder_determineTargetCore (stPre stPost : SystemState)
     (victim : SeLe4n.ThreadId) (tcb : TCB) (x : SeLe4n.ThreadId) :
     determineTargetCore (descheduleUnboundHolder stPre stPost victim tcb) x
-      = determineTargetCore stPost x := by
-  unfold determineTargetCore
-  rw [descheduleUnboundHolder_getTcb?]
+      = determineTargetCore stPost x :=
+  determineTargetCore_of_objectsAgreeOffRunLinks
+    (descheduleUnboundHolder_objectsAgreeOffRunLinks stPre stPost victim tcb) x
 
 /-- `v0.35.158`: ...and every replenish queue. -/
 @[simp] theorem descheduleUnboundHolder_replenishQueueOnCore (stPre stPost : SystemState)
@@ -1516,24 +1527,33 @@ donated takes, so the live path is unchanged there. -/
   rw [descheduleUnboundHolder_of_no_donation _ _ _ _ h,
     cancelIpcBlockingMigrated_of_no_donation _ _ _ h]
 
-/-- **WS-RR RR8.12**: the reclaim's two extra steps are scheduler writes, so the
-reclaim-complete teardown's object store is the bare teardown's — which is what
-lets every object-level and information-flow result about the bare teardown reach
-the live path unchanged. -/
-@[simp] theorem cancelIpcBlockingReclaimed_objects (victim : SeLe4n.ThreadId) (tcb : TCB)
-    (st : SystemState) :
-    (cancelIpcBlockingReclaimed victim tcb st).objects
-      = (Lifecycle.Suspend.cancelIpcBlocking st victim tcb).objects := by
+/-- **WS-RR RR8.12**: the reclaim's two extra steps are scheduler writes (and,
+WS-ZA ZA4.5, run-queue link writes), so the reclaim-complete teardown's object
+store is the bare teardown's off the run-queue links — which is what lets every
+object-level and information-flow result about the bare teardown reach the live
+path. -/
+theorem cancelIpcBlockingReclaimed_objectsAgreeOffRunLinks (victim : SeLe4n.ThreadId)
+    (tcb : TCB) (st : SystemState) :
+    (cancelIpcBlockingReclaimed victim tcb st).objectsAgreeOffRunLinks
+      (Lifecycle.Suspend.cancelIpcBlocking st victim tcb) := by
   unfold cancelIpcBlockingReclaimed
-  rw [descheduleUnboundHolder_objects, cancelIpcBlockingMigrated_objects]
+  exact (descheduleUnboundHolder_objectsAgreeOffRunLinks _ _ _ _).trans
+    (.of_objects_eq (cancelIpcBlockingMigrated_objects _ _ _))
 
-/-- **WS-RR RR8.12**: ...hence every TCB lookup is the bare teardown's. -/
-@[simp] theorem cancelIpcBlockingReclaimed_getTcb? (victim : SeLe4n.ThreadId) (tcb : TCB)
-    (st : SystemState) (x : SeLe4n.ThreadId) :
-    (cancelIpcBlockingReclaimed victim tcb st).getTcb? x
-      = (Lifecycle.Suspend.cancelIpcBlocking st victim tcb).getTcb? x := by
+theorem cancelIpcBlockingReclaimed_objects_invExt (victim : SeLe4n.ThreadId) (tcb : TCB)
+    (st : SystemState) (hInv : (Lifecycle.Suspend.cancelIpcBlocking st victim tcb).objects.invExt) :
+    (cancelIpcBlockingReclaimed victim tcb st).objects.invExt := by
   unfold cancelIpcBlockingReclaimed
-  rw [descheduleUnboundHolder_getTcb?, cancelIpcBlockingMigrated_getTcb?]
+  exact descheduleUnboundHolder_objects_invExt _ _ _ _
+    (by rw [cancelIpcBlockingMigrated_objects]; exact hInv)
+
+/-- **WS-RR RR8.12**: ...hence every TCB lookup is the bare teardown's off the
+run-queue links. -/
+theorem cancelIpcBlockingReclaimed_getTcb? (victim : SeLe4n.ThreadId) (tcb : TCB)
+    (st : SystemState) (x : SeLe4n.ThreadId) :
+    ((cancelIpcBlockingReclaimed victim tcb st).getTcb? x).map TCB.withoutRunLinks
+      = ((Lifecycle.Suspend.cancelIpcBlocking st victim tcb).getTcb? x).map TCB.withoutRunLinks :=
+  (cancelIpcBlockingReclaimed_objectsAgreeOffRunLinks victim tcb st).getTcb? x
 
 /-- **WS-RR RR8.12 (Cut 4)**: the reclaim's trigger fires only on a victim
 blocked **on its reply** — the arm gate of `cancelledCallerDonation?`, as a

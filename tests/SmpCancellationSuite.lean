@@ -62,7 +62,7 @@ open SeLe4n.Testing
 #check @descheduleThread
 #check @descheduleThread_state_eq
 #check @descheduleThread_sgi_eq
-#check @descheduleThread_objects_eq
+#check @descheduleThread_objectsAgreeOffRunLinks
 #check @descheduleThread_emits_sgi_if_remote_current
 #check @descheduleThread_no_sgi_if_local
 #check @descheduleThread_no_sgi_if_not_current
@@ -73,7 +73,7 @@ open SeLe4n.Testing
 -- SM6.E.1/.5 cross-core cancellation transitions + reductions:
 #check @cancelIpcBlockingOnCore
 #check @cancelIpcBlockingOnCore_state_eq
-#check @cancelIpcBlockingOnCore_objects_eq
+#check @cancelIpcBlockingOnCore_objectsAgreeOffRunLinks
 #check @cancelIpcBlockingOnCore_eq_reclaimed_deschedule
 #check @cancelIpcBlockingOnCore_ready_eq_descheduleThread
 
@@ -585,7 +585,7 @@ example (c : CoreId) (h1 : placedCoreOf? st victim = some c)
 #check @cancelUnboundHolderCore?_of_no_donation
 #check @descheduleUnboundHolder
 #check @descheduleUnboundHolder_of_no_donation
-#check @descheduleUnboundHolder_objects
+#check @descheduleUnboundHolder_objectsAgreeOffRunLinks
 #check @descheduleUnboundHolder_getTcb?
 #check @descheduleUnboundHolder_determineTargetCore
 #check @descheduleUnboundHolder_replenishQueueOnCore

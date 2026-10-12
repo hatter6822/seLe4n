@@ -76,10 +76,8 @@ theorem ensureRunnable_preserves_queueNextBlockingConsistent
 theorem removeRunnable_preserves_queueNextBlockingConsistent
     (st : SystemState) (tid : SeLe4n.ThreadId)
     (hInv : queueNextBlockingConsistent st) :
-    queueNextBlockingConsistent (removeRunnable st tid) := by
-  apply queueNextBlockingConsistent_of_objects_eq st (removeRunnable st tid)
-  · intro x; unfold removeRunnable; simp
-  · exact hInv
+    queueNextBlockingConsistent (removeRunnable st tid) :=
+  queueNextBlockingConsistent_of_objectsAgreeOffRunLinks (removeRunnable_objectsAgreeOffRunLinks st tid) hInv
 
 -- ============================================================================
 -- Section 3: storeObject endpoint preserves queueNextBlockingConsistent
@@ -326,9 +324,9 @@ theorem removeRunnable_preserves_queueHeadBlockedConsistent
     (hInv : queueHeadBlockedConsistent st) :
     queueHeadBlockedConsistent (removeRunnable st tid) := by
   intro epId ep hd tcb hEp hTcb
-  rw [show (removeRunnable st tid).objects = st.objects from
-    removeRunnable_preserves_objects st tid] at hEp hTcb
-  exact hInv epId ep hd tcb hEp hTcb
+  have hA := removeRunnable_objectsAgreeOffRunLinks st tid
+  run_links_back hA at tcb hTcb
+  exact hInv epId ep hd tcb (hA.get_endpoint_iff.mp hEp) hTcb
 
 /-- storeTcbIpcStateAndMessage preserves queueHeadBlockedConsistent when the
 thread is not a queue head. The precondition hNotHead ensures that tid is not
@@ -1030,9 +1028,9 @@ theorem removeRunnable_preserves_endpointQueueTailBlockedConsistent
     (hInv : endpointQueueTailBlockedConsistent st) :
     endpointQueueTailBlockedConsistent (removeRunnable st tid) := by
   intro epId ep tl tcb hEp hTcb
-  rw [show (removeRunnable st tid).objects = st.objects from
-    removeRunnable_preserves_objects st tid] at hEp hTcb
-  exact hInv epId ep tl tcb hEp hTcb
+  have hA := removeRunnable_objectsAgreeOffRunLinks st tid
+  run_links_back hA at tcb hTcb
+  exact hInv epId ep tl tcb (hA.get_endpoint_iff.mp hEp) hTcb
 
 /-- `storeObject` of a non-endpoint non-TCB object preserves `endpointQueueTailBlockedConsistent`. -/
 theorem storeObject_nonEndpointNonTcb_preserves_endpointQueueTailBlockedConsistent
@@ -1623,10 +1621,8 @@ theorem ensureRunnable_preserves_queueNextTargetBlocked
 theorem removeRunnable_preserves_queueNextTargetBlocked
     (st : SystemState) (tid : SeLe4n.ThreadId)
     (hInv : queueNextTargetBlocked st) :
-    queueNextTargetBlocked (removeRunnable st tid) := by
-  apply queueNextTargetBlocked_of_objects_eq st (removeRunnable st tid)
-  · intro x; unfold removeRunnable; simp
-  · exact hInv
+    queueNextTargetBlocked (removeRunnable st tid) :=
+  queueNextTargetBlocked_of_objectsAgreeOffRunLinks (removeRunnable_objectsAgreeOffRunLinks st tid) hInv
 
 /-- `storeObject` of a non-TCB object frames `queueNextTargetBlocked` (no TCB's `ipcState`/`queueNext`
 changes). -/

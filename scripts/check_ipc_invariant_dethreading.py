@@ -285,6 +285,10 @@ MACHINERY_PINS = {
     ("SeLe4n/Kernel/Scheduler/Operations/PerCoreWcrtInventory.lean", "syntax"): 1,
     ("SeLe4n/Kernel/Scheduler/PriorityInheritance/PerCoreInventory.lean", "macro_rules"): 1,
     ("SeLe4n/Kernel/Scheduler/PriorityInheritance/PerCoreInventory.lean", "syntax"): 1,
+    # WS-ZA ZA4.5: the `run_links_back` / `run_links_fwd` tactics -- two
+    # tactic-category macros; they mint no declaration.
+    ("SeLe4n/Kernel/Scheduler/RunQueueLinkFrame.lean", "macro_rules"): 2,
+    ("SeLe4n/Kernel/Scheduler/RunQueueLinkFrame.lean", "syntax"): 2,
     ("SeLe4n/Platform/FFI.lean", "initialize"): 2,
     # PR #889 review round 17: the boot entry's contract, decided over the
     # elaborated environment.  One `run_cmd`; it mints no declaration.

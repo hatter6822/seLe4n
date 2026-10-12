@@ -2686,10 +2686,8 @@ theorem ensureRunnable_preserves_ipcStateQueueConsistent
 theorem removeRunnable_preserves_ipcStateQueueConsistent
     (st : SystemState) (tid : SeLe4n.ThreadId)
     (hInv : ipcStateQueueConsistent st) :
-    ipcStateQueueConsistent (removeRunnable st tid) := by
-  unfold ipcStateQueueConsistent
-  simp only [removeRunnable_preserves_objects]
-  exact hInv
+    ipcStateQueueConsistent (removeRunnable st tid) :=
+  ipcStateQueueConsistent_of_objectsAgreeOffRunLinks (removeRunnable_objectsAgreeOffRunLinks st tid) hInv
 
 /-- WS-L3/L3-C3 helper: `storeTcbIpcStateAndMessage` preserves
 `ipcStateQueueConsistent` when the new ipcState satisfies the invariant
@@ -5575,7 +5573,7 @@ theorem endpointCall_establishes_blockedOnReplyHasReplyObject
                 obtain ⟨_, hEq⟩ := hStep; subst hEq
                 have hP5 : blockedOnReplyHasReplyObject st5 :=
                   linkServerStashedReply_establishes_blockedOnReplyHasReplyObject st4 st5 caller pair.1 hObjInv4 hThirdExc4 hLink
-                exact blockedOnReplyHasReplyObject_of_objects_eq (removeRunnable_preserves_objects st5 caller) hP5
+                exact blockedOnReplyHasReplyObject_of_objectsAgreeOffRunLinks (removeRunnable_objectsAgreeOffRunLinks st5 caller) hP5
       | none =>
         cases hEnq : endpointQueueEnqueue endpointId false caller st with
         | error e => simp [hHead, hEnq] at hStep
@@ -5592,7 +5590,7 @@ theorem endpointCall_establishes_blockedOnReplyHasReplyObject
             have hP2 : blockedOnReplyHasReplyObject st2 :=
               storeTcbIpcStateAndMessage_nonBlocked_preserves_blockedOnReplyHasReplyObject
                 st1 st2 caller (.blockedOnCall endpointId) (some msg) hObjInv1 hP1 (by simp) hMsg
-            exact blockedOnReplyHasReplyObject_of_objects_eq (removeRunnable_preserves_objects st2 caller) hP2
+            exact blockedOnReplyHasReplyObject_of_objectsAgreeOffRunLinks (removeRunnable_objectsAgreeOffRunLinks st2 caller) hP2
 
 open SeLe4n.Model.SystemState in
 /-- IPC de-threading D2: `endpointReceiveDual` **establishes** the third clause of
@@ -5715,7 +5713,7 @@ theorem endpointReceiveDual_establishes_blockedOnReplyHasReplyObject
               | none =>
                 simp only [hGetR, Except.ok.injEq, Prod.mk.injEq] at hStep
                 obtain ⟨_, hEq⟩ := hStep; subst hEq
-                exact blockedOnReplyHasReplyObject_of_objects_eq (removeRunnable_preserves_objects st2 receiver) hP2
+                exact blockedOnReplyHasReplyObject_of_objectsAgreeOffRunLinks (removeRunnable_objectsAgreeOffRunLinks st2 receiver) hP2
               | some rTcb =>
                 simp only [hGetR] at hStep
                 -- WS-SM SM6.D (PR #827 review #6): the `.ok` outcome forces the stash guard
@@ -5739,7 +5737,7 @@ theorem endpointReceiveDual_establishes_blockedOnReplyHasReplyObject
                     simp only [KernelObject.tcb.injEq] at ho
                     subst ho
                     exact hP2 receiver rTcb ep' rt hRecvObj (by simpa using hb)
-                  exact blockedOnReplyHasReplyObject_of_objects_eq (removeRunnable_preserves_objects stStashed receiver) hPStash
+                  exact blockedOnReplyHasReplyObject_of_objectsAgreeOffRunLinks (removeRunnable_objectsAgreeOffRunLinks stStashed receiver) hPStash
 
 open SeLe4n.Model.SystemState in
 open SeLe4n.Model.SystemState in
@@ -6074,7 +6072,7 @@ theorem endpointSendDual_preserves_blockedOnReplyHasReplyObject
             obtain ⟨_, hEq⟩ := hStep; subst hEq
             have hP2 := storeTcbIpcStateAndMessage_nonBlocked_preserves_blockedOnReplyHasReplyObject
               st1 st2 sender (.blockedOnSend endpointId) (some msg) hObjInv1 hP1 (by simp) hMsg
-            exact blockedOnReplyHasReplyObject_of_objects_eq (removeRunnable_preserves_objects st2 sender) hP2
+            exact blockedOnReplyHasReplyObject_of_objectsAgreeOffRunLinks (removeRunnable_objectsAgreeOffRunLinks st2 sender) hP2
 
 open SeLe4n.Model.SystemState in
 /-- IPC de-threading D2: storing any **non-TCB** object frames the third clause — the
@@ -6752,7 +6750,7 @@ theorem notificationWaitPark_preserves_blockedOnReplyHasReplyObject
             next st2 hSI =>
               simp only [Except.ok.injEq, Prod.mk.injEq] at hStep
               obtain ⟨_, rfl⟩ := hStep
-              exact blockedOnReplyHasReplyObject_of_objects_eq (removeRunnable_preserves_objects st2 waiter)
+              exact blockedOnReplyHasReplyObject_of_objectsAgreeOffRunLinks (removeRunnable_objectsAgreeOffRunLinks st2 waiter)
                 (storeTcbIpcStateAndMessage_fromTcb_nonBlocked_preserves_blockedOnReplyHasReplyObject
                   st1 st2 waiter waiterTcb (.blockedOnNotification notificationId) none hObjInv1 hInv1
                   (by simp) hSI)
@@ -7775,7 +7773,7 @@ theorem removeRunnable_passiveServerIdleFrame
       tcb.schedContextBinding ≠ .unbound ∨ passiveServerIdleAllowed tcb.ipcState) :
     passiveServerIdleFrame st (removeRunnable st removed) := by
   refine ⟨fun tid tcb' hTcb' hUnbound' hNotInQ' hNotCurrent' hNA => ?_⟩
-  rw [removeRunnable_preserves_objects st removed] at hTcb'
+  run_links_back (removeRunnable_objectsAgreeOffRunLinks st removed) at tcb' hTcb'
   by_cases hEq : tid = removed
   · subst hEq
     rcases hRemoved tcb' hTcb' with hB | hA
@@ -9213,7 +9211,7 @@ theorem endpointCall_establishes_blockedOnReplyHasTarget
                 simp only [hLink, Except.ok.injEq, Prod.mk.injEq] at hStep
                 obtain ⟨_, hEq⟩ := hStep; subst hEq
                 have hP5 := linkServerStashedReply_preserves_blockedOnReplyHasTarget st4 st5 caller pair.1 hObjInv4 hP4 hLink
-                exact blockedOnReplyHasTarget_of_objects_eq (removeRunnable_preserves_objects st5 caller) hP5
+                exact blockedOnReplyHasTarget_of_objectsAgreeOffRunLinks (removeRunnable_objectsAgreeOffRunLinks st5 caller) hP5
       | none =>
         cases hEnq : endpointQueueEnqueue endpointId false caller st with
         | error e => simp [hHead, hEnq] at hStep
@@ -9228,7 +9226,7 @@ theorem endpointCall_establishes_blockedOnReplyHasTarget
             obtain ⟨_, hEq⟩ := hStep; subst hEq
             have hP2 := storeTcbIpcStateAndMessage_preserves_blockedOnReplyHasTarget
               st1 st2 caller (.blockedOnCall endpointId) (some msg) hObjInv1 hP1 (by intro ep rt h; cases h) hMsg
-            exact blockedOnReplyHasTarget_of_objects_eq (removeRunnable_preserves_objects st2 caller) hP2
+            exact blockedOnReplyHasTarget_of_objectsAgreeOffRunLinks (removeRunnable_objectsAgreeOffRunLinks st2 caller) hP2
 
 open SeLe4n.Model.SystemState in
 /-- D3: `endpointReceiveDual` **establishes** the clause. -/
@@ -9334,7 +9332,7 @@ theorem endpointReceiveDual_establishes_blockedOnReplyHasTarget
               | none =>
                 simp only [hGetR, Except.ok.injEq, Prod.mk.injEq] at hStep
                 obtain ⟨_, hEq⟩ := hStep; subst hEq
-                exact blockedOnReplyHasTarget_of_objects_eq (removeRunnable_preserves_objects st2 receiver) hP2
+                exact blockedOnReplyHasTarget_of_objectsAgreeOffRunLinks (removeRunnable_objectsAgreeOffRunLinks st2 receiver) hP2
               | some rTcb =>
                 simp only [hGetR] at hStep
                 -- WS-SM SM6.D (PR #827 review #6): the `.ok` outcome forces the stash guard
@@ -9358,7 +9356,7 @@ theorem endpointReceiveDual_establishes_blockedOnReplyHasTarget
                     simp only [KernelObject.tcb.injEq] at ho
                     subst ho
                     exact hP2 receiver rTcb ep' rt hRecvObj (by simpa using hb)
-                  exact blockedOnReplyHasTarget_of_objects_eq (removeRunnable_preserves_objects stStashed receiver) hPStash
+                  exact blockedOnReplyHasTarget_of_objectsAgreeOffRunLinks (removeRunnable_objectsAgreeOffRunLinks stStashed receiver) hPStash
 
 open SeLe4n.Model.SystemState in
 /-- **WS-RR RR8.12 Cut C1 (register row 55)**: a receive that succeeds found an
@@ -9530,8 +9528,8 @@ theorem endpointReceiveDual_sameSchedContextBindings_of_blocked
         | none =>
           simp only [hGetR, Except.ok.injEq, Prod.mk.injEq] at hStep
           obtain ⟨_, hEq⟩ := hStep; subst hEq
-          exact hS2.trans (sameSchedContextBindings.of_objects_eq
-            (removeRunnable_preserves_objects st2 receiver))
+          exact hS2.trans (sameSchedContextBindings.of_objectsAgreeOffRunLinks
+            (removeRunnable_objectsAgreeOffRunLinks st2 receiver))
         | some rTcb =>
           simp only [hGetR] at hStep
           -- WS-SM SM6.D (PR #827 review #6): the `.ok` outcome forces the stash guard
@@ -9554,8 +9552,8 @@ theorem endpointReceiveDual_sameSchedContextBindings_of_blocked
               hS2.trans (storeObject_modifiedTcb_sameSchedContextBindings st2 stStashed
                 receiver.toObjId rTcb { rTcb with pendingReceiveReply := replyId } hRecvObj rfl
                 hObjInv2 hStash)
-            exact hS3.trans (sameSchedContextBindings.of_objects_eq
-              (removeRunnable_preserves_objects stStashed receiver))
+            exact hS3.trans (sameSchedContextBindings.of_objectsAgreeOffRunLinks
+              (removeRunnable_objectsAgreeOffRunLinks stStashed receiver))
 
 open SeLe4n.Model.SystemState in
 /-- D6: `endpointReceiveDual` preserves `donationBudgetTransfer`.  The rendezvous path
@@ -9821,8 +9819,8 @@ theorem endpointReceiveDual_preserves_donationOwnerValid
                 simp only [hGetR, Except.ok.injEq, Prod.mk.injEq] at hStep
                 obtain ⟨_, hEq⟩ := hStep; subst hEq
                 exact donationOwnerValid_of_frames
-                  (sameSchedContextBindings.of_objects_eq (removeRunnable_preserves_objects st2 receiver))
-                  (donationOwnerFrame.of_objects_eq (removeRunnable_preserves_objects st2 receiver)) hD2
+                  (sameSchedContextBindings.of_objectsAgreeOffRunLinks (removeRunnable_objectsAgreeOffRunLinks st2 receiver))
+                  (donationOwnerFrame.of_objectsAgreeOffRunLinks (removeRunnable_objectsAgreeOffRunLinks st2 receiver)) hD2
               | some rTcb =>
                 simp only [hGetR] at hStep
                 -- WS-SM SM6.D (PR #827 review #6): the `.ok` outcome forces the stash guard
@@ -9846,8 +9844,8 @@ theorem endpointReceiveDual_preserves_donationOwnerValid
                     (storeObject_modifiedTcbPreservingOwner_donationOwnerFrame st2 stStashed receiver.toObjId rTcb
                       { rTcb with pendingReceiveReply := replyId } hRecvObj rfl rfl hObjInv2 hStash) hD2
                   exact donationOwnerValid_of_frames
-                    (sameSchedContextBindings.of_objects_eq (removeRunnable_preserves_objects stStashed receiver))
-                    (donationOwnerFrame.of_objects_eq (removeRunnable_preserves_objects stStashed receiver)) hDStash
+                    (sameSchedContextBindings.of_objectsAgreeOffRunLinks (removeRunnable_objectsAgreeOffRunLinks stStashed receiver))
+                    (donationOwnerFrame.of_objectsAgreeOffRunLinks (removeRunnable_objectsAgreeOffRunLinks stStashed receiver)) hDStash
 
 open SeLe4n.Model.SystemState in
 /-- D6: `endpointReceiveDual` frames `passiveServerIdle`. Rendezvous: pop the sender + set it
@@ -10122,7 +10120,7 @@ theorem endpointReceiveDual_timeoutBudgetFrame
               | none =>
                 simp only [hGetR, Except.ok.injEq, Prod.mk.injEq] at hStep
                 obtain ⟨_, hEq⟩ := hStep; subst hEq
-                exact hF2.trans (timeoutBudgetFrame.of_objects_eq (removeRunnable_preserves_objects st2 receiver))
+                exact hF2.trans (timeoutBudgetFrame.of_objectsAgreeOffRunLinks (removeRunnable_objectsAgreeOffRunLinks st2 receiver))
               | some rTcb =>
                 simp only [hGetR] at hStep
                 -- WS-SM SM6.D (PR #827 review #6): the `.ok` outcome forces the stash guard
@@ -10142,7 +10140,7 @@ theorem endpointReceiveDual_timeoutBudgetFrame
                     (getTcb?_eq_some_iff st2 receiver rTcb).mp hGetR
                   have hF3 := hF2.trans (storeObject_modifiedTcb_timeoutBudgetFrame st2 stStashed receiver.toObjId rTcb
                     { rTcb with pendingReceiveReply := replyId } hRecvObj rfl hObjInv2 hStash)
-                  exact hF3.trans (timeoutBudgetFrame.of_objects_eq (removeRunnable_preserves_objects stStashed receiver))
+                  exact hF3.trans (timeoutBudgetFrame.of_objectsAgreeOffRunLinks (removeRunnable_objectsAgreeOffRunLinks stStashed receiver))
 
 open SeLe4n.Model.SystemState in
 /-- IPC de-threading D5: `endpointReceiveDual` preserves `blockedThreadTimeoutConsistent` from the
@@ -10775,7 +10773,7 @@ theorem endpointCall_sameSchedContextBindings
                 obtain ⟨_, hEq⟩ := hStep; subst hEq
                 have hS5 := linkServerStashedReply_sameSchedContextBindings st4 st5 caller pair.1 hObjInv4 hLink
                 exact ((((hS1.trans hS2).trans hS3).trans hS4).trans hS5).trans
-                  (sameSchedContextBindings.of_objects_eq (removeRunnable_preserves_objects st5 caller))
+                  (sameSchedContextBindings.of_objectsAgreeOffRunLinks (removeRunnable_objectsAgreeOffRunLinks st5 caller))
       | none =>
         cases hEnq : endpointQueueEnqueue endpointId false caller st with
         | error e => simp [hHead, hEnq] at hStep
@@ -10789,7 +10787,7 @@ theorem endpointCall_sameSchedContextBindings
             simp only [hMsg, Except.ok.injEq, Prod.mk.injEq] at hStep
             obtain ⟨_, hEq⟩ := hStep; subst hEq
             have hS2 := storeTcbIpcStateAndMessage_sameSchedContextBindings st1 st2 caller (.blockedOnCall endpointId) (some msg) hObjInv1 hMsg
-            exact (hS1.trans hS2).trans (sameSchedContextBindings.of_objects_eq (removeRunnable_preserves_objects st2 caller))
+            exact (hS1.trans hS2).trans (sameSchedContextBindings.of_objectsAgreeOffRunLinks (removeRunnable_objectsAgreeOffRunLinks st2 caller))
 
 open SeLe4n.Model.SystemState in
 /-- D6: `endpointCall` frames the SchedContext/owner side forward. Rendezvous: pop the receiver
@@ -10870,7 +10868,7 @@ theorem endpointCall_donationOwnerFrame
                 obtain ⟨_, hEq⟩ := hStep; subst hEq
                 have hF5 := linkServerStashedReply_donationOwnerFrame st4 st5 caller pair.1 hObjInv4 hLink
                 exact ((((hF1.trans hF2).trans hF3).trans hF4).trans hF5).trans
-                  (donationOwnerFrame.of_objects_eq (removeRunnable_preserves_objects st5 caller))
+                  (donationOwnerFrame.of_objectsAgreeOffRunLinks (removeRunnable_objectsAgreeOffRunLinks st5 caller))
       | none =>
         cases hEnq : endpointQueueEnqueue endpointId false caller st with
         | error e => simp [hHead, hEnq] at hStep
@@ -10885,7 +10883,7 @@ theorem endpointCall_donationOwnerFrame
             obtain ⟨_, hEq⟩ := hStep; subst hEq
             refine (hF1.trans (storeTcbIpcStateAndMessage_donationOwnerFrame st1 st2 caller (.blockedOnCall endpointId) (some msg)
               (fun tcb hTcb_s1 ep' rt => ?_) hObjInv1 hMsg)).trans
-              (donationOwnerFrame.of_objects_eq (removeRunnable_preserves_objects st2 caller))
+              (donationOwnerFrame.of_objectsAgreeOffRunLinks (removeRunnable_objectsAgreeOffRunLinks st2 caller))
             obtain ⟨tcb0, hTcb0, hIpc0⟩ := endpointQueueEnqueue_tcb_ipcState_backward endpointId false caller st st1
               caller tcb hObjInv hEnq hTcb_s1
             exact fun hc => hCallerNotReply tcb0 hTcb0 ep' rt (hIpc0.trans hc)
@@ -11058,7 +11056,7 @@ theorem endpointCall_timeoutBudgetFrame
                 obtain ⟨_, hEq⟩ := hStep; subst hEq
                 have hF5 := linkServerStashedReply_timeoutBudgetFrame st4 st5 caller pair.1 hObjInv4 hLink
                 exact ((((hF1.trans hF2).trans hF3).trans hF4).trans hF5).trans
-                  (timeoutBudgetFrame.of_objects_eq (removeRunnable_preserves_objects st5 caller))
+                  (timeoutBudgetFrame.of_objectsAgreeOffRunLinks (removeRunnable_objectsAgreeOffRunLinks st5 caller))
       | none =>
         cases hEnq : endpointQueueEnqueue endpointId false caller st with
         | error e => simp [hHead, hEnq] at hStep
@@ -11073,7 +11071,7 @@ theorem endpointCall_timeoutBudgetFrame
             obtain ⟨_, hEq⟩ := hStep; subst hEq
             exact (hF1.trans (storeTcbIpcStateAndMessage_timeoutBudgetFrame st1 st2 caller (.blockedOnCall endpointId) (some msg)
               hObjInv1 hMsg)).trans
-              (timeoutBudgetFrame.of_objects_eq (removeRunnable_preserves_objects st2 caller))
+              (timeoutBudgetFrame.of_objectsAgreeOffRunLinks (removeRunnable_objectsAgreeOffRunLinks st2 caller))
 
 open SeLe4n.Model.SystemState in
 /-- IPC de-threading D5: `endpointCall` preserves `blockedThreadTimeoutConsistent` from the
@@ -11144,7 +11142,7 @@ theorem endpointSendDual_sameSchedContextBindings
             simp only [hMsg, Except.ok.injEq, Prod.mk.injEq] at hStep
             obtain ⟨_, hEq⟩ := hStep; subst hEq
             exact (hS1.trans (storeTcbIpcStateAndMessage_sameSchedContextBindings st1 st2 sender (.blockedOnSend endpointId) (some msg) hObjInv1 hMsg)).trans
-              (sameSchedContextBindings.of_objects_eq (removeRunnable_preserves_objects st2 sender))
+              (sameSchedContextBindings.of_objectsAgreeOffRunLinks (removeRunnable_objectsAgreeOffRunLinks st2 sender))
 
 open SeLe4n.Model.SystemState in
 /-- D6: `endpointSendDual` frames the SchedContext/owner side forward. Rendezvous: pop the
@@ -11217,7 +11215,7 @@ theorem endpointSendDual_donationOwnerFrame
             obtain ⟨_, hEq⟩ := hStep; subst hEq
             refine (hF1.trans (storeTcbIpcStateAndMessage_donationOwnerFrame st1 st2 sender (.blockedOnSend endpointId) (some msg)
               (fun tcb hTcb_st1 ep' rt => ?_) hObjInv1 hMsg)).trans
-              (donationOwnerFrame.of_objects_eq (removeRunnable_preserves_objects st2 sender))
+              (donationOwnerFrame.of_objectsAgreeOffRunLinks (removeRunnable_objectsAgreeOffRunLinks st2 sender))
             obtain ⟨tcb0, hTcb0, hIpc0⟩ := endpointQueueEnqueue_tcb_ipcState_backward endpointId false sender st st1
               sender tcb hObjInv hEnq hTcb_st1
             exact fun hc => hSenderNotReply tcb0 hTcb0 ep' rt (hIpc0.trans hc)
@@ -11378,7 +11376,7 @@ theorem endpointSendDual_timeoutBudgetFrame
             obtain ⟨_, hEq⟩ := hStep; subst hEq
             exact (hF1.trans (storeTcbIpcStateAndMessage_timeoutBudgetFrame st1 st2 sender (.blockedOnSend endpointId) (some msg)
               hObjInv1 hMsg)).trans
-              (timeoutBudgetFrame.of_objects_eq (removeRunnable_preserves_objects st2 sender))
+              (timeoutBudgetFrame.of_objectsAgreeOffRunLinks (removeRunnable_objectsAgreeOffRunLinks st2 sender))
 
 open SeLe4n.Model.SystemState in
 /-- IPC de-threading D5: `endpointSendDual` preserves `blockedThreadTimeoutConsistent` from the
@@ -11881,7 +11879,7 @@ theorem endpointSendDual_preserves_blockedOnReplyHasTarget
             obtain ⟨_, hEq⟩ := hStep; subst hEq
             have hP2 := storeTcbIpcStateAndMessage_preserves_blockedOnReplyHasTarget
               st1 st2 sender (.blockedOnSend endpointId) (some msg) hObjInv1 hP1 (by intro ep rt h; cases h) hMsg
-            exact blockedOnReplyHasTarget_of_objects_eq (removeRunnable_preserves_objects st2 sender) hP2
+            exact blockedOnReplyHasTarget_of_objectsAgreeOffRunLinks (removeRunnable_objectsAgreeOffRunLinks st2 sender) hP2
 
 open SeLe4n.Model.SystemState in
 /-- D3: `notificationSignal` frames the clause. -/
@@ -11960,7 +11958,7 @@ theorem notificationWaitPark_preserves_blockedOnReplyHasTarget
             next st2 hSI =>
               simp only [Except.ok.injEq, Prod.mk.injEq] at hStep
               obtain ⟨_, rfl⟩ := hStep
-              exact blockedOnReplyHasTarget_of_objects_eq (removeRunnable_preserves_objects st2 waiter)
+              exact blockedOnReplyHasTarget_of_objectsAgreeOffRunLinks (removeRunnable_objectsAgreeOffRunLinks st2 waiter)
                 (storeTcbIpcStateAndMessage_fromTcb_preserves_blockedOnReplyHasTarget
                   st1 st2 waiter waiterTcb (.blockedOnNotification notificationId) none hObjInv1 hInv1 (by intro ep rt h; cases h) hSI)
   · contradiction
@@ -12017,7 +12015,7 @@ theorem notificationWaitPark_sameSchedContextBindings
               obtain ⟨_, rfl⟩ := hStep
               exact (hS1.trans (storeTcbIpcStateAndMessage_fromTcb_sameSchedContextBindings
                   st1 st2 waiter waiterTcb (.blockedOnNotification notificationId) none hOrig1 hObjInv1 hSI)).trans
-                (sameSchedContextBindings.of_objects_eq (removeRunnable_preserves_objects st2 waiter))
+                (sameSchedContextBindings.of_objectsAgreeOffRunLinks (removeRunnable_objectsAgreeOffRunLinks st2 waiter))
   · contradiction
   · contradiction
 
@@ -12087,7 +12085,7 @@ theorem notificationWaitPark_donationOwnerFrame
               exact (hF1.trans (storeTcbIpcStateAndMessage_fromTcb_donationOwnerFrame
                   st1 st2 waiter waiterTcb (.blockedOnNotification notificationId) none hOrig1
                   (hWaiterNotReply waiterTcb hWaiterObj) hObjInv1 hSI)).trans
-                (donationOwnerFrame.of_objects_eq (removeRunnable_preserves_objects st2 waiter))
+                (donationOwnerFrame.of_objectsAgreeOffRunLinks (removeRunnable_objectsAgreeOffRunLinks st2 waiter))
   · contradiction
   · contradiction
 
@@ -12327,7 +12325,7 @@ theorem endpointSendDual_preserves_replyCallerLinkageReciprocal
             refine (hF1.trans (storeTcbIpcStateAndMessage_replyLinkageFrame_of_unlinked st1 st2
               sender (.blockedOnSend endpointId) (some msg)
               (hF1.unlinked_forward hSenderUnlinked) hObjInv1 hStore)).trans ?_
-            exact replyLinkageFrame.of_objects_eq (removeRunnable_preserves_objects st2 sender)
+            exact replyLinkageFrame.of_objectsAgreeOffRunLinks (removeRunnable_objectsAgreeOffRunLinks st2 sender)
 
 open SeLe4n.Model.SystemState in
 /-- WS-RR RR3.8: `endpointCall` **establishes** `replyCallerLinkageReciprocal`
@@ -12420,7 +12418,7 @@ theorem endpointCall_preserves_replyCallerLinkageReciprocal
                   linkServerStashedReply_establishes_replyCallerLinkageReciprocal st4 st5 caller
                     pair.1 hObjInv4 hRecip4 hCallerBlk4 hLink
                 exact replyCallerLinkageReciprocal_of_frame
-                  (replyLinkageFrame.of_objects_eq (removeRunnable_preserves_objects st5 caller)) hRecip5
+                  (replyLinkageFrame.of_objectsAgreeOffRunLinks (removeRunnable_objectsAgreeOffRunLinks st5 caller)) hRecip5
       | none =>
         cases hEnq : endpointQueueEnqueue endpointId false caller st with
         | error e => simp [hHead, hEnq] at hStep
@@ -12437,7 +12435,7 @@ theorem endpointCall_preserves_replyCallerLinkageReciprocal
             refine (hF1.trans (storeTcbIpcStateAndMessage_replyLinkageFrame_of_unlinked
               st1 st2 caller (.blockedOnCall endpointId) (some msg)
               (hF1.unlinked_forward hCallerUnlinked) hObjInv1 hMsg)).trans ?_
-            exact replyLinkageFrame.of_objects_eq (removeRunnable_preserves_objects st2 caller)
+            exact replyLinkageFrame.of_objectsAgreeOffRunLinks (removeRunnable_objectsAgreeOffRunLinks st2 caller)
 
 open SeLe4n.Model.SystemState in
 /-- WS-RR RR3.8: `endpointReceiveDual` **establishes** `replyCallerLinkageReciprocal`
@@ -12633,8 +12631,8 @@ theorem endpointReceiveDual_preserves_replyCallerLinkageReciprocal
                 simp only [hGetR, Except.ok.injEq, Prod.mk.injEq] at hStep
                 obtain ⟨_, rfl⟩ := hStep
                 refine replyCallerLinkageReciprocal_of_frame ?_ hInv
-                exact hF2.trans (replyLinkageFrame.of_objects_eq
-                  (removeRunnable_preserves_objects st2 receiver))
+                exact hF2.trans (replyLinkageFrame.of_objectsAgreeOffRunLinks
+                  (removeRunnable_objectsAgreeOffRunLinks st2 receiver))
               | some rTcb =>
                 simp only [hGetR] at hStep
                 have hValid : st.replyStashValid replyId = true := by
@@ -12654,8 +12652,8 @@ theorem endpointReceiveDual_preserves_replyCallerLinkageReciprocal
                     receiver.toObjId rTcb { rTcb with pendingReceiveReply := replyId }
                     ((getTcb?_eq_some_iff st2 receiver rTcb).mp hGetR) rfl
                     (fun _ epx rtx hb => ⟨epx, rtx, hb⟩) hObjInv2 hStash)).trans ?_
-                  exact replyLinkageFrame.of_objects_eq
-                    (removeRunnable_preserves_objects stStashed receiver)
+                  exact replyLinkageFrame.of_objectsAgreeOffRunLinks
+                    (removeRunnable_objectsAgreeOffRunLinks stStashed receiver)
 
 open SeLe4n.Model.SystemState in
 /-- WS-RR RR3.9: `notificationSignal` **establishes** `replyCallerLinkageReciprocal`
@@ -12781,7 +12779,7 @@ theorem notificationWaitPark_preserves_replyCallerLinkageReciprocal
               refine (hF1.trans (storeTcbIpcStateAndMessage_fromTcb_replyLinkageFrame_of_unlinked
                 st1 st2 waiter waiterTcb _ none hOrig1 (hUnlinked waiterTcb hWaiterObj)
                 hObjInv1 hSI)).trans ?_
-              exact replyLinkageFrame.of_objects_eq (removeRunnable_preserves_objects st2 waiter)
+              exact replyLinkageFrame.of_objectsAgreeOffRunLinks (removeRunnable_objectsAgreeOffRunLinks st2 waiter)
   · contradiction
   · contradiction
 
@@ -12979,7 +12977,7 @@ theorem notificationWaitPark_timeoutBudgetFrame
               obtain ⟨_, rfl⟩ := hStep
               exact (hF1.trans (storeTcbIpcStateAndMessage_fromTcb_timeoutBudgetFrame st1 st2 waiter waiterTcb
                 (.blockedOnNotification notificationId) none hOrig1 hObjInv1 hSI)).trans
-                (timeoutBudgetFrame.of_objects_eq (removeRunnable_preserves_objects st2 waiter))
+                (timeoutBudgetFrame.of_objectsAgreeOffRunLinks (removeRunnable_objectsAgreeOffRunLinks st2 waiter))
   · contradiction
   · contradiction
 
@@ -14883,7 +14881,7 @@ theorem endpointSendDual_preserves_pendingReceiveReplyWellFormed
             obtain ⟨_, hEq⟩ := hStep; subst hEq
             have hP2 := storeTcbIpcStateAndMessage_notReceiving_preserves_pendingReceiveReplyWellFormed
               st1 st2 sender (.blockedOnSend endpointId) (some msg) hObjInv1 hP1 ?_ hMsg
-            · exact pendingReceiveReplyWellFormed_of_objects_eq (removeRunnable_preserves_objects st2 sender) hP2
+            · exact pendingReceiveReplyWellFormed_of_objectsAgreeOffRunLinks (removeRunnable_objectsAgreeOffRunLinks st2 sender) hP2
             · -- the enqueue preserves the sender's `ipcState`; carry `hSenderNotRecv` to `st1`.
               intro tcb' hTcb' ep' h
               obtain ⟨tcb0, hTcb0, hIpcEq⟩ := endpointQueueEnqueue_tcb_ipcState_backward
@@ -14939,7 +14937,7 @@ theorem endpointCall_preserves_pendingReceiveReplyWellFormed
             obtain ⟨_, hEq⟩ := hStep; subst hEq
             have hP2 := storeTcbIpcStateAndMessage_notReceiving_preserves_pendingReceiveReplyWellFormed
               st1 st2 caller (.blockedOnCall endpointId) (some msg) hObjInv1 hP1 ?_ hMsg
-            · exact pendingReceiveReplyWellFormed_of_objects_eq (removeRunnable_preserves_objects st2 caller) hP2
+            · exact pendingReceiveReplyWellFormed_of_objectsAgreeOffRunLinks (removeRunnable_objectsAgreeOffRunLinks st2 caller) hP2
             · -- caller's `ipcState` is preserved by the enqueue; carry `hCallerNotRecv` to `st1`.
               intro tcb' hTcb' ep' h
               obtain ⟨tcb0, hTcb0, hIpcEq⟩ := endpointQueueEnqueue_tcb_ipcState_backward
@@ -15033,6 +15031,8 @@ theorem endpointCall_preserves_pendingReceiveReplyWellFormed
                     storeTcbIpcStateAndMessage_preserves_objects_ne (ensureRunnable st2 pair.1) st4 caller _ none r'.toObjId hNe4 hObjInvEns hIpc
                   rw [hStep3]; exact (ensureRunnable_objectsAgreeOffRunLinks _ _).get_reply_iff.mpr (by rw [hStep1]; exact hRobj)
                 -- Apply the `linkServerStashedReply` frame from the post-pop PRR `hP1`.
+                refine pendingReceiveReplyWellFormed_of_objectsAgreeOffRunLinks
+                  (removeRunnable_objectsAgreeOffRunLinks st5 caller) ?_
                 refine linkServerStashedReply_preserves_pendingReceiveReplyWellFormed st4 st5 caller pair.1 hObjInv4 ?_ ?_ hLink
                 · -- hC1Other at `st4`.
                   intro tid tcb ridX hTNeServer hT4 hStash4
@@ -15168,8 +15168,8 @@ theorem notificationWaitPark_preserves_pendingReceiveReplyWellFormed
               have hLookup1 : lookupTcb st1 waiter = some waiterTcb :=
                 lookupTcb_preserved_by_storeObject_notification hLookup hObj hObjInv hSO
               rw [storeTcbIpcStateAndMessage_fromTcb_eq hLookup1] at hSI
-              exact pendingReceiveReplyWellFormed_of_objects_eq
-                (removeRunnable_preserves_objects st2 waiter)
+              exact pendingReceiveReplyWellFormed_of_objectsAgreeOffRunLinks
+                (removeRunnable_objectsAgreeOffRunLinks st2 waiter)
                 (storeTcbIpcStateAndMessage_notReceiving_preserves_pendingReceiveReplyWellFormed
                   st1 st2 waiter (.blockedOnNotification notificationId) none hObjInv1 hInv1
                   (hFrameWaiter _ st1 hSO) hSI)
@@ -16316,7 +16316,7 @@ theorem endpointReceiveDual_preserves_pendingReceiveReplyWellFormed
               | none =>
                 simp only [hGetR, Except.ok.injEq, Prod.mk.injEq] at hStep
                 obtain ⟨_, hEq⟩ := hStep; subst hEq
-                exact pendingReceiveReplyWellFormed_of_objects_eq (removeRunnable_preserves_objects st2 receiver) hP2
+                exact pendingReceiveReplyWellFormed_of_objectsAgreeOffRunLinks (removeRunnable_objectsAgreeOffRunLinks st2 receiver) hP2
               | some rTcb =>
                 simp only [hGetR] at hStep
                 -- WS-SM SM6.D (PR #827 review #6): the `.ok` outcome forces the stash guard
@@ -16360,7 +16360,7 @@ theorem endpointReceiveDual_preserves_pendingReceiveReplyWellFormed
                         st2 stStashed receiver rTcb _ rid hObjInv2 hGetR ?_ ?_ ⟨r, hr, hrc⟩ hUnstashed hP2 hStash
                       · simp [hReplyId]
                       · exact ⟨endpointId, by rw [hRecvBlk]⟩
-                  exact pendingReceiveReplyWellFormed_of_objects_eq (removeRunnable_preserves_objects stStashed receiver) hPStash
+                  exact pendingReceiveReplyWellFormed_of_objectsAgreeOffRunLinks (removeRunnable_objectsAgreeOffRunLinks stStashed receiver) hPStash
 
 open SeLe4n.Model.SystemState in
 /-- D3 (Step 4): `ipcUnwrapCaps` frames `pendingReceiveReplyWellFormed`. Cap transfer
@@ -18562,8 +18562,8 @@ theorem notificationWaitPark_preserves_queueNextBlockingConsistent
               have hLookup1 : lookupTcb st1 waiter = some waiterTcb :=
                 lookupTcb_preserved_by_storeObject_notification hLookup hObj hObjInv hSO
               rw [storeTcbIpcStateAndMessage_fromTcb_eq hLookup1] at hSI
-              exact queueNextBlockingConsistent_of_objects_eq st2 (removeRunnable st2 waiter)
-                (fun x => by rw [removeRunnable_preserves_objects])
+              exact queueNextBlockingConsistent_of_objectsAgreeOffRunLinks
+                (removeRunnable_objectsAgreeOffRunLinks st2 waiter)
                 (storeTcbIpcStateAndMessage_blockedOnNotification_preserves_queueNextBlockingConsistent
                   st1 st2 waiter notificationId none hObjInv1 hInv1 hSI)
   · contradiction
@@ -18649,8 +18649,8 @@ theorem notificationWaitPark_preserves_queueNextTargetBlocked
                   (∀ ep, waiterTcb.ipcState ≠ .blockedOnCall ep) :=
                 ⟨fun ep => by rw [hWReady1]; simp, fun ep => by rw [hWReady1]; simp,
                  fun ep => by rw [hWReady1]; simp⟩
-              exact queueNextTargetBlocked_of_objects_eq st2 (removeRunnable st2 waiter)
-                (fun x => by rw [removeRunnable_preserves_objects])
+              exact queueNextTargetBlocked_of_objectsAgreeOffRunLinks
+                (removeRunnable_objectsAgreeOffRunLinks st2 waiter)
                 (storeTcbIpcStateAndMessage_no_incoming_nonQueueBlocked_preserves_queueNextTargetBlocked
                   st1 st2 waiter (.blockedOnNotification notificationId) none hInv1 hObjInv1
                   ⟨fun _ => by simp, fun _ => by simp, fun _ => by simp⟩

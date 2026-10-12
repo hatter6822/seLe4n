@@ -221,60 +221,6 @@ private theorem list_filter_append_singleton_unobs
   rw [List.filter_append]
   simp [List.filter, hPa]
 
-/-- Removing a non-observable thread preserves low-equivalence projection. -/
-theorem removeRunnable_preserves_projection
-    (ctx : LabelingContext) (observer : IfObserver)
-    (st : SystemState) (tid : SeLe4n.ThreadId)
-    (hTidHigh : threadObservable ctx observer tid = false) :
-    projectState ctx observer (removeRunnable st tid) = projectState ctx observer st := by
-  have hRun : projectRunnable ctx observer (removeRunnable st tid) = projectRunnable ctx observer st := by
-    simp only [projectRunnable, removeRunnable, SchedulerState.runnable,
-      SchedulerState.markReschedulePendingOnCoreIf_runQueueOnCore,
-      SchedulerState.setCurrentOnCore_runQueueOnCore, SchedulerState.setRunQueueOnCore_runQueueOnCore_self]
-    exact RunQueue.toList_filter_remove_neg _ tid (threadObservable ctx observer) hTidHigh
-  have hCur : projectCurrent ctx observer (removeRunnable st tid) = projectCurrent ctx observer st := by
-    simp only [projectCurrent, removeRunnable,
-      SchedulerState.markReschedulePendingOnCoreIf_currentOnCore,
-      SchedulerState.setCurrentOnCore_currentOnCore_self]
-    cases hC : st.scheduler.currentOnCore bootCoreId with
-    | none => simp
-    | some x =>
-      by_cases hEq : some x = some tid
-      · rw [if_pos hEq]; cases (Option.some.inj hEq); simp [hTidHigh]
-      · rw [if_neg hEq]
-  have hObj : projectObjects ctx observer (removeRunnable st tid) = projectObjects ctx observer st := rfl
-  have hSvc : projectServicePresence ctx observer (removeRunnable st tid) =
-      projectServicePresence ctx observer st := funext fun _ => rfl
-  have hDom : projectActiveDomain ctx observer (removeRunnable st tid) =
-      projectActiveDomain ctx observer st := rfl
-  have hIrq : projectIrqHandlers ctx observer (removeRunnable st tid) =
-      projectIrqHandlers ctx observer st := rfl
-  have hIdx : projectObjectIndex ctx observer (removeRunnable st tid) =
-      projectObjectIndex ctx observer st := rfl
-  have hDTR : projectDomainTimeRemaining ctx observer (removeRunnable st tid) =
-      projectDomainTimeRemaining ctx observer st := rfl
-  have hDS : projectDomainSchedule ctx observer (removeRunnable st tid) =
-      projectDomainSchedule ctx observer st := rfl
-  have hDSI : projectDomainScheduleIndex ctx observer (removeRunnable st tid) =
-      projectDomainScheduleIndex ctx observer st := rfl
-  have hMR : projectMachineRegs ctx observer (removeRunnable st tid) =
-      projectMachineRegs ctx observer st := by
-    simp only [projectMachineRegs, removeRunnable,
-      SchedulerState.markReschedulePendingOnCoreIf_currentOnCore,
-      SchedulerState.setCurrentOnCore_currentOnCore_self]
-    cases hC : st.scheduler.currentOnCore bootCoreId with
-    | none => simp
-    | some x =>
-      by_cases hEq : some x = some tid
-      · rw [if_pos hEq]; cases (Option.some.inj hEq); simp [hTidHigh]
-      · rw [if_neg hEq]
-  have hMem : projectMemory ctx observer (removeRunnable st tid) =
-      projectMemory ctx observer st :=
-    projectMemory_eq_of_memory_eq ctx observer (removeRunnable st tid) st rfl
-  have hSvcReg : projectServiceRegistry ctx observer (removeRunnable st tid) =
-      projectServiceRegistry ctx observer st := funext fun _ => rfl
-  simp only [projectState, hObj, hRun, hCur, hSvc, hDom, hIrq, hIdx, hDTR, hDS, hDSI, hMR, hMem, hSvcReg]
-
 /-- WS-ZA ZA4.5: the projection strips every run-queue field from a TCB, so two
 stores agreeing off those fields project equally. -/
 theorem projectObjects_of_objectsAgreeOffRunLinks
@@ -292,6 +238,71 @@ theorem projectObjects_of_objectsAgreeOffRunLinks
         rw [ht']; rfl
       | _ => rw [h.get_of_not_tcb (fun _ e => KernelObject.noConfusion e) e]
   · rfl
+
+/-- Removing a non-observable thread preserves low-equivalence projection. -/
+theorem removeRunnable_preserves_projection
+    (ctx : LabelingContext) (observer : IfObserver)
+    (st : SystemState) (tid : SeLe4n.ThreadId)
+    (hTidHigh : threadObservable ctx observer tid = false) :
+    projectState ctx observer (removeRunnable st tid) = projectState ctx observer st := by
+  have hS := removeRunnable_scheduler st tid
+  have hD := removeRunnable_onlyObjectsSchedulerDiffer st tid
+  unfold SystemState.onlyObjectsSchedulerDiffer at hD
+  have hRun : projectRunnable ctx observer (removeRunnable st tid) = projectRunnable ctx observer st := by
+    simp only [projectRunnable, hS, SchedulerState.runnable,
+      SchedulerState.markReschedulePendingOnCoreIf_runQueueOnCore,
+      SchedulerState.setCurrentOnCore_runQueueOnCore, SchedulerState.setRunQueueOnCore_runQueueOnCore_self]
+    exact RunQueue.toList_filter_remove_neg _ tid (threadObservable ctx observer) hTidHigh
+  have hCur : projectCurrent ctx observer (removeRunnable st tid) = projectCurrent ctx observer st := by
+    simp only [projectCurrent, hS,
+      SchedulerState.markReschedulePendingOnCoreIf_currentOnCore,
+      SchedulerState.setCurrentOnCore_currentOnCore_self]
+    cases hC : st.scheduler.currentOnCore bootCoreId with
+    | none => simp
+    | some x =>
+      by_cases hEq : some x = some tid
+      · rw [if_pos hEq]; cases (Option.some.inj hEq); simp [hTidHigh]
+      · rw [if_neg hEq]
+  have hObj : projectObjects ctx observer (removeRunnable st tid) = projectObjects ctx observer st :=
+    projectObjects_of_objectsAgreeOffRunLinks ctx observer (removeRunnable_objectsAgreeOffRunLinks st tid)
+  have hSvc : projectServicePresence ctx observer (removeRunnable st tid) =
+      projectServicePresence ctx observer st := funext fun _ => by rw [hD]; rfl
+  have hDom : projectActiveDomain ctx observer (removeRunnable st tid) =
+      projectActiveDomain ctx observer st := by
+    rw [hD]; first | rfl | simp [projectActiveDomain, hS]
+  have hIrq : projectIrqHandlers ctx observer (removeRunnable st tid) =
+      projectIrqHandlers ctx observer st := by
+    rw [hD]; rfl
+  have hIdx : projectObjectIndex ctx observer (removeRunnable st tid) =
+      projectObjectIndex ctx observer st := by
+    rw [hD]; rfl
+  have hDTR : projectDomainTimeRemaining ctx observer (removeRunnable st tid) =
+      projectDomainTimeRemaining ctx observer st := by
+    rw [hD]; first | rfl | simp [projectDomainTimeRemaining, hS]
+  have hDS : projectDomainSchedule ctx observer (removeRunnable st tid) =
+      projectDomainSchedule ctx observer st := by
+    rw [hD]; first | rfl | simp [projectDomainSchedule, hS]
+  have hDSI : projectDomainScheduleIndex ctx observer (removeRunnable st tid) =
+      projectDomainScheduleIndex ctx observer st := by
+    rw [hD]; first | rfl | simp [projectDomainScheduleIndex, hS]
+  have hMR : projectMachineRegs ctx observer (removeRunnable st tid) =
+      projectMachineRegs ctx observer st := by
+    rw [hD]
+    simp only [projectMachineRegs, hS,
+      SchedulerState.markReschedulePendingOnCoreIf_currentOnCore,
+      SchedulerState.setCurrentOnCore_currentOnCore_self]
+    cases hC : st.scheduler.currentOnCore bootCoreId with
+    | none => simp
+    | some x =>
+      by_cases hEq : some x = some tid
+      · rw [if_pos hEq]; cases (Option.some.inj hEq); simp [hTidHigh]
+      · rw [if_neg hEq]
+  have hMem : projectMemory ctx observer (removeRunnable st tid) =
+      projectMemory ctx observer st :=
+    projectMemory_eq_of_memory_eq ctx observer (removeRunnable st tid) st (by rw [hD])
+  have hSvcReg : projectServiceRegistry ctx observer (removeRunnable st tid) =
+      projectServiceRegistry ctx observer st := funext fun _ => by rw [hD]; rfl
+  simp only [projectState, hObj, hRun, hCur, hSvc, hDom, hIrq, hIdx, hDTR, hDS, hDSI, hMR, hMem, hSvcReg]
 
 /-- Adding a non-observable thread to runnable preserves low-equivalence projection. -/
 theorem ensureRunnable_preserves_projection

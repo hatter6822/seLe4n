@@ -12,6 +12,7 @@
 
 import SeLe4n.Kernel.IPC.Invariant.Structural
 import SeLe4n.Kernel.IPC.Operations.Donation
+import SeLe4n.Kernel.IPC.Invariant.LookupCongruence
 
 /-!
 # WS-RR RR2.5 — the donation primitives preserve the IPC invariant bundle
@@ -1380,12 +1381,12 @@ theorem donateSchedContext_cdt_eq
   obtain ⟨_, _, _, _, _, _, s1, s2, s3, s4, _, _, _, _, hS1, hS2, _, hS3, _, hS4, hEq⟩ :=
     donateSchedContext_ok_storeChain st st' clientTid serverTid clientScId h
   have e1 : s1.cdt = st.cdt ∧ s1.cdtNodeSlot = st.cdtNodeSlot :=
-    ⟨storeObject_cdt_eq _ _ _ _ hS1, storeObject_cdtNodeSlot_eq _ _ _ _ hS1⟩
+    ⟨storeObject_cdt_eq _ _ _ _ hS1, (storeObject_cdtNodeSlot_eq _ _ _ _ hS1).1⟩
   have e2 := storeDonationFramePush_cdt_eq hS2
   have e3 : s3.cdt = s2.cdt ∧ s3.cdtNodeSlot = s2.cdtNodeSlot :=
-    ⟨storeObject_cdt_eq _ _ _ _ hS3, storeObject_cdtNodeSlot_eq _ _ _ _ hS3⟩
+    ⟨storeObject_cdt_eq _ _ _ _ hS3, (storeObject_cdtNodeSlot_eq _ _ _ _ hS3).1⟩
   have e4 : s4.cdt = s3.cdt ∧ s4.cdtNodeSlot = s3.cdtNodeSlot :=
-    ⟨storeObject_cdt_eq _ _ _ _ hS4, storeObject_cdtNodeSlot_eq _ _ _ _ hS4⟩
+    ⟨storeObject_cdt_eq _ _ _ _ hS4, (storeObject_cdtNodeSlot_eq _ _ _ _ hS4).1⟩
   refine ⟨?_, ?_⟩
   · rw [show st'.cdt = s4.cdt by rw [hEq], e4.1, e3.1, e2.1, e1.1]
   · rw [show st'.cdtNodeSlot = s4.cdtNodeSlot by rw [hEq], e4.2, e3.2, e2.2, e1.2]
@@ -1981,16 +1982,11 @@ Stated over an arbitrary object-preserving deschedule rather than over
 migration in between — both object-store frames, neither of them `removeRunnable`. -/
 theorem ipcInvariantFull_of_descheduleFrame
     (st' st'' : SystemState) (hInv : ipcInvariantFull st')
-    (hObjs : st''.objects = st'.objects)
+    (hA : st''.objectsAgreeOffRunLinks st')
     (hFrame : passiveServerIdleFrame st' st'') :
     ipcInvariantFull st'' :=
-  ipcInvariantFull_of_donationReadAgreement st' st'' hInv
-    (donationReadAgreement_of_objects_eq hObjs (donationReadAgreement.refl st'))
-    (donationChainAcyclic_of_objects_eq hObjs hInv.donationChainAcyclic)
-    (donationOwnerValid_of_objects_eq hObjs hInv.donationOwnerValid)
-    (passiveServerIdle_of_frame hFrame hInv.passiveServerIdle)
-    (donationBudgetTransfer_of_objects_eq hObjs hInv.donationBudgetTransfer)
-    (donationOwnerUnique_of_objects_eq hObjs hInv.donationOwnerUnique)
+  ipcInvariantFull_of_objectsAgreeOffRunLinks hA
+    (passiveServerIdle_of_frame hFrame hInv.passiveServerIdle) hInv
 
 /-- **WS-RR RR2.5**: `applyReplyDonation` preserves the whole twenty-conjunct IPC
 bundle — the return (`returnDonatedSchedContext_preserves_ipcInvariantFull`)
@@ -2095,7 +2091,7 @@ theorem applyReplyDonation_preserves_ipcInvariantFull
     rw [hPEq] at hPPost
     rw [hEq]
     refine ipcInvariantFull_of_descheduleFrame st' _ hFull'
-      (removeRunnable_preserves_objects st' holderVtid.val)
+      (removeRunnable_objectsAgreeOffRunLinks st' holderVtid.val)
       (removeRunnable_passiveServerIdleFrame st' holderVtid.val (fun tcb hTcb => ?_))
     have hEqT : { pTcb with schedContextBinding := .unbound } = tcb :=
       Option.some.inj (hPPost.symm.trans ((getTcb?_eq_some_iff st' _ tcb).mpr hTcb))
@@ -2229,7 +2225,7 @@ theorem applyReplyDonation_establishes_ipcInvariantFull_of_except
       rw [hPEq] at hPPost
       rw [hEq]
       refine ipcInvariantFull_of_descheduleFrame st' _ hFull'
-        (removeRunnable_preserves_objects st' holderVtid.val)
+        (removeRunnable_objectsAgreeOffRunLinks st' holderVtid.val)
         (removeRunnable_passiveServerIdleFrame st' holderVtid.val (fun tcb hTcb => ?_))
       have hEqT : { pTcb with schedContextBinding := .unbound } = tcb :=
         Option.some.inj (hPPost.symm.trans ((getTcb?_eq_some_iff st' _ tcb).mpr hTcb))
@@ -2252,8 +2248,8 @@ theorem applyReplyDonation_preserves_objects_invExt
   rcases applyReplyDonation_ok_decompose st st'' rid targetVtid h with
     ⟨_, hEq⟩ | ⟨scId, holderVtid, newOwner?, st', _, _, hR, hEq⟩
   · rw [hEq]; exact hObjInv
-  · rw [hEq, show (removeRunnable st' holderVtid.val).objects = st'.objects from
-      removeRunnable_preserves_objects st' holderVtid.val]
+  · rw [hEq]
+    refine removeRunnable_objects_invExt _ _ ?_
     exact returnDonatedSchedContext_preserves_objects_invExt st st' holderVtid.val scId
       (replyDonationRecipient st scId targetVtid.val) hObjInv newOwner? hR
 

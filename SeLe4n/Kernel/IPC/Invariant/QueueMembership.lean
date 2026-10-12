@@ -196,8 +196,8 @@ theorem removeRunnable_preserves_ipcStateQueueMembershipConsistent
     (st : SystemState) (tid : SeLe4n.ThreadId)
     (hInv : ipcStateQueueMembershipConsistent st) :
     ipcStateQueueMembershipConsistent (removeRunnable st tid) :=
-  ipcStateQueueMembershipConsistent_of_objects_eq st (removeRunnable st tid)
-    (fun x => congrArg (·.get? x) (removeRunnable_preserves_objects st tid)) hInv
+  ipcStateQueueMembershipConsistent_of_objectsAgreeOffRunLinks
+    (removeRunnable_objectsAgreeOffRunLinks st tid) hInv
 
 -- ============================================================================
 -- Section 3: TCB-store primitives

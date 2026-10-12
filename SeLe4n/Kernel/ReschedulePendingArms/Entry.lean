@@ -34,7 +34,7 @@ theorem faultSuspendOnCore_stepCovers (e : CoreId) (st : SystemState) (tid : SeL
     (c : CoreId) (hInv : st.objects.invExt) :
     stepCovers e st (faultSuspendOnCore st tid c) ∧ (faultSuspendOnCore st tid c).objects.invExt := by
   have hF := updateTcb_keyFrame (removeRunnableOnCore st tid c) tid
-    (f := fun tcb => { tcb with threadState := .Inactive }) (fun _ => rfl) (by exact hInv)
+    (f := fun tcb => { tcb with threadState := .Inactive }) (fun _ => rfl) (removeRunnableOnCore_objects_invExt st tid c hInv)
   exact ⟨stepCovers_trans (removeRunnableOnCore_stepCovers e st tid c) hF.stepCovers, hF.2.2⟩
 
 theorem recordPendingFault_keyFrame (st : SystemState) (tid : SeLe4n.ThreadId) (tf : ThreadFault)

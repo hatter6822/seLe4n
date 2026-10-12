@@ -87,6 +87,14 @@ theorem ipcStateFrame_of_objects_eq {st st' : SystemState}
   intro t tcb' hTcb
   exact ⟨tcb', by rw [← h]; exact hTcb, rfl⟩
 
+/-- WS-ZA ZA4.5: a step that writes only run-queue links frames every
+`ipcState`. -/
+theorem ipcStateFrame_of_objectsAgreeOffRunLinks {st st' : SystemState}
+    (h : st'.objectsAgreeOffRunLinks st) : ipcStateFrame st st' := by
+  intro t tcb' hTcb
+  obtain ⟨t0, h0, hE⟩ := h.get_tcb' hTcb
+  exact ⟨t0, h0, (TCB.proj_eq_of_withoutRunLinks_eq TCB.ipcState hE).symm⟩
+
 /-- WS-RR RR8.16: the donation read agreement frames every `ipcState`.
 
 Its `tcbBwd` clause already states exactly this conjunct, so every transition with
@@ -145,11 +153,11 @@ theorem linkServerStashedReply_ipcStateFrame
     linkServerStashedReply_tcb_ipcState_backward st st' caller server y tcbY' hObjInv
       hStep hTcb
 
-/-- WS-RR RR8.16: a run-queue removal writes no object. -/
+/-- WS-RR RR8.16: a run-queue removal writes only run-queue links. -/
 theorem removeRunnableOnCore_ipcStateFrame (st : SystemState)
     (tid : SeLe4n.ThreadId) (c : CoreId) :
     ipcStateFrame st (removeRunnableOnCore st tid c) :=
-  ipcStateFrame_of_objects_eq (removeRunnableOnCore_preserves_objects st tid c)
+  ipcStateFrame_of_objectsAgreeOffRunLinks (removeRunnableOnCore_objectsAgreeOffRunLinks st tid c)
 
 /-- WS-RR RR8.16: a priority-inheritance boost frames every `ipcState`.
 
@@ -757,8 +765,8 @@ theorem endpointSendDualOnCore_sameSchedContextBindings
               simp only []
               exact (hS1.trans (storeTcbIpcStateAndMessage_sameSchedContextBindings st1 st2
                 sender _ (some msg) hInv1 hIpc)).trans
-                (sameSchedContextBindings.of_objects_eq
-                  (removeRunnableOnCore_preserves_objects st2 sender executingCore))
+                (sameSchedContextBindings.of_objectsAgreeOffRunLinks
+                  (removeRunnableOnCore_objectsAgreeOffRunLinks st2 sender executingCore))
         | some _ =>
           simp only []
           cases hSnd : st.getTcb? sender with

@@ -79,8 +79,9 @@ theorem applyReplyDonationOnCore_preserves_donationChainWellFormed_of_except
         (hChainHead scId holderVtid.val · · · hHead) hRet
     rw [hEq]
     refine donationChainWellFormed_of_frame ?_ hChain'
-    exact donationChainFrame.of_objects_eq
-      (by rw [descheduleAtPlacement_preserves_objects, migrateSchedContextReplenishment_objects])
+    exact donationChainFrame.of_objectsAgreeOffRunLinks
+      ((descheduleAtPlacement_objectsAgreeOffRunLinks _ _).trans
+        (.of_objects_eq (migrateSchedContextReplenishment_objects _ _ _ _)))
 
 /-- **WS-RM (`v0.35.6`)**: what the cross-core reply leg leaves of the donation
 chain.
@@ -265,13 +266,13 @@ theorem applyReplyDonationOnCore_preserves_ipcInvariantFull
     have hMRq := migrateSchedContextReplenishment_runQueue_current_eq st' scId holderHome
       ownerHome bootCoreId
     have hFullM : ipcInvariantFull stM :=
-      ipcInvariantFull_of_descheduleFrame st' stM hFull' hMObjs
+      ipcInvariantFull_of_descheduleFrame st' stM hFull' (.of_objects_eq hMObjs)
         (passiveServerIdleFrame.of_objects_scheduler_eq hMObjs hMRq.1 hMRq.2)
     -- The deschedule writes only the placed core's queue and `current` slot --
     -- and nothing at all when the state places the holder on no core.
     rw [hEq]
     refine ipcInvariantFull_of_descheduleFrame stM _ hFullM
-      (descheduleAtPlacement_preserves_objects stM holderVtid.val)
+      (descheduleAtPlacement_objectsAgreeOffRunLinks stM holderVtid.val)
       (descheduleAtPlacement_passiveServerIdleFrame stM holderVtid.val
         (fun tcb hTcb => ?_))
     rw [hMObjs] at hTcb
@@ -382,11 +383,11 @@ theorem applyReplyDonationOnCore_establishes_ipcInvariantFull_of_except
       have hMRq := migrateSchedContextReplenishment_runQueue_current_eq st' scId holderHome
         ownerHome bootCoreId
       have hFullM : ipcInvariantFull stM :=
-        ipcInvariantFull_of_descheduleFrame st' stM hFull' hMObjs
+        ipcInvariantFull_of_descheduleFrame st' stM hFull' (.of_objects_eq hMObjs)
           (passiveServerIdleFrame.of_objects_scheduler_eq hMObjs hMRq.1 hMRq.2)
       rw [hEq]
       refine ipcInvariantFull_of_descheduleFrame stM _ hFullM
-        (descheduleAtPlacement_preserves_objects stM holderVtid.val)
+        (descheduleAtPlacement_objectsAgreeOffRunLinks stM holderVtid.val)
         (descheduleAtPlacement_passiveServerIdleFrame stM holderVtid.val
           (fun tcb hTcb => ?_))
       rw [hMObjs] at hTcb
@@ -417,8 +418,9 @@ theorem applyReplyDonationOnCore_preserves_objects_invExt
   · rw [hEq]; exact hObjInv
   · have hInv' := returnDonatedSchedContext_preserves_objects_invExt st st' holderVtid.val scId
       (replyDonationRecipient st scId targetVtid.val) hObjInv n hR
-    rw [hEq, descheduleAtPlacement_preserves_objects, migrateSchedContextReplenishment_objects]
-    exact hInv'
+    rw [hEq]
+    exact descheduleAtPlacement_preserves_objects_invExt _ _
+      (by rw [migrateSchedContextReplenishment_objects]; exact hInv')
 
 /-- **WS-RR RR8.16 (`v0.35.195`)**: the cross-core donation return preserves every
 thread's `ipcState` backward.
@@ -426,7 +428,7 @@ thread's `ipcState` backward.
 Its three object writes rewrite a `SchedContext`'s `boundThread` and two TCBs'
 `schedContextBinding` (`returnDonatedSchedContext_tcb_ipcState_replyObject_backward`),
 and the migration and the deschedule write no object at all — which is what
-`applyReplyDonationOnCore_objects_eq` already says, so this costs no second case
+`applyReplyDonationOnCore_objects_frame` already says, so this costs no second case
 analysis over the return's arms. -/
 theorem applyReplyDonationOnCore_tcb_ipcState_backward
     (st st'' : SystemState) (rid : SeLe4n.ReplyId) (targetVtid : SeLe4n.ValidThreadId)
@@ -436,14 +438,14 @@ theorem applyReplyDonationOnCore_tcb_ipcState_backward
     (t : SeLe4n.ObjId) (tcb' : TCB)
     (hTcb' : st''.objects[t]? = some (.tcb tcb')) :
     ∃ tcb, st.objects[t]? = some (.tcb tcb) ∧ tcb.ipcState = tcb'.ipcState := by
-  rcases applyReplyDonationOnCore_objects_eq st st'' rid targetVtid holderHome ownerHome h with
+  rcases applyReplyDonationOnCore_objects_frame st st'' rid targetVtid holderHome ownerHome h with
     ⟨_, hObj⟩ | ⟨scId, holder, newOwner?, st', hRet, hObj⟩
   · exact ⟨tcb', by rw [← hObj]; exact hTcb', rfl⟩
-  · rw [hObj] at hTcb'
+  · obtain ⟨t0, hT0, hE⟩ := hObj.get_tcb' hTcb'
     obtain ⟨tcb, hPre, hIpc, _⟩ :=
       returnDonatedSchedContext_tcb_ipcState_replyObject_backward st st' holder scId
-        (replyDonationRecipient st scId targetVtid.val) hObjInv newOwner? hRet t tcb' hTcb'
-    exact ⟨tcb, hPre, hIpc⟩
+        (replyDonationRecipient st scId targetVtid.val) hObjInv newOwner? hRet t t0 hT0
+    exact ⟨tcb, hPre, hIpc.trans (TCB.proj_eq_of_withoutRunLinks_eq TCB.ipcState hE).symm⟩
 
 /-- **WS-RR RR8.16 (`v0.35.195`)**: a successful cross-core reply leaves the thread
 it answers `.ready`.
@@ -1049,7 +1051,7 @@ theorem applyReplyDonationOnCore_preserves_schedulerInvariantBase_smp
 /-- WS-RR RR8.16 (`v0.35.199`): **and the capability bundle.**
 
 The migration and the deschedule write no object at all
-(`applyReplyDonationOnCore_objects_eq` reads the pop down to the return's own
+(`applyReplyDonationOnCore_objects_frame` reads the pop down to the return's own
 store), so this is the return's lift plus a `_of_objects_and_cdt_eq`. -/
 theorem applyReplyDonationOnCore_preserves_capabilityInvariantBundle
     {st st'' : SystemState} {rid : SeLe4n.ReplyId} {targetVtid : SeLe4n.ValidThreadId}
@@ -1061,12 +1063,14 @@ theorem applyReplyDonationOnCore_preserves_capabilityInvariantBundle
     with ⟨_, rfl⟩ | ⟨scId, holderVtid, newOwner?, st', _, _, hRet, hEq⟩
   · exact h
   · subst hEq
-    refine capabilityInvariantBundle_of_objects_and_cdt_eq
-      (returnDonatedSchedContext_preserves_capabilityInvariantBundle h hRet) ?_ ?_ ?_
-    · rw [descheduleAtPlacement_preserves_objects,
-        migrateSchedContextReplenishment_objects]
+    have hRetB := returnDonatedSchedContext_preserves_capabilityInvariantBundle h hRet
+    refine capabilityInvariantBundle_of_kindPreserving hRetB ?_ ?_ ?_ ?_
     · rw [descheduleAtPlacement_cdtNodeSlot, migrateSchedContextReplenishment_cdtNodeSlot]
     · rw [descheduleAtPlacement_cdt, migrateSchedContextReplenishment_cdt]
+    · exact descheduleAtPlacement_preserves_objects_invExt _ _
+        (by rw [migrateSchedContextReplenishment_objects]; exact hRetB.2.2.2.2.2.1)
+    · exact ((descheduleAtPlacement_objectsAgreeOffRunLinks _ _).trans
+        (.of_objects_eq (migrateSchedContextReplenishment_objects _ _ _ _))).kindPreserving
 
 -- **WS-RR RR8.16** (`v0.35.200`): relocated here from the staged
 -- `IPC/Invariant/FaultPreservation.lean`, so the production fault-path bundle

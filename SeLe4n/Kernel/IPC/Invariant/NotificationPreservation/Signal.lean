@@ -273,7 +273,7 @@ theorem notificationWaitPark_preserves_ipcInvariant
                 intro ⟨_, hEq⟩; subst hEq
                 have hInv2 := storeTcbIpcStateAndMessage_preserves_ipcInvariant pair.2 st'' waiter
                   (.blockedOnNotification notificationId) none hInv1 hObjInv1 hTcb
-                exact fun oid ntfn' h => hInv2 oid ntfn' (by rwa [removeRunnable_preserves_objects] at h)
+                exact fun oid ntfn' h => hInv2 oid ntfn' ((removeRunnable_objectsAgreeOffRunLinks _ _).get_notification_iff.mp h)
 
 /-- WS-F4: notificationWait preserves schedulerInvariantBundle.
 Badge-consume path: storeObject + storeTcbIpcState (scheduler unchanged).
@@ -384,13 +384,14 @@ theorem notificationWaitPark_preserves_schedulerInvariantBundle
                       exact removeRunnable_not_mem_of_not_mem st'' waiter x (hSchedEq ▸ hNotMem)
                 · exact removeRunnable_nodup st'' waiter (hSchedEq ▸ hRQU)
                 · unfold currentThreadValid
-                  rw [removeRunnable_preserves_objects, removeRunnable_scheduler_current, hCurrEq]
+                  rw [removeRunnable_scheduler_current, hCurrEq]
                   cases hCurr : (st.scheduler.currentOnCore bootCoreId) with
                   | none => simp
                   | some x =>
                     by_cases hEq' : x = waiter
                     · subst hEq'; simp
                     · rw [if_neg (show ¬(some x = some waiter) from fun h => hEq' (Option.some.inj h))]
+                      refine (removeRunnable_objectsAgreeOffRunLinks _ _).exists_tcb_iff.mpr ?_
                       show ∃ tcb, st''.objects[x.toObjId]? = some (.tcb tcb)
                       have hCTV' : ∃ tcb', st.objects[x.toObjId]? = some (.tcb tcb') := by
                         simp [currentThreadValid, hCurr] at hCTV; exact hCTV
@@ -741,7 +742,7 @@ theorem notificationWaitPark_preserves_ipcSchedulerContractPredicates
                 refine ⟨?_, ?_, ?_, ?_, ?_, ?_⟩
                 · -- runnableThreadIpcReady
                   intro tid tcb' hTcb' hRun'
-                  rw [removeRunnable_preserves_objects] at hTcb'
+                  run_links_back (removeRunnable_objectsAgreeOffRunLinks _ _) at tcb' hTcb'
                   rw [removeRunnable_runnable_mem] at hRun'
                   have ⟨hMem, hNeTid⟩ := hRun'
                   have hNe : tid.toObjId ≠ waiter.toObjId :=
@@ -757,7 +758,7 @@ theorem notificationWaitPark_preserves_ipcSchedulerContractPredicates
                   exact hReady tid tcb' hTcbPre (show tid ∈ st.scheduler.runnable by rwa [← hSchedEq])
                 · -- blockedOnSendNotRunnable
                   intro tid tcb' eid hTcb' hIpcState'
-                  rw [removeRunnable_preserves_objects] at hTcb'
+                  run_links_back (removeRunnable_objectsAgreeOffRunLinks _ _) at tcb' hTcb'
                   by_cases hNe : tid.toObjId = waiter.toObjId
                   · have := storeTcbIpcStateAndMessage_ipcState_eq pair.2 st'' waiter
                         (.blockedOnNotification notificationId) none hObjInv1 hTcb tcb' (hNe ▸ hTcb')
@@ -777,7 +778,7 @@ theorem notificationWaitPark_preserves_ipcSchedulerContractPredicates
                       (show tid ∈ st.scheduler.runnable by rwa [← hSchedEq])
                 · -- blockedOnReceiveNotRunnable
                   intro tid tcb' eid hTcb' hIpcState'
-                  rw [removeRunnable_preserves_objects] at hTcb'
+                  run_links_back (removeRunnable_objectsAgreeOffRunLinks _ _) at tcb' hTcb'
                   by_cases hNe : tid.toObjId = waiter.toObjId
                   · have := storeTcbIpcStateAndMessage_ipcState_eq pair.2 st'' waiter
                         (.blockedOnNotification notificationId) none hObjInv1 hTcb tcb' (hNe ▸ hTcb')
@@ -797,7 +798,7 @@ theorem notificationWaitPark_preserves_ipcSchedulerContractPredicates
                       (show tid ∈ st.scheduler.runnable by rwa [← hSchedEq])
                 · -- blockedOnCallNotRunnable
                   intro tid tcb' eid hTcb' hIpcState'
-                  rw [removeRunnable_preserves_objects] at hTcb'
+                  run_links_back (removeRunnable_objectsAgreeOffRunLinks _ _) at tcb' hTcb'
                   by_cases hNe : tid.toObjId = waiter.toObjId
                   · have := storeTcbIpcStateAndMessage_ipcState_eq pair.2 st'' waiter
                         (.blockedOnNotification notificationId) none hObjInv1 hTcb tcb' (hNe ▸ hTcb')
@@ -817,7 +818,7 @@ theorem notificationWaitPark_preserves_ipcSchedulerContractPredicates
                       (show tid ∈ st.scheduler.runnable by rwa [← hSchedEq])
                 · -- blockedOnReplyNotRunnable
                   intro tid tcb' eid rt hTcb' hIpcState'
-                  rw [removeRunnable_preserves_objects] at hTcb'
+                  run_links_back (removeRunnable_objectsAgreeOffRunLinks _ _) at tcb' hTcb'
                   by_cases hNe : tid.toObjId = waiter.toObjId
                   · have := storeTcbIpcStateAndMessage_ipcState_eq pair.2 st'' waiter
                         (.blockedOnNotification notificationId) none hObjInv1 hTcb tcb' (hNe ▸ hTcb')
@@ -837,7 +838,7 @@ theorem notificationWaitPark_preserves_ipcSchedulerContractPredicates
                       (show tid ∈ st.scheduler.runnable by rwa [← hSchedEq])
                 · -- blockedOnNotificationNotRunnable (WS-F6/D2)
                   intro tid tcb' nid hTcb' hIpcState'
-                  rw [removeRunnable_preserves_objects] at hTcb'
+                  run_links_back (removeRunnable_objectsAgreeOffRunLinks _ _) at tcb' hTcb'
                   by_cases hNe : tid.toObjId = waiter.toObjId
                   · -- tid matches waiter: waiter was removed from runnable
                     have hTidEq := ThreadId.toObjId_injective tid waiter hNe

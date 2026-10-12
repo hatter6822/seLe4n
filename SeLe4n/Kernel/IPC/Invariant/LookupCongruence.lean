@@ -291,14 +291,16 @@ theorem ensureRunnable_offSchedulerAgrees (st : SystemState) (tid : SeLe4n.Threa
 input off-scheduler. -/
 theorem removeRunnable_offSchedulerAgrees (st : SystemState) (tid : SeLe4n.ThreadId) :
     OffSchedulerAgrees st (removeRunnable st tid) :=
-  offSchedulerAgrees_scheduler_update st _
+  .of_runLinkStep (removeRunnable_onlyObjectsSchedulerDiffer st tid)
+    (removeRunnable_objectsAgreeOffRunLinks st tid)
 
 /-- SM6.D: `removeRunnableOnCore` (the per-core dequeue) agrees with its
 input off-scheduler. -/
 theorem removeRunnableOnCore_offSchedulerAgrees (st : SystemState)
     (tid : SeLe4n.ThreadId) (c : CoreId) :
     OffSchedulerAgrees st (removeRunnableOnCore st tid c) :=
-  offSchedulerAgrees_scheduler_update st _
+  .of_runLinkStep (removeRunnableOnCore_onlyObjectsSchedulerDiffer st tid c)
+    (removeRunnableOnCore_objectsAgreeOffRunLinks st tid c)
 
 /-- **`v0.35.161`**: a replenishment migration is a scheduler-only update, or the
 identity — it moves a SchedContext's CBS replenishments between two cores'

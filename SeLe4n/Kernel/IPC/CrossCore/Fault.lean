@@ -134,7 +134,8 @@ theorem faultSuspendOnCore_preserves_objects_invExt
     (hObjInv : st.objects.invExt) :
     (faultSuspendOnCore st tid c).objects.invExt := by
   unfold faultSuspendOnCore
-  exact SystemState.updateTcb_preserves_objects_invExt _ _ _ hObjInv
+  exact SystemState.updateTcb_preserves_objects_invExt _ _ _
+    (removeRunnableOnCore_objects_invExt st tid c hObjInv)
 
 /-- WS-RR RR4.18: and it preserves the object-store invariant. -/
 theorem faultAbandonOnCore_preserves_objects_invExt
@@ -142,16 +143,19 @@ theorem faultAbandonOnCore_preserves_objects_invExt
     (hObjInv : st.objects.invExt) :
     (faultAbandonOnCore st tid c).objects.invExt := by
   unfold faultAbandonOnCore
-  exact SystemState.updateTcb_preserves_objects_invExt _ _ _ hObjInv
+  exact SystemState.updateTcb_preserves_objects_invExt _ _ _
+    (removeRunnableOnCore_objects_invExt st tid c hObjInv)
 
 /-- **WS-RR RR8.16** (`v0.35.200`): both fail-closed dispositions are
-`kindPreservingWrite`s — the deschedule writes no object at all and the
+`kindPreservingWrite`s — the deschedule writes only run-queue links and the
 `.Inactive` store is `updateTcb` — and neither touches a derivation table. -/
 theorem faultSuspendOnCore_kindPreservingWrite (st : SystemState) (tid : SeLe4n.ThreadId)
     (c : CoreId) (hObjInv : st.objects.invExt) :
     kindPreservingWrite st (faultSuspendOnCore st tid c) := by
   unfold faultSuspendOnCore
-  exact SystemState.updateTcb_kindPreservingWrite _ tid _ hObjInv
+  exact (removeRunnableOnCore_objectsAgreeOffRunLinks st tid c).kindPreserving.trans
+    (SystemState.updateTcb_kindPreservingWrite _ tid _
+      (removeRunnableOnCore_objects_invExt st tid c hObjInv))
 
 theorem faultSuspendOnCore_cdt_eq (st : SystemState) (tid : SeLe4n.ThreadId) (c : CoreId) :
     (faultSuspendOnCore st tid c).cdt = st.cdt
@@ -164,7 +168,9 @@ theorem faultAbandonOnCore_kindPreservingWrite (st : SystemState) (tid : SeLe4n.
     (c : CoreId) (hObjInv : st.objects.invExt) :
     kindPreservingWrite st (faultAbandonOnCore st tid c) := by
   unfold faultAbandonOnCore
-  exact SystemState.updateTcb_kindPreservingWrite _ tid _ hObjInv
+  exact (removeRunnableOnCore_objectsAgreeOffRunLinks st tid c).kindPreserving.trans
+    (SystemState.updateTcb_kindPreservingWrite _ tid _
+      (removeRunnableOnCore_objects_invExt st tid c hObjInv))
 
 theorem faultAbandonOnCore_cdt_eq (st : SystemState) (tid : SeLe4n.ThreadId) (c : CoreId) :
     (faultAbandonOnCore st tid c).cdt = st.cdt

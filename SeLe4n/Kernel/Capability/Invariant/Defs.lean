@@ -1143,29 +1143,29 @@ private theorem cdtPredicates_through_blocking_path
   have hBnd1 := cspaceSlotCountBounded_of_storeObject_nonCNode st st1 endpointId (.endpoint ep)
     hBounded hObjInv hStore (fun cn h => by cases h)
   have hBnd2 := cspaceSlotCountBounded_of_storeTcbIpcState st1 st2 target ipc hBnd1 hObjInv1 hTcb
-  refine ⟨?_, ?_, ?_⟩
-  · exact cspaceSlotCountBounded_of_objects_eq st2 _ hBnd2 (removeRunnable_preserves_objects st2 target)
-  · -- cdtCompleteness transfers through storeObject, storeTcbIpcState, removeRunnable
-    -- All three only replace object entries (never delete), so objects[ref.cnode]? ≠ none is preserved
-    have hComp1 := cdtCompleteness_of_storeObject st st1 endpointId (.endpoint ep) hComp hObjInv hStore hNS1
-    have hComp2 : cdtCompleteness st2 := by
-      unfold storeTcbIpcState modifyTcb at hTcb
-      cases hLookup : lookupTcb st1 target with
-      | none => simp [hLookup] at hTcb
-      | some tcb =>
-        simp only [hLookup] at hTcb
-        cases hS : storeObject target.toObjId (.tcb { tcb with ipcState := ipc }) st1 with
-        | error e => simp [hS] at hTcb
-        | ok pair =>
-          simp only [hS] at hTcb
-          have hEq := Except.ok.inj hTcb; subst hEq
-          exact cdtCompleteness_of_storeObject st1 pair.2 target.toObjId _ hComp1 hObjInv1 hS
-            (storeObject_cdtNodeSlot_eq st1 pair.2 target.toObjId _ hS).1
-    exact cdtCompleteness_of_objects_nodeSlot_eq st2 _ hComp2
-      (removeRunnable_preserves_objects st2 target)
-      (by simp [removeRunnable])
-  · exact cdtAcyclicity_of_cdt_eq st (removeRunnable st2 target) hAcyclic
-      (by show (removeRunnable st2 target).cdt = st.cdt; simp [removeRunnable]; rw [hCdt2, hCdt1])
+  have hComp1 := cdtCompleteness_of_storeObject st st1 endpointId (.endpoint ep) hComp hObjInv hStore hNS1
+  have hComp2 : cdtCompleteness st2 := by
+    unfold storeTcbIpcState modifyTcb at hTcb
+    cases hLookup : lookupTcb st1 target with
+    | none => simp [hLookup] at hTcb
+    | some tcb =>
+      simp only [hLookup] at hTcb
+      cases hS : storeObject target.toObjId (.tcb { tcb with ipcState := ipc }) st1 with
+      | error e => simp [hS] at hTcb
+      | ok pair =>
+        simp only [hS] at hTcb
+        have hEq := Except.ok.inj hTcb; subst hEq
+        exact cdtCompleteness_of_storeObject st1 pair.2 target.toObjId _ hComp1 hObjInv1 hS
+          (storeObject_cdtNodeSlot_eq st1 pair.2 target.toObjId _ hS).1
+  have hRem := removeRunnable_onlyObjectsSchedulerDiffer st2 target
+  unfold SystemState.onlyObjectsSchedulerDiffer at hRem
+  have hRemNS : (removeRunnable st2 target).cdtNodeSlot = st2.cdtNodeSlot := by rw [hRem]
+  have hRemCdt : (removeRunnable st2 target).cdt = st.cdt := by rw [hRem]; rw [hCdt2, hCdt1]
+  exact ⟨cspaceSlotCountBounded_of_objectsAgreeOffRunLinks
+      (removeRunnable_objectsAgreeOffRunLinks st2 target) hBnd2,
+    cdtCompleteness_of_objectsAgreeOffRunLinks
+      (removeRunnable_objectsAgreeOffRunLinks st2 target) hComp2 hRemNS,
+    cdtAcyclicity_of_cdt_eq st _ hAcyclic hRemCdt⟩
 
 /-- WS-H4: Transfer WS-H4 predicates through endpoint/TCB handshake path.
 storeObject(.endpoint) → storeTcbIpcState → ensureRunnable preserves all three. -/

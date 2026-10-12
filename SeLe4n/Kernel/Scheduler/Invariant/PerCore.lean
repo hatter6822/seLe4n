@@ -934,7 +934,8 @@ theorem removeRunnableOnCore_preserves_schedulerInvariantBase_smp {st : SystemSt
         | some x =>
             rw [hCur] at hCTV
             obtain ⟨tcb, hT⟩ := hCTV
-            exact ⟨tcb, by rw [removeRunnableOnCore_getTcb? st tid c x]; exact hT⟩
+            exact Option.isSome_iff_exists.mp (by
+              rw [(removeRunnableOnCore_objectsAgreeOffRunLinks st tid c).getTcb?_isSome x, hT]; rfl)
   · refine ⟨?_, ?_, ?_⟩
     · unfold queueCurrentConsistentOnCore at hQCC ⊢
       rw [removeRunnableOnCore_currentOnCore_ne st tid c c' hcc,
@@ -950,7 +951,8 @@ theorem removeRunnableOnCore_preserves_schedulerInvariantBase_smp {st : SystemSt
       | some x =>
           rw [hCur] at hCTV
           obtain ⟨tcb, hT⟩ := hCTV
-          exact ⟨tcb, by rw [removeRunnableOnCore_getTcb? st tid c x]; exact hT⟩
+          exact Option.isSome_iff_exists.mp (by
+              rw [(removeRunnableOnCore_objectsAgreeOffRunLinks st tid c).getTcb?_isSome x, hT]; rfl)
 
 /-- WS-RR RR8.16 (`v0.35.197`): the state-resolved instance — the spelling every
 donation pop and every cancellation teardown calls. -/

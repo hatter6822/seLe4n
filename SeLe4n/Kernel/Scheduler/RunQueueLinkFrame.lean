@@ -7,8 +7,8 @@ import SeLe4n.Kernel.Scheduler.RunQueueThreadLinks
 /-!
 # Run-queue writes leave every other object field alone
 
-WS-ZA ZA4.5: the run queue's links live in the threads' TCBs, so enqueue,
-removal and rotation write the object store.  They write only the six
+WS-ZA ZA4.5: the run queue's links live in the threads' TCBs, so enqueue
+and removal write the object store.  They write only the six
 run-queue fields, though, and nothing outside the scheduler reads those.  This
 module states that frame once — two object stores *agree off the run-queue
 links* when they hold the same objects at every key once those six fields are
@@ -120,6 +120,23 @@ theorem KernelObject.map_withoutRunLinks_eq_some {a b : Option KernelObject} {o 
   cases b with
   | none => cases h
   | some o₀ => exact ⟨o₀, rfl, Option.some.inj h⟩
+
+/-- The pointwise form of a store agreement at one key: a TCB on one side is a
+TCB on the other, agreeing off its run-queue fields. -/
+theorem KernelObject.map_withoutRunLinks_tcb {a b : Option KernelObject} {t : TCB}
+    (h : a.map KernelObject.withoutRunLinks = b.map KernelObject.withoutRunLinks)
+    (hb : b = some (.tcb t)) :
+    ∃ t', a = some (.tcb t') ∧ t'.withoutRunLinks = t.withoutRunLinks := by
+  obtain ⟨o, ha, ho⟩ := KernelObject.map_withoutRunLinks_eq_some h.symm hb
+  obtain ⟨t', rfl, ht⟩ := KernelObject.withoutRunLinks_eq_tcb ho.symm
+  exact ⟨t', ha, ht⟩
+
+/-- ...and any other object is the same object on both sides. -/
+theorem KernelObject.map_withoutRunLinks_of_not_tcb {a b : Option KernelObject} {o : KernelObject}
+    (h : a.map KernelObject.withoutRunLinks = b.map KernelObject.withoutRunLinks)
+    (hb : b = some o) (hNot : ∀ t, o ≠ .tcb t) : a = some o := by
+  obtain ⟨o', ha, ho⟩ := KernelObject.map_withoutRunLinks_eq_some h.symm hb
+  rw [ha, KernelObject.withoutRunLinks_eq_of_not_tcb ho.symm hNot]
 
 end SeLe4n.Model
 
@@ -406,28 +423,6 @@ theorem runRemoveOnCore_objectsAgreeOffRunLinks (st : SystemState) (c : CoreId)
   · exact .congr h rfl (runUnlinkLinks_objectsAgreeOffRunLinks _ _ _ _ _ _)
   · exact .of_objects_eq h
 
-theorem runRotateOnCore_objects (st : SystemState) (c : CoreId) (t : SeLe4n.ThreadId) :
-    (st.runRotateOnCore c t).objects =
-      if (st.runLinkOn c t).queued then
-        ((st.runRemoveOnCore c t).runEnqueueOnCore c t (st.runLinkOn c t).prio).objects
-      else st.objects := by
-  unfold runRotateOnCore; dsimp only; split <;> rfl
-
-theorem runRotateOnCore_objectsAgreeOffRunLinks (st : SystemState) (c : CoreId)
-    (t : SeLe4n.ThreadId) :
-    objectsAgreeOffRunLinks (st.runRotateOnCore c t) st := by
-  have h := runRotateOnCore_objects st c t
-  split at h
-  · exact .congr h rfl (.trans (runEnqueueOnCore_objectsAgreeOffRunLinks _ _ _ _)
-      (runRemoveOnCore_objectsAgreeOffRunLinks _ _ _))
-  · exact .of_objects_eq h
-
-theorem runRotateOnCore_objects_invExt (st : SystemState) (c : CoreId) (t : SeLe4n.ThreadId)
-    (hInv : st.objects.invExt) : (st.runRotateOnCore c t).objects.invExt := by
-  rw [runRotateOnCore_objects]; split
-  · exact runEnqueueOnCore_objects_invExt _ _ _ _ (runRemoveOnCore_objects_invExt _ _ _ hInv)
-  · exact hInv
-
 -- ============================================================================
 -- Only the object store and the scheduler change
 -- ============================================================================
@@ -496,13 +491,6 @@ theorem runRemoveOnCore_onlyObjectsSchedulerDiffer (st : SystemState) (c : CoreI
   · exact .withScheduler (.withScheduler (runUnlinkLinks_onlyObjectsSchedulerDiffer _ _ _ _ _ _) _) _
   · exact .withScheduler (.refl _) _
 
-theorem runRotateOnCore_onlyObjectsSchedulerDiffer (st : SystemState) (c : CoreId)
-    (t : SeLe4n.ThreadId) : onlyObjectsSchedulerDiffer (st.runRotateOnCore c t) st := by
-  unfold runRotateOnCore; dsimp only; split
-  · exact .withScheduler (.trans (runEnqueueOnCore_onlyObjectsSchedulerDiffer _ _ _ _)
-      (runRemoveOnCore_onlyObjectsSchedulerDiffer _ _ _)) _
-  · exact .withScheduler (.refl _) _
-
 -- ============================================================================
 -- What each run-queue write does to the scheduler
 -- ============================================================================
@@ -520,12 +508,6 @@ def runRemoveEnds (st : SystemState) (c : CoreId) (t : SeLe4n.ThreadId) : RunQue
     (st.scheduler.runQueueEndsOnCore c).unlink L.prev L.next L.bucketPrev L.bucketNext L.prio
       (fun n h => RunQueue.maxPrioCodeWalkBy
         ((st.runUnlinkLinks t L.prev L.next L.bucketPrev L.bucketNext).runLinkOn c) n h 0)
-  else st.scheduler.runQueueEndsOnCore c
-
-/-- Core `c`'s ends once `t` is rotated to the back there. -/
-def runRotateEnds (st : SystemState) (c : CoreId) (t : SeLe4n.ThreadId) : RunQueueEnds :=
-  if (st.runLinkOn c t).queued then
-    (st.runRemoveOnCore c t).runEnqueueEnds c t (st.runLinkOn c t).prio
   else st.scheduler.runQueueEndsOnCore c
 
 @[simp] theorem runEnqueueOnCore_scheduler (st : SystemState) (c : CoreId) (t : SeLe4n.ThreadId)
@@ -550,18 +532,49 @@ def runRotateEnds (st : SystemState) (c : CoreId) (t : SeLe4n.ThreadId) : RunQue
   · simp only [hq, if_false, Bool.false_eq_true,
       SchedulerState.setRunQueueEndsOnCore_runQueueEndsOnCore_get]
 
-@[simp] theorem runRotateOnCore_scheduler (st : SystemState) (c : CoreId) (t : SeLe4n.ThreadId) :
-    (st.runRotateOnCore c t).scheduler =
-      (st.scheduler.setRunQueueEndsOnCore c (st.runRotateEnds c t)).setRunQueueOnCore c
-        ((st.scheduler.runQueueOnCore c).rotateToBack t) := by
-  unfold runRotateOnCore runRotateEnds
-  by_cases hq : (st.runLinkOn c t).queued = true
-  · simp only [hq, if_true, runEnqueueOnCore_scheduler, runRemoveOnCore_scheduler,
-      SchedulerState.setRunQueueOnCore_setRunQueueOnCore,
-      SchedulerState.setRunQueueOnCore_setRunQueueEndsOnCore,
-      SchedulerState.setRunQueueEndsOnCore_setRunQueueEndsOnCore]
-  · simp only [hq, if_false, Bool.false_eq_true,
-      SchedulerState.setRunQueueEndsOnCore_runQueueEndsOnCore_get]
+-- ============================================================================
+-- Deschedule: dequeue plus the `current` slot
+-- ============================================================================
+
+/-- Take `t` off core `c`'s scheduler: unlink its run-queue links
+(`runRemoveOnCore`) and clear the core's `current` slot if `t` holds it.  The
+`current` slot is read before the dequeue, which does not write it.  The one
+body behind `removeRunnableOnCore`, `removeRunnable` (its boot-core instance)
+and each step of the destroy sweep.
+
+The reschedule-SGI accumulator (KSC-1) is flagged exactly when the `current`
+slot changes; a pure queue removal stales nothing, so it flags nothing. -/
+def runDescheduleOnCore (st : SystemState) (c : CoreId) (t : SeLe4n.ThreadId) : SystemState :=
+  let st' := st.runRemoveOnCore c t
+  { st' with
+      scheduler := SchedulerState.markReschedulePendingOnCoreIf
+        (st'.scheduler.setCurrentOnCore c
+          (if st.scheduler.currentOnCore c = some t then none
+            else st.scheduler.currentOnCore c))
+        c (st.scheduler.currentOnCore c == some t) }
+
+theorem runDescheduleOnCore_onlyObjectsSchedulerDiffer (st : SystemState) (c : CoreId)
+    (t : SeLe4n.ThreadId) : onlyObjectsSchedulerDiffer (st.runDescheduleOnCore c t) st :=
+  (runRemoveOnCore_onlyObjectsSchedulerDiffer st c t).withScheduler _
+
+theorem runDescheduleOnCore_objectsAgreeOffRunLinks (st : SystemState) (c : CoreId)
+    (t : SeLe4n.ThreadId) : (st.runDescheduleOnCore c t).objectsAgreeOffRunLinks st :=
+  runRemoveOnCore_objectsAgreeOffRunLinks st c t
+
+theorem runDescheduleOnCore_objects_invExt (st : SystemState) (c : CoreId) (t : SeLe4n.ThreadId)
+    (hInv : st.objects.invExt) : (st.runDescheduleOnCore c t).objects.invExt :=
+  runRemoveOnCore_objects_invExt st c t hInv
+
+@[simp] theorem runDescheduleOnCore_scheduler (st : SystemState) (c : CoreId)
+    (t : SeLe4n.ThreadId) :
+    (st.runDescheduleOnCore c t).scheduler =
+      SchedulerState.markReschedulePendingOnCoreIf
+        (((st.scheduler.setRunQueueEndsOnCore c (st.runRemoveEnds c t)).setRunQueueOnCore c
+          ((st.scheduler.runQueueOnCore c).remove t)).setCurrentOnCore c
+          (if st.scheduler.currentOnCore c = some t then none
+            else st.scheduler.currentOnCore c))
+        c (st.scheduler.currentOnCore c == some t) := by
+  simp only [runDescheduleOnCore, runRemoveOnCore_scheduler]
 
 end SeLe4n.Model.SystemState
 

@@ -423,8 +423,8 @@ unbound holder's at the reclaim's (`v0.35.158`) — are discharged from
 arm's own `owed` premise, which the pack already carries.
 
 `ipcInvariantFull_of_descheduleFrame` is the whole argument: objects unchanged
-(`cancelIpcBlockingOnCore_objects_eq`, which is where the three steps' object
-frames already compose) plus a `passiveServerIdleFrame` chained from the three.
+off the run-queue links (`cancelIpcBlockingOnCore_objectsAgreeOffRunLinks`, which
+is where the three steps' object frames already compose) plus a `passiveServerIdleFrame` chained from the three.
 Nineteen of the twenty conjuncts never see the scheduler, so there is nothing
 else to transport. -/
 theorem cancelIpcBlockingOnCore_preserves_ipcInvariantFull
@@ -442,7 +442,7 @@ theorem cancelIpcBlockingOnCore_preserves_ipcInvariantFull
       = some (.tcb t) →
       t.schedContextBinding ≠ SchedContextBinding.unbound ∨ passiveServerIdleAllowed t.ipcState := by
     intro t hAt
-    rw [cancelIpcBlockingReclaimed_objects] at hAt
+    run_links_back (cancelIpcBlockingReclaimed_objectsAgreeOffRunLinks victim tcb st) at t hAt
     exact Or.inr (Or.inl (hReady t hAt))
   -- the holder deschedule's obligation, discharged from the reclaim's own reading
   -- of the holder and the reply arm's `owed` premise
@@ -459,7 +459,7 @@ theorem cancelIpcBlockingOnCore_preserves_ipcInvariantFull
       hBundle.ipcStateQueueMembershipConsistent hLookup (hArms.replyArm epV rtV hIp).owed hRes
       t hAt
   refine ipcInvariantFull_of_descheduleFrame _ _ hTeardown
-    (cancelIpcBlockingOnCore_objects_eq victim tcb executingCore st) ?_
+    (cancelIpcBlockingOnCore_objectsAgreeOffRunLinks victim tcb executingCore st) ?_
   rw [cancelIpcBlockingOnCore_state_eq]
   exact ((cancelIpcBlockingMigrated_passiveServerIdleFrame victim tcb st).trans
     (descheduleUnboundHolder_passiveServerIdleFrame st _ victim tcb hHolder)).trans
@@ -1002,8 +1002,8 @@ theorem cancelIpcBlockingOnCore_establishes_replenishQueueAffinityConsistent_smp
     (fun tid => ?_)).mpr hBase
   · rw [descheduleAtPlacement_replenishQueueOnCore,
       descheduleUnboundHolder_replenishQueueOnCore]
-  · unfold SystemState.getSchedContext?
-    rw [descheduleAtPlacement_preserves_objects, descheduleUnboundHolder_objects]
+  · rw [(descheduleAtPlacement_objectsAgreeOffRunLinks _ _).getSchedContext?,
+      (descheduleUnboundHolder_objectsAgreeOffRunLinks _ _ _ _).getSchedContext?]
   · rw [descheduleAtPlacement_determineTargetCore,
       descheduleUnboundHolder_determineTargetCore]
 

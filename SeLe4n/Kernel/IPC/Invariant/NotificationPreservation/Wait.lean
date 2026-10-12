@@ -93,10 +93,14 @@ theorem ensureRunnable_preserves_badgeWellFormed
    fun oid cn slot cap badge hC => hInv.2 oid cn slot cap badge (h.get_cnode_iff.mp hC)⟩
 
 /-- WS-F5/D1d: `removeRunnable` preserves `badgeWellFormed`.
-Only modifies `scheduler`, never the object store. -/
+It writes only the scheduler and run-queue links; badges live in notifications
+and CNodes. -/
 theorem removeRunnable_preserves_badgeWellFormed
     (st : SystemState) (tid : SeLe4n.ThreadId) (hInv : badgeWellFormed st) :
-    badgeWellFormed (removeRunnable st tid) := hInv
+    badgeWellFormed (removeRunnable st tid) :=
+  have h := removeRunnable_objectsAgreeOffRunLinks st tid
+  ⟨fun oid ntfn badge hN => hInv.1 oid ntfn badge (h.get_notification_iff.mp hN),
+   fun oid cn slot cap badge hC => hInv.2 oid cn slot cap badge (h.get_cnode_iff.mp hC)⟩
 
 /-- **Audit IPC-5 (`v0.36.49`)**: any TCB field write preserves
 `badgeWellFormed` — it stores a `.tcb`, which is neither a notification nor a
@@ -425,20 +429,23 @@ theorem notificationWait_preserves_notificationWaiterConsistent
       rw [hW0] at hTt; cases hTt; exact hWNB _ hBt
     have hInvP := notificationWaitPark_preserves_objects_invExt hObjInv hP
     obtain ⟨⟨tw, hTwP, hTwF⟩, hTailF, hO⟩ := linkNtfnWaiter_objects hInvP hL hTailNe
-    rw [hPW] at hTwP; cases hTwP
+    obtain ⟨tw', hPW', hTwE⟩ := hPW
+    rw [hPW'] at hTwP; cases hTwP
     have hNW : notificationId ≠ waiter.toObjId := by intro e; rw [e, hW0] at hN; cases hN
     have hNT : ∀ t, ntfn.waitTail = some t → notificationId ≠ t.toObjId := by
       intro t ht e; obtain ⟨tt, hTt, _⟩ := hTailC t ht; rw [← e, hN] at hTt; cases hTt
     refine notificationWaiterConsistent_of_append hConsist hN hW0 hWNB ?_ ?_ ?_ ?_
     · rw [hO _ hNW hNT]; exact hPN
-    · exact ⟨_, hTwF, rfl, by simp, by simp⟩
+    · exact ⟨_, hTwF, TCB.proj_eq_of_withoutRunLinks_eq TCB.ipcState hTwE, by simp, by simp⟩
     · intro t ttcb ht hTt
       obtain ⟨tt, hTtP, hTtF⟩ := hTailF t ht
       have htw : t.toObjId ≠ waiter.toObjId := fun e =>
         hTailNe t ht (SeLe4n.ThreadId.toObjId_injective _ _ e)
       have htn : t.toObjId ≠ notificationId := by intro e; rw [e, hN] at hTt; cases hTt
-      rw [hPO _ htn htw, hTt] at hTtP; cases hTtP
-      exact ⟨_, hTtF, rfl, rfl, by simp⟩
+      obtain ⟨tt', hTtP', hTtE⟩ := KernelObject.map_withoutRunLinks_tcb (hPO _ htn htw) hTt
+      rw [hTtP'] at hTtP; cases hTtP
+      exact ⟨_, hTtF, TCB.proj_eq_of_withoutRunLinks_eq TCB.ipcState hTtE,
+        TCB.proj_eq_of_withoutRunLinks_eq TCB.ntfnPrev hTtE, by simp⟩
     · intro x hxn hxw hxt
       rw [hO x hxw hxt, hPO x hxn hxw]
 
