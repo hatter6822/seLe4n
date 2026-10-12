@@ -609,6 +609,46 @@ theorem runDescheduleOnCore_objects_invExt (st : SystemState) (c : CoreId) (t : 
         c (st.scheduler.currentOnCore c == some t) := by
   simp only [runDescheduleOnCore, runRemoveOnCore_scheduler]
 
+/-- WS-ZA ZA4.5: re-key thread `t` on core `c` at priority `p`: dequeue it, then
+append it to the tail of its new priority bucket, both through the TCB
+run-queue links (seL4's `tcbSchedDequeue` then `tcbSchedEnqueue`). -/
+def runRequeueOnCore (st : SystemState) (c : CoreId) (t : SeLe4n.ThreadId)
+    (p : SeLe4n.Priority) : SystemState :=
+  (st.runRemoveOnCore c t).runEnqueueOnCore c t p
+
+theorem runRequeueOnCore_onlyObjectsSchedulerDiffer (st : SystemState) (c : CoreId)
+    (t : SeLe4n.ThreadId) (p : SeLe4n.Priority) :
+    onlyObjectsSchedulerDiffer (st.runRequeueOnCore c t p) st :=
+  (runEnqueueOnCore_onlyObjectsSchedulerDiffer _ c t p).trans
+    (runRemoveOnCore_onlyObjectsSchedulerDiffer st c t)
+
+theorem runRequeueOnCore_objectsAgreeOffRunLinks (st : SystemState) (c : CoreId)
+    (t : SeLe4n.ThreadId) (p : SeLe4n.Priority) :
+    (st.runRequeueOnCore c t p).objectsAgreeOffRunLinks st :=
+  (runEnqueueOnCore_objectsAgreeOffRunLinks _ c t p).trans
+    (runRemoveOnCore_objectsAgreeOffRunLinks st c t)
+
+theorem runRequeueOnCore_objects_invExt (st : SystemState) (c : CoreId) (t : SeLe4n.ThreadId)
+    (p : SeLe4n.Priority) (hInv : st.objects.invExt) : (st.runRequeueOnCore c t p).objects.invExt :=
+  runEnqueueOnCore_objects_invExt _ c t p (runRemoveOnCore_objects_invExt st c t hInv)
+
+@[simp] theorem runRequeueOnCore_machine (st : SystemState) (c : CoreId) (t : SeLe4n.ThreadId)
+    (p : SeLe4n.Priority) : (st.runRequeueOnCore c t p).machine = st.machine := by
+  simp [runRequeueOnCore]
+
+/-- The scheduler after a re-key: the ghost queue is the remove-then-insert, and
+the core's ends are the enqueue's over the dequeued state. -/
+@[simp] theorem runRequeueOnCore_scheduler (st : SystemState) (c : CoreId) (t : SeLe4n.ThreadId)
+    (p : SeLe4n.Priority) :
+    (st.runRequeueOnCore c t p).scheduler =
+      (st.scheduler.setRunQueueEndsOnCore c ((st.runRemoveOnCore c t).runEnqueueEnds c t p)).setRunQueueOnCore c
+        (((st.scheduler.runQueueOnCore c).remove t).insert t p) := by
+  simp only [runRequeueOnCore, runEnqueueOnCore_scheduler, runRemoveOnCore_scheduler,
+    SchedulerState.setRunQueueOnCore_runQueueOnCore_self,
+    SchedulerState.setRunQueueEndsOnCore_runQueueOnCore]
+  rw [SchedulerState.setRunQueueOnCore_setRunQueueEndsOnCore, SchedulerState.setRunQueueOnCore_setRunQueueOnCore,
+    SchedulerState.setRunQueueEndsOnCore_setRunQueueEndsOnCore]
+
 end SeLe4n.Model.SystemState
 
 namespace SeLe4n.Model.SystemState

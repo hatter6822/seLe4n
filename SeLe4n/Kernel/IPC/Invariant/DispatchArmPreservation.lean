@@ -530,14 +530,6 @@ theorem updatePrioritySource_preserves_ipcInvariantFull
       exact insertObjects_tcbFieldUpdate_preserves_ipcInvariantFull _ tid tcb
         { tcb with priority := p } hObjInv1 hInv1 hPre1 rfl rfl rfl rfl rfl rfl rfl rfl rfl
 
-/-- `migrateRunQueueBucketOnCore` moves no object. -/
-theorem migrateRunQueueBucketOnCore_objects_eq (st : SystemState)
-    (tid : SeLe4n.ThreadId) (p : SeLe4n.Priority) (c : CoreId) :
-    (SchedContext.PriorityManagement.migrateRunQueueBucketOnCore st tid p c).objects
-      = st.objects := by
-  simp only [SchedContext.PriorityManagement.migrateRunQueueBucketOnCore]
-  split <;> rfl
-
 /-- The bucket re-key changes no thread's run-queue membership on any core. -/
 theorem migrateRunQueueBucketOnCore_mem_runQueueOnCore (st : SystemState)
     (tid : SeLe4n.ThreadId) (p : SeLe4n.Priority) (c c' : CoreId) (x : SeLe4n.ThreadId) :
@@ -547,6 +539,7 @@ theorem migrateRunQueueBucketOnCore_mem_runQueueOnCore (st : SystemState)
   simp only [SchedContext.PriorityManagement.migrateRunQueueBucketOnCore]
   split
   · rename_i hIn
+    rw [SystemState.runRequeueOnCore_scheduler]
     by_cases hcc : c = c'
     · subst hcc
       rw [SchedulerState.setRunQueueOnCore_runQueueOnCore_self]
@@ -559,7 +552,8 @@ theorem migrateRunQueueBucketOnCore_mem_runQueueOnCore (st : SystemState)
         by_cases hEq : x = tid
         · exact Or.inr hEq
         · exact Or.inl ⟨hx, hEq⟩
-    · rw [SchedulerState.setRunQueueOnCore_runQueueOnCore_ne _ c c' _ hcc]
+    · rw [SchedulerState.setRunQueueOnCore_runQueueOnCore_ne _ c c' _ hcc,
+        SchedulerState.setRunQueueEndsOnCore_runQueueOnCore]
   · exact Iff.rfl
 
 /-- The bucket re-key repoints no core's `current` slot. -/
@@ -578,11 +572,15 @@ theorem migrateRunQueueBucketOnCore_preserves_ipcInvariantFull (st : SystemState
     (hInv : ipcInvariantFull st) :
     ipcInvariantFull (SchedContext.PriorityManagement.migrateRunQueueBucketOnCore
       st tid p c) := by
-  have hObjs := migrateRunQueueBucketOnCore_objects_eq st tid p c
-  refine ipcInvariantFull_of_getElem_eq (fun oid => by rw [hObjs]) ?_ hInv
+  have hA := SchedContext.PriorityManagement.migrateRunQueueBucketOnCore_objectsAgreeOffRunLinks
+    st tid p c
+  refine ipcInvariantFull_of_objectsAgreeOffRunLinks hA ?_ hInv
   exact passiveServerIdle_of_frame
     (passiveServerIdleFrame_of_backward_monotone
-      (fun t tcb' h => ⟨tcb', by rw [hObjs] at h; exact h, rfl, rfl⟩)
+      (fun t tcb' h =>
+        let ⟨t0, h0, hE⟩ := hA.get_tcb' h
+        ⟨t0, h0, (TCB.proj_eq_of_withoutRunLinks_eq TCB.ipcState hE).symm,
+          (TCB.proj_eq_of_withoutRunLinks_eq TCB.schedContextBinding hE).symm⟩)
       (fun y hy =>
         (migrateRunQueueBucketOnCore_mem_runQueueOnCore st tid p c
           Concurrency.bootCoreId y).mpr hy)
@@ -2708,9 +2706,10 @@ theorem applyPriorityChangeOnCore_preserves_ipcInvariantFull
   have hObjMid : (markKeyChangeFor (SchedContext.PriorityManagement.migrateRunQueueBucketOnCore
       (SchedContext.PriorityManagement.updatePrioritySource st tid tcb p) tid p
       (determineTargetCore st tid)) tid (effectiveSchedParams st tcb)).objects.invExt := by
-    rw [markKeyChangeFor_objects, migrateRunQueueBucketOnCore_objects_eq]
-    exact SchedContext.PriorityManagement.updatePrioritySource_preserves_objects_invExt
-      st tid tcb p hObjInv
+    rw [markKeyChangeFor_objects]
+    exact SchedContext.PriorityManagement.migrateRunQueueBucketOnCore_objects_invExt _ _ _ _
+      (SchedContext.PriorityManagement.updatePrioritySource_preserves_objects_invExt
+        st tid tcb p hObjInv)
   have hInvMid : ipcInvariantFull (markKeyChangeFor
       (SchedContext.PriorityManagement.migrateRunQueueBucketOnCore
         (SchedContext.PriorityManagement.updatePrioritySource st tid tcb p) tid p

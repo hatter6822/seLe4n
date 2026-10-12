@@ -151,10 +151,8 @@ theorem markKeyChangeFor_migrate_updatePrioritySource_objects_invExt (st : Syste
       (migrateRunQueueBucketOnCore (updatePrioritySource st tid tcb newPriority) tid newPriority
         home) tid k).objects.invExt := by
   rw [markKeyChangeFor_objects]
-  unfold migrateRunQueueBucketOnCore
-  split
-  · exact updatePrioritySource_preserves_objects_invExt st tid tcb newPriority hObjInv
-  · exact updatePrioritySource_preserves_objects_invExt st tid tcb newPriority hObjInv
+  exact migrateRunQueueBucketOnCore_objects_invExt _ _ _ _
+    (updatePrioritySource_preserves_objects_invExt st tid tcb newPriority hObjInv)
 
 /-- WS-SM SM8.B: the priority ops' **shared state effect** — write the new value
 to whichever field owns the thread's priority, re-bucket it on its home core, and

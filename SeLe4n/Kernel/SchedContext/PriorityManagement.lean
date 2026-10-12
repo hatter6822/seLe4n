@@ -422,7 +422,6 @@ priority inversion for the entire blocking chain. -/
 def migrateRunQueueBucketOnCore (st : SystemState) (tid : SeLe4n.ThreadId)
     (newPriority : SeLe4n.Priority) (homeCore : Concurrency.CoreId) : SystemState :=
   if tid ∈ (st.scheduler.runQueueOnCore homeCore) then
-    let rq := (st.scheduler.runQueueOnCore homeCore).remove tid
     -- AI3-B (M-22): Apply PIP boost to new priority.
     -- AK2-J (S-M08): The defensive fallback (TCB missing — unreachable under
     -- `runnableThreadsAreTCBs`) now takes the max of `newPriority` and the
@@ -440,8 +439,9 @@ def migrateRunQueueBucketOnCore (st : SystemState) (tid : SeLe4n.ThreadId)
       | none =>
         newPriority.raisedBy
           ((st.scheduler.runQueueOnCore homeCore).priorityOf tid)
-    let rq := rq.insert tid effectivePrio
-    { st with scheduler := st.scheduler.setRunQueueOnCore homeCore rq }
+    -- The thread leaves its bucket and joins the tail of the new one through
+    -- its TCB run-queue links (WS-ZA ZA4.5).
+    st.runRequeueOnCore homeCore tid effectivePrio
   else
     st
 
@@ -473,8 +473,37 @@ the same reason. -/
       = st.scheduler.replenishQueueOnCore c := by
   unfold migrateRunQueueBucketOnCore
   split
-  · exact SchedulerState.setRunQueueOnCore_replenishQueueOnCore _ _ _ _
+  · simp
   · rfl
+
+/-- WS-ZA ZA4.5: the bucket migration touches the object store only in run-queue
+links. -/
+theorem migrateRunQueueBucketOnCore_objectsAgreeOffRunLinks (st : SystemState)
+    (tid : SeLe4n.ThreadId) (newPriority : SeLe4n.Priority) (homeCore : Concurrency.CoreId) :
+    (migrateRunQueueBucketOnCore st tid newPriority homeCore).objectsAgreeOffRunLinks st := by
+  unfold migrateRunQueueBucketOnCore
+  split
+  · exact SystemState.runRequeueOnCore_objectsAgreeOffRunLinks _ _ _ _
+  · exact .refl _
+
+/-- WS-ZA ZA4.5: the bucket migration rewrites only the object store and the
+scheduler. -/
+theorem migrateRunQueueBucketOnCore_onlyObjectsSchedulerDiffer (st : SystemState)
+    (tid : SeLe4n.ThreadId) (newPriority : SeLe4n.Priority) (homeCore : Concurrency.CoreId) :
+    SystemState.onlyObjectsSchedulerDiffer (migrateRunQueueBucketOnCore st tid newPriority homeCore) st := by
+  unfold migrateRunQueueBucketOnCore
+  split
+  · exact SystemState.runRequeueOnCore_onlyObjectsSchedulerDiffer _ _ _ _
+  · exact .refl _
+
+theorem migrateRunQueueBucketOnCore_objects_invExt (st : SystemState)
+    (tid : SeLe4n.ThreadId) (newPriority : SeLe4n.Priority) (homeCore : Concurrency.CoreId)
+    (hInv : st.objects.invExt) :
+    (migrateRunQueueBucketOnCore st tid newPriority homeCore).objects.invExt := by
+  unfold migrateRunQueueBucketOnCore
+  split
+  · exact SystemState.runRequeueOnCore_objects_invExt _ _ _ _ hInv
+  · exact hInv
 
 /-- D2-E: Set the scheduling priority of a target thread.
 

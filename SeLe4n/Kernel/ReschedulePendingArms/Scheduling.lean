@@ -946,8 +946,10 @@ theorem applyPriorityChangeOnCore_stepCovers (st st' : SystemState) (tid : SeLe4
   generalize hMid : SchedContext.PriorityManagement.migrateRunQueueBucketOnCore
     (SchedContext.PriorityManagement.updatePrioritySource st tid tcb p) tid p
     (determineTargetCore st tid) = mid at hStep
-  have hMidObj : mid.objects = (SchedContext.PriorityManagement.updatePrioritySource
-      st tid tcb p).objects := by rw [← hMid]; exact migrateRunQueueBucketOnCore_objects_eq _ _ _ _
+  have hMidA : mid.objectsAgreeOffRunLinks (SchedContext.PriorityManagement.updatePrioritySource
+      st tid tcb p) := by
+    rw [← hMid]
+    exact SchedContext.PriorityManagement.migrateRunQueueBucketOnCore_objectsAgreeOffRunLinks _ _ _ _
   have hMidSched : ∀ c, (∀ x, x ∈ mid.scheduler.runQueueOnCore c ↔
         x ∈ st.scheduler.runQueueOnCore c) ∧
       mid.scheduler.currentOnCore c = st.scheduler.currentOnCore c ∧
@@ -959,15 +961,17 @@ theorem applyPriorityChangeOnCore_stepCovers (st st' : SystemState) (tid : SeLe4
     · rw [migrateRunQueueBucketOnCore_currentOnCore, hU]
     · unfold SchedContext.PriorityManagement.migrateRunQueueBucketOnCore
       split
-      · simp [SchedulerState.reschedulePendingOnCore, SchedulerState.setRunQueueOnCore, hU]
+      · simp [SchedulerState.reschedulePendingOnCore, SchedulerState.setRunQueueOnCore,
+          SchedulerState.setRunQueueEndsOnCore, hU]
       · rw [hU]
   have hKeysMid : keyInputsEqExcept tid st mid :=
-    hKeys.trans_keyInputsEq (keyInputsEq_of_objects_eq hMidObj)
+    hKeys.trans_keyInputsEq (keyInputsEq_of_objectsAgreeOffRunLinks hMidA)
   have h1 := stepCovers_markKeyChangeFor (e := e) hT hKeysMid
     (fun c _ => Or.inr ⟨fun x hx => ((hMidSched c).1 x).mp hx, (hMidSched c).2.1⟩)
     (fun c _ hp => by rw [(hMidSched c).2.2]; exact hp)
   have hInvMk : (markKeyChangeFor mid tid (effectiveSchedParams st tcb)).objects.invExt := by
-    rw [markKeyChangeFor_objects, hMidObj]; exact hInvU
+    rw [markKeyChangeFor_objects, ← hMid]
+    exact SchedContext.PriorityManagement.migrateRunQueueBucketOnCore_objects_invExt _ _ _ _ hInvU
   -- The waiter-side chain re-walk: the identity, or one chain walk.
   have hRe : stepCovers e (markKeyChangeFor mid tid (effectiveSchedParams st tcb))
         (PriorityInheritance.repropagateFromWaiter

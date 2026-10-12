@@ -4321,6 +4321,44 @@ theorem runQueue_remove_insert_preserves_projection_at_high
 -- AK6-F Step 2: migrateRunQueueBucket preservation
 -- ============================================================================
 
+/-- WS-ZA ZA4.5: re-keying a non-observable thread on any core preserves the
+projection: the store agrees off the run-queue links, which the projection
+strips, and `projectRunnable` reads the boot core's queue filtered to observable
+threads, where removing and re-inserting a high thread changes nothing. -/
+theorem runRequeueOnCore_preserves_projection
+    (ctx : LabelingContext) (observer : IfObserver)
+    (st : SystemState) (c : SeLe4n.Kernel.Concurrency.CoreId) (tid : SeLe4n.ThreadId)
+    (p : SeLe4n.Priority) (hTidHigh : threadObservable ctx observer tid = false) :
+    projectState ctx observer (st.runRequeueOnCore c tid p) = projectState ctx observer st := by
+  have hObj := projectObjects_of_objectsAgreeOffRunLinks ctx observer
+    (SystemState.runRequeueOnCore_objectsAgreeOffRunLinks st c tid p)
+  have hD := SystemState.runRequeueOnCore_onlyObjectsSchedulerDiffer st c tid p
+  unfold SystemState.onlyObjectsSchedulerDiffer at hD
+  rw [hD] at hObj ⊢
+  simp only [projectState, projectCurrent, projectActiveDomain,
+    projectDomainTimeRemaining, projectDomainScheduleIndex, projectMachineRegs, hObj,
+    SystemState.runRequeueOnCore_scheduler,
+    SchedulerState.setRunQueueOnCore_currentOnCore,
+    SchedulerState.setRunQueueOnCore_activeDomainOnCore,
+    SchedulerState.setRunQueueOnCore_domainTimeRemainingOnCore,
+    SchedulerState.setRunQueueOnCore_domainScheduleIndexOnCore,
+    SchedulerState.setRunQueueEndsOnCore_currentOnCore,
+    SchedulerState.setRunQueueEndsOnCore_activeDomainOnCore,
+    SchedulerState.setRunQueueEndsOnCore_domainTimeRemainingOnCore,
+    SchedulerState.setRunQueueEndsOnCore_domainScheduleIndexOnCore]
+  congr 1
+  simp only [projectRunnable, SchedulerState.runnable]
+  by_cases hc : c = bootCoreId
+  · subst hc
+    rw [SchedulerState.setRunQueueOnCore_runQueueOnCore_self,
+      SeLe4n.Kernel.RunQueue.toList_filter_insert_neg'
+        ((st.scheduler.runQueueOnCore bootCoreId).remove tid) tid p
+        (threadObservable ctx observer) hTidHigh]
+    exact SeLe4n.Kernel.RunQueue.toList_filter_remove_neg
+      (st.scheduler.runQueueOnCore bootCoreId) tid (threadObservable ctx observer) hTidHigh
+  · rw [SchedulerState.setRunQueueOnCore_runQueueOnCore_ne _ _ _ _ hc,
+      SchedulerState.setRunQueueEndsOnCore_runQueueOnCore]
+
 /-- WS-SM SM8.B: the **per-core** bucket migration preserves the projection.
 
 Two shapes, and the remote one is the reason the generalisation is free:
@@ -4336,18 +4374,7 @@ theorem migrateRunQueueBucketOnCore_preserves_projection
     projectState ctx observer st := by
   unfold SchedContext.PriorityManagement.migrateRunQueueBucketOnCore
   split
-  · by_cases hc : c = bootCoreId
-    · subst hc
-      exact runQueue_remove_insert_preserves_projection_at_high ctx observer st tid _ hTidHigh
-    · simp only [projectState, projectRunnable, projectCurrent, projectActiveDomain,
-        projectDomainTimeRemaining, projectDomainScheduleIndex, projectMachineRegs,
-        SchedulerState.runnable,
-        SchedulerState.setRunQueueOnCore_currentOnCore,
-        SchedulerState.setRunQueueOnCore_activeDomainOnCore,
-        SchedulerState.setRunQueueOnCore_domainTimeRemainingOnCore,
-        SchedulerState.setRunQueueOnCore_domainScheduleIndexOnCore,
-        SchedulerState.setRunQueueOnCore_runQueueOnCore_ne _ _ _ _ hc]
-      rfl
+  · exact runRequeueOnCore_preserves_projection ctx observer st c tid _ hTidHigh
   · rfl
 
 /-- AK6-F Step 2: `migrateRunQueueBucket` preserves projection when the
