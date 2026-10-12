@@ -1940,7 +1940,7 @@ theorem notificationSignal_result_wellFormed_wake
     notificationQueueWellFormed
       { state := if rest.val.isEmpty then NotificationState.idle else .waiting,
         waitingThreads := rest,
-        pendingBadge := none } := by
+        hasPendingBadge := false, pendingWord := SeLe4n.Badge.zero } := by
   unfold notificationQueueWellFormed
   by_cases hEmpty : rest.val = []
   · simp [hEmpty, List.isEmpty]
@@ -1955,7 +1955,7 @@ theorem notificationSignal_result_wellFormed_merge
     notificationQueueWellFormed
       { state := .active,
         waitingThreads := SeLe4n.NoDupList.empty,
-        pendingBadge := some mergedBadge } := by
+        hasPendingBadge := true, pendingWord := mergedBadge } := by
   unfold notificationQueueWellFormed; simp
 
 /-- notificationWait result notification is well-formed (badge-consume path):
@@ -1964,7 +1964,7 @@ theorem notificationWait_result_wellFormed_badge :
     notificationQueueWellFormed
       { state := NotificationState.idle,
         waitingThreads := SeLe4n.NoDupList.empty,
-        pendingBadge := none } := by
+        hasPendingBadge := false, pendingWord := SeLe4n.Badge.zero } := by
   unfold notificationQueueWellFormed; simp
 
 /-- WS-G7/F-P11/WS-RC R4.C: notificationWait result notification is well-formed
@@ -1979,7 +1979,7 @@ theorem notificationWait_result_wellFormed_wait
     (wt' : SeLe4n.NoDupList SeLe4n.ThreadId)
     (hCons : wt'.val = waiter :: waiters.val) :
     notificationQueueWellFormed
-      { state := .waiting, waitingThreads := wt', pendingBadge := none } := by
+      { state := .waiting, waitingThreads := wt', hasPendingBadge := false, pendingWord := SeLe4n.Badge.zero } := by
   unfold notificationQueueWellFormed
   refine ⟨?_, rfl⟩
   intro h

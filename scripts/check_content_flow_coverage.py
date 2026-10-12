@@ -198,7 +198,11 @@ DECLARED_FIELD_WRITERS = {
 
 CONTENT_CHANNELS = [
     ("SeLe4n.Model.TCB", "pendingMessage"),
-    ("SeLe4n.Model.Notification", "pendingBadge"),
+    # The badge is two fields: `Notification.pendingBadge` is a derived
+    # `Option` view over the presence flag and the word, not a field.  Both
+    # are channels: a pending zero badge differs from none only in the flag.
+    ("SeLe4n.Model.Notification", "hasPendingBadge"),
+    ("SeLe4n.Model.Notification", "pendingWord"),
 ]
 
 # WS-SM SM9.D.13a (C3): arms that write the audit trail without being able to
@@ -798,8 +802,9 @@ run_cmd do
   let env <- getEnv
 
   let idxs := cfChannelIdx env
-  if idxs.length != cfChannels.length then
-    logInfo m!"CF_CHANNEL_UNRESOLVED {cfChannels.length - idxs.length}"
+  for (structName, field) in cfChannels do
+    unless idxs.any (fun (s, f, _) => s == structName && f == field) do
+      logInfo m!"CF_CHANNEL_UNRESOLVED {structName}.{field}"
   -- (C2) every definition that writes `SystemState.declassificationTaint`
   -- DIRECTLY, in a structure update — the write no API-naming check can see.
   let stateName := `SeLe4n.Model.SystemState
@@ -1240,6 +1245,16 @@ def main() -> int:
         cls[SELF_TEST_ROOT_ARM] = "inert"
 
     out = run_probe(roots, args.depth, channels, plant_rogue=args.self_test)
+
+    # A declared channel that names no structure field scans nothing, so every
+    # verdict below would be vacuous for it: fail closed rather than drop it.
+    unresolved = re.findall(r"CF_CHANNEL_UNRESOLVED (\S+)", out)
+    if unresolved:
+        print("FAIL: content channel(s) that are not structure fields: "
+              f"{', '.join(sorted(unresolved))}.")
+        print("      A channel the probe cannot resolve is scanned for nothing;")
+        print("      name the field the content is stored in.")
+        return 1
     (hits, detail, writers, taint_edges, field_writers, field_unresolved, noroot,
      truncated, audit_hits, audit_detail, justified, state_ctors) = parse(out)
 

@@ -2045,7 +2045,28 @@ structure Notification where
       `IPC/Invariant/QueueNoDup.lean`) codify this closure at the proof
       surface, per the WS-RC §1.5 structural-fix policy. -/
   waitingThreads : SeLe4n.NoDupList SeLe4n.ThreadId
-  pendingBadge : Option SeLe4n.Badge := none
+  /-- Whether a badge is pending.  The pending badge is stored as a flag plus a
+      machine word (`pendingWord`) rather than an `Option SeLe4n.Badge`: an
+      `Option` around a 64-bit scalar is a heap cell, so every signal that left
+      a badge pending allocated.  As fields of the notification the flag and
+      the word live in its scalar area and a signal updates them in place.
+      Read the pair through `Notification.pendingBadge`; write it through
+      `hasPendingBadge := false, pendingWord := SeLe4n.Badge.zero` (cleared) or
+      `hasPendingBadge := true, pendingWord := b` (pending).  The word is zero
+      whenever the flag is clear (`pendingWord_cleared`), so the pair and
+      `Option SeLe4n.Badge` are in bijection on every notification. -/
+  hasPendingBadge : Bool := false
+  /-- The pending badge word; meaningful only when `hasPendingBadge`. -/
+  pendingWord : SeLe4n.Badge := SeLe4n.Badge.zero
+  /-- A clear flag carries the zero word, so no notification holds a word that
+      its pending badge does not show (a boot configuration or any other
+      constructor cannot hide content in the word).  A proof, erased at run
+      time; a literal construction discharges it automatically. -/
+  pendingWord_cleared : if hasPendingBadge then True else pendingWord = SeLe4n.Badge.zero := by
+    first
+      | exact trivial
+      | exact rfl
+      | assumption
   /-- WS-SM SM6.B (bound notification): the TCB bound to this notification, if
       any (the seL4 `NotificationBind` relation).  `bindNotification` sets it
       (and the dual `TCB.boundNotification`); `unbindNotification` clears it.
@@ -2056,6 +2077,20 @@ structure Notification where
       unbound, so every existing construction site is unaffected. -/
   boundTCB : Option SeLe4n.ThreadId := none
   deriving Repr, DecidableEq
+
+/-- The pending badge, if any: the `Option` view of the `hasPendingBadge` /
+    `pendingWord` pair every specification and proof reads. -/
+@[inline] def Notification.pendingBadge (n : Notification) : Option SeLe4n.Badge :=
+  if n.hasPendingBadge then some n.pendingWord else none
+
+@[simp] theorem Notification.pendingBadge_mk (s w h p c b) :
+    (Notification.mk s w h p c b).pendingBadge = if h then some p else none := rfl
+
+@[simp] theorem Notification.pendingBadge_mk_true (s w p c b) :
+    (Notification.mk s w true p c b).pendingBadge = some p := rfl
+
+@[simp] theorem Notification.pendingBadge_mk_false (s w p c b) :
+    (Notification.mk s w false p c b).pendingBadge = none := rfl
 
 /-- WS-H13/H-01: Depth-aware CNode with compressed-path guard.
 

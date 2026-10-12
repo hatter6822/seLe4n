@@ -109,7 +109,7 @@ syscall-level resolver alone; a new
 declared arm adds its `case` to `dispatchWithCapChecked_coversWrites` in the
 same cut, or the seam theorem does not elaborate).
 
-### WS-ZA A syscall that allocates nothing — IN FLIGHT (registered v0.36.72; ZA1 and most of ZA2 v0.36.73; 9 at v0.36.74; the signal at 0 at v0.36.75; the pending-badge wait at 0 at v0.36.76; runs beside WS-CV, before WS-CB)
+### WS-ZA A syscall that allocates nothing — IN FLIGHT (registered v0.36.72; ZA1 and most of ZA2 v0.36.73; 9 at v0.36.74; the signal at 0 at v0.36.75; the pending-badge wait at 0 at v0.36.76; the wide-badge signal at 0 at v0.36.77; runs beside WS-CV, before WS-CB)
 
 The continuing syscall round trip makes no heap allocation.  At `v0.36.71` it
 makes 118: 55 are register-context sites WS-CV's rows already remove, 62 are
@@ -117,8 +117,9 @@ the dispatcher's own, and one is outside the traced window.  The plan's §2
 attributes every site to the row that removes it.  At `v0.36.73` the signal
 round trip makes 13, 9 at `v0.36.74` (the plan's §1 names each), and 0 at
 `v0.36.75`.  At `v0.36.76` a wait that consumes a pending badge reads 0 too
-(48 before), and a signal with a badge `≥ 2^63` reads 4 (its heap numbers,
-the plan's R1); ZA4 measures the other syscalls and entries.  Plan:
+(48 before).  At `v0.36.77` a signal with a badge `≥ 2^63` reads 0 (4
+before): `Badge` holds a machine word and the notification keeps its pending
+badge as a flag and a word.  ZA4 measures the other syscalls and entries.  Plan:
 [`docs/planning/ZERO_ALLOCATION_SYSCALL_PLAN.md`](../planning/ZERO_ALLOCATION_SYSCALL_PLAN.md)
 (phases ZA1–ZA4).
 

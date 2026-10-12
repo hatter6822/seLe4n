@@ -491,7 +491,7 @@ theorem notificationSignal_badge_stored_fresh
     (SeLe4n.NoDupList.tail?_eq_none_iff _).mpr hNoWaiters
   simp [hObj, hTailNone, hNoPending] at hSignal
   exact ⟨{ state := .active, waitingThreads := SeLe4n.NoDupList.empty,
-           pendingBadge := some (SeLe4n.Badge.ofNatMasked badge.toNat), boundTCB := ntfn.boundTCB },
+           hasPendingBadge := true, pendingWord := (SeLe4n.Badge.ofNatMasked badge.toNat), boundTCB := ntfn.boundTCB },
     by rw [← storeObject_objects_eq st st' notifId _ hObjInv hSignal], rfl⟩
 
 /-- (H-03) When `notificationWait` returns `some badge`, that badge was the pending
@@ -546,7 +546,7 @@ theorem notificationWait_recovers_pending_badge
               simp only [hPending] at hWait
               let newNtfn : Notification :=
                 { state := .idle, waitingThreads := SeLe4n.NoDupList.empty,
-                  pendingBadge := none, boundTCB := ntfn.boundTCB }
+                  hasPendingBadge := false, pendingWord := SeLe4n.Badge.zero, boundTCB := ntfn.boundTCB }
               revert hWait
               cases hStore : storeObject notifId (.notification newNtfn) st with
               | error e => simp
@@ -602,7 +602,7 @@ WS-F5/D1c: Updated to use word-bounded `Badge.bor`. -/
 theorem badge_merge_idempotent
     (badge : SeLe4n.Badge) :
     SeLe4n.Badge.bor badge badge = SeLe4n.Badge.ofNatMasked badge.toNat := by
-  simp [SeLe4n.Badge.bor, SeLe4n.Badge.toNat, Nat.or_self]
+  exact SeLe4n.Badge.bor_idempotent badge
 
 -- ============================================================================
 -- WS-E2 / C-01: Derivation infrastructure for reformulated invariants

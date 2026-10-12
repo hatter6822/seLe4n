@@ -8124,7 +8124,7 @@ def notificationSignal (notificationId : SeLe4n.ObjId) (badge : SeLe4n.Badge) : 
             let ntfn' : Notification := {
               state := nextState
               waitingThreads := rest
-              pendingBadge := none
+              hasPendingBadge := false, pendingWord := SeLe4n.Badge.zero
               boundTCB := ntfn.boundTCB
             }
             match storeObject notificationId (.notification ntfn') st with
@@ -8137,19 +8137,12 @@ def notificationSignal (notificationId : SeLe4n.ObjId) (badge : SeLe4n.Badge) : 
                 | .error e => .error e
                 | .ok st'' => .ok ((), ensureRunnable st'' waiter)
         | none =>
-            -- WS-F5/D1c: Use word-bounded Badge.bor for accumulation.
-            -- U8-C/U-L24: Notification word overflow note: Badge.bor uses
-            -- unbounded Lean Nat internally (bitwise OR). In the formal model
-            -- this is correct — no overflow is possible. However, on real
-            -- hardware (ARM64), notification words are 64-bit. AN9 (hardware
-            -- binding) must enforce 64-bit word width by masking Badge values
-            -- to 2^64 - 1 at the platform boundary.
-            -- Badge.ofNatMasked already applies a 64-bit mask, and Badge.bor
-            -- preserves the mask (see Badge.bor definition in Prelude.lean).
-            -- AF5-D (AF-15): Nat round-trip via `Badge.ofNatMasked badge.toNat`
-            -- is safe: `ofNatMasked` applies `% machineWordMax` (64-bit masking).
-            -- `bor_valid` theorem (AC3/I-04) proves result validity.
-            -- H3 hardware binding: verify masking consistency at ABI boundary.
+            -- WS-F5/D1c: accumulate with `Badge.bor`.  A badge is a 64-bit
+            -- machine word (`UInt64`, WS-ZA ZA4.2), so the merge is the word's
+            -- own OR, exactly the hardware notification word: it cannot exceed
+            -- 64 bits and no masking is needed at any boundary.  The first
+            -- badge passes through `Badge.ofNatMasked badge.toNat`, the
+            -- identity on a word (`Badge.ofNatMasked_toNat`).
             let mergedBadge : SeLe4n.Badge :=
               match ntfn.pendingBadge with
               | some existing => SeLe4n.Badge.bor existing badge
@@ -8157,7 +8150,7 @@ def notificationSignal (notificationId : SeLe4n.ObjId) (badge : SeLe4n.Badge) : 
             let ntfn' : Notification := {
               state := .active
               waitingThreads := SeLe4n.NoDupList.empty
-              pendingBadge := some mergedBadge
+              hasPendingBadge := true, pendingWord := mergedBadge
               boundTCB := ntfn.boundTCB
             }
             storeObject notificationId (.notification ntfn') st
@@ -8188,7 +8181,7 @@ def notificationWait
         match ntfn.pendingBadge with
         | some badge =>
             let ntfn' : Notification :=
-              { state := .idle, waitingThreads := SeLe4n.NoDupList.empty, pendingBadge := none,
+              { state := .idle, waitingThreads := SeLe4n.NoDupList.empty, hasPendingBadge := false, pendingWord := SeLe4n.Badge.zero,
                 boundTCB := ntfn.boundTCB }
             match storeObject notificationId (.notification ntfn') st with
             | .error e => .error e
@@ -8222,7 +8215,7 @@ def notificationWait
                       let ntfn' : Notification := {
                         state := .waiting
                         waitingThreads := wt'
-                        pendingBadge := none
+                        hasPendingBadge := false, pendingWord := SeLe4n.Badge.zero
                         boundTCB := ntfn.boundTCB
                       }
                       match storeObject notificationId (.notification ntfn') st with
@@ -8626,7 +8619,7 @@ theorem notificationWait_badge_path_notification
       | some b =>
         simp only [hBadge] at hStep
         let newNtfn : Notification :=
-          { state := .idle, waitingThreads := SeLe4n.NoDupList.empty, pendingBadge := none,
+          { state := .idle, waitingThreads := SeLe4n.NoDupList.empty, hasPendingBadge := false, pendingWord := SeLe4n.Badge.zero,
             boundTCB := ntfn.boundTCB }
         revert hStep
         cases hStore : storeObject notifId (.notification newNtfn) st with
@@ -8683,7 +8676,7 @@ theorem notificationWait_wait_path_notification
         revert hStep
         cases hStore : storeObject notifId (.notification
             { state := .idle, waitingThreads := SeLe4n.NoDupList.empty,
-              pendingBadge := none, boundTCB := ntfn.boundTCB }) st with
+              hasPendingBadge := false, pendingWord := SeLe4n.Badge.zero, boundTCB := ntfn.boundTCB }) st with
         | error e => simp
         | ok pair =>
           simp only []
@@ -8717,7 +8710,7 @@ theorem notificationWait_wait_path_notification
                 ((SeLe4n.NoDupList.consWithGuard?_eq_some_iff waiter
                   ntfn.waitingThreads wt').mp hCons).2
               let ntfn' : Notification :=
-                { state := .waiting, waitingThreads := wt', pendingBadge := none,
+                { state := .waiting, waitingThreads := wt', hasPendingBadge := false, pendingWord := SeLe4n.Badge.zero,
                   boundTCB := ntfn.boundTCB }
               revert hStep
               cases hStore : storeObject notifId (.notification ntfn') st with

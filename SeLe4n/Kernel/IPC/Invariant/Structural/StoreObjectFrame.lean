@@ -1558,7 +1558,7 @@ theorem notificationSignal_preserves_allPendingMessagesBounded
           revert hStep
           cases hStore : storeObject notificationId
               (.notification { state := if rest.val.isEmpty then .idle else .waiting,
-                               waitingThreads := rest, pendingBadge := none, boundTCB := ntfn.boundTCB }) st with
+                               waitingThreads := rest, hasPendingBadge := false, pendingWord := SeLe4n.Badge.zero, boundTCB := ntfn.boundTCB }) st with
           | error e => simp
           | ok pair =>
               simp only []
@@ -1608,7 +1608,7 @@ theorem notificationWait_preserves_allPendingMessagesBounded
           cases hStore : storeObject notificationId
               (.notification
                 { state := .idle, waitingThreads := SeLe4n.NoDupList.empty,
-                  pendingBadge := none, boundTCB := ntfn.boundTCB }) st with
+                  hasPendingBadge := false, pendingWord := SeLe4n.Badge.zero, boundTCB := ntfn.boundTCB }) st with
           | error e => simp
           | ok pair =>
               simp only []
@@ -1815,7 +1815,7 @@ theorem notificationSignal_preserves_dualQueueSystemInvariant
         simp only [hWaiters] at hStep; revert hStep
         cases hStore : storeObject notificationId
             (.notification { state := if rest.val.isEmpty then .idle else .waiting,
-                             waitingThreads := rest, pendingBadge := none, boundTCB := ntfn.boundTCB }) st with
+                             waitingThreads := rest, hasPendingBadge := false, pendingWord := SeLe4n.Badge.zero, boundTCB := ntfn.boundTCB }) st with
         | error e => simp
         | ok pair =>
           simp only []
@@ -1858,7 +1858,7 @@ theorem notificationWait_preserves_dualQueueSystemInvariant
         cases hStore : storeObject notificationId
             (.notification
               { state := .idle, waitingThreads := SeLe4n.NoDupList.empty,
-                pendingBadge := none, boundTCB := ntfn.boundTCB }) st with
+                hasPendingBadge := false, pendingWord := SeLe4n.Badge.zero, boundTCB := ntfn.boundTCB }) st with
         | error e => simp
         | ok pair =>
           simp only []

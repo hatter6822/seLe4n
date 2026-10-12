@@ -345,7 +345,7 @@ is built and an exclusively held TCB is rewritten in its slot. -/
     (badge : SeLe4n.Badge) : SystemState :=
   st.updateTcb tid (fun t => { t with registerContext :=
     { t.registerContext with
-      x0 := badge.val.toUInt64, x1 := 0, x2 := 0, x3 := 0, x4 := 0, x5 := 0 } })
+      x0 := badge.word, x1 := 0, x2 := 0, x3 := 0, x4 := 0, x5 := 0 } })
 
 theorem stageBadgeReturn_eq (st : SystemState) (tid : SeLe4n.ThreadId)
     (badge : SeLe4n.Badge) :

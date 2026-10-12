@@ -85,7 +85,7 @@ theorem notificationSignalOnCore_signal_path_NI
     (hWaiters : ntfn.waitingThreads.tail? = some (waiter, rest))
     (hStore : storeObject notificationId (.notification
         { state := if rest.val.isEmpty then .idle else .waiting,
-          waitingThreads := rest, pendingBadge := none, boundTCB := ntfn.boundTCB }) st = .ok ((), st'))
+          waitingThreads := rest, hasPendingBadge := false, pendingWord := SeLe4n.Badge.zero, boundTCB := ntfn.boundTCB }) st = .ok ((), st'))
     (hMsg : storeTcbIpcStateAndMessage st' waiter .ready
         (some { IpcMessage.empty with badge := some badge }) = .ok st'')
     (hObjInv : st.objects.invExt)
@@ -132,7 +132,7 @@ theorem notificationSignalOnCore_signal_path_NI_smp
     (hWaiters : ntfn.waitingThreads.tail? = some (waiter, rest))
     (hStore : storeObject notificationId (.notification
         { state := if rest.val.isEmpty then .idle else .waiting,
-          waitingThreads := rest, pendingBadge := none, boundTCB := ntfn.boundTCB }) st = .ok ((), st'))
+          waitingThreads := rest, hasPendingBadge := false, pendingWord := SeLe4n.Badge.zero, boundTCB := ntfn.boundTCB }) st = .ok ((), st'))
     (hMsg : storeTcbIpcStateAndMessage st' waiter .ready
         (some { IpcMessage.empty with badge := some badge }) = .ok st'')
     (hObjInv : st.objects.invExt)
@@ -196,7 +196,7 @@ theorem notificationWaitOnCore_block_path_NI
     (hNotWaiting : ¬ (tcb.ipcState = .blockedOnNotification notificationId))
     (hCons : ntfn.waitingThreads.consWithGuard? waiter = some wt')
     (hStore : storeObject notificationId (.notification
-        { state := .waiting, waitingThreads := wt', pendingBadge := none, boundTCB := ntfn.boundTCB }) st = .ok ((), st'))
+        { state := .waiting, waitingThreads := wt', hasPendingBadge := false, pendingWord := SeLe4n.Badge.zero, boundTCB := ntfn.boundTCB }) st = .ok ((), st'))
     (hTcb : storeTcbIpcStateAndMessage_fromTcb st' waiter tcb
         (.blockedOnNotification notificationId) none = .ok st'')
     (hObjInv : st.objects.invExt)
@@ -233,7 +233,7 @@ theorem notificationWaitOnCore_block_path_NI_smp
     (hNotWaiting : ¬ (tcb.ipcState = .blockedOnNotification notificationId))
     (hCons : ntfn.waitingThreads.consWithGuard? waiter = some wt')
     (hStore : storeObject notificationId (.notification
-        { state := .waiting, waitingThreads := wt', pendingBadge := none, boundTCB := ntfn.boundTCB }) st = .ok ((), st'))
+        { state := .waiting, waitingThreads := wt', hasPendingBadge := false, pendingWord := SeLe4n.Badge.zero, boundTCB := ntfn.boundTCB }) st = .ok ((), st'))
     (hTcb : storeTcbIpcStateAndMessage_fromTcb st' waiter tcb
         (.blockedOnNotification notificationId) none = .ok st'')
     (hObjInv : st.objects.invExt)

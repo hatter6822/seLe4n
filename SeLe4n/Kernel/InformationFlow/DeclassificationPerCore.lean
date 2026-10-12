@@ -655,7 +655,7 @@ theorem declassifyStoreOnCore_admits_unattributable :
           { canDeclassify := fun _ _ => true }, bootCoreId,
           { subject := ⟨1⟩, domain := ⟨1⟩ }, ⟨1⟩, ⟨0⟩, ⟨7⟩,
           .notification { state := .idle, waitingThreads := SeLe4n.NoDupList.empty,
-                          pendingBadge := none, boundTCB := none },
+                          hasPendingBadge := false, pendingWord := SeLe4n.Badge.zero, boundTCB := none },
           (default : SystemState), _, rfl, ?_⟩
   intro hAttr
   -- The post-state's scheduler slot reduces definitionally to the pre-state's

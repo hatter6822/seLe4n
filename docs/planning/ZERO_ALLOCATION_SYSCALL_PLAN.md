@@ -48,7 +48,11 @@ boundary words, so no return frame record is built.  A signal with a badge
 switched-in thread now writes its words into the core's own register file
 (`restoreIncomingContextOnCore_eq_impl`): it had shared the thread's file with
 the bank, so a syscall after a thread switch copied it once, which only an
-untraced build showed.
+untraced build showed.  At `v0.36.77` (ZA4.2 for the wide badge, with ZA2.3's
+type change) the badge is a machine word and the notification holds its
+pending badge as a flag and a word: the wide-badge signal reads **0**, the
+signal and the wait still read 0, and the signal's first call after boot reads
+2.
 
 **Acceptance**: the exerciser reads **0** for every scenario of ZA4.1, and
 from ZA4.3 on it fails on any non-zero delta (a check on the kernel's
@@ -162,7 +166,7 @@ archive and recorded, every tier its files reach green.
 |---|---|---|
 | ZA2.1 | **Resolve once.**  The gate's resolution produces the slot reference the taint plan consumes; `contentFlowEdges`, `contentFlowClears` and `contentFlowBypassed` take it instead of calling `syscallOperandCap?`, with the planner's theorems restated over a resolved reference and one lemma tying it to `syscallOperandCap?`.  `resolveCapAddress` and `CNode.lookup` gain continuation forms (D2) proven equal to the `Except`/`Option` forms | `Capability/Operations.lean`, `Model/Object/*`, `Kernel/API.lean`, `InformationFlow/TaintPropagation.lean` |
 | ZA2.2 | **Compare without constructing** (D3) on the path: `dispatchSyscallChecked`'s current-thread check, `residentElsewhere`, and the `instDecidableEq` closures the reading finds; the `SyscallGate` record passed as its fields | `Kernel/API.lean`, `Scheduler/PriorityInheritance/PerCore.lean` |
-| ZA2.3 | **The notification arm updates in place**: the notification taken out with `RHTable.modify`, its fields written; `Notification.pendingBadge : Option Badge` becomes `pendingBadge : Badge`, presence carried by `state = .active` (already the notification invariant, `IPC/Invariant/Defs.lean:81`), the 152 reads migrated; the decoded-arguments record and the stash's `Option` round trip removed by D2 | `IPC/CrossCore/NotificationSignal.lean`, `Model/Object/Types.lean`, the notification invariants, `Kernel/API.lean` |
+| ZA2.3 | **The notification arm updates in place**: the notification taken out with `RHTable.modify`, its fields written; `Notification.pendingBadge : Option Badge` becomes two scalar fields, `hasPendingBadge : Bool` and `pendingWord : Badge`, read through the derived `Notification.pendingBadge` (done at `v0.36.77`: an `Option` around the machine-word badge is a boxed cell, one allocation per signal that left a badge pending).  The flag is kept instead of reading presence off `state = .active` so the derived view equals the old field on every notification, the ill-formed ones included: no invariant becomes vacuous and the reads keep their statements; every write site is restated over the two fields; the decoded-arguments record and the stash's `Option` round trip removed by D2 | `IPC/CrossCore/NotificationSignal.lean`, `Model/Object/Types.lean`, the notification invariants, `Kernel/API.lean` |
 | ZA2.4 | **Taint without values**: the plan's edges applied by a function of the syscall class and the resolved reference instead of a list; the state rebuilt only when the taint table changes (`applySyscallTaint` returns `post` itself when no edge source and no origin carries a tag, proved); the equality closure removed by D3 | `InformationFlow/TaintPropagation.lean`, `InformationFlow/Taint.lean` |
 | ZA2.5 | **Report through the state**: `ipcBufferWalkPlan` for a message with no overflow words and `syscallReturnOutcome`'s `.returns` value (D2) | `Architecture/IpcBufferTlbFill.lean`, `Platform/FFI.lean` |
 
@@ -182,7 +186,7 @@ remove §2.1's 55 sites.  ZA3 consumes CV4.5.
 | Row | Work | Files |
 |---|---|---|
 | ZA4.1 | **Scenarios beyond one signal**: the exerciser gains a continuing endpoint send/receive rendezvous, a call/reply pair, a yield, a notification wait that consumes a badge, and a signal with a badge `≥ 2^63`; the instrumentation re-run over each, every site recorded in this plan's §2 with its row (a site no row owns gets a row here before any fix) | `smp_exercisers.rs`, `scripts/qemu_exerciser_lib.sh`, this plan |
-| ZA4.2 | The rows ZA4.1 adds, each read to zero.  Done for the pending-badge wait at `v0.36.76`: `registerRoutedSyscall` routes it to `dispatchWaitCheckedR`; the consumed notification is written in its slot when `RHTable.findsInPlace` shows the write keeps the table's layout (`notificationWaitOnCore_eq_impl`); `syscallDispatchCrossCoreBracketedStepWords` answers the outcome's tag and six return words, staged by `stageCallerReturnWords` | per row |
+| ZA4.2 | The rows ZA4.1 adds, each read to zero.  Done for the pending-badge wait at `v0.36.76`: `registerRoutedSyscall` routes it to `dispatchWaitCheckedR`; the consumed notification is written in its slot when `RHTable.findsInPlace` shows the write keeps the table's layout (`notificationWaitOnCore_eq_impl`); `syscallDispatchCrossCoreBracketedStepWords` answers the outcome's tag and six return words, staged by `stageCallerReturnWords`.  Done for the wide-badge signal at `v0.36.77`: `Badge` holds a `UInt64` (R1), the register decode reads it with `readRegWord`, a signal with no waiter merges into the pending word in place (`signalPendingObject`), and the wait returns the word itself (`returnFrameOfBadge`) | per row |
 | ZA4.3 | **The exerciser refuses a non-zero delta** for every scenario (it printed the number; now it fails on it) | `smp_exercisers.rs` |
 | ZA4.4 | Closure: the reading recorded in `CHANGELOG.md`, `WORKSTREAM_CONTEXT.md` section moved to the closed-workstream file, this plan archived | docs |
 
@@ -195,12 +199,14 @@ theorems; it lands with them.  No `sorry`, no axiom, no `implemented_by`.
 
 ## 6. Risks, and decisions deliberately not taken
 
-- **R1 Big words.**  `Badge`, `CPtr` and the message words are `Nat`-backed;
-  a value `≥ 2^63` is a heap number in Lean's runtime, so a high-bit operand
+- **R1 Big words.**  `CPtr` and the message words are `Nat`-backed; a value
+  `≥ 2^63` is a heap number in Lean's runtime, so a high-bit operand
   allocates whatever this plan does.  CV4.3 removes it for message words.
-  For badges and capability pointers ZA4.1's high-bit scenarios measure it,
-  and the row ZA4.2 adds for it carries the type change (the word as a
-  `UInt64` field), before ZA4.3 makes a non-zero reading fail.
+  For capability pointers the row that changes the type (the word as a
+  `UInt64` field) lands with the scenario that sends a capability address
+  `≥ 2^63`, before ZA4.3 makes a non-zero reading fail.  `Badge` was the
+  third such type and holds a `UInt64` since `v0.36.77` (ZA4.2, measured by
+  ZA4.1's wide-badge scenario).
 - **R2 Type changes cost proofs.**  `pendingBadge` (ZA2.3) is the one model
   type this plan changes at its cut; a row that finds another `Option` field
   written `some` on the path decides it the same way in its own row.

@@ -217,7 +217,7 @@ example (notificationId : SeLe4n.ObjId) (badge : SeLe4n.Badge) (executingCore : 
     (hWaiters : ntfn.waitingThreads.tail? = some (waiter, rest))
     (hStore : storeObject notificationId (.notification
         { state := if rest.val.isEmpty then .idle else .waiting,
-          waitingThreads := rest, pendingBadge := none, boundTCB := ntfn.boundTCB }) st = .ok ((), st'))
+          waitingThreads := rest, hasPendingBadge := false, pendingWord := SeLe4n.Badge.zero, boundTCB := ntfn.boundTCB }) st = .ok ((), st'))
     (hMsg : storeTcbIpcStateAndMessage st' waiter .ready
         (some { IpcMessage.empty with badge := some badge }) = .ok st'')
     (hTcb'' : st''.getTcb? waiter = some waiterTcb'')
@@ -248,7 +248,7 @@ example (ctx : LabelingContext) (observer : IfObserver)
     (hWaiters : ntfn.waitingThreads.tail? = some (waiter, rest))
     (hStore : storeObject notificationId (.notification
         { state := if rest.val.isEmpty then .idle else .waiting,
-          waitingThreads := rest, pendingBadge := none, boundTCB := ntfn.boundTCB }) st = .ok ((), st'))
+          waitingThreads := rest, hasPendingBadge := false, pendingWord := SeLe4n.Badge.zero, boundTCB := ntfn.boundTCB }) st = .ok ((), st'))
     (hMsg : storeTcbIpcStateAndMessage st' waiter .ready
         (some { IpcMessage.empty with badge := some badge }) = .ok st'')
     (hObjInv : st.objects.invExt)
