@@ -1112,7 +1112,7 @@ conjunction says the runtime is unaffected. -/
 theorem rescheduleSgisFromFlags_recordSyscallRefusal_eq
     (ctx : LabelingContext) (executingCore : CoreId) (syscallId : UInt32)
     (tid : SeLe4n.ThreadId) (ke : KernelError) (x0 : UInt64)
-    (pending : Vector Bool Concurrency.numCores) (post : SystemState) :
+    (pending : PerCoreFlags) (post : SystemState) :
     rescheduleSgisFromFlags pending
         (Platform.FFI.recordSyscallRefusal ctx executingCore syscallId tid ke x0
           post).scheduler.reschedulePending

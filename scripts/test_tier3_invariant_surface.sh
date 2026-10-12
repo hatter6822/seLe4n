@@ -19795,11 +19795,11 @@ run_check "INVARIANT" rg -F -n 'effectiveBucketPriority st tcb = tcb.boostedPrio
 # not resolve), so each predicate is pinned by the body it HAS and by the absence
 # of the binding analysis it must not regrow.  Bounded to the declaration: a Lean
 # declaration header sits at column 0, so the gap cannot leave it.
-run_negative_check "INVARIANT" rg -F -n 'threadPriority[tid]? = some sc.priority' SeLe4n/Kernel/Scheduler/Invariant.lean
-run_negative_check "INVARIANT" rg -F -n 'threadPriority[tid]? = some sc.priority' SeLe4n/Kernel/Scheduler/Invariant/PerCore.lean
-run_check "INVARIANT" bash -lc 'rg -n -U "def effectiveParamsMatchRunQueue[^\n]*(\n([ \t][^\n]*)?)*" SeLe4n/Kernel/Scheduler/Invariant.lean | rg -F "runQueueOnCore bootCoreId).threadPriority[tid]? = some tcb.priority"'
+run_negative_check "INVARIANT" rg -F -n 'priorityOf tid = some sc.priority' SeLe4n/Kernel/Scheduler/Invariant.lean
+run_negative_check "INVARIANT" rg -F -n 'priorityOf tid = some sc.priority' SeLe4n/Kernel/Scheduler/Invariant/PerCore.lean
+run_check "INVARIANT" bash -lc 'rg -n -U "def effectiveParamsMatchRunQueue[^\n]*(\n([ \t][^\n]*)?)*" SeLe4n/Kernel/Scheduler/Invariant.lean | rg -F "runQueueOnCore bootCoreId).priorityOf tid = some tcb.priority"'
 run_negative_check "INVARIANT" bash -lc 'rg -n -U "def effectiveParamsMatchRunQueue[^\n]*(\n([ \t][^\n]*)?)*" SeLe4n/Kernel/Scheduler/Invariant.lean | rg -F "tcb.schedContextBinding"'
-run_check "INVARIANT" bash -lc 'rg -n -U "def effectiveParamsMatchRunQueueOnCore[^\n]*(\n([ \t][^\n]*)?)*" SeLe4n/Kernel/Scheduler/Invariant/PerCore.lean | rg -F "runQueueOnCore c).threadPriority[tid]? = some tcb.priority"'
+run_check "INVARIANT" bash -lc 'rg -n -U "def effectiveParamsMatchRunQueueOnCore[^\n]*(\n([ \t][^\n]*)?)*" SeLe4n/Kernel/Scheduler/Invariant/PerCore.lean | rg -F "runQueueOnCore c).priorityOf tid = some tcb.priority"'
 run_negative_check "INVARIANT" bash -lc 'rg -n -U "def effectiveParamsMatchRunQueueOnCore[^\n]*(\n([ \t][^\n]*)?)*" SeLe4n/Kernel/Scheduler/Invariant/PerCore.lean | rg -F "tcb.schedContextBinding"'
 # (6) THE CHECKED READER keeps its lookup -- its FAILURE is the error it exists
 # to surface -- and stops deciding the priority with it.
@@ -21908,7 +21908,7 @@ run_check "INVARIANT" rg -n '^theorem modifyTcb_preserves_badgeWellFormed$' SeLe
 run_check "INVARIANT" bash -lc 'rg -U -n "^def handleRescheduleSgiOnCore \(st : SystemState\) \(c : CoreId\) :[^\n]*(\n([ \t][^\n]*)?)*  \| \.ok none =>\n( *\n)*      if currentOutsideActiveDomainOnCore st c then\n        \.ok \(\(dropCurrentOnCore st c\)\.clearReschedulePendingOnCore c\)\n      else \.ok \(st\.clearReschedulePendingOnCore c\)\n  \| \.ok \(some tid\) =>\n( *\n)*      if currentOutsideActiveDomainOnCore st c \|\| candidateOutranksCurrentOnCore st c tid then\n        match switchToThreadOnCore st c tid with\n        \| \.ok st. => \.ok \(st.\.clearReschedulePendingOnCore c\)\n        \| \.error e => \.error e\n      else \.ok \(st\.clearReschedulePendingOnCore c\)" SeLe4n/Kernel/Scheduler/Operations/Selection.lean'
 run_check "INVARIANT" bash -lc 'rg -U -n "^def scheduleEffectiveOnCore \(st : SystemState\) \(c : CoreId\) :[^\n]*(\n([ \t][^\n]*)?)*      \.ok \(\(idleFallbackOnCore \(saveOutgoingContextOnCore st c\) c\)\.clearReschedulePendingOnCore c\)(\n([ \t][^\n]*)?)*            \.ok \{ stRestored with scheduler := \(stRestored\.scheduler\.setCurrentOnCore c \(some tid\)\)\n              \|>\.clearReschedulePendingOnCore c \}" SeLe4n/Kernel/Scheduler/Operations/Core.lean'
 run_check "INVARIANT" rg -n '^def markKeyChangeFor \(st : SystemState\) \(tid : SeLe4n\.ThreadId\)' SeLe4n/Kernel/Scheduler/Operations/ReschedulePending.lean
-run_check "INVARIANT" rg -n '^def rescheduleSgisFromFlags \(pre post : Vector Bool numCores\) :' SeLe4n/Kernel/Scheduler/Operations/ReschedulePending.lean
+run_check "INVARIANT" rg -n '^def rescheduleSgisFromFlags \(pre post : PerCoreFlags\) :' SeLe4n/Kernel/Scheduler/Operations/ReschedulePending.lean
 run_check "INVARIANT" rg -n '^theorem mem_rescheduleSgisFromFlags_iff($|[ ({:\[\]])' SeLe4n/Kernel/Scheduler/Operations/ReschedulePending.lean
 run_check "INVARIANT" rg -n '^name = "reschedule_pending_suite"$' lakefile.toml
 run_check "INVARIANT" rg -n '^run_check_with_timeout "TRACE" lake exe reschedule_pending_suite$' scripts/test_tier2_negative.sh

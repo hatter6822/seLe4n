@@ -166,20 +166,20 @@ write the core's run queue and current slot under a step whose lock footprint
 need not cover them; leaving the flag up would hold the reschedule to the
 core's next scheduling point and swallow the `false → true` edge a later remote
 writer needs. -/
-def rescheduleSgisFromFlags (pre post : Vector Bool numCores) :
+def rescheduleSgisFromFlags (pre post : PerCoreFlags) :
     List (CoreId × SgiKind) :=
   (allCores.filter fun c => !pre.get c && post.get c).map
     fun c => (c, SgiKind.reschedule)
 
-/-- The flag vector a seam captures before its transition.  A call rather than
+/-- The flag set a seam captures before its transition.  A call rather than
 a field read on purpose: the compiler sinks a projection to its use, which would
 hold the pre-state's scheduler alive across the transition and force the
 transition to copy it instead of updating it in place; a call is not sunk. -/
-@[noinline] def reschedulePendingSnapshot (st : SystemState) : Vector Bool numCores :=
+@[noinline] def reschedulePendingSnapshot (st : SystemState) : PerCoreFlags :=
   st.scheduler.reschedulePending
 
 /-- Membership in the flag-derived list, spelled out. -/
-theorem mem_rescheduleSgisFromFlags_iff (pre post : Vector Bool numCores) (c : CoreId)
+theorem mem_rescheduleSgisFromFlags_iff (pre post : PerCoreFlags) (c : CoreId)
     (k : SgiKind) :
     (c, k) ∈ rescheduleSgisFromFlags pre post ↔
       k = SgiKind.reschedule ∧ pre.get c = false ∧ post.get c = true := by
@@ -196,7 +196,7 @@ theorem mem_rescheduleSgisFromFlags_iff (pre post : Vector Bool numCores) (c : C
 
 /-- Every flag-derived SGI is a `.reschedule` (the counterpart of
 `computeCrossCoreSgis_all_reschedule`). -/
-theorem rescheduleSgisFromFlags_all_reschedule (pre post : Vector Bool numCores)
+theorem rescheduleSgisFromFlags_all_reschedule (pre post : PerCoreFlags)
     (p : CoreId × SgiKind) (h : p ∈ rescheduleSgisFromFlags pre post) :
     p.2 = SgiKind.reschedule := by
   obtain ⟨c, k⟩ := p
@@ -204,7 +204,7 @@ theorem rescheduleSgisFromFlags_all_reschedule (pre post : Vector Bool numCores)
 
 /-- A flag that was already set surfaces nothing — the list names only the
 cores this step raised. -/
-theorem rescheduleSgisFromFlags_nil_of_eq (v : Vector Bool numCores) :
+theorem rescheduleSgisFromFlags_nil_of_eq (v : PerCoreFlags) :
     rescheduleSgisFromFlags v v = [] := by
   unfold rescheduleSgisFromFlags
   rw [List.map_eq_nil_iff, List.filter_eq_nil_iff]

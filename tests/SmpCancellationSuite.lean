@@ -1510,7 +1510,7 @@ private def runPipDonationDropChecks : IO Unit := do
           | some s => decide (s.pipBoost = some ⟨200⟩)
           | none => false)
           && decide (serverTid ∈ stPipDonation.scheduler.runQueueOnCore core2)
-          && decide ((stPipDonation.scheduler.runQueueOnCore core2).threadPriority[serverTid]?
+          && decide ((stPipDonation.scheduler.runQueueOnCore core2).priorityOf serverTid
               = some ⟨200⟩))
       match suspendThreadOnCore stPipDonation vtid bootCoreId with
       | .ok (st', sgi) =>
@@ -1528,7 +1528,7 @@ private def runPipDonationDropChecks : IO Unit := do
           assertBool "server stays runnable on core 2 across the bucket migration"
             (decide (serverTid ∈ st'.scheduler.runQueueOnCore core2))
           assertBool "server's core-2 bucket is re-keyed to its base priority"
-            (decide ((st'.scheduler.runQueueOnCore core2).threadPriority[serverTid]?
+            (decide ((st'.scheduler.runQueueOnCore core2).priorityOf serverTid
               = some ⟨50⟩))
           -- (iii) the review fix: the diff seam derives the core-2
           -- re-bucketing poke the FFI suspend entry now fires.
@@ -1626,7 +1626,7 @@ private def runDisinheritanceSchedulingChecks : IO Unit := do
             (decide (st'.scheduler.currentOnCore bootCoreId = some bystanderTid))
           assertBool "preempted server is re-enqueued on the boot queue at base priority"
             (decide (serverTid ∈ st'.scheduler.runQueueOnCore bootCoreId)
-              && decide ((st'.scheduler.runQueueOnCore bootCoreId).threadPriority[serverTid]?
+              && decide ((st'.scheduler.runQueueOnCore bootCoreId).priorityOf serverTid
                   = some ⟨50⟩))
       | .error _ => assertBool "local-disinheritance suspend succeeds" false
       -- (b) single-core mirror (`suspendThread`, boot pipeline).

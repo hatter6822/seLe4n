@@ -4116,7 +4116,7 @@ entry keep their shape — this is the frame they rewrite through for the
 writers' marks and the scheduling points' clears. -/
 theorem reschedulePending_write_preserves_projection
     (ctx : LabelingContext) (observer : IfObserver) (st : SystemState)
-    (v : _root_.Vector Bool SeLe4n.Kernel.Concurrency.numCores) :
+    (v : PerCoreFlags) :
     projectState ctx observer
         { st with scheduler := { st.scheduler with reschedulePending := v } } =
       projectState ctx observer st := rfl

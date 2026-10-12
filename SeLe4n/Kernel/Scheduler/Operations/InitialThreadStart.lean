@@ -292,8 +292,8 @@ theorem startInitialThreadOnCore_runQueueOnCore_ne (st : SystemState)
 -- ============================================================================
 
 /-- An object-store insert beside any scheduler write keeps `allTablesInvExtK`:
-the three run-queue conjuncts are fields of whatever `RunQueue` the boot core
-ends up with, and every other table is untouched. -/
+the run queue carries its own table invariants as structure fields, so the
+scheduler write touches no conjunct, and every other table is untouched. -/
 private theorem allTablesInvExtK_objects_insert (st : SystemState) (k : SeLe4n.ObjId)
     (v : KernelObject) (sch : SchedulerState) (h : st.allTablesInvExtK) :
     ({ st with objects := st.objects.insert k v, scheduler := sch } : SystemState).allTablesInvExtK := by
@@ -301,9 +301,7 @@ private theorem allTablesInvExtK_objects_insert (st : SystemState) (k : SeLe4n.O
   exact ⟨RHTable.insert_preserves_invExtK _ _ _ h.1, h.2.1, h.2.2.1, h.2.2.2.1,
     h.2.2.2.2.1, h.2.2.2.2.2.1, h.2.2.2.2.2.2.1, h.2.2.2.2.2.2.2.1,
     h.2.2.2.2.2.2.2.2.1, h.2.2.2.2.2.2.2.2.2.1, h.2.2.2.2.2.2.2.2.2.2.1,
-    RunQueue.byPrio_invExtK _, RunQueue.threadPrio_invExtK _,
-    h.2.2.2.2.2.2.2.2.2.2.2.2.2.1, RunQueue.mem_invExtK _,
-    h.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2⟩
+    h.2.2.2.2.2.2.2.2.2.2.2.1, h.2.2.2.2.2.2.2.2.2.2.2.2⟩
 
 /-- The two steps of the start as a chain of `{ _ with objects := insert … }`
 writes (or none), with the scheduler replaced — the shape every witness reads. -/
@@ -596,7 +594,7 @@ def runQueueBootSound (st : SystemState) (c : CoreId) : Prop :=
   ∀ tid, tid ∈ st.scheduler.runQueueOnCore c →
     ∃ tcb, st.objects[tid.toObjId]? = some (.tcb tcb) ∧ 0 < tcb.timeSlice ∧
       tcb.pipBoost = none ∧
-      (st.scheduler.runQueueOnCore c).threadPriority[tid]? = some tcb.priority
+      (st.scheduler.runQueueOnCore c).priorityOf tid = some tcb.priority
 
 /-- **WS-BP BP7.11**: **the start keeps every core's run queue boot-sound.**
 The started thread enters one queue at its boosted priority, which with no
@@ -623,26 +621,21 @@ theorem startInitialThreadOnCore_preserves_runQueueBootSound {st : SystemState}
     rw [startInitialThreadOnCore_runQueueOnCore_self hT hNR hInv]
     refine ⟨RunQueue.insert_preserves_toList_nodup _ _ _ hNodup, ?_⟩
     intro tid' hm
-    have hTP := RunQueue.insert_threadPriority
-      (st.scheduler.runQueueOnCore (determineTargetCore st tid)) tid tcb.boostedPriority
     have hContains : (st.scheduler.runQueueOnCore (determineTargetCore st tid)).contains tid =
         false := RunQueue.contains_false_of_not_mem (hNotMem _)
-    rw [hContains] at hTP
-    simp only [Bool.false_eq_true, ↓reduceIte] at hTP
-    have hExt := (st.scheduler.runQueueOnCore (determineTargetCore st tid)).threadPrio_invExtK.1
     rcases (RunQueue.mem_insert _ _ _ _).mp hm with hm | hEqT
     · obtain ⟨t, hObj, hPos, hB, hPrio⟩ := hMem tid' hm
       refine ⟨t, by rw [hOld tid' hm]; exact hObj, hPos, hB, ?_⟩
-      have hNe : ¬(tid == tid') = true := by
-        intro hb; have := eq_of_beq hb; subst this; exact hNotMem _ hm
-      show (RunQueue.threadPriority _).get? tid' = _
-      rw [hTP, RHTable.getElem?_insert_ne _ _ _ _ hNe hExt]
+      have hNe : tid' ≠ tid := by
+        intro e; subst e; exact hNotMem _ hm
+      rw [RunQueue.priorityOf_insert, hContains]
+      simp only [Bool.false_eq_true, ↓reduceIte, hNe]
       exact hPrio
     · rw [hEqT]
       refine ⟨startedThread tcb, startInitialThreadOnCore_objects_self hT hNR hInv, hSlice,
         hBoost, ?_⟩
-      show (RunQueue.threadPriority _).get? tid = _
-      rw [hTP, RHTable.getElem?_insert_self _ _ _ hExt]
+      rw [RunQueue.priorityOf_insert, hContains]
+      simp only [Bool.false_eq_true, ↓reduceIte]
       show some (tcb.priority.raisedBy tcb.pipBoost) = some tcb.priority
       rw [hBoost]; rfl
   · rw [startInitialThreadOnCore_runQueueOnCore_ne st tid c hc hInv]

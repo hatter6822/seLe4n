@@ -3263,12 +3263,13 @@ theorem timeoutThread_preserves_runQueueSafetyOnCore
     have hInv3 : (wakeThread st2 tid execCore).1.objects.invExt :=
       wakeThread_preserves_objects_invExt _ _ execCore hInv2
     simp only [] at hStep
-    split at hStep <;>
-      · simp only [Except.ok.injEq] at hStep
-        subst hStep
-        first
-          | exact revertPriorityInheritance_preserves_runQueueSafetyOnCore _ _ _ _ hInv3 h3
-          | exact h3
+    split at hStep
+    · simp only [Except.ok.injEq] at hStep
+      subst hStep
+      exact revertPriorityInheritance_preserves_runQueueSafetyOnCore _ _ _ _ hInv3 h3
+    · simp only [Except.ok.injEq] at hStep
+      subst hStep
+      exact h3
 
 /-- WS-SM SM5.I.8 (timeout fold): `timeoutBlockedThreads` preserves the qcc-free
 run-queue safety bundle on core `c` UNCONDITIONALLY.  Folds the `timeoutThread`

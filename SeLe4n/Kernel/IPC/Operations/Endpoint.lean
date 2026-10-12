@@ -137,7 +137,7 @@ neither way is left *literally* untouched, rather than rewritten with values
 equal to the ones already there.  The unguarded form wrote
 `setRunQueueOnCore c ((runQueueOnCore c).remove tid)` at every core, and while
 that removal changes nothing a non-member can observe
-(`RunQueue.remove_content_of_not_mem`), it is not *syntactically* the old queue
+(`RunQueue.remove_of_not_mem`), it is not *syntactically* the old queue
 — so the sweep's write set could only ever be bounded by `allCores`, and
 `.lifecycleRetype` inherited that.
 
@@ -347,13 +347,13 @@ theorem removeRunnableFromAllCores_not_mem (st : SystemState) (tid : SeLe4n.Thre
     exact hOcc (by simp [threadOccupiesCore, RunQueue.mem_iff_contains.mp hMem])
 
 /-- WS-SM SM8.B: the sweep only ever removes — it never introduces a thread. -/
-theorem removeRunnableFromAllCores_flat_subset (st : SystemState)
+theorem removeRunnableFromAllCores_toList_subset (st : SystemState)
     (tid x : SeLe4n.ThreadId) (c : SeLe4n.Kernel.Concurrency.CoreId)
-    (h : x ∈ ((removeRunnableFromAllCores st tid).scheduler.runQueueOnCore c).flat) :
-    x ∈ (st.scheduler.runQueueOnCore c).flat := by
+    (h : x ∈ ((removeRunnableFromAllCores st tid).scheduler.runQueueOnCore c).toList) :
+    x ∈ (st.scheduler.runQueueOnCore c).toList := by
   rw [removeRunnableFromAllCores_runQueueOnCore] at h
   split at h
-  · exact (List.mem_filter.mp h).1
+  · rw [RunQueue.toList_remove] at h; exact (List.mem_filter.mp h).1
   · exact h
 
 /-- WS-SM SM8.B: the sweep is scheduler-only — every other field frames, by

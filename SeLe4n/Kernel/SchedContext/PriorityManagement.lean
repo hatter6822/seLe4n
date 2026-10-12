@@ -439,7 +439,7 @@ def migrateRunQueueBucketOnCore (st : SystemState) (tid : SeLe4n.ThreadId)
       | some tcb => newPriority.raisedBy tcb.pipBoost
       | none =>
         newPriority.raisedBy
-          ((st.scheduler.runQueueOnCore homeCore).threadPriority[tid]?)
+          ((st.scheduler.runQueueOnCore homeCore).priorityOf tid)
     let rq := rq.insert tid effectivePrio
     { st with scheduler := st.scheduler.setRunQueueOnCore homeCore rq }
   else

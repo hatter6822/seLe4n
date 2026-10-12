@@ -2220,13 +2220,13 @@ wrapper by `unfold`. -/
 /-- Pre-retype cleanup only removes elements from the flat list, never adds. -/
 theorem cleanupTcbReferences_flat_subset
     (st : SystemState) (tid x : SeLe4n.ThreadId)
-    (h : x ∈ ((cleanupTcbReferences st tid).scheduler.runQueueOnCore bootCoreId).flat) :
-    x ∈ (st.scheduler.runQueueOnCore bootCoreId).flat := by
+    (h : x ∈ ((cleanupTcbReferences st tid).scheduler.runQueueOnCore bootCoreId).toList) :
+    x ∈ (st.scheduler.runQueueOnCore bootCoreId).toList := by
   unfold cleanupTcbReferences at h
   rw [clearDonationOriginReferences_scheduler_eq,
       removeFromNotificationWaitQueue_scheduler_eq] at h
   rw [removeFromAllEndpointQueues_scheduler_eq] at h
-  exact removeRunnableFromAllCores_flat_subset st tid x bootCoreId h
+  exact removeRunnableFromAllCores_toList_subset st tid x bootCoreId h
 
 /-- CDT cleanup preserves the scheduler. -/
 theorem detachCNodeSlots_scheduler_eq
@@ -2321,8 +2321,8 @@ theorem lifecyclePreRetypeCleanup_flat_subset
     (st stClean : SystemState) (target : SeLe4n.ObjId)
     (currentObj newObj : KernelObject) (x : SeLe4n.ThreadId)
     (hOk : lifecyclePreRetypeCleanup st target currentObj newObj = .ok stClean)
-    (h : x ∈ (stClean.scheduler.runQueueOnCore bootCoreId).flat) :
-    x ∈ (st.scheduler.runQueueOnCore bootCoreId).flat := by
+    (h : x ∈ (stClean.scheduler.runQueueOnCore bootCoreId).toList) :
+    x ∈ (st.scheduler.runQueueOnCore bootCoreId).toList := by
   cases currentObj with
   | tcb tcb =>
     -- Unfold with known currentObj = .tcb tcb
@@ -2357,7 +2357,7 @@ theorem lifecyclePreRetypeCleanup_flat_subset
       rw [cleanupTcbReferences_scheduler_eq_removeRunnableFromAllCores] at h
       -- Take the sweep off first (it handles its own per-core guard), then
       -- collapse the run-queue-preserving prefix.
-      have hSub := removeRunnableFromAllCores_flat_subset _ tcb.tid x bootCoreId h
+      have hSub := removeRunnableFromAllCores_toList_subset _ tcb.tid x bootCoreId h
       rw [hArmRQ] at hSub
       exact hSub
   | cnode cn =>
@@ -2370,8 +2370,8 @@ theorem lifecyclePreRetypeCleanup_flat_subset
       · exact absurd hOk (by simp)
       injection hOk with hOk; subst hOk
       have hSched := detachCNodeSlots_scheduler_eq st target cn
-      rw [show ((detachCNodeSlots st target cn).scheduler.runQueueOnCore bootCoreId).flat =
-            (st.scheduler.runQueueOnCore bootCoreId).flat from by rw [hSched]] at h
+      rw [show ((detachCNodeSlots st target cn).scheduler.runQueueOnCore bootCoreId).toList =
+            (st.scheduler.runQueueOnCore bootCoreId).toList from by rw [hSched]] at h
       exact h
   | endpoint _ =>
     simp only [lifecyclePreRetypeCleanup] at hOk

@@ -45,21 +45,14 @@ theorem removeRunnable_runnable_mem
     (st : SystemState) (tid x : SeLe4n.ThreadId) :
     x ∈ (removeRunnable st tid).scheduler.runnable ↔
     x ∈ st.scheduler.runnable ∧ x ≠ tid := by
-  simp only [SchedulerState.runnable, removeRunnable_runQueueOnCore, RunQueue.toList]
-  unfold RunQueue.remove
-  constructor
-  · intro hx
-    have ⟨hFlat, hNe⟩ := List.mem_filter.mp hx
-    exact ⟨hFlat, by simpa using hNe⟩
-  · intro ⟨hFlat, hNe⟩
-    exact List.mem_filter.mpr ⟨hFlat, by simpa using hNe⟩
+  simp only [SchedulerState.runnable, removeRunnable_runQueueOnCore, RunQueue.toList_remove,
+    List.mem_filter, ne_eq, decide_eq_true_eq]
 
 theorem removeRunnable_nodup
     (st : SystemState) (tid : SeLe4n.ThreadId)
     (hNodup : st.scheduler.runnable.Nodup) :
     (removeRunnable st tid).scheduler.runnable.Nodup := by
-  simp only [SchedulerState.runnable, removeRunnable_runQueueOnCore, RunQueue.toList] at *
-  unfold RunQueue.remove at *
+  simp only [SchedulerState.runnable, removeRunnable_runQueueOnCore, RunQueue.toList_remove] at *
   exact hNodup.sublist List.filter_sublist
 
 theorem ensureRunnable_scheduler_current
@@ -218,12 +211,8 @@ theorem ensureRunnable_mem_reverse
     split at hMem
     · -- TCB case: runnable = (rq.insert tid prio).toList
       simp only [SchedulerState.runnable, SchedulerState.markReschedulePendingOnCore_runQueueOnCore, SchedulerState.setRunQueueOnCore_runQueueOnCore_self,
-        RunQueue.toList] at hMem ⊢
-      unfold RunQueue.insert at hMem
-      split at hMem
-      · exact .inl hMem
-      · simp only [List.mem_append, List.mem_singleton] at hMem
-        exact hMem.elim .inl .inr
+        RunQueue.mem_toList_iff_mem, RunQueue.mem_insert] at hMem ⊢
+      exact hMem
     · exact .inl hMem
 
 /-- WS-E3/H-09: A thread is never in its own removeRunnable result. -/

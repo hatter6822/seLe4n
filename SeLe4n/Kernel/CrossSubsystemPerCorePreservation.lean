@@ -130,7 +130,7 @@ theorem cleanupNoStaleSchedRef_perCore_holds_if_idle {st : SystemState}
     (hRQ : (st.scheduler.runQueueOnCore c).toList = []) :
     cleanupNoStaleSchedRef_perCore st target c := by
   intro tcb _ hMem
-  have hFlat : (st.scheduler.runQueueOnCore c).flat = [] := hRQ
+  have hFlat : (st.scheduler.runQueueOnCore c).toList = [] := hRQ
   rw [hFlat] at hMem; exact absurd hMem List.not_mem_nil
 
 theorem schedContextRunQueueConsistent_perCore_holds_if_idle {st : SystemState} {c : CoreId}
@@ -186,7 +186,7 @@ theorem schedContextRunQueueConsistent_smp_of_singleCore_and_idle {st : SystemSt
 theorem cleanupNoStaleSchedRef_smp_of_singleCore_and_idle {st : SystemState}
     {target : SeLe4n.ObjId}
     (hSingle : ∀ tcb, st.objects[target]? = some (.tcb tcb) →
-      ¬ (tcb.tid ∈ (st.scheduler.runQueueOnCore bootCoreId).flat))
+      ¬ (tcb.tid ∈ (st.scheduler.runQueueOnCore bootCoreId).toList))
     (hIdle : ∀ c, c ≠ bootCoreId → (st.scheduler.runQueueOnCore c).toList = []) :
     cleanupNoStaleSchedRef_smp st target := by
   intro c

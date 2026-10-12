@@ -139,9 +139,9 @@ def frozenStateAgrees (fs : FrozenSystemState) (ls : SystemState) : Bool :=
   -- -- the very paths the recorded divergences were on -- the ones this relation
   -- could not see.
   --
-  -- The subject is `byPriority`, because that is what *selection* reads:
-  -- `frozenChooseThread` folds over its buckets and the live `chooseThread` over
-  -- the same field, so two states whose buckets agree can select the same
+  -- The subject is the priority buckets, because that is what *selection* reads:
+  -- `frozenChooseThread` folds over its `byPriority` buckets and the live
+  -- `chooseThread` over the run queue's buckets (`atPriority`), so two states whose buckets agree can select the same
   -- threads.  `membership` is deliberately not compared -- a `FrozenSet` is a
   -- key-presence map with `Unit` values, so frozen membership cannot change at
   -- all, and `frozenSchedule`'s own docstring records it as a read-only record
@@ -154,9 +154,9 @@ def frozenStateAgrees (fs : FrozenSystemState) (ls : SystemState) : Bool :=
     -- Both directions over the union of bucket keys: a thread queued on one side
     -- only is a disagreement whichever side queues it, and an empty bucket on
     -- one side must face an empty or absent bucket on the other.
-    (lq.byPriority.toList.map Prod.fst
+    (lq.toList.filterMap lq.priorityOf
         ++ fs.scheduler.byPriority.indexMap.toList.map Prod.fst).all (fun prio =>
-      (fs.scheduler.byPriority.get? prio).getD [] == (lq.byPriority[prio]?).getD [])
+      (fs.scheduler.byPriority.get? prio).getD [] == lq.atPriority prio)
   objectsAgree && taintAgree && queueAgree
     && fs.scheduler.current == ls.scheduler.currentOnCore Concurrency.bootCoreId
     && fs.scheduler.activeDomain == ls.scheduler.activeDomainOnCore Concurrency.bootCoreId

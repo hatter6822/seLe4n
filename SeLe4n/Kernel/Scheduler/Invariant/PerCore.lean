@@ -198,7 +198,7 @@ def schedulerPriorityMatchOnCore (st : SystemState) (c : CoreId) : Prop :=
   ∀ tid, tid ∈ (st.scheduler.runQueueOnCore c) →
     match st.getTcb? tid with
     | some tcb =>
-        (st.scheduler.runQueueOnCore c).threadPriority[tid]? = some (tcb.boostedPriority)
+        (st.scheduler.runQueueOnCore c).priorityOf tid = some (tcb.boostedPriority)
     | none => True
 
 /-- SM4.C: per-core domain-time positivity.  Per-core form of
@@ -280,7 +280,7 @@ def effectiveParamsMatchRunQueueOnCore (st : SystemState) (c : CoreId) : Prop :=
   ∀ tid, tid ∈ (st.scheduler.runQueueOnCore c) →
     match st.getTcb? tid with
     | some tcb =>
-      (st.scheduler.runQueueOnCore c).threadPriority[tid]? = some tcb.priority
+      (st.scheduler.runQueueOnCore c).priorityOf tid = some tcb.priority
     | none => True
 
 -- ============================================================================

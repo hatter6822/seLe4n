@@ -4199,19 +4199,19 @@ private def regsAgreeOn (st st' : SystemState) (c : CoreId) : Bool :=
 /-- The run-queue half of `observableSlotsConfinedToCore`'s first field, decided
 on **every operational field** of `RunQueue`.
 
-`RunQueue` carries proof fields (`flat_wf`, `flat_wf_rev`, `mem_invExtK`) so it
-has no `DecidableEq`; this compares the six fields that carry data — the two
-priority tables, the membership set, the flat list, the cached size and the
-cached maximum.
+`RunQueue` carries proof fields (its table invariants and its `layout`) so it
+has no `DecidableEq`; this compares every field that carries data — the link
+table, the bucket table, the queue's two ends, the size and the cached maximum
+priority code — plus the derived thread order and maximum priority.
 
 Comparing `RunQueue.toList` alone was **not** sufficient, which is what the
-fifth review round caught: `toList` is `flat`, so a re-bucketing write — for
-instance `updatePipBoostOnCore` moving a thread between priority buckets, which
-is exactly what the PIP-chain leg of the live `.call`, `.reply` and
-`.tcbSuspend` arms does on a *remote* core — leaves `flat` untouched while
-`byPriority`, `threadPriority` and `maxPriority` all move.  Every assertion
-built on the old comparison would have reported confinement on a core the
-transition had genuinely written.
+fifth review round caught: a re-bucketing write — for instance
+`updatePipBoostOnCore` moving a thread between priority buckets, which is
+exactly what the PIP-chain leg of the live `.call`, `.reply` and
+`.tcbSuspend` arms does on a *remote* core — can leave the thread order
+untouched while the thread's recorded priority, its bucket and the maximum
+priority all move.  Every assertion built on that comparison would have
+reported confinement on a core the transition had genuinely written.
 
 A sound *refuter*, like `regsAgreeOn`: the table comparisons go through
 `toList`, so two tables holding the same entries in different slot layouts
@@ -4220,12 +4220,14 @@ passing assertion red, never a failing one green. -/
 private def runQueueAgreeOn (st st' : SystemState) (c : CoreId) : Bool :=
   let q := st.scheduler.runQueueOnCore c
   let q' := st'.scheduler.runQueueOnCore c
-  decide (q'.flat = q.flat) &&
+  decide (q'.toList = q.toList) &&
   decide (q'.size = q.size) &&
   decide (q'.maxPriority = q.maxPriority) &&
-  decide (q'.byPriority.toList = q.byPriority.toList) &&
-  decide (q'.threadPriority.toList = q.threadPriority.toList) &&
-  decide (q'.membership.toList = q.membership.toList)
+  decide (q'.head = q.head) &&
+  decide (q'.tail = q.tail) &&
+  decide (q'.maxCode = q.maxCode) &&
+  decide (q'.links.toList = q.links.toList) &&
+  decide (q'.buckets.toList = q.buckets.toList)
 
 /-- The six observable slots, at one core.
 
@@ -4632,7 +4634,7 @@ private def oneQueuedOnCore2 : SystemState :=
 /-- The **same** thread, same queue, moved to a different priority bucket — the
 shape `updatePipBoostOnCore` produces when a donation raises or reverts a
 server's effective priority on its home core.  With one thread in the queue
-`flat` is `[tid]` before and after, so a `toList` comparison sees nothing. -/
+`toList` is `[tid]` before and after, so a `toList` comparison sees nothing. -/
 private def reBucketedOnCore2 : SystemState :=
   let q := oneQueuedOnCore2.scheduler.runQueueOnCore c2
   { oneQueuedOnCore2 with
@@ -4642,8 +4644,8 @@ private def reBucketedOnCore2 : SystemState :=
 /-- §5.3b  The run-queue comparison, and why `toList` was not enough.
 
 The fifth review round found `confinedCheck` deciding the run-queue clause on
-`RunQueue.toList`, which is `flat`.  A re-bucketing write leaves `flat` alone,
-so every confinement assertion in this file would have passed on a core the
+`RunQueue.toList`.  A re-bucketing write can leave the thread order alone, so
+every confinement assertion in this file would have passed on a core the
 transition had genuinely written — exactly the remote PIP-chain writes the live
 `.call`, `.reply` and `.tcbSuspend` arms perform. -/
 private def runRunQueueComparisonChecks : IO Unit := do
@@ -4651,16 +4653,16 @@ private def runRunQueueComparisonChecks : IO Unit := do
   let q  := oneQueuedOnCore2.scheduler.runQueueOnCore c2
   let q' := reBucketedOnCore2.scheduler.runQueueOnCore c2
   assertBool "the fixture really queued the thread on core 2"
-    (decide (q.flat = [remoteHomedThread]))
+    (decide (q.toList = [remoteHomedThread]))
   assertBool "the re-bucketed queue holds the same single thread"
-    (decide (q'.flat = [remoteHomedThread]))
+    (decide (q'.toList = [remoteHomedThread]))
   -- The load-bearing negative: the OLD comparison cannot tell these apart.
   assertBool "NEGATIVE: a `toList` comparison reports these two queues equal"
     (decide (q'.toList = q.toList))
   assertBool "…but the priority bucket really moved"
     (decide (q'.maxPriority ≠ q.maxPriority))
   assertBool "…and the per-thread priority with it"
-    (decide (q'.threadPriority.toList ≠ q.threadPriority.toList))
+    (decide (q'.priorityOf remoteHomedThread ≠ q.priorityOf remoteHomedThread))
   -- So the widened comparison catches it, and `confinedCheck` with it.
   assertBool "runQueueAgreeOn rejects the re-bucketing"
     (runQueueAgreeOn oneQueuedOnCore2 reBucketedOnCore2 c2 = false)
@@ -11278,8 +11280,8 @@ private def runTaintFootprintChecks : IO Unit := do
        lowEquivalentSliceOnCoreCheckWithRegs niLabeling c lowLabel after niState) &&
      allCores.all (fun c =>
        decide (after.scheduler.currentOnCore c = niState.scheduler.currentOnCore c) &&
-       decide ((after.scheduler.runQueueOnCore c).flat
-         = (niState.scheduler.runQueueOnCore c).flat)))
+       decide ((after.scheduler.runQueueOnCore c).toList
+         = (niState.scheduler.runQueueOnCore c).toList)))
 
 /-- The SM9.D half of the golden trace: what the causal provenance layer reports
 as observables — the classification, the propagation the live entry performed,

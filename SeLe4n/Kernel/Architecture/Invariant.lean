@@ -609,9 +609,9 @@ private theorem default_schedulerInvariantBundleFull :
    default_runnableThreadsAreTCBs,
    by  -- R6-D: schedulerPriorityMatch — default runQueue empty, vacuously true
     intro tid hMem
-    have hFlat : ((default : SystemState).scheduler.runQueueOnCore bootCoreId).flat = [] := by decide
+    have hFlat : ((default : SystemState).scheduler.runQueueOnCore bootCoreId).toList = [] := by decide
     have hInFlat := (RunQueue.mem_toList_iff_mem _ tid).mpr hMem
-    simp [RunQueue.toList, hFlat] at hInFlat,
+    simp [hFlat] at hInFlat,
    by  -- V5-H: domainTimeRemainingPositive — default domainTimeRemaining is 5
     unfold domainTimeRemainingPositive; decide,
    default_domainScheduleEntriesPositive⟩

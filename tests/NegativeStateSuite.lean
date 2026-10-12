@@ -2510,7 +2510,7 @@ def runAN4A5LifecycleVisibilityChecks : IO Unit := do
   let (_, stInternal) ← expectOkState "AN4-A.5-01 Internal.lifecycleRetypeObject ok"
     (SeLe4n.Kernel.Internal.lifecycleRetypeObject a5AuthSlot a5RetypeTcbId a5NewObj a5State)
   expectCond "AN4-A.5-01" "Internal.lifecycleRetypeObject leaves dangling run-queue entry"
-    ((stInternal.scheduler.runQueueOnCore bootCoreId).flat.contains a5Tcb.tid)
+    ((stInternal.scheduler.runQueueOnCore bootCoreId).toList.contains a5Tcb.tid)
 
   -- AN4-A.5-02: `lifecycleRetypeWithCleanup` runs the cleanup phase first, so
   -- the run-queue reference is purged. This is the exact difference the
@@ -2518,7 +2518,7 @@ def runAN4A5LifecycleVisibilityChecks : IO Unit := do
   let (_, stWrapped) ← expectOkState "AN4-A.5-02 lifecycleRetypeWithCleanup ok"
     (SeLe4n.Kernel.lifecycleRetypeWithCleanup a5AuthSlot a5RetypeTcbId a5NewObj a5State)
   expectCond "AN4-A.5-02" "lifecycleRetypeWithCleanup scrubs run-queue reference"
-    (!(stWrapped.scheduler.runQueueOnCore bootCoreId).flat.contains a5Tcb.tid)
+    (!(stWrapped.scheduler.runQueueOnCore bootCoreId).toList.contains a5Tcb.tid)
 
   IO.println "all AN4-A.5 lifecycle visibility regression checks passed"
 

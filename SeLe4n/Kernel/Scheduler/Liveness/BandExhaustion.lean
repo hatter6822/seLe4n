@@ -68,7 +68,7 @@ satisfied when there are no higher-priority threads. -/
 def higherBandExhausted (trace : SchedulerTrace) (st : SystemState)
     (targetPrio : Priority) (targetDomain : DomainId) (startIdx : Nat) : Prop :=
   ∀ tid,
-    tid ∈ (st.scheduler.runQueueOnCore bootCoreId).flat →
+    tid ∈ (st.scheduler.runQueueOnCore bootCoreId).toList →
     (match resolveEffectivePriority st tid with
      | some (p, _, d) => d.val = targetDomain.val ∧ p.val > targetPrio.val
      | none => False) →
@@ -80,7 +80,7 @@ higher-priority threads). -/
 theorem higherBandExhausted_when_no_higher
     (trace : SchedulerTrace) (st : SystemState) (targetPrio : Priority)
     (targetDomain : DomainId) (startIdx : Nat)
-    (hNoHigher : ∀ tid, tid ∈ (st.scheduler.runQueueOnCore bootCoreId).flat →
+    (hNoHigher : ∀ tid, tid ∈ (st.scheduler.runQueueOnCore bootCoreId).toList →
       match resolveEffectivePriority st tid with
       | some (p, _, d) => ¬(d.val = targetDomain.val ∧ p.val > targetPrio.val)
       | none => True) :
@@ -143,7 +143,7 @@ eventually exits — the per-core generalisation of `higherBandExhausted`. -/
 def higherBandExhaustedOnCore (trace : SchedulerTrace) (st : SystemState)
     (targetPrio : Priority) (targetDomain : DomainId) (startIdx : Nat) (c : CoreId) : Prop :=
   ∀ tid,
-    tid ∈ (st.scheduler.runQueueOnCore c).flat →
+    tid ∈ (st.scheduler.runQueueOnCore c).toList →
     (match resolveEffectivePriority st tid with
      | some (p, _, d) => d.val = targetDomain.val ∧ p.val > targetPrio.val
      | none => False) →
@@ -161,7 +161,7 @@ domain, band exhaustion is vacuously satisfied. -/
 theorem higherBandExhaustedOnCore_when_no_higher
     (trace : SchedulerTrace) (st : SystemState) (targetPrio : Priority)
     (targetDomain : DomainId) (startIdx : Nat) (c : CoreId)
-    (hNoHigher : ∀ tid, tid ∈ (st.scheduler.runQueueOnCore c).flat →
+    (hNoHigher : ∀ tid, tid ∈ (st.scheduler.runQueueOnCore c).toList →
       match resolveEffectivePriority st tid with
       | some (p, _, d) => ¬(d.val = targetDomain.val ∧ p.val > targetPrio.val)
       | none => True) :

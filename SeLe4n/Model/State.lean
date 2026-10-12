@@ -63,6 +63,48 @@ structure DomainScheduleEntry where
   length : Nat
   deriving Repr, DecidableEq
 
+/-- One flag per core packed into a word: bit `c` is core `c`'s flag.  A flag
+set is a scalar, so copying it (an entry's snapshot of the flags before its
+transition) shares no array with the state, and setting core `c`'s flag
+rewrites a word in the scheduler record rather than a slot of an array the
+snapshot may still hold (WS-ZA ZA4.5). -/
+structure PerCoreFlags where
+  bits : BitVec numCores
+  deriving DecidableEq, Repr
+
+namespace PerCoreFlags
+
+/-- Every flag clear. -/
+def none : PerCoreFlags := ⟨0⟩
+
+instance : Inhabited PerCoreFlags := ⟨none⟩
+
+/-- Core `c`'s flag. -/
+def get (m : PerCoreFlags) (c : CoreId) : Bool := m.bits.getLsbD c.val
+
+/-- Write core `c`'s flag, leaving every other core's. -/
+def set (m : PerCoreFlags) (c : CoreId) (v : Bool) : PerCoreFlags :=
+  ⟨if v then m.bits ||| BitVec.twoPow numCores c.val
+   else m.bits &&& ~~~(BitVec.twoPow numCores c.val)⟩
+
+@[simp] theorem get_set_eq (m : PerCoreFlags) (c : CoreId) (v : Bool) :
+    (m.set c v).get c = v := by
+  unfold get set; cases v <;> simp [c.isLt]
+
+theorem get_set_ne (m : PerCoreFlags) (c c' : CoreId) (v : Bool) (h : c ≠ c') :
+    (m.set c v).get c' = m.get c' := by
+  have h' : c.val ≠ c'.val := fun e => h (Fin.ext e)
+  unfold get set; cases v <;> simp [c'.isLt, Ne.symm h']
+
+@[simp] theorem get_none (c : CoreId) : none.get c = false := by
+  simp [get, none]
+
+theorem ext {m₁ m₂ : PerCoreFlags} (h : ∀ c : CoreId, m₁.get c = m₂.get c) : m₁ = m₂ := by
+  cases m₁; cases m₂; congr 1
+  apply BitVec.eq_of_getLsbD_eq; intro i hi; exact h ⟨i, hi⟩
+
+end PerCoreFlags
+
 structure SchedulerState where
   /-- WS-G4/F-P02: Priority-bucketed run queue replacing the flat list.
       Provides O(1) amortized membership, insert, remove; O(1) best-candidate
@@ -122,7 +164,7 @@ structure SchedulerState where
       the kernel-entry lock that serialises every committing entry, so it is
       outside the per-core lock-footprint obligations and outside the
       information-flow projection (`reschedulePending_write_preserves_projection`). -/
-  reschedulePending : Vector Bool numCores := Vector.replicate numCores false
+  reschedulePending : PerCoreFlags := PerCoreFlags.none
   deriving Repr
 
 /-! ### WS-SM SM4.B.8: per-core scheduler-state accessors (path-a)
@@ -201,7 +243,7 @@ def setLastTimeoutErrorsOnCore (s : SchedulerState) (c : CoreId)
   { s with lastTimeoutErrors := s.lastTimeoutErrors.set c.val v c.isLt }
 /-- Write core `c`'s reschedule-pending flag. -/
 def setReschedulePendingOnCore (s : SchedulerState) (c : CoreId) (v : Bool) : SchedulerState :=
-  { s with reschedulePending := s.reschedulePending.set c.val v c.isLt }
+  { s with reschedulePending := s.reschedulePending.set c v }
 /-- A writer's half of the accumulator: record that core `c`'s scheduling
 decision is stale.  Every run-queue insert on `c`, every change of `c`'s
 `current` slot and every effective-key write on a thread placed on `c` ends in
@@ -250,7 +292,7 @@ theorem ext_perCore {s₁ s₂ : SchedulerState}
   have h5 : s₁.domainTimeRemaining = s₂.domainTimeRemaining := PerCoreVector.ext fun c => hDTR c
   have h6 : s₁.domainScheduleIndex = s₂.domainScheduleIndex := PerCoreVector.ext fun c => hDSI c
   have h7 : s₁.lastTimeoutErrors = s₂.lastTimeoutErrors := PerCoreVector.ext fun c => hLTE c
-  have h8 : s₁.reschedulePending = s₂.reschedulePending := PerCoreVector.ext fun c => hRP c
+  have h8 : s₁.reschedulePending = s₂.reschedulePending := PerCoreFlags.ext fun c => hRP c
   obtain ⟨rq1, cu1, ad1, dtr1, dsch1, dsi1, cdts1, rpl1, lte1, rp1⟩ := s₁
   obtain ⟨rq2, cu2, ad2, dtr2, dsch2, dsi2, cdts2, rpl2, lte2, rp2⟩ := s₂
   simp_all
@@ -502,7 +544,7 @@ own reductions rather than asking `simp` to see through the definition. -/
 @[simp] theorem setReschedulePendingOnCore_reschedulePendingOnCore_ne (s : SchedulerState) (c c' : CoreId) (v : Bool) (h : c ≠ c') :
     (s.setReschedulePendingOnCore c v).reschedulePendingOnCore c' = s.reschedulePendingOnCore c' := by
   simp only [SchedulerState.setReschedulePendingOnCore, SchedulerState.reschedulePendingOnCore]
-  exact SeLe4n.PerCoreVector.get_set_ne s.reschedulePending c c' v h
+  exact PerCoreFlags.get_set_ne s.reschedulePending c c' v h
 @[simp] theorem setReschedulePendingOnCore_currentOnCore (s : SchedulerState) (c c' : CoreId) (v : Bool) :
     (s.setReschedulePendingOnCore c v).currentOnCore c' = s.currentOnCore c' := by
   simp [SchedulerState.setReschedulePendingOnCore, SchedulerState.currentOnCore]
@@ -530,21 +572,21 @@ own reductions rather than asking `simp` to see through the definition. -/
 @[simp] theorem setReschedulePendingOnCore_configDefaultTimeSlice (s : SchedulerState) (c : CoreId) (v : Bool) :
     (s.setReschedulePendingOnCore c v).configDefaultTimeSlice = s.configDefaultTimeSlice := by
   simp [SchedulerState.setReschedulePendingOnCore]
-/-- A flag-vector replacement (the form the binding writers' scheduler frames
+/-- A flag-set replacement (the form the binding writers' scheduler frames
 state) leaves every other per-core slot alone. -/
-@[simp] theorem withReschedulePending_currentOnCore (s : SchedulerState) (v : Vector Bool numCores) (c : CoreId) :
+@[simp] theorem withReschedulePending_currentOnCore (s : SchedulerState) (v : PerCoreFlags) (c : CoreId) :
     ({ s with reschedulePending := v } : SchedulerState).currentOnCore c = s.currentOnCore c := rfl
-@[simp] theorem withReschedulePending_runQueueOnCore (s : SchedulerState) (v : Vector Bool numCores) (c : CoreId) :
+@[simp] theorem withReschedulePending_runQueueOnCore (s : SchedulerState) (v : PerCoreFlags) (c : CoreId) :
     ({ s with reschedulePending := v } : SchedulerState).runQueueOnCore c = s.runQueueOnCore c := rfl
-@[simp] theorem withReschedulePending_replenishQueueOnCore (s : SchedulerState) (v : Vector Bool numCores) (c : CoreId) :
+@[simp] theorem withReschedulePending_replenishQueueOnCore (s : SchedulerState) (v : PerCoreFlags) (c : CoreId) :
     ({ s with reschedulePending := v } : SchedulerState).replenishQueueOnCore c = s.replenishQueueOnCore c := rfl
-@[simp] theorem withReschedulePending_activeDomainOnCore (s : SchedulerState) (v : Vector Bool numCores) (c : CoreId) :
+@[simp] theorem withReschedulePending_activeDomainOnCore (s : SchedulerState) (v : PerCoreFlags) (c : CoreId) :
     ({ s with reschedulePending := v } : SchedulerState).activeDomainOnCore c = s.activeDomainOnCore c := rfl
-@[simp] theorem withReschedulePending_domainTimeRemainingOnCore (s : SchedulerState) (v : Vector Bool numCores) (c : CoreId) :
+@[simp] theorem withReschedulePending_domainTimeRemainingOnCore (s : SchedulerState) (v : PerCoreFlags) (c : CoreId) :
     ({ s with reschedulePending := v } : SchedulerState).domainTimeRemainingOnCore c = s.domainTimeRemainingOnCore c := rfl
-@[simp] theorem withReschedulePending_domainScheduleIndexOnCore (s : SchedulerState) (v : Vector Bool numCores) (c : CoreId) :
+@[simp] theorem withReschedulePending_domainScheduleIndexOnCore (s : SchedulerState) (v : PerCoreFlags) (c : CoreId) :
     ({ s with reschedulePending := v } : SchedulerState).domainScheduleIndexOnCore c = s.domainScheduleIndexOnCore c := rfl
-@[simp] theorem withReschedulePending_lastTimeoutErrorsOnCore (s : SchedulerState) (v : Vector Bool numCores) (c : CoreId) :
+@[simp] theorem withReschedulePending_lastTimeoutErrorsOnCore (s : SchedulerState) (v : PerCoreFlags) (c : CoreId) :
     ({ s with reschedulePending := v } : SchedulerState).lastTimeoutErrorsOnCore c = s.lastTimeoutErrorsOnCore c := rfl
 @[simp] theorem setCurrentOnCore_reschedulePendingOnCore (s : SchedulerState) (c c' : CoreId) (v : Option SeLe4n.ThreadId) :
     (s.setCurrentOnCore c v).reschedulePendingOnCore c' = s.reschedulePendingOnCore c' := by
@@ -1441,8 +1483,9 @@ satisfies the Robin Hood invariant extension (WF ∧ distCorrect ∧ noDupKeys �
 probeChainDominant). This is the global well-formedness condition for the
 builder-phase state representation.
 
-AI6-D (L-02): This predicate uses a 16-deep conjunction (∧-chain) over all
-RHTable/RHSet instances in the state. Tuple projection (e.g., `h.2.2.1`) is
+AI6-D (L-02): This predicate uses a 13-deep conjunction (∧-chain) over the
+RHTable/RHSet instances in the state.  The run queue's two tables are not in
+it: `RunQueue` carries their invariants as its own fields (WS-ZA ZA4.5). Tuple projection (e.g., `h.2.2.1`) is
 structurally fragile — adding a new table field shifts all subsequent
 projection indices. Named extractors (Builder.lean:30-116) provide
 maintainable access to individual conjuncts without positional dependence.
@@ -1466,12 +1509,8 @@ def SystemState.allTablesInvExtK (st : SystemState) : Prop :=
   st.services.invExtK ∧
   st.interfaceRegistry.invExtK ∧
   st.serviceRegistry.invExtK ∧
-  -- RunQueue
-  (st.scheduler.runQueueOnCore bootCoreId).byPriority.invExtK ∧
-  (st.scheduler.runQueueOnCore bootCoreId).threadPriority.invExtK ∧
   -- RHSet invExtK (via table field)
   st.objectIndexSet.table.invExtK ∧
-  (st.scheduler.runQueueOnCore bootCoreId).membership.table.invExtK ∧
   -- S-05/PERF-O1: Per-SchedContext thread index
   st.scThreadIndex.invExtK
 
@@ -1489,9 +1528,6 @@ theorem default_allTablesInvExtK : (default : SystemState).allTablesInvExtK := b
   constructor; exact SeLe4n.Kernel.RobinHood.RHTable.empty_invExtK 16 (by omega)
   constructor; exact SeLe4n.Kernel.RobinHood.RHTable.empty_invExtK 16 (by omega)
   constructor; exact SeLe4n.Kernel.RobinHood.RHTable.empty_invExtK 16 (by omega)
-  constructor; exact SeLe4n.Kernel.RobinHood.RHTable.empty_invExtK 16 (by omega)
-  constructor; exact SeLe4n.Kernel.RobinHood.RHTable.empty_invExtK 16 (by omega)
-  constructor; exact SeLe4n.Kernel.RobinHood.RHSet.empty_invExtK
   constructor; exact SeLe4n.Kernel.RobinHood.RHSet.empty_invExtK
   exact SeLe4n.Kernel.RobinHood.RHTable.empty_invExtK 16 (by omega)
 
@@ -1579,7 +1615,7 @@ owed on any core — every flag starts `false`, so the first remote write a
 step makes is the first SGI the commit surfaces. -/
 @[simp] theorem default_reschedulePendingOnCore (c : CoreId) :
     (default : SystemState).scheduler.reschedulePendingOnCore c = false :=
-  PerCoreVector.replicate_get _ _ c
+  PerCoreFlags.get_none c
 
 /-- WS-SM SM8.C.8: at boot no declassification has occurred, so the audit trail
 is empty.  The `.declassify` syscall is the only writer, so this is the trail's
@@ -1623,7 +1659,7 @@ theorem default_auditLogBounded :
   SeLe4n.Kernel.auditLogBounded_nil
 
 /-- U2-M: Compile-time completeness witness for `allTablesInvExtK`.
-    This theorem destructures `allTablesInvExtK` into exactly 16 named conjuncts.
+    This theorem destructures `allTablesInvExtK` into exactly 13 named conjuncts.
     If a new RHTable field is added to `SystemState` and included in
     `allTablesInvExtK` without updating this witness, the proof fails. -/
 theorem allTablesInvExtK_witness (st : SystemState) (h : st.allTablesInvExtK) :
@@ -1638,10 +1674,7 @@ theorem allTablesInvExtK_witness (st : SystemState) (h : st.allTablesInvExtK) :
     st.services.invExtK ∧
     st.interfaceRegistry.invExtK ∧
     st.serviceRegistry.invExtK ∧
-    (st.scheduler.runQueueOnCore bootCoreId).byPriority.invExtK ∧
-    (st.scheduler.runQueueOnCore bootCoreId).threadPriority.invExtK ∧
     st.objectIndexSet.table.invExtK ∧
-    (st.scheduler.runQueueOnCore bootCoreId).membership.table.invExtK ∧
     st.scThreadIndex.invExtK := h
 
 -- ============================================================================
@@ -5140,11 +5173,8 @@ theorem storeObject_preserves_allTablesInvExtK
   have hServices := hAll.2.2.2.2.2.2.2.2.1
   have hIfaceReg := hAll.2.2.2.2.2.2.2.2.2.1
   have hSvcReg := hAll.2.2.2.2.2.2.2.2.2.2.1
-  have hByPri := hAll.2.2.2.2.2.2.2.2.2.2.2.1
-  have hThreadPri := hAll.2.2.2.2.2.2.2.2.2.2.2.2.1
-  have hObjIdxSet := hAll.2.2.2.2.2.2.2.2.2.2.2.2.2.1
-  have hMembership := hAll.2.2.2.2.2.2.2.2.2.2.2.2.2.2.1
-  have hScThreadIdx := hAll.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2
+  have hObjIdxSet := hAll.2.2.2.2.2.2.2.2.2.2.2.1
+  have hScThreadIdx := hAll.2.2.2.2.2.2.2.2.2.2.2.2
   -- Prove objects insert preserves invExtK
   have hObj' := RHTable.insert_preserves_invExtK st.objects id obj hObj
   -- Prove objectTypes insert preserves invExtK
@@ -5168,10 +5198,10 @@ theorem storeObject_preserves_allTablesInvExtK
     cases obj with
     | vspaceRoot vs => exact RHTable.insert_preserves_invExtK _ _ _ hCleared
     | _ => exact hCleared
-  -- Compose all 16 components (S-05/PERF-O1: scThreadIndex added)
+  -- Compose all 13 components (S-05/PERF-O1: scThreadIndex added)
   exact ⟨hObj', hIrq, hAsid', hCdtSN, hCdtNS, hObjTypes',
          hChildMap, hParentMap, hServices, hIfaceReg, hSvcReg,
-         hByPri, hThreadPri, hObjIdxSet', hMembership, hScThreadIdx⟩
+         hObjIdxSet', hScThreadIdx⟩
 
 -- ============================================================================
 -- L-06/WS-E3: Default SystemState initialization proof

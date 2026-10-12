@@ -582,9 +582,9 @@ AG1-E: Now includes `replenishQueue` for CBS scheduling support. -/
 def freezeScheduler (sched : SchedulerState) : FrozenSchedulerState :=
   -- WS-SM SM4.B phase-2: the frozen execution-phase snapshot is single-core;
   -- it captures `bootCoreId`'s per-core slots.
-  { byPriority := freezeMap (sched.runQueueOnCore bootCoreId).byPriority
-    threadPriority := freezeMap (sched.runQueueOnCore bootCoreId).threadPriority
-    membership := freezeMap (sched.runQueueOnCore bootCoreId).membership.table
+  { byPriority := freezeMap (sched.runQueueOnCore bootCoreId).byPriorityTable
+    threadPriority := freezeMap (sched.runQueueOnCore bootCoreId).threadPriorityTable
+    membership := freezeMap (sched.runQueueOnCore bootCoreId).membershipTable
     current := sched.currentOnCore bootCoreId
     activeDomain := sched.activeDomainOnCore bootCoreId
     domainTimeRemaining := sched.domainTimeRemainingOnCore bootCoreId

@@ -248,28 +248,14 @@ theorem enqueueIdleThreadOnCore_objectIndex_length_le (st : SystemState) (c : Co
   SystemState.withObjectStored_objectIndex_length_le st (idleThreadId c).toObjId
     (KernelObject.tcb (queuedIdleThread c))
 
-/-- The enqueue preserves `allTablesInvExtK`.  Thirteen of the sixteen
-conjuncts are the store's (`withObjectStored_preserves_allTablesInvExtK`); the
-other three are the **boot core's run-queue tables** (`byPriority`,
-`threadPriority`, `membership.table`), which the run-queue write may replace —
-and `RunQueue` is a structure that *carries* those three proofs as fields, so
-`remove` and `insert` hand the new queue back with its invariants already
-discharged and the conjuncts are field projections on whatever queue the boot
-core ends up with. -/
+/-- The enqueue preserves `allTablesInvExtK`.  Every conjunct is the store's
+(`withObjectStored_preserves_allTablesInvExtK`): the run queue keeps its own
+table invariants as structure fields, so the run-queue write touches none of
+the conjuncts. -/
 theorem enqueueIdleThreadOnCore_preserves_allTablesInvExtK (st : SystemState) (c : CoreId)
-    (hAll : st.allTablesInvExtK) : (enqueueIdleThreadOnCore st c).allTablesInvExtK := by
-  have h := SystemState.withObjectStored_preserves_allTablesInvExtK st
+    (hAll : st.allTablesInvExtK) : (enqueueIdleThreadOnCore st c).allTablesInvExtK :=
+  SystemState.withObjectStored_preserves_allTablesInvExtK st
     (idleThreadId c).toObjId (KernelObject.tcb (queuedIdleThread c)) hAll
-  unfold SystemState.allTablesInvExtK at h ⊢
-  refine ⟨h.1, h.2.1, h.2.2.1, h.2.2.2.1, h.2.2.2.2.1, h.2.2.2.2.2.1,
-    h.2.2.2.2.2.2.1, h.2.2.2.2.2.2.2.1,
-    h.2.2.2.2.2.2.2.2.1, h.2.2.2.2.2.2.2.2.2.1,
-    h.2.2.2.2.2.2.2.2.2.2.1, ?_, ?_,
-    h.2.2.2.2.2.2.2.2.2.2.2.2.2.1, ?_,
-    h.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2⟩
-  · exact RunQueue.byPrio_invExtK _
-  · exact RunQueue.threadPrio_invExtK _
-  · exact RunQueue.mem_invExtK _
 
 /-- The enqueue preserves the per-object CNode-slot invariant: the one key it
 writes now holds a TCB, which is not a CNode, and every other key is framed. -/

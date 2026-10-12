@@ -17,7 +17,7 @@ migration (WS-SM SM4 §5.4,
 sub-tasks SM4.D.3 / SM4.D.4).  The single scheduler-reading capability
 predicate is `cleanupHookDischarged` (`Capability/Invariant/Defs.lean`),
 whose second conjunct asserts that the cleanup target's TCB carries no
-stale scheduler-queue reference (`tcb.tid ∉ (runQueueOnCore bootCoreId).flat`).
+stale scheduler-queue reference (`tcb.tid ∉ (runQueueOnCore bootCoreId).toList`).
 
 Per the implement-the-improvement rule, the per-core migration delivers
 the genuine SMP semantics: a retyped object's TCB must not be runnable
@@ -58,7 +58,7 @@ open SeLe4n.Kernel.Concurrency (CoreId bootCoreId)
 def cleanupNoStaleSchedRef_perCore (st : SystemState) (target : SeLe4n.ObjId)
     (c : CoreId) : Prop :=
   ∀ tcb, st.objects[target]? = some (.tcb tcb) →
-    ¬ (tcb.tid ∈ (st.scheduler.runQueueOnCore c).flat)
+    ¬ (tcb.tid ∈ (st.scheduler.runQueueOnCore c).toList)
 
 /-- SM4.D: per-core form of `cleanupHookDischarged`.  The lifecycle
 object-type-metadata conjunct and the `ScrubToken` witness are
@@ -79,7 +79,7 @@ theorem cleanupNoStaleSchedRef_perCore_bootCore_iff (st : SystemState)
     (target : SeLe4n.ObjId) :
     cleanupNoStaleSchedRef_perCore st target bootCoreId ↔
       (∀ tcb, st.objects[target]? = some (.tcb tcb) →
-        ¬ (tcb.tid ∈ (st.scheduler.runQueueOnCore bootCoreId).flat)) := Iff.rfl
+        ¬ (tcb.tid ∈ (st.scheduler.runQueueOnCore bootCoreId).toList)) := Iff.rfl
 
 theorem cleanupHookDischarged_perCore_bootCore_iff (st : SystemState)
     (target : SeLe4n.ObjId) :
@@ -140,7 +140,7 @@ conjunct (instantiate at `bootCoreId` + bridge). -/
 theorem cleanupNoStaleSchedRef_smp_to_singleCore (st : SystemState)
     (target : SeLe4n.ObjId) (h : cleanupNoStaleSchedRef_smp st target) :
     ∀ tcb, st.objects[target]? = some (.tcb tcb) →
-      ¬ (tcb.tid ∈ (st.scheduler.runQueueOnCore bootCoreId).flat) :=
+      ¬ (tcb.tid ∈ (st.scheduler.runQueueOnCore bootCoreId).toList) :=
   (cleanupNoStaleSchedRef_perCore_bootCore_iff st target).mp (h bootCoreId)
 
 theorem default_cleanupNoStaleSchedRef_smp (target : SeLe4n.ObjId) :

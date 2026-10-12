@@ -289,10 +289,7 @@ def createBootObject (ist : IntermediateState) (entry : ObjectEntry) : Intermedi
               h.2.2.2.2.2.2.1, h.2.2.2.2.2.2.2.1,
               h.2.2.2.2.2.2.2.2.1, h.2.2.2.2.2.2.2.2.2.1,
               h.2.2.2.2.2.2.2.2.2.2.1, h.2.2.2.2.2.2.2.2.2.2.2.1,
-              h.2.2.2.2.2.2.2.2.2.2.2.2.1,
-              h.2.2.2.2.2.2.2.2.2.2.2.2.2.1,
-              h.2.2.2.2.2.2.2.2.2.2.2.2.2.2.1,
-              h.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2⟩
+              h.2.2.2.2.2.2.2.2.2.2.2.2⟩
     hPerObjectSlots := fun oid cn hLookup => created.hPerObjectSlots oid cn hLookup
     hPerObjectMappings := fun oid vs hLookup => created.hPerObjectMappings oid vs hLookup
     hLifecycleConsistent := created.hLifecycleConsistent }
@@ -6220,7 +6217,7 @@ theorem bootFromPlatform_proofLayerInvariantBundle_general
     rw [hSch]; decide
   have hRun : (bootFromPlatform config).state.scheduler.runnable = [] := by
     rw [hSch]; decide
-  have hRQflat : ((bootFromPlatform config).state.scheduler.runQueueOnCore bootCoreId).flat = [] := by
+  have hRQflat : ((bootFromPlatform config).state.scheduler.runQueueOnCore bootCoreId).toList = [] := by
     rw [hSch]; decide
   -- 1. schedulerInvariantBundleFull
   have h1 : schedulerInvariantBundleFull (bootFromPlatform config).state := by
@@ -6236,7 +6233,7 @@ theorem bootFromPlatform_proofLayerInvariantBundle_general
     · intro tid hMem; rw [hRun] at hMem; simp at hMem
     · intro tid hMem
       have hInFlat := (RunQueue.mem_toList_iff_mem _ tid).mpr hMem
-      simp [RunQueue.toList, hRQflat] at hInFlat
+      simp [hRQflat] at hInFlat
     · -- V5-H: domainTimeRemainingPositive — boot scheduler is default, DTR = 5
       unfold domainTimeRemainingPositive; rw [hSch]; decide
     · -- X2-A: domainScheduleEntriesPositive — boot scheduler has empty domainSchedule
@@ -6298,10 +6295,10 @@ theorem bootFromPlatform_proofLayerInvariantBundle_general
     exact ⟨empty_sorted, empty_sizeConsistent⟩
   · -- effectiveParamsMatchRunQueue: the default run queue is empty.
     intro tid hMem
-    have hFlat : ((bootFromPlatform config).state.scheduler.runQueueOnCore bootCoreId).flat = [] := by
+    have hFlat : ((bootFromPlatform config).state.scheduler.runQueueOnCore bootCoreId).toList = [] := by
       rw [hSch]; decide
     have hInFlat := (RunQueue.mem_toList_iff_mem _ tid).mpr hMem
-    simp [RunQueue.toList, hFlat] at hInFlat
+    simp [hFlat] at hInFlat
 
 -- ============================================================================
 -- V4-A9: End-to-end bridge for general configs
@@ -7531,10 +7528,10 @@ private theorem bootCoreIdleQueue_toList :
       [idleThreadId bootCoreId] := by
   decide
 
-private theorem bootCoreIdleQueue_threadPriority :
+private theorem bootCoreIdleQueue_priorityOf :
     ((SeLe4n.Kernel.RunQueue.empty.remove (idleThreadId bootCoreId)).insert
-      (idleThreadId bootCoreId) (queuedIdleThread bootCoreId).priority).threadPriority[
-        idleThreadId bootCoreId]? = some ⟨0⟩ := by
+      (idleThreadId bootCoreId) (queuedIdleThread bootCoreId).priority).priorityOf
+        (idleThreadId bootCoreId) = some ⟨0⟩ := by
   decide
 
 /-- **WS-BP BP7.11**: **what a boot leaves, for the bundle to be read off** —
@@ -7571,7 +7568,7 @@ theorem proofLayerInvariantBundle_of_bootStartShape (ist : IntermediateState)
   have hRunnableTcb : ∀ tid, tid ∈ ist.state.scheduler.runnable →
       ∃ tcb, ist.state.objects[tid.toObjId]? = some (.tcb tcb) ∧ 0 < tcb.timeSlice ∧
         tcb.pipBoost = none ∧
-        (ist.state.scheduler.runQueueOnCore bootCoreId).threadPriority[tid]? =
+        (ist.state.scheduler.runQueueOnCore bootCoreId).priorityOf tid =
           some tcb.priority :=
     fun tid hMem => hQueue tid ((SeLe4n.Kernel.RunQueue.mem_toList_iff_mem _ _).mp hMem)
   have hSched : schedulerInvariantBundleFull ist.state := by
@@ -7684,7 +7681,7 @@ theorem bootFromPlatformCheckedWithIdleThreadsFor_bootStartShape
         subst hIn
         exact ⟨queuedIdleThread bootCoreId,
           (foldl_enqueueIdleThread_installs bootCoreId cores base hNodup hb).2,
-          by decide, rfl, bootCoreIdleQueue_threadPriority⟩
+          by decide, rfl, bootCoreIdleQueue_priorityOf⟩
       · rw [foldl_enqueueIdleThread_runQueueOnCore_frame cores base bootCoreId
           (fun c' hc' hEq => hb (hEq ▸ hc')), hBaseQ] at hMem
         exact absurd hMem (SeLe4n.Kernel.RunQueue.not_mem_empty tid)

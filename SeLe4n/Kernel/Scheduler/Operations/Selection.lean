@@ -16,8 +16,8 @@ namespace SeLe4n.Model.SchedulerState
 open SeLe4n.Kernel.Concurrency (CoreId)
 
 /-- WS-ZA ZA4.5: core `c`'s run queue rewritten by `f` in its slot.  The queue
-is taken out of the slot (the slot holds the empty queue, a shared constant)
-before `f` runs, so on an exclusively owned scheduler `f` receives the queue's
+is taken out of the slot (the slot holds `RunQueue.slotPlaceholder`, a shared
+constant) before `f` runs, so on an exclusively owned scheduler `f` receives the queue's
 only reference and writes its tables in place; `setRunQueueOnCore` of `f` of
 the slot reads the queue while the slot still holds it, and every table `f`
 writes is then copied.  The index is a `CoreId`, in bounds by its type, so
@@ -27,7 +27,7 @@ one, and the join rebuilt the scheduler and state records).  Proven equal
 @[inline] def modifyRunQueueOnCore (s : SchedulerState) (c : CoreId)
     (f : SeLe4n.Kernel.RunQueue → SeLe4n.Kernel.RunQueue) : SchedulerState :=
   let q := s.runQueue.get c
-  let rqs := s.runQueue.set c.val default c.isLt
+  let rqs := s.runQueue.set c.val SeLe4n.Kernel.RunQueue.slotPlaceholder c.isLt
   { s with runQueue := rqs.set c.val (f q) c.isLt }
 
 theorem modifyRunQueueOnCore_eq (s : SchedulerState) (c : CoreId)
@@ -35,6 +35,36 @@ theorem modifyRunQueueOnCore_eq (s : SchedulerState) (c : CoreId)
     s.modifyRunQueueOnCore c f = s.setRunQueueOnCore c (f (s.runQueueOnCore c)) := by
   unfold modifyRunQueueOnCore setRunQueueOnCore runQueueOnCore
   simp only [Vector.set_set]
+
+/-- `some tid`, written into `o`'s cell when `o` is a `some` held by no other
+reference.  Branching on the old thread is what lets the compiler hand the
+cell on: a `match` whose arms build the same value is folded to that value,
+which is a fresh cell (`reuseSome_eq`). -/
+def reuseSome (o : Option SeLe4n.ThreadId) (tid : SeLe4n.ThreadId) : Option SeLe4n.ThreadId :=
+  match o with
+  | some old => if old = tid then some old else some tid
+  | none => some tid
+
+theorem reuseSome_eq (o : Option SeLe4n.ThreadId) (tid : SeLe4n.ThreadId) :
+    reuseSome o tid = some tid := by
+  unfold reuseSome; split
+  · split <;> simp_all
+  · rfl
+
+/-- WS-ZA ZA4.5: core `c`'s current slot set to `some tid`, the slot's old
+`some` cell rewritten in place.  The old value is taken out of the slot (which
+holds `none`, a scalar, meanwhile) so `reuseSome` receives its only reference.
+Proven equal (`setCurrentSomeOnCore_eq`). -/
+@[inline] def setCurrentSomeOnCore (s : SchedulerState) (c : CoreId) (tid : SeLe4n.ThreadId) :
+    SchedulerState :=
+  let o := s.current.get c
+  let cur := s.current.set c.val none c.isLt
+  { s with current := cur.set c.val (reuseSome o tid) c.isLt }
+
+theorem setCurrentSomeOnCore_eq (s : SchedulerState) (c : CoreId) (tid : SeLe4n.ThreadId) :
+    s.setCurrentSomeOnCore c tid = s.setCurrentOnCore c (some tid) := by
+  unfold setCurrentSomeOnCore setCurrentOnCore
+  simp only [Vector.set_set, reuseSome_eq]
 
 end SeLe4n.Model.SchedulerState
 
@@ -920,6 +950,101 @@ theorem chooseThreadEffectiveOnCore_eq_code (st : SystemState) (c : CoreId) :
     cases r2 with
     | some r => obtain ⟨t, p, d⟩ := r; rfl
     | none => rfl
+
+/-- WS-ZA ZA4.5: the deadline `resolveEffectivePrioDeadline` resolves, alone:
+the bound or donated SchedContext's when it resolves, else the thread's own. -/
+@[inline] def effectiveDeadlineOf (st : SystemState) (tcb : TCB) : SeLe4n.Deadline :=
+  match tcb.schedContextBinding with
+  | .unbound => tcb.deadline
+  | .bound scId =>
+      match st.getSchedContext? scId with
+      | some sc => sc.deadline
+      | none => tcb.deadline
+  | .donated scId _ =>
+      match st.getSchedContext? scId with
+      | some sc => sc.deadline
+      | none => tcb.deadline
+
+/-- `resolveEffectivePrioDeadline` as its two halves, so a scan can read them
+without building the pair. -/
+theorem resolveEffectivePrioDeadline_eq (st : SystemState) (tcb : TCB) :
+    resolveEffectivePrioDeadline st tcb =
+      (tcb.priority.raisedBy tcb.pipBoost, effectiveDeadlineOf st tcb) := by
+  unfold resolveEffectivePrioDeadline effectiveDeadlineOf
+  cases hb : tcb.schedContextBinding with
+  | unbound => simp [hb]
+  | bound scId => cases hs : st.getSchedContext? scId <;> simp [hs]
+  | donated scId _ => cases hs : st.getSchedContext? scId <;> simp [hs]
+
+/-- WS-ZA ZA4.5: **the code scan walking a run queue's links.**  The scan
+`chooseBestRunnableEffectiveCode` runs over the threads in the domain `dom`,
+read one entry at a time from the link table `links` — along the bucket links
+when `bucket` holds, else along the queue links — from code `c` for at most `n`
+steps, with no list and no closure built (`chooseOnLinksCode_eq`). -/
+def chooseOnLinksCode (st : SystemState) (dom : SeLe4n.DomainId)
+    (links : RobinHood.RHTable SeLe4n.ThreadId RunQueueLink) (bucket : Bool) :
+    Nat → Nat → Bool → SeLe4n.ThreadId → SeLe4n.Priority → SeLe4n.Deadline → Nat
+  | 0, _, found, bt, _, _ => if found then bt.val + 1 else 0
+  | _ + 1, 0, found, bt, _, _ => if found then bt.val + 1 else 0
+  | n + 1, c + 1, found, bt, bp, bd =>
+      let tid : SeLe4n.ThreadId := ⟨c⟩
+      let lk := RunQueue.linkOf links tid
+      let nx := if bucket then lk.bucketNext else lk.next
+      match st.getTcb? tid with
+      | some tcb =>
+          if (tcb.domain == dom) && hasSufficientBudget st tcb then
+            let pp := tcb.priority.raisedBy tcb.pipBoost
+            let pdl := effectiveDeadlineOf st tcb
+            if !found || isBetterCandidate bp bd pp pdl then
+              chooseOnLinksCode st dom links bucket n nx true tid pp pdl
+            else chooseOnLinksCode st dom links bucket n nx found bt bp bd
+          else chooseOnLinksCode st dom links bucket n nx found bt bp bd
+      | none => chooseOnLinksCode st dom links bucket n nx found bt bp bd
+
+theorem chooseOnLinksCode_eq (st : SystemState) (dom : SeLe4n.DomainId)
+    (links : RobinHood.RHTable SeLe4n.ThreadId RunQueueLink) (bucket : Bool) (n c : Nat)
+    (found : Bool) (bt : SeLe4n.ThreadId) (bp : SeLe4n.Priority) (bd : SeLe4n.Deadline) :
+    chooseOnLinksCode st dom links bucket n c found bt bp bd =
+      chooseBestRunnableEffectiveCode st (fun tcb => tcb.domain == dom)
+        (LinkedQueue.walk (fun t => if bucket then (RunQueue.linkOf links t).bucketNext
+          else (RunQueue.linkOf links t).next) n c) found bt bp bd := by
+  induction n generalizing c found bt bp bd with
+  | zero => rfl
+  | succ n ih =>
+    cases c with
+    | zero => rfl
+    | succ c =>
+      simp only [chooseOnLinksCode, LinkedQueue.walk, chooseBestRunnableEffectiveCode, ih,
+        resolveEffectivePrioDeadline_eq]
+
+/-- WS-ZA ZA4.5: core `c`'s selection code read straight off the run queue's
+links: the max-priority bucket through its bucket links, then the whole queue
+through its queue links, each bounded by the queue's size.  Equal to
+`chooseThreadEffectiveOnCoreCode` (`chooseThreadEffectiveOnCoreCode_eq_walk`),
+which the compiler runs in its place. -/
+def chooseThreadEffectiveOnCoreCodeWalk (st : SystemState) (c : CoreId) : Nat :=
+  let rq := st.scheduler.runQueueOnCore c
+  let dom := st.scheduler.activeDomainOnCore c
+  let bucketHead := if rq.maxCode = 0 then 0
+    else (RunQueue.endsOf rq.buckets ⟨rq.maxCode - 1⟩).head
+  match chooseOnLinksCode st dom rq.links true rq.size bucketHead false default default default with
+  | 0 => chooseOnLinksCode st dom rq.links false rq.size rq.head false default default default
+  | k => k
+
+@[csimp] theorem chooseThreadEffectiveOnCoreCode_eq_walk :
+    @chooseThreadEffectiveOnCoreCode = @chooseThreadEffectiveOnCoreCodeWalk := by
+  funext st c
+  unfold chooseThreadEffectiveOnCoreCode chooseThreadEffectiveOnCoreCodeWalk
+  simp only [chooseOnLinksCode_eq, Bool.false_eq_true, if_true, if_false]
+  have hB : (st.scheduler.runQueueOnCore c).maxPriorityBucket =
+      LinkedQueue.walk (fun t => (RunQueue.linkOf (st.scheduler.runQueueOnCore c).links t).bucketNext)
+        (st.scheduler.runQueueOnCore c).size
+        (if (st.scheduler.runQueueOnCore c).maxCode = 0 then 0
+          else (RunQueue.endsOf (st.scheduler.runQueueOnCore c).buckets
+            ⟨(st.scheduler.runQueueOnCore c).maxCode - 1⟩).head) := by
+    unfold RunQueue.maxPriorityBucket RunQueue.maxPriority RunQueue.atPriority
+    split <;> simp_all
+  rw [hB]; rfl
 
 /-- Z4-D/E: SchedContext-aware thread selection.
 

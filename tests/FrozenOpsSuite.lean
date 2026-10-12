@@ -2561,7 +2561,7 @@ private def differentialSchedContextBindClearsOrigin : IO Unit := do
     (((freeze ist).scheduler.byPriority.get? ⟨0⟩).getD [] == [diffA, diffB])
   expect "FO-047: the live bind moves diffA into bucket 40"
     ((liveSchedContextBindState ist.state diffScId diffA).map
-      (fun st => (st.scheduler.runQueueOnCore bootCoreId).byPriority[(⟨40⟩ : SeLe4n.Priority)]?.getD [])
+      (fun st => ((st.scheduler.runQueueOnCore bootCoreId).atPriority (⟨40⟩ : SeLe4n.Priority)))
       == some [diffA])
   expect "FO-047 PAYOFF: ...and so does the frozen bind"
     (match frozenSchedContextBind diffScId.toObjId diffA (freeze ist) with

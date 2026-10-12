@@ -87,9 +87,10 @@ open SeLe4n.Model
 #check @fifoProgressBound_mono
 #check @fifoProgressBound_succ
 #check @fifoProgressBound_mono_interval
--- WS-RC R5.F (DEEP-SCH-05): rotateToBack membership precondition surface
-#check @SeLe4n.Kernel.RunQueue.rotateToBack_requires_membership
-#check @SeLe4n.Kernel.RunQueue.rotateToBack_priority_eq_threadPriority
+-- rotateToBack reads the thread's priority from its own link, so it has no
+-- lookup to fail; its surface is the priority and membership frame.
+#check @SeLe4n.Kernel.RunQueue.priorityOf_rotateToBack
+#check @SeLe4n.Kernel.RunQueue.contains_rotateToBack
 
 -- ============================================================================
 -- Surface anchor: Band exhaustion

@@ -136,7 +136,8 @@ STATE = os.path.join(SRC, "Model", "State.lean")
 
 
 def per_core_scheduler_fields() -> list[str]:
-    """The `SchedulerState` fields that are per-core `Vector`s.
+    """The `SchedulerState` fields that are per-core slots (`Vector`s and
+    `PerCoreFlags`).
 
     PR #861 review round 25: the read and write inventories were hand-written,
     and a hand-written inventory is how three of the seven per-core slots came
@@ -178,9 +179,13 @@ def per_core_scheduler_fields() -> list[str]:
         elif decls and line.strip():
             decls[-1][1].append(line)
 
+    # A per-core slot is a `Vector … numCores` or a `PerCoreFlags` (one flag
+    # per core packed into a word, read and written through the same
+    # `…OnCore` accessors).
     fields = [name for name, body in decls
-              if re.search(r"\bVector\b", " ".join(body))
-              and re.search(r"\bnumCores\b", " ".join(body))]
+              if (re.search(r"\bVector\b", " ".join(body))
+                  and re.search(r"\bnumCores\b", " ".join(body)))
+              or re.search(r"\bPerCoreFlags\b", " ".join(body))]
     if not fields:
         raise SystemExit("[per-core-routing] no per-core Vector fields parsed from "
                          "SchedulerState -- the gate would check nothing")

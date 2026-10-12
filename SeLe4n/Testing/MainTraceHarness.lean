@@ -571,7 +571,7 @@ private def runLifecycleAndEndpointTrace (counter : IO.Ref Nat) (st1 : SystemSta
       (.endpoint {}) st1 with
   | .error err => IO.println s!"[LEP-007] lifecycle retype-with-cleanup error: {reprStr err}"
   | .ok (_, stCleaned) =>
-      let tid12InQueue := (stCleaned.scheduler.runQueueOnCore bootCoreId).flat.any (· == (SeLe4n.ThreadId.ofNat 12))
+      let tid12InQueue := (stCleaned.scheduler.runQueueOnCore bootCoreId).toList.any (· == (SeLe4n.ThreadId.ofNat 12))
       IO.println s!"[LEP-008] lifecycle retype-with-cleanup old tid removed: {!tid12InQueue}"
   -- T7-B: Post-mutation invariant check on lifecycle retype-with-cleanup result
   match SeLe4n.Kernel.lifecycleRetypeWithCleanup lifecycleAuthSlot ⟨12⟩
@@ -2382,7 +2382,7 @@ private def runSchedContextOpsTrace (_counter : IO.Ref Nat) (st1 : SystemState) 
     IO.println s!"[SCO-013] schedContextBind runqueue-reinsert: error {reprStr err}"
   | .ok ((), stBoundRQ) =>
     let inQueue := (stBoundRQ.scheduler.runQueueOnCore bootCoreId).contains tidRQ
-    let newPrio := match (stBoundRQ.scheduler.runQueueOnCore bootCoreId).threadPriority.get? tidRQ with
+    let newPrio := match (stBoundRQ.scheduler.runQueueOnCore bootCoreId).priorityOf tidRQ with
       | some p => p.toNat
       | none => 9999
     IO.println s!"[SCO-013] schedContextBind runqueue-reinsert: inQueue={inQueue} prio={newPrio}"
@@ -2436,7 +2436,7 @@ private def runSchedContextOpsTrace (_counter : IO.Ref Nat) (st1 : SystemState) 
     -- guarantee: the thread is STILL QUEUED, at its legacy priority.
     let stillQueued := (stUnboundRQ.scheduler.runQueueOnCore bootCoreId).contains tidInRQ
     let atLegacyPrio :=
-      (stUnboundRQ.scheduler.runQueueOnCore bootCoreId).threadPriority[tidInRQ]? == some ⟨50⟩
+      (stUnboundRQ.scheduler.runQueueOnCore bootCoreId).priorityOf tidInRQ == some ⟨50⟩
     IO.println s!"[SCO-015] schedContextUnbind runqueue-rebucket: queued={stillQueued} legacyPrio={atLegacyPrio}"
 
   -- Z5-AUD-16: schedContextYieldTo — budget-starved target gets enqueued

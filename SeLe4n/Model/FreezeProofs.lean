@@ -738,14 +738,14 @@ theorem lookup_freeze_objectIndexSet (ist : IntermediateState) (k : SeLe4n.ObjId
     ist.state.objectIndexSet.table.get? k =
       (freeze ist).objectIndexSet.get? k := by
   exact freezeMap_get?_eq ist.state.objectIndexSet.table k
-    ist.hAllTables.2.2.2.2.2.2.2.2.2.2.2.2.2.1.1
+    ist.hAllTables.2.2.2.2.2.2.2.2.2.2.2.1.1
 
 /-- S-05/PERF-O1: Lookup equivalence for scThreadIndex across freeze. -/
 theorem lookup_freeze_scThreadIndex (ist : IntermediateState) (k : SeLe4n.SchedContextId) :
     ist.state.scThreadIndex.get? k =
       (freeze ist).scThreadIndex.get? k := by
   exact freezeMap_get?_eq ist.state.scThreadIndex k
-    ist.hAllTables.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.1
+    ist.hAllTables.2.2.2.2.2.2.2.2.2.2.2.2.1
 
 -- ============================================================================
 -- AK7-B (F-H02 / HIGH): Lookup-equivalence for scheduler runQueue sub-maps
@@ -755,26 +755,24 @@ theorem lookup_freeze_scThreadIndex (ist : IntermediateState) (k : SeLe4n.SchedC
 Mirrors `lookup_freeze_serviceRegistry` for the scheduler priority-indexed
 thread queues. -/
 theorem lookup_freeze_byPriority (ist : IntermediateState) (p : SeLe4n.Priority) :
-    (ist.state.scheduler.runQueueOnCore bootCoreId).byPriority.get? p =
+    (ist.state.scheduler.runQueueOnCore bootCoreId).byPriorityTable.get? p =
       (freeze ist).scheduler.byPriority.get? p := by
-  exact freezeMap_get?_eq (ist.state.scheduler.runQueueOnCore bootCoreId).byPriority p
-    ist.hAllTables.2.2.2.2.2.2.2.2.2.2.2.1.1
+  exact freezeMap_get?_eq (ist.state.scheduler.runQueueOnCore bootCoreId).byPriorityTable p
+    (ist.state.scheduler.runQueueOnCore bootCoreId).byPriorityTable_invExtK.1
 
 /-- AK7-B: Lookup equivalence for `runQueue.threadPriority` across freeze. -/
 theorem lookup_freeze_threadPriority (ist : IntermediateState) (tid : SeLe4n.ThreadId) :
-    (ist.state.scheduler.runQueueOnCore bootCoreId).threadPriority.get? tid =
+    (ist.state.scheduler.runQueueOnCore bootCoreId).threadPriorityTable.get? tid =
       (freeze ist).scheduler.threadPriority.get? tid := by
-  exact freezeMap_get?_eq (ist.state.scheduler.runQueueOnCore bootCoreId).threadPriority tid
-    ist.hAllTables.2.2.2.2.2.2.2.2.2.2.2.2.1.1
+  exact freezeMap_get?_eq (ist.state.scheduler.runQueueOnCore bootCoreId).threadPriorityTable tid
+    (ist.state.scheduler.runQueueOnCore bootCoreId).threadPriorityTable_invExtK.1
 
-/-- AK7-B: Lookup equivalence for `runQueue.membership` (RHSet) across freeze.
-`membership` wraps an underlying `RHTable κ Unit`; the freeze discards the
-set wrapper and keeps the table. -/
+/-- AK7-B: Lookup equivalence for the run queue's membership across freeze. -/
 theorem lookup_freeze_membership (ist : IntermediateState) (tid : SeLe4n.ThreadId) :
-    (ist.state.scheduler.runQueueOnCore bootCoreId).membership.table.get? tid =
+    (ist.state.scheduler.runQueueOnCore bootCoreId).membershipTable.get? tid =
       (freeze ist).scheduler.membership.get? tid := by
-  exact freezeMap_get?_eq (ist.state.scheduler.runQueueOnCore bootCoreId).membership.table tid
-    ist.hAllTables.2.2.2.2.2.2.2.2.2.2.2.2.2.2.1.1
+  exact freezeMap_get?_eq (ist.state.scheduler.runQueueOnCore bootCoreId).membershipTable tid
+    (ist.state.scheduler.runQueueOnCore bootCoreId).membershipTable_invExtK.1
 
 -- ============================================================================
 -- Q6-B: CNode Radix Lookup Equivalence
@@ -1386,11 +1384,11 @@ def apiInvariantBundle_frozenDirectFull (fst : FrozenSystemState) : Prop :=
         sst.scThreadIndex.get? scId = fst.scThreadIndex.get? scId) ∧
     -- Scheduler sub-maps
     (∀ (p : SeLe4n.Priority),
-        (sst.scheduler.runQueueOnCore bootCoreId).byPriority.get? p = fst.scheduler.byPriority.get? p) ∧
+        (sst.scheduler.runQueueOnCore bootCoreId).byPriorityTable.get? p = fst.scheduler.byPriority.get? p) ∧
     (∀ (tid : SeLe4n.ThreadId),
-        (sst.scheduler.runQueueOnCore bootCoreId).threadPriority.get? tid = fst.scheduler.threadPriority.get? tid) ∧
+        (sst.scheduler.runQueueOnCore bootCoreId).threadPriorityTable.get? tid = fst.scheduler.threadPriority.get? tid) ∧
     (∀ (tid : SeLe4n.ThreadId),
-        (sst.scheduler.runQueueOnCore bootCoreId).membership.table.get? tid = fst.scheduler.membership.get? tid) ∧
+        (sst.scheduler.runQueueOnCore bootCoreId).membershipTable.get? tid = fst.scheduler.membership.get? tid) ∧
     -- --------------------------------------------------------------------
     -- Non-map fields: bitwise equality
     -- --------------------------------------------------------------------

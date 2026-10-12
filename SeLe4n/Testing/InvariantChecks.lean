@@ -416,14 +416,16 @@ private def notificationWaiterConsistentChecks (objectIds : List SeLe4n.ObjId) (
         | _ => acc
       | none => acc) []
 
-/-- WS-G4: RunQueue internal consistency — every thread in the membership set has
-    a corresponding entry in `threadPriority`, and every `threadPriority` entry is
-    backed by membership. This invariant is maintained structurally by RunQueue.insert
-    and RunQueue.remove, but we verify it at runtime as a safety net. -/
+/-- WS-G4: RunQueue internal consistency — every thread the queue walks to has a
+    recorded priority and sits in that priority's bucket. The run queue's
+    `layout` field maintains this structurally, but we verify it at runtime as a
+    safety net. -/
 private def runQueueThreadPriorityConsistentB (st : SystemState) : Bool :=
   let rq := (st.scheduler.runQueueOnCore bootCoreId)
-  rq.flat.all fun tid =>
-    rq.threadPriority[tid]?.isSome
+  rq.toList.all fun tid =>
+    match rq.priorityOf tid with
+    | some p => (rq.atPriority p).contains tid
+    | none => false
 
 /-- WS-F7/D1a: Threads blocked on endpoint send must not appear in the runnable list.
 A blocked sender dispatched prematurely could cause message duplication or ordering violations. -/

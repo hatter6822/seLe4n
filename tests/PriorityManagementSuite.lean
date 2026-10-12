@@ -486,7 +486,7 @@ private def pm_ak2b_03_configureRebucketsBoundThread : IO Unit := do
   | .ok ((), st') =>
     -- After reconfigure, the RunQueue's cached priority for this thread
     -- must match the new priority (123), not the old (50).
-    match (st'.scheduler.runQueueOnCore bootCoreId).threadPriority[targetTid]? with
+    match (st'.scheduler.runQueueOnCore bootCoreId).priorityOf targetTid with
     | some prio =>
       expect "RunQueue bucket migrated to new priority (50 -> 123)"
         (prio == ⟨123⟩)
@@ -1329,7 +1329,7 @@ private def pm_frozenBasePriorityRebucketsLikeTheLiveWrite : IO Unit := do
     (targetTid.toObjId, .tcb (mkTcb 2 (prio := 50) (binding := .bound scId))),
     (scId.toObjId, .schedContext sc) ]
   let liveBucket (st : SystemState) (p : Nat) : List SeLe4n.ThreadId :=
-    ((st.scheduler.runQueueOnCore bootCoreId).byPriority[(⟨p⟩ : SeLe4n.Priority)]?).getD []
+    ((st.scheduler.runQueueOnCore bootCoreId).atPriority (⟨p⟩ : SeLe4n.Priority))
   let frozenBucket (st : FrozenSystemState) (p : Nat) : List SeLe4n.ThreadId :=
     (st.scheduler.byPriority.get? ⟨p⟩).getD []
   expect "control: both surfaces start with the target queued at 50"
@@ -1377,7 +1377,7 @@ private def pm_frozenCeilingRebucketsLikeTheLiveWrite : IO Unit := do
     (targetTid.toObjId, .tcb (mkTcb 2 (prio := 80) (binding := .bound scId))),
     (scId.toObjId, .schedContext sc) ]
   let liveBucket (st : SystemState) (p : Nat) : List SeLe4n.ThreadId :=
-    ((st.scheduler.runQueueOnCore bootCoreId).byPriority[(⟨p⟩ : SeLe4n.Priority)]?).getD []
+    ((st.scheduler.runQueueOnCore bootCoreId).atPriority (⟨p⟩ : SeLe4n.Priority))
   let frozenBucket (st : FrozenSystemState) (p : Nat) : List SeLe4n.ThreadId :=
     (st.scheduler.byPriority.get? ⟨p⟩).getD []
   expect "control: both surfaces start with the target queued at 80"
@@ -1458,7 +1458,7 @@ private def pm_basePrioritySurvivesBlockAndWake : IO Unit := do
     let s' : SystemState := { s with scheduler := sched }
     enqueueRunnableOnCore s' bootCoreId targetTid
   let bucketOf : SystemState → Option SeLe4n.Priority := fun s =>
-    (s.scheduler.runQueueOnCore bootCoreId).threadPriority[targetTid]?
+    (s.scheduler.runQueueOnCore bootCoreId).priorityOf targetTid
   expect "the fixture starts queued at its bound band" (bucketOf st == some ⟨50⟩)
   match setPriorityOnCore st ⟨callerTid, by decide⟩ ⟨targetTid, by decide⟩ ⟨10⟩
           bootCoreId with
@@ -1516,7 +1516,7 @@ private def pm_fp_01_priorityFootprintNamesHomeAndExecutingCores : IO Unit := do
   | .error e => throw <| IO.userError s!"PM-FP-01 setPriority should succeed, got {repr e}"
   | .ok (st1, _) =>
     expect "PM-FP-01 the live arm re-buckets on the target's own home core"
-      ((st1.scheduler.runQueueOnCore bootCoreId).threadPriority[targetTid]? == some ⟨10⟩)
+      ((st1.scheduler.runQueueOnCore bootCoreId).priorityOf targetTid == some ⟨10⟩)
     expect "PM-FP-01 ...and writes no replenish queue on any core -- the empty segment's exact half"
       (SeLe4n.Kernel.Concurrency.allCores.all (fun c =>
         (st1.scheduler.replenishQueueOnCore c).entries

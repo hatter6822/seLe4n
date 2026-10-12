@@ -1214,11 +1214,15 @@ theorem notificationSignalBoundCrossCoreDispatchChecked_stepCovers (e : CoreId)
       badge executingCore st).1 ∧
     (notificationSignalBoundCrossCoreDispatchChecked ctx notificationId signaler
       badge executingCore st).1.objects.invExt := by
+  have hRefl : stepCovers e st st ∧ st.objects.invExt := ⟨stepCovers_refl e st, hInv⟩
   unfold notificationSignalBoundCrossCoreDispatchChecked
-  repeat' split
-  all_goals first
-    | exact notificationSignalBoundOnCore_stepCovers e hInv
-    | exact ⟨stepCovers_refl e st, hInv⟩
+  split
+  · split
+    · split
+      · exact notificationSignalBoundOnCore_stepCovers e hInv
+      · exact hRefl
+    · exact notificationSignalBoundOnCore_stepCovers e hInv
+  · exact hRefl
 
 /-- The per-core wait covers on every outcome: consuming a badge keeps the
 waiter runnable, and blocking takes it off the executing core. -/

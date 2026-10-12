@@ -305,8 +305,7 @@ element-level lemma. -/
 private theorem remove_preserves_nodup (rq : RunQueue) (tid : SeLe4n.ThreadId)
     (hNodup : rq.toList.Nodup) :
     (rq.remove tid).toList.Nodup := by
-  simp only [RunQueue.toList]
-  unfold RunQueue.remove
+  rw [RunQueue.toList_remove]
   exact hNodup.sublist List.filter_sublist
 
 /-
@@ -2475,7 +2474,7 @@ private theorem chooseBestInBucket_edf_bridge
           (st.scheduler.runQueueOnCore bootCoreId).maxPriorityBucket tid tcbSel.priority tcbSel.deadline
           hBucket hBucketAllTcb
       obtain ⟨maxPrio, hMP, hTidTP⟩ :=
-        RunQueue.maxPriorityBucket_threadPriority (st.scheduler.runQueueOnCore bootCoreId) hwf tid hTidInBucket
+        RunQueue.maxPriorityBucket_priorityOf (st.scheduler.runQueueOnCore bootCoreId) tid hTidInBucket
       have hTidMem := RunQueue.maxPriorityBucket_subset (st.scheduler.runQueueOnCore bootCoreId) tid hTidInBucket
       have hPMTid := hpm tid hTidMem
       simp only [hObj] at hPMTid
@@ -2487,17 +2486,16 @@ private theorem chooseBestInBucket_edf_bridge
         | tcb tcb =>
           intro htDom htEffPrio htPrio
           have hTInRq : t ∈ (st.scheduler.runQueueOnCore bootCoreId) := by
-            rw [RunQueue.mem_iff_contains]
-            exact (st.scheduler.runQueueOnCore bootCoreId).flat_wf t
+            exact (RunQueue.mem_toList_iff_mem _ t).mp
               (by simpa [SchedulerState.runnable] using hMemOrig)
           have hPMt := hpm t hTInRq; simp only [hTObj] at hPMt
           -- AI3-A: htEffPrio gives tcb.boostedPriority = tcbSel.boostedPriority.
-          -- Combined with hPMt and hMaxEqPrio, this yields threadPriority[t]? = some maxPrio,
+          -- Combined with hPMt and hMaxEqPrio, this yields priorityOf t = some maxPrio,
           -- placing t in the maxPriorityBucket alongside tid.
-          have hTTP : (st.scheduler.runQueueOnCore bootCoreId).threadPriority[t]? = some maxPrio :=
+          have hTTP : (st.scheduler.runQueueOnCore bootCoreId).priorityOf t = some maxPrio :=
             hPMt.trans (congrArg some (htEffPrio.trans hMaxEqPrio.symm))
           have hTInBucket :=
-            RunQueue.mem_maxPriorityBucket_of_threadPriority (st.scheduler.runQueueOnCore bootCoreId) hwf
+            RunQueue.mem_maxPriorityBucket_of_priorityOf (st.scheduler.runQueueOnCore bootCoreId)
               t maxPrio hTInRq hTTP hMP
           have hTObjGet : st.getObject? t.toObjId = some (.tcb tcb) := hTObj
           have hOpt := chooseBestRunnableBy_optimal st.getObject?
@@ -2670,7 +2668,7 @@ private theorem handleYield_preserves_edfCurrentHasEarliestDeadline
           have hMemIns : t ∈ (st.scheduler.runQueueOnCore bootCoreId).insert curTid (tcb.boostedPriority) :=
             (RunQueue.mem_rotateToBack _ curTid t).mp hMem
           rw [RunQueue.mem_insert] at hMemIns
-          simp only [RunQueue.rotateToBack_threadPriority, RunQueue.insert_threadPriority,
+          simp only [RunQueue.priorityOf_rotateToBack, RunQueue.priorityOf_insert,
             show ((st.scheduler.runQueueOnCore bootCoreId).contains curTid) = false from by
               cases h : (st.scheduler.runQueueOnCore bootCoreId).contains curTid
               · rfl
@@ -2681,20 +2679,16 @@ private theorem handleYield_preserves_edfCurrentHasEarliestDeadline
             have hNeq : curTid ≠ t := fun h => hNotMem (h ▸ hOld)
             have hBEq : (curTid == t) = false := by
               cases h : (curTid == t) <;> simp_all
-            simp only [RHTable_getElem?_eq_get?]
-            rw [RHTable_getElem?_insert (st.scheduler.runQueueOnCore bootCoreId).threadPriority _ _ (st.scheduler.runQueueOnCore bootCoreId).threadPrio_invExtK.1]
-            simp only [hBEq, Bool.false_eq_true, ↓reduceIte]
+            simp only [show t ≠ curTid from fun h => hNeq h.symm, ↓reduceIte]
             exact hpm t hOld
           | inr hEq =>
             subst hEq
-            simp only [RHTable_getElem?_eq_get?]
-            rw [RHTable_getElem?_insert (st.scheduler.runQueueOnCore bootCoreId).threadPriority _ _ (st.scheduler.runQueueOnCore bootCoreId).threadPrio_invExtK.1]
-            simp only [beq_self_eq_true, ↓reduceIte]
+            simp only [↓reduceIte, RHTable_getElem?_eq_get?]
             simp only [RHTable_getElem?_eq_get?] at hObj; rw [hObj]
         have hAllTcb' : ∀ t, t ∈ { st with scheduler := st.scheduler.setRunQueueOnCore bootCoreId (((st.scheduler.runQueueOnCore bootCoreId).insert curTid (tcb.boostedPriority)).rotateToBack curTid) }.scheduler.runnable →
             ∃ tcb, st.objects[t.toObjId]? = some (.tcb tcb) := by
           intro t hMem
-          simp [SchedulerState.runnable, RunQueue.toList] at hMem
+          simp [SchedulerState.runnable] at hMem
           have hMemIns : t ∈ (st.scheduler.runQueueOnCore bootCoreId).insert curTid (tcb.boostedPriority) :=
             (RunQueue.mem_rotateToBack _ curTid t).mp ((RunQueue.mem_toList_iff_mem _ t).mp hMem)
           rw [RunQueue.mem_insert] at hMemIns
@@ -2768,7 +2762,7 @@ private theorem timerTick_preserves_edfCurrentHasEarliestDeadline
                 scheduler := st.scheduler.setRunQueueOnCore bootCoreId ((st.scheduler.runQueueOnCore bootCoreId).insert curTid (curTcb.boostedPriority)) } := by
             intro t hMem
             simp only [SchedulerState.setRunQueueOnCore_runQueueOnCore_self] at hMem
-            simp only [SchedulerState.setRunQueueOnCore_runQueueOnCore_self, RunQueue.insert_threadPriority, hContainsFalse, Bool.false_eq_true, ↓reduceIte]
+            simp only [SchedulerState.setRunQueueOnCore_runQueueOnCore_self, RunQueue.priorityOf_insert, hContainsFalse, Bool.false_eq_true, ↓reduceIte]
             rw [RunQueue.mem_insert] at hMem
             cases hMem with
             | inl hOld =>
@@ -2779,18 +2773,15 @@ private theorem timerTick_preserves_edfCurrentHasEarliestDeadline
                 cases h : (curTid.toObjId == t.toObjId) with
                 | false => rfl
                 | true => exact absurd (ThreadId.toObjId_injective curTid t (eq_of_beq h)) hNeq
-              -- objects side: insert-ne, threadPriority side: insert-ne
-              simp only [RHTable_getElem?_eq_get?]
-              rw [RHTable_getElem?_insert st.objects _ _ hObjInv,
-                  RHTable_getElem?_insert (st.scheduler.runQueueOnCore bootCoreId).threadPriority _ _ (st.scheduler.runQueueOnCore bootCoreId).threadPrio_invExtK.1]
-              simp only [hObjBEq, hBEq, Bool.false_eq_true, ↓reduceIte]
+              -- objects side: insert-ne, priorityOf side: t ≠ curTid
+              simp only [show t ≠ curTid from fun h => hNeq h.symm, ↓reduceIte, RHTable_getElem?_eq_get?]
+              rw [RHTable_getElem?_insert st.objects _ _ hObjInv]
+              simp only [hObjBEq, Bool.false_eq_true, ↓reduceIte]
               exact hpm t hOld
             | inr hEq =>
               subst hEq
-              -- threadPriority side: (rq.threadPriority.insert t prio).get? t = some prio
-              simp only [RHTable_getElem?_eq_get?]
-              rw [RHTable_getElem?_insert (st.scheduler.runQueueOnCore bootCoreId).threadPriority _ _ (st.scheduler.runQueueOnCore bootCoreId).threadPrio_invExtK.1]
-              simp only [beq_self_eq_true, ite_true]
+              -- priorityOf side: the inserted thread reads its own priority
+              simp only [↓reduceIte, RHTable_getElem?_eq_get?]
               -- objects side: (st.objects.insert t.toObjId (.tcb {...})).get? t.toObjId = some (.tcb {...})
               rw [RHTable_getElem?_insert st.objects _ _ hObjInv]
               simp only [beq_self_eq_true, ite_true]
@@ -2803,7 +2794,7 @@ private theorem timerTick_preserves_edfCurrentHasEarliestDeadline
               scheduler := st.scheduler.setRunQueueOnCore bootCoreId ((st.scheduler.runQueueOnCore bootCoreId).insert curTid (curTcb.boostedPriority)) }.scheduler.runnable →
               ∃ tcb, (st.objects.insert curTid.toObjId (.tcb { curTcb with timeSlice := st.scheduler.configDefaultTimeSlice }))[t.toObjId]? = some (.tcb tcb) := by
             intro t hMem
-            simp [SchedulerState.runnable, RunQueue.toList] at hMem
+            simp [SchedulerState.runnable] at hMem
             have hMemIns := (RunQueue.mem_toList_iff_mem _ t).mp hMem
             rw [RunQueue.mem_insert] at hMemIns
             cases hMemIns with
@@ -3063,15 +3054,15 @@ private theorem schedule_preserves_schedulerPriorityMatch
           saveOutgoingContext_tcb_fields stChoose tid.toObjId tcb hTcbC hObjInvC
         -- Goal: match (saveOutgoing).objects.get? tid.toObjId with tcb → threadPrio = prio
         -- Key facts: hTcb' gives the saveOutgoing lookup; hPrioEq links priorities
-        -- hOldPM gives the original match result with st's threadPriority
+        -- hOldPM gives the original match result with st's priorityOf
         -- Strategy: show the match on objects.get? gives .tcb tcb', then rewrite prio
         simp only [RHTable_getElem?_eq_get?] at hTcb' ⊢
         rw [hTcb']; simp only []
-        -- Goal: (stChoose.scheduler.runQueueOnCore bootCoreId).threadPriority.get? tid = some (tcb.boostedPriority')
+        -- Goal: (stChoose.scheduler.runQueueOnCore bootCoreId).priorityOf tid = some (tcb.boostedPriority')
         simp [TCB.boostedPriority, hPrioEq, hPipEq]
-        -- Goal: (stChoose.scheduler.runQueueOnCore bootCoreId).threadPriority.get? tid = some (tcb.boostedPriority)
+        -- Goal: (stChoose.scheduler.runQueueOnCore bootCoreId).priorityOf tid = some (tcb.boostedPriority)
         -- Convert stChoose → st via hRQEq
-        have : (stChoose.scheduler.runQueueOnCore bootCoreId).threadPriority = (st.scheduler.runQueueOnCore bootCoreId).threadPriority := by
+        have : (stChoose.scheduler.runQueueOnCore bootCoreId) = (st.scheduler.runQueueOnCore bootCoreId) := by
           rw [hStEqBase]
         rw [this]
         -- Now use hOldPM
@@ -3120,20 +3111,13 @@ private theorem schedule_preserves_schedulerPriorityMatch
                 saveOutgoingContext_tcb_fields stChoose t.toObjId tcb' hTcbC hObjInvC
               simp only [RHTable_getElem?_eq_get?] at hTcb'' ⊢
               rw [hTcb'']; simp only []
-              -- Goal: (runQueue.remove selTid).threadPriority.get? t = some (tcb.boostedPriority'')
+              -- Goal: (runQueue.remove selTid).priorityOf t = some (tcb.boostedPriority'')
               simp [TCB.boostedPriority, hPrioEq, hPipEq]
-              -- Goal: (runQueue.remove selTid).threadPriority.get? t = some tcb'.priority
-              -- threadPriority after remove = erase selTid; for t ≠ selTid, unchanged
-              rw [hSchedSt']
-              simp only [RunQueue.remove]
-              -- Goal: ((stChoose.scheduler.runQueueOnCore bootCoreId).threadPriority.erase selTid).get? t = some tcb'.priority
-              have hTNeSel : ¬(selTid == t) = true := by
-                intro h; exact hNeSelTid ((eq_of_beq h).symm)
-              rw [SeLe4n.Kernel.RobinHood.RHTable.getElem?_erase_ne_K
-                (stChoose.scheduler.runQueueOnCore bootCoreId).threadPriority selTid t hTNeSel
-                (stChoose.scheduler.runQueueOnCore bootCoreId).threadPrio_invExtK]
-              -- Goal: (stChoose.scheduler.runQueueOnCore bootCoreId).threadPriority.get? t = some tcb'.priority
-              have : (stChoose.scheduler.runQueueOnCore bootCoreId).threadPriority = (st.scheduler.runQueueOnCore bootCoreId).threadPriority := by
+              -- Goal: (runQueue.remove selTid).priorityOf t = some tcb'.priority
+              -- priorityOf after remove selTid: for t ≠ selTid, unchanged
+              rw [hSchedSt', RunQueue.priorityOf_remove, if_neg hNeSelTid]
+              -- Goal: (stChoose.scheduler.runQueueOnCore bootCoreId).priorityOf t = some tcb'.priority
+              have : (stChoose.scheduler.runQueueOnCore bootCoreId) = (st.scheduler.runQueueOnCore bootCoreId) := by
                 rw [hStEqBase]
               rw [this]
               simp only [RHTable_getElem?_eq_get?] at hOldPM hTcb'
@@ -3183,23 +3167,17 @@ private theorem handleYield_preserves_schedulerPriorityMatch
           have hMemIns : t ∈ (st.scheduler.runQueueOnCore bootCoreId).insert curTid (curTcb.boostedPriority) :=
             (RunQueue.mem_rotateToBack _ curTid t).mp hMem
           rw [RunQueue.mem_insert] at hMemIns
-          simp only [RunQueue.rotateToBack_threadPriority, RunQueue.insert_threadPriority,
+          simp only [RunQueue.priorityOf_rotateToBack, RunQueue.priorityOf_insert,
             hContF, Bool.false_eq_true, ↓reduceIte]
           cases hMemIns with
           | inl hOld =>
             have hNeq : curTid ≠ t := fun h => hNotMem (h ▸ hOld)
             have hBEq : (curTid == t) = false := by cases h : (curTid == t) <;> simp_all
-            simp only [RHTable_getElem?_eq_get?]
-            rw [RHTable_getElem?_insert (st.scheduler.runQueueOnCore bootCoreId).threadPriority _ _
-              (st.scheduler.runQueueOnCore bootCoreId).threadPrio_invExtK.1]
-            simp only [hBEq, Bool.false_eq_true, ↓reduceIte]
+            simp only [show t ≠ curTid from fun h => hNeq h.symm, ↓reduceIte]
             exact hpm t hOld
           | inr hEq =>
             subst hEq
-            simp only [RHTable_getElem?_eq_get?]
-            rw [RHTable_getElem?_insert (st.scheduler.runQueueOnCore bootCoreId).threadPriority _ _
-              (st.scheduler.runQueueOnCore bootCoreId).threadPrio_invExtK.1]
-            simp only [beq_self_eq_true, ↓reduceIte]
+            simp only [↓reduceIte, RHTable_getElem?_eq_get?]
             simp only [RHTable_getElem?_eq_get?] at hObj; rw [hObj]
         · -- hAllTcb on intermediate state
           intro t hMem
@@ -3251,7 +3229,7 @@ private theorem timerTick_preserves_schedulerPriorityMatch
             intro t hMem
             simp only [SchedulerState.setRunQueueOnCore_runQueueOnCore_self] at hMem ⊢
             rw [RunQueue.mem_insert] at hMem
-            simp only [RunQueue.insert_threadPriority, hContF, Bool.false_eq_true, ↓reduceIte]
+            simp only [RunQueue.priorityOf_insert, hContF, Bool.false_eq_true, ↓reduceIte]
             cases hMem with
             | inl hOld =>
               have hNeq : curTid ≠ t := fun h => hNotMem (h ▸ hOld)
@@ -3260,18 +3238,13 @@ private theorem timerTick_preserves_schedulerPriorityMatch
                 cases h : (curTid.toObjId == t.toObjId) with
                 | false => rfl
                 | true => exact absurd (ThreadId.toObjId_injective curTid t (eq_of_beq h)) hNeq
-              simp only [RHTable_getElem?_eq_get?]
-              rw [RHTable_getElem?_insert st.objects _ _ hObjInv,
-                  RHTable_getElem?_insert (st.scheduler.runQueueOnCore bootCoreId).threadPriority _ _
-                    (st.scheduler.runQueueOnCore bootCoreId).threadPrio_invExtK.1]
-              simp only [hObjBEq, hBEq, Bool.false_eq_true, ↓reduceIte]
+              simp only [show t ≠ curTid from fun h => hNeq h.symm, ↓reduceIte, RHTable_getElem?_eq_get?]
+              rw [RHTable_getElem?_insert st.objects _ _ hObjInv]
+              simp only [hObjBEq, Bool.false_eq_true, ↓reduceIte]
               exact hpm t hOld
             | inr hEq =>
               subst hEq
-              simp only [RHTable_getElem?_eq_get?]
-              rw [RHTable_getElem?_insert (st.scheduler.runQueueOnCore bootCoreId).threadPriority _ _
-                (st.scheduler.runQueueOnCore bootCoreId).threadPrio_invExtK.1]
-              simp only [beq_self_eq_true, ite_true]
+              simp only [↓reduceIte, RHTable_getElem?_eq_get?]
               rw [RHTable_getElem?_insert st.objects _ _ hObjInv]
               simp only [beq_self_eq_true, ite_true]
               -- AI3-A: only.boostedPriority depends on priority + pipBoost,
