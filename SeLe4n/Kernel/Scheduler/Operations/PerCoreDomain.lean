@@ -954,8 +954,10 @@ theorem switchDomainOnCore_domainSchedule (st : SystemState) (c : CoreId)
     split at hStep
     · simp at hStep
     · simp only [Except.ok.injEq] at hStep; subst hStep
+      obtain ⟨E, hE⟩ := requeueOutgoingOnCore_scheduler st c
       simp only [SchedulerState.setDomainScheduleIndexOnCore, SchedulerState.setDomainTimeRemainingOnCore,
-        SchedulerState.setActiveDomainOnCore, SchedulerState.setCurrentOnCore, SchedulerState.setRunQueueOnCore]
+        SchedulerState.setActiveDomainOnCore, SchedulerState.setCurrentOnCore, hE,
+        SchedulerState.setRunQueueOnCore, SchedulerState.setRunQueueEndsOnCore]
       exact hcase
 
 /-- WS-SM SM5.G.3 helper: `decrementDomainTimeOnCore` frames the domain schedule. -/

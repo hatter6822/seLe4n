@@ -977,6 +977,18 @@ theorem saveOutgoingContextOnCore_preserves_objects_invExt (st : SystemState) (c
   · exact hInv
   · exact SystemState.updateTcb_preserves_objects_invExt _ _ _ hInv
 
+/-- WS-ZA ZA4.5: the domain switch's save and re-enqueue preserves the
+object-store invariant (the re-enqueue writes run-queue links in place). -/
+theorem requeueOutgoingOnCore_objects_invExt (st : SystemState) (c : CoreId)
+    (hInv : st.objects.invExt) : (requeueOutgoingOnCore st c).objects.invExt := by
+  have hS := saveOutgoingContextOnCore_preserves_objects_invExt st c hInv
+  unfold requeueOutgoingOnCore; dsimp only
+  split
+  · exact hS
+  · split
+    · exact SystemState.runEnqueueOnCore_objects_invExt _ _ _ _ hS
+    · exact hS
+
 /-- WS-SM SM5.D.5 (local helper): `restoreIncomingContext` writes only the machine
 register file, so the object store is unchanged. -/
 theorem restoreIncomingContext_objects_eq (st : SystemState) (tid : SeLe4n.ThreadId) :
@@ -1137,7 +1149,7 @@ theorem switchDomainOnCore_preserves_objects_invExt (st : SystemState) (c : Core
     split at hStep
     · simp at hStep
     · simp only [Except.ok.injEq] at hStep; subst hStep
-      exact saveOutgoingContextOnCore_preserves_objects_invExt st c hInv
+      exact requeueOutgoingOnCore_objects_invExt st c hInv
 
 /-- WS-SM SM5.D.6: a successful per-core domain switch on a non-empty schedule
 clears `currentOnCore c` (the outgoing thread is preempted and re-enqueued before

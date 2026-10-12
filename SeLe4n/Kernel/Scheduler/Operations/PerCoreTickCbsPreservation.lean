@@ -788,8 +788,9 @@ theorem switchDomainOnCore_replenishQueueOnCore (st : SystemState) (c : CoreId)
       simp only [SchedulerState.setDomainScheduleIndexOnCore_replenishQueueOnCore,
         SchedulerState.setDomainTimeRemainingOnCore_replenishQueueOnCore,
         SchedulerState.setActiveDomainOnCore_replenishQueueOnCore,
-        SchedulerState.setCurrentOnCore_replenishQueueOnCore,
-        SchedulerState.setRunQueueOnCore_replenishQueueOnCore]
+        SchedulerState.setCurrentOnCore_replenishQueueOnCore]
+      obtain ⟨E, hE⟩ := requeueOutgoingOnCore_scheduler st c
+      rw [hE]; simp
 
 /-- WS-SM (PR #880 round 4): `switchDomainOnCore` leaves the machine (and so
 the shared clock) unchanged — its only object write is the context save. -/
@@ -804,7 +805,7 @@ theorem switchDomainOnCore_machine (st : SystemState) (c : CoreId)
     split at h
     · simp at h
     · simp only [Except.ok.injEq] at h; subst h
-      exact saveOutgoingContextOnCore_machine st c
+      exact (requeueOutgoingOnCore_machine st c).trans (saveOutgoingContextOnCore_machine st c)
 
 /-- **WS-RR RR7.39 (frame)**: the domain tick never touches any core's replenish
 queue.

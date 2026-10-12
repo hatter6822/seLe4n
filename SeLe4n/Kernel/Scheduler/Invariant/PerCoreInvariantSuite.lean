@@ -1889,11 +1889,13 @@ theorem switchDomainOnCore_runQueueOnCore_ne (st : SystemState) (c c' : CoreId)
     split at h
     · simp at h
     · simp only [Except.ok.injEq] at h; subst h
+      obtain ⟨E, hE⟩ := requeueOutgoingOnCore_scheduler st c
       simp only [SchedulerState.setDomainScheduleIndexOnCore_runQueueOnCore,
         SchedulerState.setDomainTimeRemainingOnCore_runQueueOnCore,
         SchedulerState.setActiveDomainOnCore_runQueueOnCore,
-        SchedulerState.setCurrentOnCore_runQueueOnCore,
-        SchedulerState.setRunQueueOnCore_runQueueOnCore_ne _ _ _ _ hc]
+        SchedulerState.setCurrentOnCore_runQueueOnCore, hE,
+        SchedulerState.setRunQueueOnCore_runQueueOnCore_ne _ _ _ _ hc,
+        SchedulerState.setRunQueueEndsOnCore_runQueueOnCore]
 
 /-- `switchDomainOnCore` on core `c` frames a sibling core `c'`'s current thread. -/
 theorem switchDomainOnCore_currentOnCore_ne (st : SystemState) (c c' : CoreId)
@@ -1910,8 +1912,10 @@ theorem switchDomainOnCore_currentOnCore_ne (st : SystemState) (c c' : CoreId)
       simp only [SchedulerState.setDomainScheduleIndexOnCore_currentOnCore,
         SchedulerState.setDomainTimeRemainingOnCore_currentOnCore,
         SchedulerState.setActiveDomainOnCore_currentOnCore,
-        SchedulerState.setCurrentOnCore_currentOnCore_ne _ _ _ _ hc,
-        SchedulerState.setRunQueueOnCore_currentOnCore]
+        SchedulerState.setCurrentOnCore_currentOnCore_ne _ _ _ _ hc]
+      obtain ⟨E, hE⟩ := requeueOutgoingOnCore_scheduler st c
+      simp only [hE, SchedulerState.setRunQueueOnCore_currentOnCore,
+        SchedulerState.setRunQueueEndsOnCore_currentOnCore]
 
 /-- `switchDomainOnCore` preserves TCB-resolvability of every thread (its only
 object write is the outgoing-context save, which keeps the outgoing thread a
@@ -1928,10 +1932,10 @@ theorem switchDomainOnCore_getTcb?_isSome (st : SystemState) (c : CoreId)
     · simp at h
     · simp only [Except.ok.injEq] at h; subst h
       intro tid hSome
-      have : ∃ t, (saveOutgoingContextOnCore st c).getTcb? tid = some t :=
-        saveOutgoingContextOnCore_getTcb?_isSome st c tid hInv
+      obtain ⟨t, ht⟩ := saveOutgoingContextOnCore_getTcb?_isSome st c tid hInv
           (Option.isSome_iff_exists.mp hSome)
-      exact Option.isSome_iff_exists.mpr this
+      obtain ⟨t', ht', _⟩ := (requeueOutgoingOnCore_objectsAgreeOffRunLinks st c).getTcb?_some ht
+      exact Option.isSome_iff_exists.mpr ⟨t', ht'⟩
 
 /-- The operated core is **idle** (no current thread) after `switchDomainOnCore`
 on a non-empty domain schedule — it sets `current := none` before re-dispatch.
@@ -1970,6 +1974,9 @@ theorem switchDomainOnCore_operated_runQueue_props (st : SystemState) (c : CoreI
     split at h
     · simp at h
     · simp only [Except.ok.injEq] at h; subst h
+      obtain ⟨E, hE⟩ := requeueOutgoingOnCore_scheduler st c
+      simp only [hE]
+      unfold requeueOutgoingQueue
       refine ⟨?_, ?_, ?_⟩
       · -- wellFormed
         simp only [SchedulerState.setDomainScheduleIndexOnCore_runQueueOnCore,
@@ -2035,7 +2042,7 @@ theorem switchDomainOnCore_machine_eq (st : SystemState) (c : CoreId)
     split at h
     · simp at h
     · simp only [Except.ok.injEq] at h; subst h
-      exact saveOutgoingContextOnCore_machine st c
+      exact (requeueOutgoingOnCore_machine st c).trans (saveOutgoingContextOnCore_machine st c)
 
 /-- `switchDomainOnCore`'s only `registerContext` write is the outgoing-context
 save: a thread's saved context is left unchanged, or — when it is core `c₀`'s
@@ -2056,7 +2063,9 @@ theorem switchDomainOnCore_getTcb?_regContext (st : SystemState) (c₀ : CoreId)
     split at h
     · simp at h
     · simp only [Except.ok.injEq] at h; subst h
-      exact saveOutgoingContextOnCore_getTcb?_regContext st c₀ tid tcb hInv htcb
+      obtain ⟨t, ht, hR⟩ := saveOutgoingContextOnCore_getTcb?_regContext st c₀ tid tcb hInv htcb
+      obtain ⟨t', ht', hE⟩ := (requeueOutgoingOnCore_objectsAgreeOffRunLinks st c₀).getTcb?_some ht
+      exact ⟨t', ht', by rwa [TCB.proj_eq_of_withoutRunLinks_eq TCB.registerContext hE]⟩
 
 /-- `switchDomainOnCore` on core `c₀` preserves `contextMatchesCurrentOnCore` on a
 *sibling* core `c'`: its current pointer is framed, its register bank is
@@ -4732,7 +4741,8 @@ theorem switchDomainOnCore_preserves_allThreadsTimeSlicePositive (st : SystemSta
     split at hStep
     · simp at hStep
     · simp only [Except.ok.injEq] at hStep; subst hStep
-      exact allThreadsTimeSlicePositive_of_objects_eq rfl
+      exact allThreadsTimeSlicePositive_of_objectsAgreeOffRunLinks
+        (requeueOutgoingOnCore_objectsAgreeOffRunLinks st c)
         (saveOutgoingContextOnCore_preserves_allThreadsTimeSlicePositive st c hInv h)
 
 /-- `scheduleDomainOnCore` preserves `allThreadsTimeSlicePositive` — boundary:

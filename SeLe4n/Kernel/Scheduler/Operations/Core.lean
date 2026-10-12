@@ -1808,6 +1808,63 @@ def yieldOnCore (st : SystemState) (c : CoreId) : Except KernelError SystemState
 -- ─ SM5.D.6 (separate per-core domain-boundary re-dispatch, faithful to the
 --   single-core `switchDomain` / `scheduleDomain` split) ─
 
+/-- WS-ZA ZA4.5: the queue a domain switch leaves on core `c`: the outgoing
+current (if it resolves) inserted at its boosted priority. -/
+def requeueOutgoingQueue (st : SystemState) (c : CoreId) : RunQueue :=
+  match st.scheduler.currentOnCore c with
+  | none => st.scheduler.runQueueOnCore c
+  | some tid =>
+      match st.getTcb? tid with
+      | some tcb => (st.scheduler.runQueueOnCore c).insert tid tcb.boostedPriority
+      | none => st.scheduler.runQueueOnCore c
+
+/-- WS-ZA ZA4.5: the domain switch's save and re-enqueue.  Core `c`'s outgoing
+current has its registers saved and goes back on core `c`'s queue through its
+TCB run-queue links (`runEnqueueOnCore`). -/
+def requeueOutgoingOnCore (st : SystemState) (c : CoreId) : SystemState :=
+  let stSaved := saveOutgoingContextOnCore st c
+  match st.scheduler.currentOnCore c with
+  | none => stSaved
+  | some tid =>
+      match st.getTcb? tid with
+      | some tcb => stSaved.runEnqueueOnCore c tid tcb.boostedPriority
+      | none => stSaved
+
+/-- The re-enqueue touches the object store only in run-queue links past the
+context save. -/
+theorem requeueOutgoingOnCore_objectsAgreeOffRunLinks (st : SystemState) (c : CoreId) :
+    (requeueOutgoingOnCore st c).objectsAgreeOffRunLinks (saveOutgoingContextOnCore st c) := by
+  unfold requeueOutgoingOnCore; dsimp only
+  split
+  · exact .refl _
+  · split
+    · exact SystemState.runEnqueueOnCore_objectsAgreeOffRunLinks _ _ _ _
+    · exact .refl _
+
+/-- The re-enqueue leaves the machine where the context save left it. -/
+@[simp] theorem requeueOutgoingOnCore_machine (st : SystemState) (c : CoreId) :
+    (requeueOutgoingOnCore st c).machine = (saveOutgoingContextOnCore st c).machine := by
+  unfold requeueOutgoingOnCore; dsimp only
+  split
+  · rfl
+  · split
+    · exact SystemState.runEnqueueOnCore_machine _ _ _ _
+    · rfl
+
+/-- The re-enqueue's scheduler: core `c`'s queue is `requeueOutgoingQueue` and
+its ends are rewritten; every other slot is the pre-state's. -/
+theorem requeueOutgoingOnCore_scheduler (st : SystemState) (c : CoreId) :
+    ∃ E, (requeueOutgoingOnCore st c).scheduler =
+      (st.scheduler.setRunQueueEndsOnCore c E).setRunQueueOnCore c (requeueOutgoingQueue st c) := by
+  unfold requeueOutgoingOnCore requeueOutgoingQueue; dsimp only
+  split
+  · refine ⟨st.scheduler.runQueueEndsOnCore c, ?_⟩
+    simp [SchedulerState.setRunQueueOnCore_runQueueOnCore]
+  · split
+    · exact ⟨_, by simp; rfl⟩
+    · refine ⟨st.scheduler.runQueueEndsOnCore c, ?_⟩
+      simp [SchedulerState.setRunQueueOnCore_runQueueOnCore]
+
 /-- WS-SM SM5.D.6 (per-core domain switch): the per-core analogue of
 `switchDomain`.  Advances core `c` to the next domain-schedule entry, saving the
 outgoing thread's register context, re-enqueueing core `c`'s current thread at
@@ -1828,17 +1885,11 @@ def switchDomainOnCore (st : SystemState) (c : CoreId) :
       match st.scheduler.domainSchedule[nextIdx]? with
       | none => .error .schedulerInvariantViolation
       | some entry =>
-          let stSaved := saveOutgoingContextOnCore st c
-          let rq' := match st.scheduler.currentOnCore c with
-            | none => st.scheduler.runQueueOnCore c
-            | some tid =>
-                match st.getTcb? tid with
-                | some tcb => (st.scheduler.runQueueOnCore c).insert tid (tcb.boostedPriority)
-                | none => st.scheduler.runQueueOnCore c
-          let sched' := ((((st.scheduler.setRunQueueOnCore c rq').setCurrentOnCore
+          let stQueued := requeueOutgoingOnCore st c
+          let sched' := (((stQueued.scheduler.setCurrentOnCore
               c none).setActiveDomainOnCore c (DomainScheduleEntry.domain entry)).setDomainTimeRemainingOnCore
               c (DomainScheduleEntry.length entry)).setDomainScheduleIndexOnCore c nextIdx
-          .ok { stSaved with scheduler := sched' }
+          .ok { stQueued with scheduler := sched' }
 
 /-- WS-SM SM5.D.6 (per-core domain tick): the per-core analogue of
 `scheduleDomain`.  With a **non-empty** domain schedule: decrements core `c`'s
