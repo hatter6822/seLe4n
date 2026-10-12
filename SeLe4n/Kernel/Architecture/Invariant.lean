@@ -666,6 +666,7 @@ theorem default_system_state_proofLayerInvariantBundle :
            default_boundThreadDomainConsistent⟩
   -- 11. notificationWaiterConsistent (AG7-D: empty objects → vacuous)
   · exact ⟨fun _ _ hObj => default_objects_absurd hObj,
+      fun _ _ _ hObj _ => default_objects_absurd hObj,
       fun _ _ _ hObj _ => default_objects_absurd hObj⟩
   -- 12. pendingBounded (WS-SM SM7.B: boot shootdown state is quiescent)
   · exact default_tlbShootdown_pendingBounded
@@ -1091,7 +1092,7 @@ theorem proofLayerInvariantBundle_setDeclassificationAuditTrail (st : SystemStat
          ipcSchedulerCouplingInvariantBundle_setDeclassificationAuditLog bCoupling,
          bLifecycle, bService, bVSpace,
          crossSubsystemInvariant_setDeclassificationAuditLog bCross,
-         bTlb, bSchedExt, bNtfn, bPending, bPerCoreTlb,
+         bTlb, bSchedExt, (notificationWaiterConsistent_of_objects_eq (st := st) rfl bNtfn), bPending, bPerCoreTlb,
          bIcache, bAck, hBounded⟩
 
 /-- **WS-SM SM8.C.8**: the trail-only instance — an append leaves the epoch
@@ -1174,7 +1175,7 @@ theorem proofLayerInvariantBundle_setDeclassificationRefusals (st : SystemState)
          ipcSchedulerCouplingInvariantBundle_setDeclassificationRefusals bCoupling,
          bLifecycle, bService, bVSpace,
          crossSubsystemInvariant_setDeclassificationRefusals bCross,
-         bTlb, bSchedExt, bNtfn, bPending, bPerCoreTlb,
+         bTlb, bSchedExt, (notificationWaiterConsistent_of_objects_eq (st := st) rfl bNtfn), bPending, bPerCoreTlb,
          bIcache, bAck, bAudit⟩
 
 /-! ### WS-SM SM9.D.2 — `proofLayerInvariantBundle` carriage across a taint write
@@ -1247,7 +1248,7 @@ theorem proofLayerInvariantBundle_setDeclassificationTaint (st : SystemState)
          ipcSchedulerCouplingInvariantBundle_setDeclassificationTaint bCoupling,
          bLifecycle, bService, bVSpace,
          crossSubsystemInvariant_setDeclassificationTaint bCross,
-         bTlb, bSchedExt, bNtfn, bPending, bPerCoreTlb,
+         bTlb, bSchedExt, (notificationWaiterConsistent_of_objects_eq (st := st) rfl bNtfn), bPending, bPerCoreTlb,
          bIcache, bAck, bAudit⟩
 
 /-- **WS-SM SM7.F.5**: `proofLayerInvariantBundle` carriage across a write to
@@ -1269,7 +1270,7 @@ theorem proofLayerInvariantBundle_setPerCoreTlb (st : SystemState)
   exact ⟨bSched, bCap, coreIpcInvariantBundle_setPerCoreTlb bCoreIpc,
          ipcSchedulerCouplingInvariantBundle_setPerCoreTlb bCoupling,
          bLifecycle, bService, bVSpace, crossSubsystemInvariant_setPerCoreTlb bCross,
-         bTlb, bSchedExt, bNtfn, bPending, hPerCoreTlbConsistent,
+         bTlb, bSchedExt, (notificationWaiterConsistent_of_objects_eq (st := st) rfl bNtfn), bPending, hPerCoreTlbConsistent,
          bIcache, bAck⟩
 
 /-- U4-G/U4-H: advanceTimerState preserves serviceGraphInvariant.
@@ -1296,7 +1297,7 @@ theorem advanceTimerState_preserves_proofLayerInvariantBundle
   obtain ⟨hSched, hCap, hIpc, hCoupling, hLife, hSvc, hVsp, hCross, hTlb, hExt, hNWC, hPB, hPCT⟩ := hInv
   refine ⟨by exact hSched,
          advanceTimerState_preserves_capabilityInvariantBundle ticks st hCap,
-         ?_, ?_, by exact hLife, ?_, ?_, ?_, by exact hTlb, by exact hExt, by exact hNWC,
+         ?_, ?_, by exact hLife, ?_, ?_, ?_, by exact hTlb, by exact hExt, notificationWaiterConsistent_of_objects_eq (st := st) rfl hNWC,
          by exact hPB, by exact hPCT⟩
   -- coreIpcInvariantBundle
   · obtain ⟨hS, hC, hI⟩ := hIpc
@@ -1426,7 +1427,7 @@ theorem writeRegisterState_preserves_proofLayerInvariantBundle
   -- at the struct level; others need the rewrite for Lean to see through the record update
   refine ⟨?_, ?_, ?_, ?_, by exact hLife, ?_,
          writeRegisterState_preserves_vspaceInvariantBundle reg value st hVsp,
-         ?_, by exact hTlb, ?_, by exact hNWC, by exact hPB, by exact hPCT⟩
+         ?_, by exact hTlb, ?_, notificationWaiterConsistent_of_objects_eq (st := st) rfl hNWC, by exact hPB, by exact hPCT⟩
   -- schedulerInvariantBundleFull: swap contextMatchesCurrent
   · obtain ⟨hBase, hTs, hCts, hEdf, _, hRunn, hPri, hDom, hDomE⟩ := hSched
     exact ⟨hBase, hTs, hCts, hEdf, hCtx, hRunn, hPri, hDom, hDomE⟩
@@ -1726,7 +1727,7 @@ theorem contextSwitchState_preserves_proofLayerInvariantBundle
             hTs, hTsPost, hEdfPost, hCtxPost, hRunn, hPri, hDom, hDomE⟩,
            hBud, hBudgetPost, hWf, hRq, hBind, hEff, hBound⟩
   -- 11. notificationWaiterConsistent: objects unchanged
-  · exact hNWC
+  · exact notificationWaiterConsistent_of_objects_eq (st := st) rfl hNWC
 
 -- ============================================================================
 -- WS-J1-D: Register decode consistency predicate

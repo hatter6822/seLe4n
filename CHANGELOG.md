@@ -20,10 +20,14 @@ own links, and their invariants read no notification.
   link integrity.  The head and tail are TCBs blocked on the notification, and
   the tail has no successor.  Each blocked TCB is the head or is linked back
   from its predecessor, and each successor is blocked on the same notification
-  and names it back.  Every transition's preservation, frame,
-  non-interference, lock-set and confinement proof is restated over it, and
-  `NoDupList` and the list lemmas are deleted.  Acyclicity and membership
-  (blocked on `n` iff reachable from `n`'s head) remain open in plan row ZA4.4.
+  and names it back.  A third clause is membership: a TCB blocked on a
+  notification is reached from its head along the successor links
+  (`notificationQueueReaches`; the converse is
+  `notificationQueueReaches_blocked`), so no ring of blocked waiters can hang
+  off no queue.  From these, `notificationQueue_acyclic` proves that no waiter
+  follows itself.  Every transition's preservation, frame, non-interference,
+  lock-set and confinement proof is restated over it, the runtime check walks
+  each queue from its head, and `NoDupList` and the list lemmas are deleted.
 - **Allocations.**  The blocking wait and the waking signal write the
   notification and the TCBs in their slots
   (`notificationWaitOnCore_block_inPlace_eq`,

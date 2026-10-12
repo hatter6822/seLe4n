@@ -29,6 +29,21 @@ namespace SeLe4n.Kernel
 
 open SeLe4n.Model
 
+/-- Membership carried across a step: the queue's head is reached in the new
+state, and each link out of a thread reached in both states is followed there. -/
+theorem notificationQueueReaches.transport {st st' : SystemState} {n : SeLe4n.ObjId}
+    {t : SeLe4n.ThreadId} (hR : notificationQueueReaches st n t)
+    (hHead : ∀ (ntfn : Notification) (h : SeLe4n.ThreadId),
+      st.objects[n]? = some (.notification ntfn) → ntfn.waitHead = some h →
+      notificationQueueReaches st' n h)
+    (hStep : ∀ (a b : SeLe4n.ThreadId) (ta : TCB), notificationQueueReaches st n a →
+      st.objects[a.toObjId]? = some (.tcb ta) → ta.ntfnNext = some b →
+      notificationQueueReaches st' n a → notificationQueueReaches st' n b) :
+    notificationQueueReaches st' n t := by
+  induction hR with
+  | head hN hH => exact hHead _ _ hN hH
+  | next hRa hTa hNx ih => exact hStep _ _ _ hRa hTa hNx ih
+
 /-- The frame: a step that changes no notification and no TCB blocked on a
 notification, before or after, keeps the queues consistent. -/
 theorem notificationWaiterConsistent_frame {st st' : SystemState}
@@ -48,7 +63,7 @@ theorem notificationWaiterConsistent_frame {st st' : SystemState}
       tcb.ipcState = .blockedOnNotification oid →
       st'.objects[tid.toObjId]? = st.objects[tid.toObjId]?) :
     notificationWaiterConsistent st' := by
-  refine ⟨fun oid ntfn hN => ?_, fun tid tcb oid hT hB => ?_⟩
+  refine ⟨fun oid ntfn hN => ?_, fun tid tcb oid hT hB => ?_, fun tid tcb oid hT hB => ?_⟩
   · obtain ⟨hIff, hHead, hTail⟩ := hInv.1 oid ntfn (hNtfnBack oid ntfn hN)
     refine ⟨hIff, fun h hh => ?_, fun t ht => ?_⟩
     · obtain ⟨tcb, hT, hB⟩ := hHead h hh
@@ -57,7 +72,7 @@ theorem notificationWaiterConsistent_frame {st st' : SystemState}
       exact ⟨tcb, (hBlockedPre t tcb oid hT hB).trans hT, hB, hN'⟩
   · have hTpre : st.objects[tid.toObjId]? = some (.tcb tcb) :=
       (hBlockedPost tid tcb oid hT hB).symm.trans hT
-    obtain ⟨ntfn, hN, hPrev, hTail, hNext⟩ := hInv.2 tid tcb oid hTpre hB
+    obtain ⟨ntfn, hN, hPrev, hTail, hNext⟩ := hInv.2.1 tid tcb oid hTpre hB
     refine ⟨ntfn, hNtfnFwd oid ntfn hN, ?_, hTail, ?_⟩
     · rcases hPrev with h | ⟨a, ta, ha, hTa, hBa, hNa⟩
       · exact Or.inl h
@@ -65,6 +80,13 @@ theorem notificationWaiterConsistent_frame {st st' : SystemState}
     · intro b hb
       obtain ⟨hne, tb, hTb, hBb, hPb⟩ := hNext b hb
       exact ⟨hne, tb, (hBlockedPre b tb oid hTb hBb).trans hTb, hBb, hPb⟩
+  · have hTpre : st.objects[tid.toObjId]? = some (.tcb tcb) :=
+      (hBlockedPost tid tcb oid hT hB).symm.trans hT
+    refine (hInv.2.2 tid tcb oid hTpre hB).transport
+      (fun _ _ hN hH => .head (hNtfnFwd _ _ hN) hH) (fun a _ ta hRa hTa hNx hRa' => ?_)
+    obtain ⟨ta', hTa', hBa⟩ := notificationQueueReaches_blocked hInv hRa
+    rw [hTa] at hTa'; cases hTa'
+    exact .next hRa' ((hBlockedPre a ta oid hTa hBa).trans hTa) hNx
 
 /-- One object written, at a key that holds a TCB blocked on no notification
 before the write and after it: the queues are untouched. -/
@@ -117,7 +139,7 @@ theorem notificationWaiterConsistent_of_headPop {st st' : SystemState}
   have hBh : htcb.ipcState = .blockedOnNotification nid := by
     obtain ⟨t, ht, hb⟩ := hHeadC h hHead
     rw [hT] at ht; cases ht; exact hb
-  obtain ⟨n0, hN0, _, hTailH, hNextH⟩ := hInv.2 h htcb nid hT hBh
+  obtain ⟨n0, hN0, _, hTailH, hNextH⟩ := hInv.2.1 h htcb nid hT hBh
   rw [hN] at hN0; cases hN0
   have hPres : ∀ (x : SeLe4n.ThreadId) (tx : TCB), st.objects[x.toObjId]? = some (.tcb tx) →
       x ≠ h → st'.objects[x.toObjId]? = some (.tcb tx) := by
@@ -131,7 +153,7 @@ theorem notificationWaiterConsistent_of_headPop {st st' : SystemState}
       oid ≠ nid → x ≠ h := by
     intro x tx oid hx hb hne e
     subst e; rw [hT] at hx; cases hx; rw [hBh] at hb; cases hb; exact hne rfl
-  refine ⟨fun oid n hPn => ?_, fun tid tcb oid hPt hB => ?_⟩
+  refine ⟨fun oid n hPn => ?_, fun tid tcb oid hPt hB => ?_, fun tid tcb oid hPt hB => ?_⟩
   · by_cases hO : oid = nid
     · subst hO
       rw [hPostN] at hPn; cases hPn
@@ -168,7 +190,7 @@ theorem notificationWaiterConsistent_of_headPop {st st' : SystemState}
     have hPre : st.objects[tid.toObjId]? = some (.tcb tcb) := by
       rwa [hPostO _ hTidNeN hTidNeH] at hPt
     have hth : tid ≠ h := fun e => hTidNeH (e ▸ rfl)
-    obtain ⟨n0, hN0, hPrev, hTailT, hNextT⟩ := hInv.2 tid tcb oid hPre hB
+    obtain ⟨n0, hN0, hPrev, hTailT, hNextT⟩ := hInv.2.1 tid tcb oid hPre hB
     by_cases hO : oid = nid
     · subst hO
       rw [hN] at hN0; cases hN0
@@ -198,6 +220,38 @@ theorem notificationWaiterConsistent_of_headPop {st st' : SystemState}
         · exact Or.inr ⟨a, ta, ha, hPres a ta hTa (hNeOfOther a ta oid hTa hBa hO), hBa, hNa⟩
       · obtain ⟨hne, tb, hTb, hBb, hPb⟩ := hNextT b hb
         exact ⟨hne, tb, hPres b tb hTb (hNeOfOther b tb oid hTb hBb hO), hBb, hPb⟩
+  · have hTidNeH : tid.toObjId ≠ h.toObjId := by
+      intro e; rw [e, hTh] at hPt; cases hPt; exact hNBh oid hB
+    have hTidNeN : tid.toObjId ≠ nid := by intro e; rw [e, hPostN] at hPt; cases hPt
+    have hPre : st.objects[tid.toObjId]? = some (.tcb tcb) := by
+      rwa [hPostO _ hTidNeN hTidNeH] at hPt
+    have hth : tid ≠ h := fun e => hTidNeH (e ▸ rfl)
+    have hR := hInv.2.2 tid tcb oid hPre hB
+    by_cases hO : oid = nid
+    · subst hO
+      -- Every thread the old queue reached is the old head or reached anew:
+      -- the old head's successor heads the queue now.
+      have hKey : ∀ u, notificationQueueReaches st oid u →
+          u = h ∨ notificationQueueReaches st' oid u := by
+        intro u hu
+        induction hu with
+        | head hN1 hH1 => rw [hN] at hN1; cases hN1; rw [hHead] at hH1; cases hH1; exact Or.inl rfl
+        | @next a b ta hRa hTa hNx ih =>
+          by_cases hah : a = h
+          · subst hah; rw [hT] at hTa; cases hTa
+            exact Or.inr (.head hPostN (by rw [Notification.withHeadPopped_waitHead, hNx]))
+          · rcases ih with e | hRa'
+            · exact absurd e hah
+            · exact Or.inr (.next hRa' (hPres a ta hTa hah) hNx)
+      rcases hKey tid hR with e | h'
+      · exact absurd e hth
+      · exact h'
+    · refine hR.transport (fun n1 h1 hN1 hH1 => ?_) (fun a _ ta hRa hTa hNx hRa' => ?_)
+      · have hOH : oid ≠ h.toObjId := by intro e; rw [e, hT] at hN1; cases hN1
+        exact .head (by rw [hPostO oid hO hOH]; exact hN1) hH1
+      · obtain ⟨ta', hTa', hBa⟩ := notificationQueueReaches_blocked hInv hRa
+        rw [hTa] at hTa'; cases hTa'
+        exact .next hRa' (hPres a ta hTa (hNeOfOther a ta oid hTa hBa hO)) hNx
 
 /-- A waiter appended at the tail (`notificationWait`'s block): the waiter was
 blocked on no notification and is now blocked on this one, linked in behind the
@@ -260,7 +314,7 @@ theorem notificationWaiterConsistent_of_append {st st' : SystemState}
     intro x tx oid hx hb hne ht
     obtain ⟨tt, hTt, hBt, _⟩ := hTailC x ht
     rw [hx] at hTt; cases hTt; rw [hb] at hBt; cases hBt; exact hne rfl
-  refine ⟨fun oid n hPn => ?_, fun tid tcb oid hPt hB => ?_⟩
+  refine ⟨fun oid n hPn => ?_, fun tid tcb oid hPt hB => ?_, fun tid tcb oid hPt hB => ?_⟩
   · by_cases hO : oid = nid
     · subst hO
       rw [hPostN] at hPn; cases hPn
@@ -308,7 +362,7 @@ theorem notificationWaiterConsistent_of_append {st st' : SystemState}
       obtain ⟨t', hT', hI, hP, hNeq, hNt⟩ := hCorr tid tcb0 htw hPre
       rw [hPt] at hT'; cases hT'
       have hB0 : tcb0.ipcState = .blockedOnNotification oid := hI ▸ hB
-      obtain ⟨n0, hN0, hPrev, hTailT, hNextT⟩ := hInv.2 tid tcb0 oid hPre hB0
+      obtain ⟨n0, hN0, hPrev, hTailT, hNextT⟩ := hInv.2.1 tid tcb0 oid hPre hB0
       by_cases hO : oid = nid
       · subst hO
         rw [hN] at hN0; cases hN0
@@ -360,6 +414,44 @@ theorem notificationWaiterConsistent_of_append {st st' : SystemState}
           obtain ⟨hne, tb, hTb, hBb, hPb⟩ := hNextT b hb
           obtain ⟨b', hB', hBI, hBP, _⟩ := hCorr b tb (hNeW b tb oid hTb hBb) hTb
           exact ⟨hne, b', hB', hBI.trans hBb, hBP.trans hPb⟩
+  · -- A thread reached before is reached after: the head is kept (or the waiter
+    -- heads an empty queue), and only the old tail's link moves, to the waiter.
+    have hTransport : ∀ (u : SeLe4n.ThreadId) (o : SeLe4n.ObjId),
+        notificationQueueReaches st o u → notificationQueueReaches st' o u := by
+      intro u o hu
+      refine hu.transport (fun n1 h1 hN1 hH1 => ?_) (fun a _ ta hRa hTa hNx hRa' => ?_)
+      · by_cases hO : o = nid
+        · subst hO; rw [hN] at hN1; cases hN1
+          exact .head hPostN (by simp [hH1])
+        · have hOW : o ≠ w.toObjId := by intro e; rw [e, hW] at hN1; cases hN1
+          have hOT : ∀ t, ntfn.waitTail = some t → o ≠ t.toObjId := by
+            intro t ht e
+            obtain ⟨tt, hTt, _, _⟩ := hTailC t ht
+            rw [e, hTt] at hN1; cases hN1
+          exact .head (by rw [hPostO o hO hOW hOT]; exact hN1) hH1
+      · obtain ⟨ta', hTa', hBa⟩ := notificationQueueReaches_blocked hInv hRa
+        rw [hTa] at hTa'; cases hTa'
+        have hat : ntfn.waitTail ≠ some a := by
+          intro e; obtain ⟨tt, hTt, _, hNtt⟩ := hTailC a e
+          rw [hTa] at hTt; cases hTt; rw [hNx] at hNtt; cases hNtt
+        obtain ⟨a', hA', _, _, hANe, _⟩ := hCorr a ta (hNeW a ta _ hTa hBa) hTa
+        exact .next hRa' hA' ((hANe hat).trans hNx)
+    by_cases htw : tid = w
+    · subst htw
+      rw [hTw] at hPt; cases hPt
+      rw [hBw] at hB; cases hB
+      cases hh : ntfn.waitHead with
+      | none => exact .head hPostN (by simp [hh])
+      | some h =>
+        have hts : ntfn.waitTail ≠ none := fun e => by rw [← hIff, hh] at e; cases e
+        obtain ⟨t, ht⟩ := Option.ne_none_iff_exists'.mp hts
+        obtain ⟨tt, hTt, hBt, _⟩ := hTailC t ht
+        obtain ⟨t', hT', _, _, _, hNx⟩ := hCorr t tt (hNeW t tt nid hTt hBt) hTt
+        exact .next (hTransport t nid (hInv.2.2 t tt nid hTt hBt)) hT' (hNx ht)
+    · obtain ⟨tcb0, hPre⟩ := hBwd tid tcb htw hPt
+      obtain ⟨t', hT', hI, _⟩ := hCorr tid tcb0 htw hPre
+      rw [hPt] at hT'; cases hT'
+      exact hTransport tid oid (hInv.2.2 tid tcb0 oid hPre (hI ▸ hB))
 
 
 /-- A notification rewritten with the same queue ends, and nothing else changed
@@ -378,7 +470,7 @@ theorem notificationWaiterConsistent_of_queueEnds_write {st st' : SystemState}
     intro x tx hx
     have hne : x.toObjId ≠ nid := by intro e; rw [e, hN] at hx; cases hx
     rw [hO _ hne]; exact hx
-  refine ⟨fun oid n hPn => ?_, fun tid tcb oid hPt hB => ?_⟩
+  refine ⟨fun oid n hPn => ?_, fun tid tcb oid hPt hB => ?_, fun tid tcb oid hPt hB => ?_⟩
   · by_cases hO' : oid = nid
     · subst hO'
       rw [hPostN] at hPn; cases hPn
@@ -397,7 +489,7 @@ theorem notificationWaiterConsistent_of_queueEnds_write {st st' : SystemState}
         exact ⟨tx, hTcb _ _ hx, hb, hn⟩
   · have hTid : tid.toObjId ≠ nid := by intro e; rw [e, hPostN] at hPt; cases hPt
     have hPre : st.objects[tid.toObjId]? = some (.tcb tcb) := by rwa [hO _ hTid] at hPt
-    obtain ⟨n0, hN0, hPrev, hTailT, hNextT⟩ := hInv.2 tid tcb oid hPre hB
+    obtain ⟨n0, hN0, hPrev, hTailT, hNextT⟩ := hInv.2.1 tid tcb oid hPre hB
     have hPrev' : ∀ (n1 : Notification), n1.waitHead = n0.waitHead →
         (n1.waitHead = some tid ∨ ∃ a ta, tcb.ntfnPrev = some a ∧
           st'.objects[a.toObjId]? = some (.tcb ta) ∧
@@ -418,6 +510,13 @@ theorem notificationWaiterConsistent_of_queueEnds_write {st st' : SystemState}
       rw [hN] at hN0; cases hN0
       exact ⟨n', hPostN, hPrev' n' hH, fun hn => hT ▸ hTailT hn, hNext' n' hH⟩
     · exact ⟨n0, by rw [hO oid hO']; exact hN0, hPrev' n0 rfl, hTailT, hNext' n0 rfl⟩
+  · have hTid : tid.toObjId ≠ nid := by intro e; rw [e, hPostN] at hPt; cases hPt
+    have hPre : st.objects[tid.toObjId]? = some (.tcb tcb) := by rwa [hO _ hTid] at hPt
+    refine (hInv.2.2 tid tcb oid hPre hB).transport (fun n1 h1 hN1 hH1 => ?_)
+      (fun _ _ _ _ hTa hNx hRa' => .next hRa' (hTcb _ _ hTa) hNx)
+    by_cases hO' : oid = nid
+    · subst hO'; rw [hN] at hN1; cases hN1; exact .head hPostN (hH.trans hH1)
+    · exact .head (by rw [hO oid hO']; exact hN1) hH1
 
 /-- A well-formed notification holding a pending badge has no waiters. -/
 theorem notificationQueueWellFormed_waitHead_of_pendingBadge {ntfn : Notification}
@@ -443,7 +542,7 @@ theorem notificationWaiterConsistent_of_tcbLinkFrame {st st' : SystemState}
       ∃ ty, st.objects[k]? = some (.tcb ty) ∧ tx.ipcState = ty.ipcState ∧
         tx.ntfnPrev = ty.ntfnPrev ∧ tx.ntfnNext = ty.ntfnNext) :
     notificationWaiterConsistent st' := by
-  refine ⟨fun oid n hPn => ?_, fun tid tcb oid hPt hB => ?_⟩
+  refine ⟨fun oid n hPn => ?_, fun tid tcb oid hPt hB => ?_, fun tid tcb oid hPt hB => ?_⟩
   · obtain ⟨hIff, hH, hT⟩ := hInv.1 oid n (hNtfnBack oid n hPn)
     refine ⟨hIff, fun h hh => ?_, fun t ht => ?_⟩
     · obtain ⟨ty, hy, hb⟩ := hH h hh
@@ -453,7 +552,7 @@ theorem notificationWaiterConsistent_of_tcbLinkFrame {st st' : SystemState}
       obtain ⟨tx, hx, hI, _, hN⟩ := hFwd _ ty hy
       exact ⟨tx, hx, hI.trans hb, hN.trans hn⟩
   · obtain ⟨ty, hy, hI, hP, hN⟩ := hBwd _ tcb hPt
-    obtain ⟨n0, hN0, hPrev, hTail, hNext⟩ := hInv.2 tid ty oid hy (hI ▸ hB)
+    obtain ⟨n0, hN0, hPrev, hTail, hNext⟩ := hInv.2.1 tid ty oid hy (hI ▸ hB)
     refine ⟨n0, hNtfnFwd oid n0 hN0, ?_, fun hn => hTail (hN ▸ hn), fun b hb => ?_⟩
     · rcases hPrev with hh | ⟨a, ta, ha, hTa, hBa, hNa⟩
       · exact Or.inl hh
@@ -462,9 +561,16 @@ theorem notificationWaiterConsistent_of_tcbLinkFrame {st st' : SystemState}
     · obtain ⟨hne, tb, hTb, hBb, hPb⟩ := hNext b (hN ▸ hb)
       obtain ⟨tb', hB', hBI, hBP, _⟩ := hFwd _ tb hTb
       exact ⟨hne, tb', hB', hBI.trans hBb, hBP.trans hPb⟩
+  · obtain ⟨ty, hy, hI, _, _⟩ := hBwd _ tcb hPt
+    refine (hInv.2.2 tid ty oid hy (hI ▸ hB)).transport
+      (fun _ _ hN1 hH1 => .head (hNtfnFwd _ _ hN1) hH1) (fun _ _ ta _ hTa hNx hRa' => ?_)
+    obtain ⟨tx, hx, _, _, hN⟩ := hFwd _ ta hTa
+    exact .next hRa' hx (hN.trans hNx)
+
 
 /-- The queues read the object store and nothing else. -/
 theorem notificationWaiterConsistent_of_objects_eq {st st' : SystemState}
     (h : st'.objects = st.objects) (hInv : notificationWaiterConsistent st) :
-    notificationWaiterConsistent st' := by
-  unfold notificationWaiterConsistent; rw [h]; exact hInv
+    notificationWaiterConsistent st' :=
+  notificationWaiterConsistent_frame hInv (fun _ _ hN => by rwa [h] at hN)
+    (fun _ _ hN => by rwa [h]) (fun _ _ _ _ _ => by rw [h]) (fun _ _ _ _ _ => by rw [h])

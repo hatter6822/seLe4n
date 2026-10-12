@@ -8,6 +8,7 @@
 -/
 
 import SeLe4n.Kernel.IPC.Invariant.Defs
+import SeLe4n.Kernel.IPC.Invariant.NotificationQueue
 import SeLe4n.Kernel.IPC.Operations.Endpoint
 import SeLe4n.Kernel.Scheduler.Operations.Selection
 import SeLe4n.Kernel.Scheduler.Operations.PerCoreWake
@@ -431,9 +432,9 @@ theorem queueNextTargetBlocked_of_getElem_eq {s1 s2 : SystemState}
 /-- SM6.D: pointwise-lookup transport of `notificationWaiterConsistent`. -/
 theorem notificationWaiterConsistent_of_getElem_eq {s1 s2 : SystemState}
     (hEq : ∀ oid : SeLe4n.ObjId, s2.objects[oid]? = s1.objects[oid]?)
-    (h : notificationWaiterConsistent s1) : notificationWaiterConsistent s2 := by
-  simp only [notificationWaiterConsistent, hEq] at h ⊢
-  exact h
+    (h : notificationWaiterConsistent s1) : notificationWaiterConsistent s2 :=
+  notificationWaiterConsistent_frame h (fun _ _ hN => by rwa [hEq] at hN)
+    (fun _ _ hN => by rwa [hEq]) (fun _ _ _ _ _ => hEq _) (fun _ _ _ _ _ => hEq _)
 
 /-- WS-SM SM6.D: **the whole-bundle pointwise transport** — two states whose
 object lookups agree pointwise satisfy the nineteen object-reading conjuncts

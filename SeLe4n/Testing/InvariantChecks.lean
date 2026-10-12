@@ -370,11 +370,20 @@ private def blockedOnNotificationB (st : SystemState) (oid : SeLe4n.ObjId)
   | some tcb => tcb.ipcState == .blockedOnNotification oid
   | none => false
 
+/-- WS-ZA ZA4.4: walk a notification's waiter queue from its head along the
+successor links, at most `fuel` steps. -/
+private def notificationQueueWalk (st : SystemState) :
+    Nat → Option SeLe4n.ThreadId → List SeLe4n.ThreadId
+  | 0, _ => []
+  | _ + 1, none => []
+  | fuel + 1, some t => t :: notificationQueueWalk st fuel ((st.getTcb? t).bind (·.ntfnNext))
+
 /-- WS-G7, WS-ZA ZA4.4: runtime check for `notificationWaiterConsistent`, clause
 by clause.  Each notification's queue ends are both present or both absent, are
 TCBs blocked on it, and the tail has no successor; each TCB blocked on a
 notification is its head or has a predecessor linking back to it, is its tail
-when it has no successor, and a successor it has links back to it. -/
+when it has no successor, a successor it has links back to it, and it is reached
+by walking the queue from the head. -/
 private def notificationWaiterConsistentChecks (objectIds : List SeLe4n.ObjId) (st : SystemState) : List (String × Bool) :=
   objectIds.foldr (fun oid acc =>
     -- AK7-F.reader.hygiene: AL2-A typed helper adoption.
@@ -400,19 +409,12 @@ private def notificationWaiterConsistentChecks (objectIds : List SeLe4n.ObjId) (
                 (tcb.ntfnNext.isSome || ntfn.waitTail == some tid) &&
                 tcb.ntfnNext.all (fun b => ntfn.waitHead != some b &&
                   blockedOnNotificationB st n b &&
-                  ((st.getTcb? b).bind (·.ntfnPrev)) == some tid)
+                  ((st.getTcb? b).bind (·.ntfnPrev)) == some tid) &&
+                (notificationQueueWalk st (objectIds.length + 1) ntfn.waitHead).contains tid
             | none => false
           (s!"notification waiter linked consistently: tid={oid}", ok) :: acc
         | _ => acc
       | none => acc) []
-
-/-- WS-ZA ZA4.4: walk a notification's waiter queue from its head along the
-successor links, at most `fuel` steps. -/
-private def notificationQueueWalk (st : SystemState) :
-    Nat → Option SeLe4n.ThreadId → List SeLe4n.ThreadId
-  | 0, _ => []
-  | _ + 1, none => []
-  | fuel + 1, some t => t :: notificationQueueWalk st fuel ((st.getTcb? t).bind (·.ntfnNext))
 
 /-- WS-G4: RunQueue internal consistency — every thread in the membership set has
     a corresponding entry in `threadPriority`, and every `threadPriority` entry is

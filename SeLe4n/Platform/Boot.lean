@@ -6138,12 +6138,14 @@ theorem proofLayerInvariantBundle_of_bootShape (ist : IntermediateState)
   -- AG7-D, WS-ZA ZA4.4: notificationWaiterConsistent — boot notifications
   -- have empty queues and no boot TCB is blocked on anything.
   have hNtfnWaiter : notificationWaiterConsistent ist.state := by
-    refine ⟨fun oid ntfn hObj => ?_, fun tid tcb oid hObj hBl => ?_⟩
+    refine ⟨fun oid ntfn hObj => ?_, fun tid tcb oid hObj hBl => ?_,
+      fun tid tcb oid hObj hBl => ?_⟩
     · have hNtfn := (hBS oid _ hObj).2.1 ntfn rfl
       refine ⟨by rw [hNtfn.2.1, hNtfn.2.2.1], fun h hH => ?_, fun t hT => ?_⟩
       · rw [hNtfn.2.1] at hH; cases hH
       · rw [hNtfn.2.2.1] at hT; cases hT
-    · have hTcbProps := (hBS tid.toObjId _ hObj).2.2.2.1 tcb rfl
+    all_goals
+      have hTcbProps := (hBS tid.toObjId _ hObj).2.2.2.1 tcb rfl
       rw [hTcbProps.2.1] at hBl; cases hBl
   -- 12. pendingBounded (WS-SM SM7.B): boot never posts a shootdown descriptor,
   -- so the post-boot shootdown state is the quiescent default.

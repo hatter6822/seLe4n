@@ -137,7 +137,9 @@ a faster implementation is an `@[csimp]` replacement proven equal to the
 specification function it replaces.  A notification's waiters are reached
 through `Notification.waitHead` and each waiter's `TCB.ntfnNext`, never a list
 in the notification; a thread blocked on a notification is linked by its own
-`ntfnPrev`/`ntfnNext`.
+`ntfnPrev`/`ntfnNext` and is reached from that notification's head
+(`notificationQueueReaches`), so a step that blocks or unblocks a waiter keeps
+it linked into, or out of, exactly one queue.
 
 ### WS-CB Hierarchical constant-bandwidth servers — PLANNED (registered v0.34.49; opens after WS-CV)
 

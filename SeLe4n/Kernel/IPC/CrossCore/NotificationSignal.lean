@@ -1480,7 +1480,7 @@ theorem notificationSignalOnCore_remaining_waiters
     | some t =>
       rw [hLk] at hSucc
       rw [lookupTcb_some_objects st waiter _ hLk] at hHT; cases hHT
-      obtain ⟨w, hW, _, _, hNext⟩ := hNWC.2 waiter _ notificationId
+      obtain ⟨w, hW, _, _, hNext⟩ := hNWC.2.1 waiter _ notificationId
         (lookupTcb_some_objects st waiter _ hLk) hB
       rw [hObj] at hW; cases hW
       exact (hNext waiter hSucc).1 hWaiters

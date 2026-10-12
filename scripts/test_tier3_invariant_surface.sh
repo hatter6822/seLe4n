@@ -638,6 +638,10 @@ run_check "INVARIANT" rg -n 'asidTableConsistencyChecks' SeLe4n/Testing/Invarian
 # WS-G7/F-P11: notification waiter consistency runtime checks must remain present.
 run_check "INVARIANT" rg -n 'notificationWaiterConsistentChecks' SeLe4n/Testing/InvariantChecks.lean
 run_check "INVARIANT" rg -n 'default_notificationWaiterConsistent' SeLe4n/Kernel/IPC/Invariant/Defs.lean
+# WS-ZA ZA4.4: every blocked waiter is reached from its notification's head
+# (the invariant's membership clause), and each queue is proven acyclic.
+run_check "INVARIANT" bash -lc 'rg -U -n "tcb.ipcState = .blockedOnNotification oid →\n    notificationQueueReaches st oid tid\)" SeLe4n/Kernel/IPC/Invariant/Defs.lean'
+run_check "INVARIANT" rg -n '^theorem notificationQueue_acyclic ' SeLe4n/Kernel/IPC/Invariant/Defs.lean
 
 # WS-E1 M-10 parameterized topology anchors must remain present.
 run_check "INVARIANT" rg -n 'buildParameterizedTopology' SeLe4n/Testing/MainTraceHarness.lean

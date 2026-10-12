@@ -2058,14 +2058,16 @@ private theorem witnessReachable3 : ipcReachable witnessSt3 := by
     · split at hLk
       · cases hLk; cases hMsg
       · cases hLk
-  · refine ⟨fun oid ntfn hLk => ?_, fun tid tcb oid hLk hBl => ?_⟩
+  · refine ⟨fun oid ntfn hLk => ?_, fun tid tcb oid hLk hBl => ?_,
+      fun tid tcb oid hLk hBl => ?_⟩
     · rw [witnessSt3_lookup] at hLk
       split at hLk
       · cases hLk
       · split at hLk
         · cases hLk
         · cases hLk
-    · rw [witnessSt3_lookup] at hLk
+    all_goals
+      rw [witnessSt3_lookup] at hLk
       split at hLk
       · cases hLk
       · split at hLk
@@ -2880,15 +2882,17 @@ private theorem witnessReachable4 : ipcReachable witnessSt4 := by
     split at hLk
     · cases hLk
     · exact witnessReachable3.pendingMessageCapBadgesWellFormed _ _ _ hLk hMsg
-  · refine ⟨fun oid ntfn hLk => ?_, fun tid tcb oid hLk hBl => ?_⟩
+  · refine ⟨fun oid ntfn hLk => ?_, fun tid tcb oid hLk hBl => ?_,
+      fun tid tcb oid hLk hBl => ?_⟩
     · rw [witnessSt4_lookup] at hLk
       split at hLk
       · cases hLk
       · exact absurd hLk (fun h => witnessSt3_no_notification _ _ h)
-    · rw [witnessSt4_lookup] at hLk
+    all_goals
+      rw [witnessSt4_lookup] at hLk
       split at hLk
       · cases hLk
-      · obtain ⟨n, hN, -⟩ := witnessReachable3.notificationWaiterConsistent.2 tid tcb oid hLk hBl
+      · obtain ⟨n, hN, -⟩ := witnessReachable3.notificationWaiterConsistent.2.1 tid tcb oid hLk hBl
         exact absurd hN (fun h => witnessSt3_no_notification _ _ h)
   · -- WS-OD OD2.6: the fresh Reply this state adds carries neither a donation
     -- nor a stack link (`Reply.empty`'s defaults), and the SchedContext beneath
