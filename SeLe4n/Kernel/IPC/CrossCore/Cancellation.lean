@@ -5057,7 +5057,6 @@ chooser's consumers rather than beside the switch
 chooser's and `Scheduler/Operations/Core.lean` does not import it. -/
 theorem handleRescheduleSgiOnCore_preserves_unplaced
     (st st' : SystemState) (c : CoreId) (u : SeLe4n.ThreadId)
-    (hwf : (st.scheduler.runQueueOnCore c).wellFormed)
     (hStep : handleRescheduleSgiOnCore st c = .ok st')
     (h : threadPlacedOnSomeCore st u = false) :
     threadPlacedOnSomeCore st' u = false := by
@@ -5071,7 +5070,7 @@ theorem handleRescheduleSgiOnCore_preserves_unplaced
     · rename_i tid hChoose _
       have hMem : tid ∈ st.scheduler.runQueueOnCore c :=
         (RunQueue.mem_toList_iff_mem _ tid).mp
-          (chooseThreadEffectiveOnCore_some_mem_runQueueOnCore st c tid hwf hChoose)
+          (chooseThreadEffectiveOnCore_some_mem_runQueueOnCore st c tid hChoose)
       have hu : u ≠ tid := by
         intro hEq
         subst hEq
@@ -5092,14 +5091,13 @@ thread unplaced.  Its identity arms are immediate and its three handler arms are
 theorem suspendRescheduleOnCore_preserves_unplaced
     (st st' : SystemState) (home ec : CoreId) (wc ld : Bool)
     (sgi? : Option (CoreId × SgiKind)) (u : SeLe4n.ThreadId)
-    (hwf : (st.scheduler.runQueueOnCore ec).wellFormed)
     (hStep : suspendRescheduleOnCore st home ec wc ld = .ok (st', sgi?))
     (h : threadPlacedOnSomeCore st u = false) :
     threadPlacedOnSomeCore st' u = false := by
   rcases suspendRescheduleOnCore_state_dichotomy st st' home ec wc ld sgi? hStep with
     hEq | hH
   · exact hEq ▸ h
-  · exact handleRescheduleSgiOnCore_preserves_unplaced st st' ec u hwf hH h
+  · exact handleRescheduleSgiOnCore_preserves_unplaced st st' ec u hH h
 
 /-- **WS-RR RR8.12 (Cut 4)**: G3 — the donation-cancellation dispatcher frames
 every thread's placement, on both arms.  Donation cancellation wakes nothing and
@@ -5310,6 +5308,6 @@ theorem suspendThreadOnCore_holder_unplaced
           exact hwf4
         -- G7 — the local scheduling point.
         exact suspendRescheduleOnCore_preserves_unplaced _ st' _ executingCore
-          _ _ sgi? holder hwf6 hStep hP6
+          _ _ sgi? holder hStep hP6
 
 end SeLe4n.Kernel

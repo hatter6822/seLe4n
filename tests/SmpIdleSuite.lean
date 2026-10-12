@@ -224,7 +224,7 @@ example (st : SystemState) (c : CoreId)
     (hRunnable : runnableThreadsAreTCBsOnCore st c)
     (hIdle : idleThreadEnqueuedOnCore st c) :
     ∃ tid, chooseThreadOnCore st c = .ok (some tid) :=
-  chooseThreadOnCore_always_succeeds st c hwf hRunnable hIdle
+  chooseThreadOnCore_always_succeeds st c hRunnable hIdle
 
 -- SM5.E.6: the discharge predicate is satisfiable via `enqueueIdleThreadOnCore`.
 example (st : SystemState) (c : CoreId) (hInv : st.objects.invExt)
@@ -238,7 +238,7 @@ example (st : SystemState) (c : CoreId) (hInv : st.objects.invExt)
     (hRunnable : runnableThreadsAreTCBsOnCore st c)
     (hDom : st.scheduler.activeDomainOnCore c = ⟨0⟩) :
     ∃ tid, chooseThreadOnCore (enqueueIdleThreadOnCore st c) c = .ok (some tid) :=
-  enqueueIdleThreadOnCore_chooseThreadOnCore_succeeds st c hInv hwf hRunnable hDom
+  enqueueIdleThreadOnCore_chooseThreadOnCore_succeeds st c hInv hRunnable hDom
 
 -- SM5.E.4: affinity-based core locality — idle `c` is never on another core's queue.
 -- PR #889 review: the installed idle TCB is the *queued* form (`.Ready`), which

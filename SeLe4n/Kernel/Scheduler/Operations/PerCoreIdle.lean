@@ -220,26 +220,23 @@ runnable user thread, idle is selected.  (The hypothesis `idleThreadEnqueuedOnCo
 — idle actually being a run-queue member — is the SM5.E discharge condition,
 established constructively by `enqueueIdleThreadOnCore`.) -/
 theorem chooseThreadOnCore_always_succeeds (st : SystemState) (c : CoreId)
-    (hwf : (st.scheduler.runQueueOnCore c).wellFormed)
     (hRunnable : runnableThreadsAreTCBsOnCore st c)
     (hIdle : idleThreadEnqueuedOnCore st c) :
     ∃ tid, chooseThreadOnCore st c = .ok (some tid) :=
-  chooseThreadOnCore_some_of_eligible st c hwf hRunnable
+  chooseThreadOnCore_some_of_eligible st c hRunnable
     (idleThreadId c) (queuedIdleThread c) hIdle.1 hIdle.2.1 hIdle.2.2
 
 /-- WS-SM SM5.E.6 (non-vacuity, end-to-end): for any well-formed boot-domain
-state (object-store invariant, well-formed run queue, runnable-are-TCBs, active
-domain `⟨0⟩`), enqueuing core `c`'s idle thread makes `chooseThreadOnCore`
+state (object-store invariant, runnable-are-TCBs, active domain `⟨0⟩`), enqueuing core `c`'s idle thread makes `chooseThreadOnCore`
 succeed.  Composes the SM5.E.3 preservation lemmas with the keystone — the
 constructive witness that `chooseThreadOnCore_always_succeeds` is satisfiable
 (e.g. on the default state, or any boot-derived state). -/
 theorem enqueueIdleThreadOnCore_chooseThreadOnCore_succeeds (st : SystemState) (c : CoreId)
-    (hInv : st.objects.invExt) (hwf : (st.scheduler.runQueueOnCore c).wellFormed)
+    (hInv : st.objects.invExt)
     (hRunnable : runnableThreadsAreTCBsOnCore st c)
     (hDom : st.scheduler.activeDomainOnCore c = ⟨0⟩) :
     ∃ tid, chooseThreadOnCore (enqueueIdleThreadOnCore st c) c = .ok (some tid) :=
   chooseThreadOnCore_always_succeeds (enqueueIdleThreadOnCore st c) c
-    (enqueueIdleThreadOnCore_preserves_runQueueOnCore_wellFormed st c hwf)
     (enqueueIdleThreadOnCore_preserves_runnableThreadsAreTCBsOnCore st c hInv hRunnable)
     (enqueueIdleThreadOnCore_establishes_idleThreadEnqueuedOnCore st c hInv hDom)
 
@@ -320,8 +317,6 @@ theorem bootFromPlatformCheckedWithIdleThreads_chooseThreadOnCore_succeeds
     (c : CoreId) :
     ∃ tid, chooseThreadOnCore ist.state c = .ok (some tid) :=
   chooseThreadOnCore_always_succeeds ist.state c
-    (SeLe4n.Platform.Boot.bootFromPlatformCheckedWithIdleThreads_runQueueOnCore_wellFormed
-      config ist h c)
     (bootFromPlatformCheckedWithIdleThreads_runnableThreadsAreTCBsOnCore config ist h c)
     (bootFromPlatformCheckedWithIdleThreads_idleThreadEnqueuedOnCore config ist h c)
 
@@ -342,9 +337,7 @@ theorem bootFromPlatformCheckedWithIdleThreads_chooseThreadOnCore_idle
     chooseThreadOnCore ist.state c = .ok (some (idleThreadId c)) := by
   obtain ⟨tid, hSel⟩ :=
     bootFromPlatformCheckedWithIdleThreads_chooseThreadOnCore_succeeds config ist h c
-  have hMem := chooseThreadOnCore_some_mem_runQueueOnCore ist.state c tid
-    (SeLe4n.Platform.Boot.bootFromPlatformCheckedWithIdleThreads_runQueueOnCore_wellFormed
-      config ist h c) hSel
+  have hMem := chooseThreadOnCore_some_mem_runQueueOnCore ist.state c tid hSel
   rw [SeLe4n.Platform.Boot.bootFromPlatformCheckedWithIdleThreads_mem_runQueueOnCore_iff
     config ist h c] at hMem
   rw [← hMem]
@@ -512,7 +505,6 @@ idle never starves a higher-priority thread.  An instantiation of the SM5.A
 selection-optimality theorem `chooseThreadOnCore_selects_highest` with the idle
 thread as the selected candidate. -/
 theorem idleThread_no_starvation (st : SystemState) (c : CoreId)
-    (hwf : (st.scheduler.runQueueOnCore c).wellFormed)
     (hr : runnableThreadsAreTCBsOnCore st c)
     (hSel : chooseThreadOnCore st c = .ok (some (idleThreadId c)))
     (hIdleTcb : st.getTcb? (idleThreadId c) = some (queuedIdleThread c)) :
@@ -520,7 +512,7 @@ theorem idleThread_no_starvation (st : SystemState) (c : CoreId)
       st.getTcb? t = some tcb → tcb.domain = st.scheduler.activeDomainOnCore c →
         isBetterCandidate (queuedIdleThread c).priority (queuedIdleThread c).deadline
           tcb.priority tcb.deadline = false :=
-  chooseThreadOnCore_selects_highest st c (idleThreadId c) (queuedIdleThread c) hwf hr hSel hIdleTcb
+  chooseThreadOnCore_selects_highest st c (idleThreadId c) (queuedIdleThread c) hr hSel hIdleTcb
 
 -- ============================================================================
 -- §8  Decidable companion + cross-core selection independence
@@ -547,7 +539,6 @@ per-core selection returns `some`.  Discharges `chooseThreadOnCore_some_of_eligi
 with the *resolved* idle TCB (whatever it is) rather than `queuedIdleThread c`, so
 it needs no undecidable full-TCB equality. -/
 theorem chooseThreadOnCore_always_succeeds_of_idleAvailableB (st : SystemState) (c : CoreId)
-    (hwf : (st.scheduler.runQueueOnCore c).wellFormed)
     (hRunnable : runnableThreadsAreTCBsOnCore st c)
     (hB : idleAvailableOnCoreB st c = true) :
     ∃ tid, chooseThreadOnCore st c = .ok (some tid) := by
@@ -560,7 +551,7 @@ theorem chooseThreadOnCore_always_succeeds_of_idleAvailableB (st : SystemState) 
   | none => rw [hres] at hDomB; exact absurd hDomB (by simp)
   | some idleTcb =>
       rw [hres] at hDomB
-      exact chooseThreadOnCore_some_of_eligible st c hwf hRunnable
+      exact chooseThreadOnCore_some_of_eligible st c hRunnable
         (idleThreadId c) idleTcb hMem hres (by simpa using hDomB)
 
 /-- WS-SM SM5.E.6: the `Prop` discharge predicate `idleThreadEnqueuedOnCore`

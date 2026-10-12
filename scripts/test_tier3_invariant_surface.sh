@@ -4380,11 +4380,10 @@ run_check "INVARIANT" rg -n '^theorem stageCallerReturn_stages_switched_out($|[ 
 # The fault entry's progress obligation, discharged on the live dispatch.
 run_check "INVARIANT" rg -n '^theorem handleRescheduleSgiOnCore_preserves_not_dispatchable($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/FaultProgress.lean
 run_check "INVARIANT" rg -n '^theorem switchToThreadOnCore_preserves_not_dispatchable_onCore($|[ ({:\[\]])' SeLe4n/Kernel/Scheduler/Operations/Core.lean
-# ...and the queue well-formedness it needs is carried from the PRE-state
-# across the delivery, never stated of the delivered state.
-run_check "INVARIANT" rg -n '^theorem faultDeliverOnCoreChecked_preserves_runQueuesWellFormed($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/FaultProgress.lean
-run_check "INVARIANT" rg -n '^theorem endpointCallCrossCoreDispatch_preserves_runQueuesWellFormed($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/FaultProgress.lean
-run_check "INVARIANT" rg -n -U '^    \(hwf : runQueuesWellFormed st\.scheduler\) :\n    ¬ dispatchableOnCore \(faultEntryDeliver ' SeLe4n/Kernel/FaultEntry.lean
+# ...and it needs nothing of the queue: the chooser's pick is a member of any
+# run queue (`RunQueue.bucket_wf`), so the theorem takes no well-formedness and
+# none is stated of the delivered state.
+run_check "INVARIANT" rg -n -U '^    \(tid : SeLe4n\.ThreadId\) \(hCur : st\.scheduler\.currentOnCore c = some tid\) :\n    ¬ dispatchableOnCore \(faultEntryDeliver ' SeLe4n/Kernel/FaultEntry.lean
 run_negative_check "INVARIANT" rg -n 'runQueueOnCoreWellFormed \(faultDeliveredState' SeLe4n/Kernel/FaultEntry.lean
 run_check "INVARIANT" rg -n -U '^  Platform\.FFI\.restoreTrapFrame r\.2\.2\.1\n  Concurrency\.recordCommittedCurrentThreadHw r\.2\.1$' SeLe4n/Kernel/PerCoreTimerEntry.lean
 run_check "INVARIANT" rg -n -U '^  Platform\.FFI\.restoreTrapFrame record\.2\.1\n  Concurrency\.recordCommittedCurrentThreadHw record\.1$' SeLe4n/Kernel/PerCoreRescheduleEntry.lean
@@ -14828,7 +14827,6 @@ open SeLe4n.Kernel
 -- SM5.A.6 — selection soundness + preservation form + invariant corollary.
 #check @chooseThreadOnCore_some_mem_runQueueOnCore
 #check @chooseThread_preserves_runQueueOnCore_wellFormed
-#check @chooseThreadOnCore_some_mem_of_schedulerInvariant
 
 -- SM5.A.7 — decidable selection predicates.
 #check @chooseThreadOnCoreSelects

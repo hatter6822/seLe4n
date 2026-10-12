@@ -191,7 +191,7 @@ example (st : SystemState)
     (hRunnable : ∀ c, runnableThreadsAreTCBsOnCore st c)
     (hAvail : ∀ c, idleAvailableOnCoreB st c = true) :
     ∀ c : CoreId, ∃ tid, chooseThreadOnCore st c = .ok (some tid) :=
-  schedulerNoStall_smp_of_idleAvailableB st hwf hRunnable hAvail
+  schedulerNoStall_smp_of_idleAvailableB st hRunnable hAvail
 
 -- SM5.J.4 (extends R5): an R5-scheduled thread is within the combined SMP bound.
 example (trace : Liveness.SchedulerTrace) (tid : SeLe4n.ThreadId)

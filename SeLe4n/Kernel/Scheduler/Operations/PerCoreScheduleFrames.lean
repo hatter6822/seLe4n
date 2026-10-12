@@ -192,4 +192,27 @@ theorem scheduleEffectiveOnCore_machine_regsOnCore_ne (st : SystemState) (c₀ c
           rw [saveOutgoingContextOnCore_machine]
         · simp at hStep
 
+/-- WS-ZA ZA4.3: **the per-core scheduling point cannot refuse.**  The selection
+never errors (`chooseThreadEffectiveOnCore_ne_error`), and the thread it picks
+resolves to a TCB in core `c`'s active domain and is a member of core `c`'s run
+queue (`chooseThreadEffectiveOnCore_selected_has_budget`,
+`chooseThreadEffectiveOnCore_some_mem_runQueueOnCore`): of every state, since
+the run queue carries its bucket invariant (`RunQueue.bucket_wf`).  So a
+transition that ends in this scheduling point refuses only in the checks before
+it, and a syscall made of such checks and one write followed by this point
+refuses only in the state it was handed. -/
+theorem scheduleEffectiveOnCore_ne_error (st : SystemState) (c : CoreId) (e : KernelError) :
+    scheduleEffectiveOnCore st c ≠ .error e := by
+  unfold scheduleEffectiveOnCore
+  cases hC : chooseThreadEffectiveOnCore st c with
+  | error e' => exact absurd hC (chooseThreadEffectiveOnCore_ne_error st c e')
+  | ok r =>
+    cases r with
+    | none => simp
+    | some tid =>
+      have hMem := (RunQueue.mem_toList_iff_mem _ tid).mp
+        (chooseThreadEffectiveOnCore_some_mem_runQueueOnCore st c tid hC)
+      obtain ⟨tcb, hT, _, hDom⟩ := chooseThreadEffectiveOnCore_selected_has_budget st c tid hC
+      simp [hT, hMem, hDom]
+
 end SeLe4n.Kernel
