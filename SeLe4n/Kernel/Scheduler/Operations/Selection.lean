@@ -15,27 +15,26 @@ namespace SeLe4n.Model.SchedulerState
 
 open SeLe4n.Kernel.Concurrency (CoreId)
 
-/-- WS-ZA ZA4.5: core `c`'s run queue rewritten by `f` in its slot.  The
-per-core array takes the queue out of the slot before `f` runs
-(`Array.modify`), so on an exclusively owned scheduler `f` receives the queue's
+/-- WS-ZA ZA4.5: core `c`'s run queue rewritten by `f` in its slot.  The queue
+is taken out of the slot (the slot holds the empty queue, a shared constant)
+before `f` runs, so on an exclusively owned scheduler `f` receives the queue's
 only reference and writes its tables in place; `setRunQueueOnCore` of `f` of
 the slot reads the queue while the slot still holds it, and every table `f`
-writes is then copied.  Proven equal (`modifyRunQueueOnCore_eq`). -/
+writes is then copied.  The index is a `CoreId`, in bounds by its type, so
+there is no bounds branch for the compiler to join over (`Array.modify` has
+one, and the join rebuilt the scheduler and state records).  Proven equal
+(`modifyRunQueueOnCore_eq`). -/
 @[inline] def modifyRunQueueOnCore (s : SchedulerState) (c : CoreId)
     (f : SeLe4n.Kernel.RunQueue → SeLe4n.Kernel.RunQueue) : SchedulerState :=
-  { s with runQueue := ⟨s.runQueue.toArray.modify c.val f, by simp⟩ }
+  let q := s.runQueue.get c
+  let rqs := s.runQueue.set c.val default c.isLt
+  { s with runQueue := rqs.set c.val (f q) c.isLt }
 
 theorem modifyRunQueueOnCore_eq (s : SchedulerState) (c : CoreId)
     (f : SeLe4n.Kernel.RunQueue → SeLe4n.Kernel.RunQueue) :
     s.modifyRunQueueOnCore c f = s.setRunQueueOnCore c (f (s.runQueueOnCore c)) := by
   unfold modifyRunQueueOnCore setRunQueueOnCore runQueueOnCore
-  congr 1
-  apply Vector.ext
-  intro i hi
-  simp only [Vector.getElem_mk, Array.getElem_modify, Vector.getElem_set, Vector.get]
-  split
-  · subst_vars; rfl
-  · rfl
+  simp only [Vector.set_set]
 
 end SeLe4n.Model.SchedulerState
 
