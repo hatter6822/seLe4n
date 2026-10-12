@@ -1014,23 +1014,29 @@ is genuinely required (not just a lookup function) because the budget check and
 effective-priority resolution traverse SchedContexts in the object store. -/
 theorem chooseThreadEffectiveOnCore_frame (s₁ s₂ : SystemState) (c : CoreId)
     (hObj : s₁.objects = s₂.objects)
-    (hRQ : s₁.scheduler.runQueueOnCore c = s₂.scheduler.runQueueOnCore c)
+    (hE : s₁.scheduler.runQueueEndsOnCore c = s₂.scheduler.runQueueEndsOnCore c)
     (hAD : s₁.scheduler.activeDomainOnCore c = s₂.scheduler.activeDomainOnCore c) :
     chooseThreadEffectiveOnCore s₁ c = chooseThreadEffectiveOnCore s₂ c := by
+  have hW : s₁.runMaxBucketWalk c = s₂.runMaxBucketWalk c ∧ s₁.runQueueWalk c = s₂.runQueueWalk c := by
+    unfold SystemState.runMaxBucketWalk SystemState.runQueueWalk
+    refine ⟨?_, ?_⟩ <;> simp only [SystemState.runLinkOn_of_objects hObj, hE]
   unfold chooseThreadEffectiveOnCore
-  rw [hRQ, hAD, chooseBestInBucketEffective_objects_congr s₁ s₂ _ _ hObj]
+  rw [hW.1, hW.2, hAD]
+  unfold chooseBestInWalksEffective chooseBestRunnableInDomainEffective
+  simp only [chooseBestRunnableEffective_objects_congr s₁ s₂ _ hObj]
 
-/-- WS-SM SM5.A.3 (budget variant): per-core independence under a sibling-core
-run-queue write.  Writing core `c'`'s run queue (`c' ≠ c`) leaves
-`chooseThreadEffectiveOnCore · c` unchanged. -/
+/-- WS-SM SM5.A.3 (budget variant): independence under a ghost run-queue
+write.  The selection reads the threads' links and the core's ends, never the
+ghost queue, so writing any core's ghost queue — core `c`'s own included
+(WS-ZA ZA4.5) — leaves `chooseThreadEffectiveOnCore · c` unchanged. -/
 theorem chooseThreadEffectiveOnCore_independent_of_setRunQueueOnCore
-    (s : SystemState) (c c' : CoreId) (rq : RunQueue) (h : c ≠ c') :
+    (s : SystemState) (c c' : CoreId) (rq : RunQueue) :
     chooseThreadEffectiveOnCore
         { s with scheduler := s.scheduler.setRunQueueOnCore c' rq } c
       = chooseThreadEffectiveOnCore s c := by
   apply chooseThreadEffectiveOnCore_frame
   · rfl
-  · exact SchedulerState.setRunQueueOnCore_runQueueOnCore_ne s.scheduler c' c rq (Ne.symm h)
+  · rfl
   · exact SchedulerState.setRunQueueOnCore_activeDomainOnCore s.scheduler c' c rq
 
 /-- SM5.A budget helper: the bucket-first effective selector unfolds to "scan
@@ -1351,12 +1357,33 @@ theorem chooseBestInBucketEffective_result_props
 
 /-- SM5.A budget helper: `chooseThreadEffectiveOnCore = .ok (some tid)` exposes
 the selected `(tid, priority, deadline)` triple. -/
+theorem chooseThreadEffectiveOnCore_eq_some_imp_walks_some
+    (st : SystemState) (c : CoreId) (tid : SeLe4n.ThreadId)
+    (h : chooseThreadEffectiveOnCore st c = .ok (some tid)) :
+    ∃ p d, chooseBestInWalksEffective st (st.runMaxBucketWalk c) (st.runQueueWalk c)
+      (st.scheduler.activeDomainOnCore c) = .ok (some (tid, p, d)) := by
+  unfold chooseThreadEffectiveOnCore at h
+  cases hB : chooseBestInWalksEffective st (st.runMaxBucketWalk c) (st.runQueueWalk c)
+      (st.scheduler.activeDomainOnCore c) with
+  | error e => rw [hB] at h; simp at h
+  | ok val =>
+    cases val with
+    | none => rw [hB] at h; simp at h
+    | some triple =>
+      obtain ⟨t, tp, td⟩ := triple
+      rw [hB] at h
+      simp only [Except.ok.injEq, Option.some.injEq] at h
+      subst h
+      exact ⟨tp, td, rfl⟩
+
+/-- ...and, where the links agree with the queue, of the queue's own scan. -/
 theorem chooseThreadEffectiveOnCore_eq_some_imp_bucket_some
     (st : SystemState) (c : CoreId) (tid : SeLe4n.ThreadId)
+    (hR : st.runQueueRefinedOnCore c)
     (h : chooseThreadEffectiveOnCore st c = .ok (some tid)) :
     ∃ p d, chooseBestInBucketEffective st (st.scheduler.runQueueOnCore c)
       (st.scheduler.activeDomainOnCore c) = .ok (some (tid, p, d)) := by
-  unfold chooseThreadEffectiveOnCore at h
+  rw [chooseThreadEffectiveOnCore_eq_queue hR] at h
   cases hB : chooseBestInBucketEffective st (st.scheduler.runQueueOnCore c)
       (st.scheduler.activeDomainOnCore c) with
   | error e => rw [hB] at h; simp at h
@@ -1375,11 +1402,11 @@ from `chooseThreadEffectiveOnCore`. -/
 theorem chooseThreadEffectiveOnCore_ok_of_bucket_ok
     (st : SystemState) (c : CoreId)
     (val : Option (SeLe4n.ThreadId × SeLe4n.Priority × SeLe4n.Deadline))
+    (hR : st.runQueueRefinedOnCore c)
     (h : chooseBestInBucketEffective st (st.scheduler.runQueueOnCore c)
       (st.scheduler.activeDomainOnCore c) = .ok val) :
     ∃ r, chooseThreadEffectiveOnCore st c = .ok r := by
-  unfold chooseThreadEffectiveOnCore
-  rw [h]
+  rw [chooseThreadEffectiveOnCore_eq_queue hR, h]
   cases val with
   | none => exact ⟨none, rfl⟩
   | some triple => obtain ⟨tid, p, d⟩ := triple; exact ⟨some tid, rfl⟩
@@ -1408,24 +1435,72 @@ theorem chooseBestInBucketEffective_ok_of_allTcb
 
 -- ── Public budget-aware theorems. ──
 
+/-- WS-ZA ZA4.3: the budget-aware selection never refuses.  Both scans skip
+what they cannot resolve (`chooseBestRunnableEffective_always_ok`), so neither
+the bucket scan nor the fallback scan has an error to pass on. -/
+theorem chooseThreadEffectiveOnCore_ne_error (st : SystemState) (c : CoreId)
+    (e : KernelError) : chooseThreadEffectiveOnCore st c ≠ .error e := by
+  intro h
+  unfold chooseThreadEffectiveOnCore chooseBestInWalksEffective
+    chooseBestRunnableInDomainEffective at h
+  obtain ⟨r1, h1⟩ := chooseBestRunnableEffective_always_ok st
+    (fun tcb => tcb.domain == st.scheduler.activeDomainOnCore c)
+    (st.runMaxBucketWalk c) none
+  obtain ⟨r2, h2⟩ := chooseBestRunnableEffective_always_ok st
+    (fun tcb => tcb.domain == st.scheduler.activeDomainOnCore c)
+    (st.runQueueWalk c) none
+  simp only [h1] at h
+  cases r1 with
+  | some r => simp at h
+  | none =>
+    simp only [h2] at h
+    cases r2 <;> simp at h
+
+/-- WS-ZA ZA4.5: a selection over the walked lists records a stored TCB in the
+active domain with sufficient budget — a property of the scan's filter, which
+holds whatever lists it walks. -/
+theorem chooseBestInWalksEffective_result_tcb
+    (st : SystemState) (mb all : List SeLe4n.ThreadId) (ad : SeLe4n.DomainId)
+    (rt : SeLe4n.ThreadId) (rp : SeLe4n.Priority) (rd : SeLe4n.Deadline)
+    (h : chooseBestInWalksEffective st mb all ad = .ok (some (rt, rp, rd))) :
+    ∃ rtcb : TCB, st.objects.get? rt.toObjId = some (.tcb rtcb)
+      ∧ rtcb.domain = ad ∧ hasSufficientBudget st rtcb = true := by
+  unfold chooseBestInWalksEffective at h
+  cases hMax : chooseBestRunnableInDomainEffective st mb ad none with
+  | error e => rw [hMax] at h; simp at h
+  | ok val =>
+    cases val with
+    | some r =>
+      rw [hMax] at h
+      simp only [Except.ok.injEq, Option.some.injEq] at h
+      rw [h] at hMax
+      obtain ⟨_, rtcb, hObj, hElig, hBudget⟩ :=
+        chooseBestRunnableEffective_result_props st (fun tc => tc.domain == ad) mb rt rp rd hMax
+      exact ⟨rtcb, hObj, eq_of_beq hElig, hBudget⟩
+    | none =>
+      rw [hMax] at h
+      obtain ⟨_, rtcb, hObj, hElig, hBudget⟩ :=
+        chooseBestRunnableEffective_result_props st (fun tc => tc.domain == ad) all rt rp rd h
+      exact ⟨rtcb, hObj, eq_of_beq hElig, hBudget⟩
+
 /-- WS-SM SM5.A.4 (budget variant): `chooseThreadEffectiveOnCore` never errors
 on a well-formed all-TCB run queue. -/
 theorem chooseThreadEffectiveOnCore_ok_of_runnableTCBs
     (st : SystemState) (c : CoreId)
-    (hRunnable : runnableThreadsAreTCBsOnCore st c) :
+    (_hRunnable : runnableThreadsAreTCBsOnCore st c) :
     ∃ r, chooseThreadEffectiveOnCore st c = .ok r := by
-  obtain ⟨val, hbucket⟩ := chooseBestInBucketEffective_ok_of_allTcb st
-    (st.scheduler.runQueueOnCore c) (st.scheduler.activeDomainOnCore c)
-    (runnableThreadsAreTCBs_objects_get? st c hRunnable)
-  exact chooseThreadEffectiveOnCore_ok_of_bucket_ok st c val hbucket
+  cases h : chooseThreadEffectiveOnCore st c with
+  | error e => exact absurd h (chooseThreadEffectiveOnCore_ne_error st c e)
+  | ok r => exact ⟨r, rfl⟩
 
 /-- WS-SM SM5.A.6 (budget variant, selection soundness): a thread chosen by
 `chooseThreadEffectiveOnCore` is a genuine member of core `c`'s run queue. -/
 theorem chooseThreadEffectiveOnCore_some_mem_runQueueOnCore
     (st : SystemState) (c : CoreId) (tid : SeLe4n.ThreadId)
+    (hR : st.runQueueRefinedOnCore c)
     (h : chooseThreadEffectiveOnCore st c = .ok (some tid)) :
     tid ∈ (st.scheduler.runQueueOnCore c).toList := by
-  obtain ⟨p, d, hbucket⟩ := chooseThreadEffectiveOnCore_eq_some_imp_bucket_some st c tid h
+  obtain ⟨p, d, hbucket⟩ := chooseThreadEffectiveOnCore_eq_some_imp_bucket_some st c tid hR h
   exact (chooseBestInBucketEffective_result_props st (st.scheduler.runQueueOnCore c)
     (st.scheduler.activeDomainOnCore c) tid p d hbucket).1
 
@@ -1440,32 +1515,10 @@ theorem chooseThreadEffectiveOnCore_selected_has_budget
     ∃ tcb : TCB, st.getTcb? tid = some tcb
       ∧ hasSufficientBudget st tcb = true
       ∧ tcb.domain = st.scheduler.activeDomainOnCore c := by
-  obtain ⟨p, d, hbucket⟩ := chooseThreadEffectiveOnCore_eq_some_imp_bucket_some st c tid h
-  obtain ⟨_hMem, rtcb, hObj, hDom, hBudget⟩ :=
-    chooseBestInBucketEffective_result_props st (st.scheduler.runQueueOnCore c)
-      (st.scheduler.activeDomainOnCore c) tid p d hbucket
+  obtain ⟨p, d, hbucket⟩ := chooseThreadEffectiveOnCore_eq_some_imp_walks_some st c tid h
+  obtain ⟨rtcb, hObj, hDom, hBudget⟩ :=
+    chooseBestInWalksEffective_result_tcb st _ _ _ tid p d hbucket
   exact ⟨rtcb, (SystemState.getTcb?_eq_some_iff st tid rtcb).mpr hObj, hBudget, hDom⟩
-
-/-- WS-ZA ZA4.3: the budget-aware selection never refuses.  Both scans skip
-what they cannot resolve (`chooseBestRunnableEffective_always_ok`), so neither
-the bucket scan nor the fallback scan has an error to pass on. -/
-theorem chooseThreadEffectiveOnCore_ne_error (st : SystemState) (c : CoreId)
-    (e : KernelError) : chooseThreadEffectiveOnCore st c ≠ .error e := by
-  intro h
-  unfold chooseThreadEffectiveOnCore chooseBestInBucketEffective
-    chooseBestRunnableInDomainEffective at h
-  obtain ⟨r1, h1⟩ := chooseBestRunnableEffective_always_ok st
-    (fun tcb => tcb.domain == st.scheduler.activeDomainOnCore c)
-    (st.scheduler.runQueueOnCore c).maxPriorityBucket none
-  obtain ⟨r2, h2⟩ := chooseBestRunnableEffective_always_ok st
-    (fun tcb => tcb.domain == st.scheduler.activeDomainOnCore c)
-    (st.scheduler.runQueueOnCore c).toList none
-  simp only [h1] at h
-  cases r1 with
-  | some r => simp at h
-  | none =>
-    simp only [h2] at h
-    cases r2 <;> simp at h
 
 -- ── Budget-aware completeness. ──
 
@@ -1548,7 +1601,7 @@ in the full-scan fallback.  Assembles `chooseBestRunnableEffective_result_fields
 `chooseBestRunnableEffective_optimal` (no eligible+budget thread beats it). -/
 theorem chooseThreadEffectiveOnCore_selects_highest
     (st : SystemState) (c : CoreId) (tid : SeLe4n.ThreadId) (selTcb : TCB)
-    (hRunnable : runnableThreadsAreTCBsOnCore st c)
+    (hRunnable : runnableThreadsAreTCBsOnCore st c) (hR : st.runQueueRefinedOnCore c)
     (hSel : chooseThreadEffectiveOnCore st c = .ok (some tid))
     (hSelTcb : st.getTcb? tid = some selTcb) :
     ∀ t ∈ (st.scheduler.runQueueOnCore c).maxPriorityBucket, ∀ tcb : TCB,
@@ -1559,7 +1612,7 @@ theorem chooseThreadEffectiveOnCore_selects_highest
           (resolveEffectivePrioDeadline st selTcb).1 (resolveEffectivePrioDeadline st selTcb).2
           (resolveEffectivePrioDeadline st tcb).1 (resolveEffectivePrioDeadline st tcb).2 = false := by
   intro t ht tcb htTcb htDom hBudget
-  obtain ⟨resPrio, resDl, hbucket⟩ := chooseThreadEffectiveOnCore_eq_some_imp_bucket_some st c tid hSel
+  obtain ⟨resPrio, resDl, hbucket⟩ := chooseThreadEffectiveOnCore_eq_some_imp_bucket_some st c tid hR hSel
   have hSelObj : st.objects.get? tid.toObjId = some (.tcb selTcb) :=
     (SystemState.getTcb?_eq_some_iff st tid selTcb).mp hSelTcb
   have hTObj : st.objects.get? t.toObjId = some (.tcb tcb) :=
@@ -1619,10 +1672,11 @@ theorem chooseBestInBucketEffective_none_imp_toList_none
 /-- SM5.A budget helper: `chooseThreadEffectiveOnCore = .ok none` forces the
 underlying bucket-first effective scan to be `.ok none`. -/
 theorem chooseThreadEffectiveOnCore_eq_none_imp_bucket_none
-    (st : SystemState) (c : CoreId) (h : chooseThreadEffectiveOnCore st c = .ok none) :
+    (st : SystemState) (c : CoreId) (hR : st.runQueueRefinedOnCore c)
+    (h : chooseThreadEffectiveOnCore st c = .ok none) :
     chooseBestInBucketEffective st (st.scheduler.runQueueOnCore c)
       (st.scheduler.activeDomainOnCore c) = .ok none := by
-  unfold chooseThreadEffectiveOnCore at h
+  rw [chooseThreadEffectiveOnCore_eq_queue hR] at h
   cases hB : chooseBestInBucketEffective st (st.scheduler.runQueueOnCore c)
       (st.scheduler.activeDomainOnCore c) with
   | error e => rw [hB] at h; simp at h
@@ -1636,13 +1690,13 @@ returns the idle-fallback signal `.ok none` **only** when no thread in core
 `c`'s run queue is both in its active domain and has sufficient CBS budget —
 so the budget-aware idle fallback never drops a runnable, in-budget thread. -/
 theorem chooseThreadEffectiveOnCore_none_no_eligible
-    (st : SystemState) (c : CoreId)
+    (st : SystemState) (c : CoreId) (hR : st.runQueueRefinedOnCore c)
     (h : chooseThreadEffectiveOnCore st c = .ok none) :
     ∀ tid ∈ (st.scheduler.runQueueOnCore c).toList, ∀ tcb : TCB,
       st.getTcb? tid = some tcb →
       ¬(tcb.domain = st.scheduler.activeDomainOnCore c ∧ hasSufficientBudget st tcb = true) := by
   intro tid hmem tcb htcb ⟨hDom, hBudget⟩
-  have hbucket := chooseThreadEffectiveOnCore_eq_none_imp_bucket_none st c h
+  have hbucket := chooseThreadEffectiveOnCore_eq_none_imp_bucket_none st c hR h
   have htoList := chooseBestInBucketEffective_none_imp_toList_none st
     (st.scheduler.runQueueOnCore c) (st.scheduler.activeDomainOnCore c) hbucket
   have hObjGet : st.objects.get? tid.toObjId = some (.tcb tcb) :=
@@ -1707,9 +1761,8 @@ theorem chooseThreadEffectiveOnCore_respects_activeDomain
     (hSel : chooseThreadEffectiveOnCore st c = .ok (some tid))
     (hTcb : st.getTcb? tid = some tcb) :
     tcb.domain = st.scheduler.activeDomainOnCore c := by
-  obtain ⟨p, d, hbucket⟩ := chooseThreadEffectiveOnCore_eq_some_imp_bucket_some st c tid hSel
-  obtain ⟨rtcb, hObj, hDom⟩ := chooseBestInBucketEffective_result_eligible st
-    (st.scheduler.runQueueOnCore c) (st.scheduler.activeDomainOnCore c) tid p d hbucket
+  obtain ⟨p, d, hbucket⟩ := chooseThreadEffectiveOnCore_eq_some_imp_walks_some st c tid hSel
+  obtain ⟨rtcb, hObj, hDom, _⟩ := chooseBestInWalksEffective_result_tcb st _ _ _ tid p d hbucket
   have hObjTcb : st.objects.get? tid.toObjId = some (.tcb tcb) :=
     (SystemState.getTcb?_eq_some_iff st tid tcb).mp hTcb
   rw [hObj] at hObjTcb

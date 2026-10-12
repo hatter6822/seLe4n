@@ -3145,10 +3145,12 @@ private def probeState : SystemState :=
       |>.withIrqHandler lowIrq lowEndpoint
       |>.withIrqHandler highIrq highEndpoint
       |>.build)
-  { base with scheduler :=
-      ((((base.scheduler.setRunQueueOnCore c0 (RunQueue.ofList [(lowQueued, ⟨40⟩)])).setRunQueueOnCore
-        c1 (RunQueue.ofList [(highQueued, ⟨50⟩)])).setCurrentOnCore
-        c0 (some lowCurrent)).setCurrentOnCore c1 (some highCurrent)) }
+  -- The queued threads go on through the kernel's own enqueue, so their TCBs
+  -- carry the run-queue links the selector walks.
+  let queued := (base.runEnqueueOnCore c0 lowQueued ⟨40⟩).runEnqueueOnCore c1 highQueued ⟨50⟩
+  { queued with
+      scheduler := (queued.scheduler.setCurrentOnCore c0 (some lowCurrent)).setCurrentOnCore
+        c1 (some highCurrent) }
 
 /-- The three observers the suite compares. -/
 private def lowObserver : IfObserver := IfObserver.ofLabel lowLabel

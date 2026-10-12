@@ -1191,6 +1191,32 @@ structure TCB where
   runBucketNextCode : Nat := 0
   deriving Repr
 
+/-- WS-ZA ZA4.5: where a thread runs — its home core and its place in a run
+queue.  The affinity setter and the scheduler's run-queue writes are the only
+writes to these fields; every other TCB write is a record update of fields
+outside them, so one frame over this projection carries both the home core
+(`determineTargetCore`) and the run queue's links (`runQueueRefined`) across
+it. -/
+structure TcbPlacement where
+  cpuAffinity : Option SeLe4n.Kernel.Concurrency.CoreId
+  runCoreCode : Nat
+  runPrio : SeLe4n.Priority
+  runPrevCode : Nat
+  runNextCode : Nat
+  runBucketPrevCode : Nat
+  runBucketNextCode : Nat
+
+/-- A thread's placement fields (`TcbPlacement`). -/
+def TCB.placement (t : TCB) : TcbPlacement :=
+  ⟨t.cpuAffinity, t.runCoreCode, t.runPrio, t.runPrevCode, t.runNextCode,
+    t.runBucketPrevCode, t.runBucketNextCode⟩
+
+/-- A placement frame is an affinity frame. -/
+theorem TCB.map_cpuAffinity_of_placement {o o' : Option TCB}
+    (h : o.map TCB.placement = o'.map TCB.placement) :
+    o.map (·.cpuAffinity) = o'.map (·.cpuAffinity) := by
+  cases o <;> cases o' <;> simp_all [TCB.placement]
+
 /-- The predecessor link, read from its scalar code (`TCB.queuePrevCode`). -/
 @[inline] def TCB.queuePrev (t : TCB) : Option SeLe4n.ThreadId :=
   SeLe4n.ThreadId.ofOptCode t.queuePrevCode

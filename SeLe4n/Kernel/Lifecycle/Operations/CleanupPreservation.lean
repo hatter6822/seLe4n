@@ -796,8 +796,8 @@ theorem spliceOutMidQueueNode_tcb_lookup
                    (tcbQueueLinkRewrite_queueUnlinkSuccessor tcb nextTcb) hPre
                all_goals exact ⟨t0, hPre, tcbQueueLinkRewrite.refl t0⟩)
 
-/-- WS-SM SM6.E: the endpoint sweep preserves TCB-kind and `cpuAffinity` at
-every key (and `objects.invExt`) — every fold step rewrites an
+/-- WS-SM SM6.E: the endpoint sweep preserves TCB-kind and `TCB.placement` (home core and
+run-queue links) at every key (and `objects.invExt`) — every fold step rewrites an
 `.endpoint`-valued key, which can never alias a TCB-holding key (the fold
 keystone `RHTable.fold_preserves_of_lookup` supplies the visited key's
 stored value, so the kind clash discharges the disequality). -/
@@ -808,16 +808,16 @@ theorem removeFromAllEndpointQueues_tcb_lookup
     (removeFromAllEndpointQueues st tid).objects.invExt
     ∧ ∃ t' : TCB,
       (removeFromAllEndpointQueues st tid).objects[k]? = some (.tcb t')
-      ∧ t'.cpuAffinity = t0.cpuAffinity := by
+      ∧ t'.placement = t0.placement := by
   obtain ⟨t₁, hL1, hRw1⟩ := spliceOutMidQueueNode_tcb_lookup st tid k t0 hInv hPre
-  have hAff1 : t₁.cpuAffinity = t0.cpuAffinity :=
-    hRw1.field (·.cpuAffinity) (fun _ _ _ _ _ _ => rfl)
+  have hAff1 : t₁.placement = t0.placement :=
+    hRw1.field TCB.placement (fun _ _ _ _ _ _ => rfl)
   have hInvS := spliceOutMidQueueNode_preserves_objects_invExt st tid hInv
   unfold removeFromAllEndpointQueues
   exact SeLe4n.Kernel.RobinHood.RHTable.fold_preserves_of_lookup
     (spliceOutMidQueueNode st tid).objects (spliceOutMidQueueNode st tid) _
     (fun acc => acc.objects.invExt ∧ ∃ t' : TCB,
-      acc.objects[k]? = some (.tcb t') ∧ t'.cpuAffinity = t0.cpuAffinity)
+      acc.objects[k]? = some (.tcb t') ∧ t'.placement = t0.placement)
     hInvS
     ⟨hInvS, t₁, hL1, hAff1⟩
     (fun acc x v hV hAcc => by
@@ -904,8 +904,8 @@ theorem removeFromNotificationWaitQueue_tcbField_frame {α : Type} (f : TCB → 
       hInv ((SystemState.getTcb?_eq_some_iff _ x t').mp hT')
     exact ⟨t0, (SystemState.getTcb?_eq_some_iff st x t0).mpr hL0⟩
 
-/-- WS-SM SM6.E: the notification unlink preserves TCB-kind and `cpuAffinity`
-at every key (and `objects.invExt`). -/
+/-- WS-SM SM6.E: the notification unlink preserves TCB-kind and `TCB.placement`
+(home core and run-queue links) at every key (and `objects.invExt`). -/
 theorem removeFromNotificationWaitQueue_tcb_lookup
     (st : SystemState) (tid : SeLe4n.ThreadId) (k : SeLe4n.ObjId) (t0 : TCB)
     (hInv : st.objects.invExt)
@@ -913,10 +913,10 @@ theorem removeFromNotificationWaitQueue_tcb_lookup
     (removeFromNotificationWaitQueue st tid).objects.invExt
     ∧ ∃ t' : TCB,
       (removeFromNotificationWaitQueue st tid).objects[k]? = some (.tcb t')
-      ∧ t'.cpuAffinity = t0.cpuAffinity := by
+      ∧ t'.placement = t0.placement := by
   obtain ⟨t', h, hR⟩ := removeFromNotificationWaitQueue_tcb_forward st tid k t0 hInv hPre
   exact ⟨(removeFromNotificationWaitQueue_reach st tid hInv).1, t', h,
-    hR.toQueueLinkRewrite.field (·.cpuAffinity) (fun _ _ _ _ _ _ => rfl)⟩
+    hR.toQueueLinkRewrite.field TCB.placement (fun _ _ _ _ _ _ => rfl)⟩
 
 /-- WS-SM SM6.E: a thread id whose key holds no TCB resolves to `none` under
 `lookupTcb` — both the reserved-id guard and the kind-mismatch arm return
@@ -1657,8 +1657,8 @@ theorem cancelDonatedDonationOnCore_preserves_replenishQueueAffinityConsistent_s
         (fun scId₀ hne => returnDonatedSchedContext_getSchedContext?_ne st st1 tid scId scId₀
           originalOwner hne hInv newOwner? hRet)
         (fun x => determineTargetCore_congr st st1 x
-          (returnDonatedSchedContext_getTcb?_cpuAffinity_eq st st1 tid scId originalOwner hInv
-            newOwner? hRet x))
+          (TCB.map_cpuAffinity_of_placement (returnDonatedSchedContext_getTcb?_placement_eq st st1 tid scId originalOwner hInv
+            newOwner? hRet x)))
         hScPre hScPreBound rfl hCons
   · cases h
 
@@ -2987,12 +2987,13 @@ theorem spliceOutMidQueueNode_tcbField_frame {α : Type} (f : TCB → α)
       ((SystemState.getTcb?_eq_some_iff _ x t').mp hT')
     exact ⟨t0, (SystemState.getTcb?_eq_some_iff st x t0).mpr hL0⟩
 
-/-- The `cpuAffinity` instance, which `determineTargetCore_congr` consumes. -/
-theorem spliceOutMidQueueNode_affinity_frame (st : SystemState)
+/-- The `TCB.placement` instance: the home core `determineTargetCore_congr`
+consumes and the run-queue links the link agreement reads. -/
+theorem spliceOutMidQueueNode_placement_frame (st : SystemState)
     (tid : SeLe4n.ThreadId) (hInv : st.objects.invExt) (x : SeLe4n.ThreadId) :
-    ((spliceOutMidQueueNode st tid).getTcb? x).map (·.cpuAffinity)
-      = (st.getTcb? x).map (·.cpuAffinity) :=
-  spliceOutMidQueueNode_tcbField_frame (·.cpuAffinity) (fun _ _ _ _ _ _ => rfl) st tid hInv x
+    ((spliceOutMidQueueNode st tid).getTcb? x).map TCB.placement
+      = (st.getTcb? x).map TCB.placement :=
+  spliceOutMidQueueNode_tcbField_frame TCB.placement (fun _ _ _ _ _ _ => rfl) st tid hInv x
 
 /-- **`v0.35.183` (register row 63)**: the `schedContextBinding` instance, which
 `schedContextBindingConsistent_transfer` consumes.
@@ -3526,5 +3527,97 @@ theorem removeFromAllEndpointQueues_endpoint_source (st : SystemState) (tid : Se
   | _ => exact ⟨hE, hA⟩
 
 end EndpointSweep
+
+-- ============================================================================
+-- WS-ZA ZA4.5: the donation arms as run-queue agreement stages
+-- ============================================================================
+
+/-- The replenishment migration writes two replenish queues and nothing the
+run-queue agreement reads. -/
+theorem migrateSchedContextReplenishment_runQueueStage (st : SystemState)
+    (scId : SeLe4n.SchedContextId) (fromCore toCore : SeLe4n.Kernel.Concurrency.CoreId) :
+    SystemState.RunQueueStage st (migrateSchedContextReplenishment st scId fromCore toCore) := by
+  unfold migrateSchedContextReplenishment
+  split
+  · exact .refl st
+  · exact .of_frame rfl rfl rfl
+
+/-- The donation hand-back rebinds a context and two threads' bindings: no run
+queue, no placement field. -/
+theorem returnDonatedSchedContext_runQueueStage {st st' : SystemState}
+    {serverTid : SeLe4n.ThreadId} {scId : SeLe4n.SchedContextId}
+    {originalOwner : SeLe4n.ThreadId} {newOwner? : Option SeLe4n.ThreadId}
+    (h : returnDonatedSchedContext st serverTid scId originalOwner newOwner? = .ok st') :
+    SystemState.RunQueueStage st st' :=
+  have hS := returnDonatedSchedContext_scheduler_eq st st' serverTid scId originalOwner
+    newOwner? h
+  SystemState.RunQueueStage.of_placement
+    (fun hInv => returnDonatedSchedContext_preserves_objects_invExt st st' serverTid scId
+      originalOwner hInv newOwner? h)
+    (by rw [hS]) (by rw [hS])
+    (fun hInv x => returnDonatedSchedContext_getTcb?_placement_eq st st' serverTid scId
+      originalOwner hInv newOwner? h x)
+
+theorem returnDonatedSchedContextResolved_runQueueStage {st st' : SystemState}
+    {serverTid : SeLe4n.ThreadId} {scId : SeLe4n.SchedContextId}
+    {originalOwner : SeLe4n.ThreadId}
+    (h : returnDonatedSchedContextResolved st serverTid scId originalOwner = .ok st') :
+    SystemState.RunQueueStage st st' :=
+  let ⟨_, _, hPop⟩ := returnDonatedSchedContextResolved_ok_decompose h
+  returnDonatedSchedContext_runQueueStage hPop
+
+theorem cleanupDonatedSchedContext_runQueueStage {st st' : SystemState}
+    {tid : SeLe4n.ThreadId} (h : cleanupDonatedSchedContext st tid = .ok st') :
+    SystemState.RunQueueStage st st' := by
+  unfold cleanupDonatedSchedContext at h
+  split at h
+  · cases h; exact .refl st
+  · split at h
+    · exact returnDonatedSchedContextResolved_runQueueStage h
+    · cases h; exact .refl st
+
+/-- The migrating donation cancel: the hand-back, then the replenishment move. -/
+theorem cancelDonatedDonationOnCore_runQueueStage {st st' : SystemState}
+    {tid : SeLe4n.ThreadId} {tcb : TCB} (h : cancelDonatedDonationOnCore st tid tcb = .ok st') :
+    SystemState.RunQueueStage st st' := by
+  unfold cancelDonatedDonationOnCore at h
+  split at h
+  · split at h
+    · cases h
+    · rename_i s1 h1
+      cases h
+      exact (cleanupDonatedSchedContext_runQueueStage h1).trans
+        (migrateSchedContextReplenishment_runQueueStage _ _ _ _)
+  · cases h
+
+/-- The in-place unbind: a context write, two scheduler-side writes the
+agreement does not read, the binding clear, and the key flags. -/
+theorem cancelBoundDonationOnCore_runQueueStage {st st' : SystemState}
+    {tid : SeLe4n.ThreadId} {tcb : TCB} {rqCore : SeLe4n.Kernel.Concurrency.CoreId}
+    (h : cancelBoundDonationOnCore st tid tcb rqCore = .ok st') :
+    SystemState.RunQueueStage st st' := by
+  unfold cancelBoundDonationOnCore at h
+  split at h
+  · rename_i scId _
+    cases h
+    have key : ∀ X : SystemState, SystemState.RunQueueStage st X →
+        SystemState.RunQueueStage st (markKeyChangeFrom st
+          (X.updateTcb tid fun tcb' => { tcb' with schedContextBinding := .unbound }) tid) :=
+      fun X hX => hX.trans ((SystemState.RunQueueStage.updateTcb X tid
+        (f := fun tcb' => { tcb' with schedContextBinding := .unbound }) (fun _ _ => rfl)).trans
+        (markKeyChangeFrom_runQueueStage st _ tid))
+    apply key
+    have hU := SystemState.updateSchedContext_scheduler st scId
+      (fun sc => { sc with boundThread := none, isActive := false, donationOrigin := none })
+    apply SystemState.RunQueueStage.of_placement
+    · exact fun hInv => SystemState.updateSchedContext_preserves_objects_invExt _ _ _ hInv
+    · show (st.updateSchedContext scId _).scheduler.runQueue = _
+      rw [hU]
+    · show (st.updateSchedContext scId _).scheduler.runQueueEnds = _
+      rw [hU]
+    · intro hInv x
+      exact congrArg (Option.map TCB.placement)
+        (SystemState.updateSchedContext_getTcb? st scId _ hInv x)
+  · cases h
 
 end SeLe4n.Kernel

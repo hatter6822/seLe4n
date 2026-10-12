@@ -689,8 +689,7 @@ def scheduleEffectiveOnCoreTotalImpl (st : SystemState) (c : Concurrency.CoreId)
       let tid : SeLe4n.ThreadId := ⟨k⟩
       match st.getTcb? tid with
       | some tcb =>
-          if tid ∈ (st.scheduler.runQueueOnCore c) ∧
-              tcb.domain = (st.scheduler.activeDomainOnCore c) then
+          if tcb.domain = (st.scheduler.activeDomainOnCore c) then
             let stSaved := saveOutgoingContextOnCore st c
             let stDequeued := stSaved.runRemoveOnCore c tid
             let stRestored := restoreIncomingContextOnCore stDequeued c tid

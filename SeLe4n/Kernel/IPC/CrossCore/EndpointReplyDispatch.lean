@@ -113,7 +113,7 @@ both `determineTargetCore`, which is the correct resolver for a replenish queue
 because that queue is keyed by affinity rather than by placement), so the `withLockSet` bracket can declare and
 acquire both `LockKey.replenishQueue` write locks before the transition
 runs; the return itself never touches a `cpuAffinity`
-(`returnDonatedSchedContext_getTcb?_cpuAffinity_eq`), so a pre-state reading is
+(`returnDonatedSchedContext_getTcb?_placement_eq`), so a pre-state reading is
 the post-state's. -/
 def applyReplyDonationOnCore (st : SystemState) (rid : SeLe4n.ReplyId)
     (targetVtid : SeLe4n.ValidThreadId)
@@ -597,8 +597,8 @@ theorem returnDonatedSchedContext_migrate_preserves_replenishQueueAffinityConsis
     returnDonatedSchedContext_scheduler_eq st st' replier scId owner newOwner? hRet
   have hHomeEq : ∀ tid, determineTargetCore st' tid = determineTargetCore st tid := fun tid =>
     determineTargetCore_congr st st' tid
-      (returnDonatedSchedContext_getTcb?_cpuAffinity_eq st st' replier scId owner
-        hObjInv newOwner? hRet tid)
+      (TCB.map_cpuAffinity_of_placement (returnDonatedSchedContext_getTcb?_placement_eq st st' replier scId owner
+        hObjInv newOwner? hRet tid))
   have hScNe : ∀ scId', scId' ≠ scId → st'.getSchedContext? scId' = st.getSchedContext? scId' :=
     fun scId' hne => returnDonatedSchedContext_getSchedContext?_ne st st' replier
       scId scId' owner hne hObjInv newOwner? hRet

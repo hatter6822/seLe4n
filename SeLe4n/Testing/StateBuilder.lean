@@ -79,8 +79,9 @@ private def lookupThreadPriority (objects : List (SeLe4n.ObjId × KernelObject))
   | some (_, .tcb tcb) => tcb.priority
   | _ => ⟨0⟩
 
-/-- Materialize a full `SystemState` from the builder tables. -/
-def build (builder : BootstrapBuilder) : SystemState :=
+/-- Materialize a full `SystemState` from the builder tables, before the run
+queue is populated. -/
+private def buildUnqueued (builder : BootstrapBuilder) : SystemState :=
   {
     machine := builder.machine
     objects := SeLe4n.Kernel.RobinHood.RHTable.ofList builder.objects
@@ -88,9 +89,7 @@ def build (builder : BootstrapBuilder) : SystemState :=
     objectIndexSet := SeLe4n.Kernel.RobinHood.RHSet.ofList (builder.objects.map Prod.fst)
     services := SeLe4n.Kernel.RobinHood.RHTable.ofList builder.services
     -- SM4.B: per-core scheduler fields; the test builder populates only the boot core.
-    scheduler := ((default : SchedulerState).setRunQueueOnCore SeLe4n.Kernel.Concurrency.bootCoreId
-        (SeLe4n.Kernel.RunQueue.ofList (builder.runnable.map (fun tid =>
-          (tid, lookupThreadPriority builder.objects tid))))).setCurrentOnCore
+    scheduler := (default : SchedulerState).setCurrentOnCore
           SeLe4n.Kernel.Concurrency.bootCoreId builder.current
     irqHandlers := SeLe4n.Kernel.RobinHood.RHTable.ofList builder.irqHandlers
     lifecycle := {
@@ -102,6 +101,16 @@ def build (builder : BootstrapBuilder) : SystemState :=
       | .vspaceRoot root => some (root.asid, oid)
       | _ => none)
   }
+
+/-- Materialize a full `SystemState` from the builder tables.  The boot core's
+run queue is filled by the kernel's own enqueue (`runEnqueueOnCore`), so each
+runnable thread's TCB carries the run-queue links the selector walks (WS-ZA
+ZA4.5). -/
+def build (builder : BootstrapBuilder) : SystemState :=
+  builder.runnable.foldl (fun st tid =>
+      st.runEnqueueOnCore SeLe4n.Kernel.Concurrency.bootCoreId tid
+        (lookupThreadPriority builder.objects tid))
+    builder.buildUnqueued
 
 /-- S2-F: Build a `SystemState` with post-construction invariant validation.
     Returns the state or throws if structural invariants are violated.

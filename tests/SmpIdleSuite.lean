@@ -302,15 +302,15 @@ example (st st'' : SystemState) (c : CoreId) (hInv : st.objects.invExt)
   scheduleOrIdleOnCore_preserves_runnableThreadsAreTCBsOnCore st c st'' hInv hr hStep
 
 -- SM5.E (strong no-starvation, post-fold): under the idle-dispatch precondition
--- (`chooseThreadEffectiveOnCore = .ok none`), every run-queue thread is
+-- (`chooseThreadEffectiveOnCore = .ok none`) and the link agreement, every run-queue thread is
 -- out-of-domain or out-of-budget — idle preempts no eligible user thread of any
 -- priority.
-example (st : SystemState) (c : CoreId)
+example (st : SystemState) (c : CoreId) (hR : st.runQueueRefinedOnCore c)
     (hChoose : chooseThreadEffectiveOnCore st c = .ok none)
     (tid : SeLe4n.ThreadId) (htid : tid ∈ (st.scheduler.runQueueOnCore c).toList)
     (tcb : TCB) (htcb : st.getTcb? tid = some tcb) :
     ¬(tcb.domain = st.scheduler.activeDomainOnCore c ∧ hasSufficientBudget st tcb = true) :=
-  scheduleOrIdleOnCore_idle_starves_no_eligible_thread st c hChoose tid htid tcb htcb
+  scheduleOrIdleOnCore_idle_starves_no_eligible_thread st c hR hChoose tid htid tcb htcb
 
 -- SM5.E (live-wiring witness, review #4 closure; restated for inert
 -- single-domain mode at PR #880 round 4): the folded idle dispatch is

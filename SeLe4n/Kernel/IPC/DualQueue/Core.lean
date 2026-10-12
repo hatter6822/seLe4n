@@ -1095,7 +1095,7 @@ open SeLe4n.Kernel.RobinHood
     cancellation reclaim needs the same statement about `cpuAffinity`, and the
     four-insert chain's analysis is a property of the *operation*, not of the
     field.  The two instances are `endpointQueueRemove_getTcb_upToReg` and
-    `endpointQueueRemove_getTcb_upToAffinity` below. -/
+    `endpointQueueRemove_getTcb_upToPlacement` below. -/
 private def FieldRefines {α : Type} (f : TCB → α)
     (base T : RHTable SeLe4n.ObjId KernelObject) : Prop :=
   ∀ k x, base.get? k = some (.tcb x) →
@@ -1305,16 +1305,16 @@ theorem endpointQueueRemove_getTcb_upToReg
   endpointQueueRemove_getTcb_upToField (fun t => t.registerContext)
     (fun _ _ _ _ => rfl) endpointId isReceiveQ tid st st' hInv h a ot ha
 
-/-- WS-OD OD1.4: the `cpuAffinity` instance.  The cancellation reclaim's
-    `_tcb_lookup` frame carries affinity across the holder abort, and the abort's
+/-- WS-OD OD1.4: the `TCB.placement` instance (home core and run-queue links).  The
+    cancellation reclaim's `_tcb_lookup` frame carries placement across the holder abort, and the abort's
     first write is this splice. -/
-theorem endpointQueueRemove_getTcb_upToAffinity
+theorem endpointQueueRemove_getTcb_upToPlacement
     (endpointId : SeLe4n.ObjId) (isReceiveQ : Bool) (tid : SeLe4n.ThreadId)
     (st st' : SystemState) (hInv : st.objects.invExt)
     (h : endpointQueueRemove endpointId isReceiveQ tid st = .ok st')
     (a : SeLe4n.ObjId) (ot : TCB) (ha : st.objects.get? a = some (.tcb ot)) :
-    ∃ ot', st'.objects.get? a = some (.tcb ot') ∧ ot.cpuAffinity = ot'.cpuAffinity :=
-  endpointQueueRemove_getTcb_upToField (fun t => t.cpuAffinity)
+    ∃ ot', st'.objects.get? a = some (.tcb ot') ∧ ot.placement = ot'.placement :=
+  endpointQueueRemove_getTcb_upToField TCB.placement
     (fun _ _ _ _ => rfl) endpointId isReceiveQ tid st st' hInv h a ot ha
 
 /-- WS-OD OD1.4: the **backward** direction of `FieldRefines` — every TCB `T`

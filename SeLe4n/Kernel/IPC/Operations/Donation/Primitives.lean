@@ -641,16 +641,16 @@ theorem storeObject_schedContextAt_getTcb?_eq
   · rw [storeObject_objects_ne st st' stored.toObjId tid.toObjId _ h hObjInv hStore]
 
 /-- WS-RR RR2.3 (frame helper): a `storeObject` that replaces one TCB with
-another of the same `cpuAffinity` leaves every thread's home-core reading
-unchanged. -/
-private theorem storeObject_tcbAt_getTcb?_cpuAffinity_eq
+another of the same placement (`TCB.placement`: home core and run-queue
+position) leaves every thread's placement reading unchanged. -/
+private theorem storeObject_tcbAt_getTcb?_placement_eq
     (st st' : SystemState) (stored : SeLe4n.ThreadId) (tOld tNew : TCB)
     (hOld : st.getTcb? stored = some tOld)
-    (hAff : tNew.cpuAffinity = tOld.cpuAffinity)
+    (hAff : tNew.placement = tOld.placement)
     (hObjInv : st.objects.invExt)
     (hStore : storeObject stored.toObjId (.tcb tNew) st = .ok ((), st'))
     (tid : SeLe4n.ThreadId) :
-    (st'.getTcb? tid).map (·.cpuAffinity) = (st.getTcb? tid).map (·.cpuAffinity) := by
+    (st'.getTcb? tid).map TCB.placement = (st.getTcb? tid).map TCB.placement := by
   have hRaw := (SystemState.getTcb?_eq_some_iff st stored tOld).mp hOld
   unfold SystemState.getTcb?
   by_cases h : tid.toObjId = stored.toObjId
@@ -685,23 +685,24 @@ private theorem storeObject_schedContext_getSchedContext?_ne
   rw [storeObject_objects_ne st st' target.toObjId scId.toObjId _
     (fun h => hNe (SeLe4n.SchedContextId.toObjId_injective _ _ h)) hObjInv hStore]
 
-/-- WS-RR RR2.3: `donateSchedContext` never changes any thread's `cpuAffinity`.
+/-- WS-RR RR2.3: `donateSchedContext` never changes any thread's placement
+(`TCB.placement`, of which `cpuAffinity` is one field).
 
 Its three stores are: the SchedContext's `boundThread` (a non-TCB slot whose
 previous occupant is also a SchedContext), the donor TCB's
 `schedContextBinding`, and the donee TCB's `schedContextBinding` — each a
-record update that leaves `cpuAffinity` alone.  So the SM5.C.9 home-core
+record update that leaves the placement fields alone.  So the SM5.C.9 home-core
 reading `determineTargetCore` is the same before and after the rebinding, which
 is what lets the replenishment migration's endpoints be resolved from the
 pre-state. -/
-theorem donateSchedContext_getTcb?_cpuAffinity_eq
+theorem donateSchedContext_getTcb?_placement_eq
     (st st' : SystemState)
     (clientTid serverTid : SeLe4n.ThreadId)
     (clientScId : SeLe4n.SchedContextId)
     (hObjInv : st.objects.invExt)
     (h : donateSchedContext st clientTid serverTid clientScId = .ok st')
     (tid : SeLe4n.ThreadId) :
-    (st'.getTcb? tid).map (·.cpuAffinity) = (st.getTcb? tid).map (·.cpuAffinity) := by
+    (st'.getTcb? tid).map TCB.placement = (st.getTcb? tid).map TCB.placement := by
   obtain ⟨sc, donorTcb, clientTcb, serverTcb, pushRid, pushReply, s1, s2, s3, s4,
       hObj, _, _, hFrame, hS1, hS2, hLC, hS3, hL, hS4, hEq⟩ :=
     donateSchedContext_ok_storeChain st st' clientTid serverTid clientScId h
@@ -728,14 +729,14 @@ theorem donateSchedContext_getTcb?_cpuAffinity_eq
     getTcb?_of_lookupTcb s3 serverTid serverTcb hL
   have e1 := storeObject_schedContextAt_getTcb?_eq st s1 clientScId sc _ hObj hObjInv hS1 tid
   have e2 := storeDonationFramePush_getTcb?_eq hInv1 hRep1 hS2 tid
-  have e3 := storeObject_tcbAt_getTcb?_cpuAffinity_eq s2 s3 clientTid clientTcb
+  have e3 := storeObject_tcbAt_getTcb?_placement_eq s2 s3 clientTid clientTcb
     { clientTcb with schedContextBinding := .unbound } hRaw1 rfl hInv2 hS3 tid
-  have e4 := storeObject_tcbAt_getTcb?_cpuAffinity_eq s3 s4 serverTid serverTcb
+  have e4 := storeObject_tcbAt_getTcb?_placement_eq s3 s4 serverTid serverTcb
     { serverTcb with schedContextBinding := .donated clientScId clientTid }
     hRaw2 rfl hInv3 hS4 tid
   -- The `scThreadIndex` re-keying at the end is not an object write.
   rw [hEq]
-  show (s4.getTcb? tid).map (·.cpuAffinity) = _
+  show (s4.getTcb? tid).map TCB.placement = _
   rw [e4, e3, e2, e1]
 
 /-- WS-RR RR2.3: `donateSchedContext` frames every SchedContext **other than**
@@ -883,14 +884,14 @@ theorem returnDonatedSchedContext_ok_implies_sc_bound
     | _ => simp only []; intro h; cases h
 
 /-- WS-RR RR2.9: `returnDonatedSchedContext` never changes any thread's
-`cpuAffinity` — the mirror of `donateSchedContext_getTcb?_cpuAffinity_eq`.
+placement (`TCB.placement`) — the mirror of `donateSchedContext_getTcb?_placement_eq`.
 
 WS-OD OD3.1: read off `returnDonatedSchedContext_ok_storeChain` rather than by a
 second copy of the operation's case analysis.  The head clear is one extra hop
 (`storeDonationHeadClear_getTcb?_eq`), which is exactly the shape the shared
 derivation exists to keep: the pop added a store and this proof gained a
 rewrite, not an arm. -/
-theorem returnDonatedSchedContext_getTcb?_cpuAffinity_eq
+theorem returnDonatedSchedContext_getTcb?_placement_eq
     (st st' : SystemState)
     (serverTid : SeLe4n.ThreadId)
     (scId : SeLe4n.SchedContextId)
@@ -899,7 +900,7 @@ theorem returnDonatedSchedContext_getTcb?_cpuAffinity_eq
     (newOwner? : Option SeLe4n.ThreadId)
     (h : returnDonatedSchedContext st serverTid scId originalOwner newOwner? = .ok st')
     (tid : SeLe4n.ThreadId) :
-    (st'.getTcb? tid).map (·.cpuAffinity) = (st.getTcb? tid).map (·.cpuAffinity) := by
+    (st'.getTcb? tid).map TCB.placement = (st.getTcb? tid).map TCB.placement := by
   obtain ⟨sc, head?, clientTcb, serverTcb, s1, s2, s3, s4,
     hSc, _, _, _hHead, hS1, hClear, hL1, hS3, hL2, hS4, hEq⟩ :=
     returnDonatedSchedContext_ok_storeChain st st' serverTid scId originalOwner newOwner? h
@@ -914,10 +915,10 @@ theorem returnDonatedSchedContext_getTcb?_cpuAffinity_eq
     getTcb?_of_lookupTcb s3 serverTid serverTcb hL2
   have e1 := storeObject_schedContextAt_getTcb?_eq st s1 scId sc _ hScPre hObjInv hS1 tid
   have e2 := storeDonationHeadPop_getTcb?_eq hInv1 hClear tid
-  have e3 := storeObject_tcbAt_getTcb?_cpuAffinity_eq s2 s3 originalOwner clientTcb
+  have e3 := storeObject_tcbAt_getTcb?_placement_eq s2 s3 originalOwner clientTcb
     { clientTcb with schedContextBinding := donationReturnBinding scId newOwner? }
     hRaw1 rfl hInv2 hS3 tid
-  have e4 := storeObject_tcbAt_getTcb?_cpuAffinity_eq s3 s4 serverTid serverTcb
+  have e4 := storeObject_tcbAt_getTcb?_placement_eq s3 s4 serverTid serverTcb
     { serverTcb with schedContextBinding := .unbound } hRaw2 rfl hInv3 hS4 tid
   have hGet : st'.getTcb? tid = s4.getTcb? tid := by rw [hEq]; rfl
   rw [hGet, e4, e3, e2, e1]

@@ -3242,13 +3242,13 @@ theorem scheduleEffectiveOnCore_establishes_currentThreadInActiveDomainOnCore (s
             rw [← hStep]
             simp only [SchedulerState.clearReschedulePendingOnCore_activeDomainOnCore,
               SchedulerState.setCurrentOnCore_activeDomainOnCore, restoreIncomingContextOnCore_scheduler, SystemState.runRemoveOnCore_scheduler,
-      SchedulerState.setRunQueueEndsOnCore_currentOnCore, SchedulerState.setRunQueueEndsOnCore_runQueueOnCore,
+      SchedulerState.setRunQueueEndsOnCore_runQueueOnCore,
       SchedulerState.setRunQueueEndsOnCore_activeDomainOnCore,
               SchedulerState.setRunQueueOnCore_activeDomainOnCore]
             rw [saveOutgoingContextOnCore_scheduler_eq]
           obtain ⟨tcb', hg, hdom⟩ := scheduleEffectiveOnCore_getTcb?_domain st c st' tid tcb hInv hCopy hTcb
           simp only [currentThreadInActiveDomainOnCore, hcur, hg, hact, hdom]
-          exact hcond.2
+          exact hcond
         · simp at hStep
 
 

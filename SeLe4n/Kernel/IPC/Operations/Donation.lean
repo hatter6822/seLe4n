@@ -433,7 +433,7 @@ from the **pre**-state (`determineTargetCore st caller` /
 write locks *before* the transition runs — the SM3.B discipline the cross-core
 lock-set follows for every donation-carrying syscall — and the rebinding itself
 never touches a `cpuAffinity`, so a pre-state reading is the same reading the
-post-state would give (`donateSchedContext_getTcb?_cpuAffinity_eq`).
+post-state would give (`donateSchedContext_getTcb?_placement_eq`).
 
 Self-migration — a shared home core, and in particular every single-core
 configuration — is a definitional no-op
@@ -567,7 +567,7 @@ follows:
   assumed;
 * and the rebinding moves no thread's `cpuAffinity` and no other SchedContext,
   so every reading the invariant makes is the pre-state's
-  (`donateSchedContext_getTcb?_cpuAffinity_eq`,
+  (`donateSchedContext_getTcb?_placement_eq`,
   `donateSchedContext_getSchedContext?_ne`).
 
 The two home-core hypotheses are discharged by `rfl` at the live call site,
@@ -598,8 +598,8 @@ theorem applyCallDonationOnCore_preserves_replenishQueueAffinityConsistent_smp
       applyCallDonation_scheduler_eq st callerVtid receiverVtid st1 hDon
     have hHomeEq : ∀ tid, determineTargetCore st1 tid = determineTargetCore st tid := fun tid =>
       determineTargetCore_congr st st1 tid
-        (donateSchedContext_getTcb?_cpuAffinity_eq st st1 callerVtid.val receiverVtid.val scId
-          hObjInv hDonate tid)
+        (TCB.map_cpuAffinity_of_placement (donateSchedContext_getTcb?_placement_eq st st1 callerVtid.val receiverVtid.val scId
+          hObjInv hDonate tid))
     have hScNe : ∀ scId', scId' ≠ scId → st1.getSchedContext? scId' = st.getSchedContext? scId' :=
       fun scId' hne => donateSchedContext_getSchedContext?_ne st st1 callerVtid.val receiverVtid.val
         scId scId' hne hObjInv hDonate
@@ -711,7 +711,7 @@ the budget enforcement the whole CBS surface exists to provide.
 Both home cores are read from the state the donation runs on, which is the
 reading the two `*OnCore` donation primitives take at every other call site:
 neither primitive writes a `cpuAffinity`
-(`donateSchedContext_getTcb?_cpuAffinity_eq`), so a pre-resolution and a
+(`donateSchedContext_getTcb?_placement_eq`), so a pre-resolution and a
 post-resolution agree.
 
 Total, and the identity wherever it must not fire: `applyCallDonation` no-ops

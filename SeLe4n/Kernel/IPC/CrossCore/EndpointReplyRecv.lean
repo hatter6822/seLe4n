@@ -74,7 +74,7 @@ WS-RR RR2.20: the return moves the context's binding from its holder to the
 answered caller, so its pending CBS replenishments must follow (SM5.H.4).  Both
 endpoints are read from this hop's **pre**-state, which is sound because
 `returnDonatedSchedContextValid` never writes a `cpuAffinity`
-(`returnDonatedSchedContext_getTcb?_cpuAffinity_eq`).
+(`returnDonatedSchedContext_getTcb?_placement_eq`).
 
 **WS-HP HP4.5: this pop is head-driven too, and it has to be.**  The `.reply`
 arm's pop reads the answered frame (`replyFrameHeadHolder?`); leaving this one

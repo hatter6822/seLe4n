@@ -75,12 +75,13 @@ theorem removeFromNotificationWaitQueue_getSchedContext?_eq (st : SystemState)
 /-- **`v0.35.166`: the notification unlink frames every thread's home core.**
 
 The unlink rewrites a waiter's neighbours' notification-queue links and nothing
-else of any TCB, so the affinity map is unchanged. -/
-theorem removeFromNotificationWaitQueue_affinity_frame (st : SystemState)
+else of any TCB, so every TCB's placement (home core and run-queue links) is
+unchanged. -/
+theorem removeFromNotificationWaitQueue_placement_frame (st : SystemState)
     (tid : SeLe4n.ThreadId) (hInv : st.objects.invExt) (x : SeLe4n.ThreadId) :
-    ((removeFromNotificationWaitQueue st tid).getTcb? x).map (·.cpuAffinity)
-      = (st.getTcb? x).map (·.cpuAffinity) :=
-  removeFromNotificationWaitQueue_tcbField_frame (·.cpuAffinity)
+    ((removeFromNotificationWaitQueue st tid).getTcb? x).map TCB.placement
+      = (st.getTcb? x).map TCB.placement :=
+  removeFromNotificationWaitQueue_tcbField_frame TCB.placement
     (fun _ _ _ _ _ _ => rfl) st tid hInv x
 
 /-- A notification reading after the unlink came from one at the same key, with

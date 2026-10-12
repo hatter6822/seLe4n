@@ -1219,9 +1219,11 @@ current — the caller `timerTickOnCore` has already re-enqueued it via
 (SM5.B.5); if it is core `c`'s previously-current thread re-selected, it simply
 continues running with a fresh time-slice / budget.
 
-Failure modes mirror `scheduleEffective`: a selected `tid` not in core `c`'s run
-queue or not in its active domain surfaces `.schedulerInvariantViolation` (a
-corrupted selection, never silently dispatched). -/
+A selected `tid` that resolves to no TCB or lies outside core `c`'s active
+domain surfaces `.schedulerInvariantViolation` (a corrupted selection, never
+silently dispatched); the selection walks only core `c`'s queue, so — as in
+seL4's `chooseThread` — the dispatch does not re-check membership (WS-ZA ZA4.5:
+it would read the ghost queue). -/
 def scheduleEffectiveOnCore (st : SystemState) (c : CoreId) :
     Except KernelError SystemState :=
   match chooseThreadEffectiveOnCore st c with
@@ -1241,8 +1243,7 @@ def scheduleEffectiveOnCore (st : SystemState) (c : CoreId) :
   | .ok (some tid) =>
       match st.getTcb? tid with
       | some tcb =>
-          if tid ∈ (st.scheduler.runQueueOnCore c) ∧
-              tcb.domain = (st.scheduler.activeDomainOnCore c) then
+          if tcb.domain = (st.scheduler.activeDomainOnCore c) then
             let stSaved := saveOutgoingContextOnCore st c
             let stDequeued := stSaved.runRemoveOnCore c tid
             let stRestored := restoreIncomingContextOnCore stDequeued c tid
@@ -1267,8 +1268,7 @@ def scheduleEffectiveOnCoreImpl (st : SystemState) (c : CoreId) :
       let tid : SeLe4n.ThreadId := ⟨k⟩
       match st.getTcb? tid with
       | some tcb =>
-          if tid ∈ (st.scheduler.runQueueOnCore c) ∧
-              tcb.domain = (st.scheduler.activeDomainOnCore c) then
+          if tcb.domain = (st.scheduler.activeDomainOnCore c) then
             let stSaved := saveOutgoingContextOnCore st c
             let stDequeued := stSaved.runRemoveOnCore c tid
             let stRestored := restoreIncomingContextOnCore stDequeued c tid

@@ -803,3 +803,48 @@ macro_rules
                clear hPostRunLinks))
 
 end SeLe4n.Model.SystemState
+
+namespace SeLe4n.Model.SystemState
+open SeLe4n.Kernel
+open SeLe4n.Kernel.Concurrency (CoreId)
+
+/-! ## The run-queue writes as agreement stages (WS-ZA ZA4.5) -/
+
+/-- A thread queued on core `c` is on no other core's queue: its links name one
+core (`TCB.runCoreCode`), so under the agreement the other queues lack it. -/
+theorem runQueueRefined.not_contains_of_queued {st : SystemState} (hR : st.runQueueRefined)
+    {c c' : CoreId} {t : SeLe4n.ThreadId} (hq : (st.runLinkOn c t).queued = true)
+    (hne : c' ≠ c) : (st.scheduler.runQueueOnCore c').contains t = false := by
+  obtain ⟨tcb, hT, hC⟩ := (runLinkOn_queued_iff st c t).mp hq
+  rw [← (hR c').contains]
+  cases hq' : (st.runLinkOn c' t).queued with
+  | false => rfl
+  | true =>
+    obtain ⟨tcb', hT', hC'⟩ := (runLinkOn_queued_iff st c' t).mp hq'
+    rw [hT] at hT'; cases hT'
+    exact absurd (Fin.ext (by omega)) hne
+
+/-- Re-keying a thread its core's links queue keeps the agreement. -/
+theorem RunQueueStage.runRequeueOnCore (st : SystemState) (c : CoreId) (t : SeLe4n.ThreadId)
+    (p : SeLe4n.Priority) (hq : (st.runLinkOn c t).queued = true) :
+    RunQueueStage st (st.runRequeueOnCore c t p) := fun hInv hR =>
+  ⟨runRequeueOnCore_objects_invExt st c t p hInv, by
+    obtain ⟨tcb, hT, -⟩ := (runLinkOn_queued_iff st c t).mp hq
+    refine runEnqueueOnCore_refined (runRemoveOnCore_refined hR) ?_ ?_
+    · rw [runRemoveOnCore_getTcb?_isSome, hT]; rfl
+    · intro c' hne
+      rw [runRemoveOnCore_runQueueOnCore_ne st c c' t (Ne.symm hne)]
+      exact hR.not_contains_of_queued hq hne⟩
+
+/-- Taking a thread off a core keeps the agreement: the dequeue is one, and the
+`current` slot and the reschedule flag are not read by it. -/
+theorem RunQueueStage.runDescheduleOnCore (st : SystemState) (c : CoreId)
+    (t : SeLe4n.ThreadId) : RunQueueStage st (st.runDescheduleOnCore c t) :=
+  (RunQueueStage.runRemoveOnCore st c t).trans (RunQueueStage.of_frame rfl rfl rfl)
+
+/-- A reschedule flag is not read by the agreement. -/
+theorem RunQueueStage.markReschedulePendingOnCore (st : SystemState) (c : CoreId) :
+    RunQueueStage st (st.markReschedulePendingOnCore c) :=
+  RunQueueStage.of_frame rfl rfl rfl
+
+end SeLe4n.Model.SystemState

@@ -489,8 +489,8 @@ theorem cleanupPreReceiveDonationMigrated_preserves_replenishQueueAffinityConsis
       (fun scId₀ hne => returnDonatedSchedContext_getSchedContext?_ne st stClean receiver scId
         scId₀ owner hne hObjInv newOwner? hRet)
       (fun tid => determineTargetCore_congr st stClean tid
-        (returnDonatedSchedContext_getTcb?_cpuAffinity_eq st stClean receiver scId owner hObjInv
-          newOwner? hRet tid))
+        (TCB.map_cpuAffinity_of_placement (returnDonatedSchedContext_getTcb?_placement_eq st stClean receiver scId owner hObjInv
+          newOwner? hRet tid)))
       hScPre hScPreBound rfl hCons
 
 /-- **`v0.35.161`: the migration's destination is the owner's home, read off the
@@ -513,8 +513,8 @@ theorem preReceiveReturnMigration_destination (st stClean : SystemState)
       hRet
   rw [replenishHomeOfSchedContext_eq_of_bound stClean scId _ scPost owner hScPost hBound]
   exact determineTargetCore_congr st stClean owner
-    (returnDonatedSchedContext_getTcb?_cpuAffinity_eq st stClean receiver scId owner hObjInv
-      newOwner? hRet owner)
+    (TCB.map_cpuAffinity_of_placement (returnDonatedSchedContext_getTcb?_placement_eq st stClean receiver scId owner hObjInv
+      newOwner? hRet owner))
 
 /-- WS-SM SM6.C.5 (plan §3.1): endpoint receive across cores — the receive leg of
 `replyRecv`.

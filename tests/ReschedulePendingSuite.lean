@@ -399,9 +399,8 @@ private def stBoundCurrent (withSrv : Bool) : SystemState :=
         boundThread := some boundTid, deadline := ⟨9⟩ })
     |>.withObject srv.toObjId (.tcb (mkReadyTcb 200 5 (some core1) .Ready))
     |>.build
-  let sched := base.scheduler.setCurrentOnCore core1 (some boundTid)
-  { base with scheduler :=
-      if withSrv then sched.setRunQueueOnCore core1 (RunQueue.ofList [(srv, ⟨5⟩)]) else sched }
+  let withCurrent := { base with scheduler := base.scheduler.setCurrentOnCore core1 (some boundTid) }
+  if withSrv then withCurrent.runEnqueueOnCore core1 srv ⟨5⟩ else withCurrent
 
 /-- Run core 1's reschedule handler, as the SGI the flag sends would. -/
 private def receiveOnCore1 (name : String) (st : SystemState) : IO SystemState := do

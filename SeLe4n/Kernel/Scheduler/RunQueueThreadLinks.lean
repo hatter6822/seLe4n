@@ -282,6 +282,21 @@ theorem runLinkOn_updateTcbAtCode_map (st : SystemState) (k : Nat) (g : TCB → 
     · rw [if_pos hx, if_pos (by rw [← hx, decode_code])]
     · rw [if_neg hx, if_neg (fun e => hx (by rw [e]; exact (RunQueue.code_eq_iff _ _).mpr ⟨hk, rfl⟩))]
 
+/-- WS-ZA ZA4.5: core `c`'s queue in order, walked along the threads' successor
+links from the core's head, at most its size steps. -/
+def runQueueWalk (st : SystemState) (c : CoreId) : List SeLe4n.ThreadId :=
+  walk (fun t => (st.runLinkOn c t).next) (st.scheduler.runQueueEndsOnCore c).size
+    (st.scheduler.runQueueEndsOnCore c).head
+
+/-- WS-ZA ZA4.5: core `c`'s highest occupied priority bucket in order, walked
+along the threads' bucket links from that bucket's head; empty when the core's
+queue is. -/
+def runMaxBucketWalk (st : SystemState) (c : CoreId) : List SeLe4n.ThreadId :=
+  walk (fun t => (st.runLinkOn c t).bucketNext) (st.scheduler.runQueueEndsOnCore c).size
+    (if (st.scheduler.runQueueEndsOnCore c).maxCode = 0 then 0
+      else (RunQueue.endsOf (st.scheduler.runQueueEndsOnCore c).buckets
+        ⟨(st.scheduler.runQueueEndsOnCore c).maxCode - 1⟩).head)
+
 namespace runQueueRefinedOnCore
 
 variable {st : SystemState} {c : CoreId}
@@ -358,6 +373,21 @@ theorem priorityOf (h : st.runQueueRefinedOnCore c) (t : SeLe4n.ThreadId) :
   · rw [RunQueue.queuedLink_of_not_contains hc]; rfl
   · rw [RunQueue.queuedLink_of_contains hc]
     simp [show (RunQueue.linkOf (st.scheduler.runQueueOnCore c).links t).queued = true from hc]
+
+/-- The walk along the threads' links is the queue's list. -/
+theorem runQueueWalk_eq (h : st.runQueueRefinedOnCore c) :
+    st.runQueueWalk c = (st.scheduler.runQueueOnCore c).toList :=
+  h.walk_eq
+
+/-- The walk of the highest bucket along the threads' links is the queue's. -/
+theorem runMaxBucketWalk_eq (h : st.runQueueRefinedOnCore c) :
+    st.runMaxBucketWalk c = (st.scheduler.runQueueOnCore c).maxPriorityBucket := by
+  unfold runMaxBucketWalk RunQueue.maxPriorityBucket RunQueue.maxPriority
+  rw [h.maxCode]
+  split
+  · show walk _ _ 0 = []
+    cases (st.scheduler.runQueueEndsOnCore c).size <;> rfl
+  · exact h.bucket_walk_eq _
 
 end runQueueRefinedOnCore
 
@@ -983,5 +1013,139 @@ theorem runRemoveOnCore_objects_invExt (st : SystemState) (c : CoreId) (t : SeLe
   split
   · exact runUnlinkLinks_objects_invExt _ _ _ _ _ _ hInv
   · exact hInv
+
+-- ============================================================================
+-- Stages
+-- ============================================================================
+
+/-- WS-ZA ZA4.5: **a step that keeps the run queues in agreement with the
+threads' links** — from a state whose object store keeps its table invariant
+and whose queues agree with the links, it reaches such a state.  Stages compose
+(`RunQueueStage.trans`), so a transition's agreement proof is the composition
+of its steps' stages. -/
+def RunQueueStage (st st' : SystemState) : Prop :=
+  st.objects.invExt → st.runQueueRefined → st'.objects.invExt ∧ st'.runQueueRefined
+
+theorem RunQueueStage.refl (st : SystemState) : RunQueueStage st st := fun h r => ⟨h, r⟩
+
+theorem RunQueueStage.trans {st st' st'' : SystemState}
+    (h1 : RunQueueStage st st') (h2 : RunQueueStage st' st'') : RunQueueStage st st'' :=
+  fun h r => (h1 h r).elim h2
+
+theorem RunQueueStage.of_eq {st st' : SystemState} (h : st' = st) : RunQueueStage st st' :=
+  h ▸ RunQueueStage.refl st
+
+/-- A step that writes neither the objects nor the run queues and their ends. -/
+theorem RunQueueStage.of_frame {st st' : SystemState} (hO : st'.objects = st.objects)
+    (hQ : st'.scheduler.runQueue = st.scheduler.runQueue)
+    (hE : st'.scheduler.runQueueEnds = st.scheduler.runQueueEnds) : RunQueueStage st st' :=
+  fun h r => ⟨hO ▸ h, runQueueRefined_of_frame (fun c t => runLinkOn_of_objects hO c t) hQ hE r⟩
+
+theorem RunQueueStage.updateTcb (st : SystemState) (tid : SeLe4n.ThreadId) {f : TCB → TCB}
+    (hf : ∀ x c, (f x).runLinkOn c = x.runLinkOn c) : RunQueueStage st (st.updateTcb tid f) :=
+  fun h r => ⟨updateTcb_preserves_objects_invExt st tid f h, updateTcb_runQueueRefined h hf r⟩
+
+theorem RunQueueStage.runRemoveOnCore (st : SystemState) (c : CoreId) (t : SeLe4n.ThreadId) :
+    RunQueueStage st (st.runRemoveOnCore c t) :=
+  fun h r => ⟨runRemoveOnCore_objects_invExt st c t h, runRemoveOnCore_refined r⟩
+
+/-- The run-queue entry an object slot gives a thread on core `c`: a TCB's, or
+the empty entry for any other slot. -/
+def objRunLinkOn : Option KernelObject → CoreId → RunQueueLink
+  | some (.tcb t), c => t.runLinkOn c
+  | _, _ => RunQueue.RunQueueLink.none
+
+theorem runLinkOn_eq_objRunLinkOn (st : SystemState) (c : CoreId) (t : SeLe4n.ThreadId) :
+    st.runLinkOn c t = objRunLinkOn st.objects[t.toObjId]? c := by
+  unfold runLinkOn getTcb?
+  cases h : st.objects[t.toObjId]? with
+  | none => rfl
+  | some o => cases o <;> rfl
+
+/-- **One object write keeps every thread's run-queue entry** when the object
+stored gives the same entries as the one it replaces: a TCB whose run-queue
+fields are the old TCB's, or any other object over any other object. -/
+theorem runLinkOn_insert {st st' : SystemState} {k : SeLe4n.ObjId} {obj : KernelObject}
+    (hInv : st.objects.invExt) (hO : st'.objects = st.objects.insert k obj)
+    (h : ∀ c, objRunLinkOn (some obj) c = objRunLinkOn st.objects[k]? c)
+    (c : CoreId) (t : SeLe4n.ThreadId) : st'.runLinkOn c t = st.runLinkOn c t := by
+  rw [runLinkOn_eq_objRunLinkOn, runLinkOn_eq_objRunLinkOn, hO]
+  by_cases hk : k = t.toObjId
+  · subst hk
+    simp only [RHTable_getElem?_eq_get?] at h ⊢
+    rw [RHTable.getElem?_insert_self st.objects _ obj hInv]
+    exact h c
+  · simp only [RHTable_getElem?_eq_get?]
+    rw [RHTable.getElem?_insert_ne st.objects _ _ obj (fun hb => hk (eq_of_beq hb)) hInv]
+
+/-- A step that writes one object giving the same run-queue entries, and no
+run queue or end. -/
+theorem RunQueueStage.insert {st st' : SystemState} {k : SeLe4n.ObjId} {obj : KernelObject}
+    (hO : st'.objects = st.objects.insert k obj)
+    (hQ : st'.scheduler.runQueue = st.scheduler.runQueue)
+    (hE : st'.scheduler.runQueueEnds = st.scheduler.runQueueEnds)
+    (h : ∀ c, objRunLinkOn (some obj) c = objRunLinkOn st.objects[k]? c) :
+    RunQueueStage st st' :=
+  fun hInv r => ⟨hO ▸ RHTable_insert_preserves_invExt st.objects k obj hInv,
+    runQueueRefined_of_frame (runLinkOn_insert hInv hO h) hQ hE r⟩
+
+/-- A TCB's run-queue entries are read off its placement fields. -/
+theorem _root_.SeLe4n.Model.TCB.runLinkOn_of_placement {a b : TCB}
+    (h : a.placement = b.placement) (c : CoreId) : a.runLinkOn c = b.runLinkOn c := by
+  simp only [TCB.placement, TcbPlacement.mk.injEq] at h
+  obtain ⟨-, h1, h2, h3, h4, h5, h6⟩ := h
+  unfold TCB.runLinkOn TCB.runLink
+  rw [h1, h2, h3, h4, h5, h6]
+
+/-- A placement frame (`TCB.placement`) keeps every thread's run-queue entries. -/
+theorem runLinkOn_of_placement {st st' : SystemState}
+    (h : ∀ x, (st'.getTcb? x).map TCB.placement = (st.getTcb? x).map TCB.placement)
+    (c : CoreId) (t : SeLe4n.ThreadId) : st'.runLinkOn c t = st.runLinkOn c t := by
+  have ht := h t
+  unfold runLinkOn
+  cases h1 : st'.getTcb? t <;> cases h2 : st.getTcb? t <;>
+    simp only [h1, h2, Option.map_none, Option.map_some, reduceCtorEq,
+      Option.some.injEq] at ht ⊢
+  exact TCB.runLinkOn_of_placement ht c
+
+/-- **A step that writes no run queue and moves no thread** — every TCB write a
+record update outside the placement fields — keeps the agreement.  The
+IPC teardowns, the donation hand-backs and the pending-state clears are of this
+shape; their placement frames are the cancellation path's
+(`cancelIpcBlocking_placement_frame`). -/
+theorem RunQueueStage.of_placement {st st' : SystemState}
+    (hInv : st.objects.invExt → st'.objects.invExt)
+    (hQ : st'.scheduler.runQueue = st.scheduler.runQueue)
+    (hE : st'.scheduler.runQueueEnds = st.scheduler.runQueueEnds)
+    (hP : st.objects.invExt → ∀ x,
+      (st'.getTcb? x).map TCB.placement = (st.getTcb? x).map TCB.placement) :
+    RunQueueStage st st' :=
+  fun h r => ⟨hInv h, runQueueRefined_of_frame (runLinkOn_of_placement (hP h)) hQ hE r⟩
+
+/-- **One object store that gives every thread the run-queue entries the
+replaced slot gave** keeps the agreement: a TCB stored over a TCB with the same
+run-queue fields, or any other object stored over any other object. -/
+theorem RunQueueStage.storeObject {st st' : SystemState} {k : SeLe4n.ObjId}
+    {obj : KernelObject} (hS : SeLe4n.Model.storeObject k obj st = .ok ((), st'))
+    (h : ∀ c, objRunLinkOn (some obj) c = objRunLinkOn st.objects[k]? c) :
+    RunQueueStage st st' := by
+  unfold SeLe4n.Model.storeObject at hS; cases hS
+  exact RunQueueStage.insert rfl rfl rfl h
+
+/-- The store of an object other than a TCB over an object other than a TCB. -/
+theorem RunQueueStage.storeObject_nonTcb {st st' : SystemState} {k : SeLe4n.ObjId}
+    {obj old : KernelObject} (hS : SeLe4n.Model.storeObject k obj st = .ok ((), st'))
+    (hOld : st.objects[k]? = some old)
+    (hObj : ∀ t, obj ≠ .tcb t) (hOldT : ∀ t, old ≠ .tcb t) : RunQueueStage st st' :=
+  RunQueueStage.storeObject hS (fun c => by
+    rw [hOld]
+    cases obj <;> cases old <;> first | rfl | exact absurd rfl (hObj _) | exact absurd rfl (hOldT _))
+
+/-- The store of a TCB over a TCB with the same run-queue fields. -/
+theorem RunQueueStage.storeObject_tcb {st st' : SystemState} {k : SeLe4n.ObjId}
+    {t old : TCB} (hS : SeLe4n.Model.storeObject k (.tcb t) st = .ok ((), st'))
+    (hOld : st.objects[k]? = some (.tcb old)) (h : ∀ c, t.runLinkOn c = old.runLinkOn c) :
+    RunQueueStage st st' :=
+  RunQueueStage.storeObject hS (fun c => by rw [hOld]; exact h c)
 
 end SeLe4n.Model.SystemState

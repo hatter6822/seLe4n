@@ -184,13 +184,17 @@ including priority `0`.  This is strictly stronger than `idleThread_no_starvatio
 (which only rules out *higher*-priority threads).  Unlike the run-queue-resident
 form (`enqueueIdleThreadOnCore` + `chooseThreadOnCore`, where idle is a priority-`0`
 peer and FIFO could pick it over a same-priority-`0` user thread), the production
-dispatcher never makes that mistake. -/
+dispatcher never makes that mistake.
+
+The selector walks the threads' run-queue links (WS-ZA ZA4.5), so the statement
+about the queue's members holds where the queue agrees with those links (`hR`). -/
 theorem scheduleOrIdleOnCore_idle_starves_no_eligible_thread (st : SystemState) (c : CoreId)
+    (hR : st.runQueueRefinedOnCore c)
     (hChoose : chooseThreadEffectiveOnCore st c = .ok none) :
     ∀ tid ∈ (st.scheduler.runQueueOnCore c).toList, ∀ tcb : TCB,
       st.getTcb? tid = some tcb →
       ¬(tcb.domain = st.scheduler.activeDomainOnCore c ∧ hasSufficientBudget st tcb = true) :=
-  chooseThreadEffectiveOnCore_none_no_eligible st c hChoose
+  chooseThreadEffectiveOnCore_none_no_eligible st c hR hChoose
 
 -- ============================================================================
 -- §4  The folded idle dispatch is reachable on the live per-core tick path

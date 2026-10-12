@@ -2040,9 +2040,9 @@ the runnable thread queued; the witness computes that restore target beside the
 live one, so each assertion is known to discriminate. -/
 private def runVacatedCoreChecks : IO Unit := do
   IO.println "  vacated core: a trap on a remotely vacated core dispatches a successor"
-  let vacatedQueue := RunQueue.ofList [(grantReplyFaulter, ⟨30⟩)]
-  let vacatedSched := (stRunning.scheduler.setCurrentOnCore c0 none).setRunQueueOnCore c0 vacatedQueue
-  let stVacated : SystemState := { stRunning with scheduler := vacatedSched }
+  let stVacated : SystemState :=
+    ({ stRunning with scheduler := stRunning.scheduler.setCurrentOnCore c0 none }).runEnqueueOnCore
+      c0 grantReplyFaulter ⟨30⟩
   assertBool "RETIRED: the vacated core's committed state resumes only the idle loop"
     (match Architecture.restoreTargetOnCore stVacated c0 with | .idle => true | _ => false)
   let (sgisF, stF) := faultEntryStep permissiveCtx stVacated dataAbortCtx trapWindow 0
@@ -2076,11 +2076,11 @@ names nobody, so the frame was dropped and the faulter later resumed from its
 stale context; each assertion computes that reading beside the live one. -/
 private def runResidentFrameChecks : IO Unit := do
   IO.println "  residency: a vacated core's frame is saved into its resident thread"
-  let vacatedSched := (stRunning.scheduler.setCurrentOnCore c0 none).setRunQueueOnCore c0
-    (RunQueue.ofList [(grantReplyFaulter, ⟨30⟩)])
+  let stVacated : SystemState :=
+    ({ stRunning with scheduler := stRunning.scheduler.setCurrentOnCore c0 none }).runEnqueueOnCore
+      c0 grantReplyFaulter ⟨30⟩
   let stResident : SystemState :=
-    { stRunning with scheduler := vacatedSched,
-                     machine := stRunning.machine.setResidentOnCore c0 (some faulter) }
+    { stVacated with machine := stVacated.machine.setResidentOnCore c0 (some faulter) }
   let live : SeLe4n.RegisterFile := SeLe4n.RegisterFile.withGprs 0x9004 0x7000 (fun _ => 0xAB)
   let liveIn := Architecture.InFlightContext.ofRegisterFile live
   let stalePc := savedPcOf stResident faulter

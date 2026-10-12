@@ -140,14 +140,15 @@ theorem abortHolderPendingIpc_preserves_objects_invExt (st : SystemState)
         exact abortPendingIpcOnEndpoint_preserves_objects_invExt epId false holder st st' hInv h
     · exact hInv
 
-/-- WS-OD OD1.4: the holder abort carries every pre-state TCB's `cpuAffinity`.
-`cancelIpcBlocking_tcb_lookup` is what ultimately needs it, and affinity is the
+/-- WS-OD OD1.4: the holder abort carries every pre-state TCB's `TCB.placement` (home core
+and run-queue links).
+`cancelIpcBlocking_tcb_lookup` is what ultimately needs it, and placement is the
 one field that theorem's whole chain tracks. -/
 theorem abortHolderPendingIpc_tcb_lookup (st : SystemState)
     (holder : SeLe4n.ThreadId) (hInv : st.objects.invExt)
     (k : SeLe4n.ObjId) (t0 : TCB) (hk : st.objects[k]? = some (.tcb t0)) :
     ∃ t', (abortHolderPendingIpc st holder).objects[k]? = some (.tcb t') ∧
-      t'.cpuAffinity = t0.cpuAffinity := by
+      t'.placement = t0.placement := by
   unfold abortHolderPendingIpc
   split
   · exact ⟨t0, hk, rfl⟩
@@ -626,7 +627,7 @@ theorem returnDonationToCancelledCaller_eq_self_of_getTcb?_none (st : SystemStat
   cases cancelledCallerDonation? st tid tcb <;> rfl
 
 /-- **WS-RR RR7.22 (residual, remediation)**, restated at WS-OD OD1.4: the
-donation return carries every pre-state TCB's `cpuAffinity`.
+donation return carries every pre-state TCB's `TCB.placement`.
 
 It used to say more — that the reclaim rewrites `schedContextBinding` and
 nothing else (`tcbBindingRewrite`) — and that was true while the reclaim's only
@@ -635,7 +636,7 @@ the context back it ends the holder's outstanding send or call, which rewrites
 that thread's `ipcState`, queue links, timeout fields and return frame.  So the
 binding-only claim is false of the operation now, and the honest statement is
 the one its single consumer (`cancelIpcBlocking_tcb_lookup`) actually needs —
-affinity, which neither write touches.  The three-step chain in that consumer
+placement (home core and run-queue links), which neither write touches.  The three-step chain in that consumer
 reads exactly this shape from `removeFromAllEndpointQueues_tcb_lookup` and
 `restoreToReadyCancelled_tcb_lookup`, so the reply arm now matches its
 siblings. -/
@@ -643,7 +644,7 @@ theorem returnDonationToCancelledCaller_tcb_lookup (st : SystemState)
     (tid : SeLe4n.ThreadId) (tcb : TCB) (hInv : st.objects.invExt)
     (k : SeLe4n.ObjId) (t0 : TCB) (hk : st.objects[k]? = some (.tcb t0)) :
     ∃ t', (returnDonationToCancelledCaller st tid tcb).objects[k]? = some (.tcb t') ∧
-      t'.cpuAffinity = t0.cpuAffinity := by
+      t'.placement = t0.placement := by
   unfold returnDonationToCancelledCaller
   split
   · rename_i scId holder _ _ _
@@ -1733,7 +1734,7 @@ theorem cancelIpcBlocking_preserves_objects_invExt
 -- ============================================================================
 -- WS-SM SM6.E: per-key TCB lookup frames of the cancellation teardown
 -- ============================================================================
--- The teardown never changes the *kind* or the `cpuAffinity` of a key that
+-- The teardown never changes the *kind* or the `TCB.placement` of a key that
 -- holds a TCB (it rewrites IPC/queue-link fields only), and never
 -- materialises a TCB at the victim's key when none was there.  These frames
 -- are what `cancelIpcBlocking_determineTargetCore_eq` (`IPC.CrossCore.Cancellation`
@@ -1743,7 +1744,7 @@ theorem cancelIpcBlocking_preserves_objects_invExt
 -- deschedule's bridge to the composite, which is definitional now that both
 -- read the placement at the state the removal acts on.
 
-/-- WS-SM SM6.E: `restoreToReady` preserves TCB-kind and `cpuAffinity` at
+/-- WS-SM SM6.E: `restoreToReady` preserves TCB-kind and `TCB.placement` at
 every key — the conditional rewrite clears IPC and queue-link fields only. -/
 theorem restoreToReadyStaging_tcb_lookup
     (st : SystemState) (tid : SeLe4n.ThreadId)
@@ -1752,7 +1753,7 @@ theorem restoreToReadyStaging_tcb_lookup
     (hInv : st.objects.invExt)
     (hPre : st.objects[k]? = some (.tcb t0)) :
     ∃ t' : TCB, (restoreToReadyStaging st tid frame).objects[k]? = some (.tcb t')
-      ∧ t'.cpuAffinity = t0.cpuAffinity := by
+      ∧ t'.placement = t0.placement := by
   unfold restoreToReadyStaging
   cases hT : st.getTcb? tid with
   | none => rw [SystemState.updateTcb_eq_self_of_none hT]; exact ⟨t0, hPre, rfl⟩
@@ -1760,11 +1761,11 @@ theorem restoreToReadyStaging_tcb_lookup
     rw [SystemState.updateTcb_eq_of_some hT]
     cases frame with
     | none =>
-        exact insert_tcb_rewrite_lookup (motive := fun a b => a.cpuAffinity = b.cpuAffinity)
+        exact insert_tcb_rewrite_lookup (motive := fun a b => a.placement = b.placement)
           st.objects tid.toObjId k t _ t0 (fun _ => rfl) hInv
           ((SystemState.getTcb?_eq_some_iff st tid t).mp hT) rfl hPre
     | some f =>
-        exact insert_tcb_rewrite_lookup (motive := fun a b => a.cpuAffinity = b.cpuAffinity)
+        exact insert_tcb_rewrite_lookup (motive := fun a b => a.placement = b.placement)
           st.objects tid.toObjId k t _ t0 (fun _ => rfl) hInv
           ((SystemState.getTcb?_eq_some_iff st tid t).mp hT) rfl hPre
 
@@ -1773,20 +1774,20 @@ theorem restoreToReady_tcb_lookup
     (hInv : st.objects.invExt)
     (hPre : st.objects[k]? = some (.tcb t0)) :
     ∃ t' : TCB, (restoreToReady st tid).objects[k]? = some (.tcb t')
-      ∧ t'.cpuAffinity = t0.cpuAffinity :=
+      ∧ t'.placement = t0.placement :=
   restoreToReadyStaging_tcb_lookup st tid none k t0 hInv hPre
 
 /-- **WS-RR RR7.14**: and the cancellation spelling.  The staged frame writes
-`registerContext`, which is neither the object's kind nor its `cpuAffinity`. -/
+`registerContext`, which is neither the object's kind nor its `TCB.placement`. -/
 theorem restoreToReadyCancelled_tcb_lookup
     (st : SystemState) (tid : SeLe4n.ThreadId) (k : SeLe4n.ObjId) (t0 : TCB)
     (hInv : st.objects.invExt)
     (hPre : st.objects[k]? = some (.tcb t0)) :
     ∃ t' : TCB, (restoreToReadyCancelled st tid).objects[k]? = some (.tcb t')
-      ∧ t'.cpuAffinity = t0.cpuAffinity :=
+      ∧ t'.placement = t0.placement :=
   restoreToReadyStaging_tcb_lookup st tid _ k t0 hInv hPre
 
-/-- WS-SM SM6.E: `consumeReplyLink` preserves TCB-kind and `cpuAffinity` at
+/-- WS-SM SM6.E: `consumeReplyLink` preserves TCB-kind and `TCB.placement` at
 every key.
 
 **WS-RR RR8.5**: read off the consume's two sharp pointwise readings — the
@@ -1799,7 +1800,7 @@ theorem consumeReplyLink_tcb_lookup
     (hInv : st.objects.invExt)
     (hPre : st.objects[k]? = some (.tcb t0)) :
     ∃ t' : TCB, (consumeReplyLink st tid tcb).objects[k]? = some (.tcb t')
-      ∧ t'.cpuAffinity = t0.cpuAffinity := by
+      ∧ t'.placement = t0.placement := by
   unfold consumeReplyLink
   cases tcb.replyObject with
   | none => exact ⟨t0, hPre, rfl⟩
@@ -1812,16 +1813,16 @@ theorem consumeReplyLink_tcb_lookup
     · exact ⟨t0, SystemState.consumeCallerReply_tcb_other st _ tid rid hInv hStep k t0 hk hPre,
         rfl⟩
 
-/-- WS-SM SM6.E: `cancelIpcBlocking` preserves TCB-kind and `cpuAffinity` at
+/-- WS-SM SM6.E: `cancelIpcBlocking` preserves TCB-kind and `TCB.placement` at
 every key — each `ipcState` arm composes the sweep frames with the teardown
-rewrites, none of which changes a stored TCB's kind or `cpuAffinity`. -/
+rewrites, none of which changes a stored TCB's kind or `TCB.placement`. -/
 theorem cancelIpcBlocking_tcb_lookup
     (st : SystemState) (tid : SeLe4n.ThreadId) (tcb : TCB)
     (k : SeLe4n.ObjId) (t0 : TCB)
     (hInv : st.objects.invExt)
     (hPre : st.objects[k]? = some (.tcb t0)) :
     ∃ t' : TCB, (cancelIpcBlocking st tid tcb).objects[k]? = some (.tcb t')
-      ∧ t'.cpuAffinity = t0.cpuAffinity := by
+      ∧ t'.placement = t0.placement := by
   unfold cancelIpcBlocking
   cases tcb.ipcState with
   | ready => exact ⟨t0, hPre, rfl⟩
@@ -1836,7 +1837,7 @@ theorem cancelIpcBlocking_tcb_lookup
     -- WS-RR RR7.22 (residual, remediation), extended at WS-OD OD1.4: the
     -- donation return is the extra step, and since OD1.4 it is two writes — the
     -- holder's aborted IPC and the binding hand-back.  Neither touches
-    -- `cpuAffinity`, which is what this chain tracks, so the reply arm reads the
+    -- `TCB.placement`, which is what this chain tracks, so the reply arm reads the
     -- same shape as its three siblings.
     obtain ⟨t₀, hL0, hAff0⟩ :=
       returnDonationToCancelledCaller_tcb_lookup st tid tcb hInv k t0 hPre

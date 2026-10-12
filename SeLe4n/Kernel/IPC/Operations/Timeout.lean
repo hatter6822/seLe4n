@@ -185,26 +185,27 @@ theorem abortPendingIpcOnEndpoint_machine (epId : SeLe4n.ObjId) (isReceiveQ : Bo
         · simp only [Except.ok.injEq] at h
           subst h
           exact hMach1
-/-- WS-OD OD1.4: the abort carries every pre-state TCB's `cpuAffinity`.
+/-- WS-OD OD1.4: the abort carries every pre-state TCB's `TCB.placement` (home core
+and run-queue links).
 
 Its two writes are the queue splice — which touches queue links only
-(`endpointQueueRemove_getTcb_upToAffinity`) — and the timeout rewrite, which
-writes `ipcState`, the timeout fields and the return frame.  Neither is
-`cpuAffinity`, which is what the cancellation reclaim's `_tcb_lookup` frame
+(`endpointQueueRemove_getTcb_upToPlacement`) — and the timeout rewrite, which
+writes `ipcState`, the timeout fields and the return frame.  Neither is a
+placement field, which is what the cancellation reclaim's `_tcb_lookup` frame
 carries and what `cancelIpcBlocking_tcb_lookup` ultimately needs. -/
 theorem abortPendingIpcOnEndpoint_tcb_lookup
     (epId : SeLe4n.ObjId) (isReceiveQ : Bool) (tid : SeLe4n.ThreadId)
     (st st' : SystemState) (hInv : st.objects.invExt)
     (h : abortPendingIpcOnEndpoint epId isReceiveQ tid st = .ok st')
     (k : SeLe4n.ObjId) (t0 : TCB) (hk : st.objects[k]? = some (.tcb t0)) :
-    ∃ t', st'.objects[k]? = some (.tcb t') ∧ t'.cpuAffinity = t0.cpuAffinity := by
+    ∃ t', st'.objects[k]? = some (.tcb t') ∧ t'.placement = t0.placement := by
   unfold abortPendingIpcOnEndpoint at h
   split at h
   · simp at h
   · rename_i st1 hER
     have hInv1 := endpointQueueRemove_preserves_objects_invExt _ _ _ _ _ hInv hER
     obtain ⟨t1, hk1, hAff1⟩ :=
-      endpointQueueRemove_getTcb_upToAffinity epId isReceiveQ tid st st1 hInv hER k t0
+      endpointQueueRemove_getTcb_upToPlacement epId isReceiveQ tid st st1 hInv hER k t0
         (by rw [← RHTable_getElem?_eq_get?]; exact hk)
     rw [← RHTable_getElem?_eq_get?] at hk1
     split at h

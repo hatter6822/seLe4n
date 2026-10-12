@@ -209,19 +209,19 @@ example (c : CoreId) :
 -- Budget variant: the property unique to the budget-aware selector — a
 -- dispatched thread genuinely has CBS budget.
 example (st : SystemState) (c : CoreId) (tid : SeLe4n.ThreadId)
-    (hwf : (st.scheduler.runQueueOnCore c).wellFormed)
     (h : chooseThreadEffectiveOnCore st c = .ok (some tid)) :
     ∃ tcb : TCB, st.getTcb? tid = some tcb ∧ hasSufficientBudget st tcb = true
       ∧ tcb.domain = st.scheduler.activeDomainOnCore c :=
   chooseThreadEffectiveOnCore_selected_has_budget st c tid h
 
--- Budget variant: completeness (idle fallback only when nothing in-domain has budget).
-example (st : SystemState) (c : CoreId)
+-- Budget variant: completeness (idle fallback only when nothing in-domain has budget),
+-- over the queue the run-queue links agree with.
+example (st : SystemState) (c : CoreId) (hR : st.runQueueRefinedOnCore c)
     (h : chooseThreadEffectiveOnCore st c = .ok none)
     (tid : SeLe4n.ThreadId) (htid : tid ∈ (st.scheduler.runQueueOnCore c).toList)
     (tcb : TCB) (htcb : st.getTcb? tid = some tcb) :
     ¬(tcb.domain = st.scheduler.activeDomainOnCore c ∧ hasSufficientBudget st tcb = true) :=
-  chooseThreadEffectiveOnCore_none_no_eligible st c h tid htid tcb htcb
+  chooseThreadEffectiveOnCore_none_no_eligible st c hR h tid htid tcb htcb
 
 -- ============================================================================
 -- §3  Runtime assertions (Tier-2): the SM5.A.8 scenarios + lock-set + budget
@@ -257,11 +257,10 @@ private def stOutOfDomain : SystemState :=
 /-- Core 1 (a non-boot core), used by the per-core-independence scenario. -/
 private def core1 : CoreId := ⟨1, by decide⟩
 
-/-- `stSingle` with core 1's run queue overwritten with an unrelated thread.
+/-- `stSingle` with an unrelated thread enqueued on core 1.
 Per SM5.A.3, this must not affect the selection on the boot core. -/
 private def stSingleWithCore1Busy : SystemState :=
-  { stSingle with scheduler :=
-      stSingle.scheduler.setRunQueueOnCore core1 (RunQueue.ofList [(tidB, ⟨99⟩)]) }
+  stSingle.runEnqueueOnCore core1 tidB ⟨99⟩
 
 /-- A state whose **boot core** run queue is empty but whose **core 1** run
 queue holds the in-(active-)domain runnable thread `tidA` (a genuine TCB in
@@ -269,7 +268,7 @@ the global object store).  Exercises `chooseThreadOnCore` at a *non-boot*
 core `c ≠ bootCoreId` — the whole point of the `(c : CoreId)` parameter. -/
 private def stCore1Runnable : SystemState :=
   let base := (BootstrapBuilder.empty.withObject tidA.toObjId (.tcb (mkTcb 100 10 0))).build
-  { base with scheduler := base.scheduler.setRunQueueOnCore core1 (RunQueue.ofList [(tidA, ⟨10⟩)]) }
+  base.runEnqueueOnCore core1 tidA ⟨10⟩
 
 /-- A test TCB at `tid`, priority `prio`, domain `dom`, and explicit deadline. -/
 private def mkTcbD (tid prio dom dl : Nat) : TCB :=

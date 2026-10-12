@@ -1016,7 +1016,7 @@ theorem removeFromAllEndpointQueues_getSchedContext?_eq (st : SystemState)
 
 The fold writes endpoints, which can never alias a TCB-holding key, so at every
 thread key the sweep's reading *is* the splice's — not merely agreeing on one
-field.  Extracted from `removeFromAllEndpointQueues_affinity_frame`, which proved
+field.  Extracted from `removeFromAllEndpointQueues_placement_frame`, which proved
 it inline and then threw it away: register row 63 needs the same equality for
 `schedContextBinding`, and re-deriving it per field is this project's *a field is
 not the relation*.
@@ -1046,18 +1046,18 @@ theorem removeFromAllEndpointQueues_getTcb?_eq_splice (st : SystemState)
 
 The fold writes endpoints only, so every TCB reading the sweep leaves is the
 splice's — and the splice moves no thread
-(`spliceOutMidQueueNode_affinity_frame`).  The `Option`-level equality is proved
-first and the affinity frame applied to it, rather than refining twice: the two
-states' TCB readings are *equal* here, not merely affinity-agreeing.
+(`spliceOutMidQueueNode_placement_frame`).  The `Option`-level equality is proved
+first and the placement frame applied to it, rather than refining twice: the two
+states' TCB readings are *equal* here, not merely placement-agreeing.
 
 Beside `removeFromAllEndpointQueues_nonEndpoint`, and moved here at `v0.35.166`
 for the reason the `getSchedContext?` frame above was. -/
-theorem removeFromAllEndpointQueues_affinity_frame (st : SystemState)
+theorem removeFromAllEndpointQueues_placement_frame (st : SystemState)
     (tid : SeLe4n.ThreadId) (hInv : st.objects.invExt) (x : SeLe4n.ThreadId) :
-    ((removeFromAllEndpointQueues st tid).getTcb? x).map (·.cpuAffinity)
-      = (st.getTcb? x).map (·.cpuAffinity) := by
+    ((removeFromAllEndpointQueues st tid).getTcb? x).map TCB.placement
+      = (st.getTcb? x).map TCB.placement := by
   rw [removeFromAllEndpointQueues_getTcb?_eq_splice st tid hInv x]
-  exact spliceOutMidQueueNode_affinity_frame st tid hInv x
+  exact spliceOutMidQueueNode_placement_frame st tid hInv x
 
 /-- **`v0.35.183` (register row 63): the endpoint sweep frames every thread's
 scheduling-context binding.**

@@ -199,7 +199,7 @@ theorem cleanupTcbReferences_affinity_frame (st : SystemState)
       (removeFromNotificationWaitQueue_preserves_objects_invExt _ tid h1),
     removeFromNotificationWaitQueue_tcbField_frame (·.cpuAffinity)
       (fun _ _ _ _ _ _ => rfl) _ tid h1 x,
-    removeFromAllEndpointQueues_affinity_frame _ tid h0,
+    TCB.map_cpuAffinity_of_placement (removeFromAllEndpointQueues_placement_frame _ tid h0 x),
     TCB.map_proj_eq_of_map_withoutRunLinks_eq (·.cpuAffinity)
       ((removeRunnableFromAllCores_objectsAgreeOffRunLinks st tid).getTcb? x)]
 

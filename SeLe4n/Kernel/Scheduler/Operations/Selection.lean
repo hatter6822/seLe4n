@@ -765,6 +765,26 @@ def chooseBestInBucketEffective
   | .ok none =>
     chooseBestRunnableInDomainEffective st rq.toList activeDomain none
 
+/-- WS-ZA ZA4.5: the bucket-first selection over a highest bucket and a whole
+queue given as lists — `chooseBestInBucketEffective` with the queue's lists
+(`chooseBestInBucketEffective_eq_walks`), and the selection over the lists
+walked along the threads' run-queue links. -/
+def chooseBestInWalksEffective
+    (st : SystemState)
+    (maxBucket all : List SeLe4n.ThreadId)
+    (activeDomain : SeLe4n.DomainId) :
+    Except KernelError (Option (SeLe4n.ThreadId × SeLe4n.Priority × SeLe4n.Deadline)) :=
+  match chooseBestRunnableInDomainEffective st maxBucket activeDomain none with
+  | .error e => .error e
+  | .ok (some result) => .ok (some result)
+  | .ok none =>
+    chooseBestRunnableInDomainEffective st all activeDomain none
+
+theorem chooseBestInBucketEffective_eq_walks (st : SystemState) (rq : RunQueue)
+    (activeDomain : SeLe4n.DomainId) :
+    chooseBestInBucketEffective st rq activeDomain =
+      chooseBestInWalksEffective st rq.maxPriorityBucket rq.toList activeDomain := rfl
+
 /-- WS-SM SM5.A.1: per-core thread selection (plan
 WS-SM SM5 §3.1).
 
@@ -866,11 +886,25 @@ lifted into the `Kernel` monad.  Returns `Except KernelError (Option
 ThreadId)` for the same fail-closed reason as `chooseThreadOnCore`. -/
 def chooseThreadEffectiveOnCore (st : SystemState) (c : CoreId) :
     Except KernelError (Option SeLe4n.ThreadId) :=
-  match chooseBestInBucketEffective st (st.scheduler.runQueueOnCore c)
+  match chooseBestInWalksEffective st (st.runMaxBucketWalk c) (st.runQueueWalk c)
       (st.scheduler.activeDomainOnCore c) with
   | .error e => .error e
   | .ok none => .ok none
   | .ok (some (tid, _, _)) => .ok (some tid)
+
+/-- WS-ZA ZA4.5: the selection walks the threads' run-queue links; where they
+agree with core `c`'s queue (`runQueueRefinedOnCore`) it is the bucket-first
+scan of the queue itself. -/
+theorem chooseThreadEffectiveOnCore_eq_queue {st : SystemState} {c : CoreId}
+    (hR : st.runQueueRefinedOnCore c) :
+    chooseThreadEffectiveOnCore st c =
+      match chooseBestInBucketEffective st (st.scheduler.runQueueOnCore c)
+          (st.scheduler.activeDomainOnCore c) with
+      | .error e => .error e
+      | .ok none => .ok none
+      | .ok (some (tid, _, _)) => .ok (some tid) := by
+  unfold chooseThreadEffectiveOnCore
+  rw [hR.runMaxBucketWalk_eq, hR.runQueueWalk_eq]; rfl
 
 /-- WS-ZA ZA4.5: **the selection scan with the best candidate in scalars.**
 `chooseBestRunnableEffective` carries the best candidate as an
@@ -928,12 +962,11 @@ theorem chooseBestRunnableEffectiveCode_eq (st : SystemState) (eligible : TCB �
 `chooseBestInBucketEffective` run through `chooseBestRunnableEffectiveCode`
 (`chooseThreadEffectiveOnCore_eq_code`). -/
 def chooseThreadEffectiveOnCoreCode (st : SystemState) (c : CoreId) : Nat :=
-  let rq := st.scheduler.runQueueOnCore c
   let dom := st.scheduler.activeDomainOnCore c
   match chooseBestRunnableEffectiveCode st (fun tcb => tcb.domain == dom)
-      rq.maxPriorityBucket false default default default with
+      (st.runMaxBucketWalk c) false default default default with
   | 0 => chooseBestRunnableEffectiveCode st (fun tcb => tcb.domain == dom)
-      rq.toList false default default default
+      (st.runQueueWalk c) false default default default
   | k => k
 
 theorem chooseThreadEffectiveOnCore_eq_code (st : SystemState) (c : CoreId) :
@@ -941,19 +974,19 @@ theorem chooseThreadEffectiveOnCore_eq_code (st : SystemState) (c : CoreId) :
       match chooseThreadEffectiveOnCoreCode st c with
       | 0 => .ok none
       | k + 1 => .ok (some ⟨k⟩) := by
-  unfold chooseThreadEffectiveOnCore chooseBestInBucketEffective chooseThreadEffectiveOnCoreCode
+  unfold chooseThreadEffectiveOnCore chooseBestInWalksEffective chooseThreadEffectiveOnCoreCode
     chooseBestRunnableInDomainEffective
   simp only [chooseBestRunnableEffectiveCode_eq, Bool.false_eq_true, if_false]
   obtain ⟨r1, h1⟩ := chooseBestRunnableEffective_always_ok st
     (fun tcb => tcb.domain == st.scheduler.activeDomainOnCore c)
-    (st.scheduler.runQueueOnCore c).maxPriorityBucket none
+    (st.runMaxBucketWalk c) none
   rw [h1]
   cases r1 with
   | some r => obtain ⟨t, p, d⟩ := r; rfl
   | none =>
     obtain ⟨r2, h2⟩ := chooseBestRunnableEffective_always_ok st
       (fun tcb => tcb.domain == st.scheduler.activeDomainOnCore c)
-      (st.scheduler.runQueueOnCore c).toList none
+      (st.runQueueWalk c) none
     rw [h2]
     cases r2 with
     | some r => obtain ⟨t, p, d⟩ := r; rfl
@@ -984,75 +1017,78 @@ theorem resolveEffectivePrioDeadline_eq (st : SystemState) (tcb : TCB) :
   | bound scId => cases hs : st.getSchedContext? scId <;> simp [hs]
   | donated scId _ => cases hs : st.getSchedContext? scId <;> simp [hs]
 
-/-- WS-ZA ZA4.5: **the code scan walking a run queue's links.**  The scan
-`chooseBestRunnableEffectiveCode` runs over the threads in the domain `dom`,
-read one entry at a time from the link table `links` — along the bucket links
-when `bucket` holds, else along the queue links — from code `c` for at most `n`
-steps, with no list and no closure built (`chooseOnLinksCode_eq`). -/
-def chooseOnLinksCode (st : SystemState) (dom : SeLe4n.DomainId)
-    (links : RobinHood.RHTable SeLe4n.ThreadId RunQueueLink) (bucket : Bool) :
+/-- WS-ZA ZA4.5: **the code scan walking the threads' run-queue links.**  The
+scan `chooseBestRunnableEffectiveCode` runs over the threads in the domain
+`dom`, each read once from the object store with its link on core `c` read off
+the same TCB — along the bucket links when `bucket` holds, else along the
+queue links — from code `k` for at most `n` steps, with no list and no closure
+built (`chooseOnLinksCode_eq`). -/
+def chooseOnLinksCode (st : SystemState) (dom : SeLe4n.DomainId) (c : CoreId) (bucket : Bool) :
     Nat → Nat → Bool → SeLe4n.ThreadId → SeLe4n.Priority → SeLe4n.Deadline → Nat
   | 0, _, found, bt, _, _ => if found then bt.val + 1 else 0
   | _ + 1, 0, found, bt, _, _ => if found then bt.val + 1 else 0
-  | n + 1, c + 1, found, bt, bp, bd =>
-      let tid : SeLe4n.ThreadId := ⟨c⟩
-      let lk := RunQueue.linkOf links tid
-      let nx := if bucket then lk.bucketNext else lk.next
+  | n + 1, k + 1, found, bt, bp, bd =>
+      let tid : SeLe4n.ThreadId := ⟨k⟩
       match st.getTcb? tid with
       | some tcb =>
+          let lk := tcb.runLinkOn c
+          let nx := if bucket then lk.bucketNext else lk.next
           if (tcb.domain == dom) && hasSufficientBudget st tcb then
             let pp := tcb.priority.raisedBy tcb.pipBoost
             let pdl := effectiveDeadlineOf st tcb
             if !found || isBetterCandidate bp bd pp pdl then
-              chooseOnLinksCode st dom links bucket n nx true tid pp pdl
-            else chooseOnLinksCode st dom links bucket n nx found bt bp bd
-          else chooseOnLinksCode st dom links bucket n nx found bt bp bd
-      | none => chooseOnLinksCode st dom links bucket n nx found bt bp bd
+              chooseOnLinksCode st dom c bucket n nx true tid pp pdl
+            else chooseOnLinksCode st dom c bucket n nx found bt bp bd
+          else chooseOnLinksCode st dom c bucket n nx found bt bp bd
+      | none => chooseOnLinksCode st dom c bucket n 0 found bt bp bd
 
-theorem chooseOnLinksCode_eq (st : SystemState) (dom : SeLe4n.DomainId)
-    (links : RobinHood.RHTable SeLe4n.ThreadId RunQueueLink) (bucket : Bool) (n c : Nat)
+theorem chooseOnLinksCode_eq (st : SystemState) (dom : SeLe4n.DomainId) (c : CoreId)
+    (bucket : Bool) (n k : Nat)
     (found : Bool) (bt : SeLe4n.ThreadId) (bp : SeLe4n.Priority) (bd : SeLe4n.Deadline) :
-    chooseOnLinksCode st dom links bucket n c found bt bp bd =
+    chooseOnLinksCode st dom c bucket n k found bt bp bd =
       chooseBestRunnableEffectiveCode st (fun tcb => tcb.domain == dom)
-        (LinkedQueue.walk (fun t => if bucket then (RunQueue.linkOf links t).bucketNext
-          else (RunQueue.linkOf links t).next) n c) found bt bp bd := by
-  induction n generalizing c found bt bp bd with
+        (LinkedQueue.walk (fun t => if bucket then (st.runLinkOn c t).bucketNext
+          else (st.runLinkOn c t).next) n k) found bt bp bd := by
+  induction n generalizing k found bt bp bd with
   | zero => rfl
   | succ n ih =>
-    cases c with
+    cases k with
     | zero => rfl
-    | succ c =>
-      simp only [chooseOnLinksCode, LinkedQueue.walk, chooseBestRunnableEffectiveCode, ih,
-        resolveEffectivePrioDeadline_eq]
+    | succ k =>
+      cases hT : st.getTcb? ⟨k⟩ with
+      | none =>
+        have hL : st.runLinkOn c ⟨k⟩ = RunQueue.RunQueueLink.none := by
+          unfold SystemState.runLinkOn; rw [hT]
+        simp only [chooseOnLinksCode, LinkedQueue.walk, chooseBestRunnableEffectiveCode, hT, ih,
+          hL]
+        cases bucket <;> rfl
+      | some tcb =>
+        have hL : st.runLinkOn c ⟨k⟩ = tcb.runLinkOn c := by
+          unfold SystemState.runLinkOn; rw [hT]
+        simp only [chooseOnLinksCode, LinkedQueue.walk, chooseBestRunnableEffectiveCode, ih, hT,
+          hL, resolveEffectivePrioDeadline_eq]
 
-/-- WS-ZA ZA4.5: core `c`'s selection code read straight off the run queue's
-links: the max-priority bucket through its bucket links, then the whole queue
-through its queue links, each bounded by the queue's size.  Equal to
-`chooseThreadEffectiveOnCoreCode` (`chooseThreadEffectiveOnCoreCode_eq_walk`),
-which the compiler runs in its place. -/
+/-- WS-ZA ZA4.5: core `c`'s selection code read straight off the threads'
+run-queue links and the core's ends: the max-priority bucket through its
+bucket links, then the whole queue through its queue links, each bounded by the
+queue's size.  Equal to `chooseThreadEffectiveOnCoreCode`
+(`chooseThreadEffectiveOnCoreCode_eq_walk`), which the compiler runs in its
+place. -/
 def chooseThreadEffectiveOnCoreCodeWalk (st : SystemState) (c : CoreId) : Nat :=
-  let rq := st.scheduler.runQueueOnCore c
+  let e := st.scheduler.runQueueEndsOnCore c
   let dom := st.scheduler.activeDomainOnCore c
-  let bucketHead := if rq.maxCode = 0 then 0
-    else (RunQueue.endsOf rq.buckets ⟨rq.maxCode - 1⟩).head
-  match chooseOnLinksCode st dom rq.links true rq.size bucketHead false default default default with
-  | 0 => chooseOnLinksCode st dom rq.links false rq.size rq.head false default default default
+  let bucketHead := if e.maxCode = 0 then 0
+    else (RunQueue.endsOf e.buckets ⟨e.maxCode - 1⟩).head
+  match chooseOnLinksCode st dom c true e.size bucketHead false default default default with
+  | 0 => chooseOnLinksCode st dom c false e.size e.head false default default default
   | k => k
 
 @[csimp] theorem chooseThreadEffectiveOnCoreCode_eq_walk :
     @chooseThreadEffectiveOnCoreCode = @chooseThreadEffectiveOnCoreCodeWalk := by
   funext st c
   unfold chooseThreadEffectiveOnCoreCode chooseThreadEffectiveOnCoreCodeWalk
+    SystemState.runMaxBucketWalk SystemState.runQueueWalk
   simp only [chooseOnLinksCode_eq, Bool.false_eq_true, if_true, if_false]
-  have hB : (st.scheduler.runQueueOnCore c).maxPriorityBucket =
-      LinkedQueue.walk (fun t => (RunQueue.linkOf (st.scheduler.runQueueOnCore c).links t).bucketNext)
-        (st.scheduler.runQueueOnCore c).size
-        (if (st.scheduler.runQueueOnCore c).maxCode = 0 then 0
-          else (RunQueue.endsOf (st.scheduler.runQueueOnCore c).buckets
-            ⟨(st.scheduler.runQueueOnCore c).maxCode - 1⟩).head) := by
-    unfold RunQueue.maxPriorityBucket RunQueue.maxPriority RunQueue.atPriority
-    split <;> simp_all
-  rw [hB]; rfl
 
 /-- Z4-D/E: SchedContext-aware thread selection.
 
@@ -1086,7 +1122,8 @@ theorem chooseThreadEffective_preserves_state
     (hStep : chooseThreadEffective st = .ok (next, st')) :
     st' = st := by
   unfold chooseThreadEffective chooseThreadEffectiveOnCore at hStep
-  cases hPick : chooseBestInBucketEffective st (st.scheduler.runQueueOnCore bootCoreId) (st.scheduler.activeDomainOnCore bootCoreId) with
+  cases hPick : chooseBestInWalksEffective st (st.runMaxBucketWalk bootCoreId)
+      (st.runQueueWalk bootCoreId) (st.scheduler.activeDomainOnCore bootCoreId) with
   | error e => simp [hPick] at hStep
   | ok best =>
       cases best with
@@ -2166,6 +2203,19 @@ def descheduleAtPlacementCores (st : SystemState) (tid : SeLe4n.ThreadId) : List
   | some c => [c]
   | none => []
 
+/-- WS-ZA ZA4.5: the dequeue keeps the run queues in agreement with the links. -/
+theorem removeRunnableOnCore_runQueueStage (st : SystemState) (tid : SeLe4n.ThreadId)
+    (c : CoreId) : SystemState.RunQueueStage st (removeRunnableOnCore st tid c) :=
+  SystemState.RunQueueStage.runDescheduleOnCore st c tid
+
+/-- ...and so does the removal at a resolved placement, on either arm. -/
+theorem descheduleAt_runQueueStage (st : SystemState) (tid : SeLe4n.ThreadId)
+    (placed : Option CoreId) : SystemState.RunQueueStage st (descheduleAt st tid placed) := by
+  unfold descheduleAt
+  cases placed with
+  | none => exact SystemState.RunQueueStage.refl st
+  | some c => exact removeRunnableOnCore_runQueueStage st tid c
+
 
 /-- WS-RR RR2.9 (frame): descheduling a thread on a core writes that core's run
 queue and current slot and nothing else — in particular **no** replenish queue.
@@ -2586,40 +2636,6 @@ theorem descheduleAtPlacement_unplaced (st : SystemState) (tid : SeLe4n.ThreadId
         · exact Or.inr (by simpa using h2)
       exact ⟨fun hMem => hc (hUnique c p (Or.inl hMem) hPlacedP),
              fun hCurC => hc (hUnique c p (Or.inr hCurC) hPlacedP)⟩
-
-/-- `v0.35.158`: a removal keeps every core's run queue well-formed — the removed
-core's by `RunQueue.remove_preserves_wellFormed`, every other core's because it is
-untouched.  Stated per core rather than at the removed core alone, because a
-consumer transporting well-formedness through a pipeline holds it at ONE core
-(the executing core, whose scheduling point reads it) and the removal may be at
-another. -/
-theorem removeRunnableOnCore_preserves_runQueueOnCore_wellFormed (st : SystemState)
-    (tid : SeLe4n.ThreadId) (c c' : CoreId)
-    (hwf : (st.scheduler.runQueueOnCore c').wellFormed) :
-    ((removeRunnableOnCore st tid c).scheduler.runQueueOnCore c').wellFormed := by
-  by_cases hc : c = c'
-  · subst hc
-    rw [removeRunnableOnCore_runQueueOnCore_self]
-    exact RunQueue.remove_preserves_wellFormed _ hwf tid
-  · rw [removeRunnableOnCore_runQueueOnCore_ne st tid c c' hc]
-    exact hwf
-
-/-- `v0.35.158`: ...and so does a removal at a pre-resolved placement. -/
-theorem descheduleAt_preserves_runQueueOnCore_wellFormed (st : SystemState)
-    (tid : SeLe4n.ThreadId) (placed : Option CoreId) (c' : CoreId)
-    (hwf : (st.scheduler.runQueueOnCore c').wellFormed) :
-    ((descheduleAt st tid placed).scheduler.runQueueOnCore c').wellFormed := by
-  unfold descheduleAt
-  cases placed with
-  | none => exact hwf
-  | some c => exact removeRunnableOnCore_preserves_runQueueOnCore_wellFormed st tid c c' hwf
-
-/-- `v0.35.158`: ...and the state-resolved one. -/
-theorem descheduleAtPlacement_preserves_runQueueOnCore_wellFormed (st : SystemState)
-    (tid : SeLe4n.ThreadId) (c' : CoreId)
-    (hwf : (st.scheduler.runQueueOnCore c').wellFormed) :
-    ((descheduleAtPlacement st tid).scheduler.runQueueOnCore c').wellFormed :=
-  descheduleAt_preserves_runQueueOnCore_wellFormed st tid _ c' hwf
 
 /-- `v0.35.158`: the state-resolved removal of one thread places no OTHER thread
 differently — the removal clears a current slot only where it held the removed

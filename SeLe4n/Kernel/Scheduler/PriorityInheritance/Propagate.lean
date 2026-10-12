@@ -208,6 +208,43 @@ theorem updatePipBoostOnCore_preserves_objects_invExt (st : SystemState) (c : Co
       · rw [markKeyChangeFor_objects]; exact RHTable_insert_preserves_invExt st.objects tid.toObjId _ hInv
   · exact hInv
 
+/-- WS-ZA ZA4.5: the boost keeps the run queues in agreement with the links.  Its
+TCB write changes `pipBoost` alone, its re-key moves a thread the queue holds
+(under the agreement, one the core's links queue), and its flags are read by
+nothing the agreement reads. -/
+theorem updatePipBoostOnCore_runQueueStage (st : SystemState) (c : CoreId) (tid : ThreadId) :
+    SystemState.RunQueueStage st (updatePipBoostOnCore st c tid) := by
+  intro hInv hR
+  cases hT : st.getTcb? tid with
+  | none =>
+    unfold updatePipBoostOnCore
+    rw [SystemState.getTcbWitnessed?_eq_none hT]
+    exact ⟨hInv, hR⟩
+  | some tcb =>
+    unfold updatePipBoostOnCore
+    simp only [SystemState.getTcbWitnessed?_eq_some hT]
+    by_cases hb : (tcb.pipBoost == computeMaxWaiterPriority st tid) = true
+    · simp only [hb, if_true]; exact ⟨hInv, hR⟩
+    · simp only [hb, Bool.false_eq_true, if_false]
+      have hW : SystemState.RunQueueStage st
+          (st.rewriteObject tid.toObjId (.tcb { tcb with pipBoost := computeMaxWaiterPriority st tid })
+            (SystemState.rewriteAdmissible_tcb hT _)) :=
+        fun hInv hR => ⟨SystemState.rewriteObject_preserves_objects_invExt _ _ _ _ hInv,
+          SystemState.rewriteObject_tcb_runQueueRefined _ hInv hT (fun _ => rfl) hR⟩
+      obtain ⟨hInv1, hR1⟩ := hW hInv hR
+      split
+      · rename_i hMem
+        have hq : ((st.rewriteObject tid.toObjId
+            (.tcb { tcb with pipBoost := computeMaxWaiterPriority st tid })
+            (SystemState.rewriteAdmissible_tcb hT _)).runLinkOn c tid).queued = true := by
+          rw [(hR1 c).contains]
+          exact RunQueue.mem_iff_contains.mp hMem
+        split
+        · exact ((SystemState.RunQueueStage.runRequeueOnCore _ c tid _ hq).trans
+            (markKeyChangeFor_runQueueStage _ _ _)) hInv1 hR1
+        · exact markKeyChangeFor_runQueueStage _ _ _ hInv1 hR1
+      · exact markKeyChangeFor_runQueueStage _ _ _ hInv1 hR1
+
 -- ============================================================================
 -- D4-H: propagatePriorityInheritance (chain walk)
 -- ============================================================================
@@ -711,6 +748,21 @@ theorem propagatePipChainCrossCore_preserves_objects_invExt (st : SystemState)
     | none => exact hNext
     | some nextServer => exact ih _ nextServer hNext
 
+/-- WS-ZA ZA4.5: the chain walk keeps the run queues in agreement with the links,
+one boost at a time. -/
+theorem propagatePipChainCrossCore_runQueueStage (st : SystemState) (tid : ThreadId)
+    (ec : CoreId) (fuel : Nat) :
+    SystemState.RunQueueStage st (propagatePipChainCrossCore st tid ec fuel).1 := by
+  induction fuel generalizing st tid with
+  | zero => rw [propagatePipChainCrossCore_zero]; exact .refl st
+  | succ n ih =>
+    rw [propagatePipChainCrossCore_step]
+    have hNext : SystemState.RunQueueStage st (pipBoostWithWake st tid ec).1 := by
+      rw [pipBoostWithWake_state]; exact updatePipBoostOnCore_runQueueStage st _ tid
+    cases blockingServer st tid with
+    | none => exact hNext
+    | some nextServer => exact hNext.trans (ih _ nextServer)
+
 /-- `repropagateFromWaiter` is the identity or one full chain walk — the case
 split every preservation proof of it reduces to, so each property a chain walk
 preserves transfers without unfolding the `match` at the call site. -/
@@ -1159,68 +1211,6 @@ theorem propagatePipChainCrossCore_currentOnCore :
           simp only at hTail ⊢
           rw [hTail]
           exact pipBoostWithWake_currentOnCore st startTid ec c'
-
--- ============================================================================
--- `v0.35.158` — the walk keeps every run queue well-formed
--- ============================================================================
---
--- The boost migrates a run-queue *bucket* by a `remove` followed by an `insert`,
--- both of which preserve `RunQueue.wellFormed`; every other core's queue is
--- untouched.  Needed by the suspend pipeline's placement payoff
--- (`suspendThreadOnCore_holder_unplaced`), whose scheduling point reads the
--- executing core's queue through the chooser and needs it well-formed there.
-
-/-- `v0.35.158`: the per-core boost keeps every core's run queue well-formed. -/
-theorem updatePipBoostOnCore_preserves_runQueueOnCore_wellFormed (st : SystemState)
-    (c : CoreId) (tid : ThreadId) (c' : CoreId)
-    (hwf : (st.scheduler.runQueueOnCore c').wellFormed) :
-    ((updatePipBoostOnCore st c tid).scheduler.runQueueOnCore c').wellFormed := by
-  simp only [updatePipBoostOnCore, SystemState.rewriteObject_scheduler]
-  split
-  · split
-    · exact hwf
-    · split
-      · split
-        · rw [markKeyChangeFor_runQueueOnCore, SystemState.runRequeueOnCore_scheduler,
-            SystemState.rewriteObject_scheduler]
-          by_cases hcc : c = c'
-          · subst hcc
-            rw [SchedulerState.setRunQueueOnCore_runQueueOnCore_self]
-            exact RunQueue.insert_preserves_wellFormed _
-              (RunQueue.remove_preserves_wellFormed _ hwf tid) tid _
-          · rw [SchedulerState.setRunQueueOnCore_runQueueOnCore_ne _ c c' _ hcc,
-              SchedulerState.setRunQueueEndsOnCore_runQueueOnCore]
-            exact hwf
-        · rw [markKeyChangeFor_runQueueOnCore]; exact hwf
-      · rw [markKeyChangeFor_runQueueOnCore]; exact hwf
-  · exact hwf
-
-/-- `v0.35.158`: ...and so does the boost-with-wake step. -/
-theorem pipBoostWithWake_preserves_runQueueOnCore_wellFormed (st : SystemState)
-    (tid : ThreadId) (ec c' : CoreId)
-    (hwf : (st.scheduler.runQueueOnCore c').wellFormed) :
-    ((pipBoostWithWake st tid ec).1.scheduler.runQueueOnCore c').wellFormed := by
-  rw [pipBoostWithWake_state]
-  exact updatePipBoostOnCore_preserves_runQueueOnCore_wellFormed st _ tid c' hwf
-
-/-- `v0.35.158`: ...and the whole walk, by induction on its fuel. -/
-theorem propagatePipChainCrossCore_preserves_runQueueOnCore_wellFormed :
-    ∀ (fuel : Nat) (st : SystemState) (startTid : ThreadId) (ec c' : CoreId),
-      (st.scheduler.runQueueOnCore c').wellFormed →
-      ((propagatePipChainCrossCore st startTid ec fuel).1.scheduler.runQueueOnCore c').wellFormed
-  | 0, st, startTid, ec, c', hwf => by
-      rw [propagatePipChainCrossCore_zero]; exact hwf
-  | n + 1, st, startTid, ec, c', hwf => by
-      rw [propagatePipChainCrossCore_step]
-      simp only
-      cases hb : blockingServer st startTid with
-      | none =>
-          simpa using pipBoostWithWake_preserves_runQueueOnCore_wellFormed st startTid ec c' hwf
-      | some nextServer =>
-          have hTail := propagatePipChainCrossCore_preserves_runQueueOnCore_wellFormed n
-            (pipBoostWithWake st startTid ec).1 nextServer ec c'
-            (pipBoostWithWake_preserves_runQueueOnCore_wellFormed st startTid ec c' hwf)
-          simpa using hTail
 
 -- ============================================================================
 -- WS-RR RR8.16 (`v0.35.197`) — the walk keeps every run queue duplicate-free,

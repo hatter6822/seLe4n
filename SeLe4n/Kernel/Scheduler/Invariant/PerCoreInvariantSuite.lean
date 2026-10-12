@@ -3180,8 +3180,8 @@ theorem updatePipBoost_preserves_runQueueSafetyOnCore (st : SystemState)
     (tid : SeLe4n.ThreadId) (c : CoreId) (hInv : st.objects.invExt)
     (h : runQueueSafetyOnCore st c) :
     runQueueSafetyOnCore (updatePipBoost st tid) c := by
-  obtain ⟨hRat, hWf, hNd⟩ := h
-  refine ⟨?_, updatePipBoostOnCore_preserves_runQueueOnCore_wellFormed st bootCoreId tid c hWf,
+  obtain ⟨hRat, _, hNd⟩ := h
+  refine ⟨?_, RunQueue.wellFormed_holds _,
     updatePipBoostOnCore_runQueueUniqueOnCore st bootCoreId tid c hNd⟩
   intro t ht
   have hm : t ∈ st.scheduler.runQueueOnCore c :=

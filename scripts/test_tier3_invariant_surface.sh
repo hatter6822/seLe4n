@@ -4383,11 +4383,14 @@ run_check "INVARIANT" rg -n '^theorem stageCallerReturn_stages_switched_out($|[ 
 # The fault entry's progress obligation, discharged on the live dispatch.
 run_check "INVARIANT" rg -n '^theorem handleRescheduleSgiOnCore_preserves_not_dispatchable($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/FaultProgress.lean
 run_check "INVARIANT" rg -n '^theorem switchToThreadOnCore_preserves_not_dispatchable_onCore($|[ ({:\[\]])' SeLe4n/Kernel/Scheduler/Operations/Core.lean
-# ...and it needs nothing of the queue: the chooser's pick is a member of any
-# run queue (`RunQueue.bucket_wf`), so the theorem takes no well-formedness and
-# none is stated of the delivered state.
-run_check "INVARIANT" rg -n -U '^    \(tid : SeLe4n\.ThreadId\) \(hCur : st\.scheduler\.currentOnCore c = some tid\) :\n    ¬ dispatchableOnCore \(faultEntryDeliver ' SeLe4n/Kernel/FaultEntry.lean
+# ...and it needs of the queue only the kernel-wide link agreement, stated of
+# the pre-state: the chooser walks the run-queue links, the delivery keeps the
+# agreement (`faultDeliveredState_runQueueStage`), and nothing is stated of the
+# delivered state.
+run_check "INVARIANT" rg -n -U '^    \(tid : SeLe4n\.ThreadId\) \(hCur : st\.scheduler\.currentOnCore c = some tid\)\n    \(hInv : st\.objects\.invExt\) \(hR : st\.runQueueRefined\) :\n    ¬ dispatchableOnCore \(faultEntryDeliver ' SeLe4n/Kernel/FaultEntry.lean
+run_check "INVARIANT" rg -n '^theorem faultDeliveredState_runQueueStage($|[ ({:\[\]])' SeLe4n/Kernel/FaultEntry.lean
 run_negative_check "INVARIANT" rg -n 'runQueueOnCoreWellFormed \(faultDeliveredState' SeLe4n/Kernel/FaultEntry.lean
+run_negative_check "INVARIANT" rg -n 'runQueueRefined[A-Za-z]* \(faultDeliveredState|\(faultDeliveredState [^)]*\)\.runQueueRefined' SeLe4n/Kernel/FaultEntry.lean
 run_check "INVARIANT" rg -n -U '^  Platform\.FFI\.restoreTrapFrame r\.2\.2\.1\n  Concurrency\.recordCommittedCurrentThreadHw r\.2\.1$' SeLe4n/Kernel/PerCoreTimerEntry.lean
 run_check "INVARIANT" rg -n -U '^  Platform\.FFI\.restoreTrapFrame record\.2\.1\n  Concurrency\.recordCommittedCurrentThreadHw record\.1$' SeLe4n/Kernel/PerCoreRescheduleEntry.lean
 run_check "INVARIANT" rg -n '^    if SeLe4n\.Kernel\.isIdleThreadId tid then \.idle$' SeLe4n/Kernel/Architecture/ContextRestore.lean
@@ -11779,20 +11782,20 @@ run_check "INVARIANT" rg -n '^theorem getSchedContext\?_eq_of_kind_iff \{' SeLe4
 run_check "INVARIANT" rg -n '^theorem map_tcbField_eq_of_refines \{' SeLe4n/Model/State.lean
 run_negative_check "INVARIANT" rg -n 'map_cpuAffinity_eq_of_refines' SeLe4n/
 # The splice's affinity frame, beside the two readings its proof composes.
-run_check "INVARIANT" rg -n '^theorem spliceOutMidQueueNode_affinity_frame \(' SeLe4n/Kernel/Lifecycle/Operations/CleanupPreservation.lean
+run_check "INVARIANT" rg -n '^theorem spliceOutMidQueueNode_placement_frame \(' SeLe4n/Kernel/Lifecycle/Operations/CleanupPreservation.lean
 # Each sweep's pair, beside that sweep's own `non…` biconditional.
 run_check "INVARIANT" rg -n '^theorem removeFromAllEndpointQueues_getSchedContext\?_eq \(' SeLe4n/Kernel/Lifecycle/Invariant/CancellationQueueShape.lean
-run_check "INVARIANT" rg -n '^theorem removeFromAllEndpointQueues_affinity_frame \(' SeLe4n/Kernel/Lifecycle/Invariant/CancellationQueueShape.lean
+run_check "INVARIANT" rg -n '^theorem removeFromAllEndpointQueues_placement_frame \(' SeLe4n/Kernel/Lifecycle/Invariant/CancellationQueueShape.lean
 run_check "INVARIANT" rg -n '^theorem removeFromNotificationWaitQueue_getSchedContext\?_eq \(' SeLe4n/Kernel/Lifecycle/Invariant/CancellationNotificationShape.lean
 # WS-ZA ZA4.4: the unlink rewrites queue links, so its TCB frame is a field frame.
 run_check "INVARIANT" rg -n '^theorem removeFromNotificationWaitQueue_tcbField_frame \{' SeLe4n/Kernel/Lifecycle/Operations/CleanupPreservation.lean
-run_check "INVARIANT" rg -n '^theorem removeFromNotificationWaitQueue_affinity_frame \(' SeLe4n/Kernel/Lifecycle/Invariant/CancellationNotificationShape.lean
+run_check "INVARIANT" rg -n '^theorem removeFromNotificationWaitQueue_placement_frame \(' SeLe4n/Kernel/Lifecycle/Invariant/CancellationNotificationShape.lean
 # NEGATIVE: none of the five may come back as a private copy in the bundle they
 # left.  Scoped to that file, because each is LIVE at its new home; the §4
 # tombstone names them in prose, which the code view strips.  Mutation: restore
 # any one of the deleted declarations there as code.
 run_negative_check "INVARIANT" rg -n 'getSchedContext\?_of_kind_iff|map_affinity_of_refines' SeLe4n/Kernel/IPC/Invariant/CancellationBundle.lean
-run_negative_check "INVARIANT" rg -n '^private theorem (spliceOutMidQueueNode_affinity_frame|removeFromAllEndpointQueues_getSchedContext\?_eq|removeFromAllEndpointQueues_affinity_frame|removeFromNotificationWaitQueue_getSchedContext\?_eq|removeFromNotificationWaitQueue_affinity_frame) ' SeLe4n/Kernel/IPC/Invariant/CancellationBundle.lean
+run_negative_check "INVARIANT" rg -n '^private theorem (spliceOutMidQueueNode_placement_frame|removeFromAllEndpointQueues_getSchedContext\?_eq|removeFromAllEndpointQueues_placement_frame|removeFromNotificationWaitQueue_getSchedContext\?_eq|removeFromNotificationWaitQueue_placement_frame) ' SeLe4n/Kernel/IPC/Invariant/CancellationBundle.lean
 # The SMP whole-store frame, beside its per-core original and its congruence
 # sibling -- what a step writing NO object at all reaches for.
 run_check "INVARIANT" rg -n '^theorem replenishQueueAffinityConsistent_smp_frame \{' SeLe4n/Kernel/SchedContext/ReplenishAffinity.lean
@@ -11856,7 +11859,7 @@ run_check "INVARIANT" bash -lc 'rg -U -n "^theorem schedContextBindingConsistent
 # instances -- the affinity one `determineTargetCore_congr` consumes and the
 # binding one `schedContextBindingConsistent_transfer` does.
 run_check "INVARIANT" rg -n '^theorem spliceOutMidQueueNode_tcbField_frame \{' SeLe4n/Kernel/Lifecycle/Operations/CleanupPreservation.lean
-run_check "INVARIANT" bash -lc 'rg -U -n "^theorem spliceOutMidQueueNode_affinity_frame[^\n]*(\n([ \t][^\n]*)?)*spliceOutMidQueueNode_tcbField_frame" SeLe4n/Kernel/Lifecycle/Operations/CleanupPreservation.lean'
+run_check "INVARIANT" bash -lc 'rg -U -n "^theorem spliceOutMidQueueNode_placement_frame[^\n]*(\n([ \t][^\n]*)?)*spliceOutMidQueueNode_tcbField_frame" SeLe4n/Kernel/Lifecycle/Operations/CleanupPreservation.lean'
 run_check "INVARIANT" bash -lc 'rg -U -n "^theorem spliceOutMidQueueNode_binding_frame[^\n]*(\n([ \t][^\n]*)?)*spliceOutMidQueueNode_tcbField_frame" SeLe4n/Kernel/Lifecycle/Operations/CleanupPreservation.lean'
 # The splice's TCB rewrite relation, which is what makes one owner possible: the
 # splice writes THREE link fields and nothing else, so an arbitrary projection
@@ -17783,7 +17786,7 @@ run_negative_check "INVARIANT" bash -lc 'rg -U -n "^theorem cancelIpcBlockingMig
 # thread's home the teardown moves has ONE owner: the general form in
 # CancellationBundle, not a victim-specialised copy back in Cancellation.lean.
 run_check "INVARIANT" rg -n '^theorem cancelIpcBlocking_getSchedContext\?_ne' SeLe4n/Kernel/IPC/Invariant/CancellationBundle.lean
-run_check "INVARIANT" rg -n '^theorem cancelIpcBlocking_affinity_frame($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/CancellationBundle.lean
+run_check "INVARIANT" rg -n '^theorem cancelIpcBlocking_placement_frame($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/CancellationBundle.lean
 run_negative_check "INVARIANT" rg -n '^theorem cancelIpcBlocking_determineTargetCore_eq' SeLe4n/Kernel/IPC/CrossCore/Cancellation.lean
 run_check "INVARIANT" rg -n '^theorem cancelIpcBlocking_determineTargetCore_eq($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/CancellationBundle.lean
 # The witness that makes the flip a measurement rather than a claim: the retired
@@ -17949,37 +17952,44 @@ run_check "INVARIANT" rg -n 'lake build SeLe4n\.Testing\.KernelTransitionReachab
 # about the state the transition ends in.  (Until `v0.35.158` the section lifted
 # the opposite fact, that OD1.7's wake left the holder PLACED;
 # `suspendThreadOnCore_holder_still_placed` is retired with the wake.)
-run_check "INVARIANT" bash -lc 'rg -U -n "^theorem suspendThreadOnCore_holder_unplaced[^\n]*(\n([ \t][^\n]*)?)*threadPlacedOnSomeCore st. holder = false := by" SeLe4n/Kernel/IPC/CrossCore/Cancellation.lean'
+run_check "INVARIANT" bash -lc 'rg -U -n "^theorem suspendThreadOnCore_holder_unplaced[^\n]*(\n([ \t][^\n]*)?)*threadPlacedOnSomeCore st. holder = false := by" SeLe4n/Kernel/IPC/Invariant/CancellationBundle.lean'
 # Relation, not presence: the holder-is-not-the-victim fact -- which is what
 # licenses G4 to leave the holder alone -- is DERIVED inside the payoff, not
 # taken as a hypothesis.  `suspendThreadOnCore` asserted it in a comment for
 # three cuts; a sentence in a comment is not a licence.
 run_check "INVARIANT" rg -n '^theorem cancelUnboundHolder\?_ne_victim' SeLe4n/Kernel/Lifecycle/Suspend.lean
-run_check "INVARIANT" bash -lc 'rg -U -n "^theorem suspendThreadOnCore_holder_unplaced[^\n]*(\n([ \t][^\n]*)?)*cancelUnboundHolder\?_ne_victim st _ vtid\.val tcb holder hW" SeLe4n/Kernel/IPC/CrossCore/Cancellation.lean'
+run_check "INVARIANT" bash -lc 'rg -U -n "^theorem suspendThreadOnCore_holder_unplaced[^\n]*(\n([ \t][^\n]*)?)*cancelUnboundHolder\?_ne_victim st _ vtid\.val tcb holder hW" SeLe4n/Kernel/IPC/Invariant/CancellationBundle.lean'
 # ...and it is structural in the trigger, which asks the holder's post-teardown
 # binding to be `.unbound` and the victim's not to be: one thread cannot answer
-# both, so the payoff needs no lookup of the victim to derive it.
-run_negative_check "INVARIANT" bash -lc 'rg -U -n "^theorem suspendThreadOnCore_holder_unplaced[^\n]*(\n([ \t][^\n]*)?)*\(hObjInv : st\.objects\.invExt\)" SeLe4n/Kernel/IPC/CrossCore/Cancellation.lean'
+# both, so the payoff needs no lookup of the victim to derive it.  (WS-ZA ZA4.5:
+# the payoff does take the object-store invariant now, for a different reason --
+# the run queues' agreement with the threads' links is carried stage by stage to
+# the scheduling point, and each stage needs its predecessor's store invariant.
+# The relation pinned is that the agreement reaches the scheduling point.)
+run_check "INVARIANT" bash -lc 'rg -U -n "^theorem suspendThreadOnCore_holder_unplaced[^\n]*(\n([ \t][^\n]*)?)*\(hInv : st\.objects\.invExt\) \(hR : st\.runQueueRefined\)" SeLe4n/Kernel/IPC/Invariant/CancellationBundle.lean'
+run_check "INVARIANT" bash -lc 'rg -U -n "^theorem suspendThreadOnCore_holder_unplaced[^\n]*(\n([ \t][^\n]*)?)*suspendRescheduleOnCore_preserves_unplaced[^\n]*(\n([ \t][^\n]*)?)*\(\(hS6 hInv hR\)\.2 executingCore\)" SeLe4n/Kernel/IPC/Invariant/CancellationBundle.lean'
 run_check "INVARIANT" rg -n '^theorem cancelledCallerDonation\?_blockedOnReply' SeLe4n/Kernel/Lifecycle/Suspend.lean
 # The G7 side condition of the PLACED direction is stated where it lives: a
 # scheduling point strands a thread whose TCB does not resolve.  The UNPLACED
 # direction the payoff reads needs no resolvability at all -- a scheduling point
 # places a thread only by dispatching it, and the dispatched thread is one the
-# chooser took out of the run queue, whose well-formedness is the hypothesis.
+# chooser took out of the run queue, whose agreement with the threads' links
+# (the links being what the chooser walks) is the hypothesis.
 run_check "INVARIANT" bash -lc 'rg -U -n "^theorem switchToThreadOnCore_preserves_threadPlacedOnSomeCore[^\n]*(\n([ \t][^\n]*)?)*\(hTcb : \(st\.getTcb\? u\)\.isSome\)" SeLe4n/Kernel/Scheduler/Operations/Core.lean'
 run_check "INVARIANT" bash -lc 'rg -U -n "^theorem switchToThreadOnCore_preserves_unplaced[^\n]*(\n([ \t][^\n]*)?)*threadPlacedOnSomeCore st. u = false := by" SeLe4n/Kernel/Scheduler/Operations/Core.lean'
 run_negative_check "INVARIANT" bash -lc 'rg -U -n "^theorem switchToThreadOnCore_preserves_unplaced[^\n]*(\n([ \t][^\n]*)?)*getTcb\?" SeLe4n/Kernel/Scheduler/Operations/Core.lean'
-run_check "INVARIANT" bash -lc 'rg -U -n "^theorem handleRescheduleSgiOnCore_preserves_unplaced[^\n]*(\n([ \t][^\n]*)?)*chooseThreadEffectiveOnCore_some_mem_runQueueOnCore st c tid hChoose" SeLe4n/Kernel/IPC/CrossCore/Cancellation.lean'
-run_check "INVARIANT" bash -lc 'rg -U -n "^theorem suspendRescheduleOnCore_preserves_unplaced[^\n]*(\n([ \t][^\n]*)?)*handleRescheduleSgiOnCore_preserves_unplaced st st. ec u hH h" SeLe4n/Kernel/IPC/CrossCore/Cancellation.lean'
+run_check "INVARIANT" bash -lc 'rg -U -n "^theorem handleRescheduleSgiOnCore_preserves_unplaced[^\n]*(\n([ \t][^\n]*)?)*chooseThreadEffectiveOnCore_some_mem_runQueueOnCore st c tid hR hChoose" SeLe4n/Kernel/IPC/CrossCore/Cancellation.lean'
+run_check "INVARIANT" bash -lc 'rg -U -n "^theorem suspendRescheduleOnCore_preserves_unplaced[^\n]*(\n([ \t][^\n]*)?)*handleRescheduleSgiOnCore_preserves_unplaced st st. ec u hR hH h" SeLe4n/Kernel/IPC/CrossCore/Cancellation.lean'
 # The walk frames live beside the walk, so the payoff can reach them: this
 # module imports `IPC.CrossCore.Fault`, which imports `Cancellation`, so the
 # second asker could not have reached an answer stated in `FaultProgress.lean`.
 # `v0.35.158` swapped the third frame: resolvability across the walk went with
-# the placed direction, and run-queue well-formedness across it is what the
-# unplaced direction carries to the scheduling point.
+# the placed direction.  WS-ZA ZA4.5 swapped it again: the chooser walks the
+# threads' run-queue links, so what the unplaced direction carries to the
+# scheduling point is the queues' agreement with the links, stage by stage.
 run_check "INVARIANT" rg -n '^theorem propagatePipChainCrossCore_mem_runQueueOnCore($|[ ({:\[\]])' SeLe4n/Kernel/Scheduler/PriorityInheritance/Propagate.lean
 run_check "INVARIANT" rg -n '^theorem propagatePipChainCrossCore_currentOnCore($|[ ({:\[\]])' SeLe4n/Kernel/Scheduler/PriorityInheritance/Propagate.lean
-run_check "INVARIANT" rg -n '^theorem propagatePipChainCrossCore_preserves_runQueueOnCore_wellFormed($|[ ({:\[\]])' SeLe4n/Kernel/Scheduler/PriorityInheritance/Propagate.lean
+run_check "INVARIANT" rg -n '^theorem propagatePipChainCrossCore_runQueueStage($|[ ({:\[\]])' SeLe4n/Kernel/Scheduler/PriorityInheritance/Propagate.lean
 # NARROWED at WS-RR RR8.16 (`v0.35.197`).  This negative used to ban the walk's
 # own resolvability fact tree-wide alongside the three retired *consumers*, and
 # that is a ban on a FACT rather than on the retired approach: the base
