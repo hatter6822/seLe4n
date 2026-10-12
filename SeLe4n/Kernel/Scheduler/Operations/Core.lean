@@ -2980,6 +2980,23 @@ def migrateSchedContextReplenishment (st : SystemState) (scId : SchedContextId)
     let sched' := (st.scheduler.setReplenishQueueOnCore fromCore fromQ').setReplenishQueueOnCore toCore toQ'
     { st with scheduler := sched' }
 
+/-- WS-ZA ZA4.5: moving a thread between two cores' queues through its TCB
+links writes the two queues as the abstract remove and insert, and each core's
+ends. -/
+theorem runMoveOnCore_scheduler (st : SystemState) (tid : SeLe4n.ThreadId)
+    (fromCore toCore : CoreId) (p : SeLe4n.Priority) (h : fromCore ≠ toCore) :
+    ((st.runRemoveOnCore fromCore tid).runEnqueueOnCore toCore tid p).scheduler =
+      ((((st.scheduler.setRunQueueOnCore fromCore
+          ((st.scheduler.runQueueOnCore fromCore).remove tid)).setRunQueueOnCore toCore
+          ((st.scheduler.runQueueOnCore toCore).insert tid p)).setRunQueueEndsOnCore fromCore
+          (st.runRemoveEnds fromCore tid)).setRunQueueEndsOnCore toCore
+          ((st.runRemoveOnCore fromCore tid).runEnqueueEnds toCore tid p)) := by
+  have hQ : (st.runRemoveOnCore fromCore tid).scheduler.runQueueOnCore toCore
+      = st.scheduler.runQueueOnCore toCore := by
+    simp [SchedulerState.setRunQueueOnCore_runQueueOnCore_ne _ _ _ _ h]
+  rw [SystemState.runEnqueueOnCore_scheduler, hQ, SystemState.runRemoveOnCore_scheduler]
+  rfl
+
 /-- WS-SM SM5.H.4 (full thread migration): migrate thread `tid`'s **run-queue
 entry** from core `fromCore` to core `toCore` on an affinity change.  When `tid`
 is runnable on `fromCore` (`fromCore`'s run queue contains it), it is dequeued
@@ -3000,15 +3017,58 @@ def migrateRunQueueOnAffinityChange (st : SystemState) (tid : SeLe4n.ThreadId)
     | none => st
     | some tcb =>
       if (st.scheduler.runQueueOnCore fromCore).contains tid then
-        let rqFrom := (st.scheduler.runQueueOnCore fromCore).remove tid
-        let rqTo := (st.scheduler.runQueueOnCore toCore).insert tid (tcb.boostedPriority)
+        -- The thread leaves `fromCore`'s queue and joins `toCore`'s through its
+        -- TCB run-queue links (WS-ZA ZA4.5).
+        let stMoved := (st.runRemoveOnCore fromCore tid).runEnqueueOnCore toCore tid
+          tcb.boostedPriority
         -- The reschedule-SGI accumulator (KSC-1): the insert on `toCore` is a
         -- wake there (the diff's queue rule); the removal from `fromCore`
         -- stales nothing.
-        let sched' := ((st.scheduler.setRunQueueOnCore fromCore rqFrom).setRunQueueOnCore toCore rqTo)
-          |>.markReschedulePendingOnCore toCore
-        { st with scheduler := sched' }
+        { stMoved with scheduler := stMoved.scheduler.markReschedulePendingOnCore toCore }
       else st
+
+/-- WS-ZA ZA4.5: the run-queue migration touches the object store only in the
+migrated thread's run-queue links and its neighbours'. -/
+theorem migrateRunQueueOnAffinityChange_objectsAgreeOffRunLinks (st : SystemState)
+    (tid : SeLe4n.ThreadId) (fromCore toCore : CoreId) :
+    (migrateRunQueueOnAffinityChange st tid fromCore toCore).objectsAgreeOffRunLinks st := by
+  unfold migrateRunQueueOnAffinityChange
+  split
+  · exact .refl _
+  · split
+    · exact .refl _
+    · split
+      · exact (SystemState.runEnqueueOnCore_objectsAgreeOffRunLinks _ _ _ _).trans
+          (SystemState.runRemoveOnCore_objectsAgreeOffRunLinks _ _ _)
+      · exact .refl _
+
+/-- WS-SM SM5.H.4: the run-queue migration preserves `invExt` (its link writes
+are in place). -/
+theorem migrateRunQueueOnAffinityChange_preserves_objects_invExt (st : SystemState)
+    (tid : SeLe4n.ThreadId) (fromCore toCore : CoreId) (h : st.objects.invExt) :
+    (migrateRunQueueOnAffinityChange st tid fromCore toCore).objects.invExt := by
+  unfold migrateRunQueueOnAffinityChange
+  split
+  · exact h
+  · split
+    · exact h
+    · split
+      · exact SystemState.runEnqueueOnCore_objects_invExt _ _ _ _
+          (SystemState.runRemoveOnCore_objects_invExt _ _ _ h)
+      · exact h
+
+/-- WS-SM SM5.H.4: the run-queue migration never advances the machine timer. -/
+@[simp] theorem migrateRunQueueOnAffinityChange_machine (st : SystemState)
+    (tid : SeLe4n.ThreadId) (fromCore toCore : CoreId) :
+    (migrateRunQueueOnAffinityChange st tid fromCore toCore).machine = st.machine := by
+  unfold migrateRunQueueOnAffinityChange
+  split
+  · rfl
+  · split
+    · rfl
+    · split
+      · simp
+      · rfl
 
 /-- WS-SM SM5.H.4: the run-queue migration frames every core's **replenish** queue
 (it writes only run-queue slots).

@@ -612,17 +612,19 @@ off the boot queue in the post-state was either off it before (the pre-state
 invariant answers) or on it before (the hypothesis answers). -/
 theorem passiveServerIdle_of_objects_current_eq_of_queuedAllowed
     {st st' : SystemState}
-    (hObjs : st'.objects = st.objects)
+    (hA : st'.objectsAgreeOffRunLinks st)
     (hCur : st'.scheduler.currentOnCore Concurrency.bootCoreId
       = st.scheduler.currentOnCore Concurrency.bootCoreId)
     (hQueued : unboundQueuedThreadsIdleAllowed st)
     (hPsi : passiveServerIdle st) : passiveServerIdle st' := by
   intro t tcb hT hUnb _ hNotCur
-  rw [hObjs] at hT
+  obtain ⟨t0, h0, hE⟩ := hA.get_tcb' hT
+  rw [TCB.proj_eq_of_withoutRunLinks_eq TCB.ipcState hE]
+  rw [TCB.proj_eq_of_withoutRunLinks_eq TCB.schedContextBinding hE] at hUnb
   rw [hCur] at hNotCur
   by_cases hMem : t ∈ st.scheduler.runQueueOnCore Concurrency.bootCoreId
-  · exact hQueued Concurrency.bootCoreId t tcb hT hUnb hMem
-  · exact hPsi t tcb hT hUnb hMem hNotCur
+  · exact hQueued Concurrency.bootCoreId t t0 h0 hUnb hMem
+  · exact hPsi t t0 h0 hUnb hMem hNotCur
 
 /-- The queued-threads hypothesis transports across a one-TCB rewrite that
 keeps `ipcState` and the binding, with run queues untouched. -/
@@ -685,18 +687,6 @@ theorem migrateSchedContextReplenishment_preserves_ipcInvariantFull (st : System
         Concurrency.bootCoreId).2)
     hInv.passiveServerIdle
 
-/-- The affinity run-queue migration moves no object. -/
-theorem migrateRunQueueOnAffinityChange_objects_eq (st : SystemState)
-    (tid : SeLe4n.ThreadId) (fromCore toCore : CoreId) :
-    (migrateRunQueueOnAffinityChange st tid fromCore toCore).objects
-      = st.objects := by
-  unfold migrateRunQueueOnAffinityChange
-  split
-  · rfl
-  · split
-    · rfl
-    · split <;> rfl
-
 /-- The affinity run-queue migration repoints no core's `current` slot. -/
 theorem migrateRunQueueOnAffinityChange_currentOnCore (st : SystemState)
     (tid : SeLe4n.ThreadId) (fromCore toCore c' : CoreId) :
@@ -717,9 +707,9 @@ theorem migrateRunQueueOnAffinityChange_preserves_ipcInvariantFull (st : SystemS
     (hQueued : unboundQueuedThreadsIdleAllowed st)
     (hInv : ipcInvariantFull st) :
     ipcInvariantFull (migrateRunQueueOnAffinityChange st tid fromCore toCore) := by
-  have hObjs := migrateRunQueueOnAffinityChange_objects_eq st tid fromCore toCore
-  exact ipcInvariantFull_of_getElem_eq (fun oid => by rw [hObjs])
-    (passiveServerIdle_of_objects_current_eq_of_queuedAllowed hObjs
+  have hA := migrateRunQueueOnAffinityChange_objectsAgreeOffRunLinks st tid fromCore toCore
+  exact ipcInvariantFull_of_objectsAgreeOffRunLinks hA
+    (passiveServerIdle_of_objects_current_eq_of_queuedAllowed hA
       (migrateRunQueueOnAffinityChange_currentOnCore st tid fromCore toCore
         Concurrency.bootCoreId)
       hQueued hInv.passiveServerIdle)

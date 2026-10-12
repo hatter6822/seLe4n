@@ -172,7 +172,8 @@ theorem migrateRunQueueOnAffinityChange_stepCovers (e : CoreId) (st : SystemStat
     (tid : SeLe4n.ThreadId) (fromCore toCore : CoreId) :
     stepCovers e st (migrateRunQueueOnAffinityChange st tid fromCore toCore) := by
   apply stepCovers_of_keys_slots
-    (keyInputsEq_of_objects_eq (migrateRunQueueOnAffinityChange_objects_eq _ _ _ _))
+    (keyInputsEq_of_objectsAgreeOffRunLinks
+      (migrateRunQueueOnAffinityChange_objectsAgreeOffRunLinks _ _ _ _))
   · intro c _
     rw [migrateRunQueueOnAffinityChange_currentOnCore]
     unfold migrateRunQueueOnAffinityChange
@@ -186,6 +187,8 @@ theorem migrateRunQueueOnAffinityChange_stepCovers (e : CoreId) (st : SystemStat
           · right
             refine ⟨fun t ht => ?_, rfl⟩
             simp only [SchedulerState.markReschedulePendingOnCore_runQueueOnCore] at ht
+            rw [runMoveOnCore_scheduler _ _ _ _ _ (by assumption)] at ht
+            simp only [SchedulerState.setRunQueueEndsOnCore_runQueueOnCore] at ht
             rw [SchedulerState.setRunQueueOnCore_runQueueOnCore_ne _ _ _ _ (Ne.symm hTo)] at ht
             by_cases hFr : c = fromCore
             · subst hFr
@@ -235,11 +238,12 @@ theorem setThreadCpuAffinityOnCore_stepCovers (st st' : SystemState)
             refine ⟨stepCovers_trans s1 (stepCovers_trans
               (migrateSchedContextReplenishment_stepCovers e _ scId _ _)
               (migrateRunQueueOnAffinityChange_stepCovers e _ _ _ _)), ?_⟩
-            rw [migrateRunQueueOnAffinityChange_objects_eq, migrateSchedContextReplenishment_objects]
+            apply migrateRunQueueOnAffinityChange_preserves_objects_invExt
+            rw [migrateSchedContextReplenishment_objects]
             exact kSet.2.2
           | none =>
             exact ⟨stepCovers_trans s1 (migrateRunQueueOnAffinityChange_stepCovers e _ _ _ _),
-              by rw [migrateRunQueueOnAffinityChange_objects_eq]; exact kSet.2.2⟩
+              migrateRunQueueOnAffinityChange_preserves_objects_invExt _ _ _ _ kSet.2.2⟩
         · contradiction
   · contradiction
 

@@ -4533,11 +4533,28 @@ theorem migrateRunQueueOnAffinityChange_preserves_projection
   · rfl
   · split
     · rfl
-    · rename_i tcb _
+    · rename_i hne _ tcb _
       split
-      · -- write branch: the two-core run-queue update.
+      · -- write branch: the two-core run-queue update, through the TCB run-queue
+        -- links (WS-ZA ZA4.5): the store agrees off those links, which the
+        -- projection strips.
+        have hA : SystemState.objectsAgreeOffRunLinks
+            ((st.runRemoveOnCore fromCore tid).runEnqueueOnCore toCore tid tcb.boostedPriority) st :=
+          (SystemState.runEnqueueOnCore_objectsAgreeOffRunLinks _ _ _ _).trans
+            (SystemState.runRemoveOnCore_objectsAgreeOffRunLinks _ _ _)
+        have hObj := projectObjects_of_objectsAgreeOffRunLinks ctx observer hA
+        have hD := ((SystemState.runEnqueueOnCore_onlyObjectsSchedulerDiffer _ toCore tid
+          tcb.boostedPriority).trans (SystemState.runRemoveOnCore_onlyObjectsSchedulerDiffer st fromCore tid))
+        unfold SystemState.onlyObjectsSchedulerDiffer at hD
+        dsimp only
+        rw [hD] at hObj ⊢
         simp only [projectState, projectCurrent, projectActiveDomain,
-          projectDomainTimeRemaining, projectDomainScheduleIndex, projectMachineRegs,
+          projectDomainTimeRemaining, projectDomainScheduleIndex, projectMachineRegs, hObj,
+          runMoveOnCore_scheduler _ _ _ _ _ hne,
+          SchedulerState.setRunQueueEndsOnCore_currentOnCore,
+          SchedulerState.setRunQueueEndsOnCore_activeDomainOnCore,
+          SchedulerState.setRunQueueEndsOnCore_domainTimeRemainingOnCore,
+          SchedulerState.setRunQueueEndsOnCore_domainScheduleIndexOnCore,
           SchedulerState.markReschedulePendingOnCore_currentOnCore,
           SchedulerState.markReschedulePendingOnCore_activeDomainOnCore,
           SchedulerState.markReschedulePendingOnCore_domainTimeRemainingOnCore,
@@ -4548,7 +4565,8 @@ theorem migrateRunQueueOnAffinityChange_preserves_projection
           SchedulerState.setRunQueueOnCore_domainScheduleIndexOnCore]
         congr 1
         simp only [projectRunnable, SchedulerState.runnable,
-          SchedulerState.markReschedulePendingOnCore_runQueueOnCore]
+          SchedulerState.markReschedulePendingOnCore_runQueueOnCore,
+          SchedulerState.setRunQueueEndsOnCore_runQueueOnCore]
         -- Reduce the boot-core run-queue read through the two writes (the
         -- destination core's reschedule-pending mark reads out above).
         by_cases hTo : toCore = bootCoreId

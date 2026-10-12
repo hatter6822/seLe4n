@@ -478,28 +478,6 @@ theorem setThreadCpuAffinity_getSchedContext? (st : SystemState)
 --       frames the object store + every replenish queue, so the replenish-queue
 --       theorems carry through the full composite).
 
-/-- WS-SM SM5.H.4: the run-queue migration never touches the object store. -/
-@[simp] theorem migrateRunQueueOnAffinityChange_objects (st : SystemState)
-    (tid : SeLe4n.ThreadId) (fromCore toCore : CoreId) :
-    (migrateRunQueueOnAffinityChange st tid fromCore toCore).objects = st.objects := by
-  unfold migrateRunQueueOnAffinityChange
-  split
-  · rfl
-  · split
-    · rfl
-    · split <;> rfl
-
-/-- WS-SM SM5.H.4: the run-queue migration never advances the machine timer. -/
-@[simp] theorem migrateRunQueueOnAffinityChange_machine (st : SystemState)
-    (tid : SeLe4n.ThreadId) (fromCore toCore : CoreId) :
-    (migrateRunQueueOnAffinityChange st tid fromCore toCore).machine = st.machine := by
-  unfold migrateRunQueueOnAffinityChange
-  split
-  · rfl
-  · split
-    · rfl
-    · split <;> rfl
-
 -- `v0.35.167` (WS-RR RR8.12 Cut C3b-i): `migrateRunQueueOnAffinityChange_replenishQueueOnCore`
 -- moved to `Scheduler/Operations/Core.lean`, beside the definition it frames.  It
 -- was declared here, in a **staged** module, so the live `.tcbSetAffinity` arm's
@@ -510,15 +488,16 @@ theorem setThreadCpuAffinity_getSchedContext? (st : SystemState)
 theorem migrateRunQueueOnAffinityChange_getSchedContext? (st : SystemState)
     (tid : SeLe4n.ThreadId) (fromCore toCore : CoreId) (scId' : SchedContextId) :
     (migrateRunQueueOnAffinityChange st tid fromCore toCore).getSchedContext? scId'
-      = st.getSchedContext? scId' := by
-  unfold SystemState.getSchedContext?; rw [migrateRunQueueOnAffinityChange_objects]
+      = st.getSchedContext? scId' :=
+  (migrateRunQueueOnAffinityChange_objectsAgreeOffRunLinks st tid fromCore toCore).getSchedContext? scId'
 
 /-- WS-SM SM5.H.4: the run-queue migration frames every thread's home core. -/
 theorem migrateRunQueueOnAffinityChange_determineTargetCore (st : SystemState)
     (tid : SeLe4n.ThreadId) (fromCore toCore : CoreId) (tid' : SeLe4n.ThreadId) :
     determineTargetCore (migrateRunQueueOnAffinityChange st tid fromCore toCore) tid'
-      = determineTargetCore st tid' := by
-  unfold determineTargetCore SystemState.getTcb?; rw [migrateRunQueueOnAffinityChange_objects]
+      = determineTargetCore st tid' :=
+  determineTargetCore_of_objectsAgreeOffRunLinks
+    (migrateRunQueueOnAffinityChange_objectsAgreeOffRunLinks st tid fromCore toCore) tid'
 
 -- §6c  The replenish-affinity restoration (generalised to any affinity, incl. unbind).
 
@@ -772,7 +751,7 @@ theorem schedContextMigration_consistent
   intro c
   rw [replenishQueueAffinityConsistentOnCore_frame
         (migrateRunQueueOnAffinityChange_replenishQueueOnCore _ _ _ _ c)
-        (.of_objects_eq (migrateRunQueueOnAffinityChange_objects _ _ _ _))]
+        (migrateRunQueueOnAffinityChange_objectsAgreeOffRunLinks _ _ _ _)]
   exact schedContextReplMigration_consistent st targetTid (determineTargetCore stSet targetTid)
     tcb scId sc affinity stSet hTcb hInv hBind hSc hBound hUnique hCons hSet rfl c
 
@@ -915,12 +894,6 @@ theorem migrateSchedContextReplenishment_preserves_objects_invExt (st : SystemSt
     (migrateSchedContextReplenishment st scId fromCore toCore).objects.invExt := by
   rw [migrateSchedContextReplenishment_objects]; exact h
 
-/-- WS-SM SM5.H.4: the run-queue migration preserves `invExt`. -/
-theorem migrateRunQueueOnAffinityChange_preserves_objects_invExt (st : SystemState)
-    (tid : SeLe4n.ThreadId) (fromCore toCore : CoreId) (h : st.objects.invExt) :
-    (migrateRunQueueOnAffinityChange st tid fromCore toCore).objects.invExt := by
-  rw [migrateRunQueueOnAffinityChange_objects]; exact h
-
 /-- WS-SM SM5.H.4: the full affinity-change composite preserves `invExt` — the
 affinity write preserves it (the only object write is the target TCB's affinity
 field, an insert at an existing key), and the replenish / run-queue migrations
@@ -941,14 +914,13 @@ theorem setThreadCpuAffinityWithMigration_preserves_objects_invExt (st : SystemS
       cases hBind : tcb.schedContextBinding.scId? with
       | some scId =>
           rw [setThreadCpuAffinityWithMigration_bound_state_eq st targetTid affinity executingCore
-                tcb scId hTcb hBind stSet hSet st' hStep,
-              migrateRunQueueOnAffinityChange_objects, migrateSchedContextReplenishment_objects]
-          exact hStInv
+                tcb scId hTcb hBind stSet hSet st' hStep]
+          exact migrateRunQueueOnAffinityChange_preserves_objects_invExt _ _ _ _
+            (by rw [migrateSchedContextReplenishment_objects]; exact hStInv)
       | none =>
           rw [setThreadCpuAffinityWithMigration_unbound_state_eq st targetTid affinity executingCore
-                tcb hTcb hBind stSet hSet st' hStep,
-              migrateRunQueueOnAffinityChange_objects]
-          exact hStInv
+                tcb hTcb hBind stSet hSet st' hStep]
+          exact migrateRunQueueOnAffinityChange_preserves_objects_invExt _ _ _ _ hStInv
 
 -- ============================================================================
 -- §10  SM5.H (A1) — lock-set footprints over `LockKey`
@@ -1033,9 +1005,12 @@ theorem migrateRunQueueOnAffinityChange_preserves_runQueueOnCoreWellFormed
     · exact h
     · split
       · -- write branch: scheduler = (setRunQueueOnCore fromCore rqFrom).setRunQueueOnCore toCore rqTo
-        rename_i tcb _ _
+        rename_i hne _ tcb _ _
         unfold runQueueOnCoreWellFormed at h ⊢
-        rw [SeLe4n.Model.SchedulerState.markReschedulePendingOnCore_runQueueOnCore]
+        dsimp only
+        rw [SeLe4n.Model.SchedulerState.markReschedulePendingOnCore_runQueueOnCore,
+          runMoveOnCore_scheduler _ _ _ _ _ hne]
+        simp only [SeLe4n.Model.SchedulerState.setRunQueueEndsOnCore_runQueueOnCore]
         by_cases hToc : toCore = c'
         · subst hToc
           simp only [SeLe4n.Model.SchedulerState.setRunQueueOnCore_runQueueOnCore_self]
@@ -1618,12 +1593,13 @@ theorem affinityMigrationOrdering_happensBefore
 -- preserved on every core.
 -- ============================================================================
 
-/-- WS-SM SM5.H.4 (frame): the run-queue migration frames every TCB resolution. -/
+/-- WS-SM SM5.H.4 (frame): the run-queue migration frames every TCB resolution
+off the run-queue link fields (WS-ZA ZA4.5). -/
 theorem migrateRunQueueOnAffinityChange_getTcb? (st : SystemState)
     (tid : SeLe4n.ThreadId) (fromCore toCore : CoreId) (tid' : SeLe4n.ThreadId) :
-    (migrateRunQueueOnAffinityChange st tid fromCore toCore).getTcb? tid'
-      = st.getTcb? tid' := by
-  unfold SystemState.getTcb?; rw [migrateRunQueueOnAffinityChange_objects]
+    ((migrateRunQueueOnAffinityChange st tid fromCore toCore).getTcb? tid').map TCB.withoutRunLinks
+      = (st.getTcb? tid').map TCB.withoutRunLinks :=
+  (migrateRunQueueOnAffinityChange_objectsAgreeOffRunLinks st tid fromCore toCore).getTcb? tid'
 
 /-- WS-SM SM5.H.4 (D15): the full-thread-migration run-queue move preserves the SM4.C
 per-core run-queue↔budget consistency on **every** core, given the invariant holds
@@ -1634,8 +1610,12 @@ theorem migrateRunQueueOnAffinityChange_preserves_schedContextRunQueueConsistent
     (hAll : ∀ c, schedContextRunQueueConsistent_perCore st c) :
     schedContextRunQueueConsistent_perCore
       (migrateRunQueueOnAffinityChange st tid fromCore toCore) c' := by
-  intro x hxMem tcb hTcb scId hBind
-  rw [migrateRunQueueOnAffinityChange_getTcb?] at hTcb
+  intro x hxMem tcb' hTcb' scId hBind'
+  obtain ⟨tcb, hTcb, hE⟩ :=
+    (migrateRunQueueOnAffinityChange_objectsAgreeOffRunLinks st tid fromCore toCore).symm.getTcb?_some
+      hTcb'
+  have hBind : tcb.schedContextBinding.scId? = some scId :=
+    (TCB.proj_eq_of_withoutRunLinks_eq (fun u => u.schedContextBinding.scId?) hE).trans hBind'
   -- It suffices to find the SchedContext in `st` (objects are framed).
   suffices h : ∃ sc, st.getSchedContext? scId = some sc ∧ sc.budgetRemaining.val > 0 by
     obtain ⟨sc, hsc, hbud⟩ := h
@@ -1653,7 +1633,9 @@ theorem migrateRunQueueOnAffinityChange_preserves_schedContextRunQueueConsistent
         rename_i hContains
         intro hxMem
         dsimp only at hxMem
-        rw [SeLe4n.Model.SchedulerState.markReschedulePendingOnCore_runQueueOnCore] at hxMem
+        rw [SeLe4n.Model.SchedulerState.markReschedulePendingOnCore_runQueueOnCore,
+          runMoveOnCore_scheduler _ _ _ _ _ (by assumption)] at hxMem
+        simp only [SeLe4n.Model.SchedulerState.setRunQueueEndsOnCore_runQueueOnCore] at hxMem
         by_cases hToc : toCore = c'
         · -- c' = toCore: the migrated `x` is an old member or `tid` itself.
           subst hToc
