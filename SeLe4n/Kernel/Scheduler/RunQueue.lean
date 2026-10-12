@@ -147,6 +147,27 @@ theorem maxPrioCodeWalk_eq (links : RHTable ThreadId RunQueueLink) (n c acc : Na
       simp only [maxPrioCode, List.foldr_cons, nextOf]
       omega
 
+/-- `maxPrioCodeWalk` over any read of the entries (the threads' own links,
+once they live in the TCBs). -/
+def maxPrioCodeWalkBy (lk : ThreadId → RunQueueLink) : Nat → Nat → Nat → Nat
+  | 0, _, acc => acc
+  | _ + 1, 0, acc => acc
+  | n + 1, c + 1, acc =>
+      maxPrioCodeWalkBy lk n (lk ⟨c⟩).next (max ((lk ⟨c⟩).prio.val + 1) acc)
+
+theorem maxPrioCodeWalkBy_eq (lk : ThreadId → RunQueueLink) (n c acc : Nat) :
+    maxPrioCodeWalkBy lk n c acc =
+      max acc (maxPrioCode lk (LinkedQueue.walk (fun t => (lk t).next) n c)) := by
+  induction n generalizing c acc with
+  | zero => simp [maxPrioCodeWalkBy, LinkedQueue.walk, maxPrioCode]
+  | succ n ih =>
+    cases c with
+    | zero => simp [maxPrioCodeWalkBy, LinkedQueue.walk, maxPrioCode]
+    | succ c =>
+      simp only [maxPrioCodeWalkBy, LinkedQueue.walk, ih]
+      simp only [maxPrioCode, List.foldr_cons]
+      omega
+
 /-- WS-ZA ZA4.5: what a run queue's tables and words describe.  `l` is the
 queue of every runnable thread, in the order they joined it; each priority's
 bucket is the queue of `l`'s threads at that priority, in the same order; a
@@ -1518,5 +1539,206 @@ theorem byPriorityTable_get? (rq : RunQueue) (p : Priority) :
   rw [key _ _ (RHTable.empty_invExtK 16 (by omega)), RHTable_get?_empty, atPriority_eq]
   split <;> simp
 
+-- ============================================================================
+-- What a core keeps once the links live in the threads
+-- ============================================================================
+
+/-- WS-ZA ZA4.5: the entry the queue holds for `t`, read as the threads hold
+it: a queued thread's entry, and the empty entry for any other.  A thread
+that leaves keeps its old entry in `links` (`queued := false`); its TCB keeps
+its old links too, but answers no core's queue, so this is what the two have
+in common. -/
+def queuedLink (rq : RunQueue) (t : ThreadId) : RunQueueLink :=
+  if (linkOf rq.links t).queued then linkOf rq.links t else RunQueueLink.none
+
+theorem queuedLink_queued (rq : RunQueue) (t : ThreadId) :
+    (rq.queuedLink t).queued = rq.contains t := by
+  unfold queuedLink contains
+  split
+  · rfl
+  · next h => simp only [Bool.not_eq_true] at h; rw [h]; rfl
+
+theorem queuedLink_of_contains {rq : RunQueue} {t : ThreadId} (h : rq.contains t = true) :
+    rq.queuedLink t = linkOf rq.links t := by
+  unfold queuedLink; exact if_pos h
+
+theorem queuedLink_of_not_contains {rq : RunQueue} {t : ThreadId} (h : rq.contains t = false) :
+    rq.queuedLink t = RunQueueLink.none := by
+  unfold queuedLink; rw [if_neg]; exact fun e => by unfold contains at h; rw [e] at h; cases h
+
+/-- A thread not on the queue is neither its last thread nor any bucket's. -/
+theorem code_ne_tail {rq : RunQueue} {t : ThreadId} (h : rq.contains t = false) :
+    code t ≠ rq.tail :=
+  code_ne_end rq.layout_toList.queue.2.1
+    (fun hm => by rw [(rq.mem_toList_iff_mem t).mp hm] at h; cases h)
+
+theorem code_ne_bucket_tail {rq : RunQueue} {t : ThreadId} (h : rq.contains t = false)
+    (p : Priority) : code t ≠ (endsOf rq.buckets p).tail :=
+  code_ne_end (rq.layout_toList.bucket p).2.1
+    (fun hm => by rw [(rq.mem_toList_iff_mem t).mp (List.mem_filter.mp hm).1] at h; cases h)
+
+/-- The thread a queue's nonzero tail code names is on the queue. -/
+theorem contains_of_code_eq_tail {rq : RunQueue} {x : ThreadId} (h : code x = rq.tail) :
+    rq.contains x = true := by
+  have he := rq.layout_toList.queue.2.1
+  have hm := decode_lastCode_mem (l := rq.toList) (by rw [← he, ← h]; exact code_ne_zero x)
+  rw [← he, ← h, decode_code] at hm
+  exact (rq.mem_toList_iff_mem x).mp hm
+
+theorem contains_of_code_eq_bucket_tail {rq : RunQueue} {x : ThreadId} {p : Priority}
+    (h : code x = (endsOf rq.buckets p).tail) : rq.contains x = true := by
+  have he := (rq.layout_toList.bucket p).2.1
+  have hm := decode_lastCode_mem (by rw [← he, ← h]; exact code_ne_zero x)
+  rw [← he, ← h, decode_code] at hm
+  exact (rq.mem_toList_iff_mem x).mp (List.mem_filter.mp hm).1
+
+/-- A read of a queue's entries that agrees with the queue on every queued
+thread walks the queue's list and finds its highest priority. -/
+theorem walk_of_agree (rq : RunQueue) {lk : ThreadId → RunQueueLink}
+    (h : ∀ x, lk x = rq.queuedLink x) :
+    walk (fun t => (lk t).next) rq.size rq.head = rq.toList := by
+  have hL := rq.layout_toList
+  have hmem : ∀ x ∈ rq.toList, lk x = linkOf rq.links x := fun x hx => by
+    rw [h x]; exact queuedLink_of_contains ((rq.mem_toList_iff_mem x).mp hx)
+  have hq := (isQueue_congr (nx' := fun t => (lk t).next) (pv' := fun t => (lk t).prev)
+    (fun x hx => by dsimp only; rw [hmem x hx]) (fun x hx => by dsimp only; rw [hmem x hx])).mpr
+    hL.queue
+  exact hq.walk_eq (Nat.le_of_eq hL.length)
+
+theorem maxPrioCode_of_agree (rq : RunQueue) {lk : ThreadId → RunQueueLink}
+    (h : ∀ x, lk x = rq.queuedLink x) :
+    maxPrioCode lk rq.toList = rq.maxCode := by
+  rw [rq.layout_toList.maxCode]
+  refine maxPrioCode_congr (fun x hx => ?_)
+  rw [h x, queuedLink_of_contains ((rq.mem_toList_iff_mem x).mp hx)]
+
+/-- A queued thread's links name neither itself nor any thread off the queue. -/
+theorem own_links (rq : RunQueue) {t : ThreadId} (hc : rq.contains t = true) :
+    let x := linkOf rq.links t
+    (code t ≠ x.prev ∧ code t ≠ x.next ∧ code t ≠ x.bucketPrev ∧ code t ≠ x.bucketNext) ∧
+    ∀ y : ThreadId, (code y = x.prev ∨ code y = x.next ∨ code y = x.bucketPrev ∨
+      code y = x.bucketNext) → rq.contains y = true := by
+  intro x
+  obtain ⟨A, B, hAB⟩ := rq.split_of_contains hc
+  have hL := rq.layout_toList
+  rw [hAB] at hL
+  have hnd := hL.nodup
+  obtain ⟨_, hndtB, hAtB⟩ := List.nodup_append.mp hnd
+  obtain ⟨htB, _⟩ := List.nodup_cons.mp hndtB
+  have htA : t ∉ A := fun h => hAtB t h t (List.mem_cons_self ..) rfl
+  let fp := fun z => (linkOf rq.links z).prio == x.prio
+  have hfp : fp t = true := by simp [fp, x]
+  have hBq := hL.bucket x.prio
+  rw [filter_mid hfp] at hBq
+  obtain ⟨hpv, hnx⟩ := IsQueue.mid hL.queue
+  obtain ⟨hbpv, hbnx⟩ := IsQueue.mid hBq
+  have hmemCode : ∀ (L : List ThreadId) (z : ThreadId), code z = lastCode 0 L → z ∈ L := by
+    intro L z hc
+    have hm := decode_lastCode_mem (l := L) (by rw [← hc]; exact code_ne_zero z)
+    rwa [← hc, decode_code] at hm
+  refine ⟨⟨?_, ?_, ?_, ?_⟩, fun y hy => ?_⟩
+  · rw [show x.prev = _ from hpv]; exact code_ne_end rfl htA
+  · rw [show x.next = _ from hnx]; exact code_ne_end rfl (by simpa using htB)
+  · rw [show x.bucketPrev = _ from hbpv]
+    exact code_ne_end rfl (fun h => htA (List.mem_filter.mp h).1)
+  · rw [show x.bucketNext = _ from hbnx]
+    exact code_ne_end rfl (fun h => htB (List.mem_filter.mp (List.mem_reverse.mp h)).1)
+  · apply (rq.mem_toList_iff_mem y).mp
+    rw [hAB]
+    rcases hy with hy | hy | hy | hy
+    · exact List.mem_append_left _ (hmemCode _ y (hy.trans hpv))
+    · exact List.mem_append_right _ (List.mem_cons_of_mem _
+        (List.mem_reverse.mp (hmemCode _ y (hy.trans hnx))))
+    · exact List.mem_append_left _ (List.mem_filter.mp (hmemCode _ y (hy.trans hbpv))).1
+    · exact List.mem_append_right _ (List.mem_cons_of_mem _
+        (List.mem_filter.mp (List.mem_reverse.mp (hmemCode _ y (hy.trans hbnx)))).1)
+
+/-- The fields of a queue once its member `t` is dequeued, read off `t`'s entry. -/
+theorem remove_fields (rq : RunQueue) {t : ThreadId} (hc : rq.contains t = true) :
+    let x := linkOf rq.links t
+    let head' := if x.prev = 0 then x.next else rq.head
+    (rq.remove t).links = unlinkLinks rq.links t x.prev x.next x.bucketPrev x.bucketNext ∧
+    (rq.remove t).buckets = setEnds rq.buckets x.prio (unlinkEnds x.bucketPrev x.bucketNext) ∧
+    (rq.remove t).head = head' ∧
+    (rq.remove t).tail = (if x.next = 0 then x.prev else rq.tail) ∧
+    (rq.remove t).size = rq.size - 1 ∧
+    (rq.remove t).maxCode =
+      (if x.bucketPrev = 0 ∧ x.bucketNext = 0 ∧ rq.maxCode = x.prio.val + 1 then
+        maxPrioCodeWalk (unlinkLinks rq.links t x.prev x.next x.bucketPrev x.bucketNext)
+          (rq.size - 1) head' 0
+      else rq.maxCode) := by
+  unfold remove; rw [dif_pos hc]
+  exact ⟨rfl, rfl, rfl, rfl, rfl, rfl⟩
+
+/-- Two queues with the same tables and words are the same queue. -/
+theorem ext_fields {a b : RunQueue} (h1 : a.links = b.links) (h2 : a.buckets = b.buckets)
+    (h3 : a.head = b.head) (h4 : a.tail = b.tail) (h5 : a.size = b.size)
+    (h6 : a.maxCode = b.maxCode) : a = b := by
+  cases a; cases b; simp only at h1 h2 h3 h4 h5 h6; subst h1 h2 h3 h4 h5 h6; rfl
+
+/-- Moving a queued thread to the back is dequeueing it and enqueueing it again
+at the priority it was queued at. -/
+theorem rotateToBack_eq_remove_insert (rq : RunQueue) {t : ThreadId} (hc : rq.contains t = true) :
+    rq.rotateToBack t = (rq.remove t).insert t (linkOf rq.links t).prio := by
+  obtain ⟨hLk, hBk, hHd, hTl, hSz, hMx⟩ := rq.remove_fields hc
+  have hnc : (rq.remove t).contains t = false := by
+    have := contains_remove rq t t; simp at this; exact this
+  obtain ⟨A, B, hAB⟩ := rq.split_of_contains hc
+  have hL := rq.layout_toList
+  rw [hAB] at hL
+  have hlen := hL.length
+  have hrl : (rq.remove t).toList = A ++ B := by
+    rw [toList_remove, hAB, filter_ne_mid (hAB ▸ rq.toList_nodup)]
+  have hmaxR : (rq.remove t).maxCode = maxPrioCode (linkOf rq.links) (A ++ B) := by
+    rw [(rq.remove t).layout_toList.maxCode, hrl, hLk]
+    exact maxPrioCode_congr (fun x _ => prio_unlinkLinks rq.links_invExtK t _ _ _ _ x)
+  have hmax : rq.maxCode = max (rq.remove t).maxCode ((linkOf rq.links t).prio.val + 1) := by
+    rw [hL.maxCode, maxPrioCode_mid, hmaxR]
+  unfold rotateToBack insert
+  rw [dif_pos hc, dif_neg (by rw [hnc]; decide)]
+  apply ext_fields
+  · simp only [hLk, hTl, hBk]
+  · simp only [hBk]
+  · simp only [hHd, hTl]
+  · rfl
+  · simp only [hSz]; simp at hlen; omega
+  · exact hmax
+
+theorem links_insert_of_not_contains {rq : RunQueue} {t : ThreadId} (h : rq.contains t = false)
+    (p : Priority) :
+    (rq.insert t p).links = appendLinks rq.links t p rq.tail (endsOf rq.buckets p).tail := by
+  unfold insert; rw [dif_neg (by rw [h]; decide)]
+
 end RunQueue
+
+/-- WS-ZA ZA4.5: a core's run queue as the core holds it once each thread's
+links live in its TCB (as seL4's `tcbSchedNext`/`tcbSchedPrev`): the ends of
+the queue of runnable threads, the ends of each priority's bucket, the count
+and the highest queued priority.  `RunQueue.ends` reads them off a queue. -/
+structure RunQueueEnds where
+  buckets : RHTable Priority BucketEnds
+  head : Nat
+  tail : Nat
+  size : Nat
+  maxCode : Nat
+
+namespace RunQueue
+
+/-- The ends a run queue keeps: every field but the links and the proofs. -/
+def ends (rq : RunQueue) : RunQueueEnds := ⟨rq.buckets, rq.head, rq.tail, rq.size, rq.maxCode⟩
+
+end RunQueue
+
+namespace RunQueueEnds
+
+/-- The ends of an empty queue, as one constant built once (as
+`RunQueue.slotPlaceholder`). -/
+@[noinline] def empty : RunQueueEnds := RunQueue.empty.ends
+
+instance : Inhabited RunQueueEnds where default := empty
+
+instance : Repr RunQueueEnds where
+  reprPrec e _ := repr (e.head, e.tail, e.size, e.maxCode)
+
+end RunQueueEnds
 end SeLe4n.Kernel

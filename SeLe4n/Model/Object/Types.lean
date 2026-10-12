@@ -1171,6 +1171,24 @@ structure TCB where
   /-- The successor in the notification wait queue, read through
       `TCB.ntfnNext`; `0` at the tail and off every notification queue. -/
   ntfnNextCode : Nat := 0
+  /-- WS-ZA ZA4.5: the run queue this thread is on, as a code: `0` on none,
+      `c + 1` on core `c`'s.  A thread is on at most one run queue, as in seL4,
+      where `tcbQueued` is one flag and the links below are one set; the core
+      code is what keeps one core's queue from reading another core's links.
+      Read through `TCB.runCore?`. -/
+  runCoreCode : Nat := 0
+  /-- The priority bucket the thread is queued in.  Meaningful only while
+      `runCoreCode ≠ 0`; a thread leaving the queue keeps its last value. -/
+  runPrio : SeLe4n.Priority := ⟨0⟩
+  /-- The predecessor in its core's queue of runnable threads, as a code
+      (`LinkedQueue.code`: `0` at the head), as seL4's `tcbSchedPrev`. -/
+  runPrevCode : Nat := 0
+  /-- The successor in its core's queue, `0` at the tail (`tcbSchedNext`). -/
+  runNextCode : Nat := 0
+  /-- The predecessor in its priority bucket, `0` at the bucket's head. -/
+  runBucketPrevCode : Nat := 0
+  /-- The successor in its priority bucket, `0` at the bucket's tail. -/
+  runBucketNextCode : Nat := 0
   deriving Repr
 
 /-- The predecessor link, read from its scalar code (`TCB.queuePrevCode`). -/
@@ -1189,14 +1207,14 @@ structure TCB where
 view when a code is copied from another record: together they let `simp` read
 a written link as the value written and an untouched link as the old view. -/
 
-@[simp] theorem TCB.queuePrev_mk (f1 f2 f3 f4 f5 f6 f7 f8 f9 f10 f11 f12 f13 f14 f15 f16 f17 f18 f19 f20 f21 f22 f23 f24 f25 f26 f27 f28 f29) :
-    (TCB.mk f1 f2 f3 f4 f5 f6 f7 f8 f9 f10 f11 f12 f13 f14 f15 f16 f17 f18 f19 f20 f21 f22 f23 f24 f25 f26 f27 f28 f29).queuePrev = SeLe4n.ThreadId.ofOptCode f11 := rfl
+@[simp] theorem TCB.queuePrev_mk (f1 f2 f3 f4 f5 f6 f7 f8 f9 f10 f11 f12 f13 f14 f15 f16 f17 f18 f19 f20 f21 f22 f23 f24 f25 f26 f27 f28 f29 f30 f31 f32 f33 f34 f35) :
+    (TCB.mk f1 f2 f3 f4 f5 f6 f7 f8 f9 f10 f11 f12 f13 f14 f15 f16 f17 f18 f19 f20 f21 f22 f23 f24 f25 f26 f27 f28 f29 f30 f31 f32 f33 f34 f35).queuePrev = SeLe4n.ThreadId.ofOptCode f11 := rfl
 
-@[simp] theorem TCB.queuePPrev_mk (f1 f2 f3 f4 f5 f6 f7 f8 f9 f10 f11 f12 f13 f14 f15 f16 f17 f18 f19 f20 f21 f22 f23 f24 f25 f26 f27 f28 f29) :
-    (TCB.mk f1 f2 f3 f4 f5 f6 f7 f8 f9 f10 f11 f12 f13 f14 f15 f16 f17 f18 f19 f20 f21 f22 f23 f24 f25 f26 f27 f28 f29).queuePPrev = QueuePPrev.ofOptCode f12 := rfl
+@[simp] theorem TCB.queuePPrev_mk (f1 f2 f3 f4 f5 f6 f7 f8 f9 f10 f11 f12 f13 f14 f15 f16 f17 f18 f19 f20 f21 f22 f23 f24 f25 f26 f27 f28 f29 f30 f31 f32 f33 f34 f35) :
+    (TCB.mk f1 f2 f3 f4 f5 f6 f7 f8 f9 f10 f11 f12 f13 f14 f15 f16 f17 f18 f19 f20 f21 f22 f23 f24 f25 f26 f27 f28 f29 f30 f31 f32 f33 f34 f35).queuePPrev = QueuePPrev.ofOptCode f12 := rfl
 
-@[simp] theorem TCB.queueNext_mk (f1 f2 f3 f4 f5 f6 f7 f8 f9 f10 f11 f12 f13 f14 f15 f16 f17 f18 f19 f20 f21 f22 f23 f24 f25 f26 f27 f28 f29) :
-    (TCB.mk f1 f2 f3 f4 f5 f6 f7 f8 f9 f10 f11 f12 f13 f14 f15 f16 f17 f18 f19 f20 f21 f22 f23 f24 f25 f26 f27 f28 f29).queueNext = SeLe4n.ThreadId.ofOptCode f13 := rfl
+@[simp] theorem TCB.queueNext_mk (f1 f2 f3 f4 f5 f6 f7 f8 f9 f10 f11 f12 f13 f14 f15 f16 f17 f18 f19 f20 f21 f22 f23 f24 f25 f26 f27 f28 f29 f30 f31 f32 f33 f34 f35) :
+    (TCB.mk f1 f2 f3 f4 f5 f6 f7 f8 f9 f10 f11 f12 f13 f14 f15 f16 f17 f18 f19 f20 f21 f22 f23 f24 f25 f26 f27 f28 f29 f30 f31 f32 f33 f34 f35).queueNext = SeLe4n.ThreadId.ofOptCode f13 := rfl
 
 /-- The notification-queue predecessor, read from its scalar code. -/
 @[inline] def TCB.ntfnPrev (t : TCB) : Option SeLe4n.ThreadId :=
@@ -1206,11 +1224,11 @@ a written link as the value written and an untouched link as the old view. -/
 @[inline] def TCB.ntfnNext (t : TCB) : Option SeLe4n.ThreadId :=
   SeLe4n.ThreadId.ofOptCode t.ntfnNextCode
 
-@[simp] theorem TCB.ntfnPrev_mk (f1 f2 f3 f4 f5 f6 f7 f8 f9 f10 f11 f12 f13 f14 f15 f16 f17 f18 f19 f20 f21 f22 f23 f24 f25 f26 f27 f28 f29) :
-    (TCB.mk f1 f2 f3 f4 f5 f6 f7 f8 f9 f10 f11 f12 f13 f14 f15 f16 f17 f18 f19 f20 f21 f22 f23 f24 f25 f26 f27 f28 f29).ntfnPrev = SeLe4n.ThreadId.ofOptCode f28 := rfl
+@[simp] theorem TCB.ntfnPrev_mk (f1 f2 f3 f4 f5 f6 f7 f8 f9 f10 f11 f12 f13 f14 f15 f16 f17 f18 f19 f20 f21 f22 f23 f24 f25 f26 f27 f28 f29 f30 f31 f32 f33 f34 f35) :
+    (TCB.mk f1 f2 f3 f4 f5 f6 f7 f8 f9 f10 f11 f12 f13 f14 f15 f16 f17 f18 f19 f20 f21 f22 f23 f24 f25 f26 f27 f28 f29 f30 f31 f32 f33 f34 f35).ntfnPrev = SeLe4n.ThreadId.ofOptCode f28 := rfl
 
-@[simp] theorem TCB.ntfnNext_mk (f1 f2 f3 f4 f5 f6 f7 f8 f9 f10 f11 f12 f13 f14 f15 f16 f17 f18 f19 f20 f21 f22 f23 f24 f25 f26 f27 f28 f29) :
-    (TCB.mk f1 f2 f3 f4 f5 f6 f7 f8 f9 f10 f11 f12 f13 f14 f15 f16 f17 f18 f19 f20 f21 f22 f23 f24 f25 f26 f27 f28 f29).ntfnNext = SeLe4n.ThreadId.ofOptCode f29 := rfl
+@[simp] theorem TCB.ntfnNext_mk (f1 f2 f3 f4 f5 f6 f7 f8 f9 f10 f11 f12 f13 f14 f15 f16 f17 f18 f19 f20 f21 f22 f23 f24 f25 f26 f27 f28 f29 f30 f31 f32 f33 f34 f35) :
+    (TCB.mk f1 f2 f3 f4 f5 f6 f7 f8 f9 f10 f11 f12 f13 f14 f15 f16 f17 f18 f19 f20 f21 f22 f23 f24 f25 f26 f27 f28 f29 f30 f31 f32 f33 f34 f35).ntfnNext = SeLe4n.ThreadId.ofOptCode f29 := rfl
 
 @[simp] theorem TCB.ofOptCode_ntfnPrevCode (t : TCB) :
     SeLe4n.ThreadId.ofOptCode t.ntfnPrevCode = t.ntfnPrev := rfl
@@ -1457,7 +1475,11 @@ instance : BEq TCB where
     a.fpContext == b.fpContext &&
     -- WS-ZA ZA4.4: the notification-queue links participate in structural
     -- equality, compared as their scalar codes.
-    a.ntfnPrevCode == b.ntfnPrevCode && a.ntfnNextCode == b.ntfnNextCode
+    a.ntfnPrevCode == b.ntfnPrevCode && a.ntfnNextCode == b.ntfnNextCode &&
+    -- WS-ZA ZA4.5: and the run-queue links, core and bucket.
+    a.runCoreCode == b.runCoreCode && a.runPrio == b.runPrio &&
+    a.runPrevCode == b.runPrevCode && a.runNextCode == b.runNextCode &&
+    a.runBucketPrevCode == b.runBucketPrevCode && a.runBucketNextCode == b.runBucketNextCode
 
 /-- AJ4-D (L-09): Detect sentinel-initialized (unconfigured) TCBs.
     Returns `true` if the TCB's identity or address-space references use
@@ -1711,7 +1733,12 @@ theorem TCB.ext {a b : TCB}
     (hFp : a.fpContext = b.fpContext)
     -- WS-ZA ZA4.4: and the notification-queue links.
     (hNPrev : a.ntfnPrev = b.ntfnPrev)
-    (hNNext : a.ntfnNext = b.ntfnNext) :
+    (hNNext : a.ntfnNext = b.ntfnNext)
+    -- WS-ZA ZA4.5: and the run-queue links, core and bucket.
+    (hRCore : a.runCoreCode = b.runCoreCode) (hRPrio : a.runPrio = b.runPrio)
+    (hRPrev : a.runPrevCode = b.runPrevCode) (hRNext : a.runNextCode = b.runNextCode)
+    (hRBPrev : a.runBucketPrevCode = b.runBucketPrevCode)
+    (hRBNext : a.runBucketNextCode = b.runBucketNextCode) :
     a = b := by
   have hNPrevC : a.ntfnPrevCode = b.ntfnPrevCode := by
     rw [← TCB.optCode_ntfnPrev a, ← TCB.optCode_ntfnPrev b, hNPrev]
@@ -1729,7 +1756,8 @@ theorem TCB.ext {a b : TCB}
   simp at *
   exact ⟨hTid, hPrio, hDom, hCsp, hVsp, hBuf, hIpc, hTs, hSlice, hDeadline,
          hQPrevC, hQPPrevC, hQNextC, hPend, hRC, hFh, hBn, hSc, hTb, hMcp, hPip, hTo,
-         hCpuAff, hReply, hPendReply, hPendFault, hFp, hNPrevC, hNNextC⟩
+         hCpuAff, hReply, hPendReply, hPendFault, hFp, hNPrevC, hNNextC,
+         hRCore, hRPrio, hRPrev, hRNext, hRBPrev, hRBNext⟩
 
 /-- Intrusive FIFO queue metadata for endpoint wait queues.
 

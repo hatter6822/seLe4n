@@ -875,7 +875,8 @@ def tcbReferencesReservedIdleSlot (tcb : TCB) : Bool :=
      _timeSlice, _deadline, queuePrevCode, queuePPrevCode, queueNextCode, pendingMessage, _registerContext,
      _faultHandler, boundNotification, schedContextBinding, timeoutBudget,
      _maxControlledPriority, _pipBoost, _timedOut, _cpuAffinity, replyObject,
-     pendingReceiveReply, _pendingFault, _fpContext, ntfnPrevCode, ntfnNextCode⟩ =>
+     pendingReceiveReply, _pendingFault, _fpContext, ntfnPrevCode, ntfnNextCode,
+     _runCoreCode, _runPrio, _runPrevCode, _runNextCode, _runBucketPrevCode, _runBucketNextCode⟩ =>
     SeLe4n.Kernel.isIdleThreadId tid ||
     SeLe4n.Kernel.isIdleObjId cspaceRoot || SeLe4n.Kernel.isIdleObjId vspaceRoot ||
     boundNotification.any SeLe4n.Kernel.isIdleObjId ||
@@ -1792,7 +1793,8 @@ def bootSafeTcbCheck (tcb : TCB) : Bool :=
      _timeSlice, _deadline, _queuePrev, _queuePPrev, _queueNext, _pendingMessage,
      _registerContext, _faultHandler, _boundNotification, _schedContextBinding, _timeoutBudget,
      _maxControlledPriority, _pipBoost, _timedOut, _cpuAffinity, _replyObject,
-     _pendingReceiveReply, _pendingFault, _fpContext, _ntfnPrevCode, _ntfnNextCode⟩ =>
+     _pendingReceiveReply, _pendingFault, _fpContext, _ntfnPrevCode, _ntfnNextCode,
+     _runCoreCode, _runPrio, _runPrevCode, _runNextCode, _runBucketPrevCode, _runBucketNextCode⟩ =>
     tcb.pendingMessage.isNone && decide (tcb.ipcState = .ready) &&
     tcb.queueNext.isNone && tcb.queuePrev.isNone && tcb.queuePPrev.isNone &&
     tcb.timeoutBudget.isNone &&
@@ -4091,7 +4093,8 @@ def tcbAffinityDeclared (cores : List SeLe4n.Kernel.Concurrency.CoreId) (tcb : T
      _timeSlice, _deadline, _queuePrev, _queuePPrev, _queueNext, _pendingMessage,
      _registerContext, _faultHandler, _boundNotification, _schedContextBinding, _timeoutBudget,
      _maxControlledPriority, _pipBoost, _timedOut, _cpuAffinity, _replyObject,
-     _pendingReceiveReply, _pendingFault, _fpContext, _ntfnPrevCode, _ntfnNextCode⟩ =>
+     _pendingReceiveReply, _pendingFault, _fpContext, _ntfnPrevCode, _ntfnNextCode,
+     _runCoreCode, _runPrio, _runPrevCode, _runNextCode, _runBucketPrevCode, _runBucketNextCode⟩ =>
     match tcb.cpuAffinity with
     | some c => cores.contains c
     | none   => true

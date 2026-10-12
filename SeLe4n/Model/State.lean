@@ -112,6 +112,13 @@ structure SchedulerState where
       compatibility with information-flow subsystem. -/
   runQueue : Vector SeLe4n.Kernel.RunQueue numCores :=
     Vector.replicate numCores SeLe4n.Kernel.RunQueue.empty
+  /-- WS-ZA ZA4.5: each core's run queue as the core holds it — the ends of
+      the queue and of each priority's bucket, the count and the highest
+      queued priority — while each queued thread's links live in its TCB
+      (`TCB.runPrevCode`, …, `TCB.runCoreCode`).  The two agree with
+      `runQueue` (`SystemState.runQueueRefined`). -/
+  runQueueEnds : Vector SeLe4n.Kernel.RunQueueEnds numCores :=
+    Vector.replicate numCores SeLe4n.Kernel.RunQueueEnds.empty
   current : Vector (Option SeLe4n.ThreadId) numCores :=
     Vector.replicate numCores none
   /-- M-05/WS-E6: Currently active scheduling domain. Only threads in this
@@ -189,6 +196,9 @@ def currentOnCore (s : SchedulerState) (c : CoreId) : Option SeLe4n.ThreadId :=
 /-- Per-core run queue of `s` on core `c`. -/
 def runQueueOnCore (s : SchedulerState) (c : CoreId) : SeLe4n.Kernel.RunQueue :=
   s.runQueue.get c
+/-- WS-ZA ZA4.5: core `c`'s run-queue ends. -/
+def runQueueEndsOnCore (s : SchedulerState) (c : CoreId) : SeLe4n.Kernel.RunQueueEnds :=
+  s.runQueueEnds.get c
 /-- Per-core CBS replenishment queue of `s` on core `c`. -/
 def replenishQueueOnCore (s : SchedulerState) (c : CoreId) : SeLe4n.Kernel.ReplenishQueue :=
   s.replenishQueue.get c
@@ -225,6 +235,9 @@ def setCurrentOnCore (s : SchedulerState) (c : CoreId) (v : Option SeLe4n.Thread
 /-- Write core `c`'s run-queue slot. -/
 def setRunQueueOnCore (s : SchedulerState) (c : CoreId) (v : SeLe4n.Kernel.RunQueue) :
     SchedulerState := { s with runQueue := s.runQueue.set c.val v c.isLt }
+/-- WS-ZA ZA4.5: write core `c`'s run-queue ends. -/
+def setRunQueueEndsOnCore (s : SchedulerState) (c : CoreId) (v : SeLe4n.Kernel.RunQueueEnds) :
+    SchedulerState := { s with runQueueEnds := s.runQueueEnds.set c.val v c.isLt }
 /-- Write core `c`'s CBS replenishment-queue slot. -/
 def setReplenishQueueOnCore (s : SchedulerState) (c : CoreId) (v : SeLe4n.Kernel.ReplenishQueue) :
     SchedulerState := { s with replenishQueue := s.replenishQueue.set c.val v c.isLt }
@@ -283,7 +296,8 @@ theorem ext_perCore {s₁ s₂ : SchedulerState}
     (hLTE  : ∀ c : CoreId, s₁.lastTimeoutErrorsOnCore c = s₂.lastTimeoutErrorsOnCore c)
     (hRP   : ∀ c : CoreId, s₁.reschedulePendingOnCore c = s₂.reschedulePendingOnCore c)
     (hSched : s₁.domainSchedule = s₂.domainSchedule)
-    (hSlice : s₁.configDefaultTimeSlice = s₂.configDefaultTimeSlice) :
+    (hSlice : s₁.configDefaultTimeSlice = s₂.configDefaultTimeSlice)
+    (hRQE  : ∀ c : CoreId, s₁.runQueueEndsOnCore c = s₂.runQueueEndsOnCore c) :
     s₁ = s₂ := by
   have h1 : s₁.current = s₂.current := PerCoreVector.ext fun c => hCur c
   have h2 : s₁.runQueue = s₂.runQueue := PerCoreVector.ext fun c => hRQ c
@@ -293,8 +307,9 @@ theorem ext_perCore {s₁ s₂ : SchedulerState}
   have h6 : s₁.domainScheduleIndex = s₂.domainScheduleIndex := PerCoreVector.ext fun c => hDSI c
   have h7 : s₁.lastTimeoutErrors = s₂.lastTimeoutErrors := PerCoreVector.ext fun c => hLTE c
   have h8 : s₁.reschedulePending = s₂.reschedulePending := PerCoreFlags.ext fun c => hRP c
-  obtain ⟨rq1, cu1, ad1, dtr1, dsch1, dsi1, cdts1, rpl1, lte1, rp1⟩ := s₁
-  obtain ⟨rq2, cu2, ad2, dtr2, dsch2, dsi2, cdts2, rpl2, lte2, rp2⟩ := s₂
+  have h9 : s₁.runQueueEnds = s₂.runQueueEnds := PerCoreVector.ext fun c => hRQE c
+  obtain ⟨rq1, rqe1, cu1, ad1, dtr1, dsch1, dsi1, cdts1, rpl1, lte1, rp1⟩ := s₁
+  obtain ⟨rq2, rqe2, cu2, ad2, dtr2, dsch2, dsi2, cdts2, rpl2, lte2, rp2⟩ := s₂
   simp_all
 
 
@@ -721,6 +736,83 @@ theorem setCurrentOnCore_markReschedulePendingOnCore (s : SchedulerState) (c c' 
     (v : Option SeLe4n.ThreadId) :
     (s.markReschedulePendingOnCore c).setCurrentOnCore c' v
       = (s.setCurrentOnCore c' v).markReschedulePendingOnCore c := rfl
+
+/-! ### WS-ZA ZA4.5: the run-queue ends' store/load algebra
+
+The same shape as the fields above: `_self`, the cross-core `_ne`, and the
+cross-field frames in both directions. -/
+@[simp] theorem setRunQueueEndsOnCore_runQueueEndsOnCore_self (s : SchedulerState) (c : CoreId) (v : SeLe4n.Kernel.RunQueueEnds) :
+    (s.setRunQueueEndsOnCore c v).runQueueEndsOnCore c = v := by
+  simp [SchedulerState.setRunQueueEndsOnCore, SchedulerState.runQueueEndsOnCore]
+@[simp] theorem setRunQueueEndsOnCore_runQueueEndsOnCore_ne (s : SchedulerState) (c c' : CoreId) (v : SeLe4n.Kernel.RunQueueEnds) (h : c ≠ c') :
+    (s.setRunQueueEndsOnCore c v).runQueueEndsOnCore c' = s.runQueueEndsOnCore c' := by
+  simp only [SchedulerState.setRunQueueEndsOnCore, SchedulerState.runQueueEndsOnCore]
+  exact Vector.getElem_set_ne _ _ (fun e => h (Fin.ext e))
+@[simp] theorem setRunQueueEndsOnCore_currentOnCore (s : SchedulerState) (c c' : CoreId) (v : SeLe4n.Kernel.RunQueueEnds) :
+    (s.setRunQueueEndsOnCore c v).currentOnCore c' = s.currentOnCore c' := by
+  simp [SchedulerState.setRunQueueEndsOnCore, SchedulerState.currentOnCore]
+@[simp] theorem setRunQueueEndsOnCore_runQueueOnCore (s : SchedulerState) (c c' : CoreId) (v : SeLe4n.Kernel.RunQueueEnds) :
+    (s.setRunQueueEndsOnCore c v).runQueueOnCore c' = s.runQueueOnCore c' := by
+  simp [SchedulerState.setRunQueueEndsOnCore, SchedulerState.runQueueOnCore]
+@[simp] theorem setRunQueueEndsOnCore_replenishQueueOnCore (s : SchedulerState) (c c' : CoreId) (v : SeLe4n.Kernel.RunQueueEnds) :
+    (s.setRunQueueEndsOnCore c v).replenishQueueOnCore c' = s.replenishQueueOnCore c' := by
+  simp [SchedulerState.setRunQueueEndsOnCore, SchedulerState.replenishQueueOnCore]
+@[simp] theorem setRunQueueEndsOnCore_activeDomainOnCore (s : SchedulerState) (c c' : CoreId) (v : SeLe4n.Kernel.RunQueueEnds) :
+    (s.setRunQueueEndsOnCore c v).activeDomainOnCore c' = s.activeDomainOnCore c' := by
+  simp [SchedulerState.setRunQueueEndsOnCore, SchedulerState.activeDomainOnCore]
+@[simp] theorem setRunQueueEndsOnCore_domainTimeRemainingOnCore (s : SchedulerState) (c c' : CoreId) (v : SeLe4n.Kernel.RunQueueEnds) :
+    (s.setRunQueueEndsOnCore c v).domainTimeRemainingOnCore c' = s.domainTimeRemainingOnCore c' := by
+  simp [SchedulerState.setRunQueueEndsOnCore, SchedulerState.domainTimeRemainingOnCore]
+@[simp] theorem setRunQueueEndsOnCore_domainScheduleIndexOnCore (s : SchedulerState) (c c' : CoreId) (v : SeLe4n.Kernel.RunQueueEnds) :
+    (s.setRunQueueEndsOnCore c v).domainScheduleIndexOnCore c' = s.domainScheduleIndexOnCore c' := by
+  simp [SchedulerState.setRunQueueEndsOnCore, SchedulerState.domainScheduleIndexOnCore]
+@[simp] theorem setRunQueueEndsOnCore_lastTimeoutErrorsOnCore (s : SchedulerState) (c c' : CoreId) (v : SeLe4n.Kernel.RunQueueEnds) :
+    (s.setRunQueueEndsOnCore c v).lastTimeoutErrorsOnCore c' = s.lastTimeoutErrorsOnCore c' := by
+  simp [SchedulerState.setRunQueueEndsOnCore, SchedulerState.lastTimeoutErrorsOnCore]
+@[simp] theorem setRunQueueEndsOnCore_reschedulePendingOnCore (s : SchedulerState) (c c' : CoreId) (v : SeLe4n.Kernel.RunQueueEnds) :
+    (s.setRunQueueEndsOnCore c v).reschedulePendingOnCore c' = s.reschedulePendingOnCore c' := by
+  simp [SchedulerState.setRunQueueEndsOnCore, SchedulerState.reschedulePendingOnCore]
+@[simp] theorem setRunQueueEndsOnCore_domainSchedule (s : SchedulerState) (c : CoreId) (v : SeLe4n.Kernel.RunQueueEnds) :
+    (s.setRunQueueEndsOnCore c v).domainSchedule = s.domainSchedule := by
+  simp [SchedulerState.setRunQueueEndsOnCore]
+@[simp] theorem setRunQueueEndsOnCore_configDefaultTimeSlice (s : SchedulerState) (c : CoreId) (v : SeLe4n.Kernel.RunQueueEnds) :
+    (s.setRunQueueEndsOnCore c v).configDefaultTimeSlice = s.configDefaultTimeSlice := by
+  simp [SchedulerState.setRunQueueEndsOnCore]
+@[simp] theorem setCurrentOnCore_runQueueEndsOnCore (s : SchedulerState) (c c' : CoreId) (v : Option SeLe4n.ThreadId) :
+    (s.setCurrentOnCore c v).runQueueEndsOnCore c' = s.runQueueEndsOnCore c' := by
+  simp [SchedulerState.setCurrentOnCore, SchedulerState.runQueueEndsOnCore]
+@[simp] theorem setRunQueueOnCore_runQueueEndsOnCore (s : SchedulerState) (c c' : CoreId) (v : SeLe4n.Kernel.RunQueue) :
+    (s.setRunQueueOnCore c v).runQueueEndsOnCore c' = s.runQueueEndsOnCore c' := by
+  simp [SchedulerState.setRunQueueOnCore, SchedulerState.runQueueEndsOnCore]
+@[simp] theorem setReplenishQueueOnCore_runQueueEndsOnCore (s : SchedulerState) (c c' : CoreId) (v : SeLe4n.Kernel.ReplenishQueue) :
+    (s.setReplenishQueueOnCore c v).runQueueEndsOnCore c' = s.runQueueEndsOnCore c' := by
+  simp [SchedulerState.setReplenishQueueOnCore, SchedulerState.runQueueEndsOnCore]
+@[simp] theorem setActiveDomainOnCore_runQueueEndsOnCore (s : SchedulerState) (c c' : CoreId) (v : SeLe4n.DomainId) :
+    (s.setActiveDomainOnCore c v).runQueueEndsOnCore c' = s.runQueueEndsOnCore c' := by
+  simp [SchedulerState.setActiveDomainOnCore, SchedulerState.runQueueEndsOnCore]
+@[simp] theorem setDomainTimeRemainingOnCore_runQueueEndsOnCore (s : SchedulerState) (c c' : CoreId) (v : Nat) :
+    (s.setDomainTimeRemainingOnCore c v).runQueueEndsOnCore c' = s.runQueueEndsOnCore c' := by
+  simp [SchedulerState.setDomainTimeRemainingOnCore, SchedulerState.runQueueEndsOnCore]
+@[simp] theorem setDomainScheduleIndexOnCore_runQueueEndsOnCore (s : SchedulerState) (c c' : CoreId) (v : Nat) :
+    (s.setDomainScheduleIndexOnCore c v).runQueueEndsOnCore c' = s.runQueueEndsOnCore c' := by
+  simp [SchedulerState.setDomainScheduleIndexOnCore, SchedulerState.runQueueEndsOnCore]
+@[simp] theorem setLastTimeoutErrorsOnCore_runQueueEndsOnCore (s : SchedulerState) (c c' : CoreId) (v : List (SeLe4n.ThreadId × KernelError)) :
+    (s.setLastTimeoutErrorsOnCore c v).runQueueEndsOnCore c' = s.runQueueEndsOnCore c' := by
+  simp [SchedulerState.setLastTimeoutErrorsOnCore, SchedulerState.runQueueEndsOnCore]
+@[simp] theorem setReschedulePendingOnCore_runQueueEndsOnCore (s : SchedulerState) (c c' : CoreId) (v : Bool) :
+    (s.setReschedulePendingOnCore c v).runQueueEndsOnCore c' = s.runQueueEndsOnCore c' := by
+  simp [SchedulerState.setReschedulePendingOnCore, SchedulerState.runQueueEndsOnCore]
+@[simp] theorem markReschedulePendingOnCore_runQueueEndsOnCore (s : SchedulerState) (c c' : CoreId) :
+    (s.markReschedulePendingOnCore c).runQueueEndsOnCore c' = s.runQueueEndsOnCore c' := by
+  simp [SchedulerState.markReschedulePendingOnCore, SchedulerState.setReschedulePendingOnCore, SchedulerState.runQueueEndsOnCore]
+@[simp] theorem clearReschedulePendingOnCore_runQueueEndsOnCore (s : SchedulerState) (c c' : CoreId) :
+    (s.clearReschedulePendingOnCore c).runQueueEndsOnCore c' = s.runQueueEndsOnCore c' := by
+  simp [SchedulerState.clearReschedulePendingOnCore, SchedulerState.setReschedulePendingOnCore, SchedulerState.runQueueEndsOnCore]
+@[simp] theorem markReschedulePendingOnCoreIf_runQueueEndsOnCore (s : SchedulerState) (c c' : CoreId) (b : Bool) :
+    (s.markReschedulePendingOnCoreIf c b).runQueueEndsOnCore c' = s.runQueueEndsOnCore c' := by
+  simp [SchedulerState.markReschedulePendingOnCoreIf, SchedulerState.setReschedulePendingOnCore, SchedulerState.runQueueEndsOnCore]
+@[simp] theorem withReschedulePending_runQueueEndsOnCore (s : SchedulerState) (v : PerCoreFlags) (c : CoreId) :
+    ({ s with reschedulePending := v } : SchedulerState).runQueueEndsOnCore c = s.runQueueEndsOnCore c := rfl
 
 end SchedulerState
 
