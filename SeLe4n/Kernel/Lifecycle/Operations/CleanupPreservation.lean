@@ -378,10 +378,10 @@ relation* — the splice's own patches are link rewrites, so every non-link fiel
 framed by the same fact, and fixing one field meant the next conjunct to need one
 (here `schedContextBinding`) had to re-derive the whole case analysis. -/
 def tcbQueueLinkRewrite (a b : TCB) : Prop :=
-  ∃ qp qpp qn, a = { b with queuePrev := qp, queuePPrev := qpp, queueNext := qn }
+  ∃ qp qpp qn, a = { b with queuePrevCode := qp, queuePPrevCode := qpp, queueNextCode := qn }
 
 theorem tcbQueueLinkRewrite.refl (a : TCB) : tcbQueueLinkRewrite a a :=
-  ⟨a.queuePrev, a.queuePPrev, a.queueNext, rfl⟩
+  ⟨a.queuePrevCode, a.queuePPrevCode, a.queueNextCode, rfl⟩
 
 theorem tcbQueueLinkRewrite.trans {a b c : TCB}
     (h1 : tcbQueueLinkRewrite a b) (h2 : tcbQueueLinkRewrite b c) :
@@ -399,7 +399,7 @@ The two link-writing updates the splice performs are its instances
 (`tcbQueueLinkRewrite_queueUnlinkPredecessor` / `_Successor` below). -/
 theorem tcbQueueLinkRewrite.field {α : Type} (f : TCB → α) {a b : TCB}
     (h : tcbQueueLinkRewrite a b) (hf : ∀ (t : TCB) qp qpp qn,
-      f { t with queuePrev := qp, queuePPrev := qpp, queueNext := qn } = f t) :
+      f { t with queuePrevCode := qp, queuePPrevCode := qpp, queueNextCode := qn } = f t) :
     f a = f b := by
   obtain ⟨qp, qpp, qn, rfl⟩ := h
   exact hf b qp qpp qn
@@ -407,12 +407,12 @@ theorem tcbQueueLinkRewrite.field {α : Type} (f : TCB → α) {a b : TCB}
 /-- **`v0.35.183`**: the predecessor patch is a link rewrite. -/
 theorem tcbQueueLinkRewrite_queueUnlinkPredecessor (removed p : TCB) :
     tcbQueueLinkRewrite (queueUnlinkPredecessor removed p) p :=
-  ⟨p.queuePrev, p.queuePPrev, removed.queueNext, rfl⟩
+  ⟨p.queuePrevCode, p.queuePPrevCode, removed.queueNextCode, rfl⟩
 
 /-- **`v0.35.183`**: and so is the successor patch. -/
 theorem tcbQueueLinkRewrite_queueUnlinkSuccessor (removed n : TCB) :
     tcbQueueLinkRewrite (queueUnlinkSuccessor removed n) n :=
-  ⟨removed.queuePrev, removed.queuePPrev, n.queueNext, rfl⟩
+  ⟨removed.queuePrevCode, removed.queuePPrevCode, n.queueNextCode, rfl⟩
 
 -- ============================================================================
 -- WS-SM SM6.E: per-key lookup characterisation of the cleanup sweeps
@@ -2769,10 +2769,10 @@ theorem spliceOutMidQueueNode_tcb_backward
   · exact ⟨t', hPost, tcbQueueLinkRewrite.refl t'⟩
   · rename_i tcb hT
     obtain ⟨t1, h1, r1⟩ := queueNeighbourPatch_backward _ tcb.queueNext _
-      (fun n => ⟨tcb.queuePrev, tcb.queuePPrev, n.queueNext, rfl⟩)
+      (fun n => ⟨tcb.queuePrevCode, tcb.queuePPrevCode, n.queueNextCode, rfl⟩)
       (queueNeighbourPatch_invExt _ _ _ hInv) k t' hPost
     obtain ⟨t0, h0, r0⟩ := queueNeighbourPatch_backward st.objects tcb.queuePrev _
-      (fun p => ⟨p.queuePrev, p.queuePPrev, tcb.queueNext, rfl⟩) hInv k t1 h1
+      (fun p => ⟨p.queuePrevCode, p.queuePPrevCode, tcb.queueNextCode, rfl⟩) hInv k t1 h1
     exact ⟨t0, h0, r1.trans r0⟩
 
 /-- **WS-RR RR7.22 (residual)**: the mid-queue splice leaves every non-TCB object
@@ -2803,7 +2803,7 @@ downstream of both the destroy path and the retype wrapper — so the retype's o
 reservation theorems could not be stated at all until `v0.35.166` moved it). -/
 theorem spliceOutMidQueueNode_tcbField_frame {α : Type} (f : TCB → α)
     (hf : ∀ (t : TCB) qp qpp qn,
-      f { t with queuePrev := qp, queuePPrev := qpp, queueNext := qn } = f t)
+      f { t with queuePrevCode := qp, queuePPrevCode := qpp, queueNextCode := qn } = f t)
     (st : SystemState) (tid : SeLe4n.ThreadId) (hInv : st.objects.invExt)
     (x : SeLe4n.ThreadId) :
     ((spliceOutMidQueueNode st tid).getTcb? x).map f = (st.getTcb? x).map f := by

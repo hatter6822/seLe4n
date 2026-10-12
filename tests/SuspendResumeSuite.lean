@@ -581,8 +581,8 @@ private def sr028_restoreToReadyClearsIpcFields : IO Unit := do
   let tid : SeLe4n.ThreadId := ⟨1⟩
   let tcb := { mkTcb 1 .Ready with
     ipcState := .blockedOnSend ⟨50⟩,
-    queuePrev := some ⟨3⟩, queueNext := some ⟨4⟩,
-    queuePPrev := some .endpointHead,
+    queuePrevCode := SeLe4n.ThreadId.optCode (some ⟨3⟩), queueNextCode := SeLe4n.ThreadId.optCode (some ⟨4⟩),
+    queuePPrevCode := 1,
     -- `v0.35.134`: the fifth field `TCB.restoredToReady` clears was asserted by
     -- nothing, which is how the frozen mirror came to omit it for as long as it
     -- did -- a clear nobody measures is a clear nobody notices missing.
@@ -693,8 +693,8 @@ private def sr032_frozenResumeClearsEveryRestoredField : IO Unit := do
   let tid : SeLe4n.ThreadId := ⟨1⟩
   let stale := { mkTcb 1 .Inactive with
     ipcState := .blockedOnSend ⟨50⟩,
-    queuePrev := some ⟨3⟩, queueNext := some ⟨4⟩,
-    queuePPrev := some .endpointHead,
+    queuePrevCode := SeLe4n.ThreadId.optCode (some ⟨3⟩), queueNextCode := SeLe4n.ThreadId.optCode (some ⟨4⟩),
+    queuePPrevCode := 1,
     pendingReceiveReply := some ⟨7⟩ }
   -- The retired clear leaves four of the five fields set, so the assertions
   -- below are known to separate the two readings.

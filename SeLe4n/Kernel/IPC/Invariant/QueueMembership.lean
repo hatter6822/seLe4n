@@ -1331,7 +1331,7 @@ theorem storeTcbQueueLinks_stored_queueNext
       have hEq := Except.ok.inj hStep; subst hEq
       exact ⟨tcbWithQueueLinks tcb prev pprev next,
         storeObject_objects_eq' st tid.toObjId _ pair hObjInv hStore,
-        rfl⟩
+        by simp⟩
 
 /-- `storeTcbQueueLinks` sets the target's `queuePrev` to `prev` (mirror of
 `storeTcbQueueLinks_stored_queueNext`). -/
@@ -1354,7 +1354,7 @@ theorem storeTcbQueueLinks_stored_queuePrev
       have hEq := Except.ok.inj hStep; subst hEq
       exact ⟨tcbWithQueueLinks tcb prev pprev next,
         storeObject_objects_eq' st tid.toObjId _ pair hObjInv hStore,
-        rfl⟩
+        by simp⟩
 
 -- ============================================================================
 -- Section 7: Partial V3-J preservation (for rendezvous paths)

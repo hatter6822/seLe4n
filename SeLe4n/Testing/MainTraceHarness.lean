@@ -2542,12 +2542,12 @@ private def runTimeoutEndpointTrace (_counter : IO.Ref Nat) (st1 : SystemState) 
     tid := tid1, priority := ⟨50⟩, domain := ⟨0⟩,
     cspaceRoot := ⟨10⟩, vspaceRoot := ⟨20⟩, ipcBuffer := (SeLe4n.VAddr.ofNat 4096),
     ipcState := .blockedOnSend epId,
-    queuePrev := none, queueNext := some tid2, queuePPrev := some .endpointHead }
+    queuePrevCode := 0, queueNextCode := SeLe4n.ThreadId.optCode (some tid2), queuePPrevCode := 1 }
   let tcb2 : TCB := {
     tid := tid2, priority := ⟨50⟩, domain := ⟨0⟩,
     cspaceRoot := ⟨10⟩, vspaceRoot := ⟨20⟩, ipcBuffer := (SeLe4n.VAddr.ofNat 8192),
     ipcState := .blockedOnSend epId,
-    queuePrev := some tid1, queueNext := none, queuePPrev := some (.tcbNext tid1) }
+    queuePrevCode := SeLe4n.ThreadId.optCode (some tid1), queueNextCode := 0, queuePPrevCode := QueuePPrev.optCode (some (.tcbNext tid1)) }
   let ep : Endpoint := { sendQ := { head := some tid1, tail := some tid2 }, receiveQ := {} }
   let stQ := st1.withObjectStored epId (.endpoint ep)
       |>.withObjectStored tid1.toObjId (.tcb tcb1)
@@ -2624,7 +2624,7 @@ private def runTimeoutEndpointTrace (_counter : IO.Ref Nat) (st1 : SystemState) 
     cspaceRoot := ⟨10⟩, vspaceRoot := ⟨20⟩, ipcBuffer := (SeLe4n.VAddr.ofNat 8192),
     ipcState := .blockedOnCall epH,
     schedContextBinding := .donated scH vTid,
-    queuePrev := none, queueNext := none, queuePPrev := some .endpointHead }
+    queuePrevCode := 0, queueNextCode := 0, queuePPrevCode := 1 }
   -- The frame the victim's `Call` pushed: it heads `scH`, and `scH` names it back
   -- (`replyFrameHeadContext?` validates both directions).  `prev := none` makes it
   -- the bottom of the stack, so the pop's outer-caller resolution answers `none`
@@ -2710,7 +2710,7 @@ private def runTimeoutEndpointTrace (_counter : IO.Ref Nat) (st1 : SystemState) 
   -- pop unbinds the server, and the deschedule takes it off core 1's run queue —
   -- where OD1.7's wake, whose guards declined a queued thread, left it running
   -- `.unbound` on nobody's budget.  The resolver names the core the step wrote.
-  let holderReady : TCB := { holderPinned with ipcState := .ready, queuePPrev := none }
+  let holderReady : TCB := { holderPinned with ipcState := .ready, queuePPrevCode := 0 }
   let epIdle : Endpoint := { sendQ := {}, receiveQ := {} }
   let stReady := stR.withObjectStored epH (.endpoint epIdle)
       |>.withObjectStored hTid.toObjId (.tcb holderReady)
@@ -2853,17 +2853,17 @@ private def runTimeoutEndpointTrace (_counter : IO.Ref Nat) (st1 : SystemState) 
     tid := tid1, priority := ⟨50⟩, domain := ⟨0⟩,
     cspaceRoot := ⟨10⟩, vspaceRoot := ⟨20⟩, ipcBuffer := (SeLe4n.VAddr.ofNat 4096),
     ipcState := .blockedOnSend epId,
-    queuePrev := none, queueNext := some tid2, queuePPrev := some .endpointHead }
+    queuePrevCode := 0, queueNextCode := SeLe4n.ThreadId.optCode (some tid2), queuePPrevCode := 1 }
   let tcb2_3q : TCB := {
     tid := tid2, priority := ⟨50⟩, domain := ⟨0⟩,
     cspaceRoot := ⟨10⟩, vspaceRoot := ⟨20⟩, ipcBuffer := (SeLe4n.VAddr.ofNat 8192),
     ipcState := .blockedOnSend epId,
-    queuePrev := some tid1, queueNext := some tid3, queuePPrev := some (.tcbNext tid1) }
+    queuePrevCode := SeLe4n.ThreadId.optCode (some tid1), queueNextCode := SeLe4n.ThreadId.optCode (some tid3), queuePPrevCode := QueuePPrev.optCode (some (.tcbNext tid1)) }
   let tcb3_3q : TCB := {
     tid := tid3, priority := ⟨50⟩, domain := ⟨0⟩,
     cspaceRoot := ⟨10⟩, vspaceRoot := ⟨20⟩, ipcBuffer := (SeLe4n.VAddr.ofNat 12288),
     ipcState := .blockedOnSend epId,
-    queuePrev := some tid2, queueNext := none, queuePPrev := some (.tcbNext tid2) }
+    queuePrevCode := SeLe4n.ThreadId.optCode (some tid2), queueNextCode := 0, queuePPrevCode := QueuePPrev.optCode (some (.tcbNext tid2)) }
   let ep3q : Endpoint := { sendQ := { head := some tid1, tail := some tid3 }, receiveQ := {} }
   let stQ3 := st1.withObjectStored epId (.endpoint ep3q)
       |>.withObjectStored tid1.toObjId (.tcb tcb1_3q)
@@ -2895,12 +2895,12 @@ private def runTimeoutEndpointTrace (_counter : IO.Ref Nat) (st1 : SystemState) 
     tid := tid1, priority := ⟨50⟩, domain := ⟨0⟩,
     cspaceRoot := ⟨10⟩, vspaceRoot := ⟨20⟩, ipcBuffer := (SeLe4n.VAddr.ofNat 4096),
     ipcState := .blockedOnReceive epId,
-    queuePrev := none, queueNext := some tid2, queuePPrev := some .endpointHead }
+    queuePrevCode := 0, queueNextCode := SeLe4n.ThreadId.optCode (some tid2), queuePPrevCode := 1 }
   let tcb2Recv : TCB := {
     tid := tid2, priority := ⟨50⟩, domain := ⟨0⟩,
     cspaceRoot := ⟨10⟩, vspaceRoot := ⟨20⟩, ipcBuffer := (SeLe4n.VAddr.ofNat 8192),
     ipcState := .blockedOnReceive epId,
-    queuePrev := some tid1, queueNext := none, queuePPrev := some (.tcbNext tid1) }
+    queuePrevCode := SeLe4n.ThreadId.optCode (some tid1), queueNextCode := 0, queuePPrevCode := QueuePPrev.optCode (some (.tcbNext tid1)) }
   let stRecvQ := st1.withObjectStored epId (.endpoint epRecv)
       |>.withObjectStored tid1.toObjId (.tcb tcb1Recv)
       |>.withObjectStored tid2.toObjId (.tcb tcb2Recv)
@@ -2920,7 +2920,7 @@ private def runTimeoutEndpointTrace (_counter : IO.Ref Nat) (st1 : SystemState) 
     tid := tid1, priority := ⟨50⟩, domain := ⟨0⟩,
     cspaceRoot := ⟨10⟩, vspaceRoot := ⟨20⟩, ipcBuffer := (SeLe4n.VAddr.ofNat 4096),
     ipcState := .blockedOnCall epId,
-    queuePrev := none, queueNext := none, queuePPrev := some .endpointHead }
+    queuePrevCode := 0, queueNextCode := 0, queuePPrevCode := 1 }
   let epCall : Endpoint := { sendQ := { head := some tid1, tail := some tid1 }, receiveQ := {} }
   let stCall := st1.withObjectStored epId (.endpoint epCall)
       |>.withObjectStored tid1.toObjId (.tcb tcb1Call)
@@ -2945,13 +2945,13 @@ private def runTimeoutEndpointTrace (_counter : IO.Ref Nat) (st1 : SystemState) 
     cspaceRoot := ⟨10⟩, vspaceRoot := ⟨20⟩, ipcBuffer := (SeLe4n.VAddr.ofNat 4096),
     ipcState := .blockedOnSend epId,
     schedContextBinding := .bound scIdMulti,
-    queuePrev := none, queueNext := some tid2, queuePPrev := some .endpointHead }
+    queuePrevCode := 0, queueNextCode := SeLe4n.ThreadId.optCode (some tid2), queuePPrevCode := 1 }
   let tcbM2 : TCB := {
     tid := tid2, priority := ⟨50⟩, domain := ⟨0⟩,
     cspaceRoot := ⟨10⟩, vspaceRoot := ⟨20⟩, ipcBuffer := (SeLe4n.VAddr.ofNat 8192),
     ipcState := .blockedOnSend epId,
     schedContextBinding := .bound scIdMulti,
-    queuePrev := some tid1, queueNext := none, queuePPrev := some (.tcbNext tid1) }
+    queuePrevCode := SeLe4n.ThreadId.optCode (some tid1), queueNextCode := 0, queuePPrevCode := QueuePPrev.optCode (some (.tcbNext tid1)) }
   let stMulti := { (st1.withObjectStored scIdMulti.toObjId (.schedContext scMulti)
         |>.withObjectStored epId (.endpoint epMulti)
         |>.withObjectStored tid1.toObjId (.tcb tcbM1)

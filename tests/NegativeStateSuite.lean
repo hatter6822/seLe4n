@@ -183,7 +183,7 @@ private def corruptThreadQueueLinks
       .ok {
         st with
         objects := st.objects.insert tid.toObjId
-          (.tcb { tcb with queuePrev := prev, queuePPrev := pprev, queueNext := next })
+          (.tcb { tcb with queuePrevCode := SeLe4n.ThreadId.optCode prev, queuePPrevCode := QueuePPrev.optCode pprev, queueNextCode := SeLe4n.ThreadId.optCode next })
       }
   | _ => .error .objectNotFound
 

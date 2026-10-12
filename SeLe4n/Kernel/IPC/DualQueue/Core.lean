@@ -1154,9 +1154,8 @@ private theorem FieldRefines.insert_link_update {α : Type} (f : TCB → α)
     alone.  The four conditional inserts write queue links and the removed
     thread's own link clear, so `f` carries whenever it reads none of those. -/
 theorem endpointQueueRemove_getTcb_upToField {α : Type} (f : TCB → α)
-    (hLinkFree : ∀ (t : TCB) (qp : Option SeLe4n.ThreadId) (qpp : Option QueuePPrev)
-      (qn : Option SeLe4n.ThreadId),
-      f { t with queuePrev := qp, queuePPrev := qpp, queueNext := qn } = f t)
+    (hLinkFree : ∀ (t : TCB) (qp qpp qn : Nat),
+      f { t with queuePrevCode := qp, queuePPrevCode := qpp, queueNextCode := qn } = f t)
     (endpointId : SeLe4n.ObjId) (isReceiveQ : Bool) (tid : SeLe4n.ThreadId)
     (st st' : SystemState) (hInv : st.objects.invExt)
     (h : endpointQueueRemove endpointId isReceiveQ tid st = .ok st')
@@ -1240,33 +1239,33 @@ theorem endpointQueueRemove_getTcb_upToField {α : Type} (f : TCB → α)
                       exact FieldRefines.insert_link_update f st.objects st.objects
                         nextTid.toObjId nt _ hInv (FieldRefines.rfl_self f st.objects) hN1 (hLinkFree _ _ _ _).symm
                     | endpoint _ | notification _ | cnode _ | vspaceRoot _ | untyped _ | schedContext _ | reply _ | frame _ | pageTable _ =>
-                      simp only []; exact FieldRefines.rfl_self f st.objects
+                      (try simp only []); exact FieldRefines.rfl_self f st.objects
                 | some pobj => cases pobj with
                   | tcb pt =>
-                    simp only []
+                    (try simp only [])
                     -- objs₁ = st.objects.insert prevTid (.tcb {pt with queueNext := some nextTid})
                     have hR1 : FieldRefines f st.objects
                         (st.objects.insert prevTid.toObjId
-                          (.tcb { pt with queueNext := some nextTid })) :=
+                          (.tcb { pt with queueNextCode := tcb.queueNextCode })) :=
                       FieldRefines.insert_link_update f st.objects st.objects prevTid.toObjId
                         pt _ hInv (FieldRefines.rfl_self f st.objects) hP1 (hLinkFree _ _ _ _).symm
                     have hT1 : (st.objects.insert prevTid.toObjId
-                        (.tcb { pt with queueNext := some nextTid })).invExt :=
+                        (.tcb { pt with queueNextCode := tcb.queueNextCode })).invExt :=
                       RHTable.insert_preserves_invExt _ _ _ hInv
                     cases hN1 : (st.objects.insert prevTid.toObjId
-                        (.tcb { pt with queueNext := some nextTid }))[nextTid.toObjId]? with
-                    | none => simp only []; exact hR1
+                        (.tcb { pt with queueNextCode := tcb.queueNextCode }))[nextTid.toObjId]? with
+                    | none => (try simp only []); exact hR1
                     | some nobj => cases nobj with
                       | tcb nt =>
-                        simp only []
+                        (try simp only [])
                         exact FieldRefines.insert_link_update f st.objects
                           (st.objects.insert prevTid.toObjId
-                            (.tcb { pt with queueNext := some nextTid }))
+                            (.tcb { pt with queueNextCode := tcb.queueNextCode }))
                           nextTid.toObjId nt _ hT1 hR1 hN1 (hLinkFree _ _ _ _).symm
                       | endpoint _ | notification _ | cnode _ | vspaceRoot _ | untyped _ | schedContext _ | reply _ | frame _ | pageTable _ =>
-                        simp only []; exact hR1
+                        (try simp only []); exact hR1
                   | endpoint _ | notification _ | cnode _ | vspaceRoot _ | untyped _ | schedContext _ | reply _ | frame _ | pageTable _ =>
-                    simp only []
+                    (try simp only [])
                     -- objs₁ = st.objects (predecessor lookup is not a TCB)
                     cases hN1 : st.objects[nextTid.toObjId]? with
                     | none => simp only []; exact FieldRefines.rfl_self f st.objects
@@ -1289,7 +1288,7 @@ theorem endpointQueueRemove_getTcb_upToField {α : Type} (f : TCB → α)
           injection hx with hx2
           injection hx2 with hxt
           subst hxt
-          exact ⟨{ tcb with queuePrev := none, queuePPrev := none, queueNext := none },
+          exact ⟨{ tcb with queuePrevCode := 0, queuePPrevCode := 0, queueNextCode := 0 },
                  rfl, (hLinkFree _ _ _ _).symm⟩
 
 /-- SM5.I: `endpointQueueRemove` preserves every pre-state TCB at its key with
@@ -1368,9 +1367,8 @@ private theorem FieldRefinesBack.insert_link_update {α : Type} {f : TCB → α}
 /-- WS-OD OD1.4: the splice's backward field frame — the donation invariants
     read post-state TCBs and need the pre-state one. -/
 theorem endpointQueueRemove_getTcb_backward_upToField {α : Type} (f : TCB → α)
-    (hLinkFree : ∀ (t : TCB) (qp : Option SeLe4n.ThreadId) (qpp : Option QueuePPrev)
-      (qn : Option SeLe4n.ThreadId),
-      f { t with queuePrev := qp, queuePPrev := qpp, queueNext := qn } = f t)
+    (hLinkFree : ∀ (t : TCB) (qp qpp qn : Nat),
+      f { t with queuePrevCode := qp, queuePPrevCode := qpp, queueNextCode := qn } = f t)
     (endpointId : SeLe4n.ObjId) (isReceiveQ : Bool) (tid : SeLe4n.ThreadId)
     (st st' : SystemState) (hInv : st.objects.invExt)
     (h : endpointQueueRemove endpointId isReceiveQ tid st = .ok st')

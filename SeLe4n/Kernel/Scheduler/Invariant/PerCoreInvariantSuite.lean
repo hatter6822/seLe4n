@@ -3475,8 +3475,8 @@ private theorem tsAgree_next_step (st : SystemState) (tcb : TCB)
       | some nextTid => match objs1[nextTid.toObjId]? with
         | some (.tcb nextTcb) =>
           objs1.insert nextTid.toObjId
-            (.tcb { nextTcb with queuePrev := tcb.queuePrev,
-                                 queuePPrev := tcb.queuePPrev })
+            (.tcb { nextTcb with queuePrevCode := tcb.queuePrevCode,
+                                 queuePPrevCode := tcb.queuePPrevCode })
         | _ => objs1) := by
   cases tcb.queueNext with
   | none => simpa only [] using ha1
@@ -3526,13 +3526,13 @@ theorem endpointQueueRemove_preserves_allThreadsTimeSlicePositive
                   | none => st.objects
                   | some prevTid => match st.objects[prevTid.toObjId]? with
                     | some (.tcb prevTcb) =>
-                      st.objects.insert prevTid.toObjId (.tcb { prevTcb with queueNext := tcb.queueNext })
+                      st.objects.insert prevTid.toObjId (.tcb { prevTcb with queueNextCode := tcb.queueNextCode })
                     | _ => st.objects) ∧
                 (match tcb.queuePrev with
                   | none => st.objects
                   | some prevTid => match st.objects[prevTid.toObjId]? with
                     | some (.tcb prevTcb) =>
-                      st.objects.insert prevTid.toObjId (.tcb { prevTcb with queueNext := tcb.queueNext })
+                      st.objects.insert prevTid.toObjId (.tcb { prevTcb with queueNextCode := tcb.queueNextCode })
                     | _ => st.objects).invExt := by
               cases tcb.queuePrev with
               | none => exact ⟨tsAgree_rfl _, hInv⟩

@@ -826,17 +826,17 @@ private def runBootValidationParityChecks : IO Unit := do
   -- boot-safety check.  The reservation now reads the payload, and the
   -- boot-safety check requires all three links empty.
   let linkedTo (t : SeLe4n.ThreadId) : TCB :=
-    { tcbWithTid ⟨9⟩ with queuePPrev := some (.tcbNext t) }
+    { tcbWithTid ⟨9⟩ with queuePPrevCode := QueuePPrev.optCode (some (.tcbNext t)) }
   assertBool "NEGATIVE: a boot TCB whose queuePPrev names an idle thread references the slot"
     (SeLe4n.Platform.Boot.bootObjectReferencesReservedIdleSlot (.tcb (linkedTo idle0Tid)) == true)
   assertBool "a queuePPrev naming an ordinary thread does not reference the slot"
     (SeLe4n.Platform.Boot.bootObjectReferencesReservedIdleSlot (.tcb (linkedTo ⟨7⟩)) == false &&
      SeLe4n.Platform.Boot.bootObjectReferencesReservedIdleSlot
-       (.tcb { tcbWithTid ⟨9⟩ with queuePPrev := some .endpointHead }) == false)
+       (.tcb { tcbWithTid ⟨9⟩ with queuePPrevCode := 1 }) == false)
   assertBool "NEGATIVE: ...but a boot TCB with ANY queuePPrev fails the boot-safety check"
     (SeLe4n.Platform.Boot.bootSafeObjectCheck (.tcb (linkedTo ⟨7⟩)) == false &&
      SeLe4n.Platform.Boot.bootSafeObjectCheck
-       (.tcb { tcbWithTid ⟨9⟩ with queuePPrev := some .endpointHead }) == false &&
+       (.tcb { tcbWithTid ⟨9⟩ with queuePPrevCode := 1 }) == false &&
      SeLe4n.Platform.Boot.bootSafeObjectCheck (.tcb (tcbWithTid ⟨9⟩)) == true)
   let idleLinkCfg : SeLe4n.Platform.Boot.PlatformConfig :=
     { irqTable := [], initialObjects := [entryAt 9 (linkedTo idle0Tid)] }

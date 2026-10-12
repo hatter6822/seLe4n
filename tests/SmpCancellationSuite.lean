@@ -934,8 +934,8 @@ private def stReplyBlockedStaleLinks : SystemState :=
     |>.withObject victimTid.toObjId (.tcb { mkTcb 710 30 (some core1) with
         ipcState := .blockedOnReply epId (some ownerTid),
         replyObject := some rId,
-        queuePrev := some bystanderTid,
-        queueNext := some ownerTid })
+        queuePrevCode := SeLe4n.ThreadId.optCode (some bystanderTid),
+        queueNextCode := SeLe4n.ThreadId.optCode (some ownerTid) })
     |>.build)
 
 private def runReplyCancelChecks : IO Unit := do
@@ -2457,7 +2457,7 @@ private def stStrandedHolderReclaim : SystemState :=
           ipcState := .blockedOnCall epId,
           threadState := .BlockedCall,
           schedContextBinding := .donated scId victimTid,
-          queuePPrev := some .endpointHead })
+          queuePPrevCode := 1 })
       |>.withObject scId.toObjId (.schedContext (mkStackedSc (some serverTid) (some rId)))
       |>.build)
   let rq2 := (base.scheduler.replenishQueueOnCore core2).insert scId 42

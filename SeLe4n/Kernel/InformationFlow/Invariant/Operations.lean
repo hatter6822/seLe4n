@@ -1420,7 +1420,7 @@ theorem storeTcbQueueLinks_preserves_projection
   | some tcb =>
     simp only [hLookup] at hStep
     cases hStore : storeObject tid.toObjId
-        (.tcb { tcb with queuePrev := prev, queuePPrev := pprev, queueNext := next }) st with
+        (.tcb { tcb with queuePrevCode := SeLe4n.ThreadId.optCode prev, queuePPrevCode := QueuePPrev.optCode pprev, queueNextCode := SeLe4n.ThreadId.optCode next }) st with
     | error e => simp [hStore] at hStep
     | ok pair =>
       simp only [hStore, Except.ok.injEq] at hStep; subst hStep

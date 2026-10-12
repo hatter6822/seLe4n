@@ -4504,9 +4504,9 @@ private def boundNotificationState : SystemState :=
         ((crossCoreState.objects.insert boundTcbThread.toObjId
             (.tcb { mkTcb 1023 40 (some c2) with
                       ipcState := .blockedOnReceive crossCoreEndpoint
-                      queuePrev := none
-                      queuePPrev := some .endpointHead
-                      queueNext := none })).insert
+                      queuePrevCode := 0
+                      queuePPrevCode := 1
+                      queueNextCode := 0 })).insert
           crossCoreEndpoint
             (.endpoint { receiveQ := { head := some boundTcbThread
                                        tail := some boundTcbThread } })).insert
@@ -11896,9 +11896,9 @@ private def abortHolderTcb : TCB :=
   { mkTcb 1201 40 none with
       ipcState := .blockedOnCall abortEp
       threadState := .BlockedCall
-      queuePrev := none
-      queuePPrev := some .endpointHead
-      queueNext := some abortNeighbourTid }
+      queuePrevCode := 0
+      queuePPrevCode := 1
+      queueNextCode := SeLe4n.ThreadId.optCode (some abortNeighbourTid) }
 
 /-- The thread queued **behind** it — the one the removal's successor patch
 rewrites, and the one whose label no fact of this tree constrains against the
@@ -11907,9 +11907,9 @@ private def abortNeighbourTcb : TCB :=
   { mkTcb 1202 40 none with
       ipcState := .blockedOnSend abortEp
       threadState := .BlockedSend
-      queuePrev := some abortHolderTid
-      queuePPrev := some (.tcbNext abortHolderTid)
-      queueNext := none }
+      queuePrevCode := SeLe4n.ThreadId.optCode (some abortHolderTid)
+      queuePPrevCode := QueuePPrev.optCode (some (.tcbNext abortHolderTid))
+      queueNextCode := 0 }
 
 private def abortState : SystemState :=
   (BootstrapBuilder.empty

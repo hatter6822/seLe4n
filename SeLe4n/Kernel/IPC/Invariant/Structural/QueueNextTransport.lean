@@ -1229,14 +1229,14 @@ theorem storeTcbQueueLinks_preserves_iqwf
   · intro hd hHd; obtain ⟨t, hT, hP, hPP⟩ := hHead hd hHd
     by_cases hEq : hd.toObjId = tid.toObjId
     · exact ⟨tcbWithQueueLinks origTcb prev pprev next, hEq ▸ hTcb',
-        by simp only [tcbWithQueueLinks]; exact (hHeadOk hd hHd hEq).1,
-        by simp only [tcbWithQueueLinks]; exact (hHeadOk hd hHd hEq).2⟩
+        by simp only [tcbWithQueueLinks, TCB.queuePrev_mk, SeLe4n.ThreadId.ofOptCode_optCode]; exact (hHeadOk hd hHd hEq).1,
+        by simp only [tcbWithQueueLinks, TCB.queuePPrev_mk, QueuePPrev.ofOptCode_optCode]; exact (hHeadOk hd hHd hEq).2⟩
     · exact ⟨t, by rw [storeTcbQueueLinks_preserves_objects_ne st st' tid prev pprev next
         hd.toObjId hEq hObjInv hStep]; exact hT, hP, hPP⟩
   · intro tl hTl; obtain ⟨t, hT, hN⟩ := hTail tl hTl
     by_cases hEq : tl.toObjId = tid.toObjId
     · exact ⟨tcbWithQueueLinks origTcb prev pprev next, hEq ▸ hTcb',
-        by simp only [tcbWithQueueLinks]; exact hTailOk tl hTl hEq⟩
+        by simp only [tcbWithQueueLinks, TCB.queueNext_mk, SeLe4n.ThreadId.ofOptCode_optCode]; exact hTailOk tl hTl hEq⟩
     · exact ⟨t, by rw [storeTcbQueueLinks_preserves_objects_ne st st' tid prev pprev next
         tl.toObjId hEq hObjInv hStep]; exact hT, hN⟩
 
@@ -1364,7 +1364,7 @@ theorem storeTcbQueueLinks_append_tail_preserves_linkInteg
     by_cases haT : a.toObjId = tailTid.toObjId
     · -- a is tailTid: tA has next = some newTid (from tcbWithQueueLinks)
       rw [haT] at hA; rw [hTailStF] at hA; cases hA
-      simp only [tcbWithQueueLinks] at hN
+      simp only [tcbWithQueueLinks, TCB.queueNext_mk, SeLe4n.ThreadId.ofOptCode_optCode] at hN
       -- hN : some newTid = some b, so newTid = b
       simp only [Option.some.injEq] at hN
       rw [← hN, threadId_toObjId_injective haT]
@@ -1394,7 +1394,7 @@ theorem storeTcbQueueLinks_append_tail_preserves_linkInteg
     by_cases hbN : b.toObjId = newTid.toObjId
     · -- b is newTid: tB has prev = some tailTid
       rw [hbN] at hB; rw [hNewStF] at hB; cases hB
-      simp only [tcbWithQueueLinks, Option.some.injEq] at hP
+      simp only [tcbWithQueueLinks, TCB.queuePrev_mk, SeLe4n.ThreadId.ofOptCode_optCode, Option.some.injEq] at hP
       -- hP : tailTid = a
       rw [← hP]
       refine ⟨tcbWithQueueLinks origTail prevT pprevT (some newTid), hTailStF, ?_⟩
@@ -1403,7 +1403,7 @@ theorem storeTcbQueueLinks_append_tail_preserves_linkInteg
     · by_cases hbT : b.toObjId = tailTid.toObjId
       · -- b is tailTid: prev = prevT = origTail.queuePrev
         rw [hbT] at hB; rw [hTailStF] at hB; cases hB
-        simp only [tcbWithQueueLinks] at hP
+        simp only [tcbWithQueueLinks, TCB.queuePrev_mk, SeLe4n.ThreadId.ofOptCode_optCode] at hP
         rw [hPM] at hP
         obtain ⟨tA, hA1, hNxt⟩ := hLink.2 tailTid origTail hTailOrig a hP
         have haNeT : a.toObjId ≠ tailTid.toObjId := by

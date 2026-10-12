@@ -414,8 +414,8 @@ def an10_d_clearPendingState_populated : IO Bool := do
   let tid : ThreadId := ThreadId.ofNat 56
   let tcb : TCB :=
     { mkTcb 56 with
-        queuePrev := some (ThreadId.ofNat 100)
-        queueNext := some (ThreadId.ofNat 200) }
+        queuePrevCode := SeLe4n.ThreadId.optCode (some (ThreadId.ofNat 100))
+        queueNextCode := SeLe4n.ThreadId.optCode (some (ThreadId.ofNat 200)) }
   let st : SystemState := { (default : SystemState) with
     objects := (default : SystemState).objects.insert tid.toObjId (.tcb tcb) }
   let st' := SeLe4n.Kernel.Lifecycle.Suspend.clearPendingState st tid

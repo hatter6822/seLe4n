@@ -957,6 +957,38 @@ inductive QueuePPrev where
   | tcbNext (tid : SeLe4n.ThreadId)
   deriving Repr, DecidableEq
 
+namespace QueuePPrev
+
+/-- An optional back-pointer as one scalar: `0` for `none`, `1` for the queue
+head, `t + 2` for `tcbNext t`.  A bijection with `Option QueuePPrev`, for the
+reason `SeLe4n.ThreadId.optCode` gives: the `Option` and the `tcbNext` payload
+are each a heap cell, the code is a scalar. -/
+@[inline] def optCode : Option QueuePPrev → Nat
+  | none => 0
+  | some .endpointHead => 1
+  | some (.tcbNext t) => t.val + 2
+
+/-- The optional back-pointer a code stands for; inverse of `optCode`. -/
+@[inline] def ofOptCode : Nat → Option QueuePPrev
+  | 0 => none
+  | 1 => some .endpointHead
+  | k + 2 => some (.tcbNext ⟨k⟩)
+
+@[simp] theorem ofOptCode_optCode (o : Option QueuePPrev) : ofOptCode (optCode o) = o := by
+  rcases o with _ | _ | _ <;> rfl
+
+@[simp] theorem optCode_ofOptCode (n : Nat) : optCode (ofOptCode n) = n := by
+  rcases n with _ | _ | _ <;> rfl
+
+@[simp] theorem ofOptCode_zero : ofOptCode 0 = none := rfl
+
+@[simp] theorem optCode_none : optCode none = 0 := rfl
+
+@[simp] theorem ofOptCode_eq_none_iff (n : Nat) : ofOptCode n = none ↔ n = 0 := by
+  rcases n with _ | _ | _ <;> simp [ofOptCode]
+
+end QueuePPrev
+
 structure TCB where
   tid : SeLe4n.ThreadId
   priority : SeLe4n.Priority
@@ -977,15 +1009,19 @@ structure TCB where
       priority level. 0 = no deadline (lowest urgency). Lower nonzero
       values are more urgent. -/
   deadline : SeLe4n.Deadline := ⟨0⟩
-  /-- WS-E4/M-01 intrusive queue linkage for endpoint dual queues.
-      `none`/`none` means detached from intrusive endpoint wait queues. -/
-  queuePrev : Option SeLe4n.ThreadId := none
-  /-- Pointer-to-previous-link metadata (`v0.12.1`, O(1) arbitrary removal).
-      `endpointHead` means this node is currently referenced by queue head;
-      `tcbNext prevTid` means it is referenced by `prevTid.queueNext`.
-      Cleared when detached from intrusive endpoint wait queues. -/
-  queuePPrev : Option QueuePPrev := none
-  queueNext : Option SeLe4n.ThreadId := none
+  /-- WS-E4/M-01 intrusive queue linkage, stored as a scalar code
+      (`SeLe4n.ThreadId.optCode`) and read through `TCB.queuePrev`.  A code of
+      `0` (`none`) means detached from every intrusive wait queue. -/
+  queuePrevCode : Nat := 0
+  /-- Pointer-to-previous-link metadata (`v0.12.1`, O(1) arbitrary removal),
+      stored as a scalar code (`QueuePPrev.optCode`) and read through
+      `TCB.queuePPrev`.  `endpointHead` means this node is referenced by its
+      queue's head; `tcbNext prevTid` means it is referenced by
+      `prevTid.queueNext`.  Cleared when detached. -/
+  queuePPrevCode : Nat := 0
+  /-- The successor link, stored as a scalar code and read through
+      `TCB.queueNext`. -/
+  queueNextCode : Nat := 0
   /-- WS-F1: Pending IPC message for transfer during endpoint rendezvous.
       Stored in the sender's TCB while blocked; transferred to the receiver
       on handshake/dequeue. `none` = no pending message. -/
@@ -1127,6 +1163,64 @@ structure TCB where
   fpContext : SeLe4n.FpContext := default
   deriving Repr
 
+/-- The predecessor link, read from its scalar code (`TCB.queuePrevCode`). -/
+@[inline] def TCB.queuePrev (t : TCB) : Option SeLe4n.ThreadId :=
+  SeLe4n.ThreadId.ofOptCode t.queuePrevCode
+
+/-- The back-pointer, read from its scalar code (`TCB.queuePPrevCode`). -/
+@[inline] def TCB.queuePPrev (t : TCB) : Option QueuePPrev :=
+  QueuePPrev.ofOptCode t.queuePPrevCode
+
+/-- The successor link, read from its scalar code (`TCB.queueNextCode`). -/
+@[inline] def TCB.queueNext (t : TCB) : Option SeLe4n.ThreadId :=
+  SeLe4n.ThreadId.ofOptCode t.queueNextCode
+
+/-! The views through a record built field by field, and the fold back to a
+view when a code is copied from another record: together they let `simp` read
+a written link as the value written and an untouched link as the old view. -/
+
+@[simp] theorem TCB.queuePrev_mk (f1 f2 f3 f4 f5 f6 f7 f8 f9 f10 f11 f12 f13 f14 f15 f16 f17 f18 f19 f20 f21 f22 f23 f24 f25 f26 f27) :
+    (TCB.mk f1 f2 f3 f4 f5 f6 f7 f8 f9 f10 f11 f12 f13 f14 f15 f16 f17 f18 f19 f20 f21 f22 f23 f24 f25 f26 f27).queuePrev = SeLe4n.ThreadId.ofOptCode f11 := rfl
+
+@[simp] theorem TCB.queuePPrev_mk (f1 f2 f3 f4 f5 f6 f7 f8 f9 f10 f11 f12 f13 f14 f15 f16 f17 f18 f19 f20 f21 f22 f23 f24 f25 f26 f27) :
+    (TCB.mk f1 f2 f3 f4 f5 f6 f7 f8 f9 f10 f11 f12 f13 f14 f15 f16 f17 f18 f19 f20 f21 f22 f23 f24 f25 f26 f27).queuePPrev = QueuePPrev.ofOptCode f12 := rfl
+
+@[simp] theorem TCB.queueNext_mk (f1 f2 f3 f4 f5 f6 f7 f8 f9 f10 f11 f12 f13 f14 f15 f16 f17 f18 f19 f20 f21 f22 f23 f24 f25 f26 f27) :
+    (TCB.mk f1 f2 f3 f4 f5 f6 f7 f8 f9 f10 f11 f12 f13 f14 f15 f16 f17 f18 f19 f20 f21 f22 f23 f24 f25 f26 f27).queueNext = SeLe4n.ThreadId.ofOptCode f13 := rfl
+
+@[simp] theorem TCB.ofOptCode_queuePrevCode (t : TCB) :
+    SeLe4n.ThreadId.ofOptCode t.queuePrevCode = t.queuePrev := rfl
+
+@[simp] theorem TCB.ofOptCode_queuePPrevCode (t : TCB) :
+    QueuePPrev.ofOptCode t.queuePPrevCode = t.queuePPrev := rfl
+
+@[simp] theorem TCB.ofOptCode_queueNextCode (t : TCB) :
+    SeLe4n.ThreadId.ofOptCode t.queueNextCode = t.queueNext := rfl
+
+@[simp] theorem TCB.optCode_queuePrev (t : TCB) :
+    SeLe4n.ThreadId.optCode t.queuePrev = t.queuePrevCode :=
+  SeLe4n.ThreadId.optCode_ofOptCode _
+
+@[simp] theorem TCB.optCode_queuePPrev (t : TCB) :
+    QueuePPrev.optCode t.queuePPrev = t.queuePPrevCode :=
+  QueuePPrev.optCode_ofOptCode _
+
+@[simp] theorem TCB.optCode_queueNext (t : TCB) :
+    SeLe4n.ThreadId.optCode t.queueNext = t.queueNextCode :=
+  SeLe4n.ThreadId.optCode_ofOptCode _
+
+theorem TCB.queuePrevCode_eq (t : TCB) :
+    t.queuePrevCode = SeLe4n.ThreadId.optCode t.queuePrev :=
+  (SeLe4n.ThreadId.optCode_ofOptCode _).symm
+
+theorem TCB.queuePPrevCode_eq (t : TCB) :
+    t.queuePPrevCode = QueuePPrev.optCode t.queuePPrev :=
+  (QueuePPrev.optCode_ofOptCode _).symm
+
+theorem TCB.queueNextCode_eq (t : TCB) :
+    t.queueNextCode = SeLe4n.ThreadId.optCode t.queueNext :=
+  (SeLe4n.ThreadId.optCode_ofOptCode _).symm
+
 /-- **WS-OD OD3.9**: the link update a removal writes to the **predecessor** of
 the node it unlinks — the predecessor's `queueNext` skips over `removed`.
 
@@ -1136,7 +1230,7 @@ answers: `endpointQueueRemove`, `endpointQueueRemoveDual` and
 `spliceOutMidQueueNode` each spelled the pair inline, and the third of them
 disagreed with the other two — see `queueUnlinkSuccessor`. -/
 def queueUnlinkPredecessor (removed : TCB) : TCB → TCB :=
-  fun p => { p with queueNext := removed.queueNext }
+  fun p => { p with queueNextCode := removed.queueNextCode }
 
 /-- **WS-OD OD3.9**: the link update a removal writes to the **successor** of the
 node it unlinks — the successor inherits `removed`'s `queuePrev` *and* its
@@ -1159,7 +1253,7 @@ divergence down as a design decision ("the two patches take different `upd`
 functions and not one") rather than as the defect it was.  One definition is what
 makes a fourth removal impossible to get wrong. -/
 def queueUnlinkSuccessor (removed : TCB) : TCB → TCB :=
-  fun n => { n with queuePrev := removed.queuePrev, queuePPrev := removed.queuePPrev }
+  fun n => { n with queuePrevCode := removed.queuePrevCode, queuePPrevCode := removed.queuePPrevCode }
 
 /-- **WS-RR RR8.3**: `queuePPrev` agrees with `queuePrev` — the relation the
 dual-queue removal's `pprevConsistent` guard checks, stated pointwise at the
@@ -1425,9 +1519,9 @@ argument stages on top, which is why that helper takes one and this does not. -/
 @[inline] def TCB.restoredToReady (tcb : TCB) : TCB :=
   { tcb with
       ipcState := .ready
-      queuePrev := none
-      queueNext := none
-      queuePPrev := none
+      queuePrevCode := 0
+      queueNextCode := 0
+      queuePPrevCode := 0
       pendingReceiveReply := none }
 
 /-- Transparent to `simp`, for the reason `TCB.boostedPriority_eq` above is: a
@@ -1437,9 +1531,9 @@ that, so single-sourcing the clear costs no existing proof. -/
     tcb.restoredToReady =
       { tcb with
           ipcState := .ready
-          queuePrev := none
-          queueNext := none
-          queuePPrev := none
+          queuePrevCode := 0
+          queueNextCode := 0
+          queuePPrevCode := 0
           pendingReceiveReply := none } := rfl
 
 /-- **WS-RR RR8.16 (`v0.35.190`): what a CDT revocation may do to a message in
@@ -1557,10 +1651,17 @@ theorem TCB.ext {a b : TCB}
     -- WS-BP BP7.9: extensionality covers the saved FP/SIMD context.
     (hFp : a.fpContext = b.fpContext) :
     a = b := by
+  have hQPrevC : a.queuePrevCode = b.queuePrevCode := by
+    rw [TCB.queuePrevCode_eq a, TCB.queuePrevCode_eq b, hQPrev]
+  have hQPPrevC : a.queuePPrevCode = b.queuePPrevCode := by
+    rw [TCB.queuePPrevCode_eq a, TCB.queuePPrevCode_eq b, hQPPrev]
+  have hQNextC : a.queueNextCode = b.queueNextCode := by
+    rw [TCB.queueNextCode_eq a, TCB.queueNextCode_eq b, hQNext]
+  clear hQPrev hQPPrev hQNext
   cases a; cases b
   simp at *
   exact ⟨hTid, hPrio, hDom, hCsp, hVsp, hBuf, hIpc, hTs, hSlice, hDeadline,
-         hQPrev, hQPPrev, hQNext, hPend, hRC, hFh, hBn, hSc, hTb, hMcp, hPip, hTo,
+         hQPrevC, hQPPrevC, hQNextC, hPend, hRC, hFh, hBn, hSc, hTb, hMcp, hPip, hTo,
          hCpuAff, hReply, hPendReply, hPendFault, hFp⟩
 
 /-- Intrusive FIFO queue metadata for endpoint wait queues.
@@ -1671,7 +1772,21 @@ def tcbWithQueueLinks
     (prev : Option SeLe4n.ThreadId)
     (pprev : Option QueuePPrev)
     (next : Option SeLe4n.ThreadId) : TCB :=
-  { tcb with queuePrev := prev, queuePPrev := pprev, queueNext := next }
+  { tcb with queuePrevCode := SeLe4n.ThreadId.optCode prev,
+             queuePPrevCode := QueuePPrev.optCode pprev,
+             queueNextCode := SeLe4n.ThreadId.optCode next }
+
+@[simp] theorem tcbWithQueueLinks_queuePrev (tcb : TCB) (prev pprev next) :
+    (tcbWithQueueLinks tcb prev pprev next).queuePrev = prev := by
+  simp [tcbWithQueueLinks]
+
+@[simp] theorem tcbWithQueueLinks_queuePPrev (tcb : TCB) (prev pprev next) :
+    (tcbWithQueueLinks tcb prev pprev next).queuePPrev = pprev := by
+  simp [tcbWithQueueLinks]
+
+@[simp] theorem tcbWithQueueLinks_queueNext (tcb : TCB) (prev pprev next) :
+    (tcbWithQueueLinks tcb prev pprev next).queueNext = next := by
+  simp [tcbWithQueueLinks]
 
 /-- **WS-RR RR8.3**: the pairing condition on the *values* a link store writes.
 
@@ -1742,6 +1857,8 @@ theorem tcbWithQueueLinks_queuePPrevAgreesWithPrev
     {next : Option SeLe4n.ThreadId} (h : queueLinkPairAgrees prev pprev) :
     (tcbWithQueueLinks tcb prev pprev next).queuePPrevAgreesWithPrev := by
   unfold TCB.queuePPrevAgreesWithPrev tcbWithQueueLinks
+  simp only [TCB.queuePPrev_mk, TCB.queuePrev_mk, QueuePPrev.ofOptCode_optCode,
+    SeLe4n.ThreadId.ofOptCode_optCode]
   unfold queueLinkPairAgrees at h
   cases pprev with
   | none => exact h

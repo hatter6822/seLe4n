@@ -5307,7 +5307,7 @@ private theorem clearPendingState_getElem_eq_of_quiescent
       rw [SystemState.updateTcb_eq_of_some hLk]
       dsimp only []
       obtain ⟨h1, h2, h3, h4, h5⟩ := hFields tcb hLk
-      have hSame : ({ tcb with pendingMessage := none, timeoutBudget := none, queuePrev := none, queueNext := none, queuePPrev := none } : TCB) = tcb := by
+      have hSame : ({ tcb with pendingMessage := none, timeoutBudget := none, queuePrevCode := 0, queueNextCode := 0, queuePPrevCode := 0 } : TCB) = tcb := by
         cases tcb
         simp_all
       rw [hSame]

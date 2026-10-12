@@ -305,9 +305,9 @@ so proofs can quantify over it. -/
 def restoredTcb (tcb : TCB) (frame : Option Architecture.SyscallReturnFrame) : TCB :=
   let cleared : TCB := { tcb with
       ipcState := .ready
-      queuePrev := none
-      queueNext := none
-      queuePPrev := none
+      queuePrevCode := 0
+      queueNextCode := 0
+      queuePPrevCode := 0
       pendingReceiveReply := none }
   match frame with
   | some f => cleared.withReturnFrame f
@@ -337,9 +337,9 @@ theorem restoredTcb_eq (tcb : TCB) (frame : Option Architecture.SyscallReturnFra
     restoredTcb tcb frame =
       { tcb with
           ipcState := .ready
-          queuePrev := none
-          queueNext := none
-          queuePPrev := none
+          queuePrevCode := 0
+          queueNextCode := 0
+          queuePPrevCode := 0
           pendingReceiveReply := none
           registerContext := (restoredTcb tcb frame).registerContext } := by
   unfold restoredTcb; cases frame <;> rfl
@@ -1129,11 +1129,11 @@ theorem spliceOutMidQueueNode_tcb_forward (st : SystemState) (tid : SeLe4n.Threa
     have r1 : tcbQueueLinkRewrite t1 t0 := by
       rcases hc1 with rfl | rfl
       · exact tcbQueueLinkRewrite.refl _
-      · exact ⟨t0.queuePrev, t0.queuePPrev, tcb.queueNext, rfl⟩
+      · exact ⟨t0.queuePrevCode, t0.queuePPrevCode, tcb.queueNextCode, rfl⟩
     have r2 : tcbQueueLinkRewrite t2 t1 := by
       rcases hc2 with rfl | rfl
       · exact tcbQueueLinkRewrite.refl _
-      · exact ⟨tcb.queuePrev, tcb.queuePPrev, t1.queueNext, rfl⟩
+      · exact ⟨tcb.queuePrevCode, tcb.queuePPrevCode, t1.queueNextCode, rfl⟩
     exact ⟨t2, h2, r2.trans r1⟩
 
 /-- The composite, read forwards away from the swept thread. -/
@@ -1345,9 +1345,9 @@ theorem spliceOutMidQueueNode_tcb_value (st : SystemState) (tid : SeLe4n.ThreadI
     (hPre : st.objects[a.toObjId]? = some (.tcb t0)) :
     (spliceOutMidQueueNode st tid).objects[a.toObjId]? =
       some (.tcb { t0 with
-        queueNext := if tcbV.queuePrev = some a then tcbV.queueNext else t0.queueNext,
-        queuePrev := if tcbV.queueNext = some a then tcbV.queuePrev else t0.queuePrev,
-        queuePPrev := if tcbV.queueNext = some a then tcbV.queuePPrev else t0.queuePPrev }) := by
+        queueNextCode := if tcbV.queuePrev = some a then tcbV.queueNextCode else t0.queueNextCode,
+        queuePrevCode := if tcbV.queueNext = some a then tcbV.queuePrevCode else t0.queuePrevCode,
+        queuePPrevCode := if tcbV.queueNext = some a then tcbV.queuePPrevCode else t0.queuePPrevCode }) := by
   rw [spliceOutMidQueueNode_eq_patches, hLookup]
   simp only
   have h1 := queueNeighbourPatch_tcb_value st.objects tcbV.queuePrev
@@ -1370,9 +1370,9 @@ theorem sweptAndRestored_tcb_value (st : SystemState) (v : SeLe4n.ThreadId)
     (hPre : st.objects[a.toObjId]? = some (.tcb t0)) :
     (sweptAndRestored st v frame).objects[a.toObjId]? =
       some (.tcb { t0 with
-        queueNext := if tcbV.queuePrev = some a then tcbV.queueNext else t0.queueNext,
-        queuePrev := if tcbV.queueNext = some a then tcbV.queuePrev else t0.queuePrev,
-        queuePPrev := if tcbV.queueNext = some a then tcbV.queuePPrev else t0.queuePPrev }) :=
+        queueNextCode := if tcbV.queuePrev = some a then tcbV.queueNextCode else t0.queueNextCode,
+        queuePrevCode := if tcbV.queueNext = some a then tcbV.queuePrevCode else t0.queuePrevCode,
+        queuePPrevCode := if tcbV.queueNext = some a then tcbV.queuePPrevCode else t0.queuePPrevCode }) :=
   (sweptAndRestored_tcb_iff st v frame hInv a.toObjId _
     (fun hEq => hav (SeLe4n.ThreadId.toObjId_injective _ _ hEq))).mpr
     (spliceOutMidQueueNode_tcb_value st v tcbV hInv hLookup a t0 hPre)
@@ -1420,7 +1420,7 @@ theorem sweptAndRestored_no_next_to_victim
     rw [sweptAndRestored_tcb_value st b frame tcbV hInv hLookup a t0 hav h0] at hA
     have hx : tcbA = _ := (KernelObject.tcb.inj (Option.some.inj hA)).symm
     rw [hx] at hNext
-    simp only at hNext
+    simp only [TCB.queueNext_mk, apply_ite SeLe4n.ThreadId.ofOptCode, TCB.ofOptCode_queueNextCode] at hNext
     by_cases hp : tcbV.queuePrev = some a
     · rw [if_pos hp] at hNext
       exact hAcyc b (.single b b tcbV hVObj hNext)
@@ -1569,7 +1569,7 @@ theorem sweptAndRestored_membership_witness
           exact hAcyc v (.single v v tcbV hVObj hPNext)
         refine ⟨p, _,
           sweptAndRestored_tcb_value st v frame tcbV hInv hLookup p pTcb hpv2 hP, ?_⟩
-        show (if tcbV.queuePrev = some p then tcbV.queueNext else pTcb.queueNext) = some tid
+        rw [TCB.queueNext_mk, apply_ite SeLe4n.ThreadId.ofOptCode, TCB.ofOptCode_queueNextCode]
         rw [if_pos hq]
         exact hPN
     · right
@@ -1582,7 +1582,7 @@ theorem sweptAndRestored_membership_witness
         exact hidv (Option.some.inj hAN)
       · refine ⟨prev, _,
           sweptAndRestored_tcb_value st v frame tcbV hInv hLookup prev prevTcb hpv hPrev, ?_⟩
-        show (if tcbV.queuePrev = some prev then tcbV.queueNext else prevTcb.queueNext) = some tid
+        rw [TCB.queueNext_mk, apply_ite SeLe4n.ThreadId.ofOptCode, TCB.ofOptCode_queueNextCode]
         rw [if_neg hpp]
         exact hPN
 

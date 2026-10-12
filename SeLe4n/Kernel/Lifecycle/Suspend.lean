@@ -889,9 +889,9 @@ def clearPendingState (st : SystemState) (tid : SeLe4n.ThreadId) : SystemState :
   st.updateTcb tid fun tcb => { tcb with
     pendingMessage := none
     timeoutBudget := none
-    queuePrev := none
-    queueNext := none
-    queuePPrev := none }
+    queuePrevCode := 0
+    queueNextCode := 0
+    queuePPrevCode := 0 }
 
 -- ============================================================================
 -- AN10 residual closure (H1–H4): typed entry-points for lifecycle handlers

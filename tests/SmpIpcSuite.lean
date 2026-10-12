@@ -4073,7 +4073,7 @@ private def stOrphanHeadReplyRecv : SystemState :=
     |>.withObject orphanSender.toObjId (.tcb { mkTcb 864 20 (some c0) with
         ipcState := .blockedOnSend orphanEp,
         threadState := .BlockedSend,
-        queuePPrev := some .endpointHead,
+        queuePPrevCode := 1,
         pendingMessage := some IpcMessage.empty })
     |>.withObject orphanDelegate.toObjId (.tcb { mkTcb 865 25 (some c0) with
         schedContextBinding := SchedContextBinding.unbound })

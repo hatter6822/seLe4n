@@ -873,16 +873,16 @@ def cnodeReferencesReservedIdleSlot (cn : CNode) : Bool :=
 def tcbReferencesReservedIdleSlot (tcb : TCB) : Bool :=
   match tcb with
   | ⟨tid, _priority, _domain, cspaceRoot, vspaceRoot, _ipcBuffer, _ipcState, _threadState,
-     _timeSlice, _deadline, queuePrev, queuePPrev, queueNext, pendingMessage, _registerContext,
+     _timeSlice, _deadline, queuePrevCode, queuePPrevCode, queueNextCode, pendingMessage, _registerContext,
      _faultHandler, boundNotification, schedContextBinding, timeoutBudget,
      _maxControlledPriority, _pipBoost, _timedOut, _cpuAffinity, replyObject,
      pendingReceiveReply, _pendingFault, _fpContext⟩ =>
     SeLe4n.Kernel.isIdleThreadId tid ||
     SeLe4n.Kernel.isIdleObjId cspaceRoot || SeLe4n.Kernel.isIdleObjId vspaceRoot ||
     boundNotification.any SeLe4n.Kernel.isIdleObjId ||
-    queueNext.any SeLe4n.Kernel.isIdleThreadId ||
-    queuePrev.any SeLe4n.Kernel.isIdleThreadId ||
-    (match queuePPrev with
+    (SeLe4n.ThreadId.ofOptCode queueNextCode).any SeLe4n.Kernel.isIdleThreadId ||
+    (SeLe4n.ThreadId.ofOptCode queuePrevCode).any SeLe4n.Kernel.isIdleThreadId ||
+    (match QueuePPrev.ofOptCode queuePPrevCode with
      | some (.tcbNext prev) => SeLe4n.Kernel.isIdleThreadId prev
      | _ => false) ||
     pendingMessage.any (fun msg =>

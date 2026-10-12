@@ -951,7 +951,7 @@ theorem storeTcbQueueLinks_preserves_contextMatchesCurrent
   | some tcb =>
     simp only [hLookup] at hStep
     simp only [tcbWithQueueLinks] at hStep
-    cases hStore : storeObject tid.toObjId (.tcb { tcb with queuePrev := prev, queuePPrev := pprev, queueNext := next }) st with
+    cases hStore : storeObject tid.toObjId (.tcb { tcb with queuePrevCode := SeLe4n.ThreadId.optCode prev, queuePPrevCode := QueuePPrev.optCode pprev, queueNextCode := SeLe4n.ThreadId.optCode next }) st with
     | error e => simp [hStore] at hStep
     | ok pair =>
       simp only [hStore, Except.ok.injEq] at hStep; subst hStep
@@ -959,7 +959,7 @@ theorem storeTcbQueueLinks_preserves_contextMatchesCurrent
         (fun tid' tcb' hCur hEq hObj => by
           have hTcbObj := lookupTcb_some_objects st tid tcb hLookup
           rw [hTcbObj] at hObj; cases hObj
-          exact ⟨{ tcb with queuePrev := prev, queuePPrev := pprev, queueNext := next }, rfl, rfl⟩)
+          exact ⟨{ tcb with queuePrevCode := SeLe4n.ThreadId.optCode prev, queuePPrevCode := QueuePPrev.optCode pprev, queueNextCode := SeLe4n.ThreadId.optCode next }, rfl, rfl⟩)
 
 /-- WS-H12c: `ensureRunnable` preserves `contextMatchesCurrent`. -/
 theorem ensureRunnable_preserves_contextMatchesCurrent

@@ -1044,7 +1044,7 @@ run_negative_check "INVARIANT" rg -n '^def cancelSpliceNeighbors\?' SeLe4n/Kerne
 run_check "INVARIANT" rg -n '^def queueUnlinkPredecessor($|[ ({:\[\]])' SeLe4n/Model/Object/Types.lean
 run_check "INVARIANT" rg -n '^def queueUnlinkSuccessor($|[ ({:\[\]])' SeLe4n/Model/Object/Types.lean
 # A *relation*, not a presence: the successor update writes both link fields.
-run_check "INVARIANT" bash -lc 'rg -U -n "def queueUnlinkSuccessor[^\n]*(\n([ \t][^\n]*)?)*queuePrev := removed\.queuePrev, queuePPrev := removed\.queuePPrev" SeLe4n/Model/Object/Types.lean'
+run_check "INVARIANT" bash -lc 'rg -U -n "def queueUnlinkSuccessor[^\n]*(\n([ \t][^\n]*)?)*queuePrevCode := removed\.queuePrevCode, queuePPrevCode := removed\.queuePPrevCode" SeLe4n/Model/Object/Types.lean'
 # The two removals that spell their patches inline call the shared updates ...
 run_check "INVARIANT" bash -lc 'rg -U -n "def endpointQueueRemove[^\n]*(\n([ \t][^\n]*)?)*queueUnlinkSuccessor tcb nextTcb" SeLe4n/Kernel/IPC/DualQueue/Core.lean'
 run_check "INVARIANT" bash -lc 'rg -U -n "def endpointQueueRemove[^\n]*(\n([ \t][^\n]*)?)*queueUnlinkPredecessor tcb prevTcb" SeLe4n/Kernel/IPC/DualQueue/Core.lean'
@@ -1060,7 +1060,7 @@ run_check "INVARIANT" rg -n '^theorem spliceOutMidQueueNode_next_queuePPrev($|[ 
 # must not come back, in the shared definition or in any removal that inlines
 # one again.  Mutating by *removing* a patch would be caught by the positives
 # above; this keeps the patch and breaks the relation.
-run_negative_check "INVARIANT" bash -lc 'rg -U -n "with queuePrev := (tcb|tcbV|removed)\.queuePrev \}" SeLe4n/Model/Object/Types.lean SeLe4n/Kernel/IPC/DualQueue/Core.lean SeLe4n/Kernel/Lifecycle/Operations/Cleanup.lean'
+run_negative_check "INVARIANT" bash -lc 'rg -U -n "with queuePrevCode := (tcb|tcbV|removed)\.queuePrevCode \}" SeLe4n/Model/Object/Types.lean SeLe4n/Kernel/IPC/DualQueue/Core.lean SeLe4n/Kernel/Lifecycle/Operations/Cleanup.lean'
 
 # WS-RR RR8.3: ...and the agreement between the two link fields is now an
 # *invariant*, not a per-site obligation.  No `ipcInvariantFull` conjunct read
@@ -11855,7 +11855,7 @@ run_check "INVARIANT" bash -lc 'rg -U -n "^theorem spliceOutMidQueueNode_binding
 # splice writes THREE link fields and nothing else, so an arbitrary projection
 # that ignores them crosses it.
 run_check "INVARIANT" rg -n '^def tcbQueueLinkRewrite \(a b : TCB\) : Prop :=' SeLe4n/Kernel/Lifecycle/Operations/CleanupPreservation.lean
-run_check "INVARIANT" bash -lc 'rg -U -n "^def tcbQueueLinkRewrite[^\n]*(\n([ \t][^\n]*)?)*queuePrev := qp, queuePPrev := qpp, queueNext := qn" SeLe4n/Kernel/Lifecycle/Operations/CleanupPreservation.lean'
+run_check "INVARIANT" bash -lc 'rg -U -n "^def tcbQueueLinkRewrite[^\n]*(\n([ \t][^\n]*)?)*queuePrevCode := qp, queuePPrevCode := qpp, queueNextCode := qn" SeLe4n/Kernel/Lifecycle/Operations/CleanupPreservation.lean'
 # NEGATIVE: and a whole-record `getTcb?` equality for the splice, or for the
 # sweep built over it, must not be claimed -- both are FALSE, the splice
 # rewriting its neighbours' links by design (WS-OD OD3.9).  Mutation: add a
@@ -19819,9 +19819,9 @@ run_check "INVARIANT" bash -lc 'rg -n -U "def getCurrentPriorityChecked[^\n]*(\n
 # missing.
 run_check "INVARIANT" rg -F -n 'def TCB.restoredToReady (tcb : TCB) : TCB :=' SeLe4n/Model/Object/Types.lean
 run_check "INVARIANT" bash -lc 'rg -n -U "^@\[inline\] def TCB.restoredToReady[^\n]*(\n([ \t][^\n]*)?)*" SeLe4n/Model/Object/Types.lean | rg -F "ipcState := .ready"'
-run_check "INVARIANT" bash -lc 'rg -n -U "^@\[inline\] def TCB.restoredToReady[^\n]*(\n([ \t][^\n]*)?)*" SeLe4n/Model/Object/Types.lean | rg -F "queuePrev := none"'
-run_check "INVARIANT" bash -lc 'rg -n -U "^@\[inline\] def TCB.restoredToReady[^\n]*(\n([ \t][^\n]*)?)*" SeLe4n/Model/Object/Types.lean | rg -F "queueNext := none"'
-run_check "INVARIANT" bash -lc 'rg -n -U "^@\[inline\] def TCB.restoredToReady[^\n]*(\n([ \t][^\n]*)?)*" SeLe4n/Model/Object/Types.lean | rg -F "queuePPrev := none"'
+run_check "INVARIANT" bash -lc 'rg -n -U "^@\[inline\] def TCB.restoredToReady[^\n]*(\n([ \t][^\n]*)?)*" SeLe4n/Model/Object/Types.lean | rg -F "queuePrevCode := 0"'
+run_check "INVARIANT" bash -lc 'rg -n -U "^@\[inline\] def TCB.restoredToReady[^\n]*(\n([ \t][^\n]*)?)*" SeLe4n/Model/Object/Types.lean | rg -F "queueNextCode := 0"'
+run_check "INVARIANT" bash -lc 'rg -n -U "^@\[inline\] def TCB.restoredToReady[^\n]*(\n([ \t][^\n]*)?)*" SeLe4n/Model/Object/Types.lean | rg -F "queuePPrevCode := 0"'
 run_check "INVARIANT" bash -lc 'rg -n -U "^@\[inline\] def TCB.restoredToReady[^\n]*(\n([ \t][^\n]*)?)*" SeLe4n/Model/Object/Types.lean | rg -F "pendingReceiveReply := none"'
 # ...and BOTH surfaces call it rather than spelling the list.  The negatives are
 # what make the positives a sharing claim rather than a presence check: an
@@ -20188,7 +20188,7 @@ run_negative_check "INVARIANT" rg -U -n 'def frozenQueueRemove[^\n]*(\n([ \t][^\
 # factor -- made every later removal of it `.illegalState`: stranded for good, by
 # the surface's own ordinary rendezvous.  The positive is what catches a revert,
 # since that mutation DELETES the store rather than respelling a read.
-run_check "INVARIANT" rg -U -n 'match frozenLookupTcb st1 nextTid with[^\n]*(\n([ \t][^\n]*)?)*queuePPrev := some \.endpointHead' SeLe4n/Kernel/FrozenOps/Operations.lean
+run_check "INVARIANT" rg -U -n 'match frozenLookupTcb st1 nextTid with[^\n]*(\n([ \t][^\n]*)?)*queuePPrevCode := 1' SeLe4n/Kernel/FrozenOps/Operations.lean
 run_negative_check "INVARIANT" rg -U -n 'private def frozenQueuePopHead[^\n]*(\n([ \t][^\n]*)?)*getTcb\?' SeLe4n/Kernel/FrozenOps/Operations.lean
 # ...and FO-049's four halves, each mutation-verified against the fix it is about.
 # EVERY half runs through the ordinary builder: `Builder.createObject` accepts a

@@ -999,9 +999,9 @@ theorem restoreToReady_objects_eq_at_tid
       st.objects.insert tid.toObjId
         (.tcb { origTcb with
                 ipcState := .ready
-                queuePrev := none
-                queueNext := none
-                queuePPrev := none
+                queuePrevCode := 0
+                queueNextCode := 0
+                queuePPrevCode := 0
                 pendingReceiveReply := none }) := by
   unfold restoreToReady restoreToReadyStaging
   exact congrArg SystemState.objects (SystemState.updateTcb_eq_of_some hLook _)
@@ -1156,8 +1156,8 @@ theorem restoreToReady_blockingServer_subgraph
       unfold PriorityInheritance.blockingServer
       have hRRObj :
           (restoreToReady st tid).objects[t.toObjId]?
-            = some (.tcb { origTcb with ipcState := .ready, queuePrev := none,
-                                        queueNext := none, queuePPrev := none,
+            = some (.tcb { origTcb with ipcState := .ready, queuePrevCode := 0,
+                                        queueNextCode := 0, queuePPrevCode := 0,
                                         pendingReceiveReply := none }) := by
         unfold restoreToReady restoreToReadyStaging
         rw [SystemState.updateTcb_eq_of_some hPre]

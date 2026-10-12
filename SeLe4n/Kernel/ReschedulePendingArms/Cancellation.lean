@@ -279,7 +279,7 @@ theorem endpointQueueRemove_keyInputsEq {epId : SeLe4n.ObjId} {isRecvQ : Bool}
     (h : endpointQueueRemove epId isRecvQ tid st = .ok st') :
     keyInputsEq st st' := by
   have hLF : ∀ (t : TCB) qp qpp qn,
-      tcbKeyFields { t with queuePrev := qp, queuePPrev := qpp, queueNext := qn } =
+      tcbKeyFields { t with queuePrevCode := qp, queuePPrevCode := qpp, queueNextCode := qn } =
         tcbKeyFields t := fun _ _ _ _ => rfl
   refine keyInputsEq_of_slots (fun a t ha => ?_) (fun a t' ha => ?_)
     (fun a sc ha => ⟨sc, endpointQueueRemove_schedContext_forward _ _ _ _ _ hInv h a sc ha, rfl⟩)

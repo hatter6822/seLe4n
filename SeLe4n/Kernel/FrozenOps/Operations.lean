@@ -561,7 +561,7 @@ private def frozenQueuePopHead (endpointId : SeLe4n.ObjId) (isReceiveQ : Bool)
               -- Clear queue links on dequeued TCB (U-H01: must also clear queuePPrev
               -- to allow re-enqueue via frozenQueuePushTail, which rejects
               -- threads with queuePPrev.isSome)
-              let headTcb' := { headTcb with queuePrev := none, queueNext := none, queuePPrev := none }
+              let headTcb' := { headTcb with queuePrevCode := 0, queueNextCode := 0, queuePPrevCode := 0 }
               match frozenWithObjectStored st endpointId (.endpoint ep') with
               | .ok st1 =>
                   -- **PR #897 review, swept: THE SUCCESSOR IS PROMOTED.**  The
@@ -606,7 +606,7 @@ private def frozenQueuePopHead (endpointId : SeLe4n.ObjId) (isReceiveQ : Bool)
                       | none => .error .objectNotFound
                       | some nextTcb =>
                           frozenWithObjectStored st1 nextTid.toObjId (.tcb { nextTcb with
-                            queuePrev := none, queuePPrev := some .endpointHead })
+                            queuePrevCode := 0, queuePPrevCode := 1 })
                   match afterSuccessor with
                   | .error e => .error e
                   | .ok st2 =>
@@ -1698,9 +1698,9 @@ def frozenSuspendThread (tid : SeLe4n.ThreadId) : FrozenKernel Unit :=
           ipcState := .ready
           pendingMessage := none
           timeoutBudget := none
-          queuePrev := none
-          queueNext := none
-          queuePPrev := none }
+          queuePrevCode := 0
+          queueNextCode := 0
+          queuePPrevCode := 0 }
         match frozenWithObjectStored st tid.toObjId (.tcb tcb') with
         | .ok stored => .ok ((), frozenRemoveRunnable stored tid)
         | .error e => .error e

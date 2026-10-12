@@ -798,7 +798,7 @@ private def mkTimeoutWakeState (aff : Option CoreId) : SystemState :=
   let tcbW : TCB := { mkTcb 321 12 0 with
     schedContextBinding := .bound scW, cpuAffinity := aff,
     ipcState := .blockedOnSend epW,
-    queuePrev := none, queueNext := none, queuePPrev := some .endpointHead }
+    queuePrevCode := 0, queueNextCode := 0, queuePPrevCode := 1 }
   let scObj : SchedContext :=
     { (default : SchedContext) with
         priority := ⟨15⟩, boundThread := some tidCur,
