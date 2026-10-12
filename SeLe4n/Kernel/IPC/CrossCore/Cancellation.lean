@@ -100,7 +100,7 @@ with (WS-OD `v0.35.4`).
 
 **Footprint rationale for the store sweeps**: `cancelIpcBlocking`'s
 endpoint/notification removal helpers (`removeFromAllEndpointQueues` /
-`removeFromAllNotificationWaitLists`) defensively sweep every
+`removeFromNotificationWaitQueue`) defensively sweep every
 endpoint/notification object, but under the IPC invariant bundle's queue
 membership discipline (`ipcStateQueueMembershipConsistent`,
 `notificationWaitListsConsistent`) a blocked victim is a member of exactly the
@@ -817,11 +817,21 @@ nine, `maxLockSetSize` exactly — and, because lock contention is an observable
 channel (SM8.D's CC-5), costs contention that carries no information about the
 cancellation.  A footprint that is too wide is sound and not free.
 
-Derived from `cancelBlockedEndpoint?` rather than re-matching `ipcState`: the
-arm question is asked once, so the two cannot answer it differently. -/
+WS-ZA ZA4.4: the notification arm splices too, now that a notification's
+waiters are linked through their TCBs: the unlink points the victim's
+predecessor at its successor and back (seL4's `tcbEPDequeue`), so on that arm
+the pair is the victim's two notification-queue links
+(`cancelIpcBlocking_notificationArm_objects_off` is the write set).  A head
+victim's predecessor link is dead and the unlink writes no predecessor then, so
+there the first member over-approximates by one lock.
+
+Derived from `cancelBlockedEndpoint?` and `cancelBlockedNotification?` rather
+than re-matching `ipcState`: the arm question is asked once, so the two cannot
+answer it differently. -/
 def cancelArmSpliceNeighbors? (tcb : TCB) :
     Option SeLe4n.ThreadId × Option SeLe4n.ThreadId :=
   if (cancelBlockedEndpoint? tcb).isSome then queueSpliceNeighbors? tcb
+  else if (cancelBlockedNotification? tcb).isSome then (tcb.ntfnPrev, tcb.ntfnNext)
   else (none, none)
 
 /-- WS-OD OD3.5: on the arm that splices, the narrowed resolver **is** the
@@ -836,12 +846,24 @@ unchanged. -/
   rw [h]
   rfl
 
+/-- WS-ZA ZA4.4: on the notification arm it is the victim's two
+notification-queue links. -/
+@[simp] theorem cancelArmSpliceNeighbors?_of_blockedNotification (tcb : TCB)
+    (n : SeLe4n.ObjId) (h : cancelBlockedNotification? tcb = some n) :
+    cancelArmSpliceNeighbors? tcb = (tcb.ntfnPrev, tcb.ntfnNext) := by
+  have hE : cancelBlockedEndpoint? tcb = none := by
+    unfold cancelBlockedNotification? at h; unfold cancelBlockedEndpoint?
+    split at h <;> simp_all
+  unfold cancelArmSpliceNeighbors?
+  rw [hE, h]
+  rfl
+
 /-- WS-OD OD3.5: and on every other arm it is empty. -/
-@[simp] theorem cancelArmSpliceNeighbors?_of_not_blockedEndpoint (tcb : TCB)
-    (h : cancelBlockedEndpoint? tcb = none) :
+@[simp] theorem cancelArmSpliceNeighbors?_of_unqueued (tcb : TCB)
+    (h : cancelBlockedEndpoint? tcb = none) (hN : cancelBlockedNotification? tcb = none) :
     cancelArmSpliceNeighbors? tcb = (none, none) := by
   unfold cancelArmSpliceNeighbors?
-  rw [h]
+  rw [h, hN]
   rfl
 
 /-- WS-SM SM6.E.3: the SchedContext a donation cancellation would write —
@@ -1430,7 +1452,7 @@ theorem lockSet_cancelIpcBlockingOnCore_replyArm_eq (st : SystemState)
     unfold cancelBlockedNotification?; rw [hIp]
   unfold lockSet_cancelIpcBlockingOnCore
   rw [hT]
-  simp only [hE, hN, cancelArmSpliceNeighbors?_of_not_blockedEndpoint tcb hE,
+  simp only [hE, hN, cancelArmSpliceNeighbors?_of_unqueued tcb hE hN,
     Option.map_none, lockSetExtendOpt]
 
 /-- **WS-OD OD3.5**: …and the arm that *does* splice keeps both members.  The
@@ -1459,6 +1481,31 @@ theorem lockSet_cancelIpcBlockingOnCore_endpointArm_covers_next (st : SystemStat
   rw [hT]
   simp only [cancelArmSpliceNeighbors?_of_blockedEndpoint tcb ep hE, queueSpliceNeighbors?,
     hNext]
+  exact LockSet.mem_insertOrMerge_write_self _ _
+
+/-- WS-ZA ZA4.4: the notification arm declares the victim's queue predecessor,
+whose successor link the unlink rewrites. -/
+theorem lockSet_cancelIpcBlockingOnCore_notificationArm_covers_prev (st : SystemState)
+    (victimTid : SeLe4n.ThreadId) (tcb : TCB) (n : SeLe4n.ObjId) (p : SeLe4n.ThreadId)
+    (hT : st.getTcb? victimTid = some tcb)
+    (hN : cancelBlockedNotification? tcb = some n)
+    (hPrev : tcb.ntfnPrev = some p) :
+    (tcbLock p, AccessMode.write) ∈ (lockSet_cancelIpcBlockingOnCore st victimTid).pairs := by
+  unfold lockSet_cancelIpcBlockingOnCore
+  rw [hT]
+  simp only [cancelArmSpliceNeighbors?_of_blockedNotification tcb n hN, hPrev]
+  exact mem_write_lockSetExtendOpt _ _ _ (LockSet.mem_insertOrMerge_write_self _ _)
+
+/-- WS-ZA ZA4.4: and its successor, whose predecessor link the unlink rewrites. -/
+theorem lockSet_cancelIpcBlockingOnCore_notificationArm_covers_next (st : SystemState)
+    (victimTid : SeLe4n.ThreadId) (tcb : TCB) (n : SeLe4n.ObjId) (x : SeLe4n.ThreadId)
+    (hT : st.getTcb? victimTid = some tcb)
+    (hN : cancelBlockedNotification? tcb = some n)
+    (hNext : tcb.ntfnNext = some x) :
+    (tcbLock x, AccessMode.write) ∈ (lockSet_cancelIpcBlockingOnCore st victimTid).pairs := by
+  unfold lockSet_cancelIpcBlockingOnCore
+  rw [hT]
+  simp only [cancelArmSpliceNeighbors?_of_blockedNotification tcb n hN, hNext]
   exact LockSet.mem_insertOrMerge_write_self _ _
 
 /-- **WS-OD (`v0.35.4`)**: the three reply-stack objects the donated arm's pop

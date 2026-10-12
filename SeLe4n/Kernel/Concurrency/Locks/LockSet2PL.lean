@@ -231,11 +231,11 @@ def threadIpcStateObserver (tid : SeLe4n.ThreadId) : SystemState → Option Thre
   fun s => (s.getTcb? tid).map TCB.ipcState
 
 /-- **WS-RR RR7.4**: a notification's delivery state — its `state` (which
-carries the pending badge) and its waiter list, as one projection so a caller
-cannot watch half of the rendezvous. -/
+carries the pending badge) and its wait queue's two ends, as one projection so a
+caller cannot watch half of the rendezvous. -/
 def notificationDeliveryObserver (nid : SeLe4n.ObjId) :
-    SystemState → Option (NotificationState × SeLe4n.NoDupList SeLe4n.ThreadId) :=
-  fun s => (s.getNotification? nid).map (fun n => (n.state, n.waitingThreads))
+    SystemState → Option (NotificationState × Option SeLe4n.ThreadId × Option SeLe4n.ThreadId) :=
+  fun s => (s.getNotification? nid).map (fun n => (n.state, n.waitHead, n.waitTail))
 
 -- ============================================================================
 -- §5 — SM3.C.8 — `withLockSet_invariant_preserved` (Corollary 2.1.11)

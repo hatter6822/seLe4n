@@ -41,6 +41,18 @@ theorem storeTcbQueueLinks_keyFrame {st st' : SystemState} {tid : SeLe4n.ThreadI
   exact modifyTcb_keyFrame (f := fun tcb => tcbWithQueueLinks tcb prev pprev next)
     (fun _ => rfl) hInv h
 
+/-- WS-ZA ZA4.4: the notification link-in rewrites queue links only. -/
+theorem linkNtfnWaiter_keyFrame {st st' : SystemState} {waiter : SeLe4n.ThreadId}
+    {tail : Option SeLe4n.ThreadId} (hInv : st.objects.invExt)
+    (h : linkNtfnWaiter st waiter tail = .ok st') : capabilityKeyFrame st st' := by
+  obtain ⟨st3, h3, h4⟩ := linkNtfnWaiter_ok_cases h
+  unfold storeTcbNtfnLinks at h3
+  have hF3 := modifyTcb_keyFrame (by intro _; rfl) hInv h3
+  unfold relinkNtfnNext modifyTcbOpt at h4
+  cases tail with
+  | none => cases h4; exact hF3
+  | some t => exact hF3.trans (modifyTcb_keyFrame (by intro _; rfl) hF3.2.2 h4)
+
 /-- A store over a slot no key reads, of an object no key reads. -/
 theorem storeObject_endpoint_keyFrame {st : SystemState} {oid : SeLe4n.ObjId}
     {ep ep' : Endpoint} (hInv : st.objects.invExt)
@@ -1238,29 +1250,31 @@ theorem notificationWaitOnCore_stepCovers (e : CoreId) {notificationId : SeLe4n.
       · rename_i tcb hL
         split
         · exact hRefl
-        · split
+        · dsimp only
+          split
           · exact hRefl
-          · dsimp only
+          · rename_i st1 hS
+            have hF1 := keyFrame_storeObject_inert_after (pair := ((), st1)) hPre rfl
+              (capabilityKeyFrame_refl hInv) hS
             split
             · exact hRefl
-            · rename_i st1 hS
-              have hF1 := keyFrame_storeObject_inert_after (pair := ((), st1)) hPre rfl
-                (capabilityKeyFrame_refl hInv) hS
+            · rename_i st2 hT
+              unfold storeTcbIpcStateAndMessage_fromTcb at hT
+              have hF2 : capabilityKeyFrame st st2 := by
+                revert hT
+                cases hSt : storeObject waiter.toObjId _ st1 with
+                | error _ => intro h; cases h
+                | ok p =>
+                  obtain ⟨⟨⟩, s⟩ := p
+                  intro h; cases h
+                  exact keyFrame_storeObject_tcbKeeping_after (pair := ((), _))
+                    (lookupTcb_some_objects _ _ _ hL) (by rfl) hF1 hSt
               split
               · exact hRefl
-              · rename_i st2 hT
-                unfold storeTcbIpcStateAndMessage_fromTcb at hT
-                have hF2 : capabilityKeyFrame st st2 := by
-                  revert hT
-                  cases hSt : storeObject waiter.toObjId _ st1 with
-                  | error _ => intro h; cases h
-                  | ok p =>
-                    obtain ⟨⟨⟩, s⟩ := p
-                    intro h; cases h
-                    exact keyFrame_storeObject_tcbKeeping_after (pair := ((), _))
-                      (lookupTcb_some_objects _ _ _ hL) (by rfl) hF1 hSt
-                exact ⟨stepCovers_trans hF2.stepCovers (removeRunnableOnCore_stepCovers e _ _ _),
-                  hF2.2.2⟩
+              · rename_i st4 hLink
+                have hF3 := hF2.trans (linkNtfnWaiter_keyFrame hF2.2.2 hLink)
+                exact ⟨stepCovers_trans hF3.stepCovers (removeRunnableOnCore_stepCovers e _ _ _),
+                  hF3.2.2⟩
   · split <;> exact hRefl
 
 theorem notificationWaitCrossCoreDispatchChecked_stepCovers (e : CoreId) {ctx : LabelingContext}

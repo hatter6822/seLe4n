@@ -117,7 +117,7 @@ private def baseState : SystemState :=
       ipcBuffer := (SeLe4n.VAddr.ofNat 12288)
       ipcState := .ready
     })
-    |>.withObject notificationId (.notification { state := .idle, waitingThreads := SeLe4n.NoDupList.empty, hasPendingBadge := false, pendingWord := SeLe4n.Badge.zero })
+    |>.withObject notificationId (.notification { state := .idle, hasPendingBadge := false, pendingWord := SeLe4n.Badge.zero })
     |>.withObject ⟨20⟩ (.vspaceRoot { asid := asidPrimary, mappings := {} })
     |>.withLifecycleObjectType endpointId .endpoint
     |>.withLifecycleObjectType cnodeId .cnode
@@ -2359,13 +2359,13 @@ def runWSH16LifecycleChecks : IO Unit := do
       |>.withLifecycleObjectType h16CnodeId .cnode
       |>.build)
   expectErr "H16 lifecycleRetypeObject metadata mismatch"
-    (SeLe4n.Kernel.Internal.lifecycleRetypeObject h16AuthSlot h16TargetId (.notification { state := .idle, waitingThreads := SeLe4n.NoDupList.empty, hasPendingBadge := false, pendingWord := SeLe4n.Badge.zero }) h16MismatchState)
+    (SeLe4n.Kernel.Internal.lifecycleRetypeObject h16AuthSlot h16TargetId (.notification { state := .idle, hasPendingBadge := false, pendingWord := SeLe4n.Badge.zero }) h16MismatchState)
     .illegalState
 
   -- H16-NEG-03: lifecycleRetypeObject with insufficient authority (read-only cap) → illegalAuthority
   let h16ReadOnlySlot : SeLe4n.Kernel.CSpaceAddr := { cnode := h16CnodeId, slot := SeLe4n.Slot.ofNat 1 }
   expectErr "H16 lifecycleRetypeObject insufficient authority"
-    (SeLe4n.Kernel.Internal.lifecycleRetypeObject h16ReadOnlySlot h16TargetId (.notification { state := .idle, waitingThreads := SeLe4n.NoDupList.empty, hasPendingBadge := false, pendingWord := SeLe4n.Badge.zero }) h16State)
+    (SeLe4n.Kernel.Internal.lifecycleRetypeObject h16ReadOnlySlot h16TargetId (.notification { state := .idle, hasPendingBadge := false, pendingWord := SeLe4n.Badge.zero }) h16State)
     .illegalAuthority
 
   -- H16-NEG-04: lifecycleRetypeObject with bad authority CNode → objectNotFound
@@ -2801,7 +2801,7 @@ private def runWSKGLifecycleVSpaceChecks : IO Unit := do
     badge := none
   }
   expectErr "K-G-NEG-10 lifecycleRetypeDirect wrong authority"
-    (SeLe4n.Kernel.lifecycleRetypeDirect wrongAuthCap ⟨300⟩ (.notification { state := .idle, waitingThreads := SeLe4n.NoDupList.empty, hasPendingBadge := false, pendingWord := SeLe4n.Badge.zero }) retypeState)
+    (SeLe4n.Kernel.lifecycleRetypeDirect wrongAuthCap ⟨300⟩ (.notification { state := .idle, hasPendingBadge := false, pendingWord := SeLe4n.Badge.zero }) retypeState)
     .illegalAuthority
 
   -- K-G-NEG-11: decodeVSpaceMapArgs with insufficient msgRegs (< 4) → invalidMessageInfo
@@ -2986,7 +2986,7 @@ def runWSL4BlockedThreadChecks : IO Unit := do
   let blockedState : SystemState :=
     (BootstrapBuilder.empty
       |>.withObject epId (.endpoint { sendQ := {}, receiveQ := {} })
-      |>.withObject ntfnId (.notification { state := .idle, waitingThreads := SeLe4n.NoDupList.empty, hasPendingBadge := false, pendingWord := SeLe4n.Badge.zero })
+      |>.withObject ntfnId (.notification { state := .idle, hasPendingBadge := false, pendingWord := SeLe4n.Badge.zero })
       |>.withObject ⟨7⟩ (.tcb {
         tid := ⟨7⟩, priority := ⟨10⟩, domain := ⟨0⟩,
         cspaceRoot := ⟨10⟩, vspaceRoot := ⟨20⟩, ipcBuffer := (SeLe4n.VAddr.ofNat 4096),
@@ -3077,7 +3077,7 @@ def runWSM3CapTransferNegativeChecks : IO Unit := do
           depth := 4, guardWidth := 0, guardValue := 0, radixWidth := 4,
           slots := SeLe4n.UniqueSlotMap.ofListWF [(SeLe4n.Slot.ofNat 0, cap)]
         })
-      |>.withObject targetObj (.notification { state := .idle, waitingThreads := SeLe4n.NoDupList.empty, hasPendingBadge := false, pendingWord := SeLe4n.Badge.zero })
+      |>.withObject targetObj (.notification { state := .idle, hasPendingBadge := false, pendingWord := SeLe4n.Badge.zero })
       |>.buildChecked)
 
   -- ipcTransferSingleCap with scanLimit covering all 4 slots → should get .noSlot.
@@ -3155,7 +3155,7 @@ def runL13CapTransferShortCircuitChecks : IO Unit := do
     (BootstrapBuilder.empty
       |>.withObject receiverRoot (.tcb tcbObj)
       |>.withObject senderRoot (.cnode senderCNode)
-      |>.withObject targetObj (.notification { state := .idle, waitingThreads := SeLe4n.NoDupList.empty, hasPendingBadge := false, pendingWord := SeLe4n.Badge.zero })
+      |>.withObject targetObj (.notification { state := .idle, hasPendingBadge := false, pendingWord := SeLe4n.Badge.zero })
       |>.buildChecked)
 
   -- Distinct source slots: the transfer records its derivation edge against
@@ -3194,7 +3194,7 @@ def runL13CapTransferShortCircuitChecks : IO Unit := do
   let st1 :=
     (BootstrapBuilder.empty
       |>.withObject senderRoot (.cnode senderCNode)
-      |>.withObject targetObj (.notification { state := .idle, waitingThreads := SeLe4n.NoDupList.empty, hasPendingBadge := false, pendingWord := SeLe4n.Badge.zero })
+      |>.withObject targetObj (.notification { state := .idle, hasPendingBadge := false, pendingWord := SeLe4n.Badge.zero })
       |>.buildChecked)
 
   let result1 := SeLe4n.Kernel.ipcUnwrapCapsLoop #[TransferCap.fromNode cap 0] missingRoot
@@ -4477,7 +4477,7 @@ private def r1EndpointRights : AccessRightSet :=
 private def r1BaseState : SystemState :=
   (BootstrapBuilder.empty
     |>.withObject r1EpId (.endpoint {})
-    |>.withObject r1TargetObj (.notification { state := .idle, waitingThreads := SeLe4n.NoDupList.empty, hasPendingBadge := false, pendingWord := SeLe4n.Badge.zero })
+    |>.withObject r1TargetObj (.notification { state := .idle, hasPendingBadge := false, pendingWord := SeLe4n.Badge.zero })
     |>.withObject r1CallerCNode (.cnode
         { depth := 4, guardWidth := 0, guardValue := 0, radixWidth := 4,
           slots := SeLe4n.UniqueSlotMap.ofListWF [((SeLe4n.Slot.ofNat 0), r1Cap)] })

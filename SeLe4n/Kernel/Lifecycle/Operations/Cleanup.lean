@@ -27,7 +27,7 @@ AN4-G.5 (LIF-M05) child module extracted from
 `SeLe4n.Kernel.Lifecycle.Operations`. Contains the cleanup-primitive
 defs (`lifecycleRetypeAuthority`, `removeThreadFromQueue`,
 `spliceOutMidQueueNode`, `removeFromAllEndpointQueues`,
-`removeFromAllNotificationWaitLists`, `cleanupDonatedSchedContext`,
+`removeFromNotificationWaitQueue`, `cleanupDonatedSchedContext`,
 `cleanupTcbReferences`, and since `v0.35.164` the per-core
 donation-cancellation arms `cancelBoundDonationOnCore` /
 `cancelDonatedDonationOnCore` with their `Except`-shaped dispatcher
@@ -314,49 +314,64 @@ def removeFromAllEndpointQueues (st : SystemState) (tid : SeLe4n.ThreadId) : Sys
       | none => acc
     | _ => acc
 
-/-- R4-A.2 (M-12): Remove a ThreadId from all notification waiting lists.
-    Iterates over all notification objects in `st.objects` and filters out
-    `tid` from each notification's `waitingThreads` list.
+/-- WS-ZA ZA4.4: close the gap a mid-queue waiter leaves in its notification's
+intrusive queue — the predecessor's next link and the successor's previous link
+each skip it.  A missing neighbour is a queue end, which the caller rewrote in
+the notification itself. -/
+def unlinkNtfnNeighbours (st : SystemState) (prev next : Option SeLe4n.ThreadId) :
+    SystemState :=
+  let st2 := match prev with
+    | some p => st.updateTcb p (fun t => { t with
+        ntfnNextCode := SeLe4n.ThreadId.optCode next })
+    | none => st
+  match next with
+  | some n => st2.updateTcb n (fun t => { t with
+      ntfnPrevCode := SeLe4n.ThreadId.optCode prev })
+  | none => st2
 
-    **WS-SM SM6.E (invariant fix)**: removing the **last** waiter of a
-    `.waiting` notification must transition its state to `.idle` — the
-    well-formedness predicate `notificationQueueWellFormed` requires a
-    `.waiting` notification to carry a nonempty waiter list, so the
-    pre-fix sweep left a sole-waiter cancellation in an `ipcInvariant`-
-    violating `.waiting`-with-`[]` state.  This mirrors the single-op
-    removal discipline (`notificationSignalOnCore`'s
-    `if rest.isEmpty then .idle else .waiting`).  A `.waiting`
-    notification has `pendingBadge = none`, so the `.idle` transition
-    is well-formed by construction; `.idle`/`.active` notifications
-    have empty waiter lists, so the filter (and hence the state
-    correction) is value-preserving for them. -/
-def removeFromAllNotificationWaitLists (st : SystemState) (tid : SeLe4n.ThreadId) : SystemState :=
-  st.objects.fold st fun acc oid obj =>
-    match obj with
-    | .notification _ =>
-      -- `v0.35.74`: the enumeration selects the kind, the accumulator's record
-      -- is read through the witnessed lookup, and the write is `rewriteObject`
-      -- under the store's own proof -- the endpoint sweep's shape, for the
-      -- same reason.
-      match acc.getNotificationWitnessed? oid with
-      | some ⟨notif, hN⟩ =>
-        -- PR #831 review 4 (write-set honesty): rewrite ONLY the notifications
-        -- the victim actually waits on — the filter (and the sole-waiter state
-        -- correction) is the identity for every other notification, so
-        -- re-inserting it was a spurious store write outside the declared
-        -- cancellation footprint.
-        if notif.waitingThreads.val.contains tid then
-          let wt' := notif.waitingThreads.filter (· != tid)
-          let notif' : Notification := {
-            notif with
-              waitingThreads := wt'
-              state := if notif.state = .waiting ∧ wt'.val.isEmpty then .idle
-                       else notif.state }
-          acc.rewriteObject oid (.notification notif')
-            (SystemState.rewriteAdmissible_notification hN notif')
-        else acc
-      | none => acc
-    | _ => acc
+/-- R4-A.2 (M-12), WS-ZA ZA4.4: Remove a thread from the notification wait queue
+it is linked into.
+
+A thread blocked on a notification is in that notification's queue, so the
+thread's own `ipcState` names the one queue to edit and its links name the
+neighbours to splice together (seL4's `tcbEPDequeue`).  This is O(1); the list
+form swept every notification in the store.
+
+* The queue's head is removed as a signal removes it: its successor heads the
+  queue, and nothing else is written (a head's predecessor link is not read).
+* Any other waiter's predecessor is pointed at its successor, and the successor
+  (or, at the back of the queue, the queue's tail) at its predecessor.
+
+A thread not blocked on a notification is in no queue, and nothing is written.
+
+**WS-SM SM6.E (invariant fix)**: removing the **last** waiter of a `.waiting`
+notification transitions it to `.idle` — `notificationQueueWellFormed` requires
+a `.waiting` notification to have a nonempty queue.  A `.waiting` notification
+has `pendingBadge = none`, so the `.idle` transition is well-formed by
+construction (the single-op discipline of `Notification.withHeadPopped`). -/
+def removeFromNotificationWaitQueue (st : SystemState) (tid : SeLe4n.ThreadId) : SystemState :=
+  match st.getTcb? tid with
+  | some tcb =>
+      match tcb.ipcState with
+      | .blockedOnNotification oid =>
+          match st.getNotificationWitnessed? oid with
+          | some ⟨notif, hN⟩ =>
+              let prev := tcb.ntfnPrev
+              let next := tcb.ntfnNext
+              let isHead := notif.waitHead = some tid
+              let head' := if isHead then next else notif.waitHead
+              let tail' := if next.isSome then notif.waitTail
+                else if isHead then none else prev
+              let notif' : Notification := { notif with
+                waitHeadCode := SeLe4n.ThreadId.optCode head'
+                waitTailCode := SeLe4n.ThreadId.optCode tail'
+                state := if notif.state = .waiting ∧ head'.isNone then .idle else notif.state }
+              let st1 := st.rewriteObject oid (.notification notif')
+                (SystemState.rewriteAdmissible_notification hN notif')
+              if isHead then st1 else unlinkNtfnNeighbours st1 prev next
+          | none => st
+      | _ => st
+  | none => st
 
 /-- Z7-P / AJ1-A (M-14): Return donated SchedContext before destroying a thread.
 If the thread has `.donated` binding, return the SchedContext to the original
@@ -491,7 +506,7 @@ def clearDonationOriginReferences (st : SystemState) (tid : SeLe4n.ThreadId) : S
     Removes the ThreadId from:
     1. The scheduler run queue (`removeRunnable`)
     2. All endpoint send/receive queues (`removeFromAllEndpointQueues`)
-    3. All notification waiting lists (`removeFromAllNotificationWaitLists`)
+    3. All notification waiting lists (`removeFromNotificationWaitQueue`)
     Note: the thread's reservation is ended separately in
     `lifecyclePreRetypeCleanup` BEFORE this function is called
     (`cancelDonationArmOnCore` since `v0.35.164`; the bare
@@ -507,7 +522,7 @@ def cleanupTcbReferences (st : SystemState) (tid : SeLe4n.ThreadId) : SystemStat
   -- `chooseBestRunnableBy` failed that core's entire selection scan forever.
   let st := removeRunnableFromAllCores st tid
   let st := removeFromAllEndpointQueues st tid
-  let st := removeFromAllNotificationWaitLists st tid
+  let st := removeFromNotificationWaitQueue st tid
   -- **WS-HP HP10.5**: and the recorded reservation origins that name this thread.
   -- Placed here, in the reference sweep, rather than beside the donation return in
   -- `lifecyclePreRetypeCleanup`: a *stale origin* is a dangling reference to a

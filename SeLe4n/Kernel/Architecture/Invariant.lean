@@ -665,7 +665,8 @@ theorem default_system_state_proofLayerInvariantBundle :
            default_schedContextBindingConsistent, default_effectiveParamsMatchRunQueue,
            default_boundThreadDomainConsistent⟩
   -- 11. notificationWaiterConsistent (AG7-D: empty objects → vacuous)
-  · intro oid _ _ hObj; exact default_objects_absurd hObj
+  · exact ⟨fun _ _ hObj => default_objects_absurd hObj,
+      fun _ _ _ hObj _ => default_objects_absurd hObj⟩
   -- 12. pendingBounded (WS-SM SM7.B: boot shootdown state is quiescent)
   · exact default_tlbShootdown_pendingBounded
   -- 13. tlbInvalidationConsistent_perCore (WS-SM SM7.C: every core's boot
@@ -1630,8 +1631,9 @@ theorem contextSwitchState_preserves_proofLayerInvariantBundle
     show currentNotOnNotificationWaitList { st with machine := _, scheduler := _ }
     unfold currentNotOnNotificationWaitList; simp
     intro oid ntfn hObj
-    exact not_mem_waitingThreads_of_ipcState_ne st oid ntfn newTid tcb hNWC hObj hLookup
+    have h := not_mem_queueEnds_of_ipcState_ne st oid ntfn newTid tcb hNWC hObj hLookup
       (by rw [hIpcReady]; simp)
+    simpa [Notification.mem_queueEnds, not_or] using h
   -- currentThreadIpcReady for the post-state
   have hIpcReadyPost : currentThreadIpcReady (contextSwitchState newTid newRegs st) := by
     show currentThreadIpcReady { st with machine := _, scheduler := _ }

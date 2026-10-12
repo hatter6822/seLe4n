@@ -201,14 +201,16 @@ def noStaleEndpointQueueReferences (st : SystemState) : Prop :=
     (∀ members, collectQueueMembers st.objects ep.receiveQ.head st.objects.size = some members →
       ∀ tid, tid ∈ members → st.objects[tid.toObjId]? ≠ none)
 
-/-- T5-H (L-NEW-3): No notification waiting list references a non-existent TCB.
-    For every notification object, every `ThreadId` in `waitingThreads`
-    must reference an existing TCB in the objects store. This prevents
-    deleted TCB IDs from persisting in notification wait lists. -/
+/-- T5-H (L-NEW-3): No notification wait queue references a non-existent TCB.
+    For every notification object, both ends of its wait queue
+    (`Notification.queueEnds`) must reference an existing object in the store.
+    This prevents deleted TCB IDs from persisting in notification wait queues;
+    the waiters between the ends are reached through TCB links, which
+    `notificationWaiterConsistent` keeps pointing at live TCBs. -/
 def noStaleNotificationWaitReferences (st : SystemState) : Prop :=
   ∀ (oid : SeLe4n.ObjId) (notif : Notification),
     st.objects[oid]? = some (.notification notif) →
-    ∀ tid, tid ∈ notif.waitingThreads →
+    ∀ tid, tid ∈ notif.queueEnds →
       st.objects[tid.toObjId]? ≠ none
 
 /-- R4-E.1: Every dependency graph edge references services that are
@@ -3118,7 +3120,7 @@ theorem ipcReplyRecv_crossSubsystemInvariant_bridge
 /-- AD4-B (F-08): `notificationSignal` preserves `crossSubsystemInvariant`.
     Notification signal modifies the notification object (badge accumulation
     via bitwise OR) and potentially wakes one waiting thread (modifying its
-    TCB `ipcState` and the notification's `waitingThreads` list). Does not
+    TCB `ipcState` and the notification's queue head). Does not
     modify `services`, `serviceRegistry`, or `objectIndex`. May modify
     `scheduler.runnable` via `ensureRunnable` when a waiter is woken. -/
 theorem notificationSignal_crossSubsystemInvariant_bridge
@@ -3144,7 +3146,7 @@ theorem notificationSignal_crossSubsystemInvariant_bridge
 /-- AD4-B (F-08): `notificationWait` preserves `crossSubsystemInvariant`.
     Notification wait either consumes a pending badge (modifying the notification
     object) or blocks the waiter (modifying the waiter's TCB `ipcState` and
-    adding it to the notification's `waitingThreads` list). Does not modify
+    linking it in at the notification's queue tail). Does not modify
     `services`, `serviceRegistry`, or `objectIndex`. May modify
     `scheduler.runnable` via `removeRunnable` when the waiter blocks. -/
 theorem notificationWait_crossSubsystemInvariant_bridge
@@ -3870,7 +3872,7 @@ theorem retypeFromUntyped_crossSubsystemInvariant_bridge
 
     Timer path: delegates to existing `timerTick` which modifies TCB.timeSlice
     and may call `schedule`. Notification path: delegates to `notificationSignal`
-    which modifies TCB.ipcState and Notification.waitingThreads. Both paths
+    which modifies TCB.ipcState and the notification's queue head. Both paths
     use the core bridge (`crossSubsystemInvariant_objects_change_bridge`). -/
 theorem handleInterrupt_crossSubsystemInvariant_bridge
     (st st' : SystemState)
@@ -4397,20 +4399,16 @@ structural promotion.**
   Phase B2 added `lifecyclePreRetypeCleanupWithToken` (the tokenized
   cleanup wrapper).  Phase B3 added the `mkRetypeTarget` smart
   constructor.
-* **R4.C (DEEP-IPC-05; subsumes DEEP-IPC-01)** —
-  `Notification.waitingThreads : SeLe4n.NoDupList SeLe4n.ThreadId`
-  carries `List.Nodup` structurally at construction time
-  (`SeLe4n/Model/Object/NoDupList.lean`).  `notificationSignal` pops
-  via `NoDupList.tail?`; `notificationWait` cons site is gated by
-  `NoDupList.consWithGuard?`.  The historical state-level
-  `uniqueWaiters` predicate (and its `uniqueWaiters_holds` /
-  `uniqueWaiters_trivial` discharge helpers) were deleted in the
-  WS-RC R4.C close-out; per-Notification discharge is now directly
-  via `SeLe4n.Kernel.notification_waiters_nodup`.  Structural
-  witnesses: `SeLe4n.NoDupList.nodup_witness`,
-  `SeLe4n.Kernel.notification_waiters_nodup`, and
-  `SeLe4n.Kernel.notificationWait_runtime_check_implied_by_nodup`
-  (the operational↔structural bridge).
+* **R4.C (DEEP-IPC-05; subsumes DEEP-IPC-01)** — waiter uniqueness
+  is structural.  Since WS-ZA ZA4.4 a notification's waiters are an
+  intrusive queue threaded through the TCBs (`ntfnPrevCode` /
+  `ntfnNextCode`), and a thread is in the queue exactly when its own
+  `ipcState` is `.blockedOnNotification` on it
+  (`notificationWaiterConsistent`), so no thread can wait twice: it has
+  one state and one link pair.  `notificationWait` refuses a thread
+  already blocked on the notification (`.alreadyWaiting`).  The
+  historical state-level `uniqueWaiters` predicate and the duplicate-free
+  waiter list that replaced it are both deleted.
 * **R4.D (DEEP-CAP-02)** — `cspaceMutate`'s runtime null-cap guard is
   witnessed by `SeLe4n.Kernel.cspaceMutate_rejects_null_cap` (positive
   direction) and `SeLe4n.Kernel.cspaceMutate_null_cap_rejected`
@@ -4436,14 +4434,12 @@ theorem r4_structural_fix_discharge_index_documented : True := trivial
 theorem cspaceSlotUnique_promoted_to_structural : True := trivial
 
 /-- WS-RC R4.C.8 close-out: state-level `uniqueWaiters` promoted to
-    structural via `NoDupList.hNodup` and deleted.  Marker theorem for
-    the discharge-index reachability gate; sibling of the umbrella
-    marker `r4_structural_fix_discharge_index_documented`.  The body is
-    `trivial` per the marker-theorem pattern (the structural promotion
-    is witnessed by `SeLe4n.Kernel.notification_waiters_nodup`; the
-    historical state-level predicate and its `_holds` / `_trivial`
-    discharge helpers have all been deleted in the close-out's C2
-    phase). -/
+    structural and deleted.  Marker theorem for the discharge-index
+    reachability gate; sibling of the umbrella marker
+    `r4_structural_fix_discharge_index_documented`.  The body is
+    `trivial` per the marker-theorem pattern.  Since WS-ZA ZA4.4 the
+    promotion is carried by the intrusive TCB queue: a thread's
+    membership is its own `ipcState`, so it cannot be queued twice. -/
 theorem uniqueWaiters_promoted_to_structural : True := trivial
 
 end SeLe4n.Kernel

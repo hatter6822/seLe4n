@@ -241,7 +241,8 @@ def boundDeliveryTarget? (st : SystemState) (notificationId : SeLe4n.ObjId) :
     Option (SeLe4n.ThreadId × SeLe4n.ObjId) :=
   match st.getNotification? notificationId with
   | some ntfn =>
-      if ntfn.waitingThreads.val.isEmpty then
+      -- WS-ZA ZA4.4: an empty queue is a zero head code (`waitHeadCode_eq_zero_iff`).
+      if ntfn.waitHeadCode = 0 then
         match ntfn.boundTCB with
         | some t =>
             match st.getTcb? t with

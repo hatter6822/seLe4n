@@ -153,7 +153,7 @@ def currentNotOnNotificationWaitList_perCore (st : SystemState) (c : CoreId) : P
   | some tid =>
     ∀ (oid : SeLe4n.ObjId) (ntfn : Notification),
       st.getNotification? oid = some ntfn →
-      tid ∉ ntfn.waitingThreads
+      tid ∉ ntfn.queueEnds
 
 /-- SM4.D: per-core form of `passiveServerIdle`.  An unbound thread that is
 not in core `c`'s run queue and not core `c`'s current thread is either

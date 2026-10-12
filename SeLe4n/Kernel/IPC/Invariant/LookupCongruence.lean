@@ -432,10 +432,8 @@ theorem queueNextTargetBlocked_of_getElem_eq {s1 s2 : SystemState}
 theorem notificationWaiterConsistent_of_getElem_eq {s1 s2 : SystemState}
     (hEq : ∀ oid : SeLe4n.ObjId, s2.objects[oid]? = s1.objects[oid]?)
     (h : notificationWaiterConsistent s1) : notificationWaiterConsistent s2 := by
-  intro oid ntfn tid hNtfn hMem
-  rw [hEq] at hNtfn
-  obtain ⟨tcb, hTcb, hIpc⟩ := h oid ntfn tid hNtfn hMem
-  exact ⟨tcb, by rw [hEq]; exact hTcb, hIpc⟩
+  simp only [notificationWaiterConsistent, hEq] at h ⊢
+  exact h
 
 /-- WS-SM SM6.D: **the whole-bundle pointwise transport** — two states whose
 object lookups agree pointwise satisfy the nineteen object-reading conjuncts
@@ -788,6 +786,54 @@ theorem storeTcbQueueLinks_offSchedulerAgrees {s1 s2 r2 : SystemState}
         exact ⟨r1', rfl, storeObject_offSchedulerAgrees _ _ hRel hInv1 hInv2 hSO1 hSO2⟩
 
 open SeLe4n.Model.SystemState in
+/-- WS-ZA ZA4.4 step congruence: any `modifyTcb` succeeds on the
+single-core-side state whenever it succeeds on the cross-core-side state, with
+off-scheduler-agreeing outputs — one lookup the relation fixes, one store that
+carries it. -/
+theorem modifyTcb_offSchedulerAgrees {s1 s2 r2 : SystemState}
+    (tid : SeLe4n.ThreadId) (f : TCB → TCB)
+    (hRel : OffSchedulerAgrees s1 s2)
+    (hInv1 : s1.objects.invExt) (hInv2 : s2.objects.invExt)
+    (h2 : modifyTcb s2 tid f = .ok r2) :
+    ∃ r1, modifyTcb s1 tid f = .ok r1 ∧ OffSchedulerAgrees r1 r2 := by
+  unfold modifyTcb at h2 ⊢
+  rw [lookupTcb_congr_getElem hRel.objects tid] at h2
+  cases hL : lookupTcb s1 tid with
+  | none => simp only [hL] at h2; cases h2
+  | some tcb =>
+    simp only [hL] at h2 ⊢
+    cases hSO2 : storeObject tid.toObjId (.tcb (f tcb)) s2 with
+    | error e => simp only [hSO2] at h2; cases h2
+    | ok p2 =>
+      obtain ⟨⟨⟩, r2'⟩ := p2
+      simp only [hSO2, Except.ok.injEq] at h2
+      subst h2
+      cases hSO1 : storeObject tid.toObjId (.tcb (f tcb)) s1 with
+      | error e => exact absurd hSO1 (by unfold storeObject; simp)
+      | ok p1 =>
+        obtain ⟨⟨⟩, r1'⟩ := p1
+        exact ⟨r1', rfl, storeObject_offSchedulerAgrees _ _ hRel hInv1 hInv2 hSO1 hSO2⟩
+
+/-- WS-ZA ZA4.4 step congruence: the notification link-in — two `modifyTcb`
+writes — carries the off-scheduler agreement. -/
+theorem linkNtfnWaiter_offSchedulerAgrees {s1 s2 r2 : SystemState}
+    (waiter : SeLe4n.ThreadId) (tail : Option SeLe4n.ThreadId)
+    (hRel : OffSchedulerAgrees s1 s2)
+    (hInv1 : s1.objects.invExt) (hInv2 : s2.objects.invExt)
+    (h2 : linkNtfnWaiter s2 waiter tail = .ok r2) :
+    ∃ r1, linkNtfnWaiter s1 waiter tail = .ok r1 ∧ OffSchedulerAgrees r1 r2 := by
+  obtain ⟨m2, hM2, hR2⟩ := linkNtfnWaiter_ok_cases h2
+  obtain ⟨m1, hM1, hRel1⟩ := modifyTcb_offSchedulerAgrees waiter _ hRel hInv1 hInv2 hM2
+  have hInvM1 := modifyTcb_preserves_objects_invExt hInv1 hM1
+  have hInvM2 := modifyTcb_preserves_objects_invExt hInv2 hM2
+  unfold linkNtfnWaiter storeTcbNtfnLinks
+  rw [hM1]
+  unfold relinkNtfnNext modifyTcbOpt at hR2 ⊢
+  cases tail with
+  | none => cases hR2; exact ⟨m1, rfl, hRel1⟩
+  | some t => exact modifyTcb_offSchedulerAgrees t _ hRel1 hInvM1 hInvM2 hR2
+
+open SeLe4n.Model.SystemState in
 /-- **`v0.35.161`** step congruence: `endpointQueueEnqueue` succeeds on the
 single-core-side state whenever it succeeds on the cross-core-side state, with
 off-scheduler-agreeing outputs.  Every read — the endpoint, the thread, the old
@@ -1095,13 +1141,13 @@ structure ipcReadViewAgreement (s1 s2 : SystemState) : Prop where
   endpoint : ∀ (oid : SeLe4n.ObjId) (ep : Endpoint),
     s2.objects[oid]? = some (.endpoint ep) ↔ s1.objects[oid]? = some (.endpoint ep)
   /-- The notification clause is *content* agreement, not value agreement:
-  every notification-reading conjunct reads `state`, `waitingThreads` and
+  every notification-reading conjunct reads `state`, `waitHead` and
   `pendingBadge` only, so a rewrite that moves `boundTCB` or the lock word —
   the `.tcbBindNotification` arms — stays inside the frame. -/
   notification : ∀ (oid : SeLe4n.ObjId) (ntfn : Notification),
     s2.objects[oid]? = some (.notification ntfn) →
     ∃ ntfn₀ : Notification, s1.objects[oid]? = some (.notification ntfn₀) ∧
-      ntfn₀.state = ntfn.state ∧ ntfn₀.waitingThreads = ntfn.waitingThreads ∧
+      ntfn₀.state = ntfn.state ∧ ntfn₀.waitHead = ntfn.waitHead ∧
       ntfn₀.pendingBadge = ntfn.pendingBadge
   reply : ∀ (oid : SeLe4n.ObjId) (r : SeLe4n.Kernel.Reply),
     s2.objects[oid]? = some (.reply r) ↔ s1.objects[oid]? = some (.reply r)
@@ -1225,7 +1271,7 @@ theorem of_inertOrAbsentWrites {s1 s2 : SystemState}
            ⟨sc, (step oid (.schedContext sc) (by simp [ipcReadInert])).mpr hSc, rfl⟩⟩
 
 /-- A single notification rewrite preserving queue content — `state`,
-`waitingThreads`, `pendingBadge`; `boundTCB` and the lock word are free —
+`waitHead`, `pendingBadge`; `boundTCB`, the tail and the lock word are free —
 is read-view agreement.  The `.tcbBindNotification` /
 `.tcbUnbindNotification` arms' notification store is exactly this shape. -/
 theorem of_notification_content_write {s1 s2 : SystemState} {key : SeLe4n.ObjId}
@@ -1234,7 +1280,7 @@ theorem of_notification_content_write {s1 s2 : SystemState} {key : SeLe4n.ObjId}
     (hAt : s2.objects[key]? = some (.notification ntfn'))
     (hNe : ∀ oid : SeLe4n.ObjId, oid ≠ key → s2.objects[oid]? = s1.objects[oid]?)
     (hState : ntfn'.state = ntfn.state)
-    (hWaiters : ntfn'.waitingThreads = ntfn.waitingThreads)
+    (hWaiters : ntfn'.waitHead = ntfn.waitHead)
     (hBadge : ntfn'.pendingBadge = ntfn.pendingBadge) :
     ipcReadViewAgreement s1 s2 := by
   have step : ∀ (oid : SeLe4n.ObjId) (o : KernelObject),
@@ -1637,16 +1683,6 @@ theorem queueNextTargetBlocked_of_readViewAgreement {s1 s2 : SystemState}
   intro a b tcbA tcbB hA hB hNext
   rw [hView.tcb] at hA hB
   exact h a b tcbA tcbB hA hB hNext
-
-/-- Read-view transport of `notificationWaiterConsistent`. -/
-theorem notificationWaiterConsistent_of_readViewAgreement {s1 s2 : SystemState}
-    (hView : ipcReadViewAgreement s1 s2)
-    (h : notificationWaiterConsistent s1) : notificationWaiterConsistent s2 := by
-  intro oid ntfn tid hNtfn hMem
-  obtain ⟨ntfn₀, hL, _, hW, _⟩ := hView.notification oid ntfn hNtfn
-  have hMem₀ : tid ∈ ntfn₀.waitingThreads := by rw [hW]; exact hMem
-  obtain ⟨tcb, hTcb, hIpc⟩ := h oid ntfn₀ tid hL hMem₀
-  exact ⟨tcb, (hView.tcb _ _).mpr hTcb, hIpc⟩
 
 /-- **The read-view master transport**: two states agreeing on every object
 kind the bundle reads satisfy the eighteen CNode-free object conjuncts

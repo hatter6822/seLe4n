@@ -354,9 +354,9 @@ theorem notificationSignalChecked_NI
         threadObservable ctx observer tid = false →
         objectObservable ctx observer tid.toObjId = false)
     (hWaiterDomain₁ : ∀ ntfn tid, s₁.objects[notificationId]? = some (.notification ntfn) →
-        tid ∈ ntfn.waitingThreads → threadObservable ctx observer tid = false)
+        ntfn.waitHead = some tid → threadObservable ctx observer tid = false)
     (hWaiterDomain₂ : ∀ ntfn tid, s₂.objects[notificationId]? = some (.notification ntfn) →
-        tid ∈ ntfn.waitingThreads → threadObservable ctx observer tid = false)
+        ntfn.waitHead = some tid → threadObservable ctx observer tid = false)
     (hObjInv₁ : s₁.objects.invExt)
     (hObjInv₂ : s₂.objects.invExt)
     (hStep₁ : notificationSignalChecked ctx notificationId signaler badge s₁ = .ok ((), s₁'))

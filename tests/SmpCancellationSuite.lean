@@ -170,7 +170,7 @@ open SeLe4n.Testing
 -- SM6.E cleanup-primitive invExt lemmas (CleanupPreservation):
 #check @spliceOutMidQueueNode_preserves_objects_invExt
 #check @removeFromAllEndpointQueues_preserves_objects_invExt
-#check @removeFromAllNotificationWaitLists_preserves_objects_invExt
+#check @removeFromNotificationWaitQueue_preserves_objects_invExt
 #check @cleanupDonatedSchedContext_preserves_objects_invExt
 
 -- SM6.E flagship:
@@ -182,7 +182,7 @@ open SeLe4n.Testing
 #check @SeLe4n.Kernel.RobinHood.RHTable.fold_preserves_of_lookup
 #check @spliceOutMidQueueNode_tcb_lookup
 #check @removeFromAllEndpointQueues_tcb_lookup
-#check @removeFromAllNotificationWaitLists_tcb_lookup
+#check @removeFromNotificationWaitQueue_tcb_lookup
 #check @cancelIpcBlocking_tcb_lookup
 #check @cancelIpcBlocking_getTcb?_none
 #check @cancelIpcBlocking_determineTargetCore_eq
@@ -200,7 +200,7 @@ open SeLe4n.Testing
 #check @cancelIpcBlockingOnCore_placedCoreOf?_of_some
 #check @cancelIpcBlockingOnCore_runningOnSomeCore
 #check @cancelIpcBlockingOnCoreLockSet_covers_deschedule
-#check @notificationQueueWellFormed_filter_correct
+#check @notificationQueueWellFormed_unlink
 #check @cancelIpcBlocking_preserves_ipcInvariant
 #check @cancelIpcBlockingOnCore_preserves_ipcInvariant
 #check @cancelDonationOnCore_preserves_ipcInvariant
@@ -327,13 +327,12 @@ open SeLe4n.Testing
 #check @replyObject_none_of_not_blockedOnReply
 -- WS-RR RR7.22 (residual): the notification arm — its purge description, its one
 -- coherence hypothesis, every conjunct, the keystone and the live arm.
-#check @notificationPurgeBody
-#check @removeFromAllNotificationWaitLists_eq_fold
-#check @removeFromAllNotificationWaitLists_nonNotification
-#check @removeFromAllNotificationWaitLists_notification_badge
+#check @purgedAndRestored_nonNotification
+#check @removeFromNotificationWaitQueue_notification_badge
 #check @purgedAndRestored
 #check @sweptThreadOffQueueChains
-#check @purgedAndRestored_tcb_iff
+#check @purgedAndRestored_tcb_backward
+#check @purgedAndRestored_tcb_forward
 #check @purgedAndRestored_victim_tcb
 #check @purgedAndRestored_tcb_pullback
 #check @purgedAndRestored_tcb_links
@@ -456,10 +455,13 @@ open SeLe4n.Testing
 -- checked in both directions.
 #check @cancelArmSpliceNeighbors?
 #check @cancelArmSpliceNeighbors?_of_blockedEndpoint
-#check @cancelArmSpliceNeighbors?_of_not_blockedEndpoint
+#check @cancelArmSpliceNeighbors?_of_blockedNotification
+#check @cancelArmSpliceNeighbors?_of_unqueued
 #check @lockSet_cancelIpcBlockingOnCore_replyArm_eq
 #check @lockSet_cancelIpcBlockingOnCore_endpointArm_covers_prev
 #check @lockSet_cancelIpcBlockingOnCore_endpointArm_covers_next
+#check @lockSet_cancelIpcBlockingOnCore_notificationArm_covers_prev
+#check @lockSet_cancelIpcBlockingOnCore_notificationArm_covers_next
 #check @lockSet_cancelIpcBlockingOnCore_size_le_thirteen
 #check @lockSet_cancelIpcBlockingOnCore_size_le_of_no_donation
 #check @lockSet_cancelIpcBlockingOnCore_size_le_of_donation
@@ -467,7 +469,7 @@ open SeLe4n.Testing
 #check @lockSet_tcbSuspendOnCore_size_le
 -- ...and the frames that license it: the arms that declare no neighbour write
 -- none.
-#check @cancelIpcBlocking_notificationArm_tcb_frame
+#check @cancelIpcBlocking_notificationArm_objects_off
 #check @cancelIpcBlocking_replyArm_noDonation_tcb_frame
 #check @consumeReplyLink_other_tcb_eq
 -- ...and the general reply-arm frame, with the reclaim live: the four steps
@@ -871,7 +873,7 @@ private def runEndpointCancelChecks : IO Unit := do
 
 private def stNtfnBase : SystemState :=
   (BootstrapBuilder.empty
-    |>.withObject nId (.notification { state := .idle, waitingThreads := SeLe4n.NoDupList.empty })
+    |>.withObject nId (.notification { state := .idle })
     |>.withObject victimTid.toObjId (.tcb (mkTcb 710 30 (some core1)))
     |>.withRunnable [victimTid]
     |>.build)
@@ -899,7 +901,7 @@ private def runNotificationCancelChecks : IO Unit := do
          | none => false)
       assertBool "the victim is dropped from the notification's waiter list"
         (match st'.objects[nId]? with
-         | some (.notification ntfn) => decide (victimTid ∉ ntfn.waitingThreads.val)
+         | some (.notification ntfn) => decide (victimTid ∉ ntfn.queueEnds)
          | _ => false)
       -- State-resolved lock-set picks the notification write lock.
       let ls := lockSet_cancelIpcBlockingOnCore st victimTid
@@ -1206,7 +1208,7 @@ private def runDispatcherEdgeChecks : IO Unit := do
 private def stNtfnTwoWaiters? : Option SystemState :=
   let base :=
     (BootstrapBuilder.empty
-      |>.withObject nId (.notification { state := .idle, waitingThreads := SeLe4n.NoDupList.empty })
+      |>.withObject nId (.notification { state := .idle })
       |>.withObject victimTid.toObjId (.tcb (mkTcb 710 30 (some core1)))
       |>.withObject bystanderTid.toObjId (.tcb (mkTcb 712 20 none))
       |>.withRunnable [victimTid, bystanderTid]
@@ -1221,7 +1223,7 @@ private def stNtfnTwoWaiters? : Option SystemState :=
 private def runNotificationStateCorrectionChecks : IO Unit := do
   IO.println "--- §3.9 SM6.E notification sole-waiter state correction ---"
   -- Sole waiter: cancelling the ONLY waiter must transition the notification
-  -- back to `.idle` (the `removeFromAllNotificationWaitLists` invariant fix —
+  -- back to `.idle` (the `removeFromNotificationWaitQueue` invariant fix —
   -- pre-fix the sweep left an ipcInvariant-violating `.waiting` + `[]`).
   match stNtfnBlocked? with
   | some st =>
@@ -1230,7 +1232,7 @@ private def runNotificationStateCorrectionChecks : IO Unit := do
       assertBool "sole-waiter cancel: notification transitions to .idle"
         (match st'.objects[nId]? with
          | some (.notification n) =>
-             decide (n.state = .idle ∧ n.waitingThreads.val = []
+             decide (n.state = .idle ∧ n.waitHead = none ∧ n.waitTail = none
                ∧ n.pendingBadge = none)
          | _ => false)
   | none => assertBool "setup: sole-waiter fixture available" false
@@ -1243,7 +1245,8 @@ private def runNotificationStateCorrectionChecks : IO Unit := do
       assertBool "two-waiter cancel: notification stays .waiting with the other waiter"
         (match st'.objects[nId]? with
          | some (.notification n) =>
-             decide (n.state = .waiting ∧ n.waitingThreads.val = [bystanderTid])
+             decide (n.state = .waiting ∧ n.waitHead = some bystanderTid
+               ∧ n.waitTail = some bystanderTid)
          | _ => false)
   | none => assertBool "setup: two-waiter fixture available" false
 
@@ -1907,7 +1910,7 @@ private def stCallBlockedStale? : Option SystemState :=
 private def stNtfnBlockedStale? : Option SystemState :=
   let base :=
     (BootstrapBuilder.empty
-      |>.withObject nId (.notification { state := .idle, waitingThreads := SeLe4n.NoDupList.empty })
+      |>.withObject nId (.notification { state := .idle })
       |>.withObject victimTid.toObjId (.tcb (mkTcbWithStaleRegs 710 30 (some core1)))
       |>.withRunnable [victimTid]
       |>.build)

@@ -54,7 +54,7 @@ private def chain1RetypeMintRevoke : IO Unit := do
   let dstSlot : SeLe4n.Kernel.CSpaceAddr := { cnode := cnodeId, slot := (SeLe4n.Slot.ofNat 1) }
   let st0 :=
     (BootstrapBuilder.empty
-      |>.withObject targetId (.notification { state := .idle, waitingThreads := SeLe4n.NoDupList.empty, hasPendingBadge := false, pendingWord := SeLe4n.Badge.zero })
+      |>.withObject targetId (.notification { state := .idle, hasPendingBadge := false, pendingWord := SeLe4n.Badge.zero })
       |>.withObject cnodeId (.cnode {
           depth := 0
           guardWidth := 0
@@ -130,7 +130,7 @@ private def chain4ServiceRegistryDependencyGraph : IO Unit := do
   let st0 :=
     (BootstrapBuilder.empty
       |>.withObject ⟨500⟩ (.endpoint {})
-      |>.withObject ⟨501⟩ (.notification { state := .idle, waitingThreads := SeLe4n.NoDupList.empty, hasPendingBadge := false, pendingWord := SeLe4n.Badge.zero })
+      |>.withObject ⟨501⟩ (.notification { state := .idle, hasPendingBadge := false, pendingWord := SeLe4n.Badge.zero })
       |>.withService baseSid {
           identity := { sid := baseSid, backingObject := ⟨500⟩, owner := ⟨1⟩ }
           dependencies := []
@@ -194,7 +194,7 @@ private def chain6NotificationBadgeAccumulation : IO Unit := do
   let waiter : SeLe4n.ThreadId := ⟨11⟩
   let st0 :=
     (BootstrapBuilder.empty
-      |>.withObject ntfnId (.notification { state := .idle, waitingThreads := SeLe4n.NoDupList.empty, hasPendingBadge := false, pendingWord := SeLe4n.Badge.zero })
+      |>.withObject ntfnId (.notification { state := .idle, hasPendingBadge := false, pendingWord := SeLe4n.Badge.zero })
       |>.withObject waiter.toObjId (.tcb {
           tid := waiter
           priority := ⟨20⟩
@@ -682,7 +682,7 @@ private def chain12IpcCapTransfer : IO Unit := do
   let st0 :=
     (BootstrapBuilder.empty
       |>.withObject epId (.endpoint {})
-      |>.withObject targetObj (.notification { state := .idle, waitingThreads := SeLe4n.NoDupList.empty, hasPendingBadge := false, pendingWord := SeLe4n.Badge.zero })
+      |>.withObject targetObj (.notification { state := .idle, hasPendingBadge := false, pendingWord := SeLe4n.Badge.zero })
       |>.withObject senderCNode (.cnode {
           depth := 4, guardWidth := 0, guardValue := 0, radixWidth := 4,
           slots := SeLe4n.UniqueSlotMap.ofListWF [
@@ -769,8 +769,8 @@ private def ipcCapTransferRevocable : IO Unit := do
   let st0 :=
     (BootstrapBuilder.empty
       |>.withObject epId (.endpoint {})
-      |>.withObject payloadObj (.notification { state := .idle, waitingThreads := SeLe4n.NoDupList.empty, hasPendingBadge := false, pendingWord := SeLe4n.Badge.zero })
-      |>.withObject unrelatedObj (.notification { state := .idle, waitingThreads := SeLe4n.NoDupList.empty, hasPendingBadge := false, pendingWord := SeLe4n.Badge.zero })
+      |>.withObject payloadObj (.notification { state := .idle, hasPendingBadge := false, pendingWord := SeLe4n.Badge.zero })
+      |>.withObject unrelatedObj (.notification { state := .idle, hasPendingBadge := false, pendingWord := SeLe4n.Badge.zero })
       |>.withObject senderCNode (.cnode {
           depth := 4, guardWidth := 0, guardValue := 0, radixWidth := 4,
           slots := SeLe4n.UniqueSlotMap.ofListWF [
@@ -909,7 +909,7 @@ private def ipcCapTransferRevocable : IO Unit := do
     (match stParked.objects[senderCNode]? with
      | some (.cnode cn) =>
          match SeLe4n.Kernel.lifecyclePreRetypeCleanup stParked senderCNode (.cnode cn)
-                 (.notification { state := .idle, waitingThreads := SeLe4n.NoDupList.empty, hasPendingBadge := false, pendingWord := SeLe4n.Badge.zero }) with
+                 (.notification { state := .idle, hasPendingBadge := false, pendingWord := SeLe4n.Badge.zero }) with
          | .error .revocationRequired => true
          | _ => false
      | _ => false)
@@ -979,7 +979,7 @@ private def ipcCapTransferArrivalOrder : IO Unit := do
   let st0 :=
     (BootstrapBuilder.empty
       |>.withObject epId (.endpoint {})
-      |>.withObject payloadObj (.notification { state := .idle, waitingThreads := SeLe4n.NoDupList.empty, hasPendingBadge := false, pendingWord := SeLe4n.Badge.zero })
+      |>.withObject payloadObj (.notification { state := .idle, hasPendingBadge := false, pendingWord := SeLe4n.Badge.zero })
       |>.withObject senderCNode (.cnode {
           depth := 4, guardWidth := 0, guardValue := 0, radixWidth := 4,
           slots := SeLe4n.UniqueSlotMap.ofListWF [(srcSlot, payloadCap)]
@@ -1114,7 +1114,7 @@ private def replyRecvCapTransferArrivalOrder : IO Unit := do
   let st0 :=
     (BootstrapBuilder.empty
       |>.withObject epId (.endpoint {})
-      |>.withObject payloadObj (.notification { state := .idle, waitingThreads := SeLe4n.NoDupList.empty, hasPendingBadge := false, pendingWord := SeLe4n.Badge.zero })
+      |>.withObject payloadObj (.notification { state := .idle, hasPendingBadge := false, pendingWord := SeLe4n.Badge.zero })
       |>.withObject senderCNode (.cnode {
           depth := 4, guardWidth := 0, guardValue := 0, radixWidth := 4,
           slots := SeLe4n.UniqueSlotMap.ofListWF [(srcSlot, payloadCap)]
@@ -1243,7 +1243,7 @@ private def receiveWithoutSenderInstallsNothing : IO Unit := do
   let st0 :=
     (BootstrapBuilder.empty
       |>.withObject epId (.endpoint {})
-      |>.withObject payloadObj (.notification { state := .idle, waitingThreads := SeLe4n.NoDupList.empty, hasPendingBadge := false, pendingWord := SeLe4n.Badge.zero })
+      |>.withObject payloadObj (.notification { state := .idle, hasPendingBadge := false, pendingWord := SeLe4n.Badge.zero })
       |>.withObject senderCNode (.cnode {
           depth := 4, guardWidth := 0, guardValue := 0, radixWidth := 4,
           slots := SeLe4n.UniqueSlotMap.ofListWF [(srcSlot, payloadCap)]
@@ -1473,7 +1473,7 @@ private def revokeConsumesPendingTransfer : IO Unit := do
   let st0 :=
     (BootstrapBuilder.empty
       |>.withObject epId (.endpoint {})
-      |>.withObject payloadObj (.notification { state := .idle, waitingThreads := SeLe4n.NoDupList.empty, hasPendingBadge := false, pendingWord := SeLe4n.Badge.zero })
+      |>.withObject payloadObj (.notification { state := .idle, hasPendingBadge := false, pendingWord := SeLe4n.Badge.zero })
       |>.withObject senderCNode (.cnode {
           depth := 4, guardWidth := 0, guardValue := 0, radixWidth := 4,
           slots := SeLe4n.UniqueSlotMap.ofListWF [(srcSlot, payloadCap)]
@@ -1584,7 +1584,7 @@ private def revokeLeavesIndependentSibling : IO Unit := do
   let st0 :=
     (BootstrapBuilder.empty
       |>.withObject epId (.endpoint {})
-      |>.withObject payloadObj (.notification { state := .idle, waitingThreads := SeLe4n.NoDupList.empty, hasPendingBadge := false, pendingWord := SeLe4n.Badge.zero })
+      |>.withObject payloadObj (.notification { state := .idle, hasPendingBadge := false, pendingWord := SeLe4n.Badge.zero })
       |>.withObject senderCNode (.cnode {
           depth := 4, guardWidth := 0, guardValue := 0, radixWidth := 4,
           slots := SeLe4n.UniqueSlotMap.ofListWF [(revokedSlot, payloadCap), (siblingSlot, payloadCap)]
@@ -1704,7 +1704,7 @@ private def endpointGrantDecidesBothOrderings : IO Unit := do
   let st0 :=
     (BootstrapBuilder.empty
       |>.withObject epId (.endpoint {})
-      |>.withObject payloadObj (.notification { state := .idle, waitingThreads := SeLe4n.NoDupList.empty, hasPendingBadge := false, pendingWord := SeLe4n.Badge.zero })
+      |>.withObject payloadObj (.notification { state := .idle, hasPendingBadge := false, pendingWord := SeLe4n.Badge.zero })
       |>.withObject senderCNode (.cnode {
           depth := 4, guardWidth := 0, guardValue := 0, radixWidth := 4,
           slots := SeLe4n.UniqueSlotMap.ofListWF [(srcSlot, payloadCap)]
@@ -1803,7 +1803,7 @@ private def chain13IpcCapTransferNoGrant : IO Unit := do
   let st0 :=
     (BootstrapBuilder.empty
       |>.withObject epId (.endpoint {})
-      |>.withObject targetObj (.notification { state := .idle, waitingThreads := SeLe4n.NoDupList.empty, hasPendingBadge := false, pendingWord := SeLe4n.Badge.zero })
+      |>.withObject targetObj (.notification { state := .idle, hasPendingBadge := false, pendingWord := SeLe4n.Badge.zero })
       |>.withObject senderCNode (.cnode {
           depth := 4, guardWidth := 0, guardValue := 0, radixWidth := 4,
           slots := SeLe4n.UniqueSlotMap.ofListWF [((SeLe4n.Slot.ofNat 0), cap1)]
@@ -1858,8 +1858,8 @@ private def chain14IpcBadgeAndCapTransfer : IO Unit := do
   let st0 :=
     (BootstrapBuilder.empty
       |>.withObject epId (.endpoint {})
-      |>.withObject targetObj1 (.notification { state := .idle, waitingThreads := SeLe4n.NoDupList.empty, hasPendingBadge := false, pendingWord := SeLe4n.Badge.zero })
-      |>.withObject targetObj2 (.notification { state := .idle, waitingThreads := SeLe4n.NoDupList.empty, hasPendingBadge := false, pendingWord := SeLe4n.Badge.zero })
+      |>.withObject targetObj1 (.notification { state := .idle, hasPendingBadge := false, pendingWord := SeLe4n.Badge.zero })
+      |>.withObject targetObj2 (.notification { state := .idle, hasPendingBadge := false, pendingWord := SeLe4n.Badge.zero })
       |>.withObject senderCNode (.cnode {
           depth := 4, guardWidth := 0, guardValue := 0, radixWidth := 4,
           slots := SeLe4n.UniqueSlotMap.ofListWF [
@@ -2461,7 +2461,7 @@ private def chain22NotificationBadgeDelivery : IO Unit := do
   let badge := SeLe4n.Badge.ofNatMasked 0xCAFE
   let st0 :=
     (BootstrapBuilder.empty
-      |>.withObject ntfnId (.notification { state := .idle, waitingThreads := SeLe4n.NoDupList.empty, hasPendingBadge := false, pendingWord := SeLe4n.Badge.zero })
+      |>.withObject ntfnId (.notification { state := .idle, hasPendingBadge := false, pendingWord := SeLe4n.Badge.zero })
       |>.withObject waiter.toObjId (.tcb {
           tid := waiter
           priority := ⟨20⟩
@@ -2666,7 +2666,7 @@ private def chain25IrqHandlerDispatch : IO Unit := do
   let irq : SeLe4n.Irq := ⟨5⟩
   let st0 :=
     (BootstrapBuilder.empty
-      |>.withObject ntfnId (.notification { state := .idle, waitingThreads := SeLe4n.NoDupList.empty, hasPendingBadge := false, pendingWord := SeLe4n.Badge.zero })
+      |>.withObject ntfnId (.notification { state := .idle, hasPendingBadge := false, pendingWord := SeLe4n.Badge.zero })
       |>.withIrqHandler irq ntfnId
       |>.withLifecycleObjectType ntfnId .notification
       |>.buildChecked)
@@ -2700,7 +2700,7 @@ private def chain26BootSequence : IO Unit := do
   -- For non-CNode/non-VSpace objects, the proof is vacuously true.
   let ntfnEntry : SeLe4n.Platform.Boot.ObjectEntry := {
     id := ntfnId
-    obj := .notification { state := .idle, waitingThreads := SeLe4n.NoDupList.empty, hasPendingBadge := false, pendingWord := SeLe4n.Badge.zero }
+    obj := .notification { state := .idle, hasPendingBadge := false, pendingWord := SeLe4n.Badge.zero }
     hSlots := by intro cn h; cases h
     hMappings := by intro vs h; cases h
   }
@@ -3129,7 +3129,7 @@ private def chain33ServiceLifecycle : IO Unit := do
     (BootstrapBuilder.empty
       |>.withObject epId1 (.endpoint {})
       |>.withObject epId2 (.endpoint {})
-      |>.withObject nonEpId (.notification { state := .idle, waitingThreads := SeLe4n.NoDupList.empty, hasPendingBadge := false, pendingWord := SeLe4n.Badge.zero })
+      |>.withObject nonEpId (.notification { state := .idle, hasPendingBadge := false, pendingWord := SeLe4n.Badge.zero })
       |>.withLifecycleObjectType epId1 .endpoint
       |>.withLifecycleObjectType epId2 .endpoint
       |>.withLifecycleObjectType nonEpId .notification
@@ -3234,7 +3234,7 @@ private def chain34ResolveExtraCapsSilentDrop : IO Unit := do
   let cap1 : Capability := { target := .object targetObj, rights := AccessRightSet.ofList [.write], badge := none }
   let st :=
     (BootstrapBuilder.empty
-      |>.withObject targetObj (.notification { state := .idle, waitingThreads := SeLe4n.NoDupList.empty, hasPendingBadge := false, pendingWord := SeLe4n.Badge.zero })
+      |>.withObject targetObj (.notification { state := .idle, hasPendingBadge := false, pendingWord := SeLe4n.Badge.zero })
       |>.withObject cnodeId (.cnode {
           depth := 4, guardWidth := 0, guardValue := 0, radixWidth := 4,
           slots := SeLe4n.UniqueSlotMap.ofListWF [

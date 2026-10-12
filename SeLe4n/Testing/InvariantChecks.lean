@@ -72,9 +72,9 @@ private def endpointDualQueueWellFormedB (st : SystemState) (ep : Endpoint) : Bo
 
 private def notificationQueueWellFormedB (ntfn : Notification) : Bool :=
   match ntfn.state with
-  | .idle => ntfn.waitingThreads.isEmpty && !ntfn.pendingBadge.isSome
-  | .waiting => !ntfn.waitingThreads.isEmpty && !ntfn.pendingBadge.isSome
-  | .active => ntfn.waitingThreads.isEmpty && ntfn.pendingBadge.isSome
+  | .idle => ntfn.waitHead.isNone && !ntfn.pendingBadge.isSome
+  | .waiting => ntfn.waitHead.isSome && !ntfn.pendingBadge.isSome
+  | .active => ntfn.waitHead.isNone && ntfn.pendingBadge.isSome
 
 private def schedulerQueueCurrentConsistentB (st : SystemState) : Bool :=
   match (st.scheduler.currentOnCore bootCoreId) with
@@ -363,20 +363,56 @@ private def untypedWatermarkChecks (objectIds : List SeLe4n.ObjId) (st : SystemS
           ut.children.all fun c => c.offset + c.size ≤ ut.watermark) :: acc
     | none => acc) []
 
-/-- WS-G7: Runtime check for `notificationWaiterConsistent`: for each notification
-object, every thread in the waiting list must have a TCB with
-`ipcState = .blockedOnNotification oid`. -/
+/-- WS-G7, WS-ZA ZA4.4: is `t` a TCB blocked on notification `oid`? -/
+private def blockedOnNotificationB (st : SystemState) (oid : SeLe4n.ObjId)
+    (t : SeLe4n.ThreadId) : Bool :=
+  match st.getTcb? t with
+  | some tcb => tcb.ipcState == .blockedOnNotification oid
+  | none => false
+
+/-- WS-G7, WS-ZA ZA4.4: runtime check for `notificationWaiterConsistent`, clause
+by clause.  Each notification's queue ends are both present or both absent, are
+TCBs blocked on it, and the tail has no successor; each TCB blocked on a
+notification is its head or has a predecessor linking back to it, is its tail
+when it has no successor, and a successor it has links back to it. -/
 private def notificationWaiterConsistentChecks (objectIds : List SeLe4n.ObjId) (st : SystemState) : List (String × Bool) :=
   objectIds.foldr (fun oid acc =>
     -- AK7-F.reader.hygiene: AL2-A typed helper adoption.
     match st.getNotification? oid with
     | some ntfn =>
-        ntfn.waitingThreads.foldr (fun tid inner =>
-          let ok := match st.getTcb? tid with
-            | some tcb => tcb.ipcState == .blockedOnNotification oid
+        let endsOk :=
+          (ntfn.waitHead.isNone == ntfn.waitTail.isNone) &&
+          ntfn.waitHead.all (blockedOnNotificationB st oid) &&
+          ntfn.waitTail.all (fun t => blockedOnNotificationB st oid t &&
+            ((st.getTcb? t).bind (·.ntfnNext)).isNone)
+        (s!"notification queue ends consistent: oid={oid}", endsOk) :: acc
+    | none =>
+      match st.getTcb? (SeLe4n.ThreadId.ofNat oid.toNat) with
+      | some tcb =>
+        match tcb.ipcState with
+        | .blockedOnNotification n =>
+          let tid := SeLe4n.ThreadId.ofNat oid.toNat
+          let ok := match st.getNotification? n with
+            | some ntfn =>
+                (ntfn.waitHead == some tid ||
+                  tcb.ntfnPrev.any (fun a => blockedOnNotificationB st n a &&
+                    ((st.getTcb? a).bind (·.ntfnNext)) == some tid)) &&
+                (tcb.ntfnNext.isSome || ntfn.waitTail == some tid) &&
+                tcb.ntfnNext.all (fun b => ntfn.waitHead != some b &&
+                  blockedOnNotificationB st n b &&
+                  ((st.getTcb? b).bind (·.ntfnPrev)) == some tid)
             | none => false
-          (s!"notification waiter consistent: oid={oid} tid={tid.toNat}", ok) :: inner) acc
-    | none => acc) []
+          (s!"notification waiter linked consistently: tid={oid}", ok) :: acc
+        | _ => acc
+      | none => acc) []
+
+/-- WS-ZA ZA4.4: walk a notification's waiter queue from its head along the
+successor links, at most `fuel` steps. -/
+private def notificationQueueWalk (st : SystemState) :
+    Nat → Option SeLe4n.ThreadId → List SeLe4n.ThreadId
+  | 0, _ => []
+  | _ + 1, none => []
+  | fuel + 1, some t => t :: notificationQueueWalk st fuel ((st.getTcb? t).bind (·.ntfnNext))
 
 /-- WS-G4: RunQueue internal consistency — every thread in the membership set has
     a corresponding entry in `threadPriority`, and every `threadPriority` entry is
@@ -466,14 +502,15 @@ private def currentThreadInActiveDomainB (st : SystemState) : Bool :=
       | some tcb => tcb.domain == (st.scheduler.activeDomainOnCore bootCoreId)
       | none => true  -- missing TCB caught by currentThreadValidB
 
-/-- WS-F7/D1c: No thread appears in more than one notification `waitingThreads` list.
-A thread on two waiting lists could be double-woken, corrupting both notification
-objects' state machines. -/
+/-- WS-F7/D1c, WS-ZA ZA4.4: no thread appears twice across the notification
+wait queues, walked from each head along the TCB links.  A thread on two queues,
+or a queue that loops back on itself, could be double-woken.  The walk is
+bounded by the object count, so a loop shows up as a repeat. -/
 private def uniqueWaitersCheck (objectIds : List SeLe4n.ObjId) (st : SystemState) : List (String × Bool) :=
   -- AK7-F.reader.hygiene: AL2-A typed helper adoption.
   let allWaiters : List SeLe4n.ThreadId := objectIds.foldr (fun oid acc =>
     match st.getNotification? oid with
-    | some ntfn => ntfn.waitingThreads ++ acc
+    | some ntfn => notificationQueueWalk st (objectIds.length + 1) ntfn.waitHead ++ acc
     | none => acc) []
   if allWaiters.isEmpty then []
   else
@@ -692,14 +729,14 @@ private def checkNoStaleEndpointQueueRefs (st : SystemState) : Bool :=
       headTailOk && sendInteriorOk && recvInteriorOk
     | none => true
 
-/-- AG1-F-i: Check noStaleNotificationWaitReferences — every thread ID in
-notification waiting lists has a live TCB. -/
+/-- AG1-F-i: Check noStaleNotificationWaitReferences — each end of every
+notification wait queue is a live TCB. -/
 private def checkNoStaleNotificationWaitRefs (st : SystemState) : Bool :=
   st.objectIndex.all fun oid =>
     -- AK7-F.reader.hygiene: AL2-A typed helper adoption.
     match st.getNotification? oid with
     | some ntfn =>
-      ntfn.waitingThreads.all fun tid => (st.getTcb? tid).isSome
+      ntfn.queueEnds.all fun tid => (st.getTcb? tid).isSome
     | none => true
 
 /-- AG1-F-ii: Check registryDependencyConsistent — every dependency edge in the

@@ -780,7 +780,7 @@ def cancelIpcBlocking (st : SystemState) (tid : SeLe4n.ThreadId)
         (spliceThreadReplyFrameOut (returnDonationToCancelledCaller st tid tcb) tcb) tid)
       tid tcb
   | .blockedOnNotification _ =>
-    restoreToReadyCancelled (removeFromAllNotificationWaitLists st tid) tid
+    restoreToReadyCancelled (removeFromNotificationWaitQueue st tid) tid
 
 -- ============================================================================
 -- D1-D: cancelDonation (split into two named arms — R5.A / DEEP-SUSP-02)

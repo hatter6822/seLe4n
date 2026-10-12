@@ -1396,10 +1396,10 @@ theorem lockSet_declassifySignal_size_le (a : ThreadId) (b c : ObjId)
   unfold lockSet_declassifySignal lockSet_notificationSignal maxLockSetSize
   exact Nat.le_trans (size_le_5 _ _ _ _ _ _) (by size_bound)
 
-theorem lockSet_notificationWait_size_le (a : ThreadId) (b c : ObjId) :
-    (lockSet_notificationWait a b c).size ≤ maxLockSetSize := by
+theorem lockSet_notificationWait_size_le (a : ThreadId) (b c : ObjId) (d : Option ThreadId) :
+    (lockSet_notificationWait a b c d).size ≤ maxLockSetSize := by
   unfold lockSet_notificationWait maxLockSetSize
-  exact Nat.le_trans (lockSetOfList_size_le _) (by size_bound)
+  exact Nat.le_trans (size_le_1 _ _) (by size_bound)
 
 theorem lockSet_cspaceMint_size_le (a : ThreadId) (b c : ObjId) :
     (lockSet_cspaceMint a b c).size ≤ maxLockSetSize := by
@@ -1646,7 +1646,7 @@ theorem lockSetTransitions_within_bound :
         ≤ maxLockSetSize) ∧
     -- WS-OD OD3.10: at the splice-neighbour arity, not at its default.
     (∀ a b c d e f g, (lockSet_notificationSignal a b c d e f g).size ≤ maxLockSetSize) ∧
-    (∀ a b c, (lockSet_notificationWait a b c).size ≤ maxLockSetSize) ∧
+    (∀ a b c d, (lockSet_notificationWait a b c d).size ≤ maxLockSetSize) ∧
     (∀ a b c, (lockSet_cspaceMint a b c).size ≤ maxLockSetSize) ∧
     (∀ a b c, (lockSet_cspaceCopy a b c).size ≤ maxLockSetSize) ∧
     (∀ a b c, (lockSet_cspaceMove a b c).size ≤ maxLockSetSize) ∧

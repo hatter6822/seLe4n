@@ -76,9 +76,9 @@ theorem not_runnable_membership_of_endpoint_store
 
 def notificationQueueWellFormed (ntfn : Notification) : Prop :=
   match ntfn.state with
-  | .idle => ntfn.waitingThreads.val = [] ∧ ntfn.pendingBadge = none
-  | .waiting => ntfn.waitingThreads.val ≠ [] ∧ ntfn.pendingBadge = none
-  | .active => ntfn.waitingThreads.val = [] ∧ ntfn.pendingBadge.isSome
+  | .idle => ntfn.waitHead = none ∧ ntfn.pendingBadge = none
+  | .waiting => ntfn.waitHead ≠ none ∧ ntfn.pendingBadge = none
+  | .active => ntfn.waitHead = none ∧ ntfn.pendingBadge.isSome
 
 def notificationInvariant (ntfn : Notification) : Prop :=
   notificationQueueWellFormed ntfn
@@ -1161,16 +1161,18 @@ def currentNotEndpointQueueHead (st : SystemState) : Prop :=
       st.objects[oid]? = some (.endpoint ep) →
       ep.receiveQ.head ≠ some tid ∧ ep.sendQ.head ≠ some tid
 
-/-- Under dequeue-on-dispatch QCC, the current thread must not appear on any
-notification wait list. This ensures ensureRunnable on a signaled waiter
-does not conflict with the current thread. -/
+/-- Under dequeue-on-dispatch QCC, the current thread must not be either end of
+any notification wait queue (WS-ZA ZA4.4: the ends are what a notification
+names; the waiters between them are blocked, so never current under
+`notificationWaiterConsistent`). This ensures ensureRunnable on a signaled
+waiter does not conflict with the current thread. -/
 def currentNotOnNotificationWaitList (st : SystemState) : Prop :=
   match (st.scheduler.currentOnCore bootCoreId) with
   | none => True
   | some tid =>
     ∀ (oid : SeLe4n.ObjId) (ntfn : Notification),
       st.objects[oid]? = some (.notification ntfn) →
-      tid ∉ ntfn.waitingThreads
+      tid ∉ ntfn.queueEnds
 
 /-- Combined dequeue-on-dispatch coherence predicate: the current thread
 has ready ipcState, is not an endpoint queue head, and is not on any
@@ -1397,43 +1399,83 @@ private theorem tcb_preserved_through_endpoint_store
 -- WS-G7/F-P11: Notification waiter consistency invariant
 -- ============================================================================
 
-/-- WS-G7: If a thread is in a notification's waiting list, its TCB ipcState
-must be `.blockedOnNotification oid` for that notification. This invariant
-enables the O(1) TCB ipcState duplicate-check in `notificationWait`. -/
-def notificationWaiterConsistent (st : SystemState) : Prop :=
-  ∀ (oid : SeLe4n.ObjId) (ntfn : Notification) (tid : SeLe4n.ThreadId),
-    st.objects[oid]? = some (.notification ntfn) →
-    tid ∈ ntfn.waitingThreads →
-    ∃ tcb, st.objects[tid.toObjId]? = some (.tcb tcb) ∧ tcb.ipcState = .blockedOnNotification oid
+/-- WS-G7, WS-ZA ZA4.4: **the notification wait queues are linked through the
+TCBs consistently.**  A notification names the two ends of its queue; the
+waiters between them are reached through their own `ntfnPrev` / `ntfnNext`
+links.  The predicate is local — each clause relates one object to its direct
+neighbours — so it is checked without walking a queue:
 
-/-- WS-G7: Bridge lemma: under `notificationWaiterConsistent`, if a thread's
-ipcState is NOT `.blockedOnNotification oid`, then it is NOT in that
-notification's waiting list. -/
-theorem not_mem_waitingThreads_of_ipcState_ne
+* a notification's head and tail are both present or both absent; each is a
+  TCB blocked on that notification, and the tail has no successor;
+* a TCB blocked on a notification has that notification in the store; it is
+  the queue's head or has a predecessor blocked on the same notification whose
+  successor link names it back; it is the tail when it has no successor; and a
+  successor it has is not the head, is blocked on the same notification, and
+  names it back as predecessor.
+
+The head's predecessor link is not read, so a signal that wakes the head writes
+nothing but the notification and the woken thread.  A thread not blocked on a
+notification is in no queue, and neither of its links is read.  The head and
+tail clauses are what the O(1) duplicate-wait check in `notificationWait` and
+the head wake in `notificationSignal` rest on. -/
+def notificationWaiterConsistent (st : SystemState) : Prop :=
+  (∀ (oid : SeLe4n.ObjId) (ntfn : Notification),
+    st.objects[oid]? = some (.notification ntfn) →
+    (ntfn.waitHead = none ↔ ntfn.waitTail = none) ∧
+    (∀ h, ntfn.waitHead = some h → ∃ tcb, st.objects[h.toObjId]? = some (.tcb tcb) ∧
+      tcb.ipcState = .blockedOnNotification oid) ∧
+    (∀ t, ntfn.waitTail = some t → ∃ tcb, st.objects[t.toObjId]? = some (.tcb tcb) ∧
+      tcb.ipcState = .blockedOnNotification oid ∧ tcb.ntfnNext = none)) ∧
+  (∀ (tid : SeLe4n.ThreadId) (tcb : TCB) (oid : SeLe4n.ObjId),
+    st.objects[tid.toObjId]? = some (.tcb tcb) →
+    tcb.ipcState = .blockedOnNotification oid →
+    ∃ ntfn, st.objects[oid]? = some (.notification ntfn) ∧
+      (ntfn.waitHead = some tid ∨ ∃ a ta, tcb.ntfnPrev = some a ∧
+        st.objects[a.toObjId]? = some (.tcb ta) ∧
+        ta.ipcState = .blockedOnNotification oid ∧ ta.ntfnNext = some tid) ∧
+      (tcb.ntfnNext = none → ntfn.waitTail = some tid) ∧
+      (∀ b, tcb.ntfnNext = some b → ntfn.waitHead ≠ some b ∧
+        ∃ tb, st.objects[b.toObjId]? = some (.tcb tb) ∧
+          tb.ipcState = .blockedOnNotification oid ∧ tb.ntfnPrev = some tid))
+
+/-- WS-G7: Bridge lemma: under `notificationWaiterConsistent`, a thread whose
+ipcState is NOT `.blockedOnNotification oid` is neither end of that
+notification's wait queue. -/
+theorem not_mem_queueEnds_of_ipcState_ne
     (st : SystemState) (oid : SeLe4n.ObjId) (ntfn : Notification)
     (tid : SeLe4n.ThreadId) (tcb : TCB)
     (hConsist : notificationWaiterConsistent st)
     (hNtfn : st.objects[oid]? = some (.notification ntfn))
     (hTcb : st.objects[tid.toObjId]? = some (.tcb tcb))
     (hNe : tcb.ipcState ≠ .blockedOnNotification oid) :
-    tid ∉ ntfn.waitingThreads := by
+    tid ∉ ntfn.queueEnds := by
   intro hMem
-  obtain ⟨tcb', hTcb', hIpc'⟩ := hConsist oid ntfn tid hNtfn hMem
-  rw [hTcb] at hTcb'; cases hTcb'
-  exact hNe hIpc'
+  obtain ⟨_, hHead, hTail⟩ := hConsist.1 oid ntfn hNtfn
+  rcases (Notification.mem_queueEnds ntfn tid).mp hMem with h | h
+  · obtain ⟨tcb', hTcb', hIpc'⟩ := hHead tid h
+    rw [hTcb] at hTcb'; cases hTcb'; exact hNe hIpc'
+  · obtain ⟨tcb', hTcb', hIpc', _⟩ := hTail tid h
+    rw [hTcb] at hTcb'; cases hTcb'; exact hNe hIpc'
+
+/-- WS-ZA ZA4.4: the head of a notification's wait queue is a TCB blocked on it. -/
+theorem waitHead_blocked_of_notificationWaiterConsistent
+    {st : SystemState} {oid : SeLe4n.ObjId} {ntfn : Notification} {h : SeLe4n.ThreadId}
+    (hConsist : notificationWaiterConsistent st)
+    (hNtfn : st.objects[oid]? = some (.notification ntfn))
+    (hHead : ntfn.waitHead = some h) :
+    ∃ tcb, st.objects[h.toObjId]? = some (.tcb tcb) ∧
+      tcb.ipcState = .blockedOnNotification oid :=
+  (hConsist.1 oid ntfn hNtfn).2.1 h hHead
 
 -- ============================================================================
 -- Notification uniqueness (F-12 / WS-D4 / WS-G7)
 -- ============================================================================
 
 -- WS-RC R4.C close-out (Phase C2.c4): the historical state-level
--- `uniqueWaiters` predicate, its `uniqueWaiters_holds` substantive
--- discharge, and its `uniqueWaiters_trivial` plan-named alias have all
--- been deleted.  Per-Notification Nodup is now carried structurally by
--- `Notification.waitingThreads : NoDupList ThreadId` via the
--- `NoDupList.hNodup` field; the canonical discharge is
--- `SeLe4n.NoDupList.nodup_witness` (or its plan-named alias
--- `SeLe4n.Kernel.notification_waiters_nodup`).
+-- `uniqueWaiters` predicate and its discharge helpers were deleted.  Since
+-- WS-ZA ZA4.4 a notification's waiters are an intrusive queue through the
+-- TCBs, and a thread's membership is its own `ipcState`
+-- (`notificationWaiterConsistent`), so it cannot be queued twice.
 
 /-- AJ1-B (M-04): Every thread in `blockedOnReply` state has an explicit
 `replyTarget`. All production paths (`endpointCall`, `endpointReceiveDual`)
@@ -1855,10 +1897,7 @@ theorem blockedOnReplyHasTarget_implies_some_replyTarget
   | some t => exact ⟨t, rfl⟩
 
 -- WS-RC R4.C close-out: `notificationWait_preserves_uniqueWaiters` was
--- deleted along with the `uniqueWaiters` predicate it preserved.  The
--- per-notification Nodup invariant now holds structurally via
--- `Notification.waitingThreads.hNodup`; the state-level predicate has
--- no remaining role in the proof surface.
+-- deleted along with the `uniqueWaiters` predicate it preserved.
 
 -- ============================================================================
 -- WS-G7: notificationWaiterConsistent — base case + documentation
@@ -1868,123 +1907,81 @@ theorem blockedOnReplyHasTarget_implies_some_replyTarget
 because the object store is empty, so no notification objects exist. -/
 theorem default_notificationWaiterConsistent :
     notificationWaiterConsistent (default : SystemState) := by
-  intro oid ntfn _ hObj _
-  have h : (default : SystemState).objects[oid]? = none := by
+  have h : ∀ oid : SeLe4n.ObjId, (default : SystemState).objects[oid]? = none := by
+    intro oid
     simp only [RHTable_getElem?_eq_get?]; exact RHTable_get?_empty 16 (by omega)
-  rw [h] at hObj; exact absurd hObj (by simp)
+  refine ⟨fun oid ntfn hObj => ?_, fun tid tcb _ hObj _ => ?_⟩
+  · rw [h] at hObj; exact absurd hObj (by simp)
+  · rw [h] at hObj; exact absurd hObj (by simp)
 
 /-! ### WS-G7: Preservation path for `notificationWaiterConsistent`
 
-`notificationWaiterConsistent` is a bridging invariant that enables the O(1)
-duplicate-wait check in `notificationWait`. Its preservation through the kernel
-transition surface is sketched here for documentation:
+`notificationWaiterConsistent` is the bridging invariant behind the O(1)
+duplicate-wait check in `notificationWait` and the head wake in
+`notificationSignal` (WS-ZA ZA4.4: the queue is linked through the TCBs).  Its
+preservation across the kernel transitions:
 
-1. **`notificationWait`** (wait path): Prepends `waiter` to the notification's
-   waiting list and sets `waiter.ipcState = .blockedOnNotification oid`.
-   Pre-condition: `runnableThreadIpcReady` ensures the calling thread has
-   `ipcState = .ready`, so it is not in any notification's waiting list.
-   Preservation holds because the new waiter gets the correct ipcState and
-   existing TCBs are unchanged.
+1. **`notificationWait`** (block path): the park records the waiter as the
+   queue's tail (and head, when the queue was empty) and sets its `ipcState` to
+   `.blockedOnNotification oid`; the link-in writes its links and points the
+   old tail's successor at it.  The caller is `.ready`, so it was in no queue.
+2. **`notificationWait`** (badge path): the queue was empty (a pending badge
+   and a waiter never coexist) and stays empty.
+3. **`notificationSignal`** (wake path): the head's successor, read from the
+   head's own link, heads the queue; the woken head is `.ready` and in no
+   queue.  The new head's predecessor link is stale, and no clause reads it.
+4. **`notificationSignal`** (merge path): no queue changes.
+5. **Cancellation and teardown** (`removeFromNotificationWaitQueue`): the
+   victim's neighbours are linked to each other, or the notification's ends
+   move past it.
+6. **Other kernel operations** write no notification queue and change the
+   `ipcState` only of threads not blocked on a notification.
 
-2. **`notificationWait`** (badge path): Empties the target notification's
-   waiting list. Preservation holds vacuously for the target; other
-   notifications are unchanged.
-
-3. **`notificationSignal`** (wake path): Removes the head waiter and sets its
-   ipcState to `.ready`. The woken thread does not appear elsewhere in the
-   remaining list — guaranteed structurally by `NoDupList.hNodup` on
-   `Notification.waitingThreads` (WS-RC R4.C close-out; the historical
-   state-level `uniqueWaiters` precondition is no longer required since the
-   field-level invariant is unconditional). Remaining threads' TCBs are
-   unchanged, so their ipcState is preserved.
-
-4. **`notificationSignal`** (merge path): No TCB modification; only the
-   notification badge is updated. All waiting lists are unchanged.
-
-5. **Other kernel operations** (endpoint, scheduler, lifecycle, capability):
-   These do not modify notification waiting lists. They may change a thread's
-   ipcState, but only for threads that are `.ready` or blocked on
-   non-notification objects, so `notificationWaiterConsistent` is preserved.
-
-R3-C/M-19: Formal preservation theorems are proved in
-`NotificationPreservation.lean` and `Structural.lean`:
-- `storeObject_notification_preserves_notificationWaiterConsistent` — notification
-  store with subset waiting list
-- `storeObject_nonNotification_preserves_notificationWaiterConsistent` — non-notification
-  store with ipcState consistency hypothesis
-- `storeTcbIpcStateAndMessage_preserves_notificationWaiterConsistent` — TCB ipc
-  state change when target thread is not in any notification wait list
-- `notificationSignal_preserves_notificationWaiterConsistent` — R3-C.1: wake path
-  (removes head waiter; structural `NoDupList.hNodup` ensures the woken
-  thread does not appear elsewhere) + merge path (vacuous)
-- `frame_preserves_notificationWaiterConsistent` — R3-C.2: general frame lemma
-  for operations that preserve notification objects and waiter TCBs
-- `endpointReply_preserves_notificationWaiterConsistent` — R3-C.2: concrete
-  endpoint reply preservation (target is `.blockedOnReply`, not in wait list)
-The base case (`default_notificationWaiterConsistent`) and the runtime check
-(`notificationWaiterConsistentCheck`) complete the chain.
+The formal theorems: `notificationWait_preserves_notificationWaiterConsistent`,
+`notificationSignal_preserves_notificationWaiterConsistent`,
+`storeTcbIpcStateAndMessage_preserves_notificationWaiterConsistent`,
+`endpointReply_preserves_notificationWaiterConsistent`,
+`consumeCallerReply_preserves_notificationWaiterConsistent` and
+`removeCallerReplyFrame_preserves_notificationWaiterConsistent`.  The base case
+is `default_notificationWaiterConsistent`; the runtime check is
+`notificationWaiterConsistentChecks` (`SeLe4n/Testing/InvariantChecks.lean`).
 -/
 
 -- ============================================================================
 -- Notification operation ipcInvariant preservation (WS-E4 preparation)
 -- ============================================================================
 
-/-- WS-RC R4.C: notificationSignal result notification is well-formed.
-    - Wake path: remaining waiters determine idle/waiting state, badge cleared.
-    - Merge path: no waiters, active state with merged badge.
-
-    `rest` is the `NoDupList`-typed tail produced by `tail?`; emptiness
-    is detected via `rest.val.isEmpty`. -/
+/-- notificationSignal result notification is well-formed.
+    - Wake path (WS-ZA ZA4.4): the woken head's successor heads the queue;
+      none left means idle, badge cleared.
+    - Merge path: no waiters, active state with merged badge. -/
 theorem notificationSignal_result_wellFormed_wake
-    (rest : SeLe4n.NoDupList SeLe4n.ThreadId) :
-    notificationQueueWellFormed
-      { state := if rest.val.isEmpty then NotificationState.idle else .waiting,
-        waitingThreads := rest,
-        hasPendingBadge := false, pendingWord := SeLe4n.Badge.zero } := by
+    (ntfn : Notification) (next : Option SeLe4n.ThreadId) :
+    notificationQueueWellFormed (ntfn.withHeadPopped next) := by
   unfold notificationQueueWellFormed
-  by_cases hEmpty : rest.val = []
-  · simp [hEmpty, List.isEmpty]
-  · have hNotEmpty : rest.val.isEmpty = false := by
-      cases hL : rest.val with
-      | nil => exact absurd hL hEmpty
-      | cons _ _ => rfl
-    simp [hNotEmpty, hEmpty]
+  cases next <;> simp
 
 theorem notificationSignal_result_wellFormed_merge
-    (mergedBadge : SeLe4n.Badge) :
+    (mergedBadge : SeLe4n.Badge) (b : Option SeLe4n.ThreadId) :
     notificationQueueWellFormed
       { state := .active,
-        waitingThreads := SeLe4n.NoDupList.empty,
-        hasPendingBadge := true, pendingWord := mergedBadge } := by
+        hasPendingBadge := true, pendingWord := mergedBadge, boundTCB := b } := by
   unfold notificationQueueWellFormed; simp
 
 /-- notificationWait result notification is well-formed (badge-consume path):
-    idle state, empty waiters, no badge. -/
-theorem notificationWait_result_wellFormed_badge :
+    idle state, empty queue, no badge. -/
+theorem notificationWait_result_wellFormed_badge (b : Option SeLe4n.ThreadId) :
     notificationQueueWellFormed
       { state := NotificationState.idle,
-        waitingThreads := SeLe4n.NoDupList.empty,
-        hasPendingBadge := false, pendingWord := SeLe4n.Badge.zero } := by
+        hasPendingBadge := false, pendingWord := SeLe4n.Badge.zero, boundTCB := b } := by
   unfold notificationQueueWellFormed; simp
 
-/-- WS-G7/F-P11/WS-RC R4.C: notificationWait result notification is well-formed
-    (wait path): waiting state, non-empty waiter list (prepended), no badge.
-
-    The prepended list is the smart-constructor result
-    `consWithGuard? waiter waiters = some wt'`; `wt'.val = waiter ::
-    waiters.val` follows from `NoDupList.consWithGuard?_eq_some_iff`. -/
+/-- WS-G7/F-P11, WS-ZA ZA4.4: notificationWait result notification is
+    well-formed (wait path): waiting state, nonempty queue, no badge. -/
 theorem notificationWait_result_wellFormed_wait
-    (waiter : SeLe4n.ThreadId)
-    (waiters : SeLe4n.NoDupList SeLe4n.ThreadId)
-    (wt' : SeLe4n.NoDupList SeLe4n.ThreadId)
-    (hCons : wt'.val = waiter :: waiters.val) :
-    notificationQueueWellFormed
-      { state := .waiting, waitingThreads := wt', hasPendingBadge := false, pendingWord := SeLe4n.Badge.zero } := by
-  unfold notificationQueueWellFormed
-  refine ⟨?_, rfl⟩
-  intro h
-  rw [hCons] at h
-  cases h
+    (ntfn : Notification) (waiter : SeLe4n.ThreadId) :
+    notificationQueueWellFormed (ntfn.withWaiterAppended waiter) := by
+  unfold notificationQueueWellFormed; simp
 
 -- ============================================================================
 -- WS-L3/L3-C: ipcState-queue consistency invariant
@@ -5469,14 +5466,10 @@ Z7 extends the bundle with 4 donation invariants:
 - `donationBudgetTransfer`: at most one thread per SchedContext
 
 WS-RC R4.C.7 (close-out C2): the `uniqueWaiters` conjunct previously
-listed as the 15th slot was removed when `Notification.waitingThreads`
-was promoted from `List ThreadId` to `SeLe4n.NoDupList ThreadId`.  The
-per-Notification `List.Nodup` witness is now carried structurally at
-construction time via `NoDupList.hNodup`; per-Notification discharge is
-direct via `SeLe4n.Kernel.notification_waiters_nodup`.  The bundle now
-has 15 conjuncts (was 16); `blockedOnReplyHasTarget` is the 15th.  The
-historical `uniqueWaiters` state-level predicate (and its `_holds` /
-`_trivial` discharge helpers) were deleted in the close-out. -/
+listed as the 15th slot was removed when waiter uniqueness became
+structural (since WS-ZA ZA4.4, through the intrusive TCB queue).  The
+bundle now has 15 conjuncts (was 16); `blockedOnReplyHasTarget` is the
+15th. -/
 def ipcInvariantCore (st : SystemState) : Prop :=
   ipcInvariant st ∧ dualQueueSystemInvariant st ∧ allPendingMessagesBounded st ∧
   badgeWellFormed st ∧ blockedThreadsPendingMessageConsistent st ∧

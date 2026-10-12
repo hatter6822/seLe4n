@@ -881,7 +881,7 @@ private def sd050_bindNotification_requires_ntfn_cap : IO Unit := do
     mkState [
       (caller.toObjId, .tcb { (mkTcb 1) with cspaceRoot := cnId }),
       (tgtTcb, .tcb { (mkTcb 70) with cspaceRoot := cnId }),
-      (ntfnId, .notification { state := .idle, waitingThreads := SeLe4n.NoDupList.empty, hasPendingBadge := false, pendingWord := SeLe4n.Badge.zero }),
+      (ntfnId, .notification { state := .idle, hasPendingBadge := false, pendingWord := SeLe4n.Badge.zero }),
       (cnId, .cnode {
           depth := 4, guardWidth := 0, guardValue := 0, radixWidth := 4,
           slots := SeLe4n.UniqueSlotMap.ofListWF slots })
@@ -927,7 +927,7 @@ private def dispatcherRefusesCallerNotCurrentOnCore : IO Unit := do
     mkState [
       (caller.toObjId, .tcb { (mkTcb 1) with cspaceRoot := cnId }),
       (other.toObjId, .tcb { (mkTcb 70) with cspaceRoot := cnId }),
-      (ntfnId, .notification { state := .idle, waitingThreads := SeLe4n.NoDupList.empty, hasPendingBadge := false, pendingWord := SeLe4n.Badge.zero }),
+      (ntfnId, .notification { state := .idle, hasPendingBadge := false, pendingWord := SeLe4n.Badge.zero }),
       (cnId, .cnode {
           depth := 4, guardWidth := 0, guardValue := 0, radixWidth := 4,
           slots := SeLe4n.UniqueSlotMap.ofListWF
@@ -1437,7 +1437,7 @@ private def sd058_mintReplyCapThroughTheSyscallGate : IO Unit := do
       (caller.toObjId, .tcb { (mkTcb 1) with cspaceRoot := cnId }),
       (replyObj, .reply { replyId := rid }),
       (ntfnObj, .notification
-        { state := .idle, waitingThreads := SeLe4n.NoDupList.empty, hasPendingBadge := false, pendingWord := SeLe4n.Badge.zero }),
+        { state := .idle, hasPendingBadge := false, pendingWord := SeLe4n.Badge.zero }),
       (cnId, .cnode {
           depth := 4, guardWidth := 0, guardValue := 0, radixWidth := 4,
           slots := SeLe4n.UniqueSlotMap.ofListWF
@@ -1573,7 +1573,7 @@ private def sd059_cspaceRevokeThroughTheSyscallGate : IO Unit := do
     mkState [
       (caller.toObjId, .tcb { (mkTcb 1) with cspaceRoot := cnA }),
       (ntfnObj, .notification
-        { state := .idle, waitingThreads := SeLe4n.NoDupList.empty, hasPendingBadge := false, pendingWord := SeLe4n.Badge.zero }),
+        { state := .idle, hasPendingBadge := false, pendingWord := SeLe4n.Badge.zero }),
       (cnA, .cnode {
           depth := 4, guardWidth := 0, guardValue := 0, radixWidth := 4,
           slots := SeLe4n.UniqueSlotMap.ofListWF
@@ -2226,7 +2226,7 @@ private def sd053g_bound_notification_wake_clears_stash : IO Unit := do
     (SeLe4n.Testing.BootstrapBuilder.empty
       |>.withObject epId (.endpoint {})
       |>.withObject nId (.notification
-          { state := .idle, waitingThreads := SeLe4n.NoDupList.empty, boundTCB := some server })
+          { state := .idle, boundTCB := some server })
       |>.withObject server.toObjId
           (.tcb { mkTcb 1 with ipcState := .blockedOnReceive epId, pendingReceiveReply := some rid })
       |>.withObject rid.toObjId (.reply { replyId := rid })

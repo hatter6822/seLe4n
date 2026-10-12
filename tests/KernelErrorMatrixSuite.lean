@@ -550,7 +550,7 @@ private def row_invalidCapability_send_to_nonEndpoint : KernelErrorRejection :=
                      " present but not an Endpoint (e.g., a Notification)"
     runScenario   := fun _ =>
       let endpointId : ObjId := ObjId.ofNat 140
-      let stuff : Notification := { state := .idle, waitingThreads := SeLe4n.NoDupList.empty }
+      let stuff : Notification := { state := .idle }
       let st : SystemState := { (default : SystemState) with
         objects := (default : SystemState).objects.insert endpointId
           (.notification stuff) }
@@ -927,7 +927,7 @@ private def row_untypedTypeMismatch : KernelErrorRejection :=
       let childId : ObjId := ObjId.ofNat 1001
       let cnodeId : ObjId := ObjId.ofNat 1002
       -- Source is a Notification, NOT an Untyped — triggers type mismatch.
-      let n : Notification := { state := .idle, waitingThreads := SeLe4n.NoDupList.empty }
+      let n : Notification := { state := .idle }
       -- Need a CSpace with the authority cap; build a minimal CNode.
       let authCap : Capability :=
         { target := .object untypedId

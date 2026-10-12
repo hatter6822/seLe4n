@@ -3781,7 +3781,7 @@ code may assume:
   — `witnessSt1`–`witnessSt4`, `chainWitnessSt1`, `chainWitnessSt2`,
   `donationChainWitness`; **5 in 5 across 4** after `v0.35.74` moved the two
   queue sweeps — `removeFromAllEndpointQueues`,
-  `removeFromAllNotificationWaitLists` — onto the witnessed lookup around
+  `removeFromNotificationWaitQueue` — onto the witnessed lookup around
   `rewriteObject`, and those five are the primitives that should be raw:
   `storeObject`, `rewriteObject`, `Builder.createObject`, `updateObjectAt`
   and the frozen store, so the executable population outside them is

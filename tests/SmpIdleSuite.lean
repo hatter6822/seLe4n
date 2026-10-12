@@ -644,7 +644,7 @@ private def runBootValidationParityChecks : IO Unit := do
   let squatter : SeLe4n.Platform.Boot.PlatformConfig :=
     { irqTable := [],
       initialObjects := [ { id := (idleThreadId ⟨0, by decide⟩).toObjId,
-                            obj := .notification { state := .idle, waitingThreads := SeLe4n.NoDupList.empty,
+                            obj := .notification { state := .idle, 
                                                    hasPendingBadge := false, pendingWord := SeLe4n.Badge.zero },
                             hSlots := fun _ h => KernelObject.noConfusion h,
                             hMappings := fun _ h => KernelObject.noConfusion h } ] }
@@ -705,7 +705,7 @@ private def runBootValidationParityChecks : IO Unit := do
   -- PR #889 review round 4: a boot notification pre-bound to an idle thread
   -- references the slot; bound to an ordinary thread it does not.
   let ntfnBoundTo (t : SeLe4n.ThreadId) : KernelObject :=
-    .notification { state := .idle, waitingThreads := SeLe4n.NoDupList.empty,
+    .notification { state := .idle, 
                     hasPendingBadge := false, pendingWord := SeLe4n.Badge.zero, boundTCB := some t }
   assertBool "NEGATIVE: a boot notification bound to an idle thread references the slot"
     (SeLe4n.Platform.Boot.bootObjectReferencesReservedIdleSlot
@@ -935,7 +935,7 @@ private def runBootValidationParityChecks : IO Unit := do
   let neighbour : SeLe4n.Platform.Boot.PlatformConfig :=
     { irqTable := [],
       initialObjects := [ { id := SeLe4n.ObjId.ofNat (idleThreadIdBase - 1),
-                            obj := .notification { state := .idle, waitingThreads := SeLe4n.NoDupList.empty,
+                            obj := .notification { state := .idle, 
                                                    hasPendingBadge := false, pendingWord := SeLe4n.Badge.zero },
                             hSlots := fun _ h => KernelObject.noConfusion h,
                             hMappings := fun _ h => KernelObject.noConfusion h } ] }
@@ -1028,7 +1028,7 @@ private def runObjectBudgetChecks : IO Unit := do
   let filler (n : Nat) : List SeLe4n.Platform.Boot.ObjectEntry :=
     (List.range n).map fun i =>
       { id := ⟨SeLe4n.Kernel.idleThreadIdBase + SeLe4n.Kernel.Concurrency.numCores + i⟩,
-        obj := .notification { state := .idle, waitingThreads := SeLe4n.NoDupList.empty,
+        obj := .notification { state := .idle, 
                                hasPendingBadge := false, pendingWord := SeLe4n.Badge.zero },
         hSlots := fun _ h => KernelObject.noConfusion h,
         hMappings := fun _ h => KernelObject.noConfusion h }

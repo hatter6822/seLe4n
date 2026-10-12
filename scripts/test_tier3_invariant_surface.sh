@@ -520,12 +520,9 @@ run_check "INVARIANT" rg -n '^\s*\| alreadyWaiting' SeLe4n/Model/KernelError.lea
 run_check "INVARIANT" rg -n '^theorem notificationWait_error_alreadyWaiting($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Operations/Endpoint.lean
 run_check "INVARIANT" rg -n '^theorem notificationWait_badge_path_notification($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Operations/Endpoint.lean
 run_check "INVARIANT" rg -n '^theorem notificationWait_wait_path_notification($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Operations/Endpoint.lean
-# WS-RC R4.C close-out: the state-level `uniqueWaiters` predicate and its
-# `notificationWait_preserves_uniqueWaiters` companion were deleted as part
-# of the structural promotion to `NoDupList.hNodup`.  The plan-named
-# canonical witness `notification_waiters_nodup` now discharges directly.
-run_check "INVARIANT" rg -n '^theorem notification_waiters_nodup($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/QueueNoDup.lean
-run_check "INVARIANT" rg -n '^theorem notificationWait_runtime_check_implied_by_nodup($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/QueueNoDup.lean
+# WS-ZA ZA4.4: a waiter's queue position is its own TCB links, so no duplicate
+# can be stored; the duplicate-wait guard's witness is what remains.
+run_check "INVARIANT" rg -n '^theorem notificationWait_runtime_check_implies_not_queued($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/QueueNoDup.lean
 
 # WS-E4/WS-F1 dual-queue IPC definition and theorem anchors must remain present.
 run_check "INVARIANT" rg -n '^def endpointSendDual($|[ ({:\[\]])' SeLe4n/Kernel/IPC/DualQueue/Transport.lean
@@ -719,7 +716,7 @@ run_check "INVARIANT" rg -n '^theorem cspaceRevokeCdt_preserves_capabilityInvari
 run_check "INVARIANT" rg -n '^theorem cspaceRevokeCdtStrict_preserves_capabilityInvariantBundle($|[ ({:\[\]])' SeLe4n/Kernel/Capability/Invariant/Preservation/Revoke.lean
 run_check "INVARIANT" rg -n '^theorem notificationSignal_preserves_ipcInvariantFull($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/Structural/
 run_check "INVARIANT" rg -n '^theorem notificationSignal_preserves_schedulerInvariantBundle($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/NotificationPreservation/
-run_check "INVARIANT" rg -n '^theorem notificationWait_preserves_ipcInvariantFull($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/Structural/
+run_check "INVARIANT" rg -n '^theorem notificationWait_preserves_ipcInvariantFull($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/DonationPreservation.lean
 run_check "INVARIANT" rg -n '^theorem notificationWait_preserves_schedulerInvariantBundle($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/NotificationPreservation/
 run_check "INVARIANT" rg -n '^theorem notificationSignal_preserves_ipcSchedulerContractPredicates($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/NotificationPreservation/
 run_check "INVARIANT" rg -n '^theorem notificationWait_preserves_ipcSchedulerContractPredicates($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/NotificationPreservation/
@@ -911,8 +908,6 @@ run_negative_check "INVARIANT" bash -lc 'rg -U -n "theorem cancelIpcBlocking_end
 run_check "INVARIANT" rg -n '^theorem replyObject_none_of_not_blockedOnReply($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/Defs.lean
 # WS-RR RR7.22 (residual), the notification arm: its own purge description, its
 # own coherence hypothesis, its keystone and the live arm.
-run_check "INVARIANT" rg -n '^def notificationPurgeBody($|[ ({:\[\]])' SeLe4n/Kernel/Lifecycle/Operations/CleanupPreservation.lean
-run_check "INVARIANT" bash -lc 'rg -U -n "theorem removeFromAllNotificationWaitLists_eq_fold[^\n]*(\n([ \t][^\n]*)?)*st.objects.fold st \(notificationPurgeBody tid\) := rfl" SeLe4n/Kernel/Lifecycle/Operations/CleanupPreservation.lean'
 run_check "INVARIANT" rg -n '^def sweptThreadOffQueueChains($|[ ({:\[\]])' SeLe4n/Kernel/Lifecycle/Invariant/CancellationNotificationShape.lean
 run_check "INVARIANT" rg -n '^theorem purgedAndRestored_dualQueueSystemInvariant($|[ ({:\[\]])' SeLe4n/Kernel/Lifecycle/Invariant/CancellationNotificationShape.lean
 run_check "INVARIANT" rg -n '^theorem purgedAndRestored_preserves_ipcInvariantFull($|[ ({:\[\]])' SeLe4n/Kernel/Lifecycle/Invariant/CancellationNotificationShape.lean
@@ -1964,7 +1959,7 @@ run_check "INVARIANT" bash -lc 'rg -U -n "NEGATIVE: a frame below the head carry
 run_check "INVARIANT" rg -n '^def cancelArmSpliceNeighbors\?' SeLe4n/Kernel/IPC/CrossCore/Cancellation.lean
 run_check "INVARIANT" bash -lc 'rg -U -n "^def cancelArmSpliceNeighbors\?[^\n]*(\n([ \t][^\n]*)?)*if \(cancelBlockedEndpoint\? tcb\)\.isSome then queueSpliceNeighbors\? tcb" SeLe4n/Kernel/IPC/CrossCore/Cancellation.lean'
 run_check "INVARIANT" rg -n '^@\[simp\] theorem cancelArmSpliceNeighbors\?_of_blockedEndpoint' SeLe4n/Kernel/IPC/CrossCore/Cancellation.lean
-run_check "INVARIANT" rg -n '^@\[simp\] theorem cancelArmSpliceNeighbors\?_of_not_blockedEndpoint' SeLe4n/Kernel/IPC/CrossCore/Cancellation.lean
+run_check "INVARIANT" rg -n '^@\[simp\] theorem cancelArmSpliceNeighbors\?_of_unqueued' SeLe4n/Kernel/IPC/CrossCore/Cancellation.lean
 # ...and the resolved footprint reads the arm-selected pair, not the summed one.
 run_check "INVARIANT" bash -lc 'rg -U -n "\(\(cancelArmSpliceNeighbors\? tcb\)\.1\.map \(fun p => \(tcbLock p, \.write\)\)\)\)" SeLe4n/Kernel/IPC/CrossCore/Cancellation.lean'
 run_negative_check "INVARIANT" bash -lc 'rg -U -n "\(\(queueSpliceNeighbors\? tcb\)\.1\.map \(fun p => \(tcbLock p, \.write\)\)\)\)" SeLe4n/Kernel/IPC/CrossCore/Cancellation.lean'
@@ -1976,9 +1971,9 @@ run_check "INVARIANT" rg -n '^theorem lockSet_cancelIpcBlockingOnCore_replyArm_e
 run_check "INVARIANT" rg -n '^theorem lockSet_cancelIpcBlockingOnCore_endpointArm_covers_prev($|[ ({:\[\]])' SeLe4n/Kernel/IPC/CrossCore/Cancellation.lean
 run_check "INVARIANT" rg -n '^theorem lockSet_cancelIpcBlockingOnCore_endpointArm_covers_next($|[ ({:\[\]])' SeLe4n/Kernel/IPC/CrossCore/Cancellation.lean
 run_check "INVARIANT" rg -n '^theorem lockSet_cancelIpcBlockingOnCore_size_le_thirteen($|[ ({:\[\]])' SeLe4n/Kernel/Concurrency/Locks/ResolvedFootprintBounds.lean
-# ...and the frames that license the narrowing — an arm that declares no
-# neighbour must write none, and that is checked rather than read off the shape.
-run_check "INVARIANT" rg -n '^theorem cancelIpcBlocking_notificationArm_tcb_frame($|[ ({:\[\]])' SeLe4n/Kernel/Lifecycle/Invariant/CancellationNotificationShape.lean
+# ...and the frames that license the narrowing — an arm writes no object beyond
+# the neighbours it declares, and that is checked rather than read off the shape.
+run_check "INVARIANT" rg -n '^theorem cancelIpcBlocking_notificationArm_objects_off($|[ ({:\[\]])' SeLe4n/Kernel/Lifecycle/Invariant/CancellationNotificationShape.lean
 run_check "INVARIANT" rg -n '^theorem cancelIpcBlocking_replyArm_noDonation_tcb_frame($|[ ({:\[\]])' SeLe4n/Kernel/Lifecycle/Invariant/CancellationReplyShape.lean
 run_check "INVARIANT" rg -n '^theorem consumeReplyLink_other_tcb_eq($|[ ({:\[\]])' SeLe4n/Kernel/Lifecycle/Invariant/CancellationReplyShape.lean
 # ...and the general form, with the reclaim live: the four frames that state a
@@ -3468,7 +3463,7 @@ run_negative_check "INVARIANT" bash -lc 'rg -U -n "^private theorem witnessInv(1
 # witnessed lookup and rewrite it under the store's proof
 # ============================================================================
 #
-# `removeFromAllEndpointQueues` and `removeFromAllNotificationWaitLists` were
+# `removeFromAllEndpointQueues` and `removeFromNotificationWaitQueue` were
 # the last two kernel transitions writing the object table raw.  Their fold
 # bodies dispatch on the ENUMERATED object's kind and then read the record from
 # the ACCUMULATOR through `getEndpointWitnessed?` / `getNotificationWitnessed?`,
@@ -3479,13 +3474,15 @@ run_negative_check "INVARIANT" bash -lc 'rg -U -n "^private theorem witnessInv(1
 # the two `rfl` equations.
 
 run_check "INVARIANT" bash -lc 'rg -U -n "^def removeFromAllEndpointQueues[^\n]*(\n([ \t][^\n]*)?)*    \| \.endpoint _ =>(\n([ \t][^\n]*)?)*      match acc\.getEndpointWitnessed\? oid with\n      \| some ⟨ep, hEp⟩ =>(\n([ \t][^\n]*)?)*        if ep\.sendQ\.head == some tid \|\| ep\.sendQ\.tail == some tid\n            \|\| ep\.receiveQ\.head == some tid \|\| ep\.receiveQ\.tail == some tid then(\n([ \t][^\n]*)?)*          acc\.rewriteObject oid \(\.endpoint ep'"'"'\) \(SystemState\.rewriteAdmissible_endpoint hEp ep'"'"'\)\n        else acc\n      \| none => acc" SeLe4n/Kernel/Lifecycle/Operations/Cleanup.lean'
-run_check "INVARIANT" bash -lc 'rg -U -n "^def removeFromAllNotificationWaitLists[^\n]*(\n([ \t][^\n]*)?)*    \| \.notification _ =>(\n([ \t][^\n]*)?)*      match acc\.getNotificationWitnessed\? oid with\n      \| some ⟨notif, hN⟩ =>(\n([ \t][^\n]*)?)*        if notif\.waitingThreads\.val\.contains tid then(\n([ \t][^\n]*)?)*          acc\.rewriteObject oid \(\.notification notif'"'"'\)\n            \(SystemState\.rewriteAdmissible_notification hN notif'"'"'\)\n        else acc\n      \| none => acc" SeLe4n/Kernel/Lifecycle/Operations/Cleanup.lean'
+# WS-ZA ZA4.4: the notification removal is O(1) — it reads the victim's own
+# `ipcState` for the one queue to edit and rewrites that notification through
+# the witnessed lookup; it no longer folds over the object store.
+run_check "INVARIANT" bash -lc 'rg -U -n "^def removeFromNotificationWaitQueue[^\n]*\n  match st\.getTcb\? tid with\n  \| some tcb =>\n      match tcb\.ipcState with\n      \| \.blockedOnNotification oid =>\n          match st\.getNotificationWitnessed\? oid with\n          \| some ⟨notif, hN⟩ =>(\n([ \t][^\n]*)?)*              let st1 := st\.rewriteObject oid \(\.notification notif'"'"'\)\n                \(SystemState\.rewriteAdmissible_notification hN notif'"'"'\)" SeLe4n/Kernel/Lifecycle/Operations/Cleanup.lean'
+run_negative_check "INVARIANT" bash -lc 'rg -U -n "^def removeFromNotificationWaitQueue[^\n]*(\n([ \t][^\n]*)?)*objects\.fold" SeLe4n/Kernel/Lifecycle/Operations/Cleanup.lean'
 # The named bodies read through the same witnessed lookups, and the two `rfl`
 # pins still hold the operation to its named body.
 run_check "INVARIANT" bash -lc 'rg -U -n "^def endpointSweepBody[^\n]*(\n([ \t][^\n]*)?)*      match acc\.getEndpointWitnessed\? oid with\n      \| some ⟨ep, hEp⟩ =>" SeLe4n/Kernel/Lifecycle/Operations/CleanupPreservation.lean'
-run_check "INVARIANT" bash -lc 'rg -U -n "^def notificationPurgeBody[^\n]*(\n([ \t][^\n]*)?)*    match acc\.getNotificationWitnessed\? oid with\n    \| some ⟨notif, hN⟩ =>" SeLe4n/Kernel/Lifecycle/Operations/CleanupPreservation.lean'
 run_check "INVARIANT" bash -lc 'rg -U -n "^theorem removeFromAllEndpointQueues_eq_fold[^\n]*(\n([ \t][^\n]*)?)*        \(endpointSweepBody \(spliceOutMidQueueNode st tid\) tid\) := rfl$" SeLe4n/Kernel/Lifecycle/Operations/CleanupPreservation.lean'
-run_check "INVARIANT" bash -lc 'rg -U -n "^theorem removeFromAllNotificationWaitLists_eq_fold[^\n]*(\n([ \t][^\n]*)?)*      st\.objects\.fold st \(notificationPurgeBody tid\) := rfl$" SeLe4n/Kernel/Lifecycle/Operations/CleanupPreservation.lean'
 # The two witnessed lookups and their equations, beside the TCB's.
 run_check "INVARIANT" rg -n '^@\[inline\] def getEndpointWitnessed\? \(st : SystemState\) \(id : SeLe4n\.ObjId\)' SeLe4n/Model/State.lean
 run_check "INVARIANT" rg -n '^@\[inline\] def getNotificationWitnessed\? \(st : SystemState\) \(id : SeLe4n\.ObjId\)' SeLe4n/Model/State.lean
@@ -3495,12 +3492,12 @@ run_check "INVARIANT" rg -n '^theorem getNotificationWitnessed\?_eq_(some|none)'
 # named body does (bounded to the declaration -- the module around them states
 # the raw insert in theorems about the store).
 run_negative_check "INVARIANT" rg -n 'objects\.insert' SeLe4n/Kernel/Lifecycle/Operations/Cleanup.lean
-run_negative_check "INVARIANT" bash -lc 'rg -U -n "^def (endpointSweepBody|notificationPurgeBody)[^\n]*(\n([ \t][^\n]*)?)*objects\.insert" SeLe4n/Kernel/Lifecycle/Operations/CleanupPreservation.lean'
+run_negative_check "INVARIANT" bash -lc 'rg -U -n "^def endpointSweepBody[^\n]*(\n([ \t][^\n]*)?)*objects\.insert" SeLe4n/Kernel/Lifecycle/Operations/CleanupPreservation.lean'
 # NEGATIVE: neither sweep guards on the ENUMERATED record (the pre-migration
 # shape, where the guard and the write read two records), resolves the record
 # bare or by a dependent match, or folds its guard into the rewritten value.
 run_negative_check "INVARIANT" bash -lc 'rg -U -n "^def removeFromAllEndpointQueues[^\n]*(\n([ \t][^\n]*)?)*    \| \.endpoint ep =>" SeLe4n/Kernel/Lifecycle/Operations/Cleanup.lean'
-run_negative_check "INVARIANT" bash -lc 'rg -U -n "^def removeFromAllNotificationWaitLists[^\n]*(\n([ \t][^\n]*)?)*    \| \.notification notif =>" SeLe4n/Kernel/Lifecycle/Operations/Cleanup.lean'
+run_negative_check "INVARIANT" bash -lc 'rg -U -n "^def removeFromNotificationWaitQueue[^\n]*(\n([ \t][^\n]*)?)*    \| \.notification notif =>" SeLe4n/Kernel/Lifecycle/Operations/Cleanup.lean'
 run_negative_check "INVARIANT" bash -lc 'rg -U -n "^def removeFromAll(EndpointQueues|NotificationWaitLists)[^\n]*(\n([ \t][^\n]*)?)*match (\w+ : )?acc\.get(Endpoint|Notification)\? " SeLe4n/Kernel/Lifecycle/Operations/Cleanup.lean'
 run_negative_check "INVARIANT" bash -lc 'rg -U -n "^def removeFromAll(EndpointQueues|NotificationWaitLists)[^\n]*(\n([ \t][^\n]*)?)*rewriteObject oid \(\.(endpoint|notification) \(if " SeLe4n/Kernel/Lifecycle/Operations/Cleanup.lean'
 
@@ -6327,7 +6324,7 @@ run_check "INVARIANT" rg -n '^theorem cancelIpcBlocking_machine_eq($|[ ({:\[\]])
 run_check "INVARIANT" rg -n '^theorem restoreToReady_machine_eq($|[ ({:\[\]])' SeLe4n/Kernel/Lifecycle/Suspend.lean
 run_check "INVARIANT" rg -n '^theorem consumeReplyLink_machine_eq($|[ ({:\[\]])' SeLe4n/Kernel/Lifecycle/Suspend.lean
 run_check "INVARIANT" rg -n '^theorem removeFromAllEndpointQueues_machine_eq($|[ ({:\[\]])' SeLe4n/Kernel/Lifecycle/Operations/CleanupPreservation.lean
-run_check "INVARIANT" rg -n '^theorem removeFromAllNotificationWaitLists_machine_eq($|[ ({:\[\]])' SeLe4n/Kernel/Lifecycle/Operations/CleanupPreservation.lean
+run_check "INVARIANT" rg -n '^theorem removeFromNotificationWaitQueue_machine_eq($|[ ({:\[\]])' SeLe4n/Kernel/Lifecycle/Operations/CleanupPreservation.lean
 run_check "INVARIANT" rg -n '^theorem cancelIpcBlockingOnCore_confinedToCores($|[ ({:\[\]])' SeLe4n/Kernel/SlotConfinement/Legs.lean
 run_check "INVARIANT" rg -n '^theorem cancelIpcBlockingOnCore_crossCoreNonInterference($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/NonInterferenceCrossCore.lean
 run_check "INVARIANT" rg -n '^  runComposedCancellationChecks' tests/SmpInformationFlowSuite.lean
@@ -10350,7 +10347,7 @@ run_check "INVARIANT" rg -n '^theorem notificationWait_preserves_allPendingMessa
 run_check "INVARIANT" rg -n '^theorem endpointReply_preserves_allPendingMessagesBounded($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/Structural/
 # WS-H12e: Composed ipcInvariantFull preservation theorems.
 run_check "INVARIANT" rg -n '^theorem notificationSignal_preserves_ipcInvariantFull($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/Structural/
-run_check "INVARIANT" rg -n '^theorem notificationWait_preserves_ipcInvariantFull($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/Structural/
+run_check "INVARIANT" rg -n '^theorem notificationWait_preserves_ipcInvariantFull($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/DonationPreservation.lean
 run_check "INVARIANT" rg -n '^theorem endpointReply_preserves_ipcInvariantFull($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/Structural/
 run_check "INVARIANT" rg -n '^theorem endpointSendDual_preserves_ipcInvariantFull($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/Structural/
 run_check "INVARIANT" rg -n '^theorem endpointReceiveDual_preserves_ipcInvariantFull($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/Structural/
@@ -11777,15 +11774,16 @@ run_check "INVARIANT" rg -n '^theorem spliceOutMidQueueNode_affinity_frame \(' S
 # Each sweep's pair, beside that sweep's own `non…` biconditional.
 run_check "INVARIANT" rg -n '^theorem removeFromAllEndpointQueues_getSchedContext\?_eq \(' SeLe4n/Kernel/Lifecycle/Invariant/CancellationQueueShape.lean
 run_check "INVARIANT" rg -n '^theorem removeFromAllEndpointQueues_affinity_frame \(' SeLe4n/Kernel/Lifecycle/Invariant/CancellationQueueShape.lean
-run_check "INVARIANT" rg -n '^theorem removeFromAllNotificationWaitLists_getSchedContext\?_eq \(' SeLe4n/Kernel/Lifecycle/Invariant/CancellationNotificationShape.lean
-run_check "INVARIANT" rg -n '^theorem removeFromAllNotificationWaitLists_getTcb\?_eq \(' SeLe4n/Kernel/Lifecycle/Invariant/CancellationNotificationShape.lean
-run_check "INVARIANT" rg -n '^theorem removeFromAllNotificationWaitLists_affinity_frame \(' SeLe4n/Kernel/Lifecycle/Invariant/CancellationNotificationShape.lean
+run_check "INVARIANT" rg -n '^theorem removeFromNotificationWaitQueue_getSchedContext\?_eq \(' SeLe4n/Kernel/Lifecycle/Invariant/CancellationNotificationShape.lean
+# WS-ZA ZA4.4: the unlink rewrites queue links, so its TCB frame is a field frame.
+run_check "INVARIANT" rg -n '^theorem removeFromNotificationWaitQueue_tcbField_frame \{' SeLe4n/Kernel/Lifecycle/Operations/CleanupPreservation.lean
+run_check "INVARIANT" rg -n '^theorem removeFromNotificationWaitQueue_affinity_frame \(' SeLe4n/Kernel/Lifecycle/Invariant/CancellationNotificationShape.lean
 # NEGATIVE: none of the five may come back as a private copy in the bundle they
 # left.  Scoped to that file, because each is LIVE at its new home; the §4
 # tombstone names them in prose, which the code view strips.  Mutation: restore
 # any one of the deleted declarations there as code.
 run_negative_check "INVARIANT" rg -n 'getSchedContext\?_of_kind_iff|map_affinity_of_refines' SeLe4n/Kernel/IPC/Invariant/CancellationBundle.lean
-run_negative_check "INVARIANT" rg -n '^private theorem (spliceOutMidQueueNode_affinity_frame|removeFromAllEndpointQueues_getSchedContext\?_eq|removeFromAllEndpointQueues_affinity_frame|removeFromAllNotificationWaitLists_getSchedContext\?_eq|removeFromAllNotificationWaitLists_affinity_frame) ' SeLe4n/Kernel/IPC/Invariant/CancellationBundle.lean
+run_negative_check "INVARIANT" rg -n '^private theorem (spliceOutMidQueueNode_affinity_frame|removeFromAllEndpointQueues_getSchedContext\?_eq|removeFromAllEndpointQueues_affinity_frame|removeFromNotificationWaitQueue_getSchedContext\?_eq|removeFromNotificationWaitQueue_affinity_frame) ' SeLe4n/Kernel/IPC/Invariant/CancellationBundle.lean
 # The SMP whole-store frame, beside its per-core original and its congruence
 # sibling -- what a step writing NO object at all reaches for.
 run_check "INVARIANT" rg -n '^theorem replenishQueueAffinityConsistent_smp_frame \{' SeLe4n/Kernel/SchedContext/ReplenishAffinity.lean

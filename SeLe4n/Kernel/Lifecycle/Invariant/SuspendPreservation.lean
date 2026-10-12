@@ -735,7 +735,7 @@ theorem spliceThreadReplyFrameOut_preserves_ipcInvariant (st : SystemState) (tcb
     except the reschedule flags (the donation return's KSC-1 key-change hook).
     Each IPC state branch either (a) is a no-op, (b) uses
     removeFromAllEndpointQueues (which preserves scheduler) then inserts into
-    objects, or (c) uses removeFromAllNotificationWaitLists then inserts. -/
+    objects, or (c) uses removeFromNotificationWaitQueue then inserts. -/
 theorem cancelIpcBlocking_scheduler_eq
     (st : SystemState) (tid : SeLe4n.ThreadId) (tcb : TCB) :
     (cancelIpcBlocking st tid tcb).scheduler =
@@ -756,7 +756,7 @@ theorem cancelIpcBlocking_scheduler_eq
       spliceThreadReplyFrameOut_scheduler_eq]
     exact returnDonationToCancelledCaller_scheduler_eq st tid tcb
   | blockedOnNotification _ =>
-    rw [restoreToReadyCancelled_scheduler_eq, removeFromAllNotificationWaitLists_scheduler_eq]
+    rw [restoreToReadyCancelled_scheduler_eq, removeFromNotificationWaitQueue_scheduler_eq]
 
 /-- WS-SM SM8.B: **the IPC-blocking teardown never touches the machine** — and
 hence never touches any core's register bank.
@@ -781,7 +781,7 @@ theorem cancelIpcBlocking_machine_eq
     rw [consumeReplyLink_machine_eq, restoreToReadyCancelled_machine_eq,
       spliceThreadReplyFrameOut_machine_eq, returnDonationToCancelledCaller_machine_eq]
   | blockedOnNotification _ =>
-    rw [restoreToReadyCancelled_machine_eq, removeFromAllNotificationWaitLists_machine_eq]
+    rw [restoreToReadyCancelled_machine_eq, removeFromNotificationWaitQueue_machine_eq]
 
 /-- D1-I/AE3-C/R5.A: `cancelBoundDonation` preserves `runQueue` and
 `current`. The bound arm rewrites the SchedContext, drops it from the
@@ -861,7 +861,7 @@ theorem cancelIpcBlocking_serviceRegistry_eq
       spliceThreadReplyFrameOut_serviceRegistry_eq,
       returnDonationToCancelledCaller_serviceRegistry_eq]
   | blockedOnNotification _ =>
-    rw [restoreToReadyCancelled_serviceRegistry_eq, removeFromAllNotificationWaitLists_serviceRegistry_eq]
+    rw [restoreToReadyCancelled_serviceRegistry_eq, removeFromNotificationWaitQueue_serviceRegistry_eq]
 
 /-- D1-I: clearPendingState preserves serviceRegistry. -/
 theorem clearPendingState_serviceRegistry_eq
@@ -1741,7 +1741,7 @@ theorem cancelIpcBlocking_preserves_objects_invExt
           (returnDonationToCancelledCaller_preserves_objects_invExt st tid tcb hInv)))
   | blockedOnNotification _ =>
     exact restoreToReadyCancelled_invExt _ _
-      (removeFromAllNotificationWaitLists_preserves_objects_invExt st tid hInv)
+      (removeFromNotificationWaitQueue_preserves_objects_invExt st tid hInv)
 
 -- ============================================================================
 -- WS-SM SM6.E: per-key TCB lookup frames of the cancellation teardown
@@ -1869,9 +1869,9 @@ theorem cancelIpcBlocking_tcb_lookup
     exact ⟨t₂, hL2, ((hAff2.trans hAff1).trans hAff0)⟩
   | blockedOnNotification _ =>
     obtain ⟨hInvN, t₁, hL1, hAff1⟩ :=
-      removeFromAllNotificationWaitLists_tcb_lookup st tid k t0 hInv hPre
+      removeFromNotificationWaitQueue_tcb_lookup st tid k t0 hInv hPre
     obtain ⟨t₂, hL2, hAff2⟩ :=
-      restoreToReadyCancelled_tcb_lookup (removeFromAllNotificationWaitLists st tid) tid k t₁
+      restoreToReadyCancelled_tcb_lookup (removeFromNotificationWaitQueue st tid) tid k t₁
         hInvN hL1
     exact ⟨t₂, hL2, hAff2.trans hAff1⟩
 
@@ -1963,13 +1963,13 @@ theorem cancelIpcBlocking_getTcb?_none
           ((SystemState.getTcb?_eq_some_iff _ tid t).mp hX)
         exact hNoD ty hTy
   | blockedOnNotification _ =>
-    obtain ⟨hInvN, hNoN⟩ := removeFromAllNotificationWaitLists_no_tcb st tid hInv hNo
-    have hTN : (removeFromAllNotificationWaitLists st tid).getTcb? tid = none := by
-      cases hX : (removeFromAllNotificationWaitLists st tid).getTcb? tid with
+    obtain ⟨hInvN, hNoN⟩ := removeFromNotificationWaitQueue_no_tcb st tid hInv hNo
+    have hTN : (removeFromNotificationWaitQueue st tid).getTcb? tid = none := by
+      cases hX : (removeFromNotificationWaitQueue st tid).getTcb? tid with
       | none => rfl
       | some t =>
         exact absurd ((SystemState.getTcb?_eq_some_iff _ tid t).mp hX) (hNoN t)
-    show (restoreToReadyCancelled (removeFromAllNotificationWaitLists st tid) tid).getTcb? tid
+    show (restoreToReadyCancelled (removeFromNotificationWaitQueue st tid) tid).getTcb? tid
       = none
     rw [restoreToReadyCancelled_eq_self_of_getTcb?_none _ tid hTN]
     exact hTN
@@ -2025,8 +2025,8 @@ theorem cancelDonation_preserves_objects_invExt
 -- The notification well-formedness invariant across the cancellation
 -- teardown and the donation arms: every object write is either a
 -- non-notification insert (TCB rewrites, the Reply-caller clear, the
--- SchedContext unbind) or the notification sweep's filter-corrected rewrite
--- (well-formed by `notificationQueueWellFormed_filter_correct`).
+-- SchedContext unbind) or the notification unlink's queue-end rewrite
+-- (well-formed by `notificationQueueWellFormed_unlink`).
 
 /-- WS-SM SM6.E: `restoreToReady` preserves `ipcInvariant` — its only write
 is a `.tcb` rewrite. -/
@@ -2115,8 +2115,8 @@ theorem cancelIpcBlocking_preserves_ipcInvariant
           (returnDonationToCancelledCaller_preserves_ipcInvariant st tid tcb hInv hIpc)))
   | blockedOnNotification _ =>
     exact restoreToReadyCancelled_preserves_ipcInvariant _ tid
-      (removeFromAllNotificationWaitLists_preserves_objects_invExt st tid hInv)
-      (removeFromAllNotificationWaitLists_preserves_ipcInvariant st tid hInv hIpc)
+      (removeFromNotificationWaitQueue_preserves_objects_invExt st tid hInv)
+      (removeFromNotificationWaitQueue_preserves_ipcInvariant st tid hInv hIpc)
 
 /-- WS-SM SM6.E: `cancelBoundDonation` preserves `ipcInvariant` — the bound
 arm's object writes are the SchedContext deactivation insert and the TCB

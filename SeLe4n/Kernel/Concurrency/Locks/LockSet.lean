@@ -161,9 +161,8 @@ merge modes via `AccessMode.lub`.
 runtime test assertions and `decide`-based example discharge.
 
 The mathlib-free design encodes the key-uniqueness invariant as a
-`Nodup` over the projected keys, mirroring SM3.A's
-`NoDupList`-based notification waiter list (which carries a
-`hNodup : val.Nodup` proof). -/
+`Nodup` over the projected keys, carried as a proof field of the
+structure. -/
 structure LockSet where
   /-- The list of `(LockKey × AccessMode)` declarations. -/
   pairs : List (LockKey × AccessMode)

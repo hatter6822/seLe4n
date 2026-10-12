@@ -84,7 +84,6 @@ open SeLe4n.Testing
 #check @notificationSignalOnCore_atomic_under_lockSet
 
 -- SM6.B.3 multi-waiter discipline:
-#check @notificationSignalOnCore_wakes_head
 #check @notificationSignalOnCore_remaining_waiters
 
 -- SM6.B.7 non-interference (boot-core projectState + per-core / ∀-core smp):
@@ -211,20 +210,19 @@ open SeLe4n.Testing
 /-- SM6.B.2: a signal unblocking a remote waiter emits the reschedule SGI. -/
 example (notificationId : SeLe4n.ObjId) (badge : SeLe4n.Badge) (executingCore : CoreId)
     (st : SystemState) (ntfn : Notification)
-    (waiter : SeLe4n.ThreadId) (rest : SeLe4n.NoDupList SeLe4n.ThreadId)
+    (waiter : SeLe4n.ThreadId)
     (waiterTcb'' : TCB) (st' st'' : SystemState)
     (hObj : st.objects[notificationId]? = some (.notification ntfn))
-    (hWaiters : ntfn.waitingThreads.tail? = some (waiter, rest))
+    (hWaiters : ntfn.waitHead = some waiter)
     (hStore : storeObject notificationId (.notification
-        { state := if rest.val.isEmpty then .idle else .waiting,
-          waitingThreads := rest, hasPendingBadge := false, pendingWord := SeLe4n.Badge.zero, boundTCB := ntfn.boundTCB }) st = .ok ((), st'))
+        (ntfn.withHeadPopped (ntfnSuccessor? st waiter))) st = .ok ((), st'))
     (hMsg : storeTcbIpcStateAndMessage st' waiter .ready
         (some { IpcMessage.empty with badge := some badge }) = .ok st'')
     (hTcb'' : st''.getTcb? waiter = some waiterTcb'')
     (hRemote : determineTargetCore st'' waiter ≠ executingCore) :
     (notificationSignalOnCore notificationId badge executingCore st).2
       = .ok (some (determineTargetCore st'' waiter, SgiKind.reschedule)) :=
-  notificationSignalOnCore_remote_wake notificationId badge executingCore st ntfn waiter rest
+  notificationSignalOnCore_remote_wake notificationId badge executingCore st ntfn waiter
     waiterTcb'' st' st'' hObj hWaiters hStore hMsg hTcb'' hRemote
 
 /-- SM6.B.4 (WS-LS LS2.1: over the pair): the signal is a single 2PL-atomic
@@ -242,13 +240,12 @@ example (notificationId cnRoot : SeLe4n.ObjId) (badge : SeLe4n.Badge)
 example (ctx : LabelingContext) (observer : IfObserver)
     (notificationId : SeLe4n.ObjId) (badge : SeLe4n.Badge) (executingCore : CoreId)
     (st : SystemState) (ntfn : Notification)
-    (waiter : SeLe4n.ThreadId) (rest : SeLe4n.NoDupList SeLe4n.ThreadId)
+    (waiter : SeLe4n.ThreadId)
     (st' st'' : SystemState)
     (hObj : st.objects[notificationId]? = some (.notification ntfn))
-    (hWaiters : ntfn.waitingThreads.tail? = some (waiter, rest))
+    (hWaiters : ntfn.waitHead = some waiter)
     (hStore : storeObject notificationId (.notification
-        { state := if rest.val.isEmpty then .idle else .waiting,
-          waitingThreads := rest, hasPendingBadge := false, pendingWord := SeLe4n.Badge.zero, boundTCB := ntfn.boundTCB }) st = .ok ((), st'))
+        (ntfn.withHeadPopped (ntfnSuccessor? st waiter))) st = .ok ((), st'))
     (hMsg : storeTcbIpcStateAndMessage st' waiter .ready
         (some { IpcMessage.empty with badge := some badge }) = .ok st'')
     (hObjInv : st.objects.invExt)
@@ -258,7 +255,7 @@ example (ctx : LabelingContext) (observer : IfObserver)
     lowEquivalent_smp ctx observer
       (notificationSignalOnCore notificationId badge executingCore st).1 st :=
   notificationSignalOnCore_signal_path_NI_smp ctx observer notificationId badge executingCore st
-    ntfn waiter rest st' st'' hObj hWaiters hStore hMsg hObjInv hNtfnHigh hWaiterHigh hWaiterObjHigh
+    ntfn waiter st' st'' hObj hWaiters hStore hMsg hObjInv hNtfnHigh hWaiterHigh hWaiterObjHigh
 
 /-- WS-RR RR7.22 (register finding 3): the **bound**-delivery arm is invisible on
 every core.  The typed evidence that the `lowEquivalent_smp` conclusion is the
@@ -352,7 +349,7 @@ private def mkTcb (tid : Nat) (prio : Nat) (aff : Option CoreId) : TCB :=
 + core1-bound (remote) waiter; all three runnable on the boot core. -/
 private def stBase : SystemState :=
   (BootstrapBuilder.empty
-    |>.withObject nId (.notification { state := .idle, waitingThreads := SeLe4n.NoDupList.empty })
+    |>.withObject nId (.notification { state := .idle })
     |>.withObject signallerTid.toObjId (.tcb (mkTcb 501 40 none))
     |>.withObject waiterLocalTid.toObjId (.tcb (mkTcb 502 30 none))
     |>.withObject waiterRemoteTid.toObjId (.tcb (mkTcb 503 30 (some core1)))
@@ -365,12 +362,12 @@ private def stWithWaiter (w : SeLe4n.ThreadId) : Option SystemState :=
   | (st, .ok _) => some st
   | (_, .error _) => none
 
-/-- Drive both waiters onto the list (local first, so the core1-bound remote
-waiter becomes the head — `notificationWait` prepends). -/
+/-- Drive both waiters onto the queue (remote first, so the core1-bound remote
+waiter is the head — the queue is first in, first out). -/
 private def stTwoWaiters : Option SystemState :=
-  match notificationWaitOnCore nId waiterLocalTid bootCoreId stBase with
+  match notificationWaitOnCore nId waiterRemoteTid bootCoreId stBase with
   | (st1, .ok _) =>
-      match notificationWaitOnCore nId waiterRemoteTid bootCoreId st1 with
+      match notificationWaitOnCore nId waiterLocalTid bootCoreId st1 with
       | (st2, .ok _) => some st2
       | (_, .error _) => none
   | (_, .error _) => none
@@ -381,10 +378,18 @@ private def signalSgi (st : SystemState) (ec : CoreId) : Option (CoreId × SgiKi
   | .ok sgi => sgi
   | .error _ => none
 
-/-- Read the notification's current waiter list from a state (empty on absence). -/
+/-- Walk the notification's waiter queue from its head along the TCBs'
+successor links, at most `fuel` steps (empty on absence). -/
+private def walkWaiters : Nat → SystemState → Option SeLe4n.ThreadId → List SeLe4n.ThreadId
+  | 0, _, _ => []
+  | _ + 1, _, none => []
+  | fuel + 1, st, some t =>
+      t :: walkWaiters fuel st ((st.getTcb? t).bind (·.ntfnNext))
+
+/-- Read the notification's current waiter queue from a state, head first. -/
 private def waiterList (st : SystemState) : List SeLe4n.ThreadId :=
   match st.objects[nId]? with
-  | some (.notification ntfn) => ntfn.waitingThreads.val
+  | some (.notification ntfn) => walkWaiters 8 st ntfn.waitHead
   | _ => []
 
 -- Bound-notification fixture: an endpoint + a TCB to bind to the notification.
@@ -395,7 +400,7 @@ private def boundTid : SeLe4n.ThreadId := ⟨504⟩
 boot core. -/
 private def stBoundBase : SystemState :=
   (BootstrapBuilder.empty
-    |>.withObject nId (.notification { state := .idle, waitingThreads := SeLe4n.NoDupList.empty })
+    |>.withObject nId (.notification { state := .idle })
     |>.withObject epId (.endpoint {})
     |>.withObject signallerTid.toObjId (.tcb (mkTcb 501 40 none))
     |>.withObject boundTid.toObjId (.tcb (mkTcb 504 30 none))
@@ -414,7 +419,7 @@ private def runLockSetChecks : IO Unit := do
         (·.fst)).Nodup)
   -- SM6.B.1: the wait lock-set is hierarchically correct (caller W, cnode R, ntfn W).
   assertBool "notificationWait lock-set kinds all permitted"
-    (decide (∀ p ∈ (lockSet_notificationWait waiterLocalTid cnRoot nId).pairs,
+    (decide (∀ p ∈ (lockSet_notificationWait waiterLocalTid cnRoot nId none).pairs,
         p.fst.kind ∈ permittedKinds .notificationWait))
   -- SM6.B.6: the notification *write* lock — both ends of the binding — is declared.
   assertBool "notification write lock is in the signal footprint (binding, notification end)"
@@ -472,9 +477,9 @@ private def runMultiWaiterChecks : IO Unit := do
   IO.println "--- §3.4 SM6.B.3 multi-waiter discipline ---"
   match stTwoWaiters with
   | some st =>
-      -- Both waiters are queued (remote is the head after the local-then-remote waits).
-      assertBool "both waiters are queued before signal"
-        (((waiterList st).contains waiterLocalTid) && ((waiterList st).contains waiterRemoteTid))
+      -- Both waiters are queued in arrival order: remote (first in) heads it.
+      assertBool "both waiters are queued before signal, first in at the head"
+        (decide (waiterList st = [waiterRemoteTid, waiterLocalTid]))
       assertBool "the remote waiter is the wake head (notificationSignalWaiter?)"
         (decide (notificationSignalWaiter? st nId = some waiterRemoteTid))
       let (st', _) := notificationSignalOnCore nId badge bootCoreId st
@@ -483,9 +488,9 @@ private def runMultiWaiterChecks : IO Unit := do
         (!(waiterList st').contains waiterRemoteTid)
       assertBool "signal preserves the remaining waiter — local waiter still queued"
         ((waiterList st').contains waiterLocalTid)
-      -- The remaining list stays duplicate-free (the multi-waiter NoDup discipline).
-      assertBool "remaining waiter list is duplicate-free"
-        (decide (waiterList st').Nodup)
+      -- The remaining queue is exactly the local waiter, head and tail.
+      assertBool "remaining waiter queue is the local waiter alone"
+        (decide (waiterList st' = [waiterLocalTid]))
       -- Waking the head crosses to its home core: reschedule SGI to core 1.
       assertBool "multi-waiter signal fires the reschedule SGI to the head's home core"
         (match signalSgi st bootCoreId with
@@ -721,7 +726,7 @@ private def stBoundMidQueue? : Option SystemState :=
   let base :=
     (BootstrapBuilder.empty
       |>.withObject nId (.notification
-          { state := .idle, waitingThreads := SeLe4n.NoDupList.empty,
+          { state := .idle, 
             boundTCB := some boundTid })
       |>.withObject epId (.endpoint {})
       |>.withObject signallerTid.toObjId (.tcb (mkTcb 501 40 none))

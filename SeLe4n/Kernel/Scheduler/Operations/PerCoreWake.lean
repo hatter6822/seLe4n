@@ -1709,7 +1709,7 @@ theorem enqueueRunnableOnCore_preserves_queueCurrentConsistentOnCore_self
 --
 -- (Caller obligation, documented not proved here: the *structural* IPC side —
 -- removing `tid` from any endpoint `sendQ`/`receiveQ` or notification
--- `waitingThreads` list it was blocked on — is the caller's job.  The
+-- wait queue it was blocked on — is the caller's job.  The
 -- `queueHeadBlockedConsistent` / `ipcStateQueueMembershipConsistent` /
 -- `notificationWaiterConsistent` invariants (IPC/Invariant/Defs.lean) require an
 -- endpoint/notification-queue member to carry a matching `blockedOn*` ipcState;

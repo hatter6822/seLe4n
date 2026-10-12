@@ -140,7 +140,7 @@ theorem cancelIpcBlocking_victim_ready
     rw [cancelIpcBlocking_notification_arm_eq st v tcbV nId hIp]
     unfold purgedAndRestored
     obtain ⟨hI1, t1, hL1, _⟩ :=
-      removeFromAllNotificationWaitLists_tcb_lookup st v v.toObjId tcbV hObjInv hAt
+      removeFromNotificationWaitQueue_tcb_lookup st v v.toObjId tcbV hObjInv hAt
     exact restoreVictimReady v _ t1 _ hI1 (lookupTcb_of_objects_of_not_reserved _ v t1 hL1 hNR)
   | blockedOnReply ep rt =>
     rw [cancelIpcBlocking_reply_arm_eq st v tcbV ep rt hIp]
@@ -488,10 +488,10 @@ theorem cancelIpcBlockingOnCore_preserves_ipcInvariantFull
 --   * `removeFromAllEndpointQueues_getSchedContext?_eq` / `_affinity_frame` →
 --     `Lifecycle/Invariant/CancellationQueueShape.lean`, beside
 --     `removeFromAllEndpointQueues_nonEndpoint`.
---   * `removeFromAllNotificationWaitLists_getSchedContext?_eq` /
+--   * `removeFromNotificationWaitQueue_getSchedContext?_eq` /
 --     `_affinity_frame` (and the `Option`-level `_getTcb?_eq` the second is one
 --     consequence of) → `Lifecycle/Invariant/CancellationNotificationShape.lean`,
---     beside `removeFromAllNotificationWaitLists_nonNotification`.
+--     beside `removeFromNotificationWaitQueue_nonNotification`.
 --
 -- Nothing below changed but the names; the frames this section keeps are the
 -- ones whose subjects are cancellation-path steps and have no second asker.
@@ -632,8 +632,8 @@ theorem cancelIpcBlocking_getSchedContext?_eq_of_reclaim_frame (st : SystemState
       removeFromAllEndpointQueues_getSchedContext?_eq st v hInv]
   | blockedOnNotification _ =>
     rw [restoreToReadyStaging_getSchedContext?_eq _ v _
-        (removeFromAllNotificationWaitLists_preserves_objects_invExt st v hInv),
-      removeFromAllNotificationWaitLists_getSchedContext?_eq st v hInv]
+        (removeFromNotificationWaitQueue_preserves_objects_invExt st v hInv),
+      removeFromNotificationWaitQueue_getSchedContext?_eq st v hInv]
   | blockedOnReply ep rt =>
     have hR := Lifecycle.Suspend.returnDonationToCancelledCaller_preserves_objects_invExt
       st v tcbV hInv
@@ -899,8 +899,8 @@ theorem cancelIpcBlocking_affinity_frame (st : SystemState) (v : SeLe4n.ThreadId
       removeFromAllEndpointQueues_affinity_frame st v hInv x]
   | blockedOnNotification _ =>
     rw [restoreToReadyStaging_affinity_frame _ v _
-        (removeFromAllNotificationWaitLists_preserves_objects_invExt st v hInv) x,
-      removeFromAllNotificationWaitLists_affinity_frame st v hInv x]
+        (removeFromNotificationWaitQueue_preserves_objects_invExt st v hInv) x,
+      removeFromNotificationWaitQueue_affinity_frame st v hInv x]
   | blockedOnReply ep rt =>
     have hR := Lifecycle.Suspend.returnDonationToCancelledCaller_preserves_objects_invExt
       st v tcbV hInv

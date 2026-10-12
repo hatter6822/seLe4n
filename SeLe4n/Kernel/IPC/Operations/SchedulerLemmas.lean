@@ -779,50 +779,29 @@ theorem donateSchedContext_ok_server_donated
 theorem notificationSignal_respects_pipBoost
     (notificationId : SeLe4n.ObjId) (badge : SeLe4n.Badge)
     (st st' : SystemState)
-    (waiter : SeLe4n.ThreadId) (rest : SeLe4n.NoDupList SeLe4n.ThreadId)
+    (waiter : SeLe4n.ThreadId)
     (ntfn : Notification)
     (hObjInv : st.objects.invExt)
     (hNtfn : st.objects[notificationId]? = some (.notification ntfn))
-    (hWaiters : ntfn.waitingThreads.tail? = some (waiter, rest))
+    (hHead : ntfn.waitHead = some waiter)
     (hStep : notificationSignal notificationId badge st = .ok ((), st')) :
     waiter ∈ (st'.scheduler.runQueueOnCore bootCoreId) := by
   -- The transition reads through the kind-agnostic accessor; this proof works
   -- in store terms, so it is unfolded once here.
   unfold notificationSignal SystemState.getObject? at hStep
-  -- WS-RC R4.C: `notificationSignal` pops via `tail?`; the hypothesis
-  -- `hWaiters` reduces the `match` directly to the cons branch.
-  simp only [hNtfn, hWaiters] at hStep
-  cases hStore : storeObject notificationId _ st with
-  | error e => rw [hStore] at hStep; cases hStep
-  | ok pair =>
-    rw [hStore] at hStep
-    simp only at hStep
-    have hObjInvStore : pair.2.objects.invExt :=
-      storeObject_preserves_objects_invExt st pair.2 notificationId _ hObjInv hStore
-    cases hMsg : storeTcbIpcStateAndMessage pair.2 waiter .ready _ with
-    | error e => rw [hMsg] at hStep; cases hStep
-    | ok st'' =>
-      rw [hMsg] at hStep
+  simp only [hNtfn, hHead] at hStep
+  split at hStep
+  · cases hStep
+  · next st1 hStore =>
+    split at hStep
+    · cases hStep
+    · next st3 hMsg =>
       simp only [Except.ok.injEq, Prod.mk.injEq] at hStep
       obtain ⟨_, rfl⟩ := hStep
       apply ensureRunnable_mem_self
-      -- storeTcbIpcStateAndMessage .ok ⇒ waiter had a TCB pre-store AND
-      -- post-store has a TCB at waiter.toObjId (via _tcb_exists_at_target).
-      unfold storeTcbIpcStateAndMessage modifyTcb at hMsg
-      cases hLk : lookupTcb pair.2 waiter with
-      | none => simp [hLk] at hMsg
-      | some tcb =>
-        simp only [hLk] at hMsg
-        have hPreTcb : pair.2.objects[waiter.toObjId]? = some (.tcb tcb) :=
-          lookupTcb_some_objects pair.2 waiter tcb hLk
-        -- storeObject is unconditional .ok (see Model/State.lean); directly
-        -- destructure via the definitional equality.
-        generalize hStore2 : storeObject waiter.toObjId
-          (.tcb { tcb with ipcState := .ready, pendingMessage := _ }) pair.2 = store2result at hMsg
-        match store2result, hMsg with
-        | .ok pair2, hMsg =>
-          simp only [Except.ok.injEq] at hMsg
-          subst hMsg
-          exact ⟨_, storeObject_objects_eq' pair.2 waiter.toObjId _ pair2 hObjInvStore hStore2⟩
+      -- storeTcbIpcStateAndMessage .ok ⇒ the waiter's key holds a TCB after it.
+      obtain ⟨tcb, _, hS⟩ := modifyTcb_ok_decompose hMsg
+      have hInv1 := storeObject_preserves_objects_invExt st st1 _ _ hObjInv hStore
+      exact ⟨_, storeObject_objects_eq st1 st3 waiter.toObjId _ hInv1 hS⟩
 
 end SeLe4n.Kernel

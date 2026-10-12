@@ -58,7 +58,7 @@ private def mkEmptyEndpoint : Endpoint := {}
 
 /-- Helper: construct a minimal test Notification. -/
 private def mkEmptyNotification : Notification :=
-  { state := NotificationState.idle, waitingThreads := SeLe4n.NoDupList.empty }
+  { state := NotificationState.idle }
 
 /-- Helper: construct a Reply object linked to a caller — WS-OD OD4.1's
 donation push records the donation on the donor's own reply object, so a donating

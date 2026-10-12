@@ -108,7 +108,7 @@ def test_t05b_high_spis_dispatch : IO Unit := do
     let st0 :=
       (BootstrapBuilder.empty
         |>.withObject ntfnId (.notification
-            { state := .idle, waitingThreads := SeLe4n.NoDupList.empty, hasPendingBadge := false, pendingWord := SeLe4n.Badge.zero })
+            { state := .idle, hasPendingBadge := false, pendingWord := SeLe4n.Badge.zero })
         |>.withIrqHandler ⟨intid⟩ ntfnId
         |>.withLifecycleObjectType ntfnId .notification
         |>.buildChecked)

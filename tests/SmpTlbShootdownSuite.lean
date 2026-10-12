@@ -1803,7 +1803,7 @@ private def runCompletionCutChecks : IO Unit := do
      | _ => false)
   let rtNewNtfn : SeLe4n.Model.KernelObject :=
     .notification
-      { state := .idle, waitingThreads := SeLe4n.NoDupList.empty,
+      { state := .idle, 
         hasPendingBadge := false, pendingWord := SeLe4n.Badge.zero }
   assertBool "a non-vspaceRoot CSpaceAddr retype posts nothing"
     (match SeLe4n.Kernel.lifecycleRetypeWithCleanupShootdown core0

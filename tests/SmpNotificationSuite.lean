@@ -43,8 +43,8 @@ through the evolving state:
   every error returns the pre-state;
 * **§3.8** cross-core independence framing + the state-resolved 2PL lock-set
   footprints (exact resolved size + the SM5.J WCRT-fits-budget property);
-* **§3.9** the three-waiter FIFO drain: successive signals wake the list head
-  first, each to a **distinct** home core (1/2/3), draining to idle;
+* **§3.9** the three-waiter FIFO drain: successive signals wake the waiters in
+  arrival order, each to a **distinct** home core (1/2/3), draining to idle;
 * **§3.10** **info-flow-checked** dispatch: the unchecked wait dispatch
   (`notificationWaitCrossCoreDispatch`) descheds on the caller's own core, and
   the checked bound signal (`notificationSignalBoundCrossCoreDispatchChecked`)
@@ -87,7 +87,6 @@ open SeLe4n.Testing
 #check @notificationSignalOnCore_remote_wake_preState
 #check @notificationSignalOnCore_no_sgi_if_local_waiter
 #check @notificationSignalOnCore_noWaiter_no_sgi
-#check @notificationSignalOnCore_wakes_head
 #check @notificationSignalOnCore_remaining_waiters
 #check @notificationSignalOnCore_perCore_consistent
 #check @notificationSignalOnCore_atomic_under_lockSet
@@ -121,9 +120,9 @@ notification (word-bounded `bor`), preserving the binding; no SGI. -/
 example (notificationId : SeLe4n.ObjId) (badge : SeLe4n.Badge) (executingCore : CoreId)
     (st : SystemState) (ntfn : Notification) (st' : SystemState)
     (hObj : st.objects[notificationId]? = some (.notification ntfn))
-    (hWaiters : ntfn.waitingThreads.tail? = none)
+    (hWaiters : ntfn.waitHead = none)
     (hStore : storeObject notificationId (.notification
-        { state := .active, waitingThreads := SeLe4n.NoDupList.empty,
+        { state := .active, 
           hasPendingBadge := true, pendingWord := (match ntfn.pendingBadge with
             | some existing => SeLe4n.Badge.bor existing badge
             | none => SeLe4n.Badge.ofNatMasked badge.toNat), boundTCB := ntfn.boundTCB }) st = .ok ((), st')) :
@@ -135,19 +134,18 @@ example (notificationId : SeLe4n.ObjId) (badge : SeLe4n.Badge) (executingCore : 
 + cross-core wake, surfacing exactly the wake's SGI. -/
 example (notificationId : SeLe4n.ObjId) (badge : SeLe4n.Badge) (executingCore : CoreId)
     (st : SystemState) (ntfn : Notification)
-    (waiter : SeLe4n.ThreadId) (rest : SeLe4n.NoDupList SeLe4n.ThreadId)
+    (waiter : SeLe4n.ThreadId)
     (st' st'' : SystemState)
     (hObj : st.objects[notificationId]? = some (.notification ntfn))
-    (hWaiters : ntfn.waitingThreads.tail? = some (waiter, rest))
+    (hWaiters : ntfn.waitHead = some waiter)
     (hStore : storeObject notificationId (.notification
-        { state := if rest.val.isEmpty then .idle else .waiting,
-          waitingThreads := rest, hasPendingBadge := false, pendingWord := SeLe4n.Badge.zero, boundTCB := ntfn.boundTCB }) st = .ok ((), st'))
+        (ntfn.withHeadPopped (ntfnSuccessor? st waiter))) st = .ok ((), st'))
     (hMsg : storeTcbIpcStateAndMessage st' waiter .ready
         (some { IpcMessage.empty with badge := some badge }) = .ok st'') :
     notificationSignalOnCore notificationId badge executingCore st
       = ((wakeThread st'' waiter executingCore).1,
          .ok (wakeThread st'' waiter executingCore).2) :=
-  notificationSignalOnCore_waiter_eq notificationId badge executingCore st ntfn waiter rest
+  notificationSignalOnCore_waiter_eq notificationId badge executingCore st ntfn waiter
     st' st'' hObj hWaiters hStore hMsg
 
 -- ============================================================================
@@ -192,7 +190,7 @@ queue.  The signaller is unbound (home = boot core 0). -/
 private def stFourCore : SystemState :=
   let base :=
     (BootstrapBuilder.empty
-      |>.withObject nId (.notification { state := .idle, waitingThreads := SeLe4n.NoDupList.empty })
+      |>.withObject nId (.notification { state := .idle })
       |>.withObject epId (.endpoint {})
       |>.withObject signallerT.toObjId (.tcb (mkTcb 921 40 none))
       |>.withObject waiter2.toObjId (.tcb (mkTcb 922 30 (some c2)))
@@ -217,10 +215,19 @@ private def okExcept {α : Type} (r : Except KernelError α) : Option α :=
   | .ok a => some a
   | .error _ => none
 
-/-- Read the notification's waiter list from a state (empty on absence). -/
+/-- Walk a waiter queue from `t` along the TCBs' successor links, at most
+`fuel` steps. -/
+private def walkWaiters : Nat → SystemState → Option SeLe4n.ThreadId → List SeLe4n.ThreadId
+  | 0, _, _ => []
+  | _ + 1, _, none => []
+  | fuel + 1, st, some t =>
+      t :: walkWaiters fuel st ((st.getTcb? t).bind (·.ntfnNext))
+
+/-- Read the notification's waiter queue from a state, head first (empty on
+absence). -/
 private def waiterList (st : SystemState) : List SeLe4n.ThreadId :=
   match st.objects[nId]? with
-  | some (.notification ntfn) => ntfn.waitingThreads.val
+  | some (.notification ntfn) => walkWaiters 8 st ntfn.waitHead
   | _ => []
 
 /-- Decidable predicate: `tid`'s ipcState in `st` equals `expected`. -/
@@ -239,29 +246,29 @@ private def deliveredBadgeIs (st : SystemState) (tid : SeLe4n.ThreadId)
 
 /-- The full wait/signal/handle round-trip pipeline (every intermediate state +
 every surfaced SGI).  Both waiters block from their own cores (waiter 2 first,
-so waiter 3 is the list head — `notificationWait` prepends); two signals from
-core 0 then drain the list head-first, each handled on its target core. -/
+so waiter 2 is the queue head — first in, first out); two signals from core 0
+then drain the queue in arrival order, each handled on its target core. -/
 private structure NtfnRoundTrip where
   afterWait2 : SystemState
   waitRes2   : Option SeLe4n.Badge
   afterWait3 : SystemState
   afterSig1  : SystemState
   sgiSig1    : Option (CoreId × SgiKind)
-  afterH3    : SystemState
+  afterH2    : SystemState
   afterSig2  : SystemState
   sgiSig2    : Option (CoreId × SgiKind)
-  afterH2    : SystemState
+  afterH3    : SystemState
 
 private def ntfnRoundTrip? : Option NtfnRoundTrip := do
   let (afterWait2, waitRes2) ← okPair (notificationWaitOnCore nId waiter2 c2 stFourCore)
   let (afterWait3, _) ← okPair (notificationWaitOnCore nId waiter3 c3 afterWait2)
   let (afterSig1, sgiSig1) ← okPair (notificationSignalOnCore nId badge1 c0 afterWait3)
-  let afterH3 ← okExcept (handleRescheduleSgiOnCore afterSig1 c3)
-  let (afterSig2, sgiSig2) ← okPair (notificationSignalOnCore nId badge2 c0 afterH3)
-  let afterH2 ← okExcept (handleRescheduleSgiOnCore afterSig2 c2)
+  let afterH2 ← okExcept (handleRescheduleSgiOnCore afterSig1 c2)
+  let (afterSig2, sgiSig2) ← okPair (notificationSignalOnCore nId badge2 c0 afterH2)
+  let afterH3 ← okExcept (handleRescheduleSgiOnCore afterSig2 c3)
   pure { afterWait2 := afterWait2, waitRes2 := waitRes2, afterWait3 := afterWait3,
-         afterSig1 := afterSig1, sgiSig1 := sgiSig1, afterH3 := afterH3,
-         afterSig2 := afterSig2, sgiSig2 := sgiSig2, afterH2 := afterH2 }
+         afterSig1 := afterSig1, sgiSig1 := sgiSig1, afterH2 := afterH2,
+         afterSig2 := afterSig2, sgiSig2 := sgiSig2, afterH3 := afterH3 }
 
 -- ============================================================================
 -- §3.1  Wait blocks the waiter on its own core (per-core descheduling)
@@ -283,8 +290,8 @@ private def runWaitBlockChecks : IO Unit := do
         == (stFourCore.scheduler.runQueueOnCore c3).toList)
     assertBool "the notification records the single waiter"
       (waiterList rt.afterWait2 == [waiter2])
-    assertBool "the second wait prepends: waiter 3 becomes the list head"
-      (waiterList rt.afterWait3 == [waiter3, waiter2])
+    assertBool "the second wait joins at the tail: waiter 2 stays the head"
+      (waiterList rt.afterWait3 == [waiter2, waiter3])
     assertBool "wait deschedules waiter 3 from core 3's run queue"
       (!(rt.afterWait3.scheduler.runQueueOnCore c3).contains waiter3)
 
@@ -293,26 +300,26 @@ private def runWaitBlockChecks : IO Unit := do
 -- ============================================================================
 
 private def runSignalRoundTripChecks : IO Unit := do
-  IO.println "--- §3.2 cross-core signal round trip (signal from core 0, waiter homed core 3) ---"
+  IO.println "--- §3.2 cross-core signal round trip (signal from core 0, waiter homed core 2) ---"
   match ntfnRoundTrip? with
   | none => assertBool "notification round-trip pipeline succeeded" false
   | some rt =>
-    assertBool "the signal wakes the list head (waiter 3) with a reschedule SGI to core 3"
+    assertBool "the signal wakes the queue head (waiter 2) with a reschedule SGI to core 2"
       (match rt.sgiSig1 with
-       | some (tgt, kind) => decide (tgt = c3 ∧ kind = SgiKind.reschedule)
+       | some (tgt, kind) => decide (tgt = c2 ∧ kind = SgiKind.reschedule)
        | none => false)
     assertBool "the woken waiter is .ready with the signal's badge delivered"
-      (ipcStateIs rt.afterSig1 waiter3 .ready && deliveredBadgeIs rt.afterSig1 waiter3 badge1)
-    assertBool "the woken waiter is enqueued on core 3 (its home core)"
-      ((rt.afterSig1.scheduler.runQueueOnCore c3).contains waiter3)
+      (ipcStateIs rt.afterSig1 waiter2 .ready && deliveredBadgeIs rt.afterSig1 waiter2 badge1)
+    assertBool "the woken waiter is enqueued on core 2 (its home core)"
+      ((rt.afterSig1.scheduler.runQueueOnCore c2).contains waiter2)
     assertBool "the woken waiter is NOT enqueued on core 0 (the signalling core)"
-      (!(rt.afterSig1.scheduler.runQueueOnCore c0).contains waiter3)
-    assertBool "core 3's reschedule handler dispatches the woken waiter (current = waiter 3)"
-      (rt.afterH3.scheduler.currentOnCore c3 == some waiter3)
-    assertBool "one wake per signal: waiter 2 remains blocked after the first signal"
-      (ipcStateIs rt.afterSig1 waiter2 (.blockedOnNotification nId))
-    assertBool "the notification retains the remaining waiter list"
-      (waiterList rt.afterSig1 == [waiter2])
+      (!(rt.afterSig1.scheduler.runQueueOnCore c0).contains waiter2)
+    assertBool "core 2's reschedule handler dispatches the woken waiter (current = waiter 2)"
+      (rt.afterH2.scheduler.currentOnCore c2 == some waiter2)
+    assertBool "one wake per signal: waiter 3 remains blocked after the first signal"
+      (ipcStateIs rt.afterSig1 waiter3 (.blockedOnNotification nId))
+    assertBool "the notification retains the remaining waiter queue"
+      (waiterList rt.afterSig1 == [waiter3])
     assertBool "the signaller stays runnable on core 0 (signal is non-blocking)"
       ((rt.afterSig1.scheduler.runQueueOnCore c0).contains signallerT)
 
@@ -325,23 +332,23 @@ private def runMultiWaiterDrainChecks : IO Unit := do
   match ntfnRoundTrip? with
   | none => assertBool "notification round-trip pipeline succeeded" false
   | some rt =>
-    assertBool "the second signal wakes the remaining waiter with a reschedule SGI to core 2"
+    assertBool "the second signal wakes the remaining waiter with a reschedule SGI to core 3"
       (match rt.sgiSig2 with
-       | some (tgt, kind) => decide (tgt = c2 ∧ kind = SgiKind.reschedule)
+       | some (tgt, kind) => decide (tgt = c3 ∧ kind = SgiKind.reschedule)
        | none => false)
     assertBool "the drained notification is idle with no waiters"
       (match rt.afterSig2.objects[nId]? with
        | some (.notification ntfn) =>
-           decide (ntfn.state = .idle) && ntfn.waitingThreads.val.isEmpty
+           decide (ntfn.state = .idle) && ntfn.waitHead.isNone && ntfn.waitTail.isNone
        | _ => false)
-    assertBool "per-waiter badge isolation: waiter 3 holds badge 1, waiter 2 holds badge 2"
-      (deliveredBadgeIs rt.afterSig2 waiter3 badge1 && deliveredBadgeIs rt.afterSig2 waiter2 badge2)
-    assertBool "the second woken waiter is enqueued on core 2 (its home core)"
-      ((rt.afterSig2.scheduler.runQueueOnCore c2).contains waiter2)
-    assertBool "core 2's reschedule handler dispatches the second waiter (current = waiter 2)"
-      (rt.afterH2.scheduler.currentOnCore c2 == some waiter2)
-    assertBool "the first waiter's dispatch survives the second wake (current core 3 = waiter 3)"
-      (rt.afterH2.scheduler.currentOnCore c3 == some waiter3)
+    assertBool "per-waiter badge isolation: waiter 2 holds badge 1, waiter 3 holds badge 2"
+      (deliveredBadgeIs rt.afterSig2 waiter2 badge1 && deliveredBadgeIs rt.afterSig2 waiter3 badge2)
+    assertBool "the second woken waiter is enqueued on core 3 (its home core)"
+      ((rt.afterSig2.scheduler.runQueueOnCore c3).contains waiter3)
+    assertBool "core 3's reschedule handler dispatches the second waiter (current = waiter 3)"
+      (rt.afterH3.scheduler.currentOnCore c3 == some waiter3)
+    assertBool "the first waiter's dispatch survives the second wake (current core 2 = waiter 2)"
+      (rt.afterH3.scheduler.currentOnCore c2 == some waiter2)
 
 -- ============================================================================
 -- §3.4  Badge accumulation (waiterless bor merge + non-blocking consume)
@@ -504,27 +511,27 @@ private def runIndependenceAndLockChecks : IO Unit := do
   match ntfnRoundTrip? with
   | none => assertBool "notification round-trip pipeline succeeded" false
   | some rt =>
-    -- The head wake (to core 3) frames every other core's run queue.
+    -- The head wake (to core 2) frames every other core's run queue.
     assertBool "the head wake frames core 0's run queue"
       ((rt.afterSig1.scheduler.runQueueOnCore c0).toList
         == (rt.afterWait3.scheduler.runQueueOnCore c0).toList)
     assertBool "the head wake frames core 1's run queue"
       ((rt.afterSig1.scheduler.runQueueOnCore c1).toList
         == (rt.afterWait3.scheduler.runQueueOnCore c1).toList)
-    assertBool "the head wake frames core 2's run queue"
-      ((rt.afterSig1.scheduler.runQueueOnCore c2).toList
-        == (rt.afterWait3.scheduler.runQueueOnCore c2).toList)
+    assertBool "the head wake frames core 3's run queue"
+      ((rt.afterSig1.scheduler.runQueueOnCore c3).toList
+        == (rt.afterWait3.scheduler.runQueueOnCore c3).toList)
     -- The pre-resolution helper sees the waiting head; the state-resolved
     -- footprint covers it with a write lock, hierarchically correct.
-    assertBool "notificationSignalWaiter? resolves the waiting head (waiter 3)"
-      (decide (notificationSignalWaiter? rt.afterWait3 nId = some waiter3))
+    assertBool "notificationSignalWaiter? resolves the waiting head (waiter 2)"
+      (decide (notificationSignalWaiter? rt.afterWait3 nId = some waiter2))
     let sigLs := lockSet_notificationSignalOnCore rt.afterWait3 nId signallerT cnRoot
     assertBool "state-resolved signal lock-set kinds all permitted"
       (decide (∀ p ∈ sigLs.pairs, p.fst.kind ∈ permittedKinds .notificationSignal))
     assertBool "state-resolved signal lock-set keys are duplicate-free"
       (decide (sigLs.pairs.map (·.fst)).Nodup)
     assertBool "the head waiter's TCB write lock is in the signal footprint"
-      (decide ((tcbLock waiter3, AccessMode.write) ∈ sigLs.pairs))
+      (decide ((tcbLock waiter2, AccessMode.write) ∈ sigLs.pairs))
     assertBool "the notification write lock is in the signal footprint"
       (decide ((notificationLock nId, AccessMode.write) ∈ sigLs.pairs))
     -- Exact resolved footprint size: signaller (R), sender CNode (R), notification
@@ -539,10 +546,14 @@ private def runIndependenceAndLockChecks : IO Unit := do
     -- suite's §3.7 form — a 6th lock would be 1080µs and blow the budget).
     assertBool "signal lock-set WCRT (720µs) fits the 1 ms timer-tick budget"
       (decide (sigLs.pairs.length * (3 * 60) < 1000))
-    let waitLs := lockSet_notificationWaitOnCore nId waiter2 cnRoot
+    -- WS-ZA ZA4.4: waiter3 queues behind waiter2, so the wait also writes the
+    -- old tail's successor link and must hold waiter2's TCB lock.
+    let waitLs := lockSet_notificationWaitOnCore rt.afterWait2 nId waiter3 cnRoot
     assertBool "wait lock-set kinds all permitted"
       (decide (∀ p ∈ waitLs.pairs, p.fst.kind ∈ permittedKinds .notificationWait))
     assertBool "the waiter's TCB write lock is in the wait footprint"
+      (decide ((tcbLock waiter3, AccessMode.write) ∈ waitLs.pairs))
+    assertBool "the old tail's TCB write lock is in the wait footprint"
       (decide ((tcbLock waiter2, AccessMode.write) ∈ waitLs.pairs))
 
 -- ============================================================================
@@ -555,7 +566,7 @@ private def waiterC1 : SeLe4n.ThreadId := ⟨926⟩   -- homed core 1
 1/2/3, all runnable on the boot core (they block themselves via wait). -/
 private def stThreeWaiterBase : SystemState :=
   (BootstrapBuilder.empty
-    |>.withObject nId (.notification { state := .idle, waitingThreads := SeLe4n.NoDupList.empty })
+    |>.withObject nId (.notification { state := .idle })
     |>.withObject signallerT.toObjId (.tcb (mkTcb 921 40 none))
     |>.withObject waiterC1.toObjId (.tcb (mkTcb 926 30 (some c1)))
     |>.withObject waiter2.toObjId (.tcb (mkTcb 922 30 (some c2)))
@@ -570,7 +581,7 @@ private structure ThreeWaiterDrain where
   sgi3 : Option (CoreId × SgiKind)
   drained : SystemState
 
-/-- Wait C1 → 2 → 3 (so 3 is the list head), then three signals drain them. -/
+/-- Wait C1 → 2 → 3 (so C1 is the queue head), then three signals drain them. -/
 private def threeWaiterDrain? : Option ThreeWaiterDrain := do
   let (s1, _) ← okPair (notificationWaitOnCore nId waiterC1 c1 stThreeWaiterBase)
   let (s2, _) ← okPair (notificationWaitOnCore nId waiter2 c2 s1)
@@ -585,16 +596,16 @@ private def runThreeWaiterDrainChecks : IO Unit := do
   match threeWaiterDrain? with
   | none => assertBool "three-waiter drain pipeline succeeded" false
   | some d =>
-    -- The three waits build the list head-first (wait prepends): [3, 2, C1].
-    assertBool "the three waits build the waiter list head-first ([waiter3, waiter2, waiterC1])"
-      (waiterList d.afterWaits == [waiter3, waiter2, waiterC1])
-    -- Head-first drain: signal 1 → waiter 3 (core 3), 2 → waiter 2 (core 2), 3 → C1 (core 1).
-    assertBool "signal 1 wakes the head (waiter 3) to core 3"
-      (match d.sgi1 with | some (t, k) => decide (t = c3 ∧ k = SgiKind.reschedule) | none => false)
+    -- The three waits build the queue in arrival order: [C1, 2, 3].
+    assertBool "the three waits build the waiter queue in arrival order ([waiterC1, waiter2, waiter3])"
+      (waiterList d.afterWaits == [waiterC1, waiter2, waiter3])
+    -- FIFO drain: signal 1 → C1 (core 1), 2 → waiter 2 (core 2), 3 → waiter 3 (core 3).
+    assertBool "signal 1 wakes the head (waiter C1) to core 1"
+      (match d.sgi1 with | some (t, k) => decide (t = c1 ∧ k = SgiKind.reschedule) | none => false)
     assertBool "signal 2 wakes the next (waiter 2) to core 2"
       (match d.sgi2 with | some (t, k) => decide (t = c2 ∧ k = SgiKind.reschedule) | none => false)
-    assertBool "signal 3 wakes the last (waiter C1) to core 1"
-      (match d.sgi3 with | some (t, k) => decide (t = c1 ∧ k = SgiKind.reschedule) | none => false)
+    assertBool "signal 3 wakes the last (waiter 3) to core 3"
+      (match d.sgi3 with | some (t, k) => decide (t = c3 ∧ k = SgiKind.reschedule) | none => false)
     -- The three woken threads land on their own home cores, none crossing.
     assertBool "each woken waiter is enqueued on its OWN home core (1/2/3)"
       ((d.drained.scheduler.runQueueOnCore c1).contains waiterC1
@@ -603,7 +614,7 @@ private def runThreeWaiterDrainChecks : IO Unit := do
     -- The drained notification is idle with an empty waiter list.
     assertBool "the fully-drained notification is idle with no waiters"
       (match d.drained.objects[nId]? with
-       | some (.notification n) => decide (n.state = .idle) && n.waitingThreads.val.isEmpty
+       | some (.notification n) => decide (n.state = .idle) && n.waitHead.isNone && n.waitTail.isNone
        | _ => false)
 
 -- ============================================================================

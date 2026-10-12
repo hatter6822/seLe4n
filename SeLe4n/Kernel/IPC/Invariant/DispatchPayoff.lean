@@ -2058,13 +2058,19 @@ private theorem witnessReachable3 : ipcReachable witnessSt3 := by
     · split at hLk
       · cases hLk; cases hMsg
       · cases hLk
-  · intro oid ntfn tid hLk _
-    rw [witnessSt3_lookup] at hLk
-    split at hLk
-    · cases hLk
-    · split at hLk
+  · refine ⟨fun oid ntfn hLk => ?_, fun tid tcb oid hLk hBl => ?_⟩
+    · rw [witnessSt3_lookup] at hLk
+      split at hLk
       · cases hLk
+      · split at hLk
+        · cases hLk
+        · cases hLk
+    · rw [witnessSt3_lookup] at hLk
+      split at hLk
       · cases hLk
+      · split at hLk
+        · cases hLk; cases hBl
+        · cases hLk
   · -- WS-OD OD2.6: no Reply carries a donation and no SchedContext heads a
     -- stack, so the chain invariant holds by evaluation.
     exact donationChainWellFormed_of_no_donations _
@@ -2874,11 +2880,16 @@ private theorem witnessReachable4 : ipcReachable witnessSt4 := by
     split at hLk
     · cases hLk
     · exact witnessReachable3.pendingMessageCapBadgesWellFormed _ _ _ hLk hMsg
-  · intro oid ntfn tid hLk hMem
-    rw [witnessSt4_lookup] at hLk
-    split at hLk
-    · cases hLk
-    · exact absurd hLk (fun h => witnessSt3_no_notification _ _ h)
+  · refine ⟨fun oid ntfn hLk => ?_, fun tid tcb oid hLk hBl => ?_⟩
+    · rw [witnessSt4_lookup] at hLk
+      split at hLk
+      · cases hLk
+      · exact absurd hLk (fun h => witnessSt3_no_notification _ _ h)
+    · rw [witnessSt4_lookup] at hLk
+      split at hLk
+      · cases hLk
+      · obtain ⟨n, hN, -⟩ := witnessReachable3.notificationWaiterConsistent.2 tid tcb oid hLk hBl
+        exact absurd hN (fun h => witnessSt3_no_notification _ _ h)
   · -- WS-OD OD2.6: the fresh Reply this state adds carries neither a donation
     -- nor a stack link (`Reply.empty`'s defaults), and the SchedContext beneath
     -- it still heads no stack.

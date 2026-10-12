@@ -97,29 +97,6 @@ theorem clearReschedulePendingOnCore_preserves_ipcInvariantFull (st : SystemStat
     ipcInvariantFull (st.clearReschedulePendingOnCore c) :=
   ipcInvariantFull_of_flagOnlyWrite (s1 := st) rfl (fun _ => by simp) (fun _ => by simp) h
 
-/-- A one-TCB rewrite that keeps that TCB's `ipcState` and binding, with the
-scheduler untouched, frames `passiveServerIdle`: the rewritten thread pulls
-back to its pre-image with the same idle obligations, and every other thread
-is untouched. -/
-theorem passiveServerIdleFrame_of_tcbFieldUpdate {st st' : SystemState}
-    (key : SeLe4n.ObjId) (oldTcb newTcb : TCB)
-    (hPre : st.objects[key]? = some (.tcb oldTcb))
-    (hAt : st'.objects[key]? = some (.tcb newTcb))
-    (hFrame : ∀ oid : SeLe4n.ObjId, oid ≠ key → st'.objects[oid]? = st.objects[oid]?)
-    (hIpc : newTcb.ipcState = oldTcb.ipcState)
-    (hBind : newTcb.schedContextBinding = oldTcb.schedContextBinding)
-    (hSched : st'.scheduler = st.scheduler) :
-    passiveServerIdleFrame st st' := by
-  refine ⟨fun tid tcb' hT hU hQ hC _ => ?_⟩
-  rw [hSched] at hQ hC
-  by_cases hK : tid.toObjId = key
-  · rw [hK, hAt] at hT
-    obtain rfl : newTcb = tcb' := by
-      simpa only [Option.some.injEq, KernelObject.tcb.injEq] using hT
-    exact ⟨oldTcb, by rw [hK]; exact hPre, hBind ▸ hU, hQ, hC, hIpc.symm⟩
-  · rw [hFrame _ hK] at hT
-    exact ⟨tcb', hT, hU, hQ, hC, rfl⟩
-
 -- ============================================================================
 -- §2  Service-registry arms (`.serviceRegister`, `.serviceRevoke`)
 -- ============================================================================
@@ -271,7 +248,7 @@ theorem setIPCBufferOp_preserves_ipcInvariantFull
 -- ============================================================================
 
 /-- A store replacing one notification with one of identical queue content
-(`state`, `waitingThreads`, `pendingBadge` — the binding and lock word are
+(`state`, `waitHead`, `pendingBadge` — the binding and lock word are
 free) preserves the whole bundle: the notification-reading conjuncts see the
 same content, no other conjunct reads the key, and the scheduler is
 untouched. -/
@@ -281,7 +258,7 @@ theorem storeObject_notificationContentUpdate_preserves_ipcInvariantFull
     (hPre : st.objects[nid]? = some (.notification ntfn))
     (hStore : storeObject nid (.notification ntfn') st = .ok ((), st1))
     (hState : ntfn'.state = ntfn.state)
-    (hWaiters : ntfn'.waitingThreads = ntfn.waitingThreads)
+    (hWaiters : ntfn'.waitHead = ntfn.waitHead)
     (hBadge : ntfn'.pendingBadge = ntfn.pendingBadge) :
     ipcInvariantFull st1 := by
   have hAt := storeObject_objects_eq st st1 nid (.notification ntfn') hObjInv hStore
@@ -3466,7 +3443,7 @@ def retypeReplacementFresh : KernelObject → Prop
       t.pendingReceiveReply = none ∧ t.timeoutBudget = none
   | .endpoint ep => ep.sendQ.head = none ∧ ep.sendQ.tail = none ∧
       ep.receiveQ.head = none ∧ ep.receiveQ.tail = none
-  | .notification n => n.state = .idle ∧ n.waitingThreads.val = [] ∧ n.pendingBadge = none
+  | .notification n => n.state = .idle ∧ n.waitHead = none ∧ n.pendingBadge = none
   | .reply r => r.caller = none
   | .cnode cn => ∀ slot : SeLe4n.Slot, cn.lookup slot = none
   | .schedContext _ => True
@@ -3538,8 +3515,7 @@ structure retypeTargetDetached (st : SystemState) (target : SeLe4n.ObjId) : Prop
   tcbNotBound : ∀ t : TCB, st.objects[target]? = some (.tcb t) →
     ∀ scId, t.schedContextBinding ≠ .bound scId
   tcbNotWaiter : ∀ t : TCB, st.objects[target]? = some (.tcb t) →
-    ∀ (oid : SeLe4n.ObjId) (n : Notification), st.objects[oid]? = some (.notification n) →
-    t.tid ∉ n.waitingThreads.val
+    ∀ oid : SeLe4n.ObjId, t.ipcState ≠ .blockedOnNotification oid
   /-- **WS-HP HP10.5**: no scheduling context records this thread as the origin of
       a reservation on loan.
 
@@ -4393,35 +4369,28 @@ private theorem removeFromAllEndpointQueues_id_of_unqueued
       | tcb _ | notification _ | cnode _ | vspaceRoot _ | untyped _
       | schedContext _ | reply _ | frame _ | pageTable _ => rfl)
 
-/-- The victim waits on no notification, so the wait-list sweep is the
-literal identity. -/
-private theorem removeFromAllNotificationWaitLists_id_of_no_waits
+/-- The victim waits on no notification, so the wait-list removal is the
+literal identity: it reads the queue the victim's own state names, and there
+is none. -/
+private theorem removeFromNotificationWaitQueue_id_of_no_waits
     (st : SystemState) (tid : SeLe4n.ThreadId)
-    (hObjInv : st.objects.invExt)
-    (hNoWait : ∀ (oid : SeLe4n.ObjId) (n : Notification),
-      st.objects[oid]? = some (.notification n) → tid ∉ n.waitingThreads.val) :
-    removeFromAllNotificationWaitLists st tid = st := by
-  unfold removeFromAllNotificationWaitLists
-  exact RobinHood.RHTable.fold_preserves_of_lookup st.objects st _ (· = st) hObjInv rfl
-    (fun acc oid obj hGet hAcc => by
-      rw [hAcc]
-      cases obj with
-      | notification n =>
-          have hN : st.objects[oid]? = some (.notification n) := by
-            rw [RHTable_getElem?_eq_get?]; exact hGet
-          have hC : n.waitingThreads.val.contains tid = false := by
-            simp [hNoWait oid n hN]
-          simp only [SystemState.getNotificationWitnessed?_eq_some
-            ((SystemState.getNotification?_eq_some_iff st oid n).mpr hN), hC]
-          rfl
-      | tcb _ | endpoint _ | cnode _ | vspaceRoot _ | untyped _
-      | schedContext _ | reply _ | frame _ | pageTable _ => rfl)
+    (hNoWait : ∀ tcb : TCB, st.getTcb? tid = some tcb →
+      ∀ oid : SeLe4n.ObjId, tcb.ipcState ≠ .blockedOnNotification oid) :
+    removeFromNotificationWaitQueue st tid = st := by
+  unfold removeFromNotificationWaitQueue
+  cases hT : st.getTcb? tid with
+  | none => rfl
+  | some tcb =>
+    simp only []
+    cases hS : tcb.ipcState with
+    | blockedOnNotification oid => exact absurd hS (hNoWait tcb hT oid)
+    | _ => rfl
 
 /-- **WS-HP HP10.5**: the reservation-origin scrub is the identity when no
 scheduling context records this thread as an origin — the pack's
 `tcbNotDonationOrigin`.
 
-The sibling of `removeFromAllNotificationWaitLists_id_of_no_waits` above, in the
+The sibling of `removeFromNotificationWaitQueue_id_of_no_waits` above, in the
 same shape and for the same reason: `cleanupTcbReferences` is claimed to be an
 identity under the detachment pack, and a fold that rewrites nothing must be shown
 to rewrite nothing rather than assumed to. -/
@@ -4487,10 +4456,12 @@ private theorem cleanupTcbReferences_id_of_detached
             | exact hDet.notHead oid ep tcb.tid hEp (Or.inr hBad) hSelf
             | exact hDet.notTail oid ep tcb.tid hEp (Or.inl hBad) hSelf
             | exact hDet.notTail oid ep tcb.tid hEp (Or.inr hBad) hSelf)]
-  rw [removeFromAllNotificationWaitLists_id_of_no_waits stX tcb.tid (hO ▸ hObjInv)
-    (fun oid n hN => by
-      rw [hO] at hN
-      exact hDet.tcbNotWaiter tcb hObj oid n hN)]
+  rw [removeFromNotificationWaitQueue_id_of_no_waits stX tcb.tid
+    (fun tcbX hLk => by
+      have hRaw := (SystemState.getTcb?_eq_some_iff stX tcb.tid tcbX).mp hLk
+      rw [hO, hDet.tcbSelfId tcb hObj, hObj] at hRaw
+      cases hRaw
+      exact hDet.tcbNotWaiter _ hObj)]
   -- **WS-HP HP10.5**: and the origin scrub, from the pack's own clause.
   exact clearDonationOriginReferences_id_of_no_origin stX tcb.tid (hO ▸ hObjInv)
     (fun oid sc hS => by
@@ -4599,7 +4570,7 @@ private theorem retypeTargetDetached_of_objects_scheduler_eq
   · intro t hT; rw [hObjs] at hT; exact hDet.tcbAllowedState t hT
   · intro t hT; rw [hObjs] at hT; exact hDet.tcbNotDonated t hT
   · intro t hT; rw [hObjs] at hT; exact hDet.tcbNotBound t hT
-  · intro t hT oid n hN; rw [hObjs] at hT hN; exact hDet.tcbNotWaiter t hT oid n hN
+  · intro t hT; rw [hObjs] at hT; exact hDet.tcbNotWaiter t hT
   -- **WS-HP HP10.5**: the origin clause travels on `objects` alone, like its
   -- neighbours above.
   · intro t hT oid sc hS; rw [hObjs] at hT hS

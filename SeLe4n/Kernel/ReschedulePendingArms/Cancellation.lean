@@ -373,13 +373,15 @@ theorem removeFromAllEndpointQueues_keyInputsEq (st : SystemState) (tid : SeLe4n
   keyInputsEq_of_lookups
     (fun t => by
       rw [removeFromAllEndpointQueues_getTcb?_eq_splice st tid hInv t]
-      exact spliceOutMidQueueNode_tcbField_frame tcbKeyFields (fun _ _ _ _ => rfl) st tid hInv t)
+      exact spliceOutMidQueueNode_tcbField_frame tcbKeyFields (fun _ _ _ _ _ _ => rfl) st tid hInv t)
     (fun s => by rw [removeFromAllEndpointQueues_getSchedContext?_eq st tid hInv s])
 
-theorem removeFromAllNotificationWaitLists_keyInputsEq (st : SystemState) (tid : SeLe4n.ThreadId)
-    (hInv : st.objects.invExt) : keyInputsEq st (removeFromAllNotificationWaitLists st tid) :=
-  keyInputsEq_of_lookups_eq (removeFromAllNotificationWaitLists_getTcb?_eq st tid hInv)
-    (removeFromAllNotificationWaitLists_getSchedContext?_eq st tid hInv)
+theorem removeFromNotificationWaitQueue_keyInputsEq (st : SystemState) (tid : SeLe4n.ThreadId)
+    (hInv : st.objects.invExt) : keyInputsEq st (removeFromNotificationWaitQueue st tid) :=
+  keyInputsEq_of_lookups
+    (fun t => removeFromNotificationWaitQueue_tcbField_frame tcbKeyFields
+      (fun _ _ _ _ _ _ => rfl) st tid hInv t)
+    (fun s => by rw [removeFromNotificationWaitQueue_getSchedContext?_eq st tid hInv s])
 
 /-! ### The teardown covers -/
 
@@ -431,9 +433,9 @@ theorem cancelIpcBlocking_stepCovers (e : CoreId) (st : SystemState) (tid : SeLe
   | blockedOnCall _ => exact hEp
   | blockedOnNotification _ =>
     exact stepCovers_trans
-      (stepCovers_of_keys_sched (removeFromAllNotificationWaitLists_keyInputsEq st tid hInv)
-        (removeFromAllNotificationWaitLists_scheduler_eq st tid))
-      (hRestore _ (removeFromAllNotificationWaitLists_preserves_objects_invExt st tid hInv))
+      (stepCovers_of_keys_sched (removeFromNotificationWaitQueue_keyInputsEq st tid hInv)
+        (removeFromNotificationWaitQueue_scheduler_eq st tid))
+      (hRestore _ (removeFromNotificationWaitQueue_preserves_objects_invExt st tid hInv))
   | blockedOnReply _ _ =>
     have h1 := Lifecycle.Suspend.returnDonationToCancelledCaller_preserves_objects_invExt
       st tid tcb hInv

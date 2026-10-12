@@ -159,7 +159,7 @@ def ak9c_02_missing_handler_rejected : IO Unit := do
     (irqHandlersReferenceNotifications cfg = false)
 
 private def minimalNotif : Notification :=
-  { state := .idle, waitingThreads := SeLe4n.NoDupList.empty }
+  { state := .idle }
 
 private def minimalTcb (tid : ThreadId) : TCB :=
   { tid := tid

@@ -486,130 +486,28 @@ def cnode_slotsUnique_holds_witness : IO Unit := do
   let _hUniq : cn.slotsUnique := SeLe4n.Model.CNode.slotsUnique_holds cn
   expect "CNode.slotsUnique_holds is reachable" true
 
--- ============================================================================
--- WS-RC R4.C (DEEP-IPC-05; subsumes DEEP-IPC-01) — NoDupList structural API coverage
--- ============================================================================
-
-/-- WS-RC R4.C: `NoDupList.empty` is empty. -/
-def noDupList_empty_isEmpty : IO Unit := do
-  let l : SeLe4n.NoDupList ThreadId := SeLe4n.NoDupList.empty
-  expect "NoDupList.empty.val = []" (l.val = [])
-  expect "NoDupList.empty.isEmpty" l.isEmpty
-
-/-- WS-RC R4.C: `NoDupList.consWithGuard?` returns `some` for a fresh
-    element. -/
-def noDupList_consWithGuard?_fresh_element : IO Unit := do
-  let l : SeLe4n.NoDupList ThreadId := SeLe4n.NoDupList.empty
-  let tid : ThreadId := ⟨42⟩
-  match l.consWithGuard? tid with
-  | some l' =>
-    expect "consWithGuard? on fresh element returns some"
-      (l'.val = [tid])
-  | none =>
-    throw <| IO.userError "consWithGuard? rejected fresh element"
-
-/-- WS-RC R4.C: `NoDupList.consWithGuard?` returns `none` for a duplicate
-    element. This is the operational duplicate-guard subsumption. -/
-def noDupList_consWithGuard?_duplicate_rejected : IO Unit := do
-  let tid : ThreadId := ⟨42⟩
-  -- Build a NoDupList containing `tid` via the smart constructor.
-  match (SeLe4n.NoDupList.empty : SeLe4n.NoDupList ThreadId).consWithGuard? tid with
-  | none => throw <| IO.userError "fresh insert should succeed"
-  | some l =>
-    -- Now attempt to insert `tid` again. Should return `none`.
-    match l.consWithGuard? tid with
-    | none => expect "consWithGuard? rejects duplicate" true
-    | some _ => throw <| IO.userError "consWithGuard? accepted duplicate"
-
-/-- WS-RC R4.C: `NoDupList.tail?` returns `none` for empty list. -/
-def noDupList_tail?_empty : IO Unit := do
-  let l : SeLe4n.NoDupList ThreadId := SeLe4n.NoDupList.empty
-  match l.tail? with
-  | none => expect "tail? on empty returns none" true
-  | some _ => throw <| IO.userError "tail? returned some on empty"
-
-/-- WS-RC R4.C: `NoDupList.tail?` pops the head correctly. -/
-def noDupList_tail?_pop_head : IO Unit := do
-  let tid1 : ThreadId := ⟨1⟩
-  let tid2 : ThreadId := ⟨2⟩
-  match (SeLe4n.NoDupList.empty : SeLe4n.NoDupList ThreadId).consWithGuard? tid2 with
-  | none => throw <| IO.userError "step 1 failed"
-  | some l1 =>
-    match l1.consWithGuard? tid1 with
-    | none => throw <| IO.userError "step 2 failed"
-    | some l2 =>
-      -- l2.val = [tid1, tid2] (LIFO order from cons)
-      match l2.tail? with
-      | none => throw <| IO.userError "tail? returned none on non-empty"
-      | some (head, rest) =>
-        expect "tail? head is tid1" (head = tid1)
-        expect "tail? tail.val = [tid2]" (rest.val = [tid2])
-
-/-- WS-RC R4.C: `NoDupList.filter` preserves Nodup unconditionally. -/
-def noDupList_filter_preserves_membership : IO Unit := do
-  let tid1 : ThreadId := ⟨1⟩
-  let tid2 : ThreadId := ⟨2⟩
-  match (SeLe4n.NoDupList.empty : SeLe4n.NoDupList ThreadId).consWithGuard? tid2 with
-  | none => throw <| IO.userError "setup step 1"
-  | some l1 =>
-    match l1.consWithGuard? tid1 with
-    | none => throw <| IO.userError "setup step 2"
-    | some l2 =>
-      let filtered := l2.filter (· != tid1)
-      expect "filter removes tid1" (filtered.val = [tid2])
-      expect "filter result is Nodup (structural)" true
-
-/-- WS-RC R4.C: `NoDupList.nodup_witness` is the structural discharge for
-    `uniqueWaiters`. -/
-def noDupList_nodup_witness : IO Unit := do
-  let l : SeLe4n.NoDupList ThreadId := SeLe4n.NoDupList.empty
-  let _hNd : l.val.Nodup := SeLe4n.NoDupList.nodup_witness l
-  expect "NoDupList.nodup_witness is reachable" true
-
-/-- WS-RC R4.C: `consWithGuard?_eq_some_iff` bridge — links runtime `some`
-    return to underlying-list cons equation. -/
-def consWithGuard?_eq_some_iff_bridge : IO Unit := do
-  let tid : ThreadId := ⟨7⟩
-  match (SeLe4n.NoDupList.empty : SeLe4n.NoDupList ThreadId).consWithGuard? tid with
-  | none => throw <| IO.userError "consWithGuard? rejected fresh"
-  | some l' =>
-    -- Elaborate the bridge theorem at this concrete instantiation; if it
-    -- typechecks, the bridge is reachable from user code.
-    let _hBridge :=
-      (SeLe4n.NoDupList.consWithGuard?_eq_some_iff tid SeLe4n.NoDupList.empty l').mp
-    expect "consWithGuard?_eq_some_iff bridge reachable" true
-
-/-- WS-RC R4.C: `tail?_eq_none_iff` bridge for empty list. -/
-def tail?_eq_none_iff_bridge_empty : IO Unit := do
-  let l : SeLe4n.NoDupList ThreadId := SeLe4n.NoDupList.empty
-  let _hForward : l.tail? = none ↔ l.val = [] :=
-    SeLe4n.NoDupList.tail?_eq_none_iff l
-  expect "tail?_eq_none_iff bridge reachable on empty" true
-
 /-- WS-RC R4 close-out P1: plan-named theorem reachability gate.
 
     After the A2/C2 cleanup retired the state-level `cspaceSlotUnique` and
     `uniqueWaiters` predicates along with their `_trivial` discharge
-    helpers, four plan-named theorems remain reachable as the canonical
+    helpers, three plan-named theorems remain reachable as the canonical
     discharge witnesses for the structural promotion:
 
     1. `SeLe4n.Model.CNode.cnode_slots_unique` — per-CNode slot-uniqueness
        discharge via `UniqueSlotMap.hWF`.
-    2. `SeLe4n.Kernel.notification_waiters_nodup` — per-Notification Nodup
-       discharge via `NoDupList.hNodup`.
-    3. `SeLe4n.Kernel.cspaceSlotUnique_promoted_to_structural` — R4.A.7
+    2. `SeLe4n.Kernel.cspaceSlotUnique_promoted_to_structural` — R4.A.7
        marker theorem (companion of the umbrella
        `r4_structural_fix_discharge_index_documented`).
-    4. `SeLe4n.Kernel.uniqueWaiters_promoted_to_structural` — R4.C.8
-       marker theorem.
+    3. `SeLe4n.Kernel.uniqueWaiters_promoted_to_structural` — R4.C.8
+       marker theorem.  (WS-ZA ZA4.4 retired the per-notification
+       duplicate-free waiter list: a waiter's membership is its own
+       `ipcState`, so there is no list left to witness.)
 
-    If any of these four named identifiers is deleted or renamed, this
+    If any of these named identifiers is deleted or renamed, this
     test fails to elaborate. -/
 def r4_close_out_named_theorems_reachable : IO Unit := do
   let _ : ∀ (cn : CNode), cn.slotsUnique :=
     @SeLe4n.Model.CNode.cnode_slots_unique
-  let _ : ∀ (n : Notification), n.waitingThreads.val.Nodup :=
-    @SeLe4n.Kernel.notification_waiters_nodup
   let _ : True := @SeLe4n.Kernel.cspaceSlotUnique_promoted_to_structural
   let _ : True := @SeLe4n.Kernel.uniqueWaiters_promoted_to_structural
   expect "WS-RC R4 close-out P1: plan-named theorems reachable" true
@@ -1141,7 +1039,7 @@ def getEndpoint_discriminates_variants : IO Unit := do
 getEndpoint? fails. -/
 def getNotification_discriminates_variants : IO Unit := do
   let id : ObjId := ⟨50⟩
-  let ntfn : Notification := { state := .idle, waitingThreads := SeLe4n.NoDupList.empty }
+  let ntfn : Notification := { state := .idle }
   let base : SystemState := default
   let st : SystemState :=
     { base with objects := base.objects.insert id (.notification ntfn) }
@@ -2346,16 +2244,6 @@ def main : IO Unit := do
   uniqueSlotMap_ofListWF_roundtrip
   uniqueSlotMap_keys_unique_witness
   cnode_slotsUnique_holds_witness
-  -- WS-RC R4.C (DEEP-IPC-05; subsumes DEEP-IPC-01) — NoDupList structural API coverage
-  noDupList_empty_isEmpty
-  noDupList_consWithGuard?_fresh_element
-  noDupList_consWithGuard?_duplicate_rejected
-  noDupList_tail?_empty
-  noDupList_tail?_pop_head
-  noDupList_filter_preserves_membership
-  noDupList_nodup_witness
-  consWithGuard?_eq_some_iff_bridge
-  tail?_eq_none_iff_bridge_empty
   -- WS-RC R4 close-out P1: plan-named theorem reachability gate
   r4_close_out_named_theorems_reachable
   -- WS-RC R4 close-out B1: ScrubToken structural-opacity security pin

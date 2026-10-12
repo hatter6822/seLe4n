@@ -868,7 +868,7 @@ structure SystemState where
       slot layout and is not deterministic across resize operations.
 
       **Audit (S4-J):** Two lifecycle cleanup functions use `objects.fold`:
-      `removeFromAllEndpointQueues` and `removeFromAllNotificationWaitLists`
+      `removeFromAllEndpointQueues` and `removeFromNotificationWaitQueue`
       (Lifecycle/Operations.lean). Both are order-independent — they apply
       the same idempotent per-object transformation regardless of iteration
       order. The `freeze` function in FrozenState.lean uses `objects.toList`

@@ -457,9 +457,8 @@ theorem notificationSignal_preserves_ipcStateQueueMembershipConsistent
     | notification ntfn =>
       simp only [hObj] at hStep
       -- WS-RC R4.C: `notificationSignal` pops via `tail?`.
-      cases hWaiters : ntfn.waitingThreads.tail? with
-      | some headTail =>
-        obtain ⟨waiter, rest⟩ := headTail
+      cases hWaiters : ntfn.waitHead with
+      | some waiter =>
         simp only [hWaiters] at hStep
         generalize hStore1 : storeObject notificationId _ st = r1 at hStep
         cases r1 with
@@ -491,14 +490,14 @@ theorem notificationSignal_preserves_ipcStateQueueMembershipConsistent
           hStep
 
 /-- notificationWait preserves ipcStateQueueMembershipConsistent. -/
-theorem notificationWait_preserves_ipcStateQueueMembershipConsistent
+theorem notificationWaitPark_preserves_ipcStateQueueMembershipConsistent
     (st st' : SystemState) (notificationId : SeLe4n.ObjId) (waiter : SeLe4n.ThreadId)
     (result : Option SeLe4n.Badge)
     (hInv : ipcStateQueueMembershipConsistent st)
     (hObjInv : st.objects.invExt)
-    (hStep : notificationWait notificationId waiter st = .ok (result, st')) :
+    (hStep : notificationWaitPark notificationId waiter st = .ok (result, st')) :
     ipcStateQueueMembershipConsistent st' := by
-  unfold notificationWait SystemState.getObject? at hStep
+  unfold notificationWaitPark SystemState.getObject? at hStep
   cases hObj : st.objects[notificationId]? with
   | none => simp [hObj] at hStep
   | some obj => cases obj with
@@ -536,11 +535,7 @@ theorem notificationWait_preserves_ipcStateQueueMembershipConsistent
           simp only [hLookup] at hStep
           split at hStep
           · simp at hStep
-          · -- WS-RC R4.C: case-split on consWithGuard?
-            cases hCons : ntfn.waitingThreads.consWithGuard? waiter with
-            | none => simp [hCons] at hStep
-            | some wt' =>
-            simp only [hCons] at hStep
+          · -- WS-ZA ZA4.4: the park records the waiter as the queue's tail
             generalize hStore1 : storeObject notificationId _ st = r1 at hStep
             cases r1 with
             | error e => simp at hStep

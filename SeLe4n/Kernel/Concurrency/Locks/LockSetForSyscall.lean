@@ -311,8 +311,8 @@ def lockSetForSyscall (sid : SyscallId) (ops : SyscallLockOperands)
                 endpointId
   -- The two notification arms. The signal's footprint is bound-delivery aware
   -- (`boundDeliveryTarget?` folds the bound TCB's endpoint and TCB writes in);
-  -- the wait's has no state-dependent member at all beyond the caller's root,
-  -- which is why its resolver takes no state.
+  -- the wait's one state-dependent member is the queue's old tail, whose
+  -- successor link a blocking wait rewrites (WS-ZA ZA4.4).
   | .notificationSignal =>
       (st.getTcb? ops.caller).bind fun caller =>
         ops.targetObject.map fun notificationId =>
@@ -320,7 +320,7 @@ def lockSetForSyscall (sid : SyscallId) (ops : SyscallLockOperands)
   | .notificationWait =>
       (st.getTcb? ops.caller).bind fun caller =>
         ops.targetObject.map fun notificationId =>
-          lockSet_notificationWaitOnCore notificationId ops.caller caller.cspaceRoot
+          lockSet_notificationWaitOnCore st notificationId ops.caller caller.cspaceRoot
   -- Undeclared: the caller keeps its existing serialisation. Each of
   -- these becomes a `some` in a later cut, paired with the coverage
   -- proof that its footprint contains every write the op performs.
@@ -605,14 +605,14 @@ theorem lockSetForSyscall_notificationSignal_isSome_iff
   cases st.getTcb? ops.caller <;> cases ops.targetObject <;> simp
 
 /-- **WS-RR RR7.11**: `.notificationWait` is wired to the resolved wait
-footprint — the one IPC footprint with no state-dependent member, so its
-resolver takes no state. -/
+footprint, which reads the notification's old tail from the state (WS-ZA
+ZA4.4). -/
 @[simp] theorem lockSetForSyscall_notificationWait
     (ops : SyscallLockOperands) (st : SystemState) :
     lockSetForSyscall .notificationWait ops st
       = (st.getTcb? ops.caller).bind fun caller =>
           ops.targetObject.map fun notificationId =>
-            lockSet_notificationWaitOnCore notificationId ops.caller caller.cspaceRoot := rfl
+            lockSet_notificationWaitOnCore st notificationId ops.caller caller.cspaceRoot := rfl
 
 /-- **WS-RR RR7.11**: and it declares under the same two conditions. -/
 theorem lockSetForSyscall_notificationWait_isSome_iff
@@ -1079,12 +1079,14 @@ theorem lockSetForSyscall_notificationWait_eq
     (hTcb : st.getTcb? ops.caller = some caller)
     (hNtfn : ops.targetObject = some notificationId) :
     lockSetForSyscall .notificationWait ops st
-      = some (lockSet_notificationWaitOnCore notificationId ops.caller caller.cspaceRoot) := by
+      = some (lockSet_notificationWaitOnCore st notificationId ops.caller caller.cspaceRoot) := by
   unfold lockSetForSyscall
   rw [hTcb, hNtfn]; rfl
 
-/-- **WS-RR RR7.11**: the wait's two writes — the caller's own TCB (it blocks,
-or consumes a pending badge into its message field) and the notification. -/
+/-- **WS-RR RR7.11**: the wait's writes — the caller's own TCB (it blocks,
+or consumes a pending badge into its message field), the notification, and
+(WS-ZA ZA4.4) the queue's old tail, whose successor link a blocking wait points
+at the caller. -/
 theorem lockSetForSyscall_notificationWait_covers_writes
     (ops : SyscallLockOperands) (st : SystemState) (caller : TCB)
     (notificationId : ObjId) (S : LockSet)
@@ -1092,11 +1094,16 @@ theorem lockSetForSyscall_notificationWait_covers_writes
     (hNtfn : ops.targetObject = some notificationId)
     (hDecl : lockSetForSyscall .notificationWait ops st = some S) :
     (tcbLock ops.caller, AccessMode.write) ∈ S.pairs ∧
-    (notificationLock notificationId, AccessMode.write) ∈ S.pairs := by
+    (notificationLock notificationId, AccessMode.write) ∈ S.pairs ∧
+    ∀ t, notificationWaitTail? st notificationId = some t →
+      (tcbLock t, AccessMode.write) ∈ S.pairs := by
   rw [lockSetForSyscall_notificationWait_eq ops st caller notificationId hTcb hNtfn] at hDecl
   cases hDecl
-  exact ⟨lockSet_notificationWait_caller_tcb_write_mem _ _ _,
-         lockSet_notificationWait_notification_write_mem _ _ _⟩
+  refine ⟨lockSet_notificationWait_caller_tcb_write_mem _ _ _ _,
+         lockSet_notificationWait_notification_write_mem _ _ _ _, fun t hT => ?_⟩
+  unfold lockSet_notificationWaitOnCore
+  rw [hT]
+  exact lockSet_notificationWait_tail_tcb_write_mem _ _ _ _
 
 /-- **WS-RR RR7.11, the capstone: every object a caps-carrying `.send` changes
 has its lock declared write-mode in the footprint this resolver hands the

@@ -833,8 +833,9 @@ def endpointReferencesReservedIdleSlot (ep : Endpoint) : Bool :=
     and no capability can reach the idle TCB to clear it. -/
 def notificationReferencesReservedIdleSlot (notif : Notification) : Bool :=
   match notif with
-  | ⟨_state, waitingThreads, _hasPendingBadge, _pendingWord, boundTCB⟩ =>
-    !waitingThreads.all (fun t => !SeLe4n.Kernel.isIdleThreadId t) ||
+  | ⟨_state, waitHeadCode, waitTailCode, _hasPendingBadge, _pendingWord, boundTCB⟩ =>
+    (SeLe4n.ThreadId.ofOptCode waitHeadCode).any SeLe4n.Kernel.isIdleThreadId ||
+    (SeLe4n.ThreadId.ofOptCode waitTailCode).any SeLe4n.Kernel.isIdleThreadId ||
     boundTCB.any SeLe4n.Kernel.isIdleThreadId
 
 /-- PR #889 review round 8: a boot **CNode**'s capabilities, by their targets
@@ -863,7 +864,8 @@ def cnodeReferencesReservedIdleSlot (cn : CNode) : Bool :=
       check requires all three links empty); `pendingMessage` — carried
       capabilities, by their targets; `schedContextBinding`,
       `timeoutBudget` — SchedContext ids and the donation owner;
-      `replyObject`, `pendingReceiveReply` — reply object ids.
+      `replyObject`, `pendingReceiveReply` — reply object ids; `ntfnPrevCode`,
+      `ntfnNextCode` (WS-ZA ZA4.4) — thread ids, the notification-queue links.
     * `priority`, `domain`, `ipcBuffer` (a virtual address), `ipcState`,
       `threadState`, `timeSlice`, `deadline`, `registerContext`,
       `faultHandler` (a CPtr into the thread's own CSpace, not an id),
@@ -876,7 +878,7 @@ def tcbReferencesReservedIdleSlot (tcb : TCB) : Bool :=
      _timeSlice, _deadline, queuePrevCode, queuePPrevCode, queueNextCode, pendingMessage, _registerContext,
      _faultHandler, boundNotification, schedContextBinding, timeoutBudget,
      _maxControlledPriority, _pipBoost, _timedOut, _cpuAffinity, replyObject,
-     pendingReceiveReply, _pendingFault, _fpContext⟩ =>
+     pendingReceiveReply, _pendingFault, _fpContext, ntfnPrevCode, ntfnNextCode⟩ =>
     SeLe4n.Kernel.isIdleThreadId tid ||
     SeLe4n.Kernel.isIdleObjId cspaceRoot || SeLe4n.Kernel.isIdleObjId vspaceRoot ||
     boundNotification.any SeLe4n.Kernel.isIdleObjId ||
@@ -894,7 +896,9 @@ def tcbReferencesReservedIdleSlot (tcb : TCB) : Bool :=
      | .donated scId owner =>
        SeLe4n.Kernel.isIdleObjId scId.toObjId || SeLe4n.Kernel.isIdleThreadId owner) ||
     replyObject.any (fun rid => SeLe4n.Kernel.isIdleObjId rid.toObjId) ||
-    pendingReceiveReply.any (fun rid => SeLe4n.Kernel.isIdleObjId rid.toObjId)
+    pendingReceiveReply.any (fun rid => SeLe4n.Kernel.isIdleObjId rid.toObjId) ||
+    (SeLe4n.ThreadId.ofOptCode ntfnNextCode).any SeLe4n.Kernel.isIdleThreadId ||
+    (SeLe4n.ThreadId.ofOptCode ntfnPrevCode).any SeLe4n.Kernel.isIdleThreadId
 
 /-- PR #889 review round 8: the TCB reference check in projection form —
     the same Boolean, read off the fields rather than the constructor.  Proved
@@ -921,7 +925,9 @@ theorem tcbReferencesReservedIdleSlot_def (tcb : TCB) :
         | .donated scId owner =>
           SeLe4n.Kernel.isIdleObjId scId.toObjId || SeLe4n.Kernel.isIdleThreadId owner) ||
        tcb.replyObject.any (fun rid => SeLe4n.Kernel.isIdleObjId rid.toObjId) ||
-       tcb.pendingReceiveReply.any (fun rid => SeLe4n.Kernel.isIdleObjId rid.toObjId)) :=
+       tcb.pendingReceiveReply.any (fun rid => SeLe4n.Kernel.isIdleObjId rid.toObjId) ||
+       tcb.ntfnNext.any SeLe4n.Kernel.isIdleThreadId ||
+       tcb.ntfnPrev.any SeLe4n.Kernel.isIdleThreadId) :=
   rfl
 
 /-- PR #889 review round 8: a **VSpace root** — an ASID, a virtual-to-physical
@@ -1686,13 +1692,13 @@ def bootSafeEndpointCheck (ep : Endpoint) : Bool :=
     reservation's `notificationReferencesReservedIdleSlot`. -/
 def bootSafeNotificationCheck (notif : Notification) : Bool :=
   match notif with
-  | ⟨_state, _waitingThreads, _hasPendingBadge, _pendingWord, _boundTCB⟩ =>
-    decide (notif.state = .idle) && notif.waitingThreads.isEmpty &&
+  | ⟨_state, _waitHeadCode, _waitTailCode, _hasPendingBadge, _pendingWord, _boundTCB⟩ =>
+    decide (notif.state = .idle) && notif.waitHead.isNone && notif.waitTail.isNone &&
     notif.pendingBadge.isNone
 
 @[simp] theorem bootSafeNotificationCheck_def (notif : Notification) :
     bootSafeNotificationCheck notif =
-      (decide (notif.state = .idle) && notif.waitingThreads.isEmpty &&
+      (decide (notif.state = .idle) && notif.waitHead.isNone && notif.waitTail.isNone &&
        notif.pendingBadge.isNone) := rfl
 
 /-- **WS-BP BP3.5**: a boot **capability** carries a valid badge if it carries
@@ -1779,14 +1785,17 @@ theorem bootSafeCnodeCheck_caps {cn : CNode}
     `tid` is pinned to the slot by `PlatformConfig.wellFormed`; `pipBoost`,
     `timedOut`, `registerContext` and `pendingFault` are zero-valued
     by their own defaults and a config that sets them describes a thread mid
-    flight, which `threadState = .Inactive` already excludes. -/
+    flight, which `threadState = .Inactive` already excludes.  The
+    notification-queue links (`ntfnPrevCode`, `ntfnNextCode`) are read only
+    while the thread is blocked on a notification, which `ipcState = .ready`
+    excludes, and the wait that blocks it writes both. -/
 def bootSafeTcbCheck (tcb : TCB) : Bool :=
   match tcb with
   | ⟨_tid, _priority, _domain, _cspaceRoot, _vspaceRoot, _ipcBuffer, _ipcState, _threadState,
      _timeSlice, _deadline, _queuePrev, _queuePPrev, _queueNext, _pendingMessage,
      _registerContext, _faultHandler, _boundNotification, _schedContextBinding, _timeoutBudget,
      _maxControlledPriority, _pipBoost, _timedOut, _cpuAffinity, _replyObject,
-     _pendingReceiveReply, _pendingFault, _fpContext⟩ =>
+     _pendingReceiveReply, _pendingFault, _fpContext, _ntfnPrevCode, _ntfnNextCode⟩ =>
     tcb.pendingMessage.isNone && decide (tcb.ipcState = .ready) &&
     tcb.queueNext.isNone && tcb.queuePrev.isNone && tcb.queuePPrev.isNone &&
     tcb.timeoutBudget.isNone &&
@@ -1948,9 +1957,9 @@ private theorem bootSafeObjectCheck_sound_core (obj : KernelObject)
       ep.sendQ.head = none ∧ ep.sendQ.tail = none ∧
       ep.receiveQ.head = none ∧ ep.receiveQ.tail = none) ∧
     -- Notifications: idle + empty
-    -- WS-RC R4.C: `.val = []` references the underlying List projection.
     (∀ notif, obj = .notification notif →
-      notif.state = .idle ∧ notif.waitingThreads.val = [] ∧ notif.pendingBadge = none) ∧
+      notif.state = .idle ∧ notif.waitHead = none ∧ notif.waitTail = none ∧
+      notif.pendingBadge = none) ∧
     -- CNodes: structural, and (WS-BP BP3.5) every held capability's badge is
     -- valid and none is a reply capability
     (∀ cn, obj = .cnode cn →
@@ -2002,8 +2011,8 @@ private theorem bootSafeObjectCheck_sound_core (obj : KernelObject)
   | notification notif =>
     simp only [bootSafeObjectCheck, bootSafeNotificationCheck_def, Bool.and_eq_true,
       decide_eq_true_eq] at h
-    obtain ⟨⟨h1, h2⟩, h3⟩ := h
-    exact ⟨fun _ he => by injection he, fun _ he => by injection he; subst_vars; exact ⟨h1, List.isEmpty_iff.mp h2, Option.eq_none_of_isNone h3⟩,
+    obtain ⟨⟨⟨h1, h2⟩, h2t⟩, h3⟩ := h
+    exact ⟨fun _ he => by injection he, fun _ he => by injection he; subst_vars; exact ⟨h1, Option.eq_none_of_isNone h2, Option.eq_none_of_isNone h2t, Option.eq_none_of_isNone h3⟩,
            fun _ he => by injection he, fun _ he => by injection he,
            fun _ he => by injection he, fun _ he => by injection he,
            fun _ he => by injection he, fun _ he => by injection he⟩
@@ -2102,7 +2111,8 @@ theorem bootSafeObjectCheck_sound (obj : KernelObject)
       ep.sendQ.head = none ∧ ep.sendQ.tail = none ∧
       ep.receiveQ.head = none ∧ ep.receiveQ.tail = none) ∧
     (∀ notif, obj = .notification notif →
-      notif.state = .idle ∧ notif.waitingThreads.val = [] ∧ notif.pendingBadge = none) ∧
+      notif.state = .idle ∧ notif.waitHead = none ∧ notif.waitTail = none ∧
+      notif.pendingBadge = none) ∧
     (∀ cn, obj = .cnode cn →
       cn.slotCountBounded ∧ cn.depth ≤ maxCSpaceDepth ∧
       (cn.bitsConsumed > 0 → cn.wellFormed) ∧
@@ -4084,7 +4094,7 @@ def tcbAffinityDeclared (cores : List SeLe4n.Kernel.Concurrency.CoreId) (tcb : T
      _timeSlice, _deadline, _queuePrev, _queuePPrev, _queueNext, _pendingMessage,
      _registerContext, _faultHandler, _boundNotification, _schedContextBinding, _timeoutBudget,
      _maxControlledPriority, _pipBoost, _timedOut, _cpuAffinity, _replyObject,
-     _pendingReceiveReply, _pendingFault, _fpContext⟩ =>
+     _pendingReceiveReply, _pendingFault, _fpContext, _ntfnPrevCode, _ntfnNextCode⟩ =>
     match tcb.cpuAffinity with
     | some c => cores.contains c
     | none   => true
@@ -5263,7 +5273,8 @@ def bootSafeObject (obj : KernelObject) : Prop :=
   -- Notifications must be idle with empty wait lists and no pending badge
   -- WS-RC R4.C: `.val = []` references the underlying List projection.
   (∀ notif, obj = .notification notif →
-    notif.state = .idle ∧ notif.waitingThreads.val = [] ∧ notif.pendingBadge = none) ∧
+    notif.state = .idle ∧ notif.waitHead = none ∧ notif.waitTail = none ∧
+      notif.pendingBadge = none) ∧
   -- CNodes must satisfy slot-count bound, depth consistency, and badge validity
   -- WS-SM SM6.D / PR #822 Phase H (#1.a): a boot CNode holds no reply capabilities —
   -- reply caps are minted at runtime (`mintReplyCap`) from retyped Reply objects, never
@@ -5374,7 +5385,8 @@ def bootObjectShape (obj : KernelObject) : Prop :=
     ep.sendQ.head = none ∧ ep.sendQ.tail = none ∧
     ep.receiveQ.head = none ∧ ep.receiveQ.tail = none) ∧
   (∀ notif, obj = .notification notif →
-    notif.state = .idle ∧ notif.waitingThreads.val = [] ∧ notif.pendingBadge = none) ∧
+    notif.state = .idle ∧ notif.waitHead = none ∧ notif.waitTail = none ∧
+      notif.pendingBadge = none) ∧
   (∀ cn, obj = .cnode cn →
     cn.slotCountBounded ∧ cn.depth ≤ maxCSpaceDepth ∧
     (cn.bitsConsumed > 0 → cn.wellFormed) ∧
@@ -5742,7 +5754,7 @@ theorem proofLayerInvariantBundle_of_bootShape (ist : IntermediateState)
       have hNtfn := (hBS oid _ hObj).2.1 ntfn rfl
       show notificationInvariant ntfn
       unfold notificationInvariant notificationQueueWellFormed
-      rw [hNtfn.1]; exact ⟨hNtfn.2.1, hNtfn.2.2⟩
+      rw [hNtfn.1]; exact ⟨hNtfn.2.1, hNtfn.2.2.2⟩
     · -- dualQueueSystemInvariant
       refine ⟨?_, ?_, ?_, ?_, ?_⟩
       · -- all endpoints have well-formed queues
@@ -5806,7 +5818,7 @@ theorem proofLayerInvariantBundle_of_bootShape (ist : IntermediateState)
       · -- notificationBadgesWellFormed
         intro oid ntfn badge hObj hBadge
         have hNtfn := (hBS oid _ hObj).2.1 ntfn rfl
-        rw [hNtfn.2.2] at hBadge; exact absurd hBadge (by simp)
+        rw [hNtfn.2.2.2] at hBadge; exact absurd hBadge (by simp)
       · -- capabilityBadgesWellFormed
         intro oid cn slot cap badge hObj hSlotLookup hBadge
         have hCN := (hBS oid _ hObj).2.2.1 cn rfl
@@ -6002,9 +6014,8 @@ theorem proofLayerInvariantBundle_of_bootShape (ist : IntermediateState)
     · -- noStaleNotificationWaitReferences
       intro oid notif hObj tid hMem
       have hNtfn := (hBS oid _ hObj).2.1 notif rfl
-      -- WS-RC R4.C: hMem : tid ∈ notif.waitingThreads is `tid ∈ .val` via Membership.
-      have hMemVal : tid ∈ notif.waitingThreads.val := hMem
-      rw [hNtfn.2.1] at hMemVal; simp at hMemVal
+      rw [Notification.mem_queueEnds, hNtfn.2.1, hNtfn.2.2.1] at hMem
+      simp at hMem
     · -- serviceGraphInvariant
       constructor
       · -- serviceDependencyAcyclic
@@ -6124,13 +6135,16 @@ theorem proofLayerInvariantBundle_of_bootShape (ist : IntermediateState)
           have hTcbProps := (hBS tid.toObjId _ hLookup).2.2.2.1 tcb rfl
           rw [hTcbProps.2.2.2.2.2.2.1] at hBound; cases hBound
         | _ => trivial
-  -- AG7-D: notificationWaiterConsistent — boot notifications have empty waitingThreads
+  -- AG7-D, WS-ZA ZA4.4: notificationWaiterConsistent — boot notifications
+  -- have empty queues and no boot TCB is blocked on anything.
   have hNtfnWaiter : notificationWaiterConsistent ist.state := by
-    intro oid ntfn tid hObj hMem
-    have hNtfn := (hBS oid _ hObj).2.1 ntfn rfl
-    -- WS-RC R4.C: hMem : tid ∈ ntfn.waitingThreads via Membership instance.
-    have hMemVal : tid ∈ ntfn.waitingThreads.val := hMem
-    rw [hNtfn.2.1] at hMemVal; simp at hMemVal
+    refine ⟨fun oid ntfn hObj => ?_, fun tid tcb oid hObj hBl => ?_⟩
+    · have hNtfn := (hBS oid _ hObj).2.1 ntfn rfl
+      refine ⟨by rw [hNtfn.2.1, hNtfn.2.2.1], fun h hH => ?_, fun t hT => ?_⟩
+      · rw [hNtfn.2.1] at hH; cases hH
+      · rw [hNtfn.2.2.1] at hT; cases hT
+    · have hTcbProps := (hBS tid.toObjId _ hObj).2.2.2.1 tcb rfl
+      rw [hTcbProps.2.1] at hBl; cases hBl
   -- 12. pendingBounded (WS-SM SM7.B): boot never posts a shootdown descriptor,
   -- so the post-boot shootdown state is the quiescent default.
   have hPBBundle : SeLe4n.Kernel.Architecture.pendingBounded

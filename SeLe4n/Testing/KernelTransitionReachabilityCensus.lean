@@ -1137,7 +1137,6 @@ def nonExecutedTransitionsPlain : List Name :=
   , `SeLe4n.Kernel.lifecycleRetypeWithCleanupShootdownPerCore
   , `SeLe4n.Kernel.lifecycleRetypeWithCleanupShootdownPerCoreIcache
   , `SeLe4n.Kernel.lifecycleRevokeDeleteRetype
-  , `SeLe4n.Kernel.notificationPurgeBody
   , `SeLe4n.Kernel.notificationSignal
   , `SeLe4n.Kernel.notificationSignalBound
   , `SeLe4n.Kernel.notificationSignalBoundCrossCoreDispatch
@@ -1145,6 +1144,7 @@ def nonExecutedTransitionsPlain : List Name :=
   , `SeLe4n.Kernel.notificationWait
   , `SeLe4n.Kernel.notificationWaitChecked
   , `SeLe4n.Kernel.notificationWaitCrossCoreDispatch
+  , `SeLe4n.Kernel.notificationWaitPark
   , `SeLe4n.Kernel.processReplenishmentsDue
   , `SeLe4n.Kernel.purgedAndRestored
   , `SeLe4n.Kernel.registerInterface

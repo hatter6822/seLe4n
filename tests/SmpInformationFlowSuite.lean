@@ -4044,7 +4044,7 @@ private def lowNotification : SeLe4n.ObjId := ⟨1017⟩
 /-- The SM8.B fixture: `probeState` plus one high and one low notification, so a
 real `notificationSignal` can be run on each. -/
 private def idleNotification : Notification :=
-  { state := .idle, waitingThreads := SeLe4n.NoDupList.empty, hasPendingBadge := false, pendingWord := SeLe4n.Badge.zero }
+  { state := .idle, hasPendingBadge := false, pendingWord := SeLe4n.Badge.zero }
 
 private def niState : SystemState :=
   { probeState with
@@ -4315,7 +4315,8 @@ private def waitingNotificationState : SystemState :=
   { rendezvousState with
       objects := rendezvousState.objects.insert highNotification
         (.notification { state := .waiting
-                         waitingThreads := ⟨[crossCoreWaiter], by simp⟩
+                         waitHeadCode := SeLe4n.ThreadId.optCode (some crossCoreWaiter)
+                         waitTailCode := SeLe4n.ThreadId.optCode (some crossCoreWaiter)
                          hasPendingBadge := false, pendingWord := SeLe4n.Badge.zero
                          boundTCB := none })
       -- The victim must genuinely occupy core 2's run queue, or the composed
@@ -4443,7 +4444,7 @@ private def runComposedCancellationChecks : IO Unit := do
     (decide (SeLe4n.Kernel.determineTargetCore waitingNotificationState crossCoreWaiter = c2))
   assertBool "the teardown has real work: the victim is on the notification's waiter list"
     (match waitingNotificationState.getNotification? highNotification with
-     | some n => decide (n.waitingThreads.val.contains crossCoreWaiter = true)
+     | some n => decide (crossCoreWaiter ∈ n.queueEnds)
      | none => false)
   assertBool "the cancellation is confined to the victim's home core 2"
     (confinedCheck waitingNotificationState cancelPost c2)
@@ -4453,7 +4454,7 @@ private def runComposedCancellationChecks : IO Unit := do
     (!confinedCheck waitingNotificationState cancelPost c0)
   assertBool "the teardown really removed the victim from the waiter list"
     (match cancelPost.getNotification? highNotification with
-     | some n => decide (n.waitingThreads.val.contains crossCoreWaiter = false)
+     | some n => decide (crossCoreWaiter ∉ n.queueEnds)
      | none => false)
 
 -- ---------------------------------------------------------------------------
@@ -4512,7 +4513,6 @@ private def boundNotificationState : SystemState :=
                                        tail := some boundTcbThread } })).insert
           highNotification
             (.notification { state := .idle
-                             waitingThreads := ⟨[], by simp⟩
                              hasPendingBadge := false, pendingWord := SeLe4n.Badge.zero
                              boundTCB := some boundTcbThread }) }
 
@@ -5695,7 +5695,7 @@ private def declassTargetA : SeLe4n.ObjId := ⟨1018⟩
 private def declassTargetB : SeLe4n.ObjId := ⟨1019⟩
 
 private def declassPayload (badge : Nat) : KernelObject :=
-  .notification { state := .active, waitingThreads := SeLe4n.NoDupList.empty,
+  .notification { state := .active, 
                   hasPendingBadge := true, pendingWord := (SeLe4n.Badge.ofNatMasked badge) }
 
 /-- WS-SM SM9.D.13a: **the plan a `.declassify` runs.**
@@ -9999,7 +9999,7 @@ private def runDeclassifiedSignalReceiverGateChecks : IO Unit := do
      (match declassSignalReceiverDenied.1.getNotification? highNotification,
         declassSignalState.getNotification? highNotification with
       | some n', some n => decide (n'.pendingBadge = n.pendingBadge) &&
-                           decide (n'.waitingThreads.val = n.waitingThreads.val)
+                           decide (n'.waitHead = n.waitHead ∧ n'.waitTail = n.waitTail)
       | _, _ => false) &&
      runQueueAgreeOn declassSignalState declassSignalReceiverDenied.1 c2)
   -- The load-bearing negative: **being in the footprint is not authorization**.
@@ -10042,7 +10042,7 @@ private def runDeclassifiedSignalDeliveryChecks : IO Unit := do
        declassSignalRun.1.getNotification? highNotification with
      | some tcb, some n =>
          decide (tcb.ipcState = ThreadIpcState.ready) &&
-         decide (n.waitingThreads.val.contains crossCoreWaiter = false)
+         decide (crossCoreWaiter ∉ n.queueEnds)
      | _, _ => false)
   assertBool "the wake lands on the receiver's OWN home core, not the signaller's"
     (!runQueueAgreeOn declassSignalState declassSignalRun.1 c2 &&
@@ -10053,7 +10053,7 @@ private def runDeclassifiedSignalDeliveryChecks : IO Unit := do
     (let noWaiterState : SystemState :=
        { declassSignalState with
            objects := declassSignalState.objects.insert highNotification
-             (.notification { state := .idle, waitingThreads := ⟨[], by simp⟩,
+             (.notification { state := .idle,
                               hasPendingBadge := false, pendingWord := SeLe4n.Badge.zero, boundTCB := none }) }
      decide (declassifiedSignalReceiver? noWaiterState highNotification = none) &&
      (match notificationSignalDeclassifiedOnCore signalDeclassContext launderingDeclPolicy
@@ -10331,7 +10331,7 @@ disclosure pair below compares two states differing ONLY in the queue. -/
 private def declassNoWaiterState : SystemState :=
   { declassSignalState with
       objects := declassSignalState.objects.insert highNotification
-        (.notification { state := .idle, waitingThreads := ⟨[], by simp⟩,
+        (.notification { state := .idle,
                          hasPendingBadge := false, pendingWord := SeLe4n.Badge.zero, boundTCB := none }) }
 
 /-- §11.8  SM9.C.1 (PR #872 review) — the plain-waiter gate: a no-op on
@@ -10617,7 +10617,6 @@ private def boundDeliveryState : SystemState :=
   { rendezvousState with
       objects := rendezvousState.objects.insert highNotification
         (.notification { state := .active
-                         waitingThreads := ⟨[], by simp⟩
                          hasPendingBadge := true, pendingWord := (SeLe4n.Badge.ofNatMasked 0x7B)
                          boundTCB := some crossCoreReceiver }) }
 
@@ -11225,7 +11224,7 @@ private def runTaintFootprintChecks : IO Unit := do
         ∉ sendSet.pairs) &&
      decide ((SeLe4n.Kernel.Concurrency.stateLevelLock, SeLe4n.Kernel.Concurrency.AccessMode.write)
         ∉ (SeLe4n.Kernel.Concurrency.lockSet_notificationWait highCurrent probeCNode
-             highNotification).pairs))
+             highNotification none).pairs))
   -- WS-RR RR7.23: the retype declares it, for `serviceRegistry` and the CDT.
   assertBool "the retype DOES declare the coarse table lock, for the registry and the CDT"
     (decide ((SeLe4n.Kernel.Concurrency.stateLevelLock, SeLe4n.Kernel.Concurrency.AccessMode.write)

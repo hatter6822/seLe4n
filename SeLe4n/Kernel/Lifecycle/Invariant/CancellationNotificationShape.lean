@@ -13,7 +13,7 @@ import SeLe4n.Kernel.Lifecycle.Invariant.CancellationQueueShape
 # WS-RR RR7.22 (residual) — the cancellation purge's notification shape
 
 `cancelIpcBlocking`'s blocked-on-notification arm is
-`restoreToReadyCancelled (removeFromAllNotificationWaitLists st v) v`.  It is the
+`restoreToReadyCancelled (removeFromNotificationWaitQueue st v) v`.  It is the
 second of the operation's three sweeping arms, and it needs its own engine for
 the same reason the endpoint arm did: the purge is a fold over the whole object
 store, not a splice, so no result about either of the other arms applies to it.
@@ -25,7 +25,7 @@ every TCB survives verbatim — there is no splice, so no neighbour is relinked 
 which is why this module's pullback is an equality where the endpoint arm's is a
 record rewrite, and why acyclicity transports path-for-path rather than by an
 argument about what the operation added.  `ipcInvariant` itself was already
-proved of the purge (`removeFromAllNotificationWaitLists_preserves_ipcInvariant`);
+proved of the purge (`removeFromNotificationWaitQueue_preserves_ipcInvariant`);
 what is new is carrying it through the restore, and the other nineteen conjuncts.
 
 **Harder**: there is no splice to repair the swept thread's *neighbours*.  The
@@ -56,133 +56,46 @@ open SeLe4n.Kernel.RobinHood
 -- §1  The purge's pointwise readings
 -- ============================================================================
 
-/-- The purge writes only notifications, so a non-notification reading is the
-input's, in both directions. -/
-theorem removeFromAllNotificationWaitLists_nonNotification (st : SystemState)
-    (tid : SeLe4n.ThreadId) (hInv : st.objects.invExt)
-    (k : SeLe4n.ObjId) (o : KernelObject) (hNotN : ∀ n, o ≠ .notification n) :
-    ((removeFromAllNotificationWaitLists st tid).objects[k]? = some o) ↔
-      (st.objects[k]? = some o) := by
-  rw [removeFromAllNotificationWaitLists_eq_fold]
-  exact (RHTable.fold_preserves_of_lookup st.objects st (notificationPurgeBody tid)
-    (fun acc => acc.objects.invExt ∧ (acc.objects[k]? = some o ↔ st.objects[k]? = some o))
-    hInv ⟨hInv, Iff.rfl⟩
-    (by
-      rintro acc k' v' hGet ⟨hE, hA⟩
-      unfold notificationPurgeBody
-      cases v' with
-      | notification n =>
-        simp only
-        split
-        · split
-          · refine ⟨SystemState.rewriteObject_preserves_objects_invExt _ _ _ _ hE, ?_⟩
-            by_cases hK : k' = k
-            · subst hK
-              constructor
-              · intro hx
-                have hx' := (SystemState.rewriteObject_objects_self acc k' _ _ hE).symm.trans hx
-                exact absurd (Option.some.inj hx').symm (hNotN _)
-              · intro hx
-                have hx2 : st.objects.get? k' = some o := hx
-                rw [hGet] at hx2
-                exact absurd (Option.some.inj hx2).symm (hNotN n)
-            · constructor
-              · intro hx
-                have hx' := (SystemState.rewriteObject_objects_ne acc k' k _ _ hK hE).symm.trans hx
-                exact hA.mp hx'
-              · intro hx
-                rw [SystemState.rewriteObject_objects_ne acc k' k _ _ hK hE]
-                exact hA.mpr hx
-          · exact ⟨hE, hA⟩
-        · exact ⟨hE, hA⟩
-      | _ => exact ⟨hE, hA⟩)).2
+/-- **`v0.35.166`: the notification unlink writes no scheduling context.**
 
-/-- **`v0.35.166`: the notification purge writes no scheduling context.**
-
-One instance of the frame above at the SchedContext kind, crossed into the typed
-reading by the accessor's own kind bridge.
-
-Beside `removeFromAllNotificationWaitLists_nonNotification` for the reason the
-endpoint sweep's twin sits beside its own: WS-RR RR8.11 wrote both `private` in
+Beside the unlink's other pointwise readings for the reason the endpoint
+sweep's twin sits beside its own: WS-RR RR8.11 wrote both `private` in
 `IPC/Invariant/CancellationBundle.lean`, downstream of the destroy path and of
 the retype wrapper, so neither could state a reservation theorem over this
 sweep. -/
-theorem removeFromAllNotificationWaitLists_getSchedContext?_eq (st : SystemState)
+theorem removeFromNotificationWaitQueue_getSchedContext?_eq (st : SystemState)
     (tid : SeLe4n.ThreadId) (hInv : st.objects.invExt) (scId : SeLe4n.SchedContextId) :
-    (removeFromAllNotificationWaitLists st tid).getSchedContext? scId
+    (removeFromNotificationWaitQueue st tid).getSchedContext? scId
       = st.getSchedContext? scId := by
   refine SystemState.getSchedContext?_eq_of_kind_iff (fun sc => ?_)
-  exact removeFromAllNotificationWaitLists_nonNotification st tid hInv
+  exact removeFromNotificationWaitQueue_other_slot st tid hInv
     scId.toObjId (.schedContext sc) (fun n => fun hc => KernelObject.noConfusion hc)
+    (fun t => fun hc => KernelObject.noConfusion hc)
 
-/-- **`v0.35.166`: the notification purge writes no TCB at any key.**
+/-- **`v0.35.166`: the notification unlink frames every thread's home core.**
 
-The `Option`-level equality the affinity frame above is one consequence of, and
-the shape a consumer that needs more than the affinity reaches for. -/
-theorem removeFromAllNotificationWaitLists_getTcb?_eq (st : SystemState)
+The unlink rewrites a waiter's neighbours' notification-queue links and nothing
+else of any TCB, so the affinity map is unchanged. -/
+theorem removeFromNotificationWaitQueue_affinity_frame (st : SystemState)
     (tid : SeLe4n.ThreadId) (hInv : st.objects.invExt) (x : SeLe4n.ThreadId) :
-    (removeFromAllNotificationWaitLists st tid).getTcb? x = st.getTcb? x := by
-  have hIff : ∀ t : TCB,
-      (removeFromAllNotificationWaitLists st tid).getTcb? x = some t ↔ st.getTcb? x = some t :=
-    fun t => Iff.trans (SystemState.getTcb?_eq_some_iff _ x t)
-      (Iff.trans (removeFromAllNotificationWaitLists_nonNotification st tid hInv
-          x.toObjId (.tcb t) (fun n => fun hc => KernelObject.noConfusion hc))
-        (SystemState.getTcb?_eq_some_iff st x t).symm)
-  cases hA : st.getTcb? x with
-  | none =>
-    cases hB : (removeFromAllNotificationWaitLists st tid).getTcb? x with
-    | none => rfl
-    | some t => exact absurd ((hIff t).mp hB) (by rw [hA]; simp)
-  | some t => exact (hIff t).mpr hA
+    ((removeFromNotificationWaitQueue st tid).getTcb? x).map (·.cpuAffinity)
+      = (st.getTcb? x).map (·.cpuAffinity) :=
+  removeFromNotificationWaitQueue_tcbField_frame (·.cpuAffinity)
+    (fun _ _ _ _ _ _ => rfl) st tid hInv x
 
-/-- **`v0.35.166`: the notification purge frames every thread's home core.**
-
-The purge writes notifications, so it writes no TCB at all — the `getTcb?`
-readings are *equal*, and the affinity map follows.  Unlike the endpoint sweep's
-twin there is no splice underneath to account for. -/
-theorem removeFromAllNotificationWaitLists_affinity_frame (st : SystemState)
-    (tid : SeLe4n.ThreadId) (hInv : st.objects.invExt) (x : SeLe4n.ThreadId) :
-    ((removeFromAllNotificationWaitLists st tid).getTcb? x).map (·.cpuAffinity)
-      = (st.getTcb? x).map (·.cpuAffinity) := by
-  rw [removeFromAllNotificationWaitLists_getTcb?_eq st tid hInv x]
-
-/-- A notification reading after the purge came from one at the same key, with
-its `pendingBadge` untouched — the filter rewrites only the wait list and the
-state derived from it. -/
-theorem removeFromAllNotificationWaitLists_notification_badge (st : SystemState)
+/-- A notification reading after the unlink came from one at the same key, with
+its `pendingBadge` untouched — the unlink rewrites only the queue ends and the
+state derived from them. -/
+theorem removeFromNotificationWaitQueue_notification_badge (st : SystemState)
     (tid : SeLe4n.ThreadId) (hInv : st.objects.invExt)
     (k : SeLe4n.ObjId) (n : Notification)
-    (h : (removeFromAllNotificationWaitLists st tid).objects[k]? = some (.notification n)) :
+    (h : (removeFromNotificationWaitQueue st tid).objects[k]? = some (.notification n)) :
     ∃ n0, st.objects[k]? = some (.notification n0) ∧ n.pendingBadge = n0.pendingBadge := by
-  rw [removeFromAllNotificationWaitLists_eq_fold] at h
-  refine ((RHTable.fold_preserves_of_lookup st.objects st (notificationPurgeBody tid)
-    (fun acc => acc.objects.invExt ∧ ∀ m, acc.objects[k]? = some (.notification m) →
-      ∃ m0, st.objects[k]? = some (.notification m0) ∧ m.pendingBadge = m0.pendingBadge)
-    hInv ⟨hInv, fun m hm => ⟨m, hm, rfl⟩⟩ ?_).2 n h)
-  rintro acc k' v' hGet ⟨hE, hA⟩
-  unfold notificationPurgeBody
-  cases v' with
-  | notification _ =>
-    simp only
-    split
-    · rename_i n' hN' _
-      split
-      · refine ⟨SystemState.rewriteObject_preserves_objects_invExt _ _ _ _ hE, ?_⟩
-        intro m hm
-        by_cases hK : k' = k
-        · subst hK
-          -- The rewritten record is the ACCUMULATOR's, so its origin is what the
-          -- accumulator's own reading already traces back to.
-          have hm' := (SystemState.rewriteObject_objects_self acc k' _ _ hE).symm.trans hm
-          have hx := KernelObject.notification.inj (Option.some.inj hm')
-          obtain ⟨m0, hm0, hb⟩ :=
-            hA n' ((SystemState.getNotification?_eq_some_iff acc k' n').mp hN')
-          exact ⟨m0, hm0, by rw [← hx]; exact hb⟩
-        · have hm' := (SystemState.rewriteObject_objects_ne acc k' k _ _ hK hE).symm.trans hm
-          exact hA m hm'
-      · exact ⟨hE, hA⟩
-    · exact ⟨hE, hA⟩
-  | _ => exact ⟨hE, hA⟩
+  rcases (removeFromNotificationWaitQueue_reach st tid hInv).2 k with
+    hEq | ⟨n0, n', hn, hn', hB, _, _⟩ | ⟨t, t', _, ht', _⟩
+  · exact ⟨n, hEq ▸ h, rfl⟩
+  · rw [h] at hn'; cases hn'; exact ⟨n0, hn, hB⟩
+  · rw [h] at ht'; cases ht'
 
 -- ============================================================================
 -- §2  The purge-then-restore composite
@@ -190,35 +103,37 @@ theorem removeFromAllNotificationWaitLists_notification_badge (st : SystemState)
 
 def purgedAndRestored (st : SystemState) (v : SeLe4n.ThreadId)
     (frame : Option Architecture.SyscallReturnFrame) : SystemState :=
-  Lifecycle.Suspend.restoreToReadyStaging (removeFromAllNotificationWaitLists st v) v frame
+  Lifecycle.Suspend.restoreToReadyStaging (removeFromNotificationWaitQueue st v) v frame
 
 /-- Away from the swept thread, the composite's TCB readings are the pre-state's
-**verbatim** — the purge writes only notifications and the restore only the swept
-thread.  This is where the notification arm is simpler than the endpoint one:
-there is no splice, so no neighbour is relinked. -/
-theorem purgedAndRestored_tcb_iff (st : SystemState) (v : SeLe4n.ThreadId)
+up to the notification-queue links of the swept thread's neighbours, which the
+unlink rewrites to close the gap it leaves. -/
+theorem purgedAndRestored_tcb_backward (st : SystemState) (v : SeLe4n.ThreadId)
     (frame : Option Architecture.SyscallReturnFrame)
-    (hInv : st.objects.invExt) (k : SeLe4n.ObjId) (t : TCB) (hNe : k ≠ v.toObjId) :
-    ((purgedAndRestored st v frame).objects[k]? = some (.tcb t)) ↔
-      (st.objects[k]? = some (.tcb t)) := by
-  have hExt : (removeFromAllNotificationWaitLists st v).objects.invExt :=
-    removeFromAllNotificationWaitLists_preserves_objects_invExt st v hInv
-  unfold purgedAndRestored
-  rw [restoreToReadyStaging_objects_ne _ v frame k hExt hNe]
-  exact removeFromAllNotificationWaitLists_nonNotification st v hInv k (.tcb t) (by simp)
+    (hInv : st.objects.invExt) (k : SeLe4n.ObjId) (t : TCB) (hNe : k ≠ v.toObjId)
+    (h : (purgedAndRestored st v frame).objects[k]? = some (.tcb t)) :
+    ∃ t0, st.objects[k]? = some (.tcb t0) ∧ tcbNtfnLinkRewrite t t0 := by
+  have hExt : (removeFromNotificationWaitQueue st v).objects.invExt :=
+    removeFromNotificationWaitQueue_preserves_objects_invExt st v hInv
+  unfold purgedAndRestored at h
+  rw [restoreToReadyStaging_objects_ne _ v frame k hExt hNe] at h
+  exact removeFromNotificationWaitQueue_tcb_backward st v k t hInv h
 
-/-- At the swept thread, the composite holds the restored TCB. -/
+/-- At the swept thread, the composite holds the restored TCB — restored from
+the record the unlink left, which is the pre-state's up to its own
+notification-queue links (the restore leaves those dead links alone, as seL4's
+dequeue does). -/
 theorem purgedAndRestored_victim_tcb (st : SystemState) (v : SeLe4n.ThreadId)
     (frame : Option Architecture.SyscallReturnFrame) (tcbV : TCB)
     (hInv : st.objects.invExt) (hLookup : lookupTcb st v = some tcbV) :
-    (purgedAndRestored st v frame).objects[v.toObjId]? = some (.tcb (restoredTcb tcbV frame)) := by
-  have hExt : (removeFromAllNotificationWaitLists st v).objects.invExt :=
-    removeFromAllNotificationWaitLists_preserves_objects_invExt st v hInv
-  have h1 : (removeFromAllNotificationWaitLists st v).objects[v.toObjId]? = some (.tcb tcbV) :=
-    (removeFromAllNotificationWaitLists_nonNotification st v hInv v.toObjId (.tcb tcbV)
-      (by simp)).mpr (lookupTcb_some_objects st v tcbV hLookup)
-  exact restoreToReadyStaging_objects_self _ v frame tcbV hExt
-    ((SystemState.getTcb?_eq_some_iff _ v tcbV).mpr h1)
+    ∃ t1, tcbNtfnLinkRewrite t1 tcbV ∧
+      (purgedAndRestored st v frame).objects[v.toObjId]? = some (.tcb (restoredTcb t1 frame)) := by
+  have hExt : (removeFromNotificationWaitQueue st v).objects.invExt :=
+    removeFromNotificationWaitQueue_preserves_objects_invExt st v hInv
+  obtain ⟨t1, h1, hR⟩ := removeFromNotificationWaitQueue_tcb_forward st v v.toObjId tcbV hInv
+    (lookupTcb_some_objects st v tcbV hLookup)
+  exact ⟨t1, hR, restoreToReadyStaging_objects_self _ v frame t1 hExt
+    ((SystemState.getTcb?_eq_some_iff _ v t1).mpr h1)⟩
 
 /-- Objects that are neither notifications nor the swept thread's TCB are
 untouched. -/
@@ -228,20 +143,21 @@ theorem purgedAndRestored_nonNotification (st : SystemState) (v : SeLe4n.ThreadI
     (k : SeLe4n.ObjId) (o : KernelObject)
     (hNotN : ∀ n, o ≠ .notification n) (hNotTcb : ∀ t, o ≠ .tcb t) :
     ((purgedAndRestored st v frame).objects[k]? = some o) ↔ (st.objects[k]? = some o) := by
-  have hExt : (removeFromAllNotificationWaitLists st v).objects.invExt :=
-    removeFromAllNotificationWaitLists_preserves_objects_invExt st v hInv
+  have hExt : (removeFromNotificationWaitQueue st v).objects.invExt :=
+    removeFromNotificationWaitQueue_preserves_objects_invExt st v hInv
   by_cases hkv : k = v.toObjId
   · subst hkv
+    obtain ⟨t1, -, hV⟩ := purgedAndRestored_victim_tcb st v frame tcbV hInv hLookup
     constructor
     · intro hx
-      rw [purgedAndRestored_victim_tcb st v frame tcbV hInv hLookup] at hx
+      rw [hV] at hx
       exact absurd (Option.some.inj hx).symm (hNotTcb _)
     · intro hx
       rw [lookupTcb_some_objects st v tcbV hLookup] at hx
       exact absurd (Option.some.inj hx).symm (hNotTcb tcbV)
   · unfold purgedAndRestored
     rw [restoreToReadyStaging_objects_ne _ v frame k hExt hkv]
-    exact removeFromAllNotificationWaitLists_nonNotification st v hInv k o hNotN
+    exact removeFromNotificationWaitQueue_other_slot st v hInv k o hNotN hNotTcb
 
 /-- A notification reading after the composite has the pre-state's badge. -/
 theorem purgedAndRestored_notification_badge (st : SystemState) (v : SeLe4n.ThreadId)
@@ -250,15 +166,16 @@ theorem purgedAndRestored_notification_badge (st : SystemState) (v : SeLe4n.Thre
     (k : SeLe4n.ObjId) (n : Notification)
     (h : (purgedAndRestored st v frame).objects[k]? = some (.notification n)) :
     ∃ n0, st.objects[k]? = some (.notification n0) ∧ n.pendingBadge = n0.pendingBadge := by
-  have hExt : (removeFromAllNotificationWaitLists st v).objects.invExt :=
-    removeFromAllNotificationWaitLists_preserves_objects_invExt st v hInv
+  have hExt : (removeFromNotificationWaitQueue st v).objects.invExt :=
+    removeFromNotificationWaitQueue_preserves_objects_invExt st v hInv
   have hkv : k ≠ v.toObjId := by
     intro hEq
-    rw [hEq, purgedAndRestored_victim_tcb st v frame tcbV hInv hLookup] at h
+    obtain ⟨t1, -, hV⟩ := purgedAndRestored_victim_tcb st v frame tcbV hInv hLookup
+    rw [hEq, hV] at h
     cases h
   unfold purgedAndRestored at h
   rw [restoreToReadyStaging_objects_ne _ v frame k hExt hkv] at h
-  exact removeFromAllNotificationWaitLists_notification_badge st v hInv k n h
+  exact removeFromNotificationWaitQueue_notification_badge st v hInv k n h
 
 /-- The composite touches no scheduler state. -/
 theorem purgedAndRestored_scheduler_eq (st : SystemState) (v : SeLe4n.ThreadId)
@@ -266,7 +183,7 @@ theorem purgedAndRestored_scheduler_eq (st : SystemState) (v : SeLe4n.ThreadId)
     (purgedAndRestored st v frame).scheduler = st.scheduler := by
   unfold purgedAndRestored
   rw [Lifecycle.Suspend.restoreToReadyStaging_scheduler_eq,
-    removeFromAllNotificationWaitLists_scheduler_eq]
+    removeFromNotificationWaitQueue_scheduler_eq]
 
 -- ============================================================================
 -- §3  The coherence hypothesis, and the TCB pullback it licenses
@@ -285,27 +202,33 @@ def sweptThreadOffQueueChains (st : SystemState) (tid : SeLe4n.ThreadId) : Prop 
   ∀ tcb, lookupTcb st tid = some tcb → tcb.queuePrev = none ∧ tcb.queueNext = none
 
 /-- The composite's TCB pullback: away from the swept thread the pre-state's TCB
-**verbatim**, at the swept thread the restored one. -/
+up to its notification-queue links, at the swept thread the restored one. -/
 theorem purgedAndRestored_tcb_pullback (st : SystemState) (v : SeLe4n.ThreadId)
     (frame : Option Architecture.SyscallReturnFrame) (tcbV : TCB)
     (hInv : st.objects.invExt) (hLookup : lookupTcb st v = some tcbV)
     (k : SeLe4n.ObjId) (tA : TCB)
     (h : (purgedAndRestored st v frame).objects[k]? = some (.tcb tA)) :
-    (k ≠ v.toObjId ∧ st.objects[k]? = some (.tcb tA)) ∨
-      (k = v.toObjId ∧ tA = restoredTcb tcbV frame) := by
+    (k ≠ v.toObjId ∧ ∃ t0, st.objects[k]? = some (.tcb t0) ∧ tcbNtfnLinkRewrite tA t0) ∨
+      (k = v.toObjId ∧ ∃ t1, tcbNtfnLinkRewrite t1 tcbV ∧ tA = restoredTcb t1 frame) := by
   by_cases hk : k = v.toObjId
   · subst hk
-    rw [purgedAndRestored_victim_tcb st v frame tcbV hInv hLookup] at h
-    exact Or.inr ⟨rfl, (KernelObject.tcb.inj (Option.some.inj h)).symm⟩
-  · exact Or.inl ⟨hk, (purgedAndRestored_tcb_iff st v frame hInv k tA hk).mp h⟩
+    obtain ⟨t1, hR, hV⟩ := purgedAndRestored_victim_tcb st v frame tcbV hInv hLookup
+    rw [hV] at h
+    exact Or.inr ⟨rfl, t1, hR, (KernelObject.tcb.inj (Option.some.inj h)).symm⟩
+  · exact Or.inl ⟨hk, purgedAndRestored_tcb_backward st v frame hInv k tA hk h⟩
 
 /-- The composite's TCB, read forwards away from the swept thread. -/
 theorem purgedAndRestored_tcb_forward (st : SystemState) (v : SeLe4n.ThreadId)
     (frame : Option Architecture.SyscallReturnFrame)
     (hInv : st.objects.invExt) (k : SeLe4n.ObjId) (t0 : TCB) (hkv : k ≠ v.toObjId)
     (h : st.objects[k]? = some (.tcb t0)) :
-    (purgedAndRestored st v frame).objects[k]? = some (.tcb t0) :=
-  (purgedAndRestored_tcb_iff st v frame hInv k t0 hkv).mpr h
+    ∃ tA, (purgedAndRestored st v frame).objects[k]? = some (.tcb tA) ∧
+      tcbNtfnLinkRewrite tA t0 := by
+  have hExt : (removeFromNotificationWaitQueue st v).objects.invExt :=
+    removeFromNotificationWaitQueue_preserves_objects_invExt st v hInv
+  unfold purgedAndRestored
+  rw [restoreToReadyStaging_objects_ne _ v frame k hExt hkv]
+  exact removeFromNotificationWaitQueue_tcb_forward st v k t0 hInv h
 
 /-- **The composite writes no queue link.**  Away from the swept thread the TCB
 is the pre-state's; at the swept thread the restore writes `none` over fields the
@@ -319,8 +242,8 @@ theorem purgedAndRestored_tcb_links (st : SystemState) (v : SeLe4n.ThreadId)
     ∃ t0, st.objects[k]? = some (.tcb t0) ∧
       tA.queuePrev = t0.queuePrev ∧ tA.queueNext = t0.queueNext := by
   rcases purgedAndRestored_tcb_pullback st v frame tcbV hInv hLookup k tA h with
-    ⟨_, h0⟩ | ⟨hk, rfl⟩
-  · exact ⟨tA, h0, rfl, rfl⟩
+    ⟨_, t0, h0, np, nn, rfl⟩ | ⟨hk, t1, ⟨np, nn, rfl⟩, rfl⟩
+  · exact ⟨t0, h0, rfl, rfl⟩
   · obtain ⟨hp, hn⟩ := hOff tcbV hLookup
     exact ⟨tcbV, by rw [hk]; exact lookupTcb_some_objects st v tcbV hLookup,
       by rw [restoredTcb_queuePrev, hp], by rw [restoredTcb_queueNext, hn]⟩
@@ -341,9 +264,11 @@ theorem purgedAndRestored_tcb_links_forward (st : SystemState) (v : SeLe4n.Threa
       rw [lookupTcb_some_objects st v tcbV hLookup] at h
       exact (KernelObject.tcb.inj (Option.some.inj h)).symm
     obtain ⟨hp, hn⟩ := hOff tcbV hLookup
-    exact ⟨restoredTcb tcbV frame, purgedAndRestored_victim_tcb st v frame tcbV hInv hLookup,
-      by rw [restoredTcb_queuePrev, hx, hp], by rw [restoredTcb_queueNext, hx, hn]⟩
-  · exact ⟨t0, purgedAndRestored_tcb_forward st v frame hInv k t0 hk h, rfl, rfl⟩
+    obtain ⟨t1, ⟨np, nn, rfl⟩, hV⟩ := purgedAndRestored_victim_tcb st v frame tcbV hInv hLookup
+    exact ⟨_, hV, by rw [restoredTcb_queuePrev, hx, hp],
+      by rw [restoredTcb_queueNext, hx, hn]⟩
+  · obtain ⟨tA, hA, np, nn, rfl⟩ := purgedAndRestored_tcb_forward st v frame hInv k t0 hk h
+    exact ⟨_, hA, rfl, rfl⟩
 
 -- ============================================================================
 -- §4  The dual-queue system invariant
@@ -415,10 +340,10 @@ theorem purgedAndRestored_dualQueueSystemInvariant
       -- Away from the swept thread the record is the pre-state's **verbatim**, so
       -- the head's back-pointer carries with the rest of it.
       rcases purgedAndRestored_tcb_pullback st v frame tcbV hInv hLookup hd.toObjId tA hA with
-        ⟨-, h0'⟩ | ⟨hv, -⟩
+        ⟨-, t0', h0', np, nn, rfl⟩ | ⟨hv, -⟩
       · rw [h0] at h0'
-        obtain rfl : tA = t0 := (KernelObject.tcb.inj (Option.some.inj h0')).symm
-        exact ⟨tA, hA, hp, hpp⟩
+        obtain rfl : t0' = t0 := (KernelObject.tcb.inj (Option.some.inj h0')).symm
+        exact ⟨_, hA, hp, hpp⟩
       · exact absurd hv hNeV
     · intro tl hTl
       obtain ⟨t0, h0, hn⟩ := hq.2.2 tl hTl
@@ -457,10 +382,10 @@ theorem purgedAndRestored_dualQueueSystemInvariant
     -- claims the thread is on no queue, so `queuePrev` is part of the claim).
     intro tid tcb hTcb
     rcases purgedAndRestored_tcb_pullback st v frame tcbV hInv hLookup tid.toObjId tcb hTcb with
-      ⟨_, h0⟩ | ⟨_, rfl⟩
-    · exact hPPair tid tcb h0
-    · exact TCB.queuePPrevAgreesWithPrev_of_pprev_none (restoredTcb_queuePPrev tcbV frame)
-        (restoredTcb_queuePrev tcbV frame)
+      ⟨_, t0, h0, _, _, rfl⟩ | ⟨_, t1, _, rfl⟩
+    · exact hPPair tid t0 h0
+    · exact TCB.queuePPrevAgreesWithPrev_of_pprev_none (restoredTcb_queuePPrev t1 frame)
+        (restoredTcb_queuePrev t1 frame)
   · -- **PR #897 review**: the notification purge writes notifications and the
     -- restore a TCB; neither writes an endpoint, so the fifth conjunct transports.
     exact endpointQueueHeadDisjoint_of_endpointBackward
@@ -477,8 +402,8 @@ theorem purgedAndRestored_sameSchedContextBindings
     sameSchedContextBindings st (purgedAndRestored st v frame) := by
   intro tid tcb' hTcb'
   rcases purgedAndRestored_tcb_pullback st v frame tcbV hInv hLookup tid.toObjId tcb' hTcb' with
-    ⟨_, h0⟩ | ⟨hk, rfl⟩
-  · exact ⟨tcb', h0, rfl⟩
+    ⟨_, t0, h0, _, _, rfl⟩ | ⟨hk, t1, ⟨_, _, rfl⟩, rfl⟩
+  · exact ⟨t0, h0, rfl⟩
   · exact ⟨tcbV, by rw [hk]; exact lookupTcb_some_objects st v tcbV hLookup,
       by rw [restoredTcb_eq]⟩
 
@@ -489,8 +414,8 @@ theorem purgedAndRestored_timeoutBudgetFrame
     timeoutBudgetFrame st (purgedAndRestored st v frame) := by
   intro tid tcb' hTcb'
   rcases purgedAndRestored_tcb_pullback st v frame tcbV hInv hLookup tid.toObjId tcb' hTcb' with
-    ⟨_, h0⟩ | ⟨hk, rfl⟩
-  · exact ⟨tcb', h0, rfl⟩
+    ⟨_, t0, h0, _, _, rfl⟩ | ⟨hk, t1, ⟨_, _, rfl⟩, rfl⟩
+  · exact ⟨t0, h0, rfl⟩
   · exact ⟨tcbV, by rw [hk]; exact lookupTcb_some_objects st v tcbV hLookup,
       by rw [restoredTcb_eq]⟩
 
@@ -502,8 +427,8 @@ theorem purgedAndRestored_passiveServerIdleFrame
   have hSched := purgedAndRestored_scheduler_eq st v frame
   refine ⟨fun tid tcb' hTcb' hUnbound hNotQ hNotCur hNA => ?_⟩
   rcases purgedAndRestored_tcb_pullback st v frame tcbV hInv hLookup tid.toObjId tcb' hTcb' with
-    ⟨_, h0⟩ | ⟨_, rfl⟩
-  · exact ⟨tcb', h0, hUnbound, by rw [hSched] at hNotQ; exact hNotQ,
+    ⟨_, t0, h0, _, _, rfl⟩ | ⟨_, t1, ⟨_, _, rfl⟩, rfl⟩
+  · exact ⟨t0, h0, hUnbound, by rw [hSched] at hNotQ; exact hNotQ,
       by rw [hSched] at hNotCur; exact hNotCur, rfl⟩
   · exact absurd (by rw [restoredTcb_ipcState]; exact Or.inl rfl) hNA
 
@@ -526,8 +451,9 @@ theorem purgedAndRestored_donationOwnerFrame
       obtain ⟨ep, rt, hb⟩ := hBlocked
       rw [hx] at hb
       exact hNotReply ep rt hb
-    exact ⟨ownerTcb, purgedAndRestored_tcb_forward st v frame hInv owner.toObjId ownerTcb hne hOwner,
-      hUnbound, hBlocked⟩
+    obtain ⟨tA, hA, _, _, rfl⟩ :=
+      purgedAndRestored_tcb_forward st v frame hInv owner.toObjId ownerTcb hne hOwner
+    exact ⟨_, hA, hUnbound, hBlocked⟩
 
 theorem purgedAndRestored_replyLinkageFrame
     (st : SystemState) (v : SeLe4n.ThreadId)
@@ -541,8 +467,8 @@ theorem purgedAndRestored_replyLinkageFrame
       rid.toObjId (.reply r) (by simp) (by simp)
   · intro tid tcb' hTcb'
     rcases purgedAndRestored_tcb_pullback st v frame tcbV hInv hLookup tid.toObjId tcb' hTcb' with
-      ⟨_, h0⟩ | ⟨hk, rfl⟩
-    · exact ⟨tcb', h0, rfl⟩
+      ⟨_, t0, h0, _, _, rfl⟩ | ⟨hk, t1, ⟨_, _, rfl⟩, rfl⟩
+    · exact ⟨t0, h0, rfl⟩
     · exact ⟨tcbV, by rw [hk]; exact hVObj, by rw [restoredTcb_eq]⟩
   · intro tid tcb rid hTcb hRO
     have hne : tid.toObjId ≠ v.toObjId := by
@@ -551,8 +477,9 @@ theorem purgedAndRestored_replyLinkageFrame
       have hx : tcb = tcbV := (KernelObject.tcb.inj (Option.some.inj hTcb)).symm
       rw [hx, hUnlinked] at hRO
       cases hRO
-    exact ⟨tcb, purgedAndRestored_tcb_forward st v frame hInv tid.toObjId tcb hne hTcb, rfl,
-      fun ep rt hb => ⟨ep, rt, hb⟩⟩
+    obtain ⟨tA, hA, _, _, rfl⟩ :=
+      purgedAndRestored_tcb_forward st v frame hInv tid.toObjId tcb hne hTcb
+    exact ⟨_, hA, rfl, fun ep rt hb => ⟨ep, rt, hb⟩⟩
 
 -- ============================================================================
 -- §6  The conjuncts of `ipcInvariantFull`, one at a time
@@ -563,16 +490,17 @@ theorem purgedAndRestored_ipcInvariant
     (frame : Option Architecture.SyscallReturnFrame) (tcbV : TCB)
     (hInv : st.objects.invExt) (hLookup : lookupTcb st v = some tcbV)
     (h : ipcInvariant st) : ipcInvariant (purgedAndRestored st v frame) := by
-  have hExt : (removeFromAllNotificationWaitLists st v).objects.invExt :=
-    removeFromAllNotificationWaitLists_preserves_objects_invExt st v hInv
+  have hExt : (removeFromNotificationWaitQueue st v).objects.invExt :=
+    removeFromNotificationWaitQueue_preserves_objects_invExt st v hInv
   intro oid ntfn hN
   have hkv : oid ≠ v.toObjId := by
     intro hEq
-    rw [hEq, purgedAndRestored_victim_tcb st v frame tcbV hInv hLookup] at hN
+    obtain ⟨_, -, hV⟩ := purgedAndRestored_victim_tcb st v frame tcbV hInv hLookup
+    rw [hEq, hV] at hN
     cases hN
   unfold purgedAndRestored at hN
   rw [restoreToReadyStaging_objects_ne _ v frame oid hExt hkv] at hN
-  exact removeFromAllNotificationWaitLists_preserves_ipcInvariant st v hInv h oid ntfn hN
+  exact removeFromNotificationWaitQueue_preserves_ipcInvariant st v hInv h oid ntfn hN
 
 theorem purgedAndRestored_badgeWellFormed
     (st : SystemState) (v : SeLe4n.ThreadId)
@@ -597,8 +525,8 @@ theorem purgedAndRestored_allPendingMessagesBounded
     allPendingMessagesBounded (purgedAndRestored st v frame) := by
   intro tid tcb' msg hTcb' hMsg
   rcases purgedAndRestored_tcb_pullback st v frame tcbV hInv hLookup tid.toObjId tcb' hTcb' with
-    ⟨_, h0⟩ | ⟨hk, rfl⟩
-  · exact h tid tcb' msg h0 hMsg
+    ⟨_, t0, h0, _, _, rfl⟩ | ⟨hk, t1, ⟨_, _, rfl⟩, rfl⟩
+  · exact h tid t0 msg h0 hMsg
   · exact h tid tcbV msg (by rw [hk]; exact lookupTcb_some_objects st v tcbV hLookup)
       (by rw [restoredTcb_eq] at hMsg; exact hMsg)
 
@@ -610,8 +538,8 @@ theorem purgedAndRestored_blockedThreadsPendingMessageConsistent
     blockedThreadsPendingMessageConsistent (purgedAndRestored st v frame) := by
   intro tid tcb' hTcb'
   rcases purgedAndRestored_tcb_pullback st v frame tcbV hInv hLookup tid.toObjId tcb' hTcb' with
-    ⟨_, h0⟩ | ⟨_, rfl⟩
-  · exact h tid tcb' h0
+    ⟨_, t0, h0, _, _, rfl⟩ | ⟨_, t1, ⟨_, _, rfl⟩, rfl⟩
+  · exact h tid t0 h0
   · rw [restoredTcb_eq]
     simp only
 
@@ -623,8 +551,8 @@ theorem purgedAndRestored_blockedOnReplyHasTarget
     blockedOnReplyHasTarget (purgedAndRestored st v frame) := by
   intro tid tcb' epId rt hTcb' hBlocked
   rcases purgedAndRestored_tcb_pullback st v frame tcbV hInv hLookup tid.toObjId tcb' hTcb' with
-    ⟨_, h0⟩ | ⟨_, rfl⟩
-  · exact h tid tcb' epId rt h0 hBlocked
+    ⟨_, t0, h0, _, _, rfl⟩ | ⟨_, t1, ⟨_, _, rfl⟩, rfl⟩
+  · exact h tid t0 epId rt h0 hBlocked
   · rw [restoredTcb_ipcState] at hBlocked
     cases hBlocked
 
@@ -650,26 +578,28 @@ theorem purgedAndRestored_pendingReceiveReplyWellFormed
   have hPull : ∀ (tid : SeLe4n.ThreadId) (tcb' : TCB) (rid : SeLe4n.ReplyId),
       (purgedAndRestored st v frame).getTcb? tid = some tcb' →
       tcb'.pendingReceiveReply = some rid →
-      st.getTcb? tid = some tcb' := by
+      ∃ t0, st.getTcb? tid = some t0 ∧ tcbNtfnLinkRewrite tcb' t0 := by
     intro tid tcb' rid hTcb' hStash
     have hObj : (purgedAndRestored st v frame).objects[tid.toObjId]? = some (.tcb tcb') :=
       (SystemState.getTcb?_eq_some_iff _ tid tcb').mp hTcb'
     rcases purgedAndRestored_tcb_pullback st v frame tcbV hInv hLookup tid.toObjId tcb' hObj with
-      ⟨_, h0⟩ | ⟨_, rfl⟩
-    · exact (SystemState.getTcb?_eq_some_iff _ tid tcb').mpr h0
+      ⟨_, t0, h0, hR⟩ | ⟨_, t1, ⟨_, _, rfl⟩, rfl⟩
+    · exact ⟨t0, (SystemState.getTcb?_eq_some_iff _ tid t0).mpr h0, hR⟩
     · rw [restoredTcb_pendingReceiveReply] at hStash
       cases hStash
   refine ⟨?_, ?_⟩
   · intro tid tcb' rid hTcb' hStash
-    obtain ⟨hEp, r, hr, hrc⟩ := h.1 tid tcb' rid (hPull tid tcb' rid hTcb' hStash) hStash
+    obtain ⟨t0, hP, _, _, rfl⟩ := hPull tid tcb' rid hTcb' hStash
+    obtain ⟨hEp, r, hr, hrc⟩ := h.1 tid t0 rid hP hStash
     refine ⟨hEp, r, ?_, hrc⟩
     exact (SystemState.getReply?_eq_some_iff (purgedAndRestored st v frame) rid r).mpr
       ((purgedAndRestored_nonNotification st v frame tcbV hInv hLookup
         rid.toObjId (.reply r) (by simp) (by simp)).mpr
         ((SystemState.getReply?_eq_some_iff st rid r).mp hr))
   · intro tid₁ tid₂ tcb₁ tcb₂ rid h1 h2 hs1 hs2
-    exact h.2 tid₁ tid₂ tcb₁ tcb₂ rid (hPull tid₁ tcb₁ rid h1 hs1) (hPull tid₂ tcb₂ rid h2 hs2)
-      hs1 hs2
+    obtain ⟨u1, hP1, _, _, rfl⟩ := hPull tid₁ tcb₁ rid h1 hs1
+    obtain ⟨u2, hP2, _, _, rfl⟩ := hPull tid₂ tcb₂ rid h2 hs2
+    exact h.2 tid₁ tid₂ u1 u2 rid hP1 hP2 hs1 hs2
 
 theorem purgedAndRestored_replyCallerLinkage
     (st : SystemState) (v : SeLe4n.ThreadId)
@@ -688,15 +618,16 @@ theorem purgedAndRestored_replyCallerLinkage
       rid.toObjId (.reply r) (by simp) (by simp)
   refine ⟨⟨?_, ?_⟩, ?_⟩
   · intro tid tcb' rid hTcb' hRO
-    have hPre : st.objects[tid.toObjId]? = some (.tcb tcb') := by
+    have hPre : ∃ t0, st.objects[tid.toObjId]? = some (.tcb t0) ∧ tcbNtfnLinkRewrite tcb' t0 := by
       rcases purgedAndRestored_tcb_pullback st v frame tcbV hInv hLookup tid.toObjId tcb' hTcb' with
-        ⟨_, h0⟩ | ⟨hk, hEqT⟩
+        ⟨_, h0⟩ | ⟨hk, t1, ⟨_, _, rfl⟩, hEqT⟩
       · exact h0
       · exfalso
         rw [hEqT, restoredTcb_eq] at hRO
         rw [hUnlinked] at hRO
         cases hRO
-    obtain ⟨r, hr, hrc⟩ := h.1.1 tid tcb' rid hPre hRO
+    obtain ⟨t0, hPre, _, _, rfl⟩ := hPre
+    obtain ⟨r, hr, hrc⟩ := h.1.1 tid t0 rid hPre hRO
     exact ⟨r, (hRep rid r).mpr hr, hrc⟩
   · intro rid r tid hr hrc
     obtain ⟨t0, h0, hRO, ep, rt, hBlk⟩ := h.1.2 rid r tid ((hRep rid r).mp hr) hrc
@@ -706,12 +637,13 @@ theorem purgedAndRestored_replyCallerLinkage
       have hx : t0 = tcbV := (KernelObject.tcb.inj (Option.some.inj h0)).symm
       rw [hx, hUnlinked] at hRO
       cases hRO
-    exact ⟨t0, purgedAndRestored_tcb_forward st v frame hInv tid.toObjId t0 hidv h0, hRO,
-      ep, rt, hBlk⟩
+    obtain ⟨tA, hA, _, _, rfl⟩ :=
+      purgedAndRestored_tcb_forward st v frame hInv tid.toObjId t0 hidv h0
+    exact ⟨_, hA, hRO, ep, rt, hBlk⟩
   · intro tid tcb' ep rt hTcb' hBlk
     rcases purgedAndRestored_tcb_pullback st v frame tcbV hInv hLookup tid.toObjId tcb' hTcb' with
-      ⟨_, h0⟩ | ⟨_, rfl⟩
-    · exact h.2 tid tcb' ep rt h0 hBlk
+      ⟨_, t0, h0, _, _, rfl⟩ | ⟨_, t1, ⟨_, _, rfl⟩, rfl⟩
+    · exact h.2 tid t0 ep rt h0 hBlk
     · rw [restoredTcb_ipcState] at hBlk
       cases hBlk
 
@@ -754,15 +686,15 @@ theorem purgedAndRestored_queueHeadBlockedConsistent
     have hdv : hd.toObjId ≠ v.toObjId := fun hEq =>
       hRH (hx.trans (congrArg some (SeLe4n.ThreadId.toObjId_injective _ _ hEq)))
     rcases purgedAndRestored_tcb_pullback st v frame tcbV hInv hLookup hd.toObjId tcbHd hHd with
-      ⟨_, h0⟩ | ⟨hk, _⟩
-    · exact (hHead epId ep hd tcbHd hEp0 h0).1 hx
+      ⟨_, t0, h0, _, _, rfl⟩ | ⟨hk, _⟩
+    · exact (hHead epId ep hd _ hEp0 h0).1 hx
     · exact absurd hk hdv
   · intro hx
     have hdv : hd.toObjId ≠ v.toObjId := fun hEq =>
       hSH (hx.trans (congrArg some (SeLe4n.ThreadId.toObjId_injective _ _ hEq)))
     rcases purgedAndRestored_tcb_pullback st v frame tcbV hInv hLookup hd.toObjId tcbHd hHd with
-      ⟨_, h0⟩ | ⟨hk, _⟩
-    · exact (hHead epId ep hd tcbHd hEp0 h0).2 hx
+      ⟨_, t0, h0, _, _, rfl⟩ | ⟨hk, _⟩
+    · exact (hHead epId ep hd _ hEp0 h0).2 hx
     · exact absurd hk hdv
 
 theorem purgedAndRestored_endpointQueueTailBlockedConsistent
@@ -783,15 +715,15 @@ theorem purgedAndRestored_endpointQueueTailBlockedConsistent
     have htv : tl.toObjId ≠ v.toObjId := fun hEq =>
       hRT (hx.trans (congrArg some (SeLe4n.ThreadId.toObjId_injective _ _ hEq)))
     rcases purgedAndRestored_tcb_pullback st v frame tcbV hInv hLookup tl.toObjId tcbTl hTl with
-      ⟨_, h0⟩ | ⟨hk, _⟩
-    · exact (hTail epId ep tl tcbTl hEp0 h0).1 hx
+      ⟨_, t0, h0, _, _, rfl⟩ | ⟨hk, _⟩
+    · exact (hTail epId ep tl _ hEp0 h0).1 hx
     · exact absurd hk htv
   · intro hx
     have htv : tl.toObjId ≠ v.toObjId := fun hEq =>
       hST (hx.trans (congrArg some (SeLe4n.ThreadId.toObjId_injective _ _ hEq)))
     rcases purgedAndRestored_tcb_pullback st v frame tcbV hInv hLookup tl.toObjId tcbTl hTl with
-      ⟨_, h0⟩ | ⟨hk, _⟩
-    · exact (hTail epId ep tl tcbTl hEp0 h0).2 hx
+      ⟨_, t0, h0, _, _, rfl⟩ | ⟨hk, _⟩
+    · exact (hTail epId ep tl _ hEp0 h0).2 hx
     · exact absurd hk htv
 
 /-- No `queueNext` edge in the composite touches the swept thread: it points at
@@ -809,8 +741,9 @@ theorem purgedAndRestored_edge_avoids_victim
   obtain ⟨hp, hn⟩ := hOff tcbV hLookup
   have hav : a.toObjId ≠ v.toObjId := by
     intro hEq
-    rw [hEq, purgedAndRestored_victim_tcb st v frame tcbV hInv hLookup] at hA
-    have hx : tcbA = restoredTcb tcbV frame := (KernelObject.tcb.inj (Option.some.inj hA)).symm
+    obtain ⟨t1, -, hV⟩ := purgedAndRestored_victim_tcb st v frame tcbV hInv hLookup
+    rw [hEq, hV] at hA
+    have hx : tcbA = restoredTcb t1 frame := (KernelObject.tcb.inj (Option.some.inj hA)).symm
     rw [hx, restoredTcb_queueNext] at hNext
     cases hNext
   refine ⟨hav, ?_⟩
@@ -834,10 +767,10 @@ theorem purgedAndRestored_queueNextTargetBlocked
   obtain ⟨hav, hbv⟩ := purgedAndRestored_edge_avoids_victim st v frame tcbV hInv hLookup hLink
     hOff a b tcbA hA hNext
   rcases purgedAndRestored_tcb_pullback st v frame tcbV hInv hLookup a.toObjId tcbA hA with
-    ⟨_, h0a⟩ | ⟨hk, _⟩
+    ⟨_, t0a, h0a, _, _, rfl⟩ | ⟨hk, _⟩
   · rcases purgedAndRestored_tcb_pullback st v frame tcbV hInv hLookup b.toObjId tcbB hB with
-      ⟨_, h0b⟩ | ⟨hk, _⟩
-    · exact hTgt a b tcbA tcbB h0a h0b hNext
+      ⟨_, t0b, h0b, _, _, rfl⟩ | ⟨hk, _⟩
+    · exact hTgt a b t0a t0b h0a h0b hNext
     · exact absurd hk hbv
   · exact absurd hk hav
 
@@ -852,10 +785,10 @@ theorem purgedAndRestored_queueNextBlockingConsistent
   obtain ⟨hav, hbv⟩ := purgedAndRestored_edge_avoids_victim st v frame tcbV hInv hLookup hLink
     hOff a b tcbA hA hNext
   rcases purgedAndRestored_tcb_pullback st v frame tcbV hInv hLookup a.toObjId tcbA hA with
-    ⟨_, h0a⟩ | ⟨hk, _⟩
+    ⟨_, t0a, h0a, _, _, rfl⟩ | ⟨hk, _⟩
   · rcases purgedAndRestored_tcb_pullback st v frame tcbV hInv hLookup b.toObjId tcbB hB with
-      ⟨_, h0b⟩ | ⟨hk, _⟩
-    · exact hQNB a b tcbA tcbB h0a h0b hNext
+      ⟨_, t0b, h0b, _, _, rfl⟩ | ⟨hk, _⟩
+    · exact hQNB a b t0a t0b h0a h0b hNext
     · exact absurd hk hbv
   · exact absurd hk hav
 
@@ -875,8 +808,8 @@ theorem purgedAndRestored_endpointQueueNoDup
   obtain ⟨hav, _⟩ := purgedAndRestored_edge_avoids_victim st v frame tcbV hInv hLookup hLink
     hOff tid tid tcb hTcb hSelf
   rcases purgedAndRestored_tcb_pullback st v frame tcbV hInv hLookup tid.toObjId tcb hTcb with
-    ⟨_, h0⟩ | ⟨hk, _⟩
-  · exact (hNoDup oid ep hEp0).1 tid tcb h0 hSelf
+    ⟨_, t0, h0, _, _, rfl⟩ | ⟨hk, _⟩
+  · exact (hNoDup oid ep hEp0).1 tid _ h0 hSelf
   · exact absurd hk hav
 
 theorem purgedAndRestored_ipcStateQueueMembershipConsistent
@@ -889,8 +822,8 @@ theorem purgedAndRestored_ipcStateQueueMembershipConsistent
   obtain ⟨_, hvn⟩ := hOff tcbV hLookup
   intro tid tcb' hTcb'
   rcases purgedAndRestored_tcb_pullback st v frame tcbV hInv hLookup tid.toObjId tcb' hTcb' with
-    ⟨_, h0⟩ | ⟨_, rfl⟩
-  · have hPre := hMem tid tcb' h0
+    ⟨_, t0, h0, _, _, rfl⟩ | ⟨_, t1, ⟨_, _, rfl⟩, rfl⟩
+  · have hPre := hMem tid t0 h0
     have hFwd : ∀ (prev : SeLe4n.ThreadId) (prevTcb : TCB),
         st.objects[prev.toObjId]? = some (.tcb prevTcb) → TCB.queueNext prevTcb = some tid →
         ∃ (p : SeLe4n.ThreadId) (pTcb : TCB),
@@ -903,9 +836,10 @@ theorem purgedAndRestored_ipcStateQueueMembershipConsistent
         have hx : prevTcb = tcbV := (KernelObject.tcb.inj (Option.some.inj hPrev)).symm
         rw [hx, hvn] at hPN
         cases hPN
-      exact ⟨prev, prevTcb,
-        purgedAndRestored_tcb_forward st v frame hInv prev.toObjId prevTcb hpv hPrev, hPN⟩
-    cases hI : tcb'.ipcState with
+      obtain ⟨tA, hA, _, _, rfl⟩ :=
+        purgedAndRestored_tcb_forward st v frame hInv prev.toObjId prevTcb hpv hPrev
+      exact ⟨prev, _, hA, hPN⟩
+    cases hI : t0.ipcState with
     | blockedOnSend epId =>
       rw [hI] at hPre
       obtain ⟨ep, hEp, hW⟩ := hPre
@@ -1004,27 +938,27 @@ theorem cancelIpcBlocking_notification_arm_eq (st : SystemState) (tid : SeLe4n.T
   rw [hBlocked]
   rfl
 
-/-- **WS-OD OD3.5: the notification arm writes no queue neighbour**, which is
-what licenses the arm-selected cancellation footprint to stop declaring the
-victim's `queuePrev` / `queueNext` TCB locks on this arm.
-
-The purge rewrites notification objects and the restore rewrites the swept
-thread; nothing relinks a TCB, because a notification's waiter list is a field on
-the notification rather than a chain through TCB links.  So away from the victim
-every TCB reading is the pre-state's **verbatim** — not merely same-kind — and a
-`tcbLock` for a neighbour would be a declared write the arm never performs.
-
-Stated as an `Iff` because `purgedAndRestored_tcb_iff` is, and because the
-backward direction is the one that says the arm *invents* no TCB either. -/
-theorem cancelIpcBlocking_notificationArm_tcb_frame (st : SystemState)
+/-- **WS-OD OD3.5, WS-ZA ZA4.4: the notification arm's write set** is the victim,
+the notification it waits on, and the victim's two notification-queue
+neighbours, whose links the unlink closes over the gap (seL4's
+`tcbEPDequeue`).  Every other slot reads as the pre-state's **verbatim**, which
+is what licenses the arm-selected cancellation footprint
+(`cancelArmSpliceNeighbors?`) to declare exactly those two neighbours' TCB
+locks on this arm and no endpoint-queue neighbour. -/
+theorem cancelIpcBlocking_notificationArm_objects_off (st : SystemState)
     (v : SeLe4n.ThreadId) (tcbV : TCB) (nId : SeLe4n.ObjId)
-    (hInv : st.objects.invExt)
+    (hInv : st.objects.invExt) (hLookup : st.getTcb? v = some tcbV)
     (hBlocked : tcbV.ipcState = .blockedOnNotification nId)
-    (k : SeLe4n.ObjId) (t : TCB) (hNe : k ≠ v.toObjId) :
-    ((Lifecycle.Suspend.cancelIpcBlocking st v tcbV).objects[k]? = some (.tcb t))
-      ↔ (st.objects[k]? = some (.tcb t)) := by
+    (k : SeLe4n.ObjId) (hNe : k ≠ v.toObjId) (hNtfn : k ≠ nId)
+    (hP : ∀ p, tcbV.ntfnPrev = some p → p.toObjId ≠ k)
+    (hN : ∀ n, tcbV.ntfnNext = some n → n.toObjId ≠ k) :
+    (Lifecycle.Suspend.cancelIpcBlocking st v tcbV).objects[k]? = st.objects[k]? := by
   rw [cancelIpcBlocking_notification_arm_eq st v tcbV nId hBlocked]
-  exact purgedAndRestored_tcb_iff st v _ hInv k t hNe
+  unfold purgedAndRestored
+  rw [restoreToReadyStaging_objects_ne _ v _ k
+    (removeFromNotificationWaitQueue_preserves_objects_invExt st v hInv) hNe]
+  exact removeFromNotificationWaitQueue_objects_off st v hInv tcbV hLookup k
+    (fun oid h => by rw [hBlocked] at h; cases h; exact fun h' => hNtfn h'.symm) hP hN
 
 /-- **WS-RR RR7.22 (residual)**: the cancellation's notification arm preserves
 `ipcInvariantFull`. -/

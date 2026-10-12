@@ -261,7 +261,7 @@ def objectOfTypeTag (typeTag : Nat) (sizeHint : Nat)
     })
   | 1 => .ok (.endpoint { sendQ := {}, receiveQ := {} })
   | 2 => .ok (.notification {
-      state := .idle, waitingThreads := SeLe4n.NoDupList.empty,
+      state := .idle, 
       hasPendingBadge := false, pendingWord := SeLe4n.Badge.zero
     })
   | 3 => .ok (.cnode {
@@ -312,7 +312,7 @@ def objectOfKernelType (objType : KernelObjectType) (sizeHint : Nat) : KernelObj
     }
   | .endpoint => .endpoint { sendQ := {}, receiveQ := {} }
   | .notification => .notification {
-      state := .idle, waitingThreads := SeLe4n.NoDupList.empty,
+      state := .idle, 
       hasPendingBadge := false, pendingWord := SeLe4n.Badge.zero
     }
   | .cnode => .cnode {

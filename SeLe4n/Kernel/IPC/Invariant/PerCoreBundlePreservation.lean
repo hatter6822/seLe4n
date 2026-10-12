@@ -11,6 +11,7 @@ import SeLe4n.Kernel.IPC.Invariant
 import SeLe4n.Kernel.IPC.Invariant.PerCoreBundle
 import SeLe4n.Kernel.Scheduler.Operations.Selection
 import SeLe4n.Kernel.IPC.CrossCore.EndpointCall
+import SeLe4n.Kernel.IPC.Invariant.DonationPreservation
 
 /-!
 # WS-SM SM6.D.2 — Per-operation preservation of the per-core IPC bundle
@@ -589,9 +590,8 @@ theorem notificationSignal_passiveServerIdleFrameOnCore
   simp only [notificationSignal, SystemState.getObject?] at hStep
   split at hStep
   · rename_i ntfn hObj
-    cases hWaiters : ntfn.waitingThreads.tail? with
-    | some headTail =>
-      obtain ⟨waiter, rest⟩ := headTail
+    cases hWaiters : ntfn.waitHead with
+    | some waiter =>
       simp only [hWaiters] at hStep
       split at hStep
       next => contradiction
@@ -621,13 +621,13 @@ open SeLe4n.Model.SystemState in
 branch wakes the waiter `.ready`; the block branch sets it
 `.blockedOnNotification` and deschedules it — both allowed passive
 states. -/
-theorem notificationWait_passiveServerIdleFrameOnCore
+theorem notificationWaitPark_passiveServerIdleFrameOnCore
     (st st' : SystemState) (notificationId : SeLe4n.ObjId) (waiter : SeLe4n.ThreadId)
     (badge : Option SeLe4n.Badge) (c : CoreId)
     (hObjInv : st.objects.invExt)
-    (hStep : notificationWait notificationId waiter st = .ok (badge, st')) :
+    (hStep : notificationWaitPark notificationId waiter st = .ok (badge, st')) :
     passiveServerIdleFrameOnCore st st' c := by
-  simp only [notificationWait, SystemState.getObject?] at hStep
+  simp only [notificationWaitPark, SystemState.getObject?] at hStep
   split at hStep
   · rename_i ntfn hObj
     split at hStep
@@ -650,39 +650,64 @@ theorem notificationWait_passiveServerIdleFrameOnCore
         split at hStep
         · contradiction
         · split at hStep
-          · contradiction
-          · split at hStep
+          next => contradiction
+          next st1 hSO =>
+            have hF1 := storeObject_oldNonTcb_passiveServerIdleFrameOnCore (c := c)
+              st st1 notificationId (.notification _) (fun _ => by simp) hObjInv hSO
+            have hObjInv1 := storeObject_preserves_objects_invExt st st1 notificationId _ hObjInv hSO
+            have hWaiterObj := lookupTcb_some_objects st waiter waiterTcb hLookup
+            have hNeWN : waiter.toObjId ≠ notificationId := by
+              intro h; rw [h, hObj] at hWaiterObj; simp at hWaiterObj
+            have hOrig1 := (storeObject_objects_ne st st1 notificationId waiter.toObjId _
+              hNeWN hObjInv hSO).trans hWaiterObj
+            have hLk1 : lookupTcb st1 waiter = some waiterTcb := by
+              rw [lookupTcb]; rw [lookupTcb] at hLookup
+              by_cases hRes : waiter.isReserved
+              · rw [if_pos hRes] at hLookup; simp at hLookup
+              · rw [if_neg hRes]
+                exact (SystemState.getTcb?_eq_some_iff _ _ _).mpr hOrig1
+            split at hStep
             next => contradiction
-            next st1 hSO =>
-              have hF1 := storeObject_oldNonTcb_passiveServerIdleFrameOnCore (c := c)
-                st st1 notificationId (.notification _) (fun _ => by simp) hObjInv hSO
-              have hObjInv1 := storeObject_preserves_objects_invExt st st1 notificationId _ hObjInv hSO
-              have hWaiterObj := lookupTcb_some_objects st waiter waiterTcb hLookup
-              have hNeWN : waiter.toObjId ≠ notificationId := by
-                intro h; rw [h, hObj] at hWaiterObj; simp at hWaiterObj
-              have hOrig1 := (storeObject_objects_ne st st1 notificationId waiter.toObjId _
-                hNeWN hObjInv hSO).trans hWaiterObj
-              have hLk1 : lookupTcb st1 waiter = some waiterTcb := by
-                rw [lookupTcb]; rw [lookupTcb] at hLookup
-                by_cases hRes : waiter.isReserved
-                · rw [if_pos hRes] at hLookup; simp at hLookup
-                · rw [if_neg hRes]
-                  exact (SystemState.getTcb?_eq_some_iff _ _ _).mpr hOrig1
-              split at hStep
-              next => contradiction
-              next st2 hSI =>
-                simp only [Except.ok.injEq, Prod.mk.injEq] at hStep
-                obtain ⟨_, rfl⟩ := hStep
-                rw [storeTcbIpcStateAndMessage_fromTcb_eq hLk1] at hSI
-                refine (hF1.trans (storeTcbIpcStateAndMessage_passiveServerIdleFrameOnCore st1 st2 waiter
-                    (.blockedOnNotification notificationId) none
-                    (Or.inl (Or.inr (Or.inl ⟨notificationId, Or.inr rfl⟩))) hObjInv1 hSI)).trans
-                  (removeRunnable_passiveServerIdleFrameOnCore st2 waiter (fun tcb hTcb => Or.inr ?_))
-                rw [storeTcbIpcStateAndMessage_ipcState_eq st1 st2 waiter _ _ hObjInv1 hSI tcb
-                  ((getTcb?_eq_some_iff st2 waiter tcb).mp hTcb)]
-                exact Or.inr (Or.inl ⟨notificationId, Or.inr rfl⟩)
+            next st2 hSI =>
+              simp only [Except.ok.injEq, Prod.mk.injEq] at hStep
+              obtain ⟨_, rfl⟩ := hStep
+              rw [storeTcbIpcStateAndMessage_fromTcb_eq hLk1] at hSI
+              refine (hF1.trans (storeTcbIpcStateAndMessage_passiveServerIdleFrameOnCore st1 st2 waiter
+                  (.blockedOnNotification notificationId) none
+                  (Or.inl (Or.inr (Or.inl ⟨notificationId, Or.inr rfl⟩))) hObjInv1 hSI)).trans
+                (removeRunnable_passiveServerIdleFrameOnCore st2 waiter (fun tcb hTcb => Or.inr ?_))
+              rw [storeTcbIpcStateAndMessage_ipcState_eq st1 st2 waiter _ _ hObjInv1 hSI tcb
+                ((getTcb?_eq_some_iff st2 waiter tcb).mp hTcb)]
+              exact Or.inr (Or.inl ⟨notificationId, Or.inr rfl⟩)
   · contradiction
   · contradiction
+
+/-- WS-ZA ZA4.4: the link-in rewrites queue links only, so it frames every
+core's slice. -/
+theorem linkNtfnWaiter_passiveServerIdleFrameOnCore
+    {st st' : SystemState} {waiter : SeLe4n.ThreadId} {tail : Option SeLe4n.ThreadId}
+    {c : CoreId} (hObjInv : st.objects.invExt)
+    (h : linkNtfnWaiter st waiter tail = .ok st') :
+    passiveServerIdleFrameOnCore st st' c := by
+  refine passiveServerIdleFrameOnCore_of_backward (fun tid tcb' hTcb' => ?_)
+    (linkNtfnWaiter_scheduler_eq h)
+  obtain ⟨ty, hy, np, nn, rfl⟩ := linkNtfnWaiter_tcb_backward hObjInv h tid.toObjId tcb'
+    ((SystemState.getTcb?_eq_some_iff st' tid _).mp hTcb')
+  exact ⟨ty, (SystemState.getTcb?_eq_some_iff st tid ty).mpr hy, rfl, rfl⟩
+
+/-- SM6.D.2: `notificationWait` frames every core's slice: the park does,
+and so does the link-in. -/
+theorem notificationWait_passiveServerIdleFrameOnCore
+    (st st' : SystemState) (notificationId : SeLe4n.ObjId) (waiter : SeLe4n.ThreadId)
+    (badge : Option SeLe4n.Badge) (c : CoreId)
+    (hObjInv : st.objects.invExt)
+    (hStep : notificationWait notificationId waiter st = .ok (badge, st')) :
+    passiveServerIdleFrameOnCore st st' c := by
+  rcases notificationWait_ok_cases hStep with ⟨b, _, hP⟩ | ⟨_, stP, hP, hL⟩
+  · exact notificationWaitPark_passiveServerIdleFrameOnCore st st' _ _ _ c hObjInv hP
+  · exact (notificationWaitPark_passiveServerIdleFrameOnCore st stP _ _ _ c hObjInv hP).trans
+      (linkNtfnWaiter_passiveServerIdleFrameOnCore
+        (notificationWaitPark_preserves_objects_invExt hObjInv hP) hL)
 
 open SeLe4n.Model.SystemState in
 /-- SM6.D.2: `endpointSendDual` frames every core's slice. Rendezvous:

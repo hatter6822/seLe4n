@@ -102,7 +102,7 @@ inductive NonInterferenceStep
           threadObservable ctx observer tid = false →
           objectObservable ctx observer tid.toObjId = false)
       (hWaiterDomain : ∀ ntfn tid, st.objects[notificationId]? = some (.notification ntfn) →
-          tid ∈ ntfn.waitingThreads → threadObservable ctx observer tid = false)
+          ntfn.waitHead = some tid → threadObservable ctx observer tid = false)
       (hStep : SeLe4n.Kernel.notificationSignal notificationId badge st = .ok ((), st'))
     : NonInterferenceStep ctx observer st st'
   | notificationWait
@@ -111,6 +111,8 @@ inductive NonInterferenceStep
       (hNtfnHigh : objectObservable ctx observer notificationId = false)
       (hWaiterHigh : threadObservable ctx observer waiter = false)
       (hWaiterObjHigh : objectObservable ctx observer waiter.toObjId = false)
+      (hTailHigh : ∀ t, notificationWaitTail? st notificationId = some t →
+          objectObservable ctx observer t.toObjId = false)
       (hStep : SeLe4n.Kernel.notificationWait notificationId waiter st = .ok (result, st'))
     : NonInterferenceStep ctx observer st st'
   | cspaceInsertSlot
@@ -418,9 +420,9 @@ theorem step_preserves_projection
   | notificationSignal ntfnId badge hNH hCo hWD hOp =>
     exact notificationSignal_projection_preserved ctx observer ntfnId badge st st'
       hNH hCo hWD hObjInv hOp
-  | notificationWait ntfnId waiter result hNH hWH hWOH hOp =>
+  | notificationWait ntfnId waiter result hNH hWH hWOH hTH hOp =>
     exact notificationWait_projection_preserved ctx observer ntfnId waiter result st st'
-      hNH hWH hWOH hObjInv hOp
+      hNH hWH hWOH hTH hObjInv hOp
   | cspaceInsertSlot dst cap hDH hOp =>
     simp only [projectState]; congr 1
     · funext oid; by_cases hObs : objectObservable ctx observer oid

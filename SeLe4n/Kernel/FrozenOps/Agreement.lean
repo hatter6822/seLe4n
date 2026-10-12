@@ -278,12 +278,12 @@ shape being claimed rather than on whichever shape the fixture happened to hit.
 
 The list is the discriminating test each operation actually performs —
 `receiveQ.head`, `sendQ.head` plus the dequeued sender's `ipcState`,
-`pendingBadge`, `boundTCB` then `waitingThreads` — not a grouping chosen for the
+`pendingBadge`, `boundTCB` then `waitHead` — not a grouping chosen for the
 table. -/
 inductive FrozenOpBranch where
   /-- A signal delivered straight to the notification's bound TCB. -/
   | notificationSignalToBoundThread
-  /-- A signal delivered to an ordinary waiter popped from `waitingThreads`. -/
+  /-- A signal delivered to an ordinary waiter popped from the queue head. -/
   | notificationSignalToWaiter
   /-- A signal with no waiter and no bound thread: the badge is stored. -/
   | notificationSignalStoresBadge

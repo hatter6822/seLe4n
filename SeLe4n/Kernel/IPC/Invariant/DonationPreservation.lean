@@ -1142,6 +1142,29 @@ theorem ipcInvariantFull_of_donationReadAgreement
     hAgree hAcyclic hOwnerValid hPassiveIdle hBudgetTransfer hOwnerUnique
 
 
+/-- A one-TCB rewrite that keeps that TCB's `ipcState` and binding, with the
+scheduler untouched, frames `passiveServerIdle`: the rewritten thread pulls
+back to its pre-image with the same idle obligations, and every other thread
+is untouched. -/
+theorem passiveServerIdleFrame_of_tcbFieldUpdate {st st' : SystemState}
+    (key : SeLe4n.ObjId) (oldTcb newTcb : TCB)
+    (hPre : st.objects[key]? = some (.tcb oldTcb))
+    (hAt : st'.objects[key]? = some (.tcb newTcb))
+    (hFrame : ∀ oid : SeLe4n.ObjId, oid ≠ key → st'.objects[oid]? = st.objects[oid]?)
+    (hIpc : newTcb.ipcState = oldTcb.ipcState)
+    (hBind : newTcb.schedContextBinding = oldTcb.schedContextBinding)
+    (hSched : st'.scheduler = st.scheduler) :
+    passiveServerIdleFrame st st' := by
+  refine ⟨fun tid tcb' hT hU hQ hC _ => ?_⟩
+  rw [hSched] at hQ hC
+  by_cases hK : tid.toObjId = key
+  · rw [hK, hAt] at hT
+    obtain rfl : newTcb = tcb' := by
+      simpa only [Option.some.injEq, KernelObject.tcb.injEq] using hT
+    exact ⟨oldTcb, by rw [hK]; exact hPre, hBind ▸ hU, hQ, hC, hIpc.symm⟩
+  · rw [hFrame _ hK] at hT
+    exact ⟨tcb', hT, hU, hQ, hC, rfl⟩
+
 /-- WS-RR RR2.6: a transition that rewrites **one** TCB, leaving every field any
 conjunct reads intact — the binding included — and leaving every other object
 alone, preserves the whole bundle, given a `passiveServerIdle` frame for whatever
@@ -1224,6 +1247,58 @@ theorem ipcInvariantFull_of_tcbFieldUpdate
     obtain ⟨y2, hy2, _, e2⟩ := hBwd t2.toObjId tcb2 h2
     exact hInv.donationOwnerUnique t1 t2 y1 y2 s1 s2 owner hy1 hy2 (e1 ▸ hB1) (e2 ▸ hB2)
 
+
+/-- WS-ZA ZA4.4: a write of one thread's notification-queue links preserves the
+whole bundle: no conjunct reads those links. -/
+theorem modifyTcb_ntfnLinks_preserves_ipcInvariantFull {st st' : SystemState}
+    {tid : SeLe4n.ThreadId} {f : TCB → TCB} (hf : ∀ t, tcbNtfnLinkRewrite (f t) t)
+    (hInv : ipcInvariantFull st) (hObjInv : st.objects.invExt)
+    (h : modifyTcb st tid f = .ok st') : ipcInvariantFull st' := by
+  obtain ⟨tcb, _, hPre, hAt, hFrame⟩ := modifyTcb_objects hObjInv h
+  obtain ⟨np, nn, hEq⟩ := hf tcb
+  rw [hEq] at hAt
+  exact ipcInvariantFull_of_tcbFieldUpdate st st' tid.toObjId tcb _ hInv hPre hAt hFrame
+    rfl rfl rfl rfl rfl rfl rfl rfl rfl
+    (passiveServerIdleFrame_of_tcbFieldUpdate tid.toObjId tcb _ hPre hAt hFrame rfl rfl
+      (modifyTcb_scheduler_eq h))
+
+/-- WS-ZA ZA4.4: so does the link-in of a parked waiter. -/
+theorem linkNtfnWaiter_preserves_ipcInvariantFull {st st' : SystemState}
+    {waiter : SeLe4n.ThreadId} {tail : Option SeLe4n.ThreadId}
+    (hInv : ipcInvariantFull st) (hObjInv : st.objects.invExt)
+    (h : linkNtfnWaiter st waiter tail = .ok st') : ipcInvariantFull st' := by
+  obtain ⟨st3, h3, h4⟩ := linkNtfnWaiter_ok_cases h
+  have hInv3 := modifyTcb_ntfnLinks_preserves_ipcInvariantFull (fun _ => ⟨_, _, rfl⟩) hInv hObjInv h3
+  rcases modifyTcbOpt_ok_cases h4 with ⟨_, rfl⟩ | ⟨_, _, h4⟩
+  · exact hInv3
+  · exact modifyTcb_ntfnLinks_preserves_ipcInvariantFull (fun t => ⟨t.ntfnPrevCode, _, rfl⟩) hInv3
+      (modifyTcb_preserves_objects_invExt hObjInv h3) h4
+
+/-- IPC de-threading D2: `notificationWait` preserves `ipcInvariantFull`: the
+park does (`notificationWaitPark_preserves_ipcInvariantFull`), and so does the
+link-in. -/
+theorem notificationWait_preserves_ipcInvariantFull
+    (st st' : SystemState)
+    (notificationId : SeLe4n.ObjId) (waiter : SeLe4n.ThreadId)
+    (result : Option SeLe4n.Badge)
+    (hInv : ipcInvariantFull st)
+    (hObjInv : st.objects.invExt)
+    (hWaiterNotRecv : ∀ (tcb : TCB), st.getTcb? waiter = some tcb →
+        ∀ ep, tcb.ipcState ≠ .blockedOnReceive ep)
+    (hWaiterNotReply : ∀ (tcb : TCB), st.objects[waiter.toObjId]? = some (.tcb tcb) →
+        ∀ ep rt, tcb.ipcState ≠ .blockedOnReply ep rt)
+    (hAllBudgetsNone : allTimeoutBudgetsNone st)
+    (hWaiterReady : ∀ (tcb : TCB), st.objects[waiter.toObjId]? = some (.tcb tcb) →
+        tcb.ipcState = .ready)
+    (hStep : notificationWait notificationId waiter st = .ok (result, st')) :
+    ipcInvariantFull st' := by
+  rcases notificationWait_ok_cases hStep with ⟨b, _, hP⟩ | ⟨_, stP, hP, hL⟩
+  · exact notificationWaitPark_preserves_ipcInvariantFull st st' notificationId waiter _ hInv
+      hObjInv hWaiterNotRecv hWaiterNotReply hAllBudgetsNone hWaiterReady hP
+  · exact linkNtfnWaiter_preserves_ipcInvariantFull
+      (notificationWaitPark_preserves_ipcInvariantFull st stP notificationId waiter _ hInv
+        hObjInv hWaiterNotRecv hWaiterNotReply hAllBudgetsNone hWaiterReady hP)
+      (notificationWaitPark_preserves_objects_invExt hObjInv hP) hL
 /-- WS-RR RR2.6: `donateSchedContext` preserves the object store's extended
 invariant — its three stores are `storeObject`s, which do.  The mirror
 `returnDonatedSchedContext_preserves_objects_invExt` was already in the tree; the

@@ -9,6 +9,7 @@
 
 import SeLe4n.Kernel.IPC.Invariant.EndpointPreservation
 import SeLe4n.Kernel.IPC.Invariant.WaitingThreadHelpers
+import SeLe4n.Kernel.IPC.Invariant.CallReplyRecv.ReplyRecv
 
 /-! # Notification Preservation — Signal & IPC/Scheduler Invariants (AN3-D)
 
@@ -67,21 +68,19 @@ theorem notificationSignal_preserves_ipcInvariant
     | tcb _ | cnode _ | endpoint _ | vspaceRoot _ | untyped _ | schedContext _ | reply _ | frame _ | pageTable _ => simp [hObj] at hStep
     | notification ntfn =>
       simp only [hObj] at hStep
-      -- WS-RC R4.C: signal pops via `NoDupList.tail?`.
-      cases hWaiters : ntfn.waitingThreads.tail? with
-      | some headTail =>
-        obtain ⟨waiter, rest⟩ := headTail
+      -- WS-ZA ZA4.4: signal wakes the queue head.
+      cases hWaiters : ntfn.waitHead with
+      | some waiter =>
         -- Wake path: storeObject → storeTcbIpcStateAndMessage → ensureRunnable
         simp only [hWaiters] at hStep
         revert hStep
         cases hStore : storeObject notificationId
-            (.notification { state := if rest.val.isEmpty then .idle else .waiting,
-                             waitingThreads := rest, hasPendingBadge := false, pendingWord := SeLe4n.Badge.zero, boundTCB := ntfn.boundTCB }) st with
+            (.notification (ntfn.withHeadPopped (ntfnSuccessor? st waiter))) st with
         | error e => simp
         | ok pair =>
           simp only []
           have hInv1 := storeObject_notification_preserves_ipcInvariant st pair.2 notificationId
-            _ hInv hObjInv hStore (notificationSignal_result_wellFormed_wake rest)
+            _ hInv hObjInv hStore (notificationSignal_result_wellFormed_wake ntfn _)
           have hObjInv1 : pair.2.objects.invExt :=
             storeObject_preserves_objects_invExt st pair.2 notificationId _ hObjInv hStore
           -- R3-A/M-16: Badge now delivered via storeTcbIpcStateAndMessage
@@ -97,7 +96,7 @@ theorem notificationSignal_preserves_ipcInvariant
         -- Merge path: storeObject only
         simp only [hWaiters] at hStep
         exact storeObject_notification_preserves_ipcInvariant st st' notificationId
-          _ hInv hObjInv hStep (notificationSignal_result_wellFormed_merge _)
+          _ hInv hObjInv hStep (notificationSignal_result_wellFormed_merge _ _)
 
 /-- WS-F4: notificationSignal preserves schedulerInvariantBundle.
 Wake path: storeObject + storeTcbIpcStateAndMessage (scheduler unchanged) + ensureRunnable.
@@ -118,16 +117,14 @@ theorem notificationSignal_preserves_schedulerInvariantBundle
     | tcb _ | cnode _ | endpoint _ | vspaceRoot _ | untyped _ | schedContext _ | reply _ | frame _ | pageTable _ => simp [hObj] at hStep
     | notification ntfn =>
       simp only [hObj] at hStep
-      -- WS-RC R4.C: signal pops via `NoDupList.tail?`.
-      cases hWaiters : ntfn.waitingThreads.tail? with
-      | some headTail =>
-        obtain ⟨waiter, rest⟩ := headTail
+      -- WS-ZA ZA4.4: signal wakes the queue head.
+      cases hWaiters : ntfn.waitHead with
+      | some waiter =>
         -- Wake path: storeObject → storeTcbIpcStateAndMessage → ensureRunnable
         simp only [hWaiters] at hStep
         revert hStep
         cases hStore : storeObject notificationId
-            (.notification { state := if rest.val.isEmpty then .idle else .waiting,
-                             waitingThreads := rest, hasPendingBadge := false, pendingWord := SeLe4n.Badge.zero, boundTCB := ntfn.boundTCB }) st with
+            (.notification (ntfn.withHeadPopped (ntfnSuccessor? st waiter))) st with
         | error e => simp
         | ok pair =>
           simp only []
@@ -153,13 +150,8 @@ theorem notificationSignal_preserves_schedulerInvariantBundle
                 have hNe : x ≠ waiter := by
                   intro hEq; rw [hEq] at hCurr
                   have hNoWait := hCurrNotWait; simp [currentNotOnNotificationWaitList, hCurr] at hNoWait
-                  -- WS-RC R4.C: derive `waiter ∈ ntfn.waitingThreads` from `tail?` equation.
-                  have hValEq : ntfn.waitingThreads.val = waiter :: rest.val :=
-                    (SeLe4n.NoDupList.tail?_eq_some_iff ntfn.waitingThreads waiter rest).mp hWaiters
-                  have hInWait : waiter ∈ ntfn.waitingThreads := by
-                    show waiter ∈ ntfn.waitingThreads.val
-                    rw [hValEq]; exact List.mem_cons_self
-                  exact hNoWait notificationId ntfn hObj hInWait
+                  -- WS-ZA ZA4.4: the woken waiter is the queue's head.
+                  exact (hNoWait notificationId ntfn hObj).1 hWaiters
                 exact ensureRunnable_not_mem_of_not_mem st'' waiter x (hSchedEq ▸ hNotMem) hNe
             · exact ensureRunnable_nodup st'' waiter (hSchedEq ▸ hRQU)
             · show currentThreadValid (ensureRunnable st'' waiter)
@@ -213,15 +205,15 @@ theorem notificationSignal_preserves_schedulerInvariantBundle
 /-- WS-F4: notificationWait preserves ipcInvariant.
 Badge-consume path: stores idle notification + storeTcbIpcState.
 Wait path: stores waiting notification + storeTcbIpcState + removeRunnable. -/
-theorem notificationWait_preserves_ipcInvariant
+theorem notificationWaitPark_preserves_ipcInvariant
     (st st' : SystemState)
     (notificationId : SeLe4n.ObjId) (waiter : SeLe4n.ThreadId)
     (result : Option SeLe4n.Badge)
     (hInv : ipcInvariant st)
     (hObjInv : st.objects.invExt)
-    (hStep : notificationWait notificationId waiter st = .ok (result, st')) :
+    (hStep : notificationWaitPark notificationId waiter st = .ok (result, st')) :
     ipcInvariant st' := by
-  unfold notificationWait SystemState.getObject? at hStep
+  unfold notificationWaitPark SystemState.getObject? at hStep
   cases hObj : st.objects[notificationId]? with
   | none => simp [hObj] at hStep
   | some obj => cases obj with
@@ -235,7 +227,7 @@ theorem notificationWait_preserves_ipcInvariant
         revert hStep
         cases hStore : storeObject notificationId
             (.notification
-              { state := .idle, waitingThreads := SeLe4n.NoDupList.empty,
+              { state := .idle, 
                 hasPendingBadge := false, pendingWord := SeLe4n.Badge.zero, boundTCB := ntfn.boundTCB }) st with
         | error e => simp
         | ok pair =>
@@ -243,7 +235,7 @@ theorem notificationWait_preserves_ipcInvariant
           have hObjInv1 : pair.2.objects.invExt :=
             storeObject_preserves_objects_invExt' st notificationId _ pair hObjInv hStore
           have hInv1 := storeObject_notification_preserves_ipcInvariant st pair.2 notificationId
-            _ hInv hObjInv hStore notificationWait_result_wellFormed_badge
+            _ hInv hObjInv hStore (notificationWait_result_wellFormed_badge _)
           cases hTcb : storeTcbIpcState pair.2 waiter .ready with
           | error e => simp
           | ok st'' =>
@@ -260,19 +252,10 @@ theorem notificationWait_preserves_ipcInvariant
           simp only [hLk] at hStep
           split at hStep
           · simp at hStep
-          · -- WS-RC R4.C: consWithGuard? case-split
-            cases hCons : ntfn.waitingThreads.consWithGuard? waiter with
-            | none => simp [hCons] at hStep
-            | some wt' =>
-            simp only [hCons] at hStep
-            have hConsEq : wt'.val = waiter :: ntfn.waitingThreads.val :=
-              ((SeLe4n.NoDupList.consWithGuard?_eq_some_iff waiter
-                ntfn.waitingThreads wt').mp hCons).2
+          · -- WS-ZA ZA4.4: the park records the waiter as the queue's tail
             revert hStep
             cases hStore : storeObject notificationId
-                (.notification { state := .waiting,
-                                 waitingThreads := wt',
-                                 hasPendingBadge := false, pendingWord := SeLe4n.Badge.zero, boundTCB := ntfn.boundTCB }) st with
+                (.notification (ntfn.withWaiterAppended waiter)) st with
             | error e => simp
             | ok pair =>
               simp only []
@@ -282,7 +265,7 @@ theorem notificationWait_preserves_ipcInvariant
                 storeObject_preserves_objects_invExt' st notificationId _ pair hObjInv hStore
               have hInv1 := storeObject_notification_preserves_ipcInvariant st pair.2 notificationId
                 _ hInv hObjInv hStore
-                (notificationWait_result_wellFormed_wait waiter ntfn.waitingThreads wt' hConsEq)
+                (notificationWait_result_wellFormed_wait ntfn waiter)
               cases hTcb : storeTcbIpcStateAndMessage pair.2 waiter (.blockedOnNotification notificationId) none with
               | error e => simp
               | ok st'' =>
@@ -295,16 +278,16 @@ theorem notificationWait_preserves_ipcInvariant
 /-- WS-F4: notificationWait preserves schedulerInvariantBundle.
 Badge-consume path: storeObject + storeTcbIpcState (scheduler unchanged).
 Wait path: storeObject + storeTcbIpcState (scheduler unchanged) + removeRunnable. -/
-theorem notificationWait_preserves_schedulerInvariantBundle
+theorem notificationWaitPark_preserves_schedulerInvariantBundle
     (st st' : SystemState)
     (notificationId : SeLe4n.ObjId) (waiter : SeLe4n.ThreadId)
     (result : Option SeLe4n.Badge)
     (hInv : schedulerInvariantBundle st)
     (hObjInv : st.objects.invExt)
-    (hStep : notificationWait notificationId waiter st = .ok (result, st')) :
+    (hStep : notificationWaitPark notificationId waiter st = .ok (result, st')) :
     schedulerInvariantBundle st' := by
   rcases hInv with ⟨hQCC, hRQU, hCTV⟩
-  unfold notificationWait SystemState.getObject? at hStep
+  unfold notificationWaitPark SystemState.getObject? at hStep
   cases hObj : st.objects[notificationId]? with
   | none => simp [hObj] at hStep
   | some obj => cases obj with
@@ -318,7 +301,7 @@ theorem notificationWait_preserves_schedulerInvariantBundle
         revert hStep
         cases hStore : storeObject notificationId
             (.notification
-              { state := .idle, waitingThreads := SeLe4n.NoDupList.empty,
+              { state := .idle, 
                 hasPendingBadge := false, pendingWord := SeLe4n.Badge.zero, boundTCB := ntfn.boundTCB }) st with
         | error e => simp
         | ok pair =>
@@ -369,16 +352,10 @@ theorem notificationWait_preserves_schedulerInvariantBundle
           simp only [hLk] at hStep
           split at hStep
           · simp at hStep
-          · -- WS-RC R4.C: consWithGuard? case-split
-            cases hCons : ntfn.waitingThreads.consWithGuard? waiter with
-            | none => simp [hCons] at hStep
-            | some wt' =>
-            simp only [hCons] at hStep
+          · -- WS-ZA ZA4.4: the park records the waiter as the queue's tail
             revert hStep
             cases hStore : storeObject notificationId
-                (.notification { state := .waiting,
-                                 waitingThreads := wt',
-                                 hasPendingBadge := false, pendingWord := SeLe4n.Badge.zero, boundTCB := ntfn.boundTCB }) st with
+                (.notification (ntfn.withWaiterAppended waiter)) st with
             | error e => simp
             | ok pair =>
               simp only []
@@ -447,15 +424,13 @@ theorem notificationSignal_preserves_ipcSchedulerContractPredicates
     | tcb _ | cnode _ | endpoint _ | vspaceRoot _ | untyped _ | schedContext _ | reply _ | frame _ | pageTable _ => simp [hObj] at hStep
     | notification ntfn =>
       simp only [hObj] at hStep
-      -- WS-RC R4.C: signal pops via `NoDupList.tail?`.
-      cases hWaiters : ntfn.waitingThreads.tail? with
-      | some headTail =>
-        obtain ⟨waiter, rest⟩ := headTail
+      -- WS-ZA ZA4.4: signal wakes the queue head.
+      cases hWaiters : ntfn.waitHead with
+      | some waiter =>
         simp only [hWaiters] at hStep
         revert hStep
         cases hStore : storeObject notificationId
-            (.notification { state := if rest.val.isEmpty then .idle else .waiting,
-                             waitingThreads := rest, hasPendingBadge := false, pendingWord := SeLe4n.Badge.zero, boundTCB := ntfn.boundTCB }) st with
+            (.notification (ntfn.withHeadPopped (ntfnSuccessor? st waiter))) st with
         | error e => simp
         | ok pair =>
           simp only []
@@ -606,16 +581,16 @@ Badge-consume: storeObject + storeTcbIpcState(.ready) — scheduler unchanged.
 Wait: storeObject + storeTcbIpcState(.blockedOnNotification) + removeRunnable —
 waiter's .blockedOnNotification is not .blockedOnSend/.blockedOnReceive, so
 contract predicates are maintained through backward transport. -/
-theorem notificationWait_preserves_ipcSchedulerContractPredicates
+theorem notificationWaitPark_preserves_ipcSchedulerContractPredicates
     (st st' : SystemState)
     (notificationId : SeLe4n.ObjId) (waiter : SeLe4n.ThreadId)
     (result : Option SeLe4n.Badge)
     (hContract : ipcSchedulerContractPredicates st)
     (hObjInv : st.objects.invExt)
-    (hStep : notificationWait notificationId waiter st = .ok (result, st')) :
+    (hStep : notificationWaitPark notificationId waiter st = .ok (result, st')) :
     ipcSchedulerContractPredicates st' := by
   rcases hContract with ⟨hReady, hBlockSend, hBlockRecv, hBlockCall, hBlockReply, hBlockNotif⟩
-  unfold notificationWait SystemState.getObject? at hStep
+  unfold notificationWaitPark SystemState.getObject? at hStep
   cases hObj : st.objects[notificationId]? with
   | none => simp [hObj] at hStep
   | some obj => cases obj with
@@ -628,7 +603,7 @@ theorem notificationWait_preserves_ipcSchedulerContractPredicates
         revert hStep
         cases hStore : storeObject notificationId
             (.notification
-              { state := .idle, waitingThreads := SeLe4n.NoDupList.empty,
+              { state := .idle, 
                 hasPendingBadge := false, pendingWord := SeLe4n.Badge.zero, boundTCB := ntfn.boundTCB }) st with
         | error e => simp
         | ok pair =>
@@ -745,16 +720,10 @@ theorem notificationWait_preserves_ipcSchedulerContractPredicates
           simp only [hLk] at hStep
           split at hStep
           · simp at hStep
-          · -- WS-RC R4.C: consWithGuard? case-split
-            cases hCons : ntfn.waitingThreads.consWithGuard? waiter with
-            | none => simp [hCons] at hStep
-            | some wt' =>
-            simp only [hCons] at hStep
+          · -- WS-ZA ZA4.4: the park records the waiter as the queue's tail
             revert hStep
             cases hStore : storeObject notificationId
-                (.notification { state := .waiting,
-                                 waitingThreads := wt',
-                                 hasPendingBadge := false, pendingWord := SeLe4n.Badge.zero, boundTCB := ntfn.boundTCB }) st with
+                (.notification (ntfn.withWaiterAppended waiter)) st with
             | error e => simp
             | ok pair =>
               simp only []
@@ -887,5 +856,98 @@ theorem notificationWait_preserves_ipcSchedulerContractPredicates
                     have ⟨hMem, _⟩ := hRun'
                     exact hBlockNotif tid tcb' nid hTcbPre hIpcState'
                       (show tid ∈ st.scheduler.runnable by rwa [← hSchedEq])
+
+-- ============================================================================
+-- WS-ZA ZA4.4: the wait is the park and then the link-in
+-- ============================================================================
+-- The link-in (`linkNtfnWaiter`) writes notification-queue links into TCBs and
+-- nothing else, so each invariant below crosses it by the slotwise readings
+-- `linkNtfnWaiter_tcb_backward` / `_nonTcb_iff` and the scheduler frame.
+
+/-- WS-ZA ZA4.4: the link-in writes no notification, so `ipcInvariant` crosses it. -/
+theorem linkNtfnWaiter_preserves_ipcInvariant {st st' : SystemState}
+    {waiter : SeLe4n.ThreadId} {tail : Option SeLe4n.ThreadId}
+    (hObjInv : st.objects.invExt) (h : linkNtfnWaiter st waiter tail = .ok st')
+    (hInv : ipcInvariant st) : ipcInvariant st' := fun oid ntfn hN =>
+  hInv oid ntfn ((linkNtfnWaiter_nonTcb_iff hObjInv h oid _ (fun _ hc => by cases hc)).mp hN)
+
+/-- WS-F4: notificationWait preserves ipcInvariant. -/
+theorem notificationWait_preserves_ipcInvariant
+    (st st' : SystemState)
+    (notificationId : SeLe4n.ObjId) (waiter : SeLe4n.ThreadId)
+    (result : Option SeLe4n.Badge)
+    (hInv : ipcInvariant st)
+    (hObjInv : st.objects.invExt)
+    (hStep : notificationWait notificationId waiter st = .ok (result, st')) :
+    ipcInvariant st' := by
+  rcases notificationWait_ok_cases hStep with ⟨_, rfl, hP⟩ | ⟨rfl, stP, hP, hL⟩
+  · exact notificationWaitPark_preserves_ipcInvariant st st' notificationId waiter _ hInv hObjInv hP
+  · exact linkNtfnWaiter_preserves_ipcInvariant
+      (notificationWaitPark_preserves_objects_invExt hObjInv hP) hL
+      (notificationWaitPark_preserves_ipcInvariant st stP notificationId waiter _ hInv hObjInv hP)
+
+/-- WS-ZA ZA4.4: the link-in moves no thread and changes no TCB's kind. -/
+theorem linkNtfnWaiter_preserves_schedulerInvariantBundle {st st' : SystemState}
+    {waiter : SeLe4n.ThreadId} {tail : Option SeLe4n.ThreadId}
+    (hObjInv : st.objects.invExt) (h : linkNtfnWaiter st waiter tail = .ok st')
+    (hInv : schedulerInvariantBundle st) : schedulerInvariantBundle st' := by
+  obtain ⟨hQCC, hRQU, hCTV⟩ := hInv
+  have hS := linkNtfnWaiter_scheduler_eq h
+  refine ⟨hS ▸ hQCC, hS ▸ hRQU, ?_⟩
+  unfold currentThreadValid at hCTV ⊢
+  rw [hS]
+  cases hC : st.scheduler.currentOnCore bootCoreId with
+  | none => trivial
+  | some x =>
+    rw [hC] at hCTV
+    obtain ⟨t, ht⟩ := hCTV
+    obtain ⟨tx, hx, _⟩ := linkNtfnWaiter_tcb_forward hObjInv h x.toObjId t ht
+    exact ⟨tx, hx⟩
+
+/-- WS-F4: notificationWait preserves schedulerInvariantBundle. -/
+theorem notificationWait_preserves_schedulerInvariantBundle
+    (st st' : SystemState)
+    (notificationId : SeLe4n.ObjId) (waiter : SeLe4n.ThreadId)
+    (result : Option SeLe4n.Badge)
+    (hInv : schedulerInvariantBundle st)
+    (hObjInv : st.objects.invExt)
+    (hStep : notificationWait notificationId waiter st = .ok (result, st')) :
+    schedulerInvariantBundle st' := by
+  rcases notificationWait_ok_cases hStep with ⟨_, rfl, hP⟩ | ⟨rfl, stP, hP, hL⟩
+  · exact notificationWaitPark_preserves_schedulerInvariantBundle st st' notificationId waiter _
+      hInv hObjInv hP
+  · exact linkNtfnWaiter_preserves_schedulerInvariantBundle
+      (notificationWaitPark_preserves_objects_invExt hObjInv hP) hL
+      (notificationWaitPark_preserves_schedulerInvariantBundle st stP notificationId waiter _
+        hInv hObjInv hP)
+
+/-- WS-ZA ZA4.4: the link-in keeps every field the contract reads. -/
+theorem linkNtfnWaiter_preserves_ipcSchedulerContractPredicates {st st' : SystemState}
+    {waiter : SeLe4n.ThreadId} {tail : Option SeLe4n.ThreadId}
+    (hObjInv : st.objects.invExt) (h : linkNtfnWaiter st waiter tail = .ok st')
+    (hContract : ipcSchedulerContractPredicates st) : ipcSchedulerContractPredicates st' :=
+  ipcSchedulerContractPredicates_of_schedulerEq_of_tcbIpcState st st'
+    (linkNtfnWaiter_scheduler_eq h)
+    (fun k tx hx => by
+      obtain ⟨ty, hy, np, nn, rfl⟩ := linkNtfnWaiter_tcb_backward hObjInv h k tx hx
+      exact ⟨ty, hy, rfl, rfl, rfl, rfl, rfl, rfl, rfl⟩)
+    hContract
+
+/-- WS-F4: notificationWait preserves ipcSchedulerContractPredicates. -/
+theorem notificationWait_preserves_ipcSchedulerContractPredicates
+    (st st' : SystemState)
+    (notificationId : SeLe4n.ObjId) (waiter : SeLe4n.ThreadId)
+    (result : Option SeLe4n.Badge)
+    (hContract : ipcSchedulerContractPredicates st)
+    (hObjInv : st.objects.invExt)
+    (hStep : notificationWait notificationId waiter st = .ok (result, st')) :
+    ipcSchedulerContractPredicates st' := by
+  rcases notificationWait_ok_cases hStep with ⟨_, rfl, hP⟩ | ⟨rfl, stP, hP, hL⟩
+  · exact notificationWaitPark_preserves_ipcSchedulerContractPredicates st st' notificationId
+      waiter _ hContract hObjInv hP
+  · exact linkNtfnWaiter_preserves_ipcSchedulerContractPredicates
+      (notificationWaitPark_preserves_objects_invExt hObjInv hP) hL
+      (notificationWaitPark_preserves_ipcSchedulerContractPredicates st stP notificationId
+        waiter _ hContract hObjInv hP)
 
 end SeLe4n.Kernel
