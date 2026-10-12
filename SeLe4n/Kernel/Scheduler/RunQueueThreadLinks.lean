@@ -193,6 +193,28 @@ def runQueueRefinedOnCore (st : SystemState) (c : CoreId) : Prop :=
 /-- WS-ZA ZA4.5: every core's run queue agrees with the threads. -/
 def runQueueRefined (st : SystemState) : Prop := ∀ c, st.runQueueRefinedOnCore c
 
+/-- A transition that leaves every thread's entry, every queue and every queue's
+ends as they were keeps the agreement. -/
+theorem runQueueRefined_of_frame {st st' : SystemState}
+    (hL : ∀ c t, st'.runLinkOn c t = st.runLinkOn c t)
+    (hQ : st'.scheduler.runQueue = st.scheduler.runQueue)
+    (hE : st'.scheduler.runQueueEnds = st.scheduler.runQueueEnds)
+    (h : st.runQueueRefined) : st'.runQueueRefined := by
+  intro c
+  have hc := h c
+  unfold runQueueRefinedOnCore SchedulerState.runQueueEndsOnCore SchedulerState.runQueueOnCore
+    at hc ⊢
+  rw [hQ, hE]
+  exact ⟨hc.1, fun t => (hL c t).trans (hc.2 t)⟩
+
+/-- ...in particular one that writes neither the objects nor the scheduler. -/
+theorem runQueueRefined_of_objects_scheduler_eq {st st' : SystemState}
+    (hO : st'.objects = st.objects) (hS : st'.scheduler = st.scheduler)
+    (h : st.runQueueRefined) : st'.runQueueRefined :=
+  runQueueRefined_of_frame (fun c t => runLinkOn_of_objects hO c t)
+    (congrArg SchedulerState.runQueue hS) (congrArg SchedulerState.runQueueEnds hS) h
+
+
 theorem runLinkOn_queued_iff (st : SystemState) (c : CoreId) (t : SeLe4n.ThreadId) :
     (st.runLinkOn c t).queued = true ↔
       ∃ tcb, st.getTcb? t = some tcb ∧ tcb.runCoreCode = c.val + 1 := by
@@ -615,6 +637,113 @@ theorem runLinkOn_eq_none_of_not_queued {st : SystemState} {c : CoreId} {t : SeL
   cases hT : st.getTcb? t with
   | none => rfl
   | some tcb => rw [hT] at h; exact TCB.runLinkOn_eq_none_of_not_queued h
+
+/-- The empty queue holds the empty entry for every thread. -/
+theorem _root_.SeLe4n.Kernel.RunQueue.queuedLink_empty (t : SeLe4n.ThreadId) :
+    RunQueue.empty.queuedLink t = RunQueue.RunQueueLink.none := by
+  unfold RunQueue.queuedLink
+  have h := RunQueue.contains_false_of_not_mem (RunQueue.not_mem_empty t)
+  unfold RunQueue.contains at h
+  rw [if_neg (by rw [h]; decide)]
+
+/-- An empty queue with empty ends agrees with threads none of which is on it. -/
+theorem runQueueRefinedOnCore_of_empty {st : SystemState} {c : CoreId}
+    (hQ : st.scheduler.runQueueOnCore c = RunQueue.empty)
+    (hE : st.scheduler.runQueueEndsOnCore c = RunQueueEnds.empty)
+    (hL : ∀ t, (st.runLinkOn c t).queued = false) : st.runQueueRefinedOnCore c := by
+  refine ⟨by rw [hQ, hE]; rfl, fun t => ?_⟩
+  rw [hQ, RunQueue.queuedLink_empty]
+  exact runLinkOn_eq_none_of_not_queued (hL t)
+
+/-- The default state: no threads, and every queue empty. -/
+theorem default_runQueueRefined : (default : SystemState).runQueueRefined := by
+  intro c
+  refine runQueueRefinedOnCore_of_empty (default_state_perCoreInitialized c).2.1
+    (PerCoreVector.replicate_get _ _ c) (fun t => ?_)
+  have hNone : (default : SystemState).getTcb? t = none := by
+    unfold getTcb?
+    simp only [RHTable_getElem?_eq_get?]
+    rw [show (default : SystemState).objects = RHTable.empty 16 from rfl, RHTable_get?_empty 16 (by omega)]
+  unfold runLinkOn
+  rw [hNone]
+  rfl
+
+/-- Rewriting a thread's TCB with one that holds the same entry on every core
+keeps every thread's entry. -/
+theorem runLinkOn_rewriteObject_tcb {st : SystemState} {tid : SeLe4n.ThreadId} {t t' : TCB}
+    (h : st.rewriteAdmissible tid.toObjId (.tcb t')) (hInv : st.objects.invExt)
+    (hT : st.getTcb? tid = some t) (hRun : ∀ c, t'.runLinkOn c = t.runLinkOn c)
+    (c : CoreId) (x : SeLe4n.ThreadId) :
+    (st.rewriteObject tid.toObjId (.tcb t') h).runLinkOn c x = st.runLinkOn c x := by
+  by_cases hx : x = tid
+  · subst hx
+    unfold runLinkOn
+    rw [rewriteObject_tcb_getTcb?_self st x t' h hInv, hT]
+    exact hRun c
+  · unfold runLinkOn
+    rw [rewriteObject_getTcb?_ne st _ _ h hInv x
+      (fun he => hx (SeLe4n.ThreadId.toObjId_injective _ _ he.symm))]
+
+/-- ...so such a rewrite keeps the agreement. -/
+theorem rewriteObject_tcb_runQueueRefined {st : SystemState} {tid : SeLe4n.ThreadId}
+    {t t' : TCB} (h : st.rewriteAdmissible tid.toObjId (.tcb t')) (hInv : st.objects.invExt)
+    (hT : st.getTcb? tid = some t) (hRun : ∀ c, t'.runLinkOn c = t.runLinkOn c)
+    (hR : st.runQueueRefined) : (st.rewriteObject tid.toObjId (.tcb t') h).runQueueRefined :=
+  runQueueRefined_of_frame (runLinkOn_rewriteObject_tcb h hInv hT hRun) rfl rfl hR
+
+/-- A TCB update that keeps every core's entry keeps the agreement. -/
+theorem updateTcb_runQueueRefined {st : SystemState} {tid : SeLe4n.ThreadId}
+    {f : TCB → TCB} (hInv : st.objects.invExt) (hf : ∀ x c, (f x).runLinkOn c = x.runLinkOn c)
+    (hR : st.runQueueRefined) : (st.updateTcb tid f).runQueueRefined := by
+  unfold updateTcb
+  split
+  · rename_i t hT _
+    exact rewriteObject_tcb_runQueueRefined _ hInv hT (hf t) hR
+  · exact hR
+
+/-- Storing a TCB that claims no run-queue place, at a thread no core's queue
+holds, keeps the agreement: the stored thread reads the empty entry before and
+after, and every other thread's TCB is untouched. -/
+theorem withObjectStored_tcb_runQueueRefined {st : SystemState} {tid : SeLe4n.ThreadId}
+    {t : TCB} (hInv : st.objects.invExt) (hT : t.runCoreCode = 0)
+    (hNot : ∀ c, (st.runLinkOn c tid).queued = false)
+    (hR : st.runQueueRefined) : (st.withObjectStored tid.toObjId (.tcb t)).runQueueRefined := by
+  refine runQueueRefined_of_frame (fun c x => ?_)
+    (by rw [withObjectStored_scheduler]) (by rw [withObjectStored_scheduler]) hR
+  by_cases hx : x = tid
+  · subst hx
+    rw [runLinkOn_eq_none_of_not_queued (hNot c)]
+    unfold runLinkOn getTcb?
+    rw [withObjectStored_objects_self st _ _ hInv]
+    show t.runLinkOn c = _
+    unfold TCB.runLinkOn
+    rw [if_neg (by rw [hT]; omega)]
+  · unfold runLinkOn getTcb?
+    rw [withObjectStored_objects]
+    simp only [RHTable_getElem?_eq_get?]
+    rw [RHTable.getElem?_insert_ne st.objects _ _ _
+      (fun hb => hx (SeLe4n.ThreadId.toObjId_injective _ _ (eq_of_beq hb).symm)) hInv]
+
+/-- A state whose queues and ends are the default ones and none of whose
+threads claims a run-queue place agrees: the unchecked boot's shape. -/
+theorem runQueueRefined_of_default_queues {st : SystemState}
+    (hQ : st.scheduler.runQueue = (default : SystemState).scheduler.runQueue)
+    (hE : st.scheduler.runQueueEnds = (default : SystemState).scheduler.runQueueEnds)
+    (hT : ∀ t tcb, st.getTcb? t = some tcb → tcb.runCoreCode = 0) : st.runQueueRefined := by
+  intro c
+  refine runQueueRefinedOnCore_of_empty ?_ ?_ (fun t => ?_)
+  · unfold SchedulerState.runQueueOnCore; rw [hQ]
+    exact (default_state_perCoreInitialized c).2.1
+  · unfold SchedulerState.runQueueEndsOnCore; rw [hE]
+    exact PerCoreVector.replicate_get _ _ c
+  · unfold runLinkOn
+    cases h : st.getTcb? t with
+    | none => rfl
+    | some tcb =>
+      show (tcb.runLinkOn c).queued = false
+      unfold TCB.runLinkOn
+      rw [if_neg (by rw [hT t tcb h]; omega)]
+      rfl
 
 theorem _root_.SeLe4n.Model.RunQueueLink.withPrevIfQueued_of_not_queued {l : RunQueueLink}
     (h : l.queued = false) (v : Nat) : RunQueueLink.withPrevIfQueued v l = l := by

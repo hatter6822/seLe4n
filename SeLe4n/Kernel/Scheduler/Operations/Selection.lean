@@ -1765,6 +1765,30 @@ theorem enqueueRunnableOnCore_onlyObjectsSchedulerDiffer (st : SystemState) (c :
         _).trans rfl
   · exact .refl _
 
+/-- WS-ZA ZA4.5: the enqueue keeps every core's run queue in agreement with
+the threads' links: the `.ready` mark moves no link, the append is the proven
+link append onto a thread no core holds, and the reschedule mark touches no
+queue. -/
+theorem enqueueRunnableOnCore_runQueueRefined {st : SystemState} (c : CoreId)
+    (tid : SeLe4n.ThreadId) (hInv : st.objects.invExt) (hR : st.runQueueRefined) :
+    (enqueueRunnableOnCore st c tid).runQueueRefined := by
+  unfold enqueueRunnableOnCore
+  split
+  · rename_i tcb hT _
+    split
+    · exact hR
+    · rename_i hNot
+      refine SystemState.runQueueRefined_of_frame (fun _ _ => rfl) rfl rfl ?_
+      refine SystemState.runEnqueueOnCore_refined
+        (SystemState.rewriteObject_tcb_runQueueRefined _ hInv hT (fun _ => rfl) hR) ?_ ?_
+      · rw [SystemState.rewriteObject_tcb_getTcb?_self _ _ _ _ hInv]; rfl
+      · intro c' _
+        have hF : runnableOnSomeCore st tid = false := by simpa using hNot
+        have hC := List.any_eq_false.mp hF c' (SeLe4n.Kernel.Concurrency.mem_allCores c')
+        show (st.scheduler.runQueueOnCore c').contains tid = false
+        simpa using hC
+  · exact hR
+
 /-- WS-ZA ZA4.5: the enqueue is the identity, or it inserts `tid` into core
 `c`'s run queue (ghost queue and concrete ends) and marks `c` for rescheduling. -/
 theorem enqueueRunnableOnCore_scheduler_cases (st : SystemState) (c : CoreId)

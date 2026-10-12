@@ -7782,7 +7782,8 @@ run_check "INVARIANT" rg -n '^  runLazyFpChecks$' tests/FaultHandlingSuite.lean
 # the root task on the boot core and the untrusted thread pinned to core 1.
 run_check "INVARIANT" rg -U -n '^def startInitialThreadOnCore \(st : SystemState\) \(tid : SeLe4n\.ThreadId\) : SystemState :=\n  enqueueRunnableOnCore \(st\.updateTcb tid fun t => \{ t with threadState := \.Ready \}\)\n    \(determineTargetCore st tid\) tid$' SeLe4n/Kernel/Scheduler/Operations/InitialThreadStart.lean
 run_check "INVARIANT" rg -n '^theorem initialThreadStartable_spec($|[ ({:\[\]])' SeLe4n/Kernel/Scheduler/Operations/InitialThreadStart.lean
-run_check "INVARIANT" rg -n '^theorem startInitialThreadOnCore_eq($|[ ({:\[\]])' SeLe4n/Kernel/Scheduler/Operations/InitialThreadStart.lean
+run_check "INVARIANT" rg -n '^theorem startInitialThreadOnCore_objectsAgree($|[ ({:\[\]])' SeLe4n/Kernel/Scheduler/Operations/InitialThreadStart.lean
+run_check "INVARIANT" rg -n '^theorem startInitialThreadOnCore_runQueueRefined($|[ ({:\[\]])' SeLe4n/Kernel/Scheduler/Operations/InitialThreadStart.lean
 run_check "INVARIANT" rg -n '^theorem startInitialThreadOnCore_currentOnCore($|[ ({:\[\]])' SeLe4n/Kernel/Scheduler/Operations/InitialThreadStart.lean
 run_check "INVARIANT" rg -n '^theorem startInitialThreadOnCore_preserves_threadStateConsistent($|[ ({:\[\]])' SeLe4n/Kernel/Scheduler/Operations/InitialThreadStart.lean
 run_check "INVARIANT" rg -n '^theorem startInitialThreadOnCore_preserves_runQueueBootSound($|[ ({:\[\]])' SeLe4n/Kernel/Scheduler/Operations/InitialThreadStart.lean
@@ -8261,11 +8262,13 @@ run_check "INVARIANT" rg -n '^import SeLe4n.Kernel.InformationFlow.RefusalRecord
 # the identifier outright would forbid the carriage too.  What must stay absent
 # is the field being READ as a conjunct: the `st.declassificationRefusals`
 # projection, and anything conjoined after the bundle's last conjunct — which is
-# how every conjunct from the 12th to the 16th was actually added.
+# how every conjunct from the 12th to the 17th was actually added (the 17th,
+# the run-queue link agreement of WS-ZA ZA4.5, is the bundle's last).
 run_check "INVARIANT" rg -n '^theorem refusalLedger_bounded_structurally($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/RefusalRecord.lean
 run_check "INVARIANT" rg -n '^theorem refusalCounter_bound_is_structural($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/RefusalRecord.lean
-run_check "INVARIANT" rg -n '^    auditLogBounded st\.declassificationAuditLog$' SeLe4n/Kernel/Architecture/Invariant.lean
-run_negative_check "INVARIANT" rg -n 'auditLogBounded st\.declassificationAuditLog ' SeLe4n/Kernel/Architecture/Invariant.lean
+run_check "INVARIANT" rg -n '^    auditLogBounded st\.declassificationAuditLog ∧$' SeLe4n/Kernel/Architecture/Invariant.lean
+run_check "INVARIANT" rg -n '^    st\.runQueueRefined$' SeLe4n/Kernel/Architecture/Invariant.lean
+run_negative_check "INVARIANT" rg -n 'st\.runQueueRefined ' SeLe4n/Kernel/Architecture/Invariant.lean
 run_negative_check "INVARIANT" rg -n 'st\.declassificationRefusals' SeLe4n/Kernel/Architecture/Invariant.lean
 # Saturation, the counted eviction, and the retention window.
 run_check "INVARIANT" rg -n '^theorem recordRefusal_saturates($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/RefusalRecord.lean

@@ -179,9 +179,9 @@ theorem startInitialThread_preserves_bootStartShape (ist : IntermediateState)
     (tid : SeLe4n.ThreadId) (hStart : initialThreadStartable ist.state tid = true)
     (h : bootStartShape ist) : bootStartShape (startInitialThread ist tid) := by
   have hInv := ist.hAllTables.1.1
-  obtain ⟨hShape, hFields, hAsid, hUntyped, ⟨rq, re, rp, hSch⟩, hQueue⟩ := h
+  obtain ⟨hShape, hFields, hAsid, hUntyped, ⟨rq, re, rp, hSch⟩, hRun, hQueue⟩ := h
   have hFrame := startInitialThreadOnCore_frame ist.state tid
-  refine ⟨?_, ?_, ?_, ?_, ?_, ?_⟩
+  refine ⟨?_, ?_, ?_, ?_, ?_, startInitialThreadOnCore_runQueueRefined ist.state tid hInv hRun, ?_⟩
   · intro oid obj hObj
     rcases startInitialThreadOnCore_objects_cases ist.state tid hInv oid obj hObj with
       hB | ⟨t, t', hT, rfl, he⟩

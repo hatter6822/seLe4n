@@ -416,6 +416,15 @@ theorem startInitialThreadOnCore_preserves_objects_invExt (st : SystemState)
   enqueueRunnableOnCore_preserves_objects_invExt _ _ tid
     (SystemState.updateTcb_preserves_objects_invExt st tid _ hInv)
 
+
+/-- WS-ZA ZA4.5: the start keeps the run queues in agreement with the threads'
+links: the state flag moves no link, and the enqueue keeps the agreement. -/
+theorem startInitialThreadOnCore_runQueueRefined (st : SystemState)
+    (tid : SeLe4n.ThreadId) (hInv : st.objects.invExt) (hR : st.runQueueRefined) :
+    (startInitialThreadOnCore st tid).runQueueRefined :=
+  enqueueRunnableOnCore_runQueueRefined _ tid
+    (SystemState.updateTcb_preserves_objects_invExt st tid _ hInv)
+    (SystemState.updateTcb_runQueueRefined hInv (fun _ _ => rfl) hR)
 /-- **WS-BP BP7.11**: the start preserves the per-object CNode-slot invariant —
 it writes a TCB, and every CNode it holds is the pre-state's. -/
 theorem startInitialThreadOnCore_preserves_perObjectSlotsInvariant (st : SystemState)

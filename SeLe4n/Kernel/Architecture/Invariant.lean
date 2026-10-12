@@ -146,7 +146,16 @@ transition that would falsify a line's witness.  It reads exactly three fields
 — `perCoreICache` (via `icacheOnCore`) plus `objects` + `asidTable` (via
 `resolveAsidRoot`) — and none of `machine` / `scheduler` / `tlbShootdown`, so
 it transports through the adapter transitions *definitionally*, for the same
-reason the 9th and 13th do. -/
+reason the 9th and 13th do.
+
+WS-ZA ZA4.5: `runQueueRefined` added as the 17th component — every core's run
+queue agrees with the run-queue links its threads hold (`TCB.runCoreCode` and
+the link codes beside it) and with the core's queue ends
+(`SchedulerState.runQueueEnds`), as seL4 relates its abstract ready queues to
+`tcbSchedNext`/`tcbSchedPrev`.  It is what lets the executed scheduler read
+the links in place of the abstract queue.  It reads `objects` (the TCBs' run
+fields) and `scheduler` (the queues and their ends), so the adapter
+transitions frame it as they frame the scheduler conjuncts. -/
 def proofLayerInvariantBundle (st : SystemState) : Prop :=
   schedulerInvariantBundleFull st ∧
     capabilityInvariantBundle st ∧
@@ -163,7 +172,8 @@ def proofLayerInvariantBundle (st : SystemState) : Prop :=
     tlbInvalidationConsistent_perCore st ∧
     icacheCoherent_perCore st ∧
     ackBounded st.tlbShootdown ∧
-    auditLogBounded st.declassificationAuditLog
+    auditLogBounded st.declassificationAuditLog ∧
+    st.runQueueRefined
 
 /-- Proof-carrying local preservation hooks required to compose adapter paths with invariant bundles. -/
 structure AdapterProofHooks (contract : RuntimeBoundaryContract) where
@@ -618,7 +628,7 @@ private theorem default_schedulerInvariantBundleFull :
 
 theorem default_system_state_proofLayerInvariantBundle :
     proofLayerInvariantBundle (default : SystemState) := by
-  refine ⟨?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_⟩
+  refine ⟨?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_⟩
   -- 1. schedulerInvariantBundleFull (WS-H12e: now uses full bundle)
   · exact default_schedulerInvariantBundleFull
   -- 2. capabilityInvariantBundle (6-tuple: unique, sound, bounded, completeness, acyclicity, depth)
@@ -682,6 +692,8 @@ theorem default_system_state_proofLayerInvariantBundle :
   -- 16. auditLogBounded (WS-SM SM8.C.8: boot declassifies nothing, so the
   --     audit trail is empty and trivially within capacity)
   · exact default_auditLogBounded
+  -- 17. runQueueRefined (WS-ZA ZA4.5: no thread, every queue and its ends empty)
+  · exact SystemState.default_runQueueRefined
 
 -- ============================================================================
 -- M-08/WS-E6: Architecture assumption consumption bridge theorems
@@ -1087,13 +1099,13 @@ theorem proofLayerInvariantBundle_setDeclassificationAuditTrail (st : SystemStat
       { st with declassificationAuditLog := log, declassificationAuditEpoch := epoch } := by
   obtain ⟨bSched, bCap, bCoreIpc, bCoupling, bLifecycle, bService, bVSpace,
           bCross, bTlb, bSchedExt, bNtfn, bPending, bPerCoreTlb,
-          bIcache, bAck, _bAuditPre⟩ := h
+          bIcache, bAck, _bAuditPre, bRun⟩ := h
   exact ⟨bSched, bCap, coreIpcInvariantBundle_setDeclassificationAuditLog bCoreIpc,
          ipcSchedulerCouplingInvariantBundle_setDeclassificationAuditLog bCoupling,
          bLifecycle, bService, bVSpace,
          crossSubsystemInvariant_setDeclassificationAuditLog bCross,
          bTlb, bSchedExt, (notificationWaiterConsistent_of_objects_eq (st := st) rfl bNtfn), bPending, bPerCoreTlb,
-         bIcache, bAck, hBounded⟩
+         bIcache, bAck, hBounded, bRun⟩
 
 /-- **WS-SM SM8.C.8**: the trail-only instance — an append leaves the epoch
 where it was, so a recording writer owes nothing about it. -/
@@ -1170,13 +1182,13 @@ theorem proofLayerInvariantBundle_setDeclassificationRefusals (st : SystemState)
     proofLayerInvariantBundle { st with declassificationRefusals := L } := by
   obtain ⟨bSched, bCap, bCoreIpc, bCoupling, bLifecycle, bService, bVSpace,
           bCross, bTlb, bSchedExt, bNtfn, bPending, bPerCoreTlb,
-          bIcache, bAck, bAudit⟩ := h
+          bIcache, bAck, bAudit, bRun⟩ := h
   exact ⟨bSched, bCap, coreIpcInvariantBundle_setDeclassificationRefusals bCoreIpc,
          ipcSchedulerCouplingInvariantBundle_setDeclassificationRefusals bCoupling,
          bLifecycle, bService, bVSpace,
          crossSubsystemInvariant_setDeclassificationRefusals bCross,
          bTlb, bSchedExt, (notificationWaiterConsistent_of_objects_eq (st := st) rfl bNtfn), bPending, bPerCoreTlb,
-         bIcache, bAck, bAudit⟩
+         bIcache, bAck, bAudit, bRun⟩
 
 /-! ### WS-SM SM9.D.2 — `proofLayerInvariantBundle` carriage across a taint write
 
@@ -1243,13 +1255,13 @@ theorem proofLayerInvariantBundle_setDeclassificationTaint (st : SystemState)
     proofLayerInvariantBundle { st with declassificationTaint := T } := by
   obtain ⟨bSched, bCap, bCoreIpc, bCoupling, bLifecycle, bService, bVSpace,
           bCross, bTlb, bSchedExt, bNtfn, bPending, bPerCoreTlb,
-          bIcache, bAck, bAudit⟩ := h
+          bIcache, bAck, bAudit, bRun⟩ := h
   exact ⟨bSched, bCap, coreIpcInvariantBundle_setDeclassificationTaint bCoreIpc,
          ipcSchedulerCouplingInvariantBundle_setDeclassificationTaint bCoupling,
          bLifecycle, bService, bVSpace,
          crossSubsystemInvariant_setDeclassificationTaint bCross,
          bTlb, bSchedExt, (notificationWaiterConsistent_of_objects_eq (st := st) rfl bNtfn), bPending, bPerCoreTlb,
-         bIcache, bAck, bAudit⟩
+         bIcache, bAck, bAudit, bRun⟩
 
 /-- **WS-SM SM7.F.5**: `proofLayerInvariantBundle` carriage across a write to
 `perCoreTlb`.

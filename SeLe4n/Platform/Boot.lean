@@ -5678,7 +5678,8 @@ theorem proofLayerInvariantBundle_of_bootShape (ist : IntermediateState)
     (hSched : schedulerInvariantBundleFull ist.state)
     (hCur : ist.state.scheduler.currentOnCore bootCoreId = none)
     (hReplenish : replenishQueueValid ist.state)
-    (hEffective : effectiveParamsMatchRunQueue ist.state) :
+    (hEffective : effectiveParamsMatchRunQueue ist.state)
+    (hRun : ist.state.runQueueRefined) :
     Architecture.proofLayerInvariantBundle ist.state := by
   obtain ⟨hCdt, hCdtNS, hSvc, hSvcR, hTlb, hShoot, hPerCoreTlb, hPerCoreICache,
     hAudit⟩ := hFields
@@ -6163,11 +6164,12 @@ theorem proofLayerInvariantBundle_of_bootShape (ist : IntermediateState)
       ist.state.declassificationAuditLog := by
     rw [hAudit]
     exact SeLe4n.Model.default_auditLogBounded
-  -- Compose all 16 components
+  -- 17. runQueueRefined: the caller's hypothesis.
+  -- Compose all 17 components
   exact ⟨h1, hCapBundle, ⟨h1.1, hCapBundle, hIpcFull⟩, hCouplingBundle,
          hLifeBundle, hServiceBundle, hVspaceBundle, hCrossBundle, hTlbBundle, hExtBundle,
          hNtfnWaiter, hPBBundle, hPerCoreTlbBundle, hPerCoreICacheBundle, hAckBounded,
-         hAuditBounded⟩
+         hAuditBounded, hRun⟩
 
 /-- V4-A8: The post-boot state from any config satisfies
     `proofLayerInvariantBundle` — the unchecked boot's instance of
@@ -6255,7 +6257,7 @@ theorem bootFromPlatform_proofLayerInvariantBundle_general
      bootFromPlatform_tlb_eq config, bootFromPlatform_tlbShootdown_eq config,
      bootFromPlatform_perCoreTlb_eq config, bootFromPlatform_perCoreICache_eq config,
      bootFromPlatform_declassificationAuditLog_eq config⟩
-    ?_ (bootFromPlatform_untypedRegionsDisjoint config hUntypedDisj) h1 hCur ?_ ?_
+    ?_ (bootFromPlatform_untypedRegionsDisjoint config hUntypedDisj) h1 hCur ?_ ?_ ?_
   · -- Every object is a boot-safe configured object.
     intro oid obj hObj
     refine bootSafeObject_bootObjectShape (bootFromPlatform_objects_bootSafe config hSafe oid obj hObj) ?_
@@ -6280,6 +6282,12 @@ theorem bootFromPlatform_proofLayerInvariantBundle_general
       rw [hSch]; decide
     have hInFlat := (RunQueue.mem_toList_iff_mem _ tid).mpr hMem
     simp [hFlat] at hInFlat
+  · -- runQueueRefined: default queues, and every boot-safe TCB on no queue.
+    refine SystemState.runQueueRefined_of_default_queues (by rw [hSch]) (by rw [hSch])
+      (fun t tcb hT => ?_)
+    have hSafeObj := bootFromPlatform_objects_bootSafe config hSafe _ _
+      ((SystemState.getTcb?_eq_some_iff _ _ _).mp hT)
+    exact (hSafeObj.2.2.2.1 tcb rfl).2.2.2.2.2.2.2.2.2.2
 
 -- ============================================================================
 -- V4-A9: End-to-end bridge for general configs
@@ -7682,10 +7690,40 @@ private theorem bootCoreIdleQueue_priorityOf :
         (idleThreadId bootCoreId) = some ⟨0⟩ := by
   decide
 
+/-- WS-ZA ZA4.5: the checked boot's run queues agree with its threads' links —
+its queues and ends are the default (empty) ones, and every configured TCB
+claims no run-queue place (`bootSafeTcbCheck`). -/
+theorem bootFromPlatformChecked_ok_runQueueRefined (config : PlatformConfig)
+    (ist : IntermediateState) (h : bootFromPlatformChecked config = .ok ist) :
+    ist.state.runQueueRefined := by
+  have hSch := bootFromPlatformChecked_ok_scheduler_eq config ist h
+  refine SystemState.runQueueRefined_of_default_queues (by rw [hSch]) (by rw [hSch])
+    (fun t tcb hT => ?_)
+  exact (bootFromPlatformChecked_ok_tcb_bootSafeFields config ist h _ tcb
+    ((SystemState.getTcb?_eq_some_iff _ _ _).mp hT)).2.2.2.2.2.2.2.2.2.2
+
+/-- WS-ZA ZA4.5: the idle fold keeps the run queues in agreement with the
+threads' links — each step's idle slot is fresh, so no queue holds its idle
+thread (`enqueueIdleThreadOnCore_runQueueRefined`). -/
+theorem foldl_enqueueIdleThread_runQueueRefined (L : List SeLe4n.Kernel.Concurrency.CoreId)
+    (ist : IntermediateState) (hReady : idleFoldReady L ist) (hR : ist.state.runQueueRefined) :
+    (L.foldl enqueueIdleThread ist).state.runQueueRefined := by
+  induction L generalizing ist with
+  | nil => exact hR
+  | cons x xs ih =>
+    refine ih _ hReady.step (enqueueIdleThreadOnCore_runQueueRefined ist.state x
+      ist.hAllTables.1.1 hR (fun c' _ => ?_))
+    rw [← (hR c').contains]
+    unfold SystemState.runLinkOn SystemState.getTcb?
+    rw [hReady.head.1]
+    rfl
+
 /-- **WS-BP BP7.11**: **what a boot leaves, for the bundle to be read off** —
     every object boot-shaped, the untouched fields their defaults, the ASID
     table consistent, the untypeds disjoint, the scheduler the default one but
-    for its run queues (ghost queues and concrete ends), and the boot core's queue boot-sound
+    for its run queues (ghost queues and concrete ends), every queue in
+    agreement with the threads' run-queue links (`runQueueRefined`, WS-ZA
+    ZA4.5), and the boot core's queue boot-sound
     (`Kernel.runQueueBootSound`: distinct members, each a stored TCB with a
     positive time slice and no inherited boost, bucketed at its own priority).
 
@@ -7703,6 +7741,7 @@ def bootStartShape (ist : IntermediateState) : Prop :=
   (∃ rq re rp, ist.state.scheduler =
     { (default : SystemState).scheduler with
       runQueue := rq, runQueueEnds := re, reschedulePending := rp }) ∧
+  ist.state.runQueueRefined ∧
   Kernel.runQueueBootSound ist.state bootCoreId
 
 /-- **WS-BP BP7.11**: **the proof-layer bundle of any state of boot shape.**
@@ -7711,7 +7750,7 @@ def bootStartShape (ist : IntermediateState) : Prop :=
     the rest is passed through. -/
 theorem proofLayerInvariantBundle_of_bootStartShape (ist : IntermediateState)
     (h : bootStartShape ist) : Architecture.proofLayerInvariantBundle ist.state := by
-  obtain ⟨hShape, hFields, hAsid, hUntyped, ⟨rq, re, rp, hSch⟩, hNodup, hQueue⟩ := h
+  obtain ⟨hShape, hFields, hAsid, hUntyped, ⟨rq, re, rp, hSch⟩, hRun, hNodup, hQueue⟩ := h
   have hCur : ist.state.scheduler.currentOnCore bootCoreId = none := by
     rw [hSch]; exact (default_state_perCoreInitialized bootCoreId).1
   have hRunnableTcb : ∀ tid, tid ∈ ist.state.scheduler.runnable →
@@ -7749,6 +7788,7 @@ theorem proofLayerInvariantBundle_of_bootStartShape (ist : IntermediateState)
       rw [hDS] at hMem
       simp at hMem
   refine proofLayerInvariantBundle_of_bootShape ist hShape hFields hAsid hUntyped hSched hCur ?_ ?_
+    hRun
   · simp only [replenishQueueValid, hSch]
     exact ⟨empty_sorted, empty_sizeConsistent⟩
   · intro tid hMem
@@ -7793,7 +7833,9 @@ theorem bootFromPlatformCheckedWithIdleThreadsFor_bootStartShape
         (bootFromPlatformChecked_ok_bootQuiescentFields config base hChecked),
       foldl_enqueueIdleThread_preserves_asidTableConsistent cores base
         (bootFromPlatformChecked_ok_asidTableConsistent config base hChecked) hR,
-      ?_, ⟨rq, re, (default : SystemState).scheduler.reschedulePending, hSch⟩, ?_, ?_⟩
+      ?_, ⟨rq, re, (default : SystemState).scheduler.reschedulePending, hSch⟩,
+      foldl_enqueueIdleThread_runQueueRefined cores base hR
+        (bootFromPlatformChecked_ok_runQueueRefined config base hChecked), ?_, ?_⟩
     · -- Every object: the checked boot's, or an idle TCB.
       intro oid obj hObj
       rcases foldl_enqueueIdleThread_objects_cases cores base oid obj hR hObj with

@@ -121,6 +121,35 @@ theorem enqueueIdleThreadOnCore_objectsAgreeOffRunLinks (st : SystemState) (c : 
     ((SystemState.runRemoveOnCore_objectsAgreeOffRunLinks st c _).withObjectStored
       (SystemState.runRemoveOnCore_objects_invExt _ _ _ hInv) hInv _ _)
 
+/-- WS-ZA ZA4.5: the idle enqueue keeps every run queue in agreement with the
+threads' links, provided no other core's queue holds core `c`'s idle thread:
+the removal leaves it on no queue, the store writes a TCB claiming no place,
+and the append is the proven link append. -/
+theorem enqueueIdleThreadOnCore_runQueueRefined (st : SystemState) (c : CoreId)
+    (hInv : st.objects.invExt) (hR : st.runQueueRefined)
+    (hOther : ∀ c', c' ≠ c → (st.scheduler.runQueueOnCore c').contains (idleThreadId c) = false) :
+    (enqueueIdleThreadOnCore st c).runQueueRefined := by
+  have hR1 := SystemState.runRemoveOnCore_refined (c := c) (t := idleThreadId c) hR
+  have hInv1 := SystemState.runRemoveOnCore_objects_invExt st c (idleThreadId c) hInv
+  have hGone : ∀ c', ((st.runRemoveOnCore c (idleThreadId c)).scheduler.runQueueOnCore c').contains
+      (idleThreadId c) = false := by
+    intro c'
+    by_cases hc : c' = c
+    · subst hc
+      rw [SystemState.runRemoveOnCore_runQueueOnCore_self, RunQueue.contains_remove]
+      simp
+    · rw [SystemState.runRemoveOnCore_runQueueOnCore_ne _ _ _ _ (Ne.symm hc)]
+      exact hOther c' hc
+  have hR2 := SystemState.withObjectStored_tcb_runQueueRefined (t := queuedIdleThread c) hInv1 rfl
+    (fun c' => by rw [(hR1 c').contains]; exact hGone c') hR1
+  unfold enqueueIdleThreadOnCore
+  refine SystemState.runEnqueueOnCore_refined hR2 ?_ (fun c' _ => ?_)
+  · unfold SystemState.getTcb?
+    rw [SystemState.withObjectStored_objects_self _ _ _ hInv1]
+    rfl
+  · rw [SystemState.withObjectStored_scheduler]
+    exact hGone c'
+
 /-- WS-SM SM5.E.3: the idle-enqueue's scheduler write.  The ghost queue is
 `remove`-then-`insert`, so a *re-enqueue* of an already-resident idle thread
 refreshes its priority bucket to `0` rather than leaving a stale bucket
@@ -136,8 +165,7 @@ theorem enqueueIdleThreadOnCore_scheduler (st : SystemState) (c : CoreId) :
           (queuedIdleThread c).priority) := by
   simp only [enqueueIdleThreadOnCore, SystemState.runEnqueueOnCore_scheduler,
     SystemState.withObjectStored_scheduler, SystemState.runRemoveOnCore_scheduler,
-    SchedulerState.setRunQueueOnCore_runQueueOnCore_self,
-    SchedulerState.setRunQueueEndsOnCore_runQueueOnCore]
+    SchedulerState.setRunQueueOnCore_runQueueOnCore_self]
   rw [SchedulerState.setRunQueueOnCore_setRunQueueEndsOnCore,
     SchedulerState.setRunQueueOnCore_setRunQueueOnCore,
     SchedulerState.setRunQueueEndsOnCore_setRunQueueEndsOnCore]
