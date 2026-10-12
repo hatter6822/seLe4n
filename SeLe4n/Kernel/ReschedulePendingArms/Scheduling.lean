@@ -502,7 +502,8 @@ theorem sliceExpireOnCore_stepCovers (e : CoreId) (st : SystemState)
   · exact keyInputsEq_trans
       (keyInputsEq_rewriteObject (SystemState.rewriteAdmissible_tcb hTcb _) hInv
         (by rw [hO]; rfl))
-      (keyInputsEq_with_scheduler _ _)
+      (keyInputsEq_of_objectsAgreeOffRunLinks
+        (SystemState.runEnqueueOnCore_objectsAgreeOffRunLinks _ e tid _))
   · intro c hc
     have hne : e ≠ c := Ne.symm hc
     simp [sliceExpireOnCore, hne, SystemState.rewriteObject_scheduler]
@@ -533,7 +534,9 @@ theorem spendBudgetKeyHook_stepCovers (st : SystemState) (e : CoreId)
   dsimp only
   refine ⟨⟨markKeyChangeFor_covers hTcb (fun t ht => ?_) (fun c hc => Or.inr ⟨?_, ?_⟩),
     fun c hc hp => markKeyChangeFor_reschedulePendingOnCore_mono _ _ _ _ ?_⟩, ?_⟩
-  · refine schedKeyView_eq_of_scSlotWrite (fun oid h => ?_) hScRaw hAt
+  · rw [schedKeyView_of_objectsAgreeOffRunLinks
+      (SystemState.runEnqueueOnCore_objectsAgreeOffRunLinks _ e tid _) t]
+    refine schedKeyView_eq_of_scSlotWrite (fun oid h => ?_) hScRaw hAt
       (fun tcb' hT' hB' => ht ?_)
     · show keyInputsOf (st.rewriteObject scId.toObjId _ hAdm).objects[oid]? = _
       rw [hNe oid (Ne.symm h)]
@@ -550,7 +553,8 @@ theorem spendBudgetKeyHook_stepCovers (st : SystemState) (e : CoreId)
   · simp [replenishOnCore, SystemState.rewriteObject_scheduler]
   · simpa [replenishOnCore, SystemState.rewriteObject_scheduler] using hp
   · rw [markKeyChangeFor_objects]
-    exact SystemState.rewriteObject_preserves_objects_invExt st _ _ hAdm hObjInv
+    exact SystemState.runEnqueueOnCore_objects_invExt _ e tid _
+      (SystemState.rewriteObject_preserves_objects_invExt st _ _ hAdm hObjInv)
 
 /-- **The yield's charge covers**: the unbound arm is a slice expiry on core
 `e`, the bound arm a budget spend ending in the caller's key hook. -/
@@ -566,8 +570,7 @@ theorem yieldChargeOnCore_stepCovers (st st' : SystemState) (e : CoreId)
     split at h
     · cases h
       exact ⟨sliceExpireOnCore_stepCovers e st tid tcb hTcb hObjInv,
-        SystemState.rewriteObject_preserves_objects_invExt st _ _
-          (SystemState.rewriteAdmissible_tcb hTcb _) hObjInv⟩
+        sliceExpireOnCore_objects_invExt st e tid tcb hTcb hObjInv⟩
     · rename_i scId hBind
       split at h
       · rename_i sc hSc _

@@ -1433,7 +1433,9 @@ theorem timerTickBudgetOnCore_bound_exhausted_replenish_eq
   simp only [replenishOnCore,
     SeLe4n.Model.SchedulerState.setLastTimeoutErrorsOnCore_replenishQueueOnCore,
     timeoutBlockedThreads_replenishQueueOnCore,
-    SeLe4n.Model.SchedulerState.setRunQueueOnCore_replenishQueueOnCore]
+    SeLe4n.Model.SchedulerState.setRunQueueOnCore_replenishQueueOnCore,
+      SeLe4n.Model.SystemState.runEnqueueOnCore_scheduler,
+      SeLe4n.Model.SchedulerState.setRunQueueEndsOnCore_replenishQueueOnCore]
 
 /-- **WS-RR RR7.39 (frame)**: the per-core budget charge writes **only core `c`'s**
 replenish queue.
@@ -1462,7 +1464,9 @@ theorem timerTickBudgetOnCore_replenishQueueOnCore_ne (st : SystemState) (c : Co
       · simp only [Except.ok.injEq, Prod.mk.injEq] at hStep
         obtain ⟨hst, _⟩ := hStep
         subst hst
-        simp [SchedulerState.setRunQueueOnCore_replenishQueueOnCore]
+        simp [SchedulerState.setRunQueueOnCore_replenishQueueOnCore,
+      SeLe4n.Model.SystemState.runEnqueueOnCore_scheduler,
+      SeLe4n.Model.SchedulerState.setRunQueueEndsOnCore_replenishQueueOnCore]
   -- bound and donated: the same three sub-arms (an or-pattern in the source is
   -- two goals here), so the script runs on both.
   all_goals
@@ -1474,7 +1478,9 @@ theorem timerTickBudgetOnCore_replenishQueueOnCore_ne (st : SystemState) (c : Co
          subst hst
          simp only [SchedulerState.setLastTimeoutErrorsOnCore_replenishQueueOnCore,
            timeoutBlockedThreads_replenishQueueOnCore,
-           SchedulerState.setRunQueueOnCore_replenishQueueOnCore]
+           SchedulerState.setRunQueueOnCore_replenishQueueOnCore,
+      SeLe4n.Model.SystemState.runEnqueueOnCore_scheduler,
+      SeLe4n.Model.SchedulerState.setRunQueueEndsOnCore_replenishQueueOnCore]
          exact replenishOnCore_replenishQueueOnCore_ne _ c c' _ _ hne
        · -- not exhausted: an object write only
          simp only [Except.ok.injEq, Prod.mk.injEq] at hStep
@@ -1507,7 +1513,9 @@ theorem timerTickBudgetOnCore_donated_exhausted_replenish_eq
   simp only [replenishOnCore,
     SeLe4n.Model.SchedulerState.setLastTimeoutErrorsOnCore_replenishQueueOnCore,
     timeoutBlockedThreads_replenishQueueOnCore,
-    SeLe4n.Model.SchedulerState.setRunQueueOnCore_replenishQueueOnCore]
+    SeLe4n.Model.SchedulerState.setRunQueueOnCore_replenishQueueOnCore,
+      SeLe4n.Model.SystemState.runEnqueueOnCore_scheduler,
+      SeLe4n.Model.SchedulerState.setRunQueueEndsOnCore_replenishQueueOnCore]
 
 theorem timerTickBudgetOnCore_preserves_replenishQueueValidOnCore
     (st : SystemState) (c : CoreId) (tid : SeLe4n.ThreadId) (tcb : TCB)
@@ -1523,7 +1531,7 @@ theorem timerTickBudgetOnCore_preserves_replenishQueueValidOnCore
       split at hStep <;>
         · simp only [Except.ok.injEq, Prod.mk.injEq] at hStep
           obtain ⟨hst, _⟩ := hStep; subst hst
-          refine (replenishQueueValidOnCore_frame ?_).mpr (hValid c'); rfl
+          refine (replenishQueueValidOnCore_frame ?_).mpr (hValid c'); simp
   | .bound scId =>
       match hSc : st.getSchedContext? scId with
       | some sc =>
@@ -1534,7 +1542,7 @@ theorem timerTickBudgetOnCore_preserves_replenishQueueValidOnCore
           · simp only [timerTickBudgetOnCore, budgetExhaustOnCore, spendBudgetOnCore, SystemState.rewriteObject, hB, SystemState.getSchedContextWitnessed?_eq_some hSc, if_neg hBud, Except.ok.injEq,
               Prod.mk.injEq] at hStep
             obtain ⟨hst, _⟩ := hStep; subst hst
-            refine (replenishQueueValidOnCore_frame ?_).mpr (hValid c'); rfl
+            refine (replenishQueueValidOnCore_frame ?_).mpr (hValid c'); simp
       | none =>
           simp only [timerTickBudgetOnCore, hB, SystemState.getSchedContextWitnessed?_eq_none hSc] at hStep
           exact absurd hStep (by simp)
@@ -1548,7 +1556,7 @@ theorem timerTickBudgetOnCore_preserves_replenishQueueValidOnCore
           · simp only [timerTickBudgetOnCore, budgetExhaustOnCore, spendBudgetOnCore, SystemState.rewriteObject, hB, SystemState.getSchedContextWitnessed?_eq_some hSc, if_neg hBud, Except.ok.injEq,
               Prod.mk.injEq] at hStep
             obtain ⟨hst, _⟩ := hStep; subst hst
-            refine (replenishQueueValidOnCore_frame ?_).mpr (hValid c'); rfl
+            refine (replenishQueueValidOnCore_frame ?_).mpr (hValid c'); simp
       | none =>
           simp only [timerTickBudgetOnCore, hB, SystemState.getSchedContextWitnessed?_eq_none hSc] at hStep
           exact absurd hStep (by simp)

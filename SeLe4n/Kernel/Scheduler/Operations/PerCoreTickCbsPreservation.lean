@@ -356,7 +356,7 @@ theorem timerTickBudgetOnCore_machine (st : SystemState) (c : CoreId) (tid : SeL
   · -- unbound: both time-slice arms are object/scheduler writes
     split at hStep <;>
       · simp only [Except.ok.injEq, Prod.mk.injEq] at hStep
-        obtain ⟨hst, _⟩ := hStep; subst hst; rfl
+        obtain ⟨hst, _⟩ := hStep; subst hst; simp
   all_goals
     -- bound and donated: identical structure (getSchedContext? then the budget `if`)
     split at hStep
@@ -552,7 +552,7 @@ theorem timerTickBudgetOnCore_preserves_replenishmentPipelineOrderOnCore
       split at hStep <;>
         · simp only [Except.ok.injEq, Prod.mk.injEq] at hStep
           obtain ⟨hst, _⟩ := hStep; subst hst
-          exact pipeline_frame_of_queue_timer_eq st _ c' rfl hM hPipe
+          exact pipeline_frame_of_queue_timer_eq st _ c' (by simp) hM hPipe
   | .bound scId =>
       match hSc : st.getSchedContext? scId with
       | some sc =>

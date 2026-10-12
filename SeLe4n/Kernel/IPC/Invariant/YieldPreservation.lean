@@ -77,21 +77,17 @@ theorem sliceExpireOnCore_preserves_ipcInvariantFull (st : SystemState) (c : Cor
     rfl rfl rfl rfl rfl rfl rfl rfl rfl
     (passiveServerIdleFrame_of_tcbFieldUpdate tid.toObjId tcb _ hPre hAt hFrame rfl rfl
       (rewriteObject_scheduler st tid.toObjId _ hAdm))
-  exact ipcInvariantFull_of_schedulerGrow (st := st.rewriteObject tid.toObjId _ hAdm) rfl
-    (runQueueOnCore_boot_mem_of_insert _ c tid _) (SchedulerState.setRunQueueOnCore_currentOnCore _ _ _ _) h1
-
-/-- The slice expiry keeps the object table's invariant. -/
-theorem sliceExpireOnCore_objects_invExt (st : SystemState) (c : CoreId)
-    (tid : SeLe4n.ThreadId) (tcb : TCB) (hTcb : st.getTcb? tid = some tcb)
-    (hObjInv : st.objects.invExt) :
-    (sliceExpireOnCore st c tid tcb hTcb).objects.invExt :=
-  rewriteObject_preserves_objects_invExt st _ _ (SystemState.rewriteAdmissible_tcb hTcb _) hObjInv
+  unfold sliceExpireOnCore; dsimp only
+  exact ipcInvariantFull_runEnqueueOnCore _ c tid _
+    (ipcInvariantFull_of_schedulerGrow (st := st.rewriteObject tid.toObjId _ hAdm) rfl
+      (runQueueOnCore_boot_mem_of_insert _ c tid _)
+      (SchedulerState.setRunQueueOnCore_currentOnCore _ _ _ _) h1)
 
 /-- The slice expiry queues the thread on core `c`. -/
 theorem sliceExpireOnCore_mem_runQueue (st : SystemState) (c : CoreId)
     (tid : SeLe4n.ThreadId) (tcb : TCB) (hTcb : st.getTcb? tid = some tcb) :
     tid ∈ (sliceExpireOnCore st c tid tcb hTcb).scheduler.runQueueOnCore c := by
-  simp only [sliceExpireOnCore, SchedulerState.setRunQueueOnCore_runQueueOnCore_self]
+  simp only [sliceExpireOnCore, SystemState.runEnqueueOnCore_runQueueOnCore_self]
   exact (RunQueue.mem_insert _ _ _ _).mpr (Or.inr rfl)
 
 /-- The budget spend (shared by the tick's bound arm and yield's) preserves the
@@ -114,6 +110,7 @@ theorem spendBudgetOnCore_preserves_ipcInvariantFull (st : SystemState) (c : Cor
         all_goals rfl)
   unfold spendBudgetOnCore
   dsimp only
+  refine ipcInvariantFull_runEnqueueOnCore _ c tid _ ?_
   refine ipcInvariantFull_of_schedulerGrow (st := st.rewriteObject scId.toObjId _ hAdm) rfl
     ?_ ?_ h1
   · intro y hy
@@ -282,12 +279,11 @@ theorem spendBudgetOnCore_frame (st : SystemState) (c : CoreId)
     (∀ c' : CoreId, (spendBudgetOnCore st c tid scId sc hSc ticks).scheduler.currentOnCore c'
       = st.scheduler.currentOnCore c') ∧
     tid ∈ (spendBudgetOnCore st c tid scId sc hSc ticks).scheduler.runQueueOnCore c := by
-  unfold spendBudgetOnCore
-  dsimp only
-  refine ⟨rewriteObject_preserves_objects_invExt st _ _
-    (SystemState.rewriteAdmissible_schedContext hSc _) hObjInv, fun c' => ?_, ?_⟩
-  · simp [replenishOnCore, rewriteObject_scheduler]
-  · simp only [SchedulerState.setRunQueueOnCore_runQueueOnCore_self]
+  refine ⟨spendBudgetOnCore_objects_invExt st c tid scId sc hSc ticks hObjInv, fun c' => ?_, ?_⟩
+  · unfold spendBudgetOnCore
+    simp [replenishOnCore, rewriteObject_scheduler]
+  · unfold spendBudgetOnCore
+    simp only [SystemState.runEnqueueOnCore_runQueueOnCore_self]
     exact (RunQueue.mem_insert _ _ _ _).mpr (Or.inr rfl)
 
 /-- The yield's charge preserves the bundle, keeps the object table's invariant

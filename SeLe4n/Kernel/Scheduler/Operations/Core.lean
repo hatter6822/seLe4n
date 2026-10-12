@@ -1418,8 +1418,7 @@ so a yield and an expired slice cannot come to disagree. -/
   let tcb' := { tcb with timeSlice := st.scheduler.configDefaultTimeSlice }
   let st' := st.rewriteObject tid.toObjId (.tcb tcb')
     (SystemState.rewriteAdmissible_tcb hTcb tcb')
-  let rq := (st'.scheduler.runQueueOnCore c).insert tid (tcb.boostedPriority)
-  { st' with scheduler := st'.scheduler.setRunQueueOnCore c rq }
+  st'.runEnqueueOnCore c tid tcb.boostedPriority
 
 /-- WS-ZA ZA4.3: a bound thread's budget is spent on core `c`, charging `ticks`
 against SchedContext `scId` (the timer tick charges `1` to a budget of at most
@@ -1445,8 +1444,7 @@ out the SchedContext's IPC-blocked threads (`budgetExhaustOnCore`). -/
   -- equal); `stReplenished` is defeq to the prior open-coded
   -- `setReplenishQueueOnCore c ((replenishQueueOnCore c).insert scId (now+period))`.
   let stReplenished := replenishOnCore st' c scId (now + sc.period.val)
-  let rqPreempt := (st'.scheduler.runQueueOnCore c).insert tid (resolveInsertPriority st' tid sc)
-  { stReplenished with scheduler := stReplenished.scheduler.setRunQueueOnCore c rqPreempt }
+  stReplenished.runEnqueueOnCore c tid (resolveInsertPriority st' tid sc)
 
 /-- WS-ZA ZA4.3: the compiled `sliceExpireOnCore`.  The TCB is written in its
 slot (`modifyObject`), so a state the caller owns has neither the TCB nor the
@@ -1456,8 +1454,7 @@ object table rebuilt; proven equal to the specification
     (tcb : TCB) (_hTcb : st.getTcb? tid = some tcb) : SystemState :=
   let slice := st.scheduler.configDefaultTimeSlice
   let st' := st.modifyObject tid.toObjId (SystemState.mapTcbObject fun t => { t with timeSlice := slice })
-  let prio := tcb.boostedPriority
-  { st' with scheduler := st'.scheduler.modifyRunQueueOnCore c (·.insert tid prio) }
+  st'.runEnqueueOnCore c tid tcb.boostedPriority
 
 @[csimp] theorem sliceExpireOnCore_eq_impl : @sliceExpireOnCore = @sliceExpireOnCoreImpl := by
   funext st c tid tcb hTcb
@@ -1488,8 +1485,7 @@ is queued on it, so no state is read after a later one is built from it
     cbsUpdateDeadline (scheduleReplenishment (consumeBudget s ticks) now consumedAmount) now true)
   let prio := resolveInsertPriority st' tid sc
   let stReplenished := replenishOnCore st' c scId (now + sc.period.val)
-  { stReplenished with scheduler :=
-      stReplenished.scheduler.modifyRunQueueOnCore c (·.insert tid prio) }
+  stReplenished.runEnqueueOnCore c tid prio
 
 @[csimp] theorem spendBudgetOnCore_eq_impl : @spendBudgetOnCore = @spendBudgetOnCoreImpl := by
   funext st c tid scId sc hSc ticks
@@ -1498,6 +1494,28 @@ is queued on it, so no state is read after a later one is built from it
     SystemState.rewriteObject
   simp only [RobinHood.RHTable.modify_of_get? hx, SchedulerState.modifyRunQueueOnCore_eq]
   rfl
+
+/-- The slice expiry keeps the object table's invariant: the slice reset is an
+in-place rewrite and the enqueue writes run-queue links in place (WS-ZA ZA4.5). -/
+theorem sliceExpireOnCore_objects_invExt (st : SystemState) (c : CoreId)
+    (tid : SeLe4n.ThreadId) (tcb : TCB) (hTcb : st.getTcb? tid = some tcb)
+    (hObjInv : st.objects.invExt) :
+    (sliceExpireOnCore st c tid tcb hTcb).objects.invExt :=
+  SystemState.runEnqueueOnCore_objects_invExt _ c tid _
+    (SystemState.rewriteObject_preserves_objects_invExt st _ _
+      (SystemState.rewriteAdmissible_tcb hTcb _) hObjInv)
+
+/-- The budget spend keeps the object table's invariant: the SchedContext write
+is in place, the refill is a scheduler write, and the enqueue writes run-queue
+links in place (WS-ZA ZA4.5). -/
+theorem spendBudgetOnCore_objects_invExt (st : SystemState) (c : CoreId)
+    (tid : SeLe4n.ThreadId) (scId : SchedContextId) (sc : SchedContext)
+    (hSc : st.getSchedContext? scId = some sc) (ticks : Nat)
+    (hObjInv : st.objects.invExt) :
+    (spendBudgetOnCore st c tid scId sc hSc ticks).objects.invExt :=
+  SystemState.runEnqueueOnCore_objects_invExt _ c tid _
+    (SystemState.rewriteObject_preserves_objects_invExt st _ _
+      (SystemState.rewriteAdmissible_schedContext hSc _) hObjInv)
 
 /-- A bound thread's budget runs out on the timer tick: the budget is spent
 (`spendBudgetOnCore`) and the IPC-blocked threads the SchedContext bounded time

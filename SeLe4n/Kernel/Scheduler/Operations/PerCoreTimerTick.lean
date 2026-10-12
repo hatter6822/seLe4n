@@ -877,11 +877,14 @@ theorem timerTickBudgetOnCore_preserves_objects_invExt (st : SystemState) (c : C
   unfold timerTickBudgetOnCore at hStep
   dsimp only [SystemState.rewriteObject] at hStep
   split at hStep
-  · -- unbound (both time-slice sub-branches: TCB insert)
-    split at hStep <;>
-      (simp only [Except.ok.injEq, Prod.mk.injEq] at hStep
-       obtain ⟨hst, _⟩ := hStep; subst hst
-       exact RHTable_insert_preserves_invExt st.objects _ _ hInv)
+  · -- unbound: slice expiry, or the TCB insert of a decremented slice
+    split at hStep
+    · simp only [Except.ok.injEq, Prod.mk.injEq] at hStep
+      obtain ⟨hst, _⟩ := hStep; subst hst
+      exact sliceExpireOnCore_objects_invExt st c tid tcb hW hInv
+    · simp only [Except.ok.injEq, Prod.mk.injEq] at hStep
+      obtain ⟨hst, _⟩ := hStep; subst hst
+      exact RHTable_insert_preserves_invExt st.objects _ _ hInv
   all_goals
     -- bound + donated (identical: SchedContext insert, exhausted ⇒ + timeout)
     split at hStep
@@ -889,7 +892,7 @@ theorem timerTickBudgetOnCore_preserves_objects_invExt (st : SystemState) (c : C
       · simp only [Except.ok.injEq, Prod.mk.injEq] at hStep
         obtain ⟨hst, _⟩ := hStep; subst hst
         apply timeoutBlockedThreads_preserves_objects_invExt
-        exact RHTable_insert_preserves_invExt st.objects _ _ hInv
+        exact spendBudgetOnCore_objects_invExt _ _ _ _ _ _ _ hInv
       · simp only [Except.ok.injEq, Prod.mk.injEq] at hStep
         obtain ⟨hst, _⟩ := hStep; subst hst
         exact RHTable_insert_preserves_invExt st.objects _ _ hInv
