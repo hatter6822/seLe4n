@@ -67,7 +67,14 @@ reads 2 (3 before).
   `Notification.pendingBadge : Option Badge` is derived from them, so every
   read, invariant and theorem about it keeps its statement.  The flag is
   kept rather than read off `state = .active`, so the derived view equals the
-  old field on every notification.  Write sites set both fields.
+  old field on every notification.  Write sites set both fields, and a clear
+  flag forces a zero word by construction (`pendingWord_cleared`, a proof
+  field erased at run time), so no notification, boot-configured or written,
+  can hold a word its pending badge does not show.
+- **The content-flow gate tracks both badge fields.**  It scans
+  `Notification.hasPendingBadge` and `pendingWord` (a pending zero badge
+  differs from none only in the flag), and it fails on any declared channel
+  it cannot resolve, so a renamed field cannot drop out of the scan.
 - **Trace fixture.**  `main_trace_smoke.expected` prints a badge as
   `{ word := 123 }` (was `{ val := 123 }`): the derived `Repr` names the new
   field; the values are unchanged.

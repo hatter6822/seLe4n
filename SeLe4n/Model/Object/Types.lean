@@ -2053,11 +2053,20 @@ structure Notification where
       Read the pair through `Notification.pendingBadge`; write it through
       `hasPendingBadge := false, pendingWord := SeLe4n.Badge.zero` (cleared) or
       `hasPendingBadge := true, pendingWord := b` (pending).  The word is zero
-      whenever the flag is clear, so the pair and `Option SeLe4n.Badge` are in
-      bijection on every notification the kernel writes. -/
+      whenever the flag is clear (`pendingWord_cleared`), so the pair and
+      `Option SeLe4n.Badge` are in bijection on every notification. -/
   hasPendingBadge : Bool := false
   /-- The pending badge word; meaningful only when `hasPendingBadge`. -/
   pendingWord : SeLe4n.Badge := SeLe4n.Badge.zero
+  /-- A clear flag carries the zero word, so no notification holds a word that
+      its pending badge does not show (a boot configuration or any other
+      constructor cannot hide content in the word).  A proof, erased at run
+      time; a literal construction discharges it automatically. -/
+  pendingWord_cleared : if hasPendingBadge then True else pendingWord = SeLe4n.Badge.zero := by
+    first
+      | exact trivial
+      | exact rfl
+      | assumption
   /-- WS-SM SM6.B (bound notification): the TCB bound to this notification, if
       any (the seL4 `NotificationBind` relation).  `bindNotification` sets it
       (and the dual `TCB.boundNotification`); `unbindNotification` clears it.
@@ -2074,14 +2083,14 @@ structure Notification where
 @[inline] def Notification.pendingBadge (n : Notification) : Option SeLe4n.Badge :=
   if n.hasPendingBadge then some n.pendingWord else none
 
-@[simp] theorem Notification.pendingBadge_mk (s w h p b) :
-    (Notification.mk s w h p b).pendingBadge = if h then some p else none := rfl
+@[simp] theorem Notification.pendingBadge_mk (s w h p c b) :
+    (Notification.mk s w h p c b).pendingBadge = if h then some p else none := rfl
 
-@[simp] theorem Notification.pendingBadge_mk_true (s w p b) :
-    (Notification.mk s w true p b).pendingBadge = some p := rfl
+@[simp] theorem Notification.pendingBadge_mk_true (s w p c b) :
+    (Notification.mk s w true p c b).pendingBadge = some p := rfl
 
-@[simp] theorem Notification.pendingBadge_mk_false (s w p b) :
-    (Notification.mk s w false p b).pendingBadge = none := rfl
+@[simp] theorem Notification.pendingBadge_mk_false (s w p c b) :
+    (Notification.mk s w false p c b).pendingBadge = none := rfl
 
 /-- WS-H13/H-01: Depth-aware CNode with compressed-path guard.
 

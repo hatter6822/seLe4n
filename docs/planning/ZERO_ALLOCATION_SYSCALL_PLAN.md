@@ -243,8 +243,8 @@ theorems over it and lands with them.  No `sorry`, no axiom, no `implemented_by`
 
 ## 6. Risks, and decisions deliberately not taken
 
-- **R1 Big words.**  `Badge`, `CPtr` and the message words are `Nat`-backed;
-  a value `≥ 2^63` is a heap number in Lean's runtime, so a high-bit operand
+- **R1 Big words.**  `CPtr` and the message words are `Nat`-backed; a value
+  `≥ 2^63` is a heap number in Lean's runtime, so a high-bit operand
   allocates whatever this plan does.  CV4.3 removes it for message words.
   For badges and capability pointers ZA4.1's high-bit scenarios measure it,
   and the row ZA4.2 adds for it carries the type change (the word as a
