@@ -133,7 +133,8 @@ cell where it is and nothing is allocated. -/
         state := .active
         waitingThreads := SeLe4n.NoDupList.empty
         hasPendingBadge := true
-        pendingWord := if n.hasPendingBadge then SeLe4n.Badge.bor n.pendingWord badge else badge }
+        pendingWord := if n.hasPendingBadge then SeLe4n.Badge.bor n.pendingWord badge else badge
+        pendingWord_cleared := trivial }
   | o => o
 
 /-- The pending-badge write, `st.modifyObject notificationId (signalPendingObject
@@ -280,7 +281,8 @@ of the notification's cell: idle, no waiters, no badge.  One constructor, so
 @[inline] def waitConsumedObject : KernelObject → KernelObject
   | .notification n =>
       .notification { n with
-        state := .idle, waitingThreads := SeLe4n.NoDupList.empty, hasPendingBadge := false, pendingWord := SeLe4n.Badge.zero }
+        state := .idle, waitingThreads := SeLe4n.NoDupList.empty, hasPendingBadge := false, pendingWord := SeLe4n.Badge.zero
+        pendingWord_cleared := rfl }
   | o => o
 
 /-- WS-ZA ZA4: the badge-consume path's two writes, each made in its slot: the

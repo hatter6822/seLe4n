@@ -833,7 +833,7 @@ def endpointReferencesReservedIdleSlot (ep : Endpoint) : Bool :=
     and no capability can reach the idle TCB to clear it. -/
 def notificationReferencesReservedIdleSlot (notif : Notification) : Bool :=
   match notif with
-  | ⟨_state, waitingThreads, _hasPendingBadge, _pendingWord, boundTCB⟩ =>
+  | ⟨_state, waitingThreads, _hasPendingBadge, _pendingWord, _cleared, boundTCB⟩ =>
     !waitingThreads.all (fun t => !SeLe4n.Kernel.isIdleThreadId t) ||
     boundTCB.any SeLe4n.Kernel.isIdleThreadId
 
@@ -1686,7 +1686,7 @@ def bootSafeEndpointCheck (ep : Endpoint) : Bool :=
     reservation's `notificationReferencesReservedIdleSlot`. -/
 def bootSafeNotificationCheck (notif : Notification) : Bool :=
   match notif with
-  | ⟨_state, _waitingThreads, _hasPendingBadge, _pendingWord, _boundTCB⟩ =>
+  | ⟨_state, _waitingThreads, _hasPendingBadge, _pendingWord, _cleared, _boundTCB⟩ =>
     decide (notif.state = .idle) && notif.waitingThreads.isEmpty &&
     notif.pendingBadge.isNone
 

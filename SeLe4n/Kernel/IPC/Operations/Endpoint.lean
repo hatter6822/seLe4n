@@ -8137,19 +8137,12 @@ def notificationSignal (notificationId : SeLe4n.ObjId) (badge : SeLe4n.Badge) : 
                 | .error e => .error e
                 | .ok st'' => .ok ((), ensureRunnable st'' waiter)
         | none =>
-            -- WS-F5/D1c: Use word-bounded Badge.bor for accumulation.
-            -- U8-C/U-L24: Notification word overflow note: Badge.bor uses
-            -- unbounded Lean Nat internally (bitwise OR). In the formal model
-            -- this is correct — no overflow is possible. However, on real
-            -- hardware (ARM64), notification words are 64-bit. AN9 (hardware
-            -- binding) must enforce 64-bit word width by masking Badge values
-            -- to 2^64 - 1 at the platform boundary.
-            -- Badge.ofNatMasked already applies a 64-bit mask, and Badge.bor
-            -- preserves the mask (see Badge.bor definition in Prelude.lean).
-            -- AF5-D (AF-15): Nat round-trip via `Badge.ofNatMasked badge.toNat`
-            -- is safe: `ofNatMasked` applies `% machineWordMax` (64-bit masking).
-            -- `bor_valid` theorem (AC3/I-04) proves result validity.
-            -- H3 hardware binding: verify masking consistency at ABI boundary.
+            -- WS-F5/D1c: accumulate with `Badge.bor`.  A badge is a 64-bit
+            -- machine word (`UInt64`, WS-ZA ZA4.2), so the merge is the word's
+            -- own OR, exactly the hardware notification word: it cannot exceed
+            -- 64 bits and no masking is needed at any boundary.  The first
+            -- badge passes through `Badge.ofNatMasked badge.toNat`, the
+            -- identity on a word (`Badge.ofNatMasked_toNat`).
             let mergedBadge : SeLe4n.Badge :=
               match ntfn.pendingBadge with
               | some existing => SeLe4n.Badge.bor existing badge
