@@ -115,9 +115,10 @@ statements the arm needed (no static lock footprint; a content-tracked field
 written with no tracked content moved).
 
 Two invariants that were once state-level predicates are now **structural**:
-`CNode.slots` is a `UniqueSlotMap` and `Notification.waitingThreads` is a
-`NoDupList ThreadId`, so uniqueness is a property of the type rather than a
-conjunct anything has to re-prove. That is the preferred direction: enforce an
+`CNode.slots` is a `UniqueSlotMap`, so slot uniqueness is a property of the
+type rather than a conjunct anything has to re-prove; a notification's waiters
+are an intrusive queue through the TCBs, one link pair per TCB, so a thread is
+linked into at most one place. That is the preferred direction: enforce an
 invariant in the representation when you can.
 
 ### 3.3 IPC — `SeLe4n/Kernel/IPC/Invariant/`

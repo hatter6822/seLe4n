@@ -1,3 +1,44 @@
+## v0.36.79 — WS-ZA ZA4.4: notification waiters link through the TCB, woken first in first out
+
+**A notification's waiters are an intrusive queue through the waiting TCBs, as
+seL4's `tcbEPAppend`/`tcbEPDequeue`.**  `Notification.waitingThreads` (a
+`NoDupList`) is gone: the notification names the queue's head and tail
+(`waitHeadCode`/`waitTailCode`, read through `waitHead`/`waitTail`), and each
+waiter links to its neighbours through a pair of TCB fields of its own
+(`ntfnPrevCode`/`ntfnNextCode`, read through `ntfnPrev`/`ntfnNext`).  Links are
+scalar codes, so writing one allocates nothing.  The endpoint queues keep their
+own links, and their invariants read no notification.
+
+- **Behaviour.**  A wait parks the caller (`notificationWaitPark`) and links it
+  behind the old tail (`linkNtfnWaiter`).  A signal wakes the head and pops it.
+  Waiters are woken in the order they waited; the list was last in first out.
+  Cancellation unlinks the victim from its neighbours in O(1); it used to fold
+  over the whole object table.  The wait's lock set takes the old tail's TCB
+  write lock (`lockSet_notificationWaitOnCore` reads the tail from the state),
+  proven to cover the write.
+- **Invariant.**  `notificationWaiterConsistent` is restated as the queue's
+  link integrity.  The head and tail are TCBs blocked on the notification, and
+  the tail has no successor.  Each blocked TCB is the head or is linked back
+  from its predecessor, and each successor is blocked on the same notification
+  and names it back.  Every transition's preservation, frame,
+  non-interference, lock-set and confinement proof is restated over it, and
+  `NoDupList` and the list lemmas are deleted.  Acyclicity and membership
+  (blocked on `n` iff reachable from `n`'s head) remain open in plan row ZA4.4.
+- **Allocations.**  The blocking wait and the waking signal write the
+  notification and the TCBs in their slots
+  (`notificationWaitOnCore_block_inPlace_eq`,
+  `notificationSignalOnCore_wake_inPlace_eq`, each under `@[csimp]`).
+  `RHTable` gains the two facts chained in-place writes need: an in-place
+  insert reads back what it wrote, and leaves every key's in-place question
+  unchanged.  QEMU, normal build: a wait that blocks 55 → 42, a signal to a
+  waiter 58 → 44.  The rest is the scheduling point's (ZA4.5) and the badge
+  message's.
+- **Tests.**  The SMP notification suites assert first-in-first-out drain
+  order and the old tail's lock.  The runtime checks walk the links clause by
+  clause, so the trace fixture's post-dispatch check count is 33 (was 32).
+  Tier 3 anchors follow the theorems to their new homes, and the store-reader
+  baseline is regenerated.
+
 ## v0.36.78 — WS-ZA ZA4.1 and ZA4.3: a yield syscall that forfeits the allotment; the exerciser measures IPC, blocking and yield
 
 **`SyscallId.yield` (41, no capability; seL4 MCS's `seL4_Yield`) gives up
