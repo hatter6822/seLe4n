@@ -208,10 +208,8 @@ theorem scheduleEffectiveOnCore_determineTargetCore (st : SystemState) (c : Core
     (st' : SystemState) (hInv : st.objects.invExt)
     (hStep : scheduleEffectiveOnCore st c = .ok st') (t : SeLe4n.ThreadId) :
     determineTargetCore st' t = determineTargetCore st t := by
-  have hobj := scheduleEffectiveOnCore_objects_eq st c st' hStep
-  have hgt : st'.getTcb? t = (saveOutgoingContextOnCore st c).getTcb? t := by
-    unfold SystemState.getTcb?; rw [hobj]
-  rw [determineTargetCore_congr_getTcb? st' (saveOutgoingContextOnCore st c) t hgt]
+  rw [determineTargetCore_of_objectsAgreeOffRunLinks
+    (scheduleEffectiveOnCore_objectsAgreeOffRunLinks st c st' hStep)]
   exact saveOutgoingContextOnCore_determineTargetCore st c hInv t
 
 /-- WS-SM SM5.I: a successful `scheduleEffectiveOnCore` preserves every
@@ -221,10 +219,7 @@ theorem scheduleEffectiveOnCore_boundThread (st : SystemState) (c : CoreId)
     (hStep : scheduleEffectiveOnCore st c = .ok st') (scId : SeLe4n.SchedContextId) :
     (st'.getSchedContext? scId).map (·.boundThread)
       = (st.getSchedContext? scId).map (·.boundThread) := by
-  have hobj := scheduleEffectiveOnCore_objects_eq st c st' hStep
-  have hgs : st'.getSchedContext? scId = (saveOutgoingContextOnCore st c).getSchedContext? scId := by
-    unfold SystemState.getSchedContext?; rw [hobj]
-  rw [hgs]
+  rw [(scheduleEffectiveOnCore_objectsAgreeOffRunLinks st c st' hStep).getSchedContext? scId]
   exact saveOutgoingContextOnCore_boundThread st c hInv scId
 
 -- ============================================================================

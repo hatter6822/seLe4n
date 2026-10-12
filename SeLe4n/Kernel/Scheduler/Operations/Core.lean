@@ -1097,11 +1097,10 @@ def idleDispatchableOnCore (st : SystemState) (c : CoreId) : Bool :=
 via the same dequeue-on-dispatch (`RunQueue.remove`) + context-restore
 (`restoreIncomingContext`) + set-current sequence a normal switch uses.  Factored
 out of `scheduleEffectiveOnCore`'s idle branch so its frame lemmas prove once that
-it touches only core `c`'s scheduler slots + `machine.regs` (never the object
-store). -/
+it touches only core `c`'s scheduler slots, `machine.regs` and the run-queue links
+the dequeue rewrites (WS-ZA ZA4.5) — no other object field. -/
 def dispatchIdleOnCore (st : SystemState) (c : CoreId) : SystemState :=
-  let stDeq := { st with scheduler :=
-    st.scheduler.setRunQueueOnCore c ((st.scheduler.runQueueOnCore c).remove (idleThreadId c)) }
+  let stDeq := st.runRemoveOnCore c (idleThreadId c)
   let stRestored := restoreIncomingContextOnCore stDeq c (idleThreadId c)
   { stRestored with scheduler := stRestored.scheduler.setCurrentOnCore c (some (idleThreadId c)) }
 
@@ -1110,10 +1109,12 @@ def dispatchIdleOnCore (st : SystemState) (c : CoreId) : SystemState :=
     (dispatchIdleOnCore st c).scheduler.currentOnCore c = some (idleThreadId c) := by
   simp only [dispatchIdleOnCore, SchedulerState.setCurrentOnCore_currentOnCore_self]
 
-/-- WS-SM SM5.E: dispatching idle does not touch the object store. -/
-@[simp] theorem dispatchIdleOnCore_objects (st : SystemState) (c : CoreId) :
-    (dispatchIdleOnCore st c).objects = st.objects := by
-  simp only [dispatchIdleOnCore, restoreIncomingContextOnCore_objects]
+/-- WS-SM SM5.E: dispatching idle touches the object store only in the run-queue
+links its dequeue rewrites (WS-ZA ZA4.5). -/
+theorem dispatchIdleOnCore_objectsAgreeOffRunLinks (st : SystemState) (c : CoreId) :
+    (dispatchIdleOnCore st c).objectsAgreeOffRunLinks st :=
+  .trans (.of_objects_eq (restoreIncomingContextOnCore_objects _ _ _))
+    (SystemState.runRemoveOnCore_objectsAgreeOffRunLinks st c (idleThreadId c))
 
 /-- WS-SM SM5.E: after dispatching idle, core `c`'s run queue is the old one with
 the idle thread removed (dequeue-on-dispatch). -/
@@ -1121,30 +1122,38 @@ theorem dispatchIdleOnCore_runQueueOnCore (st : SystemState) (c : CoreId) :
     (dispatchIdleOnCore st c).scheduler.runQueueOnCore c
       = (st.scheduler.runQueueOnCore c).remove (idleThreadId c) := by
   simp only [dispatchIdleOnCore, SchedulerState.setCurrentOnCore_runQueueOnCore,
-    restoreIncomingContextOnCore_scheduler, SchedulerState.setRunQueueOnCore_runQueueOnCore_self]
+    restoreIncomingContextOnCore_scheduler, SystemState.runRemoveOnCore_scheduler,
+    SchedulerState.setRunQueueOnCore_runQueueOnCore_self]
 
 /-- WS-SM SM5.E: dispatching idle frames every core's active domain. -/
 @[simp] theorem dispatchIdleOnCore_activeDomainOnCore (st : SystemState) (c c' : CoreId) :
     (dispatchIdleOnCore st c).scheduler.activeDomainOnCore c'
       = st.scheduler.activeDomainOnCore c' := by
   simp only [dispatchIdleOnCore, SchedulerState.setCurrentOnCore_activeDomainOnCore,
-    restoreIncomingContextOnCore_scheduler, SchedulerState.setRunQueueOnCore_activeDomainOnCore]
+    restoreIncomingContextOnCore_scheduler, SystemState.runRemoveOnCore_scheduler,
+    SchedulerState.setRunQueueOnCore_activeDomainOnCore,
+    SchedulerState.setRunQueueEndsOnCore_activeDomainOnCore]
 
-/-- WS-SM SM5.E: dispatching idle leaves every thread's TCB resolution unchanged. -/
+/-- WS-SM SM5.E: dispatching idle leaves every thread's TCB resolution unchanged
+past its run-queue links. -/
 theorem dispatchIdleOnCore_getTcb? (st : SystemState) (c : CoreId) (tid : SeLe4n.ThreadId) :
-    (dispatchIdleOnCore st c).getTcb? tid = st.getTcb? tid := by
-  unfold SystemState.getTcb?
-  rw [dispatchIdleOnCore_objects]
+    ((dispatchIdleOnCore st c).getTcb? tid).map TCB.withoutRunLinks
+      = (st.getTcb? tid).map TCB.withoutRunLinks :=
+  (dispatchIdleOnCore_objectsAgreeOffRunLinks st c).getTcb? tid
 
 /-- WS-SM SM5.I (per-core register banks): dispatching idle restores the idle
-thread's register context into **core `c`'s** bank.  The dequeue is scheduler-only
-(so `stDeq.objects = st.objects`), the per-core restore writes `setRegsOnCore c
-idleTcb.registerContext`, and the trailing `setCurrentOnCore` frames `machine`. -/
+thread's register context into **core `c`'s** bank.  The dequeue rewrites only
+run-queue links (so the idle TCB's `registerContext` is unchanged), the per-core
+restore writes `setRegsOnCore c idleTcb.registerContext`, and the trailing
+`setCurrentOnCore` frames `machine`. -/
 theorem dispatchIdleOnCore_machine_regsOnCore_self (st : SystemState) (c : CoreId)
     (idleTcb : TCB) (hTcb : st.getTcb? (idleThreadId c) = some idleTcb) :
     (dispatchIdleOnCore st c).machine.regsOnCore c = idleTcb.registerContext := by
   unfold dispatchIdleOnCore
-  exact restoreIncomingContextOnCore_regsOnCore_self _ c (idleThreadId c) idleTcb hTcb
+  obtain ⟨t', h', hE⟩ :=
+    (SystemState.runRemoveOnCore_objectsAgreeOffRunLinks st c (idleThreadId c)).getTcb?_some hTcb
+  rw [← TCB.proj_eq_of_withoutRunLinks_eq TCB.registerContext hE]
+  exact restoreIncomingContextOnCore_regsOnCore_self _ c (idleThreadId c) t' h'
 
 /-- WS-SM SM5.E: the per-core idle fallback applied to an already-context-saved
 state — run core `c`'s idle thread if dispatchable, else leave `current = none`.
@@ -1156,20 +1165,32 @@ def idleFallbackOnCore (st : SystemState) (c : CoreId) : SystemState :=
   if idleDispatchableOnCore st c then dispatchIdleOnCore st c
   else { st with scheduler := st.scheduler.setCurrentOnCore c none }
 
-/-- WS-SM SM5.E: the idle fallback never touches the object store (both arms — idle
-dispatch and `current = none` — leave `objects` unchanged). -/
-@[simp] theorem idleFallbackOnCore_objects (st : SystemState) (c : CoreId) :
-    (idleFallbackOnCore st c).objects = st.objects := by
+/-- WS-SM SM5.E: the idle fallback touches the object store only in the run-queue
+links the idle dispatch's dequeue rewrites (WS-ZA ZA4.5); the `current = none`
+arm leaves `objects` unchanged. -/
+theorem idleFallbackOnCore_objectsAgreeOffRunLinks (st : SystemState) (c : CoreId) :
+    (idleFallbackOnCore st c).objectsAgreeOffRunLinks st := by
   unfold idleFallbackOnCore
   split
-  · exact dispatchIdleOnCore_objects st c
-  · rfl
+  · exact dispatchIdleOnCore_objectsAgreeOffRunLinks st c
+  · exact .refl _
 
-/-- WS-SM SM5.E: the idle fallback frames every thread's TCB resolution. -/
+/-- WS-SM SM5.E: the idle fallback frames every thread's TCB resolution, past its
+run-queue links. -/
 theorem idleFallbackOnCore_getTcb? (st : SystemState) (c : CoreId) (tid : SeLe4n.ThreadId) :
-    (idleFallbackOnCore st c).getTcb? tid = st.getTcb? tid := by
-  unfold SystemState.getTcb?
-  rw [idleFallbackOnCore_objects]
+    ((idleFallbackOnCore st c).getTcb? tid).map TCB.withoutRunLinks
+      = (st.getTcb? tid).map TCB.withoutRunLinks :=
+  (idleFallbackOnCore_objectsAgreeOffRunLinks st c).getTcb? tid
+
+/-- WS-SM SM5.E: the idle fallback preserves the object-store invariant — the idle
+arm's dequeue writes only run-queue links in place (WS-ZA ZA4.5). -/
+theorem idleFallbackOnCore_objects_invExt (st : SystemState) (c : CoreId)
+    (hInv : st.objects.invExt) : (idleFallbackOnCore st c).objects.invExt := by
+  unfold idleFallbackOnCore
+  split
+  · simp only [dispatchIdleOnCore, restoreIncomingContextOnCore_objects]
+    exact SystemState.runRemoveOnCore_objects_invExt st c _ hInv
+  · exact hInv
 
 /-- WS-SM SM5.E: the idle fallback's run queue is the old one with the idle thread
 removed (idle dispatch) or unchanged (`current = none`) — in both arms a *subset*
@@ -1223,8 +1244,7 @@ def scheduleEffectiveOnCore (st : SystemState) (c : CoreId) :
           if tid ∈ (st.scheduler.runQueueOnCore c) ∧
               tcb.domain = (st.scheduler.activeDomainOnCore c) then
             let stSaved := saveOutgoingContextOnCore st c
-            let stDequeued := { stSaved with scheduler :=
-              stSaved.scheduler.setRunQueueOnCore c ((stSaved.scheduler.runQueueOnCore c).remove tid) }
+            let stDequeued := stSaved.runRemoveOnCore c tid
             let stRestored := restoreIncomingContextOnCore stDequeued c tid
             .ok { stRestored with scheduler := (stRestored.scheduler.setCurrentOnCore c (some tid))
               |>.clearReschedulePendingOnCore c }
@@ -1250,8 +1270,7 @@ def scheduleEffectiveOnCoreImpl (st : SystemState) (c : CoreId) :
           if tid ∈ (st.scheduler.runQueueOnCore c) ∧
               tcb.domain = (st.scheduler.activeDomainOnCore c) then
             let stSaved := saveOutgoingContextOnCore st c
-            let stDequeued := { stSaved with scheduler :=
-              stSaved.scheduler.modifyRunQueueOnCore c (·.remove tid) }
+            let stDequeued := stSaved.runRemoveOnCore c tid
             let stRestored := restoreIncomingContextOnCore stDequeued c tid
             .ok { stRestored with scheduler := (stRestored.scheduler.setCurrentOnCore c (some tid))
               |>.clearReschedulePendingOnCore c }
@@ -1264,8 +1283,7 @@ def scheduleEffectiveOnCoreImpl (st : SystemState) (c : CoreId) :
   funext st c
   unfold scheduleEffectiveOnCore scheduleEffectiveOnCoreImpl
   rw [chooseThreadEffectiveOnCore_eq_code]
-  cases chooseThreadEffectiveOnCoreCode st c <;>
-    simp only [SchedulerState.modifyRunQueueOnCore_eq]
+  cases chooseThreadEffectiveOnCoreCode st c <;> rfl
 
 /-- WS-SM SM5.E (deprecated alias).  The idle dispatch is now folded directly into
 `scheduleEffectiveOnCore` (its `none` branch runs core `c`'s idle thread when

@@ -279,7 +279,9 @@ theorem scheduleEffectiveOnCore_stepCovers (e : CoreId) (st st' : SystemState)
   · cases h
   · cases h
     refine stepCovers_trans hS (stepCovers_of_local_slots
-      (keyInputsEq_of_objects_eq (by simp [SystemState.clearReschedulePendingOnCore])) ?_)
+      (keyInputsEq_of_objectsAgreeOffRunLinks
+        (.trans (.of_objects_eq (SystemState.clearReschedulePendingOnCore_objects _ _))
+          (idleFallbackOnCore_objectsAgreeOffRunLinks _ e))) ?_)
     intro c hc
     have hne : e ≠ c := Ne.symm hc
     simp only [SystemState.clearReschedulePendingOnCore,
@@ -294,7 +296,9 @@ theorem scheduleEffectiveOnCore_stepCovers (e : CoreId) (st st' : SystemState)
     · split at h
       · cases h
         refine stepCovers_trans hS (stepCovers_of_local_slots
-          (keyInputsEq_of_objects_eq (by simp)) ?_)
+          (keyInputsEq_of_objectsAgreeOffRunLinks
+            (.trans (.of_objects_eq (restoreIncomingContextOnCore_objects _ _ _))
+              (SystemState.runRemoveOnCore_objectsAgreeOffRunLinks _ _ _))) ?_)
         intro c hc
         have hne : e ≠ c := Ne.symm hc
         simp [hne]

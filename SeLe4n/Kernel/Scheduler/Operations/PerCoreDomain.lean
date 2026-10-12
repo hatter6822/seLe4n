@@ -934,7 +934,8 @@ theorem scheduleEffectiveOnCore_domainSchedule (st : SystemState) (c : CoreId)
           rw [← hStep]
           simp only [SchedulerState.clearReschedulePendingOnCore_domainSchedule,
             SchedulerState.setCurrentOnCore, SchedulerState.setRunQueueOnCore,
-            restoreIncomingContextOnCore_scheduler]
+            restoreIncomingContextOnCore_scheduler, SystemState.runRemoveOnCore_scheduler,
+            SchedulerState.setRunQueueEndsOnCore_domainSchedule]
           rw [saveOutgoingContextOnCore_scheduler_eq]
         · simp at hStep
 

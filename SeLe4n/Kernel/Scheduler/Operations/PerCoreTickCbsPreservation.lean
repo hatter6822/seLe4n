@@ -117,7 +117,8 @@ theorem dispatchIdleOnCore_replenishQueueOnCore (st : SystemState) (c c' : CoreI
     (dispatchIdleOnCore st c).scheduler.replenishQueueOnCore c'
       = st.scheduler.replenishQueueOnCore c' := by
   simp only [dispatchIdleOnCore, SchedulerState.setCurrentOnCore_replenishQueueOnCore,
-    restoreIncomingContextOnCore_scheduler, SchedulerState.setRunQueueOnCore_replenishQueueOnCore]
+    restoreIncomingContextOnCore_scheduler, SchedulerState.setRunQueueOnCore_replenishQueueOnCore,
+    SystemState.runRemoveOnCore_scheduler, SchedulerState.setRunQueueEndsOnCore_replenishQueueOnCore]
 
 /-- WS-SM SM5.I: `idleFallbackOnCore` leaves every core's replenish-queue slot
 unchanged (both arms — idle dispatch and `current = none`). -/
@@ -155,7 +156,8 @@ theorem scheduleEffectiveOnCore_replenishQueueOnCore (st : SystemState) (c : Cor
           rw [← hStep]
           simp only [SchedulerState.clearReschedulePendingOnCore_replenishQueueOnCore,
             SchedulerState.setCurrentOnCore_replenishQueueOnCore,
-            restoreIncomingContextOnCore_scheduler, SchedulerState.setRunQueueOnCore_replenishQueueOnCore]
+            restoreIncomingContextOnCore_scheduler, SchedulerState.setRunQueueOnCore_replenishQueueOnCore,
+    SystemState.runRemoveOnCore_scheduler, SchedulerState.setRunQueueEndsOnCore_replenishQueueOnCore]
           rw [saveOutgoingContextOnCore_scheduler_eq]
         · simp at hStep
 

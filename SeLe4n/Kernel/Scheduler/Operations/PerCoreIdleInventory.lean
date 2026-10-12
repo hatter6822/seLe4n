@@ -230,8 +230,8 @@ def perCoreIdleTheorems : List PerCoreIdleTheorem :=
       scheduleOrIdleOnCore .dispatch,
     pcit! "dispatchIdleOnCore_currentOnCore: dispatching idle sets current to the idle thread"
       dispatchIdleOnCore_currentOnCore .dispatch,
-    pcit! "dispatchIdleOnCore_objects: dispatching idle never touches the object store"
-      dispatchIdleOnCore_objects .dispatch,
+    pcit! "dispatchIdleOnCore_objectsAgreeOffRunLinks: dispatching idle touches the object store only in run-queue links"
+      dispatchIdleOnCore_objectsAgreeOffRunLinks .dispatch,
     pcit! "dispatchIdleOnCore_runQueueOnCore: idle is removed from the run queue (dequeue-on-dispatch)"
       dispatchIdleOnCore_runQueueOnCore .dispatch,
     pcit! "dispatchIdleOnCore_activeDomainOnCore: dispatching idle frames the active domain"

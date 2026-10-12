@@ -156,7 +156,7 @@ open SeLe4n.Testing
 #check @decrementDomainTimeOnCore_preserves_runQueueOnCoreWellFormed
 #check @saveOutgoingContextOnCore_scheduler_eq
 #check @saveOutgoingContextOnCore_getTcb?_isSome
-#check @scheduleEffectiveOnCore_objects_eq
+#check @scheduleEffectiveOnCore_objectsAgreeOffRunLinks
 #check @scheduleEffectiveOnCore_getTcb?_isSome
 #check @scheduleEffectiveOnCore_preserves_runQueueOnCoreWellFormed
 #check @scheduleEffectiveOnCore_establishes_currentThreadValidOnCore

@@ -972,12 +972,10 @@ theorem scheduleEffectiveOnCore_getTcb?_regContext (st : SystemState) (c₀ : Co
       (tcb'.registerContext = tcb.registerContext ∨
         (st.scheduler.currentOnCore c₀ = some tid ∧
           tcb'.registerContext = st.machine.regsOnCore c₀)) := by
-  have hobj : st'.objects = (saveOutgoingContextOnCore st c₀).objects :=
-    scheduleEffectiveOnCore_objects_eq st c₀ st' hStep
-  have hgt : st'.getTcb? tid = (saveOutgoingContextOnCore st c₀).getTcb? tid := by
-    simp only [SystemState.getTcb?, hobj]
-  rw [hgt]
-  exact saveOutgoingContextOnCore_getTcb?_regContext st c₀ tid tcb hInv ht
+  obtain ⟨t, hgt, hR⟩ := saveOutgoingContextOnCore_getTcb?_regContext st c₀ tid tcb hInv ht
+  obtain ⟨t', ht', hE⟩ :=
+    (scheduleEffectiveOnCore_objectsAgreeOffRunLinks st c₀ st' hStep).getTcb?_some hgt
+  exact ⟨t', ht', by rwa [TCB.proj_eq_of_withoutRunLinks_eq TCB.registerContext hE]⟩
 
 /-- WS-SM SM5.I (register-bank payoff): a per-core dispatch on `c₀` preserves
 `contextMatchesCurrentOnCore` on every **sibling** core `c'`.  The bank is framed
@@ -1760,7 +1758,8 @@ theorem scheduleEffectiveOnCore_preserves_schedulerInvariantStructuralRegNodup_s
         · simp only [Except.ok.injEq] at hStep; subst hStep
           simp only [SchedulerState.clearReschedulePendingOnCore_runQueueOnCore,
             SchedulerState.setCurrentOnCore_runQueueOnCore,
-            restoreIncomingContextOnCore_scheduler, SchedulerState.setRunQueueOnCore_runQueueOnCore_self]
+            restoreIncomingContextOnCore_scheduler, SystemState.runRemoveOnCore_scheduler,
+            SchedulerState.setRunQueueOnCore_runQueueOnCore_self]
           rw [saveOutgoingContextOnCore_scheduler_eq]
           exact RunQueue.remove_preserves_toList_nodup _ tid (hPre c₀).2
         · simp at hStep
@@ -4610,7 +4609,8 @@ theorem scheduleEffectiveOnCore_preserves_allThreadsTimeSlicePositive (st : Syst
     (hStep : scheduleEffectiveOnCore st c = .ok st')
     (h : allThreadsTimeSlicePositive st) :
     allThreadsTimeSlicePositive st' :=
-  allThreadsTimeSlicePositive_of_objects_eq (scheduleEffectiveOnCore_objects_eq st c st' hStep)
+  allThreadsTimeSlicePositive_of_objectsAgreeOffRunLinks
+    (scheduleEffectiveOnCore_objectsAgreeOffRunLinks st c st' hStep)
     (saveOutgoingContextOnCore_preserves_allThreadsTimeSlicePositive st c hInv h)
 
 -- ── §8.6  allThreadsTimeSlicePositive through the remaining per-core transitions

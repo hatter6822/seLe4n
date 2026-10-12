@@ -271,8 +271,8 @@ def perCoreTimerTheorems : List PerCoreTimerTheorem :=
       saveOutgoingContextOnCore_scheduler_eq .preservation,
     pctt! "saveOutgoingContextOnCore_getTcb?_isSome: context save preserves TCB-resolvability"
       saveOutgoingContextOnCore_getTcb?_isSome .preservation,
-    pctt! "scheduleEffectiveOnCore_objects_eq: reschedule object write is the context save"
-      scheduleEffectiveOnCore_objects_eq .preservation,
+    pctt! "scheduleEffectiveOnCore_objectsAgreeOffRunLinks: reschedule object write is the context save"
+      scheduleEffectiveOnCore_objectsAgreeOffRunLinks .preservation,
     pctt! "scheduleEffectiveOnCore_getTcb?_isSome: reschedule preserves TCB-resolvability"
       scheduleEffectiveOnCore_getTcb?_isSome .preservation,
     pctt! "scheduleEffectiveOnCore_preserves_runQueueOnCoreWellFormed: B2: reschedule preserves run-queue well-formedness"

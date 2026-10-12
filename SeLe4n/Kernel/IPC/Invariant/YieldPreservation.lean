@@ -153,11 +153,11 @@ theorem saveOutgoingContextOnCore_preserves_ipcInvariantFull (st : SystemState) 
         (passiveServerIdleFrame_of_tcbFieldUpdate outTid.toObjId tcb _ hPre hAt hFrame rfl rfl
           (SystemState.updateTcb_scheduler _ _ _))
 
-/-- `passiveServerIdle` across a dispatch: the object table is unchanged, and
-every thread queued or current on the boot core before is queued or current on
-it after. -/
+/-- `passiveServerIdle` across a dispatch: the object table is unchanged past
+run-queue links, and every thread queued or current on the boot core before is
+queued or current on it after. -/
 theorem passiveServerIdle_of_dispatch {s1 s2 : SystemState}
-    (hObj : s2.objects = s1.objects)
+    (hA : s2.objectsAgreeOffRunLinks s1)
     (hMove : ∀ y : SeLe4n.ThreadId, y ∈ s1.scheduler.runQueueOnCore bootCoreId →
       y ∈ s2.scheduler.runQueueOnCore bootCoreId ∨
         s2.scheduler.currentOnCore bootCoreId = some y)
@@ -166,8 +166,11 @@ theorem passiveServerIdle_of_dispatch {s1 s2 : SystemState}
         s2.scheduler.currentOnCore bootCoreId = some y)
     (hInv : passiveServerIdle s1) : passiveServerIdle s2 := by
   intro x tcb hT hU hQ hC
-  rw [hObj] at hT
-  refine hInv x tcb hT hU (fun hx => ?_) (fun hx => ?_)
+  obtain ⟨t0, h0, hE⟩ := hA.get_tcb' hT
+  rw [TCB.proj_eq_of_withoutRunLinks_eq TCB.ipcState hE]
+  refine hInv x t0 h0
+    (by rw [← TCB.proj_eq_of_withoutRunLinks_eq TCB.schedContextBinding hE]; exact hU)
+    (fun hx => ?_) (fun hx => ?_)
   · rcases hMove x hx with h | h
     · exact hQ h
     · exact hC h
@@ -179,7 +182,7 @@ theorem passiveServerIdle_of_dispatch {s1 s2 : SystemState}
 slots are untouched; on the boot core every queued thread stays queued or
 becomes current, and the outgoing current thread was queued before. -/
 theorem passiveServerIdle_of_dispatchOnCore {s1 s2 : SystemState} (c : CoreId)
-    (hObj : s2.objects = s1.objects)
+    (hA : s2.objectsAgreeOffRunLinks s1)
     (hOther : c ≠ bootCoreId →
       s2.scheduler.runQueueOnCore bootCoreId = s1.scheduler.runQueueOnCore bootCoreId ∧
       s2.scheduler.currentOnCore bootCoreId = s1.scheduler.currentOnCore bootCoreId)
@@ -190,9 +193,9 @@ theorem passiveServerIdle_of_dispatchOnCore {s1 s2 : SystemState} (c : CoreId)
     (hInv : passiveServerIdle s1) : passiveServerIdle s2 := by
   by_cases hcc : c = bootCoreId
   · subst hcc
-    exact passiveServerIdle_of_dispatch hObj hSelf (fun y hy => hSelf y (hCurQ y hy)) hInv
+    exact passiveServerIdle_of_dispatch hA hSelf (fun y hy => hSelf y (hCurQ y hy)) hInv
   · obtain ⟨hQ, hC⟩ := hOther hcc
-    exact passiveServerIdle_of_dispatch hObj (fun y hy => Or.inl (hQ ▸ hy))
+    exact passiveServerIdle_of_dispatch hA (fun y hy => Or.inl (hQ ▸ hy))
       (fun y hy => Or.inr (hC ▸ hy)) hInv
 
 /-- The scheduling point preserves the bundle when the outgoing current thread
@@ -214,10 +217,11 @@ theorem scheduleEffectiveOnCore_preserves_ipcInvariantFull (st : SystemState) (c
   split at hStep
   · cases hStep
   · cases hStep
-    refine ipcInvariantFull_of_getElem_eq (s1 := saveOutgoingContextOnCore st c)
-      (fun _ => by simp [SystemState.clearReschedulePendingOnCore]) ?_ hS
-    refine passiveServerIdle_of_dispatchOnCore c
-      (by simp [SystemState.clearReschedulePendingOnCore]) ?_ ?_ hCurQ' hS.passiveServerIdle
+    have hA := (SystemState.objectsAgreeOffRunLinks.of_objects_eq
+      (SystemState.clearReschedulePendingOnCore_objects _ c)).trans
+      (idleFallbackOnCore_objectsAgreeOffRunLinks (saveOutgoingContextOnCore st c) c)
+    refine ipcInvariantFull_of_objectsAgreeOffRunLinks hA ?_ hS
+    refine passiveServerIdle_of_dispatchOnCore c hA ?_ ?_ hCurQ' hS.passiveServerIdle
     · intro hcc
       simp only [SystemState.clearReschedulePendingOnCore,
         SchedulerState.clearReschedulePendingOnCore_runQueueOnCore,
@@ -225,6 +229,7 @@ theorem scheduleEffectiveOnCore_preserves_ipcInvariantFull (st : SystemState) (c
       unfold idleFallbackOnCore
       split
       · simp [dispatchIdleOnCore, restoreIncomingContextOnCore_scheduler,
+          SystemState.runRemoveOnCore_scheduler,
           SchedulerState.setRunQueueOnCore_runQueueOnCore_ne _ _ _ _ hcc,
           SchedulerState.setCurrentOnCore_currentOnCore_ne _ _ _ _ hcc]
       · simp [SchedulerState.setCurrentOnCore_currentOnCore_ne _ _ _ _ hcc]
@@ -244,12 +249,15 @@ theorem scheduleEffectiveOnCore_preserves_ipcInvariantFull (st : SystemState) (c
   · split at hStep
     · split at hStep
       · cases hStep
-        refine ipcInvariantFull_of_getElem_eq (s1 := saveOutgoingContextOnCore st c)
-          (fun _ => by simp [restoreIncomingContextOnCore_objects]) ?_ hS
-        refine passiveServerIdle_of_dispatchOnCore c
-          (by simp [restoreIncomingContextOnCore_objects]) ?_ ?_ hCurQ' hS.passiveServerIdle
+        rename_i tid _ _ _ _ _
+        have hA := (SystemState.objectsAgreeOffRunLinks.of_objects_eq
+          (restoreIncomingContextOnCore_objects
+            ((saveOutgoingContextOnCore st c).runRemoveOnCore c tid) c tid)).trans
+          (SystemState.runRemoveOnCore_objectsAgreeOffRunLinks (saveOutgoingContextOnCore st c) c tid)
+        refine ipcInvariantFull_of_objectsAgreeOffRunLinks hA ?_ hS
+        refine passiveServerIdle_of_dispatchOnCore c hA ?_ ?_ hCurQ' hS.passiveServerIdle
         · intro hcc
-          simp [restoreIncomingContextOnCore_scheduler,
+          simp [restoreIncomingContextOnCore_scheduler, SystemState.runRemoveOnCore_scheduler,
             SchedulerState.setRunQueueOnCore_runQueueOnCore_ne _ _ _ _ hcc,
             SchedulerState.setCurrentOnCore_currentOnCore_ne _ _ _ _ hcc]
         · intro y hy
@@ -257,7 +265,7 @@ theorem scheduleEffectiveOnCore_preserves_ipcInvariantFull (st : SystemState) (c
             SchedulerState.clearReschedulePendingOnCore_currentOnCore,
             SchedulerState.setCurrentOnCore_runQueueOnCore,
             SchedulerState.setCurrentOnCore_currentOnCore_self,
-            restoreIncomingContextOnCore_scheduler,
+            restoreIncomingContextOnCore_scheduler, SystemState.runRemoveOnCore_scheduler,
             SchedulerState.setRunQueueOnCore_runQueueOnCore_self, RunQueue.mem_remove]
           exact (Classical.em _).elim Or.inr
             (fun h => Or.inl ⟨hy, fun hE => h (by rw [hE])⟩)

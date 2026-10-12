@@ -15609,7 +15609,7 @@ example (config : SeLe4n.Platform.Boot.PlatformConfig) (ist : SeLe4n.Model.Inter
 #check @scheduleOrIdleOnCore_establishes_currentThreadInActiveDomainOnCore
 #check @scheduleOrIdleOnCore_preserves_runnableThreadsAreTCBsOnCore
 #check @dispatchIdleOnCore_currentOnCore
-#check @dispatchIdleOnCore_objects
+#check @dispatchIdleOnCore_objectsAgreeOffRunLinks
 #check @dispatchIdleOnCore_runQueueOnCore
 #check @scheduleEffectiveOnCore_currentNone_imp_chooseEffectiveNone
 #check @scheduleOrIdleOnCore_idle_starves_no_eligible_thread
