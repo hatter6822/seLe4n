@@ -1,3 +1,40 @@
+## v0.36.80 — WS-ZA ZA4.5 (part 1): run queue as linked lists, yield allocates nothing
+
+**Yield makes no heap allocation** (QEMU exerciser, normal build, steady
+state: 49 → 0).  Signal, wide-badge signal and wait-pending stay at 0; call
+reads 186 → 180.
+
+- **Run queue.**  Each core's queue is a doubly linked list of its runnable
+  threads, with a list per priority.  A thread's links, priority and queued
+  mark sit in a per-core entry table (`RunQueue.links`); the queue record holds
+  the ends, the size and the highest priority, and carries the proof that they
+  describe one queue (`RunQueue.Layout`).  An entry outlives the thread's stay,
+  so enqueue, dequeue and rotation rewrite entries in place and the table gains
+  no key on the scheduling path.  `toList`, `atPriority`, `priorityOf` and
+  `maxPriority` are read off the links.  The `byPriority` lists, the
+  `membership` set, the `threadPriority` table and the `flat` list are gone.
+- **In place.**  The compiled `insert`, `remove` and `rotateToBack` test
+  membership first and hand the queue to a helper that takes the record apart,
+  so the result is written into its cell (`insertImpl_eq`, `removeImpl_eq`,
+  `rotateToBackImpl_eq`).  A slot whose queue is out being rewritten holds a
+  shared constant (`RunQueue.slotPlaceholder`).
+- **Selection.**  The highest-priority eligible thread is found by scanning
+  the bucket links with no candidate record (`chooseOnLinksCode`, proven equal
+  to the bucket scan it replaces).
+- **Scheduling point.**  `scheduleEffectiveOnCoreTotal` has a compiled form
+  that returns the state with no `Except` cell (it is proven never to refuse),
+  and the dispatched thread becomes current in the old current thread's cell
+  (`SchedulerState.setCurrentSomeOnCore`, `reuseSome`).
+- **Reschedule flags.**  `SchedulerState.reschedulePending` is a
+  `PerCoreFlags` (one bit per core in a word) instead of a `Vector Bool`.  The
+  entry's snapshot of the flags before its transition is then a scalar, so the
+  transition's flag write no longer copies an array the snapshot shares.
+  `rescheduleSgisFromFlags` and its theorems keep their statements over the new
+  type; the per-core routing gate counts `PerCoreFlags` fields as per-core
+  slots.
+- **Next.**  ZA4.5 part 2 moves the links into TCB fields (decision
+  2026-10-12), with the queue layout restated as a system invariant.
+
 ## v0.36.79 — WS-ZA ZA4.4: notification waiters link through the TCB, woken first in first out
 
 **A notification's waiters are an intrusive queue through the waiting TCBs, as

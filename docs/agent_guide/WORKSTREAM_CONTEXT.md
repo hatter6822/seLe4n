@@ -124,7 +124,10 @@ all of them the scheduling point's run queue, selection and switch (ZA4.5);
 its own charge and refusals allocate nothing.  At `v0.36.79` (ZA4.4) a
 notification's waiters are a first-in-first-out queue linked through the TCBs;
 a wait that blocks reads 42 (55 before) and a signal to a waiter 44 (58), the
-rest the scheduling point's and the badge message's.  ZA4 measures the other
+rest the scheduling point's and the badge message's.  At `v0.36.80` (ZA4.5
+part 1) the run queue is linked lists written in place and the scheduling point
+builds nothing: yield reads 0, a wait that blocks 40 and a signal to a waiter
+37.  ZA4.5 part 2 moves the run-queue links into the TCB.  ZA4 measures the other
 syscalls and entries.  Plan:
 [`docs/planning/ZERO_ALLOCATION_SYSCALL_PLAN.md`](../planning/ZERO_ALLOCATION_SYSCALL_PLAN.md)
 (phases ZA1–ZA4).
