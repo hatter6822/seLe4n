@@ -198,8 +198,10 @@ DECLARED_FIELD_WRITERS = {
 
 CONTENT_CHANNELS = [
     ("SeLe4n.Model.TCB", "pendingMessage"),
-    # The badge lives in the word field; `Notification.pendingBadge` is a
-    # derived `Option` view over it and `hasPendingBadge`, not a field.
+    # The badge is two fields: `Notification.pendingBadge` is a derived
+    # `Option` view over the presence flag and the word, not a field.  Both
+    # are channels: a pending zero badge differs from none only in the flag.
+    ("SeLe4n.Model.Notification", "hasPendingBadge"),
     ("SeLe4n.Model.Notification", "pendingWord"),
 ]
 

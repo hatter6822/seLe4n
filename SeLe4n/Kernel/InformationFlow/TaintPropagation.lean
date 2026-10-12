@@ -323,13 +323,15 @@ theorem syscallRecordsDeclassification_independent_of_class :
 /-- WS-SM SM9.D.7: **what this model tracks as content**, named so the boundary
 is a value rather than a claim in prose.
 
-Exactly the two payload channels the Tier-1 reach gate scans for
+Exactly the payload channels the Tier-1 reach gate scans for
 (`scripts/check_content_flow_coverage.py`'s `CONTENT_CHANNELS`): a delivered
-message and a delivered badge.  Anything else an arm writes is out of scope by
+message and a delivered badge, the badge being both of its physical fields (a
+zero badge differs from no badge only in `hasPendingBadge`).  Anything else an arm writes is out of scope by
 this definition — which is what makes `.cspaceMint`'s `.inert` classification a
 scope statement rather than the (false, for that arm) self-loop claim. -/
 def contentTrackedFields : List (String × String) :=
-  [("TCB", "pendingMessage"), ("Notification", "pendingWord")]
+  [("TCB", "pendingMessage"), ("Notification", "hasPendingBadge"),
+   ("Notification", "pendingWord")]
 
 /-- WS-SM SM9.D.7 (**the accepted out-of-scope channel**): a capability's badge
 and rights are caller-supplied on a mint, and they are **not** tracked content.
@@ -1011,14 +1013,18 @@ theorem declassifyBypassedTarget_of_untracked_kind (st : SystemState)
 field**, which is what makes the no-release default safe rather than merely
 convenient.
 
-`declassifyTargetHoldsContent` establishes a release from two field reads.  If
-those were a *subset* of `contentTrackedFields` the default would silently drop
+`declassifyTargetHoldsContent` establishes a release from two reads: a TCB's
+`pendingMessage`, and a notification's `pendingBadge`, the view over both of its
+tracked fields (the flag decides it; a clear flag forces a zero word,
+`Notification.pendingWord_cleared`).  If those were a *subset* of `contentTrackedFields` the default would silently drop
 real provenance — the under-approximation this module must never make — so the two
 have to stay in step.  Stated as an equality on the list rather than as prose:
-adding a third tracked field breaks this proof, and the fix is to give the
+adding a tracked field breaks this proof, and the fix is to give the
 predicate the matching branch, not to edit the expected list. -/
 theorem declassifyTargetHoldsContent_covers_every_tracked_field :
-    contentTrackedFields = [("TCB", "pendingMessage"), ("Notification", "pendingWord")] := rfl
+    contentTrackedFields =
+      [("TCB", "pendingMessage"), ("Notification", "hasPendingBadge"),
+       ("Notification", "pendingWord")] := rfl
 
 /-- WS-SM SM9.D.13a (PR #873 round 7): the bare downgrade's bypassed list, at the
 operand the arm reads.

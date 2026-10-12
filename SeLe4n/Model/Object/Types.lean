@@ -2196,11 +2196,20 @@ structure Notification where
       Read the pair through `Notification.pendingBadge`; write it through
       `hasPendingBadge := false, pendingWord := SeLe4n.Badge.zero` (cleared) or
       `hasPendingBadge := true, pendingWord := b` (pending).  The word is zero
-      whenever the flag is clear, so the pair and `Option SeLe4n.Badge` are in
-      bijection on every notification the kernel writes. -/
+      whenever the flag is clear (`pendingWord_cleared`), so the pair and
+      `Option SeLe4n.Badge` are in bijection on every notification. -/
   hasPendingBadge : Bool := false
   /-- The pending badge word; meaningful only when `hasPendingBadge`. -/
   pendingWord : SeLe4n.Badge := SeLe4n.Badge.zero
+  /-- A clear flag carries the zero word, so no notification holds a word that
+      its pending badge does not show (a boot configuration or any other
+      constructor cannot hide content in the word).  A proof, erased at run
+      time; a literal construction discharges it automatically. -/
+  pendingWord_cleared : if hasPendingBadge then True else pendingWord = SeLe4n.Badge.zero := by
+    first
+      | exact trivial
+      | exact rfl
+      | assumption
   /-- WS-SM SM6.B (bound notification): the TCB bound to this notification, if
       any (the seL4 `NotificationBind` relation).  `bindNotification` sets it
       (and the dual `TCB.boundNotification`); `unbindNotification` clears it.
@@ -2217,14 +2226,14 @@ structure Notification where
 @[inline] def Notification.pendingBadge (n : Notification) : Option SeLe4n.Badge :=
   if n.hasPendingBadge then some n.pendingWord else none
 
-@[simp] theorem Notification.pendingBadge_mk (s hd tl h p b) :
-    (Notification.mk s hd tl h p b).pendingBadge = if h then some p else none := rfl
+@[simp] theorem Notification.pendingBadge_mk (s hd tl h p c b) :
+    (Notification.mk s hd tl h p c b).pendingBadge = if h then some p else none := rfl
 
-@[simp] theorem Notification.pendingBadge_mk_true (s hd tl p b) :
-    (Notification.mk s hd tl true p b).pendingBadge = some p := rfl
+@[simp] theorem Notification.pendingBadge_mk_true (s hd tl p c b) :
+    (Notification.mk s hd tl true p c b).pendingBadge = some p := rfl
 
-@[simp] theorem Notification.pendingBadge_mk_false (s hd tl p b) :
-    (Notification.mk s hd tl false p b).pendingBadge = none := rfl
+@[simp] theorem Notification.pendingBadge_mk_false (s hd tl p c b) :
+    (Notification.mk s hd tl false p c b).pendingBadge = none := rfl
 
 /-- The first waiter, read from its scalar code. -/
 @[inline] def Notification.waitHead (n : Notification) : Option SeLe4n.ThreadId :=
@@ -2234,11 +2243,11 @@ structure Notification where
 @[inline] def Notification.waitTail (n : Notification) : Option SeLe4n.ThreadId :=
   SeLe4n.ThreadId.ofOptCode n.waitTailCode
 
-@[simp] theorem Notification.waitHead_mk (s hd tl h p b) :
-    (Notification.mk s hd tl h p b).waitHead = SeLe4n.ThreadId.ofOptCode hd := rfl
+@[simp] theorem Notification.waitHead_mk (s hd tl h p c b) :
+    (Notification.mk s hd tl h p c b).waitHead = SeLe4n.ThreadId.ofOptCode hd := rfl
 
-@[simp] theorem Notification.waitTail_mk (s hd tl h p b) :
-    (Notification.mk s hd tl h p b).waitTail = SeLe4n.ThreadId.ofOptCode tl := rfl
+@[simp] theorem Notification.waitTail_mk (s hd tl h p c b) :
+    (Notification.mk s hd tl h p c b).waitTail = SeLe4n.ThreadId.ofOptCode tl := rfl
 
 @[simp] theorem Notification.ofOptCode_waitHeadCode (n : Notification) :
     SeLe4n.ThreadId.ofOptCode n.waitHeadCode = n.waitHead := rfl

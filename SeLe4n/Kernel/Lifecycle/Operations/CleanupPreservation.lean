@@ -443,9 +443,10 @@ theorem notificationQueueWellFormed_unlink (notif : Notification)
           waitTailCode := SeLe4n.ThreadId.optCode tail'
           state := if notif.state = .waiting ∧ head'.isNone then .idle else notif.state } := by
   have hPB : ∀ st hc tc, (Notification.mk st hc tc notif.hasPendingBadge notif.pendingWord
-      notif.boundTCB).pendingBadge = notif.pendingBadge := fun _ _ _ => rfl
+      notif.pendingWord_cleared notif.boundTCB).pendingBadge = notif.pendingBadge := fun _ _ _ => rfl
   have hWH : ∀ st tc, (Notification.mk st (SeLe4n.ThreadId.optCode head') tc
-      notif.hasPendingBadge notif.pendingWord notif.boundTCB).waitHead = head' :=
+      notif.hasPendingBadge notif.pendingWord notif.pendingWord_cleared
+      notif.boundTCB).waitHead = head' :=
     fun _ _ => SeLe4n.ThreadId.ofOptCode_optCode head'
   unfold notificationQueueWellFormed at hWF ⊢
   rw [hPB, hWH]
