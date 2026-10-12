@@ -219,6 +219,15 @@ theorem rescheduleSgisFromFlags_nil_of_eq (v : PerCoreFlags) :
   markKeyChangeFor_extract_frame (fun s => s.objects) st tid k
     (fun _ _ => by first | rfl | simp [SystemState.markReschedulePendingOnCore])
 
+/-- WS-ZA ZA4.5: the hook rewrites the scheduler alone. -/
+theorem markKeyChangeFor_onlyObjectsSchedulerDiffer (st : SystemState) (tid : SeLe4n.ThreadId)
+    (k : SeLe4n.Priority × SeLe4n.Deadline × SeLe4n.DomainId) :
+    SystemState.onlyObjectsSchedulerDiffer (markKeyChangeFor st tid k) st :=
+  let post := markKeyChangeFor st tid k
+  markKeyChangeFor_extract_frame
+    (fun s : SystemState => ({ s with objects := post.objects, scheduler := post.scheduler } : SystemState))
+    st tid k (fun _ _ => rfl)
+
 @[simp] theorem markKeyChangeFor_objectIndex (st : SystemState) (tid : SeLe4n.ThreadId)
     (k : SeLe4n.Priority × SeLe4n.Deadline × SeLe4n.DomainId) :
     (markKeyChangeFor st tid k).objectIndex = st.objectIndex :=

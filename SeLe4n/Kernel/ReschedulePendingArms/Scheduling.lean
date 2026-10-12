@@ -92,11 +92,29 @@ theorem updatePipBoostOnCore_stepCovers (e c : CoreId) (st : SystemState)
     split
     · split
       · rename_i hMem _
-        refine stepCovers_markKeyChangeFor hT hK (fun c' _ => Or.inr ⟨fun t ht => ?_, ?_⟩)
+        -- The re-key relinks queue neighbours' TCB run-queue fields, which no
+        -- key input reads (WS-ZA ZA4.5).
+        refine stepCovers_markKeyChangeFor hT (hK.trans_keyInputsEq
+            (keyInputsEq_of_objectsAgreeOffRunLinks
+              (SystemState.runRequeueOnCore_objectsAgreeOffRunLinks _ c tid _))) (fun c' _ => Or.inr ⟨fun t ht => ?_, ?_⟩)
           (fun c' _ hF => ?_)
-        · exact mem_runQueue_reKey (s := st.scheduler) hMem ht
-        · exact SchedulerState.setRunQueueOnCore_currentOnCore _ _ _ _
-        · rw [SchedulerState.setRunQueueOnCore_reschedulePendingOnCore]; exact hF
+        · simp only [SystemState.runRequeueOnCore_scheduler, SystemState.rewriteObject_scheduler] at ht
+          by_cases hc : c = c'
+          · subst hc
+            rw [SchedulerState.setRunQueueOnCore_runQueueOnCore_self, RunQueue.mem_insert,
+              RunQueue.mem_remove] at ht
+            rcases ht with ⟨ht, _⟩ | rfl
+            · exact ht
+            · exact hMem
+          · rwa [SchedulerState.setRunQueueOnCore_runQueueOnCore_ne _ c c' _ hc,
+              SchedulerState.setRunQueueEndsOnCore_runQueueOnCore] at ht
+        · simp only [SystemState.runRequeueOnCore_scheduler, SystemState.rewriteObject_scheduler,
+            SchedulerState.setRunQueueOnCore_currentOnCore,
+            SchedulerState.setRunQueueEndsOnCore_currentOnCore]
+        · simp only [SystemState.runRequeueOnCore_scheduler, SystemState.rewriteObject_scheduler,
+            SchedulerState.setRunQueueOnCore_reschedulePendingOnCore,
+            SchedulerState.setRunQueueEndsOnCore_reschedulePendingOnCore]
+          exact hF
       · exact stepCovers_markKeyChangeFor hT hK (fun c' _ => Or.inr ⟨fun t ht => ht, rfl⟩)
           (fun c' _ hF => hF)
     · exact stepCovers_markKeyChangeFor hT hK (fun c' _ => Or.inr ⟨fun t ht => ht, rfl⟩)

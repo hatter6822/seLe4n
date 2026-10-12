@@ -21442,7 +21442,7 @@ run_check "INVARIANT" rg -n '^theorem propagatePipChainCrossCore_sameSchedContex
 # (`blockedSenderShrinks`) and the `schedContextBinding` reading
 # (`donationOwnerFlowsToHolder`) are two instances of one proof.  A mutation
 # that narrows it back to one field keeps the name and breaks the second asker.
-run_check "INVARIANT" bash -lc 'rg -U -n "^theorem updatePipBoostOnCore_tcb_backward[^\n]*(\n([ \t][^\n]*)?)*tcb. = \{ tcb with pipBoost := p \}" SeLe4n/Kernel/Scheduler/PriorityInheritance/Propagate.lean'
+run_check "INVARIANT" bash -lc 'rg -U -n "^theorem updatePipBoostOnCore_tcb_backward[^\n]*(\n([ \t][^\n]*)?)*tcb.\.withoutRunLinks = \{ tcb with pipBoost := p \}\.withoutRunLinks" SeLe4n/Kernel/Scheduler/PriorityInheritance/Propagate.lean'
 run_check "INVARIANT" rg -n '^theorem propagatePipChainCrossCore_tcb_backward($|[ ({:\[\]])' SeLe4n/Kernel/Scheduler/PriorityInheritance/Propagate.lean
 # (2) The labelled pack is OPT-IN: `ipcReachable` is unchanged and projects out
 # of it, so no existing consumer carries a `ctx` it does not read.

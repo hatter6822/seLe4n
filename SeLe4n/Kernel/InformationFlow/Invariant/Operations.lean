@@ -3368,13 +3368,17 @@ private theorem updatePipBoost_preserves_projection
     projectState ctx observer st := by
   have hObjHigh := hCoherent tid hTidHigh
   simp only [projectState]; congr 1
-  · -- projectObjects: updatePipBoost only modifies objects at tid.toObjId (non-observable)
+  · -- projectObjects: the boost's store is its object write's off the run-queue
+    -- links the projection strips (WS-ZA ZA4.5), and the write is at
+    -- tid.toObjId (non-observable)
+    refine (projectObjects_of_objectsAgreeOffRunLinks ctx observer
+      (PriorityInheritance.updatePipBoostOnCore_objectsAgreeOffRunLinks st bootCoreId tid)).trans ?_
     funext oid
     simp only [projectObjects, SystemState.getObject?]
     cases hObs : objectObservable ctx observer oid
     · rfl
     · simp only [ite_true]; congr 1
-      exact PriorityInheritance.updatePipBoost_objects_ne st tid oid (by
+      exact PriorityInheritance.pipBoostWrite_objects_ne st tid oid (by
         intro h; rw [(eq_of_beq h).symm] at hObs; simp [hObjHigh] at hObs) hObjInv
   · -- projectRunnable: filter by threadObservable excludes non-observable tid
     simp only [projectRunnable, SchedulerState.runnable]
@@ -4444,8 +4448,7 @@ theorem updatePipBoostOnCore_preserves_projection
       split
       · split
         · rw [markKeyChangeFor_preserves_projection,
-            runQueueOnCore_remove_insert_preserves_projection_at_high ctx observer _ c tid _
-              hTidHigh]
+            runRequeueOnCore_preserves_projection ctx observer _ c tid _ hTidHigh]
           exact hObj _ _
         · rw [markKeyChangeFor_preserves_projection]; exact hObj _ _
       · rw [markKeyChangeFor_preserves_projection]; exact hObj _ _

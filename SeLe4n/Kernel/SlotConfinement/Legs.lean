@@ -947,6 +947,11 @@ theorem updatePipBoostOnCore_confinedToCores (st : SystemState) (c : CoreId)
     | (simp only [markKeyChangeFor_activeDomainOnCore,
         markKeyChangeFor_domainTimeRemainingOnCore,
         markKeyChangeFor_domainScheduleIndexOnCore, markKeyChangeFor_machine,
+        SystemState.runRequeueOnCore_scheduler, SystemState.runRequeueOnCore_machine,
+        SystemState.rewriteObject_scheduler, SystemState.rewriteObject_machine,
+        SchedulerState.setRunQueueEndsOnCore_activeDomainOnCore,
+        SchedulerState.setRunQueueEndsOnCore_domainTimeRemainingOnCore,
+        SchedulerState.setRunQueueEndsOnCore_domainScheduleIndexOnCore,
         SchedulerState.setRunQueueOnCore_activeDomainOnCore,
         SchedulerState.setRunQueueOnCore_domainTimeRemainingOnCore,
         SchedulerState.setRunQueueOnCore_domainScheduleIndexOnCore]

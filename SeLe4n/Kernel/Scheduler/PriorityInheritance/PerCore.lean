@@ -79,16 +79,8 @@ theorem updatePipBoost_eq_updatePipBoostOnCore_bootCore (st : SystemState) (tid 
 `objects.insert` nor the scheduler bucket migration touches it. -/
 theorem updatePipBoostOnCore_preserves_objectIndex (st : SystemState) (c : CoreId)
     (tid : ThreadId) :
-    (updatePipBoostOnCore st c tid).objectIndex = st.objectIndex := by
-  simp only [updatePipBoostOnCore]
-  split
-  · rename_i tcb _
-    split
-    · rfl
-    · split
-      · split <;> (rw [markKeyChangeFor_objectIndex]; rfl)
-      · rw [markKeyChangeFor_objectIndex]; rfl
-  · rfl
+    (updatePipBoostOnCore st c tid).objectIndex = st.objectIndex :=
+  congrArg (·.objectIndex) (updatePipBoostOnCore_onlyObjectsSchedulerDiffer st c tid)
 
 /-- WS-SM SM5.F.2 (PIP graph invariant): `updatePipBoostOnCore` preserves
 `blockingServer` for every thread.  The blocking graph (which reads only
@@ -97,36 +89,10 @@ only `pipBoost`, and other threads' objects are untouched.  Mirrors the
 single-core `updatePipBoost_preserves_blockingServer`. -/
 theorem updatePipBoostOnCore_preserves_blockingServer (st : SystemState) (c : CoreId)
     (tid : ThreadId) (hObjInv : st.objects.invExt) (t : ThreadId) :
-    blockingServer (updatePipBoostOnCore st c tid) t = blockingServer st t := by
-  by_cases hEq : t = tid
-  · rw [hEq]
-    -- The transition discriminates on the witnessed lookup, so the split is
-    -- the typed accessor's two arms carried in by the lookup's equations; the
-    -- congruence lemma wants the store form, which `getTcb?_eq_some_iff`
-    -- supplies without a second reading.  The split precedes the unfold: the
-    -- witnessed lookup's type mentions `st.getTcb? tid`.
-    cases hTid : st.getTcb? tid with
-    | none =>
-      unfold updatePipBoostOnCore
-      rw [SystemState.getTcbWitnessed?_eq_none hTid]
-    | some tcb =>
-      have hRaw : st.objects[tid.toObjId]? = some (.tcb tcb) :=
-        (SystemState.getTcb?_eq_some_iff st tid tcb).mp hTid
-      unfold updatePipBoostOnCore
-      simp only [SystemState.getTcbWitnessed?_eq_some hTid]
-      split
-      · rfl
-      · refine blockingServer_ipcState_congr _ _ _
-          { tcb with pipBoost := computeMaxWaiterPriority st tid } tcb ?_ hRaw rfl
-        -- `.get?`-method form (AK7-clean: no raw `[·]?` bracket in the proof source).
-        have hSelf := RHTable_get?_insert_self st.objects tid.toObjId
-          (.tcb { tcb with pipBoost := computeMaxWaiterPriority st tid }) hObjInv
-        by_cases hRQ : tid ∈ (st.scheduler.runQueueOnCore c)
-        · simp only [hRQ, ite_true]; split <;> (rw [markKeyChangeFor_objects]; exact hSelf)
-        · simp only [hRQ, ite_false, markKeyChangeFor_objects]; exact hSelf
-  · exact blockingServer_congr_objects _ _ _
-      (updatePipBoostOnCore_objects_ne st c tid t.toObjId
-        (fun h => hEq (ThreadId.toObjId_injective tid t (eq_of_beq h)).symm) hObjInv)
+    blockingServer (updatePipBoostOnCore st c tid) t = blockingServer st t :=
+  (blockingServer_of_objectsAgreeOffRunLinks _ _ t
+    (updatePipBoostOnCore_objectsAgreeOffRunLinks st c tid)).trans
+    (pipBoostWrite_preserves_blockingServer st tid hObjInv t)
 
 /-- WS-SM SM5.F.2: `updatePipBoostOnCore` preserves blocking-graph acyclicity —
 it preserves `blockingServer` (graph topology) and `objectIndex` (fuel). -/
@@ -137,26 +103,6 @@ theorem updatePipBoostOnCore_preserves_blockingAcyclic (st : SystemState) (c : C
     (fun t => updatePipBoostOnCore_preserves_blockingServer st c tid hObjInv t)
     (updatePipBoostOnCore_preserves_objectIndex st c tid)
 
-/-- WS-SM SM5.F.2 (cross-core frame): a PIP boost on core `c` leaves every *other*
-core `c' ≠ c`'s run-queue slot untouched — the bucket migration writes only core
-`c`'s slot. -/
-theorem updatePipBoostOnCore_runQueueOnCore_ne (st : SystemState) (c c' : CoreId)
-    (tid : ThreadId) (h : c ≠ c') :
-    (updatePipBoostOnCore st c tid).scheduler.runQueueOnCore c'
-      = st.scheduler.runQueueOnCore c' := by
-  simp only [updatePipBoostOnCore]
-  split
-  · rename_i tcb _
-    split
-    · rfl
-    · split
-      · split
-        · rw [markKeyChangeFor_runQueueOnCore]
-          exact SchedulerState.setRunQueueOnCore_runQueueOnCore_ne st.scheduler c c' _ h
-        · rw [markKeyChangeFor_runQueueOnCore]; rfl
-      · rw [markKeyChangeFor_runQueueOnCore]; rfl
-  · rfl
-
 /-- WS-SM SM5.F.2: the holder's post-boost `pipBoost` is the GLOBAL
 `computeMaxWaiterPriority st tid` — whether the update fired (`pipBoost := newBoost`)
 or was a no-op (the pre-state `pipBoost` already equalled `newBoost`).  This is the
@@ -166,10 +112,14 @@ theorem updatePipBoostOnCore_getTcb?_pipBoost (st : SystemState) (c : CoreId) (t
     (tcb : TCB) (hTcb : st.getTcb? tid = some tcb) (hInv : st.objects.invExt) :
     ∃ tcb', (updatePipBoostOnCore st c tid).getTcb? tid = some tcb' ∧
       tcb'.pipBoost = computeMaxWaiterPriority st tid := by
-  -- The transition discriminates on the witnessed lookup, driven by the
-  -- hypothesis through the lookup's own equation.
-  unfold updatePipBoostOnCore
-  simp only [SystemState.getTcbWitnessed?_eq_some hTcb]
+  -- The object write's TCB carries the boost; the re-key's link writes leave
+  -- `pipBoost` alone (WS-ZA ZA4.5).
+  suffices hRef : ∃ tcb', (pipBoostWrite st tid).getTcb? tid = some tcb' ∧
+      tcb'.pipBoost = computeMaxWaiterPriority st tid by
+    obtain ⟨t0, h0, hB⟩ := hRef
+    obtain ⟨t', h', hE⟩ := (updatePipBoostOnCore_objectsAgreeOffRunLinks st c tid).getTcb?_some h0
+    exact ⟨t', h', (TCB.proj_eq_of_withoutRunLinks_eq TCB.pipBoost hE).trans hB⟩
+  simp only [pipBoostWrite, SystemState.getTcbWitnessed?_eq_some hTcb]
   split
   · -- no-op: pipBoost already equals newBoost
     rename_i hEq
@@ -177,11 +127,8 @@ theorem updatePipBoostOnCore_getTcb?_pipBoost (st : SystemState) (c : CoreId) (t
   · -- update: pipBoost := newBoost
     refine ⟨{ tcb with pipBoost := computeMaxWaiterPriority st tid }, ?_, rfl⟩
     rw [SystemState.getTcb?_eq_some_iff]
-    have hSelf := RHTable_get?_insert_self st.objects tid.toObjId
+    exact RHTable_get?_insert_self st.objects tid.toObjId
       (.tcb { tcb with pipBoost := computeMaxWaiterPriority st tid }) hInv
-    by_cases hRQ : tid ∈ (st.scheduler.runQueueOnCore c)
-    · simp only [hRQ, ite_true]; split <;> (rw [markKeyChangeFor_objects]; exact hSelf)
-    · simp only [hRQ, ite_false, markKeyChangeFor_objects]; exact hSelf
 
 -- ============================================================================
 -- §2  SM5.F.1 / SM5.F.3 — pipBoost_perCore_consistent
@@ -704,17 +651,8 @@ consumes it. -/
 theorem updatePipBoostOnCore_getTcb?_cpuAffinity (st : SystemState) (c : CoreId) (tid : ThreadId)
     (tcb : TCB) (hTcb : st.getTcb? tid = some tcb) (hInv : st.objects.invExt) :
     ∃ t', (updatePipBoostOnCore st c tid).getTcb? tid = some t' ∧ t'.cpuAffinity = tcb.cpuAffinity := by
-  unfold updatePipBoostOnCore
-  simp only [SystemState.getTcbWitnessed?_eq_some hTcb]
-  split
-  · exact ⟨tcb, hTcb, rfl⟩
-  · refine ⟨{ tcb with pipBoost := computeMaxWaiterPriority st tid }, ?_, rfl⟩
-    rw [SystemState.getTcb?_eq_some_iff]
-    have hSelf := RHTable_get?_insert_self st.objects tid.toObjId
-      (.tcb { tcb with pipBoost := computeMaxWaiterPriority st tid }) hInv
-    by_cases hRQ : tid ∈ (st.scheduler.runQueueOnCore c)
-    · simp only [hRQ, ite_true]; split <;> (rw [markKeyChangeFor_objects]; exact hSelf)
-    · simp only [hRQ, ite_false, markKeyChangeFor_objects]; exact hSelf
+  obtain ⟨p, t', h', hE⟩ := updatePipBoostOnCore_objects_at st c tid tcb hTcb hInv
+  exact ⟨t', h', TCB.proj_eq_of_withoutRunLinks_eq TCB.cpuAffinity hE⟩
 
 /-- WS-SM SM5.F.4 (cpuAffinity-stability / home-core stability): a PIP boost
 preserves *every* thread's home core (`determineTargetCore`).  `determineTargetCore`
@@ -723,26 +661,8 @@ walk's home-core decisions are stable as the boosts accumulate.  This is the
 invariant the single-core bridge and the deadlock-freedom argument rest on. -/
 theorem updatePipBoostOnCore_preserves_determineTargetCore (st : SystemState) (c : CoreId)
     (tid t : ThreadId) (hInv : st.objects.invExt) :
-    determineTargetCore (updatePipBoostOnCore st c tid) t = determineTargetCore st t := by
-  by_cases hEq : t = tid
-  · subst hEq
-    cases hTcb : st.getTcb? t with
-    | none => rw [updatePipBoostOnCore_eq_self_of_getTcb?_none st c t hTcb]
-    | some tcb =>
-      obtain ⟨t', hPost, hAff⟩ := updatePipBoostOnCore_getTcb?_cpuAffinity st c t tcb hTcb hInv
-      simp only [determineTargetCore, hPost, hTcb, hAff]
-  · unfold determineTargetCore
-    -- AK7-clean: frame `getTcb? t` via the `.get?`-method form (no raw `[·]?` bracket
-    -- in the proof source); the bracket-form `objects_ne` is applied under the
-    -- `RHTable_getElem?_eq_get?` bridge.
-    have hGet : (updatePipBoostOnCore st c tid).getTcb? t = st.getTcb? t := by
-      have hObjNe : (updatePipBoostOnCore st c tid).objects.get? t.toObjId
-          = st.objects.get? t.toObjId := by
-        rw [← RHTable_getElem?_eq_get?, ← RHTable_getElem?_eq_get?]
-        exact updatePipBoostOnCore_objects_ne st c tid t.toObjId
-          (fun h => hEq (ThreadId.toObjId_injective tid t (eq_of_beq h)).symm) hInv
-      unfold SystemState.getTcb?; simp only [RHTable_getElem?_eq_get?, hObjNe]
-    rw [hGet]
+    determineTargetCore (updatePipBoostOnCore st c tid) t = determineTargetCore st t :=
+  updatePipBoostOnCore_determineTargetCore st c tid t hInv
 
 /-- WS-SM SM5.F.3 (plan §3.6, post-boost dominance): after a cross-core PIP boost,
 the boosted holder's effective priority bounds *every* core's pre-state waiter slice

@@ -60,10 +60,9 @@ def updatePipBoostOnCore (st : SystemState) (c : CoreId) (tid : ThreadId) : Syst
         let oldPrio := (resolveEffectivePrioDeadline st tcb).1
         let newPrio := (resolveEffectivePrioDeadline st' tcb').1
         if oldPrio != newPrio then
-          markKeyChangeFor { st' with
-            scheduler := st'.scheduler.setRunQueueOnCore c
-              (((st'.scheduler.runQueueOnCore c).remove tid).insert tid newPrio)
-          } tid preKey
+          -- The holder leaves its bucket and joins the tail of the new one
+          -- through its TCB run-queue links (WS-ZA ZA4.5).
+          markKeyChangeFor (st'.runRequeueOnCore c tid newPrio) tid preKey
         else markKeyChangeFor st' tid preKey
       else markKeyChangeFor st' tid preKey
   | none => st
@@ -93,6 +92,121 @@ diverge, and that theorem is the equation consumers rewrite with.
   information-flow safety. -/
 def updatePipBoost (st : SystemState) (tid : ThreadId) : SystemState :=
   updatePipBoostOnCore st bootCoreId tid
+
+/-- WS-ZA ZA4.5: the boost's object write on its own — `updatePipBoostOnCore`
+less its run-queue re-key and reschedule flags.  The boost's object frames are
+stated about this state, and `updatePipBoostOnCore_objectsAgreeOffRunLinks`
+carries them to the boost, whose store differs from it only in run-queue
+links. -/
+def pipBoostWrite (st : SystemState) (tid : ThreadId) : SystemState :=
+  match st.getTcbWitnessed? tid with
+  | some ⟨tcb, h⟩ =>
+    let newBoost := computeMaxWaiterPriority st tid
+    if tcb.pipBoost == newBoost then st
+    else st.rewriteObject tid.toObjId (KernelObject.tcb { tcb with pipBoost := newBoost })
+      (SystemState.rewriteAdmissible_tcb h _)
+  | none => st
+
+theorem pipBoostWrite_eq_self_of_getTcb?_none (st : SystemState) (tid : ThreadId)
+    (hNone : st.getTcb? tid = none) : pipBoostWrite st tid = st := by
+  unfold pipBoostWrite
+  rw [SystemState.getTcbWitnessed?_eq_none hNone]
+
+/-- The boost writes the object store alone. -/
+theorem pipBoostWrite_eq_objects (st : SystemState) (tid : ThreadId) :
+    pipBoostWrite st tid = { st with objects := (pipBoostWrite st tid).objects } := by
+  simp only [pipBoostWrite]
+  split
+  · split <;> rfl
+  · rfl
+
+theorem pipBoostWrite_objects_invExt (st : SystemState) (tid : ThreadId)
+    (hInv : st.objects.invExt) : (pipBoostWrite st tid).objects.invExt := by
+  simp only [pipBoostWrite]
+  split
+  · split
+    · exact hInv
+    · exact RHTable_insert_preserves_invExt st.objects tid.toObjId _ hInv
+  · exact hInv
+
+/-- The boost leaves every other key's object alone. -/
+theorem pipBoostWrite_objects_ne (st : SystemState) (tid : ThreadId) (oid : ObjId)
+    (hNe : ¬(tid.toObjId == oid) = true) (hInv : st.objects.invExt) :
+    (pipBoostWrite st tid).objects[oid]? = st.objects[oid]? := by
+  simp only [pipBoostWrite]
+  split
+  · split
+    · rfl
+    · exact SeLe4n.Kernel.RobinHood.RHTable.getElem?_insert_ne st.objects tid.toObjId oid _ hNe hInv
+  · rfl
+
+/-- The boost rewrites the thread's TCB in `pipBoost` and nothing else. -/
+theorem pipBoostWrite_objects_at (st : SystemState) (tid : ThreadId) (tcb : TCB)
+    (hTcb : st.getTcb? tid = some tcb) (hInv : st.objects.invExt) :
+    ∃ p, (pipBoostWrite st tid).getTcb? tid = some { tcb with pipBoost := p } := by
+  simp only [SystemState.getTcb?_eq_some_iff]
+  simp only [pipBoostWrite, SystemState.getTcbWitnessed?_eq_some hTcb]
+  split
+  · exact ⟨tcb.pipBoost, (SystemState.getTcb?_eq_some_iff st tid tcb).mp hTcb⟩
+  · exact ⟨_, SeLe4n.Kernel.RobinHood.RHTable.getElem?_insert_self st.objects tid.toObjId _ hInv⟩
+
+/-- WS-ZA ZA4.5: the boost's store is its object write's, off the run-queue
+links its bucket re-key rewrites. -/
+theorem updatePipBoostOnCore_objectsAgreeOffRunLinks (st : SystemState) (c : CoreId)
+    (tid : ThreadId) :
+    (updatePipBoostOnCore st c tid).objectsAgreeOffRunLinks (pipBoostWrite st tid) := by
+  cases hT : st.getTcb? tid with
+  | none =>
+    unfold updatePipBoostOnCore pipBoostWrite
+    rw [SystemState.getTcbWitnessed?_eq_none hT]
+    exact .refl _
+  | some tcb =>
+    unfold updatePipBoostOnCore pipBoostWrite
+    simp only [SystemState.getTcbWitnessed?_eq_some hT]
+    by_cases hb : (tcb.pipBoost == computeMaxWaiterPriority st tid) = true
+    · simp only [hb, if_true]; exact .refl _
+    · simp only [hb, Bool.false_eq_true, if_false]
+      split
+      · split
+        · exact .congr (markKeyChangeFor_objects _ _ _) rfl
+            (SystemState.runRequeueOnCore_objectsAgreeOffRunLinks _ _ _ _)
+        · exact .of_objects_eq (markKeyChangeFor_objects _ _ _)
+      · exact .of_objects_eq (markKeyChangeFor_objects _ _ _)
+
+/-- WS-ZA ZA4.5: the boost rewrites the object store and the scheduler alone. -/
+theorem updatePipBoostOnCore_onlyObjectsSchedulerDiffer (st : SystemState) (c : CoreId)
+    (tid : ThreadId) :
+    SystemState.onlyObjectsSchedulerDiffer (updatePipBoostOnCore st c tid) st := by
+  simp only [updatePipBoostOnCore]
+  split
+  · split
+    · exact .refl _
+    · have hW : ∀ (o : KernelObject) (h : st.rewriteAdmissible tid.toObjId o),
+          SystemState.onlyObjectsSchedulerDiffer (st.rewriteObject tid.toObjId o h) st :=
+        fun _ _ => rfl
+      split
+      · split
+        · exact (markKeyChangeFor_onlyObjectsSchedulerDiffer _ _ _).trans
+            ((SystemState.runRequeueOnCore_onlyObjectsSchedulerDiffer _ _ _ _).trans (hW _ _))
+        · exact (markKeyChangeFor_onlyObjectsSchedulerDiffer _ _ _).trans (hW _ _)
+      · exact (markKeyChangeFor_onlyObjectsSchedulerDiffer _ _ _).trans (hW _ _)
+  · exact .refl _
+
+theorem updatePipBoostOnCore_preserves_objects_invExt (st : SystemState) (c : CoreId)
+    (tid : ThreadId) (hInv : st.objects.invExt) :
+    (updatePipBoostOnCore st c tid).objects.invExt := by
+  simp only [updatePipBoostOnCore]
+  split
+  · split
+    · exact hInv
+    · split
+      · split
+        · rw [markKeyChangeFor_objects]
+          exact SystemState.runRequeueOnCore_objects_invExt _ _ _ _
+            (RHTable_insert_preserves_invExt st.objects tid.toObjId _ hInv)
+        · rw [markKeyChangeFor_objects]; exact RHTable_insert_preserves_invExt st.objects tid.toObjId _ hInv
+      · rw [markKeyChangeFor_objects]; exact RHTable_insert_preserves_invExt st.objects tid.toObjId _ hInv
+  · exact hInv
 
 -- ============================================================================
 -- D4-H: propagatePriorityInheritance (chain walk)
@@ -200,32 +314,15 @@ In all paths, `blockingServer` reads `ipcState` which is untouched. -/
 theorem updatePipBoost_ipcState_frame (st : SystemState) (tid : ThreadId)
     (hObjInv : st.objects.invExt)
     (t : ThreadId) (hNe : t ≠ tid) :
-    (updatePipBoost st tid).objects[t.toObjId]? = st.objects[t.toObjId]? := by
-  unfold updatePipBoost updatePipBoostOnCore
-  split
-  case h_1 tcb _ _ =>
-      simp only []
-      split
-      · rfl
-      · -- pipBoost changed → the rewrite is an insert at tid.toObjId
-        have hObjNe : ¬(tid.toObjId == t.toObjId) = true := by
-          intro h; apply hNe
-          exact (ThreadId.toObjId_injective tid t (eq_of_beq h)).symm
-        -- After insert at tid.toObjId, lookup at t.toObjId is unchanged
-        split
-        · -- In run queue
-          split
-          · -- Priority changed → scheduler updated, objects have insert
-            rw [markKeyChangeFor_objects]
-            show (st.objects.insert tid.toObjId _).get? t.toObjId = _
-            exact RHTable_get?_insert_ne st.objects tid.toObjId t.toObjId _ hObjNe hObjInv
-          · -- Priority unchanged → same objects with insert
-            rw [markKeyChangeFor_objects]
-            exact RHTable_get?_insert_ne st.objects tid.toObjId t.toObjId _ hObjNe hObjInv
-        · -- Not in run queue → same objects with insert
-          rw [markKeyChangeFor_objects]
-          exact RHTable_get?_insert_ne st.objects tid.toObjId t.toObjId _ hObjNe hObjInv
-  case h_2 => rfl
+    ((updatePipBoost st tid).getTcb? t).map TCB.withoutRunLinks
+      = (st.getTcb? t).map TCB.withoutRunLinks := by
+  have hObjNe : ¬(tid.toObjId == t.toObjId) = true := by
+    intro h; apply hNe
+    exact (ThreadId.toObjId_injective tid t (eq_of_beq h)).symm
+  -- The boost's store is its object write's off the run-queue links, and the
+  -- write is an insert at `tid.toObjId` alone.
+  exact ((updatePipBoostOnCore_objectsAgreeOffRunLinks st bootCoreId tid).getTcb? t).trans
+    (by rw [SystemState.getTcb?_congr_at (pipBoostWrite_objects_ne st tid t.toObjId hObjNe hObjInv)])
 
 /-- AE3-I/S-01: For the target thread itself, `updatePipBoost` only modifies
 `pipBoost`. The `ipcState` field is definitionally preserved by the
@@ -240,26 +337,13 @@ theorem updatePipBoost_self_ipcState (st : SystemState) (tid : ThreadId)
   suffices h : ∃ tcb', (updatePipBoost st tid).objects[tid.toObjId]? = some (.tcb tcb') ∧
       tcb'.ipcState = tcb.ipcState by
     obtain ⟨tcb', hLook, hIpc⟩ := h; simp only [hLook, hIpc]
-  -- Now prove the lookup gives such a TCB
-  unfold updatePipBoost updatePipBoostOnCore
-  -- The update reads the store through the witnessed lookup, so the raw
-  -- hypothesis is retyped into accessor form and then into the lookup's own
-  -- equation before it can drive the match.
+  -- The object write leaves `ipcState` alone, and the store agrees with it
+  -- off the run-queue links.
   have hGet : st.getTcb? tid = some tcb := by unfold SystemState.getTcb?; rw [hObj]
-  simp only [SystemState.getTcbWitnessed?_eq_some hGet]
-  split
-  · -- pipBoost unchanged → state is st, lookup is hObj
-    exact ⟨tcb, hObj, rfl⟩
-  · -- pipBoost changed → lookup gives { tcb with pipBoost := ... }
-    have hSelf : (st.objects.insert tid.toObjId
-        (.tcb { tcb with pipBoost := computeMaxWaiterPriority st tid }))[tid.toObjId]? =
-        some (.tcb { tcb with pipBoost := computeMaxWaiterPriority st tid }) :=
-      RHTable_get?_insert_self st.objects tid.toObjId _ hObjInv
-    refine ⟨{ tcb with pipBoost := computeMaxWaiterPriority st tid }, ?_, rfl⟩
-    -- All scheduler branches have .objects = st.objects.insert ..., so hSelf applies
-    by_cases hRQ : tid ∈ (st.scheduler.runQueueOnCore bootCoreId)
-    · simp only [hRQ, ite_true]; split <;> (rw [markKeyChangeFor_objects]; exact hSelf)
-    · simp only [hRQ, ite_false]; rw [markKeyChangeFor_objects]; exact hSelf
+  obtain ⟨p, hRef⟩ := pipBoostWrite_objects_at st tid tcb hGet hObjInv
+  obtain ⟨t', hPost, hE⟩ := (updatePipBoostOnCore_objectsAgreeOffRunLinks st bootCoreId tid).get_tcb
+    ((SystemState.getTcb?_eq_some_iff _ tid _).mp hRef)
+  exact ⟨t', hPost, TCB.proj_eq_of_withoutRunLinks_eq TCB.ipcState hE⟩
 
 /-- AE3-I/S-01: `updatePipBoost` preserves `blockingServer` for all threads.
 This is the main frame theorem: the blocking graph is invariant under PIP
@@ -293,44 +377,33 @@ theorem blockingServer_ipcState_congr (st₁ st₂ : SystemState) (t : ThreadId)
   simp only [blockingServer, g₁, g₂, Option.bind_some,
     TCB.blockingServer?_congr hIpc]
 
+/-- The boost's object write preserves `blockingServer`: it rewrites one TCB in
+`pipBoost`, and `blockingServer` reads `ipcState`. -/
+theorem pipBoostWrite_preserves_blockingServer (st : SystemState) (tid : ThreadId)
+    (hObjInv : st.objects.invExt) (t : ThreadId) :
+    blockingServer (pipBoostWrite st tid) t = blockingServer st t := by
+  by_cases hEq : t = tid
+  · subst hEq
+    cases hTid : st.getTcb? t with
+    | none => rw [pipBoostWrite_eq_self_of_getTcb?_none st t hTid]
+    | some tcb =>
+      obtain ⟨p, hRef⟩ := pipBoostWrite_objects_at st t tcb hTid hObjInv
+      exact blockingServer_ipcState_congr _ _ _ { tcb with pipBoost := p } tcb
+        ((SystemState.getTcb?_eq_some_iff _ t _).mp hRef)
+        ((SystemState.getTcb?_eq_some_iff st t tcb).mp hTid) rfl
+  · have hObjNe : ¬(tid.toObjId == t.toObjId) = true := by
+      intro h; apply hEq
+      exact (ThreadId.toObjId_injective tid t (eq_of_beq h)).symm
+    exact blockingServer_congr_objects _ _ _ (pipBoostWrite_objects_ne st tid t.toObjId hObjNe hObjInv)
+
 theorem updatePipBoost_preserves_blockingServer (st : SystemState) (tid : ThreadId)
     (hObjInv : st.objects.invExt) (t : ThreadId) :
-    blockingServer (updatePipBoost st tid) t = blockingServer st t := by
-  by_cases hEq : t = tid
-  · -- t = tid: ipcState preserved by { tcb with pipBoost := ... }
-    rw [hEq]
-    -- The update discriminates through the witnessed lookup, so the case
-    -- analysis is the typed accessor's two arms carried in by the lookup's
-    -- equations; the raw form the congr lemma wants comes back from
-    -- `getTcb?_eq_some_iff`, which is the bridge between the two vocabularies
-    -- rather than a second reading of the store.  The split comes BEFORE the
-    -- unfold: the witnessed lookup's type mentions `st.getTcb? tid`, so a
-    -- `cases` over the unfolded match cannot generalise it.
-    cases hTid : st.getTcb? tid with
-    | none =>
-      unfold updatePipBoost updatePipBoostOnCore
-      rw [SystemState.getTcbWitnessed?_eq_none hTid]
-    | some tcb =>
-      have hRaw : st.objects[tid.toObjId]? = some (.tcb tcb) :=
-        (SystemState.getTcb?_eq_some_iff st tid tcb).mp hTid
-      unfold updatePipBoost updatePipBoostOnCore
-      simp only [SystemState.getTcbWitnessed?_eq_some hTid]
-      split
-      · rfl -- pipBoost unchanged
-      · -- pipBoost changed: blockingServer reads only ipcState, which is
-        -- unchanged by { tcb with pipBoost := ... }. Use ipcState congr lemma.
-        refine blockingServer_ipcState_congr _ _ _
-          { tcb with pipBoost := computeMaxWaiterPriority st tid } tcb ?_ hRaw rfl
-        -- Remaining goal: <result-state>.objects[tid.toObjId]? = some (.tcb { tcb with pipBoost := ... })
-        -- All scheduler branches have .objects = st.objects.insert ..., so hSelf applies.
-        have hSelf : (st.objects.insert tid.toObjId
-            (.tcb { tcb with pipBoost := computeMaxWaiterPriority st tid }))[tid.toObjId]? =
-            some (.tcb { tcb with pipBoost := computeMaxWaiterPriority st tid }) :=
-          RHTable_get?_insert_self st.objects tid.toObjId _ hObjInv
-        by_cases hRQ : tid ∈ (st.scheduler.runQueueOnCore bootCoreId)
-        · simp only [hRQ, ite_true]; split <;> (rw [markKeyChangeFor_objects]; exact hSelf)
-        · simp only [hRQ, ite_false]; rw [markKeyChangeFor_objects]; exact hSelf
-  · exact blockingServer_congr_objects _ _ _ (updatePipBoost_ipcState_frame st tid hObjInv t hEq)
+    blockingServer (updatePipBoost st tid) t = blockingServer st t :=
+  -- The boost's store agrees with its object write off the run-queue links,
+  -- which `blockingServer` does not read.
+  (blockingServer_of_objectsAgreeOffRunLinks _ _ t
+    (updatePipBoostOnCore_objectsAgreeOffRunLinks st bootCoreId tid)).trans
+    (pipBoostWrite_preserves_blockingServer st tid hObjInv t)
 
 -- ============================================================================
 -- WS-SM SM5.F.2 / SM5.F.4: per-core priority-inheritance transitions
@@ -362,22 +435,34 @@ it would force each reader to case-split on the no-op arm. -/
 theorem updatePipBoostOnCore_objects_at (st : SystemState) (c : CoreId) (tid : ThreadId)
     (tcb : TCB) (hTcb : st.getTcb? tid = some tcb)
     (hInv : st.objects.invExt) :
-    ∃ p, (updatePipBoostOnCore st c tid).getTcb? tid
-      = some { tcb with pipBoost := p } := by
-  have hIns : ∀ t : KernelObject,
-      (st.objects.insert tid.toObjId t).get? tid.toObjId = some t := fun t =>
-    SeLe4n.Kernel.RobinHood.RHTable.getElem?_insert_self st.objects tid.toObjId t hInv
-  -- The goal is converted to store form because `hIns` is about the table;
-  -- the discriminant is the witnessed lookup, driven by its own equation.
-  simp only [SystemState.getTcb?_eq_some_iff]
-  simp only [updatePipBoostOnCore, SystemState.getTcbWitnessed?_eq_some hTcb]
+    ∃ p t', (updatePipBoostOnCore st c tid).getTcb? tid = some t' ∧
+      t'.withoutRunLinks = { tcb with pipBoost := p }.withoutRunLinks := by
+  -- The object write's TCB, carried across the bucket re-key's link writes
+  -- (WS-ZA ZA4.5).
+  obtain ⟨p, hRef⟩ := pipBoostWrite_objects_at st tid tcb hTcb hInv
+  exact ⟨p, (updatePipBoostOnCore_objectsAgreeOffRunLinks st c tid).getTcb?_some hRef⟩
+
+/-- WS-SM SM5.F.2 (cross-core frame): a PIP boost on core `c` leaves every *other*
+core `c' ≠ c`'s run-queue slot untouched — the bucket migration writes only core
+`c`'s slot. -/
+theorem updatePipBoostOnCore_runQueueOnCore_ne (st : SystemState) (c c' : CoreId)
+    (tid : ThreadId) (h : c ≠ c') :
+    (updatePipBoostOnCore st c tid).scheduler.runQueueOnCore c'
+      = st.scheduler.runQueueOnCore c' := by
+  simp only [updatePipBoostOnCore]
   split
-  · exact ⟨tcb.pipBoost, (SystemState.getTcb?_eq_some_iff st tid tcb).mp hTcb⟩
-  · split
+  · rename_i tcb _
+    split
+    · rfl
     · split
-      · (rw [markKeyChangeFor_objects]; exact ⟨computeMaxWaiterPriority st tid, hIns _⟩)
-      · (rw [markKeyChangeFor_objects]; exact ⟨computeMaxWaiterPriority st tid, hIns _⟩)
-    · (rw [markKeyChangeFor_objects]; exact ⟨computeMaxWaiterPriority st tid, hIns _⟩)
+      · split
+        · rw [markKeyChangeFor_runQueueOnCore, SystemState.runRequeueOnCore_scheduler,
+            SchedulerState.setRunQueueOnCore_runQueueOnCore_ne _ c c' _ h,
+            SchedulerState.setRunQueueEndsOnCore_runQueueOnCore]
+          rfl
+        · rw [markKeyChangeFor_runQueueOnCore]; rfl
+      · rw [markKeyChangeFor_runQueueOnCore]; rfl
+  · rfl
 
 /-- WS-RR RR2.6: `updatePipBoostOnCore` leaves every thread's run-queue
 *membership* unchanged on every core.  Its bucket migration removes the boosted
@@ -395,7 +480,8 @@ theorem updatePipBoostOnCore_mem_runQueueOnCore (st : SystemState) (c c' : CoreI
     · split
       · rename_i hIn
         split
-        · rw [markKeyChangeFor_runQueueOnCore]
+        · rw [markKeyChangeFor_runQueueOnCore, SystemState.runRequeueOnCore_scheduler,
+            SystemState.rewriteObject_scheduler]
           by_cases hcc : c = c'
           · subst hcc
             rw [SchedulerState.setRunQueueOnCore_runQueueOnCore_self]
@@ -408,7 +494,8 @@ theorem updatePipBoostOnCore_mem_runQueueOnCore (st : SystemState) (c c' : CoreI
               by_cases hEq : x = tid
               · exact Or.inr hEq
               · exact Or.inl ⟨hx, hEq⟩
-          · rw [SchedulerState.setRunQueueOnCore_runQueueOnCore_ne _ c c' _ hcc]
+          · rw [SchedulerState.setRunQueueOnCore_runQueueOnCore_ne _ c c' _ hcc,
+              SchedulerState.setRunQueueEndsOnCore_runQueueOnCore]
         · rw [markKeyChangeFor_runQueueOnCore]; exact Iff.rfl
       · rw [markKeyChangeFor_runQueueOnCore]; exact Iff.rfl
   · exact Iff.rfl
@@ -563,43 +650,15 @@ theorem propagatePipChainCrossCore_state_core_independent (st : SystemState)
     | none => exact hBoost
     | some next => simp only []; rw [hBoost]; exact ih _ _
 
-/-- WS-SM SM5.F.2: `updatePipBoostOnCore` preserves the object-store invariant —
-the only object write is the holder's `pipBoost` `insert` (the per-core bucket
-migration touches only the scheduler). -/
-theorem updatePipBoostOnCore_preserves_objects_invExt (st : SystemState) (c : CoreId)
-    (tid : ThreadId) (hInv : st.objects.invExt) :
-    (updatePipBoostOnCore st c tid).objects.invExt := by
-  simp only [updatePipBoostOnCore]
-  split
-  · rename_i tcb _
-    split
-    · exact hInv
-    · split
-      · split
-        · (rw [markKeyChangeFor_objects]; exact RHTable_insert_preserves_invExt st.objects tid.toObjId _ hInv)
-        · (rw [markKeyChangeFor_objects]; exact RHTable_insert_preserves_invExt st.objects tid.toObjId _ hInv)
-      · (rw [markKeyChangeFor_objects]; exact RHTable_insert_preserves_invExt st.objects tid.toObjId _ hInv)
-  · exact hInv
-
 /-- WS-SM SM5.F.2: `updatePipBoostOnCore` does not change `objects[oid]?` for any
-`oid ≠ tid.toObjId`. -/
+`oid ≠ tid.toObjId`, off the run-queue links its bucket re-key rewrites
+(WS-ZA ZA4.5). -/
 theorem updatePipBoostOnCore_objects_ne (st : SystemState) (c : CoreId) (tid : ThreadId)
     (oid : ObjId) (hNe : ¬(tid.toObjId == oid) = true) (hInv : st.objects.invExt) :
-    (updatePipBoostOnCore st c tid).objects[oid]? = st.objects[oid]? := by
-  simp only [updatePipBoostOnCore]
-  split
-  · split
-    · rfl
-    · split
-      · split
-        · rw [markKeyChangeFor_objects]
-          show (st.objects.insert tid.toObjId _)[oid]? = _
-          exact SeLe4n.Kernel.RobinHood.RHTable.getElem?_insert_ne st.objects tid.toObjId oid _ hNe hInv
-        · rw [markKeyChangeFor_objects]
-          exact SeLe4n.Kernel.RobinHood.RHTable.getElem?_insert_ne st.objects tid.toObjId oid _ hNe hInv
-      · rw [markKeyChangeFor_objects]
-        exact SeLe4n.Kernel.RobinHood.RHTable.getElem?_insert_ne st.objects tid.toObjId oid _ hNe hInv
-  · rfl
+    ((updatePipBoostOnCore st c tid).objects[oid]?).map KernelObject.withoutRunLinks
+      = (st.objects[oid]?).map KernelObject.withoutRunLinks := by
+  rw [updatePipBoostOnCore_objectsAgreeOffRunLinks st c tid oid,
+    pipBoostWrite_objects_ne st tid oid hNe hInv]
 
 /-- WS-SM SM5.F.2: `updatePipBoostOnCore` never writes any core's `current` slot. -/
 theorem updatePipBoostOnCore_currentOnCore (st : SystemState) (c c' : CoreId)
@@ -682,6 +741,28 @@ theorem repropagateFromWaiter_preserves_objects_invExt (st : SystemState) (tid :
   repropagateFromWaiter_preserves (fun s => s.objects.invExt) st tid ec fuel
     (fun _ _ => propagatePipChainCrossCore_preserves_objects_invExt st _ ec _ hInv) hInv
 
+/-- WS-ZA ZA4.5: the boost's only object write stores a `.tcb` at a key that
+already held one, and its re-key writes run-queue links only, so every object
+that is not a TCB reads back unchanged in both directions. -/
+theorem updatePipBoostOnCore_get_of_not_tcb_iff (st : SystemState) (c : CoreId)
+    (tid : ThreadId) (hInv : st.objects.invExt) (oid : ObjId) {o : KernelObject}
+    (hNot : ∀ t, o ≠ .tcb t) :
+    (updatePipBoostOnCore st c tid).objects[oid]? = some o ↔ st.objects[oid]? = some o := by
+  have hA := updatePipBoostOnCore_objectsAgreeOffRunLinks st c tid
+  refine Iff.trans ⟨hA.get_of_not_tcb' hNot, hA.get_of_not_tcb hNot⟩ ?_
+  by_cases hk : (tid.toObjId == oid) = true
+  · -- The written key: the pre-state holds a TCB there, or nothing is written.
+    have hEq : tid.toObjId = oid := by simpa using hk
+    cases hAt : st.getTcb? tid with
+    | none => rw [pipBoostWrite_eq_self_of_getTcb?_none st tid hAt]
+    | some tcb =>
+      obtain ⟨pb, hRef⟩ := pipBoostWrite_objects_at st tid tcb hAt hInv
+      rw [← hEq, (SystemState.getTcb?_eq_some_iff _ tid _).mp hRef,
+        (SystemState.getTcb?_eq_some_iff st tid tcb).mp hAt]
+      exact ⟨fun h => absurd (Option.some.inj h).symm (hNot _),
+        fun h => absurd (Option.some.inj h).symm (hNot _)⟩
+  · rw [pipBoostWrite_objects_ne st tid oid hk hInv]
+
 /-- **WS-RM (`v0.35.6`)**: `updatePipBoostOnCore`'s only object write stores a
 `.tcb` at a key that already held one, so at every key a Reply reads back to the
 *same* Reply and a SchedContext to the same SchedContext.  This is the pair the
@@ -692,29 +773,11 @@ theorem updatePipBoostOnCore_reply_schedContext_iff (st : SystemState) (c : Core
     (∀ r : Reply, (updatePipBoostOnCore st c tid).objects[oid]? = some (.reply r) ↔
         st.objects[oid]? = some (.reply r)) ∧
     (∀ sc : SchedContext, (updatePipBoostOnCore st c tid).objects[oid]? = some (.schedContext sc) ↔
-        st.objects[oid]? = some (.schedContext sc)) := by
-  by_cases hk : (tid.toObjId == oid) = true
-  · -- The written key: the pre-state holds a TCB there, or nothing is written.
-    have hEq : tid.toObjId = oid := by simpa using hk
-    cases hAt : st.getTcb? tid with
-    | none =>
-      rw [updatePipBoostOnCore_eq_self_of_getTcb?_none st c tid hAt]
-      exact ⟨fun _ => Iff.rfl, fun _ => Iff.rfl⟩
-    | some tcb =>
-      obtain ⟨pb, hPost⟩ := updatePipBoostOnCore_objects_at st c tid tcb hAt hInv
-      have hPre : st.objects[oid]? = some (.tcb tcb) := by
-        rw [← hEq]; exact (SystemState.getTcb?_eq_some_iff st tid tcb).mp hAt
-      have hPost' : (updatePipBoostOnCore st c tid).objects[oid]?
-          = some (.tcb { tcb with pipBoost := pb }) := by
-        rw [← hEq]
-        exact (SystemState.getTcb?_eq_some_iff _ tid _).mp hPost
-      refine ⟨fun r => ⟨fun h => ?_, fun h => ?_⟩, fun sc => ⟨fun h => ?_, fun h => ?_⟩⟩
-      · rw [hPost'] at h; cases h
-      · rw [hPre] at h; cases h
-      · rw [hPost'] at h; cases h
-      · rw [hPre] at h; cases h
-  · rw [updatePipBoostOnCore_objects_ne st c tid oid hk hInv]
-    exact ⟨fun _ => Iff.rfl, fun _ => Iff.rfl⟩
+        st.objects[oid]? = some (.schedContext sc)) :=
+  ⟨fun _ => updatePipBoostOnCore_get_of_not_tcb_iff st c tid hInv oid
+      (fun _ e => KernelObject.noConfusion e),
+   fun _ => updatePipBoostOnCore_get_of_not_tcb_iff st c tid hInv oid
+      (fun _ e => KernelObject.noConfusion e)⟩
 
 /-- WS-RR RR2.17: `updatePipBoostOnCore`'s only object write stores a `.tcb`,
 so every notification the post-state holds was already there.  This is the shape
@@ -725,27 +788,9 @@ theorem updatePipBoostOnCore_notification_backward (st : SystemState) (c : CoreI
     (tid : ThreadId) (hInv : st.objects.invExt)
     (oid : ObjId) (ntfn : Notification)
     (h : (updatePipBoostOnCore st c tid).objects[oid]? = some (.notification ntfn)) :
-    st.objects[oid]? = some (.notification ntfn) := by
-  cases hAt : st.objects[tid.toObjId]? with
-  | none =>
-      rw [updatePipBoostOnCore_eq_self_of_getTcb?_none st c tid
-        (by unfold SystemState.getTcb?; rw [hAt])] at h
-      exact h
-  | some obj =>
-    cases obj with
-    | tcb tcb =>
-        obtain ⟨p, hPost⟩ := updatePipBoostOnCore_objects_at st c tid tcb
-          (by rw [SystemState.getTcb?_eq_some_iff]; exact hAt) hInv
-        have hPostRaw := (SystemState.getTcb?_eq_some_iff _ tid _).mp hPost
-        by_cases hEq : oid = tid.toObjId
-        · rw [hEq, hPostRaw] at h; cases h
-        · rw [updatePipBoostOnCore_objects_ne st c tid oid
-            (by simpa using fun e => hEq e.symm) hInv] at h
-          exact h
-    | _ =>
-        rw [updatePipBoostOnCore_eq_self_of_getTcb?_none st c tid
-          (by unfold SystemState.getTcb?; rw [hAt])] at h
-        exact h
+    st.objects[oid]? = some (.notification ntfn) :=
+  (updatePipBoostOnCore_get_of_not_tcb_iff st c tid hInv oid
+    (fun _ e => KernelObject.noConfusion e)).mp h
 
 /-- WS-RR RR2.17: the cross-core boost-with-wake inherits the frame — its state
 component is `updatePipBoostOnCore` on the thread's home core. -/
@@ -799,25 +844,29 @@ theorem updatePipBoostOnCore_tcb_backward (st : SystemState) (c : CoreId)
     (tid : ThreadId) (hInv : st.objects.invExt) (t : ThreadId) (tcb' : TCB)
     (h : (updatePipBoostOnCore st c tid).objects[t.toObjId]? = some (.tcb tcb')) :
     ∃ tcb p, st.objects[t.toObjId]? = some (.tcb tcb) ∧
-      tcb' = { tcb with pipBoost := p } := by
+      tcb'.withoutRunLinks = { tcb with pipBoost := p }.withoutRunLinks := by
+  -- Off the run-queue links the boost's TCB is its object write's (WS-ZA ZA4.5).
+  obtain ⟨t0, h0, hE⟩ := (updatePipBoostOnCore_objectsAgreeOffRunLinks st c tid).get_tcb' h
+  suffices hRef : ∃ tcb p, st.objects[t.toObjId]? = some (.tcb tcb) ∧
+      t0 = { tcb with pipBoost := p } by
+    obtain ⟨tcb, p, hPre, rfl⟩ := hRef
+    exact ⟨tcb, p, hPre, hE⟩
   cases hT : st.getTcb? tid with
   | none =>
-      rw [updatePipBoostOnCore_eq_self_of_getTcb?_none st c tid hT] at h
-      exact ⟨tcb', tcb'.pipBoost, h, rfl⟩
+      rw [pipBoostWrite_eq_self_of_getTcb?_none st tid hT] at h0
+      exact ⟨t0, t0.pipBoost, h0, rfl⟩
   | some tcb =>
       by_cases hEq : t.toObjId = tid.toObjId
-      · obtain ⟨p, hAt⟩ := updatePipBoostOnCore_objects_at st c tid tcb hT hInv
-        rw [hEq] at h
-        rw [SystemState.getTcb?_eq_some_iff] at hAt
-        rw [hAt] at h
+      · obtain ⟨p, hAt⟩ := pipBoostWrite_objects_at st tid tcb hT hInv
+        rw [hEq, (SystemState.getTcb?_eq_some_iff _ tid _).mp hAt] at h0
         refine ⟨tcb, p, ?_, ?_⟩
         · rw [hEq]; exact (SystemState.getTcb?_eq_some_iff st tid tcb).mp hT
-        · simp only [Option.some.injEq, KernelObject.tcb.injEq] at h
-          rw [h]
-      · refine ⟨tcb', tcb'.pipBoost, ?_, rfl⟩
-        rw [← updatePipBoostOnCore_objects_ne st c tid t.toObjId
+        · simp only [Option.some.injEq, KernelObject.tcb.injEq] at h0
+          rw [h0]
+      · refine ⟨t0, t0.pipBoost, ?_, rfl⟩
+        rw [← pipBoostWrite_objects_ne st tid t.toObjId
           (by simp only [beq_iff_eq]; exact fun e => hEq e.symm) hInv]
-        exact h
+        exact h0
 
 /-- WS-RR RR8.16 (`v0.35.195`, an instance of the record frame since
 `v0.35.196`): the `ipcState` reading. -/
@@ -826,7 +875,7 @@ theorem updatePipBoostOnCore_tcb_ipcState_backward (st : SystemState) (c : CoreI
     (h : (updatePipBoostOnCore st c tid).objects[t.toObjId]? = some (.tcb tcb')) :
     ∃ tcb, st.objects[t.toObjId]? = some (.tcb tcb) ∧ tcb.ipcState = tcb'.ipcState := by
   obtain ⟨tcb, p, hPre, hEq⟩ := updatePipBoostOnCore_tcb_backward st c tid hInv t tcb' h
-  exact ⟨tcb, hPre, by rw [hEq]⟩
+  exact ⟨tcb, hPre, (TCB.proj_eq_of_withoutRunLinks_eq TCB.ipcState hEq).symm⟩
 
 /-- **WS-RR RR8.16 (`v0.35.196`)**: the wake-surfacing form is the boost with an
 SGI computation beside it, so it frames the same thing. -/
@@ -834,7 +883,7 @@ theorem pipBoostWithWake_tcb_backward (st : SystemState) (tid : ThreadId)
     (ec : CoreId) (hInv : st.objects.invExt) (t : ThreadId) (tcb' : TCB)
     (h : (pipBoostWithWake st tid ec).1.objects[t.toObjId]? = some (.tcb tcb')) :
     ∃ tcb p, st.objects[t.toObjId]? = some (.tcb tcb) ∧
-      tcb' = { tcb with pipBoost := p } :=
+      tcb'.withoutRunLinks = { tcb with pipBoost := p }.withoutRunLinks :=
   updatePipBoostOnCore_tcb_backward st (determineTargetCore st tid) tid hInv t tcb' h
 
 /-- WS-RR RR8.16 (`v0.35.195`, an instance since `v0.35.196`): its `ipcState`
@@ -856,7 +905,7 @@ theorem propagatePipChainCrossCore_tcb_backward (st : SystemState)
     (h : (propagatePipChainCrossCore st tid ec fuel).1.objects[t.toObjId]?
         = some (.tcb tcb')) :
     ∃ tcb p, st.objects[t.toObjId]? = some (.tcb tcb) ∧
-      tcb' = { tcb with pipBoost := p } := by
+      tcb'.withoutRunLinks = { tcb with pipBoost := p }.withoutRunLinks := by
   induction fuel generalizing st tid tcb' with
   | zero =>
       rw [propagatePipChainCrossCore_zero] at h
@@ -874,7 +923,11 @@ theorem propagatePipChainCrossCore_tcb_backward (st : SystemState)
         obtain ⟨mid, pMid, hMid, hEqMid⟩ := ih _ nextServer hNext tcb' h
         obtain ⟨pre, pPre, hPre, hEqPre⟩ :=
           pipBoostWithWake_tcb_backward st tid ec hInv t mid hMid
-        exact ⟨pre, pMid, hPre, by rw [hEqMid, hEqPre]⟩
+        -- `{_ with pipBoost := _}` commutes with clearing the run-queue links.
+        have hSet : ∀ (u : TCB) (q : Option SeLe4n.Priority),
+            ({ u with pipBoost := q } : TCB).withoutRunLinks
+              = { u.withoutRunLinks with pipBoost := q } := fun _ _ => rfl
+        exact ⟨pre, pMid, hPre, hEqMid.trans (by rw [hSet mid pMid, hEqPre]; rfl)⟩
 
 /-- WS-RR RR8.16 (`v0.35.195`, an instance since `v0.35.196`): its `ipcState`
 reading. -/
@@ -886,7 +939,7 @@ theorem propagatePipChainCrossCore_tcb_ipcState_backward (st : SystemState)
     ∃ tcb, st.objects[t.toObjId]? = some (.tcb tcb) ∧ tcb.ipcState = tcb'.ipcState := by
   obtain ⟨tcb, p, hPre, hEq⟩ :=
     propagatePipChainCrossCore_tcb_backward st tid ec fuel hInv t tcb' h
-  exact ⟨tcb, hPre, by rw [hEq]⟩
+  exact ⟨tcb, hPre, (TCB.proj_eq_of_withoutRunLinks_eq TCB.ipcState hEq).symm⟩
 
 -- ============================================================================
 -- WS-RR RR2.20 — the PIP chain walk is a frame for replenish-queue affinity
@@ -910,18 +963,19 @@ answers `none` at that slot in both states and is untouched everywhere else. -/
 theorem updatePipBoostOnCore_getSchedContext? (st : SystemState) (c : CoreId)
     (tid : ThreadId) (hInv : st.objects.invExt) (scId : SchedContextId) :
     (updatePipBoostOnCore st c tid).getSchedContext? scId = st.getSchedContext? scId := by
-  by_cases hEq : (tid.toObjId == scId.toObjId) = true
-  · have hId : tid.toObjId = scId.toObjId := by simpa using hEq
-    cases hT : st.getTcb? tid with
-    | none => rw [updatePipBoostOnCore_eq_self_of_getTcb?_none st c tid hT]
-    | some tcb =>
-      obtain ⟨p, hPost⟩ := updatePipBoostOnCore_objects_at st c tid tcb hT hInv
-      rw [SystemState.getSchedContext?_none_of_tcb (updatePipBoostOnCore st c tid) scId _
-            (hId ▸ (SystemState.getTcb?_eq_some_iff (updatePipBoostOnCore st c tid) tid _).mp hPost),
-          SystemState.getSchedContext?_none_of_tcb st scId tcb
-            (hId ▸ (SystemState.getTcb?_eq_some_iff st tid tcb).mp hT)]
-  · unfold SystemState.getSchedContext?
-    rw [updatePipBoostOnCore_objects_ne st c tid scId.toObjId hEq hInv]
+  have hIff := fun sc : SchedContext => updatePipBoostOnCore_get_of_not_tcb_iff st c tid hInv
+    scId.toObjId (o := .schedContext sc) (fun _ e => KernelObject.noConfusion e)
+  cases h : st.getSchedContext? scId with
+  | some sc =>
+    exact (SystemState.getSchedContext?_eq_some_iff _ scId sc).mpr
+      ((hIff sc).mpr ((SystemState.getSchedContext?_eq_some_iff st scId sc).mp h))
+  | none =>
+    cases h' : (updatePipBoostOnCore st c tid).getSchedContext? scId with
+    | none => rfl
+    | some sc =>
+      rw [(SystemState.getSchedContext?_eq_some_iff st scId sc).mpr
+        ((hIff sc).mp ((SystemState.getSchedContext?_eq_some_iff _ scId sc).mp h'))] at h
+      cases h
 
 /-- WS-RR RR2.20 (frame): a PIP boost never moves a thread's home core.  It
 rewrites exactly one TCB and only in `pipBoost`, and `determineTargetCore` reads
@@ -929,18 +983,20 @@ only `cpuAffinity`. -/
 theorem updatePipBoostOnCore_determineTargetCore (st : SystemState) (c : CoreId)
     (tid t : ThreadId) (hInv : st.objects.invExt) :
     determineTargetCore (updatePipBoostOnCore st c tid) t = determineTargetCore st t := by
-  refine determineTargetCore_congr st (updatePipBoostOnCore st c tid) t ?_
+  rw [determineTargetCore_of_objectsAgreeOffRunLinks
+    (updatePipBoostOnCore_objectsAgreeOffRunLinks st c tid) t]
+  refine determineTargetCore_congr st (pipBoostWrite st tid) t ?_
   by_cases hEq : (tid.toObjId == t.toObjId) = true
   · have hId : tid.toObjId = t.toObjId := by simpa using hEq
     obtain rfl : tid = t := SeLe4n.ThreadId.toObjId_injective _ _ hId
     cases hT : st.getTcb? tid with
-    | none => rw [updatePipBoostOnCore_eq_self_of_getTcb?_none st c tid hT, hT]
+    | none => rw [pipBoostWrite_eq_self_of_getTcb?_none st tid hT, hT]
     | some tcb =>
-      obtain ⟨p, hPost⟩ := updatePipBoostOnCore_objects_at st c tid tcb hT hInv
+      obtain ⟨p, hPost⟩ := pipBoostWrite_objects_at st tid tcb hT hInv
       rw [hPost]
       rfl
-  · have hRaw := updatePipBoostOnCore_objects_ne st c tid t.toObjId hEq hInv
-    have hTcb : (updatePipBoostOnCore st c tid).getTcb? t = st.getTcb? t := by
+  · have hRaw := pipBoostWrite_objects_ne st tid t.toObjId hEq hInv
+    have hTcb : (pipBoostWrite st tid).getTcb? t = st.getTcb? t := by
       unfold SystemState.getTcb?; rw [hRaw]
     rw [hTcb]
 
@@ -1125,13 +1181,15 @@ theorem updatePipBoostOnCore_preserves_runQueueOnCore_wellFormed (st : SystemSta
     · exact hwf
     · split
       · split
-        · rw [markKeyChangeFor_runQueueOnCore]
+        · rw [markKeyChangeFor_runQueueOnCore, SystemState.runRequeueOnCore_scheduler,
+            SystemState.rewriteObject_scheduler]
           by_cases hcc : c = c'
           · subst hcc
             rw [SchedulerState.setRunQueueOnCore_runQueueOnCore_self]
             exact RunQueue.insert_preserves_wellFormed _
               (RunQueue.remove_preserves_wellFormed _ hwf tid) tid _
-          · rw [SchedulerState.setRunQueueOnCore_runQueueOnCore_ne _ c c' _ hcc]
+          · rw [SchedulerState.setRunQueueOnCore_runQueueOnCore_ne _ c c' _ hcc,
+              SchedulerState.setRunQueueEndsOnCore_runQueueOnCore]
             exact hwf
         · rw [markKeyChangeFor_runQueueOnCore]; exact hwf
       · rw [markKeyChangeFor_runQueueOnCore]; exact hwf
@@ -1191,13 +1249,15 @@ theorem updatePipBoostOnCore_runQueueUniqueOnCore (st : SystemState)
     · exact h
     · split
       · split
-        · rw [markKeyChangeFor_runQueueOnCore]
+        · rw [markKeyChangeFor_runQueueOnCore, SystemState.runRequeueOnCore_scheduler,
+            SystemState.rewriteObject_scheduler]
           by_cases hcc : c = c'
           · subst hcc
             rw [SchedulerState.setRunQueueOnCore_runQueueOnCore_self]
             exact RunQueue.insert_preserves_toList_nodup _ _ _
               (RunQueue.remove_preserves_toList_nodup _ tid h)
-          · rw [SchedulerState.setRunQueueOnCore_runQueueOnCore_ne _ c c' _ hcc]
+          · rw [SchedulerState.setRunQueueOnCore_runQueueOnCore_ne _ c c' _ hcc,
+              SchedulerState.setRunQueueEndsOnCore_runQueueOnCore]
             exact h
         · rw [markKeyChangeFor_runQueueOnCore]; exact h
       · rw [markKeyChangeFor_runQueueOnCore]; exact h
@@ -1234,17 +1294,13 @@ theorem propagatePipChainCrossCore_runQueueUniqueOnCore :
 a `rewriteObject` (which touches `objects` alone) and a run-queue update (which
 touches `scheduler` alone), so both capability-side CDT conjuncts are framed. -/
 theorem updatePipBoostOnCore_cdtNodeSlot (st : SystemState) (c : CoreId) (tid : ThreadId) :
-    (updatePipBoostOnCore st c tid).cdtNodeSlot = st.cdtNodeSlot := by
-  simp only [updatePipBoostOnCore]
-  repeat' split
-  all_goals simp [SystemState.rewriteObject]
+    (updatePipBoostOnCore st c tid).cdtNodeSlot = st.cdtNodeSlot :=
+  congrArg (·.cdtNodeSlot) (updatePipBoostOnCore_onlyObjectsSchedulerDiffer st c tid)
 
 /-- WS-RR RR8.16 (`v0.35.197`): ...and no derivation tree. -/
 theorem updatePipBoostOnCore_cdt (st : SystemState) (c : CoreId) (tid : ThreadId) :
-    (updatePipBoostOnCore st c tid).cdt = st.cdt := by
-  simp only [updatePipBoostOnCore]
-  repeat' split
-  all_goals simp [SystemState.rewriteObject]
+    (updatePipBoostOnCore st c tid).cdt = st.cdt :=
+  congrArg (·.cdt) (updatePipBoostOnCore_onlyObjectsSchedulerDiffer st c tid)
 
 /-- WS-RR RR8.16 (`v0.35.197`): ...and so does the boost-with-wake step. -/
 theorem pipBoostWithWake_cdtNodeSlot (st : SystemState) (tid : ThreadId) (ec : CoreId) :
@@ -1300,19 +1356,31 @@ theorem updatePipBoostOnCore_objects_pointwise (st : SystemState) (c : CoreId)
     (updatePipBoostOnCore st c tid).objects[oid]? = st.objects[oid]? ∨
       ∃ pre post : TCB, st.objects[oid]? = some (.tcb pre) ∧
         (updatePipBoostOnCore st c tid).objects[oid]? = some (.tcb post) := by
-  cases hT : st.getTcb? tid with
-  | none =>
-      left; rw [updatePipBoostOnCore_eq_self_of_getTcb?_none st c tid hT]
-  | some tcb =>
-      by_cases hEq : oid = tid.toObjId
-      · subst hEq
-        obtain ⟨p, hAt⟩ := updatePipBoostOnCore_objects_at st c tid tcb hT hInv
-        rw [SystemState.getTcb?_eq_some_iff] at hAt
-        exact Or.inr ⟨tcb, { tcb with pipBoost := p },
-          (SystemState.getTcb?_eq_some_iff st tid tcb).mp hT, hAt⟩
-      · left
-        exact updatePipBoostOnCore_objects_ne st c tid oid
-          (by simp only [beq_iff_eq]; exact fun e => hEq e.symm) hInv
+  -- The object write is nothing or a TCB-for-TCB rewrite, and the re-key's
+  -- link writes are TCB-for-TCB (WS-ZA ZA4.5).
+  have hRef : (pipBoostWrite st tid).objects[oid]? = st.objects[oid]? ∨
+      ∃ pre post : TCB, st.objects[oid]? = some (.tcb pre) ∧
+        (pipBoostWrite st tid).objects[oid]? = some (.tcb post) := by
+    cases hT : st.getTcb? tid with
+    | none => left; rw [pipBoostWrite_eq_self_of_getTcb?_none st tid hT]
+    | some tcb =>
+        by_cases hEq : oid = tid.toObjId
+        · subst hEq
+          obtain ⟨p, hAt⟩ := pipBoostWrite_objects_at st tid tcb hT hInv
+          rw [SystemState.getTcb?_eq_some_iff] at hAt
+          exact Or.inr ⟨tcb, { tcb with pipBoost := p },
+            (SystemState.getTcb?_eq_some_iff st tid tcb).mp hT, hAt⟩
+        · left
+          exact pipBoostWrite_objects_ne st tid oid
+            (by simp only [beq_iff_eq]; exact fun e => hEq e.symm) hInv
+  rcases (updatePipBoostOnCore_objectsAgreeOffRunLinks st c tid).pointwise oid with
+    hT | ⟨preT, postT, hPreT, hPostT⟩
+  · rcases hRef with hH | ⟨preH, postH, hPreH, hPostH⟩
+    · left; rw [hT, hH]
+    · exact Or.inr ⟨preH, postH, hPreH, by rw [hT]; exact hPostH⟩
+  · rcases hRef with hH | ⟨preH, _, hPreH, _⟩
+    · exact Or.inr ⟨preT, postT, by rw [← hH]; exact hPreT, hPostT⟩
+    · exact Or.inr ⟨preH, postT, hPreH, hPostT⟩
 
 /-- WS-RR RR8.16 (`v0.35.197`): ...and so does the boost-with-wake step. -/
 theorem pipBoostWithWake_objects_pointwise (st : SystemState) (tid : ThreadId)
@@ -1363,16 +1431,16 @@ theorem updatePipBoostOnCore_getTcb?_isSome (st : SystemState) (c : CoreId)
     (tid : ThreadId) (hInv : st.objects.invExt) (t : ThreadId)
     (h : (st.getTcb? t).isSome) :
     ((updatePipBoostOnCore st c tid).getTcb? t).isSome := by
+  rw [(updatePipBoostOnCore_objectsAgreeOffRunLinks st c tid).getTcb?_isSome t]
   cases hT : st.getTcb? tid with
-  | none => rw [updatePipBoostOnCore_eq_self_of_getTcb?_none st c tid hT]; exact h
+  | none => rw [pipBoostWrite_eq_self_of_getTcb?_none st tid hT]; exact h
   | some tcb =>
       by_cases hEq : t.toObjId = tid.toObjId
-      · obtain ⟨p, hAt⟩ := updatePipBoostOnCore_objects_at st c tid tcb hT hInv
-        have : (updatePipBoostOnCore st c tid).getTcb? t
-            = (updatePipBoostOnCore st c tid).getTcb? tid := by
+      · obtain ⟨p, hAt⟩ := pipBoostWrite_objects_at st tid tcb hT hInv
+        have : (pipBoostWrite st tid).getTcb? t = (pipBoostWrite st tid).getTcb? tid := by
           unfold SystemState.getTcb?; rw [hEq]
         rw [this, hAt]; rfl
-      · have hFrame := updatePipBoostOnCore_objects_ne st c tid t.toObjId
+      · have hFrame := pipBoostWrite_objects_ne st tid t.toObjId
           (by simp only [beq_iff_eq]; exact fun e => hEq e.symm) hInv
         unfold SystemState.getTcb? at h ⊢
         rw [hFrame]; exact h

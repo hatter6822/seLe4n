@@ -1067,6 +1067,10 @@ def nonExecutedTransitionsPlain : List Name :=
   , `SeLe4n.Kernel.Liveness.CanonicalDeploymentProgressOnCore.exitState
   , `SeLe4n.Kernel.Liveness.stepPost
   , `SeLe4n.Kernel.Liveness.traceStateAt
+  -- WS-ZA ZA4.5: the PIP boost's object write alone, without its run-queue
+  -- re-key — the reference state the boost's object frames are proven
+  -- against (`updatePipBoostOnCore_objectsAgreeOffRunLinks`).
+  , `SeLe4n.Kernel.PriorityInheritance.pipBoostWrite
   , `SeLe4n.Kernel.PriorityInheritance.propagatePipChainCrossCoreState
   , `SeLe4n.Kernel.PriorityInheritance.propagatePriorityInheritance
   -- KSC-1 PR C (`v0.36.55`): the two-state form, kept as the statement the

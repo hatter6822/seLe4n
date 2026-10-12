@@ -233,6 +233,19 @@ theorem get_none_iff {x : SeLe4n.ObjId} : st'.objects[x]? = none ↔ st.objects[
     | none => rfl
     | some _ => rw [f] at hx; cases hx
 
+/-- At every key the two stores hold the same object, or a TCB in both. -/
+theorem pointwise (x : SeLe4n.ObjId) :
+    st'.objects[x]? = st.objects[x]? ∨
+      ∃ t t' : TCB, st.objects[x]? = some (.tcb t) ∧ st'.objects[x]? = some (.tcb t') := by
+  cases e : st.objects[x]? with
+  | none => exact Or.inl ((h.get_none_iff).mpr e)
+  | some o =>
+    cases o with
+    | tcb t =>
+      obtain ⟨t', ht', _⟩ := h.get_tcb e
+      exact Or.inr ⟨t, t', rfl, ht'⟩
+    | _ => exact Or.inl (h.get_of_not_tcb (fun _ e => KernelObject.noConfusion e) e)
+
 /-- Each non-TCB kind reads the same in both stores. -/
 theorem get_endpoint_iff {x : SeLe4n.ObjId} {e : Endpoint} :
     st'.objects[x]? = some (.endpoint e) ↔ st.objects[x]? = some (.endpoint e) :=

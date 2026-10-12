@@ -1275,7 +1275,7 @@ theorem updatePipBoost_replenishQueueOnCore (st : SystemState) (tid : SeLe4n.Thr
     · rfl
     · split
       · split
-        · rw [markKeyChangeFor_replenishQueueOnCore]; rfl
+        · rw [markKeyChangeFor_replenishQueueOnCore]; simp
         · rw [markKeyChangeFor_replenishQueueOnCore]
       · rw [markKeyChangeFor_replenishQueueOnCore]
   · rfl

@@ -2531,8 +2531,26 @@ theorem updatePipBoost_preserves_schedulerInvariantStructuralRegNodup_smp
           -- The rebucket: remove tid then re-insert at the new priority; the
           -- KSC-1 key-change flag wraps the write.
           refine markKeyChangeFor_preserves_schedulerInvariantStructuralRegNodup_smp _ _ _ ?_
+          -- The re-key writes run-queue links too (WS-ZA ZA4.5), which the
+          -- invariant does not read: argue on the queue write alone.
+          let s1 : SystemState := { st with objects := st.objects.insert tid.toObjId (.tcb tcb') }
+          let p := (resolveEffectivePrioDeadline s1 tcb').1
+          let rq := ((s1.scheduler.runQueueOnCore bootCoreId).remove tid).insert tid p
+          have hS : ∀ c', schedulerInvariantStructuralRegNodup_perCore
+              { s1 with scheduler := s1.scheduler.setRunQueueOnCore bootCoreId rq } c' →
+              schedulerInvariantStructuralRegNodup_perCore (s1.runRequeueOnCore bootCoreId tid p) c' :=
+            fun _ h => schedulerInvariantStructuralRegNodup_perCore_of_flagOnlyWrite
+              (s1 := { s1 with scheduler := s1.scheduler.setRunQueueOnCore bootCoreId rq })
+              (SystemState.runRequeueOnCore_objectsAgreeOffRunLinks s1 bootCoreId tid p) (by simp)
+              (fun x => by
+                by_cases hx : x = bootCoreId
+                · subst hx; simp [rq]
+                · simp [SchedulerState.setRunQueueOnCore_runQueueOnCore_ne _ _ _ _ (Ne.symm hx)])
+              (fun _ => by simp) h
+          refine fun c' => hS c' ?_
+          revert c'
           refine setRunQueueOnCore_preserves_schedulerInvariantStructuralRegNodup_smp
-            { st with objects := st.objects.insert tid.toObjId (.tcb tcb') } bootCoreId _ ?_ ?_ ?_ ?_ hst'
+            s1 bootCoreId _ ?_ ?_ ?_ ?_ hst'
           · exact RunQueue.insert_preserves_wellFormed _
               (RunQueue.remove_preserves_wellFormed _ (hPre bootCoreId).1.1.2.2.2 tid) _ _
           · exact RunQueue.insert_preserves_toList_nodup _ _ _
@@ -3139,78 +3157,34 @@ open SeLe4n.Kernel.PriorityInheritance in
 run-queue write is the boot-core rebucket). -/
 theorem updatePipBoost_runQueueOnCore_ne (st : SystemState) (tid : SeLe4n.ThreadId)
     (c : CoreId) (hc : c ≠ bootCoreId) :
-    (updatePipBoost st tid).scheduler.runQueueOnCore c = st.scheduler.runQueueOnCore c := by
-  simp only [updatePipBoost, updatePipBoostOnCore, SystemState.rewriteObject]
-  repeat' split
-  all_goals simp only [markKeyChangeFor_runQueueOnCore,
-    SchedulerState.setRunQueueOnCore_runQueueOnCore_ne _ _ _ _ (Ne.symm hc)]
+    (updatePipBoost st tid).scheduler.runQueueOnCore c = st.scheduler.runQueueOnCore c :=
+  updatePipBoostOnCore_runQueueOnCore_ne st bootCoreId c tid (Ne.symm hc)
 
 open SeLe4n.Kernel.PriorityInheritance in
-/-- `updatePipBoost` keeps every `getTcb?` resolvable (its only object write is the
-boosted TCB's `pipBoost`, a TCB→TCB update). -/
+/-- `updatePipBoost` keeps every `getTcb?` resolvable (its only object writes are
+the boosted TCB's `pipBoost` and run-queue links, TCB→TCB updates). -/
 theorem updatePipBoost_getTcb?_isSome (st : SystemState) (tid : SeLe4n.ThreadId)
     (hInv : st.objects.invExt) (x : SeLe4n.ThreadId) (hx : (st.getTcb? x).isSome) :
-    ((updatePipBoost st tid).getTcb? x).isSome := by
-  simp only [updatePipBoost, updatePipBoostOnCore, SystemState.rewriteObject]
-  repeat' split
-  all_goals first
-    | exact hx
-    | (rw [markKeyChangeFor_getTcb?]; exact getTcb?_isSome_insert_tcb st tid _ hInv x hx)
+    ((updatePipBoost st tid).getTcb? x).isSome :=
+  updatePipBoostOnCore_getTcb?_isSome st bootCoreId tid hInv x hx
 
 open SeLe4n.Kernel.PriorityInheritance in
 /-- WS-SM SM5.I.8: `updatePipBoost` preserves the qcc-free run-queue safety bundle
-on core `c`.  On `bootCoreId` the boot rebucket is `remove`+`insert`
-(membership-preserving, the boosted thread stays a TCB); on any other core the run
-queue is framed and the `pipBoost` object write keeps `getTcb?` resolvable. -/
+on core `c`: the boot rebucket keeps run-queue membership, well-formedness and
+uniqueness, and every resolving thread still resolves. -/
 theorem updatePipBoost_preserves_runQueueSafetyOnCore (st : SystemState)
     (tid : SeLe4n.ThreadId) (c : CoreId) (hInv : st.objects.invExt)
     (h : runQueueSafetyOnCore st c) :
     runQueueSafetyOnCore (updatePipBoost st tid) c := by
-  by_cases hc : c = bootCoreId
-  · subst hc
-    simp only [updatePipBoost, updatePipBoostOnCore, SystemState.rewriteObject]
-    split
-    · rename_i tcb heq _
-      split
-      · exact h
-      · -- boost changed; generalise the boosted TCB to dodge nested-record parsing.
-        generalize ({ tcb with pipBoost := computeMaxWaiterPriority st tid } : TCB) = tcb'
-        have hst' : runQueueSafetyOnCore
-            { st with objects := st.objects.insert tid.toObjId (.tcb tcb') } bootCoreId :=
-          objects_frame_preserves_runQueueSafetyOnCore st _ bootCoreId rfl
-            (fun x hx => getTcb?_isSome_insert_tcb st tid tcb' hInv x hx) h
-        have hself : ({ st with objects := st.objects.insert tid.toObjId (.tcb tcb') }
-            : SystemState).getTcb? tid = some tcb' := by
-          simp only [SystemState.getTcb?, RHTable_getElem?_eq_get?]
-          rw [RobinHood.RHTable.getElem?_insert_self st.objects tid.toObjId _ hInv]
-        split
-        · split
-          · rename_i hmemRq _hprio
-            refine runQueueSafetyOnCore_of_markKeyChangeFor _ _ _ _ ?_
-            refine ⟨?_, ?_, ?_⟩
-            · intro t ht
-              simp only [SchedulerState.setRunQueueOnCore_runQueueOnCore_self] at ht
-              rcases (RunQueue.mem_insert _ tid _ t).mp
-                ((RunQueue.mem_toList_iff_mem _ t).mp ht) with hold | heqt
-              · rw [RunQueue.mem_remove] at hold
-                exact hst'.1 t ((RunQueue.mem_toList_iff_mem _ t).mpr hold.1)
-              · exact ⟨_, by rw [heqt]; exact hself⟩
-            · show runQueueOnCoreWellFormed _ bootCoreId
-              simp only [runQueueOnCoreWellFormed,
-                SchedulerState.setRunQueueOnCore_runQueueOnCore_self]
-              exact RunQueue.insert_preserves_wellFormed _
-                (RunQueue.remove_preserves_wellFormed _ hst'.2.1 tid) _ _
-            · show runQueueUniqueOnCore _ bootCoreId
-              simp only [runQueueUniqueOnCore,
-                SchedulerState.setRunQueueOnCore_runQueueOnCore_self]
-              exact RunQueue.insert_preserves_toList_nodup _ _ _
-                (RunQueue.remove_preserves_toList_nodup _ tid hst'.2.2)
-          · exact runQueueSafetyOnCore_of_markKeyChangeFor _ _ _ _ hst'
-        · exact runQueueSafetyOnCore_of_markKeyChangeFor _ _ _ _ hst'
-    · exact h
-  · exact runQueue_frame_preserves_runQueueSafetyOnCore st _ c
-      (updatePipBoost_runQueueOnCore_ne st tid c hc)
-      (fun x hx => updatePipBoost_getTcb?_isSome st tid hInv x hx) h
+  obtain ⟨hRat, hWf, hNd⟩ := h
+  refine ⟨?_, updatePipBoostOnCore_preserves_runQueueOnCore_wellFormed st bootCoreId tid c hWf,
+    updatePipBoostOnCore_runQueueUniqueOnCore st bootCoreId tid c hNd⟩
+  intro t ht
+  have hm : t ∈ st.scheduler.runQueueOnCore c :=
+    (updatePipBoostOnCore_mem_runQueueOnCore st bootCoreId c tid t).mp
+      ((RunQueue.mem_toList_iff_mem _ t).mp ht)
+  obtain ⟨tcbt, htcbt⟩ := hRat t ((RunQueue.mem_toList_iff_mem _ t).mpr hm)
+  exact Option.isSome_iff_exists.mp (updatePipBoost_getTcb?_isSome st tid hInv t (by simp [htcbt]))
 
 open SeLe4n.Kernel.PriorityInheritance in
 /-- WS-SM SM5.I.8: `revertPriorityInheritance` preserves the qcc-free run-queue
@@ -3369,66 +3343,31 @@ theorem timeoutBlockedThreads_preserves_runQueueSafetyOnCore (st : SystemState)
 -- which preserves `timeSlice`.
 -- ----------------------------------------------------------------------------
 
-/-- `updatePipBoost` at the target thread preserves its `timeSlice` (the
-`{tcb with pipBoost := …}` record-update touches only `pipBoost`).  Mirrors
-`updatePipBoost_self_ipcState`. -/
-private theorem updatePipBoost_self_timeSlice (st : SystemState) (tid : SeLe4n.ThreadId)
-    (hObjInv : st.objects.invExt) (tcb : TCB)
-    (hObj : st.objects[tid.toObjId]? = some (.tcb tcb)) :
-    match (PriorityInheritance.updatePipBoost st tid).objects[tid.toObjId]? with
-    | some (.tcb tcb') => tcb'.timeSlice = tcb.timeSlice
-    | _ => True := by
-  suffices h : ∃ tcb',
-      (PriorityInheritance.updatePipBoost st tid).objects[tid.toObjId]? = some (.tcb tcb') ∧
-      tcb'.timeSlice = tcb.timeSlice by
-    obtain ⟨tcb', hLook, hTS⟩ := h; simp only [hLook, hTS]
-  unfold PriorityInheritance.updatePipBoost PriorityInheritance.updatePipBoostOnCore
-  have hGet : st.getTcb? tid = some tcb := by unfold SystemState.getTcb?; rw [hObj]
-  simp only [SystemState.getTcbWitnessed?_eq_some hGet]
-  split
-  · exact ⟨tcb, hObj, rfl⟩
-  · have hSelf : (st.objects.insert tid.toObjId
-        (.tcb { tcb with pipBoost := PriorityInheritance.computeMaxWaiterPriority st tid }))[tid.toObjId]? =
-        some (.tcb { tcb with pipBoost := PriorityInheritance.computeMaxWaiterPriority st tid }) :=
-      RHTable_get?_insert_self st.objects tid.toObjId _ hObjInv
-    refine ⟨{ tcb with pipBoost := PriorityInheritance.computeMaxWaiterPriority st tid }, ?_, rfl⟩
-    by_cases hRQ : tid ∈ (st.scheduler.runQueueOnCore bootCoreId)
-    · simp only [hRQ, ite_true]; split <;> (rw [markKeyChangeFor_objects]; exact hSelf)
-    · simp only [hRQ, ite_false]; rw [markKeyChangeFor_objects]; exact hSelf
-
 /-- WS-SM SM5.I global strengthening: `updatePipBoost` preserves
-`allThreadsTimeSlicePositive` (it writes a TCB only at `tid`, via the
-`pipBoost`-only update, leaving every `timeSlice` unchanged). -/
+`allThreadsTimeSlicePositive`: off the run-queue links it agrees with the bare
+`pipBoost` write, which leaves every `timeSlice` unchanged. -/
 theorem updatePipBoost_preserves_allThreadsTimeSlicePositive (st : SystemState)
     (tid : SeLe4n.ThreadId) (hObjInv : st.objects.invExt) (h : allThreadsTimeSlicePositive st) :
     allThreadsTimeSlicePositive (PriorityInheritance.updatePipBoost st tid) := by
   refine allThreadsTimeSlicePositive_frame ?_ h
   intro x tcb' hx
+  obtain ⟨r, hr, hre⟩ :=
+    (PriorityInheritance.updatePipBoostOnCore_objectsAgreeOffRunLinks st bootCoreId tid).getTcb?_some' hx
+  have hTs : tcb'.timeSlice = r.timeSlice := TCB.proj_eq_of_withoutRunLinks_eq (·.timeSlice) hre
   by_cases hxtid : x = tid
-  · rw [hxtid] at hx ⊢
-    rw [SystemState.getTcb?_eq_some_iff] at hx
-    by_cases hc : ∃ tcb, st.objects[tid.toObjId]? = some (.tcb tcb)
-    · obtain ⟨tcb, hpre⟩ := hc
-      refine ⟨tcb, (SystemState.getTcb?_eq_some_iff st tid tcb).mpr hpre, ?_⟩
-      have hself := updatePipBoost_self_timeSlice st tid hObjInv tcb hpre
-      rw [hx] at hself; exact hself
-    · exfalso
-      have heq : PriorityInheritance.updatePipBoost st tid = st := by
-        -- The transition splits on the witnessed lookup; its `none` arm is
-        -- exactly "no TCB here", which is the hypothesis `hc` denies in the
-        -- other arm.  The split precedes the unfold (the lookup's type
-        -- mentions `st.getTcb? tid`).
-        cases hpre : st.getTcb? tid with
-        | none =>
-          unfold PriorityInheritance.updatePipBoost PriorityInheritance.updatePipBoostOnCore
-          rw [SystemState.getTcbWitnessed?_eq_none hpre]
-        | some t => exact absurd ⟨t, (SystemState.getTcb?_eq_some_iff st tid t).mp hpre⟩ hc
-      rw [heq] at hx
-      exact hc ⟨tcb', hx⟩
-  · have hEq : (PriorityInheritance.updatePipBoost st tid).getTcb? x = st.getTcb? x := by
-      unfold SystemState.getTcb?
-      rw [PriorityInheritance.updatePipBoost_ipcState_frame st tid hObjInv x hxtid]
-    rw [hEq] at hx; exact ⟨tcb', hx, rfl⟩
+  · subst hxtid
+    cases hpre : st.getTcb? x with
+    | none =>
+      rw [PriorityInheritance.pipBoostWrite_eq_self_of_getTcb?_none st x hpre, hpre] at hr
+      cases hr
+    | some tcb =>
+      obtain ⟨p, hp⟩ := PriorityInheritance.pipBoostWrite_objects_at st x tcb hpre hObjInv
+      rw [hp] at hr; cases hr
+      exact ⟨tcb, rfl, hTs⟩
+  · have hNe : ¬ (tid.toObjId == x.toObjId) = true :=
+      fun hh => hxtid (SeLe4n.ThreadId.toObjId_injective _ _ (eq_of_beq hh)).symm
+    rw [SystemState.getTcb?_congr_at (PriorityInheritance.pipBoostWrite_objects_ne st tid _ hNe hObjInv)] at hr
+    exact ⟨r, hr, hTs⟩
 
 /-- WS-SM SM5.I global strengthening: `revertPriorityInheritance` preserves
 `allThreadsTimeSlicePositive`.  Fuel induction over the blocking-chain walk; each

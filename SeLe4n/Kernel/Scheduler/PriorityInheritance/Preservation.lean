@@ -19,15 +19,28 @@ open SeLe4n.Kernel.Concurrency (bootCoreId)
 -- D4-O: Frame lemmas for updatePipBoost
 -- ============================================================================
 
+/-- WS-ZA ZA4.5: a re-key over an object write lands in the shape
+`updatePipBoost_frame`'s `h_insert_sched` names. -/
+private theorem extract_runRequeueOnCore_of_objects {F : Type} (extract : SystemState → F)
+    (st : SystemState) (objs : SeLe4n.Kernel.RobinHood.RHTable ObjId KernelObject)
+    (c : Concurrency.CoreId) (t : ThreadId) (p : SeLe4n.Priority)
+    (h_insert_sched : ∀ objs c e rq, extract { st with objects := objs, scheduler :=
+      (st.scheduler.setRunQueueEndsOnCore c e).setRunQueueOnCore c rq } = extract st) :
+    extract (({ st with objects := objs } : SystemState).runRequeueOnCore c t p) = extract st := by
+  have hD := SystemState.runRequeueOnCore_onlyObjectsSchedulerDiffer
+    ({ st with objects := objs } : SystemState) c t p
+  unfold SystemState.onlyObjectsSchedulerDiffer at hD
+  rw [hD, SystemState.runRequeueOnCore_scheduler]
+  exact h_insert_sched _ _ _ _
+
 /-- D4-O: Helper — all paths through `updatePipBoost` preserve a given
 SystemState field that is not `objects`, `scheduler.runQueue`, or `scheduler.current`. -/
 private theorem updatePipBoost_frame {F : Type}
     (extract : SystemState → F)
     (st : SystemState) (tid : ThreadId)
     (h_insert : ∀ objs, extract { st with objects := objs } = extract st)
-    (_h_sched : ∀ rq, extract { st with scheduler := { st.scheduler with runQueue := rq } } = extract st)
-    (h_insert_sched : ∀ objs rq,
-      extract { st with objects := objs, scheduler := { st.scheduler with runQueue := rq } } = extract st)
+    (h_insert_sched : ∀ objs c e rq, extract { st with objects := objs, scheduler :=
+      (st.scheduler.setRunQueueEndsOnCore c e).setRunQueueOnCore c rq } = extract st)
     (h_pending : ∀ (s : SystemState) c, extract (s.markReschedulePendingOnCore c) = extract s) :
     extract (updatePipBoost st tid) = extract st := by
   simp only [updatePipBoost, updatePipBoostOnCore, SystemState.rewriteObject]
@@ -37,8 +50,9 @@ private theorem updatePipBoost_frame {F : Type}
     · rfl
     · split
       · split
-        · exact (markKeyChangeFor_extract_frame extract _ _ _ h_pending).trans
-            (h_insert_sched _ _)
+        · -- the re-key writes run-queue links and the core's queue (WS-ZA ZA4.5)
+          exact (markKeyChangeFor_extract_frame extract _ _ _ h_pending).trans
+            (extract_runRequeueOnCore_of_objects extract st _ _ _ _ h_insert_sched)
         · exact (markKeyChangeFor_extract_frame extract _ _ _ h_pending).trans (h_insert _)
       · exact (markKeyChangeFor_extract_frame extract _ _ _ h_pending).trans (h_insert _)
   · rfl
@@ -50,7 +64,7 @@ theorem updatePipBoost_currentOnCore_eq (st : SystemState) (tid : ThreadId)
     (c' : Concurrency.CoreId) :
     ((updatePipBoost st tid).scheduler.currentOnCore c') = (st.scheduler.currentOnCore c') :=
   updatePipBoost_frame (fun s => (s.scheduler.currentOnCore c')) st tid
-    (by intro _; rfl) (by intro _; rfl) (by intro _ _; rfl) (by intro _ _; rfl)
+    (by intro _; rfl) (by intro _ _ _ _; rfl) (by intro _ _; rfl)
 
 /-- D4-O: `updatePipBoost` preserves the scheduler's `current` field. -/
 theorem updatePipBoost_preserves_current (st : SystemState) (tid : ThreadId) :
@@ -61,150 +75,126 @@ theorem updatePipBoost_preserves_current (st : SystemState) (tid : ThreadId) :
 theorem updatePipBoost_preserves_activeDomain (st : SystemState) (tid : ThreadId) :
     ((updatePipBoost st tid).scheduler.activeDomainOnCore bootCoreId) = (st.scheduler.activeDomainOnCore bootCoreId) :=
   updatePipBoost_frame (fun s => (s.scheduler.activeDomainOnCore bootCoreId)) st tid
-    (by intro _; rfl) (by intro _; rfl) (by intro _ _; rfl) (by intro _ _; rfl)
+    (by intro _; rfl) (by intro _ _ _ _; rfl) (by intro _ _; rfl)
 
 /-- D4-P: `updatePipBoost` preserves the machine state. -/
 theorem updatePipBoost_preserves_machine (st : SystemState) (tid : ThreadId) :
     (updatePipBoost st tid).machine = st.machine :=
   updatePipBoost_frame (fun s => s.machine) st tid
-    (by intro _; rfl) (by intro _; rfl) (by intro _ _; rfl) (by intro _ _; rfl)
+    (by intro _; rfl) (by intro _ _ _ _; rfl) (by intro _ _; rfl)
 
 /-- D4-P: `updatePipBoost` preserves the `lifecycle` field. -/
 theorem updatePipBoost_preserves_lifecycle (st : SystemState) (tid : ThreadId) :
     (updatePipBoost st tid).lifecycle = st.lifecycle :=
   updatePipBoost_frame (fun s => s.lifecycle) st tid
-    (by intro _; rfl) (by intro _; rfl) (by intro _ _; rfl) (by intro _ _; rfl)
+    (by intro _; rfl) (by intro _ _ _ _; rfl) (by intro _ _; rfl)
 
 /-- D4-P: `updatePipBoost` preserves `irqHandlers`. -/
 theorem updatePipBoost_preserves_irqHandlers (st : SystemState) (tid : ThreadId) :
     (updatePipBoost st tid).irqHandlers = st.irqHandlers :=
   updatePipBoost_frame (fun s => s.irqHandlers) st tid
-    (by intro _; rfl) (by intro _; rfl) (by intro _ _; rfl) (by intro _ _; rfl)
+    (by intro _; rfl) (by intro _ _ _ _; rfl) (by intro _ _; rfl)
 
 /-- D4-P: `updatePipBoost` preserves `asidTable`. -/
 theorem updatePipBoost_preserves_asidTable (st : SystemState) (tid : ThreadId) :
     (updatePipBoost st tid).asidTable = st.asidTable :=
   updatePipBoost_frame (fun s => s.asidTable) st tid
-    (by intro _; rfl) (by intro _; rfl) (by intro _ _; rfl) (by intro _ _; rfl)
+    (by intro _; rfl) (by intro _ _ _ _; rfl) (by intro _ _; rfl)
 
 /-- D4-P: `updatePipBoost` preserves `serviceRegistry`. -/
 theorem updatePipBoost_preserves_serviceRegistry (st : SystemState) (tid : ThreadId) :
     (updatePipBoost st tid).serviceRegistry = st.serviceRegistry :=
   updatePipBoost_frame (fun s => s.serviceRegistry) st tid
-    (by intro _; rfl) (by intro _; rfl) (by intro _ _; rfl) (by intro _ _; rfl)
+    (by intro _; rfl) (by intro _ _ _ _; rfl) (by intro _ _; rfl)
 
 /-- D4-P: `updatePipBoost` preserves `objectIndex`. -/
 theorem updatePipBoost_preserves_objectIndex (st : SystemState) (tid : ThreadId) :
     (updatePipBoost st tid).objectIndex = st.objectIndex :=
   updatePipBoost_frame (fun s => s.objectIndex) st tid
-    (by intro _; rfl) (by intro _; rfl) (by intro _ _; rfl) (by intro _ _; rfl)
+    (by intro _; rfl) (by intro _ _ _ _; rfl) (by intro _ _; rfl)
 
 /-- D4-P: `updatePipBoost` preserves `objectIndexSet`. -/
 theorem updatePipBoost_preserves_objectIndexSet (st : SystemState) (tid : ThreadId) :
     (updatePipBoost st tid).objectIndexSet = st.objectIndexSet :=
   updatePipBoost_frame (fun s => s.objectIndexSet) st tid
-    (by intro _; rfl) (by intro _; rfl) (by intro _ _; rfl) (by intro _ _; rfl)
+    (by intro _; rfl) (by intro _ _ _ _; rfl) (by intro _ _; rfl)
 
 /-- D4-P: `updatePipBoost` preserves `cdt`. -/
 theorem updatePipBoost_preserves_cdt (st : SystemState) (tid : ThreadId) :
     (updatePipBoost st tid).cdt = st.cdt :=
   updatePipBoost_frame (fun s => s.cdt) st tid
-    (by intro _; rfl) (by intro _; rfl) (by intro _ _; rfl) (by intro _ _; rfl)
+    (by intro _; rfl) (by intro _ _ _ _; rfl) (by intro _ _; rfl)
 
 /-- D4-P: `updatePipBoost` preserves `cdtSlotNode`. -/
 theorem updatePipBoost_preserves_cdtSlotNode (st : SystemState) (tid : ThreadId) :
     (updatePipBoost st tid).cdtSlotNode = st.cdtSlotNode :=
   updatePipBoost_frame (fun s => s.cdtSlotNode) st tid
-    (by intro _; rfl) (by intro _; rfl) (by intro _ _; rfl) (by intro _ _; rfl)
+    (by intro _; rfl) (by intro _ _ _ _; rfl) (by intro _ _; rfl)
 
 /-- D4-P: `updatePipBoost` preserves `cdtNodeSlot`. -/
 theorem updatePipBoost_preserves_cdtNodeSlot (st : SystemState) (tid : ThreadId) :
     (updatePipBoost st tid).cdtNodeSlot = st.cdtNodeSlot :=
   updatePipBoost_frame (fun s => s.cdtNodeSlot) st tid
-    (by intro _; rfl) (by intro _; rfl) (by intro _ _; rfl) (by intro _ _; rfl)
+    (by intro _; rfl) (by intro _ _ _ _; rfl) (by intro _ _; rfl)
 
 /-- D4-P: `updatePipBoost` preserves `cdtNextNode`. -/
 theorem updatePipBoost_preserves_cdtNextNode (st : SystemState) (tid : ThreadId) :
     (updatePipBoost st tid).cdtNextNode = st.cdtNextNode :=
   updatePipBoost_frame (fun s => s.cdtNextNode) st tid
-    (by intro _; rfl) (by intro _; rfl) (by intro _ _; rfl) (by intro _ _; rfl)
+    (by intro _; rfl) (by intro _ _ _ _; rfl) (by intro _ _; rfl)
 
 /-- D4-P: `updatePipBoost` preserves `interfaceRegistry`. -/
 theorem updatePipBoost_preserves_interfaceRegistry (st : SystemState) (tid : ThreadId) :
     (updatePipBoost st tid).interfaceRegistry = st.interfaceRegistry :=
   updatePipBoost_frame (fun s => s.interfaceRegistry) st tid
-    (by intro _; rfl) (by intro _; rfl) (by intro _ _; rfl) (by intro _ _; rfl)
+    (by intro _; rfl) (by intro _ _ _ _; rfl) (by intro _ _; rfl)
 
 /-- D4-P: `updatePipBoost` preserves `services`. -/
 theorem updatePipBoost_preserves_services (st : SystemState) (tid : ThreadId) :
     (updatePipBoost st tid).services = st.services :=
   updatePipBoost_frame (fun s => s.services) st tid
-    (by intro _; rfl) (by intro _; rfl) (by intro _ _; rfl) (by intro _ _; rfl)
+    (by intro _; rfl) (by intro _ _ _ _; rfl) (by intro _ _; rfl)
 
 /-- D4-P: `updatePipBoost` preserves `tlb`. -/
 theorem updatePipBoost_preserves_tlb (st : SystemState) (tid : ThreadId) :
     (updatePipBoost st tid).tlb = st.tlb :=
   updatePipBoost_frame (fun s => s.tlb) st tid
-    (by intro _; rfl) (by intro _; rfl) (by intro _ _; rfl) (by intro _ _; rfl)
+    (by intro _; rfl) (by intro _ _ _ _; rfl) (by intro _ _; rfl)
 
 /-- AE1-F: `updatePipBoost` preserves `scheduler.domainTimeRemaining`. -/
 theorem updatePipBoost_preserves_domainTimeRemaining (st : SystemState) (tid : ThreadId) :
     ((updatePipBoost st tid).scheduler.domainTimeRemainingOnCore bootCoreId) =
     (st.scheduler.domainTimeRemainingOnCore bootCoreId) :=
   updatePipBoost_frame (fun s => (s.scheduler.domainTimeRemainingOnCore bootCoreId)) st tid
-    (by intro _; rfl) (by intro _; rfl) (by intro _ _; rfl) (by intro _ _; rfl)
+    (by intro _; rfl) (by intro _ _ _ _; rfl) (by intro _ _; rfl)
 
 /-- AE1-F: `updatePipBoost` preserves `scheduler.domainSchedule`. -/
 theorem updatePipBoost_preserves_domainSchedule (st : SystemState) (tid : ThreadId) :
     (updatePipBoost st tid).scheduler.domainSchedule =
     st.scheduler.domainSchedule :=
   updatePipBoost_frame (fun s => s.scheduler.domainSchedule) st tid
-    (by intro _; rfl) (by intro _; rfl) (by intro _ _; rfl) (by intro _ _; rfl)
+    (by intro _; rfl) (by intro _ _ _ _; rfl) (by intro _ _; rfl)
 
 /-- AE1-F: `updatePipBoost` preserves `scheduler.domainScheduleIndex`. -/
 theorem updatePipBoost_preserves_domainScheduleIndex (st : SystemState) (tid : ThreadId) :
     ((updatePipBoost st tid).scheduler.domainScheduleIndexOnCore bootCoreId) =
     (st.scheduler.domainScheduleIndexOnCore bootCoreId) :=
   updatePipBoost_frame (fun s => (s.scheduler.domainScheduleIndexOnCore bootCoreId)) st tid
-    (by intro _; rfl) (by intro _; rfl) (by intro _ _; rfl) (by intro _ _; rfl)
+    (by intro _; rfl) (by intro _ _ _ _; rfl) (by intro _ _; rfl)
 
 /-- AE1-F: `updatePipBoost` preserves `objects.invExt`. -/
 theorem updatePipBoost_preserves_objects_invExt (st : SystemState) (tid : ThreadId)
     (hInv : st.objects.invExt) :
-    (updatePipBoost st tid).objects.invExt := by
-  simp only [updatePipBoost, updatePipBoostOnCore, SystemState.rewriteObject]
-  split
-  · rename_i tcb _ _
-    split
-    · exact hInv
-    · split
-      · split
-        · rw [markKeyChangeFor_objects]
-          exact RHTable_insert_preserves_invExt st.objects tid.toObjId _ hInv
-        · rw [markKeyChangeFor_objects]
-          exact RHTable_insert_preserves_invExt st.objects tid.toObjId _ hInv
-      · rw [markKeyChangeFor_objects]
-        exact RHTable_insert_preserves_invExt st.objects tid.toObjId _ hInv
-  · exact hInv
+    (updatePipBoost st tid).objects.invExt :=
+  updatePipBoostOnCore_preserves_objects_invExt st bootCoreId tid hInv
 
-/-- AE1-F: `updatePipBoost` does not change `objects[oid]?` for `oid ≠ tid.toObjId`. -/
+/-- AE1-F: `updatePipBoost` does not change `objects[oid]?` for `oid ≠ tid.toObjId`,
+off the run-queue links its bucket re-key rewrites (WS-ZA ZA4.5). -/
 theorem updatePipBoost_objects_ne (st : SystemState) (tid : ThreadId) (oid : ObjId)
     (hNe : ¬(tid.toObjId == oid) = true) (hInv : st.objects.invExt) :
-    (updatePipBoost st tid).objects[oid]? = st.objects[oid]? := by
-  simp only [updatePipBoost, updatePipBoostOnCore, SystemState.rewriteObject]
-  split
-  · split
-    · rfl
-    · split
-      · split
-        · rw [markKeyChangeFor_objects]
-          show (st.objects.insert tid.toObjId _)[oid]? = _
-          exact SeLe4n.Kernel.RobinHood.RHTable.getElem?_insert_ne st.objects tid.toObjId oid _ hNe hInv
-        · rw [markKeyChangeFor_objects]
-          exact SeLe4n.Kernel.RobinHood.RHTable.getElem?_insert_ne st.objects tid.toObjId oid _ hNe hInv
-      · rw [markKeyChangeFor_objects]
-        exact SeLe4n.Kernel.RobinHood.RHTable.getElem?_insert_ne st.objects tid.toObjId oid _ hNe hInv
-  · rfl
+    ((updatePipBoost st tid).objects[oid]?).map KernelObject.withoutRunLinks
+      = (st.objects[oid]?).map KernelObject.withoutRunLinks :=
+  updatePipBoostOnCore_objects_ne st bootCoreId tid oid hNe hInv
 
 /-- AE1-F: `updatePipBoost` preserves any filter over `runQueue.toList` when
 the filter excludes `tid`. This is the key lemma for `projectRunnable`
@@ -220,7 +210,7 @@ theorem updatePipBoost_toList_filter_neg (st : SystemState) (tid : ThreadId)
     · rfl
     · split
       · split
-        · rw [markKeyChangeFor_runQueueOnCore]
+        · rw [markKeyChangeFor_runQueueOnCore, SystemState.runRequeueOnCore_scheduler]
           simp only [SchedulerState.setRunQueueOnCore_runQueueOnCore_self]
           rw [RunQueue.toList_filter_insert_neg' _ tid _ _ hp,
               RunQueue.toList_filter_remove_neg _ tid _ hp]

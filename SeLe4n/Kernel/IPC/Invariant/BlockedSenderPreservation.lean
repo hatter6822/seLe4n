@@ -896,7 +896,7 @@ theorem propagatePipChainCrossCore_sameSchedContextBindings (st : SystemState)
   obtain ⟨tcb, p, hPre, hEq⟩ :=
     PriorityInheritance.propagatePipChainCrossCore_tcb_backward st tid ec fuel hInv t tcb'
       hTcb'
-  exact ⟨tcb, hPre, by rw [hEq]⟩
+  exact ⟨tcb, hPre, (TCB.proj_eq_of_withoutRunLinks_eq TCB.schedContextBinding hEq).symm⟩
 
 /-- **WS-RR RR8.16 (`v0.35.196`)**: the cross-core call donation carries the
 donation flow fact, given the flow the rendezvous established between its two

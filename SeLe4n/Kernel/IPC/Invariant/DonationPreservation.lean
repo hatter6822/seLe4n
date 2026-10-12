@@ -2312,31 +2312,41 @@ no thread's membership.  Everything the bundle reads is therefore intact. -/
 theorem updatePipBoostOnCore_preserves_ipcInvariantFull (st : SystemState) (c : CoreId)
     (tid : SeLe4n.ThreadId) (hObjInv : st.objects.invExt) (hInv : ipcInvariantFull st) :
     ipcInvariantFull (updatePipBoostOnCore st c tid) := by
-  have hSelf : st.getTcb? tid = none → ipcInvariantFull (updatePipBoostOnCore st c tid) := by
-    intro hNone
-    rw [updatePipBoostOnCore_eq_self_of_getTcb?_none st c tid hNone]
-    exact hInv
-  cases hAt : st.getTcb? tid with
-  | none => exact hSelf hAt
-  | some tcb =>
-      obtain ⟨p, hPost⟩ := updatePipBoostOnCore_objects_at st c tid tcb hAt hObjInv
-      have hAtRaw := (getTcb?_eq_some_iff st tid tcb).mp hAt
-      have hPostRaw := (getTcb?_eq_some_iff (updatePipBoostOnCore st c tid) tid _).mp hPost
-      have hFrame : ∀ (oid : SeLe4n.ObjId), oid ≠ tid.toObjId →
-          (updatePipBoostOnCore st c tid).objects[oid]? = st.objects[oid]? := fun oid hNe =>
-        updatePipBoostOnCore_objects_ne st c tid oid
-          (by simpa using fun h => hNe h.symm) hObjInv
-      refine ipcInvariantFull_of_tcbFieldUpdate st _ tid.toObjId tcb _ hInv hAtRaw hPostRaw
-        hFrame rfl rfl rfl rfl rfl rfl rfl rfl rfl ?_
-      refine passiveServerIdleFrame_of_backward_monotone (fun x tcb' hTcb' => ?_)
-        (fun y hy => (updatePipBoostOnCore_mem_runQueueOnCore st c bootCoreId tid y).mpr hy)
-        (updatePipBoostOnCore_currentOnCore st c bootCoreId tid)
-      by_cases hEq : x.toObjId = tid.toObjId
-      · rw [hEq] at hTcb'
-        obtain rfl : { tcb with pipBoost := p } = tcb' := by
-          simpa only [Option.some.injEq, KernelObject.tcb.injEq] using hPostRaw.symm.trans hTcb'
-        exact ⟨tcb, by rw [hEq]; exact hAtRaw, rfl, rfl⟩
-      · exact ⟨tcb', by rw [← hFrame x.toObjId hEq]; exact hTcb', rfl, rfl⟩
+  -- The boost's object write keeps the bundle; the re-key then rewrites
+  -- run-queue links only (WS-ZA ZA4.5), and moves no thread's membership.
+  have hSch : (pipBoostWrite st tid).scheduler = st.scheduler := by
+    rw [pipBoostWrite_eq_objects st tid]
+  have hRefInv : ipcInvariantFull (pipBoostWrite st tid) := by
+    cases hAt : st.getTcb? tid with
+    | none => rw [pipBoostWrite_eq_self_of_getTcb?_none st tid hAt]; exact hInv
+    | some tcb =>
+        obtain ⟨p, hPost⟩ := pipBoostWrite_objects_at st tid tcb hAt hObjInv
+        have hAtRaw := (getTcb?_eq_some_iff st tid tcb).mp hAt
+        have hPostRaw := (getTcb?_eq_some_iff (pipBoostWrite st tid) tid _).mp hPost
+        have hFrame : ∀ (oid : SeLe4n.ObjId), oid ≠ tid.toObjId →
+            (pipBoostWrite st tid).objects[oid]? = st.objects[oid]? := fun oid hNe =>
+          pipBoostWrite_objects_ne st tid oid (by simpa using fun h => hNe h.symm) hObjInv
+        refine ipcInvariantFull_of_tcbFieldUpdate st _ tid.toObjId tcb _ hInv hAtRaw hPostRaw
+          hFrame rfl rfl rfl rfl rfl rfl rfl rfl rfl ?_
+        refine passiveServerIdleFrame_of_backward_monotone (fun x tcb' hTcb' => ?_)
+          (fun y hy => by rw [hSch]; exact hy) (by rw [hSch])
+        by_cases hEq : x.toObjId = tid.toObjId
+        · rw [hEq] at hTcb'
+          obtain rfl : { tcb with pipBoost := p } = tcb' := by
+            simpa only [Option.some.injEq, KernelObject.tcb.injEq] using hPostRaw.symm.trans hTcb'
+          exact ⟨tcb, by rw [hEq]; exact hAtRaw, rfl, rfl⟩
+        · exact ⟨tcb', by rw [← hFrame x.toObjId hEq]; exact hTcb', rfl, rfl⟩
+  refine ipcInvariantFull_of_objectsAgreeOffRunLinks
+    (updatePipBoostOnCore_objectsAgreeOffRunLinks st c tid) ?_ hRefInv
+  exact passiveServerIdle_of_frame
+    (passiveServerIdleFrame_of_backward_monotone
+      (fun x tcb' h =>
+        let ⟨tcb, _, hPre, hE⟩ := updatePipBoostOnCore_tcb_backward st c tid hObjInv x tcb' h
+        ⟨tcb, hPre, (TCB.proj_eq_of_withoutRunLinks_eq TCB.ipcState hE).symm,
+          (TCB.proj_eq_of_withoutRunLinks_eq TCB.schedContextBinding hE).symm⟩)
+      (fun y hy => (updatePipBoostOnCore_mem_runQueueOnCore st c bootCoreId tid y).mpr hy)
+      (updatePipBoostOnCore_currentOnCore st c bootCoreId tid))
+    hInv.passiveServerIdle
 
 /-- WS-RR RR2.6: the cross-core PIP boost with wake preserves the bundle — its
 state component is exactly `updatePipBoostOnCore` on the thread's home core; the
