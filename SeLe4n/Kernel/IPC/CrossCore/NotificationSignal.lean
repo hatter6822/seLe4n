@@ -139,11 +139,83 @@ as a closure (a heap cell per signal).  WS-ZA. -/
     (badge : SeLe4n.Badge) : SystemState :=
   st.modifyObject notificationId (signalPendingObject badge)
 
+/-- WS-ZA ZA4.4: a signal waking the head waiter, as an update of the
+notification's cell: `next` heads the queue. -/
+@[inline] def signalPoppedObject (next : Option SeLe4n.ThreadId) : KernelObject → KernelObject
+  | .notification n => .notification (n.withHeadPopped next)
+  | o => o
+
+/-- WS-ZA ZA4.4: the wake path's two writes, each made in its slot: the head
+popped off the notification's queue, and the woken waiter made ready holding the
+badge message.  Compiled as its own function so each update is specialised in. -/
+@[noinline] def storeSignalWoken (st : SystemState) (notificationId : SeLe4n.ObjId)
+    (waiter : SeLe4n.ThreadId) (next : Option SeLe4n.ThreadId) (msg : IpcMessage) :
+    SystemState :=
+  (st.modifyObject notificationId (signalPoppedObject next)).updateTcb waiter
+    (fun t => { t with ipcState := .ready, pendingMessage := some msg })
+
+/-- WS-ZA ZA4.4: **the wake path writes only its two objects' slots** — the
+notification rewritten where it stands (`RHTable.findsInPlace`), the woken
+waiter an unreserved TCB, and both stores changing only `objects`
+(`storeLeavesIndexAndTypes`). -/
+@[inline] def signalWakesInPlace (st : SystemState) (notificationId : SeLe4n.ObjId)
+    (waiter : SeLe4n.ThreadId) : Bool :=
+  !waiter.isReserved &&
+  storeLeavesIndexAndTypes st notificationId .notification &&
+  st.objects.findsInPlace notificationId &&
+  storeLeavesIndexAndTypes st waiter.toObjId .tcb &&
+  (st.getTcb? waiter).isSome
+
+/-- WS-ZA ZA4.4: the guarded wake path's writes are the specification's. -/
+theorem notificationSignalOnCore_wake_inPlace_eq (notificationId : SeLe4n.ObjId)
+    (waiter : SeLe4n.ThreadId) (st : SystemState) (ntfn : Notification)
+    (next : Option SeLe4n.ThreadId) (msg : IpcMessage)
+    (hN : st.getNotification? notificationId = some ntfn)
+    (hG : signalWakesInPlace st notificationId waiter = true) :
+    (match storeObject notificationId (.notification (ntfn.withHeadPopped next)) st with
+      | .error _ => none
+      | .ok ((), st') =>
+          match storeTcbIpcStateAndMessage st' waiter .ready (some msg) with
+          | .error _ => none
+          | .ok st'' => some st'')
+      = some (storeSignalWoken st notificationId waiter next msg) := by
+  have hNo := (SystemState.getNotification?_eq_some_iff _ _ _).mp hN
+  simp only [signalWakesInPlace, Bool.and_eq_true, Bool.not_eq_true'] at hG
+  obtain ⟨⟨⟨⟨hRes, hLeaveN⟩, hIn⟩, hLeaveT⟩, hTcbB⟩ := hG
+  obtain ⟨tcb, hT⟩ : ∃ tcb, st.objects[waiter.toObjId]? = some (.tcb tcb) := by
+    obtain ⟨t, h⟩ := Option.isSome_iff_exists.mp hTcbB
+    exact ⟨t, (SystemState.getTcb?_eq_some_iff _ _ _).mp h⟩
+  have hNe : notificationId ≠ waiter.toObjId := by
+    intro h; rw [h, hT] at hNo; cases hNo
+  rw [storeObject_eq_of_leaves (by simpa only [KernelObject.objectType] using hLeaveN)]
+  simp only []
+  have hT1 : (st.objects.insert notificationId
+      (.notification (ntfn.withHeadPopped next)))[waiter.toObjId]? = some (.tcb tcb) := by
+    show SeLe4n.Kernel.RobinHood.RHTable.get? _ _ = _
+    rw [SeLe4n.Kernel.RobinHood.RHTable.get?_insert_ne_of_findsInPlace _ _ hIn hNe]
+    exact hT
+  have hLook : lookupTcb
+      { st with objects := st.objects.insert notificationId (.notification (ntfn.withHeadPopped next)) }
+      waiter = some tcb := by
+    simp only [lookupTcb, hRes, Bool.false_eq_true, ↓reduceIte]
+    exact (SystemState.getTcb?_eq_some_iff _ _ _).mpr hT1
+  simp only [storeTcbIpcStateAndMessage, modifyTcb, hLook]
+  rw [storeObject_eq_of_leaves (by
+    simp only [storeLeavesIndexAndTypes, KernelObject.objectType] at hLeaveT ⊢
+    rw [hT1]; rw [hT] at hLeaveT; exact hLeaveT)]
+  simp only [Option.some.injEq]
+  unfold storeSignalWoken SystemState.modifyObject
+  rw [SeLe4n.Kernel.RobinHood.RHTable.modify_of_get? hNo]
+  rw [SystemState.updateTcb_eq_of_some ((SystemState.getTcb?_eq_some_iff _ _ _).mpr hT1)]
+  rfl
+
 /-- WS-ZA ZA1.1: the compiled `notificationSignalOnCore`.  A signal with no
 waiter stores the badge through the pure store `withObjectStored`, which cannot
 fail, so the pre-state is not held across the write for a refusal that cannot
-happen (`ZERO_ALLOCATION_SYSCALL_PLAN.md` D1).  The waiter path is the
-specification's; its refusal after the notification store is ZA2.3's. -/
+happen (`ZERO_ALLOCATION_SYSCALL_PLAN.md` D1).  A signal that wakes the head
+waiter makes its two writes in place when they stay in their slots
+(`signalWakesInPlace`, `notificationSignalOnCore_wake_inPlace_eq`); otherwise
+the waiter path is the specification's. -/
 @[inline] def notificationSignalOnCoreImpl (notificationId : SeLe4n.ObjId) (badge : SeLe4n.Badge)
     (executingCore : CoreId) (st : SystemState) :
     SystemState × Except KernelError (Option (CoreId × SgiKind)) :=
@@ -152,10 +224,15 @@ specification's; its refusal after the notification store is ZA2.3's. -/
       match ntfn.waitHead with
       | some waiter =>
           let next := ntfnSuccessor? st waiter
+          let badgeMsg : IpcMessage := { IpcMessage.empty with badge := some badge }
+          if signalWakesInPlace st notificationId waiter then
+            let st'' := storeSignalWoken st notificationId waiter next badgeMsg
+            ((wakeThread st'' waiter executingCore).1,
+             .ok (wakeThread st'' waiter executingCore).2)
+          else
           match storeObject notificationId (.notification (ntfn.withHeadPopped next)) st with
           | .error e => (st, .error e)
           | .ok ((), st') =>
-              let badgeMsg : IpcMessage := { IpcMessage.empty with badge := some badge }
               match storeTcbIpcStateAndMessage st' waiter .ready (some badgeMsg) with
               | .error e => (st, .error e)
               | .ok st'' =>
@@ -185,7 +262,22 @@ specification's; its refusal after the notification store is ZA2.3's. -/
   split
   · next ntfn hN =>
     split
-    · rfl
+    · next waiter hW =>
+      dsimp only
+      by_cases hG : signalWakesInPlace st notificationId waiter = true
+      · rw [if_pos hG]
+        have h := notificationSignalOnCore_wake_inPlace_eq notificationId waiter st ntfn
+          (ntfnSuccessor? st waiter) { IpcMessage.empty with badge := some badge } hN hG
+        revert h
+        split
+        · intro h; cases h
+        · next st' h1 =>
+          split
+          · intro h; cases h
+          · next st'' h2 =>
+            intro h; cases h
+            simp only [h2]
+      · rw [if_neg hG]
     · by_cases hL : storeLeavesIndexAndTypes st notificationId .notification = true
       · rw [if_pos hL, storeSignalPending, SystemState.modifyObject,
           SeLe4n.Kernel.RobinHood.RHTable.modify_of_get? ((SystemState.getNotification?_eq_some_iff _ _ _).mp hN)]
@@ -291,11 +383,55 @@ its lookup before. -/
   storeLeavesIndexAndTypes st waiter.toObjId .tcb &&
   (st.getTcb? waiter).isSome
 
+/-- WS-ZA ZA4.4: a wait that blocks, as an update of the notification's cell:
+the waiter joins the back of its queue. -/
+@[inline] def waitAppendedObject (waiter : SeLe4n.ThreadId) : KernelObject → KernelObject
+  | .notification n => .notification (n.withWaiterAppended waiter)
+  | o => o
+
+/-- WS-ZA ZA4.4: the blocking path's writes, each made in its slot, in the
+specification's order: the notification takes the waiter as its tail, the
+waiter is blocked with no pending message, its links name the old tail and
+nothing, and the old tail's successor link names it.  Compiled as its own
+function so each update is specialised in rather than carried as a closure. -/
+@[noinline] def storeWaitBlocked (st : SystemState) (notificationId : SeLe4n.ObjId)
+    (waiter : SeLe4n.ThreadId) (tail : Option SeLe4n.ThreadId) : SystemState :=
+  let st1 := st.modifyObject notificationId (waitAppendedObject waiter)
+  let st2 := st1.updateTcb waiter (fun t => { t with
+    ipcState := .blockedOnNotification notificationId, pendingMessage := none })
+  let st3 := st2.updateTcb waiter (fun t => { t with
+    ntfnPrevCode := SeLe4n.ThreadId.optCode tail,
+    ntfnNextCode := SeLe4n.ThreadId.optCode none })
+  match tail with
+  | none => st3
+  | some t => st3.updateTcb t (fun x => { x with
+      ntfnNextCode := SeLe4n.ThreadId.optCode (some waiter) })
+
+/-- WS-ZA ZA4.4: **the blocking path writes only its objects' slots.**  The
+notification and the waiter are rewritten where they stand
+(`RHTable.findsInPlace`, which every later in-place write leaves as it was), so
+each lookup after a write is its lookup before; the old tail is an unreserved
+TCB other than the waiter, and every store changes only `objects`
+(`storeLeavesIndexAndTypes`). -/
+@[inline] def waitBlocksInPlace (st : SystemState) (notificationId : SeLe4n.ObjId)
+    (waiter : SeLe4n.ThreadId) (tail : Option SeLe4n.ThreadId) : Bool :=
+  !waiter.isReserved &&
+  storeLeavesIndexAndTypes st notificationId .notification &&
+  st.objects.findsInPlace notificationId &&
+  storeLeavesIndexAndTypes st waiter.toObjId .tcb &&
+  st.objects.findsInPlace waiter.toObjId &&
+  (match tail with
+   | none => true
+   | some t => !t.isReserved && t != waiter &&
+       storeLeavesIndexAndTypes st t.toObjId .tcb && (st.getTcb? t).isSome)
+
 /-- WS-ZA ZA4: the compiled `notificationWaitOnCore`.  A wait that consumes a
 pending badge and writes only the two objects' slots (`waitConsumesInPlace`)
 makes both writes in place and holds no pre-state across them: every refusal
 the specification could answer on that path is ruled out by the guard
-(`notificationWaitOnCore_eq_impl`).  Every other path is the specification's,
+(`notificationWaitOnCore_eq_impl`).  A wait that blocks makes its writes in
+place the same way when they stay in their slots (`waitBlocksInPlace`,
+`notificationWaitOnCore_block_inPlace_eq`).  Every other path is the specification's,
 spelled out because this definition replaces it in compiled code. -/
 def notificationWaitOnCoreImpl (notificationId : SeLe4n.ObjId) (waiter : SeLe4n.ThreadId)
     (executingCore : CoreId) (st : SystemState) :
@@ -323,6 +459,10 @@ def notificationWaitOnCoreImpl (notificationId : SeLe4n.ObjId) (waiter : SeLe4n.
                 (st, .error .alreadyWaiting)
               else
                 let tail := ntfn.waitTail
+                if waitBlocksInPlace st notificationId waiter tail then
+                  (removeRunnableOnCore (storeWaitBlocked st notificationId waiter tail) waiter
+                    executingCore, .ok none)
+                else
                 match storeObject notificationId
                     (.notification (ntfn.withWaiterAppended waiter)) st with
                 | .error e => (st, .error e)
@@ -389,6 +529,119 @@ theorem notificationWaitOnCore_consume_eq (notificationId : SeLe4n.ObjId)
   rw [SystemState.updateTcb_eq_of_some ((SystemState.getTcb?_eq_some_iff _ _ _).mpr hT1)]
   rfl
 
+/-- WS-ZA ZA4.4: the guarded blocking path's writes are the specification's. -/
+theorem notificationWaitOnCore_block_inPlace_eq (notificationId : SeLe4n.ObjId)
+    (waiter : SeLe4n.ThreadId) (st : SystemState) (ntfn : Notification) (tcb : TCB)
+    (hN : st.getNotification? notificationId = some ntfn)
+    (hLk : lookupTcb st waiter = some tcb)
+    (hG : waitBlocksInPlace st notificationId waiter ntfn.waitTail = true) :
+    (match storeObject notificationId (.notification (ntfn.withWaiterAppended waiter)) st with
+      | .error _ => none
+      | .ok ((), st1) =>
+          match storeTcbIpcStateAndMessage_fromTcb st1 waiter tcb
+              (.blockedOnNotification notificationId) none with
+          | .error _ => none
+          | .ok st2 =>
+              match linkNtfnWaiter st2 waiter ntfn.waitTail with
+              | .error _ => none
+              | .ok st'' => some st'')
+      = some (storeWaitBlocked st notificationId waiter ntfn.waitTail) := by
+  have hNo := (SystemState.getNotification?_eq_some_iff _ _ _).mp hN
+  simp only [waitBlocksInPlace, Bool.and_eq_true, Bool.not_eq_true'] at hG
+  obtain ⟨⟨⟨⟨⟨hRes, hLeaveN⟩, hInN⟩, hLeaveW⟩, hInW⟩, hTail⟩ := hG
+  have hT := lookupTcb_some_objects st waiter tcb hLk
+  have hNe : notificationId ≠ waiter.toObjId := by
+    intro h; rw [h, hT] at hNo; cases hNo
+  -- The notification, written where it stands.
+  let O1 := st.objects.insert notificationId (.notification (ntfn.withWaiterAppended waiter))
+  have hO1 : ∀ k, notificationId ≠ k → O1[k]? = st.objects[k]? := fun k hk =>
+    SeLe4n.Kernel.RobinHood.RHTable.get?_insert_ne_of_findsInPlace k _ hInN hk
+  have hInW1 : O1.findsInPlace waiter.toObjId = true := by
+    rw [SeLe4n.Kernel.RobinHood.RHTable.findsInPlace_insert_of_findsInPlace _ _ hInN]; exact hInW
+  have hT1 : O1[waiter.toObjId]? = some (.tcb tcb) := by rw [hO1 _ hNe]; exact hT
+  -- The waiter blocked, then linked, each written where it stands.
+  let W : TCB :=
+    { tcb with ipcState := .blockedOnNotification notificationId, pendingMessage := none }
+  let O2 := O1.insert waiter.toObjId (.tcb W)
+  have hW2 : O2[waiter.toObjId]? = some (.tcb W) :=
+    SeLe4n.Kernel.RobinHood.RHTable.get?_insert_self_of_findsInPlace _ hInW1
+  have hO2 : ∀ k, waiter.toObjId ≠ k → O2[k]? = O1[k]? := fun k hk =>
+    SeLe4n.Kernel.RobinHood.RHTable.get?_insert_ne_of_findsInPlace k _ hInW1 hk
+  have hInW2 : O2.findsInPlace waiter.toObjId = true := by
+    rw [SeLe4n.Kernel.RobinHood.RHTable.findsInPlace_insert_of_findsInPlace _ _ hInW1]
+    exact hInW1
+  let W3 : TCB :=
+    { W with ntfnPrevCode := SeLe4n.ThreadId.optCode ntfn.waitTail,
+             ntfnNextCode := SeLe4n.ThreadId.optCode none }
+  let O3 := O2.insert waiter.toObjId (.tcb W3)
+  have hO3 : ∀ k, waiter.toObjId ≠ k → O3[k]? = O2[k]? := fun k hk =>
+    SeLe4n.Kernel.RobinHood.RHTable.get?_insert_ne_of_findsInPlace k _ hInW2 hk
+  have hS1 : storeObject notificationId (.notification (ntfn.withWaiterAppended waiter)) st
+      = .ok ((), { st with objects := O1 }) :=
+    storeObject_eq_of_leaves (by simpa only [KernelObject.objectType] using hLeaveN)
+  have hS2 : storeTcbIpcStateAndMessage_fromTcb { st with objects := O1 } waiter tcb
+      (.blockedOnNotification notificationId) none = .ok { st with objects := O2 } := by
+    unfold storeTcbIpcStateAndMessage_fromTcb
+    rw [storeObject_eq_of_leaves (by
+      simp only [storeLeavesIndexAndTypes, KernelObject.objectType] at hLeaveW ⊢
+      rw [hT1]; rw [hT] at hLeaveW; exact hLeaveW)]
+  have hLk2 : lookupTcb { st with objects := O2 } waiter = some W := by
+    simp only [lookupTcb, hRes, Bool.false_eq_true, ↓reduceIte]
+    exact (SystemState.getTcb?_eq_some_iff _ _ _).mpr hW2
+  have hS3 : storeTcbNtfnLinks { st with objects := O2 } waiter ntfn.waitTail none
+      = .ok { st with objects := O3 } := by
+    unfold storeTcbNtfnLinks modifyTcb
+    rw [hLk2]
+    simp only []
+    rw [storeObject_eq_of_leaves (by
+      simp only [storeLeavesIndexAndTypes, KernelObject.objectType] at hLeaveW ⊢
+      rw [hW2]; rw [hT] at hLeaveW; exact hLeaveW)]
+  rw [hS1]; simp only []; rw [hS2]; simp only []
+  unfold linkNtfnWaiter; rw [hS3]; simp only []
+  -- The specification's side, write by write.
+  have hR1 : (st.modifyObject notificationId (waitAppendedObject waiter))
+      = { st with objects := O1 } := by
+    unfold SystemState.modifyObject
+    rw [SeLe4n.Kernel.RobinHood.RHTable.modify_of_get? hNo]
+    rfl
+  have hR2 : ({ st with objects := O1 } : SystemState).updateTcb waiter (fun t => { t with
+      ipcState := .blockedOnNotification notificationId, pendingMessage := none })
+      = { st with objects := O2 } :=
+    SystemState.updateTcb_eq_of_some ((SystemState.getTcb?_eq_some_iff _ _ _).mpr hT1) _
+  have hR3 : ({ st with objects := O2 } : SystemState).updateTcb waiter (fun t => { t with
+      ntfnPrevCode := SeLe4n.ThreadId.optCode ntfn.waitTail,
+      ntfnNextCode := SeLe4n.ThreadId.optCode none })
+      = { st with objects := O3 } :=
+    SystemState.updateTcb_eq_of_some ((SystemState.getTcb?_eq_some_iff _ _ _).mpr hW2) _
+  unfold storeWaitBlocked
+  simp only []
+  rw [hR1, hR2, hR3]
+  -- The old tail's successor link.
+  revert hTail
+  cases hTl : ntfn.waitTail with
+  | none => intro _; rfl
+  | some t =>
+    intro hTail
+    simp only [Bool.and_eq_true, Bool.not_eq_true', bne_iff_ne, ne_eq] at hTail
+    obtain ⟨⟨⟨hResT, hTW⟩, hLeaveT⟩, hTcbT⟩ := hTail
+    obtain ⟨tt, hTt⟩ := Option.isSome_iff_exists.mp hTcbT
+    have hTt' := (SystemState.getTcb?_eq_some_iff _ _ _).mp hTt
+    have hNeT : notificationId ≠ t.toObjId := by
+      intro h; rw [h, hTt'] at hNo; cases hNo
+    have hWT : waiter.toObjId ≠ t.toObjId := fun h =>
+      hTW (SeLe4n.ThreadId.toObjId_injective _ _ h).symm
+    have hT3 : O3[t.toObjId]? = some (.tcb tt) := by
+      rw [hO3 _ hWT, hO2 _ hWT, hO1 _ hNeT]; exact hTt'
+    have hLk3 : lookupTcb { st with objects := O3 } t = some tt := by
+      simp only [lookupTcb, hResT, Bool.false_eq_true, ↓reduceIte]
+      exact (SystemState.getTcb?_eq_some_iff _ _ _).mpr hT3
+    simp only [relinkNtfnNext, modifyTcbOpt, modifyTcb, hLk3]
+    rw [storeObject_eq_of_leaves (by
+      simp only [storeLeavesIndexAndTypes, KernelObject.objectType] at hLeaveT ⊢
+      rw [hT3]; rw [hTt'] at hLeaveT; exact hLeaveT)]
+    simp only [Option.some.injEq]
+    rw [SystemState.updateTcb_eq_of_some ((SystemState.getTcb?_eq_some_iff _ _ _).mpr hT3)]
+
 @[csimp] theorem notificationWaitOnCore_eq_impl :
     @notificationWaitOnCore = @notificationWaitOnCoreImpl := by
   funext notificationId waiter executingCore st
@@ -410,7 +663,30 @@ theorem notificationWaitOnCore_consume_eq (notificationId : SeLe4n.ObjId)
             intro h; cases h
             simp only [h1, h2]
       · rfl
-    · rfl
+    · next hB =>
+      split
+      · rfl
+      · next tcb hLk =>
+        split
+        · rfl
+        · dsimp only
+          by_cases hG : waitBlocksInPlace st notificationId waiter ntfn.waitTail = true
+          · rw [if_pos hG]
+            have h := notificationWaitOnCore_block_inPlace_eq notificationId waiter st ntfn tcb
+              hN hLk hG
+            revert h
+            split
+            · intro h; cases h
+            · next st1 h1 =>
+              split
+              · intro h; cases h
+              · next st2 h2 =>
+                split
+                · intro h; cases h
+                · next st'' h3 =>
+                  intro h; cases h
+                  rfl
+          · rw [if_neg hG]
   · rfl
 
 -- ============================================================================
