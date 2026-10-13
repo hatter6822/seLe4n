@@ -109,7 +109,7 @@ syscall-level resolver alone; a new
 declared arm adds its `case` to `dispatchWithCapChecked_coversWrites` in the
 same cut, or the seam theorem does not elaborate).
 
-### WS-ZA A syscall that allocates nothing — IN FLIGHT (registered v0.36.72; ZA1 and most of ZA2 v0.36.73; 9 at v0.36.74; the signal at 0 at v0.36.75; the pending-badge wait at 0 at v0.36.76; the wide-badge signal at 0 at v0.36.77; yield at v0.36.78; intrusive notification waiters at v0.36.79; runs beside WS-CV, before WS-CB)
+### WS-ZA A syscall that allocates nothing — IN FLIGHT (registered v0.36.72; ZA1 and most of ZA2 v0.36.73; 9 at v0.36.74; the signal at 0 at v0.36.75; the pending-badge wait at 0 at v0.36.76; the wide-badge signal at 0 at v0.36.77; yield at v0.36.78; intrusive notification waiters at v0.36.82; runs beside WS-CV, before WS-CB)
 
 The continuing syscall round trip makes no heap allocation.  At `v0.36.71` it
 makes 118: 55 are register-context sites WS-CV's rows already remove, 62 are
@@ -121,13 +121,13 @@ round trip makes 13, 9 at `v0.36.74` (the plan's §1 names each), and 0 at
 before): `Badge` holds a machine word and the notification keeps its pending
 badge as a flag and a word.  At `v0.36.78` the yield syscall (ZA4.3) reads 49,
 all of them the scheduling point's run queue, selection and switch (ZA4.5);
-its own charge and refusals allocate nothing.  At `v0.36.79` (ZA4.4) a
+its own charge and refusals allocate nothing.  At `v0.36.82` (ZA4.4) a
 notification's waiters are a first-in-first-out queue linked through the TCBs;
 a wait that blocks reads 42 (55 before) and a signal to a waiter 44 (58), the
-rest the scheduling point's and the badge message's.  At `v0.36.80` (ZA4.5
+rest the scheduling point's and the badge message's.  At `v0.36.82` (ZA4.5
 part 1) the run queue is linked lists written in place and the scheduling point
 builds nothing: yield reads 0, a wait that blocks 40 and a signal to a waiter
-37.  At `v0.36.81` (ZA4.5 part 2) the links are TCB fields and each core keeps
+37.  At `v0.36.82` (ZA4.5 part 2) the links are TCB fields and each core keeps
 only the queue's ends; the abstract queue is an erased ghost proven to agree
 with the links on every reachable state (`runQueueRefined`, a conjunct of
 `ipcReachable`).  Yield stays 0, a signal to a waiter reads 33 and a call 184.

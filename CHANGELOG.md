@@ -1,123 +1,8 @@
-## v0.36.82 — Notification queues: clear the links of a dequeued thread (PR #932 review)
+## v0.36.82 — WS-ZA ZA4.4 and ZA4.5: notification and run queues linked through the TCB, yield allocates nothing
 
-**A thread that leaves a notification queue keeps no queue links, as in seL4.**
-The review found that a signal popping the head left the woken thread's
-`ntfnNext` naming its old successor and left the new head's `ntfnPrev` naming
-the woken thread.  A later cancellation of the new head would then rewrite the
-woken thread's successor link, which by then belongs to whatever queue the
-woken thread joined next.  seL4's `tcbEPDequeue` clears both, and so does
-seLe4n now.
+One PR (#932) carrying the ZA4.4 and ZA4.5 rows and the fixes its review asked for; the four parts below were committed separately and ship as this one version.
 
-- **Pop.**  The signal's wake ends with `detachNtfnHead`: the woken thread's
-  two links are cleared and the successor's predecessor link is cleared.  The
-  successor is in the signal's lock set.  The in-place compiled form
-  (`storeSignalWoken`) makes the same writes.
-- **Cancel.**  The cancellation unlink clears the victim's links after
-  splicing its neighbours.  The frozen wake does the same.
-- **Invariant.**  `notificationWaiterConsistent` gains two clauses: a queue's
-  head has no predecessor link, and a TCB blocked on no notification holds no
-  notification link.  The second makes a stale link unrepresentable in a
-  reachable state.  Both are proven for every transition and established at
-  boot.  `bootSafeTcbCheck` now refuses a configured TCB carrying a
-  notification link.  The runtime invariant checks test both clauses.
-- **Proof plumbing.**  `ntfnLinksRewritten` relates a state to one whose TCBs
-  differ only in their notification links.  Each invariant the signal path
-  carries transfers across it: IPC, scheduler, run-queue agreement, capability
-  key frame, slot confinement, the per-core bundles and the cross-core proofs.
-- **Information flow.**  The pop writes the successor's TCB.  The signal's
-  non-interference theorems therefore also require the successor to be
-  non-observable (`hSuccHigh`), as the wait already requires of the queue's
-  tail.
-- **Footprint and fixtures.**  A signal that wakes a waiter with a successor
-  holds five locks, the successor's TCB write lock added (900µs, inside the
-  1 ms tick budget).  The main trace's `[PIP-005]` line counts 34 invariant
-  checks, one more for the off-queue clause.
-- **Test builder.**  `buildValidated` refuses a supplied TCB that already
-  claims a run-queue place (`runCoreCode ≠ 0`), as `bootSafeTcbCheck` does at
-  boot; such a TCB made the fold over `runnable` skip or refuse its enqueue and
-  return a state whose queue was not the one the fixture named (second review
-  finding).  The negative-state suite checks both sides.
-- **Allocations** (QEMU exerciser, normal build): unchanged.  Signal, wide-badge
-  signal, wait-pending and yield read 0, and a signal that wakes a waiter 33.
-
-## v0.36.81 — WS-ZA ZA4.5 (part 2): run-queue links in the TCB, the abstract queue an erased ghost
-
-**The run queue lives in the threads, as in seL4.**  Each TCB carries its
-run-queue links; a core keeps only the queue's ends.  Yield still makes no heap
-allocation (QEMU exerciser, normal build): signal, wide-badge signal,
-wait-pending and yield read 0; signal's first call after boot 3 → 2; signal to
-a waiter 37 → 33; call 180 → 184.
-
-- **Links.**  Six run-link fields in the TCB (the core, nonzero exactly while
-  queued; the priority; the previous and next links of the whole queue and of
-  the priority bucket) and per-core `RunQueueEnds` (head, tail, size, highest
-  priority, per-bucket ends).  Enqueue,
-  dequeue and rotation rewrite the affected TCBs' fields through
-  `RHTable.mapValueAt`, a value-only table update whose frame holds with no
-  table invariant, and the per-core ends in their vector slot.
-- **Ghost queue.**  Each core's abstract `RunQueue` stays in the model as a
-  field of type `Erased`, so the compiler drops it.  One invariant,
-  `runQueueRefined`, states that the links describe it (as seL4 relates its
-  abstract ready queues to the C links); it is a conjunct of `ipcReachable`,
-  proven for every committing kernel entry, so every scheduler theorem stated
-  over the queue still holds of the links the kernel reads.
-- **Executable reads.**  Membership (`queuedOn`), the queue's list
-  (`runQueueWalk`), a thread's queued priority (`queuedPriorityOn`) and the
-  highest bucket (`runMaxBucketWalk`) are read off the TCBs, each proven equal
-  to the ghost read under `runQueueRefined`.  The compiled enqueue, removal
-  and selection paths read TCB fields directly and write records in place
-  (`@[csimp]` forms proven equal to their specifications).
-- **Proof-only references.**  The single-core reference operations (`schedule`,
-  `timerTick`, `handleYield`, `switchDomain`, `chooseThread`,
-  `suspendThread`, `setPriorityOp`, the IF projections, …) write or read only
-  the ghost and are now `noncomputable`; the kernel runs their per-core forms.
-  The suites and the main trace run the per-core forms on the boot core
-  (`SeLe4n/Testing/BootCoreOps.lean`) and the link-reading information-flow
-  views (`projectStateByLinks`, `ObservableState.onCoreByLinks`, …), each
-  proven equal to its reference form under `runQueueRefined`.  The main trace's
-  IDLE-004 line now reports the live schedule.
-- **Debt.**  Two rows in `docs/REGISTERED_DEBT.md` §C: the dispatch payoffs'
-  `ct_not_in_q` and current-uniqueness premises (the next row), and the model
-  dispatch's single-core tick.
-
-## v0.36.80 — WS-ZA ZA4.5 (part 1): run queue as linked lists, yield allocates nothing
-
-**Yield makes no heap allocation** (QEMU exerciser, normal build, steady
-state: 49 → 0).  Signal, wide-badge signal and wait-pending stay at 0; call
-reads 186 → 180.
-
-- **Run queue.**  Each core's queue is a doubly linked list of its runnable
-  threads, with a list per priority.  A thread's links, priority and queued
-  mark sit in a per-core entry table (`RunQueue.links`); the queue record holds
-  the ends, the size and the highest priority, and carries the proof that they
-  describe one queue (`RunQueue.Layout`).  An entry outlives the thread's stay,
-  so enqueue, dequeue and rotation rewrite entries in place and the table gains
-  no key on the scheduling path.  `toList`, `atPriority`, `priorityOf` and
-  `maxPriority` are read off the links.  The `byPriority` lists, the
-  `membership` set, the `threadPriority` table and the `flat` list are gone.
-- **In place.**  The compiled `insert`, `remove` and `rotateToBack` test
-  membership first and hand the queue to a helper that takes the record apart,
-  so the result is written into its cell (`insertImpl_eq`, `removeImpl_eq`,
-  `rotateToBackImpl_eq`).  A slot whose queue is out being rewritten holds a
-  shared constant (`RunQueue.slotPlaceholder`).
-- **Selection.**  The highest-priority eligible thread is found by scanning
-  the bucket links with no candidate record (`chooseOnLinksCode`, proven equal
-  to the bucket scan it replaces).
-- **Scheduling point.**  `scheduleEffectiveOnCoreTotal` has a compiled form
-  that returns the state with no `Except` cell (it is proven never to refuse),
-  and the dispatched thread becomes current in the old current thread's cell
-  (`SchedulerState.setCurrentSomeOnCore`, `reuseSome`).
-- **Reschedule flags.**  `SchedulerState.reschedulePending` is a
-  `PerCoreFlags` (one bit per core in a word) instead of a `Vector Bool`.  The
-  entry's snapshot of the flags before its transition is then a scalar, so the
-  transition's flag write no longer copies an array the snapshot shares.
-  `rescheduleSgisFromFlags` and its theorems keep their statements over the new
-  type; the per-core routing gate counts `PerCoreFlags` fields as per-core
-  slots.
-- **Next.**  ZA4.5 part 2 moves the links into TCB fields (decision
-  2026-10-12), with the queue layout restated as a system invariant.
-
-## v0.36.79 — WS-ZA ZA4.4: notification waiters link through the TCB, woken first in first out
+### WS-ZA ZA4.4: notification waiters link through the TCB, woken first in first out
 
 **A notification's waiters are an intrusive queue through the waiting TCBs, as
 seL4's `tcbEPAppend`/`tcbEPDequeue`.**  `Notification.waitingThreads` (a
@@ -161,6 +46,125 @@ own links, and their invariants read no notification.
   clause, so the trace fixture's post-dispatch check count is 33 (was 32).
   Tier 3 anchors follow the theorems to their new homes, and the store-reader
   baseline is regenerated.
+
+### WS-ZA ZA4.5 (part 1): run queue as linked lists, yield allocates nothing
+
+**Yield makes no heap allocation** (QEMU exerciser, normal build, steady
+state: 49 → 0).  Signal, wide-badge signal and wait-pending stay at 0; call
+reads 186 → 180.
+
+- **Run queue.**  Each core's queue is a doubly linked list of its runnable
+  threads, with a list per priority.  A thread's links, priority and queued
+  mark sit in a per-core entry table (`RunQueue.links`); the queue record holds
+  the ends, the size and the highest priority, and carries the proof that they
+  describe one queue (`RunQueue.Layout`).  An entry outlives the thread's stay,
+  so enqueue, dequeue and rotation rewrite entries in place and the table gains
+  no key on the scheduling path.  `toList`, `atPriority`, `priorityOf` and
+  `maxPriority` are read off the links.  The `byPriority` lists, the
+  `membership` set, the `threadPriority` table and the `flat` list are gone.
+- **In place.**  The compiled `insert`, `remove` and `rotateToBack` test
+  membership first and hand the queue to a helper that takes the record apart,
+  so the result is written into its cell (`insertImpl_eq`, `removeImpl_eq`,
+  `rotateToBackImpl_eq`).  A slot whose queue is out being rewritten holds a
+  shared constant (`RunQueue.slotPlaceholder`).
+- **Selection.**  The highest-priority eligible thread is found by scanning
+  the bucket links with no candidate record (`chooseOnLinksCode`, proven equal
+  to the bucket scan it replaces).
+- **Scheduling point.**  `scheduleEffectiveOnCoreTotal` has a compiled form
+  that returns the state with no `Except` cell (it is proven never to refuse),
+  and the dispatched thread becomes current in the old current thread's cell
+  (`SchedulerState.setCurrentSomeOnCore`, `reuseSome`).
+- **Reschedule flags.**  `SchedulerState.reschedulePending` is a
+  `PerCoreFlags` (one bit per core in a word) instead of a `Vector Bool`.  The
+  entry's snapshot of the flags before its transition is then a scalar, so the
+  transition's flag write no longer copies an array the snapshot shares.
+  `rescheduleSgisFromFlags` and its theorems keep their statements over the new
+  type; the per-core routing gate counts `PerCoreFlags` fields as per-core
+  slots.
+- **Next.**  ZA4.5 part 2 moves the links into TCB fields (decision
+  2026-10-12), with the queue layout restated as a system invariant.
+
+### WS-ZA ZA4.5 (part 2): run-queue links in the TCB, the abstract queue an erased ghost
+
+**The run queue lives in the threads, as in seL4.**  Each TCB carries its
+run-queue links; a core keeps only the queue's ends.  Yield still makes no heap
+allocation (QEMU exerciser, normal build): signal, wide-badge signal,
+wait-pending and yield read 0; signal's first call after boot 3 → 2; signal to
+a waiter 37 → 33; call 180 → 184.
+
+- **Links.**  Six run-link fields in the TCB (the core, nonzero exactly while
+  queued; the priority; the previous and next links of the whole queue and of
+  the priority bucket) and per-core `RunQueueEnds` (head, tail, size, highest
+  priority, per-bucket ends).  Enqueue,
+  dequeue and rotation rewrite the affected TCBs' fields through
+  `RHTable.mapValueAt`, a value-only table update whose frame holds with no
+  table invariant, and the per-core ends in their vector slot.
+- **Ghost queue.**  Each core's abstract `RunQueue` stays in the model as a
+  field of type `Erased`, so the compiler drops it.  One invariant,
+  `runQueueRefined`, states that the links describe it (as seL4 relates its
+  abstract ready queues to the C links); it is a conjunct of `ipcReachable`,
+  proven for every committing kernel entry, so every scheduler theorem stated
+  over the queue still holds of the links the kernel reads.
+- **Executable reads.**  Membership (`queuedOn`), the queue's list
+  (`runQueueWalk`), a thread's queued priority (`queuedPriorityOn`) and the
+  highest bucket (`runMaxBucketWalk`) are read off the TCBs, each proven equal
+  to the ghost read under `runQueueRefined`.  The compiled enqueue, removal
+  and selection paths read TCB fields directly and write records in place
+  (`@[csimp]` forms proven equal to their specifications).
+- **Proof-only references.**  The single-core reference operations (`schedule`,
+  `timerTick`, `handleYield`, `switchDomain`, `chooseThread`,
+  `suspendThread`, `setPriorityOp`, the IF projections, …) write or read only
+  the ghost and are now `noncomputable`; the kernel runs their per-core forms.
+  The suites and the main trace run the per-core forms on the boot core
+  (`SeLe4n/Testing/BootCoreOps.lean`) and the link-reading information-flow
+  views (`projectStateByLinks`, `ObservableState.onCoreByLinks`, …), each
+  proven equal to its reference form under `runQueueRefined`.  The main trace's
+  IDLE-004 line now reports the live schedule.
+- **Debt.**  Two rows in `docs/REGISTERED_DEBT.md` §C: the dispatch payoffs'
+  `ct_not_in_q` and current-uniqueness premises (the next row), and the model
+  dispatch's single-core tick.
+
+### Review fixes: a dequeued thread keeps no notification links; the test builder refuses run placement
+
+**A thread that leaves a notification queue keeps no queue links, as in seL4.**
+The review found that a signal popping the head left the woken thread's
+`ntfnNext` naming its old successor and left the new head's `ntfnPrev` naming
+the woken thread.  A later cancellation of the new head would then rewrite the
+woken thread's successor link, which by then belongs to whatever queue the
+woken thread joined next.  seL4's `tcbEPDequeue` clears both, and so does
+seLe4n now.
+
+- **Pop.**  The signal's wake ends with `detachNtfnHead`: the woken thread's
+  two links are cleared and the successor's predecessor link is cleared.  The
+  successor is in the signal's lock set.  The in-place compiled form
+  (`storeSignalWoken`) makes the same writes.
+- **Cancel.**  The cancellation unlink clears the victim's links after
+  splicing its neighbours.  The frozen wake does the same.
+- **Invariant.**  `notificationWaiterConsistent` gains two clauses: a queue's
+  head has no predecessor link, and a TCB blocked on no notification holds no
+  notification link.  The second makes a stale link unrepresentable in a
+  reachable state.  Both are proven for every transition and established at
+  boot.  `bootSafeTcbCheck` now refuses a configured TCB carrying a
+  notification link.  The runtime invariant checks test both clauses.
+- **Proof plumbing.**  `ntfnLinksRewritten` relates a state to one whose TCBs
+  differ only in their notification links.  Each invariant the signal path
+  carries transfers across it: IPC, scheduler, run-queue agreement, capability
+  key frame, slot confinement, the per-core bundles and the cross-core proofs.
+- **Information flow.**  The pop writes the successor's TCB.  The signal's
+  non-interference theorems therefore also require the successor to be
+  non-observable (`hSuccHigh`), as the wait already requires of the queue's
+  tail.
+- **Footprint and fixtures.**  A signal that wakes a waiter with a successor
+  holds five locks, the successor's TCB write lock added (900µs, inside the
+  1 ms tick budget).  The main trace's `[PIP-005]` line counts 34 invariant
+  checks, one more for the off-queue clause.
+- **Test builder.**  `buildValidated` refuses a supplied TCB that already
+  claims a run-queue place (`runCoreCode ≠ 0`), as `bootSafeTcbCheck` does at
+  boot; such a TCB made the fold over `runnable` skip or refuse its enqueue and
+  return a state whose queue was not the one the fixture named (second review
+  finding).  The negative-state suite checks both sides.
+- **Allocations** (QEMU exerciser, normal build): unchanged.  Signal, wide-badge
+  signal, wait-pending and yield read 0, and a signal that wakes a waiter 33.
 
 ## v0.36.78 — WS-ZA ZA4.1 and ZA4.3: a yield syscall that forfeits the allotment; the exerciser measures IPC, blocking and yield
 

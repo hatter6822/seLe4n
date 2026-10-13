@@ -4345,7 +4345,7 @@ alongside the latent inventory (closing SMP-H3).
 
    **The reschedule-pending flag (`v0.36.51`, KSC-1 PR A).**  An eighth
    per-core field, `reschedulePending : PerCoreFlags` (one bit per core in a
-   word since `v0.36.80`, so a snapshot of it is a scalar), read through
+   word since `v0.36.82`, so a snapshot of it is a scalar), read through
    `reschedulePendingOnCore` and written only by `markReschedulePendingOnCore`
    / `markReschedulePendingOnCoreIf` (set) and `clearReschedulePendingOnCore`
    (clear), with the same store/load algebra, `ext_perCore` hypothesis and
@@ -5570,7 +5570,7 @@ type-level structural promotion:
   Defined in `SeLe4n/Kernel/Capability/Invariant/Defs.lean`.
 * **R4.C (DEEP-IPC-05; subsumes DEEP-IPC-01)** — a notification's
   waiters cannot hold a thread twice.  R4.C first carried this as a
-  `NoDupList` waiter list; since `v0.36.79` (WS-ZA ZA4.4) the waiters are
+  `NoDupList` waiter list; since `v0.36.82` (WS-ZA ZA4.4) the waiters are
   an intrusive first-in-first-out queue linked through the waiting TCBs
   (`TCB.ntfnPrev` / `TCB.ntfnNext`, with `Notification.waitHead` /
   `waitTail` naming its ends), as seL4's `tcbEPAppend` / `tcbEPDequeue`.
@@ -6884,7 +6884,7 @@ by the intrusive notification queue's links, `notificationWaiterConsistent`):
   for donated states (the donor is `.unbound`; only the server's `.donated`
   references the SchedContext)
 - `uniqueWaiters` (RETIRED at WS-RC R4.C.7): no notification has duplicate
-  waiters.  Since `v0.36.79` the waiters are an intrusive queue through the
+  waiters.  Since `v0.36.82` the waiters are an intrusive queue through the
   TCBs' `ntfnPrev` / `ntfnNext` links, one pair per TCB, whose consistency is
   `notificationWaiterConsistent` (part of `ipcReachable`): each end is a TCB
   blocked on the notification, and each blocked TCB is the head or has a
