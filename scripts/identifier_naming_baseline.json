@@ -57,7 +57,7 @@
   "scripts/test_tier3_invariant_surface.sh": 39
  },
  "SM5": {
-  "scripts/test_tier3_invariant_surface.sh": 110,
+  "scripts/test_tier3_invariant_surface.sh": 109,
   "tests/fixtures/scenario_registry.yaml": 6
  },
  "SM6": {
