@@ -1590,7 +1590,11 @@ theorem notificationSignal_preserves_allPendingMessagesBounded
                     pair.2 st'' waiter .ready _
                     (fun m hm => by cases hm; exact IpcMessage.empty_bounded)
                     hObjInvPair hIpc hInv1
-                  exact ensureRunnable_preserves_allPendingMessagesBounded st'' waiter hInv2
+                  exact ensureRunnable_preserves_allPendingMessagesBounded _ waiter
+                    (allPendingMessagesBounded_of_ntfnLinksRewritten
+                      (detachNtfnHead_linksRewritten _ _ _
+                        (storeTcbIpcStateAndMessage_preserves_objects_invExt _ _ _ _ _
+                          hObjInvPair hIpc)) hInv2)
       | none =>
           simp only [hWaiters] at hStep
           exact storeObject_notification_preserves_allPendingMessagesBounded
@@ -1856,9 +1860,12 @@ theorem notificationSignal_preserves_dualQueueSystemInvariant
           | error e => simp
           | ok st'' =>
             simp only [Except.ok.injEq, Prod.mk.injEq]; intro ⟨_, hEq⟩; subst hEq
-            exact ensureRunnable_preserves_dualQueueSystemInvariant st'' waiter
-              (storeTcbIpcStateAndMessage_preserves_dualQueueSystemInvariant
-                pair.2 st'' waiter .ready _ hObjInv1 hTcb hInv1)
+            exact ensureRunnable_preserves_dualQueueSystemInvariant _ waiter
+              (dualQueueSystemInvariant_of_ntfnLinksRewritten
+                (detachNtfnHead_linksRewritten _ _ _
+                  (storeTcbIpcStateAndMessage_preserves_objects_invExt _ _ _ _ _ hObjInv1 hTcb))
+                (storeTcbIpcStateAndMessage_preserves_dualQueueSystemInvariant
+                  pair.2 st'' waiter .ready _ hObjInv1 hTcb hInv1))
       | none =>
         simp only [hWaiters] at hStep
         exact storeObject_notification_preserves_dualQueueSystemInvariant

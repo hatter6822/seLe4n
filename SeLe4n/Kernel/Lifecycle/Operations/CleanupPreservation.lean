@@ -185,8 +185,7 @@ theorem removeFromNotificationWaitQueue_eq_objects (st : SystemState) (tid : SeL
   · split
     · split
       · dsimp only
-        exact ite_of_both (P := fun s => ∃ objs, s = { st with objects := objs }) _
-          ⟨_, rfl⟩ (hN _ _ _ ⟨_, rfl⟩)
+        exact hN _ _ _ (hU _ _ _ ⟨_, rfl⟩)
       · exact ⟨st.objects, rfl⟩
     · exact ⟨st.objects, rfl⟩
   · exact ⟨st.objects, rfl⟩
@@ -571,8 +570,8 @@ theorem removeFromNotificationWaitQueue_reach (st : SystemState) (tid : SeLe4n.T
           (fun h => by simp [h])
         have h1 := ntfnUnlinkReach_rewriteNotification hInv oid notif _ hN'
           (by rfl) (by rfl) hW (SystemState.rewriteAdmissible_notification hN _)
-        exact ite_of_both (P := ntfnUnlinkReach st) _ h1
-          (ntfnUnlinkReach_unlinkNtfnNeighbours h1 _ _)
+        exact ntfnUnlinkReach_unlinkNtfnNeighbours
+          (ntfnUnlinkReach_updateTcb h1 tid _ (fun _ => ⟨_, _, rfl⟩)) _ _
       · exact hRefl
     · exact hRefl
   · exact hRefl
@@ -608,12 +607,14 @@ theorem unlinkNtfnNeighbours_objects_off (s : SystemState)
       rw [SystemState.updateTcb_objects_ne _ n _ k (hN n rfl) hInv2]
       exact SystemState.updateTcb_objects_ne _ p _ k (hP p rfl) hInv
 
-/-- WS-ZA ZA4.4: the unlink writes the notification the victim waits on and
-the victim's two queue neighbours, and no other slot. -/
+/-- WS-ZA ZA4.4: the unlink writes the notification the victim waits on, the
+victim itself (its queue links cleared) and the victim's two queue neighbours,
+and no other slot. -/
 theorem removeFromNotificationWaitQueue_objects_off (st : SystemState)
     (tid : SeLe4n.ThreadId) (hInv : st.objects.invExt) (tcb : TCB)
     (hT : st.getTcb? tid = some tcb) (k : SeLe4n.ObjId)
     (hOff : ∀ oid, tcb.ipcState = .blockedOnNotification oid → oid ≠ k)
+    (hV : ∀ oid, tcb.ipcState = .blockedOnNotification oid → tid.toObjId ≠ k)
     (hP : ∀ p, tcb.ntfnPrev = some p → p.toObjId ≠ k)
     (hN : ∀ n, tcb.ntfnNext = some n → n.toObjId ≠ k) :
     (removeFromNotificationWaitQueue st tid).objects[k]? = st.objects[k]? := by
@@ -626,11 +627,15 @@ theorem removeFromNotificationWaitQueue_objects_off (st : SystemState)
     · have hR : ∀ (n' : Notification) h,
           (st.rewriteObject oid (.notification n') h).objects[k]? = st.objects[k]? :=
         fun n' h => SystemState.rewriteObject_objects_ne st oid k _ h (hOff oid hS) hInv
-      split
-      · exact hR _ _
-      · exact (unlinkNtfnNeighbours_objects_off _ _ _
-          (SystemState.rewriteObject_preserves_objects_invExt st oid _ _ hInv) k hP hN).trans
-          (hR _ _)
+      refine (unlinkNtfnNeighbours_objects_off _ _ _
+        (SystemState.updateTcb_preserves_objects_invExt _ _ _
+          (SystemState.rewriteObject_preserves_objects_invExt st oid _ _ hInv)) k ?_ hN).trans
+        ((SystemState.updateTcb_objects_ne _ tid _ k (hV oid hS)
+          (SystemState.rewriteObject_preserves_objects_invExt st oid _ _ hInv)).trans (hR _ _))
+      intro p hp
+      split at hp
+      · cases hp
+      · exact hP p hp
     · rfl
   | _ => rfl
 

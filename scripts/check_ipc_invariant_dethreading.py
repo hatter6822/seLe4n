@@ -276,6 +276,10 @@ MACHINERY_PINS = {
     ("SeLe4n/Kernel/IPC/Invariant/RunQueueAgreement/Endpoint.lean", "macro_rules"): 21,
     ("SeLe4n/Kernel/IPC/Invariant/RunQueueAgreement/Endpoint.lean", "syntax"): 2,
     ("SeLe4n/Kernel/IPC/Invariant/RunQueueAgreement/Ipc.lean", "macro_rules"): 5,
+    # PR #932 review: the `ntfn_links_back` / `ntfn_links_fwd` tactics, which
+    # swap a TCB across a notification-link rewrite; neither mints a declaration.
+    ("SeLe4n/Kernel/IPC/Operations/Endpoint.lean", "macro_rules"): 2,
+    ("SeLe4n/Kernel/IPC/Operations/Endpoint.lean", "syntax"): 2,
     ("SeLe4n/Kernel/InformationFlow/NonInterferencePerCore.lean", "macro_rules"): 1,
     ("SeLe4n/Kernel/InformationFlow/NonInterferencePerCore.lean", "syntax"): 1,
     ("SeLe4n/Kernel/Scheduler/Invariant/PerCoreInvariantSuiteInventory.lean", "macro_rules"): 1,

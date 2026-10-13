@@ -311,6 +311,19 @@ theorem storeTcbPendingMessage_preserves_endpointQueueNoDup
 -- Section 3: Per-operation preservation proofs
 -- ============================================================================
 
+/-- WS-ZA ZA4.4: a step that rewrites notification-queue links and nothing else
+keeps the endpoint queues free of duplicates: neither endpoints nor the
+endpoint-queue links move. -/
+theorem endpointQueueNoDup_of_ntfnLinksRewritten {st s : SystemState}
+    (h : ntfnLinksRewritten st s) (hInv : endpointQueueNoDup st) : endpointQueueNoDup s := by
+  intro oid ep hObj
+  obtain ⟨hSelf, hDisj⟩ := hInv oid ep
+    ((h.obj_iff oid _ (fun _ => KernelObject.noConfusion)).mp hObj)
+  refine ⟨fun tid tcb hTcb => ?_, hDisj⟩
+  obtain ⟨ty, hSt, hQN⟩ := h.field_bwd TCB.queueNext (fun _ _ _ => rfl) hTcb
+  rw [hQN]
+  exact hSelf tid ty hSt
+
 /-- V3-K-op-9a: notificationSignal preserves endpointQueueNoDup.
 Notification operations only modify notification objects and TCBs; no endpoint change. -/
 theorem notificationSignal_preserves_endpointQueueNoDup
@@ -347,6 +360,8 @@ theorem notificationSignal_preserves_endpointQueueNoDup
             simp only [Except.ok.injEq, Prod.mk.injEq] at hStep
             obtain ⟨_, rfl⟩ := hStep
             exact ensureRunnable_preserves_endpointQueueNoDup _ _ <|
+              endpointQueueNoDup_of_ntfnLinksRewritten (detachNtfnHead_linksRewritten _ _ _
+                (storeTcbIpcStateAndMessage_preserves_objects_invExt _ _ _ _ _ hObjInv1 hMsg)) <|
               storeTcbIpcStateAndMessage_preserves_endpointQueueNoDup _ _ _ _ _ hInv1 hObjInv1 hMsg
       | none =>
         -- Accumulate path: storeObject notification only

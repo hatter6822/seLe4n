@@ -188,7 +188,7 @@ theorem startInitialThread_preserves_bootStartShape (ist : IntermediateState)
     · exact hShape oid obj hB
     · obtain ⟨h1, h2, h3, h4, h5, h6, h7⟩ := hShape oid _ hT
       refine ⟨?_, ?_, ?_, ?_, ?_, ?_, ?_⟩ <;> intro x hx <;> cases hx
-      obtain ⟨t1, t2, t3, t4, t5, t6, t7, t8, t9⟩ := h4 t rfl
+      obtain ⟨t1, t2, t3, t4, t5, t6, t7, t8, t9, t10, t11⟩ := h4 t rfl
       -- The start writes the thread's state, its IPC state (to `.ready`) and
       -- its run-queue links; every shape field reads past all three.
       rcases he with he | he | he <;>
@@ -200,7 +200,9 @@ theorem startInitialThread_preserves_bootStartShape (ist : IntermediateState)
         (TCB.proj_eq_of_withoutRunLinks_eq TCB.timeoutBudget he).trans t6,
         (TCB.proj_eq_of_withoutRunLinks_eq TCB.schedContextBinding he).trans t7,
         (TCB.proj_eq_of_withoutRunLinks_eq TCB.replyObject he).trans t8,
-        (TCB.proj_eq_of_withoutRunLinks_eq TCB.pendingReceiveReply he).trans t9⟩
+        (TCB.proj_eq_of_withoutRunLinks_eq TCB.pendingReceiveReply he).trans t9,
+        (TCB.proj_eq_of_withoutRunLinks_eq TCB.ntfnPrev he).trans t10,
+        (TCB.proj_eq_of_withoutRunLinks_eq TCB.ntfnNext he).trans t11⟩
   · show bootQuiescentFields (startInitialThreadOnCore ist.state tid)
     rw [hFrame]; exact hFields
   · show Architecture.asidTableConsistent (startInitialThreadOnCore ist.state tid)

@@ -430,12 +430,22 @@ theorem notificationSignalOnCore_confinedToCores (notificationId : SeLe4n.ObjId)
                   w hInv' hMsg,
                 storeObject_determineTargetCore_eq st st1 notificationId _ w hNe
                   hObjInv hStore]
+          -- The pop's link rewrite writes TCB links only: no scheduler slot.
+          have hInv2 : st2.objects.invExt :=
+            storeTcbIpcStateAndMessage_preserves_objects_invExt _ _ _ _ _ hInv' hMsg
+          have hDetach : observableSlotsConfinedToCores st2
+              (detachNtfnHead st2 w (ntfnSuccessor? st w)) [] :=
+            observableSlotsConfinedToCores_nil_of_scheduler_machine_eq
+              (detachNtfnHead_scheduler _ _ _) (detachNtfnHead_machine _ _ _)
           have hChain := observableSlotsConfinedToCores_trans
             (observableSlotsConfinedToCores_trans
-              (storeObject_confinedToCores st st1 _ _ hStore)
-              (storeTcbIpcStateAndMessage_confinedToCores st1 st2 w .ready _ hMsg))
-            (wakeThread_confinedToCores st2 w executingCore)
-          rw [hTarget] at hChain
+              (observableSlotsConfinedToCores_trans
+                (storeObject_confinedToCores st st1 _ _ hStore)
+                (storeTcbIpcStateAndMessage_confinedToCores st1 st2 w .ready _ hMsg))
+              hDetach)
+            (wakeThread_confinedToCores (detachNtfnHead st2 w (ntfnSuccessor? st w)) w
+              executingCore)
+          rw [(detachNtfnHead_linksRewritten st2 w _ hInv2).targetCore_eq, hTarget] at hChain
           exact hChain
 
 /-- SM8.B.2 (**SM6.B, cross-core**): a notification *wait* never writes another

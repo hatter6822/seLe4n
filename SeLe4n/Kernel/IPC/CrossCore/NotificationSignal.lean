@@ -88,10 +88,13 @@ def notificationSignalOnCore (notificationId : SeLe4n.ObjId) (badge : SeLe4n.Bad
               match storeTcbIpcStateAndMessage st' waiter .ready (some badgeMsg) with
               | .error e => (st, .error e)
               | .ok st'' =>
+                  -- WS-ZA ZA4.4: the woken waiter leaves the queue holding no
+                  -- links, and its successor heads it with no predecessor.
+                  let st3 := detachNtfnHead st'' waiter next
                   -- Cross-core waiter wake (SM5.C): route to the waiter's home
                   -- core, capturing the optional `.reschedule` SGI.
-                  ((wakeThread st'' waiter executingCore).1,
-                   .ok (wakeThread st'' waiter executingCore).2)
+                  ((wakeThread st3 waiter executingCore).1,
+                   .ok (wakeThread st3 waiter executingCore).2)
       | none =>
           -- WS-F5/D1c: word-bounded Badge.bor accumulation (mirrors single-core).
           let mergedBadge : SeLe4n.Badge :=
@@ -145,14 +148,15 @@ notification's cell: `next` heads the queue. -/
   | .notification n => .notification (n.withHeadPopped next)
   | o => o
 
-/-- WS-ZA ZA4.4: the wake path's two writes, each made in its slot: the head
-popped off the notification's queue, and the woken waiter made ready holding the
-badge message.  Compiled as its own function so each update is specialised in. -/
+/-- WS-ZA ZA4.4: the wake path's writes, each made in its slot: the head popped
+off the notification's queue, the woken waiter made ready holding the badge
+message, and the queue links the pop leaves behind cleared (`detachNtfnHead`).
+Compiled as its own function so each update is specialised in. -/
 @[noinline] def storeSignalWoken (st : SystemState) (notificationId : SeLe4n.ObjId)
     (waiter : SeLe4n.ThreadId) (next : Option SeLe4n.ThreadId) (msg : IpcMessage) :
     SystemState :=
-  (st.modifyObject notificationId (signalPoppedObject next)).updateTcb waiter
-    (fun t => { t with ipcState := .ready, pendingMessage := some msg })
+  detachNtfnHead ((st.modifyObject notificationId (signalPoppedObject next)).updateTcb waiter
+    (fun t => { t with ipcState := .ready, pendingMessage := some msg })) waiter next
 
 /-- WS-ZA ZA4.4: **the wake path writes only its two objects' slots** — the
 notification rewritten where it stands (`RHTable.findsInPlace`), the woken
@@ -177,7 +181,7 @@ theorem notificationSignalOnCore_wake_inPlace_eq (notificationId : SeLe4n.ObjId)
       | .ok ((), st') =>
           match storeTcbIpcStateAndMessage st' waiter .ready (some msg) with
           | .error _ => none
-          | .ok st'' => some st'')
+          | .ok st'' => some (detachNtfnHead st'' waiter next))
       = some (storeSignalWoken st notificationId waiter next msg) := by
   have hNo := (SystemState.getNotification?_eq_some_iff _ _ _).mp hN
   simp only [signalWakesInPlace, Bool.and_eq_true, Bool.not_eq_true'] at hG
@@ -213,7 +217,7 @@ theorem notificationSignalOnCore_wake_inPlace_eq (notificationId : SeLe4n.ObjId)
 waiter stores the badge through the pure store `withObjectStored`, which cannot
 fail, so the pre-state is not held across the write for a refusal that cannot
 happen (`ZERO_ALLOCATION_SYSCALL_PLAN.md` D1).  A signal that wakes the head
-waiter makes its two writes in place when they stay in their slots
+waiter makes its writes in place when they stay in their slots
 (`signalWakesInPlace`, `notificationSignalOnCore_wake_inPlace_eq`); otherwise
 the waiter path is the specification's. -/
 @[inline] def notificationSignalOnCoreImpl (notificationId : SeLe4n.ObjId) (badge : SeLe4n.Badge)
@@ -236,8 +240,9 @@ the waiter path is the specification's. -/
               match storeTcbIpcStateAndMessage st' waiter .ready (some badgeMsg) with
               | .error e => (st, .error e)
               | .ok st'' =>
-                  ((wakeThread st'' waiter executingCore).1,
-                   .ok (wakeThread st'' waiter executingCore).2)
+                  let st3 := detachNtfnHead st'' waiter next
+                  ((wakeThread st3 waiter executingCore).1,
+                   .ok (wakeThread st3 waiter executingCore).2)
       | none =>
           if storeLeavesIndexAndTypes st notificationId .notification then
             (storeSignalPending st notificationId badge,
@@ -275,8 +280,9 @@ the waiter path is the specification's. -/
           split
           · intro h; cases h
           · next st'' h2 =>
-            intro h; cases h
+            intro h
             simp only [h2]
+            rw [← Option.some.inj h]
       · rw [if_neg hG]
     · by_cases hL : storeLeavesIndexAndTypes st notificationId .notification = true
       · rw [if_pos hL, storeSignalPending, SystemState.modifyObject,
@@ -693,26 +699,20 @@ theorem notificationWaitOnCore_block_inPlace_eq (notificationId : SeLe4n.ObjId)
 -- §2  Pre-resolution helpers + state-resolved lock-sets (plan §3.1)
 -- ============================================================================
 
-/-- WS-SM SM6.B.1: the waiter a cross-core signal would wake — the head of the
-notification's waiter list, if any.  Pre-resolved from the pre-state so the
-signaller can assemble the `lockSet_notificationSignal` footprint (the waiter TCB
-write lock is present iff a waiter is blocked). -/
-def notificationSignalWaiter? (st : SystemState) (notificationId : SeLe4n.ObjId) :
-    Option SeLe4n.ThreadId :=
-  match st.getNotification? notificationId with
-  | some ntfn => ntfn.waitHead
-  | none => none
+/-- **WS-OD OD3.10**: the queue neighbours a signal relinks.
 
-/-- **WS-OD OD3.10**: the queue neighbours the bound delivery relinks.
+On the bound-delivery path, the bound TCB's endpoint-queue neighbours.  Derived
+from `boundDeliveryTarget?` -- the resolver the arm's endpoint and bound TCB
+members already come from -- so the footprint and the transition cannot disagree
+about *whether* this signal splices, and from `queueSpliceNeighbors?`, the
+neutral answer the cancellation arms use, so they cannot disagree about *who*
+the neighbours are.
 
-Derived from `boundDeliveryTarget?` -- the resolver the arm's endpoint and bound
-TCB members already come from -- so the footprint and the transition cannot
-disagree about *whether* this signal splices, and from `queueSpliceNeighbors?`,
-the neutral answer the cancellation arms use, so they cannot disagree about
-*who* the neighbours are.  `none, none` on every non-bound path, which is the
-overwhelming majority of signals: the bound path requires an empty wait queue
-and a bound TCB blocked on receive.  (A signal that wakes the head of the wait
-queue relinks no other TCB: WS-ZA ZA4.4.) -/
+**WS-ZA ZA4.4**: on every other path, the successor of the woken head, whose
+predecessor link the wake clears (`notificationSignalSuccessor?`); none when the
+signal wakes no waiter or the head was the only one.  The bound path requires an
+empty wait queue and a bound TCB blocked on receive, so the two never both
+apply. -/
 def notificationSignalSpliceNeighbors? (st : SystemState) (notificationId : SeLe4n.ObjId) :
     Option SeLe4n.ThreadId × Option SeLe4n.ThreadId :=
   match boundDeliveryTarget? st notificationId with
@@ -720,15 +720,17 @@ def notificationSignalSpliceNeighbors? (st : SystemState) (notificationId : SeLe
       match st.getTcb? boundTcb with
       | some tcb => queueSpliceNeighbors? tcb
       | none => (none, none)
-  | none => (none, none)
+  | none => (none, notificationSignalSuccessor? st notificationId)
 
-/-- **WS-OD OD3.10**: a signal with no bound-delivery target splices nothing.
-The gate is the *same* resolver the footprint's other two optionals key on, so
-"this arm splices" is one fact rather than two that can drift. -/
+/-- **WS-OD OD3.10**, WS-ZA ZA4.4: a signal with no bound-delivery target
+splices no endpoint queue; the one TCB it relinks is the woken head's
+successor.  The gate is the *same* resolver the footprint's other two optionals
+key on, so "this arm splices" is one fact rather than two that can drift. -/
 @[simp] theorem notificationSignalSpliceNeighbors?_of_no_target (st : SystemState)
     (notificationId : SeLe4n.ObjId)
     (hNone : boundDeliveryTarget? st notificationId = none) :
-    notificationSignalSpliceNeighbors? st notificationId = (none, none) := by
+    notificationSignalSpliceNeighbors? st notificationId =
+      (none, notificationSignalSuccessor? st notificationId) := by
   unfold notificationSignalSpliceNeighbors?; rw [hNone]
 
 /-- **WS-OD OD3.10**: on the delivery path the neighbours are the bound TCB's own
@@ -768,8 +770,11 @@ def lockSet_notificationSignalOnCore (st : SystemState) (notificationId : SeLe4n
         -- **WS-OD OD3.10**: and the two TCBs the dequeue relinks.
         (notificationSignalSpliceNeighbors? st notificationId)
   | none =>
+      -- WS-ZA ZA4.4: and the woken head's successor, whose predecessor link
+      -- the wake clears.
       lockSet_notificationSignal signaller cnodeRootObjId notificationId
-        (notificationSignalWaiter? st notificationId)
+        (notificationSignalWaiter? st notificationId) none none
+        (notificationSignalSpliceNeighbors? st notificationId)
 
 /-- WS-SM SM6.B.1: the concrete lock-set a cross-core `notificationWaitOnCore`
 on state `st` acquires — `lockSet_notificationWait` (caller TCB write, CNode
@@ -812,7 +817,7 @@ theorem notificationSignalOnCore_replenishQueueOnCore (notificationId : SeLe4n.O
         split
         · rfl
         · next st2 hMsg =>
-          rw [wakeThread_replenishQueueOnCore,
+          rw [wakeThread_replenishQueueOnCore, detachNtfnHead_scheduler,
             storeTcbIpcStateAndMessage_scheduler_eq st1 st2 _ _ _ hMsg,
             storeObject_scheduler_eq st st1 _ _ hStore]
 
@@ -980,8 +985,10 @@ theorem notificationSignalOnCore_waiter_eq
     (hMsg : storeTcbIpcStateAndMessage st' waiter .ready
         (some { IpcMessage.empty with badge := some badge }) = .ok st'') :
     notificationSignalOnCore notificationId badge executingCore st
-      = ((wakeThread st'' waiter executingCore).1,
-         .ok (wakeThread st'' waiter executingCore).2) := by
+      = ((wakeThread (detachNtfnHead st'' waiter (ntfnSuccessor? st waiter)) waiter
+            executingCore).1,
+         .ok (wakeThread (detachNtfnHead st'' waiter (ntfnSuccessor? st waiter)) waiter
+            executingCore).2) := by
   unfold notificationSignalOnCore
   have hObjN : st.getNotification? notificationId = some ntfn :=
     (SystemState.getNotification?_eq_some_iff st notificationId ntfn).mpr hObj
@@ -1031,14 +1038,20 @@ theorem notificationSignalOnCore_remote_wake
     (hMsg : storeTcbIpcStateAndMessage st' waiter .ready
         (some { IpcMessage.empty with badge := some badge }) = .ok st'')
     (hTcb'' : st''.getTcb? waiter = some waiterTcb'')
-    (hRemote : determineTargetCore st'' waiter ≠ executingCore) :
+    (hRemote : determineTargetCore st'' waiter ≠ executingCore)
+    (hObjInv : st.objects.invExt) :
     (notificationSignalOnCore notificationId badge executingCore st).2
       = .ok (some (determineTargetCore st'' waiter, SgiKind.reschedule)) := by
+  have hD := detachNtfnHead_linksRewritten st'' waiter (ntfnSuccessor? st waiter)
+    (storeTcbIpcStateAndMessage_preserves_objects_invExt _ _ _ _ _
+      (storeObject_preserves_objects_invExt st st' notificationId _ hObjInv hStore) hMsg)
+  obtain ⟨t3, h3, _⟩ := hD.getTcb?_fwd hTcb''
   rw [notificationSignalOnCore_waiter_eq notificationId badge executingCore st ntfn
         waiter st' st'' hObj hWaiters hStore hMsg]
-  show Except.ok (wakeThread st'' waiter executingCore).2
+  show Except.ok (wakeThread _ waiter executingCore).2
       = Except.ok (some (determineTargetCore st'' waiter, SgiKind.reschedule))
-  rw [wakeThread_emits_sgi_if_remote st'' waiter executingCore waiterTcb'' hTcb'' hRemote]
+  rw [wakeThread_emits_sgi_if_remote _ waiter executingCore t3 h3
+    (by rw [hD.targetCore_eq]; exact hRemote), hD.targetCore_eq]
 
 /-- WS-SM SM6.B.2: dually, a cross-core signal whose waiter is *local* (home core
 = executing core) surfaces **no** SGI — the local scheduler picks the
@@ -1054,12 +1067,16 @@ theorem notificationSignalOnCore_no_sgi_if_local_waiter
         (ntfn.withHeadPopped (ntfnSuccessor? st waiter))) st = .ok ((), st'))
     (hMsg : storeTcbIpcStateAndMessage st' waiter .ready
         (some { IpcMessage.empty with badge := some badge }) = .ok st'')
-    (hLocal : determineTargetCore st'' waiter = executingCore) :
+    (hLocal : determineTargetCore st'' waiter = executingCore)
+    (hObjInv : st.objects.invExt) :
     (notificationSignalOnCore notificationId badge executingCore st).2 = .ok none := by
+  have hD := detachNtfnHead_linksRewritten st'' waiter (ntfnSuccessor? st waiter)
+    (storeTcbIpcStateAndMessage_preserves_objects_invExt _ _ _ _ _
+      (storeObject_preserves_objects_invExt st st' notificationId _ hObjInv hStore) hMsg)
   rw [notificationSignalOnCore_waiter_eq notificationId badge executingCore st ntfn
         waiter st' st'' hObj hWaiters hStore hMsg]
-  show Except.ok (wakeThread st'' waiter executingCore).2 = Except.ok none
-  rw [wakeThread_no_sgi_if_local st'' waiter executingCore hLocal]
+  show Except.ok (wakeThread _ waiter executingCore).2 = Except.ok none
+  rw [wakeThread_no_sgi_if_local _ waiter executingCore (by rw [hD.targetCore_eq]; exact hLocal)]
 
 /-- WS-SM SM6.B.2: the **no-waiter** path (the signal merges its badge into the
 notification's pending badge) surfaces no SGI — no thread is woken, so there is
@@ -1114,7 +1131,8 @@ theorem lockSet_notificationSignalOnCore_correct
   cases hT : boundDeliveryTarget? st notificationId with
   | none =>
       exact lockSet_consistent_notificationSignal signaller cnodeRootObjId notificationId
-        (notificationSignalWaiter? st notificationId)
+        (notificationSignalWaiter? st notificationId) none none
+        (notificationSignalSpliceNeighbors? st notificationId)
   | some pair =>
       -- PR #822 review: the bound-delivery footprint is the canonical signal footprint
       -- with the `boundEndpoint` / `boundTcb` optionals set; the parametric consistency
@@ -1322,6 +1340,24 @@ theorem lockSet_notificationSignalOnCore_splice_next_write_mem
   simp only [lockSetExtendOpt, hNext, Option.map_some]
   exact self_write_mem_insertOrMerge _ (tcbLock nextTid)
 
+/-- WS-ZA ZA4.4: a signal that wakes the head of the wait queue declares the
+TCB write lock of the head's successor, whose predecessor link the wake clears
+(`detachNtfnHead`). -/
+theorem lockSet_notificationSignalOnCore_successor_write_mem
+    (st : SystemState) (notificationId : SeLe4n.ObjId) (signaller : SeLe4n.ThreadId)
+    (cnodeRootObjId : SeLe4n.ObjId) (succ : SeLe4n.ThreadId)
+    (hNone : boundDeliveryTarget? st notificationId = none)
+    (hSucc : notificationSignalSuccessor? st notificationId = some succ) :
+    (tcbLock succ, AccessMode.write) ∈
+      (lockSet_notificationSignalOnCore st notificationId signaller cnodeRootObjId).pairs := by
+  unfold lockSet_notificationSignalOnCore
+  rw [hNone]
+  simp only []
+  rw [notificationSignalSpliceNeighbors?_of_no_target st notificationId hNone, hSucc]
+  unfold lockSet_notificationSignal
+  simp only [lockSetExtendOpt, Option.map_some, Option.map_none]
+  exact self_write_mem_insertOrMerge _ (tcbLock succ)
+
 -- ============================================================================
 -- §7  SM6.B.5 — Per-core consistency of the signal wake
 -- ============================================================================
@@ -1345,17 +1381,24 @@ theorem notificationSignalOnCore_perCore_consistent
         (ntfn.withHeadPopped (ntfnSuccessor? st waiter))) st = .ok ((), st'))
     (hMsg : storeTcbIpcStateAndMessage st' waiter .ready
         (some { IpcMessage.empty with badge := some badge }) = .ok st'')
-    (hOther : determineTargetCore st'' waiter ≠ c') :
+    (hOther : determineTargetCore st'' waiter ≠ c')
+    (hObjInv : st.objects.invExt) :
     (notificationSignalOnCore notificationId badge executingCore st).1.scheduler.runQueueOnCore c'
         = st.scheduler.runQueueOnCore c'
     ∧ (notificationSignalOnCore notificationId badge executingCore st).1.scheduler.currentOnCore c'
         = st.scheduler.currentOnCore c' := by
-  have hSched : st''.scheduler = st.scheduler := by
-    rw [storeTcbIpcStateAndMessage_scheduler_eq st' st'' waiter .ready _ hMsg,
+  have hSched : (detachNtfnHead st'' waiter (ntfnSuccessor? st waiter)).scheduler
+      = st.scheduler := by
+    rw [detachNtfnHead_scheduler, storeTcbIpcStateAndMessage_scheduler_eq st' st'' waiter .ready _ hMsg,
         storeObject_scheduler_eq st st' notificationId _ hStore]
+  have hD := detachNtfnHead_linksRewritten st'' waiter (ntfnSuccessor? st waiter)
+    (storeTcbIpcStateAndMessage_preserves_objects_invExt _ _ _ _ _
+      (storeObject_preserves_objects_invExt st st' notificationId _ hObjInv hStore) hMsg)
+  have hTarget := hD.targetCore_eq waiter
   rw [notificationSignalOnCore_waiter_eq notificationId badge executingCore st ntfn
         waiter st' st'' hObj hWaiters hStore hMsg]
-  obtain ⟨hRQ, hCur⟩ := wakeThread_independent_of_other_core st'' waiter executingCore c' hOther
+  obtain ⟨hRQ, hCur⟩ := wakeThread_independent_of_other_core _ waiter executingCore c'
+    (by rw [hTarget]; exact hOther)
   exact ⟨by rw [hRQ, hSched], by rw [hCur, hSched]⟩
 
 -- ============================================================================
@@ -1464,10 +1507,13 @@ theorem notificationSignalOnCore_remaining_waiters
   refine ⟨ntfn.withHeadPopped (ntfnSuccessor? st waiter), ?_, by simp, ?_, by simp⟩
   · rw [notificationSignalOnCore_waiter_eq notificationId badge executingCore st ntfn
           waiter st' st'' hObj hWaiters hStore hMsg]
-    show (wakeThread st'' waiter executingCore).1.objects[notificationId]?
+    have hD := detachNtfnHead_linksRewritten st'' waiter (ntfnSuccessor? st waiter) hInv''
+    obtain ⟨wTcb3, hwGet3, ⟨_, _, rfl⟩⟩ := hD.getTcb?_fwd hwGet
+    show (wakeThread _ waiter executingCore).1.objects[notificationId]?
       = some (.notification _)
-    refine (wakeThread_objectsAgreeOffRunLinks_of_ready st'' waiter executingCore wTcb hwGet hwReady
-      hInv'').get_notification_iff.mpr ?_
+    refine (wakeThread_objectsAgreeOffRunLinks_of_ready _ waiter executingCore _ hwGet3 hwReady
+      hD.2.1).get_notification_iff.mpr ?_
+    refine (hD.obj_iff _ _ (fun _ e => by cases e)).mpr ?_
     rw [storeTcbIpcStateAndMessage_preserves_objects_ne st' st'' waiter .ready _ notificationId
           hNe hInv' hMsg]
     exact hNtfn'
@@ -1547,30 +1593,13 @@ theorem notificationSignalOnCore_remote_wake_preState
     rw [storeTcbIpcStateAndMessage_determineTargetCore_eq st' st'' waiter .ready _ waiter hInv' hMsg,
         storeObject_determineTargetCore_eq st st' notificationId _ waiter hNe hObjInv hStore]
   rw [notificationSignalOnCore_remote_wake notificationId badge executingCore st ntfn waiter
-        waiterTcb'' st' st'' hObj hWaiters hStore hMsg hTcb'' (by rw [hTarget]; exact hRemote),
+        waiterTcb'' st' st'' hObj hWaiters hStore hMsg hTcb'' (by rw [hTarget]; exact hRemote)
+        hObjInv,
       hTarget]
 
 -- ============================================================================
 -- §11  SM6.B (coherence) — the lock-set pre-resolution names the woken thread
 -- ============================================================================
-
-/-- WS-SM SM6.B (lock-set / transition coherence): the waiter the lock-set
-pre-resolves (`notificationSignalWaiter?`, the notification's waiter-list head,
-used to build `lockSet_notificationSignalOnCore`) is **exactly** the thread the
-transition wakes (the queue head).  So the runtime acquires the waiter-TCB write
-lock on the very TCB the signal mutates — the footprint declaration and the
-operation agree. -/
-theorem notificationSignalWaiter?_eq_wake_head
-    (st : SystemState) (notificationId : SeLe4n.ObjId) (ntfn : Notification)
-    (waiter : SeLe4n.ThreadId)
-    (hObj : st.objects[notificationId]? = some (.notification ntfn))
-    (hWaiters : ntfn.waitHead = some waiter) :
-    notificationSignalWaiter? st notificationId = some waiter := by
-  have hObjN : st.getNotification? notificationId = some ntfn :=
-    (SystemState.getNotification?_eq_some_iff st notificationId ntfn).mpr hObj
-  unfold notificationSignalWaiter?
-  rw [hObjN]
-  exact hWaiters
 
 -- ============================================================================
 -- §12  SM6.B.1 — `notificationWaitOnCore` path reductions + per-core blocking

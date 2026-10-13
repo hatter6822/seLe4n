@@ -828,8 +828,9 @@ waiters are linked through their TCBs: the unlink points the victim's
 predecessor at its successor and back (seL4's `tcbEPDequeue`), so on that arm
 the pair is the victim's two notification-queue links
 (`cancelIpcBlocking_notificationArm_objects_off` is the write set).  A head
-victim's predecessor link is dead and the unlink writes no predecessor then, so
-there the first member over-approximates by one lock.
+victim holds no predecessor link (`notificationWaiterConsistent`: a queue's
+head has none, since a signal's pop clears it on the new head), so the pair
+names exactly the TCBs the unlink writes beside the victim.
 
 Derived from `cancelBlockedEndpoint?` and `cancelBlockedNotification?` rather
 than re-matching `ipcState`: the arm question is asked once, so the two cannot

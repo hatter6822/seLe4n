@@ -3455,6 +3455,8 @@ theorem notificationSignal_preserves_ipcStateQueueConsistent
             obtain ⟨_, rfl⟩ := hStep
             have hObjInv1 := storeObject_preserves_objects_invExt' st notificationId _ pair1 hObjInv hStore1
             exact ensureRunnable_preserves_ipcStateQueueConsistent _ _ <|
+              ipcStateQueueConsistent_of_ntfnLinksRewritten (detachNtfnHead_linksRewritten _ _ _
+                (storeTcbIpcStateAndMessage_preserves_objects_invExt _ _ _ _ _ hObjInv1 hMsg)) <|
               storeTcbIpcStateAndMessage_preserves_ipcStateQueueConsistent _ _ _ _ _ hObjInv1 hMsg
                 (storeObject_notification_preserves_ipcStateQueueConsistent st pair1.2 notificationId _
                   ⟨ntfn, hObj⟩ hObjInv hStore1 hInv) trivial
@@ -5119,6 +5121,13 @@ theorem blockedOnReplyHasReplyObject_of_objectsAgreeOffRunLinks {st st' : System
   run_links_back hA at tcb hTcb
   exact h tid tcb ep rt hTcb hBlk
 
+theorem blockedOnReplyHasReplyObject_of_ntfnLinksRewritten {st st' : SystemState}
+    (hA : ntfnLinksRewritten st st') (h : blockedOnReplyHasReplyObject st) :
+    blockedOnReplyHasReplyObject st' := by
+  intro tid tcb ep rt hTcb hBlk
+  ntfn_links_back hA at tcb hTcb
+  exact h tid tcb ep rt hTcb hBlk
+
 open SeLe4n.Model.SystemState in
 /-- IPC de-threading D2: a `storeTcbIpcStateAndMessage` whose new `ipcState` is **not**
 `.blockedOnReply` preserves the third clause — the stored TCB leaves the
@@ -6693,7 +6702,8 @@ theorem notificationSignal_preserves_blockedOnReplyHasReplyObject
           obtain ⟨_, rfl⟩ := hStep
           have hInv2 := storeTcbIpcStateAndMessage_nonBlocked_preserves_blockedOnReplyHasReplyObject
             st1 st2 waiter .ready _ hObjInv1 hInv1 (by simp) hSM
-          exact blockedOnReplyHasReplyObject_of_objectsAgreeOffRunLinks (ensureRunnable_objectsAgreeOffRunLinks st2 waiter) hInv2
+          exact blockedOnReplyHasReplyObject_of_objectsAgreeOffRunLinks (ensureRunnable_objectsAgreeOffRunLinks _ waiter)
+            (blockedOnReplyHasReplyObject_of_ntfnLinksRewritten (detachNtfnHead_linksRewritten _ _ _ (storeTcbIpcStateAndMessage_preserves_objects_invExt _ _ _ _ _ hObjInv1 hSM)) hInv2)
     | none =>
       simp only [hWaiters] at hStep
       split at hStep
@@ -7625,6 +7635,13 @@ theorem blockedOnReplyHasTarget_of_objectsAgreeOffRunLinks {st st' : SystemState
     blockedOnReplyHasTarget st' := by
   intro tid tcb ep rt hTcb hBlk
   run_links_back hA at tcb hTcb
+  exact h tid tcb ep rt hTcb hBlk
+
+theorem blockedOnReplyHasTarget_of_ntfnLinksRewritten {st st' : SystemState}
+    (hA : ntfnLinksRewritten st st') (h : blockedOnReplyHasTarget st) :
+    blockedOnReplyHasTarget st' := by
+  intro tid tcb ep rt hTcb hBlk
+  ntfn_links_back hA at tcb hTcb
   exact h tid tcb ep rt hTcb hBlk
 
 -- ============================================================================
@@ -11907,7 +11924,8 @@ theorem notificationSignal_preserves_blockedOnReplyHasTarget
           obtain ⟨_, rfl⟩ := hStep
           have hInv2 := storeTcbIpcStateAndMessage_preserves_blockedOnReplyHasTarget
             st1 st2 waiter .ready _ hObjInv1 hInv1 (by intro ep rt h; cases h) hSM
-          exact blockedOnReplyHasTarget_of_objectsAgreeOffRunLinks (ensureRunnable_objectsAgreeOffRunLinks st2 waiter) hInv2
+          exact blockedOnReplyHasTarget_of_objectsAgreeOffRunLinks (ensureRunnable_objectsAgreeOffRunLinks _ waiter)
+            (blockedOnReplyHasTarget_of_ntfnLinksRewritten (detachNtfnHead_linksRewritten _ _ _ (storeTcbIpcStateAndMessage_preserves_objects_invExt _ _ _ _ _ hObjInv1 hSM)) hInv2)
     | none =>
       simp only [hWaiters] at hStep
       split at hStep
@@ -12132,7 +12150,8 @@ theorem notificationSignal_sameSchedContextBindings
           simp only [Except.ok.injEq, Prod.mk.injEq] at hStep
           obtain ⟨_, rfl⟩ := hStep
           exact (hS1.trans (storeTcbIpcStateAndMessage_sameSchedContextBindings st1 st2 waiter .ready _ hObjInv1 hSM)).trans
-            (sameSchedContextBindings.of_objectsAgreeOffRunLinks (ensureRunnable_objectsAgreeOffRunLinks st2 waiter))
+            ((sameSchedContextBindings.of_ntfnLinksRewritten (detachNtfnHead_linksRewritten _ _ _ (storeTcbIpcStateAndMessage_preserves_objects_invExt _ _ _ _ _ hObjInv1 hSM))).trans
+              (sameSchedContextBindings.of_objectsAgreeOffRunLinks (ensureRunnable_objectsAgreeOffRunLinks _ waiter)))
     | none =>
       simp only [hWaiters] at hStep
       split at hStep
@@ -12180,7 +12199,8 @@ theorem notificationSignal_donationOwnerFrame
           obtain ⟨_, rfl⟩ := hStep
           refine (hF1.trans (storeTcbIpcStateAndMessage_donationOwnerFrame st1 st2 waiter .ready _
             (fun tcb hTcb1 ep rt => ?_) hObjInv1 hSM)).trans
-            (donationOwnerFrame.of_objectsAgreeOffRunLinks (ensureRunnable_objectsAgreeOffRunLinks st2 waiter))
+            ((donationOwnerFrame.of_ntfnLinksRewritten (detachNtfnHead_linksRewritten _ _ _ (storeTcbIpcStateAndMessage_preserves_objects_invExt _ _ _ _ _ hObjInv1 hSM))).trans
+              (donationOwnerFrame.of_objectsAgreeOffRunLinks (ensureRunnable_objectsAgreeOffRunLinks _ waiter)))
           rw [hWTcb1] at hTcb1
           obtain rfl := KernelObject.tcb.inj (Option.some.inj hTcb1)
           intro hcontra; rw [hWIpc] at hcontra; cases hcontra
@@ -12699,7 +12719,8 @@ theorem notificationSignal_preserves_replyCallerLinkageReciprocal
               rw [hWTcb1] at hTcb1
               obtain rfl := KernelObject.tcb.inj (Option.some.inj hTcb1)
               exact hUnlinked) hObjInv1 hSM)).trans ?_
-          exact replyLinkageFrame.of_objectsAgreeOffRunLinks (ensureRunnable_objectsAgreeOffRunLinks st2 waiter)
+          exact (replyLinkageFrame.of_ntfnLinksRewritten (detachNtfnHead_linksRewritten _ _ _ (storeTcbIpcStateAndMessage_preserves_objects_invExt _ _ _ _ _ hObjInv1 hSM))).trans
+            (replyLinkageFrame.of_objectsAgreeOffRunLinks (ensureRunnable_objectsAgreeOffRunLinks _ waiter))
     | none =>
       simp only [hWaiters] at hStep
       split at hStep
@@ -12905,7 +12926,8 @@ theorem notificationSignal_passiveServerIdleFrame
           obtain ⟨_, rfl⟩ := hStep
           exact (hF1.trans (storeTcbIpcStateAndMessage_passiveServerIdleFrame st1 st2 waiter .ready _
             (Or.inl (Or.inl rfl)) hObjInv1 hSM)).trans
-            (ensureRunnable_passiveServerIdleFrame st2 waiter)
+            ((passiveServerIdleFrame.of_ntfnLinksRewritten (detachNtfnHead_linksRewritten _ _ _ (storeTcbIpcStateAndMessage_preserves_objects_invExt _ _ _ _ _ hObjInv1 hSM))).trans
+              (ensureRunnable_passiveServerIdleFrame _ waiter))
     | none =>
       simp only [hWaiters] at hStep
       split at hStep
@@ -13021,7 +13043,8 @@ theorem notificationSignal_timeoutBudgetFrame
           obtain ⟨_, rfl⟩ := hStep
           exact (hF1.trans (storeTcbIpcStateAndMessage_timeoutBudgetFrame st1 st2 waiter .ready _
             hObjInv1 hSM)).trans
-            (timeoutBudgetFrame.of_objectsAgreeOffRunLinks (ensureRunnable_objectsAgreeOffRunLinks st2 waiter))
+            ((timeoutBudgetFrame.of_ntfnLinksRewritten (detachNtfnHead_linksRewritten _ _ _ (storeTcbIpcStateAndMessage_preserves_objects_invExt _ _ _ _ _ hObjInv1 hSM))).trans
+              (timeoutBudgetFrame.of_objectsAgreeOffRunLinks (ensureRunnable_objectsAgreeOffRunLinks _ waiter)))
     | none =>
       simp only [hWaiters] at hStep
       split at hStep
@@ -15214,7 +15237,8 @@ theorem notificationSignal_preserves_pendingReceiveReplyWellFormed
           have hInv2 := storeTcbIpcStateAndMessage_notReceiving_preserves_pendingReceiveReplyWellFormed
             st1 st2 waiter .ready _ hObjInv1 hInv1 ?_ hSM
           · exact pendingReceiveReplyWellFormed_of_objectsAgreeOffRunLinks
-              (ensureRunnable_objectsAgreeOffRunLinks st2 waiter) hInv2
+              (ensureRunnable_objectsAgreeOffRunLinks _ waiter)
+              (pendingReceiveReplyWellFormed_of_ntfnLinksRewritten (detachNtfnHead_linksRewritten _ _ _ (storeTcbIpcStateAndMessage_preserves_objects_invExt _ _ _ _ _ hObjInv1 hSM)) hInv2)
           · intro tcb' hTcb' ep h
             -- `waiter`'s TCB is unchanged by the notification store: derive its pre-state.
             have hNe : waiter.toObjId ≠ notificationId := by
@@ -18687,7 +18711,8 @@ theorem notificationSignal_preserves_queueNextBlockingConsistent
           simp only [Except.ok.injEq, Prod.mk.injEq] at hStep
           obtain ⟨_, rfl⟩ := hStep
           exact queueNextBlockingConsistent_of_objectsAgreeOffRunLinks
-            (ensureRunnable_objectsAgreeOffRunLinks st2 waiter)
+            (ensureRunnable_objectsAgreeOffRunLinks _ waiter)
+            <| queueNextBlockingConsistent_of_ntfnLinksRewritten (detachNtfnHead_linksRewritten _ _ _ (storeTcbIpcStateAndMessage_preserves_objects_invExt _ _ _ _ _ hObjInv1 hSM))
             (storeTcbIpcStateAndMessage_ready_preserves_queueNextBlockingConsistent
               st1 st2 waiter _ hInv1 hObjInv1 hSM)
     | none =>
@@ -18740,7 +18765,8 @@ theorem notificationSignal_preserves_queueHeadBlockedConsistent
             refine ⟨fun hHd => ?_, fun hHd => ?_⟩
             · have := (hInv1 epId' ep' waiter wTcb hEp' hWTcb1).1 hHd; rw [hWIpc] at this; cases this
             · rcases (hInv1 epId' ep' waiter wTcb hEp' hWTcb1).2 hHd with h | h <;> rw [hWIpc] at h <;> cases h
-          exact ensureRunnable_preserves_queueHeadBlockedConsistent st2 waiter
+          exact ensureRunnable_preserves_queueHeadBlockedConsistent _ waiter
+            <| queueHeadBlockedConsistent_of_ntfnLinksRewritten (detachNtfnHead_linksRewritten _ _ _ (storeTcbIpcStateAndMessage_preserves_objects_invExt _ _ _ _ _ hObjInv1 hSM))
             (storeTcbIpcStateAndMessage_preserves_queueHeadBlockedConsistent
               st1 st2 waiter .ready _ hInv1 hObjInv1 hSM hNotHead)
     | none =>
@@ -18787,7 +18813,8 @@ theorem notificationSignal_preserves_queueNextTargetBlocked
           have hWaiterNotBlocked : (∀ ep, wTcb.ipcState ≠ .blockedOnReceive ep) ∧
               (∀ ep, wTcb.ipcState ≠ .blockedOnSend ep) ∧ (∀ ep, wTcb.ipcState ≠ .blockedOnCall ep) :=
             ⟨fun ep => by rw [hWIpc]; simp, fun ep => by rw [hWIpc]; simp, fun ep => by rw [hWIpc]; simp⟩
-          exact ensureRunnable_preserves_queueNextTargetBlocked st2 waiter
+          exact ensureRunnable_preserves_queueNextTargetBlocked _ waiter
+            <| queueNextTargetBlocked_of_ntfnLinksRewritten (detachNtfnHead_linksRewritten _ _ _ (storeTcbIpcStateAndMessage_preserves_objects_invExt _ _ _ _ _ hObjInv1 hSM))
             (storeTcbIpcStateAndMessage_no_incoming_nonQueueBlocked_preserves_queueNextTargetBlocked
               st1 st2 waiter .ready _ hInv1 hObjInv1 ⟨fun _ => by simp, fun _ => by simp, fun _ => by simp⟩
               (queueNextTargetBlocked_no_incoming_of_notQueueBlocked st1 hInv1 waiter wTcb hWTcb1
@@ -18839,7 +18866,8 @@ theorem notificationSignal_preserves_endpointQueueTailBlockedConsistent
             refine ⟨fun hTl => ?_, fun hTl => ?_⟩
             · have := (hInv1 epId' ep' waiter wTcb hEp' hWTcb1).1 hTl; rw [hWIpc] at this; cases this
             · rcases (hInv1 epId' ep' waiter wTcb hEp' hWTcb1).2 hTl with h | h <;> rw [hWIpc] at h <;> cases h
-          exact ensureRunnable_preserves_endpointQueueTailBlockedConsistent st2 waiter
+          exact ensureRunnable_preserves_endpointQueueTailBlockedConsistent _ waiter
+            <| endpointQueueTailBlockedConsistent_of_ntfnLinksRewritten (detachNtfnHead_linksRewritten _ _ _ (storeTcbIpcStateAndMessage_preserves_objects_invExt _ _ _ _ _ hObjInv1 hSM))
             (storeTcbIpcStateAndMessage_preserves_endpointQueueTailBlockedConsistent
               st1 st2 waiter .ready _ hInv1 hObjInv1 hSM hNotTail)
     | none =>

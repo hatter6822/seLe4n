@@ -183,6 +183,43 @@ theorem ipcStateQueueMembershipConsistent_of_objectsAgreeOffRunLinks {st st' : S
   | .blockedOnReply _ _ => trivial
   | .blockedOnNotification _ => trivial
 
+/-- WS-ZA ZA4.4: a step that rewrites notification-queue links and nothing else
+keeps `ipcStateQueueMembershipConsistent` -- it reads IPC states, endpoints and
+`queueNext` links, none of which move. -/
+theorem ipcStateQueueMembershipConsistent_of_ntfnLinksRewritten {st s : SystemState}
+    (h : ntfnLinksRewritten st s) (hInv : ipcStateQueueMembershipConsistent st) :
+    ipcStateQueueMembershipConsistent s := by
+  intro tid tcb hTcb
+  obtain ⟨t, ht, ⟨np, nn, rfl⟩⟩ := h.tcb_bwd hTcb
+  have hPre := hInv tid t ht
+  have hEp : ∀ (epId : SeLe4n.ObjId) (ep : Endpoint),
+      st.objects[epId]? = some (.endpoint ep) → s.objects[epId]? = some (.endpoint ep) :=
+    fun epId ep hE => (h.obj_iff epId _ (fun _ => KernelObject.noConfusion)).mpr hE
+  have reach : ∀ {A : Prop},
+      (A ∨ ∃ (prev : SeLe4n.ThreadId) (prevTcb : TCB),
+        st.objects[prev.toObjId]? = some (.tcb prevTcb) ∧ prevTcb.queueNext = some tid) →
+      (A ∨ ∃ (prev : SeLe4n.ThreadId) (prevTcb : TCB),
+        s.objects[prev.toObjId]? = some (.tcb prevTcb) ∧ prevTcb.queueNext = some tid) :=
+    fun hReach =>
+    hReach.elim Or.inl (fun ⟨prev, prevTcb, hPrev, hNext⟩ => by
+      obtain ⟨p', hP', hQ⟩ := h.field_fwd TCB.queueNext (fun _ _ _ => rfl) hPrev
+      exact Or.inr ⟨prev, p', hP', hQ.trans hNext⟩)
+  show match t.ipcState with
+    | .blockedOnSend epId => _ | .blockedOnReceive epId => _ | .blockedOnCall epId => _ | _ => True
+  match hIpc : t.ipcState with
+  | .blockedOnSend epId =>
+    simp only [hIpc] at hPre; obtain ⟨ep, hE, hReach⟩ := hPre
+    exact ⟨ep, hEp _ _ hE, reach hReach⟩
+  | .blockedOnReceive epId =>
+    simp only [hIpc] at hPre; obtain ⟨ep, hE, hReach⟩ := hPre
+    exact ⟨ep, hEp _ _ hE, reach hReach⟩
+  | .blockedOnCall epId =>
+    simp only [hIpc] at hPre; obtain ⟨ep, hE, hReach⟩ := hPre
+    exact ⟨ep, hEp _ _ hE, reach hReach⟩
+  | .ready => trivial
+  | .blockedOnReply _ _ => trivial
+  | .blockedOnNotification _ => trivial
+
 /-- ensureRunnable preserves ipcStateQueueMembershipConsistent. -/
 theorem ensureRunnable_preserves_ipcStateQueueMembershipConsistent
     (st : SystemState) (tid : SeLe4n.ThreadId)
@@ -511,6 +548,9 @@ theorem notificationSignal_preserves_ipcStateQueueMembershipConsistent
             simp only [Except.ok.injEq, Prod.mk.injEq] at hStep
             obtain ⟨_, rfl⟩ := hStep
             exact ensureRunnable_preserves_ipcStateQueueMembershipConsistent _ _ <|
+              ipcStateQueueMembershipConsistent_of_ntfnLinksRewritten
+                (detachNtfnHead_linksRewritten _ _ _
+                  (storeTcbIpcStateAndMessage_preserves_objects_invExt _ _ _ _ _ hObjInv1 hMsg)) <|
               storeTcbIpcStateAndMessage_preserves_ipcStateQueueMembershipConsistent _ _ _ _ _ hInv1 hObjInv1
                 (fun epId => by intro h; cases h) (fun epId => by intro h; cases h)
                 (fun epId => by intro h; cases h) hMsg

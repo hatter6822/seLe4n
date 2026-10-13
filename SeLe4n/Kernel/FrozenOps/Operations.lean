@@ -412,11 +412,19 @@ def frozenNotificationSignal (notificationId : SeLe4n.ObjId)
                 match frozenLookupTcb st' waiter with
                 | none => .error .objectNotFound
                 | some waiterTcb =>
-                  match frozenStoreTcb waiter
+                  -- WS-ZA ZA4.4: the woken waiter leaves the queue holding no
+                  -- links, and its successor heads it with no predecessor
+                  -- (the live `detachNtfnHead`).
+                  match (frozenStoreTcb waiter
                       { waiterTcb with
                         ipcState := .ready,
                         pendingMessage :=
-                          some { IpcMessage.empty with badge := some badge } } st' with
+                          some { IpcMessage.empty with badge := some badge },
+                        ntfnPrevCode := SeLe4n.ThreadId.optCode none,
+                        ntfnNextCode := SeLe4n.ThreadId.optCode none } st').bind
+                      (fun r => (frozenModifyTcbOpt r.2 next
+                        (fun t => { t with ntfnPrevCode := SeLe4n.ThreadId.optCode none })).map
+                        (fun s => ((), s))) with
                   | .error e => .error e
                   | .ok ((), st'') =>
                     -- PR #873 round 15: the woken waiter re-enters the run queue,

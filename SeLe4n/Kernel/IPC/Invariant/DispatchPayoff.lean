@@ -2070,12 +2070,26 @@ private theorem witnessReachable3 : ipcReachable witnessSt3 := by
       · cases hLk; cases hMsg
       · cases hLk
   · refine ⟨fun oid ntfn hLk => ?_, fun tid tcb oid hLk hBl => ?_,
-      fun tid tcb oid hLk hBl => ?_⟩
+      fun tid tcb oid hLk hBl => ?_, fun oid ntfn h tcb hLk _ _ => ?_,
+      fun tid tcb hLk _ => ?_⟩
     · rw [witnessSt3_lookup] at hLk
       split at hLk
       · cases hLk
       · split at hLk
         · cases hLk
+        · cases hLk
+    rotate_left 2
+    · rw [witnessSt3_lookup] at hLk
+      split at hLk
+      · cases hLk
+      · split at hLk
+        · cases hLk
+        · cases hLk
+    · rw [witnessSt3_lookup] at hLk
+      split at hLk
+      · cases hLk
+      · split at hLk
+        · cases hLk; exact ⟨rfl, rfl⟩
         · cases hLk
     all_goals
       rw [witnessSt3_lookup] at hLk
@@ -2897,11 +2911,21 @@ private theorem witnessReachable4 : ipcReachable witnessSt4 := by
     · cases hLk
     · exact witnessReachable3.pendingMessageCapBadgesWellFormed _ _ _ hLk hMsg
   · refine ⟨fun oid ntfn hLk => ?_, fun tid tcb oid hLk hBl => ?_,
-      fun tid tcb oid hLk hBl => ?_⟩
+      fun tid tcb oid hLk hBl => ?_, fun oid ntfn h tcb hLk _ _ => ?_,
+      fun tid tcb hLk hNB => ?_⟩
     · rw [witnessSt4_lookup] at hLk
       split at hLk
       · cases hLk
       · exact absurd hLk (fun h => witnessSt3_no_notification _ _ h)
+    rotate_left 2
+    · rw [witnessSt4_lookup] at hLk
+      split at hLk
+      · cases hLk
+      · exact absurd hLk (fun h => witnessSt3_no_notification _ _ h)
+    · rw [witnessSt4_lookup] at hLk
+      split at hLk
+      · cases hLk
+      · exact witnessReachable3.notificationWaiterConsistent.2.2.2.2 tid tcb hLk hNB
     all_goals
       rw [witnessSt4_lookup] at hLk
       split at hLk

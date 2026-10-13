@@ -284,6 +284,63 @@ theorem dualQueueSystemInvariant_of_objectsAgreeOffRunLinks {st st' : SystemStat
     queuePPrevAgreesWithPrev_of_objectsAgreeOffRunLinks h hPP,
     endpointQueueHeadDisjoint_of_objectsAgreeOffRunLinks h hHD⟩
 
+/-! ### Steps that write nothing but notification-queue links
+
+WS-ZA ZA4.4: a notification pop or unlink rewrites only the two notification
+links of a TCB, which no dual-queue clause reads. -/
+
+theorem dualQueueSystemInvariant_of_ntfnLinksRewritten {st st' : SystemState}
+    (h : ntfnLinksRewritten st st') (hInv : dualQueueSystemInvariant st) :
+    dualQueueSystemInvariant st' := by
+  obtain ⟨hEp, hLink, hAcyclic, hPP, hHD⟩ := hInv
+  have hEpIff : ∀ (k : SeLe4n.ObjId) (ep : Endpoint), st'.objects[k]? = some (.endpoint ep) ↔
+      st.objects[k]? = some (.endpoint ep) := fun k ep =>
+    h.obj_iff k _ (fun _ e => by cases e)
+  have hQ : ∀ {q : IntrusiveQueue}, intrusiveQueueWellFormed q st →
+      intrusiveQueueWellFormed q st' := by
+    intro q ⟨hHT, hHead, hTail⟩
+    refine ⟨hHT, fun hd hh => ?_, fun tl ht => ?_⟩
+    · obtain ⟨t, hT, hp, hpp⟩ := hHead hd hh
+      obtain ⟨_, hT', ⟨_, _, rfl⟩⟩ := h.tcb_fwd hT
+      exact ⟨_, hT', hp, hpp⟩
+    · obtain ⟨t, hT, hn⟩ := hTail tl ht
+      obtain ⟨_, hT', ⟨_, _, rfl⟩⟩ := h.tcb_fwd hT
+      exact ⟨_, hT', hn⟩
+  have hPath : ∀ {a b}, QueueNextPath st' a b → QueueNextPath st a b := by
+    intro a b hp
+    induction hp with
+    | single x y tcbA hObj hNext =>
+      ntfn_links_back h at tcbA hObj
+      exact .single x y tcbA hObj hNext
+    | cons x y z tcbA hObj hNext _ ih =>
+      ntfn_links_back h at tcbA hObj
+      exact .cons x y z tcbA hObj hNext ih
+  refine ⟨fun epId ep hObj => ?_, ⟨fun a tA hA b hN => ?_, fun b tB hB a hP => ?_⟩,
+    fun tid hp => hAcyclic tid (hPath hp), fun tid tcb hT => ?_,
+    endpointQueueHeadDisjoint_of_endpointBackward (fun _ _ hE => (hEpIff _ _).mp hE) hHD⟩
+  · have hWf := hEp epId ep ((hEpIff _ _).mp hObj)
+    unfold dualQueueEndpointWellFormed at hWf ⊢
+    rw [hObj]; rw [(hEpIff _ _).mp hObj] at hWf
+    exact ⟨hQ hWf.1, hQ hWf.2⟩
+  · ntfn_links_back h at tA hA
+    obtain ⟨tB, hB, hP⟩ := hLink.1 a tA hA b hN
+    obtain ⟨_, hB', ⟨_, _, rfl⟩⟩ := h.tcb_fwd hB
+    exact ⟨_, hB', hP⟩
+  · ntfn_links_back h at tB hB
+    obtain ⟨tA, hA, hN⟩ := hLink.2 b tB hB a hP
+    obtain ⟨_, hA', ⟨_, _, rfl⟩⟩ := h.tcb_fwd hA
+    exact ⟨_, hA', hN⟩
+  · ntfn_links_back h at tcb hT
+    have hC := hPP tid tcb hT
+    exact hC
+
+theorem allPendingMessagesBounded_of_ntfnLinksRewritten {st st' : SystemState}
+    (h : ntfnLinksRewritten st st') (hInv : allPendingMessagesBounded st) :
+    allPendingMessagesBounded st' := by
+  intro tid tcb msg hT hM
+  ntfn_links_back h at tcb hT
+  exact hInv tid tcb msg hT hM
+
 /-- **PR #897 review**: a `storeObject` of a non-endpoint object carries the fifth
 conjunct — at the stored key the post-state holds that object, which is not an
 endpoint, and every other key agrees. -/

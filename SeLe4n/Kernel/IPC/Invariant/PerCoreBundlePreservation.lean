@@ -114,6 +114,16 @@ theorem trans {st st' st'' : SystemState} {c : CoreId}
     obtain ⟨tcb, hh, hUU, hQQ, hCC, hIpc⟩ := h1.pullback tid tcb' h' hU' hQ' hC' (hIpc' ▸ hNA)
     exact ⟨tcb, hh, hUU, hQQ, hCC, hIpc.trans hIpc'⟩⟩
 
+/-- WS-ZA ZA4.4: a rewrite of notification-queue links frames every core's
+slice: the scheduler is untouched and every TCB keeps its binding and IPC state. -/
+theorem of_ntfnLinksRewritten {st st' : SystemState} {c : CoreId}
+    (h : ntfnLinksRewritten st st') : passiveServerIdleFrameOnCore st st' c := by
+  refine ⟨fun tid tcb' hT hU hQ hC _ => ?_⟩
+  rw [h.scheduler_eq] at hQ hC
+  have hT' := (SystemState.getTcb?_eq_some_iff _ tid tcb').mp hT
+  ntfn_links_back h at tcb' hT'
+  exact ⟨tcb', (SystemState.getTcb?_eq_some_iff _ tid tcb').mpr hT', hU, hQ, hC, rfl⟩
+
 end passiveServerIdleFrameOnCore
 
 /-- WS-SM SM6.D.2: a transition that preserves every TCB's `ipcState` and
@@ -617,7 +627,9 @@ theorem notificationSignal_passiveServerIdleFrameOnCore
           obtain ⟨_, rfl⟩ := hStep
           exact (hF1.trans (storeTcbIpcStateAndMessage_passiveServerIdleFrameOnCore st1 st2 waiter .ready _
             (Or.inl (Or.inl rfl)) hObjInv1 hSM)).trans
-            (ensureRunnable_passiveServerIdleFrameOnCore st2 waiter)
+            ((passiveServerIdleFrameOnCore.of_ntfnLinksRewritten (detachNtfnHead_linksRewritten _ _ _
+              (storeTcbIpcStateAndMessage_preserves_objects_invExt _ _ _ _ _ hObjInv1 hSM))).trans
+              (ensureRunnable_passiveServerIdleFrameOnCore _ waiter))
     | none =>
       simp only [hWaiters] at hStep
       split at hStep

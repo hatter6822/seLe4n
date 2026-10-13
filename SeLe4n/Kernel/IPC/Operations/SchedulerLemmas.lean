@@ -804,7 +804,11 @@ theorem notificationSignal_respects_pipBoost
       obtain ⟨tcb, hLk, hS⟩ := modifyTcb_ok_decompose hMsg
       have hInv1 := storeObject_preserves_objects_invExt st st1 _ _ hObjInv hStore
       have h3 := storeObject_objects_eq st1 st3 waiter.toObjId _ hInv1 hS
-      refine ensureRunnable_mem_self _ _ ⟨_, h3⟩ ?_
+      -- The pop's link writes rewrite the waiter's notification links only.
+      have hR := detachNtfnHead_linksRewritten st3 waiter (ntfnSuccessor? st waiter)
+        (storeObject_preserves_objects_invExt _ _ _ _ hInv1 hS)
+      obtain ⟨t4, h4, ⟨np, nn, hT4⟩⟩ := hR.tcb_fwd h3
+      refine ensureRunnable_mem_self _ _ ⟨_, h4⟩ ?_
       -- Admission reads only the waiter's placement code, which neither store
       -- changes: the notification store is at another key (the waiter's key
       -- holds a TCB in `st1`), and the waiter store rewrites its IPC fields.
@@ -819,7 +823,7 @@ theorem notificationSignal_respects_pipBoost
         exact h1
       unfold SystemState.runEnqueueAdmits at hAdm ⊢
       rw [(SystemState.getTcb?_eq_some_iff _ _ _).mpr h0] at hAdm
-      rw [(SystemState.getTcb?_eq_some_iff _ _ _).mpr h3]
+      rw [(SystemState.getTcb?_eq_some_iff _ _ _).mpr h4, hT4]
       exact hAdm
 
 end SeLe4n.Kernel

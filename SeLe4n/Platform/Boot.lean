@@ -1786,9 +1786,10 @@ theorem bootSafeCnodeCheck_caps {cn : CNode}
     `timedOut`, `registerContext` and `pendingFault` are zero-valued
     by their own defaults and a config that sets them describes a thread mid
     flight, which `threadState = .Inactive` already excludes.  The
-    notification-queue links (`ntfnPrevCode`, `ntfnNextCode`) are read only
-    while the thread is blocked on a notification, which `ipcState = .ready`
-    excludes, and the wait that blocks it writes both; the other run-queue
+    notification-queue links (`ntfnPrev`, `ntfnNext`) must be empty: the
+    notification-waiter invariant requires every thread blocked on no
+    notification to hold none (as seL4 clears `tcbEPNext`/`tcbEPPrev` on
+    dequeue), so a boot TCB carrying one is refused; the run-queue
     fields (`runPrio`, `runPrevCode`, `runNextCode`, `runBucketPrevCode`,
     `runBucketNextCode`) likewise are read only while `runCoreCode` names a
     core, and the enqueue that sets it writes them all. -/
@@ -1807,7 +1808,8 @@ def bootSafeTcbCheck (tcb : TCB) : Bool :=
     tcb.replyObject.isNone &&
     tcb.pendingReceiveReply.isNone &&
     decide (tcb.threadState = .Inactive) &&
-    decide (tcb.runCoreCode = 0)
+    decide (tcb.runCoreCode = 0) &&
+    tcb.ntfnPrev.isNone && tcb.ntfnNext.isNone
 
 @[simp] theorem bootSafeTcbCheck_def (tcb : TCB) :
     bootSafeTcbCheck tcb =
@@ -1818,7 +1820,8 @@ def bootSafeTcbCheck (tcb : TCB) : Bool :=
        tcb.replyObject.isNone &&
        tcb.pendingReceiveReply.isNone &&
        decide (tcb.threadState = .Inactive) &&
-       decide (tcb.runCoreCode = 0)) := rfl
+       decide (tcb.runCoreCode = 0) &&
+       tcb.ntfnPrev.isNone && tcb.ntfnNext.isNone) := rfl
 
 /-- A boot **untyped** region is *pristine*: nothing has been carved from it
     and it descends from nothing.  `watermark = 0` and `children = []`,
@@ -1984,7 +1987,8 @@ private theorem bootSafeObjectCheck_sound_core (obj : KernelObject)
       tcb.schedContextBinding = .unbound ∧
       tcb.replyObject = none ∧
       tcb.pendingReceiveReply = none ∧
-      tcb.threadState = .Inactive ∧ tcb.runCoreCode = 0) ∧
+      tcb.threadState = .Inactive ∧ tcb.runCoreCode = 0 ∧
+      tcb.ntfnPrev = none ∧ tcb.ntfnNext = none) ∧
     -- WS-BP BP3.2: a configured VSpaceRoot is a thread's — admitted iff
     -- bootSafeUserVSpaceRoot (a user ASID, no mappings)
     (∀ vs, obj = .vspaceRoot vs →
@@ -2038,10 +2042,10 @@ private theorem bootSafeObjectCheck_sound_core (obj : KernelObject)
   | tcb tcb =>
     simp only [bootSafeObjectCheck, bootSafeTcbCheck_def, Bool.and_eq_true,
       decide_eq_true_eq] at h
-    obtain ⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨h1, h2⟩, h3⟩, h4⟩, h4b⟩, h5⟩, h6⟩, h7⟩, h8⟩, h9⟩, hRun⟩ := h
+    obtain ⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨h1, h2⟩, h3⟩, h4⟩, h4b⟩, h5⟩, h6⟩, h7⟩, h8⟩, h9⟩, hRun⟩, hNP⟩, hNN⟩ := h
     exact ⟨fun _ he => by injection he, fun _ he => by injection he,
            fun _ he => by injection he,
-           fun _ he => by injection he; subst_vars; exact ⟨Option.eq_none_of_isNone h1, h2, Option.eq_none_of_isNone h3, Option.eq_none_of_isNone h4, Option.eq_none_of_isNone h4b, Option.eq_none_of_isNone h5, h6, Option.eq_none_of_isNone h7, Option.eq_none_of_isNone h8, h9, hRun⟩,
+           fun _ he => by injection he; subst_vars; exact ⟨Option.eq_none_of_isNone h1, h2, Option.eq_none_of_isNone h3, Option.eq_none_of_isNone h4, Option.eq_none_of_isNone h4b, Option.eq_none_of_isNone h5, h6, Option.eq_none_of_isNone h7, Option.eq_none_of_isNone h8, h9, hRun, Option.eq_none_of_isNone hNP, Option.eq_none_of_isNone hNN⟩,
            fun _ he => by injection he, fun _ he => by injection he,
            fun _ he => by injection he, fun _ he => by injection he⟩
   | vspaceRoot vsr =>
@@ -2133,7 +2137,8 @@ theorem bootSafeObjectCheck_sound (obj : KernelObject)
       tcb.schedContextBinding = .unbound ∧
       tcb.replyObject = none ∧
       tcb.pendingReceiveReply = none ∧
-      tcb.threadState = .Inactive ∧ tcb.runCoreCode = 0) ∧
+      tcb.threadState = .Inactive ∧ tcb.runCoreCode = 0 ∧
+      tcb.ntfnPrev = none ∧ tcb.ntfnNext = none) ∧
     (∀ vs, obj = .vspaceRoot vs →
       SeLe4n.Platform.RPi5.VSpaceBoot.bootSafeUserVSpaceRoot vs) ∧
     (∀ sc, obj = .schedContext sc →
@@ -5270,7 +5275,10 @@ def bootSafeObject (obj : KernelObject) : Prop :=
     -- PR #889 review: neither current nor queued at boot ⟹ `.Inactive`.
     tcb.threadState = .Inactive ∧
     -- WS-ZA ZA4.5: and on no core's run queue, whose membership the TCB holds.
-    tcb.runCoreCode = 0) ∧
+    tcb.runCoreCode = 0 ∧
+    -- PR #932 review: and on no notification queue (seL4 clears both links
+    -- on dequeue; the notification-waiter invariant requires it).
+    tcb.ntfnPrev = none ∧ tcb.ntfnNext = none) ∧
   -- WS-BP BP3.2: a configured VSpaceRoot is a thread's — admitted iff
   -- bootSafeUserVSpaceRoot (a user ASID, no mappings)
   (∀ vs, obj = .vspaceRoot vs →
@@ -5371,7 +5379,8 @@ def bootObjectShape (obj : KernelObject) : Prop :=
     tcb.timeoutBudget = none ∧
     tcb.schedContextBinding = .unbound ∧
     tcb.replyObject = none ∧
-    tcb.pendingReceiveReply = none) ∧
+    tcb.pendingReceiveReply = none ∧
+    tcb.ntfnPrev = none ∧ tcb.ntfnNext = none) ∧
   (∀ vs, obj = .vspaceRoot vs →
     SeLe4n.Platform.RPi5.VSpaceBoot.bootVSpaceRootMappingsSafe vs) ∧
   (∀ sc, obj = .schedContext sc →
@@ -5391,7 +5400,8 @@ theorem bootSafeObject_bootObjectShape {obj : KernelObject} (h : bootSafeObject 
    fun tcb hEq =>
      let t := h.2.2.2.1 tcb hEq
      ⟨t.1, t.2.1, t.2.2.1, t.2.2.2.1, t.2.2.2.2.1, t.2.2.2.2.2.1, t.2.2.2.2.2.2.1,
-      t.2.2.2.2.2.2.2.1, t.2.2.2.2.2.2.2.2.1⟩,
+      t.2.2.2.2.2.2.2.1, t.2.2.2.2.2.2.2.2.1, t.2.2.2.2.2.2.2.2.2.2.2.1,
+      t.2.2.2.2.2.2.2.2.2.2.2.2⟩,
    fun vs hEq =>
      SeLe4n.Platform.RPi5.VSpaceBoot.bootSafeUserVSpaceRoot_mappingsSafe
        (h.2.2.2.2.1 vs hEq) (hMappings vs hEq),
@@ -5412,14 +5422,14 @@ theorem bootSafeVSpaceRoot_bootObjectShape {vs : VSpaceRoot}
 theorem queuedIdleThread_bootObjectShape (c : SeLe4n.Kernel.Concurrency.CoreId) :
     bootObjectShape (.tcb (queuedIdleThread c)) := by
   refine ⟨?_, ?_, ?_, ?_, ?_, ?_, ?_⟩ <;> intro x hx <;> cases hx
-  exact ⟨rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl⟩
+  exact ⟨rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl⟩
 
 /-- **WS-ZA ZA4.5**: ...and so does the idle TCB linked in as its queue's only
     member — the run-queue links are not among the fields the shape reads. -/
 theorem idleThreadQueuedAlone_bootObjectShape (c : SeLe4n.Kernel.Concurrency.CoreId) :
     bootObjectShape (.tcb (idleThreadQueuedAlone c)) := by
   refine ⟨?_, ?_, ?_, ?_, ?_, ?_, ?_⟩ <;> intro x hx <;> cases hx
-  exact ⟨rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl⟩
+  exact ⟨rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl⟩
 
 -- ============================================================================
 -- V4-A4b: Boot-safe object bridge — connect boot state objects to bootSafe
@@ -5873,11 +5883,11 @@ theorem proofLayerInvariantBundle_of_bootShape (ist : IntermediateState)
         rw [hTcb.2.1] at hIpc; cases hIpc
       · have hObjRaw := (SystemState.getTcb?_eq_some_iff _ tid tcb).mp hObj
         have hTcb := (hBS tid.toObjId _ hObjRaw).2.2.2.1 tcb rfl
-        rw [hTcb.2.2.2.2.2.2.2.2] at hRep; cases hRep
+        rw [hTcb.2.2.2.2.2.2.2.2.1] at hRep; cases hRep
       · -- pendingReceiveReplyWellFormed uniqueness (17th.2): boot TCBs carry no stash.
         have hObjRaw := (SystemState.getTcb?_eq_some_iff _ tid₁ tcb₁).mp hObj₁
         have hTcb := (hBS tid₁.toObjId _ hObjRaw).2.2.2.1 tcb₁ rfl
-        rw [hTcb.2.2.2.2.2.2.2.2] at hRep₁; cases hRep₁
+        rw [hTcb.2.2.2.2.2.2.2.2.1] at hRep₁; cases hRep₁
       · -- IPC de-threading D6: donationOwnerUnique (18th, vacuous — boot TCBs are .unbound).
         have hTcb := (hBS tidA.toObjId _ hA).2.2.2.1 tcbA rfl
         rw [hTcb.2.2.2.2.2.2.1] at hBA; cases hBA
@@ -6115,14 +6125,22 @@ theorem proofLayerInvariantBundle_of_bootShape (ist : IntermediateState)
           rw [hTcbProps.2.2.2.2.2.2.1] at hBound; cases hBound
         | _ => trivial
   -- AG7-D, WS-ZA ZA4.4: notificationWaiterConsistent — boot notifications
-  -- have empty queues and no boot TCB is blocked on anything.
+  -- have empty queues, no boot TCB is blocked on anything, and no boot TCB
+  -- holds a notification-queue link.
   have hNtfnWaiter : notificationWaiterConsistent ist.state := by
     refine ⟨fun oid ntfn hObj => ?_, fun tid tcb oid hObj hBl => ?_,
-      fun tid tcb oid hObj hBl => ?_⟩
+      fun tid tcb oid hObj hBl => ?_, fun oid ntfn h tcb hObj hH _ => ?_,
+      fun tid tcb hObj _ => ?_⟩
     · have hNtfn := (hBS oid _ hObj).2.1 ntfn rfl
       refine ⟨by rw [hNtfn.2.1, hNtfn.2.2.1], fun h hH => ?_, fun t hT => ?_⟩
       · rw [hNtfn.2.1] at hH; cases hH
       · rw [hNtfn.2.2.1] at hT; cases hT
+    rotate_left 2
+    · -- a boot notification has no queue head
+      rw [((hBS oid _ hObj).2.1 ntfn rfl).2.1] at hH; cases hH
+    · -- and no boot TCB holds a notification link
+      have hTcbProps := (hBS tid.toObjId _ hObj).2.2.2.1 tcb rfl
+      exact ⟨hTcbProps.2.2.2.2.2.2.2.2.2.1, hTcbProps.2.2.2.2.2.2.2.2.2.2⟩
     all_goals
       have hTcbProps := (hBS tid.toObjId _ hObj).2.2.2.1 tcb rfl
       rw [hTcbProps.2.1] at hBl; cases hBl
@@ -6287,7 +6305,7 @@ theorem bootFromPlatform_proofLayerInvariantBundle_general
       (fun t tcb hT => ?_)
     have hSafeObj := bootFromPlatform_objects_bootSafe config hSafe _ _
       ((SystemState.getTcb?_eq_some_iff _ _ _).mp hT)
-    exact (hSafeObj.2.2.2.1 tcb rfl).2.2.2.2.2.2.2.2.2.2
+    exact (hSafeObj.2.2.2.1 tcb rfl).2.2.2.2.2.2.2.2.2.2.1
 
 -- ============================================================================
 -- V4-A9: End-to-end bridge for general configs
@@ -6758,7 +6776,8 @@ theorem bootFromPlatformChecked_ok_tcb_bootSafeFields (config : PlatformConfig)
       tcb.schedContextBinding = .unbound ∧
       tcb.replyObject = none ∧
       tcb.pendingReceiveReply = none ∧
-      tcb.threadState = .Inactive ∧ tcb.runCoreCode = 0 := by
+      tcb.threadState = .Inactive ∧ tcb.runCoreCode = 0 ∧
+      tcb.ntfnPrev = none ∧ tcb.ntfnNext = none := by
   obtain ⟨_, hSafe, hShape⟩ := bootFromPlatformChecked_ok_shape config ist h
   have hPlain : (bootFromPlatform config).state.objects[oid]? = some (KernelObject.tcb tcb) := by
     rcases hShape with ⟨_, rfl⟩ | ⟨entry, _, rfl⟩
@@ -6795,7 +6814,7 @@ theorem bootFromPlatformChecked_ok_runQueueRefined (config : PlatformConfig)
   refine SystemState.runQueueRefined_of_default_queues (by rw [hSch]) (by rw [hSch])
     (fun t tcb hT => ?_)
   exact (bootFromPlatformChecked_ok_tcb_bootSafeFields config ist h _ tcb
-    ((SystemState.getTcb?_eq_some_iff _ _ _).mp hT)).2.2.2.2.2.2.2.2.2.2
+    ((SystemState.getTcb?_eq_some_iff _ _ _).mp hT)).2.2.2.2.2.2.2.2.2.2.1
 
 /-- WS-ZA ZA4.5: the idle fold keeps the run queues in agreement with the
 threads' links — each step's idle slot is fresh, so no queue holds its idle

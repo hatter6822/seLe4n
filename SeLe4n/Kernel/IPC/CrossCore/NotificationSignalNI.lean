@@ -84,6 +84,22 @@ theorem modifyTcbOpt_preserves_projectionOnCore (ctx : LabelingContext) (observe
   | none => unfold modifyTcbOpt at h; cases h; rfl
   | some t => exact modifyTcb_preserves_projectionOnCore ctx observer c (hHigh t rfl) hObjInv h
 
+/-- PR #932 review: the per-core form of `detachNtfnHead_preserves_projection` —
+the pop rewrites only TCB links, never a scheduler slot or the machine. -/
+theorem detachNtfnHead_preserves_projectionOnCore (ctx : LabelingContext)
+    (observer : IfObserver) (c : CoreId) (st : SystemState) (head : SeLe4n.ThreadId)
+    (next : Option SeLe4n.ThreadId)
+    (hHead : objectObservable ctx observer head.toObjId = false)
+    (hNext : ∀ n, next = some n → objectObservable ctx observer n.toObjId = false)
+    (hInv : st.objects.invExt) :
+    projectStateOnCore ctx observer (detachNtfnHead st head next) c =
+      projectStateOnCore ctx observer st c :=
+  projectStateOnCore_congr ctx observer
+    (detachNtfnHead_preserves_projection ctx observer st head next hHead hNext hInv)
+    (by rw [detachNtfnHead_scheduler]) (by rw [detachNtfnHead_scheduler])
+    (by rw [detachNtfnHead_scheduler]) (by rw [detachNtfnHead_scheduler])
+    (by rw [detachNtfnHead_scheduler]) (by rw [detachNtfnHead_machine])
+
 -- ============================================================================
 -- §2  SM6.B.7 — boot-core non-interference (`projectState`)
 -- ============================================================================
@@ -92,8 +108,9 @@ theorem modifyTcbOpt_preserves_projectionOnCore (ctx : LabelingContext) (observe
 notification signal at a **non-observable** notification, waking a non-observable
 waiter, is invisible to a low observer — `projectState` of the post-state equals
 that of the pre-state.  No covert channel is opened: the notification-object write
-(badge / waiter-list mutation), the waiter's `ipcState := .ready` write, and the
-cross-core waiter wake all touch only high state. -/
+(badge / waiter-list mutation), the waiter's `ipcState := .ready` write, the
+pop's link rewrite on the waiter and its successor (the successor high too,
+`hSuccHigh`), and the cross-core waiter wake all touch only high state. -/
 theorem notificationSignalOnCore_signal_path_NI
     (ctx : LabelingContext) (observer : IfObserver)
     (notificationId : SeLe4n.ObjId) (badge : SeLe4n.Badge) (executingCore : CoreId)
@@ -109,7 +126,9 @@ theorem notificationSignalOnCore_signal_path_NI
     (hObjInv : st.objects.invExt)
     (hNtfnHigh : objectObservable ctx observer notificationId = false)
     (hWaiterHigh : threadObservable ctx observer waiter = false)
-    (hWaiterObjHigh : objectObservable ctx observer waiter.toObjId = false) :
+    (hWaiterObjHigh : objectObservable ctx observer waiter.toObjId = false)
+    (hSuccHigh : ∀ n, ntfnSuccessor? st waiter = some n →
+      objectObservable ctx observer n.toObjId = false) :
     projectState ctx observer (notificationSignalOnCore notificationId badge executingCore st).1
       = projectState ctx observer st := by
   have hInv' : st'.objects.invExt :=
@@ -118,10 +137,14 @@ theorem notificationSignalOnCore_signal_path_NI
     storeTcbIpcStateAndMessage_preserves_objects_invExt st' st'' waiter _ _ hInv' hMsg
   rw [notificationSignalOnCore_waiter_eq notificationId badge executingCore st ntfn
         waiter st' st'' hObj hWaiters hStore hMsg]
-  show projectState ctx observer (wakeThread st'' waiter executingCore).1
+  have hInvD := (detachNtfnHead_linksRewritten st'' waiter (ntfnSuccessor? st waiter) hInv'').2.1
+  show projectState ctx observer
+      (wakeThread (detachNtfnHead st'' waiter (ntfnSuccessor? st waiter)) waiter executingCore).1
     = projectState ctx observer st
-  rw [wakeThread_preserves_projection ctx observer st'' waiter executingCore
-        hWaiterHigh hWaiterObjHigh hInv'',
+  rw [wakeThread_preserves_projection ctx observer _ waiter executingCore
+        hWaiterHigh hWaiterObjHigh hInvD,
+      detachNtfnHead_preserves_projection ctx observer st'' waiter _ hWaiterObjHigh hSuccHigh
+        hInv'',
       storeTcbIpcStateAndMessage_preserves_projection ctx observer st' st'' waiter _ _
         hWaiterObjHigh hInv' hMsg,
       storeObject_preserves_projection ctx observer st st' notificationId _ hNtfnHigh hObjInv hStore]
@@ -155,7 +178,9 @@ theorem notificationSignalOnCore_signal_path_NI_smp
     (hObjInv : st.objects.invExt)
     (hNtfnHigh : objectObservable ctx observer notificationId = false)
     (hWaiterHigh : threadObservable ctx observer waiter = false)
-    (hWaiterObjHigh : objectObservable ctx observer waiter.toObjId = false) :
+    (hWaiterObjHigh : objectObservable ctx observer waiter.toObjId = false)
+    (hSuccHigh : ∀ n, ntfnSuccessor? st waiter = some n →
+      objectObservable ctx observer n.toObjId = false) :
     lowEquivalent_smp ctx observer
       (notificationSignalOnCore notificationId badge executingCore st).1 st := by
   intro c
@@ -168,10 +193,14 @@ theorem notificationSignalOnCore_signal_path_NI_smp
     = projectStateOnCore ctx observer st c
   rw [notificationSignalOnCore_waiter_eq notificationId badge executingCore st ntfn
         waiter st' st'' hObj hWaiters hStore hMsg]
-  show projectStateOnCore ctx observer (wakeThread st'' waiter executingCore).1 c
+  have hInvD := (detachNtfnHead_linksRewritten st'' waiter (ntfnSuccessor? st waiter) hInv'').2.1
+  show projectStateOnCore ctx observer
+      (wakeThread (detachNtfnHead st'' waiter (ntfnSuccessor? st waiter)) waiter executingCore).1 c
     = projectStateOnCore ctx observer st c
-  rw [wakeThread_preserves_projectionOnCore ctx observer st'' waiter executingCore c
-        hWaiterHigh hWaiterObjHigh hInv'',
+  rw [wakeThread_preserves_projectionOnCore ctx observer _ waiter executingCore c
+        hWaiterHigh hWaiterObjHigh hInvD,
+      detachNtfnHead_preserves_projectionOnCore ctx observer c st'' waiter _ hWaiterObjHigh
+        hSuccHigh hInv'',
       storeTcbIpcStateAndMessage_preserves_projectionOnCore ctx observer st' st'' waiter .ready _ c
         hWaiterObjHigh hInv' hMsg,
       storeObject_preserves_projectionOnCore ctx observer st st' notificationId _ c

@@ -680,7 +680,9 @@ theorem default_system_state_proofLayerInvariantBundle :
   -- 11. notificationWaiterConsistent (AG7-D: empty objects → vacuous)
   · exact ⟨fun _ _ hObj => default_objects_absurd hObj,
       fun _ _ _ hObj _ => default_objects_absurd hObj,
-      fun _ _ _ hObj _ => default_objects_absurd hObj⟩
+      fun _ _ _ hObj _ => default_objects_absurd hObj,
+      fun _ _ _ _ hObj _ _ => default_objects_absurd hObj,
+      fun _ _ hObj _ => default_objects_absurd hObj⟩
   -- 12. pendingBounded (WS-SM SM7.B: boot shootdown state is quiescent)
   · exact default_tlbShootdown_pendingBounded
   -- 13. tlbInvalidationConsistent_perCore (WS-SM SM7.C: every core's boot

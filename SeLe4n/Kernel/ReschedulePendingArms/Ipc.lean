@@ -1159,6 +1159,17 @@ theorem storeTcbIpcState_keyFrame {st st' : SystemState} {tid : SeLe4n.ThreadId}
   unfold storeTcbIpcState at h
   exact modifyTcb_keyFrame (f := fun tcb => { tcb with ipcState := ipc }) (fun _ => rfl) hInv h
 
+/-- PR #932 review: the signal's pop rewrites only notification links, which
+are no key input. -/
+theorem detachNtfnHead_keyFrame {st : SystemState} (head : SeLe4n.ThreadId)
+    (next : Option SeLe4n.ThreadId) (hInv : st.objects.invExt) :
+    capabilityKeyFrame st (detachNtfnHead st head next) := by
+  have hD := detachNtfnHead_linksRewritten st head next hInv
+  refine ⟨fun oid => ?_, hD.scheduler_eq, hD.2.1⟩
+  rcases hD.2.2 oid with e | ⟨t0, t1, h0, h1, np, nn, rfl⟩
+  · rw [e]
+  · rw [h0, h1]; rfl
+
 /-- The per-core signal covers on every outcome. -/
 theorem notificationSignalOnCore_stepCovers (e : CoreId) {notificationId : SeLe4n.ObjId}
     {badge : SeLe4n.Badge} {executingCore : CoreId} {st : SystemState}
@@ -1184,8 +1195,10 @@ theorem notificationSignalOnCore_stepCovers (e : CoreId) {notificationId : SeLe4
         · exact hRefl
         · rename_i st2 hT
           have hF2 := hF1.trans (storeTcbIpcStateAndMessage_keyFrame hF1.2.2 hT)
-          exact (wakeThread_stepCovers e st2 _ executingCore hF2.2.2).imp_left
-            (stepCovers_trans hF2.stepCovers)
+          have hI2 := storeTcbIpcStateAndMessage_preserves_objects_invExt _ _ _ _ _ hF1.2.2 hT
+          exact (wakeThread_stepCovers e _ _ executingCore
+            (hF2.trans (detachNtfnHead_keyFrame _ _ hI2)).2.2).imp_left
+            (stepCovers_trans (hF2.trans (detachNtfnHead_keyFrame _ _ hI2)).stepCovers)
     · dsimp only
       cases hS : storeObject notificationId _ st with
       | error _ => exact hRefl

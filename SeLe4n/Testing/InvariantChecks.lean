@@ -383,7 +383,8 @@ by clause.  Each notification's queue ends are both present or both absent, are
 TCBs blocked on it, and the tail has no successor; each TCB blocked on a
 notification is its head or has a predecessor linking back to it, is its tail
 when it has no successor, a successor it has links back to it, and it is reached
-by walking the queue from the head. -/
+by walking the queue from the head.  A queue's head has no predecessor, and a
+TCB blocked on no notification holds no notification link (PR #932 review). -/
 private def notificationWaiterConsistentChecks (objectIds : List SeLe4n.ObjId) (st : SystemState) : List (String × Bool) :=
   objectIds.foldr (fun oid acc =>
     -- AK7-F.reader.hygiene: AL2-A typed helper adoption.
@@ -393,7 +394,8 @@ private def notificationWaiterConsistentChecks (objectIds : List SeLe4n.ObjId) (
           (ntfn.waitHead.isNone == ntfn.waitTail.isNone) &&
           ntfn.waitHead.all (blockedOnNotificationB st oid) &&
           ntfn.waitTail.all (fun t => blockedOnNotificationB st oid t &&
-            ((st.getTcb? t).bind (·.ntfnNext)).isNone)
+            ((st.getTcb? t).bind (·.ntfnNext)).isNone) &&
+          ntfn.waitHead.all (fun h => ((st.getTcb? h).bind (·.ntfnPrev)).isNone)
         (s!"notification queue ends consistent: oid={oid}", endsOk) :: acc
     | none =>
       match st.getTcb? (SeLe4n.ThreadId.ofNat oid.toNat) with
@@ -413,7 +415,9 @@ private def notificationWaiterConsistentChecks (objectIds : List SeLe4n.ObjId) (
                 (notificationQueueWalk st (objectIds.length + 1) ntfn.waitHead).contains tid
             | none => false
           (s!"notification waiter linked consistently: tid={oid}", ok) :: acc
-        | _ => acc
+        | _ =>
+          (s!"unblocked thread holds no notification link: tid={oid}",
+            tcb.ntfnPrev.isNone && tcb.ntfnNext.isNone) :: acc
       | none => acc) []
 
 /-- WS-G4: RunQueue internal consistency — every thread the boot core's queue

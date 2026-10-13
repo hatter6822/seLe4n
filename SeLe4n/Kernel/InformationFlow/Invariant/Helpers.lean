@@ -239,6 +239,34 @@ theorem projectObjects_of_objectsAgreeOffRunLinks
       | _ => rw [h.get_of_not_tcb (fun _ e => KernelObject.noConfusion e) e]
   · rfl
 
+/-- A step that changes nothing outside the object table, and nothing the
+observer projects inside it, preserves the projection. -/
+theorem projectState_of_objects_only (ctx : LabelingContext) (observer : IfObserver)
+    {s st : SystemState} (hS : s = { st with objects := s.objects })
+    (hO : projectObjects ctx observer s = projectObjects ctx observer st) :
+    projectState ctx observer s = projectState ctx observer st := by
+  unfold projectState
+  rw [hO, hS]
+  rfl
+
+/-- WS-ZA ZA4.4: a signal's pop writes the old head and its successor, each only
+in its notification links; with both threads high the projection is unchanged. -/
+theorem detachNtfnHead_preserves_projection (ctx : LabelingContext) (observer : IfObserver)
+    (st : SystemState) (head : SeLe4n.ThreadId) (next : Option SeLe4n.ThreadId)
+    (hHead : objectObservable ctx observer head.toObjId = false)
+    (hNext : ∀ n, next = some n → objectObservable ctx observer n.toObjId = false)
+    (hInv : st.objects.invExt) :
+    projectState ctx observer (detachNtfnHead st head next) = projectState ctx observer st := by
+  refine projectState_of_objects_only ctx observer (detachNtfnHead_eq_objects st head next hInv) ?_
+  funext o
+  unfold projectObjects SystemState.getObject?
+  split
+  · rename_i hObs
+    rw [detachNtfnHead_objects_ne st head next hInv o
+      (fun e => by rw [e, hObs] at hHead; cases hHead)
+      (fun n hn e => by have h := hNext n hn; rw [e, hObs] at h; cases h)]
+  · rfl
+
 /-- Removing a non-observable thread preserves low-equivalence projection. -/
 theorem removeRunnable_preserves_projection
     (ctx : LabelingContext) (observer : IfObserver)
@@ -1245,7 +1273,10 @@ theorem lifecycleRetypeObject_preserves_lowEquivalent
 -- WS-F3/F-21: notificationSignal non-interference
 -- ============================================================================
 
-/-- WS-F3/F-21: notificationSignal at non-observable entities preserves projection. -/
+/-- WS-F3/F-21: notificationSignal at non-observable entities preserves projection.
+WS-ZA ZA4.4: a wake also clears the woken head's successor's predecessor link
+(seL4's `tcbEPDequeue`), so the successor it relinks must be non-observable too,
+as a blocking wait's old tail is. -/
 theorem notificationSignal_projection_preserved
     (ctx : LabelingContext) (observer : IfObserver)
     (notificationId : SeLe4n.ObjId) (badge : SeLe4n.Badge)
@@ -1256,6 +1287,8 @@ theorem notificationSignal_projection_preserved
         objectObservable ctx observer tid.toObjId = false)
     (hWaiterDomain : ∀ ntfn tid, st.objects[notificationId]? = some (.notification ntfn) →
         ntfn.waitHead = some tid → threadObservable ctx observer tid = false)
+    (hSuccHigh : ∀ t, notificationSignalSuccessor? st notificationId = some t →
+        objectObservable ctx observer t.toObjId = false)
     (hObjInv : st.objects.invExt)
     (hStep : notificationSignal notificationId badge st = .ok ((), st')) :
     projectState ctx observer st' = projectState ctx observer st := by
@@ -1288,7 +1321,12 @@ theorem notificationSignal_projection_preserved
           | ok st2 =>
             simp only [Except.ok.injEq, Prod.mk.injEq]; intro ⟨_, hEq⟩; subst hEq
             have hObjInvMid := storeObject_preserves_objects_invExt' st notificationId _ pair hObjInv hStore
-            rw [ensureRunnable_preserves_projection ctx observer st2 waiter hWaiterHigh,
+            rw [ensureRunnable_preserves_projection ctx observer _ waiter hWaiterHigh,
+                detachNtfnHead_preserves_projection ctx observer st2 waiter _ hWaiterObjHigh
+                  (fun n hn => hSuccHigh n
+                    ((notificationSignalSuccessor?_eq_wake st notificationId ntfn waiter hObj
+                      hWaiters).trans hn))
+                  (storeTcbIpcStateAndMessage_preserves_objects_invExt _ _ _ _ _ hObjInvMid hTcb),
                 storeTcbIpcStateAndMessage_preserves_projection ctx observer pair.2 st2 waiter _ _ hWaiterObjHigh hObjInvMid hTcb,
                 storeObject_preserves_projection ctx observer st pair.2 notificationId _ hNtfnHigh hObjInv hStore]
 
@@ -1304,8 +1342,12 @@ theorem notificationSignal_preserves_lowEquivalent
         objectObservable ctx observer tid.toObjId = false)
     (hWaiterDomain₁ : ∀ ntfn tid, s₁.objects[notificationId]? = some (.notification ntfn) →
         ntfn.waitHead = some tid → threadObservable ctx observer tid = false)
+    (hSuccHigh₁ : ∀ t, notificationSignalSuccessor? s₁ notificationId = some t →
+        objectObservable ctx observer t.toObjId = false)
     (hWaiterDomain₂ : ∀ ntfn tid, s₂.objects[notificationId]? = some (.notification ntfn) →
         ntfn.waitHead = some tid → threadObservable ctx observer tid = false)
+    (hSuccHigh₂ : ∀ t, notificationSignalSuccessor? s₂ notificationId = some t →
+        objectObservable ctx observer t.toObjId = false)
     (hObjInv₁ : s₁.objects.invExt)
     (hObjInv₂ : s₂.objects.invExt)
     (hStep₁ : notificationSignal notificationId badge s₁ = .ok ((), s₁'))
@@ -1315,9 +1357,9 @@ theorem notificationSignal_preserves_lowEquivalent
     suffices h₂ : projectState ctx observer s₂' = projectState ctx observer s₂ by
       unfold lowEquivalent; rw [h₁, h₂]; exact hLow
     exact notificationSignal_projection_preserved ctx observer notificationId badge s₂ s₂'
-      hNtfnHigh hCoherent hWaiterDomain₂ hObjInv₂ hStep₂
+      hNtfnHigh hCoherent hWaiterDomain₂ hSuccHigh₂ hObjInv₂ hStep₂
   exact notificationSignal_projection_preserved ctx observer notificationId badge s₁ s₁'
-    hNtfnHigh hCoherent hWaiterDomain₁ hObjInv₁ hStep₁
+    hNtfnHigh hCoherent hWaiterDomain₁ hSuccHigh₁ hObjInv₁ hStep₁
 
 -- ============================================================================
 -- WS-F3/F-21: notificationWait non-interference

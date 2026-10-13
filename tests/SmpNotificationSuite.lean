@@ -130,8 +130,9 @@ example (notificationId : SeLe4n.ObjId) (badge : SeLe4n.Badge) (executingCore : 
   notificationSignalOnCore_noWaiter_eq notificationId badge executingCore st ntfn st'
     hObj hWaiters hStore
 
-/-- SM6.B.1 waiter reduction: a signal on a waiting head is the badge delivery
-+ cross-core wake, surfacing exactly the wake's SGI. -/
+/-- SM6.B.1 waiter reduction: a signal on a waiting head is the badge delivery,
+the pop's link rewrite (`detachNtfnHead`) and the cross-core wake, surfacing
+exactly the wake's SGI. -/
 example (notificationId : SeLe4n.ObjId) (badge : SeLe4n.Badge) (executingCore : CoreId)
     (st : SystemState) (ntfn : Notification)
     (waiter : SeLe4n.ThreadId)
@@ -143,8 +144,10 @@ example (notificationId : SeLe4n.ObjId) (badge : SeLe4n.Badge) (executingCore : 
     (hMsg : storeTcbIpcStateAndMessage st' waiter .ready
         (some { IpcMessage.empty with badge := some badge }) = .ok st'') :
     notificationSignalOnCore notificationId badge executingCore st
-      = ((wakeThread st'' waiter executingCore).1,
-         .ok (wakeThread st'' waiter executingCore).2) :=
+      = ((wakeThread (detachNtfnHead st'' waiter (ntfnSuccessor? st waiter)) waiter
+            executingCore).1,
+         .ok (wakeThread (detachNtfnHead st'' waiter (ntfnSuccessor? st waiter)) waiter
+            executingCore).2) :=
   notificationSignalOnCore_waiter_eq notificationId badge executingCore st ntfn waiter
     st' st'' hObj hWaiters hStore hMsg
 
@@ -531,17 +534,22 @@ private def runIndependenceAndLockChecks : IO Unit := do
       (decide ((tcbLock waiter2, AccessMode.write) ∈ sigLs.pairs))
     assertBool "the notification write lock is in the signal footprint"
       (decide ((notificationLock nId, AccessMode.write) ∈ sigLs.pairs))
+    -- PR #932 review: waiter3 queues behind waiter2, so the pop also clears
+    -- waiter3's predecessor link and must hold its TCB write lock.
+    assertBool "the successor's TCB write lock is in the signal footprint"
+      (decide ((tcbLock waiter3, AccessMode.write) ∈ sigLs.pairs))
     -- Exact resolved footprint size: signaller (R), sender CNode (R), notification
-    -- (W), woken-waiter TCB (W) — four locks off the bound-delivery path.  Pinning
-    -- the exact size catches a silent lock add/drop a `≤` bound would miss.
-    assertBool "state-resolved signal footprint has exactly 4 locks (signaller/cnode/ntfn/waiter)"
-      (decide (sigLs.pairs.length = 4))
+    -- (W), woken-waiter TCB (W), its successor's TCB (W) — five locks off the
+    -- bound-delivery path.  Pinning the exact size catches a silent lock add/drop
+    -- a `≤` bound would miss.
+    assertBool "state-resolved signal footprint has exactly 5 locks (signaller/cnode/ntfn/waiter/successor)"
+      (decide (sigLs.pairs.length = 5))
     assertBool "signal lock-set size within maxLockSetSize"
       (decide (sigLs.pairs.length ≤ maxLockSetSize))
-    -- SM5.J (plan §4.1): the 4-lock signal footprint is 4·3·60 = 720µs, which fits
+    -- SM5.J (plan §4.1): the 5-lock signal footprint is 5·3·60 = 900µs, which fits
     -- the 1 ms per-core timer-tick budget (a real timing property, matching the IPC
     -- suite's §3.7 form — a 6th lock would be 1080µs and blow the budget).
-    assertBool "signal lock-set WCRT (720µs) fits the 1 ms timer-tick budget"
+    assertBool "signal lock-set WCRT (900µs) fits the 1 ms timer-tick budget"
       (decide (sigLs.pairs.length * (3 * 60) < 1000))
     -- WS-ZA ZA4.4: waiter3 queues behind waiter2, so the wait also writes the
     -- old tail's successor link and must hold waiter2's TCB lock.

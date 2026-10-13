@@ -101,6 +101,24 @@ macro_rules | `(tactic| run_queue_stage_step) => `(tactic|
     (storeObject_notificationOver_runQueueStage (by with_reducible assumption)
       (by with_reducible assumption)))
 
+/-- A step that rewrites only notification-queue links (`ntfnLinksRewritten`)
+keeps the run-queue agreement: a TCB's run-queue entries are read off its
+run-queue fields, which the rewrite leaves alone. -/
+theorem runQueueStage_of_ntfnLinksRewritten {st s : SystemState}
+    (h : st.objects.invExt → ntfnLinksRewritten st s) : RunQueueStage st s := by
+  intro hInv hR
+  have hD := h hInv
+  refine ⟨hD.2.1, SystemState.runQueueRefined_of_frame (fun c t => ?_)
+    (by rw [hD.scheduler_eq]) (by rw [hD.scheduler_eq]) hR⟩
+  rw [SystemState.runLinkOn_eq_objRunLinkOn, SystemState.runLinkOn_eq_objRunLinkOn]
+  rcases hD.2.2 t.toObjId with e | ⟨t0, t1, h0, h1, np, nn, rfl⟩
+  · rw [e]
+  · rw [h0, h1]; rfl
+
+theorem detachNtfnHead_runQueueStage (st : SystemState) (head : SeLe4n.ThreadId)
+    (next : Option SeLe4n.ThreadId) : RunQueueStage st (detachNtfnHead st head next) :=
+  runQueueStage_of_ntfnLinksRewritten (detachNtfnHead_linksRewritten st head next)
+
 theorem notificationSignalOnCore_runQueueStage (notificationId : SeLe4n.ObjId)
     (badge : SeLe4n.Badge) (c : Concurrency.CoreId) (st : SystemState) :
     RunQueueStage st (notificationSignalOnCore notificationId badge c st).1 := by
@@ -108,8 +126,9 @@ theorem notificationSignalOnCore_runQueueStage (notificationId : SeLe4n.ObjId)
   repeat' (first | split | dsimp only)
   all_goals first
     | exact RunQueueStage.refl _
-    | exact ((storeObject_notificationOver_runQueueStage (by assumption) (by assumption)).trans
+    | exact (((storeObject_notificationOver_runQueueStage (by assumption) (by assumption)).trans
          (storeTcbIpcStateAndMessage_runQueueStage (by assumption))).trans
+         (detachNtfnHead_runQueueStage _ _ _)).trans
          (wakeThread_runQueueStage _ _ _)
     | exact storeObject_notificationOver_runQueueStage (by assumption) (by assumption)
 

@@ -103,6 +103,8 @@ inductive NonInterferenceStep
           objectObservable ctx observer tid.toObjId = false)
       (hWaiterDomain : ∀ ntfn tid, st.objects[notificationId]? = some (.notification ntfn) →
           ntfn.waitHead = some tid → threadObservable ctx observer tid = false)
+      (hSuccHigh : ∀ t, notificationSignalSuccessor? st notificationId = some t →
+          objectObservable ctx observer t.toObjId = false)
       (hStep : SeLe4n.Kernel.notificationSignal notificationId badge st = .ok ((), st'))
     : NonInterferenceStep ctx observer st st'
   | notificationWait
@@ -417,9 +419,9 @@ theorem step_preserves_projection
   | lifecycleRevokeDeleteRetype authority cleanup target newObj hCH hTH hOp =>
     exact lifecycleRevokeDeleteRetype_preserves_projection ctx observer authority cleanup target
       newObj st st' hCH hTH hObjInv hOp
-  | notificationSignal ntfnId badge hNH hCo hWD hOp =>
+  | notificationSignal ntfnId badge hNH hCo hWD hSH hOp =>
     exact notificationSignal_projection_preserved ctx observer ntfnId badge st st'
-      hNH hCo hWD hObjInv hOp
+      hNH hCo hWD hSH hObjInv hOp
   | notificationWait ntfnId waiter result hNH hWH hWOH hTH hOp =>
     exact notificationWait_projection_preserved ctx observer ntfnId waiter result st st'
       hNH hWH hWOH hTH hObjInv hOp

@@ -189,7 +189,8 @@ theorem notificationSignalOnCore_declassificationAuditLog_eq (notificationId : S
         | error e => rfl
         | ok st2 =>
           simp only []
-          rw [wakeThread_declassificationAuditLog_eq st2 pair executingCore,
+          rw [wakeThread_declassificationAuditLog_eq _ pair executingCore,
+            detachNtfnHead_declassificationAuditLog,
             storeTcbIpcStateAndMessage_declassificationAuditLog_eq p1.2 st2 pair .ready _ hMsg,
             storeObject_declassificationAuditLog_eq st _ _ p1 hStore]
 
@@ -310,9 +311,9 @@ theorem notificationSignalOnCore_currentOnCore_eq (notificationId : SeLe4n.ObjId
         | error e => rfl
         | ok st2 =>
           simp only []
-          show ((wakeThread st2 pair executingCore).1).scheduler.currentOnCore c = _
+          show ((wakeThread _ pair executingCore).1).scheduler.currentOnCore c = _
           unfold wakeThread
-          rw [enqueueRunnableOnCore_currentOnCore st2 _ pair c,
+          rw [enqueueRunnableOnCore_currentOnCore _ _ pair c, detachNtfnHead_scheduler,
             storeTcbIpcStateAndMessage_scheduler_eq p1.2 st2 pair .ready _ hMsg,
             storeObject_scheduler_eq st p1.2 _ _ (by cases p1 with | mk u v => cases u; exact hStore)]
 

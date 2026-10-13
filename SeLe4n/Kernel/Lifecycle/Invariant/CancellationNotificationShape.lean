@@ -959,7 +959,8 @@ theorem cancelIpcBlocking_notificationArm_objects_off (st : SystemState)
   rw [restoreToReadyStaging_objects_ne _ v _ k
     (removeFromNotificationWaitQueue_preserves_objects_invExt st v hInv) hNe]
   exact removeFromNotificationWaitQueue_objects_off st v hInv tcbV hLookup k
-    (fun oid h => by rw [hBlocked] at h; cases h; exact fun h' => hNtfn h'.symm) hP hN
+    (fun oid h => by rw [hBlocked] at h; cases h; exact fun h' => hNtfn h'.symm)
+    (fun _ _ h' => hNe h'.symm) hP hN
 
 /-- **WS-RR RR7.22 (residual)**: the cancellation's notification arm preserves
 `ipcInvariantFull`. -/

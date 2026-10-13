@@ -355,8 +355,12 @@ theorem notificationSignalChecked_NI
         objectObservable ctx observer tid.toObjId = false)
     (hWaiterDomain₁ : ∀ ntfn tid, s₁.objects[notificationId]? = some (.notification ntfn) →
         ntfn.waitHead = some tid → threadObservable ctx observer tid = false)
+    (hSuccHigh₁ : ∀ t, notificationSignalSuccessor? s₁ notificationId = some t →
+        objectObservable ctx observer t.toObjId = false)
     (hWaiterDomain₂ : ∀ ntfn tid, s₂.objects[notificationId]? = some (.notification ntfn) →
         ntfn.waitHead = some tid → threadObservable ctx observer tid = false)
+    (hSuccHigh₂ : ∀ t, notificationSignalSuccessor? s₂ notificationId = some t →
+        objectObservable ctx observer t.toObjId = false)
     (hObjInv₁ : s₁.objects.invExt)
     (hObjInv₂ : s₂.objects.invExt)
     (hStep₁ : notificationSignalChecked ctx notificationId signaler badge s₁ = .ok ((), s₁'))
@@ -371,7 +375,7 @@ theorem notificationSignalChecked_NI
   rw [notificationSignalChecked_eq_notificationSignal_when_allowed ctx notificationId signaler badge s₁ hFlow] at hStep₁
   rw [notificationSignalChecked_eq_notificationSignal_when_allowed ctx notificationId signaler badge s₂ hFlow] at hStep₂
   exact notificationSignal_preserves_lowEquivalent ctx observer notificationId badge
-    s₁ s₂ s₁' s₂' hLow hNtfnHigh hCoherent hWaiterDomain₁ hWaiterDomain₂ hObjInv₁ hObjInv₂ hStep₁ hStep₂
+    s₁ s₂ s₁' s₂' hLow hNtfnHigh hCoherent hWaiterDomain₁ hSuccHigh₁ hWaiterDomain₂ hSuccHigh₂ hObjInv₁ hObjInv₂ hStep₁ hStep₂
 
 /-- R5-A/M-01: cspaceCopyChecked NI — projection-based (internalized).
 Replaces the prior hypothesis-accepting version. -/

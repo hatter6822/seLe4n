@@ -1,3 +1,40 @@
+## v0.36.82 — Notification queues: clear the links of a dequeued thread (PR #932 review)
+
+**A thread that leaves a notification queue keeps no queue links, as in seL4.**
+The review found that a signal popping the head left the woken thread's
+`ntfnNext` naming its old successor and left the new head's `ntfnPrev` naming
+the woken thread.  A later cancellation of the new head would then rewrite the
+woken thread's successor link, which by then belongs to whatever queue the
+woken thread joined next.  seL4's `tcbEPDequeue` clears both, and so does
+seLe4n now.
+
+- **Pop.**  The signal's wake ends with `detachNtfnHead`: the woken thread's
+  two links are cleared and the successor's predecessor link is cleared.  The
+  successor is in the signal's lock set.  The in-place compiled form
+  (`storeSignalWoken`) makes the same writes.
+- **Cancel.**  The cancellation unlink clears the victim's links after
+  splicing its neighbours.  The frozen wake does the same.
+- **Invariant.**  `notificationWaiterConsistent` gains two clauses: a queue's
+  head has no predecessor link, and a TCB blocked on no notification holds no
+  notification link.  The second makes a stale link unrepresentable in a
+  reachable state.  Both are proven for every transition and established at
+  boot.  `bootSafeTcbCheck` now refuses a configured TCB carrying a
+  notification link.  The runtime invariant checks test both clauses.
+- **Proof plumbing.**  `ntfnLinksRewritten` relates a state to one whose TCBs
+  differ only in their notification links.  Each invariant the signal path
+  carries transfers across it: IPC, scheduler, run-queue agreement, capability
+  key frame, slot confinement, the per-core bundles and the cross-core proofs.
+- **Information flow.**  The pop writes the successor's TCB.  The signal's
+  non-interference theorems therefore also require the successor to be
+  non-observable (`hSuccHigh`), as the wait already requires of the queue's
+  tail.
+- **Footprint and fixtures.**  A signal that wakes a waiter with a successor
+  holds five locks, the successor's TCB write lock added (900µs, inside the
+  1 ms tick budget).  The main trace's `[PIP-005]` line counts 34 invariant
+  checks, one more for the off-queue clause.
+- **Allocations** (QEMU exerciser, normal build): unchanged.  Signal, wide-badge
+  signal, wait-pending and yield read 0, and a signal that wakes a waiter 33.
+
 ## v0.36.81 — WS-ZA ZA4.5 (part 2): run-queue links in the TCB, the abstract queue an erased ghost
 
 **The run queue lives in the threads, as in seL4.**  Each TCB carries its

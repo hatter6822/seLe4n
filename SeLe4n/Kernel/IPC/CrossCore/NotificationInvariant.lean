@@ -86,8 +86,9 @@ theorem notificationSignalOnCore_preserves_objects_invExt
         | ok st'' =>
           simp only
           have hObj2 := storeTcbIpcStateAndMessage_preserves_objects_invExt pair.2 st'' waiter _ _ hObj1 hTcb
-          show (wakeThread st'' waiter executingCore).1.objects.invExt
-          exact wakeThread_preserves_objects_invExt st'' waiter executingCore hObj2
+          show (wakeThread _ waiter executingCore).1.objects.invExt
+          exact wakeThread_preserves_objects_invExt _ waiter executingCore
+            (detachNtfnHead_linksRewritten _ _ _ hObj2).2.1
 
 /-- WS-SM SM6.B.1: the cross-core notification wait preserves object-store
 integrity (`invExt`) on every control path. -/
@@ -191,10 +192,13 @@ theorem notificationSignalOnCore_preserves_ipcInvariant
           have hObj2 := storeTcbIpcStateAndMessage_preserves_objects_invExt pair.2 st'' waiter _ _ hObjInv1 hTcb
           obtain ⟨tr, hTrGet, hTrReady⟩ :=
             storeTcbIpcStateAndMessage_getTcb?_ipcState pair.2 st'' waiter .ready _ hObjInv1 hTcb
-          show ipcInvariant (wakeThread st'' waiter executingCore).1
+          have hD := detachNtfnHead_linksRewritten st'' waiter (ntfnSuccessor? st waiter) hObj2
+          obtain ⟨tr3, hTrGet3, ⟨_, _, rfl⟩⟩ := hD.getTcb?_fwd hTrGet
+          show ipcInvariant (wakeThread _ waiter executingCore).1
           exact fun oid ntfn' h => hInv2 oid ntfn'
-            ((wakeThread_objectsAgreeOffRunLinks_of_ready st'' waiter executingCore tr hTrGet hTrReady
-              hObj2).get_notification_iff.mp h)
+            ((hD.obj_iff _ _ (fun _ e => by cases e)).mp
+              ((wakeThread_objectsAgreeOffRunLinks_of_ready _ waiter executingCore _ hTrGet3
+                hTrReady hD.2.1).get_notification_iff.mp h))
 
 /-- WS-SM SM6.B.1: the cross-core notification wait preserves the IPC
 `ipcInvariant`.  Mirrors `notificationWait_preserves_ipcInvariant`, with the
@@ -309,10 +313,13 @@ theorem notificationSignalOnCore_passiveServerIdleFrameOnCore
             hObjInv1 hTcb
           obtain ⟨tr, hTrGet, hTrReady⟩ :=
             storeTcbIpcStateAndMessage_getTcb?_ipcState pair.2 st2 waiter .ready _ hObjInv1 hTcb
-          show passiveServerIdleFrameOnCore st (wakeThread st2 waiter executingCore).1 c
+          have hD := detachNtfnHead_linksRewritten st2 waiter (ntfnSuccessor? st waiter) hObjInv2
+          obtain ⟨tr3, hTrGet3, ⟨_, _, rfl⟩⟩ := hD.getTcb?_fwd hTrGet
+          show passiveServerIdleFrameOnCore st (wakeThread _ waiter executingCore).1 c
           exact (hF1.trans hF2).trans
-            (wakeThread_passiveServerIdleFrameOnCore_of_ready st2 waiter executingCore tr
-              hTrGet hTrReady hObjInv2)
+            ((passiveServerIdleFrameOnCore.of_ntfnLinksRewritten hD).trans
+              (wakeThread_passiveServerIdleFrameOnCore_of_ready _ waiter executingCore _
+                hTrGet3 hTrReady hD.2.1))
 
 open SeLe4n.Model.SystemState in
 /-- WS-SM SM6.D: `notificationWaitOnCore` frames every core's
@@ -460,12 +467,15 @@ theorem notificationSignalOnCore_post_agrees
             hObjInv1 hTcb
           obtain ⟨tr, hTrGet, hTrReady⟩ :=
             storeTcbIpcStateAndMessage_getTcb?_ipcState pair.2 st2 waiter .ready _ hObjInv1 hTcb
-          refine ⟨ensureRunnable st2 waiter, ?_, ?_⟩
+          have hD := detachNtfnHead_linksRewritten st2 waiter (ntfnSuccessor? st waiter) hObjInv2
+          obtain ⟨tr3, hTrGet3, ⟨_, _, rfl⟩⟩ := hD.getTcb?_fwd hTrGet
+          refine ⟨ensureRunnable (detachNtfnHead st2 waiter (ntfnSuccessor? st waiter)) waiter,
+            ?_, ?_⟩
           · unfold notificationSignal SystemState.getObject?
             simp only [hObjRaw, hWaiters, hStore, hTcb]
-          · exact (ensureRunnable_offSchedulerAgrees st2 waiter).symm.trans
-              (wakeThread_offSchedulerAgrees_of_ready st2 waiter executingCore tr hTrGet
-                hTrReady hObjInv2)
+          · exact (ensureRunnable_offSchedulerAgrees _ waiter).symm.trans
+              (wakeThread_offSchedulerAgrees_of_ready _ waiter executingCore _ hTrGet3
+                hTrReady hD.2.1)
 
 open SeLe4n.Model.SystemState in
 /-- WS-SM SM6.D: agreement dichotomy for the cross-core wait.  Either the

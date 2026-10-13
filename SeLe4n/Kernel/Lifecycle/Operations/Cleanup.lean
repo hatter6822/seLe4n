@@ -314,21 +314,6 @@ def removeFromAllEndpointQueues (st : SystemState) (tid : SeLe4n.ThreadId) : Sys
       | none => acc
     | _ => acc
 
-/-- WS-ZA ZA4.4: close the gap a mid-queue waiter leaves in its notification's
-intrusive queue — the predecessor's next link and the successor's previous link
-each skip it.  A missing neighbour is a queue end, which the caller rewrote in
-the notification itself. -/
-def unlinkNtfnNeighbours (st : SystemState) (prev next : Option SeLe4n.ThreadId) :
-    SystemState :=
-  let st2 := match prev with
-    | some p => st.updateTcb p (fun t => { t with
-        ntfnNextCode := SeLe4n.ThreadId.optCode next })
-    | none => st
-  match next with
-  | some n => st2.updateTcb n (fun t => { t with
-      ntfnPrevCode := SeLe4n.ThreadId.optCode prev })
-  | none => st2
-
 /-- R4-A.2 (M-12), WS-ZA ZA4.4: Remove a thread from the notification wait queue
 it is linked into.
 
@@ -338,9 +323,11 @@ neighbours to splice together (seL4's `tcbEPDequeue`).  This is O(1); the list
 form swept every notification in the store.
 
 * The queue's head is removed as a signal removes it: its successor heads the
-  queue, and nothing else is written (a head's predecessor link is not read).
+  queue and drops its predecessor link.
 * Any other waiter's predecessor is pointed at its successor, and the successor
   (or, at the back of the queue, the queue's tail) at its predecessor.
+* Either way the removed thread leaves holding no queue links
+  (`clearNtfnLinks`), as every thread on no notification queue does.
 
 A thread not blocked on a notification is in no queue, and nothing is written.
 
@@ -368,7 +355,8 @@ def removeFromNotificationWaitQueue (st : SystemState) (tid : SeLe4n.ThreadId) :
                 state := if notif.state = .waiting ∧ head'.isNone then .idle else notif.state }
               let st1 := st.rewriteObject oid (.notification notif')
                 (SystemState.rewriteAdmissible_notification hN notif')
-              if isHead then st1 else unlinkNtfnNeighbours st1 prev next
+              unlinkNtfnNeighbours (clearNtfnLinks st1 tid)
+                (if isHead then none else prev) next
           | none => st
       | _ => st
   | none => st

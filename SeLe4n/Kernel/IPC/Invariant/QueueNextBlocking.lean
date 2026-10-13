@@ -66,6 +66,34 @@ theorem queueNextBlockingConsistent_of_objectsAgreeOffRunLinks {st st' : SystemS
   run_links_back h at tcbB hB
   exact hInv a b tcbA tcbB hA hB hN
 
+/-- WS-ZA ZA4.4: a rewrite of notification-queue links keeps every endpoint-queue
+link and IPC state. -/
+theorem queueNextBlockingConsistent_of_ntfnLinksRewritten {st st' : SystemState}
+    (h : ntfnLinksRewritten st st') (hInv : queueNextBlockingConsistent st) :
+    queueNextBlockingConsistent st' := by
+  intro a b tcbA tcbB hA hB hN
+  ntfn_links_back h at tcbA hA
+  ntfn_links_back h at tcbB hB
+  exact hInv a b tcbA tcbB hA hB hN
+
+/-- WS-ZA ZA4.4: as above, for the endpoint queue heads. -/
+theorem queueHeadBlockedConsistent_of_ntfnLinksRewritten {st st' : SystemState}
+    (h : ntfnLinksRewritten st st') (hInv : queueHeadBlockedConsistent st) :
+    queueHeadBlockedConsistent st' := by
+  intro epId ep hd tcb hEp hTcb
+  rw [h.endpoint_iff] at hEp
+  ntfn_links_back h at tcb hTcb
+  exact hInv epId ep hd tcb hEp hTcb
+
+/-- WS-ZA ZA4.4: as above, for the endpoint queue tails. -/
+theorem endpointQueueTailBlockedConsistent_of_ntfnLinksRewritten {st st' : SystemState}
+    (h : ntfnLinksRewritten st st') (hInv : endpointQueueTailBlockedConsistent st) :
+    endpointQueueTailBlockedConsistent st' := by
+  intro epId ep tl tcb hEp hTcb
+  rw [h.endpoint_iff] at hEp
+  ntfn_links_back h at tcb hTcb
+  exact hInv epId ep tl tcb hEp hTcb
+
 theorem ensureRunnable_preserves_queueNextBlockingConsistent
     (st : SystemState) (tid : SeLe4n.ThreadId)
     (hInv : queueNextBlockingConsistent st) :
@@ -1607,6 +1635,16 @@ theorem queueNextTargetBlocked_of_objectsAgreeOffRunLinks {st st' : SystemState}
   intro a b tcbA tcbB hA hB hN
   run_links_back h at tcbA hA
   run_links_back h at tcbB hB
+  exact hInv a b tcbA tcbB hA hB hN
+
+/-- WS-ZA ZA4.4: a rewrite of notification-queue links keeps
+`queueNextTargetBlocked`. -/
+theorem queueNextTargetBlocked_of_ntfnLinksRewritten {st st' : SystemState}
+    (h : ntfnLinksRewritten st st') (hInv : queueNextTargetBlocked st) :
+    queueNextTargetBlocked st' := by
+  intro a b tcbA tcbB hA hB hN
+  ntfn_links_back h at tcbA hA
+  ntfn_links_back h at tcbB hB
   exact hInv a b tcbA tcbB hA hB hN
 
 /-- `ensureRunnable` frames `queueNextTargetBlocked` (objects unchanged). -/

@@ -219,11 +219,12 @@ example (notificationId : SeLe4n.ObjId) (badge : SeLe4n.Badge) (executingCore : 
     (hMsg : storeTcbIpcStateAndMessage st' waiter .ready
         (some { IpcMessage.empty with badge := some badge }) = .ok st'')
     (hTcb'' : st''.getTcb? waiter = some waiterTcb'')
-    (hRemote : determineTargetCore st'' waiter ≠ executingCore) :
+    (hRemote : determineTargetCore st'' waiter ≠ executingCore)
+    (hObjInv : st.objects.invExt) :
     (notificationSignalOnCore notificationId badge executingCore st).2
       = .ok (some (determineTargetCore st'' waiter, SgiKind.reschedule)) :=
   notificationSignalOnCore_remote_wake notificationId badge executingCore st ntfn waiter
-    waiterTcb'' st' st'' hObj hWaiters hStore hMsg hTcb'' hRemote
+    waiterTcb'' st' st'' hObj hWaiters hStore hMsg hTcb'' hRemote hObjInv
 
 /-- SM6.B.4 (WS-LS LS2.1: over the pair): the signal is a single 2PL-atomic
 step under its lock-set — the ghost bracket's value is the bare transition's. -/
@@ -251,11 +252,14 @@ example (ctx : LabelingContext) (observer : IfObserver)
     (hObjInv : st.objects.invExt)
     (hNtfnHigh : objectObservable ctx observer notificationId = false)
     (hWaiterHigh : threadObservable ctx observer waiter = false)
-    (hWaiterObjHigh : objectObservable ctx observer waiter.toObjId = false) :
+    (hWaiterObjHigh : objectObservable ctx observer waiter.toObjId = false)
+    (hSuccHigh : ∀ n, ntfnSuccessor? st waiter = some n →
+      objectObservable ctx observer n.toObjId = false) :
     lowEquivalent_smp ctx observer
       (notificationSignalOnCore notificationId badge executingCore st).1 st :=
   notificationSignalOnCore_signal_path_NI_smp ctx observer notificationId badge executingCore st
     ntfn waiter st' st'' hObj hWaiters hStore hMsg hObjInv hNtfnHigh hWaiterHigh hWaiterObjHigh
+    hSuccHigh
 
 /-- WS-RR RR7.22 (register finding 3): the **bound**-delivery arm is invisible on
 every core.  The typed evidence that the `lowEquivalent_smp` conclusion is the

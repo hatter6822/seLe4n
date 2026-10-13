@@ -861,7 +861,12 @@ theorem notificationSignal_confinedToBootCore (st st' : SystemState)
               (storeObject_confinedToCore st st1 notificationId _ bootCoreId hStore) ?_
             refine observableSlotsConfinedToCore_trans
               (storeTcbIpcStateAndMessage_confinedToCore st1 st2 waiter _ _ bootCoreId hStore2) ?_
-            exact ensureRunnable_confinedToBootCore st2 waiter
+            -- The pop's link rewrite writes no scheduler slot or register.
+            refine observableSlotsConfinedToCore_trans
+              (observableSlotsConfinedToCore_of_scheduler_machine_eq bootCoreId
+                (detachNtfnHead_scheduler st2 waiter (ntfnSuccessor? st waiter))
+                (detachNtfnHead_machine st2 waiter (ntfnSuccessor? st waiter))) ?_
+            exact ensureRunnable_confinedToBootCore _ waiter
     | tcb _ | cnode _ | endpoint _ | vspaceRoot _ | untyped _ | schedContext _ | reply _ | frame _ | pageTable _ =>
       simp [hObj] at hStep
 
@@ -1789,10 +1794,12 @@ theorem nonInterference_perCore_notificationSignal (ctx : LabelingContext) (obse
       objectObservable ctx observer tid.toObjId = false)
     (hWaiterDomain : ∀ ntfn tid, st.objects[notificationId]? = some (.notification ntfn) →
       ntfn.waitHead = some tid → threadObservable ctx observer tid = false)
+    (hSuccHigh : ∀ t, notificationSignalSuccessor? st notificationId = some t →
+      objectObservable ctx observer t.toObjId = false)
     (hStep : SeLe4n.Kernel.notificationSignal notificationId badge st = .ok ((), st')) :
     lowEquivalent_smp ctx observer st' st :=
   nonInterference_perCore ctx observer st st' hObjInv hIdxComplete hObjSetInv
-    (.notificationSignal notificationId badge hNtfnHigh hCoherent hWaiterDomain hStep)
+    (.notificationSignal notificationId badge hNtfnHigh hCoherent hWaiterDomain hSuccHigh hStep)
     (notificationSignal_confinedToBootCore st st' notificationId badge hStep)
 
 theorem nonInterference_perCore_notificationWait (ctx : LabelingContext) (observer : IfObserver)
