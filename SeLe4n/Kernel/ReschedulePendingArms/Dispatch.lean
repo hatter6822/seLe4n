@@ -146,7 +146,7 @@ theorem lifecycleRetypeDirectWithCleanupShootdownPerCoreIcache_stepCovers (e : C
     {ec : CoreId} {authCap : Capability} {target : SeLe4n.ObjId} {newObj : KernelObject}
     {st st' : SystemState} (hInv : st.objects.invExt)
     (hBi : schedContextBindingBidirectional st) (hDet : retypeTargetDetached st target)
-    (hPlaced : placedThreadsHaveTcbs st)
+    (hPlaced : placedThreadsHaveTcbs st) (hFresh : retypeReplacementFresh newObj)
     (h : lifecycleRetypeDirectWithCleanupShootdownPerCoreIcache ec authCap target newObj st
       = .ok ((), st')) :
     stepCovers e st st' ∧ st'.objects.invExt := by
@@ -163,32 +163,44 @@ theorem lifecycleRetypeDirectWithCleanupShootdownPerCoreIcache_stepCovers (e : C
     intro oid hne
     rw [hObjB, storeObject_objects_ne _ _ _ _ _ hne hScrubInv hStore,
       scrubObjectMemory_objects_eq, hCO]
-  have hUnread : ∀ c t, (t ∈ st.scheduler.runQueueOnCore c ∨
-      st.scheduler.currentOnCore c = some t) → schedKeyView st' t = schedKeyView st t := by
-    intro c t hP
-    obtain ⟨tcb, hT⟩ := Option.isSome_iff_exists.mp (hPlaced c t hP)
-    have hTo := (SystemState.getTcb?_eq_some_iff _ _ _).mp hT
-    have ht : t.toObjId ≠ target := by
-      intro hEq
-      rw [hEq] at hTo
-      have hDs := hDet.tcbDescheduled tcb hTo c
-      have hId : tcb.tid = t :=
-        SeLe4n.ThreadId.toObjId_injective _ _ ((hDet.tcbSelfId tcb hTo).trans hEq.symm)
-      rw [hId] at hDs
-      rcases hP with hQ | hQ
-      · have hQ' : (st.scheduler.runQueueOnCore c).contains t = true := hQ
-        rw [hDs.1] at hQ'; cases hQ'
-      · exact hDs.2 hQ
+  have hKeyNe : ∀ t, t.toObjId ≠ target → schedKeyView st' t = schedKeyView st t := by
+    intro t ht
     refine schedKeyView_eq_of_slotUnread (fun oid hne => by rw [hFrame oid hne]) ht ?_
-    intro tcb' hT' sc hsc hEq
-    rw [hT] at hT'; cases hT'
-    obtain ⟨sco, hSo, _⟩ := hBi t tcb sc hTo hsc
+    intro tcb hT sc hsc hEq
+    obtain ⟨sco, hSo, _⟩ := hBi t tcb sc ((SystemState.getTcb?_eq_some_iff _ _ _).mp hT) hsc
     rw [hEq] at hSo
     exact hDet.notSc sco hSo
+  have hUnread : ∀ c t, st.scheduler.currentOnCore c = some t →
+      schedKeyView st' t = schedKeyView st t := by
+    intro c t hP
+    obtain ⟨tcb, hT⟩ := Option.isSome_iff_exists.mp (hPlaced c t (Or.inr hP))
+    have hTo := (SystemState.getTcb?_eq_some_iff _ _ _).mp hT
+    refine hKeyNe t (fun hEq => ?_)
+    rw [hEq] at hTo
+    have hDs := hDet.tcbDescheduled tcb hTo c
+    have hId : tcb.tid = t :=
+      SeLe4n.ThreadId.toObjId_injective _ _ ((hDet.tcbSelfId tcb hTo).trans hEq.symm)
+    rw [hId] at hDs
+    exact hDs.2.2 hP
   refine ⟨⟨fun c _ => Or.inr ⟨fun t ht => ?_, by rw [hSched], fun t ht => ?_⟩,
     fun c _ hc => by rw [hSched]; exact hc⟩, ?_⟩
-  · rw [hSched] at ht; exact ⟨ht, (hUnread c t (Or.inl ht)).symm⟩
-  · rw [hSched] at ht; exact schedKeyNotWeakened_of_eq (hUnread c t (Or.inr ht)).symm
+  · -- The replacement is fresh, so a thread queued after the retype is not the
+    -- target and was queued before it.
+    have hne : t.toObjId ≠ target := by
+      intro hEq
+      unfold SystemState.queuedOn SystemState.getTcb? at ht
+      rw [hEq, hObjB, storeObject_objects_eq _ _ _ _ hScrubInv hStore] at ht
+      revert ht
+      cases newObj with
+      | tcb tn =>
+        obtain ⟨-, -, -, -, -, -, -, -, -, hC⟩ := hFresh
+        simp [hC]
+      | _ => simp
+    have hq : st.queuedOn c t = true := by
+      unfold SystemState.queuedOn SystemState.getTcb? at ht ⊢
+      rw [hFrame _ hne] at ht; exact ht
+    exact ⟨hq, (hKeyNe t hne).symm⟩
+  · rw [hSched] at ht; exact schedKeyNotWeakened_of_eq (hUnread c t ht).symm
   · rw [hObjB]; exact storeObject_preserves_objects_invExt _ _ _ _ hScrubInv hStore
 
 /-! ### The capability-only arms -/
@@ -214,7 +226,8 @@ theorem dispatchCapabilityOnly_stepCovers {decoded : SyscallDecodeResult} {cap :
     · cases h
     · rename_i args hArgs
       exact lifecycleRetypeDirectWithCleanupShootdownPerCoreIcache_stepCovers ec hInv hBi
-        (hDet args hId hArgs) hPlaced h
+        (hDet args hId hArgs) hPlaced
+        (objectOfKernelType_withIdentity_replacementFresh args.newType args.size args.targetObj) h
   all_goals (repeat' split at h)
   all_goals first | (cases h; done) | skip
   all_goals try first

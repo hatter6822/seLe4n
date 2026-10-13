@@ -29,9 +29,12 @@ open SeLe4n.Kernel.Concurrency (CoreId SgiKind)
 /-- A TCB write that keeps the key fields moves no key input. -/
 theorem modifyTcb_keyFrame {st st' : SystemState} {tid : SeLe4n.ThreadId} {f : TCB → TCB}
     (hF : ∀ t, tcbKeyFields (f t) = tcbKeyFields t) (hInv : st.objects.invExt)
-    (h : modifyTcb st tid f = .ok st') : capabilityKeyFrame st st' := by
+    (h : modifyTcb st tid f = .ok st')
+    (hR : ∀ t, (f t).runCoreCode = t.runCoreCode := by intro _; rfl) :
+    capabilityKeyFrame st st' := by
   obtain ⟨tcb, hL, hS⟩ := modifyTcb_ok_decompose h
   exact storeObject_tcbKeyKeeping_keyFrame hInv (lookupTcb_some_objects _ _ _ hL) hS (hF tcb)
+    (hR tcb)
 
 theorem storeTcbQueueLinks_keyFrame {st st' : SystemState} {tid : SeLe4n.ThreadId}
     {prev : Option SeLe4n.ThreadId} {pprev : Option QueuePPrev} {next : Option SeLe4n.ThreadId}
@@ -547,6 +550,10 @@ theorem donateSchedContext_stepCovers (e : CoreId) {st st' : SystemState}
                     have k4 := keyInputsEqExcept_storeObject_tcb hInv3
                       (lookupTcb_some_objects _ _ _ hL2) hS4
                     refine stepCovers_markKeyChangeFrom_pair (fun t hc hs => ?_) ?_
+                      (((runCoresAgree_storeObject_tcb hInv3 (lookupTcb_some_objects _ _ _ hL2)
+                          hS4 rfl).trans
+                        (runCoresAgree_storeObject_tcb hInv2 (lookupTcb_some_objects _ _ _ hL1)
+                          hS3 rfl)).trans k2.runCoresAgree)
                     · show schedKeyView s4 t = schedKeyView st t
                       rw [schedKeyView_eq_of_keyInputsEqExcept k4 hs,
                         schedKeyView_eq_of_keyInputsEqExcept k3 hc,
@@ -780,9 +787,10 @@ theorem endpointCallCrossCoreDispatchChecked_stepCovers (e : CoreId) {ctx : Labe
 
 /-- A TCB rewrite that keeps the key fields, in its total form. -/
 theorem updateTcb_keyFrame (st : SystemState) (tid : SeLe4n.ThreadId) {f : TCB → TCB}
-    (hF : ∀ t, tcbKeyFields (f t) = tcbKeyFields t) (hInv : st.objects.invExt) :
+    (hF : ∀ t, tcbKeyFields (f t) = tcbKeyFields t) (hInv : st.objects.invExt)
+    (hR : ∀ t, (f t).runCoreCode = t.runCoreCode := by intro _; rfl) :
     capabilityKeyFrame st (st.updateTcb tid f) :=
-  ⟨keyInputsEq_updateTcb hInv hF, SystemState.updateTcb_scheduler _ _ _,
+  ⟨keyInputsEq_updateTcb hInv hF hR, SystemState.updateTcb_scheduler _ _ _,
    SystemState.updateTcb_preserves_objects_invExt _ _ _ hInv⟩
 
 theorem spliceReplyFrameOutOrSelf_keyFrame (st : SystemState) (rid : SeLe4n.ReplyId)
@@ -1135,14 +1143,14 @@ theorem keyFrame_storeObject_inert_after {st s : SystemState} {oid : SeLe4n.ObjI
 after a key-preserving prefix. -/
 theorem keyFrame_storeObject_tcbKeeping_after {st s : SystemState} {tid : SeLe4n.ThreadId}
     {t t' : TCB} {pair : Unit × SystemState}
-    (hPre : st.objects[tid.toObjId]? = some (.tcb t)) (hKey : tcbKeyFields t' = tcbKeyFields t)
+    (hPre : st.objects[tid.toObjId]? = some (.tcb t)) (hKey : tcbKeyCore t' = tcbKeyCore t)
     (hF : capabilityKeyFrame st s) (h : storeObject tid.toObjId (.tcb t') s = .ok pair) :
     capabilityKeyFrame st pair.2 := by
   obtain ⟨⟨⟩, s'⟩ := pair
   refine hF.trans ⟨keyInputsEq_storeObject hF.2.2 h ?_, storeObject_scheduler_eq _ _ _ _ h,
     storeObject_preserves_objects_invExt _ _ _ _ hF.2.2 h⟩
   rw [hF.1 tid.toObjId, hPre]
-  simp only [tcbKeyFields, Prod.mk.injEq] at hKey
+  simp only [tcbKeyCore, tcbKeyFields, Prod.mk.injEq] at hKey
   simp only [keyInputsOf, hKey]
 
 theorem storeTcbIpcState_keyFrame {st st' : SystemState} {tid : SeLe4n.ThreadId}

@@ -553,20 +553,10 @@ theorem migrateRunQueueBucketOnCore_mem_runQueueOnCore (st : SystemState)
       ↔ x ∈ st.scheduler.runQueueOnCore c' := by
   simp only [SchedContext.PriorityManagement.migrateRunQueueBucketOnCore]
   split
-  · rename_i hIn
-    rw [SystemState.runRequeueOnCore_scheduler]
+  · rw [SystemState.runRequeueOnCore_scheduler]
     by_cases hcc : c = c'
     · subst hcc
-      rw [SchedulerState.setRunQueueOnCore_runQueueOnCore_self]
-      rw [RunQueue.mem_insert, RunQueue.mem_remove]
-      constructor
-      · rintro (⟨hx, _⟩ | hxt)
-        · exact hx
-        · exact hxt ▸ hIn
-      · intro hx
-        by_cases hEq : x = tid
-        · exact Or.inr hEq
-        · exact Or.inl ⟨hx, hEq⟩
+      rw [SchedulerState.setRunQueueOnCore_runQueueOnCore_self, RunQueue.mem_rekey]
     · rw [SchedulerState.setRunQueueOnCore_runQueueOnCore_ne _ c c' _ hcc,
         SchedulerState.setRunQueueEndsOnCore_runQueueOnCore]
   · exact Iff.rfl
@@ -1851,11 +1841,8 @@ theorem ipcInvariantFull_of_runRequeueOnCore (st : SystemState) (c : CoreId)
   · rw [SystemState.runRequeueOnCore_scheduler]
     by_cases hcc : c = Concurrency.bootCoreId
     · subst hcc
-      rw [SchedulerState.setRunQueueOnCore_runQueueOnCore_self]
-      rw [RunQueue.mem_insert, RunQueue.mem_remove]
-      by_cases hEq : y = tid
-      · exact Or.inr hEq
-      · exact Or.inl ⟨hy, hEq⟩
+      rw [SchedulerState.setRunQueueOnCore_runQueueOnCore_self, RunQueue.mem_rekey]
+      exact hy
     · rw [SchedulerState.setRunQueueOnCore_runQueueOnCore_ne _ c Concurrency.bootCoreId _ hcc,
         SchedulerState.setRunQueueEndsOnCore_runQueueOnCore]
       exact hy
@@ -1921,8 +1908,8 @@ theorem schedContextConfigureBoundPropagate_preserves_ipcInvariantFull
     have hSomeW := (SystemState.getTcb?_eq_some_iff
       { stStored with objects := stStored.objects.insert boundTid.toObjId (.tcb { boundTcb with priority := ⟨priority⟩ }) }
       boundTid { boundTcb with priority := ⟨priority⟩ }).mpr hAtW
-    by_cases hMem : boundTid ∈ stStored.scheduler.runQueueOnCore
-        (determineTargetCore { stStored with objects := stStored.objects.insert boundTid.toObjId (.tcb { boundTcb with priority := ⟨priority⟩ }) } boundTid)
+    by_cases hMem : ({ stStored with objects := stStored.objects.insert boundTid.toObjId (.tcb { boundTcb with priority := ⟨priority⟩ }) } : SystemState).queuedOn
+        (determineTargetCore { stStored with objects := stStored.objects.insert boundTid.toObjId (.tcb { boundTcb with priority := ⟨priority⟩ }) } boundTid) boundTid = true
     · rw [if_pos hMem]
       have hInvR := ipcInvariantFull_of_runRequeueOnCore
         { stStored with objects := stStored.objects.insert boundTid.toObjId (.tcb { boundTcb with priority := ⟨priority⟩ }) }
@@ -2718,7 +2705,7 @@ theorem applyPriorityChangeOnCore_preserves_ipcInvariantFull
     (PriorityInheritance.repropagateFromWaiter_preserves ipcInvariantFull _ _ _ _
       (fun _ _ => propagatePipChainCrossCore_preserves_ipcInvariantFull _ _ _ _ hObjMid hInvMid)
       hInvMid)
-    (SystemState.currentRequeueAdmitted.transport hR (hStage hObjInv hR).2 hFrame hAdm) hStep
+    (SystemState.currentRequeueAdmitted.transport hFrame hAdm) hStep
 
 /-- `.tcbSetPriority`: authority check, then the priority write and bucket
 re-key — no conjunct-read field or membership moves. -/
@@ -3122,7 +3109,7 @@ theorem schedContextUnbindOnCore_preserves_ipcInvariantFull
       hStage.1
       (schedContextUnbind_preserves_ipcInvariantFull st stMid vScId hObjInv hInv
         hBoundAllowed hUnbind)
-      (SystemState.currentRequeueAdmitted.transport hR hStage.2
+      (SystemState.currentRequeueAdmitted.transport
         (SchedContextOps.schedContextUnbind_currentPlacementFrame vScId st stMid ec hObjInv hU
           hUnbind) hAdm)
       hStep
@@ -3516,9 +3503,12 @@ structure retypeTargetDetached (st : SystemState) (target : SeLe4n.ObjId) : Prop
   tcbNotDonationOrigin : ∀ t : TCB, st.objects[target]? = some (.tcb t) →
     ∀ (oid : SeLe4n.ObjId) (sc : SchedContext), st.objects[oid]? = some (.schedContext sc) →
     sc.donationOrigin ≠ some t.tid
+  /-- The thread is on no core: out of every core's abstract queue, its own
+      run-queue links name no core (WS-ZA ZA4.5: what the destroy sweep reads),
+      and no core runs it. -/
   tcbDescheduled : ∀ t : TCB, st.objects[target]? = some (.tcb t) →
     ∀ c : CoreId, (st.scheduler.runQueueOnCore c).contains t.tid = false ∧
-      st.scheduler.currentOnCore c ≠ some t.tid
+      st.queuedOn c t.tid = false ∧ st.scheduler.currentOnCore c ≠ some t.tid
   /-- **WS-BP BP7.9**: and no core's registers hold the thread's live FP/SIMD
       values.  The destroy path refuses such a target (`threadHeldOnSomeCore`),
       so under this pack the refusal is not taken — the same shape as
@@ -4292,7 +4282,7 @@ theorem retypeWrite_preserves_ipcInvariantFull
 per-core step is the literal identity. -/
 private theorem removeRunnableFromAllCores_id_of_descheduled
     (st : SystemState) (tid : SeLe4n.ThreadId)
-    (hRQ : ∀ c : CoreId, (st.scheduler.runQueueOnCore c).contains tid = false)
+    (hRQ : ∀ c : CoreId, st.queuedOn c tid = false)
     (hCur : ∀ c : CoreId, st.scheduler.currentOnCore c ≠ some tid) :
     removeRunnableFromAllCores st tid = st := by
   have hstep : ∀ c : CoreId, removeRunnableStepOnCore tid st c = st := by
@@ -4426,8 +4416,10 @@ private theorem cleanupTcbReferences_id_of_detached
   unfold cleanupTcbReferences
   dsimp only []
   rw [removeRunnableFromAllCores_id_of_descheduled stX tcb.tid
-    (fun c => by rw [hS]; exact (hDet.tcbDescheduled tcb hObj c).1)
-    (fun c => by rw [hS]; exact (hDet.tcbDescheduled tcb hObj c).2)]
+    (fun c => by
+      rw [(SystemState.RunCoresAgree.of_objects hO).queuedOn]
+      exact (hDet.tcbDescheduled tcb hObj c).2.1)
+    (fun c => by rw [hS]; exact (hDet.tcbDescheduled tcb hObj c).2.2)]
   rw [removeFromAllEndpointQueues_id_of_unqueued stX tcb.tid (hO ▸ hObjInv)
     (fun tcbX hLk => by
       obtain rfl := hLkT tcbX hLk
@@ -4474,7 +4466,7 @@ theorem lifecyclePreRetypeCleanup_detached_frame
           unfold threadCurrentOnSomeCore
           simp only [List.any_eq_false, beq_iff_eq]
           intro c _
-          exact (hDet.tcbDescheduled tcb hObj c).2
+          exact (hDet.tcbDescheduled tcb hObj c).2.2
         have hF : st.machine.fpOwnedOnSomeCore tcb.tid = false :=
           (MachineState.fpOwnedOnSomeCore_eq_false_iff _ _).mpr (hDet.tcbFpReleased tcb hObj)
         have hR : st.machine.residentOnSomeCore tcb.tid = false :=
@@ -4561,7 +4553,9 @@ private theorem retypeTargetDetached_of_objects_scheduler_eq
   -- neighbours above.
   · intro t hT oid sc hS; rw [hObjs] at hT hS
     exact hDet.tcbNotDonationOrigin t hT oid sc hS
-  · intro t hT c; rw [hObjs] at hT; rw [hSched]; exact hDet.tcbDescheduled t hT c
+  · intro t hT c; rw [hObjs] at hT
+    rw [hSched, (SystemState.RunCoresAgree.of_objects hObjs).queuedOn]
+    exact hDet.tcbDescheduled t hT c
   -- WS-BP BP7.9: the FP-owner clause travels on the owner table alone.
   · intro t hT c; rw [hObjs] at hT
     show st2.machine.fpOwner.get c ≠ some t.tid
@@ -5728,14 +5722,14 @@ theorem suspendThreadOnCore_preserves_ipcInvariantFull
           have hF1 : SystemState.CurrentPlacementFrame ecX stR2
               (Lifecycle.Suspend.clearPendingState stR2 vtid.val) := by
             unfold Lifecycle.Suspend.clearPendingState
-            exact SystemState.CurrentPlacementFrame.updateTcb ecX _ _ _ hObjInvR
+            exact SystemState.CurrentPlacementFrame.updateTcb ecX _ _ _ (fun _ => rfl) hObjInvR
           have hF2 := SystemState.CurrentPlacementFrame.updateTcb ecX
             (Lifecycle.Suspend.clearPendingState stR2 vtid.val) vtid.val
-            (fun t => { t with threadState := .Inactive })
+            (fun t => { t with threadState := .Inactive }) (fun _ => rfl)
             (SystemState.updateTcb_preserves_objects_invExt _ _ _ hObjInvR)
           exact suspendRescheduleOnCore_preserves_ipcInvariantFull _ stO c2 ecX wc ld sgiO
             hObjInvI hInvI
-            (SystemState.currentRequeueAdmitted.transport hR ((hS1.trans hS2) hObjInvR hRR).2
+            (SystemState.currentRequeueAdmitted.transport
               (hFR.trans (hF1.trans hF2)) hAdmX) hStepO
         cases hB : tcb.schedContextBinding with
         | unbound =>

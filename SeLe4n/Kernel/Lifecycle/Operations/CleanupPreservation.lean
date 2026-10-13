@@ -1834,15 +1834,16 @@ theorem releaseSchedContextBinding_preserves_replenishQueueAffinityConsistent_sm
         unfold SystemState.getTcb?
         rw [SchedContextOps.purgeReplenishmentFromAllCores_objects]
 
-/-- After cleanup, the cleaned thread is not in the run queue. -/
+/-- After cleanup, the cleaned thread is not in the run queue (the sweep is the
+cleanup's first step, so the agreement is read on its input). -/
 theorem cleanupTcbReferences_removes_from_runnable
-    (st : SystemState) (tid : SeLe4n.ThreadId) :
+    (st : SystemState) (tid : SeLe4n.ThreadId) (hR : st.runQueueRefined) :
     ¬(tid ∈ ((cleanupTcbReferences st tid).scheduler.runQueueOnCore bootCoreId)) := by
   unfold cleanupTcbReferences
   rw [clearDonationOriginReferences_scheduler_eq,
       removeFromNotificationWaitQueue_scheduler_eq]
   rw [removeFromAllEndpointQueues_scheduler_eq]
-  exact removeRunnableFromAllCores_not_mem st tid bootCoreId
+  exact removeRunnableFromAllCores_not_mem st tid bootCoreId hR
 
 /-- Cleanup preserves lifecycle metadata. -/
 theorem cleanupTcbReferences_lifecycle_eq
@@ -3620,6 +3621,17 @@ theorem cancelBoundDonationOnCore_runQueueStage {st st' : SystemState}
         (SystemState.updateSchedContext_getTcb? st scId _ hInv x)
   · cases h
 
+/-- The retype's donation arm: the identity, the in-place unbind, or the
+migrating return. -/
+theorem cancelDonationArmOnCore_runQueueStage {st st' : SystemState}
+    {tid : SeLe4n.ThreadId} {tcb : TCB} (h : cancelDonationArmOnCore st tid tcb = .ok st') :
+    SystemState.RunQueueStage st st' := by
+  unfold cancelDonationArmOnCore at h
+  split at h
+  · cases h; exact .refl st
+  · exact cancelBoundDonationOnCore_runQueueStage h
+  · exact cancelDonatedDonationOnCore_runQueueStage h
+
 /-- The replenishment migration is a current-placement frame: it writes two
 replenish queues. -/
 theorem migrateSchedContextReplenishment_currentPlacementFrame (st : SystemState)
@@ -3628,7 +3640,7 @@ theorem migrateSchedContextReplenishment_currentPlacementFrame (st : SystemState
   unfold migrateSchedContextReplenishment
   split
   · exact .refl c st
-  · exact .of_frame rfl rfl (fun _ _ => rfl)
+  · exact .of_frame rfl rfl
 
 /-- The migrating donation cancel is a current-placement frame: the hand-back
 rebinds and moves no thread, and keeps every TCB. -/
@@ -3645,9 +3657,8 @@ theorem cancelDonatedDonationOnCore_currentPlacementFrame {st st' : SystemState}
       have hS := cleanupDonatedSchedContext_scheduler_eq st s1 tid h1
       refine SystemState.CurrentPlacementFrame.trans ?_
         (migrateSchedContextReplenishment_currentPlacementFrame _ _ _ _ c)
-      exact SystemState.CurrentPlacementFrame.of_parts
-        (fun y hy => cleanupDonatedSchedContext_getTcb?_isSome st s1 tid y hInv h1 hy)
-        (by rw [hS]; rfl) (fun _ _ => by rw [hS]; rfl)
+      exact SystemState.CurrentPlacementFrame.of_parts (by rw [hS]; rfl)
+        (cleanupDonatedSchedContext_runCoresAgree st s1 tid hInv h1)
   · cases h
 
 /-- The in-place donation cancel is a current-placement frame: a context write,
@@ -3667,13 +3678,60 @@ theorem cancelBoundDonationOnCore_currentPlacementFrame {st st' : SystemState}
     have hInv1 := SystemState.updateSchedContext_preserves_objects_invExt st scId
       (fun sc => { sc with boundThread := none, isActive := false, donationOrigin := none }) hInv
     refine SystemState.CurrentPlacementFrame.trans ?_
-      (SystemState.CurrentPlacementFrame.updateTcb c _ tid _ hInv1)
+      (SystemState.CurrentPlacementFrame.updateTcb c _ tid _ (fun _ => rfl) hInv1)
     refine SystemState.CurrentPlacementFrame.trans
       (SystemState.CurrentPlacementFrame.of_parts (st' := st.updateSchedContext scId
         (fun sc => { sc with boundThread := none, isActive := false, donationOrigin := none }))
-        (fun y hy => by rw [SystemState.updateSchedContext_getTcb? _ _ _ hInv]; exact hy)
-        (by rw [hU]) (fun _ _ => by rw [hU])) ?_
-    exact SystemState.CurrentPlacementFrame.of_frame rfl rfl (fun _ _ => rfl)
+        (by rw [hU]) (fun y => by rw [SystemState.updateSchedContext_getTcb? _ _ _ hInv])) ?_
+    exact SystemState.CurrentPlacementFrame.of_frame rfl rfl
   · cases h
+
+/-- The migrating donation cancel moves no thread's run-queue core: the
+hand-back rewrites bindings and the migration writes replenish queues. -/
+theorem cancelDonatedDonationOnCore_runCoresAgree {st st' : SystemState}
+    {tid : SeLe4n.ThreadId} {tcb : TCB} (hInv : st.objects.invExt)
+    (h : cancelDonatedDonationOnCore st tid tcb = .ok st') : SystemState.RunCoresAgree st' st := by
+  unfold cancelDonatedDonationOnCore at h
+  split at h
+  · split at h
+    · cases h
+    · rename_i s1 h1
+      cases h
+      exact SystemState.RunCoresAgree.trans
+        (SystemState.RunCoresAgree.of_objects (migrateSchedContextReplenishment_objects _ _ _ _))
+        (cleanupDonatedSchedContext_runCoresAgree st s1 tid hInv h1)
+  · cases h
+
+/-- The in-place donation cancel moves no thread's run-queue core: a context
+write, the binding clear and the key flags. -/
+theorem cancelBoundDonationOnCore_runCoresAgree {st st' : SystemState}
+    {tid : SeLe4n.ThreadId} {tcb : TCB} {rqCore : SeLe4n.Kernel.Concurrency.CoreId}
+    (hInv : st.objects.invExt) (h : cancelBoundDonationOnCore st tid tcb rqCore = .ok st') :
+    SystemState.RunCoresAgree st' st := by
+  unfold cancelBoundDonationOnCore at h
+  split at h
+  · rename_i scId _
+    cases h
+    have hInv1 := SystemState.updateSchedContext_preserves_objects_invExt st scId
+      (fun sc => { sc with boundThread := none, isActive := false, donationOrigin := none }) hInv
+    refine SystemState.RunCoresAgree.trans
+      (SystemState.RunCoresAgree.of_objects (markKeyChangeFrom_objects _ _ _)) ?_
+    refine SystemState.RunCoresAgree.trans
+      (SystemState.updateTcb_runCoreCode _ tid _ (by intro _; rfl) hInv1) ?_
+    exact SystemState.RunCoresAgree.trans (SystemState.RunCoresAgree.of_objects
+        (st := st.updateSchedContext scId
+          (fun sc => { sc with boundThread := none, isActive := false, donationOrigin := none })) rfl)
+      (fun y => by rw [SystemState.updateSchedContext_getTcb? _ _ _ hInv])
+  · cases h
+
+/-- The reservation arm moves no thread's run-queue core. -/
+theorem cancelDonationArmOnCore_runCoresAgree {st st' : SystemState}
+    {tid : SeLe4n.ThreadId} {tcb : TCB} (hInv : st.objects.invExt)
+    (h : cancelDonationArmOnCore st tid tcb = .ok st') : SystemState.RunCoresAgree st' st := by
+  unfold cancelDonationArmOnCore at h
+  split at h
+  · cases h; exact SystemState.RunCoresAgree.refl _
+  · exact cancelBoundDonationOnCore_runCoresAgree hInv h
+  · exact cancelDonatedDonationOnCore_runCoresAgree hInv h
 
 end SeLe4n.Kernel

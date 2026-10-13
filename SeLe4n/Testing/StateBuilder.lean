@@ -319,4 +319,12 @@ def dispatchSyscallCheckedAsCurrent (ctx : SeLe4n.Kernel.LabelingContext)
     (st : SystemState) : Except KernelError (Unit × SystemState) :=
   SeLe4n.Kernel.dispatchSyscallChecked ctx decoded tid core (withCurrentOnCore st core tid)
 
+/-- Queue `entries` on core `c`, in order, through the kernel's own enqueue
+(`runEnqueueOnCore`): each thread's TCB carries the run-queue links the kernel
+reads (WS-ZA ZA4.5), so a fixture built this way is one the kernel could have
+reached.  Each thread's TCB must already be in `st`. -/
+def enqueueAllOnCore (st : SystemState) (c : SeLe4n.Kernel.Concurrency.CoreId)
+    (entries : List (SeLe4n.ThreadId × SeLe4n.Priority)) : SystemState :=
+  entries.foldl (fun s e => s.runEnqueueOnCore c e.1 e.2) st
+
 end SeLe4n.Testing

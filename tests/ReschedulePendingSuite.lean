@@ -140,9 +140,8 @@ private def baseObjects : SystemState :=
 
 /-- `srv` queued on core 1 at 5; `cur1` current on core 1. -/
 private def stBase : SystemState :=
-  { baseObjects with
-      scheduler := baseObjects.scheduler.setRunQueueOnCore core1 (RunQueue.ofList [(srv, ⟨5⟩)])
-        |>.setCurrentOnCore core1 (some cur1) }
+  let q := enqueueAllOnCore baseObjects core1 [(srv, ⟨5⟩)]
+  { q with scheduler := q.scheduler.setCurrentOnCore core1 (some cur1) }
 
 /-- `srv` parked (no run queue anywhere); `cur1` current on core 1. -/
 private def stNoRq : SystemState :=
@@ -154,7 +153,7 @@ private def stImmaterial : SystemState :=
   let base := ((BootstrapBuilder.empty.withObject srvHi.toObjId
       (.tcb (mkReadyTcb 202 10 (some core1) .Ready))).withObject
     cliLo.toObjId (.tcb (mkWaiterTcb 203 5 202))).build
-  { base with scheduler := base.scheduler.setRunQueueOnCore core1 (RunQueue.ofList [(srvHi, ⟨10⟩)]) }
+  enqueueAllOnCore base core1 [(srvHi, ⟨10⟩)]
 
 private def assertBool (name : String) (b : Bool) : IO Unit := do
   if b then
@@ -316,9 +315,8 @@ private def stLent : SystemState :=
     |>.withObject scLent.toObjId (.schedContext { SchedContext.empty scLent with
         boundThread := some lendSrv, deadline := ⟨9⟩ })
     |>.build
-  { base with
-      scheduler := base.scheduler.setRunQueueOnCore core1 (RunQueue.ofList [(lendOrigin, ⟨6⟩)])
-        |>.setCurrentOnCore core0 (some lendSrv) }
+  let q := enqueueAllOnCore base core1 [(lendOrigin, ⟨6⟩)]
+  { q with scheduler := q.scheduler.setCurrentOnCore core0 (some lendSrv) }
 
 /-- §2.7 the scheduling-context return (`returnDonatedSchedContext`): the
 recipient's effective deadline moves to the context's, and the recipient is
@@ -347,8 +345,7 @@ private def stBound : SystemState :=
     |>.withObject scBound.toObjId (.schedContext { SchedContext.empty scBound with
         boundThread := some boundTid, deadline := ⟨9⟩ })
     |>.build
-  { base with
-      scheduler := base.scheduler.setRunQueueOnCore core1 (RunQueue.ofList [(boundTid, ⟨6⟩)]) }
+  enqueueAllOnCore base core1 [(boundTid, ⟨6⟩)]
 
 /-- §2.8 the bound unbind (`cancelBoundDonationOnCore`): the thread's effective
 deadline stops being the context's, and the thread is queued on another core,

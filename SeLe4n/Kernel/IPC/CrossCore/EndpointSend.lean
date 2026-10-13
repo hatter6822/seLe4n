@@ -161,8 +161,8 @@ theorem wakeThread_bootCore_eq_ensureRunnable (st : SystemState) (tid : SeLe4n.T
     (tcb : TCB)
     (hTcb : st.getTcb? tid = some tcb)
     (hHome : determineTargetCore st tid = bootCoreId)
-    (hNotElsewhere : ∀ c : CoreId, c ≠ bootCoreId →
-      ¬ (st.scheduler.runQueueOnCore c).contains tid)
+    (hNotElsewhere : ∀ c : CoreId, c ≠ bootCoreId → st.queuedOn c tid = false)
+    (hR : st.runQueueRefined)
     (hReady : tcb.ipcState = .ready)
     (hNoResize : ¬ (st.objects.size * 4 ≥ st.objects.capacity * 3)) :
     (wakeThread st tid bootCoreId).1 = ensureRunnable st tid := by
@@ -172,13 +172,14 @@ theorem wakeThread_bootCore_eq_ensureRunnable (st : SystemState) (tid : SeLe4n.T
   have hSome : runnableOnSomeCore st tid
       = (st.scheduler.runQueueOnCore bootCoreId).contains tid := by
     unfold runnableOnSomeCore
+    rw [← (hR bootCoreId).queuedOn]
     apply Bool.eq_iff_iff.mpr
     simp only [List.any_eq_true]
     constructor
     · rintro ⟨c, -, hc⟩
       by_cases hcb : c = bootCoreId
       · exact hcb ▸ hc
-      · exact absurd hc (by simpa using hNotElsewhere c hcb)
+      · rw [hNotElsewhere c hcb] at hc; cases hc
     · intro h
       exact ⟨bootCoreId, SeLe4n.Kernel.Concurrency.mem_allCores _, h⟩
   -- `hReady` makes the wake's object write a re-store of the value already
@@ -263,8 +264,8 @@ theorem endpointSendDualOnCore_bootCore_rendezvous_eq_single (endpointId : SeLe4
     (hStore : storeTcbReceiveComplete stPop receiver (some msg) = .ok stRecv)
     (hTcb : stRecv.getTcb? receiver = some rTcb)
     (hHome : determineTargetCore stRecv receiver = bootCoreId)
-    (hNotElsewhere : ∀ c : CoreId, c ≠ bootCoreId →
-      ¬ (stRecv.scheduler.runQueueOnCore c).contains receiver)
+    (hNotElsewhere : ∀ c : CoreId, c ≠ bootCoreId → stRecv.queuedOn c receiver = false)
+    (hR : stRecv.runQueueRefined)
     (hReady : rTcb.ipcState = .ready)
     (hNoResize : ¬ (stRecv.objects.size * 4 ≥ stRecv.objects.capacity * 3))
     (hSingle : endpointSendDual endpointId sender msg st = .ok ((), st')) :
@@ -290,7 +291,7 @@ theorem endpointSendDualOnCore_bootCore_rendezvous_eq_single (endpointId : SeLe4
   simp only [Except.ok.injEq, Prod.mk.injEq, true_and] at hSingle
   rw [← hSingle]
   exact wakeThread_bootCore_eq_ensureRunnable stRecv receiver rTcb hTcb hHome
-    hNotElsewhere hReady hNoResize
+    hNotElsewhere hR hReady hNoResize
 
 /-- WS-SM SM6: the bounds rejections are fail-closed and state-preserving. -/
 theorem endpointSendDualOnCore_tooLarge (endpointId : SeLe4n.ObjId)

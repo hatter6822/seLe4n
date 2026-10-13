@@ -16,7 +16,8 @@ import SeLe4n.Kernel.Scheduler.PriorityInheritance.PerCore
 The KSC-1 / HAL-3 row of `docs/REGISTERED_DEBT.md`, PR B.  A step `pre → post`
 on executing core `e` **covers** a remote core `c` when it either raised (or
 kept) `c`'s reschedule flag, or left `c`'s scheduling decision unstaled:
-nothing joined `c`'s run queue, no queued thread's effective key moved,
+nothing joined `c`'s run queue (read off the threads' run-queue links, the
+queue the chooser walks: WS-ZA ZA4.5), no queued thread's effective key moved,
 `c`'s current slot is unchanged and its occupant's claim to the CPU did not
 weaken (`coreDecisionUnstaled`).  The flags are allowed to over-approximate —
 a raise that stales nothing costs one scheduling point that finds nothing to
@@ -61,8 +62,8 @@ queued on `c` afterwards was queued there before with the same key, the current
 slot is unchanged, and its occupant's claim did not weaken.  (Removing a queued
 thread, or strengthening the current one, stales nothing.) -/
 def coreDecisionUnstaled (pre post : SystemState) (c : CoreId) : Prop :=
-  (∀ t, t ∈ post.scheduler.runQueueOnCore c →
-      t ∈ pre.scheduler.runQueueOnCore c ∧ schedKeyView pre t = schedKeyView post t) ∧
+  (∀ t, post.queuedOn c t = true →
+      pre.queuedOn c t = true ∧ schedKeyView pre t = schedKeyView post t) ∧
   post.scheduler.currentOnCore c = pre.scheduler.currentOnCore c ∧
   (∀ t, post.scheduler.currentOnCore c = some t → schedKeyNotWeakened pre post t)
 
@@ -357,7 +358,7 @@ theorem schedKeyView_rewriteObject_tcb {st : SystemState} {tid : SeLe4n.ThreadId
 unstaled. -/
 theorem coreDecisionUnstaled_of_frame {pre post : SystemState} {c : CoreId}
     (hKeys : ∀ t, schedKeyView post t = schedKeyView pre t)
-    (hRq : ∀ t, t ∈ post.scheduler.runQueueOnCore c → t ∈ pre.scheduler.runQueueOnCore c)
+    (hRq : ∀ t, post.queuedOn c t = true → pre.queuedOn c t = true)
     (hCur : post.scheduler.currentOnCore c = pre.scheduler.currentOnCore c) :
     coreDecisionUnstaled pre post c :=
   ⟨fun t ht => ⟨hRq t ht, (hKeys t).symm⟩, hCur,
@@ -368,7 +369,7 @@ theorem coreDecisionUnstaled_of_frame {pre post : SystemState} {c : CoreId}
 theorem reschedulePendingCovers_of_frame {e : CoreId} {pre post : SystemState}
     (hKeys : ∀ t, schedKeyView post t = schedKeyView pre t)
     (hSlots : ∀ c, c ≠ e → post.scheduler.reschedulePendingOnCore c = true ∨
-      ((∀ t, t ∈ post.scheduler.runQueueOnCore c → t ∈ pre.scheduler.runQueueOnCore c) ∧
+      ((∀ t, post.queuedOn c t = true → pre.queuedOn c t = true) ∧
         post.scheduler.currentOnCore c = pre.scheduler.currentOnCore c)) :
     reschedulePendingCovers e pre post := fun c hc =>
   (hSlots c hc).imp id fun ⟨hRq, hCur⟩ => coreDecisionUnstaled_of_frame hKeys hRq hCur
@@ -400,7 +401,12 @@ theorem enqueueRunnableOnCore_covers (e c : CoreId) (st : SystemState)
       · intro c' _
         by_cases hc : c = c'
         · subst hc; left; rw [hE]; simp
-        · right; rw [hE]; simp [hc]
+        · right
+          refine ⟨fun t ht => ?_, by rw [hE]; simp [hc]⟩
+          rw [enqueueRunnableOnCore_queuedOn st c tid hInv] at ht
+          split at ht
+          · exact absurd (of_decide_eq_true ht) (Ne.symm hc)
+          · exact ht
 
 theorem enqueueRunnableOnCore_monotone (e c : CoreId) (st : SystemState)
     (tid : SeLe4n.ThreadId) :
@@ -427,11 +433,16 @@ theorem removeRunnableOnCore_covers (e : CoreId) (st : SystemState)
     · left; simp [hcur]
     · right
       refine ⟨fun t ht => ?_, by simp [hcur]⟩
-      simp only [SchedulerState.markReschedulePendingOnCoreIf_runQueueOnCore,
-        SchedulerState.setCurrentOnCore_runQueueOnCore,
-        SchedulerState.setRunQueueOnCore_runQueueOnCore_self] at ht
-      exact ((RunQueue.mem_remove _ _ _).mp ht).1
-  · right; simp [hc]
+      rw [removeRunnableOnCore_queuedOn] at ht
+      split at ht
+      · exact absurd ht (by simp)
+      · exact ht
+  · right
+    refine ⟨fun t ht => ?_, by simp [hc]⟩
+    rw [removeRunnableOnCore_queuedOn] at ht
+    split at ht
+    · exact absurd ht (by simp)
+    · exact ht
 
 theorem removeRunnableOnCore_monotone (e : CoreId) (st : SystemState)
     (tid : SeLe4n.ThreadId) (c : CoreId) :
@@ -452,13 +463,12 @@ theorem removeRunnableOnCore_monotone (e : CoreId) (st : SystemState)
 theorem markKeyChangeFor_reschedulePendingOnCore_of_moved {pre mid : SystemState}
     {tid : SeLe4n.ThreadId} {tcb : TCB} {c : CoreId}
     (hPre : pre.getTcb? tid = some tcb)
-    (hMem : tid ∈ mid.scheduler.runQueueOnCore c)
+    (hMem : mid.queuedOn c tid = true)
     (hMoved : schedKeyView mid tid ≠ schedKeyView pre tid) :
     (markKeyChangeFor mid tid (effectiveSchedParams pre tcb)).scheduler.reschedulePendingOnCore c
       = true := by
-  have hMem' : (mid.scheduler.runQueueOnCore c).contains tid = true := hMem
   simp only [markKeyChangeFor, markReschedulePendingWhere_reschedulePendingOnCore,
-    Concurrency.mem_allCores, decide_true, Bool.and_true, hMem', Bool.and_true]
+    Concurrency.mem_allCores, decide_true, Bool.and_true, hMem, Bool.and_true]
   cases hT : mid.getTcb? tid with
   | none => simp
   | some x =>
@@ -510,26 +520,26 @@ theorem markKeyChangeFor_covers {e : CoreId} {pre mid : SystemState}
     {tid : SeLe4n.ThreadId} {tcb : TCB} (hPre : pre.getTcb? tid = some tcb)
     (hOthers : ∀ t, t ≠ tid → schedKeyView mid t = schedKeyView pre t)
     (hSlots : ∀ c, c ≠ e → mid.scheduler.reschedulePendingOnCore c = true ∨
-      ((∀ t, t ∈ mid.scheduler.runQueueOnCore c → t ∈ pre.scheduler.runQueueOnCore c) ∧
+      ((∀ t, mid.queuedOn c t = true → pre.queuedOn c t = true) ∧
         mid.scheduler.currentOnCore c = pre.scheduler.currentOnCore c)) :
     reschedulePendingCovers e pre
       (markKeyChangeFor mid tid (effectiveSchedParams pre tcb)) := by
   intro c hc
   rcases hSlots c hc with hUp | ⟨hRq, hCur⟩
   · exact Or.inl (markKeyChangeFor_reschedulePendingOnCore_mono _ _ _ _ hUp)
-  by_cases hA : tid ∈ mid.scheduler.runQueueOnCore c ∧ schedKeyView mid tid ≠ schedKeyView pre tid
+  by_cases hA : mid.queuedOn c tid = true ∧ schedKeyView mid tid ≠ schedKeyView pre tid
   · exact Or.inl (markKeyChangeFor_reschedulePendingOnCore_of_moved hPre hA.1 hA.2)
   by_cases hB : mid.scheduler.currentOnCore c = some tid ∧ ¬ schedKeyNotWeakened pre mid tid
   · exact Or.inl (markKeyChangeFor_reschedulePendingOnCore_of_weakened hPre hB.1 hB.2)
   right
-  have hKey : ∀ t, t ∈ mid.scheduler.runQueueOnCore c → schedKeyView pre t = schedKeyView mid t := by
+  have hKey : ∀ t, mid.queuedOn c t = true → schedKeyView pre t = schedKeyView mid t := by
     intro t ht
     by_cases hEq : t = tid
     · subst hEq
       exact (Classical.byContradiction fun h => hA ⟨ht, fun h' => h h'.symm⟩)
     · exact (hOthers t hEq).symm
   refine ⟨fun t ht => ?_, ?_, fun t ht => ?_⟩
-  · simp only [markKeyChangeFor_runQueueOnCore] at ht
+  · rw [markKeyChangeFor_queuedOn] at ht
     exact ⟨hRq t ht, (hKey t ht).trans (schedKeyView_markKeyChangeFor _ _ _ t).symm⟩
   · simp only [markKeyChangeFor_currentOnCore]; exact hCur
   · simp only [markKeyChangeFor_currentOnCore] at ht
@@ -546,7 +556,7 @@ theorem markKeyChangeFor_covers {e : CoreId} {pre mid : SystemState}
 in `post`: a core whose queue holds `tid` when its key moved, and a core whose
 current slot holds it when its key weakened. -/
 def keyChangeFlagged (pre post : SystemState) (tid : SeLe4n.ThreadId) : Prop :=
-  ∀ c, ((tid ∈ post.scheduler.runQueueOnCore c ∧ schedKeyView post tid ≠ schedKeyView pre tid) ∨
+  ∀ c, ((post.queuedOn c tid = true ∧ schedKeyView post tid ≠ schedKeyView pre tid) ∨
       (post.scheduler.currentOnCore c = some tid ∧ ¬ schedKeyNotWeakened pre post tid)) →
     post.scheduler.reschedulePendingOnCore c = true
 
@@ -556,7 +566,7 @@ may only shrink), covers. -/
 theorem reschedulePendingCovers_of_keyChangeFlagged {e : CoreId} {pre post : SystemState}
     (hKeys : ∀ t, schedKeyView post t = schedKeyView pre t ∨ keyChangeFlagged pre post t)
     (hSlots : ∀ c, c ≠ e → post.scheduler.reschedulePendingOnCore c = true ∨
-      ((∀ t, t ∈ post.scheduler.runQueueOnCore c → t ∈ pre.scheduler.runQueueOnCore c) ∧
+      ((∀ t, post.queuedOn c t = true → pre.queuedOn c t = true) ∧
         post.scheduler.currentOnCore c = pre.scheduler.currentOnCore c)) :
     reschedulePendingCovers e pre post := by
   intro c hc
@@ -575,7 +585,7 @@ theorem reschedulePendingCovers_of_keyChangeFlagged {e : CoreId} {pre post : Sys
 /-- Flagging survives a later step that moves no slot, no key and no flag down. -/
 theorem keyChangeFlagged_of_flagOnly {pre mid post : SystemState} {tid : SeLe4n.ThreadId}
     (h : keyChangeFlagged pre mid tid)
-    (hRq : ∀ c, post.scheduler.runQueueOnCore c = mid.scheduler.runQueueOnCore c)
+    (hRq : SystemState.RunCoresAgree post mid)
     (hCur : ∀ c, post.scheduler.currentOnCore c = mid.scheduler.currentOnCore c)
     (hKey : ∀ t, schedKeyView post t = schedKeyView mid t)
     (hMono : ∀ c, mid.scheduler.reschedulePendingOnCore c = true →
@@ -586,7 +596,7 @@ theorem keyChangeFlagged_of_flagOnly {pre mid post : SystemState} {tid : SeLe4n.
   apply h c
   have hW : schedKeyNotWeakened pre post tid ↔ schedKeyNotWeakened pre mid tid := by
     unfold schedKeyNotWeakened; rw [hKey]
-  rw [hRq, hCur, hKey] at hc
+  rw [hRq.queuedOn, hCur, hKey] at hc
   rcases hc with hc | ⟨hc1, hc2⟩
   · exact Or.inl hc
   · exact Or.inr ⟨hc1, fun hw => hc2 (hW.mpr hw)⟩
@@ -608,8 +618,9 @@ theorem markKeyChangeFrom_reschedulePendingOnCore_mono (pre post : SystemState)
 theorem markKeyChangeFrom_flagged (pre mid : SystemState) (tid : SeLe4n.ThreadId) :
     keyChangeFlagged pre (markKeyChangeFrom pre mid tid) tid := by
   intro c hc
-  simp only [markKeyChangeFrom_runQueueOnCore, markKeyChangeFrom_currentOnCore,
-    schedKeyView_markKeyChangeFrom] at hc
+  rw [(SystemState.RunCoresAgree.of_objects (markKeyChangeFrom_objects pre mid tid)).queuedOn]
+    at hc
+  simp only [markKeyChangeFrom_currentOnCore, schedKeyView_markKeyChangeFrom] at hc
   have hW : schedKeyNotWeakened pre (markKeyChangeFrom pre mid tid) tid ↔
       schedKeyNotWeakened pre mid tid := by
     unfold schedKeyNotWeakened; simp only [schedKeyView_markKeyChangeFrom]
@@ -625,13 +636,12 @@ theorem markKeyChangeFrom_flagged (pre mid : SystemState) (tid : SeLe4n.ThreadId
         (fun h' => hw (hW.mpr (by rw [hEq] at *; exact h')))
   | none =>
     have hEq : markKeyChangeFrom pre mid tid = markReschedulePendingWhere mid
-        (fun c => (mid.scheduler.runQueueOnCore c).contains tid ||
+        (fun c => mid.queuedOn c tid ||
           mid.scheduler.currentOnCore c == some tid) allCores := by
       unfold markKeyChangeFrom; rw [hT]
     rw [hEq, markReschedulePendingWhere_reschedulePendingOnCore]
     rcases hc with ⟨hm, -⟩ | ⟨hcur, -⟩
-    · have hm' : (mid.scheduler.runQueueOnCore c).contains tid = true := hm
-      simp [hm']
+    · simp [hm]
     · simp [hcur]
 
 /-! ### The key inputs as an object-store relation
@@ -642,12 +652,15 @@ object slot onto exactly that, so "no key moved" is a property of the object
 store that composes by `.trans` and that a single store lemma establishes for
 every write whose slot keeps its projection. -/
 
-/-- What one object slot contributes to any thread's effective key. -/
+/-- What one object slot contributes to any thread's effective key, and the core
+whose run queue a TCB's links place it on (WS-ZA ZA4.5: the coverage reads
+queue membership off the TCB links, so the core is an input too). -/
 def keyInputsOf : Option KernelObject →
     Option ((SeLe4n.Priority × SeLe4n.Deadline × SchedContextBinding ×
-      Option SeLe4n.Priority × SeLe4n.DomainId) ⊕ SeLe4n.Deadline)
+      Option SeLe4n.Priority × SeLe4n.DomainId × Nat) ⊕ SeLe4n.Deadline)
   | some (.tcb t) =>
-      some (.inl (t.priority, t.deadline, t.schedContextBinding, t.pipBoost, t.domain))
+      some (.inl (t.priority, t.deadline, t.schedContextBinding, t.pipBoost, t.domain,
+        t.runCoreCode))
   | some (.schedContext sc) => some (.inr sc.deadline)
   | _ => none
 
@@ -678,17 +691,68 @@ theorem keyInputsEq_storeObject {st st' : SystemState} {oid : SeLe4n.ObjId}
 theorem keyInputsEq_with_scheduler (st : SystemState) (s : SchedulerState) :
     keyInputsEq st { st with scheduler := s } := fun _ => rfl
 
-/-- WS-ZA ZA4.5: clearing a TCB's run-queue links moves no key input. -/
-theorem keyInputsOf_map_withoutRunLinks (o : Option KernelObject) :
-    keyInputsOf (o.map KernelObject.withoutRunLinks) = keyInputsOf o := by
-  rcases o with _ | o
-  · rfl
-  · cases o <;> rfl
+/-- WS-ZA ZA4.5: two slots that agree off the run-queue links and name the same
+run-queue core carry the same key inputs. -/
+theorem keyInputsOf_eq_of_offRunLinks {a b : Option KernelObject}
+    (hw : a.map KernelObject.withoutRunLinks = b.map KernelObject.withoutRunLinks)
+    (hr : ∀ t t', a = some (.tcb t) → b = some (.tcb t') → t.runCoreCode = t'.runCoreCode) :
+    keyInputsOf a = keyInputsOf b := by
+  cases a with
+  | none => cases b with
+    | none => rfl
+    | some _ => simp at hw
+  | some o => cases b with
+    | none => simp at hw
+    | some o' =>
+      simp only [Option.map_some, Option.some.injEq] at hw
+      by_cases ht : ∃ t', o' = .tcb t'
+      · obtain ⟨t', rfl⟩ := ht
+        obtain ⟨t, rfl, e⟩ := KernelObject.withoutRunLinks_eq_tcb hw
+        have hc := hr t t' rfl rfl
+        simp only [keyInputsOf, hc, TCB.proj_eq_of_withoutRunLinks_eq TCB.priority e,
+          TCB.proj_eq_of_withoutRunLinks_eq TCB.deadline e,
+          TCB.proj_eq_of_withoutRunLinks_eq TCB.schedContextBinding e,
+          TCB.proj_eq_of_withoutRunLinks_eq TCB.pipBoost e,
+          TCB.proj_eq_of_withoutRunLinks_eq TCB.domain e]
+      · have hNot : ∀ t', o' ≠ .tcb t' := fun t' h => ht ⟨t', h⟩
+        rw [KernelObject.withoutRunLinks_eq_self_of_not_tcb hNot] at hw
+        have hNotO : ∀ t, o ≠ .tcb t := fun t h => by
+          subst h; exact hNot _ (by simpa using hw.symm)
+        rw [KernelObject.withoutRunLinks_eq_self_of_not_tcb hNotO] at hw
+        rw [hw]
 
-/-- WS-ZA ZA4.5: the run-queue links are no key input. -/
+/-- The thread whose TCB an object slot would hold. -/
+theorem runCoreCode_eq_of_slot {pre post : SystemState} {oid : SeLe4n.ObjId}
+    (hc : (post.getTcb? (SeLe4n.ThreadId.ofNat oid.toNat)).map TCB.runCoreCode =
+      (pre.getTcb? (SeLe4n.ThreadId.ofNat oid.toNat)).map TCB.runCoreCode) :
+    ∀ t t', post.objects[oid]? = some (.tcb t) → pre.objects[oid]? = some (.tcb t') →
+      t.runCoreCode = t'.runCoreCode := fun t t' ha hb => by
+  rw [(SystemState.getTcb?_eq_some_iff post (SeLe4n.ThreadId.ofNat oid.toNat) t).mpr ha,
+    (SystemState.getTcb?_eq_some_iff pre (SeLe4n.ThreadId.ofNat oid.toNat) t').mpr hb] at hc
+  simpa using hc
+
+/-- WS-ZA ZA4.5: the run-queue links other than the core are no key input. -/
 theorem keyInputsEq_of_objectsAgreeOffRunLinks {pre post : SystemState}
-    (h : post.objectsAgreeOffRunLinks pre) : keyInputsEq pre post := fun oid => by
-  rw [← keyInputsOf_map_withoutRunLinks, h oid, keyInputsOf_map_withoutRunLinks]
+    (h : post.objectsAgreeOffRunLinks pre) (hRun : SystemState.RunCoresAgree post pre) :
+    keyInputsEq pre post := fun oid =>
+  keyInputsOf_eq_of_offRunLinks (h oid) (runCoreCode_eq_of_slot (hRun _))
+
+/-- Equal key inputs place every thread on the same run-queue core. -/
+theorem keyInputsEq.runCoresAgree {pre post : SystemState} (h : keyInputsEq pre post) :
+    SystemState.RunCoresAgree post pre := fun y => by
+  have hk := h y.toObjId
+  unfold SystemState.getTcb?
+  revert hk
+  generalize post.objects[y.toObjId]? = a
+  generalize pre.objects[y.toObjId]? = b
+  intro hk
+  cases a with
+  | none => cases b with
+    | none => rfl
+    | some o => cases o <;> simp_all [keyInputsOf]
+  | some o => cases b with
+    | none => cases o <;> simp_all [keyInputsOf]
+    | some o' => cases o <;> cases o' <;> simp_all [keyInputsOf]
 
 /-- A TCB's five key fields. -/
 def tcbKeyFields (t : TCB) :
@@ -783,6 +847,12 @@ theorem schedKeyView_eq_of_keyInputsEq {pre post : SystemState} (h : keyInputsEq
     rw [effectiveSchedParams_congr_deadline
       (getSchedContext?_deadline_of_keyInputsEq h) hT]
 
+/-- Equal key inputs followed by a run-queue link rewrite move no thread's key. -/
+theorem schedKeyView_of_keyInputsEq_offRunLinks {pre mid post : SystemState}
+    (h₁ : keyInputsEq pre mid) (h₂ : post.objectsAgreeOffRunLinks mid) (t : SeLe4n.ThreadId) :
+    schedKeyView post t = schedKeyView pre t :=
+  (schedKeyView_of_objectsAgreeOffRunLinks h₂ t).trans (schedKeyView_eq_of_keyInputsEq h₁ t)
+
 /-- **No key input moved but `tid`'s own TCB's**, and `tid`'s slot holds no
 scheduling context on either side, so no other thread's key can read it. -/
 def keyInputsEqExcept (tid : SeLe4n.ThreadId) (pre post : SystemState) : Prop :=
@@ -807,6 +877,29 @@ theorem keyInputsEqExcept.trans_keyInputsEq {tid : SeLe4n.ThreadId} {a b d : Sys
     rw [hb] at hk
     cases o <;> simp [keyInputsOf] at hk
     exact h₁.2.2 _ hb
+
+/-- A run-queue link rewrite that moves no core but `tid`'s keeps every key input
+but `tid`'s. -/
+theorem keyInputsEqExcept.trans_offRunLinks {tid : SeLe4n.ThreadId} {a b d : SystemState}
+    (h₁ : keyInputsEqExcept tid a b) (h₂ : d.objectsAgreeOffRunLinks b)
+    (hRun : ∀ y, y ≠ tid → (d.getTcb? y).map TCB.runCoreCode = (b.getTcb? y).map TCB.runCoreCode) :
+    keyInputsEqExcept tid a d := by
+  refine ⟨fun oid h => ?_, h₁.2.1, fun sc hd => ?_⟩
+  · refine (keyInputsOf_eq_of_offRunLinks (h₂ oid) (runCoreCode_eq_of_slot (hRun _ ?_))).trans
+      (h₁.1 oid h)
+    intro e; exact h (by rw [← e]; rfl)
+  · have hw := h₂ tid.toObjId
+    rw [hd] at hw
+    cases hb : b.objects[tid.toObjId]? with
+    | none => rw [hb] at hw; cases hw
+    | some o =>
+      rw [hb] at hw
+      simp only [Option.map_some, Option.some.injEq] at hw
+      cases o with
+      | tcb t => simp [KernelObject.withoutRunLinks] at hw
+      | schedContext sc' =>
+        exact h₁.2.2 sc' hb
+      | _ => simp [KernelObject.withoutRunLinks] at hw
 
 theorem keyInputsEq.trans_keyInputsEqExcept {tid : SeLe4n.ThreadId} {a b d : SystemState}
     (h₁ : keyInputsEq a b) (h₂ : keyInputsEqExcept tid b d) : keyInputsEqExcept tid a d := by
@@ -880,7 +973,8 @@ theorem keyInputsEq_rewriteObject {st : SystemState} {id : SeLe4n.ObjId} {new : 
 
 /-- A TCB update that keeps every key field moves no key input. -/
 theorem keyInputsEq_updateTcb {st : SystemState} {tid : SeLe4n.ThreadId} {f : TCB → TCB}
-    (hInv : st.objects.invExt) (hF : ∀ t, tcbKeyFields (f t) = tcbKeyFields t) :
+    (hInv : st.objects.invExt) (hF : ∀ t, tcbKeyFields (f t) = tcbKeyFields t)
+    (hR : ∀ t, (f t).runCoreCode = t.runCoreCode := by intro _; rfl) :
     keyInputsEq st (st.updateTcb tid f) := by
   cases hT : st.getTcb? tid with
   | none => rw [SystemState.updateTcb_eq_self_of_none hT]; exact keyInputsEq_refl st
@@ -893,7 +987,7 @@ theorem keyInputsEq_updateTcb {st : SystemState} {tid : SeLe4n.ThreadId} {f : TC
     rw [hO]
     have := hF t
     simp only [tcbKeyFields, Prod.mk.injEq] at this
-    simp only [keyInputsOf, this]
+    simp only [keyInputsOf, this, hR t]
 
 /-! ### Steps that cover by frame -/
 
@@ -915,13 +1009,12 @@ theorem stepCovers_of_eq {e : CoreId} {pre post : SystemState} (h : post = pre) 
 /-- **A step that moves no key input, no remote slot and no remote flag down
 covers.**  The discharge for every object-only step. -/
 theorem stepCovers_of_frame {e : CoreId} {pre post : SystemState}
-    (hKeys : keyInputsEq pre post)
-    (hRq : ∀ c, c ≠ e → post.scheduler.runQueueOnCore c = pre.scheduler.runQueueOnCore c)
+    (hView : ∀ t, schedKeyView post t = schedKeyView pre t)
+    (hRq : ∀ c, c ≠ e → ∀ t, post.queuedOn c t = true → pre.queuedOn c t = true)
     (hCur : ∀ c, c ≠ e → post.scheduler.currentOnCore c = pre.scheduler.currentOnCore c)
     (hMono : reschedulePendingMonotone e pre post) :
     stepCovers e pre post :=
-  ⟨reschedulePendingCovers_of_frame (schedKeyView_eq_of_keyInputsEq hKeys)
-    (fun c hc => Or.inr ⟨fun t ht => by rw [hRq c hc] at ht; exact ht, hCur c hc⟩), hMono⟩
+  ⟨reschedulePendingCovers_of_frame hView (fun c hc => Or.inr ⟨hRq c hc, hCur c hc⟩), hMono⟩
 
 /-- The common shape: the scheduler is unchanged but for the flags, which only
 rise. -/
@@ -931,7 +1024,8 @@ theorem stepCovers_of_scheduler_eq_except_reschedule {e : CoreId} {pre post : Sy
       { pre.scheduler with reschedulePending := post.scheduler.reschedulePending })
     (hMono : reschedulePendingMonotone e pre post) :
     stepCovers e pre post :=
-  stepCovers_of_frame hKeys (fun c _ => by rw [hSched]; rfl) (fun c _ => by rw [hSched]; rfl) hMono
+  stepCovers_of_frame (schedKeyView_eq_of_keyInputsEq hKeys)
+    (fun c _ t ht => (hKeys.runCoresAgree.queuedOn c t) ▸ ht) (fun c _ => by rw [hSched]; rfl) hMono
 
 theorem reschedulePendingMonotone_of_scheduler_eq {e : CoreId} {pre post : SystemState}
     (h : post.scheduler = pre.scheduler) : reschedulePendingMonotone e pre post :=
@@ -951,7 +1045,7 @@ theorem stepCovers_markKeyChangeFor {e : CoreId} {pre mid : SystemState}
     {tid : SeLe4n.ThreadId} {tcb : TCB} (hPre : pre.getTcb? tid = some tcb)
     (hKeys : keyInputsEqExcept tid pre mid)
     (hSlots : ∀ c, c ≠ e → mid.scheduler.reschedulePendingOnCore c = true ∨
-      ((∀ t, t ∈ mid.scheduler.runQueueOnCore c → t ∈ pre.scheduler.runQueueOnCore c) ∧
+      ((∀ t, mid.queuedOn c t = true → pre.queuedOn c t = true) ∧
         mid.scheduler.currentOnCore c = pre.scheduler.currentOnCore c))
     (hMono : reschedulePendingMonotone e pre mid) :
     stepCovers e pre (markKeyChangeFor mid tid (effectiveSchedParams pre tcb)) :=

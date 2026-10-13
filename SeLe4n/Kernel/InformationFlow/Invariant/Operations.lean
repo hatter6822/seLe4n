@@ -4354,12 +4354,9 @@ theorem runRequeueOnCore_preserves_projection
   simp only [projectRunnable, SchedulerState.runnable]
   by_cases hc : c = bootCoreId
   · subst hc
-    rw [SchedulerState.setRunQueueOnCore_runQueueOnCore_self,
-      SeLe4n.Kernel.RunQueue.toList_filter_insert_neg'
-        ((st.scheduler.runQueueOnCore bootCoreId).remove tid) tid p
-        (threadObservable ctx observer) hTidHigh]
-    exact SeLe4n.Kernel.RunQueue.toList_filter_remove_neg
-      (st.scheduler.runQueueOnCore bootCoreId) tid (threadObservable ctx observer) hTidHigh
+    rw [SchedulerState.setRunQueueOnCore_runQueueOnCore_self]
+    exact SeLe4n.Kernel.RunQueue.toList_filter_rekey_neg
+      (st.scheduler.runQueueOnCore bootCoreId) tid p (threadObservable ctx observer) hTidHigh
   · rw [SchedulerState.setRunQueueOnCore_runQueueOnCore_ne _ _ _ _ hc,
       SchedulerState.setRunQueueEndsOnCore_runQueueOnCore]
 

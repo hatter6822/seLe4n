@@ -226,6 +226,97 @@ theorem runLinkOn_queued_iff (st : SystemState) (c : CoreId) (t : SeLe4n.ThreadI
     · simp [hc, TCB.runLinkOn, TCB.runLink]
     · simp [hc, TCB.runLinkOn, RunQueue.RunQueueLink.none]
 
+/-- WS-ZA ZA4.5: is thread `t` queued on core `c`?  Read from its TCB alone —
+the core its run-queue links name — with no queue consulted, which is what the
+compiled kernel runs for every run-queue membership test (`queuedOn_eq`). -/
+def queuedOn (st : SystemState) (c : CoreId) (t : SeLe4n.ThreadId) : Bool :=
+  match st.getTcb? t with
+  | some tcb => tcb.runCoreCode == c.val + 1
+  | none => false
+
+theorem queuedOn_eq_runLinkOn (st : SystemState) (c : CoreId) (t : SeLe4n.ThreadId) :
+    st.queuedOn c t = (st.runLinkOn c t).queued := by
+  unfold queuedOn
+  apply Bool.eq_iff_iff.mpr
+  rw [runLinkOn_queued_iff]
+  cases h : st.getTcb? t with
+  | none => simp
+  | some tcb => simp
+
+theorem queuedOn_of_getTcb? {st st' : SystemState} {t : SeLe4n.ThreadId}
+    (h : st'.getTcb? t = st.getTcb? t) (c : CoreId) : st'.queuedOn c t = st.queuedOn c t := by
+  unfold queuedOn; rw [h]
+
+/-- WS-ZA ZA4.5: two states whose threads name the same run-queue core — the
+TCB field `queuedOn` reads, compared thread by thread (a thread that is no TCB
+in one is none in the other).  What a step that moves no thread on or off a run
+queue keeps, whatever else it writes. -/
+def RunCoresAgree (st' st : SystemState) : Prop :=
+  ∀ y : SeLe4n.ThreadId, (st'.getTcb? y).map TCB.runCoreCode = (st.getTcb? y).map TCB.runCoreCode
+
+namespace RunCoresAgree
+
+theorem refl (st : SystemState) : RunCoresAgree st st := fun _ => rfl
+
+theorem symm {st st' : SystemState} (h : RunCoresAgree st' st) : RunCoresAgree st st' :=
+  fun y => (h y).symm
+
+theorem trans {s1 s2 s3 : SystemState} (h₂ : RunCoresAgree s3 s2) (h₁ : RunCoresAgree s2 s1) :
+    RunCoresAgree s3 s1 := fun y => (h₂ y).trans (h₁ y)
+
+theorem of_objects {st st' : SystemState} (h : st'.objects = st.objects) : RunCoresAgree st' st :=
+  fun y => by unfold getTcb?; rw [h]
+
+theorem queuedOn {st st' : SystemState} (h : RunCoresAgree st' st) (c : CoreId)
+    (t : SeLe4n.ThreadId) : st'.queuedOn c t = st.queuedOn c t := by
+  have ht := h t
+  unfold SystemState.queuedOn
+  cases h1 : st'.getTcb? t <;> cases h2 : st.getTcb? t <;> rw [h1, h2] at ht <;>
+    simp only [Option.map_none, Option.map_some, reduceCtorEq, Option.some.injEq] at ht <;>
+    simp only [ht]
+
+/-- A TCB update that keeps the run-queue core keeps every thread's core. -/
+theorem updateTcb {st : SystemState} {tid : SeLe4n.ThreadId} {f : TCB → TCB}
+    (hInv : st.objects.invExt) (hf : ∀ t, (f t).runCoreCode = t.runCoreCode) :
+    RunCoresAgree (st.updateTcb tid f) st := by
+  intro y
+  by_cases h : tid.toObjId = y.toObjId
+  · cases ThreadId.toObjId_injective tid y h
+    rw [updateTcb_getTcb?_self st tid f hInv]
+    cases st.getTcb? tid <;> simp [hf]
+  · rw [updateTcb_getTcb?_ne st tid f hInv y h]
+
+/-- An in-place rewrite of a TCB that keeps its run-queue core keeps every
+thread's core. -/
+theorem rewriteObject_tcb {st : SystemState} {tid : SeLe4n.ThreadId} {tcb tcb' : TCB}
+    (hT : st.getTcb? tid = some tcb) (h : st.rewriteAdmissible tid.toObjId (.tcb tcb'))
+    (hInv : st.objects.invExt) (hc : tcb'.runCoreCode = tcb.runCoreCode) :
+    RunCoresAgree (st.rewriteObject tid.toObjId (.tcb tcb') h) st := by
+  intro y
+  by_cases hy : tid.toObjId = y.toObjId
+  · cases ThreadId.toObjId_injective tid y hy
+    rw [hT, (getTcb?_eq_some_iff _ tid tcb').mpr (rewriteObject_objects_self st _ _ h hInv)]
+    simp [hc]
+  · rw [rewriteObject_getTcb?_ne st _ _ h hInv y hy]
+
+/-- An in-place rewrite of a slot that holds no TCB, with no TCB, keeps every
+thread's core. -/
+theorem rewriteObject_not_tcb {st : SystemState} {id : SeLe4n.ObjId} {new : KernelObject}
+    (h : st.rewriteAdmissible id new) (hInv : st.objects.invExt)
+    (hOld : ∀ t, st.objects[id]? ≠ some (.tcb t)) (hNew : ∀ t, new ≠ .tcb t) :
+    RunCoresAgree (st.rewriteObject id new h) st := by
+  intro y
+  by_cases hy : id = y.toObjId
+  · subst hy
+    unfold getTcb?
+    rw [rewriteObject_objects_self st _ _ h hInv]
+    cases hO : st.objects[y.toObjId]? with
+    | none => cases new <;> simp_all
+    | some o => cases o <;> cases new <;> simp_all
+  · rw [rewriteObject_getTcb?_ne st _ _ h hInv y hy]
+
+end RunCoresAgree
+
 /-- A thread is on at most one core's queue: its TCB names one core. -/
 theorem runLinkOn_queued_unique {st : SystemState} {c c' : CoreId} {t : SeLe4n.ThreadId}
     (h : (st.runLinkOn c t).queued = true) (h' : (st.runLinkOn c' t).queued = true) : c = c' := by
@@ -304,6 +395,11 @@ variable {st : SystemState} {c : CoreId}
 theorem contains (h : st.runQueueRefinedOnCore c) (t : SeLe4n.ThreadId) :
     (st.runLinkOn c t).queued = (st.scheduler.runQueueOnCore c).contains t := by
   rw [h.2 t, RunQueue.queuedLink_queued]
+
+/-- Membership read from the threads' links is the queue's. -/
+theorem queuedOn (h : st.runQueueRefinedOnCore c) (t : SeLe4n.ThreadId) :
+    st.queuedOn c t = (st.scheduler.runQueueOnCore c).contains t := by
+  rw [queuedOn_eq_runLinkOn, h.contains]
 
 /-- A queued thread's entry, read from its TCB, is the queue's. -/
 theorem link_of_mem (h : st.runQueueRefinedOnCore c) {t : SeLe4n.ThreadId}
@@ -538,6 +634,62 @@ theorem runEnqueueOnCore_runCoreCode_ne (st : SystemState) (c : CoreId) (t y : S
   · exact runEnqueueAdmitted_runCoreCode_ne st c t y p hy
   · rfl
 
+/-- The append's TCB writes give `t` core `c`'s code and keep every other
+thread's. -/
+theorem runAppendLinks_runCoresAgree_self (st : SystemState) (c : CoreId) (t : SeLe4n.ThreadId)
+    (p : SeLe4n.Priority) :
+    ((st.runAppendLinks c t p).getTcb? t).map TCB.runCoreCode =
+      (st.getTcb? t).map (fun _ => c.val + 1) := by
+  unfold runAppendLinks; dsimp only
+  rw [updateTcbAtCode_runCoreCode _ _ (fun x => { x with runBucketNextCode := code t })
+      (fun _ => rfl) t,
+    updateTcbAtCode_runCoreCode _ _ (fun x => { x with runNextCode := code t }) (fun _ => rfl) t,
+    mapTcbInPlace_getTcb?_self, Option.map_map]
+  rfl
+
+/-- WS-ZA ZA4.5: after the admitted enqueue of `t` on core `c`, `t` — when it is
+a thread — is queued on `c` and on no other core, and no other thread moves on
+or off a queue. -/
+theorem runEnqueueAdmitted_queuedOn (st : SystemState) (c : CoreId) (t : SeLe4n.ThreadId)
+    (p : SeLe4n.Priority) (c' : CoreId) (y : SeLe4n.ThreadId) :
+    (st.runEnqueueAdmitted c t p).queuedOn c' y =
+      if y = t then ((st.getTcb? t).isSome && decide (c' = c)) else st.queuedOn c' y := by
+  by_cases hy : y = t
+  · subst hy
+    rw [if_pos rfl]
+    have hcode : ∀ tcb : TCB, tcb.runCoreCode = c.val + 1 →
+        (tcb.runCoreCode == c'.val + 1) = decide (c' = c) := by
+      intro tcb hC
+      rw [hC]
+      by_cases hc : c' = c
+      · subst hc; simp
+      · simp only [hc, decide_false, beq_eq_false_iff_ne]
+        intro h; exact hc (Fin.ext (by omega))
+    unfold runEnqueueAdmitted; dsimp only
+    split
+    · next hq =>
+      show st.queuedOn c' y = _
+      obtain ⟨tcb, hT, hC⟩ := (runLinkOn_queued_iff st c y).mp hq
+      unfold queuedOn; rw [hT]
+      simp only [Option.isSome_some, Bool.true_and]
+      exact hcode tcb hC
+    · show (st.runAppendLinks c y p).queuedOn c' y = _
+      have h := runAppendLinks_runCoresAgree_self st c y p
+      unfold queuedOn
+      cases h1 : (st.runAppendLinks c y p).getTcb? y <;> cases h2 : st.getTcb? y <;>
+        rw [h1, h2] at h <;>
+        simp only [Option.map_none, Option.map_some, reduceCtorEq, Option.some.injEq] at h
+      · rfl
+      · simp only [Option.isSome_some, Bool.true_and]; exact hcode _ h
+  · rw [if_neg hy]
+    have h := runEnqueueAdmitted_runCoreCode_ne st c t y p hy
+    unfold queuedOn
+    cases h1 : (st.runEnqueueAdmitted c t p).getTcb? y <;> cases h2 : st.getTcb? y <;>
+      rw [h1, h2] at h <;>
+      simp only [Option.map_none, Option.map_some, reduceCtorEq, Option.some.injEq] at h <;>
+      simp only [h]
+
+
 /-- Core `c`'s current thread may go back on `c`'s queue: it is queued on no
 other core (seL4's `ct_not_in_q` at the preemption point). A preemption puts
 the outgoing thread back on its own core, and that requeue lands only under
@@ -597,6 +749,72 @@ theorem runEnqueueAdmits_isSome {st : SystemState} {c : CoreId} {t : SeLe4n.Thre
   | none => rw [hT] at h; cases h
   | some _ => rfl
 
+/-- A thread is admitted on `c` exactly when it is a TCB its links queue on no
+other core. -/
+theorem runEnqueueAdmits_iff {st : SystemState} {c : CoreId} {t : SeLe4n.ThreadId}
+    (hT : (st.getTcb? t).isSome) :
+    st.runEnqueueAdmits c t = true ↔ ∀ c', c' ≠ c → st.queuedOn c' t = false := by
+  obtain ⟨tcb, hTcb⟩ := Option.isSome_iff_exists.mp hT
+  unfold runEnqueueAdmits queuedOn
+  simp only [hTcb, Bool.or_eq_true, beq_iff_eq, decide_eq_true_eq, beq_eq_false_iff_ne]
+  constructor
+  · rintro ((h1 | h0) | hlt) c' hne he
+    · exact hne (Fin.ext (by omega))
+    · omega
+    · have := c'.isLt; omega
+  · intro hN
+    by_cases h0 : tcb.runCoreCode = 0
+    · exact Or.inl (Or.inr h0)
+    · by_cases hlt : Concurrency.numCores < tcb.runCoreCode
+      · exact Or.inr hlt
+      · refine Or.inl (Or.inl ?_)
+        by_cases hc : (⟨tcb.runCoreCode - 1, by omega⟩ : CoreId) = c
+        · rw [← hc]; show tcb.runCoreCode = tcb.runCoreCode - 1 + 1; omega
+        · exact absurd (show tcb.runCoreCode = tcb.runCoreCode - 1 + 1 by omega) (hN _ hc)
+
+theorem runEnqueueOnCore_queuedOn (st : SystemState) (c : CoreId) (t : SeLe4n.ThreadId)
+    (p : SeLe4n.Priority) (c' : CoreId) (y : SeLe4n.ThreadId) :
+    (st.runEnqueueOnCore c t p).queuedOn c' y =
+      if y = t ∧ st.runEnqueueAdmits c t = true then decide (c' = c)
+      else st.queuedOn c' y := by
+  unfold runEnqueueOnCore
+  split
+  · next hA =>
+    rw [runEnqueueAdmitted_queuedOn]
+    by_cases hy : y = t
+    · subst hy
+      rw [if_pos rfl, if_pos ⟨rfl, hA⟩, runEnqueueAdmits_isSome hA, Bool.true_and]
+    · rw [if_neg hy, if_neg (fun h => hy h.1)]
+  · next hA =>
+    rw [if_neg (fun h => hA h.2)]
+
+/-- An enqueue on core `c` queues nothing new on any other core. -/
+theorem runEnqueueOnCore_queuedOn_imp_ne {st : SystemState} {c c' : CoreId} {t y : SeLe4n.ThreadId}
+    {p : SeLe4n.Priority} (h : c' ≠ c) (hq : (st.runEnqueueOnCore c t p).queuedOn c' y = true) :
+    st.queuedOn c' y = true := by
+  rw [runEnqueueOnCore_queuedOn] at hq
+  split at hq
+  · exact absurd (of_decide_eq_true hq) h
+  · exact hq
+
+/-- An enqueue leaves a thread with a TCB queued on some core, read off its own
+links: on `c` when admitted, otherwise on the core its links already name. -/
+theorem runEnqueueOnCore_queuedOn_somewhere {st : SystemState} {c : CoreId}
+    {t : SeLe4n.ThreadId} (p : SeLe4n.Priority) (hT : (st.getTcb? t).isSome) :
+    ∃ c', (st.runEnqueueOnCore c t p).queuedOn c' t = true := by
+  cases hA : st.runEnqueueAdmits c t
+  · obtain ⟨tcb, hTcb⟩ := Option.isSome_iff_exists.mp hT
+    have hA' := hA
+    simp only [runEnqueueAdmits, hTcb, Bool.or_eq_false_iff, beq_eq_false_iff_ne,
+      decide_eq_false_iff_not, Nat.not_lt] at hA'
+    obtain ⟨⟨_, h0⟩, hle⟩ := hA'
+    refine ⟨⟨tcb.runCoreCode - 1, by omega⟩, ?_⟩
+    rw [runEnqueueOnCore_queuedOn, if_neg (fun h => absurd h.2 (by simp [hA]))]
+    simp only [queuedOn, hTcb, beq_iff_eq]
+    show tcb.runCoreCode = tcb.runCoreCode - 1 + 1
+    omega
+  · exact ⟨c, by rw [runEnqueueOnCore_queuedOn, if_pos ⟨rfl, hA⟩]; simp⟩
+
 /-- A step that, for core `c`'s current thread afterwards, kept it current there,
 kept its TCB, and gave it no new place on another core's queue.  Core `c`'s
 current thread stays admitted for the requeue at `c`'s preemption across such a
@@ -606,7 +824,7 @@ def CurrentPlacementFrame (c : CoreId) (st st' : SystemState) : Prop :=
   ∀ y, st'.scheduler.currentOnCore c = some y →
     st.scheduler.currentOnCore c = some y ∧
     ((st.getTcb? y).isSome → (st'.getTcb? y).isSome) ∧
-    ∀ c', c' ≠ c → y ∈ st'.scheduler.runQueueOnCore c' → y ∈ st.scheduler.runQueueOnCore c'
+    ∀ c', c' ≠ c → st'.queuedOn c' y = true → st.queuedOn c' y = true
 
 theorem CurrentPlacementFrame.refl (c : CoreId) (st : SystemState) :
     CurrentPlacementFrame c st st := fun _ h => ⟨h, id, fun _ _ => id⟩
@@ -619,79 +837,81 @@ theorem CurrentPlacementFrame.trans {c : CoreId} {s1 s2 s3 : SystemState}
   obtain ⟨h1, hT12, hQ12⟩ := hFirst y h2
   exact ⟨h1, fun h => hT23 (hT12 h), fun c' hne hm => hQ12 c' hne (hQ23 c' hne hm)⟩
 
-/-- A step that keeps the objects, every core's current slot and every run queue. -/
+/-- A step that keeps every thread's run-queue core and core `c`'s current slot. -/
+theorem CurrentPlacementFrame.of_parts {c : CoreId} {st st' : SystemState}
+    (hC : st'.scheduler.currentOnCore c = st.scheduler.currentOnCore c)
+    (hQ : RunCoresAgree st' st) :
+    CurrentPlacementFrame c st st' := by
+  intro y hy
+  refine ⟨hC ▸ hy, fun h => ?_, fun c' _ hm => by rw [← hQ.queuedOn c' y]; exact hm⟩
+  have := congrArg Option.isSome (hQ y)
+  simp only [Option.isSome_map] at this
+  rw [this]; exact h
+
+/-- A step that keeps the objects and core `c`'s current slot. -/
 theorem CurrentPlacementFrame.of_frame {c : CoreId} {st st' : SystemState}
     (hO : st'.objects = st.objects)
-    (hC : st'.scheduler.currentOnCore c = st.scheduler.currentOnCore c)
-    (hQ : ∀ c', c' ≠ c → st'.scheduler.runQueueOnCore c' = st.scheduler.runQueueOnCore c') :
-    CurrentPlacementFrame c st st' := by
-  intro y hy
-  refine ⟨hC ▸ hy, fun h => by rw [getTcb?_frame hO]; exact h, fun c' hne hm => ?_⟩
-  rw [← hQ c' hne]; exact hm
+    (hC : st'.scheduler.currentOnCore c = st.scheduler.currentOnCore c) :
+    CurrentPlacementFrame c st st' :=
+  CurrentPlacementFrame.of_parts hC (RunCoresAgree.of_objects hO)
 
-/-- A step that keeps every TCB, core `c`'s current slot and every other
-core's queue. -/
-theorem CurrentPlacementFrame.of_parts {c : CoreId} {st st' : SystemState}
-    (hT : ∀ y, (st.getTcb? y).isSome → (st'.getTcb? y).isSome)
-    (hC : st'.scheduler.currentOnCore c = st.scheduler.currentOnCore c)
-    (hQ : ∀ c', c' ≠ c → st'.scheduler.runQueueOnCore c' = st.scheduler.runQueueOnCore c') :
-    CurrentPlacementFrame c st st' := by
-  intro y hy
-  refine ⟨hC ▸ hy, hT y, fun c' hne hm => ?_⟩
-  rw [← hQ c' hne]; exact hm
-
-/-- A TCB rewritten over a TCB, with the scheduler untouched. -/
+/-- A TCB rewritten over a TCB with the same run-queue core, with the scheduler
+untouched. -/
 theorem CurrentPlacementFrame.rewriteObject_tcb (c : CoreId) {st : SystemState}
     {tid : SeLe4n.ThreadId} {t : TCB} (h : st.rewriteAdmissible tid.toObjId (.tcb t))
-    (hInv : st.objects.invExt) : CurrentPlacementFrame c st (st.rewriteObject tid.toObjId (.tcb t) h) := by
-  refine CurrentPlacementFrame.of_parts (fun y hy => ?_) (by rw [rewriteObject_scheduler])
-    (fun _ _ => by rw [rewriteObject_scheduler])
+    (hInv : st.objects.invExt)
+    (hc : ∀ t0, st.getTcb? tid = some t0 → t.runCoreCode = t0.runCoreCode) :
+    CurrentPlacementFrame c st (st.rewriteObject tid.toObjId (.tcb t) h) := by
+  refine CurrentPlacementFrame.of_parts (by rw [rewriteObject_scheduler]) (fun y => ?_)
   by_cases hyt : y = tid
-  · subst hyt; rw [rewriteObject_tcb_getTcb?_self _ _ _ _ hInv]; rfl
+  · subst hyt
+    rw [rewriteObject_tcb_getTcb?_self _ _ _ _ hInv]
+    obtain ⟨o, ho, hk, -⟩ := h
+    cases o with
+    | tcb t0 =>
+      rw [(getTcb?_eq_some_iff st y t0).mpr ho]
+      simp [hc t0 ((getTcb?_eq_some_iff st y t0).mpr ho)]
+    | _ => cases hk
   · rw [rewriteObject_getTcb?_ne _ _ _ h hInv y
-      (fun e => hyt (SeLe4n.ThreadId.toObjId_injective _ _ e).symm)]; exact hy
+      (fun e => hyt (SeLe4n.ThreadId.toObjId_injective _ _ e).symm)]
 
 /-- A write of the SchedContext thread index alone. -/
 theorem CurrentPlacementFrame.withScThreadIndex (s : SystemState)
     (x : RobinHood.RHTable SeLe4n.SchedContextId (List SeLe4n.ThreadId)) (c : CoreId) :
     CurrentPlacementFrame c s { s with scThreadIndex := x } :=
-  CurrentPlacementFrame.of_frame rfl rfl (fun _ _ => rfl)
+  CurrentPlacementFrame.of_frame rfl rfl
 
-/-- A typed TCB read-modify-write, with the scheduler untouched. -/
+/-- A typed TCB read-modify-write keeping the run-queue core, with the scheduler
+untouched. -/
 theorem CurrentPlacementFrame.updateTcb (c : CoreId) (st : SystemState) (tid : SeLe4n.ThreadId)
-    (f : TCB → TCB) (hInv : st.objects.invExt) : CurrentPlacementFrame c st (st.updateTcb tid f) := by
-  refine CurrentPlacementFrame.of_parts (fun y hy => ?_) (by rw [updateTcb_scheduler])
-    (fun _ _ => by rw [updateTcb_scheduler])
-  by_cases hyt : y = tid
-  · subst hyt; rw [updateTcb_getTcb?_self _ _ _ hInv, Option.isSome_map]; exact hy
-  · rw [updateTcb_getTcb?_ne _ _ _ hInv _
-      (fun e => hyt (SeLe4n.ThreadId.toObjId_injective _ _ e).symm)]; exact hy
+    (f : TCB → TCB) (hf : ∀ x, (f x).runCoreCode = x.runCoreCode) (hInv : st.objects.invExt) :
+    CurrentPlacementFrame c st (st.updateTcb tid f) :=
+  CurrentPlacementFrame.of_parts (by rw [updateTcb_scheduler]) (updateTcb_runCoreCode st tid f hf hInv)
 
 /-- A SchedContext rewritten over a SchedContext, with the scheduler untouched. -/
 theorem CurrentPlacementFrame.rewriteObject_schedContext (c : CoreId) {st : SystemState}
     {k : SeLe4n.ObjId} {sc : SchedContext} (h : st.rewriteAdmissible k (.schedContext sc))
     (hInv : st.objects.invExt) :
     CurrentPlacementFrame c st (st.rewriteObject k (.schedContext sc) h) :=
-  CurrentPlacementFrame.of_parts
-    (fun y hy => by rw [rewriteObject_schedContext_getTcb? _ _ _ _ hInv]; exact hy)
-    (by rw [rewriteObject_scheduler]) (fun _ _ => by rw [rewriteObject_scheduler])
+  CurrentPlacementFrame.of_parts (by rw [rewriteObject_scheduler])
+    (fun y => by rw [rewriteObject_schedContext_getTcb? _ _ _ _ hInv])
 
-/-- Across a current-placement frame between two states whose queues agree with
-the links, core `c`'s current thread stays admitted for its requeue at `c`. -/
+/-- Across a current-placement frame, core `c`'s current thread stays admitted
+for its requeue at `c`: its links name no other core afterwards, because they
+named none before. -/
 theorem currentRequeueAdmitted.transport {c : CoreId} {st st' : SystemState}
-    (hR : st.runQueueRefined) (hR' : st'.runQueueRefined)
     (hF : CurrentPlacementFrame c st st') (h : st.currentRequeueAdmitted c) :
     st'.currentRequeueAdmitted c := by
   intro y hy
   obtain ⟨hy0, hT, hQ⟩ := hF y hy
   have hA := h y hy0
-  refine runEnqueueAdmits_of_refined hR' (hT (runEnqueueAdmits_isSome hA)) (fun c' hne => ?_)
-  cases hc : (st'.scheduler.runQueueOnCore c').contains y with
+  have hT0 := runEnqueueAdmits_isSome hA
+  refine (runEnqueueAdmits_iff (hT hT0)).mpr fun c' hne => ?_
+  cases hc : st'.queuedOn c' y with
   | false => rfl
   | true =>
-    have h1 := runEnqueueAdmits_not_contains hR hA c' hne
-    have h2 := RunQueue.mem_iff_contains.mp (hQ c' hne (RunQueue.mem_iff_contains.mpr hc))
-    rw [h1] at h2; cases h2
+    have h1 := (runEnqueueAdmits_iff hT0).mp hA c' hne
+    rw [hQ c' hne hc] at h1; cases h1
 
 /-- An admitted enqueue on `c` leaves `t` admitted on `c`: it is on `c`'s
 queue now, or was already. -/
@@ -1120,6 +1340,18 @@ theorem rewriteObject_tcb_runQueueRefined {st : SystemState} {tid : SeLe4n.Threa
     (hR : st.runQueueRefined) : (st.rewriteObject tid.toObjId (.tcb t') h).runQueueRefined :=
   runQueueRefined_of_frame (runLinkOn_rewriteObject_tcb h hInv hT hRun) rfl rfl hR
 
+/-- A TCB rewritten over a TCB with the same run-queue core moves no thread's
+membership. -/
+theorem rewriteObject_tcb_queuedOn {st : SystemState} {tid : SeLe4n.ThreadId}
+    {t t' : TCB} (h : st.rewriteAdmissible tid.toObjId (.tcb t')) (hInv : st.objects.invExt)
+    (hT : st.getTcb? tid = some t) (hc : t'.runCoreCode = t.runCoreCode)
+    (c : CoreId) (y : SeLe4n.ThreadId) :
+    (st.rewriteObject tid.toObjId (.tcb t') h).queuedOn c y = st.queuedOn c y := by
+  by_cases hy : y = tid
+  · subst hy; unfold queuedOn; rw [rewriteObject_tcb_getTcb?_self _ _ _ _ hInv, hT]; simp [hc]
+  · exact queuedOn_of_getTcb? (rewriteObject_getTcb?_ne _ _ _ h hInv y
+      (fun e => hy (SeLe4n.ThreadId.toObjId_injective _ _ e).symm)) c
+
 /-- A TCB update that keeps every core's entry keeps the agreement. -/
 theorem updateTcb_runQueueRefined {st : SystemState} {tid : SeLe4n.ThreadId}
     {f : TCB → TCB} (hInv : st.objects.invExt) (hf : ∀ x c, (f x).runLinkOn c = x.runLinkOn c)
@@ -1395,6 +1627,39 @@ theorem runRemoveOnCore_objects (st : SystemState) (c : CoreId) (t : SeLe4n.Thre
       else st.objects := by
   unfold runRemoveOnCore; dsimp only; split <;> rfl
 
+/-- The unlink moves no core code but `t`'s. -/
+theorem runUnlinkLinks_runCoreCode_ne (st : SystemState) (t : SeLe4n.ThreadId)
+    (pv nx bpv bnx : Nat) (y : SeLe4n.ThreadId) (hy : y ≠ t) :
+    ((st.runUnlinkLinks t pv nx bpv bnx).getTcb? y).map TCB.runCoreCode =
+      (st.getTcb? y).map TCB.runCoreCode := by
+  have h1 := updateTcbAtCode_runCoreCode st pv (fun y => { y with runNextCode := nx }) (fun _ => rfl) y
+  have h2 := updateTcbAtCode_runCoreCode (st.updateTcbAtCode pv (fun y => { y with runNextCode := nx }))
+    nx (fun y => { y with runPrevCode := pv }) (fun _ => rfl) y
+  have h3 := updateTcbAtCode_runCoreCode ((st.updateTcbAtCode pv (fun y => { y with runNextCode := nx })).updateTcbAtCode
+    nx (fun y => { y with runPrevCode := pv })) bpv (fun y => { y with runBucketNextCode := bnx }) (fun _ => rfl) y
+  have h4 := updateTcbAtCode_runCoreCode (((st.updateTcbAtCode pv (fun y => { y with runNextCode := nx })).updateTcbAtCode
+    nx (fun y => { y with runPrevCode := pv })).updateTcbAtCode bpv (fun y => { y with runBucketNextCode := bnx }))
+    bnx (fun y => { y with runBucketPrevCode := bpv }) (fun _ => rfl) y
+  have h5 := mapTcbInPlace_runCoreCode ((((st.updateTcbAtCode pv (fun y => { y with runNextCode := nx })).updateTcbAtCode
+    nx (fun y => { y with runPrevCode := pv })).updateTcbAtCode bpv (fun y => { y with runBucketNextCode := bnx })).updateTcbAtCode
+    bnx (fun y => { y with runBucketPrevCode := bpv })) t y (fun y => { y with runCoreCode := 0 })
+    (fun _ => Or.inr (Ne.symm hy))
+  exact h5.trans (h4.trans (h3.trans (h2.trans h1)))
+
+/-- A removal of `t` moves no other thread's core code. -/
+theorem runRemoveOnCore_runCoreCode_ne (st : SystemState) (c : CoreId) (t y : SeLe4n.ThreadId)
+    (hy : y ≠ t) :
+    ((st.runRemoveOnCore c t).getTcb? y).map TCB.runCoreCode =
+      (st.getTcb? y).map TCB.runCoreCode := by
+  by_cases hq : (st.runLinkOn c t).queued = true
+  · have h := runRemoveOnCore_objects st c t
+    rw [if_pos hq] at h
+    rw [getTcb?_frame h]
+    exact runUnlinkLinks_runCoreCode_ne _ _ _ _ _ _ y hy
+  · have h := runRemoveOnCore_objects st c t
+    rw [if_neg hq] at h
+    rw [getTcb?_frame h]
+
 theorem runRemoveOnCore_getTcb?_isSome (st : SystemState) (c : CoreId) (t y : SeLe4n.ThreadId)
     :
     ((st.runRemoveOnCore c t).getTcb? y).isSome = (st.getTcb? y).isSome := by
@@ -1413,6 +1678,71 @@ theorem runRemoveOnCore_objects_invExt (st : SystemState) (c : CoreId) (t : SeLe
   · exact runUnlinkLinks_objects_invExt _ _ _ _ _ _ hInv
   · exact hInv
 
+theorem RunQueueLink.queued_withNextIfQueued (v : Nat) (l : RunQueueLink) :
+    (RunQueueLink.withNextIfQueued v l).queued = l.queued := by
+  unfold RunQueueLink.withNextIfQueued; split <;> rfl
+theorem RunQueueLink.queued_withPrevIfQueued (v : Nat) (l : RunQueueLink) :
+    (RunQueueLink.withPrevIfQueued v l).queued = l.queued := by
+  unfold RunQueueLink.withPrevIfQueued; split <;> rfl
+theorem RunQueueLink.queued_withBucketNextIfQueued (v : Nat) (l : RunQueueLink) :
+    (RunQueueLink.withBucketNextIfQueued v l).queued = l.queued := by
+  unfold RunQueueLink.withBucketNextIfQueued; split <;> rfl
+theorem RunQueueLink.queued_withBucketPrevIfQueued (v : Nat) (l : RunQueueLink) :
+    (RunQueueLink.withBucketPrevIfQueued v l).queued = l.queued := by
+  unfold RunQueueLink.withBucketPrevIfQueued; split <;> rfl
+
+/-- Unlinking a thread takes it off every queue and moves no other thread on
+or off one. -/
+theorem runUnlinkLinks_queuedOn (st : SystemState) (t : SeLe4n.ThreadId) (pv nx bpv bnx : Nat)
+    (c : CoreId) (y : SeLe4n.ThreadId) :
+    (st.runUnlinkLinks t pv nx bpv bnx).queuedOn c y = if y = t then false else st.queuedOn c y := by
+  rw [queuedOn_eq_runLinkOn, runUnlinkLinks_runLinkOn, queuedOn_eq_runLinkOn]
+  by_cases hy : y = t
+  · rw [if_pos hy, if_pos hy]; rfl
+  · rw [if_neg hy, if_neg hy]
+    dsimp only
+    simp only [apply_ite RunQueueLink.queued, RunQueueLink.queued_withBucketPrevIfQueued,
+      RunQueueLink.queued_withBucketNextIfQueued, RunQueueLink.queued_withPrevIfQueued,
+      RunQueueLink.queued_withNextIfQueued, ite_self]
+
+/-- WS-ZA ZA4.5: dequeueing `t` from core `c` leaves it queued on `c` nowhere
+and moves no other thread, and `t` on no other core, on or off a queue. -/
+theorem runRemoveOnCore_queuedOn (st : SystemState) (c : CoreId) (t : SeLe4n.ThreadId)
+    (c' : CoreId) (y : SeLe4n.ThreadId) :
+    (st.runRemoveOnCore c t).queuedOn c' y =
+      if y = t ∧ c' = c then false else st.queuedOn c' y := by
+  have hO := runRemoveOnCore_objects st c t
+  rw [show (st.runRemoveOnCore c t).queuedOn c' y =
+      (if (st.runLinkOn c t).queued then
+        (st.runUnlinkLinks t (st.runLinkOn c t).prev (st.runLinkOn c t).next
+          (st.runLinkOn c t).bucketPrev (st.runLinkOn c t).bucketNext).queuedOn c' y
+       else st.queuedOn c' y) from by
+    split
+    · next hq => rw [if_pos hq] at hO; exact (RunCoresAgree.of_objects hO).queuedOn c' y
+    · next hq => rw [if_neg hq] at hO; exact (RunCoresAgree.of_objects hO).queuedOn c' y]
+  split
+  · next hq =>
+    rw [runUnlinkLinks_queuedOn]
+    by_cases hy : y = t
+    · subst hy
+      rw [if_pos rfl]
+      by_cases hc : c' = c
+      · rw [if_pos ⟨rfl, hc⟩]
+      · rw [if_neg (fun h => hc h.2)]
+        symm
+        cases hq' : st.queuedOn c' y with
+        | false => rfl
+        | true =>
+          exact absurd (runLinkOn_queued_unique hq ((queuedOn_eq_runLinkOn st c' y) ▸ hq'))
+            (fun h => hc h.symm)
+    · rw [if_neg hy, if_neg (fun h => hy h.1)]
+  · next hq =>
+    split
+    · next h =>
+      obtain ⟨rfl, rfl⟩ := h
+      rw [queuedOn_eq_runLinkOn]; simpa using hq
+    · rfl
+
 -- ============================================================================
 -- Stages
 -- ============================================================================
@@ -1426,6 +1756,27 @@ def RunQueueStage (st st' : SystemState) : Prop :=
   st.objects.invExt → st.runQueueRefined → st'.objects.invExt ∧ st'.runQueueRefined
 
 theorem RunQueueStage.refl (st : SystemState) : RunQueueStage st st := fun h r => ⟨h, r⟩
+
+/-- Under the link agreement, a thread its links queue on `c` is on `c`'s
+queue, and conversely. -/
+theorem mem_runQueueOnCore_of_queuedOn {st : SystemState} (hR : st.runQueueRefined)
+    {c : CoreId} {t : SeLe4n.ThreadId} (h : st.queuedOn c t = true) :
+    t ∈ st.scheduler.runQueueOnCore c := by
+  rw [(hR c).queuedOn] at h; exact RunQueue.mem_iff_contains.mpr h
+
+theorem queuedOn_of_mem_runQueueOnCore {st : SystemState} (hR : st.runQueueRefined)
+    {c : CoreId} {t : SeLe4n.ThreadId} (h : t ∈ st.scheduler.runQueueOnCore c) :
+    st.queuedOn c t = true := by
+  rw [(hR c).queuedOn]; exact RunQueue.mem_iff_contains.mp h
+
+/-- Across a step whose two ends both agree with their links, a thread's
+membership read off its links moves exactly as the queue's does. -/
+theorem queuedOn_congr_of_refined {st st' : SystemState} (hR : st.runQueueRefined)
+    (hR' : st'.runQueueRefined) (c : CoreId) (u : SeLe4n.ThreadId)
+    (hQ : u ∈ st'.scheduler.runQueueOnCore c ↔ u ∈ st.scheduler.runQueueOnCore c) :
+    st'.queuedOn c u = st.queuedOn c u := by
+  rw [(hR' c).queuedOn, (hR c).queuedOn]
+  exact Bool.eq_iff_iff.mpr hQ
 
 theorem RunQueueStage.trans {st st' st'' : SystemState}
     (h1 : RunQueueStage st st') (h2 : RunQueueStage st' st'') : RunQueueStage st st'' :=

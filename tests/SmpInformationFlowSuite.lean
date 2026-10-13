@@ -3677,9 +3677,10 @@ private def runCrossCoreInvisibilityChecks : IO Unit := do
   -- Schedule a second high thread on core 2 and re-queue core 1: a purely
   -- high-labelled reshuffle on cores 1 and 2.
   let stHighReshuffle : SystemState :=
-    { probeState with
-      scheduler := ((probeState.scheduler.setCurrentOnCore c2 (some highQueued)).setRunQueueOnCore
-        c1 RunQueue.empty).setCurrentOnCore c1 none }
+    let dequeued := probeState.runRemoveOnCore c1 highQueued
+    { dequeued with
+      scheduler := (dequeued.scheduler.setCurrentOnCore c2 (some highQueued)).setCurrentOnCore
+        c1 none }
   assertBool "the low observer's slice is unchanged on EVERY core"
     (allCores.all (fun c =>
       decide (ObservableState.sliceOnCore probeLabeling c lowLabel stHighReshuffle
@@ -4316,7 +4317,7 @@ private def rendezvousState : SystemState :=
 /-- The same state with a **waiter** parked on the high notification, so the
 notification write set computes its non-degenerate branch too. -/
 private def waitingNotificationState : SystemState :=
-  { rendezvousState with
+  enqueueAllOnCore { rendezvousState with
       objects := rendezvousState.objects.insert highNotification
         (.notification { state := .waiting
                          waitHeadCode := SeLe4n.ThreadId.optCode (some crossCoreWaiter)
@@ -4328,8 +4329,7 @@ private def waitingNotificationState : SystemState :=
       -- the write is NOT confined to the executing core — would be testing a
       -- transition that wrote nothing at all.  This is the state the suspend
       -- pipeline acts on: the TCB is captured, then torn down and descheduled.
-      scheduler := rendezvousState.scheduler.setRunQueueOnCore c2
-        (RunQueue.ofList [(crossCoreWaiter, ⟨40⟩)]) }
+      } c2 [(crossCoreWaiter, ⟨40⟩)]
 
 /-- `crossCoreState` differing **only** in core 1's program counter — the witness
 that `confinedCheck`'s register clause is not vacuous. -/
@@ -4638,10 +4638,7 @@ shape `updatePipBoostOnCore` produces when a donation raises or reverts a
 server's effective priority on its home core.  With one thread in the queue
 `toList` is `[tid]` before and after, so a `toList` comparison sees nothing. -/
 private def reBucketedOnCore2 : SystemState :=
-  let q := oneQueuedOnCore2.scheduler.runQueueOnCore c2
-  { oneQueuedOnCore2 with
-      scheduler := oneQueuedOnCore2.scheduler.setRunQueueOnCore c2
-        ((q.remove remoteHomedThread).insert remoteHomedThread ⟨7⟩) }
+  oneQueuedOnCore2.runRequeueOnCore c2 remoteHomedThread ⟨7⟩
 
 /-- §5.3b  The run-queue comparison, and why `toList` was not enough.
 
@@ -9895,8 +9892,7 @@ so leaving it there would make the delivery's enqueue idempotent and §11.3's
 "the wake lands on the receiver's own core" would pass on a transition that
 enqueued nothing. -/
 private def declassSignalState : SystemState :=
-  { waitingNotificationState with
-      scheduler := waitingNotificationState.scheduler.setRunQueueOnCore c2 RunQueue.empty }
+  waitingNotificationState.runRemoveOnCore c2 crossCoreWaiter
 
 /-- The transition, run for effect. -/
 private def declassSignalRun :

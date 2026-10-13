@@ -1095,6 +1095,31 @@ theorem mem_remove (rq : RunQueue) (tid : ThreadId) (x : ThreadId) :
   simp only [mem_iff_contains, contains_remove, Bool.and_eq_true, Bool.not_eq_true',
     beq_eq_false_iff_ne, ne_eq]
 
+/-- Re-key `tid` at priority `prio` when the queue holds it (remove, then insert
+at the new bucket's tail); a queue that does not hold `tid` is left as is. -/
+def rekey (rq : RunQueue) (tid : ThreadId) (prio : Priority) : RunQueue :=
+  if rq.contains tid then (rq.remove tid).insert tid prio else rq
+
+/-- A re-key moves no thread into or out of the queue. -/
+@[simp] theorem contains_rekey (rq : RunQueue) (tid : ThreadId) (prio : Priority) (x : ThreadId) :
+    (rq.rekey tid prio).contains x = rq.contains x := by
+  unfold rekey
+  split
+  · rename_i h
+    rw [contains_insert, contains_remove]
+    by_cases hx : x = tid
+    · subst hx; rw [h, beq_self_eq_true]; rfl
+    · rw [beq_false_of_ne hx]; cases rq.contains x <;> rfl
+  · rfl
+
+theorem mem_rekey (rq : RunQueue) (tid : ThreadId) (prio : Priority) (x : ThreadId) :
+    x ∈ rq.rekey tid prio ↔ x ∈ rq := by
+  simp only [mem_iff_contains, contains_rekey]
+
+theorem rekey_of_contains {rq : RunQueue} {tid : ThreadId} (prio : Priority)
+    (h : rq.contains tid = true) : rq.rekey tid prio = (rq.remove tid).insert tid prio := by
+  unfold rekey; rw [if_pos h]
+
 theorem not_mem_remove_self (rq : RunQueue) (tid : ThreadId) : ¬(tid ∈ rq.remove tid) := by
   rw [mem_remove]; exact fun ⟨_, hne⟩ => hne rfl
 
@@ -1361,6 +1386,15 @@ theorem toList_filter_remove_neg (rq : RunQueue) (tid : ThreadId)
   by_cases hx : x = tid
   · subst hx; simp [hp]
   · simp [hx]
+
+/-- A re-key leaves the queue's order on every thread the filter drops `tid`
+from unchanged. -/
+theorem toList_filter_rekey_neg (rq : RunQueue) (tid : ThreadId) (prio : Priority)
+    (p : ThreadId → Bool) (hp : p tid = false) :
+    (rq.rekey tid prio).toList.filter p = rq.toList.filter p := by
+  unfold rekey; split
+  · rw [toList_filter_insert_neg' _ tid _ _ hp, toList_filter_remove_neg _ tid _ hp]
+  · rfl
 
 theorem toList_filter_rotateToBack_neg (rq : RunQueue) (tid : ThreadId)
     (p : ThreadId → Bool) (hp : p tid = false) :

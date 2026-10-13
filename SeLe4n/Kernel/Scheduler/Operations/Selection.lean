@@ -1565,6 +1565,25 @@ theorem preemptCurrentOnCore_currentOnCore (st : SystemState) (c : CoreId)
       · simp [SystemState.rewriteObject_scheduler]
       · rfl
 
+/-- `preemptCurrentOnCore` queues nothing on another core: it re-enqueues on its
+own core only, and its context save keeps every run-queue core. -/
+theorem preemptCurrentOnCore_queuedOn_ne (st : SystemState) (c : CoreId)
+    (incoming : SeLe4n.ThreadId) (hInv : st.objects.invExt) (c' : CoreId) (h : c ≠ c')
+    (y : SeLe4n.ThreadId) (hq : (preemptCurrentOnCore st c incoming).queuedOn c' y = true) :
+    st.queuedOn c' y = true := by
+  unfold preemptCurrentOnCore at hq
+  split at hq
+  · exact hq
+  · split at hq
+    · exact hq
+    · split at hq
+      · rename_i prevTid _ _ prevTcb hT _
+        rw [SystemState.runEnqueueOnCore_queuedOn] at hq
+        split at hq
+        · exact absurd (of_decide_eq_true hq) (Ne.symm h)
+        · rwa [(SystemState.RunCoresAgree.rewriteObject_tcb (tcb' := { prevTcb with registerContext := st.machine.regsOnCore c }) hT _ hInv rfl).queuedOn] at hq
+      · exact hq
+
 /-- WS-SM SM5.B.1 (plan §3.2): per-core context switch to `tid` on core `c`.
 
 Performs, in order:
@@ -1657,7 +1676,7 @@ otherwise dispatch concurrently).  Reads every per-core run queue via
 `RunQueue.contains` over `Concurrency.allCores`. -/
 def runnableOnSomeCore (st : SystemState) (tid : SeLe4n.ThreadId) : Bool :=
   (SeLe4n.Kernel.Concurrency.allCores).any
-    (fun c => (st.scheduler.runQueueOnCore c).contains tid)
+    (fun c => st.queuedOn c tid)
 
 /-- WS-SM SM5.D.4 (audit-pass-2 / Codex-P2): is `tid` the *current* (running)
 thread on *some* core?  A running thread is dequeued-on-dispatch, so it is absent
@@ -1695,7 +1714,7 @@ it is handed, so the witness has to cover both.  `find?` over `allCores` in the
 model's own core order makes the answer deterministic. -/
 def placedCoreOf? (st : SystemState) (tid : SeLe4n.ThreadId) : Option CoreId :=
   (SeLe4n.Kernel.Concurrency.allCores).find?
-    (fun c => (st.scheduler.runQueueOnCore c).contains tid
+    (fun c => st.queuedOn c tid
       || st.scheduler.currentOnCore c == some tid)
 
 /-- `find?` succeeds exactly where `any` does.  Stated locally rather than
@@ -1733,7 +1752,7 @@ theorem placedCoreOf?_isSome_iff (st : SystemState) (tid : SeLe4n.ThreadId) :
 running.  This is what licenses `removeRunnableOnCore` at that core. -/
 theorem placedCoreOf?_sound (st : SystemState) (tid : SeLe4n.ThreadId)
     (c : CoreId) (h : placedCoreOf? st tid = some c) :
-    (st.scheduler.runQueueOnCore c).contains tid
+    st.queuedOn c tid
       || st.scheduler.currentOnCore c == some tid := by
   simpa using List.find?_some h
 
@@ -1759,6 +1778,7 @@ theorem wakeDeclines_of_refined {st : SystemState} {c : CoreId} {tid : SeLe4n.Th
   refine wakeDeclines_eq_false_iff.mpr ⟨hF, SystemState.runEnqueueAdmits_of_refined hR hT ?_⟩
   intro c' _
   have hC := List.any_eq_false.mp hF c' (SeLe4n.Kernel.Concurrency.mem_allCores c')
+  rw [← (hR c').queuedOn]
   simpa using hC
 
 /-- WS-SM SM5.C.1 (plan §3.3): enqueue `tid` as a runnable thread on core `c`.
@@ -1907,6 +1927,37 @@ theorem enqueueRunnableOnCore_mem_old (st : SystemState) (c c' : CoreId)
     · rw [SchedulerState.setRunQueueOnCore_runQueueOnCore_ne _ _ _ _ (Ne.symm hcc),
         SchedulerState.setRunQueueEndsOnCore_runQueueOnCore]
       exact hMem
+
+/-- WS-ZA ZA4.5: the wake moves no thread's run-queue membership but the woken
+one's, which it puts on `c` when it does not decline. -/
+theorem enqueueRunnableOnCore_queuedOn (st : SystemState) (c : CoreId) (tid : SeLe4n.ThreadId)
+    (hInv : st.objects.invExt) (c' : CoreId) (y : SeLe4n.ThreadId) :
+    (enqueueRunnableOnCore st c tid).queuedOn c' y =
+      if y = tid ∧ (st.getTcb? tid).isSome ∧ wakeDeclines st c tid = false then decide (c' = c)
+      else st.queuedOn c' y := by
+  cases hT : st.getTcb? tid with
+  | none =>
+    have hW : st.getTcbWitnessed? tid = none := by
+      unfold SystemState.getTcbWitnessed?; split <;> simp_all [SystemState.getTcb?]
+    simp only [enqueueRunnableOnCore, hW, Option.isSome_none, Bool.false_eq_true, false_and,
+      and_false, if_false]
+  | some tcb =>
+    simp only [enqueueRunnableOnCore, SystemState.getTcbWitnessed?_eq_some hT,
+      Option.isSome_some, true_and]
+    cases hD : wakeDeclines st c tid
+    · simp only [Bool.false_eq_true, if_false, and_true]
+      show (SystemState.runEnqueueAdmitted _ c tid _).queuedOn c' y = _
+      rw [SystemState.runEnqueueAdmitted_queuedOn,
+        SystemState.rewriteObject_tcb_getTcb?_self _ _ _ _ hInv]
+      by_cases hy : y = tid
+      · rw [if_pos hy, if_pos hy]; rfl
+      · rw [if_neg hy, if_neg hy]
+        apply SystemState.queuedOn_of_getTcb?
+        have hNe : ¬ (tid.toObjId == y.toObjId) = true :=
+          fun hh => hy (SeLe4n.ThreadId.toObjId_injective _ _ (eq_of_beq hh)).symm
+        simp only [SystemState.rewriteObject, SystemState.getTcb?, RHTable_getElem?_eq_get?]
+        rw [RobinHood.RHTable.getElem?_insert_ne st.objects tid.toObjId y.toObjId _ hNe hInv]
+    · rw [if_pos rfl, if_neg (fun h => Bool.noConfusion h.2)]
 
 /-- WS-ZA ZA4.5: on a thread that resolves to a TCB and is not yet runnable, the
 enqueue inserts it into core `c`'s run queue at its boosted priority. -/
@@ -2379,30 +2430,28 @@ composes. -/
     (removeRunnableOnCore_objectsAgreeOffRunLinks st tid c) x
 
 
-/-- `placedCoreOf?` reads exactly two per-core scheduler slices, so a step that
-frames both at every core frames it.  The pointwise form, because the migration
-frames them per core rather than by handing back the whole scheduler. -/
-theorem placedCoreOf?_congr_of_runQueue_current_eq {st st' : SystemState}
-    (tid : SeLe4n.ThreadId)
-    (h : ∀ c : CoreId, st'.scheduler.runQueueOnCore c = st.scheduler.runQueueOnCore c
-      ∧ st'.scheduler.currentOnCore c = st.scheduler.currentOnCore c) :
+/-- `placedCoreOf?` reads each thread's run-queue core (from its TCB) and each
+core's current slot, so a step that keeps every thread's run-queue core
+(`RunCoresAgree`) and every current slot places every thread alike. -/
+theorem placedCoreOf?_congr_of_runCores_current_eq {st st' : SystemState}
+    (tid : SeLe4n.ThreadId) (hQ : SystemState.RunCoresAgree st' st)
+    (h : ∀ c : CoreId, st'.scheduler.currentOnCore c = st.scheduler.currentOnCore c) :
     placedCoreOf? st' tid = placedCoreOf? st tid := by
   unfold placedCoreOf?
-  have hp : (fun c : CoreId => (st'.scheduler.runQueueOnCore c).contains tid
+  have hp : (fun c : CoreId => st'.queuedOn c tid
       || st'.scheduler.currentOnCore c == some tid)
-      = (fun c : CoreId => (st.scheduler.runQueueOnCore c).contains tid
+      = (fun c : CoreId => st.queuedOn c tid
       || st.scheduler.currentOnCore c == some tid) := by
-    funext c; rw [(h c).1, (h c).2]
+    funext c; rw [hQ.queuedOn c tid, h c]
   rw [hp]
 
 /-- ...and the core list it produces moves with it. -/
-theorem descheduleAtPlacementCores_congr_of_runQueue_current_eq {st st' : SystemState}
-    (tid : SeLe4n.ThreadId)
-    (h : ∀ c : CoreId, st'.scheduler.runQueueOnCore c = st.scheduler.runQueueOnCore c
-      ∧ st'.scheduler.currentOnCore c = st.scheduler.currentOnCore c) :
+theorem descheduleAtPlacementCores_congr_of_runCores_current_eq {st st' : SystemState}
+    (tid : SeLe4n.ThreadId) (hQ : SystemState.RunCoresAgree st' st)
+    (h : ∀ c : CoreId, st'.scheduler.currentOnCore c = st.scheduler.currentOnCore c) :
     descheduleAtPlacementCores st' tid = descheduleAtPlacementCores st tid := by
   unfold descheduleAtPlacementCores
-  rw [placedCoreOf?_congr_of_runQueue_current_eq tid h]
+  rw [placedCoreOf?_congr_of_runCores_current_eq tid hQ h]
 
 /-- The core list is the resolver's answer as a list — the shape a pre-resolved
 removal's write set (`descheduleAt … placed`, confined to `placed.toList`) is
@@ -2413,34 +2462,15 @@ theorem descheduleAtPlacementCores_eq_toList (st : SystemState) (tid : SeLe4n.Th
   unfold descheduleAtPlacementCores
   cases placedCoreOf? st tid <;> rfl
 
-/-- `placedCoreOf?` reads only `tid`'s membership in each queue and each core's
-current slot, so two states agreeing on those place `tid` alike — finer than
-`placedCoreOf?_congr_of_runQueue_current_eq`, which asks the queues themselves
-to agree, and the form a run-queue insert of some *other* thread satisfies. -/
-theorem placedCoreOf?_congr_of_contains_current_eq {st st' : SystemState}
-    (tid : SeLe4n.ThreadId)
-    (h : ∀ c : CoreId,
-      (st'.scheduler.runQueueOnCore c).contains tid
-        = (st.scheduler.runQueueOnCore c).contains tid
-      ∧ st'.scheduler.currentOnCore c = st.scheduler.currentOnCore c) :
-    placedCoreOf? st' tid = placedCoreOf? st tid := by
-  unfold placedCoreOf?
-  have hp : (fun c : CoreId => (st'.scheduler.runQueueOnCore c).contains tid
-      || st'.scheduler.currentOnCore c == some tid)
-      = (fun c : CoreId => (st.scheduler.runQueueOnCore c).contains tid
-      || st.scheduler.currentOnCore c == some tid) := by
-    funext c; rw [(h c).1, (h c).2]
-  rw [hp]
-
 /-- A thread placed on exactly one core — queued or current on `w`, and on no
 other core — is placed there by the resolver.  The `find?` takes the first
 satisfying core, and with one candidate there is no other to take. -/
 theorem placedCoreOf?_eq_some_of_unique (st : SystemState) (tid : SeLe4n.ThreadId)
     (w : CoreId)
-    (hw : ((st.scheduler.runQueueOnCore w).contains tid
+    (hw : (st.queuedOn w tid
       || st.scheduler.currentOnCore w == some tid) = true)
     (hOther : ∀ c : CoreId, c ≠ w →
-      ((st.scheduler.runQueueOnCore c).contains tid
+      (st.queuedOn c tid
         || st.scheduler.currentOnCore c == some tid) = false) :
     placedCoreOf? st tid = some w := by
   cases hp : placedCoreOf? st tid with
@@ -2514,6 +2544,14 @@ theorem removeRunnableOnCore_not_mem_self (st : SystemState)
     tid ∉ (removeRunnableOnCore st tid c).scheduler.runQueueOnCore c := by
   rw [removeRunnableOnCore_runQueueOnCore_self]
   exact RunQueue.not_mem_remove_self _ tid
+
+/-- WS-ZA ZA4.5: the removal takes `tid` off core `c`'s queue and moves no
+other thread, nor `tid` on any other core, on or off a queue. -/
+theorem removeRunnableOnCore_queuedOn (st : SystemState) (tid : SeLe4n.ThreadId) (c c' : CoreId)
+    (y : SeLe4n.ThreadId) :
+    (removeRunnableOnCore st tid c).queuedOn c' y =
+      if y = tid ∧ c' = c then false else st.queuedOn c' y :=
+  SystemState.runDescheduleOnCore_queuedOn st c tid c' y
 
 /-- After `removeRunnableOnCore`, `tid` is not core `c`'s current thread. -/
 theorem removeRunnableOnCore_currentOnCore_ne_self (st : SystemState)
@@ -2615,15 +2653,14 @@ removal may clear a current slot, so the slot itself is not equal, but the bit
 "is it `tid`" is. -/
 theorem placedCoreOf?_congr_of_bits {st st' : SystemState} (tid : SeLe4n.ThreadId)
     (h : ∀ c : CoreId,
-      (st'.scheduler.runQueueOnCore c).contains tid
-        = (st.scheduler.runQueueOnCore c).contains tid
+      st'.queuedOn c tid = st.queuedOn c tid
       ∧ (st'.scheduler.currentOnCore c == some tid)
         = (st.scheduler.currentOnCore c == some tid)) :
     placedCoreOf? st' tid = placedCoreOf? st tid := by
   unfold placedCoreOf?
-  have hp : (fun c : CoreId => (st'.scheduler.runQueueOnCore c).contains tid
+  have hp : (fun c : CoreId => st'.queuedOn c tid
       || st'.scheduler.currentOnCore c == some tid)
-      = (fun c : CoreId => (st.scheduler.runQueueOnCore c).contains tid
+      = (fun c : CoreId => st.queuedOn c tid
       || st.scheduler.currentOnCore c == some tid) := by
     funext c; rw [(h c).1, (h c).2]
   rw [hp]
@@ -2633,7 +2670,7 @@ the pointwise form of `placedCoreOf?_isSome_iff`, which is what a consumer
 asserting *this thread consumes no CPU* reads. -/
 theorem placedCoreOf?_none_iff (st : SystemState) (tid : SeLe4n.ThreadId) :
     placedCoreOf? st tid = none
-      ↔ ∀ c : CoreId, tid ∉ st.scheduler.runQueueOnCore c
+      ↔ ∀ c : CoreId, st.queuedOn c tid = false
           ∧ st.scheduler.currentOnCore c ≠ some tid := by
   have hIs := placedCoreOf?_isSome_iff st tid
   constructor
@@ -2646,17 +2683,14 @@ theorem placedCoreOf?_none_iff (st : SystemState) (tid : SeLe4n.ThreadId) :
     have h1c := h1 c (SeLe4n.Kernel.Concurrency.mem_allCores c)
     have h2c := h2 c (SeLe4n.Kernel.Concurrency.mem_allCores c)
     simp only [Bool.not_eq_true] at h1c h2c
-    exact ⟨fun hMem => by
-        rw [RunQueue.mem_iff_contains, h1c] at hMem
-        exact Bool.false_ne_true hMem,
-      fun hCur => by rw [hCur] at h2c; simp at h2c⟩
+    exact ⟨h1c, fun hCur => by rw [hCur] at h2c; simp at h2c⟩
   · intro h
     cases hP : placedCoreOf? st tid with
     | none => rfl
     | some c =>
       have hs := placedCoreOf?_sound st tid c hP
       rcases Bool.or_eq_true_iff.mp hs with h1 | h2
-      · exact absurd h1 (h c).1
+      · rw [(h c).1] at h1; exact absurd h1 Bool.false_ne_true
       · exact absurd (by simpa using h2) (h c).2
 
 /-- `v0.35.158`: under single placement — the thread is queued or current on at
@@ -2667,8 +2701,8 @@ and the cancellation reclaim both perform this removal on the thread they unbind
 and both want the same conclusion of it. -/
 theorem descheduleAtPlacement_unplaced (st : SystemState) (tid : SeLe4n.ThreadId)
     (hUnique : ∀ c c' : CoreId,
-        (tid ∈ st.scheduler.runQueueOnCore c ∨ st.scheduler.currentOnCore c = some tid) →
-        (tid ∈ st.scheduler.runQueueOnCore c' ∨ st.scheduler.currentOnCore c' = some tid) →
+        (st.queuedOn c tid = true ∨ st.scheduler.currentOnCore c = some tid) →
+        (st.queuedOn c' tid = true ∨ st.scheduler.currentOnCore c' = some tid) →
         c = c') :
     placedCoreOf? (descheduleAtPlacement st tid) tid = none := by
   rw [placedCoreOf?_none_iff]
@@ -2681,18 +2715,20 @@ theorem descheduleAtPlacement_unplaced (st : SystemState) (tid : SeLe4n.ThreadId
     simp only [descheduleAtPlacement, descheduleAt, hP]
     by_cases hc : c = p
     · subst hc
-      exact ⟨removeRunnableOnCore_not_mem_self st tid c,
+      exact ⟨by rw [removeRunnableOnCore_queuedOn, if_pos ⟨rfl, rfl⟩],
         removeRunnableOnCore_currentOnCore_ne_self st tid c⟩
-    · rw [removeRunnableOnCore_runQueueOnCore_ne st tid p c (fun h => hc h.symm),
+    · rw [removeRunnableOnCore_queuedOn, if_neg (fun h => hc h.2),
         removeRunnableOnCore_currentOnCore_ne st tid p c (fun h => hc h.symm)]
       have hp := placedCoreOf?_sound st tid p hP
-      have hPlacedP : tid ∈ st.scheduler.runQueueOnCore p
+      have hPlacedP : st.queuedOn p tid = true
           ∨ st.scheduler.currentOnCore p = some tid := by
         rcases Bool.or_eq_true_iff.mp hp with h1 | h2
         · exact Or.inl h1
         · exact Or.inr (by simpa using h2)
-      exact ⟨fun hMem => hc (hUnique c p (Or.inl hMem) hPlacedP),
-             fun hCurC => hc (hUnique c p (Or.inr hCurC) hPlacedP)⟩
+      refine ⟨?_, fun hCurC => hc (hUnique c p (Or.inr hCurC) hPlacedP)⟩
+      cases hq : st.queuedOn c tid with
+      | false => rfl
+      | true => exact absurd (hUnique c p (Or.inl hq) hPlacedP) hc
 
 /-- `v0.35.158`: the state-resolved removal of one thread places no OTHER thread
 differently — the removal clears a current slot only where it held the removed
@@ -2711,10 +2747,7 @@ theorem descheduleAtPlacement_placedCoreOf?_ne (st : SystemState) (tid x : SeLe4
     by_cases hc : p = c
     · subst hc
       refine ⟨?_, ?_⟩
-      · rw [removeRunnableOnCore_runQueueOnCore_self]
-        apply Bool.eq_iff_iff.mpr
-        rw [← RunQueue.mem_iff_contains, ← RunQueue.mem_iff_contains, RunQueue.mem_remove]
-        exact ⟨fun hx => hx.1, fun hx => ⟨hx, hne⟩⟩
+      · rw [removeRunnableOnCore_queuedOn, if_neg (fun h => hne h.1)]
       · rw [removeRunnableOnCore_currentOnCore_self]
         split
         · rename_i hCur
@@ -2726,7 +2759,7 @@ theorem descheduleAtPlacement_placedCoreOf?_ne (st : SystemState) (tid x : SeLe4
             simp only [beq_iff_eq, Option.some.injEq] at h
             exact absurd h.symm hne
         · rfl
-    · rw [removeRunnableOnCore_runQueueOnCore_ne st tid p c hc,
+    · rw [removeRunnableOnCore_queuedOn, if_neg (fun h => hc h.2.symm),
         removeRunnableOnCore_currentOnCore_ne st tid p c hc]
       exact ⟨rfl, rfl⟩
 

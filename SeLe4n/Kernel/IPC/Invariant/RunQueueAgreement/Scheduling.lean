@@ -26,15 +26,13 @@ theorem _root_.SeLe4n.Model.SystemState.RunQueueStage.runEnqueueOnCore (st : Sys
     RunQueueStage st (st.runEnqueueOnCore c t p) := fun hInv hR =>
   ⟨SystemState.runEnqueueOnCore_objects_invExt st c t p hInv, SystemState.runEnqueueOnCore_refined hR⟩
 
-/-- A re-bucket of a thread its core's queue holds: under the agreement, that
-core's links queue it. -/
-theorem _root_.SeLe4n.Model.SystemState.RunQueueStage.runRequeueOnCore_of_mem (st : SystemState)
-    (c : Concurrency.CoreId) (t : SeLe4n.ThreadId) (p : SeLe4n.Priority)
-    (hMem : t ∈ st.scheduler.runQueueOnCore c) :
-    RunQueueStage st (st.runRequeueOnCore c t p) := fun hInv hR => by
-  have hq : (st.runLinkOn c t).queued = true := by
-    rw [(hR c).contains]; exact RunQueue.mem_iff_contains.mp hMem
-  exact SystemState.RunQueueStage.runRequeueOnCore _ _ _ _ hq hInv hR
+/-- A re-bucket of a thread its core's links queue (the guard the re-bucketing
+operations test, WS-ZA ZA4.5). -/
+theorem _root_.SeLe4n.Model.SystemState.RunQueueStage.runRequeueOnCore_of_queuedOn
+    (st : SystemState) (c : Concurrency.CoreId) (t : SeLe4n.ThreadId) (p : SeLe4n.Priority)
+    (h : st.queuedOn c t = true) : RunQueueStage st (st.runRequeueOnCore c t p) :=
+  SystemState.RunQueueStage.runRequeueOnCore _ _ _ _
+    ((SystemState.queuedOn_eq_runLinkOn _ _ _).symm.trans h)
 
 /-- The bind writes the context's bound thread, the thread's binding and
 priority, re-buckets or places the thread through the link-writing queue
@@ -64,7 +62,7 @@ theorem schedContextBind_runQueueStage {vScId : SeLe4n.ValidObjId} {vTid : SeLe4
                 refine RunQueueStage.trans ?_ (RunQueueStage.withScThreadIndex _ _)
                 split
                 · rename_i hMem
-                  refine RunQueueStage.trans ?_ (RunQueueStage.runRequeueOnCore_of_mem _ _ _ _ hMem)
+                  refine RunQueueStage.trans ?_ (RunQueueStage.runRequeueOnCore_of_queuedOn _ _ _ _ hMem)
                   refine RunQueueStage.trans ?_ (RunQueueStage.updateTcb _ _ (fun _ _ => rfl))
                   exact RunQueueStage.insert rfl rfl rfl
                     (fun c => by rw [show st.objects[vScId.val]? = _ from hScRaw]; rfl)
@@ -107,7 +105,7 @@ theorem schedContextConfigureBoundPropagate_runQueueStage (stStored : SystemStat
       · exact RunQueueStage.refl _
       · split
         · rename_i hM
-          refine RunQueueStage.trans ?_ (RunQueueStage.runRequeueOnCore_of_mem _ _ _ _ hM)
+          refine RunQueueStage.trans ?_ (RunQueueStage.runRequeueOnCore_of_queuedOn _ _ _ _ hM)
           exact RunQueueStage.rewriteObject_tcb hBound (fun _ => by rfl) _
         · exact RunQueueStage.rewriteObject_tcb hBound (fun _ => by rfl) _
     · refine RunQueueStage.trans ?_ (RunQueueStage.rewriteObject_tcb hCur (fun _ => by rfl) _)
@@ -116,7 +114,7 @@ theorem schedContextConfigureBoundPropagate_runQueueStage (stStored : SystemStat
       · exact RunQueueStage.refl _
       · split
         · rename_i hM
-          refine RunQueueStage.trans ?_ (RunQueueStage.runRequeueOnCore_of_mem _ _ _ _ hM)
+          refine RunQueueStage.trans ?_ (RunQueueStage.runRequeueOnCore_of_queuedOn _ _ _ _ hM)
           exact RunQueueStage.rewriteObject_tcb hBound (fun _ => by rfl) _
         · exact RunQueueStage.rewriteObject_tcb hBound (fun _ => by rfl) _
   · rename_i hEq
@@ -125,7 +123,7 @@ theorem schedContextConfigureBoundPropagate_runQueueStage (stStored : SystemStat
     · exact RunQueueStage.refl _
     · split
       · rename_i hM
-        refine RunQueueStage.trans ?_ (RunQueueStage.runRequeueOnCore_of_mem _ _ _ _ hM)
+        refine RunQueueStage.trans ?_ (RunQueueStage.runRequeueOnCore_of_queuedOn _ _ _ _ hM)
         exact RunQueueStage.rewriteObject_tcb hBound (fun _ => by rfl) _
       · exact RunQueueStage.rewriteObject_tcb hBound (fun _ => by rfl) _
 
@@ -811,8 +809,8 @@ theorem lifecycleRetypeDirectWithCleanup_runQueueStage {st st' : SystemState}
   | tcb t =>
     have hT : st.getTcb? t.tid = some t := (SystemState.getTcb?_eq_some_iff _ _ _).mpr
       (by rw [hDet.tcbSelfId t hObj]; exact hObj)
-    have hq := (hR c).contains t.tid
-    rw [(hDet.tcbDescheduled t hObj c).1] at hq
+    have hq := (hDet.tcbDescheduled t hObj c).2.1
+    rw [SystemState.queuedOn_eq_runLinkOn] at hq
     have hN := SystemState.runLinkOn_eq_none_of_not_queued hq
     unfold SystemState.runLinkOn at hN
     rw [hT] at hN

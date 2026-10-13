@@ -410,7 +410,7 @@ merge. -/
 theorem lifecycleRetypeDirectWithCleanupShootdownPerCoreIcache_crossCoreNonInterference
     (ctx : LabelingContext) (observer : IfObserver) (executingCore : CoreId)
     (authCap : Capability) (target : SeLe4n.ObjId) (newObj : KernelObject)
-    (st st' : SystemState) (c : CoreId)
+    (st st' : SystemState) (c : CoreId) (hInv : st.objects.invExt)
     (hne : c ∉ lifecycleRetypeWriteSet st target)
     (hStep : lifecycleRetypeDirectWithCleanupShootdownPerCoreIcache executingCore authCap
       target newObj st = .ok ((), st'))
@@ -418,7 +418,7 @@ theorem lifecycleRetypeDirectWithCleanupShootdownPerCoreIcache_crossCoreNonInter
     projectStateOnCore ctx observer st' c = projectStateOnCore ctx observer st c :=
   crossCoreNonInterference_ofCores ctx observer hne
     (lifecycleRetypeDirectWithCleanupShootdownPerCoreIcache_confinedToCores executingCore
-      authCap target newObj st st' hStep) hShared
+      authCap target newObj st st' hInv hStep) hShared
 
 -- ============================================================================
 -- §6 The non-interference instantiations
@@ -590,7 +590,7 @@ the one the pre-state places the victim on nor the one the reclaim's holder
 deschedule writes. -/
 theorem cancelIpcBlockingOnCore_crossCoreNonInterference (ctx : LabelingContext)
     (observer : IfObserver) (victim : SeLe4n.ThreadId) (tcb : TCB)
-    (executingCore : CoreId) (st : SystemState) (c : CoreId)
+    (executingCore : CoreId) (st : SystemState) (c : CoreId) (hInv : st.objects.invExt)
     (hne : c ∉ descheduleAtPlacementCores st victim)
     (hHolder : cancelUnboundHolderCore? st (cancelIpcBlockingMigrated victim tcb st)
       victim tcb ≠ some c)
@@ -613,7 +613,7 @@ theorem cancelIpcBlockingOnCore_crossCoreNonInterference (ctx : LabelingContext)
           simp only [Option.toList, List.mem_singleton] at hw
           exact hHolder (by rw [hw, hW])
       · exact hne hd)
-    (cancelIpcBlockingOnCore_confinedToCores victim tcb executingCore st) hShared
+    (cancelIpcBlockingOnCore_confinedToCores victim tcb executingCore st hInv) hShared
 
 /-- SM8.B.2 (**the headline, and the thing SM6 cannot say**): waking a thread on
 a remote core is invisible to a third core *whatever that thread's label*.

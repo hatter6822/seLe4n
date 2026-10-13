@@ -56,7 +56,7 @@ def updatePipBoostOnCore (st : SystemState) (c : CoreId) (tid : ThreadId) : Syst
       let st' := st.rewriteObject tid.toObjId (KernelObject.tcb tcb')
         (SystemState.rewriteAdmissible_tcb h tcb')
       -- Conditional run-queue bucket migration ON CORE c (the holder's home core)
-      if tid ∈ (st.scheduler.runQueueOnCore c) then
+      if st.queuedOn c tid then
         let oldPrio := (resolveEffectivePrioDeadline st tcb).1
         let newPrio := (resolveEffectivePrioDeadline st' tcb').1
         if oldPrio != newPrio then
@@ -237,8 +237,10 @@ theorem updatePipBoostOnCore_runQueueStage (st : SystemState) (c : CoreId) (tid 
         have hq : ((st.rewriteObject tid.toObjId
             (.tcb { tcb with pipBoost := computeMaxWaiterPriority st tid })
             (SystemState.rewriteAdmissible_tcb hT _)).runLinkOn c tid).queued = true := by
-          rw [(hR1 c).contains]
-          exact RunQueue.mem_iff_contains.mp hMem
+          rw [← SystemState.queuedOn_eq_runLinkOn,
+            SystemState.rewriteObject_tcb_queuedOn
+              (t' := { tcb with pipBoost := computeMaxWaiterPriority st tid }) _ hInv hT rfl]
+          exact hMem
         split
         · exact ((SystemState.RunQueueStage.runRequeueOnCore _ c tid _ hq).trans
             (markKeyChangeFor_runQueueStage _ _ _)) hInv1 hR1
@@ -263,12 +265,15 @@ theorem updatePipBoostOnCore_currentPlacementFrame (st : SystemState) (c0 : Core
     · have hW := SystemState.CurrentPlacementFrame.rewriteObject_tcb c
         (t := { tcb with pipBoost := computeMaxWaiterPriority st tid })
         (SystemState.rewriteAdmissible_tcb hT _) hInv
+        (fun t0 h0 => by rw [hT] at h0; cases h0; rfl)
       split
       · rename_i hMem
         split
         · refine hW.trans ((SystemState.CurrentPlacementFrame.runRequeueOnCore _ c c0 tid _ ?_).trans
             (markKeyChangeFor_currentPlacementFrame _ _ _ c))
-          rw [SystemState.rewriteObject_scheduler]; exact hMem
+          rw [SystemState.rewriteObject_tcb_queuedOn
+            (t' := { tcb with pipBoost := computeMaxWaiterPriority st tid }) _ hInv hT rfl]
+          exact hMem
         · exact hW.trans (markKeyChangeFor_currentPlacementFrame _ _ _ c)
       · exact hW.trans (markKeyChangeFor_currentPlacementFrame _ _ _ c)
 
@@ -533,6 +538,31 @@ theorem updatePipBoostOnCore_runQueueOnCore_ne (st : SystemState) (c c' : CoreId
 thread and re-inserts it at the new effective priority — a re-keying, not a
 deschedule — and fires only under the guard that the thread is already in that
 queue. -/
+theorem updatePipBoostOnCore_queuedOn (st : SystemState) (c c' : CoreId)
+    (tid x : ThreadId) (hInv : st.objects.invExt) :
+    (updatePipBoostOnCore st c tid).queuedOn c' x = st.queuedOn c' x := by
+  cases hT : st.getTcb? tid with
+  | none =>
+    unfold updatePipBoostOnCore
+    rw [SystemState.getTcbWitnessed?_eq_none hT]
+  | some tcb =>
+    unfold updatePipBoostOnCore
+    simp only [SystemState.getTcbWitnessed?_eq_some hT]
+    have hW := SystemState.rewriteObject_tcb_queuedOn
+      (t' := { tcb with pipBoost := computeMaxWaiterPriority st tid })
+      (SystemState.rewriteAdmissible_tcb hT _) hInv hT rfl
+    split
+    · rfl
+    · split
+      · rename_i hIn
+        split
+        · rw [markKeyChangeFor_queuedOn,
+            SystemState.runRequeueOnCore_queuedOn_of_queued _ (by rw [hW]; exact hIn), hW]
+        · rw [markKeyChangeFor_queuedOn, hW]
+      · rw [markKeyChangeFor_queuedOn, hW]
+
+/-- The ghost reading of the same fact: a re-key moves no thread into or out of
+any core's ghost queue. -/
 theorem updatePipBoostOnCore_mem_runQueueOnCore (st : SystemState) (c c' : CoreId)
     (tid x : ThreadId) :
     x ∈ (updatePipBoostOnCore st c tid).scheduler.runQueueOnCore c'
@@ -542,22 +572,12 @@ theorem updatePipBoostOnCore_mem_runQueueOnCore (st : SystemState) (c c' : CoreI
   · split
     · exact Iff.rfl
     · split
-      · rename_i hIn
-        split
+      · split
         · rw [markKeyChangeFor_runQueueOnCore, SystemState.runRequeueOnCore_scheduler,
             SystemState.rewriteObject_scheduler]
           by_cases hcc : c = c'
           · subst hcc
-            rw [SchedulerState.setRunQueueOnCore_runQueueOnCore_self]
-            rw [RunQueue.mem_insert, RunQueue.mem_remove]
-            constructor
-            · rintro (⟨hx, _⟩ | hxt)
-              · exact hx
-              · exact hxt ▸ hIn
-            · intro hx
-              by_cases hEq : x = tid
-              · exact Or.inr hEq
-              · exact Or.inl ⟨hx, hEq⟩
+            rw [SchedulerState.setRunQueueOnCore_runQueueOnCore_self, RunQueue.mem_rekey]
           · rw [SchedulerState.setRunQueueOnCore_runQueueOnCore_ne _ c c' _ hcc,
               SchedulerState.setRunQueueEndsOnCore_runQueueOnCore]
         · rw [markKeyChangeFor_runQueueOnCore]; exact Iff.rfl
@@ -603,7 +623,7 @@ def pipBoostWithWake (st : SystemState) (tid : ThreadId) (executingCore : CoreId
   let st' := updatePipBoostOnCore st target tid
   let sgi : Option (CoreId × SgiKind) :=
     if target == executingCore then none
-    else if tid ∈ (st.scheduler.runQueueOnCore target) then
+    else if st.queuedOn target tid then
       match st.getTcb? tid, st'.getTcb? tid with
       | some t, some t' =>
         -- Gate on the *effective* priority (the run-queue bucket key) changing,
@@ -1211,6 +1231,37 @@ theorem repropagateFromWaiter_replenishQueueOnCore (st : SystemState) (tid : Thr
 exactly where it was, on every core — the lift of
 `updatePipBoostOnCore_mem_runQueueOnCore` to the walk's step.  A boost migrates a
 bucket; it neither admits nor drops a member. -/
+theorem pipBoostWithWake_queuedOn (st : SystemState) (tid x : ThreadId)
+    (ec c' : CoreId) (hInv : st.objects.invExt) :
+    (pipBoostWithWake st tid ec).1.queuedOn c' x = st.queuedOn c' x := by
+  rw [pipBoostWithWake_state]
+  exact updatePipBoostOnCore_queuedOn st _ c' tid x hInv
+
+/-- **WS-RR RR8.12**: and so does the whole walk, by induction on its fuel —
+read off the threads' own links. -/
+theorem propagatePipChainCrossCore_queuedOn :
+    ∀ (fuel : Nat) (st : SystemState) (startTid x : ThreadId) (ec c' : CoreId),
+      st.objects.invExt →
+      (propagatePipChainCrossCore st startTid ec fuel).1.queuedOn c' x = st.queuedOn c' x
+  | 0, st, startTid, x, ec, c', _ => by
+      rw [propagatePipChainCrossCore_zero]
+  | n + 1, st, startTid, x, ec, c', hInv => by
+      rw [propagatePipChainCrossCore_step]
+      simp only
+      cases hb : blockingServer st startTid with
+      | none => simpa using pipBoostWithWake_queuedOn st startTid x ec c' hInv
+      | some nextServer =>
+          have hTail := propagatePipChainCrossCore_queuedOn n
+            (pipBoostWithWake st startTid ec).1 nextServer x ec c'
+            (pipBoostWithWake_preserves_objects_invExt st startTid ec hInv)
+          simp only at hTail ⊢
+          rw [hTail]
+          exact pipBoostWithWake_queuedOn st startTid x ec c' hInv
+
+/-- **WS-RR RR8.12**: one walk step leaves every thread's run-queue *membership*
+exactly where it was, on every core — the lift of
+`updatePipBoostOnCore_mem_runQueueOnCore` to the walk's step.  A boost migrates a
+bucket; it neither admits nor drops a member. -/
 theorem pipBoostWithWake_mem_runQueueOnCore (st : SystemState) (tid x : ThreadId)
     (ec c' : CoreId) :
     x ∈ (pipBoostWithWake st tid ec).1.scheduler.runQueueOnCore c'
@@ -1301,8 +1352,7 @@ theorem updatePipBoostOnCore_runQueueUniqueOnCore (st : SystemState)
           by_cases hcc : c = c'
           · subst hcc
             rw [SchedulerState.setRunQueueOnCore_runQueueOnCore_self]
-            exact RunQueue.insert_preserves_toList_nodup _ _ _
-              (RunQueue.remove_preserves_toList_nodup _ tid h)
+            exact RunQueue.toList_nodup _
           · rw [SchedulerState.setRunQueueOnCore_runQueueOnCore_ne _ c c' _ hcc,
               SchedulerState.setRunQueueEndsOnCore_runQueueOnCore]
             exact h

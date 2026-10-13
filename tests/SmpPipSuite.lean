@@ -202,7 +202,7 @@ example (st : SystemState) (tid : SeLe4n.ThreadId) (ec : CoreId)
 -- condition (the WS-SM SM5.F.4 C9 runnability gate is part of the hypotheses).
 example (st : SystemState) (tid : SeLe4n.ThreadId) (ec : CoreId) (t t' : TCB)
     (hRemote : determineTargetCore st tid ≠ ec)
-    (hRunnable : tid ∈ st.scheduler.runQueueOnCore (determineTargetCore st tid))
+    (hRunnable : st.queuedOn (determineTargetCore st tid) tid = true)
     (hPre : st.getTcb? tid = some t)
     (hPost : (updatePipBoostOnCore st (determineTargetCore st tid) tid).getTcb? tid = some t')
     (hMaterial : (resolveEffectivePrioDeadline st t).1
@@ -251,7 +251,7 @@ example (st : SystemState) (tid : SeLe4n.ThreadId) :
 
 -- SM5.F.4 (C9): a boost of a non-runnable holder fires no SGI.
 example (st : SystemState) (tid : SeLe4n.ThreadId) (ec : CoreId)
-    (hNotRun : tid ∉ st.scheduler.runQueueOnCore (determineTargetCore st tid)) :
+    (hNotRun : st.queuedOn (determineTargetCore st tid) tid = false) :
     (pipBoostWithWake st tid ec).2 = none :=
   pipBoostWithWake_no_sgi_if_not_runnable st tid ec hNotRun
 
@@ -327,7 +327,7 @@ it genuinely warrants poking core 1 (the WS-SM SM5.F.4 C9 runnability gate). -/
 private def st : SystemState :=
   let base := ((BootstrapBuilder.empty.withObject srv.toObjId (.tcb (mkServerTcb 200 5 core1))).withObject
     cli.toObjId (.tcb (mkWaiterTcb 201 10 200))).build
-  { base with scheduler := base.scheduler.setRunQueueOnCore core1 (RunQueue.ofList [(srv, ⟨5⟩)]) }
+  enqueueAllOnCore base core1 [(srv, ⟨5⟩)]
 
 private def assertBool (name : String) (b : Bool) : IO Unit := do
   if b then
@@ -451,7 +451,7 @@ private def stImmaterial : SystemState :=
   let base := ((BootstrapBuilder.empty.withObject srvHi.toObjId
       (.tcb (mkServerTcb 202 10 core1))).withObject
     cliLo.toObjId (.tcb (mkWaiterTcb 203 5 202))).build
-  { base with scheduler := base.scheduler.setRunQueueOnCore core1 (RunQueue.ofList [(srvHi, ⟨10⟩)]) }
+  enqueueAllOnCore base core1 [(srvHi, ⟨10⟩)]
 
 /-- §3.6: WS-SM SM5.F.4 C9 — the runnability gate on the cross-core boost SGI. -/
 private def runC9Checks : IO Unit := do

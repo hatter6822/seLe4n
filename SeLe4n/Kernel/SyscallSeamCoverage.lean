@@ -436,8 +436,8 @@ theorem dispatchWithCapChecked_coversWrites (ctx : LabelingContext)
       simp only at hDisp
       rw [hArgs] at hDisp
       simp only at hDisp
-      exact schedLockSet_lifecycleRetypeOnCore_coversWrites e cap args.targetObj _ st st' S hDisp
-        hSched
+      exact schedLockSet_lifecycleRetypeOnCore_coversWrites e cap args.targetObj _ st st' S
+        hObjInv hDisp hSched
   -- ---- `.notificationSignal` ----------------------------------------------
   case notificationSignal =>
     cases hT : cap.target <;> rw [hT] at hOps <;> simp only [Option.some.injEq, reduceCtorEq] at hOps

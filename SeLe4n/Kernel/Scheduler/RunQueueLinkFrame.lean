@@ -674,45 +674,115 @@ theorem runDescheduleOnCore_objects_invExt (st : SystemState) (c : CoreId) (t : 
         c (st.scheduler.currentOnCore c == some t) := by
   simp only [runDescheduleOnCore, runRemoveOnCore_scheduler]
 
+theorem runDescheduleOnCore_queuedOn (st : SystemState) (c : CoreId) (t : SeLe4n.ThreadId)
+    (c' : CoreId) (y : SeLe4n.ThreadId) :
+    (st.runDescheduleOnCore c t).queuedOn c' y =
+      if y = t ∧ c' = c then false else st.queuedOn c' y := by
+  have h : RunCoresAgree (st.runDescheduleOnCore c t) (st.runRemoveOnCore c t) :=
+    RunCoresAgree.of_objects rfl
+  rw [h.queuedOn c' y, runRemoveOnCore_queuedOn]
+
 /-- WS-ZA ZA4.5: re-key thread `t` on core `c` at priority `p`: dequeue it, then
 append it to the tail of its new priority bucket, both through the TCB
-run-queue links (seL4's `tcbSchedDequeue` then `tcbSchedEnqueue`). -/
+run-queue links (seL4's `tcbSchedDequeue` then `tcbSchedEnqueue`).  The
+erased ghost queue is re-keyed only when it holds `t`, so a requeue never adds
+a thread to the ghost: under `runQueueRefined` the condition is the link bit
+the callers test, and the ghost's membership is preserved with no hypothesis. -/
 def runRequeueOnCore (st : SystemState) (c : CoreId) (t : SeLe4n.ThreadId)
     (p : SeLe4n.Priority) : SystemState :=
-  (st.runRemoveOnCore c t).runEnqueueAdmitted c t p
+  let st' := (st.runRemoveOnCore c t).runEnqueueAdmitted c t p
+  if (st.scheduler.runQueueOnCore c).contains t then st'
+  else { st' with scheduler := st'.scheduler.setRunQueueOnCore c (st.scheduler.runQueueOnCore c) }
+
+/-- The requeue's object store is the dequeue-then-enqueue's: the ghost
+condition touches only the scheduler. -/
+theorem runRequeueOnCore_objects (st : SystemState) (c : CoreId) (t : SeLe4n.ThreadId)
+    (p : SeLe4n.Priority) :
+    (st.runRequeueOnCore c t p).objects = ((st.runRemoveOnCore c t).runEnqueueAdmitted c t p).objects := by
+  unfold runRequeueOnCore; dsimp only; split <;> rfl
+
+/-- A requeue of `t` moves no other thread's core code. -/
+theorem runRequeueOnCore_runCoreCode_ne (st : SystemState) (c : CoreId) (t y : SeLe4n.ThreadId)
+    (p : SeLe4n.Priority) (hy : y ≠ t) :
+    ((st.runRequeueOnCore c t p).getTcb? y).map TCB.runCoreCode =
+      (st.getTcb? y).map TCB.runCoreCode :=
+  (RunCoresAgree.of_objects (runRequeueOnCore_objects st c t p) y).trans
+    ((runEnqueueAdmitted_runCoreCode_ne _ c t y p hy).trans (runRemoveOnCore_runCoreCode_ne st c t y hy))
+
+/-- A requeue moves no thread's run-queue membership except `t`'s, which it
+leaves on `c` (when `t` is a thread at all). -/
+theorem runRequeueOnCore_queuedOn (st : SystemState) (c : CoreId) (t : SeLe4n.ThreadId)
+    (p : SeLe4n.Priority) (c' : CoreId) (y : SeLe4n.ThreadId) :
+    (st.runRequeueOnCore c t p).queuedOn c' y =
+      if y = t then ((st.getTcb? t).isSome && decide (c' = c)) else st.queuedOn c' y := by
+  rw [(RunCoresAgree.of_objects (runRequeueOnCore_objects st c t p)).queuedOn c' y,
+    runEnqueueAdmitted_queuedOn, runRemoveOnCore_getTcb?_isSome]
+  by_cases hy : y = t
+  · rw [if_pos hy, if_pos hy]
+  · rw [if_neg hy, if_neg hy, runRemoveOnCore_queuedOn, if_neg (fun h => hy h.1)]
+
+/-- Requeueing a thread already queued on `c` moves no thread's membership. -/
+theorem runRequeueOnCore_queuedOn_of_queued {st : SystemState} {c : CoreId}
+    {t : SeLe4n.ThreadId} (p : SeLe4n.Priority) (h : st.queuedOn c t = true)
+    (c' : CoreId) (y : SeLe4n.ThreadId) :
+    (st.runRequeueOnCore c t p).queuedOn c' y = st.queuedOn c' y := by
+  rw [runRequeueOnCore_queuedOn]
+  by_cases hy : y = t
+  · subst hy
+    rw [if_pos rfl]
+    unfold queuedOn at h ⊢
+    cases hT : st.getTcb? y with
+    | none => rw [hT] at h; cases h
+    | some tcb =>
+      rw [hT] at h
+      simp only [Option.isSome_some, Bool.true_and, beq_iff_eq] at h ⊢
+      apply Bool.eq_iff_iff.mpr
+      simp only [decide_eq_true_eq, beq_iff_eq, h]
+      constructor
+      · rintro rfl; rfl
+      · intro he; exact Fin.ext (by omega)
+  · rw [if_neg hy]
 
 theorem runRequeueOnCore_onlyObjectsSchedulerDiffer (st : SystemState) (c : CoreId)
     (t : SeLe4n.ThreadId) (p : SeLe4n.Priority) :
-    onlyObjectsSchedulerDiffer (st.runRequeueOnCore c t p) st :=
-  (runEnqueueAdmitted_onlyObjectsSchedulerDiffer _ c t p).trans
+    onlyObjectsSchedulerDiffer (st.runRequeueOnCore c t p) st := by
+  have h := (runEnqueueAdmitted_onlyObjectsSchedulerDiffer (st.runRemoveOnCore c t) c t p).trans
     (runRemoveOnCore_onlyObjectsSchedulerDiffer st c t)
+  unfold runRequeueOnCore; dsimp only; split
+  · exact h
+  · exact h.withScheduler _
 
 theorem runRequeueOnCore_objectsAgreeOffRunLinks (st : SystemState) (c : CoreId)
     (t : SeLe4n.ThreadId) (p : SeLe4n.Priority) :
-    (st.runRequeueOnCore c t p).objectsAgreeOffRunLinks st :=
-  (runEnqueueAdmitted_objectsAgreeOffRunLinks _ c t p).trans
-    (runRemoveOnCore_objectsAgreeOffRunLinks st c t)
+    (st.runRequeueOnCore c t p).objectsAgreeOffRunLinks st := by
+  intro x; rw [runRequeueOnCore_objects]
+  exact ((runEnqueueAdmitted_objectsAgreeOffRunLinks _ c t p).trans
+    (runRemoveOnCore_objectsAgreeOffRunLinks st c t)) x
 
 theorem runRequeueOnCore_objects_invExt (st : SystemState) (c : CoreId) (t : SeLe4n.ThreadId)
-    (p : SeLe4n.Priority) (hInv : st.objects.invExt) : (st.runRequeueOnCore c t p).objects.invExt :=
-  runEnqueueAdmitted_objects_invExt _ c t p (runRemoveOnCore_objects_invExt st c t hInv)
+    (p : SeLe4n.Priority) (hInv : st.objects.invExt) : (st.runRequeueOnCore c t p).objects.invExt := by
+  rw [runRequeueOnCore_objects]
+  exact runEnqueueAdmitted_objects_invExt _ c t p (runRemoveOnCore_objects_invExt st c t hInv)
 
 @[simp] theorem runRequeueOnCore_machine (st : SystemState) (c : CoreId) (t : SeLe4n.ThreadId)
     (p : SeLe4n.Priority) : (st.runRequeueOnCore c t p).machine = st.machine := by
   have h := runRequeueOnCore_onlyObjectsSchedulerDiffer st c t p
   unfold onlyObjectsSchedulerDiffer at h; rw [h]
 
-/-- The scheduler after a re-key: the ghost queue is the remove-then-insert, and
-the core's ends are the enqueue's over the dequeued state. -/
+/-- The scheduler after a re-key: the ghost queue is re-keyed, and the core's
+ends are the enqueue's over the dequeued state. -/
 @[simp] theorem runRequeueOnCore_scheduler (st : SystemState) (c : CoreId) (t : SeLe4n.ThreadId)
     (p : SeLe4n.Priority) :
     (st.runRequeueOnCore c t p).scheduler =
       (st.scheduler.setRunQueueEndsOnCore c ((st.runRemoveOnCore c t).runEnqueueEnds c t p)).setRunQueueOnCore c
-        (((st.scheduler.runQueueOnCore c).remove t).insert t p) := by
-  simp only [runRequeueOnCore, runEnqueueAdmitted_scheduler, runRemoveOnCore_scheduler,
-    SchedulerState.setRunQueueOnCore_runQueueOnCore_self]
-  rw [SchedulerState.setRunQueueOnCore_setRunQueueEndsOnCore, SchedulerState.setRunQueueOnCore_setRunQueueOnCore,
-    SchedulerState.setRunQueueEndsOnCore_setRunQueueEndsOnCore]
+        ((st.scheduler.runQueueOnCore c).rekey t p) := by
+  unfold runRequeueOnCore RunQueue.rekey; dsimp only
+  split <;>
+  · simp only [runEnqueueAdmitted_scheduler, runRemoveOnCore_scheduler,
+      SchedulerState.setRunQueueOnCore_runQueueOnCore_self]
+    rw [SchedulerState.setRunQueueOnCore_setRunQueueEndsOnCore, SchedulerState.setRunQueueOnCore_setRunQueueOnCore,
+      SchedulerState.setRunQueueEndsOnCore_setRunQueueEndsOnCore]
+    try rw [SchedulerState.setRunQueueOnCore_setRunQueueOnCore]
 
 /-! A run-queue link write writes only its own core's queue and ends: every
 other observable per-core slot reads through. -/
@@ -821,20 +891,16 @@ theorem runEnqueueAdmitted_getTcb?_isSome (st : SystemState) (c : CoreId) (t y :
 /-- A re-key of `t` on the core whose queue holds it moves no thread to
 another core, and keeps every core's current slot and every TCB. -/
 theorem CurrentPlacementFrame.runRequeueOnCore (st : SystemState) (c c0 : CoreId)
-    (t : SeLe4n.ThreadId) (p : SeLe4n.Priority) (hMem : t ∈ st.scheduler.runQueueOnCore c0) :
+    (t : SeLe4n.ThreadId) (p : SeLe4n.Priority) (hq : st.queuedOn c0 t = true) :
     CurrentPlacementFrame c st (st.runRequeueOnCore c0 t p) := by
   intro y hy
   refine ⟨by simpa using hy, fun h => ?_, fun c' _ hm => ?_⟩
-  · unfold SystemState.runRequeueOnCore
-    rw [runEnqueueAdmitted_getTcb?_isSome, runRemoveOnCore_getTcb?_isSome]; exact h
-  · by_cases hc : c0 = c'
-    · subst hc
-      rw [runRequeueOnCore_scheduler, SchedulerState.setRunQueueOnCore_runQueueOnCore_self,
-        RunQueue.mem_insert, RunQueue.mem_remove] at hm
-      rcases hm with ⟨hm, -⟩ | rfl
-      · exact hm
-      · exact hMem
-    · rwa [runRequeueOnCore_runQueueOnCore_ne _ _ _ _ _ hc] at hm
+  · have ho := runRequeueOnCore_objects st c0 t p
+    unfold getTcb? at h ⊢; rw [ho]
+    have := runEnqueueAdmitted_getTcb?_isSome (st.runRemoveOnCore c0 t) c0 t y p
+    rw [runRemoveOnCore_getTcb?_isSome] at this
+    unfold getTcb? at this; rw [this]; exact h
+  · rwa [runRequeueOnCore_queuedOn_of_queued p hq] at hm
 
 /-- A removal from core `c0`'s queue moves no thread anywhere new. -/
 theorem CurrentPlacementFrame.runRemoveOnCore (st : SystemState) (c c0 : CoreId)
@@ -842,11 +908,10 @@ theorem CurrentPlacementFrame.runRemoveOnCore (st : SystemState) (c c0 : CoreId)
   intro y hy
   refine ⟨by simpa using hy, fun h => by rw [runRemoveOnCore_getTcb?_isSome]; exact h,
     fun c' _ hm => ?_⟩
-  by_cases hc : c0 = c'
-  · subst hc
-    rw [runRemoveOnCore_runQueueOnCore_self, RunQueue.mem_remove] at hm
-    exact hm.1
-  · rwa [runRemoveOnCore_runQueueOnCore_ne _ _ _ _ hc] at hm
+  rw [runRemoveOnCore_queuedOn] at hm
+  split at hm
+  · cases hm
+  · exact hm
 
 /-- Taking a thread off core `c0` moves no thread anywhere new; the only current
 slot it writes, it clears. -/
@@ -867,8 +932,7 @@ theorem CurrentPlacementFrame.runDescheduleOnCore (st : SystemState) (c c0 : Cor
     · rw [SchedulerState.setCurrentOnCore_currentOnCore_ne _ _ _ _ hc] at hy
       simpa using hy
   obtain ⟨-, hT, hQ⟩ := hR y (by simpa using hy0)
-  refine ⟨hy0, hT, fun c' hne hm => hQ c' hne ?_⟩
-  simpa using hm
+  exact ⟨hy0, hT, fun c' hne hm => hQ c' hne hm⟩
 
 /-- An enqueue on core `c0` of a thread other than core `c`'s current one moves
 that current thread nowhere new. -/
@@ -882,16 +946,10 @@ theorem CurrentPlacementFrame.runEnqueueOnCore (st : SystemState) (c c0 : CoreId
     split
     · rw [runEnqueueAdmitted_getTcb?_isSome]; exact h
     · exact h
-  · by_cases hc : c0 = c'
-    · subst hc
-      cases hA : st.runEnqueueAdmits c0 t with
-      | true =>
-        rw [runEnqueueOnCore_runQueueOnCore_self p hA, RunQueue.mem_insert] at hm
-        rcases hm with hm | rfl
-        · exact hm
-        · exact absurd hy0 hNe
-      | false => rwa [runEnqueueOnCore_of_not_admits p hA] at hm
-    · rwa [runEnqueueOnCore_runQueueOnCore_ne _ _ _ _ _ hc] at hm
+  · rw [runEnqueueOnCore_queuedOn] at hm
+    split at hm
+    · rename_i hyt; exact absurd (hyt.1 ▸ hy0) hNe
+    · exact hm
 
 theorem runUnlinkLinks_objects_invExtK (st : SystemState) (t : SeLe4n.ThreadId)
     (pv nx bpv bnx : Nat) (hK : st.objects.invExtK) :
@@ -1003,6 +1061,9 @@ theorem RunQueueStage.runRequeueOnCore (st : SystemState) (c : CoreId) (t : SeLe
     RunQueueStage st (st.runRequeueOnCore c t p) := fun hInv hR =>
   ⟨runRequeueOnCore_objects_invExt st c t p hInv, by
     obtain ⟨tcb, hT, -⟩ := (runLinkOn_queued_iff st c t).mp hq
+    have hc : (st.scheduler.runQueueOnCore c).contains t = true := by
+      rw [← (hR c).contains]; exact hq
+    unfold SystemState.runRequeueOnCore; dsimp only; rw [if_pos hc]
     refine runEnqueueAdmitted_refined (runRemoveOnCore_refined hR) ?_ ?_
     · rw [runRemoveOnCore_getTcb?_isSome, hT]; rfl
     · intro c' hne

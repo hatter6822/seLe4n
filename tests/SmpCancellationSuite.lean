@@ -191,7 +191,6 @@ open SeLe4n.Testing
 -- declared before the transition runs and a removal resolved after the reclaim's
 -- holder deschedule, an equation now that the reclaim's step is a removal of a
 -- thread that is never the victim.
-#check @placedCoreOf?_congr_of_contains_current_eq
 #check @placedCoreOf?_eq_some_of_unique
 #check @descheduleAtPlacementCores_eq_toList
 #check @cancelIpcBlockingMigrated_placedCoreOf?
@@ -526,21 +525,21 @@ variable (dh1? dh2? : Option SeLe4n.ReplyId) (doc? : Option SeLe4n.ThreadId)
 -- victim on, not on its home; its three hypotheses are the placement, the
 -- victim being current there, and that core being remote.
 /-- SM6.E.5: the flagship's remote-poke conjunct applies. -/
-example (c : CoreId) (h1 : placedCoreOf? st victim = some c)
+example (c : CoreId) (hInv : st.objects.invExt) (h1 : placedCoreOf? st victim = some c)
     (h2 : st.scheduler.currentOnCore c = some victim)
     (h3 : c ≠ ec) :
     (cancelIpcBlockingOnCore victim tcb ec st).2 = some (c, SgiKind.reschedule) :=
-  (cancellation_cross_core_correct victim tcb ec c st h1 h2 h3).1
+  (cancellation_cross_core_correct victim tcb ec c st hInv h1 h2 h3).1
 
 /-- SM6.E.5: the flagship's placed-core deschedule conjunct applies. -/
-example (c : CoreId) (h1 : placedCoreOf? st victim = some c)
+example (c : CoreId) (hInv : st.objects.invExt) (h1 : placedCoreOf? st victim = some c)
     (h2 : st.scheduler.currentOnCore c = some victim)
     (h3 : c ≠ ec) :
     victim ∉ (cancelIpcBlockingOnCore victim tcb ec st).1.scheduler.runQueueOnCore c :=
-  (cancellation_cross_core_correct victim tcb ec c st h1 h2 h3).2.1
+  (cancellation_cross_core_correct victim tcb ec c st hInv h1 h2 h3).2.1
 
 /-- SM6.E.5: the flagship's object-level fidelity conjunct applies. -/
-example (c : CoreId) (h1 : placedCoreOf? st victim = some c)
+example (c : CoreId) (hInv : st.objects.invExt) (h1 : placedCoreOf? st victim = some c)
     (h2 : st.scheduler.currentOnCore c = some victim)
     (h3 : c ≠ ec) :
     (cancelIpcBlockingOnCore victim tcb ec st).1.objectsAgreeOffRunLinks
@@ -548,32 +547,32 @@ example (c : CoreId) (h1 : placedCoreOf? st victim = some c)
   -- WS-OD OD1.7, re-keyed at `v0.35.158`: one projection deeper — the per-core
   -- locality conjunct split into a run-queue half and a current-slot half, both
   -- conditioned on the core the reclaim's holder deschedule writes.
-  (cancellation_cross_core_correct victim tcb ec c st h1 h2 h3).2.2.2.2.2
+  (cancellation_cross_core_correct victim tcb ec c st hInv h1 h2 h3).2.2.2.2.2
 
 /-- `v0.35.158`: the flagship's **current-slot** locality conjunct applies, on a
 core the reclaim's holder deschedule does not target — it was unconditional
 while the reclaim's step was a wake, which inserts into a run queue and moves
 nothing onto a core; a removal can clear a current slot, so the exclusion now
 covers both halves. -/
-example (c : CoreId) (h1 : placedCoreOf? st victim = some c)
+example (c : CoreId) (hInv : st.objects.invExt) (h1 : placedCoreOf? st victim = some c)
     (h2 : st.scheduler.currentOnCore c = some victim)
     (h3 : c ≠ ec) (c' : CoreId) (hc' : c' ≠ c)
     (hPark : cancelUnboundHolderCore? st (cancelIpcBlockingMigrated victim tcb st)
         victim tcb ≠ some c') :
     (cancelIpcBlockingOnCore victim tcb ec st).1.scheduler.currentOnCore c'
       = st.scheduler.currentOnCore c' :=
-  (cancellation_cross_core_correct victim tcb ec c st h1 h2 h3).2.2.2.2.1 c' hc' hPark
+  (cancellation_cross_core_correct victim tcb ec c st hInv h1 h2 h3).2.2.2.2.1 c' hc' hPark
 
 /-- `v0.35.158`: the flagship's **run-queue** locality conjunct applies, on a
 core the reclaim's holder deschedule does not target. -/
-example (c : CoreId) (h1 : placedCoreOf? st victim = some c)
+example (c : CoreId) (hInv : st.objects.invExt) (h1 : placedCoreOf? st victim = some c)
     (h2 : st.scheduler.currentOnCore c = some victim)
     (h3 : c ≠ ec) (c' : CoreId) (hc' : c' ≠ c)
     (hPark : cancelUnboundHolderCore? st (cancelIpcBlockingMigrated victim tcb st)
         victim tcb ≠ some c') :
     (cancelIpcBlockingOnCore victim tcb ec st).1.scheduler.runQueueOnCore c'
       = st.scheduler.runQueueOnCore c' :=
-  (cancellation_cross_core_correct victim tcb ec c st h1 h2 h3).2.2.2.1 c' hc' hPark
+  (cancellation_cross_core_correct victim tcb ec c st hInv h1 h2 h3).2.2.2.1 c' hc' hPark
 
 -- `v0.35.158`: the holder-deschedule surface (WS-OD OD1.7's wake until then) —
 -- the trigger, its core, the scheduler-only removal, its frames, and the payoff
@@ -617,9 +616,9 @@ arm is unconditionally `true` and the chooser selects it at its legacy band. -/
 example (stPost : SystemState) (holder : SeLe4n.ThreadId)
     (hW : cancelUnboundHolder? st stPost victim tcb = some holder)
     (hUnique : ∀ c c' : CoreId,
-        (holder ∈ stPost.scheduler.runQueueOnCore c
+        (stPost.queuedOn c holder = true
           ∨ stPost.scheduler.currentOnCore c = some holder) →
-        (holder ∈ stPost.scheduler.runQueueOnCore c'
+        (stPost.queuedOn c' holder = true
           ∨ stPost.scheduler.currentOnCore c' = some holder) →
         c = c') :
     placedCoreOf? (descheduleUnboundHolder st stPost victim tcb) holder = none :=

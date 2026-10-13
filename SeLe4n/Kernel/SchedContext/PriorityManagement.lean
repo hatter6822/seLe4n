@@ -421,7 +421,7 @@ a PIP-boosted thread would drop it to the new base priority, causing
 priority inversion for the entire blocking chain. -/
 def migrateRunQueueBucketOnCore (st : SystemState) (tid : SeLe4n.ThreadId)
     (newPriority : SeLe4n.Priority) (homeCore : Concurrency.CoreId) : SystemState :=
-  if tid ∈ (st.scheduler.runQueueOnCore homeCore) then
+  if st.queuedOn homeCore tid then
     -- AI3-B (M-22): Apply PIP boost to new priority.
     -- AK2-J (S-M08): The defensive fallback (TCB missing — unreachable under
     -- `runnableThreadsAreTCBs`) now takes the max of `newPriority` and the
@@ -543,11 +543,8 @@ theorem updatePrioritySource_currentPlacementFrame (st : SystemState)
     (hInv : st.objects.invExt) (c : Concurrency.CoreId) :
     SystemState.CurrentPlacementFrame c st (updatePrioritySource st tid tcb newPriority) := by
   obtain ⟨o, ho⟩ := updatePrioritySource_only_modifies_objects st tid tcb newPriority
-  refine SystemState.CurrentPlacementFrame.of_parts (fun y hy => ?_)
-    (by rw [ho]) (fun _ _ => by rw [ho])
-  have h := congrArg Option.isSome (updatePrioritySource_runCoreCode st tid tcb newPriority hInv y)
-  simp only [Option.isSome_map] at h
-  rw [h]; exact hy
+  exact SystemState.CurrentPlacementFrame.of_parts (by rw [ho])
+    (updatePrioritySource_runCoreCode st tid tcb newPriority hInv)
 
 /-- WS-ZA ZA4.5: the bucket migration keeps the agreement — it re-keys a thread
 its home queue holds, which under the agreement that core's links queue. -/
@@ -559,7 +556,7 @@ theorem migrateRunQueueBucketOnCore_runQueueStage (st : SystemState)
   split
   · rename_i hMem
     have hq : (st.runLinkOn homeCore tid).queued = true := by
-      rw [(hR homeCore).contains]; exact RunQueue.mem_iff_contains.mp hMem
+      rw [← SystemState.queuedOn_eq_runLinkOn]; exact hMem
     exact SystemState.RunQueueStage.runRequeueOnCore _ _ _ _ hq hInv hR
   · exact ⟨hInv, hR⟩
 

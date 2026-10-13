@@ -43,6 +43,19 @@ theorem resumeReadyMidState_keyInputsEqExcept (st : SystemState) (tid : SeLe4n.T
   obtain ⟨t, ht⟩ := Option.isSome_iff_exists.mp hT
   rw [SystemState.updateTcb_getTcb?_self _ _ _ hInv, ht]; rfl
 
+/-- The resume's mid-state moves no thread's run-queue core. -/
+theorem resumeReadyMidState_runCoresAgree (st : SystemState) (tid : SeLe4n.ThreadId)
+    (hInv : st.objects.invExt) :
+    SystemState.RunCoresAgree (Lifecycle.Suspend.resumeReadyMidState st tid) st := by
+  have hInv1 : (Lifecycle.Suspend.restoreToReady st tid).objects.invExt :=
+    SystemState.updateTcb_preserves_objects_invExt _ _ _ hInv
+  have h1 : SystemState.RunCoresAgree (Lifecycle.Suspend.restoreToReady st tid) st :=
+    SystemState.RunCoresAgree.updateTcb hInv (fun _ => rfl)
+  have h2 : SystemState.RunCoresAgree (Lifecycle.Suspend.resumeReadyMidState st tid)
+      (Lifecycle.Suspend.restoreToReady st tid) :=
+    SystemState.RunCoresAgree.updateTcb hInv1 (fun _ => rfl)
+  exact h2.trans h1
+
 /-- **Resume covers.**  The boost write ends in the key hook, the enqueue flags
 the core it inserts on, and the inline reschedule is a scheduling point. -/
 theorem resumeThreadOnCore_stepCovers (st st' : SystemState) (vtid : SeLe4n.ValidThreadId)
@@ -62,7 +75,8 @@ theorem resumeThreadOnCore_stepCovers (st st' : SystemState) (vtid : SeLe4n.Vali
       have hS := PriorityInheritance.resumeReadyMidState_scheduler_eq st vtid.val
       exact stepCovers_markKeyChangeFor hT
         (resumeReadyMidState_keyInputsEqExcept st vtid.val hInv (by rw [hT]; rfl))
-        (fun c _ => Or.inr ⟨fun t ht => by rwa [hS] at ht, by rw [hS]⟩)
+        (fun c _ => Or.inr ⟨fun t ht => by
+          rwa [(resumeReadyMidState_runCoresAgree st vtid.val hInv).queuedOn] at ht, by rw [hS]⟩)
         (fun c _ hF => by rw [hS]; exact hF)
     have h1Inv : (markKeyChangeFrom st (Lifecycle.Suspend.resumeReadyMidState st vtid.val)
         vtid.val).objects.invExt := by rw [markKeyChangeFrom_objects]; exact hMidInv

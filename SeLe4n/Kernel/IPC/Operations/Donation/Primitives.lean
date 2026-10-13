@@ -923,6 +923,18 @@ theorem returnDonatedSchedContext_getTcb?_placement_eq
   have hGet : st'.getTcb? tid = s4.getTcb? tid := by rw [hEq]; rfl
   rw [hGet, e4, e3, e2, e1]
 
+/-- **WS-ZA ZA4.5**: the donation return moves no thread's run-queue core. -/
+theorem returnDonatedSchedContext_runCoresAgree (st st' : SystemState)
+    (serverTid : SeLe4n.ThreadId) (scId : SeLe4n.SchedContextId)
+    (originalOwner : SeLe4n.ThreadId) (hObjInv : st.objects.invExt)
+    (newOwner? : Option SeLe4n.ThreadId)
+    (h : returnDonatedSchedContext st serverTid scId originalOwner newOwner? = .ok st') :
+    SystemState.RunCoresAgree st' st := fun y => by
+  have hP := returnDonatedSchedContext_getTcb?_placement_eq st st' serverTid scId
+    originalOwner hObjInv newOwner? h y
+  revert hP
+  cases st'.getTcb? y <;> cases st.getTcb? y <;> simp_all [TCB.placement]
+
 /-- WS-RR RR2.9: `returnDonatedSchedContext` frames every SchedContext **other
 than** the one it rebinds.
 

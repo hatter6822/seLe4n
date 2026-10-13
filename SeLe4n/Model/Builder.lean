@@ -8,6 +8,7 @@
 -/
 
 import SeLe4n.Model.IntermediateState
+import SeLe4n.Kernel.Scheduler.RunQueueLinkFrame
 
 /-!
 # Q3-B: Builder Operations — Invariant-Preserving State Construction
@@ -274,22 +275,26 @@ frozen operations' failure to maintain `byPriority` stayed invisible for so long
 the frozen tests all started from states where the run queue was empty and
 therefore could not show a wake failing to refill it.
 
-`allTablesInvExtK` and the other three obligations do not mention the
-scheduler (the run queue carries its tables' invariants as its own fields), so
-they carry over unchanged. -/
+The thread goes on through the kernel's own enqueue (`runEnqueueOnCore`, WS-ZA
+ZA4.5), so its TCB carries the run-queue links the kernel reads and the queue
+agrees with the threads, as on any state the kernel reaches; a builder that set
+the queue alone produced a state where the kernel saw no runnable thread.  The
+enqueue rewrites run-queue links in TCBs and nothing else, so the CNode,
+VSpaceRoot and lifecycle obligations carry over, and the table invariant needs
+only the object store's. -/
 def markRunnable (ist : IntermediateState) (tid : SeLe4n.ThreadId)
     (prio : SeLe4n.Priority) : IntermediateState where
-  state :=
-    { ist.state with
-        scheduler := ist.state.scheduler.setRunQueueOnCore bootCoreId
-          ((ist.state.scheduler.runQueueOnCore bootCoreId).insert tid prio) }
-  hAllTables := by
-    have h := ist.hAllTables
-    unfold SystemState.allTablesInvExtK at h ⊢
-    exact h
-  hPerObjectSlots := ist.hPerObjectSlots
-  hPerObjectMappings := ist.hPerObjectMappings
-  hLifecycleConsistent := ist.hLifecycleConsistent
+  state := ist.state.runEnqueueOnCore bootCoreId tid prio
+  hAllTables :=
+    (SystemState.runEnqueueOnCore_onlyObjectsSchedulerDiffer _ _ _ _).allTablesInvExtK
+      (SystemState.runEnqueueOnCore_objects_invExtK _ _ _ _ ist.hAllTables.1) ist.hAllTables
+  hPerObjectSlots := fun id cn h => ist.hPerObjectSlots id cn
+    ((SystemState.runEnqueueOnCore_objectsAgreeOffRunLinks _ _ _ _).get_cnode_iff.mp h)
+  hPerObjectMappings := fun id vs h => ist.hPerObjectMappings id vs
+    ((SystemState.runEnqueueOnCore_objectsAgreeOffRunLinks _ _ _ _).get_vspaceRoot_iff.mp h)
+  hLifecycleConsistent :=
+    (SystemState.runEnqueueOnCore_onlyObjectsSchedulerDiffer _ _ _ _).objectTypeMetadataConsistent
+      (SystemState.runEnqueueOnCore_objectsAgreeOffRunLinks _ _ _ _) ist.hLifecycleConsistent
 
 /-- **Seed an object's declassification provenance.**
 

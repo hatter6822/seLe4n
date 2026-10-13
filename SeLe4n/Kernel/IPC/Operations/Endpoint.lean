@@ -119,7 +119,7 @@ pre-state is what lets the destroy path declare the cores it touches instead of
 declaring all of them. -/
 def threadOccupiesCore (st : SystemState) (tid : SeLe4n.ThreadId)
     (c : SeLe4n.Kernel.Concurrency.CoreId) : Bool :=
-  (st.scheduler.runQueueOnCore c).contains tid
+  st.queuedOn c tid
     || (st.scheduler.currentOnCore c == some tid)
 
 /-- WS-SM SM8.B: one core's share of the destroy sweep — drop the thread from
@@ -164,9 +164,8 @@ theorem removeRunnableStepOnCore_threadOccupiesCore_ne (tid : SeLe4n.ThreadId)
       = threadOccupiesCore st tid c := by
   unfold removeRunnableStepOnCore threadOccupiesCore
   split
-  · simp [SchedulerState.setCurrentOnCore_runQueueOnCore,
-      SchedulerState.setRunQueueOnCore_runQueueOnCore_ne _ _ _ _ hne,
-      SchedulerState.setCurrentOnCore_currentOnCore_ne _ _ _ _ hne,
+  · rw [SystemState.runDescheduleOnCore_queuedOn, if_neg (fun h => hne h.2.symm)]
+    simp [SchedulerState.setCurrentOnCore_currentOnCore_ne _ _ _ _ hne,
       SchedulerState.setRunQueueOnCore_currentOnCore]
   · rfl
 
@@ -319,9 +318,12 @@ post-state, which is what `currentSlotChangeSgis` keys the remote poke on. -/
     (SeLe4n.Kernel.Concurrency.mem_allCores c)
     SeLe4n.Kernel.Concurrency.allCores_nodup
 
-/-- WS-SM SM8.B: and so the destroyed thread is in no core's run queue. -/
+/-- WS-SM SM8.B: and so the destroyed thread is in no core's run queue.
+WS-ZA ZA4.5: the sweep's guard reads the thread's run-queue core from its TCB,
+so where the threads' links agree with the queues (`runQueueRefined`) a core the
+guard skips does not hold the thread. -/
 theorem removeRunnableFromAllCores_not_mem (st : SystemState) (tid : SeLe4n.ThreadId)
-    (c : SeLe4n.Kernel.Concurrency.CoreId) :
+    (c : SeLe4n.Kernel.Concurrency.CoreId) (hR : st.runQueueRefined) :
     ¬ (tid ∈ (removeRunnableFromAllCores st tid).scheduler.runQueueOnCore c) := by
   rw [removeRunnableFromAllCores_runQueueOnCore]
   -- Occupied: the removal takes it out.  Unoccupied: it was never there — the
@@ -331,7 +333,7 @@ theorem removeRunnableFromAllCores_not_mem (st : SystemState) (tid : SeLe4n.Thre
   · exact RunQueue.not_mem_remove_self _ _
   · next hOcc =>
     intro hMem
-    exact hOcc (by simp [threadOccupiesCore, RunQueue.mem_iff_contains.mp hMem])
+    exact hOcc (by simp [threadOccupiesCore, (hR c).queuedOn, RunQueue.mem_iff_contains.mp hMem])
 
 /-- WS-SM SM8.B: the sweep only ever removes — it never introduces a thread. -/
 theorem removeRunnableFromAllCores_toList_subset (st : SystemState)

@@ -114,7 +114,7 @@ def markKeyChangeFor (st : SystemState) (tid : SeLe4n.ThreadId)
     | some k => k.1.val < preKey.1.val || preKey.2.1.val < k.2.1.val || preKey.2.2 != k.2.2
     | none => false
   let staled : CoreId → Bool := fun c =>
-    (moved && (st.scheduler.runQueueOnCore c).contains tid) ||
+    (moved && st.queuedOn c tid) ||
       (weakened && st.scheduler.currentOnCore c == some tid)
   markReschedulePendingWhere st staled allCores
 
@@ -137,7 +137,7 @@ def markKeyChangeFrom (pre post : SystemState) (tid : SeLe4n.ThreadId) : SystemS
   match pre.getTcb? tid with
   | some tcb => markKeyChangeFor post tid (effectiveSchedParams pre tcb)
   | none => markReschedulePendingWhere post
-      (fun c => (post.scheduler.runQueueOnCore c).contains tid ||
+      (fun c => post.queuedOn c tid ||
         post.scheduler.currentOnCore c == some tid) allCores
 
 theorem markKeyChangeFrom_extract_frame {F : Type} (extract : SystemState → F)
@@ -218,6 +218,11 @@ theorem rescheduleSgisFromFlags_nil_of_eq (v : PerCoreFlags) :
     (markKeyChangeFor st tid k).objects = st.objects :=
   markKeyChangeFor_extract_frame (fun s => s.objects) st tid k
     (fun _ _ => by first | rfl | simp [SystemState.markReschedulePendingOnCore])
+
+@[simp] theorem markKeyChangeFor_queuedOn (st : SystemState) (tid : SeLe4n.ThreadId)
+    (k : SeLe4n.Priority × SeLe4n.Deadline × SeLe4n.DomainId) (c : CoreId) (t : SeLe4n.ThreadId) :
+    (markKeyChangeFor st tid k).queuedOn c t = st.queuedOn c t :=
+  (SystemState.RunCoresAgree.of_objects (markKeyChangeFor_objects st tid k)).queuedOn c t
 
 /-- WS-ZA ZA4.5: the hook rewrites the scheduler alone. -/
 theorem markKeyChangeFor_onlyObjectsSchedulerDiffer (st : SystemState) (tid : SeLe4n.ThreadId)
@@ -441,21 +446,21 @@ theorem markKeyChangeFor_onlyObjectsSchedulerDiffer (st : SystemState) (tid : Se
   markKeyChangeFor_extract_frame (fun s => s.scheduler.configDefaultTimeSlice) st tid k
     (fun _ _ => by first | rfl | simp [SystemState.markReschedulePendingOnCore])
 
-/-- Queue membership on some core reads the run queues alone, which the hook
-never writes. -/
+/-- Queue membership on some core reads the threads' run-queue cores alone,
+which the hook never writes. -/
 @[simp] theorem markKeyChangeFor_runnableOnSomeCore (st : SystemState)
     (tid tid' : SeLe4n.ThreadId) (k : SeLe4n.Priority × SeLe4n.Deadline × SeLe4n.DomainId) :
     runnableOnSomeCore (markKeyChangeFor st tid k) tid' = runnableOnSomeCore st tid' := by
   unfold runnableOnSomeCore
-  simp only [markKeyChangeFor_runQueueOnCore]
+  simp only [markKeyChangeFor_queuedOn]
 
-/-- The placement resolver reads the run queues and current slots alone, which
-the hook never writes. -/
+/-- The placement resolver reads the threads' run-queue cores and the current
+slots alone, which the hook never writes. -/
 @[simp] theorem markKeyChangeFor_placedCoreOf? (st : SystemState)
     (tid tid' : SeLe4n.ThreadId) (k : SeLe4n.Priority × SeLe4n.Deadline × SeLe4n.DomainId) :
     placedCoreOf? (markKeyChangeFor st tid k) tid' = placedCoreOf? st tid' := by
   unfold placedCoreOf?
-  simp only [markKeyChangeFor_runQueueOnCore, markKeyChangeFor_currentOnCore]
+  simp only [markKeyChangeFor_queuedOn, markKeyChangeFor_currentOnCore]
 
 /-- Marking one core never lowers another's flag (nor its own). -/
 theorem _root_.SeLe4n.Model.SchedulerState.markReschedulePendingOnCore_reschedulePendingOnCore_of
@@ -479,6 +484,11 @@ theorem markKeyChangeFor_reschedulePendingOnCore_mono (st : SystemState)
     (markKeyChangeFrom pre st tid).objects = st.objects :=
   markKeyChangeFrom_extract_frame (fun s => s.objects) pre st tid
     (fun _ _ => by first | rfl | simp [SystemState.markReschedulePendingOnCore])
+
+@[simp] theorem markKeyChangeFrom_queuedOn (pre st : SystemState) (tid : SeLe4n.ThreadId)
+    (c : CoreId) (t : SeLe4n.ThreadId) :
+    (markKeyChangeFrom pre st tid).queuedOn c t = st.queuedOn c t :=
+  (SystemState.RunCoresAgree.of_objects (markKeyChangeFrom_objects pre st tid)).queuedOn c t
 
 @[simp] theorem markKeyChangeFrom_objectIndex (pre st : SystemState) (tid : SeLe4n.ThreadId) :
     (markKeyChangeFrom pre st tid).objectIndex = st.objectIndex :=
@@ -663,13 +673,13 @@ theorem markKeyChangeFor_reschedulePendingOnCore_mono (st : SystemState)
     (tid tid' : SeLe4n.ThreadId) :
     runnableOnSomeCore (markKeyChangeFrom pre st tid) tid' = runnableOnSomeCore st tid' := by
   unfold runnableOnSomeCore
-  simp only [markKeyChangeFrom_runQueueOnCore]
+  simp only [markKeyChangeFrom_queuedOn]
 
 @[simp] theorem markKeyChangeFrom_placedCoreOf? (pre st : SystemState)
     (tid tid' : SeLe4n.ThreadId) :
     placedCoreOf? (markKeyChangeFrom pre st tid) tid' = placedCoreOf? st tid' := by
   unfold placedCoreOf?
-  simp only [markKeyChangeFrom_runQueueOnCore, markKeyChangeFrom_currentOnCore]
+  simp only [markKeyChangeFrom_queuedOn, markKeyChangeFrom_currentOnCore]
 
 @[simp] theorem markKeyChangeFrom_getObject? (pre st : SystemState) (tid : SeLe4n.ThreadId)
     (oid : SeLe4n.ObjId) :
@@ -748,12 +758,12 @@ theorem markKeyChangeFrom_runQueueStage (pre post : SystemState) (tid : SeLe4n.T
 theorem markKeyChangeFor_currentPlacementFrame (st : SystemState) (tid : SeLe4n.ThreadId)
     (k : SeLe4n.Priority × SeLe4n.Deadline × SeLe4n.DomainId) (c : CoreId) :
     SystemState.CurrentPlacementFrame c st (markKeyChangeFor st tid k) :=
-  SystemState.CurrentPlacementFrame.of_parts (fun y h => by rw [markKeyChangeFor_getTcb?]; exact h)
-    (markKeyChangeFor_currentOnCore _ _ _ _) (fun c' _ => markKeyChangeFor_runQueueOnCore _ _ _ _)
+  SystemState.CurrentPlacementFrame.of_parts (markKeyChangeFor_currentOnCore _ _ _ _)
+    (SystemState.RunCoresAgree.of_objects (markKeyChangeFor_objects _ _ _))
 
 theorem markKeyChangeFrom_currentPlacementFrame (pre post : SystemState) (tid : SeLe4n.ThreadId)
     (c : CoreId) : SystemState.CurrentPlacementFrame c post (markKeyChangeFrom pre post tid) :=
-  SystemState.CurrentPlacementFrame.of_parts (fun y h => by rw [markKeyChangeFrom_getTcb?]; exact h)
-    (markKeyChangeFrom_currentOnCore _ _ _ _) (fun c' _ => markKeyChangeFrom_runQueueOnCore _ _ _ _)
+  SystemState.CurrentPlacementFrame.of_parts (markKeyChangeFrom_currentOnCore _ _ _ _)
+    (SystemState.RunCoresAgree.of_objects (markKeyChangeFrom_objects _ _ _))
 
 end SeLe4n.Kernel

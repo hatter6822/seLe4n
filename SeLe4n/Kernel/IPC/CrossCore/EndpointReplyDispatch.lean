@@ -339,17 +339,19 @@ theorem applyReplyDonationOnCore_characterisation
     | none => rfl
     | some holderVtid => rfl
 
-/-- `placedCoreOf?` reads the scheduler alone, so a step that writes only objects
-leaves it exactly where it was (the reschedule flags it does not read either).  The transport the single-core bridge below needs,
+/-- `placedCoreOf?` reads the current slots and each thread's run-queue core
+(WS-ZA ZA4.5), so a step that writes no current slot and moves no thread leaves
+it exactly where it was (the reschedule flags it does not read either).  The transport the single-core bridge below needs,
 and the reason that bridge can state its hypothesis on the **pre**-state: a caller
 can discharge a fact about the state it holds, not about one the operation
 computes. -/
 theorem placedCoreOf?_congr_of_scheduler_eq {st st' : SystemState}
     (tid : SeLe4n.ThreadId)
     (h : st'.scheduler =
-      { st.scheduler with reschedulePending := st'.scheduler.reschedulePending }) :
-    placedCoreOf? st' tid = placedCoreOf? st tid := by
-  unfold placedCoreOf?; rw [h]; rfl
+      { st.scheduler with reschedulePending := st'.scheduler.reschedulePending })
+    (hQ : SystemState.RunCoresAgree st' st) :
+    placedCoreOf? st' tid = placedCoreOf? st tid :=
+  placedCoreOf?_congr_of_runCores_current_eq tid hQ (fun c => by rw [h]; rfl)
 
 /-- WS-SM SM6.C.3 (bootCore bridge) / WS-RR RR2.13, restated at `v0.35.37`:
 `applyReplyDonationOnCore` with donor and donee sharing a home core is the
@@ -378,6 +380,7 @@ now, and its placement says nothing about the deschedule.  A hypothesis on
 which is the plan's SS3.8.2 hazard reaching a theorem statement. -/
 theorem applyReplyDonationOnCore_eq_single_of_placed_at_bootCore (st : SystemState)
     (rid : SeLe4n.ReplyId) (targetVtid : SeLe4n.ValidThreadId) (c : CoreId)
+    (hObjInv : st.objects.invExt)
     (hPlaced : ∀ (scId : SeLe4n.SchedContextId) (holder : SeLe4n.ThreadId),
         replyFrameHeadHolder? st rid = some (scId, holder) →
         placedCoreOf? st holder = some bootCoreId) :
@@ -403,7 +406,9 @@ theorem applyReplyDonationOnCore_eq_single_of_placed_at_bootCore (st : SystemSta
         have hSched :=
           returnDonatedSchedContext_scheduler_eq st st' _ _ _ _ hPop
         simp only [migrateSchedContextReplenishment_noop, descheduleAtPlacement, descheduleAt,
-          placedCoreOf?_congr_of_scheduler_eq _ hSched, hPlaced scId holder hTrig,
+          placedCoreOf?_congr_of_scheduler_eq _ hSched
+            (returnDonatedSchedContext_runCoresAgree st st' _ _ _ hObjInv _ hPop),
+          hPlaced scId holder hTrig,
           removeRunnableOnCore_bootCoreId]
 
 /-- WS-RR RR2.8 (decomposition): a successful cross-core donation return either

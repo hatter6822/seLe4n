@@ -6724,8 +6724,9 @@ theorem bootFromPlatformCheckedWithIdleThreads_idle_threadState (config : Platfo
   show _ = (queuedIdleThread c).threadState
   rw [queuedIdleThread_threadState]
   apply inferThreadState_ready_of_runQueueOnCore ist'.state c
-  · exact (SeLe4n.Kernel.RunQueue.mem_toList_iff_mem _ _).mp
-      (bootFromPlatformCheckedWithIdleThreads_idle_available config ist' h c).1
+  · have hO := (bootFromPlatformCheckedWithIdleThreads_idle_available config ist' h c).2.1
+    unfold SystemState.queuedOn SystemState.getTcb?
+    rw [hO]; simp [idleThreadQueuedAlone]
   · unfold threadRunningOnSomeCore runningOnSomeCore
     rw [List.any_eq_false]
     intro c' _
@@ -6784,6 +6785,51 @@ theorem bootFromPlatformChecked_ok_tcb_bootSafeFields (config : PlatformConfig)
     rw [hEmpty] at hBase
     simp at hBase
 
+/-- WS-ZA ZA4.5: the checked boot's run queues agree with its threads' links —
+its queues and ends are the default (empty) ones, and every configured TCB
+claims no run-queue place (`bootSafeTcbCheck`). -/
+theorem bootFromPlatformChecked_ok_runQueueRefined (config : PlatformConfig)
+    (ist : IntermediateState) (h : bootFromPlatformChecked config = .ok ist) :
+    ist.state.runQueueRefined := by
+  have hSch := bootFromPlatformChecked_ok_scheduler_eq config ist h
+  refine SystemState.runQueueRefined_of_default_queues (by rw [hSch]) (by rw [hSch])
+    (fun t tcb hT => ?_)
+  exact (bootFromPlatformChecked_ok_tcb_bootSafeFields config ist h _ tcb
+    ((SystemState.getTcb?_eq_some_iff _ _ _).mp hT)).2.2.2.2.2.2.2.2.2.2
+
+/-- WS-ZA ZA4.5: the idle fold keeps the run queues in agreement with the
+threads' links — each step's idle slot is fresh, so no queue holds its idle
+thread (`enqueueIdleThreadOnCore_runQueueRefined`). -/
+theorem foldl_enqueueIdleThread_runQueueRefined (L : List SeLe4n.Kernel.Concurrency.CoreId)
+    (ist : IntermediateState) (hReady : idleFoldReady L ist) (hR : ist.state.runQueueRefined) :
+    (L.foldl enqueueIdleThread ist).state.runQueueRefined := by
+  induction L generalizing ist with
+  | nil => exact hR
+  | cons x xs ih =>
+    refine ih _ hReady.step (enqueueIdleThreadOnCore_runQueueRefined ist.state x
+      ist.hAllTables.1.1 hR (fun c' _ => ?_))
+    rw [← (hR c').contains]
+    unfold SystemState.runLinkOn SystemState.getTcb?
+    rw [hReady.head.1]
+    rfl
+
+/-- WS-ZA ZA4.5: and so does the idle boot's. -/
+theorem bootFromPlatformCheckedWithIdleThreads_runQueueRefined (config : PlatformConfig)
+    (ist' : IntermediateState) (h : bootFromPlatformCheckedWithIdleThreads config = .ok ist') :
+    ist'.state.runQueueRefined := by
+  cases hChecked : bootFromPlatformChecked config with
+  | error e =>
+    unfold bootFromPlatformCheckedWithIdleThreads at h
+    rw [hChecked] at h; simp [Except.map] at h
+  | ok ist =>
+    rw [bootFromPlatformCheckedWithIdleThreads_map_ok config ist hChecked] at h
+    injection h with h
+    subst h
+    exact foldl_enqueueIdleThread_runQueueRefined _ ist
+      (bootFromPlatformChecked_ok_idleFoldReady config ist hChecked _
+        SeLe4n.Kernel.Concurrency.allCores_nodup)
+      (bootFromPlatformChecked_ok_runQueueRefined config ist hChecked)
+
 /-- **PR #889 review**: every TCB a successful checked boot installs is `.Inactive`
     with a `.ready` IPC state — the two fields `inferThreadState` reads for a thread
     that is neither current nor queued.  The two-field projection of
@@ -6815,7 +6861,7 @@ theorem bootFromPlatformChecked_ok_not_running_not_queued (config : PlatformConf
   · unfold threadQueuedOnSomeCore runnableOnSomeCore
     rw [List.any_eq_false]
     intro c _
-    rw [hSched]
+    rw [(bootFromPlatformChecked_ok_runQueueRefined config ist h c).queuedOn, hSched]
     show tid ∉ (default : SchedulerState).runQueueOnCore c
     rw [(default_state_perCoreInitialized c).2.1]
     exact SeLe4n.Kernel.RunQueue.not_mem_empty tid
@@ -7010,6 +7056,8 @@ theorem bootFromPlatformCheckedWithIdleThreads_threadStateConsistent (config : P
           unfold threadQueuedOnSomeCore runnableOnSomeCore
           rw [List.any_eq_false]
           intro c' _
+          rw [(foldl_enqueueIdleThread_runQueueRefined _ ist hReady
+            (bootFromPlatformChecked_ok_runQueueRefined config ist hChecked) c').queuedOn]
           show (⟨oid.toNat⟩ : SeLe4n.ThreadId) ∉
             (SeLe4n.Kernel.Concurrency.allCores.foldl enqueueIdleThread
               ist).state.scheduler.runQueueOnCore c'
@@ -7689,34 +7737,6 @@ private theorem bootCoreIdleQueue_priorityOf :
       (idleThreadId bootCoreId) (queuedIdleThread bootCoreId).priority).priorityOf
         (idleThreadId bootCoreId) = some ⟨0⟩ := by
   decide
-
-/-- WS-ZA ZA4.5: the checked boot's run queues agree with its threads' links —
-its queues and ends are the default (empty) ones, and every configured TCB
-claims no run-queue place (`bootSafeTcbCheck`). -/
-theorem bootFromPlatformChecked_ok_runQueueRefined (config : PlatformConfig)
-    (ist : IntermediateState) (h : bootFromPlatformChecked config = .ok ist) :
-    ist.state.runQueueRefined := by
-  have hSch := bootFromPlatformChecked_ok_scheduler_eq config ist h
-  refine SystemState.runQueueRefined_of_default_queues (by rw [hSch]) (by rw [hSch])
-    (fun t tcb hT => ?_)
-  exact (bootFromPlatformChecked_ok_tcb_bootSafeFields config ist h _ tcb
-    ((SystemState.getTcb?_eq_some_iff _ _ _).mp hT)).2.2.2.2.2.2.2.2.2.2
-
-/-- WS-ZA ZA4.5: the idle fold keeps the run queues in agreement with the
-threads' links — each step's idle slot is fresh, so no queue holds its idle
-thread (`enqueueIdleThreadOnCore_runQueueRefined`). -/
-theorem foldl_enqueueIdleThread_runQueueRefined (L : List SeLe4n.Kernel.Concurrency.CoreId)
-    (ist : IntermediateState) (hReady : idleFoldReady L ist) (hR : ist.state.runQueueRefined) :
-    (L.foldl enqueueIdleThread ist).state.runQueueRefined := by
-  induction L generalizing ist with
-  | nil => exact hR
-  | cons x xs ih =>
-    refine ih _ hReady.step (enqueueIdleThreadOnCore_runQueueRefined ist.state x
-      ist.hAllTables.1.1 hR (fun c' _ => ?_))
-    rw [← (hR c').contains]
-    unfold SystemState.runLinkOn SystemState.getTcb?
-    rw [hReady.head.1]
-    rfl
 
 /-- **WS-BP BP7.11**: **what a boot leaves, for the bundle to be read off** —
     every object boot-shaped, the untouched fields their defaults, the ASID

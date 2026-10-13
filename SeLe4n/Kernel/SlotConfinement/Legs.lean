@@ -1073,7 +1073,7 @@ executing core, so the honest statement names it.  Where no donation is resolved
 the holder list is empty and this is the pre-OD1.7 statement at the placed core
 (`cancelIpcBlockingOnCore_confinedToCores_of_no_donation`). -/
 theorem cancelIpcBlockingOnCore_confinedToCores (victim : SeLe4n.ThreadId) (tcb : TCB)
-    (executingCore : CoreId) (st : SystemState) :
+    (executingCore : CoreId) (st : SystemState) (hInv : st.objects.invExt) :
     observableSlotsConfinedToCores st
       (cancelIpcBlockingOnCore victim tcb executingCore st).1
       ((cancelUnboundHolderCore? st (cancelIpcBlockingMigrated victim tcb st)
@@ -1086,8 +1086,8 @@ theorem cancelIpcBlockingOnCore_confinedToCores (victim : SeLe4n.ThreadId) (tcb 
   simp only [List.mem_append] at hc ⊢
   rcases hc with hw | hd
   · exact Or.inl hw
-  · rw [descheduleAtPlacementCores_eq_toList, cancelIpcBlockingReclaimed_placedCoreOf?_victim]
-      at hd
+  · rw [descheduleAtPlacementCores_eq_toList,
+      cancelIpcBlockingReclaimed_placedCoreOf?_victim _ _ _ hInv] at hd
     rw [descheduleAtPlacementCores_eq_toList]
     exact Or.inr hd
 
@@ -1096,12 +1096,12 @@ reclaim deschedules nobody, so the composite is confined to the victim's placed
 core exactly as it was before OD1.7 — which is every arm but a reply arm whose
 caller had donated. -/
 theorem cancelIpcBlockingOnCore_confinedToCores_of_no_donation (victim : SeLe4n.ThreadId)
-    (tcb : TCB) (executingCore : CoreId) (st : SystemState)
+    (tcb : TCB) (executingCore : CoreId) (st : SystemState) (hInv : st.objects.invExt)
     (h : Lifecycle.Suspend.cancelledCallerDonation? st victim tcb = none) :
     observableSlotsConfinedToCores st
       (cancelIpcBlockingOnCore victim tcb executingCore st).1
       (descheduleAtPlacementCores st victim) := by
-  have hW := cancelIpcBlockingOnCore_confinedToCores victim tcb executingCore st
+  have hW := cancelIpcBlockingOnCore_confinedToCores victim tcb executingCore st hInv
   rwa [cancelUnboundHolderCore?_of_no_donation _ _ victim tcb h, Option.toList,
     List.nil_append] at hW
 

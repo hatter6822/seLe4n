@@ -436,6 +436,7 @@ theorem bootFromPlatformCheckedWithIdleThreads_initialThreadStartable
     unfold runnableOnSomeCore
     rw [List.any_eq_false]
     intro c _ hMem
+    rw [(bootFromPlatformCheckedWithIdleThreads_runQueueRefined config ist h c).queuedOn] at hMem
     have hIn := (SeLe4n.Kernel.RunQueue.mem_toList_iff_mem _ _).mpr hMem
     rw [bootFromPlatformCheckedWithIdleThreads_mem_runQueueOnCore_iff config ist h c] at hIn
     exact hNotIdle c hIn

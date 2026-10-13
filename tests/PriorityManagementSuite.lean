@@ -481,7 +481,7 @@ private def pm_ak2b_03_configureRebucketsBoundThread : IO Unit := do
     (scObjId, .schedContext sc)
   ]
   -- Insert the bound thread into the RunQueue at its current priority 50.
-  let st : SystemState := { stBase with scheduler := stBase.scheduler.setRunQueueOnCore bootCoreId ((stBase.scheduler.runQueueOnCore bootCoreId).insert targetTid ⟨50⟩) }
+  let st : SystemState := enqueueAllOnCore stBase bootCoreId [(targetTid, ⟨50⟩)]
   match SeLe4n.Kernel.SchedContextOps.schedContextConfigure ⟨scObjId, by decide⟩ 100 200 123 0 0 st with
   | .ok ((), st') =>
     -- After reconfigure, the RunQueue's cached priority for this thread
@@ -1453,10 +1453,7 @@ private def pm_basePrioritySurvivesBlockAndWake : IO Unit := do
   let scId : SeLe4n.SchedContextId := ⟨50⟩
   let st := boundInSyncState callerTid targetTid scId
   let blockAndWake : SystemState → SystemState := fun s =>
-    let rq := (s.scheduler.runQueueOnCore bootCoreId).remove targetTid
-    let sched := s.scheduler.setRunQueueOnCore bootCoreId rq
-    let s' : SystemState := { s with scheduler := sched }
-    enqueueRunnableOnCore s' bootCoreId targetTid
+    enqueueRunnableOnCore (s.runRemoveOnCore bootCoreId targetTid) bootCoreId targetTid
   let bucketOf : SystemState → Option SeLe4n.Priority := fun s =>
     (s.scheduler.runQueueOnCore bootCoreId).priorityOf targetTid
   expect "the fixture starts queued at its bound band" (bucketOf st == some ⟨50⟩)

@@ -193,7 +193,7 @@ condition under which `updatePipBoostOnCore` performs its run-queue bucket migra
 theorem pipBoostWithWake_emits_sgi_if_remote (st : SystemState) (tid : ThreadId) (ec : CoreId)
     (t t' : TCB)
     (hRemote : determineTargetCore st tid ≠ ec)
-    (hRunnable : tid ∈ st.scheduler.runQueueOnCore (determineTargetCore st tid))
+    (hRunnable : st.queuedOn (determineTargetCore st tid) tid = true)
     (hPre : st.getTcb? tid = some t)
     (hPost : (updatePipBoostOnCore st (determineTargetCore st tid) tid).getTcb? tid = some t')
     (hMaterial : (resolveEffectivePrioDeadline st t).1
@@ -219,7 +219,7 @@ is next re-enqueued there).  Closes the spurious-cross-core-IPI gap for blocked-
 boosts (the common PIP case: the boosted holder is itself blocked deeper in the
 chain). -/
 theorem pipBoostWithWake_no_sgi_if_not_runnable (st : SystemState) (tid : ThreadId) (ec : CoreId)
-    (hNotRun : tid ∉ st.scheduler.runQueueOnCore (determineTargetCore st tid)) :
+    (hNotRun : st.queuedOn (determineTargetCore st tid) tid = false) :
     (pipBoostWithWake st tid ec).2 = none := by
   simp [pipBoostWithWake, hNotRun]
 
@@ -355,7 +355,7 @@ poked.  The substantive cross-core content. -/
 theorem propagatePipChainCrossCore_head_sgi_remote (st : SystemState) (tid : ThreadId)
     (ec : CoreId) (n : Nat) (t t' : TCB)
     (hRemote : determineTargetCore st tid ≠ ec)
-    (hRunnable : tid ∈ st.scheduler.runQueueOnCore (determineTargetCore st tid))
+    (hRunnable : st.queuedOn (determineTargetCore st tid) tid = true)
     (hPre : st.getTcb? tid = some t)
     (hPost : (updatePipBoostOnCore st (determineTargetCore st tid) tid).getTcb? tid = some t')
     (hMaterial : (resolveEffectivePrioDeadline st t).1
@@ -785,8 +785,8 @@ theorem propagatePipChainCrossCore_second_link_sgi_remote (st : SystemState) (ti
     (ec : CoreId) (n : Nat) (nextServer : ThreadId) (t t' : TCB)
     (hBS : blockingServer st tid = some nextServer)
     (hRemote : determineTargetCore (pipBoostWithWake st tid ec).1 nextServer ≠ ec)
-    (hRunnable : nextServer ∈ (pipBoostWithWake st tid ec).1.scheduler.runQueueOnCore
-                  (determineTargetCore (pipBoostWithWake st tid ec).1 nextServer))
+    (hRunnable : (pipBoostWithWake st tid ec).1.queuedOn
+                  (determineTargetCore (pipBoostWithWake st tid ec).1 nextServer) nextServer = true)
     (hPre : (pipBoostWithWake st tid ec).1.getTcb? nextServer = some t)
     (hPost : (updatePipBoostOnCore (pipBoostWithWake st tid ec).1
               (determineTargetCore (pipBoostWithWake st tid ec).1 nextServer) nextServer).getTcb?
@@ -1240,14 +1240,14 @@ def crossCoreSgiBody (pre post : SystemState) (execCore : CoreId) (oid : ObjId)
     match pre.getTcb? tpost.tid with
     | some tpre =>
       let home := SeLe4n.Kernel.determineTargetCore post tpost.tid
-      if tpost.tid ∈ post.scheduler.runQueueOnCore home then
+      if post.queuedOn home tpost.tid then
         -- QUEUE rules (wake / re-bucketing), home-keyed: a queued thread lives
         -- on its home core's run queue (the SM5.H.4 migration maintains this).
         -- A home on the executing core needs no poke (single-core inert); fire
         -- UNLESS the thread was already runnable on `home` (not a wake) AND its
         -- effective bucket is unchanged (not a re-bucketing).
         if home == execCore then none
-        else if (tpost.tid ∈ pre.scheduler.runQueueOnCore home)
+        else if pre.queuedOn home tpost.tid
             && ((SeLe4n.Kernel.effectiveSchedParams pre tpre).1
                   == (SeLe4n.Kernel.effectiveSchedParams post tpost).1)
             && ((SeLe4n.Kernel.effectiveSchedParams pre tpre).2.1.val
@@ -1773,10 +1773,8 @@ theorem crossCoreSgiBody_remote_wake (pre post : SystemState) (execCore : CoreId
     (hPost : post.objects[oid]? = some (.tcb tpost))
     (hPre : pre.getTcb? tpost.tid = some tpre)
     (hRemote : SeLe4n.Kernel.determineTargetCore post tpost.tid ≠ execCore)
-    (hPostRq : tpost.tid ∈
-        post.scheduler.runQueueOnCore (SeLe4n.Kernel.determineTargetCore post tpost.tid))
-    (hPreNotRq : tpost.tid ∉
-        pre.scheduler.runQueueOnCore (SeLe4n.Kernel.determineTargetCore post tpost.tid)) :
+    (hPostRq : post.queuedOn (SeLe4n.Kernel.determineTargetCore post tpost.tid) tpost.tid = true)
+    (hPreNotRq : pre.queuedOn (SeLe4n.Kernel.determineTargetCore post tpost.tid) tpost.tid = false) :
     crossCoreSgiBody pre post execCore oid
       = some (SeLe4n.Kernel.determineTargetCore post tpost.tid, SgiKind.reschedule) := by
   unfold crossCoreSgiBody SystemState.getObject?
@@ -1797,8 +1795,8 @@ theorem crossCoreSgiBody_remote_deschedule (pre post : SystemState) (execCore : 
     (oid : ObjId) (tpost tpre : TCB) (preCur : CoreId)
     (hPost : post.objects[oid]? = some (.tcb tpost))
     (hPre : pre.getTcb? tpost.tid = some tpre)
-    (hPostNotRq : tpost.tid ∉
-        post.scheduler.runQueueOnCore (SeLe4n.Kernel.determineTargetCore post tpost.tid))
+    (hPostNotRq : post.queuedOn (SeLe4n.Kernel.determineTargetCore post tpost.tid) tpost.tid
+        = false)
     (hFind : SeLe4n.Kernel.Concurrency.allCores.find? (fun c =>
         pre.scheduler.currentOnCore c == some tpost.tid) = some preCur)
     (hRemote : preCur ≠ execCore)
@@ -1808,7 +1806,7 @@ theorem crossCoreSgiBody_remote_deschedule (pre post : SystemState) (execCore : 
   unfold crossCoreSgiBody SystemState.getObject?
   rw [hPost]
   simp only [hPre, hFind]
-  rw [if_neg hPostNotRq, if_neg (by simpa using hRemote),
+  rw [if_neg (by simp [hPostNotRq]), if_neg (by simpa using hRemote),
       if_pos (by simp [hPostNotCur])]
 
 /-- WS-SM SM6.E (the deboosted-current rule, positive direction — PR #831
@@ -1822,8 +1820,8 @@ theorem crossCoreSgiBody_remote_deboost_current (pre post : SystemState)
     (execCore : CoreId) (oid : ObjId) (tpost tpre : TCB) (preCur : CoreId)
     (hPost : post.objects[oid]? = some (.tcb tpost))
     (hPre : pre.getTcb? tpost.tid = some tpre)
-    (hPostNotRq : tpost.tid ∉
-        post.scheduler.runQueueOnCore (SeLe4n.Kernel.determineTargetCore post tpost.tid))
+    (hPostNotRq : post.queuedOn (SeLe4n.Kernel.determineTargetCore post tpost.tid) tpost.tid
+        = false)
     (hFind : SeLe4n.Kernel.Concurrency.allCores.find? (fun c =>
         pre.scheduler.currentOnCore c == some tpost.tid) = some preCur)
     (hRemote : preCur ≠ execCore)
@@ -1835,7 +1833,7 @@ theorem crossCoreSgiBody_remote_deboost_current (pre post : SystemState)
   unfold crossCoreSgiBody SystemState.getObject?
   rw [hPost]
   simp only [hPre, hFind]
-  rw [if_neg hPostNotRq, if_neg (by simpa using hRemote),
+  rw [if_neg (by simp [hPostNotRq]), if_neg (by simpa using hRemote),
       if_neg (by simp [hPostCur]), if_pos (by simp [SeLe4n.Kernel.effectiveSchedParams_fst_eq_resolve, hDrop])]
 
 /-- WS-SM SM5.F.4: every SGI the diff-based dispatch emits is a `.reschedule` — it

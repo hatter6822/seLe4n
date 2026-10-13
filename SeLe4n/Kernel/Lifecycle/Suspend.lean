@@ -1464,9 +1464,9 @@ theorem descheduleUnboundHolder_holder_unplaced (stPre stPost : SystemState)
     (victim : SeLe4n.ThreadId) (tcb : TCB) (holder : SeLe4n.ThreadId)
     (hW : cancelUnboundHolder? stPre stPost victim tcb = some holder)
     (hUnique : ∀ c c' : CoreId,
-        (holder ∈ stPost.scheduler.runQueueOnCore c
+        (stPost.queuedOn c holder = true
           ∨ stPost.scheduler.currentOnCore c = some holder) →
-        (holder ∈ stPost.scheduler.runQueueOnCore c'
+        (stPost.queuedOn c' holder = true
           ∨ stPost.scheduler.currentOnCore c' = some holder) →
         c = c') :
     placedCoreOf? (descheduleUnboundHolder stPre stPost victim tcb) holder = none := by

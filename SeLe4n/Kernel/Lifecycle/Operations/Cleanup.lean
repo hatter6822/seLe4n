@@ -430,6 +430,32 @@ theorem cleanupDonatedSchedContext_getTcb?_isSome
       rfl
     · rw [← Except.ok.inj h]; exact hu
 
+/-- The donated-context cleanup rewrites thread bindings only, so it moves no
+thread's run-queue core. -/
+theorem cleanupDonatedSchedContext_runCoresAgree
+    (st st' : SystemState) (tid : SeLe4n.ThreadId) (hInv : st.objects.invExt)
+    (h : cleanupDonatedSchedContext st tid = .ok st') : SystemState.RunCoresAgree st' st := by
+  simp only [cleanupDonatedSchedContext] at h
+  split at h
+  · rw [← Except.ok.inj h]; exact .refl st
+  · split at h
+    · rename_i scId owner _
+      refine returnDonatedSchedContextResolved_lift
+        (P := fun s => SystemState.RunCoresAgree s st) h (fun n s hs y => ?_)
+      cases h0 : st.getTcb? y with
+      | some t0 =>
+        obtain ⟨t', ht', sb, rfl⟩ := returnDonatedSchedContext_tcb_rewrite st s tid scId owner hInv n hs
+          y.toObjId t0 ((SystemState.getTcb?_eq_some_iff st y t0).mp h0)
+        rw [(SystemState.getTcb?_eq_some_iff s y _).mpr ht']; rfl
+      | none =>
+        cases h1 : s.getTcb? y with
+        | none => rfl
+        | some t' =>
+          obtain ⟨t0, ht0, -⟩ := returnDonatedSchedContext_tcb_rewrite_backward st s tid scId owner
+            n hInv hs y.toObjId t' ((SystemState.getTcb?_eq_some_iff s y t').mp h1)
+          rw [(SystemState.getTcb?_eq_some_iff st y t0).mpr ht0] at h0; cases h0
+    · rw [← Except.ok.inj h]; exact .refl st
+
 /-- WS-SM SM8.B: `cleanupDonatedSchedContext` never touches the machine state
 either — the register banks included.  Added beside the scheduler frame for the
 SM8.B per-core confinement consumer: per-core confinement reads each core's

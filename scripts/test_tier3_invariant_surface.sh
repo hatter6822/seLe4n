@@ -3520,7 +3520,7 @@ run_negative_check "INVARIANT" bash -lc 'rg -U -n "^def removeFromAll(EndpointQu
 # The harness is in the write census's domain (D1), so it holds no raw write.
 
 run_check "INVARIANT" bash -lc 'rg -U -n "^  let stDeepCNode : SystemState :=\n    st1\.withObjectStored ⟨200⟩ \(\.cnode deepRadixCNode\)$" SeLe4n/Testing/MainTraceHarness.lean'
-run_check "INVARIANT" bash -lc 'rg -U -n "^  let stCtx : SystemState := \{ \(st1\.withObjectStored ⟨1⟩ ctxTcb1\) with\n      scheduler := setBootRqCur st1\.scheduler \(mkRunQueue \[⟨1⟩\]\) none \}$" SeLe4n/Testing/MainTraceHarness.lean'
+run_check "INVARIANT" bash -lc 'rg -U -n "^  let stCtx : SystemState :=\n    queueBoot \(\(resetBootQueue st1\)\.withObjectStored ⟨1⟩ ctxTcb1\) \(atPrioZero \[⟨1⟩\]\) none$" SeLe4n/Testing/MainTraceHarness.lean'
 run_check "INVARIANT" bash -lc 'rg -U -n "^  let stWithSc := st1\.withObjectStored scId scObj$" SeLe4n/Testing/MainTraceHarness.lean'
 # NEGATIVE: no raw insert or erase anywhere in the harness, and no hand-kept
 # index bookkeeping beside a store (the store performs exactly that update).
@@ -7686,7 +7686,7 @@ run_check "INVARIANT" rg -n 'audit drain of one entry .new visible length 1.' te
 # path refuses a thread a core still holds, and `fp_context.S` is the only code
 # that names an FP register or writes CPACR_EL1 outside the boot prologues.
 run_check "INVARIANT" rg -n '^  fpContext : SeLe4n\.FpContext := default$' SeLe4n/Model/Object/Types.lean
-run_check "INVARIANT" rg -n '^                       fpContext := default \}$' SeLe4n/Kernel/InformationFlow/Projection.lean
+run_check "INVARIANT" rg -n '^                       fpContext := default,$' SeLe4n/Kernel/InformationFlow/Projection.lean
 run_check "INVARIANT" rg -n '^  fpOwner : _root_\.Vector \(Option ThreadId\) numCores :=$' SeLe4n/Machine.lean
 run_check "INVARIANT" rg -n '^theorem fpAccessOnCore_load_eq_own_context($|[ ({:\[\]])' SeLe4n/Kernel/Architecture/FpContext.lean
 run_check "INVARIANT" rg -n '^theorem fpAccessOnCore_saves_owner($|[ ({:\[\]])' SeLe4n/Kernel/Architecture/FpContext.lean
@@ -17786,7 +17786,7 @@ run_negative_check "INVARIANT" bash -lc 'rg -U -n "^theorem cancelIpcBlockingMig
 # thread's home the teardown moves has ONE owner: the general form in
 # CancellationBundle, not a victim-specialised copy back in Cancellation.lean.
 run_check "INVARIANT" rg -n '^theorem cancelIpcBlocking_getSchedContext\?_ne' SeLe4n/Kernel/IPC/Invariant/CancellationBundle.lean
-run_check "INVARIANT" rg -n '^theorem cancelIpcBlocking_placement_frame($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/CancellationBundle.lean
+run_check "INVARIANT" rg -n '^theorem cancelIpcBlocking_placement_frame($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/CancellationPlacementFrame.lean
 run_negative_check "INVARIANT" rg -n '^theorem cancelIpcBlocking_determineTargetCore_eq' SeLe4n/Kernel/IPC/CrossCore/Cancellation.lean
 run_check "INVARIANT" rg -n '^theorem cancelIpcBlocking_determineTargetCore_eq($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/CancellationBundle.lean
 # The witness that makes the flip a measurement rather than a claim: the retired
@@ -17979,7 +17979,7 @@ run_check "INVARIANT" bash -lc 'rg -U -n "^theorem switchToThreadOnCore_preserve
 run_check "INVARIANT" bash -lc 'rg -U -n "^theorem switchToThreadOnCore_preserves_unplaced[^\n]*(\n([ \t][^\n]*)?)*threadPlacedOnSomeCore st. u = false := by" SeLe4n/Kernel/Scheduler/Operations/Core.lean'
 run_negative_check "INVARIANT" bash -lc 'rg -U -n "^theorem switchToThreadOnCore_preserves_unplaced[^\n]*(\n([ \t][^\n]*)?)*getTcb\?" SeLe4n/Kernel/Scheduler/Operations/Core.lean'
 run_check "INVARIANT" bash -lc 'rg -U -n "^theorem handleRescheduleSgiOnCore_preserves_unplaced[^\n]*(\n([ \t][^\n]*)?)*chooseThreadEffectiveOnCore_some_mem_runQueueOnCore st c tid hR hChoose" SeLe4n/Kernel/IPC/CrossCore/Cancellation.lean'
-run_check "INVARIANT" bash -lc 'rg -U -n "^theorem suspendRescheduleOnCore_preserves_unplaced[^\n]*(\n([ \t][^\n]*)?)*handleRescheduleSgiOnCore_preserves_unplaced st st. ec u hR hH h" SeLe4n/Kernel/IPC/CrossCore/Cancellation.lean'
+run_check "INVARIANT" bash -lc 'rg -U -n "^theorem suspendRescheduleOnCore_preserves_unplaced[^\n]*(\n([ \t][^\n]*)?)*handleRescheduleSgiOnCore_preserves_unplaced st st. ec u hInv hR hH h" SeLe4n/Kernel/IPC/CrossCore/Cancellation.lean'
 # The walk frames live beside the walk, so the payoff can reach them: this
 # module imports `IPC.CrossCore.Fault`, which imports `Cancellation`, so the
 # second asker could not have reached an answer stated in `FaultProgress.lean`.

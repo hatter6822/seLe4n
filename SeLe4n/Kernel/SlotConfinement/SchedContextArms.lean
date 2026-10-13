@@ -469,9 +469,10 @@ theorem schedContextConfigureBoundPropagate_tcbChainFields (stStored : SystemSta
     · rfl
   · rw [if_neg hPrioEq]
     try dsimp only []
-    by_cases hMem : boundTid ∈ stStored.scheduler.runQueueOnCore
+    by_cases hMem : ({ stStored with objects := (stStored.objects.insert boundTid.toObjId
+          (.tcb { boundTcb with priority := ⟨priority⟩ })) } : SystemState).queuedOn
         (determineTargetCore { stStored with objects := (stStored.objects.insert boundTid.toObjId
-          (.tcb { boundTcb with priority := ⟨priority⟩ })) } boundTid)
+          (.tcb { boundTcb with priority := ⟨priority⟩ })) } boundTid) boundTid = true
     · rw [if_pos hMem]
       -- The re-key moves only the thread's TCB run-queue links (WS-ZA ZA4.5),
       -- which neither field reads.

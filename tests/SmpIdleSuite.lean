@@ -1136,9 +1136,9 @@ private def runInactiveFlagChecks : IO Unit := do
   -- The dispatch premise, exhibited: a run-queue entry whose stored flag says
   -- `.Inactive` already violates the relation before any switch, which is what
   -- `hActive` refuses.
-  let inactiveTcb : TCB := { (mkUserTcb 100 5 0) with threadState := .Inactive }
-  let inactiveObjects := stUserIdle.objects.insert tidUser.toObjId (.tcb inactiveTcb)
-  let stInactiveQueued : SystemState := { stUserIdle with objects := inactiveObjects }
+  -- The flag is rewritten in place, so the thread keeps its run-queue links.
+  let stInactiveQueued : SystemState :=
+    stUserIdle.updateTcb tidUser (fun t => { t with threadState := .Inactive })
   assertBool "a queued thread flagged .Inactive violates the live relation"
     (!SeLe4n.Testing.threadInactiveFlagConsistentBool stInactiveQueued)
   -- The runtime entry points exist and are called: the quiescent boot-shaped

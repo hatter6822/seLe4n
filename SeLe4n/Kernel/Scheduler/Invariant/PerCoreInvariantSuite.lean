@@ -2533,7 +2533,6 @@ theorem updatePipBoost_preserves_schedulerInvariantStructuralRegNodup_smp
       · -- tid ∈ runQueue boot
         split
         · -- oldPrio ≠ newPrio: rebucket the boot run queue.
-          rename_i hmemRq _hprio
           -- getTcb? facts for `st'` (the objects insert).
           have hself : ({ st with objects := st.objects.insert tid.toObjId (.tcb tcb') } : SystemState).getTcb? tid = some tcb' := by
             simp only [SystemState.getTcb?, RHTable_getElem?_eq_get?]
@@ -2550,7 +2549,7 @@ theorem updatePipBoost_preserves_schedulerInvariantStructuralRegNodup_smp
           -- invariant does not read: argue on the queue write alone.
           let s1 : SystemState := { st with objects := st.objects.insert tid.toObjId (.tcb tcb') }
           let p := (resolveEffectivePrioDeadline s1 tcb').1
-          let rq := ((s1.scheduler.runQueueOnCore bootCoreId).remove tid).insert tid p
+          let rq := (s1.scheduler.runQueueOnCore bootCoreId).rekey tid p
           have hS : ∀ c', schedulerInvariantStructuralRegNodup_perCore
               { s1 with scheduler := s1.scheduler.setRunQueueOnCore bootCoreId rq } c' →
               schedulerInvariantStructuralRegNodup_perCore (s1.runRequeueOnCore bootCoreId tid p) c' :=
@@ -2566,29 +2565,23 @@ theorem updatePipBoost_preserves_schedulerInvariantStructuralRegNodup_smp
           revert c'
           refine setRunQueueOnCore_preserves_schedulerInvariantStructuralRegNodup_smp
             s1 bootCoreId _ ?_ ?_ ?_ ?_ hst'
-          · exact RunQueue.insert_preserves_wellFormed _
-              (RunQueue.remove_preserves_wellFormed _ (hPre bootCoreId).1.1.2.2.2 tid) _ _
-          · exact RunQueue.insert_preserves_toList_nodup _ _ _
-              (RunQueue.remove_preserves_toList_nodup _ tid (hPre bootCoreId).2)
-          · -- members are TCBs
+          · exact RunQueue.wellFormed_holds _
+          · exact RunQueue.toList_nodup _
+          · -- members are TCBs: the re-key moves no thread in or out
             intro t ht
-            rcases (RunQueue.mem_insert _ tid _ t).mp ((RunQueue.mem_toList_iff_mem _ t).mp ht) with hold | heqt
-            · -- t ∈ (rq.remove tid): t ∈ rq ∧ t ≠ tid
-              rw [RunQueue.mem_remove] at hold
-              obtain ⟨hmem, hnetid⟩ := hold
-              obtain ⟨tcbt, htcbt⟩ := (hPre bootCoreId).1.1.2.2.1 t
+            have hmem := (RunQueue.mem_rekey _ tid _ t).mp ((RunQueue.mem_toList_iff_mem _ t).mp ht)
+            by_cases hnetid : t = tid
+            · exact ⟨tcb', by rw [hnetid]; exact hself⟩
+            · obtain ⟨tcbt, htcbt⟩ := (hPre bootCoreId).1.1.2.2.1 t
                 ((RunQueue.mem_toList_iff_mem _ t).mpr hmem)
               exact ⟨tcbt, by rw [hne t hnetid]; exact htcbt⟩
-            · exact ⟨tcb', by rw [heqt]; exact hself⟩
-          · -- current ∉ rebucketed queue
+          · -- current ∉ re-keyed queue
             intro t hcur hmem
             have hcur0 : st.scheduler.currentOnCore bootCoreId = some t := hcur
             have hqcc := (hPre bootCoreId).1.1.1
             simp only [queueCurrentConsistentOnCore, hcur0] at hqcc
-            rcases (RunQueue.mem_insert _ tid _ t).mp ((RunQueue.mem_toList_iff_mem _ t).mp hmem) with hold | heqt
-            · rw [RunQueue.mem_remove] at hold
-              exact hqcc ((RunQueue.mem_toList_iff_mem _ t).mpr hold.1)
-            · subst heqt; exact absurd ((RunQueue.mem_toList_iff_mem _ t).mpr hmemRq) hqcc
+            exact hqcc ((RunQueue.mem_toList_iff_mem _ t).mpr
+              ((RunQueue.mem_rekey _ tid _ t).mp ((RunQueue.mem_toList_iff_mem _ t).mp hmem)))
         · exact markKeyChangeFor_preserves_schedulerInvariantStructuralRegNodup_smp _ _ _ hst'
       · exact markKeyChangeFor_preserves_schedulerInvariantStructuralRegNodup_smp _ _ _ hst'
   · exact hPre
