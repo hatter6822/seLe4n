@@ -16,6 +16,7 @@ import SeLe4n.Kernel.Lifecycle.Suspend
 import SeLe4n.Platform.Boot
 import SeLe4n.Platform.RPi5.Contract
 import SeLe4n.Platform.RPi5.VSpaceBoot
+import SeLe4n.Testing.BootCoreOps
 
 /-!
 # AN9 Hardware Binding regression suite
@@ -124,7 +125,9 @@ def main : IO Unit := do
   -- the empty `objects` table makes the lookup fail.  This is a
   -- REAL theorem (not `x = x`); the regression test below
   -- evaluates the actual function call and checks the error tag.
-  let suspendResult := suspendThread (default : SystemState)
+  -- The run drives the live boot-core suspend (`suspendThreadOnCore`);
+  -- the reference `suspendThread` is proof-only.
+  let suspendResult := SeLe4n.Testing.bootSuspendThread (default : SystemState)
                          (⟨SeLe4n.ThreadId.ofNat 1, by decide⟩)
   let isInvalidArg : Bool := match suspendResult with
     | .error .invalidArgument => true

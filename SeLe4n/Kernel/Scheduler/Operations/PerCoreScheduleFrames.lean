@@ -66,8 +66,6 @@ theorem scheduleEffectiveOnCore_activeDomainOnCore (st : SystemState) (c : CoreI
           simp only [SchedulerState.clearReschedulePendingOnCore_activeDomainOnCore,
             SchedulerState.setCurrentOnCore_activeDomainOnCore, restoreIncomingContextOnCore_scheduler, SystemState.runRemoveOnCore_scheduler,
       SchedulerState.setRunQueueEndsOnCore_activeDomainOnCore,
-      SchedulerState.setRunQueueEndsOnCore_domainScheduleIndexOnCore,
-      SchedulerState.setRunQueueEndsOnCore_domainTimeRemainingOnCore,
             SchedulerState.setRunQueueOnCore_activeDomainOnCore]
           rw [saveOutgoingContextOnCore_scheduler_eq]
         · simp at hStep
@@ -80,9 +78,8 @@ theorem idleFallbackOnCore_domainScheduleIndexOnCore (st : SystemState) (c c' : 
   split
   · simp [dispatchIdleOnCore, SchedulerState.setCurrentOnCore_domainScheduleIndexOnCore,
       restoreIncomingContextOnCore_scheduler, SystemState.runRemoveOnCore_scheduler,
-      SchedulerState.setRunQueueEndsOnCore_activeDomainOnCore,
       SchedulerState.setRunQueueEndsOnCore_domainScheduleIndexOnCore,
-      SchedulerState.setRunQueueEndsOnCore_domainTimeRemainingOnCore, SchedulerState.setRunQueueOnCore_domainScheduleIndexOnCore]
+      SchedulerState.setRunQueueOnCore_domainScheduleIndexOnCore]
   · simp [SchedulerState.setCurrentOnCore_domainScheduleIndexOnCore]
 
 /-- WS-SM SM5.G.2 helper: a successful per-core reschedule frames every core's
@@ -112,9 +109,7 @@ theorem scheduleEffectiveOnCore_domainScheduleIndexOnCore (st : SystemState) (c 
           rw [← hStep]
           simp only [SchedulerState.clearReschedulePendingOnCore_domainScheduleIndexOnCore,
             SchedulerState.setCurrentOnCore_domainScheduleIndexOnCore, restoreIncomingContextOnCore_scheduler, SystemState.runRemoveOnCore_scheduler,
-      SchedulerState.setRunQueueEndsOnCore_activeDomainOnCore,
       SchedulerState.setRunQueueEndsOnCore_domainScheduleIndexOnCore,
-      SchedulerState.setRunQueueEndsOnCore_domainTimeRemainingOnCore,
             SchedulerState.setRunQueueOnCore_domainScheduleIndexOnCore]
           rw [saveOutgoingContextOnCore_scheduler_eq]
         · simp at hStep
@@ -126,8 +121,6 @@ theorem idleFallbackOnCore_domainTimeRemainingOnCore (st : SystemState) (c c' : 
   unfold idleFallbackOnCore
   split
   · simp [dispatchIdleOnCore, restoreIncomingContextOnCore_scheduler, SystemState.runRemoveOnCore_scheduler,
-      SchedulerState.setRunQueueEndsOnCore_activeDomainOnCore,
-      SchedulerState.setRunQueueEndsOnCore_domainScheduleIndexOnCore,
       SchedulerState.setRunQueueEndsOnCore_domainTimeRemainingOnCore]
   · simp
 
@@ -159,8 +152,6 @@ theorem scheduleEffectiveOnCore_domainTimeRemainingOnCore (st : SystemState) (c 
           simp only [SchedulerState.clearReschedulePendingOnCore_domainTimeRemainingOnCore,
             SchedulerState.setCurrentOnCore_domainTimeRemainingOnCore,
             restoreIncomingContextOnCore_scheduler, SystemState.runRemoveOnCore_scheduler,
-      SchedulerState.setRunQueueEndsOnCore_activeDomainOnCore,
-      SchedulerState.setRunQueueEndsOnCore_domainScheduleIndexOnCore,
       SchedulerState.setRunQueueEndsOnCore_domainTimeRemainingOnCore,
             SchedulerState.setRunQueueOnCore_domainTimeRemainingOnCore]
           rw [saveOutgoingContextOnCore_scheduler_eq]

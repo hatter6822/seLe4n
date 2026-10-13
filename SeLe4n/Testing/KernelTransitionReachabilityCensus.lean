@@ -979,7 +979,14 @@ capabilities that were not derivations — an independently rooted capability to
 the same object, and the revoked capability's own parent.  What still runs it is
 `lifecycleRevokeDeleteRetype`, an internal proof helper already on this list, and
 the non-interference operation catalogue, where it is an operation in its own
-right; no syscall reaches it. -/
+right; no syscall reaches it.
+
+WS-ZA ZA4.5 adds the `…With` forms of the reference interrupt and exception
+dispatch (`handleInterruptWith`, `interruptDispatchSequenceWith`,
+`dispatchExceptionWith`) and `withOutgoingContextChecked`: they take the timer
+tick or the scheduler operation as a parameter so the suites can run the
+reference dispatch and the checked wrappers in front of the live per-core
+operations; no seam runs them (the live entries run `timerTickOnCore`). -/
 def nonExecutedTransitionsPlain : List Name :=
   [ `SeLe4n.Kernel.Architecture.TlbCacheJointState.empty
   , `SeLe4n.Kernel.Architecture.TlbCacheJointState.pageTableUpdate
@@ -996,14 +1003,17 @@ def nonExecutedTransitionsPlain : List Name :=
   , `SeLe4n.Kernel.Architecture.asidAllocateWithShootdown
   , `SeLe4n.Kernel.Architecture.contextSwitchState
   , `SeLe4n.Kernel.Architecture.dispatchException
+  , `SeLe4n.Kernel.Architecture.dispatchExceptionWith
   , `SeLe4n.Kernel.Architecture.dispatchSynchronousException
   , `SeLe4n.Kernel.Architecture.endOfInterrupt
   , `SeLe4n.Kernel.Architecture.handleInterrupt
+  , `SeLe4n.Kernel.Architecture.handleInterruptWith
   , `SeLe4n.Kernel.Architecture.handleTlbShootdownReqOnCore
   , `SeLe4n.Kernel.Architecture.handleTlbShootdownReqOnCorePerCore
   , `SeLe4n.Kernel.Architecture.icFetchOnCore
   , `SeLe4n.Kernel.Architecture.icInvalidateOnCore
   , `SeLe4n.Kernel.Architecture.interruptDispatchSequence
+  , `SeLe4n.Kernel.Architecture.interruptDispatchSequenceWith
   , `SeLe4n.Kernel.Architecture.markTlbBarriered
   , `SeLe4n.Kernel.Architecture.markTlbDirty
   , `SeLe4n.Kernel.Architecture.setIcacheOnCore
@@ -1195,6 +1205,7 @@ def nonExecutedTransitionsPlain : List Name :=
   , `SeLe4n.Kernel.timerTickOnCorePreDomain
   , `SeLe4n.Kernel.timerTickOnCorePrepared
   , `SeLe4n.Kernel.timerTickWithBudget
+  , `SeLe4n.Kernel.withOutgoingContextChecked
   , `SeLe4n.Kernel.withObjects
   , `SeLe4n.Model.Builder.insertCap
   , `SeLe4n.Model.Builder.mapPage

@@ -332,14 +332,14 @@ private def runBlockingChecks : IO Unit := do
   -- (the bridge `removeRunnableOnCore_bootCoreId` holds by `rfl`; observe it on the
   -- boot run queue, since `SystemState` has no `DecidableEq`).
   assertBool "removeRunnableOnCore bootCore matches removeRunnable on the boot run queue"
-    (((removeRunnableOnCore stBase callerTid bootCoreId).scheduler.runQueueOnCore bootCoreId).toList
-      == ((removeRunnable stBase callerTid).scheduler.runQueueOnCore bootCoreId).toList)
+    (((removeRunnableOnCore stBase callerTid bootCoreId).runQueueWalk bootCoreId)
+      == ((removeRunnable stBase callerTid).runQueueWalk bootCoreId))
   -- SM6.A.4: the caller is removed from its own core's run queue.
   assertBool "removeRunnableOnCore deschedules the caller from its core's run queue"
-    (!((removeRunnableOnCore stBase callerTid bootCoreId).scheduler.runQueueOnCore bootCoreId).contains callerTid)
+    (!((removeRunnableOnCore stBase callerTid bootCoreId).queuedOn bootCoreId callerTid))
   -- SM6.A.4: a sibling core's run queue is untouched (per-core locality).
   assertBool "removeRunnableOnCore on core 1 leaves the boot core's run queue intact"
-    ((removeRunnableOnCore stBase callerTid core1).scheduler.runQueueOnCore bootCoreId |>.contains callerTid)
+    ((removeRunnableOnCore stBase callerTid core1).queuedOn bootCoreId callerTid)
 
 private def runNoReceiverChecks : IO Unit := do
   IO.println "--- §3.3 SM6.A.1 no-receiver path (blockedOnCall) ---"
@@ -353,7 +353,7 @@ private def runNoReceiverChecks : IO Unit := do
      | some t => decide (t.ipcState = .blockedOnCall epId)
      | none => false)
   assertBool "no-receiver call removes the caller from the boot run queue"
-    (!(st'.scheduler.runQueueOnCore bootCoreId).contains callerTid)
+    (!(st'.queuedOn bootCoreId callerTid))
   -- SM6.A.5/.8: WithCaps + the full cross-core dispatch agree with the bare call
   -- on the no-receiver path (no caps to transfer; no donation without a server).
   assertBool "no-receiver WithCaps cross-core call also surfaces no SGI"

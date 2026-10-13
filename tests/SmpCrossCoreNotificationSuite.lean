@@ -506,7 +506,7 @@ private def runWaitChecks : IO Unit := do
     (match res with | .ok none => true | _ => false)
   -- The caller is removed from its own core's run queue (per-core deschedule).
   assertBool "wait removes the caller from its own core's run queue"
-    (!(st'.scheduler.runQueueOnCore bootCoreId).contains waiterLocalTid)
+    (!(st'.queuedOn bootCoreId waiterLocalTid))
   -- The caller's TCB records the blocked-on-notification state.
   assertBool "wait records blockedOnNotification on the caller"
     (match st'.getTcb? waiterLocalTid with
@@ -515,7 +515,7 @@ private def runWaitChecks : IO Unit := do
   -- A sibling core's run queue is untouched (per-core locality of the deschedule).
   let (st'', _) := notificationWaitOnCore nId waiterLocalTid core1 stBase
   assertBool "wait on core 1 leaves the boot core's run queue intact"
-    ((st''.scheduler.runQueueOnCore bootCoreId).contains waiterLocalTid)
+    ((st''.queuedOn bootCoreId waiterLocalTid))
 
 private def runBadgeWaitChecks : IO Unit := do
   IO.println "--- §3.6 SM6.B.1 wait consumes a pending badge (caller stays runnable) ---"
@@ -526,7 +526,7 @@ private def runBadgeWaitChecks : IO Unit := do
     (match res with | .ok (some b) => decide (b = badge) | _ => false)
   -- The badge-consume path makes no scheduler change — the caller stays runnable.
   assertBool "badge-consume wait leaves the caller runnable on the boot core"
-    ((st'.scheduler.runQueueOnCore bootCoreId).contains waiterLocalTid)
+    ((st'.queuedOn bootCoreId waiterLocalTid))
   assertBool "badge-consume wait clears the notification to idle (badge consumed)"
     (match st'.objects[nId]? with
      | some (.notification ntfn) => decide (ntfn.state = .idle ∧ ntfn.pendingBadge = none)
@@ -852,8 +852,8 @@ private def runBoundDeliveryNonInterferenceChecks : IO Unit := do
         (!(stSig.objects[boundTid.toObjId]? == stBound.objects[boundTid.toObjId]?))
       assertBool "bound-delivery NI fixture: the raw states differ at the endpoint"
         (!(stSig.objects[epId]? == stBound.objects[epId]?))
-      let pPost := SeLe4n.Kernel.projectState boundDeliveryLabeling lowObserver stSig
-      let pPre := SeLe4n.Kernel.projectState boundDeliveryLabeling lowObserver stBound
+      let pPost := SeLe4n.Kernel.projectStateByLinks boundDeliveryLabeling lowObserver stSig
+      let pPre := SeLe4n.Kernel.projectStateByLinks boundDeliveryLabeling lowObserver stBound
       -- Guard 3: the projection is not empty — a low object the delivery does
       -- not write is visible in both.
       assertBool "bound-delivery NI fixture: the low signaller is visible in both projections"

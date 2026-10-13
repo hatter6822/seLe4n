@@ -471,7 +471,7 @@ def an10_e_removeRunnableValid_no_op_on_empty_queue : IO Bool := do
   let st : SystemState := default
   let st' : SystemState := SeLe4n.Kernel.removeRunnableValid st vtid
   -- Empty queue stays empty after a no-op remove.
-  return (st'.scheduler.runQueueOnCore bootCoreId).size == 0
+  return (st'.runQueueWalk bootCoreId).length == 0
 
 /-- AN10-E.H2 — `clearPendingStateValid` reduces to `clearPendingState`
 on a populated state with a TCB carrying a non-default `pendingMessage`.

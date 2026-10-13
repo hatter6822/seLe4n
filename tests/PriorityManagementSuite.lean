@@ -13,6 +13,7 @@ import SeLe4n.Kernel.SchedContext.PriorityManagement
 import SeLe4n.Kernel.FrozenOps
 import SeLe4n.Model.FrozenState
 import SeLe4n.Kernel.SchedContext.Types
+import SeLe4n.Testing.BootCoreOps
 
 open SeLe4n.Model
 open SeLe4n.Kernel.Concurrency (bootCoreId
@@ -62,7 +63,7 @@ private def pm001_setPriorityWithinMCP : IO Unit := do
     (⟨1⟩, .tcb (mkTcb 1 (prio := 50) (mcp := 100))),
     (⟨2⟩, .tcb (mkTcb 2 (prio := 30)))
   ]
-  match setPriorityOp st ⟨callerTid, by decide⟩ ⟨targetTid, by decide⟩ ⟨80⟩ with
+  match bootSetPriority st ⟨callerTid, by decide⟩ ⟨targetTid, by decide⟩ ⟨80⟩ with
   | .ok st' =>
     match st'.objects[targetTid.toObjId]? with
     | some (.tcb tcb) =>
@@ -78,7 +79,7 @@ private def pm002_setPriorityAtMCP : IO Unit := do
     (⟨1⟩, .tcb (mkTcb 1 (prio := 50) (mcp := 100))),
     (⟨2⟩, .tcb (mkTcb 2 (prio := 30)))
   ]
-  match setPriorityOp st ⟨callerTid, by decide⟩ ⟨targetTid, by decide⟩ ⟨100⟩ with
+  match bootSetPriority st ⟨callerTid, by decide⟩ ⟨targetTid, by decide⟩ ⟨100⟩ with
   | .ok _ => expect "setPriority at MCP boundary succeeds" true
   | .error e => throw <| IO.userError s!"setPriority at MCP should succeed, got {repr e}"
 
@@ -94,7 +95,7 @@ private def pm003_setPriorityAboveMCP : IO Unit := do
     (⟨1⟩, .tcb (mkTcb 1 (prio := 50) (mcp := 100))),
     (⟨2⟩, .tcb (mkTcb 2 (prio := 30)))
   ]
-  match setPriorityOp st ⟨callerTid, by decide⟩ ⟨targetTid, by decide⟩ ⟨101⟩ with
+  match bootSetPriority st ⟨callerTid, by decide⟩ ⟨targetTid, by decide⟩ ⟨101⟩ with
   | .ok _ => throw <| IO.userError "setPriority above MCP should fail"
   | .error e =>
     expect "error is illegalAuthority" (e == .illegalAuthority)
@@ -104,7 +105,7 @@ private def pm004_setPriorityMissingCaller : IO Unit := do
   let callerTid : SeLe4n.ThreadId := ⟨99⟩
   let targetTid : SeLe4n.ThreadId := ⟨2⟩
   let st := mkState [(⟨2⟩, .tcb (mkTcb 2 (prio := 30)))]
-  match setPriorityOp st ⟨callerTid, by decide⟩ ⟨targetTid, by decide⟩ ⟨50⟩ with
+  match bootSetPriority st ⟨callerTid, by decide⟩ ⟨targetTid, by decide⟩ ⟨50⟩ with
   | .ok _ => throw <| IO.userError "missing caller should fail"
   | .error e =>
     expect "error is invalidArgument" (e == .invalidArgument)
@@ -114,7 +115,7 @@ private def pm005_setPriorityMissingTarget : IO Unit := do
   let callerTid : SeLe4n.ThreadId := ⟨1⟩
   let targetTid : SeLe4n.ThreadId := ⟨99⟩
   let st := mkState [(⟨1⟩, .tcb (mkTcb 1 (prio := 50) (mcp := 100)))]
-  match setPriorityOp st ⟨callerTid, by decide⟩ ⟨targetTid, by decide⟩ ⟨50⟩ with
+  match bootSetPriority st ⟨callerTid, by decide⟩ ⟨targetTid, by decide⟩ ⟨50⟩ with
   | .ok _ => throw <| IO.userError "missing target should fail"
   | .error e =>
     expect "error is invalidArgument" (e == .invalidArgument)
@@ -131,7 +132,7 @@ private def pm006_setMCPriorityWithinMCP : IO Unit := do
     (⟨1⟩, .tcb (mkTcb 1 (prio := 50) (mcp := 200))),
     (⟨2⟩, .tcb (mkTcb 2 (prio := 30) (mcp := 150)))
   ]
-  match setMCPriorityOp st ⟨callerTid, by decide⟩ ⟨targetTid, by decide⟩ ⟨100⟩ with
+  match bootSetMCPriority st ⟨callerTid, by decide⟩ ⟨targetTid, by decide⟩ ⟨100⟩ with
   | .ok st' =>
     match st'.objects[targetTid.toObjId]? with
     | some (.tcb tcb) =>
@@ -147,7 +148,7 @@ private def pm007_setMCPriorityAboveMCP : IO Unit := do
     (⟨1⟩, .tcb (mkTcb 1 (prio := 50) (mcp := 100))),
     (⟨2⟩, .tcb (mkTcb 2 (prio := 30) (mcp := 150)))
   ]
-  match setMCPriorityOp st ⟨callerTid, by decide⟩ ⟨targetTid, by decide⟩ ⟨101⟩ with
+  match bootSetMCPriority st ⟨callerTid, by decide⟩ ⟨targetTid, by decide⟩ ⟨101⟩ with
   | .ok _ => throw <| IO.userError "setMCPriority above MCP should fail"
   | .error e =>
     expect "error is illegalAuthority" (e == .illegalAuthority)
@@ -161,7 +162,7 @@ private def pm008_setMCPriorityCapsExisting : IO Unit := do
     (⟨1⟩, .tcb (mkTcb 1 (prio := 50) (mcp := 200))),
     (⟨2⟩, .tcb (mkTcb 2 (prio := 80) (mcp := 150)))
   ]
-  match setMCPriorityOp st ⟨callerTid, by decide⟩ ⟨targetTid, by decide⟩ ⟨50⟩ with
+  match bootSetMCPriority st ⟨callerTid, by decide⟩ ⟨targetTid, by decide⟩ ⟨50⟩ with
   | .ok st' =>
     match st'.objects[targetTid.toObjId]? with
     | some (.tcb tcb) =>
@@ -190,7 +191,7 @@ private def pm009_setPriorityBoundThread : IO Unit := do
     (⟨2⟩, .tcb (mkTcb 2 (prio := 30) (binding := .bound scId))),
     (scId.toObjId, .schedContext sc)
   ]
-  match setPriorityOp st ⟨callerTid, by decide⟩ ⟨targetTid, by decide⟩ ⟨80⟩ with
+  match bootSetPriority st ⟨callerTid, by decide⟩ ⟨targetTid, by decide⟩ ⟨80⟩ with
   | .ok st' =>
     -- SchedContext priority should be updated
     match st'.objects[scId.toObjId]? with
@@ -207,7 +208,7 @@ private def pm010_setPriorityUnboundThread : IO Unit := do
     (⟨1⟩, .tcb (mkTcb 1 (prio := 50) (mcp := 200))),
     (⟨2⟩, .tcb (mkTcb 2 (prio := 30)))
   ]
-  match setPriorityOp st ⟨callerTid, by decide⟩ ⟨targetTid, by decide⟩ ⟨60⟩ with
+  match bootSetPriority st ⟨callerTid, by decide⟩ ⟨targetTid, by decide⟩ ⟨60⟩ with
   | .ok st' =>
     match st'.objects[targetTid.toObjId]? with
     | some (.tcb tcb) =>
@@ -240,7 +241,7 @@ private def pm010b_setMCPriorityCapsSchedContextBound : IO Unit := do
     (⟨2⟩, .tcb (mkTcb 2 (prio := 80) (mcp := 150) (binding := .bound scId))),
     (scId.toObjId, .schedContext sc)
   ]
-  match setMCPriorityOp st ⟨callerTid, by decide⟩ ⟨targetTid, by decide⟩ ⟨50⟩ with
+  match bootSetMCPriority st ⟨callerTid, by decide⟩ ⟨targetTid, by decide⟩ ⟨50⟩ with
   | .ok st' =>
     -- Verify MCP was updated on TCB, and that the cap wrote the thread's own
     -- base priority -- the one home every scheduling decision reads.
@@ -288,7 +289,7 @@ private def pm010c_setMCPriorityReadsThreadNotReservation : IO Unit := do
   let retiredReservationReading : SeLe4n.Priority := sc.priority
   expect "the two readings disagree on this state"
     (!(retiredReservationReading == ⟨30⟩))
-  match setMCPriorityOp st ⟨callerTid, by decide⟩ ⟨targetTid, by decide⟩ ⟨50⟩ with
+  match bootSetMCPriority st ⟨callerTid, by decide⟩ ⟨targetTid, by decide⟩ ⟨50⟩ with
   | .ok st' =>
     match st'.objects[targetTid.toObjId]? with
     | some (.tcb tcb) =>
@@ -318,10 +319,10 @@ private def pm011_mcpTransitivity : IO Unit := do
     (⟨3⟩, .tcb (mkTcb 3 (prio := 20) (mcp := 200)))
   ]
   -- Step 1: A sets B's MCP to 80
-  match setMCPriorityOp st ⟨tidA, by decide⟩ ⟨tidB, by decide⟩ ⟨80⟩ with
+  match bootSetMCPriority st ⟨tidA, by decide⟩ ⟨tidB, by decide⟩ ⟨80⟩ with
   | .ok st' =>
     -- Step 2: B tries to set C's priority to 90 (above B's new MCP of 80) — should fail
-    match setPriorityOp st' ⟨tidB, by decide⟩ ⟨tidC, by decide⟩ ⟨90⟩ with
+    match bootSetPriority st' ⟨tidB, by decide⟩ ⟨tidC, by decide⟩ ⟨90⟩ with
     | .ok _ => throw <| IO.userError "B should not set priority above its MCP"
     | .error e =>
       expect "transitive MCP blocks escalation" (e == .illegalAuthority)
@@ -337,7 +338,7 @@ private def pm012_selfSetPriority : IO Unit := do
   let st := mkState [
     (⟨1⟩, .tcb (mkTcb 1 (prio := 50) (mcp := 100)))
   ]
-  match setPriorityOp st ⟨tid, by decide⟩ ⟨tid, by decide⟩ ⟨80⟩ with
+  match bootSetPriority st ⟨tid, by decide⟩ ⟨tid, by decide⟩ ⟨80⟩ with
   | .ok st' =>
     match st'.objects[tid.toObjId]? with
     | some (.tcb tcb) =>
@@ -486,7 +487,7 @@ private def pm_ak2b_03_configureRebucketsBoundThread : IO Unit := do
   | .ok ((), st') =>
     -- After reconfigure, the RunQueue's cached priority for this thread
     -- must match the new priority (123), not the old (50).
-    match (st'.scheduler.runQueueOnCore bootCoreId).priorityOf targetTid with
+    match (st'.queuedPriorityOn bootCoreId targetTid) with
     | some prio =>
       expect "RunQueue bucket migrated to new priority (50 -> 123)"
         (prio == ⟨123⟩)
@@ -703,7 +704,7 @@ private def pm_ak8d_01_hardwarePriorityCeilingRejects : IO Unit := do
     (⟨1⟩, .tcb (mkTcb 1 (prio := 50) (mcp := 1000))),
     (⟨2⟩, .tcb (mkTcb 2 (prio := 30)))
   ]
-  match setPriorityOp st ⟨callerTid, by decide⟩ ⟨targetTid, by decide⟩ ⟨256⟩ with
+  match bootSetPriority st ⟨callerTid, by decide⟩ ⟨targetTid, by decide⟩ ⟨256⟩ with
   | .ok _ => throw <| IO.userError "priority 256 above hardware ceiling should be rejected"
   | .error e => expect "error is illegalAuthority" (e == .illegalAuthority)
 
@@ -716,7 +717,7 @@ private def pm_ak8d_02_maxHardwarePriorityAccepts : IO Unit := do
     (⟨1⟩, .tcb (mkTcb 1 (prio := 50) (mcp := 255))),
     (⟨2⟩, .tcb (mkTcb 2 (prio := 30)))
   ]
-  match setPriorityOp st ⟨callerTid, by decide⟩ ⟨targetTid, by decide⟩ ⟨255⟩ with
+  match bootSetPriority st ⟨callerTid, by decide⟩ ⟨targetTid, by decide⟩ ⟨255⟩ with
   | .ok _ => expect "priority 255 (at ceiling) accepted" true
   | .error e =>
     throw <| IO.userError s!"priority 255 at hardware ceiling should succeed, got {repr e}"
@@ -730,7 +731,7 @@ private def pm_ak8d_03_setMCPriorityHardwareCeilingRejects : IO Unit := do
     (⟨1⟩, .tcb (mkTcb 1 (prio := 50) (mcp := 1000))),
     (⟨2⟩, .tcb (mkTcb 2 (prio := 30) (mcp := 100)))
   ]
-  match setMCPriorityOp st ⟨callerTid, by decide⟩ ⟨targetTid, by decide⟩ ⟨500⟩ with
+  match bootSetMCPriority st ⟨callerTid, by decide⟩ ⟨targetTid, by decide⟩ ⟨500⟩ with
   | .ok _ => throw <| IO.userError "MCP 500 above hardware ceiling should be rejected"
   | .error e => expect "error is illegalAuthority" (e == .illegalAuthority)
 
@@ -849,7 +850,7 @@ TCB — untouched.  Pre-fix this wrote `SchedContext.priority := 80`. -/
 private def pm_od_03_setPriorityOnDoneeSparesTheDonor : IO Unit := do
   let scId : SeLe4n.SchedContextId := ⟨50⟩
   let st := odDonationState scId
-  match setPriorityOp st ⟨⟨1⟩, by decide⟩ ⟨⟨2⟩, by decide⟩ ⟨80⟩ with
+  match bootSetPriority st ⟨⟨1⟩, by decide⟩ ⟨⟨2⟩, by decide⟩ ⟨80⟩ with
   | .error e => throw <| IO.userError s!"setPriority on a donee should succeed, got {repr e}"
   | .ok st' =>
     match st'.objects[(⟨2⟩ : SeLe4n.ThreadId).toObjId]? with
@@ -883,7 +884,7 @@ private def pm_od_04_setMCPriorityCapOnDoneeSparesTheDonor : IO Unit := do
   let scId : SeLe4n.SchedContextId := ⟨50⟩
   let st := odDonationState scId
   -- The donee's current priority is 30; capping MCP to 20 must cap it.
-  match setMCPriorityOp st ⟨⟨1⟩, by decide⟩ ⟨⟨2⟩, by decide⟩ ⟨20⟩ with
+  match bootSetMCPriority st ⟨⟨1⟩, by decide⟩ ⟨⟨2⟩, by decide⟩ ⟨20⟩ with
   | .error e => throw <| IO.userError s!"setMCPriority on a donee should succeed, got {repr e}"
   | .ok st' =>
     match st'.objects[(⟨2⟩ : SeLe4n.ThreadId).toObjId]? with
@@ -937,7 +938,7 @@ private def pm_od_06_boundControlStillWritesTheReservation : IO Unit := do
     (⟨2⟩, .tcb (mkTcb 2 (prio := odDoneePriority) (binding := .bound scId))),
     (scId.toObjId, .schedContext sc)
   ]
-  match setPriorityOp st ⟨⟨1⟩, by decide⟩ ⟨⟨2⟩, by decide⟩ ⟨80⟩ with
+  match bootSetPriority st ⟨⟨1⟩, by decide⟩ ⟨⟨2⟩, by decide⟩ ⟨80⟩ with
   | .error e => throw <| IO.userError s!"setPriority on a bound thread should succeed, got {repr e}"
   | .ok st' =>
     match st'.objects[scId.toObjId]? with
@@ -1176,7 +1177,7 @@ private def pm_frozenBasePriorityAgreesWithTheLiveWrite : IO Unit := do
     (callerTid.toObjId, .tcb (mkTcb 1 (prio := 50) (mcp := 200))),
     (targetTid.toObjId, .tcb (mkTcb 2 (prio := 50) (binding := .bound scId))),
     (scId.toObjId, .schedContext sc) ]
-  match setPriorityOp liveSt ⟨callerTid, by decide⟩ ⟨targetTid, by decide⟩ ⟨10⟩ with
+  match bootSetPriority liveSt ⟨callerTid, by decide⟩ ⟨targetTid, by decide⟩ ⟨10⟩ with
   | .error e => throw <| IO.userError s!"live setPriority should succeed, got {repr e}"
   | .ok liveAfter =>
     match frozenSetPriority callerTid targetTid ⟨10⟩ frozenSt with
@@ -1233,7 +1234,7 @@ private def pm_frozenCeilingAgreesWithTheLiveWrite : IO Unit := do
     (callerTid.toObjId, .tcb (mkTcb 1 (prio := 50) (mcp := 200))),
     (targetTid.toObjId, .tcb (mkTcb 2 (prio := 80) (binding := .bound scId))),
     (scId.toObjId, .schedContext sc) ]
-  match setMCPriorityOp liveSt ⟨callerTid, by decide⟩ ⟨targetTid, by decide⟩ ⟨20⟩ with
+  match bootSetMCPriority liveSt ⟨callerTid, by decide⟩ ⟨targetTid, by decide⟩ ⟨20⟩ with
   | .error e => throw <| IO.userError s!"live setMCPriority should succeed, got {repr e}"
   | .ok liveAfter =>
     match frozenSetMCPriority callerTid targetTid ⟨20⟩ frozenSt with
@@ -1263,7 +1264,7 @@ private def pm_frozenCeilingAgreesWithTheLiveWrite : IO Unit := do
     (callerTid.toObjId, .tcb (mkTcb 1 (prio := 50) (mcp := 200))),
     (targetTid.toObjId, .tcb (mkTcb 2 (prio := 10) (binding := .bound scId))),
     (scId.toObjId, .schedContext sc) ]
-  match setMCPriorityOp (mkState driftedObjs) ⟨callerTid, by decide⟩
+  match bootSetMCPriority (mkState driftedObjs) ⟨callerTid, by decide⟩
           ⟨targetTid, by decide⟩ ⟨20⟩ with
   | .error e => throw <| IO.userError s!"live setMCPriority (drifted) should succeed, got {repr e}"
   | .ok liveAfter =>
@@ -1328,14 +1329,17 @@ private def pm_frozenBasePriorityRebucketsLikeTheLiveWrite : IO Unit := do
     (callerTid.toObjId, .tcb (mkTcb 1 (prio := 50) (mcp := 200))),
     (targetTid.toObjId, .tcb (mkTcb 2 (prio := 50) (binding := .bound scId))),
     (scId.toObjId, .schedContext sc) ]
+  -- The live bucket read through the TCB run-queue links: the queue walk filtered
+  -- to the threads linked at band `p` (the ghost `atPriority` is proof-only).
   let liveBucket (st : SystemState) (p : Nat) : List SeLe4n.ThreadId :=
-    ((st.scheduler.runQueueOnCore bootCoreId).atPriority (⟨p⟩ : SeLe4n.Priority))
+    (st.runQueueWalk bootCoreId).filter
+      (fun t => st.queuedPriorityOn bootCoreId t == some (⟨p⟩ : SeLe4n.Priority))
   let frozenBucket (st : FrozenSystemState) (p : Nat) : List SeLe4n.ThreadId :=
     (st.scheduler.byPriority.get? ⟨p⟩).getD []
   expect "control: both surfaces start with the target queued at 50"
     (liveBucket liveSt 50 == [callerTid, targetTid]
       && frozenBucket frozenSt 50 == [callerTid, targetTid])
-  match setPriorityOp liveSt ⟨callerTid, by decide⟩ ⟨targetTid, by decide⟩ ⟨10⟩ with
+  match bootSetPriority liveSt ⟨callerTid, by decide⟩ ⟨targetTid, by decide⟩ ⟨10⟩ with
   | .error e => throw <| IO.userError s!"live setPriority should succeed, got {repr e}"
   | .ok liveAfter =>
     match frozenSetPriority callerTid targetTid ⟨10⟩ frozenSt with
@@ -1376,13 +1380,16 @@ private def pm_frozenCeilingRebucketsLikeTheLiveWrite : IO Unit := do
     (callerTid.toObjId, .tcb (mkTcb 1 (prio := 50) (mcp := 200))),
     (targetTid.toObjId, .tcb (mkTcb 2 (prio := 80) (binding := .bound scId))),
     (scId.toObjId, .schedContext sc) ]
+  -- The live bucket read through the TCB run-queue links: the queue walk filtered
+  -- to the threads linked at band `p` (the ghost `atPriority` is proof-only).
   let liveBucket (st : SystemState) (p : Nat) : List SeLe4n.ThreadId :=
-    ((st.scheduler.runQueueOnCore bootCoreId).atPriority (⟨p⟩ : SeLe4n.Priority))
+    (st.runQueueWalk bootCoreId).filter
+      (fun t => st.queuedPriorityOn bootCoreId t == some (⟨p⟩ : SeLe4n.Priority))
   let frozenBucket (st : FrozenSystemState) (p : Nat) : List SeLe4n.ThreadId :=
     (st.scheduler.byPriority.get? ⟨p⟩).getD []
   expect "control: both surfaces start with the target queued at 80"
     (liveBucket liveSt 80 == [targetTid] && frozenBucket frozenSt 80 == [targetTid])
-  match setMCPriorityOp liveSt ⟨callerTid, by decide⟩ ⟨targetTid, by decide⟩ ⟨20⟩ with
+  match bootSetMCPriority liveSt ⟨callerTid, by decide⟩ ⟨targetTid, by decide⟩ ⟨20⟩ with
   | .error e => throw <| IO.userError s!"live setMCPriority should succeed, got {repr e}"
   | .ok liveAfter =>
     match frozenSetMCPriority callerTid targetTid ⟨20⟩ frozenSt with
@@ -1455,7 +1462,7 @@ private def pm_basePrioritySurvivesBlockAndWake : IO Unit := do
   let blockAndWake : SystemState → SystemState := fun s =>
     enqueueRunnableOnCore (s.runRemoveOnCore bootCoreId targetTid) bootCoreId targetTid
   let bucketOf : SystemState → Option SeLe4n.Priority := fun s =>
-    (s.scheduler.runQueueOnCore bootCoreId).priorityOf targetTid
+    (s.queuedPriorityOn bootCoreId targetTid)
   expect "the fixture starts queued at its bound band" (bucketOf st == some ⟨50⟩)
   match setPriorityOnCore st ⟨callerTid, by decide⟩ ⟨targetTid, by decide⟩ ⟨10⟩
           bootCoreId with
@@ -1513,7 +1520,7 @@ private def pm_fp_01_priorityFootprintNamesHomeAndExecutingCores : IO Unit := do
   | .error e => throw <| IO.userError s!"PM-FP-01 setPriority should succeed, got {repr e}"
   | .ok (st1, _) =>
     expect "PM-FP-01 the live arm re-buckets on the target's own home core"
-      ((st1.scheduler.runQueueOnCore bootCoreId).priorityOf targetTid == some ⟨10⟩)
+      ((st1.queuedPriorityOn bootCoreId targetTid) == some ⟨10⟩)
     expect "PM-FP-01 ...and writes no replenish queue on any core -- the empty segment's exact half"
       (SeLe4n.Kernel.Concurrency.allCores.all (fun c =>
         (st1.scheduler.replenishQueueOnCore c).entries

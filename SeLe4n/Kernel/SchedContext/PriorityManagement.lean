@@ -581,7 +581,7 @@ Returns `illegalAuthority` if `newPriority > caller.maxControlledPriority`.
 system forbids any caller from feeding `ThreadId.sentinel` for either
 argument. Uses `vCallerTid.val` / `vTargetTid.val` directly in the body
 so `split at` tactics in preservation proofs work cleanly. -/
-def setPriorityOp (st : SystemState) (vCallerTid vTargetTid : SeLe4n.ValidThreadId)
+noncomputable def setPriorityOp (st : SystemState) (vCallerTid vTargetTid : SeLe4n.ValidThreadId)
     (newPriority : SeLe4n.Priority) : Except KernelError SystemState :=
   -- E1: Caller TCB lookup + MCP authority check
   -- AN10-B (DEF-AK7-F.reader.hygiene): typed-helper migration. Both
@@ -634,7 +634,7 @@ Returns `illegalAuthority` if `newMCP > caller.maxControlledPriority`.
 
 **WS-AL AL8 (cascades AK7-E)**: `callerTid` / `targetTid` are
 `ValidThreadId` for compile-time sentinel rejection. -/
-def setMCPriorityOp (st : SystemState) (vCallerTid vTargetTid : SeLe4n.ValidThreadId)
+noncomputable def setMCPriorityOp (st : SystemState) (vCallerTid vTargetTid : SeLe4n.ValidThreadId)
     (newMCP : SeLe4n.Priority) : Except KernelError SystemState :=
   -- F1: Caller MCP authority validation (reuses validatePriorityAuthority for consistency)
   -- AN10-B (DEF-AK7-F.reader.hygiene): typed-helper migration. Both

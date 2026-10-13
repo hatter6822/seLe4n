@@ -572,7 +572,7 @@ private def runP2MaterialityChecks : IO Unit := do
               = some ⟨5⟩))
   -- srvHi IS runnable on its home core 1 — the C9 gate is satisfied, not the suppressor.
   assertBool "P2-2 the holder IS runnable on its home core (C9 gate satisfied, not suppressing)"
-    (decide (srvHi ∈ stImmaterial.scheduler.runQueueOnCore core1))
+    (stImmaterial.queuedOn core1 srvHi)
   -- The effective priority of the POST-BOOST holder is unchanged (base 10 dominates the
   -- applied boost 5) — read from the genuinely boosted state, so this exercises the exact
   -- `max(base, pipBoost) = max(10, 5) = 10` the materiality gate compares.

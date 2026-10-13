@@ -2559,10 +2559,9 @@ def deployment_starts_both_initial_threads : IO Unit := do
         !SeLe4n.Kernel.runnableOnSomeCore idle.state untrusted do
       throw <| IO.userError s!"idle stage already queues an initial thread on {v.ramSize}"
     -- Each is queued on its own core, and only there.
-    let q0 := started.state.scheduler.runQueueOnCore boot
-    let q1 := started.state.scheduler.runQueueOnCore rpi5UntrustedCore
-    unless q0.contains root && !q0.contains untrusted && q1.contains untrusted &&
-        !q1.contains root do
+    let q0 := started.state.queuedOn boot
+    let q1 := started.state.queuedOn rpi5UntrustedCore
+    unless q0 root && !q0 untrusted && q1 untrusted && !q1 root do
       throw <| IO.userError s!"initial threads not queued one per core on {v.ramSize}"
     -- Both are stored `.Ready`.
     unless (started.state.getTcb? root).map (·.threadState) == some .Ready &&
@@ -2573,7 +2572,7 @@ def deployment_starts_both_initial_threads : IO Unit := do
         (fun c => started.state.scheduler.currentOnCore c == none) do
       throw <| IO.userError s!"the start dispatched a thread on {v.ramSize}"
     -- Each core's first scheduling point selects the started thread over idle.
-    let chosen := fun st c => match SeLe4n.Kernel.chooseThreadOnCore st c with
+    let chosen := fun st c => match SeLe4n.Kernel.chooseThreadOnCoreByLinks st c with
       | .ok t => t
       | .error _ => none
     unless chosen started.state boot == some root &&
@@ -2708,10 +2707,9 @@ def qemuVirt_deployment_boots : IO Unit := do
   | .ok ist =>
       let root : SeLe4n.ThreadId := ⟨qemuVirtRootTaskTcbId.val⟩
       let untrusted : SeLe4n.ThreadId := ⟨qemuVirtUntrustedTcbId.val⟩
-      let q0 := ist.state.scheduler.runQueueOnCore SeLe4n.Kernel.Concurrency.bootCoreId
-      let q1 := ist.state.scheduler.runQueueOnCore qemuVirtUntrustedCore
-      unless q0.contains root && !q0.contains untrusted && q1.contains untrusted &&
-          !q1.contains root do
+      let q0 := ist.state.queuedOn SeLe4n.Kernel.Concurrency.bootCoreId
+      let q1 := ist.state.queuedOn qemuVirtUntrustedCore
+      unless q0 root && !q0 untrusted && q1 untrusted && !q1 root do
         throw <| IO.userError "the virt deployment's initial threads are not queued one per core"
       IO.println "  PASS: the virt deployment boots and starts both initial threads, one per domain"
   unless [(qemuVirtRootTaskUntyped.regionBase.toNat, qemuVirtRootTaskUntyped.regionSize)]

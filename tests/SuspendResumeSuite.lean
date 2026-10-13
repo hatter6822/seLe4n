@@ -13,6 +13,7 @@ import SeLe4n.Kernel.Lifecycle.Suspend
 import SeLe4n.Kernel.FrozenOps
 import SeLe4n.Model.FrozenState
 import SeLe4n.Kernel.SchedContext.Types
+import SeLe4n.Testing.BootCoreOps
 
 open SeLe4n.Model
 open SeLe4n.Kernel.Lifecycle.Suspend
@@ -51,7 +52,7 @@ private def mkState (objs : List (ObjId × KernelObject))
 private def sr001_suspendReady : IO Unit := do
   let tid : SeLe4n.ThreadId := ⟨1⟩
   let st := mkState [(⟨1⟩, .tcb (mkTcb 1 .Ready))]
-  match suspendThread st ⟨tid, by decide⟩ with
+  match bootSuspendThread st ⟨tid, by decide⟩ with
   | .ok st' =>
     match st'.objects[tid.toObjId]? with
     | some (.tcb tcb) =>
@@ -63,7 +64,7 @@ private def sr001_suspendReady : IO Unit := do
 private def sr002_suspendInactive : IO Unit := do
   let tid : SeLe4n.ThreadId := ⟨1⟩
   let st := mkState [(⟨1⟩, .tcb (mkTcb 1 .Inactive))]
-  match suspendThread st ⟨tid, by decide⟩ with
+  match bootSuspendThread st ⟨tid, by decide⟩ with
   | .ok _ => throw <| IO.userError "should fail for Inactive thread"
   | .error e =>
     expect "error is illegalState" (e == .illegalState)
@@ -72,7 +73,7 @@ private def sr002_suspendInactive : IO Unit := do
 private def sr003_suspendMissing : IO Unit := do
   let tid : SeLe4n.ThreadId := ⟨99⟩
   let st := mkState [(⟨1⟩, .tcb (mkTcb 1 .Ready))]
-  match suspendThread st ⟨tid, by decide⟩ with
+  match bootSuspendThread st ⟨tid, by decide⟩ with
   | .ok _ => throw <| IO.userError "should fail for missing thread"
   | .error e =>
     expect "error is invalidArgument" (e == .invalidArgument)
@@ -84,7 +85,7 @@ private def sr004_suspendClearsPending : IO Unit := do
     pendingMessage := some { registers := #[], caps := #[], badge := SeLe4n.Badge.ofNatMasked 42 }
     timeoutBudget := some (SeLe4n.SchedContextId.ofNat 100) }
   let st := mkState [(⟨1⟩, .tcb tcb)]
-  match suspendThread st ⟨tid, by decide⟩ with
+  match bootSuspendThread st ⟨tid, by decide⟩ with
   | .ok st' =>
     match st'.objects[tid.toObjId]? with
     | some (.tcb tcb') =>
@@ -103,7 +104,7 @@ private def sr004_suspendClearsPending : IO Unit := do
 private def sr005_resumeInactive : IO Unit := do
   let tid : SeLe4n.ThreadId := ⟨1⟩
   let st := mkState [(⟨1⟩, .tcb (mkTcb 1 .Inactive))]
-  match resumeThread st ⟨tid, by decide⟩ with
+  match bootResumeThread st ⟨tid, by decide⟩ with
   | .ok st' =>
     match st'.objects[tid.toObjId]? with
     | some (.tcb tcb) =>
@@ -116,7 +117,7 @@ private def sr005_resumeInactive : IO Unit := do
 private def sr006_resumeReady : IO Unit := do
   let tid : SeLe4n.ThreadId := ⟨1⟩
   let st := mkState [(⟨1⟩, .tcb (mkTcb 1 .Ready))]
-  match resumeThread st ⟨tid, by decide⟩ with
+  match bootResumeThread st ⟨tid, by decide⟩ with
   | .ok _ => throw <| IO.userError "should fail for Ready thread"
   | .error e =>
     expect "error is illegalState" (e == .illegalState)
@@ -125,7 +126,7 @@ private def sr006_resumeReady : IO Unit := do
 private def sr007_resumeMissing : IO Unit := do
   let tid : SeLe4n.ThreadId := ⟨99⟩
   let st := mkState [(⟨1⟩, .tcb (mkTcb 1 .Inactive))]
-  match resumeThread st ⟨tid, by decide⟩ with
+  match bootResumeThread st ⟨tid, by decide⟩ with
   | .ok _ => throw <| IO.userError "should fail for missing thread"
   | .error e =>
     expect "error is invalidArgument" (e == .invalidArgument)
@@ -134,9 +135,9 @@ private def sr007_resumeMissing : IO Unit := do
 private def sr008_suspendResumeRoundtrip : IO Unit := do
   let tid : SeLe4n.ThreadId := ⟨1⟩
   let st := mkState [(⟨1⟩, .tcb (mkTcb 1 .Ready))]
-  match suspendThread st ⟨tid, by decide⟩ with
+  match bootSuspendThread st ⟨tid, by decide⟩ with
   | .ok st' =>
-    match resumeThread st' ⟨tid, by decide⟩ with
+    match bootResumeThread st' ⟨tid, by decide⟩ with
     | .ok st'' =>
       match st''.objects[tid.toObjId]? with
       | some (.tcb tcb) =>
@@ -202,7 +203,7 @@ private def sr012_suspendBlockedOnSend : IO Unit := do
     ipcState := .blockedOnSend epId
     threadState := .BlockedSend }
   let st := mkState [(⟨1⟩, .tcb tcb)]
-  match suspendThread st ⟨tid, by decide⟩ with
+  match bootSuspendThread st ⟨tid, by decide⟩ with
   | .ok st' =>
     match st'.objects[tid.toObjId]? with
     | some (.tcb tcb') =>
@@ -219,7 +220,7 @@ private def sr013_suspendBlockedOnReceive : IO Unit := do
     ipcState := .blockedOnReceive epId
     threadState := .BlockedRecv }
   let st := mkState [(⟨1⟩, .tcb tcb)]
-  match suspendThread st ⟨tid, by decide⟩ with
+  match bootSuspendThread st ⟨tid, by decide⟩ with
   | .ok st' =>
     match st'.objects[tid.toObjId]? with
     | some (.tcb tcb') =>
@@ -236,7 +237,7 @@ private def sr014_suspendBlockedOnCall : IO Unit := do
     ipcState := .blockedOnCall epId
     threadState := .BlockedCall }
   let st := mkState [(⟨1⟩, .tcb tcb)]
-  match suspendThread st ⟨tid, by decide⟩ with
+  match bootSuspendThread st ⟨tid, by decide⟩ with
   | .ok st' =>
     match st'.objects[tid.toObjId]? with
     | some (.tcb tcb') =>
@@ -253,7 +254,7 @@ private def sr015_suspendBlockedOnReply : IO Unit := do
     ipcState := .blockedOnReply epId none
     threadState := .BlockedReply }
   let st := mkState [(⟨1⟩, .tcb tcb)]
-  match suspendThread st ⟨tid, by decide⟩ with
+  match bootSuspendThread st ⟨tid, by decide⟩ with
   | .ok st' =>
     match st'.objects[tid.toObjId]? with
     | some (.tcb tcb') =>
@@ -270,7 +271,7 @@ private def sr016_suspendBlockedOnNotification : IO Unit := do
     ipcState := .blockedOnNotification notifId
     threadState := .BlockedNotif }
   let st := mkState [(⟨1⟩, .tcb tcb)]
-  match suspendThread st ⟨tid, by decide⟩ with
+  match bootSuspendThread st ⟨tid, by decide⟩ with
   | .ok st' =>
     match st'.objects[tid.toObjId]? with
     | some (.tcb tcb') =>
@@ -293,7 +294,7 @@ private def sr017_suspendBoundSchedContext : IO Unit := do
     budgetRemaining := ⟨1000⟩, boundThread := some ⟨1⟩ }
   let tcb := { mkTcb 1 .Ready with schedContextBinding := .bound scId }
   let st := mkState [(⟨1⟩, .tcb tcb), (⟨50⟩, .schedContext sc)]
-  match suspendThread st ⟨tid, by decide⟩ with
+  match bootSuspendThread st ⟨tid, by decide⟩ with
   | .ok st' =>
     match st'.objects[tid.toObjId]? with
     | some (.tcb tcb') =>
@@ -312,7 +313,7 @@ private def sr018_suspendEndpoint : IO Unit := do
   let tid : SeLe4n.ThreadId := ⟨1⟩
   let ep : Endpoint := {}
   let st := mkState [(⟨1⟩, .endpoint ep)]
-  match suspendThread st ⟨tid, by decide⟩ with
+  match bootSuspendThread st ⟨tid, by decide⟩ with
   | .ok _ => throw <| IO.userError "should fail for non-TCB"
   | .error e =>
     expect "error is invalidArgument" (e == .invalidArgument)
@@ -322,7 +323,7 @@ private def sr019_resumeEndpoint : IO Unit := do
   let tid : SeLe4n.ThreadId := ⟨1⟩
   let ep : Endpoint := {}
   let st := mkState [(⟨1⟩, .endpoint ep)]
-  match resumeThread st ⟨tid, by decide⟩ with
+  match bootResumeThread st ⟨tid, by decide⟩ with
   | .ok _ => throw <| IO.userError "should fail for non-TCB"
   | .error e =>
     expect "error is invalidArgument" (e == .invalidArgument)
@@ -435,7 +436,7 @@ private def sr026_resumePipBoostRecomputedNoWaiters : IO Unit := do
   -- Construct an Inactive TCB with a stale pipBoost from before suspend.
   let tcb := { mkTcb 1 .Inactive with pipBoost := some ⟨50⟩ }
   let st := mkState [(⟨1⟩, .tcb tcb)]
-  match resumeThread st ⟨tid, by decide⟩ with
+  match bootResumeThread st ⟨tid, by decide⟩ with
   | .ok st' =>
     match st'.objects[tid.toObjId]? with
     | some (.tcb tcb') =>
@@ -455,9 +456,9 @@ private def sr027_suspendResumePipReroundtrip : IO Unit := do
   let tid : SeLe4n.ThreadId := ⟨1⟩
   let tcb := { mkTcb 1 .Ready with pipBoost := some ⟨30⟩ }
   let st := mkState [(⟨1⟩, .tcb tcb)]
-  match suspendThread st ⟨tid, by decide⟩ with
+  match bootSuspendThread st ⟨tid, by decide⟩ with
   | .ok stMid =>
-    match resumeThread stMid ⟨tid, by decide⟩ with
+    match bootResumeThread stMid ⟨tid, by decide⟩ with
     | .ok stFinal =>
       match stFinal.objects[tid.toObjId]? with
       | some (.tcb tcbFinal) =>
@@ -491,7 +492,7 @@ private def sr027b_resumeRecomputesPipBoostWithWaiters : IO Unit := do
     (⟨1⟩, .tcb tidTcb),
     (⟨2⟩, .tcb waiterTcb)
   ]
-  match resumeThread st ⟨tid, by decide⟩ with
+  match bootResumeThread st ⟨tid, by decide⟩ with
   | .ok st' =>
     match st'.objects[tid.toObjId]? with
     | some (.tcb tcb') =>
@@ -523,7 +524,7 @@ private def sr027c_resumeThreadPreservesBlockingAcyclic : IO Unit := do
   let waiterTcb := { waiterBaseTcb with
     ipcState := .blockedOnReply endpointId (some tid) }
   let st := mkState [(⟨1⟩, .tcb tidTcb), (⟨2⟩, .tcb waiterTcb)]
-  match resumeThread st ⟨tid, by decide⟩ with
+  match bootResumeThread st ⟨tid, by decide⟩ with
   | .ok st' =>
     -- Verify acyclicity: no thread appears in its own blocking chain.
     -- For each thread in the post-state, the blocking chain from itself
@@ -558,7 +559,7 @@ private def sr027d_resumeThreadPipBoostMatchesGraph : IO Unit := do
   let waiterTcb := { waiterBaseTcb with
     ipcState := .blockedOnReply endpointId (some tid) }
   let st := mkState [(⟨1⟩, .tcb tidTcb), (⟨2⟩, .tcb waiterTcb)]
-  match resumeThread st ⟨tid, by decide⟩ with
+  match bootResumeThread st ⟨tid, by decide⟩ with
   | .ok st' =>
     match st'.objects[tid.toObjId]? with
     | some (.tcb tcb') =>
@@ -629,14 +630,14 @@ private def sr030_resumeHigherPriorityReenqueuesCaller : IO Unit := do
   expect "SR-030 precondition: A is current"
     (st.scheduler.currentOnCore SeLe4n.Kernel.Concurrency.bootCoreId == some aTid)
   expect "SR-030 precondition: A is NOT in the run queue"
-    (!(st.scheduler.runQueueOnCore SeLe4n.Kernel.Concurrency.bootCoreId).contains aTid)
-  match resumeThread st ⟨bTid, by decide⟩ with
+    (!(st.queuedOn SeLe4n.Kernel.Concurrency.bootCoreId aTid))
+  match bootResumeThread st ⟨bTid, by decide⟩ with
   | .ok st' =>
     expect "SR-030 resumed higher-priority B preempts and becomes current"
       (st'.scheduler.currentOnCore SeLe4n.Kernel.Concurrency.bootCoreId == some bTid)
     -- THE FIX: the preempted caller A is re-enqueued, not orphaned.
     expect "SR-030 preempted caller A is re-enqueued (NOT orphaned)"
-      ((st'.scheduler.runQueueOnCore SeLe4n.Kernel.Concurrency.bootCoreId).contains aTid)
+      ((st'.queuedOn SeLe4n.Kernel.Concurrency.bootCoreId aTid))
   | .error e => throw <| IO.userError s!"SR-030 resume should succeed, got {repr e}"
 
 /-- SR-031: resuming a LOWER-priority thread does not preempt — the current thread keeps
@@ -649,12 +650,12 @@ private def sr031_resumeLowerPriorityKeepsCurrent : IO Unit := do
     (((SeLe4n.Testing.BootstrapBuilder.empty.withObject aTid.toObjId
         (.tcb (mkTcb 1 .Running 20))).withObject bTid.toObjId
         (.tcb (mkTcb 2 .Inactive 10))).withCurrent (some aTid)).build
-  match resumeThread st ⟨bTid, by decide⟩ with
+  match bootResumeThread st ⟨bTid, by decide⟩ with
   | .ok st' =>
     expect "SR-031 lower-priority resume does not preempt: A stays current"
       (st'.scheduler.currentOnCore SeLe4n.Kernel.Concurrency.bootCoreId == some aTid)
     expect "SR-031 resumed lower-priority B is enqueued"
-      ((st'.scheduler.runQueueOnCore SeLe4n.Kernel.Concurrency.bootCoreId).contains bTid)
+      ((st'.queuedOn SeLe4n.Kernel.Concurrency.bootCoreId bTid))
   | .error e => throw <| IO.userError s!"SR-031 resume should succeed, got {repr e}"
 
 
@@ -843,7 +844,7 @@ private def sr035_resumeFootprintNamesHomeAndExecutingCores : IO Unit := do
   match resumeThreadOnCore st vB bootCore with
   | .ok (st', _) =>
     expect "SR-035 the live arm enqueues B on its own home core, not the executing one"
-      ((st'.scheduler.runQueueOnCore core1).contains bTid)
+      ((st'.queuedOn core1 bTid))
     expect "SR-035 ...and writes no replenish queue on any core -- the empty segment's exact half"
       (SeLe4n.Kernel.Concurrency.allCores.all (fun c =>
         (st'.scheduler.replenishQueueOnCore c).entries

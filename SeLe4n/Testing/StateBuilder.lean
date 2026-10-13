@@ -327,4 +327,28 @@ def enqueueAllOnCore (st : SystemState) (c : SeLe4n.Kernel.Concurrency.CoreId)
     (entries : List (SeLe4n.ThreadId × SeLe4n.Priority)) : SystemState :=
   entries.foldl (fun s e => s.runEnqueueOnCore c e.1 e.2) st
 
+/-- Replace core `c`'s run queue with `entries`: every thread now queued on `c` is
+removed and `entries` are queued in order, all through the kernel's own removal
+and enqueue, so the TCB links the kernel reads describe the new queue.  A write
+to the scheduler's ghost queue alone (`setRunQueueOnCore`) changes nothing the
+compiled kernel reads. -/
+def replaceRunQueueOnCore (st : SystemState) (c : SeLe4n.Kernel.Concurrency.CoreId)
+    (entries : List (SeLe4n.ThreadId × SeLe4n.Priority)) : SystemState :=
+  enqueueAllOnCore ((st.runQueueWalk c).foldl (fun s t => s.runRemoveOnCore c t) st) c entries
+
+/-- Runtime form of `chooseThreadOnCoreSelects`: core `c`'s selection read
+through the threads' run-queue links (`chooseThreadOnCoreByLinks`, equal to
+`chooseThreadOnCore` under the link refinement by `chooseThreadOnCoreByLinks_eq`). -/
+def selectsByLinks (st : SystemState) (c : SeLe4n.Kernel.Concurrency.CoreId)
+    (tid : SeLe4n.ThreadId) : Bool :=
+  match SeLe4n.Kernel.chooseThreadOnCoreByLinks st c with
+  | .ok (some t) => t == tid
+  | _ => false
+
+/-- Runtime form of `chooseThreadOnCoreIdleFallback` (see `selectsByLinks`). -/
+def idleFallbackByLinks (st : SystemState) (c : SeLe4n.Kernel.Concurrency.CoreId) : Bool :=
+  match SeLe4n.Kernel.chooseThreadOnCoreByLinks st c with
+  | .ok none => true
+  | _ => false
+
 end SeLe4n.Testing

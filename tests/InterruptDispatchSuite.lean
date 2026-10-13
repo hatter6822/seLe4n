@@ -9,6 +9,7 @@
 
 import SeLe4n.Kernel.Architecture.InterruptDispatch
 import SeLe4n.Testing.Helpers
+import SeLe4n.Testing.BootCoreOps
 import SeLe4n.Testing.StateBuilder
 import SeLe4n.Platform.RPi5.Board
 import SeLe4n.Platform.QemuVirt.Board
@@ -112,7 +113,7 @@ def test_t05b_high_spis_dispatch : IO Unit := do
         |>.withIrqHandler ⟨intid⟩ ntfnId
         |>.withLifecycleObjectType ntfnId .notification
         |>.buildChecked)
-    match interruptDispatchSequence st0 intid with
+    match bootInterruptDispatchSequence st0 intid with
     | .ok ((), st1) =>
       match st1.objects[ntfnId]? with
       | some (.notification ntfn) =>
@@ -157,7 +158,7 @@ def test_t08_round_trip_empty : IO Unit := do
     unchanged (no ack entry, no EOI). -/
 def test_t09_dispatch_spurious_no_state_change : IO Unit := do
   let st : SeLe4n.Model.SystemState := default
-  match interruptDispatchSequence st 1023 with
+  match bootInterruptDispatchSequence st 1023 with
   | .ok ((), st') =>
     expectCond "interrupt-dispatch" "spurious: machine.eoiPending unchanged"
       (st'.machine.eoiPending == st.machine.eoiPending)
@@ -168,7 +169,7 @@ def test_t09_dispatch_spurious_no_state_change : IO Unit := do
     unchanged at Lean layer. -/
 def test_t10_dispatch_out_of_range : IO Unit := do
   let st : SeLe4n.Model.SystemState := default
-  match interruptDispatchSequence st 500 with
+  match bootInterruptDispatchSequence st 500 with
   | .ok ((), st') =>
     expectCond "interrupt-dispatch" "outOfRange: machine.eoiPending unchanged"
       (st'.machine.eoiPending == st.machine.eoiPending)
@@ -188,7 +189,7 @@ def test_t11_eoi_before_handler : IO Unit := do
   let st : SeLe4n.Model.SystemState := default
   -- INTID 30 = `timerInterruptId`; `handleInterrupt` routes to
   -- `timerTick`, which succeeds on default state.
-  match interruptDispatchSequence st 30 with
+  match bootInterruptDispatchSequence st 30 with
   | .ok ((), st') =>
     expectCond "interrupt-dispatch" "AN8-C: 30 not in final eoiPending (EOI fired)"
       (30 ∉ st'.machine.eoiPending)
@@ -216,7 +217,7 @@ def test_t12_eoi_filters_only_target_intid : IO Unit := do
   -- state directly. Under the OLD ordering, EOI would have been
   -- skipped on the error branch — so this test is a regression guard
   -- against any future revert to `ack → handle → EOI`.
-  match interruptDispatchSequence stSentinel 30 with
+  match bootInterruptDispatchSequence stSentinel 30 with
   | .ok ((), st') =>
     expectCond "interrupt-dispatch" "T12: target INTID 30 filtered by EOI"
       (30 ∉ st'.machine.eoiPending)

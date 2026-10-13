@@ -323,6 +323,25 @@ def dispatchSynchronousException (ectx : ExceptionContext) (st : SystemState)
               let delivered := Kernel.faultDeliverOnCore st tid f fctx executingCore
               .ok (delivered.2.sgi, delivered.1)
 
+/-- WS-ZA ZA4.5: `dispatchException` with the IRQ arm's timer handler `tick` as
+a parameter (`interruptDispatchSequenceWith`); the reference model's is the
+single-core `timerTick`. Routing the reference model's timer arm through
+`timerTickOnCore` on the executing core, and dropping the parameter, is a
+registered debt row (`docs/REGISTERED_DEBT.md` §C, "The model's interrupt and
+exception dispatch run the single-core reference tick"). -/
+def dispatchExceptionWith (tick : Kernel Unit) (etype : ExceptionType) (ectx : ExceptionContext)
+    (rawIntId : Nat := 0)
+    (st : SystemState) (executingCore : CoreId := bootCoreId) :
+    Except KernelError (Option (CoreId × SgiKind) × SystemState) :=
+  match etype with
+  | .synchronous => dispatchSynchronousException ectx st executingCore
+  | .irq =>
+      match interruptDispatchSequenceWith tick st rawIntId with
+      | .error e => .error e
+      | .ok ((), st') => .ok (none, st')
+  | .fiq => .error .notSupported
+  | .serror => .error .hardwareFault
+
 /-- AG3-C/AG3-D: Top-level exception dispatch.
     Routes by exception type:
     - Synchronous: Classify and dispatch via `dispatchSynchronousException`
@@ -334,18 +353,11 @@ def dispatchSynchronousException (ectx : ExceptionContext) (st : SystemState)
     WS-RR RR4.21: the result carries the synchronous path's optional cross-core
     SGI; the IRQ path surfaces none of its own here (the per-core IRQ handler
     fires its own). -/
-def dispatchException (etype : ExceptionType) (ectx : ExceptionContext)
+noncomputable def dispatchException (etype : ExceptionType) (ectx : ExceptionContext)
     (rawIntId : Nat := 0)
     (st : SystemState) (executingCore : CoreId := bootCoreId) :
     Except KernelError (Option (CoreId × SgiKind) × SystemState) :=
-  match etype with
-  | .synchronous => dispatchSynchronousException ectx st executingCore
-  | .irq =>
-      match interruptDispatchSequence st rawIntId with
-      | .error e => .error e
-      | .ok ((), st') => .ok (none, st')
-  | .fiq => .error .notSupported
-  | .serror => .error .hardwareFault
+  dispatchExceptionWith timerTick etype ectx rawIntId st executingCore
 
 -- ============================================================================
 -- AG3-C-vi: Preservation theorem
@@ -368,7 +380,7 @@ theorem dispatchException_svc (ectx : ExceptionContext) (n : Nat) (st : SystemSt
       (match syscallEntry arm64DefaultLayout st.machine.registerCount st with
        | .error e => .error e
        | .ok ((), st') => .ok (none, st')) := by
-  simp [dispatchException, dispatchSynchronousException, hSvc]
+  simp [dispatchException, dispatchExceptionWith, dispatchSynchronousException, hSvc]
 
 /-- AG3-D: IRQ dispatch delegates to `interruptDispatchSequence`. -/
 theorem dispatchException_irq (ectx : ExceptionContext) (rawIntId : Nat)
@@ -630,7 +642,7 @@ theorem handleInterrupt_timer_preserves_interruptsEnabled (st : SystemState) :
     st'.machine.interruptsEnabled = st.machine.interruptsEnabled := by
   intro st' hStep
   have hReduce : handleInterrupt st timerInterruptId = timerTick st := by
-    unfold handleInterrupt; simp [timerInterruptId]
+    unfold handleInterrupt handleInterruptWith; simp [timerInterruptId]
   rw [hReduce] at hStep
   exact timerTick_preserves_interruptsEnabled st st' hStep
 

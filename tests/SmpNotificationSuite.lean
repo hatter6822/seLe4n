@@ -197,11 +197,8 @@ private def stFourCore : SystemState :=
       |>.withObject waiter3.toObjId (.tcb (mkTcb 923 30 (some c3)))
       |>.withObject boundT.toObjId (.tcb (mkTcb 924 35 (some c1)))
       |>.build)
-  { base with scheduler :=
-      ((((base.scheduler.setRunQueueOnCore c0 (RunQueue.ofList [(signallerT, ⟨40⟩)])).setRunQueueOnCore
-        c1 (RunQueue.ofList [(boundT, ⟨35⟩)])).setRunQueueOnCore
-        c2 (RunQueue.ofList [(waiter2, ⟨30⟩)])).setRunQueueOnCore
-        c3 (RunQueue.ofList [(waiter3, ⟨30⟩)])) }
+  enqueueAllOnCore (enqueueAllOnCore (enqueueAllOnCore (enqueueAllOnCore base
+    c0 [(signallerT, ⟨40⟩)]) c1 [(boundT, ⟨35⟩)]) c2 [(waiter2, ⟨30⟩)]) c3 [(waiter3, ⟨30⟩)]
 
 -- Fail-closed Option plumbing for the multi-step pipelines.
 private def okPair {α : Type} (r : SystemState × Except KernelError α) :
@@ -284,16 +281,16 @@ private def runWaitBlockChecks : IO Unit := do
     assertBool "wait blocks waiter 2 as blockedOnNotification"
       (ipcStateIs rt.afterWait2 waiter2 (.blockedOnNotification nId))
     assertBool "wait deschedules waiter 2 from core 2's run queue"
-      (!(rt.afterWait2.scheduler.runQueueOnCore c2).contains waiter2)
+      (!(rt.afterWait2.queuedOn c2 waiter2))
     assertBool "waiter 2's wait frames core 3's run queue"
-      ((rt.afterWait2.scheduler.runQueueOnCore c3).toList
-        == (stFourCore.scheduler.runQueueOnCore c3).toList)
+      ((rt.afterWait2.runQueueWalk c3)
+        == (stFourCore.runQueueWalk c3))
     assertBool "the notification records the single waiter"
       (waiterList rt.afterWait2 == [waiter2])
     assertBool "the second wait joins at the tail: waiter 2 stays the head"
       (waiterList rt.afterWait3 == [waiter2, waiter3])
     assertBool "wait deschedules waiter 3 from core 3's run queue"
-      (!(rt.afterWait3.scheduler.runQueueOnCore c3).contains waiter3)
+      (!(rt.afterWait3.queuedOn c3 waiter3))
 
 -- ============================================================================
 -- §3.2  The wait → signal → SGI → handler-dispatch round trip
@@ -311,9 +308,9 @@ private def runSignalRoundTripChecks : IO Unit := do
     assertBool "the woken waiter is .ready with the signal's badge delivered"
       (ipcStateIs rt.afterSig1 waiter2 .ready && deliveredBadgeIs rt.afterSig1 waiter2 badge1)
     assertBool "the woken waiter is enqueued on core 2 (its home core)"
-      ((rt.afterSig1.scheduler.runQueueOnCore c2).contains waiter2)
+      ((rt.afterSig1.queuedOn c2 waiter2))
     assertBool "the woken waiter is NOT enqueued on core 0 (the signalling core)"
-      (!(rt.afterSig1.scheduler.runQueueOnCore c0).contains waiter2)
+      (!(rt.afterSig1.queuedOn c0 waiter2))
     assertBool "core 2's reschedule handler dispatches the woken waiter (current = waiter 2)"
       (rt.afterH2.scheduler.currentOnCore c2 == some waiter2)
     assertBool "one wake per signal: waiter 3 remains blocked after the first signal"
@@ -321,7 +318,7 @@ private def runSignalRoundTripChecks : IO Unit := do
     assertBool "the notification retains the remaining waiter queue"
       (waiterList rt.afterSig1 == [waiter3])
     assertBool "the signaller stays runnable on core 0 (signal is non-blocking)"
-      ((rt.afterSig1.scheduler.runQueueOnCore c0).contains signallerT)
+      ((rt.afterSig1.queuedOn c0 signallerT))
 
 -- ============================================================================
 -- §3.3  Multi-waiter drain (each waiter woken to its OWN home core)
@@ -344,7 +341,7 @@ private def runMultiWaiterDrainChecks : IO Unit := do
     assertBool "per-waiter badge isolation: waiter 2 holds badge 1, waiter 3 holds badge 2"
       (deliveredBadgeIs rt.afterSig2 waiter2 badge1 && deliveredBadgeIs rt.afterSig2 waiter3 badge2)
     assertBool "the second woken waiter is enqueued on core 3 (its home core)"
-      ((rt.afterSig2.scheduler.runQueueOnCore c3).contains waiter3)
+      ((rt.afterSig2.queuedOn c3 waiter3))
     assertBool "core 3's reschedule handler dispatches the second waiter (current = waiter 3)"
       (rt.afterH3.scheduler.currentOnCore c3 == some waiter3)
     assertBool "the first waiter's dispatch survives the second wake (current core 2 = waiter 2)"
@@ -380,7 +377,7 @@ private def runBadgeAccumulationChecks : IO Unit := do
       (consumed == some (SeLe4n.Badge.bor badge1 badge2))
     assertBool "the badge-path wait does NOT block the waiter (stays runnable on core 2)"
       (ipcStateIs st3 waiter2 .ready
-        && (st3.scheduler.runQueueOnCore c2).contains waiter2)
+        && (st3.queuedOn c2 waiter2))
     assertBool "the consumed notification returns to idle with no pending badge"
       (match st3.objects[nId]? with
        | some (.notification ntfn) =>
@@ -417,7 +414,7 @@ private def runBoundDeliveryChecks : IO Unit := do
        | some (.endpoint ep) => ep.receiveQ.head == none
        | _ => false)
     assertBool "the woken bound TCB is enqueued on core 1 (its home core)"
-      ((stSig.scheduler.runQueueOnCore c1).contains boundT)
+      ((stSig.queuedOn c1 boundT))
     assertBool "core 1's reschedule handler dispatches the bound TCB (current = boundT)"
       (stH1.scheduler.currentOnCore c1 == some boundT)
     assertBool "the binding survives the delivery (boundTCB retained)"
@@ -513,14 +510,14 @@ private def runIndependenceAndLockChecks : IO Unit := do
   | some rt =>
     -- The head wake (to core 2) frames every other core's run queue.
     assertBool "the head wake frames core 0's run queue"
-      ((rt.afterSig1.scheduler.runQueueOnCore c0).toList
-        == (rt.afterWait3.scheduler.runQueueOnCore c0).toList)
+      ((rt.afterSig1.runQueueWalk c0)
+        == (rt.afterWait3.runQueueWalk c0))
     assertBool "the head wake frames core 1's run queue"
-      ((rt.afterSig1.scheduler.runQueueOnCore c1).toList
-        == (rt.afterWait3.scheduler.runQueueOnCore c1).toList)
+      ((rt.afterSig1.runQueueWalk c1)
+        == (rt.afterWait3.runQueueWalk c1))
     assertBool "the head wake frames core 3's run queue"
-      ((rt.afterSig1.scheduler.runQueueOnCore c3).toList
-        == (rt.afterWait3.scheduler.runQueueOnCore c3).toList)
+      ((rt.afterSig1.runQueueWalk c3)
+        == (rt.afterWait3.runQueueWalk c3))
     -- The pre-resolution helper sees the waiting head; the state-resolved
     -- footprint covers it with a write lock, hierarchically correct.
     assertBool "notificationSignalWaiter? resolves the waiting head (waiter 2)"
@@ -608,9 +605,9 @@ private def runThreeWaiterDrainChecks : IO Unit := do
       (match d.sgi3 with | some (t, k) => decide (t = c3 ∧ k = SgiKind.reschedule) | none => false)
     -- The three woken threads land on their own home cores, none crossing.
     assertBool "each woken waiter is enqueued on its OWN home core (1/2/3)"
-      ((d.drained.scheduler.runQueueOnCore c1).contains waiterC1
-        && (d.drained.scheduler.runQueueOnCore c2).contains waiter2
-        && (d.drained.scheduler.runQueueOnCore c3).contains waiter3)
+      ((d.drained.queuedOn c1 waiterC1)
+        && (d.drained.queuedOn c2 waiter2)
+        && (d.drained.queuedOn c3 waiter3))
     -- The drained notification is idle with an empty waiter list.
     assertBool "the fully-drained notification is idle with no waiters"
       (match d.drained.objects[nId]? with

@@ -294,8 +294,8 @@ a run queue `[tidP]`.  A switch on the boot core must leave core 1 untouched. -/
 private def stCrossCore : SystemState :=
   let base := (((BootstrapBuilder.empty.withObject tidA.toObjId (.tcb (mkTcb 100 10 0))).withObject
     tidP.toObjId (.tcb (mkTcb 101 15 0))).withRunnable [tidA]).build
-  let core1Sched := (base.scheduler.setCurrentOnCore core1 (some tidP)).setRunQueueOnCore core1 (RunQueue.ofList [(tidP, ⟨15⟩)])
-  { base with scheduler := core1Sched }
+  let queued := replaceRunQueueOnCore base core1 [(tidP, ⟨15⟩)]
+  { queued with scheduler := queued.scheduler.setCurrentOnCore core1 (some tidP) }
 
 /-- Run `switchToThreadOnCore` and evaluate a Bool predicate on the `.ok`
 post-state; `false` if the switch errored. -/
@@ -340,18 +340,18 @@ private def runSwitchScenarios : IO Unit := do
   -- simultaneously in the run queue.
   assertBool "scenario 2: after switch, tidA is dequeued (not in the run queue)"
     (switchOkAnd stRunnable bootCoreId tidA
-      (fun st' => !decide (tidA ∈ (st'.scheduler.runQueueOnCore bootCoreId).toList)))
+      (fun st' => !decide (tidA ∈ (st'.runQueueWalk bootCoreId))))
   -- Scenario 3 (SM5.B.3 / Thm 3.2.2): the evicted previous current thread tidP
   -- is re-enqueued into the same core's run queue (preempted, not lost).
   assertBool "scenario 3: preempted previous current tidP is re-enqueued"
     (switchOkAnd stPreempt bootCoreId tidA
-      (fun st' => decide (tidP ∈ (st'.scheduler.runQueueOnCore bootCoreId).toList)))
+      (fun st' => decide (tidP ∈ (st'.runQueueWalk bootCoreId))))
   assertBool "scenario 3: after preempt-switch, current is the incoming tidA"
     (switchOkAnd stPreempt bootCoreId tidA
       (fun st' => st'.scheduler.currentOnCore bootCoreId == some tidA))
   assertBool "scenario 3: the incoming tidA is dequeued (not in the run queue)"
     (switchOkAnd stPreempt bootCoreId tidA
-      (fun st' => !decide (tidA ∈ (st'.scheduler.runQueueOnCore bootCoreId).toList)))
+      (fun st' => !decide (tidA ∈ (st'.runQueueWalk bootCoreId))))
   -- Scenario 4 (SM5.B.4 / Thm 3.2.3): reject-remote — tidR is bound to core 1,
   -- so a switch on the boot core is rejected with .threadOnDifferentCore.
   assertBool "scenario 4: switch tidR (affinity core1) on boot core ⇒ rejected"
@@ -377,7 +377,7 @@ private def runSwitchScenarios : IO Unit := do
       (fun st' => st'.scheduler.currentOnCore core1 == some tidP))
   assertBool "scenario 7: switch on boot core leaves core 1's run queue (tidP ∈)"
     (switchOkAnd stCrossCore bootCoreId tidA
-      (fun st' => decide (tidP ∈ (st'.scheduler.runQueueOnCore core1).toList)))
+      (fun st' => decide (tidP ∈ (st'.runQueueWalk core1))))
   -- Scenario 8: non-TCB error path — switching to a ghost thread errors with
   -- .schedulerInvariantViolation (neither succeeds nor reject-remote).
   assertBool "scenario 8: switch to a non-TCB ghost ⇒ does not succeed"
@@ -394,7 +394,7 @@ private def runSwitchScenarios : IO Unit := do
       (fun st' => st'.scheduler.currentOnCore bootCoreId == some tidA))
   assertBool "scenario 9: self-switch leaves tidA dequeued (not in the run queue)"
     (switchOkAnd stSelfCurrent bootCoreId tidA
-      (fun st' => !decide (tidA ∈ (st'.scheduler.runQueueOnCore bootCoreId).toList)))
+      (fun st' => !decide (tidA ∈ (st'.runQueueWalk bootCoreId))))
   -- PR #814 review P2-1 (self-switch guard): the switch does NOT restore the stale
   -- saved context — the boot core's live registers (pc = 99) are preserved, not
   -- rolled back to tidA's saved `registerContext` (pc = 0).  Without the guard this

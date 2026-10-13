@@ -850,7 +850,7 @@ the invariant that ties `activeDomainOnCore` to `domainSchedule[index]` is the
 separate `domainConsistentOnCore` (SM5.G.2).
 `schedulingChannel_full_observation_determined` is what licenses the omission,
 and it takes that invariant as a hypothesis. -/
-def schedulingObservationOnCore (ctx : LabelingContext) (c : CoreId) (L : SecurityLabel)
+noncomputable def schedulingObservationOnCore (ctx : LabelingContext) (c : CoreId) (L : SecurityLabel)
     (s : SystemState) : Nat × Nat :=
   ((ObservableState.onCore ctx c L s).domainScheduleIndex,
    (ObservableState.onCore ctx c L s).domainTimeRemaining)
@@ -858,7 +858,7 @@ def schedulingObservationOnCore (ctx : LabelingContext) (c : CoreId) (L : Securi
 /-- SM8.B.9: the observation, as a single natural number, relative to a bound
 `quantumBound` on the countdown.  A positional encoding — index in the high
 digit, countdown in the low one. -/
-def schedulingObservationCode (quantumBound : Nat) (ctx : LabelingContext) (c : CoreId)
+noncomputable def schedulingObservationCode (quantumBound : Nat) (ctx : LabelingContext) (c : CoreId)
     (L : SecurityLabel) (s : SystemState) : Nat :=
   (schedulingObservationOnCore ctx c L s).1 * (quantumBound + 1)
     + (schedulingObservationOnCore ctx c L s).2
@@ -948,7 +948,7 @@ theorem schedulingChannel_alphabet_bounded (quantumBound : Nat) (ctx : LabelingC
 `schedulingObservationOnCore` deliberately carries only the index and the
 countdown; this is the whole tuple, and `schedulingChannel_full_observation_determined`
 below is what licenses bounding the channel by the smaller one. -/
-def schedulingObservationFullOnCore (ctx : LabelingContext) (c : CoreId) (L : SecurityLabel)
+noncomputable def schedulingObservationFullOnCore (ctx : LabelingContext) (c : CoreId) (L : SecurityLabel)
     (s : SystemState) : SeLe4n.DomainId × Nat × Nat :=
   ((ObservableState.onCore ctx c L s).activeDomain,
    (ObservableState.onCore ctx c L s).domainScheduleIndex,
@@ -1221,7 +1221,7 @@ theorem schedulingCapacityRun_singleton (quantumBound : Nat) (s : SystemState) (
     rw [List.mem_singleton.mp ha, List.mem_singleton.mp hb]
 
 /-- SM8.B.9: the sequence of codes an observer on `(c, L)` reads off a run. -/
-def schedulingObservationTrace (quantumBound : Nat) (ctx : LabelingContext)
+noncomputable def schedulingObservationTrace (quantumBound : Nat) (ctx : LabelingContext)
     (c : CoreId) (L : SecurityLabel) (run : List SystemState) : List Nat :=
   run.map (schedulingObservationCode quantumBound ctx c L)
 

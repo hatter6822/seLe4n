@@ -282,10 +282,10 @@ private def stSingleDomain : SystemState := BootstrapBuilder.empty.build
 match the first schedule entry, so only `domainSchedule` is overridden.  Core 1's run
 queue is seeded with a thread so the cross-core run-queue frame test is non-vacuous. -/
 private def stTwoDomain : SystemState :=
-  let base := BootstrapBuilder.empty.build
-  { base with scheduler :=
-      { (base.scheduler.setRunQueueOnCore core1 (RunQueue.ofList [(tidA, ⟨10⟩)])) with
-        domainSchedule := twoDomainSchedule } }
+  let base := enqueueAllOnCore
+    (BootstrapBuilder.empty.withObject tidA.toObjId (.tcb (mkTcb 100 10 0))).build
+    core1 [(tidA, ⟨10⟩)]
+  { base with scheduler := { base.scheduler with domainSchedule := twoDomainSchedule } }
 
 /-- A two-domain state whose boot-core run queue holds an in-(active-)domain thread
 `tidA` (domain 0) and an out-of-domain thread `tidB` (domain 1).  `chooseThreadOnCore`
@@ -333,9 +333,9 @@ private def runDomainScenarios : IO Unit := do
     (stTwoDomain.scheduler.activeDomainOnCore bootCoreId ∈ (stTwoDomain.scheduler.domainSchedule.map (·.domain)))
   -- Scenario 5: selection respects the active-domain barrier (active domain 0).
   assertBool "scenario 5: chooseThreadOnCore selects the in-domain thread A (domain 0)"
-    (decide (chooseThreadOnCoreSelects stDomainSelect bootCoreId tidA))
+    (selectsByLinks stDomainSelect bootCoreId tidA)
   assertBool "scenario 5: chooseThreadOnCore does NOT select the out-of-domain thread B (domain 1)"
-    (!decide (chooseThreadOnCoreSelects stDomainSelect bootCoreId tidB))
+    (!selectsByLinks stDomainSelect bootCoreId tidB)
   assertBool "scenario 5: the selected thread A's domain (0) equals the active domain (0)"
     (((stDomainSelect.getTcb? tidA).map (·.domain)) == some (stDomainSelect.scheduler.activeDomainOnCore bootCoreId))
   -- Scenario 6: cross-core independence — rotating the boot core's domain leaves
@@ -344,8 +344,8 @@ private def runDomainScenarios : IO Unit := do
     ((advanceDomainOnCore stTwoDomain bootCoreId).scheduler.activeDomainOnCore core1
       == stTwoDomain.scheduler.activeDomainOnCore core1)
   assertBool "scenario 6: rotating the boot core's domain frames core 1's run queue"
-    (((advanceDomainOnCore stTwoDomain bootCoreId).scheduler.runQueueOnCore core1).toList
-      == (stTwoDomain.scheduler.runQueueOnCore core1).toList)
+    (((advanceDomainOnCore stTwoDomain bootCoreId).runQueueWalk core1)
+      == (stTwoDomain.runQueueWalk core1))
   assertBool "scenario 6: rotating the boot core's domain never touches the object store"
     ((advanceDomainOnCore stTwoDomain bootCoreId).objects.toList.length == stTwoDomain.objects.toList.length)
 
@@ -442,11 +442,11 @@ private def runCompletionScenarios : IO Unit := do
       == stCore1Domain.scheduler.activeDomainOnCore bootCoreId)
   -- Composed rotate-then-select (G.2 ∘ G.4): selection follows the rotated domain.
   assertBool "composed: before rotation (active domain 0) the domain-0 thread A is selected"
-    (decide (chooseThreadOnCoreSelects stDomainSelect bootCoreId tidA))
+    (selectsByLinks stDomainSelect bootCoreId tidA)
   assertBool "composed: after rotation (active domain 1) the domain-1 thread B is selected"
-    (decide (chooseThreadOnCoreSelects (advanceDomainOnCore stDomainSelect bootCoreId) bootCoreId tidB))
+    (selectsByLinks (advanceDomainOnCore stDomainSelect bootCoreId) bootCoreId tidB)
   assertBool "composed: after rotation the domain-0 thread A is NO LONGER selected"
-    (!decide (chooseThreadOnCoreSelects (advanceDomainOnCore stDomainSelect bootCoreId) bootCoreId tidA))
+    (!selectsByLinks (advanceDomainOnCore stDomainSelect bootCoreId) bootCoreId tidA)
   -- Index-bounds invariant holds on the fixtures (boot empty + after rotation).
   assertBool "index-bounds: boot (empty schedule) satisfies the invariant"
     (decide (stSingleDomain.scheduler.domainSchedule = []

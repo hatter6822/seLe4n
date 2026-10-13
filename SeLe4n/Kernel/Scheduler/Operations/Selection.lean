@@ -16,27 +16,6 @@ namespace SeLe4n.Model.SchedulerState
 
 open SeLe4n.Kernel.Concurrency (CoreId)
 
-/-- WS-ZA ZA4.5: core `c`'s run queue rewritten by `f` in its slot.  The queue
-is taken out of the slot (the slot holds `RunQueue.slotPlaceholder`, a shared
-constant) before `f` runs, so on an exclusively owned scheduler `f` receives the queue's
-only reference and writes its tables in place; `setRunQueueOnCore` of `f` of
-the slot reads the queue while the slot still holds it, and every table `f`
-writes is then copied.  The index is a `CoreId`, in bounds by its type, so
-there is no bounds branch for the compiler to join over (`Array.modify` has
-one, and the join rebuilt the scheduler and state records).  Proven equal
-(`modifyRunQueueOnCore_eq`). -/
-@[inline] def modifyRunQueueOnCore (s : SchedulerState) (c : CoreId)
-    (f : SeLe4n.Kernel.RunQueue → SeLe4n.Kernel.RunQueue) : SchedulerState :=
-  let q := s.runQueue.get c
-  let rqs := s.runQueue.set c.val SeLe4n.Kernel.RunQueue.slotPlaceholder c.isLt
-  { s with runQueue := rqs.set c.val (f q) c.isLt }
-
-theorem modifyRunQueueOnCore_eq (s : SchedulerState) (c : CoreId)
-    (f : SeLe4n.Kernel.RunQueue → SeLe4n.Kernel.RunQueue) :
-    s.modifyRunQueueOnCore c f = s.setRunQueueOnCore c (f (s.runQueueOnCore c)) := by
-  unfold modifyRunQueueOnCore setRunQueueOnCore runQueueOnCore
-  simp only [Vector.set_set]
-
 /-- `some tid`, written into `o`'s cell when `o` is a `some` held by no other
 reference.  Branching on the old thread is what lets the compiler hand the
 cell on: a `match` whose arms build the same value is folded to that value,
@@ -826,7 +805,7 @@ caller for no gain.
 Selection policy is identical to `chooseThread`: bucket-first
 priority/EDF/FIFO via `chooseBestInBucket` (no budget filter — the
 budget-aware variant is `chooseThreadEffective`). -/
-def chooseThreadOnCore (st : SystemState) (c : CoreId) :
+noncomputable def chooseThreadOnCore (st : SystemState) (c : CoreId) :
     Except KernelError (Option SeLe4n.ThreadId) :=
   match chooseBestInBucket st.getObject? (st.scheduler.runQueueOnCore c)
       (st.scheduler.activeDomainOnCore c) with
@@ -850,7 +829,7 @@ at each fixed-priority band.
 
 This is a pure read operation — the system state is returned unchanged.
 If no runnable thread exists in the active domain, selection returns `none`. -/
-def chooseThread : Kernel (Option SeLe4n.ThreadId) :=
+noncomputable def chooseThread : Kernel (Option SeLe4n.ThreadId) :=
   fun st =>
     match chooseThreadOnCore st bootCoreId with
     | .error e => .error e
@@ -905,6 +884,27 @@ theorem chooseThreadEffectiveOnCore_eq_queue {st : SystemState} {c : CoreId}
       | .ok (some (tid, _, _)) => .ok (some tid) := by
   unfold chooseThreadEffectiveOnCore
   rw [hR.runMaxBucketWalk_eq, hR.runQueueWalk_eq]; rfl
+
+/-- WS-ZA ZA4.5: `chooseThreadOnCore` read along the threads' run-queue links,
+so it has executable code; equal to it wherever the links refine core `c`'s
+queue (`chooseThreadOnCoreByLinks_eq`). -/
+def chooseThreadOnCoreByLinks (st : SystemState) (c : CoreId) :
+    Except KernelError (Option SeLe4n.ThreadId) :=
+  match (match chooseBestRunnableInDomain st.getObject? (st.runMaxBucketWalk c)
+            (st.scheduler.activeDomainOnCore c) none with
+         | .error e => Except.error e
+         | .ok (some result) => Except.ok (some result)
+         | .ok none => chooseBestRunnableInDomain st.getObject? (st.runQueueWalk c)
+            (st.scheduler.activeDomainOnCore c) none) with
+  | .error e => .error e
+  | .ok none => .ok none
+  | .ok (some (tid, _, _)) => .ok (some tid)
+
+theorem chooseThreadOnCoreByLinks_eq {st : SystemState} {c : CoreId}
+    (hR : st.runQueueRefinedOnCore c) :
+    chooseThreadOnCoreByLinks st c = chooseThreadOnCore st c := by
+  unfold chooseThreadOnCoreByLinks chooseThreadOnCore chooseBestInBucket
+  rw [hR.runMaxBucketWalk_eq, hR.runQueueWalk_eq]
 
 /-- WS-ZA ZA4.5: **the selection scan with the best candidate in scalars.**
 `chooseBestRunnableEffective` carries the best candidate as an
@@ -1031,8 +1031,7 @@ def chooseOnLinksCode (st : SystemState) (dom : SeLe4n.DomainId) (c : CoreId) (b
       let tid : SeLe4n.ThreadId := ⟨k⟩
       match st.getTcb? tid with
       | some tcb =>
-          let lk := tcb.runLinkOn c
-          let nx := if bucket then lk.bucketNext else lk.next
+          let nx := tcb.runNextOn c bucket
           if (tcb.domain == dom) && hasSufficientBudget st tcb then
             let pp := tcb.priority.raisedBy tcb.pipBoost
             let pdl := effectiveDeadlineOf st tcb
@@ -1066,7 +1065,7 @@ theorem chooseOnLinksCode_eq (st : SystemState) (dom : SeLe4n.DomainId) (c : Cor
         have hL : st.runLinkOn c ⟨k⟩ = tcb.runLinkOn c := by
           unfold SystemState.runLinkOn; rw [hT]
         simp only [chooseOnLinksCode, LinkedQueue.walk, chooseBestRunnableEffectiveCode, ih, hT,
-          hL, resolveEffectivePrioDeadline_eq]
+          hL, resolveEffectivePrioDeadline_eq, TCB.runNextOn_eq]
 
 /-- WS-ZA ZA4.5: core `c`'s selection code read straight off the threads'
 run-queue links and the core's ends: the max-priority bucket through its

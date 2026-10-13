@@ -314,43 +314,43 @@ private def runSelectionScenarios : IO Unit := do
   IO.println "--- §3 SM5.A.8 per-core chooseThread scenarios ---"
   -- Scenario 1: empty run queue → idle-fallback signal `.ok none`.
   assertBool "scenario 1: empty run queue ⇒ idle fallback (.ok none)"
-    (decide (chooseThreadOnCoreIdleFallback stEmpty bootCoreId))
+    (idleFallbackByLinks stEmpty bootCoreId)
   assertBool "scenario 1: empty run queue selects no concrete thread"
-    (!decide (chooseThreadOnCoreSelects stEmpty bootCoreId tidA))
+    (!selectsByLinks stEmpty bootCoreId tidA)
   -- Scenario 2: a single in-domain runnable thread is selected.
   assertBool "scenario 2: single in-domain thread ⇒ selected"
-    (decide (chooseThreadOnCoreSelects stSingle bootCoreId tidA))
+    (selectsByLinks stSingle bootCoreId tidA)
   assertBool "scenario 2: single in-domain thread ⇒ not idle fallback"
-    (!decide (chooseThreadOnCoreIdleFallback stSingle bootCoreId))
+    (!idleFallbackByLinks stSingle bootCoreId)
   -- Scenario 3: the highest-priority in-domain thread wins.
   assertBool "scenario 3: highest-priority thread (B, prio 20) selected over A (prio 10)"
-    (decide (chooseThreadOnCoreSelects stTwo bootCoreId tidB))
+    (selectsByLinks stTwo bootCoreId tidB)
   assertBool "scenario 3: lower-priority thread A is NOT selected"
-    (!decide (chooseThreadOnCoreSelects stTwo bootCoreId tidA))
+    (!selectsByLinks stTwo bootCoreId tidA)
   -- Scenario 4: an out-of-(active-)domain thread is skipped → idle fallback.
   assertBool "scenario 4: out-of-domain thread (domain 1, active 0) ⇒ idle fallback"
-    (decide (chooseThreadOnCoreIdleFallback stOutOfDomain bootCoreId))
+    (idleFallbackByLinks stOutOfDomain bootCoreId)
   assertBool "scenario 4: out-of-domain thread C is NOT selected"
-    (!decide (chooseThreadOnCoreSelects stOutOfDomain bootCoreId tidC))
+    (!selectsByLinks stOutOfDomain bootCoreId tidC)
   -- Scenario 5: per-core independence — a busy core 1 does not change the
   -- boot core's selection (computational witness of SM5.A.3).
   assertBool "scenario 5: boot-core selection unaffected by core 1's run queue"
-    (decide (chooseThreadOnCoreSelects stSingleWithCore1Busy bootCoreId tidA))
+    (selectsByLinks stSingleWithCore1Busy bootCoreId tidA)
   assertBool "scenario 5: boot core does NOT pick up core 1's thread B"
-    (!decide (chooseThreadOnCoreSelects stSingleWithCore1Busy bootCoreId tidB))
+    (!selectsByLinks stSingleWithCore1Busy bootCoreId tidB)
   -- Scenario 6: selection soundness — the chosen thread is in the run queue.
   assertBool "scenario 6: selected thread A is a member of the boot-core run queue"
-    (decide (tidA ∈ (stSingle.scheduler.runQueueOnCore bootCoreId).toList))
+    (decide (tidA ∈ (stSingle.runQueueWalk bootCoreId)))
   assertBool "scenario 6: selected thread B is a member of the two-thread run queue"
-    (decide (tidB ∈ (stTwo.scheduler.runQueueOnCore bootCoreId).toList))
+    (decide (tidB ∈ (stTwo.runQueueWalk bootCoreId)))
   -- Scenario 7: genuine per-core selection on a NON-boot core (c ≠ bootCoreId).
   -- Core 1 has the in-domain runnable thread A; the boot core is empty.
   assertBool "scenario 7: core 1 selects its own in-domain runnable thread A"
-    (decide (chooseThreadOnCoreSelects stCore1Runnable core1 tidA))
+    (selectsByLinks stCore1Runnable core1 tidA)
   assertBool "scenario 7: the boot core (empty) falls back to idle"
-    (decide (chooseThreadOnCoreIdleFallback stCore1Runnable bootCoreId))
+    (idleFallbackByLinks stCore1Runnable bootCoreId)
   assertBool "scenario 7: core 1's thread A is NOT visible to the boot core's selection"
-    (!decide (chooseThreadOnCoreSelects stCore1Runnable bootCoreId tidA))
+    (!selectsByLinks stCore1Runnable bootCoreId tidA)
 
 /-- §3.7: SM5.A.2 lock-set structural witnesses (decidable). -/
 private def runLockSetChecks : IO Unit := do
@@ -404,22 +404,22 @@ private def runAdvancedScenarios : IO Unit := do
   -- again.  `runnableThreadsAreTCBs` still says no ghost should exist; the
   -- scheduler just no longer needs that to be true in order to make progress.
   assertBool "corrupt run queue: the ghost entry is not selected"
-    (!decide (chooseThreadOnCoreSelects stGhost bootCoreId tidGhost))
+    (!selectsByLinks stGhost bootCoreId tidGhost)
   assertBool "corrupt run queue: the ghost is SKIPPED, so the core idles rather than wedging"
-    (decide (chooseThreadOnCoreIdleFallback stGhost bootCoreId))
+    (idleFallbackByLinks stGhost bootCoreId)
   -- The load-bearing negative: skipping must not have made selection total by
   -- making it vacuous — a queue holding a real, eligible TCB still selects it.
   assertBool "NEGATIVE: a well-formed queue still selects its thread"
-    (decide (chooseThreadOnCoreSelects stEdf bootCoreId tidB))
+    (selectsByLinks stEdf bootCoreId tidB)
   -- EDF tie-break: equal priority, B has earlier deadline ⇒ B wins.
   assertBool "EDF: equal-priority thread B (deadline 3) beats A (deadline 5)"
-    (decide (chooseThreadOnCoreSelects stEdf bootCoreId tidB))
+    (selectsByLinks stEdf bootCoreId tidB)
   assertBool "EDF: the later-deadline thread A is NOT selected"
-    (!decide (chooseThreadOnCoreSelects stEdf bootCoreId tidA))
+    (!selectsByLinks stEdf bootCoreId tidA)
   -- Budget guarantee: the non-budget selector picks the exhausted-budget thread,
   -- but the budget-aware selector rejects it and falls back to idle.
   assertBool "budget: non-budget chooseThreadOnCore selects the exhausted-budget thread"
-    (decide (chooseThreadOnCoreSelects stBudgetExhausted bootCoreId tidBound))
+    (selectsByLinks stBudgetExhausted bootCoreId tidBound)
   assertBool "budget: budget-aware chooseThreadEffectiveOnCore REJECTS it (idle fallback)"
     (decide (chooseThreadEffectiveOnCoreIdleFallback stBudgetExhausted bootCoreId))
   assertBool "budget: budget-aware selector does NOT select the exhausted-budget thread"
@@ -431,7 +431,7 @@ private def runAdvancedScenarios : IO Unit := do
     (decide (chooseThreadEffectiveOnCoreSelects stSingle bootCoreId tidA))
   assertBool "budget: budget-aware selector and non-budget selector agree on an all-unbound queue"
     (decide (chooseThreadEffectiveOnCoreSelects stSingle bootCoreId tidA)
-      && decide (chooseThreadOnCoreSelects stSingle bootCoreId tidA))
+      && selectsByLinks stSingle bootCoreId tidA)
 
 def runSmpSchedulerSelectionChecks : IO Unit := do
   IO.println "WS-SM SM5.A — Per-core chooseThread suite"

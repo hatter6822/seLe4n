@@ -663,7 +663,7 @@ def projectObjects (ctx : LabelingContext) (observer : IfObserver) (st : SystemS
       none
 
 /-- Project runnable queue to observer-visible threads only. -/
-def projectRunnable (ctx : LabelingContext) (observer : IfObserver) (st : SystemState) :
+noncomputable def projectRunnable (ctx : LabelingContext) (observer : IfObserver) (st : SystemState) :
     List SeLe4n.ThreadId :=
   st.scheduler.runnable.filter (threadObservable ctx observer)
 
@@ -940,7 +940,7 @@ kernel-internal monotonic counter — projecting it unconditionally would
 create a covert timing channel (observers could infer other domains'
 execution by watching timer increments). Memory projection deferred to
 WS-H11 (VSpace domain ownership model required). -/
-def projectState (ctx : LabelingContext) (observer : IfObserver) (st : SystemState) : ObservableState :=
+noncomputable def projectState (ctx : LabelingContext) (observer : IfObserver) (st : SystemState) : ObservableState :=
   {
     objects := projectObjects ctx observer st
     runnable := projectRunnable ctx observer st

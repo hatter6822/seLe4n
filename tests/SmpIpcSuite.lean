@@ -281,11 +281,8 @@ private def stFourCore : SystemState :=
       |>.withObject replyD.toObjId (.reply { replyId := replyD })
       |>.withObject replyB2.toObjId (.reply { replyId := replyB2 })
       |>.build)
-  { base with scheduler :=
-      ((((base.scheduler.setRunQueueOnCore c0 (RunQueue.ofList [(clientA, ⟨40⟩)])).setRunQueueOnCore
-        c1 (RunQueue.ofList [(serverB, ⟨50⟩)])).setRunQueueOnCore
-        c2 (RunQueue.ofList [(clientC, ⟨40⟩)])).setRunQueueOnCore
-        c3 (RunQueue.ofList [(serverD, ⟨50⟩)])) }
+  enqueueAllOnCore (enqueueAllOnCore (enqueueAllOnCore (enqueueAllOnCore base
+    c0 [(clientA, ⟨40⟩)]) c1 [(serverB, ⟨50⟩)]) c2 [(clientC, ⟨40⟩)]) c3 [(serverD, ⟨50⟩)]
 
 /-- `stFourCore` plus a fifth thread `E` (priority 35, bound to core 2) present
 in the object store but in no run queue — the send-rendezvous sender. -/
@@ -402,7 +399,7 @@ private def runTwoThreadRoundTripChecks : IO Unit := do
     assertBool "recv blocks server B as blockedOnReceive"
       (ipcStateIs rt.afterRecv serverB (.blockedOnReceive epAB))
     assertBool "recv deschedules server B from core 1's run queue"
-      (!(rt.afterRecv.scheduler.runQueueOnCore c1).contains serverB)
+      (!(rt.afterRecv.queuedOn c1 serverB))
     assertBool "recv stashes the server-supplied reply object on B"
       ((rt.afterRecv.getTcb? serverB).any (fun t => t.pendingReceiveReply == some replyB))
     -- The client's call wakes the server on its HOME core with a reschedule SGI.
@@ -414,12 +411,12 @@ private def runTwoThreadRoundTripChecks : IO Unit := do
       (ipcStateIs rt.afterCallA serverB .ready
         && pendingMessageIs rt.afterCallA serverB (some callMsgA))
     assertBool "call enqueues the woken server on core 1 (its home core)"
-      ((rt.afterCallA.scheduler.runQueueOnCore c1).contains serverB)
+      ((rt.afterCallA.queuedOn c1 serverB))
     -- The caller blocks awaiting the reply, descheduled from its own core.
     assertBool "call blocks client A as blockedOnReply (recorded receiver B)"
       (ipcStateIs rt.afterCallA clientA (.blockedOnReply epAB (some serverB)))
     assertBool "call deschedules client A from core 0's run queue"
-      (!(rt.afterCallA.scheduler.runQueueOnCore c0).contains clientA)
+      (!(rt.afterCallA.queuedOn c0 clientA))
     assertBool "call links client A to the server's stashed reply object"
       (match rt.afterCallA.getReply? replyB, rt.afterCallA.getTcb? clientA with
        | some r, some t => decide (r.caller = some clientA ∧ t.replyObject = some replyB)
@@ -436,7 +433,7 @@ private def runTwoThreadRoundTripChecks : IO Unit := do
       (ipcStateIs rt.afterReplyB clientA .ready
         && pendingMessageIs rt.afterReplyB clientA (some replyMsgB))
     assertBool "reply enqueues the woken client on core 0 (its home core)"
-      ((rt.afterReplyB.scheduler.runQueueOnCore c0).contains clientA)
+      ((rt.afterReplyB.queuedOn c0 clientA))
     assertBool "reply consumes the caller↔reply linkage (single-use)"
       (match rt.afterReplyB.getReply? replyB, rt.afterReplyB.getTcb? clientA with
        | some r, some t => decide (r.caller = none ∧ t.replyObject = none)
@@ -476,11 +473,11 @@ private def runFourThreadRendezvousChecks : IO Unit := do
     assertBool "A's call frames pair C↔D's endpoint (epCD object unchanged)"
       (rt.afterCallA.objects[epCD]? == rt.afterRecv.objects[epCD]?)
     assertBool "A's call frames core 2's run queue"
-      ((rt.afterCallA.scheduler.runQueueOnCore c2).toList
-        == (rt.afterRecv.scheduler.runQueueOnCore c2).toList)
+      ((rt.afterCallA.runQueueWalk c2)
+        == (rt.afterRecv.runQueueWalk c2))
     assertBool "A's call frames core 3's run queue"
-      ((rt.afterCallA.scheduler.runQueueOnCore c3).toList
-        == (rt.afterRecv.scheduler.runQueueOnCore c3).toList)
+      ((rt.afterCallA.runQueueWalk c3)
+        == (rt.afterRecv.runQueueWalk c3))
     assertBool "C's call frames pair A↔B's endpoint (epAB object unchanged)"
       (rt.afterCallC.objects[epAB]? == rt.afterSgiB.objects[epAB]?)
     -- Payload isolation: each client got ITS server's reply, each server ITS
@@ -517,7 +514,7 @@ private def runSendReceiveChecks : IO Unit := do
     assertBool "send blocks sender E as blockedOnSend"
       (ipcStateIs stSent senderE (.blockedOnSend epAB))
     assertBool "the blocked sender is on no run queue (genuinely blocked)"
-      (!(stSent.scheduler.runQueueOnCore c2).contains senderE)
+      (!(stSent.queuedOn c2 senderE))
   match sendRendezvous? with
   | none => assertBool "send/receive rendezvous pipeline succeeded" false
   | some (st2, sender, sgi) =>
@@ -527,9 +524,9 @@ private def runSendReceiveChecks : IO Unit := do
        | some (tgt, kind) => decide (tgt = c2 ∧ kind = SgiKind.reschedule)
        | none => false)
     assertBool "the woken sender is enqueued on core 2 (its home core)"
-      ((st2.scheduler.runQueueOnCore c2).contains senderE)
+      ((st2.queuedOn c2 senderE))
     assertBool "the woken sender is NOT enqueued on core 1 (the executing core)"
-      (!(st2.scheduler.runQueueOnCore c1).contains senderE)
+      (!(st2.queuedOn c1 senderE))
     assertBool "the woken sender is .ready with its pending message cleared"
       (ipcStateIs st2 senderE .ready && pendingMessageIs st2 senderE none)
     assertBool "the receiver holds the transferred send payload"
@@ -549,7 +546,7 @@ private def runClientFirstChecks : IO Unit := do
     assertBool "no-receiver call blocks client A as blockedOnCall"
       (ipcStateIs stCall clientA (.blockedOnCall epAB))
     assertBool "no-receiver call deschedules client A from core 0"
-      (!(stCall.scheduler.runQueueOnCore c0).contains clientA)
+      (!(stCall.queuedOn c0 clientA))
     assertBool "the blocked caller joins the endpoint's send queue"
       (match stCall.objects[epAB]? with
        | some (.endpoint ep) => ep.sendQ.head == some clientA
@@ -611,7 +608,7 @@ private def runReplyRecvLoopChecks : IO Unit := do
       assertBool "replyRecv's reply leg resumes client A with the reply payload"
         (ipcStateIs st4 clientA .ready && pendingMessageIs st4 clientA (some replyMsgB))
       assertBool "replyRecv's reply leg queues A on its home core 0"
-        ((st4.scheduler.runQueueOnCore c0).contains clientA)
+        ((st4.queuedOn c0 clientA))
       assertBool "replyRecv's receive leg pops C into blockedOnReply (recorded receiver B)"
         (ipcStateIs st4 clientC (.blockedOnReply epAB (some serverB)))
       assertBool "replyRecv's receive leg re-links the SAME reply object to C"
@@ -640,7 +637,7 @@ private def runErrorPathChecks : IO Unit := do
   assertBool "call on an absent endpoint fails with objectNotFound"
     (match res1 with | .error .objectNotFound => true | _ => false)
   assertBool "the failed call returns the pre-state (client A still queued on core 0)"
-    ((stErr1.scheduler.runQueueOnCore c0).contains clientA
+    ((stErr1.queuedOn c0 clientA)
       && ipcStateIs stErr1 clientA .ready)
   -- Wrong-kind object (a Reply object is not an endpoint): invalidCapability.
   assertBool "call on a wrong-kind object fails with invalidCapability"
@@ -819,7 +816,7 @@ private def runDonationChecks : IO Unit := do
       (match stCall.getTcb? donServer with
        | some t => decide (t.pipBoost = some ⟨60⟩) | none => false)
     assertBool "the boosted server is enqueued on its home core 1"
-      ((stCall.scheduler.runQueueOnCore c1).contains donServer)
+      ((stCall.queuedOn c1 donServer))
     -- The scheduler resolves the server's EFFECTIVE priority to the donated 60
     -- (via the donated SchedContext's priority ⊔ the PIP boost) — the run-queue
     -- bucket key is the stale enqueue-time base, but selection reads the resolver.
@@ -853,7 +850,7 @@ private def runDonationChecks : IO Unit := do
       -- `removeRunnableOnCore` — the very thing the non-current fixture would miss.
       assertBool "donation return descheds the now-passive server from core 1"
         (stReply.scheduler.currentOnCore c1 != some donServer
-          && !(stReply.scheduler.runQueueOnCore c1).contains donServer)
+          && !(stReply.queuedOn c1 donServer))
       -- **WS-OD OD4**: the reply-stack fields are *live* since the push landed.
       -- At OD2 this check read the other way -- the three fields stayed `none`
       -- through a whole donating call and its return, which is what made
@@ -1152,7 +1149,7 @@ private def runDonationMigrationChecks : IO Unit := do
       -- cannot see it: that conjunct is conditioned on the thread already being
       -- descheduled, so an unbound thread still queued satisfies it vacuously.
       assertBool "pre: the recorded server is queued on its own core 1"
-        ((stCallQ.scheduler.runQueueOnCore c1).contains donServer)
+        ((stCallQ.queuedOn c1 donServer))
       -- **PR #895 review round 10**: and it is QUEUED rather than current, which
       -- is the shape round 9's fix could not actually handle.  That cut took the
       -- core from the caller's `serverCore`, which production computes as
@@ -1173,7 +1170,7 @@ private def runDonationMigrationChecks : IO Unit := do
       assertBool "pre: ...while the resolver answers core 1"
         (decide (placedCoreOf? stCallQ donServer = some c1))
       assertBool "the delegated rendezvous deschedules the recorded server"
-        (!(stQ.scheduler.runQueueOnCore c1).contains donServer)
+        (!(stQ.queuedOn c1 donServer))
       assertBool "...and it is not left as core 1's current thread either"
         (stQ.scheduler.currentOnCore c1 != some donServer)
       assertBool "...which matters because the pop left it `.unbound`"
@@ -1191,7 +1188,7 @@ private def runDonationMigrationChecks : IO Unit := do
     | .ok stN =>
       assertBool "the .replyRecv non-delegated rendezvous arm succeeds" true
       assertBool "the non-delegated server KEEPS its place on core 1"
-        ((stN.scheduler.runQueueOnCore c1).contains donServer)
+        ((stN.queuedOn c1 donServer))
       assertBool "...because it received the queued caller's context itself"
         (match stN.getTcb? donServer with
          | some t => decide (t.schedContextBinding = .donated scCaller2 donCaller2)
@@ -1369,8 +1366,8 @@ private def runFlowCheckedChecks : IO Unit := do
         && stDenied.objects[clientA.toObjId]? == rt.afterRecv.objects[clientA.toObjId]?
         && stDenied.objects[replyB.toObjId]? == rt.afterRecv.objects[replyB.toObjId]?)
     assertBool "the denied call leaves cores 0/1 run queues unchanged"
-      ((stDenied.scheduler.runQueueOnCore c0).toList == (rt.afterRecv.scheduler.runQueueOnCore c0).toList
-        && (stDenied.scheduler.runQueueOnCore c1).toList == (rt.afterRecv.scheduler.runQueueOnCore c1).toList)
+      ((stDenied.runQueueWalk c0) == (rt.afterRecv.runQueueWalk c0)
+        && (stDenied.runQueueWalk c1) == (rt.afterRecv.runQueueWalk c1))
     assertBool "the denied call does NOT block the client (still ready)"
       (ipcStateIs stDenied clientA .ready)
     -- ALLOWED (all public): the checked dispatch equals the unchecked one — compare
@@ -1387,10 +1384,10 @@ private def runFlowCheckedChecks : IO Unit := do
         && checkedAllowed.1.objects[clientA.toObjId]? == uncheckedCall.1.objects[clientA.toObjId]?
         && checkedAllowed.1.objects[replyB.toObjId]? == uncheckedCall.1.objects[replyB.toObjId]?
         && checkedAllowed.1.objects[epAB]? == uncheckedCall.1.objects[epAB]?
-        && (checkedAllowed.1.scheduler.runQueueOnCore c0).toList
-            == (uncheckedCall.1.scheduler.runQueueOnCore c0).toList
-        && (checkedAllowed.1.scheduler.runQueueOnCore c1).toList
-            == (uncheckedCall.1.scheduler.runQueueOnCore c1).toList)
+        && (checkedAllowed.1.runQueueWalk c0)
+            == (uncheckedCall.1.runQueueWalk c0)
+        && (checkedAllowed.1.runQueueWalk c1)
+            == (uncheckedCall.1.runQueueWalk c1))
     -- (b) Reply gate. Fixture: rt.afterCallA (client A blockedOnReply, server B ready).
     -- DENIED (high server B → low client A): fail-closed — the whole affected
     -- footprint (caller, replier, reply object, endpoint) and cores 0/1 run queues
@@ -1408,8 +1405,8 @@ private def runFlowCheckedChecks : IO Unit := do
         && stRDenied.objects[replyB.toObjId]? == rt.afterCallA.objects[replyB.toObjId]?
         && stRDenied.objects[epAB]? == rt.afterCallA.objects[epAB]?)
     assertBool "the denied reply leaves cores 0/1 run queues unchanged"
-      ((stRDenied.scheduler.runQueueOnCore c0).toList == (rt.afterCallA.scheduler.runQueueOnCore c0).toList
-        && (stRDenied.scheduler.runQueueOnCore c1).toList == (rt.afterCallA.scheduler.runQueueOnCore c1).toList)
+      ((stRDenied.runQueueWalk c0) == (rt.afterCallA.runQueueWalk c0)
+        && (stRDenied.runQueueWalk c1) == (rt.afterCallA.runQueueWalk c1))
     -- ALLOWED (all public): the checked reply equals the unchecked one — compare
     -- the surfaced SGI (a dropped remote-wake would diverge here), the woken
     -- caller's object (payload delivery), the consumed reply object, AND the
@@ -1423,8 +1420,8 @@ private def runFlowCheckedChecks : IO Unit := do
         | _, _ => false)
         && checkedRAllowed.1.objects[clientA.toObjId]? == uncheckedReply.1.objects[clientA.toObjId]?
         && checkedRAllowed.1.objects[replyB.toObjId]? == uncheckedReply.1.objects[replyB.toObjId]?
-        && (checkedRAllowed.1.scheduler.runQueueOnCore c0).toList
-            == (uncheckedReply.1.scheduler.runQueueOnCore c0).toList)
+        && (checkedRAllowed.1.runQueueWalk c0)
+            == (uncheckedReply.1.runQueueWalk c0))
 
 -- ============================================================================
 -- §3.12 Live API dispatch (`dispatchSyscall` .call through CSpace resolution)
@@ -1479,7 +1476,7 @@ private def runLiveApiChecks : IO Unit := do
     assertBool "authorized live .call blocks the caller as blockedOnReply"
       (ipcStateIs st' apiCaller (.blockedOnReply apiEp (some apiServer)))
     assertBool "authorized live .call wakes the server on its home core 1"
-      ((st'.scheduler.runQueueOnCore c1).contains apiServer)
+      ((st'.queuedOn c1 apiServer))
   -- NO CAP (empty slot 0): the CSpace lookup fails closed.
   assertBool "live .call with no cap at the CPtr fails with invalidCapability"
     (match apiDispatch [] 0 with | .error .invalidCapability => true | _ => false)
@@ -1583,7 +1580,7 @@ private def runSuspendArmChecks : IO Unit := do
              | some t => decide (t.schedContextBinding = SchedContextBinding.unbound) | none => false)
           assertBool "the suspend descheds the victim from its home core 1"
             (stSusp.scheduler.currentOnCore c1 != some donServer
-              && !(stSusp.scheduler.runQueueOnCore c1).contains donServer)
+              && !(stSusp.queuedOn c1 donServer))
           assertBool "the suspend clears the victim's IPC state and queue links"
             (match stSusp.getTcb? donServer with
              | some t => decide (t.ipcState = ThreadIpcState.ready)
@@ -1645,7 +1642,7 @@ private def runHandlerContentionChecks : IO Unit := do
   | none => assertBool "contention pipeline (high current) succeeded" false
   | some st =>
     assertBool "the woken server (prio 50) is enqueued on core 1"
-      ((st.scheduler.runQueueOnCore c1).contains serverB)
+      ((st.queuedOn c1 serverB))
     assertBool "core 1's handler keeps the higher-priority current (no wrongful preemption)"
       (st.scheduler.currentOnCore c1 == some highPrioT)
   -- (b) LOW current (prio 10 < server 50): the woken server DOES preempt (control).
@@ -5194,8 +5191,8 @@ private def runRetypeFootprintChecks : IO Unit := do
     assertBool "(d) C6g: EVERY core outside the declared run segment keeps its run queue"
       (allCores.all (fun d =>
         hasRunQueueWrite fpTcb d ||
-          (stArm.scheduler.runQueueOnCore d).toList
-            == (stBound.scheduler.runQueueOnCore d).toList))
+          (stArm.runQueueWalk d)
+            == (stBound.runQueueWalk d)))
     assertBool "(d) C6g NEGATIVE: the retired reading FAILS the same replenish measurement"
       (!allCores.all (fun d =>
         hasReplenishWrite retired d || replenishEntriesOn stArm d == replenishEntriesOn stBound d))

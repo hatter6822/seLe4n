@@ -8,6 +8,7 @@
 -/
 
 import SeLe4n.Machine
+import SeLe4n.Model.Erased
 import SeLe4n.Model.Object
 import SeLe4n.Kernel.Scheduler.RunQueue
 import SeLe4n.Kernel.SchedContext.ReplenishQueue
@@ -110,8 +111,8 @@ structure SchedulerState where
       Provides O(1) amortized membership, insert, remove; O(1) best-candidate
       via cached maxPriority. The `toList` projection maintains proof/projection
       compatibility with information-flow subsystem. -/
-  runQueue : Vector SeLe4n.Kernel.RunQueue numCores :=
-    Vector.replicate numCores SeLe4n.Kernel.RunQueue.empty
+  runQueue : SeLe4n.Erased (Vector SeLe4n.Kernel.RunQueue numCores) :=
+    SeLe4n.Erased.mk (Vector.replicate numCores SeLe4n.Kernel.RunQueue.empty)
   /-- WS-ZA ZA4.5: each core's run queue as the core holds it — the ends of
       the queue and of each priority's bucket, the count and the highest
       queued priority — while each queued thread's links live in its TCB
@@ -193,9 +194,10 @@ namespace SchedulerState
 /-- Per-core current-thread of `s` on core `c`. -/
 def currentOnCore (s : SchedulerState) (c : CoreId) : Option SeLe4n.ThreadId :=
   s.current.get c
-/-- Per-core run queue of `s` on core `c`. -/
-def runQueueOnCore (s : SchedulerState) (c : CoreId) : SeLe4n.Kernel.RunQueue :=
-  s.runQueue.get c
+/-- Per-core run queue of `s` on core `c`: ghost state (WS-ZA ZA4.5), read by
+proofs only; the kernel reads the threads' run-queue links and the core's ends. -/
+noncomputable def runQueueOnCore (s : SchedulerState) (c : CoreId) : SeLe4n.Kernel.RunQueue :=
+  s.runQueue.out.get c
 /-- WS-ZA ZA4.5: core `c`'s run-queue ends. -/
 def runQueueEndsOnCore (s : SchedulerState) (c : CoreId) : SeLe4n.Kernel.RunQueueEnds :=
   s.runQueueEnds.get c
@@ -234,10 +236,28 @@ def setCurrentOnCore (s : SchedulerState) (c : CoreId) (v : Option SeLe4n.Thread
     SchedulerState := { s with current := s.current.set c.val v c.isLt }
 /-- Write core `c`'s run-queue slot. -/
 def setRunQueueOnCore (s : SchedulerState) (c : CoreId) (v : SeLe4n.Kernel.RunQueue) :
-    SchedulerState := { s with runQueue := s.runQueue.set c.val v c.isLt }
+    SchedulerState := { s with runQueue := s.runQueue.map (·.set c.val v c.isLt) }
 /-- WS-ZA ZA4.5: write core `c`'s run-queue ends. -/
 def setRunQueueEndsOnCore (s : SchedulerState) (c : CoreId) (v : SeLe4n.Kernel.RunQueueEnds) :
     SchedulerState := { s with runQueueEnds := s.runQueueEnds.set c.val v c.isLt }
+/-- WS-ZA ZA4.5: core `c`'s run-queue ends rewritten by `f` in their slot.  The
+ends are taken out of the slot (which holds the shared `RunQueueEnds.empty`
+meanwhile) before `f` runs, so on an exclusively owned scheduler `f` receives
+their only reference and rewrites their bucket table in place; reading the slot
+and writing it back (`setRunQueueEndsOnCore`) would leave the slot holding the
+ends while `f` runs, and the table would be copied.  Proven equal
+(`modifyRunQueueEndsOnCore_eq`). -/
+@[inline] def modifyRunQueueEndsOnCore (s : SchedulerState) (c : CoreId)
+    (f : SeLe4n.Kernel.RunQueueEnds → SeLe4n.Kernel.RunQueueEnds) : SchedulerState :=
+  let e := s.runQueueEnds.get c
+  let es := s.runQueueEnds.set c.val SeLe4n.Kernel.RunQueueEnds.empty c.isLt
+  { s with runQueueEnds := es.set c.val (f e) c.isLt }
+
+theorem modifyRunQueueEndsOnCore_eq (s : SchedulerState) (c : CoreId)
+    (f : SeLe4n.Kernel.RunQueueEnds → SeLe4n.Kernel.RunQueueEnds) :
+    s.modifyRunQueueEndsOnCore c f = s.setRunQueueEndsOnCore c (f (s.runQueueEndsOnCore c)) := by
+  unfold modifyRunQueueEndsOnCore setRunQueueEndsOnCore runQueueEndsOnCore
+  simp only [Vector.set_set]
 /-- Write core `c`'s CBS replenishment-queue slot. -/
 def setReplenishQueueOnCore (s : SchedulerState) (c : CoreId) (v : SeLe4n.Kernel.ReplenishQueue) :
     SchedulerState := { s with replenishQueue := s.replenishQueue.set c.val v c.isLt }
@@ -300,7 +320,7 @@ theorem ext_perCore {s₁ s₂ : SchedulerState}
     (hRQE  : ∀ c : CoreId, s₁.runQueueEndsOnCore c = s₂.runQueueEndsOnCore c) :
     s₁ = s₂ := by
   have h1 : s₁.current = s₂.current := PerCoreVector.ext fun c => hCur c
-  have h2 : s₁.runQueue = s₂.runQueue := PerCoreVector.ext fun c => hRQ c
+  have h2 : s₁.runQueue = s₂.runQueue := SeLe4n.Erased.ext (PerCoreVector.ext fun c => hRQ c)
   have h3 : s₁.replenishQueue = s₂.replenishQueue := PerCoreVector.ext fun c => hRepl c
   have h4 : s₁.activeDomain = s₂.activeDomain := PerCoreVector.ext fun c => hAD c
   have h5 : s₁.domainTimeRemaining = s₂.domainTimeRemaining := PerCoreVector.ext fun c => hDTR c
@@ -326,7 +346,7 @@ every pair of cores (the fields are independent `Vector`s). -/
   simp [SchedulerState.setCurrentOnCore, SchedulerState.currentOnCore]
 @[simp] theorem setRunQueueOnCore_runQueueOnCore_self (s : SchedulerState) (c : CoreId) (v : SeLe4n.Kernel.RunQueue) :
     (s.setRunQueueOnCore c v).runQueueOnCore c = v := by
-  simp [SchedulerState.setRunQueueOnCore, SchedulerState.runQueueOnCore]
+  simp [SchedulerState.setRunQueueOnCore, SchedulerState.runQueueOnCore, SeLe4n.Erased.out_map]
 @[simp] theorem setReplenishQueueOnCore_replenishQueueOnCore_self (s : SchedulerState) (c : CoreId) (v : SeLe4n.Kernel.ReplenishQueue) :
     (s.setReplenishQueueOnCore c v).replenishQueueOnCore c = v := by
   simp [SchedulerState.setReplenishQueueOnCore, SchedulerState.replenishQueueOnCore]
@@ -356,8 +376,8 @@ runtime suite exercises and that SM5's genuine cross-core writes consume. -/
   exact SeLe4n.PerCoreVector.get_set_ne s.current c c' v h
 @[simp] theorem setRunQueueOnCore_runQueueOnCore_ne (s : SchedulerState) (c c' : CoreId) (v : SeLe4n.Kernel.RunQueue) (h : c ≠ c') :
     (s.setRunQueueOnCore c v).runQueueOnCore c' = s.runQueueOnCore c' := by
-  simp only [SchedulerState.setRunQueueOnCore, SchedulerState.runQueueOnCore]
-  exact SeLe4n.PerCoreVector.get_set_ne s.runQueue c c' v h
+  simp only [SchedulerState.setRunQueueOnCore, SchedulerState.runQueueOnCore, SeLe4n.Erased.out_map]
+  exact SeLe4n.PerCoreVector.get_set_ne s.runQueue.out c c' v h
 @[simp] theorem setReplenishQueueOnCore_replenishQueueOnCore_ne (s : SchedulerState) (c c' : CoreId) (v : SeLe4n.Kernel.ReplenishQueue) (h : c ≠ c') :
     (s.setReplenishQueueOnCore c v).replenishQueueOnCore c' = s.replenishQueueOnCore c' := by
   simp only [SchedulerState.setReplenishQueueOnCore, SchedulerState.replenishQueueOnCore]
@@ -798,7 +818,8 @@ cross-field frames in both directions. -/
 @[simp] theorem setRunQueueOnCore_setRunQueueOnCore (s : SchedulerState) (c : CoreId)
     (v w : SeLe4n.Kernel.RunQueue) :
     (s.setRunQueueOnCore c v).setRunQueueOnCore c w = s.setRunQueueOnCore c w := by
-  simp [SchedulerState.setRunQueueOnCore]
+  simp only [SchedulerState.setRunQueueOnCore, SchedulerState.mk.injEq, and_true]
+  exact SeLe4n.Erased.ext (by simp [SeLe4n.Erased.out_map])
 /-- Queue and ends writes commute (ends written first, the normal form). -/
 theorem setRunQueueOnCore_setRunQueueEndsOnCore (s : SchedulerState) (c c' : CoreId)
     (v : SeLe4n.Kernel.RunQueue) (e : SeLe4n.Kernel.RunQueueEnds) :
@@ -838,7 +859,7 @@ end SchedulerState
 
 /-- WS-G4: Compatibility alias — `runnable` projects to the flat list maintained
     inside `RunQueue` for proof/projection compatibility. -/
-abbrev SchedulerState.runnable (s : SchedulerState) : List SeLe4n.ThreadId :=
+noncomputable abbrev SchedulerState.runnable (s : SchedulerState) : List SeLe4n.ThreadId :=
   (s.runQueueOnCore bootCoreId).toList
 
 /-- X2-B/H-2: Check that all domain schedule entries have positive length.
@@ -1510,7 +1531,17 @@ theorem default_state_perCoreInitialized (c : CoreId) :
     (default : SchedulerState).domainTimeRemainingOnCore c = 5 ∧
     (default : SchedulerState).domainScheduleIndexOnCore c = 0 ∧
     (default : SchedulerState).lastTimeoutErrorsOnCore c = [] := by
-  refine ⟨?_, ?_, ?_, ?_, ?_, ?_, ?_⟩ <;> exact PerCoreVector.replicate_get _ _ c
+  refine ⟨?_, ?_, ?_, ?_, ?_, ?_, ?_⟩ <;>
+    first
+    | exact PerCoreVector.replicate_get _ _ c
+    | (simp only [SchedulerState.runQueueOnCore]
+       show (SeLe4n.Erased.mk (Vector.replicate numCores SeLe4n.Kernel.RunQueue.empty)).out.get c = _
+       rw [SeLe4n.Erased.out_mk]; exact PerCoreVector.replicate_get _ _ c)
+
+/-- The default scheduler state's run queue is empty on every core. -/
+@[simp] theorem SchedulerState.runQueueOnCore_default (c : CoreId) :
+    (default : SchedulerState).runQueueOnCore c = SeLe4n.Kernel.RunQueue.empty :=
+  (default_state_perCoreInitialized c).2.1
 
 instance : Inhabited SystemState where
   default := {

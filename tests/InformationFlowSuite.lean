@@ -11,6 +11,7 @@ import SeLe4n
 import SeLe4n.Testing.StateBuilder
 import SeLe4n.Testing.Helpers
 import SeLe4n.Platform.Boot
+import SeLe4n.Kernel.InformationFlow.ProjectionPerCore
 
 set_option maxRecDepth 1024
 
@@ -356,8 +357,8 @@ def test_dispatchCapabilityOnly_projection_invariant : IO Bool := do
     { (default : SystemState) with
       objects := ((default : SystemState).objects.insert publicOid publicObj).insert
                   secretOid secretB }
-  let pA := SeLe4n.Kernel.projectState sampleLabeling reviewer stA
-  let pB := SeLe4n.Kernel.projectState sampleLabeling reviewer stB
+  let pA := SeLe4n.Kernel.projectStateByLinks sampleLabeling reviewer stA
+  let pB := SeLe4n.Kernel.projectStateByLinks sampleLabeling reviewer stB
   let probeA := pA.objects publicOid
   let probeB := pB.objects publicOid
   let secretProbeA := pA.objects secretOid
@@ -548,8 +549,8 @@ def runInformationFlowChecks : IO Unit := do
     (!(SeLe4n.Kernel.securityFlowsTo secretLabel publicLabel))
 
   -- === Object projection checks ===
-  let publicProjection := SeLe4n.Kernel.projectState sampleLabeling reviewer sampleState
-  let adminProjection := SeLe4n.Kernel.projectState sampleLabeling admin sampleState
+  let publicProjection := SeLe4n.Kernel.projectStateByLinks sampleLabeling reviewer sampleState
+  let adminProjection := SeLe4n.Kernel.projectStateByLinks sampleLabeling admin sampleState
 
   expect "public observer cannot see secret object"
     ((publicProjection.objects ⟨2⟩).isNone)
@@ -566,8 +567,8 @@ def runInformationFlowChecks : IO Unit := do
   -- === F-04 fix: Replace tautological lowEquivalent reflexivity with distinct-state comparison ===
   -- Compare sampleState and altState: they differ in secret components (oid=2, current=tid2)
   -- but should project identically for a public observer because those components are invisible.
-  let publicProjectionSample := SeLe4n.Kernel.projectState sampleLabeling reviewer sampleState
-  let publicProjectionAlt := SeLe4n.Kernel.projectState sampleLabeling reviewer altState
+  let publicProjectionSample := SeLe4n.Kernel.projectStateByLinks sampleLabeling reviewer sampleState
+  let publicProjectionAlt := SeLe4n.Kernel.projectStateByLinks sampleLabeling reviewer altState
 
   -- Verify the two states ARE actually different (so this isn't a tautological comparison)
   expect "altState differs from sampleState (secret object changed)"
@@ -972,8 +973,8 @@ def runInformationFlowChecks : IO Unit := do
       |>.withIrqHandler ⟨1⟩ ⟨2⟩   -- IRQ 1 → oid 2 (secret object)
       |>.buildChecked)
 
-  let irqPublicProj := SeLe4n.Kernel.projectState sampleLabeling reviewer irqState
-  let irqAdminProj := SeLe4n.Kernel.projectState sampleLabeling admin irqState
+  let irqPublicProj := SeLe4n.Kernel.projectStateByLinks sampleLabeling reviewer irqState
+  let irqAdminProj := SeLe4n.Kernel.projectStateByLinks sampleLabeling admin irqState
 
   -- Public observer sees IRQ 0 → oid 1 (public target)
   expect "public observer sees IRQ handler to public object"
@@ -1041,8 +1042,8 @@ def runInformationFlowChecks : IO Unit := do
       endpointLabelOf := fun _ => publicLabel
       serviceLabelOf := fun _ => publicLabel }
 
-  let cnodePublicProj := SeLe4n.Kernel.projectState cnodeLabeling reviewer cnodeState
-  let cnodeAdminProj := SeLe4n.Kernel.projectState cnodeLabeling admin cnodeState
+  let cnodePublicProj := SeLe4n.Kernel.projectStateByLinks cnodeLabeling reviewer cnodeState
+  let cnodeAdminProj := SeLe4n.Kernel.projectStateByLinks cnodeLabeling admin cnodeState
 
   -- Public observer sees the CNode but with filtered slots
   match cnodePublicProj.objects ⟨50⟩ with
@@ -1089,7 +1090,7 @@ def runInformationFlowChecks : IO Unit := do
           ]) })
       |>.buildChecked)
 
-  let cnodeSlotProj := SeLe4n.Kernel.projectState cnodeLabeling reviewer cnodeSlotState
+  let cnodeSlotProj := SeLe4n.Kernel.projectStateByLinks cnodeLabeling reviewer cnodeSlotState
   match cnodeSlotProj.objects ⟨60⟩ with
   | some (.cnode cn) =>
     expect "cnodeSlot target to public CNode is visible"
@@ -1359,7 +1360,7 @@ def runInformationFlowChecks : IO Unit := do
         scheduler := { ((BootstrapBuilder.empty.buildChecked).scheduler.setDomainTimeRemainingOnCore bootCoreId 42).setDomainScheduleIndexOnCore bootCoreId 1 with
           domainSchedule := [{ domain := ⟨0⟩, length := 10 }, { domain := ⟨1⟩, length := 5 }] } }
 
-  let projection := SeLe4n.Kernel.projectState sameDomainNtfnCtx
+  let projection := SeLe4n.Kernel.projectStateByLinks sameDomainNtfnCtx
     { clearance := publicLabel } timingState
 
   expect "domainTimeRemaining projected"
@@ -1424,7 +1425,7 @@ def runInformationFlowChecks : IO Unit := do
   IO.println "BIBA integrity comparison verified"
 
   -- V6-E: serviceRegistry projection
-  let svcRegProjection := SeLe4n.Kernel.projectState sameDomainNtfnCtx
+  let svcRegProjection := SeLe4n.Kernel.projectStateByLinks sameDomainNtfnCtx
     { clearance := publicLabel } (BootstrapBuilder.empty.buildChecked)
   expect "serviceRegistry field exists in projection"
     (svcRegProjection.serviceRegistry ⟨999⟩ == none)
@@ -1817,10 +1818,10 @@ def runInformationFlowChecks : IO Unit := do
       { (default : SystemState) with
         scheduler := (default : SystemState).scheduler.setCurrentOnCore bootCoreId (some tidB) }
     let pA :=
-      SeLe4n.Kernel.projectState
+      SeLe4n.Kernel.projectStateByLinks
         SeLe4n.Kernel.defaultLabelingContext reviewer stA
     let pB :=
-      SeLe4n.Kernel.projectState
+      SeLe4n.Kernel.projectStateByLinks
         SeLe4n.Kernel.defaultLabelingContext reviewer stB
     -- Channel remains observable: projections of differing `current`
     -- produce differing `projectCurrent` outputs.
@@ -1839,10 +1840,10 @@ def runInformationFlowChecks : IO Unit := do
       { (default : SystemState) with
         scheduler := (default : SystemState).scheduler.setActiveDomainOnCore bootCoreId ⟨1⟩ }
     let pA :=
-      SeLe4n.Kernel.projectState
+      SeLe4n.Kernel.projectStateByLinks
         SeLe4n.Kernel.defaultLabelingContext reviewer stA
     let pB :=
-      SeLe4n.Kernel.projectState
+      SeLe4n.Kernel.projectStateByLinks
         SeLe4n.Kernel.defaultLabelingContext reviewer stB
     expect "NI-L3/2: activeDomain channel remains observable"
       (pA.activeDomain ≠ pB.activeDomain)
@@ -1860,10 +1861,10 @@ def runInformationFlowChecks : IO Unit := do
       { (default : SystemState) with
         scheduler := (default : SystemState).scheduler.setDomainTimeRemainingOnCore bootCoreId 200 }
     let pA :=
-      SeLe4n.Kernel.projectState
+      SeLe4n.Kernel.projectStateByLinks
         SeLe4n.Kernel.defaultLabelingContext reviewer stA
     let pB :=
-      SeLe4n.Kernel.projectState
+      SeLe4n.Kernel.projectStateByLinks
         SeLe4n.Kernel.defaultLabelingContext reviewer stB
     expect "NI-L3/3: domainTimeRemaining channel remains observable"
       (pA.domainTimeRemaining ≠ pB.domainTimeRemaining)
@@ -1880,10 +1881,10 @@ def runInformationFlowChecks : IO Unit := do
       { (default : SystemState) with
         scheduler := (default : SystemState).scheduler.setDomainScheduleIndexOnCore bootCoreId 3 }
     let pA :=
-      SeLe4n.Kernel.projectState
+      SeLe4n.Kernel.projectStateByLinks
         SeLe4n.Kernel.defaultLabelingContext reviewer stA
     let pB :=
-      SeLe4n.Kernel.projectState
+      SeLe4n.Kernel.projectStateByLinks
         SeLe4n.Kernel.defaultLabelingContext reviewer stB
     expect "NI-L3/4: domainScheduleIndex channel remains observable"
       (pA.domainScheduleIndex ≠ pB.domainScheduleIndex)

@@ -288,10 +288,10 @@ private def runPreconditionChecks : IO Unit := do
     (decide ((default : SystemState).scheduler.configDefaultTimeSlice > 0))
   -- `hwf` precondition: empty RunQueue is well-formed (vacuous).
   assertBool "default.scheduler.runQueueOnCore bootCoreId is empty (hwf foundation)"
-    (decide (((default : SystemState).scheduler.runQueueOnCore bootCoreId).toList = []))
+    (decide (((default : SystemState).runQueueWalk bootCoreId) = []))
   -- `hAllTcb` precondition: empty runnable ⟹ vacuous TCB resolution.
-  assertBool "default.scheduler.runnable = [] ⟹ hAllTcb vacuous"
-    (decide ((default : SystemState).scheduler.runnable = []))
+  assertBool "(default.runQueueWalk bootCoreId) = [] ⟹ hAllTcb vacuous"
+    (decide ((default : SystemState).runQueueWalk bootCoreId = []))
 
 /-- §3.2  Per-op preservation theorems' types resolve.  Each of the 6
 aggregate + 50 per-conjunct preservation theorems has its typed signature

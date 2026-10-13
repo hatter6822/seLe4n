@@ -9,6 +9,7 @@
 
 import SeLe4n.Model.IntermediateState
 import SeLe4n.Kernel.RadixTree.Bridge
+import SeLe4n.Kernel.Scheduler.RunQueueThreadLinks
 
 /-!
 # Q5: FrozenSystemState + Freeze
@@ -577,14 +578,29 @@ theorem freezeObject_preserves_type (obj : KernelObject) :
     (freezeObject obj).objectType = obj.objectType := by
   cases obj <;> rfl
 
+/-- The boot core's run queue in order, read from the threads' run-queue links
+(WS-ZA ZA4.5: the abstract queue is ghost state the compiled freeze cannot read). -/
+def bootRunQueueOrder (st : SystemState) : List SeLe4n.ThreadId :=
+  st.runQueueWalk bootCoreId
+
+/-- A thread's priority as its boot-core run-queue links record it. -/
+def bootRunQueuePrio (st : SystemState) (t : SeLe4n.ThreadId) : SeLe4n.Priority :=
+  (st.runLinkOn bootCoreId t).prio
+
 /-- Q5-C: Freeze the scheduler state.
-AG1-E: Now includes `replenishQueue` for CBS scheduling support. -/
-def freezeScheduler (sched : SchedulerState) : FrozenSchedulerState :=
+AG1-E: Now includes `replenishQueue` for CBS scheduling support.
+WS-ZA ZA4.5: the run-queue tables are built from the threads' run-queue links
+(`bootRunQueueOrder`, `bootRunQueuePrio`); under the link agreement they are the
+abstract queue's tables (`freezeScheduler_byPriority_eq` and its siblings). -/
+def freezeScheduler (st : SystemState) : FrozenSchedulerState :=
   -- WS-SM SM4.B phase-2: the frozen execution-phase snapshot is single-core;
   -- it captures `bootCoreId`'s per-core slots.
-  { byPriority := freezeMap (sched.runQueueOnCore bootCoreId).byPriorityTable
-    threadPriority := freezeMap (sched.runQueueOnCore bootCoreId).threadPriorityTable
-    membership := freezeMap (sched.runQueueOnCore bootCoreId).membershipTable
+  let sched := st.scheduler
+  { byPriority := freezeMap
+      (SeLe4n.Kernel.RunQueue.byPriorityTableOf (bootRunQueueOrder st) (bootRunQueuePrio st))
+    threadPriority := freezeMap
+      (SeLe4n.Kernel.RunQueue.threadPriorityTableOf (bootRunQueueOrder st) (bootRunQueuePrio st))
+    membership := freezeMap (SeLe4n.Kernel.RunQueue.membershipTableOf (bootRunQueueOrder st))
     current := sched.currentOnCore bootCoreId
     activeDomain := sched.activeDomainOnCore bootCoreId
     domainTimeRemaining := sched.domainTimeRemainingOnCore bootCoreId
@@ -593,6 +609,42 @@ def freezeScheduler (sched : SchedulerState) : FrozenSchedulerState :=
     configDefaultTimeSlice := sched.configDefaultTimeSlice
     replenishQueue := { entries := (sched.replenishQueueOnCore bootCoreId).entries
                         size := (sched.replenishQueueOnCore bootCoreId).size } }
+
+/-- Under the link agreement the walk is the abstract queue's list and each
+member's recorded priority is the queue's. -/
+theorem bootRunQueueOrder_eq {st : SystemState}
+    (h : st.runQueueRefinedOnCore bootCoreId) :
+    bootRunQueueOrder st = (st.scheduler.runQueueOnCore bootCoreId).toList :=
+  SystemState.runQueueRefinedOnCore.runQueueWalk_eq h
+
+theorem bootRunQueuePrio_eq {st : SystemState}
+    (h : st.runQueueRefinedOnCore bootCoreId) :
+    ∀ t ∈ (st.scheduler.runQueueOnCore bootCoreId).toList, bootRunQueuePrio st t =
+      (SeLe4n.Kernel.RunQueue.linkOf (st.scheduler.runQueueOnCore bootCoreId).links t).prio :=
+  fun _ ht => by unfold bootRunQueuePrio; rw [h.link_of_mem ht]
+
+theorem freezeScheduler_byPriority_eq {st : SystemState}
+    (h : st.runQueueRefinedOnCore bootCoreId) :
+    (freezeScheduler st).byPriority =
+      freezeMap (st.scheduler.runQueueOnCore bootCoreId).byPriorityTable := by
+  show freezeMap _ = freezeMap _
+  rw [bootRunQueueOrder_eq h,
+    SeLe4n.Kernel.RunQueue.byPriorityTableOf_congr (bootRunQueuePrio_eq h)]; rfl
+
+theorem freezeScheduler_threadPriority_eq {st : SystemState}
+    (h : st.runQueueRefinedOnCore bootCoreId) :
+    (freezeScheduler st).threadPriority =
+      freezeMap (st.scheduler.runQueueOnCore bootCoreId).threadPriorityTable := by
+  show freezeMap _ = freezeMap _
+  rw [bootRunQueueOrder_eq h,
+    SeLe4n.Kernel.RunQueue.threadPriorityTableOf_congr (bootRunQueuePrio_eq h)]; rfl
+
+theorem freezeScheduler_membership_eq {st : SystemState}
+    (h : st.runQueueRefinedOnCore bootCoreId) :
+    (freezeScheduler st).membership =
+      freezeMap (st.scheduler.runQueueOnCore bootCoreId).membershipTable := by
+  show freezeMap _ = freezeMap _
+  rw [bootRunQueueOrder_eq h]; rfl
 
 /-- Q5-C: Master freeze function — converts an `IntermediateState` (builder
 phase with invariant witnesses) into a `FrozenSystemState` (execution phase
@@ -629,7 +681,7 @@ def freeze (ist : IntermediateState) : FrozenSystemState :=
     cdtNodeSlot := freezeMap st.cdtNodeSlot
     cdtEdges := st.cdt.edges
     cdtNextNode := st.cdtNextNode
-    scheduler := freezeScheduler st.scheduler
+    scheduler := freezeScheduler st
     objectTypes := freezeMap st.lifecycle.objectTypes
     machine := st.machine
     objectIndex := st.objectIndex

@@ -327,7 +327,7 @@ private def runDefaultChecks : IO Unit := do
   assertBool "boot core has no current thread (queueCurrentConsistent / currentThreadValid vacuous)"
     (decide ((stEmpty.scheduler.currentOnCore bootCoreId) = none))
   assertBool "boot core's run queue is empty (runnableThreadsAreTCBs vacuous)"
-    (decide ((stEmpty.scheduler.runQueueOnCore bootCoreId).toList = []))
+    (decide ((stEmpty.runQueueWalk bootCoreId) = []))
   assertBool "core 1 has no current thread"
     (decide ((stEmpty.scheduler.currentOnCore core1) = none))
 
@@ -337,13 +337,13 @@ because the rotation touches only the domain triple). -/
 private def runFramingChecks : IO Unit := do
   IO.println "--- §3.2 advanceDomainOnCore frames the structural reads ---"
   assertBool "tidA still in the boot-core run queue after rotation (runnableThreadsAreTCBs frame)"
-    (decide (tidA ∈ (stRunRotated.scheduler.runQueueOnCore bootCoreId).toList))
+    (decide (tidA ∈ (stRunRotated.runQueueWalk bootCoreId)))
   assertBool "tidA still resolves to a TCB after rotation (currentThreadValid / runnable frame)"
     (decide (stRunRotated.getTcb? tidA).isSome)
   assertBool "boot-core current unchanged by rotation (= none)"
     (decide ((stRunRotated.scheduler.currentOnCore bootCoreId) = none))
   assertBool "sibling core 1's run queue unaffected by a boot-core rotation (cross-core frame)"
-    (decide ((stRunRotated.scheduler.runQueueOnCore core1).toList = []))
+    (decide ((stRunRotated.runQueueWalk core1) = []))
 
 /-- §3.3: `enqueueRunnableOnCore` (the wake) genuinely enqueues a blocked TCB and
 keeps it a TCB — the substantive content of `runnableThreadsAreTCBs` preservation
@@ -356,11 +356,11 @@ private def runWakeChecks : IO Unit := do
     (BootstrapBuilder.empty.withObject tidB.toObjId (.tcb (mkTcb 200 5))).build
   let stWoken : SystemState := enqueueRunnableOnCore stBlocked bootCoreId tidB
   assertBool "the woken thread is now in the boot-core run queue"
-    (decide (tidB ∈ (stWoken.scheduler.runQueueOnCore bootCoreId).toList))
+    (decide (tidB ∈ (stWoken.runQueueWalk bootCoreId)))
   assertBool "the woken thread still resolves to a TCB (runnable-are-TCBs holds)"
     (decide (stWoken.getTcb? tidB).isSome)
   assertBool "the wake leaves sibling core 1's run queue empty (cross-core frame)"
-    (decide ((stWoken.scheduler.runQueueOnCore core1).toList = []))
+    (decide ((stWoken.runQueueWalk core1) = []))
 
 private def tidB1 : SeLe4n.ThreadId := ThreadId.ofNat 101
 
@@ -435,7 +435,7 @@ private def runTimerTickChecks : IO Unit := do
   match timerTickOnCore stEmpty bootCoreId with
   | .ok (st', _) =>
     assertBool "idle timer tick succeeds; post-tick boot run queue stays empty"
-      (decide ((st'.scheduler.runQueueOnCore bootCoreId).toList = []))
+      (decide ((st'.runQueueWalk bootCoreId) = []))
     assertBool "idle timer tick: post-tick boot current stays none"
       (decide ((st'.scheduler.currentOnCore bootCoreId) = none))
   | .error _ =>

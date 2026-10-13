@@ -72,7 +72,7 @@ def stepPrecondition (step : SchedulerStep) (st : SystemState) : Prop :=
 
 /-- D5-A4 helper: Step execution function mapping SchedulerStep to the
 corresponding kernel transition. Returns `.ok nextState` on success. -/
-def stepPost (step : SchedulerStep) (st : SystemState) : Except KernelError SystemState :=
+noncomputable def stepPost (step : SchedulerStep) (st : SystemState) : Except KernelError SystemState :=
   match step with
   | .timerTick =>
     match timerTick st with
@@ -242,7 +242,7 @@ def resolveEffectivePriority (st : SystemState) (tid : ThreadId)
 
 /-- D5-C: Count threads in the run queue with effective priority ≥ target's
 effective priority in the same domain. -/
-def countHigherOrEqualEffectivePriority (st : SystemState)
+noncomputable def countHigherOrEqualEffectivePriority (st : SystemState)
     (targetPrio : Priority) (targetDomain : DomainId) : Nat :=
   (st.scheduler.runQueueOnCore bootCoreId).toList.foldl (fun count otherTid =>
     match resolveEffectivePriority st otherTid with
@@ -254,7 +254,7 @@ def countHigherOrEqualEffectivePriority (st : SystemState)
 
 /-- D5-C: Maximum SchedContext budget among threads at same-or-higher effective
 priority in the same domain. Returns 0 if no such threads exist. -/
-def maxBudgetInBand (st : SystemState) (targetPrio : Priority)
+noncomputable def maxBudgetInBand (st : SystemState) (targetPrio : Priority)
     (targetDomain : DomainId) : Nat :=
   (st.scheduler.runQueueOnCore bootCoreId).toList.foldl (fun maxB otherTid =>
     match resolveEffectivePriority st otherTid with
@@ -277,7 +277,7 @@ def maxBudgetInBand (st : SystemState) (targetPrio : Priority)
 
 /-- D5-C: Maximum SchedContext period among threads at same-or-higher effective
 priority in the same domain. Unbound threads contribute period=0. -/
-def maxPeriodInBand (st : SystemState) (targetPrio : Priority)
+noncomputable def maxPeriodInBand (st : SystemState) (targetPrio : Priority)
     (targetDomain : DomainId) : Nat :=
   (st.scheduler.runQueueOnCore bootCoreId).toList.foldl (fun maxP otherTid =>
     match resolveEffectivePriority st otherTid with
@@ -298,7 +298,7 @@ def maxPeriodInBand (st : SystemState) (targetPrio : Priority)
 
 /-- D5-C: 0-indexed position of thread `tid` in its priority bucket.
 Returns `none` if thread is not in the run queue. -/
-def bucketPosition (st : SystemState) (tid : ThreadId) : Option Nat :=
+noncomputable def bucketPosition (st : SystemState) (tid : ThreadId) : Option Nat :=
   match (st.scheduler.runQueueOnCore bootCoreId).priorityOf tid with
   | none => none
   | some prio =>
@@ -359,7 +359,7 @@ theorem runnableAt_eq_onCore_bootCore (trace : SchedulerTrace) (k : Nat) (tid : 
 /-- WS-SM SM5.J.4: count threads in **core `c`'s** run queue with effective
 priority ≥ target's in the same domain — the per-core generalisation of
 `countHigherOrEqualEffectivePriority`. -/
-def countHigherOrEqualEffectivePriorityOnCore (st : SystemState)
+noncomputable def countHigherOrEqualEffectivePriorityOnCore (st : SystemState)
     (targetPrio : Priority) (targetDomain : DomainId) (c : CoreId) : Nat :=
   (st.scheduler.runQueueOnCore c).toList.foldl (fun count otherTid =>
     match resolveEffectivePriority st otherTid with
@@ -378,7 +378,7 @@ theorem countHigherOrEqualEffectivePriority_eq_onCore_bootCore (st : SystemState
 /-- WS-SM SM5.J.4: maximum SchedContext budget among the same-or-higher-priority
 threads in **core `c`'s** run queue — the per-core generalisation of
 `maxBudgetInBand`. -/
-def maxBudgetInBandOnCore (st : SystemState) (targetPrio : Priority)
+noncomputable def maxBudgetInBandOnCore (st : SystemState) (targetPrio : Priority)
     (targetDomain : DomainId) (c : CoreId) : Nat :=
   (st.scheduler.runQueueOnCore c).toList.foldl (fun maxB otherTid =>
     match resolveEffectivePriority st otherTid with
@@ -406,7 +406,7 @@ theorem maxBudgetInBand_eq_onCore_bootCore (st : SystemState)
 /-- WS-SM SM5.J.4: maximum SchedContext period among the same-or-higher-priority
 threads in **core `c`'s** run queue — the per-core generalisation of
 `maxPeriodInBand`. -/
-def maxPeriodInBandOnCore (st : SystemState) (targetPrio : Priority)
+noncomputable def maxPeriodInBandOnCore (st : SystemState) (targetPrio : Priority)
     (targetDomain : DomainId) (c : CoreId) : Nat :=
   (st.scheduler.runQueueOnCore c).toList.foldl (fun maxP otherTid =>
     match resolveEffectivePriority st otherTid with
@@ -433,7 +433,7 @@ theorem maxPeriodInBand_eq_onCore_bootCore (st : SystemState)
 
 /-- WS-SM SM5.J.4: 0-indexed position of `tid` in its priority bucket on **core
 `c`** — the per-core generalisation of `bucketPosition`. -/
-def bucketPositionOnCore (st : SystemState) (tid : ThreadId) (c : CoreId) : Option Nat :=
+noncomputable def bucketPositionOnCore (st : SystemState) (tid : ThreadId) (c : CoreId) : Option Nat :=
   match (st.scheduler.runQueueOnCore c).priorityOf tid with
   | none => none
   | some prio =>

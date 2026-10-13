@@ -3178,7 +3178,7 @@ read **through the observable state** rather than through `projectCNode`.
 this is a decidable end-to-end check of the redaction. -/
 private def cnodeSlotThroughView (c : CoreId) (L : SecurityLabel) (slot : SeLe4n.Slot) :
     Option Capability :=
-  match (ObservableState.onCore probeLabeling c L probeState).objects probeCNode with
+  match (ObservableState.onCoreByLinks probeLabeling c L probeState).objects probeCNode with
   | some (.cnode cn) => cn.lookup slot
   | _ => none
 
@@ -3215,7 +3215,7 @@ component the pre-v0.33.4 relation constrained is untouched, so this is exactly
 the state that dominated the real view in both directions before the four
 scheduling clauses were added. -/
 private def domainShiftedView : ObservableState :=
-  { ObservableState.onCore probeLabeling c0 lowLabel probeState with
+  { ObservableState.onCoreByLinks probeLabeling c0 lowLabel probeState with
     activeDomain := ⟨9⟩ }
 
 /-- §3.0  Fixture non-vacuity.  Every later group reads this state; if the
@@ -3257,11 +3257,11 @@ private def runFixtureChecks : IO Unit := do
     (decide (probeState.scheduler.currentOnCore c0 = some lowCurrent ∧
              probeState.scheduler.currentOnCore c1 = some highCurrent))
   assertBool "core 0 queues the low thread, core 1 queues the high thread"
-    (decide ((probeState.scheduler.runQueueOnCore c0).toList = [lowQueued] ∧
-             (probeState.scheduler.runQueueOnCore c1).toList = [highQueued]))
+    (decide ((probeState.runQueueWalk c0) = [lowQueued] ∧
+             (probeState.runQueueWalk c1) = [highQueued]))
   assertBool "cores 2 and 3 are idle (no current, empty queue)"
     (decide (probeState.scheduler.currentOnCore c2 = none ∧
-             (probeState.scheduler.runQueueOnCore c2).toList = []))
+             (probeState.runQueueWalk c2) = []))
   -- The labeling must be non-trivial: it has to separate the two clearances.
   --
   -- Note this is *not* checked with `isInsecureDefaultContext`.  That detector
@@ -3324,52 +3324,52 @@ private def runPartitionChecks : IO Unit := do
   IO.println "--- §3.2 the shared / per-core field partition ---"
   -- Per-core half: each core sees its own current thread and its own queue.
   assertBool "the low observer sees core 0's low current thread"
-    (decide ((ObservableState.onCore probeLabeling c0 lowLabel probeState).current
+    (decide ((ObservableState.onCoreByLinks probeLabeling c0 lowLabel probeState).current
       = some lowCurrent))
   assertBool "the low observer sees core 0's low run queue"
-    (decide ((ObservableState.onCore probeLabeling c0 lowLabel probeState).runnable
+    (decide ((ObservableState.onCoreByLinks probeLabeling c0 lowLabel probeState).runnable
       = [lowQueued]))
   assertBool "the low observer sees nothing of core 1 (its threads are high)"
-    (decide ((ObservableState.onCore probeLabeling c1 lowLabel probeState).current = none ∧
-             (ObservableState.onCore probeLabeling c1 lowLabel probeState).runnable = []))
+    (decide ((ObservableState.onCoreByLinks probeLabeling c1 lowLabel probeState).current = none ∧
+             (ObservableState.onCoreByLinks probeLabeling c1 lowLabel probeState).runnable = []))
   assertBool "the high observer sees core 1's high current thread and queue"
-    (decide ((ObservableState.onCore probeLabeling c1 highLabel probeState).current
+    (decide ((ObservableState.onCoreByLinks probeLabeling c1 highLabel probeState).current
         = some highCurrent ∧
-             (ObservableState.onCore probeLabeling c1 highLabel probeState).runnable
+             (ObservableState.onCoreByLinks probeLabeling c1 highLabel probeState).runnable
         = [highQueued]))
   assertBool "core 0's view never shows core 1's thread (per-core restriction)"
-    (decide ((ObservableState.onCore probeLabeling c0 highLabel probeState).current
+    (decide ((ObservableState.onCoreByLinks probeLabeling c0 highLabel probeState).current
       = some lowCurrent))
   assertBool "the idle cores project empty per-core components at both clearances"
-    (decide ((ObservableState.onCore probeLabeling c2 lowLabel probeState).current = none ∧
-             (ObservableState.onCore probeLabeling c2 highLabel probeState).current = none ∧
-             (ObservableState.onCore probeLabeling c2 highLabel probeState).runnable = []))
+    (decide ((ObservableState.onCoreByLinks probeLabeling c2 lowLabel probeState).current = none ∧
+             (ObservableState.onCoreByLinks probeLabeling c2 highLabel probeState).current = none ∧
+             (ObservableState.onCoreByLinks probeLabeling c2 highLabel probeState).runnable = []))
   -- Shared half: the same on every core, at a fixed clearance.
   assertBool "the shared objectIndex component is identical on every core"
     (allCores.all (fun c =>
-      decide ((ObservableState.onCore probeLabeling c lowLabel probeState).objectIndex
-        = (ObservableState.onCore probeLabeling bootCoreId lowLabel probeState).objectIndex)))
+      decide ((ObservableState.onCoreByLinks probeLabeling c lowLabel probeState).objectIndex
+        = (ObservableState.onCoreByLinks probeLabeling bootCoreId lowLabel probeState).objectIndex)))
   assertBool "the shared services component is identical on every core"
     (allCores.all (fun c =>
-      decide ((ObservableState.onCore probeLabeling c lowLabel probeState).services lowService
-          = (ObservableState.onCore probeLabeling bootCoreId lowLabel probeState).services
+      decide ((ObservableState.onCoreByLinks probeLabeling c lowLabel probeState).services lowService
+          = (ObservableState.onCoreByLinks probeLabeling bootCoreId lowLabel probeState).services
               lowService ∧
-        (ObservableState.onCore probeLabeling c lowLabel probeState).services highService
-          = (ObservableState.onCore probeLabeling bootCoreId lowLabel probeState).services
+        (ObservableState.onCoreByLinks probeLabeling c lowLabel probeState).services highService
+          = (ObservableState.onCoreByLinks probeLabeling bootCoreId lowLabel probeState).services
               highService)))
   assertBool "the shared irqHandlers component is identical on every core"
     (allCores.all (fun c =>
-      decide ((ObservableState.onCore probeLabeling c lowLabel probeState).irqHandlers lowIrq
-          = (ObservableState.onCore probeLabeling bootCoreId lowLabel probeState).irqHandlers
+      decide ((ObservableState.onCoreByLinks probeLabeling c lowLabel probeState).irqHandlers lowIrq
+          = (ObservableState.onCoreByLinks probeLabeling bootCoreId lowLabel probeState).irqHandlers
               lowIrq ∧
-        (ObservableState.onCore probeLabeling c lowLabel probeState).irqHandlers highIrq
-          = (ObservableState.onCore probeLabeling bootCoreId lowLabel probeState).irqHandlers
+        (ObservableState.onCoreByLinks probeLabeling c lowLabel probeState).irqHandlers highIrq
+          = (ObservableState.onCoreByLinks probeLabeling bootCoreId lowLabel probeState).irqHandlers
               highIrq)))
   assertBool "the shared objects component is identical on every core"
     (allCores.all (fun c =>
-      decide (((ObservableState.onCore probeLabeling c lowLabel probeState).objects
+      decide (((ObservableState.onCoreByLinks probeLabeling c lowLabel probeState).objects
             lowEndpoint).isSome
-          = ((ObservableState.onCore probeLabeling bootCoreId lowLabel probeState).objects
+          = ((ObservableState.onCoreByLinks probeLabeling bootCoreId lowLabel probeState).objects
               lowEndpoint).isSome)))
   -- `ext_fragments` used substantively: two *different* states whose fragments
   -- coincide have the same view.  Here the second state differs only in the
@@ -3390,25 +3390,27 @@ private def runDecidableSliceChecks : IO Unit := do
   IO.println "--- §3.3 the decidable per-core slice ---"
   assertBool "slice low-equivalence decides reflexively at every (core, label)"
     (allCores.all (fun c =>
-      decide (lowEquivalentSliceOnCore probeLabeling c lowLabel probeState probeState) &&
-      decide (lowEquivalentSliceOnCore probeLabeling c highLabel probeState probeState)))
+      decide (ObservableState.sliceOnCoreByLinks probeLabeling c lowLabel probeState
+        = ObservableState.sliceOnCoreByLinks probeLabeling c lowLabel probeState) &&
+      decide (ObservableState.sliceOnCoreByLinks probeLabeling c highLabel probeState
+        = ObservableState.sliceOnCoreByLinks probeLabeling c highLabel probeState)))
   assertBool "the slice records core 0's low current thread and queue"
-    (decide ((ObservableState.sliceOnCore probeLabeling c0 lowLabel probeState).current
+    (decide ((ObservableState.sliceOnCoreByLinks probeLabeling c0 lowLabel probeState).current
         = some lowCurrent ∧
-      (ObservableState.sliceOnCore probeLabeling c0 lowLabel probeState).runnable
+      (ObservableState.sliceOnCoreByLinks probeLabeling c0 lowLabel probeState).runnable
         = [lowQueued]))
   assertBool "the slice records that core 0's register bank is observable to low"
-    (decide ((ObservableState.sliceOnCore probeLabeling c0 lowLabel probeState).registersObservable
+    (decide ((ObservableState.sliceOnCoreByLinks probeLabeling c0 lowLabel probeState).registersObservable
       = true))
   assertBool "the slice records that core 1's register bank is NOT observable to low"
-    (decide ((ObservableState.sliceOnCore probeLabeling c1 lowLabel probeState).registersObservable
+    (decide ((ObservableState.sliceOnCoreByLinks probeLabeling c1 lowLabel probeState).registersObservable
       = false))
   assertBool "…but IS observable to high (the negative above is not vacuous)"
-    (decide ((ObservableState.sliceOnCore probeLabeling c1 highLabel probeState).registersObservable
+    (decide ((ObservableState.sliceOnCoreByLinks probeLabeling c1 highLabel probeState).registersObservable
       = true))
   assertBool "the low and high slices of core 1 genuinely differ (decidable refutation)"
-    (!decide (ObservableState.sliceOnCore probeLabeling c1 lowLabel probeState
-      = ObservableState.sliceOnCore probeLabeling c1 highLabel probeState))
+    (!decide (ObservableState.sliceOnCoreByLinks probeLabeling c1 lowLabel probeState
+      = ObservableState.sliceOnCoreByLinks probeLabeling c1 highLabel probeState))
   assertBool "observable equality implies slice equality (sound refuter)"
     (allCores.all (fun c =>
       have _h : lowEquivalentSliceOnCore probeLabeling c lowLabel probeState probeState :=
@@ -3438,8 +3440,8 @@ private def runIndependenceChecks : IO Unit := do
     { probeState with
       scheduler := probeState.scheduler.setCurrentOnCore c1 (some lowQueued) }
   assertBool "a write to core 1's current slot leaves core 0's slice unchanged"
-    (decide (ObservableState.sliceOnCore probeLabeling c0 lowLabel stRemoteCurrent
-      = ObservableState.sliceOnCore probeLabeling c0 lowLabel probeState))
+    (decide (ObservableState.sliceOnCoreByLinks probeLabeling c0 lowLabel stRemoteCurrent
+      = ObservableState.sliceOnCoreByLinks probeLabeling c0 lowLabel probeState))
   assertBool "onCore_setCurrentOnCore_ne applies (theorem level, c0 ≠ c1)"
     (have _h : ObservableState.onCore probeLabeling c0 lowLabel
         { probeState with
@@ -3447,28 +3449,29 @@ private def runIndependenceChecks : IO Unit := do
         = ObservableState.onCore probeLabeling c0 lowLabel probeState :=
       onCore_setCurrentOnCore_ne probeLabeling lowLabel probeState (by decide) (some lowQueued)
      true)
-  -- Write only core 1's run queue.
-  let stRemoteQueue : SystemState :=
-    { probeState with
-      scheduler := probeState.scheduler.setRunQueueOnCore c1 (RunQueue.ofList [(lowQueued, ⟨40⟩)]) }
+  -- Write only core 1's run queue, through the kernel's own enqueue so the
+  -- thread's TCB carries the core-1 links the queue is read through.  The
+  -- low thread queued is `lowCurrent` (`lowQueued` already sits on core 0's
+  -- queue, and a thread is never given a second place).
+  let stRemoteQueue : SystemState := probeState.runEnqueueOnCore c1 lowCurrent ⟨40⟩
   assertBool "a write to core 1's run queue leaves core 0's slice unchanged"
-    (decide (ObservableState.sliceOnCore probeLabeling c0 lowLabel stRemoteQueue
-      = ObservableState.sliceOnCore probeLabeling c0 lowLabel probeState))
+    (decide (ObservableState.sliceOnCoreByLinks probeLabeling c0 lowLabel stRemoteQueue
+      = ObservableState.sliceOnCoreByLinks probeLabeling c0 lowLabel probeState))
   assertBool "…and DOES change core 1's own low view (the write is not a no-op)"
-    (!decide (ObservableState.sliceOnCore probeLabeling c1 lowLabel stRemoteQueue
-      = ObservableState.sliceOnCore probeLabeling c1 lowLabel probeState))
+    (!decide (ObservableState.sliceOnCoreByLinks probeLabeling c1 lowLabel stRemoteQueue
+      = ObservableState.sliceOnCoreByLinks probeLabeling c1 lowLabel probeState))
   -- Write only core 1's active domain / domain timing.
   let stRemoteDomain : SystemState :=
     { probeState with
       scheduler := (probeState.scheduler.setActiveDomainOnCore c1 ⟨3⟩).setDomainTimeRemainingOnCore
         c1 99 }
   assertBool "a remote domain switch leaves core 0's slice unchanged"
-    (decide (ObservableState.sliceOnCore probeLabeling c0 lowLabel stRemoteDomain
-      = ObservableState.sliceOnCore probeLabeling c0 lowLabel probeState))
+    (decide (ObservableState.sliceOnCoreByLinks probeLabeling c0 lowLabel stRemoteDomain
+      = ObservableState.sliceOnCoreByLinks probeLabeling c0 lowLabel probeState))
   assertBool "…and IS visible on core 1 (scheduling transparency, per core)"
-    (decide ((ObservableState.onCore probeLabeling c1 lowLabel stRemoteDomain).activeDomain
+    (decide ((ObservableState.onCoreByLinks probeLabeling c1 lowLabel stRemoteDomain).activeDomain
         = ⟨3⟩ ∧
-      (ObservableState.onCore probeLabeling c1 lowLabel stRemoteDomain).domainTimeRemaining = 99))
+      (ObservableState.onCoreByLinks probeLabeling c1 lowLabel stRemoteDomain).domainTimeRemaining = 99))
   -- Write only core 1's register bank.
   let stRemoteRegs : SystemState :=
     { probeState with
@@ -3505,9 +3508,9 @@ private def runIndependenceChecks : IO Unit := do
       true))
   assertBool "the machine timer is invisible on every core (the excluded channel)"
     (allCores.all (fun c =>
-      decide (ObservableState.sliceOnCore probeLabeling c lowLabel
+      decide (ObservableState.sliceOnCoreByLinks probeLabeling c lowLabel
           { probeState with machine := { probeState.machine with timer := 123456 } }
-        = ObservableState.sliceOnCore probeLabeling c lowLabel probeState)))
+        = ObservableState.sliceOnCoreByLinks probeLabeling c lowLabel probeState)))
   assertBool "onCore_machineTimer applies on every core (theorem level)"
     (allCores.all (fun c =>
       have _h : ObservableState.onCore probeLabeling c lowLabel
@@ -3520,11 +3523,11 @@ private def runIndependenceChecks : IO Unit := do
     { probeState with
       scheduler := probeState.scheduler.setCurrentOnCore c0 (some lowQueued) }
   assertBool "the SAME current-slot write on core 0 DOES change core 0's slice"
-    (!decide (ObservableState.sliceOnCore probeLabeling c0 lowLabel stLocalCurrent
-      = ObservableState.sliceOnCore probeLabeling c0 lowLabel probeState))
+    (!decide (ObservableState.sliceOnCoreByLinks probeLabeling c0 lowLabel stLocalCurrent
+      = ObservableState.sliceOnCoreByLinks probeLabeling c0 lowLabel probeState))
   assertBool "…while still leaving core 1's slice unchanged (the frame is symmetric)"
-    (decide (ObservableState.sliceOnCore probeLabeling c1 lowLabel stLocalCurrent
-      = ObservableState.sliceOnCore probeLabeling c1 lowLabel probeState))
+    (decide (ObservableState.sliceOnCoreByLinks probeLabeling c1 lowLabel stLocalCurrent
+      = ObservableState.sliceOnCoreByLinks probeLabeling c1 lowLabel probeState))
 
 /-- §3.5  Label monotonicity — the high observer outsees the low one, strictly.
 
@@ -3558,39 +3561,39 @@ private def runMonotonicityChecks : IO Unit := do
       true))
   -- Strictness, component by component.
   assertBool "STRICT: the high observer sees core 1's current thread, the low one does not"
-    (decide ((ObservableState.onCore probeLabeling c1 lowLabel probeState).current = none ∧
-             (ObservableState.onCore probeLabeling c1 highLabel probeState).current
+    (decide ((ObservableState.onCoreByLinks probeLabeling c1 lowLabel probeState).current = none ∧
+             (ObservableState.onCoreByLinks probeLabeling c1 highLabel probeState).current
                = some highCurrent))
   assertBool "STRICT: the high observer sees core 1's run queue, the low one does not"
-    (decide ((ObservableState.onCore probeLabeling c1 lowLabel probeState).runnable = [] ∧
-             (ObservableState.onCore probeLabeling c1 highLabel probeState).runnable
+    (decide ((ObservableState.onCoreByLinks probeLabeling c1 lowLabel probeState).runnable = [] ∧
+             (ObservableState.onCoreByLinks probeLabeling c1 highLabel probeState).runnable
                = [highQueued]))
   assertBool "STRICT: the high endpoint is in the high objectIndex only"
     (decide (highEndpoint ∉
-        (ObservableState.onCore probeLabeling c0 lowLabel probeState).objectIndex ∧
-      highEndpoint ∈ (ObservableState.onCore probeLabeling c0 highLabel probeState).objectIndex))
+        (ObservableState.onCoreByLinks probeLabeling c0 lowLabel probeState).objectIndex ∧
+      highEndpoint ∈ (ObservableState.onCoreByLinks probeLabeling c0 highLabel probeState).objectIndex))
   assertBool "MONOTONE: the low endpoint is in BOTH object indices"
     (decide (lowEndpoint ∈
-        (ObservableState.onCore probeLabeling c0 lowLabel probeState).objectIndex ∧
-      lowEndpoint ∈ (ObservableState.onCore probeLabeling c0 highLabel probeState).objectIndex))
+        (ObservableState.onCoreByLinks probeLabeling c0 lowLabel probeState).objectIndex ∧
+      lowEndpoint ∈ (ObservableState.onCoreByLinks probeLabeling c0 highLabel probeState).objectIndex))
   assertBool "STRICT: the high service is present only to the high observer"
-    (decide ((ObservableState.onCore probeLabeling c0 lowLabel probeState).services highService
+    (decide ((ObservableState.onCoreByLinks probeLabeling c0 lowLabel probeState).services highService
         = false ∧
-      (ObservableState.onCore probeLabeling c0 highLabel probeState).services highService = true))
+      (ObservableState.onCoreByLinks probeLabeling c0 highLabel probeState).services highService = true))
   assertBool "STRICT: the high IRQ handler is routed only for the high observer"
-    (decide ((ObservableState.onCore probeLabeling c0 lowLabel probeState).irqHandlers highIrq
+    (decide ((ObservableState.onCoreByLinks probeLabeling c0 lowLabel probeState).irqHandlers highIrq
         = none ∧
-      (ObservableState.onCore probeLabeling c0 highLabel probeState).irqHandlers highIrq
+      (ObservableState.onCoreByLinks probeLabeling c0 highLabel probeState).irqHandlers highIrq
         = some highEndpoint))
   assertBool "MONOTONE: the low IRQ handler is routed for BOTH observers"
-    (decide ((ObservableState.onCore probeLabeling c0 lowLabel probeState).irqHandlers lowIrq
+    (decide ((ObservableState.onCoreByLinks probeLabeling c0 lowLabel probeState).irqHandlers lowIrq
         = some lowEndpoint ∧
-      (ObservableState.onCore probeLabeling c0 highLabel probeState).irqHandlers lowIrq
+      (ObservableState.onCoreByLinks probeLabeling c0 highLabel probeState).irqHandlers lowIrq
         = some lowEndpoint))
   assertBool "STRICT: the high endpoint object is visible only to the high observer"
-    (decide (((ObservableState.onCore probeLabeling c0 lowLabel probeState).objects
+    (decide (((ObservableState.onCoreByLinks probeLabeling c0 lowLabel probeState).objects
           highEndpoint).isSome = false ∧
-      ((ObservableState.onCore probeLabeling c0 highLabel probeState).objects
+      ((ObservableState.onCoreByLinks probeLabeling c0 highLabel probeState).objects
           highEndpoint).isSome = true))
   -- `onCore_objects_label_invariant_off_cnode` (an equality of
   -- `Option KernelObject` values) has no runtime form: `KernelObject` carries
@@ -3598,8 +3601,22 @@ private def runMonotonicityChecks : IO Unit := do
   -- decidable.  Its witness is the §2 elaboration-time example; what §3 can
   -- decide is the visibility half, immediately above and below.
   assertBool "STRICT: the low observer's object index is strictly smaller"
-    (decide ((ObservableState.onCore probeLabeling c0 lowLabel probeState).objectIndex.length <
-      (ObservableState.onCore probeLabeling c0 highLabel probeState).objectIndex.length))
+    (decide ((ObservableState.onCoreByLinks probeLabeling c0 lowLabel probeState).objectIndex.length <
+      (ObservableState.onCoreByLinks probeLabeling c0 highLabel probeState).objectIndex.length))
+
+/-- `schedulingObservationCode` read through the run-queue links: the same
+positional code over the link-read view (`onCoreByLinks`), so the runtime check
+below can evaluate it.  `schedulingObservationCodeByLinks_eq` pins it to the
+library code (the two fields it reads never touch the run queue). -/
+private def schedulingObservationCodeByLinks (quantumBound : Nat) (ctx : LabelingContext)
+    (c : CoreId) (L : SecurityLabel) (s : SystemState) : Nat :=
+  (ObservableState.onCoreByLinks ctx c L s).domainScheduleIndex * (quantumBound + 1)
+    + (ObservableState.onCoreByLinks ctx c L s).domainTimeRemaining
+
+private theorem schedulingObservationCodeByLinks_eq (quantumBound : Nat) (ctx : LabelingContext)
+    (c : CoreId) (L : SecurityLabel) (s : SystemState) :
+    schedulingObservationCodeByLinks quantumBound ctx c L s
+      = SeLe4n.Kernel.schedulingObservationCode quantumBound ctx c L s := rfl
 
 /-- §3.6  Scheduling transparency (accepted covert channel CC-1) restated per
 core: the four scheduling components are label-invariant, and each core carries
@@ -3612,21 +3629,21 @@ private def runSchedulingTransparencyChecks : IO Unit := do
         c1 2 }
   assertBool "the four scheduling components are label-invariant on every core"
     (allCores.all (fun c =>
-      decide ((ObservableState.onCore probeLabeling c lowLabel stSplitDomains).activeDomain
-          = (ObservableState.onCore probeLabeling c highLabel stSplitDomains).activeDomain ∧
-        (ObservableState.onCore probeLabeling c lowLabel stSplitDomains).domainTimeRemaining
-          = (ObservableState.onCore probeLabeling c highLabel stSplitDomains).domainTimeRemaining ∧
-        (ObservableState.onCore probeLabeling c lowLabel stSplitDomains).domainSchedule
-          = (ObservableState.onCore probeLabeling c highLabel stSplitDomains).domainSchedule ∧
-        (ObservableState.onCore probeLabeling c lowLabel stSplitDomains).domainScheduleIndex
-          = (ObservableState.onCore probeLabeling c highLabel stSplitDomains).domainScheduleIndex)))
+      decide ((ObservableState.onCoreByLinks probeLabeling c lowLabel stSplitDomains).activeDomain
+          = (ObservableState.onCoreByLinks probeLabeling c highLabel stSplitDomains).activeDomain ∧
+        (ObservableState.onCoreByLinks probeLabeling c lowLabel stSplitDomains).domainTimeRemaining
+          = (ObservableState.onCoreByLinks probeLabeling c highLabel stSplitDomains).domainTimeRemaining ∧
+        (ObservableState.onCoreByLinks probeLabeling c lowLabel stSplitDomains).domainSchedule
+          = (ObservableState.onCoreByLinks probeLabeling c highLabel stSplitDomains).domainSchedule ∧
+        (ObservableState.onCoreByLinks probeLabeling c lowLabel stSplitDomains).domainScheduleIndex
+          = (ObservableState.onCoreByLinks probeLabeling c highLabel stSplitDomains).domainScheduleIndex)))
   assertBool "the scheduling components are UNFILTERED reads of the raw scheduler"
     (allCores.all (fun c =>
-      decide ((ObservableState.onCore probeLabeling c lowLabel stSplitDomains).activeDomain
+      decide ((ObservableState.onCoreByLinks probeLabeling c lowLabel stSplitDomains).activeDomain
           = stSplitDomains.scheduler.activeDomainOnCore c ∧
-        (ObservableState.onCore probeLabeling c lowLabel stSplitDomains).domainScheduleIndex
+        (ObservableState.onCoreByLinks probeLabeling c lowLabel stSplitDomains).domainScheduleIndex
           = stSplitDomains.scheduler.domainScheduleIndexOnCore c ∧
-        (ObservableState.onCore probeLabeling c lowLabel stSplitDomains).domainTimeRemaining
+        (ObservableState.onCoreByLinks probeLabeling c lowLabel stSplitDomains).domainTimeRemaining
           = stSplitDomains.scheduler.domainTimeRemainingOnCore c)))
   assertBool "onCore_schedulingTransparency applies on every core (theorem level)"
     (allCores.all (fun c =>
@@ -3647,11 +3664,11 @@ private def runSchedulingTransparencyChecks : IO Unit := do
     { probeState with
       scheduler := { probeState.scheduler with domainSchedule := [⟨⟨9⟩, 5⟩, ⟨⟨8⟩, 5⟩] } }
   assertBool "two same-length schedules give the SAME index/countdown code"
-    (decide (SeLe4n.Kernel.schedulingObservationCode 8 probeLabeling c0 lowLabel schedA
-      = SeLe4n.Kernel.schedulingObservationCode 8 probeLabeling c0 lowLabel schedB))
+    (decide (schedulingObservationCodeByLinks 8 probeLabeling c0 lowLabel schedA
+      = schedulingObservationCodeByLinks 8 probeLabeling c0 lowLabel schedB))
   assertBool "NEGATIVE: …yet the observer sees different schedules, so the code alone is not the observation"
-    (!decide ((ObservableState.onCore probeLabeling c0 lowLabel schedA).domainSchedule
-      = (ObservableState.onCore probeLabeling c0 lowLabel schedB).domainSchedule))
+    (!decide ((ObservableState.onCoreByLinks probeLabeling c0 lowLabel schedA).domainSchedule
+      = (ObservableState.onCoreByLinks probeLabeling c0 lowLabel schedB).domainSchedule))
   assertBool "NEGATIVE: so a two-state run over both is NOT one schedule (the required clause fails)"
     (!decide (schedA.scheduler.domainSchedule = schedB.scheduler.domainSchedule))
   assertBool "the run preconditions hold trivially for a one-state run"
@@ -3659,15 +3676,15 @@ private def runSchedulingTransparencyChecks : IO Unit := do
      have _t := @SeLe4n.Kernel.schedulingChannel_trace_determines_observations
      true)
   assertBool "the channel is PER CORE: cores 0 and 1 report different domains"
-    (!decide ((ObservableState.onCore probeLabeling c0 lowLabel stSplitDomains).activeDomain
-      = (ObservableState.onCore probeLabeling c1 lowLabel stSplitDomains).activeDomain))
+    (!decide ((ObservableState.onCoreByLinks probeLabeling c0 lowLabel stSplitDomains).activeDomain
+      = (ObservableState.onCoreByLinks probeLabeling c1 lowLabel stSplitDomains).activeDomain))
   assertBool "…and different schedule indices"
-    (!decide ((ObservableState.onCore probeLabeling c0 lowLabel stSplitDomains).domainScheduleIndex
-      = (ObservableState.onCore probeLabeling c1 lowLabel stSplitDomains).domainScheduleIndex))
+    (!decide ((ObservableState.onCoreByLinks probeLabeling c0 lowLabel stSplitDomains).domainScheduleIndex
+      = (ObservableState.onCoreByLinks probeLabeling c1 lowLabel stSplitDomains).domainScheduleIndex))
   assertBool "the system-wide domain schedule is shared by every core"
     (allCores.all (fun c =>
-      decide ((ObservableState.onCore probeLabeling c lowLabel stSplitDomains).domainSchedule
-        = (ObservableState.onCore probeLabeling bootCoreId lowLabel stSplitDomains).domainSchedule)))
+      decide ((ObservableState.onCoreByLinks probeLabeling c lowLabel stSplitDomains).domainSchedule
+        = (ObservableState.onCoreByLinks probeLabeling bootCoreId lowLabel stSplitDomains).domainSchedule)))
 
 /-- §3.7  The SM8.B seed: a high thread scheduled on a remote core is invisible
 to a low observer on **every** core — the shape `crossCoreNonInterference` will
@@ -3683,20 +3700,20 @@ private def runCrossCoreInvisibilityChecks : IO Unit := do
         c1 none }
   assertBool "the low observer's slice is unchanged on EVERY core"
     (allCores.all (fun c =>
-      decide (ObservableState.sliceOnCore probeLabeling c lowLabel stHighReshuffle
-        = ObservableState.sliceOnCore probeLabeling c lowLabel probeState)))
+      decide (ObservableState.sliceOnCoreByLinks probeLabeling c lowLabel stHighReshuffle
+        = ObservableState.sliceOnCoreByLinks probeLabeling c lowLabel probeState)))
   assertBool "…and the low observer's shared objectIndex is unchanged too"
     (allCores.all (fun c =>
-      decide ((ObservableState.onCore probeLabeling c lowLabel stHighReshuffle).objectIndex
-        = (ObservableState.onCore probeLabeling c lowLabel probeState).objectIndex)))
+      decide ((ObservableState.onCoreByLinks probeLabeling c lowLabel stHighReshuffle).objectIndex
+        = (ObservableState.onCoreByLinks probeLabeling c lowLabel probeState).objectIndex)))
   assertBool "NON-VACUITY: the HIGH observer's slice DOES change (cores 1 and 2)"
-    (!decide (ObservableState.sliceOnCore probeLabeling c1 highLabel stHighReshuffle
-        = ObservableState.sliceOnCore probeLabeling c1 highLabel probeState) &&
-     !decide (ObservableState.sliceOnCore probeLabeling c2 highLabel stHighReshuffle
-        = ObservableState.sliceOnCore probeLabeling c2 highLabel probeState))
+    (!decide (ObservableState.sliceOnCoreByLinks probeLabeling c1 highLabel stHighReshuffle
+        = ObservableState.sliceOnCoreByLinks probeLabeling c1 highLabel probeState) &&
+     !decide (ObservableState.sliceOnCoreByLinks probeLabeling c2 highLabel stHighReshuffle
+        = ObservableState.sliceOnCoreByLinks probeLabeling c2 highLabel probeState))
   assertBool "the high observer's core 0 slice is still unchanged (per-core locality)"
-    (decide (ObservableState.sliceOnCore probeLabeling c0 highLabel stHighReshuffle
-      = ObservableState.sliceOnCore probeLabeling c0 highLabel probeState))
+    (decide (ObservableState.sliceOnCoreByLinks probeLabeling c0 highLabel stHighReshuffle
+      = ObservableState.sliceOnCoreByLinks probeLabeling c0 highLabel probeState))
 
 /-- §3.8  CNode slot redaction — the one observer-dependent part of object
 projection, and the only place where a wider clearance reveals *more of an
@@ -3818,13 +3835,13 @@ private def runMemoryProjectionChecks : IO Unit := do
   -- Through the observable state: the projected byte is the real memory content.
   assertBool "the projected memory byte is the machine's actual byte where observable"
     (allCores.all (fun c =>
-      decide ((ObservableState.onCore probeLabelingWithMemory c lowLabel probeState).memory lowPage
+      decide ((ObservableState.onCoreByLinks probeLabelingWithMemory c lowLabel probeState).memory lowPage
         = some (probeState.machine.memory lowPage))))
   assertBool "…and none where not observable (high page, unowned page)"
     (allCores.all (fun c =>
-      decide ((ObservableState.onCore probeLabelingWithMemory c lowLabel probeState).memory
+      decide ((ObservableState.onCoreByLinks probeLabelingWithMemory c lowLabel probeState).memory
           highPage = none ∧
-        (ObservableState.onCore probeLabelingWithMemory c lowLabel probeState).memory
+        (ObservableState.onCoreByLinks probeLabelingWithMemory c lowLabel probeState).memory
           unownedPage = none)))
   assertBool "onCore_label_monotone applies under the memory-owning context"
     (allCores.all (fun c =>
@@ -3843,27 +3860,27 @@ private def runServiceRegistryChecks : IO Unit := do
   IO.println "--- §3.10 service-registry projection (entry level) ---"
   assertBool "the low observer gets the low service's FULL entry"
     (allCores.all (fun c =>
-      decide ((ObservableState.onCore probeLabeling c lowLabel probeState).serviceRegistry
+      decide ((ObservableState.onCoreByLinks probeLabeling c lowLabel probeState).serviceRegistry
         lowService = some (mkServiceEntry lowService lowEndpoint))))
   assertBool "STRICT: the low observer gets none for the high service"
     (allCores.all (fun c =>
-      decide ((ObservableState.onCore probeLabeling c lowLabel probeState).serviceRegistry
+      decide ((ObservableState.onCoreByLinks probeLabeling c lowLabel probeState).serviceRegistry
         highService = none)))
   assertBool "…while the high observer gets its full entry (not vacuous)"
     (allCores.all (fun c =>
-      decide ((ObservableState.onCore probeLabeling c highLabel probeState).serviceRegistry
+      decide ((ObservableState.onCoreByLinks probeLabeling c highLabel probeState).serviceRegistry
         highService = some (mkServiceEntry highService highEndpoint))))
   assertBool "VALUE-PRESERVING: the low service's entry is IDENTICAL at both clearances"
     (allCores.all (fun c =>
-      decide ((ObservableState.onCore probeLabeling c lowLabel probeState).serviceRegistry
+      decide ((ObservableState.onCoreByLinks probeLabeling c lowLabel probeState).serviceRegistry
           lowService
-        = (ObservableState.onCore probeLabeling c highLabel probeState).serviceRegistry
+        = (ObservableState.onCoreByLinks probeLabeling c highLabel probeState).serviceRegistry
           lowService)))
   assertBool "the registry projection agrees with the presence projection"
     (allCores.all (fun c =>
-      decide (((ObservableState.onCore probeLabeling c lowLabel probeState).serviceRegistry
+      decide (((ObservableState.onCoreByLinks probeLabeling c lowLabel probeState).serviceRegistry
           lowService).isSome
-        = (ObservableState.onCore probeLabeling c lowLabel probeState).services lowService)))
+        = (ObservableState.onCoreByLinks probeLabeling c lowLabel probeState).services lowService)))
 
 /-- §3.11  The three-clearance chain `low ⊏ mid ⊏ high`.
 
@@ -3884,10 +3901,10 @@ private def runClearanceChainChecks : IO Unit := do
              objectObservable probeLabeling midObserver midEndpoint = true ∧
              objectObservable probeLabeling highObserver midEndpoint = true))
   assertBool "…and the three object indices are STRICTLY increasing in length"
-    (decide ((ObservableState.onCore probeLabeling c0 lowLabel probeState).objectIndex.length <
-        (ObservableState.onCore probeLabeling c0 midLabel probeState).objectIndex.length ∧
-      (ObservableState.onCore probeLabeling c0 midLabel probeState).objectIndex.length <
-        (ObservableState.onCore probeLabeling c0 highLabel probeState).objectIndex.length))
+    (decide ((ObservableState.onCoreByLinks probeLabeling c0 lowLabel probeState).objectIndex.length <
+        (ObservableState.onCoreByLinks probeLabeling c0 midLabel probeState).objectIndex.length ∧
+      (ObservableState.onCoreByLinks probeLabeling c0 midLabel probeState).objectIndex.length <
+        (ObservableState.onCoreByLinks probeLabeling c0 highLabel probeState).objectIndex.length))
   assertBool "visibilityLe_refl applies at every (core, clearance)"
     (allCores.all (fun c =>
       have _h : (ObservableState.onCore probeLabeling c midLabel probeState).visibilityLe
@@ -3913,15 +3930,15 @@ private def runClearanceChainChecks : IO Unit := do
   -- The Sublist strengthening, computed: order is preserved, not merely membership.
   assertBool "ORDER-PRESERVING: the low objectIndex is a SUBLIST of the mid one"
     (allCores.all (fun c =>
-      decide ((ObservableState.onCore probeLabeling c lowLabel probeState).objectIndex.Sublist
-        (ObservableState.onCore probeLabeling c midLabel probeState).objectIndex)))
+      decide ((ObservableState.onCoreByLinks probeLabeling c lowLabel probeState).objectIndex.Sublist
+        (ObservableState.onCoreByLinks probeLabeling c midLabel probeState).objectIndex)))
   assertBool "…and the mid objectIndex a sublist of the high one"
     (allCores.all (fun c =>
-      decide ((ObservableState.onCore probeLabeling c midLabel probeState).objectIndex.Sublist
-        (ObservableState.onCore probeLabeling c highLabel probeState).objectIndex)))
+      decide ((ObservableState.onCoreByLinks probeLabeling c midLabel probeState).objectIndex.Sublist
+        (ObservableState.onCoreByLinks probeLabeling c highLabel probeState).objectIndex)))
   assertBool "the run-queue clause is a sublist too (core 1: [] ⊑ [highQueued])"
-    (decide ((ObservableState.onCore probeLabeling c1 lowLabel probeState).runnable.Sublist
-      (ObservableState.onCore probeLabeling c1 highLabel probeState).runnable))
+    (decide ((ObservableState.onCoreByLinks probeLabeling c1 lowLabel probeState).runnable.Sublist
+      (ObservableState.onCoreByLinks probeLabeling c1 highLabel probeState).runnable))
   assertBool "the derived membership corollaries apply"
     (allCores.all (fun c =>
       have _h : lowEndpoint ∈ (ObservableState.onCore probeLabeling c highLabel probeState).objectIndex :=
@@ -3935,16 +3952,16 @@ private def runFinerCheckChecks : IO Unit := do
   IO.println "--- §3.12 the register-aware finer check ---"
   assertBool "the finer check accepts a state against itself on every core"
     (allCores.all (fun c =>
-      lowEquivalentSliceOnCoreCheckWithRegs probeLabeling c lowLabel probeState probeState))
+      lowEquivalentSliceOnCoreCheckWithRegsByLinks probeLabeling c lowLabel probeState probeState))
   assertBool "the finer check REJECTS a differing register bank the slice accepts"
     (let stRegs : SystemState :=
        { probeState with
          machine := probeState.machine.setRegsOnCore c0 (SeLe4n.RegisterFile.withGprs 7 9 (fun _ => 1)) }
      -- the coarse slice accepts (registersObservable is unchanged) …
-     decide (ObservableState.sliceOnCore probeLabeling c0 lowLabel stRegs
-        = ObservableState.sliceOnCore probeLabeling c0 lowLabel probeState) &&
+     decide (ObservableState.sliceOnCoreByLinks probeLabeling c0 lowLabel stRegs
+        = ObservableState.sliceOnCoreByLinks probeLabeling c0 lowLabel probeState) &&
      -- … while the finer check rejects: it is strictly finer.
-     !lowEquivalentSliceOnCoreCheckWithRegs probeLabeling c0 lowLabel stRegs probeState)
+     !lowEquivalentSliceOnCoreCheckWithRegsByLinks probeLabeling c0 lowLabel stRegs probeState)
   assertBool "the finer check refines the slice (soundness direction)"
     (allCores.all (fun c =>
       have _h : lowEquivalentSliceOnCore probeLabeling c lowLabel probeState probeState :=
@@ -4024,12 +4041,12 @@ private def runObjectContentOrderChecks : IO Unit := do
           (ObservableState.visibilityLe_refl _) (ObservableState.visibilityLe_refl _) rfl
       true))
   assertBool "…and it is a REAL constraint: differing activeDomain breaks it"
-    (decide (¬ (ObservableState.onCore probeLabeling c0 lowLabel probeState).activeDomain
+    (decide (¬ (ObservableState.onCoreByLinks probeLabeling c0 lowLabel probeState).activeDomain
         = domainShiftedView.activeDomain) &&
      -- the shifted view still dominates in the `isSome`/list/value clauses the
      -- pre-v0.33.4 relation had — only the new `activeDomain` clause separates
      -- them, so `visibilityLe` is now antisymmetric where it was not.
-     decide ((ObservableState.onCore probeLabeling c0 lowLabel probeState).runnable
+     decide ((ObservableState.onCoreByLinks probeLabeling c0 lowLabel probeState).runnable
         = domainShiftedView.runnable))
 
 -- ============================================================================
@@ -4081,7 +4098,7 @@ sees it.  `Option Badge` has `DecidableEq`, so unlike the whole projected object
 this is a decidable end-to-end read of the observable state. -/
 private def projectedBadge (c : CoreId) (L : SecurityLabel) (st : SystemState)
     (oid : SeLe4n.ObjId) : Option SeLe4n.Badge :=
-  match (ObservableState.onCore niLabeling c L st).objects oid with
+  match (ObservableState.onCoreByLinks niLabeling c L st).objects oid with
   | some (.notification n) => n.pendingBadge
   | _ => none
 
@@ -4221,16 +4238,24 @@ A sound *refuter*, like `regsAgreeOn`: the table comparisons go through
 would be reported as differing.  That direction is safe — it can only turn a
 passing assertion red, never a failing one green. -/
 private def runQueueAgreeOn (st st' : SystemState) (c : CoreId) : Bool :=
-  let q := st.scheduler.runQueueOnCore c
-  let q' := st'.scheduler.runQueueOnCore c
-  decide (q'.toList = q.toList) &&
-  decide (q'.size = q.size) &&
-  decide (q'.maxPriority = q.maxPriority) &&
-  decide (q'.head = q.head) &&
-  decide (q'.tail = q.tail) &&
-  decide (q'.maxCode = q.maxCode) &&
-  decide (q'.links.toList = q.links.toList) &&
-  decide (q'.buckets.toList = q.buckets.toList)
+  -- Read through the run-queue links the kernel executes on: the core's kept
+  -- ends (head, tail, size, max code, bucket ends) and, for every thread queued
+  -- in either state, its link record (queued bit, priority, both link pairs).
+  -- Under `runQueueRefinedOnCore` these are exactly the queue's ends and
+  -- `queuedLink` entries, so this is the queue comparison at the link level
+  -- (the order, size, maximum priority, links and buckets of the original).
+  let e := st.scheduler.runQueueEndsOnCore c
+  let e' := st'.scheduler.runQueueEndsOnCore c
+  let w := st.runQueueWalk c
+  let w' := st'.runQueueWalk c
+  decide (w' = w) &&
+  decide (e'.size = e.size) &&
+  decide (st'.runMaxBucketWalk c = st.runMaxBucketWalk c) &&
+  decide (e'.head = e.head) &&
+  decide (e'.tail = e.tail) &&
+  decide (e'.maxCode = e.maxCode) &&
+  (w ++ w').all (fun t => decide (st'.runLinkOn c t = st.runLinkOn c t)) &&
+  decide (e'.buckets.toList = e.buckets.toList)
 
 /-- The six observable slots, at one core.
 
@@ -4414,12 +4439,12 @@ private def runCrossCoreWriteSetChecks : IO Unit := do
 private def runVisibleRemoteWakeChecks : IO Unit := do
   IO.println "--- §5.2 a VISIBLE thread woken on a remote core ---"
   assertBool "the wake really changed core 2's run queue (the transition is not inert)"
-    (decide ((remoteWakePost.scheduler.runQueueOnCore c2).toList
-      ≠ (crossCoreState.scheduler.runQueueOnCore c2).toList))
+    (decide ((remoteWakePost.runQueueWalk c2)
+      ≠ (crossCoreState.runQueueWalk c2)))
   assertBool "cores 0, 1 and 3 see none of it"
     ([c0, c1, c3].all (fun c =>
-      decide ((remoteWakePost.scheduler.runQueueOnCore c).toList
-                = (crossCoreState.scheduler.runQueueOnCore c).toList) &&
+      decide ((remoteWakePost.runQueueWalk c)
+                = (crossCoreState.runQueueWalk c)) &&
       decide (remoteWakePost.scheduler.currentOnCore c
                 = crossCoreState.scheduler.currentOnCore c)))
   -- The load-bearing negative: this is a statement about *other* cores.  On
@@ -4428,8 +4453,8 @@ private def runVisibleRemoteWakeChecks : IO Unit := do
   -- case SM6's `hHighThread`-conditional theorem cannot cover and this one
   -- deliberately does not claim.
   assertBool "NEGATIVE: on core 2 itself the run queue DID move, visibly"
-    (decide (remoteHomedThread ∈ (remoteWakePost.scheduler.runQueueOnCore c2).toList) &&
-     decide (remoteHomedThread ∉ (crossCoreState.scheduler.runQueueOnCore c2).toList))
+    (decide (remoteHomedThread ∈ (remoteWakePost.runQueueWalk c2)) &&
+     decide (remoteHomedThread ∉ (crossCoreState.runQueueWalk c2)))
 
 /-- The composed SM6.E cancellation of a victim blocked on a notification and
 homed on core 2 — the teardown really has queue work to do here, so the
@@ -4560,8 +4585,8 @@ private def runLiveCrossCoreArmChecks : IO Unit := do
     (decide (SeLe4n.Kernel.endpointReceiveDualWriteSet blockedSenderState crossCoreEndpoint c0
       = [c2]))
   assertBool "the rendezvous really woke the sender onto core 2 (not inert)"
-    (decide ((receiveDualPost.scheduler.runQueueOnCore c2).toList
-      ≠ (blockedSenderState.scheduler.runQueueOnCore c2).toList))
+    (decide ((receiveDualPost.runQueueWalk c2)
+      ≠ (blockedSenderState.runQueueWalk c2)))
   assertBool "the receive dual is confined to core 2"
     (confinedCheck blockedSenderState receiveDualPost c2)
   -- Load-bearing negative: it is a genuinely *remote* write, so the executing
@@ -4582,8 +4607,8 @@ private def runLiveCrossCoreArmChecks : IO Unit := do
     (decide (SeLe4n.Kernel.notificationSignalBoundWriteSet boundNotificationState
       highNotification = [c2]))
   assertBool "the bound delivery really woke the bound TCB onto core 2"
-    (decide ((boundSignalPost.scheduler.runQueueOnCore c2).toList
-      ≠ (boundNotificationState.scheduler.runQueueOnCore c2).toList))
+    (decide ((boundSignalPost.runQueueWalk c2)
+      ≠ (boundNotificationState.runQueueWalk c2)))
   assertBool "the bound signal is confined to core 2"
     (confinedCheck boundNotificationState boundSignalPost c2)
   assertBool "NEGATIVE: the bound signal is NOT confined to the executing core 0"
@@ -4649,19 +4674,25 @@ transition had genuinely written — exactly the remote PIP-chain writes the liv
 `.call`, `.reply` and `.tcbSuspend` arms perform. -/
 private def runRunQueueComparisonChecks : IO Unit := do
   IO.println "--- §5.3b the run-queue comparison ---"
-  let q  := oneQueuedOnCore2.scheduler.runQueueOnCore c2
-  let q' := reBucketedOnCore2.scheduler.runQueueOnCore c2
+  -- Read through the run-queue links (`runQueueWalk` is the queue's order,
+  -- `queuedPriorityOn` a thread's recorded priority, the kept `maxCode` the
+  -- highest occupied bucket — `maxPriority` is `maxCode - 1`).
+  let w  := oneQueuedOnCore2.runQueueWalk c2
+  let w' := reBucketedOnCore2.runQueueWalk c2
+  let e  := oneQueuedOnCore2.scheduler.runQueueEndsOnCore c2
+  let e' := reBucketedOnCore2.scheduler.runQueueEndsOnCore c2
   assertBool "the fixture really queued the thread on core 2"
-    (decide (q.toList = [remoteHomedThread]))
+    (decide (w = [remoteHomedThread]))
   assertBool "the re-bucketed queue holds the same single thread"
-    (decide (q'.toList = [remoteHomedThread]))
+    (decide (w' = [remoteHomedThread]))
   -- The load-bearing negative: the OLD comparison cannot tell these apart.
   assertBool "NEGATIVE: a `toList` comparison reports these two queues equal"
-    (decide (q'.toList = q.toList))
+    (decide (w' = w))
   assertBool "…but the priority bucket really moved"
-    (decide (q'.maxPriority ≠ q.maxPriority))
+    (decide (e'.maxCode ≠ e.maxCode))
   assertBool "…and the per-thread priority with it"
-    (decide (q'.priorityOf remoteHomedThread ≠ q.priorityOf remoteHomedThread))
+    (decide (reBucketedOnCore2.queuedPriorityOn c2 remoteHomedThread
+      ≠ oneQueuedOnCore2.queuedPriorityOn c2 remoteHomedThread))
   -- So the widened comparison catches it, and `confinedCheck` with it.
   assertBool "runQueueAgreeOn rejects the re-bucketing"
     (runQueueAgreeOn oneQueuedOnCore2 reBucketedOnCore2 c2 = false)
@@ -4849,8 +4880,8 @@ private def runResolvedFlowGateChecks : IO Unit := do
   -- Two genuinely different states that agree on core 0's current thread —
   -- the wake rewrote the object store and core 2's run queue.
   assertBool "the wake really produced a different state"
-    (decide ((remoteWakePost.scheduler.runQueueOnCore c2).toList
-      ≠ (crossCoreState.scheduler.runQueueOnCore c2).toList))
+    (decide ((remoteWakePost.runQueueWalk c2)
+      ≠ (crossCoreState.runQueueWalk c2)))
   assertBool "…yet the two states agree on core 0's subject"
     (decide (remoteWakePost.scheduler.currentOnCore c0
       = crossCoreState.scheduler.currentOnCore c0))
@@ -4891,7 +4922,7 @@ private def runVacatedCoreChecks : IO Unit := do
   -- The fixture is what we think it is.
   assertBool "core 0 starts with a current thread and a non-empty run queue"
     (decide (niState.scheduler.currentOnCore c0 = some lowCurrent) &&
-     decide ((niState.scheduler.runQueueOnCore c0).toList ≠ []))
+     decide ((niState.runQueueWalk c0) ≠ []))
   -- The send really blocks — without this the whole group is inert.
   assertBool "the send blocks: core 0's current slot is cleared"
     (decide (vacatedPost.scheduler.currentOnCore c0 = none))
@@ -4903,7 +4934,7 @@ private def runVacatedCoreChecks : IO Unit := do
   -- cut: a core with nothing running and a runnable thread queued on it.
   assertBool "NEGATIVE: the raw transition strands an eligible thread on an idle core"
     (decide (vacatedPost.scheduler.currentOnCore c0 = none) &&
-     decide ((vacatedPost.scheduler.runQueueOnCore c0).toList ≠ []))
+     decide ((vacatedPost.runQueueWalk c0) ≠ []))
   -- …and neither of the two mechanisms that might have covered for it does.
   assertBool "NEGATIVE: the SGI diff does not poke the executing core"
     (SeLe4n.Kernel.PriorityInheritance.computeCrossCoreSgis niState vacatedPost c0
@@ -4916,7 +4947,7 @@ private def runVacatedCoreChecks : IO Unit := do
   assertBool "the local reschedule dispatches the queued thread"
     (decide (vacatedRescheduled.scheduler.currentOnCore c0 = some lowQueued))
   assertBool "…and takes it out of the run queue (dequeue-on-dispatch)"
-    (decide ((vacatedRescheduled.scheduler.runQueueOnCore c0).toList = []))
+    (decide ((vacatedRescheduled.runQueueWalk c0) = []))
   -- The guard is a guard: the rule is inert where the core still runs something.
   assertBool "NEGATIVE: the rule is inert when the transition left a thread running"
     (decide (SeLe4n.Kernel.PriorityInheritance.localSuccessorNeeded niState niState c0 = false))
@@ -5073,7 +5104,7 @@ private def runUnbindCoreAgreementChecks : IO Unit := do
     (match unboundDivergentPost with
      | none => false
      | some post =>
-       decide ((post.scheduler.runQueueOnCore c0).contains remoteHomedThread = true))
+       decide ((post.queuedOn c0 remoteHomedThread) = true))
   -- LOAD-BEARING NEGATIVE: the pre-fix behaviour, stated so it cannot return.
   -- Keying the guard on the home core would have left core 2 still running the
   -- thread, because boot's current slot never held it in the first place.
@@ -5119,7 +5150,7 @@ private def runRetypeWriteSetChecks : IO Unit := do
   IO.println "--- §5.7 the destroy sweep, bounded by pre-state occupancy ---"
   -- the fixture is not vacuous: the victim is somewhere
   assertBool "the victim is queued on core 2 in the fixture"
-    (decide ((retypeVictimState.scheduler.runQueueOnCore c2).contains remoteHomedThread = true))
+    (decide ((retypeVictimState.queuedOn c2 remoteHomedThread) = true))
   assertBool "the occupancy set is exactly [core 2]"
     (decide (SeLe4n.Kernel.threadOccupiedCores retypeVictimState remoteHomedThread = [c2]))
   -- NEGATIVE — the whole point.  The naive `allCores` bound would also pass
@@ -5138,7 +5169,7 @@ private def runRetypeWriteSetChecks : IO Unit := do
       (SeLe4n.Kernel.cleanupTcbReferences retypeVictimState remoteHomedThread) [])
   assertBool "…and core 2's run queue no longer holds the victim"
     (decide (((SeLe4n.Kernel.cleanupTcbReferences retypeVictimState
-      remoteHomedThread).scheduler.runQueueOnCore c2).contains remoteHomedThread = false))
+      remoteHomedThread).queuedOn c2 remoteHomedThread) = false))
   -- both disjuncts of the guard: queued on core 2, current on core 3
   assertBool "a victim queued on core 2 AND current on core 3 occupies both"
     (decide (SeLe4n.Kernel.threadOccupiedCores retypeVictimTwoCoreState remoteHomedThread
@@ -5211,8 +5242,8 @@ private def runCrossCoreNonInterferenceChecks : IO Unit := do
   -- visible.  Core 1 runs `highCurrent`, so the low observer sees `none` either
   -- way; core 0 runs `lowCurrent`, which the low observer does see.
   assertBool "NEGATIVE: clearing core 0's current slot IS visible to core 0's low observer"
-    (decide ((ObservableState.onCore niLabeling c0 lowLabel niState).current = some lowCurrent) &&
-     decide ((ObservableState.onCore niLabeling c0 lowLabel
+    (decide ((ObservableState.onCoreByLinks niLabeling c0 lowLabel niState).current = some lowCurrent) &&
+     decide ((ObservableState.onCoreByLinks niLabeling c0 lowLabel
         { niState with scheduler := niState.scheduler.setCurrentOnCore c0 none }).current = none))
   assertBool "the cross-core frame holds for every one of core c's six slots"
     (confinedCheck niState remoteCoreWriteState c1)
@@ -5500,7 +5531,7 @@ private def runCovertChannelInventoryChecks : IO Unit := do
   -- inventory records that rather than filing everything as hardware-only.
   assertBool "NEGATIVE: CC-1 (scheduling) IS model-visible — the split is real"
     (decide (acceptedCovertChannel_scheduling_perCore.modelVisible = true) &&
-     decide ((ObservableState.onCore niLabeling c1 lowLabel niState).activeDomain
+     decide ((ObservableState.onCoreByLinks niLabeling c1 lowLabel niState).activeDomain
         = niState.scheduler.activeDomainOnCore c1))
   -- SM8.B.8 (fourth review round): every entry is reachable from the enum and
   -- carries a named projection theorem, so a new channel cannot be filed
@@ -5575,10 +5606,10 @@ private def runSchedulingChannelBoundChecks : IO Unit := do
         scheduler := { niState.scheduler with
           domainSchedule := [⟨⟨0⟩, 10⟩, ⟨⟨1⟩, 10⟩, ⟨⟨0⟩, 10⟩] } }
   assertBool "the observed schedule index is below the schedule length"
-    (decide ((ObservableState.onCore niLabeling c1 lowLabel schedState).domainScheduleIndex
-        < (ObservableState.onCore niLabeling c1 lowLabel schedState).domainSchedule.length))
+    (decide ((ObservableState.onCoreByLinks niLabeling c1 lowLabel schedState).domainScheduleIndex
+        < (ObservableState.onCoreByLinks niLabeling c1 lowLabel schedState).domainSchedule.length))
   assertBool "the observed schedule IS the system-wide one (shared, not per-core)"
-    (decide ((ObservableState.onCore niLabeling c1 lowLabel schedState).domainSchedule
+    (decide ((ObservableState.onCoreByLinks niLabeling c1 lowLabel schedState).domainSchedule
         = schedState.scheduler.domainSchedule))
   -- The unbounded half, and the point of the correction: two states differing
   -- only in `domainTimeRemaining` are observationally distinct, with the SAME
@@ -5590,10 +5621,10 @@ private def runSchedulingChannelBoundChecks : IO Unit := do
     { schedState with
         scheduler := schedState.scheduler.setDomainTimeRemainingOnCore c1 4242 }
   assertBool "NEGATIVE: schedule length does NOT bound the channel — the quantum does not fit"
-    (decide ((ObservableState.onCore niLabeling c1 lowLabel quantumA).domainTimeRemaining
-        ≠ (ObservableState.onCore niLabeling c1 lowLabel quantumB).domainTimeRemaining) &&
-     decide ((ObservableState.onCore niLabeling c1 lowLabel quantumA).domainSchedule
-        = (ObservableState.onCore niLabeling c1 lowLabel quantumB).domainSchedule))
+    (decide ((ObservableState.onCoreByLinks niLabeling c1 lowLabel quantumA).domainTimeRemaining
+        ≠ (ObservableState.onCoreByLinks niLabeling c1 lowLabel quantumB).domainTimeRemaining) &&
+     decide ((ObservableState.onCoreByLinks niLabeling c1 lowLabel quantumA).domainSchedule
+        = (ObservableState.onCoreByLinks niLabeling c1 lowLabel quantumB).domainSchedule))
   assertBool "the distinguishing value is well outside a 3-entry alphabet"
     (decide (4242 > (schedState.scheduler.domainSchedule.length)))
 
@@ -5612,9 +5643,9 @@ private def runCatchAllPremiseChecks : IO Unit := do
   -- preserved" does not imply the per-core statement, which is exactly why the
   -- four catch-all lifts take `hConfined` rather than deriving it.
   assertBool "NEGATIVE: …but it MOVES core 1's own view (current: some → none)"
-    (decide ((ObservableState.onCore niLabeling c1 highLabel niState).current
+    (decide ((ObservableState.onCoreByLinks niLabeling c1 highLabel niState).current
         = some highCurrent) &&
-     decide ((ObservableState.onCore niLabeling c1 highLabel remoteCoreWriteState).current
+     decide ((ObservableState.onCoreByLinks niLabeling c1 highLabel remoteCoreWriteState).current
         = none))
 
 /-- §4.10  The per-core endpoint policy and the release bridge
@@ -6310,7 +6341,7 @@ private def runLiveDeclassifyChecks : IO Unit := do
     (match liveDeclassRun liveDeclassLabeling with
      | none => false
      | some st => allCores.all (fun c =>
-         lowEquivalentSliceOnCoreCheckWithRegs niLabeling c lowLabel st niState &&
+         lowEquivalentSliceOnCoreCheckWithRegsByLinks niLabeling c lowLabel st niState &&
          confinedCheck niState st c))
   -- The load-bearing negative: the DEFAULT declassification policy is deny-all,
   -- so an operator who has configured nothing cannot declassify at all.
@@ -6421,7 +6452,7 @@ private def runDeclassifyRunChecks : IO Unit := do
     (match outcome with
      | .error _ => false
      | .ok ((), st) => allCores.all (fun c =>
-         lowEquivalentSliceOnCoreCheckWithRegs niLabeling c lowLabel st niState &&
+         lowEquivalentSliceOnCoreCheckWithRegsByLinks niLabeling c lowLabel st niState &&
          confinedCheck niState st c))
   -- The load-bearing negative: a run stops at the first refusal, and the entries
   -- recorded before it survive — the trail is append-only, not transactional.
@@ -6567,7 +6598,7 @@ cross-core {chainIsCrossCore log}"
 {decide (st.objectIndex = niState.objectIndex)}, scheduler unchanged \
 {decide (st.scheduler.currentOnCore c1 = niState.scheduler.currentOnCore c1)}"
       , s!"[smp-declassification] invisible on every core: \
-{allCores.all (fun c => lowEquivalentSliceOnCoreCheckWithRegs niLabeling c lowLabel st niState)}"
+{allCores.all (fun c => lowEquivalentSliceOnCoreCheckWithRegsByLinks niLabeling c lowLabel st niState)}"
       , s!"[smp-declassification] unconfigured policy refuses: \
 {match declassifyObjectFromCore (liftLegacyContext unconfiguredDeclassLabeling)
     unconfiguredDeclassLabeling.declassificationPolicy c1 lowNotification niState with
@@ -6737,7 +6768,7 @@ private def lockProbeStates : List SeLe4n.Kernel.Concurrency.RwLockState :=
 `BEq KernelObject` compares every field, so this is a whole-object read. -/
 private def projectedEndpoint (c : CoreId) (L : SecurityLabel) (st : SystemState) :
     Option KernelObject :=
-  (ObservableState.onCore niLabeling c L st).objects lowEndpoint
+  (ObservableState.onCoreByLinks niLabeling c L st).objects lowEndpoint
 
 /-- `niLocked` with lock word `l` installed at the low endpoint's key. -/
 private def lockAt (l : SeLe4n.Kernel.Concurrency.RwLockState) :
@@ -6764,7 +6795,7 @@ private def runFineLockInvisibilityChecks : IO Unit := do
       (projectedEndpoint c highLabel (lockAt l).kernel == projectedEndpoint c highLabel niState))))
   assertBool "…and the whole observable slice agrees, on every core"
     (lockProbeStates.all (fun l => allCores.all (fun c =>
-      lowEquivalentSliceOnCoreCheckWithRegs niLabeling c lowLabel (lockAt l).kernel niState)))
+      lowEquivalentSliceOnCoreCheckWithRegsByLinks niLabeling c lowLabel (lockAt l).kernel niState)))
   -- The table-level lock (hierarchy level 0) is one more key of the same table.
   assertBool "the table-level objStore lock is invisible (theorem)"
     (have _h : ∀ (c : CoreId) (lk : SeLe4n.Kernel.Concurrency.RwLockState),
@@ -7271,7 +7302,7 @@ private def bracketedEntryResult :
 /-- The §7.6 projected endpoint, under the entry labelling. -/
 private def entryProjectedEndpoint (c : CoreId) (L : SecurityLabel) (st : SystemState) :
     Option KernelObject :=
-  (ObservableState.onCore fineLockEntryLabeling c L st).objects lowEndpoint
+  (ObservableState.onCoreByLinks fineLockEntryLabeling c L st).objects lowEndpoint
 
 /-- §7.6  SM8.D.5 — the bracketed live entry, and fail-closed sharpened. -/
 private def runFineLockEntryChecks : IO Unit := do
@@ -7335,9 +7366,9 @@ private def runFineLockEntryChecks : IO Unit := do
   -- …which is exactly enough: the observer's view is unchanged on every core.
   assertBool "the refused syscall is invisible on every core, at both clearances"
     (allCores.all (fun c =>
-      lowEquivalentSliceOnCoreCheckWithRegs fineLockEntryLabeling c lowLabel
+      lowEquivalentSliceOnCoreCheckWithRegsByLinks fineLockEntryLabeling c lowLabel
         bracketedEntryResult.1.kernel niState &&
-      lowEquivalentSliceOnCoreCheckWithRegs fineLockEntryLabeling c highLabel
+      lowEquivalentSliceOnCoreCheckWithRegsByLinks fineLockEntryLabeling c highLabel
         bracketedEntryResult.1.kernel niState))
   assertBool "…and the projected object at the LOCKED endpoint is identical"
     (allCores.all (fun c =>
@@ -7439,22 +7470,22 @@ private def runFineLockSuccessPathChecks : IO Unit := do
   -- …yet the LOW observer sees nothing of it, on every core.
   assertBool "the low observer's view is unchanged on every core"
     (allCores.all (fun c =>
-      lowEquivalentSliceOnCoreCheckWithRegs fineLockEntryLabeling c lowLabel
+      lowEquivalentSliceOnCoreCheckWithRegsByLinks fineLockEntryLabeling c lowLabel
         successEntryResult.1.kernel successEntryState))
   assertBool "…including the projected objects at the locked endpoint and CNode"
     (allCores.all (fun c =>
       (entryProjectedEndpoint c lowLabel successEntryResult.1.kernel
         == entryProjectedEndpoint c lowLabel successEntryState) &&
-      ((ObservableState.onCore fineLockEntryLabeling c lowLabel
+      ((ObservableState.onCoreByLinks fineLockEntryLabeling c lowLabel
           successEntryResult.1.kernel).objects probeCNode
-        == (ObservableState.onCore fineLockEntryLabeling c lowLabel successEntryState).objects
+        == (ObservableState.onCoreByLinks fineLockEntryLabeling c lowLabel successEntryState).objects
           probeCNode)))
   -- NEGATIVE: the HIGH observer *does* see the difference, so the low
   -- observer's blindness is the label filter's doing and not a no-op.
   assertBool "NEGATIVE: the HIGH observer's view of the caller DID move"
-    (!((ObservableState.onCore fineLockEntryLabeling c1 highLabel
+    (!((ObservableState.onCoreByLinks fineLockEntryLabeling c1 highLabel
           successEntryResult.1.kernel).objects highCurrent.toObjId
-       == (ObservableState.onCore fineLockEntryLabeling c1 highLabel successEntryState).objects
+       == (ObservableState.onCoreByLinks fineLockEntryLabeling c1 highLabel successEntryState).objects
          highCurrent.toObjId))
   -- The bracket's own contribution (WS-LS LS2.1): the ghost table only, and it
   -- round-trips to all-free (O3).  `LockState` is a function, so by theorem.
@@ -7611,7 +7642,7 @@ authority={authorityWritePermitted fineLockLabeling untrustedSubject lowEndpoint
   , s!"[smp-fine-lock] bracketed entry refused: {traceRefusedOutcome} \
 lockOnly={lockWritesOnlyCheck niLocked bracketedEntryResult.1}"
   , s!"[smp-fine-lock] bracketed entry succeeded: {traceSuccessOutcome} \
-lowInvisible={allCores.all (fun c => lowEquivalentSliceOnCoreCheckWithRegs
+lowInvisible={allCores.all (fun c => lowEquivalentSliceOnCoreCheckWithRegsByLinks
   fineLockEntryLabeling c lowLabel successEntryResult.1.kernel successEntryState)}"
   , s!"[smp-fine-lock] declared footprints: \
 tcbSuspend={(SeLe4n.Kernel.Concurrency.lockSetForSyscall .tcbSuspend
@@ -8218,12 +8249,12 @@ private def covertChannelSeverityName : CovertChannelSeverity → String
 /-- The low observer's view at a given core — named once so the per-core lines
 below cannot accidentally read two different projections. -/
 private def lowViewOnCore (c : CoreId) : ObservableState :=
-  ObservableState.onCore niLabeling c lowLabel niState
+  ObservableState.onCoreByLinks niLabeling c lowLabel niState
 
 /-- How many objects an observer at `L` can see, on the fixture.  The shared
 half of the partition, so the core is irrelevant and `c0` is not a choice. -/
 private def visibleObjectCount (L : SecurityLabel) : Nat :=
-  (ObservableState.onCore niLabeling c0 L niState).objectIndex.length
+  (ObservableState.onCoreByLinks niLabeling c0 L niState).objectIndex.length
 
 /-- Are the post-state's **per-core slots** invisible to the low observer on
 every core?  The decidable slice plus the register comparison — the finer of the
@@ -8235,7 +8266,7 @@ outside its reach by construction (`perCoreSlice_erases_shared_content`).  That
 is what `lowBadgeUnchangedEverywhere` is for. -/
 private def lowSlotsInvisibleEverywhere (st' : SystemState) : Bool :=
   allCores.all (fun c =>
-    lowEquivalentSliceOnCoreCheckWithRegs niLabeling c lowLabel niState st')
+    lowEquivalentSliceOnCoreCheckWithRegsByLinks niLabeling c lowLabel niState st')
 
 /-- Does the low observer read the **same badge** on `oid` at every core after
 the transition?  Read through the observable state's `objects` function, so this
@@ -8259,7 +8290,7 @@ private def visibleCoreWriteState : SystemState :=
 the fixture — the independence set. -/
 private def independenceInvisibleCores : List CoreId :=
   allCores.filter (fun c =>
-    lowEquivalentSliceOnCoreCheckWithRegs niLabeling c lowLabel niState visibleCoreWriteState)
+    lowEquivalentSliceOnCoreCheckWithRegsByLinks niLabeling c lowLabel niState visibleCoreWriteState)
 
 /-- The SM8.A half of the trace: what an observer at `(core, label)` sees. -/
 private def observerTraceLines : List String :=
@@ -10531,9 +10562,9 @@ private def runTaintMountChecks : IO Unit := do
   -- The write is invisible: a taint table an observer cannot read moves no view.
   assertBool "a taint write moves no observer's view, on any core"
     (allCores.all (fun c =>
-       lowEquivalentSliceOnCoreCheckWithRegs niLabeling c lowLabel taintProbeState niState) &&
+       lowEquivalentSliceOnCoreCheckWithRegsByLinks niLabeling c lowLabel taintProbeState niState) &&
      allCores.all (fun c =>
-       lowEquivalentSliceOnCoreCheckWithRegs niLabeling c highLabel taintProbeState niState))
+       lowEquivalentSliceOnCoreCheckWithRegsByLinks niLabeling c highLabel taintProbeState niState))
   -- NEGATIVE: the write really happened, so the invisibility above is the
   -- projection's doing rather than a no-op.
   assertBool "NEGATIVE: the write really did move the table"
@@ -11275,11 +11306,11 @@ private def runTaintFootprintChecks : IO Unit := do
     (let plan : TaintPlan := { edges := [{ sink := lowCurrent.toObjId, source := declassTargetA }] }
      let after := applySyscallTaint plan niState niState
      allCores.all (fun c =>
-       lowEquivalentSliceOnCoreCheckWithRegs niLabeling c lowLabel after niState) &&
+       lowEquivalentSliceOnCoreCheckWithRegsByLinks niLabeling c lowLabel after niState) &&
      allCores.all (fun c =>
        decide (after.scheduler.currentOnCore c = niState.scheduler.currentOnCore c) &&
-       decide ((after.scheduler.runQueueOnCore c).toList
-         = (niState.scheduler.runQueueOnCore c).toList)))
+       decide ((after.runQueueWalk c)
+         = (niState.runQueueWalk c))))
 
 /-- The SM9.D half of the golden trace: what the causal provenance layer reports
 as observables — the classification, the propagation the live entry performed,
@@ -11946,14 +11977,14 @@ has `DecidableEq`, so unlike the whole projected state this is a decidable
 end-to-end read of the observable view. -/
 private def abortViewQueuePrev (ctx : LabelingContext) (st : SystemState)
     (t : SeLe4n.ThreadId) : Option (Option SeLe4n.ThreadId) :=
-  match (projectState ctx lowObserver st).objects t.toObjId with
+  match (projectStateByLinks ctx lowObserver st).objects t.toObjId with
   | some (.tcb pt) => some pt.queuePrev
   | _ => none
 
 /-- An endpoint's send-queue head as the low observer sees it. -/
 private def abortViewSendHead (ctx : LabelingContext) (st : SystemState)
     (oid : SeLe4n.ObjId) : Option (Option SeLe4n.ThreadId) :=
-  match (projectState ctx lowObserver st).objects oid with
+  match (projectStateByLinks ctx lowObserver st).objects oid with
   | some (.endpoint ep) => some ep.sendQ.head
   | _ => none
 

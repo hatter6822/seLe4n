@@ -27,6 +27,7 @@ import SeLe4n.Kernel.Lifecycle.Operations
 import SeLe4n.Kernel.InformationFlow.Policy
 import SeLe4n.Platform.Boot
 import SeLe4n.Testing.Helpers
+import SeLe4n.Testing.BootCoreOps
 
 /-!
 # AN11-A — KernelError variant cross-syscall coverage matrix (H-20)
@@ -412,7 +413,7 @@ private def row_schedulerInvariantViolation : KernelErrorRejection :=
       let st : SystemState := { (default : SystemState) with
         scheduler := (default : SystemState).scheduler.setCurrentOnCore
           SeLe4n.Kernel.Concurrency.bootCoreId (some (ThreadId.ofNat 999)) }
-      runUnit (scheduleChecked st) }
+      runUnit (bootScheduleChecked st) }
 
 /-- Row: `validateIpcBufferAddress` rejects unaligned address with
 `.alignmentError`.  Same as the AN11-A.2 baseline row but tagged as
@@ -737,7 +738,7 @@ private def row_notSupported_fiq : KernelErrorRejection :=
     runScenario   := fun _ =>
       let ectx : SeLe4n.Kernel.Architecture.ExceptionContext :=
         { esr := 0, elr := 0, spsr := 0, far := 0 }
-      runUnit (SeLe4n.Kernel.Architecture.dispatchException .fiq ectx 0
+      runUnit (SeLe4n.Testing.bootDispatchException .fiq ectx 0
         (default : SystemState)) }
 
 /-- Row: `dispatchException .serror` returns `.hardwareFault`. -/
@@ -750,7 +751,7 @@ private def row_hardwareFault_serror : KernelErrorRejection :=
     runScenario   := fun _ =>
       let ectx : SeLe4n.Kernel.Architecture.ExceptionContext :=
         { esr := 0, elr := 0, spsr := 0, far := 0 }
-      runUnit (SeLe4n.Kernel.Architecture.dispatchException .serror ectx 0
+      runUnit (SeLe4n.Testing.bootDispatchException .serror ectx 0
         (default : SystemState)) }
 
 /-- Row: `dispatchSynchronousException` on a data abort **the kernel cannot

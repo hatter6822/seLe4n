@@ -669,10 +669,11 @@ reachable state** the no-stall premise is established by `decide` (not assumed) 
 the constructive form `chooseThreadOnCore_always_succeeds_of_idleAvailableB`.  The
 ∀-core form: if every core's idle is available, every core selects some thread. -/
 theorem schedulerNoStall_smp_of_idleAvailableB (st : SystemState)
-    (hRunnable : ∀ c, runnableThreadsAreTCBsOnCore st c)
+    (hRunnable : ∀ c, runnableThreadsAreTCBsOnCore st c) (hR : st.runQueueRefined)
     (hAvail : ∀ c, idleAvailableOnCoreB st c = true) :
     ∀ c : CoreId, ∃ tid, chooseThreadOnCore st c = .ok (some tid) :=
-  fun c => chooseThreadOnCore_always_succeeds_of_idleAvailableB st c (hRunnable c) (hAvail c)
+  fun c => chooseThreadOnCore_always_succeeds_of_idleAvailableB st c (hRunnable c) (hR c)
+    (hAvail c)
 
 /-- WS-SM SM5.J.4 (**the genuine per-core eventually-scheduled liveness** — the
 real fix for "no thread starves"): a thread `tid` runnable on core `c` with

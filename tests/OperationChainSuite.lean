@@ -13,6 +13,7 @@ import SeLe4n.Testing.InvariantChecks
 import SeLe4n.Testing.Helpers
 import SeLe4n.Testing.Deprecated
 import SeLe4n.Platform.Boot
+import SeLe4n.Testing.BootCoreOps
 
 set_option maxRecDepth 1024
 
@@ -420,7 +421,7 @@ private partial def scheduleNTimes (n : Nat) (assertEvery : Nat) (st : SystemSta
   if n = 0 then
     pure st
   else
-    let step := if (st.scheduler.currentOnCore bootCoreId).isSome then SeLe4n.Kernel.handleYield st else SeLe4n.Kernel.schedule st
+    let step := if (st.scheduler.currentOnCore bootCoreId).isSome then bootYield st else bootSchedule st
     let st' ← runKernelSt s!"scheduler: schedule step {n}" step
     if assertEvery > 0 && n % assertEvery = 0 then
       assertInvariants s!"scheduler periodic invariant {n}" st'
@@ -441,11 +442,11 @@ private def schedulerStressChecks : IO Unit := do
       |>.withObject ⟨2603⟩ (.tcb { tid := ⟨2603⟩, priority := ⟨100⟩, domain := ⟨0⟩, cspaceRoot := ⟨260⟩, vspaceRoot := ⟨3000⟩, ipcBuffer := (SeLe4n.VAddr.ofNat 16384), ipcState := .ready })
       |>.withRunnable [⟨2600⟩, ⟨2601⟩, ⟨2602⟩, ⟨2603⟩]
       |>.buildChecked)
-  let (_, stFirst) ← expectOkSt "scheduler same-priority baseline" (SeLe4n.Kernel.schedule samePrioState)
+  let (_, stFirst) ← expectOkSt "scheduler same-priority baseline" (bootSchedule samePrioState)
   let baseline := (stFirst.scheduler.currentOnCore bootCoreId)
   let mut consistent := true
   for _ in List.range 20 do
-    match SeLe4n.Kernel.schedule samePrioState with
+    match bootSchedule samePrioState with
     | .ok (_, st') =>
         if (st'.scheduler.currentOnCore bootCoreId) ≠ baseline then
           consistent := false
@@ -491,8 +492,8 @@ private def schedulerStressChecks : IO Unit := do
   let mut st := domainState
   let mut isolated := true
   for _ in List.range 16 do
-    let stSwitch ← runKernelSt "scheduler domain switch" (SeLe4n.Kernel.switchDomain st)
-    let stSched ← runKernelSt "scheduler domain schedule" (SeLe4n.Kernel.schedule stSwitch)
+    let stSwitch ← runKernelSt "scheduler domain switch" (bootSwitchDomain st)
+    let stSched ← runKernelSt "scheduler domain schedule" (bootSchedule stSwitch)
     match (stSched.scheduler.currentOnCore bootCoreId) with
     | none => pure ()
     | some tid =>
@@ -582,7 +583,9 @@ private def chain10RegisterDecodeMultiSyscall : IO Unit := do
   | _ => throw <| IO.userError "chain10: sender TCB not found after send"
 
   -- Step 2: Dispatch receiver — remove from runQueue before making current
-  let stRecv := { stAfterSend with scheduler := (stAfterSend.scheduler.setCurrentOnCore bootCoreId (some ⟨301⟩)).setRunQueueOnCore bootCoreId ((stAfterSend.scheduler.runQueueOnCore bootCoreId).remove ⟨301⟩) }
+  -- (dequeue through the TCB links so the live queue, not just the ghost, drops 301)
+  let stDeq := stAfterSend.runRemoveOnCore bootCoreId ⟨301⟩
+  let stRecv := { stDeq with scheduler := stDeq.scheduler.setCurrentOnCore bootCoreId (some ⟨301⟩) }
   let stFinal ← match SeLe4n.Kernel.syscallEntry SeLe4n.arm64DefaultLayout 32 stRecv with
   | .ok (_, stAfterRecv) =>
       -- After receive, endpoint sendQ should be empty (sender was dequeued)
@@ -2491,7 +2494,7 @@ private def chain22NotificationBadgeDelivery : IO Unit := do
     | none => throw (IO.userError "chain22: FAIL — waiter pendingMessage is none after signal wake")
   | _ => throw (IO.userError "chain22: FAIL — waiter TCB not found after signal wake")
   -- Step 4: Verify waiter is runnable again
-  expect "chain22: waiter is runnable after wake" (waiter ∈ (st2.scheduler.runQueueOnCore bootCoreId))
+  expect "chain22: waiter is runnable after wake" (st2.queuedOn bootCoreId waiter)
   assertInvariants "chain22: signal-wake badge delivery" st2
 
 -- ============================================================================
@@ -2639,10 +2642,10 @@ private def chain24HandleYieldEmptyQueue : IO Unit := do
       |>.withLifecycleObjectType ⟨20⟩ .vspaceRoot
       |>.buildChecked)
   -- Schedule to get the thread as current
-  let (_, st1) ← expectOkSt "chain24: initial schedule" (SeLe4n.Kernel.schedule st0)
+  let (_, st1) ← expectOkSt "chain24: initial schedule" (bootSchedule st0)
   expect "chain24: thread is current" ((st1.scheduler.currentOnCore bootCoreId) == some tid)
   -- Yield — single thread should re-enqueue and re-select itself
-  let (_, st2) ← expectOkSt "chain24: handleYield" (SeLe4n.Kernel.handleYield st1)
+  let (_, st2) ← expectOkSt "chain24: handleYield" (bootYield st1)
   expect "chain24: same thread re-selected after yield" ((st2.scheduler.currentOnCore bootCoreId) == some tid)
   assertInvariants "chain24: yield single thread" st2
   -- Edge case: handleYield with NO current thread and empty run queue
@@ -2653,11 +2656,13 @@ private def chain24HandleYieldEmptyQueue : IO Unit := do
       |>.withLifecycleObjectType ⟨10⟩ .cnode
       |>.withLifecycleObjectType ⟨20⟩ .vspaceRoot
       |>.buildChecked)
-  -- V5-F: handleYield with current=none now returns .error .invalidArgument
-  -- (defensive: yielding requires a current thread to re-enqueue)
-  expectErr "chain24: yield empty queue returns invalidArgument"
-    (SeLe4n.Kernel.handleYield stEmpty)
-    .invalidArgument
+  -- V5-F: yielding requires a current thread.  The live per-core yield
+  -- (`yieldOnCore`, WS-ZA ZA4.3) refuses a core with no caller as
+  -- `.illegalState`; the single-core reference `handleYield` it replaced in
+  -- this suite reported `.invalidArgument`.
+  expectErr "chain24: yield with no current thread returns illegalState"
+    (bootYield stEmpty)
+    .illegalState
 
 /-- L-P07: IRQ handler dispatch — register an IRQ handler and verify
 signal is dispatched to the correct notification object. -/

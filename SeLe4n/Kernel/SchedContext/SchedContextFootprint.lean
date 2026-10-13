@@ -522,7 +522,7 @@ theorem schedContextUnbind_replenishQueueOnCore_ne_of_tcb (st st' : SystemState)
     dsimp only
     repeat' split
     all_goals
-      simp [SchedulerState.setRunQueueOnCore_replenishQueueOnCore,
+      simp [
         SchedulerState.setCurrentOnCore_replenishQueueOnCore]
 
 /-- **`v0.35.168`: ...and the live per-core arm writes the same one**, the

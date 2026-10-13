@@ -854,7 +854,7 @@ def chooseThreadOnCoreSelects (st : SystemState) (c : CoreId)
 not derive `DecidableEq (Except _ _)`, so the instance is discharged by a
 structural case analysis on the (fully-evaluated) selection result rather
 than by `inferInstance`. -/
-instance (st : SystemState) (c : CoreId) (tid : SeLe4n.ThreadId) :
+noncomputable instance (st : SystemState) (c : CoreId) (tid : SeLe4n.ThreadId) :
     Decidable (chooseThreadOnCoreSelects st c tid) :=
   match h : chooseThreadOnCore st c with
   | .ok (some t) =>
@@ -869,7 +869,7 @@ must fall back to idle" — the decidable complement of
 def chooseThreadOnCoreIdleFallback (st : SystemState) (c : CoreId) : Prop :=
   chooseThreadOnCore st c = .ok none
 
-instance (st : SystemState) (c : CoreId) :
+noncomputable instance (st : SystemState) (c : CoreId) :
     Decidable (chooseThreadOnCoreIdleFallback st c) :=
   match h : chooseThreadOnCore st c with
   | .ok none => .isTrue (by simp [chooseThreadOnCoreIdleFallback, h])

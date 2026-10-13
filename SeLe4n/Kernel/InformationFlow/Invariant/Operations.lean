@@ -4340,7 +4340,7 @@ theorem runRequeueOnCore_preserves_projection
   unfold SystemState.onlyObjectsSchedulerDiffer at hD
   rw [hD] at hObj ⊢
   simp only [projectState, projectCurrent, projectActiveDomain,
-    projectDomainTimeRemaining, projectDomainScheduleIndex, projectMachineRegs, hObj,
+    projectDomainTimeRemaining, projectDomainScheduleIndex, projectMachineRegs,
     SystemState.runRequeueOnCore_scheduler,
     SchedulerState.setRunQueueOnCore_currentOnCore,
     SchedulerState.setRunQueueOnCore_activeDomainOnCore,
@@ -4576,7 +4576,7 @@ theorem migrateRunQueueOnAffinityChange_preserves_projection
         dsimp only
         rw [hD] at hObj ⊢
         simp only [projectState, projectCurrent, projectActiveDomain,
-          projectDomainTimeRemaining, projectDomainScheduleIndex, projectMachineRegs, hObj,
+          projectDomainTimeRemaining, projectDomainScheduleIndex, projectMachineRegs,
           runMoveOnCore_scheduler _ _ _ _ _ hne,
           SchedulerState.setRunQueueEndsOnCore_currentOnCore,
           SchedulerState.setRunQueueEndsOnCore_activeDomainOnCore,

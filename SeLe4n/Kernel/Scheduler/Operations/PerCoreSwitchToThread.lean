@@ -1170,7 +1170,7 @@ theorem preemptCurrentOnCore_activeDomainOnCore (st : SystemState) (c : CoreId)
   · split
     · rfl
     · split
-      · simp [SchedulerState.setRunQueueOnCore_activeDomainOnCore, SystemState.rewriteObject_scheduler]
+      · simp [SystemState.rewriteObject_scheduler]
       · rfl
 
 /-- WS-SM (PR #880 round 7): a successful switch never touches any core's
@@ -1260,7 +1260,7 @@ theorem preemptCurrentOnCore_replenishQueueOnCore (st : SystemState) (c : CoreId
   · split
     · rfl
     · split
-      · simp [SchedulerState.setRunQueueOnCore_replenishQueueOnCore, SystemState.rewriteObject_scheduler]
+      · simp [SystemState.rewriteObject_scheduler]
       · rfl
 
 /-- WS-SM (PR #880 round 7): a successful switch never touches any core's

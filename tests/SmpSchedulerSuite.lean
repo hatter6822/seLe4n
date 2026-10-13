@@ -87,16 +87,13 @@ private def stFourCore : SystemState :=
     tB.toObjId (.tcb (mkTcb 101 20 0 c1))).withObject
     tC.toObjId (.tcb (mkTcb 102 15 0 c2))).withObject
     tD.toObjId (.tcb (mkTcb 103 25 0 c3))).build
-  { base with scheduler :=
-      ((((base.scheduler.setRunQueueOnCore c0 (RunQueue.ofList [(tA, ⟨10⟩)])).setRunQueueOnCore
-        c1 (RunQueue.ofList [(tB, ⟨20⟩)])).setRunQueueOnCore
-        c2 (RunQueue.ofList [(tC, ⟨15⟩)])).setRunQueueOnCore
-        c3 (RunQueue.ofList [(tD, ⟨25⟩)])) }
+  enqueueAllOnCore (enqueueAllOnCore (enqueueAllOnCore (enqueueAllOnCore base
+    c0 [(tA, ⟨10⟩)]) c1 [(tB, ⟨20⟩)]) c2 [(tC, ⟨15⟩)]) c3 [(tD, ⟨25⟩)]
 
 /-- `stFourCore` with core 0's run queue emptied and its idle thread enqueued — the
 SM5.J.4 / SM5.E no-stall fixture (core 0 has no user thread but must not stall). -/
 private def stCore0Idle : SystemState :=
-  let emptied := { stFourCore with scheduler := stFourCore.scheduler.setRunQueueOnCore c0 (RunQueue.ofList []) }
+  let emptied := replaceRunQueueOnCore stFourCore c0 []
   enqueueIdleThreadOnCore emptied c0
 
 -- ============================================================================
@@ -112,7 +109,7 @@ private def threadLabel (t : SeLe4n.ThreadId) : String :=
 The per-core idle thread is recognised explicitly so the no-stall fallback reads as
 "the idle thread" rather than an anonymous id. -/
 private def selLabel (st : SystemState) (c : CoreId) : String :=
-  match chooseThreadOnCore st c with
+  match chooseThreadOnCoreByLinks st c with
   | .ok (some t) => if t == idleThreadId c then "the idle thread" else threadLabel t
   | .ok none     => "idle-fallback"
   | .error _     => "selection-error"
@@ -144,47 +141,48 @@ private def assertBool (name : String) (b : Bool) : IO Unit := do
 
 private def runSelectionScenarios : IO Unit := do
   IO.println "--- §1 per-core selection (4-thread / 4-core workload) ---"
-  assertBool "core 0 selects its bound thread A" (decide (chooseThreadOnCoreSelects stFourCore c0 tA))
-  assertBool "core 1 selects its bound thread B" (decide (chooseThreadOnCoreSelects stFourCore c1 tB))
-  assertBool "core 2 selects its bound thread C" (decide (chooseThreadOnCoreSelects stFourCore c2 tC))
-  assertBool "core 3 selects its bound thread D" (decide (chooseThreadOnCoreSelects stFourCore c3 tD))
+  assertBool "core 0 selects its bound thread A" (selectsByLinks stFourCore c0 tA)
+  assertBool "core 1 selects its bound thread B" (selectsByLinks stFourCore c1 tB)
+  assertBool "core 2 selects its bound thread C" (selectsByLinks stFourCore c2 tC)
+  assertBool "core 3 selects its bound thread D" (selectsByLinks stFourCore c3 tD)
   -- Each core selects only its OWN thread — never a thread bound to another core.
-  assertBool "core 0 does NOT select B (bound to core 1)" (!decide (chooseThreadOnCoreSelects stFourCore c0 tB))
-  assertBool "core 0 does NOT select C (bound to core 2)" (!decide (chooseThreadOnCoreSelects stFourCore c0 tC))
-  assertBool "core 0 does NOT select D (bound to core 3)" (!decide (chooseThreadOnCoreSelects stFourCore c0 tD))
-  assertBool "core 3 does NOT select A (bound to core 0)" (!decide (chooseThreadOnCoreSelects stFourCore c3 tA))
+  assertBool "core 0 does NOT select B (bound to core 1)" (!selectsByLinks stFourCore c0 tB)
+  assertBool "core 0 does NOT select C (bound to core 2)" (!selectsByLinks stFourCore c0 tC)
+  assertBool "core 0 does NOT select D (bound to core 3)" (!selectsByLinks stFourCore c0 tD)
+  assertBool "core 3 does NOT select A (bound to core 0)" (!selectsByLinks stFourCore c3 tA)
   -- All four cores schedule a thread (no core stalls on the full workload).
-  assertBool "core 0 makes a selection (not idle-fallback)" (!decide (chooseThreadOnCoreIdleFallback stFourCore c0))
-  assertBool "core 1 makes a selection (not idle-fallback)" (!decide (chooseThreadOnCoreIdleFallback stFourCore c1))
-  assertBool "core 2 makes a selection (not idle-fallback)" (!decide (chooseThreadOnCoreIdleFallback stFourCore c2))
-  assertBool "core 3 makes a selection (not idle-fallback)" (!decide (chooseThreadOnCoreIdleFallback stFourCore c3))
+  assertBool "core 0 makes a selection (not idle-fallback)" (!idleFallbackByLinks stFourCore c0)
+  assertBool "core 1 makes a selection (not idle-fallback)" (!idleFallbackByLinks stFourCore c1)
+  assertBool "core 2 makes a selection (not idle-fallback)" (!idleFallbackByLinks stFourCore c2)
+  assertBool "core 3 makes a selection (not idle-fallback)" (!idleFallbackByLinks stFourCore c3)
 
 -- ============================================================================
 -- §2  Cross-core independence — mutating one core frames the others
 -- ============================================================================
 
-/-- `stFourCore` with core 1's run queue swapped to hold thread A's id at a new
-priority — used to witness that core 1's mutation frames cores 0/2/3. -/
+/-- `stFourCore` with core 1's run queue emptied — used to witness that core 1's
+mutation frames cores 0/2/3.  (A thread holds one run-queue place, in its TCB, so
+core 1's queue cannot take thread A while core 0's holds it.) -/
 private def stMutatedCore1 : SystemState :=
-  { stFourCore with scheduler := stFourCore.scheduler.setRunQueueOnCore c1 (RunQueue.ofList [(tA, ⟨5⟩)]) }
+  replaceRunQueueOnCore stFourCore c1 []
 
 private def runIndependenceScenarios : IO Unit := do
   IO.println "--- §2 cross-core independence (mutate core 1, frame 0/2/3) ---"
-  -- Core 1's selection changes (now resolves tA via core 1's queue) ...
+  -- Core 1's selection changes (its queue is now empty) ...
   assertBool "core 1's selection changed after its run-queue mutation"
-    (!decide (chooseThreadOnCoreSelects stMutatedCore1 c1 tB))
+    (!selectsByLinks stMutatedCore1 c1 tB)
   -- ... but cores 0/2/3 are completely unaffected (same selection as before).
   assertBool "core 0 still selects A after core 1's mutation (frame)"
-    (decide (chooseThreadOnCoreSelects stMutatedCore1 c0 tA))
+    (selectsByLinks stMutatedCore1 c0 tA)
   assertBool "core 2 still selects C after core 1's mutation (frame)"
-    (decide (chooseThreadOnCoreSelects stMutatedCore1 c2 tC))
+    (selectsByLinks stMutatedCore1 c2 tC)
   assertBool "core 3 still selects D after core 1's mutation (frame)"
-    (decide (chooseThreadOnCoreSelects stMutatedCore1 c3 tD))
+    (selectsByLinks stMutatedCore1 c3 tD)
   -- The per-core run queues are genuinely distinct slots.
   assertBool "core 0's run queue is unchanged by core 1's mutation"
-    (decide ((stMutatedCore1.scheduler.runQueueOnCore c0).toList = (stFourCore.scheduler.runQueueOnCore c0).toList))
+    (decide ((stMutatedCore1.runQueueWalk c0) = (stFourCore.runQueueWalk c0)))
   assertBool "core 2's run queue is unchanged by core 1's mutation"
-    (decide ((stMutatedCore1.scheduler.runQueueOnCore c2).toList = (stFourCore.scheduler.runQueueOnCore c2).toList))
+    (decide ((stMutatedCore1.runQueueWalk c2) = (stFourCore.runQueueWalk c2)))
 
 -- ============================================================================
 -- §3  Affinity admission — each thread is admitted only on its bound core
@@ -289,15 +287,15 @@ private def runIdleScenarios : IO Unit := do
   assertBool "core 0 (emptied) with idle enqueued: idle is an in-domain candidate"
     (decide (idleAvailableOnCoreB stCore0Idle c0 = true))
   assertBool "core 0 (emptied) with idle enqueued: selects the idle thread (no stall)"
-    (decide (chooseThreadOnCoreSelects stCore0Idle c0 (idleThreadId c0)))
+    (selectsByLinks stCore0Idle c0 (idleThreadId c0))
   assertBool "core 0 (emptied) with idle enqueued: selection succeeds (.ok some)"
-    (match chooseThreadOnCore stCore0Idle c0 with | .ok (some _) => true | _ => false)
+    (match chooseThreadOnCoreByLinks stCore0Idle c0 with | .ok (some _) => true | _ => false)
   -- The idle thread does not leak onto the other cores' run queues.
   assertBool "core 0's idle thread is NOT on core 1's run queue (locality)"
-    (!decide (idleThreadId c0 ∈ (stCore0Idle.scheduler.runQueueOnCore c1).toList))
+    (!decide (idleThreadId c0 ∈ (stCore0Idle.runQueueWalk c1)))
   -- The other cores still schedule their own threads (idle is only a core-0 fallback).
   assertBool "core 1 still selects B while core 0 idles"
-    (decide (chooseThreadOnCoreSelects stCore0Idle c1 tB))
+    (selectsByLinks stCore0Idle c1 tB)
 
 -- ============================================================================
 -- §8  Multi-step dynamic simulation (concurrent dispatch + cross-core round-trip)
@@ -335,9 +333,9 @@ private def runDynamicSimulation : IO Unit := do
       assertBool "step 3: wake E (bound core 3) from core 0 ⇒ .reschedule SGI to core 3"
         (match sgi with | some (tgt, k) => tgt == c3 && k == SgiKind.reschedule | none => false)
       assertBool "step 3: E is now runnable on core 3's run queue (was blocked)"
-        (decide (tE ∈ (st3.scheduler.runQueueOnCore c3).toList))
+        (decide (tE ∈ (st3.runQueueWalk c3)))
       assertBool "step 3: E was NOT runnable before the wake (genuinely blocked)"
-        (!decide (tE ∈ (st2.scheduler.runQueueOnCore c3).toList))
+        (!decide (tE ∈ (st2.runQueueWalk c3)))
       -- Step 4: target core 3 handles the reschedule SGI ⇒ dispatches the woken E.
       match handleRescheduleSgiOnCore st3 c3 with
       | .error _ => assertBool "step 4: core 3 handles the reschedule SGI (succeeds)" false

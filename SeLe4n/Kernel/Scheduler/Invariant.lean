@@ -438,7 +438,8 @@ def runnableThreadsAreTCBs (st : SystemState) : Prop :=
 theorem default_runnableThreadsAreTCBs :
     runnableThreadsAreTCBs (default : SystemState) := by
   intro tid hMem
-  have : (default : SystemState).scheduler.runnable = [] := by decide
+  have : (default : SystemState).scheduler.runnable = [] := by
+      show ((default : SchedulerState).runQueueOnCore bootCoreId).toList = []; simp
   rw [this] at hMem; simp at hMem
 
 
@@ -610,7 +611,8 @@ def budgetPositive (st : SystemState) : Prop :=
 theorem default_budgetPositive :
     budgetPositive (default : SystemState) := by
   intro tid hMem
-  have : (default : SystemState).scheduler.runnable = [] := by decide
+  have : (default : SystemState).scheduler.runnable = [] := by
+      show ((default : SchedulerState).runQueueOnCore bootCoreId).toList = []; simp
   rw [this] at hMem; simp at hMem
 
 -- ============================================================================
@@ -991,6 +993,9 @@ def effectiveParamsMatchRunQueue (st : SystemState) : Prop :=
 theorem default_effectiveParamsMatchRunQueue :
     effectiveParamsMatchRunQueue (default : SystemState) := by
   intro tid hMem
+  have h0 : (default : SystemState).scheduler.runQueueOnCore bootCoreId = RunQueue.empty :=
+    SchedulerState.runQueueOnCore_default bootCoreId
+  rw [h0] at hMem
   exact absurd hMem (RunQueue.not_mem_empty tid)
 
 -- ============================================================================

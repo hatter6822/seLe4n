@@ -1910,7 +1910,7 @@ def bootFromPlatform_smp_witness_reachable : IO Unit := do
     (SeLe4n.Kernel.Concurrency.allCores.all (fun c =>
       (bootedIdle.objects[(SeLe4n.Kernel.idleThreadId c).toObjId]?).isSome))
   expect "SM4.G: idle boot path leaves the run queue empty (dequeue-on-dispatch)"
-    (bootedIdle.scheduler.runnable.isEmpty)
+    ((bootedIdle.runQueueWalk bootCoreId).isEmpty)
   -- SM4.G soundness: the installed idle-thread state satisfies the FULL
   -- 9-conjunct scheduler invariant bundle (not merely the base triad) and
   -- `currentThreadInActiveDomain` — witnessed at elaboration time by the two

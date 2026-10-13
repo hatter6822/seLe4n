@@ -1275,7 +1275,7 @@ scenarios:
     source: SeLe4n/Testing/MainTraceHarness.lean
     function: runPerCoreIdleDispatchTrace
     subsystem: Scheduler
-    description: "WS-SM SM5.E: legacy single-core schedule current = none (idle not dispatched)"
+    description: "WS-SM SM5.E: live boot-core schedule current = some 65536 (scheduleEffectiveOnCore folds the idle dispatch)"
   IDLE-005:
     source: SeLe4n/Testing/MainTraceHarness.lean
     function: runPerCoreIdleDispatchTrace

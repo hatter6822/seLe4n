@@ -25,7 +25,7 @@ variable {α β : Type} [BEq α] [Hashable α]
 
 /-- Apply `f` to the value stored under `k`, in its slot; a table without `k`
 is unchanged (the probe answers `capacity`, past the array). -/
-@[inline] def RHTable.mapValueAt (t : RHTable α β) (k : α) (f : β → β) : RHTable α β :=
+@[specialize] def RHTable.mapValueAt (t : RHTable α β) (k : α) (f : β → β) : RHTable α β :=
   let i := findIdxLoop t.capacity (idealIndex k t.capacity t.hCapPos) k 0 t.slots
     t.capacity t.hSlotsLen t.hCapPos
   { t with

@@ -312,7 +312,7 @@ decomposition (AN5-A): the child-module layout there naturally
 accommodates a parallel split here without causing duplicate-import
 churn. At 1002 LOC `Core.lean` remains well under the 2000-LOC Theme
 4.7 ceiling. -/
-def schedule : Kernel Unit :=
+noncomputable def schedule : Kernel Unit :=
   fun st =>
     match chooseThread st with
     | .error e => .error e
@@ -383,7 +383,7 @@ AK2-L (S-L13..S-L18) — Scheduler LOW-tier documentation batch.
   exactly one bucket). A dedicated per-bucket lemma is tracked for AK2.5
   alongside the fused priority-match predicate (AK2-B).
 -/
-def handleYield : Kernel Unit :=
+noncomputable def handleYield : Kernel Unit :=
   fun st =>
     match (st.scheduler.currentOnCore bootCoreId) with
     | none =>
@@ -442,7 +442,7 @@ before calling `schedule()`. Context save/restore is handled inline by
 `schedule`: the outgoing thread's registers are saved to its TCB and
 the incoming thread's registers are restored, establishing
 `contextMatchesCurrent` atomically. -/
-def timerTick : Kernel Unit :=
+noncomputable def timerTick : Kernel Unit :=
   fun st =>
     match (st.scheduler.currentOnCore bootCoreId) with
     | none =>
@@ -512,7 +512,7 @@ again. Only `timerTickBudget`'s budget-exhaustion branch (Z4-F3) triggers
 `timeoutBlockedThreads`, ensuring that timeouts fire only when
 `budgetRemaining = 0`. This guard is correct by construction: this function
 never calls `timeoutBlockedThreads`. -/
-def processReplenishmentsDue (st : SystemState) (now : Nat) : SystemState :=
+noncomputable def processReplenishmentsDue (st : SystemState) (now : Nat) : SystemState :=
   let (remainingQueue, dueIds) := popDueReplenishments st now
   let st' := { st with scheduler := st.scheduler.setReplenishQueueOnCore bootCoreId remainingQueue }
   dueIds.foldl (fun acc scId =>
@@ -731,7 +731,7 @@ Threads with exhausted CBS budgets are automatically skipped during
 selection. The primary `schedule` transition is preserved for backward
 compatibility (unbound threads + legacy test fixtures). Production boot
 paths use `scheduleEffective` via `timerTickWithBudget`. -/
-def scheduleEffective : Kernel Unit :=
+noncomputable def scheduleEffective : Kernel Unit :=
   fun st =>
     match chooseThreadEffective st with
     | .error e => .error e
@@ -768,7 +768,7 @@ Processing order:
 
 The original `timerTick` is preserved as `timerTickLegacy` for backward
 compatibility with existing preservation proofs. -/
-def timerTickWithBudget : Kernel Unit :=
+noncomputable def timerTickWithBudget : Kernel Unit :=
   fun st =>
     -- AK2-D (S-M02): clear the diagnostic timeout-error record at the start of
     -- each tick so a stale list never survives across rounds.
@@ -808,7 +808,7 @@ When a SchedContext-bound thread yields:
 4. Calls `schedule` to select next thread
 
 Unbound threads use the existing yield path (insert + rotateToBack). -/
-def handleYieldWithBudget : Kernel Unit :=
+noncomputable def handleYieldWithBudget : Kernel Unit :=
   fun st =>
     match (st.scheduler.currentOnCore bootCoreId) with
     | none => .error .invalidArgument
@@ -855,7 +855,7 @@ def handleYieldWithBudget : Kernel Unit :=
 
 `chooseThread` is now domain-aware; this entry point remains for call sites that
 expect explicit domain-oriented naming. -/
-def chooseThreadInDomain : Kernel (Option SeLe4n.ThreadId) :=
+noncomputable def chooseThreadInDomain : Kernel (Option SeLe4n.ThreadId) :=
   chooseThread
 
 /-- WS-H12b/H-04: Advance the domain schedule to the next entry.
@@ -884,7 +884,7 @@ save via `saveOutgoingContext`). This split is correct because:
   state must include the saved register context in the object store.
 - Formal guarantee: `saveOutgoingContext_scheduler` (Core.lean:19)
   mechanizes the proof that `(saveOutgoingContext st).scheduler = st.scheduler`. -/
-def switchDomain : Kernel Unit :=
+noncomputable def switchDomain : Kernel Unit :=
   fun st =>
     let schedule := st.scheduler.domainSchedule
     match schedule with
@@ -965,7 +965,7 @@ theorem switchDomain_preserves_objects_invExt
 
 /-- M-05/WS-E6: Handle a domain tick. Decrements the domain time remaining;
 if expired, switches to the next domain and reschedules. -/
-def scheduleDomain : Kernel Unit :=
+noncomputable def scheduleDomain : Kernel Unit :=
   fun st =>
     if (st.scheduler.domainTimeRemainingOnCore bootCoreId) ≤ 1 then
       match switchDomain st with
@@ -1256,9 +1256,8 @@ def scheduleEffectiveOnCore (st : SystemState) (c : CoreId) :
 /-- WS-ZA ZA4.5: the compiled `scheduleEffectiveOnCore`.  The selection is a
 thread code (`chooseThreadEffectiveOnCoreCode`), so no candidate record,
 `Option` or `Except` is built for it, and the dispatched thread leaves core
-`c`'s run queue in the queue's own slot
-(`modifyRunQueueOnCore`), so the queue's tables are written in place rather
-than copied.  Proven equal (`scheduleEffectiveOnCore_eq_impl`). -/
+`c`'s run queue through its TCB run-queue links (`runRemoveOnCore`), written in
+place.  Proven equal (`scheduleEffectiveOnCore_eq_impl`). -/
 def scheduleEffectiveOnCoreImpl (st : SystemState) (c : CoreId) :
     Except KernelError SystemState :=
   match chooseThreadEffectiveOnCoreCode st c with
@@ -1461,7 +1460,7 @@ object table rebuilt; proven equal to the specification
   have hx := (SystemState.getTcb?_eq_some_iff st tid tcb).mp hTcb
   unfold sliceExpireOnCore sliceExpireOnCoreImpl SystemState.modifyObject
     SystemState.rewriteObject
-  simp only [RobinHood.RHTable.modify_of_get? hx, SchedulerState.modifyRunQueueOnCore_eq]
+  simp only [RobinHood.RHTable.modify_of_get? hx]
   rfl
 
 /-- WS-ZA ZA4.3: the object update a SchedContext update performs, as
@@ -1492,7 +1491,7 @@ is queued on it, so no state is read after a later one is built from it
   have hx := (SystemState.getSchedContext?_eq_some_iff st scId sc).mp hSc
   unfold spendBudgetOnCore spendBudgetOnCoreImpl SystemState.modifyObject
     SystemState.rewriteObject
-  simp only [RobinHood.RHTable.modify_of_get? hx, SchedulerState.modifyRunQueueOnCore_eq]
+  simp only [RobinHood.RHTable.modify_of_get? hx]
   rfl
 
 /-- The slice expiry keeps the object table's invariant: the slice reset is an
@@ -1810,7 +1809,7 @@ def yieldOnCore (st : SystemState) (c : CoreId) : Except KernelError SystemState
 
 /-- WS-ZA ZA4.5: the queue a domain switch leaves on core `c`: the outgoing
 current (if it resolves) inserted at its boosted priority. -/
-def requeueOutgoingQueue (st : SystemState) (c : CoreId) : RunQueue :=
+noncomputable def requeueOutgoingQueue (st : SystemState) (c : CoreId) : RunQueue :=
   match st.scheduler.currentOnCore c with
   | none => st.scheduler.runQueueOnCore c
   | some tid =>

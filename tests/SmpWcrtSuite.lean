@@ -188,10 +188,10 @@ example (e : Concurrency.KernelExecution) (c : CoreId) (op : Concurrency.KernelO
 -- on any concrete state where every core's idle is available — not assumed.
 example (st : SystemState)
     (hwf : ∀ c, (st.scheduler.runQueueOnCore c).wellFormed)
-    (hRunnable : ∀ c, runnableThreadsAreTCBsOnCore st c)
+    (hRunnable : ∀ c, runnableThreadsAreTCBsOnCore st c) (hR : st.runQueueRefined)
     (hAvail : ∀ c, idleAvailableOnCoreB st c = true) :
     ∀ c : CoreId, ∃ tid, chooseThreadOnCore st c = .ok (some tid) :=
-  schedulerNoStall_smp_of_idleAvailableB st hRunnable hAvail
+  schedulerNoStall_smp_of_idleAvailableB st hRunnable hR hAvail
 
 -- SM5.J.4 (extends R5): an R5-scheduled thread is within the combined SMP bound.
 example (trace : Liveness.SchedulerTrace) (tid : SeLe4n.ThreadId)
@@ -365,21 +365,21 @@ private def runNoStallChecks : IO Unit := do
   assertBool "after enqueue: idleAvailableOnCoreB holds (idle is an in-domain candidate)"
     (decide (idleAvailableOnCoreB stEmptyIdle bootCoreId = true))
   assertBool "after enqueue: chooseThreadOnCore SELECTS the idle thread (no stall)"
-    (decide (chooseThreadOnCoreSelects stEmptyIdle bootCoreId (idleThreadId bootCoreId)))
+    (selectsByLinks stEmptyIdle bootCoreId (idleThreadId bootCoreId))
   assertBool "after enqueue: the selection is success (.ok), not an error"
-    (match chooseThreadOnCore stEmptyIdle bootCoreId with | .ok (some _) => true | _ => false)
+    (match chooseThreadOnCoreByLinks stEmptyIdle bootCoreId with | .ok (some _) => true | _ => false)
   assertBool "bare empty core signals idle-fallback (.ok none) — the SM5.E hook"
-    (decide (chooseThreadOnCoreIdleFallback stEmpty bootCoreId))
+    (idleFallbackByLinks stEmpty bootCoreId)
   -- The ∀-CORE non-vacuity witness: `schedulerNoStall_smp_of_idleAvailableB`'s premise
   -- (every core's idle available) is genuinely satisfiable — enqueue idle on ALL 4
   -- cores and `decide` the premise + per-core selection on the concrete state.
   assertBool "all-cores fixture: idleAvailableOnCoreB holds on EVERY core (the ∀-core premise)"
     (allCores.all (fun c => idleAvailableOnCoreB stAllIdle c))
   assertBool "all-cores fixture: EVERY core selects its own idle thread (no core stalls)"
-    (allCores.all (fun c => decide (chooseThreadOnCoreSelects stAllIdle c (idleThreadId c))))
+    (allCores.all (fun c => selectsByLinks stAllIdle c (idleThreadId c)))
   assertBool "all-cores fixture: each core's idle stays on its own queue (no cross-core leak)"
     (allCores.all (fun c => allCores.all (fun c' =>
-      c == c' || !decide (idleThreadId c ∈ (stAllIdle.scheduler.runQueueOnCore c').toList))))
+      c == c' || !decide (idleThreadId c ∈ (stAllIdle.runQueueWalk c')))))
 
 /-- §3.5: the completion-pass refinements — the execution-sensitive bridge formula,
 the cycle-commensurate combined bound, and the access-mode soundness. -/

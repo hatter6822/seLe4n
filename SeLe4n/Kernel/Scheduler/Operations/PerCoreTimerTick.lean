@@ -1789,8 +1789,8 @@ theorem idleFallbackOnCore_currentOnCore_ne (st : SystemState) (c c' : CoreId)
   split
   · simp only [dispatchIdleOnCore, SchedulerState.setCurrentOnCore_currentOnCore_ne _ _ _ _ h,
       restoreIncomingContextOnCore_scheduler, SystemState.runRemoveOnCore_scheduler,
-      SchedulerState.setRunQueueEndsOnCore_currentOnCore, SchedulerState.setRunQueueEndsOnCore_runQueueOnCore,
-      SchedulerState.setRunQueueEndsOnCore_activeDomainOnCore, SchedulerState.setRunQueueOnCore_currentOnCore]
+      SchedulerState.setRunQueueEndsOnCore_currentOnCore, 
+      SchedulerState.setRunQueueOnCore_currentOnCore]
   · simp only [SchedulerState.setCurrentOnCore_currentOnCore_ne _ _ _ _ h]
 
 /-- WS-SM SM5.I (frame helper): the idle fallback frames every *sibling* core's
@@ -1802,8 +1802,8 @@ theorem idleFallbackOnCore_runQueueOnCore_ne (st : SystemState) (c c' : CoreId)
   split
   · simp only [dispatchIdleOnCore, SchedulerState.setCurrentOnCore_runQueueOnCore,
       restoreIncomingContextOnCore_scheduler, SystemState.runRemoveOnCore_scheduler,
-      SchedulerState.setRunQueueEndsOnCore_currentOnCore, SchedulerState.setRunQueueEndsOnCore_runQueueOnCore,
-      SchedulerState.setRunQueueEndsOnCore_activeDomainOnCore, SchedulerState.setRunQueueOnCore_runQueueOnCore_ne _ _ _ _ h]
+      SchedulerState.setRunQueueEndsOnCore_runQueueOnCore,
+      SchedulerState.setRunQueueOnCore_runQueueOnCore_ne _ _ _ _ h]
   · simp only [SchedulerState.setCurrentOnCore_runQueueOnCore]
 
 /-- WS-SM SM5.I.8 (other-core frame for the dispatcher): a per-core dispatch on
@@ -1844,14 +1844,13 @@ theorem scheduleEffectiveOnCore_independent_of_other_core (st : SystemState)
           · simp only [SchedulerState.clearReschedulePendingOnCore_currentOnCore,
               SchedulerState.setCurrentOnCore_currentOnCore_ne _ _ _ _ hcc,
               restoreIncomingContextOnCore_scheduler, SystemState.runRemoveOnCore_scheduler,
-      SchedulerState.setRunQueueEndsOnCore_currentOnCore, SchedulerState.setRunQueueEndsOnCore_runQueueOnCore,
-      SchedulerState.setRunQueueEndsOnCore_activeDomainOnCore, SchedulerState.setRunQueueOnCore_currentOnCore,
+      SchedulerState.setRunQueueEndsOnCore_currentOnCore, 
+      SchedulerState.setRunQueueOnCore_currentOnCore,
               saveOutgoingContextOnCore_scheduler_eq]
           · simp only [SchedulerState.clearReschedulePendingOnCore_runQueueOnCore,
               SchedulerState.setCurrentOnCore_runQueueOnCore,
               restoreIncomingContextOnCore_scheduler, SystemState.runRemoveOnCore_scheduler,
-      SchedulerState.setRunQueueEndsOnCore_currentOnCore, SchedulerState.setRunQueueEndsOnCore_runQueueOnCore,
-      SchedulerState.setRunQueueEndsOnCore_activeDomainOnCore,
+      SchedulerState.setRunQueueEndsOnCore_runQueueOnCore,
               SchedulerState.setRunQueueOnCore_runQueueOnCore_ne _ _ _ _ hcc,
               saveOutgoingContextOnCore_scheduler_eq]
         · simp at hStep
@@ -1997,8 +1996,7 @@ theorem scheduleEffectiveOnCore_preserves_runQueueOnCoreWellFormed (st : SystemS
           simp only [SchedulerState.clearReschedulePendingOnCore_runQueueOnCore,
             SchedulerState.setCurrentOnCore_runQueueOnCore,
             restoreIncomingContextOnCore_scheduler, SystemState.runRemoveOnCore_scheduler,
-      SchedulerState.setRunQueueEndsOnCore_currentOnCore, SchedulerState.setRunQueueEndsOnCore_runQueueOnCore,
-      SchedulerState.setRunQueueEndsOnCore_activeDomainOnCore, SchedulerState.setRunQueueOnCore_runQueueOnCore_self]
+      SchedulerState.setRunQueueOnCore_runQueueOnCore_self]
           rw [saveOutgoingContextOnCore_scheduler_eq]
           exact RunQueue.remove_preserves_wellFormed _ hwf tid
         · simp at hStep
@@ -2093,8 +2091,6 @@ theorem scheduleEffectiveOnCore_establishes_queueCurrentConsistentOnCore (st : S
             SchedulerState.clearReschedulePendingOnCore_runQueueOnCore,
             SchedulerState.setCurrentOnCore_currentOnCore_self,
             SchedulerState.setCurrentOnCore_runQueueOnCore, restoreIncomingContextOnCore_scheduler, SystemState.runRemoveOnCore_scheduler,
-      SchedulerState.setRunQueueEndsOnCore_currentOnCore, SchedulerState.setRunQueueEndsOnCore_runQueueOnCore,
-      SchedulerState.setRunQueueEndsOnCore_activeDomainOnCore,
             SchedulerState.setRunQueueOnCore_runQueueOnCore_self]
           rw [saveOutgoingContextOnCore_scheduler_eq]
           exact RunQueue.not_mem_remove_toList _ tid
@@ -2200,8 +2196,7 @@ theorem scheduleEffectiveOnCore_runQueue_toList_subset (st : SystemState) (c : C
           simp only [SchedulerState.clearReschedulePendingOnCore_runQueueOnCore,
             SchedulerState.setCurrentOnCore_runQueueOnCore,
             restoreIncomingContextOnCore_scheduler, SystemState.runRemoveOnCore_scheduler,
-      SchedulerState.setRunQueueEndsOnCore_currentOnCore, SchedulerState.setRunQueueEndsOnCore_runQueueOnCore,
-      SchedulerState.setRunQueueEndsOnCore_activeDomainOnCore, SchedulerState.setRunQueueOnCore_runQueueOnCore_self] at hx
+      SchedulerState.setRunQueueOnCore_runQueueOnCore_self] at hx
           rw [saveOutgoingContextOnCore_scheduler_eq] at hx
           rw [RunQueue.mem_toList_iff_mem] at hx ⊢
           exact (RunQueue.mem_remove _ tid x |>.mp hx).1
@@ -3019,8 +3014,7 @@ theorem scheduleEffectiveOnCore_preserves_runQueueOnCore_nodup (st : SystemState
           simp only [SchedulerState.clearReschedulePendingOnCore_runQueueOnCore,
             SchedulerState.setCurrentOnCore_runQueueOnCore,
             restoreIncomingContextOnCore_scheduler, SystemState.runRemoveOnCore_scheduler,
-      SchedulerState.setRunQueueEndsOnCore_currentOnCore, SchedulerState.setRunQueueEndsOnCore_runQueueOnCore,
-      SchedulerState.setRunQueueEndsOnCore_activeDomainOnCore, SchedulerState.setRunQueueOnCore_runQueueOnCore_self]
+      SchedulerState.setRunQueueOnCore_runQueueOnCore_self]
           rw [saveOutgoingContextOnCore_scheduler_eq]
           exact RunQueue.remove_preserves_toList_nodup _ tid hnd
         · simp at hStep
@@ -3244,7 +3238,6 @@ theorem scheduleEffectiveOnCore_establishes_currentThreadInActiveDomainOnCore (s
             rw [← hStep]
             simp only [SchedulerState.clearReschedulePendingOnCore_activeDomainOnCore,
               SchedulerState.setCurrentOnCore_activeDomainOnCore, restoreIncomingContextOnCore_scheduler, SystemState.runRemoveOnCore_scheduler,
-      SchedulerState.setRunQueueEndsOnCore_runQueueOnCore,
       SchedulerState.setRunQueueEndsOnCore_activeDomainOnCore,
               SchedulerState.setRunQueueOnCore_activeDomainOnCore]
             rw [saveOutgoingContextOnCore_scheduler_eq]

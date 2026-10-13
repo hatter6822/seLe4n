@@ -298,7 +298,7 @@ private def runAffinityChecks : IO Unit := do
   checkDiff "migration core1 → core2" stBase post core0 true
   assertBool "migration: the destination core 2 is flagged" (flagOf post core2)
   assertBool "migration: the queued thread now lives on core 2"
-    (decide (srv ∈ post.scheduler.runQueueOnCore core2))
+    (post.queuedOn core2 srv)
 
 /-- The lent scheduling context of §2.7, deadline 9. -/
 private def scLent : SeLe4n.SchedContextId := SeLe4n.SchedContextId.ofNat 300
@@ -422,7 +422,7 @@ private def runDomainEvictionChecks : IO Unit := do
   assertBool "eviction to idle: core 1 runs nothing"
     (idle.scheduler.currentOnCore core1 == none)
   assertBool "eviction to idle: the thread stays queued on core 1"
-    (boundTid ∈ (idle.scheduler.runQueueOnCore core1))
+    (idle.queuedOn core1 boundTid)
   assertBool "eviction to idle: core 1's flag is cleared" (!flagOf idle core1)
   let preSrv := stBoundCurrent true
   let movedSrv ← configureBound 1 preSrv
@@ -430,7 +430,7 @@ private def runDomainEvictionChecks : IO Unit := do
   assertBool "eviction to a lower-priority thread: srv runs on core 1"
     (switched.scheduler.currentOnCore core1 == some srv)
   assertBool "eviction to a lower-priority thread: the evicted thread is queued"
-    (boundTid ∈ (switched.scheduler.runQueueOnCore core1))
+    (switched.queuedOn core1 boundTid)
   let kept ← configureBound 0 preSrv
   let stays ← receiveOnCore1 "reconfigure that keeps the domain" kept
   assertBool "reconfigure that keeps the domain: the incumbent keeps running"
@@ -458,7 +458,7 @@ private def runLocalDomainEvictionChecks : IO Unit := do
   assertBool "local eviction to idle: core 1 runs nothing"
     (idle.scheduler.currentOnCore core1 == none)
   assertBool "local eviction to idle: the thread stays queued on core 1"
-    (boundTid ∈ (idle.scheduler.runQueueOnCore core1))
+    (idle.queuedOn core1 boundTid)
   assertBool "local eviction to idle: core 1's flag is cleared" (!flagOf idle core1)
   assertBool "local eviction to idle: core 1 resumes the idle loop, not the evicted thread"
     (match Architecture.restoreTargetOnCore idle core1 with | .idle => true | _ => false)

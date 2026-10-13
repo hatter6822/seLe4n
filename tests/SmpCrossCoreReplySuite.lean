@@ -355,9 +355,9 @@ private def runWakeChecks : IO Unit := do
   -- The woken remote caller is enqueued on core 1's run queue (its home core).
   let (st', _) := endpointReplyOnCore serverTid clientRemoteTid replyMsg bootCoreId stBase
   assertBool "the woken remote caller is enqueued on core 1 (its home core)"
-    ((st'.scheduler.runQueueOnCore core1).contains clientRemoteTid)
+    ((st'.queuedOn core1 clientRemoteTid))
   assertBool "the boot core's run queue is untouched by the remote wake"
-    (!(st'.scheduler.runQueueOnCore bootCoreId).contains clientRemoteTid)
+    (!(st'.queuedOn bootCoreId clientRemoteTid))
 
 private def runReplayChecks : IO Unit := do
   IO.println "--- §3.4 SM6.C.7 reply-replay barrier + confused-deputy rejection ---"
@@ -764,7 +764,7 @@ private def runDonationChecks : IO Unit := do
         |>.build)
       core2 serverTid
   assertBool "PRECONDITION: the recorded server is queued on core 2 before the return"
-    ((stQueuedServer.scheduler.runQueueOnCore core2).contains serverTid)
+    ((stQueuedServer.queuedOn core2 serverTid))
   assertBool "…and current on NO core, which is what made the retired current-on proxy answer the boot core"
     (Concurrency.allCores.all (fun c => stQueuedServer.scheduler.currentOnCore c != some serverTid))
   assertBool "…so the placement resolver and the superseded proxy disagree here"
@@ -776,7 +776,7 @@ private def runDonationChecks : IO Unit := do
       match applyReplyDonationOnCore stQueuedServer replyId707 clientV core2 core2 with
       | .ok stAfter =>
           assertBool "the donation return DESCHEDULES a queued recorded server (v0.35.37)"
-            (!(stAfter.scheduler.runQueueOnCore core2).contains serverTid)
+            (!(stAfter.queuedOn core2 serverTid))
           assertBool "…and on no other core either — the server is off every run queue"
             (decide (placedCoreOf? stAfter serverTid = none))
           assertBool "…and the donation really was returned, so this is not a vacuous pass"
@@ -791,12 +791,12 @@ private def runDonationChecks : IO Unit := do
           -- priority against no reservation.
           assertBool "NEGATIVE: the superseded boot-core-fallback deschedule leaves it queued"
             ((removeRunnableOnCore stQueuedServer serverTid bootCoreId
-              ).scheduler.runQueueOnCore core2 |>.contains serverTid)
+              ).queuedOn core2 serverTid)
           assertBool "…so the two spellings genuinely differ on core 2's queue"
             (!((descheduleAtPlacement stQueuedServer serverTid
-                 ).scheduler.runQueueOnCore core2 |>.contains serverTid)
+                 ).queuedOn core2 serverTid)
              && ((removeRunnableOnCore stQueuedServer serverTid bootCoreId
-                  ).scheduler.runQueueOnCore core2 |>.contains serverTid))
+                  ).queuedOn core2 serverTid))
       | .error _ =>
           assertBool "the donation return succeeds on the queued-server shape" false
   | none => assertBool "clientLocalTid is a valid thread id" false
@@ -810,7 +810,7 @@ private def runDispatchChecks : IO Unit := do
   assertBool "cross-core reply dispatch surfaces the reschedule SGI to core 1"
     (match res with | .ok (some (tgt, kind)) => decide (tgt = core1 ∧ kind = SgiKind.reschedule) | _ => false)
   assertBool "cross-core reply dispatch enqueues the remote caller on core 1"
-    ((st'.scheduler.runQueueOnCore core1).contains clientRemoteTid)
+    ((st'.queuedOn core1 clientRemoteTid))
   -- SM6.C.9: the cross-core PIP-revert chain emits at most `fuel` SGIs.
   assertBool "donation-chain PIP reversion emits at most `fuel` (=8) cross-core SGIs"
     (decide ((PriorityInheritance.propagatePipChainCrossCore stBase serverTid bootCoreId 8).2.length ≤ 8))

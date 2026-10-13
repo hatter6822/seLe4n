@@ -80,7 +80,7 @@ theorem ensureRunnable_mem_self
   unfold ensureRunnable
   split
   · assumption
-  · simp only [hTcbTyped, hAdm, if_true]
+  · simp only [hTcbTyped]
     show (st.runEnqueueAdmitted bootCoreId tid tcb.boostedPriority).queuedOn bootCoreId tid = true
     rw [SystemState.runEnqueueAdmitted_queuedOn, if_pos rfl, hTcbTyped]
     simp

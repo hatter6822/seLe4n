@@ -9,6 +9,7 @@
 
 import SeLe4n.Model.State
 import SeLe4n.Kernel.Concurrency.Types
+import SeLe4n.Kernel.Scheduler.RunQueueThreadLinks
 
 /-!
 # WS-SM SM4.B — Per-core `SchedulerState` accessor + theorem test suite
@@ -220,8 +221,11 @@ private def runDefaultInitChecks : IO Unit := do
   IO.println "--- §3.1 SM4.B.9 default-state per-core initialisation ---"
   assertBool "currentOnCore = none on every core"
     (allCores.all (fun c => decide ((default : SchedulerState).currentOnCore c = none)))
+  -- The run queue is read through its executable form: the walk over the
+  -- scheduler's queue ends and the threads' run-queue links (`runQueueWalk`).
   assertBool "runQueueOnCore is empty (toList = []) on every core"
-    (allCores.all (fun c => decide (((default : SchedulerState).runQueueOnCore c).toList = [])))
+    (allCores.all (fun c => decide
+      (({ (default : SystemState) with scheduler := (default : SchedulerState) }).runQueueWalk c = [])))
   assertBool "replenishQueueOnCore is empty (size = 0) on every core"
     (allCores.all (fun c => decide (((default : SchedulerState).replenishQueueOnCore c).size = 0)))
   assertBool "activeDomainOnCore = ⟨0⟩ on every core"
@@ -242,7 +246,8 @@ private def runAccessorReadChecks : IO Unit := do
   assertBool "currentOnCore reads the written value at the boot core"
     (decide (s.currentOnCore bootCoreId = some (SeLe4n.ThreadId.ofNat 1)))
   assertBool "writing current leaves runQueueOnCore empty (frame) on every core"
-    (allCores.all (fun c => decide ((s.runQueueOnCore c).toList = [])))
+    (allCores.all (fun c => decide
+      (({ (default : SystemState) with scheduler := s }).runQueueWalk c = [])))
   assertBool "per-core independence: a non-boot core's current is unchanged (none)"
     (allCores.all (fun c => decide (c = bootCoreId ∨ s.currentOnCore c = none)))
 

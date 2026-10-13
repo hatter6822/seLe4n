@@ -6199,9 +6199,9 @@ theorem bootFromPlatform_proofLayerInvariantBundle_general
   have hCur : ((bootFromPlatform config).state.scheduler.currentOnCore bootCoreId) = none := by
     rw [hSch]; decide
   have hRun : (bootFromPlatform config).state.scheduler.runnable = [] := by
-    rw [hSch]; decide
+    rw [hSch]; show ((default : SchedulerState).runQueueOnCore bootCoreId).toList = []; simp
   have hRQflat : ((bootFromPlatform config).state.scheduler.runQueueOnCore bootCoreId).toList = [] := by
-    rw [hSch]; decide
+    rw [hSch]; show ((default : SchedulerState).runQueueOnCore bootCoreId).toList = []; simp
   -- 1. schedulerInvariantBundleFull
   have h1 : schedulerInvariantBundleFull (bootFromPlatform config).state := by
     refine ⟨⟨?_, ?_, ?_⟩, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_⟩
@@ -6279,7 +6279,7 @@ theorem bootFromPlatform_proofLayerInvariantBundle_general
   · -- effectiveParamsMatchRunQueue: the default run queue is empty.
     intro tid hMem
     have hFlat : ((bootFromPlatform config).state.scheduler.runQueueOnCore bootCoreId).toList = [] := by
-      rw [hSch]; decide
+      rw [hSch]; show ((default : SchedulerState).runQueueOnCore bootCoreId).toList = []; simp
     have hInFlat := (RunQueue.mem_toList_iff_mem _ tid).mpr hMem
     simp [hFlat] at hInFlat
   · -- runQueueRefined: default queues, and every boot-safe TCB on no queue.

@@ -18,6 +18,7 @@ import SeLe4n.Kernel.Scheduler.PriorityInheritance.PerCore
 import SeLe4n.Kernel.IPC.CrossCore.SuspendFootprint
 import SeLe4n.Kernel.SchedContext.SchedContextFootprint
 import SeLe4n.Testing.StateBuilder
+import SeLe4n.Testing.BootCoreOps
 
 /-!
 # WS-SM SM6.E — Cross-core cancellation test suite
@@ -1021,10 +1022,10 @@ private def runRemoteRunningCancelChecks : IO Unit := do
   assertBool "victim is cleared from core 1's current slot"
     (decide (st'.scheduler.currentOnCore core1 ≠ some victimTid))
   assertBool "victim is not in core 1's run queue"
-    (decide (victimTid ∉ st'.scheduler.runQueueOnCore core1))
+    (!(st'.queuedOn core1 victimTid))
   -- (3) per-core locality: boot core untouched
   assertBool "boot core's run queue and current slot are untouched"
-    (decide (bystanderTid ∈ st'.scheduler.runQueueOnCore bootCoreId)
+    ((st'.queuedOn bootCoreId bystanderTid)
       && decide (st'.scheduler.currentOnCore bootCoreId
         = stRunningRemote.scheduler.currentOnCore bootCoreId))
   -- The `.ready` arm: the composite reduces to the pure deschedule.
@@ -1096,8 +1097,7 @@ private def runBoundDonationCancelChecks : IO Unit := do
         = stBoundDonation.scheduler.currentOnCore bootCoreId)
       && decide (st'.scheduler.currentOnCore core1
         = stBoundDonation.scheduler.currentOnCore core1)
-      && decide ((victimTid ∈ st'.scheduler.runQueueOnCore core1)
-        ↔ (victimTid ∈ stBoundDonation.scheduler.runQueueOnCore core1)))
+      && (st'.queuedOn core1 victimTid == stBoundDonation.queuedOn core1 victimTid))
   -- Lock-set: victim TCB write + SC write, permitted + Nodup.
   let ls := lockSet_cancelDonationOnCore stBoundDonation victimTid
   assertBool "donation lock-set kinds all permitted (.tcbSuspend)"
@@ -1392,7 +1392,7 @@ private def runPerCoreSuspendChecks : IO Unit := do
              | none => false)
           assertBool "remote suspend fully descheduled the victim on core 1"
             (decide (st'.scheduler.currentOnCore core1 ≠ some victimTid)
-              && decide (victimTid ∉ st'.scheduler.runQueueOnCore core1))
+              && !(st'.queuedOn core1 victimTid))
           -- (d) the diff seam re-derives the same poke (the SM6.E
           -- descheduled-current rule of `crossCoreSgiBody`).
           assertBool "computeCrossCoreSgis recovers the deschedule SGI from the diff"
@@ -1508,8 +1508,8 @@ private def runPipDonationDropChecks : IO Unit := do
         ((match stPipDonation.getTcb? serverTid with
           | some s => decide (s.pipBoost = some ⟨200⟩)
           | none => false)
-          && decide (serverTid ∈ stPipDonation.scheduler.runQueueOnCore core2)
-          && decide ((stPipDonation.scheduler.runQueueOnCore core2).priorityOf serverTid
+          && (stPipDonation.queuedOn core2 serverTid)
+          && decide ((stPipDonation.queuedPriorityOn core2 serverTid)
               = some ⟨200⟩))
       match suspendThreadOnCore stPipDonation vtid bootCoreId with
       | .ok (st', sgi) =>
@@ -1525,9 +1525,9 @@ private def runPipDonationDropChecks : IO Unit := do
           -- `updatePipBoost` would have left the core-2 bucket at the stale
           -- 200 — the SM5.F per-core-PIP-migration gap this closes).
           assertBool "server stays runnable on core 2 across the bucket migration"
-            (decide (serverTid ∈ st'.scheduler.runQueueOnCore core2))
+            ((st'.queuedOn core2 serverTid))
           assertBool "server's core-2 bucket is re-keyed to its base priority"
-            (decide ((st'.scheduler.runQueueOnCore core2).priorityOf serverTid
+            (decide ((st'.queuedPriorityOn core2 serverTid)
               = some ⟨50⟩))
           -- (iii) the review fix: the diff seam derives the core-2
           -- re-bucketing poke the FFI suspend entry now fires.
@@ -1540,8 +1540,9 @@ private def runPipDonationDropChecks : IO Unit := do
           assertBool "surfaced SGI remains the victim's home-core poke"
             (decide (sgi = some (core1, SgiKind.reschedule)))
       | .error _ => assertBool "PIP-donation suspend succeeds" false
-      -- Single-core mirror: the boot pipeline (`suspendThread`) drops the
-      -- boost through the same capture → clear → revert-from-server order.
+      -- Single-core mirror: the boot pipeline drops the boost through the same
+      -- capture → clear → revert-from-server order.  Run as the live boot-core
+      -- suspend (`bootSuspendThread`); the reference `suspendThread` is proof-only.
       let stBootPip :=
         (BootstrapBuilder.empty
           |>.withObject epId (.endpoint {})
@@ -1555,7 +1556,7 @@ private def runPipDonationDropChecks : IO Unit := do
               pipBoost := some ⟨200⟩ })
           |>.withRunnable [serverTid]
           |>.build)
-      match suspendThread stBootPip vtid with
+      match bootSuspendThread stBootPip vtid with
       | .ok st' =>
           assertBool "single-core suspend also drops the server's donated boost"
             (match st'.getTcb? serverTid with
@@ -1624,12 +1625,13 @@ private def runDisinheritanceSchedulingChecks : IO Unit := do
           assertBool "deboosted server loses the boot current slot to the bystander"
             (decide (st'.scheduler.currentOnCore bootCoreId = some bystanderTid))
           assertBool "preempted server is re-enqueued on the boot queue at base priority"
-            (decide (serverTid ∈ st'.scheduler.runQueueOnCore bootCoreId)
-              && decide ((st'.scheduler.runQueueOnCore bootCoreId).priorityOf serverTid
+            ((st'.queuedOn bootCoreId serverTid)
+              && decide ((st'.queuedPriorityOn bootCoreId serverTid)
                   = some ⟨50⟩))
       | .error _ => assertBool "local-disinheritance suspend succeeds" false
-      -- (b) single-core mirror (`suspendThread`, boot pipeline).
-      match suspendThread stLocalDeboost vtid with
+      -- (b) single-core mirror (boot pipeline, run as the live `bootSuspendThread`;
+      -- the reference `suspendThread` is proof-only).
+      match bootSuspendThread stLocalDeboost vtid with
       | .ok st' =>
           assertBool "single-core suspend also preempts the deboosted boot current"
             (decide (st'.scheduler.currentOnCore bootCoreId = some bystanderTid))
@@ -1741,7 +1743,7 @@ private def runPlacementDescheduleChecks : IO Unit := do
   assertBool "setup: the victim is unpinned, so its home is the boot core"
     (decide (determineTargetCore stUnpinnedQueuedRemote victimTid = bootCoreId))
   assertBool "setup: ...and it is QUEUED on core 2, current nowhere"
-    (decide (victimTid ∈ stUnpinnedQueuedRemote.scheduler.runQueueOnCore core2)
+    ((stUnpinnedQueuedRemote.queuedOn core2 victimTid)
       && decide (runningCoreOf? stUnpinnedQueuedRemote victimTid = none))
   assertBool "the placement resolver finds core 2"
     (decide (placedCoreOf? stUnpinnedQueuedRemote victimTid = some core2))
@@ -1749,11 +1751,11 @@ private def runPlacementDescheduleChecks : IO Unit := do
   -- and there is no running core, so the victim stays queued on core 2.
   let retired := retiredHomeAndRunningDeschedule stUnpinnedQueuedRemote victimTid
   assertBool "the RETIRED home-and-running reading leaves the victim queued on core 2"
-    (decide (victimTid ∈ retired.scheduler.runQueueOnCore core2))
+    ((retired.queuedOn core2 victimTid))
   -- The live deschedule primitive.
   let (st', sgi) := descheduleThread stUnpinnedQueuedRemote victimTid bootCoreId
   assertBool "descheduleThread removes the victim from core 2's run queue"
-    (decide (victimTid ∉ st'.scheduler.runQueueOnCore core2))
+    (!(st'.queuedOn core2 victimTid))
   assertBool "...and surfaces no SGI: a queued victim needs no poke"
     (decide (sgi = none))
   assertBool "...and the victim is placed nowhere afterwards"
@@ -1762,7 +1764,7 @@ private def runPlacementDescheduleChecks : IO Unit := do
   let tcb := victimTcb stUnpinnedQueuedRemote
   let (stC, sgiC) := cancelIpcBlockingOnCore victimTid tcb bootCoreId stUnpinnedQueuedRemote
   assertBool "cancelIpcBlockingOnCore removes the victim from core 2 too, with no SGI"
-    (decide (victimTid ∉ stC.scheduler.runQueueOnCore core2) && decide (sgiC = none))
+    (!(stC.queuedOn core2 victimTid) && decide (sgiC = none))
   -- The live `.tcbSuspend` operation: the victim ends `.Inactive` and on no core.
   match victimTid.toValid? with
   | none => assertBool "setup: victim ValidThreadId" false
@@ -1770,7 +1772,7 @@ private def runPlacementDescheduleChecks : IO Unit := do
       match suspendThreadOnCore stUnpinnedQueuedRemote vtid bootCoreId with
       | .ok (stS, sgiS) =>
           assertBool "suspendThreadOnCore removes the victim from core 2's run queue"
-            (decide (victimTid ∉ stS.scheduler.runQueueOnCore core2))
+            (!(stS.queuedOn core2 victimTid))
           assertBool "...the victim is placed on no core afterwards"
             (decide (placedCoreOf? stS victimTid = none))
           assertBool "...it is .Inactive"
@@ -2419,8 +2421,8 @@ private def retiredHolderWake (stPre stPost : SystemState) (victim : SeLe4n.Thre
       if wasBlockedOut && post.ipcState == .ready
           && !(runnableOnSomeCore stPost holder || runningOnSomeCore stPost holder) then
         let c := determineTargetCore stPre holder
-        let rq := (stPost.scheduler.runQueueOnCore c).insert holder post.boostedPriority
-        { stPost with scheduler := stPost.scheduler.setRunQueueOnCore c rq }
+        -- `RunQueue.insert` on core `c`'s queue, written through the threads' links.
+        stPost.runEnqueueOnCore c holder post.boostedPriority
       else stPost
     | _, _ => stPost
 
@@ -2429,7 +2431,7 @@ single placement, which `suspendThreadOnCore_holder_unplaced` takes as a
 hypothesis and which this suite exhibits rather than assumes. -/
 private def placedCores (st : SystemState) (tid : SeLe4n.ThreadId) : List CoreId :=
   allCores.filter (fun c =>
-    (st.scheduler.runQueueOnCore c).contains tid || st.scheduler.currentOnCore c == some tid)
+    (st.queuedOn c tid) || st.scheduler.currentOnCore c == some tid)
 
 /-- **The shape on which the reclaim's abort actually unblocks the holder.**
 
@@ -2561,8 +2563,8 @@ private def runReclaimCompleteSuspendChecks : IO Unit := do
           = some SchedContextBinding.unbound)
       && decide (placedCoreOf? live serverTid = none))
   assertBool "...where the RETIRED wake placed it on its home core's run queue, unbudgeted"
-    (decide ((retiredHolderWake st (cancelIpcBlockingMigrated victimTid tcb st) victimTid tcb
-      |>.scheduler.runQueueOnCore core2).contains serverTid))
+    ((retiredHolderWake st (cancelIpcBlockingMigrated victimTid tcb st) victimTid tcb
+      |>.queuedOn core2 serverTid))
   assertBool "...and migrates the reservation to the home of the thread it is now bound to"
     (replenishHolds live core1 scId && !replenishHolds live core2 scId)
   assertBool "...and names no core, since a parked holder is removed from nothing"
@@ -2576,17 +2578,17 @@ private def runReclaimCompleteSuspendChecks : IO Unit := do
     (decide ((stQ.getTcb? serverTid).map (·.ipcState) = some .ready)
       && decide ((stQ.getTcb? serverTid).map (·.schedContextBinding)
           = some (SchedContextBinding.donated scId victimTid))
-      && decide ((stQ.scheduler.runQueueOnCore core2).contains serverTid)
+      && decide ((stQ.queuedOn core2 serverTid))
       && decide (placedCores stQ serverTid = [core2]))
   let liveQ := cancelIpcBlockingReclaimed victimTid tcbQ stQ
   let retiredQ := retiredHolderWake stQ (cancelIpcBlockingMigrated victimTid tcbQ stQ)
     victimTid tcbQ
   assertBool "the RETIRED wake leaves the unbound holder QUEUED: runnable at its legacy band on nobody's budget"
-    (decide ((retiredQ.scheduler.runQueueOnCore core2).contains serverTid)
+    (decide ((retiredQ.queuedOn core2 serverTid))
       && decide ((retiredQ.getTcb? serverTid).map (·.schedContextBinding)
           = some SchedContextBinding.unbound))
   assertBool "the LIVE reclaim takes the holder it unbound OFF core 2's run queue"
-    (decide (!(liveQ.scheduler.runQueueOnCore core2).contains serverTid)
+    (decide (!(liveQ.queuedOn core2 serverTid))
       && decide (placedCoreOf? liveQ serverTid = none)
       && decide ((liveQ.getTcb? serverTid).map (·.schedContextBinding)
           = some SchedContextBinding.unbound))
@@ -2645,18 +2647,19 @@ entry names the deactivated reservation"
   -- reached for the bare teardown -- `cancelIpcBlockingReclaimed` was declared in
   -- a module that imports `Lifecycle/Suspend.lean`, so this path could not see it.
   -- It has no production caller, but it is the tree's single-core reference and
-  -- four `SyscallDispatchSuite` scenarios drive it.
+  -- four `SyscallDispatchSuite` scenarios drive it.  The reference op is now
+  -- proof-only (it reads the run-queue ghost), so the run drives the boot-core
+  -- live suspend (`bootSuspendThread`) in its place.
   match SeLe4n.ThreadId.toValid? victimTid with
   | none => assertBool "the victim id is valid" false
   | some vv =>
-    match Lifecycle.Suspend.suspendThread stQ vv with
-    | .error _ => assertBool "the single-core reference suspend succeeds" false
+    match bootSuspendThread stQ vv with
+    | .error _ => assertBool "the boot-core suspend succeeds" false
     | .ok stRef =>
-      assertBool "the single-core reference suspend leaves the unbound holder on no scheduler slot"
+      assertBool "the boot-core suspend leaves the unbound holder on no scheduler slot"
         (!threadPlacedOnSomeCore stRef serverTid)
       assertBool "...where the RETIRED bare G2 left it queued and unbound on core 2"
-        (decide (((bareTeardownG2 stQ victimTid tcbQ).scheduler.runQueueOnCore core2).contains
-            serverTid)
+        ((bareTeardownG2 stQ victimTid tcbQ).queuedOn core2 serverTid
           && decide (((bareTeardownG2 stQ victimTid tcbQ).getTcb? serverTid).map
               (·.schedContextBinding) = some SchedContextBinding.unbound))
   -- (viii) The footprint names the holder's placed core, and the pre-RR8.12
@@ -2703,9 +2706,10 @@ with the object writes the live bind performs left in place, so the two readings
 differ in exactly the placement. -/
 private def retiredBindPlacement (st : SystemState) (tid : SeLe4n.ThreadId) : SystemState :=
   let home := determineTargetCore st tid
-  if tid ∈ (st.scheduler.runQueueOnCore home) then
-    let rq := ((st.scheduler.runQueueOnCore home).remove tid).insert tid ⟨50⟩
-    { st with scheduler := st.scheduler.setRunQueueOnCore home rq }
+  -- Membership, `RunQueue.remove` and `RunQueue.insert` on the home core's queue,
+  -- read and written through the threads' links.
+  if st.queuedOn home tid then
+    (st.runRemoveOnCore home tid).runEnqueueOnCore home tid ⟨50⟩
   else st
 
 private def runBindPlacesParkedChecks : IO Unit := do
@@ -2753,7 +2757,7 @@ private def runBindPlacesParkedChecks : IO Unit := do
       assertBool "(b) the LIVE bind puts the parked holder back on a run queue"
         (runnableOnSomeCore stBound serverTid)
       assertBool "(b) ...on its own home core, which is the core the footprint declares"
-        (decide ((stBound.scheduler.runQueueOnCore core2).contains serverTid)
+        (decide ((stBound.queuedOn core2 serverTid))
           && decide ((LockKey.runQueue (determineTargetCore parked serverTid),
                 Concurrency.AccessMode.write)
               ∈ schedLockSet_schedContextBindOnCore parked serverTid))

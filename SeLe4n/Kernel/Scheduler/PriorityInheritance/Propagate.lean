@@ -567,7 +567,7 @@ theorem updatePipBoostOnCore_mem_runQueueOnCore (st : SystemState) (c c' : CoreI
     (tid x : ThreadId) :
     x ∈ (updatePipBoostOnCore st c tid).scheduler.runQueueOnCore c'
       ↔ x ∈ st.scheduler.runQueueOnCore c' := by
-  simp only [updatePipBoostOnCore, SystemState.rewriteObject_scheduler]
+  simp only [updatePipBoostOnCore]
   split
   · split
     · exact Iff.rfl
@@ -1341,7 +1341,7 @@ theorem updatePipBoostOnCore_runQueueUniqueOnCore (st : SystemState)
     (c : CoreId) (tid : ThreadId) (c' : CoreId)
     (h : (st.scheduler.runQueueOnCore c').toList.Nodup) :
     ((updatePipBoostOnCore st c tid).scheduler.runQueueOnCore c').toList.Nodup := by
-  simp only [updatePipBoostOnCore, SystemState.rewriteObject_scheduler]
+  simp only [updatePipBoostOnCore]
   split
   · split
     · exact h

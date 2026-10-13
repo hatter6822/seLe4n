@@ -43,7 +43,9 @@ by every kernel entry (`IPC.Invariant.RunQueueAgreement`).  Every payoff also
 takes two scheduler facts about the pre-state: the executing core's current
 thread is queued on no other core (`hCurAdm`, seL4's `ct_not_in_q`, which a
 preemption at a scheduling point needs to requeue it on its own core), and it is
-current on no other core (`hCurU`).
+current on no other core (`hCurU`).  Carrying both through every entry, so the
+premises go, is a registered debt row (`docs/REGISTERED_DEBT.md` §C, "The
+dispatch payoffs take the scheduler's `ct_not_in_q`…").
 -/
 
 namespace SeLe4n.Kernel

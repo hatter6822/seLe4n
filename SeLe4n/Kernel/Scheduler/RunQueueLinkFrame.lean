@@ -685,21 +685,22 @@ theorem runDescheduleOnCore_queuedOn (st : SystemState) (c : CoreId) (t : SeLe4n
 /-- WS-ZA ZA4.5: re-key thread `t` on core `c` at priority `p`: dequeue it, then
 append it to the tail of its new priority bucket, both through the TCB
 run-queue links (seL4's `tcbSchedDequeue` then `tcbSchedEnqueue`).  The
-erased ghost queue is re-keyed only when it holds `t`, so a requeue never adds
-a thread to the ghost: under `runQueueRefined` the condition is the link bit
-the callers test, and the ghost's membership is preserved with no hypothesis. -/
+ghost queue is re-keyed (`RunQueue.rekey`: only when it holds `t`), so a
+requeue never adds a thread to the ghost: under `runQueueRefined` the condition
+is the link bit the callers test, and the ghost's membership is preserved with
+no hypothesis.  The ghost write is erased, so the compiled requeue is the two
+link moves alone. -/
 def runRequeueOnCore (st : SystemState) (c : CoreId) (t : SeLe4n.ThreadId)
     (p : SeLe4n.Priority) : SystemState :=
   let st' := (st.runRemoveOnCore c t).runEnqueueAdmitted c t p
-  if (st.scheduler.runQueueOnCore c).contains t then st'
-  else { st' with scheduler := st'.scheduler.setRunQueueOnCore c (st.scheduler.runQueueOnCore c) }
+  { st' with scheduler := st'.scheduler.setRunQueueOnCore c ((st.scheduler.runQueueOnCore c).rekey t p) }
 
 /-- The requeue's object store is the dequeue-then-enqueue's: the ghost
 condition touches only the scheduler. -/
 theorem runRequeueOnCore_objects (st : SystemState) (c : CoreId) (t : SeLe4n.ThreadId)
     (p : SeLe4n.Priority) :
     (st.runRequeueOnCore c t p).objects = ((st.runRemoveOnCore c t).runEnqueueAdmitted c t p).objects := by
-  unfold runRequeueOnCore; dsimp only; split <;> rfl
+  rfl
 
 /-- A requeue of `t` moves no other thread's core code. -/
 theorem runRequeueOnCore_runCoreCode_ne (st : SystemState) (c : CoreId) (t y : SeLe4n.ThreadId)
@@ -748,9 +749,7 @@ theorem runRequeueOnCore_onlyObjectsSchedulerDiffer (st : SystemState) (c : Core
     onlyObjectsSchedulerDiffer (st.runRequeueOnCore c t p) st := by
   have h := (runEnqueueAdmitted_onlyObjectsSchedulerDiffer (st.runRemoveOnCore c t) c t p).trans
     (runRemoveOnCore_onlyObjectsSchedulerDiffer st c t)
-  unfold runRequeueOnCore; dsimp only; split
-  · exact h
-  · exact h.withScheduler _
+  exact h.withScheduler _
 
 theorem runRequeueOnCore_objectsAgreeOffRunLinks (st : SystemState) (c : CoreId)
     (t : SeLe4n.ThreadId) (p : SeLe4n.Priority) :
@@ -776,13 +775,10 @@ ends are the enqueue's over the dequeued state. -/
     (st.runRequeueOnCore c t p).scheduler =
       (st.scheduler.setRunQueueEndsOnCore c ((st.runRemoveOnCore c t).runEnqueueEnds c t p)).setRunQueueOnCore c
         ((st.scheduler.runQueueOnCore c).rekey t p) := by
-  unfold runRequeueOnCore RunQueue.rekey; dsimp only
-  split <;>
-  · simp only [runEnqueueAdmitted_scheduler, runRemoveOnCore_scheduler,
-      SchedulerState.setRunQueueOnCore_runQueueOnCore_self]
-    rw [SchedulerState.setRunQueueOnCore_setRunQueueEndsOnCore, SchedulerState.setRunQueueOnCore_setRunQueueOnCore,
-      SchedulerState.setRunQueueEndsOnCore_setRunQueueEndsOnCore]
-    try rw [SchedulerState.setRunQueueOnCore_setRunQueueOnCore]
+  unfold runRequeueOnCore; dsimp only
+  simp only [runEnqueueAdmitted_scheduler, runRemoveOnCore_scheduler]
+  rw [SchedulerState.setRunQueueOnCore_setRunQueueOnCore, SchedulerState.setRunQueueOnCore_setRunQueueEndsOnCore,
+    SchedulerState.setRunQueueOnCore_setRunQueueOnCore, SchedulerState.setRunQueueEndsOnCore_setRunQueueEndsOnCore]
 
 /-! A run-queue link write writes only its own core's queue and ends: every
 other observable per-core slot reads through. -/
@@ -1063,7 +1059,11 @@ theorem RunQueueStage.runRequeueOnCore (st : SystemState) (c : CoreId) (t : SeLe
     obtain ⟨tcb, hT, -⟩ := (runLinkOn_queued_iff st c t).mp hq
     have hc : (st.scheduler.runQueueOnCore c).contains t = true := by
       rw [← (hR c).contains]; exact hq
-    unfold SystemState.runRequeueOnCore; dsimp only; rw [if_pos hc]
+    have hEq : st.runRequeueOnCore c t p = (st.runRemoveOnCore c t).runEnqueueAdmitted c t p := by
+      unfold SystemState.runRequeueOnCore; dsimp only
+      rw [RunQueue.rekey, if_pos hc, ← runRemoveOnCore_runQueueOnCore_self,
+        ← runEnqueueAdmitted_runQueueOnCore_self, SchedulerState.setRunQueueOnCore_runQueueOnCore]
+    rw [hEq]
     refine runEnqueueAdmitted_refined (runRemoveOnCore_refined hR) ?_ ?_
     · rw [runRemoveOnCore_getTcb?_isSome, hT]; rfl
     · intro c' hne

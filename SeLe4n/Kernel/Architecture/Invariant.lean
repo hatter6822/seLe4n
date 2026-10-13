@@ -428,7 +428,8 @@ private theorem default_schedulerInvariantBundle :
   · -- queueCurrentConsistent: current = none → True
     simp [queueCurrentConsistent, default_currentOnCore_none]
   · -- runQueueUnique: [].Nodup
-    exact List.nodup_nil
+    show ((default : SchedulerState).runQueueOnCore bootCoreId).toList.Nodup
+    simp
   · -- currentThreadValid: current = none → True
     simp [currentThreadValid, default_currentOnCore_none]
 
@@ -611,7 +612,8 @@ private theorem default_schedulerInvariantBundleFull :
    by
     unfold timeSlicePositive
     intro tid hMem
-    have : (default : SystemState).scheduler.runnable = [] := by decide
+    have : (default : SystemState).scheduler.runnable = [] := by
+      show ((default : SchedulerState).runQueueOnCore bootCoreId).toList = []; simp
     rw [this] at hMem; simp at hMem,
    by unfold currentTimeSlicePositive; simp [default_currentOnCore_none],
    by unfold edfCurrentHasEarliestDeadline; simp [default_currentOnCore_none],
@@ -619,7 +621,8 @@ private theorem default_schedulerInvariantBundleFull :
    default_runnableThreadsAreTCBs,
    by  -- R6-D: schedulerPriorityMatch — default runQueue empty, vacuously true
     intro tid hMem
-    have hFlat : ((default : SystemState).scheduler.runQueueOnCore bootCoreId).toList = [] := by decide
+    have hFlat : ((default : SystemState).scheduler.runQueueOnCore bootCoreId).toList = [] := by
+      show ((default : SchedulerState).runQueueOnCore bootCoreId).toList = []; simp
     have hInFlat := (RunQueue.mem_toList_iff_mem _ tid).mpr hMem
     simp [hFlat] at hInFlat,
    by  -- V5-H: domainTimeRemainingPositive — default domainTimeRemaining is 5

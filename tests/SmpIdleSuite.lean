@@ -12,6 +12,7 @@ import SeLe4n.Kernel.Scheduler.Operations.PerCoreIdleInventory
 import SeLe4n.Kernel.Scheduler.Operations.PerCoreDispatch
 import SeLe4n.Testing.StateBuilder
 import SeLe4n.Testing.InvariantChecks
+import SeLe4n.Testing.BootCoreOps
 
 /-!
 # WS-SM SM5.E — Per-core idle thread test suite
@@ -402,15 +403,15 @@ the selection picks the idle thread. -/
 private def runAlwaysSucceedsChecks : IO Unit := do
   IO.println "--- §3.2 SM5.E.6 chooseThreadOnCore_always_succeeds ---"
   assertBool "empty boot-core run queue ⇒ idle-fallback signal (.ok none)"
-    (decide (chooseThreadOnCoreIdleFallback stEmpty bootCoreId))
+    (idleFallbackByLinks stEmpty bootCoreId)
   assertBool "after enqueue: idle thread IS a member of the boot-core run queue"
-    (decide (idleThreadId bootCoreId ∈ (stEmptyIdle.scheduler.runQueueOnCore bootCoreId).toList))
+    (decide (idleThreadId bootCoreId ∈ (stEmptyIdle.runQueueWalk bootCoreId)))
   assertBool "after enqueue: idle resolves to a TCB in the object store"
     (decide (stEmptyIdle.getTcb? (idleThreadId bootCoreId)).isSome)
   assertBool "after enqueue: chooseThreadOnCore SELECTS the idle thread"
-    (decide (chooseThreadOnCoreSelects stEmptyIdle bootCoreId (idleThreadId bootCoreId)))
+    (selectsByLinks stEmptyIdle bootCoreId (idleThreadId bootCoreId))
   assertBool "after enqueue: selection is no longer the idle-fallback signal"
-    (!decide (chooseThreadOnCoreIdleFallback stEmptyIdle bootCoreId))
+    (!idleFallbackByLinks stEmptyIdle bootCoreId)
 
 /-- §3.3: SM5.E.5 — priority-0 idle never starves a higher-priority thread. -/
 private def runNoStarvationChecks : IO Unit := do
@@ -418,20 +419,20 @@ private def runNoStarvationChecks : IO Unit := do
   -- The boot-core run queue holds both the priority-10 user thread and the
   -- priority-0 idle thread; selection picks the user thread.
   assertBool "user thread (prio 10) is selected over idle (prio 0)"
-    (decide (chooseThreadOnCoreSelects stUserIdle bootCoreId tidUser))
+    (selectsByLinks stUserIdle bootCoreId tidUser)
   assertBool "idle (prio 0) is NOT selected while a higher-priority thread is runnable"
-    (!decide (chooseThreadOnCoreSelects stUserIdle bootCoreId (idleThreadId bootCoreId)))
+    (!selectsByLinks stUserIdle bootCoreId (idleThreadId bootCoreId))
   assertBool "idle is still present in the run queue (available as fallback)"
-    (decide (idleThreadId bootCoreId ∈ (stUserIdle.scheduler.runQueueOnCore bootCoreId).toList))
+    (decide (idleThreadId bootCoreId ∈ (stUserIdle.runQueueWalk bootCoreId)))
   assertBool "the user thread is still present in the run queue"
-    (decide (tidUser ∈ (stUserIdle.scheduler.runQueueOnCore bootCoreId).toList))
+    (decide (tidUser ∈ (stUserIdle.runQueueWalk bootCoreId)))
 
 /-- §3.4: SM5.E.4 — per-core idle locality (frame + affinity + cross-core). -/
 private def runLocalityChecks : IO Unit := do
   IO.println "--- §3.4 SM5.E.4 idle_core_locality ---"
   -- Frame: enqueuing the boot core's idle thread does NOT add it to core 1's queue.
   assertBool "boot-core idle thread is NOT on core 1's run queue (frame locality)"
-    (!decide (idleThreadId bootCoreId ∈ (stEmptyIdle.scheduler.runQueueOnCore core1).toList))
+    (!decide (idleThreadId bootCoreId ∈ (stEmptyIdle.runQueueWalk core1)))
   -- Affinity: idle bootCore is admitted on bootCore but not on core 1.
   assertBool "idle bootCore is admitted on its own core"
     (decide (affinityAdmitsCore (createIdleThread bootCoreId) bootCoreId = true))
@@ -440,11 +441,11 @@ private def runLocalityChecks : IO Unit := do
   -- Cross-core symmetry: core 1's own idle thread is enqueued on core 1, selected
   -- by core 1's scheduler, and absent from the boot core's queue.
   assertBool "core 1 selects its OWN idle thread"
-    (decide (chooseThreadOnCoreSelects stCore1Idle core1 (idleThreadId core1)))
+    (selectsByLinks stCore1Idle core1 (idleThreadId core1))
   assertBool "core 1's idle thread is NOT on the boot core's run queue"
-    (!decide (idleThreadId core1 ∈ (stCore1Idle.scheduler.runQueueOnCore bootCoreId).toList))
+    (!decide (idleThreadId core1 ∈ (stCore1Idle.runQueueWalk bootCoreId)))
   assertBool "the boot core (empty) still falls back to idle when only core 1 has its idle thread"
-    (decide (chooseThreadOnCoreIdleFallback stCore1Idle bootCoreId))
+    (idleFallbackByLinks stCore1Idle bootCoreId)
 
 /-- A boot state with the boot core's idle thread *installed* (object store) but
 nothing runnable — the idle-aware dispatcher's exercise state. -/
@@ -484,18 +485,20 @@ private def runDispatcherChecks : IO Unit := do
   -- The idle-aware dispatcher runs the idle thread (current = some idleThreadId).
   assertBool "idle-aware dispatcher runs the idle thread (current = some idleThreadId)"
     (decide (dispatchedCurrent stIdleInstalled bootCoreId = some (idleThreadId bootCoreId)))
-  -- For the same state the legacy single-core `schedule` goes to current = none.
-  assertBool "legacy single-core schedule leaves current = none (idle not dispatched)"
-    (decide ((match SeLe4n.Kernel.schedule stIdleInstalled with
+  -- The live scheduling point folds the idle dispatch in, so it agrees with the
+  -- idle-aware dispatcher.  (The single-core reference `schedule`, which left
+  -- current = none here, is proof-only since WS-ZA ZA4.5.)
+  assertBool "live schedule runs the idle thread too (folded idle dispatch)"
+    (decide ((match bootSchedule stIdleInstalled with
               | .ok (_, s) => s.scheduler.currentOnCore bootCoreId
-              | .error _ => some (idleThreadId bootCoreId)) = none))
+              | .error _ => none) = some (idleThreadId bootCoreId)))
   -- Without an idle thread installed the dispatcher falls back to current = none.
   assertBool "dispatcher falls back to current = none when no idle thread is installed"
     (decide (dispatchedCurrent stEmpty bootCoreId = none))
   -- Dequeue-on-dispatch: the dispatched idle thread is not in the run queue.
   assertBool "dispatched idle is absent from the run queue (dequeue-on-dispatch)"
     (match SeLe4n.Kernel.scheduleOrIdleOnCore stIdleInstalled bootCoreId with
-     | .ok s => !(s.scheduler.runQueueOnCore bootCoreId).toList.any (· == idleThreadId bootCoreId)
+     | .ok s => !(s.runQueueWalk bootCoreId).any (· == idleThreadId bootCoreId)
      | .error _ => false)
 
 /-- §3.7: the SM5.E.3 `enqueueIdleThreadOnCore` lock-set witnesses. -/
@@ -549,7 +552,7 @@ private def runBootIdleChecks : IO Unit := do
   | .ok ist =>
       for c in allCores do
         assertBool s!"core {c.val}: its idle thread is on its OWN run queue"
-          (decide (idleThreadId c ∈ (ist.state.scheduler.runQueueOnCore c).toList))
+          (decide (idleThreadId c ∈ (ist.state.runQueueWalk c)))
         assertBool s!"core {c.val}: its idle thread resolves to THIS core's idle TCB"
           (match ist.state.getTcb? (idleThreadId c) with
            | some tcb =>
@@ -578,7 +581,7 @@ private def runBootIdleChecks : IO Unit := do
         for c' in allCores do
           if c' ≠ c then
             assertBool s!"core {c.val}: its idle thread is NOT on core {c'.val}'s queue"
-              (decide (idleThreadId c ∉ (ist.state.scheduler.runQueueOnCore c').toList))
+              (decide (idleThreadId c ∉ (ist.state.runQueueWalk c')))
         -- WS-RR RR5.10 against RR5.14, the two rows composed: with the
         -- classification lifted off the boot core, a SECONDARY core's queued
         -- idle thread classifies `.Ready`.  Under the boot-core-pinned
@@ -593,11 +596,11 @@ private def runBootIdleChecks : IO Unit := do
         -- WS-RR RR5.12 (audit): the boot queue holds idle and NOTHING else —
         -- the runtime face of `bootFromPlatformCheckedWithIdleThreads_mem_runQueueOnCore_iff`.
         assertBool s!"core {c.val}: its run queue holds exactly its idle thread"
-          (decide ((ist.state.scheduler.runQueueOnCore c).toList = [idleThreadId c]))
+          (decide ((ist.state.runQueueWalk c) = [idleThreadId c]))
         -- ...so the core's FIRST selection is its idle thread
         -- (`bootFromPlatformCheckedWithIdleThreads_chooseThreadOnCore_idle`).
         assertBool s!"core {c.val}: its first selection is its own idle thread"
-          (match chooseThreadOnCore ist.state c with
+          (match chooseThreadOnCoreByLinks ist.state c with
            | .ok (some tid) => decide (tid = idleThreadId c)
            | _ => false)
   match SeLe4n.Platform.Boot.bootFromPlatformChecked cfg with
@@ -607,7 +610,7 @@ private def runBootIdleChecks : IO Unit := do
       for c in allCores do
         assertBool
           s!"NEGATIVE core {c.val}: the pre-RR5.14 entry enqueues no idle thread"
-          (decide (idleThreadId c ∉ (plain.state.scheduler.runQueueOnCore c).toList))
+          (decide (idleThreadId c ∉ (plain.state.runQueueWalk c)))
         assertBool
           s!"NEGATIVE core {c.val}: nor installs its idle TCB"
           (plain.state.getTcb? (idleThreadId c)).isNone

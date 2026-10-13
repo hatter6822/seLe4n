@@ -226,7 +226,7 @@
 [IDLE-001] boot-core idle thread installed (id): 65536
 [IDLE-002] pre-dispatch current: none
 [IDLE-003] idle dispatchable on boot core: true
-[IDLE-004] legacy schedule current (idle = none): none
+[IDLE-004] live schedule current (folded idle dispatch): some 65536
 [IDLE-005] idle-aware dispatch current (idle runs): some 65536
 [IDLE-006] dispatched idle absent from run queue (dequeue-on-dispatch): true
 [ITR-001] inter-transition invariant checks: 38 passed

@@ -919,18 +919,18 @@ theorem preemptCurrentOnCore_domainTimeRemainingOnCore (st : SystemState) (c c' 
     (preemptCurrentOnCore st c tid).scheduler.domainTimeRemainingOnCore c'
       = st.scheduler.domainTimeRemainingOnCore c' := by
   simp only [preemptCurrentOnCore]; repeat' split
-  all_goals first | rfl | simp only [SchedulerState.setCurrentOnCore_domainTimeRemainingOnCore,
-      SchedulerState.setRunQueueOnCore_domainTimeRemainingOnCore, SystemState.runEnqueueOnCore_domainTimeRemainingOnCore,
-      SystemState.rewriteObject_scheduler, SchedulerState.setRunQueueEndsOnCore_domainTimeRemainingOnCore]
+  all_goals first | rfl | simp only [
+      SystemState.runEnqueueOnCore_domainTimeRemainingOnCore,
+      SystemState.rewriteObject_scheduler]
 
 theorem preemptCurrentOnCore_domainScheduleIndexOnCore (st : SystemState) (c c' : CoreId)
     (tid : SeLe4n.ThreadId) :
     (preemptCurrentOnCore st c tid).scheduler.domainScheduleIndexOnCore c'
       = st.scheduler.domainScheduleIndexOnCore c' := by
   simp only [preemptCurrentOnCore]; repeat' split
-  all_goals first | rfl | simp only [SchedulerState.setCurrentOnCore_domainScheduleIndexOnCore,
-      SchedulerState.setRunQueueOnCore_domainScheduleIndexOnCore, SystemState.runEnqueueOnCore_domainScheduleIndexOnCore,
-      SystemState.rewriteObject_scheduler, SchedulerState.setRunQueueEndsOnCore_domainScheduleIndexOnCore]
+  all_goals first | rfl | simp only [
+      SystemState.runEnqueueOnCore_domainScheduleIndexOnCore,
+      SystemState.rewriteObject_scheduler]
 
 theorem switchToThreadOnCore_domainTimeRemainingOnCore (st st' : SystemState) (c c' : CoreId)
     (tid : SeLe4n.ThreadId) (h : switchToThreadOnCore st c tid = .ok st') :

@@ -155,14 +155,20 @@ def frozenStateAgrees (fs : FrozenSystemState) (ls : SystemState) : Bool :=
   -- would be requiring the representation to be something it is not; requiring
   -- the buckets to track it is requiring the frozen kernel to schedule the same
   -- threads, which is the claim that matters.
-  let lq := ls.scheduler.runQueueOnCore Concurrency.bootCoreId
+  --
+  -- WS-ZA ZA4.5: the live buckets are read off the boot core's run-queue links
+  -- (`bootRunQueueOrder`, `bootRunQueuePrio`), the same derivation `freeze`
+  -- takes them from; under the link agreement they are the queue's
+  -- (`freezeScheduler_byPriority_eq`).
+  let lorder := bootRunQueueOrder ls
+  let lb := SeLe4n.Kernel.RunQueue.byPriorityTableOf lorder (bootRunQueuePrio ls)
   let queueAgree :=
     -- Both directions over the union of bucket keys: a thread queued on one side
     -- only is a disagreement whichever side queues it, and an empty bucket on
     -- one side must face an empty or absent bucket on the other.
-    (lq.toList.filterMap lq.priorityOf
+    (lorder.map (bootRunQueuePrio ls)
         ++ fs.scheduler.byPriority.indexMap.toList.map Prod.fst).all (fun prio =>
-      (fs.scheduler.byPriority.get? prio).getD [] == lq.atPriority prio)
+      (fs.scheduler.byPriority.get? prio).getD [] == (lb.get? prio).getD [])
   objectsAgree && taintAgree && queueAgree
     && fs.scheduler.current == ls.scheduler.currentOnCore Concurrency.bootCoreId
     && fs.scheduler.activeDomain == ls.scheduler.activeDomainOnCore Concurrency.bootCoreId

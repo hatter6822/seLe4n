@@ -238,12 +238,6 @@ theorem layout_empty_tables :
 instance : Inhabited RunQueue where default := empty
 instance : EmptyCollection RunQueue where emptyCollection := empty
 
-/-- An empty queue held as one constant, built once at initialisation: what a
-per-core slot holds while its queue is taken out to be rewritten in place
-(`modifyRunQueueOnCore`).  `empty` is inlined, so a slot filled with it builds
-a fresh record on every call. -/
-@[noinline] def slotPlaceholder : RunQueue := empty
-
 /-- The queued threads, in the order they joined the queue. -/
 def toList (rq : RunQueue) : List ThreadId := walk (nextOf rq.links) rq.size rq.head
 
@@ -1485,19 +1479,54 @@ theorem ofList_wellFormed (entries : List (ThreadId × Priority)) : (ofList entr
 -- Tables for the frozen snapshot (built once, at freeze)
 -- ============================================================================
 
+/-- The threads of queue order `l` with their priorities `prio` as a table.
+The frozen snapshot builds it from the threads' run-queue links
+(`freezeScheduler`); `threadPriorityTable` is the same table read off the
+abstract queue. -/
+def threadPriorityTableOf (l : List ThreadId) (prio : ThreadId → Priority) :
+    RHTable ThreadId Priority :=
+  l.foldl (fun t tid => t.insert tid (prio tid)) (RHTable.empty 16 (by omega))
+
+/-- The threads of queue order `l` as a table. -/
+def membershipTableOf (l : List ThreadId) : RHTable ThreadId Unit :=
+  l.foldl (fun t tid => t.insert tid ()) (RHTable.empty 16 (by omega))
+
+/-- Each priority's bucket of queue order `l` as a table. -/
+def byPriorityTableOf (l : List ThreadId) (prio : ThreadId → Priority) :
+    RHTable Priority (List ThreadId) :=
+  l.foldl (fun t tid =>
+    let p := prio tid
+    t.insert p ((t.get? p).getD [] ++ [tid])) (RHTable.empty 16 (by omega))
+
+/-- A fold reads its step only at the list's members. -/
+theorem foldl_congr_mem {α β : Type} (f g : β → α → β) :
+    ∀ (l : List α) (b : β), (∀ a ∈ l, ∀ b, f b a = g b a) → l.foldl f b = l.foldl g b
+  | [], _, _ => rfl
+  | a :: r, b, h => by
+    rw [List.foldl_cons, List.foldl_cons, h a (List.mem_cons_self ..) b]
+    exact foldl_congr_mem f g r _ (fun x hx => h x (List.mem_cons_of_mem _ hx))
+
+theorem threadPriorityTableOf_congr {l : List ThreadId} {prio prio' : ThreadId → Priority}
+    (h : ∀ t ∈ l, prio t = prio' t) :
+    threadPriorityTableOf l prio = threadPriorityTableOf l prio' :=
+  foldl_congr_mem _ _ l _ (fun t ht _ => by rw [h t ht])
+
+theorem byPriorityTableOf_congr {l : List ThreadId} {prio prio' : ThreadId → Priority}
+    (h : ∀ t ∈ l, prio t = prio' t) :
+    byPriorityTableOf l prio = byPriorityTableOf l prio' :=
+  foldl_congr_mem _ _ l _ (fun t ht _ => by simp only [h t ht])
+
 /-- The queued threads' priorities as a table, for the frozen snapshot. -/
 def threadPriorityTable (rq : RunQueue) : RHTable ThreadId Priority :=
-  rq.toList.foldl (fun t tid => t.insert tid (linkOf rq.links tid).prio) (RHTable.empty 16 (by omega))
+  threadPriorityTableOf rq.toList (fun tid => (linkOf rq.links tid).prio)
 
 /-- The queued threads as a table, for the frozen snapshot. -/
 def membershipTable (rq : RunQueue) : RHTable ThreadId Unit :=
-  rq.toList.foldl (fun t tid => t.insert tid ()) (RHTable.empty 16 (by omega))
+  membershipTableOf rq.toList
 
 /-- Each priority's bucket as a table, for the frozen snapshot. -/
 def byPriorityTable (rq : RunQueue) : RHTable Priority (List ThreadId) :=
-  rq.toList.foldl (fun t tid =>
-    let p := (linkOf rq.links tid).prio
-    t.insert p ((t.get? p).getD [] ++ [tid])) (RHTable.empty 16 (by omega))
+  byPriorityTableOf rq.toList (fun tid => (linkOf rq.links tid).prio)
 
 theorem foldl_insert_invExtK {α β : Type} [BEq α] [Hashable α] [LawfulBEq α]
     (f : RHTable α β → ThreadId → α × β) :
@@ -1507,7 +1536,7 @@ theorem foldl_insert_invExtK {α β : Type} [BEq α] [Hashable α] [LawfulBEq α
   | _ :: r, _, h => foldl_insert_invExtK f r _ (RHTable_insert_preserves_invExtK _ _ _ h)
 
 theorem threadPriorityTable_invExtK (rq : RunQueue) : rq.threadPriorityTable.invExtK :=
-  foldl_insert_invExtK (fun _ tid => (tid, (linkOf rq.links tid).prio)) _ _
+  show (threadPriorityTableOf _ _).invExtK from foldl_insert_invExtK (fun _ tid => (tid, (linkOf rq.links tid).prio)) _ _
     (RHTable.empty_invExtK 16 (by omega))
 
 theorem membershipTable_invExtK (rq : RunQueue) : rq.membershipTable.invExtK :=
@@ -1533,7 +1562,7 @@ theorem foldl_insert_get_key {β : Type} (g : ThreadId → β) (x : ThreadId) :
 
 theorem threadPriorityTable_get? (rq : RunQueue) (tid : ThreadId) :
     rq.threadPriorityTable.get? tid = rq.priorityOf tid := by
-  unfold threadPriorityTable
+  unfold threadPriorityTable threadPriorityTableOf
   rw [foldl_insert_get_key (fun tid => (linkOf rq.links tid).prio) tid _ _
     (RHTable.empty_invExtK 16 (by omega)), RHTable_get?_empty]
   unfold priorityOf
@@ -1543,7 +1572,7 @@ theorem threadPriorityTable_get? (rq : RunQueue) (tid : ThreadId) :
 
 theorem membershipTable_get? (rq : RunQueue) (tid : ThreadId) :
     rq.membershipTable.get? tid = if rq.contains tid then some () else none := by
-  unfold membershipTable
+  unfold membershipTable membershipTableOf
   rw [foldl_insert_get_key (fun _ => ()) tid _ _ (RHTable.empty_invExtK 16 (by omega)),
     RHTable_get?_empty]
   by_cases h : rq.contains tid
@@ -1569,7 +1598,7 @@ theorem byPriorityTable_get? (rq : RunQueue) (p : Priority) :
       · subst e; simp
       · have e' : ((linkOf rq.links y).prio == p) = false := by simp [e]
         simp only [e', List.filter_cons, Bool.false_eq_true, ↓reduceIte]
-  unfold byPriorityTable
+  unfold byPriorityTable byPriorityTableOf
   rw [key _ _ (RHTable.empty_invExtK 16 (by omega)), RHTable_get?_empty, atPriority_eq]
   split <;> simp
 
@@ -1765,8 +1794,9 @@ end RunQueue
 
 namespace RunQueueEnds
 
-/-- The ends of an empty queue, as one constant built once (as
-`RunQueue.slotPlaceholder`). -/
+/-- The ends of an empty queue, as one constant built once at initialisation
+(`RunQueue.empty` is inlined, so a slot filled with it would build a fresh
+record on every call). -/
 @[noinline] def empty : RunQueueEnds := RunQueue.empty.ends
 
 instance : Inhabited RunQueueEnds where default := empty

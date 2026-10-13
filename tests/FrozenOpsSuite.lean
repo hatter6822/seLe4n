@@ -27,6 +27,21 @@ private def expect (label : String) (cond : Bool) : IO Unit := do
   else
     throw <| IO.userError s!"frozen-ops check failed [{label}]"
 
+/-- Core `c`'s priority-`p` bucket, walked along the threads' bucket links from
+the bucket's head: the executable reading of
+`(st.scheduler.runQueueOnCore c).atPriority p`, whose run queue is a proof-only
+ghost (bridge `runQueueRefinedOnCore.bucket_walk_eq`, pinned below). -/
+private def bucketOnCore (st : SystemState) (c : SeLe4n.Kernel.Concurrency.CoreId)
+    (p : SeLe4n.Priority) : List SeLe4n.ThreadId :=
+  SeLe4n.Kernel.LinkedQueue.walk (fun t => (st.runLinkOn c t).bucketNext)
+    (st.scheduler.runQueueEndsOnCore c).size
+    (SeLe4n.Kernel.RunQueue.endsOf (st.scheduler.runQueueEndsOnCore c).buckets p).head
+
+example (st : SystemState) (c : SeLe4n.Kernel.Concurrency.CoreId) (p : SeLe4n.Priority)
+    (h : st.runQueueRefinedOnCore c) :
+    bucketOnCore st c p = (st.scheduler.runQueueOnCore c).atPriority p :=
+  h.bucket_walk_eq p
+
 /-- Helper: construct a minimal empty FrozenSystemState. -/
 private def emptyFrozenState : FrozenSystemState :=
   SeLe4n.Testing.emptyFrozenSystemState
@@ -2561,7 +2576,7 @@ private def differentialSchedContextBindClearsOrigin : IO Unit := do
     (((freeze ist).scheduler.byPriority.get? ⟨0⟩).getD [] == [diffA, diffB])
   expect "FO-047: the live bind moves diffA into bucket 40"
     ((liveSchedContextBindState ist.state diffScId diffA).map
-      (fun st => ((st.scheduler.runQueueOnCore bootCoreId).atPriority (⟨40⟩ : SeLe4n.Priority)))
+      (fun st => bucketOnCore st bootCoreId (⟨40⟩ : SeLe4n.Priority))
       == some [diffA])
   expect "FO-047 PAYOFF: ...and so does the frozen bind"
     (match frozenSchedContextBind diffScId.toObjId diffA (freeze ist) with
@@ -2900,7 +2915,7 @@ private def differentialSchedContextConfigureDomainOnlyKeepsOrder : IO Unit := d
     (diffAddSchedContext mkEmptyIntermediateState cfgScId cfgSc) boundTcb) peerTcb
   let liveAt (prio dom at_ : Nat) : Option (List SeLe4n.ThreadId) :=
     (liveSchedContextConfigureState ist.state cfgScId 100 1000 prio 0 dom).map
-      (fun st => (st.scheduler.runQueueOnCore bootCoreId).atPriority ⟨at_⟩)
+      (fun st => bucketOnCore st bootCoreId ⟨at_⟩)
   let frozenAt (prio dom at_ : Nat) : Option (List SeLe4n.ThreadId) :=
     (frozenSchedContextConfigure cfgScId.toObjId 100 1000 prio 0 dom (freeze ist)).toOption.map
       (fun r => (r.2.scheduler.byPriority.get? ⟨at_⟩).getD [])
@@ -2913,7 +2928,7 @@ private def differentialSchedContextConfigureDomainOnlyKeepsOrder : IO Unit := d
   -- runs -- and the frozen copy of the pre-state agrees, so a divergence below is
   -- the operation's and not the freeze's.
   expect "FO-048 control: the bound thread and its peer share a bucket, in this order"
-    ((ist.state.scheduler.runQueueOnCore bootCoreId).atPriority ⟨0⟩ == [diffA, diffB])
+    (bucketOnCore ist.state bootCoreId ⟨0⟩ == [diffA, diffB])
   expect "FO-048 control: the frozen copy of the pre-state agrees"
     (frozenStateAgrees (freeze ist) ist.state)
   expect "FO-048 control: the live domain-only reconfigure runs"

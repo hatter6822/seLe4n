@@ -769,7 +769,8 @@ theorem default_crossSubsystemInvariant :
     simp [this] at h₁
   · -- Z9-C: schedContextRunQueueConsistent — vacuously true (empty runnable list)
     intro tid hMem
-    have : (default : SystemState).scheduler.runnable = [] := by decide
+    have : (default : SystemState).scheduler.runnable = [] := by
+      show ((default : SchedulerState).runQueueOnCore SeLe4n.Kernel.Concurrency.bootCoreId).toList = []; simp
     rw [this] at hMem; simp at hMem
   · -- AF1-B3: blockingAcyclic — vacuously true for empty objects (fuel = 0)
     intro tid hMem

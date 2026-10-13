@@ -1685,7 +1685,7 @@ construction of a `ValidThreadId` requires a `tid ≠ ThreadId.sentinel`
 witness. Enforcement moves from runtime dispatch-boundary checks to
 the compile-time type signature, making the discipline
 non-bypassable. -/
-def suspendThread (st : SystemState) (vtid : SeLe4n.ValidThreadId)
+noncomputable def suspendThread (st : SystemState) (vtid : SeLe4n.ValidThreadId)
     : Except KernelError SystemState :=
   let tid : SeLe4n.ThreadId := vtid.val
   -- G1: TCB lookup + state validation
@@ -1832,7 +1832,7 @@ to produce a `tid ≠ ThreadId.sentinel` witness (via `ThreadId.toValid?`
 or `ThreadId.toValid`). This ELIMINATES the need for sentinel-checking
 at the dispatch boundary as a runtime guard; enforcement moves to the
 type signature, non-bypassable at compile time. -/
-def resumeThread (st : SystemState) (vtid : SeLe4n.ValidThreadId)
+noncomputable def resumeThread (st : SystemState) (vtid : SeLe4n.ValidThreadId)
     : Except KernelError SystemState :=
   let tid : SeLe4n.ThreadId := vtid.val
   -- H1: TCB lookup

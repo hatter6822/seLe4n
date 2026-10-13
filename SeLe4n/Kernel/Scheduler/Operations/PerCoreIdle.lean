@@ -556,7 +556,7 @@ decidable and concrete states can `decide` it.  It is the form the
 selection-success theorem actually needs (the selected-thread identity does not
 require pinning the full idle TCB). -/
 def idleAvailableOnCoreB (st : SystemState) (c : CoreId) : Bool :=
-  (st.scheduler.runQueueOnCore c).contains (idleThreadId c) &&
+  st.queuedOn c (idleThreadId c) &&
   (match st.getTcb? (idleThreadId c) with
    | some tcb => tcb.domain == st.scheduler.activeDomainOnCore c
    | none => false)
@@ -567,11 +567,11 @@ per-core selection returns `some`.  Discharges `chooseThreadOnCore_some_of_eligi
 with the *resolved* idle TCB (whatever it is) rather than `queuedIdleThread c`, so
 it needs no undecidable full-TCB equality. -/
 theorem chooseThreadOnCore_always_succeeds_of_idleAvailableB (st : SystemState) (c : CoreId)
-    (hRunnable : runnableThreadsAreTCBsOnCore st c)
+    (hRunnable : runnableThreadsAreTCBsOnCore st c) (hR : st.runQueueRefinedOnCore c)
     (hB : idleAvailableOnCoreB st c = true) :
     ∃ tid, chooseThreadOnCore st c = .ok (some tid) := by
   unfold idleAvailableOnCoreB at hB
-  rw [Bool.and_eq_true] at hB
+  rw [Bool.and_eq_true, hR.queuedOn] at hB
   obtain ⟨hMemB, hDomB⟩ := hB
   have hMem : idleThreadId c ∈ (st.scheduler.runQueueOnCore c).toList :=
     (RunQueue.mem_toList_iff_mem _ _).mpr (by rwa [RunQueue.mem_iff_contains])
@@ -587,10 +587,11 @@ implies its decidable companion `idleAvailableOnCoreB` — so any state satisfyi
 the (stronger, exact-TCB) `Prop` form can be `decide`d through the `Bool`
 companion. -/
 theorem idleThreadEnqueuedOnCore_idleAvailableOnCoreB (st : SystemState) (c : CoreId)
+    (hR : st.runQueueRefinedOnCore c)
     (h : idleThreadEnqueuedOnCore st c) : idleAvailableOnCoreB st c = true := by
   obtain ⟨hMem, ⟨t, hTcb, hw⟩, hDom⟩ := h
   unfold idleAvailableOnCoreB
-  rw [Bool.and_eq_true]
+  rw [Bool.and_eq_true, hR.queuedOn]
   refine ⟨by rw [← RunQueue.mem_iff_contains]; exact (RunQueue.mem_toList_iff_mem _ _).mp hMem, ?_⟩
   rw [hTcb]
   exact beq_iff_eq.mpr (by rw [TCB.proj_eq_of_withoutRunLinks_eq TCB.domain hw]; exact hDom)

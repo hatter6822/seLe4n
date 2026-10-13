@@ -2664,7 +2664,7 @@ theorem applyPriorityChangeOnCore_preserves_ipcInvariantFull
     (p : SeLe4n.Priority) (ec : CoreId) (b : Bool)
     (sgi : Option (CoreId × Concurrency.SgiKind))
     (hObjInv : st.objects.invExt) (hInv : ipcInvariantFull st)
-    (hR : st.runQueueRefined) (hAdm : st.currentRequeueAdmitted ec)
+    (hAdm : st.currentRequeueAdmitted ec)
     (hPre : st.objects[tid.toObjId]? = some (.tcb tcb))
     (hStep : SchedContext.PriorityManagement.applyPriorityChangeOnCore
       st tid tcb p ec b = .ok (st', sgi)) :
@@ -2713,7 +2713,7 @@ theorem setPriorityOnCore_preserves_ipcInvariantFull
     (st st' : SystemState) (vCallerTid vTargetTid : SeLe4n.ValidThreadId)
     (p : SeLe4n.Priority) (ec : CoreId) (sgi : Option (CoreId × Concurrency.SgiKind))
     (hObjInv : st.objects.invExt) (hInv : ipcInvariantFull st)
-    (hR : st.runQueueRefined) (hAdm : st.currentRequeueAdmitted ec)
+    (hAdm : st.currentRequeueAdmitted ec)
     (hStep : SchedContext.PriorityManagement.setPriorityOnCore
       st vCallerTid vTargetTid p ec = .ok (st', sgi)) :
     ipcInvariantFull st' := by
@@ -2724,7 +2724,7 @@ theorem setPriorityOnCore_preserves_ipcInvariantFull
     · split at hStep
       · rename_i targetTcb hTarget
         exact applyPriorityChangeOnCore_preserves_ipcInvariantFull st st' vTargetTid.val
-          targetTcb p ec _ _ hObjInv hInv hR hAdm
+          targetTcb p ec _ _ hObjInv hInv hAdm
           ((SystemState.getTcb?_eq_some_iff st vTargetTid.val targetTcb).mp hTarget) hStep
       · contradiction
   · contradiction
@@ -2736,7 +2736,7 @@ theorem setMCPriorityOnCore_preserves_ipcInvariantFull
     (st st' : SystemState) (vCallerTid vTargetTid : SeLe4n.ValidThreadId)
     (p : SeLe4n.Priority) (ec : CoreId) (sgi : Option (CoreId × Concurrency.SgiKind))
     (hObjInv : st.objects.invExt) (hInv : ipcInvariantFull st)
-    (hR : st.runQueueRefined) (hAdm : st.currentRequeueAdmitted ec)
+    (hAdm : st.currentRequeueAdmitted ec)
     (hStep : SchedContext.PriorityManagement.setMCPriorityOnCore
       st vCallerTid vTargetTid p ec = .ok (st', sgi)) :
     ipcInvariantFull st' := by
@@ -2755,12 +2755,6 @@ theorem setMCPriorityOnCore_preserves_ipcInvariantFull
           vTargetTid.val.toObjId (.tcb { targetTcb with maxControlledPriority := p }) hObjInv
         have hAtMcp := insertObjects_getElem_self st vTargetTid.val.toObjId
           (.tcb { targetTcb with maxControlledPriority := p }) hObjInv
-        -- The ceiling write moves no run-queue field and no core code.
-        have hSMcp : SystemState.RunQueueStage st ({ st with objects :=
-            (st.objects.insert vTargetTid.val.toObjId
-              (.tcb { targetTcb with maxControlledPriority := p })) } : SystemState) :=
-          SystemState.RunQueueStage.insert rfl rfl rfl (fun c => by rw [hPreRaw]; rfl)
-        have hRMcp := (hSMcp hObjInv hR).2
         have hAdmMcp : ({ st with objects := (st.objects.insert vTargetTid.val.toObjId
             (.tcb { targetTcb with maxControlledPriority := p })) } : SystemState).currentRequeueAdmitted
             ec := fun y hy =>
@@ -2770,7 +2764,7 @@ theorem setMCPriorityOnCore_preserves_ipcInvariantFull
         split at hStep
         · exact applyPriorityChangeOnCore_preserves_ipcInvariantFull _ st' vTargetTid.val
             { targetTcb with maxControlledPriority := p } p ec _ _
-            hObjInvMcp hInvMcp hRMcp hAdmMcp hAtMcp hStep
+            hObjInvMcp hInvMcp hAdmMcp hAtMcp hStep
         · cases hStep
           exact hInvMcp
       · contradiction

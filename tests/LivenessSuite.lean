@@ -300,6 +300,18 @@ example :
   intro h
   exact absurd h.2.2.2 (by decide)
 
+-- The default state's boot-core run queue holds no thread.  The queue is a
+-- proof-only ghost, so this is proved from the library's
+-- `SchedulerState.runQueueOnCore_default` (the default queue is
+-- `RunQueue.empty`) and `RunQueue.not_mem_empty`, not by `decide`.
+private theorem default_runQueue_not_contains (tid : SeLe4n.ThreadId) :
+    ((default : SystemState).scheduler.runQueueOnCore bootCoreId).contains tid = false := by
+  rw [show (default : SystemState).scheduler.runQueueOnCore bootCoreId =
+      SeLe4n.Kernel.RunQueue.empty from SchedulerState.runQueueOnCore_default _]
+  cases hc : SeLe4n.Kernel.RunQueue.empty.contains tid
+  · rfl
+  · exact absurd hc (SeLe4n.Kernel.RunQueue.not_mem_empty tid)
+
 -- AN5-E.3: Functional test — constructing an exit witness from a two-step
 -- trace whose post-state places `tid` neither in the run queue nor as
 -- current discharges `eventuallyExits` via
@@ -318,7 +330,7 @@ example :
     (tid := SeLe4n.ThreadId.ofNat 42) (startIdx := 0) (k := 1) (by decide)
     (st := default)
   · rfl
-  · decide
+  · exact default_runQueue_not_contains _
   · decide
 
 -- AN5-E.3: Functional test — `rpi5_canonicalConfig_eventuallyExits` via
@@ -338,7 +350,7 @@ example :
     exitIdxAfter := by decide
     exitState := default
     exitStateAtIdx := by rfl
-    notInRunQueue := by decide
+    notInRunQueue := default_runQueue_not_contains _
     notCurrent := by decide
   }
 

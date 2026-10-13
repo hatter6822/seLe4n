@@ -107,15 +107,10 @@ theorem schedContextUnbind_confinedToCores (vScId : SeLe4n.ValidObjId)
             SystemState.updateTcb_machine, SystemState.rewriteObject_machine,
             SchedContextOps.schedContextUnbindQueueStage_runQueueOnCore_ne,
             SchedulerState.setCurrentOnCore_runQueueOnCore,
-            SchedulerState.setRunQueueOnCore_runQueueOnCore_ne,
             SchedulerState.setCurrentOnCore_currentOnCore_ne,
-            SchedulerState.setRunQueueOnCore_currentOnCore,
             SchedulerState.setCurrentOnCore_activeDomainOnCore,
-            SchedulerState.setRunQueueOnCore_activeDomainOnCore,
             SchedulerState.setCurrentOnCore_domainTimeRemainingOnCore,
-            SchedulerState.setRunQueueOnCore_domainTimeRemainingOnCore,
-            SchedulerState.setCurrentOnCore_domainScheduleIndexOnCore,
-            SchedulerState.setRunQueueOnCore_domainScheduleIndexOnCore]
+            SchedulerState.setCurrentOnCore_domainScheduleIndexOnCore]
       · next hNoTcb =>
         rw [Except.ok.injEq, Prod.mk.injEq] at hStep
         obtain ⟨-, hs⟩ := hStep

@@ -319,12 +319,9 @@ private def stFault : SystemState :=
           (.tcb (mkTcb 1125 30 none (some grantReplyCPtr)))
       |>.withObject replyH.toObjId (.reply { replyId := replyH })
       |>.build)
-  { base with scheduler :=
-      ((((base.scheduler.setRunQueueOnCore c0
-            (RunQueue.ofList [(faulter, ⟨40⟩), (grantReplyFaulter, ⟨30⟩)])).setRunQueueOnCore
-        c1 (RunQueue.ofList [(handler, ⟨50⟩)])).setRunQueueOnCore
-        c2 (RunQueue.ofList [(orphan, ⟨40⟩)])).setRunQueueOnCore
-        c3 (RunQueue.ofList [(weak, ⟨40⟩)])) }
+  enqueueAllOnCore (enqueueAllOnCore (enqueueAllOnCore (enqueueAllOnCore base
+    c0 [(faulter, ⟨40⟩), (grantReplyFaulter, ⟨30⟩)]) c1 [(handler, ⟨50⟩)])
+    c2 [(orphan, ⟨40⟩)]) c3 [(weak, ⟨40⟩)]
 
 /-- The state with each core's current thread set — a faulting thread is by
 definition the one its core was running. -/
@@ -393,7 +390,7 @@ private def deliveredMessageOf (st : SystemState) (tid : SeLe4n.ThreadId) : Opti
 The runtime reading of `dispatchableOnCore`, which RR4.19 forbids of a thread
 that has just faulted. -/
 private def dispatchableOn (st : SystemState) (tid : SeLe4n.ThreadId) (c : CoreId) : Bool :=
-  (st.scheduler.runQueueOnCore c).contains tid ||
+  (st.queuedOn c tid) ||
     (st.scheduler.currentOnCore c == some tid)
 
 -- ============================================================================
@@ -1188,7 +1185,7 @@ private def runConfigureAndResumeChecks : IO Unit := do
          | .error _ => false)
       assertBool "configuring touches no scheduler state"
         (st1.scheduler.currentOnCore c2 == stRunning.scheduler.currentOnCore c2 &&
-          (st1.scheduler.runQueueOnCore c2).toList == (stRunning.scheduler.runQueueOnCore c2).toList)
+          (st1.runQueueWalk c2) == (stRunning.runQueueWalk c2))
       -- The configured thread's next fault is delivered, not suspended.
       match handlerRecvOnCore1 st1 with
       | (st2, .ok _) =>
@@ -1664,10 +1661,7 @@ private def stFaultBound : SystemState :=
       |>.withObject handler.toObjId (.tcb (mkTcb 1122 50 (some c1) none))
       |>.withObject replyH.toObjId (.reply { replyId := replyH })
       |>.build)
-  { base with scheduler :=
-      ((base.scheduler.setRunQueueOnCore c0
-          (RunQueue.ofList [(faulter, ⟨40⟩)])).setRunQueueOnCore
-        c1 (RunQueue.ofList [(handler, ⟨50⟩)])) }
+  enqueueAllOnCore (enqueueAllOnCore base c0 [(faulter, ⟨40⟩)]) c1 [(handler, ⟨50⟩)]
 
 private def stBoundRunning : SystemState :=
   { stFaultBound with scheduler :=
@@ -1770,7 +1764,7 @@ private def runProgressChecks : IO Unit := do
       assertBool "the faulter was dispatchable on core 0 before the fault"
         (dispatchableOn d.afterRecv faulter c0)
       assertBool "after delivery the faulter is NOT in core 0's run queue"
-        (!(d.afterFault.scheduler.runQueueOnCore c0).contains faulter)
+        (!(d.afterFault.queuedOn c0 faulter))
       assertBool "after delivery the faulter is NOT core 0's current thread"
         (d.afterFault.scheduler.currentOnCore c0 != some faulter)
       assertBool "after delivery the faulter is not dispatchable on ANY core"
@@ -2041,8 +2035,10 @@ live one, so each assertion is known to discriminate. -/
 private def runVacatedCoreChecks : IO Unit := do
   IO.println "  vacated core: a trap on a remotely vacated core dispatches a successor"
   let stVacated : SystemState :=
-    ({ stRunning with scheduler := stRunning.scheduler.setCurrentOnCore c0 none }).runEnqueueOnCore
-      c0 grantReplyFaulter ⟨30⟩
+    -- `stFault` queues the faulter and `grantReplyFaulter` on core 0; the remote
+    -- suspend takes the faulter off the queue and leaves the other queued.
+    ({ stRunning with scheduler := stRunning.scheduler.setCurrentOnCore c0 none }).runRemoveOnCore
+      c0 faulter
   assertBool "RETIRED: the vacated core's committed state resumes only the idle loop"
     (match Architecture.restoreTargetOnCore stVacated c0 with | .idle => true | _ => false)
   let (sgisF, stF) := faultEntryStep permissiveCtx stVacated dataAbortCtx trapWindow 0
@@ -2077,8 +2073,8 @@ stale context; each assertion computes that reading beside the live one. -/
 private def runResidentFrameChecks : IO Unit := do
   IO.println "  residency: a vacated core's frame is saved into its resident thread"
   let stVacated : SystemState :=
-    ({ stRunning with scheduler := stRunning.scheduler.setCurrentOnCore c0 none }).runEnqueueOnCore
-      c0 grantReplyFaulter ⟨30⟩
+    ({ stRunning with scheduler := stRunning.scheduler.setCurrentOnCore c0 none }).runRemoveOnCore
+      c0 faulter
   let stResident : SystemState :=
     { stVacated with machine := stVacated.machine.setResidentOnCore c0 (some faulter) }
   let live : SeLe4n.RegisterFile := SeLe4n.RegisterFile.withGprs 0x9004 0x7000 (fun _ => 0xAB)

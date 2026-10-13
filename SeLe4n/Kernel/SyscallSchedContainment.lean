@@ -616,7 +616,7 @@ theorem yieldChargeOnCore_frame_ne (st st' : SystemState) (e d : CoreId)
   · cases h
   · split at h
     · cases h
-      simp [sliceExpireOnCore, hne, SystemState.rewriteObject_scheduler,
+      simp [sliceExpireOnCore, SystemState.rewriteObject_scheduler,
         SystemState.runEnqueueOnCore_runQueueOnCore_ne _ _ _ _ _ hne]
     all_goals
       split at h

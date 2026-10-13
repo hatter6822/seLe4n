@@ -3259,9 +3259,12 @@ opaque ffiSuspendThread : UInt64 → BaseIO UInt32
     lock through new FFI, which the simulation build cannot link — the suites
     that exercise this definition run with no HAL.
 
-    What remains is a **single-core reference path** with no production caller,
+    What remains is a **boot-pinned reference path** with no production caller,
     exercised by `tests/SyscallDispatchSuite.lean` (SD-020..SD-023) as the
-    boot-pinned counterpart of the live cross-core entry.  New code must not
+    counterpart of the live cross-core entry.  It runs the per-core suspend
+    (`suspendThreadOnCore`) on the boot core and drops the cross-core SGI it
+    reports; the single-core `suspendThread` writes the run queue only through
+    the proof-only ghost (WS-ZA ZA4.5), so it has no compiled code.  New code must not
     call it: the live suspend is `suspendThreadCrossCoreEntry`, whose Rust
     wrapper takes the kernel-entry bracket and consults the per-core readiness
     gate (RR5.7). -/
@@ -3275,8 +3278,8 @@ def suspendThreadInner (tid : UInt64) : BaseIO UInt32 := do
       -- signature.
       pure (KernelError.toUInt32 .invalidArgument)
   | some vtid =>
-      match suspendThread st vtid with
-      | Except.ok st' =>
+      match suspendThreadOnCore st vtid Concurrency.bootCoreId with
+      | Except.ok (st', _) =>
           initialiseKernelState st'
           pure 0
       | Except.error e =>

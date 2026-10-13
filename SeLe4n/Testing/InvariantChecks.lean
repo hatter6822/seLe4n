@@ -79,10 +79,10 @@ private def notificationQueueWellFormedB (ntfn : Notification) : Bool :=
 private def schedulerQueueCurrentConsistentB (st : SystemState) : Bool :=
   match (st.scheduler.currentOnCore bootCoreId) with
   | none => true
-  | some tid => !(tid ∈ st.scheduler.runnable)
+  | some tid => !(st.queuedOn bootCoreId tid)
 
 private def schedulerRunQueueUniqueB (st : SystemState) : Bool :=
-  st.scheduler.runnable.Nodup
+  (st.runQueueWalk bootCoreId).Nodup
 
 private def currentThreadValidB (st : SystemState) : Bool :=
   match (st.scheduler.currentOnCore bootCoreId) with
@@ -416,15 +416,17 @@ private def notificationWaiterConsistentChecks (objectIds : List SeLe4n.ObjId) (
         | _ => acc
       | none => acc) []
 
-/-- WS-G4: RunQueue internal consistency — every thread the queue walks to has a
-    recorded priority and sits in that priority's bucket. The run queue's
-    `layout` field maintains this structurally, but we verify it at runtime as a
-    safety net. -/
+/-- WS-G4: RunQueue internal consistency — every thread the boot core's queue
+    walks to, along its TCB's run-queue links, records a priority and sits in
+    that priority's bucket walk.  The link agreement maintains this
+    structurally, but we verify it at runtime as a safety net. -/
 private def runQueueThreadPriorityConsistentB (st : SystemState) : Bool :=
-  let rq := (st.scheduler.runQueueOnCore bootCoreId)
-  rq.toList.all fun tid =>
-    match rq.priorityOf tid with
-    | some p => (rq.atPriority p).contains tid
+  let e := st.scheduler.runQueueEndsOnCore bootCoreId
+  (st.runQueueWalk bootCoreId).all fun tid =>
+    match st.queuedPriorityOn bootCoreId tid with
+    | some p =>
+        (SeLe4n.Kernel.LinkedQueue.walk (fun t => (st.runLinkOn bootCoreId t).bucketNext) e.size
+          (SeLe4n.Kernel.RunQueue.endsOf e.buckets p).head).contains tid
     | none => false
 
 /-- WS-F7/D1a: Threads blocked on endpoint send must not appear in the runnable list.
@@ -436,10 +438,10 @@ private def blockedOnSendNotRunnableChecks (objectIds : List SeLe4n.ObjId) (st :
     | some tcb =>
         match tcb.ipcState with
         | .blockedOnSend _ =>
-            let ok := !(tcb.tid ∈ st.scheduler.runnable)
+            let ok := !(st.queuedOn bootCoreId tcb.tid)
             (s!"blockedOnSend not runnable: tid={tcb.tid.toNat}", ok) :: acc
         | .blockedOnCall _ =>
-            let ok := !(tcb.tid ∈ st.scheduler.runnable)
+            let ok := !(st.queuedOn bootCoreId tcb.tid)
             (s!"blockedOnCall not runnable: tid={tcb.tid.toNat}", ok) :: acc
         | _ => acc
     | none => acc) []
@@ -453,13 +455,13 @@ private def blockedOnReceiveNotRunnableChecks (objectIds : List SeLe4n.ObjId) (s
     | some tcb =>
         match tcb.ipcState with
         | .blockedOnReceive _ =>
-            let ok := !(tcb.tid ∈ st.scheduler.runnable)
+            let ok := !(st.queuedOn bootCoreId tcb.tid)
             (s!"blockedOnReceive not runnable: tid={tcb.tid.toNat}", ok) :: acc
         | .blockedOnReply _ _ =>
-            let ok := !(tcb.tid ∈ st.scheduler.runnable)
+            let ok := !(st.queuedOn bootCoreId tcb.tid)
             (s!"blockedOnReply not runnable: tid={tcb.tid.toNat}", ok) :: acc
         | .blockedOnNotification _ =>
-            let ok := !(tcb.tid ∈ st.scheduler.runnable)
+            let ok := !(st.queuedOn bootCoreId tcb.tid)
             (s!"blockedOnNotification not runnable: tid={tcb.tid.toNat}", ok) :: acc
         | _ => acc
     | none => acc) []
@@ -566,7 +568,7 @@ def stateInvariantChecksFor (objectIds : List SeLe4n.ObjId) (st : SystemState)
     , ("scheduler current thread in active domain", currentThreadInActiveDomainB st)
     ]
   let runnableChecks : List (String × Bool) :=
-    st.scheduler.runnable.map fun tid =>
+    (st.runQueueWalk bootCoreId).map fun tid =>
       let label := s!"runnable thread resolves to ready TCB: tid={tid.toNat}"
       -- AK7-F.reader.hygiene: AL2-A typed helper adoption.
       let ok :=
@@ -780,7 +782,7 @@ private def checkSchedContextNotDualBound (st : SystemState) : Bool :=
 /-- AG1-F-ii: Check schedContextRunQueueConsistent — runnable SC-bound threads
 have a live SchedContext with positive budget. -/
 private def checkSchedContextRunQueueConsistent (st : SystemState) : Bool :=
-  (st.scheduler.runQueueOnCore bootCoreId).toList.all fun tid =>
+  (st.runQueueWalk bootCoreId).all fun tid =>
     -- AK7-F.reader.hygiene: AL2-A typed helper adoption.
     match st.getTcb? tid with
     | some tcb =>

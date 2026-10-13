@@ -41,6 +41,20 @@ empty entry otherwise. -/
 def TCB.runLinkOn (tcb : TCB) (c : CoreId) : RunQueueLink :=
   if tcb.runCoreCode = c.val + 1 then TCB.runLink tcb else RunQueue.RunQueueLink.none
 
+/-- A TCB's successor in core `c`'s queue (in its bucket when `bucket` holds),
+read as one field: `(tcb.runLinkOn c).next` / `.bucketNext` with no link
+record built (`TCB.runNextOn_eq`). -/
+@[inline] def TCB.runNextOn (tcb : TCB) (c : CoreId) (bucket : Bool) : Nat :=
+  if tcb.runCoreCode = c.val + 1 then
+    (if bucket then tcb.runBucketNextCode else tcb.runNextCode)
+  else 0
+
+theorem TCB.runNextOn_eq (tcb : TCB) (c : CoreId) (bucket : Bool) :
+    tcb.runNextOn c bucket =
+      if bucket then (tcb.runLinkOn c).bucketNext else (tcb.runLinkOn c).next := by
+  unfold TCB.runNextOn TCB.runLinkOn TCB.runLink
+  split <;> cases bucket <;> rfl
+
 /-- A queued entry with its successor replaced; any other entry kept. -/
 def RunQueueLink.withNextIfQueued (v : Nat) (l : RunQueueLink) : RunQueueLink :=
   if l.queued then { l with next := v } else l
@@ -120,7 +134,7 @@ theorem runLinkOn_of_objects {st st' : SystemState} (h : st'.objects = st.object
   runLinkOn_of_getTcb? (getTcb?_frame h t) c
 
 /-- The object with a TCB rewritten through `g`; every other kind as is. -/
-def _root_.SeLe4n.Model.KernelObject.mapTcb (g : TCB → TCB) : KernelObject → KernelObject
+@[inline] def _root_.SeLe4n.Model.KernelObject.mapTcb (g : TCB → TCB) : KernelObject → KernelObject
   | .tcb x => .tcb (g x)
   | o => o
 
@@ -128,7 +142,7 @@ def _root_.SeLe4n.Model.KernelObject.mapTcb (g : TCB → TCB) : KernelObject →
 (`RHTable.mapValueAt`): no probe, no resize, no key moved, so the frame holds
 on every object table (`objects_mapTcbInPlace`).  The run queue's link writes
 go through it; a key holding no TCB is left as it is. -/
-def mapTcbInPlace (st : SystemState) (t : SeLe4n.ThreadId) (g : TCB → TCB) : SystemState :=
+@[inline] def mapTcbInPlace (st : SystemState) (t : SeLe4n.ThreadId) (g : TCB → TCB) : SystemState :=
   { st with objects := st.objects.mapValueAt t.toObjId (KernelObject.mapTcb g) }
 
 theorem objects_mapTcbInPlace (st : SystemState) (t : SeLe4n.ThreadId) (g : TCB → TCB)
@@ -243,6 +257,13 @@ theorem queuedOn_eq_runLinkOn (st : SystemState) (c : CoreId) (t : SeLe4n.Thread
   | none => simp
   | some tcb => simp
 
+/-- WS-ZA ZA4.5: the priority thread `t` is queued at on core `c`, read from
+its TCB; `none` when it is not queued there.  Under the link agreement it is the
+queue's `priorityOf` (`runQueueRefinedOnCore.queuedPriorityOn`). -/
+def queuedPriorityOn (st : SystemState) (c : CoreId) (t : SeLe4n.ThreadId) :
+    Option SeLe4n.Priority :=
+  if (st.runLinkOn c t).queued then some (st.runLinkOn c t).prio else none
+
 theorem queuedOn_of_getTcb? {st st' : SystemState} {t : SeLe4n.ThreadId}
     (h : st'.getTcb? t = st.getTcb? t) (c : CoreId) : st'.queuedOn c t = st.queuedOn c t := by
   unfold queuedOn; rw [h]
@@ -344,7 +365,7 @@ theorem runLinkOn_mapTcbInPlace_map (st : SystemState) (y : SeLe4n.ThreadId) (g 
 
 /-- Rewrite the TCB a link code names (`LinkedQueue.decode`); nothing for the
 code `0`, which names no thread. -/
-def updateTcbAtCode (st : SystemState) (k : Nat) (g : TCB → TCB) : SystemState :=
+@[inline] def updateTcbAtCode (st : SystemState) (k : Nat) (g : TCB → TCB) : SystemState :=
   if k = 0 then st else st.mapTcbInPlace (decode k) g
 
 theorem updateTcbAtCode_objects_invExt (st : SystemState) (k : Nat) (g : TCB → TCB)
@@ -476,6 +497,11 @@ theorem priorityOf (h : st.runQueueRefinedOnCore c) (t : SeLe4n.ThreadId) :
   · rw [RunQueue.queuedLink_of_contains hc]
     simp [show (RunQueue.linkOf (st.scheduler.runQueueOnCore c).links t).queued = true from hc]
 
+/-- The priority read from the threads' links is the queue's. -/
+theorem queuedPriorityOn (h : st.runQueueRefinedOnCore c) (t : SeLe4n.ThreadId) :
+    st.queuedPriorityOn c t = (st.scheduler.runQueueOnCore c).priorityOf t :=
+  h.priorityOf t
+
 /-- The walk along the threads' links is the queue's list. -/
 theorem runQueueWalk_eq (h : st.runQueueRefinedOnCore c) :
     st.runQueueWalk c = (st.scheduler.runQueueOnCore c).toList :=
@@ -512,6 +538,41 @@ def runAppendLinks (st : SystemState) (c : CoreId) (t : SeLe4n.ThreadId)
   let st2 := st1.updateTcbAtCode e.tail (fun x => { x with runNextCode := code t })
   st2.updateTcbAtCode btail (fun x => { x with runBucketNextCode := code t })
 
+/-- The code of the last thread in a queue's bucket for priority `p`. -/
+def _root_.SeLe4n.Kernel.RunQueueEnds.bucketTail (e : RunQueueEnds) (p : SeLe4n.Priority) : Nat :=
+  (RunQueue.endsOf e.buckets p).tail
+
+/-- `runAppendLinks`'s three TCB writes, on the object table alone, given the
+queue's and the bucket's last codes. -/
+def appendLinkObjects (o : RHTable SeLe4n.ObjId KernelObject) (c : CoreId) (t : SeLe4n.ThreadId)
+    (p : SeLe4n.Priority) (qtail btail : Nat) : RHTable SeLe4n.ObjId KernelObject :=
+  let o1 := o.mapValueAt t.toObjId (KernelObject.mapTcb fun x => { x with
+    runCoreCode := c.val + 1, runPrio := p, runPrevCode := qtail, runNextCode := 0,
+    runBucketPrevCode := btail, runBucketNextCode := 0 })
+  let o2 := if qtail = 0 then o1 else
+    o1.mapValueAt (decode qtail).toObjId (KernelObject.mapTcb fun x => { x with runNextCode := code t })
+  if btail = 0 then o2 else
+    o2.mapValueAt (decode btail).toObjId
+      (KernelObject.mapTcb fun x => { x with runBucketNextCode := code t })
+
+/-- WS-ZA ZA4.5: the compiled `runAppendLinks`.  The two last codes are read
+first; the state record is then rebuilt once around the table writes, with no
+branch between taking it apart and rebuilding it, so an exclusive state is
+rewritten in place. -/
+def runAppendLinksImpl (st : SystemState) (c : CoreId) (t : SeLe4n.ThreadId)
+    (p : SeLe4n.Priority) : SystemState :=
+  let e := st.scheduler.runQueueEndsOnCore c
+  let qtail := e.tail
+  let btail := e.bucketTail p
+  { st with objects := appendLinkObjects st.objects c t p qtail btail }
+
+@[csimp] theorem runAppendLinks_eq_impl : @runAppendLinks = @runAppendLinksImpl := by
+  funext st c t p
+  unfold runAppendLinks runAppendLinksImpl appendLinkObjects RunQueueEnds.bucketTail
+    updateTcbAtCode mapTcbInPlace
+  dsimp only
+  split <;> split <;> rfl
+
 /-- The ends of a queue once `t` joins it at priority `p`: `RunQueue.insert`'s
 ends, read off the old ones. -/
 def _root_.SeLe4n.Kernel.RunQueueEnds.append (e : RunQueueEnds) (t : SeLe4n.ThreadId) (p : SeLe4n.Priority) :
@@ -523,6 +584,22 @@ def _root_.SeLe4n.Kernel.RunQueueEnds.append (e : RunQueueEnds) (t : SeLe4n.Thre
     size := e.size + 1
     maxCode := max e.maxCode (p.val + 1) }
 
+/-- WS-ZA ZA4.5: the compiled `RunQueueEnds.append`.  The ends are taken apart
+before the bucket table is rewritten, so on exclusively owned ends the table
+reaches `setEnds` with its only reference and is written in place, and the new
+ends reuse the old cell. -/
+def _root_.SeLe4n.Kernel.RunQueueEnds.appendImpl (e : RunQueueEnds) (t : SeLe4n.ThreadId)
+    (p : SeLe4n.Priority) : RunQueueEnds :=
+  match e with
+  | ⟨b, h, tl, s, m⟩ =>
+    let btail := (RunQueue.endsOf b p).tail
+    ⟨RunQueue.setEnds b p (RunQueue.appendEnds t btail), if tl = 0 then code t else h, code t,
+      s + 1, max m (p.val + 1)⟩
+
+@[csimp] theorem _root_.SeLe4n.Kernel.RunQueueEnds.append_eq_impl :
+    @RunQueueEnds.append = @RunQueueEnds.appendImpl := by
+  funext e t p; cases e; rfl
+
 /-- WS-ZA ZA4.5: thread `t` joins the back of core `c`'s queue at priority `p`,
 as the threads and the core hold it (`runAppendLinks`, `RunQueueEnds.append`). -/
 def runAppendOnCore (st : SystemState) (c : CoreId) (t : SeLe4n.ThreadId)
@@ -530,6 +607,17 @@ def runAppendOnCore (st : SystemState) (c : CoreId) (t : SeLe4n.ThreadId)
   let st3 := st.runAppendLinks c t p
   let e' := (st3.scheduler.runQueueEndsOnCore c).append t p
   { st3 with scheduler := st3.scheduler.setRunQueueEndsOnCore c e' }
+
+/-- WS-ZA ZA4.5: the compiled `runAppendOnCore`: the core's ends are rewritten
+in their slot (`modifyRunQueueEndsOnCore`). -/
+def runAppendOnCoreImpl (st : SystemState) (c : CoreId) (t : SeLe4n.ThreadId)
+    (p : SeLe4n.Priority) : SystemState :=
+  let st3 := st.runAppendLinks c t p
+  { st3 with scheduler := st3.scheduler.modifyRunQueueEndsOnCore c (·.append t p) }
+
+@[csimp] theorem runAppendOnCore_eq_impl : @runAppendOnCore = @runAppendOnCoreImpl := by
+  funext st c t p
+  simp only [runAppendOnCore, runAppendOnCoreImpl, SchedulerState.modifyRunQueueEndsOnCore_eq]
 
 /-- WS-ZA ZA4.5: may `t` join core `c`'s queue?  Only a thread — a TCB — on no
 core's queue, or already on `c`'s: a TCB holds one run core, so a thread is on
@@ -550,6 +638,18 @@ def runEnqueueAdmitted (st : SystemState) (c : CoreId) (t : SeLe4n.ThreadId)
   let st' := if (st.runLinkOn c t).queued then st else st.runAppendOnCore c t p
   let rq := (st'.scheduler.runQueueOnCore c).insert t p
   { st' with scheduler := st'.scheduler.setRunQueueOnCore c rq }
+
+/-- WS-ZA ZA4.5: the compiled `runEnqueueAdmitted`: membership is read as the
+run-core field (`queuedOn`), with no link record built. -/
+def runEnqueueAdmittedImpl (st : SystemState) (c : CoreId) (t : SeLe4n.ThreadId)
+    (p : SeLe4n.Priority) : SystemState :=
+  let st' := if st.queuedOn c t then st else st.runAppendOnCore c t p
+  let rq := (st'.scheduler.runQueueOnCore c).insert t p
+  { st' with scheduler := st'.scheduler.setRunQueueOnCore c rq }
+
+@[csimp] theorem runEnqueueAdmitted_eq_impl : @runEnqueueAdmitted = @runEnqueueAdmittedImpl := by
+  funext st c t p
+  simp only [runEnqueueAdmitted, runEnqueueAdmittedImpl, queuedOn_eq_runLinkOn]
 
 /-- WS-ZA ZA4.5: enqueue `t` on core `c` at priority `p`.  A thread queued on
 another core stays there and a non-thread is not queued (`runEnqueueAdmits`):
@@ -1168,7 +1268,9 @@ theorem runAppendOnCore_runLinkOn (st : SystemState) (c : CoreId) (t : SeLe4n.Th
 theorem _root_.SeLe4n.Model.SchedulerState.setRunQueueOnCore_runQueueOnCore
     (s : SchedulerState) (c : CoreId) : s.setRunQueueOnCore c (s.runQueueOnCore c) = s := by
   unfold SchedulerState.setRunQueueOnCore SchedulerState.runQueueOnCore
-  cases s; simp [Vector.get]
+  cases s
+  simp only [SchedulerState.mk.injEq, and_true]
+  exact SeLe4n.Erased.ext (by simp [Vector.get])
 
 /-- WS-ZA ZA4.5: enqueueing a TCB that is on no other core's queue keeps every
 core's queue in agreement with the threads. -/
@@ -1433,6 +1535,33 @@ def runUnlinkLinks (st : SystemState) (t : SeLe4n.ThreadId) (pv nx bpv bnx : Nat
   let st4 := st3.updateTcbAtCode bnx (fun y => { y with runBucketPrevCode := bpv })
   st4.mapTcbInPlace t (fun y => { y with runCoreCode := 0 })
 
+/-- A TCB write at a link code on the object table; nothing for the code `0`. -/
+@[inline] def mapTcbAtCodeObjects (o : RHTable SeLe4n.ObjId KernelObject) (k : Nat)
+    (g : TCB → TCB) : RHTable SeLe4n.ObjId KernelObject :=
+  if k = 0 then o else o.mapValueAt (decode k).toObjId (KernelObject.mapTcb g)
+
+/-- `runUnlinkLinks`'s five TCB writes, on the object table alone. -/
+def unlinkLinkObjects (o : RHTable SeLe4n.ObjId KernelObject) (t : SeLe4n.ThreadId)
+    (pv nx bpv bnx : Nat) : RHTable SeLe4n.ObjId KernelObject :=
+  let o1 := mapTcbAtCodeObjects o pv (fun y => { y with runNextCode := nx })
+  let o2 := mapTcbAtCodeObjects o1 nx (fun y => { y with runPrevCode := pv })
+  let o3 := mapTcbAtCodeObjects o2 bpv (fun y => { y with runBucketNextCode := bnx })
+  let o4 := mapTcbAtCodeObjects o3 bnx (fun y => { y with runBucketPrevCode := bpv })
+  o4.mapValueAt t.toObjId (KernelObject.mapTcb fun y => { y with runCoreCode := 0 })
+
+/-- WS-ZA ZA4.5: the compiled `runUnlinkLinks`: the state record is rebuilt
+once around the table writes (`runAppendLinksImpl`). -/
+def runUnlinkLinksImpl (st : SystemState) (t : SeLe4n.ThreadId) (pv nx bpv bnx : Nat) :
+    SystemState :=
+  { st with objects := unlinkLinkObjects st.objects t pv nx bpv bnx }
+
+@[csimp] theorem runUnlinkLinks_eq_impl : @runUnlinkLinks = @runUnlinkLinksImpl := by
+  funext st t pv nx bpv bnx
+  unfold runUnlinkLinks runUnlinkLinksImpl unlinkLinkObjects mapTcbAtCodeObjects
+    updateTcbAtCode mapTcbInPlace
+  dsimp only
+  split <;> split <;> split <;> split <;> rfl
+
 theorem runUnlinkLinks_scheduler (st : SystemState) (t : SeLe4n.ThreadId) (pv nx bpv bnx : Nat) :
     (st.runUnlinkLinks t pv nx bpv bnx).scheduler = st.scheduler := by
   simp only [runUnlinkLinks, updateTcbAtCode_scheduler, mapTcbInPlace_scheduler]
@@ -1490,6 +1619,102 @@ def runRemoveOnCore (st : SystemState) (c : CoreId) (t : SeLe4n.ThreadId) : Syst
     else st
   let rq := (st'.scheduler.runQueueOnCore c).remove t
   { st' with scheduler := st'.scheduler.setRunQueueOnCore c rq }
+
+/-- WS-ZA ZA4.5: `maxPrioCodeWalkBy (st.runLinkOn c)` as compiled: each thread's
+priority and successor read straight off its TCB, with no link record built
+(`runMaxCodeWalk_eq`). -/
+def runMaxCodeWalk (st : SystemState) (c : CoreId) : Nat → Nat → Nat → Nat
+  | 0, _, acc => acc
+  | _ + 1, 0, acc => acc
+  | n + 1, k + 1, acc =>
+      match st.getTcb? ⟨k⟩ with
+      | some tcb =>
+          if tcb.runCoreCode = c.val + 1 then
+            runMaxCodeWalk st c n tcb.runNextCode (max (tcb.runPrio.val + 1) acc)
+          else runMaxCodeWalk st c n 0 (max 1 acc)
+      | none => runMaxCodeWalk st c n 0 (max 1 acc)
+
+theorem runMaxCodeWalk_eq (st : SystemState) (c : CoreId) (n k acc : Nat) :
+    st.runMaxCodeWalk c n k acc = RunQueue.maxPrioCodeWalkBy (st.runLinkOn c) n k acc := by
+  induction n generalizing k acc with
+  | zero => cases k <;> rfl
+  | succ n ih =>
+    cases k with
+    | zero => rfl
+    | succ k =>
+      simp only [runMaxCodeWalk, RunQueue.maxPrioCodeWalkBy, runLinkOn, TCB.runLinkOn, TCB.runLink]
+      split
+      · split <;> simp [ih, RunQueue.RunQueueLink.none]
+      · simp [ih, RunQueue.RunQueueLink.none]
+
+/-- The ends of a queue once the thread with links `pv`, `nx`, `bpv`, `bnx` at
+priority `p` leaves it, with the highest priority code left, `mx`, already
+read: `RunQueueEnds.unlink` with its scan run beforehand.  Taken apart first,
+as `RunQueueEnds.appendImpl`, so exclusively owned ends are rewritten in place. -/
+def _root_.SeLe4n.Kernel.RunQueueEnds.unlinkTo (e : RunQueueEnds) (pv nx bpv bnx : Nat)
+    (p : SeLe4n.Priority) (mx : Nat) : RunQueueEnds :=
+  match e with
+  | ⟨b, h, tl, s, _⟩ =>
+    ⟨RunQueue.setEnds b p (RunQueue.unlinkEnds bpv bnx), if pv = 0 then nx else h,
+      if nx = 0 then pv else tl, s - 1, mx⟩
+
+/-- The highest priority code left on core `c` once the thread with links
+`pv`, `nx`, `bpv`, `bnx` at priority `p` has been unlinked from the threads in
+`st` (its ends not yet written): `RunQueueEnds.unlink`'s `maxCode`.  A call of
+its own, so the scan's reads of `st` end before the caller rewrites `st`. -/
+def runUnlinkMaxCode (st : SystemState) (c : CoreId) (pv nx bpv bnx : Nat)
+    (p : SeLe4n.Priority) : Nat :=
+  let e0 := st.scheduler.runQueueEndsOnCore c
+  let head' := if pv = 0 then nx else e0.head
+  if bpv = 0 ∧ bnx = 0 ∧ e0.maxCode = p.val + 1 then
+    st.runMaxCodeWalk c (e0.size - 1) head' 0 else e0.maxCode
+
+/-- Core `c`'s ends once the thread with links `pv`, `nx`, `bpv`, `bnx` at
+priority `p` leaves, with the highest priority code left, `mx`, read
+beforehand, rewritten in their slot.  Taking `mx` as an argument orders the scan
+(`runUnlinkMaxCode`) before the state is taken apart, so an exclusive state is
+rewritten in place. -/
+@[noinline] def runUnlinkEndsAt (st : SystemState) (c : CoreId) (pv nx bpv bnx : Nat)
+    (p : SeLe4n.Priority) (mx : Nat) : SystemState :=
+  { st with scheduler := st.scheduler.modifyRunQueueEndsOnCore c (·.unlinkTo pv nx bpv bnx p mx) }
+
+/-- WS-ZA ZA4.5: the compiled `runRemoveOnCore`.  The leaving thread's links are
+read off its TCB as fields, the highest-priority scan (`runMaxCodeWalk`) runs
+before the core's ends are taken out of their slot, and the ends are rewritten
+there (`modifyRunQueueEndsOnCore`): no link record, closure or state copy. -/
+def runRemoveOnCoreImpl (st : SystemState) (c : CoreId) (t : SeLe4n.ThreadId) : SystemState :=
+  let st' := match st.getTcb? t with
+    | some tcb =>
+      if tcb.runCoreCode = c.val + 1 then
+        let pv := tcb.runPrevCode
+        let nx := tcb.runNextCode
+        let bpv := tcb.runBucketPrevCode
+        let bnx := tcb.runBucketNextCode
+        let p := tcb.runPrio
+        let st5 := st.runUnlinkLinks t pv nx bpv bnx
+        st5.runUnlinkEndsAt c pv nx bpv bnx p (st5.runUnlinkMaxCode c pv nx bpv bnx p)
+      else st
+    | none => st
+  let rq := (st'.scheduler.runQueueOnCore c).remove t
+  { st' with scheduler := st'.scheduler.setRunQueueOnCore c rq }
+
+@[csimp] theorem runRemoveOnCore_eq_impl : @runRemoveOnCore = @runRemoveOnCoreImpl := by
+  funext st c t
+  unfold runRemoveOnCore runRemoveOnCoreImpl
+  unfold runLinkOn
+  cases st.getTcb? t with
+  | none => rfl
+  | some tcb =>
+    dsimp only
+    unfold TCB.runLinkOn
+    split
+    · simp only [TCB.runLink, if_true, runUnlinkMaxCode, runUnlinkEndsAt,
+        SchedulerState.modifyRunQueueEndsOnCore_eq]
+      generalize (st.runUnlinkLinks t _ _ _ _).scheduler.runQueueEndsOnCore c = e
+      cases e
+      simp only [RunQueueEnds.unlink, RunQueueEnds.unlinkTo, runMaxCodeWalk_eq]
+      split <;> rfl
+    · rfl
 
 /-- WS-ZA ZA4.5: dequeueing keeps every core's queue in agreement with the
 threads. -/
