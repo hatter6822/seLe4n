@@ -1515,6 +1515,13 @@ instance : BEq TCB where
 @[inline] def TCB.isUnconfigured (tcb : TCB) : Bool :=
   tcb.tid.isReserved || tcb.cspaceRoot.isReserved || tcb.vspaceRoot.isReserved
 
+/-- **A thread a core may run**: ready in IPC and not suspended — seL4's
+`isRunnable`.  The one test every placement that admits a thread no IPC step
+just readied asks: the bind's parked-thread placement and the replenishment
+wake. -/
+@[inline] def TCB.isRunnable (tcb : TCB) : Bool :=
+  tcb.ipcState == .ready && tcb.threadState != .Inactive
+
 /-- **The priority a thread is actually scheduled at** -- its own, raised to any
 priority it has inherited.
 

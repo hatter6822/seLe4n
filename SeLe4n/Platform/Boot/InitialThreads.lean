@@ -442,6 +442,11 @@ theorem bootFromPlatformCheckedWithIdleThreads_initialThreadStartable
     have hIn := (SeLe4n.Kernel.RunQueue.mem_toList_iff_mem _ _).mpr hMem
     rw [bootFromPlatformCheckedWithIdleThreads_mem_runQueueOnCore_iff config ist h c] at hIn
     exact hNotIdle c hIn
+  have hI : isIdleThreadId tid = false := by
+    cases hI : isIdleThreadId tid
+    · rfl
+    · obtain ⟨c, hc⟩ := (isIdleThreadId_iff tid).mp hI
+      exact absurd hc (hNotIdle c)
   have hObj := (SystemState.getTcb?_eq_some_iff _ _ _).mp hT
   have hCons := bootFromPlatformCheckedWithIdleThreads_threadStateConsistent config ist h _ _ hObj
   rw [← bootFromPlatformCheckedWithIdleThreadsFor_allCores] at h
@@ -450,10 +455,10 @@ theorem bootFromPlatformCheckedWithIdleThreads_initialThreadStartable
     rw [hCons]
     unfold inferThreadState threadRunningOnSomeCore threadQueuedOnSomeCore
     have hEta : (⟨tid.toObjId.toNat⟩ : SeLe4n.ThreadId) = tid := rfl
-    rw [hEta, hRun, hQ, hIpc]
+    rw [hEta, hRun, hQ, hI, hIpc]
     rfl
   unfold initialThreadStartable
-  rw [hT, hRun, hQ]
+  rw [hT, hRun, hQ, hI]
   simp [hInactive, hBoost, hSlice]
 
 end SeLe4n.Platform.Boot

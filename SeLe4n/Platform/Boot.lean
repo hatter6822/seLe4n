@@ -6861,6 +6861,40 @@ theorem bootFromPlatformChecked_ok_tcb_inactive (config : PlatformConfig)
   let hTcb := bootFromPlatformChecked_ok_tcb_bootSafeFields config ist h oid tcb hObj
   ⟨hTcb.2.2.2.2.2.2.2.2.2.1, hTcb.2.1⟩
 
+/-- On the plain checked boot no TCB sits in an idle thread's slot: the
+    well-formedness gate reserves those slots (`idleSlotsReserved`). -/
+theorem bootFromPlatformChecked_ok_tcb_not_idle (config : PlatformConfig)
+    (ist : IntermediateState) (h : bootFromPlatformChecked config = .ok ist)
+    (oid : SeLe4n.ObjId) (tcb : TCB)
+    (hObj : ist.state.objects[oid]? = some (KernelObject.tcb tcb)) :
+    isIdleThreadId ⟨oid.toNat⟩ = false := by
+  obtain ⟨hWf, _, hShape⟩ := bootFromPlatformChecked_ok_shape config ist h
+  have hPlain : (bootFromPlatform config).state.objects[oid]? = some (KernelObject.tcb tcb) := by
+    rcases hShape with ⟨_, rfl⟩ | ⟨entry, _, rfl⟩
+    · rwa [bootEnableInterruptsOp_objects_eq] at hObj
+    · rw [bootEnableInterruptsOp_objects_eq] at hObj
+      by_cases hEq : entry.id = oid
+      · subst hEq
+        rw [installBootVSpaceRoot_objects_lookup] at hObj
+        exact absurd hObj (by simp)
+      · rwa [installBootVSpaceRoot_objects_ne _ _ _ _ _ hEq] at hObj
+  have hLook' : (foldObjects config.initialObjects
+      (foldIrqs config.irqTable mkEmptyIntermediateState)).state.objects[oid]? =
+        some (KernelObject.tcb tcb) := by
+    unfold bootFromPlatform at hPlain
+    rwa [applyMachineConfig_objects_eq] at hPlain
+  rcases foldObjects_objects_reachable config.initialObjects _ _ _ hLook' with
+    ⟨e, hMem, hId, _⟩ | hBase
+  · have := idleSlotsReserved_initialObjects config
+      (PlatformConfig.wellFormed_idleSlotsReserved config hWf) e hMem
+    rw [hId] at this
+    exact this
+  · rw [foldIrqs_objects, mkEmpty_state_eq_default] at hBase
+    have hEmpty : (default : SystemState).objects[oid]? = none := by
+      simp only [RHTable_getElem?_eq_get?]; exact RHTable_get?_empty 16 (by omega)
+    rw [hEmpty] at hBase
+    simp at hBase
+
 /-- **PR #889 review**: on the plain checked boot no thread is current and no
     thread is queued — the two `inferThreadState` tests, both `false`. -/
 theorem bootFromPlatformChecked_ok_not_running_not_queued (config : PlatformConfig)
@@ -6897,7 +6931,7 @@ theorem bootFromPlatformChecked_ok_threadStateConsistent (config : PlatformConfi
   obtain ⟨hRun, hQ⟩ := bootFromPlatformChecked_ok_not_running_not_queued config ist h ⟨oid.toNat⟩
   rw [hInactive]
   unfold inferThreadState
-  rw [hRun, hQ, hReady]
+  rw [hRun, hQ, bootFromPlatformChecked_ok_tcb_not_idle config ist h oid tcb hObj, hReady]
   rfl
 
 -- ============================================================================

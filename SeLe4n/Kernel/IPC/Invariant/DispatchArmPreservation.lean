@@ -3098,7 +3098,7 @@ theorem schedContextUnbindOnCore_preserves_ipcInvariantFull
   split at hStep
   · contradiction
   · rename_i stMid hUnbind
-    have hStage := SchedContextOps.schedContextUnbind_runQueueStage vScId st stMid hUnbind hObjInv hR
+    have hStage := (SchedContextOps.schedContextUnbind_runQueueEntryStage vScId st stMid hUnbind).1 hObjInv hR
     exact priorityRescheduleOnCore_preserves_ipcInvariantFull stMid _ ec true st' sgi
       hStage.1
       (schedContextUnbind_preserves_ipcInvariantFull st stMid vScId hObjInv hInv
@@ -3503,6 +3503,12 @@ structure retypeTargetDetached (st : SystemState) (target : SeLe4n.ObjId) : Prop
   tcbDescheduled : ∀ t : TCB, st.objects[target]? = some (.tcb t) →
     ∀ c : CoreId, (st.scheduler.runQueueOnCore c).contains t.tid = false ∧
       st.queuedOn c t.tid = false ∧ st.scheduler.currentOnCore c ≠ some t.tid
+  /-- And the thread is no core's idle thread: an idle thread is the kernel's
+      own scheduling reserve and no user capability names one, so this is the
+      same caller obligation as the rest of the pack; destroying one would leave
+      its core with nothing to run. -/
+  tcbNotIdle : ∀ t : TCB, st.objects[target]? = some (.tcb t) →
+    SeLe4n.Kernel.isIdleThreadId t.tid = false
   /-- **WS-BP BP7.9**: and no core's registers hold the thread's live FP/SIMD
       values.  The destroy path refuses such a target (`threadHeldOnSomeCore`),
       so under this pack the refusal is not taken — the same shape as
@@ -4550,6 +4556,7 @@ private theorem retypeTargetDetached_of_objects_scheduler_eq
   · intro t hT c; rw [hObjs] at hT
     rw [hSched, (SystemState.RunCoresAgree.of_objects hObjs).queuedOn]
     exact hDet.tcbDescheduled t hT c
+  · intro t hT; rw [hObjs] at hT; exact hDet.tcbNotIdle t hT
   -- WS-BP BP7.9: the FP-owner clause travels on the owner table alone.
   · intro t hT c; rw [hObjs] at hT
     show st2.machine.fpOwner.get c ≠ some t.tid
@@ -5705,14 +5712,6 @@ theorem suspendThreadOnCore_preserves_ipcInvariantFull
           -- The clear and the deactivation write no run-queue field and move no
           -- thread, so the executing core's current thread stays admitted for its
           -- requeue at the scheduling point (seL4's `ct_not_in_q`).
-          have hS1 : SystemState.RunQueueStage stR2
-              (Lifecycle.Suspend.clearPendingState stR2 vtid.val) := by
-            unfold Lifecycle.Suspend.clearPendingState
-            exact SystemState.RunQueueStage.updateTcb _ _ (by intro _ _; rfl)
-          have hS2 : SystemState.RunQueueStage (Lifecycle.Suspend.clearPendingState stR2 vtid.val)
-              ((Lifecycle.Suspend.clearPendingState stR2 vtid.val).updateTcb vtid.val
-                fun t => { t with threadState := .Inactive }) :=
-            SystemState.RunQueueStage.updateTcb _ _ (by intro _ _; rfl)
           have hF1 : SystemState.CurrentPlacementFrame ecX stR2
               (Lifecycle.Suspend.clearPendingState stR2 vtid.val) := by
             unfold Lifecycle.Suspend.clearPendingState
@@ -5739,7 +5738,7 @@ theorem suspendThreadOnCore_preserves_ipcInvariantFull
             obtain ⟨hInv2, hObjInv2, hShape2⟩ := suspendDescheduleTail_shape st vtid.val
               (placedCoreOf? st vtid.val) hObjInv hShapeD hInv
             exact hTail st hObjInv hInv hShapeD _ hObjInv2 hInv2 hShape2
-              (descheduleAt_runQueueStage st _ _ hObjInv hR).2
+              ((descheduleAt_runQueueStage st _ _).1 hObjInv hR).2
               _ ec _ _ st' sgi (descheduleAt_currentPlacementFrame st _ _ ec) hAdm hStep
         | bound scId =>
             simp only [hB] at hStep
@@ -5763,7 +5762,7 @@ theorem suspendThreadOnCore_preserves_ipcInvariantFull
                   vtid.val (placedCoreOf? st vtid.val) hObjInvD hShapeD hInvD
                 exact hTail stD hObjInvD hInvD hShapeD _ hObjInv2 hInv2 hShape2
                   (((cancelBoundDonationOnCore_runQueueStage hDon).trans
-                    (descheduleAt_runQueueStage stD _ _)) hObjInv hR).2
+                    (descheduleAt_runQueueStage stD _ _)).1 hObjInv hR).2
                   _ ec _ _ st' sgi
                   ((cancelBoundDonationOnCore_currentPlacementFrame hObjInv hDon ec).trans
                     (descheduleAt_currentPlacementFrame stD _ _ ec)) hAdm hStep
@@ -5787,7 +5786,7 @@ theorem suspendThreadOnCore_preserves_ipcInvariantFull
                   vtid.val (placedCoreOf? st vtid.val) hObjInvD hShapeD hInvD
                 exact hTail stD hObjInvD hInvD hShapeD _ hObjInv2 hInv2 hShape2
                   (((cancelDonatedDonationOnCore_runQueueStage hDon).trans
-                    (descheduleAt_runQueueStage stD _ _)) hObjInv hR).2
+                    (descheduleAt_runQueueStage stD _ _)).1 hObjInv hR).2
                   _ ec _ _ st' sgi
                   ((cancelDonatedDonationOnCore_currentPlacementFrame hObjInv hDon ec).trans
                     (descheduleAt_currentPlacementFrame stD _ _ ec)) hAdm hStep

@@ -951,7 +951,7 @@ theorem faultReplyOnCore_stepCovers (e : CoreId) {replier faulted : SeLe4n.Threa
       exact updateTcb_keyFrame st1 faulted (fun _ => rfl) hRInv
     · unfold faultAbandonOnCore
       refine ⟨stepCovers_trans (stepCovers_trans hR
-        (removeRunnableOnCore_stepCovers e st1 faulted (determineTargetCore st1 faulted))) ?_,
+        (removeRunnableOnCore_stepCovers e st1 faulted (faultAbandonCore st1 faulted))) ?_,
         SystemState.updateTcb_preserves_objects_invExt _ _ _
           (removeRunnableOnCore_objects_invExt _ _ _ hRInv)⟩
       apply capabilityKeyFrame.stepCovers

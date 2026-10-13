@@ -4385,10 +4385,11 @@ run_check "INVARIANT" rg -n '^theorem handleRescheduleSgiOnCore_preserves_not_di
 run_check "INVARIANT" rg -n '^theorem switchToThreadOnCore_preserves_not_dispatchable_onCore($|[ ({:\[\]])' SeLe4n/Kernel/Scheduler/Operations/Core.lean
 # ...and it needs of the queue only the kernel-wide link agreement, stated of
 # the pre-state: the chooser walks the run-queue links, the delivery keeps the
-# agreement (`faultDeliveredState_runQueueStage`), and nothing is stated of the
-# delivered state.
-run_check "INVARIANT" rg -n -U '^    \(tid : SeLe4n\.ThreadId\) \(hCur : st\.scheduler\.currentOnCore c = some tid\)\n    \(hInv : st\.objects\.invExt\) \(hR : st\.runQueueRefined\) :\n    ¬ dispatchableOnCore \(faultEntryDeliver ' SeLe4n/Kernel/FaultEntry.lean
-run_check "INVARIANT" rg -n '^theorem faultDeliveredState_runQueueStage($|[ ({:\[\]])' SeLe4n/Kernel/FaultEntry.lean
+# agreement (`faultDeliveredState_runQueueEntryStage`), and nothing is stated of
+# the delivered state.  The faulting thread is no idle thread (an idle thread
+# never traps, and the entry delivers nothing for one).
+run_check "INVARIANT" rg -n -U '^    \(tid : SeLe4n\.ThreadId\) \(hCur : st\.scheduler\.currentOnCore c = some tid\)\n    \(hNI : isIdleThreadId tid = false\) \(hInv : st\.objects\.invExt\) \(hR : st\.runQueueRefined\)\n    \(hHeads : endpointHeadsWakeable st\) :\n    ¬ dispatchableOnCore \(faultEntryDeliver ' SeLe4n/Kernel/FaultEntry.lean
+run_check "INVARIANT" rg -n '^theorem faultDeliveredState_runQueueEntryStage($|[ ({:\[\]])' SeLe4n/Kernel/FaultEntry.lean
 run_negative_check "INVARIANT" rg -n 'runQueueOnCoreWellFormed \(faultDeliveredState' SeLe4n/Kernel/FaultEntry.lean
 run_negative_check "INVARIANT" rg -n 'runQueueRefined[A-Za-z]* \(faultDeliveredState|\(faultDeliveredState [^)]*\)\.runQueueRefined' SeLe4n/Kernel/FaultEntry.lean
 run_check "INVARIANT" rg -n -U '^  Platform\.FFI\.restoreTrapFrame r\.2\.2\.1\n  Concurrency\.recordCommittedCurrentThreadHw r\.2\.1$' SeLe4n/Kernel/PerCoreTimerEntry.lean
@@ -11562,7 +11563,7 @@ run_negative_check "INVARIANT" rg -n 'replyRecvPopReplenishCores' SeLe4n tests
 # over the dispatch alone would miss.
 run_check "INVARIANT" bash -lc 'rg -U -n "^def replyTransferWriteSet[^\n]*(\n([ \t][^\n]*)?)*if threadHasPendingFault st callerTid then\n *faultReplyWriteSet replier callerTid mi regs executingCore st\n *else\n *endpointReplyDispatchWriteSet replier callerTid msg executingCore st" SeLe4n/Kernel/IPC/CrossCore/Fault.lean'
 run_check "INVARIANT" bash -lc 'rg -U -n "^def faultReplyWriteSet[^\n]*(\n([ \t][^\n]*)?)*\+\+ faultReplyApplyCores st. faulted \(decodeFaultReply tf.fault tf.context mi regs\)" SeLe4n/Kernel/IPC/CrossCore/Fault.lean'
-run_check "INVARIANT" bash -lc 'rg -U -n "^def faultReplyApplyCores[^\n]*(\n([ \t][^\n]*)?)*\| \.abandon => \[determineTargetCore st faulted\]" SeLe4n/Kernel/IPC/CrossCore/Fault.lean'
+run_check "INVARIANT" bash -lc 'rg -U -n "^def faultReplyApplyCores[^\n]*(\n([ \t][^\n]*)?)*\| \.abandon => \[faultAbandonCore st faulted\]" SeLe4n/Kernel/IPC/CrossCore/Fault.lean'
 # ...and none of the new declarations takes a core as a PARAMETER (the shape Cut
 # 8a-ii's first form had, and the RR2.4 / RR2.10 shapes these refine).
 run_negative_check "INVARIANT" bash -lc 'rg -U -n "^def (endpointCallDispatchReplenishCores|schedLockSet_endpointCallOnCore|endpointReplyDispatchReplenishCores|schedLockSet_endpointReplyOnCore|replyTransferWriteSet|replyTransferReplenishCores|schedLockSet_replyTransferOnCore)[^\n]*(\n([ \t][^\n]*)?)*(donorHome|doneeHome|holderHome|ownerHome|replierHome|serverCore|callerHome)" SeLe4n/Kernel/IPC/CrossCore/EndpointCallDispatch.lean SeLe4n/Kernel/IPC/CrossCore/EndpointReplyDispatch.lean SeLe4n/Kernel/IPC/CrossCore/Fault.lean'
@@ -18017,7 +18018,7 @@ run_negative_check "INVARIANT" rg -n 'propagatePipChainCrossCore_not_mem_of_not_
 # inline in `threadInactiveFlagConsistent_dispatch`, and the payoff asks the same
 # thing of the same step.  The relation is that the inactive-flag theorem READS
 # the two placement lemmas rather than restating their argument.
-run_check "INVARIANT" bash -lc 'rg -U -n "^theorem threadInactiveFlagConsistent_dispatch[^\n]*(\n([ \t][^\n]*)?)*threadPlacedOnSomeCore_dispatch_ne st c tid u hu \(hOutgoing u hu\)" SeLe4n/Kernel/Scheduler/Operations/Core.lean'
+run_check "INVARIANT" bash -lc 'rg -U -n "^theorem threadInactiveFlagConsistent_dispatch[^\n]*(\n([ \t][^\n]*)?)*threadPlacedOnSomeCore_dispatch_ne st c tid u hu \(hOutgoing u hu hI\)" SeLe4n/Kernel/Scheduler/Operations/Core.lean'
 run_check "INVARIANT" bash -lc 'rg -U -n "^theorem threadInactiveFlagConsistent_dispatch[^\n]*(\n([ \t][^\n]*)?)*threadPlacedOnSomeCore_dispatch_self st c tid" SeLe4n/Kernel/Scheduler/Operations/Core.lean'
 # Placement is framed by agreement AT the thread, not by equality of the slots --
 # the equality form cannot frame G4, which clears the victim's current slot.
@@ -21131,7 +21132,7 @@ run_check "INVARIANT" rg -n 'the one uncovered lock domain is registered, with a
 # re-bucketed only a thread already queued, so `v0.35.158`'s parked holder — the
 # recovery that cut names — could never be recovered by binding it a reservation.
 run_check "INVARIANT" rg -n '^def bindPlacesParkedThread($|[ ({:\[\]])' SeLe4n/Kernel/SchedContext/Operations.lean
-run_check "INVARIANT" bash -lc 'rg -U -n "^def bindPlacesParkedThread[^\n]*(\n([ \t][^\n]*)?)*\(placedCoreOf\? st tid\).isNone && tcb.ipcState == .ready" SeLe4n/Kernel/SchedContext/Operations.lean'
+run_check "INVARIANT" bash -lc 'rg -U -n "^def bindPlacesParkedThread[^\n]*(\n([ \t][^\n]*)?)*\(placedCoreOf\? st tid\).isNone && tcb.isRunnable" SeLe4n/Kernel/SchedContext/Operations.lean'
 # RELATION: the bind's own body reads that guard, on the state its writes reach.
 run_check "INVARIANT" bash -lc 'rg -U -n "^def schedContextBind[^\n]*(\n([ \t][^\n]*)?)*else if bindPlacesParkedThread st2 vThreadId.val tcb sc then" SeLe4n/Kernel/SchedContext/Operations.lean'
 # ...and the placement uses the SAME insert priority as the re-bucket arm, so the

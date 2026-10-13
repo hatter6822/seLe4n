@@ -821,7 +821,7 @@ theorem notificationSignal_respects_pipBoost
       have h0 : st.objects[waiter.toObjId]? = some (.tcb tcb) := by
         rw [← storeObject_objects_ne st st1 notificationId waiter.toObjId _ hNe hObjInv hStore]
         exact h1
-      unfold SystemState.runEnqueueAdmits at hAdm ⊢
+      unfold SystemState.runEnqueueAdmits SystemState.runLinksAdmit at hAdm ⊢
       rw [(SystemState.getTcb?_eq_some_iff _ _ _).mpr h0] at hAdm
       rw [(SystemState.getTcb?_eq_some_iff _ _ _).mpr h4, hT4]
       exact hAdm

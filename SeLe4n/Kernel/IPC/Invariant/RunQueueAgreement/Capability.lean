@@ -22,20 +22,25 @@ open SeLe4n.Model.SystemState (RunQueueStage)
 /-- A stage may assume the pre-state's store invariant. -/
 theorem _root_.SeLe4n.Model.SystemState.RunQueueStage.of_inv {st st' : SystemState}
     (h : st.objects.invExt → RunQueueStage st st') : RunQueueStage st st' :=
-  fun hInv r => h hInv hInv r
+  RunQueueStage.of_invExt h
 
-/-- A step whose every object slot gives the run-queue entries it gave, and
-which writes no run queue and no end. -/
+/-- A step whose every object slot gives the run-queue entries it gave and is
+rewritten monotonely, and which writes no run queue and no end. -/
 theorem _root_.SeLe4n.Model.SystemState.RunQueueStage.of_slots {st st' : SystemState}
     (h : st.objects.invExt → st'.objects.invExt ∧
       (∀ (oid : SeLe4n.ObjId) (c : Concurrency.CoreId), SystemState.objRunLinkOn st'.objects[oid]? c =
         SystemState.objRunLinkOn st.objects[oid]? c) ∧
-      st'.scheduler = st.scheduler) : RunQueueStage st st' := fun hInv r =>
-  have ⟨hI, hS, hSch⟩ := h hInv
-  ⟨hI, SystemState.runQueueRefined_of_frame (fun c t => by
-      rw [SystemState.runLinkOn_eq_objRunLinkOn, SystemState.runLinkOn_eq_objRunLinkOn]
-      exact hS _ c)
-    (by rw [hSch]) (by rw [hSch]) r⟩
+      (∀ oid : SeLe4n.ObjId, SystemState.slotStateMono st.objects[oid]? st'.objects[oid]?) ∧
+      st'.scheduler = st.scheduler) : RunQueueStage st st' :=
+  have hL : st.objects.invExt → ∀ c t, st'.runLinkOn c t = st.runLinkOn c t := fun hInv c t => by
+    rw [SystemState.runLinkOn_eq_objRunLinkOn, SystemState.runLinkOn_eq_objRunLinkOn]
+    exact (h hInv).2.1 _ c
+  ⟨fun hInv r => ⟨(h hInv).1,
+      SystemState.runQueueRefined_of_frame (hL hInv) (by rw [(h hInv).2.2.2])
+        (by rw [(h hInv).2.2.2]) r⟩,
+    fun _ hInv _ _ d => SystemState.currentDequeuedUniqueExcept_of_eq (by rw [(h hInv).2.2.2])
+      (hL hInv) (SystemState.StateMono.of_slots (h hInv).2.2.1) d,
+    fun hInv _ => SystemState.StateMono.of_slots (h hInv).2.2.1⟩
 
 /-- A write confined to VSpace roots moves no thread's run-queue entry. -/
 theorem vspaceRootOnlyWrite_runQueueStage {st st' : SystemState}
@@ -47,7 +52,11 @@ theorem vspaceRootOnlyWrite_runQueueStage {st st' : SystemState}
     ⟨hI, fun oid c => by
       rcases hW oid with e | ⟨⟨r, h1⟩, ⟨r', h2⟩⟩
       · rw [e]
-      · rw [h1, h2]; rfl, hS⟩
+      · rw [h1, h2]; rfl, fun oid => by
+      rcases hW oid with e | ⟨⟨r, h1⟩, ⟨r', h2⟩⟩
+      · exact SystemState.slotStateMono.of_eq e
+      · exact SystemState.slotStateMono.of_obj h2
+          (SystemState.objStateMono_nonTcb (by rw [h1]; rfl) rfl), hS⟩
 
 /-- A write of the derivation tree alone. -/
 theorem withCdt_runQueueStage (st : SystemState) (cdt : CapDerivationTree) :
@@ -58,7 +67,7 @@ theorem ensureCdtNodeForSlot_runQueueStage (st : SystemState) (ref : SlotRef) :
     RunQueueStage st (SystemState.ensureCdtNodeForSlot st ref).snd :=
   RunQueueStage.of_frame (SystemState.ensureCdtNodeForSlot_objects_eq st ref)
     (by rw [SystemState.ensureCdtNodeForSlot_scheduler_eq])
-    (by rw [SystemState.ensureCdtNodeForSlot_scheduler_eq])
+    (by rw [SystemState.ensureCdtNodeForSlot_scheduler_eq]) (by rw [SystemState.ensureCdtNodeForSlot_scheduler_eq])
 
 theorem cdtRecord_runQueueStage (stM : SystemState) (src dst : CSpaceAddr)
     (kind : DerivationOp) :
@@ -78,7 +87,7 @@ theorem ensureCdtNodeForSlot_runQueueStage' {st st' : SystemState} {ref : SlotRe
 theorem detachSlotFromCdt_runQueueStage (st : SystemState) (ref : SlotRef) :
     RunQueueStage st (SystemState.detachSlotFromCdt st ref) :=
   RunQueueStage.of_frame (SystemState.detachSlotFromCdt_objects_eq st ref)
-    (by rw [detachSlotFromCdt_scheduler_eq]) (by rw [detachSlotFromCdt_scheduler_eq])
+    (by rw [detachSlotFromCdt_scheduler_eq]) (by rw [detachSlotFromCdt_scheduler_eq]) (by rw [detachSlotFromCdt_scheduler_eq])
 
 theorem attachSlotToCdtNode_runQueueStage (st : SystemState) (ref : SlotRef)
     (node : CdtNodeId) : RunQueueStage st (SystemState.attachSlotToCdtNode st ref node) :=
@@ -198,7 +207,12 @@ theorem revokePendingTransfersFrom_runQueueStage (st : SystemState) (nodes : Lis
     ⟨hExt, fun oid c => by
       rcases hObj oid with e | ⟨t, t', hPre, ⟨hT, _⟩, hPost⟩
       · rw [e]
-      · rw [hPre, hPost, hT]; rfl, hSched⟩
+      · rw [hPre, hPost, hT]; rfl, fun oid => by
+      rcases hObj oid with e | ⟨t, t', hPre, ⟨hT, _⟩, hPost⟩
+      · exact SystemState.slotStateMono.of_eq e
+      · rw [hPre]
+        exact SystemState.slotStateMono.of_obj hPost (SystemState.objStateMono_tcb
+          ⟨fun h => by rw [hT]; exact h, fun h => by rw [hT]; exact h⟩), hSched⟩
 
 theorem cspaceRevokeCdt_runQueueStage {st st' : SystemState} {addr : CSpaceAddr}
     {pages : List MappedPage} (h : cspaceRevokeCdt addr st = .ok (pages, st')) :
@@ -278,7 +292,7 @@ theorem vspaceUnifyInstructionPage_runQueueStage {asid : SeLe4n.ASID} {vaddr : S
     {st st' : SystemState} (h : Architecture.vspaceUnifyInstructionPage asid vaddr st = .ok ((), st')) :
     RunQueueStage st st' :=
   have hF := Architecture.vspaceUnifyInstructionPage_frame h
-  RunQueueStage.of_frame hF.1 (by rw [hF.2.2.1]) (by rw [hF.2.2.1])
+  RunQueueStage.of_frame hF.1 (by rw [hF.2.2.1]) (by rw [hF.2.2.1]) (by rw [hF.2.2.1])
 
 theorem untypedResetWithShootdown_runQueueStage {ec : Concurrency.CoreId} {untypedId : SeLe4n.ObjId}
     {st st' : SystemState} (h : untypedResetWithShootdown ec untypedId st = .ok ((), st')) :
@@ -292,10 +306,20 @@ theorem untypedResetWithShootdown_runQueueStage {ec : Concurrency.CoreId} {untyp
     cases o with
     | none => rfl
     | some obj => cases obj <;> first | rfl | exact absurd h (by simp [resetTouched])
-  refine ⟨hExt, fun oid c => ?_, hS1⟩
-  rcases hW oid with e | ⟨t1, t2⟩
-  · rw [e]
-  · rw [hT _ t1, hT _ t2]
+  have hN : ∀ o : Option KernelObject, resetTouched o → SystemState.objTcb? o = none := by
+    intro o h
+    cases o with
+    | none => rfl
+    | some obj => cases obj <;> first | rfl | exact absurd h (by simp [resetTouched])
+  refine ⟨hExt, fun oid c => ?_, fun oid => ?_, hS1⟩
+  · rcases hW oid with e | ⟨t1, t2⟩
+    · rw [e]
+    · rw [hT _ t1, hT _ t2]
+  · rcases hW oid with e | ⟨t1, t2⟩
+    · exact SystemState.slotStateMono.of_eq e
+    · refine ⟨fun x hx => ?_, fun x' hx' => ?_⟩
+      · first | (rw [hN _ t1] at hx; cases hx) | (rw [hN _ t2] at hx; cases hx)
+      · first | (rw [hN _ t1] at hx'; cases hx') | (rw [hN _ t2] at hx'; cases hx')
 
 theorem revokeService_runQueueStage {sid : ServiceId} {st st' : SystemState}
     (h : revokeService sid st = .ok ((), st')) : RunQueueStage st st' :=
@@ -318,9 +342,10 @@ theorem lookupServiceByCap_runQueueStage {epId : SeLe4n.ObjId} {st st' : SystemS
 /-- The raw-insert form of a TCB rewrite that keeps the run-queue fields. -/
 theorem insertTcb_runQueueStage {st : SystemState} {tid : SeLe4n.ThreadId} {tcb tcb' : TCB}
     (hPre : st.objects[tid.toObjId]? = some (.tcb tcb))
-    (h : ∀ c, tcb'.runLinkOn c = tcb.runLinkOn c) :
+    (h : ∀ c, tcb'.runLinkOn c = tcb.runLinkOn c) (hm : TCB.StepMono tcb tcb' := by exact ⟨id, id⟩) :
     RunQueueStage st { st with objects := st.objects.insert tid.toObjId (.tcb tcb') } :=
   RunQueueStage.insert rfl rfl rfl (fun c => by rw [hPre]; exact h c)
+    (by rw [hPre]; exact SystemState.objStateMono_tcb hm)
 
 theorem setIPCBufferOp_runQueueStage {st st' : SystemState} {vtid : SeLe4n.ValidThreadId}
     {addr : SeLe4n.VAddr}
@@ -495,9 +520,14 @@ theorem untypedRetypeObject_runQueueStage {src dst : CSpaceAddr} {childId : SeLe
   have k1 := storeObject_inert_runQueueStage hStUt hUt (fun _ h => KernelObject.noConfusion h) (fun _ h => KernelObject.noConfusion h)
   have k2 : RunQueueStage stUt st1 :=
     RunQueueStage.storeObject hStCh (fun c => by rw [hChildNone]; cases req <;> rfl)
+      (by
+        rw [hChildNone]
+        cases req <;> first
+          | exact SystemState.objStateMono_nonTcb rfl rfl
+          | exact ⟨fun _ h => by cases h, fun _ h _ => by cases h; exact .inl rfl⟩)
   have kZ : RunQueueStage st1 (req.scrub st1 ut) :=
     RunQueueStage.of_frame (CarveRequest.scrub_objects _ _ _)
-      (by rw [CarveRequest.scrub_scheduler]) (by rw [CarveRequest.scrub_scheduler])
+      (by rw [CarveRequest.scrub_scheduler]) (by rw [CarveRequest.scrub_scheduler]) (by rw [CarveRequest.scrub_scheduler])
   exact (((k1.trans k2).trans kZ).trans (cspaceInsertSlot_runQueueStage hIns)).trans
     (cdtRecord_runQueueStage _ _ _ _)
 

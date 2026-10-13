@@ -359,17 +359,24 @@ theorem faultDeliverOnCore_delivered_eq (st : SystemState) (tid : SeLe4n.ThreadI
 -- §3  RR4.13–RR4.15 — the fault reply
 -- ============================================================================
 
+/-- The core an abandon deschedules the faulted thread on: the core it is
+placed on (`placedCoreOf?`, its run-queue links or a current slot — seL4's
+`tcbSchedDequeue` reads the thread's own queue membership), else its home core,
+where it is neither queued nor running and the deschedule is a no-op on it. -/
+def faultAbandonCore (st : SystemState) (faulted : SeLe4n.ThreadId) : CoreId :=
+  (placedCoreOf? st faulted).getD (determineTargetCore st faulted)
+
 /-- WS-RR RR4.14/RR4.15: apply a decoded reply outcome to the faulted thread —
 restart it with the frame the handler chose, or leave it inactive.
 
-An abandoned thread is descheduled on **its own** home core, not the replier's:
-the reply chain woke it onto its home core, and the handler may be running
-anywhere. -/
+An abandoned thread is descheduled where it is placed (`faultAbandonCore`), not
+on the replier's core: the reply chain woke it onto its home core, and the
+handler may be running anywhere. -/
 def faultReplyApplyOnCore (st : SystemState) (faulted : SeLe4n.ThreadId)
     (outcome : FaultReplyOutcome) : SystemState :=
   match outcome with
   | .restart frame => applyFaultRestart st faulted frame
-  | .abandon       => faultAbandonOnCore st faulted (determineTargetCore st faulted)
+  | .abandon       => faultAbandonOnCore st faulted (faultAbandonCore st faulted)
 
 /-- WS-RR RR4.13–RR4.15 (**the fault reply**): a handler answers the fault its
 client is blocked on.
@@ -528,7 +535,7 @@ theorem faultReplyOnCore_abandon_not_runnable (replier faulted : SeLe4n.ThreadId
       congrArg Prod.fst hStep
     have hOutR : decodeFaultReply tf.fault tf.context mi regs = .abandon := by
       rw [← hOut]; exact hAb
-    refine ⟨determineTargetCore stR faulted, ?_, ?_⟩ <;>
+    refine ⟨faultAbandonCore stR faulted, ?_, ?_⟩ <;>
       · rw [← hSt]
         simp only [faultReplyApplyOnCore, hOutR]
         first
@@ -823,15 +830,15 @@ theorem faultDeliverOnCoreChecked_delivered_flows (ctx : LabelingContext)
 -- message each branch hands it.  Inert until the bracket cut wires
 -- `schedLockSetForSyscall`.
 
-/-- The cores `faultReplyApplyOnCore` may write: none on a restart, the faulted
-thread's own home core on an abandon
-(`faultAbandonOnCore … (determineTargetCore st faulted)`), read off the state the
+/-- The cores `faultReplyApplyOnCore` may write: none on a restart, the core the
+faulted thread is placed on on an abandon
+(`faultAbandonOnCore … (faultAbandonCore st faulted)`), read off the state the
 apply runs on — the dispatch's post-state, exactly as the apply reads it. -/
 def faultReplyApplyCores (st : SystemState) (faulted : SeLe4n.ThreadId)
     (outcome : FaultReplyOutcome) : List CoreId :=
   match outcome with
   | .restart _ => []
-  | .abandon => [determineTargetCore st faulted]
+  | .abandon => [faultAbandonCore st faulted]
 
 /-- **WS-RR RR8.12 Cut C3a**: the cores the fault reply may write — the dispatch's
 own set at the empty message, then the outcome's at the dispatch's post-state,
@@ -970,9 +977,9 @@ theorem schedLockSet_replyTransferOnCore_covers_dispatch_of_fault
   exact schedFootprintOfCores_subset (fun _ h => List.mem_append.mpr (Or.inl h)) (fun _ h => h)
 
 /-- **WS-RR RR8.12 Cut C3a (the abandon)**: on a faulted caller whose reply decodes
-to an abandon, the footprint names the run-queue write lock of the faulted thread's
-home core at the dispatch's post-state — the core `faultAbandonOnCore` deschedules it
-on.  This is the member a footprint over the dispatch alone would have missed. -/
+to an abandon, the footprint names the run-queue write lock of the core the faulted
+thread is placed on at the dispatch's post-state (`faultAbandonCore`) — the core
+`faultAbandonOnCore` deschedules it on.  This is the member a footprint over the dispatch alone would have missed. -/
 theorem schedLockSet_replyTransferOnCore_contains_abandon_runQueue_write
     (replier callerTid : SeLe4n.ThreadId) (mi : MessageInfo) (regs : Array SeLe4n.RegValue)
     (msg : IpcMessage) (executingCore : CoreId) (st st' : SystemState) (tcb : TCB)
@@ -981,7 +988,7 @@ theorem schedLockSet_replyTransferOnCore_contains_abandon_runQueue_write
     (hDisp : endpointReplyCrossCoreDispatch replier callerTid IpcMessage.empty executingCore st
       = (st', .ok sgi))
     (hAbandon : decodeFaultReply tf.fault tf.context mi regs = .abandon) :
-    (LockKey.runQueue (determineTargetCore st' callerTid), Concurrency.AccessMode.write)
+    (LockKey.runQueue (faultAbandonCore st' callerTid), Concurrency.AccessMode.write)
       ∈ schedLockSet_replyTransferOnCore replier callerTid mi regs msg executingCore st := by
   have hHas : threadHasPendingFault st callerTid = true := by
     simp [threadHasPendingFault, hTcb, hFault]

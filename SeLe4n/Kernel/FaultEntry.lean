@@ -152,15 +152,19 @@ def faultDeliveredState (lctx : LabelingContext) (st : SystemState) (f : Fault)
   let fctx := faultContextOfThread stRegs tid ectx.elr ectx.spsr
   (faultDeliverOnCoreChecked lctx stRegs tid f fctx c).1
 
-/-- The delivered state keeps the run-queue link agreement: the register spill
-writes no run-queue field, and the delivery is a stage
-(`faultDeliverOnCoreChecked_runQueueStage`). -/
-theorem faultDeliveredState_runQueueStage (lctx : LabelingContext) (st : SystemState)
+/-- The delivered state is a kernel entry's: the register spill writes no
+run-queue field and no IPC state, and the delivery is a kernel entry
+(`faultDeliverOnCoreChecked_runQueueEntryStage`) for a faulting thread that is
+`c`'s current thread and no idle thread. -/
+theorem faultDeliveredState_runQueueEntryStage (lctx : LabelingContext) (st : SystemState)
     (f : Fault) (ectx : ExceptionContext) (w : FaultRegisterWindow) (c : CoreId)
-    (tid : SeLe4n.ThreadId) :
-    SystemState.RunQueueStage st (faultDeliveredState lctx st f ectx w c tid) :=
-  (writeFaultRegistersToTcb_runQueueStage st tid w).trans
-    (faultDeliverOnCoreChecked_runQueueStage lctx _ tid f _ c)
+    (tid : SeLe4n.ThreadId) (hInv : st.objects.invExt) (hHeads : endpointHeadsWakeable st)
+    (hCur : st.scheduler.currentOnCore c = some tid) (hNI : isIdleThreadId tid = false) :
+    SystemState.RunQueueEntryStage st (faultDeliveredState lctx st f ectx w c tid) :=
+  (writeFaultRegistersToTcb_runQueueStage st tid w).entry.trans
+    (faultDeliverOnCoreChecked_runQueueEntryStage lctx _ tid f _ c
+      (hHeads.updateTcb hInv fun _ => rfl)
+      (by rw [writeFaultRegistersToTcb_scheduler]; exact hCur) hNI)
 
 /-- Review round (PR #887): **the delivery the two fault entries share**, given
 the fault already chosen.  Spill the trap frame's window, build the context
@@ -223,6 +227,10 @@ def faultEntryDeliver (lctx : LabelingContext) (st : SystemState) (f : Fault)
       let st' := PriorityInheritance.dispatchVacatedCore st c
       (rescheduleSgisFromFlags pending0 st'.scheduler.reschedulePending, st')
   | some tid =>
+      -- An idle thread runs the kernel's own loop at EL1 and takes no fault
+      -- from EL0 (seL4's idle thread never faults), so a trap the model
+      -- attributes to one delivers nothing and the idle loop resumes.
+      if isIdleThreadId tid then ([], st) else
       let st' := faultDeliveredState lctx st f ectx w c tid
       let st'' := PriorityInheritance.scheduleLocalSuccessorFrom (some tid) st' c
       (rescheduleSgisFromFlags pending0 st''.scheduler.reschedulePending, st'')
@@ -655,15 +663,18 @@ longer on (`handleRescheduleSgiOnCore_preserves_not_dispatchable`).  The
 chooser walks the threads' run-queue links (WS-ZA ZA4.5), so it draws from the
 queue's *members* where the queue agrees with those links: the agreement holds
 of the pre-state (`hR`) and the delivery keeps it
-(`faultDeliveredState_runQueueStage`). -/
+(`faultDeliveredState_runQueueEntryStage`).  The faulting thread is no idle
+thread: the entry delivers nothing for one. -/
 theorem faultEntryDeliver_not_dispatchable (lctx : LabelingContext) (st : SystemState)
     (f : Fault) (ectx : ExceptionContext) (w : FaultRegisterWindow) (c : CoreId)
     (tid : SeLe4n.ThreadId) (hCur : st.scheduler.currentOnCore c = some tid)
-    (hInv : st.objects.invExt) (hR : st.runQueueRefined) :
+    (hNI : isIdleThreadId tid = false) (hInv : st.objects.invExt) (hR : st.runQueueRefined)
+    (hHeads : endpointHeadsWakeable st) :
     ¬ dispatchableOnCore (faultEntryDeliver lctx st f ectx w c).2 tid c := by
-  have hR' := ((faultDeliveredState_runQueueStage lctx st f ectx w c tid) hInv hR).2 c
+  have hR' := ((faultDeliveredState_runQueueEntryStage lctx st f ectx w c tid hInv hHeads hCur
+    hNI).1 hInv hR).2 c
   unfold faultEntryDeliver
-  simp only [hCur]
+  simp only [hCur, hNI, Bool.false_eq_true, ↓reduceIte]
   have hD : ¬ dispatchableOnCore (faultDeliveredState lctx st f ectx w c tid) tid c :=
     faultDeliverOnCoreChecked_not_dispatchable lctx _ tid f _ c
   unfold PriorityInheritance.scheduleLocalSuccessorFrom
@@ -686,14 +697,14 @@ theorem faultEntryStep_not_dispatchable (lctx : LabelingContext) (st : SystemSta
     (coreId : UInt64) (tid : SeLe4n.ThreadId) (h : coreId.toNat < numCores)
     (hEl0 : ectx.takenFromEl0 = true)
     (hCur : st.scheduler.currentOnCore ⟨coreId.toNat, h⟩ = some tid)
-    (hFault : (faultOfExceptionContext ectx).isSome)
-    (hInv : st.objects.invExt) (hR : st.runQueueRefined) :
+    (hFault : (faultOfExceptionContext ectx).isSome) (hNI : isIdleThreadId tid = false)
+    (hInv : st.objects.invExt) (hR : st.runQueueRefined) (hHeads : endpointHeadsWakeable st) :
     ¬ dispatchableOnCore (faultEntryStep lctx st ectx w coreId).2 tid ⟨coreId.toNat, h⟩ := by
   unfold faultEntryStep
   rw [dif_pos h, if_pos hEl0]
   cases hF : faultOfExceptionContext ectx with
   | none => rw [hF] at hFault; exact absurd hFault (by simp)
-  | some f => exact faultEntryDeliver_not_dispatchable lctx st f ectx w _ tid hCur hInv hR
+  | some f => exact faultEntryDeliver_not_dispatchable lctx st f ectx w _ tid hCur hNI hInv hR hHeads
 
 /-- Review round (PR #887): the unknown-syscall entry carries the same
 guarantee — a thread that issued an unknown syscall is never resumed at it
@@ -703,12 +714,13 @@ theorem unknownSyscallEntryStep_not_dispatchable (lctx : LabelingContext)
     (coreId : UInt64) (tid : SeLe4n.ThreadId) (h : coreId.toNat < numCores)
     (hEl0 : ectx.takenFromEl0 = true)
     (hCur : st.scheduler.currentOnCore ⟨coreId.toNat, h⟩ = some tid)
-    (hInv : st.objects.invExt) (hR : st.runQueueRefined) :
+    (hNI : isIdleThreadId tid = false) (hInv : st.objects.invExt) (hR : st.runQueueRefined)
+    (hHeads : endpointHeadsWakeable st) :
     ¬ dispatchableOnCore (unknownSyscallEntryStep lctx st ectx w coreId).2 tid
       ⟨coreId.toNat, h⟩ := by
   unfold unknownSyscallEntryStep
   rw [dif_pos h, if_pos hEl0]
-  exact faultEntryDeliver_not_dispatchable lctx st _ ectx w _ tid hCur hInv hR
+  exact faultEntryDeliver_not_dispatchable lctx st _ ectx w _ tid hCur hNI hInv hR hHeads
 
 /-- PR #887 review round 3: **the syscall seam's capability fault carries the
 same guarantee.**  `deliverSyscallCapFault` is the abort entry's delivery at
@@ -736,6 +748,7 @@ theorem syscallDispatchFromAbi_capFault_not_dispatchable
     (x0 x1 x2 x3 x4 x5 ipcBufferAddr elr spsr spEl0 x30 : UInt64)
     (st st' : SystemState) (tid : SeLe4n.ThreadId) (ke : KernelError) (fault : Fault)
     (hCur : (st.scheduler.currentOnCore executingCore) = some tid)
+    (hNI : isIdleThreadId tid = false)
     (hSyscall :
       syscallEntryChecked ctx SeLe4n.arm64DefaultLayout executingCore 32
           (Platform.FFI.writeFfiRegistersToTcb st tid syscallId x0 x1 x2 x3 x4 x5)
@@ -747,7 +760,7 @@ theorem syscallDispatchFromAbi_capFault_not_dispatchable
         x0 x1 x2 x3 x4 x5 ipcBufferAddr elr spsr spEl0 x30 st = Except.ok (.faulted, st')) :
     ¬ dispatchableOnCore st' tid executingCore := by
   rw [Platform.FFI.syscallDispatchFromAbi_capFault_faulted ctx executingCore syscallId
-    x0 x1 x2 x3 x4 x5 ipcBufferAddr elr spsr spEl0 x30 st tid ke fault hCur hSyscall hCap]
+    x0 x1 x2 x3 x4 x5 ipcBufferAddr elr spsr spEl0 x30 st tid ke fault hCur hNI hSyscall hCap]
     at hCommit
   have hSt : st' = Platform.FFI.deliverSyscallCapFault ctx executingCore
       (Platform.FFI.writeFfiRegistersToTcb st tid syscallId x0 x1 x2 x3 x4 x5) tid fault
