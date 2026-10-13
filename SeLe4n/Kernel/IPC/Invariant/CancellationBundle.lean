@@ -747,6 +747,31 @@ private theorem endpointQueueRemove_placement_frame {endpointId : SeLe4n.ObjId}
       ((SystemState.getTcb?_eq_some_iff _ x t').mp hT')
     exact ⟨ot, (SystemState.getTcb?_eq_some_iff st x ot).mpr hL⟩
 
+/-- The IPC abort a timeout or a reclaim runs: the queue removal patches queue
+links, and the aborted thread's TCB is stored over itself with the same
+placement. -/
+theorem abortPendingIpcOnEndpoint_placement_frame {epId : SeLe4n.ObjId} {isReceiveQ : Bool}
+    {tid : SeLe4n.ThreadId} {st st' : SystemState} (hInv : st.objects.invExt)
+    (hA : abortPendingIpcOnEndpoint epId isReceiveQ tid st = .ok st') (x : SeLe4n.ThreadId) :
+    (st'.getTcb? x).map TCB.placement = (st.getTcb? x).map TCB.placement := by
+  obtain ⟨st1, tcb1, hRem, hLook, hStore⟩ := abortPendingIpcOnEndpoint_shape hA
+  have hInv1 := endpointQueueRemove_preserves_objects_invExt _ _ _ _ _ hInv hRem
+  rw [storeObject_tcb_placement_frame (hInv := hInv1)
+        (hPre := lookupTcb_some_objects _ _ _ hLook) (hStore := hStore)
+        (hAff := by simp [TCB.withReturnFrame, TCB.placement]) (x := x),
+    endpointQueueRemove_placement_frame hInv hRem x]
+
+/-- ...so it keeps the run queues in agreement with the links. -/
+theorem abortPendingIpcOnEndpoint_runQueueStage {epId : SeLe4n.ObjId} {isReceiveQ : Bool}
+    {tid : SeLe4n.ThreadId} {st st' : SystemState}
+    (hA : abortPendingIpcOnEndpoint epId isReceiveQ tid st = .ok st') :
+    SystemState.RunQueueStage st st' :=
+  have hS := abortPendingIpcOnEndpoint_scheduler_eq epId isReceiveQ tid st st' hA
+  SystemState.RunQueueStage.of_placement
+    (fun hInv => abortPendingIpcOnEndpoint_preserves_objects_invExt epId isReceiveQ tid st st'
+      hInv hA)
+    (by rw [hS]) (by rw [hS]) (fun hInv x => abortPendingIpcOnEndpoint_placement_frame hInv hA x)
+
 /-- WS-RR RR8.11: the holder abort ends an outstanding send or call and moves no
 thread's home core. -/
 private theorem abortHolderPendingIpc_placement_frame (st : SystemState)
@@ -761,13 +786,7 @@ private theorem abortHolderPendingIpc_placement_frame (st : SystemState)
     intro epId
     cases hA : abortPendingIpcOnEndpoint epId false holder st with
     | error _ => rfl
-    | ok stA =>
-      obtain ⟨st1, tcb1, hRem, hLook, hStore⟩ := abortPendingIpcOnEndpoint_shape hA
-      have hInv1 := endpointQueueRemove_preserves_objects_invExt _ _ _ _ _ hInv hRem
-      rw [storeObject_tcb_placement_frame (hInv := hInv1)
-            (hPre := lookupTcb_some_objects _ _ _ hLook) (hStore := hStore)
-            (hAff := by simp [TCB.withReturnFrame, TCB.placement]) (x := x),
-        endpointQueueRemove_placement_frame hInv hRem x]
+    | ok stA => exact abortPendingIpcOnEndpoint_placement_frame hInv hA x
   unfold Lifecycle.Suspend.abortHolderPendingIpc
   split
   · rfl

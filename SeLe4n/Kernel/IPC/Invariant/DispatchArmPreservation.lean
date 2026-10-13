@@ -3418,12 +3418,15 @@ became `dualQueueSystemInvariant`'s fourth conjunct, and it is not derivable fro
 `queuePrev` *refutes* the pairing rather than satisfying it vacuously.  It sits
 next to `queuePrev` because the two are one back-pointer, which is the whole
 lesson of WS-OD OD1.1 and OD3.9 — each found a removal writing one of them
-alone. -/
+alone.
+
+**WS-ZA ZA4.5**: `runCoreCode = 0` — a fresh thread's run-queue fields name no
+core, so storing it keeps every run queue in agreement with the threads' links. -/
 def retypeReplacementFresh : KernelObject → Prop
   | .tcb t => t.ipcState = .ready ∧ t.pendingMessage = none ∧ t.queueNext = none ∧
       t.queuePrev = none ∧ t.queuePPrev = none ∧
       t.schedContextBinding = .unbound ∧ t.replyObject = none ∧
-      t.pendingReceiveReply = none ∧ t.timeoutBudget = none
+      t.pendingReceiveReply = none ∧ t.timeoutBudget = none ∧ t.runCoreCode = 0
   | .endpoint ep => ep.sendQ.head = none ∧ ep.sendQ.tail = none ∧
       ep.receiveQ.head = none ∧ ep.receiveQ.tail = none
   | .notification n => n.state = .idle ∧ n.waitHead = none ∧ n.pendingBadge = none
@@ -3655,7 +3658,7 @@ private theorem retypeWrite_blockedThreadTimeoutConsistent
   by_cases hK : tid.toObjId = target
   · rw [hK] at hT
     obtain rfl : newObj = .tcb tcb := retypeWrite_at_target hAt hT
-    obtain ⟨-, -, -, -, -, -, -, -, hTBn⟩ := hFresh
+    obtain ⟨-, -, -, -, -, -, -, -, hTBn, -⟩ := hFresh
     rw [hTBn] at hTB
     cases hTB
   · rw [hNe _ hK] at hT
