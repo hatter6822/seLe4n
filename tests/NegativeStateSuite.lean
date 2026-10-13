@@ -1665,6 +1665,29 @@ private def runEndpointQueueHeadDisjointChecks : IO Unit := do
   let _ := @SeLe4n.Kernel.endpointQueueHeadDisjoint
   pure ()
 
+/-- PR #932 review: `buildValidated` refuses a supplied TCB that already claims
+a run-queue place, since the fold over `runnable` would skip or refuse its
+enqueue and leave the queue it names unbuilt.  Same fixture with the placement
+cleared builds; that keeps the token and breaks only the relation. -/
+private def runBuilderRunPlacementChecks : IO Unit := do
+  let expectBool (label : String) (actual expected : Bool) : IO Unit :=
+    if actual == expected then IO.println s!"positive check passed [{label}]"
+    else throw <| IO.userError s!"{label}: expected {expected}, got {actual}"
+  let tid := SeLe4n.ThreadId.ofNat 31
+  let tcbWith (code : Nat) : TCB :=
+    { tid := tid, priority := ⟨10⟩, domain := ⟨0⟩, cspaceRoot := ⟨0⟩, vspaceRoot := ⟨0⟩,
+      ipcBuffer := (SeLe4n.VAddr.ofNat 0), runCoreCode := code }
+  let fixture (code : Nat) : BootstrapBuilder :=
+    BootstrapBuilder.empty
+      |>.withObject tid.toObjId (.tcb (tcbWith code))
+      |>.withRunnable [tid]
+  expectBool "builder refuses a supplied TCB carrying run-queue placement"
+    (match (fixture 1).buildValidated with | .error _ => true | .ok _ => false) true
+  expectBool "the same fixture without placement builds and queues the thread"
+    (match (fixture 0).buildValidated with
+     | .ok st => st.runQueueWalk SeLe4n.Kernel.Concurrency.bootCoreId == [tid]
+     | .error _ => false) true
+
 private def runNegativeChecks : IO Unit := do
   runBaselineLookupNegativeChecks                       -- [was 248-262]
   runCspaceMutationAndRevokeNegativeChecks              -- [was 263-461; sections 2+3 combined for strictSeed/strictRootSlot reuse]
@@ -1675,6 +1698,7 @@ private def runNegativeChecks : IO Unit := do
   runDualQueuePPrevPairingChecks                        -- WS-RR RR8.3
   runDualQueueTailPairingChecks                         -- WS-RR RR8.4
   runEndpointQueueHeadDisjointChecks                    -- PR #897 review (v0.35.108)
+  runBuilderRunPlacementChecks                          -- PR #932 review
 
   -- ==========================================================================
   -- WS-D4 F-12: Double-wait prevention in notificationWait (was 1036-1043).

@@ -32,6 +32,11 @@ seLe4n now.
   holds five locks, the successor's TCB write lock added (900µs, inside the
   1 ms tick budget).  The main trace's `[PIP-005]` line counts 34 invariant
   checks, one more for the off-queue clause.
+- **Test builder.**  `buildValidated` refuses a supplied TCB that already
+  claims a run-queue place (`runCoreCode ≠ 0`), as `bootSafeTcbCheck` does at
+  boot; such a TCB made the fold over `runnable` skip or refuse its enqueue and
+  return a state whose queue was not the one the fixture named (second review
+  finding).  The negative-state suite checks both sides.
 - **Allocations** (QEMU exerciser, normal build): unchanged.  Signal, wide-badge
   signal, wait-pending and yield read 0, and a signal that wakes a waiter 33.
 

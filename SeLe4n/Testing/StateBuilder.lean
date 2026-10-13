@@ -121,7 +121,11 @@ def build (builder : BootstrapBuilder) : SystemState :=
     4. CNode slot table capacity bounds (4 ≤ capacity, size < capacity)
     5. IRQ handlers reference existing objects
     6. VSpaceRoot ASID uniqueness (no two VSpaceRoots share an ASID)
-    7. Current thread (if set) is in the runnable list -/
+    7. Current thread (if set) is not in the runnable list
+    8. No supplied TCB claims a run-queue place (`runCoreCode = 0`, as
+       `bootSafeTcbCheck` requires of a boot TCB): `build` places exactly the
+       `runnable` threads, and a TCB naming a core would make its enqueue
+       skip (boot core) or be refused (another core) -/
 def buildValidated (builder : BootstrapBuilder) : Except String SystemState :=
   let st := builder.build
   let oids := builder.objects.map Prod.fst
@@ -153,6 +157,13 @@ def buildValidated (builder : BootstrapBuilder) : Except String SystemState :=
     | .cnode cn => cn.slots.capacity < 4 || cn.slots.size >= cn.slots.capacity
     | _ => false) then
     .error "BuilderTestState check 4 failed: CNode slots violate capacity bounds (need 4 ≤ capacity, size < capacity)"
+  -- Check 8 (PR #932 review): no supplied TCB already claims a run-queue
+  -- place, so the fold over `runnable` builds the queue the builder names.
+  else if builder.objects.any (fun (_, obj) =>
+    match obj with | .tcb t => t.runCoreCode != 0 | _ => false) then
+    let bad := builder.objects.filterMap (fun (oid, obj) =>
+      match obj with | .tcb t => if t.runCoreCode != 0 then some oid else none | _ => none)
+    .error s!"BuilderTestState check 8 failed: supplied TCB(s) carry run-queue placement (runCoreCode ≠ 0): {bad}"
   -- Check 5: IRQ handlers reference existing objects
   else if builder.irqHandlers.any (fun (_, oid) => !oids.contains oid) then
     .error "BuilderTestState check 5 failed: IRQ handler references non-existent object"
