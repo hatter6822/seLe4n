@@ -37,12 +37,13 @@ state-shaped preconditions of the whole de-threaded family), the running
 caller's shape, and the per-arm facts the RR3.15–RR3.21 packs need — every
 field a pre-state fact, so nothing is bound on the post-state.  The yield
 syscall resolves no capability, so it has no pack: its premise
-(`hYieldReach`) is `ipcReachable`, again a pre-state fact.  Every payoff also
-takes three scheduler facts about the pre-state: the run queues agree with the
-threads' links (`hRunQ`), the executing core's current thread is queued on no other
-core (`hCurAdm`, seL4's `ct_not_in_q`, which a preemption at a scheduling point
-needs to requeue it on its own core), and it is current on no other core
-(`hCurU`).
+(`hYieldReach`) is `ipcReachable`, again a pre-state fact.  The run queues'
+agreement with the threads' links is one of `ipcReachable`'s conjuncts, carried
+by every kernel entry (`IPC.Invariant.RunQueueAgreement`).  Every payoff also
+takes two scheduler facts about the pre-state: the executing core's current
+thread is queued on no other core (`hCurAdm`, seL4's `ct_not_in_q`, which a
+preemption at a scheduling point needs to requeue it on its own core), and it is
+current on no other core (`hCurU`).
 -/
 
 namespace SeLe4n.Kernel
@@ -660,7 +661,7 @@ theorem dispatchWithCap_preserves_ipcInvariantFull
     (decoded : SyscallDecodeResult) (tid : SeLe4n.ThreadId) (executingCore : Concurrency.CoreId) (gate : SyscallGate)
     (cap : Capability) (st st' : SystemState)
     (hPack : syscallDispatchQuiescence decoded tid executingCore gate cap st)
-    (hRunQ : st.runQueueRefined) (hCurAdm : st.currentRequeueAdmitted executingCore)
+    (hCurAdm : st.currentRequeueAdmitted executingCore)
     (hCurU : ∀ c' t, st.scheduler.currentOnCore executingCore = some t →
       st.scheduler.currentOnCore c' = some t → c' = executingCore)
     (hStep : dispatchWithCap decoded tid executingCore gate cap st = .ok ((), st')) :
@@ -673,7 +674,7 @@ theorem dispatchWithCap_preserves_ipcInvariantFull
   | some k =>
       rw [hCapOnly] at hStep
       exact dispatchCapabilityOnly_preserves_ipcInvariantFull decoded cap tid executingCore k st st'
-        hCapOnly hObjInv hInv hPack.capOnly hRunQ hCurAdm hCurU hStep
+        hCapOnly hObjInv hInv hPack.capOnly hPack.reachable.runQueueRefined hCurAdm hCurU hStep
   | none =>
       rw [hCapOnly] at hStep
       cases hSy : decoded.syscallId <;> simp only [hSy] at hStep <;>
@@ -1181,7 +1182,7 @@ theorem dispatchSyscall_preserves_ipcInvariantFull
       syscallLookupCap gate st = .ok (cap, st) →
       syscallDispatchQuiescence decoded tid executingCore gate cap st)
     (hYieldReach : decoded.syscallId = .yield → ipcReachable st)
-    (hRunQ : st.runQueueRefined) (hCurAdm : st.currentRequeueAdmitted executingCore)
+    (hCurAdm : st.currentRequeueAdmitted executingCore)
     (hCurU : ∀ c' t, st.scheduler.currentOnCore executingCore = some t →
       st.scheduler.currentOnCore c' = some t → c' = executingCore)
     (hStep : dispatchSyscall decoded tid executingCore st = .ok ((), st')) :
@@ -1231,7 +1232,7 @@ theorem dispatchSyscall_preserves_ipcInvariantFull
                           subst hStEq
                           have hInvPost := dispatchWithCap_preserves_ipcInvariantFull
                             decoded tid executingCore _ cap stL stPost
-                            (hPack _ cap hLk) hRunQ hCurAdm hCurU hInvk
+                            (hPack _ cap hLk) hCurAdm hCurU hInvk
                           rw [← hStep]
                           refine ipcInvariantFull_of_objects_scheduler_eq ?_ ?_ hInvPost
                           · exact applySyscallTaint_objects _ _ _
@@ -1285,7 +1286,7 @@ theorem dispatchWithCapChecked_preserves_ipcInvariantFull
     (tid : SeLe4n.ThreadId) (executingCore : Concurrency.CoreId) (gate : SyscallGate) (cap : Capability)
     (st st' : SystemState)
     (hQ : checkedSyscallDispatchQuiescence decoded tid executingCore gate cap st)
-    (hRunQ : st.runQueueRefined) (hCurAdm : st.currentRequeueAdmitted executingCore)
+    (hCurAdm : st.currentRequeueAdmitted executingCore)
     (hCurU : ∀ c' t, st.scheduler.currentOnCore executingCore = some t →
       st.scheduler.currentOnCore c' = some t → c' = executingCore)
     (hStep : dispatchWithCapChecked ctx decoded tid executingCore gate cap st = .ok ((), st')) :
@@ -1297,7 +1298,7 @@ theorem dispatchWithCapChecked_preserves_ipcInvariantFull
   | some k =>
       rw [hCapOnly] at hStep
       exact dispatchCapabilityOnly_preserves_ipcInvariantFull decoded cap tid executingCore k st st'
-        hCapOnly hObjInv hInv hQ.base.capOnly hRunQ hCurAdm hCurU hStep
+        hCapOnly hObjInv hInv hQ.base.capOnly hQ.base.reachable.runQueueRefined hCurAdm hCurU hStep
   | none =>
       rw [hCapOnly] at hStep
       have hCapOnly0 := hCapOnly
@@ -1336,7 +1337,7 @@ theorem dispatchWithCapChecked_preserves_ipcInvariantFull
                       simp only [hCapOnly0, hSy, hTgt, hRes, hDisp]
                       exact hStep
                     exact dispatchWithCap_preserves_ipcInvariantFull decoded tid executingCore gate
-                      cap st st' hQ.base hRunQ hCurAdm hCurU hU
+                      cap st st' hQ.base hCurAdm hCurU hU
                   · injection hDisp with hA hB
                     subst hB
                     simp only [] at hStep; cases hStep
@@ -1351,7 +1352,7 @@ theorem dispatchWithCapChecked_preserves_ipcInvariantFull
               simp only [hCapOnly0, hSy, hTgt]
               exact hStep
             exact dispatchWithCap_preserves_ipcInvariantFull decoded tid executingCore gate cap st st'
-              hQ.base hRunQ hCurAdm hCurU hU
+              hQ.base hCurAdm hCurU hU
         all_goals cases hStep
       case call =>
         cases hTgt : cap.target <;> simp only [hTgt] at hStep
@@ -1375,7 +1376,7 @@ theorem dispatchWithCapChecked_preserves_ipcInvariantFull
                       simp only [hCapOnly0, hSy, hTgt, hRes, hDisp]
                       exact hStep
                     exact dispatchWithCap_preserves_ipcInvariantFull decoded tid executingCore gate
-                      cap st st' hQ.base hRunQ hCurAdm hCurU hU
+                      cap st st' hQ.base hCurAdm hCurU hU
                   · injection hDisp with hA hB
                     subst hB
                     simp only [] at hStep; cases hStep
@@ -1411,7 +1412,7 @@ theorem dispatchWithCapChecked_preserves_ipcInvariantFull
                         replyAnsweredCaller?_of_getReply st rid reply hRep, hCaller]
                       exact hStep
                     exact dispatchWithCap_preserves_ipcInvariantFull decoded tid executingCore gate
-                      cap st st' hQ.base hRunQ hCurAdm hCurU hU
+                      cap st st' hQ.base hCurAdm hCurU hU
                   next => cases hStep
         all_goals cases hStep
       case cspaceMint =>
@@ -1429,7 +1430,7 @@ theorem dispatchWithCapChecked_preserves_ipcInvariantFull
                   simp only [hCapOnly0, hSy, hTgt, hDec]
                   exact hStep
                 exact dispatchWithCap_preserves_ipcInvariantFull decoded tid executingCore gate cap
-                  st st' hQ.base hRunQ hCurAdm hCurU hU
+                  st st' hQ.base hCurAdm hCurU hU
               · cases hStep
         all_goals cases hStep
       case cspaceCopy =>
@@ -1447,7 +1448,7 @@ theorem dispatchWithCapChecked_preserves_ipcInvariantFull
                   simp only [hCapOnly0, hSy, hTgt, hDec]
                   exact hStep
                 exact dispatchWithCap_preserves_ipcInvariantFull decoded tid executingCore gate cap
-                  st st' hQ.base hRunQ hCurAdm hCurU hU
+                  st st' hQ.base hCurAdm hCurU hU
               · cases hStep
         all_goals cases hStep
       case cspaceMove =>
@@ -1465,7 +1466,7 @@ theorem dispatchWithCapChecked_preserves_ipcInvariantFull
                   simp only [hCapOnly0, hSy, hTgt, hDec]
                   exact hStep
                 exact dispatchWithCap_preserves_ipcInvariantFull decoded tid executingCore gate cap
-                  st st' hQ.base hRunQ hCurAdm hCurU hU
+                  st st' hQ.base hCurAdm hCurU hU
               · cases hStep
         all_goals cases hStep
       case serviceRegister =>
@@ -1483,7 +1484,7 @@ theorem dispatchWithCapChecked_preserves_ipcInvariantFull
                   simp only [hCapOnly0, hSy, hTgt, hDec]
                   exact hStep
                 exact dispatchWithCap_preserves_ipcInvariantFull decoded tid executingCore gate cap
-                  st st' hQ.base hRunQ hCurAdm hCurU hU
+                  st st' hQ.base hCurAdm hCurU hU
               · cases hStep
         all_goals cases hStep
       case notificationSignal =>
@@ -1508,7 +1509,7 @@ theorem dispatchWithCapChecked_preserves_ipcInvariantFull
                     simp only [hCapOnly0, hSy, hTgt, hDec]
                     exact hStep
                   exact dispatchWithCap_preserves_ipcInvariantFull decoded tid executingCore gate
-                    cap st st' hQ.base hRunQ hCurAdm hCurU hU
+                    cap st st' hQ.base hCurAdm hCurU hU
         all_goals cases hStep
       case notificationWait =>
         cases hTgt : cap.target <;> simp only [hTgt] at hStep
@@ -1527,7 +1528,7 @@ theorem dispatchWithCapChecked_preserves_ipcInvariantFull
                 simp only [hCapOnly0, hSy, hTgt]
                 exact hStep
               exact dispatchWithCap_preserves_ipcInvariantFull decoded tid executingCore gate cap
-                st st' hQ.base hRunQ hCurAdm hCurU hU
+                st st' hQ.base hCurAdm hCurU hU
         all_goals cases hStep
       case replyRecv =>
         cases hTgt : cap.target <;> simp only [hTgt] at hStep
@@ -1546,7 +1547,7 @@ theorem dispatchWithCapChecked_preserves_ipcInvariantFull
                     simp only [hCapOnly0, hSy, hTgt, hResv]
                     exact hStep
                   exact dispatchWithCap_preserves_ipcInvariantFull decoded tid executingCore gate cap
-                    st st' hQ.base hRunQ hCurAdm hCurU hU
+                    st st' hQ.base hCurAdm hCurU hU
                 next => cases hStep
         all_goals cases hStep
       case declassify =>
@@ -1707,7 +1708,7 @@ theorem dispatchSyscallChecked_preserves_ipcInvariantFull
       syscallResolveCap gate st = .ok (cap, st) →
       checkedSyscallDispatchQuiescence decoded tid executingCore gate cap st)
     (hYieldReach : decoded.syscallId = .yield → ipcReachable st)
-    (hRunQ : st.runQueueRefined) (hCurAdm : st.currentRequeueAdmitted executingCore)
+    (hCurAdm : st.currentRequeueAdmitted executingCore)
     (hCurU : ∀ c' t, st.scheduler.currentOnCore executingCore = some t →
       st.scheduler.currentOnCore c' = some t → c' = executingCore)
     (hStep : dispatchSyscallChecked ctx decoded tid executingCore st = .ok ((), st')) :
@@ -1759,7 +1760,7 @@ theorem dispatchSyscallChecked_preserves_ipcInvariantFull
                               subst hStEq
                               have hInvPost := dispatchWithCapChecked_preserves_ipcInvariantFull
                                 ctx decoded tid executingCore _ cap stL stPost (hPack _ cap hRz)
-                                hRunQ hCurAdm hCurU hInvk
+                                hCurAdm hCurU hInvk
                               rw [← hStep]
                               refine ipcInvariantFull_of_objects_scheduler_eq ?_ ?_ hInvPost
                               · exact applySyscallTaint_objects _ _ _
@@ -1784,7 +1785,7 @@ theorem dispatchSyscallChecked_preserves_ipcInvariantFull
                               subst hStEq
                               have hInvPost := dispatchWithCapChecked_preserves_ipcInvariantFull
                                 ctx decoded tid executingCore _ cap stL stPost (hPack _ cap hRz)
-                                hRunQ hCurAdm hCurU hInvk
+                                hCurAdm hCurU hInvk
                               rw [← hStep]
                               refine ipcInvariantFull_of_objects_scheduler_eq ?_ ?_ hInvPost
                               · exact applySyscallTaint_objects _ _ _
@@ -2051,7 +2052,7 @@ private theorem witnessSt3_no_stack_head (scId : SeLe4n.SchedContextId)
     · cases hLk
 
 private theorem witnessReachable3 : ipcReachable witnessSt3 := by
-  refine ⟨witnessInv3, witnessObjInv3, ?_, ?_, ?_, ?_⟩
+  refine ⟨witnessInv3, witnessObjInv3, ?_, ?_, ?_, ?_, ?_⟩
   · intro tid tcb hLk
     rw [witnessSt3_lookup] at hLk
     split at hLk
@@ -2086,6 +2087,9 @@ private theorem witnessReachable3 : ipcReachable witnessSt3 := by
     exact donationChainWellFormed_of_no_donations _
       (fun rid r hR => absurd hR (fun h => witnessSt3_no_reply rid r h))
       witnessSt3_no_stack_head
+  · -- WS-ZA ZA4.5: the boot's empty run queues, and the one thread names no core.
+    exact SystemState.runQueueRefined_of_default_queues rfl rfl
+      (fun t tcb h => by rw [witnessSt3_getTcb_unique t tcb h]; rfl)
 
 private def witnessDecoded : SyscallDecodeResult :=
   { capAddr := SeLe4n.CPtr.ofNat 0, msgInfo := default, syscallId := .send }
@@ -2879,7 +2883,7 @@ private theorem witnessInv4 : ipcInvariantFull witnessSt4 := by
 
 set_option maxHeartbeats 1000000 in
 private theorem witnessReachable4 : ipcReachable witnessSt4 := by
-  refine ⟨witnessInv4, witnessObjInv4, ?_, ?_, ?_, ?_⟩
+  refine ⟨witnessInv4, witnessObjInv4, ?_, ?_, ?_, ?_, ?_⟩
   · intro tid tcb hLk
     rw [witnessSt4_lookup] at hLk
     split at hLk
@@ -2916,6 +2920,15 @@ private theorem witnessReachable4 : ipcReachable witnessSt4 := by
       split at hSc
       · cases hSc
       · exact witnessSt3_no_stack_head scId sc hSc
+  · -- WS-ZA ZA4.5: the fresh Reply is no thread, so `witnessSt3`'s one thread is
+    -- still the only one, on the boot's empty run queues.
+    refine SystemState.runQueueRefined_of_default_queues rfl rfl (fun t tcb h => ?_)
+    unfold SystemState.getTcb? at h
+    rw [witnessSt4_lookup] at h
+    by_cases hk : (SeLe4n.ObjId.ofNat 3 : SeLe4n.ObjId) == t.toObjId
+    · rw [if_pos hk] at h; simp at h
+    · rw [if_neg hk] at h
+      rw [witnessSt3_getTcb_unique t tcb h]; rfl
 
 private theorem witnessSt4_getTcb :
     witnessSt4.getTcb? witnessTid = some witnessTcbBound := by
