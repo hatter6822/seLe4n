@@ -49,11 +49,11 @@ enforcement, and scheduling.
 
 | Attribute | Value |
 |-----------|-------|
-| **Package version** | `0.36.82` (`lakefile.toml`) |
+| **Package version** | `0.36.83` (`lakefile.toml`) |
 | **Lean toolchain** | `v4.28.0` (`lean-toolchain`) |
-| **Production LoC** | 456,717 across 405 Lean files |
-| **Test LoC** | 87,277 across 70 Lean test suites |
-| **Proved declarations** | 15,772 theorem/lemma declarations (zero sorry/axiom) |
+| **Production LoC** | 459,453 across 405 Lean files |
+| **Test LoC** | 87,322 across 70 Lean test suites |
+| **Proved declarations** | 15,921 theorem/lemma declarations (zero sorry/axiom) |
 | **Target hardware** | Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A) |
 | **Latest audit** | pre-SM10 completeness audit at `v0.34.3` — [`UNFINISHED_SMP_WORK.md`](../planning/UNFINISHED_SMP_WORK.md), 171 confirmed findings. Prior baselines in [`docs/audits/`](../audits) |
 | **Active workstream** | **WS-BP (the bare-metal boot path)** — SM10.1's content, unblocked at v0.35.203; **BP0 (cross-implementation agreement) landed at v0.36.2** (§6.2.2), and **BP1 (aarch64 Lean object code) at v0.36.2** (§6.2.3), **BP2.1 (the Lean heap)** at v0.36.2 (§6.2.4), **BP2.2 (the kernel's Lean runtime, in Rust)** at v0.36.2 (§6.2.5), **BP2.3/BP2.4 (the library initializer, failing closed)** at v0.36.2 (§6.2.6), **BP2.6 (the boot map built from constants)** at v0.36.2 (§6.2.7), and **BP3 (the RPi5 deployment, which boots, and the proof-layer bundle of the state it installs)** at v0.36.2 (§6.2.8, §8.14.2), and **BP4.1/BP4.2 (the `lean_kernel_main` entry, and the install ordered before the secondaries by a type)** at v0.36.2 (§6.2.9), and **BP4.3/BP4.4 (the firmware's device tree reaching Lean, and the entry booting the deployment on the variant it describes)** at v0.36.2 (§6.2.10), and **BP4.5 (the image's loaded bytes cleaned to the Point of Unification before any thread can fetch)** at v0.36.2 (§6.2.11), and **BP4.6 (the verified board's RAM outside the kernel's extent mapped, and the boot map sealed before any secondary is released)** and **BP4.7 (that RAM handed to the root task as untypeds)** at v0.36.2 (§6.2.12), and **BP5.1 (the kernel image, a bare-metal binary entered at `_start` under `link.ld`)** and **BP5.2 (the Lean kernel linked into it, under `--gc-sections` from the archive lane's roots)** and **BP5.3 (the firmware's boot files, `kernel8.img` and `config.txt`, cut from that image and checked against it)** and **BP5.4 (its size and section map published with every CI run)** at v0.36.2 (§6.2.13), and **BP5.5 (the firmware's EL2 entry dropped to EL1, with the PSCI conduit following the entry level)** at v0.36.2 (§6.2.15), and **BP6 (every PE marks itself ready after its own per-PE runtime handshake and before it unmasks IRQs, and the boot halts unless every declared PE serves the kernel)** at v0.36.2 (§6.2.16), and **BP7.10 (the first gigabyte's RAM read off the firmware's account, and the constant boot map shrunk to the kernel's reserved extent)** at v0.36.3 (§6.2.17), and **BP7.1 slices 1–3 (frame capabilities, the untyped carve that mints them, and the untyped reset that returns their memory)** at v0.36.4, v0.36.5 and v0.36.6, slice 4a (child untypeds and subtree resets) at v0.36.8, the in-place VSpace-root refusal at v0.36.9, and slice 4b's VSpace-root carve at v0.36.10, `.tcbSetSpace` (a thread runs in a carved address space) at v0.36.11, intermediate page tables at v0.36.12, and every configured address space owning a table page at v0.36.13, which completes BP7.1 (§8.10.2a); BP7.2's user window and 16-bit hardware ASIDs at v0.36.14 and its physical-write ledger and translation install at v0.36.15; BP7.3–BP7.9 at v0.36.16–v0.36.22 (the whole trap frame saved, per-core restore staging, unblock-frame delivery, the live context restore, the delivered declassified badge, overflow message registers, lazily switched FP/SIMD state); and BP7.11 (the boot starts both initial threads, one per domain) at v0.36.23, which completes BP7; BP8.1's first slice (the image built for QEMU's `virt` — its device map from `src/board.rs`, its link script derived from `link.ld`, an arm64 Image header on `_start` — booted there at EL1 and at EL2 by `scripts/test_qemu.sh`) at v0.36.24, and its second (the Lean `virt` binding `SeLe4n/Platform/QemuVirt/` — its board check the RPi5 bridge's own coverage predicates, the RPi5 deployment's layout on it with every boot gate decided, and its own boot entry `lean_kernel_main_qemu_virt`, held by the boot-entry contract's table to its own approved call) at v0.36.25, and its third (the Lean-linked image booted by `scripts/test_qemu.sh --lean-kernel` on four PEs at EL1 and EL2 to every core's first idle dispatch, on every PR — §6.2.18) at v0.36.26, completing BP8.1, and BP8.2 (the four-PE bring-up gate, executed on every PR — §6.2.18) at v0.36.27. **WS-RR (SMP release readiness)** is complete (v0.34.26 → v0.35.203, RR0–RR8). SM10 (release closure → v1.0.0) follows WS-BP. See [`REGISTERED_DEBT.md`](../REGISTERED_DEBT.md) |
@@ -3530,26 +3530,31 @@ Hardware-mode kernel state lives in two `IO.Ref` cells:
   `bootFromPlatformCheckedWithIdleThreads` with the IO.Ref seed) on
   hardware boot.  **WS-RR RR5.14** switched the composed entry from
   `bootFromPlatformChecked`, which installs no idle threads: every core
-  now comes up with its own idle thread **enqueued** on its own run
-  queue (and no core's current slot set, so `queueCurrentConsistent`
-  holds and each core's first scheduling point dispatches idle out of
-  the queue).  The stored idle TCB is the **queued** form
-  (`queuedIdleThread`, `.Ready`), the state the classification infers for
-  a queued, non-current thread; every config TCB is `.Inactive`
+  now comes up with its own idle thread **stored**, and, as in seL4,
+  on no run queue: the boot installs each core's idle TCB
+  (`storeIdleThreadOnCore`, `readyIdleThread`, `.Ready`) and writes no
+  scheduler field, so every queue is empty and no core's current slot
+  is set (`bootFromPlatformCheckedWithIdleThreads_scheduler_eq`,
+  `…_runQueueOnCore_eq`, `…_idle_resident`).  A core runs its idle
+  thread only when its queue holds no eligible thread
+  (`idleFallbackOnCore`), so each core's first scheduling point
+  dispatches idle (`…_idleDispatchableOnCore`), and the scheduler never
+  stalls (`schedulerNoStall_smp`: a scheduling point on a core whose
+  idle thread is dispatchable always leaves a current thread).  The
+  classification infers `.Ready` for an idle thread neither current nor
+  queued; every config TCB is `.Inactive`
   (`bootSafeObjectCheck`); so the production boot state is
   `threadStateConsistent` with no hypothesis beyond the boot
   (`bootFromPlatformCheckedWithIdleThreads_threadStateConsistent`).  The
   idle slots are reserved by `PlatformConfig.wellFormed`
   (`idleSlotsReserved`), so a successful checked boot has them empty
   (`bootFromPlatformChecked_ok_idleSlotsFreshAt`) and the idle fold
-  overwrites no config object.  Since `v0.35.68` the per-core enqueue
-  the boot folds **is** the kernel model's `enqueueIdleThreadOnCore`
-  applied to the intermediate state's `state`
-  (`Platform.Boot.enqueueIdleThread_state`, by `rfl`), with the four
-  `IntermediateState` witnesses the operation's own preservation
-  theorems — one body for the boot and the scheduler, where the boot
-  used to carry a builder-side copy that differed in the bookkeeping
-  the store maintains.  That consistency is a **boot-state
+  overwrites no config object.  The per-core store the boot folds
+  **is** the kernel model's `storeIdleThreadOnCore` applied to the
+  intermediate state's `state` (`Platform.Boot.storeIdleThread_state`,
+  by `rfl`), with the four `IntermediateState` witnesses the
+  operation's own preservation theorems — one body for the boot and the
+  scheduler.  That consistency is a **boot-state
   theorem**, not a preserved invariant (PR #889 review round 2): the
   dispatch writes no `threadState`, so the relation the live decisions
   read — the stored flag says `.Inactive` iff the classification does —
@@ -3563,14 +3568,21 @@ Hardware-mode kernel state lives in two `IO.Ref` cells:
   passes through, refuses a capability naming one
   (`capTargetsReservedIdleObject`, `syscallResolveCap_ok_not_reserved`),
   so no `.tcbSuspend` can remove a core's only guaranteed runnable
-  thread.  The boot queue is characterised exactly — on every core
-  it is the empty queue with that core's idle thread enqueued
-  (`bootFromPlatformCheckedWithIdleThreads_runQueueOnCore_eq`) — so its
-  well-formedness and the resolution of its members are theorems of the
-  boot state, the staged keystone
-  `bootFromPlatformCheckedWithIdleThreads_chooseThreadOnCore_succeeds`
-  takes no hypothesis beyond the boot, and each core's first selection
-  is its own idle thread (`…_chooseThreadOnCore_idle`).
+  thread.  An idle thread never traps: it runs the kernel's own loop at
+  EL1, so the syscall seam refuses a syscall attributed to one with the
+  `.illegalState` frame, as on a core with no thread, and the fault
+  entry delivers nothing for one.  The boot also establishes the
+  scheduler's placement invariant `currentDequeuedUnique` (seL4's
+  `ct_not_in_q`, current uniqueness and `valid_idle`: every core's
+  current thread is on no run queue, current on that core alone,
+  runnable and active; no idle thread is ever queued; an idle thread
+  runs only on its own core and is always runnable; every TCB's two
+  state fields agree), for the idle boot
+  (`bootFromPlatformCheckedWithIdleThreads_currentDequeuedUnique`) and
+  for the started boot, every initial-thread start being a run-queue
+  stage (`bootFromPlatformCheckedStartedFor_allCores_currentDequeuedUnique`).
+  Every kernel entry carries it (`RunQueueEntryStage`), so the dispatch
+  payoffs take it in place of bare premises.
   `bootAndInitialisePlatform platform config` is the same entry under
   the platform binding's own labeling (§6.7).
 - `kernelLabelingContextRef : IO.Ref LabelingContext` — the
