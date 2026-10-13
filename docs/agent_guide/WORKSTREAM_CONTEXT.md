@@ -127,7 +127,12 @@ a wait that blocks reads 42 (55 before) and a signal to a waiter 44 (58), the
 rest the scheduling point's and the badge message's.  At `v0.36.80` (ZA4.5
 part 1) the run queue is linked lists written in place and the scheduling point
 builds nothing: yield reads 0, a wait that blocks 40 and a signal to a waiter
-37.  ZA4.5 part 2 moves the run-queue links into the TCB.  ZA4 measures the other
+37.  At `v0.36.81` (ZA4.5 part 2) the links are TCB fields and each core keeps
+only the queue's ends; the abstract queue is an erased ghost proven to agree
+with the links on every reachable state (`runQueueRefined`, a conjunct of
+`ipcReachable`).  Yield stays 0, a signal to a waiter reads 33 and a call 184.
+The single-core reference scheduler operations are proof-only from then on: run
+code, suites included, uses the per-core forms.  ZA4 measures the other
 syscalls and entries.  Plan:
 [`docs/planning/ZERO_ALLOCATION_SYSCALL_PLAN.md`](../planning/ZERO_ALLOCATION_SYSCALL_PLAN.md)
 (phases ZA1–ZA4).

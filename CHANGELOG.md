@@ -1,3 +1,43 @@
+## v0.36.81 — WS-ZA ZA4.5 (part 2): run-queue links in the TCB, the abstract queue an erased ghost
+
+**The run queue lives in the threads, as in seL4.**  Each TCB carries its
+run-queue links; a core keeps only the queue's ends.  Yield still makes no heap
+allocation (QEMU exerciser, normal build): signal, wide-badge signal,
+wait-pending and yield read 0; signal's first call after boot 3 → 2; signal to
+a waiter 37 → 33; call 180 → 184.
+
+- **Links.**  Six run-link fields in the TCB (the core, nonzero exactly while
+  queued; the priority; the previous and next links of the whole queue and of
+  the priority bucket) and per-core `RunQueueEnds` (head, tail, size, highest
+  priority, per-bucket ends).  Enqueue,
+  dequeue and rotation rewrite the affected TCBs' fields through
+  `RHTable.mapValueAt`, a value-only table update whose frame holds with no
+  table invariant, and the per-core ends in their vector slot.
+- **Ghost queue.**  Each core's abstract `RunQueue` stays in the model as a
+  field of type `Erased`, so the compiler drops it.  One invariant,
+  `runQueueRefined`, states that the links describe it (as seL4 relates its
+  abstract ready queues to the C links); it is a conjunct of `ipcReachable`,
+  proven for every committing kernel entry, so every scheduler theorem stated
+  over the queue still holds of the links the kernel reads.
+- **Executable reads.**  Membership (`queuedOn`), the queue's list
+  (`runQueueWalk`), a thread's queued priority (`queuedPriorityOn`) and the
+  highest bucket (`runMaxBucketWalk`) are read off the TCBs, each proven equal
+  to the ghost read under `runQueueRefined`.  The compiled enqueue, removal
+  and selection paths read TCB fields directly and write records in place
+  (`@[csimp]` forms proven equal to their specifications).
+- **Proof-only references.**  The single-core reference operations (`schedule`,
+  `timerTick`, `handleYield`, `switchDomain`, `chooseThread`,
+  `suspendThread`, `setPriorityOp`, the IF projections, …) write or read only
+  the ghost and are now `noncomputable`; the kernel runs their per-core forms.
+  The suites and the main trace run the per-core forms on the boot core
+  (`SeLe4n/Testing/BootCoreOps.lean`) and the link-reading information-flow
+  views (`projectStateByLinks`, `ObservableState.onCoreByLinks`, …), each
+  proven equal to its reference form under `runQueueRefined`.  The main trace's
+  IDLE-004 line now reports the live schedule.
+- **Debt.**  Two rows in `docs/REGISTERED_DEBT.md` §C: the dispatch payoffs'
+  `ct_not_in_q` and current-uniqueness premises (the next row), and the model
+  dispatch's single-core tick.
+
 ## v0.36.80 — WS-ZA ZA4.5 (part 1): run queue as linked lists, yield allocates nothing
 
 **Yield makes no heap allocation** (QEMU exerciser, normal build, steady
