@@ -53,7 +53,8 @@ theorem yieldChargeOnCore_confinedToCores (st st' : SystemState) (c : CoreId)
     · cases h
       refine ⟨?_, ?_, ?_, ?_, ?_, ?_⟩ <;> intro c' hc <;>
         simp [sliceExpireOnCore, hne c' hc, SystemState.rewriteObject_scheduler,
-          SystemState.rewriteObject_machine]
+          SystemState.rewriteObject_machine,
+          SystemState.runEnqueueOnCore_runQueueOnCore_ne _ _ _ _ _ (hne c' hc)]
     all_goals
       split at h
       · cases h
@@ -61,7 +62,8 @@ theorem yieldChargeOnCore_confinedToCores (st st' : SystemState) (c : CoreId)
           (markKeyChangeFor_confinedToCores _ _ _)
         refine ⟨?_, ?_, ?_, ?_, ?_, ?_⟩ <;> intro c' hc <;>
           simp [spendBudgetOnCore, replenishOnCore, hne c' hc,
-            SystemState.rewriteObject_scheduler, SystemState.rewriteObject_machine]
+            SystemState.rewriteObject_scheduler, SystemState.rewriteObject_machine,
+            SystemState.runEnqueueOnCore_runQueueOnCore_ne _ _ _ _ _ (hne c' hc)]
       · cases h
 
 /-- WS-ZA ZA4.3: **the yield writes only the executing core** — its charge and

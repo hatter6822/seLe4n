@@ -745,4 +745,15 @@ theorem markKeyChangeFrom_runQueueStage (pre post : SystemState) (tid : SeLe4n.T
   RunQueueStage_of_reading
     (markKeyChangeFrom_extract_frame runQueueReading pre post tid (fun _ _ => rfl))
 
+theorem markKeyChangeFor_currentPlacementFrame (st : SystemState) (tid : SeLe4n.ThreadId)
+    (k : SeLe4n.Priority × SeLe4n.Deadline × SeLe4n.DomainId) (c : CoreId) :
+    SystemState.CurrentPlacementFrame c st (markKeyChangeFor st tid k) :=
+  SystemState.CurrentPlacementFrame.of_parts (fun y h => by rw [markKeyChangeFor_getTcb?]; exact h)
+    (markKeyChangeFor_currentOnCore _ _ _ _) (fun c' _ => markKeyChangeFor_runQueueOnCore _ _ _ _)
+
+theorem markKeyChangeFrom_currentPlacementFrame (pre post : SystemState) (tid : SeLe4n.ThreadId)
+    (c : CoreId) : SystemState.CurrentPlacementFrame c post (markKeyChangeFrom pre post tid) :=
+  SystemState.CurrentPlacementFrame.of_parts (fun y h => by rw [markKeyChangeFrom_getTcb?]; exact h)
+    (markKeyChangeFrom_currentOnCore _ _ _ _) (fun c' _ => markKeyChangeFrom_runQueueOnCore _ _ _ _)
+
 end SeLe4n.Kernel

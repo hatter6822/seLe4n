@@ -7197,7 +7197,7 @@ theorem enqueueIdleThread_bootQuiescentFields (ist : IntermediateState)
     bootQuiescentFields (enqueueIdleThread ist c).state := by
   rw [enqueueIdleThread_state]
   unfold enqueueIdleThreadOnCore
-  have h1 := SystemState.runEnqueueOnCore_onlyObjectsSchedulerDiffer
+  have h1 := SystemState.runEnqueueAdmitted_onlyObjectsSchedulerDiffer
     ((ist.state.runRemoveOnCore c (idleThreadId c)).withObjectStored (idleThreadId c).toObjId
       (KernelObject.tcb (queuedIdleThread c))) c (idleThreadId c) (queuedIdleThread c).priority
   have h2 := SystemState.runRemoveOnCore_onlyObjectsSchedulerDiffer ist.state c (idleThreadId c)
@@ -7585,7 +7585,7 @@ private theorem enqueueIdleThread_preserves_asidTableConsistent (ist : Intermedi
   have hTbl : (enqueueIdleThread ist c).state.asidTable = ist.state.asidTable := by
     rw [enqueueIdleThread_state]
     unfold enqueueIdleThreadOnCore
-    have h1 := SystemState.runEnqueueOnCore_onlyObjectsSchedulerDiffer
+    have h1 := SystemState.runEnqueueAdmitted_onlyObjectsSchedulerDiffer
       ((ist.state.runRemoveOnCore c (idleThreadId c)).withObjectStored (idleThreadId c).toObjId
         (KernelObject.tcb (queuedIdleThread c))) c (idleThreadId c) (queuedIdleThread c).priority
     have h2 := SystemState.runRemoveOnCore_onlyObjectsSchedulerDiffer ist.state c (idleThreadId c)

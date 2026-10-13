@@ -647,7 +647,11 @@ theorem ensureRunnable_confinedToBootCore (st : SystemState) (tid : SeLe4n.Threa
     unfold ensureRunnable <;>
     (split
      · rfl
-     · split <;> simp [Ne.symm hc])
+     · split
+       · split
+         · simp [SystemState.runEnqueueAdmitted_runQueueOnCore_ne _ _ _ _ _ (Ne.symm hc)]
+         · rfl
+       · rfl)
 
 /-- `removeRunnable` removes from **the boot core's** run queue and clears the
 boot core's current slot; every other core is untouched. -/

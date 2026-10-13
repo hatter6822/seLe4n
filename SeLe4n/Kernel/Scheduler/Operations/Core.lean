@@ -1815,19 +1815,27 @@ def requeueOutgoingQueue (st : SystemState) (c : CoreId) : RunQueue :=
   | none => st.scheduler.runQueueOnCore c
   | some tid =>
       match st.getTcb? tid with
-      | some tcb => (st.scheduler.runQueueOnCore c).insert tid tcb.boostedPriority
+      | some tcb =>
+          if st.runEnqueueAdmits c tid then
+            (st.scheduler.runQueueOnCore c).insert tid tcb.boostedPriority
+          else st.scheduler.runQueueOnCore c
       | none => st.scheduler.runQueueOnCore c
 
 /-- WS-ZA ZA4.5: the domain switch's save and re-enqueue.  Core `c`'s outgoing
 current has its registers saved and goes back on core `c`'s queue through its
-TCB run-queue links (`runEnqueueOnCore`). -/
+TCB run-queue links.  Admission (`runEnqueueAdmits`) is read before the save,
+which writes only the register file and so cannot change it; a current thread
+queued on another core is left where it is, as `runEnqueueOnCore` leaves it. -/
 def requeueOutgoingOnCore (st : SystemState) (c : CoreId) : SystemState :=
   let stSaved := saveOutgoingContextOnCore st c
   match st.scheduler.currentOnCore c with
   | none => stSaved
   | some tid =>
       match st.getTcb? tid with
-      | some tcb => stSaved.runEnqueueOnCore c tid tcb.boostedPriority
+      | some tcb =>
+          if st.runEnqueueAdmits c tid then
+            stSaved.runEnqueueAdmitted c tid tcb.boostedPriority
+          else stSaved
       | none => stSaved
 
 /-- The re-enqueue touches the object store only in run-queue links past the
@@ -1838,7 +1846,9 @@ theorem requeueOutgoingOnCore_objectsAgreeOffRunLinks (st : SystemState) (c : Co
   split
   · exact .refl _
   · split
-    · exact SystemState.runEnqueueOnCore_objectsAgreeOffRunLinks _ _ _ _
+    · split
+      · exact SystemState.runEnqueueAdmitted_objectsAgreeOffRunLinks _ _ _ _
+      · exact .refl _
     · exact .refl _
 
 /-- The re-enqueue leaves the machine where the context save left it. -/
@@ -1848,7 +1858,9 @@ theorem requeueOutgoingOnCore_objectsAgreeOffRunLinks (st : SystemState) (c : Co
   split
   · rfl
   · split
-    · exact SystemState.runEnqueueOnCore_machine _ _ _ _
+    · split
+      · exact SystemState.runEnqueueAdmitted_machine _ _ _ _
+      · rfl
     · rfl
 
 /-- The re-enqueue's scheduler: core `c`'s queue is `requeueOutgoingQueue` and
@@ -1861,7 +1873,10 @@ theorem requeueOutgoingOnCore_scheduler (st : SystemState) (c : CoreId) :
   · refine ⟨st.scheduler.runQueueEndsOnCore c, ?_⟩
     simp [SchedulerState.setRunQueueOnCore_runQueueOnCore]
   · split
-    · exact ⟨_, by simp; rfl⟩
+    · split
+      · exact ⟨_, by simp [SystemState.runEnqueueAdmitted_scheduler]; rfl⟩
+      · refine ⟨st.scheduler.runQueueEndsOnCore c, ?_⟩
+        simp [SchedulerState.setRunQueueOnCore_runQueueOnCore]
     · refine ⟨st.scheduler.runQueueEndsOnCore c, ?_⟩
       simp [SchedulerState.setRunQueueOnCore_runQueueOnCore]
 
@@ -2335,18 +2350,18 @@ theorem objects_insert_tcb_frame (st : SystemState) (k : SeLe4n.ObjId)
 /-- WS-ZA ZA4.5: an enqueue through the threads places exactly as the bare
 queue insert does — the TCB links and the core's ends are not read by
 placement. -/
-theorem threadPlacedOnSomeCore_runEnqueueOnCore (S : SystemState) (c : CoreId)
+theorem threadPlacedOnSomeCore_runEnqueueAdmitted (S : SystemState) (c : CoreId)
     (t u : SeLe4n.ThreadId) (p : SeLe4n.Priority) :
-    threadPlacedOnSomeCore (S.runEnqueueOnCore c t p) u
+    threadPlacedOnSomeCore (S.runEnqueueAdmitted c t p) u
       = threadPlacedOnSomeCore
           { S with
               scheduler := S.scheduler.setRunQueueOnCore c
                 ((S.scheduler.runQueueOnCore c).insert t p) } u := by
   refine threadPlacedOnSomeCore_congr _ _ u (fun c' => ?_) (fun c' => ?_)
-  · simp only [SystemState.runEnqueueOnCore_scheduler,
+  · simp only [SystemState.runEnqueueAdmitted_scheduler,
       SchedulerState.setRunQueueOnCore_currentOnCore,
       SchedulerState.setRunQueueEndsOnCore_currentOnCore]
-  · rw [SystemState.runEnqueueOnCore_scheduler]
+  · rw [SystemState.runEnqueueAdmitted_scheduler]
     by_cases hc : c = c'
     · subst hc; simp only [SchedulerState.setRunQueueOnCore_runQueueOnCore_self]
     · simp only [SchedulerState.setRunQueueOnCore_runQueueOnCore_ne _ _ _ _ hc,
@@ -2364,7 +2379,13 @@ theorem threadPlacedOnSomeCore_save_and_reenqueue
       (({ st with objects := st.objects.insert prevTid.toObjId saved } : SystemState
         ).runEnqueueOnCore c prevTid prio) u
       = threadPlacedOnSomeCore st u := by
-  rw [threadPlacedOnSomeCore_runEnqueueOnCore]
+  unfold SystemState.runEnqueueOnCore
+  split
+  case isFalse =>
+    -- Not admitted: the enqueue is the identity, and the object write moves
+    -- no thread's placement.
+    exact threadPlacedOnSomeCore_congr st _ u (fun _ => rfl) (fun _ => Iff.rfl)
+  rw [threadPlacedOnSomeCore_runEnqueueAdmitted]
   show threadPlacedOnSomeCore
       { st with objects := st.objects.insert prevTid.toObjId saved,
                 scheduler := st.scheduler.setRunQueueOnCore c
@@ -2668,6 +2689,25 @@ theorem preemptCurrentOnCore_objects_frame (st : SystemState) (c : CoreId)
       · intro hObj; exact ⟨tcb', hObj, rfl, rfl⟩
 
 
+/-- The preempt leaves core `c`'s displaced current thread queued on some core:
+on `c` when the enqueue admits it, and otherwise on the core its run-queue links
+already name (the link agreement `hR` is what says that core's queue holds it). -/
+theorem preemptCurrentOnCore_outgoing_queued (st : SystemState) (c : CoreId)
+    (tid u : SeLe4n.ThreadId) (hObjInv : st.objects.invExt) (hR : st.runQueueRefined)
+    (hu : u ≠ tid) (hCur : st.scheduler.currentOnCore c = some u)
+    (hTcb : (st.getTcb? u).isSome) :
+    threadQueuedOnSomeCore (preemptCurrentOnCore st c tid) u = true := by
+  obtain ⟨prevTcb, hPrev⟩ := Option.isSome_iff_exists.mp hTcb
+  rw [threadQueuedOnSomeCore_eq_true_iff]
+  unfold preemptCurrentOnCore
+  rw [hCur]
+  dsimp only
+  rw [if_neg (by simpa using hu), SystemState.getTcbWitnessed?_eq_some hPrev]
+  dsimp only
+  refine SystemState.runEnqueueOnCore_queued_somewhere _
+    (SystemState.rewriteObject_tcb_runQueueRefined _ hObjInv hPrev (fun _ => rfl) hR) ?_
+  rw [SystemState.rewriteObject_tcb_getTcb?_self _ _ _ _ hObjInv]; rfl
+
 /-- **WS-RR RR7.36**: the per-core context switch preserves the inactive-flag
 relation.
 
@@ -2685,6 +2725,7 @@ theorem switchToThreadOnCore_preserves_threadInactiveFlagConsistent
     (hCurrentValid : ∀ u, st.scheduler.currentOnCore c = some u → (st.getTcb? u).isSome)
     (hActive : ∀ tcb, st.getTcb? tid = some tcb →
       inferThreadState st tid tcb ≠ .Inactive)
+    (hR : st.runQueueRefined)
     (hStep : switchToThreadOnCore st c tid = .ok st')
     (h : threadInactiveFlagConsistent st) :
     threadInactiveFlagConsistent st' := by
@@ -2708,17 +2749,8 @@ theorem switchToThreadOnCore_preserves_threadInactiveFlagConsistent
           threadQueuedOnSomeCore (preemptCurrentOnCore st c tid) u = true := by
         intro u hu hCurP
         rw [preemptCurrentOnCore_currentOnCore] at hCurP
-        obtain ⟨prevTcb, hPrev⟩ := Option.isSome_iff_exists.mp (hCurrentValid u hCurP)
-        rw [threadQueuedOnSomeCore_eq_true_iff]
-        refine ⟨c, ?_⟩
-        show u ∈ (preemptCurrentOnCore st c tid).scheduler.runQueueOnCore c
-        unfold preemptCurrentOnCore
-        rw [hCurP]
-        dsimp only
-        rw [if_neg (by simpa using hu), SystemState.getTcbWitnessed?_eq_some hPrev]
-        dsimp only
-        rw [SystemState.runEnqueueOnCore_runQueueOnCore_self, RunQueue.mem_insert]
-        exact Or.inr rfl
+        exact preemptCurrentOnCore_outgoing_queued st c tid u hObjInv hR hu hCurP
+          (hCurrentValid u hCurP)
       have hActiveP : ∀ tcb, (preemptCurrentOnCore st c tid).getTcb? tid = some tcb →
           inferThreadState (preemptCurrentOnCore st c tid) tid tcb ≠ .Inactive := by
         intro tcb hGet hInactive
@@ -2804,6 +2836,7 @@ follows then displaces it with nothing to fall back to. -/
 theorem switchToThreadOnCore_preserves_threadPlacedOnSomeCore
     (st st' : SystemState) (c : CoreId) (tid u : SeLe4n.ThreadId)
     (hTcb : (st.getTcb? u).isSome)
+    (hObjInv : st.objects.invExt) (hR : st.runQueueRefined)
     (hStep : switchToThreadOnCore st c tid = .ok st')
     (h : threadPlacedOnSomeCore st u = true) :
     threadPlacedOnSomeCore st' u = true := by
@@ -2817,17 +2850,7 @@ theorem switchToThreadOnCore_preserves_threadPlacedOnSomeCore
     · exact h
     · intro hCurP
       rw [preemptCurrentOnCore_currentOnCore] at hCurP
-      obtain ⟨prevTcb, hPrev⟩ := Option.isSome_iff_exists.mp hTcb
-      rw [threadQueuedOnSomeCore_eq_true_iff]
-      refine ⟨c, ?_⟩
-      show u ∈ (preemptCurrentOnCore st c tid).scheduler.runQueueOnCore c
-      unfold preemptCurrentOnCore
-      rw [hCurP]
-      dsimp only
-      rw [if_neg (by simpa using hu), SystemState.getTcbWitnessed?_eq_some hPrev]
-      dsimp only
-      rw [SystemState.runEnqueueOnCore_runQueueOnCore_self, RunQueue.mem_insert]
-      exact Or.inr rfl
+      exact preemptCurrentOnCore_outgoing_queued st c tid u hObjInv hR hu hCurP hTcb
 
 /-- **`v0.35.158`**: the other direction — a context switch keeps an
 **unplaced** thread unplaced, given it is not the thread being dispatched.
@@ -2883,13 +2906,10 @@ theorem preemptCurrentOnCore_mem_runQueueOnCore_self (st : SystemState) (c : Cor
           rw [if_neg hEq, SystemState.getTcbWitnessed?_eq_none hPT]
         rw [hId] at h; exact h
       | some ptcb =>
-        have hRq : (preemptCurrentOnCore st c incoming).scheduler.runQueueOnCore c
-            = (st.scheduler.runQueueOnCore c).insert prev ptcb.boostedPriority := by
-          unfold preemptCurrentOnCore; rw [hCur]; dsimp only
-          rw [if_neg hEq, SystemState.getTcbWitnessed?_eq_some hPT]
-          exact SystemState.runEnqueueOnCore_runQueueOnCore_self _ _ _ _
-        rw [hRq, RunQueue.mem_insert] at h
-        rcases h with h | h
+        unfold preemptCurrentOnCore at h; rw [hCur] at h; dsimp only at h
+        rw [if_neg hEq, SystemState.getTcbWitnessed?_eq_some hPT] at h
+        dsimp only at h
+        rcases SystemState.runEnqueueOnCore_mem_runQueueOnCore_self h with h | h
         · exact Or.inl h
         · exact Or.inr (by rw [h])
 
@@ -2985,7 +3005,7 @@ links writes the two queues as the abstract remove and insert, and each core's
 ends. -/
 theorem runMoveOnCore_scheduler (st : SystemState) (tid : SeLe4n.ThreadId)
     (fromCore toCore : CoreId) (p : SeLe4n.Priority) (h : fromCore ≠ toCore) :
-    ((st.runRemoveOnCore fromCore tid).runEnqueueOnCore toCore tid p).scheduler =
+    ((st.runRemoveOnCore fromCore tid).runEnqueueAdmitted toCore tid p).scheduler =
       ((((st.scheduler.setRunQueueOnCore fromCore
           ((st.scheduler.runQueueOnCore fromCore).remove tid)).setRunQueueOnCore toCore
           ((st.scheduler.runQueueOnCore toCore).insert tid p)).setRunQueueEndsOnCore fromCore
@@ -2994,7 +3014,7 @@ theorem runMoveOnCore_scheduler (st : SystemState) (tid : SeLe4n.ThreadId)
   have hQ : (st.runRemoveOnCore fromCore tid).scheduler.runQueueOnCore toCore
       = st.scheduler.runQueueOnCore toCore := by
     simp [SchedulerState.setRunQueueOnCore_runQueueOnCore_ne _ _ _ _ h]
-  rw [SystemState.runEnqueueOnCore_scheduler, hQ, SystemState.runRemoveOnCore_scheduler]
+  rw [SystemState.runEnqueueAdmitted_scheduler, hQ, SystemState.runRemoveOnCore_scheduler]
   rfl
 
 /-- WS-SM SM5.H.4 (full thread migration): migrate thread `tid`'s **run-queue
@@ -3018,8 +3038,9 @@ def migrateRunQueueOnAffinityChange (st : SystemState) (tid : SeLe4n.ThreadId)
     | some tcb =>
       if (st.scheduler.runQueueOnCore fromCore).contains tid then
         -- The thread leaves `fromCore`'s queue and joins `toCore`'s through its
-        -- TCB run-queue links (WS-ZA ZA4.5).
-        let stMoved := (st.runRemoveOnCore fromCore tid).runEnqueueOnCore toCore tid
+        -- TCB run-queue links (WS-ZA ZA4.5).  The removal leaves it on no queue
+        -- (its links named `fromCore`), so the enqueue is admitted.
+        let stMoved := (st.runRemoveOnCore fromCore tid).runEnqueueAdmitted toCore tid
           tcb.boostedPriority
         -- The reschedule-SGI accumulator (KSC-1): the insert on `toCore` is a
         -- wake there (the diff's queue rule); the removal from `fromCore`
@@ -3038,7 +3059,7 @@ theorem migrateRunQueueOnAffinityChange_objectsAgreeOffRunLinks (st : SystemStat
   · split
     · exact .refl _
     · split
-      · exact (SystemState.runEnqueueOnCore_objectsAgreeOffRunLinks _ _ _ _).trans
+      · exact (SystemState.runEnqueueAdmitted_objectsAgreeOffRunLinks _ _ _ _).trans
           (SystemState.runRemoveOnCore_objectsAgreeOffRunLinks _ _ _)
       · exact .refl _
 
@@ -3053,7 +3074,7 @@ theorem migrateRunQueueOnAffinityChange_preserves_objects_invExt (st : SystemSta
   · split
     · exact h
     · split
-      · exact SystemState.runEnqueueOnCore_objects_invExt _ _ _ _
+      · exact SystemState.runEnqueueAdmitted_objects_invExt _ _ _ _
           (SystemState.runRemoveOnCore_objects_invExt _ _ _ h)
       · exact h
 
@@ -3087,7 +3108,7 @@ no reservation moves no replenish entry. -/
   · split
     · rfl
     · split
-      · simp
+      · simp [SystemState.runEnqueueAdmitted_scheduler]
       · rfl
 
 -- The reschedule-SGI accumulator (KSC-1): `runningCoreOf?` moved down once

@@ -93,6 +93,39 @@ theorem initialThreadStartable_spec {st : SystemState} {tid : SeLe4n.ThreadId}
     obtain ⟨⟨⟨⟨h1, h2⟩, h3⟩, h4⟩, h5⟩ := h
     exact ⟨tcb, rfl, h1, h2, h3, h4, h5⟩
 
+/-- WS-ZA ZA4.5: does the start's enqueue place the thread?  It does when the
+thread is queued on no core and its run-queue links admit its home core
+(`runEnqueueAdmits`); otherwise the enqueue declines and the start writes only
+the flag.  `startFresh_of_startable` derives it for a startable thread from the
+link agreement. -/
+def startFresh (st : SystemState) (tid : SeLe4n.ThreadId) : Bool :=
+  !runnableOnSomeCore st tid && st.runEnqueueAdmits (determineTargetCore st tid) tid
+
+/-- The flag write keeps both halves of `startFresh`: it moves no queue and no
+run-queue link. -/
+theorem startFresh_ready {st : SystemState} {tid : SeLe4n.ThreadId} {tcb : TCB}
+    (hT : st.getTcb? tid = some tcb) (hInv : st.objects.invExt) :
+    (runnableOnSomeCore ({ st with objects := (st.objects.insert tid.toObjId
+        (.tcb { tcb with threadState := .Ready })) } : SystemState) tid ||
+      !({ st with objects := (st.objects.insert tid.toObjId
+        (.tcb { tcb with threadState := .Ready })) } : SystemState).runEnqueueAdmits
+          (determineTargetCore st tid) tid) = !startFresh st tid := by
+  have hT1 : ({ st with objects := (st.objects.insert tid.toObjId
+      (.tcb { tcb with threadState := .Ready })) } : SystemState).getTcb? tid =
+        some { tcb with threadState := .Ready } := by
+    rw [SystemState.getTcb?_eq_some_iff]
+    exact RHTable.getElem?_insert_self st.objects _ _ hInv
+  have hA : ({ st with objects := (st.objects.insert tid.toObjId
+      (.tcb { tcb with threadState := .Ready })) } : SystemState).runEnqueueAdmits
+        (determineTargetCore st tid) tid = st.runEnqueueAdmits (determineTargetCore st tid) tid := by
+    unfold SystemState.runEnqueueAdmits; rw [hT1, hT]
+  have hRn : runnableOnSomeCore ({ st with objects := (st.objects.insert tid.toObjId
+      (.tcb { tcb with threadState := .Ready })) } : SystemState) tid =
+        runnableOnSomeCore st tid := rfl
+  rw [hA, hRn]
+  unfold startFresh
+  cases runnableOnSomeCore st tid <;> cases st.runEnqueueAdmits (determineTargetCore st tid) tid <;> rfl
+
 -- ============================================================================
 -- §2  What the start writes
 -- ============================================================================
@@ -104,7 +137,7 @@ fields (WS-ZA ZA4.5: the enqueue also writes the run-queue links of the thread
 and its queue neighbours).  Everything the other lemmas say of the objects is
 read off this. -/
 theorem startInitialThreadOnCore_objectsAgree {st : SystemState} {tid : SeLe4n.ThreadId}
-    {tcb : TCB} (hT : st.getTcb? tid = some tcb) (hNR : runnableOnSomeCore st tid = false)
+    {tcb : TCB} (hT : st.getTcb? tid = some tcb) (hNR : startFresh st tid = true)
     (hInv : st.objects.invExt) :
     (startInitialThreadOnCore st tid).objectsAgreeOffRunLinks
       { st with
@@ -118,15 +151,17 @@ theorem startInitialThreadOnCore_objectsAgree {st : SystemState} {tid : SeLe4n.T
         some { tcb with threadState := .Ready } := by
     rw [SystemState.getTcb?_eq_some_iff]
     exact RHTable.getElem?_insert_self st.objects _ _ hInv
-  have hNR1 : runnableOnSomeCore ({ st with objects := (st.objects.insert tid.toObjId
-      (.tcb { tcb with threadState := .Ready })) } : SystemState) tid = false := hNR
-  exact enqueueRunnableOnCore_objectsAgree_marked _ _ tid _ hT1 hNR1
+  have hG := startFresh_ready hT hInv
+  rw [hNR] at hG
+  simp only [Bool.not_true, Bool.or_eq_false_iff, Bool.not_eq_false'] at hG
+  exact enqueueRunnableOnCore_objectsAgree_marked _ _ tid _ hT1
+    (wakeDeclines_eq_false_iff.mpr ⟨hG.1, hG.2⟩)
 
 /-- **WS-BP BP7.11** (the decomposition, scheduler half): the home core's run
 queue gains the thread at its boosted priority (ghost queue and concrete ends),
 and the home core's reschedule-pending flag is raised. -/
 theorem startInitialThreadOnCore_scheduler {st : SystemState} {tid : SeLe4n.ThreadId}
-    {tcb : TCB} (hT : st.getTcb? tid = some tcb) (hNR : runnableOnSomeCore st tid = false)
+    {tcb : TCB} (hT : st.getTcb? tid = some tcb) (hNR : startFresh st tid = true)
     (hInv : st.objects.invExt) :
     ∃ E : RunQueueEnds, (startInitialThreadOnCore st tid).scheduler =
       ((st.scheduler.setRunQueueEndsOnCore (determineTargetCore st tid) E).setRunQueueOnCore
@@ -140,9 +175,11 @@ theorem startInitialThreadOnCore_scheduler {st : SystemState} {tid : SeLe4n.Thre
         some { tcb with threadState := .Ready } := by
     rw [SystemState.getTcb?_eq_some_iff]
     exact RHTable.getElem?_insert_self st.objects _ _ hInv
-  have hNR1 : runnableOnSomeCore ({ st with objects := (st.objects.insert tid.toObjId
-      (.tcb { tcb with threadState := .Ready })) } : SystemState) tid = false := hNR
-  obtain ⟨E, hE⟩ := enqueueRunnableOnCore_scheduler_of_fresh _ _ tid _ hT1 hNR1
+  have hG := startFresh_ready hT hInv
+  rw [hNR] at hG
+  simp only [Bool.not_true, Bool.or_eq_false_iff, Bool.not_eq_false'] at hG
+  obtain ⟨E, hE⟩ := enqueueRunnableOnCore_scheduler_of_fresh _ _ tid _ hT1
+    (wakeDeclines_eq_false_iff.mpr ⟨hG.1, hG.2⟩)
   exact ⟨E, hE⟩
 
 /-- **WS-BP BP7.11** (field frame): the start writes the object store and the
@@ -164,11 +201,12 @@ theorem startInitialThreadOnCore_eq_of_none {st : SystemState} {tid : SeLe4n.Thr
   unfold enqueueRunnableOnCore
   rw [SystemState.getTcbWitnessed?_eq_none hT]
 
-/-- **WS-BP BP7.11**: on a thread already queued the start writes the flag and
-nothing else — the enqueue declines a queued thread.  (`initialThreadStartable`
-refuses that case; stated so every witness below is total.) -/
-theorem startInitialThreadOnCore_eq_of_runnable {st : SystemState} {tid : SeLe4n.ThreadId}
-    {tcb : TCB} (hT : st.getTcb? tid = some tcb) (hNR : runnableOnSomeCore st tid = true)
+/-- **WS-BP BP7.11**: on a thread already queued (or whose links name another
+core) the start writes the flag and nothing else — the enqueue declines it.
+(`initialThreadStartable` refuses that case; stated so every witness below is
+total.) -/
+theorem startInitialThreadOnCore_eq_of_declined {st : SystemState} {tid : SeLe4n.ThreadId}
+    {tcb : TCB} (hT : st.getTcb? tid = some tcb) (hNR : startFresh st tid = false)
     (hInv : st.objects.invExt) :
     startInitialThreadOnCore st tid =
       { st with objects := (st.objects.insert tid.toObjId
@@ -182,14 +220,15 @@ theorem startInitialThreadOnCore_eq_of_runnable {st : SystemState} {tid : SeLe4n
     exact RHTable.getElem?_insert_self st.objects _ _ hInv
   unfold enqueueRunnableOnCore
   rw [SystemState.getTcbWitnessed?_eq_some hT1]
-  have hNR1 : runnableOnSomeCore ({ st with objects := (st.objects.insert tid.toObjId
-      (.tcb { tcb with threadState := .Ready })) } : SystemState) tid = true := hNR
-  simp only [hNR1, ↓reduceIte]
+  have hG := startFresh_ready hT hInv
+  rw [hNR, Bool.not_false] at hG
+  dsimp only
+  rw [if_pos (by unfold wakeDeclines; exact hG)]
 
 /-- **WS-BP BP7.11**: the started thread's key holds `startedThread tcb`, off
 its run-queue fields. -/
 theorem startInitialThreadOnCore_objects_self {st : SystemState} {tid : SeLe4n.ThreadId}
-    {tcb : TCB} (hT : st.getTcb? tid = some tcb) (hNR : runnableOnSomeCore st tid = false)
+    {tcb : TCB} (hT : st.getTcb? tid = some tcb) (hNR : startFresh st tid = true)
     (hInv : st.objects.invExt) :
     ∃ t', (startInitialThreadOnCore st tid).objects[tid.toObjId]? = some (.tcb t') ∧
       t'.withoutRunLinks = (startedThread tcb).withoutRunLinks :=
@@ -210,14 +249,14 @@ theorem startInitialThreadOnCore_objects_ne {st : SystemState} {tid : SeLe4n.Thr
     unfold enqueueRunnableOnCore
     rw [SystemState.getTcbWitnessed?_eq_none hT]
   | some tcb =>
-    cases hNR : runnableOnSomeCore st tid with
-    | false =>
+    cases hNR : startFresh st tid with
+    | true =>
       rw [startInitialThreadOnCore_objectsAgree hT hNR hInv k]
       show (((st.objects.insert _ _).insert _ _).get? k).map _ = (st.objects.get? k).map _
       rw [RHTable.getElem?_insert_ne _ _ _ _ hNeB (RHTable_insert_preserves_invExt _ _ _ hInv),
         RHTable.getElem?_insert_ne _ _ _ _ hNeB hInv]
-    | true =>
-      rw [startInitialThreadOnCore_eq_of_runnable hT hNR hInv]
+    | false =>
+      rw [startInitialThreadOnCore_eq_of_declined hT hNR hInv]
       show ((st.objects.insert _ _).get? k).map _ = (st.objects.get? k).map _
       rw [RHTable.getElem?_insert_ne _ _ _ _ hNeB hInv]
 
@@ -247,7 +286,7 @@ theorem startInitialThreadOnCore_currentOnCore (st : SystemState) (tid : SeLe4n.
 boosted priority. -/
 theorem startInitialThreadOnCore_runQueueOnCore_self {st : SystemState}
     {tid : SeLe4n.ThreadId} {tcb : TCB} (hT : st.getTcb? tid = some tcb)
-    (hNR : runnableOnSomeCore st tid = false) (hInv : st.objects.invExt) :
+    (hNR : startFresh st tid = true) (hInv : st.objects.invExt) :
     (startInitialThreadOnCore st tid).scheduler.runQueueOnCore (determineTargetCore st tid) =
       (st.scheduler.runQueueOnCore (determineTargetCore st tid)).insert tid
         tcb.boostedPriority := by
@@ -256,18 +295,18 @@ theorem startInitialThreadOnCore_runQueueOnCore_self {st : SystemState}
   exact SchedulerState.setRunQueueOnCore_runQueueOnCore_self _ _ _
 
 /-- **WS-BP BP7.11**: where the start writes nothing to the scheduler — the
-thread resolves to nothing, or is already queued — every core's queue is as
-before. -/
+thread resolves to nothing, or the enqueue declines it — every core's queue is
+as before. -/
 theorem startInitialThreadOnCore_runQueueOnCore_ne' (st : SystemState)
     (tid : SeLe4n.ThreadId) (hInv : st.objects.invExt)
-    (h : st.getTcb? tid = none ∨ runnableOnSomeCore st tid = true) (c : CoreId) :
+    (h : st.getTcb? tid = none ∨ startFresh st tid = false) (c : CoreId) :
     (startInitialThreadOnCore st tid).scheduler.runQueueOnCore c =
       st.scheduler.runQueueOnCore c := by
   rcases h with hT | hNR
   · rw [startInitialThreadOnCore_eq_of_none hT]
   · cases hT : st.getTcb? tid with
     | none => rw [startInitialThreadOnCore_eq_of_none hT]
-    | some tcb => rw [startInitialThreadOnCore_eq_of_runnable hT hNR hInv]
+    | some tcb => rw [startInitialThreadOnCore_eq_of_declined hT hNR hInv]
 
 /-- **WS-BP BP7.11** (cross-core frame): every other core's run queue is
 untouched. -/
@@ -283,24 +322,13 @@ theorem startInitialThreadOnCore_runQueueOnCore_ne (st : SystemState)
     unfold enqueueRunnableOnCore
     rw [SystemState.getTcbWitnessed?_eq_none hT]
   | some tcb =>
-    cases hNR : runnableOnSomeCore st tid with
-    | false =>
+    cases hNR : startFresh st tid with
+    | true =>
       obtain ⟨E, hE⟩ := startInitialThreadOnCore_scheduler hT hNR hInv
       rw [hE, SchedulerState.markReschedulePendingOnCore_runQueueOnCore,
         SchedulerState.setRunQueueOnCore_runQueueOnCore_ne _ _ _ _ hc,
         SchedulerState.setRunQueueEndsOnCore_runQueueOnCore]
-    | true =>
-      unfold startInitialThreadOnCore enqueueRunnableOnCore
-      split
-      · split
-        · rw [SystemState.updateTcb_scheduler]
-        · rename_i hRun
-          have : runnableOnSomeCore (st.updateTcb tid fun t => { t with threadState := .Ready }) tid =
-              runnableOnSomeCore st tid := by
-            unfold runnableOnSomeCore; rw [SystemState.updateTcb_scheduler]
-          rw [this, hNR] at hRun
-          exact absurd rfl hRun
-      · rw [SystemState.updateTcb_scheduler]
+    | false => rw [startInitialThreadOnCore_eq_of_declined hT hNR hInv]
 
 -- ============================================================================
 -- §3  The `IntermediateState` witnesses
@@ -342,13 +370,13 @@ theorem startInitialThreadOnCore_objects_cases (st : SystemState)
     | some tcb =>
       right
       have hT0 := (SystemState.getTcb?_eq_some_iff _ _ _).mp hT
-      cases hNR : runnableOnSomeCore st tid with
-      | false =>
+      cases hNR : startFresh st tid with
+      | true =>
         obtain ⟨t', h', ht⟩ := startInitialThreadOnCore_objects_self hT hNR hInv
         rw [h'] at hObj; cases hObj
         exact ⟨tcb, t', hT0, rfl, Or.inr (Or.inr ht)⟩
-      | true =>
-        rw [startInitialThreadOnCore_eq_of_runnable hT hNR hInv] at hObj
+      | false =>
+        rw [startInitialThreadOnCore_eq_of_declined hT hNR hInv] at hObj
         change (st.objects.insert _ _).get? _ = _ at hObj
         rw [RHTable.getElem?_insert_self _ _ _ hInv] at hObj
         cases hObj; exact ⟨tcb, _, hT0, rfl, Or.inr (Or.inl rfl)⟩
@@ -386,14 +414,14 @@ theorem startInitialThreadOnCore_getTcb?_isSome (st : SystemState)
   by_cases hEq : tid.toObjId = t.toObjId
   · have hTid : tid = t := ThreadId.toObjId_injective _ _ hEq
     subst hTid
-    cases hNR : runnableOnSomeCore st tid with
-    | false =>
+    cases hNR : startFresh st tid with
+    | true =>
       obtain ⟨t', h', _⟩ := startInitialThreadOnCore_objects_self hT hNR hInv
       rw [(SystemState.getTcb?_eq_some_iff _ _ _).mpr h']; rfl
-    | true =>
+    | false =>
       have : (startInitialThreadOnCore st tid).getTcb? tid =
           some { tcb with threadState := .Ready } := by
-        rw [SystemState.getTcb?_eq_some_iff, startInitialThreadOnCore_eq_of_runnable hT hNR hInv]
+        rw [SystemState.getTcb?_eq_some_iff, startInitialThreadOnCore_eq_of_declined hT hNR hInv]
         exact RHTable.getElem?_insert_self st.objects _ _ hInv
       rw [this]; rfl
   · obtain ⟨o', h', ho⟩ := KernelObject.map_withoutRunLinks_eq_some
@@ -485,10 +513,10 @@ theorem startInitialThreadOnCore_runnableOnSomeCore_ne (st : SystemState)
     | none =>
       rw [startInitialThreadOnCore_runQueueOnCore_ne' st tid hInv (Or.inl hT)]
     | some tcb =>
-      cases hNR : runnableOnSomeCore st tid with
-      | true =>
-        rw [startInitialThreadOnCore_runQueueOnCore_ne' st tid hInv (Or.inr hNR)]
+      cases hNR : startFresh st tid with
       | false =>
+        rw [startInitialThreadOnCore_runQueueOnCore_ne' st tid hInv (Or.inr hNR)]
+      | true =>
         rw [startInitialThreadOnCore_runQueueOnCore_self hT hNR hInv]
         have := RunQueue.mem_insert
           (st.scheduler.runQueueOnCore (determineTargetCore st tid)) tid tcb.boostedPriority tid'
@@ -509,7 +537,7 @@ theorem startInitialThreadOnCore_runningOnSomeCore (st : SystemState)
 
 /-- **WS-BP BP7.11**: the started thread is queued — on its home core. -/
 theorem startInitialThreadOnCore_mem_self {st : SystemState} {tid : SeLe4n.ThreadId}
-    {tcb : TCB} (hT : st.getTcb? tid = some tcb) (hNR : runnableOnSomeCore st tid = false)
+    {tcb : TCB} (hT : st.getTcb? tid = some tcb) (hNR : startFresh st tid = true)
     (hInv : st.objects.invExt) :
     tid ∈ (startInitialThreadOnCore st tid).scheduler.runQueueOnCore
       (determineTargetCore st tid) := by
@@ -519,11 +547,23 @@ theorem startInitialThreadOnCore_mem_self {st : SystemState} {tid : SeLe4n.Threa
 /-- **WS-BP BP7.11**: ...so it is placed on some core. -/
 theorem startInitialThreadOnCore_runnableOnSomeCore_self {st : SystemState}
     {tid : SeLe4n.ThreadId} {tcb : TCB} (hT : st.getTcb? tid = some tcb)
-    (hNR : runnableOnSomeCore st tid = false) (hInv : st.objects.invExt) :
+    (hNR : startFresh st tid = true) (hInv : st.objects.invExt) :
     runnableOnSomeCore (startInitialThreadOnCore st tid) tid = true := by
   unfold runnableOnSomeCore
   rw [List.any_eq_true]
   exact ⟨_, mem_allCores _, startInitialThreadOnCore_mem_self hT hNR hInv⟩
+
+/-- WS-ZA ZA4.5: a startable thread is fresh under the link agreement — queued
+nowhere, so its links name no core and its home core admits it. -/
+theorem startFresh_of_startable {st : SystemState} {tid : SeLe4n.ThreadId}
+    (hStart : initialThreadStartable st tid = true) (hR : st.runQueueRefined) :
+    startFresh st tid = true := by
+  obtain ⟨tcb, hT, _, _, _, hNR, _⟩ := initialThreadStartable_spec hStart
+  have hA : st.runEnqueueAdmits (determineTargetCore st tid) tid = true :=
+    SystemState.runEnqueueAdmits_of_refined hR (by rw [hT]; rfl) fun c' _ =>
+      RunQueue.contains_false_of_not_mem (not_mem_runQueueOnCore_of_runnableOnSomeCore_false hNR c')
+  unfold startFresh
+  rw [hNR, hA]; rfl
 
 /-- **WS-BP BP7.11**: **the start keeps the full thread-state classification.**
 The started thread is stored `.Ready` and is queued on no current slot, which is
@@ -532,9 +572,10 @@ its placement.  So the boot state's `threadStateConsistent` — and with it the
 inactive-flag relation the live decisions read — survives every start. -/
 theorem startInitialThreadOnCore_preserves_threadStateConsistent {st : SystemState}
     {tid : SeLe4n.ThreadId} (hStart : initialThreadStartable st tid = true)
-    (hInv : st.objects.invExt) (h : threadStateConsistent st) :
+    (hInv : st.objects.invExt) (hR : st.runQueueRefined) (h : threadStateConsistent st) :
     threadStateConsistent (startInitialThreadOnCore st tid) := by
-  obtain ⟨tcb, hT, _, _, _, hNR, hNRun⟩ := initialThreadStartable_spec hStart
+  obtain ⟨tcb, hT, _, _, _, -, hNRun⟩ := initialThreadStartable_spec hStart
+  have hNR := startFresh_of_startable hStart hR
   intro oid t hObj
   by_cases hEq : tid.toObjId = oid
   · subst hEq
@@ -576,12 +617,14 @@ boost is its base priority; every thread already queued is another thread,
 whose record and bucket the start leaves alone. -/
 theorem startInitialThreadOnCore_preserves_runQueueBootSound {st : SystemState}
     {tid : SeLe4n.ThreadId} (hStart : initialThreadStartable st tid = true)
-    (hInv : st.objects.invExt) (c : CoreId) (h : runQueueBootSound st c) :
+    (hInv : st.objects.invExt) (hR : st.runQueueRefined) (c : CoreId)
+    (h : runQueueBootSound st c) :
     runQueueBootSound (startInitialThreadOnCore st tid) c := by
-  obtain ⟨tcb, hT, _, hBoost, hSlice, hNR, _⟩ := initialThreadStartable_spec hStart
+  obtain ⟨tcb, hT, _, hBoost, hSlice, hNR0, _⟩ := initialThreadStartable_spec hStart
+  have hNR := startFresh_of_startable hStart hR
   obtain ⟨hNodup, hMem⟩ := h
   unfold runQueueBootSound
-  have hNotMem := not_mem_runQueueOnCore_of_runnableOnSomeCore_false hNR
+  have hNotMem := not_mem_runQueueOnCore_of_runnableOnSomeCore_false hNR0
   -- A thread already queued on `c` is not the started one, so its record is framed.
   have hOld : ∀ tid', tid' ∈ st.scheduler.runQueueOnCore c → ∀ t,
       st.objects[tid'.toObjId]? = some (.tcb t) → 0 < t.timeSlice → t.pipBoost = none →
@@ -637,9 +680,11 @@ def threadStarted (st : SystemState) (tid : SeLe4n.ThreadId) : Prop :=
 
 /-- **WS-BP BP7.11**: the start starts its thread. -/
 theorem startInitialThreadOnCore_threadStarted {st : SystemState} {tid : SeLe4n.ThreadId}
-    (hStart : initialThreadStartable st tid = true) (hInv : st.objects.invExt) :
+    (hStart : initialThreadStartable st tid = true) (hInv : st.objects.invExt)
+    (hR : st.runQueueRefined) :
     threadStarted (startInitialThreadOnCore st tid) tid := by
-  obtain ⟨tcb, hT, _, _, _, hNR, _⟩ := initialThreadStartable_spec hStart
+  obtain ⟨tcb, hT, _, _, _, -, _⟩ := initialThreadStartable_spec hStart
+  have hNR := startFresh_of_startable hStart hR
   obtain ⟨t', h', ht⟩ := startInitialThreadOnCore_objects_self hT hNR hInv
   exact ⟨startInitialThreadOnCore_runnableOnSomeCore_self hT hNR hInv, t',
     (SystemState.getTcb?_eq_some_iff _ _ _).mpr h', TCB.proj_eq_of_withoutRunLinks_eq TCB.threadState ht⟩

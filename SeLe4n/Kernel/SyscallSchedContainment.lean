@@ -616,11 +616,13 @@ theorem yieldChargeOnCore_frame_ne (st st' : SystemState) (e d : CoreId)
   · cases h
   · split at h
     · cases h
-      simp [sliceExpireOnCore, hne, SystemState.rewriteObject_scheduler]
+      simp [sliceExpireOnCore, hne, SystemState.rewriteObject_scheduler,
+        SystemState.runEnqueueOnCore_runQueueOnCore_ne _ _ _ _ _ hne]
     all_goals
       split at h
       · cases h
-        simp [spendBudgetOnCore, replenishOnCore, hne, SystemState.rewriteObject_scheduler]
+        simp [spendBudgetOnCore, replenishOnCore, hne, SystemState.rewriteObject_scheduler,
+          SystemState.runEnqueueOnCore_runQueueOnCore_ne _ _ _ _ _ hne]
       · cases h
 
 /-- **WS-ZA ZA4.3**: `.yield`'s footprint covers its writes.  The run and

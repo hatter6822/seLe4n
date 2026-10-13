@@ -391,8 +391,8 @@ theorem schedContextBind_replenishQueueOnCore (st st' : SystemState)
                 · split
                   · simp only [SystemState.markReschedulePendingOnCore,
                       SchedulerState.markReschedulePendingOnCore_replenishQueueOnCore,
-                      SystemState.runEnqueueOnCore_scheduler,
-                      SchedulerState.setRunQueueOnCore_replenishQueueOnCore,
+                      SystemState.runEnqueueOnCore_scheduler]
+                    split <;> simp only [SchedulerState.setRunQueueOnCore_replenishQueueOnCore,
                       SchedulerState.setRunQueueEndsOnCore_replenishQueueOnCore,
                       SystemState.updateTcb_scheduler, SystemState.rewriteObject_scheduler]
                   · simp only [SystemState.updateTcb_scheduler,

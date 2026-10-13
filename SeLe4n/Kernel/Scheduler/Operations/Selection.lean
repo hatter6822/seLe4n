@@ -1737,6 +1737,30 @@ theorem placedCoreOf?_sound (st : SystemState) (tid : SeLe4n.ThreadId)
       || st.scheduler.currentOnCore c == some tid := by
   simpa using List.find?_some h
 
+/-- WS-ZA ZA4.5: does a wake on core `c` leave `tid` where it is?  It does when
+the thread is already runnable on some core (the single-placement guard below),
+or when its run-queue links do not admit `c` (`runEnqueueAdmits`: its links
+already place it on another core's queue, seL4's `tcbQueued`).  Both are the
+one test, so a wake either places the thread or changes nothing. -/
+def wakeDeclines (st : SystemState) (c : CoreId) (tid : SeLe4n.ThreadId) : Bool :=
+  runnableOnSomeCore st tid || !st.runEnqueueAdmits c tid
+
+theorem wakeDeclines_eq_false_iff {st : SystemState} {c : CoreId} {tid : SeLe4n.ThreadId} :
+    wakeDeclines st c tid = false ↔
+      runnableOnSomeCore st tid = false ∧ st.runEnqueueAdmits c tid = true := by
+  unfold wakeDeclines
+  cases runnableOnSomeCore st tid <;> cases st.runEnqueueAdmits c tid <;> simp
+
+/-- Under the link agreement, a thread runnable on no core is admitted
+everywhere, so a wake declines it only when it is already runnable. -/
+theorem wakeDeclines_of_refined {st : SystemState} {c : CoreId} {tid : SeLe4n.ThreadId}
+    (hR : st.runQueueRefined) (hT : (st.getTcb? tid).isSome)
+    (hF : runnableOnSomeCore st tid = false) : wakeDeclines st c tid = false := by
+  refine wakeDeclines_eq_false_iff.mpr ⟨hF, SystemState.runEnqueueAdmits_of_refined hR hT ?_⟩
+  intro c' _
+  have hC := List.any_eq_false.mp hF c' (SeLe4n.Kernel.Concurrency.mem_allCores c')
+  simpa using hC
+
 /-- WS-SM SM5.C.1 (plan §3.3): enqueue `tid` as a runnable thread on core `c`.
 
 The per-core "make `tid` runnable on core `c`" primitive — the per-core
@@ -1778,12 +1802,14 @@ def enqueueRunnableOnCore (st : SystemState) (c : CoreId)
     (tid : SeLe4n.ThreadId) : SystemState :=
   match st.getTcbWitnessed? tid with
   | some ⟨tcb, h⟩ =>
-      if runnableOnSomeCore st tid then st
+      -- WS-ZA ZA4.5: a thread its links already place on a queue is not
+      -- placed again (`wakeDeclines`, seL4's `tcbQueued`).
+      if wakeDeclines st c tid then st
       else
         -- WS-ZA ZA4.5: the insert writes the thread's run-queue links
-        -- (`runEnqueueOnCore`), after the `.ready` mark.
+        -- (`runEnqueueAdmitted`), after the `.ready` mark.
         let st' := (st.rewriteObject tid.toObjId (.tcb { tcb with ipcState := .ready })
-            (SystemState.rewriteAdmissible_tcb h _)).runEnqueueOnCore c tid tcb.boostedPriority
+            (SystemState.rewriteAdmissible_tcb h _)).runEnqueueAdmitted c tid tcb.boostedPriority
         -- The reschedule-SGI accumulator (KSC-1): a run-queue insert on `c`
         -- stales `c`'s decision (the diff's wake rule).
         { st' with scheduler := st'.scheduler.markReschedulePendingOnCore c }
@@ -1798,7 +1824,7 @@ theorem enqueueRunnableOnCore_onlyObjectsSchedulerDiffer (st : SystemState) (c :
   split
   · split
     · exact .refl _
-    · exact ((SystemState.runEnqueueOnCore_onlyObjectsSchedulerDiffer _ c tid _).withScheduler
+    · exact ((SystemState.runEnqueueAdmitted_onlyObjectsSchedulerDiffer _ c tid _).withScheduler
         _).trans rfl
   · exact .refl _
 
@@ -1815,16 +1841,38 @@ theorem enqueueRunnableOnCore_runQueueRefined {st : SystemState} (c : CoreId)
     split
     · exact hR
     · rename_i hNot
+      have hAdm := (wakeDeclines_eq_false_iff.mp (by simpa using hNot)).2
       refine SystemState.runQueueRefined_of_frame (fun _ _ => rfl) rfl rfl ?_
-      refine SystemState.runEnqueueOnCore_refined
+      refine SystemState.runEnqueueAdmitted_refined
         (SystemState.rewriteObject_tcb_runQueueRefined _ hInv hT (fun _ => rfl) hR) ?_ ?_
       · rw [SystemState.rewriteObject_tcb_getTcb?_self _ _ _ _ hInv]; rfl
-      · intro c' _
-        have hF : runnableOnSomeCore st tid = false := by simpa using hNot
-        have hC := List.any_eq_false.mp hF c' (SeLe4n.Kernel.Concurrency.mem_allCores c')
+      · intro c' hne
         show (st.scheduler.runQueueOnCore c').contains tid = false
-        simpa using hC
+        exact SystemState.runEnqueueAdmits_not_contains hR hAdm c' hne
   · exact hR
+
+/-- The wake keeps a thread admitted on core `c` admitted there: the `.ready`
+mark moves no core code, and the enqueue on `c` either leaves another thread's
+code alone or puts the woken one on `c`. -/
+theorem enqueueRunnableOnCore_runEnqueueAdmits {st : SystemState} (c : CoreId)
+    (tid y : SeLe4n.ThreadId) (hInv : st.objects.invExt) (h : st.runEnqueueAdmits c y = true) :
+    (enqueueRunnableOnCore st c tid).runEnqueueAdmits c y = true := by
+  unfold enqueueRunnableOnCore
+  split
+  · rename_i tcb hT _
+    split
+    · exact h
+    · show (SystemState.runEnqueueAdmitted _ c tid _).runEnqueueAdmits c y = true
+      have h' := SystemState.runEnqueueAdmits_rewriteObject_tcb
+        (t' := { tcb with ipcState := .ready }) (SystemState.rewriteAdmissible_tcb hT _) hInv hT
+        rfl c y
+      rw [← h'] at h
+      by_cases hy : y = tid
+      · subst hy; exact SystemState.runEnqueueAdmitted_runEnqueueAdmits_self _ c y _ h
+      · rw [SystemState.runEnqueueAdmits_congr
+          (SystemState.runEnqueueAdmitted_runCoreCode_ne _ c tid y _ hy)]
+        exact h
+  · exact h
 
 /-- WS-ZA ZA4.5: the enqueue is the identity, or it inserts `tid` into core
 `c`'s run queue (ghost queue and concrete ends) and marks `c` for rescheduling. -/
@@ -1839,7 +1887,7 @@ theorem enqueueRunnableOnCore_scheduler_cases (st : SystemState) (c : CoreId)
   split
   · split
     · exact Or.inl rfl
-    · exact Or.inr ⟨_, _, by simp only [SystemState.runEnqueueOnCore_scheduler]; rfl⟩
+    · exact Or.inr ⟨_, _, by simp only [SystemState.runEnqueueAdmitted_scheduler]; rfl⟩
   · exact Or.inl rfl
 
 /-- SM6.D.2 micro-frame (cross-core): `enqueueRunnableOnCore` only *adds* `tid`
@@ -1864,13 +1912,13 @@ theorem enqueueRunnableOnCore_mem_old (st : SystemState) (c c' : CoreId)
 enqueue inserts it into core `c`'s run queue at its boosted priority. -/
 theorem enqueueRunnableOnCore_scheduler_of_fresh (st : SystemState) (c : CoreId)
     (tid : SeLe4n.ThreadId) (tcb : TCB) (hTcb : st.getTcb? tid = some tcb)
-    (hFresh : runnableOnSomeCore st tid = false) :
+    (hFresh : wakeDeclines st c tid = false) :
     ∃ E : RunQueueEnds, (enqueueRunnableOnCore st c tid).scheduler =
       ((st.scheduler.setRunQueueEndsOnCore c E).setRunQueueOnCore c
         ((st.scheduler.runQueueOnCore c).insert tid tcb.boostedPriority)).markReschedulePendingOnCore c := by
   simp only [enqueueRunnableOnCore, SystemState.getTcbWitnessed?_eq_some hTcb, hFresh,
     Bool.false_eq_true, if_false]
-  exact ⟨_, by simp only [SystemState.runEnqueueOnCore_scheduler]; rfl⟩
+  exact ⟨_, by simp only [SystemState.runEnqueueAdmitted_scheduler]; rfl⟩
 
 /-- WS-ZA ZA4.5: on a thread that resolves to a TCB and is not yet runnable, the
 enqueue's object store is the `.ready` mark — one insert at the thread's key —
@@ -1878,13 +1926,13 @@ up to TCB run-queue fields (the enqueue also writes the thread's and its
 neighbours' run-queue links). -/
 theorem enqueueRunnableOnCore_objectsAgree_marked (st : SystemState) (c : CoreId)
     (tid : SeLe4n.ThreadId) (tcb : TCB) (hTcb : st.getTcb? tid = some tcb)
-    (hFresh : runnableOnSomeCore st tid = false) :
+    (hFresh : wakeDeclines st c tid = false) :
     (enqueueRunnableOnCore st c tid).objectsAgreeOffRunLinks
       { st with objects := st.objects.insert tid.toObjId (.tcb { tcb with ipcState := .ready }) } := by
   simp only [enqueueRunnableOnCore, SystemState.getTcbWitnessed?_eq_some hTcb, hFresh,
     Bool.false_eq_true, if_false]
   exact SystemState.objectsAgreeOffRunLinks.congr rfl rfl
-    (SystemState.runEnqueueOnCore_objectsAgreeOffRunLinks _ c tid _)
+    (SystemState.runEnqueueAdmitted_objectsAgreeOffRunLinks _ c tid _)
 
 /-- WS-SM SM5.C.1 (preservation): `enqueueRunnableOnCore` preserves the
 RobinHood object-store invariant.  Its object-store writes are the woken
@@ -1900,7 +1948,7 @@ theorem enqueueRunnableOnCore_preserves_objects_invExt (st : SystemState)
       simp only [enqueueRunnableOnCore, SystemState.getTcbWitnessed?_eq_some hTcb]
       split
       · exact hInv
-      · exact SystemState.runEnqueueOnCore_objects_invExt _ c tid _
+      · exact SystemState.runEnqueueAdmitted_objects_invExt _ c tid _
           (SeLe4n.Kernel.RobinHood.RHTable.insert_preserves_invExt st.objects _ _ hInv)
 
 /-- WS-ZA ZA4.5: the enqueue keeps the object store's kernel-level table
@@ -1913,7 +1961,7 @@ theorem enqueueRunnableOnCore_objects_invExtK (st : SystemState) (c : CoreId)
   split
   · split
     · exact hK
-    · exact SystemState.runEnqueueOnCore_objects_invExtK _ c tid _
+    · exact SystemState.runEnqueueAdmitted_objects_invExtK _ c tid _
         (SeLe4n.Kernel.RobinHood.RHTable.insert_preserves_invExtK _ _ _ hK)
   · exact hK
 
@@ -1936,7 +1984,7 @@ theorem enqueueRunnableOnCore_kindPreservingWrite (st : SystemState) (c : CoreId
     · exact kindPreservingWrite.refl _
     · exact (SystemState.rewriteObject_kindPreservingWrite st tid.toObjId _
         (SystemState.rewriteAdmissible_tcb hw _) hInv).trans
-        (SystemState.runEnqueueOnCore_objectsAgreeOffRunLinks _ c tid _).kindPreserving
+        (SystemState.runEnqueueAdmitted_objectsAgreeOffRunLinks _ c tid _).kindPreserving
 
 /-- The enqueue keeps the lifecycle metadata's consistency with the object
 store: it writes no metadata, and every object it writes keeps its kind. -/
@@ -2215,6 +2263,15 @@ theorem descheduleAt_runQueueStage (st : SystemState) (tid : SeLe4n.ThreadId)
   cases placed with
   | none => exact SystemState.RunQueueStage.refl st
   | some c => exact removeRunnableOnCore_runQueueStage st tid c
+
+/-- The removal at a resolved placement is a current-placement frame. -/
+theorem descheduleAt_currentPlacementFrame (st : SystemState) (tid : SeLe4n.ThreadId)
+    (placed : Option CoreId) (c : CoreId) :
+    SystemState.CurrentPlacementFrame c st (descheduleAt st tid placed) := by
+  unfold descheduleAt
+  cases placed with
+  | none => exact .refl c st
+  | some c0 => exact SystemState.CurrentPlacementFrame.runDescheduleOnCore st c c0 tid
 
 
 /-- WS-RR RR2.9 (frame): descheduling a thread on a core writes that core's run

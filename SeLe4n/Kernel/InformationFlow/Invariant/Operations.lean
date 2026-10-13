@@ -4569,11 +4569,11 @@ theorem migrateRunQueueOnAffinityChange_preserves_projection
         -- links (WS-ZA ZA4.5): the store agrees off those links, which the
         -- projection strips.
         have hA : SystemState.objectsAgreeOffRunLinks
-            ((st.runRemoveOnCore fromCore tid).runEnqueueOnCore toCore tid tcb.boostedPriority) st :=
-          (SystemState.runEnqueueOnCore_objectsAgreeOffRunLinks _ _ _ _).trans
+            ((st.runRemoveOnCore fromCore tid).runEnqueueAdmitted toCore tid tcb.boostedPriority) st :=
+          (SystemState.runEnqueueAdmitted_objectsAgreeOffRunLinks _ _ _ _).trans
             (SystemState.runRemoveOnCore_objectsAgreeOffRunLinks _ _ _)
         have hObj := projectObjects_of_objectsAgreeOffRunLinks ctx observer hA
-        have hD := ((SystemState.runEnqueueOnCore_onlyObjectsSchedulerDiffer _ toCore tid
+        have hD := ((SystemState.runEnqueueAdmitted_onlyObjectsSchedulerDiffer _ toCore tid
           tcb.boostedPriority).trans (SystemState.runRemoveOnCore_onlyObjectsSchedulerDiffer st fromCore tid))
         unfold SystemState.onlyObjectsSchedulerDiffer at hD
         dsimp only

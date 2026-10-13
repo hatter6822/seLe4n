@@ -228,7 +228,7 @@ theorem startInitialThread_preserves_bootStartShape (ist : IntermediateState)
     refine ⟨rq', re', rp', ?_⟩
     show (startInitialThreadOnCore ist.state tid).scheduler = _
     rw [hrq', hSch]
-  · exact startInitialThreadOnCore_preserves_runQueueBootSound hStart hInv bootCoreId hQueue
+  · exact startInitialThreadOnCore_preserves_runQueueBootSound hStart hInv hRun bootCoreId hQueue
 
 /-- **WS-BP BP7.11**: the started stage leaves a state of boot shape. -/
 theorem bootFromPlatformCheckedStartedFor_bootStartShape
@@ -289,20 +289,21 @@ leaves every earlier one started
 (`Kernel.startInitialThreadOnCore_preserves_threadStarted`). -/
 theorem startInitialThreads_ok_started :
     ∀ (L : List SeLe4n.ThreadId) (ist ist' : IntermediateState),
+      ist.state.runQueueRefined →
       startInitialThreads L ist = .ok ist' → ∀ tid ∈ L, threadStarted ist'.state tid := by
   intro L
   induction L with
-  | nil => intro _ _ _ tid hMem; cases hMem
+  | nil => intro _ _ _ _ tid hMem; cases hMem
   | cons tid rest ih =>
-    intro ist ist' h tid' hMem
+    intro ist ist' hR h tid' hMem
     unfold startInitialThreads at h
     split at h
     · rename_i hStart
       rcases List.mem_cons.mp hMem with rfl | hRest
       · exact startInitialThreads_induct (fun i => threadStarted i.state tid')
           (fun i t hs hP => startInitialThreadOnCore_preserves_threadStarted hs i.hAllTables.1.1 hP)
-          rest _ _ h (startInitialThreadOnCore_threadStarted hStart ist.hAllTables.1.1)
-      · exact ih _ _ h tid' hRest
+          rest _ _ h (startInitialThreadOnCore_threadStarted hStart ist.hAllTables.1.1 hR)
+      · exact ih _ _ (startInitialThreadOnCore_runQueueRefined _ _ ist.hAllTables.1.1 hR) h tid' hRest
     · cases h
 
 /-- **WS-BP BP7.11**: ...on the started boot, every thread the configuration
@@ -312,8 +313,10 @@ theorem bootFromPlatformCheckedStartedFor_started
     (ist : IntermediateState)
     (h : bootFromPlatformCheckedStartedFor cores config = .ok ist) :
     ∀ tid ∈ config.initialThreads, threadStarted ist.state tid := by
-  obtain ⟨base, _, hStart⟩ := bootFromPlatformCheckedStartedFor_ok cores config ist h
-  exact startInitialThreads_ok_started _ _ _ hStart
+  obtain ⟨base, hBase, hStart⟩ := bootFromPlatformCheckedStartedFor_ok cores config ist h
+  obtain ⟨_, _, _, _, _, hRun, _⟩ := bootFromPlatformCheckedWithIdleThreadsFor_bootStartShape cores
+    (bootFromPlatformCheckedWithIdleThreadsFor_ok_nodup cores config base hBase) config base hBase
+  exact startInitialThreads_ok_started _ _ _ hRun hStart
 
 /-- **WS-BP BP7.11**: **the started boot keeps the full thread-state
 classification** — the idle boot's (`bootFromPlatformCheckedWithIdleThreads_threadStateConsistent`)
@@ -324,10 +327,13 @@ theorem bootFromPlatformCheckedStartedFor_allCores_threadStateConsistent
     (h : bootFromPlatformCheckedStartedFor SeLe4n.Kernel.Concurrency.allCores config = .ok ist) :
     threadStateConsistent ist.state := by
   obtain ⟨base, hBase, hStart⟩ := bootFromPlatformCheckedStartedFor_ok _ config ist h
+  obtain ⟨_, _, _, _, _, hRun, _⟩ := bootFromPlatformCheckedWithIdleThreadsFor_bootStartShape _
+    SeLe4n.Kernel.Concurrency.allCores_nodup config base hBase
   rw [bootFromPlatformCheckedWithIdleThreadsFor_allCores] at hBase
-  exact startInitialThreads_induct (fun i => threadStateConsistent i.state)
-    (fun i t hs hP => startInitialThreadOnCore_preserves_threadStateConsistent hs i.hAllTables.1.1 hP)
-    _ _ _ hStart (bootFromPlatformCheckedWithIdleThreads_threadStateConsistent config base hBase)
+  exact (startInitialThreads_induct (fun i => i.state.runQueueRefined ∧ threadStateConsistent i.state)
+    (fun i t hs hP => ⟨startInitialThreadOnCore_runQueueRefined _ _ i.hAllTables.1.1 hP.1,
+      startInitialThreadOnCore_preserves_threadStateConsistent hs i.hAllTables.1.1 hP.1 hP.2⟩)
+    _ _ _ hStart ⟨hRun, bootFromPlatformCheckedWithIdleThreads_threadStateConsistent config base hBase⟩).2
 
 /-- **WS-BP BP7.11**: ...and with it the inactive-flag relation the live
 decisions read. -/

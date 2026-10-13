@@ -321,16 +321,18 @@ theorem ensureRunnable_preserves_projection
     | none => rfl
     | some tcb =>
           simp only [hNotMem, hTcb, if_false] at hObj
-          have hD := SystemState.runEnqueueOnCore_onlyObjectsSchedulerDiffer st bootCoreId tid
+          by_cases hAdm : st.runEnqueueAdmits bootCoreId tid = true
+          case neg => simp only [hAdm, Bool.false_eq_true, if_false]
+          simp only [hAdm, if_true] at hObj ⊢
+          have hD := SystemState.runEnqueueAdmitted_onlyObjectsSchedulerDiffer st bootCoreId tid
             tcb.boostedPriority
           unfold SystemState.onlyObjectsSchedulerDiffer at hD
-          dsimp only
           rw [hD] at hObj ⊢
           -- the enqueue frames every projection except the objects (equal off
           -- run-queue fields) and projectRunnable.
           simp only [projectState, projectCurrent, projectActiveDomain, projectDomainTimeRemaining,
-            projectDomainScheduleIndex, projectMachineRegs, hObj,
-            SystemState.runEnqueueOnCore_scheduler,
+            projectDomainScheduleIndex, projectMachineRegs,
+            SystemState.runEnqueueAdmitted_scheduler,
             SchedulerState.markReschedulePendingOnCore_currentOnCore, SchedulerState.setRunQueueOnCore_currentOnCore,
             SchedulerState.setRunQueueEndsOnCore_currentOnCore,
             SchedulerState.markReschedulePendingOnCore_activeDomainOnCore, SchedulerState.setRunQueueOnCore_activeDomainOnCore,
@@ -340,7 +342,7 @@ theorem ensureRunnable_preserves_projection
             SchedulerState.markReschedulePendingOnCore_domainScheduleIndexOnCore, SchedulerState.setRunQueueOnCore_domainScheduleIndexOnCore,
             SchedulerState.setRunQueueEndsOnCore_domainScheduleIndexOnCore]
           congr 1
-          simp only [projectRunnable, SchedulerState.runnable, SystemState.runEnqueueOnCore_scheduler,
+          simp only [projectRunnable, SchedulerState.runnable,
             SchedulerState.markReschedulePendingOnCore_runQueueOnCore, SchedulerState.setRunQueueOnCore_runQueueOnCore_self]
           exact RunQueue.toList_filter_insert_neg _ _ _ _ hTidHigh hNotMem
 

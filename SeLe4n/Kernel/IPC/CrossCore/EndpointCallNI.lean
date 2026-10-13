@@ -116,10 +116,9 @@ theorem enqueueRunnableOnCore_preserves_projection
     | none => exact Or.inl rfl
     | some t => exact Or.inr ⟨t, rfl⟩
   · simp only [enqueueRunnableOnCore, SystemState.getTcbWitnessed?_eq_none hTcb]
-  · by_cases hFresh : runnableOnSomeCore st tid = true
-    · simp only [enqueueRunnableOnCore, SystemState.getTcbWitnessed?_eq_some hTcb, hFresh,
-        if_true]
-    have hF : runnableOnSomeCore st tid = false := by simpa using hFresh
+  · by_cases hFresh : wakeDeclines st c tid = true
+    · rw [enqueueRunnableOnCore_eq_self_of_declines st c tid hFresh]
+    have hF : wakeDeclines st c tid = false := by simpa using hFresh
     -- The objects: equal off run-queue fields to the `.ready` mark of a high
     -- object, and the projection strips those fields.
     have hObj : projectObjects ctx observer (enqueueRunnableOnCore st c tid)

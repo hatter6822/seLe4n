@@ -127,10 +127,11 @@ example (st : SystemState) (c : CoreId) (tid : SeLe4n.ThreadId) (st' : SystemSta
 example (st : SystemState) (c : CoreId) (tid prevTid : SeLe4n.ThreadId) (prevTcb : TCB)
     (st' : SystemState)
     (hCur : st.scheduler.currentOnCore c = some prevTid) (hNe : prevTid ≠ tid)
-    (hPrev : st.getTcb? prevTid = some prevTcb)
+    (hPrev : st.getTcb? prevTid = some prevTcb) (hInv : st.objects.invExt)
+    (hAdm : st.runEnqueueAdmits c prevTid = true)
     (h : switchToThreadOnCore st c tid = .ok st') :
     prevTid ∈ (st'.scheduler.runQueueOnCore c).toList :=
-  switchToThreadOnCore_preempts_previous st c tid prevTid prevTcb st' hCur hNe hPrev h
+  switchToThreadOnCore_preempts_previous st c tid prevTid prevTcb st' hCur hNe hPrev hInv hAdm h
 
 /-- SM5.B.4 / Theorem 3.2.3: reject-remote — a switch onto a non-affinity core. -/
 example (st : SystemState) (c c' : CoreId) (tid : SeLe4n.ThreadId) (tidTcb : TCB)

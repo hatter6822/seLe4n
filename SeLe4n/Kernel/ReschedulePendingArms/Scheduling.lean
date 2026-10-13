@@ -521,7 +521,8 @@ theorem sliceExpireOnCore_stepCovers (e : CoreId) (st : SystemState)
         (SystemState.runEnqueueOnCore_objectsAgreeOffRunLinks _ e tid _))
   · intro c hc
     have hne : e ≠ c := Ne.symm hc
-    simp [sliceExpireOnCore, hne, SystemState.rewriteObject_scheduler]
+    simp [sliceExpireOnCore, hne, SystemState.rewriteObject_scheduler,
+      SystemState.runEnqueueOnCore_runQueueOnCore_ne _ _ _ _ _ hne]
 
 /-- **The budget spend and its key hook cover.**  The spend rewrites the
 SchedContext's budget and deadline — a key input only the caller reads
@@ -564,7 +565,8 @@ theorem spendBudgetKeyHook_stepCovers (st : SystemState) (e : CoreId)
       exact Option.some.inj hb2
   · have hne : e ≠ c := Ne.symm hc
     intro t ht
-    simpa [replenishOnCore, hne, SystemState.rewriteObject_scheduler] using ht
+    simpa [replenishOnCore, hne, SystemState.rewriteObject_scheduler,
+      SystemState.runEnqueueOnCore_runQueueOnCore_ne _ _ _ _ _ hne] using ht
   · simp [replenishOnCore, SystemState.rewriteObject_scheduler]
   · simpa [replenishOnCore, SystemState.rewriteObject_scheduler] using hp
   · rw [markKeyChangeFor_objects]
@@ -651,18 +653,17 @@ theorem runEnqueueMark_slots (S : SystemState) (s0 : SchedulerState) (h c : Core
         ((S.runEnqueueOnCore h x p).markReschedulePendingOnCore h).scheduler.currentOnCore c =
           s0.currentOnCore c) := by
   subst hS
-  simp only [SystemState.markReschedulePendingOnCore, SystemState.runEnqueueOnCore_scheduler]
+  simp only [SystemState.markReschedulePendingOnCore]
   by_cases hh : h = c
   · subst hh; exact Or.inl (SchedulerState.markReschedulePendingOnCore_reschedulePendingOnCore_self _ _)
   · refine Or.inr ⟨fun t ht => ?_, by simp⟩
     rwa [SchedulerState.markReschedulePendingOnCore_runQueueOnCore,
-      SchedulerState.setRunQueueOnCore_runQueueOnCore_ne _ h c _ hh,
-      SchedulerState.setRunQueueEndsOnCore_runQueueOnCore] at ht
+      SystemState.runEnqueueOnCore_runQueueOnCore_ne _ h c _ _ hh] at ht
 
 theorem runEnqueueMark_flag_mono (S : SystemState) (h c : CoreId) (x : SeLe4n.ThreadId)
     (p : SeLe4n.Priority) (hF : S.scheduler.reschedulePendingOnCore c = true) :
     ((S.runEnqueueOnCore h x p).markReschedulePendingOnCore h).scheduler.reschedulePendingOnCore c = true := by
-  simp only [SystemState.markReschedulePendingOnCore, SystemState.runEnqueueOnCore_scheduler]
+  simp only [SystemState.markReschedulePendingOnCore]
   by_cases hh : h = c
   · subst hh; exact SchedulerState.markReschedulePendingOnCore_reschedulePendingOnCore_self _ _
   · rw [SchedulerState.markReschedulePendingOnCore_reschedulePendingOnCore_ne _ _ _ hh]

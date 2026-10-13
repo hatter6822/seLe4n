@@ -1304,7 +1304,9 @@ theorem ensureRunnable_replenishQueueOnCore (st : SystemState) (tid : SeLe4n.Thr
   split
   · rfl
   · split
-    · simp
+    · split
+      · simp
+      · rfl
     · rfl
 
 -- WS-SM (PR #880 round 8, frame): the target-aware wake never touches any
@@ -1409,7 +1411,7 @@ theorem timerTickBudgetOnCore_bound_exhausted_replenish_eq
     SeLe4n.Model.SchedulerState.setLastTimeoutErrorsOnCore_replenishQueueOnCore,
     timeoutBlockedThreads_replenishQueueOnCore,
     SeLe4n.Model.SchedulerState.setRunQueueOnCore_replenishQueueOnCore,
-      SeLe4n.Model.SystemState.runEnqueueOnCore_scheduler,
+      SeLe4n.Model.SystemState.runEnqueueOnCore_replenishQueueOnCore,
       SeLe4n.Model.SchedulerState.setRunQueueEndsOnCore_replenishQueueOnCore]
 
 /-- **WS-RR RR7.39 (frame)**: the per-core budget charge writes **only core `c`'s**
@@ -1440,7 +1442,7 @@ theorem timerTickBudgetOnCore_replenishQueueOnCore_ne (st : SystemState) (c : Co
         obtain ⟨hst, _⟩ := hStep
         subst hst
         simp [SchedulerState.setRunQueueOnCore_replenishQueueOnCore,
-      SeLe4n.Model.SystemState.runEnqueueOnCore_scheduler,
+      SeLe4n.Model.SystemState.runEnqueueOnCore_replenishQueueOnCore,
       SeLe4n.Model.SchedulerState.setRunQueueEndsOnCore_replenishQueueOnCore]
   -- bound and donated: the same three sub-arms (an or-pattern in the source is
   -- two goals here), so the script runs on both.
@@ -1454,7 +1456,7 @@ theorem timerTickBudgetOnCore_replenishQueueOnCore_ne (st : SystemState) (c : Co
          simp only [SchedulerState.setLastTimeoutErrorsOnCore_replenishQueueOnCore,
            timeoutBlockedThreads_replenishQueueOnCore,
            SchedulerState.setRunQueueOnCore_replenishQueueOnCore,
-      SeLe4n.Model.SystemState.runEnqueueOnCore_scheduler,
+      SeLe4n.Model.SystemState.runEnqueueOnCore_replenishQueueOnCore,
       SeLe4n.Model.SchedulerState.setRunQueueEndsOnCore_replenishQueueOnCore]
          exact replenishOnCore_replenishQueueOnCore_ne _ c c' _ _ hne
        · -- not exhausted: an object write only
@@ -1489,7 +1491,7 @@ theorem timerTickBudgetOnCore_donated_exhausted_replenish_eq
     SeLe4n.Model.SchedulerState.setLastTimeoutErrorsOnCore_replenishQueueOnCore,
     timeoutBlockedThreads_replenishQueueOnCore,
     SeLe4n.Model.SchedulerState.setRunQueueOnCore_replenishQueueOnCore,
-      SeLe4n.Model.SystemState.runEnqueueOnCore_scheduler,
+      SeLe4n.Model.SystemState.runEnqueueOnCore_replenishQueueOnCore,
       SeLe4n.Model.SchedulerState.setRunQueueEndsOnCore_replenishQueueOnCore]
 
 theorem timerTickBudgetOnCore_preserves_replenishQueueValidOnCore

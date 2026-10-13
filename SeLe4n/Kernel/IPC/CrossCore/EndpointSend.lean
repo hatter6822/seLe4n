@@ -197,9 +197,13 @@ theorem wakeThread_bootCore_eq_ensureRunnable (st : SystemState) (tid : SeLe4n.T
       = st := by
     rw [hObj]
   simp only [hSt]
+  unfold wakeDeclines
+  rw [hSome]
   by_cases hMem : (st.scheduler.runQueueOnCore bootCoreId).contains tid = true
-  · simp [hSome, hMem, RunQueue.mem_iff_contains]
-  · simp [hSome, hMem, RunQueue.mem_iff_contains]
+  · simp [hMem, RunQueue.mem_iff_contains]
+  · by_cases hA : st.runEnqueueAdmits bootCoreId tid = true
+    · simp [hMem, hA, RunQueue.mem_iff_contains]
+    · simp [hMem, hA, RunQueue.mem_iff_contains]
 
 /-- WS-SM SM6 (**the blocking leg's bootCore bridge**): with no receiver waiting,
 the per-core send on the boot core commits **exactly** the single-core

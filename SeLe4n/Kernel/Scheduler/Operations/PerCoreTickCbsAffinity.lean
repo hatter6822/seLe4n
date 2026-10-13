@@ -121,8 +121,8 @@ theorem enqueueRunnableOnCore_boundThread (st : SystemState) (c : CoreId)
     unfold enqueueRunnableOnCore
     rw [SystemState.getTcbWitnessed?_eq_none hTcb]
   | some tcb =>
-    cases hR : runnableOnSomeCore st tid0 with
-    | true => rw [enqueueRunnableOnCore_eq_self_of_runnable st c tid0 hR]
+    cases hR : wakeDeclines st c tid0 with
+    | true => rw [enqueueRunnableOnCore_eq_self_of_declines st c tid0 hR]
     | false =>
       -- The enqueue agrees off run-queue fields with the `.ready` mark, a TCB
       -- write no SchedContext lookup sees.

@@ -3167,7 +3167,7 @@ run_check "INVARIANT" bash -lc 'rg -U -n "^def timerTickBudgetOnCorePreempts \(s
 # The idle enqueue is a STORE -- the key may hold nothing, and a store is what
 # registers a new object in the index -- between the run-queue link writes:
 # unlink any earlier placement, store the idle TCB, link it in.
-run_check "INVARIANT" bash -lc 'rg -U -n "^def enqueueIdleThreadOnCore \(st : SystemState\) \(c : CoreId\) : SystemState :=\n  \(\(st\.runRemoveOnCore c \(idleThreadId c\)\)\.withObjectStored \(idleThreadId c\)\.toObjId\n      \(KernelObject\.tcb \(queuedIdleThread c\)\)\)\.runEnqueueOnCore c \(idleThreadId c\)" SeLe4n/Kernel/Scheduler/Operations/IdleEnqueue.lean'
+run_check "INVARIANT" bash -lc 'rg -U -n "^def enqueueIdleThreadOnCore \(st : SystemState\) \(c : CoreId\) : SystemState :=\n  \(\(st\.runRemoveOnCore c \(idleThreadId c\)\)\.withObjectStored \(idleThreadId c\)\.toObjId\n      \(KernelObject\.tcb \(queuedIdleThread c\)\)\)\.runEnqueueAdmitted c \(idleThreadId c\)" SeLe4n/Kernel/Scheduler/Operations/IdleEnqueue.lean'
 run_negative_check "INVARIANT" bash -lc 'rg -U -n "^def enqueueIdleThreadOnCore \(st : SystemState\)[^\n]*(\n([ \t][^\n]*)?)*objects\.insert" SeLe4n/Kernel/Scheduler/Operations/IdleEnqueue.lean'
 # The timer suite charges a thread the fixture STORES and resolves it through
 # the witnessed lookup; a TCB fabricated beside the state cannot be charged.

@@ -913,7 +913,7 @@ theorem preemptCurrentOnCore_domainTimeRemainingOnCore (st : SystemState) (c c' 
       = st.scheduler.domainTimeRemainingOnCore c' := by
   simp only [preemptCurrentOnCore]; repeat' split
   all_goals first | rfl | simp only [SchedulerState.setCurrentOnCore_domainTimeRemainingOnCore,
-      SchedulerState.setRunQueueOnCore_domainTimeRemainingOnCore, SystemState.runEnqueueOnCore_scheduler,
+      SchedulerState.setRunQueueOnCore_domainTimeRemainingOnCore, SystemState.runEnqueueOnCore_domainTimeRemainingOnCore,
       SystemState.rewriteObject_scheduler, SchedulerState.setRunQueueEndsOnCore_domainTimeRemainingOnCore]
 
 theorem preemptCurrentOnCore_domainScheduleIndexOnCore (st : SystemState) (c c' : CoreId)
@@ -922,7 +922,7 @@ theorem preemptCurrentOnCore_domainScheduleIndexOnCore (st : SystemState) (c c' 
       = st.scheduler.domainScheduleIndexOnCore c' := by
   simp only [preemptCurrentOnCore]; repeat' split
   all_goals first | rfl | simp only [SchedulerState.setCurrentOnCore_domainScheduleIndexOnCore,
-      SchedulerState.setRunQueueOnCore_domainScheduleIndexOnCore, SystemState.runEnqueueOnCore_scheduler,
+      SchedulerState.setRunQueueOnCore_domainScheduleIndexOnCore, SystemState.runEnqueueOnCore_domainScheduleIndexOnCore,
       SystemState.rewriteObject_scheduler, SchedulerState.setRunQueueEndsOnCore_domainScheduleIndexOnCore]
 
 theorem switchToThreadOnCore_domainTimeRemainingOnCore (st st' : SystemState) (c c' : CoreId)
@@ -1192,7 +1192,10 @@ theorem migrateRunQueueOnAffinityChange_confinedToCores (st : SystemState)
     · split
       · rfl
       · split
-        · simp [SchedulerState.setRunQueueOnCore_runQueueOnCore_ne, Ne.symm hf, Ne.symm ht]
+        · dsimp only
+          rw [SchedulerState.markReschedulePendingOnCore_runQueueOnCore,
+            SystemState.runEnqueueAdmitted_runQueueOnCore_ne _ _ _ _ _ (Ne.symm ht),
+            SystemState.runRemoveOnCore_runQueueOnCore_ne _ _ _ _ (Ne.symm hf)]
         · rfl
   all_goals intro c _
   all_goals (unfold migrateRunQueueOnAffinityChange; repeat' split)

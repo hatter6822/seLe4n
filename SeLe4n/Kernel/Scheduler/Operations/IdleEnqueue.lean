@@ -107,7 +107,7 @@ threads are created here (they need not pre-exist), so there is no
 `getTcb?`-resolves precondition and no fail-closed branch. -/
 def enqueueIdleThreadOnCore (st : SystemState) (c : CoreId) : SystemState :=
   ((st.runRemoveOnCore c (idleThreadId c)).withObjectStored (idleThreadId c).toObjId
-      (KernelObject.tcb (queuedIdleThread c))).runEnqueueOnCore c (idleThreadId c)
+      (KernelObject.tcb (queuedIdleThread c))).runEnqueueAdmitted c (idleThreadId c)
     (queuedIdleThread c).priority
 
 /-- WS-ZA ZA4.5: off the run-queue links, the enqueue's object store is the bare
@@ -117,7 +117,7 @@ theorem enqueueIdleThreadOnCore_objectsAgreeOffRunLinks (st : SystemState) (c : 
     (hInv : st.objects.invExt) :
     (enqueueIdleThreadOnCore st c).objectsAgreeOffRunLinks
       (st.withObjectStored (idleThreadId c).toObjId (KernelObject.tcb (queuedIdleThread c))) :=
-  (SystemState.runEnqueueOnCore_objectsAgreeOffRunLinks _ _ _ _).trans
+  (SystemState.runEnqueueAdmitted_objectsAgreeOffRunLinks _ _ _ _).trans
     ((SystemState.runRemoveOnCore_objectsAgreeOffRunLinks st c _).withObjectStored
       (SystemState.runRemoveOnCore_objects_invExt _ _ _ hInv) hInv _ _)
 
@@ -143,7 +143,7 @@ theorem enqueueIdleThreadOnCore_runQueueRefined (st : SystemState) (c : CoreId)
   have hR2 := SystemState.withObjectStored_tcb_runQueueRefined (t := queuedIdleThread c) hInv1 rfl
     (fun c' => by rw [(hR1 c').contains]; exact hGone c') hR1
   unfold enqueueIdleThreadOnCore
-  refine SystemState.runEnqueueOnCore_refined hR2 ?_ (fun c' _ => ?_)
+  refine SystemState.runEnqueueAdmitted_refined hR2 ?_ (fun c' _ => ?_)
   · unfold SystemState.getTcb?
     rw [SystemState.withObjectStored_objects_self _ _ _ hInv1]
     rfl
@@ -163,7 +163,7 @@ theorem enqueueIdleThreadOnCore_scheduler (st : SystemState) (c : CoreId) :
             (queuedIdleThread c).priority)).setRunQueueOnCore c
         (((st.scheduler.runQueueOnCore c).remove (idleThreadId c)).insert (idleThreadId c)
           (queuedIdleThread c).priority) := by
-  simp only [enqueueIdleThreadOnCore, SystemState.runEnqueueOnCore_scheduler,
+  simp only [enqueueIdleThreadOnCore, SystemState.runEnqueueAdmitted_scheduler,
     SystemState.withObjectStored_scheduler, SystemState.runRemoveOnCore_scheduler,
     SchedulerState.setRunQueueOnCore_runQueueOnCore_self]
   rw [SchedulerState.setRunQueueOnCore_setRunQueueEndsOnCore,
@@ -174,7 +174,7 @@ theorem enqueueIdleThreadOnCore_scheduler (st : SystemState) (c : CoreId) :
 the link writes the object store and the scheduler. -/
 theorem enqueueIdleThreadOnCore_machine (st : SystemState) (c : CoreId) :
     (enqueueIdleThreadOnCore st c).machine = st.machine := by
-  simp only [enqueueIdleThreadOnCore, SystemState.runEnqueueOnCore_machine]
+  simp only [enqueueIdleThreadOnCore, SystemState.runEnqueueAdmitted_machine]
   rw [storeObject_machine_eq _ _ _ _ (SystemState.storeObject_eq_withObjectStored _ _ _),
     SystemState.runRemoveOnCore_machine]
 
@@ -362,7 +362,7 @@ theorem enqueueIdleThreadOnCore_objects_of_fresh (st : SystemState) (c : CoreId)
     at hS2o hS2s hS2t
   have hL2 : S2.runLinkOn c (idleThreadId c) = RunQueue.RunQueueLink.none := by
     unfold SystemState.runLinkOn; rw [hS2t]; rfl
-  rw [SystemState.runEnqueueOnCore_objects, hL2, if_neg (by decide)]
+  rw [SystemState.runEnqueueAdmitted_objects, hL2, if_neg (by decide)]
   unfold SystemState.runAppendLinks
   simp only [hS2s, hS1s, hTail, hBTail, SystemState.updateTcbAtCode, if_true]
   rw [SystemState.objects_mapTcbInPlace]
@@ -404,7 +404,7 @@ RobinHood invariant — the unlink and append rewrite resident values, the store
 is an `insert`. -/
 theorem enqueueIdleThreadOnCore_preserves_objects_invExt (st : SystemState) (c : CoreId)
     (hInv : st.objects.invExt) : (enqueueIdleThreadOnCore st c).objects.invExt :=
-  SystemState.runEnqueueOnCore_objects_invExt _ _ _ _
+  SystemState.runEnqueueAdmitted_objects_invExt _ _ _ _
     (SystemState.withObjectStored_preserves_objects_invExt _ _ _
       (SystemState.runRemoveOnCore_objects_invExt _ _ _ hInv))
 
@@ -421,7 +421,7 @@ theorem enqueueIdleThreadOnCore_preserves_runQueueOnCore_wellFormed (st : System
 run-queue link writes beside it leave the object index alone. -/
 theorem enqueueIdleThreadOnCore_objectIndex_length_le (st : SystemState) (c : CoreId) :
     (enqueueIdleThreadOnCore st c).objectIndex.length ≤ st.objectIndex.length + 1 := by
-  have h1 := SystemState.runEnqueueOnCore_onlyObjectsSchedulerDiffer
+  have h1 := SystemState.runEnqueueAdmitted_onlyObjectsSchedulerDiffer
     ((st.runRemoveOnCore c (idleThreadId c)).withObjectStored (idleThreadId c).toObjId
       (KernelObject.tcb (queuedIdleThread c))) c (idleThreadId c) (queuedIdleThread c).priority
   have h2 := SystemState.runRemoveOnCore_onlyObjectsSchedulerDiffer st c (idleThreadId c)
@@ -443,8 +443,8 @@ theorem enqueueIdleThreadOnCore_preserves_allTablesInvExtK (st : SystemState) (c
     (SystemState.runRemoveOnCore_objects_invExtK _ _ _ hAll.1) hAll
   have h2 := SystemState.withObjectStored_preserves_allTablesInvExtK _ (idleThreadId c).toObjId
     (KernelObject.tcb (queuedIdleThread c)) h1
-  exact (SystemState.runEnqueueOnCore_onlyObjectsSchedulerDiffer _ _ _ _).allTablesInvExtK
-    (SystemState.runEnqueueOnCore_objects_invExtK _ _ _ _ h2.1) h2
+  exact (SystemState.runEnqueueAdmitted_onlyObjectsSchedulerDiffer _ _ _ _).allTablesInvExtK
+    (SystemState.runEnqueueAdmitted_objects_invExtK _ _ _ _ h2.1) h2
 
 /-- The enqueue preserves the per-object CNode-slot invariant: the one key it
 stores now holds a TCB, which is not a CNode, every other key is framed, and the
@@ -497,7 +497,7 @@ theorem enqueueIdleThreadOnCore_preserves_objectTypeMetadataConsistent (st : Sys
   have hC2 := SystemState.withObjectStored_preserves_objectTypeMetadataConsistent _
     (idleThreadId c).toObjId (KernelObject.tcb (queuedIdleThread c))
     hAll1.1.1 hAll1.2.2.2.2.2.1.1 hC1
-  exact (SystemState.runEnqueueOnCore_onlyObjectsSchedulerDiffer _ _ _ _).objectTypeMetadataConsistent
-    (SystemState.runEnqueueOnCore_objectsAgreeOffRunLinks _ _ _ _) hC2
+  exact (SystemState.runEnqueueAdmitted_onlyObjectsSchedulerDiffer _ _ _ _).objectTypeMetadataConsistent
+    (SystemState.runEnqueueAdmitted_objectsAgreeOffRunLinks _ _ _ _) hC2
 
 end SeLe4n.Kernel

@@ -986,7 +986,9 @@ theorem requeueOutgoingOnCore_objects_invExt (st : SystemState) (c : CoreId)
   split
   · exact hS
   · split
-    · exact SystemState.runEnqueueOnCore_objects_invExt _ _ _ _ hS
+    · split
+      · exact SystemState.runEnqueueAdmitted_objects_invExt _ _ _ _ hS
+      · exact hS
     · exact hS
 
 /-- WS-SM SM5.D.5 (local helper): `restoreIncomingContext` writes only the machine

@@ -3174,6 +3174,9 @@ theorem dispatchCapabilityOnly_preserves_ipcInvariantFull
     (hObjInv : st.objects.invExt)
     (hInv : ipcInvariantFull st)
     (hPack : capabilityDispatchQuiescence decoded cap st)
+    (hR : st.runQueueRefined) (hAdm : st.currentRequeueAdmitted executingCore)
+    (hU : ∀ c' t, st.scheduler.currentOnCore executingCore = some t →
+      st.scheduler.currentOnCore c' = some t → c' = executingCore)
     (hStep : k st = .ok ((), st')) :
     ipcInvariantFull st' := by
   unfold dispatchCapabilityOnly at hArm
@@ -3356,9 +3359,7 @@ theorem dispatchCapabilityOnly_preserves_ipcInvariantFull
                   exact schedContextUnbindOnCore_preserves_ipcInvariantFull st st' vScId _
                     sgiU hObjInv hInv
                     (hPack.unbindBoundThreadPassive scId hSy hTgt vScId hVal)
-                    (fun stMid h => schedContextUnbind_preserves_objects_invExt vScId st
-                      stMid hObjInv h)
-                    hUn
+                    hR hAdm hU hUn
     all_goals try cases hStep
   case tcbBindNotification =>
     cases hTgt : cap.target <;> simp only [hTgt] at hStep
@@ -3423,7 +3424,7 @@ theorem dispatchCapabilityOnly_preserves_ipcInvariantFull
                   exact suspendThreadOnCore_preserves_ipcInvariantFull st st' vtid _ sgiU
                     hObjInv (hPack.targetThreadQuiescent objId (Or.inl hSy) hTgt vtid hVal)
                     hPack.bindingBidirectional hInv
-                    hPack.replyStacksSettleOnWaitingDonors hSus
+                    hPack.replyStacksSettleOnWaitingDonors hR hAdm hSus
     all_goals try cases hStep
   case tcbResume =>
     cases hTgt : cap.target <;> simp only [hTgt] at hStep
@@ -3450,7 +3451,8 @@ theorem dispatchCapabilityOnly_preserves_ipcInvariantFull
                 (retirePendingFaultForResume_preserves_objects_invExt st _ hObjInv)
                 (threadIpcFieldsQuiescent_retirePendingFaultForResume st _ hObjInv
                   (hPack.targetThreadQuiescent objId (Or.inr hSy) hTgt vtid hVal))
-                (retirePendingFaultForResume_preserves_ipcInvariantFull st _ hObjInv hInv) hRes
+                (retirePendingFaultForResume_preserves_ipcInvariantFull st _ hObjInv hInv)
+                (retirePendingFaultForResume_currentRequeueAdmitted st _ _ hObjInv hAdm) hRes
     all_goals try cases hStep
   case tcbSetPriority =>
     cases hTgt : cap.target <;> simp only [hTgt] at hStep
@@ -3477,7 +3479,7 @@ theorem dispatchCapabilityOnly_preserves_ipcInvariantFull
                       simp only [hSet] at hStep
                       cases hStep
                       exact setPriorityOnCore_preserves_ipcInvariantFull st st' vCallerTid
-                        vTargetTid _ _ sgiU hObjInv hInv hSet
+                        vTargetTid _ _ sgiU hObjInv hInv hR hAdm hSet
     all_goals try cases hStep
   case tcbSetMCPriority =>
     cases hTgt : cap.target <;> simp only [hTgt] at hStep
@@ -3504,7 +3506,7 @@ theorem dispatchCapabilityOnly_preserves_ipcInvariantFull
                       simp only [hSet] at hStep
                       cases hStep
                       exact setMCPriorityOnCore_preserves_ipcInvariantFull st st' vCallerTid
-                        vTargetTid _ _ sgiU hObjInv hInv hSet
+                        vTargetTid _ _ sgiU hObjInv hInv hR hAdm hSet
     all_goals try cases hStep
   case tcbSetIPCBuffer =>
     cases hTgt : cap.target <;> simp only [hTgt] at hStep

@@ -78,16 +78,18 @@ theorem sliceExpireOnCore_preserves_ipcInvariantFull (st : SystemState) (c : Cor
     (passiveServerIdleFrame_of_tcbFieldUpdate tid.toObjId tcb _ hPre hAt hFrame rfl rfl
       (rewriteObject_scheduler st tid.toObjId _ hAdm))
   unfold sliceExpireOnCore; dsimp only
-  exact ipcInvariantFull_runEnqueueOnCore _ c tid _
-    (ipcInvariantFull_of_schedulerGrow (st := st.rewriteObject tid.toObjId _ hAdm) rfl
-      (runQueueOnCore_boot_mem_of_insert _ c tid _)
-      (SchedulerState.setRunQueueOnCore_currentOnCore _ _ _ _) h1)
+  exact ipcInvariantFull_runEnqueueOnCore _ c tid _ h1
 
 /-- The slice expiry queues the thread on core `c`. -/
 theorem sliceExpireOnCore_mem_runQueue (st : SystemState) (c : CoreId)
-    (tid : SeLe4n.ThreadId) (tcb : TCB) (hTcb : st.getTcb? tid = some tcb) :
+    (tid : SeLe4n.ThreadId) (tcb : TCB) (hTcb : st.getTcb? tid = some tcb)
+    (hObjInv : st.objects.invExt) (hAdm : st.runEnqueueAdmits c tid = true) :
     tid ∈ (sliceExpireOnCore st c tid tcb hTcb).scheduler.runQueueOnCore c := by
-  simp only [sliceExpireOnCore, SystemState.runEnqueueOnCore_runQueueOnCore_self]
+  unfold sliceExpireOnCore; dsimp only
+  rw [SystemState.runEnqueueOnCore_runQueueOnCore_self _ (by
+    rw [SystemState.runEnqueueAdmits_rewriteObject_tcb
+      (t' := { tcb with timeSlice := st.scheduler.configDefaultTimeSlice }) _ hObjInv hTcb rfl]
+    exact hAdm)]
   exact (RunQueue.mem_insert _ _ _ _).mpr (Or.inr rfl)
 
 /-- The budget spend (shared by the tick's bound arm and yield's) preserves the
@@ -110,17 +112,11 @@ theorem spendBudgetOnCore_preserves_ipcInvariantFull (st : SystemState) (c : Cor
         all_goals rfl)
   unfold spendBudgetOnCore
   dsimp only
-  refine ipcInvariantFull_runEnqueueOnCore _ c tid _ ?_
-  refine ipcInvariantFull_of_schedulerGrow (st := st.rewriteObject scId.toObjId _ hAdm) rfl
-    ?_ ?_ h1
-  · intro y hy
-    by_cases hcc : c = bootCoreId
-    · subst hcc
-      rw [SchedulerState.setRunQueueOnCore_runQueueOnCore_self, RunQueue.mem_insert]
-      exact Or.inl hy
-    · rw [SchedulerState.setRunQueueOnCore_runQueueOnCore_ne _ _ _ _ hcc]
-      simpa [replenishOnCore] using hy
-  · simp [replenishOnCore]
+  have h2 : ipcInvariantFull (replenishOnCore (st.rewriteObject scId.toObjId _ hAdm) c scId
+      (st.machine.timer + sc.period.val)) :=
+    ipcInvariantFull_of_schedulerGrow (st := st.rewriteObject scId.toObjId _ hAdm) rfl
+      (by intro y hy; simpa [replenishOnCore] using hy) (by simp [replenishOnCore]) h1
+  exact ipcInvariantFull_runEnqueueOnCore _ c tid _ h2
 
 /-- Saving the outgoing thread's registers preserves the bundle: it rewrites
 `registerContext`, a field no conjunct reads, and leaves the scheduler alone. -/
@@ -274,7 +270,7 @@ theorem scheduleEffectiveOnCore_preserves_ipcInvariantFull (st : SystemState) (c
 theorem spendBudgetOnCore_frame (st : SystemState) (c : CoreId)
     (tid : SeLe4n.ThreadId) (scId : SchedContextId) (sc : SchedContext)
     (hSc : st.getSchedContext? scId = some sc) (ticks : Nat)
-    (hObjInv : st.objects.invExt) :
+    (hObjInv : st.objects.invExt) (hAdm : st.runEnqueueAdmits c tid = true) :
     (spendBudgetOnCore st c tid scId sc hSc ticks).objects.invExt ∧
     (∀ c' : CoreId, (spendBudgetOnCore st c tid scId sc hSc ticks).scheduler.currentOnCore c'
       = st.scheduler.currentOnCore c') ∧
@@ -282,8 +278,12 @@ theorem spendBudgetOnCore_frame (st : SystemState) (c : CoreId)
   refine ⟨spendBudgetOnCore_objects_invExt st c tid scId sc hSc ticks hObjInv, fun c' => ?_, ?_⟩
   · unfold spendBudgetOnCore
     simp [replenishOnCore, rewriteObject_scheduler]
-  · unfold spendBudgetOnCore
-    simp only [SystemState.runEnqueueOnCore_runQueueOnCore_self]
+  · unfold spendBudgetOnCore; dsimp only
+    rw [SystemState.runEnqueueOnCore_runQueueOnCore_self _ (by
+      refine (SystemState.runEnqueueAdmits_congr ?_ c).trans hAdm
+      exact congrArg (Option.map TCB.runCoreCode)
+        (rewriteObject_schedContext_getTcb? _ _ _ (SystemState.rewriteAdmissible_schedContext hSc _)
+          hObjInv tid))]
     exact (RunQueue.mem_insert _ _ _ _).mpr (Or.inr rfl)
 
 /-- The yield's charge preserves the bundle, keeps the object table's invariant
@@ -291,6 +291,7 @@ and every core's `current` slot, and leaves the caller queued on core `c`. -/
 theorem yieldChargeOnCore_preserves_ipcInvariantFull (st : SystemState) (c : CoreId)
     (tid : SeLe4n.ThreadId) (st' : SystemState)
     (hObjInv : st.objects.invExt) (hInv : ipcInvariantFull st)
+    (hAdm : st.runEnqueueAdmits c tid = true)
     (hStep : yieldChargeOnCore st c tid = .ok st') :
     ipcInvariantFull st' ∧ st'.objects.invExt ∧
     (∀ c' : CoreId, st'.scheduler.currentOnCore c' = st.scheduler.currentOnCore c') ∧
@@ -304,12 +305,12 @@ theorem yieldChargeOnCore_preserves_ipcInvariantFull (st : SystemState) (c : Cor
       exact ⟨sliceExpireOnCore_preserves_ipcInvariantFull st c tid tcb hTcb hObjInv hInv,
         sliceExpireOnCore_objects_invExt st c tid tcb hTcb hObjInv,
         fun c' => by simp [sliceExpireOnCore, rewriteObject_scheduler],
-        sliceExpireOnCore_mem_runQueue st c tid tcb hTcb⟩
+        sliceExpireOnCore_mem_runQueue st c tid tcb hTcb hObjInv hAdm⟩
     all_goals
       split at hStep
       · rename_i sc hSc _
         cases hStep
-        obtain ⟨hI, hC, hM⟩ := spendBudgetOnCore_frame st c tid _ sc hSc _ hObjInv
+        obtain ⟨hI, hC, hM⟩ := spendBudgetOnCore_frame st c tid _ sc hSc _ hObjInv hAdm
         refine ⟨markKeyChangeFor_preserves_ipcInvariantFull _ _ _
             (spendBudgetOnCore_preserves_ipcInvariantFull st c tid _ sc hSc _ hObjInv hInv),
           by rw [markKeyChangeFor_objects]; exact hI,
@@ -320,6 +321,7 @@ theorem yieldChargeOnCore_preserves_ipcInvariantFull (st : SystemState) (c : Cor
 /-- **The yield syscall preserves `ipcInvariantFull`.** -/
 theorem yieldOnCore_preserves_ipcInvariantFull (st : SystemState) (c : CoreId)
     (st' : SystemState) (hObjInv : st.objects.invExt) (hInv : ipcInvariantFull st)
+    (hAdm : ∀ t, st.scheduler.currentOnCore c = some t → st.runEnqueueAdmits c t = true)
     (hStep : yieldOnCore st c = .ok st') : ipcInvariantFull st' := by
   unfold yieldOnCore at hStep
   split at hStep
@@ -329,7 +331,7 @@ theorem yieldOnCore_preserves_ipcInvariantFull (st : SystemState) (c : CoreId)
     · cases hStep
     · rename_i st1 hCharge
       obtain ⟨hI1, hObj1, hCur1, hMem1⟩ := yieldChargeOnCore_preserves_ipcInvariantFull
-        st c tid st1 hObjInv hInv hCharge
+        st c tid st1 hObjInv hInv (hAdm tid hCur) hCharge
       refine scheduleEffectiveOnCore_preserves_ipcInvariantFull st1 c _ hObj1 hI1
         (fun t ht => ?_) hStep
       rw [hCur1, hCur] at ht

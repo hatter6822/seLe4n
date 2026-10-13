@@ -505,6 +505,74 @@ theorem migrateRunQueueBucketOnCore_objects_invExt (st : SystemState)
   · exact SystemState.runRequeueOnCore_objects_invExt _ _ _ _ hInv
   · exact hInv
 
+/-- WS-ZA ZA4.5: the priority write keeps the run queues in agreement with the
+links — it writes a reservation and the thread's `priority`, neither a link. -/
+theorem updatePrioritySource_runQueueStage (st : SystemState) (tid : SeLe4n.ThreadId)
+    (tcb : TCB) (newPriority : SeLe4n.Priority) :
+    SystemState.RunQueueStage st (updatePrioritySource st tid tcb newPriority) := by
+  unfold updatePrioritySource
+  split
+  · refine SystemState.RunQueueStage.trans (fun h r => ⟨?_, ?_⟩)
+      (SystemState.RunQueueStage.updateTcb _ tid (fun _ _ => rfl))
+    · exact SystemState.updateSchedContext_preserves_objects_invExt _ _ _ h
+    · exact SystemState.runQueueRefined_of_frame
+        (fun c t => SystemState.runLinkOn_of_getTcb?
+          (SystemState.updateSchedContext_getTcb? _ _ _ h t) c)
+        (by rw [SystemState.updateSchedContext_scheduler])
+        (by rw [SystemState.updateSchedContext_scheduler]) r
+  · exact SystemState.RunQueueStage.updateTcb _ tid (fun _ _ => rfl)
+
+/-- WS-ZA ZA4.5: the priority write keeps every thread's core code. -/
+theorem updatePrioritySource_runCoreCode (st : SystemState) (tid : SeLe4n.ThreadId)
+    (tcb : TCB) (newPriority : SeLe4n.Priority) (hInv : st.objects.invExt)
+    (y : SeLe4n.ThreadId) :
+    ((updatePrioritySource st tid tcb newPriority).getTcb? y).map TCB.runCoreCode =
+      (st.getTcb? y).map TCB.runCoreCode := by
+  unfold updatePrioritySource
+  split
+  · rw [SystemState.updateTcb_runCoreCode _ _ (fun t => { t with priority := newPriority })
+      (fun _ => rfl) (SystemState.updateSchedContext_preserves_objects_invExt _ _ _ hInv),
+      SystemState.updateSchedContext_getTcb? _ _ _ hInv]
+  · exact SystemState.updateTcb_runCoreCode _ _ (fun t => { t with priority := newPriority })
+      (fun _ => rfl) hInv y
+
+/-- WS-ZA ZA4.5: the priority write is a current-placement frame: it moves no
+current slot, no queue and no TCB in or out of the store. -/
+theorem updatePrioritySource_currentPlacementFrame (st : SystemState)
+    (tid : SeLe4n.ThreadId) (tcb : TCB) (newPriority : SeLe4n.Priority)
+    (hInv : st.objects.invExt) (c : Concurrency.CoreId) :
+    SystemState.CurrentPlacementFrame c st (updatePrioritySource st tid tcb newPriority) := by
+  obtain ⟨o, ho⟩ := updatePrioritySource_only_modifies_objects st tid tcb newPriority
+  refine SystemState.CurrentPlacementFrame.of_parts (fun y hy => ?_)
+    (by rw [ho]) (fun _ _ => by rw [ho])
+  have h := congrArg Option.isSome (updatePrioritySource_runCoreCode st tid tcb newPriority hInv y)
+  simp only [Option.isSome_map] at h
+  rw [h]; exact hy
+
+/-- WS-ZA ZA4.5: the bucket migration keeps the agreement — it re-keys a thread
+its home queue holds, which under the agreement that core's links queue. -/
+theorem migrateRunQueueBucketOnCore_runQueueStage (st : SystemState)
+    (tid : SeLe4n.ThreadId) (newPriority : SeLe4n.Priority) (homeCore : Concurrency.CoreId) :
+    SystemState.RunQueueStage st (migrateRunQueueBucketOnCore st tid newPriority homeCore) := by
+  intro hInv hR
+  unfold migrateRunQueueBucketOnCore
+  split
+  · rename_i hMem
+    have hq : (st.runLinkOn homeCore tid).queued = true := by
+      rw [(hR homeCore).contains]; exact RunQueue.mem_iff_contains.mp hMem
+    exact SystemState.RunQueueStage.runRequeueOnCore _ _ _ _ hq hInv hR
+  · exact ⟨hInv, hR⟩
+
+/-- WS-ZA ZA4.5: the bucket migration is a current-placement frame. -/
+theorem migrateRunQueueBucketOnCore_currentPlacementFrame (st : SystemState)
+    (tid : SeLe4n.ThreadId) (newPriority : SeLe4n.Priority) (homeCore c : Concurrency.CoreId) :
+    SystemState.CurrentPlacementFrame c st (migrateRunQueueBucketOnCore st tid newPriority homeCore) := by
+  unfold migrateRunQueueBucketOnCore
+  split
+  · rename_i hMem
+    exact SystemState.CurrentPlacementFrame.runRequeueOnCore _ _ _ _ _ hMem
+  · exact .refl _ _
+
 /-- D2-E: Set the scheduling priority of a target thread.
 
 Sequence:

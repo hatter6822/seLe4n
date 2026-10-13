@@ -283,7 +283,7 @@ queue immediately after `enqueueRunnableOnCore` (when it resolves to a TCB).
 The substantive "the wake genuinely enqueues" content. -/
 theorem enqueueRunnableOnCore_mem_runQueueOnCore (st : SystemState) (c : CoreId)
     (tid : SeLe4n.ThreadId) (tcb : TCB) (hTcb : st.getTcb? tid = some tcb)
-    (hFresh : runnableOnSomeCore st tid = false) :
+    (hFresh : wakeDeclines st c tid = false) :
     tid ∈ ((enqueueRunnableOnCore st c tid).scheduler.runQueueOnCore c).toList := by
   obtain ⟨E, hE⟩ := enqueueRunnableOnCore_scheduler_of_fresh st c tid tcb hTcb hFresh
   simp only [hE, SchedulerState.markReschedulePendingOnCore_runQueueOnCore,
@@ -296,7 +296,7 @@ theorem enqueueRunnableOnCore_mem_runQueueOnCore (st : SystemState) (c : CoreId)
 boosted priority. -/
 theorem enqueueRunnableOnCore_runQueueOnCore_of_fresh (st : SystemState) (c : CoreId)
     (tid : SeLe4n.ThreadId) (tcb : TCB) (hTcb : st.getTcb? tid = some tcb)
-    (hFresh : runnableOnSomeCore st tid = false) :
+    (hFresh : wakeDeclines st c tid = false) :
     (enqueueRunnableOnCore st c tid).scheduler.runQueueOnCore c =
       (st.scheduler.runQueueOnCore c).insert tid tcb.boostedPriority := by
   obtain ⟨E, hE⟩ := enqueueRunnableOnCore_scheduler_of_fresh st c tid tcb hTcb hFresh
@@ -313,7 +313,7 @@ fields, which the enqueue sets (WS-ZA ZA4.5). -/
 theorem enqueueRunnableOnCore_makes_ready (st : SystemState) (c : CoreId)
     (tid : SeLe4n.ThreadId) (tcb : TCB)
     (hTcb : st.getTcb? tid = some tcb) (hInv : st.objects.invExt)
-    (hFresh : runnableOnSomeCore st tid = false) :
+    (hFresh : wakeDeclines st c tid = false) :
     ∃ t', (enqueueRunnableOnCore st c tid).getTcb? tid = some t' ∧
       t'.withoutRunLinks = ({ tcb with ipcState := .ready } : TCB).withoutRunLinks := by
   have hM : ({ st with objects := (st.objects.insert tid.toObjId
@@ -345,7 +345,7 @@ to `{ tcb with ipcState := .ready }` off run-queue fields is `enqueueRunnableOnC
 theorem enqueueRunnableOnCore_preserves_woken_thread_fields (st : SystemState)
     (c : CoreId) (tid : SeLe4n.ThreadId) (tcb : TCB)
     (hTcb : st.getTcb? tid = some tcb) (hInv : st.objects.invExt)
-    (hFresh : runnableOnSomeCore st tid = false) :
+    (hFresh : wakeDeclines st c tid = false) :
     ∃ tcb', (enqueueRunnableOnCore st c tid).getTcb? tid = some tcb' ∧
       tcb'.priority = tcb.priority ∧ tcb'.domain = tcb.domain ∧
       tcb'.cpuAffinity = tcb.cpuAffinity ∧ tcb'.threadState = tcb.threadState :=
@@ -392,7 +392,7 @@ theorem enqueueRunnableOnCore_getTcb?_ne (st : SystemState) (c : CoreId)
   cases hTcb : st.getTcb? tid with
   | none => simp only [enqueueRunnableOnCore, SystemState.getTcbWitnessed?_eq_none hTcb]
   | some tcb =>
-    cases hR : runnableOnSomeCore st tid
+    cases hR : wakeDeclines st c tid
     · rw [(enqueueRunnableOnCore_objectsAgree_marked st c tid tcb hTcb hR).getTcb? other]
       have hNeO : ¬ (tid.toObjId == other.toObjId) = true := fun he =>
         hNe (ThreadId.toObjId_injective _ _ (by simpa using he)).symm
@@ -437,12 +437,17 @@ some core, the single-placement guard makes `enqueueRunnableOnCore` the identity
 — the wake creates no second placement.  The structural fact every preservation
 proof uses to discharge the reject branch (the post-state is `st`, so any
 invariant trivially carries over). -/
-theorem enqueueRunnableOnCore_eq_self_of_runnable (st : SystemState) (c : CoreId)
-    (tid : SeLe4n.ThreadId) (hRun : runnableOnSomeCore st tid = true) :
+theorem enqueueRunnableOnCore_eq_self_of_declines (st : SystemState) (c : CoreId)
+    (tid : SeLe4n.ThreadId) (hD : wakeDeclines st c tid = true) :
     enqueueRunnableOnCore st c tid = st := by
   cases hTcb : st.getTcb? tid with
   | none => simp only [enqueueRunnableOnCore, SystemState.getTcbWitnessed?_eq_none hTcb]
-  | some tcb => simp [enqueueRunnableOnCore, SystemState.getTcbWitnessed?_eq_some hTcb, hRun]
+  | some tcb => simp [enqueueRunnableOnCore, SystemState.getTcbWitnessed?_eq_some hTcb, hD]
+
+theorem enqueueRunnableOnCore_eq_self_of_runnable (st : SystemState) (c : CoreId)
+    (tid : SeLe4n.ThreadId) (hRun : runnableOnSomeCore st tid = true) :
+    enqueueRunnableOnCore st c tid = st :=
+  enqueueRunnableOnCore_eq_self_of_declines st c tid (by simp [wakeDeclines, hRun])
 
 
 -- ============================================================================
@@ -525,7 +530,7 @@ thread.  The substantive content behind `wakeThread_lossless`. -/
 theorem wakeThread_target_runQueue_contains (st : SystemState)
     (tid : SeLe4n.ThreadId) (executingCore : CoreId) (tcb : TCB)
     (hTcb : st.getTcb? tid = some tcb)
-    (hFresh : runnableOnSomeCore st tid = false) :
+    (hFresh : wakeDeclines st (determineTargetCore st tid) tid = false) :
     tid ∈ ((wakeThread st tid executingCore).1.scheduler.runQueueOnCore
             (determineTargetCore st tid)).toList := by
   rw [wakeThread_state_eq_enqueue]
@@ -575,7 +580,7 @@ theorem enqueueRunnableOnCore_objectsAgreeOffRunLinks_of_ready
   split
   · exact .refl _
   · refine SystemState.objectsAgreeOffRunLinks.congr rfl rfl
-      ((SystemState.runEnqueueOnCore_objectsAgreeOffRunLinks _ c tid _).trans
+      ((SystemState.runEnqueueAdmitted_objectsAgreeOffRunLinks _ c tid _).trans
         (.of_getElem_eq fun oid => ?_))
     show (st.objects.insert tid.toObjId (.tcb { tcb with ipcState := .ready }))[oid]?
         = st.objects[oid]?
@@ -731,7 +736,7 @@ a real `switch` step once its reschedule SGI is serviced — is
 than witnessing reflexively here. -/
 theorem wakeThread_lossless (st : SystemState) (tid : SeLe4n.ThreadId)
     (executingCore : CoreId) (tcb : TCB) (hTcb : st.getTcb? tid = some tcb)
-    (hFresh : runnableOnSomeCore st tid = false) :
+    (hFresh : wakeDeclines st (determineTargetCore st tid) tid = false) :
     ∃ futureState : SystemState,
       SchedReachable (wakeThread st tid executingCore).1 futureState ∧
       (futureState.scheduler.currentOnCore (determineTargetCore st tid) = some tid ∨
@@ -1618,10 +1623,10 @@ theorem enqueueRunnableOnCore_getTcb?_isSome (st : SystemState) (c : CoreId)
     (tid t : SeLe4n.ThreadId) (tcb : TCB) (hInv : st.objects.invExt)
     (hres : st.getTcb? t = some tcb) :
     ∃ tcb', (enqueueRunnableOnCore st c tid).getTcb? t = some tcb' := by
-  cases hFresh : runnableOnSomeCore st tid with
+  cases hFresh : wakeDeclines st c tid with
   | true =>
       -- Single-placement reject: the wake is the identity, so the lookup is `st`'s.
-      rw [enqueueRunnableOnCore_eq_self_of_runnable st c tid hFresh]; exact ⟨tcb, hres⟩
+      rw [enqueueRunnableOnCore_eq_self_of_declines st c tid hFresh]; exact ⟨tcb, hres⟩
   | false =>
       by_cases hEq : t = tid
       · subst hEq
@@ -1705,10 +1710,10 @@ theorem enqueueRunnableOnCore_preserves_queueCurrentConsistentOnCore_self
           -- No-op wake: run queue unchanged.
           rw [enqueueRunnableOnCore_no_tcb_noop st c tid hTcb]; exact hcons
       | some tcb =>
-          cases hFresh : runnableOnSomeCore st tid with
+          cases hFresh : wakeDeclines st c tid with
           | true =>
               -- Single-placement reject: the wake is the identity, run queue unchanged.
-              rw [enqueueRunnableOnCore_eq_self_of_runnable st c tid hFresh]; exact hcons
+              rw [enqueueRunnableOnCore_eq_self_of_declines st c tid hFresh]; exact hcons
           | false =>
               rw [enqueueRunnableOnCore_runQueueOnCore_of_fresh _ _ _ _ hTcb hFresh]
               dsimp only
@@ -1760,10 +1765,10 @@ theorem enqueueRunnableOnCore_preserves_runnableThreadIpcReady (st : SystemState
     (c : CoreId) (wtid : SeLe4n.ThreadId) (hInv : st.objects.invExt)
     (hpre : runnableThreadIpcReady_perCore st c) :
     runnableThreadIpcReady_perCore (enqueueRunnableOnCore st c wtid) c := by
-  cases hFresh : runnableOnSomeCore st wtid with
+  cases hFresh : wakeDeclines st c wtid with
   | true =>
       -- Single-placement reject: the wake is the identity, so the predicate carries over.
-      rw [enqueueRunnableOnCore_eq_self_of_runnable st c wtid hFresh]; exact hpre
+      rw [enqueueRunnableOnCore_eq_self_of_declines st c wtid hFresh]; exact hpre
   | false =>
     unfold runnableThreadIpcReady_perCore at hpre ⊢
     intro t tcb hTcb hMem
@@ -1814,10 +1819,10 @@ private theorem enqueueRunnableOnCore_preserves_blockedNotRunnable_aux
     ∀ (t : SeLe4n.ThreadId) (tcb : TCB),
       (enqueueRunnableOnCore st c wtid).getTcb? t = some tcb → P tcb.ipcState →
       t ∉ ((enqueueRunnableOnCore st c wtid).scheduler.runQueueOnCore c).toList := by
-  cases hFresh : runnableOnSomeCore st wtid with
+  cases hFresh : wakeDeclines st c wtid with
   | true =>
       -- Single-placement reject: the wake is the identity; the predicate carries over.
-      rw [enqueueRunnableOnCore_eq_self_of_runnable st c wtid hFresh]; exact hpre
+      rw [enqueueRunnableOnCore_eq_self_of_declines st c wtid hFresh]; exact hpre
   | false =>
     intro t tcb hTcb hP hMem
     by_cases hEq : t = wtid
@@ -1995,8 +2000,8 @@ theorem enqueueRunnableOnCore_preserves_runQueueUniqueOnCore (st : SystemState)
     cases hTcb : st.getTcb? tid with
     | none => rw [enqueueRunnableOnCore_no_tcb_noop st c tid hTcb]; exact hnd
     | some tcb =>
-      cases hFresh : runnableOnSomeCore st tid with
-      | true => rw [enqueueRunnableOnCore_eq_self_of_runnable st c tid hFresh]; exact hnd
+      cases hFresh : wakeDeclines st c tid with
+      | true => rw [enqueueRunnableOnCore_eq_self_of_declines st c tid hFresh]; exact hnd
       | false =>
         rw [enqueueRunnableOnCore_runQueueOnCore_of_fresh _ _ _ _ hTcb hFresh]
         exact RunQueue.insert_preserves_toList_nodup _ _ _ hnd
@@ -2066,8 +2071,8 @@ theorem enqueueRunnableOnCore_preserves_runnableThreadsAreTCBsOnCore_anyCore (st
     cases hTcb : st.getTcb? tid with
     | none => rw [enqueueRunnableOnCore_no_tcb_noop st c tid hTcb]; exact h
     | some tcb =>
-      cases hFresh : runnableOnSomeCore st tid with
-      | true => rw [enqueueRunnableOnCore_eq_self_of_runnable st c tid hFresh]; exact h
+      cases hFresh : wakeDeclines st c tid with
+      | true => rw [enqueueRunnableOnCore_eq_self_of_declines st c tid hFresh]; exact h
       | false =>
         intro t ht
         rw [enqueueRunnableOnCore_runQueueOnCore_of_fresh _ _ _ _ hTcb hFresh] at ht
@@ -2145,9 +2150,9 @@ theorem enqueueRunnableOnCore_determineTargetCore_eq (st : SystemState) (c : Cor
     | none =>
         simp only [enqueueRunnableOnCore, SystemState.getTcbWitnessed?_eq_none hTcb, hTcb]
     | some tcb =>
-        cases hFresh : runnableOnSomeCore st x with
+        cases hFresh : wakeDeclines st c x with
         | true =>
-            rw [enqueueRunnableOnCore_eq_self_of_runnable st c x hFresh, hTcb]
+            rw [enqueueRunnableOnCore_eq_self_of_declines st c x hFresh, hTcb]
         | false =>
             obtain ⟨t', h', ht⟩ := enqueueRunnableOnCore_makes_ready st c x tcb hTcb hInv hFresh
             rw [h']

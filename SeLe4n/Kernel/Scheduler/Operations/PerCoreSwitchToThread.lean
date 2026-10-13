@@ -205,12 +205,17 @@ theorem preemptCurrentOnCore_runQueueOnCore_self_active (st : SystemState) (c : 
     (incoming prevTid : SeLe4n.ThreadId) (prevTcb : TCB)
     (hCur : st.scheduler.currentOnCore c = some prevTid)
     (hNe : (prevTid == incoming) = false)
-    (hTcb : st.getTcb? prevTid = some prevTcb) :
+    (hTcb : st.getTcb? prevTid = some prevTcb) (hInv : st.objects.invExt)
+    (hAdm : st.runEnqueueAdmits c prevTid = true) :
     (preemptCurrentOnCore st c incoming).scheduler.runQueueOnCore c
       = (st.scheduler.runQueueOnCore c).insert prevTid (prevTcb.boostedPriority) := by
   unfold preemptCurrentOnCore
-  simp [hCur, hNe, SystemState.getTcbWitnessed?_eq_some hTcb,
-    SystemState.runEnqueueOnCore_runQueueOnCore_self, SystemState.rewriteObject_scheduler]
+  simp only [hCur, hNe, SystemState.getTcbWitnessed?_eq_some hTcb, Bool.false_eq_true, if_false]
+  rw [SystemState.runEnqueueOnCore_runQueueOnCore_self _
+    (by rw [SystemState.runEnqueueAdmits_rewriteObject_tcb
+      (t' := { prevTcb with registerContext := st.machine.regsOnCore c }) _ hInv hTcb rfl]
+        exact hAdm)]
+  rfl
 
 -- ── §2b  preempt preservation + unreachability of the non-TCB fallback ──
 
@@ -245,8 +250,10 @@ theorem preemptCurrentOnCore_preserves_runQueueOnCore_wellFormed (st : SystemSta
   · split
     · exact hwf
     · split
-      · rw [SystemState.runEnqueueOnCore_runQueueOnCore_self]
-        exact RunQueue.insert_preserves_wellFormed _ hwf _ _
+      · rw [SystemState.runEnqueueOnCore_runQueueOnCore_self_eq]
+        split
+        · exact RunQueue.insert_preserves_wellFormed _ hwf _ _
+        · exact hwf
       · exact hwf
 
 /-- WS-SM SM5.B.3 (defense-in-depth, the SM5.B.4 audit closure): under
@@ -260,7 +267,8 @@ theorem preemptCurrentOnCore_active_under_valid (st : SystemState) (c : CoreId)
     (incoming prevTid : SeLe4n.ThreadId)
     (hValid : currentThreadValidOnCore st c)
     (hCur : st.scheduler.currentOnCore c = some prevTid)
-    (hNe : (prevTid == incoming) = false) :
+    (hNe : (prevTid == incoming) = false) (hInv : st.objects.invExt)
+    (hAdm : st.runEnqueueAdmits c prevTid = true) :
     ∃ prevTcb, st.getTcb? prevTid = some prevTcb ∧
       (preemptCurrentOnCore st c incoming).scheduler.runQueueOnCore c
         = (st.scheduler.runQueueOnCore c).insert prevTid (prevTcb.boostedPriority) := by
@@ -268,7 +276,8 @@ theorem preemptCurrentOnCore_active_under_valid (st : SystemState) (c : CoreId)
   simp only [hCur] at hValid
   obtain ⟨prevTcb, hPrevTcb⟩ := hValid
   exact ⟨prevTcb, hPrevTcb,
-    preemptCurrentOnCore_runQueueOnCore_self_active st c incoming prevTid prevTcb hCur hNe hPrevTcb⟩
+    preemptCurrentOnCore_runQueueOnCore_self_active st c incoming prevTid prevTcb hCur hNe hPrevTcb
+      hInv hAdm⟩
 
 /-- WS-SM SM5.B.3 (typed-accessor frame): `preemptCurrentOnCore` leaves the
 incoming thread's `getTcb?` lookup unchanged.  The preempt's only object-store
@@ -470,7 +479,8 @@ theorem switchToThreadOnCore_preempts_previous (st : SystemState) (c : CoreId)
     (tid prevTid : SeLe4n.ThreadId) (prevTcb : TCB) (st' : SystemState)
     (hCur : st.scheduler.currentOnCore c = some prevTid)
     (hNe : prevTid ≠ tid)
-    (hPrevTcb : st.getTcb? prevTid = some prevTcb)
+    (hPrevTcb : st.getTcb? prevTid = some prevTcb) (hInv : st.objects.invExt)
+    (hAdm : st.runEnqueueAdmits c prevTid = true)
     (h : switchToThreadOnCore st c tid = .ok st') :
     prevTid ∈ (st'.scheduler.runQueueOnCore c).toList := by
   unfold switchToThreadOnCore at h
@@ -483,7 +493,7 @@ theorem switchToThreadOnCore_preempts_previous (st : SystemState) (c : CoreId)
       subst h
       have hBeq : (prevTid == tid) = false := beq_eq_false_iff_ne.mpr hNe
       have hPreempt := preemptCurrentOnCore_runQueueOnCore_self_active st c tid
-        prevTid prevTcb hCur hBeq hPrevTcb
+        prevTid prevTcb hCur hBeq hPrevTcb hInv hAdm
       simp only [SchedulerState.setCurrentOnCore_runQueueOnCore,
         restoreIncomingContextOnCoreUnlessCurrent_scheduler, SystemState.runRemoveOnCore_scheduler,
         SchedulerState.setRunQueueOnCore_runQueueOnCore_self, hPreempt]
@@ -1042,10 +1052,11 @@ theorem preemptCurrentOnCore_runQueue_resolves (st : SystemState) (c : CoreId)
                 simp [preemptCurrentOnCore, hCur, hEqb, SystemState.getTcbWitnessed?_eq_none hPrev]] at hx
               exact hRAT x hx
           | some prevTcb =>
-              rw [preemptCurrentOnCore_runQueueOnCore_self_active st c incoming prevTid prevTcb
-                hCur hEqb hPrev] at hx
-              rcases (RunQueue.mem_insert _ _ _ _).mp ((RunQueue.mem_toList_iff_mem _ _).mp hx) with
-                hold | heq
+              have hx' := (RunQueue.mem_toList_iff_mem _ _).mp hx
+              unfold preemptCurrentOnCore at hx'
+              simp only [hCur, hEqb, SystemState.getTcbWitnessed?_eq_some hPrev, Bool.false_eq_true,
+                if_false] at hx'
+              rcases SystemState.runEnqueueOnCore_mem_runQueueOnCore_self hx' with hold | heq
               · exact hRAT x ((RunQueue.mem_toList_iff_mem _ _).mpr hold)
               · subst heq
                 unfold currentThreadValidOnCore at hCTV
@@ -1118,8 +1129,10 @@ theorem preemptCurrentOnCore_preserves_runQueueOnCore_nodup (st : SystemState)
   · split
     · exact hnd
     · split
-      · rw [SystemState.runEnqueueOnCore_runQueueOnCore_self]
-        exact RunQueue.insert_preserves_toList_nodup _ _ _ hnd
+      · rw [SystemState.runEnqueueOnCore_runQueueOnCore_self_eq]
+        split
+        · exact RunQueue.insert_preserves_toList_nodup _ _ _ hnd
+        · exact hnd
       · exact hnd
 
 /-- WS-SM (PR #880 round 7): a successful switch preserves core `c`'s run-queue

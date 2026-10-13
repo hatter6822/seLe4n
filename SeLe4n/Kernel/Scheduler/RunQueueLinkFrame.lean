@@ -412,33 +412,54 @@ theorem runAppendLinks_objectsAgreeOffRunLinks (st : SystemState) (c : CoreId)
     (.trans (updateTcbAtCode_objectsAgreeOffRunLinks _ _ (fun _ => rfl))
       (mapTcbInPlace_objectsAgreeOffRunLinks _ _ (fun _ => rfl)))
 
-theorem runEnqueueOnCore_objects (st : SystemState) (c : CoreId) (t : SeLe4n.ThreadId)
+theorem runEnqueueAdmitted_objects (st : SystemState) (c : CoreId) (t : SeLe4n.ThreadId)
     (p : SeLe4n.Priority) :
-    (st.runEnqueueOnCore c t p).objects =
+    (st.runEnqueueAdmitted c t p).objects =
       if (st.runLinkOn c t).queued then st.objects else (st.runAppendLinks c t p).objects := by
-  unfold runEnqueueOnCore; dsimp only; split <;> rfl
+  unfold runEnqueueAdmitted; dsimp only; split <;> rfl
 
-theorem runEnqueueOnCore_objectsAgreeOffRunLinks (st : SystemState) (c : CoreId)
+theorem runEnqueueAdmitted_objectsAgreeOffRunLinks (st : SystemState) (c : CoreId)
     (t : SeLe4n.ThreadId) (p : SeLe4n.Priority) :
-    objectsAgreeOffRunLinks (st.runEnqueueOnCore c t p) st := by
-  have h := runEnqueueOnCore_objects st c t p
+    objectsAgreeOffRunLinks (st.runEnqueueAdmitted c t p) st := by
+  have h := runEnqueueAdmitted_objects st c t p
   split at h
   · exact .of_objects_eq h
   · exact .congr h rfl (runAppendLinks_objectsAgreeOffRunLinks st c t p)
 
+theorem runEnqueueOnCore_objectsAgreeOffRunLinks (st : SystemState) (c : CoreId)
+    (t : SeLe4n.ThreadId) (p : SeLe4n.Priority) :
+    objectsAgreeOffRunLinks (st.runEnqueueOnCore c t p) st := by
+  unfold runEnqueueOnCore; split
+  · exact runEnqueueAdmitted_objectsAgreeOffRunLinks st c t p
+  · exact .of_objects_eq rfl
+
+theorem runEnqueueAdmitted_objects_invExt (st : SystemState) (c : CoreId) (t : SeLe4n.ThreadId)
+    (p : SeLe4n.Priority) (hInv : st.objects.invExt) :
+    (st.runEnqueueAdmitted c t p).objects.invExt := by
+  rw [runEnqueueAdmitted_objects]; split
+  · exact hInv
+  · exact runAppendLinks_objects_invExt _ _ _ _ hInv
+
 theorem runEnqueueOnCore_objects_invExt (st : SystemState) (c : CoreId) (t : SeLe4n.ThreadId)
     (p : SeLe4n.Priority) (hInv : st.objects.invExt) :
     (st.runEnqueueOnCore c t p).objects.invExt := by
-  rw [runEnqueueOnCore_objects]; split
+  unfold runEnqueueOnCore; split
+  · exact runEnqueueAdmitted_objects_invExt st c t p hInv
   · exact hInv
-  · exact runAppendLinks_objects_invExt _ _ _ _ hInv
+
+theorem runEnqueueAdmitted_objects_invExtK (st : SystemState) (c : CoreId) (t : SeLe4n.ThreadId)
+    (p : SeLe4n.Priority) (hK : st.objects.invExtK) :
+    (st.runEnqueueAdmitted c t p).objects.invExtK := by
+  rw [runEnqueueAdmitted_objects]; split
+  · exact hK
+  · exact runAppendLinks_objects_invExtK _ _ _ _ hK
 
 theorem runEnqueueOnCore_objects_invExtK (st : SystemState) (c : CoreId) (t : SeLe4n.ThreadId)
     (p : SeLe4n.Priority) (hK : st.objects.invExtK) :
     (st.runEnqueueOnCore c t p).objects.invExtK := by
-  rw [runEnqueueOnCore_objects]; split
+  unfold runEnqueueOnCore; split
+  · exact runEnqueueAdmitted_objects_invExtK st c t p hK
   · exact hK
-  · exact runAppendLinks_objects_invExtK _ _ _ _ hK
 
 theorem runUnlinkLinks_objectsAgreeOffRunLinks (st : SystemState) (t : SeLe4n.ThreadId)
     (pv nx bpv bnx : Nat) :
@@ -507,12 +528,19 @@ theorem runAppendLinks_onlyObjectsSchedulerDiffer (st : SystemState) (c : CoreId
   unfold runAppendLinks
   exact .trans (.updateTcbAtCode _ _ _) (.trans (.updateTcbAtCode _ _ _) (.mapTcbInPlace _ _ _))
 
+theorem runEnqueueAdmitted_onlyObjectsSchedulerDiffer (st : SystemState) (c : CoreId)
+    (t : SeLe4n.ThreadId) (p : SeLe4n.Priority) :
+    onlyObjectsSchedulerDiffer (st.runEnqueueAdmitted c t p) st := by
+  unfold runEnqueueAdmitted runAppendOnCore; dsimp only; split
+  · exact .withScheduler (.refl _) _
+  · exact .withScheduler (.withScheduler (runAppendLinks_onlyObjectsSchedulerDiffer _ _ _ _) _) _
+
 theorem runEnqueueOnCore_onlyObjectsSchedulerDiffer (st : SystemState) (c : CoreId)
     (t : SeLe4n.ThreadId) (p : SeLe4n.Priority) :
     onlyObjectsSchedulerDiffer (st.runEnqueueOnCore c t p) st := by
-  unfold runEnqueueOnCore runAppendOnCore; dsimp only; split
-  · exact .withScheduler (.refl _) _
-  · exact .withScheduler (.withScheduler (runAppendLinks_onlyObjectsSchedulerDiffer _ _ _ _) _) _
+  unfold runEnqueueOnCore; split
+  · exact runEnqueueAdmitted_onlyObjectsSchedulerDiffer st c t p
+  · exact .refl _
 
 theorem runUnlinkLinks_onlyObjectsSchedulerDiffer (st : SystemState) (t : SeLe4n.ThreadId)
     (pv nx bpv bnx : Nat) : onlyObjectsSchedulerDiffer (st.runUnlinkLinks t pv nx bpv bnx) st := by
@@ -527,6 +555,11 @@ theorem runRemoveOnCore_onlyObjectsSchedulerDiffer (st : SystemState) (c : CoreI
   · exact .withScheduler (.refl _) _
 
 /-- A run-queue write leaves the machine where it was. -/
+@[simp] theorem runEnqueueAdmitted_machine (st : SystemState) (c : CoreId) (t : SeLe4n.ThreadId)
+    (p : SeLe4n.Priority) : (st.runEnqueueAdmitted c t p).machine = st.machine := by
+  have h := runEnqueueAdmitted_onlyObjectsSchedulerDiffer st c t p
+  unfold onlyObjectsSchedulerDiffer at h; rw [h]
+
 @[simp] theorem runEnqueueOnCore_machine (st : SystemState) (c : CoreId) (t : SeLe4n.ThreadId)
     (p : SeLe4n.Priority) : (st.runEnqueueOnCore c t p).machine = st.machine := by
   have h := runEnqueueOnCore_onlyObjectsSchedulerDiffer st c t p
@@ -556,16 +589,35 @@ def runRemoveEnds (st : SystemState) (c : CoreId) (t : SeLe4n.ThreadId) : RunQue
         ((st.runUnlinkLinks t L.prev L.next L.bucketPrev L.bucketNext).runLinkOn c) n h 0)
   else st.scheduler.runQueueEndsOnCore c
 
-@[simp] theorem runEnqueueOnCore_scheduler (st : SystemState) (c : CoreId) (t : SeLe4n.ThreadId)
+theorem runEnqueueAdmitted_scheduler (st : SystemState) (c : CoreId) (t : SeLe4n.ThreadId)
     (p : SeLe4n.Priority) :
-    (st.runEnqueueOnCore c t p).scheduler =
+    (st.runEnqueueAdmitted c t p).scheduler =
       (st.scheduler.setRunQueueEndsOnCore c (st.runEnqueueEnds c t p)).setRunQueueOnCore c
         ((st.scheduler.runQueueOnCore c).insert t p) := by
-  unfold runEnqueueOnCore runEnqueueEnds runAppendOnCore
+  unfold runEnqueueAdmitted runEnqueueEnds runAppendOnCore
   by_cases hq : (st.runLinkOn c t).queued = true
   · simp only [hq, if_true, SchedulerState.setRunQueueEndsOnCore_runQueueEndsOnCore_get]
   · simp only [hq, if_false, Bool.false_eq_true, runAppendLinks_scheduler,
       SchedulerState.setRunQueueEndsOnCore_runQueueOnCore]
+
+/-- The scheduler after an enqueue: the admitted enqueue's, or unchanged. -/
+theorem runEnqueueOnCore_scheduler (st : SystemState) (c : CoreId) (t : SeLe4n.ThreadId)
+    (p : SeLe4n.Priority) :
+    (st.runEnqueueOnCore c t p).scheduler =
+      if st.runEnqueueAdmits c t then
+        (st.scheduler.setRunQueueEndsOnCore c (st.runEnqueueEnds c t p)).setRunQueueOnCore c
+          ((st.scheduler.runQueueOnCore c).insert t p)
+      else st.scheduler := by
+  unfold runEnqueueOnCore; split
+  · exact runEnqueueAdmitted_scheduler st c t p
+  · rfl
+
+theorem runEnqueueOnCore_scheduler_of_admits {st : SystemState} {c : CoreId}
+    {t : SeLe4n.ThreadId} (p : SeLe4n.Priority) (h : st.runEnqueueAdmits c t = true) :
+    (st.runEnqueueOnCore c t p).scheduler =
+      (st.scheduler.setRunQueueEndsOnCore c (st.runEnqueueEnds c t p)).setRunQueueOnCore c
+        ((st.scheduler.runQueueOnCore c).insert t p) := by
+  rw [runEnqueueOnCore_of_admits p h, runEnqueueAdmitted_scheduler]
 
 @[simp] theorem runRemoveOnCore_scheduler (st : SystemState) (c : CoreId) (t : SeLe4n.ThreadId) :
     (st.runRemoveOnCore c t).scheduler =
@@ -627,27 +679,28 @@ append it to the tail of its new priority bucket, both through the TCB
 run-queue links (seL4's `tcbSchedDequeue` then `tcbSchedEnqueue`). -/
 def runRequeueOnCore (st : SystemState) (c : CoreId) (t : SeLe4n.ThreadId)
     (p : SeLe4n.Priority) : SystemState :=
-  (st.runRemoveOnCore c t).runEnqueueOnCore c t p
+  (st.runRemoveOnCore c t).runEnqueueAdmitted c t p
 
 theorem runRequeueOnCore_onlyObjectsSchedulerDiffer (st : SystemState) (c : CoreId)
     (t : SeLe4n.ThreadId) (p : SeLe4n.Priority) :
     onlyObjectsSchedulerDiffer (st.runRequeueOnCore c t p) st :=
-  (runEnqueueOnCore_onlyObjectsSchedulerDiffer _ c t p).trans
+  (runEnqueueAdmitted_onlyObjectsSchedulerDiffer _ c t p).trans
     (runRemoveOnCore_onlyObjectsSchedulerDiffer st c t)
 
 theorem runRequeueOnCore_objectsAgreeOffRunLinks (st : SystemState) (c : CoreId)
     (t : SeLe4n.ThreadId) (p : SeLe4n.Priority) :
     (st.runRequeueOnCore c t p).objectsAgreeOffRunLinks st :=
-  (runEnqueueOnCore_objectsAgreeOffRunLinks _ c t p).trans
+  (runEnqueueAdmitted_objectsAgreeOffRunLinks _ c t p).trans
     (runRemoveOnCore_objectsAgreeOffRunLinks st c t)
 
 theorem runRequeueOnCore_objects_invExt (st : SystemState) (c : CoreId) (t : SeLe4n.ThreadId)
     (p : SeLe4n.Priority) (hInv : st.objects.invExt) : (st.runRequeueOnCore c t p).objects.invExt :=
-  runEnqueueOnCore_objects_invExt _ c t p (runRemoveOnCore_objects_invExt st c t hInv)
+  runEnqueueAdmitted_objects_invExt _ c t p (runRemoveOnCore_objects_invExt st c t hInv)
 
 @[simp] theorem runRequeueOnCore_machine (st : SystemState) (c : CoreId) (t : SeLe4n.ThreadId)
     (p : SeLe4n.Priority) : (st.runRequeueOnCore c t p).machine = st.machine := by
-  simp [runRequeueOnCore]
+  have h := runRequeueOnCore_onlyObjectsSchedulerDiffer st c t p
+  unfold onlyObjectsSchedulerDiffer at h; rw [h]
 
 /-- The scheduler after a re-key: the ghost queue is the remove-then-insert, and
 the core's ends are the enqueue's over the dequeued state. -/
@@ -656,9 +709,8 @@ the core's ends are the enqueue's over the dequeued state. -/
     (st.runRequeueOnCore c t p).scheduler =
       (st.scheduler.setRunQueueEndsOnCore c ((st.runRemoveOnCore c t).runEnqueueEnds c t p)).setRunQueueOnCore c
         (((st.scheduler.runQueueOnCore c).remove t).insert t p) := by
-  simp only [runRequeueOnCore, runEnqueueOnCore_scheduler, runRemoveOnCore_scheduler,
-    SchedulerState.setRunQueueOnCore_runQueueOnCore_self,
-    SchedulerState.setRunQueueEndsOnCore_runQueueOnCore]
+  simp only [runRequeueOnCore, runEnqueueAdmitted_scheduler, runRemoveOnCore_scheduler,
+    SchedulerState.setRunQueueOnCore_runQueueOnCore_self]
   rw [SchedulerState.setRunQueueOnCore_setRunQueueEndsOnCore, SchedulerState.setRunQueueOnCore_setRunQueueOnCore,
     SchedulerState.setRunQueueEndsOnCore_setRunQueueEndsOnCore]
 
@@ -668,27 +720,62 @@ other observable per-core slot reads through. -/
 @[simp] theorem runEnqueueOnCore_currentOnCore (st : SystemState) (c : CoreId) (t : SeLe4n.ThreadId)
     (p : SeLe4n.Priority) (c' : CoreId) :
     (st.runEnqueueOnCore c t p).scheduler.currentOnCore c' = st.scheduler.currentOnCore c' := by
-  simp [runEnqueueOnCore_scheduler]
+  rw [runEnqueueOnCore_scheduler]; split <;> simp
 
 @[simp] theorem runEnqueueOnCore_activeDomainOnCore (st : SystemState) (c : CoreId) (t : SeLe4n.ThreadId)
     (p : SeLe4n.Priority) (c' : CoreId) :
     (st.runEnqueueOnCore c t p).scheduler.activeDomainOnCore c' = st.scheduler.activeDomainOnCore c' := by
-  simp [runEnqueueOnCore_scheduler]
+  rw [runEnqueueOnCore_scheduler]; split <;> simp
 
 @[simp] theorem runEnqueueOnCore_domainTimeRemainingOnCore (st : SystemState) (c : CoreId) (t : SeLe4n.ThreadId)
     (p : SeLe4n.Priority) (c' : CoreId) :
     (st.runEnqueueOnCore c t p).scheduler.domainTimeRemainingOnCore c' = st.scheduler.domainTimeRemainingOnCore c' := by
-  simp [runEnqueueOnCore_scheduler]
+  rw [runEnqueueOnCore_scheduler]; split <;> simp
 
 @[simp] theorem runEnqueueOnCore_domainScheduleIndexOnCore (st : SystemState) (c : CoreId) (t : SeLe4n.ThreadId)
     (p : SeLe4n.Priority) (c' : CoreId) :
     (st.runEnqueueOnCore c t p).scheduler.domainScheduleIndexOnCore c' = st.scheduler.domainScheduleIndexOnCore c' := by
-  simp [runEnqueueOnCore_scheduler]
+  rw [runEnqueueOnCore_scheduler]; split <;> simp
 
 @[simp] theorem runEnqueueOnCore_reschedulePendingOnCore (st : SystemState) (c : CoreId) (t : SeLe4n.ThreadId)
     (p : SeLe4n.Priority) (c' : CoreId) :
     (st.runEnqueueOnCore c t p).scheduler.reschedulePendingOnCore c' = st.scheduler.reschedulePendingOnCore c' := by
-  simp [runEnqueueOnCore_scheduler]
+  rw [runEnqueueOnCore_scheduler]; split <;> simp
+
+@[simp] theorem runEnqueueOnCore_replenishQueueOnCore (st : SystemState) (c : CoreId) (t : SeLe4n.ThreadId)
+    (p : SeLe4n.Priority) (c' : CoreId) :
+    (st.runEnqueueOnCore c t p).scheduler.replenishQueueOnCore c' = st.scheduler.replenishQueueOnCore c' := by
+  rw [runEnqueueOnCore_scheduler]; split <;> simp
+
+@[simp] theorem runEnqueueAdmitted_currentOnCore (st : SystemState) (c : CoreId) (t : SeLe4n.ThreadId)
+    (p : SeLe4n.Priority) (c' : CoreId) :
+    (st.runEnqueueAdmitted c t p).scheduler.currentOnCore c' = st.scheduler.currentOnCore c' := by
+  simp [runEnqueueAdmitted_scheduler]
+
+@[simp] theorem runEnqueueAdmitted_activeDomainOnCore (st : SystemState) (c : CoreId) (t : SeLe4n.ThreadId)
+    (p : SeLe4n.Priority) (c' : CoreId) :
+    (st.runEnqueueAdmitted c t p).scheduler.activeDomainOnCore c' = st.scheduler.activeDomainOnCore c' := by
+  simp [runEnqueueAdmitted_scheduler]
+
+@[simp] theorem runEnqueueAdmitted_domainTimeRemainingOnCore (st : SystemState) (c : CoreId) (t : SeLe4n.ThreadId)
+    (p : SeLe4n.Priority) (c' : CoreId) :
+    (st.runEnqueueAdmitted c t p).scheduler.domainTimeRemainingOnCore c' = st.scheduler.domainTimeRemainingOnCore c' := by
+  simp [runEnqueueAdmitted_scheduler]
+
+@[simp] theorem runEnqueueAdmitted_domainScheduleIndexOnCore (st : SystemState) (c : CoreId) (t : SeLe4n.ThreadId)
+    (p : SeLe4n.Priority) (c' : CoreId) :
+    (st.runEnqueueAdmitted c t p).scheduler.domainScheduleIndexOnCore c' = st.scheduler.domainScheduleIndexOnCore c' := by
+  simp [runEnqueueAdmitted_scheduler]
+
+@[simp] theorem runEnqueueAdmitted_reschedulePendingOnCore (st : SystemState) (c : CoreId) (t : SeLe4n.ThreadId)
+    (p : SeLe4n.Priority) (c' : CoreId) :
+    (st.runEnqueueAdmitted c t p).scheduler.reschedulePendingOnCore c' = st.scheduler.reschedulePendingOnCore c' := by
+  simp [runEnqueueAdmitted_scheduler]
+
+@[simp] theorem runEnqueueAdmitted_replenishQueueOnCore (st : SystemState) (c : CoreId) (t : SeLe4n.ThreadId)
+    (p : SeLe4n.Priority) (c' : CoreId) :
+    (st.runEnqueueAdmitted c t p).scheduler.replenishQueueOnCore c' = st.scheduler.replenishQueueOnCore c' := by
+  simp [runEnqueueAdmitted_scheduler]
 
 @[simp] theorem runRequeueOnCore_currentOnCore (st : SystemState) (c : CoreId) (t : SeLe4n.ThreadId)
     (p : SeLe4n.Priority) (c' : CoreId) :
@@ -719,6 +806,92 @@ theorem runRequeueOnCore_runQueueOnCore_ne (st : SystemState) (c c' : CoreId) (t
     (p : SeLe4n.Priority) (h : c ≠ c') :
     (st.runRequeueOnCore c t p).scheduler.runQueueOnCore c' = st.scheduler.runQueueOnCore c' := by
   simp [runRequeueOnCore_scheduler, SchedulerState.setRunQueueOnCore_runQueueOnCore_ne _ _ _ _ h]
+
+theorem runEnqueueAdmitted_getTcb?_isSome (st : SystemState) (c : CoreId) (t y : SeLe4n.ThreadId)
+    (p : SeLe4n.Priority) :
+    ((st.runEnqueueAdmitted c t p).getTcb? y).isSome = (st.getTcb? y).isSome := by
+  unfold runEnqueueAdmitted; dsimp only
+  split
+  · rfl
+  · show ((st.runAppendLinks c t p).getTcb? y).isSome = _
+    unfold runAppendLinks; dsimp only
+    rw [updateTcbAtCode_getTcb?_isSome, updateTcbAtCode_getTcb?_isSome,
+      mapTcbInPlace_getTcb?_isSome]
+
+/-- A re-key of `t` on the core whose queue holds it moves no thread to
+another core, and keeps every core's current slot and every TCB. -/
+theorem CurrentPlacementFrame.runRequeueOnCore (st : SystemState) (c c0 : CoreId)
+    (t : SeLe4n.ThreadId) (p : SeLe4n.Priority) (hMem : t ∈ st.scheduler.runQueueOnCore c0) :
+    CurrentPlacementFrame c st (st.runRequeueOnCore c0 t p) := by
+  intro y hy
+  refine ⟨by simpa using hy, fun h => ?_, fun c' _ hm => ?_⟩
+  · unfold SystemState.runRequeueOnCore
+    rw [runEnqueueAdmitted_getTcb?_isSome, runRemoveOnCore_getTcb?_isSome]; exact h
+  · by_cases hc : c0 = c'
+    · subst hc
+      rw [runRequeueOnCore_scheduler, SchedulerState.setRunQueueOnCore_runQueueOnCore_self,
+        RunQueue.mem_insert, RunQueue.mem_remove] at hm
+      rcases hm with ⟨hm, -⟩ | rfl
+      · exact hm
+      · exact hMem
+    · rwa [runRequeueOnCore_runQueueOnCore_ne _ _ _ _ _ hc] at hm
+
+/-- A removal from core `c0`'s queue moves no thread anywhere new. -/
+theorem CurrentPlacementFrame.runRemoveOnCore (st : SystemState) (c c0 : CoreId)
+    (t : SeLe4n.ThreadId) : CurrentPlacementFrame c st (st.runRemoveOnCore c0 t) := by
+  intro y hy
+  refine ⟨by simpa using hy, fun h => by rw [runRemoveOnCore_getTcb?_isSome]; exact h,
+    fun c' _ hm => ?_⟩
+  by_cases hc : c0 = c'
+  · subst hc
+    rw [runRemoveOnCore_runQueueOnCore_self, RunQueue.mem_remove] at hm
+    exact hm.1
+  · rwa [runRemoveOnCore_runQueueOnCore_ne _ _ _ _ hc] at hm
+
+/-- Taking a thread off core `c0` moves no thread anywhere new; the only current
+slot it writes, it clears. -/
+theorem CurrentPlacementFrame.runDescheduleOnCore (st : SystemState) (c c0 : CoreId)
+    (t : SeLe4n.ThreadId) : CurrentPlacementFrame c st (st.runDescheduleOnCore c0 t) := by
+  intro y hy
+  have hR := CurrentPlacementFrame.runRemoveOnCore st c c0 t
+  unfold SystemState.runDescheduleOnCore at hy ⊢
+  dsimp only at hy ⊢
+  simp only [SchedulerState.markReschedulePendingOnCoreIf_currentOnCore] at hy
+  have hy0 : st.scheduler.currentOnCore c = some y := by
+    by_cases hc : c0 = c
+    · subst hc
+      rw [SchedulerState.setCurrentOnCore_currentOnCore_self] at hy
+      split at hy
+      · cases hy
+      · exact hy
+    · rw [SchedulerState.setCurrentOnCore_currentOnCore_ne _ _ _ _ hc] at hy
+      simpa using hy
+  obtain ⟨-, hT, hQ⟩ := hR y (by simpa using hy0)
+  refine ⟨hy0, hT, fun c' hne hm => hQ c' hne ?_⟩
+  simpa using hm
+
+/-- An enqueue on core `c0` of a thread other than core `c`'s current one moves
+that current thread nowhere new. -/
+theorem CurrentPlacementFrame.runEnqueueOnCore (st : SystemState) (c c0 : CoreId)
+    (t : SeLe4n.ThreadId) (p : SeLe4n.Priority) (hNe : st.scheduler.currentOnCore c ≠ some t) :
+    CurrentPlacementFrame c st (st.runEnqueueOnCore c0 t p) := by
+  intro y hy
+  have hy0 : st.scheduler.currentOnCore c = some y := by simpa using hy
+  refine ⟨hy0, fun h => ?_, fun c' _ hm => ?_⟩
+  · unfold SystemState.runEnqueueOnCore
+    split
+    · rw [runEnqueueAdmitted_getTcb?_isSome]; exact h
+    · exact h
+  · by_cases hc : c0 = c'
+    · subst hc
+      cases hA : st.runEnqueueAdmits c0 t with
+      | true =>
+        rw [runEnqueueOnCore_runQueueOnCore_self p hA, RunQueue.mem_insert] at hm
+        rcases hm with hm | rfl
+        · exact hm
+        · exact absurd hy0 hNe
+      | false => rwa [runEnqueueOnCore_of_not_admits p hA] at hm
+    · rwa [runEnqueueOnCore_runQueueOnCore_ne _ _ _ _ _ hc] at hm
 
 theorem runUnlinkLinks_objects_invExtK (st : SystemState) (t : SeLe4n.ThreadId)
     (pv nx bpv bnx : Nat) (hK : st.objects.invExtK) :
@@ -830,7 +1003,7 @@ theorem RunQueueStage.runRequeueOnCore (st : SystemState) (c : CoreId) (t : SeLe
     RunQueueStage st (st.runRequeueOnCore c t p) := fun hInv hR =>
   ⟨runRequeueOnCore_objects_invExt st c t p hInv, by
     obtain ⟨tcb, hT, -⟩ := (runLinkOn_queued_iff st c t).mp hq
-    refine runEnqueueOnCore_refined (runRemoveOnCore_refined hR) ?_ ?_
+    refine runEnqueueAdmitted_refined (runRemoveOnCore_refined hR) ?_ ?_
     · rw [runRemoveOnCore_getTcb?_isSome, hT]; rfl
     · intro c' hne
       rw [runRemoveOnCore_runQueueOnCore_ne st c c' t (Ne.symm hne)]

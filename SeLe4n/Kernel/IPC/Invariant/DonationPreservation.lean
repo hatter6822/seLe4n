@@ -2007,25 +2007,52 @@ theorem ipcInvariantFull_of_runLinkView {s1 s2 : SystemState}
 
 /-- WS-ZA ZA4.5: an enqueue through the threads keeps the bundle whenever the
 bare queue insert does. -/
-theorem ipcInvariantFull_runEnqueueOnCore (S : SystemState) (c : CoreId)
+theorem ipcInvariantFull_runEnqueueAdmitted (S : SystemState) (c : CoreId)
     (t : SeLe4n.ThreadId) (p : SeLe4n.Priority)
     (h : ipcInvariantFull { S with
       scheduler := S.scheduler.setRunQueueOnCore c
         ((S.scheduler.runQueueOnCore c).insert t p) }) :
-    ipcInvariantFull (S.runEnqueueOnCore c t p) := by
+    ipcInvariantFull (S.runEnqueueAdmitted c t p) := by
   refine ipcInvariantFull_of_runLinkView (s1 := { S with
       scheduler := S.scheduler.setRunQueueOnCore c ((S.scheduler.runQueueOnCore c).insert t p) })
-    (SystemState.runEnqueueOnCore_objectsAgreeOffRunLinks S c t p) (fun y => ?_) ?_ h
-  · show y ∈ (S.runEnqueueOnCore c t p).scheduler.runQueueOnCore bootCoreId ↔
+    (SystemState.runEnqueueAdmitted_objectsAgreeOffRunLinks S c t p) (fun y => ?_) ?_ h
+  · show y ∈ (S.runEnqueueAdmitted c t p).scheduler.runQueueOnCore bootCoreId ↔
       y ∈ (S.scheduler.setRunQueueOnCore c _).runQueueOnCore bootCoreId
     by_cases hc : c = bootCoreId
     · subst hc
-      rw [SystemState.runEnqueueOnCore_runQueueOnCore_self,
+      rw [SystemState.runEnqueueAdmitted_runQueueOnCore_self,
         SchedulerState.setRunQueueOnCore_runQueueOnCore_self]
-    · rw [SystemState.runEnqueueOnCore_runQueueOnCore_ne _ _ _ _ _ hc,
+    · rw [SystemState.runEnqueueAdmitted_runQueueOnCore_ne _ _ _ _ _ hc,
         SchedulerState.setRunQueueOnCore_runQueueOnCore_ne _ _ _ _ hc]
-  · simp only [SystemState.runEnqueueOnCore_scheduler, SchedulerState.setRunQueueOnCore_currentOnCore,
+  · simp only [SystemState.runEnqueueAdmitted_scheduler, SchedulerState.setRunQueueOnCore_currentOnCore,
       SchedulerState.setRunQueueEndsOnCore_currentOnCore]
+
+/-- A bare insert into a run queue keeps the bundle: membership only grows. -/
+theorem ipcInvariantFull_of_runQueueInsert (S : SystemState) (c : CoreId)
+    (t : SeLe4n.ThreadId) (p : SeLe4n.Priority) (h : ipcInvariantFull S) :
+    ipcInvariantFull { S with scheduler := S.scheduler.setRunQueueOnCore c ((S.scheduler.runQueueOnCore c).insert t p) } := by
+  refine ipcInvariantFull_of_getElem_eq (s1 := S) (fun oid => rfl) ?_ h
+  refine passiveServerIdle_of_frame
+    (passiveServerIdleFrame_of_backward_monotone (st := S)
+      (fun t tcb'' h => ⟨tcb'', h, rfl, rfl⟩) (fun y hy => ?_) (by simp))
+    h.passiveServerIdle
+  show y ∈ (S.scheduler.setRunQueueOnCore c _).runQueueOnCore Concurrency.bootCoreId
+  by_cases hc : c = Concurrency.bootCoreId
+  · subst hc
+    rw [SchedulerState.setRunQueueOnCore_runQueueOnCore_self, RunQueue.mem_insert]
+    exact Or.inl hy
+  · rw [SchedulerState.setRunQueueOnCore_runQueueOnCore_ne _ _ _ _ hc]
+    exact hy
+
+/-- The guarded enqueue keeps the bundle: the admitted insert only grows the
+queue, and a declined enqueue is the state as it was. -/
+theorem ipcInvariantFull_runEnqueueOnCore (S : SystemState) (c : CoreId)
+    (t : SeLe4n.ThreadId) (p : SeLe4n.Priority) (h0 : ipcInvariantFull S) :
+    ipcInvariantFull (S.runEnqueueOnCore c t p) := by
+  unfold SystemState.runEnqueueOnCore
+  split
+  · exact ipcInvariantFull_runEnqueueAdmitted S c t p (ipcInvariantFull_of_runQueueInsert S c t p h0)
+  · exact h0
 
 /-- **WS-RR RR2.5**: `applyReplyDonation` preserves the whole twenty-conjunct IPC
 bundle — the return (`returnDonatedSchedContext_preserves_ipcInvariantFull`)

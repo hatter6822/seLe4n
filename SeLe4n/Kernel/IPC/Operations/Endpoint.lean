@@ -554,14 +554,18 @@ def ensureRunnable (st : SystemState) (tid : SeLe4n.ThreadId) : SystemState :=
     -- same identity fall-through, so migration is semantics-preserving.
     match st.getTcb? tid with
     | some tcb =>
-        -- WS-ZA ZA4.5: the enqueue writes the thread's run-queue links
-        -- (`runEnqueueOnCore`).
-        let st' := st.runEnqueueOnCore bootCoreId tid tcb.boostedPriority
-        { st' with
-            -- The reschedule-SGI accumulator (KSC-1): the boot-core instance
-            -- of `enqueueRunnableOnCore`'s mark, so the wake paths' bridge
-            -- `wakeThread_bootCore_eq_ensureRunnable` stays an equation.
-            scheduler := st'.scheduler.markReschedulePendingOnCore bootCoreId }
+        -- WS-ZA ZA4.5: the enqueue writes the thread's run-queue links. A
+        -- thread placed on another core is not admitted (one placement per
+        -- thread, seL4's `tcbQueued`), and the wake then changes nothing, as
+        -- `enqueueRunnableOnCore` does.
+        if st.runEnqueueAdmits bootCoreId tid then
+          let st' := st.runEnqueueAdmitted bootCoreId tid tcb.boostedPriority
+          { st' with
+              -- The reschedule-SGI accumulator (KSC-1): the boot-core instance
+              -- of `enqueueRunnableOnCore`'s mark, so the wake paths' bridge
+              -- `wakeThread_bootCore_eq_ensureRunnable` stays an equation.
+              scheduler := st'.scheduler.markReschedulePendingOnCore bootCoreId }
+        else st
     | none => st
 
 def lookupTcb (st : SystemState) (tid : SeLe4n.ThreadId) : Option TCB :=
@@ -8548,7 +8552,9 @@ theorem ensureRunnable_onlyObjectsSchedulerDiffer (st : SystemState) (tid : SeLe
   split
   · exact .refl _
   · split
-    · exact .withScheduler (SystemState.runEnqueueOnCore_onlyObjectsSchedulerDiffer _ _ _ _) _
+    · split
+      · exact .withScheduler (SystemState.runEnqueueAdmitted_onlyObjectsSchedulerDiffer _ _ _ _) _
+      · exact .refl _
     · exact .refl _
 
 /-- WS-ZA ZA4.5: `ensureRunnable` changes no object off the run-queue links
@@ -8559,7 +8565,9 @@ theorem ensureRunnable_objectsAgreeOffRunLinks (st : SystemState) (tid : SeLe4n.
   split
   · exact .refl _
   · split
-    · exact SystemState.runEnqueueOnCore_objectsAgreeOffRunLinks _ _ _ _
+    · split
+      · exact SystemState.runEnqueueAdmitted_objectsAgreeOffRunLinks _ _ _ _
+      · exact .refl _
     · exact .refl _
 
 theorem ensureRunnable_objects_invExt (st : SystemState) (tid : SeLe4n.ThreadId)
@@ -8568,7 +8576,9 @@ theorem ensureRunnable_objects_invExt (st : SystemState) (tid : SeLe4n.ThreadId)
   split
   · exact hInv
   · split
-    · exact SystemState.runEnqueueOnCore_objects_invExt _ _ _ _ hInv
+    · split
+      · exact SystemState.runEnqueueAdmitted_objects_invExt _ _ _ _ hInv
+      · exact hInv
     · exact hInv
 
 /-- TPI-D1: ensureRunnable preserves objectIndexSet (only modifies scheduler). -/

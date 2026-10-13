@@ -314,7 +314,11 @@ theorem ensureRunnable_currentOnCore (st : SystemState) (tid0 : SeLe4n.ThreadId)
   unfold ensureRunnable
   split
   · rfl
-  · split <;> simp
+  · split
+    · split
+      · simp
+      · rfl
+    · rfl
 
 /-- SM6.D.2: `ensureRunnable` only *adds* to `bootCoreId`'s run queue —
 every pre-state member of any core's queue remains a member. -/
@@ -325,14 +329,16 @@ theorem ensureRunnable_mem_old_onCore (st : SystemState) (tid0 x : SeLe4n.Thread
   split
   · exact hMem
   · split
-    · by_cases hc : bootCoreId = c
-      · subst hc
-        rw [SchedulerState.markReschedulePendingOnCore_runQueueOnCore,
-          SystemState.runEnqueueOnCore_runQueueOnCore_self, RunQueue.mem_insert]
-        exact Or.inl hMem
-      · rw [SchedulerState.markReschedulePendingOnCore_runQueueOnCore,
-          SystemState.runEnqueueOnCore_runQueueOnCore_ne _ _ _ _ _ hc]
-        exact hMem
+    · split
+      · by_cases hc : bootCoreId = c
+        · subst hc
+          rw [SchedulerState.markReschedulePendingOnCore_runQueueOnCore,
+            SystemState.runEnqueueAdmitted_runQueueOnCore_self, RunQueue.mem_insert]
+          exact Or.inl hMem
+        · rw [SchedulerState.markReschedulePendingOnCore_runQueueOnCore,
+            SystemState.runEnqueueAdmitted_runQueueOnCore_ne _ _ _ _ _ hc]
+          exact hMem
+      · exact hMem
     · exact hMem
 
 /-- SM6.D.2 micro-frame: `ensureRunnable` frames every core's slice — it

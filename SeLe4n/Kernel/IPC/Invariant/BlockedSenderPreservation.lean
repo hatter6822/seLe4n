@@ -238,9 +238,9 @@ exists for, and why the flow fact rides a wake with no gate. -/
 theorem enqueueRunnableOnCore_blockedSenderShrinks (st : SystemState) (c : CoreId)
     (tid : SeLe4n.ThreadId) (hInv : st.objects.invExt) :
     blockedSenderShrinks st (enqueueRunnableOnCore st c tid) := by
-  cases hFresh : runnableOnSomeCore st tid with
+  cases hFresh : wakeDeclines st c tid with
   | true =>
-      rw [enqueueRunnableOnCore_eq_self_of_runnable st c tid hFresh]
+      rw [enqueueRunnableOnCore_eq_self_of_declines st c tid hFresh]
       exact blockedSenderShrinks.refl st
   | false =>
       intro other t' epId hLook hB

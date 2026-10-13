@@ -438,13 +438,10 @@ theorem restoreToReadyOnCore_pipBoost_recomputed (st : SystemState) (c : CoreId)
   unfold restoreToReadyOnCore
   -- The enqueue preserves `tid`'s pipBoost: no-op keeps the mid-state; the fresh
   -- branch sets only `ipcState` (`enqueueRunnableOnCore_makes_ready`).
-  by_cases hRun : runnableOnSomeCore (restoreToReadyMidState st tid) tid = true
-  · have hEq : enqueueRunnableOnCore (restoreToReadyMidState st tid) c tid
-        = restoreToReadyMidState st tid := by
-      unfold enqueueRunnableOnCore; rw [SystemState.getTcbWitnessed?_eq_some hSt2Tcb]; simp [hRun]
-    rw [hEq]
+  by_cases hRun : wakeDeclines (restoreToReadyMidState st tid) c tid = true
+  · rw [enqueueRunnableOnCore_eq_self_of_declines _ _ _ hRun]
     exact ⟨_, hSt2Tcb, rfl⟩
-  · have hFresh : runnableOnSomeCore (restoreToReadyMidState st tid) tid = false := by
+  · have hFresh : wakeDeclines (restoreToReadyMidState st tid) c tid = false := by
       simpa using hRun
     obtain ⟨t', h', ht⟩ := enqueueRunnableOnCore_makes_ready (restoreToReadyMidState st tid) c tid
       { t1 with pipBoost := computeMaxWaiterPriority (restoreToReady st tid) tid } hSt2Tcb hInv2 hFresh
@@ -1017,10 +1014,10 @@ theorem resumeThreadOnCore_sets_threadState (st : SystemState) (vtid : SeLe4n.Va
   have hst3 : ∃ t3, (enqueueRunnableOnCore (markKeyChangeFrom st (resumeReadyMidState st vtid.val) vtid.val)
         (determineTargetCore st vtid.val) vtid.val).getTcb? vtid.val = some t3
         ∧ t3.threadState = .Ready := by
-    by_cases hRun : runnableOnSomeCore (markKeyChangeFrom st (resumeReadyMidState st vtid.val) vtid.val) vtid.val = true
-    · rw [SeLe4n.Kernel.enqueueRunnableOnCore_eq_self_of_runnable _ _ _ hRun]
+    by_cases hRun : wakeDeclines (markKeyChangeFrom st (resumeReadyMidState st vtid.val) vtid.val) (determineTargetCore st vtid.val) vtid.val = true
+    · rw [SeLe4n.Kernel.enqueueRunnableOnCore_eq_self_of_declines _ _ _ hRun]
       exact ⟨tm, hmid, hmidReady⟩
-    · have hFresh : runnableOnSomeCore (markKeyChangeFrom st (resumeReadyMidState st vtid.val) vtid.val) vtid.val = false := by
+    · have hFresh : wakeDeclines (markKeyChangeFrom st (resumeReadyMidState st vtid.val) vtid.val) (determineTargetCore st vtid.val) vtid.val = false := by
         simpa using hRun
       obtain ⟨t', h', ht⟩ := SeLe4n.Kernel.enqueueRunnableOnCore_makes_ready _ _ _ tm hmid hmidInv hFresh
       exact ⟨t', h', (TCB.proj_eq_of_withoutRunLinks_eq TCB.threadState ht).trans hmidReady⟩
@@ -1163,10 +1160,10 @@ theorem restoreToReadyWithWake_sets_threadState (st : SystemState) (tid : Thread
   obtain ⟨tm, hmid, hmidReady⟩ := resumeReadyMidState_getTcb?_ready st tid tcb hGet hInv
   have hmidInv : (resumeReadyMidState st tid).objects.invExt :=
     resumeReadyMidState_objects_invExt st tid hInv
-  by_cases hRun : runnableOnSomeCore (resumeReadyMidState st tid) tid = true
-  · rw [SeLe4n.Kernel.enqueueRunnableOnCore_eq_self_of_runnable _ _ _ hRun]
+  by_cases hRun : wakeDeclines (resumeReadyMidState st tid) (determineTargetCore st tid) tid = true
+  · rw [SeLe4n.Kernel.enqueueRunnableOnCore_eq_self_of_declines _ _ _ hRun]
     exact ⟨tm, hmid, hmidReady⟩
-  · have hFresh : runnableOnSomeCore (resumeReadyMidState st tid) tid = false := by simpa using hRun
+  · have hFresh : wakeDeclines (resumeReadyMidState st tid) (determineTargetCore st tid) tid = false := by simpa using hRun
     obtain ⟨t', h', ht⟩ := SeLe4n.Kernel.enqueueRunnableOnCore_makes_ready _ _ _ tm hmid hmidInv hFresh
     exact ⟨t', h', (TCB.proj_eq_of_withoutRunLinks_eq TCB.threadState ht).trans hmidReady⟩
 

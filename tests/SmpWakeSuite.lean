@@ -82,6 +82,8 @@ open SeLe4n.Testing
 #check @enqueueRunnableOnCore_no_tcb_noop
 #check @enqueueRunnableOnCore_eq_self_of_runnable
 #check @runnableOnSomeCore
+#check @enqueueRunnableOnCore_eq_self_of_declines
+#check @wakeDeclines
 
 -- SM5.C.2/.4/.10 wakeThread semantics:
 #check @wakeThread_state_eq_enqueue
@@ -207,14 +209,14 @@ example (st : SystemState) (tid : SeLe4n.ThreadId) (executingCore : CoreId)
 
 /-- SM5.C.10: the woken thread lands in the target core's run queue. -/
 example (st : SystemState) (tid : SeLe4n.ThreadId) (executingCore : CoreId) (tcb : TCB)
-    (hTcb : st.getTcb? tid = some tcb) (hFresh : runnableOnSomeCore st tid = false) :
+    (hTcb : st.getTcb? tid = some tcb) (hFresh : wakeDeclines st (determineTargetCore st tid) tid = false) :
     tid ∈ ((wakeThread st tid executingCore).1.scheduler.runQueueOnCore
             (determineTargetCore st tid)).toList :=
   wakeThread_target_runQueue_contains st tid executingCore tcb hTcb hFresh
 
 /-- SM5.C.6 / Thm 3.3.2: cross-core wake is lossless. -/
 example (st : SystemState) (tid : SeLe4n.ThreadId) (executingCore : CoreId) (tcb : TCB)
-    (hTcb : st.getTcb? tid = some tcb) (hFresh : runnableOnSomeCore st tid = false) :
+    (hTcb : st.getTcb? tid = some tcb) (hFresh : wakeDeclines st (determineTargetCore st tid) tid = false) :
     ∃ futureState : SystemState,
       SchedReachable (wakeThread st tid executingCore).1 futureState ∧
       (futureState.scheduler.currentOnCore (determineTargetCore st tid) = some tid ∨
@@ -239,7 +241,7 @@ example (st : SystemState) (tid : SeLe4n.ThreadId) (tcb : TCB)
     `threadState`); only `ipcState` and its run-queue links change. -/
 example (st : SystemState) (c : CoreId) (tid : SeLe4n.ThreadId) (tcb : TCB)
     (hTcb : st.getTcb? tid = some tcb) (hInv : st.objects.invExt)
-    (hFresh : runnableOnSomeCore st tid = false) :
+    (hFresh : wakeDeclines st c tid = false) :
     ∃ tcb', (enqueueRunnableOnCore st c tid).getTcb? tid = some tcb' ∧
       tcb'.priority = tcb.priority ∧ tcb'.domain = tcb.domain ∧
       tcb'.cpuAffinity = tcb.cpuAffinity ∧ tcb'.threadState = tcb.threadState :=

@@ -384,9 +384,9 @@ theorem enqueueRunnableOnCore_covers (e c : CoreId) (st : SystemState)
   | none =>
     rw [enqueueRunnableOnCore_no_tcb_noop st c tid hTcb]; exact reschedulePendingCovers_refl e st
   | some tcb =>
-    cases hFresh : runnableOnSomeCore st tid with
+    cases hFresh : wakeDeclines st c tid with
     | true =>
-      rw [enqueueRunnableOnCore_eq_self_of_runnable st c tid hFresh]
+      rw [enqueueRunnableOnCore_eq_self_of_declines st c tid hFresh]
       exact reschedulePendingCovers_refl e st
     | false =>
       obtain ⟨E, hE⟩ := enqueueRunnableOnCore_scheduler_of_fresh st c tid tcb hTcb hFresh
