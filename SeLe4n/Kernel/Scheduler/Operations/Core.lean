@@ -2976,7 +2976,9 @@ def migrateRunQueueOnAffinityChange (st : SystemState) (tid : SeLe4n.ThreadId)
     match st.getTcb? tid with
     | none => st
     | some tcb =>
-      if (st.scheduler.runQueueOnCore fromCore).contains tid then
+      -- Its own run-queue links say whether it is queued on `fromCore` (seL4's
+      -- `tcbQueued`); the abstract queue is ghost state (WS-ZA ZA4.5).
+      if tcb.runCoreCode = fromCore.val + 1 then
         -- The thread leaves `fromCore`'s queue and joins `toCore`'s through its
         -- TCB run-queue links (WS-ZA ZA4.5).  The removal leaves it on no queue
         -- (its links named `fromCore`), so the enqueue is admitted.
@@ -3123,7 +3125,7 @@ def setThreadCpuAffinityWithMigration (st : SystemState) (targetTid : SeLe4n.Thr
           let st2 := migrateRunQueueOnAffinityChange st1 targetTid oldCore newCore
           let sgi : Option (CoreId × SgiKind) :=
             if newCore == executingCore then none
-            else if (st2.scheduler.runQueueOnCore newCore).contains targetTid then
+            else if st2.queuedOn newCore targetTid then
               some (newCore, SgiKind.reschedule)
             else none
           .ok (st2, sgi)

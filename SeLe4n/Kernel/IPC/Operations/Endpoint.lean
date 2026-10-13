@@ -548,7 +548,9 @@ be reused by rewriting through this equality. -/
     rendezvous, reply wake). Matches the yield/timer/switch convention
     established in AI3-A. -/
 def ensureRunnable (st : SystemState) (tid : SeLe4n.ThreadId) : SystemState :=
-  if tid ∈ (st.scheduler.runQueueOnCore bootCoreId) then
+  -- WS-ZA ZA4.5: the thread's own run-queue links say whether it is queued on
+  -- the boot core (seL4's `tcbQueued`); the abstract queue is ghost state.
+  if st.queuedOn bootCoreId tid then
     st
   else
     -- AN10-B (DEF-AK7-F.reader.hygiene): typed-helper migration. The

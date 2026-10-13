@@ -453,7 +453,8 @@ theorem migrateRunQueueOnAffinityChange_runQueueStage (st : SystemState) (tid : 
             simp
           · rw [SystemState.runRemoveOnCore_runQueueOnCore_ne _ _ _ _ (Ne.symm hf)]
             exact SystemState.runEnqueueAdmits_not_contains hR
-              (SystemState.runEnqueueAdmits_of_contains hR hC) c' hf
+              (SystemState.runEnqueueAdmits_of_contains hR
+                ((hR fromCore).contains_of_runCoreCode hTcb hC)) c' hf
       · exact RunQueueStage.refl _
 
 /-- The affinity op: the affinity field write, the replenishment move (replenish

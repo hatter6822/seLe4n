@@ -320,7 +320,7 @@ theorem ensureRunnable_preserves_projection
     cases hTcb : st.getTcb? tid with
     | none => rfl
     | some tcb =>
-          simp only [hNotMem, hTcb, if_false] at hObj
+          simp only [hNotMem, hTcb] at hObj
           by_cases hAdm : st.runEnqueueAdmits bootCoreId tid = true
           case neg => simp only [hAdm, Bool.false_eq_true, if_false]
           simp only [hAdm, if_true] at hObj ⊢
@@ -344,7 +344,7 @@ theorem ensureRunnable_preserves_projection
           congr 1
           simp only [projectRunnable, SchedulerState.runnable,
             SchedulerState.markReschedulePendingOnCore_runQueueOnCore, SchedulerState.setRunQueueOnCore_runQueueOnCore_self]
-          exact RunQueue.toList_filter_insert_neg _ _ _ _ hTidHigh hNotMem
+          exact RunQueue.toList_filter_insert_neg' _ _ _ _ hTidHigh
 
 /-- storeTcbIpcState at a non-observable object preserves projection (single-state). -/
 theorem storeTcbIpcState_preserves_projection

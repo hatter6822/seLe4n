@@ -401,6 +401,12 @@ theorem queuedOn (h : st.runQueueRefinedOnCore c) (t : SeLe4n.ThreadId) :
     st.queuedOn c t = (st.scheduler.runQueueOnCore c).contains t := by
   rw [queuedOn_eq_runLinkOn, h.contains]
 
+/-- A thread whose TCB names core `c` is on `c`'s queue. -/
+theorem contains_of_runCoreCode (h : st.runQueueRefinedOnCore c) {t : SeLe4n.ThreadId}
+    {tcb : TCB} (hT : st.getTcb? t = some tcb) (hc : tcb.runCoreCode = c.val + 1) :
+    (st.scheduler.runQueueOnCore c).contains t = true := by
+  rw [← h.queuedOn]; unfold SystemState.queuedOn; rw [hT]; simp [hc]
+
 /-- A queued thread's entry, read from its TCB, is the queue's. -/
 theorem link_of_mem (h : st.runQueueRefinedOnCore c) {t : SeLe4n.ThreadId}
     (ht : t ∈ (st.scheduler.runQueueOnCore c).toList) :

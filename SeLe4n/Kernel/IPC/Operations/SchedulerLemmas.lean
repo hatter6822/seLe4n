@@ -71,7 +71,7 @@ theorem ensureRunnable_mem_self
     (st : SystemState) (tid : SeLe4n.ThreadId)
     (hTcb : ∃ tcb, st.objects[tid.toObjId]? = some (.tcb tcb))
     (hAdm : st.runEnqueueAdmits bootCoreId tid = true) :
-    tid ∈ ((ensureRunnable st tid).scheduler.runQueueOnCore bootCoreId) := by
+    (ensureRunnable st tid).queuedOn bootCoreId tid = true := by
   obtain ⟨tcb, hTcb⟩ := hTcb
   -- AN10-B: post-migration `ensureRunnable` reads via `getTcb?`; bridge
   -- from the raw lookup hypothesis via the iff lemma.
@@ -80,9 +80,10 @@ theorem ensureRunnable_mem_self
   unfold ensureRunnable
   split
   · assumption
-  · simp only [hTcbTyped, SchedulerState.markReschedulePendingOnCore_runQueueOnCore, SystemState.runEnqueueAdmitted_scheduler, SchedulerState.setRunQueueOnCore_runQueueOnCore_self]
-    rw [RunQueue.mem_insert]
-    exact Or.inr rfl
+  · simp only [hTcbTyped, hAdm, if_true]
+    show (st.runEnqueueAdmitted bootCoreId tid tcb.boostedPriority).queuedOn bootCoreId tid = true
+    rw [SystemState.runEnqueueAdmitted_queuedOn, if_pos rfl, hTcbTyped]
+    simp
 
 theorem ensureRunnable_mem_old
     (st : SystemState) (tid x : SeLe4n.ThreadId)
@@ -112,8 +113,10 @@ theorem ensureRunnable_runnable_mem_old
     · rename_i tcb hTcb
       split
       · simp only [SchedulerState.runnable, SchedulerState.markReschedulePendingOnCore_runQueueOnCore, SystemState.runEnqueueAdmitted_scheduler, SchedulerState.setRunQueueOnCore_runQueueOnCore_self]
-        rw [RunQueue.toList_insert_not_mem _ _ _ hNotMem]
-        exact List.mem_append_left _ hMem
+        rw [RunQueue.toList_insert]
+        split
+        · exact hMem
+        · exact List.mem_append_left _ hMem
       · exact hMem
     · exact hMem
 
@@ -129,14 +132,7 @@ theorem ensureRunnable_nodup
     · rename_i tcb hTcb
       split
       · simp only [SchedulerState.runnable, SchedulerState.markReschedulePendingOnCore_runQueueOnCore, SystemState.runEnqueueAdmitted_scheduler, SchedulerState.setRunQueueOnCore_runQueueOnCore_self]
-        rw [RunQueue.toList_insert_not_mem _ _ _ hNotMem]
-        have hNotFlat : tid ∉ st.scheduler.runnable :=
-          RunQueue.not_mem_toList_of_not_mem _ _ hNotMem
-        refine List.nodup_append.2 ⟨hNodup, List.pairwise_singleton _ _, ?_⟩
-        intro x hx y hy
-        have : y = tid := by simpa using hy
-        subst this; intro hEq; subst hEq
-        exact hNotFlat hx
+        exact RunQueue.toList_nodup _
       · exact hNodup
     · exact hNodup
 
@@ -155,7 +151,7 @@ theorem threadId_toObjId_injective {a b : SeLe4n.ThreadId}
     yield/timer/switch. -/
 theorem ensureRunnable_inserts_at_effective_priority
     (st : SystemState) (tid : SeLe4n.ThreadId) (tcb : TCB)
-    (hNotMem : tid ∉ (st.scheduler.runQueueOnCore bootCoreId))
+    (hNotQ : st.queuedOn bootCoreId tid = false)
     (hTcb : st.objects[tid.toObjId]? = some (.tcb tcb))
     (hAdm : st.runEnqueueAdmits bootCoreId tid = true) :
     ((ensureRunnable st tid).scheduler.runQueueOnCore bootCoreId) =
@@ -164,7 +160,7 @@ theorem ensureRunnable_inserts_at_effective_priority
   have hTcbTyped : st.getTcb? tid = some tcb :=
     (SystemState.getTcb?_eq_some_iff st tid tcb).mpr hTcb
   unfold ensureRunnable
-  rw [if_neg hNotMem]
+  rw [if_neg (by simp [hNotQ])]
   simp only [hTcbTyped, hAdm, if_true, SchedulerState.markReschedulePendingOnCore_runQueueOnCore, SystemState.runEnqueueAdmitted_scheduler, SchedulerState.setRunQueueOnCore_runQueueOnCore_self]
 
 /-- AK1-E (I-M03): PIP-boosted threads are inserted at their boosted
@@ -173,14 +169,14 @@ theorem ensureRunnable_inserts_at_effective_priority
     specialised to the case where `tcb.pipBoost = some boost ∧ tcb.priority < boost`. -/
 theorem ensureRunnable_honors_pipBoost
     (st : SystemState) (tid : SeLe4n.ThreadId) (tcb : TCB)
-    (hNotMem : tid ∉ (st.scheduler.runQueueOnCore bootCoreId))
+    (hNotQ : st.queuedOn bootCoreId tid = false)
     (hTcb : st.objects[tid.toObjId]? = some (.tcb tcb))
     (hAdm : st.runEnqueueAdmits bootCoreId tid = true)
     (boost : SeLe4n.Priority)
     (hBoost : tcb.pipBoost = some boost) :
     ((ensureRunnable st tid).scheduler.runQueueOnCore bootCoreId) =
       (st.scheduler.runQueueOnCore bootCoreId).insert tid ⟨Nat.max tcb.priority.val boost.val⟩ := by
-  rw [ensureRunnable_inserts_at_effective_priority st tid tcb hNotMem hTcb hAdm]
+  rw [ensureRunnable_inserts_at_effective_priority st tid tcb hNotQ hTcb hAdm]
   congr 1
   -- Since `v0.35.28` the reading goes through `TCB.boostedPriority` and
   -- `Priority.raisedBy`, both transparent to `simp`, so the boost hypothesis
@@ -773,7 +769,8 @@ theorem donateSchedContext_ok_server_donated
 -- ============================================================================
 
 /-- AK1-E (I-M03 / MEDIUM): When `notificationSignal` successfully wakes a
-    queued waiter, that waiter appears in the post-state runQueue.
+    queued waiter, that waiter is queued on the boot core in the post-state:
+    its own run-queue links place it there (WS-ZA ZA4.5).
     Combined with `ensureRunnable_inserts_at_effective_priority`, this
     ensures the waiter is inserted at its PIP-effective priority — i.e.,
     `tcb.boostedPriority`. This is the correctness witness
@@ -790,7 +787,7 @@ theorem notificationSignal_respects_pipBoost
     (hHead : ntfn.waitHead = some waiter)
     (hAdm : st.runEnqueueAdmits bootCoreId waiter = true)
     (hStep : notificationSignal notificationId badge st = .ok ((), st')) :
-    waiter ∈ (st'.scheduler.runQueueOnCore bootCoreId) := by
+    st'.queuedOn bootCoreId waiter = true := by
   -- The transition reads through the kind-agnostic accessor; this proof works
   -- in store terms, so it is unfolded once here.
   unfold notificationSignal SystemState.getObject? at hStep

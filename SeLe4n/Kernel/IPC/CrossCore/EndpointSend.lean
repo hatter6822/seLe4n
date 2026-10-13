@@ -162,17 +162,14 @@ theorem wakeThread_bootCore_eq_ensureRunnable (st : SystemState) (tid : SeLe4n.T
     (hTcb : st.getTcb? tid = some tcb)
     (hHome : determineTargetCore st tid = bootCoreId)
     (hNotElsewhere : ∀ c : CoreId, c ≠ bootCoreId → st.queuedOn c tid = false)
-    (hR : st.runQueueRefined)
     (hReady : tcb.ipcState = .ready)
     (hNoResize : ¬ (st.objects.size * 4 ≥ st.objects.capacity * 3)) :
     (wakeThread st tid bootCoreId).1 = ensureRunnable st tid := by
   unfold wakeThread enqueueRunnableOnCore ensureRunnable
   simp only [hHome, hTcb, SystemState.getTcbWitnessed?_eq_some hTcb, SystemState.rewriteObject]
   -- `runnableOnSomeCore` collapses onto the boot-core membership test.
-  have hSome : runnableOnSomeCore st tid
-      = (st.scheduler.runQueueOnCore bootCoreId).contains tid := by
+  have hSome : runnableOnSomeCore st tid = st.queuedOn bootCoreId tid := by
     unfold runnableOnSomeCore
-    rw [← (hR bootCoreId).queuedOn]
     apply Bool.eq_iff_iff.mpr
     simp only [List.any_eq_true]
     constructor
@@ -200,11 +197,11 @@ theorem wakeThread_bootCore_eq_ensureRunnable (st : SystemState) (tid : SeLe4n.T
   simp only [hSt]
   unfold wakeDeclines
   rw [hSome]
-  by_cases hMem : (st.scheduler.runQueueOnCore bootCoreId).contains tid = true
-  · simp [hMem, RunQueue.mem_iff_contains]
+  by_cases hMem : st.queuedOn bootCoreId tid = true
+  · simp [hMem]
   · by_cases hA : st.runEnqueueAdmits bootCoreId tid = true
-    · simp [hMem, hA, RunQueue.mem_iff_contains]
-    · simp [hMem, hA, RunQueue.mem_iff_contains]
+    · simp [hMem, hA]
+    · simp [hMem, hA]
 
 /-- WS-SM SM6 (**the blocking leg's bootCore bridge**): with no receiver waiting,
 the per-core send on the boot core commits **exactly** the single-core
@@ -265,7 +262,6 @@ theorem endpointSendDualOnCore_bootCore_rendezvous_eq_single (endpointId : SeLe4
     (hTcb : stRecv.getTcb? receiver = some rTcb)
     (hHome : determineTargetCore stRecv receiver = bootCoreId)
     (hNotElsewhere : ∀ c : CoreId, c ≠ bootCoreId → stRecv.queuedOn c receiver = false)
-    (hR : stRecv.runQueueRefined)
     (hReady : rTcb.ipcState = .ready)
     (hNoResize : ¬ (stRecv.objects.size * 4 ≥ stRecv.objects.capacity * 3))
     (hSingle : endpointSendDual endpointId sender msg st = .ok ((), st')) :
@@ -291,7 +287,7 @@ theorem endpointSendDualOnCore_bootCore_rendezvous_eq_single (endpointId : SeLe4
   simp only [Except.ok.injEq, Prod.mk.injEq, true_and] at hSingle
   rw [← hSingle]
   exact wakeThread_bootCore_eq_ensureRunnable stRecv receiver rTcb hTcb hHome
-    hNotElsewhere hR hReady hNoResize
+    hNotElsewhere hReady hNoResize
 
 /-- WS-SM SM6: the bounds rejections are fail-closed and state-preserving. -/
 theorem endpointSendDualOnCore_tooLarge (endpointId : SeLe4n.ObjId)

@@ -423,22 +423,16 @@ def migrateRunQueueBucketOnCore (st : SystemState) (tid : SeLe4n.ThreadId)
     (newPriority : SeLe4n.Priority) (homeCore : Concurrency.CoreId) : SystemState :=
   if st.queuedOn homeCore tid then
     -- AI3-B (M-22): Apply PIP boost to new priority.
-    -- AK2-J (S-M08): The defensive fallback (TCB missing — unreachable under
-    -- `runnableThreadsAreTCBs`) now takes the max of `newPriority` and the
-    -- RunQueue's cached priority for `tid`. Any PIP boost previously recorded
-    -- in the RunQueue is therefore preserved rather than silently erased.
-    -- AN10-B (DEF-AK7-F.reader.hygiene): typed-helper migration.
-    -- `Priority.raisedBy` (`Prelude.lean`) is the one reading of "a base raised
-    -- by an inherited boost"; the base here is the *new* priority rather than
-    -- the thread's stored one, which is exactly why the helper takes its base as
-    -- a parameter.  The fallback raises by the RunQueue's cached priority, which
-    -- carries any boost recorded there, so it is the same question with a
-    -- different source for the boost.
+    -- AN10-B (DEF-AK7-F.reader.hygiene): `Priority.raisedBy` (`Prelude.lean`)
+    -- is the one reading of "a base raised by an inherited boost"; the base
+    -- here is the *new* priority rather than the thread's stored one, which is
+    -- exactly why the helper takes its base as a parameter.  A thread with no
+    -- TCB has no run-queue links (WS-ZA ZA4.5: they are TCB fields), so it is
+    -- on no queue and the requeue below leaves the state as it is; its
+    -- priority is the new one.
     let effectivePrio := match st.getTcb? tid with
       | some tcb => newPriority.raisedBy tcb.pipBoost
-      | none =>
-        newPriority.raisedBy
-          ((st.scheduler.runQueueOnCore homeCore).priorityOf tid)
+      | none => newPriority
     -- The thread leaves its bucket and joins the tail of the new one through
     -- its TCB run-queue links (WS-ZA ZA4.5).
     st.runRequeueOnCore homeCore tid effectivePrio

@@ -1609,7 +1609,8 @@ on every core pre-migration.  The migrated thread carries its (unchanged) positi
 budget to the new core; every other core's membership only shrinks or is untouched. -/
 theorem migrateRunQueueOnAffinityChange_preserves_schedContextRunQueueConsistent_perCore
     (st : SystemState) (tid : SeLe4n.ThreadId) (fromCore toCore c' : CoreId)
-    (hAll : ∀ c, schedContextRunQueueConsistent_perCore st c) :
+    (hAll : ∀ c, schedContextRunQueueConsistent_perCore st c)
+    (hR : st.runQueueRefined) :
     schedContextRunQueueConsistent_perCore
       (migrateRunQueueOnAffinityChange st tid fromCore toCore) c' := by
   intro x hxMem tcb' hTcb' scId hBind'
@@ -1629,10 +1630,11 @@ theorem migrateRunQueueOnAffinityChange_preserves_schedContextRunQueueConsistent
   · intro hxMem; exact hAll c' x hxMem tcb hTcb scId hBind
   · split
     · intro hxMem; exact hAll c' x hxMem tcb hTcb scId hBind
-    · rename_i migTcb _
+    · rename_i migTcb hMigTcb
       split
       · -- write branch: the scheduler is the two-core run-queue update.
-        rename_i hContains
+        rename_i hCode
+        have hContains := (hR fromCore).contains_of_runCoreCode hMigTcb hCode
         intro hxMem
         dsimp only at hxMem
         rw [SeLe4n.Model.SchedulerState.markReschedulePendingOnCore_runQueueOnCore,
@@ -1757,6 +1759,7 @@ theorem setThreadCpuAffinityWithMigration_preserves_schedContextRunQueueConsiste
     (st' : SystemState × Option (CoreId × SgiKind))
     (hTcb : st.getTcb? targetTid = some tcb) (hInv : st.objects.invExt)
     (hCons : ∀ c, schedContextRunQueueConsistent_perCore st c)
+    (hR : st.runQueueRefined)
     (hStep : setThreadCpuAffinityWithMigration st targetTid affinity executingCore = .ok st') :
     schedContextRunQueueConsistent_perCore st'.1 c' := by
   cases hSet : setThreadCpuAffinity st targetTid affinity with
@@ -1774,13 +1777,31 @@ theorem setThreadCpuAffinityWithMigration_preserves_schedContextRunQueueConsiste
         · simp at hStep
         · simp only [Except.ok.injEq] at hStep
           subst hStep
+          -- The affinity write keeps every run-queue field and the replenishment
+          -- move writes the replenish queues alone, so the link agreement holds
+          -- where the run-queue move reads it.
+          have hRSet : stSet.runQueueRefined := by
+            unfold setThreadCpuAffinity at hSet
+            split at hSet
+            · rename_i t hT _
+              rw [Except.ok.injEq] at hSet; subst hSet
+              exact SystemState.rewriteObject_tcb_runQueueRefined _ hInv
+                hT (fun _ => rfl) hR
+            · cases hSet
           apply migrateRunQueueOnAffinityChange_preserves_schedContextRunQueueConsistent_perCore
-          intro c
-          cases hb : tcb.schedContextBinding.scId? with
-          | none => exact hConsSet c
-          | some scId =>
-              exact migrateSchedContextReplenishment_preserves_schedContextRunQueueConsistent_perCore
-                stSet scId _ _ c (hConsSet c)
+          · intro c
+            cases hb : tcb.schedContextBinding.scId? with
+            | none => exact hConsSet c
+            | some scId =>
+                exact migrateSchedContextReplenishment_preserves_schedContextRunQueueConsistent_perCore
+                  stSet scId _ _ c (hConsSet c)
+          · split
+            · exact SystemState.runQueueRefined_of_frame
+                (fun c t => SystemState.runLinkOn_of_objects
+                  (migrateSchedContextReplenishment_objects _ _ _ _) c t)
+                (by unfold migrateSchedContextReplenishment; split <;> rfl)
+                (by unfold migrateSchedContextReplenishment; split <;> rfl) hRSet
+            · exact hRSet
 
 -- ============================================================================
 -- §18  SM5.H.4 (B8/SGI) — the cross-core `.reschedule` SGI the composite emits
@@ -1793,7 +1814,8 @@ theorem setThreadCpuAffinityWithMigration_preserves_schedContextRunQueueConsiste
 /-- WS-SM SM5.H.4 (SGI characterisation): the composite's emitted SGI is exactly
 the def's `if`-expression — `none` when the new home is the executing core (local,
 no cross-core poke), and otherwise a `.reschedule` SGI to the new home iff the
-migrated thread is runnable there (its run-queue entry landed on the new home). -/
+migrated thread is runnable there (its run-queue links, read from its TCB, name
+the new home). -/
 theorem setThreadCpuAffinityWithMigration_sgi_eq
     (st : SystemState) (targetTid : SeLe4n.ThreadId) (affinity : Option CoreId)
     (executingCore : CoreId) (tcb : TCB) (stSet : SystemState)
@@ -1803,7 +1825,7 @@ theorem setThreadCpuAffinityWithMigration_sgi_eq
     (hStep : setThreadCpuAffinityWithMigration st targetTid affinity executingCore = .ok st') :
     st'.2 =
       (if determineTargetCore stSet targetTid == executingCore then none
-       else if (st'.1.scheduler.runQueueOnCore (determineTargetCore stSet targetTid)).contains targetTid then
+       else if st'.1.queuedOn (determineTargetCore stSet targetTid) targetTid then
          some (determineTargetCore stSet targetTid, SgiKind.reschedule)
        else none) := by
   simp only [setThreadCpuAffinityWithMigration, hTcb, hSet] at hStep
@@ -1840,7 +1862,7 @@ theorem setThreadCpuAffinityWithMigration_emits_reschedule_of_remote_runnable
     (hSet : setThreadCpuAffinity st targetTid affinity = .ok stSet)
     (hStep : setThreadCpuAffinityWithMigration st targetTid affinity executingCore = .ok st')
     (hRemote : (determineTargetCore stSet targetTid == executingCore) = false)
-    (hRun : (st'.1.scheduler.runQueueOnCore (determineTargetCore stSet targetTid)).contains targetTid = true) :
+    (hRun : st'.1.queuedOn (determineTargetCore stSet targetTid) targetTid = true) :
     st'.2 = some (determineTargetCore stSet targetTid, SgiKind.reschedule) := by
   rw [setThreadCpuAffinityWithMigration_sgi_eq st targetTid affinity executingCore tcb stSet st'
         hTcb hSet hStep, if_neg (by simp [hRemote]), if_pos hRun]

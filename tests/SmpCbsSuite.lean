@@ -303,11 +303,11 @@ example (st : SystemState) (tid : SeLe4n.ThreadId) (fromCore toCore c' : CoreId)
 
 -- SM5.H.4 (§16 D15): the run-queue migration preserves SM4.C run-queue↔budget consistency.
 example (st : SystemState) (tid : SeLe4n.ThreadId) (fromCore toCore c' : CoreId)
-    (hAll : ∀ c, schedContextRunQueueConsistent_perCore st c) :
+    (hAll : ∀ c, schedContextRunQueueConsistent_perCore st c) (hR : st.runQueueRefined) :
     schedContextRunQueueConsistent_perCore
       (migrateRunQueueOnAffinityChange st tid fromCore toCore) c' :=
   migrateRunQueueOnAffinityChange_preserves_schedContextRunQueueConsistent_perCore
-    st tid fromCore toCore c' hAll
+    st tid fromCore toCore c' hAll hR
 
 -- SM5.H.2 (A4): the live per-core budget tick preserves replenish-queue validity.
 example (st : SystemState) (c : CoreId) (tid : SeLe4n.ThreadId) (tcb : TCB)
@@ -580,9 +580,7 @@ private def runDeclaredCoreScenarios : IO Unit := do
 private def runRunQueueMigrationScenarios : IO Unit := do
   IO.println "--- §3.6 SM5.H.4 run-queue migration (full thread migration) ---"
   -- Put tid0 in core 1's run queue, then migrate it to the boot core.
-  let stRq : SystemState :=
-    let rq := RunQueue.empty.insert tid0 ⟨5⟩
-    { stCbs with scheduler := stCbs.scheduler.setRunQueueOnCore core1 rq }
+  let stRq : SystemState := stCbs.runEnqueueOnCore core1 tid0 ⟨5⟩
   let stMoved := migrateRunQueueOnAffinityChange stRq tid0 core1 bootCoreId
   assertBool "before: tid0 is in core 1's run queue"
     ((stRq.scheduler.runQueueOnCore core1).contains tid0)
@@ -704,9 +702,7 @@ run-queue↔budget consistency on its new core. -/
 private def runSm5hCompletionScenarios : IO Unit := do
   IO.println "--- §3.8 SM5.H.4 D15 composite + SGI characterisation ---"
   -- tid0 runnable on core 1, re-homed to the (remote, from core 1) boot core.
-  let stRq : SystemState :=
-    let rq := RunQueue.empty.insert tid0 ⟨5⟩
-    { stCbs with scheduler := stCbs.scheduler.setRunQueueOnCore core1 rq }
+  let stRq : SystemState := stCbs.runEnqueueOnCore core1 tid0 ⟨5⟩
   match setThreadCpuAffinityWithMigration stRq tid0 (some bootCoreId) core1 with
   | .ok (st', sgi) =>
       -- §18 `_emits_reschedule_of_remote_runnable`: remote (boot ≠ core1) + runnable
