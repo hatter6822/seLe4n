@@ -167,11 +167,14 @@ pub enum SyscallId {
     /// WS-BP BP7.1 (`v0.36.12`): take one out (`seL4_ARM_PageTable_Unmap`); no
     /// message registers.
     PageTableUnmap = 40,
+    /// WS-ZA ZA4.3: give up the rest of the caller's budget or time slice
+    /// (`seL4_Yield`); invokes no capability, no message registers.
+    Yield = 41,
 }
 
 impl SyscallId {
     /// Total number of modelled syscalls (must match `sele4n-types`).
-    pub const COUNT: u32 = 41;
+    pub const COUNT: u32 = 42;
 
     /// AN9-F.1.b: decode a raw `u32` syscall id, rejecting values
     /// outside the valid `0..COUNT` range with `None`.
@@ -218,6 +221,7 @@ impl SyscallId {
             38 => Some(Self::TcbSetSpace),
             39 => Some(Self::PageTableMap),
             40 => Some(Self::PageTableUnmap),
+            41 => Some(Self::Yield),
             _ => None,
         }
     }
@@ -267,6 +271,8 @@ impl SyscallId {
             Self::PageTableMap => 2,
             // WS-BP BP7.1: the unmap's only operand is the invoked capability.
             Self::PageTableUnmap => 0,
+            // WS-ZA ZA4.3: yield takes no operand at all.
+            Self::Yield => 0,
             Self::LifecycleRetype => 3,
             Self::VSpaceMap => 4,
             Self::VSpaceUnmap => 2,
@@ -1173,7 +1179,10 @@ mod tests {
         assert_eq!(SyscallId::PageTableUnmap.min_inline_args(), 0);
         assert_eq!(SyscallId::from_u32(39), Some(SyscallId::PageTableMap));
         assert_eq!(SyscallId::from_u32(40), Some(SyscallId::PageTableUnmap));
-        assert_eq!(SyscallId::from_u32(41), None);
+        // WS-ZA ZA4.3: the yield takes no operand at all.
+        assert_eq!(SyscallId::Yield.min_inline_args(), 0);
+        assert_eq!(SyscallId::from_u32(41), Some(SyscallId::Yield));
+        assert_eq!(SyscallId::from_u32(42), None);
     }
 
     // WS-RR RR5.6: the regression guard for the off-by-one ABI bug — a valid

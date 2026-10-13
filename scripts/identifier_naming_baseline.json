@@ -51,7 +51,7 @@
   "scripts/test_tier3_invariant_surface.sh": 47
  },
  "SM3": {
-  "scripts/test_tier3_invariant_surface.sh": 58
+  "scripts/test_tier3_invariant_surface.sh": 43
  },
  "SM4": {
   "scripts/test_tier3_invariant_surface.sh": 39

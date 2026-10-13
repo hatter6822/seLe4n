@@ -24,5 +24,8 @@
   "auditReadFromCore#inert": true,
   "auditDrainVisiblePrefix#inert": true,
   "_declassify_signal_note": "The data-carrying declassification's unchecked arm is inert for exactly the reason `.declassify`'s is, and one more.  Its authority is a policy at TWO hops, so an unchecked arm would mean 'every downgrade into this notification, and every onward delivery out of it, is authorized' — and the second half is sharper, because the ordinary checked `.notificationSignal` already gates notification -> receiver (the badge-leak closure at v0.31.73), so an unchecked declassifying variant would be strictly weaker than the syscall it wraps while carrying stronger authority.  `dispatchWithCap` fails closed with `.declassificationDenied` (dispatchWithCap_declassifySignal_denied).",
-  "notificationSignalDeclassifiedCrossCoreDispatch#inert": true
+  "notificationSignalDeclassifiedCrossCoreDispatch#inert": true,
+  "_yield_note": "The yield syscall invokes no capability: both dispatchers run it from a guard ahead of the caller's CSpace lookup, and that guard arm calls `dispatchYield`, the `Kernel` wrapper over `yieldOnCore`, so the walk starts there.  The capability dispatchers' own `.yield` arms are unreachable refusals spelled for exhaustiveness (`fun _ => .error .illegalState`) and are inert.",
+  "yieldOnCore#alt": "dispatchYield",
+  "yieldOnCore#inert": true
 }

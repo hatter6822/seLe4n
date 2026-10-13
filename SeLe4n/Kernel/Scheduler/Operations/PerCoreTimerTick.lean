@@ -1768,6 +1768,75 @@ theorem saveOutgoingContextOnCore_scheduler_eq (st : SystemState) (c : CoreId) :
   · rfl
   · exact SystemState.updateTcb_scheduler _ _ _
 
+/-- WS-SM SM5.I (frame helper): the idle fallback frames every *sibling* core's
+`current` slot — both arms (idle dispatch / `current = none`) write only core
+`c`'s slot. -/
+theorem idleFallbackOnCore_currentOnCore_ne (st : SystemState) (c c' : CoreId)
+    (h : c ≠ c') :
+    (idleFallbackOnCore st c).scheduler.currentOnCore c' = st.scheduler.currentOnCore c' := by
+  unfold idleFallbackOnCore
+  split
+  · simp only [dispatchIdleOnCore, SchedulerState.setCurrentOnCore_currentOnCore_ne _ _ _ _ h,
+      restoreIncomingContextOnCore_scheduler, SchedulerState.setRunQueueOnCore_currentOnCore]
+  · simp only [SchedulerState.setCurrentOnCore_currentOnCore_ne _ _ _ _ h]
+
+/-- WS-SM SM5.I (frame helper): the idle fallback frames every *sibling* core's
+run queue. -/
+theorem idleFallbackOnCore_runQueueOnCore_ne (st : SystemState) (c c' : CoreId)
+    (h : c ≠ c') :
+    (idleFallbackOnCore st c).scheduler.runQueueOnCore c' = st.scheduler.runQueueOnCore c' := by
+  unfold idleFallbackOnCore
+  split
+  · simp only [dispatchIdleOnCore, SchedulerState.setCurrentOnCore_runQueueOnCore,
+      restoreIncomingContextOnCore_scheduler, SchedulerState.setRunQueueOnCore_runQueueOnCore_ne _ _ _ _ h]
+  · simp only [SchedulerState.setCurrentOnCore_runQueueOnCore]
+
+/-- WS-SM SM5.I.8 (other-core frame for the dispatcher): a per-core dispatch on
+core `c` leaves every *sibling* core's `current` and `runQueue` slots untouched.
+The dispatch's only scheduler writes are core `c`'s `setRunQueueOnCore` (dequeue)
+and `setCurrentOnCore`; `saveOutgoingContextOnCore` / `restoreIncomingContext`
+leave the scheduler structure intact (they touch only the object store /
+`machine.regs`).  Proved over all OK branches (idle fallback + thread dispatch);
+the error branch is impossible under `hStep`. -/
+theorem scheduleEffectiveOnCore_independent_of_other_core (st : SystemState)
+    (c c' : CoreId) (st' : SystemState) (hcc : c ≠ c')
+    (hStep : scheduleEffectiveOnCore st c = .ok st') :
+    st'.scheduler.currentOnCore c' = st.scheduler.currentOnCore c'
+      ∧ st'.scheduler.runQueueOnCore c' = st.scheduler.runQueueOnCore c' := by
+  unfold scheduleEffectiveOnCore at hStep
+  cases hCh : chooseThreadEffectiveOnCore st c with
+  | error e => rw [hCh] at hStep; simp at hStep
+  | ok res =>
+    rw [hCh] at hStep
+    cases res with
+    | none =>
+      simp only [Except.ok.injEq] at hStep; subst hStep
+      refine ⟨?_, ?_⟩
+      · rw [SystemState.clearReschedulePendingOnCore_scheduler,
+          SchedulerState.clearReschedulePendingOnCore_currentOnCore,
+          idleFallbackOnCore_currentOnCore_ne _ c c' hcc, saveOutgoingContextOnCore_scheduler_eq]
+      · rw [SystemState.clearReschedulePendingOnCore_scheduler,
+          SchedulerState.clearReschedulePendingOnCore_runQueueOnCore,
+          idleFallbackOnCore_runQueueOnCore_ne _ c c' hcc, saveOutgoingContextOnCore_scheduler_eq]
+    | some tid =>
+      cases hTcb : st.getTcb? tid with
+      | none => simp [hTcb] at hStep
+      | some tcb =>
+        simp only [hTcb] at hStep
+        split at hStep
+        · simp only [Except.ok.injEq] at hStep; subst hStep
+          refine ⟨?_, ?_⟩
+          · simp only [SchedulerState.clearReschedulePendingOnCore_currentOnCore,
+              SchedulerState.setCurrentOnCore_currentOnCore_ne _ _ _ _ hcc,
+              restoreIncomingContextOnCore_scheduler, SchedulerState.setRunQueueOnCore_currentOnCore,
+              saveOutgoingContextOnCore_scheduler_eq]
+          · simp only [SchedulerState.clearReschedulePendingOnCore_runQueueOnCore,
+              SchedulerState.setCurrentOnCore_runQueueOnCore,
+              restoreIncomingContextOnCore_scheduler,
+              SchedulerState.setRunQueueOnCore_runQueueOnCore_ne _ _ _ _ hcc,
+              saveOutgoingContextOnCore_scheduler_eq]
+        · simp at hStep
+
 /-- WS-SM SM5.D.5 (frame): the per-core register-context save preserves
 TCB-resolvability of any thread — its only write replaces the outgoing thread's
 TCB with the same TCB plus a fresh register context (still a TCB), and any other

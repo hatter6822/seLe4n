@@ -63,6 +63,7 @@ import SeLe4n.Kernel.SchedContext.PriorityManagementPerCore
 import SeLe4n.Kernel.SchedContext.OperationsPerCore
 import SeLe4n.Kernel.IPC.Operations.Donation
 import SeLe4n.Kernel.IPC.Invariant.DispatchArmPreservation
+import SeLe4n.Kernel.IPC.Invariant.YieldPreservation
 import SeLe4n.Kernel.SchedContext.BindingAffinity
 
 import SeLe4n.Kernel.Architecture.Adapter
@@ -1094,6 +1095,10 @@ def syscallRequiredRight : SyscallId → AccessRight
   -- PR #822 Phase H: deriving a reply cap from the object cap to a Reply requires
   -- grant authority on that object cap (consistent with the cspaceMint/Copy/Move family).
   | .mintReplyCap          => .grant
+  -- WS-ZA ZA4.3: a yield invokes no capability — `dispatchSyscall` and
+  -- `dispatchSyscallChecked` run it before any gate is built — so no right is
+  -- ever checked for it.  `.read`, the weakest, is the value a gate would carry.
+  | .yield                 => .read
 
 /-- PR #870 round 5: **which syscalls validate the capability's target before
 its rights.**
@@ -1156,6 +1161,7 @@ def syscallChecksTargetFirst : SyscallId → Bool
   | .tcbSetSpace           => false
   | .pageTableMap          => false
   | .pageTableUnmap        => false
+  | .yield                 => false
   | .tcbBindNotification   => false
   | .tcbUnbindNotification => false
   | .mintReplyCap          => false
@@ -4095,6 +4101,9 @@ def dispatchWithCap (decoded : SyscallDecodeResult) (tid : SeLe4n.ThreadId)
   -- schedContextBind, schedContextUnbind, tcbSuspend, tcbResume — 14 total arms
   -- handled by dispatchCapabilityOnly. The wildcard satisfies Lean's exhaustiveness
   -- checker and is provably unreachable (dispatchWithCap_wildcard_unreachable).
+  -- WS-ZA ZA4.3: a yield invokes no capability, so `dispatchSyscall` runs it
+  -- before this tier (`dispatchYield`) and this tier never receives one.
+  | .yield => fun _ => .error .illegalState
   | _ => fun _ => .error .illegalState
 
 -- ============================================================================
@@ -4667,7 +4676,20 @@ def dispatchWithCapChecked (ctx : LabelingContext)
   -- schedContextBind, schedContextUnbind, tcbSuspend, tcbResume) are handled by
   -- dispatchCapabilityOnly returning `some` above. This wildcard is provably
   -- unreachable (see dispatchWithCapChecked_wildcard_unreachable below).
+  -- WS-ZA ZA4.3: as in `dispatchWithCap`, a yield never reaches this tier.
+  | .yield => fun _ => .error .illegalState
   | _ => fun _ => .error .illegalState
+
+/-- **WS-ZA ZA4.3**: the yield syscall at the dispatcher — `yieldOnCore` on the
+executing core, which the dispatcher has already confirmed the caller is
+current on.  A yield wakes no thread and so sends no SGI; a core whose decision
+the caller's moved key stales is flagged by the key hook, and the commit seam
+derives the pokes from the state it commits. -/
+def dispatchYield (executingCore : Concurrency.CoreId) : Kernel Unit :=
+  fun st =>
+    match yieldOnCore st executingCore with
+    | .error e => .error e
+    | .ok st' => .ok ((), st')
 
 /-- T6-I: Policy-checked dispatch variant. Routes syscalls through
     information-flow-checked wrappers when a `LabelingContext` is provided.
@@ -4700,6 +4722,10 @@ def dispatchSyscallChecked (ctx : LabelingContext)
     -- downgrade for another core's caller.  Refused before any lookup, with
     -- the state untouched (`dispatchSyscallChecked_ok_caller_current`).
     if st.scheduler.currentOnCore executingCore ≠ some tid then .error .illegalState
+    -- WS-ZA ZA4.3: a yield invokes no capability, so it runs before the
+    -- caller's CSpace is consulted and moves no content (`contentFlowClass
+    -- .yield = .inert`), so no taint step follows it.
+    else if decoded.syscallId = .yield then dispatchYield executingCore st
     else
     match st.getObject? tid.toObjId with
     | some (.tcb tcb) =>
@@ -4754,6 +4780,10 @@ def dispatchSyscallCheckedImpl (ctx : LabelingContext)
     (executingCore : Concurrency.CoreId) : Kernel Unit :=
   fun st =>
     if st.scheduler.currentOnCore executingCore ≠ some tid then .error .illegalState
+    -- WS-ZA ZA4.3: a yield invokes no capability, so it runs before the
+    -- caller's CSpace is consulted and moves no content (`contentFlowClass
+    -- .yield = .inert`), so no taint step follows it.
+    else if decoded.syscallId = .yield then dispatchYield executingCore st
     else
     match st.getObject? tid.toObjId with
     | some (.tcb tcb) =>
@@ -5241,7 +5271,7 @@ theorem dispatchWithCap_wildcard_unreachable (sid : SyscallId) :
             .vspaceUnifyInstruction, .declassify, .declassifySignal,
             .auditRead, .auditDrain, .tcbSetFaultHandler,
             .cspaceRevoke, .untypedRetype, .untypedReset, .tcbSetSpace,
-            .pageTableMap, .pageTableUnmap] : List SyscallId) := by
+            .pageTableMap, .pageTableUnmap, .yield] : List SyscallId) := by
   cases sid <;> simp [List.mem_cons]
 
 /-- AE1-D: Every `SyscallId` variant is handled by either `dispatchCapabilityOnly`
@@ -5264,7 +5294,7 @@ theorem dispatchWithCapChecked_wildcard_unreachable (sid : SyscallId) :
             .vspaceUnifyInstruction, .declassify, .declassifySignal,
             .auditRead, .auditDrain, .tcbSetFaultHandler,
             .cspaceRevoke, .untypedRetype, .untypedReset, .tcbSetSpace,
-            .pageTableMap, .pageTableUnmap] : List SyscallId) := by
+            .pageTableMap, .pageTableUnmap, .yield] : List SyscallId) := by
   cases sid <;> simp [List.mem_cons]
 
 /-- WS-J1-C: Route decoded syscall arguments to the appropriate capability-gated
@@ -5294,6 +5324,10 @@ def dispatchSyscall (decoded : SyscallDecodeResult) (tid : SeLe4n.ThreadId)
     -- current on the executing core, or the pair is refused before any lookup
     -- (`dispatchSyscall_ok_caller_current`).
     if st.scheduler.currentOnCore executingCore ≠ some tid then .error .illegalState
+    -- WS-ZA ZA4.3: a yield invokes no capability, so it runs before the
+    -- caller's CSpace is consulted and moves no content (`contentFlowClass
+    -- .yield = .inert`), so no taint step follows it.
+    else if decoded.syscallId = .yield then dispatchYield executingCore st
     else
     match st.getObject? tid.toObjId with
     | some (.tcb tcb) =>
@@ -5409,6 +5443,7 @@ with the required access right for the invoked syscall. Threads through
 theorem dispatchSyscall_requires_right
     (decoded : SyscallDecodeResult) (tid : SeLe4n.ThreadId) (executingCore : Concurrency.CoreId)
     (st : SystemState) (st' : SystemState)
+    (hCap : decoded.syscallId ≠ .yield)
     (hOk : dispatchSyscall decoded tid executingCore st = .ok ((), st')) :
     ∃ tcb, (SystemState.objects st)[tid.toObjId]? = some (KernelObject.tcb tcb) ∧
       ∃ rootCn, (SystemState.objects st)[tcb.cspaceRoot]? = some (KernelObject.cnode rootCn) ∧
@@ -5465,12 +5500,13 @@ theorem syscallEntry_implies_capability_held
       lookupThreadRegisterContext tid st = .ok (regs, st) ∧
       SeLe4n.Kernel.Architecture.RegisterDecode.decodeSyscallArgsFromState
         st tid layout regs regCount = .ok decoded ∧
+      (decoded.syscallId ≠ .yield →
       ∃ tcb, (SystemState.objects st)[tid.toObjId]? = some (KernelObject.tcb tcb) ∧
         ∃ rootCn, (SystemState.objects st)[tcb.cspaceRoot]? = some (KernelObject.cnode rootCn) ∧
           ∃ cap ref,
             resolveCapAddress tcb.cspaceRoot decoded.capAddr rootCn.depth st = .ok ref ∧
             SystemState.lookupSlotCap st ref = some cap ∧
-            cap.hasRight (syscallRequiredRight decoded.syscallId) = true := by
+            cap.hasRight (syscallRequiredRight decoded.syscallId) = true) := by
   unfold syscallEntry at hOk
   split at hOk
   · simp at hOk
@@ -5487,12 +5523,9 @@ theorem syscallEntry_implies_capability_held
           exact hLookup.2.symm
         -- PR #873 round 6: the seam moved into `dispatchSyscall`, so the entry
         -- delegates and this hypothesis IS the dispatch's own success.
-        have hDispatch :=
-          dispatchSyscall_requires_right decoded tid bootCoreId _st_regs st' (hStEq ▸ hOk)
-        rw [hStEq] at hDispatch hLookup
-        obtain ⟨tcb, hTcb, rootCn, hRoot, cap, ref, hResolve, hSlot, hRight⟩ := hDispatch
-        exact ⟨tid, regs, decoded, hCurrent, hLookup, hDecode,
-               tcb, hTcb, rootCn, hRoot, cap, ref, hResolve, hSlot, hRight⟩
+        subst hStEq
+        refine ⟨tid, regs, decoded, hCurrent, hLookup, hDecode, fun hCap => ?_⟩
+        exact dispatchSyscall_requires_right decoded tid bootCoreId _ st' hCap hOk
 
 /-- WS-J1-C: `lookupThreadRegisterContext` does not modify kernel state. -/
 theorem lookupThreadRegisterContext_state_unchanged
@@ -6644,6 +6677,10 @@ theorem dispatchSyscallChecked_applies_taint_plan
   -- The caller/core guard: a mismatched pair is refused before any lookup.
   split at h
   · exact absurd h (by simp)
+  -- WS-ZA ZA4.3: a yield's plan is inert, so the step leaves its state as is.
+  by_cases hY : decoded.syscallId = .yield
+  · exact ⟨st', by rw [syscallTaintPlan_yield st tid decoded hY, applySyscallTaint_inert]⟩
+  rw [if_neg hY] at h
   split at h
   · split at h
     · split at h
@@ -6668,6 +6705,10 @@ theorem dispatchSyscall_applies_taint_plan
   -- The caller/core guard: a mismatched pair is refused before any lookup.
   split at h
   · exact absurd h (by simp)
+  -- WS-ZA ZA4.3: a yield's plan is inert, so the step leaves its state as is.
+  by_cases hY : decoded.syscallId = .yield
+  · exact ⟨st', by rw [syscallTaintPlan_yield st tid decoded hY, applySyscallTaint_inert]⟩
+  rw [if_neg hY] at h
   split at h
   · split at h
     · split at h
@@ -6777,12 +6818,19 @@ theorem dispatchSyscallChecked_preserves_projection
         syscallResolveCap gate st = .ok (cap, st) →
         ∀ stOut, dispatchWithCapChecked ctx decoded tid executingCore gate cap st = .ok ((), stOut) →
         projectState ctx observer stOut = projectState ctx observer st)
+    (hYieldProj : decoded.syscallId = .yield →
+        ∀ stOut, dispatchYield executingCore st = .ok ((), stOut) →
+        projectState ctx observer stOut = projectState ctx observer st)
     (hStep : dispatchSyscallChecked ctx decoded tid executingCore st = .ok ((), st')) :
     projectState ctx observer st' = projectState ctx observer st := by
   simp only [dispatchSyscallChecked, SystemState.getObject?] at hStep
   -- The caller/core guard: a mismatched pair is refused before any lookup.
   split at hStep
   · exact absurd hStep (by simp)
+  -- WS-ZA ZA4.3: the capability-free yield, carried by its own hypothesis.
+  by_cases hY : decoded.syscallId = .yield
+  · rw [if_pos hY] at hStep; exact hYieldProj hY st' hStep
+  rw [if_neg hY] at hStep
   -- Layer 1: TCB lookup (read-only)
   split at hStep
   · -- some (.tcb tcb)
@@ -7298,6 +7346,7 @@ test, which is where the audit pair's second gate lives since PR #870 round 5. -
 theorem dispatchSyscallChecked_requires_right
     (ctx : LabelingContext) (decoded : SyscallDecodeResult) (tid : SeLe4n.ThreadId) (executingCore : Concurrency.CoreId)
     (st : SystemState) (st' : SystemState)
+    (hCap : decoded.syscallId ≠ .yield)
     (hOk : dispatchSyscallChecked ctx decoded tid executingCore st = .ok ((), st')) :
     ∃ tcb, st.getTcb? tid = some tcb ∧
       ∃ rootCn, st.getCNode? tcb.cspaceRoot = some rootCn ∧
@@ -7378,13 +7427,14 @@ theorem syscallEntryChecked_implies_capability_held
       ∃ stFilled,
         SeLe4n.Kernel.Architecture.tlbFillIpcBufferOnCore
           st executingCore tid decoded.overflowCount = stFilled ∧
+        (decoded.syscallId ≠ .yield →
         ∃ tcb, stFilled.getTcb? tid = some tcb ∧
           ∃ rootCn, stFilled.getCNode? tcb.cspaceRoot = some rootCn ∧
             ∃ cap ref,
               resolveCapAddress tcb.cspaceRoot decoded.capAddr rootCn.depth stFilled =
                 .ok ref ∧
               SystemState.lookupSlotCap stFilled ref = some cap ∧
-              cap.hasRight (syscallRequiredRight decoded.syscallId) = true := by
+              cap.hasRight (syscallRequiredRight decoded.syscallId) = true) := by
   unfold syscallEntryChecked at hOk
   split at hOk
   · simp at hOk
@@ -7405,10 +7455,8 @@ theorem syscallEntryChecked_implies_capability_held
             split at hLookup <;> simp at hLookup
             exact hLookup.2.symm
           subst hStEq
-          obtain ⟨tcb, hTcb, rootCn, hRoot, cap, ref, hResolve, hSlot, hRight⟩ :=
-            dispatchSyscallChecked_requires_right ctx decoded tid executingCore _ st' hOk
-          exact ⟨tid, regs, decoded, hCurrent, hLookup, hDecode, _, rfl,
-                 tcb, hTcb, rootCn, hRoot, cap, ref, hResolve, hSlot, hRight⟩
+          exact ⟨tid, regs, decoded, hCurrent, hLookup, hDecode, _, rfl, fun hCap =>
+            dispatchSyscallChecked_requires_right ctx decoded tid executingCore _ st' hCap hOk⟩
 
 
 /-- **WS-RR RR7.3**: the live-path capability guarantee, stated on the state the
@@ -7432,23 +7480,24 @@ theorem syscallEntryChecked_implies_capability_held_of_pre_state
       lookupThreadRegisterContext tid st = .ok (regs, st) ∧
       SeLe4n.Kernel.Architecture.RegisterDecode.decodeSyscallArgsFromState
         st tid layout regs regCount = .ok decoded ∧
+      (decoded.syscallId ≠ .yield →
       ∃ tcb, st.getTcb? tid = some tcb ∧
         ∃ rootCn, st.getCNode? tcb.cspaceRoot = some rootCn ∧
           ∃ cap ref,
             resolveCapAddress tcb.cspaceRoot decoded.capAddr rootCn.depth st = .ok ref ∧
             SystemState.lookupSlotCap st ref = some cap ∧
-            cap.hasRight (syscallRequiredRight decoded.syscallId) = true := by
-  obtain ⟨hCtx, tid, regs, decoded, hCurrent, hLookup, hDecode, stFilled, hFill,
-          tcb, hTcb, rootCn, hRoot, cap, ref, hResolve, hSlot, hRight⟩ :=
+            cap.hasRight (syscallRequiredRight decoded.syscallId) = true) := by
+  obtain ⟨hCtx, tid, regs, decoded, hCurrent, hLookup, hDecode, stFilled, hFill, hHeld⟩ :=
     syscallEntryChecked_implies_capability_held ctx layout executingCore regCount st st' hOk
+  refine ⟨hCtx, tid, regs, decoded, hCurrent, hLookup, hDecode, fun hCap => ?_⟩
+  obtain ⟨tcb, hTcb, rootCn, hRoot, cap, ref, hResolve, hSlot, hRight⟩ := hHeld hCap
   subst hFill
   have hObjects :
       (SeLe4n.Kernel.Architecture.tlbFillIpcBufferOnCore
         st executingCore tid decoded.overflowCount).objects = st.objects :=
     (SeLe4n.Kernel.Architecture.tlbFillIpcBufferOnCore_frame
       st executingCore tid decoded.overflowCount).1
-  refine ⟨hCtx, tid, regs, decoded, hCurrent, hLookup, hDecode, tcb, ?_, rootCn, ?_,
-          cap, ref, ?_, ?_, hRight⟩
+  refine ⟨tcb, ?_, rootCn, ?_, cap, ref, ?_, ?_, hRight⟩
   · simpa only [SystemState.getTcb?, hObjects] using hTcb
   · simpa only [SystemState.getCNode?, hObjects] using hRoot
   · rw [← resolveCapAddress_congr_objects _ st hObjects]; exact hResolve
@@ -8112,7 +8161,23 @@ def syscallDelegates : SyscallId → Prop
         dispatchWithCap decoded tid executingCore gate cap st =
           cspaceRevokeCdtFinalising executingCore
             { cnode := cnodeId, slot := args.targetSlot } st
+  -- WS-ZA ZA4.3: the capability-free yield.  Both dispatchers run it from the
+  -- guard ahead of the caller's CSpace lookup, so the obligation is stated
+  -- over the dispatchers themselves: once the caller is current on the
+  -- executing core, each IS the yield's own transition.
+  | .yield =>
+      ∀ (ctx : LabelingContext) (decoded : SyscallDecodeResult) (tid : SeLe4n.ThreadId)
+        (executingCore : Concurrency.CoreId) (st : SystemState),
+        decoded.syscallId = .yield →
+        st.scheduler.currentOnCore executingCore = some tid →
+        dispatchSyscall decoded tid executingCore st = dispatchYield executingCore st ∧
+        dispatchSyscallChecked ctx decoded tid executingCore st = dispatchYield executingCore st
   | _ => False
+
+/-- WS-ZA ZA4.3: the `.yield` obligation, discharged. -/
+theorem syscallDelegates_yield : syscallDelegates .yield := by
+  intro ctx decoded tid executingCore st hSyscall hCur
+  exact ⟨by simp [dispatchSyscall, hSyscall, hCur], by simp [dispatchSyscallChecked, hSyscall, hCur]⟩
 
 /-- The `.receive` obligation, discharged. -/
 theorem syscallDelegates_receive : syscallDelegates .receive := by

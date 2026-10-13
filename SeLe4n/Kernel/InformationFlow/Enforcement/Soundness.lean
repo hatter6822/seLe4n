@@ -375,12 +375,14 @@ abbrev enforcementBoundaryExtended : List EnforcementClass := enforcementBoundar
     `setThreadSpace`, capability-only — the live `.tcbSetSpace` arm's
     transition, rewriting a suspended thread's two root fields.  WS-BP BP7.1
     (`v0.36.12`) added `pageTableMap` and `pageTableUnmap`, capability-only —
-    the live `.pageTableMap` / `.pageTableUnmap` arms' transitions.
+    the live `.pageTableMap` / `.pageTableUnmap` arms' transitions.  WS-ZA
+    ZA4.3 added `yieldOnCore`, the yield's transition, which invokes no
+    capability and is listed with the capability-only operations.
 
     This theorem is the authority for the entry count; `enforcementBoundary`'s
     own docstring deliberately does not restate it. -/
 theorem enforcementBoundaryExtended_count :
-    enforcementBoundaryExtended.length = 52 := by rfl
+    enforcementBoundaryExtended.length = 53 := by rfl
 
 /-- W2-G (M-3): Element-wise correspondence — `enforcementBoundaryExtended` and
     `enforcementBoundary` are definitionally equal. This closes the M-3 finding

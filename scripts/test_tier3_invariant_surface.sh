@@ -251,10 +251,10 @@ run_check "INVARIANT" rg -n '^def syscallEntry($|[ ({:\[\]])' SeLe4n/Kernel/API.
 # off `currentOnCore executingCore`, so a mismatched pair would have let one
 # core's subject authorize a downgrade for another core's caller.  The guard is
 # pinned as the FIRST step of each dispatcher's body (the relation, not the
-# token), the refusal and success-implies-current theorems state it, and the
-# suite drives a mismatched pair through both dispatchers.
-run_check "INVARIANT" rg -n -U 'def dispatchSyscall \(decoded[^\n]*\n[^\n]*\n  fun st =>(\n[ \t]*)*\n    if st\.scheduler\.currentOnCore executingCore ≠ some tid then \.error \.illegalState\n    else\n    match st\.getObject\? tid\.toObjId with' SeLe4n/Kernel/API.lean
-run_check "INVARIANT" rg -n -U 'def dispatchSyscallChecked \(ctx[^\n]*\n[^\n]*\n[^\n]*\n  fun st =>(\n[ \t]*)*\n    if st\.scheduler\.currentOnCore executingCore ≠ some tid then \.error \.illegalState\n    else\n    match st\.getObject\? tid\.toObjId with' SeLe4n/Kernel/API.lean
+# token), ahead of the capability-free yield branch and the caller lookup; the
+# refusal and success-implies-current theorems state it, and the suite drives a mismatched pair through both dispatchers.
+run_check "INVARIANT" rg -n -U 'def dispatchSyscall \(decoded[^\n]*\n[^\n]*\n  fun st =>(\n[ \t]*)*\n    if st\.scheduler\.currentOnCore executingCore ≠ some tid then \.error \.illegalState(\n[ \t]*)*\n    else if decoded\.syscallId = \.yield then dispatchYield executingCore st\n    else\n    match st\.getObject\? tid\.toObjId with' SeLe4n/Kernel/API.lean
+run_check "INVARIANT" rg -n -U 'def dispatchSyscallChecked \(ctx[^\n]*\n[^\n]*\n[^\n]*\n  fun st =>(\n[ \t]*)*\n    if st\.scheduler\.currentOnCore executingCore ≠ some tid then \.error \.illegalState(\n[ \t]*)*\n    else if decoded\.syscallId = \.yield then dispatchYield executingCore st\n    else\n    match st\.getObject\? tid\.toObjId with' SeLe4n/Kernel/API.lean
 run_check "INVARIANT" rg -n '^theorem dispatchSyscallChecked_refuses_mismatched_core($|[ ({:\[\]])' SeLe4n/Kernel/API.lean
 run_check "INVARIANT" rg -n '^theorem dispatchSyscall_refuses_mismatched_core($|[ ({:\[\]])' SeLe4n/Kernel/API.lean
 run_check "INVARIANT" rg -n '^theorem dispatchSyscallChecked_ok_caller_current($|[ ({:\[\]])' SeLe4n/Kernel/API.lean
@@ -3125,8 +3125,16 @@ run_check "INVARIANT" bash -lc 'rg -U -n "^def timerTickBudgetOnCore \(st : Syst
 # SchedContext writes are the rewrite under the witnessed SchedContext lookup.
 run_check "INVARIANT" bash -lc 'rg -U -n "^def timerTickBudget \(st : SystemState\)[^\n]*(\n([ \t][^\n]*)?)*st\.rewriteObject tid\.toObjId \(\.tcb tcb\x27\)[^\n]*(\n([ \t][^\n]*)?)*st\.rewriteObject tid\.toObjId \(\.tcb tcb\x27\)" SeLe4n/Kernel/Scheduler/Operations/Core.lean'
 run_check "INVARIANT" bash -lc 'rg -U -n "^def timerTickBudget \(st : SystemState\)[^\n]*(\n([ \t][^\n]*)?)*match st\.getSchedContextWitnessed\? scId with[^\n]*(\n([ \t][^\n]*)?)*st\.rewriteObject scId\.toObjId \(\.schedContext sc\x27\x27\x27\)[^\n]*(\n([ \t][^\n]*)?)*st\.rewriteObject scId\.toObjId \(\.schedContext sc\x27\)" SeLe4n/Kernel/Scheduler/Operations/Core.lean'
-run_check "INVARIANT" bash -lc 'rg -U -n "^def timerTickBudgetOnCore \(st : SystemState\)[^\n]*(\n([ \t][^\n]*)?)*st\.rewriteObject tid\.toObjId \(\.tcb tcb\x27\)[^\n]*(\n([ \t][^\n]*)?)*st\.rewriteObject tid\.toObjId \(\.tcb tcb\x27\)" SeLe4n/Kernel/Scheduler/Operations/Core.lean'
-run_check "INVARIANT" bash -lc 'rg -U -n "^def timerTickBudgetOnCore \(st : SystemState\)[^\n]*(\n([ \t][^\n]*)?)*match st\.getSchedContextWitnessed\? scId with[^\n]*(\n([ \t][^\n]*)?)*st\.rewriteObject scId\.toObjId \(\.schedContext sc\x27\x27\x27\)[^\n]*(\n([ \t][^\n]*)?)*st\.rewriteObject scId\.toObjId \(\.schedContext sc\x27\)" SeLe4n/Kernel/Scheduler/Operations/Core.lean'
+# The per-core tick's writes are shared with the yield syscall's charge: the
+# expired slice (`sliceExpireOnCore`) and the spent budget (`spendBudgetOnCore`)
+# each own one rewrite under the witness they are handed, and the tick's own
+# body keeps the not-yet-expired TCB and SchedContext rewrites.
+run_check "INVARIANT" bash -lc 'rg -U -n "^def timerTickBudgetOnCore \(st : SystemState\)[^\n]*(\n([ \t][^\n]*)?)*sliceExpireOnCore st c tid tcb hTcb[^\n]*(\n([ \t][^\n]*)?)*st\.rewriteObject tid\.toObjId \(\.tcb tcb\x27\)" SeLe4n/Kernel/Scheduler/Operations/Core.lean'
+run_check "INVARIANT" bash -lc 'rg -U -n "^def timerTickBudgetOnCore \(st : SystemState\)[^\n]*(\n([ \t][^\n]*)?)*match st\.getSchedContextWitnessed\? scId with[^\n]*(\n([ \t][^\n]*)?)*budgetExhaustOnCore st c tid scId sc hSc 1[^\n]*(\n([ \t][^\n]*)?)*st\.rewriteObject scId\.toObjId \(\.schedContext sc\x27\)" SeLe4n/Kernel/Scheduler/Operations/Core.lean'
+run_check "INVARIANT" bash -lc 'rg -U -n "^@\[inline\] def sliceExpireOnCore \(st : SystemState\)[^\n]*(\n([ \t][^\n]*)?)*st\.rewriteObject tid\.toObjId \(\.tcb tcb\x27\)" SeLe4n/Kernel/Scheduler/Operations/Core.lean'
+run_check "INVARIANT" bash -lc 'rg -U -n "^@\[inline\] def spendBudgetOnCore \(st : SystemState\)[^\n]*(\n([ \t][^\n]*)?)*st\.rewriteObject scId\.toObjId \(\.schedContext sc\x27\x27\x27\)" SeLe4n/Kernel/Scheduler/Operations/Core.lean'
+run_negative_check "INVARIANT" bash -lc 'rg -U -n "^@\[inline\] def sliceExpireOnCore \(st : SystemState\)[^\n]*(\n([ \t][^\n]*)?)*objects\.insert" SeLe4n/Kernel/Scheduler/Operations/Core.lean'
+run_negative_check "INVARIANT" bash -lc 'rg -U -n "^@\[inline\] def spendBudgetOnCore \(st : SystemState\)[^\n]*(\n([ \t][^\n]*)?)*objects\.insert" SeLe4n/Kernel/Scheduler/Operations/Core.lean'
 # NEGATIVE, per declaration: neither tick carries a raw store write any more.
 run_negative_check "INVARIANT" bash -lc 'rg -U -n "^def timerTickBudget \(st : SystemState\)[^\n]*(\n([ \t][^\n]*)?)*objects\.insert" SeLe4n/Kernel/Scheduler/Operations/Core.lean'
 run_negative_check "INVARIANT" bash -lc 'rg -U -n "^def timerTickBudgetOnCore \(st : SystemState\)[^\n]*(\n([ \t][^\n]*)?)*objects\.insert" SeLe4n/Kernel/Scheduler/Operations/Core.lean'
@@ -4372,11 +4380,10 @@ run_check "INVARIANT" rg -n '^theorem stageCallerReturn_stages_switched_out($|[ 
 # The fault entry's progress obligation, discharged on the live dispatch.
 run_check "INVARIANT" rg -n '^theorem handleRescheduleSgiOnCore_preserves_not_dispatchable($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/FaultProgress.lean
 run_check "INVARIANT" rg -n '^theorem switchToThreadOnCore_preserves_not_dispatchable_onCore($|[ ({:\[\]])' SeLe4n/Kernel/Scheduler/Operations/Core.lean
-# ...and the queue well-formedness it needs is carried from the PRE-state
-# across the delivery, never stated of the delivered state.
-run_check "INVARIANT" rg -n '^theorem faultDeliverOnCoreChecked_preserves_runQueuesWellFormed($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/FaultProgress.lean
-run_check "INVARIANT" rg -n '^theorem endpointCallCrossCoreDispatch_preserves_runQueuesWellFormed($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/FaultProgress.lean
-run_check "INVARIANT" rg -n -U '^    \(hwf : runQueuesWellFormed st\.scheduler\) :\n    ¬ dispatchableOnCore \(faultEntryDeliver ' SeLe4n/Kernel/FaultEntry.lean
+# ...and it needs nothing of the queue: the chooser's pick is a member of any
+# run queue (`RunQueue.bucket_wf`), so the theorem takes no well-formedness and
+# none is stated of the delivered state.
+run_check "INVARIANT" rg -n -U '^    \(tid : SeLe4n\.ThreadId\) \(hCur : st\.scheduler\.currentOnCore c = some tid\) :\n    ¬ dispatchableOnCore \(faultEntryDeliver ' SeLe4n/Kernel/FaultEntry.lean
 run_negative_check "INVARIANT" rg -n 'runQueueOnCoreWellFormed \(faultDeliveredState' SeLe4n/Kernel/FaultEntry.lean
 run_check "INVARIANT" rg -n -U '^  Platform\.FFI\.restoreTrapFrame r\.2\.2\.1\n  Concurrency\.recordCommittedCurrentThreadHw r\.2\.1$' SeLe4n/Kernel/PerCoreTimerEntry.lean
 run_check "INVARIANT" rg -n -U '^  Platform\.FFI\.restoreTrapFrame record\.2\.1\n  Concurrency\.recordCommittedCurrentThreadHw record\.1$' SeLe4n/Kernel/PerCoreRescheduleEntry.lean
@@ -6114,7 +6121,7 @@ run_check "INVARIANT" rg -n '^theorem crossCoreLeakage_bounded_by_globalProjecti
 run_check "INVARIANT" rg -n '^theorem crossCoreTransition_invisible_to_every_observer($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/NonInterferencePerCore.lean
 run_check "INVARIANT" rg -n '^def enforcementBoundaryPerCore($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/CovertChannelPerCore.lean
 run_check "INVARIANT" rg -n '^theorem enforcementBoundaryPerCore_count($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/CovertChannelPerCore.lean
-run_check "INVARIANT" rg -n 'enforcementBoundaryPerCore\.length = 67' SeLe4n/Kernel/InformationFlow/CovertChannelPerCore.lean
+run_check "INVARIANT" rg -n 'enforcementBoundaryPerCore\.length = 68' SeLe4n/Kernel/InformationFlow/CovertChannelPerCore.lean
 run_check "INVARIANT" rg -n '^theorem enforcementBoundaryPerCore_extends_canonical($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/CovertChannelPerCore.lean
 run_check "INVARIANT" rg -n '^def enforcementBoundaryPerCoreComplete($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/CovertChannelPerCore.lean
 run_check "INVARIANT" rg -n '^theorem enforcementBoundaryPerCore_is_complete($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/CovertChannelPerCore.lean
@@ -6238,7 +6245,7 @@ run_check "INVARIANT" rg -n '^theorem endpointCallOnCore_crossCoreNonInterferenc
 run_check "INVARIANT" rg -n '^theorem wakeThread_crossCoreNonInterference_of_visible_thread($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/NonInterferenceCrossCore.lean
 # SM9.A.4b took the inventory 26 -> 28 with the two audit readers, both of
 # which take an executing core and carry an EMPTY write set.
-run_check "INVARIANT" rg -n 'CrossCoreTransition.all.length = 32' SeLe4n/Kernel/InformationFlow/NonInterferenceCrossCore.lean
+run_check "INVARIANT" rg -n 'CrossCoreTransition.all.length = 33' SeLe4n/Kernel/InformationFlow/NonInterferenceCrossCore.lean
 
 # PR #861 review round 34: the context-restore gate lives in WRAPPERS, never
 # inside the transitions.  An in-transition `if contextRestoreSeamLive` reduces
@@ -6533,7 +6540,7 @@ run_check "INVARIANT" rg -n '^theorem endpointReceiveDualOnCore_crossCoreNonInte
 # Audit IPC-2 (`v0.36.49`): the two-leg ReplyRecv composite these three named is
 # deleted; the live transition took its name and its entries are anchored above.
 run_negative_check "INVARIANT" rg -n '^def endpointReplyRecvWriteSet($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/NonInterferenceCrossCore.lean
-run_check "INVARIANT" rg -n '^theorem crossCoreNiTheorem_count : CrossCoreTransition\.all\.length = 32' SeLe4n/Kernel/InformationFlow/NonInterferenceCrossCore.lean
+run_check "INVARIANT" rg -n '^theorem crossCoreNiTheorem_count : CrossCoreTransition\.all\.length = 33' SeLe4n/Kernel/InformationFlow/NonInterferenceCrossCore.lean
 # Round 14: all three SchedContext arms this cut made remote writers are audited.
 # The negative is the point — `crossCoreRemoteWriterPendingAudit` was the counted
 # gap while two were unproven, and it must not come back as an empty list, which
@@ -6828,7 +6835,7 @@ run_check "INVARIANT" rg -n 'NEGATIVE: linearOrder disagrees on exactly one of t
 # SM9.A.11 took it 40 -> 42 with the two audit readers; WS-RR RR8.16
 # (`v0.35.190`) took it 44 -> 45 with `cspaceRevokeCdt`.  The anchor pins HEAD's
 # value; the arrows above are history, which is why they are not restated in it.
-run_check "INVARIANT" rg -n 'enforcementBoundaryExtended.length = 52' SeLe4n/Kernel/InformationFlow/Enforcement/Soundness.lean
+run_check "INVARIANT" rg -n 'enforcementBoundaryExtended.length = 53' SeLe4n/Kernel/InformationFlow/Enforcement/Soundness.lean
 run_check "INVARIANT" rg -n '^  runEndpointPolicyGateChecks' tests/SmpInformationFlowSuite.lean
 run_check "INVARIANT" rg -n 'NEGATIVE: a widening override cannot open a flow the lattice denies' tests/SmpInformationFlowSuite.lean
 
@@ -7262,7 +7269,7 @@ run_check "INVARIANT" rg -n 'NEGATIVE: it IS visible at the core it landed on' t
 run_check "INVARIANT" rg -n 'NEGATIVE: the remote wake is not confined to the EXECUTING core' tests/SmpInformationFlowSuite.lean
 run_check "INVARIANT" rg -n 'SCOPE: the decidable slice cannot see a badge write' tests/SmpInformationFlowSuite.lean
 run_check "INVARIANT" rg -n '^\[smp-information-flow\]' tests/fixtures/smp_information_flow.expected
-run_check "INVARIANT" rg -n 'enforcement boundary: canonical 52' tests/fixtures/smp_information_flow.expected
+run_check "INVARIANT" rg -n 'enforcement boundary: canonical 53' tests/fixtures/smp_information_flow.expected
 run_check "INVARIANT" rg -n 'smp_information_flow\.expected' tests/fixtures/smp_information_flow.expected.sha256
 # The FIXTURE's independence probe must land on a core whose current thread the
 # low observer can SEE, or the reported set is `allCores` and the line is
@@ -7441,10 +7448,23 @@ run_check "INVARIANT" rg -n '31 => some \.auditRead' SeLe4n/Model/Object/Types.l
 run_check "INVARIANT" rg -n '32 => some \.auditDrain' SeLe4n/Model/Object/Types.lean
 # The count anchors pin HEAD's value, not the value the cut above produced:
 # `.tcbSetFaultHandler` took it to 35 and WS-RR RR8.16's `.cspaceRevoke` to 36.
-run_check "INVARIANT" rg -n '^def count : Nat := 41' SeLe4n/Model/Object/Types.lean
+run_check "INVARIANT" rg -n '^def count : Nat := 42' SeLe4n/Model/Object/Types.lean
 run_check "INVARIANT" rg -n 'AuditRead = 31' rust/sele4n-types/src/syscall.rs
 run_check "INVARIANT" rg -n 'AuditDrain = 32' rust/sele4n-types/src/syscall.rs
-run_check "INVARIANT" rg -n 'pub const COUNT: usize = 41;' rust/sele4n-types/src/syscall.rs
+run_check "INVARIANT" rg -n 'pub const COUNT: usize = 42;' rust/sele4n-types/src/syscall.rs
+
+# WS-ZA ZA4.3: the yield syscall, both ABI halves, and the proofs that cover it:
+# IPC invariant preservation, the reschedule flags, the own-core lock footprint,
+# slot confinement to the executing core, and cross-core non-interference.
+run_check "INVARIANT" rg -n '\| \.yield\s+=> 41' SeLe4n/Model/Object/Types.lean
+run_check "INVARIANT" rg -n '41 => some \.yield' SeLe4n/Model/Object/Types.lean
+run_check "INVARIANT" rg -n '^    Yield = 41,' rust/sele4n-types/src/syscall.rs
+run_check "INVARIANT" rg -n '41 => Some\(Self::Yield\)' rust/sele4n-types/src/syscall.rs
+run_check "INVARIANT" rg -n '^theorem yieldOnCore_preserves_ipcInvariantFull($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/YieldPreservation.lean
+run_check "INVARIANT" rg -n '^theorem yieldOnCore_stepCovers($|[ ({:\[\]])' SeLe4n/Kernel/ReschedulePendingArms/Scheduling.lean
+run_check "INVARIANT" rg -n '^theorem schedLockSet_yieldOnCore_coversWrites($|[ ({:\[\]])' SeLe4n/Kernel/SyscallSchedContainment.lean
+run_check "INVARIANT" rg -n '^theorem yieldOnCore_confinedToCores($|[ ({:\[\]])' SeLe4n/Kernel/SlotConfinement/YieldArm.lean
+run_check "INVARIANT" rg -n '^theorem yieldOnCore_crossCoreNonInterference($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/NonInterferenceCrossCore.lean
 run_check "INVARIANT" rg -n 'AuditFieldTooLarge = 55' rust/sele4n-types/src/error.rs
 
 # SM9.A.8: the safe wrappers.  Without them the syscalls are hand-encode-only,
@@ -7534,7 +7554,7 @@ run_check "INVARIANT" rg -n '^  runAuditDrainSignalChecks' tests/SmpInformationF
 run_check "INVARIANT" rg -n 'capabilityOnly "auditReadFromCore"' SeLe4n/Kernel/InformationFlow/Enforcement/Wrappers.lean
 run_negative_check "INVARIANT" rg -n 'capabilityOnly "auditReadWord"' SeLe4n/Kernel/InformationFlow/Enforcement/Wrappers.lean
 run_check "INVARIANT" rg -n 'capabilityOnly "auditDrainVisiblePrefix"' SeLe4n/Kernel/InformationFlow/Enforcement/Wrappers.lean
-run_check "INVARIANT" rg -n 'enforcementBoundaryPerCore.length = 67' SeLe4n/Kernel/InformationFlow/CovertChannelPerCore.lean
+run_check "INVARIANT" rg -n 'enforcementBoundaryPerCore.length = 68' SeLe4n/Kernel/InformationFlow/CovertChannelPerCore.lean
 run_check "INVARIANT" rg -n '^def lockSet_auditRead($|[ ({:\[\]])' SeLe4n/Kernel/Concurrency/Locks/LockSetTransitions.lean
 run_check "INVARIANT" rg -n '^def lockSet_auditDrain($|[ ({:\[\]])' SeLe4n/Kernel/Concurrency/Locks/LockSetTransitions.lean
 # PR #870 round 6 (the lock domain): a declared footprint covers the COMMITTED
@@ -7616,7 +7636,7 @@ run_check "INVARIANT" rg -n 'NEGATIVE: the PRE-EPOCH rule would have stamped thi
 run_check "INVARIANT" rg -n 'NEGATIVE: an unconfigured deployment still has the cliff' tests/SmpInformationFlowSuite.lean
 run_check "INVARIANT" rg -n '^private def auditReaderTraceLines($|[ ({:\[\]])' tests/SmpInformationFlowSuite.lean
 run_check "INVARIANT" rg -n 'audit view: trail 3 entries' tests/fixtures/smp_information_flow.expected
-run_check "INVARIANT" rg -n 'audit ABI: auditRead=31 auditDrain=32 syscalls=41' tests/fixtures/smp_information_flow.expected
+run_check "INVARIANT" rg -n 'audit ABI: auditRead=31 auditDrain=32 syscalls=42' tests/fixtures/smp_information_flow.expected
 # The end-to-end ABI witness: the returned word is the SELECTED one, not the
 # caller's own preloaded `x0`.  Without the staged frame the assertion below
 # would read back whatever the caller left there.
@@ -8409,7 +8429,7 @@ run_check "INVARIANT" rg -n '^private def refusalLedgerTraceLines($|[ ({:\[\]])'
 run_check "INVARIANT" rg -n 'refusal seam: recordingSyscalls=2' tests/fixtures/smp_information_flow.expected
 run_check "INVARIANT" rg -n 'refusal write: attempts=1 version=1 trailMoved=false' tests/fixtures/smp_information_flow.expected
 run_check "INVARIANT" rg -n 'refusal read .partial.: status=SeLe4n.Model.KernelError.illegalAuthority' tests/fixtures/smp_information_flow.expected
-run_check "INVARIANT" rg -n 'audit ABI: auditRead=31 auditDrain=32 syscalls=41 opcodes=30 readableStructures=2' tests/fixtures/smp_information_flow.expected
+run_check "INVARIANT" rg -n 'audit ABI: auditRead=31 auditDrain=32 syscalls=42 opcodes=30 readableStructures=2' tests/fixtures/smp_information_flow.expected
 
 # ============================================================================
 # WS-SM SM9.C — the data-carrying declassification
@@ -8516,7 +8536,7 @@ run_negative_check "INVARIANT" rg -n 'declassifiedSignal' SeLe4n/Kernel/Informat
 # SM9.C.8: the syscall, both Rust mirrors and the seam classification the total
 # `refusalSeamClass` forced it to supply.
 run_check "INVARIANT" rg -n '^  \| declassifySignal' SeLe4n/Model/Object/Types.lean
-run_check "INVARIANT" rg -n 'def count : Nat := 41' SeLe4n/Model/Object/Types.lean
+run_check "INVARIANT" rg -n 'def count : Nat := 42' SeLe4n/Model/Object/Types.lean
 run_check "INVARIANT" rg -n 'DeclassifySignal = 33' rust/sele4n-types/src/syscall.rs
 run_check "INVARIANT" rg -n 'DeclassifySignal = 33' rust/sele4n-hal/src/svc_dispatch.rs
 run_check "INVARIANT" rg -n 'DeclassificationDeniedAtReceiver = 56' rust/sele4n-types/src/error.rs
@@ -14807,7 +14827,6 @@ open SeLe4n.Kernel
 -- SM5.A.6 — selection soundness + preservation form + invariant corollary.
 #check @chooseThreadOnCore_some_mem_runQueueOnCore
 #check @chooseThread_preserves_runQueueOnCore_wellFormed
-#check @chooseThreadOnCore_some_mem_of_schedulerInvariant
 
 -- SM5.A.7 — decidable selection predicates.
 #check @chooseThreadOnCoreSelects
@@ -17942,8 +17961,8 @@ run_check "INVARIANT" rg -n '^theorem cancelledCallerDonation\?_blockedOnReply' 
 run_check "INVARIANT" bash -lc 'rg -U -n "^theorem switchToThreadOnCore_preserves_threadPlacedOnSomeCore[^\n]*(\n([ \t][^\n]*)?)*\(hTcb : \(st\.getTcb\? u\)\.isSome\)" SeLe4n/Kernel/Scheduler/Operations/Core.lean'
 run_check "INVARIANT" bash -lc 'rg -U -n "^theorem switchToThreadOnCore_preserves_unplaced[^\n]*(\n([ \t][^\n]*)?)*threadPlacedOnSomeCore st. u = false := by" SeLe4n/Kernel/Scheduler/Operations/Core.lean'
 run_negative_check "INVARIANT" bash -lc 'rg -U -n "^theorem switchToThreadOnCore_preserves_unplaced[^\n]*(\n([ \t][^\n]*)?)*getTcb\?" SeLe4n/Kernel/Scheduler/Operations/Core.lean'
-run_check "INVARIANT" bash -lc 'rg -U -n "^theorem handleRescheduleSgiOnCore_preserves_unplaced[^\n]*(\n([ \t][^\n]*)?)*chooseThreadEffectiveOnCore_some_mem_runQueueOnCore st c tid hwf hChoose" SeLe4n/Kernel/IPC/CrossCore/Cancellation.lean'
-run_check "INVARIANT" bash -lc 'rg -U -n "^theorem suspendRescheduleOnCore_preserves_unplaced[^\n]*(\n([ \t][^\n]*)?)*handleRescheduleSgiOnCore_preserves_unplaced st st. ec u hwf hH h" SeLe4n/Kernel/IPC/CrossCore/Cancellation.lean'
+run_check "INVARIANT" bash -lc 'rg -U -n "^theorem handleRescheduleSgiOnCore_preserves_unplaced[^\n]*(\n([ \t][^\n]*)?)*chooseThreadEffectiveOnCore_some_mem_runQueueOnCore st c tid hChoose" SeLe4n/Kernel/IPC/CrossCore/Cancellation.lean'
+run_check "INVARIANT" bash -lc 'rg -U -n "^theorem suspendRescheduleOnCore_preserves_unplaced[^\n]*(\n([ \t][^\n]*)?)*handleRescheduleSgiOnCore_preserves_unplaced st st. ec u hH h" SeLe4n/Kernel/IPC/CrossCore/Cancellation.lean'
 # The walk frames live beside the walk, so the payoff can reach them: this
 # module imports `IPC.CrossCore.Fault`, which imports `Cancellation`, so the
 # second asker could not have reached an answer stated in `FaultProgress.lean`.

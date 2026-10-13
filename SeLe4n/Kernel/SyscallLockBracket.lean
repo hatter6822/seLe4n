@@ -437,9 +437,15 @@ domain untouched.
 Every other syscall answers `none`, which every arm undeclared in *both* domains
 would get anyway — so this match says what each declared arm needs rather than
 enumerating thirty-five cases, and a new declared arm that forgets to add itself
-here gets the fail-closed answer. -/
+here gets the fail-closed answer.
+
+**WS-ZA ZA4.3**: a yield invokes no capability — the dispatcher runs it before
+the caller's TCB or any capability is looked up — so its operands are the caller
+alone, answered before the gate rather than through a lookup the yield never
+makes. -/
 def abiEntryLockOperands (decoded : SyscallDecodeResult) (tid : SeLe4n.ThreadId)
     (s : SystemState) : Option SyscallLockOperands :=
+  if decoded.syscallId = .yield then some { caller := tid } else
   match abiEntryGate decoded tid s with
   | none => none
   | some (_, gate) =>
@@ -596,6 +602,7 @@ theorem abiEntryLockOperands_tcbSuspend_target_valid (decoded : SyscallDecodeRes
     (hT : ops.targetThread = some t) :
     t ≠ SeLe4n.ThreadId.sentinel := by
   unfold abiEntryLockOperands at h
+  rw [if_neg (by rw [hSid]; decide)] at h
   cases hGate : abiEntryGate decoded tid s with
   | none => rw [hGate] at h; exact absurd h (by simp)
   | some pair =>
@@ -640,6 +647,8 @@ theorem abiEntryLockOperands_caller (decoded : SyscallDecodeResult)
     (h : abiEntryLockOperands decoded tid s = some ops) :
     ops.caller = tid := by
   unfold abiEntryLockOperands at h
+  split at h
+  · rw [← Option.some.inj h]
   cases hGate : abiEntryGate decoded tid s with
   | none => rw [hGate] at h; exact absurd h (by simp)
   | some pair =>
@@ -662,14 +671,17 @@ theorem abiEntryLockOperands_caller (decoded : SyscallDecodeResult)
 
 /-- **WS-LS LS2.3**: resolved operands come from a resolved gate and a
 successful rights-gated lookup of the capability the decode addresses, at the
-very state the operands are read at (the lookup is read-only). -/
+very state the operands are read at (the lookup is read-only) — for every
+syscall but the capability-free yield. -/
 theorem abiEntryLockOperands_gate_lookup (decoded : SyscallDecodeResult)
     (tid : SeLe4n.ThreadId) (s : SystemState) (ops : SyscallLockOperands)
+    (hNotYield : decoded.syscallId ≠ .yield)
     (h : abiEntryLockOperands decoded tid s = some ops) :
     ∃ (tcb : TCB) (gate : SyscallGate) (cap : Capability),
       abiEntryGate decoded tid s = some (tcb, gate) ∧
       syscallLookupCap gate s = .ok (cap, s) := by
   unfold abiEntryLockOperands at h
+  rw [if_neg hNotYield] at h
   cases hGate : abiEntryGate decoded tid s with
   | none => rw [hGate] at h; exact absurd h (by simp)
   | some pair =>

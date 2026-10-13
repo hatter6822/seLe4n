@@ -811,6 +811,7 @@ COL0 = re.compile(r"^[A-Za-z@/]")
 # table, delegation-theorem statements — is not a code path and must not be
 # walked (round 20).
 DISPATCH_DEFS = re.compile(r"^dispatch(WithCap|CapabilityOnly|Syscall)")
+GUARD = re.compile(r"^([ \t]*)(?:else )?if decoded\.syscallId = \.([A-Za-z][A-Za-z0-9]*) then\b(.*)$", re.M)
 
 
 def dispatch_arm_bodies(path: str) -> dict[str, list[str]]:
@@ -878,6 +879,27 @@ def dispatch_arm_bodies(path: str) -> dict[str, list[str]]:
                 end = j
                 break
         out.setdefault(sid, []).append("\n".join(lines[ln:end]))
+    # A syscall that invokes no capability is dispatched by a guard ahead of
+    # the caller's CSpace lookup (`else if decoded.syscallId = .yield then
+    # dispatchYield executingCore st`), not by a `| .ctor =>` arm.  The guard
+    # is that syscall's live arm: its text is the rest of the guard line plus
+    # every deeper-indented line under it.  Reading only the `| .ctor =>`
+    # arms would find the unreachable refusal arm the capability dispatcher
+    # still has to spell for exhaustiveness, and never walk the live path.
+    for m in GUARD.finditer(text):
+        ln = text[:m.start()].count("\n")
+        if not DISPATCH_DEFS.match(enclosing(ln)):
+            continue
+        indent = len(m.group(1))
+        end = ln + 1
+        while end < len(lines):
+            nxt = lines[end]
+            if nxt.strip() and (COL0.match(nxt)
+                                or len(nxt) - len(nxt.lstrip()) <= indent):
+                break
+            end += 1
+        body = [m.group(3)] + lines[ln + 1:end]
+        out.setdefault(m.group(2), []).append("\n".join(body))
     return out
 
 
@@ -1118,6 +1140,11 @@ def main() -> int:
             "    phantomArmRoot st\n"
             "  -/\n"
             "  | .send => endpointSendWitnessRoot st\n"
+            "def dispatchSyscallWitness (st : Nat) : Nat :=\n"
+            "    if decoded.syscallId = .yieldWitness then yieldWitnessRoot st\n"
+            "    else\n"
+            "    match st with\n"
+            "    | _ => otherRoot st\n"
             "def syscallMapWitness : SyscallId → String\n"
             "  | .send => \"realLabel\"\n"
             "/- an old sample:\n"
@@ -1143,6 +1170,12 @@ def main() -> int:
                 _bad.append("the real call disappeared from the arm")
             if "resumeThread" in _called:
                 _bad.append("a trailing comment reached called_names")
+            _guard = [called_names(strip_arm_patterns(_a))
+                      for _a in _arms.get("yieldWitness", [])]
+            if len(_guard) != 1 or "yieldWitnessRoot" not in _guard[0] \
+                    or "otherRoot" in _guard[0]:
+                _bad.append("a capability-free guard arm was not read as the "
+                            "syscall's own arm")
             if "phantomArm" in _arms:
                 _bad.append("a block-comment sample injected a dispatch arm")
             if parse_map(_fx, "syscallMapWitness") != {"send": "realLabel"}:

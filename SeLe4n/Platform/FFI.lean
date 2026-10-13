@@ -2782,7 +2782,10 @@ partition is therefore the ledger's, and it is pinned
 (`capFaultReceivePhase?_none_iff_records`): a syscall returns its lookup
 failure exactly when the seam records it.  Total, with no wildcard: a new
 syscall decides its arm at elaboration, and the pin decides it against the
-ledger. -/
+ledger.  The one other `none` is the yield (WS-ZA ZA4.3), which looks up no
+capability: a refused yield (no current thread, a missing SchedContext) returns
+its error, and its unused capability-address register can never turn that
+refusal into a fault. -/
 def capFaultReceivePhase? : SyscallId → Option Bool
   | .send                   => some false
   | .receive                => some true
@@ -2825,13 +2828,18 @@ def capFaultReceivePhase? : SyscallId → Option Bool
   | .tcbSetSpace            => some false
   | .pageTableMap           => some false
   | .pageTableUnmap         => some false
+  -- WS-ZA ZA4.3: a yield looks up no capability, so it has no lookup failure
+  -- to deliver in either phase.
+  | .yield                  => none
 
 /-- The partition, pinned against the ledger rather than listed twice: a
-syscall returns its lookup failure exactly when the refusal seam records it.
-A third recording syscall, or a fault arm given to a declassifying one, fails
-here. -/
-theorem capFaultReceivePhase?_none_iff_records (sid : SyscallId) :
-    (capFaultReceivePhase? sid).isNone = decide (refusalSeamClass sid = .records) := by
+syscall that looks up a capability returns its lookup failure exactly when the
+refusal seam records it, and the capability-free yield has none to deliver.
+A third recording syscall, or a fault arm given to a declassifying one or to
+the yield, fails here. -/
+theorem capFaultReceivePhase?_none_iff_records_or_capabilityFree (sid : SyscallId) :
+    (capFaultReceivePhase? sid).isNone =
+      (decide (refusalSeamClass sid = .records) || decide (sid = .yield)) := by
   cases sid <;> rfl
 
 /-- PR #887 review round 3: **the capability-fault producer's decision.**
@@ -3926,6 +3934,7 @@ theorem syscallDispatchFromAbi_implies_capability_held
       SeLe4n.Kernel.Architecture.RegisterDecode.decodeSyscallArgsFromState
         (writeFfiRegistersToTcb st tid syscallId x0 x1 x2 x3 x4 x5)
         tid SeLe4n.arm64DefaultLayout regs 32 = Except.ok decoded ∧
+      (decoded.syscallId ≠ .yield →
       ∃ tcb, (writeFfiRegistersToTcb st tid syscallId x0 x1 x2 x3 x4 x5).getTcb? tid
           = some tcb ∧
         ∃ rootCn,
@@ -3936,12 +3945,11 @@ theorem syscallDispatchFromAbi_implies_capability_held
                 (writeFfiRegistersToTcb st tid syscallId x0 x1 x2 x3 x4 x5) = Except.ok ref ∧
             SystemState.lookupSlotCap
                 (writeFfiRegistersToTcb st tid syscallId x0 x1 x2 x3 x4 x5) ref = some cap ∧
-            cap.hasRight (syscallRequiredRight decoded.syscallId) = true := by
+            cap.hasRight (syscallRequiredRight decoded.syscallId) = true) := by
   refine ⟨syscallDispatchFromAbi_ok_of_syscallEntryChecked_ok ctx executingCore syscallId
             x0 x1 x2 x3 x4 x5 ipcBufferAddr elr spsr spEl0 x30 st tid st'
             hCur hSyscall, ?_⟩
-  obtain ⟨hCtx, tid', regs, decoded, hCurrent', hLookup, hDecode,
-          tcb, hTcb, rootCn, hRoot, cap, ref, hResolve, hSlot, hRight⟩ :=
+  obtain ⟨hCtx, tid', regs, decoded, hCurrent', hLookup, hDecode, hHeld⟩ :=
     syscallEntryChecked_implies_capability_held_of_pre_state
       ctx SeLe4n.arm64DefaultLayout executingCore 32 _ st' hSyscall
   -- The spill leaves the scheduler untouched, so the thread the entry found on
@@ -3952,8 +3960,7 @@ theorem syscallDispatchFromAbi_implies_capability_held
     rw [hSched, hCur] at hCurrent'
     exact (Option.some.inj hCurrent').symm
   subst hTidEq
-  exact ⟨hCtx, regs, decoded, hDecode, tcb, hTcb, rootCn, hRoot, cap, ref,
-         hResolve, hSlot, hRight⟩
+  exact ⟨hCtx, regs, decoded, hDecode, hHeld⟩
 
 /-- WS-RC R2.B.5 (restated at the WS-RA type, and again at SM9.B.9): when
     `syscallEntryChecked` rejects on the register-spilled state,

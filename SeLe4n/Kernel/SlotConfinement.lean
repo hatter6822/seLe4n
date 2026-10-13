@@ -13,6 +13,7 @@ import SeLe4n.Kernel.SlotConfinement.IpcArms
 import SeLe4n.Kernel.SlotConfinement.SchedContextArms
 import SeLe4n.Kernel.SlotConfinement.PriorityArms
 import SeLe4n.Kernel.SlotConfinement.MemoryArms
+import SeLe4n.Kernel.SlotConfinement.YieldArm
 
 /-!
 # Per-core slot confinement

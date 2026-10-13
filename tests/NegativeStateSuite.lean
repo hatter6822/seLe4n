@@ -2577,8 +2577,10 @@ def runWSJ1DecodeChecks : IO Unit := do
     (SeLe4n.Kernel.Architecture.RegisterDecode.decodeSyscallId ⟨38⟩)
   let _ ← expectOkVal "J1 decodeSyscallId valid boundary (40 = pageTableUnmap)"
     (SeLe4n.Kernel.Architecture.RegisterDecode.decodeSyscallId ⟨40⟩)
-  expectErr "J1 decodeSyscallId invalid (41)"
+  let _ ← expectOkVal "J1 decodeSyscallId valid boundary (41 = yield)"
     (SeLe4n.Kernel.Architecture.RegisterDecode.decodeSyscallId ⟨41⟩)
+  expectErr "J1 decodeSyscallId invalid (42)"
+    (SeLe4n.Kernel.Architecture.RegisterDecode.decodeSyscallId ⟨42⟩)
     .invalidSyscallNumber
 
   -- J1-NEG-05: decodeSyscallId with large invalid number → invalidSyscallNumber

@@ -417,6 +417,18 @@ theorem schedFootprintOfCores_congr {run₁ run₂ rep₁ rep₂ : List CoreId}
   unfold schedFootprintOfCores
   rw [schedCoreSegment_congr _ hRun, schedCoreSegment_congr _ hRep]
 
+/-- **WS-ZA ZA4.3**: the yield syscall's scheduler-domain footprint on the
+executing core — the object store, and the executing core's run queue and
+replenish queue.  A yield writes the caller's TCB or SchedContext, the
+executing core's run queue (the caller's re-enqueue and the re-selection) and,
+when the caller is bound, that core's replenish queue (the refill).  It times
+out no IPC and wakes no thread, so no other core's queue is touched; the cores
+whose decision the caller's moved key stales are flagged through their
+reschedule-pending flags, which no lock covers. -/
+def schedLockSet_yieldOnCore (executingCore : CoreId) :
+    List (LockKey × Concurrency.AccessMode) :=
+  schedFootprintOfCores [executingCore] [executingCore]
+
 /-- WS-SM SM5.H.4 (lock-set): `migrateSchedContextReplenishment fromCore toCore`
 writes both cores' replenish-queue slots. -/
 def migrateSchedContextReplenishmentLockSet (fromCore toCore : CoreId) :

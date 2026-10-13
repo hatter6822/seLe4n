@@ -10,6 +10,7 @@
 import SeLe4n.Kernel.Scheduler.Operations.Core
 import SeLe4n.Kernel.Scheduler.Operations.PerCoreChooseThread
 import SeLe4n.Kernel.Scheduler.Operations.PerCoreTimerTick
+import SeLe4n.Kernel.Scheduler.Operations.PerCoreScheduleFrames
 
 /-!
 # WS-SM SM5.G — Per-core domain scheduling
@@ -897,13 +898,6 @@ theorem advanceDomainOnCore_cyclic_activeDomain (st : SystemState) (c : CoreId)
 -- (`scheduleEffectiveOnCore`) is domain-irrelevant; the frame lemmas below establish
 -- that it touches neither `activeDomainOnCore c` nor `domainSchedule`.
 
-/-- WS-SM SM5.G.3 helper: the idle fallback frames core `c`'s active domain. -/
-theorem idleFallbackOnCore_activeDomainOnCore (st : SystemState) (c : CoreId) :
-    (idleFallbackOnCore st c).scheduler.activeDomainOnCore c = st.scheduler.activeDomainOnCore c := by
-  unfold idleFallbackOnCore
-  split
-  · exact dispatchIdleOnCore_activeDomainOnCore st c
-  · simp [SchedulerState.setCurrentOnCore_activeDomainOnCore]
 
 /-- WS-SM SM5.G.3 helper: the idle fallback frames the domain schedule. -/
 theorem idleFallbackOnCore_domainSchedule (st : SystemState) (c : CoreId) :
@@ -914,38 +908,6 @@ theorem idleFallbackOnCore_domainSchedule (st : SystemState) (c : CoreId) :
       restoreIncomingContextOnCore_scheduler]
   · simp [SchedulerState.setCurrentOnCore]
 
-/-- WS-SM SM5.G.3 helper: a successful per-core reschedule frames core `c`'s active
-domain (the re-dispatch changes the current thread / run queue / object store, never
-the active scheduling domain).  The currently-missing frame the live preservation
-needs; proof mirrors `scheduleEffectiveOnCore_establishes_currentThreadInActiveDomainOnCore`'s
-`hact` step. -/
-theorem scheduleEffectiveOnCore_activeDomainOnCore (st : SystemState) (c : CoreId)
-    (st' : SystemState) (hStep : scheduleEffectiveOnCore st c = .ok st') :
-    st'.scheduler.activeDomainOnCore c = st.scheduler.activeDomainOnCore c := by
-  unfold scheduleEffectiveOnCore at hStep
-  cases hCh : chooseThreadEffectiveOnCore st c with
-  | error e => rw [hCh] at hStep; simp at hStep
-  | ok res =>
-    rw [hCh] at hStep
-    cases res with
-    | none =>
-      simp only [Except.ok.injEq] at hStep; subst hStep
-      rw [SystemState.clearReschedulePendingOnCore_scheduler,
-        SchedulerState.clearReschedulePendingOnCore_activeDomainOnCore,
-        idleFallbackOnCore_activeDomainOnCore, saveOutgoingContextOnCore_scheduler_eq]
-    | some tid =>
-      cases hTcb : st.getTcb? tid with
-      | none => simp [hTcb] at hStep
-      | some tcb =>
-        simp only [hTcb] at hStep
-        split at hStep
-        · simp only [Except.ok.injEq] at hStep
-          rw [← hStep]
-          simp only [SchedulerState.clearReschedulePendingOnCore_activeDomainOnCore,
-            SchedulerState.setCurrentOnCore_activeDomainOnCore, restoreIncomingContextOnCore_scheduler,
-            SchedulerState.setRunQueueOnCore_activeDomainOnCore]
-          rw [saveOutgoingContextOnCore_scheduler_eq]
-        · simp at hStep
 
 /-- WS-SM SM5.G.3 helper: a successful per-core reschedule frames the domain schedule. -/
 theorem scheduleEffectiveOnCore_domainSchedule (st : SystemState) (c : CoreId)
@@ -1069,7 +1031,7 @@ theorem scheduleDomainOnCore_preserves_activeDomainOnCore_isInDomainSchedule
           switchDomainOnCore_preserves_activeDomainOnCore_isInDomainSchedule st c stMid hPred hsw
         unfold activeDomainOnCore_isInDomainSchedule at hMid ⊢
         rw [scheduleEffectiveOnCore_domainSchedule stMid c st' hStep,
-          scheduleEffectiveOnCore_activeDomainOnCore stMid c st' hStep]
+          scheduleEffectiveOnCore_activeDomainOnCore stMid c st' c hStep]
         exact hMid
     · -- non-boundary: pure domain-time decrement.
       simp only [Except.ok.injEq] at hStep
@@ -1114,45 +1076,6 @@ theorem domainConsistentOnCore_frame {st st' : SystemState} {c : CoreId}
   rw [hSch, hIdx] at he
   rw [hAD]; exact hInv entry he
 
-/-- WS-SM SM5.G.2 helper: the idle fallback frames core `c`'s schedule index. -/
-theorem idleFallbackOnCore_domainScheduleIndexOnCore (st : SystemState) (c : CoreId) :
-    (idleFallbackOnCore st c).scheduler.domainScheduleIndexOnCore c
-      = st.scheduler.domainScheduleIndexOnCore c := by
-  unfold idleFallbackOnCore
-  split
-  · simp [dispatchIdleOnCore, SchedulerState.setCurrentOnCore_domainScheduleIndexOnCore,
-      restoreIncomingContextOnCore_scheduler, SchedulerState.setRunQueueOnCore_domainScheduleIndexOnCore]
-  · simp [SchedulerState.setCurrentOnCore_domainScheduleIndexOnCore]
-
-/-- WS-SM SM5.G.2 helper: a successful per-core reschedule frames core `c`'s schedule
-index (the re-dispatch changes current / run queue / object store, never the index). -/
-theorem scheduleEffectiveOnCore_domainScheduleIndexOnCore (st : SystemState) (c : CoreId)
-    (st' : SystemState) (hStep : scheduleEffectiveOnCore st c = .ok st') :
-    st'.scheduler.domainScheduleIndexOnCore c = st.scheduler.domainScheduleIndexOnCore c := by
-  unfold scheduleEffectiveOnCore at hStep
-  cases hCh : chooseThreadEffectiveOnCore st c with
-  | error e => rw [hCh] at hStep; simp at hStep
-  | ok res =>
-    rw [hCh] at hStep
-    cases res with
-    | none =>
-      simp only [Except.ok.injEq] at hStep; subst hStep
-      rw [SystemState.clearReschedulePendingOnCore_scheduler,
-        SchedulerState.clearReschedulePendingOnCore_domainScheduleIndexOnCore,
-        idleFallbackOnCore_domainScheduleIndexOnCore, saveOutgoingContextOnCore_scheduler_eq]
-    | some tid =>
-      cases hTcb : st.getTcb? tid with
-      | none => simp [hTcb] at hStep
-      | some tcb =>
-        simp only [hTcb] at hStep
-        split at hStep
-        · simp only [Except.ok.injEq] at hStep
-          rw [← hStep]
-          simp only [SchedulerState.clearReschedulePendingOnCore_domainScheduleIndexOnCore,
-            SchedulerState.setCurrentOnCore_domainScheduleIndexOnCore, restoreIncomingContextOnCore_scheduler,
-            SchedulerState.setRunQueueOnCore_domainScheduleIndexOnCore]
-          rw [saveOutgoingContextOnCore_scheduler_eq]
-        · simp at hStep
 
 /-- WS-SM SM5.G.2 helper: `decrementDomainTimeOnCore` frames core `c`'s schedule index. -/
 theorem decrementDomainTimeOnCore_domainScheduleIndexOnCore (st : SystemState) (c : CoreId) :
@@ -1185,7 +1108,7 @@ theorem scheduleDomainOnCore_preserves_domainScheduleIndexInBoundsOnCore
         rw [hsw] at hStep
         exact domainScheduleIndexInBoundsOnCore_frame
           (scheduleEffectiveOnCore_domainSchedule stMid c st' hStep)
-          (scheduleEffectiveOnCore_domainScheduleIndexOnCore stMid c st' hStep)
+          (scheduleEffectiveOnCore_domainScheduleIndexOnCore stMid c st' c hStep)
           (switchDomainOnCore_preserves_domainScheduleIndexInBoundsOnCore st c stMid hsw)
     · -- non-boundary: pure domain-time decrement.
       simp only [Except.ok.injEq] at hStep; subst hStep
@@ -1237,8 +1160,8 @@ theorem scheduleDomainOnCore_preserves_domainConsistentOnCore
         rw [hsw] at hStep
         exact domainConsistentOnCore_frame
           (scheduleEffectiveOnCore_domainSchedule stMid c st' hStep)
-          (scheduleEffectiveOnCore_domainScheduleIndexOnCore stMid c st' hStep)
-          (scheduleEffectiveOnCore_activeDomainOnCore stMid c st' hStep)
+          (scheduleEffectiveOnCore_domainScheduleIndexOnCore stMid c st' c hStep)
+          (scheduleEffectiveOnCore_activeDomainOnCore stMid c st' c hStep)
           (switchDomainOnCore_preserves_domainConsistentOnCore st c stMid hCons hsw)
     · -- non-boundary: pure domain-time decrement.
       simp only [Except.ok.injEq] at hStep; subst hStep

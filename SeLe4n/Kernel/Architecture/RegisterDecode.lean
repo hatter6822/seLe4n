@@ -687,6 +687,8 @@ inductive RegisterRoutedSyscall where
   | signal (capAddr : CPtr) (badge : Badge)
   /-- A wait: its operand address. -/
   | wait (capAddr : CPtr)
+  /-- WS-ZA ZA4.3: a yield, which reads no operand. -/
+  | yield
   | viaDecode
 
 /-- WS-ZA ZA4.2: register `r`'s word, as `readReg` reads it, without the
@@ -722,6 +724,8 @@ theorem readReg_val_eq_word (rf : RegisterFile) (r : RegName) :
           else .viaDecode
         else if (readReg regs layout.syscallNumReg).val = SyscallId.notificationWait.toNat then
           .wait capAddr
+        else if (readReg regs layout.syscallNumReg).val = SyscallId.yield.toNat then
+          .yield
         else .viaDecode
       else .viaDecode
   else .viaDecode
@@ -779,7 +783,9 @@ theorem decodeSyscallArgsFromState_of_routedSignal
             hB hC hM hLen hS, rfl, rfl, rfl, by simpa only [Array.size_map] using h0,
             by simp only [Array.getElem_map, readReg_val_eq_word, Badge.ofWord_eq_ofNatMasked]⟩
         · cases h
-      · split at h <;> cases h
+      · split at h
+        · cases h
+        · split at h <;> cases h
     · cases h
   · cases h
 
@@ -808,7 +814,37 @@ theorem decodeSyscallArgsFromState_of_routedWait
           cases h
           exact ⟨_, decodeSyscallArgsFromState_of_routed st tid layout regs regCount _ mi _
             hB hC hM hLen hS, rfl, rfl, rfl⟩
+        · split at h <;> cases h
+    · cases h
+  · cases h
+
+/-- WS-ZA ZA4.3: what a routed yield pins about the decode — it succeeds, as
+`.yield`, with no overflow words. -/
+theorem decodeSyscallArgsFromState_of_routedYield
+    (st : SystemState) (tid : ThreadId)
+    (layout : SyscallRegisterLayout) (regs : RegisterFile) (regCount : Nat)
+    (h : registerRoutedSyscall layout regs regCount = .yield) :
+    ∃ decoded, decodeSyscallArgsFromState st tid layout regs regCount = .ok decoded ∧
+      decoded.syscallId = .yield ∧ decoded.overflowCount = 0 := by
+  unfold registerRoutedSyscall at h
+  split at h
+  · next hB =>
+    rcases hC : decodeCapPtr (readReg regs layout.capPtrReg) with e | c
+    · simp only [hC] at h; cases h
+    rcases hM : decodeMsgInfo (readReg regs layout.msgInfoReg) with e | mi
+    · simp only [hC, hM] at h; cases h
+    simp only [hC, hM] at h
+    split at h
+    · next hLen =>
+      split at h
+      · split at h <;> cases h
+      · split at h
         · cases h
+        · split at h
+          · next hS =>
+            exact ⟨_, decodeSyscallArgsFromState_of_routed st tid layout regs regCount _ mi _
+              hB hC hM hLen hS, rfl, rfl⟩
+          · cases h
     · cases h
   · cases h
 

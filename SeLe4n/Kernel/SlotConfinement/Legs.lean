@@ -924,6 +924,7 @@ theorem observableSlotsConfinedToCores_then_flagOnly {st stMid st' : SystemState
     observableSlotsConfinedToCores st st' cs :=
   List.append_nil cs ▸ observableSlotsConfinedToCores_trans h₁ h₂
 
+
 /-- SM8.B.2: a PIP re-bucketing writes core `c`'s run queue and the boosted
 TCB, and nothing else per-core. -/
 theorem updatePipBoostOnCore_confinedToCores (st : SystemState) (c : CoreId)

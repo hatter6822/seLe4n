@@ -8,6 +8,7 @@
 -/
 
 import SeLe4n.Kernel.API
+import SeLe4n.Kernel.Scheduler.Operations.PerCoreScheduleFrames
 
 /-!
 # The checked syscall entry, refusing in the state it was refused in
@@ -547,6 +548,7 @@ theorem dispatchOperandCheckedR_eq (ctx : LabelingContext)
     (executingCore : Concurrency.CoreId)
     (arm : TaintTable → Option Capability → RefusalCarrying Unit)
     (hFirst : syscallChecksTargetFirst decoded.syscallId = false)
+    (hNotYield : decoded.syscallId ≠ .yield)
     (hArm : ∀ (st : SystemState) (tcb : TCB) (rootCn : CNode) (ref : CSpaceAddr),
       st.getObject? tid.toObjId = some (.tcb tcb) →
       st.getObject? tcb.cspaceRoot = some (.cnode rootCn) →
@@ -567,7 +569,7 @@ theorem dispatchOperandCheckedR_eq (ctx : LabelingContext)
       (threadId_isEqSome_iff _ _).2 hCur
     have hNot : ¬ (st.scheduler.currentOnCore executingCore ≠ some tid) := fun h => h hCur
     rw [if_neg (by simp only [hIs, Bool.not_true, Bool.false_eq_true, not_false_eq_true]),
-      if_neg hNot]
+      if_neg hNot, if_neg hNotYield]
     split
     · next tcb hTcb =>
       split
@@ -621,6 +623,7 @@ theorem dispatchSignalCheckedR_eq (ctx : LabelingContext)
     dispatchSignalCheckedR ctx decoded.capAddr sigArgs tid executingCore =
       RefusalCarrying.ofKernel (dispatchSyscallChecked ctx decoded tid executingCore) := by
   apply dispatchOperandCheckedR_eq ctx decoded tid executingCore _ (by rw [hSig]; rfl)
+    (by rw [hSig]; decide)
   intro st tcb rootCn ref hTcb hRoot hRef
   rw [syscallTaintPlan_eq_signalTaintPlanOf st tid decoded hSig,
     syscallOperandCap?_of_resolved st tid _ tcb rootCn ref hTcb hRoot hRef]
@@ -646,6 +649,7 @@ theorem dispatchWaitCheckedR_eq (ctx : LabelingContext)
     dispatchWaitCheckedR ctx decoded.capAddr tid executingCore =
       RefusalCarrying.ofKernel (dispatchSyscallChecked ctx decoded tid executingCore) := by
   apply dispatchOperandCheckedR_eq ctx decoded tid executingCore _ (by rw [hWait]; rfl)
+    (by rw [hWait]; decide)
   intro st tcb rootCn ref hTcb hRoot hRef
   have hArm := waitOperandArmThenTaintR_eq ctx decoded tid executingCore
     { callerId := tid, cspaceRoot := tcb.cspaceRoot, capAddr := decoded.capAddr,
@@ -654,6 +658,73 @@ theorem dispatchWaitCheckedR_eq (ctx : LabelingContext)
     st ref hWait hRef (syscallOperandCap?_of_resolved st tid _ tcb rootCn ref hTcb hRoot hRef)
   simp only [hWait] at hArm ⊢
   exact hArm
+
+/-- WS-ZA ZA4.3: core `c`'s scheduling point as the total function it is
+(`scheduleEffectiveOnCore_ne_error`); the refusal arm is unreachable. -/
+@[inline] def scheduleEffectiveOnCoreTotal (st : SystemState) (c : Concurrency.CoreId) :
+    SystemState :=
+  match h : scheduleEffectiveOnCore st c with
+  | .ok st' => st'
+  | .error e => absurd h (scheduleEffectiveOnCore_ne_error st c e)
+
+/-- WS-ZA ZA4.3: the yield on core `c`, refusing in the state it was handed
+(`yieldOnCoreR_eq`).  Its refusals are the three lookups before the charge
+writes (no caller, no TCB, no SchedContext), and the scheduling point after the
+charge cannot refuse, so the state goes to the charge and nothing keeps it.
+The bound arm reads the caller's scheduling parameters before the charge
+consumes the state (D1). -/
+@[inline] def yieldOnCoreR (st : SystemState) (c : Concurrency.CoreId) :
+    Except (KernelError × SystemState) SystemState :=
+  match st.scheduler.currentOnCore c with
+  | none => .error (.illegalState, st)
+  | some tid =>
+    match st.getTcbWitnessed? tid with
+    | none => .error (.schedulerInvariantViolation, st)
+    | some ⟨tcb, hTcb⟩ =>
+      match tcb.schedContextBinding with
+      | .unbound => .ok (scheduleEffectiveOnCoreTotal (sliceExpireOnCore st c tid tcb hTcb) c)
+      | .bound scId | .donated scId _ =>
+        match st.getSchedContextWitnessed? scId with
+        | some ⟨sc, hSc⟩ =>
+          let params := effectiveSchedParams st tcb
+          .ok (scheduleEffectiveOnCoreTotal (markKeyChangeFor
+            (spendBudgetOnCore st c tid scId sc hSc sc.budgetRemaining.val) tid params) c)
+        | none => .error (.missingSchedContext, st)
+
+theorem scheduleEffectiveOnCoreTotal_eq (st : SystemState) (c : Concurrency.CoreId) :
+    scheduleEffectiveOnCore st c = .ok (scheduleEffectiveOnCoreTotal st c) := by
+  unfold scheduleEffectiveOnCoreTotal
+  split
+  · next st' h => exact h
+  · next e h => exact absurd h (scheduleEffectiveOnCore_ne_error st c e)
+
+theorem yieldOnCoreR_eq (st : SystemState) (c : Concurrency.CoreId) :
+    yieldOnCoreR st c =
+      match yieldOnCore st c with
+      | .error e => .error (e, st)
+      | .ok st' => .ok st' := by
+  unfold yieldOnCoreR yieldOnCore yieldChargeOnCore
+  cases st.scheduler.currentOnCore c with
+  | none => rfl
+  | some tid =>
+    simp only []
+    cases st.getTcbWitnessed? tid with
+    | none => rfl
+    | some p =>
+      obtain ⟨tcb, hTcb⟩ := p
+      simp only []
+      cases tcb.schedContextBinding with
+      | unbound => simp only [scheduleEffectiveOnCoreTotal_eq]
+      | bound scId =>
+        simp only []
+        cases st.getSchedContextWitnessed? scId with
+        | none => rfl
+        | some q => obtain ⟨sc, hSc⟩ := q; simp only [scheduleEffectiveOnCoreTotal_eq]
+      | donated scId _ =>
+        simp only []
+        cases st.getSchedContextWitnessed? scId with
+        | none => rfl
+        | some q => obtain ⟨sc, hSc⟩ := q; simp only [scheduleEffectiveOnCoreTotal_eq]
 
 /-- `syscallEntryChecked`, refusing in the state it was handed
 (`syscallEntryCheckedR_eq`).  A signal or wait whose arguments all sit in
@@ -682,6 +753,12 @@ specification's form. -/
           dispatchSignalCheckedR ctx capAddr (.ok { badge }) tid executingCore st
         | .wait capAddr =>
           dispatchWaitCheckedR ctx capAddr tid executingCore st
+        -- WS-ZA ZA4.3: a yield reads no operand and checks nothing a write
+        -- precedes, so a refusal is in the entry's own state.
+        | .yield =>
+          match yieldOnCoreR st executingCore with
+          | .error r => .error r
+          | .ok st' => .ok ((), st')
         | .viaDecode =>
           RefusalCarrying.ofKernel (syscallEntryChecked ctx layout executingCore regCount) st
       | some _ => .error (.illegalState, st)
@@ -730,6 +807,16 @@ theorem syscallEntryCheckedR_eq (ctx : LabelingContext)
           simp only [RefusalCarrying.ofKernel, syscallEntryChecked, hCtx, hCur, hRegs, hDec,
             hZero, Bool.false_eq_true, ↓reduceIte,
             SeLe4n.Kernel.Architecture.tlbFillIpcBufferOnCore_zero]
+        · next hYieldRegs =>
+          obtain ⟨decoded, hDec, hYield, hZero⟩ :=
+            SeLe4n.Kernel.Architecture.RegisterDecode.decodeSyscallArgsFromState_of_routedYield
+              st tid layout tcb.registerContext regCount hYieldRegs
+          simp only [RefusalCarrying.ofKernel, syscallEntryChecked, hCtx, hCur, hRegs, hDec,
+            hZero, Bool.false_eq_true, ↓reduceIte,
+            SeLe4n.Kernel.Architecture.tlbFillIpcBufferOnCore_zero,
+            dispatchSyscallChecked, hYield, ne_eq, not_true_eq_false, dispatchYield,
+            yieldOnCoreR_eq]
+          cases yieldOnCore st executingCore <;> rfl
         · rfl
       · next o hNot hObj =>
         have hRegs : lookupThreadRegisterContext tid st = .error .illegalState := by

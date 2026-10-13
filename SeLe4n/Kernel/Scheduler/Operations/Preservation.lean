@@ -2458,7 +2458,7 @@ private theorem chooseBestInBucket_edf_bridge
       have hBucketAllTcb : ∀ u, u ∈ (st.scheduler.runQueueOnCore bootCoreId).maxPriorityBucket →
           ∃ utcb, st.getObject? u.toObjId = some (.tcb utcb) := by
         intro u hU
-        have hURq := RunQueue.maxPriorityBucket_subset (st.scheduler.runQueueOnCore bootCoreId) hwf u hU
+        have hURq := RunQueue.maxPriorityBucket_subset (st.scheduler.runQueueOnCore bootCoreId) u hU
         obtain ⟨utcb, hutcb⟩ := hAllTcb u (by
           simpa [SchedulerState.runnable] using
             RunQueue.membership_implies_flat (st.scheduler.runQueueOnCore bootCoreId) u hURq)
@@ -2476,7 +2476,7 @@ private theorem chooseBestInBucket_edf_bridge
           hBucket hBucketAllTcb
       obtain ⟨maxPrio, hMP, hTidTP⟩ :=
         RunQueue.maxPriorityBucket_threadPriority (st.scheduler.runQueueOnCore bootCoreId) hwf tid hTidInBucket
-      have hTidMem := RunQueue.maxPriorityBucket_subset (st.scheduler.runQueueOnCore bootCoreId) hwf tid hTidInBucket
+      have hTidMem := RunQueue.maxPriorityBucket_subset (st.scheduler.runQueueOnCore bootCoreId) tid hTidInBucket
       have hPMTid := hpm tid hTidMem
       simp only [hObj] at hPMTid
       have hMaxEqPrio : maxPrio = tcbSel.boostedPriority := Option.some.inj (hTidTP.symm.trans hPMTid)

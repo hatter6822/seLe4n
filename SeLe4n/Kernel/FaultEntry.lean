@@ -641,23 +641,13 @@ the thread that was current on `c` is not dispatchable there afterwards.
 **WS-BP BP7.6: the SM10.1 obligation, discharged.**  The core's successor is
 dispatched now, and it is drawn from the run queue the faulting thread is no
 longer on (`handleRescheduleSgiOnCore_preserves_not_dispatchable`).  That the
-chooser draws from the queue's *members* is what the queue's well-formedness
-says — its bucket scan and its membership agree — so the theorem takes it of
-the state the successor is chosen on — and that is derived, not assumed: the
-theorem takes every core's queue well-formed on the **pre**-state, which is a
-conjunct of `schedulerInvariant_perCore` every reachable state carries, and
-`faultDeliverOnCoreChecked_preserves_runQueuesWellFormed` carries it across the
-spill and the delivery. -/
+chooser draws from the queue's *members* is a fact of every run queue, which
+carries its bucket invariant (`RunQueue.bucket_wf`, WS-ZA ZA4.3), so the
+theorem holds of every pre-state. -/
 theorem faultEntryDeliver_not_dispatchable (lctx : LabelingContext) (st : SystemState)
     (f : Fault) (ectx : ExceptionContext) (w : FaultRegisterWindow) (c : CoreId)
-    (tid : SeLe4n.ThreadId) (hCur : st.scheduler.currentOnCore c = some tid)
-    (hwf : runQueuesWellFormed st.scheduler) :
+    (tid : SeLe4n.ThreadId) (hCur : st.scheduler.currentOnCore c = some tid) :
     ¬ dispatchableOnCore (faultEntryDeliver lctx st f ectx w c).2 tid c := by
-  have hwfD : (faultDeliveredState lctx st f ectx w c tid).scheduler.runQueueOnCore c
-      |>.wellFormed := by
-    unfold faultDeliveredState
-    refine faultDeliverOnCoreChecked_preserves_runQueuesWellFormed lctx _ tid f _ c ?_ c
-    rw [writeFaultRegistersToTcb_scheduler]; exact hwf
   unfold faultEntryDeliver
   simp only [hCur]
   have hD : ¬ dispatchableOnCore (faultDeliveredState lctx st f ectx w c tid) tid c :=
@@ -666,7 +656,7 @@ theorem faultEntryDeliver_not_dispatchable (lctx : LabelingContext) (st : System
   split
   · split
     · rename_i stH hH
-      exact handleRescheduleSgiOnCore_preserves_not_dispatchable _ stH c tid hwfD hH hD
+      exact handleRescheduleSgiOnCore_preserves_not_dispatchable _ stH c tid hH hD
     · exact hD
   · exact hD
 
@@ -682,14 +672,13 @@ theorem faultEntryStep_not_dispatchable (lctx : LabelingContext) (st : SystemSta
     (coreId : UInt64) (tid : SeLe4n.ThreadId) (h : coreId.toNat < numCores)
     (hEl0 : ectx.takenFromEl0 = true)
     (hCur : st.scheduler.currentOnCore ⟨coreId.toNat, h⟩ = some tid)
-    (hFault : (faultOfExceptionContext ectx).isSome)
-    (hwf : runQueuesWellFormed st.scheduler) :
+    (hFault : (faultOfExceptionContext ectx).isSome) :
     ¬ dispatchableOnCore (faultEntryStep lctx st ectx w coreId).2 tid ⟨coreId.toNat, h⟩ := by
   unfold faultEntryStep
   rw [dif_pos h, if_pos hEl0]
   cases hF : faultOfExceptionContext ectx with
   | none => rw [hF] at hFault; exact absurd hFault (by simp)
-  | some f => exact faultEntryDeliver_not_dispatchable lctx st f ectx w _ tid hCur hwf
+  | some f => exact faultEntryDeliver_not_dispatchable lctx st f ectx w _ tid hCur
 
 /-- Review round (PR #887): the unknown-syscall entry carries the same
 guarantee — a thread that issued an unknown syscall is never resumed at it
@@ -698,13 +687,12 @@ theorem unknownSyscallEntryStep_not_dispatchable (lctx : LabelingContext)
     (st : SystemState) (ectx : ExceptionContext) (w : FaultRegisterWindow)
     (coreId : UInt64) (tid : SeLe4n.ThreadId) (h : coreId.toNat < numCores)
     (hEl0 : ectx.takenFromEl0 = true)
-    (hCur : st.scheduler.currentOnCore ⟨coreId.toNat, h⟩ = some tid)
-    (hwf : runQueuesWellFormed st.scheduler) :
+    (hCur : st.scheduler.currentOnCore ⟨coreId.toNat, h⟩ = some tid) :
     ¬ dispatchableOnCore (unknownSyscallEntryStep lctx st ectx w coreId).2 tid
       ⟨coreId.toNat, h⟩ := by
   unfold unknownSyscallEntryStep
   rw [dif_pos h, if_pos hEl0]
-  exact faultEntryDeliver_not_dispatchable lctx st _ ectx w _ tid hCur hwf
+  exact faultEntryDeliver_not_dispatchable lctx st _ ectx w _ tid hCur
 
 /-- PR #887 review round 3: **the syscall seam's capability fault carries the
 same guarantee.**  `deliverSyscallCapFault` is the abort entry's delivery at

@@ -78,7 +78,6 @@ open SeLe4n.Testing
 -- SM5.A.6 selection soundness:
 #check @chooseThreadOnCore_some_mem_runQueueOnCore
 #check @chooseThread_preserves_runQueueOnCore_wellFormed
-#check @chooseThreadOnCore_some_mem_of_schedulerInvariant
 
 -- SM5.A.7 decidability:
 #check @chooseThreadOnCoreSelects
@@ -145,7 +144,7 @@ example (st : SystemState) (c : CoreId)
     (hwf : (st.scheduler.runQueueOnCore c).wellFormed)
     (hr : runnableThreadsAreTCBsOnCore st c) :
     ∃ r, chooseThreadOnCore st c = .ok r :=
-  chooseThreadOnCore_ok_of_runnableTCBs st c hwf hr
+  chooseThreadOnCore_ok_of_runnableTCBs st c hr
 
 -- SM5.A.4: completeness — `.ok none` implies no in-domain runnable thread.
 example (st : SystemState) (c : CoreId) (h : chooseThreadOnCore st c = .ok none)
@@ -163,25 +162,19 @@ example (st : SystemState) (c : CoreId)
     (hTcb : st.getTcb? tid₀ = some tcb₀)
     (hDom : tcb₀.domain = st.scheduler.activeDomainOnCore c) :
     ∃ tid, chooseThreadOnCore st c = .ok (some tid) :=
-  chooseThreadOnCore_some_of_eligible st c hwf hr tid₀ tcb₀ hMem hTcb hDom
+  chooseThreadOnCore_some_of_eligible st c hr tid₀ tcb₀ hMem hTcb hDom
 
 -- SM5.A.6: selection soundness — a chosen thread is a run-queue member.
 example (st : SystemState) (c : CoreId) (tid : SeLe4n.ThreadId)
     (hwf : (st.scheduler.runQueueOnCore c).wellFormed)
     (h : chooseThreadOnCore st c = .ok (some tid)) :
     tid ∈ (st.scheduler.runQueueOnCore c).toList :=
-  chooseThreadOnCore_some_mem_runQueueOnCore st c tid hwf h
+  chooseThreadOnCore_some_mem_runQueueOnCore st c tid h
 
 -- SM5.A.4 / SM5.A.6: the `schedulerInvariant_perCore` corollaries.
 example (st : SystemState) (c : CoreId) (h : schedulerInvariant_perCore st c) :
     ∃ r, chooseThreadOnCore st c = .ok r :=
   chooseThreadOnCore_ok_of_schedulerInvariant st c h
-
-example (st : SystemState) (c : CoreId) (tid : SeLe4n.ThreadId)
-    (hInv : schedulerInvariant_perCore st c)
-    (h : chooseThreadOnCore st c = .ok (some tid)) :
-    tid ∈ (st.scheduler.runQueueOnCore c).toList :=
-  chooseThreadOnCore_some_mem_of_schedulerInvariant st c tid hInv h
 
 -- SM5.A.3 (§3.1.1): selection optimality over the maximum-priority bucket.
 example (st : SystemState) (c : CoreId) (tid : SeLe4n.ThreadId) (selTcb : TCB)
@@ -192,7 +185,7 @@ example (st : SystemState) (c : CoreId) (tid : SeLe4n.ThreadId) (selTcb : TCB)
     ∀ t ∈ (st.scheduler.runQueueOnCore c).maxPriorityBucket, ∀ tcb : TCB,
       st.getTcb? t = some tcb → tcb.domain = st.scheduler.activeDomainOnCore c →
         isBetterCandidate selTcb.priority selTcb.deadline tcb.priority tcb.deadline = false :=
-  chooseThreadOnCore_selects_highest st c tid selTcb hwf hr hSel hSelTcb
+  chooseThreadOnCore_selects_highest st c tid selTcb hr hSel hSelTcb
 
 -- SM5.A.2: the run-queue-lock total order witnesses (decidable inhabitation).
 example : LockKind.runQueue.level = 10 := rfl
@@ -220,7 +213,7 @@ example (st : SystemState) (c : CoreId) (tid : SeLe4n.ThreadId)
     (h : chooseThreadEffectiveOnCore st c = .ok (some tid)) :
     ∃ tcb : TCB, st.getTcb? tid = some tcb ∧ hasSufficientBudget st tcb = true
       ∧ tcb.domain = st.scheduler.activeDomainOnCore c :=
-  chooseThreadEffectiveOnCore_selected_has_budget st c tid hwf h
+  chooseThreadEffectiveOnCore_selected_has_budget st c tid h
 
 -- Budget variant: completeness (idle fallback only when nothing in-domain has budget).
 example (st : SystemState) (c : CoreId)

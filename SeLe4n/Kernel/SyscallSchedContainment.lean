@@ -11,10 +11,11 @@
 -- confinement theorem, and those moved from the staged
 -- `InformationFlow/NonInterferenceCrossCore` into `Kernel/SlotConfinement` so
 -- that the syscall seam's `BracketSpec.covers` (`SyscallSeamCoverage.lean`)
--- can be built from the sixteen theorems below.
+-- can be built from the seventeen theorems below.
 import SeLe4n.Kernel.SyscallSchedFootprint
 import SeLe4n.Kernel.SchedLockBracket
 import SeLe4n.Kernel.SlotConfinement
+import SeLe4n.Kernel.Scheduler.Operations.PerCoreScheduleFrames
 
 /-!
 # WS-RR RR8.12 Cut C6a — the non-donating arms' footprints are not false
@@ -595,5 +596,57 @@ theorem schedLockSet_lifecycleRetypeOnCore_coversWrites (executingCore : CoreId)
       authCap target newObj st st' hStep)
     (fun d hd => lifecycleRetypeDirectWithCleanupShootdownPerCoreIcache_replenishQueueOnCore_ne
       executingCore authCap target newObj st st' d hd hStep)
+
+-- ============================================================================
+-- §12  The yield
+-- ============================================================================
+
+/-- **WS-ZA ZA4.3**: the yield's charge writes no core's run queue, `current`,
+active domain or replenish queue but the executing core's.  The slice expiry
+re-enqueues on core `e`; the budget spend refills on core `e` and re-enqueues
+there; the key hook writes reschedule-pending flags alone. -/
+theorem yieldChargeOnCore_frame_ne (st st' : SystemState) (e d : CoreId)
+    (tid : SeLe4n.ThreadId) (hne : e ≠ d) (h : yieldChargeOnCore st e tid = .ok st') :
+    st'.scheduler.runQueueOnCore d = st.scheduler.runQueueOnCore d ∧
+    st'.scheduler.currentOnCore d = st.scheduler.currentOnCore d ∧
+    st'.scheduler.activeDomainOnCore d = st.scheduler.activeDomainOnCore d ∧
+    st'.scheduler.replenishQueueOnCore d = st.scheduler.replenishQueueOnCore d := by
+  unfold yieldChargeOnCore at h
+  split at h
+  · cases h
+  · split at h
+    · cases h
+      simp [sliceExpireOnCore, hne, SystemState.rewriteObject_scheduler]
+    all_goals
+      split at h
+      · cases h
+        simp [spendBudgetOnCore, replenishOnCore, hne, SystemState.rewriteObject_scheduler]
+      · cases h
+
+/-- **WS-ZA ZA4.3**: `.yield`'s footprint covers its writes.  The run and
+replenish segments are the executing core alone: the charge is framed at every
+other core (`yieldChargeOnCore_frame_ne`) and so is the scheduling point on
+core `e`. -/
+theorem schedLockSet_yieldOnCore_coversWrites (executingCore : CoreId)
+    (st st' : SystemState) (S : LockSet)
+    (hS : LockSet.ofList? (schedLockSet_yieldOnCore executingCore) = some S)
+    (h : yieldOnCore st executingCore = .ok st') :
+    footprintCoversWrites S st st' := by
+  unfold yieldOnCore at h
+  split at h
+  · cases h
+  · split at h
+    · cases h
+    · rename_i st1 hCharge
+      refine footprintCoversWrites_of_cores S [executingCore] [executingCore] st st'
+        (LockSet.ofList?_pairs hS) (fun d hd => ?_) (fun d hd => ?_)
+      all_goals
+        have hne : executingCore ≠ d := fun hEq => hd (by rw [hEq]; exact List.mem_singleton_self d)
+        obtain ⟨h1, h2, h3, h4⟩ := yieldChargeOnCore_frame_ne st st1 executingCore d _ hne hCharge
+      · obtain ⟨hC, hR⟩ := scheduleEffectiveOnCore_independent_of_other_core st1 executingCore d
+          st' hne h
+        exact ⟨hR.trans h1, hC.trans h2,
+          (scheduleEffectiveOnCore_activeDomainOnCore st1 executingCore st' d h).trans h3⟩
+      · exact (scheduleEffectiveOnCore_replenishQueueOnCore st1 executingCore st' d h).trans h4
 
 end SeLe4n.Kernel

@@ -9,6 +9,7 @@
 
 import SeLe4n.Kernel.ReschedulePendingArms.Capability
 import SeLe4n.Kernel.Scheduler.Invariant.ReschedulePendingSchedulingPoints
+import SeLe4n.Kernel.Scheduler.Operations.PerCoreTimerTick
 
 /-!
 # The priority, affinity and scheduling-context arms cover
@@ -487,6 +488,117 @@ theorem schedContextConfigure_stepCovers (st st' : SystemState) (vScId : SeLe4n.
               exact absurd (SystemState.getTcbWitnessed?_eq_some hT) (by rw [hNone]; simp)
       · contradiction
     · contradiction
+
+/-! ### The yield -/
+
+/-- The slice expiry writes the caller's `timeSlice`, which is no key input,
+and core `e`'s queue. -/
+theorem sliceExpireOnCore_stepCovers (e : CoreId) (st : SystemState)
+    (tid : SeLe4n.ThreadId) (tcb : TCB) (hTcb : st.getTcb? tid = some tcb)
+    (hInv : st.objects.invExt) :
+    stepCovers e st (sliceExpireOnCore st e tid tcb hTcb) := by
+  have hO := (SystemState.getTcb?_eq_some_iff st tid tcb).mp hTcb
+  refine stepCovers_of_local_slots ?_ ?_
+  · exact keyInputsEq_trans
+      (keyInputsEq_rewriteObject (SystemState.rewriteAdmissible_tcb hTcb _) hInv
+        (by rw [hO]; rfl))
+      (keyInputsEq_with_scheduler _ _)
+  · intro c hc
+    have hne : e ≠ c := Ne.symm hc
+    simp [sliceExpireOnCore, hne, SystemState.rewriteObject_scheduler]
+
+/-- **The budget spend and its key hook cover.**  The spend rewrites the
+SchedContext's budget and deadline — a key input only the caller reads
+(`schedContextBindingBidirectional`) — refills on core `e` and queues the
+caller there.  The caller's key hook flags any core its moved key stales. -/
+theorem spendBudgetKeyHook_stepCovers (st : SystemState) (e : CoreId)
+    (tid : SeLe4n.ThreadId) (tcb : TCB) (hTcb : st.getTcb? tid = some tcb)
+    (scId : SchedContextId) (sc : SchedContext) (hSc : st.getSchedContext? scId = some sc)
+    (ticks : Nat) (hObjInv : st.objects.invExt) (hBi : schedContextBindingBidirectional st)
+    (hBindId : tcb.schedContextBinding.scId? = some scId) :
+    stepCovers e st (markKeyChangeFor (spendBudgetOnCore st e tid scId sc hSc ticks) tid
+      (effectiveSchedParams st tcb)) ∧
+    (markKeyChangeFor (spendBudgetOnCore st e tid scId sc hSc ticks) tid
+      (effectiveSchedParams st tcb)).objects.invExt := by
+  have hTRaw := (SystemState.getTcb?_eq_some_iff st tid tcb).mp hTcb
+  have hScRaw := (SystemState.getSchedContext?_eq_some_iff st scId sc).mp hSc
+  have hAdm := SystemState.rewriteAdmissible_schedContext hSc
+    (cbsUpdateDeadline (scheduleReplenishment (consumeBudget sc ticks)
+      st.machine.timer ⟨sc.budgetRemaining.val⟩) st.machine.timer true)
+  have hAt := SystemState.rewriteObject_objects_self st scId.toObjId _ hAdm hObjInv
+  have hNe : ∀ oid, scId.toObjId ≠ oid →
+      (st.rewriteObject scId.toObjId _ hAdm).objects[oid]? = st.objects[oid]? :=
+    fun oid h => SystemState.rewriteObject_objects_ne st scId.toObjId oid _ hAdm h hObjInv
+  unfold spendBudgetOnCore
+  dsimp only
+  refine ⟨⟨markKeyChangeFor_covers hTcb (fun t ht => ?_) (fun c hc => Or.inr ⟨?_, ?_⟩),
+    fun c hc hp => markKeyChangeFor_reschedulePendingOnCore_mono _ _ _ _ ?_⟩, ?_⟩
+  · refine schedKeyView_eq_of_scSlotWrite (fun oid h => ?_) hScRaw hAt
+      (fun tcb' hT' hB' => ht ?_)
+    · show keyInputsOf (st.rewriteObject scId.toObjId _ hAdm).objects[oid]? = _
+      rw [hNe oid (Ne.symm h)]
+    · obtain ⟨sc1, h1, hb1⟩ := hBi t tcb' scId
+        ((SystemState.getTcb?_eq_some_iff _ _ _).mp hT') hB'
+      obtain ⟨sc2, h2, hb2⟩ := hBi tid tcb scId hTRaw hBindId
+      rw [hScRaw] at h1 h2
+      cases h1; cases h2
+      rw [hb1] at hb2
+      exact Option.some.inj hb2
+  · have hne : e ≠ c := Ne.symm hc
+    intro t ht
+    simpa [replenishOnCore, hne, SystemState.rewriteObject_scheduler] using ht
+  · simp [replenishOnCore, SystemState.rewriteObject_scheduler]
+  · simpa [replenishOnCore, SystemState.rewriteObject_scheduler] using hp
+  · rw [markKeyChangeFor_objects]
+    exact SystemState.rewriteObject_preserves_objects_invExt st _ _ hAdm hObjInv
+
+/-- **The yield's charge covers**: the unbound arm is a slice expiry on core
+`e`, the bound arm a budget spend ending in the caller's key hook. -/
+theorem yieldChargeOnCore_stepCovers (st st' : SystemState) (e : CoreId)
+    (tid : SeLe4n.ThreadId)
+    (hObjInv : st.objects.invExt) (hBi : schedContextBindingBidirectional st)
+    (h : yieldChargeOnCore st e tid = .ok st') :
+    stepCovers e st st' ∧ st'.objects.invExt := by
+  unfold yieldChargeOnCore at h
+  split at h
+  · cases h
+  · rename_i tcb hTcb _
+    split at h
+    · cases h
+      exact ⟨sliceExpireOnCore_stepCovers e st tid tcb hTcb hObjInv,
+        SystemState.rewriteObject_preserves_objects_invExt st _ _
+          (SystemState.rewriteAdmissible_tcb hTcb _) hObjInv⟩
+    · rename_i scId hBind
+      split at h
+      · rename_i sc hSc _
+        cases h
+        exact spendBudgetKeyHook_stepCovers st e tid tcb hTcb scId sc hSc _ hObjInv hBi
+          (by rw [hBind]; rfl)
+      · cases h
+    · rename_i scId owner hBind
+      split at h
+      · rename_i sc hSc _
+        cases h
+        exact spendBudgetKeyHook_stepCovers st e tid tcb hTcb scId sc hSc _ hObjInv hBi
+          (by rw [hBind]; rfl)
+      · cases h
+
+/-- **The yield covers**: its charge covers and the scheduling point on core
+`e` covers (`scheduleEffectiveOnCore_stepCovers`). -/
+theorem yieldOnCore_stepCovers (st st' : SystemState) (e : CoreId)
+    (hObjInv : st.objects.invExt) (hBi : schedContextBindingBidirectional st)
+    (h : yieldOnCore st e = .ok st') :
+    stepCovers e st st' ∧ st'.objects.invExt := by
+  unfold yieldOnCore at h
+  split at h
+  · cases h
+  · rename_i tid _
+    split at h
+    · cases h
+    · rename_i st1 hCharge
+      obtain ⟨h1, hInv1⟩ := yieldChargeOnCore_stepCovers st st1 e tid hObjInv hBi hCharge
+      exact ⟨stepCovers_trans h1 (scheduleEffectiveOnCore_stepCovers e st1 _ hInv1 h),
+        scheduleEffectiveOnCore_preserves_objects_invExt st1 e _ hInv1 h⟩
 
 /-! ### Scheduling-context bind and unbind -/
 

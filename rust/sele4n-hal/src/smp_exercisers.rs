@@ -1344,60 +1344,207 @@ fn per_core_stats() -> Option<bool> {
 // WS-CV CV0.1 — the heap allocations of one syscall round trip
 // ============================================================================
 
-/// One round trip the driver measures: a continuing syscall on the root task's
-/// interrupt notification (slot 4 of the QEMU `virt` root task's CNode,
-/// `Platform/QemuVirt/Deployment.lean`, `qemuVirtRootTaskCNode`), which
-/// continues its caller — no switch, no block.
+/// One syscall the driver issues as whichever thread is current on core 0: the
+/// root task, or the partner thread the deployment configures beside it
+/// (`Platform/QemuVirt/Deployment.lean`, `qemuVirtPartnerTcbId`).  The capability
+/// addresses are slots of the root task's CNode, which the partner shares
+/// (`qemuVirtRootTaskCNode`).
 #[cfg(feature = "hw_target")]
 struct RoundTrip {
     /// The name its printed lines carry.
     name: &'static str,
     /// The `SyscallId` in `x7`.
     syscall: u64,
-    /// The badge in `x2` (the one inline message register; unread by a wait).
-    badge: u64,
+    /// The capability address in `x0`.
+    cptr: u64,
+    /// The message length in `x1`'s `MessageInfo` (at most 4, so the kernel
+    /// reads no overflow register from an IPC buffer neither thread maps).
+    msg_len: u64,
+    /// The first two message registers, `x2` and `x3`.
+    msg: [u64; 2],
     /// A signal of this badge issued first and not measured, so a wait finds
     /// the badge pending and consumes it without blocking.
     primed: Option<u64>,
+    /// Whether the caller blocks: the dispatch answers `Blocked` and restores
+    /// the other thread, instead of a frame to the caller.
+    blocks: bool,
 }
 
+/// `Send` (`SyscallId` 0).
+#[cfg(feature = "hw_target")]
+const SEND: u64 = 0;
+/// `Receive` (`SyscallId` 1).
+#[cfg(feature = "hw_target")]
+const RECEIVE: u64 = 1;
+/// `Call` (`SyscallId` 2).
+#[cfg(feature = "hw_target")]
+const CALL: u64 = 2;
+/// `Reply` (`SyscallId` 3).
+#[cfg(feature = "hw_target")]
+const REPLY: u64 = 3;
 /// `NotificationSignal` (`SyscallId` 14).
 #[cfg(feature = "hw_target")]
 const SIGNAL: u64 = 14;
 /// `NotificationWait` (`SyscallId` 15).
 #[cfg(feature = "hw_target")]
 const WAIT: u64 = 15;
-
-/// The round trips measured (WS-ZA ZA4.1): the signal, a signal whose badge
-/// does not fit a scalar `Nat` (`≥ 2^63`), and a wait that consumes a pending
-/// badge.
+/// `TcbSuspend` (`SyscallId` 20).
 #[cfg(feature = "hw_target")]
-const ROUND_TRIPS: [RoundTrip; 3] = [
+const TCB_SUSPEND: u64 = 20;
+/// `TcbResume` (`SyscallId` 21).
+#[cfg(feature = "hw_target")]
+const TCB_RESUME: u64 = 21;
+/// `MintReplyCap` (`SyscallId` 28).
+#[cfg(feature = "hw_target")]
+const MINT_REPLY_CAP: u64 = 28;
+/// `Yield` (`SyscallId` 41).
+#[cfg(feature = "hw_target")]
+const YIELD: u64 = 41;
+
+/// The root task's CNode slots the round trips name.
+#[cfg(feature = "hw_target")]
+const CNODE_SLOT: u64 = 2;
+#[cfg(feature = "hw_target")]
+const NOTIFICATION_SLOT: u64 = 4;
+#[cfg(feature = "hw_target")]
+const PARTNER_TCB_SLOT: u64 = 6;
+#[cfg(feature = "hw_target")]
+const ENDPOINT_SLOT: u64 = 7;
+#[cfg(feature = "hw_target")]
+const REPLY_OBJECT_SLOT: u64 = 8;
+/// The free slot the reply capability is minted into.
+#[cfg(feature = "hw_target")]
+const REPLY_CAP_SLOT: u64 = 9;
+
+/// A signal on the interrupt notification with `badge`.
+#[cfg(feature = "hw_target")]
+const fn signal(name: &'static str, badge: u64) -> RoundTrip {
     RoundTrip {
-        name: "signal",
+        name,
         syscall: SIGNAL,
-        badge: 1,
+        cptr: NOTIFICATION_SLOT,
+        msg_len: 1,
+        msg: [badge, 0],
         primed: None,
-    },
-    RoundTrip {
-        name: "signal-wide-badge",
-        syscall: SIGNAL,
-        badge: 1 << 63,
-        primed: None,
-    },
+        blocks: false,
+    }
+}
+
+/// The round trips one thread makes alone (WS-ZA ZA4.1): the signal, a signal
+/// whose badge does not fit a scalar `Nat` (`≥ 2^63`), a wait that consumes a
+/// pending badge, and a yield (WS-ZA ZA4.3), which invokes no capability: the
+/// root task is unbound and alone on its core while these run, so it ends its
+/// time slice and is chosen again.  Each continues its caller.
+#[cfg(feature = "hw_target")]
+const ROUND_TRIPS: [RoundTrip; 4] = [
+    signal("signal", 1),
+    signal("signal-wide-badge", 1 << 63),
     RoundTrip {
         name: "wait-pending",
         syscall: WAIT,
-        badge: 0,
+        cptr: NOTIFICATION_SLOT,
+        msg_len: 1,
+        msg: [0, 0],
         primed: Some(1),
+        blocks: false,
+    },
+    RoundTrip {
+        name: "yield",
+        syscall: YIELD,
+        cptr: 0,
+        msg_len: 0,
+        msg: [0, 0],
+        primed: None,
+        blocks: false,
     },
 ];
-/// The capability address every round trip names: the interrupt notification.
+
+/// A step on the exerciser endpoint, or the notification, for the partner
+/// scenarios.
 #[cfg(feature = "hw_target")]
-const ROUND_TRIP_CPTR: u64 = 4;
-/// Its `MessageInfo`: one message register (the badge, in `x2`).
+const fn partner_step(
+    name: &'static str,
+    syscall: u64,
+    cptr: u64,
+    msg_len: u64,
+    msg: [u64; 2],
+    blocks: bool,
+) -> RoundTrip {
+    RoundTrip {
+        name,
+        syscall,
+        cptr,
+        msg_len,
+        msg,
+        primed: None,
+        blocks,
+    }
+}
+
+/// The round trips that need a second thread (WS-ZA ZA4.1), each a sequence
+/// issued as whichever thread is current.  Each opens with a step that blocks
+/// the current thread, so core 0 switches to the other (the only other
+/// runnable thread there), which the next step runs as: whichever thread
+/// started, the sequence is the same, so a tick that switched the two between
+/// sequences changes nothing.
+/// - a receive that blocks, then a send that finds the receiver waiting and
+///   continues;
+/// - a wait that blocks, then a signal that wakes the waiter and continues;
+/// - a receive that blocks holding the reply capability, then a call that
+///   wakes it and blocks for the answer, then the reply, which continues.
 #[cfg(feature = "hw_target")]
-const ROUND_TRIP_MSG_INFO: u64 = 1;
+const PARTNER_SCENARIOS: [&[RoundTrip]; 3] = [
+    &[
+        partner_step("receive-blocks", RECEIVE, ENDPOINT_SLOT, 0, [0, 0], true),
+        partner_step("send-to-receiver", SEND, ENDPOINT_SLOT, 1, [0x55, 0], false),
+    ],
+    &[
+        partner_step("wait-blocks", WAIT, NOTIFICATION_SLOT, 0, [0, 0], true),
+        partner_step(
+            "signal-to-waiter",
+            SIGNAL,
+            NOTIFICATION_SLOT,
+            1,
+            [1, 0],
+            false,
+        ),
+    ],
+    &[
+        partner_step(
+            "receive-for-call",
+            RECEIVE,
+            ENDPOINT_SLOT,
+            1,
+            [REPLY_CAP_SLOT, 0],
+            true,
+        ),
+        partner_step("call", CALL, ENDPOINT_SLOT, 1, [0x66, 0], true),
+        partner_step("reply", REPLY, REPLY_CAP_SLOT, 1, [0x77, 0], false),
+    ],
+];
+
+/// The partner scenarios' setup, issued once and not measured: the partner
+/// thread resumed onto core 0's run queue, and the reply capability minted
+/// from the reply object into its free slot.
+#[cfg(feature = "hw_target")]
+const PARTNER_SETUP: [RoundTrip; 2] = [
+    partner_step(
+        "resume-partner",
+        TCB_RESUME,
+        PARTNER_TCB_SLOT,
+        0,
+        [0, 0],
+        false,
+    ),
+    partner_step(
+        "mint-reply-cap",
+        MINT_REPLY_CAP,
+        CNODE_SLOT,
+        2,
+        [REPLY_OBJECT_SLOT, REPLY_CAP_SLOT],
+        false,
+    ),
+];
 /// `ESR_EL1` of an `SVC` from AArch64 (exception class `0x15`).
 #[cfg(feature = "hw_target")]
 const ROUND_TRIP_ESR: u64 = 0x15 << 26;
@@ -1417,48 +1564,65 @@ fn own_heap_allocations(core: usize) -> Option<u64> {
     crate::lean_heap::kernel_allocations_on(core).ok()
 }
 
-/// **WS-CV CV0.1, WS-ZA ZA4.1**: the heap allocations of continuing syscall
-/// round trips through the Lean kernel, on the boot core.  For each of
-/// `ROUND_TRIPS` the driver publishes a frame carrying the syscall as the
-/// in-flight frame, classifies its syndrome and dispatches it through the
-/// syscall seam (`svc_dispatch::dispatch_svc`), as the `SVC` arm does, reading
-/// this core's own heap counter before and after with IRQs masked across both
-/// reads — the heap is one for every core, and a tick taken in between would
-/// charge its own allocations to the syscall.  The numbers are evidence, read
-/// by review; the verdict is only that both reads happened, the counter did
-/// not go back, and the round trip returned a success frame.
+/// What one dispatched round trip did.
+#[cfg(feature = "hw_target")]
+enum Dispatched {
+    /// A success frame returned to the caller.
+    Returned([u64; 6]),
+    /// The caller blocked and the other thread was restored.
+    Blocked,
+    /// Anything else (printed where it was found).
+    Failed,
+}
+
+/// Issue `trip` unmeasured, failing the driver with `why` unless it did what
+/// the trip says it does.
+#[cfg(feature = "hw_target")]
+fn unmeasured(trip: &RoundTrip, why: &str) -> bool {
+    let ok = match dispatch_round_trip(trip).0 {
+        Dispatched::Returned(_) => !trip.blocks,
+        Dispatched::Blocked => trip.blocks,
+        Dispatched::Failed => false,
+    };
+    if !ok {
+        crate::kprintln!(
+            "[smp-test] FAIL: heap-allocations-per-syscall: {}: {why}",
+            trip.name
+        );
+    }
+    ok
+}
+
+/// **WS-CV CV0.1, WS-ZA ZA4.1**: the heap allocations of syscall round trips
+/// through the Lean kernel, on the boot core.  For each round trip the driver
+/// publishes a frame carrying the syscall as the in-flight frame, classifies
+/// its syndrome and dispatches it through the syscall seam
+/// (`svc_dispatch::dispatch_svc`), as the `SVC` arm does, reading this core's
+/// own heap counter before and after with IRQs masked across both reads — the
+/// heap is one for every core, and a tick taken in between would charge its
+/// own allocations to the syscall.  The numbers are evidence, read by review;
+/// the verdict is only that both reads happened, the counter did not go back,
+/// and the round trip did what it says (returned a success frame, or blocked
+/// and restored the other thread).
 ///
-/// Each round trip runs twice; the second call is the steady state every later
-/// syscall sees, and is the number the plan records.  Only the first round
-/// trip's first call is measured as well: it is the first write to objects the
-/// boot built, which the boot's own state still shares, so it copies them once.
-/// A later round trip's first call follows the earlier ones on the same
-/// objects, so it is no first touch and runs unmeasured.
+/// Each round trip, and each partner sequence, runs twice; the second run is
+/// the steady state every later syscall sees, and is the number the plan
+/// records.  Only the very first round trip's first call is measured as well:
+/// it is the first write to objects the boot built, which the boot's own state
+/// still shares, so it copies them once.  Every later first run follows the
+/// earlier ones on the same objects, so it is no first touch and runs
+/// unmeasured.
 #[cfg(feature = "hw_target")]
 fn heap_allocations_per_syscall() -> Option<bool> {
     for (index, trip) in ROUND_TRIPS.iter().enumerate() {
         for first in [true, false] {
             if let Some(badge) = trip.primed {
-                let prime = RoundTrip {
-                    name: trip.name,
-                    syscall: SIGNAL,
-                    badge,
-                    primed: None,
-                };
-                if dispatch_round_trip(&prime).0.is_none() {
-                    crate::kprintln!(
-                        "[smp-test] FAIL: heap-allocations-per-syscall: {}: the priming signal failed",
-                        trip.name
-                    );
+                if !unmeasured(&signal(trip.name, badge), "the priming signal failed") {
                     return Some(false);
                 }
             }
             if first && index != 0 {
-                if dispatch_round_trip(trip).0.is_none() {
-                    crate::kprintln!(
-                        "[smp-test] FAIL: heap-allocations-per-syscall: {}: the unmeasured first call failed",
-                        trip.name
-                    );
+                if !unmeasured(trip, "the unmeasured first call failed") {
                     return Some(false);
                 }
                 continue;
@@ -1469,15 +1633,49 @@ fn heap_allocations_per_syscall() -> Option<bool> {
             }
         }
     }
+    for step in PARTNER_SETUP.iter() {
+        if !unmeasured(step, "the partner setup failed") {
+            return Some(false);
+        }
+    }
+    for scenario in PARTNER_SCENARIOS.iter() {
+        for first in [true, false] {
+            for step in scenario.iter() {
+                let ok = if first {
+                    unmeasured(step, "the unmeasured first run failed")
+                } else {
+                    heap_allocations_round_trip(step, "") == Some(true)
+                };
+                if !ok {
+                    return Some(false);
+                }
+            }
+        }
+    }
+    // The partner goes back to `.Inactive`: suspended from its own core's queue
+    // when the root task is current, or suspending itself when it is.
+    let suspend = partner_step(
+        "suspend-partner",
+        TCB_SUSPEND,
+        PARTNER_TCB_SLOT,
+        0,
+        [0, 0],
+        false,
+    );
+    if let Dispatched::Failed = dispatch_round_trip(&suspend).0 {
+        crate::kprintln!(
+            "[smp-test] FAIL: heap-allocations-per-syscall: suspend-partner: the partner was not suspended"
+        );
+        return Some(false);
+    }
     Some(true)
 }
 
 /// Dispatch one round trip through the syscall seam with IRQs masked, reading
-/// this core's heap counter before and after: the returned frame's registers
-/// when it returned a success frame (printing why not otherwise), and the two
-/// readings.
+/// this core's heap counter before and after: what it did (printing why when
+/// it did neither of the two things a round trip may do), and the two readings.
 #[cfg(feature = "hw_target")]
-fn dispatch_round_trip(trip: &RoundTrip) -> (Option<[u64; 6]>, Option<u64>, Option<u64>) {
+fn dispatch_round_trip(trip: &RoundTrip) -> (Dispatched, Option<u64>, Option<u64>) {
     let core = crate::per_cpu::current_core_id_from_tpidr() as usize;
     let mut frame = crate::trap::TrapFrame {
         gprs: [0; 31],
@@ -1489,9 +1687,10 @@ fn dispatch_round_trip(trip: &RoundTrip) -> (Option<[u64; 6]>, Option<u64>, Opti
         tpidr_el0: 0,
         reserved: 0,
     };
-    frame.gprs[0] = ROUND_TRIP_CPTR;
-    frame.gprs[1] = ROUND_TRIP_MSG_INFO;
-    frame.gprs[2] = trip.badge;
+    frame.gprs[0] = trip.cptr;
+    frame.gprs[1] = trip.msg_len;
+    frame.gprs[2] = trip.msg[0];
+    frame.gprs[3] = trip.msg[1];
     frame.gprs[7] = trip.syscall;
     let args = crate::svc_dispatch::SyscallArgs::from_trap_frame(&frame);
     let saved_daif = crate::interrupts::disable_interrupts();
@@ -1517,38 +1716,41 @@ fn dispatch_round_trip(trip: &RoundTrip) -> (Option<[u64; 6]>, Option<u64>, Opti
     crate::user_translation::install_translation(crate::user_translation::Translation::Kernel);
     crate::fp_context::set_trap_for_resume(false);
     let name = trip.name;
-    let regs = match dispatched {
+    if !restored {
+        crate::kprintln!(
+            "[smp-test] FAIL: heap-allocations-per-syscall: {name}: resumed no thread"
+        );
+        return (Dispatched::Failed, before, after);
+    }
+    let outcome = match dispatched {
         // A refusal is an ordinary frame too, its status in the `x1` label
         // (`error_frame_regs`): only label 0, the success, measures the
         // syscall the gate names.
-        Ok(crate::svc_dispatch::SvcOutcome::Frame(regs)) if regs[1] >> 9 == 0 => Some(regs),
+        Ok(crate::svc_dispatch::SvcOutcome::Frame(regs)) if regs[1] >> 9 == 0 => {
+            Dispatched::Returned(regs)
+        }
         Ok(crate::svc_dispatch::SvcOutcome::Frame(regs)) => {
             crate::kprintln!(
                 "[smp-test] FAIL: heap-allocations-per-syscall: {name}: refused (x1 label {:#x})",
                 regs[1] >> 9
             );
-            None
+            Dispatched::Failed
         }
+        Ok(crate::svc_dispatch::SvcOutcome::Blocked) => Dispatched::Blocked,
         Ok(other) => {
             crate::kprintln!(
                 "[smp-test] FAIL: heap-allocations-per-syscall: {name}: did not return: {other:?}"
             );
-            None
+            Dispatched::Failed
         }
         Err(error) => {
             crate::kprintln!(
                 "[smp-test] FAIL: heap-allocations-per-syscall: {name}: refused: {error:?}"
             );
-            None
+            Dispatched::Failed
         }
     };
-    if !restored {
-        crate::kprintln!(
-            "[smp-test] FAIL: heap-allocations-per-syscall: {name}: resumed no thread"
-        );
-        return (None, before, after);
-    }
-    (regs, before, after)
+    (outcome, before, after)
 }
 
 /// One measured round trip of `heap_allocations_per_syscall`; `which` labels
@@ -1557,21 +1759,31 @@ fn dispatch_round_trip(trip: &RoundTrip) -> (Option<[u64; 6]>, Option<u64>, Opti
 fn heap_allocations_round_trip(trip: &RoundTrip, which: &str) -> Option<bool> {
     let core = crate::per_cpu::current_core_id_from_tpidr() as usize;
     let name = trip.name;
-    let (regs, before, after) = dispatch_round_trip(trip);
+    let (outcome, before, after) = dispatch_round_trip(trip);
     let (Some(before), Some(after)) = (before, after) else {
         crate::kprintln!(
             "[smp-test] FAIL: heap-allocations-per-syscall: {name}: the heap counter could not be read"
         );
         return Some(false);
     };
-    let Some(regs) = regs else {
-        return Some(false);
-    };
-    crate::kprintln!(
-        "[smp-test] heap-allocations-per-syscall: {name}: core {core}{which}: returned x0={:#x} x1={:#x}",
-        regs[0],
-        regs[1]
-    );
+    match outcome {
+        Dispatched::Returned(regs) if !trip.blocks => crate::kprintln!(
+            "[smp-test] heap-allocations-per-syscall: {name}: core {core}{which}: returned x0={:#x} x1={:#x}",
+            regs[0],
+            regs[1]
+        ),
+        Dispatched::Blocked if trip.blocks => crate::kprintln!(
+            "[smp-test] heap-allocations-per-syscall: {name}: core {core}{which}: blocked, the other thread restored"
+        ),
+        Dispatched::Failed => return Some(false),
+        _ => {
+            let expected = if trip.blocks { "block" } else { "return" };
+            crate::kprintln!(
+                "[smp-test] FAIL: heap-allocations-per-syscall: {name}: did not {expected}"
+            );
+            return Some(false);
+        }
+    }
     if after < before {
         crate::kprintln!(
             "[smp-test] FAIL: heap-allocations-per-syscall: {name}: the counter went back ({before} -> {after})"

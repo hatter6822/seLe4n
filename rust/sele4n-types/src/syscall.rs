@@ -5,7 +5,7 @@
 
 use crate::rights::AccessRight;
 
-/// Syscall identifier. 41 variants matching the Lean `SyscallId` inductive.
+/// Syscall identifier. 42 variants matching the Lean `SyscallId` inductive.
 ///
 /// The `toNat` encoding from Lean is reflected in the `#[repr(u64)]` discriminants.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -153,11 +153,17 @@ pub enum SyscallId {
     /// Invoked on the page-table capability (`Write` right), with no message
     /// registers; refused while anything still translates through the table.
     PageTableUnmap = 40,
+    /// WS-ZA ZA4.3: give up the rest of the caller's allotment — seL4's
+    /// `seL4_Yield` under MCS.  A thread bound to a scheduling context forfeits
+    /// its remaining budget until the next refill; an unbound thread ends its
+    /// time slice and goes behind the threads of its priority.  Invokes no
+    /// capability: x0 and the message registers are ignored.
+    Yield = 41,
 }
 
 impl SyscallId {
     /// Total number of modeled syscalls.
-    pub const COUNT: usize = 41;
+    pub const COUNT: usize = 42;
 
     /// Convert from a raw `u64` value. Returns `None` for out-of-range.
     /// Lean: `SyscallId.ofNat?`
@@ -204,6 +210,7 @@ impl SyscallId {
             38 => Some(Self::TcbSetSpace),
             39 => Some(Self::PageTableMap),
             40 => Some(Self::PageTableUnmap),
+            41 => Some(Self::Yield),
             _ => None,
         }
     }
@@ -277,6 +284,10 @@ impl SyscallId {
             // a read-only notification cap cannot signal, and so cannot
             // declassify through a signal either, whatever the policy says.
             Self::DeclassifySignal => AccessRight::Write,
+            // WS-ZA ZA4.3: yield invokes no capability, so no right is ever
+            // checked for it (the kernel dispatches it before the capability
+            // gate).  `Read` is the value the Lean `syscallRequiredRight` gives.
+            Self::Yield => AccessRight::Read,
         }
     }
 }
@@ -461,8 +472,10 @@ mod tests {
         assert_eq!(SyscallId::from_u64(38), Some(SyscallId::TcbSetSpace));
         assert_eq!(SyscallId::from_u64(39), Some(SyscallId::PageTableMap));
         assert_eq!(SyscallId::from_u64(40), Some(SyscallId::PageTableUnmap));
-        assert_eq!(SyscallId::from_u64(41), None);
-        assert_eq!(SyscallId::COUNT, 41);
+        // WS-ZA ZA4.3: the yield, appended the same way.
+        assert_eq!(SyscallId::from_u64(41), Some(SyscallId::Yield));
+        assert_eq!(SyscallId::from_u64(42), None);
+        assert_eq!(SyscallId::COUNT, 42);
         assert_eq!(
             SyscallId::UntypedReset.required_right(),
             AccessRight::Retype
