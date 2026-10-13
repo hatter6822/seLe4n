@@ -217,13 +217,12 @@ import SeLe4n.Kernel.IPC.CrossCore.EndpointReplyDispatchInvariant
 import SeLe4n.Kernel.IPC.Invariant.BlockedSenderPreservation
 -- WS-ZA ZA4.5: the run-queue link agreement carried through the syscall arms
 -- (`IPC.Invariant.RunQueueAgreement.{Endpoint,Capability,Ipc,Scheduling}`:
--- each arm, the scheduling point, the tick and retype a `RunQueueStage`;
--- `Dispatch` composes them over the syscall dispatch, `Entry` over every
--- committing entry's step).  Production-clean.
+-- each arm, the scheduling point, the tick and retype a `RunQueueStage`).
+-- Production-clean.  Their composition over the syscall dispatch and every
+-- committing entry (`Dispatch`, `Entry`) imports the staged reschedule-flag
+-- arms and so is staged with them (`Platform.Staged`).
 import SeLe4n.Kernel.IPC.Invariant.RunQueueAgreement.Ipc
 import SeLe4n.Kernel.IPC.Invariant.RunQueueAgreement.Scheduling
-import SeLe4n.Kernel.IPC.Invariant.RunQueueAgreement.Dispatch
-import SeLe4n.Kernel.IPC.Invariant.RunQueueAgreement.Entry
 -- WS-RR (bind/unbind affinity closure): the replenish-queue invariant surface
 -- for the two live arms that create and destroy a SchedContext's binding —
 -- the orphan-freedom invariant (`replenishQueueEntriesBound_smp`), the
