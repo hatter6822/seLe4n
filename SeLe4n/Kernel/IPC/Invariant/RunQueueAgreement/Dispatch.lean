@@ -3,6 +3,7 @@ Copyright (c) 2026 seLe4n contributors. All rights reserved.
 Released under GPL-3.0-or-later license as described in the file LICENSE.
 -/
 import SeLe4n.Kernel.IPC.Invariant.RunQueueAgreement.Scheduling
+import SeLe4n.Kernel.ReschedulePendingArms.Dispatch
 
 /-!
 # Every kernel entry keeps the run-queue link agreement
@@ -20,13 +21,14 @@ open Architecture.RegisterDecode
 open Architecture.SyscallArgDecode
 
 /-- The capability-only dispatch keeps the run queues in agreement with the
-threads' links on every arm.  The retype arm reads the detached-target pack the
-invariant payoff reads; nothing else is assumed. -/
+threads' links on every arm.  The one premise is the retype arm's: the target
+it replaces is detached (`retypeDetachedFor`, a field of the pack the invariant
+payoff reads). -/
 theorem dispatchCapabilityOnly_runQueueStage
     (decoded : SyscallDecodeResult) (cap : Capability) (tid : SeLe4n.ThreadId)
     (executingCore : Concurrency.CoreId) (k : Kernel Unit) (st st' : SystemState)
     (hArm : dispatchCapabilityOnly decoded cap tid executingCore = some k)
-    (hPack : capabilityDispatchQuiescence decoded cap st)
+    (hDet : retypeDetachedFor decoded st)
     (hStep : k st = .ok ((), st')) :
     RunQueueStage st st' := by
   unfold dispatchCapabilityOnly at hArm
@@ -81,7 +83,7 @@ theorem dispatchCapabilityOnly_runQueueStage
           simp only [hDec] at hStep
           exact lifecycleRetypeDirectWithCleanupShootdownPerCoreIcache_runQueueStage
               (objectOfKernelType_withIdentity_replacementFresh args.newType args.size args.targetObj)
-              (hPack.retypeDetached args hSy hDec) hStep
+              (hDet args hSy hDec) hStep
     all_goals try cases hStep
   case vspaceMap =>
     cases hTgt : cap.target <;> simp only [hTgt] at hStep
@@ -566,14 +568,14 @@ included. -/
 theorem dispatchWithCapChecked_runQueueStage (ctx : LabelingContext)
     (decoded : SyscallDecodeResult) (tid : SeLe4n.ThreadId)
     (executingCore : Concurrency.CoreId) (gate : SyscallGate) (cap : Capability)
-    (st st' : SystemState) (hPack : capabilityDispatchQuiescence decoded cap st)
+    (st st' : SystemState) (hDet : retypeDetachedFor decoded st)
     (h : dispatchWithCapChecked ctx decoded tid executingCore gate cap st = .ok ((), st')) :
     RunQueueStage st st' := by
   unfold dispatchWithCapChecked at h
   cases hC : dispatchCapabilityOnly decoded cap tid executingCore with
   | some k =>
     rw [hC] at h
-    exact dispatchCapabilityOnly_runQueueStage decoded cap tid executingCore k st st' hC hPack h
+    exact dispatchCapabilityOnly_runQueueStage decoded cap tid executingCore k st st' hC hDet h
   | none =>
   rw [hC] at h
   dsimp only at h
@@ -727,13 +729,12 @@ theorem dispatchWithCapChecked_runQueueStage (ctx : LabelingContext)
 
 /-- **The checked syscall dispatch keeps the run queues in agreement with the
 threads' links**: the yield, the capability resolution (a read), the routed arm,
-and the taint pass, which writes the taint ledger alone.  The pack is the
-capability-only half of the one the invariant payoff reads. -/
+and the taint pass, which writes the taint ledger alone.  The one premise is the
+retype arm's detached target. -/
 theorem dispatchSyscallChecked_runQueueStage (ctx : LabelingContext)
     (decoded : SyscallDecodeResult) (tid : SeLe4n.ThreadId)
     (executingCore : Concurrency.CoreId) (st st' : SystemState)
-    (hPack : ∀ (gate : SyscallGate) (cap : Capability),
-      syscallResolveCap gate st = .ok (cap, st) → capabilityDispatchQuiescence decoded cap st)
+    (hDet : retypeDetachedFor decoded st)
     (h : dispatchSyscallChecked ctx decoded tid executingCore st = .ok ((), st')) :
     RunQueueStage st st' := by
   unfold dispatchSyscallChecked at h
@@ -767,7 +768,7 @@ theorem dispatchSyscallChecked_runQueueStage (ctx : LabelingContext)
       obtain ⟨-, -, -, hStEq⟩ := syscallResolveCap_implies_capability_at_slot _ st cap s1 hRz
       subst hStEq
       exact dispatchWithCapChecked_runQueueStage ctx decoded tid executingCore _ cap _ stPost
-        (hPack _ cap hRz) hD
+        hDet hD
   · unfold syscallInvokeResolved at hD
     split at hD
     · cases hD
@@ -775,21 +776,21 @@ theorem dispatchSyscallChecked_runQueueStage (ctx : LabelingContext)
       obtain ⟨-, -, -, hStEq⟩ := syscallResolveCap_implies_capability_at_slot _ st cap s1 hRz
       subst hStEq
       exact dispatchWithCapChecked_runQueueStage ctx decoded tid executingCore _ cap _ stPost
-        (hPack _ cap hRz) hD
+        hDet hD
 
 /-- **Every arm the unchecked `dispatchWithCap` routes keeps the run queues in
 agreement with the threads' links**, the capability-only arms included. -/
 theorem dispatchWithCap_runQueueStage (decoded : SyscallDecodeResult)
     (tid : SeLe4n.ThreadId) (executingCore : Concurrency.CoreId) (gate : SyscallGate)
     (cap : Capability) (st st' : SystemState)
-    (hPack : capabilityDispatchQuiescence decoded cap st)
+    (hDet : retypeDetachedFor decoded st)
     (h : dispatchWithCap decoded tid executingCore gate cap st = .ok ((), st')) :
     RunQueueStage st st' := by
   unfold dispatchWithCap at h
   cases hC : dispatchCapabilityOnly decoded cap tid executingCore with
   | some k =>
     rw [hC] at h
-    exact dispatchCapabilityOnly_runQueueStage decoded cap tid executingCore k st st' hC hPack h
+    exact dispatchCapabilityOnly_runQueueStage decoded cap tid executingCore k st st' hC hDet h
   | none =>
   rw [hC] at h
   dsimp only at h
@@ -892,8 +893,7 @@ theorem dispatchWithCap_runQueueStage (decoded : SyscallDecodeResult)
 threads' links.** -/
 theorem dispatchSyscall_runQueueStage (decoded : SyscallDecodeResult)
     (tid : SeLe4n.ThreadId) (executingCore : Concurrency.CoreId) (st st' : SystemState)
-    (hPack : ∀ (gate : SyscallGate) (cap : Capability),
-      syscallLookupCap gate st = .ok (cap, st) → capabilityDispatchQuiescence decoded cap st)
+    (hDet : retypeDetachedFor decoded st)
     (h : dispatchSyscall decoded tid executingCore st = .ok ((), st')) :
     RunQueueStage st st' := by
   unfold dispatchSyscall at h
@@ -924,6 +924,6 @@ theorem dispatchSyscall_runQueueStage (decoded : SyscallDecodeResult)
     obtain ⟨-, -, -, hStEq⟩ := syscallResolveCap_implies_capability_at_slot _ st cap s1 hRz
     subst hStEq
     exact dispatchWithCap_runQueueStage decoded tid executingCore _ cap _ stPost
-      (hPack _ cap hLk) hD
+      hDet hD
 
 end SeLe4n.Kernel
