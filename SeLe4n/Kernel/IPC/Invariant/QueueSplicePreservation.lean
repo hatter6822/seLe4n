@@ -487,13 +487,17 @@ same constructor application, because `next.queueNext` is what the successor
 already holds. -/
 theorem tcbWithQueueLinks_eq_queueUnlinkSuccessor (removed next : TCB) :
     tcbWithQueueLinks next removed.queuePrev removed.queuePPrev next.queueNext
-      = queueUnlinkSuccessor removed next := rfl
+      = queueUnlinkSuccessor removed next := by
+  simp only [tcbWithQueueLinks, queueUnlinkSuccessor, TCB.optCode_queuePrev,
+    TCB.optCode_queuePPrev, TCB.optCode_queueNext]
 
 /-- **WS-OD OD3.9**: and the write it makes to its predecessor is
 `queueUnlinkPredecessor`. -/
 theorem tcbWithQueueLinks_eq_queueUnlinkPredecessor (removed prev : TCB) :
     tcbWithQueueLinks prev prev.queuePrev prev.queuePPrev removed.queueNext
-      = queueUnlinkPredecessor removed prev := rfl
+      = queueUnlinkPredecessor removed prev := by
+  simp only [tcbWithQueueLinks, queueUnlinkPredecessor, TCB.optCode_queuePrev,
+    TCB.optCode_queuePPrev, TCB.optCode_queueNext]
 
 /-- **WS-OD OD3.9: the dual removal stores the shared successor update.**
 
@@ -1748,7 +1752,7 @@ theorem endpointQueueRemoveDual_queueNext_witness
     · subst hqt
       obtain ⟨orig, hOrig, hAt⟩ := storeTcbQueueLinks_result_tcb s s' q qp qpp qn hi hStore
       exact ⟨tcbWithQueueLinks orig qp qpp qn, hAt, by
-        show qn = some t2
+        rw [tcbWithQueueLinks_queueNext]
         exact hAgree rfl⟩
     · refine ⟨qTcb, ?_, hQN⟩
       rw [storeTcbQueueLinks_preserves_objects_ne s s' t qp qpp qn q.toObjId
@@ -3019,7 +3023,7 @@ theorem endpointQueueRemove_ok_headLast
   unfold endpointQueueRemove queueRemoveBoundary spliceEndpoint tcbWithQueueLinks withObjects SystemState.getObject?
   -- WS-OD OD3.9: the two neighbour patches are the shared unlink updates now.
   unfold queueUnlinkPredecessor queueUnlinkSuccessor
-  simp only [hEp, hTcb, hPrevNone, hNext, hHead, hTail, if_pos]
+  simp only [hEp, hTcb, hPrevNone, hNext, hHead, hTail, if_pos, SeLe4n.ThreadId.optCode_none, QueuePPrev.optCode_none]
 
 /-- WS-OD OD1.3: the single removal on the **head, with successor** branch. -/
 theorem endpointQueueRemove_ok_headMore
@@ -3045,7 +3049,7 @@ theorem endpointQueueRemove_ok_headMore
   unfold endpointQueueRemove queueRemoveBoundary spliceEndpoint tcbWithQueueLinks withObjects SystemState.getObject?
   -- WS-OD OD3.9: the two neighbour patches are the shared unlink updates now.
   unfold queueUnlinkPredecessor queueUnlinkSuccessor
-  simp only [hEp, hTcb, hPrevNone, hNext, hHead, hNextRaw, if_pos, if_neg hTailNe]
+  simp only [hEp, hTcb, hPrevNone, hNext, hHead, hNextRaw, if_pos, if_neg hTailNe, SeLe4n.ThreadId.optCode_none, QueuePPrev.optCode_none, TCB.queuePrevCode_eq, TCB.queuePPrevCode_eq, TCB.queueNextCode_eq]
 
 /-- WS-OD OD1.3: the single removal on the **mid-queue, no successor** branch. -/
 theorem endpointQueueRemove_ok_midLast
@@ -3071,7 +3075,7 @@ theorem endpointQueueRemove_ok_midLast
   unfold endpointQueueRemove queueRemoveBoundary spliceEndpoint tcbWithQueueLinks withObjects SystemState.getObject?
   -- WS-OD OD3.9: the two neighbour patches are the shared unlink updates now.
   unfold queueUnlinkPredecessor queueUnlinkSuccessor
-  simp only [hEp, hTcb, hPrev, hNext, hTail, hPrevRaw, if_pos, if_neg hHeadNe]
+  simp only [hEp, hTcb, hPrev, hNext, hTail, hPrevRaw, if_pos, if_neg hHeadNe, SeLe4n.ThreadId.optCode_none, QueuePPrev.optCode_none, TCB.queuePrevCode_eq, TCB.queuePPrevCode_eq, TCB.queueNextCode_eq]
 
 /-- WS-OD OD1.3: the single removal on the **mid-queue, with successor** branch. -/
 theorem endpointQueueRemove_ok_midMore
@@ -3110,7 +3114,7 @@ theorem endpointQueueRemove_ok_midMore
   unfold endpointQueueRemove queueRemoveBoundary spliceEndpoint tcbWithQueueLinks withObjects SystemState.getObject?
   -- WS-OD OD3.9: the two neighbour patches are the shared unlink updates now.
   unfold queueUnlinkPredecessor queueUnlinkSuccessor
-  simp only [hEp, hTcb, hPrev, hNext, hPrevRaw, hLk, if_neg hHeadNe, if_neg hTailNe]
+  simp only [hEp, hTcb, hPrev, hNext, hPrevRaw, hLk, if_neg hHeadNe, if_neg hTailNe, SeLe4n.ThreadId.optCode_none, QueuePPrev.optCode_none, TCB.queuePrevCode_eq, TCB.queuePPrevCode_eq, TCB.queueNextCode_eq]
 
 /-- WS-OD OD1.3: a TCB key and an endpoint key are distinct — the store holds
 one object per key and these two are of different kinds. -/

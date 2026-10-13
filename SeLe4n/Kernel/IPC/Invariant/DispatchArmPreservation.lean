@@ -9,6 +9,7 @@
 
 import SeLe4n.Kernel.IPC.Invariant.LookupCongruence
 import SeLe4n.Kernel.IPC.Invariant.DonationPreservation
+import SeLe4n.Kernel.IPC.Invariant.PerCoreBundlePreservation
 import SeLe4n.Kernel.Architecture.SyscallReturn
 import SeLe4n.Kernel.Architecture.PerCoreCacheModel
 import SeLe4n.Kernel.Architecture.IpcBufferValidation
@@ -84,6 +85,21 @@ theorem markKeyChangeFor_preserves_ipcInvariantFull (st : SystemState)
   ipcInvariantFull_of_flagOnlyWrite (markKeyChangeFor_objects _ _ _)
     (markKeyChangeFor_runQueueOnCore _ _ _) (markKeyChangeFor_currentOnCore _ _ _) h
 
+/-- A reschedule-pending mark writes a flag and nothing else. -/
+theorem markReschedulePendingOnCore_preserves_ipcInvariantFull (st : SystemState)
+    (c : CoreId) (h : ipcInvariantFull st) :
+    ipcInvariantFull (st.markReschedulePendingOnCore c) :=
+  ipcInvariantFull_of_flagOnlyWrite (s1 := st) rfl
+    (fun _ => by simp [SystemState.markReschedulePendingOnCore])
+    (fun _ => by simp [SystemState.markReschedulePendingOnCore]) h
+
+/-- The scheduling-context thread index is read by no conjunct. -/
+theorem ipcInvariantFull_withScThreadIndex (st : SystemState)
+    (idx : SeLe4n.Kernel.RobinHood.RHTable SeLe4n.SchedContextId (List SeLe4n.ThreadId))
+    (h : ipcInvariantFull st) :
+    ipcInvariantFull { st with scThreadIndex := idx } :=
+  ipcInvariantFull_of_flagOnlyWrite (s1 := st) rfl (fun _ => rfl) (fun _ => rfl) h
+
 /-- The pre-state form of the hook writes a flag or nothing. -/
 theorem markKeyChangeFrom_preserves_ipcInvariantFull (pre st : SystemState)
     (tid : SeLe4n.ThreadId) (h : ipcInvariantFull st) :
@@ -96,29 +112,6 @@ theorem clearReschedulePendingOnCore_preserves_ipcInvariantFull (st : SystemStat
     (c : CoreId) (h : ipcInvariantFull st) :
     ipcInvariantFull (st.clearReschedulePendingOnCore c) :=
   ipcInvariantFull_of_flagOnlyWrite (s1 := st) rfl (fun _ => by simp) (fun _ => by simp) h
-
-/-- A one-TCB rewrite that keeps that TCB's `ipcState` and binding, with the
-scheduler untouched, frames `passiveServerIdle`: the rewritten thread pulls
-back to its pre-image with the same idle obligations, and every other thread
-is untouched. -/
-theorem passiveServerIdleFrame_of_tcbFieldUpdate {st st' : SystemState}
-    (key : SeLe4n.ObjId) (oldTcb newTcb : TCB)
-    (hPre : st.objects[key]? = some (.tcb oldTcb))
-    (hAt : st'.objects[key]? = some (.tcb newTcb))
-    (hFrame : ∀ oid : SeLe4n.ObjId, oid ≠ key → st'.objects[oid]? = st.objects[oid]?)
-    (hIpc : newTcb.ipcState = oldTcb.ipcState)
-    (hBind : newTcb.schedContextBinding = oldTcb.schedContextBinding)
-    (hSched : st'.scheduler = st.scheduler) :
-    passiveServerIdleFrame st st' := by
-  refine ⟨fun tid tcb' hT hU hQ hC _ => ?_⟩
-  rw [hSched] at hQ hC
-  by_cases hK : tid.toObjId = key
-  · rw [hK, hAt] at hT
-    obtain rfl : newTcb = tcb' := by
-      simpa only [Option.some.injEq, KernelObject.tcb.injEq] using hT
-    exact ⟨oldTcb, by rw [hK]; exact hPre, hBind ▸ hU, hQ, hC, hIpc.symm⟩
-  · rw [hFrame _ hK] at hT
-    exact ⟨tcb', hT, hU, hQ, hC, rfl⟩
 
 -- ============================================================================
 -- §2  Service-registry arms (`.serviceRegister`, `.serviceRevoke`)
@@ -271,7 +264,7 @@ theorem setIPCBufferOp_preserves_ipcInvariantFull
 -- ============================================================================
 
 /-- A store replacing one notification with one of identical queue content
-(`state`, `waitingThreads`, `pendingBadge` — the binding and lock word are
+(`state`, `waitHead`, `pendingBadge` — the binding and lock word are
 free) preserves the whole bundle: the notification-reading conjuncts see the
 same content, no other conjunct reads the key, and the scheduler is
 untouched. -/
@@ -281,7 +274,7 @@ theorem storeObject_notificationContentUpdate_preserves_ipcInvariantFull
     (hPre : st.objects[nid]? = some (.notification ntfn))
     (hStore : storeObject nid (.notification ntfn') st = .ok ((), st1))
     (hState : ntfn'.state = ntfn.state)
-    (hWaiters : ntfn'.waitingThreads = ntfn.waitingThreads)
+    (hWaiters : ntfn'.waitHead = ntfn.waitHead)
     (hBadge : ntfn'.pendingBadge = ntfn.pendingBadge) :
     ipcInvariantFull st1 := by
   have hAt := storeObject_objects_eq st st1 nid (.notification ntfn') hObjInv hStore
@@ -552,14 +545,6 @@ theorem updatePrioritySource_preserves_ipcInvariantFull
       exact insertObjects_tcbFieldUpdate_preserves_ipcInvariantFull _ tid tcb
         { tcb with priority := p } hObjInv1 hInv1 hPre1 rfl rfl rfl rfl rfl rfl rfl rfl rfl
 
-/-- `migrateRunQueueBucketOnCore` moves no object. -/
-theorem migrateRunQueueBucketOnCore_objects_eq (st : SystemState)
-    (tid : SeLe4n.ThreadId) (p : SeLe4n.Priority) (c : CoreId) :
-    (SchedContext.PriorityManagement.migrateRunQueueBucketOnCore st tid p c).objects
-      = st.objects := by
-  simp only [SchedContext.PriorityManagement.migrateRunQueueBucketOnCore]
-  split <;> rfl
-
 /-- The bucket re-key changes no thread's run-queue membership on any core. -/
 theorem migrateRunQueueBucketOnCore_mem_runQueueOnCore (st : SystemState)
     (tid : SeLe4n.ThreadId) (p : SeLe4n.Priority) (c c' : CoreId) (x : SeLe4n.ThreadId) :
@@ -568,20 +553,12 @@ theorem migrateRunQueueBucketOnCore_mem_runQueueOnCore (st : SystemState)
       ↔ x ∈ st.scheduler.runQueueOnCore c' := by
   simp only [SchedContext.PriorityManagement.migrateRunQueueBucketOnCore]
   split
-  · rename_i hIn
+  · rw [SystemState.runRequeueOnCore_scheduler]
     by_cases hcc : c = c'
     · subst hcc
-      rw [SchedulerState.setRunQueueOnCore_runQueueOnCore_self]
-      rw [RunQueue.mem_insert, RunQueue.mem_remove]
-      constructor
-      · rintro (⟨hx, _⟩ | hxt)
-        · exact hx
-        · exact hxt ▸ hIn
-      · intro hx
-        by_cases hEq : x = tid
-        · exact Or.inr hEq
-        · exact Or.inl ⟨hx, hEq⟩
-    · rw [SchedulerState.setRunQueueOnCore_runQueueOnCore_ne _ c c' _ hcc]
+      rw [SchedulerState.setRunQueueOnCore_runQueueOnCore_self, RunQueue.mem_rekey]
+    · rw [SchedulerState.setRunQueueOnCore_runQueueOnCore_ne _ c c' _ hcc,
+        SchedulerState.setRunQueueEndsOnCore_runQueueOnCore]
   · exact Iff.rfl
 
 /-- The bucket re-key repoints no core's `current` slot. -/
@@ -600,11 +577,15 @@ theorem migrateRunQueueBucketOnCore_preserves_ipcInvariantFull (st : SystemState
     (hInv : ipcInvariantFull st) :
     ipcInvariantFull (SchedContext.PriorityManagement.migrateRunQueueBucketOnCore
       st tid p c) := by
-  have hObjs := migrateRunQueueBucketOnCore_objects_eq st tid p c
-  refine ipcInvariantFull_of_getElem_eq (fun oid => by rw [hObjs]) ?_ hInv
+  have hA := SchedContext.PriorityManagement.migrateRunQueueBucketOnCore_objectsAgreeOffRunLinks
+    st tid p c
+  refine ipcInvariantFull_of_objectsAgreeOffRunLinks hA ?_ hInv
   exact passiveServerIdle_of_frame
     (passiveServerIdleFrame_of_backward_monotone
-      (fun t tcb' h => ⟨tcb', by rw [hObjs] at h; exact h, rfl, rfl⟩)
+      (fun t tcb' h =>
+        let ⟨t0, h0, hE⟩ := hA.get_tcb' h
+        ⟨t0, h0, (TCB.proj_eq_of_withoutRunLinks_eq TCB.ipcState hE).symm,
+          (TCB.proj_eq_of_withoutRunLinks_eq TCB.schedContextBinding hE).symm⟩)
       (fun y hy =>
         (migrateRunQueueBucketOnCore_mem_runQueueOnCore st tid p c
           Concurrency.bootCoreId y).mpr hy)
@@ -634,17 +615,19 @@ off the boot queue in the post-state was either off it before (the pre-state
 invariant answers) or on it before (the hypothesis answers). -/
 theorem passiveServerIdle_of_objects_current_eq_of_queuedAllowed
     {st st' : SystemState}
-    (hObjs : st'.objects = st.objects)
+    (hA : st'.objectsAgreeOffRunLinks st)
     (hCur : st'.scheduler.currentOnCore Concurrency.bootCoreId
       = st.scheduler.currentOnCore Concurrency.bootCoreId)
     (hQueued : unboundQueuedThreadsIdleAllowed st)
     (hPsi : passiveServerIdle st) : passiveServerIdle st' := by
   intro t tcb hT hUnb _ hNotCur
-  rw [hObjs] at hT
+  obtain ⟨t0, h0, hE⟩ := hA.get_tcb' hT
+  rw [TCB.proj_eq_of_withoutRunLinks_eq TCB.ipcState hE]
+  rw [TCB.proj_eq_of_withoutRunLinks_eq TCB.schedContextBinding hE] at hUnb
   rw [hCur] at hNotCur
   by_cases hMem : t ∈ st.scheduler.runQueueOnCore Concurrency.bootCoreId
-  · exact hQueued Concurrency.bootCoreId t tcb hT hUnb hMem
-  · exact hPsi t tcb hT hUnb hMem hNotCur
+  · exact hQueued Concurrency.bootCoreId t t0 h0 hUnb hMem
+  · exact hPsi t t0 h0 hUnb hMem hNotCur
 
 /-- The queued-threads hypothesis transports across a one-TCB rewrite that
 keeps `ipcState` and the binding, with run queues untouched. -/
@@ -707,18 +690,6 @@ theorem migrateSchedContextReplenishment_preserves_ipcInvariantFull (st : System
         Concurrency.bootCoreId).2)
     hInv.passiveServerIdle
 
-/-- The affinity run-queue migration moves no object. -/
-theorem migrateRunQueueOnAffinityChange_objects_eq (st : SystemState)
-    (tid : SeLe4n.ThreadId) (fromCore toCore : CoreId) :
-    (migrateRunQueueOnAffinityChange st tid fromCore toCore).objects
-      = st.objects := by
-  unfold migrateRunQueueOnAffinityChange
-  split
-  · rfl
-  · split
-    · rfl
-    · split <;> rfl
-
 /-- The affinity run-queue migration repoints no core's `current` slot. -/
 theorem migrateRunQueueOnAffinityChange_currentOnCore (st : SystemState)
     (tid : SeLe4n.ThreadId) (fromCore toCore c' : CoreId) :
@@ -739,9 +710,9 @@ theorem migrateRunQueueOnAffinityChange_preserves_ipcInvariantFull (st : SystemS
     (hQueued : unboundQueuedThreadsIdleAllowed st)
     (hInv : ipcInvariantFull st) :
     ipcInvariantFull (migrateRunQueueOnAffinityChange st tid fromCore toCore) := by
-  have hObjs := migrateRunQueueOnAffinityChange_objects_eq st tid fromCore toCore
-  exact ipcInvariantFull_of_getElem_eq (fun oid => by rw [hObjs])
-    (passiveServerIdle_of_objects_current_eq_of_queuedAllowed hObjs
+  have hA := migrateRunQueueOnAffinityChange_objectsAgreeOffRunLinks st tid fromCore toCore
+  exact ipcInvariantFull_of_objectsAgreeOffRunLinks hA
+    (passiveServerIdle_of_objects_current_eq_of_queuedAllowed hA
       (migrateRunQueueOnAffinityChange_currentOnCore st tid fromCore toCore
         Concurrency.bootCoreId)
       hQueued hInv.passiveServerIdle)
@@ -1850,30 +1821,31 @@ theorem storeObject_schedContextContentUpdate_preserves_ipcInvariantFull
       hInv.passiveServerIdle)
     hCap hInv
 
-/-- Re-keying a queued thread's run-queue bucket in place preserves the whole
-bundle: membership survives the remove/insert pair, `current` and objects are
-untouched. -/
-theorem ipcInvariantFull_of_runQueueReKey (st : SystemState) (c : CoreId)
+/-- Re-keying a queued thread's run-queue bucket through its TCB run-queue
+links preserves the whole bundle: membership survives the remove/insert pair,
+`current` is untouched, and the objects agree off the run-queue links
+(WS-ZA ZA4.5). -/
+theorem ipcInvariantFull_of_runRequeueOnCore (st : SystemState) (c : CoreId)
     (tid : SeLe4n.ThreadId) (p : SeLe4n.Priority)
-    (hInv : ipcInvariantFull st)
-    (hMem : tid ∈ st.scheduler.runQueueOnCore c) :
-    ipcInvariantFull { st with scheduler := st.scheduler.setRunQueueOnCore c (((st.scheduler.runQueueOnCore c).remove tid).insert tid p) } := by
-  refine ipcInvariantFull_of_getElem_eq (s1 := st) (fun oid => rfl) ?_ hInv
+    (hInv : ipcInvariantFull st) :
+    ipcInvariantFull (st.runRequeueOnCore c tid p) := by
+  have hA := SystemState.runRequeueOnCore_objectsAgreeOffRunLinks st c tid p
+  refine ipcInvariantFull_of_objectsAgreeOffRunLinks hA ?_ hInv
   refine passiveServerIdle_of_frame
     (passiveServerIdleFrame_of_backward_monotone (st := st)
-      (fun t tcb' h => ⟨tcb', h, rfl, rfl⟩)
-      (fun y hy => ?_) (by simp))
+      (fun t tcb' h => ?_) (fun y hy => ?_) (by simp))
     hInv.passiveServerIdle
-  show y ∈ (st.scheduler.setRunQueueOnCore c (((st.scheduler.runQueueOnCore c).remove tid).insert tid p)).runQueueOnCore Concurrency.bootCoreId
-  by_cases hcc : c = Concurrency.bootCoreId
-  · subst hcc
-    rw [SchedulerState.setRunQueueOnCore_runQueueOnCore_self]
-    rw [RunQueue.mem_insert, RunQueue.mem_remove]
-    by_cases hEq : y = tid
-    · exact Or.inr hEq
-    · exact Or.inl ⟨hy, hEq⟩
-  · rw [SchedulerState.setRunQueueOnCore_runQueueOnCore_ne _ c Concurrency.bootCoreId _ hcc]
-    exact hy
+  · obtain ⟨tcb, h0, e⟩ := hA.get_tcb' h
+    exact ⟨tcb, h0, (TCB.proj_eq_of_withoutRunLinks_eq (·.ipcState) e).symm,
+      (TCB.proj_eq_of_withoutRunLinks_eq (·.schedContextBinding) e).symm⟩
+  · rw [SystemState.runRequeueOnCore_scheduler]
+    by_cases hcc : c = Concurrency.bootCoreId
+    · subst hcc
+      rw [SchedulerState.setRunQueueOnCore_runQueueOnCore_self, RunQueue.mem_rekey]
+      exact hy
+    · rw [SchedulerState.setRunQueueOnCore_runQueueOnCore_ne _ c Concurrency.bootCoreId _ hcc,
+        SchedulerState.setRunQueueEndsOnCore_runQueueOnCore]
+      exact hy
 
 /-- Domain alignment over any base state: a no-op or a one-TCB rewrite of a
 field no conjunct reads. -/
@@ -1936,24 +1908,24 @@ theorem schedContextConfigureBoundPropagate_preserves_ipcInvariantFull
     have hSomeW := (SystemState.getTcb?_eq_some_iff
       { stStored with objects := stStored.objects.insert boundTid.toObjId (.tcb { boundTcb with priority := ⟨priority⟩ }) }
       boundTid { boundTcb with priority := ⟨priority⟩ }).mpr hAtW
-    by_cases hMem : boundTid ∈ stStored.scheduler.runQueueOnCore
-        (determineTargetCore { stStored with objects := stStored.objects.insert boundTid.toObjId (.tcb { boundTcb with priority := ⟨priority⟩ }) } boundTid)
+    by_cases hMem : ({ stStored with objects := stStored.objects.insert boundTid.toObjId (.tcb { boundTcb with priority := ⟨priority⟩ }) } : SystemState).queuedOn
+        (determineTargetCore { stStored with objects := stStored.objects.insert boundTid.toObjId (.tcb { boundTcb with priority := ⟨priority⟩ }) } boundTid) boundTid = true
     · rw [if_pos hMem]
-      have hInvR := ipcInvariantFull_of_runQueueReKey
+      have hInvR := ipcInvariantFull_of_runRequeueOnCore
         { stStored with objects := stStored.objects.insert boundTid.toObjId (.tcb { boundTcb with priority := ⟨priority⟩ }) }
         (determineTargetCore { stStored with objects := stStored.objects.insert boundTid.toObjId (.tcb { boundTcb with priority := ⟨priority⟩ }) } boundTid)
         boundTid
         (match boundTcb.pipBoost with
           | none => ⟨priority⟩
           | some boostPri => ⟨Nat.max priority boostPri.val⟩)
-        hInvW hMem
+        hInvW
+      -- The re-key relinked the thread's run-queue fields, so the domain step
+      -- reads the re-keyed record (WS-ZA ZA4.5).
       split
       · rename_i currentTcb hCur _
-        have hCEq : { boundTcb with priority := ⟨priority⟩ } = currentTcb :=
-          Option.some.inj (hSomeW.symm.trans hCur)
-        subst hCEq
         exact domainAlignStep_preserves_ipcInvariantFull _ boundTid _ domain
-          _ hObjInvW hInvR hAtW
+          _ (SystemState.runRequeueOnCore_objects_invExt _ _ _ _ hObjInvW) hInvR
+          ((SystemState.getTcb?_eq_some_iff _ _ _).mp hCur)
       · exact hInvR
     · rw [if_neg hMem]
       split
@@ -2429,29 +2401,14 @@ theorem schedContextBind_preserves_ipcInvariantFull
               rfl rfl rfl rfl rfl rfl rfl rfl
               (Or.inl ⟨hUnbound, rfl, hFree, rfl, hNotOwner, hNoOther⟩)
               hPassive2
-            -- The key-change hook at the bind's end writes a flag or nothing.
-            refine markKeyChangeFor_preserves_ipcInvariantFull _ _ _ ?_
+            -- The key-change hook at the bind's end writes a flag or nothing,
+            -- and the thread index is read by no conjunct.
+            refine markKeyChangeFor_preserves_ipcInvariantFull _ _ _
+              (ipcInvariantFull_withScThreadIndex _ _ ?_)
             split
-            · rename_i hMem
-              refine ipcInvariantFull_of_getElem_eq
-                (s1 := { st with objects := (st.objects.insert vScId.val (.schedContext { sc with boundThread := some vThreadId.val, donationOrigin := none })).insert vThreadId.val.toObjId (.tcb { tcb with schedContextBinding := .bound ⟨vScId.val.toNat⟩, priority := sc.priority }) })
-                (fun oid => rfl) ?_ hInv2
-              refine passiveServerIdle_of_frame
-                (passiveServerIdleFrame_of_backward_monotone
-                  (st := { st with objects := (st.objects.insert vScId.val (.schedContext { sc with boundThread := some vThreadId.val, donationOrigin := none })).insert vThreadId.val.toObjId (.tcb { tcb with schedContextBinding := .bound ⟨vScId.val.toNat⟩, priority := sc.priority }) })
-                  (fun t tcb'' h => ⟨tcb'', h, rfl, rfl⟩)
-                  (fun y hy => ?_) (by simp))
-                hInv2.passiveServerIdle
-              by_cases hcc : determineTargetCore { st with objects := (st.objects.insert vScId.val (.schedContext { sc with boundThread := some vThreadId.val, donationOrigin := none })).insert vThreadId.val.toObjId (.tcb { tcb with schedContextBinding := .bound ⟨vScId.val.toNat⟩, priority := sc.priority }) } vThreadId.val = Concurrency.bootCoreId
-              · rw [show (Concurrency.bootCoreId : CoreId) = determineTargetCore { st with objects := (st.objects.insert vScId.val (.schedContext { sc with boundThread := some vThreadId.val, donationOrigin := none })).insert vThreadId.val.toObjId (.tcb { tcb with schedContextBinding := .bound ⟨vScId.val.toNat⟩, priority := sc.priority }) } vThreadId.val from hcc.symm]
-                rw [SchedulerState.setRunQueueOnCore_runQueueOnCore_self]
-                rw [RunQueue.mem_insert, RunQueue.mem_remove]
-                by_cases hEq : y = vThreadId.val
-                · exact Or.inr hEq
-                · exact Or.inl ⟨by rw [show (determineTargetCore { st with objects := (st.objects.insert vScId.val (.schedContext { sc with boundThread := some vThreadId.val, donationOrigin := none })).insert vThreadId.val.toObjId (.tcb { tcb with schedContextBinding := .bound ⟨vScId.val.toNat⟩, priority := sc.priority }) } vThreadId.val : CoreId) = Concurrency.bootCoreId from hcc]; exact hy, hEq⟩
-              · rw [SchedulerState.setRunQueueOnCore_runQueueOnCore_ne _ _ _ _
-                  (fun h => hcc h)]
-                exact hy
+            · -- The re-bucket arm: a re-key through the TCB run-queue links
+              -- (WS-ZA ZA4.5).
+              exact ipcInvariantFull_of_runRequeueOnCore _ _ _ _ hInv2
             · -- **WS-RR RR8.12 Cut B2 (`v0.35.182`)**: the two remaining arms — the
               -- placement of a parked runnable thread, and the identity.  The
               -- placement is the re-bucket arm's argument with the *remove*
@@ -2460,38 +2417,9 @@ theorem schedContextBind_preserves_ipcInvariantFull
               -- write, so the bundle survives for the same reason.
               split
               · rename_i hPark
-                refine ipcInvariantFull_of_getElem_eq
-                  (s1 := { st with objects := (st.objects.insert vScId.val (.schedContext { sc with boundThread := some vThreadId.val, donationOrigin := none })).insert vThreadId.val.toObjId (.tcb { tcb with schedContextBinding := .bound ⟨vScId.val.toNat⟩, priority := sc.priority }) })
-                  (fun oid => rfl) ?_ hInv2
-                refine passiveServerIdle_of_frame
-                  (passiveServerIdleFrame_of_backward_monotone
-                    (st := { st with objects := (st.objects.insert vScId.val (.schedContext { sc with boundThread := some vThreadId.val, donationOrigin := none })).insert vThreadId.val.toObjId (.tcb { tcb with schedContextBinding := .bound ⟨vScId.val.toNat⟩, priority := sc.priority }) })
-                    (fun t tcb'' h => ⟨tcb'', h, rfl, rfl⟩)
-                    (fun y hy => ?_) (by simp))
-                  hInv2.passiveServerIdle
-                by_cases hcc : determineTargetCore { st with objects := (st.objects.insert vScId.val (.schedContext { sc with boundThread := some vThreadId.val, donationOrigin := none })).insert vThreadId.val.toObjId (.tcb { tcb with schedContextBinding := .bound ⟨vScId.val.toNat⟩, priority := sc.priority }) } vThreadId.val = Concurrency.bootCoreId
-                · rw [show (Concurrency.bootCoreId : CoreId) = determineTargetCore { st with objects := (st.objects.insert vScId.val (.schedContext { sc with boundThread := some vThreadId.val, donationOrigin := none })).insert vThreadId.val.toObjId (.tcb { tcb with schedContextBinding := .bound ⟨vScId.val.toNat⟩, priority := sc.priority }) } vThreadId.val from hcc.symm]
-                  rw [SchedulerState.markReschedulePendingOnCore_runQueueOnCore,
-                    SchedulerState.setRunQueueOnCore_runQueueOnCore_self]
-                  rw [RunQueue.mem_insert]
-                  refine Or.inl ?_
-                  rw [show (determineTargetCore { st with objects := (st.objects.insert vScId.val (.schedContext { sc with boundThread := some vThreadId.val, donationOrigin := none })).insert vThreadId.val.toObjId (.tcb { tcb with schedContextBinding := .bound ⟨vScId.val.toNat⟩, priority := sc.priority }) } vThreadId.val : CoreId) = Concurrency.bootCoreId from hcc]
-                  exact hy
-                · rw [SchedulerState.markReschedulePendingOnCore_runQueueOnCore,
-                    SchedulerState.setRunQueueOnCore_runQueueOnCore_ne _ _ _ _
-                    (fun h => hcc h)]
-                  exact hy
-              · rename_i hPark
-                exact ipcInvariantFull_of_getElem_eq
-                  (s1 := { st with objects := (st.objects.insert vScId.val (.schedContext { sc with boundThread := some vThreadId.val, donationOrigin := none })).insert vThreadId.val.toObjId (.tcb { tcb with schedContextBinding := .bound ⟨vScId.val.toNat⟩, priority := sc.priority }) })
-                  (fun oid => rfl)
-                  (passiveServerIdle_of_frame
-                    (passiveServerIdleFrame_of_backward_monotone
-                      (st := { st with objects := (st.objects.insert vScId.val (.schedContext { sc with boundThread := some vThreadId.val, donationOrigin := none })).insert vThreadId.val.toObjId (.tcb { tcb with schedContextBinding := .bound ⟨vScId.val.toNat⟩, priority := sc.priority }) })
-                      (fun t tcb'' h => ⟨tcb'', h, rfl, rfl⟩)
-                      (fun y hy => hy) rfl)
-                    hInv2.passiveServerIdle)
-                  hInv2
+                refine markReschedulePendingOnCore_preserves_ipcInvariantFull _ _
+                  (ipcInvariantFull_runEnqueueOnCore _ _ _ _ hInv2)
+              · exact hInv2
           · contradiction
       · contradiction
   · contradiction
@@ -2516,7 +2444,9 @@ theorem preemptCurrentOnCore_preserves_ipcInvariantFull (st : SystemState)
     · rename_i prevTid _ hPrev
       split
       · rename_i prevTcb hPrevTcb _
-        -- The in-place rewrite IS the insert; the proof below is stated over it.
+        -- The in-place rewrite IS the insert; the re-enqueue only grows the
+        -- queue, so the proof below is stated over the rewritten pre-state.
+        refine ipcInvariantFull_runEnqueueOnCore _ c prevTid _ ?_
         dsimp only [SystemState.rewriteObject]
         have hPreRaw := (SystemState.getTcb?_eq_some_iff st prevTid prevTcb).mp hPrevTcb
         have hAt := insertObjects_getElem_self st prevTid.toObjId
@@ -2535,12 +2465,7 @@ theorem preemptCurrentOnCore_preserves_ipcInvariantFull (st : SystemState)
               exact ⟨prevTcb, by rw [ht]; exact hPreRaw, rfl, rfl⟩
             · rw [insertObjects_getElem_ne st prevTid.toObjId _ _ ht hObjInv] at h
               exact ⟨tcb'', h, rfl, rfl⟩
-          · by_cases hcc : c = Concurrency.bootCoreId
-            · subst hcc
-              rw [SchedulerState.setRunQueueOnCore_runQueueOnCore_self, RunQueue.mem_insert]
-              exact Or.inl hy
-            · rw [SchedulerState.setRunQueueOnCore_runQueueOnCore_ne _ _ _ _ hcc]
-              exact hy
+          · exact hy
       · exact hInv
 
 /-- A preempted `current` thread with no TCB leaves the preempt a no-op. -/
@@ -2560,14 +2485,18 @@ theorem preemptCurrentOnCore_prev_mem (st : SystemState) (c : CoreId)
     (incoming prev : SeLe4n.ThreadId) (ptcb : TCB)
     (hCur : st.scheduler.currentOnCore c = some prev)
     (hne : ¬(prev == incoming) = true)
-    (hPT : st.getTcb? prev = some ptcb) :
+    (hPT : st.getTcb? prev = some ptcb) (hObjInv : st.objects.invExt)
+    (hAdm : st.runEnqueueAdmits c prev = true) :
     prev ∈ (preemptCurrentOnCore st c incoming).scheduler.runQueueOnCore c := by
   unfold preemptCurrentOnCore
   rw [hCur]
   dsimp only []
   rw [if_neg hne, SystemState.getTcbWitnessed?_eq_some hPT]
   dsimp only []
-  rw [SchedulerState.setRunQueueOnCore_runQueueOnCore_self]
+  rw [SystemState.runEnqueueOnCore_runQueueOnCore_self _ (by
+    rw [SystemState.runEnqueueAdmits_rewriteObject_tcb
+      (t' := { ptcb with registerContext := st.machine.regsOnCore c }) _ hObjInv hPT rfl]
+    exact hAdm)]
   exact (RunQueue.mem_insert _ _ _ _).mpr (Or.inr rfl)
 
 /-- `switchToThreadOnCore` preserves the whole bundle.  Objects move only in
@@ -2577,6 +2506,7 @@ placement is untouched. -/
 theorem switchToThreadOnCore_preserves_ipcInvariantFull (st : SystemState)
     (c : CoreId) (tid : SeLe4n.ThreadId) (st' : SystemState)
     (hObjInv : st.objects.invExt) (hInv : ipcInvariantFull st)
+    (hAdm : st.currentRequeueAdmitted c)
     (hStep : switchToThreadOnCore st c tid = .ok st') :
     ipcInvariantFull st' := by
   unfold switchToThreadOnCore at hStep
@@ -2587,13 +2517,19 @@ theorem switchToThreadOnCore_preserves_ipcInvariantFull (st : SystemState)
       dsimp only [] at hStep
       cases hStep
       have hP := preemptCurrentOnCore_preserves_ipcInvariantFull st c tid hObjInv hInv
-      refine ipcInvariantFull_of_getElem_eq
+      have hA : ((preemptCurrentOnCore st c tid).runRemoveOnCore c tid).objectsAgreeOffRunLinks
+          (preemptCurrentOnCore st c tid) := SystemState.runRemoveOnCore_objectsAgreeOffRunLinks _ _ _
+      refine ipcInvariantFull_of_objectsAgreeOffRunLinks
         (s1 := preemptCurrentOnCore st c tid)
-        (fun oid => by
-          simp only [restoreIncomingContextOnCoreUnlessCurrent_objects]) ?_ hP
-      intro t tcb'' hT hU hQ hC
-      simp only [restoreIncomingContextOnCoreUnlessCurrent_objects] at hT
-      simp only [restoreIncomingContextOnCoreUnlessCurrent_scheduler] at hQ hC
+        (.trans (.of_objects_eq (restoreIncomingContextOnCoreUnlessCurrent_objects _ _ _)) hA) ?_ hP
+      intro t tcb₀ hT₀ hU₀ hQ hC
+      simp only [restoreIncomingContextOnCoreUnlessCurrent_objects] at hT₀
+      obtain ⟨tcb'', hT, hE⟩ := hA.get_tcb' hT₀
+      have hU : tcb''.schedContextBinding = .unbound := by
+        rw [← TCB.proj_eq_of_withoutRunLinks_eq TCB.schedContextBinding hE]; exact hU₀
+      rw [TCB.proj_eq_of_withoutRunLinks_eq TCB.ipcState hE]
+      simp only [restoreIncomingContextOnCoreUnlessCurrent_scheduler,
+        SystemState.runRemoveOnCore_scheduler] at hQ hC
       by_cases hcc : c = Concurrency.bootCoreId
       · subst hcc
         rw [SchedulerState.setCurrentOnCore_currentOnCore_self] at hC
@@ -2616,7 +2552,8 @@ theorem switchToThreadOnCore_preserves_ipcInvariantFull (st : SystemState)
             · exact hTne (by simpa using hne)
             · cases hPT : st.getTcb? prev with
               | some ptcb =>
-                exact hQpre (preemptCurrentOnCore_prev_mem st _ tid prev ptcb hCur hne hPT)
+                exact hQpre (preemptCurrentOnCore_prev_mem st _ tid prev ptcb hCur hne hPT hObjInv
+                  (hAdm prev hCur))
               | none =>
                 rw [preemptCurrentOnCore_noop_of_prev_no_tcb st _ tid prev hCur hne hPT] at hT
                 have := (SystemState.getTcb?_eq_some_iff st prev tcb'').mpr hT
@@ -2624,8 +2561,11 @@ theorem switchToThreadOnCore_preserves_ipcInvariantFull (st : SystemState)
                 cases this
         exact hP.passiveServerIdle t tcb'' hT hU hQpre hCpre
       · rw [SchedulerState.setCurrentOnCore_runQueueOnCore,
-          SchedulerState.setRunQueueOnCore_runQueueOnCore_ne _ _ _ _ hcc] at hQ
-        rw [SchedulerState.setCurrentOnCore_currentOnCore_ne _ _ _ _ hcc] at hC
+          SchedulerState.setRunQueueOnCore_runQueueOnCore_ne _ _ _ _ hcc,
+          SchedulerState.setRunQueueEndsOnCore_runQueueOnCore] at hQ
+        rw [SchedulerState.setCurrentOnCore_currentOnCore_ne _ _ _ _ hcc,
+          SchedulerState.setRunQueueOnCore_currentOnCore,
+          SchedulerState.setRunQueueEndsOnCore_currentOnCore] at hC
         exact hP.passiveServerIdle t tcb'' hT hU hQ hC
     · contradiction
   · contradiction
@@ -2635,6 +2575,7 @@ the preempt re-queues the incumbent, and clearing the slot can only hide a
 thread that is now on the queue. -/
 theorem dropCurrentOnCore_preserves_ipcInvariantFull (st : SystemState) (c : CoreId)
     (hObjInv : st.objects.invExt) (hInv : ipcInvariantFull st)
+    (hAdm : st.currentRequeueAdmitted c)
     (hOut : currentOutsideActiveDomainOnCore st c = true) :
     ipcInvariantFull (dropCurrentOnCore st c) := by
   have hInv2 := preemptCurrentOnCore_preserves_ipcInvariantFull st c (idleThreadId c) hObjInv hInv
@@ -2647,7 +2588,7 @@ theorem dropCurrentOnCore_preserves_ipcInvariantFull (st : SystemState) (c : Cor
     simpa [dropCurrentOnCore] using hQ
   by_cases hcb : c = Concurrency.bootCoreId
   · have hPrevMem := preemptCurrentOnCore_prev_mem st c (idleThreadId c) prev ptcb hCur
-      (by rw [hNotIdle]; decide) hPT
+      (by rw [hNotIdle]; decide) hPT hObjInv (hAdm prev hCur)
     have hNe : (preemptCurrentOnCore st c (idleThreadId c)).scheduler.currentOnCore c ≠ some tid := by
       rw [preemptCurrentOnCore_currentOnCore, hCur]
       intro hEq
@@ -2665,6 +2606,7 @@ selection followed by (at most) a switch. -/
 theorem handleRescheduleSgiOnCore_preserves_ipcInvariantFull (st : SystemState)
     (c : CoreId) (st' : SystemState)
     (hObjInv : st.objects.invExt) (hInv : ipcInvariantFull st)
+    (hAdm : st.currentRequeueAdmitted c)
     (hStep : handleRescheduleSgiOnCore st c = .ok st') :
     ipcInvariantFull st' := by
   unfold handleRescheduleSgiOnCore at hStep
@@ -2674,7 +2616,7 @@ theorem handleRescheduleSgiOnCore_preserves_ipcInvariantFull (st : SystemState)
     · rename_i hOut
       cases hStep
       exact clearReschedulePendingOnCore_preserves_ipcInvariantFull _ _
-        (dropCurrentOnCore_preserves_ipcInvariantFull st c hObjInv hInv hOut)
+        (dropCurrentOnCore_preserves_ipcInvariantFull st c hObjInv hInv hAdm hOut)
     · cases hStep
       exact clearReschedulePendingOnCore_preserves_ipcInvariantFull _ _ hInv
   · split at hStep
@@ -2682,7 +2624,7 @@ theorem handleRescheduleSgiOnCore_preserves_ipcInvariantFull (st : SystemState)
       · rename_i sSw hSw
         cases hStep
         exact clearReschedulePendingOnCore_preserves_ipcInvariantFull _ _
-          (switchToThreadOnCore_preserves_ipcInvariantFull st c _ sSw hObjInv hInv hSw)
+          (switchToThreadOnCore_preserves_ipcInvariantFull st c _ sSw hObjInv hInv hAdm hSw)
       · contradiction
     · cases hStep
       exact clearReschedulePendingOnCore_preserves_ipcInvariantFull _ _ hInv
@@ -2692,6 +2634,7 @@ theorem priorityRescheduleOnCore_preserves_ipcInvariantFull (st : SystemState)
     (running? : Option CoreId) (ec : CoreId) (b : Bool)
     (st' : SystemState) (sgi : Option (CoreId × Concurrency.SgiKind))
     (hObjInv : st.objects.invExt) (hInv : ipcInvariantFull st)
+    (hAdm : st.currentRequeueAdmitted ec)
     (hStep : SchedContext.PriorityManagement.priorityRescheduleOnCore st running? ec b
       = .ok (st', sgi)) :
     ipcInvariantFull st' := by
@@ -2702,7 +2645,7 @@ theorem priorityRescheduleOnCore_preserves_ipcInvariantFull (st : SystemState)
       · split at hStep
         · rename_i hH
           cases hStep
-          exact handleRescheduleSgiOnCore_preserves_ipcInvariantFull st ec _ hObjInv hInv hH
+          exact handleRescheduleSgiOnCore_preserves_ipcInvariantFull st ec _ hObjInv hInv hAdm hH
         · contradiction
       · cases hStep
         exact hInv
@@ -2721,6 +2664,7 @@ theorem applyPriorityChangeOnCore_preserves_ipcInvariantFull
     (p : SeLe4n.Priority) (ec : CoreId) (b : Bool)
     (sgi : Option (CoreId × Concurrency.SgiKind))
     (hObjInv : st.objects.invExt) (hInv : ipcInvariantFull st)
+    (hAdm : st.currentRequeueAdmitted ec)
     (hPre : st.objects[tid.toObjId]? = some (.tcb tcb))
     (hStep : SchedContext.PriorityManagement.applyPriorityChangeOnCore
       st tid tcb p ec b = .ok (st', sgi)) :
@@ -2729,9 +2673,10 @@ theorem applyPriorityChangeOnCore_preserves_ipcInvariantFull
   have hObjMid : (markKeyChangeFor (SchedContext.PriorityManagement.migrateRunQueueBucketOnCore
       (SchedContext.PriorityManagement.updatePrioritySource st tid tcb p) tid p
       (determineTargetCore st tid)) tid (effectiveSchedParams st tcb)).objects.invExt := by
-    rw [markKeyChangeFor_objects, migrateRunQueueBucketOnCore_objects_eq]
-    exact SchedContext.PriorityManagement.updatePrioritySource_preserves_objects_invExt
-      st tid tcb p hObjInv
+    rw [markKeyChangeFor_objects]
+    exact SchedContext.PriorityManagement.migrateRunQueueBucketOnCore_objects_invExt _ _ _ _
+      (SchedContext.PriorityManagement.updatePrioritySource_preserves_objects_invExt
+        st tid tcb p hObjInv)
   have hInvMid : ipcInvariantFull (markKeyChangeFor
       (SchedContext.PriorityManagement.migrateRunQueueBucketOnCore
         (SchedContext.PriorityManagement.updatePrioritySource st tid tcb p) tid p
@@ -2739,11 +2684,28 @@ theorem applyPriorityChangeOnCore_preserves_ipcInvariantFull
     markKeyChangeFor_preserves_ipcInvariantFull _ _ _
     (migrateRunQueueBucketOnCore_preserves_ipcInvariantFull _ _ _ _
       (updatePrioritySource_preserves_ipcInvariantFull st tid tcb p hObjInv hInv hPre))
+  -- The chain before the seam keeps the run queues in agreement with the links
+  -- and is a current-placement frame, so the executing core's current thread
+  -- stays admitted for its requeue at the preemption (seL4's `ct_not_in_q`).
+  have hStage := ((SchedContext.PriorityManagement.updatePrioritySource_runQueueStage st tid tcb p).trans
+    (SchedContext.PriorityManagement.migrateRunQueueBucketOnCore_runQueueStage _ tid p
+      (determineTargetCore st tid))).trans
+    ((markKeyChangeFor_runQueueStage _ tid (effectiveSchedParams st tcb)).trans
+      (PriorityInheritance.repropagateFromWaiter_runQueueStage _ tid ec st.objectIndex.length))
+  have hFrame :=
+    ((SchedContext.PriorityManagement.updatePrioritySource_currentPlacementFrame st tid tcb p
+      hObjInv ec).trans
+    (SchedContext.PriorityManagement.migrateRunQueueBucketOnCore_currentPlacementFrame _ tid p
+      (determineTargetCore st tid) ec)).trans
+    ((markKeyChangeFor_currentPlacementFrame _ tid (effectiveSchedParams st tcb) ec).trans
+      (PriorityInheritance.repropagateFromWaiter_currentPlacementFrame _ tid ec ec
+        st.objectIndex.length hObjMid))
   exact priorityRescheduleOnCore_preserves_ipcInvariantFull _ _ _ _ _ _
     (PriorityInheritance.repropagateFromWaiter_preserves_objects_invExt _ _ _ _ hObjMid)
     (PriorityInheritance.repropagateFromWaiter_preserves ipcInvariantFull _ _ _ _
       (fun _ _ => propagatePipChainCrossCore_preserves_ipcInvariantFull _ _ _ _ hObjMid hInvMid)
-      hInvMid) hStep
+      hInvMid)
+    (SystemState.currentRequeueAdmitted.transport hFrame hAdm) hStep
 
 /-- `.tcbSetPriority`: authority check, then the priority write and bucket
 re-key — no conjunct-read field or membership moves. -/
@@ -2751,6 +2713,7 @@ theorem setPriorityOnCore_preserves_ipcInvariantFull
     (st st' : SystemState) (vCallerTid vTargetTid : SeLe4n.ValidThreadId)
     (p : SeLe4n.Priority) (ec : CoreId) (sgi : Option (CoreId × Concurrency.SgiKind))
     (hObjInv : st.objects.invExt) (hInv : ipcInvariantFull st)
+    (hAdm : st.currentRequeueAdmitted ec)
     (hStep : SchedContext.PriorityManagement.setPriorityOnCore
       st vCallerTid vTargetTid p ec = .ok (st', sgi)) :
     ipcInvariantFull st' := by
@@ -2761,7 +2724,7 @@ theorem setPriorityOnCore_preserves_ipcInvariantFull
     · split at hStep
       · rename_i targetTcb hTarget
         exact applyPriorityChangeOnCore_preserves_ipcInvariantFull st st' vTargetTid.val
-          targetTcb p ec _ _ hObjInv hInv
+          targetTcb p ec _ _ hObjInv hInv hAdm
           ((SystemState.getTcb?_eq_some_iff st vTargetTid.val targetTcb).mp hTarget) hStep
       · contradiction
   · contradiction
@@ -2773,6 +2736,7 @@ theorem setMCPriorityOnCore_preserves_ipcInvariantFull
     (st st' : SystemState) (vCallerTid vTargetTid : SeLe4n.ValidThreadId)
     (p : SeLe4n.Priority) (ec : CoreId) (sgi : Option (CoreId × Concurrency.SgiKind))
     (hObjInv : st.objects.invExt) (hInv : ipcInvariantFull st)
+    (hAdm : st.currentRequeueAdmitted ec)
     (hStep : SchedContext.PriorityManagement.setMCPriorityOnCore
       st vCallerTid vTargetTid p ec = .ok (st', sgi)) :
     ipcInvariantFull st' := by
@@ -2791,10 +2755,16 @@ theorem setMCPriorityOnCore_preserves_ipcInvariantFull
           vTargetTid.val.toObjId (.tcb { targetTcb with maxControlledPriority := p }) hObjInv
         have hAtMcp := insertObjects_getElem_self st vTargetTid.val.toObjId
           (.tcb { targetTcb with maxControlledPriority := p }) hObjInv
+        have hAdmMcp : ({ st with objects := (st.objects.insert vTargetTid.val.toObjId
+            (.tcb { targetTcb with maxControlledPriority := p })) } : SystemState).currentRequeueAdmitted
+            ec := fun y hy =>
+          (SystemState.runEnqueueAdmits_rewriteObject_tcb
+            (SystemState.rewriteAdmissible_tcb hTarget { targetTcb with maxControlledPriority := p })
+            hObjInv hTarget rfl ec y).trans (hAdm y hy)
         split at hStep
         · exact applyPriorityChangeOnCore_preserves_ipcInvariantFull _ st' vTargetTid.val
             { targetTcb with maxControlledPriority := p } p ec _ _
-            hObjInvMcp hInvMcp hAtMcp hStep
+            hObjInvMcp hInvMcp hAdmMcp hAtMcp hStep
         · cases hStep
           exact hInvMcp
       · contradiction
@@ -2897,8 +2867,6 @@ demoted thread's `passiveServerIdle` exemption is the `hAllowedIpc` fact. -/
 private theorem schedContextUnbindTail_preserves_ipcInvariantFull
     (stA : SystemState) (scObj : SeLe4n.ObjId) (tid : SeLe4n.ThreadId)
     (sc : SeLe4n.Kernel.SchedContext) (tcb : TCB)
-    (c : CoreId) (scIdT : SeLe4n.SchedContextId)
-    (idx : RobinHood.RHTable SeLe4n.SchedContextId (List SeLe4n.ThreadId))
     (h : stA.rewriteAdmissible scObj
       (.schedContext { sc with boundThread := none, isActive := false, donationOrigin := none }))
     (hObjInvA : stA.objects.invExt) (hInvA : ipcInvariantFull stA)
@@ -2906,11 +2874,9 @@ private theorem schedContextUnbindTail_preserves_ipcInvariantFull
     (hPreT : stA.objects[tid.toObjId]? = some (.tcb tcb))
     (hBoundEq : sc.boundThread = some tid)
     (hAllowedIpc : passiveServerIdleAllowed tcb.ipcState) :
-    ipcInvariantFull { SchedContextOps.purgeReplenishmentOnCore
-      ((stA.rewriteObject scObj
+    ipcInvariantFull ((stA.rewriteObject scObj
           (.schedContext { sc with boundThread := none, isActive := false, donationOrigin := none })
-          h).updateTcb tid (fun t => { t with schedContextBinding := .unbound }))
-      c scIdT with scThreadIndex := idx } := by
+          h).updateTcb tid (fun t => { t with schedContextBinding := .unbound })) := by
   -- `v0.35.71`: the two typed writes, reduced to the double insert the levers
   -- below are stated over.
   rw [SystemState.updateTcb_after_rewriteObject_schedContext stA scObj _ h tid tcb _ hObjInvA
@@ -2961,14 +2927,27 @@ private theorem schedContextUnbindTail_preserves_ipcInvariantFull
     rfl rfl rfl rfl rfl rfl rfl rfl
     (Or.inr ⟨rfl, hBoundEq, rfl⟩)
     hPassive3
-  have hInv4 := purgeReplenishmentOnCore_preserves_ipcInvariantFull _ c scIdT hInv3
-  refine ipcInvariantFull_of_objects_scheduler_eq ?_ ?_ hInv4
+  refine ipcInvariantFull_of_objects_scheduler_eq ?_ ?_ hInv3
   · rfl
   · rfl
 
-/-- The scheduler stage of the unbind — current-clear plus optional re-bucket
-— preserves the bundle: the demoted thread's exemption is the `hAllowedIpc`
-fact, every other thread's boot-core placement is monotone. -/
+/-- The unbind's run-queue stage keeps the bundle: a re-key keeps membership, a
+placement only grows it, both through the TCB run-queue links (WS-ZA ZA4.5). -/
+theorem schedContextUnbindQueueStage_preserves_ipcInvariantFull (T : SystemState)
+    (home : CoreId) (tid : SeLe4n.ThreadId) (prio : SeLe4n.Priority) (wasCurrent : Bool)
+    (h : ipcInvariantFull T) :
+    ipcInvariantFull (SchedContextOps.schedContextUnbindQueueStage T home tid prio wasCurrent) := by
+  unfold SchedContextOps.schedContextUnbindQueueStage
+  split
+  · exact ipcInvariantFull_of_runRequeueOnCore _ _ _ _ h
+  · split
+    · exact markReschedulePendingOnCore_preserves_ipcInvariantFull _ _
+        (ipcInvariantFull_runEnqueueOnCore _ _ _ _ h)
+    · exact h
+
+/-- The current-slot stage of the unbind preserves the bundle: the demoted
+thread's exemption is the `hAllowedIpc` fact, every other thread's boot-core
+placement is monotone. -/
 private theorem unbindSchedulerStage_preserves_ipcInvariantFull
     (st stA : SystemState) (tid : SeLe4n.ThreadId) (tcb : TCB)
     (hInv : ipcInvariantFull st)
@@ -3033,6 +3012,9 @@ theorem schedContextUnbind_preserves_ipcInvariantFull
           (SchedContextId.ofObjId vScId.val) sc).mp hSc
         have hTcbRaw := (SystemState.getTcb?_eq_some_iff st tid tcb).mp hTcb
         have hAllowedIpc := hBoundAllowed sc tid tcb hScRaw hBound hTcbRaw
+        -- The current-slot stage, then the two object writes, then the
+        -- run-queue stage through the TCB run-queue links (WS-ZA ZA4.5), the
+        -- home-core purge, the index write and the key-change hook.
         cases hRC : runningCoreOf? st tid with
         | some rc =>
           have hCurRC : st.scheduler.currentOnCore rc = some tid := by
@@ -3040,86 +3022,40 @@ theorem schedContextUnbind_preserves_ipcInvariantFull
             simpa using this
           rw [hRC] at hStep
           simp only [Option.isSome_some] at hStep
-          have hStage : ipcInvariantFull { st with scheduler := (st.scheduler.setCurrentOnCore rc none).setRunQueueOnCore (determineTargetCore st tid) ((((st.scheduler.setCurrentOnCore rc none).runQueueOnCore (determineTargetCore st tid)).remove tid).insert tid (TCB.boostedPriority { tcb with schedContextBinding := .unbound })) } := by
+          have hStage : ipcInvariantFull { st with scheduler := (st.scheduler.setCurrentOnCore rc none).markReschedulePendingOnCore rc } := by
             refine unbindSchedulerStage_preserves_ipcInvariantFull st _ tid tcb hInv rfl
               hTcbRaw hAllowedIpc ?_ ?_
-            · intro t htne hm
-              by_cases hcc : determineTargetCore st tid = Concurrency.bootCoreId
-              · rw [show (Concurrency.bootCoreId : CoreId) = determineTargetCore st tid
-                  from hcc.symm]
-                rw [SchedulerState.setRunQueueOnCore_runQueueOnCore_self,
-                  RunQueue.mem_insert, RunQueue.mem_remove,
-                  SchedulerState.setCurrentOnCore_runQueueOnCore]
-                exact Or.inl ⟨by rw [hcc]; exact hm, htne⟩
-              · rw [SchedulerState.setRunQueueOnCore_runQueueOnCore_ne _ _ _ _ hcc,
-                  SchedulerState.setCurrentOnCore_runQueueOnCore]
-                exact hm
+            · intro t _ hm
+              rw [SchedulerState.markReschedulePendingOnCore_runQueueOnCore,
+                SchedulerState.setCurrentOnCore_runQueueOnCore]
+              exact hm
             · intro t htne _
               by_cases hrb : rc = Concurrency.bootCoreId
               · rw [← hrb, hCurRC]
                 exact fun h => htne (Option.some.inj h).symm
               · intro hpre
-                have hA : ((st.scheduler.setCurrentOnCore rc none).setRunQueueOnCore (determineTargetCore st tid) ((((st.scheduler.setCurrentOnCore rc none).runQueueOnCore (determineTargetCore st tid)).remove tid).insert tid (TCB.boostedPriority { tcb with schedContextBinding := .unbound }))).currentOnCore Concurrency.bootCoreId = some t := by
-                  rw [SchedulerState.setRunQueueOnCore_currentOnCore,
-                    SchedulerState.setCurrentOnCore_currentOnCore_ne _ _ _ _ hrb]
-                  exact hpre
                 rename_i hcur
-                exact hcur hA
-          split at hStep
-          all_goals
-            cases hStep
-          -- The key-change hook at the unbind's end writes a flag or nothing;
-          -- the stage's own marks (the cleared slot's core, and the placed
-          -- thread's home) move no run queue and no current slot either.
-          all_goals
-            refine markKeyChangeFor_preserves_ipcInvariantFull _ _ _ ?_
-          all_goals
-            refine schedContextUnbindTail_preserves_ipcInvariantFull _ vScId.val tid sc tcb
-              _ _ _ _ hObjInv ?_ hScRaw hTcbRaw hBound hAllowedIpc
-          all_goals
-            refine ipcInvariantFull_of_flagOnlyWrite ?_ ?_ ?_ hStage
-          all_goals first
-            | rfl
-            | (intro c'
-               simp only [↓reduceIte,
-                 SchedulerState.setRunQueueOnCore_markReschedulePendingOnCore,
-                 SchedulerState.markReschedulePendingOnCore_runQueueOnCore,
-                 SchedulerState.markReschedulePendingOnCore_currentOnCore])
+                exact hcur (by
+                  rw [SchedulerState.markReschedulePendingOnCore_currentOnCore,
+                    SchedulerState.setCurrentOnCore_currentOnCore_ne _ _ _ _ hrb]
+                  exact hpre)
+          cases hStep
+          exact markKeyChangeFor_preserves_ipcInvariantFull _ _ _
+            (ipcInvariantFull_withScThreadIndex _ _
+              (purgeReplenishmentOnCore_preserves_ipcInvariantFull _ _ _
+                (schedContextUnbindQueueStage_preserves_ipcInvariantFull _ _ _ _ _
+                  (schedContextUnbindTail_preserves_ipcInvariantFull _ vScId.val tid sc tcb
+                    _ hObjInv hStage hScRaw hTcbRaw hBound hAllowedIpc))))
         | none =>
           rw [hRC] at hStep
           simp only [Option.isSome_none] at hStep
-          split at hStep
-          · rename_i hMem
-            cases hStep
-            have hStage : ipcInvariantFull { st with scheduler := st.scheduler.setRunQueueOnCore (determineTargetCore st tid) (((st.scheduler.runQueueOnCore (determineTargetCore st tid)).remove tid).insert tid (TCB.boostedPriority { tcb with schedContextBinding := .unbound })) } := by
-              refine unbindSchedulerStage_preserves_ipcInvariantFull st _ tid tcb hInv rfl
-                hTcbRaw hAllowedIpc ?_ ?_
-              · intro t htne hm
-                by_cases hcc : determineTargetCore st tid = Concurrency.bootCoreId
-                · rw [show (Concurrency.bootCoreId : CoreId) = determineTargetCore st tid
-                    from hcc.symm]
-                  rw [SchedulerState.setRunQueueOnCore_runQueueOnCore_self,
-                    RunQueue.mem_insert, RunQueue.mem_remove]
-                  exact Or.inl ⟨by rw [hcc]; exact hm, htne⟩
-                · rw [SchedulerState.setRunQueueOnCore_runQueueOnCore_ne _ _ _ _ hcc]
-                  exact hm
-              · intro t _ hcur
-                intro hpre
-                exact hcur (by rw [SchedulerState.setRunQueueOnCore_currentOnCore]; exact hpre)
-            refine markKeyChangeFor_preserves_ipcInvariantFull _ _ _ ?_
-            exact schedContextUnbindTail_preserves_ipcInvariantFull _ vScId.val tid sc tcb
-              _ _ _ _ hObjInv hStage hScRaw hTcbRaw hBound hAllowedIpc
-          · split at hStep
-            all_goals first
-              -- `wasCurrent` is `false` on this arm, so its `if` has one live branch
-              | exact absurd ‹false = true› (by simp)
-              | (cases hStep
-                 refine markKeyChangeFor_preserves_ipcInvariantFull _ _ _ ?_
-                 exact schedContextUnbindTail_preserves_ipcInvariantFull _ vScId.val tid sc tcb
-                   _ _ _ _ hObjInv
-                   (unbindSchedulerStage_preserves_ipcInvariantFull st _ tid tcb hInv rfl
-                     hTcbRaw hAllowedIpc (fun t _ hm => hm) (fun t _ hcur => hcur))
-                   hScRaw hTcbRaw hBound hAllowedIpc)
+          cases hStep
+          exact markKeyChangeFor_preserves_ipcInvariantFull _ _ _
+            (ipcInvariantFull_withScThreadIndex _ _
+              (purgeReplenishmentOnCore_preserves_ipcInvariantFull _ _ _
+                (schedContextUnbindQueueStage_preserves_ipcInvariantFull _ _ _ _ _
+                  (schedContextUnbindTail_preserves_ipcInvariantFull _ vScId.val tid sc tcb
+                    _ hObjInv hInv hScRaw hTcbRaw hBound hAllowedIpc))))
       · rename_i hTcbNone
         dsimp only [SystemState.rewriteObject] at hStep
         cases hStep
@@ -3152,8 +3088,9 @@ theorem schedContextUnbindOnCore_preserves_ipcInvariantFull
       scX.boundThread = some t →
       st.objects[t.toObjId]? = some (.tcb tcbX) →
       passiveServerIdleAllowed tcbX.ipcState)
-    (hObjInvPreserved : ∀ stMid, SchedContextOps.schedContextUnbind vScId st = .ok ((), stMid) →
-      stMid.objects.invExt)
+    (hR : st.runQueueRefined) (hAdm : st.currentRequeueAdmitted ec)
+    (hU : ∀ c' t, st.scheduler.currentOnCore ec = some t → st.scheduler.currentOnCore c' = some t →
+      c' = ec)
     (hStep : SchedContextOps.schedContextUnbindOnCore vScId ec st = .ok (st', sgi)) :
     ipcInvariantFull st' := by
   unfold SchedContextOps.schedContextUnbindOnCore at hStep
@@ -3161,10 +3098,14 @@ theorem schedContextUnbindOnCore_preserves_ipcInvariantFull
   split at hStep
   · contradiction
   · rename_i stMid hUnbind
+    have hStage := SchedContextOps.schedContextUnbind_runQueueStage vScId st stMid hUnbind hObjInv hR
     exact priorityRescheduleOnCore_preserves_ipcInvariantFull stMid _ ec true st' sgi
-      (hObjInvPreserved stMid hUnbind)
+      hStage.1
       (schedContextUnbind_preserves_ipcInvariantFull st stMid vScId hObjInv hInv
         hBoundAllowed hUnbind)
+      (SystemState.currentRequeueAdmitted.transport
+        (SchedContextOps.schedContextUnbind_currentPlacementFrame vScId st stMid ec hObjInv hU
+          hUnbind) hAdm)
       hStep
 
 -- ============================================================================
@@ -3458,15 +3399,18 @@ became `dualQueueSystemInvariant`'s fourth conjunct, and it is not derivable fro
 `queuePrev` *refutes* the pairing rather than satisfying it vacuously.  It sits
 next to `queuePrev` because the two are one back-pointer, which is the whole
 lesson of WS-OD OD1.1 and OD3.9 — each found a removal writing one of them
-alone. -/
+alone.
+
+**WS-ZA ZA4.5**: `runCoreCode = 0` — a fresh thread's run-queue fields name no
+core, so storing it keeps every run queue in agreement with the threads' links. -/
 def retypeReplacementFresh : KernelObject → Prop
   | .tcb t => t.ipcState = .ready ∧ t.pendingMessage = none ∧ t.queueNext = none ∧
       t.queuePrev = none ∧ t.queuePPrev = none ∧
       t.schedContextBinding = .unbound ∧ t.replyObject = none ∧
-      t.pendingReceiveReply = none ∧ t.timeoutBudget = none
+      t.pendingReceiveReply = none ∧ t.timeoutBudget = none ∧ t.runCoreCode = 0
   | .endpoint ep => ep.sendQ.head = none ∧ ep.sendQ.tail = none ∧
       ep.receiveQ.head = none ∧ ep.receiveQ.tail = none
-  | .notification n => n.state = .idle ∧ n.waitingThreads.val = [] ∧ n.pendingBadge = none
+  | .notification n => n.state = .idle ∧ n.waitHead = none ∧ n.pendingBadge = none
   | .reply r => r.caller = none
   | .cnode cn => ∀ slot : SeLe4n.Slot, cn.lookup slot = none
   | .schedContext _ => True
@@ -3538,8 +3482,7 @@ structure retypeTargetDetached (st : SystemState) (target : SeLe4n.ObjId) : Prop
   tcbNotBound : ∀ t : TCB, st.objects[target]? = some (.tcb t) →
     ∀ scId, t.schedContextBinding ≠ .bound scId
   tcbNotWaiter : ∀ t : TCB, st.objects[target]? = some (.tcb t) →
-    ∀ (oid : SeLe4n.ObjId) (n : Notification), st.objects[oid]? = some (.notification n) →
-    t.tid ∉ n.waitingThreads.val
+    ∀ oid : SeLe4n.ObjId, t.ipcState ≠ .blockedOnNotification oid
   /-- **WS-HP HP10.5**: no scheduling context records this thread as the origin of
       a reservation on loan.
 
@@ -3554,9 +3497,12 @@ structure retypeTargetDetached (st : SystemState) (target : SeLe4n.ObjId) : Prop
   tcbNotDonationOrigin : ∀ t : TCB, st.objects[target]? = some (.tcb t) →
     ∀ (oid : SeLe4n.ObjId) (sc : SchedContext), st.objects[oid]? = some (.schedContext sc) →
     sc.donationOrigin ≠ some t.tid
+  /-- The thread is on no core: out of every core's abstract queue, its own
+      run-queue links name no core (WS-ZA ZA4.5: what the destroy sweep reads),
+      and no core runs it. -/
   tcbDescheduled : ∀ t : TCB, st.objects[target]? = some (.tcb t) →
     ∀ c : CoreId, (st.scheduler.runQueueOnCore c).contains t.tid = false ∧
-      st.scheduler.currentOnCore c ≠ some t.tid
+      st.queuedOn c t.tid = false ∧ st.scheduler.currentOnCore c ≠ some t.tid
   /-- **WS-BP BP7.9**: and no core's registers hold the thread's live FP/SIMD
       values.  The destroy path refuses such a target (`threadHeldOnSomeCore`),
       so under this pack the refusal is not taken — the same shape as
@@ -3696,7 +3642,7 @@ private theorem retypeWrite_blockedThreadTimeoutConsistent
   by_cases hK : tid.toObjId = target
   · rw [hK] at hT
     obtain rfl : newObj = .tcb tcb := retypeWrite_at_target hAt hT
-    obtain ⟨-, -, -, -, -, -, -, -, hTBn⟩ := hFresh
+    obtain ⟨-, -, -, -, -, -, -, -, hTBn, -⟩ := hFresh
     rw [hTBn] at hTB
     cases hTB
   · rw [hNe _ hK] at hT
@@ -4330,7 +4276,7 @@ theorem retypeWrite_preserves_ipcInvariantFull
 per-core step is the literal identity. -/
 private theorem removeRunnableFromAllCores_id_of_descheduled
     (st : SystemState) (tid : SeLe4n.ThreadId)
-    (hRQ : ∀ c : CoreId, (st.scheduler.runQueueOnCore c).contains tid = false)
+    (hRQ : ∀ c : CoreId, st.queuedOn c tid = false)
     (hCur : ∀ c : CoreId, st.scheduler.currentOnCore c ≠ some tid) :
     removeRunnableFromAllCores st tid = st := by
   have hstep : ∀ c : CoreId, removeRunnableStepOnCore tid st c = st := by
@@ -4393,35 +4339,28 @@ private theorem removeFromAllEndpointQueues_id_of_unqueued
       | tcb _ | notification _ | cnode _ | vspaceRoot _ | untyped _
       | schedContext _ | reply _ | frame _ | pageTable _ => rfl)
 
-/-- The victim waits on no notification, so the wait-list sweep is the
-literal identity. -/
-private theorem removeFromAllNotificationWaitLists_id_of_no_waits
+/-- The victim waits on no notification, so the wait-list removal is the
+literal identity: it reads the queue the victim's own state names, and there
+is none. -/
+private theorem removeFromNotificationWaitQueue_id_of_no_waits
     (st : SystemState) (tid : SeLe4n.ThreadId)
-    (hObjInv : st.objects.invExt)
-    (hNoWait : ∀ (oid : SeLe4n.ObjId) (n : Notification),
-      st.objects[oid]? = some (.notification n) → tid ∉ n.waitingThreads.val) :
-    removeFromAllNotificationWaitLists st tid = st := by
-  unfold removeFromAllNotificationWaitLists
-  exact RobinHood.RHTable.fold_preserves_of_lookup st.objects st _ (· = st) hObjInv rfl
-    (fun acc oid obj hGet hAcc => by
-      rw [hAcc]
-      cases obj with
-      | notification n =>
-          have hN : st.objects[oid]? = some (.notification n) := by
-            rw [RHTable_getElem?_eq_get?]; exact hGet
-          have hC : n.waitingThreads.val.contains tid = false := by
-            simp [hNoWait oid n hN]
-          simp only [SystemState.getNotificationWitnessed?_eq_some
-            ((SystemState.getNotification?_eq_some_iff st oid n).mpr hN), hC]
-          rfl
-      | tcb _ | endpoint _ | cnode _ | vspaceRoot _ | untyped _
-      | schedContext _ | reply _ | frame _ | pageTable _ => rfl)
+    (hNoWait : ∀ tcb : TCB, st.getTcb? tid = some tcb →
+      ∀ oid : SeLe4n.ObjId, tcb.ipcState ≠ .blockedOnNotification oid) :
+    removeFromNotificationWaitQueue st tid = st := by
+  unfold removeFromNotificationWaitQueue
+  cases hT : st.getTcb? tid with
+  | none => rfl
+  | some tcb =>
+    simp only []
+    cases hS : tcb.ipcState with
+    | blockedOnNotification oid => exact absurd hS (hNoWait tcb hT oid)
+    | _ => rfl
 
 /-- **WS-HP HP10.5**: the reservation-origin scrub is the identity when no
 scheduling context records this thread as an origin — the pack's
 `tcbNotDonationOrigin`.
 
-The sibling of `removeFromAllNotificationWaitLists_id_of_no_waits` above, in the
+The sibling of `removeFromNotificationWaitQueue_id_of_no_waits` above, in the
 same shape and for the same reason: `cleanupTcbReferences` is claimed to be an
 identity under the detachment pack, and a fold that rewrites nothing must be shown
 to rewrite nothing rather than assumed to. -/
@@ -4471,8 +4410,10 @@ private theorem cleanupTcbReferences_id_of_detached
   unfold cleanupTcbReferences
   dsimp only []
   rw [removeRunnableFromAllCores_id_of_descheduled stX tcb.tid
-    (fun c => by rw [hS]; exact (hDet.tcbDescheduled tcb hObj c).1)
-    (fun c => by rw [hS]; exact (hDet.tcbDescheduled tcb hObj c).2)]
+    (fun c => by
+      rw [(SystemState.RunCoresAgree.of_objects hO).queuedOn]
+      exact (hDet.tcbDescheduled tcb hObj c).2.1)
+    (fun c => by rw [hS]; exact (hDet.tcbDescheduled tcb hObj c).2.2)]
   rw [removeFromAllEndpointQueues_id_of_unqueued stX tcb.tid (hO ▸ hObjInv)
     (fun tcbX hLk => by
       obtain rfl := hLkT tcbX hLk
@@ -4487,10 +4428,12 @@ private theorem cleanupTcbReferences_id_of_detached
             | exact hDet.notHead oid ep tcb.tid hEp (Or.inr hBad) hSelf
             | exact hDet.notTail oid ep tcb.tid hEp (Or.inl hBad) hSelf
             | exact hDet.notTail oid ep tcb.tid hEp (Or.inr hBad) hSelf)]
-  rw [removeFromAllNotificationWaitLists_id_of_no_waits stX tcb.tid (hO ▸ hObjInv)
-    (fun oid n hN => by
-      rw [hO] at hN
-      exact hDet.tcbNotWaiter tcb hObj oid n hN)]
+  rw [removeFromNotificationWaitQueue_id_of_no_waits stX tcb.tid
+    (fun tcbX hLk => by
+      have hRaw := (SystemState.getTcb?_eq_some_iff stX tcb.tid tcbX).mp hLk
+      rw [hO, hDet.tcbSelfId tcb hObj, hObj] at hRaw
+      cases hRaw
+      exact hDet.tcbNotWaiter _ hObj)]
   -- **WS-HP HP10.5**: and the origin scrub, from the pack's own clause.
   exact clearDonationOriginReferences_id_of_no_origin stX tcb.tid (hO ▸ hObjInv)
     (fun oid sc hS => by
@@ -4517,7 +4460,7 @@ theorem lifecyclePreRetypeCleanup_detached_frame
           unfold threadCurrentOnSomeCore
           simp only [List.any_eq_false, beq_iff_eq]
           intro c _
-          exact (hDet.tcbDescheduled tcb hObj c).2
+          exact (hDet.tcbDescheduled tcb hObj c).2.2
         have hF : st.machine.fpOwnedOnSomeCore tcb.tid = false :=
           (MachineState.fpOwnedOnSomeCore_eq_false_iff _ _).mpr (hDet.tcbFpReleased tcb hObj)
         have hR : st.machine.residentOnSomeCore tcb.tid = false :=
@@ -4599,12 +4542,14 @@ private theorem retypeTargetDetached_of_objects_scheduler_eq
   · intro t hT; rw [hObjs] at hT; exact hDet.tcbAllowedState t hT
   · intro t hT; rw [hObjs] at hT; exact hDet.tcbNotDonated t hT
   · intro t hT; rw [hObjs] at hT; exact hDet.tcbNotBound t hT
-  · intro t hT oid n hN; rw [hObjs] at hT hN; exact hDet.tcbNotWaiter t hT oid n hN
+  · intro t hT; rw [hObjs] at hT; exact hDet.tcbNotWaiter t hT
   -- **WS-HP HP10.5**: the origin clause travels on `objects` alone, like its
   -- neighbours above.
   · intro t hT oid sc hS; rw [hObjs] at hT hS
     exact hDet.tcbNotDonationOrigin t hT oid sc hS
-  · intro t hT c; rw [hObjs] at hT; rw [hSched]; exact hDet.tcbDescheduled t hT c
+  · intro t hT c; rw [hObjs] at hT
+    rw [hSched, (SystemState.RunCoresAgree.of_objects hObjs).queuedOn]
+    exact hDet.tcbDescheduled t hT c
   -- WS-BP BP7.9: the FP-owner clause travels on the owner table alone.
   · intro t hT c; rw [hObjs] at hT
     show st2.machine.fpOwner.get c ≠ some t.tid
@@ -4883,50 +4828,16 @@ private theorem enqueueRunnableOnCore_preserves_ipcInvariantFull
       rw [SystemState.getTcbWitnessed?_eq_none hLk]
       exact hInv
   | some tcb =>
-      unfold enqueueRunnableOnCore
-      rw [SystemState.getTcbWitnessed?_eq_some hLk]
-      dsimp only [SystemState.rewriteObject]
-      split
-      · exact hInv
-      · have hSame : ({ tcb with ipcState := .ready } : TCB) = tcb := by
-          have h1 := hReady tcb hLk
-          cases tcb
-          simp_all
-        rw [hSame]
-        have hPre : st.objects[tid.toObjId]? = some (.tcb tcb) :=
-          (SystemState.getTcb?_eq_some_iff st tid tcb).mp hLk
-        have hEq : ∀ oid : SeLe4n.ObjId,
-            ({ st with objects := st.objects.insert tid.toObjId (.tcb tcb), scheduler := (st.scheduler.setRunQueueOnCore c ((st.scheduler.runQueueOnCore c).insert tid (tcb.boostedPriority))).markReschedulePendingOnCore c } : SystemState).objects[oid]? = st.objects[oid]? := by
-          intro oid
-          show (st.objects.insert tid.toObjId (.tcb tcb))[oid]? = st.objects[oid]?
-          by_cases hK : oid = tid.toObjId
-          · subst hK
-            simp only [RHTable_getElem?_eq_get?]
-            rw [RobinHood.RHTable.getElem?_insert_self st.objects tid.toObjId _ hObjInv]
-            rw [← RHTable_getElem?_eq_get?]
-            exact hPre.symm
-          · simp only [RHTable_getElem?_eq_get?]
-            exact RobinHood.RHTable.getElem?_insert_ne st.objects tid.toObjId oid _
-              (by simp; exact fun h => hK h.symm) hObjInv
-        refine ipcInvariantFull_of_getElem_eq hEq ?_ hInv
-        intro t tcbT hT hUnb hNQ hNC
-        rw [hEq] at hT
-        rw [show ({ st with objects := st.objects.insert tid.toObjId (.tcb tcb), scheduler := (st.scheduler.setRunQueueOnCore c ((st.scheduler.runQueueOnCore c).insert tid (tcb.boostedPriority))).markReschedulePendingOnCore c } : SystemState).scheduler.currentOnCore Concurrency.bootCoreId = st.scheduler.currentOnCore Concurrency.bootCoreId from by simp] at hNC
-        have hNQ' : t ∉ st.scheduler.runQueueOnCore Concurrency.bootCoreId := by
-          intro hMem
-          apply hNQ
-          show t ∈ ({ st with objects := st.objects.insert tid.toObjId (.tcb tcb), scheduler := (st.scheduler.setRunQueueOnCore c ((st.scheduler.runQueueOnCore c).insert tid (tcb.boostedPriority))).markReschedulePendingOnCore c } : SystemState).scheduler.runQueueOnCore Concurrency.bootCoreId
-          by_cases hc : c = Concurrency.bootCoreId
-          · subst hc
-            show t ∈ ((st.scheduler.setRunQueueOnCore Concurrency.bootCoreId ((st.scheduler.runQueueOnCore Concurrency.bootCoreId).insert tid (tcb.boostedPriority))).markReschedulePendingOnCore Concurrency.bootCoreId).runQueueOnCore Concurrency.bootCoreId
-            rw [SchedulerState.markReschedulePendingOnCore_runQueueOnCore,
-              SchedulerState.setRunQueueOnCore_runQueueOnCore_self]
-            exact (RunQueue.mem_insert _ _ _ _).mpr (Or.inl hMem)
-          · show t ∈ ((st.scheduler.setRunQueueOnCore c ((st.scheduler.runQueueOnCore c).insert tid (tcb.boostedPriority))).markReschedulePendingOnCore c).runQueueOnCore Concurrency.bootCoreId
-            rw [SchedulerState.markReschedulePendingOnCore_runQueueOnCore,
-              SchedulerState.setRunQueueOnCore_runQueueOnCore_ne _ _ _ _ hc]
-            exact hMem
-        exact hInv.passiveServerIdle t tcbT hT hUnb hNQ' hNC
+      -- The `.ready` mark re-stores the value already there, so the objects
+      -- agree off run-queue fields; the queue only grows.
+      have hA := enqueueRunnableOnCore_objectsAgreeOffRunLinks_of_ready st c tid tcb hLk
+        (hReady tcb hLk) hObjInv
+      refine ipcInvariantFull_of_objectsAgreeOffRunLinks hA ?_ hInv
+      intro t tcbT hT hUnb hNQ hNC
+      run_links_back hA at tcbT hT
+      refine hInv.passiveServerIdle t tcbT hT hUnb ?_ ?_
+      · exact fun hMem => hNQ (enqueueRunnableOnCore_mem_old st c Concurrency.bootCoreId tid t hMem)
+      · rwa [enqueueRunnableOnCore_currentOnCore] at hNC
 
 private theorem resumeReadyMidState_objects_invExt
     (st : SystemState) (tid : SeLe4n.ThreadId) (hObjInv : st.objects.invExt) :
@@ -4965,17 +4876,19 @@ private theorem resumeReadyMidState_getTcb_ready
       rw [hEq tid.toObjId] at hPre1
       exact hQ.ready t ((SystemState.getTcb?_eq_some_iff st tid t).mpr hPre1)
 
-private theorem enqueueRunnableOnCore_objects_invExt
-    (st : SystemState) (c : CoreId) (tid : SeLe4n.ThreadId)
-    (hObjInv : st.objects.invExt) :
-    (enqueueRunnableOnCore st c tid).objects.invExt := by
-  unfold enqueueRunnableOnCore
-  dsimp only []
-  split
-  · split
-    · exact hObjInv
-    · exact RHTable_insert_preserves_invExt _ _ _ hObjInv
-  · exact hObjInv
+/-- The resume's legs before its reschedule (the ready-restore, the key hook)
+move no thread's core code, so every thread keeps its admission. -/
+private theorem resumeMid_runEnqueueAdmits (st : SystemState) (tid y : SeLe4n.ThreadId)
+    (c : CoreId) (hObjInv : st.objects.invExt) :
+    (markKeyChangeFrom st (Lifecycle.Suspend.resumeReadyMidState st tid) tid).runEnqueueAdmits c y =
+      st.runEnqueueAdmits c y := by
+  apply SystemState.runEnqueueAdmits_congr
+  rw [markKeyChangeFrom_getTcb?]
+  unfold Lifecycle.Suspend.resumeReadyMidState
+  refine (SystemState.updateTcb_runCoreCode _ _ _ (by intro _; rfl)
+    (restoreToReady_objects_invExt st tid hObjInv) y).trans ?_
+  unfold Lifecycle.Suspend.restoreToReady Lifecycle.Suspend.restoreToReadyStaging
+  exact SystemState.updateTcb_runCoreCode _ _ _ (by intro _; rfl) hObjInv y
 
 /-- The full per-core resume (live once the context-restore seam flips). -/
 theorem resumeThreadOnCore_preserves_ipcInvariantFull
@@ -4984,6 +4897,7 @@ theorem resumeThreadOnCore_preserves_ipcInvariantFull
     (hObjInv : st.objects.invExt)
     (hQ : threadIpcFieldsQuiescent st vtid.val)
     (hInv : ipcInvariantFull st)
+    (hAdm : st.currentRequeueAdmitted ec)
     (hStep : Lifecycle.Suspend.resumeThreadOnCore st vtid ec = .ok (st', sgi)) :
     ipcInvariantFull st' := by
   unfold Lifecycle.Suspend.resumeThreadOnCore at hStep
@@ -5005,7 +4919,7 @@ theorem resumeThreadOnCore_preserves_ipcInvariantFull
           (determineTargetCore st vtid.val) vtid.val hMidInv
           (by rw [markKeyChangeFrom_getTcb?]
               exact resumeReadyMidState_getTcb_ready st vtid.val hObjInv hQ) hMid
-        have hEnqInv := enqueueRunnableOnCore_objects_invExt
+        have hEnqInv := enqueueRunnableOnCore_preserves_objects_invExt
           (markKeyChangeFrom st (Lifecycle.Suspend.resumeReadyMidState st vtid.val) vtid.val)
           (determineTargetCore st vtid.val) vtid.val hMidInv
         split at hStep
@@ -5015,8 +4929,15 @@ theorem resumeThreadOnCore_preserves_ipcInvariantFull
           | ok st4 =>
               rw [hRes] at hStep
               cases hStep
-              exact handleRescheduleSgiOnCore_preserves_ipcInvariantFull _ ec _
-                hEnqInv hEnq hRes
+              refine handleRescheduleSgiOnCore_preserves_ipcInvariantFull _ ec _
+                hEnqInv hEnq (fun t hCur => ?_) hRes
+              simp only [enqueueRunnableOnCore_currentOnCore, markKeyChangeFrom_currentOnCore,
+                Lifecycle.Suspend.resumeReadyMidState, SystemState.updateTcb_scheduler,
+                Lifecycle.Suspend.restoreToReady_scheduler_eq] at hCur
+              rename_i hHome
+              rw [show determineTargetCore st vtid.val = ec by simpa using hHome]
+              exact enqueueRunnableOnCore_runEnqueueAdmits ec vtid.val t hMidInv
+                ((resumeMid_runEnqueueAdmits st vtid.val t ec hObjInv).trans (hAdm t hCur))
           | error e => rw [hRes] at hStep; cases hStep
         · cases hStep
           exact hEnq
@@ -5054,6 +4975,25 @@ theorem retirePendingFaultForResume_preserves_objects_invExt
       | some tf =>
           simp only [retirePendingFaultForResume, hT, hF, applyFaultRestart]
           exact SystemState.updateTcb_preserves_objects_invExt _ _ _ hObjInv
+
+/-- The fault retire writes the restart frame and clears the fault, no core code,
+so the executing core's current thread stays admitted for its requeue. -/
+theorem retirePendingFaultForResume_currentRequeueAdmitted (st : SystemState)
+    (tid : SeLe4n.ThreadId) (ec : CoreId) (hObjInv : st.objects.invExt)
+    (h : st.currentRequeueAdmitted ec) :
+    (retirePendingFaultForResume st tid).currentRequeueAdmitted ec := by
+  intro y hy
+  rw [retirePendingFaultForResume_scheduler_eq] at hy
+  refine (SystemState.runEnqueueAdmits_congr ?_ ec).trans (h y hy)
+  unfold retirePendingFaultForResume
+  split
+  · split
+    · unfold applyFaultRestart
+      refine SystemState.updateTcb_runCoreCode _ _ _ ?_ hObjInv y
+      intro x
+      first | rfl | simp [TCB.withRestartFrame]
+    · rfl
+  · rfl
 
 /-- Review round (PR #887): the retire step rewrites none of the fields the
 quiescence pack reads, so the pack transports to the state the resume runs
@@ -5254,40 +5194,11 @@ private theorem removeRunnableOnCore_preserves_ipcInvariantFull
     (hReady : ∀ tcbX : TCB, st.getTcb? tid = some tcbX → tcbX.ipcState = .ready)
     (hInv : ipcInvariantFull st) :
     ipcInvariantFull (removeRunnableOnCore st tid c) := by
-  refine ipcInvariantFull_of_getElem_eq (s1 := st) (fun oid => rfl) ?_ hInv
-  intro t tcbT hT hUnb hNQ hNC
-  by_cases hTv : t = tid
-  · subst hTv
-    have := hReady tcbT ((SystemState.getTcb?_eq_some_iff st t tcbT).mpr hT)
-    exact Or.inl this
-  · have hNQ' : t ∉ st.scheduler.runQueueOnCore Concurrency.bootCoreId := by
-      intro hMem
-      apply hNQ
-      show t ∈ ((st.scheduler.setRunQueueOnCore c ((st.scheduler.runQueueOnCore c).remove tid)).setCurrentOnCore c (if (st.scheduler.currentOnCore c) = some tid then none else (st.scheduler.currentOnCore c))).runQueueOnCore Concurrency.bootCoreId
-      rw [SchedulerState.setCurrentOnCore_runQueueOnCore]
-      by_cases hc : c = Concurrency.bootCoreId
-      · subst hc
-        rw [SchedulerState.setRunQueueOnCore_runQueueOnCore_self]
-        exact (RunQueue.mem_remove _ _ _).mpr ⟨hMem, hTv⟩
-      · rw [SchedulerState.setRunQueueOnCore_runQueueOnCore_ne _ _ _ _ hc]
-        exact hMem
-    have hNC' : st.scheduler.currentOnCore Concurrency.bootCoreId ≠ some t := by
-      intro hCur
-      by_cases hc : c = Concurrency.bootCoreId
-      · subst hc
-        by_cases hEq : st.scheduler.currentOnCore Concurrency.bootCoreId = some tid
-        · rw [hEq] at hCur
-          exact hTv (Option.some.inj hCur).symm
-        · apply hNC
-          show ((st.scheduler.setRunQueueOnCore Concurrency.bootCoreId ((st.scheduler.runQueueOnCore Concurrency.bootCoreId).remove tid)).setCurrentOnCore Concurrency.bootCoreId (if (st.scheduler.currentOnCore Concurrency.bootCoreId) = some tid then none else (st.scheduler.currentOnCore Concurrency.bootCoreId))).currentOnCore Concurrency.bootCoreId = some t
-          rw [SchedulerState.setCurrentOnCore_currentOnCore_self, if_neg hEq]
-          exact hCur
-      · apply hNC
-        show ((st.scheduler.setRunQueueOnCore c ((st.scheduler.runQueueOnCore c).remove tid)).setCurrentOnCore c (if (st.scheduler.currentOnCore c) = some tid then none else (st.scheduler.currentOnCore c))).currentOnCore Concurrency.bootCoreId = some t
-        rw [SchedulerState.setCurrentOnCore_currentOnCore_ne _ _ _ _ hc,
-          SchedulerState.setRunQueueOnCore_currentOnCore]
-        exact hCur
-    exact hInv.passiveServerIdle t tcbT hT hUnb hNQ' hNC'
+  refine ipcInvariantFull_of_descheduleFrame st _ hInv
+    (removeRunnableOnCore_objectsAgreeOffRunLinks st tid c)
+    (removeRunnableOnCore_passiveServerIdleFrame st tid c (fun tcb h => Or.inr ?_))
+  rw [hReady tcb ((SystemState.getTcb?_eq_some_iff st tid tcb).mpr h)]
+  exact Or.inl rfl
 
 /-- Under the quiescent field shape the pending-state clear rewrites every
 field to the value it already holds — pointwise inert. -/
@@ -5307,7 +5218,7 @@ private theorem clearPendingState_getElem_eq_of_quiescent
       rw [SystemState.updateTcb_eq_of_some hLk]
       dsimp only []
       obtain ⟨h1, h2, h3, h4, h5⟩ := hFields tcb hLk
-      have hSame : ({ tcb with pendingMessage := none, timeoutBudget := none, queuePrev := none, queueNext := none, queuePPrev := none } : TCB) = tcb := by
+      have hSame : ({ tcb with pendingMessage := none, timeoutBudget := none, queuePrevCode := 0, queueNextCode := 0, queuePPrevCode := 0 } : TCB) = tcb := by
         cases tcb
         simp_all
       rw [hSame]
@@ -5328,6 +5239,7 @@ private theorem suspendRescheduleOnCore_preserves_ipcInvariantFull
     (st st' : SystemState) (home ec : CoreId) (wasCur localDeboosted : Bool)
     (sgi : Option (CoreId × Concurrency.SgiKind))
     (hObjInv : st.objects.invExt) (hInv : ipcInvariantFull st)
+    (hAdm : st.currentRequeueAdmitted ec)
     (hStep : Lifecycle.Suspend.suspendRescheduleOnCore st home ec wasCur localDeboosted = .ok (st', sgi)) :
     ipcInvariantFull st' := by
   unfold Lifecycle.Suspend.suspendRescheduleOnCore at hStep
@@ -5337,14 +5249,14 @@ private theorem suspendRescheduleOnCore_preserves_ipcInvariantFull
       | ok st4 =>
           rw [hRes] at hStep
           cases hStep
-          exact handleRescheduleSgiOnCore_preserves_ipcInvariantFull st ec st' hObjInv hInv hRes
+          exact handleRescheduleSgiOnCore_preserves_ipcInvariantFull st ec st' hObjInv hInv hAdm hRes
       | error e => rw [hRes] at hStep; cases hStep
     · split at hStep
       · cases hRes : handleRescheduleSgiOnCore st ec with
         | ok st4 =>
             rw [hRes] at hStep
             cases hStep
-            exact handleRescheduleSgiOnCore_preserves_ipcInvariantFull st ec st' hObjInv hInv hRes
+            exact handleRescheduleSgiOnCore_preserves_ipcInvariantFull st ec st' hObjInv hInv hAdm hRes
         | error e => rw [hRes] at hStep; cases hStep
       · cases hStep
         exact hInv
@@ -5353,7 +5265,7 @@ private theorem suspendRescheduleOnCore_preserves_ipcInvariantFull
       | ok st4 =>
           rw [hRes] at hStep
           cases hStep
-          exact handleRescheduleSgiOnCore_preserves_ipcInvariantFull st ec st' hObjInv hInv hRes
+          exact handleRescheduleSgiOnCore_preserves_ipcInvariantFull st ec st' hObjInv hInv hAdm hRes
       | error e => rw [hRes] at hStep; cases hStep
     · cases hStep
       exact hInv
@@ -5695,13 +5607,16 @@ private theorem suspendDescheduleTail_shape
   · unfold descheduleAt
     cases placed with
     | none => exact hObjInvD
-    | some c => exact hObjInvD
+    | some c => exact removeRunnableOnCore_objects_invExt stD tid c hObjInvD
   · intro tcbX hX
-    apply hShape
     unfold descheduleAt at hX
     cases placed with
-    | none => exact hX
-    | some c => exact hX
+    | none => exact hShape tcbX hX
+    | some c =>
+      have hX' := (SystemState.getTcb?_eq_some_iff _ tid tcbX).mp hX
+      clear hX
+      run_links_back (removeRunnableOnCore_objectsAgreeOffRunLinks stD tid c) at tcbX hX'
+      exact hShape tcbX ((SystemState.getTcb?_eq_some_iff stD tid tcbX).mpr hX')
 
 /-- `.tcbSuspend` (dispatch arm): the whole per-core suspension pipeline —
 cancel (inert on a quiescent victim), PIP revert (empty for a `.ready`
@@ -5725,6 +5640,7 @@ theorem suspendThreadOnCore_preserves_ipcInvariantFull
     -- resolution carries.
     (hStackValid : ∀ scId serverTid originalOwner,
         replyStackOuterCallerValid st scId serverTid originalOwner)
+    (hR : st.runQueueRefined) (hAdm : st.currentRequeueAdmitted ec)
     (hStep : Lifecycle.Suspend.suspendThreadOnCore st vtid ec = .ok (st', sgi)) :
     ipcInvariantFull st' := by
   unfold Lifecycle.Suspend.suspendThreadOnCore at hStep
@@ -5774,17 +5690,41 @@ theorem suspendThreadOnCore_preserves_ipcInvariantFull
               tcbX.ipcState = .ready ∧ tcbX.pendingMessage = none ∧
               tcbX.timeoutBudget = none ∧ tcbX.queuePrev = none ∧
               tcbX.queueNext = none ∧ tcbX.queuePPrev = none) →
+            stR2.runQueueRefined →
             ∀ (c2 ecX : CoreId) (wc ld : Bool) (stO : SystemState)
               (sgiO : Option (CoreId × Concurrency.SgiKind)),
+            SystemState.CurrentPlacementFrame ecX st stR2 →
+            st.currentRequeueAdmitted ecX →
             Lifecycle.Suspend.suspendRescheduleOnCore
               ((Lifecycle.Suspend.clearPendingState stR2 vtid.val).updateTcb vtid.val fun t => { t with threadState := .Inactive })
               c2 ecX wc ld = .ok (stO, sgiO) →
             ipcInvariantFull stO := by
-          intro stD _ _ _ stR2 hObjInvR hInvR hShapeR c2 ecX wc ld stO sgiO hStepO
+          intro stD _ _ _ stR2 hObjInvR hInvR hShapeR hRR c2 ecX wc ld stO sgiO hFR hAdmX hStepO
           obtain ⟨hInvI, hObjInvI⟩ :=
             suspendClearStore_preserves_ipcInvariantFull stR2 vtid.val hObjInvR hShapeR hInvR
+          -- The clear and the deactivation write no run-queue field and move no
+          -- thread, so the executing core's current thread stays admitted for its
+          -- requeue at the scheduling point (seL4's `ct_not_in_q`).
+          have hS1 : SystemState.RunQueueStage stR2
+              (Lifecycle.Suspend.clearPendingState stR2 vtid.val) := by
+            unfold Lifecycle.Suspend.clearPendingState
+            exact SystemState.RunQueueStage.updateTcb _ _ (by intro _ _; rfl)
+          have hS2 : SystemState.RunQueueStage (Lifecycle.Suspend.clearPendingState stR2 vtid.val)
+              ((Lifecycle.Suspend.clearPendingState stR2 vtid.val).updateTcb vtid.val
+                fun t => { t with threadState := .Inactive }) :=
+            SystemState.RunQueueStage.updateTcb _ _ (by intro _ _; rfl)
+          have hF1 : SystemState.CurrentPlacementFrame ecX stR2
+              (Lifecycle.Suspend.clearPendingState stR2 vtid.val) := by
+            unfold Lifecycle.Suspend.clearPendingState
+            exact SystemState.CurrentPlacementFrame.updateTcb ecX _ _ _ (fun _ => rfl) hObjInvR
+          have hF2 := SystemState.CurrentPlacementFrame.updateTcb ecX
+            (Lifecycle.Suspend.clearPendingState stR2 vtid.val) vtid.val
+            (fun t => { t with threadState := .Inactive }) (fun _ => rfl)
+            (SystemState.updateTcb_preserves_objects_invExt _ _ _ hObjInvR)
           exact suspendRescheduleOnCore_preserves_ipcInvariantFull _ stO c2 ecX wc ld sgiO
-            hObjInvI hInvI hStepO
+            hObjInvI hInvI
+            (SystemState.currentRequeueAdmitted.transport
+              (hFR.trans (hF1.trans hF2)) hAdmX) hStepO
         cases hB : tcb.schedContextBinding with
         | unbound =>
             simp only [hB] at hStep
@@ -5799,7 +5739,8 @@ theorem suspendThreadOnCore_preserves_ipcInvariantFull
             obtain ⟨hInv2, hObjInv2, hShape2⟩ := suspendDescheduleTail_shape st vtid.val
               (placedCoreOf? st vtid.val) hObjInv hShapeD hInv
             exact hTail st hObjInv hInv hShapeD _ hObjInv2 hInv2 hShape2
-              _ ec _ _ st' sgi hStep
+              (descheduleAt_runQueueStage st _ _ hObjInv hR).2
+              _ ec _ _ st' sgi (descheduleAt_currentPlacementFrame st _ _ ec) hAdm hStep
         | bound scId =>
             simp only [hB] at hStep
             cases hDon : cancelBoundDonationOnCore st vtid.val tcb
@@ -5821,7 +5762,11 @@ theorem suspendThreadOnCore_preserves_ipcInvariantFull
                 obtain ⟨hInv2, hObjInv2, hShape2⟩ := suspendDescheduleTail_shape stD
                   vtid.val (placedCoreOf? st vtid.val) hObjInvD hShapeD hInvD
                 exact hTail stD hObjInvD hInvD hShapeD _ hObjInv2 hInv2 hShape2
-                  _ ec _ _ st' sgi hStep
+                  (((cancelBoundDonationOnCore_runQueueStage hDon).trans
+                    (descheduleAt_runQueueStage stD _ _)) hObjInv hR).2
+                  _ ec _ _ st' sgi
+                  ((cancelBoundDonationOnCore_currentPlacementFrame hObjInv hDon ec).trans
+                    (descheduleAt_currentPlacementFrame stD _ _ ec)) hAdm hStep
         | donated scId owner =>
             simp only [hB] at hStep
             cases hDon : cancelDonatedDonationOnCore st vtid.val tcb with
@@ -5841,7 +5786,11 @@ theorem suspendThreadOnCore_preserves_ipcInvariantFull
                 obtain ⟨hInv2, hObjInv2, hShape2⟩ := suspendDescheduleTail_shape stD
                   vtid.val (placedCoreOf? st vtid.val) hObjInvD hShapeD hInvD
                 exact hTail stD hObjInvD hInvD hShapeD _ hObjInv2 hInv2 hShape2
-                  _ ec _ _ st' sgi hStep
+                  (((cancelDonatedDonationOnCore_runQueueStage hDon).trans
+                    (descheduleAt_runQueueStage stD _ _)) hObjInv hR).2
+                  _ ec _ _ st' sgi
+                  ((cancelDonatedDonationOnCore_currentPlacementFrame hObjInv hDon ec).trans
+                    (descheduleAt_currentPlacementFrame stD _ _ ec)) hAdm hStep
 
 -- ============================================================================
 -- §16  Return-frame staging composites (`Architecture.stage*`)

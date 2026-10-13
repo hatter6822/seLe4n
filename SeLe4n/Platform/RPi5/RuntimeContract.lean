@@ -120,8 +120,9 @@ def registerContextStableCheck (_st st' : SystemState) : Bool :=
     | some tcb =>
       -- Core register-context match (U6-C)
       st'.machine.regs == tcb.registerContext &&
-      -- Dequeue-on-dispatch: current not in runnable queue (AG7-D)
-      !st'.scheduler.runnable.contains tid &&
+      -- Dequeue-on-dispatch: current not on the boot core's run queue, read
+      -- from its own run-queue links (AG7-D; WS-ZA ZA4.5)
+      tcb.runCoreCode != bootCoreId.val + 1 &&
       -- Time-slice positivity (AG7-D)
       (tcb.timeSlice > 0) &&
       -- IPC readiness (AG7-D): enables derivation of currentNotEndpointQueueHead
@@ -360,19 +361,19 @@ theorem registerContextStableCheck_register_match
   exact beq_iff_eq.mp hStable.1.1.1.1.1
 
 /-- AN7-C: Dequeue-on-dispatch conjunct — when the check passes the current
-    thread is NOT in the runnable queue (a runnable-queue membership would
-    violate EDF dispatch semantics). -/
+    thread is NOT on the boot core's run queue, read from its own run-queue
+    links (a runnable-queue membership would violate EDF dispatch semantics). -/
 theorem registerContextStableCheck_dequeue_on_dispatch
     (st st' : SeLe4n.Model.SystemState)
     (tid : SeLe4n.ThreadId) (tcb : SeLe4n.Model.TCB)
     (hCur : (st'.scheduler.currentOnCore bootCoreId) = some tid)
     (hObj : st'.objects[tid.toObjId]? = some (.tcb tcb))
     (hStable : registerContextStableCheck st st' = true) :
-    st'.scheduler.runnable.contains tid = false := by
+    tcb.runCoreCode ≠ bootCoreId.val + 1 := by
   unfold registerContextStableCheck SystemState.getTcb? at hStable
   simp only [hCur, hObj, Bool.and_eq_true] at hStable
   have h := hStable.1.1.1.1.2
-  exact Bool.not_eq_true' _ |>.mp h
+  simpa using h
 
 /-- AN7-C: Time-slice positivity conjunct — the dispatched TCB's time slice
     is strictly positive. -/

@@ -401,13 +401,13 @@ theorem lockSet_notificationSignalOnCore_size_le (st : SystemState)
   unfold lockSet_notificationSignalOnCore
   split <;> exact lockSet_notificationSignal_size_le _ _ _ _ _ _ _
 
-/-- The **wait** footprint, which resolves nothing from `st` and is the base at
-its own arguments. -/
-theorem lockSet_notificationWaitOnCore_size_le (notificationId : SeLe4n.ObjId)
+/-- The **wait** footprint: the base at the queue tail it resolves from `st`. -/
+theorem lockSet_notificationWaitOnCore_size_le (st : SystemState)
+    (notificationId : SeLe4n.ObjId)
     (caller : SeLe4n.ThreadId) (cnodeRootObjId : SeLe4n.ObjId) :
-    (lockSet_notificationWaitOnCore notificationId caller cnodeRootObjId).size
+    (lockSet_notificationWaitOnCore st notificationId caller cnodeRootObjId).size
       ≤ maxLockSetSize :=
-  lockSet_notificationWait_size_le _ _ _
+  lockSet_notificationWait_size_le _ _ _ _
 
 -- ============================================================================
 -- §3  The cancellation teardown footprints
@@ -559,7 +559,7 @@ theorem lockSet_cancelIpcBlockingOnCore_size_le_of_donation (st : SystemState)
   have hN : cancelBlockedNotification? tcb = none := by
     unfold cancelBlockedNotification?; rw [hIp]
   have hNb : cancelArmSpliceNeighbors? tcb = (none, none) :=
-    cancelArmSpliceNeighbors?_of_not_blockedEndpoint tcb hE
+    cancelArmSpliceNeighbors?_of_unqueued tcb hE hN
   unfold lockSet_cancelIpcBlockingOnCore
   rw [hT]
   simp only [hE, hN, hNb, Option.map_none, extendOpt_none]

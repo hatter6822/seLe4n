@@ -57,20 +57,15 @@ theorem updatePrioritySource_lifecycle_eq
 -- Transport lemmas — migrateRunQueueBucket
 -- ============================================================================
 
-theorem migrateRunQueueBucket_objects_eq
-    (st : SystemState) (tid : SeLe4n.ThreadId) (newPrio : SeLe4n.Priority) :
-    (migrateRunQueueBucket st tid newPrio).objects = st.objects := by
-  unfold migrateRunQueueBucket migrateRunQueueBucketOnCore; split <;> rfl
-
 theorem migrateRunQueueBucket_serviceRegistry_eq
     (st : SystemState) (tid : SeLe4n.ThreadId) (newPrio : SeLe4n.Priority) :
-    (migrateRunQueueBucket st tid newPrio).serviceRegistry = st.serviceRegistry := by
-  unfold migrateRunQueueBucket migrateRunQueueBucketOnCore; split <;> rfl
+    (migrateRunQueueBucket st tid newPrio).serviceRegistry = st.serviceRegistry := 
+  congrArg (·.serviceRegistry) (migrateRunQueueBucketOnCore_onlyObjectsSchedulerDiffer st tid newPrio Concurrency.bootCoreId)
 
 theorem migrateRunQueueBucket_lifecycle_eq
     (st : SystemState) (tid : SeLe4n.ThreadId) (newPrio : SeLe4n.Priority) :
-    (migrateRunQueueBucket st tid newPrio).lifecycle = st.lifecycle := by
-  unfold migrateRunQueueBucket migrateRunQueueBucketOnCore; split <;> rfl
+    (migrateRunQueueBucket st tid newPrio).lifecycle = st.lifecycle := 
+  congrArg (·.lifecycle) (migrateRunQueueBucketOnCore_onlyObjectsSchedulerDiffer st tid newPrio Concurrency.bootCoreId)
 
 -- ============================================================================
 -- Transport lemmas — updatePrioritySource (additional fields)
@@ -103,13 +98,13 @@ theorem updatePrioritySource_objectIndex_eq
 
 theorem migrateRunQueueBucket_irqHandlers_eq
     (st : SystemState) (tid : SeLe4n.ThreadId) (newPrio : SeLe4n.Priority) :
-    (migrateRunQueueBucket st tid newPrio).irqHandlers = st.irqHandlers := by
-  unfold migrateRunQueueBucket migrateRunQueueBucketOnCore; split <;> rfl
+    (migrateRunQueueBucket st tid newPrio).irqHandlers = st.irqHandlers := 
+  congrArg (·.irqHandlers) (migrateRunQueueBucketOnCore_onlyObjectsSchedulerDiffer st tid newPrio Concurrency.bootCoreId)
 
 theorem migrateRunQueueBucket_machine_eq
     (st : SystemState) (tid : SeLe4n.ThreadId) (newPrio : SeLe4n.Priority) :
-    (migrateRunQueueBucket st tid newPrio).machine = st.machine := by
-  unfold migrateRunQueueBucket migrateRunQueueBucketOnCore; split <;> rfl
+    (migrateRunQueueBucket st tid newPrio).machine = st.machine := 
+  congrArg (·.machine) (migrateRunQueueBucketOnCore_onlyObjectsSchedulerDiffer st tid newPrio Concurrency.bootCoreId)
 
 -- ============================================================================
 -- D2-J: Authority non-escalation theorems

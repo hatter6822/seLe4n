@@ -307,7 +307,9 @@ theorem pipChainVisited_length_le (s : SystemState) (tid : SeLe4n.ThreadId) (n :
 -- ============================================================================
 
 /-- **WS-RR RR7.40 (one step)**: a single boost writes only the boosted thread's
-TCB and its home core's run queue.
+TCB and its home core's run queue.  Off the run-queue links, that is: the
+bucket re-key relinks the home core's queue neighbours (WS-ZA ZA4.5), state the
+home core's run-queue lock covers, as seL4's ready-queue lock covers its C links.
 
 The two halves are SM5.F.2's own frames (`updatePipBoostOnCore_objects_ne`,
 `updatePipBoostOnCore_runQueueOnCore_ne`); this states them against the footprint
@@ -315,7 +317,8 @@ so the chain-level result composes them rather than re-deriving them. -/
 theorem pipBoostWithWake_coversWrites (s : SystemState) (tid : SeLe4n.ThreadId)
     (ec : CoreId) (hInv : s.objects.invExt) :
     (∀ oid : SeLe4n.ObjId, ¬(tid.toObjId == oid) = true →
-        (pipBoostWithWake s tid ec).1.objects[oid]? = s.objects[oid]?) ∧
+        ((pipBoostWithWake s tid ec).1.objects[oid]?).map KernelObject.withoutRunLinks
+          = (s.objects[oid]?).map KernelObject.withoutRunLinks) ∧
       (∀ d : CoreId, determineTargetCore s tid ≠ d →
         (pipBoostWithWake s tid ec).1.scheduler.runQueueOnCore d
           = s.scheduler.runQueueOnCore d) := by
@@ -348,8 +351,9 @@ theorem pipChainVisited_boost_eq (s : SystemState) (tid t : SeLe4n.ThreadId)
 /-- **WS-RR RR7.40 (the payoff)**: the cross-core PIP chain walk writes only
 inside the footprint the chain declares.
 
-Every object it rewrites is a visited thread's TCB, and every run queue in which
-it migrates a bucket belongs to a visited thread's home core.  So the footprint
+Every object it rewrites, run-queue links aside, is a visited thread's TCB, and
+every run queue in which it migrates a bucket belongs to a visited thread's home
+core (whose run-queue lock covers the links that migration rewrites).  So the footprint
 the RR7.40 extension acquires is not a *false* one: the exclusion the 2PL
 argument rests on is exclusion the walk actually established.
 
@@ -361,7 +365,8 @@ theorem propagatePipChainCrossCore_coversWrites (s : SystemState)
     (tid : SeLe4n.ThreadId) (ec : CoreId) (n : Nat) (hInv : s.objects.invExt) :
     (∀ oid : SeLe4n.ObjId,
         (∀ t ∈ pipChainVisited s tid n, ¬(t.toObjId == oid) = true) →
-        (propagatePipChainCrossCore s tid ec n).1.objects[oid]? = s.objects[oid]?) ∧
+        ((propagatePipChainCrossCore s tid ec n).1.objects[oid]?).map KernelObject.withoutRunLinks
+          = (s.objects[oid]?).map KernelObject.withoutRunLinks) ∧
       (∀ d : CoreId, d ∉ pipChainHomeCores s (pipChainVisited s tid n) →
         (propagatePipChainCrossCore s tid ec n).1.scheduler.runQueueOnCore d
           = s.scheduler.runQueueOnCore d) := by

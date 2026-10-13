@@ -114,7 +114,7 @@ def markKeyChangeFor (st : SystemState) (tid : SeLe4n.ThreadId)
     | some k => k.1.val < preKey.1.val || preKey.2.1.val < k.2.1.val || preKey.2.2 != k.2.2
     | none => false
   let staled : CoreId → Bool := fun c =>
-    (moved && (st.scheduler.runQueueOnCore c).contains tid) ||
+    (moved && st.queuedOn c tid) ||
       (weakened && st.scheduler.currentOnCore c == some tid)
   markReschedulePendingWhere st staled allCores
 
@@ -137,7 +137,7 @@ def markKeyChangeFrom (pre post : SystemState) (tid : SeLe4n.ThreadId) : SystemS
   match pre.getTcb? tid with
   | some tcb => markKeyChangeFor post tid (effectiveSchedParams pre tcb)
   | none => markReschedulePendingWhere post
-      (fun c => (post.scheduler.runQueueOnCore c).contains tid ||
+      (fun c => post.queuedOn c tid ||
         post.scheduler.currentOnCore c == some tid) allCores
 
 theorem markKeyChangeFrom_extract_frame {F : Type} (extract : SystemState → F)
@@ -166,20 +166,20 @@ write the core's run queue and current slot under a step whose lock footprint
 need not cover them; leaving the flag up would hold the reschedule to the
 core's next scheduling point and swallow the `false → true` edge a later remote
 writer needs. -/
-def rescheduleSgisFromFlags (pre post : Vector Bool numCores) :
+def rescheduleSgisFromFlags (pre post : PerCoreFlags) :
     List (CoreId × SgiKind) :=
   (allCores.filter fun c => !pre.get c && post.get c).map
     fun c => (c, SgiKind.reschedule)
 
-/-- The flag vector a seam captures before its transition.  A call rather than
+/-- The flag set a seam captures before its transition.  A call rather than
 a field read on purpose: the compiler sinks a projection to its use, which would
 hold the pre-state's scheduler alive across the transition and force the
 transition to copy it instead of updating it in place; a call is not sunk. -/
-@[noinline] def reschedulePendingSnapshot (st : SystemState) : Vector Bool numCores :=
+@[noinline] def reschedulePendingSnapshot (st : SystemState) : PerCoreFlags :=
   st.scheduler.reschedulePending
 
 /-- Membership in the flag-derived list, spelled out. -/
-theorem mem_rescheduleSgisFromFlags_iff (pre post : Vector Bool numCores) (c : CoreId)
+theorem mem_rescheduleSgisFromFlags_iff (pre post : PerCoreFlags) (c : CoreId)
     (k : SgiKind) :
     (c, k) ∈ rescheduleSgisFromFlags pre post ↔
       k = SgiKind.reschedule ∧ pre.get c = false ∧ post.get c = true := by
@@ -196,7 +196,7 @@ theorem mem_rescheduleSgisFromFlags_iff (pre post : Vector Bool numCores) (c : C
 
 /-- Every flag-derived SGI is a `.reschedule` (the counterpart of
 `computeCrossCoreSgis_all_reschedule`). -/
-theorem rescheduleSgisFromFlags_all_reschedule (pre post : Vector Bool numCores)
+theorem rescheduleSgisFromFlags_all_reschedule (pre post : PerCoreFlags)
     (p : CoreId × SgiKind) (h : p ∈ rescheduleSgisFromFlags pre post) :
     p.2 = SgiKind.reschedule := by
   obtain ⟨c, k⟩ := p
@@ -204,7 +204,7 @@ theorem rescheduleSgisFromFlags_all_reschedule (pre post : Vector Bool numCores)
 
 /-- A flag that was already set surfaces nothing — the list names only the
 cores this step raised. -/
-theorem rescheduleSgisFromFlags_nil_of_eq (v : Vector Bool numCores) :
+theorem rescheduleSgisFromFlags_nil_of_eq (v : PerCoreFlags) :
     rescheduleSgisFromFlags v v = [] := by
   unfold rescheduleSgisFromFlags
   rw [List.map_eq_nil_iff, List.filter_eq_nil_iff]
@@ -218,6 +218,20 @@ theorem rescheduleSgisFromFlags_nil_of_eq (v : Vector Bool numCores) :
     (markKeyChangeFor st tid k).objects = st.objects :=
   markKeyChangeFor_extract_frame (fun s => s.objects) st tid k
     (fun _ _ => by first | rfl | simp [SystemState.markReschedulePendingOnCore])
+
+@[simp] theorem markKeyChangeFor_queuedOn (st : SystemState) (tid : SeLe4n.ThreadId)
+    (k : SeLe4n.Priority × SeLe4n.Deadline × SeLe4n.DomainId) (c : CoreId) (t : SeLe4n.ThreadId) :
+    (markKeyChangeFor st tid k).queuedOn c t = st.queuedOn c t :=
+  (SystemState.RunCoresAgree.of_objects (markKeyChangeFor_objects st tid k)).queuedOn c t
+
+/-- WS-ZA ZA4.5: the hook rewrites the scheduler alone. -/
+theorem markKeyChangeFor_onlyObjectsSchedulerDiffer (st : SystemState) (tid : SeLe4n.ThreadId)
+    (k : SeLe4n.Priority × SeLe4n.Deadline × SeLe4n.DomainId) :
+    SystemState.onlyObjectsSchedulerDiffer (markKeyChangeFor st tid k) st :=
+  let post := markKeyChangeFor st tid k
+  markKeyChangeFor_extract_frame
+    (fun s : SystemState => ({ s with objects := post.objects, scheduler := post.scheduler } : SystemState))
+    st tid k (fun _ _ => rfl)
 
 @[simp] theorem markKeyChangeFor_objectIndex (st : SystemState) (tid : SeLe4n.ThreadId)
     (k : SeLe4n.Priority × SeLe4n.Deadline × SeLe4n.DomainId) :
@@ -432,21 +446,21 @@ theorem rescheduleSgisFromFlags_nil_of_eq (v : Vector Bool numCores) :
   markKeyChangeFor_extract_frame (fun s => s.scheduler.configDefaultTimeSlice) st tid k
     (fun _ _ => by first | rfl | simp [SystemState.markReschedulePendingOnCore])
 
-/-- Queue membership on some core reads the run queues alone, which the hook
-never writes. -/
+/-- Queue membership on some core reads the threads' run-queue cores alone,
+which the hook never writes. -/
 @[simp] theorem markKeyChangeFor_runnableOnSomeCore (st : SystemState)
     (tid tid' : SeLe4n.ThreadId) (k : SeLe4n.Priority × SeLe4n.Deadline × SeLe4n.DomainId) :
     runnableOnSomeCore (markKeyChangeFor st tid k) tid' = runnableOnSomeCore st tid' := by
   unfold runnableOnSomeCore
-  simp only [markKeyChangeFor_runQueueOnCore]
+  simp only [markKeyChangeFor_queuedOn]
 
-/-- The placement resolver reads the run queues and current slots alone, which
-the hook never writes. -/
+/-- The placement resolver reads the threads' run-queue cores and the current
+slots alone, which the hook never writes. -/
 @[simp] theorem markKeyChangeFor_placedCoreOf? (st : SystemState)
     (tid tid' : SeLe4n.ThreadId) (k : SeLe4n.Priority × SeLe4n.Deadline × SeLe4n.DomainId) :
     placedCoreOf? (markKeyChangeFor st tid k) tid' = placedCoreOf? st tid' := by
   unfold placedCoreOf?
-  simp only [markKeyChangeFor_runQueueOnCore, markKeyChangeFor_currentOnCore]
+  simp only [markKeyChangeFor_queuedOn, markKeyChangeFor_currentOnCore]
 
 /-- Marking one core never lowers another's flag (nor its own). -/
 theorem _root_.SeLe4n.Model.SchedulerState.markReschedulePendingOnCore_reschedulePendingOnCore_of
@@ -470,6 +484,11 @@ theorem markKeyChangeFor_reschedulePendingOnCore_mono (st : SystemState)
     (markKeyChangeFrom pre st tid).objects = st.objects :=
   markKeyChangeFrom_extract_frame (fun s => s.objects) pre st tid
     (fun _ _ => by first | rfl | simp [SystemState.markReschedulePendingOnCore])
+
+@[simp] theorem markKeyChangeFrom_queuedOn (pre st : SystemState) (tid : SeLe4n.ThreadId)
+    (c : CoreId) (t : SeLe4n.ThreadId) :
+    (markKeyChangeFrom pre st tid).queuedOn c t = st.queuedOn c t :=
+  (SystemState.RunCoresAgree.of_objects (markKeyChangeFrom_objects pre st tid)).queuedOn c t
 
 @[simp] theorem markKeyChangeFrom_objectIndex (pre st : SystemState) (tid : SeLe4n.ThreadId) :
     (markKeyChangeFrom pre st tid).objectIndex = st.objectIndex :=
@@ -654,13 +673,13 @@ theorem markKeyChangeFor_reschedulePendingOnCore_mono (st : SystemState)
     (tid tid' : SeLe4n.ThreadId) :
     runnableOnSomeCore (markKeyChangeFrom pre st tid) tid' = runnableOnSomeCore st tid' := by
   unfold runnableOnSomeCore
-  simp only [markKeyChangeFrom_runQueueOnCore]
+  simp only [markKeyChangeFrom_queuedOn]
 
 @[simp] theorem markKeyChangeFrom_placedCoreOf? (pre st : SystemState)
     (tid tid' : SeLe4n.ThreadId) :
     placedCoreOf? (markKeyChangeFrom pre st tid) tid' = placedCoreOf? st tid' := by
   unfold placedCoreOf?
-  simp only [markKeyChangeFrom_runQueueOnCore, markKeyChangeFrom_currentOnCore]
+  simp only [markKeyChangeFrom_queuedOn, markKeyChangeFrom_currentOnCore]
 
 @[simp] theorem markKeyChangeFrom_getObject? (pre st : SystemState) (tid : SeLe4n.ThreadId)
     (oid : SeLe4n.ObjId) :
@@ -706,5 +725,45 @@ theorem schedulerEqExceptReschedule_of_eq {a b : SystemState}
     (h : a.scheduler = b.scheduler) :
     a.scheduler = { b.scheduler with reschedulePending := a.scheduler.reschedulePending } := by
   rw [h]
+
+/-! ### The reschedule flags as run-queue agreement stages (WS-ZA ZA4.5)
+
+Every flag writer here writes the per-core flag word and nothing the agreement
+reads (the object store, the queues, their ends). -/
+
+/-- The state a run-queue agreement reads. -/
+private def runQueueReading (s : SystemState) :=
+  (s.objects, s.scheduler.runQueue, s.scheduler.runQueueEnds)
+
+private theorem RunQueueStage_of_reading {st st' : SystemState}
+    (h : runQueueReading st' = runQueueReading st) : SystemState.RunQueueStage st st' := by
+  simp only [runQueueReading, Prod.mk.injEq] at h
+  exact SystemState.RunQueueStage.of_frame h.1 h.2.1 h.2.2
+
+theorem markReschedulePendingWhere_runQueueStage (st : SystemState) (p : CoreId → Bool)
+    (cs : List CoreId) : SystemState.RunQueueStage st (markReschedulePendingWhere st p cs) :=
+  RunQueueStage_of_reading
+    (markReschedulePendingWhere_extract_frame runQueueReading (fun _ _ => rfl) st p cs)
+
+theorem markKeyChangeFor_runQueueStage (st : SystemState) (tid : SeLe4n.ThreadId)
+    (k : SeLe4n.Priority × SeLe4n.Deadline × SeLe4n.DomainId) :
+    SystemState.RunQueueStage st (markKeyChangeFor st tid k) :=
+  RunQueueStage_of_reading (markKeyChangeFor_extract_frame runQueueReading st tid k (fun _ _ => rfl))
+
+theorem markKeyChangeFrom_runQueueStage (pre post : SystemState) (tid : SeLe4n.ThreadId) :
+    SystemState.RunQueueStage post (markKeyChangeFrom pre post tid) :=
+  RunQueueStage_of_reading
+    (markKeyChangeFrom_extract_frame runQueueReading pre post tid (fun _ _ => rfl))
+
+theorem markKeyChangeFor_currentPlacementFrame (st : SystemState) (tid : SeLe4n.ThreadId)
+    (k : SeLe4n.Priority × SeLe4n.Deadline × SeLe4n.DomainId) (c : CoreId) :
+    SystemState.CurrentPlacementFrame c st (markKeyChangeFor st tid k) :=
+  SystemState.CurrentPlacementFrame.of_parts (markKeyChangeFor_currentOnCore _ _ _ _)
+    (SystemState.RunCoresAgree.of_objects (markKeyChangeFor_objects _ _ _))
+
+theorem markKeyChangeFrom_currentPlacementFrame (pre post : SystemState) (tid : SeLe4n.ThreadId)
+    (c : CoreId) : SystemState.CurrentPlacementFrame c post (markKeyChangeFrom pre post tid) :=
+  SystemState.CurrentPlacementFrame.of_parts (markKeyChangeFrom_currentOnCore _ _ _ _)
+    (SystemState.RunCoresAgree.of_objects (markKeyChangeFrom_objects _ _ _))
 
 end SeLe4n.Kernel

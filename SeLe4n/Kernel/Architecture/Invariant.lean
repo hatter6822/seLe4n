@@ -146,7 +146,16 @@ transition that would falsify a line's witness.  It reads exactly three fields
 — `perCoreICache` (via `icacheOnCore`) plus `objects` + `asidTable` (via
 `resolveAsidRoot`) — and none of `machine` / `scheduler` / `tlbShootdown`, so
 it transports through the adapter transitions *definitionally*, for the same
-reason the 9th and 13th do. -/
+reason the 9th and 13th do.
+
+WS-ZA ZA4.5: `runQueueRefined` added as the 17th component — every core's run
+queue agrees with the run-queue links its threads hold (`TCB.runCoreCode` and
+the link codes beside it) and with the core's queue ends
+(`SchedulerState.runQueueEnds`), as seL4 relates its abstract ready queues to
+`tcbSchedNext`/`tcbSchedPrev`.  It is what lets the executed scheduler read
+the links in place of the abstract queue.  It reads `objects` (the TCBs' run
+fields) and `scheduler` (the queues and their ends), so the adapter
+transitions frame it as they frame the scheduler conjuncts. -/
 def proofLayerInvariantBundle (st : SystemState) : Prop :=
   schedulerInvariantBundleFull st ∧
     capabilityInvariantBundle st ∧
@@ -163,7 +172,8 @@ def proofLayerInvariantBundle (st : SystemState) : Prop :=
     tlbInvalidationConsistent_perCore st ∧
     icacheCoherent_perCore st ∧
     ackBounded st.tlbShootdown ∧
-    auditLogBounded st.declassificationAuditLog
+    auditLogBounded st.declassificationAuditLog ∧
+    st.runQueueRefined
 
 /-- Proof-carrying local preservation hooks required to compose adapter paths with invariant bundles. -/
 structure AdapterProofHooks (contract : RuntimeBoundaryContract) where
@@ -418,7 +428,8 @@ private theorem default_schedulerInvariantBundle :
   · -- queueCurrentConsistent: current = none → True
     simp [queueCurrentConsistent, default_currentOnCore_none]
   · -- runQueueUnique: [].Nodup
-    exact List.nodup_nil
+    show ((default : SchedulerState).runQueueOnCore bootCoreId).toList.Nodup
+    simp
   · -- currentThreadValid: current = none → True
     simp [currentThreadValid, default_currentOnCore_none]
 
@@ -601,7 +612,8 @@ private theorem default_schedulerInvariantBundleFull :
    by
     unfold timeSlicePositive
     intro tid hMem
-    have : (default : SystemState).scheduler.runnable = [] := by decide
+    have : (default : SystemState).scheduler.runnable = [] := by
+      show ((default : SchedulerState).runQueueOnCore bootCoreId).toList = []; simp
     rw [this] at hMem; simp at hMem,
    by unfold currentTimeSlicePositive; simp [default_currentOnCore_none],
    by unfold edfCurrentHasEarliestDeadline; simp [default_currentOnCore_none],
@@ -609,16 +621,17 @@ private theorem default_schedulerInvariantBundleFull :
    default_runnableThreadsAreTCBs,
    by  -- R6-D: schedulerPriorityMatch — default runQueue empty, vacuously true
     intro tid hMem
-    have hFlat : ((default : SystemState).scheduler.runQueueOnCore bootCoreId).flat = [] := by decide
+    have hFlat : ((default : SystemState).scheduler.runQueueOnCore bootCoreId).toList = [] := by
+      show ((default : SchedulerState).runQueueOnCore bootCoreId).toList = []; simp
     have hInFlat := (RunQueue.mem_toList_iff_mem _ tid).mpr hMem
-    simp [RunQueue.toList, hFlat] at hInFlat,
+    simp [hFlat] at hInFlat,
    by  -- V5-H: domainTimeRemainingPositive — default domainTimeRemaining is 5
     unfold domainTimeRemainingPositive; decide,
    default_domainScheduleEntriesPositive⟩
 
 theorem default_system_state_proofLayerInvariantBundle :
     proofLayerInvariantBundle (default : SystemState) := by
-  refine ⟨?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_⟩
+  refine ⟨?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_⟩
   -- 1. schedulerInvariantBundleFull (WS-H12e: now uses full bundle)
   · exact default_schedulerInvariantBundleFull
   -- 2. capabilityInvariantBundle (6-tuple: unique, sound, bounded, completeness, acyclicity, depth)
@@ -665,7 +678,11 @@ theorem default_system_state_proofLayerInvariantBundle :
            default_schedContextBindingConsistent, default_effectiveParamsMatchRunQueue,
            default_boundThreadDomainConsistent⟩
   -- 11. notificationWaiterConsistent (AG7-D: empty objects → vacuous)
-  · intro oid _ _ hObj; exact default_objects_absurd hObj
+  · exact ⟨fun _ _ hObj => default_objects_absurd hObj,
+      fun _ _ _ hObj _ => default_objects_absurd hObj,
+      fun _ _ _ hObj _ => default_objects_absurd hObj,
+      fun _ _ _ _ hObj _ _ => default_objects_absurd hObj,
+      fun _ _ hObj _ => default_objects_absurd hObj⟩
   -- 12. pendingBounded (WS-SM SM7.B: boot shootdown state is quiescent)
   · exact default_tlbShootdown_pendingBounded
   -- 13. tlbInvalidationConsistent_perCore (WS-SM SM7.C: every core's boot
@@ -680,6 +697,8 @@ theorem default_system_state_proofLayerInvariantBundle :
   -- 16. auditLogBounded (WS-SM SM8.C.8: boot declassifies nothing, so the
   --     audit trail is empty and trivially within capacity)
   · exact default_auditLogBounded
+  -- 17. runQueueRefined (WS-ZA ZA4.5: no thread, every queue and its ends empty)
+  · exact SystemState.default_runQueueRefined
 
 -- ============================================================================
 -- M-08/WS-E6: Architecture assumption consumption bridge theorems
@@ -952,7 +971,7 @@ neither of which is term size or proof budget, so neither is fixable by raising
   which is precisely what fails here.  No amount of unfolding can bridge it.
 
 Each is bridged by a congruence lemma the codebase already carries
-(`dualQueueSystemInvariant_of_getElem_eq`, `blockingAcyclic_frame`,
+(`dualQueueSystemInvariant_of_readViewAgreement`, `blockingAcyclic_frame`,
 `serviceNontrivialPath_of_services_eq`), so the carriage below is composition
 rather than new proof.
 
@@ -968,8 +987,8 @@ private theorem ipcInvariantFull_setPerCoreTlb {st : SystemState}
     ipcInvariantFull { st with perCoreTlb := t } := by
   obtain ⟨c1, c2, c3, c4, c5, c6, c7, c8, c9, c10,
           c11, c12, c13, c14, c15, c16, c17, c18, c19, c20⟩ := h
-  exact ⟨c1, dualQueueSystemInvariant_of_getElem_eq (s1 := st)
-           (s2 := { st with perCoreTlb := t }) (fun _ => rfl) c2,
+  exact ⟨c1, dualQueueSystemInvariant_of_readViewAgreement (s1 := st)
+           (s2 := { st with perCoreTlb := t }) (.of_getElem_eq (fun _ => rfl)) c2,
          c3, c4, c5, c6, c7, c8, c9, c10,
          c11, c12, c13, c14, c15, c16, c17, c18, c19, c20⟩
 
@@ -1019,9 +1038,9 @@ private theorem ipcInvariantFull_setDeclassificationAuditLog {st : SystemState}
       { st with declassificationAuditLog := log, declassificationAuditEpoch := epoch } := by
   obtain ⟨c1, c2, c3, c4, c5, c6, c7, c8, c9, c10,
           c11, c12, c13, c14, c15, c16, c17, c18, c19, c20⟩ := h
-  exact ⟨c1, dualQueueSystemInvariant_of_getElem_eq (s1 := st)
+  exact ⟨c1, dualQueueSystemInvariant_of_readViewAgreement (s1 := st)
            (s2 := { st with declassificationAuditLog := log,
-                            declassificationAuditEpoch := epoch }) (fun _ => rfl) c2,
+                            declassificationAuditEpoch := epoch }) (.of_getElem_eq (fun _ => rfl)) c2,
          c3, c4, c5, c6, c7, c8, c9, c10,
          c11, c12, c13, c14, c15, c16, c17, c18, c19, c20⟩
 
@@ -1085,13 +1104,13 @@ theorem proofLayerInvariantBundle_setDeclassificationAuditTrail (st : SystemStat
       { st with declassificationAuditLog := log, declassificationAuditEpoch := epoch } := by
   obtain ⟨bSched, bCap, bCoreIpc, bCoupling, bLifecycle, bService, bVSpace,
           bCross, bTlb, bSchedExt, bNtfn, bPending, bPerCoreTlb,
-          bIcache, bAck, _bAuditPre⟩ := h
+          bIcache, bAck, _bAuditPre, bRun⟩ := h
   exact ⟨bSched, bCap, coreIpcInvariantBundle_setDeclassificationAuditLog bCoreIpc,
          ipcSchedulerCouplingInvariantBundle_setDeclassificationAuditLog bCoupling,
          bLifecycle, bService, bVSpace,
          crossSubsystemInvariant_setDeclassificationAuditLog bCross,
-         bTlb, bSchedExt, bNtfn, bPending, bPerCoreTlb,
-         bIcache, bAck, hBounded⟩
+         bTlb, bSchedExt, (notificationWaiterConsistent_of_objects_eq (st := st) rfl bNtfn), bPending, bPerCoreTlb,
+         bIcache, bAck, hBounded, bRun⟩
 
 /-- **WS-SM SM8.C.8**: the trail-only instance — an append leaves the epoch
 where it was, so a recording writer owes nothing about it. -/
@@ -1119,8 +1138,8 @@ private theorem ipcInvariantFull_setDeclassificationRefusals {st : SystemState}
     ipcInvariantFull { st with declassificationRefusals := L } := by
   obtain ⟨c1, c2, c3, c4, c5, c6, c7, c8, c9, c10,
           c11, c12, c13, c14, c15, c16, c17, c18, c19, c20⟩ := h
-  exact ⟨c1, dualQueueSystemInvariant_of_getElem_eq (s1 := st)
-           (s2 := { st with declassificationRefusals := L }) (fun _ => rfl) c2,
+  exact ⟨c1, dualQueueSystemInvariant_of_readViewAgreement (s1 := st)
+           (s2 := { st with declassificationRefusals := L }) (.of_getElem_eq (fun _ => rfl)) c2,
          c3, c4, c5, c6, c7, c8, c9, c10,
          c11, c12, c13, c14, c15, c16, c17, c18, c19, c20⟩
 
@@ -1168,13 +1187,13 @@ theorem proofLayerInvariantBundle_setDeclassificationRefusals (st : SystemState)
     proofLayerInvariantBundle { st with declassificationRefusals := L } := by
   obtain ⟨bSched, bCap, bCoreIpc, bCoupling, bLifecycle, bService, bVSpace,
           bCross, bTlb, bSchedExt, bNtfn, bPending, bPerCoreTlb,
-          bIcache, bAck, bAudit⟩ := h
+          bIcache, bAck, bAudit, bRun⟩ := h
   exact ⟨bSched, bCap, coreIpcInvariantBundle_setDeclassificationRefusals bCoreIpc,
          ipcSchedulerCouplingInvariantBundle_setDeclassificationRefusals bCoupling,
          bLifecycle, bService, bVSpace,
          crossSubsystemInvariant_setDeclassificationRefusals bCross,
-         bTlb, bSchedExt, bNtfn, bPending, bPerCoreTlb,
-         bIcache, bAck, bAudit⟩
+         bTlb, bSchedExt, (notificationWaiterConsistent_of_objects_eq (st := st) rfl bNtfn), bPending, bPerCoreTlb,
+         bIcache, bAck, bAudit, bRun⟩
 
 /-! ### WS-SM SM9.D.2 — `proofLayerInvariantBundle` carriage across a taint write
 
@@ -1194,8 +1213,8 @@ private theorem ipcInvariantFull_setDeclassificationTaint {st : SystemState}
     ipcInvariantFull { st with declassificationTaint := T } := by
   obtain ⟨c1, c2, c3, c4, c5, c6, c7, c8, c9, c10,
           c11, c12, c13, c14, c15, c16, c17, c18, c19, c20⟩ := h
-  exact ⟨c1, dualQueueSystemInvariant_of_getElem_eq (s1 := st)
-           (s2 := { st with declassificationTaint := T }) (fun _ => rfl) c2,
+  exact ⟨c1, dualQueueSystemInvariant_of_readViewAgreement (s1 := st)
+           (s2 := { st with declassificationTaint := T }) (.of_getElem_eq (fun _ => rfl)) c2,
          c3, c4, c5, c6, c7, c8, c9, c10,
          c11, c12, c13, c14, c15, c16, c17, c18, c19, c20⟩
 
@@ -1241,13 +1260,13 @@ theorem proofLayerInvariantBundle_setDeclassificationTaint (st : SystemState)
     proofLayerInvariantBundle { st with declassificationTaint := T } := by
   obtain ⟨bSched, bCap, bCoreIpc, bCoupling, bLifecycle, bService, bVSpace,
           bCross, bTlb, bSchedExt, bNtfn, bPending, bPerCoreTlb,
-          bIcache, bAck, bAudit⟩ := h
+          bIcache, bAck, bAudit, bRun⟩ := h
   exact ⟨bSched, bCap, coreIpcInvariantBundle_setDeclassificationTaint bCoreIpc,
          ipcSchedulerCouplingInvariantBundle_setDeclassificationTaint bCoupling,
          bLifecycle, bService, bVSpace,
          crossSubsystemInvariant_setDeclassificationTaint bCross,
-         bTlb, bSchedExt, bNtfn, bPending, bPerCoreTlb,
-         bIcache, bAck, bAudit⟩
+         bTlb, bSchedExt, (notificationWaiterConsistent_of_objects_eq (st := st) rfl bNtfn), bPending, bPerCoreTlb,
+         bIcache, bAck, bAudit, bRun⟩
 
 /-- **WS-SM SM7.F.5**: `proofLayerInvariantBundle` carriage across a write to
 `perCoreTlb`.
@@ -1268,7 +1287,7 @@ theorem proofLayerInvariantBundle_setPerCoreTlb (st : SystemState)
   exact ⟨bSched, bCap, coreIpcInvariantBundle_setPerCoreTlb bCoreIpc,
          ipcSchedulerCouplingInvariantBundle_setPerCoreTlb bCoupling,
          bLifecycle, bService, bVSpace, crossSubsystemInvariant_setPerCoreTlb bCross,
-         bTlb, bSchedExt, bNtfn, bPending, hPerCoreTlbConsistent,
+         bTlb, bSchedExt, (notificationWaiterConsistent_of_objects_eq (st := st) rfl bNtfn), bPending, hPerCoreTlbConsistent,
          bIcache, bAck⟩
 
 /-- U4-G/U4-H: advanceTimerState preserves serviceGraphInvariant.
@@ -1295,7 +1314,7 @@ theorem advanceTimerState_preserves_proofLayerInvariantBundle
   obtain ⟨hSched, hCap, hIpc, hCoupling, hLife, hSvc, hVsp, hCross, hTlb, hExt, hNWC, hPB, hPCT⟩ := hInv
   refine ⟨by exact hSched,
          advanceTimerState_preserves_capabilityInvariantBundle ticks st hCap,
-         ?_, ?_, by exact hLife, ?_, ?_, ?_, by exact hTlb, by exact hExt, by exact hNWC,
+         ?_, ?_, by exact hLife, ?_, ?_, ?_, by exact hTlb, by exact hExt, notificationWaiterConsistent_of_objects_eq (st := st) rfl hNWC,
          by exact hPB, by exact hPCT⟩
   -- coreIpcInvariantBundle
   · obtain ⟨hS, hC, hI⟩ := hIpc
@@ -1425,7 +1444,7 @@ theorem writeRegisterState_preserves_proofLayerInvariantBundle
   -- at the struct level; others need the rewrite for Lean to see through the record update
   refine ⟨?_, ?_, ?_, ?_, by exact hLife, ?_,
          writeRegisterState_preserves_vspaceInvariantBundle reg value st hVsp,
-         ?_, by exact hTlb, ?_, by exact hNWC, by exact hPB, by exact hPCT⟩
+         ?_, by exact hTlb, ?_, notificationWaiterConsistent_of_objects_eq (st := st) rfl hNWC, by exact hPB, by exact hPCT⟩
   -- schedulerInvariantBundleFull: swap contextMatchesCurrent
   · obtain ⟨hBase, hTs, hCts, hEdf, _, hRunn, hPri, hDom, hDomE⟩ := hSched
     exact ⟨hBase, hTs, hCts, hEdf, hCtx, hRunn, hPri, hDom, hDomE⟩
@@ -1630,8 +1649,9 @@ theorem contextSwitchState_preserves_proofLayerInvariantBundle
     show currentNotOnNotificationWaitList { st with machine := _, scheduler := _ }
     unfold currentNotOnNotificationWaitList; simp
     intro oid ntfn hObj
-    exact not_mem_waitingThreads_of_ipcState_ne st oid ntfn newTid tcb hNWC hObj hLookup
+    have h := not_mem_queueEnds_of_ipcState_ne st oid ntfn newTid tcb hNWC hObj hLookup
       (by rw [hIpcReady]; simp)
+    simpa [Notification.mem_queueEnds, not_or] using h
   -- currentThreadIpcReady for the post-state
   have hIpcReadyPost : currentThreadIpcReady (contextSwitchState newTid newRegs st) := by
     show currentThreadIpcReady { st with machine := _, scheduler := _ }
@@ -1724,7 +1744,7 @@ theorem contextSwitchState_preserves_proofLayerInvariantBundle
             hTs, hTsPost, hEdfPost, hCtxPost, hRunn, hPri, hDom, hDomE⟩,
            hBud, hBudgetPost, hWf, hRq, hBind, hEff, hBound⟩
   -- 11. notificationWaiterConsistent: objects unchanged
-  · exact hNWC
+  · exact notificationWaiterConsistent_of_objects_eq (st := st) rfl hNWC
 
 -- ============================================================================
 -- WS-J1-D: Register decode consistency predicate

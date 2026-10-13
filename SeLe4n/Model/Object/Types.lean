@@ -14,7 +14,6 @@ import SeLe4n.Kernel.RobinHood
 -- (`Kernel.SchedContext` also re-exports the budget operations and their
 -- invariants, which would sit on the model layer's critical path).
 import SeLe4n.Kernel.SchedContext.Types
-import SeLe4n.Model.Object.NoDupList
 import SeLe4n.Model.Object.UniqueSlotMap
 
 namespace SeLe4n.Model
@@ -957,6 +956,38 @@ inductive QueuePPrev where
   | tcbNext (tid : SeLe4n.ThreadId)
   deriving Repr, DecidableEq
 
+namespace QueuePPrev
+
+/-- An optional back-pointer as one scalar: `0` for `none`, `1` for the queue
+head, `t + 2` for `tcbNext t`.  A bijection with `Option QueuePPrev`, for the
+reason `SeLe4n.ThreadId.optCode` gives: the `Option` and the `tcbNext` payload
+are each a heap cell, the code is a scalar. -/
+@[inline] def optCode : Option QueuePPrev → Nat
+  | none => 0
+  | some .endpointHead => 1
+  | some (.tcbNext t) => t.val + 2
+
+/-- The optional back-pointer a code stands for; inverse of `optCode`. -/
+@[inline] def ofOptCode : Nat → Option QueuePPrev
+  | 0 => none
+  | 1 => some .endpointHead
+  | k + 2 => some (.tcbNext ⟨k⟩)
+
+@[simp] theorem ofOptCode_optCode (o : Option QueuePPrev) : ofOptCode (optCode o) = o := by
+  rcases o with _ | _ | _ <;> rfl
+
+@[simp] theorem optCode_ofOptCode (n : Nat) : optCode (ofOptCode n) = n := by
+  rcases n with _ | _ | _ <;> rfl
+
+@[simp] theorem ofOptCode_zero : ofOptCode 0 = none := rfl
+
+@[simp] theorem optCode_none : optCode none = 0 := rfl
+
+@[simp] theorem ofOptCode_eq_none_iff (n : Nat) : ofOptCode n = none ↔ n = 0 := by
+  rcases n with _ | _ | _ <;> simp [ofOptCode]
+
+end QueuePPrev
+
 structure TCB where
   tid : SeLe4n.ThreadId
   priority : SeLe4n.Priority
@@ -977,15 +1008,19 @@ structure TCB where
       priority level. 0 = no deadline (lowest urgency). Lower nonzero
       values are more urgent. -/
   deadline : SeLe4n.Deadline := ⟨0⟩
-  /-- WS-E4/M-01 intrusive queue linkage for endpoint dual queues.
-      `none`/`none` means detached from intrusive endpoint wait queues. -/
-  queuePrev : Option SeLe4n.ThreadId := none
-  /-- Pointer-to-previous-link metadata (`v0.12.1`, O(1) arbitrary removal).
-      `endpointHead` means this node is currently referenced by queue head;
-      `tcbNext prevTid` means it is referenced by `prevTid.queueNext`.
-      Cleared when detached from intrusive endpoint wait queues. -/
-  queuePPrev : Option QueuePPrev := none
-  queueNext : Option SeLe4n.ThreadId := none
+  /-- WS-E4/M-01 intrusive queue linkage, stored as a scalar code
+      (`SeLe4n.ThreadId.optCode`) and read through `TCB.queuePrev`.  A code of
+      `0` (`none`) means detached from every intrusive wait queue. -/
+  queuePrevCode : Nat := 0
+  /-- Pointer-to-previous-link metadata (`v0.12.1`, O(1) arbitrary removal),
+      stored as a scalar code (`QueuePPrev.optCode`) and read through
+      `TCB.queuePPrev`.  `endpointHead` means this node is referenced by its
+      queue's head; `tcbNext prevTid` means it is referenced by
+      `prevTid.queueNext`.  Cleared when detached. -/
+  queuePPrevCode : Nat := 0
+  /-- The successor link, stored as a scalar code and read through
+      `TCB.queueNext`. -/
+  queueNextCode : Nat := 0
   /-- WS-F1: Pending IPC message for transfer during endpoint rendezvous.
       Stored in the sender's TCB while blocked; transferred to the receiver
       on handshake/dequeue. `none` = no pending message. -/
@@ -1125,7 +1160,148 @@ structure TCB where
       `registerContext`: it is the thread's own state, and the lazy switch is
       what keeps any other thread from reading it.  Zero for a fresh thread. -/
   fpContext : SeLe4n.FpContext := default
+  /-- The predecessor in the notification wait queue this thread is on, as a
+      scalar code (`SeLe4n.ThreadId.optCode`), read through `TCB.ntfnPrev`.
+      A notification queue links through this pair rather than the endpoint
+      links: a thread waits on at most one object (its `ipcState` names it),
+      and keeping the pairs apart leaves every endpoint-queue invariant blind
+      to notifications.  `0` when the thread waits on no notification or is
+      its queue's head. -/
+  ntfnPrevCode : Nat := 0
+  /-- The successor in the notification wait queue, read through
+      `TCB.ntfnNext`; `0` at the tail and off every notification queue. -/
+  ntfnNextCode : Nat := 0
+  /-- WS-ZA ZA4.5: the run queue this thread is on, as a code: `0` on none,
+      `c + 1` on core `c`'s.  A thread is on at most one run queue, as in seL4,
+      where `tcbQueued` is one flag and the links below are one set; the core
+      code is what keeps one core's queue from reading another core's links.
+      Read through `TCB.runCore?`. -/
+  runCoreCode : Nat := 0
+  /-- The priority bucket the thread is queued in.  Meaningful only while
+      `runCoreCode ≠ 0`; a thread leaving the queue keeps its last value. -/
+  runPrio : SeLe4n.Priority := ⟨0⟩
+  /-- The predecessor in its core's queue of runnable threads, as a code
+      (`LinkedQueue.code`: `0` at the head), as seL4's `tcbSchedPrev`. -/
+  runPrevCode : Nat := 0
+  /-- The successor in its core's queue, `0` at the tail (`tcbSchedNext`). -/
+  runNextCode : Nat := 0
+  /-- The predecessor in its priority bucket, `0` at the bucket's head. -/
+  runBucketPrevCode : Nat := 0
+  /-- The successor in its priority bucket, `0` at the bucket's tail. -/
+  runBucketNextCode : Nat := 0
   deriving Repr
+
+/-- WS-ZA ZA4.5: where a thread runs — its home core and its place in a run
+queue.  The affinity setter and the scheduler's run-queue writes are the only
+writes to these fields; every other TCB write is a record update of fields
+outside them, so one frame over this projection carries both the home core
+(`determineTargetCore`) and the run queue's links (`runQueueRefined`) across
+it. -/
+structure TcbPlacement where
+  cpuAffinity : Option SeLe4n.Kernel.Concurrency.CoreId
+  runCoreCode : Nat
+  runPrio : SeLe4n.Priority
+  runPrevCode : Nat
+  runNextCode : Nat
+  runBucketPrevCode : Nat
+  runBucketNextCode : Nat
+
+/-- A thread's placement fields (`TcbPlacement`). -/
+def TCB.placement (t : TCB) : TcbPlacement :=
+  ⟨t.cpuAffinity, t.runCoreCode, t.runPrio, t.runPrevCode, t.runNextCode,
+    t.runBucketPrevCode, t.runBucketNextCode⟩
+
+/-- A placement frame is an affinity frame. -/
+theorem TCB.map_cpuAffinity_of_placement {o o' : Option TCB}
+    (h : o.map TCB.placement = o'.map TCB.placement) :
+    o.map (·.cpuAffinity) = o'.map (·.cpuAffinity) := by
+  cases o <;> cases o' <;> simp_all [TCB.placement]
+
+/-- The predecessor link, read from its scalar code (`TCB.queuePrevCode`). -/
+@[inline] def TCB.queuePrev (t : TCB) : Option SeLe4n.ThreadId :=
+  SeLe4n.ThreadId.ofOptCode t.queuePrevCode
+
+/-- The back-pointer, read from its scalar code (`TCB.queuePPrevCode`). -/
+@[inline] def TCB.queuePPrev (t : TCB) : Option QueuePPrev :=
+  QueuePPrev.ofOptCode t.queuePPrevCode
+
+/-- The successor link, read from its scalar code (`TCB.queueNextCode`). -/
+@[inline] def TCB.queueNext (t : TCB) : Option SeLe4n.ThreadId :=
+  SeLe4n.ThreadId.ofOptCode t.queueNextCode
+
+/-! The views through a record built field by field, and the fold back to a
+view when a code is copied from another record: together they let `simp` read
+a written link as the value written and an untouched link as the old view. -/
+
+@[simp] theorem TCB.queuePrev_mk (f1 f2 f3 f4 f5 f6 f7 f8 f9 f10 f11 f12 f13 f14 f15 f16 f17 f18 f19 f20 f21 f22 f23 f24 f25 f26 f27 f28 f29 f30 f31 f32 f33 f34 f35) :
+    (TCB.mk f1 f2 f3 f4 f5 f6 f7 f8 f9 f10 f11 f12 f13 f14 f15 f16 f17 f18 f19 f20 f21 f22 f23 f24 f25 f26 f27 f28 f29 f30 f31 f32 f33 f34 f35).queuePrev = SeLe4n.ThreadId.ofOptCode f11 := rfl
+
+@[simp] theorem TCB.queuePPrev_mk (f1 f2 f3 f4 f5 f6 f7 f8 f9 f10 f11 f12 f13 f14 f15 f16 f17 f18 f19 f20 f21 f22 f23 f24 f25 f26 f27 f28 f29 f30 f31 f32 f33 f34 f35) :
+    (TCB.mk f1 f2 f3 f4 f5 f6 f7 f8 f9 f10 f11 f12 f13 f14 f15 f16 f17 f18 f19 f20 f21 f22 f23 f24 f25 f26 f27 f28 f29 f30 f31 f32 f33 f34 f35).queuePPrev = QueuePPrev.ofOptCode f12 := rfl
+
+@[simp] theorem TCB.queueNext_mk (f1 f2 f3 f4 f5 f6 f7 f8 f9 f10 f11 f12 f13 f14 f15 f16 f17 f18 f19 f20 f21 f22 f23 f24 f25 f26 f27 f28 f29 f30 f31 f32 f33 f34 f35) :
+    (TCB.mk f1 f2 f3 f4 f5 f6 f7 f8 f9 f10 f11 f12 f13 f14 f15 f16 f17 f18 f19 f20 f21 f22 f23 f24 f25 f26 f27 f28 f29 f30 f31 f32 f33 f34 f35).queueNext = SeLe4n.ThreadId.ofOptCode f13 := rfl
+
+/-- The notification-queue predecessor, read from its scalar code. -/
+@[inline] def TCB.ntfnPrev (t : TCB) : Option SeLe4n.ThreadId :=
+  SeLe4n.ThreadId.ofOptCode t.ntfnPrevCode
+
+/-- The notification-queue successor, read from its scalar code. -/
+@[inline] def TCB.ntfnNext (t : TCB) : Option SeLe4n.ThreadId :=
+  SeLe4n.ThreadId.ofOptCode t.ntfnNextCode
+
+@[simp] theorem TCB.ntfnPrev_mk (f1 f2 f3 f4 f5 f6 f7 f8 f9 f10 f11 f12 f13 f14 f15 f16 f17 f18 f19 f20 f21 f22 f23 f24 f25 f26 f27 f28 f29 f30 f31 f32 f33 f34 f35) :
+    (TCB.mk f1 f2 f3 f4 f5 f6 f7 f8 f9 f10 f11 f12 f13 f14 f15 f16 f17 f18 f19 f20 f21 f22 f23 f24 f25 f26 f27 f28 f29 f30 f31 f32 f33 f34 f35).ntfnPrev = SeLe4n.ThreadId.ofOptCode f28 := rfl
+
+@[simp] theorem TCB.ntfnNext_mk (f1 f2 f3 f4 f5 f6 f7 f8 f9 f10 f11 f12 f13 f14 f15 f16 f17 f18 f19 f20 f21 f22 f23 f24 f25 f26 f27 f28 f29 f30 f31 f32 f33 f34 f35) :
+    (TCB.mk f1 f2 f3 f4 f5 f6 f7 f8 f9 f10 f11 f12 f13 f14 f15 f16 f17 f18 f19 f20 f21 f22 f23 f24 f25 f26 f27 f28 f29 f30 f31 f32 f33 f34 f35).ntfnNext = SeLe4n.ThreadId.ofOptCode f29 := rfl
+
+@[simp] theorem TCB.ofOptCode_ntfnPrevCode (t : TCB) :
+    SeLe4n.ThreadId.ofOptCode t.ntfnPrevCode = t.ntfnPrev := rfl
+
+@[simp] theorem TCB.ofOptCode_ntfnNextCode (t : TCB) :
+    SeLe4n.ThreadId.ofOptCode t.ntfnNextCode = t.ntfnNext := rfl
+
+@[simp] theorem TCB.optCode_ntfnPrev (t : TCB) :
+    SeLe4n.ThreadId.optCode t.ntfnPrev = t.ntfnPrevCode :=
+  SeLe4n.ThreadId.optCode_ofOptCode _
+
+@[simp] theorem TCB.optCode_ntfnNext (t : TCB) :
+    SeLe4n.ThreadId.optCode t.ntfnNext = t.ntfnNextCode :=
+  SeLe4n.ThreadId.optCode_ofOptCode _
+
+@[simp] theorem TCB.ofOptCode_queuePrevCode (t : TCB) :
+    SeLe4n.ThreadId.ofOptCode t.queuePrevCode = t.queuePrev := rfl
+
+@[simp] theorem TCB.ofOptCode_queuePPrevCode (t : TCB) :
+    QueuePPrev.ofOptCode t.queuePPrevCode = t.queuePPrev := rfl
+
+@[simp] theorem TCB.ofOptCode_queueNextCode (t : TCB) :
+    SeLe4n.ThreadId.ofOptCode t.queueNextCode = t.queueNext := rfl
+
+@[simp] theorem TCB.optCode_queuePrev (t : TCB) :
+    SeLe4n.ThreadId.optCode t.queuePrev = t.queuePrevCode :=
+  SeLe4n.ThreadId.optCode_ofOptCode _
+
+@[simp] theorem TCB.optCode_queuePPrev (t : TCB) :
+    QueuePPrev.optCode t.queuePPrev = t.queuePPrevCode :=
+  QueuePPrev.optCode_ofOptCode _
+
+@[simp] theorem TCB.optCode_queueNext (t : TCB) :
+    SeLe4n.ThreadId.optCode t.queueNext = t.queueNextCode :=
+  SeLe4n.ThreadId.optCode_ofOptCode _
+
+theorem TCB.queuePrevCode_eq (t : TCB) :
+    t.queuePrevCode = SeLe4n.ThreadId.optCode t.queuePrev :=
+  (SeLe4n.ThreadId.optCode_ofOptCode _).symm
+
+theorem TCB.queuePPrevCode_eq (t : TCB) :
+    t.queuePPrevCode = QueuePPrev.optCode t.queuePPrev :=
+  (QueuePPrev.optCode_ofOptCode _).symm
+
+theorem TCB.queueNextCode_eq (t : TCB) :
+    t.queueNextCode = SeLe4n.ThreadId.optCode t.queueNext :=
+  (SeLe4n.ThreadId.optCode_ofOptCode _).symm
 
 /-- **WS-OD OD3.9**: the link update a removal writes to the **predecessor** of
 the node it unlinks — the predecessor's `queueNext` skips over `removed`.
@@ -1136,7 +1312,7 @@ answers: `endpointQueueRemove`, `endpointQueueRemoveDual` and
 `spliceOutMidQueueNode` each spelled the pair inline, and the third of them
 disagreed with the other two — see `queueUnlinkSuccessor`. -/
 def queueUnlinkPredecessor (removed : TCB) : TCB → TCB :=
-  fun p => { p with queueNext := removed.queueNext }
+  fun p => { p with queueNextCode := removed.queueNextCode }
 
 /-- **WS-OD OD3.9**: the link update a removal writes to the **successor** of the
 node it unlinks — the successor inherits `removed`'s `queuePrev` *and* its
@@ -1159,7 +1335,7 @@ divergence down as a design decision ("the two patches take different `upd`
 functions and not one") rather than as the defect it was.  One definition is what
 makes a fourth removal impossible to get wrong. -/
 def queueUnlinkSuccessor (removed : TCB) : TCB → TCB :=
-  fun n => { n with queuePrev := removed.queuePrev, queuePPrev := removed.queuePPrev }
+  fun n => { n with queuePrevCode := removed.queuePrevCode, queuePPrevCode := removed.queuePPrevCode }
 
 /-- **WS-RR RR8.3**: `queuePPrev` agrees with `queuePrev` — the relation the
 dual-queue removal's `pprevConsistent` guard checks, stated pointwise at the
@@ -1322,7 +1498,14 @@ instance : BEq TCB where
     a.pendingFault == b.pendingFault &&
     -- WS-BP BP7.9: the saved FP/SIMD context participates in structural
     -- equality.  `FpContext` derives `DecidableEq`, so its `==` agrees with `=`.
-    a.fpContext == b.fpContext
+    a.fpContext == b.fpContext &&
+    -- WS-ZA ZA4.4: the notification-queue links participate in structural
+    -- equality, compared as their scalar codes.
+    a.ntfnPrevCode == b.ntfnPrevCode && a.ntfnNextCode == b.ntfnNextCode &&
+    -- WS-ZA ZA4.5: and the run-queue links, core and bucket.
+    a.runCoreCode == b.runCoreCode && a.runPrio == b.runPrio &&
+    a.runPrevCode == b.runPrevCode && a.runNextCode == b.runNextCode &&
+    a.runBucketPrevCode == b.runBucketPrevCode && a.runBucketNextCode == b.runBucketNextCode
 
 /-- AJ4-D (L-09): Detect sentinel-initialized (unconfigured) TCBs.
     Returns `true` if the TCB's identity or address-space references use
@@ -1403,6 +1586,24 @@ theorem TCB.boostedPriority_congr {a b : TCB}
     a.boostedPriority = b.boostedPriority := by
   simp only [TCB.boostedPriority_eq, hp, hb]
 
+/-- WS-ZA ZA4.4: `a` is `b` with (only) its two notification-queue links
+rewritten — every write the notification queue makes to a TCB beyond the
+waiter's own state: the link-in of a new waiter and its old tail, and the
+unlink's neighbours.  Every other field, the endpoint-queue links included, is
+`b`'s. -/
+def tcbNtfnLinkRewrite (a b : TCB) : Prop :=
+  ∃ np nn, a = { b with ntfnPrevCode := np, ntfnNextCode := nn }
+
+theorem tcbNtfnLinkRewrite.refl (a : TCB) : tcbNtfnLinkRewrite a a :=
+  ⟨a.ntfnPrevCode, a.ntfnNextCode, rfl⟩
+
+theorem tcbNtfnLinkRewrite.trans {a b c : TCB}
+    (h1 : tcbNtfnLinkRewrite a b) (h2 : tcbNtfnLinkRewrite b c) :
+    tcbNtfnLinkRewrite a c := by
+  obtain ⟨p1, n1, rfl⟩ := h1
+  obtain ⟨p2, n2, rfl⟩ := h2
+  exact ⟨p1, n1, rfl⟩
+
 /-- **A thread restored to the runnable shape** -- the field clear performed on a
 thread whose blocking IPC ends, as a function of the record.
 
@@ -1425,9 +1626,9 @@ argument stages on top, which is why that helper takes one and this does not. -/
 @[inline] def TCB.restoredToReady (tcb : TCB) : TCB :=
   { tcb with
       ipcState := .ready
-      queuePrev := none
-      queueNext := none
-      queuePPrev := none
+      queuePrevCode := 0
+      queueNextCode := 0
+      queuePPrevCode := 0
       pendingReceiveReply := none }
 
 /-- Transparent to `simp`, for the reason `TCB.boostedPriority_eq` above is: a
@@ -1437,9 +1638,9 @@ that, so single-sourcing the clear costs no existing proof. -/
     tcb.restoredToReady =
       { tcb with
           ipcState := .ready
-          queuePrev := none
-          queueNext := none
-          queuePPrev := none
+          queuePrevCode := 0
+          queueNextCode := 0
+          queuePPrevCode := 0
           pendingReceiveReply := none } := rfl
 
 /-- **WS-RR RR8.16 (`v0.35.190`): what a CDT revocation may do to a message in
@@ -1555,13 +1756,34 @@ theorem TCB.ext {a b : TCB}
     -- WS-RR RR4: extensionality covers the outstanding-fault field.
     (hPendFault : a.pendingFault = b.pendingFault)
     -- WS-BP BP7.9: extensionality covers the saved FP/SIMD context.
-    (hFp : a.fpContext = b.fpContext) :
+    (hFp : a.fpContext = b.fpContext)
+    -- WS-ZA ZA4.4: and the notification-queue links.
+    (hNPrev : a.ntfnPrev = b.ntfnPrev)
+    (hNNext : a.ntfnNext = b.ntfnNext)
+    -- WS-ZA ZA4.5: and the run-queue links, core and bucket.
+    (hRCore : a.runCoreCode = b.runCoreCode) (hRPrio : a.runPrio = b.runPrio)
+    (hRPrev : a.runPrevCode = b.runPrevCode) (hRNext : a.runNextCode = b.runNextCode)
+    (hRBPrev : a.runBucketPrevCode = b.runBucketPrevCode)
+    (hRBNext : a.runBucketNextCode = b.runBucketNextCode) :
     a = b := by
+  have hNPrevC : a.ntfnPrevCode = b.ntfnPrevCode := by
+    rw [← TCB.optCode_ntfnPrev a, ← TCB.optCode_ntfnPrev b, hNPrev]
+  have hNNextC : a.ntfnNextCode = b.ntfnNextCode := by
+    rw [← TCB.optCode_ntfnNext a, ← TCB.optCode_ntfnNext b, hNNext]
+  clear hNPrev hNNext
+  have hQPrevC : a.queuePrevCode = b.queuePrevCode := by
+    rw [TCB.queuePrevCode_eq a, TCB.queuePrevCode_eq b, hQPrev]
+  have hQPPrevC : a.queuePPrevCode = b.queuePPrevCode := by
+    rw [TCB.queuePPrevCode_eq a, TCB.queuePPrevCode_eq b, hQPPrev]
+  have hQNextC : a.queueNextCode = b.queueNextCode := by
+    rw [TCB.queueNextCode_eq a, TCB.queueNextCode_eq b, hQNext]
+  clear hQPrev hQPPrev hQNext
   cases a; cases b
   simp at *
   exact ⟨hTid, hPrio, hDom, hCsp, hVsp, hBuf, hIpc, hTs, hSlice, hDeadline,
-         hQPrev, hQPPrev, hQNext, hPend, hRC, hFh, hBn, hSc, hTb, hMcp, hPip, hTo,
-         hCpuAff, hReply, hPendReply, hPendFault, hFp⟩
+         hQPrevC, hQPPrevC, hQNextC, hPend, hRC, hFh, hBn, hSc, hTb, hMcp, hPip, hTo,
+         hCpuAff, hReply, hPendReply, hPendFault, hFp, hNPrevC, hNNextC,
+         hRCore, hRPrio, hRPrev, hRNext, hRBPrev, hRBNext⟩
 
 /-- Intrusive FIFO queue metadata for endpoint wait queues.
 
@@ -1671,7 +1893,21 @@ def tcbWithQueueLinks
     (prev : Option SeLe4n.ThreadId)
     (pprev : Option QueuePPrev)
     (next : Option SeLe4n.ThreadId) : TCB :=
-  { tcb with queuePrev := prev, queuePPrev := pprev, queueNext := next }
+  { tcb with queuePrevCode := SeLe4n.ThreadId.optCode prev,
+             queuePPrevCode := QueuePPrev.optCode pprev,
+             queueNextCode := SeLe4n.ThreadId.optCode next }
+
+@[simp] theorem tcbWithQueueLinks_queuePrev (tcb : TCB) (prev pprev next) :
+    (tcbWithQueueLinks tcb prev pprev next).queuePrev = prev := by
+  simp [tcbWithQueueLinks]
+
+@[simp] theorem tcbWithQueueLinks_queuePPrev (tcb : TCB) (prev pprev next) :
+    (tcbWithQueueLinks tcb prev pprev next).queuePPrev = pprev := by
+  simp [tcbWithQueueLinks]
+
+@[simp] theorem tcbWithQueueLinks_queueNext (tcb : TCB) (prev pprev next) :
+    (tcbWithQueueLinks tcb prev pprev next).queueNext = next := by
+  simp [tcbWithQueueLinks]
 
 /-- **WS-RR RR8.3**: the pairing condition on the *values* a link store writes.
 
@@ -1742,6 +1978,8 @@ theorem tcbWithQueueLinks_queuePPrevAgreesWithPrev
     {next : Option SeLe4n.ThreadId} (h : queueLinkPairAgrees prev pprev) :
     (tcbWithQueueLinks tcb prev pprev next).queuePPrevAgreesWithPrev := by
   unfold TCB.queuePPrevAgreesWithPrev tcbWithQueueLinks
+  simp only [TCB.queuePPrev_mk, TCB.queuePrev_mk, QueuePPrev.ofOptCode_optCode,
+    SeLe4n.ThreadId.ofOptCode_optCode]
   unfold queueLinkPairAgrees at h
   cases pprev with
   | none => exact h
@@ -1989,62 +2227,21 @@ inductive NotificationState where
 
 `active` stores a single pending badge, while `waiting` tracks blocked receivers.
 
-**S4-G: `waitingThreads` representation evaluation.** An intrusive queue
-(matching the endpoint dual-queue design) was evaluated and not implemented:
-
-1. **Low cardinality.** Unlike endpoint send/receive queues which can grow to
-   hundreds of threads in server workloads, notification waiting lists are
-   typically short (1-3 threads). The seL4 spec notes that most notifications
-   are 1:1 or 1:N with small N.
-
-2. **No ordering requirement.** `notificationSignal` wakes the head waiter
-   (`List.head?`), but seL4 does not guarantee FIFO ordering for notification
-   waiters. Any waiter may be woken, so the prepend-based O(1) enqueue in
-   `notificationWait` is semantically correct.
-
-3. **O(n) cost is acceptable.** The only O(n) operation is
-   `List.filter` in `removeFromAllNotificationWaitLists` (lifecycle cleanup),
-   which iterates over all notifications' waiting lists during TCB deletion.
-   With the expected bound of ≤8 waiters per notification (typical RPi5 core
-   count), this is effectively O(1).
-
-4. **Migration cost.** Intrusive queues require adding `notifQueuePrev`/
-   `notifQueueNext` fields to TCB (6 new fields including PPrev metadata),
-   duplicating the endpoint queue infrastructure for minimal benefit.
-
-The `List` representation is retained. If future profiling reveals notification
-queue pressure, migration to intrusive queues remains straightforward. -/
+**The wait queue links through the waiting TCBs** (WS-ZA ZA4.4).  The
+notification holds the queue's head and tail, as scalar codes
+(`SeLe4n.ThreadId.optCode`), and each waiter its predecessor and successor
+(`TCB.ntfnPrev`, `TCB.ntfnNext`).  A wait appends at the tail and a signal
+wakes the head, first in first out as seL4's `tcbEPAppend`/`tcbEPDequeue`;
+cancellation unlinks a waiter in place.  Nothing on these paths allocates:
+the list this replaced built a cell for every wait. -/
 structure Notification where
   state : NotificationState
-  /-- T5-L (M-MOD-6): Blocked waiter list. Uses `List.cons` prepend (LIFO ordering),
-      matching seL4's notification wait semantics. `notificationWait` prepends the
-      caller's ThreadId, and `notificationSignal` wakes via `List.head?` (most
-      recently blocked waiter). This LIFO order is deliberate: seL4 does not
-      guarantee FIFO for notification waiters, and prepend gives O(1) enqueue.
-      Thread removal during lifecycle cleanup uses `List.filter` (O(n), acceptable
-      for ≤8 waiters per notification).
-
-      **WS-RC R4.C (DEEP-IPC-05; subsumes DEEP-IPC-01)**: the list-level
-      no-duplicate property is carried **structurally** by
-      `SeLe4n.NoDupList SeLe4n.ThreadId`, materialised in
-      `SeLe4n/Model/Object/NoDupList.lean`. The wrapper exposes
-      `val : List SeLe4n.ThreadId` plus a proof `hNodup : val.Nodup`, so
-      every reachable notification has a duplicate-free waiter list by
-      construction. The smart constructors `NoDupList.empty`,
-      `NoDupList.consWithGuard?`, `NoDupList.filter`, and `NoDupList.tail?`
-      discharge the obligation at every mutation site (`Endpoint.lean`,
-      `Cleanup.lean`, `FrozenOps/Operations.lean`).  The runtime duplicate
-      guard at `IPC/Operations/Endpoint.lean` is subsumed by
-      `NoDupList.consWithGuard?` (which returns `none` for a duplicate and
-      is consumed as `.error .alreadyWaiting`); the historical state-level
-      `SeLe4n.Kernel.uniqueWaiters` predicate was deleted in the WS-RC R4.C
-      close-out (per-Notification discharge is now via
-      `SeLe4n.Kernel.notification_waiters_nodup`).  The structural-witness
-      theorems `SeLe4n.Kernel.notification_waiters_nodup` and
-      `SeLe4n.Kernel.notificationWait_runtime_check_implied_by_nodup` (in
-      `IPC/Invariant/QueueNoDup.lean`) codify this closure at the proof
-      surface, per the WS-RC §1.5 structural-fix policy. -/
-  waitingThreads : SeLe4n.NoDupList SeLe4n.ThreadId
+  /-- The wait queue's head, as a scalar code; read through
+      `Notification.waitHead`.  `0` when no thread waits. -/
+  waitHeadCode : Nat := 0
+  /-- The wait queue's tail, as a scalar code; read through
+      `Notification.waitTail`. -/
+  waitTailCode : Nat := 0
   /-- Whether a badge is pending.  The pending badge is stored as a flag plus a
       machine word (`pendingWord`) rather than an `Option SeLe4n.Badge`: an
       `Option` around a 64-bit scalar is a heap cell, so every signal that left
@@ -2083,14 +2280,129 @@ structure Notification where
 @[inline] def Notification.pendingBadge (n : Notification) : Option SeLe4n.Badge :=
   if n.hasPendingBadge then some n.pendingWord else none
 
-@[simp] theorem Notification.pendingBadge_mk (s w h p c b) :
-    (Notification.mk s w h p c b).pendingBadge = if h then some p else none := rfl
+@[simp] theorem Notification.pendingBadge_mk (s hd tl h p c b) :
+    (Notification.mk s hd tl h p c b).pendingBadge = if h then some p else none := rfl
 
-@[simp] theorem Notification.pendingBadge_mk_true (s w p c b) :
-    (Notification.mk s w true p c b).pendingBadge = some p := rfl
+@[simp] theorem Notification.pendingBadge_mk_true (s hd tl p c b) :
+    (Notification.mk s hd tl true p c b).pendingBadge = some p := rfl
 
-@[simp] theorem Notification.pendingBadge_mk_false (s w p c b) :
-    (Notification.mk s w false p c b).pendingBadge = none := rfl
+@[simp] theorem Notification.pendingBadge_mk_false (s hd tl p c b) :
+    (Notification.mk s hd tl false p c b).pendingBadge = none := rfl
+
+/-- The first waiter, read from its scalar code. -/
+@[inline] def Notification.waitHead (n : Notification) : Option SeLe4n.ThreadId :=
+  SeLe4n.ThreadId.ofOptCode n.waitHeadCode
+
+/-- The last waiter, read from its scalar code. -/
+@[inline] def Notification.waitTail (n : Notification) : Option SeLe4n.ThreadId :=
+  SeLe4n.ThreadId.ofOptCode n.waitTailCode
+
+@[simp] theorem Notification.waitHead_mk (s hd tl h p c b) :
+    (Notification.mk s hd tl h p c b).waitHead = SeLe4n.ThreadId.ofOptCode hd := rfl
+
+@[simp] theorem Notification.waitTail_mk (s hd tl h p c b) :
+    (Notification.mk s hd tl h p c b).waitTail = SeLe4n.ThreadId.ofOptCode tl := rfl
+
+@[simp] theorem Notification.ofOptCode_waitHeadCode (n : Notification) :
+    SeLe4n.ThreadId.ofOptCode n.waitHeadCode = n.waitHead := rfl
+
+@[simp] theorem Notification.ofOptCode_waitTailCode (n : Notification) :
+    SeLe4n.ThreadId.ofOptCode n.waitTailCode = n.waitTail := rfl
+
+@[simp] theorem Notification.optCode_waitHead (n : Notification) :
+    SeLe4n.ThreadId.optCode n.waitHead = n.waitHeadCode :=
+  SeLe4n.ThreadId.optCode_ofOptCode _
+
+@[simp] theorem Notification.optCode_waitTail (n : Notification) :
+    SeLe4n.ThreadId.optCode n.waitTail = n.waitTailCode :=
+  SeLe4n.ThreadId.optCode_ofOptCode _
+
+/-- WS-ZA ZA4.4: the threads a notification names itself — the two ends of its
+wait queue.  The waiters between them are reached through those threads' own
+links (`TCB.ntfnNext` / `TCB.ntfnPrev`), not through the notification. -/
+def Notification.queueEnds (n : Notification) : List SeLe4n.ThreadId :=
+  n.waitHead.toList ++ n.waitTail.toList
+
+@[simp] theorem Notification.mem_queueEnds (n : Notification) (tid : SeLe4n.ThreadId) :
+    tid ∈ n.queueEnds ↔ n.waitHead = some tid ∨ n.waitTail = some tid := by
+  unfold Notification.queueEnds
+  cases n.waitHead <;> cases n.waitTail <;> simp [eq_comm]
+
+/-- WS-ZA ZA4.4: the notification once its head waiter is woken.  `next` is the
+woken head's successor (its `ntfnNext`): it heads the queue, and when there is
+none the queue is empty and the notification idle.  No badge is pending — a
+notification with waiters holds none — and the binding is carried. -/
+@[inline] def Notification.withHeadPopped (n : Notification)
+    (next : Option SeLe4n.ThreadId) : Notification :=
+  { state := if next.isSome then .waiting else .idle
+    waitHeadCode := SeLe4n.ThreadId.optCode next
+    waitTailCode := if next.isSome then n.waitTailCode else 0
+    hasPendingBadge := false, pendingWord := SeLe4n.Badge.zero
+    boundTCB := n.boundTCB }
+
+/-- WS-ZA ZA4.4: the notification once `waiter` joins the back of its queue: the
+waiter is the new tail, and the head too when the queue was empty. -/
+@[inline] def Notification.withWaiterAppended (n : Notification)
+    (waiter : SeLe4n.ThreadId) : Notification :=
+  { state := .waiting
+    waitHeadCode := if n.waitHeadCode = 0 then SeLe4n.ThreadId.optCode (some waiter)
+      else n.waitHeadCode
+    waitTailCode := SeLe4n.ThreadId.optCode (some waiter)
+    hasPendingBadge := false, pendingWord := SeLe4n.Badge.zero
+    boundTCB := n.boundTCB }
+
+@[simp] theorem Notification.withHeadPopped_waitHead (n : Notification)
+    (next : Option SeLe4n.ThreadId) : (n.withHeadPopped next).waitHead = next := by
+  simp [Notification.withHeadPopped, Notification.waitHead]
+
+@[simp] theorem Notification.withHeadPopped_waitTail (n : Notification)
+    (next : Option SeLe4n.ThreadId) :
+    (n.withHeadPopped next).waitTail = if next.isSome then n.waitTail else none := by
+  cases next <;> simp only [Notification.withHeadPopped, Notification.waitTail_mk,
+    Option.isSome_none, Option.isSome_some, Bool.false_eq_true, ↓reduceIte,
+    SeLe4n.ThreadId.ofOptCode_zero, Notification.ofOptCode_waitTailCode]
+
+@[simp] theorem Notification.withHeadPopped_state (n : Notification)
+    (next : Option SeLe4n.ThreadId) :
+    (n.withHeadPopped next).state = if next.isSome then .waiting else .idle := rfl
+
+@[simp] theorem Notification.withHeadPopped_pendingBadge (n : Notification)
+    (next : Option SeLe4n.ThreadId) : (n.withHeadPopped next).pendingBadge = none := rfl
+
+@[simp] theorem Notification.withHeadPopped_boundTCB (n : Notification)
+    (next : Option SeLe4n.ThreadId) : (n.withHeadPopped next).boundTCB = n.boundTCB := rfl
+
+theorem Notification.waitHeadCode_eq_zero_iff (n : Notification) :
+    n.waitHeadCode = 0 ↔ n.waitHead = none := by
+  rw [← Notification.optCode_waitHead]
+  cases n.waitHead <;> simp [SeLe4n.ThreadId.optCode]
+
+@[simp] theorem Notification.withWaiterAppended_waitHead (n : Notification)
+    (waiter : SeLe4n.ThreadId) :
+    (n.withWaiterAppended waiter).waitHead = some (n.waitHead.getD waiter) := by
+  unfold Notification.withWaiterAppended Notification.waitHead
+  by_cases h : n.waitHeadCode = 0
+  · simp [h]
+  · simp only [h, ↓reduceIte]
+    have h' := mt (Notification.waitHeadCode_eq_zero_iff n).mpr h
+    unfold Notification.waitHead at h'
+    cases hc : SeLe4n.ThreadId.ofOptCode n.waitHeadCode with
+    | none => exact absurd hc h'
+    | some t => rfl
+
+@[simp] theorem Notification.withWaiterAppended_waitTail (n : Notification)
+    (waiter : SeLe4n.ThreadId) : (n.withWaiterAppended waiter).waitTail = some waiter := by
+  simp [Notification.withWaiterAppended, Notification.waitTail]
+
+@[simp] theorem Notification.withWaiterAppended_state (n : Notification)
+    (waiter : SeLe4n.ThreadId) : (n.withWaiterAppended waiter).state = .waiting := rfl
+
+@[simp] theorem Notification.withWaiterAppended_pendingBadge (n : Notification)
+    (waiter : SeLe4n.ThreadId) : (n.withWaiterAppended waiter).pendingBadge = none := rfl
+
+@[simp] theorem Notification.withWaiterAppended_boundTCB (n : Notification)
+    (waiter : SeLe4n.ThreadId) :
+    (n.withWaiterAppended waiter).boundTCB = n.boundTCB := rfl
 
 /-- WS-H13/H-01: Depth-aware CNode with compressed-path guard.
 

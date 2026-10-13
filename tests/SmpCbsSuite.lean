@@ -303,11 +303,11 @@ example (st : SystemState) (tid : SeLe4n.ThreadId) (fromCore toCore c' : CoreId)
 
 -- SM5.H.4 (§16 D15): the run-queue migration preserves SM4.C run-queue↔budget consistency.
 example (st : SystemState) (tid : SeLe4n.ThreadId) (fromCore toCore c' : CoreId)
-    (hAll : ∀ c, schedContextRunQueueConsistent_perCore st c) :
+    (hAll : ∀ c, schedContextRunQueueConsistent_perCore st c) (hR : st.runQueueRefined) :
     schedContextRunQueueConsistent_perCore
       (migrateRunQueueOnAffinityChange st tid fromCore toCore) c' :=
   migrateRunQueueOnAffinityChange_preserves_schedContextRunQueueConsistent_perCore
-    st tid fromCore toCore c' hAll
+    st tid fromCore toCore c' hAll hR
 
 -- SM5.H.2 (A4): the live per-core budget tick preserves replenish-queue validity.
 example (st : SystemState) (c : CoreId) (tid : SeLe4n.ThreadId) (tcb : TCB)
@@ -580,35 +580,32 @@ private def runDeclaredCoreScenarios : IO Unit := do
 private def runRunQueueMigrationScenarios : IO Unit := do
   IO.println "--- §3.6 SM5.H.4 run-queue migration (full thread migration) ---"
   -- Put tid0 in core 1's run queue, then migrate it to the boot core.
-  let stRq : SystemState :=
-    let rq := RunQueue.empty.insert tid0 ⟨5⟩
-    { stCbs with scheduler := stCbs.scheduler.setRunQueueOnCore core1 rq }
+  let stRq : SystemState := stCbs.runEnqueueOnCore core1 tid0 ⟨5⟩
   let stMoved := migrateRunQueueOnAffinityChange stRq tid0 core1 bootCoreId
   assertBool "before: tid0 is in core 1's run queue"
-    ((stRq.scheduler.runQueueOnCore core1).contains tid0)
+    ((stRq.queuedOn core1 tid0))
   assertBool "after run-queue migration: tid0 left core 1's run queue"
-    (!(stMoved.scheduler.runQueueOnCore core1).contains tid0)
+    (!(stMoved.queuedOn core1 tid0))
   assertBool "after run-queue migration: tid0 entered the boot core's run queue"
-    ((stMoved.scheduler.runQueueOnCore bootCoreId).contains tid0)
+    ((stMoved.queuedOn bootCoreId tid0))
   assertBool "run-queue migration frames the replenish queue (still holds scId0)"
     ((stMoved.scheduler.replenishQueueOnCore core1).entries.contains (scId0, 5000))
   -- A self-migration is the identity.
   assertBool "self run-queue migration (core 1 → core 1) is the identity"
-    ((migrateRunQueueOnAffinityChange stRq tid0 core1 core1).scheduler.runQueueOnCore core1
-      |>.contains tid0)
+    ((migrateRunQueueOnAffinityChange stRq tid0 core1 core1).queuedOn core1 tid0)
   -- A runnable thread re-homed to a REMOTE core emits the cross-core SGI.
   match setThreadCpuAffinityWithMigration stRq tid0 (some bootCoreId) core1 with
   | .ok (st', sgi) =>
       assertBool "runnable tid0's remote re-home emits a cross-core .reschedule SGI to the boot core"
         (sgi == some (bootCoreId, SgiKind.reschedule))
       assertBool "runnable tid0's remote re-home: tid0 is now in the boot core's run queue"
-        ((st'.scheduler.runQueueOnCore bootCoreId).contains tid0)
+        ((st'.queuedOn bootCoreId tid0))
   | .error _ => assertBool "runnable tid0 remote re-home succeeds" false
   -- D15 witness: after migrating tid0 (in core 1's run queue, SC budget 50 > 0) to the
   -- boot core, the SM4.C run-queue↔budget consistency content holds for tid0 on the new
   -- core — it is in the boot core's run queue AND its SchedContext has positive budget.
   assertBool "D15: a migrated runnable thread carries its positive SC budget to the new core"
-    (((stMoved.scheduler.runQueueOnCore bootCoreId).contains tid0) &&
+    (((stMoved.queuedOn bootCoreId tid0)) &&
      (match stMoved.getSchedContext? scId0 with | some sc => sc.budgetRemaining.val > 0 | none => false))
   -- #2 (Codex P1): rebinding a thread RUNNING on a core its new affinity forbids is
   -- rejected fail-closed.  Put tid0 as `currentOnCore core1` (running ⇒ dequeue-on-
@@ -704,9 +701,7 @@ run-queue↔budget consistency on its new core. -/
 private def runSm5hCompletionScenarios : IO Unit := do
   IO.println "--- §3.8 SM5.H.4 D15 composite + SGI characterisation ---"
   -- tid0 runnable on core 1, re-homed to the (remote, from core 1) boot core.
-  let stRq : SystemState :=
-    let rq := RunQueue.empty.insert tid0 ⟨5⟩
-    { stCbs with scheduler := stCbs.scheduler.setRunQueueOnCore core1 rq }
+  let stRq : SystemState := stCbs.runEnqueueOnCore core1 tid0 ⟨5⟩
   match setThreadCpuAffinityWithMigration stRq tid0 (some bootCoreId) core1 with
   | .ok (st', sgi) =>
       -- §18 `_emits_reschedule_of_remote_runnable`: remote (boot ≠ core1) + runnable
@@ -716,7 +711,7 @@ private def runSm5hCompletionScenarios : IO Unit := do
       -- §17 D15 (composite): the migrated thread satisfies run-queue↔budget consistency
       -- on its new core — present in the boot core's run queue AND positive SC budget.
       assertBool "§17 D15 composite: migrated thread is in the new core's run queue with positive SC budget"
-        (((st'.scheduler.runQueueOnCore bootCoreId).contains tid0) &&
+        (((st'.queuedOn bootCoreId tid0)) &&
          (match st'.getSchedContext? scId0 with | some sc => sc.budgetRemaining.val > 0 | none => false))
   | .error _ => assertBool "remote-runnable composite succeeds" false
   -- §18 `_no_sgi_if_local`: a local re-home (new home == executing core) emits no SGI.

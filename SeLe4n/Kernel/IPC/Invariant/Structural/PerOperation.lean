@@ -2434,7 +2434,7 @@ theorem endpointReceiveDual_preserves_blockedThreadsPendingMessageConsistent
               have hInvMsg := storeTcbIpcStateAndMessage_preserves_blockedThreadsPendingMessageConsistent
                 pair.2.2 st2 pair.1 .ready none hObjInvPop hMsg hInvPop trivial
               have hInvEns := ensureRunnable_preserves_blockedThreadsPendingMessageConsistent st2 pair.1 hInvMsg
-              have hObjInvEns : (ensureRunnable st2 pair.1).objects.invExt := by rwa [ensureRunnable_preserves_objects]
+              have hObjInvEns : (ensureRunnable st2 pair.1).objects.invExt := ensureRunnable_objects_invExt _ _ (by assumption)
               revert hStep
               -- AK1-D: atomic (.ready, senderMsg) receiver update; .ready falls through hTarget default
               cases hPend : storeTcbIpcStateAndMessage (ensureRunnable st2 pair.1) receiver .ready _ with
@@ -2565,7 +2565,7 @@ theorem endpointCall_preserves_blockedThreadsPendingMessageConsistent
                   pair.2.2 st1 pair.1 .ready (some msg) hObjInvPop hMsg hInvPop trivial
                 have hInvEns := ensureRunnable_preserves_blockedThreadsPendingMessageConsistent st1 pair.1 hInv1
                 have hObjInvEns : (ensureRunnable st1 pair.1).objects.invExt := by
-                  rwa [ensureRunnable_preserves_objects]
+                  exact ensureRunnable_objects_invExt _ _ (by assumption)
                 -- AK1-C (I-M01): storeTcbIpcStateAndMessage atomically clears caller's pendingMessage
                 cases hIpc : storeTcbIpcStateAndMessage (ensureRunnable st1 pair.1) caller
                     (.blockedOnReply endpointId (some pair.1)) none with
@@ -2659,7 +2659,7 @@ theorem endpointReply_preserves_blockedThreadsPendingMessageConsistent
               simp only [hMsg] at hStep
               have hMid := this st1 hMsg
               have hObjInvMid : (ensureRunnable st1 target).objects.invExt := by
-                rw [ensureRunnable_preserves_objects]
+                apply ensureRunnable_objects_invExt
                 exact storeTcbIpcStateAndMessage_preserves_objects_invExt st st1 target .ready (some msg) hObjInv hMsg
               -- PR #827 #3 fold: peel the atomic consume (no-op when unlinked).
               cases hRO : tcb.replyObject with
@@ -2741,7 +2741,7 @@ theorem endpointReplyRecv_preserves_blockedThreadsPendingMessageConsistent
                   have hInvEns := ensureRunnable_preserves_blockedThreadsPendingMessageConsistent
                     st1 replyTarget hInv1
                   have hObjInvEns : (ensureRunnable st1 replyTarget).objects.invExt := by
-                    rwa [ensureRunnable_preserves_objects]
+                    exact ensureRunnable_objects_invExt _ _ (by assumption)
                   -- PR #827 #3 fold: peel the atomic consume (no-op when unlinked).
                   cases hRO : tcb.replyObject with
                   | none =>

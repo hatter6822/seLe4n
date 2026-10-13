@@ -881,6 +881,47 @@ theorem RHTable.get?_insert_ne_of_findsInPlace [BEq α] [Hashable α] [LawfulBEq
   · rw [Array.getElem?_modify, if_neg hji]
 
 
+/-- WS-ZA ZA4.4: an insert that rewrites its key in place leaves every key's
+in-place question as it was: the size, the capacity and every slot's key and
+distance are unchanged, so a chain of in-place writes can be asked about up
+front, on the table it starts from. -/
+theorem RHTable.findsInPlace_insert_of_findsInPlace [BEq α] [Hashable α] [LawfulBEq α]
+    {t : RHTable α β} {k : α} (k' : α) (v : β) (h : t.findsInPlace k = true) :
+    (t.insert k v).findsInPlace k' = t.findsInPlace k' := by
+  have h' := h
+  unfold RHTable.findsInPlace at h'
+  simp only [Bool.and_eq_true, Bool.not_eq_true', decide_eq_false_iff_not,
+    decide_eq_true_eq] at h'
+  obtain ⟨hNo, hFound⟩ := h'
+  unfold RHTable.insert
+  rw [if_neg hNo, RHTable.insertNoResize_eq_impl]
+  unfold RHTable.insertNoResizeImpl
+  dsimp only
+  rw [if_pos hFound]
+  unfold RHTable.findsInPlace
+  dsimp only
+  rw [findIdxLoop_modify_withValue]
+
+/-- WS-ZA ZA4.4: an insert that rewrites its key in place reads back what it
+wrote, on every table, well-formed or not. -/
+theorem RHTable.get?_insert_self_of_findsInPlace [BEq α] [Hashable α] [LawfulBEq α]
+    {t : RHTable α β} {k : α} (v : β) (h : t.findsInPlace k = true) :
+    (t.insert k v).get? k = some v := by
+  unfold RHTable.findsInPlace at h
+  simp only [Bool.and_eq_true, Bool.not_eq_true', decide_eq_false_iff_not,
+    decide_eq_true_eq] at h
+  obtain ⟨hNo, hFound⟩ := h
+  obtain ⟨e, he, hek⟩ := findIdxLoop_key _ _ _ _ _ _ _ _ hFound
+  unfold RHTable.insert
+  rw [if_neg hNo, RHTable.insertNoResize_eq_impl]
+  unfold RHTable.insertNoResizeImpl
+  dsimp only
+  rw [if_pos hFound]
+  unfold RHTable.get?
+  simp only [getLoop_eq_findIdxLoop]
+  rw [findIdxLoop_modify_withValue, Array.getElem?_modify, if_pos rfl, he]
+  simp [RHEntry.withValue]
+
 /-- N1-D3: `insertNoResize` increases size by at most 1. -/
 theorem RHTable.insertNoResize_size_le [BEq α] [Hashable α] [LawfulBEq α]
     (t : RHTable α β) (k : α) (v : β) :

@@ -346,7 +346,7 @@ private def sd022_suspendThreadInner_missing : IO Unit := do
     s!"suspendThreadInner of a missing thread must return InvalidArgument (39), got {result}"
 
 /-- SD-023: `suspendThreadInner` on the reserved sentinel `tid = 0`
-    returns InvalidArgument WITHOUT invoking `suspendThread`.
+    returns InvalidArgument WITHOUT invoking `suspendThreadOnCore`.
 
 `ThreadId.sentinel` is defined as `⟨0⟩` (`H-06/WS-E3` in `Prelude.lean`),
 so `tid : UInt64 = 0` flows through `ThreadId.ofNat 0 = ThreadId.sentinel`,
@@ -806,7 +806,7 @@ private def sd045_bootInitialise_installs_percore_idle : IO Unit := do
       for c in SeLe4n.Kernel.Concurrency.allCores do
         expect s!"sd045_idle_enqueued_core_{c.val}"
           (decide (SeLe4n.Kernel.idleThreadId c ∈
-            (st.scheduler.runQueueOnCore c).toList))
+            (st.runQueueWalk c)))
           "each core's idle thread must be on that core's own run queue"
         expect s!"sd045_idle_resolves_core_{c.val}"
           (st.getTcb? (SeLe4n.Kernel.idleThreadId c)).isSome
@@ -881,7 +881,7 @@ private def sd050_bindNotification_requires_ntfn_cap : IO Unit := do
     mkState [
       (caller.toObjId, .tcb { (mkTcb 1) with cspaceRoot := cnId }),
       (tgtTcb, .tcb { (mkTcb 70) with cspaceRoot := cnId }),
-      (ntfnId, .notification { state := .idle, waitingThreads := SeLe4n.NoDupList.empty, hasPendingBadge := false, pendingWord := SeLe4n.Badge.zero }),
+      (ntfnId, .notification { state := .idle, hasPendingBadge := false, pendingWord := SeLe4n.Badge.zero }),
       (cnId, .cnode {
           depth := 4, guardWidth := 0, guardValue := 0, radixWidth := 4,
           slots := SeLe4n.UniqueSlotMap.ofListWF slots })
@@ -927,7 +927,7 @@ private def dispatcherRefusesCallerNotCurrentOnCore : IO Unit := do
     mkState [
       (caller.toObjId, .tcb { (mkTcb 1) with cspaceRoot := cnId }),
       (other.toObjId, .tcb { (mkTcb 70) with cspaceRoot := cnId }),
-      (ntfnId, .notification { state := .idle, waitingThreads := SeLe4n.NoDupList.empty, hasPendingBadge := false, pendingWord := SeLe4n.Badge.zero }),
+      (ntfnId, .notification { state := .idle, hasPendingBadge := false, pendingWord := SeLe4n.Badge.zero }),
       (cnId, .cnode {
           depth := 4, guardWidth := 0, guardValue := 0, radixWidth := 4,
           slots := SeLe4n.UniqueSlotMap.ofListWF
@@ -1120,11 +1120,11 @@ private def sd055_witnesses_installed_and_binding_cores : IO Unit := do
       let c1 : SeLe4n.Kernel.Concurrency.CoreId := ⟨1, by decide⟩
       expect "sd055_single_core_installs_idle_0"
         ((st.getTcb? (SeLe4n.Kernel.idleThreadId c0)).isSome &&
-         decide (SeLe4n.Kernel.idleThreadId c0 ∈ (st.scheduler.runQueueOnCore c0).toList))
+         decide (SeLe4n.Kernel.idleThreadId c0 ∈ (st.runQueueWalk c0)))
         "the single-core binding must install and enqueue idle 0"
       expect "sd055_single_core_installs_no_idle_1"
         ((st.getTcb? (SeLe4n.Kernel.idleThreadId c1)).isNone &&
-         (st.scheduler.runQueueOnCore c1).toList.isEmpty)
+         (st.runQueueWalk c1).isEmpty)
         "the single-core binding must not install idle threads for cores it does not declare"
   match ← bootAndInitialisePlatform SeLe4n.Platform.Sim.SimPlatform witnessedCfg with
   | Except.error e =>
@@ -1328,7 +1328,7 @@ private def sd057_rawSuspendSeamRefusesIdleIds : IO Unit := do
          | some vIdle =>
            match suspendThreadOnCore st vIdle c0 with
            | Except.ok (st', _) =>
-             decide (idle0 ∉ (st'.scheduler.runQueueOnCore c0).toList)
+             decide (idle0 ∉ (st'.runQueueWalk c0))
            | Except.error _ => false
          | none => false)
         "without the seam's check, suspendThreadOnCore dequeues idle 0"
@@ -1342,7 +1342,7 @@ private def sd057_rawSuspendSeamRefusesIdleIds : IO Unit := do
       let st' ← getKernelState
       expect "sd057_idle_thread_still_installed_queued_and_ready"
         ((st'.getTcb? idle0).isSome &&
-         decide (idle0 ∈ (st'.scheduler.runQueueOnCore c0).toList) &&
+         decide (idle0 ∈ (st'.runQueueWalk c0)) &&
          ((st'.getTcb? idle0).map (·.threadState) == some .Ready))
         "the refusal must commit nothing"
       -- The pure step, the theorem's subject: refused, no SGI, state untouched.
@@ -1350,7 +1350,7 @@ private def sd057_rawSuspendSeamRefusesIdleIds : IO Unit := do
         (match suspendThreadCrossCoreStep idle0.toNat.toUInt64 c0 st with
          | ((code, sgis), stAfter) =>
            code == invalidArgument && sgis.isEmpty &&
-           decide (idle0 ∈ (stAfter.scheduler.runQueueOnCore c0).toList))
+           decide (idle0 ∈ (stAfter.runQueueWalk c0)))
         "the pure step must refuse an idle id without deriving an SGI"
       expect "sd057_every_core_idle_id_refused"
         (SeLe4n.Kernel.Concurrency.allCores.all (fun c =>
@@ -1437,7 +1437,7 @@ private def sd058_mintReplyCapThroughTheSyscallGate : IO Unit := do
       (caller.toObjId, .tcb { (mkTcb 1) with cspaceRoot := cnId }),
       (replyObj, .reply { replyId := rid }),
       (ntfnObj, .notification
-        { state := .idle, waitingThreads := SeLe4n.NoDupList.empty, hasPendingBadge := false, pendingWord := SeLe4n.Badge.zero }),
+        { state := .idle, hasPendingBadge := false, pendingWord := SeLe4n.Badge.zero }),
       (cnId, .cnode {
           depth := 4, guardWidth := 0, guardValue := 0, radixWidth := 4,
           slots := SeLe4n.UniqueSlotMap.ofListWF
@@ -1573,7 +1573,7 @@ private def sd059_cspaceRevokeThroughTheSyscallGate : IO Unit := do
     mkState [
       (caller.toObjId, .tcb { (mkTcb 1) with cspaceRoot := cnA }),
       (ntfnObj, .notification
-        { state := .idle, waitingThreads := SeLe4n.NoDupList.empty, hasPendingBadge := false, pendingWord := SeLe4n.Badge.zero }),
+        { state := .idle, hasPendingBadge := false, pendingWord := SeLe4n.Badge.zero }),
       (cnA, .cnode {
           depth := 4, guardWidth := 0, guardValue := 0, radixWidth := 4,
           slots := SeLe4n.UniqueSlotMap.ofListWF
@@ -2007,7 +2007,7 @@ private def sd052b_replyRecv_donation_switch : IO Unit := do
             ((st'.getTcb? clientA).any (fun t => decide (t.ipcState = .ready)))
             "the previous caller should be unblocked by the reply leg"
           expect "sd052b_server_stays_runnable"
-            ((st'.scheduler.runQueueOnCore bootCoreId).contains server)
+            ((st'.queuedOn bootCoreId server))
             "the passive server must stay runnable after rendezvousing with a queued Call"
           expect "sd052b_donation_switched"
             ((st'.getTcb? server).any (fun t => decide (t.schedContextBinding = .donated scB clientB)))
@@ -2226,7 +2226,7 @@ private def sd053g_bound_notification_wake_clears_stash : IO Unit := do
     (SeLe4n.Testing.BootstrapBuilder.empty
       |>.withObject epId (.endpoint {})
       |>.withObject nId (.notification
-          { state := .idle, waitingThreads := SeLe4n.NoDupList.empty, boundTCB := some server })
+          { state := .idle, boundTCB := some server })
       |>.withObject server.toObjId
           (.tcb { mkTcb 1 with ipcState := .blockedOnReceive epId, pendingReceiveReply := some rid })
       |>.withObject rid.toObjId (.reply { replyId := rid })

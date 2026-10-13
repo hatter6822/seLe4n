@@ -159,6 +159,15 @@ theorem replyCapPointsToValidReply_of_objects_eq {st st' : SystemState}
   unfold replyCapPointsToValidReply SystemState.getReply? at h ⊢
   rw [hObjs]; exact h
 
+/-- WS-ZA ZA4.5: a step writing only run-queue links keeps every reply cap
+backed — CNodes and Reply objects are not TCBs. -/
+theorem replyCapPointsToValidReply_of_objectsAgreeOffRunLinks {st st' : SystemState}
+    (hA : st'.objectsAgreeOffRunLinks st) (h : replyCapPointsToValidReply st) :
+    replyCapPointsToValidReply st' := by
+  intro oid cn slot cap rid hCn hLk hT
+  rw [hA.getReply? rid]
+  exact h oid cn slot cap rid (hA.get_cnode_iff.mp hCn) hLk hT
+
 /-- Composed capability invariant bundle entrypoint.
 
 The active lifecycle slice extends the M2 foundation bundle with security-meaningful
@@ -518,7 +527,7 @@ def cleanupHookDischarged (st : SystemState) (target : SeLe4n.ObjId) : Prop :=
   (∀ obj, st.objects[target]? = some obj →
     SystemState.lookupObjectTypeMeta st target = some obj.objectType)
   ∧ (∀ tcb, st.objects[target]? = some (.tcb tcb) →
-      ¬ (tcb.tid ∈ (st.scheduler.runQueueOnCore bootCoreId).flat))
+      ¬ (tcb.tid ∈ (st.scheduler.runQueueOnCore bootCoreId).toList))
   ∧ SeLe4n.Kernel.ScrubToken st target
 
 /-- AN4-F.4 (CAP-M04): Precondition subtype for cleanup-aware retype entry
@@ -553,7 +562,7 @@ def mkRetypeTarget (st : SystemState) (target : SeLe4n.ObjId)
     (hTypeMeta : ∀ obj, st.objects[target]? = some obj →
       SystemState.lookupObjectTypeMeta st target = some obj.objectType)
     (hNoStaleRefs : ∀ tcb, st.objects[target]? = some (.tcb tcb) →
-      ¬ (tcb.tid ∈ (st.scheduler.runQueueOnCore bootCoreId).flat))
+      ¬ (tcb.tid ∈ (st.scheduler.runQueueOnCore bootCoreId).toList))
     (token : SeLe4n.Kernel.ScrubToken st target) :
     RetypeTarget st :=
   { id := target,
@@ -565,7 +574,7 @@ def mkRetypeTarget (st : SystemState) (target : SeLe4n.ObjId)
     (hTypeMeta : ∀ obj, st.objects[target]? = some obj →
       SystemState.lookupObjectTypeMeta st target = some obj.objectType)
     (hNoStaleRefs : ∀ tcb, st.objects[target]? = some (.tcb tcb) →
-      ¬ (tcb.tid ∈ (st.scheduler.runQueueOnCore bootCoreId).flat))
+      ¬ (tcb.tid ∈ (st.scheduler.runQueueOnCore bootCoreId).toList))
     (token : SeLe4n.Kernel.ScrubToken st target) :
     (mkRetypeTarget st target hTypeMeta hNoStaleRefs token).id = target := rfl
 
@@ -775,6 +784,26 @@ theorem cdtCompleteness_of_objects_nodeSlot_eq
   rw [hNodeSlotEq] at hNS
   rw [hObjEq]
   exact hComp nodeId ref hNS
+
+/-- WS-ZA ZA4.5: the three object-reading capability predicates carry across a
+step that writes only run-queue links (CNodes are not TCBs, and a key is
+occupied in one store exactly when it is in the other). -/
+theorem cspaceSlotCountBounded_of_objectsAgreeOffRunLinks {st st' : SystemState}
+    (hA : st'.objectsAgreeOffRunLinks st) (hBounded : cspaceSlotCountBounded st) :
+    cspaceSlotCountBounded st' :=
+  fun cnodeId cn hObj => hBounded cnodeId cn (hA.get_cnode_iff.mp hObj)
+
+theorem cdtCompleteness_of_objectsAgreeOffRunLinks {st st' : SystemState}
+    (hA : st'.objectsAgreeOffRunLinks st) (hComp : cdtCompleteness st)
+    (hNodeSlotEq : st'.cdtNodeSlot = st.cdtNodeSlot) : cdtCompleteness st' := by
+  intro nodeId ref hNS
+  rw [hNodeSlotEq] at hNS
+  exact fun hNone => hComp nodeId ref hNS (hA.get_none_iff.mp hNone)
+
+theorem cspaceDepthConsistent_of_objectsAgreeOffRunLinks {st st' : SystemState}
+    (hA : st'.objectsAgreeOffRunLinks st) (hDepth : cspaceDepthConsistent st) :
+    cspaceDepthConsistent st' :=
+  fun cnodeId cn hObj => hDepth cnodeId cn (hA.get_cnode_iff.mp hObj)
 
 /-- WS-H4: Transfer cdtCompleteness through storeObject. After storeObject,
 objects may change but every key that was non-none stays non-none. -/
@@ -1114,29 +1143,29 @@ private theorem cdtPredicates_through_blocking_path
   have hBnd1 := cspaceSlotCountBounded_of_storeObject_nonCNode st st1 endpointId (.endpoint ep)
     hBounded hObjInv hStore (fun cn h => by cases h)
   have hBnd2 := cspaceSlotCountBounded_of_storeTcbIpcState st1 st2 target ipc hBnd1 hObjInv1 hTcb
-  refine ⟨?_, ?_, ?_⟩
-  · exact cspaceSlotCountBounded_of_objects_eq st2 _ hBnd2 (removeRunnable_preserves_objects st2 target)
-  · -- cdtCompleteness transfers through storeObject, storeTcbIpcState, removeRunnable
-    -- All three only replace object entries (never delete), so objects[ref.cnode]? ≠ none is preserved
-    have hComp1 := cdtCompleteness_of_storeObject st st1 endpointId (.endpoint ep) hComp hObjInv hStore hNS1
-    have hComp2 : cdtCompleteness st2 := by
-      unfold storeTcbIpcState modifyTcb at hTcb
-      cases hLookup : lookupTcb st1 target with
-      | none => simp [hLookup] at hTcb
-      | some tcb =>
-        simp only [hLookup] at hTcb
-        cases hS : storeObject target.toObjId (.tcb { tcb with ipcState := ipc }) st1 with
-        | error e => simp [hS] at hTcb
-        | ok pair =>
-          simp only [hS] at hTcb
-          have hEq := Except.ok.inj hTcb; subst hEq
-          exact cdtCompleteness_of_storeObject st1 pair.2 target.toObjId _ hComp1 hObjInv1 hS
-            (storeObject_cdtNodeSlot_eq st1 pair.2 target.toObjId _ hS).1
-    exact cdtCompleteness_of_objects_nodeSlot_eq st2 _ hComp2
-      (removeRunnable_preserves_objects st2 target)
-      (by simp [removeRunnable])
-  · exact cdtAcyclicity_of_cdt_eq st (removeRunnable st2 target) hAcyclic
-      (by show (removeRunnable st2 target).cdt = st.cdt; simp [removeRunnable]; rw [hCdt2, hCdt1])
+  have hComp1 := cdtCompleteness_of_storeObject st st1 endpointId (.endpoint ep) hComp hObjInv hStore hNS1
+  have hComp2 : cdtCompleteness st2 := by
+    unfold storeTcbIpcState modifyTcb at hTcb
+    cases hLookup : lookupTcb st1 target with
+    | none => simp [hLookup] at hTcb
+    | some tcb =>
+      simp only [hLookup] at hTcb
+      cases hS : storeObject target.toObjId (.tcb { tcb with ipcState := ipc }) st1 with
+      | error e => simp [hS] at hTcb
+      | ok pair =>
+        simp only [hS] at hTcb
+        have hEq := Except.ok.inj hTcb; subst hEq
+        exact cdtCompleteness_of_storeObject st1 pair.2 target.toObjId _ hComp1 hObjInv1 hS
+          (storeObject_cdtNodeSlot_eq st1 pair.2 target.toObjId _ hS).1
+  have hRem := removeRunnable_onlyObjectsSchedulerDiffer st2 target
+  unfold SystemState.onlyObjectsSchedulerDiffer at hRem
+  have hRemNS : (removeRunnable st2 target).cdtNodeSlot = st2.cdtNodeSlot := by rw [hRem]
+  have hRemCdt : (removeRunnable st2 target).cdt = st.cdt := by rw [hRem]; rw [hCdt2, hCdt1]
+  exact ⟨cspaceSlotCountBounded_of_objectsAgreeOffRunLinks
+      (removeRunnable_objectsAgreeOffRunLinks st2 target) hBnd2,
+    cdtCompleteness_of_objectsAgreeOffRunLinks
+      (removeRunnable_objectsAgreeOffRunLinks st2 target) hComp2 hRemNS,
+    cdtAcyclicity_of_cdt_eq st _ hAcyclic hRemCdt⟩
 
 /-- WS-H4: Transfer WS-H4 predicates through endpoint/TCB handshake path.
 storeObject(.endpoint) → storeTcbIpcState → ensureRunnable preserves all three. -/
@@ -1172,20 +1201,14 @@ private theorem cdtPredicates_through_handshake_path
         have hEq := Except.ok.inj hTcb; subst hEq
         exact cdtCompleteness_of_storeObject st1 pair.2 target.toObjId _ hComp1 hObjInv1 hS
           (storeObject_cdtNodeSlot_eq st1 pair.2 target.toObjId _ hS).1
-  have hEnsNS : (ensureRunnable st2 target).cdtNodeSlot = st2.cdtNodeSlot := by
-    unfold ensureRunnable
-    split
-    · rfl
-    · split
-      · rfl
-      · rfl
-  have hEnsCdt : (ensureRunnable st2 target).cdt = st.cdt := by
-    unfold ensureRunnable; split
-    · rw [hCdt2, hCdt1]
-    · split <;> rw [hCdt2, hCdt1]
-  exact ⟨cspaceSlotCountBounded_of_objects_eq st2 _ hBnd2 (ensureRunnable_preserves_objects st2 target),
-    cdtCompleteness_of_objects_nodeSlot_eq st2 _ hComp2
-      (ensureRunnable_preserves_objects st2 target) hEnsNS,
+  have hEns := ensureRunnable_onlyObjectsSchedulerDiffer st2 target
+  unfold SystemState.onlyObjectsSchedulerDiffer at hEns
+  have hEnsNS : (ensureRunnable st2 target).cdtNodeSlot = st2.cdtNodeSlot := by rw [hEns]
+  have hEnsCdt : (ensureRunnable st2 target).cdt = st.cdt := by rw [hEns]; rw [hCdt2, hCdt1]
+  exact ⟨cspaceSlotCountBounded_of_objectsAgreeOffRunLinks
+      (ensureRunnable_objectsAgreeOffRunLinks st2 target) hBnd2,
+    cdtCompleteness_of_objectsAgreeOffRunLinks
+      (ensureRunnable_objectsAgreeOffRunLinks st2 target) hComp2 hEnsNS,
     cdtAcyclicity_of_cdt_eq st _ hAcyclic hEnsCdt⟩
 
 /-- WS-H4: Transfer WS-H4 predicates through reply path.
@@ -1225,18 +1248,12 @@ theorem cdtPredicates_through_reply_path
         simp only [hS] at hTcb; have hEq := Except.ok.inj hTcb; subst hEq
         exact cdtCompleteness_of_storeObject st pair.2 target.toObjId _ hComp hObjInv hS
           (storeObject_cdtNodeSlot_eq st pair.2 target.toObjId _ hS).1
-  have hEnsNS : (ensureRunnable st1 target).cdtNodeSlot = st1.cdtNodeSlot := by
-    unfold ensureRunnable
-    split
-    · rfl
-    · split
-      · rfl
-      · rfl
-  have hEnsCdt : (ensureRunnable st1 target).cdt = st.cdt := by
-    unfold ensureRunnable; split
-    · rw [hCdt1]
-    · split <;> rw [hCdt1]
-  exact ⟨cspaceSlotCountBounded_of_objects_eq st1 _ hBnd1 (ensureRunnable_preserves_objects st1 target),
-    cdtCompleteness_of_objects_nodeSlot_eq st1 _ hComp1
-      (ensureRunnable_preserves_objects st1 target) hEnsNS,
+  have hEns := ensureRunnable_onlyObjectsSchedulerDiffer st1 target
+  unfold SystemState.onlyObjectsSchedulerDiffer at hEns
+  have hEnsNS : (ensureRunnable st1 target).cdtNodeSlot = st1.cdtNodeSlot := by rw [hEns]
+  have hEnsCdt : (ensureRunnable st1 target).cdt = st.cdt := by rw [hEns]; rw [hCdt1]
+  exact ⟨cspaceSlotCountBounded_of_objectsAgreeOffRunLinks
+      (ensureRunnable_objectsAgreeOffRunLinks st1 target) hBnd1,
+    cdtCompleteness_of_objectsAgreeOffRunLinks
+      (ensureRunnable_objectsAgreeOffRunLinks st1 target) hComp1 hEnsNS,
     cdtAcyclicity_of_cdt_eq st _ hAcyclic hEnsCdt⟩

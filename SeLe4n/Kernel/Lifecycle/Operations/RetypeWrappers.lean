@@ -182,6 +182,7 @@ theorem lifecycleRetypeWithCleanup_ok_runnable_no_dangling
     (newObj : KernelObject)
     (tcb : TCB)
     (hObj : st.objects[target]? = some (.tcb tcb))
+    (hInv : st.objects.invExt) (hR : st.runQueueRefined)
     (hStep : lifecycleRetypeWithCleanup authority target newObj st = .ok ((), st')) :
     ¬(tcb.tid ∈ (st'.scheduler.runQueueOnCore bootCoreId)) := by
   unfold lifecycleRetypeWithCleanup SystemState.getObject? at hStep
@@ -226,8 +227,10 @@ theorem lifecycleRetypeWithCleanup_ok_runnable_no_dangling
         rw [if_neg (by simp [hRO])] at hClean
         injection hClean with hClean; subst hClean
         -- `cleanupTcbReferences_removes_from_runnable` is polymorphic in the input
-        -- state; `_` lets Lean unify it with the arm's post-state.
+        -- state; `_` lets Lean unify it with the arm's post-state, which keeps
+        -- the run-queue link agreement (the arm is a `RunQueueStage`).
         exact cleanupTcbReferences_removes_from_runnable _ tcb.tid
+          ((cancelDonationArmOnCore_runQueueStage hArm) hInv hR).2
 
 -- ============================================================================
 -- WS-K-D: Lifecycle syscall dispatch helpers
@@ -261,7 +264,7 @@ def objectOfTypeTag (typeTag : Nat) (sizeHint : Nat)
     })
   | 1 => .ok (.endpoint { sendQ := {}, receiveQ := {} })
   | 2 => .ok (.notification {
-      state := .idle, waitingThreads := SeLe4n.NoDupList.empty,
+      state := .idle, 
       hasPendingBadge := false, pendingWord := SeLe4n.Badge.zero
     })
   | 3 => .ok (.cnode {
@@ -312,7 +315,7 @@ def objectOfKernelType (objType : KernelObjectType) (sizeHint : Nat) : KernelObj
     }
   | .endpoint => .endpoint { sendQ := {}, receiveQ := {} }
   | .notification => .notification {
-      state := .idle, waitingThreads := SeLe4n.NoDupList.empty,
+      state := .idle, 
       hasPendingBadge := false, pendingWord := SeLe4n.Badge.zero
     }
   | .cnode => .cnode {

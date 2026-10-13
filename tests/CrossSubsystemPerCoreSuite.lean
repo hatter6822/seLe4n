@@ -9,6 +9,7 @@
 
 import SeLe4n.Kernel.CrossSubsystemPerCorePreservation
 import SeLe4n.Platform.RPi5.RuntimeContractPerCore
+import SeLe4n.Testing.StateBuilder
 
 /-!
 # WS-SM SM4.D — Cross-subsystem per-core invariant migration test suite
@@ -340,9 +341,16 @@ private def runArchitectureChecks : IO Unit := do
     `bootCoreId` (genuine value-level decidable checks). -/
 private def runInformationFlowChecks : IO Unit := do
   IO.println "--- §3.4 information-flow per-core projections ---"
+  -- The run queue is read through the TCB links (`projectRunnableOnCoreByLinks`);
+  -- `projectRunnableOnCoreByLinks_eq` under `default_runQueueRefined` ties it to
+  -- the ghost-queue `projectRunnableOnCore`.
   assertBool "projectRunnableOnCore = [] on every core (default state)"
     (allCores.all (fun c =>
-      decide (projectRunnableOnCore defaultLabelingContext probeObserver
+      have _h : projectRunnableOnCoreByLinks defaultLabelingContext probeObserver
+          (default : SystemState) c =
+        projectRunnableOnCore defaultLabelingContext probeObserver (default : SystemState) c :=
+        projectRunnableOnCoreByLinks_eq _ _ (SystemState.default_runQueueRefined c)
+      decide (projectRunnableOnCoreByLinks defaultLabelingContext probeObserver
         (default : SystemState) c = [])))
   assertBool "projectCurrentOnCore = none on every core (default state)"
     (allCores.all (fun c =>
@@ -353,8 +361,12 @@ private def runInformationFlowChecks : IO Unit := do
       decide (projectMachineRegsOnCore defaultLabelingContext probeObserver
         (default : SystemState) c = none)))
   assertBool "projectRunnableOnCore at bootCoreId = projectRunnable (default state)"
-    (decide (projectRunnableOnCore defaultLabelingContext probeObserver (default : SystemState)
-      bootCoreId = projectRunnable defaultLabelingContext probeObserver (default : SystemState)))
+    (have _h : projectRunnableOnCore defaultLabelingContext probeObserver (default : SystemState)
+        bootCoreId = projectRunnable defaultLabelingContext probeObserver (default : SystemState) :=
+      projectRunnableOnCore_bootCore _ _ _
+     decide (projectRunnableOnCoreByLinks defaultLabelingContext probeObserver
+        (default : SystemState) bootCoreId =
+      (projectStateByLinks defaultLabelingContext probeObserver (default : SystemState)).runnable))
   assertBool "projectStateOnCore_bootCore bridge applies"
     (have _h : projectStateOnCore defaultLabelingContext probeObserver (default : SystemState)
         bootCoreId = projectState defaultLabelingContext probeObserver (default : SystemState) :=
@@ -476,14 +488,19 @@ private def runNonVacuousChecks : IO Unit := do
   let c1 : CoreId := ⟨1, by decide⟩
   let tid : SeLe4n.ThreadId := SeLe4n.ThreadId.ofNat 5
   -- Populate core 0's run queue with one observable thread.
+  -- The thread needs a TCB to carry its run-queue links; it is queued through
+  -- the kernel's own enqueue (`runEnqueueOnCore`).
+  let tcb : TCB :=
+    { tid := tid, priority := ⟨50⟩, domain := ⟨0⟩,
+      cspaceRoot := SeLe4n.ObjId.ofNat 0, vspaceRoot := SeLe4n.ObjId.ofNat 0,
+      ipcBuffer := SeLe4n.VAddr.ofNat 0 }
   let stRQ : SystemState :=
-    { (default : SystemState) with
-      scheduler := (default : SystemState).scheduler.setRunQueueOnCore c0
-        (((default : SystemState).scheduler.runQueueOnCore c0).insert tid ⟨50⟩) }
+    ((SeLe4n.Testing.BootstrapBuilder.empty.withObject tid.toObjId (.tcb tcb)).build
+      ).runEnqueueOnCore c0 tid ⟨50⟩
   assertBool "queued observable thread appears in core 0's projectRunnableOnCore (non-vacuous)"
-    (decide (tid ∈ projectRunnableOnCore defaultLabelingContext probeObserver stRQ c0))
+    (decide (tid ∈ projectRunnableOnCoreByLinks defaultLabelingContext probeObserver stRQ c0))
   assertBool "core 1's projectRunnableOnCore stays [] under populated core 0 (cross-core)"
-    (decide (projectRunnableOnCore defaultLabelingContext probeObserver stRQ c1 = []))
+    (decide (projectRunnableOnCoreByLinks defaultLabelingContext probeObserver stRQ c1 = []))
   -- Populate core 0's current slot with an observable thread.
   let stCur : SystemState :=
     { (default : SystemState) with

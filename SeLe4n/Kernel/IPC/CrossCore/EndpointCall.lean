@@ -1887,16 +1887,15 @@ theorem ipcUnwrapCaps_getSchedContext?_eq (msg : IpcMessage)
   · rw [ipcUnwrapCaps_preserves_objects_ne msg receiverRoot slotBase grantRight st st' summary
       scId.toObjId hRoot hObjInv hStep]
 
-/-- `v0.35.161`: waking an already-`.ready` thread is object-invisible, so it frames
-every SchedContext resolution — the shape the receive leg's plain-`Send` wake has,
+/-- `v0.35.161`: waking an already-`.ready` thread writes only TCB run-queue links,
+so it frames every SchedContext resolution — the shape the receive leg's plain-`Send` wake has,
 the sender having just been stored `.ready`. -/
 theorem wakeThread_getSchedContext?_eq_of_ready (st : SystemState)
     (tid : SeLe4n.ThreadId) (ec : CoreId) (tcb : TCB) (scId : SeLe4n.SchedContextId)
     (hTcb : st.getTcb? tid = some tcb) (hReady : tcb.ipcState = .ready)
     (hInv : st.objects.invExt) :
     (wakeThread st tid ec).1.getSchedContext? scId = st.getSchedContext? scId := by
-  unfold SystemState.getSchedContext?
-  rw [wakeThread_objects_getElem_eq_of_ready st tid ec tcb hTcb hReady hInv]
+  exact (wakeThread_objectsAgreeOffRunLinks_of_ready st tid ec tcb hTcb hReady hInv).getSchedContext? scId
 
 -- ============================================================================
 -- §12 SM6.A.4 — Per-core caller blocking (plan §3.2 steps 5–6)
@@ -1986,8 +1985,7 @@ theorem endpointCallOnCore_preserves_objects_invExt
         | ok st'' =>
           simp only
           have h2 := storeTcbIpcStateAndMessage_preserves_objects_invExt st' st'' caller _ _ h1 hMsg
-          show (removeRunnableOnCore st'' caller executingCore).objects.invExt
-          rw [removeRunnableOnCore_preserves_objects]; exact h2
+          exact removeRunnableOnCore_objects_invExt _ _ _ h2
     | some _ =>
       simp only
       cases hPop : endpointQueuePopHead endpointId true st with
@@ -2015,8 +2013,7 @@ theorem endpointCallOnCore_preserves_objects_invExt
               obtain ⟨_, st5⟩ := pL
               simp only
               have h5 := linkServerStashedReply_preserves_objects_invExt st4 st5 caller pair.1 h4 hLink
-              show (removeRunnableOnCore st5 caller executingCore).objects.invExt
-              rw [removeRunnableOnCore_preserves_objects]; exact h5
+              exact removeRunnableOnCore_objects_invExt _ _ _ h5
 
 /-- **WS-RR RR8.16** (`v0.35.200`): the cross-core Call leg is a
 `kindPreservingWrite`.
@@ -2059,7 +2056,7 @@ theorem endpointCallOnCore_kindPreservingWrite
           have w2 := storeTcbIpcStateAndMessage_kindPreservingWrite h1 hMsg
           show kindPreservingWrite st (removeRunnableOnCore st'' caller executingCore)
           exact (w1.trans w2).trans
-            (kindPreservingWrite.of_objects_eq (removeRunnableOnCore_preserves_objects _ _ _))
+            (removeRunnableOnCore_objectsAgreeOffRunLinks _ _ _).kindPreserving
     | some _ =>
       simp only
       cases hPop : endpointQueuePopHead endpointId true st with
@@ -2097,7 +2094,7 @@ theorem endpointCallOnCore_kindPreservingWrite
                 pair.1 h4 hLink
               show kindPreservingWrite st (removeRunnableOnCore st5 caller executingCore)
               exact ((((w1.trans w2).trans w3).trans w4).trans w5).trans
-                (kindPreservingWrite.of_objects_eq (removeRunnableOnCore_preserves_objects _ _ _))
+                (removeRunnableOnCore_objectsAgreeOffRunLinks _ _ _).kindPreserving
 
 /-- **WS-RR RR8.16** (`v0.35.200`): ...and the Call leg writes neither CDT table
 on any path. -/
@@ -2170,16 +2167,17 @@ theorem endpointCallOnCore_cdt_eq
 
 open SeLe4n.Model.SystemState in
 /-- D6 (per-core): a `wakeThread` of a `.ready` thread preserves every TCB's binding (its state
-effect is `enqueueRunnableOnCore` — a scheduler-only step that leaves the object store
-pointwise-unchanged for a `.ready` target). -/
+effect is `enqueueRunnableOnCore`, which for a `.ready` target writes only TCB run-queue
+links). -/
 theorem wakeThread_sameSchedContextBindings_of_ready
     (st : SystemState) (wtid : SeLe4n.ThreadId) (ec : CoreId) (wtcb : TCB)
     (hWGet : st.getTcb? wtid = some wtcb) (hWReady : wtcb.ipcState = .ready)
     (hObjInv : st.objects.invExt) :
     sameSchedContextBindings st (wakeThread st wtid ec).1 := by
   intro y tcY hY
-  rw [wakeThread_objects_getElem_eq_of_ready st wtid ec wtcb hWGet hWReady hObjInv y.toObjId] at hY
-  exact ⟨tcY, hY, rfl⟩
+  obtain ⟨t, h, e⟩ :=
+    (wakeThread_objectsAgreeOffRunLinks_of_ready st wtid ec wtcb hWGet hWReady hObjInv).get_tcb' hY
+  exact ⟨t, h, (TCB.proj_eq_of_withoutRunLinks_eq TCB.schedContextBinding e).symm⟩
 
 /-! **WS-RR RR8.16 (`v0.35.189`)**: the D6 binding frame below was relocated here
 from the staged `EndpointCallInvariant.lean` rather than re-proved.  It is what
@@ -2223,7 +2221,7 @@ theorem endpointCallOnCore_sameSchedContextBindings
           simp only
           have hS2 := hS1.trans (storeTcbIpcStateAndMessage_sameSchedContextBindings st' st'' caller (.blockedOnCall endpointId) (some msg) hObj1 hMsg)
           show sameSchedContextBindings st (removeRunnableOnCore st'' caller executingCore)
-          exact hS2.trans (sameSchedContextBindings.of_objects_eq (removeRunnableOnCore_preserves_objects st'' caller executingCore))
+          exact hS2.trans (sameSchedContextBindings.of_objectsAgreeOffRunLinks (removeRunnableOnCore_objectsAgreeOffRunLinks st'' caller executingCore))
     | some _ =>
       simp only
       cases hPop : endpointQueuePopHead endpointId true st with
@@ -2257,7 +2255,7 @@ theorem endpointCallOnCore_sameSchedContextBindings
               simp only
               have hS5 := hS4.trans (linkServerStashedReply_sameSchedContextBindings st4 st5 caller pair.1 hObjInv4 hLink)
               show sameSchedContextBindings st (removeRunnableOnCore st5 caller executingCore)
-              exact hS5.trans (sameSchedContextBindings.of_objects_eq (removeRunnableOnCore_preserves_objects st5 caller executingCore))
+              exact hS5.trans (sameSchedContextBindings.of_objectsAgreeOffRunLinks (removeRunnableOnCore_objectsAgreeOffRunLinks st5 caller executingCore))
 
 /-- Finding F-1: a `storeTcbReceiveComplete` that succeeds resolves the target TCB
 and sets its `ipcState` to `.ready`. Mirror of
@@ -2317,15 +2315,16 @@ theorem endpointCallOnCore_reply_linkage_under_lockSet
   -- WS-SM SM6.D (#7.3b fold): the server-first reply link sets the caller's
   -- `replyObject` but leaves its `ipcState` (`.blockedOnReply`) intact.
   rw [endpointCallOnCore_rendezvous_eq endpointId caller msg executingCore st ep receiver
-        recvTcb0 st' st'' st4 st5 hSz1 hSz2 hObj hHead hPop hStore hCallerStore hLink,
-      removeRunnableOnCore_getTcb?]
+        recvTcb0 st' st'' st4 st5 hSz1 hSz2 hObj hHead hPop hStore hCallerStore hLink]
   obtain ⟨t', hT5⟩ :=
     linkServerStashedReply_tcb_forward st4 st5 caller receiver caller.toObjId t hObjInv4 hLink hT4
   obtain ⟨tb, hTb, hIpcEq⟩ :=
     linkServerStashedReply_tcb_ipcState_backward st4 st5 caller receiver caller t' hObjInv4 hLink hT5
-  refine ⟨t', (SystemState.getTcb?_eq_some_iff st5 caller t').mpr hT5, ?_⟩
+  obtain ⟨t'', hT6, hE⟩ :=
+    (removeRunnableOnCore_objectsAgreeOffRunLinks st5 caller executingCore).get_tcb hT5
+  refine ⟨t'', (SystemState.getTcb?_eq_some_iff _ caller t'').mpr hT6, ?_⟩
   have hbt : t = tb := by simpa using hT4.symm.trans hTb
-  rw [← hIpcEq, ← hbt]; exact hIpc
+  rw [TCB.proj_eq_of_withoutRunLinks_eq TCB.ipcState hE, ← hIpcEq, ← hbt]; exact hIpc
 
 -- ============================================================================
 -- §14 SM6.A.6 — the caller-TCB write lock IS in the footprint (membership)

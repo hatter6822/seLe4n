@@ -76,9 +76,9 @@ theorem not_runnable_membership_of_endpoint_store
 
 def notificationQueueWellFormed (ntfn : Notification) : Prop :=
   match ntfn.state with
-  | .idle => ntfn.waitingThreads.val = [] ∧ ntfn.pendingBadge = none
-  | .waiting => ntfn.waitingThreads.val ≠ [] ∧ ntfn.pendingBadge = none
-  | .active => ntfn.waitingThreads.val = [] ∧ ntfn.pendingBadge.isSome
+  | .idle => ntfn.waitHead = none ∧ ntfn.pendingBadge = none
+  | .waiting => ntfn.waitHead ≠ none ∧ ntfn.pendingBadge = none
+  | .active => ntfn.waitHead = none ∧ ntfn.pendingBadge.isSome
 
 def notificationInvariant (ntfn : Notification) : Prop :=
   notificationQueueWellFormed ntfn
@@ -1161,16 +1161,18 @@ def currentNotEndpointQueueHead (st : SystemState) : Prop :=
       st.objects[oid]? = some (.endpoint ep) →
       ep.receiveQ.head ≠ some tid ∧ ep.sendQ.head ≠ some tid
 
-/-- Under dequeue-on-dispatch QCC, the current thread must not appear on any
-notification wait list. This ensures ensureRunnable on a signaled waiter
-does not conflict with the current thread. -/
+/-- Under dequeue-on-dispatch QCC, the current thread must not be either end of
+any notification wait queue (WS-ZA ZA4.4: the ends are what a notification
+names; the waiters between them are blocked, so never current under
+`notificationWaiterConsistent`). This ensures ensureRunnable on a signaled
+waiter does not conflict with the current thread. -/
 def currentNotOnNotificationWaitList (st : SystemState) : Prop :=
   match (st.scheduler.currentOnCore bootCoreId) with
   | none => True
   | some tid =>
     ∀ (oid : SeLe4n.ObjId) (ntfn : Notification),
       st.objects[oid]? = some (.notification ntfn) →
-      tid ∉ ntfn.waitingThreads
+      tid ∉ ntfn.queueEnds
 
 /-- Combined dequeue-on-dispatch coherence predicate: the current thread
 has ready ipcState, is not an endpoint queue head, and is not on any
@@ -1397,43 +1399,260 @@ private theorem tcb_preserved_through_endpoint_store
 -- WS-G7/F-P11: Notification waiter consistency invariant
 -- ============================================================================
 
-/-- WS-G7: If a thread is in a notification's waiting list, its TCB ipcState
-must be `.blockedOnNotification oid` for that notification. This invariant
-enables the O(1) TCB ipcState duplicate-check in `notificationWait`. -/
-def notificationWaiterConsistent (st : SystemState) : Prop :=
-  ∀ (oid : SeLe4n.ObjId) (ntfn : Notification) (tid : SeLe4n.ThreadId),
-    st.objects[oid]? = some (.notification ntfn) →
-    tid ∈ ntfn.waitingThreads →
-    ∃ tcb, st.objects[tid.toObjId]? = some (.tcb tcb) ∧ tcb.ipcState = .blockedOnNotification oid
+/-- WS-ZA ZA4.4: `t` is in notification `n`'s wait queue: it is the queue's
+head, or the successor (`ntfnNext`) of a thread in the queue.  A signal wakes
+exactly the threads reached this way, in this order. -/
+inductive notificationQueueReaches (st : SystemState) (n : SeLe4n.ObjId) :
+    SeLe4n.ThreadId → Prop
+  | head {ntfn : Notification} {h : SeLe4n.ThreadId} :
+      st.objects[n]? = some (.notification ntfn) → ntfn.waitHead = some h →
+      notificationQueueReaches st n h
+  | next {a b : SeLe4n.ThreadId} {ta : TCB} :
+      notificationQueueReaches st n a → st.objects[a.toObjId]? = some (.tcb ta) →
+      ta.ntfnNext = some b → notificationQueueReaches st n b
 
-/-- WS-G7: Bridge lemma: under `notificationWaiterConsistent`, if a thread's
-ipcState is NOT `.blockedOnNotification oid`, then it is NOT in that
-notification's waiting list. -/
-theorem not_mem_waitingThreads_of_ipcState_ne
+/-- WS-G7, WS-ZA ZA4.4: **the notification wait queues are linked through the
+TCBs consistently.**  A notification names the two ends of its queue; the
+waiters between them are reached through their own `ntfnPrev` / `ntfnNext`
+links.  The predicate is local — each clause relates one object to its direct
+neighbours — so it is checked without walking a queue:
+
+* a notification's head and tail are both present or both absent; each is a
+  TCB blocked on that notification, and the tail has no successor;
+* a TCB blocked on a notification has that notification in the store; it is
+  the queue's head or has a predecessor blocked on the same notification whose
+  successor link names it back; it is the tail when it has no successor; and a
+  successor it has is not the head, is blocked on the same notification, and
+  names it back as predecessor.
+
+The head and tail clauses are what the O(1) duplicate-wait check in
+`notificationWait` and the head wake in `notificationSignal` rest on.
+
+The third clause is membership: a TCB blocked on a notification is reached
+from that notification's head (`notificationQueueReaches`), so no ring of
+blocked waiters hangs off no queue, and every waiter a signal can wake is woken
+in order.  With the local clauses it makes each queue acyclic
+(`notificationQueue_acyclic`).
+
+The last two clauses are the queues' boundaries outside the links: a queue's
+head has no predecessor, and a TCB blocked on no notification, on no queue,
+holds no notification links at all.  So no link anywhere names a thread that
+has left its queue: a signal that pops the head and a cancellation that unlinks
+a waiter clear the links they leave behind (`detachNtfnHead`,
+`removeFromNotificationWaitQueue`), as seL4's `tcbEPDequeue` rewrites the new
+head's predecessor link. -/
+def notificationWaiterConsistent (st : SystemState) : Prop :=
+  (∀ (oid : SeLe4n.ObjId) (ntfn : Notification),
+    st.objects[oid]? = some (.notification ntfn) →
+    (ntfn.waitHead = none ↔ ntfn.waitTail = none) ∧
+    (∀ h, ntfn.waitHead = some h → ∃ tcb, st.objects[h.toObjId]? = some (.tcb tcb) ∧
+      tcb.ipcState = .blockedOnNotification oid) ∧
+    (∀ t, ntfn.waitTail = some t → ∃ tcb, st.objects[t.toObjId]? = some (.tcb tcb) ∧
+      tcb.ipcState = .blockedOnNotification oid ∧ tcb.ntfnNext = none)) ∧
+  (∀ (tid : SeLe4n.ThreadId) (tcb : TCB) (oid : SeLe4n.ObjId),
+    st.objects[tid.toObjId]? = some (.tcb tcb) →
+    tcb.ipcState = .blockedOnNotification oid →
+    ∃ ntfn, st.objects[oid]? = some (.notification ntfn) ∧
+      (ntfn.waitHead = some tid ∨ ∃ a ta, tcb.ntfnPrev = some a ∧
+        st.objects[a.toObjId]? = some (.tcb ta) ∧
+        ta.ipcState = .blockedOnNotification oid ∧ ta.ntfnNext = some tid) ∧
+      (tcb.ntfnNext = none → ntfn.waitTail = some tid) ∧
+      (∀ b, tcb.ntfnNext = some b → ntfn.waitHead ≠ some b ∧
+        ∃ tb, st.objects[b.toObjId]? = some (.tcb tb) ∧
+          tb.ipcState = .blockedOnNotification oid ∧ tb.ntfnPrev = some tid)) ∧
+  (∀ (tid : SeLe4n.ThreadId) (tcb : TCB) (oid : SeLe4n.ObjId),
+    st.objects[tid.toObjId]? = some (.tcb tcb) →
+    tcb.ipcState = .blockedOnNotification oid →
+    notificationQueueReaches st oid tid) ∧
+  (∀ (oid : SeLe4n.ObjId) (ntfn : Notification) (h : SeLe4n.ThreadId) (tcb : TCB),
+    st.objects[oid]? = some (.notification ntfn) → ntfn.waitHead = some h →
+    st.objects[h.toObjId]? = some (.tcb tcb) → tcb.ntfnPrev = none) ∧
+  (∀ (tid : SeLe4n.ThreadId) (tcb : TCB),
+    st.objects[tid.toObjId]? = some (.tcb tcb) →
+    (∀ oid, tcb.ipcState ≠ .blockedOnNotification oid) →
+    tcb.ntfnPrev = none ∧ tcb.ntfnNext = none)
+
+/-- WS-ZA ZA4.4: a thread blocked on a notification is in that notification's
+wait queue (the membership clause). -/
+theorem notificationWaiterConsistent.reaches {st : SystemState}
+    (h : notificationWaiterConsistent st) {tid : SeLe4n.ThreadId} {tcb : TCB}
+    {oid : SeLe4n.ObjId} (hT : st.objects[tid.toObjId]? = some (.tcb tcb))
+    (hB : tcb.ipcState = .blockedOnNotification oid) :
+    notificationQueueReaches st oid tid :=
+  h.2.2.1 tid tcb oid hT hB
+
+/-- WS-ZA ZA4.4: a notification queue's head has no predecessor link. -/
+theorem notificationWaiterConsistent.headNoPrev {st : SystemState}
+    (h : notificationWaiterConsistent st) {oid : SeLe4n.ObjId} {ntfn : Notification}
+    {hd : SeLe4n.ThreadId} {tcb : TCB} (hN : st.objects[oid]? = some (.notification ntfn))
+    (hH : ntfn.waitHead = some hd) (hT : st.objects[hd.toObjId]? = some (.tcb tcb)) :
+    tcb.ntfnPrev = none :=
+  h.2.2.2.1 oid ntfn hd tcb hN hH hT
+
+/-- WS-ZA ZA4.4: a thread blocked on no notification holds no notification links. -/
+theorem notificationWaiterConsistent.unqueuedNoLinks {st : SystemState}
+    (h : notificationWaiterConsistent st) {tid : SeLe4n.ThreadId} {tcb : TCB}
+    (hT : st.objects[tid.toObjId]? = some (.tcb tcb))
+    (hNB : ∀ oid, tcb.ipcState ≠ .blockedOnNotification oid) :
+    tcb.ntfnPrev = none ∧ tcb.ntfnNext = none :=
+  h.2.2.2.2 tid tcb hT hNB
+
+/-- WS-G7: Bridge lemma: under `notificationWaiterConsistent`, a thread whose
+ipcState is NOT `.blockedOnNotification oid` is neither end of that
+notification's wait queue. -/
+theorem not_mem_queueEnds_of_ipcState_ne
     (st : SystemState) (oid : SeLe4n.ObjId) (ntfn : Notification)
     (tid : SeLe4n.ThreadId) (tcb : TCB)
     (hConsist : notificationWaiterConsistent st)
     (hNtfn : st.objects[oid]? = some (.notification ntfn))
     (hTcb : st.objects[tid.toObjId]? = some (.tcb tcb))
     (hNe : tcb.ipcState ≠ .blockedOnNotification oid) :
-    tid ∉ ntfn.waitingThreads := by
+    tid ∉ ntfn.queueEnds := by
   intro hMem
-  obtain ⟨tcb', hTcb', hIpc'⟩ := hConsist oid ntfn tid hNtfn hMem
-  rw [hTcb] at hTcb'; cases hTcb'
-  exact hNe hIpc'
+  obtain ⟨_, hHead, hTail⟩ := hConsist.1 oid ntfn hNtfn
+  rcases (Notification.mem_queueEnds ntfn tid).mp hMem with h | h
+  · obtain ⟨tcb', hTcb', hIpc'⟩ := hHead tid h
+    rw [hTcb] at hTcb'; cases hTcb'; exact hNe hIpc'
+  · obtain ⟨tcb', hTcb', hIpc', _⟩ := hTail tid h
+    rw [hTcb] at hTcb'; cases hTcb'; exact hNe hIpc'
+
+/-- WS-ZA ZA4.4: the head of a notification's wait queue is a TCB blocked on it. -/
+theorem waitHead_blocked_of_notificationWaiterConsistent
+    {st : SystemState} {oid : SeLe4n.ObjId} {ntfn : Notification} {h : SeLe4n.ThreadId}
+    (hConsist : notificationWaiterConsistent st)
+    (hNtfn : st.objects[oid]? = some (.notification ntfn))
+    (hHead : ntfn.waitHead = some h) :
+    ∃ tcb, st.objects[h.toObjId]? = some (.tcb tcb) ∧
+      tcb.ipcState = .blockedOnNotification oid :=
+  (hConsist.1 oid ntfn hNtfn).2.1 h hHead
+
+/-- WS-ZA ZA4.4: every thread in a notification's wait queue is a TCB blocked
+on that notification, the converse of the membership clause. -/
+theorem notificationQueueReaches_blocked {st : SystemState} {n : SeLe4n.ObjId}
+    {t : SeLe4n.ThreadId} (hInv : notificationWaiterConsistent st)
+    (hR : notificationQueueReaches st n t) :
+    ∃ tcb, st.objects[t.toObjId]? = some (.tcb tcb) ∧
+      tcb.ipcState = .blockedOnNotification n := by
+  induction hR with
+  | @head ntfn h hN hH => exact (hInv.1 _ _ hN).2.1 _ hH
+  | @next a b ta _ hTa hNx ih =>
+    obtain ⟨ta', hTa', hBa⟩ := ih
+    rw [hTa] at hTa'; cases hTa'
+    obtain ⟨_, _, _, _, hNext⟩ := hInv.2.1 _ _ _ hTa hBa
+    obtain ⟨_, tb, hTb, hBb, _⟩ := hNext _ hNx
+    exact ⟨tb, hTb, hBb⟩
+
+/-- WS-ZA ZA4.4: `b` follows `a` in a notification wait queue through one or
+more successor links. -/
+inductive notificationQueueLinkPath (st : SystemState) :
+    SeLe4n.ThreadId → SeLe4n.ThreadId → Prop
+  | single {a b : SeLe4n.ThreadId} {ta : TCB} :
+      st.objects[a.toObjId]? = some (.tcb ta) → ta.ntfnNext = some b →
+      notificationQueueLinkPath st a b
+  | tail {a x b : SeLe4n.ThreadId} {tx : TCB} :
+      notificationQueueLinkPath st a x → st.objects[x.toObjId]? = some (.tcb tx) →
+      tx.ntfnNext = some b → notificationQueueLinkPath st a b
+
+/-- A link in front of a path is a path. -/
+theorem notificationQueueLinkPath.cons {st : SystemState} {w x y : SeLe4n.ThreadId}
+    {tw : TCB} (hW : st.objects[w.toObjId]? = some (.tcb tw)) (hN : tw.ntfnNext = some x)
+    (hP : notificationQueueLinkPath st x y) : notificationQueueLinkPath st w y := by
+  induction hP with
+  | single hA hB => exact .tail (.single hW hN) hA hB
+  | tail _ hX hB ih => exact .tail ih hX hB
+
+/-- Successor links from a thread blocked on a notification stay on threads
+blocked on it. -/
+theorem notificationQueueLinkPath_blocked {st : SystemState} {n : SeLe4n.ObjId}
+    {a b : SeLe4n.ThreadId} {ta : TCB} (hInv : notificationWaiterConsistent st)
+    (hA : st.objects[a.toObjId]? = some (.tcb ta))
+    (hB : ta.ipcState = .blockedOnNotification n)
+    (hP : notificationQueueLinkPath st a b) :
+    ∃ tb, st.objects[b.toObjId]? = some (.tcb tb) ∧
+      tb.ipcState = .blockedOnNotification n := by
+  induction hP with
+  | single hA' hN =>
+    rw [hA] at hA'; cases hA'
+    obtain ⟨_, _, _, _, hNext⟩ := hInv.2.1 _ _ _ hA hB
+    obtain ⟨_, tb, hTb, hBb, _⟩ := hNext _ hN
+    exact ⟨tb, hTb, hBb⟩
+  | tail _ hX hN ih =>
+    obtain ⟨tx', hX', hBx⟩ := ih
+    rw [hX] at hX'; cases hX'
+    obtain ⟨_, _, _, _, hNext⟩ := hInv.2.1 _ _ _ hX hBx
+    obtain ⟨_, tb, hTb, hBb, _⟩ := hNext _ hN
+    exact ⟨tb, hTb, hBb⟩
+
+/-- The last link of a path. -/
+theorem notificationQueueLinkPath.last {st : SystemState} {a b : SeLe4n.ThreadId}
+    (hP : notificationQueueLinkPath st a b) :
+    ∃ x tx, (x = a ∨ notificationQueueLinkPath st a x) ∧
+      st.objects[x.toObjId]? = some (.tcb tx) ∧ tx.ntfnNext = some b := by
+  cases hP with
+  | single hA hN => exact ⟨_, _, Or.inl rfl, hA, hN⟩
+  | tail hP hX hN => exact ⟨_, _, Or.inr hP, hX, hN⟩
+
+/-- WS-ZA ZA4.4: **each notification wait queue is acyclic.**  No thread in a
+queue follows itself: the head is no thread's successor, and a successor names
+exactly one predecessor, so a ring would need a thread in it to have two. -/
+theorem notificationQueueReaches_acyclic {st : SystemState} {n : SeLe4n.ObjId}
+    {t : SeLe4n.ThreadId} (hInv : notificationWaiterConsistent st)
+    (hR : notificationQueueReaches st n t) : ¬ notificationQueueLinkPath st t t := by
+  -- The last link into a thread of the queue starts at a thread blocked on it.
+  have hLastBlocked : ∀ {u : SeLe4n.ThreadId}, notificationQueueReaches st n u →
+      notificationQueueLinkPath st u u → ∃ x tx, (x = u ∨ notificationQueueLinkPath st u x) ∧
+        st.objects[x.toObjId]? = some (.tcb tx) ∧ tx.ntfnNext = some u ∧
+        tx.ipcState = .blockedOnNotification n := by
+    intro u hRu hP
+    obtain ⟨x, tx, hXu, hX, hNx⟩ := hP.last
+    obtain ⟨tu, hTu, hBu⟩ := notificationQueueReaches_blocked hInv hRu
+    have hBx : tx.ipcState = .blockedOnNotification n := by
+      rcases hXu with e | hPx
+      · subst e; rw [hTu] at hX; cases hX; exact hBu
+      · obtain ⟨tx', hX', hB'⟩ := notificationQueueLinkPath_blocked hInv hTu hBu hPx
+        rw [hX] at hX'; cases hX'; exact hB'
+    exact ⟨x, tx, hXu, hX, hNx, hBx⟩
+  induction hR with
+  | @head ntfn h hN hH =>
+    intro hP
+    obtain ⟨x, tx, _, hX, hNx, hBx⟩ := hLastBlocked (.head hN hH) hP
+    obtain ⟨n0, hN0, _, _, hNext⟩ := hInv.2.1 _ _ _ hX hBx
+    rw [hN] at hN0; cases hN0
+    exact (hNext h hNx).1 hH
+  | @next a b ta hRa hTa hNx ih =>
+    intro hP
+    obtain ⟨x, tx, hXb, hX, hNxb, hBx⟩ := hLastBlocked (.next hRa hTa hNx) hP
+    obtain ⟨ta', hTa', hBa⟩ := notificationQueueReaches_blocked hInv hRa
+    rw [hTa] at hTa'; cases hTa'
+    obtain ⟨_, _, _, _, hNextX⟩ := hInv.2.1 _ _ _ hX hBx
+    obtain ⟨_, _, _, _, hNextA⟩ := hInv.2.1 _ _ _ hTa hBa
+    obtain ⟨_, tb, hTb, _, hPb⟩ := hNextX b hNxb
+    obtain ⟨_, tb', hTb', _, hPb'⟩ := hNextA b hNx
+    rw [hTb] at hTb'; cases hTb'; rw [hPb] at hPb'; cases hPb'
+    -- `x` is `a`: the path from `b` back to `a`, behind `a`'s link to `b`, is a
+    -- ring through `a`.
+    rcases hXb with e | hPba
+    · subst e; exact ih (.single hTa hNx)
+    · exact ih (notificationQueueLinkPath.cons hTa hNx hPba)
+
+/-- WS-ZA ZA4.4: no thread blocked on a notification follows itself in the
+queue. -/
+theorem notificationQueue_acyclic {st : SystemState} {n : SeLe4n.ObjId}
+    {t : SeLe4n.ThreadId} {tcb : TCB} (hInv : notificationWaiterConsistent st)
+    (hT : st.objects[t.toObjId]? = some (.tcb tcb))
+    (hB : tcb.ipcState = .blockedOnNotification n) :
+    ¬ notificationQueueLinkPath st t t :=
+  notificationQueueReaches_acyclic hInv (hInv.reaches hT hB)
 
 -- ============================================================================
 -- Notification uniqueness (F-12 / WS-D4 / WS-G7)
 -- ============================================================================
 
 -- WS-RC R4.C close-out (Phase C2.c4): the historical state-level
--- `uniqueWaiters` predicate, its `uniqueWaiters_holds` substantive
--- discharge, and its `uniqueWaiters_trivial` plan-named alias have all
--- been deleted.  Per-Notification Nodup is now carried structurally by
--- `Notification.waitingThreads : NoDupList ThreadId` via the
--- `NoDupList.hNodup` field; the canonical discharge is
--- `SeLe4n.NoDupList.nodup_witness` (or its plan-named alias
--- `SeLe4n.Kernel.notification_waiters_nodup`).
+-- `uniqueWaiters` predicate and its discharge helpers were deleted.  Since
+-- WS-ZA ZA4.4 a notification's waiters are an intrusive queue through the
+-- TCBs, and a thread's membership is its own `ipcState`
+-- (`notificationWaiterConsistent`), so it cannot be queued twice.
 
 /-- AJ1-B (M-04): Every thread in `blockedOnReply` state has an explicit
 `replyTarget`. All production paths (`endpointCall`, `endpointReceiveDual`)
@@ -1602,6 +1821,46 @@ theorem pendingReceiveReplyWellFormed_of_objects_eq {st st' : SystemState}
   unfold pendingReceiveReplyWellFormed SystemState.getTcb? SystemState.getReply? at h ⊢
   rw [hObjs]; exact h
 
+/-- WS-ZA ZA4.5: the stash reads TCBs' IPC state and stash field and Reply
+objects, none of which a run-queue write touches. -/
+theorem pendingReceiveReplyWellFormed_of_objectsAgreeOffRunLinks {st st' : SystemState}
+    (hA : st'.objectsAgreeOffRunLinks st) (h : pendingReceiveReplyWellFormed st) :
+    pendingReceiveReplyWellFormed st' := by
+  have back : ∀ {t : SeLe4n.ThreadId} {tcb' : TCB}, st'.getTcb? t = some tcb' →
+      ∃ tcb, st.getTcb? t = some tcb ∧ tcb'.ipcState = tcb.ipcState ∧
+        tcb'.pendingReceiveReply = tcb.pendingReceiveReply := by
+    intro t tcb' hT
+    have hT' := (SystemState.getTcb?_eq_some_iff _ t tcb').mp hT
+    run_links_back hA at tcb' hT'
+    exact ⟨tcb', (SystemState.getTcb?_eq_some_iff _ t tcb').mpr hT', rfl, rfl⟩
+  refine ⟨fun tid tcb' rid hT hP => ?_, fun t1 t2 c1 c2 rid h1 h2 p1 p2 => ?_⟩
+  · obtain ⟨tcb, hT0, hI, hP0⟩ := back hT
+    obtain ⟨⟨ep, hEp⟩, ⟨r, hr, hc⟩⟩ := h.1 tid tcb rid hT0 (hP0 ▸ hP)
+    exact ⟨⟨ep, hI.trans hEp⟩, ⟨r, (hA.getReply? rid).trans hr, hc⟩⟩
+  · obtain ⟨d1, h1', _, q1⟩ := back h1
+    obtain ⟨d2, h2', _, q2⟩ := back h2
+    exact h.2 t1 t2 d1 d2 rid h1' h2' (q1 ▸ p1) (q2 ▸ p2)
+
+/-- WS-ZA ZA4.4: a rewrite of notification-queue links keeps every TCB's IPC
+state and stashed reply, and every Reply. -/
+theorem pendingReceiveReplyWellFormed_of_ntfnLinksRewritten {st st' : SystemState}
+    (hA : ntfnLinksRewritten st st') (h : pendingReceiveReplyWellFormed st) :
+    pendingReceiveReplyWellFormed st' := by
+  have back : ∀ {t : SeLe4n.ThreadId} {tcb' : TCB}, st'.getTcb? t = some tcb' →
+      ∃ tcb, st.getTcb? t = some tcb ∧ tcb'.ipcState = tcb.ipcState ∧
+        tcb'.pendingReceiveReply = tcb.pendingReceiveReply := by
+    intro t tcb' hT
+    have hT' := (SystemState.getTcb?_eq_some_iff _ t tcb').mp hT
+    ntfn_links_back hA at tcb' hT'
+    exact ⟨tcb', (SystemState.getTcb?_eq_some_iff _ t tcb').mpr hT', rfl, rfl⟩
+  refine ⟨fun tid tcb' rid hT hP => ?_, fun t1 t2 c1 c2 rid h1 h2 p1 p2 => ?_⟩
+  · obtain ⟨tcb, hT0, hI, hP0⟩ := back hT
+    obtain ⟨⟨ep, hEp⟩, ⟨r, hr, hc⟩⟩ := h.1 tid tcb rid hT0 (hP0 ▸ hP)
+    exact ⟨⟨ep, hI.trans hEp⟩, ⟨r, (hA.getReply? rid).trans hr, hc⟩⟩
+  · obtain ⟨d1, h1', _, q1⟩ := back h1
+    obtain ⟨d2, h2', _, q2⟩ := back h2
+    exact h.2 t1 t2 d1 d2 rid h1' h2' (q1 ▸ p1) (q2 ▸ p2)
+
 /-- WS-SM SM6.E: `ipcInvariant` reads only the object store, so any
 transition that leaves the object store unchanged frames it (the cross-core
 deschedule, the replenishment migration, per-core scheduler-queue edits). -/
@@ -1610,6 +1869,12 @@ theorem ipcInvariant_of_objects_eq {st st' : SystemState}
     ipcInvariant st' := by
   intro oid ntfn hL
   exact h oid ntfn (hObjs ▸ hL)
+
+/-- WS-ZA ZA4.5: a step that writes only run-queue links keeps every
+notification. -/
+theorem ipcInvariant_of_objectsAgreeOffRunLinks {st st' : SystemState}
+    (hA : st'.objectsAgreeOffRunLinks st) (h : ipcInvariant st) : ipcInvariant st' :=
+  fun oid ntfn hL => h oid ntfn (hA.get_notification_iff.mp hL)
 
 -- ============================================================================
 -- WS-SM SM6.D (#7.1 fold): upstream reply-link / server-first-stash frames.
@@ -1855,10 +2120,7 @@ theorem blockedOnReplyHasTarget_implies_some_replyTarget
   | some t => exact ⟨t, rfl⟩
 
 -- WS-RC R4.C close-out: `notificationWait_preserves_uniqueWaiters` was
--- deleted along with the `uniqueWaiters` predicate it preserved.  The
--- per-notification Nodup invariant now holds structurally via
--- `Notification.waitingThreads.hNodup`; the state-level predicate has
--- no remaining role in the proof surface.
+-- deleted along with the `uniqueWaiters` predicate it preserved.
 
 -- ============================================================================
 -- WS-G7: notificationWaiterConsistent — base case + documentation
@@ -1868,123 +2130,81 @@ theorem blockedOnReplyHasTarget_implies_some_replyTarget
 because the object store is empty, so no notification objects exist. -/
 theorem default_notificationWaiterConsistent :
     notificationWaiterConsistent (default : SystemState) := by
-  intro oid ntfn _ hObj _
-  have h : (default : SystemState).objects[oid]? = none := by
+  have h : ∀ oid : SeLe4n.ObjId, (default : SystemState).objects[oid]? = none := by
+    intro oid
     simp only [RHTable_getElem?_eq_get?]; exact RHTable_get?_empty 16 (by omega)
-  rw [h] at hObj; exact absurd hObj (by simp)
+  refine ⟨fun oid ntfn hObj => ?_, fun tid tcb _ hObj _ => ?_, fun tid tcb _ hObj _ => ?_,
+    fun oid _ _ _ hObj _ _ => ?_, fun tid tcb hObj _ => ?_⟩
+  all_goals (rw [h] at hObj; exact absurd hObj (by simp))
 
 /-! ### WS-G7: Preservation path for `notificationWaiterConsistent`
 
-`notificationWaiterConsistent` is a bridging invariant that enables the O(1)
-duplicate-wait check in `notificationWait`. Its preservation through the kernel
-transition surface is sketched here for documentation:
+`notificationWaiterConsistent` is the bridging invariant behind the O(1)
+duplicate-wait check in `notificationWait` and the head wake in
+`notificationSignal` (WS-ZA ZA4.4: the queue is linked through the TCBs).  Its
+preservation across the kernel transitions:
 
-1. **`notificationWait`** (wait path): Prepends `waiter` to the notification's
-   waiting list and sets `waiter.ipcState = .blockedOnNotification oid`.
-   Pre-condition: `runnableThreadIpcReady` ensures the calling thread has
-   `ipcState = .ready`, so it is not in any notification's waiting list.
-   Preservation holds because the new waiter gets the correct ipcState and
-   existing TCBs are unchanged.
+1. **`notificationWait`** (block path): the park records the waiter as the
+   queue's tail (and head, when the queue was empty) and sets its `ipcState` to
+   `.blockedOnNotification oid`; the link-in writes its links and points the
+   old tail's successor at it.  The caller is `.ready`, so it was in no queue.
+2. **`notificationWait`** (badge path): the queue was empty (a pending badge
+   and a waiter never coexist) and stays empty.
+3. **`notificationSignal`** (wake path): the head's successor, read from the
+   head's own link, heads the queue; the woken head is `.ready` and in no
+   queue.  The new head's predecessor link is stale, and no clause reads it.
+4. **`notificationSignal`** (merge path): no queue changes.
+5. **Cancellation and teardown** (`removeFromNotificationWaitQueue`): the
+   victim's neighbours are linked to each other, or the notification's ends
+   move past it.
+6. **Other kernel operations** write no notification queue and change the
+   `ipcState` only of threads not blocked on a notification.
 
-2. **`notificationWait`** (badge path): Empties the target notification's
-   waiting list. Preservation holds vacuously for the target; other
-   notifications are unchanged.
-
-3. **`notificationSignal`** (wake path): Removes the head waiter and sets its
-   ipcState to `.ready`. The woken thread does not appear elsewhere in the
-   remaining list — guaranteed structurally by `NoDupList.hNodup` on
-   `Notification.waitingThreads` (WS-RC R4.C close-out; the historical
-   state-level `uniqueWaiters` precondition is no longer required since the
-   field-level invariant is unconditional). Remaining threads' TCBs are
-   unchanged, so their ipcState is preserved.
-
-4. **`notificationSignal`** (merge path): No TCB modification; only the
-   notification badge is updated. All waiting lists are unchanged.
-
-5. **Other kernel operations** (endpoint, scheduler, lifecycle, capability):
-   These do not modify notification waiting lists. They may change a thread's
-   ipcState, but only for threads that are `.ready` or blocked on
-   non-notification objects, so `notificationWaiterConsistent` is preserved.
-
-R3-C/M-19: Formal preservation theorems are proved in
-`NotificationPreservation.lean` and `Structural.lean`:
-- `storeObject_notification_preserves_notificationWaiterConsistent` — notification
-  store with subset waiting list
-- `storeObject_nonNotification_preserves_notificationWaiterConsistent` — non-notification
-  store with ipcState consistency hypothesis
-- `storeTcbIpcStateAndMessage_preserves_notificationWaiterConsistent` — TCB ipc
-  state change when target thread is not in any notification wait list
-- `notificationSignal_preserves_notificationWaiterConsistent` — R3-C.1: wake path
-  (removes head waiter; structural `NoDupList.hNodup` ensures the woken
-  thread does not appear elsewhere) + merge path (vacuous)
-- `frame_preserves_notificationWaiterConsistent` — R3-C.2: general frame lemma
-  for operations that preserve notification objects and waiter TCBs
-- `endpointReply_preserves_notificationWaiterConsistent` — R3-C.2: concrete
-  endpoint reply preservation (target is `.blockedOnReply`, not in wait list)
-The base case (`default_notificationWaiterConsistent`) and the runtime check
-(`notificationWaiterConsistentCheck`) complete the chain.
+The formal theorems: `notificationWait_preserves_notificationWaiterConsistent`,
+`notificationSignal_preserves_notificationWaiterConsistent`,
+`storeTcbIpcStateAndMessage_preserves_notificationWaiterConsistent`,
+`endpointReply_preserves_notificationWaiterConsistent`,
+`consumeCallerReply_preserves_notificationWaiterConsistent` and
+`removeCallerReplyFrame_preserves_notificationWaiterConsistent`.  The base case
+is `default_notificationWaiterConsistent`; the runtime check is
+`notificationWaiterConsistentChecks` (`SeLe4n/Testing/InvariantChecks.lean`).
 -/
 
 -- ============================================================================
 -- Notification operation ipcInvariant preservation (WS-E4 preparation)
 -- ============================================================================
 
-/-- WS-RC R4.C: notificationSignal result notification is well-formed.
-    - Wake path: remaining waiters determine idle/waiting state, badge cleared.
-    - Merge path: no waiters, active state with merged badge.
-
-    `rest` is the `NoDupList`-typed tail produced by `tail?`; emptiness
-    is detected via `rest.val.isEmpty`. -/
+/-- notificationSignal result notification is well-formed.
+    - Wake path (WS-ZA ZA4.4): the woken head's successor heads the queue;
+      none left means idle, badge cleared.
+    - Merge path: no waiters, active state with merged badge. -/
 theorem notificationSignal_result_wellFormed_wake
-    (rest : SeLe4n.NoDupList SeLe4n.ThreadId) :
-    notificationQueueWellFormed
-      { state := if rest.val.isEmpty then NotificationState.idle else .waiting,
-        waitingThreads := rest,
-        hasPendingBadge := false, pendingWord := SeLe4n.Badge.zero } := by
+    (ntfn : Notification) (next : Option SeLe4n.ThreadId) :
+    notificationQueueWellFormed (ntfn.withHeadPopped next) := by
   unfold notificationQueueWellFormed
-  by_cases hEmpty : rest.val = []
-  · simp [hEmpty, List.isEmpty]
-  · have hNotEmpty : rest.val.isEmpty = false := by
-      cases hL : rest.val with
-      | nil => exact absurd hL hEmpty
-      | cons _ _ => rfl
-    simp [hNotEmpty, hEmpty]
+  cases next <;> simp
 
 theorem notificationSignal_result_wellFormed_merge
-    (mergedBadge : SeLe4n.Badge) :
+    (mergedBadge : SeLe4n.Badge) (b : Option SeLe4n.ThreadId) :
     notificationQueueWellFormed
       { state := .active,
-        waitingThreads := SeLe4n.NoDupList.empty,
-        hasPendingBadge := true, pendingWord := mergedBadge } := by
+        hasPendingBadge := true, pendingWord := mergedBadge, boundTCB := b } := by
   unfold notificationQueueWellFormed; simp
 
 /-- notificationWait result notification is well-formed (badge-consume path):
-    idle state, empty waiters, no badge. -/
-theorem notificationWait_result_wellFormed_badge :
+    idle state, empty queue, no badge. -/
+theorem notificationWait_result_wellFormed_badge (b : Option SeLe4n.ThreadId) :
     notificationQueueWellFormed
       { state := NotificationState.idle,
-        waitingThreads := SeLe4n.NoDupList.empty,
-        hasPendingBadge := false, pendingWord := SeLe4n.Badge.zero } := by
+        hasPendingBadge := false, pendingWord := SeLe4n.Badge.zero, boundTCB := b } := by
   unfold notificationQueueWellFormed; simp
 
-/-- WS-G7/F-P11/WS-RC R4.C: notificationWait result notification is well-formed
-    (wait path): waiting state, non-empty waiter list (prepended), no badge.
-
-    The prepended list is the smart-constructor result
-    `consWithGuard? waiter waiters = some wt'`; `wt'.val = waiter ::
-    waiters.val` follows from `NoDupList.consWithGuard?_eq_some_iff`. -/
+/-- WS-G7/F-P11, WS-ZA ZA4.4: notificationWait result notification is
+    well-formed (wait path): waiting state, nonempty queue, no badge. -/
 theorem notificationWait_result_wellFormed_wait
-    (waiter : SeLe4n.ThreadId)
-    (waiters : SeLe4n.NoDupList SeLe4n.ThreadId)
-    (wt' : SeLe4n.NoDupList SeLe4n.ThreadId)
-    (hCons : wt'.val = waiter :: waiters.val) :
-    notificationQueueWellFormed
-      { state := .waiting, waitingThreads := wt', hasPendingBadge := false, pendingWord := SeLe4n.Badge.zero } := by
-  unfold notificationQueueWellFormed
-  refine ⟨?_, rfl⟩
-  intro h
-  rw [hCons] at h
-  cases h
+    (ntfn : Notification) (waiter : SeLe4n.ThreadId) :
+    notificationQueueWellFormed (ntfn.withWaiterAppended waiter) := by
+  unfold notificationQueueWellFormed; simp
 
 -- ============================================================================
 -- WS-L3/L3-C: ipcState-queue consistency invariant
@@ -2031,6 +2251,36 @@ def ipcStateQueueConsistent (st : SystemState) : Prop :=
     | .blockedOnCall epId =>
         ∃ ep, st.objects[epId]? = some (.endpoint ep)
     | _ => True
+
+/-- WS-ZA ZA4.5: a step writing only run-queue links keeps every blocked
+thread's endpoint. -/
+theorem ipcStateQueueConsistent_of_objectsAgreeOffRunLinks {st st' : SystemState}
+    (hA : st'.objectsAgreeOffRunLinks st) (h : ipcStateQueueConsistent st) :
+    ipcStateQueueConsistent st' := by
+  intro tid tcb hT
+  run_links_back hA at tcb hT
+  have hPre := h tid tcb hT
+  revert hPre
+  dsimp only
+  split <;> intro hPre
+  all_goals first
+    | trivial
+    | (obtain ⟨ep, hEp⟩ := hPre; exact ⟨ep, hA.get_endpoint_iff.mpr hEp⟩)
+
+/-- WS-ZA ZA4.4: a rewrite of notification-queue links keeps every TCB's IPC
+state and every endpoint. -/
+theorem ipcStateQueueConsistent_of_ntfnLinksRewritten {st st' : SystemState}
+    (hA : ntfnLinksRewritten st st') (h : ipcStateQueueConsistent st) :
+    ipcStateQueueConsistent st' := by
+  intro tid tcb hT
+  ntfn_links_back hA at tcb hT
+  have hPre := h tid tcb hT
+  revert hPre
+  dsimp only
+  split <;> intro hPre
+  all_goals first
+    | trivial
+    | (obtain ⟨ep, hEp⟩ := hPre; exact ⟨ep, hA.endpoint_iff.mpr hEp⟩)
 
 -- ============================================================================
 -- V3-G (M-PRF-5): blockedThreadsPendingMessageConsistent invariant
@@ -2397,6 +2647,19 @@ theorem trans {st st' st'' : SystemState}
 theorem of_objects_eq {st st' : SystemState} (hEq : st'.objects = st.objects) :
     timeoutBudgetFrame st st' :=
   fun _ tcb' h => ⟨tcb', by rw [hEq] at h; exact h, rfl⟩
+
+/-- WS-ZA ZA4.5: a step writing only run-queue links frames every budget. -/
+theorem of_objectsAgreeOffRunLinks {st st' : SystemState} (h : st'.objectsAgreeOffRunLinks st) :
+    timeoutBudgetFrame st st' := by
+  intro tid tcb' hObj
+  run_links_back h at tcb' hObj
+  exact ⟨tcb', hObj, rfl⟩
+
+theorem of_ntfnLinksRewritten {st st' : SystemState} (h : ntfnLinksRewritten st st') :
+    timeoutBudgetFrame st st' := by
+  intro tid tcb' hObj
+  ntfn_links_back h at tcb' hObj
+  exact ⟨tcb', hObj, rfl⟩
 
 end timeoutBudgetFrame
 
@@ -3129,6 +3392,15 @@ theorem of_objects_scheduler_eq {st st' : SystemState}
   ⟨fun _ tcb' h hU hQ hC _ =>
     ⟨tcb', by rw [hObjs] at h; exact h, hU, by rw [hRq] at hQ; exact hQ,
       by rw [hCur] at hC; exact hC, rfl⟩⟩
+
+/-- WS-ZA ZA4.4: a rewrite of notification-queue links frames passive servers:
+the scheduler is untouched and every TCB keeps its binding and IPC state. -/
+theorem of_ntfnLinksRewritten {st st' : SystemState} (h : ntfnLinksRewritten st st') :
+    passiveServerIdleFrame st st' := by
+  refine ⟨fun tid tcb' hT hU hQ hC _ => ?_⟩
+  rw [h.scheduler_eq] at hQ hC
+  ntfn_links_back h at tcb' hT
+  exact ⟨tcb', hT, hU, hQ, hC, rfl⟩
 
 end passiveServerIdleFrame
 
@@ -4265,6 +4537,12 @@ theorem of_no_chain_object_write {st st' : SystemState}
       rw [(hSc oid sc).mp hSc']
       simp [hH]
 
+/-- WS-ZA ZA4.5: a step that writes only run-queue links frames the chain — it
+writes no Reply and no SchedContext. -/
+theorem of_objectsAgreeOffRunLinks {st st' : SystemState} (h : st'.objectsAgreeOffRunLinks st) :
+    donationChainFrame st st' :=
+  of_no_chain_object_write (fun _ _ => h.get_reply_iff) (fun _ _ => h.get_schedContext_iff)
+
 end donationChainFrame
 
 /-- WS-OD OD3.2: the head validation is transported across a frame. -/
@@ -4766,6 +5044,27 @@ theorem of_objects_eq {st st' : SystemState} (hObjs : st'.objects = st.objects) 
   ⟨fun _ _ => by rw [hObjs], fun _ tcb' h => ⟨tcb', by rw [hObjs] at h; exact h, rfl⟩,
    fun _ tcb _ h _ => ⟨tcb, by rw [hObjs]; exact h, rfl, fun ep rt hb => ⟨ep, rt, hb⟩⟩⟩
 
+/-- WS-ZA ZA4.5: a step writing only run-queue links keeps every reply link. -/
+theorem of_objectsAgreeOffRunLinks {st st' : SystemState} (h : st'.objectsAgreeOffRunLinks st) :
+    replyLinkageFrame st st' := by
+  refine ⟨fun rid _ => ?_, fun tid tcb' hT => ?_, fun tid tcb _ hT _ => ?_⟩
+  · exact ⟨fun ⟨r, hr, hc⟩ => ⟨r, h.get_reply_iff.mp hr, hc⟩,
+      fun ⟨r, hr, hc⟩ => ⟨r, h.get_reply_iff.mpr hr, hc⟩⟩
+  · run_links_back h at tcb' hT
+    exact ⟨tcb', hT, rfl⟩
+  · run_links_fwd h at tcb hT
+    exact ⟨_, hT, rfl, fun ep rt hb => ⟨ep, rt, hb⟩⟩
+
+theorem of_ntfnLinksRewritten {st st' : SystemState} (h : ntfnLinksRewritten st st') :
+    replyLinkageFrame st st' := by
+  refine ⟨fun rid _ => ?_, fun tid tcb' hT => ?_, fun tid tcb _ hT _ => ?_⟩
+  · exact ⟨fun ⟨r, hr, hc⟩ => ⟨r, h.reply_iff.mp hr, hc⟩,
+      fun ⟨r, hr, hc⟩ => ⟨r, h.reply_iff.mpr hr, hc⟩⟩
+  · ntfn_links_back h at tcb' hT
+    exact ⟨tcb', hT, rfl⟩
+  · ntfn_links_fwd h at tcb hT
+    exact ⟨_, hT, rfl, fun ep rt hb => ⟨ep, rt, hb⟩⟩
+
 /-- The pointwise form, for steps whose object map agrees key by key rather than
 definitionally. -/
 theorem of_getElem_eq {st st' : SystemState}
@@ -5060,6 +5359,19 @@ theorem of_objects_eq {st st' : SystemState}
     (hEq : st'.objects = st.objects) : donationOwnerFrame st st' :=
   ⟨fun scId sc h => by rw [hEq]; exact h,
    fun owner ownerTcb h hU hR => ⟨ownerTcb, by rw [hEq]; exact h, hU, hR⟩⟩
+
+/-- WS-ZA ZA4.5: a step writing only run-queue links frames every owner. -/
+theorem of_objectsAgreeOffRunLinks {st st' : SystemState} (h : st'.objectsAgreeOffRunLinks st) :
+    donationOwnerFrame st st' := by
+  refine ⟨fun scId sc hSc => h.get_schedContext_iff.mpr hSc, fun owner ownerTcb hT hU hR => ?_⟩
+  run_links_fwd h at ownerTcb hT
+  exact ⟨_, hT, hU, hR⟩
+
+theorem of_ntfnLinksRewritten {st st' : SystemState} (h : ntfnLinksRewritten st st') :
+    donationOwnerFrame st st' := by
+  refine ⟨fun scId sc hSc => h.schedContext_iff.mpr hSc, fun owner ownerTcb hT hU hR => ?_⟩
+  ntfn_links_fwd h at ownerTcb hT
+  exact ⟨_, hT, hU, hR⟩
 
 end donationOwnerFrame
 
@@ -5408,6 +5720,13 @@ theorem of_objects_eq {st st' : SystemState} {woken : SeLe4n.ThreadId}
   ⟨fun _ _ h => by rw [hEq]; exact h,
    fun _ tcb h => ⟨tcb, by rw [hEq]; exact h, rfl, Or.inr rfl⟩⟩
 
+/-- WS-ZA ZA4.5: a step writing only run-queue links frames every owner. -/
+theorem of_objectsAgreeOffRunLinks {st st' : SystemState} {woken : SeLe4n.ThreadId}
+    (h : st'.objectsAgreeOffRunLinks st) : donationOwnerFrameExcept st st' woken := by
+  refine ⟨fun _ _ hSc => h.get_schedContext_iff.mpr hSc, fun _ tcb hT => ?_⟩
+  run_links_fwd h at tcb hT
+  exact ⟨_, hT, rfl, Or.inr rfl⟩
+
 /-- The pointwise form: object lookups that agree everywhere frame trivially.  This
 is the shape a cross-core transition's `OffSchedulerAgrees` supplies. -/
 theorem of_getElem_eq {st st' : SystemState} {woken : SeLe4n.ThreadId}
@@ -5469,14 +5788,10 @@ Z7 extends the bundle with 4 donation invariants:
 - `donationBudgetTransfer`: at most one thread per SchedContext
 
 WS-RC R4.C.7 (close-out C2): the `uniqueWaiters` conjunct previously
-listed as the 15th slot was removed when `Notification.waitingThreads`
-was promoted from `List ThreadId` to `SeLe4n.NoDupList ThreadId`.  The
-per-Notification `List.Nodup` witness is now carried structurally at
-construction time via `NoDupList.hNodup`; per-Notification discharge is
-direct via `SeLe4n.Kernel.notification_waiters_nodup`.  The bundle now
-has 15 conjuncts (was 16); `blockedOnReplyHasTarget` is the 15th.  The
-historical `uniqueWaiters` state-level predicate (and its `_holds` /
-`_trivial` discharge helpers) were deleted in the close-out. -/
+listed as the 15th slot was removed when waiter uniqueness became
+structural (since WS-ZA ZA4.4, through the intrusive TCB queue).  The
+bundle now has 15 conjuncts (was 16); `blockedOnReplyHasTarget` is the
+15th. -/
 def ipcInvariantCore (st : SystemState) : Prop :=
   ipcInvariant st ∧ dualQueueSystemInvariant st ∧ allPendingMessagesBounded st ∧
   badgeWellFormed st ∧ blockedThreadsPendingMessageConsistent st ∧

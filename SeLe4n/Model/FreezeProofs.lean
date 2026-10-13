@@ -738,14 +738,14 @@ theorem lookup_freeze_objectIndexSet (ist : IntermediateState) (k : SeLe4n.ObjId
     ist.state.objectIndexSet.table.get? k =
       (freeze ist).objectIndexSet.get? k := by
   exact freezeMap_get?_eq ist.state.objectIndexSet.table k
-    ist.hAllTables.2.2.2.2.2.2.2.2.2.2.2.2.2.1.1
+    ist.hAllTables.2.2.2.2.2.2.2.2.2.2.2.1.1
 
 /-- S-05/PERF-O1: Lookup equivalence for scThreadIndex across freeze. -/
 theorem lookup_freeze_scThreadIndex (ist : IntermediateState) (k : SeLe4n.SchedContextId) :
     ist.state.scThreadIndex.get? k =
       (freeze ist).scThreadIndex.get? k := by
   exact freezeMap_get?_eq ist.state.scThreadIndex k
-    ist.hAllTables.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.1
+    ist.hAllTables.2.2.2.2.2.2.2.2.2.2.2.2.1
 
 -- ============================================================================
 -- AK7-B (F-H02 / HIGH): Lookup-equivalence for scheduler runQueue sub-maps
@@ -754,27 +754,34 @@ theorem lookup_freeze_scThreadIndex (ist : IntermediateState) (k : SeLe4n.SchedC
 /-- AK7-B: Lookup equivalence for `runQueue.byPriority` across freeze.
 Mirrors `lookup_freeze_serviceRegistry` for the scheduler priority-indexed
 thread queues. -/
-theorem lookup_freeze_byPriority (ist : IntermediateState) (p : SeLe4n.Priority) :
-    (ist.state.scheduler.runQueueOnCore bootCoreId).byPriority.get? p =
+theorem lookup_freeze_byPriority (ist : IntermediateState) (p : SeLe4n.Priority)
+    (hR : ist.state.runQueueRefinedOnCore bootCoreId) :
+    (ist.state.scheduler.runQueueOnCore bootCoreId).byPriorityTable.get? p =
       (freeze ist).scheduler.byPriority.get? p := by
-  exact freezeMap_get?_eq (ist.state.scheduler.runQueueOnCore bootCoreId).byPriority p
-    ist.hAllTables.2.2.2.2.2.2.2.2.2.2.2.1.1
+  show _ = (freezeScheduler ist.state).byPriority.get? p
+  rw [freezeScheduler_byPriority_eq hR]
+  exact freezeMap_get?_eq (ist.state.scheduler.runQueueOnCore bootCoreId).byPriorityTable p
+    (ist.state.scheduler.runQueueOnCore bootCoreId).byPriorityTable_invExtK.1
 
 /-- AK7-B: Lookup equivalence for `runQueue.threadPriority` across freeze. -/
-theorem lookup_freeze_threadPriority (ist : IntermediateState) (tid : SeLe4n.ThreadId) :
-    (ist.state.scheduler.runQueueOnCore bootCoreId).threadPriority.get? tid =
+theorem lookup_freeze_threadPriority (ist : IntermediateState) (tid : SeLe4n.ThreadId)
+    (hR : ist.state.runQueueRefinedOnCore bootCoreId) :
+    (ist.state.scheduler.runQueueOnCore bootCoreId).threadPriorityTable.get? tid =
       (freeze ist).scheduler.threadPriority.get? tid := by
-  exact freezeMap_get?_eq (ist.state.scheduler.runQueueOnCore bootCoreId).threadPriority tid
-    ist.hAllTables.2.2.2.2.2.2.2.2.2.2.2.2.1.1
+  show _ = (freezeScheduler ist.state).threadPriority.get? tid
+  rw [freezeScheduler_threadPriority_eq hR]
+  exact freezeMap_get?_eq (ist.state.scheduler.runQueueOnCore bootCoreId).threadPriorityTable tid
+    (ist.state.scheduler.runQueueOnCore bootCoreId).threadPriorityTable_invExtK.1
 
-/-- AK7-B: Lookup equivalence for `runQueue.membership` (RHSet) across freeze.
-`membership` wraps an underlying `RHTable κ Unit`; the freeze discards the
-set wrapper and keeps the table. -/
-theorem lookup_freeze_membership (ist : IntermediateState) (tid : SeLe4n.ThreadId) :
-    (ist.state.scheduler.runQueueOnCore bootCoreId).membership.table.get? tid =
+/-- AK7-B: Lookup equivalence for the run queue's membership across freeze. -/
+theorem lookup_freeze_membership (ist : IntermediateState) (tid : SeLe4n.ThreadId)
+    (hR : ist.state.runQueueRefinedOnCore bootCoreId) :
+    (ist.state.scheduler.runQueueOnCore bootCoreId).membershipTable.get? tid =
       (freeze ist).scheduler.membership.get? tid := by
-  exact freezeMap_get?_eq (ist.state.scheduler.runQueueOnCore bootCoreId).membership.table tid
-    ist.hAllTables.2.2.2.2.2.2.2.2.2.2.2.2.2.2.1.1
+  show _ = (freezeScheduler ist.state).membership.get? tid
+  rw [freezeScheduler_membership_eq hR]
+  exact freezeMap_get?_eq (ist.state.scheduler.runQueueOnCore bootCoreId).membershipTable tid
+    (ist.state.scheduler.runQueueOnCore bootCoreId).membershipTable_invExtK.1
 
 -- ============================================================================
 -- Q6-B: CNode Radix Lookup Equivalence
@@ -1386,11 +1393,11 @@ def apiInvariantBundle_frozenDirectFull (fst : FrozenSystemState) : Prop :=
         sst.scThreadIndex.get? scId = fst.scThreadIndex.get? scId) ∧
     -- Scheduler sub-maps
     (∀ (p : SeLe4n.Priority),
-        (sst.scheduler.runQueueOnCore bootCoreId).byPriority.get? p = fst.scheduler.byPriority.get? p) ∧
+        (sst.scheduler.runQueueOnCore bootCoreId).byPriorityTable.get? p = fst.scheduler.byPriority.get? p) ∧
     (∀ (tid : SeLe4n.ThreadId),
-        (sst.scheduler.runQueueOnCore bootCoreId).threadPriority.get? tid = fst.scheduler.threadPriority.get? tid) ∧
+        (sst.scheduler.runQueueOnCore bootCoreId).threadPriorityTable.get? tid = fst.scheduler.threadPriority.get? tid) ∧
     (∀ (tid : SeLe4n.ThreadId),
-        (sst.scheduler.runQueueOnCore bootCoreId).membership.table.get? tid = fst.scheduler.membership.get? tid) ∧
+        (sst.scheduler.runQueueOnCore bootCoreId).membershipTable.get? tid = fst.scheduler.membership.get? tid) ∧
     -- --------------------------------------------------------------------
     -- Non-map fields: bitwise equality
     -- --------------------------------------------------------------------
@@ -1464,9 +1471,9 @@ theorem freeze_preserves_direct_invariants_full (ist : IntermediateState)
   · exact fun oid => lookup_freeze_objectTypes ist oid
   · exact fun oid => lookup_freeze_objectIndexSet ist oid
   · exact fun scId => lookup_freeze_scThreadIndex ist scId
-  · exact fun p => lookup_freeze_byPriority ist p
-  · exact fun tid => lookup_freeze_threadPriority ist tid
-  · exact fun tid => lookup_freeze_membership ist tid
+  · exact fun p => lookup_freeze_byPriority ist p (hInv.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2 bootCoreId)
+  · exact fun tid => lookup_freeze_threadPriority ist tid (hInv.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2 bootCoreId)
+  · exact fun tid => lookup_freeze_membership ist tid (hInv.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2 bootCoreId)
   -- Non-map fields (21)
   · exact (freeze_preserves_machine ist).symm
   · exact (freeze_preserves_objectIndex ist).symm
@@ -1765,12 +1772,12 @@ theorem freezeMap_insert_step [BEq κ] [Hashable κ] [LawfulBEq κ]
 /-- AG1-E: Freezing the scheduler preserves replenish queue entries.
 The frozen `replenishQueue` contains exactly the same entries and size
 as the runtime `ReplenishQueue`. -/
-theorem freezeScheduler_replenishQueue_entries (sched : SchedulerState) :
-    (freezeScheduler sched).replenishQueue.entries = (sched.replenishQueueOnCore bootCoreId).entries :=
+theorem freezeScheduler_replenishQueue_entries (st : SystemState) :
+    (freezeScheduler st).replenishQueue.entries = (st.scheduler.replenishQueueOnCore bootCoreId).entries :=
   rfl
 
-theorem freezeScheduler_replenishQueue_size (sched : SchedulerState) :
-    (freezeScheduler sched).replenishQueue.size = (sched.replenishQueueOnCore bootCoreId).size :=
+theorem freezeScheduler_replenishQueue_size (st : SystemState) :
+    (freezeScheduler st).replenishQueue.size = (st.scheduler.replenishQueueOnCore bootCoreId).size :=
   rfl
 
 end SeLe4n.Model

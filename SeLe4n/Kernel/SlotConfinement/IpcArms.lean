@@ -249,7 +249,7 @@ leg still collapses to the one deschedule, and at a replier the state places
 nowhere the core list is empty because the step is the identity. -/
 theorem applyReplyDonationOnCore_confinedToCores (st st' : SystemState)
     (rid : SeLe4n.ReplyId) (targetVtid : SeLe4n.ValidThreadId)
-    (holderHome ownerHome : CoreId)
+    (holderHome ownerHome : CoreId) (hObjInv : st.objects.invExt)
     (hStep : applyReplyDonationOnCore st rid targetVtid holderHome ownerHome = .ok st') :
     observableSlotsConfinedToCores st st' (replyDonationDescheduleCores st rid) := by
   rcases applyReplyDonationOnCore_ok_decompose st st' rid targetVtid holderHome
@@ -272,9 +272,12 @@ theorem applyReplyDonationOnCore_confinedToCores (st st' : SystemState)
       unfold replyDonationDescheduleCores; rw [hHead]
     have hCores : descheduleAtPlacementCores stMig holderVtid.val
         = descheduleAtPlacementCores st holderVtid.val := by
-      rw [descheduleAtPlacementCores_congr_of_runQueue_current_eq _ hMig]
+      rw [descheduleAtPlacementCores_congr_of_runCores_current_eq _
+        (SystemState.RunCoresAgree.of_objects (migrateSchedContextReplenishment_objects _ _ _ _))
+        (fun c => (hMig c).2)]
       unfold descheduleAtPlacementCores
-      rw [placedCoreOf?_congr_of_scheduler_eq _ hRetSched]
+      rw [placedCoreOf?_congr_of_scheduler_eq _ hRetSched
+        (returnDonatedSchedContext_runCoresAgree st stRet _ _ _ hObjInv _ hRet)]
     rw [hEq, hList, ← hCores]
     exact observableSlotsConfinedToCores_trans
       (by
@@ -345,7 +348,11 @@ theorem endpointReplyCrossCoreDispatch_confinedToCores (replier target : SeLe4n.
                   (observableSlotsConfinedToCores_trans hReply
                     (applyReplyDonationOnCore_confinedToCores st1 st2 rid targetV
                       (replyDonationHolderHome st1 rid target)
-                      (replyDonationRecipientHome st1 rid target) hDon))
+                      (replyDonationRecipientHome st1 rid target)
+                      (by
+                        have h1 := endpointReplyOnCore_preserves_objects_invExt replier target msg
+                          executingCore st hObjInv
+                        rwa [hRep] at h1) hDon))
                   (propagatePipChainCrossCore_confinedToCores executingCore
                     st2.objectIndex.length st2 expected)
 
@@ -912,16 +919,18 @@ theorem preemptCurrentOnCore_domainTimeRemainingOnCore (st : SystemState) (c c' 
     (preemptCurrentOnCore st c tid).scheduler.domainTimeRemainingOnCore c'
       = st.scheduler.domainTimeRemainingOnCore c' := by
   simp only [preemptCurrentOnCore]; repeat' split
-  all_goals first | rfl | simp only [SchedulerState.setCurrentOnCore_domainTimeRemainingOnCore,
-      SchedulerState.setRunQueueOnCore_domainTimeRemainingOnCore]
+  all_goals first | rfl | simp only [
+      SystemState.runEnqueueOnCore_domainTimeRemainingOnCore,
+      SystemState.rewriteObject_scheduler]
 
 theorem preemptCurrentOnCore_domainScheduleIndexOnCore (st : SystemState) (c c' : CoreId)
     (tid : SeLe4n.ThreadId) :
     (preemptCurrentOnCore st c tid).scheduler.domainScheduleIndexOnCore c'
       = st.scheduler.domainScheduleIndexOnCore c' := by
   simp only [preemptCurrentOnCore]; repeat' split
-  all_goals first | rfl | simp only [SchedulerState.setCurrentOnCore_domainScheduleIndexOnCore,
-      SchedulerState.setRunQueueOnCore_domainScheduleIndexOnCore]
+  all_goals first | rfl | simp only [
+      SystemState.runEnqueueOnCore_domainScheduleIndexOnCore,
+      SystemState.rewriteObject_scheduler]
 
 theorem switchToThreadOnCore_domainTimeRemainingOnCore (st st' : SystemState) (c c' : CoreId)
     (tid : SeLe4n.ThreadId) (h : switchToThreadOnCore st c tid = .ok st') :
@@ -934,7 +943,8 @@ theorem switchToThreadOnCore_domainTimeRemainingOnCore (st st' : SystemState) (c
        subst h
        simp only [restoreIncomingContextOnCoreUnlessCurrent_scheduler,
          SchedulerState.setCurrentOnCore_domainTimeRemainingOnCore,
-         SchedulerState.setRunQueueOnCore_domainTimeRemainingOnCore,
+         SchedulerState.setRunQueueOnCore_domainTimeRemainingOnCore, SystemState.runRemoveOnCore_scheduler,
+         SchedulerState.setRunQueueEndsOnCore_domainTimeRemainingOnCore,
          preemptCurrentOnCore_domainTimeRemainingOnCore])
     | exact absurd h (by simp)
 
@@ -949,7 +959,8 @@ theorem switchToThreadOnCore_domainScheduleIndexOnCore (st st' : SystemState) (c
        subst h
        simp only [restoreIncomingContextOnCoreUnlessCurrent_scheduler,
          SchedulerState.setCurrentOnCore_domainScheduleIndexOnCore,
-         SchedulerState.setRunQueueOnCore_domainScheduleIndexOnCore,
+         SchedulerState.setRunQueueOnCore_domainScheduleIndexOnCore, SystemState.runRemoveOnCore_scheduler,
+         SchedulerState.setRunQueueEndsOnCore_domainScheduleIndexOnCore,
          preemptCurrentOnCore_domainScheduleIndexOnCore])
     | exact absurd h (by simp)
 
@@ -1089,32 +1100,35 @@ theorem removeRunnableFromAllCores_confinedToCores (st : SystemState)
   · exact removeRunnableFromAllCores_domainScheduleIndexOnCore st tid c
   · rw [removeRunnableFromAllCores_machine]
 
-/-- SM8.B.2: occupancy is a scheduler read, so a scheduler-preserving prefix
-does not move the write set.
+/-- SM8.B.2: occupancy reads the current slots and the thread's own run-queue
+core (WS-ZA ZA4.5), so a prefix that keeps the scheduler and every thread's
+run-queue core does not move the write set.
 
 Load-bearing for the retype: the sweep runs several steps into the cleanup
 pipeline, but the write set is declared at the pipeline's **entry** state. The
-two are the same set precisely because everything in between frames the
-scheduler. -/
+two are the same set precisely because everything in between frames both. -/
 theorem threadOccupiedCores_congr {st st' : SystemState} (tid : SeLe4n.ThreadId)
-    (h : st'.scheduler = st.scheduler) :
-    threadOccupiedCores st' tid = threadOccupiedCores st tid := by
-  unfold threadOccupiedCores threadOccupiesCore
-  rw [h]
-
-/-- `v0.35.164`: the occupancy set reads only the run queues and current slots, so
-a step that keeps every one of those — the destroy path's reservation arm, which
-may write a replenish queue — keeps the set, with no whole-scheduler equality. -/
-theorem threadOccupiedCores_congr_of_runQueue_current {st st' : SystemState}
-    (tid : SeLe4n.ThreadId)
-    (h : ∀ c, st'.scheduler.runQueueOnCore c = st.scheduler.runQueueOnCore c
-      ∧ st'.scheduler.currentOnCore c = st.scheduler.currentOnCore c) :
+    (h : st'.scheduler = st.scheduler) (hR : SystemState.RunCoresAgree st' st) :
     threadOccupiedCores st' tid = threadOccupiedCores st tid := by
   unfold threadOccupiedCores
   apply List.filter_congr
   intro c _
   unfold threadOccupiesCore
-  rw [(h c).1, (h c).2]
+  rw [h, hR.queuedOn]
+
+/-- `v0.35.164`: the occupancy set reads only the threads' run-queue cores and the
+current slots, so a step that keeps every one of those — the destroy path's
+reservation arm, which may write a replenish queue — keeps the set, with no
+whole-scheduler equality. -/
+theorem threadOccupiedCores_congr_of_runCores_current {st st' : SystemState}
+    (tid : SeLe4n.ThreadId) (hR : SystemState.RunCoresAgree st' st)
+    (h : ∀ c, st'.scheduler.currentOnCore c = st.scheduler.currentOnCore c) :
+    threadOccupiedCores st' tid = threadOccupiedCores st tid := by
+  unfold threadOccupiedCores
+  apply List.filter_congr
+  intro c _
+  unfold threadOccupiesCore
+  rw [hR.queuedOn, h c]
 
 /-- SM8.B.2: **the TCB reference scrub's bound** — the destroy sweep, plus two
 object-store sweeps that write no scheduler slot at all. -/
@@ -1188,7 +1202,10 @@ theorem migrateRunQueueOnAffinityChange_confinedToCores (st : SystemState)
     · split
       · rfl
       · split
-        · simp [SchedulerState.setRunQueueOnCore_runQueueOnCore_ne, Ne.symm hf, Ne.symm ht]
+        · dsimp only
+          rw [SchedulerState.markReschedulePendingOnCore_runQueueOnCore,
+            SystemState.runEnqueueAdmitted_runQueueOnCore_ne _ _ _ _ _ (Ne.symm ht),
+            SystemState.runRemoveOnCore_runQueueOnCore_ne _ _ _ _ (Ne.symm hf)]
         · rfl
   all_goals intro c _
   all_goals (unfold migrateRunQueueOnAffinityChange; repeat' split)

@@ -1375,9 +1375,9 @@ def frozenQueuePushTailObjects (st : FrozenSystemState)
         then { ep with receiveQ := q' }
         else { ep with sendQ := q' }
       let tcb' := { tcb with
-        queuePrev := none
-        queuePPrev := some .endpointHead
-        queueNext := none }
+        queuePrevCode := 0
+        queuePPrevCode := 1
+        queueNextCode := 0 }
       -- Both writes are guaranteed by Phase 1; the refusals are unreachable.
       match frozenWithObjectStored st endpointId (.endpoint ep') with
       | .ok st1 => frozenWithObjectStored st1 tid.toObjId (.tcb tcb')
@@ -1411,11 +1411,11 @@ def frozenQueuePushTailObjects (st : FrozenSystemState)
           let ep' : Endpoint := if isReceiveQ
             then { ep with receiveQ := q' }
             else { ep with sendQ := q' }
-          let tailTcb' := { tailTcb with queueNext := some tid }
+          let tailTcb' := { tailTcb with queueNextCode := SeLe4n.ThreadId.optCode (some tid) }
           let tcb' := { tcb with
-            queuePrev := some tailTid
-            queuePPrev := some (.tcbNext tailTid)
-            queueNext := none }
+            queuePrevCode := SeLe4n.ThreadId.optCode (some tailTid)
+            queuePPrevCode := QueuePPrev.optCode (some (.tcbNext tailTid))
+            queueNextCode := 0 }
           -- All three writes are guaranteed by Phase 1.
           match frozenWithObjectStored st endpointId (.endpoint ep') with
           | .ok st1 =>
@@ -1545,7 +1545,7 @@ def frozenQueueRemove (endpointId : SeLe4n.ObjId) (isReceiveQ : Bool)
           let ep' : Endpoint := if isReceiveQ
             then { ep with receiveQ := q' }
             else { ep with sendQ := q' }
-          let tcb' := { tcb with queuePrev := none, queueNext := none, queuePPrev := none }
+          let tcb' := { tcb with queuePrevCode := 0, queueNextCode := 0, queuePPrevCode := 0 }
           match frozenWithObjectStored st endpointId (.endpoint ep') with
           | .error e => .error e
           | .ok st1 =>
@@ -1580,7 +1580,7 @@ def frozenQueueRemove (endpointId : SeLe4n.ObjId) (isReceiveQ : Bool)
                       if !queuePredecessorNamesSuccessor prevTcb tid then .error .illegalState
                       else
                         frozenWithObjectStored st2 prevTid.toObjId
-                          (.tcb { prevTcb with queueNext := tcb.queueNext })
+                          (.tcb { prevTcb with queueNextCode := tcb.queueNextCode })
                   | _ => .error .objectNotFound
               match afterPrev with
               | .error e => .error e
@@ -1596,10 +1596,10 @@ def frozenQueueRemove (endpointId : SeLe4n.ObjId) (isReceiveQ : Bool)
                   match frozenLookupTcb st3 nextTid with
                   | some nextTcb =>
                       frozenWithObjectStored st3 nextTid.toObjId (.tcb { nextTcb with
-                        queuePrev := tcb.queuePrev,
-                        queuePPrev := match tcb.queuePrev with
+                        queuePrevCode := tcb.queuePrevCode,
+                        queuePPrevCode := QueuePPrev.optCode (match tcb.queuePrev with
                           | none => some .endpointHead
-                          | some prevTid => some (.tcbNext prevTid) })
+                          | some prevTid => some (.tcbNext prevTid)) })
                   | _ => .error .objectNotFound
   | some _ => .error .invalidCapability
   | none => .error .objectNotFound

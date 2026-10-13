@@ -135,6 +135,44 @@ theorem ext {a b : ThreadId} (h : a.val = b.val) : a = b := by
 /-- Projection helper kept explicit for migration ergonomics. -/
 @[inline] def toNat (id : ThreadId) : Nat := id.val
 
+/-- An optional thread as one scalar: `0` for `none`, `t + 1` for `some t`.
+
+A field of type `Option ThreadId` is a heap cell whenever it holds `some`, so
+every write of a present link allocates.  A `Nat` code is a scalar for every
+thread id the kernel issues, and `optCode`/`ofOptCode` are a bijection, so a
+field stored as a code and read through `ofOptCode` has exactly the values the
+`Option` field had. -/
+@[inline] def optCode : Option ThreadId → Nat
+  | none => 0
+  | some t => t.val + 1
+
+/-- The optional thread a code stands for; inverse of `optCode`. -/
+@[inline] def ofOptCode : Nat → Option ThreadId
+  | 0 => none
+  | k + 1 => some ⟨k⟩
+
+@[simp] theorem ofOptCode_optCode (o : Option ThreadId) : ofOptCode (optCode o) = o := by
+  cases o <;> rfl
+
+@[simp] theorem optCode_ofOptCode (n : Nat) : optCode (ofOptCode n) = n := by
+  cases n <;> rfl
+
+@[simp] theorem ofOptCode_zero : ofOptCode 0 = none := rfl
+
+@[simp] theorem optCode_none : optCode none = 0 := rfl
+
+@[simp] theorem ofOptCode_eq_none_iff (n : Nat) : ofOptCode n = none ↔ n = 0 := by
+  cases n <;> simp [ofOptCode]
+
+@[simp] theorem ofOptCode_eq_some_iff (n : Nat) (t : ThreadId) :
+    ofOptCode n = some t ↔ n = t.val + 1 := by
+  cases n with
+  | zero => simp [ofOptCode]
+  | succ k => cases t; simp [ofOptCode]
+
+theorem optCode_injective {a b : Option ThreadId} (h : optCode a = optCode b) : a = b := by
+  rw [← ofOptCode_optCode a, h, ofOptCode_optCode]
+
 /-- L-04/WS-E6: Explicit conversion used at object-store boundaries.
 
 **Design note (deferred validation):** This conversion is unchecked — it does

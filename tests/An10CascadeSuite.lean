@@ -58,7 +58,7 @@ private def mkEmptyEndpoint : Endpoint := {}
 
 /-- Helper: construct a minimal test Notification. -/
 private def mkEmptyNotification : Notification :=
-  { state := NotificationState.idle, waitingThreads := SeLe4n.NoDupList.empty }
+  { state := NotificationState.idle }
 
 /-- Helper: construct a Reply object linked to a caller — WS-OD OD4.1's
 donation push records the donation on the donor's own reply object, so a donating
@@ -414,8 +414,8 @@ def an10_d_clearPendingState_populated : IO Bool := do
   let tid : ThreadId := ThreadId.ofNat 56
   let tcb : TCB :=
     { mkTcb 56 with
-        queuePrev := some (ThreadId.ofNat 100)
-        queueNext := some (ThreadId.ofNat 200) }
+        queuePrevCode := SeLe4n.ThreadId.optCode (some (ThreadId.ofNat 100))
+        queueNextCode := SeLe4n.ThreadId.optCode (some (ThreadId.ofNat 200)) }
   let st : SystemState := { (default : SystemState) with
     objects := (default : SystemState).objects.insert tid.toObjId (.tcb tcb) }
   let st' := SeLe4n.Kernel.Lifecycle.Suspend.clearPendingState st tid
@@ -471,7 +471,7 @@ def an10_e_removeRunnableValid_no_op_on_empty_queue : IO Bool := do
   let st : SystemState := default
   let st' : SystemState := SeLe4n.Kernel.removeRunnableValid st vtid
   -- Empty queue stays empty after a no-op remove.
-  return (st'.scheduler.runQueueOnCore bootCoreId).threadPriority.size == 0
+  return (st'.runQueueWalk bootCoreId).length == 0
 
 /-- AN10-E.H2 — `clearPendingStateValid` reduces to `clearPendingState`
 on a populated state with a TCB carrying a non-default `pendingMessage`.

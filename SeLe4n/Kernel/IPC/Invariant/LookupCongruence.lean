@@ -8,6 +8,7 @@
 -/
 
 import SeLe4n.Kernel.IPC.Invariant.Defs
+import SeLe4n.Kernel.IPC.Invariant.NotificationQueue
 import SeLe4n.Kernel.IPC.Operations.Endpoint
 import SeLe4n.Kernel.Scheduler.Operations.Selection
 import SeLe4n.Kernel.Scheduler.Operations.PerCoreWake
@@ -103,179 +104,8 @@ theorem lookupTcb_congr_getElem {s1 s2 : SystemState}
   unfold lookupTcb SystemState.getTcb?; rw [hEq]
 
 -- ============================================================================
--- §1  Per-conjunct pointwise-lookup transports
+-- §1  Frame lemmas for single TCB rewrites
 -- ============================================================================
-
-/-- Pointwise-lookup transport of a `queueNext` reachability path. -/
-theorem QueueNextPath_of_getElem_eq {s1 s2 : SystemState}
-    (hEq : ∀ oid : SeLe4n.ObjId, s2.objects[oid]? = s1.objects[oid]?) {a b : SeLe4n.ThreadId}
-    (hp : QueueNextPath s2 a b) : QueueNextPath s1 a b := by
-  induction hp with
-  | single x y tcbA hObj hNext => exact .single x y tcbA (by rw [← hEq]; exact hObj) hNext
-  | cons x y z tcbA hObj hNext _ ih => exact .cons x y z tcbA (by rw [← hEq]; exact hObj) hNext ih
-
-/-- Pointwise-lookup transport of TCB-queue chain acyclicity. -/
-theorem tcbQueueChainAcyclic_of_getElem_eq {s1 s2 : SystemState}
-    (hEq : ∀ oid : SeLe4n.ObjId, s2.objects[oid]? = s1.objects[oid]?)
-    (h : tcbQueueChainAcyclic s1) : tcbQueueChainAcyclic s2 :=
-  fun tid hp => h tid (QueueNextPath_of_getElem_eq hEq hp)
-
-/-- **WS-RR RR8.3**: pointwise-lookup transport of the `queuePPrev`/`queuePrev`
-pairing — the `getElem_eq` sibling, for the lookup-congruence family. -/
-theorem queuePPrevAgreesWithPrev_of_getElem_eq {s1 s2 : SystemState}
-    (hEq : ∀ oid : SeLe4n.ObjId, s2.objects[oid]? = s1.objects[oid]?)
-    (h : queuePPrevAgreesWithPrev s1) : queuePPrevAgreesWithPrev s2 :=
-  fun tid tcb hTcb => h tid tcb (by rw [← hEq]; exact hTcb)
-
-/-- Pointwise-lookup transport of doubly-linked TCB-queue link integrity. -/
-theorem tcbQueueLinkIntegrity_of_getElem_eq {s1 s2 : SystemState}
-    (hEq : ∀ oid : SeLe4n.ObjId, s2.objects[oid]? = s1.objects[oid]?)
-    (h : tcbQueueLinkIntegrity s1) : tcbQueueLinkIntegrity s2 := by
-  obtain ⟨hFwd, hRev⟩ := h
-  refine ⟨fun a tcbA hA b hNext => ?_, fun b tcbB hB a hPrev => ?_⟩
-  · rw [hEq] at hA
-    obtain ⟨tcbB, hB, hPrev⟩ := hFwd a tcbA hA b hNext
-    exact ⟨tcbB, by rw [hEq]; exact hB, hPrev⟩
-  · rw [hEq] at hB
-    obtain ⟨tcbA, hA, hNext⟩ := hRev b tcbB hB a hPrev
-    exact ⟨tcbA, by rw [hEq]; exact hA, hNext⟩
-
-/-- Pointwise-lookup transport of single-queue well-formedness. -/
-theorem intrusiveQueueWellFormed_of_getElem_eq {s1 s2 : SystemState}
-    (hEq : ∀ oid : SeLe4n.ObjId, s2.objects[oid]? = s1.objects[oid]?) {q : IntrusiveQueue}
-    (h : intrusiveQueueWellFormed q s1) : intrusiveQueueWellFormed q s2 := by
-  obtain ⟨hP1, hP2, hP3⟩ := h
-  refine ⟨hP1, fun hd hHead => ?_, fun tl hTail => ?_⟩
-  · obtain ⟨tcb, hObj, hPrev⟩ := hP2 hd hHead
-    exact ⟨tcb, by rw [hEq]; exact hObj, hPrev⟩
-  · obtain ⟨tcb, hObj, hNext⟩ := hP3 tl hTail
-    exact ⟨tcb, by rw [hEq]; exact hObj, hNext⟩
-
-/-- Pointwise-lookup transport of an endpoint's dual-queue well-formedness. -/
-theorem dualQueueEndpointWellFormed_of_getElem_eq {s1 s2 : SystemState}
-    (hEq : ∀ oid : SeLe4n.ObjId, s2.objects[oid]? = s1.objects[oid]?) {epId : SeLe4n.ObjId}
-    (h : dualQueueEndpointWellFormed epId s1) : dualQueueEndpointWellFormed epId s2 := by
-  unfold dualQueueEndpointWellFormed at h ⊢
-  rw [hEq]
-  revert h
-  cases s1.objects[epId]? with
-  | none => exact fun _ => trivial
-  | some obj =>
-    cases obj with
-    | endpoint ep =>
-      exact fun h => ⟨intrusiveQueueWellFormed_of_getElem_eq hEq h.1,
-                      intrusiveQueueWellFormed_of_getElem_eq hEq h.2⟩
-    | tcb _ | cnode _ | vspaceRoot _ | notification _ | untyped _ | schedContext _ | reply _ | frame _ | pageTable _ =>
-      exact fun _ => trivial
-
-/-- WS-SM SM6.A.1: the dual-queue system invariant is preserved by any state
-change that leaves every object lookup intact.  Assembles the four sub-predicate
-congruences above. -/
-theorem dualQueueSystemInvariant_of_getElem_eq {s1 s2 : SystemState}
-    (hEq : ∀ oid : SeLe4n.ObjId, s2.objects[oid]? = s1.objects[oid]?)
-    (h : dualQueueSystemInvariant s1) : dualQueueSystemInvariant s2 := by
-  obtain ⟨hEp, hLink, hAcyc, hPP, hHD⟩ := h
-  refine ⟨fun epId ep hObj => ?_,
-          tcbQueueLinkIntegrity_of_getElem_eq hEq hLink,
-          tcbQueueChainAcyclic_of_getElem_eq hEq hAcyc,
-          queuePPrevAgreesWithPrev_of_getElem_eq hEq hPP,
-          -- **PR #897 review**: the fifth conjunct reads endpoints, which agree.
-          endpointQueueHeadDisjoint_of_getElem_eq hEq hHD⟩
-  rw [hEq] at hObj
-  exact dualQueueEndpointWellFormed_of_getElem_eq hEq (hEp epId ep hObj)
-
-/-- Pointwise-lookup transport of pending-message boundedness. -/
-theorem allPendingMessagesBounded_of_getElem_eq {s1 s2 : SystemState}
-    (hEq : ∀ oid : SeLe4n.ObjId, s2.objects[oid]? = s1.objects[oid]?)
-    (h : allPendingMessagesBounded s1) : allPendingMessagesBounded s2 := by
-  intro tid tcb msg hObj hPend
-  rw [hEq] at hObj
-  exact h tid tcb msg hObj hPend
-
-/-- Pointwise-lookup transport of badge well-formedness (notification + cap). -/
-theorem badgeWellFormed_of_getElem_eq {s1 s2 : SystemState}
-    (hEq : ∀ oid : SeLe4n.ObjId, s2.objects[oid]? = s1.objects[oid]?)
-    (h : badgeWellFormed s1) : badgeWellFormed s2 := by
-  obtain ⟨hNtfn, hCap⟩ := h
-  refine ⟨fun oid ntfn badge hObj hBadge => ?_, fun oid cn slot cap badge hObj hLk hBadge => ?_⟩
-  · rw [hEq] at hObj; exact hNtfn oid ntfn badge hObj hBadge
-  · rw [hEq] at hObj; exact hCap oid cn slot cap badge hObj hLk hBadge
-
-/-- SM6.D: pointwise-lookup transport of notification well-formedness. -/
-theorem ipcInvariant_of_getElem_eq {s1 s2 : SystemState}
-    (hEq : ∀ oid : SeLe4n.ObjId, s2.objects[oid]? = s1.objects[oid]?)
-    (h : ipcInvariant s1) : ipcInvariant s2 := by
-  intro oid ntfn hObj
-  rw [hEq] at hObj
-  exact h oid ntfn hObj
-
-/-- SM6.D: pointwise-lookup transport of `blockedThreadsPendingMessageConsistent`. -/
-theorem blockedThreadsPendingMessageConsistent_of_getElem_eq {s1 s2 : SystemState}
-    (hEq : ∀ oid : SeLe4n.ObjId, s2.objects[oid]? = s1.objects[oid]?)
-    (h : blockedThreadsPendingMessageConsistent s1) : blockedThreadsPendingMessageConsistent s2 := by
-  intro tid tcb hObj
-  rw [hEq] at hObj
-  exact h tid tcb hObj
-
-/-- SM6.D: pointwise-lookup transport of `endpointQueueNoDup`. -/
-theorem endpointQueueNoDup_of_getElem_eq {s1 s2 : SystemState}
-    (hEq : ∀ oid : SeLe4n.ObjId, s2.objects[oid]? = s1.objects[oid]?)
-    (h : endpointQueueNoDup s1) : endpointQueueNoDup s2 := by
-  intro oid ep hEp
-  rw [hEq] at hEp
-  obtain ⟨hSelf, hDisj⟩ := h oid ep hEp
-  refine ⟨fun tid tcb hTcb => ?_, hDisj⟩
-  rw [hEq] at hTcb
-  exact hSelf tid tcb hTcb
-
-/-- SM6.D: pointwise-lookup transport of `ipcStateQueueMembershipConsistent`. -/
-theorem ipcStateQueueMembershipConsistent_of_getElem_eq {s1 s2 : SystemState}
-    (hEq : ∀ oid : SeLe4n.ObjId, s2.objects[oid]? = s1.objects[oid]?)
-    (h : ipcStateQueueMembershipConsistent s1) : ipcStateQueueMembershipConsistent s2 := by
-  intro tid tcb hTcb
-  rw [hEq] at hTcb
-  have hG := h tid tcb hTcb
-  cases hIpc : tcb.ipcState with
-  | blockedOnSend epId =>
-      simp only [hIpc] at hG
-      obtain ⟨ep, hEp, hReach⟩ := hG
-      refine ⟨ep, by rw [hEq]; exact hEp, ?_⟩
-      rcases hReach with hHead | ⟨prev, prevTcb, hPrev, hNext⟩
-      · exact Or.inl hHead
-      · exact Or.inr ⟨prev, prevTcb, by rw [hEq]; exact hPrev, hNext⟩
-  | blockedOnReceive epId =>
-      simp only [hIpc] at hG
-      obtain ⟨ep, hEp, hReach⟩ := hG
-      refine ⟨ep, by rw [hEq]; exact hEp, ?_⟩
-      rcases hReach with hHead | ⟨prev, prevTcb, hPrev, hNext⟩
-      · exact Or.inl hHead
-      · exact Or.inr ⟨prev, prevTcb, by rw [hEq]; exact hPrev, hNext⟩
-  | blockedOnCall epId =>
-      simp only [hIpc] at hG
-      obtain ⟨ep, hEp, hReach⟩ := hG
-      refine ⟨ep, by rw [hEq]; exact hEp, ?_⟩
-      rcases hReach with hHead | ⟨prev, prevTcb, hPrev, hNext⟩
-      · exact Or.inl hHead
-      · exact Or.inr ⟨prev, prevTcb, by rw [hEq]; exact hPrev, hNext⟩
-  | ready => trivial
-  | blockedOnNotification nid => trivial
-  | blockedOnReply ep rt => trivial
-
-/-- SM6.D: pointwise-lookup transport of `queueNextBlockingConsistent`. -/
-theorem queueNextBlockingConsistent_of_getElem_eq {s1 s2 : SystemState}
-    (hEq : ∀ oid : SeLe4n.ObjId, s2.objects[oid]? = s1.objects[oid]?)
-    (h : queueNextBlockingConsistent s1) : queueNextBlockingConsistent s2 := by
-  intro a b tcbA tcbB hA hB hNext
-  rw [hEq] at hA hB
-  exact h a b tcbA tcbB hA hB hNext
-
-/-- SM6.D: pointwise-lookup transport of `queueHeadBlockedConsistent`. -/
-theorem queueHeadBlockedConsistent_of_getElem_eq {s1 s2 : SystemState}
-    (hEq : ∀ oid : SeLe4n.ObjId, s2.objects[oid]? = s1.objects[oid]?)
-    (h : queueHeadBlockedConsistent s1) : queueHeadBlockedConsistent s2 := by
-  intro epId ep hd tcb hEp hTcb
-  rw [hEq] at hEp hTcb
-  exact h epId ep hd tcb hEp hTcb
 
 /-- **WS-LS LS2.3**: a TCB rewrite that keeps the thread's `ipcState` keeps
 every queue head consistent — the shape of the syscall seam's register spill,
@@ -314,204 +144,6 @@ theorem queueHeadBlockedConsistent_updateTcb_of_ipcState_eq (st : SystemState)
   · rw [SystemState.updateTcb_objects_ne st tid f hd.toObjId hNe hInv] at hTcb
     exact h epId ep hd tcb hEp' hTcb
 
-/-- SM6.D: pointwise-lookup transport of `blockedThreadTimeoutConsistent`. -/
-theorem blockedThreadTimeoutConsistent_of_getElem_eq {s1 s2 : SystemState}
-    (hEq : ∀ oid : SeLe4n.ObjId, s2.objects[oid]? = s1.objects[oid]?)
-    (h : blockedThreadTimeoutConsistent s1) : blockedThreadTimeoutConsistent s2 := by
-  intro tid tcb scId hTcb hBudget
-  rw [hEq] at hTcb
-  obtain ⟨⟨sc, hSc⟩, hBlk⟩ := h tid tcb scId hTcb hBudget
-  exact ⟨⟨sc, by rw [hEq]; exact hSc⟩, hBlk⟩
-
-/-- SM6.D: pointwise-lookup transport of `allTimeoutBudgetsNone`. -/
-theorem allTimeoutBudgetsNone_of_getElem_eq {s1 s2 : SystemState}
-    (hEq : ∀ oid : SeLe4n.ObjId, s2.objects[oid]? = s1.objects[oid]?)
-    (h : allTimeoutBudgetsNone s1) : allTimeoutBudgetsNone s2 := by
-  intro tid tcb hTcb
-  rw [hEq] at hTcb
-  exact h tid tcb hTcb
-
-/-- SM6.D: pointwise-lookup transport of `donationChainAcyclic`. -/
-theorem donationChainAcyclic_of_getElem_eq {s1 s2 : SystemState}
-    (hEq : ∀ oid : SeLe4n.ObjId, s2.objects[oid]? = s1.objects[oid]?)
-    (h : donationChainAcyclic s1) : donationChainAcyclic s2 := by
-  intro tid1 tid2 tcb1 tcb2 scId1 scId2 h1 h2 hB1 hB2
-  rw [hEq] at h1 h2
-  exact h tid1 tid2 tcb1 tcb2 scId1 scId2 h1 h2 hB1 hB2
-
-/-- SM6.D: pointwise-lookup transport of `donationOwnerValid`. -/
-theorem donationOwnerValid_of_getElem_eq {s1 s2 : SystemState}
-    (hEq : ∀ oid : SeLe4n.ObjId, s2.objects[oid]? = s1.objects[oid]?)
-    (h : donationOwnerValid s1) : donationOwnerValid s2 := by
-  intro tid tcb scId owner hTcb hBind
-  rw [hEq] at hTcb
-  obtain ⟨⟨sc, hSc, hBound⟩, ⟨ownerTcb, hOwner, hUnbound, hReply⟩⟩ := h tid tcb scId owner hTcb hBind
-  exact ⟨⟨sc, by rw [hEq]; exact hSc, hBound⟩,
-    ⟨ownerTcb, by rw [hEq]; exact hOwner, hUnbound, hReply⟩⟩
-
-/-- SM6.D: pointwise-lookup transport of `donationBudgetTransfer`. -/
-theorem donationBudgetTransfer_of_getElem_eq {s1 s2 : SystemState}
-    (hEq : ∀ oid : SeLe4n.ObjId, s2.objects[oid]? = s1.objects[oid]?)
-    (h : donationBudgetTransfer s1) : donationBudgetTransfer s2 := by
-  intro tid1 tid2 tcb1 tcb2 scId h1 h2 hNe hS1 hS2
-  rw [hEq] at h1 h2
-  exact h tid1 tid2 tcb1 tcb2 scId h1 h2 hNe hS1 hS2
-
-/-- SM6.D: pointwise-lookup transport of `blockedOnReplyHasTarget`. -/
-theorem blockedOnReplyHasTarget_of_getElem_eq {s1 s2 : SystemState}
-    (hEq : ∀ oid : SeLe4n.ObjId, s2.objects[oid]? = s1.objects[oid]?)
-    (h : blockedOnReplyHasTarget s1) : blockedOnReplyHasTarget s2 := by
-  intro tid tcb endpointId replyTarget hTcb hIpc
-  rw [hEq] at hTcb
-  exact h tid tcb endpointId replyTarget hTcb hIpc
-
-/-- SM6.D: pointwise-lookup transport of `replyCallerLinkageReciprocal`. -/
-theorem replyCallerLinkageReciprocal_of_getElem_eq {s1 s2 : SystemState}
-    (hEq : ∀ oid : SeLe4n.ObjId, s2.objects[oid]? = s1.objects[oid]?)
-    (h : replyCallerLinkageReciprocal s1) : replyCallerLinkageReciprocal s2 := by
-  refine ⟨fun tid tcb rid hTcb hRep => ?_, fun rid r tid hRep hCaller => ?_⟩
-  · rw [hEq] at hTcb
-    obtain ⟨r, hR, hBack⟩ := h.1 tid tcb rid hTcb hRep
-    exact ⟨r, by rw [hEq]; exact hR, hBack⟩
-  · rw [hEq] at hRep
-    obtain ⟨tcb, hTcb, hFwd, hBlk⟩ := h.2 rid r tid hRep hCaller
-    exact ⟨tcb, by rw [hEq]; exact hTcb, hFwd, hBlk⟩
-
-/-- SM6.D: pointwise-lookup transport of `blockedOnReplyHasReplyObject`. -/
-theorem blockedOnReplyHasReplyObject_of_getElem_eq {s1 s2 : SystemState}
-    (hEq : ∀ oid : SeLe4n.ObjId, s2.objects[oid]? = s1.objects[oid]?)
-    (h : blockedOnReplyHasReplyObject s1) : blockedOnReplyHasReplyObject s2 := by
-  intro tid tcb ep rt hTcb hIpc
-  rw [hEq] at hTcb
-  exact h tid tcb ep rt hTcb hIpc
-
-/-- SM6.D: pointwise-lookup transport of `replyCallerLinkage`. -/
-theorem replyCallerLinkage_of_getElem_eq {s1 s2 : SystemState}
-    (hEq : ∀ oid : SeLe4n.ObjId, s2.objects[oid]? = s1.objects[oid]?)
-    (h : replyCallerLinkage s1) : replyCallerLinkage s2 :=
-  ⟨replyCallerLinkageReciprocal_of_getElem_eq hEq h.1,
-   blockedOnReplyHasReplyObject_of_getElem_eq hEq h.2⟩
-
-/-- SM6.D: pointwise-lookup transport of `pendingReceiveReplyWellFormed`. -/
-theorem pendingReceiveReplyWellFormed_of_getElem_eq {s1 s2 : SystemState}
-    (hEq : ∀ oid : SeLe4n.ObjId, s2.objects[oid]? = s1.objects[oid]?)
-    (h : pendingReceiveReplyWellFormed s1) : pendingReceiveReplyWellFormed s2 := by
-  refine ⟨fun tid tcb rid hTcb hStash => ?_,
-          fun tid₁ tid₂ tcb₁ tcb₂ rid h1 h2 hS1 hS2 => ?_⟩
-  · rw [getTcb?_congr_getElem hEq] at hTcb
-    obtain ⟨hRecv, ⟨r, hR, hFree⟩⟩ := h.1 tid tcb rid hTcb hStash
-    exact ⟨hRecv, ⟨r, by rw [getReply?_congr_getElem hEq]; exact hR, hFree⟩⟩
-  · rw [getTcb?_congr_getElem hEq] at h1 h2
-    exact h.2 tid₁ tid₂ tcb₁ tcb₂ rid h1 h2 hS1 hS2
-
-/-- SM6.D: pointwise-lookup transport of `donationOwnerUnique`. -/
-theorem donationOwnerUnique_of_getElem_eq {s1 s2 : SystemState}
-    (hEq : ∀ oid : SeLe4n.ObjId, s2.objects[oid]? = s1.objects[oid]?)
-    (h : donationOwnerUnique s1) : donationOwnerUnique s2 := by
-  intro tid1 tid2 tcb1 tcb2 scId1 scId2 owner h1 h2 hB1 hB2
-  rw [hEq] at h1 h2
-  exact h tid1 tid2 tcb1 tcb2 scId1 scId2 owner h1 h2 hB1 hB2
-
-/-- SM6.D: pointwise-lookup transport of `endpointQueueTailBlockedConsistent`. -/
-theorem endpointQueueTailBlockedConsistent_of_getElem_eq {s1 s2 : SystemState}
-    (hEq : ∀ oid : SeLe4n.ObjId, s2.objects[oid]? = s1.objects[oid]?)
-    (h : endpointQueueTailBlockedConsistent s1) : endpointQueueTailBlockedConsistent s2 := by
-  intro epId ep tl tcb hEp hTcb
-  rw [hEq] at hEp hTcb
-  exact h epId ep tl tcb hEp hTcb
-
-/-- SM6.D: pointwise-lookup transport of `queueNextTargetBlocked`. -/
-theorem queueNextTargetBlocked_of_getElem_eq {s1 s2 : SystemState}
-    (hEq : ∀ oid : SeLe4n.ObjId, s2.objects[oid]? = s1.objects[oid]?)
-    (h : queueNextTargetBlocked s1) : queueNextTargetBlocked s2 := by
-  intro a b tcbA tcbB hA hB hNext
-  rw [hEq] at hA hB
-  exact h a b tcbA tcbB hA hB hNext
-
-/-- SM6.D: pointwise-lookup transport of `notificationWaiterConsistent`. -/
-theorem notificationWaiterConsistent_of_getElem_eq {s1 s2 : SystemState}
-    (hEq : ∀ oid : SeLe4n.ObjId, s2.objects[oid]? = s1.objects[oid]?)
-    (h : notificationWaiterConsistent s1) : notificationWaiterConsistent s2 := by
-  intro oid ntfn tid hNtfn hMem
-  rw [hEq] at hNtfn
-  obtain ⟨tcb, hTcb, hIpc⟩ := h oid ntfn tid hNtfn hMem
-  exact ⟨tcb, by rw [hEq]; exact hTcb, hIpc⟩
-
-/-- WS-SM SM6.D: **the whole-bundle pointwise transport** — two states whose
-object lookups agree pointwise satisfy the nineteen object-reading conjuncts
-of `ipcInvariantFull` interchangeably; the one scheduler-reading conjunct
-(`passiveServerIdle`) is supplied for the target state.  This is the lever
-that carries the single-core whole-bundle theorems across the cross-core
-wake's lookup-invisible re-insert. -/
-theorem ipcInvariantFull_of_getElem_eq {s1 s2 : SystemState}
-    (hEq : ∀ oid : SeLe4n.ObjId, s2.objects[oid]? = s1.objects[oid]?)
-    (hPsi2 : passiveServerIdle s2)
-    (h : ipcInvariantFull s1) : ipcInvariantFull s2 :=
-  ⟨ipcInvariant_of_getElem_eq hEq h.ipcInvariant,
-   dualQueueSystemInvariant_of_getElem_eq hEq h.dualQueueSystemInvariant,
-   allPendingMessagesBounded_of_getElem_eq hEq h.allPendingMessagesBounded,
-   badgeWellFormed_of_getElem_eq hEq h.badgeWellFormed,
-   blockedThreadsPendingMessageConsistent_of_getElem_eq hEq h.blockedThreadsPendingMessageConsistent,
-   endpointQueueNoDup_of_getElem_eq hEq h.endpointQueueNoDup,
-   ipcStateQueueMembershipConsistent_of_getElem_eq hEq h.ipcStateQueueMembershipConsistent,
-   queueNextBlockingConsistent_of_getElem_eq hEq h.queueNextBlockingConsistent,
-   queueHeadBlockedConsistent_of_getElem_eq hEq h.queueHeadBlockedConsistent,
-   blockedThreadTimeoutConsistent_of_getElem_eq hEq h.blockedThreadTimeoutConsistent,
-   donationChainAcyclic_of_getElem_eq hEq h.donationChainAcyclic,
-   donationOwnerValid_of_getElem_eq hEq h.donationOwnerValid,
-   hPsi2,
-   donationBudgetTransfer_of_getElem_eq hEq h.donationBudgetTransfer,
-   blockedOnReplyHasTarget_of_getElem_eq hEq h.blockedOnReplyHasTarget,
-   replyCallerLinkage_of_getElem_eq hEq h.replyCallerLinkage,
-   pendingReceiveReplyWellFormed_of_getElem_eq hEq h.pendingReceiveReplyWellFormed,
-   donationOwnerUnique_of_getElem_eq hEq h.donationOwnerUnique,
-   endpointQueueTailBlockedConsistent_of_getElem_eq hEq h.endpointQueueTailBlockedConsistent,
-   queueNextTargetBlocked_of_getElem_eq hEq h.queueNextTargetBlocked⟩
-
-/-- WS-RR RR3.12: the relaxed donation-owner invariant is a pure object-store
-property, so it transports across pointwise lookup agreement. -/
-theorem donationOwnerValidExcept_of_getElem_eq {s1 s2 : SystemState}
-    {woken : SeLe4n.ThreadId}
-    (hEq : ∀ oid : SeLe4n.ObjId, s2.objects[oid]? = s1.objects[oid]?)
-    (h : donationOwnerValidExcept s1 woken) : donationOwnerValidExcept s2 woken := by
-  intro tid tcb scId owner hTcb hBind
-  rw [hEq] at hTcb
-  obtain ⟨⟨sc, hSc, hBound⟩, ⟨ownerTcb, hOwner, hUnbound, hCase⟩⟩ :=
-    h tid tcb scId owner hTcb hBind
-  exact ⟨⟨sc, by rw [hEq]; exact hSc, hBound⟩,
-    ⟨ownerTcb, by rw [hEq]; exact hOwner, hUnbound, hCase⟩⟩
-
-/-- WS-RR RR3.12: the relaxed bundle transports across pointwise lookup agreement,
-exactly as `ipcInvariantFull_of_getElem_eq` does for the full one — `passiveServerIdle`
-is the single scheduler-reading conjunct and is supplied for the target state. -/
-theorem ipcInvariantFullExceptDonationOwner_of_getElem_eq {s1 s2 : SystemState}
-    {woken : SeLe4n.ThreadId}
-    (hEq : ∀ oid : SeLe4n.ObjId, s2.objects[oid]? = s1.objects[oid]?)
-    (hPsi2 : passiveServerIdle s2)
-    (h : ipcInvariantFullExceptDonationOwner s1 woken) :
-    ipcInvariantFullExceptDonationOwner s2 woken :=
-  ⟨ipcInvariant_of_getElem_eq hEq h.1,
-   dualQueueSystemInvariant_of_getElem_eq hEq h.2.1,
-   allPendingMessagesBounded_of_getElem_eq hEq h.2.2.1,
-   badgeWellFormed_of_getElem_eq hEq h.2.2.2.1,
-   blockedThreadsPendingMessageConsistent_of_getElem_eq hEq h.2.2.2.2.1,
-   endpointQueueNoDup_of_getElem_eq hEq h.2.2.2.2.2.1,
-   ipcStateQueueMembershipConsistent_of_getElem_eq hEq h.2.2.2.2.2.2.1,
-   queueNextBlockingConsistent_of_getElem_eq hEq h.2.2.2.2.2.2.2.1,
-   queueHeadBlockedConsistent_of_getElem_eq hEq h.2.2.2.2.2.2.2.2.1,
-   blockedThreadTimeoutConsistent_of_getElem_eq hEq h.2.2.2.2.2.2.2.2.2.1,
-   donationChainAcyclic_of_getElem_eq hEq h.2.2.2.2.2.2.2.2.2.2.1,
-   donationOwnerValidExcept_of_getElem_eq hEq h.donationOwnerValidExcept,
-   hPsi2,
-   donationBudgetTransfer_of_getElem_eq hEq h.2.2.2.2.2.2.2.2.2.2.2.2.2.1,
-   blockedOnReplyHasTarget_of_getElem_eq hEq h.2.2.2.2.2.2.2.2.2.2.2.2.2.2.1,
-   replyCallerLinkage_of_getElem_eq hEq h.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.1,
-   pendingReceiveReplyWellFormed_of_getElem_eq hEq h.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.1,
-   donationOwnerUnique_of_getElem_eq hEq h.donationOwnerUnique,
-   endpointQueueTailBlockedConsistent_of_getElem_eq hEq
-     h.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.1,
-   queueNextTargetBlocked_of_getElem_eq hEq h.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2⟩
-
 -- ============================================================================
 -- §2  The off-scheduler agreement relation
 -- ============================================================================
@@ -530,7 +162,9 @@ proof discharges per field; if `SystemState` gains a field, this structure
 must gain the matching clause — the §4 step congruences will fail to
 elaborate otherwise, which is the intended tripwire. -/
 structure OffSchedulerAgrees (s1 s2 : SystemState) : Prop where
-  objects : ∀ oid : SeLe4n.ObjId, s2.objects[oid]? = s1.objects[oid]?
+  /-- WS-ZA ZA4.5: objects agree **off the run-queue links**, which are scheduler
+      state that lives in the TCB. -/
+  objects : s2.objectsAgreeOffRunLinks s1
   machine : s2.machine = s1.machine
   objectIndex : s2.objectIndex = s1.objectIndex
   objectIndexSet : s2.objectIndexSet = s1.objectIndexSet
@@ -585,13 +219,13 @@ namespace OffSchedulerAgrees
 
 /-- Reflexivity. -/
 theorem refl (st : SystemState) : OffSchedulerAgrees st st :=
-  ⟨fun _ => rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl,
+  ⟨.refl _, rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl,
    rfl, rfl, rfl, rfl, rfl, rfl, rfl⟩
 
 /-- Symmetry. -/
 theorem symm {s1 s2 : SystemState} (h : OffSchedulerAgrees s1 s2) :
     OffSchedulerAgrees s2 s1 :=
-  ⟨fun oid => (h.objects oid).symm, h.machine.symm, h.objectIndex.symm,
+  ⟨h.objects.symm, h.machine.symm, h.objectIndex.symm,
    h.objectIndexSet.symm, h.services.symm, h.irqHandlers.symm, h.lifecycle.symm,
    h.asidTable.symm, h.interfaceRegistry.symm, h.serviceRegistry.symm, h.cdt.symm,
    h.cdtSlotNode.symm, h.cdtNodeSlot.symm, h.cdtNextNode.symm, h.scThreadIndex.symm,
@@ -604,7 +238,7 @@ theorem symm {s1 s2 : SystemState} (h : OffSchedulerAgrees s1 s2) :
 theorem trans {s1 s2 s3 : SystemState}
     (hFirst : OffSchedulerAgrees s1 s2) (hSecond : OffSchedulerAgrees s2 s3) :
     OffSchedulerAgrees s1 s3 :=
-  ⟨fun oid => (hSecond.objects oid).trans (hFirst.objects oid), hSecond.machine.trans hFirst.machine,
+  ⟨hSecond.objects.trans hFirst.objects, hSecond.machine.trans hFirst.machine,
    hSecond.objectIndex.trans hFirst.objectIndex, hSecond.objectIndexSet.trans hFirst.objectIndexSet,
    hSecond.services.trans hFirst.services, hSecond.irqHandlers.trans hFirst.irqHandlers,
    hSecond.lifecycle.trans hFirst.lifecycle, hSecond.asidTable.trans hFirst.asidTable,
@@ -631,32 +265,42 @@ end OffSchedulerAgrees
 off-scheduler. -/
 theorem offSchedulerAgrees_scheduler_update (st : SystemState) (σ : SchedulerState) :
     OffSchedulerAgrees st { st with scheduler := σ } :=
-  ⟨fun _ => rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl,
+  ⟨.refl _, rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl,
    rfl, rfl, rfl, rfl, rfl, rfl, rfl⟩
 
+/-- WS-ZA ZA4.5: a step that writes only the object store and the scheduler,
+and the store only off the run-queue links, agrees with its input
+off-scheduler. -/
+theorem OffSchedulerAgrees.of_runLinkStep {st st' : SystemState}
+    (hD : st'.onlyObjectsSchedulerDiffer st) (hA : st'.objectsAgreeOffRunLinks st) :
+    OffSchedulerAgrees st st' := by
+  have hD' := hD
+  unfold SystemState.onlyObjectsSchedulerDiffer at hD'
+  refine ⟨hA, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_,
+    ?_, ?_, ?_⟩ <;> rw [hD']
+
 /-- SM6.D: `ensureRunnable` (the single-core boot enqueue) agrees with its
-input off-scheduler. -/
+input off-scheduler — it writes the scheduler and the woken thread's run-queue
+links. -/
 theorem ensureRunnable_offSchedulerAgrees (st : SystemState) (tid : SeLe4n.ThreadId) :
-    OffSchedulerAgrees st (ensureRunnable st tid) := by
-  unfold ensureRunnable
-  split
-  · exact OffSchedulerAgrees.refl st
-  · split
-    · exact offSchedulerAgrees_scheduler_update st _
-    · exact OffSchedulerAgrees.refl st
+    OffSchedulerAgrees st (ensureRunnable st tid) :=
+  .of_runLinkStep (ensureRunnable_onlyObjectsSchedulerDiffer st tid)
+    (ensureRunnable_objectsAgreeOffRunLinks st tid)
 
 /-- SM6.D: `removeRunnable` (the single-core boot dequeue) agrees with its
 input off-scheduler. -/
 theorem removeRunnable_offSchedulerAgrees (st : SystemState) (tid : SeLe4n.ThreadId) :
     OffSchedulerAgrees st (removeRunnable st tid) :=
-  offSchedulerAgrees_scheduler_update st _
+  .of_runLinkStep (removeRunnable_onlyObjectsSchedulerDiffer st tid)
+    (removeRunnable_objectsAgreeOffRunLinks st tid)
 
 /-- SM6.D: `removeRunnableOnCore` (the per-core dequeue) agrees with its
 input off-scheduler. -/
 theorem removeRunnableOnCore_offSchedulerAgrees (st : SystemState)
     (tid : SeLe4n.ThreadId) (c : CoreId) :
     OffSchedulerAgrees st (removeRunnableOnCore st tid c) :=
-  offSchedulerAgrees_scheduler_update st _
+  .of_runLinkStep (removeRunnableOnCore_onlyObjectsSchedulerDiffer st tid c)
+    (removeRunnableOnCore_objectsAgreeOffRunLinks st tid c)
 
 /-- **`v0.35.161`**: a replenishment migration is a scheduler-only update, or the
 identity — it moves a SchedContext's CBS replenishments between two cores'
@@ -670,18 +314,16 @@ theorem migrateSchedContextReplenishment_offSchedulerAgrees (st : SystemState)
   · exact offSchedulerAgrees_scheduler_update _ _
 
 /-- SM6.D: `enqueueRunnableOnCore` of an already-`.ready` thread agrees with
-its input off-scheduler — the only object it writes is the woken TCB with
-`ipcState := .ready`, an identical-value (lookup-invisible) re-insert; every
-other field is untouched. -/
+its input off-scheduler — the only object it writes is the woken TCB: its
+`ipcState := .ready` is an identical-value re-insert and its run-queue links are
+scheduler state; every other field is untouched. -/
 theorem enqueueRunnableOnCore_offSchedulerAgrees_of_ready
     (st : SystemState) (c : CoreId) (tid : SeLe4n.ThreadId) (tcb : TCB)
     (hTcb : st.getTcb? tid = some tcb) (hReady : tcb.ipcState = .ready)
     (hInv : st.objects.invExt) :
-    OffSchedulerAgrees st (enqueueRunnableOnCore st c tid) := by
-  refine ⟨fun oid => enqueueRunnableOnCore_objects_getElem_eq_of_ready st c tid tcb hTcb hReady hInv oid,
-    ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_⟩
-  all_goals simp only [enqueueRunnableOnCore, SystemState.getTcbWitnessed?_eq_some hTcb]
-  all_goals split <;> rfl
+    OffSchedulerAgrees st (enqueueRunnableOnCore st c tid) :=
+  .of_runLinkStep (enqueueRunnableOnCore_onlyObjectsSchedulerDiffer st c tid)
+    (enqueueRunnableOnCore_objectsAgreeOffRunLinks_of_ready st c tid tcb hTcb hReady hInv)
 
 /-- SM6.D: the cross-core `wakeThread` of an already-`.ready` thread agrees
 with its input off-scheduler. -/
@@ -698,38 +340,110 @@ theorem wakeThread_offSchedulerAgrees_of_ready
 -- ============================================================================
 
 open SeLe4n.Model.SystemState in
-/-- SM6.D step congruence: `storeObject` maps off-scheduler-agreeing inputs to
-off-scheduler-agreeing outputs (it is total; control-free). -/
+/-- SM6.D step congruence: `storeObject` of two objects that agree off the
+run-queue links maps off-scheduler-agreeing inputs to off-scheduler-agreeing
+outputs (it is total; control-free).  The kind, so the type-table entry and the
+ASID side table, is the same on both sides. -/
+theorem storeObject_offSchedulerAgrees_of_agree {s1 s2 r1 r2 : SystemState}
+    (id : SeLe4n.ObjId) {o1 o2 : KernelObject}
+    (ho : o2.withoutRunLinks = o1.withoutRunLinks)
+    (hRel : OffSchedulerAgrees s1 s2)
+    (hInv1 : s1.objects.invExt) (hInv2 : s2.objects.invExt)
+    (h1 : storeObject id o1 s1 = .ok ((), r1))
+    (h2 : storeObject id o2 s2 = .ok ((), r2)) :
+    OffSchedulerAgrees r1 r2 := by
+  have hObjEq : r2.objectsAgreeOffRunLinks r1 := by
+    intro oid
+    by_cases hEq : oid = id
+    · rw [hEq, storeObject_objects_eq s2 r2 id o2 hInv2 h2,
+          storeObject_objects_eq s1 r1 id o1 hInv1 h1]
+      exact congrArg some ho
+    · rw [storeObject_objects_ne s2 r2 id oid o2 hEq hInv2 h2,
+          storeObject_objects_ne s1 r1 id oid o1 hEq hInv1 h1]
+      exact hRel.objects oid
+  rcases KernelObject.withoutRunLinks_eq_cases ho with rfl | ⟨t1, t2, rfl, rfl⟩
+  all_goals
+    unfold storeObject at h1 h2
+    cases h1
+    cases h2
+    refine ⟨hObjEq, hRel.machine, ?_, ?_, hRel.services, hRel.irqHandlers, ?_, ?_,
+      hRel.interfaceRegistry, hRel.serviceRegistry, hRel.cdt, hRel.cdtSlotNode,
+      hRel.cdtNodeSlot, hRel.cdtNextNode, hRel.scThreadIndex, hRel.tlb,
+      hRel.perCoreTlb, hRel.perCoreICache, hRel.pendingIcacheMaintenance, hRel.pendingPhysicalWrites,
+      hRel.declassificationAuditLog, hRel.declassificationAuditEpoch,
+      hRel.declassificationRefusals, hRel.declassificationTaint⟩
+    · simp only [hRel.objectIndexSet, hRel.objectIndex]
+    · simp only [hRel.objectIndexSet]
+    · simp only [hRel.lifecycle, KernelObject.objectType]
+    · dsimp only
+      rw [hRel.asidTable]
+      cases e : s1.objects[id]? with
+      | none => rw [hRel.objects.get_none_iff.mpr e]
+      | some o => cases o with
+        | tcb t => obtain ⟨t', h', _⟩ := hRel.objects.get_tcb e; rw [h']
+        | _ => rw [hRel.objects.get_of_not_tcb (fun _ e => KernelObject.noConfusion e) e]
+
+/-- SM6.D step congruence: `storeObject` of one object maps
+off-scheduler-agreeing inputs to off-scheduler-agreeing outputs. -/
 theorem storeObject_offSchedulerAgrees {s1 s2 r1 r2 : SystemState}
     (id : SeLe4n.ObjId) (obj : KernelObject)
     (hRel : OffSchedulerAgrees s1 s2)
     (hInv1 : s1.objects.invExt) (hInv2 : s2.objects.invExt)
     (h1 : storeObject id obj s1 = .ok ((), r1))
     (h2 : storeObject id obj s2 = .ok ((), r2)) :
-    OffSchedulerAgrees r1 r2 := by
-  have hObjEq : ∀ oid : SeLe4n.ObjId, r2.objects[oid]? = r1.objects[oid]? := by
-    intro oid
-    by_cases hEq : oid = id
-    · rw [hEq, storeObject_objects_eq s2 r2 id obj hInv2 h2,
-          storeObject_objects_eq s1 r1 id obj hInv1 h1]
-    · rw [storeObject_objects_ne s2 r2 id oid obj hEq hInv2 h2,
-          storeObject_objects_ne s1 r1 id oid obj hEq hInv1 h1]
-      exact hRel.objects oid
-  unfold storeObject at h1 h2
-  cases h1
-  cases h2
-  refine ⟨hObjEq, hRel.machine, ?_, ?_, hRel.services, hRel.irqHandlers, ?_, ?_,
-    hRel.interfaceRegistry, hRel.serviceRegistry, hRel.cdt, hRel.cdtSlotNode,
-    hRel.cdtNodeSlot, hRel.cdtNextNode, hRel.scThreadIndex, hRel.tlb,
-    hRel.perCoreTlb, hRel.perCoreICache, hRel.pendingIcacheMaintenance, hRel.pendingPhysicalWrites,
-    hRel.declassificationAuditLog, hRel.declassificationAuditEpoch,
-    hRel.declassificationRefusals, hRel.declassificationTaint⟩
-  · simp only [hRel.objectIndexSet, hRel.objectIndex]
-  · simp only [hRel.objectIndexSet]
-  · simp only [hRel.lifecycle]
-  · simp only [hRel.objects id, hRel.asidTable]
+    OffSchedulerAgrees r1 r2 :=
+  storeObject_offSchedulerAgrees_of_agree id rfl hRel hInv1 hInv2 h1 h2
+
+/-- WS-ZA ZA4.5: a TCB found in a store that agrees off the run-queue links is
+the TCB of the other store with its run-queue fields rewritten. -/
+theorem lookupTcb_back_of_objectsAgreeOffRunLinks {s1 s2 : SystemState}
+    (h : s2.objectsAgreeOffRunLinks s1) {tid : SeLe4n.ThreadId} {t' : TCB}
+    (hL : lookupTcb s2 tid = some t') :
+    ∃ t : TCB, ∃ (rc : Nat) (rp : SeLe4n.Priority) (rpv rnx rbpv rbnx : Nat),
+      lookupTcb s1 tid = some t ∧
+      t' = { t with runCoreCode := rc, runPrio := rp, runPrevCode := rpv, runNextCode := rnx,
+                    runBucketPrevCode := rbpv, runBucketNextCode := rbnx } := by
+  unfold lookupTcb at hL ⊢
+  cases hr : tid.isReserved
+  · simp only [hr, Bool.false_eq_true, ↓reduceIte] at hL ⊢
+    obtain ⟨t, rc, rp, rpv, rnx, rbpv, rbnx, ht, e⟩ :=
+      h.get_tcb_back ((SystemState.getTcb?_eq_some_iff s2 tid t').mp hL)
+    exact ⟨t, rc, rp, rpv, rnx, rbpv, rbnx, (SystemState.getTcb?_eq_some_iff s1 tid t).mpr ht, e⟩
+  · simp only [hr, ↓reduceIte] at hL; cases hL
 
 open SeLe4n.Model.SystemState in
+/-- WS-ZA ZA4.4 step congruence: a `modifyTcb` whose rewrite reads no
+run-queue field succeeds on the single-core-side state whenever it succeeds on
+the cross-core-side state, with off-scheduler-agreeing outputs — one lookup the
+relation fixes up to the run-queue links, one store that carries it. -/
+theorem modifyTcb_offSchedulerAgrees {s1 s2 r2 : SystemState}
+    (tid : SeLe4n.ThreadId) (f : TCB → TCB) (hf : TCB.RunLinksBlind f)
+    (hRel : OffSchedulerAgrees s1 s2)
+    (hInv1 : s1.objects.invExt) (hInv2 : s2.objects.invExt)
+    (h2 : modifyTcb s2 tid f = .ok r2) :
+    ∃ r1, modifyTcb s1 tid f = .ok r1 ∧ OffSchedulerAgrees r1 r2 := by
+  unfold modifyTcb at h2 ⊢
+  cases hL2 : lookupTcb s2 tid with
+  | none => simp only [hL2] at h2; cases h2
+  | some tcb2 =>
+    obtain ⟨tcb, rc, rp, rpv, rnx, rbpv, rbnx, hL, hTcbEq⟩ :=
+      lookupTcb_back_of_objectsAgreeOffRunLinks hRel.objects hL2
+    simp only [hL2] at h2
+    simp only [hL]
+    cases hSO2 : storeObject tid.toObjId (.tcb (f tcb2)) s2 with
+    | error e => simp only [hSO2] at h2; cases h2
+    | ok p2 =>
+      obtain ⟨⟨⟩, r2'⟩ := p2
+      simp only [hSO2, Except.ok.injEq] at h2
+      subst h2
+      cases hSO1 : storeObject tid.toObjId (.tcb (f tcb)) s1 with
+      | error e => exact absurd hSO1 (by unfold storeObject; simp)
+      | ok p1 =>
+        obtain ⟨⟨⟩, r1'⟩ := p1
+        refine ⟨r1', rfl, storeObject_offSchedulerAgrees_of_agree _ ?_ hRel hInv1 hInv2 hSO1 hSO2⟩
+        rw [hTcbEq]
+        exact congrArg KernelObject.tcb (hf tcb rc rp rpv rnx rbpv rbnx)
+
 /-- SM6.D step congruence: `storeTcbIpcStateAndMessage` succeeds on the
 single-core-side state whenever it succeeds on the cross-core-side state,
 with off-scheduler-agreeing outputs. -/
@@ -738,54 +452,40 @@ theorem storeTcbIpcStateAndMessage_offSchedulerAgrees {s1 s2 r2 : SystemState}
     (hRel : OffSchedulerAgrees s1 s2)
     (hInv1 : s1.objects.invExt) (hInv2 : s2.objects.invExt)
     (h2 : storeTcbIpcStateAndMessage s2 tid ipc msg = .ok r2) :
-    ∃ r1, storeTcbIpcStateAndMessage s1 tid ipc msg = .ok r1 ∧ OffSchedulerAgrees r1 r2 := by
-  unfold storeTcbIpcStateAndMessage modifyTcb at h2 ⊢
-  rw [lookupTcb_congr_getElem hRel.objects tid] at h2
-  cases hL : lookupTcb s1 tid with
-  | none => simp only [hL] at h2; cases h2
-  | some tcb =>
-    simp only [hL] at h2 ⊢
-    cases hSO2 : storeObject tid.toObjId (.tcb { tcb with ipcState := ipc, pendingMessage := msg }) s2 with
-    | error e => simp only [hSO2] at h2; cases h2
-    | ok p2 =>
-      obtain ⟨⟨⟩, r2'⟩ := p2
-      simp only [hSO2, Except.ok.injEq] at h2
-      subst h2
-      cases hSO1 : storeObject tid.toObjId (.tcb { tcb with ipcState := ipc, pendingMessage := msg }) s1 with
-      | error e => exact absurd hSO1 (by unfold storeObject; simp)
-      | ok p1 =>
-        obtain ⟨⟨⟩, r1'⟩ := p1
-        exact ⟨r1', rfl, storeObject_offSchedulerAgrees _ _ hRel hInv1 hInv2 hSO1 hSO2⟩
+    ∃ r1, storeTcbIpcStateAndMessage s1 tid ipc msg = .ok r1 ∧ OffSchedulerAgrees r1 r2 :=
+  modifyTcb_offSchedulerAgrees tid _ (fun _ _ _ _ _ _ _ => rfl) hRel hInv1 hInv2 h2
 
-open SeLe4n.Model.SystemState in
 /-- **`v0.35.161`** step congruence: `storeTcbQueueLinks` succeeds on the
 single-core-side state whenever it succeeds on the cross-core-side state, with
-off-scheduler-agreeing outputs — it reads the store through `lookupTcb`, which
-the relation fixes, and writes through `storeObject`, which carries it. -/
+off-scheduler-agreeing outputs — it is a `modifyTcb` of the queue links. -/
 theorem storeTcbQueueLinks_offSchedulerAgrees {s1 s2 r2 : SystemState}
     (tid : SeLe4n.ThreadId) (prev : Option SeLe4n.ThreadId) (pprev : Option QueuePPrev)
     (next : Option SeLe4n.ThreadId)
     (hRel : OffSchedulerAgrees s1 s2)
     (hInv1 : s1.objects.invExt) (hInv2 : s2.objects.invExt)
     (h2 : storeTcbQueueLinks s2 tid prev pprev next = .ok r2) :
-    ∃ r1, storeTcbQueueLinks s1 tid prev pprev next = .ok r1 ∧ OffSchedulerAgrees r1 r2 := by
-  unfold storeTcbQueueLinks modifyTcb at h2 ⊢
-  rw [lookupTcb_congr_getElem hRel.objects tid] at h2
-  cases hL : lookupTcb s1 tid with
-  | none => simp only [hL] at h2; cases h2
-  | some tcb =>
-    simp only [hL] at h2 ⊢
-    cases hSO2 : storeObject tid.toObjId (.tcb (tcbWithQueueLinks tcb prev pprev next)) s2 with
-    | error e => simp only [hSO2] at h2; cases h2
-    | ok p2 =>
-      obtain ⟨⟨⟩, r2'⟩ := p2
-      simp only [hSO2, Except.ok.injEq] at h2
-      subst h2
-      cases hSO1 : storeObject tid.toObjId (.tcb (tcbWithQueueLinks tcb prev pprev next)) s1 with
-      | error e => exact absurd hSO1 (by unfold storeObject; simp)
-      | ok p1 =>
-        obtain ⟨⟨⟩, r1'⟩ := p1
-        exact ⟨r1', rfl, storeObject_offSchedulerAgrees _ _ hRel hInv1 hInv2 hSO1 hSO2⟩
+    ∃ r1, storeTcbQueueLinks s1 tid prev pprev next = .ok r1 ∧ OffSchedulerAgrees r1 r2 :=
+  modifyTcb_offSchedulerAgrees tid _ (fun _ _ _ _ _ _ _ => rfl) hRel hInv1 hInv2 h2
+
+/-- WS-ZA ZA4.4 step congruence: the notification link-in — two `modifyTcb`
+writes — carries the off-scheduler agreement. -/
+theorem linkNtfnWaiter_offSchedulerAgrees {s1 s2 r2 : SystemState}
+    (waiter : SeLe4n.ThreadId) (tail : Option SeLe4n.ThreadId)
+    (hRel : OffSchedulerAgrees s1 s2)
+    (hInv1 : s1.objects.invExt) (hInv2 : s2.objects.invExt)
+    (h2 : linkNtfnWaiter s2 waiter tail = .ok r2) :
+    ∃ r1, linkNtfnWaiter s1 waiter tail = .ok r1 ∧ OffSchedulerAgrees r1 r2 := by
+  obtain ⟨m2, hM2, hR2⟩ := linkNtfnWaiter_ok_cases h2
+  obtain ⟨m1, hM1, hRel1⟩ := modifyTcb_offSchedulerAgrees waiter _
+    (fun _ _ _ _ _ _ _ => rfl) hRel hInv1 hInv2 hM2
+  have hInvM1 := modifyTcb_preserves_objects_invExt hInv1 hM1
+  have hInvM2 := modifyTcb_preserves_objects_invExt hInv2 hM2
+  unfold linkNtfnWaiter storeTcbNtfnLinks
+  rw [hM1]
+  unfold relinkNtfnNext modifyTcbOpt at hR2 ⊢
+  cases tail with
+  | none => cases hR2; exact ⟨m1, rfl, hRel1⟩
+  | some t => exact modifyTcb_offSchedulerAgrees t _ (fun _ _ _ _ _ _ _ => rfl) hRel1 hInvM1 hInvM2 hR2
 
 open SeLe4n.Model.SystemState in
 /-- **`v0.35.161`** step congruence: `endpointQueueEnqueue` succeeds on the
@@ -806,25 +506,31 @@ theorem endpointQueueEnqueue_offSchedulerAgrees {s1 s2 r2 : SystemState}
     ∃ r1, endpointQueueEnqueue endpointId isReceiveQ tid s1 = .ok r1 ∧
       OffSchedulerAgrees r1 r2 := by
   unfold endpointQueueEnqueue SystemState.getObject? at h2 ⊢
-  rw [hRel.objects endpointId, lookupTcb_congr_getElem hRel.objects tid] at h2
   revert h2
-  cases hObj : s1.objects[endpointId]? with
+  cases hObj : s2.objects[endpointId]? with
   | none => simp
   | some obj =>
     cases obj with
     | tcb _ | cnode _ | notification _ | vspaceRoot _ | untyped _ | schedContext _
     | reply _ | frame _ | pageTable _ => simp
     | endpoint ep =>
+      rw [hRel.objects.get_endpoint_iff.mp hObj]
       simp only []
-      cases hL : lookupTcb s1 tid with
+      cases hL2 : lookupTcb s2 tid with
       | none => simp
-      | some tcb =>
+      | some tcb2 =>
+        obtain ⟨tcb, _, _, _, _, _, _, hL, rfl⟩ :=
+          lookupTcb_back_of_objectsAgreeOffRunLinks hRel.objects hL2
+        rw [hL]
         simp only []
         split
         · simp
         · split
           · simp
-          · cases hTail : (if isReceiveQ then ep.receiveQ else ep.sendQ).tail with
+          · rename_i hClear
+            rw [if_neg (show ¬ ((tcb.queuePPrev.isSome || tcb.queuePrev.isSome ||
+              tcb.queueNext.isSome) = true) from hClear)]
+            cases hTail : (if isReceiveQ then ep.receiveQ else ep.sendQ).tail with
             | none =>
               simp only []
               cases hSO2 : storeObject endpointId
@@ -850,11 +556,15 @@ theorem endpointQueueEnqueue_offSchedulerAgrees {s1 s2 r2 : SystemState}
                     (storeObject_preserves_objects_invExt s2 t2 endpointId _ hInv2 hSO2) hLinks2
             | some tailTid =>
               simp only []
-              rw [lookupTcb_congr_getElem hRel.objects tailTid]
-              cases hLT : lookupTcb s1 tailTid with
+              cases hLT2 : lookupTcb s2 tailTid with
               | none => simp
-              | some tailTcb =>
-                simp only []
+              | some tailTcb2 =>
+                obtain ⟨tailTcb, _, _, _, _, _, _, hLT, hTailEq⟩ :=
+                  lookupTcb_back_of_objectsAgreeOffRunLinks hRel.objects hLT2
+                have hQP : tailTcb2.queuePrev = tailTcb.queuePrev := by subst hTailEq; rfl
+                have hQPP : tailTcb2.queuePPrev = tailTcb.queuePPrev := by subst hTailEq; rfl
+                rw [hLT]
+                simp only [hQP, hQPP]
                 cases hSO2 : storeObject endpointId
                     (.endpoint (if isReceiveQ
                       then { ep with receiveQ :=
@@ -914,7 +624,7 @@ theorem consumeReply_offSchedulerAgrees {s1 s2 r1 r2 : SystemState}
     (h2 : consumeReply rid s2 = .ok ((), r2)) :
     OffSchedulerAgrees r1 r2 := by
   unfold consumeReply at h1 h2
-  rw [getReply?_congr_getElem hRel.objects rid] at h2
+  rw [hRel.objects.getReply? rid] at h2
   cases hG : s1.getReply? rid with
   | none =>
       simp only [hG, Except.ok.injEq, Prod.mk.injEq, true_and] at h1 h2
@@ -937,7 +647,7 @@ theorem spliceReplyFrameStores_offSchedulerAgrees {s1 s2 t1 t2 : SystemState}
     (h2 : spliceReplyFrameStores s2 rid above r a = .ok t2) :
     OffSchedulerAgrees t1 t2 := by
   have hGR : ∀ q, s2.getReply? q = s1.getReply? q :=
-    fun q => getReply?_congr_getElem hRel.objects q
+    fun q => hRel.objects.getReply? q
   have hBelow : spliceFrameBelow? s2 rid r above = spliceFrameBelow? s1 rid r above := by
     unfold spliceFrameBelow?
     cases hP : r.prev with
@@ -975,7 +685,7 @@ theorem spliceReplyFrameOutOrSelf_offSchedulerAgrees {s1 s2 : SystemState}
     OffSchedulerAgrees (spliceReplyFrameOutOrSelf s1 rid)
       (spliceReplyFrameOutOrSelf s2 rid) := by
   have hGR : ∀ q, s2.getReply? q = s1.getReply? q :=
-    fun q => getReply?_congr_getElem hRel.objects q
+    fun q => hRel.objects.getReply? q
   rcases spliceReplyFrameOutOrSelf_decision s1 rid with
     ⟨r1, above, a, hR1, hN1, hA1, hP1, hS1⟩ | ⟨hId1, hNo1⟩
   · rcases spliceReplyFrameOutOrSelf_decision s2 rid with
@@ -1032,15 +742,27 @@ theorem consumeCallerReply_offSchedulerAgrees {s1 s2 r1 r2 : SystemState}
             rw [hG] at hC2
             exact storeObject_preserves_objects_invExt s2 m2 _ _ hInv2 hC2
       have hRelM : OffSchedulerAgrees m1 m2 := consumeReply_offSchedulerAgrees rid hRel hInv1 hInv2 hC1 hC2
-      rw [getTcb?_congr_getElem hRelM.objects caller] at h2
       cases hG : m1.getTcb? caller with
       | none =>
-          simp only [hG, Except.ok.injEq, Prod.mk.injEq, true_and] at h1 h2
+          have hG2 : m2.getTcb? caller = none := by
+            have := hRelM.objects.getTcb?_isSome caller
+            rw [hG] at this
+            cases e : m2.getTcb? caller with
+            | none => rfl
+            | some _ => rw [e] at this; cases this
+          simp only [hG, hG2, Except.ok.injEq, Prod.mk.injEq, true_and] at h1 h2
           rw [← h1, ← h2]
           exact hRelM
       | some tcb =>
-          simp only [hG] at h1 h2
-          exact storeObject_offSchedulerAgrees _ _ hRelM hInvM1 hInvM2 h1 h2
+          obtain ⟨tcb2, hG2, e⟩ : ∃ t, m2.getTcb? caller = some t ∧
+              t.withoutRunLinks = tcb.withoutRunLinks := by
+            obtain ⟨t, ht, e⟩ := hRelM.objects.get_tcb ((getTcb?_eq_some_iff m1 caller tcb).mp hG)
+            exact ⟨t, (getTcb?_eq_some_iff m2 caller t).mpr ht, e⟩
+          simp only [hG] at h1
+          simp only [hG2] at h2
+          refine storeObject_offSchedulerAgrees_of_agree _ ?_ hRelM hInvM1 hInvM2 h1 h2
+          rw [TCB.eq_withRunLinks_of_withoutRunLinks_eq e]
+          rfl
 
 open SeLe4n.Model.SystemState in
 /-- **WS-RM (`v0.35.6`)** step congruence: the removal (total) maps
@@ -1090,18 +812,23 @@ CNodes are deliberately absent — `capabilityBadgesWellFormed` is the one claus
 that reads them, and the transitions this frame serves (capability writes,
 page-table writes, untyped scrubs) exist precisely to rewrite them. -/
 structure ipcReadViewAgreement (s1 s2 : SystemState) : Prop where
-  tcb : ∀ (oid : SeLe4n.ObjId) (t : TCB),
-    s2.objects[oid]? = some (.tcb t) ↔ s1.objects[oid]? = some (.tcb t)
+  /-- The TCB clauses are agreement **off the run-queue links** (WS-ZA ZA4.5):
+  no conjunct reads the six run-queue fields, which are the scheduler's, so a
+  run-queue write on either side stays inside the frame. -/
+  tcb : ∀ (oid : SeLe4n.ObjId) (t : TCB), s2.objects[oid]? = some (.tcb t) →
+    ∃ t₀ : TCB, s1.objects[oid]? = some (.tcb t₀) ∧ t.withoutRunLinks = t₀.withoutRunLinks
+  tcbFwd : ∀ (oid : SeLe4n.ObjId) (t₀ : TCB), s1.objects[oid]? = some (.tcb t₀) →
+    ∃ t : TCB, s2.objects[oid]? = some (.tcb t) ∧ t.withoutRunLinks = t₀.withoutRunLinks
   endpoint : ∀ (oid : SeLe4n.ObjId) (ep : Endpoint),
     s2.objects[oid]? = some (.endpoint ep) ↔ s1.objects[oid]? = some (.endpoint ep)
   /-- The notification clause is *content* agreement, not value agreement:
-  every notification-reading conjunct reads `state`, `waitingThreads` and
+  every notification-reading conjunct reads `state`, `waitHead` and
   `pendingBadge` only, so a rewrite that moves `boundTCB` or the lock word —
   the `.tcbBindNotification` arms — stays inside the frame. -/
   notification : ∀ (oid : SeLe4n.ObjId) (ntfn : Notification),
     s2.objects[oid]? = some (.notification ntfn) →
     ∃ ntfn₀ : Notification, s1.objects[oid]? = some (.notification ntfn₀) ∧
-      ntfn₀.state = ntfn.state ∧ ntfn₀.waitingThreads = ntfn.waitingThreads ∧
+      ntfn₀.state = ntfn.state ∧ ntfn₀.waitHead = ntfn.waitHead ∧
       ntfn₀.pendingBadge = ntfn.pendingBadge
   reply : ∀ (oid : SeLe4n.ObjId) (r : SeLe4n.Kernel.Reply),
     s2.objects[oid]? = some (.reply r) ↔ s1.objects[oid]? = some (.reply r)
@@ -1117,14 +844,21 @@ structure ipcReadViewAgreement (s1 s2 : SystemState) : Prop where
 
 namespace ipcReadViewAgreement
 
+/-- **WS-ZA ZA4.5**: object stores that agree off the run-queue links are
+read-view agreement — the relation a run-queue write induces. -/
+theorem of_objectsAgreeOffRunLinks {s1 s2 : SystemState}
+    (h : s2.objectsAgreeOffRunLinks s1) : ipcReadViewAgreement s1 s2 :=
+  ⟨fun _ _ hx => h.get_tcb' hx, fun _ _ hx => h.get_tcb hx,
+   fun _ _ => h.get_endpoint_iff,
+   fun _ ntfn hObj => ⟨ntfn, h.get_notification_iff.mp hObj, rfl, rfl, rfl⟩,
+   fun _ _ => h.get_reply_iff,
+   fun _ sc hSc => ⟨sc, h.get_schedContext_iff.mpr hSc, rfl⟩⟩
+
 /-- Full pointwise lookup agreement is read-view agreement. -/
 theorem of_getElem_eq {s1 s2 : SystemState}
     (hEq : ∀ oid : SeLe4n.ObjId, s2.objects[oid]? = s1.objects[oid]?) :
     ipcReadViewAgreement s1 s2 :=
-  ⟨fun oid _ => by rw [hEq oid], fun oid _ => by rw [hEq oid],
-   fun oid ntfn hObj => ⟨ntfn, (hEq oid) ▸ hObj, rfl, rfl, rfl⟩,
-   fun oid _ => by rw [hEq oid],
-   fun oid sc hSc => ⟨sc, by rw [hEq oid]; exact hSc, rfl⟩⟩
+  of_objectsAgreeOffRunLinks (.of_getElem_eq hEq)
 
 /-- The frame the capability, VSpace and untyped-scrub transitions induce:
 lookups agree except at rewritten oids, and every rewritten oid holds a kind
@@ -1142,7 +876,8 @@ theorem of_inertWrites {s1 s2 : SystemState}
     · constructor
       · intro hx; rw [hx] at h2; exact absurd h2 hNotInert
       · intro hx; rw [hx] at h1; exact absurd h1 hNotInert
-  exact ⟨fun oid t => step oid (.tcb t) (by simp [ipcReadInert]),
+  exact ⟨fun oid t h => ⟨t, (step oid (.tcb t) (by simp [ipcReadInert])).mp h, rfl⟩,
+         fun oid t h => ⟨t, (step oid (.tcb t) (by simp [ipcReadInert])).mpr h, rfl⟩,
          fun oid ep => step oid (.endpoint ep) (by simp [ipcReadInert]),
          fun oid ntfn hObj =>
            ⟨ntfn, (step oid (.notification ntfn) (by simp [ipcReadInert])).mp hObj,
@@ -1181,7 +916,8 @@ theorem of_fresh_inert_write {s1 s2 : SystemState} {key : SeLe4n.ObjId}
       · intro hx; rw [hx] at h2; exact absurd h2 hNotInert
       · intro hx; cases hx
     · rw [hNe oid hK]
-  exact ⟨fun oid t => step oid (.tcb t) (by simp [ipcReadInert]),
+  exact ⟨fun oid t h => ⟨t, (step oid (.tcb t) (by simp [ipcReadInert])).mp h, rfl⟩,
+         fun oid t h => ⟨t, (step oid (.tcb t) (by simp [ipcReadInert])).mpr h, rfl⟩,
          fun oid ep => step oid (.endpoint ep) (by simp [ipcReadInert]),
          fun oid ntfn hObj =>
            ⟨ntfn, (step oid (.notification ntfn) (by simp [ipcReadInert])).mp hObj,
@@ -1215,7 +951,8 @@ theorem of_inertOrAbsentWrites {s1 s2 : SystemState}
         rcases h1 with h1 | h1
         · cases h1
         · exact absurd h1 hNotInert
-  exact ⟨fun oid t => step oid (.tcb t) (by simp [ipcReadInert]),
+  exact ⟨fun oid t h => ⟨t, (step oid (.tcb t) (by simp [ipcReadInert])).mp h, rfl⟩,
+         fun oid t h => ⟨t, (step oid (.tcb t) (by simp [ipcReadInert])).mpr h, rfl⟩,
          fun oid ep => step oid (.endpoint ep) (by simp [ipcReadInert]),
          fun oid ntfn hObj =>
            ⟨ntfn, (step oid (.notification ntfn) (by simp [ipcReadInert])).mp hObj,
@@ -1225,7 +962,7 @@ theorem of_inertOrAbsentWrites {s1 s2 : SystemState}
            ⟨sc, (step oid (.schedContext sc) (by simp [ipcReadInert])).mpr hSc, rfl⟩⟩
 
 /-- A single notification rewrite preserving queue content — `state`,
-`waitingThreads`, `pendingBadge`; `boundTCB` and the lock word are free —
+`waitHead`, `pendingBadge`; `boundTCB`, the tail and the lock word are free —
 is read-view agreement.  The `.tcbBindNotification` /
 `.tcbUnbindNotification` arms' notification store is exactly this shape. -/
 theorem of_notification_content_write {s1 s2 : SystemState} {key : SeLe4n.ObjId}
@@ -1234,7 +971,7 @@ theorem of_notification_content_write {s1 s2 : SystemState} {key : SeLe4n.ObjId}
     (hAt : s2.objects[key]? = some (.notification ntfn'))
     (hNe : ∀ oid : SeLe4n.ObjId, oid ≠ key → s2.objects[oid]? = s1.objects[oid]?)
     (hState : ntfn'.state = ntfn.state)
-    (hWaiters : ntfn'.waitingThreads = ntfn.waitingThreads)
+    (hWaiters : ntfn'.waitHead = ntfn.waitHead)
     (hBadge : ntfn'.pendingBadge = ntfn.pendingBadge) :
     ipcReadViewAgreement s1 s2 := by
   have step : ∀ (oid : SeLe4n.ObjId) (o : KernelObject),
@@ -1250,7 +987,8 @@ theorem of_notification_content_write {s1 s2 : SystemState} {key : SeLe4n.ObjId}
       · intro hx
         exact absurd (Option.some.inj hx).symm (hNo ntfn)
     · rw [hNe oid hK]
-  refine ⟨fun oid t => step oid (.tcb t) (fun n h => KernelObject.noConfusion h),
+  refine ⟨fun oid t h => ⟨t, (step oid (.tcb t) (fun n h => KernelObject.noConfusion h)).mp h, rfl⟩,
+          fun oid t h => ⟨t, (step oid (.tcb t) (fun n h => KernelObject.noConfusion h)).mpr h, rfl⟩,
           fun oid ep => step oid (.endpoint ep) (fun n h => KernelObject.noConfusion h),
           fun oid n hObj => ?_,
           fun oid r => step oid (.reply r) (fun n h => KernelObject.noConfusion h),
@@ -1290,7 +1028,8 @@ theorem of_schedContext_content_write {s1 s2 : SystemState} {key : SeLe4n.ObjId}
       · intro hx
         exact absurd (Option.some.inj hx).symm (hNo sc)
     · rw [hNe oid hK]
-  refine ⟨fun oid t => step oid (.tcb t) (fun x h => KernelObject.noConfusion h),
+  refine ⟨fun oid t h => ⟨t, (step oid (.tcb t) (fun x h => KernelObject.noConfusion h)).mp h, rfl⟩,
+          fun oid t h => ⟨t, (step oid (.tcb t) (fun x h => KernelObject.noConfusion h)).mpr h, rfl⟩,
           fun oid ep => step oid (.endpoint ep) (fun x h => KernelObject.noConfusion h),
           fun oid n hObj =>
             ⟨n, (step oid (.notification n)
@@ -1310,7 +1049,14 @@ theorem of_schedContext_content_write {s1 s2 : SystemState} {key : SeLe4n.ObjId}
 theorem trans {s1 s2 s3 : SystemState}
     (hFore : ipcReadViewAgreement s1 s2) (hAft : ipcReadViewAgreement s2 s3) :
     ipcReadViewAgreement s1 s3 :=
-  ⟨fun oid t => (hAft.tcb oid t).trans (hFore.tcb oid t),
+  ⟨fun oid t h3 => by
+     obtain ⟨t2, h2, e2⟩ := hAft.tcb oid t h3
+     obtain ⟨t1, h1, e1⟩ := hFore.tcb oid t2 h2
+     exact ⟨t1, h1, e2.trans e1⟩,
+   fun oid t h1 => by
+     obtain ⟨t2, h2, e2⟩ := hFore.tcbFwd oid t h1
+     obtain ⟨t3, h3, e3⟩ := hAft.tcbFwd oid t2 h2
+     exact ⟨t3, h3, e3.trans e2⟩,
    fun oid ep => (hAft.endpoint oid ep).trans (hFore.endpoint oid ep),
    fun oid n h3 => by
      obtain ⟨n2, h2, hS2, hW2, hB2⟩ := hAft.notification oid n h3
@@ -1322,12 +1068,26 @@ theorem trans {s1 s2 s3 : SystemState}
      obtain ⟨sc3, h3, hB3⟩ := hAft.schedContext oid sc2 h2
      exact ⟨sc3, h3, hB3.trans hB2⟩⟩
 
-/-- The typed-getter form of the TCB clause. -/
-theorem getTcb?_iff {s1 s2 : SystemState} (hView : ipcReadViewAgreement s1 s2)
-    (tid : SeLe4n.ThreadId) (t : TCB) :
-    s2.getTcb? tid = some t ↔ s1.getTcb? tid = some t :=
-  (SystemState.getTcb?_eq_some_iff s2 tid t).trans
-    ((hView.tcb tid.toObjId t).trans (SystemState.getTcb?_eq_some_iff s1 tid t).symm)
+/-- A TCB of `s2` is a TCB of `s1` with its run-queue fields rewritten — the
+form `run_links_back` substitutes. -/
+theorem get_tcb_back {s1 s2 : SystemState} (hView : ipcReadViewAgreement s1 s2)
+    {x : SeLe4n.ObjId} {t' : TCB} (hx : s2.objects[x]? = some (.tcb t')) :
+    ∃ t : TCB, ∃ (rc : Nat) (rp : SeLe4n.Priority) (rpv rnx rbpv rbnx : Nat),
+      s1.objects[x]? = some (.tcb t) ∧
+      t' = { t with runCoreCode := rc, runPrio := rp, runPrevCode := rpv, runNextCode := rnx,
+                    runBucketPrevCode := rbpv, runBucketNextCode := rbnx } := by
+  obtain ⟨t, ht, e⟩ := hView.tcb x t' hx
+  exact ⟨t, _, _, _, _, _, _, ht, TCB.eq_withRunLinks_of_withoutRunLinks_eq e⟩
+
+/-- The same, from `s1` to `s2` — the form `run_links_fwd` substitutes. -/
+theorem get_tcb_fwd {s1 s2 : SystemState} (hView : ipcReadViewAgreement s1 s2)
+    {x : SeLe4n.ObjId} {t : TCB} (hx : s1.objects[x]? = some (.tcb t)) :
+    ∃ t' : TCB, ∃ (rc : Nat) (rp : SeLe4n.Priority) (rpv rnx rbpv rbnx : Nat),
+      s2.objects[x]? = some (.tcb t') ∧
+      t = { t' with runCoreCode := rc, runPrio := rp, runPrevCode := rpv, runNextCode := rnx,
+                    runBucketPrevCode := rbpv, runBucketNextCode := rbnx } := by
+  obtain ⟨t', ht, e⟩ := hView.tcbFwd x t hx
+  exact ⟨t', _, _, _, _, _, _, ht, TCB.eq_withRunLinks_of_withoutRunLinks_eq e.symm⟩
 
 /-- The typed-getter form of the reply clause. -/
 theorem getReply?_iff {s1 s2 : SystemState} (hView : ipcReadViewAgreement s1 s2)
@@ -1343,15 +1103,21 @@ theorem QueueNextPath_of_readViewAgreement {s1 s2 : SystemState}
     (hView : ipcReadViewAgreement s1 s2) {a b : SeLe4n.ThreadId}
     (hp : QueueNextPath s2 a b) : QueueNextPath s1 a b := by
   induction hp with
-  | single x y tcbA hObj hNext => exact .single x y tcbA ((hView.tcb _ _).mp hObj) hNext
-  | cons x y z tcbA hObj hNext _ ih => exact .cons x y z tcbA ((hView.tcb _ _).mp hObj) hNext ih
+  | single x y tcbA hObj hNext =>
+    run_links_back hView at tcbA hObj
+    exact .single x y tcbA hObj hNext
+  | cons x y z tcbA hObj hNext _ ih =>
+    run_links_back hView at tcbA hObj
+    exact .cons x y z tcbA hObj hNext ih
 
 /-- **WS-RR RR8.3**: read-view transport of the pairing.  The view's `tcb`
 clause is full-record agreement, so the pair travels with the record. -/
 theorem queuePPrevAgreesWithPrev_of_readViewAgreement {s1 s2 : SystemState}
     (hView : ipcReadViewAgreement s1 s2) (h : queuePPrevAgreesWithPrev s1) :
     queuePPrevAgreesWithPrev s2 :=
-  fun tid tcb hTcb => h tid tcb ((hView.tcb tid.toObjId tcb).mp hTcb)
+  fun tid tcb hTcb => by
+    run_links_back hView at tcb hTcb
+    exact h tid tcb hTcb
 
 /-- Read-view transport of TCB-queue chain acyclicity. -/
 theorem tcbQueueChainAcyclic_of_readViewAgreement {s1 s2 : SystemState}
@@ -1365,12 +1131,14 @@ theorem tcbQueueLinkIntegrity_of_readViewAgreement {s1 s2 : SystemState}
     (h : tcbQueueLinkIntegrity s1) : tcbQueueLinkIntegrity s2 := by
   obtain ⟨hFwd, hRev⟩ := h
   refine ⟨fun a tcbA hA b hNext => ?_, fun b tcbB hB a hPrev => ?_⟩
-  · rw [hView.tcb] at hA
+  · run_links_back hView at tcbA hA
     obtain ⟨tcbB, hB, hPrev⟩ := hFwd a tcbA hA b hNext
-    exact ⟨tcbB, (hView.tcb _ _).mpr hB, hPrev⟩
-  · rw [hView.tcb] at hB
+    run_links_fwd hView at tcbB hB
+    exact ⟨_, hB, hPrev⟩
+  · run_links_back hView at tcbB hB
     obtain ⟨tcbA, hA, hNext⟩ := hRev b tcbB hB a hPrev
-    exact ⟨tcbA, (hView.tcb _ _).mpr hA, hNext⟩
+    run_links_fwd hView at tcbA hA
+    exact ⟨_, hA, hNext⟩
 
 /-- Read-view transport of single-queue well-formedness. -/
 theorem intrusiveQueueWellFormed_of_readViewAgreement {s1 s2 : SystemState}
@@ -1379,9 +1147,11 @@ theorem intrusiveQueueWellFormed_of_readViewAgreement {s1 s2 : SystemState}
   obtain ⟨hP1, hP2, hP3⟩ := h
   refine ⟨hP1, fun hd hHead => ?_, fun tl hTail => ?_⟩
   · obtain ⟨tcb, hObj, hPrev⟩ := hP2 hd hHead
-    exact ⟨tcb, (hView.tcb _ _).mpr hObj, hPrev⟩
+    run_links_fwd hView at tcb hObj
+    exact ⟨_, hObj, hPrev⟩
   · obtain ⟨tcb, hObj, hNext⟩ := hP3 tl hTail
-    exact ⟨tcb, (hView.tcb _ _).mpr hObj, hNext⟩
+    run_links_fwd hView at tcb hObj
+    exact ⟨_, hObj, hNext⟩
 
 /-- Read-view transport of an endpoint's dual-queue well-formedness. -/
 theorem dualQueueEndpointWellFormed_of_readViewAgreement {s1 s2 : SystemState}
@@ -1420,7 +1190,7 @@ theorem allPendingMessagesBounded_of_readViewAgreement {s1 s2 : SystemState}
     (hView : ipcReadViewAgreement s1 s2)
     (h : allPendingMessagesBounded s1) : allPendingMessagesBounded s2 := by
   intro tid tcb msg hObj hPend
-  rw [hView.tcb] at hObj
+  run_links_back hView at tcb hObj
   exact h tid tcb msg hObj hPend
 
 /-- Read-view transport of the generic in-flight-message family. -/
@@ -1428,7 +1198,7 @@ theorem pendingMessagesSatisfy_of_readViewAgreement {P : IpcMessage → Prop} {s
     (hView : ipcReadViewAgreement s1 s2)
     (h : pendingMessagesSatisfy P s1) : pendingMessagesSatisfy P s2 := by
   intro tid tcb msg hObj hPend
-  rw [hView.tcb] at hObj
+  run_links_back hView at tcb hObj
   exact h tid tcb msg hObj hPend
 
 /-- Read-view transport of the notification half of `badgeWellFormed`. -/
@@ -1456,7 +1226,7 @@ theorem blockedThreadsPendingMessageConsistent_of_readViewAgreement {s1 s2 : Sys
     (h : blockedThreadsPendingMessageConsistent s1) :
     blockedThreadsPendingMessageConsistent s2 := by
   intro tid tcb hObj
-  rw [hView.tcb] at hObj
+  run_links_back hView at tcb hObj
   exact h tid tcb hObj
 
 /-- Read-view transport of `endpointQueueNoDup`. -/
@@ -1467,7 +1237,7 @@ theorem endpointQueueNoDup_of_readViewAgreement {s1 s2 : SystemState}
   rw [hView.endpoint] at hEp
   obtain ⟨hSelf, hDisj⟩ := h oid ep hEp
   refine ⟨fun tid tcb hTcb => ?_, hDisj⟩
-  rw [hView.tcb] at hTcb
+  run_links_back hView at tcb hTcb
   exact hSelf tid tcb hTcb
 
 /-- Read-view transport of `ipcStateQueueMembershipConsistent`. -/
@@ -1475,7 +1245,7 @@ theorem ipcStateQueueMembershipConsistent_of_readViewAgreement {s1 s2 : SystemSt
     (hView : ipcReadViewAgreement s1 s2)
     (h : ipcStateQueueMembershipConsistent s1) : ipcStateQueueMembershipConsistent s2 := by
   intro tid tcb hTcb
-  rw [hView.tcb] at hTcb
+  run_links_back hView at tcb hTcb
   have hG := h tid tcb hTcb
   cases hIpc : tcb.ipcState with
   | blockedOnSend epId =>
@@ -1484,21 +1254,24 @@ theorem ipcStateQueueMembershipConsistent_of_readViewAgreement {s1 s2 : SystemSt
       refine ⟨ep, (hView.endpoint _ _).mpr hEp, ?_⟩
       rcases hReach with hHead | ⟨prev, prevTcb, hPrev, hNext⟩
       · exact Or.inl hHead
-      · exact Or.inr ⟨prev, prevTcb, (hView.tcb _ _).mpr hPrev, hNext⟩
+      · run_links_fwd hView at prevTcb hPrev
+        exact Or.inr ⟨prev, _, hPrev, hNext⟩
   | blockedOnReceive epId =>
       simp only [hIpc] at hG
       obtain ⟨ep, hEp, hReach⟩ := hG
       refine ⟨ep, (hView.endpoint _ _).mpr hEp, ?_⟩
       rcases hReach with hHead | ⟨prev, prevTcb, hPrev, hNext⟩
       · exact Or.inl hHead
-      · exact Or.inr ⟨prev, prevTcb, (hView.tcb _ _).mpr hPrev, hNext⟩
+      · run_links_fwd hView at prevTcb hPrev
+        exact Or.inr ⟨prev, _, hPrev, hNext⟩
   | blockedOnCall epId =>
       simp only [hIpc] at hG
       obtain ⟨ep, hEp, hReach⟩ := hG
       refine ⟨ep, (hView.endpoint _ _).mpr hEp, ?_⟩
       rcases hReach with hHead | ⟨prev, prevTcb, hPrev, hNext⟩
       · exact Or.inl hHead
-      · exact Or.inr ⟨prev, prevTcb, (hView.tcb _ _).mpr hPrev, hNext⟩
+      · run_links_fwd hView at prevTcb hPrev
+        exact Or.inr ⟨prev, _, hPrev, hNext⟩
   | ready => trivial
   | blockedOnNotification nid => trivial
   | blockedOnReply ep rt => trivial
@@ -1508,7 +1281,7 @@ theorem queueNextBlockingConsistent_of_readViewAgreement {s1 s2 : SystemState}
     (hView : ipcReadViewAgreement s1 s2)
     (h : queueNextBlockingConsistent s1) : queueNextBlockingConsistent s2 := by
   intro a b tcbA tcbB hA hB hNext
-  rw [hView.tcb] at hA hB
+  run_links_back hView at tcbA hA; run_links_back hView at tcbB hB
   exact h a b tcbA tcbB hA hB hNext
 
 /-- Read-view transport of `queueHeadBlockedConsistent`. -/
@@ -1517,7 +1290,7 @@ theorem queueHeadBlockedConsistent_of_readViewAgreement {s1 s2 : SystemState}
     (h : queueHeadBlockedConsistent s1) : queueHeadBlockedConsistent s2 := by
   intro epId ep hd tcb hEp hTcb
   rw [hView.endpoint] at hEp
-  rw [hView.tcb] at hTcb
+  run_links_back hView at tcb hTcb
   exact h epId ep hd tcb hEp hTcb
 
 /-- Read-view transport of `blockedThreadTimeoutConsistent`. -/
@@ -1525,7 +1298,7 @@ theorem blockedThreadTimeoutConsistent_of_readViewAgreement {s1 s2 : SystemState
     (hView : ipcReadViewAgreement s1 s2)
     (h : blockedThreadTimeoutConsistent s1) : blockedThreadTimeoutConsistent s2 := by
   intro tid tcb scId hTcb hBudget
-  rw [hView.tcb] at hTcb
+  run_links_back hView at tcb hTcb
   obtain ⟨⟨sc, hSc⟩, hBlk⟩ := h tid tcb scId hTcb hBudget
   obtain ⟨sc', hSc', _⟩ := hView.schedContext _ sc hSc
   exact ⟨⟨sc', hSc'⟩, hBlk⟩
@@ -1535,7 +1308,7 @@ theorem allTimeoutBudgetsNone_of_readViewAgreement {s1 s2 : SystemState}
     (hView : ipcReadViewAgreement s1 s2)
     (h : allTimeoutBudgetsNone s1) : allTimeoutBudgetsNone s2 := by
   intro tid tcb hTcb
-  rw [hView.tcb] at hTcb
+  run_links_back hView at tcb hTcb
   exact h tid tcb hTcb
 
 /-- Read-view transport of `donationChainAcyclic`. -/
@@ -1543,7 +1316,7 @@ theorem donationChainAcyclic_of_readViewAgreement {s1 s2 : SystemState}
     (hView : ipcReadViewAgreement s1 s2)
     (h : donationChainAcyclic s1) : donationChainAcyclic s2 := by
   intro tid1 tid2 tcb1 tcb2 scId1 scId2 h1 h2 hB1 hB2
-  rw [hView.tcb] at h1 h2
+  run_links_back hView at tcb1 h1; run_links_back hView at tcb2 h2
   exact h tid1 tid2 tcb1 tcb2 scId1 scId2 h1 h2 hB1 hB2
 
 /-- Read-view transport of `donationOwnerValid`. -/
@@ -1551,19 +1324,19 @@ theorem donationOwnerValid_of_readViewAgreement {s1 s2 : SystemState}
     (hView : ipcReadViewAgreement s1 s2)
     (h : donationOwnerValid s1) : donationOwnerValid s2 := by
   intro tid tcb scId owner hTcb hBind
-  rw [hView.tcb] at hTcb
+  run_links_back hView at tcb hTcb
   obtain ⟨⟨sc, hSc, hBound⟩, ⟨ownerTcb, hOwner, hUnbound, hReply⟩⟩ :=
     h tid tcb scId owner hTcb hBind
   obtain ⟨sc', hSc', hBT⟩ := hView.schedContext _ sc hSc
-  exact ⟨⟨sc', hSc', hBT.trans hBound⟩,
-    ⟨ownerTcb, (hView.tcb _ _).mpr hOwner, hUnbound, hReply⟩⟩
+  run_links_fwd hView at ownerTcb hOwner
+  exact ⟨⟨sc', hSc', hBT.trans hBound⟩, ⟨_, hOwner, hUnbound, hReply⟩⟩
 
 /-- Read-view transport of `donationBudgetTransfer`. -/
 theorem donationBudgetTransfer_of_readViewAgreement {s1 s2 : SystemState}
     (hView : ipcReadViewAgreement s1 s2)
     (h : donationBudgetTransfer s1) : donationBudgetTransfer s2 := by
   intro tid1 tid2 tcb1 tcb2 scId h1 h2 hNe hS1 hS2
-  rw [hView.tcb] at h1 h2
+  run_links_back hView at tcb1 h1; run_links_back hView at tcb2 h2
   exact h tid1 tid2 tcb1 tcb2 scId h1 h2 hNe hS1 hS2
 
 /-- Read-view transport of `blockedOnReplyHasTarget`. -/
@@ -1571,7 +1344,7 @@ theorem blockedOnReplyHasTarget_of_readViewAgreement {s1 s2 : SystemState}
     (hView : ipcReadViewAgreement s1 s2)
     (h : blockedOnReplyHasTarget s1) : blockedOnReplyHasTarget s2 := by
   intro tid tcb endpointId replyTarget hTcb hIpc
-  rw [hView.tcb] at hTcb
+  run_links_back hView at tcb hTcb
   exact h tid tcb endpointId replyTarget hTcb hIpc
 
 /-- Read-view transport of `replyCallerLinkageReciprocal`. -/
@@ -1579,19 +1352,20 @@ theorem replyCallerLinkageReciprocal_of_readViewAgreement {s1 s2 : SystemState}
     (hView : ipcReadViewAgreement s1 s2)
     (h : replyCallerLinkageReciprocal s1) : replyCallerLinkageReciprocal s2 := by
   refine ⟨fun tid tcb rid hTcb hRep => ?_, fun rid r tid hRep hCaller => ?_⟩
-  · rw [hView.tcb] at hTcb
+  · run_links_back hView at tcb hTcb
     obtain ⟨r, hR, hBack⟩ := h.1 tid tcb rid hTcb hRep
     exact ⟨r, (hView.reply _ _).mpr hR, hBack⟩
   · rw [hView.reply] at hRep
     obtain ⟨tcb, hTcb, hFwd, hBlk⟩ := h.2 rid r tid hRep hCaller
-    exact ⟨tcb, (hView.tcb _ _).mpr hTcb, hFwd, hBlk⟩
+    run_links_fwd hView at tcb hTcb
+    exact ⟨_, hTcb, hFwd, hBlk⟩
 
 /-- Read-view transport of `blockedOnReplyHasReplyObject`. -/
 theorem blockedOnReplyHasReplyObject_of_readViewAgreement {s1 s2 : SystemState}
     (hView : ipcReadViewAgreement s1 s2)
     (h : blockedOnReplyHasReplyObject s1) : blockedOnReplyHasReplyObject s2 := by
   intro tid tcb ep rt hTcb hIpc
-  rw [hView.tcb] at hTcb
+  run_links_back hView at tcb hTcb
   exact h tid tcb ep rt hTcb hIpc
 
 /-- Read-view transport of `replyCallerLinkage`. -/
@@ -1607,10 +1381,14 @@ theorem pendingReceiveReplyWellFormed_of_readViewAgreement {s1 s2 : SystemState}
     (h : pendingReceiveReplyWellFormed s1) : pendingReceiveReplyWellFormed s2 := by
   refine ⟨fun tid tcb rid hTcb hStash => ?_,
           fun tid₁ tid₂ tcb₁ tcb₂ rid h1 h2 hS1 hS2 => ?_⟩
-  · rw [hView.getTcb?_iff] at hTcb
+  · rw [SystemState.getTcb?_eq_some_iff] at hTcb
+    run_links_back hView at tcb hTcb
+    rw [← SystemState.getTcb?_eq_some_iff] at hTcb
     obtain ⟨hRecv, ⟨r, hR, hFree⟩⟩ := h.1 tid tcb rid hTcb hStash
     exact ⟨hRecv, ⟨r, (hView.getReply?_iff _ _).mpr hR, hFree⟩⟩
-  · rw [hView.getTcb?_iff] at h1 h2
+  · rw [SystemState.getTcb?_eq_some_iff] at h1 h2
+    run_links_back hView at tcb₁ h1; run_links_back hView at tcb₂ h2
+    rw [← SystemState.getTcb?_eq_some_iff] at h1 h2
     exact h.2 tid₁ tid₂ tcb₁ tcb₂ rid h1 h2 hS1 hS2
 
 /-- Read-view transport of `donationOwnerUnique`. -/
@@ -1618,7 +1396,7 @@ theorem donationOwnerUnique_of_readViewAgreement {s1 s2 : SystemState}
     (hView : ipcReadViewAgreement s1 s2)
     (h : donationOwnerUnique s1) : donationOwnerUnique s2 := by
   intro tid1 tid2 tcb1 tcb2 scId1 scId2 owner h1 h2 hB1 hB2
-  rw [hView.tcb] at h1 h2
+  run_links_back hView at tcb1 h1; run_links_back hView at tcb2 h2
   exact h tid1 tid2 tcb1 tcb2 scId1 scId2 owner h1 h2 hB1 hB2
 
 /-- Read-view transport of `endpointQueueTailBlockedConsistent`. -/
@@ -1627,7 +1405,7 @@ theorem endpointQueueTailBlockedConsistent_of_readViewAgreement {s1 s2 : SystemS
     (h : endpointQueueTailBlockedConsistent s1) : endpointQueueTailBlockedConsistent s2 := by
   intro epId ep tl tcb hEp hTcb
   rw [hView.endpoint] at hEp
-  rw [hView.tcb] at hTcb
+  run_links_back hView at tcb hTcb
   exact h epId ep tl tcb hEp hTcb
 
 /-- Read-view transport of `queueNextTargetBlocked`. -/
@@ -1635,18 +1413,8 @@ theorem queueNextTargetBlocked_of_readViewAgreement {s1 s2 : SystemState}
     (hView : ipcReadViewAgreement s1 s2)
     (h : queueNextTargetBlocked s1) : queueNextTargetBlocked s2 := by
   intro a b tcbA tcbB hA hB hNext
-  rw [hView.tcb] at hA hB
+  run_links_back hView at tcbA hA; run_links_back hView at tcbB hB
   exact h a b tcbA tcbB hA hB hNext
-
-/-- Read-view transport of `notificationWaiterConsistent`. -/
-theorem notificationWaiterConsistent_of_readViewAgreement {s1 s2 : SystemState}
-    (hView : ipcReadViewAgreement s1 s2)
-    (h : notificationWaiterConsistent s1) : notificationWaiterConsistent s2 := by
-  intro oid ntfn tid hNtfn hMem
-  obtain ⟨ntfn₀, hL, _, hW, _⟩ := hView.notification oid ntfn hNtfn
-  have hMem₀ : tid ∈ ntfn₀.waitingThreads := by rw [hW]; exact hMem
-  obtain ⟨tcb, hTcb, hIpc⟩ := h oid ntfn₀ tid hL hMem₀
-  exact ⟨tcb, (hView.tcb _ _).mpr hTcb, hIpc⟩
 
 /-- **The read-view master transport**: two states agreeing on every object
 kind the bundle reads satisfy the eighteen CNode-free object conjuncts
@@ -1683,6 +1451,86 @@ theorem ipcInvariantFull_of_readViewAgreement {s1 s2 : SystemState}
    endpointQueueTailBlockedConsistent_of_readViewAgreement hView
      h.endpointQueueTailBlockedConsistent,
    queueNextTargetBlocked_of_readViewAgreement hView h.queueNextTargetBlocked⟩
+
+/-- WS-ZA ZA4.5: CNodes read the same in stores that agree off the run-queue
+links, so the capability half of `badgeWellFormed` carries across them. -/
+theorem capabilityBadgesWellFormed_of_objectsAgreeOffRunLinks {s1 s2 : SystemState}
+    (hA : s2.objectsAgreeOffRunLinks s1) (h : capabilityBadgesWellFormed s1) :
+    capabilityBadgesWellFormed s2 :=
+  fun oid cn slot cap badge hObj => h oid cn slot cap badge (hA.get_cnode_iff.mp hObj)
+
+/-- WS-ZA ZA4.5: badge well-formedness across stores that agree off the
+run-queue links. -/
+theorem badgeWellFormed_of_objectsAgreeOffRunLinks {s1 s2 : SystemState}
+    (hA : s2.objectsAgreeOffRunLinks s1) (h : badgeWellFormed s1) : badgeWellFormed s2 :=
+  ⟨notificationBadgesWellFormed_of_readViewAgreement (.of_objectsAgreeOffRunLinks hA) h.1,
+   capabilityBadgesWellFormed_of_objectsAgreeOffRunLinks hA h.2⟩
+
+/-- WS-SM SM6.D, restated for WS-ZA ZA4.5: **the whole-bundle transport** —
+two states whose object stores agree off the run-queue links satisfy the
+nineteen object-reading conjuncts of `ipcInvariantFull` interchangeably; the
+one scheduler-reading conjunct (`passiveServerIdle`) is supplied for the
+target state.  This is the lever that carries the single-core whole-bundle
+theorems across the cross-core wake, whose run-queue placement differs. -/
+theorem ipcInvariantFull_of_objectsAgreeOffRunLinks {s1 s2 : SystemState}
+    (hA : s2.objectsAgreeOffRunLinks s1)
+    (hPsi2 : passiveServerIdle s2)
+    (h : ipcInvariantFull s1) : ipcInvariantFull s2 :=
+  ipcInvariantFull_of_readViewAgreement (.of_objectsAgreeOffRunLinks hA) hPsi2
+    (capabilityBadgesWellFormed_of_objectsAgreeOffRunLinks hA h.badgeWellFormed.2) h
+
+/-- The same for pointwise-equal lookups. -/
+theorem ipcInvariantFull_of_getElem_eq {s1 s2 : SystemState}
+    (hEq : ∀ oid : SeLe4n.ObjId, s2.objects[oid]? = s1.objects[oid]?)
+    (hPsi2 : passiveServerIdle s2)
+    (h : ipcInvariantFull s1) : ipcInvariantFull s2 :=
+  ipcInvariantFull_of_objectsAgreeOffRunLinks (.of_getElem_eq hEq) hPsi2 h
+
+/-- WS-RR RR3.12: read-view transport of the relaxed donation-owner invariant. -/
+theorem donationOwnerValidExcept_of_readViewAgreement {s1 s2 : SystemState}
+    {woken : SeLe4n.ThreadId}
+    (hView : ipcReadViewAgreement s1 s2)
+    (h : donationOwnerValidExcept s1 woken) : donationOwnerValidExcept s2 woken := by
+  intro tid tcb scId owner hTcb hBind
+  run_links_back hView at tcb hTcb
+  obtain ⟨⟨sc, hSc, hBound⟩, ⟨ownerTcb, hOwner, hUnbound, hCase⟩⟩ :=
+    h tid tcb scId owner hTcb hBind
+  obtain ⟨sc', hSc', hBT⟩ := hView.schedContext _ sc hSc
+  run_links_fwd hView at ownerTcb hOwner
+  exact ⟨⟨sc', hSc', hBT.trans hBound⟩, ⟨_, hOwner, hUnbound, hCase⟩⟩
+
+/-- WS-RR RR3.12: the relaxed bundle transports across stores that agree off
+the run-queue links, exactly as `ipcInvariantFull_of_objectsAgreeOffRunLinks`
+does for the full one. -/
+theorem ipcInvariantFullExceptDonationOwner_of_objectsAgreeOffRunLinks {s1 s2 : SystemState}
+    {woken : SeLe4n.ThreadId}
+    (hA : s2.objectsAgreeOffRunLinks s1)
+    (hPsi2 : passiveServerIdle s2)
+    (h : ipcInvariantFullExceptDonationOwner s1 woken) :
+    ipcInvariantFullExceptDonationOwner s2 woken := by
+  have hView : ipcReadViewAgreement s1 s2 := .of_objectsAgreeOffRunLinks hA
+  exact ⟨ipcInvariant_of_readViewAgreement hView h.1,
+   dualQueueSystemInvariant_of_readViewAgreement hView h.2.1,
+   allPendingMessagesBounded_of_readViewAgreement hView h.2.2.1,
+   badgeWellFormed_of_objectsAgreeOffRunLinks hA h.2.2.2.1,
+   blockedThreadsPendingMessageConsistent_of_readViewAgreement hView h.2.2.2.2.1,
+   endpointQueueNoDup_of_readViewAgreement hView h.2.2.2.2.2.1,
+   ipcStateQueueMembershipConsistent_of_readViewAgreement hView h.2.2.2.2.2.2.1,
+   queueNextBlockingConsistent_of_readViewAgreement hView h.2.2.2.2.2.2.2.1,
+   queueHeadBlockedConsistent_of_readViewAgreement hView h.2.2.2.2.2.2.2.2.1,
+   blockedThreadTimeoutConsistent_of_readViewAgreement hView h.2.2.2.2.2.2.2.2.2.1,
+   donationChainAcyclic_of_readViewAgreement hView h.2.2.2.2.2.2.2.2.2.2.1,
+   donationOwnerValidExcept_of_readViewAgreement hView h.donationOwnerValidExcept,
+   hPsi2,
+   donationBudgetTransfer_of_readViewAgreement hView h.2.2.2.2.2.2.2.2.2.2.2.2.2.1,
+   blockedOnReplyHasTarget_of_readViewAgreement hView h.2.2.2.2.2.2.2.2.2.2.2.2.2.2.1,
+   replyCallerLinkage_of_readViewAgreement hView h.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.1,
+   pendingReceiveReplyWellFormed_of_readViewAgreement hView
+     h.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.1,
+   donationOwnerUnique_of_readViewAgreement hView h.donationOwnerUnique,
+   endpointQueueTailBlockedConsistent_of_readViewAgreement hView
+     h.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.1,
+   queueNextTargetBlocked_of_readViewAgreement hView h.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2⟩
 
 /-- The transition frame nearly every capability-only dispatch arm induces:
 objects and scheduler both untouched.  `ipcInvariantFull` transports whole. -/

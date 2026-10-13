@@ -9,6 +9,7 @@
 
 import SeLe4n.Model.State
 import SeLe4n.Kernel.Scheduler.Operations.ReschedulePending
+import SeLe4n.Kernel.Scheduler.RunQueueLinkFrame
 
 /-! # AN3-E.5 (IPC-M09) — `cleanupPreReceiveDonation` co-location banner.
 
@@ -104,19 +105,11 @@ finding ID, the affected site, and the remediation applied.
   AK10 documentation closure).
 -/
 
-/-- WS-G4/F-P02: O(1) amortized remove via RunQueue. -/
+/-- WS-G4/F-P02: O(1) remove.  WS-ZA ZA4.5: the boot-core instance of
+`removeRunnableOnCore` — both are `runDescheduleOnCore`, so the bridge
+`removeRunnableOnCore_bootCoreId` stays a definitional equality. -/
 def removeRunnable (st : SystemState) (tid : SeLe4n.ThreadId) : SystemState :=
-  { st with
-      scheduler := ((st.scheduler.setRunQueueOnCore bootCoreId
-          ((st.scheduler.runQueueOnCore bootCoreId).remove tid)).setCurrentOnCore bootCoreId
-          (if (st.scheduler.currentOnCore bootCoreId) = some tid then none
-            else (st.scheduler.currentOnCore bootCoreId)))
-          -- The reschedule-SGI accumulator (KSC-1): the boot-core instance of
-          -- `removeRunnableOnCore`'s mark, so the bridge
-          -- `removeRunnableOnCore_bootCoreId` stays a definitional equality.
-          |>.markReschedulePendingOnCoreIf bootCoreId
-            (st.scheduler.currentOnCore bootCoreId == some tid)
-  }
+  st.runDescheduleOnCore bootCoreId tid
 
 /-- WS-SM SM8.B (PR #861 review round 17): **does core `c` hold this thread at
 all** — in its run queue, or as its current thread?
@@ -126,7 +119,7 @@ pre-state is what lets the destroy path declare the cores it touches instead of
 declaring all of them. -/
 def threadOccupiesCore (st : SystemState) (tid : SeLe4n.ThreadId)
     (c : SeLe4n.Kernel.Concurrency.CoreId) : Bool :=
-  (st.scheduler.runQueueOnCore c).contains tid
+  st.queuedOn c tid
     || (st.scheduler.currentOnCore c == some tid)
 
 /-- WS-SM SM8.B: one core's share of the destroy sweep — drop the thread from
@@ -137,7 +130,7 @@ neither way is left *literally* untouched, rather than rewritten with values
 equal to the ones already there.  The unguarded form wrote
 `setRunQueueOnCore c ((runQueueOnCore c).remove tid)` at every core, and while
 that removal changes nothing a non-member can observe
-(`RunQueue.remove_content_of_not_mem`), it is not *syntactically* the old queue
+(`RunQueue.remove_of_not_mem`), it is not *syntactically* the old queue
 — so the sweep's write set could only ever be bounded by `allCores`, and
 `.lifecycleRetype` inherited that.
 
@@ -148,14 +141,8 @@ deletion that is not on file and that nothing else wants. -/
 def removeRunnableStepOnCore (tid : SeLe4n.ThreadId) (st : SystemState)
     (c : SeLe4n.Kernel.Concurrency.CoreId) : SystemState :=
   if threadOccupiesCore st tid c then
-    { st with
-        scheduler := ((st.scheduler.setRunQueueOnCore c
-            ((st.scheduler.runQueueOnCore c).remove tid)).setCurrentOnCore c
-            (if (st.scheduler.currentOnCore c) = some tid then none
-              else (st.scheduler.currentOnCore c)))
-            -- The reschedule-SGI accumulator (KSC-1): flagged exactly when
-            -- the `current` slot changes, as `removeRunnableOnCore`.
-            |>.markReschedulePendingOnCoreIf c (st.scheduler.currentOnCore c == some tid) }
+    -- The same body as `removeRunnableOnCore` (WS-ZA ZA4.5).
+    st.runDescheduleOnCore c tid
   else st
 
 /-- WS-SM SM8.B: the guard is exactly "this core holds the thread", so an
@@ -177,9 +164,8 @@ theorem removeRunnableStepOnCore_threadOccupiesCore_ne (tid : SeLe4n.ThreadId)
       = threadOccupiesCore st tid c := by
   unfold removeRunnableStepOnCore threadOccupiesCore
   split
-  · simp [SchedulerState.setCurrentOnCore_runQueueOnCore,
-      SchedulerState.setRunQueueOnCore_runQueueOnCore_ne _ _ _ _ hne,
-      SchedulerState.setCurrentOnCore_currentOnCore_ne _ _ _ _ hne,
+  · rw [SystemState.runDescheduleOnCore_queuedOn, if_neg (fun h => hne h.2.symm)]
+    simp [SchedulerState.setCurrentOnCore_currentOnCore_ne _ _ _ _ hne,
       SchedulerState.setRunQueueOnCore_currentOnCore]
   · rfl
 
@@ -332,9 +318,12 @@ post-state, which is what `currentSlotChangeSgis` keys the remote poke on. -/
     (SeLe4n.Kernel.Concurrency.mem_allCores c)
     SeLe4n.Kernel.Concurrency.allCores_nodup
 
-/-- WS-SM SM8.B: and so the destroyed thread is in no core's run queue. -/
+/-- WS-SM SM8.B: and so the destroyed thread is in no core's run queue.
+WS-ZA ZA4.5: the sweep's guard reads the thread's run-queue core from its TCB,
+so where the threads' links agree with the queues (`runQueueRefined`) a core the
+guard skips does not hold the thread. -/
 theorem removeRunnableFromAllCores_not_mem (st : SystemState) (tid : SeLe4n.ThreadId)
-    (c : SeLe4n.Kernel.Concurrency.CoreId) :
+    (c : SeLe4n.Kernel.Concurrency.CoreId) (hR : st.runQueueRefined) :
     ¬ (tid ∈ (removeRunnableFromAllCores st tid).scheduler.runQueueOnCore c) := by
   rw [removeRunnableFromAllCores_runQueueOnCore]
   -- Occupied: the removal takes it out.  Unoccupied: it was never there — the
@@ -344,45 +333,61 @@ theorem removeRunnableFromAllCores_not_mem (st : SystemState) (tid : SeLe4n.Thre
   · exact RunQueue.not_mem_remove_self _ _
   · next hOcc =>
     intro hMem
-    exact hOcc (by simp [threadOccupiesCore, RunQueue.mem_iff_contains.mp hMem])
+    exact hOcc (by simp [threadOccupiesCore, (hR c).queuedOn, RunQueue.mem_iff_contains.mp hMem])
 
 /-- WS-SM SM8.B: the sweep only ever removes — it never introduces a thread. -/
-theorem removeRunnableFromAllCores_flat_subset (st : SystemState)
+theorem removeRunnableFromAllCores_toList_subset (st : SystemState)
     (tid x : SeLe4n.ThreadId) (c : SeLe4n.Kernel.Concurrency.CoreId)
-    (h : x ∈ ((removeRunnableFromAllCores st tid).scheduler.runQueueOnCore c).flat) :
-    x ∈ (st.scheduler.runQueueOnCore c).flat := by
+    (h : x ∈ ((removeRunnableFromAllCores st tid).scheduler.runQueueOnCore c).toList) :
+    x ∈ (st.scheduler.runQueueOnCore c).toList := by
   rw [removeRunnableFromAllCores_runQueueOnCore] at h
   split at h
-  · exact (List.mem_filter.mp h).1
+  · rw [RunQueue.toList_remove] at h; exact (List.mem_filter.mp h).1
   · exact h
 
-/-- WS-SM SM8.B: the sweep is scheduler-only — every other field frames, by
-induction over the core list rather than by reducing it. -/
+/-- WS-ZA ZA4.5: one step of the sweep writes only the object store (run-queue
+links) and the scheduler, at either guard branch. -/
+theorem removeRunnableStepOnCore_onlyObjectsSchedulerDiffer (tid : SeLe4n.ThreadId)
+    (st : SystemState) (c : SeLe4n.Kernel.Concurrency.CoreId) :
+    (removeRunnableStepOnCore tid st c).onlyObjectsSchedulerDiffer st := by
+  unfold removeRunnableStepOnCore
+  split
+  · exact SystemState.runDescheduleOnCore_onlyObjectsSchedulerDiffer _ _ _
+  · exact .refl _
+
+theorem removeRunnableStepOnCore_objectsAgreeOffRunLinks (tid : SeLe4n.ThreadId)
+    (st : SystemState) (c : SeLe4n.Kernel.Concurrency.CoreId) :
+    (removeRunnableStepOnCore tid st c).objectsAgreeOffRunLinks st := by
+  unfold removeRunnableStepOnCore
+  split
+  · exact SystemState.runDescheduleOnCore_objectsAgreeOffRunLinks _ _ _
+  · exact .refl _
+
+theorem removeRunnableStepOnCore_objects_invExt (tid : SeLe4n.ThreadId)
+    (st : SystemState) (c : SeLe4n.Kernel.Concurrency.CoreId) (hInv : st.objects.invExt) :
+    (removeRunnableStepOnCore tid st c).objects.invExt := by
+  unfold removeRunnableStepOnCore
+  split
+  · exact SystemState.runDescheduleOnCore_objects_invExt _ _ _ hInv
+  · exact hInv
+
+/-- WS-SM SM8.B: the sweep writes only the object store and the scheduler, and
+the store only on run-queue links (WS-ZA ZA4.5) — by induction over the core
+list rather than by reducing it. -/
 theorem foldl_removeRunnableStepOnCore_frame
     (cs : List SeLe4n.Kernel.Concurrency.CoreId) (tid : SeLe4n.ThreadId) :
     ∀ st : SystemState,
-      (cs.foldl (removeRunnableStepOnCore tid) st).objects = st.objects
-      ∧ (cs.foldl (removeRunnableStepOnCore tid) st).lifecycle = st.lifecycle
-      ∧ (cs.foldl (removeRunnableStepOnCore tid) st).machine = st.machine
-      ∧ (cs.foldl (removeRunnableStepOnCore tid) st).tlbShootdown = st.tlbShootdown := by
+      (cs.foldl (removeRunnableStepOnCore tid) st).onlyObjectsSchedulerDiffer st
+      ∧ (cs.foldl (removeRunnableStepOnCore tid) st).objectsAgreeOffRunLinks st
+      ∧ (st.objects.invExt → (cs.foldl (removeRunnableStepOnCore tid) st).objects.invExt) := by
   induction cs with
-  | nil => intro _; exact ⟨rfl, rfl, rfl, rfl⟩
+  | nil => intro st; exact ⟨.refl _, .refl _, id⟩
   | cons d ds ih =>
     intro st
-    obtain ⟨h1, h2, h3, h4⟩ := ih (removeRunnableStepOnCore tid st d)
-    -- The step frames all four fields in *both* guard branches: the taken one
-    -- writes only `scheduler`, the untaken one writes nothing.
-    have hStep : ∀ (s : SystemState) (e : SeLe4n.Kernel.Concurrency.CoreId),
-        (removeRunnableStepOnCore tid s e).objects = s.objects
-        ∧ (removeRunnableStepOnCore tid s e).lifecycle = s.lifecycle
-        ∧ (removeRunnableStepOnCore tid s e).machine = s.machine
-        ∧ (removeRunnableStepOnCore tid s e).tlbShootdown = s.tlbShootdown := by
-      intro s e
-      unfold removeRunnableStepOnCore
-      split <;> exact ⟨rfl, rfl, rfl, rfl⟩
-    obtain ⟨g1, g2, g3, g4⟩ := hStep st d
-    exact ⟨by rw [List.foldl_cons, h1, g1], by rw [List.foldl_cons, h2, g2],
-           by rw [List.foldl_cons, h3, g3], by rw [List.foldl_cons, h4, g4]⟩
+    obtain ⟨h1, h2, h3⟩ := ih (removeRunnableStepOnCore tid st d)
+    exact ⟨h1.trans (removeRunnableStepOnCore_onlyObjectsSchedulerDiffer tid st d),
+      h2.trans (removeRunnableStepOnCore_objectsAgreeOffRunLinks tid st d),
+      fun hInv => h3 (removeRunnableStepOnCore_objects_invExt tid st d hInv)⟩
 
 /-- WS-SM SM8.B (PR #861 review round 35): the sweep leaves every core's **domain**
 slots alone.
@@ -468,30 +473,52 @@ theorem foldl_removeRunnableStepOnCore_replenishQueueOnCore
       = st.scheduler.domainScheduleIndexOnCore c :=
   (foldl_removeRunnableStepOnCore_domain_frame _ tid st c).2.2
 
-@[simp] theorem removeRunnableFromAllCores_objects (st : SystemState)
+theorem removeRunnableFromAllCores_onlyObjectsSchedulerDiffer (st : SystemState)
     (tid : SeLe4n.ThreadId) :
-    (removeRunnableFromAllCores st tid).objects = st.objects :=
+    (removeRunnableFromAllCores st tid).onlyObjectsSchedulerDiffer st :=
   (foldl_removeRunnableStepOnCore_frame _ tid st).1
+
+/-- WS-ZA ZA4.5: the sweep changes no object off the run-queue links (was
+`removeRunnableFromAllCores_objects`, an object-store equality). -/
+theorem removeRunnableFromAllCores_objectsAgreeOffRunLinks (st : SystemState)
+    (tid : SeLe4n.ThreadId) :
+    (removeRunnableFromAllCores st tid).objectsAgreeOffRunLinks st :=
+  (foldl_removeRunnableStepOnCore_frame _ tid st).2.1
+
+theorem removeRunnableFromAllCores_objects_invExt (st : SystemState)
+    (tid : SeLe4n.ThreadId) (hInv : st.objects.invExt) :
+    (removeRunnableFromAllCores st tid).objects.invExt :=
+  (foldl_removeRunnableStepOnCore_frame _ tid st).2.2 hInv
 
 @[simp] theorem removeRunnableFromAllCores_lifecycle (st : SystemState)
     (tid : SeLe4n.ThreadId) :
-    (removeRunnableFromAllCores st tid).lifecycle = st.lifecycle :=
-  (foldl_removeRunnableStepOnCore_frame _ tid st).2.1
+    (removeRunnableFromAllCores st tid).lifecycle = st.lifecycle := by
+  rw [removeRunnableFromAllCores_onlyObjectsSchedulerDiffer st tid]
 
 @[simp] theorem removeRunnableFromAllCores_machine (st : SystemState)
     (tid : SeLe4n.ThreadId) :
-    (removeRunnableFromAllCores st tid).machine = st.machine :=
-  (foldl_removeRunnableStepOnCore_frame _ tid st).2.2.1
+    (removeRunnableFromAllCores st tid).machine = st.machine := by
+  rw [removeRunnableFromAllCores_onlyObjectsSchedulerDiffer st tid]
 
 @[simp] theorem removeRunnableFromAllCores_tlbShootdown (st : SystemState)
     (tid : SeLe4n.ThreadId) :
-    (removeRunnableFromAllCores st tid).tlbShootdown = st.tlbShootdown :=
-  (foldl_removeRunnableStepOnCore_frame _ tid st).2.2.2
+    (removeRunnableFromAllCores st tid).tlbShootdown = st.tlbShootdown := by
+  rw [removeRunnableFromAllCores_onlyObjectsSchedulerDiffer st tid]
 
 /-- WS-SM SM7.B: `removeRunnable` is scheduler-only — the TLB-shootdown
 state is framed (`pendingBounded` bundle-carriage leaf). -/
 theorem removeRunnable_tlbShootdown_eq (st : SystemState) (tid : SeLe4n.ThreadId) :
-    (removeRunnable st tid).tlbShootdown = st.tlbShootdown := rfl
+    (removeRunnable st tid).tlbShootdown = st.tlbShootdown := by
+  have h := SystemState.runDescheduleOnCore_onlyObjectsSchedulerDiffer st bootCoreId tid
+  unfold SystemState.onlyObjectsSchedulerDiffer at h
+  unfold removeRunnable; rw [h]
+
+/-- AG8-G: `removeRunnable` preserves machine state. -/
+theorem removeRunnable_machine_eq (st : SystemState) (tid : SeLe4n.ThreadId) :
+    (removeRunnable st tid).machine = st.machine := by
+  have h := SystemState.runDescheduleOnCore_onlyObjectsSchedulerDiffer st bootCoreId tid
+  unfold SystemState.onlyObjectsSchedulerDiffer at h
+  unfold removeRunnable; rw [h]
 
 /-- AN10 residual closure (H7): typed entry-point for `removeRunnable` that
 documents the production-path discipline at the type system. Production
@@ -521,7 +548,9 @@ be reused by rewriting through this equality. -/
     rendezvous, reply wake). Matches the yield/timer/switch convention
     established in AI3-A. -/
 def ensureRunnable (st : SystemState) (tid : SeLe4n.ThreadId) : SystemState :=
-  if tid ∈ (st.scheduler.runQueueOnCore bootCoreId) then
+  -- WS-ZA ZA4.5: the thread's own run-queue links say whether it is queued on
+  -- the boot core (seL4's `tcbQueued`); the abstract queue is ghost state.
+  if st.queuedOn bootCoreId tid then
     st
   else
     -- AN10-B (DEF-AK7-F.reader.hygiene): typed-helper migration. The
@@ -529,14 +558,18 @@ def ensureRunnable (st : SystemState) (tid : SeLe4n.ThreadId) : SystemState :=
     -- same identity fall-through, so migration is semantics-preserving.
     match st.getTcb? tid with
     | some tcb =>
-        { st with
-            scheduler := (st.scheduler.setRunQueueOnCore bootCoreId
-              ((st.scheduler.runQueueOnCore bootCoreId).insert tid tcb.boostedPriority))
+        -- WS-ZA ZA4.5: the enqueue writes the thread's run-queue links. A
+        -- thread placed on another core is not admitted (one placement per
+        -- thread, seL4's `tcbQueued`), and the wake then changes nothing, as
+        -- `enqueueRunnableOnCore` does.
+        if st.runEnqueueAdmits bootCoreId tid then
+          let st' := st.runEnqueueAdmitted bootCoreId tid tcb.boostedPriority
+          { st' with
               -- The reschedule-SGI accumulator (KSC-1): the boot-core instance
               -- of `enqueueRunnableOnCore`'s mark, so the wake paths' bridge
               -- `wakeThread_bootCore_eq_ensureRunnable` stays an equation.
-              |>.markReschedulePendingOnCore bootCoreId
-        }
+              scheduler := st'.scheduler.markReschedulePendingOnCore bootCoreId }
+        else st
     | none => st
 
 def lookupTcb (st : SystemState) (tid : SeLe4n.ThreadId) : Option TCB :=
@@ -547,6 +580,16 @@ def lookupTcb (st : SystemState) (tid : SeLe4n.ThreadId) : Option TCB :=
     -- `getTcb?` plus the reserved-id refusal, and spelling the store read a
     -- second time here is how the two could come to disagree.
     st.getTcb? tid
+
+/-- WS-ZA ZA4.5: two stores agreeing off the run-queue links look every thread
+up to the same TCB off those links. -/
+theorem lookupTcb_map_of_objectsAgreeOffRunLinks {s1 s2 : SystemState}
+    (h : s2.objectsAgreeOffRunLinks s1) (tid : SeLe4n.ThreadId) :
+    (lookupTcb s2 tid).map TCB.withoutRunLinks = (lookupTcb s1 tid).map TCB.withoutRunLinks := by
+  unfold lookupTcb
+  cases hr : tid.isReserved
+  · simp only [Bool.false_eq_true, ↓reduceIte]; exact h.getTcb? tid
+  · rfl
 
 /-- WS-RR RR3.12: a successful `lookupTcb` witnesses that the tid is not reserved —
 the half of `lookupTcb`'s guard that lets a lookup be *re-established* in another
@@ -660,6 +703,349 @@ def storeTcbIpcStateAndMessage_fromTcb (st : SystemState) (tid : SeLe4n.ThreadId
   | .error e => .error e
   | .ok ((), st') => .ok st'
 
+/-- WS-ZA ZA4.4: a thread's two notification-queue links, written together. -/
+def storeTcbNtfnLinks (st : SystemState) (tid : SeLe4n.ThreadId)
+    (prev next : Option SeLe4n.ThreadId) : Except KernelError SystemState :=
+  modifyTcb st tid (fun tcb => { tcb with
+    ntfnPrevCode := SeLe4n.ThreadId.optCode prev, ntfnNextCode := SeLe4n.ThreadId.optCode next })
+
+/-- WS-ZA ZA4.4: `modifyTcb` at an optional thread; no thread, no write. -/
+def modifyTcbOpt (st : SystemState) (target? : Option SeLe4n.ThreadId) (f : TCB → TCB) :
+    Except KernelError SystemState :=
+  match target? with
+  | none => .ok st
+  | some t => modifyTcb st t f
+
+/-- WS-ZA ZA4.4: point a queue neighbour's successor link at `next`.  No
+neighbour, no write: an empty notification queue has no tail to link from. -/
+def relinkNtfnNext (st : SystemState) (target? next : Option SeLe4n.ThreadId) :
+    Except KernelError SystemState :=
+  modifyTcbOpt st target? (fun tcb => { tcb with ntfnNextCode := SeLe4n.ThreadId.optCode next })
+
+/-- WS-ZA ZA4.4: the thread behind `tid` in its notification queue, read from
+`tid`'s own link; none when `tid` resolves to no TCB. -/
+def ntfnSuccessor? (st : SystemState) (tid : SeLe4n.ThreadId) : Option SeLe4n.ThreadId :=
+  match lookupTcb st tid with
+  | some tcb => tcb.ntfnNext
+  | none => none
+
+/-- WS-ZA ZA4.4: close the gap a waiter leaves in its notification's intrusive
+queue -- the predecessor's next link and the successor's previous link each skip
+it (seL4's `tcbEPDequeue`).  A missing neighbour is a queue end, which the
+caller rewrites in the notification itself: with no predecessor the successor
+heads the queue and its predecessor link is cleared. -/
+def unlinkNtfnNeighbours (st : SystemState) (prev next : Option SeLe4n.ThreadId) :
+    SystemState :=
+  let st2 := match prev with
+    | some p => st.updateTcb p (fun t => { t with
+        ntfnNextCode := SeLe4n.ThreadId.optCode next })
+    | none => st
+  match next with
+  | some n => st2.updateTcb n (fun t => { t with
+      ntfnPrevCode := SeLe4n.ThreadId.optCode prev })
+  | none => st2
+
+/-- WS-ZA ZA4.4: a thread leaving its notification queue keeps no queue links. -/
+def clearNtfnLinks (st : SystemState) (tid : SeLe4n.ThreadId) : SystemState :=
+  st.updateTcb tid (fun t => { t with
+    ntfnPrevCode := SeLe4n.ThreadId.optCode none,
+    ntfnNextCode := SeLe4n.ThreadId.optCode none })
+
+/-- WS-ZA ZA4.4: the TCB writes of a head leaving its notification queue (a
+signal's wake): the old head drops both of its links, and the successor, which
+now heads the queue, drops its predecessor link.  Both writes rewrite a TCB in
+its slot (`SystemState.updateTcb`). -/
+def detachNtfnHead (st : SystemState) (head : SeLe4n.ThreadId)
+    (next : Option SeLe4n.ThreadId) : SystemState :=
+  unlinkNtfnNeighbours (clearNtfnLinks st head) none next
+
+/-- WS-ZA ZA4.4: `s` is `st` with at most notification-queue links rewritten:
+every field outside the object table is `st`'s, the table stays well formed, and
+each key holds what it held or a TCB with only its two notification links
+rewritten.  The frame every link write of a pop or an unlink discharges. -/
+def ntfnLinksRewritten (st s : SystemState) : Prop :=
+  s = { st with objects := s.objects } ∧ s.objects.invExt ∧
+  ∀ k : SeLe4n.ObjId, s.objects[k]? = st.objects[k]? ∨
+    ∃ t t', st.objects[k]? = some (.tcb t) ∧ s.objects[k]? = some (.tcb t') ∧
+      tcbNtfnLinkRewrite t' t
+
+theorem ntfnLinksRewritten.refl {st : SystemState} (hInv : st.objects.invExt) :
+    ntfnLinksRewritten st st := ⟨rfl, hInv, fun _ => Or.inl rfl⟩
+
+theorem ntfnLinksRewritten.updateTcb {st s : SystemState} (h : ntfnLinksRewritten st s)
+    (p : SeLe4n.ThreadId) (f : TCB → TCB) (hf : ∀ t, tcbNtfnLinkRewrite (f t) t) :
+    ntfnLinksRewritten st (s.updateTcb p f) := by
+  obtain ⟨hEq, hInv, hRel⟩ := h
+  cases hG : s.getTcb? p with
+  | none => rw [SystemState.updateTcb_eq_self_of_none hG]; exact ⟨hEq, hInv, hRel⟩
+  | some t =>
+    rw [SystemState.updateTcb_eq_of_some hG]
+    have hT := (SystemState.getTcb?_eq_some_iff s p t).mp hG
+    refine ⟨?_, RHTable_insert_preserves_invExt _ _ _ hInv, fun k => ?_⟩
+    · generalize s.objects.insert p.toObjId (.tcb (f t)) = O
+      rw [hEq]
+    simp only [RHTable_getElem?_eq_get?] at hT ⊢
+    by_cases hk : p.toObjId = k
+    · subst hk
+      rw [SeLe4n.Kernel.RobinHood.RHTable.getElem?_insert_self _ _ _ hInv]
+      have := hRel p.toObjId
+      simp only [RHTable_getElem?_eq_get?, hT] at this
+      rcases this with h | ⟨t0, t1, h0, h1, hR⟩
+      · exact Or.inr ⟨t, f t, h.symm, rfl, hf t⟩
+      · cases h1; exact Or.inr ⟨t0, f t, h0, rfl, (hf t).trans hR⟩
+    · rw [SeLe4n.Kernel.RobinHood.RHTable.getElem?_insert_ne _ _ _ _
+        (fun hb => hk (eq_of_beq hb)) hInv]
+      simpa only [RHTable_getElem?_eq_get?] using hRel k
+
+/-- A TCB before is a link rewrite of itself after. -/
+theorem ntfnLinksRewritten.tcb_fwd {st s : SystemState} (h : ntfnLinksRewritten st s)
+    {k : SeLe4n.ObjId} {t : TCB} (hT : st.objects[k]? = some (.tcb t)) :
+    ∃ t', s.objects[k]? = some (.tcb t') ∧ tcbNtfnLinkRewrite t' t := by
+  rcases h.2.2 k with e | ⟨t0, t1, h0, h1, hR⟩
+  · exact ⟨t, e.trans hT, .refl t⟩
+  · rw [hT] at h0; cases h0; exact ⟨t1, h1, hR⟩
+
+/-- A TCB after is a link rewrite of the TCB before. -/
+theorem ntfnLinksRewritten.tcb_bwd {st s : SystemState} (h : ntfnLinksRewritten st s)
+    {k : SeLe4n.ObjId} {t' : TCB} (hT : s.objects[k]? = some (.tcb t')) :
+    ∃ t, st.objects[k]? = some (.tcb t) ∧ tcbNtfnLinkRewrite t' t := by
+  rcases h.2.2 k with e | ⟨t0, t1, h0, h1, hR⟩
+  · exact ⟨t', e.symm.trans hT, .refl t'⟩
+  · rw [hT] at h1; cases h1; exact ⟨t0, h0, hR⟩
+
+/-- A key that held no TCB holds the same object. -/
+theorem ntfnLinksRewritten.non_tcb {st s : SystemState} (h : ntfnLinksRewritten st s)
+    {k : SeLe4n.ObjId} (hk : ∀ t, st.objects[k]? ≠ some (.tcb t)) :
+    s.objects[k]? = st.objects[k]? := by
+  rcases h.2.2 k with e | ⟨t0, _, h0, _, _⟩
+  · exact e
+  · exact absurd h0 (hk t0)
+
+theorem ntfnLinksRewritten.scheduler_eq {st s : SystemState} (h : ntfnLinksRewritten st s) :
+    s.scheduler = st.scheduler := by rw [h.1]
+
+/-- A non-TCB object reads the same on both sides. -/
+theorem ntfnLinksRewritten.obj_iff {st s : SystemState} (h : ntfnLinksRewritten st s)
+    (k : SeLe4n.ObjId) (o : KernelObject) (ho : ∀ t, o ≠ .tcb t) :
+    s.objects[k]? = some o ↔ st.objects[k]? = some o := by
+  rcases h.2.2 k with e | ⟨t0, t1, h0, h1, _⟩
+  · rw [e]
+  · rw [h0, h1]
+    exact ⟨fun e => absurd (Option.some.inj e).symm (ho t1),
+      fun e => absurd (Option.some.inj e).symm (ho t0)⟩
+
+/-- Every TCB field the notification links do not hold reads the same. -/
+theorem ntfnLinksRewritten.field_bwd {α : Type} {st s : SystemState}
+    (h : ntfnLinksRewritten st s) (f : TCB → α)
+    (hf : ∀ (t : TCB) np nn, f { t with ntfnPrevCode := np, ntfnNextCode := nn } = f t)
+    {k : SeLe4n.ObjId} {t' : TCB} (hT : s.objects[k]? = some (.tcb t')) :
+    ∃ t, st.objects[k]? = some (.tcb t) ∧ f t' = f t := by
+  obtain ⟨t, ht, ⟨np, nn, rfl⟩⟩ := h.tcb_bwd hT
+  exact ⟨t, ht, hf t np nn⟩
+
+/-- ...read forwards. -/
+theorem ntfnLinksRewritten.field_fwd {α : Type} {st s : SystemState}
+    (h : ntfnLinksRewritten st s) (f : TCB → α)
+    (hf : ∀ (t : TCB) np nn, f { t with ntfnPrevCode := np, ntfnNextCode := nn } = f t)
+    {k : SeLe4n.ObjId} {t : TCB} (hT : st.objects[k]? = some (.tcb t)) :
+    ∃ t', s.objects[k]? = some (.tcb t') ∧ f t' = f t := by
+  obtain ⟨t', ht, ⟨np, nn, rfl⟩⟩ := h.tcb_fwd hT
+  exact ⟨_, ht, hf t np nn⟩
+
+theorem ntfnLinksRewritten_unlinkNtfnNeighbours {st s : SystemState}
+    (h : ntfnLinksRewritten st s) (prev next : Option SeLe4n.ThreadId) :
+    ntfnLinksRewritten st (unlinkNtfnNeighbours s prev next) := by
+  unfold unlinkNtfnNeighbours
+  cases prev <;> cases next <;> dsimp only
+  · exact h
+  · exact h.updateTcb _ _ (fun t => ⟨_, t.ntfnNextCode, rfl⟩)
+  · exact h.updateTcb _ _ (fun t => ⟨t.ntfnPrevCode, _, rfl⟩)
+  · exact (h.updateTcb _ _ (fun t => ⟨t.ntfnPrevCode, _, rfl⟩)).updateTcb _ _
+      (fun t => ⟨_, t.ntfnNextCode, rfl⟩)
+
+theorem ntfnLinksRewritten_clearNtfnLinks {st s : SystemState}
+    (h : ntfnLinksRewritten st s) (tid : SeLe4n.ThreadId) :
+    ntfnLinksRewritten st (clearNtfnLinks s tid) :=
+  h.updateTcb _ _ (fun _ => ⟨_, _, rfl⟩)
+
+/-- `ntfn_links_back e at t h`: with `e : ntfnLinksRewritten st s` and
+`h : s.objects[x]? = some (.tcb t)`, replace `t` by the `st` TCB with its two
+notification links rewritten (so every other field reads `st`'s) and `h` by the
+read `st.objects[x]? = some (.tcb t)`. -/
+syntax (name := ntfnLinksBack) "ntfn_links_back " term " at " Lean.Parser.Tactic.rcasesPatLo ident : tactic
+
+set_option hygiene false in
+macro_rules
+  | `(tactic| ntfn_links_back $e at $t $h) =>
+    `(tactic| (obtain ⟨$t, hPreNtfnLinks, _, _, rfl⟩ := ($e).tcb_bwd $h
+               clear $h
+               have $h := hPreNtfnLinks
+               clear hPreNtfnLinks))
+
+/-- `ntfn_links_fwd e at t h`: the forward form of `ntfn_links_back` — with
+`h : st.objects[x]? = some (.tcb t)`, `h` becomes the read of `s` at `x`, which
+holds `t` with its two notification links rewritten. -/
+syntax (name := ntfnLinksFwd) "ntfn_links_fwd " term " at " Lean.Parser.Tactic.rcasesPatLo ident : tactic
+
+set_option hygiene false in
+macro_rules
+  | `(tactic| ntfn_links_fwd $e at $t $h) =>
+    `(tactic| (obtain ⟨$t, hPostNtfnLinks, _, _, rfl⟩ := ($e).tcb_fwd $h
+               clear $h
+               have $h := hPostNtfnLinks
+               clear hPostNtfnLinks))
+
+theorem ntfnLinksRewritten.endpoint_iff {st s : SystemState} (h : ntfnLinksRewritten st s)
+    {k : SeLe4n.ObjId} {ep : Endpoint} :
+    s.objects[k]? = some (.endpoint ep) ↔ st.objects[k]? = some (.endpoint ep) :=
+  h.obj_iff k _ (fun _ e => by cases e)
+
+theorem ntfnLinksRewritten.reply_iff {st s : SystemState} (h : ntfnLinksRewritten st s)
+    {k : SeLe4n.ObjId} {r : SeLe4n.Kernel.Reply} :
+    s.objects[k]? = some (.reply r) ↔ st.objects[k]? = some (.reply r) :=
+  h.obj_iff k _ (fun _ e => by cases e)
+
+theorem ntfnLinksRewritten.schedContext_iff {st s : SystemState} (h : ntfnLinksRewritten st s)
+    {k : SeLe4n.ObjId} {sc : SeLe4n.Kernel.SchedContext} :
+    s.objects[k]? = some (.schedContext sc) ↔ st.objects[k]? = some (.schedContext sc) :=
+  h.obj_iff k _ (fun _ e => by cases e)
+
+/-- Reply objects read the same on both sides. -/
+theorem ntfnLinksRewritten.getReply? {st s : SystemState} (h : ntfnLinksRewritten st s)
+    (rid : SeLe4n.ReplyId) : s.getReply? rid = st.getReply? rid := by
+  unfold SystemState.getReply?
+  rcases h.2.2 rid.toObjId with e | ⟨_, _, h0, h1, _⟩
+  · rw [e]
+  · rw [h0, h1]
+
+/-- A TCB read through `getTcb?` survives as a link rewrite of itself. -/
+theorem ntfnLinksRewritten.getTcb?_fwd {st s : SystemState} (h : ntfnLinksRewritten st s)
+    {tid : SeLe4n.ThreadId} {t : TCB} (hT : st.getTcb? tid = some t) :
+    ∃ t', s.getTcb? tid = some t' ∧ tcbNtfnLinkRewrite t' t := by
+  obtain ⟨t', h', hR⟩ := h.tcb_fwd ((SystemState.getTcb?_eq_some_iff _ _ _).mp hT)
+  exact ⟨t', (SystemState.getTcb?_eq_some_iff _ _ _).mpr h', hR⟩
+
+/-- A wake's home core reads the thread's affinity, which a link rewrite keeps. -/
+theorem ntfnLinksRewritten.targetCore_eq {st s : SystemState}
+    (h : ntfnLinksRewritten st s) (tid : SeLe4n.ThreadId) :
+    determineTargetCore s tid = determineTargetCore st tid := by
+  unfold determineTargetCore
+  cases hT : st.getTcb? tid with
+  | some t =>
+    obtain ⟨_, h', ⟨_, _, rfl⟩⟩ := h.getTcb?_fwd hT
+    rw [h']
+  | none =>
+    cases hS : s.getTcb? tid with
+    | none => rfl
+    | some t' =>
+      obtain ⟨t, ht, _⟩ := h.tcb_bwd ((SystemState.getTcb?_eq_some_iff _ _ _).mp hS)
+      rw [(SystemState.getTcb?_eq_some_iff _ _ _).mpr ht] at hT; cases hT
+
+/-- WS-ZA ZA4.4: the pop's TCB writes rewrite notification links and nothing else. -/
+theorem detachNtfnHead_linksRewritten (st : SystemState) (head : SeLe4n.ThreadId)
+    (next : Option SeLe4n.ThreadId) (hInv : st.objects.invExt) :
+    ntfnLinksRewritten st (detachNtfnHead st head next) :=
+  ntfnLinksRewritten_unlinkNtfnNeighbours
+    (ntfnLinksRewritten_clearNtfnLinks (.refl hInv) head) none next
+
+/-- WS-ZA ZA4.4: the pop's TCB writes touch the old head and its successor and no
+other slot. -/
+theorem detachNtfnHead_objects_ne (st : SystemState) (head : SeLe4n.ThreadId)
+    (next : Option SeLe4n.ThreadId) (hInv : st.objects.invExt) (k : SeLe4n.ObjId)
+    (hH : head.toObjId ≠ k) (hN : ∀ n, next = some n → n.toObjId ≠ k) :
+    (detachNtfnHead st head next).objects[k]? = st.objects[k]? := by
+  have h1 : (clearNtfnLinks st head).objects[k]? = st.objects[k]? :=
+    SystemState.updateTcb_objects_ne _ _ _ k hH hInv
+  have hInv1 : (clearNtfnLinks st head).objects.invExt :=
+    SystemState.updateTcb_preserves_objects_invExt _ _ _ hInv
+  unfold detachNtfnHead unlinkNtfnNeighbours
+  cases next with
+  | none => exact h1
+  | some n =>
+    dsimp only
+    rw [SystemState.updateTcb_objects_ne _ n _ k (hN n rfl) hInv1]
+    exact h1
+
+/-- WS-ZA ZA4.4: the pop's TCB writes leave every field outside the object table. -/
+theorem detachNtfnHead_eq_objects (st : SystemState) (head : SeLe4n.ThreadId)
+    (next : Option SeLe4n.ThreadId) (hInv : st.objects.invExt) :
+    detachNtfnHead st head next = { st with objects := (detachNtfnHead st head next).objects } :=
+  (detachNtfnHead_linksRewritten st head next hInv).1
+
+/-- WS-ZA ZA4.4: the pop's TCB writes leave the scheduler alone. -/
+@[simp] theorem detachNtfnHead_scheduler (st : SystemState) (head : SeLe4n.ThreadId)
+    (next : Option SeLe4n.ThreadId) :
+    (detachNtfnHead st head next).scheduler = st.scheduler := by
+  unfold detachNtfnHead unlinkNtfnNeighbours clearNtfnLinks
+  cases next <;> simp only [SystemState.updateTcb_scheduler]
+
+/-- WS-ZA ZA4.4: and the declassification audit trail. -/
+@[simp] theorem detachNtfnHead_declassificationAuditLog (st : SystemState)
+    (head : SeLe4n.ThreadId) (next : Option SeLe4n.ThreadId) :
+    (detachNtfnHead st head next).declassificationAuditLog = st.declassificationAuditLog := by
+  have hU : ∀ (s : SystemState) (tid : SeLe4n.ThreadId) (f : TCB → TCB),
+      (s.updateTcb tid f).declassificationAuditLog = s.declassificationAuditLog := by
+    intro s tid f; unfold SystemState.updateTcb; split <;> rfl
+  unfold detachNtfnHead unlinkNtfnNeighbours clearNtfnLinks
+  cases next <;> simp only [hU]
+
+@[simp] theorem detachNtfnHead_machine (st : SystemState) (head : SeLe4n.ThreadId)
+    (next : Option SeLe4n.ThreadId) :
+    (detachNtfnHead st head next).machine = st.machine := by
+  have hU : ∀ (s : SystemState) (tid : SeLe4n.ThreadId) (f : TCB → TCB),
+      (s.updateTcb tid f).machine = s.machine := by
+    intro s tid f; unfold SystemState.updateTcb; split <;> rfl
+  unfold detachNtfnHead unlinkNtfnNeighbours clearNtfnLinks
+  cases next <;> simp only [hU]
+
+/-- A TCB rewritten in its slot reads back through the rewrite. -/
+theorem updateTcb_objects_self_of_tcb {st : SystemState} {tid : SeLe4n.ThreadId} {t : TCB}
+    (f : TCB → TCB) (hInv : st.objects.invExt)
+    (hT : st.objects[tid.toObjId]? = some (.tcb t)) :
+    (st.updateTcb tid f).objects[tid.toObjId]? = some (.tcb (f t)) := by
+  have h := SystemState.updateTcb_getTcb?_self st tid f hInv
+  rw [(SystemState.getTcb?_eq_some_iff st tid t).mpr hT] at h
+  exact (SystemState.getTcb?_eq_some_iff _ tid (f t)).mp h
+
+/-- WS-ZA ZA4.4: the old head leaves the pop with its IPC state and no queue
+links (its successor is another thread). -/
+theorem detachNtfnHead_head {st : SystemState} {head : SeLe4n.ThreadId}
+    {next : Option SeLe4n.ThreadId} {t : TCB} (hInv : st.objects.invExt)
+    (hT : st.objects[head.toObjId]? = some (.tcb t)) (hN : next ≠ some head) :
+    ∃ t', (detachNtfnHead st head next).objects[head.toObjId]? = some (.tcb t') ∧
+      t'.ipcState = t.ipcState ∧ t'.ntfnPrev = none ∧ t'.ntfnNext = none := by
+  have h1 := updateTcb_objects_self_of_tcb (fun t => { t with
+    ntfnPrevCode := SeLe4n.ThreadId.optCode none,
+    ntfnNextCode := SeLe4n.ThreadId.optCode none }) hInv hT
+  refine ⟨{ t with ntfnPrevCode := 0, ntfnNextCode := 0 }, ?_, rfl, rfl, rfl⟩
+  unfold detachNtfnHead clearNtfnLinks unlinkNtfnNeighbours
+  cases next with
+  | none => exact h1
+  | some n =>
+    dsimp only
+    rw [SystemState.updateTcb_objects_ne _ n _ _
+      (fun e => hN (congrArg some (SeLe4n.ThreadId.toObjId_injective _ _ e)))
+      (SystemState.updateTcb_preserves_objects_invExt _ _ _ hInv)]
+    exact h1
+
+/-- WS-ZA ZA4.4: the successor leaves the pop with its IPC state and successor
+link, and no predecessor link: it heads the queue now. -/
+theorem detachNtfnHead_successor {st : SystemState} {head b : SeLe4n.ThreadId}
+    {tb : TCB} (hInv : st.objects.invExt) (hbh : b ≠ head)
+    (hT : st.objects[b.toObjId]? = some (.tcb tb)) :
+    ∃ tb', (detachNtfnHead st head (some b)).objects[b.toObjId]? = some (.tcb tb') ∧
+      tb'.ipcState = tb.ipcState ∧ tb'.ntfnPrev = none ∧ tb'.ntfnNext = tb.ntfnNext := by
+  have hInv1 := SystemState.updateTcb_preserves_objects_invExt st head (fun t => { t with
+    ntfnPrevCode := SeLe4n.ThreadId.optCode none,
+    ntfnNextCode := SeLe4n.ThreadId.optCode none }) hInv
+  have h1 : (clearNtfnLinks st head).objects[b.toObjId]? = some (.tcb tb) := by
+    unfold clearNtfnLinks
+    rw [SystemState.updateTcb_objects_ne _ _ _ _
+      (fun e => hbh (SeLe4n.ThreadId.toObjId_injective _ _ e).symm) hInv]
+    exact hT
+  exact ⟨{ tb with ntfnPrevCode := SeLe4n.ThreadId.optCode none },
+    updateTcb_objects_self_of_tcb (fun t => { t with
+      ntfnPrevCode := SeLe4n.ThreadId.optCode none }) hInv1 h1, rfl, rfl, rfl⟩
 /-- **Audit IPC-5 (`v0.36.49`)**: a committed `modifyTcb` is one lookup that
 found a TCB and one `storeObject` of `f` applied to it.  Every frame below — and
 so every per-writer frame — is read off this. -/
@@ -739,6 +1125,89 @@ theorem modifyTcb_cdt_eq {st st' : SystemState} {tid : SeLe4n.ThreadId}
     st'.cdt = st.cdt ∧ st'.cdtNodeSlot = st.cdtNodeSlot := by
   obtain ⟨_, _, hS⟩ := modifyTcb_ok_decompose h
   exact ⟨storeObject_cdt_eq _ _ _ _ hS, storeObject_cdtNodeSlot_eq _ _ _ _ hS⟩
+
+/-- WS-ZA ZA4.4: a notification survives a TCB field write — the key the write
+stores at held a TCB. -/
+theorem modifyTcb_preserves_notification {st st' : SystemState} {tid : SeLe4n.ThreadId}
+    {f : TCB → TCB} (oid : SeLe4n.ObjId) (ntfn : Notification)
+    (hObjInv : st.objects.invExt) (h : modifyTcb st tid f = .ok st')
+    (hNtfn : st.objects[oid]? = some (.notification ntfn)) :
+    st'.objects[oid]? = some (.notification ntfn) := by
+  obtain ⟨tcb, hLk, _⟩ := modifyTcb_ok_decompose h
+  have hNe : oid ≠ tid.toObjId := by
+    intro hEq; subst hEq; rw [lookupTcb_some_objects st tid tcb hLk] at hNtfn; cases hNtfn
+  rw [modifyTcb_preserves_objects_ne oid hNe hObjInv h]; exact hNtfn
+
+/-- WS-ZA ZA4.4: a committed `modifyTcbOpt` is no write or one `modifyTcb`. -/
+theorem modifyTcbOpt_ok_cases {st st' : SystemState} {t? : Option SeLe4n.ThreadId}
+    {f : TCB → TCB} (h : modifyTcbOpt st t? f = .ok st') :
+    (t? = none ∧ st' = st) ∨ ∃ t, t? = some t ∧ modifyTcb st t f = .ok st' := by
+  unfold modifyTcbOpt at h
+  cases t? with
+  | none => exact Or.inl ⟨rfl, (Except.ok.inj h).symm⟩
+  | some t => exact Or.inr ⟨t, rfl, h⟩
+
+theorem modifyTcbOpt_scheduler_eq {st st' : SystemState} {t? : Option SeLe4n.ThreadId}
+    {f : TCB → TCB} (h : modifyTcbOpt st t? f = .ok st') : st'.scheduler = st.scheduler := by
+  rcases modifyTcbOpt_ok_cases h with ⟨_, rfl⟩ | ⟨_, _, h⟩
+  · rfl
+  · exact modifyTcb_scheduler_eq h
+
+theorem modifyTcbOpt_machine_eq {st st' : SystemState} {t? : Option SeLe4n.ThreadId}
+    {f : TCB → TCB} (h : modifyTcbOpt st t? f = .ok st') : st'.machine = st.machine := by
+  rcases modifyTcbOpt_ok_cases h with ⟨_, rfl⟩ | ⟨_, _, h⟩
+  · rfl
+  · exact modifyTcb_machine_eq h
+
+theorem modifyTcbOpt_preserves_objects_ne {st st' : SystemState}
+    {t? : Option SeLe4n.ThreadId} {f : TCB → TCB} (oid : SeLe4n.ObjId)
+    (hNe : ∀ t, t? = some t → oid ≠ t.toObjId)
+    (hObjInv : st.objects.invExt) (h : modifyTcbOpt st t? f = .ok st') :
+    st'.objects[oid]? = st.objects[oid]? := by
+  rcases modifyTcbOpt_ok_cases h with ⟨_, rfl⟩ | ⟨t, ht, h⟩
+  · rfl
+  · exact modifyTcb_preserves_objects_ne oid (hNe t ht) hObjInv h
+
+theorem modifyTcbOpt_preserves_objects_invExt {st st' : SystemState}
+    {t? : Option SeLe4n.ThreadId} {f : TCB → TCB}
+    (hObjInv : st.objects.invExt) (h : modifyTcbOpt st t? f = .ok st') :
+    st'.objects.invExt := by
+  rcases modifyTcbOpt_ok_cases h with ⟨_, rfl⟩ | ⟨_, _, h⟩
+  · exact hObjInv
+  · exact modifyTcb_preserves_objects_invExt hObjInv h
+
+theorem modifyTcbOpt_preserves_notification {st st' : SystemState}
+    {t? : Option SeLe4n.ThreadId} {f : TCB → TCB} (oid : SeLe4n.ObjId) (ntfn : Notification)
+    (hObjInv : st.objects.invExt) (h : modifyTcbOpt st t? f = .ok st')
+    (hNtfn : st.objects[oid]? = some (.notification ntfn)) :
+    st'.objects[oid]? = some (.notification ntfn) := by
+  rcases modifyTcbOpt_ok_cases h with ⟨_, rfl⟩ | ⟨_, _, h⟩
+  · exact hNtfn
+  · exact modifyTcb_preserves_notification oid ntfn hObjInv h hNtfn
+
+theorem modifyTcbOpt_notification_backward {st st' : SystemState}
+    {t? : Option SeLe4n.ThreadId} {f : TCB → TCB} (oid : SeLe4n.ObjId) (ntfn : Notification)
+    (hObjInv : st.objects.invExt) (h : modifyTcbOpt st t? f = .ok st')
+    (hNtfn : st'.objects[oid]? = some (.notification ntfn)) :
+    st.objects[oid]? = some (.notification ntfn) := by
+  rcases modifyTcbOpt_ok_cases h with ⟨_, rfl⟩ | ⟨_, _, h⟩
+  · exact hNtfn
+  · exact modifyTcb_notification_backward oid ntfn hObjInv h hNtfn
+
+theorem modifyTcbOpt_kindPreservingWrite {st st' : SystemState}
+    {t? : Option SeLe4n.ThreadId} {f : TCB → TCB}
+    (hObjInv : st.objects.invExt) (h : modifyTcbOpt st t? f = .ok st') :
+    kindPreservingWrite st st' := by
+  rcases modifyTcbOpt_ok_cases h with ⟨_, rfl⟩ | ⟨_, _, h⟩
+  · exact kindPreservingWrite.refl _
+  · exact modifyTcb_kindPreservingWrite hObjInv h
+
+theorem modifyTcbOpt_cdt_eq {st st' : SystemState} {t? : Option SeLe4n.ThreadId}
+    {f : TCB → TCB} (h : modifyTcbOpt st t? f = .ok st') :
+    st'.cdt = st.cdt ∧ st'.cdtNodeSlot = st.cdtNodeSlot := by
+  rcases modifyTcbOpt_ok_cases h with ⟨_, rfl⟩ | ⟨_, _, h⟩
+  · exact ⟨rfl, rfl⟩
+  · exact modifyTcb_cdt_eq h
 
 /-- **WS-RR RR8.16** (`v0.35.200`): the resolving spelling of the delivery store
 is a `kindPreservingWrite` too — it looks the TCB up itself, so it needs no
@@ -1481,15 +1950,18 @@ theorem of_objects_eq {st st' : SystemState} (h : st'.objects = st.objects) :
     sameSchedContextBindings st st' :=
   fun _ tcb' hObj => ⟨tcb', h ▸ hObj, rfl⟩
 
-/-- **WS-RR RR8.12 Cut C1**: the pointwise form of `of_objects_eq` — a step invisible
-to every object-store lookup preserves all bindings.  The cross-core `wakeThread` of
-an already-`.ready` thread is such a step (`wakeThread_objects_getElem_eq_of_ready`)
-without its table being *equal* to the pre-state's, which the whole-table form cannot
-see. -/
-theorem of_objects_getElem_eq {st st' : SystemState}
-    (h : ∀ oid : SeLe4n.ObjId, st'.objects[oid]? = st.objects[oid]?) :
-    sameSchedContextBindings st st' :=
-  fun tid tcb' hObj => ⟨tcb', by rw [← h tid.toObjId]; exact hObj, rfl⟩
+/-- WS-ZA ZA4.5: a step writing only run-queue links preserves all bindings. -/
+theorem of_objectsAgreeOffRunLinks {st st' : SystemState} (h : st'.objectsAgreeOffRunLinks st) :
+    sameSchedContextBindings st st' := by
+  intro tid tcb' hObj
+  run_links_back h at tcb' hObj
+  exact ⟨tcb', hObj, rfl⟩
+
+theorem of_ntfnLinksRewritten {st st' : SystemState} (h : ntfnLinksRewritten st st') :
+    sameSchedContextBindings st st' := by
+  intro tid tcb' hObj
+  ntfn_links_back h at tcb' hObj
+  exact ⟨tcb', hObj, rfl⟩
 
 /-- **WS-RR RR8.12 Cut C1**: a post-state `lookupTcb` pulls back to a pre-state
 `lookupTcb` at the same thread with an equal binding — the frame read through the
@@ -8111,23 +8583,18 @@ def notificationSignal (notificationId : SeLe4n.ObjId) (badge : SeLe4n.Badge) : 
   fun st =>
     match st.getObject? notificationId with
     | some (.notification ntfn) =>
-        -- WS-RC R4.C: pop via the structural `NoDupList.tail?` smart accessor;
-        -- it returns the head and a `NoDupList`-typed tail with the Nodup
-        -- proof discharged inline. Proof-side preservation theorems use the
-        -- `tail?_eq_{none,some}_iff` bridge lemmas to align with the
-        -- underlying `.val` cons/nil case-split.
-        match ntfn.waitingThreads.tail? with
-        | some (waiter, rest) =>
-            let nextState : NotificationState := if rest.val.isEmpty then .idle else .waiting
-            -- WS-SM SM6.B (review #2, single-core): preserve `boundTCB` so an ordinary
-            -- signal does not destroy a bound notification's binding.
-            let ntfn' : Notification := {
-              state := nextState
-              waitingThreads := rest
-              hasPendingBadge := false, pendingWord := SeLe4n.Badge.zero
-              boundTCB := ntfn.boundTCB
-            }
-            match storeObject notificationId (.notification ntfn') st with
+        -- WS-ZA ZA4.4: wake the head of the queue, first in first out (seL4's
+        -- `tcbEPDequeue`).  Its successor, read from the head's own link before
+        -- any write, heads the queue next and drops its predecessor link; the
+        -- woken thread, no longer blocked, keeps no queue links
+        -- (`detachNtfnHead`, `notificationWaiterConsistent`).
+        match ntfn.waitHead with
+        | some waiter =>
+            let next := ntfnSuccessor? st waiter
+            -- WS-SM SM6.B (review #2, single-core): `withHeadPopped` preserves
+            -- `boundTCB` so an ordinary signal does not destroy a bound
+            -- notification's binding.
+            match storeObject notificationId (.notification (ntfn.withHeadPopped next)) st with
             | .error e => .error e
             | .ok ((), st') =>
                 -- R3-A/M-16: Deliver signaled badge to woken waiter via pendingMessage.
@@ -8135,7 +8602,7 @@ def notificationSignal (notificationId : SeLe4n.ObjId) (badge : SeLe4n.Badge) : 
                 let badgeMsg : IpcMessage := { IpcMessage.empty with badge := some badge }
                 match storeTcbIpcStateAndMessage st' waiter .ready (some badgeMsg) with
                 | .error e => .error e
-                | .ok st'' => .ok ((), ensureRunnable st'' waiter)
+                | .ok st'' => .ok ((), ensureRunnable (detachNtfnHead st'' waiter next) waiter)
         | none =>
             -- WS-F5/D1c: accumulate with `Badge.bor`.  A badge is a 64-bit
             -- machine word (`UInt64`, WS-ZA ZA4.2), so the merge is the word's
@@ -8149,7 +8616,6 @@ def notificationSignal (notificationId : SeLe4n.ObjId) (badge : SeLe4n.Badge) : 
               | none => SeLe4n.Badge.ofNatMasked badge.toNat
             let ntfn' : Notification := {
               state := .active
-              waitingThreads := SeLe4n.NoDupList.empty
               hasPendingBadge := true, pendingWord := mergedBadge
               boundTCB := ntfn.boundTCB
             }
@@ -8161,18 +8627,20 @@ def notificationSignal (notificationId : SeLe4n.ObjId) (badge : SeLe4n.Badge) : 
 -- is defined in `IPC/Operations/SchedulerLemmas.lean` (downstream of this
 -- file), where it can use `ensureRunnable_mem_self`.
 
-/-- Wait on a notification: consume pending badge or block the caller.
+/-- Park a waiter on a notification: consume the pending badge or block the
+caller, recording it as the queue's new tail.  The queue links are
+`linkNtfnWaiter`'s; `notificationWait` runs the two.
 
 WS-G7/F-P11: Duplicate-wait check uses O(1) TCB ipcState lookup instead of
 O(n) list membership scan. If the waiter's ipcState is already
 `.blockedOnNotification notificationId`, the thread is already waiting and
 `alreadyWaiting` is returned.
 
-WS-G7/F-P11: Waiter is prepended (`waiter :: waitingThreads`) instead of
-appended (`waitingThreads ++ [waiter]`), reducing enqueue from O(n) to O(1).
-FIFO ordering is not required by the seL4 notification spec — any waiter may
-be woken on signal. -/
-def notificationWait
+WS-ZA ZA4.4: the waiter joins the back of the queue (seL4's `tcbEPAppend`),
+linked through its own TCB: its predecessor link names the old tail, and the old
+tail's successor link names it.  Enqueue is O(1); a signal wakes the head, so
+waiters are woken first in first out. -/
+def notificationWaitPark
     (notificationId : SeLe4n.ObjId)
     (waiter : SeLe4n.ThreadId) : Kernel (Option SeLe4n.Badge) :=
   fun st =>
@@ -8181,7 +8649,7 @@ def notificationWait
         match ntfn.pendingBadge with
         | some badge =>
             let ntfn' : Notification :=
-              { state := .idle, waitingThreads := SeLe4n.NoDupList.empty, hasPendingBadge := false, pendingWord := SeLe4n.Badge.zero,
+              { state := .idle, hasPendingBadge := false, pendingWord := SeLe4n.Badge.zero,
                 boundTCB := ntfn.boundTCB }
             match storeObject notificationId (.notification ntfn') st with
             | .error e => .error e
@@ -8190,64 +8658,106 @@ def notificationWait
                 | .error e => .error e
                 | .ok st'' => .ok (some badge, st'')
         | none =>
-            -- WS-G7/F-P11/WS-RC R4.C: O(1) duplicate check via TCB ipcState
-            -- (fast-path) PLUS structural duplicate guarantee via
-            -- `NoDupList.consWithGuard?`. The TCB-state check fires first
-            -- (cheaper, fail-fast on the common case); the consWithGuard?
-            -- discharge is the type-level invariant carrier that makes the
-            -- Nodup property structural rather than upstream-convention.
+            -- WS-G7/F-P11: O(1) duplicate check via TCB ipcState.  A thread
+            -- already blocked on this notification is in its queue.
             match lookupTcb st waiter with
             | none => .error .objectNotFound
             | some tcb =>
                 if tcb.ipcState = .blockedOnNotification notificationId then
                   .error .alreadyWaiting
                 else
-                  match ntfn.waitingThreads.consWithGuard? waiter with
-                  | none =>
-                      -- WS-RC R4.C: structurally unreachable under
-                      -- `notificationWaiterConsistent` because the TCB
-                      -- ipcState check above implies non-membership, but
-                      -- preserved as defence-in-depth — if a future
-                      -- refactor weakens the invariant chain, this branch
-                      -- still fails closed with the explicit error code.
-                      .error .alreadyWaiting
-                  | some wt' =>
-                      let ntfn' : Notification := {
-                        state := .waiting
-                        waitingThreads := wt'
-                        hasPendingBadge := false, pendingWord := SeLe4n.Badge.zero
-                        boundTCB := ntfn.boundTCB
-                      }
-                      match storeObject notificationId (.notification ntfn') st with
+                  match storeObject notificationId
+                      (.notification (ntfn.withWaiterAppended waiter)) st with
+                  | .error e => .error e
+                  | .ok ((), st1) =>
+                      -- WS-L1/L1-C: Use _fromTcb — storeObject at notificationId
+                      -- does not modify waiter's TCB, so tcb is still valid in st1
+                      --
+                      -- WS-RR RR3.5: clear `pendingMessage` **atomically** with the
+                      -- block, exactly as `endpointReceiveDual`'s block path does
+                      -- (PR #873 round 11).  A waiter that already collected a
+                      -- message stays `.ready` holding it -- `stageDeliveredMessage`
+                      -- reads it at the delivering syscall's boundary and does not
+                      -- clear it -- so parking it without the clear carried that
+                      -- consumed message into `.blockedOnNotification`, leaving its
+                      -- body readable on a parked thread and making
+                      -- `blockedThreadsPendingMessageConsistent` (a conjunct of
+                      -- `ipcInvariantFull`) FALSE in a reachable state: receive a
+                      -- message, then Wait on an idle notification.
+                      --
+                      -- Nothing owes the parked waiter that payload: the wake
+                      -- (`notificationSignal`) overwrites `pendingMessage` with the
+                      -- badge message it delivers, so the cleared field is dead
+                      -- from the block to the wake.
+                      match storeTcbIpcStateAndMessage_fromTcb st1 waiter tcb
+                          (.blockedOnNotification notificationId) none with
                       | .error e => .error e
-                      | .ok ((), st') =>
-                          -- WS-L1/L1-C: Use _fromTcb — storeObject at notificationId
-                          -- does not modify waiter's TCB, so tcb is still valid in st'
-                          --
-                          -- WS-RR RR3.5: clear `pendingMessage` **atomically** with the
-                          -- block, exactly as `endpointReceiveDual`'s block path does
-                          -- (PR #873 round 11).  A waiter that already collected a
-                          -- message stays `.ready` holding it -- `stageDeliveredMessage`
-                          -- reads it at the delivering syscall's boundary and does not
-                          -- clear it -- so parking it without the clear carried that
-                          -- consumed message into `.blockedOnNotification`, leaving its
-                          -- body readable on a parked thread and making
-                          -- `blockedThreadsPendingMessageConsistent` (a conjunct of
-                          -- `ipcInvariantFull`) FALSE in a reachable state: receive a
-                          -- message, then Wait on an idle notification.  The invariant
-                          -- was previously threaded as a post-state hypothesis on every
-                          -- `notificationWait` bundle, which is what hid it.
-                          --
-                          -- Nothing owes the parked waiter that payload: the wake
-                          -- (`notificationSignal`) overwrites `pendingMessage` with the
-                          -- badge message it delivers, so the cleared field is dead
-                          -- from the block to the wake.
-                          match storeTcbIpcStateAndMessage_fromTcb st' waiter tcb
-                              (.blockedOnNotification notificationId) none with
-                          | .error e => .error e
-                          | .ok st'' => .ok (none, removeRunnable st'' waiter)
+                      | .ok st2 => .ok (none, removeRunnable st2 waiter)
     | some _ => .error .invalidCapability
     | none => .error .objectNotFound
+
+/-- WS-ZA ZA4.4: link a parked waiter into its notification's queue behind the
+old tail (seL4's `tcbEPAppend`).  The waiter's own links are written after the
+park wrote its state, so the record the park read cannot overwrite them; the old
+tail's successor link then points at the waiter.  No tail, no relink: the waiter
+is the queue's head, which the park already recorded in the notification. -/
+def linkNtfnWaiter (st : SystemState) (waiter : SeLe4n.ThreadId)
+    (tail : Option SeLe4n.ThreadId) : Except KernelError SystemState :=
+  match storeTcbNtfnLinks st waiter tail none with
+  | .error e => .error e
+  | .ok st3 => relinkNtfnNext st3 tail (some waiter)
+
+/-- WS-ZA ZA4.4: the TCB a blocking wait relinks besides the caller — the queue's
+old tail, whose successor link it points at the caller.  None when the wait
+consumes a pending badge (no block) or the queue is empty. -/
+def notificationWaitTail? (st : SystemState) (notificationId : SeLe4n.ObjId) :
+    Option SeLe4n.ThreadId :=
+  match st.getNotification? notificationId with
+  | some ntfn =>
+      match ntfn.pendingBadge with
+      | some _ => none
+      | none => ntfn.waitTail
+  | none => none
+
+/-- WS-SM SM6.B.1: the waiter a cross-core signal would wake — the head of the
+notification's waiter list, if any.  Pre-resolved from the pre-state so the
+signaller can assemble the `lockSet_notificationSignal` footprint (the waiter TCB
+write lock is present iff a waiter is blocked). -/
+def notificationSignalWaiter? (st : SystemState) (notificationId : SeLe4n.ObjId) :
+    Option SeLe4n.ThreadId :=
+  match st.getNotification? notificationId with
+  | some ntfn => ntfn.waitHead
+  | none => none
+
+/-- WS-ZA ZA4.4: the waiter that heads the queue once a signal has woken its
+head -- the head's successor, read from the head's own link, exactly as the
+signal reads it (`ntfnSuccessor?`).  The signal clears its predecessor link
+(`detachNtfnHead`), so it is a TCB the signal writes. -/
+def notificationSignalSuccessor? (st : SystemState) (notificationId : SeLe4n.ObjId) :
+    Option SeLe4n.ThreadId :=
+  match notificationSignalWaiter? st notificationId with
+  | some waiter => ntfnSuccessor? st waiter
+  | none => none
+
+/-- Block on a notification or consume its pending badge.
+
+The park (`notificationWaitPark`) does everything but the queue links: it
+consumes a pending badge, or records the waiter as the queue's tail in the
+notification and blocks it.  A waiter that blocked is then linked in behind the
+queue's old tail, read from the notification before the park
+(`notificationWaitTail?`). -/
+def notificationWait
+    (notificationId : SeLe4n.ObjId)
+    (waiter : SeLe4n.ThreadId) : Kernel (Option SeLe4n.Badge) :=
+  fun st =>
+    let tail := notificationWaitTail? st notificationId
+    match notificationWaitPark notificationId waiter st with
+    | .error e => .error e
+    | .ok (some badge, st') => .ok (some badge, st')
+    | .ok (none, st') =>
+        match linkNtfnWaiter st' waiter tail with
+        | .error e => .error e
+        | .ok st'' => .ok (none, st'')
 
 -- ============================================================================
 -- F-12: Supporting lemmas for notification waiting-list proofs (WS-D4)
@@ -8353,31 +8863,76 @@ theorem storeTcbIpcStateAndMessage_preserves_notification
   · rw [storeTcbIpcStateAndMessage_preserves_objects_ne st st' tid ipc msg notifId hEq hObjInv hStep]
     exact hNtfn
 
-/-- `removeRunnable` only modifies the scheduler; all objects are preserved. -/
-theorem removeRunnable_preserves_objects
-    (st : SystemState)
-    (tid : SeLe4n.ThreadId) :
-    (removeRunnable st tid).objects = st.objects := by
-  rfl
+/-- WS-ZA ZA4.5: `removeRunnable` writes the scheduler and the run-queue links
+of the dequeued thread and its neighbours, and nothing else. -/
+theorem removeRunnable_onlyObjectsSchedulerDiffer (st : SystemState) (tid : SeLe4n.ThreadId) :
+    SystemState.onlyObjectsSchedulerDiffer (removeRunnable st tid) st :=
+  SystemState.runDescheduleOnCore_onlyObjectsSchedulerDiffer st bootCoreId tid
 
-/-- WS-E3/H-09: `ensureRunnable` only modifies the scheduler; all objects are preserved. -/
-theorem ensureRunnable_preserves_objects
-    (st : SystemState)
-    (tid : SeLe4n.ThreadId) :
-    (ensureRunnable st tid).objects = st.objects := by
+/-- WS-ZA ZA4.5: `removeRunnable` changes no object off the run-queue links
+(was `removeRunnable_preserves_objects` while the links lived in the
+scheduler). -/
+theorem removeRunnable_objectsAgreeOffRunLinks (st : SystemState) (tid : SeLe4n.ThreadId) :
+    SystemState.objectsAgreeOffRunLinks (removeRunnable st tid) st :=
+  SystemState.runDescheduleOnCore_objectsAgreeOffRunLinks st bootCoreId tid
+
+theorem removeRunnable_objects_invExt (st : SystemState) (tid : SeLe4n.ThreadId)
+    (hInv : st.objects.invExt) : (removeRunnable st tid).objects.invExt :=
+  SystemState.runDescheduleOnCore_objects_invExt st bootCoreId tid hInv
+
+/-- WS-ZA ZA4.5: what `removeRunnable` does to the scheduler. -/
+theorem removeRunnable_scheduler (st : SystemState) (tid : SeLe4n.ThreadId) :
+    (removeRunnable st tid).scheduler =
+      SchedulerState.markReschedulePendingOnCoreIf
+        (((st.scheduler.setRunQueueEndsOnCore bootCoreId (st.runRemoveEnds bootCoreId tid)).setRunQueueOnCore
+          bootCoreId ((st.scheduler.runQueueOnCore bootCoreId).remove tid)).setCurrentOnCore bootCoreId
+          (if st.scheduler.currentOnCore bootCoreId = some tid then none
+            else st.scheduler.currentOnCore bootCoreId))
+        bootCoreId (st.scheduler.currentOnCore bootCoreId == some tid) :=
+  SystemState.runDescheduleOnCore_scheduler st bootCoreId tid
+
+/-- WS-ZA ZA4.5: `ensureRunnable` writes the scheduler and the run-queue links
+of the threads it touches, and nothing else. -/
+theorem ensureRunnable_onlyObjectsSchedulerDiffer (st : SystemState) (tid : SeLe4n.ThreadId) :
+    SystemState.onlyObjectsSchedulerDiffer (ensureRunnable st tid) st := by
   unfold ensureRunnable
   split
-  · rfl
-  · split <;> rfl
+  · exact .refl _
+  · split
+    · split
+      · exact .withScheduler (SystemState.runEnqueueAdmitted_onlyObjectsSchedulerDiffer _ _ _ _) _
+      · exact .refl _
+    · exact .refl _
+
+/-- WS-ZA ZA4.5: `ensureRunnable` changes no object off the run-queue links
+(was `ensureRunnable_preserves_objects` while the links lived in the scheduler). -/
+theorem ensureRunnable_objectsAgreeOffRunLinks (st : SystemState) (tid : SeLe4n.ThreadId) :
+    SystemState.objectsAgreeOffRunLinks (ensureRunnable st tid) st := by
+  unfold ensureRunnable
+  split
+  · exact .refl _
+  · split
+    · split
+      · exact SystemState.runEnqueueAdmitted_objectsAgreeOffRunLinks _ _ _ _
+      · exact .refl _
+    · exact .refl _
+
+theorem ensureRunnable_objects_invExt (st : SystemState) (tid : SeLe4n.ThreadId)
+    (hInv : st.objects.invExt) : (ensureRunnable st tid).objects.invExt := by
+  unfold ensureRunnable
+  split
+  · exact hInv
+  · split
+    · split
+      · exact SystemState.runEnqueueAdmitted_objects_invExt _ _ _ _ hInv
+      · exact hInv
+    · exact hInv
 
 /-- TPI-D1: ensureRunnable preserves objectIndexSet (only modifies scheduler). -/
 theorem ensureRunnable_preserves_objectIndexSet
     (st : SystemState) (tid : SeLe4n.ThreadId) :
     (ensureRunnable st tid).objectIndexSet = st.objectIndexSet := by
-  unfold ensureRunnable
-  split
-  · rfl
-  · split <;> rfl
+  rw [ensureRunnable_onlyObjectsSchedulerDiffer st tid]
 
 /-- TPI-D1: ensureRunnable preserves objectIndexSetComplete. -/
 theorem ensureRunnable_preserves_objectIndexSetComplete
@@ -8387,7 +8942,7 @@ theorem ensureRunnable_preserves_objectIndexSetComplete
   intro oid hNe
   rw [ensureRunnable_preserves_objectIndexSet st tid]
   apply hComplete
-  rwa [ensureRunnable_preserves_objects st tid] at hNe
+  exact fun e => hNe ((ensureRunnable_objectsAgreeOffRunLinks st tid).get_none_iff.mpr e)
 
 /-- TPI-D1: ensureRunnable preserves objectIndexSet.table.invExt. -/
 theorem ensureRunnable_preserves_objectIndexSet_invExt
@@ -8540,41 +9095,59 @@ theorem storeTcbIpcState_notification_backward
     st.objects[oid]? = some (.notification ntfn) :=
   modifyTcb_notification_backward oid ntfn hObjInv hStep hNtfn
 
-/-- WS-G7/F-P11: Double-wait is rejected: if the waiter's TCB ipcState is
-already `.blockedOnNotification notifId`, `notificationWait` returns
-`alreadyWaiting`. Uses O(1) TCB lookup instead of O(n) list membership. -/
-theorem notificationWait_error_alreadyWaiting
-    (waiter : SeLe4n.ThreadId)
-    (notifId : SeLe4n.ObjId)
-    (st : SystemState)
-    (ntfn : Notification)
-    (tcb : TCB)
-    (hObj : st.objects[notifId]? = some (.notification ntfn))
-    (hNoBadge : ntfn.pendingBadge = none)
-    (hTcb : lookupTcb st waiter = some tcb)
-    (hBlocked : tcb.ipcState = .blockedOnNotification notifId) :
-    notificationWait notifId waiter st = .error .alreadyWaiting := by
-  unfold notificationWait SystemState.getObject?
-  simp [hObj, hNoBadge, hTcb, hBlocked]
+/-- WS-ZA ZA4.4: the park's writes are `storeObject`s and a scheduler update, so
+the object table stays well formed. -/
+theorem notificationWaitPark_preserves_objects_invExt {notifId : SeLe4n.ObjId}
+    {waiter : SeLe4n.ThreadId} {st st' : SystemState} {r : Option SeLe4n.Badge}
+    (hObjInv : st.objects.invExt)
+    (h : notificationWaitPark notifId waiter st = .ok (r, st')) : st'.objects.invExt := by
+  unfold notificationWaitPark at h
+  split at h
+  · split at h
+    · dsimp only at h
+      split at h
+      · cases h
+      · next st1 h1 =>
+        have hI1 := storeObject_preserves_objects_invExt _ _ _ _ hObjInv h1
+        split at h
+        · cases h
+        · next st2 h2 => cases h; exact modifyTcb_preserves_objects_invExt hI1 h2
+    · split at h
+      · cases h
+      · split at h
+        · cases h
+        · split at h
+          · cases h
+          · next st1 h1 =>
+            have hI1 := storeObject_preserves_objects_invExt _ _ _ _ hObjInv h1
+            split at h
+            · cases h
+            · next st2 h2 =>
+              cases h
+              unfold storeTcbIpcStateAndMessage_fromTcb at h2
+              split at h2
+              · cases h2
+              · next st3 h3 =>
+                cases h2
+                exact removeRunnable_objects_invExt _ _
+                  (storeObject_preserves_objects_invExt st1 st2 _ _ hI1 h3)
+  · cases h
+  · cases h
 
 /-- Decomposition: on the badge-consumed path, the post-state notification
-has an empty waiting list.
-
-WS-RC R4.C: the conclusion references `.val` (the underlying `List
-ThreadId`) because the field type is `NoDupList ThreadId`.  Equivalently,
-`ntfn'.waitingThreads = SeLe4n.NoDupList.empty`. -/
-theorem notificationWait_badge_path_notification
+has an empty wait queue. -/
+theorem notificationWaitPark_badge_path_notification
     (st st' : SystemState)
     (notifId : SeLe4n.ObjId)
     (waiter : SeLe4n.ThreadId)
     (badge : SeLe4n.Badge)
     (hObjInv : st.objects.invExt)
-    (hStep : notificationWait notifId waiter st = .ok (some badge, st')) :
+    (hStep : notificationWaitPark notifId waiter st = .ok (some badge, st')) :
     ∃ ntfn', st'.objects[notifId]? = some (.notification ntfn') ∧
-      ntfn'.waitingThreads.val = [] := by
+      ntfn'.waitHead = none := by
   -- The proof reasons about the object store directly, so the kind-agnostic
   -- accessor the transition now reads through is unfolded once, here.
-  unfold notificationWait SystemState.getObject? at hStep
+  unfold notificationWaitPark SystemState.getObject? at hStep
   cases hObj : st.objects[notifId]? with
   | none => simp [hObj] at hStep
   | some obj =>
@@ -8586,40 +9159,19 @@ theorem notificationWait_badge_path_notification
       cases hBadge : ntfn.pendingBadge with
       | none =>
         simp only [hBadge] at hStep
-        -- WS-G7: lookupTcb match
+        -- Every committed block path answers `none`, never a badge.
         cases hLookup : lookupTcb st waiter with
         | none => simp [hLookup] at hStep
         | some tcb =>
           simp only [hLookup] at hStep
           split at hStep
           · simp at hStep
-          · -- WS-RC R4.C: also case-split on consWithGuard?
-            cases hCons : ntfn.waitingThreads.consWithGuard? waiter with
-            | none => simp [hCons] at hStep
-            | some wt' =>
-              simp only [hCons] at hStep
-              revert hStep
-              cases hStore : storeObject notifId _ st with
-              | error e => simp
-              | ok pair =>
-                simp only []
-                intro hStep
-                -- WS-L1: rewrite _fromTcb back to original for proof compatibility
-                -- (WS-RR RR3.5: the block store now clears `pendingMessage`, so the
-                -- bridge is `storeTcbIpcStateAndMessage_fromTcb_eq`).
-                have hLookup' := lookupTcb_preserved_by_storeObject_notification hLookup hObj hObjInv hStore
-                rw [storeTcbIpcStateAndMessage_fromTcb_eq hLookup'] at hStep
-                revert hStep
-                cases hTcb : storeTcbIpcStateAndMessage pair.2 waiter _ none with
-                | error e => simp
-                | ok st2 =>
-                  simp only [Except.ok.injEq, Prod.mk.injEq]
-                  intro ⟨h, _⟩
-                  exact absurd h (by simp)
+          · split at hStep <;> (try split at hStep) <;> (try split at hStep) <;>
+              (try split at hStep) <;> simp at hStep
       | some b =>
         simp only [hBadge] at hStep
         let newNtfn : Notification :=
-          { state := .idle, waitingThreads := SeLe4n.NoDupList.empty, hasPendingBadge := false, pendingWord := SeLe4n.Badge.zero,
+          { state := .idle, hasPendingBadge := false, pendingWord := SeLe4n.Badge.zero,
             boundTCB := ntfn.boundTCB }
         revert hStep
         cases hStore : storeObject notifId (.notification newNtfn) st with
@@ -8643,25 +9195,20 @@ theorem notificationWait_badge_path_notification
               storeTcbIpcState_preserves_notification pair.2 st2 waiter .ready notifId newNtfn hNtfnStored hPairObjInv hTcb
             exact ⟨newNtfn, hNtfnPreserved, rfl⟩
 
-/-- WS-G7/F-P11/WS-RC R4.C: Decomposition: on the wait path, the post-state
-notification has the waiter prepended.  The waiter's TCB existed and was
-not already blocked on this notification.
-
-WS-RC R4.C: the conclusion references `.val` (the underlying `List
-ThreadId`) because the field type is now `NoDupList ThreadId`.  The
-prepend witness is derived from `NoDupList.consWithGuard?_eq_some_iff`. -/
-theorem notificationWait_wait_path_notification
+/-- WS-G7/F-P11, WS-ZA ZA4.4: Decomposition: on the wait path, the post-state
+notification has the waiter appended at the back of its queue. -/
+theorem notificationWaitPark_wait_path_notification
     (st st' : SystemState)
     (notifId : SeLe4n.ObjId)
     (waiter : SeLe4n.ThreadId)
     (hObjInv : st.objects.invExt)
-    (hStep : notificationWait notifId waiter st = .ok (none, st')) :
+    (hStep : notificationWaitPark notifId waiter st = .ok (none, st')) :
     ∃ ntfn ntfn',
       st.objects[notifId]? = some (.notification ntfn) ∧
       ntfn.pendingBadge = none ∧
       st'.objects[notifId]? = some (.notification ntfn') ∧
-      ntfn'.waitingThreads.val = waiter :: ntfn.waitingThreads.val := by
-  unfold notificationWait SystemState.getObject? at hStep
+      ntfn' = ntfn.withWaiterAppended waiter := by
+  unfold notificationWaitPark SystemState.getObject? at hStep
   cases hObj : st.objects[notifId]? with
   | none => simp [hObj] at hStep
   | some obj =>
@@ -8673,70 +9220,441 @@ theorem notificationWait_wait_path_notification
       cases hBadge : ntfn.pendingBadge with
       | some b =>
         simp only [hBadge] at hStep
-        revert hStep
-        cases hStore : storeObject notifId (.notification
-            { state := .idle, waitingThreads := SeLe4n.NoDupList.empty,
-              hasPendingBadge := false, pendingWord := SeLe4n.Badge.zero, boundTCB := ntfn.boundTCB }) st with
-        | error e => simp
-        | ok pair =>
-          simp only []
-          intro hStep
-          revert hStep
-          cases hTcb : storeTcbIpcState pair.2 waiter .ready with
-          | error e => simp
-          | ok st2 =>
-            simp only [Except.ok.injEq, Prod.mk.injEq]
-            intro ⟨h, _⟩
-            exact absurd h (by simp)
+        split at hStep
+        · simp at hStep
+        · split at hStep <;> simp at hStep
       | none =>
         simp only [hBadge] at hStep
-        -- WS-G7: match on lookupTcb
         cases hLookup : lookupTcb st waiter with
         | none => simp [hLookup] at hStep
         | some tcb =>
           simp only [hLookup] at hStep
-          -- ipcState check
           by_cases hBlocked : tcb.ipcState = .blockedOnNotification notifId
           · simp [hBlocked] at hStep
           · simp only [hBlocked, ite_false] at hStep
-            -- WS-RC R4.C: structural consWithGuard? case-split
-            cases hCons : ntfn.waitingThreads.consWithGuard? waiter with
-            | none => simp [hCons] at hStep
-            | some wt' =>
-              simp only [hCons] at hStep
-              -- Recover wt'.val = waiter :: ntfn.waitingThreads.val from the
-              -- structural smart-constructor equation.
-              have hConsEq : wt'.val = waiter :: ntfn.waitingThreads.val :=
-                ((SeLe4n.NoDupList.consWithGuard?_eq_some_iff waiter
-                  ntfn.waitingThreads wt').mp hCons).2
-              let ntfn' : Notification :=
-                { state := .waiting, waitingThreads := wt', hasPendingBadge := false, pendingWord := SeLe4n.Badge.zero,
-                  boundTCB := ntfn.boundTCB }
-              revert hStep
-              cases hStore : storeObject notifId (.notification ntfn') st with
-              | error e => simp
-              | ok pair =>
-                simp only []
-                intro hStep
-                -- WS-L1: rewrite _fromTcb back to original for proof compatibility
-                have hLookup' := lookupTcb_preserved_by_storeObject_notification hLookup hObj hObjInv hStore
-                rw [storeTcbIpcStateAndMessage_fromTcb_eq hLookup'] at hStep
-                revert hStep
-                cases hTcb : storeTcbIpcStateAndMessage pair.2 waiter (.blockedOnNotification notifId) none with
-                | error e => simp
-                | ok st2 =>
-                  simp only [Except.ok.injEq, Prod.mk.injEq]
-                  intro ⟨_, hStEq⟩
-                  have hRemObj : (removeRunnable st2 waiter).objects = st2.objects := rfl
-                  have hNtfnStored : pair.2.objects[notifId]? = some (.notification ntfn') :=
-                    storeObject_objects_eq st pair.2 notifId (.notification ntfn') hObjInv hStore
-                  have hPairObjInv : pair.2.objects.invExt := by
-                    unfold storeObject at hStore; cases hStore
-                    exact RHTable_insert_preserves_invExt _ _ _ hObjInv
-                  have hNtfnPreserved : st2.objects[notifId]? = some (.notification ntfn') :=
-                    storeTcbIpcStateAndMessage_preserves_notification pair.2 st2 waiter
-                      (.blockedOnNotification notifId) none notifId ntfn' hPairObjInv hNtfnStored hTcb
-                  refine ⟨ntfn, ntfn', rfl, hBadge, ?_, hConsEq⟩
-                  rw [← hStEq, hRemObj]
-                  exact hNtfnPreserved
+            refine ⟨ntfn, ntfn.withWaiterAppended waiter, rfl, hBadge, ?_, rfl⟩
+            split at hStep
+            · simp at hStep
+            · next st1 hStore =>
+              have hLookup' := lookupTcb_preserved_by_storeObject_notification hLookup hObj hObjInv hStore
+              rw [storeTcbIpcStateAndMessage_fromTcb_eq hLookup'] at hStep
+              have hInv1 := storeObject_preserves_objects_invExt st st1 _ _ hObjInv hStore
+              have hN1 := storeObject_objects_eq st st1 notifId _ hObjInv hStore
+              split at hStep
+              · simp at hStep
+              · next st2 hTcb =>
+                have hN2 := modifyTcb_preserves_notification notifId _ hInv1 hTcb hN1
+                simp only [Except.ok.injEq, Prod.mk.injEq] at hStep
+                rw [← hStep.2]
+                exact (removeRunnable_objectsAgreeOffRunLinks st2 waiter).get_notification_iff.mpr hN2
+
+/-- WS-ZA ZA4.4: a committed wait is a park that consumed a badge, or a park
+that blocked followed by the link-in. -/
+theorem notificationWait_ok_cases {notifId : SeLe4n.ObjId} {waiter : SeLe4n.ThreadId}
+    {st st' : SystemState} {r : Option SeLe4n.Badge}
+    (h : notificationWait notifId waiter st = .ok (r, st')) :
+    (∃ b, r = some b ∧ notificationWaitPark notifId waiter st = .ok (some b, st')) ∨
+    (r = none ∧ ∃ stP, notificationWaitPark notifId waiter st = .ok (none, stP) ∧
+      linkNtfnWaiter stP waiter (notificationWaitTail? st notifId) = .ok st') := by
+  unfold notificationWait at h
+  dsimp only at h
+  split at h
+  · cases h
+  · next b stP hP =>
+    cases h; exact Or.inl ⟨b, rfl, hP⟩
+  · next stP hP =>
+    split at h
+    · cases h
+    · next st'' hL => cases h; exact Or.inr ⟨rfl, stP, hP, hL⟩
+
+/-- WS-ZA ZA4.4: the link-in is a write of the waiter's links followed by an
+optional write of the old tail's successor link. -/
+theorem linkNtfnWaiter_ok_cases {st st' : SystemState} {waiter : SeLe4n.ThreadId}
+    {tail : Option SeLe4n.ThreadId} (h : linkNtfnWaiter st waiter tail = .ok st') :
+    ∃ st3, storeTcbNtfnLinks st waiter tail none = .ok st3 ∧
+      relinkNtfnNext st3 tail (some waiter) = .ok st' := by
+  unfold linkNtfnWaiter at h
+  split at h
+  · cases h
+  · next st3 h3 => exact ⟨st3, h3, h⟩
+
+/-- WS-ZA ZA4.4: the link-in writes TCBs only, so every notification survives. -/
+theorem linkNtfnWaiter_preserves_notification {st st' : SystemState}
+    {waiter : SeLe4n.ThreadId} {tail : Option SeLe4n.ThreadId} (oid : SeLe4n.ObjId)
+    (ntfn : Notification) (hObjInv : st.objects.invExt)
+    (h : linkNtfnWaiter st waiter tail = .ok st')
+    (hNtfn : st.objects[oid]? = some (.notification ntfn)) :
+    st'.objects[oid]? = some (.notification ntfn) := by
+  obtain ⟨st3, h3, h4⟩ := linkNtfnWaiter_ok_cases h
+  exact modifyTcbOpt_preserves_notification oid ntfn (modifyTcb_preserves_objects_invExt hObjInv h3)
+    h4 (modifyTcb_preserves_notification oid ntfn hObjInv h3 hNtfn)
+
+theorem linkNtfnWaiter_preserves_objects_invExt {st st' : SystemState}
+    {waiter : SeLe4n.ThreadId} {tail : Option SeLe4n.ThreadId} (hObjInv : st.objects.invExt)
+    (h : linkNtfnWaiter st waiter tail = .ok st') : st'.objects.invExt := by
+  obtain ⟨st3, h3, h4⟩ := linkNtfnWaiter_ok_cases h
+  exact modifyTcbOpt_preserves_objects_invExt (modifyTcb_preserves_objects_invExt hObjInv h3) h4
+
+theorem linkNtfnWaiter_scheduler_eq {st st' : SystemState}
+    {waiter : SeLe4n.ThreadId} {tail : Option SeLe4n.ThreadId}
+    (h : linkNtfnWaiter st waiter tail = .ok st') : st'.scheduler = st.scheduler := by
+  obtain ⟨st3, h3, h4⟩ := linkNtfnWaiter_ok_cases h
+  rw [modifyTcbOpt_scheduler_eq h4, modifyTcb_scheduler_eq h3]
+
+/-- WS-ZA ZA4.4: a TCB after a notification-link write was a TCB before it,
+with at most its notification-queue links rewritten. -/
+theorem modifyTcb_ntfnLinks_tcb_backward {st st' : SystemState} {tid : SeLe4n.ThreadId}
+    {f : TCB → TCB} (hf : ∀ t, tcbNtfnLinkRewrite (f t) t) (hObjInv : st.objects.invExt)
+    (h : modifyTcb st tid f = .ok st') (k : SeLe4n.ObjId) (tx : TCB)
+    (hx : st'.objects[k]? = some (.tcb tx)) :
+    ∃ ty, st.objects[k]? = some (.tcb ty) ∧ tcbNtfnLinkRewrite tx ty := by
+  obtain ⟨tcb, hLk, hS⟩ := modifyTcb_ok_decompose h
+  by_cases hk : k = tid.toObjId
+  · subst hk
+    rw [storeObject_objects_eq st st' _ _ hObjInv hS] at hx
+    cases hx
+    exact ⟨tcb, lookupTcb_some_objects st tid tcb hLk, hf tcb⟩
+  · rw [storeObject_objects_ne st st' tid.toObjId k _ hk hObjInv hS] at hx
+    exact ⟨tx, hx, tcbNtfnLinkRewrite.refl tx⟩
+
+/-- WS-ZA ZA4.4: and a TCB before it is a TCB after it. -/
+theorem modifyTcb_ntfnLinks_tcb_forward {st st' : SystemState} {tid : SeLe4n.ThreadId}
+    {f : TCB → TCB} (hf : ∀ t, tcbNtfnLinkRewrite (f t) t) (hObjInv : st.objects.invExt)
+    (h : modifyTcb st tid f = .ok st') (k : SeLe4n.ObjId) (ty : TCB)
+    (hy : st.objects[k]? = some (.tcb ty)) :
+    ∃ tx, st'.objects[k]? = some (.tcb tx) ∧ tcbNtfnLinkRewrite tx ty := by
+  obtain ⟨tcb, hLk, hS⟩ := modifyTcb_ok_decompose h
+  by_cases hk : k = tid.toObjId
+  · subst hk
+    rw [lookupTcb_some_objects st tid tcb hLk] at hy
+    cases hy
+    exact ⟨f _, storeObject_objects_eq st st' _ _ hObjInv hS, hf _⟩
+  · exact ⟨ty, by rw [storeObject_objects_ne st st' tid.toObjId k _ hk hObjInv hS]; exact hy,
+      tcbNtfnLinkRewrite.refl ty⟩
+
+/-- WS-ZA ZA4.4: a slot holding no TCB is untouched by a TCB field write. -/
+theorem modifyTcb_nonTcb_iff {st st' : SystemState} {tid : SeLe4n.ThreadId}
+    {f : TCB → TCB} (hObjInv : st.objects.invExt) (h : modifyTcb st tid f = .ok st')
+    (k : SeLe4n.ObjId) (o : KernelObject) (hNotT : ∀ t, o ≠ .tcb t) :
+    st'.objects[k]? = some o ↔ st.objects[k]? = some o := by
+  obtain ⟨tcb, hLk, hS⟩ := modifyTcb_ok_decompose h
+  by_cases hk : k = tid.toObjId
+  · subst hk
+    rw [storeObject_objects_eq st st' _ _ hObjInv hS, lookupTcb_some_objects st tid tcb hLk]
+    exact ⟨fun hx => absurd (Option.some.inj hx).symm (hNotT _),
+      fun hx => absurd (Option.some.inj hx).symm (hNotT _)⟩
+  · rw [storeObject_objects_ne st st' tid.toObjId k _ hk hObjInv hS]
+
+/-- WS-ZA ZA4.4: the link-in, slotwise — every TCB after it was a TCB before
+it up to its notification-queue links, and every other slot is untouched. -/
+theorem linkNtfnWaiter_tcb_backward {st st' : SystemState} {waiter : SeLe4n.ThreadId}
+    {tail : Option SeLe4n.ThreadId} (hObjInv : st.objects.invExt)
+    (h : linkNtfnWaiter st waiter tail = .ok st') (k : SeLe4n.ObjId) (tx : TCB)
+    (hx : st'.objects[k]? = some (.tcb tx)) :
+    ∃ ty, st.objects[k]? = some (.tcb ty) ∧ tcbNtfnLinkRewrite tx ty := by
+  obtain ⟨st3, h3, h4⟩ := linkNtfnWaiter_ok_cases h
+  have hI3 := modifyTcb_preserves_objects_invExt hObjInv h3
+  have hLinks : ∀ t : TCB, tcbNtfnLinkRewrite { t with
+      ntfnPrevCode := SeLe4n.ThreadId.optCode tail, ntfnNextCode := SeLe4n.ThreadId.optCode none } t :=
+    fun t => ⟨_, _, rfl⟩
+  have hBack3 : ∀ (k : SeLe4n.ObjId) (tz : TCB), st'.objects[k]? = some (.tcb tz) →
+      ∃ ty, st3.objects[k]? = some (.tcb ty) ∧ tcbNtfnLinkRewrite tz ty := by
+    intro k tz hz
+    rcases modifyTcbOpt_ok_cases h4 with ⟨_, rfl⟩ | ⟨t, _, h4⟩
+    · exact ⟨tz, hz, tcbNtfnLinkRewrite.refl tz⟩
+    · exact modifyTcb_ntfnLinks_tcb_backward (fun t => ⟨t.ntfnPrevCode, _, rfl⟩) hI3 h4 k tz hz
+  obtain ⟨t3, h3k, r3⟩ := hBack3 k tx hx
+  obtain ⟨ty, hyk, ry⟩ := modifyTcb_ntfnLinks_tcb_backward hLinks hObjInv h3 k t3 h3k
+  exact ⟨ty, hyk, r3.trans ry⟩
+
+theorem linkNtfnWaiter_tcb_forward {st st' : SystemState} {waiter : SeLe4n.ThreadId}
+    {tail : Option SeLe4n.ThreadId} (hObjInv : st.objects.invExt)
+    (h : linkNtfnWaiter st waiter tail = .ok st') (k : SeLe4n.ObjId) (ty : TCB)
+    (hy : st.objects[k]? = some (.tcb ty)) :
+    ∃ tx, st'.objects[k]? = some (.tcb tx) ∧ tcbNtfnLinkRewrite tx ty := by
+  obtain ⟨st3, h3, h4⟩ := linkNtfnWaiter_ok_cases h
+  have hI3 := modifyTcb_preserves_objects_invExt hObjInv h3
+  obtain ⟨t3, h3k, r3⟩ := modifyTcb_ntfnLinks_tcb_forward (fun t => ⟨_, _, rfl⟩) hObjInv h3 k ty hy
+  rcases modifyTcbOpt_ok_cases h4 with ⟨_, rfl⟩ | ⟨t, _, h4⟩
+  · exact ⟨t3, h3k, r3⟩
+  · obtain ⟨tx, hxk, rx⟩ :=
+      modifyTcb_ntfnLinks_tcb_forward (fun t => ⟨t.ntfnPrevCode, _, rfl⟩) hI3 h4 k t3 h3k
+    exact ⟨tx, hxk, rx.trans r3⟩
+
+theorem linkNtfnWaiter_nonTcb_iff {st st' : SystemState} {waiter : SeLe4n.ThreadId}
+    {tail : Option SeLe4n.ThreadId} (hObjInv : st.objects.invExt)
+    (h : linkNtfnWaiter st waiter tail = .ok st') (k : SeLe4n.ObjId) (o : KernelObject)
+    (hNotT : ∀ t, o ≠ .tcb t) :
+    st'.objects[k]? = some o ↔ st.objects[k]? = some o := by
+  obtain ⟨st3, h3, h4⟩ := linkNtfnWaiter_ok_cases h
+  have hI3 := modifyTcb_preserves_objects_invExt hObjInv h3
+  refine Iff.trans ?_ (modifyTcb_nonTcb_iff hObjInv h3 k o hNotT)
+  rcases modifyTcbOpt_ok_cases h4 with ⟨_, rfl⟩ | ⟨t, _, h4⟩
+  · exact Iff.rfl
+  · exact modifyTcb_nonTcb_iff hI3 h4 k o hNotT
+
+/-- WS-ZA ZA4.4: a committed `modifyTcb` read off by key: the thread's slot
+holds `f` of the TCB that was there, and every other slot is unchanged. -/
+theorem modifyTcb_objects {st st' : SystemState} {tid : SeLe4n.ThreadId} {f : TCB → TCB}
+    (hObjInv : st.objects.invExt) (h : modifyTcb st tid f = .ok st') :
+    ∃ tcb, lookupTcb st tid = some tcb ∧ st.objects[tid.toObjId]? = some (.tcb tcb) ∧
+      st'.objects[tid.toObjId]? = some (.tcb (f tcb)) ∧
+      ∀ x, x ≠ tid.toObjId → st'.objects[x]? = st.objects[x]? := by
+  obtain ⟨tcb, hLk, hS⟩ := modifyTcb_ok_decompose h
+  exact ⟨tcb, hLk, lookupTcb_some_objects st tid tcb hLk,
+    storeObject_objects_eq st st' tid.toObjId _ hObjInv hS,
+    fun x hx => storeObject_objects_ne st st' tid.toObjId x _ hx hObjInv hS⟩
+
+/-- WS-ZA ZA4.4: the link-in read off by key: the waiter's links name the old
+tail and nothing, the old tail's successor link names the waiter, and no other
+slot changes. -/
+theorem linkNtfnWaiter_objects {st st' : SystemState} {waiter : SeLe4n.ThreadId}
+    {tail : Option SeLe4n.ThreadId} (hObjInv : st.objects.invExt)
+    (h : linkNtfnWaiter st waiter tail = .ok st')
+    (hNe : ∀ t, tail = some t → t ≠ waiter) :
+    (∃ tw, st.objects[waiter.toObjId]? = some (.tcb tw) ∧
+      st'.objects[waiter.toObjId]? = some (.tcb { tw with
+        ntfnPrevCode := SeLe4n.ThreadId.optCode tail,
+        ntfnNextCode := SeLe4n.ThreadId.optCode none })) ∧
+    (∀ t, tail = some t → ∃ tt, st.objects[t.toObjId]? = some (.tcb tt) ∧
+      st'.objects[t.toObjId]? = some (.tcb { tt with
+        ntfnNextCode := SeLe4n.ThreadId.optCode (some waiter) })) ∧
+    (∀ x, x ≠ waiter.toObjId → (∀ t, tail = some t → x ≠ t.toObjId) →
+      st'.objects[x]? = st.objects[x]?) := by
+  obtain ⟨st3, h3, hR⟩ := linkNtfnWaiter_ok_cases h
+  unfold storeTcbNtfnLinks at h3
+  obtain ⟨tw, _, hW0, hW3, hO3⟩ := modifyTcb_objects hObjInv h3
+  have hInv3 := modifyTcb_preserves_objects_invExt hObjInv h3
+  cases tail with
+  | none =>
+    simp only [relinkNtfnNext, modifyTcbOpt, Except.ok.injEq] at hR
+    subst hR
+    refine ⟨⟨tw, hW0, hW3⟩, ?_, fun x hx _ => hO3 x hx⟩
+    intro t ht; cases ht
+  | some t =>
+    simp only [relinkNtfnNext, modifyTcbOpt] at hR
+    obtain ⟨tt, _, hT3, hT', hO'⟩ := modifyTcb_objects hInv3 hR
+    have htw : t.toObjId ≠ waiter.toObjId := fun e =>
+      hNe t rfl (SeLe4n.ThreadId.toObjId_injective _ _ e)
+    have hT0 : st.objects[t.toObjId]? = some (.tcb tt) := by rw [← hO3 _ htw]; exact hT3
+    refine ⟨⟨tw, hW0, by rw [hO' _ (Ne.symm htw)]; exact hW3⟩, fun t' ht' => ?_,
+      fun x hx hxt => ?_⟩
+    · cases ht'; exact ⟨tt, hT0, hT'⟩
+    · rw [hO' x (hxt t rfl), hO3 x hx]
+
+/-- WS-ZA ZA4.4: a park that blocked, read off by key: the notification records
+the waiter as its tail, the waiter is blocked on it with no message, and no
+other slot changes. -/
+theorem notificationWaitPark_block_objects {st st' : SystemState} {nid : SeLe4n.ObjId}
+    {waiter : SeLe4n.ThreadId} (hObjInv : st.objects.invExt)
+    (h : notificationWaitPark nid waiter st = .ok (none, st')) :
+    ∃ ntfn tcb, st.objects[nid]? = some (.notification ntfn) ∧ ntfn.pendingBadge = none ∧
+      lookupTcb st waiter = some tcb ∧
+      tcb.ipcState ≠ .blockedOnNotification nid ∧
+      st'.objects[nid]? = some (.notification (ntfn.withWaiterAppended waiter)) ∧
+      (∃ t', st'.objects[waiter.toObjId]? = some (.tcb t') ∧
+        t'.withoutRunLinks = ({ tcb with
+          ipcState := .blockedOnNotification nid, pendingMessage := none } : TCB).withoutRunLinks) ∧
+      (∀ x, x ≠ nid → x ≠ waiter.toObjId →
+        (st'.objects[x]?).map KernelObject.withoutRunLinks =
+          (st.objects[x]?).map KernelObject.withoutRunLinks) := by
+  unfold notificationWaitPark SystemState.getObject? at h
+  cases hObj : st.objects[nid]? with
+  | none => simp [hObj] at h
+  | some obj =>
+    cases obj with
+    | tcb _ | cnode _ | endpoint _ | vspaceRoot _ | untyped _
+    | schedContext _ | reply _ | frame _ | pageTable _ => simp [hObj] at h
+    | notification ntfn =>
+      simp only [hObj] at h
+      cases hBadge : ntfn.pendingBadge with
+      | some b =>
+        simp only [hBadge] at h
+        split at h
+        · simp at h
+        · split at h <;> simp at h
+      | none =>
+        simp only [hBadge] at h
+        cases hLookup : lookupTcb st waiter with
+        | none => simp [hLookup] at h
+        | some tcb =>
+          simp only [hLookup] at h
+          by_cases hBlocked : tcb.ipcState = .blockedOnNotification nid
+          · simp [hBlocked] at h
+          · simp only [hBlocked, ite_false] at h
+            split at h
+            · simp at h
+            · next st1 hStore =>
+              have hLookup' := lookupTcb_preserved_by_storeObject_notification
+                hLookup hObj hObjInv hStore
+              rw [storeTcbIpcStateAndMessage_fromTcb_eq hLookup'] at h
+              have hInv1 := storeObject_preserves_objects_invExt st st1 _ _ hObjInv hStore
+              have hN1 := storeObject_objects_eq st st1 nid _ hObjInv hStore
+              have hW0 := lookupTcb_some_objects st waiter tcb hLookup
+              have hNW : nid ≠ waiter.toObjId := by intro e; rw [e, hW0] at hObj; cases hObj
+              split at h
+              · simp at h
+              · next st2 hTcb =>
+                simp only [Except.ok.injEq, Prod.mk.injEq] at h
+                obtain ⟨_, hEq⟩ := h; subst hEq
+                unfold storeTcbIpcStateAndMessage at hTcb
+                obtain ⟨tcb', hLk2, _, hW2, hO2⟩ := modifyTcb_objects hInv1 hTcb
+                rw [hLookup'] at hLk2; cases hLk2
+                have hA := removeRunnable_objectsAgreeOffRunLinks st2 waiter
+                refine ⟨ntfn, tcb, rfl, hBadge, rfl, hBlocked, ?_, hA.get_tcb hW2,
+                  fun x hx hxw => ?_⟩
+                · exact hA.get_notification_iff.mpr (by rw [hO2 _ hNW]; exact hN1)
+                · rw [hA x, hO2 _ hxw, storeObject_objects_ne st st1 nid x _ hx hObjInv hStore]
+
+/-- WS-ZA ZA4.4: a park that consumed a badge, read off by key: the notification
+is rewritten idle with an empty queue, the waiter is made ready, and no other
+slot changes. -/
+theorem notificationWaitPark_badge_objects {st st' : SystemState} {nid : SeLe4n.ObjId}
+    {waiter : SeLe4n.ThreadId} {b : SeLe4n.Badge} (hObjInv : st.objects.invExt)
+    (h : notificationWaitPark nid waiter st = .ok (some b, st')) :
+    ∃ (ntfn ntfn' : Notification) (tcb : TCB) (st1 : SystemState),
+      st.objects[nid]? = some (.notification ntfn) ∧
+      ntfn.pendingBadge = some b ∧ ntfn'.waitHead = none ∧ ntfn'.waitTail = none ∧
+      st.objects[waiter.toObjId]? = some (.tcb tcb) ∧
+      st1.objects[nid]? = some (.notification ntfn') ∧
+      (∀ x, x ≠ nid → st1.objects[x]? = st.objects[x]?) ∧
+      st'.objects[waiter.toObjId]? = some (.tcb { tcb with ipcState := .ready }) ∧
+      (∀ x, x ≠ waiter.toObjId → st'.objects[x]? = st1.objects[x]?) := by
+  unfold notificationWaitPark SystemState.getObject? at h
+  cases hObj : st.objects[nid]? with
+  | none => simp [hObj] at h
+  | some obj =>
+    cases obj with
+    | tcb _ | cnode _ | endpoint _ | vspaceRoot _ | untyped _
+    | schedContext _ | reply _ | frame _ | pageTable _ => simp [hObj] at h
+    | notification ntfn =>
+      simp only [hObj] at h
+      cases hBadge : ntfn.pendingBadge with
+      | none =>
+        simp only [hBadge] at h
+        split at h
+        · simp at h
+        · split at h
+          · simp at h
+          · split at h
+            · simp at h
+            · split at h <;> simp at h
+      | some b' =>
+        simp only [hBadge] at h
+        split at h
+        · simp at h
+        · next st1 hStore =>
+          split at h
+          · simp at h
+          · next st2 hTcb =>
+            simp only [Except.ok.injEq, Prod.mk.injEq, Option.some.injEq] at h
+            obtain ⟨hb, hEq⟩ := h; subst hb; subst hEq
+            have hInv1 := storeObject_preserves_objects_invExt st st1 _ _ hObjInv hStore
+            have hN1 := storeObject_objects_eq st st1 nid _ hObjInv hStore
+            unfold storeTcbIpcState at hTcb
+            obtain ⟨tcb, _, hW1, hW2, hO2⟩ := modifyTcb_objects hInv1 hTcb
+            have hNW : nid ≠ waiter.toObjId := by intro e; rw [e, hW1] at hN1; cases hN1
+            have hW0 : st.objects[waiter.toObjId]? = some (.tcb tcb) := by
+              rw [← storeObject_objects_ne st st1 nid _ _ (Ne.symm hNW) hObjInv hStore]
+              exact hW1
+            let n' : Notification :=
+              { state := .idle, hasPendingBadge := false, pendingWord := SeLe4n.Badge.zero
+                boundTCB := ntfn.boundTCB }
+            exact ⟨ntfn, n', tcb, st1, rfl, hBadge, rfl, rfl, hW0, hN1,
+              fun x hx => storeObject_objects_ne st st1 nid x _ hx hObjInv hStore, hW2, hO2⟩
+
+/-- WS-ZA ZA4.4: on a blocking wait the tail the link-in reads is the
+notification's own. -/
+theorem notificationWaitTail?_of_objects {st : SystemState} {notifId : SeLe4n.ObjId}
+    {ntfn : Notification} (hObj : st.objects[notifId]? = some (.notification ntfn))
+    (hBadge : ntfn.pendingBadge = none) :
+    notificationWaitTail? st notifId = ntfn.waitTail := by
+  unfold notificationWaitTail?
+  rw [(SystemState.getNotification?_eq_some_iff st notifId ntfn).mpr hObj]
+  simp only [hBadge]
+
+/-- WS-SM SM6.B (lock-set / transition coherence): the waiter the lock-set
+pre-resolves (`notificationSignalWaiter?`, the notification's waiter-list head,
+used to build `lockSet_notificationSignalOnCore`) is **exactly** the thread the
+transition wakes (the queue head).  So the runtime acquires the waiter-TCB write
+lock on the very TCB the signal mutates — the footprint declaration and the
+operation agree. -/
+theorem notificationSignalWaiter?_eq_wake_head
+    (st : SystemState) (notificationId : SeLe4n.ObjId) (ntfn : Notification)
+    (waiter : SeLe4n.ThreadId)
+    (hObj : st.objects[notificationId]? = some (.notification ntfn))
+    (hWaiters : ntfn.waitHead = some waiter) :
+    notificationSignalWaiter? st notificationId = some waiter := by
+  have hObjN : st.getNotification? notificationId = some ntfn :=
+    (SystemState.getNotification?_eq_some_iff st notificationId ntfn).mpr hObj
+  unfold notificationSignalWaiter?
+  rw [hObjN]
+  exact hWaiters
+
+/-- WS-ZA ZA4.4: the successor a signal relinks is the woken head's own
+successor link. -/
+theorem notificationSignalSuccessor?_eq_wake
+    (st : SystemState) (notificationId : SeLe4n.ObjId) (ntfn : Notification)
+    (waiter : SeLe4n.ThreadId)
+    (hObj : st.objects[notificationId]? = some (.notification ntfn))
+    (hWaiters : ntfn.waitHead = some waiter) :
+    notificationSignalSuccessor? st notificationId = ntfnSuccessor? st waiter := by
+  unfold notificationSignalSuccessor?
+  rw [notificationSignalWaiter?_eq_wake_head st notificationId ntfn waiter hObj hWaiters]
+
+/-- WS-G7/F-P11: Double-wait is rejected: if the waiter's TCB ipcState is
+already `.blockedOnNotification notifId`, `notificationWait` returns
+`alreadyWaiting`. Uses O(1) TCB lookup instead of O(n) list membership. -/
+theorem notificationWait_error_alreadyWaiting
+    (waiter : SeLe4n.ThreadId)
+    (notifId : SeLe4n.ObjId)
+    (st : SystemState)
+    (ntfn : Notification)
+    (tcb : TCB)
+    (hObj : st.objects[notifId]? = some (.notification ntfn))
+    (hNoBadge : ntfn.pendingBadge = none)
+    (hTcb : lookupTcb st waiter = some tcb)
+    (hBlocked : tcb.ipcState = .blockedOnNotification notifId) :
+    notificationWait notifId waiter st = .error .alreadyWaiting := by
+  have hP : notificationWaitPark notifId waiter st = .error .alreadyWaiting := by
+    unfold notificationWaitPark SystemState.getObject?
+    simp [hObj, hNoBadge, hTcb, hBlocked]
+  unfold notificationWait
+  simp only [hP]
+
+/-- Decomposition: on the badge-consumed path, the post-state notification
+has an empty wait queue. -/
+theorem notificationWait_badge_path_notification
+    (st st' : SystemState)
+    (notifId : SeLe4n.ObjId)
+    (waiter : SeLe4n.ThreadId)
+    (badge : SeLe4n.Badge)
+    (hObjInv : st.objects.invExt)
+    (hStep : notificationWait notifId waiter st = .ok (some badge, st')) :
+    ∃ ntfn', st'.objects[notifId]? = some (.notification ntfn') ∧
+      ntfn'.waitHead = none := by
+  rcases notificationWait_ok_cases hStep with ⟨b, hb, hP⟩ | ⟨hr, _⟩
+  · cases hb
+    exact notificationWaitPark_badge_path_notification st st' notifId waiter badge hObjInv hP
+  · cases hr
+
+/-- WS-G7/F-P11, WS-ZA ZA4.4: Decomposition: on the wait path, the post-state
+notification has the waiter appended at the back of its queue. -/
+theorem notificationWait_wait_path_notification
+    (st st' : SystemState)
+    (notifId : SeLe4n.ObjId)
+    (waiter : SeLe4n.ThreadId)
+    (hObjInv : st.objects.invExt)
+    (hStep : notificationWait notifId waiter st = .ok (none, st')) :
+    ∃ ntfn ntfn',
+      st.objects[notifId]? = some (.notification ntfn) ∧
+      ntfn.pendingBadge = none ∧
+      st'.objects[notifId]? = some (.notification ntfn') ∧
+      ntfn' = ntfn.withWaiterAppended waiter := by
+  rcases notificationWait_ok_cases hStep with ⟨b, hb, _⟩ | ⟨_, stP, hP, hL⟩
+  · cases hb
+  · obtain ⟨ntfn, ntfn', h1, h2, h3, h4⟩ :=
+      notificationWaitPark_wait_path_notification st stP notifId waiter hObjInv hP
+    exact ⟨ntfn, ntfn', h1, h2, linkNtfnWaiter_preserves_notification notifId ntfn'
+      (notificationWaitPark_preserves_objects_invExt hObjInv hP) hL h3, h4⟩
 

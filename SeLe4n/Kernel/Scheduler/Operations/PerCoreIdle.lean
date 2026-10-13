@@ -90,12 +90,14 @@ theorem enqueueIdleThreadOnCore_preserves_runnableThreadsAreTCBsOnCore (st : Sys
     RunQueue.mem_insert] at htid
   by_cases hEq : tid = idleThreadId c
   · subst hEq
-    exact ⟨queuedIdleThread c, enqueueIdleThreadOnCore_getTcb?_self st c hInv⟩
+    obtain ⟨t, ht, _⟩ := enqueueIdleThreadOnCore_getTcb?_self st c hInv
+    exact ⟨t, ht⟩
   · -- `remove`-then-`insert`: a non-idle member came from the pre-remove queue.
     have hMemOld : tid ∈ st.scheduler.runQueueOnCore c :=
       ((RunQueue.mem_remove _ _ _).mp (htid.resolve_right hEq)).1
     obtain ⟨tcb, htcb⟩ := hRunnable tid ((RunQueue.mem_toList_iff_mem _ _).mpr hMemOld)
-    exact ⟨tcb, by rw [enqueueIdleThreadOnCore_getTcb?_ne st c tid hInv hEq]; exact htcb⟩
+    obtain ⟨t, ht, _⟩ := enqueueIdleThreadOnCore_getTcb?_ne_fwd st c tid hInv hEq htcb
+    exact ⟨t, ht⟩
 
 -- ============================================================================
 -- §1b  The conditional preservations (SM5.I consumption surface, continued)
@@ -128,8 +130,10 @@ theorem enqueueIdleThreadOnCore_preserves_currentThreadValidOnCore (st : SystemS
     obtain ⟨tcb, htcb⟩ := hVal
     by_cases hEq : t = idleThreadId c
     · subst hEq
-      exact ⟨queuedIdleThread c, enqueueIdleThreadOnCore_getTcb?_self st c hInv⟩
-    · exact ⟨tcb, by rw [enqueueIdleThreadOnCore_getTcb?_ne st c t hInv hEq]; exact htcb⟩
+      obtain ⟨t', ht', _⟩ := enqueueIdleThreadOnCore_getTcb?_self st c hInv
+      exact ⟨t', ht'⟩
+    · obtain ⟨t', ht', _⟩ := enqueueIdleThreadOnCore_getTcb?_ne_fwd st c t hInv hEq htcb
+      exact ⟨t', ht'⟩
 
 /-- WS-SM SM5.E.3 (preservation, the soundness-critical one): the enqueue
 preserves dequeue-on-dispatch consistency **provided the idle thread is not the
@@ -171,12 +175,26 @@ theorem enqueueIdleThreadOnCore_preserves_currentThreadInActiveDomainOnCore (st 
   | some t =>
     rw [hcur] at hDom hNotCur
     have hNe : t ≠ idleThreadId c := fun heq => hNotCur (congrArg some heq)
-    simp only [enqueueIdleThreadOnCore_getTcb?_ne st c t hInv hNe]
-    exact hDom
+    dsimp only at hDom ⊢
+    cases e1 : (enqueueIdleThreadOnCore st c).getTcb? t with
+    | none => trivial
+    | some t1 =>
+      obtain ⟨t2, e2, hw⟩ := enqueueIdleThreadOnCore_getTcb?_ne_back st c t hInv hNe e1
+      rw [e2] at hDom
+      show t1.domain = _
+      rw [TCB.proj_eq_of_withoutRunLinks_eq TCB.domain hw]
+      exact hDom
 
 -- ============================================================================
 -- §4  `chooseThreadOnCore_always_succeeds` (SM5.E.6)
 -- ============================================================================
+
+/-- WS-ZA ZA4.5: core `c`'s idle slot holds the idle TCB, up to its run-queue
+links — which record where on its queue the idle thread sits, and so differ
+between a placement on an empty queue and one behind other threads. -/
+def idleTcbResidentOnCore (st : SystemState) (c : CoreId) : Prop :=
+  ∃ t, st.getTcb? (idleThreadId c) = some t ∧
+    t.withoutRunLinks = (queuedIdleThread c).withoutRunLinks
 
 /-- WS-SM SM5.E.6 (plan §3.5.2): the SM5.E discharge predicate — core `c`'s
 idle thread is *available as an in-domain run-queue candidate*.
@@ -191,7 +209,7 @@ idle thread per (core, domain) to keep idle in-domain in every domain — out of
 v1.0.0 scope. -/
 def idleThreadEnqueuedOnCore (st : SystemState) (c : CoreId) : Prop :=
   idleThreadId c ∈ (st.scheduler.runQueueOnCore c).toList ∧
-  st.getTcb? (idleThreadId c) = some (queuedIdleThread c) ∧
+  idleTcbResidentOnCore st c ∧
   (queuedIdleThread c).domain = st.scheduler.activeDomainOnCore c
 
 /-- WS-SM SM5.E.6 (non-vacuity, the constructive discharge): on any state whose
@@ -222,9 +240,10 @@ established constructively by `enqueueIdleThreadOnCore`.) -/
 theorem chooseThreadOnCore_always_succeeds (st : SystemState) (c : CoreId)
     (hRunnable : runnableThreadsAreTCBsOnCore st c)
     (hIdle : idleThreadEnqueuedOnCore st c) :
-    ∃ tid, chooseThreadOnCore st c = .ok (some tid) :=
-  chooseThreadOnCore_some_of_eligible st c hRunnable
-    (idleThreadId c) (queuedIdleThread c) hIdle.1 hIdle.2.1 hIdle.2.2
+    ∃ tid, chooseThreadOnCore st c = .ok (some tid) := by
+  obtain ⟨hMem, ⟨t, ht, hw⟩, hDom⟩ := hIdle
+  exact chooseThreadOnCore_some_of_eligible st c hRunnable (idleThreadId c) t hMem ht
+    (by rw [TCB.proj_eq_of_withoutRunLinks_eq TCB.domain hw]; exact hDom)
 
 /-- WS-SM SM5.E.6 (non-vacuity, end-to-end): for any well-formed boot-domain
 state (object-store invariant, runnable-are-TCBs, active domain `⟨0⟩`), enqueuing core `c`'s idle thread makes `chooseThreadOnCore`
@@ -275,7 +294,7 @@ theorem bootFromPlatformCheckedWithIdleThreads_idleThreadEnqueuedOnCore
     idleThreadEnqueuedOnCore ist.state c := by
   obtain ⟨hMem, hObj, hDom⟩ :=
     SeLe4n.Platform.Boot.bootFromPlatformCheckedWithIdleThreads_idle_available config ist h c
-  refine ⟨hMem, ?_, ?_⟩
+  refine ⟨hMem, ⟨idleThreadQueuedAlone c, ?_, rfl⟩, ?_⟩
   · simp only [SystemState.getTcb?]
     rw [hObj]
   · rw [queuedIdleThread_domain, hDom]
@@ -370,13 +389,15 @@ The hypothesis `hIdleTcb` (core `c`'s idle slot holds the idle TCB, so we know
 its affinity) holds wherever idle threads are installed (after
 `enqueueIdleThreadOnCore c` / `bootFromPlatformWithIdleThreads`). -/
 theorem idleThread_core_locality (st : SystemState) (c c' : CoreId) (h : c ≠ c')
-    (hIdleTcb : st.getTcb? (idleThreadId c) = some (queuedIdleThread c))
+    (hIdleTcb : idleTcbResidentOnCore st c)
     (hAff : runQueueAffinityConsistentOnCore st c') :
     idleThreadId c ∉ (st.scheduler.runQueueOnCore c').toList := by
   intro hMem
-  have hAdmit : affinityAdmitsCore (queuedIdleThread c) c' = true :=
-    hAff (idleThreadId c) hMem (queuedIdleThread c) hIdleTcb
-  rw [affinityAdmitsCore_some (queuedIdleThread c) c' c (queuedIdleThread_cpuAffinity c)] at hAdmit
+  obtain ⟨t, ht, hw⟩ := hIdleTcb
+  have hAdmit : affinityAdmitsCore t c' = true := hAff (idleThreadId c) hMem t ht
+  rw [affinityAdmitsCore_some t c' c (by
+    rw [TCB.proj_eq_of_withoutRunLinks_eq TCB.cpuAffinity hw]
+    exact queuedIdleThread_cpuAffinity c)] at hAdmit
   exact h (beq_iff_eq.mp hAdmit)
 
 /-- WS-SM SM5.E.4 (operational companion): enqueuing core `c`'s idle thread onto
@@ -409,20 +430,24 @@ theorem enqueueIdleThreadOnCore_preserves_runQueueAffinityConsistentOnCore_self
     RunQueue.mem_insert] at htid
   by_cases hEq : tid = idleThreadId c
   · subst hEq
-    rw [enqueueIdleThreadOnCore_getTcb?_self st c hInv] at htcb
-    cases htcb
-    simp [affinityAdmitsCore, queuedIdleThread_cpuAffinity]
+    obtain ⟨t, ht, hw⟩ := enqueueIdleThreadOnCore_getTcb?_self st c hInv
+    rw [ht] at htcb
+    rw [← Option.some.inj htcb, affinityAdmitsCore_some t c c (by
+      rw [TCB.proj_eq_of_withoutRunLinks_eq TCB.cpuAffinity hw]
+      exact queuedIdleThread_cpuAffinity c)]
+    simp
   · have hMemOld : tid ∈ st.scheduler.runQueueOnCore c :=
       ((RunQueue.mem_remove _ _ _).mp (htid.resolve_right hEq)).1
-    rw [enqueueIdleThreadOnCore_getTcb?_ne st c tid hInv hEq] at htcb
-    exact hAff tid ((RunQueue.mem_toList_iff_mem _ _).mpr hMemOld) tcb htcb
+    obtain ⟨t', ht', hw⟩ := enqueueIdleThreadOnCore_getTcb?_ne_back st c tid hInv hEq htcb
+    have hA := hAff tid ((RunQueue.mem_toList_iff_mem _ _).mpr hMemOld) t' ht'
+    rwa [← TCB.proj_eq_of_withoutRunLinks_eq (fun u => affinityAdmitsCore u c) hw] at hA
 
 /-- WS-SM SM5.E.4 (`∀ c` aggregate, plan §3.5 form): core `c`'s idle thread is
 absent from *every other* core's run queue, simultaneously — the SMP locality
 statement.  Each core's queue is affinity-consistent (`hAff`), and each core's
 idle slot holds its idle TCB (`hIdle`). -/
 theorem idleThread_core_locality_forall (st : SystemState)
-    (hIdle : ∀ c, st.getTcb? (idleThreadId c) = some (queuedIdleThread c))
+    (hIdle : ∀ c, idleTcbResidentOnCore st c)
     (hAff : ∀ c, runQueueAffinityConsistentOnCore st c) :
     ∀ c c', c ≠ c' → idleThreadId c ∉ (st.scheduler.runQueueOnCore c').toList :=
   fun c c' h => idleThread_core_locality st c c' h (hIdle c) (hAff c')
@@ -507,12 +532,15 @@ thread as the selected candidate. -/
 theorem idleThread_no_starvation (st : SystemState) (c : CoreId)
     (hr : runnableThreadsAreTCBsOnCore st c)
     (hSel : chooseThreadOnCore st c = .ok (some (idleThreadId c)))
-    (hIdleTcb : st.getTcb? (idleThreadId c) = some (queuedIdleThread c)) :
+    (hIdleTcb : idleTcbResidentOnCore st c) :
     ∀ t ∈ (st.scheduler.runQueueOnCore c).maxPriorityBucket, ∀ tcb : TCB,
       st.getTcb? t = some tcb → tcb.domain = st.scheduler.activeDomainOnCore c →
         isBetterCandidate (queuedIdleThread c).priority (queuedIdleThread c).deadline
-          tcb.priority tcb.deadline = false :=
-  chooseThreadOnCore_selects_highest st c (idleThreadId c) (queuedIdleThread c) hr hSel hIdleTcb
+          tcb.priority tcb.deadline = false := by
+  obtain ⟨i, hi, hw⟩ := hIdleTcb
+  rw [← TCB.proj_eq_of_withoutRunLinks_eq TCB.priority hw,
+    ← TCB.proj_eq_of_withoutRunLinks_eq TCB.deadline hw]
+  exact chooseThreadOnCore_selects_highest st c (idleThreadId c) i hr hSel hi
 
 -- ============================================================================
 -- §8  Decidable companion + cross-core selection independence
@@ -528,7 +556,7 @@ decidable and concrete states can `decide` it.  It is the form the
 selection-success theorem actually needs (the selected-thread identity does not
 require pinning the full idle TCB). -/
 def idleAvailableOnCoreB (st : SystemState) (c : CoreId) : Bool :=
-  (st.scheduler.runQueueOnCore c).contains (idleThreadId c) &&
+  st.queuedOn c (idleThreadId c) &&
   (match st.getTcb? (idleThreadId c) with
    | some tcb => tcb.domain == st.scheduler.activeDomainOnCore c
    | none => false)
@@ -539,11 +567,11 @@ per-core selection returns `some`.  Discharges `chooseThreadOnCore_some_of_eligi
 with the *resolved* idle TCB (whatever it is) rather than `queuedIdleThread c`, so
 it needs no undecidable full-TCB equality. -/
 theorem chooseThreadOnCore_always_succeeds_of_idleAvailableB (st : SystemState) (c : CoreId)
-    (hRunnable : runnableThreadsAreTCBsOnCore st c)
+    (hRunnable : runnableThreadsAreTCBsOnCore st c) (hR : st.runQueueRefinedOnCore c)
     (hB : idleAvailableOnCoreB st c = true) :
     ∃ tid, chooseThreadOnCore st c = .ok (some tid) := by
   unfold idleAvailableOnCoreB at hB
-  rw [Bool.and_eq_true] at hB
+  rw [Bool.and_eq_true, hR.queuedOn] at hB
   obtain ⟨hMemB, hDomB⟩ := hB
   have hMem : idleThreadId c ∈ (st.scheduler.runQueueOnCore c).toList :=
     (RunQueue.mem_toList_iff_mem _ _).mpr (by rwa [RunQueue.mem_iff_contains])
@@ -559,13 +587,14 @@ implies its decidable companion `idleAvailableOnCoreB` — so any state satisfyi
 the (stronger, exact-TCB) `Prop` form can be `decide`d through the `Bool`
 companion. -/
 theorem idleThreadEnqueuedOnCore_idleAvailableOnCoreB (st : SystemState) (c : CoreId)
+    (hR : st.runQueueRefinedOnCore c)
     (h : idleThreadEnqueuedOnCore st c) : idleAvailableOnCoreB st c = true := by
-  obtain ⟨hMem, hTcb, hDom⟩ := h
+  obtain ⟨hMem, ⟨t, hTcb, hw⟩, hDom⟩ := h
   unfold idleAvailableOnCoreB
-  rw [Bool.and_eq_true]
+  rw [Bool.and_eq_true, hR.queuedOn]
   refine ⟨by rw [← RunQueue.mem_iff_contains]; exact (RunQueue.mem_toList_iff_mem _ _).mp hMem, ?_⟩
   rw [hTcb]
-  exact beq_iff_eq.mpr hDom
+  exact beq_iff_eq.mpr (by rw [TCB.proj_eq_of_withoutRunLinks_eq TCB.domain hw]; exact hDom)
 
 /-- WS-SM SM5.E (cross-core selection-frame, honest scope): enqueuing core `c`'s
 idle thread leaves a *different* core `c'`'s run queue and active domain — the

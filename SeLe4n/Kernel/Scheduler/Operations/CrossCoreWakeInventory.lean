@@ -151,7 +151,7 @@ def crossCoreWakeTheorems : List CrossCoreWakeTheorem :=
     -- ── SM5.C.1 enqueueRunnableOnCore (.enqueue) ──
     ccwt! "enqueueRunnableOnCore: the per-core make-runnable primitive"
       enqueueRunnableOnCore .enqueue,
-    ccwt! "enqueueRunnableOnCore_preserves_woken_thread_fields: only ipcState changes on the woken thread"
+    ccwt! "enqueueRunnableOnCore_preserves_woken_thread_fields: only ipcState and run-queue links change on the woken thread"
       enqueueRunnableOnCore_preserves_woken_thread_fields .enqueue,
     ccwt! "enqueueRunnableOnCore_preserves_objects_invExt: preserves object-store invariant"
       enqueueRunnableOnCore_preserves_objects_invExt .enqueue,
@@ -165,7 +165,7 @@ def crossCoreWakeTheorems : List CrossCoreWakeTheorem :=
       enqueueRunnableOnCore_runQueueOnCore_ne .enqueue,
     ccwt! "enqueueRunnableOnCore_currentOnCore: never writes any current slot"
       enqueueRunnableOnCore_currentOnCore .enqueue,
-    ccwt! "enqueueRunnableOnCore_getTcb?_ne: every other thread's TCB framed out (AK7-clean)"
+    ccwt! "enqueueRunnableOnCore_getTcb?_ne: every other thread's TCB framed out off run-queue links"
       enqueueRunnableOnCore_getTcb?_ne .enqueue,
     ccwt! "enqueueRunnableOnCore_getTcb?_isSome: preserves TCB-resolvability of any thread"
       enqueueRunnableOnCore_getTcb?_isSome .enqueue,

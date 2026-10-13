@@ -266,7 +266,7 @@ private def pip019_runQueueBucketMigration : IO Unit := do
     (runnable := [⟨1⟩])
   let st' := updatePipBoost st ⟨1⟩
   -- Thread 1 should still be in run queue (membership preserved)
-  expect "thread 1 still in run queue" (⟨1⟩ ∈ (st'.scheduler.runQueueOnCore bootCoreId))
+  expect "thread 1 still in run queue" (st'.queuedOn bootCoreId ⟨1⟩)
   -- Check pipBoost was set
   match st'.objects[(⟨1⟩ : ObjId)]? with
   | some (.tcb tcb) =>

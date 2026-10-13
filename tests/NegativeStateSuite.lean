@@ -14,6 +14,7 @@ import SeLe4n.Testing.Helpers
 import SeLe4n.Platform.Boot
 import SeLe4n.Platform.RPi5.Board
 import SeLe4n.Platform.RPi5.BootContract
+import SeLe4n.Testing.BootCoreOps
 
 set_option maxRecDepth 1024
 
@@ -117,7 +118,7 @@ private def baseState : SystemState :=
       ipcBuffer := (SeLe4n.VAddr.ofNat 12288)
       ipcState := .ready
     })
-    |>.withObject notificationId (.notification { state := .idle, waitingThreads := SeLe4n.NoDupList.empty, hasPendingBadge := false, pendingWord := SeLe4n.Badge.zero })
+    |>.withObject notificationId (.notification { state := .idle, hasPendingBadge := false, pendingWord := SeLe4n.Badge.zero })
     |>.withObject ⟨20⟩ (.vspaceRoot { asid := asidPrimary, mappings := {} })
     |>.withLifecycleObjectType endpointId .endpoint
     |>.withLifecycleObjectType cnodeId .cnode
@@ -183,7 +184,7 @@ private def corruptThreadQueueLinks
       .ok {
         st with
         objects := st.objects.insert tid.toObjId
-          (.tcb { tcb with queuePrev := prev, queuePPrev := pprev, queueNext := next })
+          (.tcb { tcb with queuePrevCode := SeLe4n.ThreadId.optCode prev, queuePPrevCode := QueuePPrev.optCode pprev, queueNextCode := SeLe4n.ThreadId.optCode next })
       }
   | _ => .error .objectNotFound
 
@@ -907,15 +908,16 @@ private def runDualQueueEndpointFifoNegativeChecks : IO Unit := do
       |>.withCurrent (some (SeLe4n.ThreadId.ofNat 7))
       |>.buildChecked)
   let (_, stPriorityScheduled) ← expectOkSt "schedule chooses highest-priority runnable"
-    (SeLe4n.Kernel.schedule schedPriorityState)
+    (bootSchedule schedPriorityState)
   if (stPriorityScheduled.scheduler.currentOnCore bootCoreId) = some (SeLe4n.ThreadId.ofNat 8) then
     IO.println "positive check passed [schedule priority order]: current = tid 8"
   else
     throw <| IO.userError "schedule priority order expected current = tid 8"
 
   -- WS-H12b: current=none so both threads can be in runnable; re-add thread 7
-  let crossDomainState : SystemState :=
-    { schedPriorityState with
+  -- (thread 7 is enqueued through the TCB links, so the live queue holds it too)
+  let crossDomainEnqueued : SystemState :=
+    ({ schedPriorityState with
       objects := schedPriorityState.objects.insert (SeLe4n.ThreadId.ofNat 7).toObjId (.tcb {
             tid := ⟨7⟩
             priority := ⟨80⟩
@@ -924,10 +926,12 @@ private def runDualQueueEndpointFifoNegativeChecks : IO Unit := do
             vspaceRoot := ⟨20⟩
             ipcBuffer := (SeLe4n.VAddr.ofNat 4096)
             ipcState := .ready
-          })
-      scheduler := ((schedPriorityState.scheduler.setRunQueueOnCore bootCoreId ((schedPriorityState.scheduler.runQueueOnCore bootCoreId).insert (SeLe4n.ThreadId.ofNat 7) ⟨80⟩)).setActiveDomainOnCore bootCoreId ⟨0⟩).setCurrentOnCore bootCoreId none }
+          }) } : SystemState).runEnqueueOnCore bootCoreId (SeLe4n.ThreadId.ofNat 7) ⟨80⟩
+  let crossDomainState : SystemState :=
+    { crossDomainEnqueued with
+      scheduler := (crossDomainEnqueued.scheduler.setActiveDomainOnCore bootCoreId ⟨0⟩).setCurrentOnCore bootCoreId none }
   let (_, stCrossDomainScheduled) ← expectOkSt "schedule filters runnable set to active domain"
-    (SeLe4n.Kernel.schedule crossDomainState)
+    (bootSchedule crossDomainState)
   if (stCrossDomainScheduled.scheduler.currentOnCore bootCoreId) = some (SeLe4n.ThreadId.ofNat 8) then
     IO.println "positive check passed [schedule domain filter]: active domain thread selected"
   else
@@ -936,7 +940,7 @@ private def runDualQueueEndpointFifoNegativeChecks : IO Unit := do
   let noActiveDomainRunnableState : SystemState :=
     { crossDomainState with scheduler := crossDomainState.scheduler.setActiveDomainOnCore bootCoreId ⟨2⟩ }
   let (_, stNoActiveDomainRunnable) ← expectOkSt "schedule returns idle when no active-domain runnable threads"
-    (SeLe4n.Kernel.schedule noActiveDomainRunnableState)
+    (bootSchedule noActiveDomainRunnableState)
   if (stNoActiveDomainRunnable.scheduler.currentOnCore bootCoreId) = none then
     IO.println "positive check passed [schedule domain isolation]: no cross-domain fallback"
   else
@@ -979,25 +983,21 @@ private def runDualQueueEndpointFifoNegativeChecks : IO Unit := do
       |>.buildChecked)
       |> fun st => { st with scheduler := st.scheduler.setActiveDomainOnCore bootCoreId ⟨1⟩ }
   let (_, stMixedDomainScheduled) ← expectOkSt "schedule ignores higher-priority cross-domain runnable"
-    (SeLe4n.Kernel.schedule mixedDomainFifoState)
+    (bootSchedule mixedDomainFifoState)
   if (stMixedDomainScheduled.scheduler.currentOnCore bootCoreId) = some (SeLe4n.ThreadId.ofNat 10) then
     IO.println "positive check passed [schedule mixed domain priority]: active-domain runnable wins"
   else
     throw <| IO.userError "schedule mixed domain priority expected current = tid 10"
 
   let (_, stMixedDomainScheduledFifo) ← expectOkSt "schedule keeps FIFO stability for equal prio/deadline in active domain"
-    (SeLe4n.Kernel.schedule {
-      mixedDomainFifoState with
-      objects := mixedDomainFifoState.objects.insert (SeLe4n.ThreadId.ofNat 10).toObjId (.tcb {
-            tid := ⟨10⟩
-            priority := ⟨20⟩
-            deadline := ⟨4⟩
-            domain := ⟨1⟩
-            cspaceRoot := cnodeId
-            vspaceRoot := ⟨20⟩
-            ipcBuffer := (SeLe4n.VAddr.ofNat 12288)
-            ipcState := .ready
-          }) })
+    -- Only the deadline moves: the TCB keeps its run-queue links (WS-ZA ZA4.5),
+    -- so the thread stays where the builder queued it.
+    (bootSchedule (match mixedDomainFifoState.getTcb? (SeLe4n.ThreadId.ofNat 10) with
+      | some tcb10 => {
+          mixedDomainFifoState with
+          objects := mixedDomainFifoState.objects.insert (SeLe4n.ThreadId.ofNat 10).toObjId
+            (.tcb { tcb10 with deadline := ⟨4⟩ }) }
+      | none => mixedDomainFifoState))
   if (stMixedDomainScheduledFifo.scheduler.currentOnCore bootCoreId) = some (SeLe4n.ThreadId.ofNat 10) then
     IO.println "positive check passed [schedule mixed domain FIFO]: earlier queue element retained"
   else
@@ -1011,7 +1011,7 @@ private def runDualQueueEndpointFifoNegativeChecks : IO Unit := do
           { domain := ⟨1⟩, length := 2 }
         ] } }
   let (_, stScheduleDomainSwitched) ← expectOkSt "scheduleDomain switches domain and reschedules"
-    (SeLe4n.Kernel.scheduleDomain scheduleDomainSwitchState)
+    (bootScheduleDomain scheduleDomainSwitchState)
   if (stScheduleDomainSwitched.scheduler.activeDomainOnCore bootCoreId) = ⟨1⟩ then
     IO.println "positive check passed [scheduleDomain active domain advance]: activeDomain = 1"
   else
@@ -1030,11 +1030,14 @@ private def runDualQueueEndpointFifoNegativeChecks : IO Unit := do
     throw <| IO.userError "scheduleDomain reschedule expected current = tid 10"
 
   -- WS-H12b: dequeue-on-dispatch — current thread must NOT be in runnable queue
+  -- (thread 10 is dequeued through the TCB links, so the live queue drops it too)
+  let scheduleDomainDequeued : SystemState :=
+    scheduleDomainSwitchState.runRemoveOnCore bootCoreId (SeLe4n.ThreadId.ofNat 10)
   let scheduleDomainTickOnlyState : SystemState :=
-    { scheduleDomainSwitchState with
-      scheduler := ((((scheduleDomainSwitchState.scheduler.setActiveDomainOnCore bootCoreId ⟨1⟩).setCurrentOnCore bootCoreId (some (SeLe4n.ThreadId.ofNat 10))).setRunQueueOnCore bootCoreId ((scheduleDomainSwitchState.scheduler.runQueueOnCore bootCoreId).remove (SeLe4n.ThreadId.ofNat 10))).setDomainTimeRemainingOnCore bootCoreId 3).setDomainScheduleIndexOnCore bootCoreId 1 }
+    { scheduleDomainDequeued with
+      scheduler := (((scheduleDomainDequeued.scheduler.setActiveDomainOnCore bootCoreId ⟨1⟩).setCurrentOnCore bootCoreId (some (SeLe4n.ThreadId.ofNat 10))).setDomainTimeRemainingOnCore bootCoreId 3).setDomainScheduleIndexOnCore bootCoreId 1 }
   let (_, stScheduleDomainTickOnly) ← expectOkSt "scheduleDomain decrements budget without switching"
-    (SeLe4n.Kernel.scheduleDomain scheduleDomainTickOnlyState)
+    (bootScheduleDomain scheduleDomainTickOnlyState)
   if (stScheduleDomainTickOnly.scheduler.activeDomainOnCore bootCoreId) = ⟨1⟩ ∧ (stScheduleDomainTickOnly.scheduler.domainScheduleIndexOnCore bootCoreId) = 1 then
     IO.println "positive check passed [scheduleDomain no switch]: domain/index unchanged"
   else
@@ -1050,12 +1053,12 @@ private def runDualQueueEndpointFifoNegativeChecks : IO Unit := do
 
   -- F-03 fix: Yield test — verify which thread is current after rotation, not just queue membership
   let (_, stYielded) ← expectOkSt "yield rotates current within runnable queue"
-    (SeLe4n.Kernel.handleYield schedPriorityState)
+    (bootYield schedPriorityState)
   -- WS-H12b: after yield, schedule dequeues the dispatched thread (8) from runnable
-  if stYielded.scheduler.runnable = [SeLe4n.ThreadId.ofNat 7] then
+  if (stYielded.runQueueWalk bootCoreId) = [SeLe4n.ThreadId.ofNat 7] then
     IO.println "positive check passed [yield runnable rotation]: [7] (8 dequeued as current)"
   else
-    throw <| IO.userError s!"yield runnable rotation expected [7], got {toString stYielded.scheduler.runnable}"
+    throw <| IO.userError s!"yield runnable rotation expected [7], got {toString (stYielded.runQueueWalk bootCoreId)}"
 
   -- Verify which thread is current after yield (should be tid 8, the highest priority)
   if (stYielded.scheduler.currentOnCore bootCoreId) = some (SeLe4n.ThreadId.ofNat 8) then
@@ -1070,6 +1073,14 @@ private def runDualQueueEndpointFifoNegativeChecks : IO Unit := do
       |>.withRunnable [SeLe4n.ThreadId.ofNat 77]
       |>.withCurrent none
       |>.build)
+  -- WS-ZA ZA4.5: a run-queue place is fields of the thread's TCB, so a thread
+  -- with no TCB cannot be queued at all: the kernel's enqueue refuses it and the
+  -- queue the scheduler walks stays empty.  The schedule checks below then pin
+  -- that a core whose queue holds nothing dispatchable comes back idle.
+  if (malformedSched.runQueueWalk bootCoreId).isEmpty then
+    IO.println "positive check passed [an entry with no TCB takes no run-queue place]"
+  else
+    throw <| IO.userError s!"an entry with no TCB was queued: {toString (malformedSched.runQueueWalk bootCoreId)}"
   -- WS-SM SM8.B (PR #861 review round 15): these two used to assert
   -- `.schedulerInvariantViolation`.  They now assert the **stronger** property
   -- that replaced it: a run-queue entry whose object is not a TCB is *skipped*,
@@ -1088,7 +1099,7 @@ private def runDualQueueEndpointFifoNegativeChecks : IO Unit := do
   -- be run through `assertStateInvariantsFor` — it would fail on the very
   -- `runnableThreadsAreTCBs` breach the case constructs.
   let (_, stMalformed) ← expectOkVal "schedule skips a malformed runnable target"
-    (SeLe4n.Kernel.schedule malformedSched)
+    (bootSchedule malformedSched)
   -- The load-bearing part: skipping is not silently dispatching it.  There is no
   -- TCB to switch to, so the core must come back idle rather than current on 77.
   if (stMalformed.scheduler.currentOnCore bootCoreId) = none then
@@ -1100,7 +1111,7 @@ private def runDualQueueEndpointFifoNegativeChecks : IO Unit := do
     { malformedSched with scheduler := malformedSched.scheduler.setActiveDomainOnCore bootCoreId ⟨1⟩ }
   let (_, stMalformedOff) ← expectOkVal
     "schedule skips a malformed runnable target in a non-active domain too"
-    (SeLe4n.Kernel.schedule malformedOffDomain)
+    (bootSchedule malformedOffDomain)
   if (stMalformedOff.scheduler.currentOnCore bootCoreId) = none then
     IO.println "positive check passed [off-domain malformed entry skipped, core left idle]"
   else
@@ -1654,6 +1665,29 @@ private def runEndpointQueueHeadDisjointChecks : IO Unit := do
   let _ := @SeLe4n.Kernel.endpointQueueHeadDisjoint
   pure ()
 
+/-- PR #932 review: `buildValidated` refuses a supplied TCB that already claims
+a run-queue place, since the fold over `runnable` would skip or refuse its
+enqueue and leave the queue it names unbuilt.  Same fixture with the placement
+cleared builds; that keeps the token and breaks only the relation. -/
+private def runBuilderRunPlacementChecks : IO Unit := do
+  let expectBool (label : String) (actual expected : Bool) : IO Unit :=
+    if actual == expected then IO.println s!"positive check passed [{label}]"
+    else throw <| IO.userError s!"{label}: expected {expected}, got {actual}"
+  let tid := SeLe4n.ThreadId.ofNat 31
+  let tcbWith (code : Nat) : TCB :=
+    { tid := tid, priority := ⟨10⟩, domain := ⟨0⟩, cspaceRoot := ⟨0⟩, vspaceRoot := ⟨0⟩,
+      ipcBuffer := (SeLe4n.VAddr.ofNat 0), runCoreCode := code }
+  let fixture (code : Nat) : BootstrapBuilder :=
+    BootstrapBuilder.empty
+      |>.withObject tid.toObjId (.tcb (tcbWith code))
+      |>.withRunnable [tid]
+  expectBool "builder refuses a supplied TCB carrying run-queue placement"
+    (match (fixture 1).buildValidated with | .error _ => true | .ok _ => false) true
+  expectBool "the same fixture without placement builds and queues the thread"
+    (match (fixture 0).buildValidated with
+     | .ok st => st.runQueueWalk SeLe4n.Kernel.Concurrency.bootCoreId == [tid]
+     | .error _ => false) true
+
 private def runNegativeChecks : IO Unit := do
   runBaselineLookupNegativeChecks                       -- [was 248-262]
   runCspaceMutationAndRevokeNegativeChecks              -- [was 263-461; sections 2+3 combined for strictSeed/strictRootSlot reuse]
@@ -1664,6 +1698,7 @@ private def runNegativeChecks : IO Unit := do
   runDualQueuePPrevPairingChecks                        -- WS-RR RR8.3
   runDualQueueTailPairingChecks                         -- WS-RR RR8.4
   runEndpointQueueHeadDisjointChecks                    -- PR #897 review (v0.35.108)
+  runBuilderRunPlacementChecks                          -- PR #932 review
 
   -- ==========================================================================
   -- WS-D4 F-12: Double-wait prevention in notificationWait (was 1036-1043).
@@ -2359,13 +2394,13 @@ def runWSH16LifecycleChecks : IO Unit := do
       |>.withLifecycleObjectType h16CnodeId .cnode
       |>.build)
   expectErr "H16 lifecycleRetypeObject metadata mismatch"
-    (SeLe4n.Kernel.Internal.lifecycleRetypeObject h16AuthSlot h16TargetId (.notification { state := .idle, waitingThreads := SeLe4n.NoDupList.empty, hasPendingBadge := false, pendingWord := SeLe4n.Badge.zero }) h16MismatchState)
+    (SeLe4n.Kernel.Internal.lifecycleRetypeObject h16AuthSlot h16TargetId (.notification { state := .idle, hasPendingBadge := false, pendingWord := SeLe4n.Badge.zero }) h16MismatchState)
     .illegalState
 
   -- H16-NEG-03: lifecycleRetypeObject with insufficient authority (read-only cap) → illegalAuthority
   let h16ReadOnlySlot : SeLe4n.Kernel.CSpaceAddr := { cnode := h16CnodeId, slot := SeLe4n.Slot.ofNat 1 }
   expectErr "H16 lifecycleRetypeObject insufficient authority"
-    (SeLe4n.Kernel.Internal.lifecycleRetypeObject h16ReadOnlySlot h16TargetId (.notification { state := .idle, waitingThreads := SeLe4n.NoDupList.empty, hasPendingBadge := false, pendingWord := SeLe4n.Badge.zero }) h16State)
+    (SeLe4n.Kernel.Internal.lifecycleRetypeObject h16ReadOnlySlot h16TargetId (.notification { state := .idle, hasPendingBadge := false, pendingWord := SeLe4n.Badge.zero }) h16State)
     .illegalAuthority
 
   -- H16-NEG-04: lifecycleRetypeObject with bad authority CNode → objectNotFound
@@ -2510,7 +2545,7 @@ def runAN4A5LifecycleVisibilityChecks : IO Unit := do
   let (_, stInternal) ← expectOkState "AN4-A.5-01 Internal.lifecycleRetypeObject ok"
     (SeLe4n.Kernel.Internal.lifecycleRetypeObject a5AuthSlot a5RetypeTcbId a5NewObj a5State)
   expectCond "AN4-A.5-01" "Internal.lifecycleRetypeObject leaves dangling run-queue entry"
-    ((stInternal.scheduler.runQueueOnCore bootCoreId).flat.contains a5Tcb.tid)
+    ((stInternal.runQueueWalk bootCoreId).contains a5Tcb.tid)
 
   -- AN4-A.5-02: `lifecycleRetypeWithCleanup` runs the cleanup phase first, so
   -- the run-queue reference is purged. This is the exact difference the
@@ -2518,7 +2553,7 @@ def runAN4A5LifecycleVisibilityChecks : IO Unit := do
   let (_, stWrapped) ← expectOkState "AN4-A.5-02 lifecycleRetypeWithCleanup ok"
     (SeLe4n.Kernel.lifecycleRetypeWithCleanup a5AuthSlot a5RetypeTcbId a5NewObj a5State)
   expectCond "AN4-A.5-02" "lifecycleRetypeWithCleanup scrubs run-queue reference"
-    (!(stWrapped.scheduler.runQueueOnCore bootCoreId).flat.contains a5Tcb.tid)
+    (!(stWrapped.runQueueWalk bootCoreId).contains a5Tcb.tid)
 
   IO.println "all AN4-A.5 lifecycle visibility regression checks passed"
 
@@ -2801,7 +2836,7 @@ private def runWSKGLifecycleVSpaceChecks : IO Unit := do
     badge := none
   }
   expectErr "K-G-NEG-10 lifecycleRetypeDirect wrong authority"
-    (SeLe4n.Kernel.lifecycleRetypeDirect wrongAuthCap ⟨300⟩ (.notification { state := .idle, waitingThreads := SeLe4n.NoDupList.empty, hasPendingBadge := false, pendingWord := SeLe4n.Badge.zero }) retypeState)
+    (SeLe4n.Kernel.lifecycleRetypeDirect wrongAuthCap ⟨300⟩ (.notification { state := .idle, hasPendingBadge := false, pendingWord := SeLe4n.Badge.zero }) retypeState)
     .illegalAuthority
 
   -- K-G-NEG-11: decodeVSpaceMapArgs with insufficient msgRegs (< 4) → invalidMessageInfo
@@ -2986,7 +3021,7 @@ def runWSL4BlockedThreadChecks : IO Unit := do
   let blockedState : SystemState :=
     (BootstrapBuilder.empty
       |>.withObject epId (.endpoint { sendQ := {}, receiveQ := {} })
-      |>.withObject ntfnId (.notification { state := .idle, waitingThreads := SeLe4n.NoDupList.empty, hasPendingBadge := false, pendingWord := SeLe4n.Badge.zero })
+      |>.withObject ntfnId (.notification { state := .idle, hasPendingBadge := false, pendingWord := SeLe4n.Badge.zero })
       |>.withObject ⟨7⟩ (.tcb {
         tid := ⟨7⟩, priority := ⟨10⟩, domain := ⟨0⟩,
         cspaceRoot := ⟨10⟩, vspaceRoot := ⟨20⟩, ipcBuffer := (SeLe4n.VAddr.ofNat 4096),
@@ -3077,7 +3112,7 @@ def runWSM3CapTransferNegativeChecks : IO Unit := do
           depth := 4, guardWidth := 0, guardValue := 0, radixWidth := 4,
           slots := SeLe4n.UniqueSlotMap.ofListWF [(SeLe4n.Slot.ofNat 0, cap)]
         })
-      |>.withObject targetObj (.notification { state := .idle, waitingThreads := SeLe4n.NoDupList.empty, hasPendingBadge := false, pendingWord := SeLe4n.Badge.zero })
+      |>.withObject targetObj (.notification { state := .idle, hasPendingBadge := false, pendingWord := SeLe4n.Badge.zero })
       |>.buildChecked)
 
   -- ipcTransferSingleCap with scanLimit covering all 4 slots → should get .noSlot.
@@ -3155,7 +3190,7 @@ def runL13CapTransferShortCircuitChecks : IO Unit := do
     (BootstrapBuilder.empty
       |>.withObject receiverRoot (.tcb tcbObj)
       |>.withObject senderRoot (.cnode senderCNode)
-      |>.withObject targetObj (.notification { state := .idle, waitingThreads := SeLe4n.NoDupList.empty, hasPendingBadge := false, pendingWord := SeLe4n.Badge.zero })
+      |>.withObject targetObj (.notification { state := .idle, hasPendingBadge := false, pendingWord := SeLe4n.Badge.zero })
       |>.buildChecked)
 
   -- Distinct source slots: the transfer records its derivation edge against
@@ -3194,7 +3229,7 @@ def runL13CapTransferShortCircuitChecks : IO Unit := do
   let st1 :=
     (BootstrapBuilder.empty
       |>.withObject senderRoot (.cnode senderCNode)
-      |>.withObject targetObj (.notification { state := .idle, waitingThreads := SeLe4n.NoDupList.empty, hasPendingBadge := false, pendingWord := SeLe4n.Badge.zero })
+      |>.withObject targetObj (.notification { state := .idle, hasPendingBadge := false, pendingWord := SeLe4n.Badge.zero })
       |>.buildChecked)
 
   let result1 := SeLe4n.Kernel.ipcUnwrapCapsLoop #[TransferCap.fromNode cap 0] missingRoot
@@ -4164,7 +4199,7 @@ private def runX2RuntimeInvariantTests : IO Unit := do
       |>.withRunnable [SeLe4n.ThreadId.ofNat 77]
       |>.withCurrent none
       |>.build)
-  match SeLe4n.Kernel.scheduleChecked malformedSt with
+  match bootScheduleChecked malformedSt with
   | .error e =>
     throw <| IO.userError s!"scheduleChecked must skip a malformed runnable entry rather than fail, got {repr e}"
   | .ok (_, stChecked) =>
@@ -4174,12 +4209,15 @@ private def runX2RuntimeInvariantTests : IO Unit := do
     else
       throw <| IO.userError s!"scheduleChecked must not dispatch a malformed runnable entry, got current = {toString (stChecked.scheduler.currentOnCore bootCoreId)}"
 
-  -- X2-I: handleYieldChecked on default state (no current thread) returns invalidArgument
-  -- (not schedulerInvariantViolation — the saveOutgoingContextChecked guard passes
-  -- because current=none, but handleYield itself rejects the no-current-thread case)
-  expectErr "handleYieldChecked no current thread"
-    (SeLe4n.Kernel.handleYieldChecked (default : SystemState))
-    .invalidArgument
+  -- X2-I: the checked yield on default state (no current thread) is refused by
+  -- the yield itself, not as schedulerInvariantViolation — the
+  -- saveOutgoingContextChecked guard passes because current=none.  The live
+  -- per-core yield (`yieldOnCore`) refuses a core with no caller as
+  -- `.illegalState`; the single-core reference `handleYield` it replaced in
+  -- this suite reported `.invalidArgument`.
+  expectErr "yield checked, no current thread"
+    (bootYieldChecked (default : SystemState))
+    .illegalState
 
   -- ── WS-RR RR8.12 follow-on (`v0.35.192`): the other two X2-I wrappers ──
   --
@@ -4216,7 +4254,7 @@ private def runX2RuntimeInvariantTests : IO Unit := do
           SeLe4n.Kernel.Concurrency.bootCoreId x2Regs }
   let x2PcAfter : SystemState → Option Nat :=
     fun st => (st.getTcb? x2Tid).map (·.registerContext.pc.toNat)
-  match SeLe4n.Kernel.timerTickChecked x2Live with
+  match bootTimerTickChecked x2Live with
   | .error e =>
     throw <| IO.userError s!"timerTickChecked must succeed on a resolvable current thread, got {repr e}"
   | .ok (_, stChecked) =>
@@ -4224,7 +4262,7 @@ private def runX2RuntimeInvariantTests : IO Unit := do
       IO.println "positive check passed [timerTickChecked saves the outgoing context]"
     else
       throw <| IO.userError s!"timerTickChecked must save the outgoing context, got pc = {toString (x2PcAfter stChecked)}"
-  match SeLe4n.Kernel.timerTick x2Live with
+  match bootTimerTick x2Live with
   | .error e =>
     throw <| IO.userError s!"the CONTROL (bare timerTick) must succeed on the same state, got {repr e}"
   | .ok (_, stBare) =>
@@ -4244,9 +4282,9 @@ private def runX2RuntimeInvariantTests : IO Unit := do
       |>.withCurrent (some (SeLe4n.ThreadId.ofNat 77))
       |>.build)
   expectErr "switchDomainChecked refuses a dangling current thread"
-    (SeLe4n.Kernel.switchDomainChecked x2Dangling)
+    (bootSwitchDomainChecked x2Dangling)
     .schedulerInvariantViolation
-  match SeLe4n.Kernel.switchDomain x2Dangling with
+  match bootSwitchDomain x2Dangling with
   | .error e =>
     throw <| IO.userError s!"the CONTROL (bare switchDomain) must PROCEED on the dangling state — that is what the wrapper adds — got {repr e}"
   | .ok _ =>
@@ -4256,10 +4294,10 @@ private def runX2RuntimeInvariantTests : IO Unit := do
   -- same discriminant, so the guard adds nothing THERE.  Asserted rather than
   -- left implicit: it is why (1) had to measure the save instead.
   expectErr "timerTickChecked refuses a dangling current thread"
-    (SeLe4n.Kernel.timerTickChecked x2Dangling)
+    (bootTimerTickChecked x2Dangling)
     .schedulerInvariantViolation
   expectErr "…and so does the bare timerTick, with the same discriminant"
-    (SeLe4n.Kernel.timerTick x2Dangling)
+    (bootTimerTick x2Dangling)
     .schedulerInvariantViolation
 
   IO.println "all X2 runtime invariant tests passed"
@@ -4477,7 +4515,7 @@ private def r1EndpointRights : AccessRightSet :=
 private def r1BaseState : SystemState :=
   (BootstrapBuilder.empty
     |>.withObject r1EpId (.endpoint {})
-    |>.withObject r1TargetObj (.notification { state := .idle, waitingThreads := SeLe4n.NoDupList.empty, hasPendingBadge := false, pendingWord := SeLe4n.Badge.zero })
+    |>.withObject r1TargetObj (.notification { state := .idle, hasPendingBadge := false, pendingWord := SeLe4n.Badge.zero })
     |>.withObject r1CallerCNode (.cnode
         { depth := 4, guardWidth := 0, guardValue := 0, radixWidth := 4,
           slots := SeLe4n.UniqueSlotMap.ofListWF [((SeLe4n.Slot.ofNat 0), r1Cap)] })

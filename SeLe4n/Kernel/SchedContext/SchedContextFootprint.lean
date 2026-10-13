@@ -384,11 +384,16 @@ theorem schedContextBind_replenishQueueOnCore (st st' : SystemState)
                 -- flag) or nothing, so none moves a replenish queue — which is
                 -- what keeps this arm's segment EMPTY.
                 split
-                · simp only [SchedulerState.setRunQueueOnCore_replenishQueueOnCore,
+                · simp only [SystemState.runRequeueOnCore_scheduler,
+                    SchedulerState.setRunQueueOnCore_replenishQueueOnCore,
+                    SchedulerState.setRunQueueEndsOnCore_replenishQueueOnCore,
                     SystemState.updateTcb_scheduler, SystemState.rewriteObject_scheduler]
                 · split
-                  · simp only [SchedulerState.markReschedulePendingOnCore_replenishQueueOnCore,
-                      SchedulerState.setRunQueueOnCore_replenishQueueOnCore,
+                  · simp only [SystemState.markReschedulePendingOnCore,
+                      SchedulerState.markReschedulePendingOnCore_replenishQueueOnCore,
+                      SystemState.runEnqueueOnCore_scheduler]
+                    split <;> simp only [SchedulerState.setRunQueueOnCore_replenishQueueOnCore,
+                      SchedulerState.setRunQueueEndsOnCore_replenishQueueOnCore,
                       SystemState.updateTcb_scheduler, SystemState.rewriteObject_scheduler]
                   · simp only [SystemState.updateTcb_scheduler,
                       SystemState.rewriteObject_scheduler]
@@ -400,8 +405,8 @@ theorem schedContextBind_replenishQueueOnCore (st st' : SystemState)
 queue.**
 
 Its two halves are a priority rewrite with an optional run-queue re-bucket and a
-domain rewrite; a `rewriteObject` frames the scheduler outright and a
-`setRunQueueOnCore` frames every replenish queue.  What the arm *does* write is
+domain rewrite; a `rewriteObject` frames the scheduler outright and the re-bucket
+(`runRequeueOnCore`) writes run-queue state only.  What the arm *does* write is
 the purge one step earlier, which is what
 `schedContextConfigure_replenishQueueOnCore_ne_of_sc` below is stated over. -/
 theorem schedContextConfigureBoundPropagate_replenishQueueOnCore (stStored : SystemState)
@@ -416,7 +421,8 @@ theorem schedContextConfigureBoundPropagate_replenishQueueOnCore (stStored : Sys
   repeat' split
   all_goals
     simp [SystemState.rewriteObject_scheduler,
-      SchedulerState.setRunQueueOnCore_replenishQueueOnCore]
+      SchedulerState.setRunQueueOnCore_replenishQueueOnCore,
+      SchedulerState.setRunQueueEndsOnCore_replenishQueueOnCore]
 
 /-- **`v0.35.168`: a `.schedContextConfigure` writes exactly one replenish
 queue** — the SC's own home core's, where its purge lands.
@@ -511,11 +517,12 @@ theorem schedContextUnbind_replenishQueueOnCore_ne_of_tcb (st st' : SystemState)
     rw [← h.2, markKeyChangeFor_replenishQueueOnCore]
     dsimp only
     rw [SchedContextOps.purgeReplenishmentOnCore_replenishQueueOnCore_ne _ _ _ _ hne.symm,
+      SchedContextOps.schedContextUnbindQueueStage_replenishQueueOnCore,
       SystemState.updateTcb_scheduler, SystemState.rewriteObject_scheduler]
     dsimp only
     repeat' split
     all_goals
-      simp [SchedulerState.setRunQueueOnCore_replenishQueueOnCore,
+      simp [
         SchedulerState.setCurrentOnCore_replenishQueueOnCore]
 
 /-- **`v0.35.168`: ...and the live per-core arm writes the same one**, the

@@ -436,8 +436,8 @@ theorem dispatchWithCapChecked_coversWrites (ctx : LabelingContext)
       simp only at hDisp
       rw [hArgs] at hDisp
       simp only at hDisp
-      exact schedLockSet_lifecycleRetypeOnCore_coversWrites e cap args.targetObj _ st st' S hDisp
-        hSched
+      exact schedLockSet_lifecycleRetypeOnCore_coversWrites e cap args.targetObj _ st st' S
+        hObjInv hDisp hSched
   -- ---- `.notificationSignal` ----------------------------------------------
   case notificationSignal =>
     cases hT : cap.target <;> rw [hT] at hOps <;> simp only [Option.some.injEq, reduceCtorEq] at hOps
@@ -802,7 +802,7 @@ theorem syscallDispatchCrossCoreStep_coversWrites (ctx : LabelingContext) (e : C
         (Platform.FFI.writeFfiRegistersToTcb st tid syscallId x0 x1 x2 x3 x4 x5) :=
     queueHeadBlockedConsistent_updateTcb_of_ipcState_eq st tid _ hObjInv (fun _ => rfl) hHeads
   have hFillHeads : queueHeadBlockedConsistent stFilled :=
-    queueHeadBlockedConsistent_of_getElem_eq (fun oid => by rw [hFillObj]) hRegsHeads
+    queueHeadBlockedConsistent_of_readViewAgreement (.of_getElem_eq (fun oid => by rw [hFillObj])) hRegsHeads
   have hD := abiEntryPlan_dispatches ctx e syscallId x0 x1 x2 x3 x4 x5 ipcBufferAddr elr spsr
     spEl0 x30 st tid decoded stFilled hPlan
   cases hDisp : dispatchSyscallChecked ctx decoded tid e stFilled with

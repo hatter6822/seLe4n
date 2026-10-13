@@ -42,7 +42,9 @@ transition you actually called.
 `FrozenKernelObject` re-represents exactly two variants: `.cnode` (slots become
 a `CNodeRadix`) and `.vspaceRoot` (mappings become a `FrozenMap`).  The other six
 reuse the runtime types verbatim, so agreement on them is *equality*, with no
-observation to choose and therefore no field anyone can forget to include.  The
+observation to choose and therefore no field anyone can forget to include — save
+a TCB's run-queue links, which represent the live run queue and are compared as
+that queue (below).  The
 two re-represented variants are compared through their lookups, in both
 directions, so neither a missing entry nor an invented one passes.
 -/
@@ -77,7 +79,11 @@ def frozenVSpaceMappingsAgree (f : FrozenVSpaceRoot) (l : VSpaceRoot) : Bool :=
 agreement on the two re-represented ones; a kind mismatch is a disagreement. -/
 def frozenObjectAgrees (f : FrozenKernelObject) (l : KernelObject) : Bool :=
   match f, l with
-  | .tcb a,          .tcb b          => a == b
+  -- WS-ZA ZA4.5: a TCB is compared off its run-queue links.  The links are the
+  -- live run queue's representation — where on its core's queue the thread
+  -- sits — and the frozen surface represents its queue in `byPriority`
+  -- instead; `frozenStateAgrees` compares the two queues directly.
+  | .tcb a,          .tcb b          => a.withoutRunLinks == b.withoutRunLinks
   | .endpoint a,     .endpoint b     => a == b
   | .notification a, .notification b => a == b
   | .untyped a,      .untyped b      => a == b
@@ -139,9 +145,9 @@ def frozenStateAgrees (fs : FrozenSystemState) (ls : SystemState) : Bool :=
   -- -- the very paths the recorded divergences were on -- the ones this relation
   -- could not see.
   --
-  -- The subject is `byPriority`, because that is what *selection* reads:
-  -- `frozenChooseThread` folds over its buckets and the live `chooseThread` over
-  -- the same field, so two states whose buckets agree can select the same
+  -- The subject is the priority buckets, because that is what *selection* reads:
+  -- `frozenChooseThread` folds over its `byPriority` buckets and the live
+  -- `chooseThread` over the run queue's buckets (`atPriority`), so two states whose buckets agree can select the same
   -- threads.  `membership` is deliberately not compared -- a `FrozenSet` is a
   -- key-presence map with `Unit` values, so frozen membership cannot change at
   -- all, and `frozenSchedule`'s own docstring records it as a read-only record
@@ -149,14 +155,20 @@ def frozenStateAgrees (fs : FrozenSystemState) (ls : SystemState) : Bool :=
   -- would be requiring the representation to be something it is not; requiring
   -- the buckets to track it is requiring the frozen kernel to schedule the same
   -- threads, which is the claim that matters.
-  let lq := ls.scheduler.runQueueOnCore Concurrency.bootCoreId
+  --
+  -- WS-ZA ZA4.5: the live buckets are read off the boot core's run-queue links
+  -- (`bootRunQueueOrder`, `bootRunQueuePrio`), the same derivation `freeze`
+  -- takes them from; under the link agreement they are the queue's
+  -- (`freezeScheduler_byPriority_eq`).
+  let lorder := bootRunQueueOrder ls
+  let lb := SeLe4n.Kernel.RunQueue.byPriorityTableOf lorder (bootRunQueuePrio ls)
   let queueAgree :=
     -- Both directions over the union of bucket keys: a thread queued on one side
     -- only is a disagreement whichever side queues it, and an empty bucket on
     -- one side must face an empty or absent bucket on the other.
-    (lq.byPriority.toList.map Prod.fst
+    (lorder.map (bootRunQueuePrio ls)
         ++ fs.scheduler.byPriority.indexMap.toList.map Prod.fst).all (fun prio =>
-      (fs.scheduler.byPriority.get? prio).getD [] == (lq.byPriority[prio]?).getD [])
+      (fs.scheduler.byPriority.get? prio).getD [] == (lb.get? prio).getD [])
   objectsAgree && taintAgree && queueAgree
     && fs.scheduler.current == ls.scheduler.currentOnCore Concurrency.bootCoreId
     && fs.scheduler.activeDomain == ls.scheduler.activeDomainOnCore Concurrency.bootCoreId
@@ -278,12 +290,12 @@ shape being claimed rather than on whichever shape the fixture happened to hit.
 
 The list is the discriminating test each operation actually performs —
 `receiveQ.head`, `sendQ.head` plus the dequeued sender's `ipcState`,
-`pendingBadge`, `boundTCB` then `waitingThreads` — not a grouping chosen for the
+`pendingBadge`, `boundTCB` then `waitHead` — not a grouping chosen for the
 table. -/
 inductive FrozenOpBranch where
   /-- A signal delivered straight to the notification's bound TCB. -/
   | notificationSignalToBoundThread
-  /-- A signal delivered to an ordinary waiter popped from `waitingThreads`. -/
+  /-- A signal delivered to an ordinary waiter popped from the queue head. -/
   | notificationSignalToWaiter
   /-- A signal with no waiter and no bound thread: the badge is stored. -/
   | notificationSignalStoresBadge

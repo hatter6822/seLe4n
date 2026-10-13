@@ -26,11 +26,18 @@ open SeLe4n.Kernel.Concurrency (CoreId SgiKind)
 
 /-! ### Reading the key inputs off the two typed lookups -/
 
+/-- A TCB's key fields and its run-queue core: what its slot contributes to the
+key inputs (WS-ZA ZA4.5). -/
+def tcbKeyCore (t : TCB) :
+    (SeLe4n.Priority × SeLe4n.Deadline × SchedContextBinding × Option SeLe4n.Priority ×
+      SeLe4n.DomainId) × Nat :=
+  (tcbKeyFields t, t.runCoreCode)
+
 /-- **Equal key fields at every TCB and equal deadlines at every scheduling
 context are equal key inputs.**  Every object slot is some thread's and some
 context's slot, so the two typed readings decide what the slot contributes. -/
 theorem keyInputsEq_of_lookups {pre post : SystemState}
-    (hT : ∀ t, (post.getTcb? t).map tcbKeyFields = (pre.getTcb? t).map tcbKeyFields)
+    (hT : ∀ t, (post.getTcb? t).map tcbKeyCore = (pre.getTcb? t).map tcbKeyCore)
     (hS : ∀ s, (post.getSchedContext? s).map (·.deadline) =
       (pre.getSchedContext? s).map (·.deadline)) :
     keyInputsEq pre post := by
@@ -53,7 +60,7 @@ theorem keyInputsEq_of_lookups {pre post : SystemState}
     | none => rw [hq, hp] at hT' hS'; cases oq <;> simp_all [keyInputsOf]
     | some op =>
       rw [hq, hp] at hT' hS'
-      cases oq <;> cases op <;> simp_all [keyInputsOf, tcbKeyFields]
+      cases oq <;> cases op <;> simp_all [keyInputsOf, tcbKeyCore, tcbKeyFields]
 
 /-- Whole-lookup equalities, the form most frame lemmas state. -/
 theorem keyInputsEq_of_lookups_eq {pre post : SystemState}
@@ -72,6 +79,20 @@ theorem keyInputsEqExcept_storeObject_tcb {st st' : SystemState} {tid : SeLe4n.T
    fun sc h => (by rw [hPre] at h; cases h),
    fun sc h => (by rw [storeObject_objects_eq st st' _ _ hInv hStore] at h; cases h)⟩
 
+/-- A TCB stored over `tid`'s TCB with the same run-queue core moves no
+thread's run-queue core. -/
+theorem runCoresAgree_storeObject_tcb {st st' : SystemState} {tid : SeLe4n.ThreadId}
+    {t t' : TCB} (hInv : st.objects.invExt)
+    (hPre : st.objects[tid.toObjId]? = some (.tcb t))
+    (hStore : storeObject tid.toObjId (.tcb t') st = .ok ((), st'))
+    (hc : t'.runCoreCode = t.runCoreCode) :
+    SystemState.RunCoresAgree st' st := by
+  intro y
+  unfold SystemState.getTcb?
+  by_cases hy : y.toObjId = tid.toObjId
+  · rw [hy, storeObject_objects_eq st st' _ _ hInv hStore, hPre]; simp [hc]
+  · rw [storeObject_objects_ne st st' tid.toObjId y.toObjId _ hy hInv hStore]
+
 /-! ### The binding writers' pair of hooks -/
 
 /-- **Two key writes ended in their two hooks cover.**  A step that rebinds `a`
@@ -81,7 +102,7 @@ hook (the second hook moves no slot and no key, so `a`'s flags survive it). -/
 theorem stepCovers_markKeyChangeFrom_pair {e : CoreId} {pre m : SystemState}
     {a b : SeLe4n.ThreadId}
     (hKeys : ∀ t, t ≠ a → t ≠ b → schedKeyView m t = schedKeyView pre t)
-    (hSched : m.scheduler = pre.scheduler) :
+    (hSched : m.scheduler = pre.scheduler) (hRun : SystemState.RunCoresAgree m pre) :
     stepCovers e pre (markKeyChangeFrom pre (markKeyChangeFrom pre m a) b) := by
   refine ⟨reschedulePendingCovers_of_keyChangeFlagged (fun t => ?_)
     (fun c _ => Or.inr ⟨fun t ht => ?_, ?_⟩), fun c _ h => ?_⟩
@@ -90,13 +111,13 @@ theorem stepCovers_markKeyChangeFrom_pair {e : CoreId} {pre m : SystemState}
     by_cases ha : t = a
     · subst ha
       refine Or.inr (keyChangeFlagged_of_flagOnly (markKeyChangeFrom_flagged pre m t)
-        (fun c => ?_) (fun c => ?_) (fun t' => ?_)
+        (SystemState.RunCoresAgree.of_objects (markKeyChangeFrom_objects _ _ _))
+        (fun c => ?_) (fun t' => ?_)
         (fun c h => markKeyChangeFrom_reschedulePendingOnCore_mono _ _ _ _ h))
-      · simp only [markKeyChangeFrom_runQueueOnCore]
       · simp only [markKeyChangeFrom_currentOnCore]
       · simp only [schedKeyView_markKeyChangeFrom]
     · left; simp only [schedKeyView_markKeyChangeFrom]; exact hKeys t ha hb
-  · simp only [markKeyChangeFrom_runQueueOnCore] at ht; rw [hSched] at ht; exact ht
+  · simp only [markKeyChangeFrom_queuedOn] at ht; rw [hRun.queuedOn] at ht; exact ht
   · simp only [markKeyChangeFrom_currentOnCore]; rw [hSched]
   · apply markKeyChangeFrom_reschedulePendingOnCore_mono
     apply markKeyChangeFrom_reschedulePendingOnCore_mono
@@ -131,9 +152,10 @@ theorem returnStoreChain_keys {st s1 s2 s3 s4 : SystemState} {scId : SeLe4n.Sche
     (hL1 : lookupTcb s2 owner = some ct)
     (hS3 : storeObject owner.toObjId (.tcb ct') s2 = .ok ((), s3))
     (hL2 : lookupTcb s3 server = some stcb)
-    (hS4 : storeObject server.toObjId (.tcb stcb') s3 = .ok ((), s4)) :
+    (hS4 : storeObject server.toObjId (.tcb stcb') s3 = .ok ((), s4))
+    (hc3 : ct'.runCoreCode = ct.runCoreCode) (hc4 : stcb'.runCoreCode = stcb.runCoreCode) :
     (∀ t, t ≠ owner → t ≠ server → schedKeyView s4 t = schedKeyView st t) ∧
-      s4.scheduler = st.scheduler ∧ s4.objects.invExt := by
+      s4.scheduler = st.scheduler ∧ s4.objects.invExt ∧ SystemState.RunCoresAgree s4 st := by
   have hInv1 := storeObject_preserves_objects_invExt _ _ _ _ hInv hS1
   have hInv2 := storeDonationHeadPop_preserves_objects_invExt hInv1 hS2
   have hInv3 := storeObject_preserves_objects_invExt _ _ _ _ hInv2 hS3
@@ -142,7 +164,10 @@ theorem returnStoreChain_keys {st s1 s2 s3 s4 : SystemState} {scId : SeLe4n.Sche
   have k2 := keyInputsEq_trans k1 (storeDonationHeadPop_keyInputsEq hInv1 hS2)
   have k3 := keyInputsEqExcept_storeObject_tcb hInv2 (lookupTcb_some_objects _ _ _ hL1) hS3
   have k4 := keyInputsEqExcept_storeObject_tcb hInv3 (lookupTcb_some_objects _ _ _ hL2) hS4
-  refine ⟨fun t ho hs => ?_, ?_, storeObject_preserves_objects_invExt _ _ _ _ hInv3 hS4⟩
+  refine ⟨fun t ho hs => ?_, ?_, storeObject_preserves_objects_invExt _ _ _ _ hInv3 hS4,
+    ((runCoresAgree_storeObject_tcb hInv3 (lookupTcb_some_objects _ _ _ hL2) hS4 hc4).trans
+      (runCoresAgree_storeObject_tcb hInv2 (lookupTcb_some_objects _ _ _ hL1) hS3 hc3)).trans
+      k2.runCoresAgree⟩
   · rw [schedKeyView_eq_of_keyInputsEqExcept k4 hs, schedKeyView_eq_of_keyInputsEqExcept k3 ho,
       schedKeyView_eq_of_keyInputsEq k2]
   · rw [storeObject_scheduler_eq _ _ _ _ hS4, storeObject_scheduler_eq _ _ _ _ hS3,
@@ -208,12 +233,15 @@ theorem returnDonatedSchedContext_stepCovers (e : CoreId) {st st' : SystemState}
                     simp only []
                     intro h
                     cases h
-                    obtain ⟨hK, hS, hI⟩ := returnStoreChain_keys
+                    obtain ⟨hK, hS, hI, hR⟩ := returnStoreChain_keys
                       (sc' := donationReturnSchedContext sc originalOwner
-                        (head?.bind (fun p => p.2.prev)) newOwner?) hInv hObj rfl
-                      (by rw [← hS1]) hS2 hL1 (by rw [← hS3]) hL2 (by rw [← hS4])
+                        (head?.bind (fun p => p.2.prev)) newOwner?)
+                      (ct' := { clientTcb with
+                        schedContextBinding := donationReturnBinding scId newOwner? })
+                      (stcb' := { serverTcb with schedContextBinding := .unbound }) hInv hObj rfl
+                      (by rw [← hS1]) hS2 hL1 (by rw [← hS3]) hL2 (by rw [← hS4]) rfl rfl
                     exact ⟨stepCovers_markKeyChangeFrom_pair
-                      (fun t ho hs => hK t ho hs) hS,
+                      (fun t ho hs => hK t ho hs) hS hR,
                       by simp only [markKeyChangeFrom_objects]; exact hI⟩
     | _ => intro h; cases h
 
@@ -231,7 +259,7 @@ survives with its key fields and every scheduling context with its deadline, and
 neither kind appears where it was not. -/
 theorem keyInputsEq_of_slots {pre post : SystemState}
     (hTf : ∀ (a : SeLe4n.ObjId) (t : TCB), pre.objects[a]? = some (.tcb t) →
-      ∃ t', post.objects[a]? = some (.tcb t') ∧ tcbKeyFields t' = tcbKeyFields t)
+      ∃ t', post.objects[a]? = some (.tcb t') ∧ tcbKeyCore t' = tcbKeyCore t)
     (hTb : ∀ (a : SeLe4n.ObjId) (t' : TCB), post.objects[a]? = some (.tcb t') →
       ∃ t, pre.objects[a]? = some (.tcb t))
     (hSf : ∀ (a : SeLe4n.ObjId) (sc : SchedContext), pre.objects[a]? = some (.schedContext sc) →
@@ -257,7 +285,7 @@ theorem keyInputsEq_of_slots {pre post : SystemState}
     cases op with
     | tcb t =>
       obtain ⟨t', hq, hk⟩ := hTf oid t hp
-      rw [hq]; simp only [tcbKeyFields, Prod.mk.injEq] at hk; simp only [keyInputsOf, hk]
+      rw [hq]; simp only [tcbKeyCore, tcbKeyFields, Prod.mk.injEq] at hk; simp only [keyInputsOf, hk]
     | schedContext sc =>
       obtain ⟨sc', hq, hd⟩ := hSf oid sc hp
       rw [hq]; simp only [keyInputsOf, hd]
@@ -272,6 +300,7 @@ theorem restoreToReadyStaging_keyInputsEq (st : SystemState) (tid : SeLe4n.Threa
   unfold Lifecycle.Suspend.restoreToReadyStaging
   exact keyInputsEq_updateTcb hInv (fun t => by
     cases frame <;> simp [tcbKeyFields, TCB.withReturnFrame])
+    (fun t => by cases frame <;> simp [TCB.withReturnFrame])
 
 /-- The endpoint-queue removal rewrites queue links only. -/
 theorem endpointQueueRemove_keyInputsEq {epId : SeLe4n.ObjId} {isRecvQ : Bool}
@@ -279,17 +308,17 @@ theorem endpointQueueRemove_keyInputsEq {epId : SeLe4n.ObjId} {isRecvQ : Bool}
     (h : endpointQueueRemove epId isRecvQ tid st = .ok st') :
     keyInputsEq st st' := by
   have hLF : ∀ (t : TCB) qp qpp qn,
-      tcbKeyFields { t with queuePrev := qp, queuePPrev := qpp, queueNext := qn } =
-        tcbKeyFields t := fun _ _ _ _ => rfl
+      tcbKeyCore { t with queuePrevCode := qp, queuePPrevCode := qpp, queueNextCode := qn } =
+        tcbKeyCore t := fun _ _ _ _ => rfl
   refine keyInputsEq_of_slots (fun a t ha => ?_) (fun a t' ha => ?_)
     (fun a sc ha => ⟨sc, endpointQueueRemove_schedContext_forward _ _ _ _ _ hInv h a sc ha, rfl⟩)
     (fun a sc ha => ⟨sc, endpointQueueRemove_schedContext_backward _ _ _ _ _ hInv h a sc ha⟩)
   · rw [RHTable_getElem?_eq_get?] at ha
-    obtain ⟨t', h', hk⟩ := endpointQueueRemove_getTcb_upToField tcbKeyFields hLF _ _ _ _ _ hInv h a t ha
+    obtain ⟨t', h', hk⟩ := endpointQueueRemove_getTcb_upToField tcbKeyCore hLF _ _ _ _ _ hInv h a t ha
     rw [← RHTable_getElem?_eq_get?] at h'
     exact ⟨t', h', hk.symm⟩
   · obtain ⟨t, h', _⟩ :=
-      endpointQueueRemove_getTcb_backward_upToField tcbKeyFields hLF _ _ _ _ _ hInv h a t' ha
+      endpointQueueRemove_getTcb_backward_upToField tcbKeyCore hLF _ _ _ _ _ hInv h a t' ha
     exact ⟨t, h'⟩
 
 /-- The holder's abort removes it from its endpoint queue and readies it: no
@@ -373,13 +402,15 @@ theorem removeFromAllEndpointQueues_keyInputsEq (st : SystemState) (tid : SeLe4n
   keyInputsEq_of_lookups
     (fun t => by
       rw [removeFromAllEndpointQueues_getTcb?_eq_splice st tid hInv t]
-      exact spliceOutMidQueueNode_tcbField_frame tcbKeyFields (fun _ _ _ _ => rfl) st tid hInv t)
+      exact spliceOutMidQueueNode_tcbField_frame tcbKeyCore (fun _ _ _ _ _ _ => rfl) st tid hInv t)
     (fun s => by rw [removeFromAllEndpointQueues_getSchedContext?_eq st tid hInv s])
 
-theorem removeFromAllNotificationWaitLists_keyInputsEq (st : SystemState) (tid : SeLe4n.ThreadId)
-    (hInv : st.objects.invExt) : keyInputsEq st (removeFromAllNotificationWaitLists st tid) :=
-  keyInputsEq_of_lookups_eq (removeFromAllNotificationWaitLists_getTcb?_eq st tid hInv)
-    (removeFromAllNotificationWaitLists_getSchedContext?_eq st tid hInv)
+theorem removeFromNotificationWaitQueue_keyInputsEq (st : SystemState) (tid : SeLe4n.ThreadId)
+    (hInv : st.objects.invExt) : keyInputsEq st (removeFromNotificationWaitQueue st tid) :=
+  keyInputsEq_of_lookups
+    (fun t => removeFromNotificationWaitQueue_tcbField_frame tcbKeyCore
+      (fun _ _ _ _ _ _ => rfl) st tid hInv t)
+    (fun s => by rw [removeFromNotificationWaitQueue_getSchedContext?_eq st tid hInv s])
 
 /-! ### The teardown covers -/
 
@@ -431,9 +462,9 @@ theorem cancelIpcBlocking_stepCovers (e : CoreId) (st : SystemState) (tid : SeLe
   | blockedOnCall _ => exact hEp
   | blockedOnNotification _ =>
     exact stepCovers_trans
-      (stepCovers_of_keys_sched (removeFromAllNotificationWaitLists_keyInputsEq st tid hInv)
-        (removeFromAllNotificationWaitLists_scheduler_eq st tid))
-      (hRestore _ (removeFromAllNotificationWaitLists_preserves_objects_invExt st tid hInv))
+      (stepCovers_of_keys_sched (removeFromNotificationWaitQueue_keyInputsEq st tid hInv)
+        (removeFromNotificationWaitQueue_scheduler_eq st tid))
+      (hRestore _ (removeFromNotificationWaitQueue_preserves_objects_invExt st tid hInv))
   | blockedOnReply _ _ =>
     have h1 := Lifecycle.Suspend.returnDonationToCancelledCaller_preserves_objects_invExt
       st tid tcb hInv
@@ -452,7 +483,7 @@ theorem cancelIpcBlocking_stepCovers (e : CoreId) (st : SystemState) (tid : SeLe
 and no run-queue or current slot, and lowered no flag. -/
 theorem stepCovers_markKeyChangeFrom {e : CoreId} {pre m : SystemState} {a : SeLe4n.ThreadId}
     (hKeys : ∀ t, t ≠ a → schedKeyView m t = schedKeyView pre t)
-    (hRq : ∀ c, m.scheduler.runQueueOnCore c = pre.scheduler.runQueueOnCore c)
+    (hRq : SystemState.RunCoresAgree m pre)
     (hCur : ∀ c, m.scheduler.currentOnCore c = pre.scheduler.currentOnCore c)
     (hFl : ∀ c, pre.scheduler.reschedulePendingOnCore c = true →
       m.scheduler.reschedulePendingOnCore c = true) :
@@ -462,7 +493,7 @@ theorem stepCovers_markKeyChangeFrom {e : CoreId} {pre m : SystemState} {a : SeL
   · by_cases ha : t = a
     · subst ha; exact Or.inr (markKeyChangeFrom_flagged _ _ _)
     · left; simp only [schedKeyView_markKeyChangeFrom]; exact hKeys t ha
-  · simp only [markKeyChangeFrom_runQueueOnCore] at ht; rw [hRq] at ht; exact ht
+  · simp only [markKeyChangeFrom_queuedOn] at ht; rw [hRq.queuedOn] at ht; exact ht
   · simp only [markKeyChangeFrom_currentOnCore]; exact hCur c
   · exact markKeyChangeFrom_reschedulePendingOnCore_mono _ _ _ _ (hFl c h)
 
@@ -506,13 +537,15 @@ theorem cancelBoundDonationOnCore_stepCovers (e : CoreId) {st st' : SystemState}
       (fun _ => rfl)
     have hS1 := SystemState.updateSchedContext_scheduler st scId
       (fun sc => { sc with boundThread := none, isActive := false, donationOrigin := none })
-    refine ⟨stepCovers_markKeyChangeFrom (fun t ht => ?_) (fun c => ?_) (fun c => ?_)
-      (fun c hc => ?_), ?_⟩
+    refine ⟨stepCovers_markKeyChangeFrom (fun t ht => ?_)
+      ((SystemState.RunCoresAgree.updateTcb (tid := tid)
+        (f := fun tcb' => { tcb' with schedContextBinding := .unbound }) (by exact hInv1) (fun _ => rfl)).trans
+        ((SystemState.RunCoresAgree.of_objects rfl).trans k1.runCoresAgree))
+      (fun c => ?_) (fun c hc => ?_), ?_⟩
     · rw [schedKeyView_updateTcb_ne _ tid _ ?_ ht]
       · exact (schedKeyView_eq_of_keyInputsEq (keyInputsEq_of_objects_eq rfl) t).trans
           (schedKeyView_eq_of_keyInputsEq k1 t)
       · exact hInv1
-    · rw [SystemState.updateTcb_scheduler]; simp only [SchedulerState.setReplenishQueueOnCore_runQueueOnCore]; rw [hS1]
     · rw [SystemState.updateTcb_scheduler]; simp only [SchedulerState.setReplenishQueueOnCore_currentOnCore]; rw [hS1]
     · rw [SystemState.updateTcb_scheduler]; simp only [SchedulerState.setReplenishQueueOnCore_reschedulePendingOnCore]; rw [hS1]; exact hc
     · simp only [markKeyChangeFrom_objects]

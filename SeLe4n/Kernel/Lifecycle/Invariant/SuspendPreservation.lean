@@ -140,14 +140,15 @@ theorem abortHolderPendingIpc_preserves_objects_invExt (st : SystemState)
         exact abortPendingIpcOnEndpoint_preserves_objects_invExt epId false holder st st' hInv h
     · exact hInv
 
-/-- WS-OD OD1.4: the holder abort carries every pre-state TCB's `cpuAffinity`.
-`cancelIpcBlocking_tcb_lookup` is what ultimately needs it, and affinity is the
+/-- WS-OD OD1.4: the holder abort carries every pre-state TCB's `TCB.placement` (home core
+and run-queue links).
+`cancelIpcBlocking_tcb_lookup` is what ultimately needs it, and placement is the
 one field that theorem's whole chain tracks. -/
 theorem abortHolderPendingIpc_tcb_lookup (st : SystemState)
     (holder : SeLe4n.ThreadId) (hInv : st.objects.invExt)
     (k : SeLe4n.ObjId) (t0 : TCB) (hk : st.objects[k]? = some (.tcb t0)) :
     ∃ t', (abortHolderPendingIpc st holder).objects[k]? = some (.tcb t') ∧
-      t'.cpuAffinity = t0.cpuAffinity := by
+      t'.placement = t0.placement := by
   unfold abortHolderPendingIpc
   split
   · exact ⟨t0, hk, rfl⟩
@@ -626,7 +627,7 @@ theorem returnDonationToCancelledCaller_eq_self_of_getTcb?_none (st : SystemStat
   cases cancelledCallerDonation? st tid tcb <;> rfl
 
 /-- **WS-RR RR7.22 (residual, remediation)**, restated at WS-OD OD1.4: the
-donation return carries every pre-state TCB's `cpuAffinity`.
+donation return carries every pre-state TCB's `TCB.placement`.
 
 It used to say more — that the reclaim rewrites `schedContextBinding` and
 nothing else (`tcbBindingRewrite`) — and that was true while the reclaim's only
@@ -635,7 +636,7 @@ the context back it ends the holder's outstanding send or call, which rewrites
 that thread's `ipcState`, queue links, timeout fields and return frame.  So the
 binding-only claim is false of the operation now, and the honest statement is
 the one its single consumer (`cancelIpcBlocking_tcb_lookup`) actually needs —
-affinity, which neither write touches.  The three-step chain in that consumer
+placement (home core and run-queue links), which neither write touches.  The three-step chain in that consumer
 reads exactly this shape from `removeFromAllEndpointQueues_tcb_lookup` and
 `restoreToReadyCancelled_tcb_lookup`, so the reply arm now matches its
 siblings. -/
@@ -643,7 +644,7 @@ theorem returnDonationToCancelledCaller_tcb_lookup (st : SystemState)
     (tid : SeLe4n.ThreadId) (tcb : TCB) (hInv : st.objects.invExt)
     (k : SeLe4n.ObjId) (t0 : TCB) (hk : st.objects[k]? = some (.tcb t0)) :
     ∃ t', (returnDonationToCancelledCaller st tid tcb).objects[k]? = some (.tcb t') ∧
-      t'.cpuAffinity = t0.cpuAffinity := by
+      t'.placement = t0.placement := by
   unfold returnDonationToCancelledCaller
   split
   · rename_i scId holder _ _ _
@@ -735,7 +736,7 @@ theorem spliceThreadReplyFrameOut_preserves_ipcInvariant (st : SystemState) (tcb
     except the reschedule flags (the donation return's KSC-1 key-change hook).
     Each IPC state branch either (a) is a no-op, (b) uses
     removeFromAllEndpointQueues (which preserves scheduler) then inserts into
-    objects, or (c) uses removeFromAllNotificationWaitLists then inserts. -/
+    objects, or (c) uses removeFromNotificationWaitQueue then inserts. -/
 theorem cancelIpcBlocking_scheduler_eq
     (st : SystemState) (tid : SeLe4n.ThreadId) (tcb : TCB) :
     (cancelIpcBlocking st tid tcb).scheduler =
@@ -756,7 +757,7 @@ theorem cancelIpcBlocking_scheduler_eq
       spliceThreadReplyFrameOut_scheduler_eq]
     exact returnDonationToCancelledCaller_scheduler_eq st tid tcb
   | blockedOnNotification _ =>
-    rw [restoreToReadyCancelled_scheduler_eq, removeFromAllNotificationWaitLists_scheduler_eq]
+    rw [restoreToReadyCancelled_scheduler_eq, removeFromNotificationWaitQueue_scheduler_eq]
 
 /-- WS-SM SM8.B: **the IPC-blocking teardown never touches the machine** — and
 hence never touches any core's register bank.
@@ -781,7 +782,7 @@ theorem cancelIpcBlocking_machine_eq
     rw [consumeReplyLink_machine_eq, restoreToReadyCancelled_machine_eq,
       spliceThreadReplyFrameOut_machine_eq, returnDonationToCancelledCaller_machine_eq]
   | blockedOnNotification _ =>
-    rw [restoreToReadyCancelled_machine_eq, removeFromAllNotificationWaitLists_machine_eq]
+    rw [restoreToReadyCancelled_machine_eq, removeFromNotificationWaitQueue_machine_eq]
 
 /-- D1-I/AE3-C/R5.A: `cancelBoundDonation` preserves `runQueue` and
 `current`. The bound arm rewrites the SchedContext, drops it from the
@@ -861,7 +862,7 @@ theorem cancelIpcBlocking_serviceRegistry_eq
       spliceThreadReplyFrameOut_serviceRegistry_eq,
       returnDonationToCancelledCaller_serviceRegistry_eq]
   | blockedOnNotification _ =>
-    rw [restoreToReadyCancelled_serviceRegistry_eq, removeFromAllNotificationWaitLists_serviceRegistry_eq]
+    rw [restoreToReadyCancelled_serviceRegistry_eq, removeFromNotificationWaitQueue_serviceRegistry_eq]
 
 /-- D1-I: clearPendingState preserves serviceRegistry. -/
 theorem clearPendingState_serviceRegistry_eq
@@ -999,9 +1000,9 @@ theorem restoreToReady_objects_eq_at_tid
       st.objects.insert tid.toObjId
         (.tcb { origTcb with
                 ipcState := .ready
-                queuePrev := none
-                queueNext := none
-                queuePPrev := none
+                queuePrevCode := 0
+                queueNextCode := 0
+                queuePPrevCode := 0
                 pendingReceiveReply := none }) := by
   unfold restoreToReady restoreToReadyStaging
   exact congrArg SystemState.objects (SystemState.updateTcb_eq_of_some hLook _)
@@ -1156,8 +1157,8 @@ theorem restoreToReady_blockingServer_subgraph
       unfold PriorityInheritance.blockingServer
       have hRRObj :
           (restoreToReady st tid).objects[t.toObjId]?
-            = some (.tcb { origTcb with ipcState := .ready, queuePrev := none,
-                                        queueNext := none, queuePPrev := none,
+            = some (.tcb { origTcb with ipcState := .ready, queuePrevCode := 0,
+                                        queueNextCode := 0, queuePPrevCode := 0,
                                         pendingReceiveReply := none }) := by
         unfold restoreToReady restoreToReadyStaging
         rw [SystemState.updateTcb_eq_of_some hPre]
@@ -1194,52 +1195,39 @@ theorem restoreToReady_preserves_blockingAcyclic
   · exact restoreToReady_blockingServer_subgraph st tid hObjInv
   · exact congrArg List.length (restoreToReady_objectIndex_eq st tid)
 
-/-- WS-RC R5.B.2 / Phase Q1: `ensureRunnable` doesn't change `objects`. -/
-theorem ensureRunnable_objects_eq
-    (st : SystemState) (tid : SeLe4n.ThreadId) :
-    (ensureRunnable st tid).objects = st.objects := by
-  unfold ensureRunnable
-  split
-  · rfl
-  · split <;> rfl
-
 /-- WS-RC R5.B.2 / Phase Q1: `ensureRunnable` preserves the object index. -/
 theorem ensureRunnable_objectIndex_eq
     (st : SystemState) (tid : SeLe4n.ThreadId) :
-    (ensureRunnable st tid).objectIndex = st.objectIndex := by
-  unfold ensureRunnable
-  split
-  · rfl
-  · split <;> rfl
+    (ensureRunnable st tid).objectIndex = st.objectIndex :=
+  by
+  have h := ensureRunnable_onlyObjectsSchedulerDiffer st tid
+  unfold SystemState.onlyObjectsSchedulerDiffer at h
+  rw [h]
 
 /-- WS-RC R5.B.2 / Phase Q1: `ensureRunnable` preserves `blockingServer` at
-    every thread (since it doesn't touch `objects`). -/
+    every thread — it writes only run-queue links, and a blocking edge is read
+    from the thread's IPC state. -/
 theorem ensureRunnable_blockingServer_eq
     (st : SystemState) (tid : SeLe4n.ThreadId) :
     ∀ t : SeLe4n.ThreadId,
       PriorityInheritance.blockingServer (ensureRunnable st tid) t
-        = PriorityInheritance.blockingServer st t := by
-  intro t
-  unfold PriorityInheritance.blockingServer
-  rw [SystemState.getTcb?_congr_at
-        (show (ensureRunnable st tid).objects[t.toObjId]? = st.objects[t.toObjId]? from
-          congrArg (fun o => o[t.toObjId]?) (ensureRunnable_objects_eq st tid))]
+        = PriorityInheritance.blockingServer st t :=
+  fun t => PriorityInheritance.blockingServer_of_objectsAgreeOffRunLinks st _ t
+    (ensureRunnable_objectsAgreeOffRunLinks st tid)
 
 -- ============================================================================
 -- WS-RC R5.B.2 / Phase Q2: computeMaxWaiterPriority frame for ensureRunnable
 -- ============================================================================
 
 /-- WS-RC R5.B.2 / Phase Q2: `ensureRunnable` preserves
-    `computeMaxWaiterPriority`.  Proof: `ensureRunnable` doesn't change
-    `objects` or `objectIndex`; apply Phase P1's
-    `computeMaxWaiterPriority_frame`. -/
+    `computeMaxWaiterPriority`: it writes only run-queue links and keeps the
+    object index, and the waiter fold reads neither. -/
 theorem ensureRunnable_preserves_computeMaxWaiterPriority
     (st : SystemState) (tid : SeLe4n.ThreadId) (target : SeLe4n.ThreadId) :
     PriorityInheritance.computeMaxWaiterPriority (ensureRunnable st tid) target
       = PriorityInheritance.computeMaxWaiterPriority st target := by
-  apply PriorityInheritance.computeMaxWaiterPriority_frame
-  · exact ensureRunnable_objects_eq st tid
-  · exact ensureRunnable_objectIndex_eq st tid
+  exact PriorityInheritance.computeMaxWaiterPriority_of_objectsAgreeOffRunLinks st _ target
+    (ensureRunnable_objectsAgreeOffRunLinks st tid) (ensureRunnable_objectIndex_eq st tid)
 
 -- ============================================================================
 -- WS-RC R5.B.2 / Phase Q2: restoreIncomingContext helper frames
@@ -1741,12 +1729,12 @@ theorem cancelIpcBlocking_preserves_objects_invExt
           (returnDonationToCancelledCaller_preserves_objects_invExt st tid tcb hInv)))
   | blockedOnNotification _ =>
     exact restoreToReadyCancelled_invExt _ _
-      (removeFromAllNotificationWaitLists_preserves_objects_invExt st tid hInv)
+      (removeFromNotificationWaitQueue_preserves_objects_invExt st tid hInv)
 
 -- ============================================================================
 -- WS-SM SM6.E: per-key TCB lookup frames of the cancellation teardown
 -- ============================================================================
--- The teardown never changes the *kind* or the `cpuAffinity` of a key that
+-- The teardown never changes the *kind* or the `TCB.placement` of a key that
 -- holds a TCB (it rewrites IPC/queue-link fields only), and never
 -- materialises a TCB at the victim's key when none was there.  These frames
 -- are what `cancelIpcBlocking_determineTargetCore_eq` (`IPC.CrossCore.Cancellation`
@@ -1756,7 +1744,7 @@ theorem cancelIpcBlocking_preserves_objects_invExt
 -- deschedule's bridge to the composite, which is definitional now that both
 -- read the placement at the state the removal acts on.
 
-/-- WS-SM SM6.E: `restoreToReady` preserves TCB-kind and `cpuAffinity` at
+/-- WS-SM SM6.E: `restoreToReady` preserves TCB-kind and `TCB.placement` at
 every key — the conditional rewrite clears IPC and queue-link fields only. -/
 theorem restoreToReadyStaging_tcb_lookup
     (st : SystemState) (tid : SeLe4n.ThreadId)
@@ -1765,7 +1753,7 @@ theorem restoreToReadyStaging_tcb_lookup
     (hInv : st.objects.invExt)
     (hPre : st.objects[k]? = some (.tcb t0)) :
     ∃ t' : TCB, (restoreToReadyStaging st tid frame).objects[k]? = some (.tcb t')
-      ∧ t'.cpuAffinity = t0.cpuAffinity := by
+      ∧ t'.placement = t0.placement := by
   unfold restoreToReadyStaging
   cases hT : st.getTcb? tid with
   | none => rw [SystemState.updateTcb_eq_self_of_none hT]; exact ⟨t0, hPre, rfl⟩
@@ -1773,11 +1761,11 @@ theorem restoreToReadyStaging_tcb_lookup
     rw [SystemState.updateTcb_eq_of_some hT]
     cases frame with
     | none =>
-        exact insert_tcb_rewrite_lookup (motive := fun a b => a.cpuAffinity = b.cpuAffinity)
+        exact insert_tcb_rewrite_lookup (motive := fun a b => a.placement = b.placement)
           st.objects tid.toObjId k t _ t0 (fun _ => rfl) hInv
           ((SystemState.getTcb?_eq_some_iff st tid t).mp hT) rfl hPre
     | some f =>
-        exact insert_tcb_rewrite_lookup (motive := fun a b => a.cpuAffinity = b.cpuAffinity)
+        exact insert_tcb_rewrite_lookup (motive := fun a b => a.placement = b.placement)
           st.objects tid.toObjId k t _ t0 (fun _ => rfl) hInv
           ((SystemState.getTcb?_eq_some_iff st tid t).mp hT) rfl hPre
 
@@ -1786,20 +1774,20 @@ theorem restoreToReady_tcb_lookup
     (hInv : st.objects.invExt)
     (hPre : st.objects[k]? = some (.tcb t0)) :
     ∃ t' : TCB, (restoreToReady st tid).objects[k]? = some (.tcb t')
-      ∧ t'.cpuAffinity = t0.cpuAffinity :=
+      ∧ t'.placement = t0.placement :=
   restoreToReadyStaging_tcb_lookup st tid none k t0 hInv hPre
 
 /-- **WS-RR RR7.14**: and the cancellation spelling.  The staged frame writes
-`registerContext`, which is neither the object's kind nor its `cpuAffinity`. -/
+`registerContext`, which is neither the object's kind nor its `TCB.placement`. -/
 theorem restoreToReadyCancelled_tcb_lookup
     (st : SystemState) (tid : SeLe4n.ThreadId) (k : SeLe4n.ObjId) (t0 : TCB)
     (hInv : st.objects.invExt)
     (hPre : st.objects[k]? = some (.tcb t0)) :
     ∃ t' : TCB, (restoreToReadyCancelled st tid).objects[k]? = some (.tcb t')
-      ∧ t'.cpuAffinity = t0.cpuAffinity :=
+      ∧ t'.placement = t0.placement :=
   restoreToReadyStaging_tcb_lookup st tid _ k t0 hInv hPre
 
-/-- WS-SM SM6.E: `consumeReplyLink` preserves TCB-kind and `cpuAffinity` at
+/-- WS-SM SM6.E: `consumeReplyLink` preserves TCB-kind and `TCB.placement` at
 every key.
 
 **WS-RR RR8.5**: read off the consume's two sharp pointwise readings — the
@@ -1812,7 +1800,7 @@ theorem consumeReplyLink_tcb_lookup
     (hInv : st.objects.invExt)
     (hPre : st.objects[k]? = some (.tcb t0)) :
     ∃ t' : TCB, (consumeReplyLink st tid tcb).objects[k]? = some (.tcb t')
-      ∧ t'.cpuAffinity = t0.cpuAffinity := by
+      ∧ t'.placement = t0.placement := by
   unfold consumeReplyLink
   cases tcb.replyObject with
   | none => exact ⟨t0, hPre, rfl⟩
@@ -1825,16 +1813,16 @@ theorem consumeReplyLink_tcb_lookup
     · exact ⟨t0, SystemState.consumeCallerReply_tcb_other st _ tid rid hInv hStep k t0 hk hPre,
         rfl⟩
 
-/-- WS-SM SM6.E: `cancelIpcBlocking` preserves TCB-kind and `cpuAffinity` at
+/-- WS-SM SM6.E: `cancelIpcBlocking` preserves TCB-kind and `TCB.placement` at
 every key — each `ipcState` arm composes the sweep frames with the teardown
-rewrites, none of which changes a stored TCB's kind or `cpuAffinity`. -/
+rewrites, none of which changes a stored TCB's kind or `TCB.placement`. -/
 theorem cancelIpcBlocking_tcb_lookup
     (st : SystemState) (tid : SeLe4n.ThreadId) (tcb : TCB)
     (k : SeLe4n.ObjId) (t0 : TCB)
     (hInv : st.objects.invExt)
     (hPre : st.objects[k]? = some (.tcb t0)) :
     ∃ t' : TCB, (cancelIpcBlocking st tid tcb).objects[k]? = some (.tcb t')
-      ∧ t'.cpuAffinity = t0.cpuAffinity := by
+      ∧ t'.placement = t0.placement := by
   unfold cancelIpcBlocking
   cases tcb.ipcState with
   | ready => exact ⟨t0, hPre, rfl⟩
@@ -1849,7 +1837,7 @@ theorem cancelIpcBlocking_tcb_lookup
     -- WS-RR RR7.22 (residual, remediation), extended at WS-OD OD1.4: the
     -- donation return is the extra step, and since OD1.4 it is two writes — the
     -- holder's aborted IPC and the binding hand-back.  Neither touches
-    -- `cpuAffinity`, which is what this chain tracks, so the reply arm reads the
+    -- `TCB.placement`, which is what this chain tracks, so the reply arm reads the
     -- same shape as its three siblings.
     obtain ⟨t₀, hL0, hAff0⟩ :=
       returnDonationToCancelledCaller_tcb_lookup st tid tcb hInv k t0 hPre
@@ -1869,9 +1857,9 @@ theorem cancelIpcBlocking_tcb_lookup
     exact ⟨t₂, hL2, ((hAff2.trans hAff1).trans hAff0)⟩
   | blockedOnNotification _ =>
     obtain ⟨hInvN, t₁, hL1, hAff1⟩ :=
-      removeFromAllNotificationWaitLists_tcb_lookup st tid k t0 hInv hPre
+      removeFromNotificationWaitQueue_tcb_lookup st tid k t0 hInv hPre
     obtain ⟨t₂, hL2, hAff2⟩ :=
-      restoreToReadyCancelled_tcb_lookup (removeFromAllNotificationWaitLists st tid) tid k t₁
+      restoreToReadyCancelled_tcb_lookup (removeFromNotificationWaitQueue st tid) tid k t₁
         hInvN hL1
     exact ⟨t₂, hL2, hAff2.trans hAff1⟩
 
@@ -1963,13 +1951,13 @@ theorem cancelIpcBlocking_getTcb?_none
           ((SystemState.getTcb?_eq_some_iff _ tid t).mp hX)
         exact hNoD ty hTy
   | blockedOnNotification _ =>
-    obtain ⟨hInvN, hNoN⟩ := removeFromAllNotificationWaitLists_no_tcb st tid hInv hNo
-    have hTN : (removeFromAllNotificationWaitLists st tid).getTcb? tid = none := by
-      cases hX : (removeFromAllNotificationWaitLists st tid).getTcb? tid with
+    obtain ⟨hInvN, hNoN⟩ := removeFromNotificationWaitQueue_no_tcb st tid hInv hNo
+    have hTN : (removeFromNotificationWaitQueue st tid).getTcb? tid = none := by
+      cases hX : (removeFromNotificationWaitQueue st tid).getTcb? tid with
       | none => rfl
       | some t =>
         exact absurd ((SystemState.getTcb?_eq_some_iff _ tid t).mp hX) (hNoN t)
-    show (restoreToReadyCancelled (removeFromAllNotificationWaitLists st tid) tid).getTcb? tid
+    show (restoreToReadyCancelled (removeFromNotificationWaitQueue st tid) tid).getTcb? tid
       = none
     rw [restoreToReadyCancelled_eq_self_of_getTcb?_none _ tid hTN]
     exact hTN
@@ -2025,8 +2013,8 @@ theorem cancelDonation_preserves_objects_invExt
 -- The notification well-formedness invariant across the cancellation
 -- teardown and the donation arms: every object write is either a
 -- non-notification insert (TCB rewrites, the Reply-caller clear, the
--- SchedContext unbind) or the notification sweep's filter-corrected rewrite
--- (well-formed by `notificationQueueWellFormed_filter_correct`).
+-- SchedContext unbind) or the notification unlink's queue-end rewrite
+-- (well-formed by `notificationQueueWellFormed_unlink`).
 
 /-- WS-SM SM6.E: `restoreToReady` preserves `ipcInvariant` — its only write
 is a `.tcb` rewrite. -/
@@ -2115,8 +2103,8 @@ theorem cancelIpcBlocking_preserves_ipcInvariant
           (returnDonationToCancelledCaller_preserves_ipcInvariant st tid tcb hInv hIpc)))
   | blockedOnNotification _ =>
     exact restoreToReadyCancelled_preserves_ipcInvariant _ tid
-      (removeFromAllNotificationWaitLists_preserves_objects_invExt st tid hInv)
-      (removeFromAllNotificationWaitLists_preserves_ipcInvariant st tid hInv hIpc)
+      (removeFromNotificationWaitQueue_preserves_objects_invExt st tid hInv)
+      (removeFromNotificationWaitQueue_preserves_ipcInvariant st tid hInv hIpc)
 
 /-- WS-SM SM6.E: `cancelBoundDonation` preserves `ipcInvariant` — the bound
 arm's object writes are the SchedContext deactivation insert and the TCB

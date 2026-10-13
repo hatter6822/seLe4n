@@ -421,27 +421,21 @@ a PIP-boosted thread would drop it to the new base priority, causing
 priority inversion for the entire blocking chain. -/
 def migrateRunQueueBucketOnCore (st : SystemState) (tid : SeLe4n.ThreadId)
     (newPriority : SeLe4n.Priority) (homeCore : Concurrency.CoreId) : SystemState :=
-  if tid ∈ (st.scheduler.runQueueOnCore homeCore) then
-    let rq := (st.scheduler.runQueueOnCore homeCore).remove tid
+  if st.queuedOn homeCore tid then
     -- AI3-B (M-22): Apply PIP boost to new priority.
-    -- AK2-J (S-M08): The defensive fallback (TCB missing — unreachable under
-    -- `runnableThreadsAreTCBs`) now takes the max of `newPriority` and the
-    -- RunQueue's cached priority for `tid`. Any PIP boost previously recorded
-    -- in the RunQueue is therefore preserved rather than silently erased.
-    -- AN10-B (DEF-AK7-F.reader.hygiene): typed-helper migration.
-    -- `Priority.raisedBy` (`Prelude.lean`) is the one reading of "a base raised
-    -- by an inherited boost"; the base here is the *new* priority rather than
-    -- the thread's stored one, which is exactly why the helper takes its base as
-    -- a parameter.  The fallback raises by the RunQueue's cached priority, which
-    -- carries any boost recorded there, so it is the same question with a
-    -- different source for the boost.
+    -- AN10-B (DEF-AK7-F.reader.hygiene): `Priority.raisedBy` (`Prelude.lean`)
+    -- is the one reading of "a base raised by an inherited boost"; the base
+    -- here is the *new* priority rather than the thread's stored one, which is
+    -- exactly why the helper takes its base as a parameter.  A thread with no
+    -- TCB has no run-queue links (WS-ZA ZA4.5: they are TCB fields), so it is
+    -- on no queue and the requeue below leaves the state as it is; its
+    -- priority is the new one.
     let effectivePrio := match st.getTcb? tid with
       | some tcb => newPriority.raisedBy tcb.pipBoost
-      | none =>
-        newPriority.raisedBy
-          ((st.scheduler.runQueueOnCore homeCore).threadPriority[tid]?)
-    let rq := rq.insert tid effectivePrio
-    { st with scheduler := st.scheduler.setRunQueueOnCore homeCore rq }
+      | none => newPriority
+    -- The thread leaves its bucket and joins the tail of the new one through
+    -- its TCB run-queue links (WS-ZA ZA4.5).
+    st.runRequeueOnCore homeCore tid effectivePrio
   else
     st
 
@@ -473,8 +467,102 @@ the same reason. -/
       = st.scheduler.replenishQueueOnCore c := by
   unfold migrateRunQueueBucketOnCore
   split
-  · exact SchedulerState.setRunQueueOnCore_replenishQueueOnCore _ _ _ _
+  · simp
   · rfl
+
+/-- WS-ZA ZA4.5: the bucket migration touches the object store only in run-queue
+links. -/
+theorem migrateRunQueueBucketOnCore_objectsAgreeOffRunLinks (st : SystemState)
+    (tid : SeLe4n.ThreadId) (newPriority : SeLe4n.Priority) (homeCore : Concurrency.CoreId) :
+    (migrateRunQueueBucketOnCore st tid newPriority homeCore).objectsAgreeOffRunLinks st := by
+  unfold migrateRunQueueBucketOnCore
+  split
+  · exact SystemState.runRequeueOnCore_objectsAgreeOffRunLinks _ _ _ _
+  · exact .refl _
+
+/-- WS-ZA ZA4.5: the bucket migration rewrites only the object store and the
+scheduler. -/
+theorem migrateRunQueueBucketOnCore_onlyObjectsSchedulerDiffer (st : SystemState)
+    (tid : SeLe4n.ThreadId) (newPriority : SeLe4n.Priority) (homeCore : Concurrency.CoreId) :
+    SystemState.onlyObjectsSchedulerDiffer (migrateRunQueueBucketOnCore st tid newPriority homeCore) st := by
+  unfold migrateRunQueueBucketOnCore
+  split
+  · exact SystemState.runRequeueOnCore_onlyObjectsSchedulerDiffer _ _ _ _
+  · exact .refl _
+
+theorem migrateRunQueueBucketOnCore_objects_invExt (st : SystemState)
+    (tid : SeLe4n.ThreadId) (newPriority : SeLe4n.Priority) (homeCore : Concurrency.CoreId)
+    (hInv : st.objects.invExt) :
+    (migrateRunQueueBucketOnCore st tid newPriority homeCore).objects.invExt := by
+  unfold migrateRunQueueBucketOnCore
+  split
+  · exact SystemState.runRequeueOnCore_objects_invExt _ _ _ _ hInv
+  · exact hInv
+
+/-- WS-ZA ZA4.5: the priority write keeps the run queues in agreement with the
+links — it writes a reservation and the thread's `priority`, neither a link. -/
+theorem updatePrioritySource_runQueueStage (st : SystemState) (tid : SeLe4n.ThreadId)
+    (tcb : TCB) (newPriority : SeLe4n.Priority) :
+    SystemState.RunQueueStage st (updatePrioritySource st tid tcb newPriority) := by
+  unfold updatePrioritySource
+  split
+  · refine SystemState.RunQueueStage.trans (fun h r => ⟨?_, ?_⟩)
+      (SystemState.RunQueueStage.updateTcb _ tid (fun _ _ => rfl))
+    · exact SystemState.updateSchedContext_preserves_objects_invExt _ _ _ h
+    · exact SystemState.runQueueRefined_of_frame
+        (fun c t => SystemState.runLinkOn_of_getTcb?
+          (SystemState.updateSchedContext_getTcb? _ _ _ h t) c)
+        (by rw [SystemState.updateSchedContext_scheduler])
+        (by rw [SystemState.updateSchedContext_scheduler]) r
+  · exact SystemState.RunQueueStage.updateTcb _ tid (fun _ _ => rfl)
+
+/-- WS-ZA ZA4.5: the priority write keeps every thread's core code. -/
+theorem updatePrioritySource_runCoreCode (st : SystemState) (tid : SeLe4n.ThreadId)
+    (tcb : TCB) (newPriority : SeLe4n.Priority) (hInv : st.objects.invExt)
+    (y : SeLe4n.ThreadId) :
+    ((updatePrioritySource st tid tcb newPriority).getTcb? y).map TCB.runCoreCode =
+      (st.getTcb? y).map TCB.runCoreCode := by
+  unfold updatePrioritySource
+  split
+  · rw [SystemState.updateTcb_runCoreCode _ _ (fun t => { t with priority := newPriority })
+      (fun _ => rfl) (SystemState.updateSchedContext_preserves_objects_invExt _ _ _ hInv),
+      SystemState.updateSchedContext_getTcb? _ _ _ hInv]
+  · exact SystemState.updateTcb_runCoreCode _ _ (fun t => { t with priority := newPriority })
+      (fun _ => rfl) hInv y
+
+/-- WS-ZA ZA4.5: the priority write is a current-placement frame: it moves no
+current slot, no queue and no TCB in or out of the store. -/
+theorem updatePrioritySource_currentPlacementFrame (st : SystemState)
+    (tid : SeLe4n.ThreadId) (tcb : TCB) (newPriority : SeLe4n.Priority)
+    (hInv : st.objects.invExt) (c : Concurrency.CoreId) :
+    SystemState.CurrentPlacementFrame c st (updatePrioritySource st tid tcb newPriority) := by
+  obtain ⟨o, ho⟩ := updatePrioritySource_only_modifies_objects st tid tcb newPriority
+  exact SystemState.CurrentPlacementFrame.of_parts (by rw [ho])
+    (updatePrioritySource_runCoreCode st tid tcb newPriority hInv)
+
+/-- WS-ZA ZA4.5: the bucket migration keeps the agreement — it re-keys a thread
+its home queue holds, which under the agreement that core's links queue. -/
+theorem migrateRunQueueBucketOnCore_runQueueStage (st : SystemState)
+    (tid : SeLe4n.ThreadId) (newPriority : SeLe4n.Priority) (homeCore : Concurrency.CoreId) :
+    SystemState.RunQueueStage st (migrateRunQueueBucketOnCore st tid newPriority homeCore) := by
+  intro hInv hR
+  unfold migrateRunQueueBucketOnCore
+  split
+  · rename_i hMem
+    have hq : (st.runLinkOn homeCore tid).queued = true := by
+      rw [← SystemState.queuedOn_eq_runLinkOn]; exact hMem
+    exact SystemState.RunQueueStage.runRequeueOnCore _ _ _ _ hq hInv hR
+  · exact ⟨hInv, hR⟩
+
+/-- WS-ZA ZA4.5: the bucket migration is a current-placement frame. -/
+theorem migrateRunQueueBucketOnCore_currentPlacementFrame (st : SystemState)
+    (tid : SeLe4n.ThreadId) (newPriority : SeLe4n.Priority) (homeCore c : Concurrency.CoreId) :
+    SystemState.CurrentPlacementFrame c st (migrateRunQueueBucketOnCore st tid newPriority homeCore) := by
+  unfold migrateRunQueueBucketOnCore
+  split
+  · rename_i hMem
+    exact SystemState.CurrentPlacementFrame.runRequeueOnCore _ _ _ _ _ hMem
+  · exact .refl _ _
 
 /-- D2-E: Set the scheduling priority of a target thread.
 
@@ -493,7 +581,7 @@ Returns `illegalAuthority` if `newPriority > caller.maxControlledPriority`.
 system forbids any caller from feeding `ThreadId.sentinel` for either
 argument. Uses `vCallerTid.val` / `vTargetTid.val` directly in the body
 so `split at` tactics in preservation proofs work cleanly. -/
-def setPriorityOp (st : SystemState) (vCallerTid vTargetTid : SeLe4n.ValidThreadId)
+noncomputable def setPriorityOp (st : SystemState) (vCallerTid vTargetTid : SeLe4n.ValidThreadId)
     (newPriority : SeLe4n.Priority) : Except KernelError SystemState :=
   -- E1: Caller TCB lookup + MCP authority check
   -- AN10-B (DEF-AK7-F.reader.hygiene): typed-helper migration. Both
@@ -546,7 +634,7 @@ Returns `illegalAuthority` if `newMCP > caller.maxControlledPriority`.
 
 **WS-AL AL8 (cascades AK7-E)**: `callerTid` / `targetTid` are
 `ValidThreadId` for compile-time sentinel rejection. -/
-def setMCPriorityOp (st : SystemState) (vCallerTid vTargetTid : SeLe4n.ValidThreadId)
+noncomputable def setMCPriorityOp (st : SystemState) (vCallerTid vTargetTid : SeLe4n.ValidThreadId)
     (newMCP : SeLe4n.Priority) : Except KernelError SystemState :=
   -- F1: Caller MCP authority validation (reuses validatePriorityAuthority for consistency)
   -- AN10-B (DEF-AK7-F.reader.hygiene): typed-helper migration. Both

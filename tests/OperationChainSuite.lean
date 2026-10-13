@@ -13,6 +13,7 @@ import SeLe4n.Testing.InvariantChecks
 import SeLe4n.Testing.Helpers
 import SeLe4n.Testing.Deprecated
 import SeLe4n.Platform.Boot
+import SeLe4n.Testing.BootCoreOps
 
 set_option maxRecDepth 1024
 
@@ -54,7 +55,7 @@ private def chain1RetypeMintRevoke : IO Unit := do
   let dstSlot : SeLe4n.Kernel.CSpaceAddr := { cnode := cnodeId, slot := (SeLe4n.Slot.ofNat 1) }
   let st0 :=
     (BootstrapBuilder.empty
-      |>.withObject targetId (.notification { state := .idle, waitingThreads := SeLe4n.NoDupList.empty, hasPendingBadge := false, pendingWord := SeLe4n.Badge.zero })
+      |>.withObject targetId (.notification { state := .idle, hasPendingBadge := false, pendingWord := SeLe4n.Badge.zero })
       |>.withObject cnodeId (.cnode {
           depth := 0
           guardWidth := 0
@@ -130,7 +131,7 @@ private def chain4ServiceRegistryDependencyGraph : IO Unit := do
   let st0 :=
     (BootstrapBuilder.empty
       |>.withObject ⟨500⟩ (.endpoint {})
-      |>.withObject ⟨501⟩ (.notification { state := .idle, waitingThreads := SeLe4n.NoDupList.empty, hasPendingBadge := false, pendingWord := SeLe4n.Badge.zero })
+      |>.withObject ⟨501⟩ (.notification { state := .idle, hasPendingBadge := false, pendingWord := SeLe4n.Badge.zero })
       |>.withService baseSid {
           identity := { sid := baseSid, backingObject := ⟨500⟩, owner := ⟨1⟩ }
           dependencies := []
@@ -194,7 +195,7 @@ private def chain6NotificationBadgeAccumulation : IO Unit := do
   let waiter : SeLe4n.ThreadId := ⟨11⟩
   let st0 :=
     (BootstrapBuilder.empty
-      |>.withObject ntfnId (.notification { state := .idle, waitingThreads := SeLe4n.NoDupList.empty, hasPendingBadge := false, pendingWord := SeLe4n.Badge.zero })
+      |>.withObject ntfnId (.notification { state := .idle, hasPendingBadge := false, pendingWord := SeLe4n.Badge.zero })
       |>.withObject waiter.toObjId (.tcb {
           tid := waiter
           priority := ⟨20⟩
@@ -420,7 +421,7 @@ private partial def scheduleNTimes (n : Nat) (assertEvery : Nat) (st : SystemSta
   if n = 0 then
     pure st
   else
-    let step := if (st.scheduler.currentOnCore bootCoreId).isSome then SeLe4n.Kernel.handleYield st else SeLe4n.Kernel.schedule st
+    let step := if (st.scheduler.currentOnCore bootCoreId).isSome then bootYield st else bootSchedule st
     let st' ← runKernelSt s!"scheduler: schedule step {n}" step
     if assertEvery > 0 && n % assertEvery = 0 then
       assertInvariants s!"scheduler periodic invariant {n}" st'
@@ -441,11 +442,11 @@ private def schedulerStressChecks : IO Unit := do
       |>.withObject ⟨2603⟩ (.tcb { tid := ⟨2603⟩, priority := ⟨100⟩, domain := ⟨0⟩, cspaceRoot := ⟨260⟩, vspaceRoot := ⟨3000⟩, ipcBuffer := (SeLe4n.VAddr.ofNat 16384), ipcState := .ready })
       |>.withRunnable [⟨2600⟩, ⟨2601⟩, ⟨2602⟩, ⟨2603⟩]
       |>.buildChecked)
-  let (_, stFirst) ← expectOkSt "scheduler same-priority baseline" (SeLe4n.Kernel.schedule samePrioState)
+  let (_, stFirst) ← expectOkSt "scheduler same-priority baseline" (bootSchedule samePrioState)
   let baseline := (stFirst.scheduler.currentOnCore bootCoreId)
   let mut consistent := true
   for _ in List.range 20 do
-    match SeLe4n.Kernel.schedule samePrioState with
+    match bootSchedule samePrioState with
     | .ok (_, st') =>
         if (st'.scheduler.currentOnCore bootCoreId) ≠ baseline then
           consistent := false
@@ -491,8 +492,8 @@ private def schedulerStressChecks : IO Unit := do
   let mut st := domainState
   let mut isolated := true
   for _ in List.range 16 do
-    let stSwitch ← runKernelSt "scheduler domain switch" (SeLe4n.Kernel.switchDomain st)
-    let stSched ← runKernelSt "scheduler domain schedule" (SeLe4n.Kernel.schedule stSwitch)
+    let stSwitch ← runKernelSt "scheduler domain switch" (bootSwitchDomain st)
+    let stSched ← runKernelSt "scheduler domain schedule" (bootSchedule stSwitch)
     match (stSched.scheduler.currentOnCore bootCoreId) with
     | none => pure ()
     | some tid =>
@@ -582,7 +583,9 @@ private def chain10RegisterDecodeMultiSyscall : IO Unit := do
   | _ => throw <| IO.userError "chain10: sender TCB not found after send"
 
   -- Step 2: Dispatch receiver — remove from runQueue before making current
-  let stRecv := { stAfterSend with scheduler := (stAfterSend.scheduler.setCurrentOnCore bootCoreId (some ⟨301⟩)).setRunQueueOnCore bootCoreId ((stAfterSend.scheduler.runQueueOnCore bootCoreId).remove ⟨301⟩) }
+  -- (dequeue through the TCB links so the live queue, not just the ghost, drops 301)
+  let stDeq := stAfterSend.runRemoveOnCore bootCoreId ⟨301⟩
+  let stRecv := { stDeq with scheduler := stDeq.scheduler.setCurrentOnCore bootCoreId (some ⟨301⟩) }
   let stFinal ← match SeLe4n.Kernel.syscallEntry SeLe4n.arm64DefaultLayout 32 stRecv with
   | .ok (_, stAfterRecv) =>
       -- After receive, endpoint sendQ should be empty (sender was dequeued)
@@ -682,7 +685,7 @@ private def chain12IpcCapTransfer : IO Unit := do
   let st0 :=
     (BootstrapBuilder.empty
       |>.withObject epId (.endpoint {})
-      |>.withObject targetObj (.notification { state := .idle, waitingThreads := SeLe4n.NoDupList.empty, hasPendingBadge := false, pendingWord := SeLe4n.Badge.zero })
+      |>.withObject targetObj (.notification { state := .idle, hasPendingBadge := false, pendingWord := SeLe4n.Badge.zero })
       |>.withObject senderCNode (.cnode {
           depth := 4, guardWidth := 0, guardValue := 0, radixWidth := 4,
           slots := SeLe4n.UniqueSlotMap.ofListWF [
@@ -769,8 +772,8 @@ private def ipcCapTransferRevocable : IO Unit := do
   let st0 :=
     (BootstrapBuilder.empty
       |>.withObject epId (.endpoint {})
-      |>.withObject payloadObj (.notification { state := .idle, waitingThreads := SeLe4n.NoDupList.empty, hasPendingBadge := false, pendingWord := SeLe4n.Badge.zero })
-      |>.withObject unrelatedObj (.notification { state := .idle, waitingThreads := SeLe4n.NoDupList.empty, hasPendingBadge := false, pendingWord := SeLe4n.Badge.zero })
+      |>.withObject payloadObj (.notification { state := .idle, hasPendingBadge := false, pendingWord := SeLe4n.Badge.zero })
+      |>.withObject unrelatedObj (.notification { state := .idle, hasPendingBadge := false, pendingWord := SeLe4n.Badge.zero })
       |>.withObject senderCNode (.cnode {
           depth := 4, guardWidth := 0, guardValue := 0, radixWidth := 4,
           slots := SeLe4n.UniqueSlotMap.ofListWF [
@@ -909,7 +912,7 @@ private def ipcCapTransferRevocable : IO Unit := do
     (match stParked.objects[senderCNode]? with
      | some (.cnode cn) =>
          match SeLe4n.Kernel.lifecyclePreRetypeCleanup stParked senderCNode (.cnode cn)
-                 (.notification { state := .idle, waitingThreads := SeLe4n.NoDupList.empty, hasPendingBadge := false, pendingWord := SeLe4n.Badge.zero }) with
+                 (.notification { state := .idle, hasPendingBadge := false, pendingWord := SeLe4n.Badge.zero }) with
          | .error .revocationRequired => true
          | _ => false
      | _ => false)
@@ -979,7 +982,7 @@ private def ipcCapTransferArrivalOrder : IO Unit := do
   let st0 :=
     (BootstrapBuilder.empty
       |>.withObject epId (.endpoint {})
-      |>.withObject payloadObj (.notification { state := .idle, waitingThreads := SeLe4n.NoDupList.empty, hasPendingBadge := false, pendingWord := SeLe4n.Badge.zero })
+      |>.withObject payloadObj (.notification { state := .idle, hasPendingBadge := false, pendingWord := SeLe4n.Badge.zero })
       |>.withObject senderCNode (.cnode {
           depth := 4, guardWidth := 0, guardValue := 0, radixWidth := 4,
           slots := SeLe4n.UniqueSlotMap.ofListWF [(srcSlot, payloadCap)]
@@ -1114,7 +1117,7 @@ private def replyRecvCapTransferArrivalOrder : IO Unit := do
   let st0 :=
     (BootstrapBuilder.empty
       |>.withObject epId (.endpoint {})
-      |>.withObject payloadObj (.notification { state := .idle, waitingThreads := SeLe4n.NoDupList.empty, hasPendingBadge := false, pendingWord := SeLe4n.Badge.zero })
+      |>.withObject payloadObj (.notification { state := .idle, hasPendingBadge := false, pendingWord := SeLe4n.Badge.zero })
       |>.withObject senderCNode (.cnode {
           depth := 4, guardWidth := 0, guardValue := 0, radixWidth := 4,
           slots := SeLe4n.UniqueSlotMap.ofListWF [(srcSlot, payloadCap)]
@@ -1243,7 +1246,7 @@ private def receiveWithoutSenderInstallsNothing : IO Unit := do
   let st0 :=
     (BootstrapBuilder.empty
       |>.withObject epId (.endpoint {})
-      |>.withObject payloadObj (.notification { state := .idle, waitingThreads := SeLe4n.NoDupList.empty, hasPendingBadge := false, pendingWord := SeLe4n.Badge.zero })
+      |>.withObject payloadObj (.notification { state := .idle, hasPendingBadge := false, pendingWord := SeLe4n.Badge.zero })
       |>.withObject senderCNode (.cnode {
           depth := 4, guardWidth := 0, guardValue := 0, radixWidth := 4,
           slots := SeLe4n.UniqueSlotMap.ofListWF [(srcSlot, payloadCap)]
@@ -1473,7 +1476,7 @@ private def revokeConsumesPendingTransfer : IO Unit := do
   let st0 :=
     (BootstrapBuilder.empty
       |>.withObject epId (.endpoint {})
-      |>.withObject payloadObj (.notification { state := .idle, waitingThreads := SeLe4n.NoDupList.empty, hasPendingBadge := false, pendingWord := SeLe4n.Badge.zero })
+      |>.withObject payloadObj (.notification { state := .idle, hasPendingBadge := false, pendingWord := SeLe4n.Badge.zero })
       |>.withObject senderCNode (.cnode {
           depth := 4, guardWidth := 0, guardValue := 0, radixWidth := 4,
           slots := SeLe4n.UniqueSlotMap.ofListWF [(srcSlot, payloadCap)]
@@ -1584,7 +1587,7 @@ private def revokeLeavesIndependentSibling : IO Unit := do
   let st0 :=
     (BootstrapBuilder.empty
       |>.withObject epId (.endpoint {})
-      |>.withObject payloadObj (.notification { state := .idle, waitingThreads := SeLe4n.NoDupList.empty, hasPendingBadge := false, pendingWord := SeLe4n.Badge.zero })
+      |>.withObject payloadObj (.notification { state := .idle, hasPendingBadge := false, pendingWord := SeLe4n.Badge.zero })
       |>.withObject senderCNode (.cnode {
           depth := 4, guardWidth := 0, guardValue := 0, radixWidth := 4,
           slots := SeLe4n.UniqueSlotMap.ofListWF [(revokedSlot, payloadCap), (siblingSlot, payloadCap)]
@@ -1704,7 +1707,7 @@ private def endpointGrantDecidesBothOrderings : IO Unit := do
   let st0 :=
     (BootstrapBuilder.empty
       |>.withObject epId (.endpoint {})
-      |>.withObject payloadObj (.notification { state := .idle, waitingThreads := SeLe4n.NoDupList.empty, hasPendingBadge := false, pendingWord := SeLe4n.Badge.zero })
+      |>.withObject payloadObj (.notification { state := .idle, hasPendingBadge := false, pendingWord := SeLe4n.Badge.zero })
       |>.withObject senderCNode (.cnode {
           depth := 4, guardWidth := 0, guardValue := 0, radixWidth := 4,
           slots := SeLe4n.UniqueSlotMap.ofListWF [(srcSlot, payloadCap)]
@@ -1803,7 +1806,7 @@ private def chain13IpcCapTransferNoGrant : IO Unit := do
   let st0 :=
     (BootstrapBuilder.empty
       |>.withObject epId (.endpoint {})
-      |>.withObject targetObj (.notification { state := .idle, waitingThreads := SeLe4n.NoDupList.empty, hasPendingBadge := false, pendingWord := SeLe4n.Badge.zero })
+      |>.withObject targetObj (.notification { state := .idle, hasPendingBadge := false, pendingWord := SeLe4n.Badge.zero })
       |>.withObject senderCNode (.cnode {
           depth := 4, guardWidth := 0, guardValue := 0, radixWidth := 4,
           slots := SeLe4n.UniqueSlotMap.ofListWF [((SeLe4n.Slot.ofNat 0), cap1)]
@@ -1858,8 +1861,8 @@ private def chain14IpcBadgeAndCapTransfer : IO Unit := do
   let st0 :=
     (BootstrapBuilder.empty
       |>.withObject epId (.endpoint {})
-      |>.withObject targetObj1 (.notification { state := .idle, waitingThreads := SeLe4n.NoDupList.empty, hasPendingBadge := false, pendingWord := SeLe4n.Badge.zero })
-      |>.withObject targetObj2 (.notification { state := .idle, waitingThreads := SeLe4n.NoDupList.empty, hasPendingBadge := false, pendingWord := SeLe4n.Badge.zero })
+      |>.withObject targetObj1 (.notification { state := .idle, hasPendingBadge := false, pendingWord := SeLe4n.Badge.zero })
+      |>.withObject targetObj2 (.notification { state := .idle, hasPendingBadge := false, pendingWord := SeLe4n.Badge.zero })
       |>.withObject senderCNode (.cnode {
           depth := 4, guardWidth := 0, guardValue := 0, radixWidth := 4,
           slots := SeLe4n.UniqueSlotMap.ofListWF [
@@ -2461,7 +2464,7 @@ private def chain22NotificationBadgeDelivery : IO Unit := do
   let badge := SeLe4n.Badge.ofNatMasked 0xCAFE
   let st0 :=
     (BootstrapBuilder.empty
-      |>.withObject ntfnId (.notification { state := .idle, waitingThreads := SeLe4n.NoDupList.empty, hasPendingBadge := false, pendingWord := SeLe4n.Badge.zero })
+      |>.withObject ntfnId (.notification { state := .idle, hasPendingBadge := false, pendingWord := SeLe4n.Badge.zero })
       |>.withObject waiter.toObjId (.tcb {
           tid := waiter
           priority := ⟨20⟩
@@ -2491,7 +2494,7 @@ private def chain22NotificationBadgeDelivery : IO Unit := do
     | none => throw (IO.userError "chain22: FAIL — waiter pendingMessage is none after signal wake")
   | _ => throw (IO.userError "chain22: FAIL — waiter TCB not found after signal wake")
   -- Step 4: Verify waiter is runnable again
-  expect "chain22: waiter is runnable after wake" (waiter ∈ (st2.scheduler.runQueueOnCore bootCoreId))
+  expect "chain22: waiter is runnable after wake" (st2.queuedOn bootCoreId waiter)
   assertInvariants "chain22: signal-wake badge delivery" st2
 
 -- ============================================================================
@@ -2639,10 +2642,10 @@ private def chain24HandleYieldEmptyQueue : IO Unit := do
       |>.withLifecycleObjectType ⟨20⟩ .vspaceRoot
       |>.buildChecked)
   -- Schedule to get the thread as current
-  let (_, st1) ← expectOkSt "chain24: initial schedule" (SeLe4n.Kernel.schedule st0)
+  let (_, st1) ← expectOkSt "chain24: initial schedule" (bootSchedule st0)
   expect "chain24: thread is current" ((st1.scheduler.currentOnCore bootCoreId) == some tid)
   -- Yield — single thread should re-enqueue and re-select itself
-  let (_, st2) ← expectOkSt "chain24: handleYield" (SeLe4n.Kernel.handleYield st1)
+  let (_, st2) ← expectOkSt "chain24: handleYield" (bootYield st1)
   expect "chain24: same thread re-selected after yield" ((st2.scheduler.currentOnCore bootCoreId) == some tid)
   assertInvariants "chain24: yield single thread" st2
   -- Edge case: handleYield with NO current thread and empty run queue
@@ -2653,11 +2656,13 @@ private def chain24HandleYieldEmptyQueue : IO Unit := do
       |>.withLifecycleObjectType ⟨10⟩ .cnode
       |>.withLifecycleObjectType ⟨20⟩ .vspaceRoot
       |>.buildChecked)
-  -- V5-F: handleYield with current=none now returns .error .invalidArgument
-  -- (defensive: yielding requires a current thread to re-enqueue)
-  expectErr "chain24: yield empty queue returns invalidArgument"
-    (SeLe4n.Kernel.handleYield stEmpty)
-    .invalidArgument
+  -- V5-F: yielding requires a current thread.  The live per-core yield
+  -- (`yieldOnCore`, WS-ZA ZA4.3) refuses a core with no caller as
+  -- `.illegalState`; the single-core reference `handleYield` it replaced in
+  -- this suite reported `.invalidArgument`.
+  expectErr "chain24: yield with no current thread returns illegalState"
+    (bootYield stEmpty)
+    .illegalState
 
 /-- L-P07: IRQ handler dispatch — register an IRQ handler and verify
 signal is dispatched to the correct notification object. -/
@@ -2666,7 +2671,7 @@ private def chain25IrqHandlerDispatch : IO Unit := do
   let irq : SeLe4n.Irq := ⟨5⟩
   let st0 :=
     (BootstrapBuilder.empty
-      |>.withObject ntfnId (.notification { state := .idle, waitingThreads := SeLe4n.NoDupList.empty, hasPendingBadge := false, pendingWord := SeLe4n.Badge.zero })
+      |>.withObject ntfnId (.notification { state := .idle, hasPendingBadge := false, pendingWord := SeLe4n.Badge.zero })
       |>.withIrqHandler irq ntfnId
       |>.withLifecycleObjectType ntfnId .notification
       |>.buildChecked)
@@ -2700,7 +2705,7 @@ private def chain26BootSequence : IO Unit := do
   -- For non-CNode/non-VSpace objects, the proof is vacuously true.
   let ntfnEntry : SeLe4n.Platform.Boot.ObjectEntry := {
     id := ntfnId
-    obj := .notification { state := .idle, waitingThreads := SeLe4n.NoDupList.empty, hasPendingBadge := false, pendingWord := SeLe4n.Badge.zero }
+    obj := .notification { state := .idle, hasPendingBadge := false, pendingWord := SeLe4n.Badge.zero }
     hSlots := by intro cn h; cases h
     hMappings := by intro vs h; cases h
   }
@@ -3129,7 +3134,7 @@ private def chain33ServiceLifecycle : IO Unit := do
     (BootstrapBuilder.empty
       |>.withObject epId1 (.endpoint {})
       |>.withObject epId2 (.endpoint {})
-      |>.withObject nonEpId (.notification { state := .idle, waitingThreads := SeLe4n.NoDupList.empty, hasPendingBadge := false, pendingWord := SeLe4n.Badge.zero })
+      |>.withObject nonEpId (.notification { state := .idle, hasPendingBadge := false, pendingWord := SeLe4n.Badge.zero })
       |>.withLifecycleObjectType epId1 .endpoint
       |>.withLifecycleObjectType epId2 .endpoint
       |>.withLifecycleObjectType nonEpId .notification
@@ -3234,7 +3239,7 @@ private def chain34ResolveExtraCapsSilentDrop : IO Unit := do
   let cap1 : Capability := { target := .object targetObj, rights := AccessRightSet.ofList [.write], badge := none }
   let st :=
     (BootstrapBuilder.empty
-      |>.withObject targetObj (.notification { state := .idle, waitingThreads := SeLe4n.NoDupList.empty, hasPendingBadge := false, pendingWord := SeLe4n.Badge.zero })
+      |>.withObject targetObj (.notification { state := .idle, hasPendingBadge := false, pendingWord := SeLe4n.Badge.zero })
       |>.withObject cnodeId (.cnode {
           depth := 4, guardWidth := 0, guardValue := 0, radixWidth := 4,
           slots := SeLe4n.UniqueSlotMap.ofListWF [

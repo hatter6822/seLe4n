@@ -268,7 +268,7 @@ def test_AK8_G_storeTcbChecked_cross_variant_rejected : IO Bool := do
 holding a Notification. -/
 def test_AK8_G_storeEndpointChecked_cross_variant_rejected : IO Bool := do
   let id : ObjId := ObjId.ofNat 52
-  let n : Notification := { state := .idle, waitingThreads := SeLe4n.NoDupList.empty }
+  let n : Notification := { state := .idle }
   let st := mkFrozenStateWith [(id, (.notification n))]
   let ep : Endpoint := {}
   match SeLe4n.Kernel.FrozenOps.frozenStoreEndpointChecked id ep st with
@@ -287,7 +287,7 @@ def test_AK8_G_storeNotificationChecked_cross_variant_rejected : IO Bool := do
       vspaceRoot := ObjId.ofNat 0
       ipcBuffer := SeLe4n.VAddr.ofNat 0 }
   let st := mkFrozenStateWith [(id, (.tcb tcb))]
-  let n : Notification := { state := .idle, waitingThreads := SeLe4n.NoDupList.empty }
+  let n : Notification := { state := .idle }
   match SeLe4n.Kernel.FrozenOps.frozenStoreNotificationChecked id n st with
   | .ok _ => return false
   | .error e => return e == KernelError.objectNotFound

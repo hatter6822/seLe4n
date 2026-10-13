@@ -177,7 +177,7 @@ private def witnessState : SystemState :=
           slots := SeLe4n.UniqueSlotMap.ofListWF
             [(SeLe4n.Slot.ofNat capPtrValue, ntfnCap)] })
     |>.withObject ntfnId (.notification
-        { state := .idle, waitingThreads := SeLe4n.NoDupList.empty,
+        { state := .idle, 
           hasPendingBadge := false, pendingWord := SeLe4n.Badge.zero, boundTCB := none })
     |>.withObject callerTid.toObjId (.tcb
         { tid := callerTid, priority := ⟨40⟩, domain := ⟨0⟩,
@@ -277,7 +277,7 @@ private def twoThreadState : SystemState :=
     |>.withObject callerVsp (.vspaceRoot { asid := SeLe4n.ASID.ofNat 7, mappings := {} })
     |>.withObject callerCn (.cnode sharedCn)
     |>.withObject ntfnId (.notification
-        { state := .idle, waitingThreads := SeLe4n.NoDupList.empty,
+        { state := .idle, 
           hasPendingBadge := false, pendingWord := SeLe4n.Badge.zero, boundTCB := none })
     |>.withObject epId (.endpoint {})
     |>.withObject callerTid.toObjId (.tcb
@@ -305,7 +305,7 @@ private def replyPendingState : SystemState :=
     |>.withObject callerVsp (.vspaceRoot { asid := SeLe4n.ASID.ofNat 7, mappings := {} })
     |>.withObject callerCn (.cnode sharedCn)
     |>.withObject ntfnId (.notification
-        { state := .idle, waitingThreads := SeLe4n.NoDupList.empty,
+        { state := .idle, 
           hasPendingBadge := false, pendingWord := SeLe4n.Badge.zero, boundTCB := none })
     |>.withObject epId (.endpoint {})
     |>.withObject callerTid.toObjId (.tcb
@@ -672,7 +672,7 @@ private def auditWitnessState : SystemState :=
                  { target := .auditTrail,
                    rights := AccessRightSet.ofList [.read] })] })
       |>.withObject ntfnId (.notification
-          { state := .idle, waitingThreads := SeLe4n.NoDupList.empty,
+          { state := .idle, 
             hasPendingBadge := false, pendingWord := SeLe4n.Badge.zero, boundTCB := none })
       |>.withObject callerTid.toObjId (.tcb
           { tid := callerTid, priority := ⟨40⟩, domain := ⟨0⟩,

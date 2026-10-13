@@ -144,13 +144,11 @@ theorem endpointCallOnCore_rendezvous_post_ipcState
       hObjInv hPop
   have hInv'' : st''.objects.invExt :=
     storeTcbIpcStateAndMessage_preserves_objects_invExt st' st'' receiver _ _ hInv' hStore
-  -- The receiver is `.ready` in `st''`, so the wake is object-invisible.
+  -- The receiver is `.ready` in `st''`, so the wake writes only run-queue links.
   obtain ⟨recvTcb'', hRecv'', hRecvReady⟩ :=
     storeTcbIpcStateAndMessage_getTcb?_ipcState st' st'' receiver .ready (some msg) hInv' hStore
-  have hWakeObjs : ∀ oid, (wakeThread st'' receiver executingCore).1.objects[oid]?
-      = st''.objects[oid]? :=
-    wakeThread_objects_getElem_eq_of_ready st'' receiver executingCore recvTcb'' hRecv''
-      hRecvReady hInv''
+  have hWA := wakeThread_objectsAgreeOffRunLinks_of_ready st'' receiver executingCore recvTcb''
+    hRecv'' hRecvReady hInv''
   have hWakeInv : (wakeThread st'' receiver executingCore).1.objects.invExt :=
     wakeThread_preserves_objects_invExt st'' receiver executingCore hInv''
   have hInv4 : st4.objects.invExt :=
@@ -162,25 +160,29 @@ theorem endpointCallOnCore_rendezvous_post_ipcState
   rw [hEq]
   constructor
   · intro tcb hTcb
-    rw [removeRunnableOnCore_getTcb?] at hTcb
+    obtain ⟨t5, hT5, hR⟩ := (removeRunnableOnCore_objectsAgreeOffRunLinks st5 caller executingCore).get_tcb'
+      ((getTcb?_eq_some_iff _ caller tcb).mp hTcb)
     obtain ⟨tcb4, hTcb4, hIpcEq⟩ := linkServerStashedReply_tcb_ipcState_backward st4 st5
-      caller receiver caller tcb hInv4 hLink ((getTcb?_eq_some_iff st5 caller tcb).mp hTcb)
+      caller receiver caller t5 hInv4 hLink hT5
     have : tcb4 = callerTcb4 :=
       Option.some.inj (((getTcb?_eq_some_iff st4 caller tcb4).mpr hTcb4).symm.trans hCaller4)
-    exact ⟨endpointId, some receiver, by rw [← hIpcEq, this]; exact hCallerBlocked⟩
+    exact ⟨endpointId, some receiver, by
+      rw [TCB.proj_eq_of_withoutRunLinks_eq TCB.ipcState hR, ← hIpcEq, this]; exact hCallerBlocked⟩
   · intro tcb hTcb
-    rw [removeRunnableOnCore_getTcb?] at hTcb
+    obtain ⟨t5, hT5, hR⟩ := (removeRunnableOnCore_objectsAgreeOffRunLinks st5 caller executingCore).get_tcb'
+      ((getTcb?_eq_some_iff _ receiver tcb).mp hTcb)
     obtain ⟨tcb4, hTcb4, hIpcEq⟩ := linkServerStashedReply_tcb_ipcState_backward st4 st5
-      caller receiver receiver tcb hInv4 hLink ((getTcb?_eq_some_iff st5 receiver tcb).mp hTcb)
+      caller receiver receiver t5 hInv4 hLink hT5
     obtain ⟨tcbW, hTcbW, _, hIpcW⟩ := storeTcbIpcStateAndMessage_getTcb?_backward
       (wakeThread st'' receiver executingCore).1 st4 caller
       (.blockedOnReply endpointId (some receiver)) none hWakeInv hCallerStore receiver tcb4
       ((getTcb?_eq_some_iff st4 receiver tcb4).mpr hTcb4)
-    have hTcbW'' : st''.getTcb? receiver = some tcbW := by
-      rw [getTcb?_eq_some_iff] at hTcbW ⊢
-      rw [← hWakeObjs receiver.toObjId]; exact hTcbW
-    have : tcbW = recvTcb'' := Option.some.inj (hTcbW''.symm.trans hRecv'')
-    rw [← hIpcEq, ← hIpcW (Ne.symm hNe), this]
+    rw [getTcb?_eq_some_iff] at hTcbW
+    obtain ⟨tW, hTcbW'', hE⟩ := hWA.get_tcb' hTcbW
+    have : tW = recvTcb'' :=
+      Option.some.inj (((getTcb?_eq_some_iff _ _ _).mpr hTcbW'').symm.trans hRecv'')
+    rw [TCB.proj_eq_of_withoutRunLinks_eq TCB.ipcState hR, ← hIpcEq, ← hIpcW (Ne.symm hNe),
+      TCB.proj_eq_of_withoutRunLinks_eq TCB.ipcState hE, this]
     exact hRecvReady
 
 

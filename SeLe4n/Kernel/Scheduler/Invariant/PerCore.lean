@@ -198,7 +198,7 @@ def schedulerPriorityMatchOnCore (st : SystemState) (c : CoreId) : Prop :=
   ∀ tid, tid ∈ (st.scheduler.runQueueOnCore c) →
     match st.getTcb? tid with
     | some tcb =>
-        (st.scheduler.runQueueOnCore c).threadPriority[tid]? = some (tcb.boostedPriority)
+        (st.scheduler.runQueueOnCore c).priorityOf tid = some (tcb.boostedPriority)
     | none => True
 
 /-- SM4.C: per-core domain-time positivity.  Per-core form of
@@ -280,7 +280,7 @@ def effectiveParamsMatchRunQueueOnCore (st : SystemState) (c : CoreId) : Prop :=
   ∀ tid, tid ∈ (st.scheduler.runQueueOnCore c) →
     match st.getTcb? tid with
     | some tcb =>
-      (st.scheduler.runQueueOnCore c).threadPriority[tid]? = some tcb.priority
+      (st.scheduler.runQueueOnCore c).priorityOf tid = some tcb.priority
     | none => True
 
 -- ============================================================================
@@ -934,7 +934,8 @@ theorem removeRunnableOnCore_preserves_schedulerInvariantBase_smp {st : SystemSt
         | some x =>
             rw [hCur] at hCTV
             obtain ⟨tcb, hT⟩ := hCTV
-            exact ⟨tcb, by rw [removeRunnableOnCore_getTcb? st tid c x]; exact hT⟩
+            exact Option.isSome_iff_exists.mp (by
+              rw [(removeRunnableOnCore_objectsAgreeOffRunLinks st tid c).getTcb?_isSome x, hT]; rfl)
   · refine ⟨?_, ?_, ?_⟩
     · unfold queueCurrentConsistentOnCore at hQCC ⊢
       rw [removeRunnableOnCore_currentOnCore_ne st tid c c' hcc,
@@ -950,7 +951,8 @@ theorem removeRunnableOnCore_preserves_schedulerInvariantBase_smp {st : SystemSt
       | some x =>
           rw [hCur] at hCTV
           obtain ⟨tcb, hT⟩ := hCTV
-          exact ⟨tcb, by rw [removeRunnableOnCore_getTcb? st tid c x]; exact hT⟩
+          exact Option.isSome_iff_exists.mp (by
+              rw [(removeRunnableOnCore_objectsAgreeOffRunLinks st tid c).getTcb?_isSome x, hT]; rfl)
 
 /-- WS-RR RR8.16 (`v0.35.197`): the state-resolved instance — the spelling every
 donation pop and every cancellation teardown calls. -/
@@ -2356,6 +2358,15 @@ theorem allThreadsTimeSlicePositive_of_objects_eq {st st' : SystemState}
   intro tid tcb htcb
   rw [getTcb?_congr_objects hObj] at htcb
   exact h tid tcb htcb
+
+/-- WS-ZA ZA4.5: the same past the run-queue links — a slice is not a link. -/
+theorem allThreadsTimeSlicePositive_of_objectsAgreeOffRunLinks {st st' : SystemState}
+    (hA : st'.objectsAgreeOffRunLinks st) (h : allThreadsTimeSlicePositive st) :
+    allThreadsTimeSlicePositive st' := by
+  intro tid tcb' htcb
+  obtain ⟨tcb, h0, hE⟩ := hA.getTcb?_some' htcb
+  rw [TCB.proj_eq_of_withoutRunLinks_eq TCB.timeSlice hE]
+  exact h tid tcb h0
 
 /-- General frame lemma: `allThreadsTimeSlicePositive` is preserved by any
 transition whose object writes preserve every thread's `timeSlice` field.  Every

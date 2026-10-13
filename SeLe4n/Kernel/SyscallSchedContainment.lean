@@ -584,7 +584,7 @@ layers are scheduler-silent — `retypeInitiatorDrain_scheduler` and
 frame descends through them without a case analysis of its own. -/
 theorem schedLockSet_lifecycleRetypeOnCore_coversWrites (executingCore : CoreId)
     (authCap : Capability) (target : SeLe4n.ObjId) (newObj : KernelObject)
-    (st st' : SystemState) (S : LockSet)
+    (st st' : SystemState) (S : LockSet) (hInv : st.objects.invExt)
     (hStep : lifecycleRetypeDirectWithCleanupShootdownPerCoreIcache executingCore authCap
       target newObj st = .ok ((), st'))
     (hS : LockSet.ofList? (schedLockSet_lifecycleRetypeOnCore st target) = some S) :
@@ -593,7 +593,7 @@ theorem schedLockSet_lifecycleRetypeOnCore_coversWrites (executingCore : CoreId)
     (lifecycleRetypeReplenishCores st target) st st'
     (LockSet.ofList?_pairs hS)
     (lifecycleRetypeDirectWithCleanupShootdownPerCoreIcache_confinedToCores executingCore
-      authCap target newObj st st' hStep)
+      authCap target newObj st st' hInv hStep)
     (fun d hd => lifecycleRetypeDirectWithCleanupShootdownPerCoreIcache_replenishQueueOnCore_ne
       executingCore authCap target newObj st st' d hd hStep)
 
@@ -616,11 +616,13 @@ theorem yieldChargeOnCore_frame_ne (st st' : SystemState) (e d : CoreId)
   · cases h
   · split at h
     · cases h
-      simp [sliceExpireOnCore, hne, SystemState.rewriteObject_scheduler]
+      simp [sliceExpireOnCore, SystemState.rewriteObject_scheduler,
+        SystemState.runEnqueueOnCore_runQueueOnCore_ne _ _ _ _ _ hne]
     all_goals
       split at h
       · cases h
-        simp [spendBudgetOnCore, replenishOnCore, hne, SystemState.rewriteObject_scheduler]
+        simp [spendBudgetOnCore, replenishOnCore, hne, SystemState.rewriteObject_scheduler,
+          SystemState.runEnqueueOnCore_runQueueOnCore_ne _ _ _ _ _ hne]
       · cases h
 
 /-- **WS-ZA ZA4.3**: `.yield`'s footprint covers its writes.  The run and

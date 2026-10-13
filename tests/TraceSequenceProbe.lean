@@ -9,6 +9,8 @@
 
 import SeLe4n
 import SeLe4n.Testing.InvariantChecks
+import SeLe4n.Testing.BootCoreOps
+import SeLe4n.Testing.StateBuilder
 
 /-! AN11-E.11 (TST-M13): TraceSequenceProbe is intentionally **Tier 4
 only** (`scripts/test_tier4_nightly_candidates.sh`).  It runs every seed
@@ -63,17 +65,17 @@ def probeBaseState (threadCount : Nat) : SystemState :=
   let allEntries :=
     (probeEndpointId, KernelObject.endpoint {}) ::
     (probeNotificationId, KernelObject.notification {
-      state := .idle, waitingThreads := SeLe4n.NoDupList.empty, hasPendingBadge := false, pendingWord := SeLe4n.Badge.zero }) ::
+      state := .idle, hasPendingBadge := false, pendingWord := SeLe4n.Badge.zero }) ::
     (probeCNodeId, cnodeObj) ::
     threadEntries
   let runnableThreads : List SeLe4n.ThreadId :=
     (List.range threadCount).map fun n => ⟨n + 1⟩
-  { (default : SystemState) with
+  let base : SystemState := { (default : SystemState) with
     objects := SeLe4n.Kernel.RobinHood.RHTable.ofList allEntries
     objectIndex := allEntries.map Prod.fst
-    objectIndexSet := SeLe4n.Kernel.RobinHood.RHSet.ofList (allEntries.map Prod.fst)
-    scheduler := (default : SchedulerState).setRunQueueOnCore SeLe4n.Kernel.Concurrency.bootCoreId (SeLe4n.Kernel.RunQueue.ofList (runnableThreads.map (fun tid => (tid, ⟨0⟩))))
-  }
+    objectIndexSet := SeLe4n.Kernel.RobinHood.RHSet.ofList (allEntries.map Prod.fst) }
+  SeLe4n.Testing.enqueueAllOnCore base SeLe4n.Kernel.Concurrency.bootCoreId
+    (runnableThreads.map (fun tid => (tid, ⟨0⟩)))
 
 def nextRand (x : Nat) : Nat :=
   (1664525 * x + 1013904223) % 4294967296
@@ -223,7 +225,7 @@ def stepOp (op : ProbeOp) (tid : SeLe4n.ThreadId) (st : SystemState) : StepOutco
       | .error err => classifyError .notifyWait err
   -- WS-F7/D2d: Schedule — pick best runnable thread in active domain
   | .scheduleOp =>
-      match SeLe4n.Kernel.schedule st with
+      match bootSchedule st with
       | .ok (_, st') => .mutated st'
       | .error err => classifyError .scheduleOp err
   -- WS-F7/D2d: Capability lookup — exercise CSpace resolution

@@ -29,9 +29,12 @@ open SeLe4n.Kernel.Concurrency (CoreId SgiKind)
 /-- A TCB write that keeps the key fields moves no key input. -/
 theorem modifyTcb_keyFrame {st st' : SystemState} {tid : SeLe4n.ThreadId} {f : TCB → TCB}
     (hF : ∀ t, tcbKeyFields (f t) = tcbKeyFields t) (hInv : st.objects.invExt)
-    (h : modifyTcb st tid f = .ok st') : capabilityKeyFrame st st' := by
+    (h : modifyTcb st tid f = .ok st')
+    (hR : ∀ t, (f t).runCoreCode = t.runCoreCode := by intro _; rfl) :
+    capabilityKeyFrame st st' := by
   obtain ⟨tcb, hL, hS⟩ := modifyTcb_ok_decompose h
   exact storeObject_tcbKeyKeeping_keyFrame hInv (lookupTcb_some_objects _ _ _ hL) hS (hF tcb)
+    (hR tcb)
 
 theorem storeTcbQueueLinks_keyFrame {st st' : SystemState} {tid : SeLe4n.ThreadId}
     {prev : Option SeLe4n.ThreadId} {pprev : Option QueuePPrev} {next : Option SeLe4n.ThreadId}
@@ -40,6 +43,18 @@ theorem storeTcbQueueLinks_keyFrame {st st' : SystemState} {tid : SeLe4n.ThreadI
   unfold storeTcbQueueLinks at h
   exact modifyTcb_keyFrame (f := fun tcb => tcbWithQueueLinks tcb prev pprev next)
     (fun _ => rfl) hInv h
+
+/-- WS-ZA ZA4.4: the notification link-in rewrites queue links only. -/
+theorem linkNtfnWaiter_keyFrame {st st' : SystemState} {waiter : SeLe4n.ThreadId}
+    {tail : Option SeLe4n.ThreadId} (hInv : st.objects.invExt)
+    (h : linkNtfnWaiter st waiter tail = .ok st') : capabilityKeyFrame st st' := by
+  obtain ⟨st3, h3, h4⟩ := linkNtfnWaiter_ok_cases h
+  unfold storeTcbNtfnLinks at h3
+  have hF3 := modifyTcb_keyFrame (by intro _; rfl) hInv h3
+  unfold relinkNtfnNext modifyTcbOpt at h4
+  cases tail with
+  | none => cases h4; exact hF3
+  | some t => exact hF3.trans (modifyTcb_keyFrame (by intro _; rfl) hF3.2.2 h4)
 
 /-- A store over a slot no key reads, of an object no key reads. -/
 theorem storeObject_endpoint_keyFrame {st : SystemState} {oid : SeLe4n.ObjId}
@@ -231,7 +246,7 @@ theorem endpointSendDualOnCore_stepCovers (e : CoreId) {endpointId : SeLe4n.ObjI
           have hF2 := storeTcbIpcStateAndMessage_keyFrame hInv1 hBlk
           have hInv2 := storeTcbIpcStateAndMessage_preserves_objects_invExt _ _ _ _ _ hInv1 hBlk
           exact ⟨stepCovers_trans (hF1.trans hF2).stepCovers
-            (removeRunnableOnCore_stepCovers e st2 sender executingCore), hInv2⟩
+            (removeRunnableOnCore_stepCovers e st2 sender executingCore), removeRunnableOnCore_objects_invExt st2 sender executingCore hInv2⟩
   · split <;> exact ⟨stepCovers_refl e st, hInv⟩
 
 /-- Installing transferred capabilities writes CNodes and the CDT only. -/
@@ -411,7 +426,7 @@ theorem endpointReceiveDualOnCore_stepCovers (e : CoreId) {endpointId : SeLe4n.O
             have hF2 := hF1.trans (storeTcbIpcStateAndMessage_keyFrame hF1.2.2 hBlk)
             have hPre := stepCovers_trans hC hF2.stepCovers
             split
-            · exact ⟨stepCovers_trans hPre (removeRunnableOnCore_stepCovers e _ _ _), hF2.2.2⟩
+            · exact ⟨stepCovers_trans hPre (removeRunnableOnCore_stepCovers e _ _ _), removeRunnableOnCore_objects_invExt _ _ _ hF2.2.2⟩
             · rename_i rTcb hT
               split
               · split
@@ -420,7 +435,7 @@ theorem endpointReceiveDualOnCore_stepCovers (e : CoreId) {endpointId : SeLe4n.O
                   have hF3 := storeObject_tcbKeyKeeping_keyFrame hF2.2.2
                     ((SystemState.getTcb?_eq_some_iff _ _ _).mp hT) hS rfl
                   exact ⟨stepCovers_trans (stepCovers_trans hPre hF3.stepCovers)
-                    (removeRunnableOnCore_stepCovers e _ _ _), hF3.2.2⟩
+                    (removeRunnableOnCore_stepCovers e _ _ _), removeRunnableOnCore_objects_invExt _ _ _ hF3.2.2⟩
               · exact hRefl
   · split <;> exact hRefl
 
@@ -535,6 +550,10 @@ theorem donateSchedContext_stepCovers (e : CoreId) {st st' : SystemState}
                     have k4 := keyInputsEqExcept_storeObject_tcb hInv3
                       (lookupTcb_some_objects _ _ _ hL2) hS4
                     refine stepCovers_markKeyChangeFrom_pair (fun t hc hs => ?_) ?_
+                      (((runCoresAgree_storeObject_tcb hInv3 (lookupTcb_some_objects _ _ _ hL2)
+                          hS4 rfl).trans
+                        (runCoresAgree_storeObject_tcb hInv2 (lookupTcb_some_objects _ _ _ hL1)
+                          hS3 rfl)).trans k2.runCoresAgree)
                     · show schedKeyView s4 t = schedKeyView st t
                       rw [schedKeyView_eq_of_keyInputsEqExcept k4 hs,
                         schedKeyView_eq_of_keyInputsEqExcept k3 hc,
@@ -678,7 +697,7 @@ theorem endpointCallOnCore_stepCovers (e : CoreId) {endpointId : SeLe4n.ObjId}
             · rename_i st5 hLink
               have hF5 := hF4.trans (linkServerStashedReply_keyFrame hF4.2.2 hLink)
               exact ⟨stepCovers_trans (stepCovers_trans (stepCovers_trans hF2.stepCovers hW)
-                hF5.stepCovers) (removeRunnableOnCore_stepCovers e _ _ _), hF5.2.2⟩
+                hF5.stepCovers) (removeRunnableOnCore_stepCovers e _ _ _), removeRunnableOnCore_objects_invExt _ _ _ hF5.2.2⟩
     · split
       · exact hRefl
       · rename_i st1 hEnq
@@ -688,7 +707,7 @@ theorem endpointCallOnCore_stepCovers (e : CoreId) {endpointId : SeLe4n.ObjId}
         · rename_i st2 hBlk
           have hF2 := hF1.trans (storeTcbIpcStateAndMessage_keyFrame hF1.2.2 hBlk)
           exact ⟨stepCovers_trans hF2.stepCovers (removeRunnableOnCore_stepCovers e _ _ _),
-            hF2.2.2⟩
+            removeRunnableOnCore_objects_invExt _ _ _ hF2.2.2⟩
   · split <;> exact hRefl
 
 theorem endpointCallWithCapsOnCore_stepCovers (e : CoreId) {endpointId : SeLe4n.ObjId}
@@ -768,9 +787,10 @@ theorem endpointCallCrossCoreDispatchChecked_stepCovers (e : CoreId) {ctx : Labe
 
 /-- A TCB rewrite that keeps the key fields, in its total form. -/
 theorem updateTcb_keyFrame (st : SystemState) (tid : SeLe4n.ThreadId) {f : TCB → TCB}
-    (hF : ∀ t, tcbKeyFields (f t) = tcbKeyFields t) (hInv : st.objects.invExt) :
+    (hF : ∀ t, tcbKeyFields (f t) = tcbKeyFields t) (hInv : st.objects.invExt)
+    (hR : ∀ t, (f t).runCoreCode = t.runCoreCode := by intro _; rfl) :
     capabilityKeyFrame st (st.updateTcb tid f) :=
-  ⟨keyInputsEq_updateTcb hInv hF, SystemState.updateTcb_scheduler _ _ _,
+  ⟨keyInputsEq_updateTcb hInv hF hR, SystemState.updateTcb_scheduler _ _ _,
    SystemState.updateTcb_preserves_objects_invExt _ _ _ hInv⟩
 
 theorem spliceReplyFrameOutOrSelf_keyFrame (st : SystemState) (rid : SeLe4n.ReplyId)
@@ -858,8 +878,8 @@ theorem applyReplyDonationOnCore_stepCovers (e : CoreId) {st st' : SystemState}
           (migrateSchedContextReplenishment_stepCovers e _ _ _ _))
           (descheduleAt_stepCovers e _ _ _), ?_⟩
         unfold descheduleAtPlacement
-        rw [descheduleAt_objects, migrateSchedContextReplenishment_objects]
-        exact h1Inv
+        exact descheduleAt_objects_invExt _ _ _
+          (by rw [migrateSchedContextReplenishment_objects]; exact h1Inv)
     · cases h
 
 /-- The live reply covers on every outcome: the reply leg, the donation
@@ -932,9 +952,11 @@ theorem faultReplyOnCore_stepCovers (e : CoreId) {replier faulted : SeLe4n.Threa
     · unfold faultAbandonOnCore
       refine ⟨stepCovers_trans (stepCovers_trans hR
         (removeRunnableOnCore_stepCovers e st1 faulted (determineTargetCore st1 faulted))) ?_,
-        SystemState.updateTcb_preserves_objects_invExt _ _ _ (by exact hRInv)⟩
+        SystemState.updateTcb_preserves_objects_invExt _ _ _
+          (removeRunnableOnCore_objects_invExt _ _ _ hRInv)⟩
       apply capabilityKeyFrame.stepCovers
-      exact updateTcb_keyFrame _ faulted (fun _ => rfl) (by exact hRInv)
+      exact updateTcb_keyFrame _ faulted (fun _ => rfl)
+        (removeRunnableOnCore_objects_invExt _ _ _ hRInv)
 
 /-- The checked reply transfer covers on its `.ok`. -/
 theorem replyTransferOnCoreChecked_stepCovers (e : CoreId) {ctx : LabelingContext}
@@ -1121,14 +1143,14 @@ theorem keyFrame_storeObject_inert_after {st s : SystemState} {oid : SeLe4n.ObjI
 after a key-preserving prefix. -/
 theorem keyFrame_storeObject_tcbKeeping_after {st s : SystemState} {tid : SeLe4n.ThreadId}
     {t t' : TCB} {pair : Unit × SystemState}
-    (hPre : st.objects[tid.toObjId]? = some (.tcb t)) (hKey : tcbKeyFields t' = tcbKeyFields t)
+    (hPre : st.objects[tid.toObjId]? = some (.tcb t)) (hKey : tcbKeyCore t' = tcbKeyCore t)
     (hF : capabilityKeyFrame st s) (h : storeObject tid.toObjId (.tcb t') s = .ok pair) :
     capabilityKeyFrame st pair.2 := by
   obtain ⟨⟨⟩, s'⟩ := pair
   refine hF.trans ⟨keyInputsEq_storeObject hF.2.2 h ?_, storeObject_scheduler_eq _ _ _ _ h,
     storeObject_preserves_objects_invExt _ _ _ _ hF.2.2 h⟩
   rw [hF.1 tid.toObjId, hPre]
-  simp only [tcbKeyFields, Prod.mk.injEq] at hKey
+  simp only [tcbKeyCore, tcbKeyFields, Prod.mk.injEq] at hKey
   simp only [keyInputsOf, hKey]
 
 theorem storeTcbIpcState_keyFrame {st st' : SystemState} {tid : SeLe4n.ThreadId}
@@ -1136,6 +1158,17 @@ theorem storeTcbIpcState_keyFrame {st st' : SystemState} {tid : SeLe4n.ThreadId}
     (h : storeTcbIpcState st tid ipc = .ok st') : capabilityKeyFrame st st' := by
   unfold storeTcbIpcState at h
   exact modifyTcb_keyFrame (f := fun tcb => { tcb with ipcState := ipc }) (fun _ => rfl) hInv h
+
+/-- PR #932 review: the signal's pop rewrites only notification links, which
+are no key input. -/
+theorem detachNtfnHead_keyFrame {st : SystemState} (head : SeLe4n.ThreadId)
+    (next : Option SeLe4n.ThreadId) (hInv : st.objects.invExt) :
+    capabilityKeyFrame st (detachNtfnHead st head next) := by
+  have hD := detachNtfnHead_linksRewritten st head next hInv
+  refine ⟨fun oid => ?_, hD.scheduler_eq, hD.2.1⟩
+  rcases hD.2.2 oid with e | ⟨t0, t1, h0, h1, np, nn, rfl⟩
+  · rw [e]
+  · rw [h0, h1]; rfl
 
 /-- The per-core signal covers on every outcome. -/
 theorem notificationSignalOnCore_stepCovers (e : CoreId) {notificationId : SeLe4n.ObjId}
@@ -1162,8 +1195,10 @@ theorem notificationSignalOnCore_stepCovers (e : CoreId) {notificationId : SeLe4
         · exact hRefl
         · rename_i st2 hT
           have hF2 := hF1.trans (storeTcbIpcStateAndMessage_keyFrame hF1.2.2 hT)
-          exact (wakeThread_stepCovers e st2 _ executingCore hF2.2.2).imp_left
-            (stepCovers_trans hF2.stepCovers)
+          have hI2 := storeTcbIpcStateAndMessage_preserves_objects_invExt _ _ _ _ _ hF1.2.2 hT
+          exact (wakeThread_stepCovers e _ _ executingCore
+            (hF2.trans (detachNtfnHead_keyFrame _ _ hI2)).2.2).imp_left
+            (stepCovers_trans (hF2.trans (detachNtfnHead_keyFrame _ _ hI2)).stepCovers)
     · dsimp only
       cases hS : storeObject notificationId _ st with
       | error _ => exact hRefl
@@ -1202,11 +1237,15 @@ theorem notificationSignalBoundCrossCoreDispatchChecked_stepCovers (e : CoreId)
       badge executingCore st).1 ∧
     (notificationSignalBoundCrossCoreDispatchChecked ctx notificationId signaler
       badge executingCore st).1.objects.invExt := by
+  have hRefl : stepCovers e st st ∧ st.objects.invExt := ⟨stepCovers_refl e st, hInv⟩
   unfold notificationSignalBoundCrossCoreDispatchChecked
-  repeat' split
-  all_goals first
-    | exact notificationSignalBoundOnCore_stepCovers e hInv
-    | exact ⟨stepCovers_refl e st, hInv⟩
+  split
+  · split
+    · split
+      · exact notificationSignalBoundOnCore_stepCovers e hInv
+      · exact hRefl
+    · exact notificationSignalBoundOnCore_stepCovers e hInv
+  · exact hRefl
 
 /-- The per-core wait covers on every outcome: consuming a badge keeps the
 waiter runnable, and blocking takes it off the executing core. -/
@@ -1238,29 +1277,31 @@ theorem notificationWaitOnCore_stepCovers (e : CoreId) {notificationId : SeLe4n.
       · rename_i tcb hL
         split
         · exact hRefl
-        · split
+        · dsimp only
+          split
           · exact hRefl
-          · dsimp only
+          · rename_i st1 hS
+            have hF1 := keyFrame_storeObject_inert_after (pair := ((), st1)) hPre rfl
+              (capabilityKeyFrame_refl hInv) hS
             split
             · exact hRefl
-            · rename_i st1 hS
-              have hF1 := keyFrame_storeObject_inert_after (pair := ((), st1)) hPre rfl
-                (capabilityKeyFrame_refl hInv) hS
+            · rename_i st2 hT
+              unfold storeTcbIpcStateAndMessage_fromTcb at hT
+              have hF2 : capabilityKeyFrame st st2 := by
+                revert hT
+                cases hSt : storeObject waiter.toObjId _ st1 with
+                | error _ => intro h; cases h
+                | ok p =>
+                  obtain ⟨⟨⟩, s⟩ := p
+                  intro h; cases h
+                  exact keyFrame_storeObject_tcbKeeping_after (pair := ((), _))
+                    (lookupTcb_some_objects _ _ _ hL) (by rfl) hF1 hSt
               split
               · exact hRefl
-              · rename_i st2 hT
-                unfold storeTcbIpcStateAndMessage_fromTcb at hT
-                have hF2 : capabilityKeyFrame st st2 := by
-                  revert hT
-                  cases hSt : storeObject waiter.toObjId _ st1 with
-                  | error _ => intro h; cases h
-                  | ok p =>
-                    obtain ⟨⟨⟩, s⟩ := p
-                    intro h; cases h
-                    exact keyFrame_storeObject_tcbKeeping_after (pair := ((), _))
-                      (lookupTcb_some_objects _ _ _ hL) (by rfl) hF1 hSt
-                exact ⟨stepCovers_trans hF2.stepCovers (removeRunnableOnCore_stepCovers e _ _ _),
-                  hF2.2.2⟩
+              · rename_i st4 hLink
+                have hF3 := hF2.trans (linkNtfnWaiter_keyFrame hF2.2.2 hLink)
+                exact ⟨stepCovers_trans hF3.stepCovers (removeRunnableOnCore_stepCovers e _ _ _),
+                  removeRunnableOnCore_objects_invExt _ _ _ hF3.2.2⟩
   · split <;> exact hRefl
 
 theorem notificationWaitCrossCoreDispatchChecked_stepCovers (e : CoreId) {ctx : LabelingContext}
@@ -1289,7 +1330,7 @@ theorem applyRendezvousCallDonation_stepCovers (e : CoreId) {st st' : SystemStat
 theorem descheduleAtPlacement_stepCovers (e : CoreId) (st : SystemState) (tid : SeLe4n.ThreadId)
     (hInv : st.objects.invExt) :
     stepCovers e st (descheduleAtPlacement st tid) ∧ (descheduleAtPlacement st tid).objects.invExt :=
-  ⟨descheduleAt_stepCovers e _ _ _, by unfold descheduleAtPlacement; rw [descheduleAt_objects]; exact hInv⟩
+  ⟨descheduleAt_stepCovers e _ _ _, by unfold descheduleAtPlacement; exact descheduleAt_objects_invExt _ _ _ hInv⟩
 
 theorem replyRecvPopDonation_stepCovers (e : CoreId) {rid : SeLe4n.ReplyId}
     {target : SeLe4n.ThreadId} {st st' : SystemState}

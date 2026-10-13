@@ -262,7 +262,7 @@ theorem rpi5_higherBandExhausted_from_progresses
     (trace : SchedulerTrace) (st : SystemState)
     (targetPrio : Priority) (targetDomain : DomainId) (startIdx : Nat)
     (progresses :
-      ∀ tid, tid ∈ (st.scheduler.runQueueOnCore bootCoreId).flat →
+      ∀ tid, tid ∈ (st.scheduler.runQueueOnCore bootCoreId).toList →
         (match resolveEffectivePriority st tid with
          | some (p, _, d) => d.val = targetDomain.val ∧ p.val > targetPrio.val
          | none => False) →
@@ -282,7 +282,7 @@ the same module. -/
 theorem rpi5_higherBandExhausted_empty_band
     (trace : SchedulerTrace) (st : SystemState)
     (targetPrio : Priority) (targetDomain : DomainId) (startIdx : Nat)
-    (hNoHigher : ∀ tid, tid ∈ (st.scheduler.runQueueOnCore bootCoreId).flat →
+    (hNoHigher : ∀ tid, tid ∈ (st.scheduler.runQueueOnCore bootCoreId).toList →
       match resolveEffectivePriority st tid with
       | some (p, _, d) => ¬(d.val = targetDomain.val ∧ p.val > targetPrio.val)
       | none => True) :
@@ -500,7 +500,7 @@ theorem rpi5_higherBandExhausted_from_progressesOnCore
     (trace : SchedulerTrace) (st : SystemState)
     (targetPrio : Priority) (targetDomain : DomainId) (startIdx : Nat) (c : CoreId)
     (progresses :
-      ∀ tid, tid ∈ (st.scheduler.runQueueOnCore c).flat →
+      ∀ tid, tid ∈ (st.scheduler.runQueueOnCore c).toList →
         (match resolveEffectivePriority st tid with
          | some (p, _, d) => d.val = targetDomain.val ∧ p.val > targetPrio.val
          | none => False) →

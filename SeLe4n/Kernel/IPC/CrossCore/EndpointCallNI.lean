@@ -81,13 +81,22 @@ theorem removeRunnableOnCore_preserves_projection
     -- definitionally unchanged by a deschedule on another core, so those
     -- `congr` subgoals close by `rfl`; only the run-queue and current-thread
     -- slots need their explicit frame lemmas.
-    have hMach : (removeRunnableOnCore st tid c).machine = st.machine := rfl
+    have hMach : (removeRunnableOnCore st tid c).machine = st.machine :=
+      removeRunnableOnCore_machine_eq st tid c
+    have hObj := projectObjects_of_objectsAgreeOffRunLinks ctx observer
+      (removeRunnableOnCore_objectsAgreeOffRunLinks st tid c)
+    have hS := removeRunnableOnCore_scheduler st tid c
+    have hD := removeRunnableOnCore_onlyObjectsSchedulerDiffer st tid c
+    unfold SystemState.onlyObjectsSchedulerDiffer at hD
     simp only [projectState]
     congr 1 <;>
       first
-        | rfl
+        | exact hObj
         | simp only [projectRunnable, projectCurrent, projectMachineRegs,
-            SchedulerState.runnable, hRQ, hCur, hMach]
+            SchedulerState.runnable, hRQ, hCur, hMach]; done
+        | (rw [hD]; rfl)
+        | (rw [hD]; simp [hS, projectActiveDomain, projectDomainTimeRemaining,
+            projectDomainSchedule, projectDomainScheduleIndex])
 
 /-- WS-SM SM6.A.7: enqueuing a **non-observable** thread onto *any* core's run
 queue (the receiver wake) preserves the low-observer projection.  The
@@ -107,37 +116,51 @@ theorem enqueueRunnableOnCore_preserves_projection
     | none => exact Or.inl rfl
     | some t => exact Or.inr ⟨t, rfl⟩
   · simp only [enqueueRunnableOnCore, SystemState.getTcbWitnessed?_eq_none hTcb]
-  · simp only [enqueueRunnableOnCore, SystemState.getTcbWitnessed?_eq_some hTcb]
-    split
-    · rfl
-    · simp only [projectState]
-      congr 1
-      · exact projectObjects_insert_high ctx observer st _ tid
-          (.tcb { tcb with ipcState := .ready }) rfl hHighObj hObjInv
-      case _ =>
-        simp only [projectRunnable, SchedulerState.runnable]
-        by_cases hc : c = bootCoreId
-        · subst hc
-          rw [SchedulerState.markReschedulePendingOnCore_runQueueOnCore,
-            SchedulerState.setRunQueueOnCore_runQueueOnCore_self]
-          exact RunQueue.toList_filter_insert_neg' _ _ _ _ hHighThread
-        · rw [SchedulerState.markReschedulePendingOnCore_runQueueOnCore,
-            SchedulerState.setRunQueueOnCore_runQueueOnCore_ne _ _ _ _ hc]
-      all_goals
-        first
-          | rfl
-          | simp only [projectCurrent, projectMachineRegs, projectActiveDomain,
-              projectDomainTimeRemaining, projectDomainSchedule, projectDomainScheduleIndex,
-              SchedulerState.markReschedulePendingOnCore_currentOnCore,
-              SchedulerState.markReschedulePendingOnCore_activeDomainOnCore,
-              SchedulerState.markReschedulePendingOnCore_domainTimeRemainingOnCore,
-              SchedulerState.markReschedulePendingOnCore_domainScheduleIndexOnCore,
-              SchedulerState.markReschedulePendingOnCore_domainSchedule,
-              SchedulerState.setRunQueueOnCore_currentOnCore,
-              SchedulerState.setRunQueueOnCore_activeDomainOnCore,
-              SchedulerState.setRunQueueOnCore_domainTimeRemainingOnCore,
-              SchedulerState.setRunQueueOnCore_domainScheduleIndexOnCore,
-              SchedulerState.setRunQueueOnCore_domainSchedule]
+  · by_cases hFresh : wakeDeclines st c tid = true
+    · rw [enqueueRunnableOnCore_eq_self_of_declines st c tid hFresh]
+    have hF : wakeDeclines st c tid = false := by simpa using hFresh
+    -- The objects: equal off run-queue fields to the `.ready` mark of a high
+    -- object, and the projection strips those fields.
+    have hObj : projectObjects ctx observer (enqueueRunnableOnCore st c tid)
+        = projectObjects ctx observer st :=
+      (projectObjects_of_objectsAgreeOffRunLinks ctx observer
+        (enqueueRunnableOnCore_objectsAgree_marked st c tid tcb hTcb hF)).trans
+        (projectObjects_insert_high ctx observer st _ tid
+          (.tcb { tcb with ipcState := .ready }) rfl hHighObj hObjInv)
+    have hObj2 : ∀ S, projectObjects ctx observer
+        { st with objects := (enqueueRunnableOnCore st c tid).objects, scheduler := S }
+        = projectObjects ctx observer st := fun _ => hObj
+    obtain ⟨E, hE⟩ := enqueueRunnableOnCore_scheduler_of_fresh st c tid tcb hTcb hF
+    have hD := enqueueRunnableOnCore_onlyObjectsSchedulerDiffer st c tid
+    unfold SystemState.onlyObjectsSchedulerDiffer at hD
+    rw [hD, hE]
+    -- The scheduler: the insert lands on a high thread (invisible to
+    -- `projectRunnable`) and frames every other projected scheduler field.
+    simp only [projectState, projectCurrent, projectActiveDomain, projectDomainTimeRemaining,
+      projectDomainScheduleIndex, projectDomainSchedule, projectMachineRegs, hObj2,
+      SchedulerState.markReschedulePendingOnCore_currentOnCore,
+      SchedulerState.setRunQueueOnCore_currentOnCore,
+      SchedulerState.setRunQueueEndsOnCore_currentOnCore,
+      SchedulerState.markReschedulePendingOnCore_activeDomainOnCore,
+      SchedulerState.setRunQueueOnCore_activeDomainOnCore,
+      SchedulerState.setRunQueueEndsOnCore_activeDomainOnCore,
+      SchedulerState.markReschedulePendingOnCore_domainTimeRemainingOnCore,
+      SchedulerState.setRunQueueOnCore_domainTimeRemainingOnCore,
+      SchedulerState.setRunQueueEndsOnCore_domainTimeRemainingOnCore,
+      SchedulerState.markReschedulePendingOnCore_domainScheduleIndexOnCore,
+      SchedulerState.setRunQueueOnCore_domainScheduleIndexOnCore,
+      SchedulerState.setRunQueueEndsOnCore_domainScheduleIndexOnCore,
+      SchedulerState.markReschedulePendingOnCore_domainSchedule,
+      SchedulerState.setRunQueueOnCore_domainSchedule]
+    congr 1
+    simp only [projectRunnable, SchedulerState.runnable,
+      SchedulerState.markReschedulePendingOnCore_runQueueOnCore]
+    by_cases hc : c = bootCoreId
+    · subst hc
+      rw [SchedulerState.setRunQueueOnCore_runQueueOnCore_self]
+      exact RunQueue.toList_filter_insert_neg' _ _ _ _ hHighThread
+    · rw [SchedulerState.setRunQueueOnCore_runQueueOnCore_ne _ _ _ _ hc,
+        SchedulerState.setRunQueueEndsOnCore_runQueueOnCore]
 
 /-- WS-SM SM6.A.7: the cross-core receiver wake (`wakeThread`) preserves the
 low-observer projection for a high receiver. -/

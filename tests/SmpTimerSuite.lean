@@ -156,7 +156,7 @@ open SeLe4n.Testing
 #check @decrementDomainTimeOnCore_preserves_runQueueOnCoreWellFormed
 #check @saveOutgoingContextOnCore_scheduler_eq
 #check @saveOutgoingContextOnCore_getTcb?_isSome
-#check @scheduleEffectiveOnCore_objects_eq
+#check @scheduleEffectiveOnCore_objectsAgreeOffRunLinks
 #check @scheduleEffectiveOnCore_getTcb?_isSome
 #check @scheduleEffectiveOnCore_preserves_runQueueOnCoreWellFormed
 #check @scheduleEffectiveOnCore_establishes_currentThreadValidOnCore
@@ -482,7 +482,7 @@ private def runReplenishChecks : IO Unit := do
     ((processOneReplenishmentOnCore stIdle bootCoreId scId 0).2.2 == false)
   -- the replenishment leaves the boot run queue empty (no thread became runnable).
   assertBool "no-op replenishment leaves the run queue empty"
-    ((processReplenishmentsDueOnCore stIdle bootCoreId 0).1.scheduler.runQueueOnCore bootCoreId).toList.isEmpty
+    ((processReplenishmentsDueOnCore stIdle bootCoreId 0).1.runQueueWalk bootCoreId).isEmpty
   -- the per-core CBS replenishment does not advance the global timer.
   assertBool "replenishment does not advance machine.timer"
     ((processReplenishmentsDueOnCore stIdle bootCoreId 0).1.machine.timer == stIdle.machine.timer)
@@ -619,14 +619,14 @@ private def runEmptyBoundaryRequeueChecks : IO Unit := do
     (stBoundaryBusy.scheduler.domainTimeRemainingOnCore bootCoreId == 1)
   assertBool "fixture: high-priority thread current, low-priority thread queued"
     (stBoundaryBusy.scheduler.currentOnCore bootCoreId == some tidHigh
-      && decide (tidLow ∈ (stBoundaryBusy.scheduler.runQueueOnCore bootCoreId).toList))
+      && decide (tidLow ∈ (stBoundaryBusy.runQueueWalk bootCoreId)))
   assertBool "inert domain tick keeps the incumbent current (no dispatch at all)"
     (match scheduleDomainOnCore stBoundaryBusy bootCoreId with
      | .ok st' => st'.scheduler.currentOnCore bootCoreId == some tidHigh
      | .error _ => false)
   assertBool "inert domain tick leaves the low-priority waiter queued"
     (match scheduleDomainOnCore stBoundaryBusy bootCoreId with
-     | .ok st' => decide (tidLow ∈ (st'.scheduler.runQueueOnCore bootCoreId).toList)
+     | .ok st' => decide (tidLow ∈ (st'.runQueueWalk bootCoreId))
      | .error _ => false)
   -- Round 4's specific hazard: the countdown must NOT stick at a perpetual
   -- boundary — in inert mode it is simply never touched.
@@ -647,7 +647,7 @@ private def runEmptyBoundaryRequeueChecks : IO Unit := do
     (match scheduleDomainOnCore stSingleDomain bootCoreId with
      | .ok st' => st'.scheduler.currentOnCore bootCoreId
           == stSingleDomain.scheduler.currentOnCore bootCoreId
-        && ((st'.scheduler.runQueueOnCore bootCoreId).toList.isEmpty : Bool)
+        && ((st'.runQueueWalk bootCoreId).isEmpty : Bool)
      | .error _ => false)
 
 /-- §3.11 (PR #880 follow-up — commit-coupled shadow clock): the flagged step's
@@ -767,7 +767,7 @@ private def runLocalReplenishRescheduleChecks : IO Unit := do
      | .error _ => false)
   assertBool "the preempted current is re-enqueued, not dropped"
     (match timerTickOnCore stDue bootCoreId with
-     | .ok r => (r.1.scheduler.runQueueOnCore bootCoreId).contains tidLo
+     | .ok r => (r.1.queuedOn bootCoreId tidLo)
      | .error _ => false)
   -- Idle-slot arm (the round-17 carve-out): a vacated core whose queued thread
   -- was ineligible at vacate time is dispatched the moment its refill lands.
@@ -798,7 +798,7 @@ private def mkTimeoutWakeState (aff : Option CoreId) : SystemState :=
   let tcbW : TCB := { mkTcb 321 12 0 with
     schedContextBinding := .bound scW, cpuAffinity := aff,
     ipcState := .blockedOnSend epW,
-    queuePrev := none, queueNext := none, queuePPrev := some .endpointHead }
+    queuePrevCode := 0, queueNextCode := 0, queuePPrevCode := 1 }
   let scObj : SchedContext :=
     { (default : SchedContext) with
         priority := ⟨15⟩, boundThread := some tidCur,
@@ -829,11 +829,11 @@ private def runAffinityTimeoutWakeChecks : IO Unit := do
   let stRemote := mkTimeoutWakeState (some core2)
   assertBool "remote-affinity waiter wakes onto its HOME core's queue (core 2)"
     (match timerTickOnCore stRemote core1 with
-     | .ok r => (r.1.scheduler.runQueueOnCore core2).contains tidW
+     | .ok r => (r.1.queuedOn core2 tidW)
      | .error _ => false)
   assertBool "remote-affinity waiter is NOT parked on the boot queue (the round-8 bug)"
     (match timerTickOnCore stRemote core1 with
-     | .ok r => ! (r.1.scheduler.runQueueOnCore bootCoreId).contains tidW
+     | .ok r => ! (r.1.queuedOn bootCoreId tidW)
      | .error _ => false)
   assertBool "the remote home core is poked: (core 2, .reschedule) rides the tick result"
     (match timerTickOnCore stRemote core1 with
@@ -843,7 +843,7 @@ private def runAffinityTimeoutWakeChecks : IO Unit := do
   let stLocal := mkTimeoutWakeState (some core1)
   assertBool "local-affinity waiter wakes onto the ticking core's own queue"
     (match timerTickOnCore stLocal core1 with
-     | .ok r => (r.1.scheduler.runQueueOnCore core1).contains tidW
+     | .ok r => (r.1.queuedOn core1 tidW)
      | .error _ => false)
   assertBool "a local timeout wake fires no SGI"
     (match timerTickOnCore stLocal core1 with
@@ -854,7 +854,7 @@ private def runAffinityTimeoutWakeChecks : IO Unit := do
   let stUnbound := mkTimeoutWakeState none
   assertBool "unbound waiter wakes onto the boot queue"
     (match timerTickOnCore stUnbound core1 with
-     | .ok r => (r.1.scheduler.runQueueOnCore bootCoreId).contains tidW
+     | .ok r => (r.1.queuedOn bootCoreId tidW)
      | .error _ => false)
   assertBool "the boot core is poked for the unbound waiter woken from core 1"
     (match timerTickOnCore stUnbound core1 with

@@ -134,10 +134,9 @@ object store and the scheduler, and neither is the trail. -/
     (c : CoreId) (tid : SeLe4n.ThreadId) :
     (enqueueRunnableOnCore st c tid).declassificationAuditLog =
       st.declassificationAuditLog := by
-  unfold enqueueRunnableOnCore
-  split
-  · split <;> rfl
-  · rfl
+  have h := enqueueRunnableOnCore_onlyObjectsSchedulerDiffer st c tid
+  unfold SystemState.onlyObjectsSchedulerDiffer at h
+  rw [h]
 
 /-- WS-SM SM9.C.1: the cross-core wake leaves the trail alone. -/
 @[simp] theorem wakeThread_declassificationAuditLog_eq (st : SystemState)
@@ -172,7 +171,7 @@ theorem notificationSignalOnCore_declassificationAuditLog_eq (notificationId : S
   | none => simp only []; split <;> rfl
   | some ntfn =>
     simp only []
-    cases hT : ntfn.waitingThreads.tail? with
+    cases hT : ntfn.waitHead with
     | none =>
       simp only []
       cases hStore : storeObject notificationId _ st with
@@ -185,13 +184,14 @@ theorem notificationSignalOnCore_declassificationAuditLog_eq (notificationId : S
       | error e => rfl
       | ok p1 =>
         simp only []
-        cases hMsg : storeTcbIpcStateAndMessage p1.2 pair.1 .ready
+        cases hMsg : storeTcbIpcStateAndMessage p1.2 pair .ready
             (some { IpcMessage.empty with badge := some badge }) with
         | error e => rfl
         | ok st2 =>
           simp only []
-          rw [wakeThread_declassificationAuditLog_eq st2 pair.1 executingCore,
-            storeTcbIpcStateAndMessage_declassificationAuditLog_eq p1.2 st2 pair.1 .ready _ hMsg,
+          rw [wakeThread_declassificationAuditLog_eq _ pair executingCore,
+            detachNtfnHead_declassificationAuditLog,
+            storeTcbIpcStateAndMessage_declassificationAuditLog_eq p1.2 st2 pair .ready _ hMsg,
             storeObject_declassificationAuditLog_eq st _ _ p1 hStore]
 
 /-- WS-SM SM9.C.1: the bound-aware signal too — the delivery path composes a
@@ -237,7 +237,7 @@ theorem notificationSignalOnCore_error_state (notificationId : SeLe4n.ObjId)
   | none => simp only []; split <;> rfl
   | some ntfn =>
     simp only [hN] at h ⊢
-    cases hT : ntfn.waitingThreads.tail? with
+    cases hT : ntfn.waitHead with
     | none =>
       simp only [hT] at h ⊢
       cases hStore : storeObject notificationId _ st with
@@ -249,7 +249,7 @@ theorem notificationSignalOnCore_error_state (notificationId : SeLe4n.ObjId)
       | error e' => rfl
       | ok p1 =>
         simp only [hStore] at h ⊢
-        cases hMsg : storeTcbIpcStateAndMessage p1.2 pair.1 .ready
+        cases hMsg : storeTcbIpcStateAndMessage p1.2 pair .ready
             (some { IpcMessage.empty with badge := some badge }) with
         | error e' => rfl
         | ok st2 => simp only [hMsg] at h; exact absurd h (by simp)
@@ -291,7 +291,7 @@ theorem notificationSignalOnCore_currentOnCore_eq (notificationId : SeLe4n.ObjId
   | none => simp only []; split <;> rfl
   | some ntfn =>
     simp only []
-    cases hT : ntfn.waitingThreads.tail? with
+    cases hT : ntfn.waitHead with
     | none =>
       simp only []
       cases hStore : storeObject notificationId _ st with
@@ -306,15 +306,15 @@ theorem notificationSignalOnCore_currentOnCore_eq (notificationId : SeLe4n.ObjId
       | error e => rfl
       | ok p1 =>
         simp only []
-        cases hMsg : storeTcbIpcStateAndMessage p1.2 pair.1 .ready
+        cases hMsg : storeTcbIpcStateAndMessage p1.2 pair .ready
             (some { IpcMessage.empty with badge := some badge }) with
         | error e => rfl
         | ok st2 =>
           simp only []
-          show ((wakeThread st2 pair.1 executingCore).1).scheduler.currentOnCore c = _
+          show ((wakeThread _ pair executingCore).1).scheduler.currentOnCore c = _
           unfold wakeThread
-          rw [enqueueRunnableOnCore_currentOnCore st2 _ pair.1 c,
-            storeTcbIpcStateAndMessage_scheduler_eq p1.2 st2 pair.1 .ready _ hMsg,
+          rw [enqueueRunnableOnCore_currentOnCore _ _ pair c, detachNtfnHead_scheduler,
+            storeTcbIpcStateAndMessage_scheduler_eq p1.2 st2 pair .ready _ hMsg,
             storeObject_scheduler_eq st p1.2 _ _ (by cases p1 with | mk u v => cases u; exact hStore)]
 
 /-- WS-SM SM9.C.1: the bound-aware signal too — bound delivery dequeues, stores

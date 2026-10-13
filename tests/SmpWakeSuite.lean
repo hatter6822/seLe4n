@@ -82,6 +82,8 @@ open SeLe4n.Testing
 #check @enqueueRunnableOnCore_no_tcb_noop
 #check @enqueueRunnableOnCore_eq_self_of_runnable
 #check @runnableOnSomeCore
+#check @enqueueRunnableOnCore_eq_self_of_declines
+#check @wakeDeclines
 
 -- SM5.C.2/.4/.10 wakeThread semantics:
 #check @wakeThread_state_eq_enqueue
@@ -207,14 +209,14 @@ example (st : SystemState) (tid : SeLe4n.ThreadId) (executingCore : CoreId)
 
 /-- SM5.C.10: the woken thread lands in the target core's run queue. -/
 example (st : SystemState) (tid : SeLe4n.ThreadId) (executingCore : CoreId) (tcb : TCB)
-    (hTcb : st.getTcb? tid = some tcb) (hFresh : runnableOnSomeCore st tid = false) :
+    (hTcb : st.getTcb? tid = some tcb) (hFresh : wakeDeclines st (determineTargetCore st tid) tid = false) :
     tid ∈ ((wakeThread st tid executingCore).1.scheduler.runQueueOnCore
             (determineTargetCore st tid)).toList :=
   wakeThread_target_runQueue_contains st tid executingCore tcb hTcb hFresh
 
 /-- SM5.C.6 / Thm 3.3.2: cross-core wake is lossless. -/
 example (st : SystemState) (tid : SeLe4n.ThreadId) (executingCore : CoreId) (tcb : TCB)
-    (hTcb : st.getTcb? tid = some tcb) (hFresh : runnableOnSomeCore st tid = false) :
+    (hTcb : st.getTcb? tid = some tcb) (hFresh : wakeDeclines st (determineTargetCore st tid) tid = false) :
     ∃ futureState : SystemState,
       SchedReachable (wakeThread st tid executingCore).1 futureState ∧
       (futureState.scheduler.currentOnCore (determineTargetCore st tid) = some tid ∨
@@ -236,10 +238,10 @@ example (st : SystemState) (tid : SeLe4n.ThreadId) (tcb : TCB)
 
 /-- SM5.C.1 (audit-pass-2): `enqueueRunnableOnCore` preserves the woken thread's
     security-relevant fields (`priority` / `domain` / `cpuAffinity` /
-    `threadState`); only `ipcState` changes. -/
+    `threadState`); only `ipcState` and its run-queue links change. -/
 example (st : SystemState) (c : CoreId) (tid : SeLe4n.ThreadId) (tcb : TCB)
     (hTcb : st.getTcb? tid = some tcb) (hInv : st.objects.invExt)
-    (hFresh : runnableOnSomeCore st tid = false) :
+    (hFresh : wakeDeclines st c tid = false) :
     ∃ tcb', (enqueueRunnableOnCore st c tid).getTcb? tid = some tcb' ∧
       tcb'.priority = tcb.priority ∧ tcb'.domain = tcb.domain ∧
       tcb'.cpuAffinity = tcb.cpuAffinity ∧ tcb'.threadState = tcb.threadState :=
@@ -357,7 +359,7 @@ private def assertBool (name : String) (b : Bool) : IO Unit := do
 the `RunQueue`'s `Prop`-valued `Membership` by going through the `Bool`-valued
 `RunQueue.contains`). -/
 private def rqHas (st : SystemState) (c : CoreId) (tid : SeLe4n.ThreadId) : Bool :=
-  (st.scheduler.runQueueOnCore c).contains tid
+  (st.queuedOn c tid)
 
 /-- Evaluate a Bool predicate on the post-wake state. -/
 private def wakeStateAnd (st : SystemState) (tid : SeLe4n.ThreadId) (ec : CoreId)
@@ -392,7 +394,7 @@ private def runEnqueueChecks : IO Unit := do
   assertBool "enqueue on core 1 leaves the boot core's run queue empty (frame)"
     (!rqHas (enqueueRunnableOnCore stWake core1 tidW) bootCoreId tidW)
   assertBool "enqueue of a non-TCB ghost is a no-op (boot run queue stays empty)"
-    (((enqueueRunnableOnCore stWake bootCoreId tidGhost).scheduler.runQueueOnCore bootCoreId).toList.isEmpty)
+    (((enqueueRunnableOnCore stWake bootCoreId tidGhost).runQueueWalk bootCoreId).isEmpty)
   -- audit-pass-3 (Codex P2): single-placement.  `enqueueRunnableOnCore` now carries
   -- a *global* reject guard (`runnableOnSomeCore`): a wake of a thread already
   -- runnable on ANY core is a no-op, so the same TCB can never become eligible on
@@ -402,12 +404,12 @@ private def runEnqueueChecks : IO Unit := do
   assertBool "double-wake keeps tidU in the boot run queue exactly once (no duplicate)"
     (let st1 := enqueueRunnableOnCore stWake bootCoreId tidU
      let st2 := enqueueRunnableOnCore st1 bootCoreId tidU
-     ((st2.scheduler.runQueueOnCore bootCoreId).toList.filter (· == tidU)).length == 1)
+     ((st2.runQueueWalk bootCoreId).filter (· == tidU)).length == 1)
   assertBool "double-wake run queue identical to single-wake (enqueue idempotent)"
     (let st1 := enqueueRunnableOnCore stWake bootCoreId tidU
      let st2 := enqueueRunnableOnCore st1 bootCoreId tidU
-     (st2.scheduler.runQueueOnCore bootCoreId).toList
-       == (st1.scheduler.runQueueOnCore bootCoreId).toList)
+     (st2.runQueueWalk bootCoreId)
+       == (st1.runQueueWalk bootCoreId))
   -- audit-pass-3 (Codex P2): the CROSS-core single-placement guard.  Enqueue tidU
   -- on core 1, then attempt to enqueue it on the boot core: the global reject makes
   -- the second a no-op, so tidU stays on core 1 ONLY — never eligible on two cores.
@@ -438,8 +440,8 @@ private def runWakeSgiChecks : IO Unit := do
   -- Cross-core independence: a remote wake to core 1 leaves the boot core untouched.
   assertBool "remote wake to core1 leaves the boot core's run queue untouched"
     (wakeStateAnd stWake tidW bootCoreId
-      (fun st' => (st'.scheduler.runQueueOnCore bootCoreId).toList
-                    == (stWake.scheduler.runQueueOnCore bootCoreId).toList))
+      (fun st' => (st'.runQueueWalk bootCoreId)
+                    == (stWake.runQueueWalk bootCoreId)))
 
 /-- §3.4 SM5.C.5/.12: the full wake → SGI → handle round-trip. -/
 private def runRoundTripChecks : IO Unit := do
@@ -461,7 +463,7 @@ private def runRoundTripChecks : IO Unit := do
   assertBool "SGI handler on an empty run queue is idle (no current set, queue empty)"
     (handlerOkAnd stWake core1
       (fun st2 => (st2.scheduler.currentOnCore core1 == none)
-                    && (st2.scheduler.runQueueOnCore core1).toList.isEmpty))
+                    && (st2.runQueueWalk core1).isEmpty))
   -- audit-pass-3 (Codex P1): fixed-priority preemption gate `candidateOutranksCurrentOnCore`.
   -- An idle core (current = none) admits any candidate; an equal-priority candidate
   -- does NOT preempt the running thread (no gratuitous preemption — the fix that
@@ -675,10 +677,10 @@ private def runAuditPass1Checks : IO Unit := do
   -- 3 untouched (run queues stay empty), exercising the general frame theorem.
   assertBool "wake to core 1 leaves core 2's run queue untouched"
     (wakeStateAnd stWake tidW bootCoreId
-      (fun st' => (st'.scheduler.runQueueOnCore ⟨2, by decide⟩).toList.isEmpty))
+      (fun st' => (st'.runQueueWalk ⟨2, by decide⟩).isEmpty))
   assertBool "wake to core 1 leaves core 3's run queue untouched"
     (wakeStateAnd stWake tidW bootCoreId
-      (fun st' => (st'.scheduler.runQueueOnCore ⟨3, by decide⟩).toList.isEmpty))
+      (fun st' => (st'.runQueueWalk ⟨3, by decide⟩).isEmpty))
   -- gap (m): the inventory size + partition witnesses are decidably consistent.
   assertBool "SM5.C inventory has 83 entries"
     (decide (crossCoreWakeTheorems.length = 83))

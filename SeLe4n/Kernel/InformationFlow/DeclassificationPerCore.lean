@@ -654,7 +654,7 @@ theorem declassifyStoreOnCore_admits_unattributable :
             endpointDomainOf := fun _ => ⟨0⟩, serviceDomainOf := fun _ => ⟨0⟩ },
           { canDeclassify := fun _ _ => true }, bootCoreId,
           { subject := ⟨1⟩, domain := ⟨1⟩ }, ⟨1⟩, ⟨0⟩, ⟨7⟩,
-          .notification { state := .idle, waitingThreads := SeLe4n.NoDupList.empty,
+          .notification { state := .idle, 
                           hasPendingBadge := false, pendingWord := SeLe4n.Badge.zero, boundTCB := none },
           (default : SystemState), _, rfl, ?_⟩
   intro hAttr

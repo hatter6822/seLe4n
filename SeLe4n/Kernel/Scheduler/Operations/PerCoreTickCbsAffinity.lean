@@ -110,28 +110,6 @@ theorem affinityConsistent_transfer (st base : SystemState) (c : CoreId)
 
 -- ── shallow TCB / SchedContext writes ──
 
-/-- WS-SM SM5.I: `enqueueRunnableOnCore` (an `ipcState := .ready` TCB write)
-preserves every thread's home core. -/
-theorem enqueueRunnableOnCore_determineTargetCore (st : SystemState) (c : CoreId)
-    (tid0 : SeLe4n.ThreadId) (hInv : st.objects.invExt) (t : SeLe4n.ThreadId) :
-    determineTargetCore (enqueueRunnableOnCore st c tid0) t = determineTargetCore st t := by
-  -- The case split precedes the unfold: the witnessed lookup's type mentions
-  -- `st.getTcb? tid0`, so a `cases` over the unfolded match cannot generalise it.
-  cases hTcb : st.getTcb? tid0 with
-  | none =>
-    unfold enqueueRunnableOnCore
-    rw [SystemState.getTcbWitnessed?_eq_none hTcb]
-  | some tcb =>
-    unfold enqueueRunnableOnCore
-    rw [SystemState.getTcbWitnessed?_eq_some hTcb]
-    cases hR : runnableOnSomeCore st tid0 with
-    | true => simp
-    | false =>
-      have hRaw := (SystemState.getTcb?_eq_some_iff st tid0 tcb).mp hTcb
-      simp only [Bool.false_eq_true, if_false]
-      exact determineTargetCore_insert_tcb st _ tid0 tcb { tcb with ipcState := .ready }
-        hInv hRaw rfl rfl t
-
 /-- WS-SM SM5.I: `enqueueRunnableOnCore` preserves every SchedContext's
 `boundThread` projection. -/
 theorem enqueueRunnableOnCore_boundThread (st : SystemState) (c : CoreId)
@@ -143,15 +121,15 @@ theorem enqueueRunnableOnCore_boundThread (st : SystemState) (c : CoreId)
     unfold enqueueRunnableOnCore
     rw [SystemState.getTcbWitnessed?_eq_none hTcb]
   | some tcb =>
-    unfold enqueueRunnableOnCore
-    rw [SystemState.getTcbWitnessed?_eq_some hTcb]
-    cases hR : runnableOnSomeCore st tid0 with
-    | true => simp
+    cases hR : wakeDeclines st c tid0 with
+    | true => rw [enqueueRunnableOnCore_eq_self_of_declines st c tid0 hR]
     | false =>
+      -- The enqueue agrees off run-queue fields with the `.ready` mark, a TCB
+      -- write no SchedContext lookup sees.
       have hRaw := (SystemState.getTcb?_eq_some_iff st tid0 tcb).mp hTcb
-      simp only [Bool.false_eq_true, if_false]
-      rw [getSchedContext?_insert_tcb_eq st _ tid0 tcb { tcb with ipcState := .ready }
-        hInv hRaw rfl scId]
+      rw [(enqueueRunnableOnCore_objectsAgree_marked st c tid0 tcb hTcb hR).getSchedContext? scId,
+        getSchedContext?_insert_tcb_eq st _ tid0 tcb { tcb with ipcState := .ready }
+          hInv hRaw rfl scId]
 
 /-- WS-SM SM5.I: `refillSchedContext` (a budget/replenishment SchedContext write)
 preserves every thread's home core. -/
@@ -230,10 +208,8 @@ theorem scheduleEffectiveOnCore_determineTargetCore (st : SystemState) (c : Core
     (st' : SystemState) (hInv : st.objects.invExt)
     (hStep : scheduleEffectiveOnCore st c = .ok st') (t : SeLe4n.ThreadId) :
     determineTargetCore st' t = determineTargetCore st t := by
-  have hobj := scheduleEffectiveOnCore_objects_eq st c st' hStep
-  have hgt : st'.getTcb? t = (saveOutgoingContextOnCore st c).getTcb? t := by
-    unfold SystemState.getTcb?; rw [hobj]
-  rw [determineTargetCore_congr_getTcb? st' (saveOutgoingContextOnCore st c) t hgt]
+  rw [determineTargetCore_of_objectsAgreeOffRunLinks
+    (scheduleEffectiveOnCore_objectsAgreeOffRunLinks st c st' hStep)]
   exact saveOutgoingContextOnCore_determineTargetCore st c hInv t
 
 /-- WS-SM SM5.I: a successful `scheduleEffectiveOnCore` preserves every
@@ -243,10 +219,7 @@ theorem scheduleEffectiveOnCore_boundThread (st : SystemState) (c : CoreId)
     (hStep : scheduleEffectiveOnCore st c = .ok st') (scId : SeLe4n.SchedContextId) :
     (st'.getSchedContext? scId).map (·.boundThread)
       = (st.getSchedContext? scId).map (·.boundThread) := by
-  have hobj := scheduleEffectiveOnCore_objects_eq st c st' hStep
-  have hgs : st'.getSchedContext? scId = (saveOutgoingContextOnCore st c).getSchedContext? scId := by
-    unfold SystemState.getSchedContext?; rw [hobj]
-  rw [hgs]
+  rw [(scheduleEffectiveOnCore_objectsAgreeOffRunLinks st c st' hStep).getSchedContext? scId]
   exact saveOutgoingContextOnCore_boundThread st c hInv scId
 
 -- ============================================================================
@@ -268,7 +241,7 @@ theorem processOneReplenishmentOnCore_determineTargetCore (st : SystemState) (ec
   · split
     · exact hRefillDt
     · rw [wakeThread_state_eq_enqueue,
-        enqueueRunnableOnCore_determineTargetCore _ _ _ hRefillInv]
+        enqueueRunnableOnCore_determineTargetCore_eq _ _ _ _ hRefillInv]
       exact hRefillDt
   · exact hRefillDt
 

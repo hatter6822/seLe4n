@@ -105,19 +105,19 @@ theorem priorityChangeMid_chainShape (base : SystemState) (tid : SeLe4n.ThreadId
       (SchedContext.PriorityManagement.migrateRunQueueBucketOnCore
         (SchedContext.PriorityManagement.updatePrioritySource base tid tcb p) tid p home) tid k
     = mid
-  have hObj : mid.objects =
-      (SchedContext.PriorityManagement.updatePrioritySource base tid tcb p).objects := by
-    rw [← hMid, markKeyChangeFor_objects]
-    unfold SchedContext.PriorityManagement.migrateRunQueueBucketOnCore
-    split <;> rfl
+  have hA : mid.objectsAgreeOffRunLinks
+      (SchedContext.PriorityManagement.updatePrioritySource base tid tcb p) := by
+    rw [← hMid]
+    exact .congr (markKeyChangeFor_objects _ _ _) rfl
+      (SchedContext.PriorityManagement.migrateRunQueueBucketOnCore_objectsAgreeOffRunLinks _ _ _ _)
   have hMidInv : mid.objects.invExt := by
-    rw [hObj]
-    exact SchedContext.PriorityManagement.updatePrioritySource_preserves_objects_invExt
-      base tid tcb p hInv
-  obtain ⟨hHome, hEdge⟩ := PriorityInheritance.chainShape_of_tcbFields mid base (fun t => by
-    rw [SystemState.getTcb?_congr_at (st := SchedContext.PriorityManagement.updatePrioritySource
-      base tid tcb p) (st' := mid) (tid := t) (by rw [hObj])]
-    exact updatePrioritySource_tcbChainFields base tid tcb p hInv t)
+    rw [← hMid, markKeyChangeFor_objects]
+    exact SchedContext.PriorityManagement.migrateRunQueueBucketOnCore_objects_invExt _ _ _ _
+      (SchedContext.PriorityManagement.updatePrioritySource_preserves_objects_invExt
+        base tid tcb p hInv)
+  obtain ⟨hHome, hEdge⟩ := PriorityInheritance.chainShape_of_tcbFields mid base (fun t =>
+    (TCB.map_proj_eq_of_map_withoutRunLinks_eq (fun x => (x.cpuAffinity, x.ipcState))
+      (hA.getTcb? t)).trans (updatePrioritySource_tcbChainFields base tid tcb p hInv t))
   exact PriorityInheritance.waiterChainWriteSet_congr mid base tid ec fuel hMidInv hInv hHome hEdge
 
 /-- SM8.B.2: the priority ops' **whole** state effect writes the target's home

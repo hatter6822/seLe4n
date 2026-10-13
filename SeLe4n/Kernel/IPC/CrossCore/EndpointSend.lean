@@ -161,16 +161,14 @@ theorem wakeThread_bootCore_eq_ensureRunnable (st : SystemState) (tid : SeLe4n.T
     (tcb : TCB)
     (hTcb : st.getTcb? tid = some tcb)
     (hHome : determineTargetCore st tid = bootCoreId)
-    (hNotElsewhere : ∀ c : CoreId, c ≠ bootCoreId →
-      ¬ (st.scheduler.runQueueOnCore c).contains tid)
+    (hNotElsewhere : ∀ c : CoreId, c ≠ bootCoreId → st.queuedOn c tid = false)
     (hReady : tcb.ipcState = .ready)
     (hNoResize : ¬ (st.objects.size * 4 ≥ st.objects.capacity * 3)) :
     (wakeThread st tid bootCoreId).1 = ensureRunnable st tid := by
   unfold wakeThread enqueueRunnableOnCore ensureRunnable
   simp only [hHome, hTcb, SystemState.getTcbWitnessed?_eq_some hTcb, SystemState.rewriteObject]
   -- `runnableOnSomeCore` collapses onto the boot-core membership test.
-  have hSome : runnableOnSomeCore st tid
-      = (st.scheduler.runQueueOnCore bootCoreId).contains tid := by
+  have hSome : runnableOnSomeCore st tid = st.queuedOn bootCoreId tid := by
     unfold runnableOnSomeCore
     apply Bool.eq_iff_iff.mpr
     simp only [List.any_eq_true]
@@ -178,7 +176,7 @@ theorem wakeThread_bootCore_eq_ensureRunnable (st : SystemState) (tid : SeLe4n.T
     · rintro ⟨c, -, hc⟩
       by_cases hcb : c = bootCoreId
       · exact hcb ▸ hc
-      · exact absurd hc (by simpa using hNotElsewhere c hcb)
+      · rw [hNotElsewhere c hcb] at hc; cases hc
     · intro h
       exact ⟨bootCoreId, SeLe4n.Kernel.Concurrency.mem_allCores _, h⟩
   -- `hReady` makes the wake's object write a re-store of the value already
@@ -192,10 +190,18 @@ theorem wakeThread_bootCore_eq_ensureRunnable (st : SystemState) (tid : SeLe4n.T
     rw [RHTable_getElem?_eq_get?] at hRaw
     rw [hEta]
     exact hRaw
-  by_cases hMem : (st.scheduler.runQueueOnCore bootCoreId).contains tid = true
-  · simp [hSome, hMem, RunQueue.mem_iff_contains]
-  · simp [hSome, hMem, RunQueue.mem_iff_contains, hObj,
-      TCB.boostedPriority]
+  have hSt : ({ st with objects :=
+      (st.objects.insert tid.toObjId (.tcb { tcb with ipcState := .ready })) } : SystemState)
+      = st := by
+    rw [hObj]
+  simp only [hSt]
+  unfold wakeDeclines
+  rw [hSome]
+  by_cases hMem : st.queuedOn bootCoreId tid = true
+  · simp [hMem]
+  · by_cases hA : st.runEnqueueAdmits bootCoreId tid = true
+    · simp [hMem, hA]
+    · simp [hMem, hA]
 
 /-- WS-SM SM6 (**the blocking leg's bootCore bridge**): with no receiver waiting,
 the per-core send on the boot core commits **exactly** the single-core
@@ -255,8 +261,7 @@ theorem endpointSendDualOnCore_bootCore_rendezvous_eq_single (endpointId : SeLe4
     (hStore : storeTcbReceiveComplete stPop receiver (some msg) = .ok stRecv)
     (hTcb : stRecv.getTcb? receiver = some rTcb)
     (hHome : determineTargetCore stRecv receiver = bootCoreId)
-    (hNotElsewhere : ∀ c : CoreId, c ≠ bootCoreId →
-      ¬ (stRecv.scheduler.runQueueOnCore c).contains receiver)
+    (hNotElsewhere : ∀ c : CoreId, c ≠ bootCoreId → stRecv.queuedOn c receiver = false)
     (hReady : rTcb.ipcState = .ready)
     (hNoResize : ¬ (stRecv.objects.size * 4 ≥ stRecv.objects.capacity * 3))
     (hSingle : endpointSendDual endpointId sender msg st = .ok ((), st')) :

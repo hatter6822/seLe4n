@@ -153,68 +153,92 @@ theorem removeFromAllEndpointQueues_machine_eq
     (fun acc _ _ hAcc => by
       split <;> first | exact hAcc | (split <;> first | exact hAcc | (split <;> exact hAcc)))
 
-/-- W6-B: removeFromAllNotificationWaitLists only modifies `objects`, preserving
+/-- Both branches of a conditional state satisfy `P`, so the conditional does. -/
+theorem ite_of_both {P : SystemState → Prop} {a b : SystemState} (c : Prop) [Decidable c]
+    (ha : P a) (hb : P b) : P (if c then a else b) := by
+  split <;> assumption
+
+/-- WS-ZA ZA4.4: the unlink writes `objects` and nothing else — one
+notification and at most two neighbour TCBs, each a record update of the state's
+object store.  Every component frame below is read off this. -/
+theorem removeFromNotificationWaitQueue_eq_objects (st : SystemState) (tid : SeLe4n.ThreadId) :
+    ∃ objs, removeFromNotificationWaitQueue st tid = { st with objects := objs } := by
+  have hU : ∀ (s : SystemState) (t : SeLe4n.ThreadId) (f : TCB → TCB),
+      (∃ objs, s = { st with objects := objs }) →
+      ∃ objs, s.updateTcb t f = { st with objects := objs } := by
+    rintro s t f ⟨o, rfl⟩
+    unfold SystemState.updateTcb
+    split
+    · exact ⟨_, rfl⟩
+    · exact ⟨o, rfl⟩
+  have hN : ∀ (s : SystemState) prev next, (∃ objs, s = { st with objects := objs }) →
+      ∃ objs, unlinkNtfnNeighbours s prev next = { st with objects := objs } := by
+    intro s prev next hs
+    unfold unlinkNtfnNeighbours
+    cases prev <;> cases next <;> dsimp only
+    · exact hs
+    · exact hU _ _ _ hs
+    · exact hU _ _ _ hs
+    · exact hU _ _ _ (hU _ _ _ hs)
+  unfold removeFromNotificationWaitQueue
+  split
+  · split
+    · split
+      · dsimp only
+        exact hN _ _ _ (hU _ _ _ ⟨_, rfl⟩)
+      · exact ⟨st.objects, rfl⟩
+    · exact ⟨st.objects, rfl⟩
+  · exact ⟨st.objects, rfl⟩
+
+/-- W6-B: removeFromNotificationWaitQueue only modifies `objects`, preserving
     scheduler, lifecycle, and serviceRegistry simultaneously. -/
-theorem removeFromAllNotificationWaitLists_preserves
+theorem removeFromNotificationWaitQueue_preserves
     (st : SystemState) (tid : SeLe4n.ThreadId) :
-    (removeFromAllNotificationWaitLists st tid).scheduler = st.scheduler ∧
-    (removeFromAllNotificationWaitLists st tid).lifecycle = st.lifecycle ∧
-    (removeFromAllNotificationWaitLists st tid).serviceRegistry = st.serviceRegistry := by
-  unfold removeFromAllNotificationWaitLists
-  exact SeLe4n.Kernel.RobinHood.RHTable.fold_preserves st.objects st _
-    (fun acc => acc.scheduler = st.scheduler ∧ acc.lifecycle = st.lifecycle ∧
-                acc.serviceRegistry = st.serviceRegistry)
-    ⟨rfl, rfl, rfl⟩
-    (fun acc _ _ hAcc => by
-      split <;> first | exact hAcc | (split <;> first | exact hAcc | (split <;> exact hAcc)))
+    (removeFromNotificationWaitQueue st tid).scheduler = st.scheduler ∧
+    (removeFromNotificationWaitQueue st tid).lifecycle = st.lifecycle ∧
+    (removeFromNotificationWaitQueue st tid).serviceRegistry = st.serviceRegistry := by
+  obtain ⟨_, h⟩ := removeFromNotificationWaitQueue_eq_objects st tid
+  rw [h]; exact ⟨rfl, rfl, rfl⟩
 
-/-- WS-SM SM8.B: removeFromAllNotificationWaitLists only modifies `objects` —
+/-- WS-SM SM8.B: removeFromNotificationWaitQueue only modifies `objects` —
 the machine is framed. -/
-theorem removeFromAllNotificationWaitLists_machine_eq
+theorem removeFromNotificationWaitQueue_machine_eq
     (st : SystemState) (tid : SeLe4n.ThreadId) :
-    (removeFromAllNotificationWaitLists st tid).machine = st.machine := by
-  unfold removeFromAllNotificationWaitLists
-  exact SeLe4n.Kernel.RobinHood.RHTable.fold_preserves st.objects st _
-    (fun acc => acc.machine = st.machine)
-    rfl
-    (fun acc _ _ hAcc => by
-      split <;> first | exact hAcc | (split <;> first | exact hAcc | (split <;> exact hAcc)))
+    (removeFromNotificationWaitQueue st tid).machine = st.machine := by
+  obtain ⟨_, h⟩ := removeFromNotificationWaitQueue_eq_objects st tid
+  rw [h]
 
-/-- R4-A.2: removeFromAllNotificationWaitLists preserves the scheduler. -/
-theorem removeFromAllNotificationWaitLists_scheduler_eq
+/-- R4-A.2: removeFromNotificationWaitQueue preserves the scheduler. -/
+theorem removeFromNotificationWaitQueue_scheduler_eq
     (st : SystemState) (tid : SeLe4n.ThreadId) :
-    (removeFromAllNotificationWaitLists st tid).scheduler = st.scheduler :=
-  (removeFromAllNotificationWaitLists_preserves st tid).1
+    (removeFromNotificationWaitQueue st tid).scheduler = st.scheduler :=
+  (removeFromNotificationWaitQueue_preserves st tid).1
 
-/-- R4-A.2: removeFromAllNotificationWaitLists preserves lifecycle metadata. -/
-theorem removeFromAllNotificationWaitLists_lifecycle_eq
+/-- R4-A.2: removeFromNotificationWaitQueue preserves lifecycle metadata. -/
+theorem removeFromNotificationWaitQueue_lifecycle_eq
     (st : SystemState) (tid : SeLe4n.ThreadId) :
-    (removeFromAllNotificationWaitLists st tid).lifecycle = st.lifecycle :=
-  (removeFromAllNotificationWaitLists_preserves st tid).2.1
+    (removeFromNotificationWaitQueue st tid).lifecycle = st.lifecycle :=
+  (removeFromNotificationWaitQueue_preserves st tid).2.1
 
-/-- R4-A.2: removeFromAllNotificationWaitLists preserves serviceRegistry. -/
-theorem removeFromAllNotificationWaitLists_serviceRegistry_eq
+/-- R4-A.2: removeFromNotificationWaitQueue preserves serviceRegistry. -/
+theorem removeFromNotificationWaitQueue_serviceRegistry_eq
     (st : SystemState) (tid : SeLe4n.ThreadId) :
-    (removeFromAllNotificationWaitLists st tid).serviceRegistry = st.serviceRegistry :=
-  (removeFromAllNotificationWaitLists_preserves st tid).2.2
+    (removeFromNotificationWaitQueue st tid).serviceRegistry = st.serviceRegistry :=
+  (removeFromNotificationWaitQueue_preserves st tid).2.2
 
-/-- WS-SM SM7.B: removeFromAllNotificationWaitLists only modifies `objects`
+/-- WS-SM SM7.B: removeFromNotificationWaitQueue only modifies `objects`
 — the TLB-shootdown state is framed. -/
-theorem removeFromAllNotificationWaitLists_tlbShootdown_eq
+theorem removeFromNotificationWaitQueue_tlbShootdown_eq
     (st : SystemState) (tid : SeLe4n.ThreadId) :
-    (removeFromAllNotificationWaitLists st tid).tlbShootdown = st.tlbShootdown := by
-  unfold removeFromAllNotificationWaitLists
-  exact SeLe4n.Kernel.RobinHood.RHTable.fold_preserves st.objects st _
-    (fun acc => acc.tlbShootdown = st.tlbShootdown)
-    rfl
-    (fun acc _ _ hAcc => by
-      split <;> first | exact hAcc | (split <;> first | exact hAcc | (split <;> exact hAcc)))
+    (removeFromNotificationWaitQueue st tid).tlbShootdown = st.tlbShootdown := by
+  obtain ⟨_, h⟩ := removeFromNotificationWaitQueue_eq_objects st tid
+  rw [h]
 
 /-- **WS-HP HP10.5**: the reservation-origin scrub touches `objects` and nothing
 else — the frames `cleanupTcbReferences`'s own proofs rewrite through.
 
 One `fold_preserves` per component, in the shape
-`removeFromAllNotificationWaitLists_preserves` uses, because the sweep is the same
+`removeFromNotificationWaitQueue_preserves` uses, because the sweep is the same
 kind of fold: it rewrites only the SchedContexts whose origin names the victim and
 returns the accumulator untouched everywhere else. -/
 theorem clearDonationOriginReferences_preserves
@@ -284,7 +308,7 @@ theorem cleanupTcbReferences_tlbShootdown_eq
     (cleanupTcbReferences st tid).tlbShootdown = st.tlbShootdown := by
   unfold cleanupTcbReferences
   rw [clearDonationOriginReferences_tlbShootdown_eq,
-      removeFromAllNotificationWaitLists_tlbShootdown_eq,
+      removeFromNotificationWaitQueue_tlbShootdown_eq,
       removeFromAllEndpointQueues_tlbShootdown_eq]
   -- Via the sweep's own frame.  Reducing through `removeRunnableFromAllCores`
   -- here would have to whnf the per-core guard at every core.
@@ -342,26 +366,6 @@ theorem removeFromAllEndpointQueues_preserves_objects_invExt
         · exact hAcc
       · exact hAcc)
 
-/-- WS-SM SM6.E: `removeFromAllNotificationWaitLists` preserves
-`objects.invExt` — the waiter-list sweep is a fold whose every step is an
-`objects.insert`. -/
-theorem removeFromAllNotificationWaitLists_preserves_objects_invExt
-    (st : SystemState) (tid : SeLe4n.ThreadId)
-    (hInv : st.objects.invExt) :
-    (removeFromAllNotificationWaitLists st tid).objects.invExt := by
-  unfold removeFromAllNotificationWaitLists
-  exact SeLe4n.Kernel.RobinHood.RHTable.fold_preserves st.objects st _
-    (fun acc => acc.objects.invExt) hInv
-    (fun acc _ _ hAcc => by
-      split
-      · split
-        · split
-          · exact SystemState.rewriteObject_preserves_objects_invExt _ _ _ _ hAcc
-          · exact hAcc
-        · exact hAcc
-      · exact hAcc)
-
-
 /-- **WS-RR RR7.22 (residual)**: `a` is `b` with (only) its three intrusive-queue
 links rewritten.
 
@@ -378,17 +382,19 @@ relation* — the splice's own patches are link rewrites, so every non-link fiel
 framed by the same fact, and fixing one field meant the next conjunct to need one
 (here `schedContextBinding`) had to re-derive the whole case analysis. -/
 def tcbQueueLinkRewrite (a b : TCB) : Prop :=
-  ∃ qp qpp qn, a = { b with queuePrev := qp, queuePPrev := qpp, queueNext := qn }
+  ∃ qp qpp qn np nn, a = { b with
+    queuePrevCode := qp, queuePPrevCode := qpp, queueNextCode := qn,
+    ntfnPrevCode := np, ntfnNextCode := nn }
 
 theorem tcbQueueLinkRewrite.refl (a : TCB) : tcbQueueLinkRewrite a a :=
-  ⟨a.queuePrev, a.queuePPrev, a.queueNext, rfl⟩
+  ⟨a.queuePrevCode, a.queuePPrevCode, a.queueNextCode, a.ntfnPrevCode, a.ntfnNextCode, rfl⟩
 
 theorem tcbQueueLinkRewrite.trans {a b c : TCB}
     (h1 : tcbQueueLinkRewrite a b) (h2 : tcbQueueLinkRewrite b c) :
     tcbQueueLinkRewrite a c := by
-  obtain ⟨p1, pp1, n1, rfl⟩ := h1
-  obtain ⟨p2, pp2, n2, rfl⟩ := h2
-  exact ⟨p1, pp1, n1, rfl⟩
+  obtain ⟨p1, pp1, n1, np1, nn1, rfl⟩ := h1
+  obtain ⟨p2, pp2, n2, np2, nn2, rfl⟩ := h2
+  exact ⟨p1, pp1, n1, np1, nn1, rfl⟩
 
 /-- **`v0.35.183`**: a link rewrite agrees on every field but the three links.
 
@@ -398,21 +404,240 @@ exactly those three, so `f` is fixed by `rfl` after the existential is opened.
 The two link-writing updates the splice performs are its instances
 (`tcbQueueLinkRewrite_queueUnlinkPredecessor` / `_Successor` below). -/
 theorem tcbQueueLinkRewrite.field {α : Type} (f : TCB → α) {a b : TCB}
-    (h : tcbQueueLinkRewrite a b) (hf : ∀ (t : TCB) qp qpp qn,
-      f { t with queuePrev := qp, queuePPrev := qpp, queueNext := qn } = f t) :
+    (h : tcbQueueLinkRewrite a b) (hf : ∀ (t : TCB) qp qpp qn np nn,
+      f { t with
+        queuePrevCode := qp, queuePPrevCode := qpp, queueNextCode := qn,
+        ntfnPrevCode := np, ntfnNextCode := nn } = f t) :
     f a = f b := by
-  obtain ⟨qp, qpp, qn, rfl⟩ := h
-  exact hf b qp qpp qn
+  obtain ⟨qp, qpp, qn, np, nn, rfl⟩ := h
+  exact hf b qp qpp qn np nn
 
 /-- **`v0.35.183`**: the predecessor patch is a link rewrite. -/
 theorem tcbQueueLinkRewrite_queueUnlinkPredecessor (removed p : TCB) :
     tcbQueueLinkRewrite (queueUnlinkPredecessor removed p) p :=
-  ⟨p.queuePrev, p.queuePPrev, removed.queueNext, rfl⟩
+  ⟨p.queuePrevCode, p.queuePPrevCode, removed.queueNextCode, p.ntfnPrevCode,
+    p.ntfnNextCode, rfl⟩
 
 /-- **`v0.35.183`**: and so is the successor patch. -/
 theorem tcbQueueLinkRewrite_queueUnlinkSuccessor (removed n : TCB) :
     tcbQueueLinkRewrite (queueUnlinkSuccessor removed n) n :=
-  ⟨removed.queuePrev, removed.queuePPrev, n.queueNext, rfl⟩
+  ⟨removed.queuePrevCode, removed.queuePPrevCode, n.queueNextCode, n.ntfnPrevCode,
+    n.ntfnNextCode, rfl⟩
+
+theorem _root_.SeLe4n.Model.tcbNtfnLinkRewrite.toQueueLinkRewrite {a b : TCB} (h : tcbNtfnLinkRewrite a b) :
+    tcbQueueLinkRewrite a b := by
+  obtain ⟨np, nn, rfl⟩ := h
+  exact ⟨b.queuePrevCode, b.queuePPrevCode, b.queueNextCode, np, nn, rfl⟩
+
+/-- WS-ZA ZA4.4: the unlink's notification rewrite is well formed — the head
+can only become `none` from a `.waiting` state it then corrects to `.idle`, and
+an `.idle` or `.active` notification has no head to replace. -/
+theorem notificationQueueWellFormed_unlink (notif : Notification)
+    (head' tail' : Option SeLe4n.ThreadId)
+    (hHead : notif.waitHead = none → head' = none)
+    (hWF : notificationQueueWellFormed notif) :
+    notificationQueueWellFormed
+      { notif with
+          waitHeadCode := SeLe4n.ThreadId.optCode head'
+          waitTailCode := SeLe4n.ThreadId.optCode tail'
+          state := if notif.state = .waiting ∧ head'.isNone then .idle else notif.state } := by
+  have hPB : ∀ st hc tc, (Notification.mk st hc tc notif.hasPendingBadge notif.pendingWord
+      notif.pendingWord_cleared notif.boundTCB).pendingBadge = notif.pendingBadge := fun _ _ _ => rfl
+  have hWH : ∀ st tc, (Notification.mk st (SeLe4n.ThreadId.optCode head') tc
+      notif.hasPendingBadge notif.pendingWord notif.pendingWord_cleared
+      notif.boundTCB).waitHead = head' :=
+    fun _ _ => SeLe4n.ThreadId.ofOptCode_optCode head'
+  unfold notificationQueueWellFormed at hWF ⊢
+  rw [hPB, hWH]
+  cases hState : notif.state with
+  | idle =>
+    simp only [hState] at hWF
+    exact ⟨hHead hWF.1, hWF.2⟩
+  | waiting =>
+    simp only [hState] at hWF
+    cases head' with
+    | none => exact ⟨rfl, hWF.2⟩
+    | some h => exact ⟨Option.some_ne_none h, hWF.2⟩
+  | active =>
+    simp only [hState] at hWF
+    exact ⟨hHead hWF.1, hWF.2⟩
+
+/-- WS-ZA ZA4.4: what the notification unlink may do to one slot of the object
+table — nothing, a notification rewritten with its pending badge and bound thread
+kept, or a TCB whose intrusive links alone are rewritten (the unlinked waiter's
+neighbours). -/
+def ntfnUnlinkSlotRel (o o' : Option KernelObject) : Prop :=
+  o' = o ∨
+  (∃ n n', o = some (.notification n) ∧ o' = some (.notification n') ∧
+    n'.pendingBadge = n.pendingBadge ∧ n'.boundTCB = n.boundTCB ∧
+    (notificationQueueWellFormed n → notificationQueueWellFormed n')) ∨
+  (∃ t t', o = some (.tcb t) ∧ o' = some (.tcb t') ∧ tcbNtfnLinkRewrite t' t)
+
+theorem ntfnUnlinkSlotRel.trans {a b c : Option KernelObject}
+    (h1 : ntfnUnlinkSlotRel a b) (h2 : ntfnUnlinkSlotRel b c) : ntfnUnlinkSlotRel a c := by
+  rcases h1 with rfl | ⟨n, n', rfl, rfl, hB, hT, hW⟩ | ⟨t, t', rfl, rfl, hR⟩
+  · exact h2
+  · rcases h2 with rfl | ⟨m, m', hm, rfl, hB2, hT2, hW2⟩ | ⟨u, u', hu, _, _⟩
+    · exact Or.inr (Or.inl ⟨n, n', rfl, rfl, hB, hT, hW⟩)
+    · cases hm
+      exact Or.inr (Or.inl ⟨n, m', rfl, rfl, hB2.trans hB, hT2.trans hT, hW2 ∘ hW⟩)
+    · cases hu
+  · rcases h2 with rfl | ⟨m, m', hm, _, _, _, _⟩ | ⟨u, u', hu, rfl, hR2⟩
+    · exact Or.inr (Or.inr ⟨t, t', rfl, rfl, hR⟩)
+    · cases hm
+    · cases hu; exact Or.inr (Or.inr ⟨t, u', rfl, rfl, hR2.trans hR⟩)
+
+/-- The unlink's reach from `st`: the table stays well formed and every slot is
+related to its pre-state reading. -/
+def ntfnUnlinkReach (st s : SystemState) : Prop :=
+  s.objects.invExt ∧ ∀ k : SeLe4n.ObjId, ntfnUnlinkSlotRel (st.objects[k]?) (s.objects[k]?)
+
+theorem ntfnUnlinkReach_updateTcb {st s : SystemState} (h : ntfnUnlinkReach st s)
+    (p : SeLe4n.ThreadId) (f : TCB → TCB) (hf : ∀ t, tcbNtfnLinkRewrite (f t) t) :
+    ntfnUnlinkReach st (s.updateTcb p f) := by
+  obtain ⟨hInv, hRel⟩ := h
+  cases hG : s.getTcb? p with
+  | none => rw [SystemState.updateTcb_eq_self_of_none hG]; exact ⟨hInv, hRel⟩
+  | some t =>
+    rw [SystemState.updateTcb_eq_of_some hG]
+    have hT := (SystemState.getTcb?_eq_some_iff s p t).mp hG
+    refine ⟨RHTable_insert_preserves_invExt _ _ _ hInv, fun k => ?_⟩
+    simp only [RHTable_getElem?_eq_get?] at hT ⊢
+    by_cases hk : p.toObjId = k
+    · subst hk
+      rw [SeLe4n.Kernel.RobinHood.RHTable.getElem?_insert_self _ _ _ hInv]
+      have := hRel p.toObjId
+      simp only [RHTable_getElem?_eq_get?, hT] at this
+      exact this.trans (Or.inr (Or.inr ⟨t, f t, rfl, rfl, hf t⟩))
+    · rw [SeLe4n.Kernel.RobinHood.RHTable.getElem?_insert_ne _ _ _ _
+        (fun hb => hk (eq_of_beq hb)) hInv]
+      simpa only [RHTable_getElem?_eq_get?] using hRel k
+
+theorem ntfnUnlinkReach_rewriteNotification {st : SystemState} (hInv : st.objects.invExt)
+    (oid : SeLe4n.ObjId) (n n' : Notification)
+    (hN : st.objects[oid]? = some (.notification n))
+    (hB : n'.pendingBadge = n.pendingBadge) (hT : n'.boundTCB = n.boundTCB)
+    (hW : notificationQueueWellFormed n → notificationQueueWellFormed n')
+    (hAdm : st.rewriteAdmissible oid (.notification n')) :
+    ntfnUnlinkReach st (st.rewriteObject oid (.notification n') hAdm) := by
+  refine ⟨SystemState.rewriteObject_preserves_objects_invExt _ _ _ _ hInv, fun k => ?_⟩
+  by_cases hk : oid = k
+  · subst hk
+    rw [SystemState.rewriteObject_objects_self _ _ _ _ hInv, hN]
+    exact Or.inr (Or.inl ⟨n, n', rfl, rfl, hB, hT, hW⟩)
+  · rw [SystemState.rewriteObject_objects_ne _ _ _ _ _ hk hInv]
+    exact Or.inl rfl
+
+/-- WS-ZA ZA4.4: the neighbour relink rewrites intrusive links only. -/
+theorem ntfnUnlinkReach_unlinkNtfnNeighbours {st s : SystemState} (h : ntfnUnlinkReach st s)
+    (prev next : Option SeLe4n.ThreadId) :
+    ntfnUnlinkReach st (unlinkNtfnNeighbours s prev next) := by
+  have hP : ∀ (u : SystemState) (p : SeLe4n.ThreadId) (c : Nat), ntfnUnlinkReach st u →
+      ntfnUnlinkReach st (u.updateTcb p (fun t => { t with ntfnNextCode := c })) :=
+    fun u p c hu => ntfnUnlinkReach_updateTcb hu p _
+      (fun t => ⟨t.ntfnPrevCode, _, rfl⟩)
+  have hN : ∀ (u : SystemState) (p : SeLe4n.ThreadId) (c : Nat), ntfnUnlinkReach st u →
+      ntfnUnlinkReach st (u.updateTcb p (fun t => { t with ntfnPrevCode := c })) :=
+    fun u p c hu => ntfnUnlinkReach_updateTcb hu p _
+      (fun t => ⟨_, t.ntfnNextCode, rfl⟩)
+  unfold unlinkNtfnNeighbours
+  cases prev <;> cases next <;> dsimp only
+  · exact h
+  · exact hN _ _ _ h
+  · exact hP _ _ _ h
+  · exact hN _ _ _ (hP _ _ _ h)
+
+/-- **WS-ZA ZA4.4: the notification unlink in one statement.**  It writes the
+waiter's notification (queue ends and the state derived from them) and the
+links of at most two neighbouring TCBs; every other slot is untouched. -/
+theorem removeFromNotificationWaitQueue_reach (st : SystemState) (tid : SeLe4n.ThreadId)
+    (hInv : st.objects.invExt) :
+    ntfnUnlinkReach st (removeFromNotificationWaitQueue st tid) := by
+  have hRefl : ntfnUnlinkReach st st := ⟨hInv, fun _ => Or.inl rfl⟩
+  unfold removeFromNotificationWaitQueue
+  split
+  · next tcb _ =>
+    split
+    · next oid _ =>
+      split
+      · next notif hN _ =>
+        have hN' := (SystemState.getNotification?_eq_some_iff st oid notif).mp hN
+        dsimp only
+        have hW := notificationQueueWellFormed_unlink notif
+          (if notif.waitHead = some tid then tcb.ntfnNext else notif.waitHead)
+          (if tcb.ntfnNext.isSome then notif.waitTail
+            else if notif.waitHead = some tid then none else tcb.ntfnPrev)
+          (fun h => by simp [h])
+        have h1 := ntfnUnlinkReach_rewriteNotification hInv oid notif _ hN'
+          (by rfl) (by rfl) hW (SystemState.rewriteAdmissible_notification hN _)
+        exact ntfnUnlinkReach_unlinkNtfnNeighbours
+          (ntfnUnlinkReach_updateTcb h1 tid _ (fun _ => ⟨_, _, rfl⟩)) _ _
+      · exact hRefl
+    · exact hRefl
+  · exact hRefl
+
+/-- WS-SM SM6.E: `removeFromNotificationWaitQueue` preserves
+`objects.invExt` — every write of the unlink is an in-place rewrite
+(`removeFromNotificationWaitQueue_reach`). -/
+theorem removeFromNotificationWaitQueue_preserves_objects_invExt
+    (st : SystemState) (tid : SeLe4n.ThreadId)
+    (hInv : st.objects.invExt) :
+    (removeFromNotificationWaitQueue st tid).objects.invExt :=
+  (removeFromNotificationWaitQueue_reach st tid hInv).1
+
+/-- WS-ZA ZA4.4: closing the gap writes the two neighbours and no other slot. -/
+theorem unlinkNtfnNeighbours_objects_off (s : SystemState)
+    (prev next : Option SeLe4n.ThreadId) (hInv : s.objects.invExt) (k : SeLe4n.ObjId)
+    (hP : ∀ p, prev = some p → p.toObjId ≠ k)
+    (hN : ∀ n, next = some n → n.toObjId ≠ k) :
+    (unlinkNtfnNeighbours s prev next).objects[k]? = s.objects[k]? := by
+  unfold unlinkNtfnNeighbours
+  cases prev with
+  | none =>
+    cases next with
+    | none => rfl
+    | some n => exact SystemState.updateTcb_objects_ne _ n _ k (hN n rfl) hInv
+  | some p =>
+    have hInv2 := SystemState.updateTcb_preserves_objects_invExt s p
+      (fun t => { t with ntfnNextCode := SeLe4n.ThreadId.optCode next }) hInv
+    cases next with
+    | none => exact SystemState.updateTcb_objects_ne _ p _ k (hP p rfl) hInv
+    | some n =>
+      dsimp only
+      rw [SystemState.updateTcb_objects_ne _ n _ k (hN n rfl) hInv2]
+      exact SystemState.updateTcb_objects_ne _ p _ k (hP p rfl) hInv
+
+/-- WS-ZA ZA4.4: the unlink writes the notification the victim waits on, the
+victim itself (its queue links cleared) and the victim's two queue neighbours,
+and no other slot. -/
+theorem removeFromNotificationWaitQueue_objects_off (st : SystemState)
+    (tid : SeLe4n.ThreadId) (hInv : st.objects.invExt) (tcb : TCB)
+    (hT : st.getTcb? tid = some tcb) (k : SeLe4n.ObjId)
+    (hOff : ∀ oid, tcb.ipcState = .blockedOnNotification oid → oid ≠ k)
+    (hV : ∀ oid, tcb.ipcState = .blockedOnNotification oid → tid.toObjId ≠ k)
+    (hP : ∀ p, tcb.ntfnPrev = some p → p.toObjId ≠ k)
+    (hN : ∀ n, tcb.ntfnNext = some n → n.toObjId ≠ k) :
+    (removeFromNotificationWaitQueue st tid).objects[k]? = st.objects[k]? := by
+  unfold removeFromNotificationWaitQueue
+  simp only [hT]
+  cases hS : tcb.ipcState with
+  | blockedOnNotification oid =>
+    dsimp only
+    split
+    · have hR : ∀ (n' : Notification) h,
+          (st.rewriteObject oid (.notification n') h).objects[k]? = st.objects[k]? :=
+        fun n' h => SystemState.rewriteObject_objects_ne st oid k _ h (hOff oid hS) hInv
+      refine (unlinkNtfnNeighbours_objects_off _ _ _
+        (SystemState.updateTcb_preserves_objects_invExt _ _ _
+          (SystemState.rewriteObject_preserves_objects_invExt st oid _ _ hInv)) k ?_ hN).trans
+        ((SystemState.updateTcb_objects_ne _ tid _ k (hV oid hS)
+          (SystemState.rewriteObject_preserves_objects_invExt st oid _ _ hInv)).trans (hR _ _))
+      intro p hp
+      split at hp
+      · cases hp
+      · exact hP p hp
+    · rfl
+  | _ => rfl
 
 -- ============================================================================
 -- WS-SM SM6.E: per-key lookup characterisation of the cleanup sweeps
@@ -576,8 +801,8 @@ theorem spliceOutMidQueueNode_tcb_lookup
                    (tcbQueueLinkRewrite_queueUnlinkSuccessor tcb nextTcb) hPre
                all_goals exact ⟨t0, hPre, tcbQueueLinkRewrite.refl t0⟩)
 
-/-- WS-SM SM6.E: the endpoint sweep preserves TCB-kind and `cpuAffinity` at
-every key (and `objects.invExt`) — every fold step rewrites an
+/-- WS-SM SM6.E: the endpoint sweep preserves TCB-kind and `TCB.placement` (home core and
+run-queue links) at every key (and `objects.invExt`) — every fold step rewrites an
 `.endpoint`-valued key, which can never alias a TCB-holding key (the fold
 keystone `RHTable.fold_preserves_of_lookup` supplies the visited key's
 stored value, so the kind clash discharges the disequality). -/
@@ -588,16 +813,16 @@ theorem removeFromAllEndpointQueues_tcb_lookup
     (removeFromAllEndpointQueues st tid).objects.invExt
     ∧ ∃ t' : TCB,
       (removeFromAllEndpointQueues st tid).objects[k]? = some (.tcb t')
-      ∧ t'.cpuAffinity = t0.cpuAffinity := by
+      ∧ t'.placement = t0.placement := by
   obtain ⟨t₁, hL1, hRw1⟩ := spliceOutMidQueueNode_tcb_lookup st tid k t0 hInv hPre
-  have hAff1 : t₁.cpuAffinity = t0.cpuAffinity :=
-    hRw1.field (·.cpuAffinity) (fun _ _ _ _ => rfl)
+  have hAff1 : t₁.placement = t0.placement :=
+    hRw1.field TCB.placement (fun _ _ _ _ _ _ => rfl)
   have hInvS := spliceOutMidQueueNode_preserves_objects_invExt st tid hInv
   unfold removeFromAllEndpointQueues
   exact SeLe4n.Kernel.RobinHood.RHTable.fold_preserves_of_lookup
     (spliceOutMidQueueNode st tid).objects (spliceOutMidQueueNode st tid) _
     (fun acc => acc.objects.invExt ∧ ∃ t' : TCB,
-      acc.objects[k]? = some (.tcb t') ∧ t'.cpuAffinity = t0.cpuAffinity)
+      acc.objects[k]? = some (.tcb t') ∧ t'.placement = t0.placement)
     hInvS
     ⟨hInvS, t₁, hL1, hAff1⟩
     (fun acc x v hV hAcc => by
@@ -623,42 +848,80 @@ theorem removeFromAllEndpointQueues_tcb_lookup
         · exact ⟨hAccInv, t', hL', hAff'⟩
       · exact ⟨hAccInv, t', hL', hAff'⟩)
 
-/-- WS-SM SM6.E: the notification sweep preserves TCB-kind and `cpuAffinity`
-at every key (and `objects.invExt`) — every fold step rewrites a
-`.notification`-valued key, which can never alias a TCB-holding key. -/
-theorem removeFromAllNotificationWaitLists_tcb_lookup
+/-- WS-ZA ZA4.4: a TCB before the unlink is a TCB after it, with at most its
+intrusive links rewritten. -/
+theorem removeFromNotificationWaitQueue_tcb_forward
     (st : SystemState) (tid : SeLe4n.ThreadId) (k : SeLe4n.ObjId) (t0 : TCB)
     (hInv : st.objects.invExt)
     (hPre : st.objects[k]? = some (.tcb t0)) :
-    (removeFromAllNotificationWaitLists st tid).objects.invExt
+    ∃ t' : TCB, (removeFromNotificationWaitQueue st tid).objects[k]? = some (.tcb t')
+      ∧ tcbNtfnLinkRewrite t' t0 := by
+  rcases (removeFromNotificationWaitQueue_reach st tid hInv).2 k with
+    h | ⟨n, _, hn, _, _, _, _⟩ | ⟨t, t', ht, ht', hR⟩
+  · exact ⟨t0, h.trans hPre, tcbNtfnLinkRewrite.refl t0⟩
+  · rw [hPre] at hn; cases hn
+  · rw [hPre] at ht; cases ht; exact ⟨t', ht', hR⟩
+
+/-- WS-ZA ZA4.4: and a TCB after the unlink was one before it. -/
+theorem removeFromNotificationWaitQueue_tcb_backward
+    (st : SystemState) (tid : SeLe4n.ThreadId) (k : SeLe4n.ObjId) (t' : TCB)
+    (hInv : st.objects.invExt)
+    (hPost : (removeFromNotificationWaitQueue st tid).objects[k]? = some (.tcb t')) :
+    ∃ t0 : TCB, st.objects[k]? = some (.tcb t0) ∧ tcbNtfnLinkRewrite t' t0 := by
+  rcases (removeFromNotificationWaitQueue_reach st tid hInv).2 k with
+    h | ⟨n, n', _, hn', _, _, _⟩ | ⟨t, t2, ht, ht', hR⟩
+  · exact ⟨t', h ▸ hPost, tcbNtfnLinkRewrite.refl t'⟩
+  · rw [hPost] at hn'; cases hn'
+  · rw [hPost] at ht'; cases ht'; exact ⟨t, ht, hR⟩
+
+/-- WS-ZA ZA4.4: a slot holding neither a notification nor a TCB is untouched. -/
+theorem removeFromNotificationWaitQueue_other_slot
+    (st : SystemState) (tid : SeLe4n.ThreadId) (hInv : st.objects.invExt)
+    (k : SeLe4n.ObjId) (o : KernelObject) (hNotN : ∀ n, o ≠ .notification n)
+    (hNotT : ∀ t, o ≠ .tcb t) :
+    (removeFromNotificationWaitQueue st tid).objects[k]? = some o ↔
+      st.objects[k]? = some o := by
+  rcases (removeFromNotificationWaitQueue_reach st tid hInv).2 k with
+    h | ⟨n, n', hn, hn', _, _, _⟩ | ⟨t, t2, ht, ht', _⟩
+  · rw [h]
+  · rw [hn, hn']
+    exact ⟨fun h => absurd (Option.some.inj h).symm (hNotN n'),
+      fun h => absurd (Option.some.inj h).symm (hNotN n)⟩
+  · rw [ht, ht']
+    exact ⟨fun h => absurd (Option.some.inj h).symm (hNotT t2),
+      fun h => absurd (Option.some.inj h).symm (hNotT t)⟩
+
+/-- WS-ZA ZA4.4: every TCB field the intrusive links do not carry reads the same
+through `getTcb?` after the unlink. -/
+theorem removeFromNotificationWaitQueue_tcbField_frame {α : Type} (f : TCB → α)
+    (hf : ∀ (t : TCB) qp qpp qn np nn,
+      f { t with
+        queuePrevCode := qp, queuePPrevCode := qpp, queueNextCode := qn,
+        ntfnPrevCode := np, ntfnNextCode := nn } = f t)
+    (st : SystemState) (tid : SeLe4n.ThreadId) (hInv : st.objects.invExt)
+    (x : SeLe4n.ThreadId) :
+    ((removeFromNotificationWaitQueue st tid).getTcb? x).map f = (st.getTcb? x).map f := by
+  refine SystemState.map_tcbField_eq_of_refines f (fun t0 hT0 => ?_) (fun t' hT' => ?_)
+  · obtain ⟨t', hL', hRw'⟩ := removeFromNotificationWaitQueue_tcb_forward st tid x.toObjId t0
+      hInv ((SystemState.getTcb?_eq_some_iff st x t0).mp hT0)
+    exact ⟨t', (SystemState.getTcb?_eq_some_iff _ x t').mpr hL', hRw'.toQueueLinkRewrite.field f hf⟩
+  · obtain ⟨t0, hL0, _⟩ := removeFromNotificationWaitQueue_tcb_backward st tid x.toObjId t'
+      hInv ((SystemState.getTcb?_eq_some_iff _ x t').mp hT')
+    exact ⟨t0, (SystemState.getTcb?_eq_some_iff st x t0).mpr hL0⟩
+
+/-- WS-SM SM6.E: the notification unlink preserves TCB-kind and `TCB.placement`
+(home core and run-queue links) at every key (and `objects.invExt`). -/
+theorem removeFromNotificationWaitQueue_tcb_lookup
+    (st : SystemState) (tid : SeLe4n.ThreadId) (k : SeLe4n.ObjId) (t0 : TCB)
+    (hInv : st.objects.invExt)
+    (hPre : st.objects[k]? = some (.tcb t0)) :
+    (removeFromNotificationWaitQueue st tid).objects.invExt
     ∧ ∃ t' : TCB,
-      (removeFromAllNotificationWaitLists st tid).objects[k]? = some (.tcb t')
-      ∧ t'.cpuAffinity = t0.cpuAffinity := by
-  unfold removeFromAllNotificationWaitLists
-  exact SeLe4n.Kernel.RobinHood.RHTable.fold_preserves_of_lookup st.objects st _
-    (fun acc => acc.objects.invExt ∧ ∃ t' : TCB,
-      acc.objects[k]? = some (.tcb t') ∧ t'.cpuAffinity = t0.cpuAffinity)
-    hInv
-    ⟨hInv, t0, hPre, rfl⟩
-    (fun acc x v hV hAcc => by
-      obtain ⟨hAccInv, t', hL', hAff'⟩ := hAcc
-      split
-      · -- write-set-honest sweep (PR #831 review 4): the insert arm is
-        -- guarded by waiter membership; the untouched arm is the identity.
-        split
-        · split
-          · have hNe : x ≠ k := fun hxk => by
-              subst hxk
-              have hclash := hPre.symm.trans hV
-              injection hclash with h
-              injection h
-            exact ⟨SystemState.rewriteObject_preserves_objects_invExt _ _ _ _ hAccInv,
-              t',
-              (SystemState.rewriteObject_objects_ne _ _ _ _ _ hNe hAccInv).trans hL',
-              hAff'⟩
-          · exact ⟨hAccInv, t', hL', hAff'⟩
-        · exact ⟨hAccInv, t', hL', hAff'⟩
-      · exact ⟨hAccInv, t', hL', hAff'⟩)
+      (removeFromNotificationWaitQueue st tid).objects[k]? = some (.tcb t')
+      ∧ t'.placement = t0.placement := by
+  obtain ⟨t', h, hR⟩ := removeFromNotificationWaitQueue_tcb_forward st tid k t0 hInv hPre
+  exact ⟨(removeFromNotificationWaitQueue_reach st tid hInv).1, t', h,
+    hR.toQueueLinkRewrite.field TCB.placement (fun _ _ _ _ _ _ => rfl)⟩
 
 /-- WS-SM SM6.E: a thread id whose key holds no TCB resolves to `none` under
 `lookupTcb` — both the reserved-id guard and the kind-mismatch arm return
@@ -727,43 +990,19 @@ theorem removeFromAllEndpointQueues_no_tcb
         · exact ⟨hAccInv, hNoT⟩
       · exact ⟨hAccInv, hNoT⟩)
 
-/-- WS-SM SM6.E: the notification sweep never materialises a TCB at the swept
-thread's key — every fold step writes a `.notification` value. -/
-theorem removeFromAllNotificationWaitLists_no_tcb
+/-- WS-SM SM6.E: the notification unlink never materialises a TCB at a key
+that held none — its TCB writes are in-place link rewrites. -/
+theorem removeFromNotificationWaitQueue_no_tcb
     (st : SystemState) (tid : SeLe4n.ThreadId)
     (hInv : st.objects.invExt)
     (hNo : ∀ t : TCB, st.objects[tid.toObjId]? ≠ some (.tcb t)) :
-    (removeFromAllNotificationWaitLists st tid).objects.invExt
+    (removeFromNotificationWaitQueue st tid).objects.invExt
     ∧ ∀ t : TCB,
-      (removeFromAllNotificationWaitLists st tid).objects[tid.toObjId]?
+      (removeFromNotificationWaitQueue st tid).objects[tid.toObjId]?
         ≠ some (.tcb t) := by
-  unfold removeFromAllNotificationWaitLists
-  exact SeLe4n.Kernel.RobinHood.RHTable.fold_preserves_of_lookup st.objects st _
-    (fun acc => acc.objects.invExt ∧ ∀ t : TCB,
-      acc.objects[tid.toObjId]? ≠ some (.tcb t))
-    hInv
-    ⟨hInv, hNo⟩
-    (fun acc x v _ hAcc => by
-      obtain ⟨hAccInv, hNoT⟩ := hAcc
-      split
-      · -- write-set-honest sweep (PR #831 review 4): the insert arm is
-        -- guarded; the untouched arm is the identity.
-        split
-        · split
-          · refine ⟨SystemState.rewriteObject_preserves_objects_invExt _ _ _ _ hAccInv,
-              fun t h => ?_⟩
-            by_cases hx : x = tid.toObjId
-            · -- The swept key itself is rewritten in its own kind — not to a TCB.
-              subst hx
-              have hclash := (SystemState.rewriteObject_objects_self
-                acc tid.toObjId _ _ hAccInv).symm.trans h
-              injection hclash with hclash
-              injection hclash
-            · exact hNoT t ((SystemState.rewriteObject_objects_ne
-                acc x tid.toObjId _ _ hx hAccInv).symm.trans h)
-          · exact ⟨hAccInv, hNoT⟩
-        · exact ⟨hAccInv, hNoT⟩
-      · exact ⟨hAccInv, hNoT⟩)
+  refine ⟨(removeFromNotificationWaitQueue_reach st tid hInv).1, fun t h => ?_⟩
+  obtain ⟨t0, h0, _⟩ := removeFromNotificationWaitQueue_tcb_backward st tid _ t hInv h
+  exact hNo t0 h0
 
 -- ============================================================================
 -- WS-SM SM6.E: cleanup primitives preserve `ipcInvariant`
@@ -930,86 +1169,20 @@ theorem removeFromAllEndpointQueues_preserves_ipcInvariant
         · exact hAcc
       · exact hAcc)).2
 
-/-- WS-SM SM6.E: the sweep's waiter filter with sole-waiter state correction
-preserves notification well-formedness — filtering only shrinks the waiter
-list, and the correction transitions `.waiting` to `.idle` exactly when the
-filtered list is empty (a `.waiting` notification carries no pending badge,
-so the `.idle` shape holds by construction). -/
-theorem notificationQueueWellFormed_filter_correct
-    (notif : Notification) (tid : SeLe4n.ThreadId)
-    (hWF : notificationQueueWellFormed notif) :
-    notificationQueueWellFormed
-      { notif with
-          waitingThreads := notif.waitingThreads.filter (· != tid)
-          state := if notif.state = .waiting
-              ∧ (notif.waitingThreads.filter (· != tid)).val.isEmpty then .idle
-            else notif.state } := by
-  unfold notificationQueueWellFormed at hWF ⊢
-  cases hState : notif.state with
-  | idle =>
-    simp only [hState] at hWF
-    rw [if_neg (fun hC => NotificationState.noConfusion hC.1)]
-    exact ⟨by rw [NoDupList.val_filter, hWF.1]; rfl, hWF.2⟩
-  | waiting =>
-    simp only [hState] at hWF
-    by_cases hE : (notif.waitingThreads.filter (· != tid)).val.isEmpty = true
-    · -- Sole-waiter removal: the correction transitions to `.idle`.
-      rw [if_pos ⟨rfl, hE⟩]
-      exact ⟨List.isEmpty_iff.mp hE, hWF.2⟩
-    · -- Waiters remain: still `.waiting`, with a nonempty filtered list.
-      rw [if_neg (fun hC => hE hC.2)]
-      refine ⟨fun hNil => hE ?_, hWF.2⟩
-      rw [hNil]
-      rfl
-  | active =>
-    simp only [hState] at hWF
-    rw [if_neg (fun hC => NotificationState.noConfusion hC.1)]
-    exact ⟨by rw [NoDupList.val_filter, hWF.1]; rfl, hWF.2⟩
-
-/-- WS-SM SM6.E: the notification sweep preserves `ipcInvariant` — every fold
-step rewrites a notification to its filter-corrected form, which is
-well-formed from the source's invariant
-(`notificationQueueWellFormed_filter_correct`). -/
-theorem removeFromAllNotificationWaitLists_preserves_ipcInvariant
+/-- WS-SM SM6.E: the notification unlink preserves `ipcInvariant` — its one
+notification rewrite is well formed from the source's
+(`notificationQueueWellFormed_unlink`), and its TCB writes touch no
+notification. -/
+theorem removeFromNotificationWaitQueue_preserves_ipcInvariant
     (st : SystemState) (tid : SeLe4n.ThreadId)
     (hInv : st.objects.invExt) (hIpc : ipcInvariant st) :
-    ipcInvariant (removeFromAllNotificationWaitLists st tid) := by
-  unfold removeFromAllNotificationWaitLists
-  exact (SeLe4n.Kernel.RobinHood.RHTable.fold_preserves_of_lookup st.objects st _
-    (fun acc => acc.objects.invExt ∧ ipcInvariant acc)
-    hInv ⟨hInv, hIpc⟩
-    (fun acc x _ _hV hAcc => by
-      obtain ⟨hAccInv, hAccIpc⟩ := hAcc
-      split
-      · -- `.notification` step: the record is the ACCUMULATOR's, read through
-        -- the witnessed lookup, and its corrected rewrite is well-formed from
-        -- the accumulator's own invariant (`hAccIpc` at the visited key).
-        -- Write-set-honest sweep (PR #831 review 4): the insert arm is
-        -- guarded by waiter membership; the untouched arm is the identity.
-        split
-        · rename_i notif hN _
-          split
-          · refine ⟨SystemState.rewriteObject_preserves_objects_invExt _ _ _ _ hAccInv, ?_⟩
-            have hWF : notificationInvariant
-                { notif with
-                    waitingThreads := notif.waitingThreads.filter (· != tid)
-                    state := if notif.state = .waiting
-                        ∧ (notif.waitingThreads.filter (· != tid)).val.isEmpty then .idle
-                      else notif.state } :=
-              notificationQueueWellFormed_filter_correct notif tid
-                (hAccIpc x notif ((SystemState.getNotification?_eq_some_iff acc x notif).mp hN))
-            intro oid ntfn hL
-            by_cases hx : x = oid
-            · subst hx
-              have hEq := (SystemState.rewriteObject_objects_self acc x _ _ hAccInv).symm.trans hL
-              injection hEq with hEq
-              injection hEq with hEq
-              exact hEq ▸ hWF
-            · exact hAccIpc oid ntfn
-                ((SystemState.rewriteObject_objects_ne acc x oid _ _ hx hAccInv).symm.trans hL)
-          · exact ⟨hAccInv, hAccIpc⟩
-        · exact ⟨hAccInv, hAccIpc⟩
-      · exact ⟨hAccInv, hAccIpc⟩)).2
+    ipcInvariant (removeFromNotificationWaitQueue st tid) := by
+  intro oid ntfn hL
+  rcases (removeFromNotificationWaitQueue_reach st tid hInv).2 oid with
+    h | ⟨n, n', hn, hn', _, _, hW⟩ | ⟨t, t', _, ht', _⟩
+  · exact hIpc oid ntfn (h ▸ hL)
+  · rw [hL] at hn'; cases hn'; exact hW (hIpc oid n hn)
+  · rw [hL] at ht'; cases ht'
 
 /-- WS-SM SM6.E: `cleanupDonatedSchedContext` preserves `objects.invExt` —
 the identity arms are trivial and the `.donated` arm delegates to
@@ -1489,8 +1662,8 @@ theorem cancelDonatedDonationOnCore_preserves_replenishQueueAffinityConsistent_s
         (fun scId₀ hne => returnDonatedSchedContext_getSchedContext?_ne st st1 tid scId scId₀
           originalOwner hne hInv newOwner? hRet)
         (fun x => determineTargetCore_congr st st1 x
-          (returnDonatedSchedContext_getTcb?_cpuAffinity_eq st st1 tid scId originalOwner hInv
-            newOwner? hRet x))
+          (TCB.map_cpuAffinity_of_placement (returnDonatedSchedContext_getTcb?_placement_eq st st1 tid scId originalOwner hInv
+            newOwner? hRet x)))
         hScPre hScPreBound rfl hCons
   · cases h
 
@@ -1666,15 +1839,16 @@ theorem releaseSchedContextBinding_preserves_replenishQueueAffinityConsistent_sm
         unfold SystemState.getTcb?
         rw [SchedContextOps.purgeReplenishmentFromAllCores_objects]
 
-/-- After cleanup, the cleaned thread is not in the run queue. -/
+/-- After cleanup, the cleaned thread is not in the run queue (the sweep is the
+cleanup's first step, so the agreement is read on its input). -/
 theorem cleanupTcbReferences_removes_from_runnable
-    (st : SystemState) (tid : SeLe4n.ThreadId) :
+    (st : SystemState) (tid : SeLe4n.ThreadId) (hR : st.runQueueRefined) :
     ¬(tid ∈ ((cleanupTcbReferences st tid).scheduler.runQueueOnCore bootCoreId)) := by
   unfold cleanupTcbReferences
   rw [clearDonationOriginReferences_scheduler_eq,
-      removeFromAllNotificationWaitLists_scheduler_eq]
+      removeFromNotificationWaitQueue_scheduler_eq]
   rw [removeFromAllEndpointQueues_scheduler_eq]
-  exact removeRunnableFromAllCores_not_mem st tid bootCoreId
+  exact removeRunnableFromAllCores_not_mem st tid bootCoreId hR
 
 /-- Cleanup preserves lifecycle metadata. -/
 theorem cleanupTcbReferences_lifecycle_eq
@@ -1682,7 +1856,7 @@ theorem cleanupTcbReferences_lifecycle_eq
     (cleanupTcbReferences st tid).lifecycle = st.lifecycle := by
   unfold cleanupTcbReferences
   rw [clearDonationOriginReferences_lifecycle_eq,
-      removeFromAllNotificationWaitLists_lifecycle_eq,
+      removeFromNotificationWaitQueue_lifecycle_eq,
     removeFromAllEndpointQueues_lifecycle_eq (removeRunnableFromAllCores st tid) tid]
   exact removeRunnableFromAllCores_lifecycle st tid
 
@@ -2052,13 +2226,13 @@ wrapper by `unfold`. -/
 /-- Pre-retype cleanup only removes elements from the flat list, never adds. -/
 theorem cleanupTcbReferences_flat_subset
     (st : SystemState) (tid x : SeLe4n.ThreadId)
-    (h : x ∈ ((cleanupTcbReferences st tid).scheduler.runQueueOnCore bootCoreId).flat) :
-    x ∈ (st.scheduler.runQueueOnCore bootCoreId).flat := by
+    (h : x ∈ ((cleanupTcbReferences st tid).scheduler.runQueueOnCore bootCoreId).toList) :
+    x ∈ (st.scheduler.runQueueOnCore bootCoreId).toList := by
   unfold cleanupTcbReferences at h
   rw [clearDonationOriginReferences_scheduler_eq,
-      removeFromAllNotificationWaitLists_scheduler_eq] at h
+      removeFromNotificationWaitQueue_scheduler_eq] at h
   rw [removeFromAllEndpointQueues_scheduler_eq] at h
-  exact removeRunnableFromAllCores_flat_subset st tid x bootCoreId h
+  exact removeRunnableFromAllCores_toList_subset st tid x bootCoreId h
 
 /-- CDT cleanup preserves the scheduler. -/
 theorem detachCNodeSlots_scheduler_eq
@@ -2106,7 +2280,7 @@ theorem cleanupTcbReferences_scheduler_eq_removeRunnableFromAllCores
       = (removeRunnableFromAllCores st tid).scheduler := by
   unfold cleanupTcbReferences
   rw [clearDonationOriginReferences_scheduler_eq,
-      removeFromAllNotificationWaitLists_scheduler_eq]
+      removeFromNotificationWaitQueue_scheduler_eq]
   exact removeFromAllEndpointQueues_scheduler_eq (removeRunnableFromAllCores st tid) tid
 
 /-- **WS-SM SM8.B (PR #861 review round 40): the destroyed-remote-current case
@@ -2144,7 +2318,7 @@ theorem cleanupTcbReferences_machine_eq
     (cleanupTcbReferences st tid).machine = st.machine := by
   unfold cleanupTcbReferences
   rw [clearDonationOriginReferences_machine_eq,
-      removeFromAllNotificationWaitLists_machine_eq,
+      removeFromNotificationWaitQueue_machine_eq,
       removeFromAllEndpointQueues_machine_eq, removeRunnableFromAllCores_machine]
 
 /-- Pre-retype cleanup flat list subset: any element in the post-cleanup flat
@@ -2153,8 +2327,8 @@ theorem lifecyclePreRetypeCleanup_flat_subset
     (st stClean : SystemState) (target : SeLe4n.ObjId)
     (currentObj newObj : KernelObject) (x : SeLe4n.ThreadId)
     (hOk : lifecyclePreRetypeCleanup st target currentObj newObj = .ok stClean)
-    (h : x ∈ (stClean.scheduler.runQueueOnCore bootCoreId).flat) :
-    x ∈ (st.scheduler.runQueueOnCore bootCoreId).flat := by
+    (h : x ∈ (stClean.scheduler.runQueueOnCore bootCoreId).toList) :
+    x ∈ (st.scheduler.runQueueOnCore bootCoreId).toList := by
   cases currentObj with
   | tcb tcb =>
     -- Unfold with known currentObj = .tcb tcb
@@ -2189,7 +2363,7 @@ theorem lifecyclePreRetypeCleanup_flat_subset
       rw [cleanupTcbReferences_scheduler_eq_removeRunnableFromAllCores] at h
       -- Take the sweep off first (it handles its own per-core guard), then
       -- collapse the run-queue-preserving prefix.
-      have hSub := removeRunnableFromAllCores_flat_subset _ tcb.tid x bootCoreId h
+      have hSub := removeRunnableFromAllCores_toList_subset _ tcb.tid x bootCoreId h
       rw [hArmRQ] at hSub
       exact hSub
   | cnode cn =>
@@ -2202,8 +2376,8 @@ theorem lifecyclePreRetypeCleanup_flat_subset
       · exact absurd hOk (by simp)
       injection hOk with hOk; subst hOk
       have hSched := detachCNodeSlots_scheduler_eq st target cn
-      rw [show ((detachCNodeSlots st target cn).scheduler.runQueueOnCore bootCoreId).flat =
-            (st.scheduler.runQueueOnCore bootCoreId).flat from by rw [hSched]] at h
+      rw [show ((detachCNodeSlots st target cn).scheduler.runQueueOnCore bootCoreId).toList =
+            (st.scheduler.runQueueOnCore bootCoreId).toList from by rw [hSched]] at h
       exact h
   | endpoint _ =>
     simp only [lifecyclePreRetypeCleanup] at hOk
@@ -2769,10 +2943,12 @@ theorem spliceOutMidQueueNode_tcb_backward
   · exact ⟨t', hPost, tcbQueueLinkRewrite.refl t'⟩
   · rename_i tcb hT
     obtain ⟨t1, h1, r1⟩ := queueNeighbourPatch_backward _ tcb.queueNext _
-      (fun n => ⟨tcb.queuePrev, tcb.queuePPrev, n.queueNext, rfl⟩)
+      (fun n => ⟨tcb.queuePrevCode, tcb.queuePPrevCode, n.queueNextCode, n.ntfnPrevCode,
+        n.ntfnNextCode, rfl⟩)
       (queueNeighbourPatch_invExt _ _ _ hInv) k t' hPost
     obtain ⟨t0, h0, r0⟩ := queueNeighbourPatch_backward st.objects tcb.queuePrev _
-      (fun p => ⟨p.queuePrev, p.queuePPrev, tcb.queueNext, rfl⟩) hInv k t1 h1
+      (fun p => ⟨p.queuePrevCode, p.queuePPrevCode, tcb.queueNextCode, p.ntfnPrevCode,
+        p.ntfnNextCode, rfl⟩) hInv k t1 h1
     exact ⟨t0, h0, r1.trans r0⟩
 
 /-- **WS-RR RR7.22 (residual)**: the mid-queue splice leaves every non-TCB object
@@ -2802,8 +2978,10 @@ cancellation bundle that first needed it (WS-RR RR8.11 wrote it `private` there,
 downstream of both the destroy path and the retype wrapper — so the retype's own
 reservation theorems could not be stated at all until `v0.35.166` moved it). -/
 theorem spliceOutMidQueueNode_tcbField_frame {α : Type} (f : TCB → α)
-    (hf : ∀ (t : TCB) qp qpp qn,
-      f { t with queuePrev := qp, queuePPrev := qpp, queueNext := qn } = f t)
+    (hf : ∀ (t : TCB) qp qpp qn np nn,
+      f { t with
+        queuePrevCode := qp, queuePPrevCode := qpp, queueNextCode := qn,
+        ntfnPrevCode := np, ntfnNextCode := nn } = f t)
     (st : SystemState) (tid : SeLe4n.ThreadId) (hInv : st.objects.invExt)
     (x : SeLe4n.ThreadId) :
     ((spliceOutMidQueueNode st tid).getTcb? x).map f = (st.getTcb? x).map f := by
@@ -2815,12 +2993,13 @@ theorem spliceOutMidQueueNode_tcbField_frame {α : Type} (f : TCB → α)
       ((SystemState.getTcb?_eq_some_iff _ x t').mp hT')
     exact ⟨t0, (SystemState.getTcb?_eq_some_iff st x t0).mpr hL0⟩
 
-/-- The `cpuAffinity` instance, which `determineTargetCore_congr` consumes. -/
-theorem spliceOutMidQueueNode_affinity_frame (st : SystemState)
+/-- The `TCB.placement` instance: the home core `determineTargetCore_congr`
+consumes and the run-queue links the link agreement reads. -/
+theorem spliceOutMidQueueNode_placement_frame (st : SystemState)
     (tid : SeLe4n.ThreadId) (hInv : st.objects.invExt) (x : SeLe4n.ThreadId) :
-    ((spliceOutMidQueueNode st tid).getTcb? x).map (·.cpuAffinity)
-      = (st.getTcb? x).map (·.cpuAffinity) :=
-  spliceOutMidQueueNode_tcbField_frame (·.cpuAffinity) (fun _ _ _ _ => rfl) st tid hInv x
+    ((spliceOutMidQueueNode st tid).getTcb? x).map TCB.placement
+      = (st.getTcb? x).map TCB.placement :=
+  spliceOutMidQueueNode_tcbField_frame TCB.placement (fun _ _ _ _ _ _ => rfl) st tid hInv x
 
 /-- **`v0.35.183` (register row 63)**: the `schedContextBinding` instance, which
 `schedContextBindingConsistent_transfer` consumes.
@@ -2833,7 +3012,7 @@ theorem spliceOutMidQueueNode_binding_frame (st : SystemState)
     (tid : SeLe4n.ThreadId) (hInv : st.objects.invExt) (x : SeLe4n.ThreadId) :
     ((spliceOutMidQueueNode st tid).getTcb? x).map (·.schedContextBinding)
       = (st.getTcb? x).map (·.schedContextBinding) :=
-  spliceOutMidQueueNode_tcbField_frame (·.schedContextBinding) (fun _ _ _ _ => rfl)
+  spliceOutMidQueueNode_tcbField_frame (·.schedContextBinding) (fun _ _ _ _ _ _ => rfl)
     st tid hInv x
 
 -- The precise per-key readings of the two neighbour patches: what the splice
@@ -3078,39 +3257,6 @@ theorem removeFromAllEndpointQueues_eq_fold (st : SystemState) (tid : SeLe4n.Thr
     removeFromAllEndpointQueues st tid =
       (spliceOutMidQueueNode st tid).objects.fold (spliceOutMidQueueNode st tid)
         (endpointSweepBody (spliceOutMidQueueNode st tid) tid) := rfl
-
-/-- **WS-RR RR7.22 (residual)**: the notification purge's fold body, named.
-
-Its guard is what makes the write set honest: a notification the swept thread
-does not wait on is left alone rather than re-inserted, so the purge's footprint
-is the notifications it actually changes.  The `.waiting → .idle` correction is
-part of the body because emptying the wait list is what makes the old state
-ill-formed. -/
-def notificationPurgeBody (tid : SeLe4n.ThreadId)
-    (acc : SystemState) (oid : SeLe4n.ObjId) (obj : KernelObject) : SystemState :=
-  match obj with
-  | .notification _ =>
-    match acc.getNotificationWitnessed? oid with
-    | some ⟨notif, hN⟩ =>
-      if notif.waitingThreads.val.contains tid then
-        let wt' := notif.waitingThreads.filter (· != tid)
-        let notif' : Notification := {
-          notif with
-            waitingThreads := wt'
-            state := if notif.state = .waiting ∧ wt'.val.isEmpty then .idle
-                     else notif.state }
-        acc.rewriteObject oid (.notification notif')
-          (SystemState.rewriteAdmissible_notification hN notif')
-      else acc
-    | none => acc
-  | _ => acc
-
-/-- The purge *is* that fold.  `rfl`, the pin — same discipline as the endpoint
-sweep's above. -/
-theorem removeFromAllNotificationWaitLists_eq_fold (st : SystemState)
-    (tid : SeLe4n.ThreadId) :
-    removeFromAllNotificationWaitLists st tid =
-      st.objects.fold st (notificationPurgeBody tid) := rfl
 
 /-- **WS-RR RR7.22 (residual)**: a thread sits at neither boundary of either of
 an endpoint's queues.
@@ -3387,5 +3533,210 @@ theorem removeFromAllEndpointQueues_endpoint_source (st : SystemState) (tid : Se
   | _ => exact ⟨hE, hA⟩
 
 end EndpointSweep
+
+-- ============================================================================
+-- WS-ZA ZA4.5: the donation arms as run-queue agreement stages
+-- ============================================================================
+
+/-- The replenishment migration writes two replenish queues and nothing the
+run-queue agreement reads. -/
+theorem migrateSchedContextReplenishment_runQueueStage (st : SystemState)
+    (scId : SeLe4n.SchedContextId) (fromCore toCore : SeLe4n.Kernel.Concurrency.CoreId) :
+    SystemState.RunQueueStage st (migrateSchedContextReplenishment st scId fromCore toCore) := by
+  unfold migrateSchedContextReplenishment
+  split
+  · exact .refl st
+  · exact .of_frame rfl rfl rfl
+
+/-- The donation hand-back rebinds a context and two threads' bindings: no run
+queue, no placement field. -/
+theorem returnDonatedSchedContext_runQueueStage {st st' : SystemState}
+    {serverTid : SeLe4n.ThreadId} {scId : SeLe4n.SchedContextId}
+    {originalOwner : SeLe4n.ThreadId} {newOwner? : Option SeLe4n.ThreadId}
+    (h : returnDonatedSchedContext st serverTid scId originalOwner newOwner? = .ok st') :
+    SystemState.RunQueueStage st st' :=
+  have hS := returnDonatedSchedContext_scheduler_eq st st' serverTid scId originalOwner
+    newOwner? h
+  SystemState.RunQueueStage.of_placement
+    (fun hInv => returnDonatedSchedContext_preserves_objects_invExt st st' serverTid scId
+      originalOwner hInv newOwner? h)
+    (by rw [hS]) (by rw [hS])
+    (fun hInv x => returnDonatedSchedContext_getTcb?_placement_eq st st' serverTid scId
+      originalOwner hInv newOwner? h x)
+
+theorem returnDonatedSchedContextResolved_runQueueStage {st st' : SystemState}
+    {serverTid : SeLe4n.ThreadId} {scId : SeLe4n.SchedContextId}
+    {originalOwner : SeLe4n.ThreadId}
+    (h : returnDonatedSchedContextResolved st serverTid scId originalOwner = .ok st') :
+    SystemState.RunQueueStage st st' :=
+  let ⟨_, _, hPop⟩ := returnDonatedSchedContextResolved_ok_decompose h
+  returnDonatedSchedContext_runQueueStage hPop
+
+theorem cleanupDonatedSchedContext_runQueueStage {st st' : SystemState}
+    {tid : SeLe4n.ThreadId} (h : cleanupDonatedSchedContext st tid = .ok st') :
+    SystemState.RunQueueStage st st' := by
+  unfold cleanupDonatedSchedContext at h
+  split at h
+  · cases h; exact .refl st
+  · split at h
+    · exact returnDonatedSchedContextResolved_runQueueStage h
+    · cases h; exact .refl st
+
+/-- The migrating donation cancel: the hand-back, then the replenishment move. -/
+theorem cancelDonatedDonationOnCore_runQueueStage {st st' : SystemState}
+    {tid : SeLe4n.ThreadId} {tcb : TCB} (h : cancelDonatedDonationOnCore st tid tcb = .ok st') :
+    SystemState.RunQueueStage st st' := by
+  unfold cancelDonatedDonationOnCore at h
+  split at h
+  · split at h
+    · cases h
+    · rename_i s1 h1
+      cases h
+      exact (cleanupDonatedSchedContext_runQueueStage h1).trans
+        (migrateSchedContextReplenishment_runQueueStage _ _ _ _)
+  · cases h
+
+/-- The in-place unbind: a context write, two scheduler-side writes the
+agreement does not read, the binding clear, and the key flags. -/
+theorem cancelBoundDonationOnCore_runQueueStage {st st' : SystemState}
+    {tid : SeLe4n.ThreadId} {tcb : TCB} {rqCore : SeLe4n.Kernel.Concurrency.CoreId}
+    (h : cancelBoundDonationOnCore st tid tcb rqCore = .ok st') :
+    SystemState.RunQueueStage st st' := by
+  unfold cancelBoundDonationOnCore at h
+  split at h
+  · rename_i scId _
+    cases h
+    have key : ∀ X : SystemState, SystemState.RunQueueStage st X →
+        SystemState.RunQueueStage st (markKeyChangeFrom st
+          (X.updateTcb tid fun tcb' => { tcb' with schedContextBinding := .unbound }) tid) :=
+      fun X hX => hX.trans ((SystemState.RunQueueStage.updateTcb X tid
+        (f := fun tcb' => { tcb' with schedContextBinding := .unbound }) (fun _ _ => rfl)).trans
+        (markKeyChangeFrom_runQueueStage st _ tid))
+    apply key
+    have hU := SystemState.updateSchedContext_scheduler st scId
+      (fun sc => { sc with boundThread := none, isActive := false, donationOrigin := none })
+    apply SystemState.RunQueueStage.of_placement
+    · exact fun hInv => SystemState.updateSchedContext_preserves_objects_invExt _ _ _ hInv
+    · show (st.updateSchedContext scId _).scheduler.runQueue = _
+      rw [hU]
+    · show (st.updateSchedContext scId _).scheduler.runQueueEnds = _
+      rw [hU]
+    · intro hInv x
+      exact congrArg (Option.map TCB.placement)
+        (SystemState.updateSchedContext_getTcb? st scId _ hInv x)
+  · cases h
+
+/-- The retype's donation arm: the identity, the in-place unbind, or the
+migrating return. -/
+theorem cancelDonationArmOnCore_runQueueStage {st st' : SystemState}
+    {tid : SeLe4n.ThreadId} {tcb : TCB} (h : cancelDonationArmOnCore st tid tcb = .ok st') :
+    SystemState.RunQueueStage st st' := by
+  unfold cancelDonationArmOnCore at h
+  split at h
+  · cases h; exact .refl st
+  · exact cancelBoundDonationOnCore_runQueueStage h
+  · exact cancelDonatedDonationOnCore_runQueueStage h
+
+/-- The replenishment migration is a current-placement frame: it writes two
+replenish queues. -/
+theorem migrateSchedContextReplenishment_currentPlacementFrame (st : SystemState)
+    (scId : SeLe4n.SchedContextId) (fromCore toCore c : SeLe4n.Kernel.Concurrency.CoreId) :
+    SystemState.CurrentPlacementFrame c st (migrateSchedContextReplenishment st scId fromCore toCore) := by
+  unfold migrateSchedContextReplenishment
+  split
+  · exact .refl c st
+  · exact .of_frame rfl rfl
+
+/-- The migrating donation cancel is a current-placement frame: the hand-back
+rebinds and moves no thread, and keeps every TCB. -/
+theorem cancelDonatedDonationOnCore_currentPlacementFrame {st st' : SystemState}
+    {tid : SeLe4n.ThreadId} {tcb : TCB} (hInv : st.objects.invExt)
+    (h : cancelDonatedDonationOnCore st tid tcb = .ok st') (c : SeLe4n.Kernel.Concurrency.CoreId) :
+    SystemState.CurrentPlacementFrame c st st' := by
+  unfold cancelDonatedDonationOnCore at h
+  split at h
+  · split at h
+    · cases h
+    · rename_i s1 h1
+      cases h
+      have hS := cleanupDonatedSchedContext_scheduler_eq st s1 tid h1
+      refine SystemState.CurrentPlacementFrame.trans ?_
+        (migrateSchedContextReplenishment_currentPlacementFrame _ _ _ _ c)
+      exact SystemState.CurrentPlacementFrame.of_parts (by rw [hS]; rfl)
+        (cleanupDonatedSchedContext_runCoresAgree st s1 tid hInv h1)
+  · cases h
+
+/-- The in-place donation cancel is a current-placement frame: a context write,
+two scheduler-side writes no current slot or run queue reads, the binding clear,
+and the key flags. -/
+theorem cancelBoundDonationOnCore_currentPlacementFrame {st st' : SystemState}
+    {tid : SeLe4n.ThreadId} {tcb : TCB} {rqCore : SeLe4n.Kernel.Concurrency.CoreId}
+    (hInv : st.objects.invExt) (h : cancelBoundDonationOnCore st tid tcb rqCore = .ok st')
+    (c : SeLe4n.Kernel.Concurrency.CoreId) : SystemState.CurrentPlacementFrame c st st' := by
+  unfold cancelBoundDonationOnCore at h
+  split at h
+  · rename_i scId _
+    cases h
+    refine SystemState.CurrentPlacementFrame.trans ?_ (markKeyChangeFrom_currentPlacementFrame _ _ _ c)
+    have hU := SystemState.updateSchedContext_scheduler st scId
+      (fun sc => { sc with boundThread := none, isActive := false, donationOrigin := none })
+    have hInv1 := SystemState.updateSchedContext_preserves_objects_invExt st scId
+      (fun sc => { sc with boundThread := none, isActive := false, donationOrigin := none }) hInv
+    refine SystemState.CurrentPlacementFrame.trans ?_
+      (SystemState.CurrentPlacementFrame.updateTcb c _ tid _ (fun _ => rfl) hInv1)
+    refine SystemState.CurrentPlacementFrame.trans
+      (SystemState.CurrentPlacementFrame.of_parts (st' := st.updateSchedContext scId
+        (fun sc => { sc with boundThread := none, isActive := false, donationOrigin := none }))
+        (by rw [hU]) (fun y => by rw [SystemState.updateSchedContext_getTcb? _ _ _ hInv])) ?_
+    exact SystemState.CurrentPlacementFrame.of_frame rfl rfl
+  · cases h
+
+/-- The migrating donation cancel moves no thread's run-queue core: the
+hand-back rewrites bindings and the migration writes replenish queues. -/
+theorem cancelDonatedDonationOnCore_runCoresAgree {st st' : SystemState}
+    {tid : SeLe4n.ThreadId} {tcb : TCB} (hInv : st.objects.invExt)
+    (h : cancelDonatedDonationOnCore st tid tcb = .ok st') : SystemState.RunCoresAgree st' st := by
+  unfold cancelDonatedDonationOnCore at h
+  split at h
+  · split at h
+    · cases h
+    · rename_i s1 h1
+      cases h
+      exact SystemState.RunCoresAgree.trans
+        (SystemState.RunCoresAgree.of_objects (migrateSchedContextReplenishment_objects _ _ _ _))
+        (cleanupDonatedSchedContext_runCoresAgree st s1 tid hInv h1)
+  · cases h
+
+/-- The in-place donation cancel moves no thread's run-queue core: a context
+write, the binding clear and the key flags. -/
+theorem cancelBoundDonationOnCore_runCoresAgree {st st' : SystemState}
+    {tid : SeLe4n.ThreadId} {tcb : TCB} {rqCore : SeLe4n.Kernel.Concurrency.CoreId}
+    (hInv : st.objects.invExt) (h : cancelBoundDonationOnCore st tid tcb rqCore = .ok st') :
+    SystemState.RunCoresAgree st' st := by
+  unfold cancelBoundDonationOnCore at h
+  split at h
+  · rename_i scId _
+    cases h
+    have hInv1 := SystemState.updateSchedContext_preserves_objects_invExt st scId
+      (fun sc => { sc with boundThread := none, isActive := false, donationOrigin := none }) hInv
+    refine SystemState.RunCoresAgree.trans
+      (SystemState.RunCoresAgree.of_objects (markKeyChangeFrom_objects _ _ _)) ?_
+    refine SystemState.RunCoresAgree.trans
+      (SystemState.updateTcb_runCoreCode _ tid _ (by intro _; rfl) hInv1) ?_
+    exact SystemState.RunCoresAgree.trans (SystemState.RunCoresAgree.of_objects
+        (st := st.updateSchedContext scId
+          (fun sc => { sc with boundThread := none, isActive := false, donationOrigin := none })) rfl)
+      (fun y => by rw [SystemState.updateSchedContext_getTcb? _ _ _ hInv])
+  · cases h
+
+/-- The reservation arm moves no thread's run-queue core. -/
+theorem cancelDonationArmOnCore_runCoresAgree {st st' : SystemState}
+    {tid : SeLe4n.ThreadId} {tcb : TCB} (hInv : st.objects.invExt)
+    (h : cancelDonationArmOnCore st tid tcb = .ok st') : SystemState.RunCoresAgree st' st := by
+  unfold cancelDonationArmOnCore at h
+  split at h
+  · cases h; exact SystemState.RunCoresAgree.refl _
+  · exact cancelBoundDonationOnCore_runCoresAgree hInv h
+  · exact cancelDonatedDonationOnCore_runCoresAgree hInv h
 
 end SeLe4n.Kernel

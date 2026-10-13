@@ -169,24 +169,30 @@ def schedulerInvariantStructural_smp (st : SystemState) : Prop :=
   ∀ c : CoreId, schedulerInvariantStructural_perCore st c
 
 /-- The reschedule-SGI accumulator (KSC-1): a write that touches only the
-reschedule-pending flags — objects, every run queue and every current slot
-unchanged — carries the structural per-core invariant across. -/
+reschedule-pending flags and the threads' run-queue links — objects equal off
+those links, every run queue and every current slot unchanged — carries the
+structural per-core invariant across. -/
 theorem schedulerInvariantStructural_perCore_of_flagOnlyWrite {s1 s2 : SystemState}
-    (hObj : s2.objects = s1.objects)
+    (hA : s2.objectsAgreeOffRunLinks s1)
     (hRq : ∀ c, s2.scheduler.runQueueOnCore c = s1.scheduler.runQueueOnCore c)
     (hCur : ∀ c, s2.scheduler.currentOnCore c = s1.scheduler.currentOnCore c)
     {c : CoreId} (h : schedulerInvariantStructural_perCore s1 c) :
     schedulerInvariantStructural_perCore s2 c := by
   obtain ⟨hQ, hV, hT, hW⟩ := h
-  have hGet : ∀ t, s2.getTcb? t = s1.getTcb? t := fun t => by
-    unfold SystemState.getTcb?; rw [hObj]
+  -- WS-ZA ZA4.5: the run-queue links may move; whether a thread resolves does not.
+  have hGet : ∀ t, (∃ tcb, s1.getTcb? t = some tcb) → ∃ tcb, s2.getTcb? t = some tcb :=
+    fun t h => Option.isSome_iff_exists.mp
+      ((hA.getTcb?_isSome t).trans (Option.isSome_iff_exists.mpr h))
   refine ⟨?_, ?_, ?_, ?_⟩
   · unfold queueCurrentConsistentOnCore at hQ ⊢; rw [hCur, hRq]; exact hQ
-  · unfold currentThreadValidOnCore at hV ⊢; simp only [hCur, hGet]; exact hV
+  · unfold currentThreadValidOnCore at hV ⊢
+    rw [hCur]
+    cases hc : s1.scheduler.currentOnCore c with
+    | none => trivial
+    | some t => rw [hc] at hV; exact hGet t hV
   · intro t ht
     rw [hRq] at ht
-    obtain ⟨tcb, htcb⟩ := hT t ht
-    exact ⟨tcb, by rw [hGet]; exact htcb⟩
+    exact hGet t (hT t ht)
   · unfold runQueueOnCoreWellFormed at hW ⊢; rw [hRq]; exact hW
 
 /-- KSC-1: clearing a core's reschedule-pending flag (a scheduling point's last
@@ -194,7 +200,7 @@ write) preserves the structural SMP invariant. -/
 theorem clearReschedulePendingOnCore_preserves_schedulerInvariantStructural_smp
     (st : SystemState) (c : CoreId) (h : schedulerInvariantStructural_smp st) :
     schedulerInvariantStructural_smp (st.clearReschedulePendingOnCore c) := fun c' =>
-  schedulerInvariantStructural_perCore_of_flagOnlyWrite (s1 := st) rfl
+  schedulerInvariantStructural_perCore_of_flagOnlyWrite (s1 := st) (.of_objects_eq rfl)
     (fun _ => by simp) (fun _ => by simp) (h c')
 
 -- Per-conjunct projections from the structural per-core aggregate.
@@ -415,24 +421,39 @@ def schedulerInvariantStructuralReg_smp (st : SystemState) : Prop :=
 
 /-- KSC-1: the flag-only transfer for the register-bank-extended invariant. -/
 theorem schedulerInvariantStructuralReg_perCore_of_flagOnlyWrite {s1 s2 : SystemState}
-    (hObj : s2.objects = s1.objects) (hMach : s2.machine = s1.machine)
+    (hA : s2.objectsAgreeOffRunLinks s1) (hMach : s2.machine = s1.machine)
     (hRq : ∀ c, s2.scheduler.runQueueOnCore c = s1.scheduler.runQueueOnCore c)
     (hCur : ∀ c, s2.scheduler.currentOnCore c = s1.scheduler.currentOnCore c)
     {c : CoreId} (h : schedulerInvariantStructuralReg_perCore s1 c) :
     schedulerInvariantStructuralReg_perCore s2 c := by
   obtain ⟨hS, hC⟩ := h
-  have hGet : ∀ t, s2.getTcb? t = s1.getTcb? t := fun t => by
-    unfold SystemState.getTcb?; rw [hObj]
-  refine ⟨schedulerInvariantStructural_perCore_of_flagOnlyWrite hObj hRq hCur hS, ?_⟩
+  refine ⟨schedulerInvariantStructural_perCore_of_flagOnlyWrite hA hRq hCur hS, ?_⟩
   unfold contextMatchesCurrentOnCore at hC ⊢
-  simp only [hCur, hGet, hMach]; exact hC
+  rw [hCur, hMach]
+  cases hc : s1.scheduler.currentOnCore c with
+  | none => trivial
+  | some t =>
+    rw [hc] at hC
+    dsimp only at hC ⊢
+    -- The saved registers read past the run-queue links.
+    have e := TCB.map_proj_eq_of_map_withoutRunLinks_eq TCB.registerContext (hA.getTcb? t)
+    cases h2 : s2.getTcb? t with
+    | none => trivial
+    | some t2 =>
+      cases h1 : s1.getTcb? t with
+      | none => rw [h1, h2] at e; cases e
+      | some t1 =>
+        rw [h1, h2, Option.map_some, Option.map_some, Option.some.injEq] at e
+        rw [h1] at hC
+        dsimp only
+        rw [e]; exact hC
 
 /-- KSC-1: clearing a reschedule-pending flag preserves the register-bank-extended
 structural SMP invariant. -/
 theorem clearReschedulePendingOnCore_preserves_schedulerInvariantStructuralReg_smp
     (st : SystemState) (c : CoreId) (h : schedulerInvariantStructuralReg_smp st) :
     schedulerInvariantStructuralReg_smp (st.clearReschedulePendingOnCore c) := fun c' =>
-  schedulerInvariantStructuralReg_perCore_of_flagOnlyWrite (s1 := st) rfl rfl
+  schedulerInvariantStructuralReg_perCore_of_flagOnlyWrite (s1 := st) (.of_objects_eq rfl) rfl
     (fun _ => by simp) (fun _ => by simp) (h c')
 
 theorem schedulerInvariantStructuralReg_perCore_to_structural
@@ -528,9 +549,9 @@ theorem enqueueRunnableOnCore_preserves_runnableThreadsAreTCBsOnCore
       rw [enqueueRunnableOnCore_no_tcb_noop st c tid hTcb] at hx
       exact h x hx
   | some tcb =>
-      cases hFresh : runnableOnSomeCore st tid with
+      cases hFresh : wakeDeclines st c tid with
       | true =>
-          rw [enqueueRunnableOnCore_eq_self_of_runnable st c tid hFresh] at hx
+          rw [enqueueRunnableOnCore_eq_self_of_declines st c tid hFresh] at hx
           exact h x hx
       | false =>
           by_cases hxtid : x = tid
@@ -539,9 +560,7 @@ theorem enqueueRunnableOnCore_preserves_runnableThreadsAreTCBsOnCore
             have hx' : x ∈ ((st.scheduler.runQueueOnCore c).insert tid
                 (tcb.boostedPriority)).toList := by
               have h2 := hx
-              simp only [enqueueRunnableOnCore, SystemState.getTcbWitnessed?_eq_some hTcb, hFresh, Bool.false_eq_true, if_false,
-                SchedulerState.markReschedulePendingOnCore_runQueueOnCore,
-                SchedulerState.setRunQueueOnCore_runQueueOnCore_self] at h2
+              rw [enqueueRunnableOnCore_runQueueOnCore_of_fresh st c tid tcb hTcb hFresh] at h2
               exact h2
             rcases (RunQueue.mem_insert _ _ _ _).mp ((RunQueue.mem_toList_iff_mem _ _).mp hx') with
               hold | heq
@@ -754,8 +773,10 @@ theorem enqueueIdleThreadOnCore_preserves_schedulerInvariantStructural_smp
   · exact fun c' hc => enqueueIdleThreadOnCore_runQueueOnCore_ne st c₀ c' hc
   · intro t hsome
     by_cases hEq : t = idleThreadId c₀
-    · subst hEq; rw [enqueueIdleThreadOnCore_getTcb?_self st c₀ hInv]; rfl
-    · rw [enqueueIdleThreadOnCore_getTcb?_ne st c₀ t hInv hEq]; exact hsome
+    · subst hEq
+      obtain ⟨i, hi, _⟩ := enqueueIdleThreadOnCore_getTcb?_self st c₀ hInv
+      rw [hi]; rfl
+    · rw [enqueueIdleThreadOnCore_getTcb?_ne_isSome st c₀ t hInv hEq]; exact hsome
 
 -- ── §3.7  Per-core CBS replenishment (`replenishOnCore`) ──
 
@@ -953,12 +974,10 @@ theorem scheduleEffectiveOnCore_getTcb?_regContext (st : SystemState) (c₀ : Co
       (tcb'.registerContext = tcb.registerContext ∨
         (st.scheduler.currentOnCore c₀ = some tid ∧
           tcb'.registerContext = st.machine.regsOnCore c₀)) := by
-  have hobj : st'.objects = (saveOutgoingContextOnCore st c₀).objects :=
-    scheduleEffectiveOnCore_objects_eq st c₀ st' hStep
-  have hgt : st'.getTcb? tid = (saveOutgoingContextOnCore st c₀).getTcb? tid := by
-    simp only [SystemState.getTcb?, hobj]
-  rw [hgt]
-  exact saveOutgoingContextOnCore_getTcb?_regContext st c₀ tid tcb hInv ht
+  obtain ⟨t, hgt, hR⟩ := saveOutgoingContextOnCore_getTcb?_regContext st c₀ tid tcb hInv ht
+  obtain ⟨t', ht', hE⟩ :=
+    (scheduleEffectiveOnCore_objectsAgreeOffRunLinks st c₀ st' hStep).getTcb?_some hgt
+  exact ⟨t', ht', by rwa [TCB.proj_eq_of_withoutRunLinks_eq TCB.registerContext hE]⟩
 
 /-- WS-SM SM5.I (register-bank payoff): a per-core dispatch on `c₀` preserves
 `contextMatchesCurrentOnCore` on every **sibling** core `c'`.  The bank is framed
@@ -1025,8 +1044,8 @@ theorem scheduleOrIdleOnCore_preserves_schedulerInvariantStructuralReg_smp
 -- ── §4.2  Switch register-bank preservation ──
 
 /-- WS-SM SM5.I (register-bank sibling frame): the switch's `getTcb?` register-
-context characterisation (via `switchToThreadOnCore_objects_eq_preempt` and the
-preempt's `registerContext` write). -/
+context characterisation (via `switchToThreadOnCore_objectsAgreeOffRunLinks_preempt`
+and the preempt's `registerContext` write). -/
 theorem switchToThreadOnCore_getTcb?_regContext (st : SystemState) (c₀ : CoreId)
     (tid t : SeLe4n.ThreadId) (tcb : TCB) (st' : SystemState) (hInv : st.objects.invExt)
     (h : switchToThreadOnCore st c₀ tid = .ok st') (ht : st.getTcb? t = some tcb) :
@@ -1034,11 +1053,10 @@ theorem switchToThreadOnCore_getTcb?_regContext (st : SystemState) (c₀ : CoreI
       (tcb'.registerContext = tcb.registerContext ∨
         (st.scheduler.currentOnCore c₀ = some t ∧
           tcb'.registerContext = st.machine.regsOnCore c₀)) := by
-  have hobj := switchToThreadOnCore_objects_eq_preempt st c₀ tid st' h
-  have hgt : st'.getTcb? t = (preemptCurrentOnCore st c₀ tid).getTcb? t := by
-    unfold SystemState.getTcb?; rw [hobj]
-  rw [hgt]
-  exact preemptCurrentOnCore_getTcb?_regContext st c₀ tid t tcb hInv ht
+  obtain ⟨t1, h1, hR⟩ := preemptCurrentOnCore_getTcb?_regContext st c₀ tid t tcb hInv ht
+  obtain ⟨t', h', hE⟩ :=
+    (switchToThreadOnCore_objectsAgreeOffRunLinks_preempt st c₀ tid st' h).getTcb?_some h1
+  exact ⟨t', h', by rw [TCB.proj_eq_of_withoutRunLinks_eq TCB.registerContext hE]; exact hR⟩
 
 /-- WS-SM SM5.I (register-bank payoff): the per-core switch on `c₀` preserves
 `contextMatchesCurrentOnCore` on every sibling core (same idempotent-save argument
@@ -1179,14 +1197,15 @@ theorem enqueueRunnableOnCore_getTcb?_regContext (st : SystemState) (c : CoreId)
       tcb'.registerContext = tcb.registerContext := by
   by_cases hot : other = tid
   · subst hot
-    cases hFresh : runnableOnSomeCore st other with
+    cases hFresh : wakeDeclines st c other with
     | true =>
         refine ⟨tcb, ?_, rfl⟩
-        rw [enqueueRunnableOnCore_eq_self_of_runnable st c other hFresh]; exact ht
+        rw [enqueueRunnableOnCore_eq_self_of_declines st c other hFresh]; exact ht
     | false =>
-        exact ⟨{ tcb with ipcState := .ready },
-          enqueueRunnableOnCore_makes_ready st c other tcb ht hInv hFresh, rfl⟩
-  · exact ⟨tcb, by rw [enqueueRunnableOnCore_getTcb?_ne st c tid other hInv hot]; exact ht, rfl⟩
+        obtain ⟨t', h', e⟩ := enqueueRunnableOnCore_makes_ready st c other tcb ht hInv hFresh
+        exact ⟨t', h', TCB.proj_eq_of_withoutRunLinks_eq TCB.registerContext e⟩
+  · obtain ⟨t', h', e⟩ := enqueueRunnableOnCore_getTcb?_ne_fwd st c tid other hInv hot ht
+    exact ⟨t', h', TCB.proj_eq_of_withoutRunLinks_eq TCB.registerContext e⟩
 
 /-- WS-SM SM5.I.8 (register-bank payoff): the pure per-core domain rotation
 preserves the register-bank-extended structural SMP invariant — it touches no
@@ -1290,13 +1309,15 @@ theorem enqueueIdleThreadOnCore_preserves_schedulerInvariantStructuralReg_smp
   intro c'
   refine contextMatchesCurrentOnCore_frame_at
     (enqueueIdleThreadOnCore_currentOnCore st c₀ c')
-    rfl ?_ (hPre c').1.2.1 (hPre c').2
+    (by rw [enqueueIdleThreadOnCore_machine]) ?_ (hPre c').1.2.1 (hPre c').2
   intro tid tcb hcur htcb
   -- `tid = current c' ≠ idleThreadId c₀`, so the enqueue's only object write frames it.
   have hne : tid ≠ idleThreadId c₀ := by
     intro he; subst he; exact hNotCurAny c' hcur
-  refine ⟨tcb, ?_, RegisterFile.beq_self _⟩
-  rw [enqueueIdleThreadOnCore_getTcb?_ne st c₀ tid hInv hne]; exact htcb
+  obtain ⟨t', ht', hw⟩ := enqueueIdleThreadOnCore_getTcb?_ne_fwd st c₀ tid hInv hne htcb
+  refine ⟨t', ht', ?_⟩
+  rw [TCB.proj_eq_of_withoutRunLinks_eq TCB.registerContext hw]
+  exact RegisterFile.beq_self _
 
 -- ============================================================================
 -- §4.4  The Nodup-extended structural invariant (`runQueueUniqueOnCore` 6th conjunct)
@@ -1331,8 +1352,10 @@ theorem preemptCurrentOnCore_preserves_runQueueUniqueOnCore_self (st : SystemSta
   · split
     · exact hN
     · split
-      · simp only [SchedulerState.setRunQueueOnCore_runQueueOnCore_self]
-        exact RunQueue.insert_preserves_toList_nodup _ _ _ hN
+      · rw [SystemState.runEnqueueOnCore_runQueueOnCore_self_eq]
+        split
+        · exact RunQueue.insert_preserves_toList_nodup _ _ _ hN
+        · exact hN
       · exact hN
 
 /-- WS-SM SM5.I: the register-bank-and-Nodup-extended structural per-core
@@ -1346,13 +1369,13 @@ def schedulerInvariantStructuralRegNodup_smp (st : SystemState) : Prop :=
 
 /-- KSC-1: the flag-only transfer for the Nodup-extended invariant. -/
 theorem schedulerInvariantStructuralRegNodup_perCore_of_flagOnlyWrite {s1 s2 : SystemState}
-    (hObj : s2.objects = s1.objects) (hMach : s2.machine = s1.machine)
+    (hA : s2.objectsAgreeOffRunLinks s1) (hMach : s2.machine = s1.machine)
     (hRq : ∀ c, s2.scheduler.runQueueOnCore c = s1.scheduler.runQueueOnCore c)
     (hCur : ∀ c, s2.scheduler.currentOnCore c = s1.scheduler.currentOnCore c)
     {c : CoreId} (h : schedulerInvariantStructuralRegNodup_perCore s1 c) :
     schedulerInvariantStructuralRegNodup_perCore s2 c := by
   obtain ⟨hR, hU⟩ := h
-  refine ⟨schedulerInvariantStructuralReg_perCore_of_flagOnlyWrite hObj hMach hRq hCur hR, ?_⟩
+  refine ⟨schedulerInvariantStructuralReg_perCore_of_flagOnlyWrite hA hMach hRq hCur hR, ?_⟩
   unfold runQueueUniqueOnCore at hU ⊢; rw [hRq]; exact hU
 
 /-- KSC-1: clearing a reschedule-pending flag preserves the Nodup-extended
@@ -1360,7 +1383,7 @@ structural SMP invariant. -/
 theorem clearReschedulePendingOnCore_preserves_schedulerInvariantStructuralRegNodup_smp
     (st : SystemState) (c : CoreId) (h : schedulerInvariantStructuralRegNodup_smp st) :
     schedulerInvariantStructuralRegNodup_smp (st.clearReschedulePendingOnCore c) := fun c' =>
-  schedulerInvariantStructuralRegNodup_perCore_of_flagOnlyWrite (s1 := st) rfl rfl
+  schedulerInvariantStructuralRegNodup_perCore_of_flagOnlyWrite (s1 := st) (.of_objects_eq rfl) rfl
     (fun _ => by simp) (fun _ => by simp) (h c')
 
 /-- KSC-1: `markKeyChangeFor` (the key-change writer) only ever raises
@@ -1370,7 +1393,7 @@ theorem markKeyChangeFor_preserves_schedulerInvariantStructuralRegNodup_smp
     (h : schedulerInvariantStructuralRegNodup_smp st) :
     schedulerInvariantStructuralRegNodup_smp (markKeyChangeFor st tid k) := fun c' =>
   schedulerInvariantStructuralRegNodup_perCore_of_flagOnlyWrite
-    (markKeyChangeFor_objects st tid k) (markKeyChangeFor_machine st tid k)
+    (.of_objects_eq (markKeyChangeFor_objects st tid k)) (markKeyChangeFor_machine st tid k)
     (fun _ => markKeyChangeFor_runQueueOnCore st tid k _)
     (fun _ => markKeyChangeFor_currentOnCore st tid k _) (h c')
 
@@ -1658,32 +1681,27 @@ theorem enqueueRunnableOnCore_preserves_allThreadsTimeSlicePositive
   refine allThreadsTimeSlicePositive_frame ?_ h
   intro x tcb' hx
   by_cases hxtid : x = tid
-  · rw [hxtid] at hx ⊢
-    cases hTcb : st.getTcb? tid with
+  · subst hxtid
+    cases hTcb : st.getTcb? x with
     | none =>
       exfalso
-      rw [enqueueRunnableOnCore_no_tcb_noop st c₀ tid hTcb] at hx
-      rw [hTcb] at hx; exact absurd hx (by simp)
+      rw [enqueueRunnableOnCore_no_tcb_noop st c₀ x hTcb, hTcb] at hx
+      exact absurd hx (by simp)
     | some tcb =>
       refine ⟨tcb, rfl, ?_⟩
-      by_cases hrun : runnableOnSomeCore st tid = true
-      · have heq : enqueueRunnableOnCore st c₀ tid = st := by
-          simp only [enqueueRunnableOnCore, SystemState.getTcbWitnessed?_eq_some hTcb, hrun, if_true]
-        rw [heq, hTcb, Option.some.injEq] at hx
-        rw [← hx]
-      · rw [Bool.not_eq_true] at hrun
-        have hpost : (enqueueRunnableOnCore st c₀ tid).getTcb? tid
-            = some { tcb with ipcState := .ready } := by
-          simp only [enqueueRunnableOnCore, SystemState.getTcbWitnessed?_eq_some hTcb]
-          split
-          · rename_i hr; rw [hrun] at hr; exact absurd hr (by simp)
-          · simp only [SystemState.getTcb?, RHTable_getElem?_eq_get?, SystemState.rewriteObject_objects]
-            rw [RobinHood.RHTable.getElem?_insert_self st.objects tid.toObjId
-              (.tcb { tcb with ipcState := .ready }) hInv]
-        rw [hpost, Option.some.injEq] at hx
-        rw [← hx]
-  · rw [enqueueRunnableOnCore_getTcb?_ne st c₀ tid x hInv hxtid] at hx
-    exact ⟨tcb', hx, rfl⟩
+      cases hrun : wakeDeclines st c₀ x with
+      | true =>
+        rw [enqueueRunnableOnCore_eq_self_of_declines st c₀ x hrun, hTcb, Option.some.injEq] at hx
+        rw [hx]
+      | false =>
+        -- The wake marks the thread `.ready` and writes its run-queue links;
+        -- neither is its slice.
+        obtain ⟨t', h', e⟩ := enqueueRunnableOnCore_makes_ready st c₀ x tcb hTcb hInv hrun
+        rw [h', Option.some.injEq] at hx
+        subst hx
+        exact TCB.proj_eq_of_withoutRunLinks_eq TCB.timeSlice e
+  · obtain ⟨t, hT, e⟩ := enqueueRunnableOnCore_getTcb?_ne_back st c₀ tid x hInv hxtid hx
+    exact ⟨t, hT, TCB.proj_eq_of_withoutRunLinks_eq TCB.timeSlice e⟩
 
 theorem enqueueRunnableOnCore_preserves_schedulerInvariantStructuralRegNodup_smp
     (st : SystemState) (c₀ : CoreId) (tid : SeLe4n.ThreadId)
@@ -1698,15 +1716,11 @@ theorem enqueueRunnableOnCore_preserves_schedulerInvariantStructuralRegNodup_smp
     (fun c' hc => enqueueRunnableOnCore_runQueueOnCore_ne st c₀ c' tid hc)
   -- operated core: the wake is a `RunQueue.insert`.
   unfold runQueueUniqueOnCore
-  cases hTcb : st.getTcb? tid with
-  | none => simp only [enqueueRunnableOnCore, SystemState.getTcbWitnessed?_eq_none hTcb]; exact (hPre c₀).2
-  | some tcb =>
-      simp only [enqueueRunnableOnCore, SystemState.getTcbWitnessed?_eq_some hTcb]
-      split
-      · exact (hPre c₀).2
-      · simp only [SchedulerState.markReschedulePendingOnCore_runQueueOnCore,
-          SchedulerState.setRunQueueOnCore_runQueueOnCore_self]
-        exact RunQueue.insert_preserves_toList_nodup _ _ _ (hPre c₀).2
+  rcases enqueueRunnableOnCore_scheduler_cases st c₀ tid with h | ⟨E, p, h⟩ <;> rw [h]
+  · exact (hPre c₀).2
+  · simp only [SchedulerState.markReschedulePendingOnCore_runQueueOnCore,
+      SchedulerState.setRunQueueOnCore_runQueueOnCore_self]
+    exact RunQueue.insert_preserves_toList_nodup _ _ _ (hPre c₀).2
 
 theorem wakeThread_preserves_schedulerInvariantStructuralRegNodup_smp
     (st : SystemState) (tid : SeLe4n.ThreadId) (executingCore : CoreId)
@@ -1750,7 +1764,8 @@ theorem scheduleEffectiveOnCore_preserves_schedulerInvariantStructuralRegNodup_s
         · simp only [Except.ok.injEq] at hStep; subst hStep
           simp only [SchedulerState.clearReschedulePendingOnCore_runQueueOnCore,
             SchedulerState.setCurrentOnCore_runQueueOnCore,
-            restoreIncomingContextOnCore_scheduler, SchedulerState.setRunQueueOnCore_runQueueOnCore_self]
+            restoreIncomingContextOnCore_scheduler, SystemState.runRemoveOnCore_scheduler,
+            SchedulerState.setRunQueueOnCore_runQueueOnCore_self]
           rw [saveOutgoingContextOnCore_scheduler_eq]
           exact RunQueue.remove_preserves_toList_nodup _ tid (hPre c₀).2
         · simp at hStep
@@ -1785,7 +1800,7 @@ theorem switchToThreadOnCore_preserves_schedulerInvariantStructuralRegNodup_smp
     · rw [if_pos hAff, Except.ok.injEq] at h
       subst h
       simp only [SchedulerState.setCurrentOnCore_runQueueOnCore,
-        restoreIncomingContextOnCoreUnlessCurrent_scheduler,
+        restoreIncomingContextOnCoreUnlessCurrent_scheduler, SystemState.runRemoveOnCore_scheduler,
         SchedulerState.setRunQueueOnCore_runQueueOnCore_self]
       exact RunQueue.remove_preserves_toList_nodup _ tid
         (preemptCurrentOnCore_preserves_runQueueUniqueOnCore_self st c₀ tid (hPre c₀).2)
@@ -1880,11 +1895,13 @@ theorem switchDomainOnCore_runQueueOnCore_ne (st : SystemState) (c c' : CoreId)
     split at h
     · simp at h
     · simp only [Except.ok.injEq] at h; subst h
+      obtain ⟨E, hE⟩ := requeueOutgoingOnCore_scheduler st c
       simp only [SchedulerState.setDomainScheduleIndexOnCore_runQueueOnCore,
         SchedulerState.setDomainTimeRemainingOnCore_runQueueOnCore,
         SchedulerState.setActiveDomainOnCore_runQueueOnCore,
-        SchedulerState.setCurrentOnCore_runQueueOnCore,
-        SchedulerState.setRunQueueOnCore_runQueueOnCore_ne _ _ _ _ hc]
+        SchedulerState.setCurrentOnCore_runQueueOnCore, hE,
+        SchedulerState.setRunQueueOnCore_runQueueOnCore_ne _ _ _ _ hc,
+        SchedulerState.setRunQueueEndsOnCore_runQueueOnCore]
 
 /-- `switchDomainOnCore` on core `c` frames a sibling core `c'`'s current thread. -/
 theorem switchDomainOnCore_currentOnCore_ne (st : SystemState) (c c' : CoreId)
@@ -1901,8 +1918,10 @@ theorem switchDomainOnCore_currentOnCore_ne (st : SystemState) (c c' : CoreId)
       simp only [SchedulerState.setDomainScheduleIndexOnCore_currentOnCore,
         SchedulerState.setDomainTimeRemainingOnCore_currentOnCore,
         SchedulerState.setActiveDomainOnCore_currentOnCore,
-        SchedulerState.setCurrentOnCore_currentOnCore_ne _ _ _ _ hc,
-        SchedulerState.setRunQueueOnCore_currentOnCore]
+        SchedulerState.setCurrentOnCore_currentOnCore_ne _ _ _ _ hc]
+      obtain ⟨E, hE⟩ := requeueOutgoingOnCore_scheduler st c
+      simp only [hE, SchedulerState.setRunQueueOnCore_currentOnCore,
+        SchedulerState.setRunQueueEndsOnCore_currentOnCore]
 
 /-- `switchDomainOnCore` preserves TCB-resolvability of every thread (its only
 object write is the outgoing-context save, which keeps the outgoing thread a
@@ -1919,10 +1938,10 @@ theorem switchDomainOnCore_getTcb?_isSome (st : SystemState) (c : CoreId)
     · simp at h
     · simp only [Except.ok.injEq] at h; subst h
       intro tid hSome
-      have : ∃ t, (saveOutgoingContextOnCore st c).getTcb? tid = some t :=
-        saveOutgoingContextOnCore_getTcb?_isSome st c tid hInv
+      obtain ⟨t, ht⟩ := saveOutgoingContextOnCore_getTcb?_isSome st c tid hInv
           (Option.isSome_iff_exists.mp hSome)
-      exact Option.isSome_iff_exists.mpr this
+      obtain ⟨t', ht', _⟩ := (requeueOutgoingOnCore_objectsAgreeOffRunLinks st c).getTcb?_some ht
+      exact Option.isSome_iff_exists.mpr ⟨t', ht'⟩
 
 /-- The operated core is **idle** (no current thread) after `switchDomainOnCore`
 on a non-empty domain schedule — it sets `current := none` before re-dispatch.
@@ -1961,6 +1980,9 @@ theorem switchDomainOnCore_operated_runQueue_props (st : SystemState) (c : CoreI
     split at h
     · simp at h
     · simp only [Except.ok.injEq] at h; subst h
+      obtain ⟨E, hE⟩ := requeueOutgoingOnCore_scheduler st c
+      simp only [hE]
+      unfold requeueOutgoingQueue
       refine ⟨?_, ?_, ?_⟩
       · -- wellFormed
         simp only [SchedulerState.setDomainScheduleIndexOnCore_runQueueOnCore,
@@ -1971,7 +1993,9 @@ theorem switchDomainOnCore_operated_runQueue_props (st : SystemState) (c : CoreI
         split
         · exact hWf
         · split
-          · exact RunQueue.insert_preserves_wellFormed _ hWf _ _
+          · split
+            · exact RunQueue.insert_preserves_wellFormed _ hWf _ _
+            · exact hWf
           · exact hWf
       · -- Nodup
         simp only [SchedulerState.setDomainScheduleIndexOnCore_runQueueOnCore,
@@ -1982,7 +2006,9 @@ theorem switchDomainOnCore_operated_runQueue_props (st : SystemState) (c : CoreI
         split
         · exact hNodup
         · split
-          · exact RunQueue.insert_preserves_toList_nodup _ _ _ hNodup
+          · split
+            · exact RunQueue.insert_preserves_toList_nodup _ _ _ hNodup
+            · exact hNodup
           · exact hNodup
       · -- runnableThreadsAreTCBs on the post state
         intro tid htid
@@ -2005,12 +2031,15 @@ theorem switchDomainOnCore_operated_runQueue_props (st : SystemState) (c : CoreI
                 exact hgoal tid (by rw [htcb]; rfl)
             | some tcb0 =>
                 simp only [htcb0] at htid
-                rcases (RunQueue.mem_insert _ tid0 _ tid).mp
-                    ((RunQueue.mem_toList_iff_mem _ tid).mp htid) with hold | heq
-                · obtain ⟨tcb, htcb⟩ := hRAT tid ((RunQueue.mem_toList_iff_mem _ tid).mpr hold)
+                split at htid
+                · rcases (RunQueue.mem_insert _ tid0 _ tid).mp
+                      ((RunQueue.mem_toList_iff_mem _ tid).mp htid) with hold | heq
+                  · obtain ⟨tcb, htcb⟩ := hRAT tid ((RunQueue.mem_toList_iff_mem _ tid).mpr hold)
+                    exact hgoal tid (by rw [htcb]; rfl)
+                  · subst heq
+                    exact hgoal tid (by rw [htcb0]; rfl)
+                · obtain ⟨tcb, htcb⟩ := hRAT tid htid
                   exact hgoal tid (by rw [htcb]; rfl)
-                · subst heq
-                  exact hgoal tid (by rw [htcb0]; rfl)
 
 /-- `switchDomainOnCore` leaves the machine register banks unchanged (its only
 object write is the outgoing-context save, which reads `regsOnCore c₀` and writes
@@ -2026,7 +2055,7 @@ theorem switchDomainOnCore_machine_eq (st : SystemState) (c : CoreId)
     split at h
     · simp at h
     · simp only [Except.ok.injEq] at h; subst h
-      exact saveOutgoingContextOnCore_machine st c
+      exact (requeueOutgoingOnCore_machine st c).trans (saveOutgoingContextOnCore_machine st c)
 
 /-- `switchDomainOnCore`'s only `registerContext` write is the outgoing-context
 save: a thread's saved context is left unchanged, or — when it is core `c₀`'s
@@ -2047,7 +2076,9 @@ theorem switchDomainOnCore_getTcb?_regContext (st : SystemState) (c₀ : CoreId)
     split at h
     · simp at h
     · simp only [Except.ok.injEq] at h; subst h
-      exact saveOutgoingContextOnCore_getTcb?_regContext st c₀ tid tcb hInv htcb
+      obtain ⟨t, ht, hR⟩ := saveOutgoingContextOnCore_getTcb?_regContext st c₀ tid tcb hInv htcb
+      obtain ⟨t', ht', hE⟩ := (requeueOutgoingOnCore_objectsAgreeOffRunLinks st c₀).getTcb?_some ht
+      exact ⟨t', ht', by rwa [TCB.proj_eq_of_withoutRunLinks_eq TCB.registerContext hE]⟩
 
 /-- `switchDomainOnCore` on core `c₀` preserves `contextMatchesCurrentOnCore` on a
 *sibling* core `c'`: its current pointer is framed, its register bank is
@@ -2282,73 +2313,109 @@ theorem processReplenishmentsDueOnCore_preserves_schedulerInvariantStructuralReg
 -- ── §8.3b  The IPC timeout-path base preservation (ensureRunnable / timeoutThread
 --           / timeoutBlockedThreads), feeding the budget phase of the tick ──
 
+/-- WS-ZA ZA4.5: `ensureRunnable` is the identity, or it inserts a resolving,
+unqueued thread into the boot core's run queue (ghost queue and concrete ends)
+and marks the boot core for rescheduling. -/
+theorem ensureRunnable_scheduler_cases (st : SystemState) (tid : SeLe4n.ThreadId) :
+    (ensureRunnable st tid).scheduler = st.scheduler ∨
+      ∃ (tcb : TCB) (E : RunQueueEnds), st.getTcb? tid = some tcb ∧
+        (ensureRunnable st tid).scheduler =
+          ((st.scheduler.setRunQueueEndsOnCore bootCoreId E).setRunQueueOnCore bootCoreId
+            ((st.scheduler.runQueueOnCore bootCoreId).insert tid tcb.boostedPriority)
+            ).markReschedulePendingOnCore bootCoreId := by
+  unfold ensureRunnable
+  split
+  · exact Or.inl rfl
+  · split
+    · rename_i tcb htcb
+      split
+      · exact Or.inr ⟨tcb, SystemState.runEnqueueEnds st bootCoreId tid tcb.boostedPriority, htcb,
+          by simp only [SystemState.runEnqueueAdmitted_scheduler]⟩
+      · exact Or.inl rfl
+    · exact Or.inl rfl
+
 /-- WS-SM SM5.I.8 (timeout atom): `ensureRunnable` preserves the base safety
 invariant on every core, given the enqueued thread is not the boot core's current
 thread (so the boot `queueCurrentConsistent` survives the insert).  `ensureRunnable`
-writes only the boot run queue (objects unchanged), so siblings frame and boot
+writes only the boot run queue (objects equal off run-queue links), so siblings frame and boot
 takes a `RunQueue.insert`. -/
 theorem ensureRunnable_preserves_schedulerInvariantStructuralRegNodup_smp
     (st : SystemState) (tid : SeLe4n.ThreadId) (_hInv : st.objects.invExt)
     (hNotCur : st.scheduler.currentOnCore bootCoreId ≠ some tid)
     (hPre : schedulerInvariantStructuralRegNodup_smp st) :
     schedulerInvariantStructuralRegNodup_smp (ensureRunnable st tid) := by
-  unfold ensureRunnable
-  split
-  · exact hPre
-  · split
-    · rename_i tcb htcb
-      intro c'
-      by_cases hc : c' = bootCoreId
-      · subst hc
-        obtain ⟨⟨⟨hQCC, hCTV, hRAT, hWf⟩, hCtx⟩, hNod⟩ := hPre bootCoreId
-        refine ⟨⟨⟨?_, ?_, ?_, ?_⟩, ?_⟩, ?_⟩
-        · -- queueCurrentConsistent on boot: current ∉ (oldRq.insert tid)
-          simp only [queueCurrentConsistentOnCore,
-            SchedulerState.markReschedulePendingOnCore_currentOnCore, SchedulerState.setRunQueueOnCore_currentOnCore,
-            SchedulerState.markReschedulePendingOnCore_runQueueOnCore, SchedulerState.setRunQueueOnCore_runQueueOnCore_self]
-          simp only [queueCurrentConsistentOnCore] at hQCC
-          cases hcur : st.scheduler.currentOnCore bootCoreId with
-          | none => exact trivial
-          | some t =>
-              rw [hcur] at hQCC
-              intro hmem
-              rcases (RunQueue.mem_insert _ tid _ t).mp
-                ((RunQueue.mem_toList_iff_mem _ t).mp hmem) with hold | heq
-              · exact hQCC ((RunQueue.mem_toList_iff_mem _ t).mpr hold)
-              · exact hNotCur (by rw [hcur, heq])
-        · -- currentThreadValid: current + objects unchanged
-          simp only [currentThreadValidOnCore, SchedulerState.markReschedulePendingOnCore_currentOnCore, SchedulerState.setRunQueueOnCore_currentOnCore]
-          exact hCTV
-        · -- runnableThreadsAreTCBs: members are old TCBs ∪ {tid}, objects unchanged
-          intro t hmem
-          simp only [SchedulerState.markReschedulePendingOnCore_runQueueOnCore, SchedulerState.setRunQueueOnCore_runQueueOnCore_self] at hmem
+  intro c'
+  have hD := ensureRunnable_onlyObjectsSchedulerDiffer st tid
+  unfold SystemState.onlyObjectsSchedulerDiffer at hD
+  have hM : (ensureRunnable st tid).machine = st.machine := by rw [hD]
+  -- The enqueue's run-queue link writes are invisible to the invariant: argue on
+  -- the pre-state objects under the post-state scheduler.
+  refine schedulerInvariantStructuralRegNodup_perCore_of_flagOnlyWrite
+    (s1 := { st with scheduler := (ensureRunnable st tid).scheduler })
+    (ensureRunnable_objectsAgreeOffRunLinks st tid) hM (fun _ => rfl) (fun _ => rfl) ?_
+  rcases ensureRunnable_scheduler_cases st tid with h | ⟨tcb, E, htcb, h⟩ <;> rw [h]
+  · exact hPre c'
+  by_cases hc : c' = bootCoreId
+  · subst hc
+    obtain ⟨⟨⟨hQCC, hCTV, hRAT, hWf⟩, hCtx⟩, hNod⟩ := hPre bootCoreId
+    refine ⟨⟨⟨?_, ?_, ?_, ?_⟩, ?_⟩, ?_⟩
+    · -- queueCurrentConsistent on boot: current ∉ (oldRq.insert tid)
+      simp only [queueCurrentConsistentOnCore,
+        SchedulerState.markReschedulePendingOnCore_currentOnCore, SchedulerState.setRunQueueOnCore_currentOnCore,
+        SchedulerState.setRunQueueEndsOnCore_currentOnCore,
+        SchedulerState.markReschedulePendingOnCore_runQueueOnCore, SchedulerState.setRunQueueOnCore_runQueueOnCore_self]
+      simp only [queueCurrentConsistentOnCore] at hQCC
+      cases hcur : st.scheduler.currentOnCore bootCoreId with
+      | none => exact trivial
+      | some t =>
+          rw [hcur] at hQCC
+          intro hmem
           rcases (RunQueue.mem_insert _ tid _ t).mp
             ((RunQueue.mem_toList_iff_mem _ t).mp hmem) with hold | heq
-          · exact hRAT t ((RunQueue.mem_toList_iff_mem _ t).mpr hold)
-          · exact ⟨tcb, by rw [heq]; exact htcb⟩
-        · -- runQueueWellFormed: insert preserves
-          simp only [runQueueOnCoreWellFormed, SchedulerState.markReschedulePendingOnCore_runQueueOnCore, SchedulerState.setRunQueueOnCore_runQueueOnCore_self]
-          exact RunQueue.insert_preserves_wellFormed _ hWf _ _
-        · -- contextMatches: current + regs + objects unchanged
-          refine contextMatchesCurrentOnCore_frame_at ?_ rfl
-            (fun t tcb' _ ht => ⟨tcb', ht, RegisterFile.beq_self _⟩) hCTV hCtx
-          simp only [SchedulerState.markReschedulePendingOnCore_currentOnCore, SchedulerState.setRunQueueOnCore_currentOnCore]
-        · -- Nodup: insert preserves
-          simp only [runQueueUniqueOnCore, SchedulerState.markReschedulePendingOnCore_runQueueOnCore, SchedulerState.setRunQueueOnCore_runQueueOnCore_self]
-          exact RunQueue.insert_preserves_toList_nodup _ _ _ hNod
-      · -- sibling c' ≠ boot: run queue + current framed, objects unchanged
-        refine ⟨⟨?_, ?_⟩, ?_⟩
-        · refine schedulerInvariantStructural_perCore_frame ?_ ?_ ?_ (hPre c').1.1
-          · simp only [SchedulerState.markReschedulePendingOnCore_currentOnCore, SchedulerState.setRunQueueOnCore_currentOnCore]
-          · simp only [SchedulerState.markReschedulePendingOnCore_runQueueOnCore, SchedulerState.setRunQueueOnCore_runQueueOnCore_ne _ _ _ _ (Ne.symm hc)]
-          · exact fun _ hh => hh
-        · refine contextMatchesCurrentOnCore_frame_at ?_ rfl
-            (fun t tcb' _ ht => ⟨tcb', ht, RegisterFile.beq_self _⟩) ((hPre c').1.1.2.1) ((hPre c').1.2)
-          · simp only [SchedulerState.markReschedulePendingOnCore_currentOnCore, SchedulerState.setRunQueueOnCore_currentOnCore]
-        · exact (runQueueUniqueOnCore_frame
-            (by simp only [SchedulerState.markReschedulePendingOnCore_runQueueOnCore, SchedulerState.setRunQueueOnCore_runQueueOnCore_ne _ _ _ _ (Ne.symm hc)])).mpr
-            (hPre c').2
-    · exact hPre
+          · exact hQCC ((RunQueue.mem_toList_iff_mem _ t).mpr hold)
+          · exact hNotCur (by rw [hcur, heq])
+    · -- currentThreadValid: current + objects unchanged
+      simp only [currentThreadValidOnCore, SchedulerState.markReschedulePendingOnCore_currentOnCore,
+        SchedulerState.setRunQueueOnCore_currentOnCore, SchedulerState.setRunQueueEndsOnCore_currentOnCore]
+      exact hCTV
+    · -- runnableThreadsAreTCBs: members are old TCBs ∪ {tid}, objects unchanged
+      intro t hmem
+      simp only [SchedulerState.markReschedulePendingOnCore_runQueueOnCore,
+        SchedulerState.setRunQueueOnCore_runQueueOnCore_self] at hmem
+      rcases (RunQueue.mem_insert _ tid _ t).mp
+        ((RunQueue.mem_toList_iff_mem _ t).mp hmem) with hold | heq
+      · exact hRAT t ((RunQueue.mem_toList_iff_mem _ t).mpr hold)
+      · exact ⟨tcb, by rw [heq]; exact htcb⟩
+    · -- runQueueWellFormed: insert preserves
+      simp only [runQueueOnCoreWellFormed, SchedulerState.markReschedulePendingOnCore_runQueueOnCore,
+        SchedulerState.setRunQueueOnCore_runQueueOnCore_self]
+      exact RunQueue.insert_preserves_wellFormed _ hWf _ _
+    · -- contextMatches: current + regs + objects unchanged
+      refine contextMatchesCurrentOnCore_frame_at ?_ rfl
+        (fun t tcb' _ ht => ⟨tcb', ht, RegisterFile.beq_self _⟩) hCTV hCtx
+      simp only [SchedulerState.markReschedulePendingOnCore_currentOnCore,
+        SchedulerState.setRunQueueOnCore_currentOnCore, SchedulerState.setRunQueueEndsOnCore_currentOnCore]
+    · -- Nodup: insert preserves
+      simp only [runQueueUniqueOnCore, SchedulerState.markReschedulePendingOnCore_runQueueOnCore,
+        SchedulerState.setRunQueueOnCore_runQueueOnCore_self]
+      exact RunQueue.insert_preserves_toList_nodup _ _ _ hNod
+  · -- sibling c' ≠ boot: run queue + current framed, objects unchanged
+    have hCur : (((st.scheduler.setRunQueueEndsOnCore bootCoreId E).setRunQueueOnCore bootCoreId
+        ((st.scheduler.runQueueOnCore bootCoreId).insert tid tcb.boostedPriority)
+        ).markReschedulePendingOnCore bootCoreId).currentOnCore c' = st.scheduler.currentOnCore c' := by
+      simp only [SchedulerState.markReschedulePendingOnCore_currentOnCore,
+        SchedulerState.setRunQueueOnCore_currentOnCore, SchedulerState.setRunQueueEndsOnCore_currentOnCore]
+    have hRq : (((st.scheduler.setRunQueueEndsOnCore bootCoreId E).setRunQueueOnCore bootCoreId
+        ((st.scheduler.runQueueOnCore bootCoreId).insert tid tcb.boostedPriority)
+        ).markReschedulePendingOnCore bootCoreId).runQueueOnCore c' = st.scheduler.runQueueOnCore c' := by
+      simp only [SchedulerState.markReschedulePendingOnCore_runQueueOnCore,
+        SchedulerState.setRunQueueOnCore_runQueueOnCore_ne _ _ _ _ (Ne.symm hc),
+        SchedulerState.setRunQueueEndsOnCore_runQueueOnCore]
+    refine ⟨⟨?_, ?_⟩, ?_⟩
+    · exact schedulerInvariantStructural_perCore_frame hCur hRq (fun _ hh => hh) (hPre c').1.1
+    · exact contextMatchesCurrentOnCore_frame_at hCur rfl
+        (fun t tcb' _ ht => ⟨tcb', ht, RegisterFile.beq_self _⟩) ((hPre c').1.1.2.1) ((hPre c').1.2)
+    · exact (runQueueUniqueOnCore_frame hRq).mpr (hPre c').2
 
 /-- WS-SM SM5.I.8 (reusable object atom): inserting a TCB whose `registerContext`
 equals the displaced TCB's at the same key preserves the base safety invariant.
@@ -2466,7 +2533,6 @@ theorem updatePipBoost_preserves_schedulerInvariantStructuralRegNodup_smp
       · -- tid ∈ runQueue boot
         split
         · -- oldPrio ≠ newPrio: rebucket the boot run queue.
-          rename_i hmemRq _hprio
           -- getTcb? facts for `st'` (the objects insert).
           have hself : ({ st with objects := st.objects.insert tid.toObjId (.tcb tcb') } : SystemState).getTcb? tid = some tcb' := by
             simp only [SystemState.getTcb?, RHTable_getElem?_eq_get?]
@@ -2479,31 +2545,43 @@ theorem updatePipBoost_preserves_schedulerInvariantStructuralRegNodup_smp
           -- The rebucket: remove tid then re-insert at the new priority; the
           -- KSC-1 key-change flag wraps the write.
           refine markKeyChangeFor_preserves_schedulerInvariantStructuralRegNodup_smp _ _ _ ?_
+          -- The re-key writes run-queue links too (WS-ZA ZA4.5), which the
+          -- invariant does not read: argue on the queue write alone.
+          let s1 : SystemState := { st with objects := st.objects.insert tid.toObjId (.tcb tcb') }
+          let p := (resolveEffectivePrioDeadline s1 tcb').1
+          let rq := (s1.scheduler.runQueueOnCore bootCoreId).rekey tid p
+          have hS : ∀ c', schedulerInvariantStructuralRegNodup_perCore
+              { s1 with scheduler := s1.scheduler.setRunQueueOnCore bootCoreId rq } c' →
+              schedulerInvariantStructuralRegNodup_perCore (s1.runRequeueOnCore bootCoreId tid p) c' :=
+            fun _ h => schedulerInvariantStructuralRegNodup_perCore_of_flagOnlyWrite
+              (s1 := { s1 with scheduler := s1.scheduler.setRunQueueOnCore bootCoreId rq })
+              (SystemState.runRequeueOnCore_objectsAgreeOffRunLinks s1 bootCoreId tid p) (by simp)
+              (fun x => by
+                by_cases hx : x = bootCoreId
+                · subst hx; simp [rq]
+                · simp [SchedulerState.setRunQueueOnCore_runQueueOnCore_ne _ _ _ _ (Ne.symm hx)])
+              (fun _ => by simp) h
+          refine fun c' => hS c' ?_
+          revert c'
           refine setRunQueueOnCore_preserves_schedulerInvariantStructuralRegNodup_smp
-            { st with objects := st.objects.insert tid.toObjId (.tcb tcb') } bootCoreId _ ?_ ?_ ?_ ?_ hst'
-          · exact RunQueue.insert_preserves_wellFormed _
-              (RunQueue.remove_preserves_wellFormed _ (hPre bootCoreId).1.1.2.2.2 tid) _ _
-          · exact RunQueue.insert_preserves_toList_nodup _ _ _
-              (RunQueue.remove_preserves_toList_nodup _ tid (hPre bootCoreId).2)
-          · -- members are TCBs
+            s1 bootCoreId _ ?_ ?_ ?_ ?_ hst'
+          · exact RunQueue.wellFormed_holds _
+          · exact RunQueue.toList_nodup _
+          · -- members are TCBs: the re-key moves no thread in or out
             intro t ht
-            rcases (RunQueue.mem_insert _ tid _ t).mp ((RunQueue.mem_toList_iff_mem _ t).mp ht) with hold | heqt
-            · -- t ∈ (rq.remove tid): t ∈ rq ∧ t ≠ tid
-              rw [RunQueue.mem_remove] at hold
-              obtain ⟨hmem, hnetid⟩ := hold
-              obtain ⟨tcbt, htcbt⟩ := (hPre bootCoreId).1.1.2.2.1 t
+            have hmem := (RunQueue.mem_rekey _ tid _ t).mp ((RunQueue.mem_toList_iff_mem _ t).mp ht)
+            by_cases hnetid : t = tid
+            · exact ⟨tcb', by rw [hnetid]; exact hself⟩
+            · obtain ⟨tcbt, htcbt⟩ := (hPre bootCoreId).1.1.2.2.1 t
                 ((RunQueue.mem_toList_iff_mem _ t).mpr hmem)
               exact ⟨tcbt, by rw [hne t hnetid]; exact htcbt⟩
-            · exact ⟨tcb', by rw [heqt]; exact hself⟩
-          · -- current ∉ rebucketed queue
+          · -- current ∉ re-keyed queue
             intro t hcur hmem
             have hcur0 : st.scheduler.currentOnCore bootCoreId = some t := hcur
             have hqcc := (hPre bootCoreId).1.1.1
             simp only [queueCurrentConsistentOnCore, hcur0] at hqcc
-            rcases (RunQueue.mem_insert _ tid _ t).mp ((RunQueue.mem_toList_iff_mem _ t).mp hmem) with hold | heqt
-            · rw [RunQueue.mem_remove] at hold
-              exact hqcc ((RunQueue.mem_toList_iff_mem _ t).mpr hold.1)
-            · subst heqt; exact absurd ((RunQueue.mem_toList_iff_mem _ t).mpr hmemRq) hqcc
+            exact hqcc ((RunQueue.mem_toList_iff_mem _ t).mpr
+              ((RunQueue.mem_rekey _ tid _ t).mp ((RunQueue.mem_toList_iff_mem _ t).mp hmem)))
         · exact markKeyChangeFor_preserves_schedulerInvariantStructuralRegNodup_smp _ _ _ hst'
       · exact markKeyChangeFor_preserves_schedulerInvariantStructuralRegNodup_smp _ _ _ hst'
   · exact hPre
@@ -2705,15 +2783,6 @@ theorem endpointQueueRemove_preserves_schedulerInvariantStructuralRegNodup_smp
       simp [ht']
   · intro _c x txcb _hcur htcb
     exact endpointQueueRemove_getTcb?_upToReg endpointId isReceiveQ tid st st' hInv hStep x txcb htcb
-
-/-- `ensureRunnable` leaves the object store untouched (it writes only the boot
-run queue).  Thin local copy — the `Lifecycle.Suspend` original is outside this
-module's import closure (mirrors `PerCoreTimerTick`'s `_local` copy). -/
-private theorem ensureRunnable_objects_eq_local (st : SystemState) (tid : SeLe4n.ThreadId) :
-    (ensureRunnable st tid).objects = st.objects := by
-  unfold ensureRunnable; split
-  · rfl
-  · split <;> rfl
 
 open SeLe4n.Kernel.PriorityInheritance in
 /-- WS-OD OD1.2: the timeout's object-only prefix preserves the register-nodup
@@ -2976,17 +3045,54 @@ theorem runQueue_frame_preserves_runQueueSafetyOnCore (st st' : SystemState) (c 
   · show runQueueUniqueOnCore st'.scheduler c
     simp only [runQueueUniqueOnCore, hrq]; exact hNd
 
+/-- WS-ZA ZA4.5: an insert into core `c`'s run queue of a thread that resolves
+in the post-state, with every resolving thread still resolving, preserves the
+run-queue safety bundle there. -/
+theorem runQueue_insert_preserves_runQueueSafetyOnCore (st st' : SystemState) (c : CoreId)
+    (tid : SeLe4n.ThreadId) (p : SeLe4n.Priority)
+    (hrq : st'.scheduler.runQueueOnCore c = (st.scheduler.runQueueOnCore c).insert tid p)
+    (hSome : ∀ x : SeLe4n.ThreadId, (st.getTcb? x).isSome → (st'.getTcb? x).isSome)
+    (hNew : (st'.getTcb? tid).isSome)
+    (h : runQueueSafetyOnCore st c) : runQueueSafetyOnCore st' c := by
+  obtain ⟨hRat, hWf, hNd⟩ := h
+  refine ⟨?_, ?_, ?_⟩
+  · intro t ht
+    rw [hrq] at ht
+    rcases (RunQueue.mem_insert _ tid _ t).mp ((RunQueue.mem_toList_iff_mem _ t).mp ht) with
+      hold | heq
+    · obtain ⟨tcbt, htcbt⟩ := hRat t ((RunQueue.mem_toList_iff_mem _ t).mpr hold)
+      exact Option.isSome_iff_exists.mp (hSome t (by simp [htcbt]))
+    · subst heq; exact Option.isSome_iff_exists.mp hNew
+  · show runQueueOnCoreWellFormed st'.scheduler c
+    simp only [runQueueOnCoreWellFormed, hrq]
+    exact RunQueue.insert_preserves_wellFormed _ hWf _ _
+  · show runQueueUniqueOnCore st'.scheduler c
+    simp only [runQueueUniqueOnCore, hrq]
+    exact RunQueue.insert_preserves_toList_nodup _ _ _ hNd
+
+/-- WS-ZA ZA4.5: a run-queue link enqueue on core `c` of a thread that resolves
+preserves the run-queue safety bundle there. -/
+theorem runEnqueueOnCore_preserves_runQueueSafetyOnCore (st : SystemState) (c : CoreId)
+    (tid : SeLe4n.ThreadId) (p : SeLe4n.Priority) (tcb : TCB) (hT : st.getTcb? tid = some tcb)
+    (h : runQueueSafetyOnCore st c) : runQueueSafetyOnCore (st.runEnqueueOnCore c tid p) c := by
+  cases hAd : st.runEnqueueAdmits c tid with
+  | false => rw [SystemState.runEnqueueOnCore_of_not_admits p hAd]; exact h
+  | true =>
+    have hA := SystemState.runEnqueueOnCore_objectsAgreeOffRunLinks st c tid p
+    exact runQueue_insert_preserves_runQueueSafetyOnCore st _ c tid p
+      (SystemState.runEnqueueOnCore_runQueueOnCore_self p hAd)
+      (fun x hx => by rw [hA.getTcb?_isSome x]; exact hx)
+      (by rw [hA.getTcb?_isSome tid, hT]; rfl) h
+
 /-- `ensureRunnable` frames core `c`'s run queue when `c ≠ bootCoreId` (it writes
 only the boot run queue). -/
 theorem ensureRunnable_runQueueOnCore_ne (st : SystemState) (tid : SeLe4n.ThreadId)
     (c : CoreId) (hc : c ≠ bootCoreId) :
     (ensureRunnable st tid).scheduler.runQueueOnCore c = st.scheduler.runQueueOnCore c := by
-  unfold ensureRunnable
-  split
-  · rfl
-  · split
-    · simp only [SchedulerState.markReschedulePendingOnCore_runQueueOnCore, SchedulerState.setRunQueueOnCore_runQueueOnCore_ne _ _ _ _ (Ne.symm hc)]
-    · rfl
+  rcases ensureRunnable_scheduler_cases st tid with h | ⟨_, E, _, h⟩ <;> rw [h]
+  simp only [SchedulerState.markReschedulePendingOnCore_runQueueOnCore,
+    SchedulerState.setRunQueueOnCore_runQueueOnCore_ne _ _ _ _ (Ne.symm hc),
+    SchedulerState.setRunQueueEndsOnCore_runQueueOnCore]
 
 /-- WS-SM SM5.I.8: `ensureRunnable` preserves the qcc-free run-queue safety bundle
 on core `c`.  Objects are untouched (`getTcb?` fixed); on `bootCoreId` the
@@ -2995,32 +3101,19 @@ TCB); on any other core the run queue is framed. -/
 theorem ensureRunnable_preserves_runQueueSafetyOnCore (st : SystemState)
     (tid : SeLe4n.ThreadId) (c : CoreId) (h : runQueueSafetyOnCore st c) :
     runQueueSafetyOnCore (ensureRunnable st tid) c := by
+  have hSome : ∀ x : SeLe4n.ThreadId, (st.getTcb? x).isSome →
+      ((ensureRunnable st tid).getTcb? x).isSome := fun x hx => by
+    rw [(ensureRunnable_objectsAgreeOffRunLinks st tid).getTcb?_isSome]; exact hx
   by_cases hc : c = bootCoreId
   · subst hc
-    unfold ensureRunnable
-    split
-    · exact h
-    · split
-      · rename_i tcb htcb
-        obtain ⟨hRat, hWf, hNd⟩ := h
-        refine ⟨?_, ?_, ?_⟩
-        · intro t ht
-          simp only [SchedulerState.markReschedulePendingOnCore_runQueueOnCore, SchedulerState.setRunQueueOnCore_runQueueOnCore_self] at ht
-          rcases (RunQueue.mem_insert _ tid _ t).mp
-            ((RunQueue.mem_toList_iff_mem _ t).mp ht) with hold | heq
-          · exact hRat t ((RunQueue.mem_toList_iff_mem _ t).mpr hold)
-          · exact ⟨tcb, by rw [heq]; exact htcb⟩
-        · show runQueueOnCoreWellFormed _ bootCoreId
-          simp only [runQueueOnCoreWellFormed, SchedulerState.markReschedulePendingOnCore_runQueueOnCore, SchedulerState.setRunQueueOnCore_runQueueOnCore_self]
-          exact RunQueue.insert_preserves_wellFormed _ hWf _ _
-        · show runQueueUniqueOnCore _ bootCoreId
-          simp only [runQueueUniqueOnCore, SchedulerState.markReschedulePendingOnCore_runQueueOnCore, SchedulerState.setRunQueueOnCore_runQueueOnCore_self]
-          exact RunQueue.insert_preserves_toList_nodup _ _ _ hNd
-      · exact h
+    rcases ensureRunnable_scheduler_cases st tid with hS | ⟨tcb, E, htcb, hS⟩
+    · exact runQueue_frame_preserves_runQueueSafetyOnCore st _ bootCoreId (by rw [hS]) hSome h
+    · refine runQueue_insert_preserves_runQueueSafetyOnCore st _ bootCoreId tid
+        tcb.boostedPriority ?_ hSome (hSome tid (by rw [htcb]; rfl)) h
+      rw [hS, SchedulerState.markReschedulePendingOnCore_runQueueOnCore,
+        SchedulerState.setRunQueueOnCore_runQueueOnCore_self]
   · exact runQueue_frame_preserves_runQueueSafetyOnCore st _ c
-      (ensureRunnable_runQueueOnCore_ne st tid c hc)
-      (fun x hx => by rw [show (ensureRunnable st tid).getTcb? x = st.getTcb? x from by
-        unfold SystemState.getTcb?; rw [ensureRunnable_objects_eq_local]]; exact hx) h
+      (ensureRunnable_runQueueOnCore_ne st tid c hc) hSome h
 
 /-- WS-SM (PR #880 round 8): `enqueueRunnableOnCore` preserves the qcc-free
 run-queue safety bundle on **every** core `c` — a sibling core's queue is framed;
@@ -3035,39 +3128,19 @@ theorem enqueueRunnableOnCore_preserves_runQueueSafetyOnCore (st : SystemState)
   cases hTcb : st.getTcb? tid with
   | none => rw [enqueueRunnableOnCore_no_tcb_noop st tc tid hTcb]; exact h
   | some tcb =>
-    cases hFresh : runnableOnSomeCore st tid with
-    | true => rw [enqueueRunnableOnCore_eq_self_of_runnable st tc tid hFresh]; exact h
+    cases hFresh : wakeDeclines st tc tid with
+    | true => rw [enqueueRunnableOnCore_eq_self_of_declines st tc tid hFresh]; exact h
     | false =>
       have hSome : ∀ x : SeLe4n.ThreadId, (st.getTcb? x).isSome →
-          ((enqueueRunnableOnCore st tc tid).getTcb? x).isSome := by
-        intro x hx
-        by_cases hxt : x = tid
-        · subst hxt
-          rw [enqueueRunnableOnCore_makes_ready st tc x tcb hTcb hInv hFresh]
-          exact rfl
-        · rw [enqueueRunnableOnCore_getTcb?_ne st tc tid x hInv hxt]; exact hx
+          ((enqueueRunnableOnCore st tc tid).getTcb? x).isSome := fun x hx => by
+        obtain ⟨t, ht⟩ := Option.isSome_iff_exists.mp hx
+        obtain ⟨t', ht'⟩ := enqueueRunnableOnCore_getTcb?_isSome st tc tid x t hInv ht
+        rw [ht']; rfl
       by_cases hc : c = tc
       · subst hc
-        obtain ⟨hRat, hWf, hNd⟩ := h
-        refine ⟨?_, ?_, ?_⟩
-        · intro t ht
-          simp only [enqueueRunnableOnCore, SystemState.getTcbWitnessed?_eq_some hTcb, hFresh, Bool.false_eq_true, if_false,
-            SchedulerState.markReschedulePendingOnCore_runQueueOnCore,
-            SchedulerState.setRunQueueOnCore_runQueueOnCore_self] at ht
-          rcases (RunQueue.mem_insert _ tid _ t).mp
-            ((RunQueue.mem_toList_iff_mem _ t).mp ht) with hold | heq
-          · obtain ⟨tcbt, htcbt⟩ := hRat t ((RunQueue.mem_toList_iff_mem _ t).mpr hold)
-            have hs := hSome t (by simp [htcbt])
-            cases h' : (enqueueRunnableOnCore st c tid).getTcb? t with
-            | none => rw [h'] at hs; exact absurd hs (by simp)
-            | some tcb' => exact ⟨tcb', rfl⟩
-          · exact ⟨_, by rw [heq]; exact enqueueRunnableOnCore_makes_ready st c tid tcb hTcb hInv hFresh⟩
-        · show runQueueOnCoreWellFormed _ c
-          simp only [runQueueOnCoreWellFormed]
-          exact enqueueRunnableOnCore_preserves_runQueueOnCore_wellFormed st c tid hWf
-        · show runQueueUniqueOnCore _ c
-          simp only [runQueueUniqueOnCore]
-          exact enqueueRunnableOnCore_preserves_runQueueUniqueOnCore st c c tid hNd
+        exact runQueue_insert_preserves_runQueueSafetyOnCore st _ c tid tcb.boostedPriority
+          (enqueueRunnableOnCore_runQueueOnCore_of_fresh st c tid tcb hTcb hFresh) hSome
+          (hSome tid (by rw [hTcb]; rfl)) h
       · exact runQueue_frame_preserves_runQueueSafetyOnCore st _ c
           (enqueueRunnableOnCore_runQueueOnCore_ne st tc c tid (fun he => hc he.symm))
           hSome h
@@ -3095,78 +3168,34 @@ open SeLe4n.Kernel.PriorityInheritance in
 run-queue write is the boot-core rebucket). -/
 theorem updatePipBoost_runQueueOnCore_ne (st : SystemState) (tid : SeLe4n.ThreadId)
     (c : CoreId) (hc : c ≠ bootCoreId) :
-    (updatePipBoost st tid).scheduler.runQueueOnCore c = st.scheduler.runQueueOnCore c := by
-  simp only [updatePipBoost, updatePipBoostOnCore, SystemState.rewriteObject]
-  repeat' split
-  all_goals simp only [markKeyChangeFor_runQueueOnCore,
-    SchedulerState.setRunQueueOnCore_runQueueOnCore_ne _ _ _ _ (Ne.symm hc)]
+    (updatePipBoost st tid).scheduler.runQueueOnCore c = st.scheduler.runQueueOnCore c :=
+  updatePipBoostOnCore_runQueueOnCore_ne st bootCoreId c tid (Ne.symm hc)
 
 open SeLe4n.Kernel.PriorityInheritance in
-/-- `updatePipBoost` keeps every `getTcb?` resolvable (its only object write is the
-boosted TCB's `pipBoost`, a TCB→TCB update). -/
+/-- `updatePipBoost` keeps every `getTcb?` resolvable (its only object writes are
+the boosted TCB's `pipBoost` and run-queue links, TCB→TCB updates). -/
 theorem updatePipBoost_getTcb?_isSome (st : SystemState) (tid : SeLe4n.ThreadId)
     (hInv : st.objects.invExt) (x : SeLe4n.ThreadId) (hx : (st.getTcb? x).isSome) :
-    ((updatePipBoost st tid).getTcb? x).isSome := by
-  simp only [updatePipBoost, updatePipBoostOnCore, SystemState.rewriteObject]
-  repeat' split
-  all_goals first
-    | exact hx
-    | (rw [markKeyChangeFor_getTcb?]; exact getTcb?_isSome_insert_tcb st tid _ hInv x hx)
+    ((updatePipBoost st tid).getTcb? x).isSome :=
+  updatePipBoostOnCore_getTcb?_isSome st bootCoreId tid hInv x hx
 
 open SeLe4n.Kernel.PriorityInheritance in
 /-- WS-SM SM5.I.8: `updatePipBoost` preserves the qcc-free run-queue safety bundle
-on core `c`.  On `bootCoreId` the boot rebucket is `remove`+`insert`
-(membership-preserving, the boosted thread stays a TCB); on any other core the run
-queue is framed and the `pipBoost` object write keeps `getTcb?` resolvable. -/
+on core `c`: the boot rebucket keeps run-queue membership, well-formedness and
+uniqueness, and every resolving thread still resolves. -/
 theorem updatePipBoost_preserves_runQueueSafetyOnCore (st : SystemState)
     (tid : SeLe4n.ThreadId) (c : CoreId) (hInv : st.objects.invExt)
     (h : runQueueSafetyOnCore st c) :
     runQueueSafetyOnCore (updatePipBoost st tid) c := by
-  by_cases hc : c = bootCoreId
-  · subst hc
-    simp only [updatePipBoost, updatePipBoostOnCore, SystemState.rewriteObject]
-    split
-    · rename_i tcb heq _
-      split
-      · exact h
-      · -- boost changed; generalise the boosted TCB to dodge nested-record parsing.
-        generalize ({ tcb with pipBoost := computeMaxWaiterPriority st tid } : TCB) = tcb'
-        have hst' : runQueueSafetyOnCore
-            { st with objects := st.objects.insert tid.toObjId (.tcb tcb') } bootCoreId :=
-          objects_frame_preserves_runQueueSafetyOnCore st _ bootCoreId rfl
-            (fun x hx => getTcb?_isSome_insert_tcb st tid tcb' hInv x hx) h
-        have hself : ({ st with objects := st.objects.insert tid.toObjId (.tcb tcb') }
-            : SystemState).getTcb? tid = some tcb' := by
-          simp only [SystemState.getTcb?, RHTable_getElem?_eq_get?]
-          rw [RobinHood.RHTable.getElem?_insert_self st.objects tid.toObjId _ hInv]
-        split
-        · split
-          · rename_i hmemRq _hprio
-            refine runQueueSafetyOnCore_of_markKeyChangeFor _ _ _ _ ?_
-            refine ⟨?_, ?_, ?_⟩
-            · intro t ht
-              simp only [SchedulerState.setRunQueueOnCore_runQueueOnCore_self] at ht
-              rcases (RunQueue.mem_insert _ tid _ t).mp
-                ((RunQueue.mem_toList_iff_mem _ t).mp ht) with hold | heqt
-              · rw [RunQueue.mem_remove] at hold
-                exact hst'.1 t ((RunQueue.mem_toList_iff_mem _ t).mpr hold.1)
-              · exact ⟨_, by rw [heqt]; exact hself⟩
-            · show runQueueOnCoreWellFormed _ bootCoreId
-              simp only [runQueueOnCoreWellFormed,
-                SchedulerState.setRunQueueOnCore_runQueueOnCore_self]
-              exact RunQueue.insert_preserves_wellFormed _
-                (RunQueue.remove_preserves_wellFormed _ hst'.2.1 tid) _ _
-            · show runQueueUniqueOnCore _ bootCoreId
-              simp only [runQueueUniqueOnCore,
-                SchedulerState.setRunQueueOnCore_runQueueOnCore_self]
-              exact RunQueue.insert_preserves_toList_nodup _ _ _
-                (RunQueue.remove_preserves_toList_nodup _ tid hst'.2.2)
-          · exact runQueueSafetyOnCore_of_markKeyChangeFor _ _ _ _ hst'
-        · exact runQueueSafetyOnCore_of_markKeyChangeFor _ _ _ _ hst'
-    · exact h
-  · exact runQueue_frame_preserves_runQueueSafetyOnCore st _ c
-      (updatePipBoost_runQueueOnCore_ne st tid c hc)
-      (fun x hx => updatePipBoost_getTcb?_isSome st tid hInv x hx) h
+  obtain ⟨hRat, _, hNd⟩ := h
+  refine ⟨?_, RunQueue.wellFormed_holds _,
+    updatePipBoostOnCore_runQueueUniqueOnCore st bootCoreId tid c hNd⟩
+  intro t ht
+  have hm : t ∈ st.scheduler.runQueueOnCore c :=
+    (updatePipBoostOnCore_mem_runQueueOnCore st bootCoreId c tid t).mp
+      ((RunQueue.mem_toList_iff_mem _ t).mp ht)
+  obtain ⟨tcbt, htcbt⟩ := hRat t ((RunQueue.mem_toList_iff_mem _ t).mpr hm)
+  exact Option.isSome_iff_exists.mp (updatePipBoost_getTcb?_isSome st tid hInv t (by simp [htcbt]))
 
 open SeLe4n.Kernel.PriorityInheritance in
 /-- WS-SM SM5.I.8: `revertPriorityInheritance` preserves the qcc-free run-queue
@@ -3263,12 +3292,13 @@ theorem timeoutThread_preserves_runQueueSafetyOnCore
     have hInv3 : (wakeThread st2 tid execCore).1.objects.invExt :=
       wakeThread_preserves_objects_invExt _ _ execCore hInv2
     simp only [] at hStep
-    split at hStep <;>
-      · simp only [Except.ok.injEq] at hStep
-        subst hStep
-        first
-          | exact revertPriorityInheritance_preserves_runQueueSafetyOnCore _ _ _ _ hInv3 h3
-          | exact h3
+    split at hStep
+    · simp only [Except.ok.injEq] at hStep
+      subst hStep
+      exact revertPriorityInheritance_preserves_runQueueSafetyOnCore _ _ _ _ hInv3 h3
+    · simp only [Except.ok.injEq] at hStep
+      subst hStep
+      exact h3
 
 /-- WS-SM SM5.I.8 (timeout fold): `timeoutBlockedThreads` preserves the qcc-free
 run-queue safety bundle on core `c` UNCONDITIONALLY.  Folds the `timeoutThread`
@@ -3324,66 +3354,31 @@ theorem timeoutBlockedThreads_preserves_runQueueSafetyOnCore (st : SystemState)
 -- which preserves `timeSlice`.
 -- ----------------------------------------------------------------------------
 
-/-- `updatePipBoost` at the target thread preserves its `timeSlice` (the
-`{tcb with pipBoost := …}` record-update touches only `pipBoost`).  Mirrors
-`updatePipBoost_self_ipcState`. -/
-private theorem updatePipBoost_self_timeSlice (st : SystemState) (tid : SeLe4n.ThreadId)
-    (hObjInv : st.objects.invExt) (tcb : TCB)
-    (hObj : st.objects[tid.toObjId]? = some (.tcb tcb)) :
-    match (PriorityInheritance.updatePipBoost st tid).objects[tid.toObjId]? with
-    | some (.tcb tcb') => tcb'.timeSlice = tcb.timeSlice
-    | _ => True := by
-  suffices h : ∃ tcb',
-      (PriorityInheritance.updatePipBoost st tid).objects[tid.toObjId]? = some (.tcb tcb') ∧
-      tcb'.timeSlice = tcb.timeSlice by
-    obtain ⟨tcb', hLook, hTS⟩ := h; simp only [hLook, hTS]
-  unfold PriorityInheritance.updatePipBoost PriorityInheritance.updatePipBoostOnCore
-  have hGet : st.getTcb? tid = some tcb := by unfold SystemState.getTcb?; rw [hObj]
-  simp only [SystemState.getTcbWitnessed?_eq_some hGet]
-  split
-  · exact ⟨tcb, hObj, rfl⟩
-  · have hSelf : (st.objects.insert tid.toObjId
-        (.tcb { tcb with pipBoost := PriorityInheritance.computeMaxWaiterPriority st tid }))[tid.toObjId]? =
-        some (.tcb { tcb with pipBoost := PriorityInheritance.computeMaxWaiterPriority st tid }) :=
-      RHTable_get?_insert_self st.objects tid.toObjId _ hObjInv
-    refine ⟨{ tcb with pipBoost := PriorityInheritance.computeMaxWaiterPriority st tid }, ?_, rfl⟩
-    by_cases hRQ : tid ∈ (st.scheduler.runQueueOnCore bootCoreId)
-    · simp only [hRQ, ite_true]; split <;> (rw [markKeyChangeFor_objects]; exact hSelf)
-    · simp only [hRQ, ite_false]; rw [markKeyChangeFor_objects]; exact hSelf
-
 /-- WS-SM SM5.I global strengthening: `updatePipBoost` preserves
-`allThreadsTimeSlicePositive` (it writes a TCB only at `tid`, via the
-`pipBoost`-only update, leaving every `timeSlice` unchanged). -/
+`allThreadsTimeSlicePositive`: off the run-queue links it agrees with the bare
+`pipBoost` write, which leaves every `timeSlice` unchanged. -/
 theorem updatePipBoost_preserves_allThreadsTimeSlicePositive (st : SystemState)
     (tid : SeLe4n.ThreadId) (hObjInv : st.objects.invExt) (h : allThreadsTimeSlicePositive st) :
     allThreadsTimeSlicePositive (PriorityInheritance.updatePipBoost st tid) := by
   refine allThreadsTimeSlicePositive_frame ?_ h
   intro x tcb' hx
+  obtain ⟨r, hr, hre⟩ :=
+    (PriorityInheritance.updatePipBoostOnCore_objectsAgreeOffRunLinks st bootCoreId tid).getTcb?_some' hx
+  have hTs : tcb'.timeSlice = r.timeSlice := TCB.proj_eq_of_withoutRunLinks_eq (·.timeSlice) hre
   by_cases hxtid : x = tid
-  · rw [hxtid] at hx ⊢
-    rw [SystemState.getTcb?_eq_some_iff] at hx
-    by_cases hc : ∃ tcb, st.objects[tid.toObjId]? = some (.tcb tcb)
-    · obtain ⟨tcb, hpre⟩ := hc
-      refine ⟨tcb, (SystemState.getTcb?_eq_some_iff st tid tcb).mpr hpre, ?_⟩
-      have hself := updatePipBoost_self_timeSlice st tid hObjInv tcb hpre
-      rw [hx] at hself; exact hself
-    · exfalso
-      have heq : PriorityInheritance.updatePipBoost st tid = st := by
-        -- The transition splits on the witnessed lookup; its `none` arm is
-        -- exactly "no TCB here", which is the hypothesis `hc` denies in the
-        -- other arm.  The split precedes the unfold (the lookup's type
-        -- mentions `st.getTcb? tid`).
-        cases hpre : st.getTcb? tid with
-        | none =>
-          unfold PriorityInheritance.updatePipBoost PriorityInheritance.updatePipBoostOnCore
-          rw [SystemState.getTcbWitnessed?_eq_none hpre]
-        | some t => exact absurd ⟨t, (SystemState.getTcb?_eq_some_iff st tid t).mp hpre⟩ hc
-      rw [heq] at hx
-      exact hc ⟨tcb', hx⟩
-  · have hEq : (PriorityInheritance.updatePipBoost st tid).getTcb? x = st.getTcb? x := by
-      unfold SystemState.getTcb?
-      rw [PriorityInheritance.updatePipBoost_ipcState_frame st tid hObjInv x hxtid]
-    rw [hEq] at hx; exact ⟨tcb', hx, rfl⟩
+  · subst hxtid
+    cases hpre : st.getTcb? x with
+    | none =>
+      rw [PriorityInheritance.pipBoostWrite_eq_self_of_getTcb?_none st x hpre, hpre] at hr
+      cases hr
+    | some tcb =>
+      obtain ⟨p, hp⟩ := PriorityInheritance.pipBoostWrite_objects_at st x tcb hpre hObjInv
+      rw [hp] at hr; cases hr
+      exact ⟨tcb, rfl, hTs⟩
+  · have hNe : ¬ (tid.toObjId == x.toObjId) = true :=
+      fun hh => hxtid (SeLe4n.ThreadId.toObjId_injective _ _ (eq_of_beq hh)).symm
+    rw [SystemState.getTcb?_congr_at (PriorityInheritance.pipBoostWrite_objects_ne st tid _ hNe hObjInv)] at hr
+    exact ⟨r, hr, hTs⟩
 
 /-- WS-SM SM5.I global strengthening: `revertPriorityInheritance` preserves
 `allThreadsTimeSlicePositive`.  Fuel induction over the blocking-chain walk; each
@@ -3475,8 +3470,8 @@ private theorem tsAgree_next_step (st : SystemState) (tcb : TCB)
       | some nextTid => match objs1[nextTid.toObjId]? with
         | some (.tcb nextTcb) =>
           objs1.insert nextTid.toObjId
-            (.tcb { nextTcb with queuePrev := tcb.queuePrev,
-                                 queuePPrev := tcb.queuePPrev })
+            (.tcb { nextTcb with queuePrevCode := tcb.queuePrevCode,
+                                 queuePPrevCode := tcb.queuePPrevCode })
         | _ => objs1) := by
   cases tcb.queueNext with
   | none => simpa only [] using ha1
@@ -3526,13 +3521,13 @@ theorem endpointQueueRemove_preserves_allThreadsTimeSlicePositive
                   | none => st.objects
                   | some prevTid => match st.objects[prevTid.toObjId]? with
                     | some (.tcb prevTcb) =>
-                      st.objects.insert prevTid.toObjId (.tcb { prevTcb with queueNext := tcb.queueNext })
+                      st.objects.insert prevTid.toObjId (.tcb { prevTcb with queueNextCode := tcb.queueNextCode })
                     | _ => st.objects) ∧
                 (match tcb.queuePrev with
                   | none => st.objects
                   | some prevTid => match st.objects[prevTid.toObjId]? with
                     | some (.tcb prevTcb) =>
-                      st.objects.insert prevTid.toObjId (.tcb { prevTcb with queueNext := tcb.queueNext })
+                      st.objects.insert prevTid.toObjId (.tcb { prevTcb with queueNextCode := tcb.queueNextCode })
                     | _ => st.objects).invExt := by
               cases tcb.queuePrev with
               | none => exact ⟨tsAgree_rfl _, hInv⟩
@@ -3769,7 +3764,9 @@ theorem timerTickBudgetOnCore_preserves_allThreadsTimeSlicePositive
     · -- case #1: reset to configDefaultTimeSlice
       simp only [Except.ok.injEq, Prod.mk.injEq] at hStep
       obtain ⟨rfl, _⟩ := hStep
-      exact allThreadsTimeSlicePositive_of_insert_pos hInv rfl hConfigTS h
+      exact allThreadsTimeSlicePositive_of_objectsAgreeOffRunLinks
+        (SystemState.runEnqueueOnCore_objectsAgreeOffRunLinks _ c tid _)
+        (allThreadsTimeSlicePositive_of_insert_pos hInv rfl hConfigTS h)
     · -- case #2: decrement (guard: timeSlice > 1)
       rename_i hnotle
       simp only [Except.ok.injEq, Prod.mk.injEq] at hStep
@@ -3798,20 +3795,12 @@ theorem timerTickBudgetOnCore_preserves_allThreadsTimeSlicePositive
         have hInv2 := replenishOnCore_preserves_objects_invExt
           { st with objects := st.objects.insert scId.toObjId (.schedContext scNew) }
           c scId (st.machine.timer + sc.period.val) hInv1
-        have h3 : allThreadsTimeSlicePositive
-            { replenishOnCore { st with objects := st.objects.insert scId.toObjId (.schedContext scNew) }
-                c scId (st.machine.timer + sc.period.val) with
-              scheduler := (replenishOnCore
-                { st with objects := st.objects.insert scId.toObjId (.schedContext scNew) }
-                c scId (st.machine.timer + sc.period.val)).scheduler.setRunQueueOnCore c
-                (((replenishOnCore
-                  { st with objects := st.objects.insert scId.toObjId (.schedContext scNew) }
-                  c scId (st.machine.timer + sc.period.val)).scheduler.runQueueOnCore c).insert tid
-                  (resolveInsertPriority
-                    { st with objects := st.objects.insert scId.toObjId (.schedContext scNew) }
-                    tid sc)) } :=
-          allThreadsTimeSlicePositive_of_objects_eq rfl h2
-        have h4 := timeoutBlockedThreads_preserves_allThreadsTimeSlicePositive _ scId c (by exact hInv2) h3
+        have h3 := allThreadsTimeSlicePositive_of_objectsAgreeOffRunLinks
+          (SystemState.runEnqueueOnCore_objectsAgreeOffRunLinks _ c tid
+            (resolveInsertPriority
+              { st with objects := st.objects.insert scId.toObjId (.schedContext scNew) } tid sc)) h2
+        have h4 := timeoutBlockedThreads_preserves_allThreadsTimeSlicePositive _ scId c
+          (SystemState.runEnqueueOnCore_objects_invExt _ c tid _ hInv2) h3
         exact allThreadsTimeSlicePositive_of_objects_eq rfl h4
       · -- case #4: consume budget (SchedContext insert only)
         simp only [Except.ok.injEq, Prod.mk.injEq] at hStep
@@ -3841,20 +3830,12 @@ theorem timerTickBudgetOnCore_preserves_allThreadsTimeSlicePositive
         have hInv2 := replenishOnCore_preserves_objects_invExt
           { st with objects := st.objects.insert scId.toObjId (.schedContext scNew) }
           c scId (st.machine.timer + sc.period.val) hInv1
-        have h3 : allThreadsTimeSlicePositive
-            { replenishOnCore { st with objects := st.objects.insert scId.toObjId (.schedContext scNew) }
-                c scId (st.machine.timer + sc.period.val) with
-              scheduler := (replenishOnCore
-                { st with objects := st.objects.insert scId.toObjId (.schedContext scNew) }
-                c scId (st.machine.timer + sc.period.val)).scheduler.setRunQueueOnCore c
-                (((replenishOnCore
-                  { st with objects := st.objects.insert scId.toObjId (.schedContext scNew) }
-                  c scId (st.machine.timer + sc.period.val)).scheduler.runQueueOnCore c).insert tid
-                  (resolveInsertPriority
-                    { st with objects := st.objects.insert scId.toObjId (.schedContext scNew) }
-                    tid sc)) } :=
-          allThreadsTimeSlicePositive_of_objects_eq rfl h2
-        have h4 := timeoutBlockedThreads_preserves_allThreadsTimeSlicePositive _ scId c (by exact hInv2) h3
+        have h3 := allThreadsTimeSlicePositive_of_objectsAgreeOffRunLinks
+          (SystemState.runEnqueueOnCore_objectsAgreeOffRunLinks _ c tid
+            (resolveInsertPriority
+              { st with objects := st.objects.insert scId.toObjId (.schedContext scNew) } tid sc)) h2
+        have h4 := timeoutBlockedThreads_preserves_allThreadsTimeSlicePositive _ scId c
+          (SystemState.runEnqueueOnCore_objects_invExt _ c tid _ hInv2) h3
         exact allThreadsTimeSlicePositive_of_objects_eq rfl h4
       · -- case #4
         simp only [Except.ok.injEq, Prod.mk.injEq] at hStep
@@ -3908,19 +3889,7 @@ theorem timerTickBudgetOnCore_preserves_runQueueSafetyOnCore
           : SystemState).getTcb? tid = some tcbR := by
         simp only [SystemState.getTcb?, RHTable_getElem?_eq_get?]
         rw [RobinHood.RHTable.getElem?_insert_self st.objects tid.toObjId _ hInv]
-      refine ⟨?_, ?_, ?_⟩
-      · intro t ht
-        simp only [SchedulerState.setRunQueueOnCore_runQueueOnCore_self] at ht
-        rcases (RunQueue.mem_insert _ tid _ t).mp
-          ((RunQueue.mem_toList_iff_mem _ t).mp ht) with hold | heqt
-        · exact hst'.1 t ((RunQueue.mem_toList_iff_mem _ t).mpr hold)
-        · exact ⟨_, by rw [heqt]; exact hself⟩
-      · show runQueueOnCoreWellFormed _ c
-        simp only [runQueueOnCoreWellFormed, SchedulerState.setRunQueueOnCore_runQueueOnCore_self]
-        exact RunQueue.insert_preserves_wellFormed _ hst'.2.1 _ _
-      · show runQueueUniqueOnCore _ c
-        simp only [runQueueUniqueOnCore, SchedulerState.setRunQueueOnCore_runQueueOnCore_self]
-        exact RunQueue.insert_preserves_toList_nodup _ _ _ hst'.2.2
+      exact runEnqueueOnCore_preserves_runQueueSafetyOnCore _ c tid _ tcbR hself hst'
     · -- case #2: not preempted, decrement time-slice (object insert only)
       simp only [Except.ok.injEq, Prod.mk.injEq] at hStep
       obtain ⟨rfl, _⟩ := hStep
@@ -3959,33 +3928,12 @@ theorem timerTickBudgetOnCore_preserves_runQueueSafetyOnCore
             c scId (st.machine.timer + sc.period.val)).getTcb? tid = some tcb := by
           rw [replenishOnCore_getTcb?,
             getTcb?_insert_schedContext_eq st _ scId sc scNew hInv hOldSc rfl tid]; exact hTid
-        have h3 : runQueueSafetyOnCore
-            { replenishOnCore
-                { st with objects := st.objects.insert scId.toObjId (.schedContext scNew) }
-                c scId (st.machine.timer + sc.period.val) with
-              scheduler := (replenishOnCore
-                { st with objects := st.objects.insert scId.toObjId (.schedContext scNew) }
-                c scId (st.machine.timer + sc.period.val)).scheduler.setRunQueueOnCore c
-                (((replenishOnCore
-                  { st with objects := st.objects.insert scId.toObjId (.schedContext scNew) }
-                  c scId (st.machine.timer + sc.period.val)).scheduler.runQueueOnCore c).insert tid
-                  (resolveInsertPriority
-                    { st with objects := st.objects.insert scId.toObjId (.schedContext scNew) }
-                    tid sc)) } c := by
-          refine ⟨?_, ?_, ?_⟩
-          · intro t ht
-            simp only [SchedulerState.setRunQueueOnCore_runQueueOnCore_self] at ht
-            rcases (RunQueue.mem_insert _ tid _ t).mp
-              ((RunQueue.mem_toList_iff_mem _ t).mp ht) with hold | heqt
-            · exact h2.1 t ((RunQueue.mem_toList_iff_mem _ t).mpr hold)
-            · exact ⟨tcb, by rw [heqt]; exact hTidR⟩
-          · show runQueueOnCoreWellFormed _ c
-            simp only [runQueueOnCoreWellFormed, SchedulerState.setRunQueueOnCore_runQueueOnCore_self]
-            exact RunQueue.insert_preserves_wellFormed _ h2.2.1 _ _
-          · show runQueueUniqueOnCore _ c
-            simp only [runQueueUniqueOnCore, SchedulerState.setRunQueueOnCore_runQueueOnCore_self]
-            exact RunQueue.insert_preserves_toList_nodup _ _ _ h2.2.2
-        have h4 := timeoutBlockedThreads_preserves_runQueueSafetyOnCore _ scId c c (by exact hInv2) h3
+        have h3 := runEnqueueOnCore_preserves_runQueueSafetyOnCore _ c tid
+          (resolveInsertPriority
+            { st with objects := st.objects.insert scId.toObjId (.schedContext scNew) } tid sc)
+          tcb hTidR h2
+        have h4 := timeoutBlockedThreads_preserves_runQueueSafetyOnCore _ scId c c
+          (SystemState.runEnqueueOnCore_objects_invExt _ c tid _ hInv2) h3
         refine runQueue_frame_preserves_runQueueSafetyOnCore _ _ c
           (by simp only [SchedulerState.setLastTimeoutErrorsOnCore_runQueueOnCore])
           (fun x hx => hx) h4
@@ -4031,33 +3979,12 @@ theorem timerTickBudgetOnCore_preserves_runQueueSafetyOnCore
             c scId (st.machine.timer + sc.period.val)).getTcb? tid = some tcb := by
           rw [replenishOnCore_getTcb?,
             getTcb?_insert_schedContext_eq st _ scId sc scNew hInv hOldSc rfl tid]; exact hTid
-        have h3 : runQueueSafetyOnCore
-            { replenishOnCore
-                { st with objects := st.objects.insert scId.toObjId (.schedContext scNew) }
-                c scId (st.machine.timer + sc.period.val) with
-              scheduler := (replenishOnCore
-                { st with objects := st.objects.insert scId.toObjId (.schedContext scNew) }
-                c scId (st.machine.timer + sc.period.val)).scheduler.setRunQueueOnCore c
-                (((replenishOnCore
-                  { st with objects := st.objects.insert scId.toObjId (.schedContext scNew) }
-                  c scId (st.machine.timer + sc.period.val)).scheduler.runQueueOnCore c).insert tid
-                  (resolveInsertPriority
-                    { st with objects := st.objects.insert scId.toObjId (.schedContext scNew) }
-                    tid sc)) } c := by
-          refine ⟨?_, ?_, ?_⟩
-          · intro t ht
-            simp only [SchedulerState.setRunQueueOnCore_runQueueOnCore_self] at ht
-            rcases (RunQueue.mem_insert _ tid _ t).mp
-              ((RunQueue.mem_toList_iff_mem _ t).mp ht) with hold | heqt
-            · exact h2.1 t ((RunQueue.mem_toList_iff_mem _ t).mpr hold)
-            · exact ⟨tcb, by rw [heqt]; exact hTidR⟩
-          · show runQueueOnCoreWellFormed _ c
-            simp only [runQueueOnCoreWellFormed, SchedulerState.setRunQueueOnCore_runQueueOnCore_self]
-            exact RunQueue.insert_preserves_wellFormed _ h2.2.1 _ _
-          · show runQueueUniqueOnCore _ c
-            simp only [runQueueUniqueOnCore, SchedulerState.setRunQueueOnCore_runQueueOnCore_self]
-            exact RunQueue.insert_preserves_toList_nodup _ _ _ h2.2.2
-        have h4 := timeoutBlockedThreads_preserves_runQueueSafetyOnCore _ scId c c (by exact hInv2) h3
+        have h3 := runEnqueueOnCore_preserves_runQueueSafetyOnCore _ c tid
+          (resolveInsertPriority
+            { st with objects := st.objects.insert scId.toObjId (.schedContext scNew) } tid sc)
+          tcb hTidR h2
+        have h4 := timeoutBlockedThreads_preserves_runQueueSafetyOnCore _ scId c c
+          (SystemState.runEnqueueOnCore_objects_invExt _ c tid _ hInv2) h3
         refine runQueue_frame_preserves_runQueueSafetyOnCore _ _ c
           (by simp only [SchedulerState.setLastTimeoutErrorsOnCore_runQueueOnCore])
           (fun x hx => hx) h4
@@ -4147,32 +4074,21 @@ theorem timerTickOnCorePrepared_preserves_runnableThreadsAreTCBsOnCore (st : Sys
 
 -- ── §8.3e  Prepared-phase discharge — `contextMatchesCurrentOnCore` (register bank) ──
 
-/-- A wake keeps any pre-state thread resolvable with an unchanged
-`registerContext` (it changes only the woken thread's `ipcState`). -/
-theorem enqueueRunnableOnCore_getTcb?_upToReg (st : SystemState) (c : CoreId)
-    (tid x : SeLe4n.ThreadId) (t : TCB) (hInv : st.objects.invExt)
-    (hres : st.getTcb? x = some t) :
-    ∃ t', (enqueueRunnableOnCore st c tid).getTcb? x = some t' ∧
-      t.registerContext = t'.registerContext := by
-  cases hFresh : runnableOnSomeCore st tid with
-  | true => rw [enqueueRunnableOnCore_eq_self_of_runnable st c tid hFresh]; exact ⟨t, hres, rfl⟩
-  | false =>
-    by_cases hEq : x = tid
-    · subst hEq
-      exact ⟨_, enqueueRunnableOnCore_makes_ready st c x t hres hInv hFresh, rfl⟩
-    · rw [enqueueRunnableOnCore_getTcb?_ne st c tid x hInv hEq]; exact ⟨t, hres, rfl⟩
-
 /-- A wake keeps a non-TCB slot non-resolvable (it cannot turn a non-TCB into a
 TCB). -/
 theorem enqueueRunnableOnCore_getTcb?_eq_none (st : SystemState) (c : CoreId)
     (tid x : SeLe4n.ThreadId) (hInv : st.objects.invExt) (hres : st.getTcb? x = none) :
     (enqueueRunnableOnCore st c tid).getTcb? x = none := by
-  cases hFresh : runnableOnSomeCore st tid with
-  | true => rw [enqueueRunnableOnCore_eq_self_of_runnable st c tid hFresh]; exact hres
+  cases hFresh : wakeDeclines st c tid with
+  | true => rw [enqueueRunnableOnCore_eq_self_of_declines st c tid hFresh]; exact hres
   | false =>
     by_cases hEq : x = tid
     · subst hEq; rw [enqueueRunnableOnCore_no_tcb_noop st c x hres]; exact hres
-    · rw [enqueueRunnableOnCore_getTcb?_ne st c tid x hInv hEq]; exact hres
+    · have e := enqueueRunnableOnCore_getTcb?_ne st c tid x hInv hEq
+      rw [hres] at e
+      cases h' : (enqueueRunnableOnCore st c tid).getTcb? x with
+      | none => rfl
+      | some _ => rw [h'] at e; cases e
 
 /-- WS-SM SM5.I.8 (preservation, SM4.C `contextMatchesCurrentOnCore`): a wake on
 core `c` preserves the register-bank match on **every** core `c'` — it writes no
@@ -4193,10 +4109,10 @@ theorem enqueueRunnableOnCore_preserves_contextMatchesCurrentOnCore_anyCore (st 
     | some curTcb =>
       simp only [hCurTcb] at h
       obtain ⟨t', ht', hreg⟩ :=
-        enqueueRunnableOnCore_getTcb?_upToReg st c tid cur curTcb hInv hCurTcb
+        enqueueRunnableOnCore_getTcb?_regContext st c tid cur curTcb hInv hCurTcb
       rw [ht']
       show (st.machine.regsOnCore c' == t'.registerContext) = true
-      rw [← hreg]; exact h
+      rw [hreg]; exact h
 
 /-- WS-SM SM5.I.8: a wake preserves the register-bank match on every core `c'`. -/
 theorem wakeThread_preserves_contextMatchesCurrentOnCore (st : SystemState)
@@ -4425,12 +4341,10 @@ theorem enqueueRunnableOnCore_configDefaultTimeSlice (st : SystemState) (c : Cor
     (tid : SeLe4n.ThreadId) :
     (enqueueRunnableOnCore st c tid).scheduler.configDefaultTimeSlice
       = st.scheduler.configDefaultTimeSlice := by
-  unfold enqueueRunnableOnCore
-  split
-  · split
-    · rfl
-    · simp
-  · rfl
+  rcases enqueueRunnableOnCore_scheduler_cases st c tid with h | ⟨E, p, h⟩ <;> rw [h]
+  simp only [SchedulerState.markReschedulePendingOnCore_configDefaultTimeSlice,
+    SchedulerState.setRunQueueOnCore_configDefaultTimeSlice,
+    SchedulerState.setRunQueueEndsOnCore_configDefaultTimeSlice]
 
 /-- `configDefaultTimeSlice` is preserved by the cross-core wake (its state
 component is a `enqueueRunnableOnCore` at the target core). -/
@@ -4597,7 +4511,8 @@ theorem scheduleEffectiveOnCore_preserves_allThreadsTimeSlicePositive (st : Syst
     (hStep : scheduleEffectiveOnCore st c = .ok st')
     (h : allThreadsTimeSlicePositive st) :
     allThreadsTimeSlicePositive st' :=
-  allThreadsTimeSlicePositive_of_objects_eq (scheduleEffectiveOnCore_objects_eq st c st' hStep)
+  allThreadsTimeSlicePositive_of_objectsAgreeOffRunLinks
+    (scheduleEffectiveOnCore_objectsAgreeOffRunLinks st c st' hStep)
     (saveOutgoingContextOnCore_preserves_allThreadsTimeSlicePositive st c hInv h)
 
 -- ── §8.6  allThreadsTimeSlicePositive through the remaining per-core transitions
@@ -4623,18 +4538,21 @@ theorem preemptCurrentOnCore_preserves_allThreadsTimeSlicePositive (st : SystemS
         -- the saved TCB is `{ prevTcb with registerContext := … }`, whose
         -- `timeSlice` is `prevTcb`'s — positive by `h` on the preempted thread.
         dsimp only [SystemState.rewriteObject]
-        exact allThreadsTimeSlicePositive_of_insert_pos hInv rfl (h prevTid prevTcb hprev) h
+        exact allThreadsTimeSlicePositive_of_objectsAgreeOffRunLinks
+          (SystemState.runEnqueueOnCore_objectsAgreeOffRunLinks _ _ _ _)
+          (allThreadsTimeSlicePositive_of_insert_pos hInv rfl (h prevTid prevTcb hprev) h)
       · exact h
 
 /-- `switchToThreadOnCore` preserves `allThreadsTimeSlicePositive` — its only
-object write is the preempt's register-context save (its objects equal the
-preempt's, via `switchToThreadOnCore_objects_eq_preempt`). -/
+object write off the run-queue links is the preempt's register-context save (via
+`switchToThreadOnCore_objectsAgreeOffRunLinks_preempt`). -/
 theorem switchToThreadOnCore_preserves_allThreadsTimeSlicePositive (st : SystemState)
     (c : CoreId) (tid : SeLe4n.ThreadId) (st' : SystemState) (hInv : st.objects.invExt)
     (hStep : switchToThreadOnCore st c tid = .ok st')
     (h : allThreadsTimeSlicePositive st) :
     allThreadsTimeSlicePositive st' :=
-  allThreadsTimeSlicePositive_of_objects_eq (switchToThreadOnCore_objects_eq_preempt st c tid st' hStep)
+  allThreadsTimeSlicePositive_of_objectsAgreeOffRunLinks
+    (switchToThreadOnCore_objectsAgreeOffRunLinks_preempt st c tid st' hStep)
     (preemptCurrentOnCore_preserves_allThreadsTimeSlicePositive st c tid hInv h)
 
 /-- `handleRescheduleSgiOnCore` preserves `allThreadsTimeSlicePositive` — it either
@@ -4755,8 +4673,12 @@ the idle TCB (`createIdleThread c`, `timeSlice` the positive TCB default). -/
 theorem enqueueIdleThreadOnCore_preserves_allThreadsTimeSlicePositive (st : SystemState)
     (c : CoreId) (hInv : st.objects.invExt) (h : allThreadsTimeSlicePositive st) :
     allThreadsTimeSlicePositive (enqueueIdleThreadOnCore st c) :=
-  allThreadsTimeSlicePositive_of_insert_pos hInv (enqueueIdleThreadOnCore_objects st c)
-    (by show 0 < 5; decide) h
+  allThreadsTimeSlicePositive_of_objectsAgreeOffRunLinks
+    (enqueueIdleThreadOnCore_objectsAgreeOffRunLinks st c hInv)
+    (allThreadsTimeSlicePositive_of_insert_pos hInv
+      (SystemState.withObjectStored_objects st (idleThreadId c).toObjId
+        (KernelObject.tcb (queuedIdleThread c)))
+      (by show 0 < 5; decide) h)
 
 /-- `switchDomainOnCore` preserves `allThreadsTimeSlicePositive` — its only object
 write is the outgoing register-context save (`saveOutgoingContextOnCore`); the
@@ -4773,7 +4695,8 @@ theorem switchDomainOnCore_preserves_allThreadsTimeSlicePositive (st : SystemSta
     split at hStep
     · simp at hStep
     · simp only [Except.ok.injEq] at hStep; subst hStep
-      exact allThreadsTimeSlicePositive_of_objects_eq rfl
+      exact allThreadsTimeSlicePositive_of_objectsAgreeOffRunLinks
+        (requeueOutgoingOnCore_objectsAgreeOffRunLinks st c)
         (saveOutgoingContextOnCore_preserves_allThreadsTimeSlicePositive st c hInv h)
 
 /-- `scheduleDomainOnCore` preserves `allThreadsTimeSlicePositive` — boundary:

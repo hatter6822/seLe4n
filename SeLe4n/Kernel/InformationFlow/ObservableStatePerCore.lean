@@ -91,6 +91,10 @@ residency by timing its own accesses.
 
 namespace SeLe4n.Kernel
 
+-- WS-ZA ZA4.5: the observation reads the scheduler's ghost run queue, so the
+-- views and checks built on it are proof-level (`noncomputable`).
+noncomputable section
+
 open SeLe4n.Model
 open SeLe4n.Kernel.Concurrency (CoreId bootCoreId)
 
@@ -745,6 +749,51 @@ compared exactly. -/
 theorem machineRegs_beq_iff (o₁ o₂ : Option RegisterFile) :
     (o₁ == o₂) = true ↔ o₁ = o₂ :=
   beq_iff_eq
+
+/-! WS-ZA ZA4.5: the observer views read along the threads' run-queue links.
+`ObservableState.onCore` reads the run queue through its proof-only ghost, so
+it has no executable code.  The forms below read the links instead; each is
+equal to its ghost form wherever the links refine core `c`'s queue, which every
+reachable state carries (`runQueueRefined`). -/
+
+/-- `ObservableState.onCore`, read along the links. -/
+def ObservableState.onCoreByLinks (ctx : LabelingContext) (c : CoreId) (L : SecurityLabel)
+    (s : SystemState) : ObservableState :=
+  projectStateOnCoreByLinks ctx (IfObserver.ofLabel L) s c
+
+theorem onCoreByLinks_eq (ctx : LabelingContext) (c : CoreId) (L : SecurityLabel)
+    {s : SystemState} (h : s.runQueueRefinedOnCore c) :
+    ObservableState.onCoreByLinks ctx c L s = ObservableState.onCore ctx c L s :=
+  projectStateOnCoreByLinks_eq ctx _ h
+
+/-- `ObservableState.sliceOnCore`, read along the links. -/
+def ObservableState.sliceOnCoreByLinks (ctx : LabelingContext) (c : CoreId)
+    (L : SecurityLabel) (s : SystemState) : PerCoreObservableSlice :=
+  (ObservableState.onCoreByLinks ctx c L s).perCoreSlice
+
+theorem sliceOnCoreByLinks_eq (ctx : LabelingContext) (c : CoreId) (L : SecurityLabel)
+    {s : SystemState} (h : s.runQueueRefinedOnCore c) :
+    ObservableState.sliceOnCoreByLinks ctx c L s = ObservableState.sliceOnCore ctx c L s := by
+  unfold ObservableState.sliceOnCoreByLinks ObservableState.sliceOnCore
+  rw [onCoreByLinks_eq ctx c L h]
+
+/-- `lowEquivalentSliceOnCoreCheckWithRegs`, read along the links. -/
+def lowEquivalentSliceOnCoreCheckWithRegsByLinks (ctx : LabelingContext) (c : CoreId)
+    (L : SecurityLabel) (s₁ s₂ : SystemState) : Bool :=
+  decide (ObservableState.sliceOnCoreByLinks ctx c L s₁
+      = ObservableState.sliceOnCoreByLinks ctx c L s₂) &&
+    ((ObservableState.onCoreByLinks ctx c L s₁).machineRegs
+      == (ObservableState.onCoreByLinks ctx c L s₂).machineRegs)
+
+theorem lowEquivalentSliceOnCoreCheckWithRegsByLinks_eq (ctx : LabelingContext)
+    (c : CoreId) (L : SecurityLabel) {s₁ s₂ : SystemState}
+    (h₁ : s₁.runQueueRefinedOnCore c) (h₂ : s₂.runQueueRefinedOnCore c) :
+    lowEquivalentSliceOnCoreCheckWithRegsByLinks ctx c L s₁ s₂
+      = lowEquivalentSliceOnCoreCheckWithRegs ctx c L s₁ s₂ := by
+  unfold lowEquivalentSliceOnCoreCheckWithRegsByLinks lowEquivalentSliceOnCoreCheckWithRegs
+    lowEquivalentSliceOnCore
+  rw [sliceOnCoreByLinks_eq ctx c L h₁, sliceOnCoreByLinks_eq ctx c L h₂,
+    onCoreByLinks_eq ctx c L h₁, onCoreByLinks_eq ctx c L h₂]
 
 -- ============================================================================
 -- §5  SM8.A.4 — per-core independence (the read set of the per-core view)
@@ -1740,5 +1789,7 @@ theorem onCore_label_monotone_strict :
         (IfObserver.ofLabel SecurityLabel.kernelTrusted)
         (SeLe4n.ObjId.ofNat harnessSeparationBoundary) = true := by
   decide
+
+end
 
 end SeLe4n.Kernel

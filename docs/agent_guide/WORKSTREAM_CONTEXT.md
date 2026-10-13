@@ -109,7 +109,7 @@ syscall-level resolver alone; a new
 declared arm adds its `case` to `dispatchWithCapChecked_coversWrites` in the
 same cut, or the seam theorem does not elaborate).
 
-### WS-ZA A syscall that allocates nothing — IN FLIGHT (registered v0.36.72; ZA1 and most of ZA2 v0.36.73; 9 at v0.36.74; the signal at 0 at v0.36.75; the pending-badge wait at 0 at v0.36.76; the wide-badge signal at 0 at v0.36.77; runs beside WS-CV, before WS-CB)
+### WS-ZA A syscall that allocates nothing — IN FLIGHT (registered v0.36.72; ZA1 and most of ZA2 v0.36.73; 9 at v0.36.74; the signal at 0 at v0.36.75; the pending-badge wait at 0 at v0.36.76; the wide-badge signal at 0 at v0.36.77; yield at v0.36.78; intrusive notification waiters at v0.36.82; runs beside WS-CV, before WS-CB)
 
 The continuing syscall round trip makes no heap allocation.  At `v0.36.71` it
 makes 118: 55 are register-context sites WS-CV's rows already remove, 62 are
@@ -121,7 +121,18 @@ round trip makes 13, 9 at `v0.36.74` (the plan's §1 names each), and 0 at
 before): `Badge` holds a machine word and the notification keeps its pending
 badge as a flag and a word.  At `v0.36.78` the yield syscall (ZA4.3) reads 49,
 all of them the scheduling point's run queue, selection and switch (ZA4.5);
-its own charge and refusals allocate nothing.  ZA4 measures the other
+its own charge and refusals allocate nothing.  At `v0.36.82` (ZA4.4) a
+notification's waiters are a first-in-first-out queue linked through the TCBs;
+a wait that blocks reads 42 (55 before) and a signal to a waiter 44 (58), the
+rest the scheduling point's and the badge message's.  At `v0.36.82` (ZA4.5
+part 1) the run queue is linked lists written in place and the scheduling point
+builds nothing: yield reads 0, a wait that blocks 40 and a signal to a waiter
+37.  At `v0.36.82` (ZA4.5 part 2) the links are TCB fields and each core keeps
+only the queue's ends; the abstract queue is an erased ghost proven to agree
+with the links on every reachable state (`runQueueRefined`, a conjunct of
+`ipcReachable`).  Yield stays 0, a signal to a waiter reads 33 and a call 184.
+The single-core reference scheduler operations are proof-only from then on: run
+code, suites included, uses the per-core forms.  ZA4 measures the other
 syscalls and entries.  Plan:
 [`docs/planning/ZERO_ALLOCATION_SYSCALL_PLAN.md`](../planning/ZERO_ALLOCATION_SYSCALL_PLAN.md)
 (phases ZA1–ZA4).
@@ -131,7 +142,12 @@ No state value is used after a later state is built from it (an arm checks
 every failure before its first write); a function on the path returns the
 state, a scalar or nothing; a comparison builds no value to compare against;
 a faster implementation is an `@[csimp]` replacement proven equal to the
-specification function it replaces.
+specification function it replaces.  A notification's waiters are reached
+through `Notification.waitHead` and each waiter's `TCB.ntfnNext`, never a list
+in the notification; a thread blocked on a notification is linked by its own
+`ntfnPrev`/`ntfnNext` and is reached from that notification's head
+(`notificationQueueReaches`), so a step that blocks or unblocks a waiter keeps
+it linked into, or out of, exactly one queue.
 
 ### WS-CB Hierarchical constant-bandwidth servers — PLANNED (registered v0.34.49; opens after WS-CV)
 
@@ -3781,7 +3797,7 @@ code may assume:
   — `witnessSt1`–`witnessSt4`, `chainWitnessSt1`, `chainWitnessSt2`,
   `donationChainWitness`; **5 in 5 across 4** after `v0.35.74` moved the two
   queue sweeps — `removeFromAllEndpointQueues`,
-  `removeFromAllNotificationWaitLists` — onto the witnessed lookup around
+  `removeFromNotificationWaitQueue` — onto the witnessed lookup around
   `rewriteObject`, and those five are the primitives that should be raw:
   `storeObject`, `rewriteObject`, `Builder.createObject`, `updateObjectAt`
   and the frozen store, so the executable population outside them is

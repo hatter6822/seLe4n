@@ -11,6 +11,7 @@ import SeLe4n.Kernel.IPC.Invariant
 import SeLe4n.Kernel.IPC.Invariant.PerCoreBundle
 import SeLe4n.Kernel.Scheduler.Operations.Selection
 import SeLe4n.Kernel.IPC.CrossCore.EndpointCall
+import SeLe4n.Kernel.IPC.Invariant.DonationPreservation
 
 /-!
 # WS-SM SM6.D.2 — Per-operation preservation of the per-core IPC bundle
@@ -112,6 +113,16 @@ theorem trans {st st' st'' : SystemState} {c : CoreId}
     obtain ⟨tcb', h', hU', hQ', hC', hIpc'⟩ := h2.pullback tid tcb'' h hU hQ hC hNA
     obtain ⟨tcb, hh, hUU, hQQ, hCC, hIpc⟩ := h1.pullback tid tcb' h' hU' hQ' hC' (hIpc' ▸ hNA)
     exact ⟨tcb, hh, hUU, hQQ, hCC, hIpc.trans hIpc'⟩⟩
+
+/-- WS-ZA ZA4.4: a rewrite of notification-queue links frames every core's
+slice: the scheduler is untouched and every TCB keeps its binding and IPC state. -/
+theorem of_ntfnLinksRewritten {st st' : SystemState} {c : CoreId}
+    (h : ntfnLinksRewritten st st') : passiveServerIdleFrameOnCore st st' c := by
+  refine ⟨fun tid tcb' hT hU hQ hC _ => ?_⟩
+  rw [h.scheduler_eq] at hQ hC
+  have hT' := (SystemState.getTcb?_eq_some_iff _ tid tcb').mp hT
+  ntfn_links_back h at tcb' hT'
+  exact ⟨tcb', (SystemState.getTcb?_eq_some_iff _ tid tcb').mpr hT', hU, hQ, hC, rfl⟩
 
 end passiveServerIdleFrameOnCore
 
@@ -313,7 +324,11 @@ theorem ensureRunnable_currentOnCore (st : SystemState) (tid0 : SeLe4n.ThreadId)
   unfold ensureRunnable
   split
   · rfl
-  · split <;> simp
+  · split
+    · split
+      · simp
+      · rfl
+    · rfl
 
 /-- SM6.D.2: `ensureRunnable` only *adds* to `bootCoreId`'s run queue —
 every pre-state member of any core's queue remains a member. -/
@@ -324,13 +339,16 @@ theorem ensureRunnable_mem_old_onCore (st : SystemState) (tid0 x : SeLe4n.Thread
   split
   · exact hMem
   · split
-    · by_cases hc : bootCoreId = c
-      · subst hc
-        simp only [SchedulerState.markReschedulePendingOnCore_runQueueOnCore, SchedulerState.setRunQueueOnCore_runQueueOnCore_self]
-        rw [RunQueue.mem_insert]
-        exact Or.inl hMem
-      · rw [SchedulerState.markReschedulePendingOnCore_runQueueOnCore, SchedulerState.setRunQueueOnCore_runQueueOnCore_ne _ _ _ _ hc]
-        exact hMem
+    · split
+      · by_cases hc : bootCoreId = c
+        · subst hc
+          rw [SchedulerState.markReschedulePendingOnCore_runQueueOnCore,
+            SystemState.runEnqueueAdmitted_runQueueOnCore_self, RunQueue.mem_insert]
+          exact Or.inl hMem
+        · rw [SchedulerState.markReschedulePendingOnCore_runQueueOnCore,
+            SystemState.runEnqueueAdmitted_runQueueOnCore_ne _ _ _ _ _ hc]
+          exact hMem
+      · exact hMem
     · exact hMem
 
 /-- SM6.D.2 micro-frame: `ensureRunnable` frames every core's slice — it
@@ -341,7 +359,9 @@ theorem ensureRunnable_passiveServerIdleFrameOnCore
     (st : SystemState) (tid0 : SeLe4n.ThreadId) {c : CoreId} :
     passiveServerIdleFrameOnCore st (ensureRunnable st tid0) c := by
   refine ⟨fun tid tcb' hTcb' hUnbound' hNotInQ' hNotCurrent' _ => ?_⟩
-  rw [getTcb?_congr_objects (ensureRunnable_preserves_objects st tid0) tid] at hTcb'
+  have hRaw := (SystemState.getTcb?_eq_some_iff _ tid tcb').mp hTcb'
+  run_links_back ensureRunnable_objectsAgreeOffRunLinks st tid0 at tcb' hRaw
+  replace hTcb' := (SystemState.getTcb?_eq_some_iff _ tid tcb').mpr hRaw
   refine ⟨tcb', hTcb', hUnbound', ?_, ?_, rfl⟩
   · exact fun hIn => hNotInQ' (ensureRunnable_mem_old_onCore st tid0 tid c hIn)
   · rwa [ensureRunnable_currentOnCore st tid0 c] at hNotCurrent'
@@ -372,7 +392,9 @@ theorem removeRunnable_passiveServerIdleFrameOnCore
       tcb.schedContextBinding ≠ .unbound ∨ passiveServerIdleAllowed tcb.ipcState) :
     passiveServerIdleFrameOnCore st (removeRunnable st removed) c := by
   refine ⟨fun tid tcb' hTcb' hUnbound' hNotInQ' hNotCurrent' hNA => ?_⟩
-  rw [getTcb?_congr_objects (removeRunnable_preserves_objects st removed) tid] at hTcb'
+  rw [SystemState.getTcb?_eq_some_iff] at hTcb'
+  run_links_back (removeRunnable_objectsAgreeOffRunLinks st removed) at tcb' hTcb'
+  rw [← SystemState.getTcb?_eq_some_iff] at hTcb'
   by_cases hEq : tid = removed
   · subst hEq
     rcases hRemoved tcb' hTcb' with hB | hA
@@ -589,9 +611,8 @@ theorem notificationSignal_passiveServerIdleFrameOnCore
   simp only [notificationSignal, SystemState.getObject?] at hStep
   split at hStep
   · rename_i ntfn hObj
-    cases hWaiters : ntfn.waitingThreads.tail? with
-    | some headTail =>
-      obtain ⟨waiter, rest⟩ := headTail
+    cases hWaiters : ntfn.waitHead with
+    | some waiter =>
       simp only [hWaiters] at hStep
       split at hStep
       next => contradiction
@@ -606,7 +627,9 @@ theorem notificationSignal_passiveServerIdleFrameOnCore
           obtain ⟨_, rfl⟩ := hStep
           exact (hF1.trans (storeTcbIpcStateAndMessage_passiveServerIdleFrameOnCore st1 st2 waiter .ready _
             (Or.inl (Or.inl rfl)) hObjInv1 hSM)).trans
-            (ensureRunnable_passiveServerIdleFrameOnCore st2 waiter)
+            ((passiveServerIdleFrameOnCore.of_ntfnLinksRewritten (detachNtfnHead_linksRewritten _ _ _
+              (storeTcbIpcStateAndMessage_preserves_objects_invExt _ _ _ _ _ hObjInv1 hSM))).trans
+              (ensureRunnable_passiveServerIdleFrameOnCore _ waiter))
     | none =>
       simp only [hWaiters] at hStep
       split at hStep
@@ -621,13 +644,13 @@ open SeLe4n.Model.SystemState in
 branch wakes the waiter `.ready`; the block branch sets it
 `.blockedOnNotification` and deschedules it — both allowed passive
 states. -/
-theorem notificationWait_passiveServerIdleFrameOnCore
+theorem notificationWaitPark_passiveServerIdleFrameOnCore
     (st st' : SystemState) (notificationId : SeLe4n.ObjId) (waiter : SeLe4n.ThreadId)
     (badge : Option SeLe4n.Badge) (c : CoreId)
     (hObjInv : st.objects.invExt)
-    (hStep : notificationWait notificationId waiter st = .ok (badge, st')) :
+    (hStep : notificationWaitPark notificationId waiter st = .ok (badge, st')) :
     passiveServerIdleFrameOnCore st st' c := by
-  simp only [notificationWait, SystemState.getObject?] at hStep
+  simp only [notificationWaitPark, SystemState.getObject?] at hStep
   split at hStep
   · rename_i ntfn hObj
     split at hStep
@@ -650,39 +673,64 @@ theorem notificationWait_passiveServerIdleFrameOnCore
         split at hStep
         · contradiction
         · split at hStep
-          · contradiction
-          · split at hStep
+          next => contradiction
+          next st1 hSO =>
+            have hF1 := storeObject_oldNonTcb_passiveServerIdleFrameOnCore (c := c)
+              st st1 notificationId (.notification _) (fun _ => by simp) hObjInv hSO
+            have hObjInv1 := storeObject_preserves_objects_invExt st st1 notificationId _ hObjInv hSO
+            have hWaiterObj := lookupTcb_some_objects st waiter waiterTcb hLookup
+            have hNeWN : waiter.toObjId ≠ notificationId := by
+              intro h; rw [h, hObj] at hWaiterObj; simp at hWaiterObj
+            have hOrig1 := (storeObject_objects_ne st st1 notificationId waiter.toObjId _
+              hNeWN hObjInv hSO).trans hWaiterObj
+            have hLk1 : lookupTcb st1 waiter = some waiterTcb := by
+              rw [lookupTcb]; rw [lookupTcb] at hLookup
+              by_cases hRes : waiter.isReserved
+              · rw [if_pos hRes] at hLookup; simp at hLookup
+              · rw [if_neg hRes]
+                exact (SystemState.getTcb?_eq_some_iff _ _ _).mpr hOrig1
+            split at hStep
             next => contradiction
-            next st1 hSO =>
-              have hF1 := storeObject_oldNonTcb_passiveServerIdleFrameOnCore (c := c)
-                st st1 notificationId (.notification _) (fun _ => by simp) hObjInv hSO
-              have hObjInv1 := storeObject_preserves_objects_invExt st st1 notificationId _ hObjInv hSO
-              have hWaiterObj := lookupTcb_some_objects st waiter waiterTcb hLookup
-              have hNeWN : waiter.toObjId ≠ notificationId := by
-                intro h; rw [h, hObj] at hWaiterObj; simp at hWaiterObj
-              have hOrig1 := (storeObject_objects_ne st st1 notificationId waiter.toObjId _
-                hNeWN hObjInv hSO).trans hWaiterObj
-              have hLk1 : lookupTcb st1 waiter = some waiterTcb := by
-                rw [lookupTcb]; rw [lookupTcb] at hLookup
-                by_cases hRes : waiter.isReserved
-                · rw [if_pos hRes] at hLookup; simp at hLookup
-                · rw [if_neg hRes]
-                  exact (SystemState.getTcb?_eq_some_iff _ _ _).mpr hOrig1
-              split at hStep
-              next => contradiction
-              next st2 hSI =>
-                simp only [Except.ok.injEq, Prod.mk.injEq] at hStep
-                obtain ⟨_, rfl⟩ := hStep
-                rw [storeTcbIpcStateAndMessage_fromTcb_eq hLk1] at hSI
-                refine (hF1.trans (storeTcbIpcStateAndMessage_passiveServerIdleFrameOnCore st1 st2 waiter
-                    (.blockedOnNotification notificationId) none
-                    (Or.inl (Or.inr (Or.inl ⟨notificationId, Or.inr rfl⟩))) hObjInv1 hSI)).trans
-                  (removeRunnable_passiveServerIdleFrameOnCore st2 waiter (fun tcb hTcb => Or.inr ?_))
-                rw [storeTcbIpcStateAndMessage_ipcState_eq st1 st2 waiter _ _ hObjInv1 hSI tcb
-                  ((getTcb?_eq_some_iff st2 waiter tcb).mp hTcb)]
-                exact Or.inr (Or.inl ⟨notificationId, Or.inr rfl⟩)
+            next st2 hSI =>
+              simp only [Except.ok.injEq, Prod.mk.injEq] at hStep
+              obtain ⟨_, rfl⟩ := hStep
+              rw [storeTcbIpcStateAndMessage_fromTcb_eq hLk1] at hSI
+              refine (hF1.trans (storeTcbIpcStateAndMessage_passiveServerIdleFrameOnCore st1 st2 waiter
+                  (.blockedOnNotification notificationId) none
+                  (Or.inl (Or.inr (Or.inl ⟨notificationId, Or.inr rfl⟩))) hObjInv1 hSI)).trans
+                (removeRunnable_passiveServerIdleFrameOnCore st2 waiter (fun tcb hTcb => Or.inr ?_))
+              rw [storeTcbIpcStateAndMessage_ipcState_eq st1 st2 waiter _ _ hObjInv1 hSI tcb
+                ((getTcb?_eq_some_iff st2 waiter tcb).mp hTcb)]
+              exact Or.inr (Or.inl ⟨notificationId, Or.inr rfl⟩)
   · contradiction
   · contradiction
+
+/-- WS-ZA ZA4.4: the link-in rewrites queue links only, so it frames every
+core's slice. -/
+theorem linkNtfnWaiter_passiveServerIdleFrameOnCore
+    {st st' : SystemState} {waiter : SeLe4n.ThreadId} {tail : Option SeLe4n.ThreadId}
+    {c : CoreId} (hObjInv : st.objects.invExt)
+    (h : linkNtfnWaiter st waiter tail = .ok st') :
+    passiveServerIdleFrameOnCore st st' c := by
+  refine passiveServerIdleFrameOnCore_of_backward (fun tid tcb' hTcb' => ?_)
+    (linkNtfnWaiter_scheduler_eq h)
+  obtain ⟨ty, hy, np, nn, rfl⟩ := linkNtfnWaiter_tcb_backward hObjInv h tid.toObjId tcb'
+    ((SystemState.getTcb?_eq_some_iff st' tid _).mp hTcb')
+  exact ⟨ty, (SystemState.getTcb?_eq_some_iff st tid ty).mpr hy, rfl, rfl⟩
+
+/-- SM6.D.2: `notificationWait` frames every core's slice: the park does,
+and so does the link-in. -/
+theorem notificationWait_passiveServerIdleFrameOnCore
+    (st st' : SystemState) (notificationId : SeLe4n.ObjId) (waiter : SeLe4n.ThreadId)
+    (badge : Option SeLe4n.Badge) (c : CoreId)
+    (hObjInv : st.objects.invExt)
+    (hStep : notificationWait notificationId waiter st = .ok (badge, st')) :
+    passiveServerIdleFrameOnCore st st' c := by
+  rcases notificationWait_ok_cases hStep with ⟨b, _, hP⟩ | ⟨_, stP, hP, hL⟩
+  · exact notificationWaitPark_passiveServerIdleFrameOnCore st st' _ _ _ c hObjInv hP
+  · exact (notificationWaitPark_passiveServerIdleFrameOnCore st stP _ _ _ c hObjInv hP).trans
+      (linkNtfnWaiter_passiveServerIdleFrameOnCore
+        (notificationWaitPark_preserves_objects_invExt hObjInv hP) hL)
 
 open SeLe4n.Model.SystemState in
 /-- SM6.D.2: `endpointSendDual` frames every core's slice. Rendezvous:
@@ -828,7 +876,7 @@ theorem endpointReceiveDual_passiveServerIdleFrameOnCore
                 storeTcbIpcStateAndMessage_preserves_objects_invExt pair.2.2 st2 pair.1 _ none hObjInvPop hMsg
               have hF2 := hF1.trans (storeTcbIpcStateAndMessage_passiveServerIdleFrameOnCore pair.2.2 st2 pair.1
                 .ready none (Or.inl (Or.inl rfl)) hObjInvPop hMsg)
-              have hObjInvEns : (ensureRunnable st2 pair.1).objects.invExt := by rwa [ensureRunnable_preserves_objects]
+              have hObjInvEns : (ensureRunnable st2 pair.1).objects.invExt := ensureRunnable_objects_invExt _ _ (by assumption)
               have hF3 := hF2.trans (ensureRunnable_passiveServerIdleFrameOnCore st2 pair.1)
               revert hStep
               cases hPend : storeTcbIpcStateAndMessage (ensureRunnable st2 pair.1) receiver .ready _ with
@@ -944,7 +992,7 @@ theorem endpointCall_passiveServerIdleFrameOnCore
             have hObjInv2 := storeTcbIpcStateAndMessage_preserves_objects_invExt pair.2.2 st2 pair.1 _ _ hObjInv1 hMsg
             have hF2 := storeTcbIpcStateAndMessage_passiveServerIdleFrameOnCore (c := c) pair.2.2 st2 pair.1 .ready (some msg)
               (Or.inl (Or.inl rfl)) hObjInv1 hMsg
-            have hObjInvEns : (ensureRunnable st2 pair.1).objects.invExt := by rwa [ensureRunnable_preserves_objects]
+            have hObjInvEns : (ensureRunnable st2 pair.1).objects.invExt := ensureRunnable_objects_invExt _ _ (by assumption)
             have hF3 := ensureRunnable_passiveServerIdleFrameOnCore (c := c) st2 pair.1
             cases hIpc : storeTcbIpcStateAndMessage (ensureRunnable st2 pair.1) caller (.blockedOnReply endpointId (some pair.1)) none with
             | error e => simp [hIpc] at hStep
@@ -1034,13 +1082,13 @@ theorem endpointReplyRecv_passiveServerIdleFrameOnCore
             have hObjInvR := storeTcbIpcStateAndMessage_preserves_objects_invExt st stReplied replyTarget _ _ hObjInv hMsg
             have hF1 := (storeTcbIpcStateAndMessage_passiveServerIdleFrameOnCore (c := c) st stReplied replyTarget .ready (some msg)
               (Or.inl (Or.inl rfl)) hObjInv hMsg).trans (ensureRunnable_passiveServerIdleFrameOnCore stReplied replyTarget)
-            have hObjInvE : (ensureRunnable stReplied replyTarget).objects.invExt := by rwa [ensureRunnable_preserves_objects]
+            have hObjInvE : (ensureRunnable stReplied replyTarget).objects.invExt := ensureRunnable_objects_invExt _ _ (by assumption)
             have hReceiverReadyE : ∀ (t : TCB),
                 (ensureRunnable stReplied replyTarget).getTcb? receiver = some t →
                 t.ipcState = .ready := by
               intro t hT
               have hTRaw := (getTcb?_eq_some_iff _ receiver t).mp hT
-              rw [ensureRunnable_preserves_objects] at hTRaw
+              run_links_back (ensureRunnable_objectsAgreeOffRunLinks _ _) at t hTRaw
               by_cases hRT : receiver = replyTarget
               · exact storeTcbIpcStateAndMessage_ipcState_eq st stReplied replyTarget .ready (some msg)
                   hObjInv hMsg t (hRT ▸ hTRaw)
@@ -1130,7 +1178,7 @@ theorem endpointReply_passiveServerIdleFrameOnCore
                 (Or.inl (Or.inl rfl)) hObjInv hMsg).trans
                 (ensureRunnable_passiveServerIdleFrameOnCore st'' target)
             have hObjInvMid : (ensureRunnable st'' target).objects.invExt := by
-              rw [ensureRunnable_preserves_objects]
+              apply ensureRunnable_objects_invExt
               exact storeTcbIpcStateAndMessage_preserves_objects_invExt st st'' target .ready (some msg) hObjInv hMsg
             cases hRO : tcb.replyObject with
             | none =>
@@ -1426,44 +1474,22 @@ theorem endpointReplyRecv_preserves_ipcInvariantFull_perCore
 -- whole-bundle closures for the cross-core notification/reply/receive
 -- transitions.
 
-/-- SM6.D.2 micro-frame (cross-core): `enqueueRunnableOnCore` only *adds* `tid`
-to core `c`'s run queue — it never removes any thread from any core's queue.
-So every pre-state run-queue member is preserved. -/
-theorem enqueueRunnableOnCore_mem_old (st : SystemState) (c c' : CoreId)
-    (tid x : SeLe4n.ThreadId)
-    (hMem : x ∈ st.scheduler.runQueueOnCore c') :
-    x ∈ (enqueueRunnableOnCore st c tid).scheduler.runQueueOnCore c' := by
-  cases hTcb : st.getTcb? tid with
-  | none => simp only [enqueueRunnableOnCore, SystemState.getTcbWitnessed?_eq_none hTcb]; exact hMem
-  | some tcb =>
-    simp only [enqueueRunnableOnCore, SystemState.getTcbWitnessed?_eq_some hTcb]
-    split
-    · exact hMem
-    · by_cases hcc : c' = c
-      · subst hcc
-        simp only [SchedulerState.markReschedulePendingOnCore_runQueueOnCore,
-          SchedulerState.setRunQueueOnCore_runQueueOnCore_self]
-        exact (RunQueue.mem_insert _ _ _ _).mpr (Or.inl hMem)
-      · rw [SchedulerState.markReschedulePendingOnCore_runQueueOnCore,
-          SchedulerState.setRunQueueOnCore_runQueueOnCore_ne st.scheduler c c' _ (Ne.symm hcc)]
-        exact hMem
-
 open SeLe4n.Model.SystemState in
 /-- SM6.D.2 micro-frame (cross-core): `wakeThread` of an already-`.ready`
-thread frames every core's slice — the object map is element-wise
-unchanged, every core's `current` is untouched, and the wake only *adds*
-the woken thread to its home core's run queue. -/
+thread frames every core's slice — the object map agrees off TCB
+run-queue fields, every core's `current` is untouched, and the wake only
+*adds* the woken thread to its home core's run queue. -/
 theorem wakeThread_passiveServerIdleFrameOnCore_of_ready
     (st : SystemState) (wtid : SeLe4n.ThreadId) (ec : CoreId) (wtcb : TCB) {c : CoreId}
     (hWGet : st.getTcb? wtid = some wtcb) (hWReady : wtcb.ipcState = .ready)
     (hObjInv : st.objects.invExt) :
     passiveServerIdleFrameOnCore st (wakeThread st wtid ec).1 c := by
   refine ⟨fun tid tcb' hTcb' hUnbound' hNotInQ' hNotCurrent' _ => ?_⟩
-  have hGetEq : (wakeThread st wtid ec).1.getTcb? tid = st.getTcb? tid := by
-    unfold SystemState.getTcb?
-    rw [wakeThread_objects_getElem_eq_of_ready st wtid ec wtcb hWGet hWReady hObjInv tid.toObjId]
-  rw [hGetEq] at hTcb'
-  refine ⟨tcb', hTcb', hUnbound', ?_, ?_, rfl⟩
+  obtain ⟨t, hT, e⟩ := (wakeThread_objectsAgreeOffRunLinks_of_ready st wtid ec wtcb hWGet hWReady
+    hObjInv).get_tcb' ((SystemState.getTcb?_eq_some_iff _ _ _).mp hTcb')
+  refine ⟨t, (SystemState.getTcb?_eq_some_iff _ _ _).mpr hT,
+    (TCB.proj_eq_of_withoutRunLinks_eq TCB.schedContextBinding e).symm.trans hUnbound', ?_, ?_,
+    (TCB.proj_eq_of_withoutRunLinks_eq TCB.ipcState e).symm⟩
   · intro hIn
     exact hNotInQ' (enqueueRunnableOnCore_mem_old st (determineTargetCore st wtid) c wtid tid hIn)
   · rwa [show (wakeThread st wtid ec).1 = enqueueRunnableOnCore st (determineTargetCore st wtid) wtid from rfl,
@@ -1481,7 +1507,7 @@ theorem removeRunnableOnCore_passiveServerIdleFrame
       tcb.schedContextBinding ≠ .unbound ∨ passiveServerIdleAllowed tcb.ipcState) :
     passiveServerIdleFrame st (removeRunnableOnCore st removed c) := by
   refine ⟨fun tid tcb' hTcb' hUnbound' hNotInQ' hNotCurrent' hNA => ?_⟩
-  rw [removeRunnableOnCore_preserves_objects st removed c] at hTcb'
+  run_links_back (removeRunnableOnCore_objectsAgreeOffRunLinks st removed c) at tcb' hTcb'
   by_cases hEq : tid = removed
   · subst hEq
     rcases hRemoved tcb' hTcb' with hB | hA
@@ -1529,7 +1555,9 @@ theorem removeRunnableOnCore_passiveServerIdleFrameOnCore
       tcb.schedContextBinding ≠ .unbound ∨ passiveServerIdleAllowed tcb.ipcState) :
     passiveServerIdleFrameOnCore st (removeRunnableOnCore st removed oc) c := by
   refine ⟨fun tid tcb' hTcb' hUnbound' hNotInQ' hNotCurrent' hNA => ?_⟩
-  rw [getTcb?_congr_objects (removeRunnableOnCore_preserves_objects st removed oc) tid] at hTcb'
+  rw [SystemState.getTcb?_eq_some_iff] at hTcb'
+  run_links_back (removeRunnableOnCore_objectsAgreeOffRunLinks st removed oc) at tcb' hTcb'
+  rw [← SystemState.getTcb?_eq_some_iff] at hTcb'
   by_cases hEq : tid = removed
   · subst hEq
     rcases hRemoved tcb' hTcb' with hB | hA

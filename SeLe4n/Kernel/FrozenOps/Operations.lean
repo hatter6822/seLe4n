@@ -277,7 +277,7 @@ private def frozenBoundDeliveryTarget? (st : FrozenSystemState)
     (notificationId : SeLe4n.ObjId) : Option (SeLe4n.ThreadId × SeLe4n.ObjId) :=
   match st.getNotification? notificationId with
   | some ntfn =>
-      if ntfn.waitingThreads.val.isEmpty then
+      if ntfn.waitHeadCode = 0 then
         match ntfn.boundTCB with
         | some t =>
             match frozenLookupTcb st t with
@@ -289,6 +289,20 @@ private def frozenBoundDeliveryTarget? (st : FrozenSystemState)
         | none => none
       else none
   | _ => none
+
+/-- WS-ZA ZA4.4: the frozen mirror of `modifyTcbOpt` — a TCB field write at an
+optional thread; no thread, no write. -/
+def frozenModifyTcbOpt (st : FrozenSystemState) (target? : Option SeLe4n.ThreadId)
+    (f : TCB → TCB) : Except KernelError FrozenSystemState :=
+  match target? with
+  | none => .ok st
+  | some t =>
+      match frozenLookupTcb st t with
+      | none => .error .objectNotFound
+      | some tcb =>
+          match frozenStoreTcb t (f tcb) st with
+          | .error e => .error e
+          | .ok ((), st') => .ok st'
 
 /-- Q7-C2: Frozen notification signal — wake waiter or accumulate badge.
 Mirrors `notificationSignal` using frozen state lookups and mutations.
@@ -375,13 +389,14 @@ def frozenNotificationSignal (notificationId : SeLe4n.ObjId)
                         -- `signalBypassedNotification`'s live classification.
                         .ok ((), frozenTaintFlow st3 boundTid.toObjId signaller.toObjId)
         | none =>
-        -- WS-RC R4.C: pop via `NoDupList.tail?`.
-        match ntfn.waitingThreads.tail? with
-        | some (waiter, rest) =>
-            let nextState : NotificationState := if rest.val.isEmpty then .idle else .waiting
-            let ntfn' : Notification := {
-              state := nextState, waitingThreads := rest, hasPendingBadge := false, pendingWord := SeLe4n.Badge.zero,
-              boundTCB := ntfn.boundTCB }
+        -- WS-ZA ZA4.4: wake the head; its successor heads the queue (the live
+        -- `notificationSignal`).
+        match ntfn.waitHead with
+        | some waiter =>
+            let next := match frozenLookupTcb st waiter with
+              | some t => t.ntfnNext
+              | none => none
+            let ntfn' : Notification := ntfn.withHeadPopped next
             match frozenWithObjectStored st notificationId (.notification ntfn') with
             | .ok st' =>
                 -- **The badge is delivered, not just dropped.**  This branch
@@ -397,11 +412,19 @@ def frozenNotificationSignal (notificationId : SeLe4n.ObjId)
                 match frozenLookupTcb st' waiter with
                 | none => .error .objectNotFound
                 | some waiterTcb =>
-                  match frozenStoreTcb waiter
+                  -- WS-ZA ZA4.4: the woken waiter leaves the queue holding no
+                  -- links, and its successor heads it with no predecessor
+                  -- (the live `detachNtfnHead`).
+                  match (frozenStoreTcb waiter
                       { waiterTcb with
                         ipcState := .ready,
                         pendingMessage :=
-                          some { IpcMessage.empty with badge := some badge } } st' with
+                          some { IpcMessage.empty with badge := some badge },
+                        ntfnPrevCode := SeLe4n.ThreadId.optCode none,
+                        ntfnNextCode := SeLe4n.ThreadId.optCode none } st').bind
+                      (fun r => (frozenModifyTcbOpt r.2 next
+                        (fun t => { t with ntfnPrevCode := SeLe4n.ThreadId.optCode none })).map
+                        (fun s => ((), s))) with
                   | .error e => .error e
                   | .ok ((), st'') =>
                     -- PR #873 round 15: the woken waiter re-enters the run queue,
@@ -422,7 +445,7 @@ def frozenNotificationSignal (notificationId : SeLe4n.ObjId)
               | some existing => SeLe4n.Badge.bor existing badge
               | none => SeLe4n.Badge.ofNatMasked badge.toNat
             let ntfn' : Notification := {
-              state := .active, waitingThreads := SeLe4n.NoDupList.empty,
+              state := .active, 
               hasPendingBadge := true, pendingWord := mergedBadge, boundTCB := ntfn.boundTCB }
             match frozenWithObjectStored st notificationId (.notification ntfn') with
             | .ok stored =>
@@ -448,7 +471,7 @@ def frozenNotificationWait (notificationId : SeLe4n.ObjId)
         match ntfn.pendingBadge with
         | some badge =>
             let ntfn' : Notification :=
-              { state := .idle, waitingThreads := SeLe4n.NoDupList.empty,
+              { state := .idle, 
                 hasPendingBadge := false, pendingWord := SeLe4n.Badge.zero, boundTCB := ntfn.boundTCB }
             match frozenWithObjectStored st notificationId (.notification ntfn') with
             | .ok st' =>
@@ -479,30 +502,32 @@ def frozenNotificationWait (notificationId : SeLe4n.ObjId)
                 if tcb.ipcState = .blockedOnNotification notificationId then
                   .error .alreadyWaiting
                 else
-                  -- WS-RC R4.C: structural duplicate guard via consWithGuard?
-                  match ntfn.waitingThreads.consWithGuard? waiter with
-                  | none => .error .alreadyWaiting
-                  | some wt' =>
-                      let ntfn' : Notification := {
-                        state := .waiting
-                        waitingThreads := wt'
-                        hasPendingBadge := false, pendingWord := SeLe4n.Badge.zero
-                        boundTCB := ntfn.boundTCB }
-                      match frozenWithObjectStored st notificationId (.notification ntfn') with
-                      | .ok st' =>
-                          -- PR #886 review: clear `pendingMessage` atomically
-                          -- with the block, exactly as the live idle-wait path
-                          -- does since the RR3.5 fix -- storing state alone
-                          -- carried a consumed message into
-                          -- `.blockedOnNotification` on this side only, a
-                          -- live/frozen divergence on the mirror's own
-                          -- `TCB.pendingMessage` content channel.
-                          match (frozenStoreTcbIpcStateAndMessage st' waiter
-                              (.blockedOnNotification notificationId) none).map
-                              (fun stB => frozenRemoveRunnable stB waiter) with
-                          | .error e => .error e
-                          | .ok st'' => .ok (none, st'')
+                  let tail := ntfn.waitTail
+                  let ntfn' : Notification := ntfn.withWaiterAppended waiter
+                  match frozenWithObjectStored st notificationId (.notification ntfn') with
+                  | .ok st' =>
+                      -- PR #886 review: clear `pendingMessage` atomically
+                      -- with the block, exactly as the live idle-wait path
+                      -- does since the RR3.5 fix -- storing state alone
+                      -- carried a consumed message into
+                      -- `.blockedOnNotification` on this side only, a
+                      -- live/frozen divergence on the mirror's own
+                      -- `TCB.pendingMessage` content channel.
+                      --
+                      -- WS-ZA ZA4.4: then linked in behind the old tail.
+                      match ((frozenStoreTcbIpcStateAndMessage st' waiter
+                          (.blockedOnNotification notificationId) none).bind
+                          (fun stB => frozenModifyTcbOpt stB (some waiter)
+                            (fun t => { t with
+                              ntfnPrevCode := SeLe4n.ThreadId.optCode tail,
+                              ntfnNextCode := SeLe4n.ThreadId.optCode none })) |>.bind
+                          (fun stL => frozenModifyTcbOpt stL tail
+                            (fun t => { t with
+                              ntfnNextCode := SeLe4n.ThreadId.optCode (some waiter) }))).map
+                          (fun stB => frozenRemoveRunnable stB waiter) with
                       | .error e => .error e
+                      | .ok st'' => .ok (none, st'')
+                  | .error e => .error e
     | some _ => .error .invalidCapability
     | none => .error .objectNotFound
 
@@ -561,7 +586,7 @@ private def frozenQueuePopHead (endpointId : SeLe4n.ObjId) (isReceiveQ : Bool)
               -- Clear queue links on dequeued TCB (U-H01: must also clear queuePPrev
               -- to allow re-enqueue via frozenQueuePushTail, which rejects
               -- threads with queuePPrev.isSome)
-              let headTcb' := { headTcb with queuePrev := none, queueNext := none, queuePPrev := none }
+              let headTcb' := { headTcb with queuePrevCode := 0, queueNextCode := 0, queuePPrevCode := 0 }
               match frozenWithObjectStored st endpointId (.endpoint ep') with
               | .ok st1 =>
                   -- **PR #897 review, swept: THE SUCCESSOR IS PROMOTED.**  The
@@ -606,7 +631,7 @@ private def frozenQueuePopHead (endpointId : SeLe4n.ObjId) (isReceiveQ : Bool)
                       | none => .error .objectNotFound
                       | some nextTcb =>
                           frozenWithObjectStored st1 nextTid.toObjId (.tcb { nextTcb with
-                            queuePrev := none, queuePPrev := some .endpointHead })
+                            queuePrevCode := 0, queuePPrevCode := 1 })
                   match afterSuccessor with
                   | .error e => .error e
                   | .ok st2 =>
@@ -1698,9 +1723,9 @@ def frozenSuspendThread (tid : SeLe4n.ThreadId) : FrozenKernel Unit :=
           ipcState := .ready
           pendingMessage := none
           timeoutBudget := none
-          queuePrev := none
-          queueNext := none
-          queuePPrev := none }
+          queuePrevCode := 0
+          queueNextCode := 0
+          queuePPrevCode := 0 }
         match frozenWithObjectStored st tid.toObjId (.tcb tcb') with
         | .ok stored => .ok ((), frozenRemoveRunnable stored tid)
         | .error e => .error e

@@ -150,21 +150,91 @@ theorem ipcStateQueueMembershipConsistent_of_objects_eq
   | .blockedOnReply _ _ => trivial
   | .blockedOnNotification _ => trivial
 
+/-- WS-ZA ZA4.5: a write that changes nothing but TCB run-queue links keeps
+`ipcStateQueueMembershipConsistent` — it reads IPC states, endpoint queues and
+`queueNext` links, none of them a run-queue field. -/
+theorem ipcStateQueueMembershipConsistent_of_objectsAgreeOffRunLinks {st st' : SystemState}
+    (h : SystemState.objectsAgreeOffRunLinks st' st)
+    (hInv : ipcStateQueueMembershipConsistent st) :
+    ipcStateQueueMembershipConsistent st' := by
+  intro tid tcb hTcb
+  run_links_back h at tcb hTcb
+  have hPre := hInv tid tcb hTcb
+  have reach : ∀ {A : Prop},
+      (A ∨ ∃ (prev : SeLe4n.ThreadId) (prevTcb : TCB),
+        st.objects[prev.toObjId]? = some (.tcb prevTcb) ∧ prevTcb.queueNext = some tid) →
+      (A ∨ ∃ (prev : SeLe4n.ThreadId) (prevTcb : TCB),
+        st'.objects[prev.toObjId]? = some (.tcb prevTcb) ∧ prevTcb.queueNext = some tid) :=
+    fun hReach =>
+    hReach.elim Or.inl (fun ⟨prev, prevTcb, hPrev, hNext⟩ => by
+      run_links_fwd h at prevTcb hPrev
+      exact Or.inr ⟨prev, prevTcb, hPrev, hNext⟩)
+  match hIpc : tcb.ipcState with
+  | .blockedOnSend epId =>
+    simp only [hIpc] at hPre; obtain ⟨ep, hEp, hReach⟩ := hPre
+    exact ⟨ep, h.get_endpoint_iff.mpr hEp, reach hReach⟩
+  | .blockedOnReceive epId =>
+    simp only [hIpc] at hPre; obtain ⟨ep, hEp, hReach⟩ := hPre
+    exact ⟨ep, h.get_endpoint_iff.mpr hEp, reach hReach⟩
+  | .blockedOnCall epId =>
+    simp only [hIpc] at hPre; obtain ⟨ep, hEp, hReach⟩ := hPre
+    exact ⟨ep, h.get_endpoint_iff.mpr hEp, reach hReach⟩
+  | .ready => trivial
+  | .blockedOnReply _ _ => trivial
+  | .blockedOnNotification _ => trivial
+
+/-- WS-ZA ZA4.4: a step that rewrites notification-queue links and nothing else
+keeps `ipcStateQueueMembershipConsistent` -- it reads IPC states, endpoints and
+`queueNext` links, none of which move. -/
+theorem ipcStateQueueMembershipConsistent_of_ntfnLinksRewritten {st s : SystemState}
+    (h : ntfnLinksRewritten st s) (hInv : ipcStateQueueMembershipConsistent st) :
+    ipcStateQueueMembershipConsistent s := by
+  intro tid tcb hTcb
+  obtain ⟨t, ht, ⟨np, nn, rfl⟩⟩ := h.tcb_bwd hTcb
+  have hPre := hInv tid t ht
+  have hEp : ∀ (epId : SeLe4n.ObjId) (ep : Endpoint),
+      st.objects[epId]? = some (.endpoint ep) → s.objects[epId]? = some (.endpoint ep) :=
+    fun epId ep hE => (h.obj_iff epId _ (fun _ => KernelObject.noConfusion)).mpr hE
+  have reach : ∀ {A : Prop},
+      (A ∨ ∃ (prev : SeLe4n.ThreadId) (prevTcb : TCB),
+        st.objects[prev.toObjId]? = some (.tcb prevTcb) ∧ prevTcb.queueNext = some tid) →
+      (A ∨ ∃ (prev : SeLe4n.ThreadId) (prevTcb : TCB),
+        s.objects[prev.toObjId]? = some (.tcb prevTcb) ∧ prevTcb.queueNext = some tid) :=
+    fun hReach =>
+    hReach.elim Or.inl (fun ⟨prev, prevTcb, hPrev, hNext⟩ => by
+      obtain ⟨p', hP', hQ⟩ := h.field_fwd TCB.queueNext (fun _ _ _ => rfl) hPrev
+      exact Or.inr ⟨prev, p', hP', hQ.trans hNext⟩)
+  show match t.ipcState with
+    | .blockedOnSend epId => _ | .blockedOnReceive epId => _ | .blockedOnCall epId => _ | _ => True
+  match hIpc : t.ipcState with
+  | .blockedOnSend epId =>
+    simp only [hIpc] at hPre; obtain ⟨ep, hE, hReach⟩ := hPre
+    exact ⟨ep, hEp _ _ hE, reach hReach⟩
+  | .blockedOnReceive epId =>
+    simp only [hIpc] at hPre; obtain ⟨ep, hE, hReach⟩ := hPre
+    exact ⟨ep, hEp _ _ hE, reach hReach⟩
+  | .blockedOnCall epId =>
+    simp only [hIpc] at hPre; obtain ⟨ep, hE, hReach⟩ := hPre
+    exact ⟨ep, hEp _ _ hE, reach hReach⟩
+  | .ready => trivial
+  | .blockedOnReply _ _ => trivial
+  | .blockedOnNotification _ => trivial
+
 /-- ensureRunnable preserves ipcStateQueueMembershipConsistent. -/
 theorem ensureRunnable_preserves_ipcStateQueueMembershipConsistent
     (st : SystemState) (tid : SeLe4n.ThreadId)
     (hInv : ipcStateQueueMembershipConsistent st) :
     ipcStateQueueMembershipConsistent (ensureRunnable st tid) :=
-  ipcStateQueueMembershipConsistent_of_objects_eq st (ensureRunnable st tid)
-    (fun x => congrArg (·.get? x) (ensureRunnable_preserves_objects st tid)) hInv
+  ipcStateQueueMembershipConsistent_of_objectsAgreeOffRunLinks
+    (ensureRunnable_objectsAgreeOffRunLinks st tid) hInv
 
 /-- removeRunnable preserves ipcStateQueueMembershipConsistent. -/
 theorem removeRunnable_preserves_ipcStateQueueMembershipConsistent
     (st : SystemState) (tid : SeLe4n.ThreadId)
     (hInv : ipcStateQueueMembershipConsistent st) :
     ipcStateQueueMembershipConsistent (removeRunnable st tid) :=
-  ipcStateQueueMembershipConsistent_of_objects_eq st (removeRunnable st tid)
-    (fun x => congrArg (·.get? x) (removeRunnable_preserves_objects st tid)) hInv
+  ipcStateQueueMembershipConsistent_of_objectsAgreeOffRunLinks
+    (removeRunnable_objectsAgreeOffRunLinks st tid) hInv
 
 -- ============================================================================
 -- Section 3: TCB-store primitives
@@ -457,9 +527,8 @@ theorem notificationSignal_preserves_ipcStateQueueMembershipConsistent
     | notification ntfn =>
       simp only [hObj] at hStep
       -- WS-RC R4.C: `notificationSignal` pops via `tail?`.
-      cases hWaiters : ntfn.waitingThreads.tail? with
-      | some headTail =>
-        obtain ⟨waiter, rest⟩ := headTail
+      cases hWaiters : ntfn.waitHead with
+      | some waiter =>
         simp only [hWaiters] at hStep
         generalize hStore1 : storeObject notificationId _ st = r1 at hStep
         cases r1 with
@@ -479,6 +548,9 @@ theorem notificationSignal_preserves_ipcStateQueueMembershipConsistent
             simp only [Except.ok.injEq, Prod.mk.injEq] at hStep
             obtain ⟨_, rfl⟩ := hStep
             exact ensureRunnable_preserves_ipcStateQueueMembershipConsistent _ _ <|
+              ipcStateQueueMembershipConsistent_of_ntfnLinksRewritten
+                (detachNtfnHead_linksRewritten _ _ _
+                  (storeTcbIpcStateAndMessage_preserves_objects_invExt _ _ _ _ _ hObjInv1 hMsg)) <|
               storeTcbIpcStateAndMessage_preserves_ipcStateQueueMembershipConsistent _ _ _ _ _ hInv1 hObjInv1
                 (fun epId => by intro h; cases h) (fun epId => by intro h; cases h)
                 (fun epId => by intro h; cases h) hMsg
@@ -491,14 +563,14 @@ theorem notificationSignal_preserves_ipcStateQueueMembershipConsistent
           hStep
 
 /-- notificationWait preserves ipcStateQueueMembershipConsistent. -/
-theorem notificationWait_preserves_ipcStateQueueMembershipConsistent
+theorem notificationWaitPark_preserves_ipcStateQueueMembershipConsistent
     (st st' : SystemState) (notificationId : SeLe4n.ObjId) (waiter : SeLe4n.ThreadId)
     (result : Option SeLe4n.Badge)
     (hInv : ipcStateQueueMembershipConsistent st)
     (hObjInv : st.objects.invExt)
-    (hStep : notificationWait notificationId waiter st = .ok (result, st')) :
+    (hStep : notificationWaitPark notificationId waiter st = .ok (result, st')) :
     ipcStateQueueMembershipConsistent st' := by
-  unfold notificationWait SystemState.getObject? at hStep
+  unfold notificationWaitPark SystemState.getObject? at hStep
   cases hObj : st.objects[notificationId]? with
   | none => simp [hObj] at hStep
   | some obj => cases obj with
@@ -536,11 +608,7 @@ theorem notificationWait_preserves_ipcStateQueueMembershipConsistent
           simp only [hLookup] at hStep
           split at hStep
           · simp at hStep
-          · -- WS-RC R4.C: case-split on consWithGuard?
-            cases hCons : ntfn.waitingThreads.consWithGuard? waiter with
-            | none => simp [hCons] at hStep
-            | some wt' =>
-            simp only [hCons] at hStep
+          · -- WS-ZA ZA4.4: the park records the waiter as the queue's tail
             generalize hStore1 : storeObject notificationId _ st = r1 at hStep
             cases r1 with
             | error e => simp at hStep
@@ -707,7 +775,7 @@ theorem endpointReply_preserves_ipcStateQueueMembershipConsistent
                       (fun epId => by intro h; cases h) hMsg
                 -- PR #827 #3 fold: peel the atomic consume (no-op when unlinked).
                 have hObjInvMid : (ensureRunnable st1 target).objects.invExt := by
-                  rw [ensureRunnable_preserves_objects]
+                  apply ensureRunnable_objects_invExt
                   have hMsg' := hMsg
                   rw [storeTcbIpcStateAndMessage_fromTcb_eq hLookup] at hMsg'
                   exact storeTcbIpcStateAndMessage_preserves_objects_invExt
@@ -1331,7 +1399,7 @@ theorem storeTcbQueueLinks_stored_queueNext
       have hEq := Except.ok.inj hStep; subst hEq
       exact ⟨tcbWithQueueLinks tcb prev pprev next,
         storeObject_objects_eq' st tid.toObjId _ pair hObjInv hStore,
-        rfl⟩
+        by simp⟩
 
 /-- `storeTcbQueueLinks` sets the target's `queuePrev` to `prev` (mirror of
 `storeTcbQueueLinks_stored_queueNext`). -/
@@ -1354,7 +1422,7 @@ theorem storeTcbQueueLinks_stored_queuePrev
       have hEq := Except.ok.inj hStep; subst hEq
       exact ⟨tcbWithQueueLinks tcb prev pprev next,
         storeObject_objects_eq' st tid.toObjId _ pair hObjInv hStore,
-        rfl⟩
+        by simp⟩
 
 -- ============================================================================
 -- Section 7: Partial V3-J preservation (for rendezvous paths)

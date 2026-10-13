@@ -117,7 +117,8 @@ theorem dispatchIdleOnCore_replenishQueueOnCore (st : SystemState) (c c' : CoreI
     (dispatchIdleOnCore st c).scheduler.replenishQueueOnCore c'
       = st.scheduler.replenishQueueOnCore c' := by
   simp only [dispatchIdleOnCore, SchedulerState.setCurrentOnCore_replenishQueueOnCore,
-    restoreIncomingContextOnCore_scheduler, SchedulerState.setRunQueueOnCore_replenishQueueOnCore]
+    restoreIncomingContextOnCore_scheduler, SchedulerState.setRunQueueOnCore_replenishQueueOnCore,
+    SystemState.runRemoveOnCore_scheduler, SchedulerState.setRunQueueEndsOnCore_replenishQueueOnCore]
 
 /-- WS-SM SM5.I: `idleFallbackOnCore` leaves every core's replenish-queue slot
 unchanged (both arms — idle dispatch and `current = none`). -/
@@ -155,7 +156,8 @@ theorem scheduleEffectiveOnCore_replenishQueueOnCore (st : SystemState) (c : Cor
           rw [← hStep]
           simp only [SchedulerState.clearReschedulePendingOnCore_replenishQueueOnCore,
             SchedulerState.setCurrentOnCore_replenishQueueOnCore,
-            restoreIncomingContextOnCore_scheduler, SchedulerState.setRunQueueOnCore_replenishQueueOnCore]
+            restoreIncomingContextOnCore_scheduler, SchedulerState.setRunQueueOnCore_replenishQueueOnCore,
+    SystemState.runRemoveOnCore_scheduler, SchedulerState.setRunQueueEndsOnCore_replenishQueueOnCore]
           rw [saveOutgoingContextOnCore_scheduler_eq]
         · simp at hStep
 
@@ -250,9 +252,9 @@ theorem timerTickOnCore_preserves_replenishQueueValidOnCore (st : SystemState) (
 run queue). -/
 theorem ensureRunnable_machine (st : SystemState) (tid : SeLe4n.ThreadId) :
     (ensureRunnable st tid).machine = st.machine := by
-  unfold ensureRunnable; split
-  · rfl
-  · split <;> rfl
+  have h := ensureRunnable_onlyObjectsSchedulerDiffer st tid
+  unfold SystemState.onlyObjectsSchedulerDiffer at h
+  rw [h]
 
 /-- WS-SM SM5.I: `saveOutgoingContextOnCore` leaves the machine unchanged (it saves
 the register context *into* the outgoing TCB; it reads `machine.regs` but writes
@@ -354,7 +356,7 @@ theorem timerTickBudgetOnCore_machine (st : SystemState) (c : CoreId) (tid : SeL
   · -- unbound: both time-slice arms are object/scheduler writes
     split at hStep <;>
       · simp only [Except.ok.injEq, Prod.mk.injEq] at hStep
-        obtain ⟨hst, _⟩ := hStep; subst hst; rfl
+        obtain ⟨hst, _⟩ := hStep; subst hst; simp
   all_goals
     -- bound and donated: identical structure (getSchedContext? then the budget `if`)
     split at hStep
@@ -550,7 +552,7 @@ theorem timerTickBudgetOnCore_preserves_replenishmentPipelineOrderOnCore
       split at hStep <;>
         · simp only [Except.ok.injEq, Prod.mk.injEq] at hStep
           obtain ⟨hst, _⟩ := hStep; subst hst
-          exact pipeline_frame_of_queue_timer_eq st _ c' rfl hM hPipe
+          exact pipeline_frame_of_queue_timer_eq st _ c' (by simp) hM hPipe
   | .bound scId =>
       match hSc : st.getSchedContext? scId with
       | some sc =>
@@ -786,8 +788,9 @@ theorem switchDomainOnCore_replenishQueueOnCore (st : SystemState) (c : CoreId)
       simp only [SchedulerState.setDomainScheduleIndexOnCore_replenishQueueOnCore,
         SchedulerState.setDomainTimeRemainingOnCore_replenishQueueOnCore,
         SchedulerState.setActiveDomainOnCore_replenishQueueOnCore,
-        SchedulerState.setCurrentOnCore_replenishQueueOnCore,
-        SchedulerState.setRunQueueOnCore_replenishQueueOnCore]
+        SchedulerState.setCurrentOnCore_replenishQueueOnCore]
+      obtain ⟨E, hE⟩ := requeueOutgoingOnCore_scheduler st c
+      rw [hE]; simp
 
 /-- WS-SM (PR #880 round 4): `switchDomainOnCore` leaves the machine (and so
 the shared clock) unchanged — its only object write is the context save. -/
@@ -802,7 +805,7 @@ theorem switchDomainOnCore_machine (st : SystemState) (c : CoreId)
     split at h
     · simp at h
     · simp only [Except.ok.injEq] at h; subst h
-      exact saveOutgoingContextOnCore_machine st c
+      exact (requeueOutgoingOnCore_machine st c).trans (saveOutgoingContextOnCore_machine st c)
 
 /-- **WS-RR RR7.39 (frame)**: the domain tick never touches any core's replenish
 queue.

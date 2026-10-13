@@ -661,11 +661,65 @@ theorem dispatchWaitCheckedR_eq (ctx : LabelingContext)
 
 /-- WS-ZA ZA4.3: core `c`'s scheduling point as the total function it is
 (`scheduleEffectiveOnCore_ne_error`); the refusal arm is unreachable. -/
-@[inline] def scheduleEffectiveOnCoreTotal (st : SystemState) (c : Concurrency.CoreId) :
+def scheduleEffectiveOnCoreTotal (st : SystemState) (c : Concurrency.CoreId) :
     SystemState :=
   match h : scheduleEffectiveOnCore st c with
   | .ok st' => st'
   | .error e => absurd h (scheduleEffectiveOnCore_ne_error st c e)
+
+theorem scheduleEffectiveOnCoreTotal_eq (st : SystemState) (c : Concurrency.CoreId) :
+    scheduleEffectiveOnCore st c = .ok (scheduleEffectiveOnCoreTotal st c) := by
+  unfold scheduleEffectiveOnCoreTotal
+  split
+  · next st' h => exact h
+  · next e h => exact absurd h (scheduleEffectiveOnCore_ne_error st c e)
+
+/-- WS-ZA ZA4.5: the compiled `scheduleEffectiveOnCoreTotal`.  The state is
+returned as it is, with no `Except` cell around it; the dispatched thread
+leaves the run queue through its TCB links (`runRemoveOnCore`) and becomes current in
+the old current thread's cell (`setCurrentSomeOnCore`).  The two arms that
+return `st` unchanged are the refusals the scheduling point never takes
+(`scheduleEffectiveOnCore_ne_error`).  Proven equal
+(`scheduleEffectiveOnCoreTotal_eq_impl`). -/
+def scheduleEffectiveOnCoreTotalImpl (st : SystemState) (c : Concurrency.CoreId) :
+    SystemState :=
+  match chooseThreadEffectiveOnCoreCode st c with
+  | 0 => (idleFallbackOnCore (saveOutgoingContextOnCore st c) c).clearReschedulePendingOnCore c
+  | k + 1 =>
+      let tid : SeLe4n.ThreadId := ⟨k⟩
+      match st.getTcb? tid with
+      | some tcb =>
+          if tcb.domain = (st.scheduler.activeDomainOnCore c) then
+            let stSaved := saveOutgoingContextOnCore st c
+            let stDequeued := stSaved.runRemoveOnCore c tid
+            let stRestored := restoreIncomingContextOnCore stDequeued c tid
+            { stRestored with scheduler := (stRestored.scheduler.setCurrentSomeOnCore c tid)
+              |>.clearReschedulePendingOnCore c }
+          else st
+      | none => st
+
+@[csimp] theorem scheduleEffectiveOnCoreTotal_eq_impl :
+    @scheduleEffectiveOnCoreTotal = @scheduleEffectiveOnCoreTotalImpl := by
+  funext st c
+  apply Except.ok.inj (ε := KernelError)
+  rw [← scheduleEffectiveOnCoreTotal_eq, scheduleEffectiveOnCore_eq_impl]
+  have hne := scheduleEffectiveOnCore_ne_error st c
+  rw [scheduleEffectiveOnCore_eq_impl] at hne
+  unfold scheduleEffectiveOnCoreImpl at hne ⊢
+  unfold scheduleEffectiveOnCoreTotalImpl
+  generalize chooseThreadEffectiveOnCoreCode st c = k at hne ⊢
+  cases k with
+  | zero => rfl
+  | succ k =>
+    simp only at hne ⊢
+    cases hT : st.getTcb? ⟨k⟩ with
+    | none => rw [hT] at hne; exact absurd rfl (hne _)
+    | some tcb =>
+      rw [hT] at hne
+      simp only at hne ⊢
+      split
+      · simp only [SchedulerState.setCurrentSomeOnCore_eq]
+      · next h => rw [if_neg h] at hne; exact absurd rfl (hne _)
 
 /-- WS-ZA ZA4.3: the yield on core `c`, refusing in the state it was handed
 (`yieldOnCoreR_eq`).  Its refusals are the three lookups before the charge
@@ -690,13 +744,6 @@ consumes the state (D1). -/
           .ok (scheduleEffectiveOnCoreTotal (markKeyChangeFor
             (spendBudgetOnCore st c tid scId sc hSc sc.budgetRemaining.val) tid params) c)
         | none => .error (.missingSchedContext, st)
-
-theorem scheduleEffectiveOnCoreTotal_eq (st : SystemState) (c : Concurrency.CoreId) :
-    scheduleEffectiveOnCore st c = .ok (scheduleEffectiveOnCoreTotal st c) := by
-  unfold scheduleEffectiveOnCoreTotal
-  split
-  · next st' h => exact h
-  · next e h => exact absurd h (scheduleEffectiveOnCore_ne_error st c e)
 
 theorem yieldOnCoreR_eq (st : SystemState) (c : Concurrency.CoreId) :
     yieldOnCoreR st c =

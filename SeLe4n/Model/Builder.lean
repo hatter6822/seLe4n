@@ -8,6 +8,7 @@
 -/
 
 import SeLe4n.Model.IntermediateState
+import SeLe4n.Kernel.Scheduler.RunQueueLinkFrame
 
 /-!
 # Q3-B: Builder Operations — Invariant-Preserving State Construction
@@ -55,7 +56,7 @@ private theorem allTablesInvExtK_objectTypes {st : SystemState}
 
 /-- Extract objectIndexSet invExtK from allTablesInvExtK. -/
 private theorem allTablesInvExtK_objectIndexSet {st : SystemState}
-    (h : st.allTablesInvExtK) : st.objectIndexSet.table.invExtK := h.2.2.2.2.2.2.2.2.2.2.2.2.2.1
+    (h : st.allTablesInvExtK) : st.objectIndexSet.table.invExtK := h.2.2.2.2.2.2.2.2.2.2.2.1
 
 /-- Extract asidTable invExtK from allTablesInvExtK. -/
 private theorem allTablesInvExtK_asidTable {st : SystemState}
@@ -77,23 +78,11 @@ private theorem allTablesInvExtK_cdtChildMap {st : SystemState}
 private theorem allTablesInvExtK_cdtParentMap {st : SystemState}
     (h : st.allTablesInvExtK) : st.cdt.parentMap.invExtK := h.2.2.2.2.2.2.2.1
 
-/-- Y1-F: Extract scheduler.runQueue.byPriority invExtK from allTablesInvExtK. -/
-private theorem allTablesInvExtK_byPriority {st : SystemState}
-    (h : st.allTablesInvExtK) : (st.scheduler.runQueueOnCore bootCoreId).byPriority.invExtK := h.2.2.2.2.2.2.2.2.2.2.2.1
-
-/-- Y1-F: Extract scheduler.runQueue.threadPriority invExtK from allTablesInvExtK. -/
-private theorem allTablesInvExtK_threadPriority {st : SystemState}
-    (h : st.allTablesInvExtK) : (st.scheduler.runQueueOnCore bootCoreId).threadPriority.invExtK := h.2.2.2.2.2.2.2.2.2.2.2.2.1
-
-/-- Y1-F: Extract scheduler.runQueue.membership.table invExtK from allTablesInvExtK. -/
-private theorem allTablesInvExtK_membership {st : SystemState}
-    (h : st.allTablesInvExtK) : (st.scheduler.runQueueOnCore bootCoreId).membership.table.invExtK := h.2.2.2.2.2.2.2.2.2.2.2.2.2.2.1
-
 /-- S-05/PERF-O1: Extract scThreadIndex invExtK from allTablesInvExtK. -/
 private theorem allTablesInvExtK_scThreadIndex {st : SystemState}
-    (h : st.allTablesInvExtK) : st.scThreadIndex.invExtK := h.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2
+    (h : st.allTablesInvExtK) : st.scThreadIndex.invExtK := h.2.2.2.2.2.2.2.2.2.2.2.2
 
--- Y1-G: Completeness note — all 16 conjuncts of `allTablesInvExtK` have named
+-- Y1-G: Completeness note — all 13 conjuncts of `allTablesInvExtK` have named
 -- accessors. The full list (matching the definition order in State.lean;
 -- `v0.35.78` retired the capability-reference table's conjunct, which sat
 -- seventh):
@@ -108,11 +97,10 @@ private theorem allTablesInvExtK_scThreadIndex {st : SystemState}
 --  9. allTablesInvExtK_services       (services)
 -- 10. allTablesInvExtK_interfaceRegistry (interfaceRegistry)
 -- 11. allTablesInvExtK_serviceRegistry (serviceRegistry)
--- 12. allTablesInvExtK_byPriority     (scheduler.runQueue.byPriority)
--- 13. allTablesInvExtK_threadPriority (scheduler.runQueue.threadPriority)
--- 14. allTablesInvExtK_objectIndexSet (objectIndexSet.table)
--- 15. allTablesInvExtK_membership     (scheduler.runQueue.membership.table)
--- 16. allTablesInvExtK_scThreadIndex  (scThreadIndex)
+-- 12. allTablesInvExtK_objectIndexSet (objectIndexSet.table)
+-- 13. allTablesInvExtK_scThreadIndex  (scThreadIndex)
+-- (The run queue's tables are not in the bundle: `RunQueue` carries their
+-- invariants as its own fields, WS-ZA ZA4.5.)
 -- WARNING: Do not use raw tuple projections (.2.2.2...) on allTablesInvExtK.
 -- Use the named accessors above instead. Raw projections are fragile and break
 -- silently when fields are added or reordered.
@@ -160,14 +148,9 @@ def registerService (ist : IntermediateState) (sid : ServiceId)
   hAllTables := by
     have h := ist.hAllTables
     unfold SystemState.allTablesInvExtK at h ⊢
-    exact ⟨h.1, h.2.1, h.2.2.1, h.2.2.2.1, h.2.2.2.2.1,
-           h.2.2.2.2.2.1, h.2.2.2.2.2.2.1,
-           h.2.2.2.2.2.2.2.1, h.2.2.2.2.2.2.2.2.1,
-           h.2.2.2.2.2.2.2.2.2.1,
+    exact ⟨h.1, h.2.1, h.2.2.1, h.2.2.2.1, h.2.2.2.2.1, h.2.2.2.2.2.1, h.2.2.2.2.2.2.1, h.2.2.2.2.2.2.2.1, h.2.2.2.2.2.2.2.2.1, h.2.2.2.2.2.2.2.2.2.1,
            RHTable.insert_preserves_invExtK _ _ _ h.2.2.2.2.2.2.2.2.2.2.1,
-           h.2.2.2.2.2.2.2.2.2.2.2.1, h.2.2.2.2.2.2.2.2.2.2.2.2.1,
-           h.2.2.2.2.2.2.2.2.2.2.2.2.2.1, h.2.2.2.2.2.2.2.2.2.2.2.2.2.2.1,
-           h.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2⟩
+           h.2.2.2.2.2.2.2.2.2.2.2.1, h.2.2.2.2.2.2.2.2.2.2.2.2⟩
   hPerObjectSlots := by
     intro id cn hObj; exact ist.hPerObjectSlots id cn hObj
   hPerObjectMappings := by
@@ -212,13 +195,9 @@ def createObject (ist : IntermediateState)
     refine ⟨RHTable.insert_preserves_invExtK _ _ _ h.1,
            h.2.1, h.2.2.1, h.2.2.2.1, h.2.2.2.2.1,
            RHTable.insert_preserves_invExtK _ _ _ h.2.2.2.2.2.1,
-           h.2.2.2.2.2.2.1, h.2.2.2.2.2.2.2.1,
-           h.2.2.2.2.2.2.2.2.1, h.2.2.2.2.2.2.2.2.2.1,
-           h.2.2.2.2.2.2.2.2.2.2.1, h.2.2.2.2.2.2.2.2.2.2.2.1,
-           h.2.2.2.2.2.2.2.2.2.2.2.2.1,
-           ?_, h.2.2.2.2.2.2.2.2.2.2.2.2.2.2.1,
-           h.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2⟩
-    exact RHSet.insert_preserves_invExtK ist.state.objectIndexSet id h.2.2.2.2.2.2.2.2.2.2.2.2.2.1
+           h.2.2.2.2.2.2.1, h.2.2.2.2.2.2.2.1, h.2.2.2.2.2.2.2.2.1, h.2.2.2.2.2.2.2.2.2.1, h.2.2.2.2.2.2.2.2.2.2.1,
+           ?_, h.2.2.2.2.2.2.2.2.2.2.2.2⟩
+    exact RHSet.insert_preserves_invExtK ist.state.objectIndexSet id h.2.2.2.2.2.2.2.2.2.2.2.1
   hPerObjectSlots := by
     unfold perObjectSlotsInvariant
     intro oid cn hObj
@@ -296,32 +275,26 @@ frozen operations' failure to maintain `byPriority` stayed invisible for so long
 the frozen tests all started from states where the run queue was empty and
 therefore could not show a wake failing to refill it.
 
-The three `allTablesInvExtK` conjuncts that name the run queue are discharged
-from the new `RunQueue`'s own fields, which `RunQueue.insert` maintains by
-construction; the rest of the bundle and the other three obligations do not
-mention the scheduler, so they carry over unchanged. -/
+The thread goes on through the kernel's own enqueue (`runEnqueueOnCore`, WS-ZA
+ZA4.5), so its TCB carries the run-queue links the kernel reads and the queue
+agrees with the threads, as on any state the kernel reaches; a builder that set
+the queue alone produced a state where the kernel saw no runnable thread.  The
+enqueue rewrites run-queue links in TCBs and nothing else, so the CNode,
+VSpaceRoot and lifecycle obligations carry over, and the table invariant needs
+only the object store's. -/
 def markRunnable (ist : IntermediateState) (tid : SeLe4n.ThreadId)
     (prio : SeLe4n.Priority) : IntermediateState where
-  state :=
-    { ist.state with
-        scheduler := ist.state.scheduler.setRunQueueOnCore bootCoreId
-          ((ist.state.scheduler.runQueueOnCore bootCoreId).insert tid prio) }
-  hAllTables := by
-    have h := ist.hAllTables
-    unfold SystemState.allTablesInvExtK at h ⊢
-    simp only [SchedulerState.setRunQueueOnCore_runQueueOnCore_self]
-    exact ⟨h.1, h.2.1, h.2.2.1, h.2.2.2.1, h.2.2.2.2.1, h.2.2.2.2.2.1,
-      h.2.2.2.2.2.2.1, h.2.2.2.2.2.2.2.1,
-      h.2.2.2.2.2.2.2.2.1, h.2.2.2.2.2.2.2.2.2.1,
-      h.2.2.2.2.2.2.2.2.2.2.1,
-      ((ist.state.scheduler.runQueueOnCore bootCoreId).insert tid prio).byPrio_invExtK,
-      ((ist.state.scheduler.runQueueOnCore bootCoreId).insert tid prio).threadPrio_invExtK,
-      h.2.2.2.2.2.2.2.2.2.2.2.2.2.1,
-      ((ist.state.scheduler.runQueueOnCore bootCoreId).insert tid prio).mem_invExtK,
-      h.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2⟩
-  hPerObjectSlots := ist.hPerObjectSlots
-  hPerObjectMappings := ist.hPerObjectMappings
-  hLifecycleConsistent := ist.hLifecycleConsistent
+  state := ist.state.runEnqueueOnCore bootCoreId tid prio
+  hAllTables :=
+    (SystemState.runEnqueueOnCore_onlyObjectsSchedulerDiffer _ _ _ _).allTablesInvExtK
+      (SystemState.runEnqueueOnCore_objects_invExtK _ _ _ _ ist.hAllTables.1) ist.hAllTables
+  hPerObjectSlots := fun id cn h => ist.hPerObjectSlots id cn
+    ((SystemState.runEnqueueOnCore_objectsAgreeOffRunLinks _ _ _ _).get_cnode_iff.mp h)
+  hPerObjectMappings := fun id vs h => ist.hPerObjectMappings id vs
+    ((SystemState.runEnqueueOnCore_objectsAgreeOffRunLinks _ _ _ _).get_vspaceRoot_iff.mp h)
+  hLifecycleConsistent :=
+    (SystemState.runEnqueueOnCore_onlyObjectsSchedulerDiffer _ _ _ _).objectTypeMetadataConsistent
+      (SystemState.runEnqueueOnCore_objectsAgreeOffRunLinks _ _ _ _) ist.hLifecycleConsistent
 
 /-- **Seed an object's declassification provenance.**
 

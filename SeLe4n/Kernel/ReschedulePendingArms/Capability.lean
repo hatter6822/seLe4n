@@ -85,9 +85,9 @@ theorem cspaceDeleteSlot_keyInputsEq (st st' : SystemState) (addr : CSpaceAddr)
 /-- The CDT bookkeeping writes no object and no scheduler state. -/
 theorem ensureCdtNodeForSlot_objects_scheduler (st : SystemState) (ref : SlotRef) :
     (SystemState.ensureCdtNodeForSlot st ref).snd.objects = st.objects ∧
-    (SystemState.ensureCdtNodeForSlot st ref).snd.scheduler = st.scheduler := by
-  unfold SystemState.ensureCdtNodeForSlot
-  split <;> exact ⟨rfl, rfl⟩
+    (SystemState.ensureCdtNodeForSlot st ref).snd.scheduler = st.scheduler :=
+  ⟨SystemState.ensureCdtNodeForSlot_objects_eq st ref,
+   SystemState.ensureCdtNodeForSlot_scheduler_eq st ref⟩
 
 /-- The CDT edge every `WithCdt` form ends with writes no object and no scheduler
 state. -/
@@ -410,25 +410,27 @@ theorem storeObject_tcbKeyKeeping_keyFrame {st st' : SystemState} {tid : SeLe4n.
     {tcb tcb' : TCB} (hObjInv : st.objects.invExt)
     (hPre : st.objects[tid.toObjId]? = some (.tcb tcb))
     (hStore : storeObject tid.toObjId (.tcb tcb') st = .ok ((), st'))
-    (hKey : tcbKeyFields tcb' = tcbKeyFields tcb) : capabilityKeyFrame st st' := by
+    (hKey : tcbKeyFields tcb' = tcbKeyFields tcb)
+    (hRun : tcb'.runCoreCode = tcb.runCoreCode := by rfl) : capabilityKeyFrame st st' := by
   refine ⟨keyInputsEq_storeObject hObjInv hStore ?_, storeObject_scheduler_eq _ _ _ _ hStore,
     storeObject_preserves_objects_invExt _ _ _ _ hObjInv hStore⟩
   rw [hPre]
   simp only [tcbKeyFields, Prod.mk.injEq] at hKey
-  simp only [keyInputsOf, hKey]
+  simp only [keyInputsOf, hKey, hRun]
 
 /-- The raw-insert form of the same rewrite. -/
 theorem insertObjects_tcbKeyKeeping_keyFrame {st : SystemState} {tid : SeLe4n.ThreadId}
     {tcb tcb' : TCB} (hObjInv : st.objects.invExt)
     (hPre : st.objects[tid.toObjId]? = some (.tcb tcb))
-    (hKey : tcbKeyFields tcb' = tcbKeyFields tcb) :
+    (hKey : tcbKeyFields tcb' = tcbKeyFields tcb)
+    (hRun : tcb'.runCoreCode = tcb.runCoreCode := by rfl) :
     capabilityKeyFrame st { st with objects := st.objects.insert tid.toObjId (.tcb tcb') } := by
   refine ⟨fun oid => ?_, rfl, objects_insert_invExt hObjInv _ _⟩
   by_cases h : oid = tid.toObjId
   · subst h
     rw [insertObjects_getElem_self st _ _ hObjInv, hPre]
     simp only [tcbKeyFields, Prod.mk.injEq] at hKey
-    simp only [keyInputsOf, hKey]
+    simp only [keyInputsOf, hKey, hRun]
   · rw [insertObjects_getElem_ne st _ _ _ h hObjInv]
 
 theorem writeReturnFrameToTcb_keyFrame (st : SystemState) (tid : SeLe4n.ThreadId)

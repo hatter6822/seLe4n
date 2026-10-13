@@ -12,6 +12,7 @@
 
 import SeLe4n.Kernel.IPC.Invariant.Structural
 import SeLe4n.Kernel.IPC.Operations.Donation
+import SeLe4n.Kernel.IPC.Invariant.LookupCongruence
 
 /-!
 # WS-RR RR2.5 — the donation primitives preserve the IPC invariant bundle
@@ -1142,6 +1143,29 @@ theorem ipcInvariantFull_of_donationReadAgreement
     hAgree hAcyclic hOwnerValid hPassiveIdle hBudgetTransfer hOwnerUnique
 
 
+/-- A one-TCB rewrite that keeps that TCB's `ipcState` and binding, with the
+scheduler untouched, frames `passiveServerIdle`: the rewritten thread pulls
+back to its pre-image with the same idle obligations, and every other thread
+is untouched. -/
+theorem passiveServerIdleFrame_of_tcbFieldUpdate {st st' : SystemState}
+    (key : SeLe4n.ObjId) (oldTcb newTcb : TCB)
+    (hPre : st.objects[key]? = some (.tcb oldTcb))
+    (hAt : st'.objects[key]? = some (.tcb newTcb))
+    (hFrame : ∀ oid : SeLe4n.ObjId, oid ≠ key → st'.objects[oid]? = st.objects[oid]?)
+    (hIpc : newTcb.ipcState = oldTcb.ipcState)
+    (hBind : newTcb.schedContextBinding = oldTcb.schedContextBinding)
+    (hSched : st'.scheduler = st.scheduler) :
+    passiveServerIdleFrame st st' := by
+  refine ⟨fun tid tcb' hT hU hQ hC _ => ?_⟩
+  rw [hSched] at hQ hC
+  by_cases hK : tid.toObjId = key
+  · rw [hK, hAt] at hT
+    obtain rfl : newTcb = tcb' := by
+      simpa only [Option.some.injEq, KernelObject.tcb.injEq] using hT
+    exact ⟨oldTcb, by rw [hK]; exact hPre, hBind ▸ hU, hQ, hC, hIpc.symm⟩
+  · rw [hFrame _ hK] at hT
+    exact ⟨tcb', hT, hU, hQ, hC, rfl⟩
+
 /-- WS-RR RR2.6: a transition that rewrites **one** TCB, leaving every field any
 conjunct reads intact — the binding included — and leaving every other object
 alone, preserves the whole bundle, given a `passiveServerIdle` frame for whatever
@@ -1224,6 +1248,58 @@ theorem ipcInvariantFull_of_tcbFieldUpdate
     obtain ⟨y2, hy2, _, e2⟩ := hBwd t2.toObjId tcb2 h2
     exact hInv.donationOwnerUnique t1 t2 y1 y2 s1 s2 owner hy1 hy2 (e1 ▸ hB1) (e2 ▸ hB2)
 
+
+/-- WS-ZA ZA4.4: a write of one thread's notification-queue links preserves the
+whole bundle: no conjunct reads those links. -/
+theorem modifyTcb_ntfnLinks_preserves_ipcInvariantFull {st st' : SystemState}
+    {tid : SeLe4n.ThreadId} {f : TCB → TCB} (hf : ∀ t, tcbNtfnLinkRewrite (f t) t)
+    (hInv : ipcInvariantFull st) (hObjInv : st.objects.invExt)
+    (h : modifyTcb st tid f = .ok st') : ipcInvariantFull st' := by
+  obtain ⟨tcb, _, hPre, hAt, hFrame⟩ := modifyTcb_objects hObjInv h
+  obtain ⟨np, nn, hEq⟩ := hf tcb
+  rw [hEq] at hAt
+  exact ipcInvariantFull_of_tcbFieldUpdate st st' tid.toObjId tcb _ hInv hPre hAt hFrame
+    rfl rfl rfl rfl rfl rfl rfl rfl rfl
+    (passiveServerIdleFrame_of_tcbFieldUpdate tid.toObjId tcb _ hPre hAt hFrame rfl rfl
+      (modifyTcb_scheduler_eq h))
+
+/-- WS-ZA ZA4.4: so does the link-in of a parked waiter. -/
+theorem linkNtfnWaiter_preserves_ipcInvariantFull {st st' : SystemState}
+    {waiter : SeLe4n.ThreadId} {tail : Option SeLe4n.ThreadId}
+    (hInv : ipcInvariantFull st) (hObjInv : st.objects.invExt)
+    (h : linkNtfnWaiter st waiter tail = .ok st') : ipcInvariantFull st' := by
+  obtain ⟨st3, h3, h4⟩ := linkNtfnWaiter_ok_cases h
+  have hInv3 := modifyTcb_ntfnLinks_preserves_ipcInvariantFull (fun _ => ⟨_, _, rfl⟩) hInv hObjInv h3
+  rcases modifyTcbOpt_ok_cases h4 with ⟨_, rfl⟩ | ⟨_, _, h4⟩
+  · exact hInv3
+  · exact modifyTcb_ntfnLinks_preserves_ipcInvariantFull (fun t => ⟨t.ntfnPrevCode, _, rfl⟩) hInv3
+      (modifyTcb_preserves_objects_invExt hObjInv h3) h4
+
+/-- IPC de-threading D2: `notificationWait` preserves `ipcInvariantFull`: the
+park does (`notificationWaitPark_preserves_ipcInvariantFull`), and so does the
+link-in. -/
+theorem notificationWait_preserves_ipcInvariantFull
+    (st st' : SystemState)
+    (notificationId : SeLe4n.ObjId) (waiter : SeLe4n.ThreadId)
+    (result : Option SeLe4n.Badge)
+    (hInv : ipcInvariantFull st)
+    (hObjInv : st.objects.invExt)
+    (hWaiterNotRecv : ∀ (tcb : TCB), st.getTcb? waiter = some tcb →
+        ∀ ep, tcb.ipcState ≠ .blockedOnReceive ep)
+    (hWaiterNotReply : ∀ (tcb : TCB), st.objects[waiter.toObjId]? = some (.tcb tcb) →
+        ∀ ep rt, tcb.ipcState ≠ .blockedOnReply ep rt)
+    (hAllBudgetsNone : allTimeoutBudgetsNone st)
+    (hWaiterReady : ∀ (tcb : TCB), st.objects[waiter.toObjId]? = some (.tcb tcb) →
+        tcb.ipcState = .ready)
+    (hStep : notificationWait notificationId waiter st = .ok (result, st')) :
+    ipcInvariantFull st' := by
+  rcases notificationWait_ok_cases hStep with ⟨b, _, hP⟩ | ⟨_, stP, hP, hL⟩
+  · exact notificationWaitPark_preserves_ipcInvariantFull st st' notificationId waiter _ hInv
+      hObjInv hWaiterNotRecv hWaiterNotReply hAllBudgetsNone hWaiterReady hP
+  · exact linkNtfnWaiter_preserves_ipcInvariantFull
+      (notificationWaitPark_preserves_ipcInvariantFull st stP notificationId waiter _ hInv
+        hObjInv hWaiterNotRecv hWaiterNotReply hAllBudgetsNone hWaiterReady hP)
+      (notificationWaitPark_preserves_objects_invExt hObjInv hP) hL
 /-- WS-RR RR2.6: `donateSchedContext` preserves the object store's extended
 invariant — its three stores are `storeObject`s, which do.  The mirror
 `returnDonatedSchedContext_preserves_objects_invExt` was already in the tree; the
@@ -1305,12 +1381,12 @@ theorem donateSchedContext_cdt_eq
   obtain ⟨_, _, _, _, _, _, s1, s2, s3, s4, _, _, _, _, hS1, hS2, _, hS3, _, hS4, hEq⟩ :=
     donateSchedContext_ok_storeChain st st' clientTid serverTid clientScId h
   have e1 : s1.cdt = st.cdt ∧ s1.cdtNodeSlot = st.cdtNodeSlot :=
-    ⟨storeObject_cdt_eq _ _ _ _ hS1, storeObject_cdtNodeSlot_eq _ _ _ _ hS1⟩
+    ⟨storeObject_cdt_eq _ _ _ _ hS1, (storeObject_cdtNodeSlot_eq _ _ _ _ hS1).1⟩
   have e2 := storeDonationFramePush_cdt_eq hS2
   have e3 : s3.cdt = s2.cdt ∧ s3.cdtNodeSlot = s2.cdtNodeSlot :=
-    ⟨storeObject_cdt_eq _ _ _ _ hS3, storeObject_cdtNodeSlot_eq _ _ _ _ hS3⟩
+    ⟨storeObject_cdt_eq _ _ _ _ hS3, (storeObject_cdtNodeSlot_eq _ _ _ _ hS3).1⟩
   have e4 : s4.cdt = s3.cdt ∧ s4.cdtNodeSlot = s3.cdtNodeSlot :=
-    ⟨storeObject_cdt_eq _ _ _ _ hS4, storeObject_cdtNodeSlot_eq _ _ _ _ hS4⟩
+    ⟨storeObject_cdt_eq _ _ _ _ hS4, (storeObject_cdtNodeSlot_eq _ _ _ _ hS4).1⟩
   refine ⟨?_, ?_⟩
   · rw [show st'.cdt = s4.cdt by rw [hEq], e4.1, e3.1, e2.1, e1.1]
   · rw [show st'.cdtNodeSlot = s4.cdtNodeSlot by rw [hEq], e4.2, e3.2, e2.2, e1.2]
@@ -1906,16 +1982,77 @@ Stated over an arbitrary object-preserving deschedule rather than over
 migration in between — both object-store frames, neither of them `removeRunnable`. -/
 theorem ipcInvariantFull_of_descheduleFrame
     (st' st'' : SystemState) (hInv : ipcInvariantFull st')
-    (hObjs : st''.objects = st'.objects)
+    (hA : st''.objectsAgreeOffRunLinks st')
     (hFrame : passiveServerIdleFrame st' st'') :
     ipcInvariantFull st'' :=
-  ipcInvariantFull_of_donationReadAgreement st' st'' hInv
-    (donationReadAgreement_of_objects_eq hObjs (donationReadAgreement.refl st'))
-    (donationChainAcyclic_of_objects_eq hObjs hInv.donationChainAcyclic)
-    (donationOwnerValid_of_objects_eq hObjs hInv.donationOwnerValid)
-    (passiveServerIdle_of_frame hFrame hInv.passiveServerIdle)
-    (donationBudgetTransfer_of_objects_eq hObjs hInv.donationBudgetTransfer)
-    (donationOwnerUnique_of_objects_eq hObjs hInv.donationOwnerUnique)
+  ipcInvariantFull_of_objectsAgreeOffRunLinks hA
+    (passiveServerIdle_of_frame hFrame hInv.passiveServerIdle) hInv
+
+/-- WS-ZA ZA4.5: a step that writes only run-queue links in TCBs and leaves the
+boot core's queue membership and `current` slot as they were keeps the bundle —
+no conjunct reads a run-queue link, and `passiveServerIdle` reads the boot
+core's queue and slot. -/
+theorem ipcInvariantFull_of_runLinkView {s1 s2 : SystemState}
+    (hA : s2.objectsAgreeOffRunLinks s1)
+    (hQ : ∀ y, y ∈ s2.scheduler.runQueueOnCore bootCoreId ↔
+      y ∈ s1.scheduler.runQueueOnCore bootCoreId)
+    (hC : s2.scheduler.currentOnCore bootCoreId = s1.scheduler.currentOnCore bootCoreId)
+    (h : ipcInvariantFull s1) : ipcInvariantFull s2 :=
+  ipcInvariantFull_of_objectsAgreeOffRunLinks hA (fun tid tcb' hT hU hNQ hNC => by
+    obtain ⟨t0, h0, hE⟩ := hA.get_tcb' hT
+    rw [TCB.proj_eq_of_withoutRunLinks_eq TCB.ipcState hE]
+    exact h.passiveServerIdle tid t0 h0
+      (by rw [← TCB.proj_eq_of_withoutRunLinks_eq TCB.schedContextBinding hE]; exact hU)
+      (fun hm => hNQ ((hQ tid).mpr hm)) (by rw [← hC]; exact hNC)) h
+
+/-- WS-ZA ZA4.5: an enqueue through the threads keeps the bundle whenever the
+bare queue insert does. -/
+theorem ipcInvariantFull_runEnqueueAdmitted (S : SystemState) (c : CoreId)
+    (t : SeLe4n.ThreadId) (p : SeLe4n.Priority)
+    (h : ipcInvariantFull { S with
+      scheduler := S.scheduler.setRunQueueOnCore c
+        ((S.scheduler.runQueueOnCore c).insert t p) }) :
+    ipcInvariantFull (S.runEnqueueAdmitted c t p) := by
+  refine ipcInvariantFull_of_runLinkView (s1 := { S with
+      scheduler := S.scheduler.setRunQueueOnCore c ((S.scheduler.runQueueOnCore c).insert t p) })
+    (SystemState.runEnqueueAdmitted_objectsAgreeOffRunLinks S c t p) (fun y => ?_) ?_ h
+  · show y ∈ (S.runEnqueueAdmitted c t p).scheduler.runQueueOnCore bootCoreId ↔
+      y ∈ (S.scheduler.setRunQueueOnCore c _).runQueueOnCore bootCoreId
+    by_cases hc : c = bootCoreId
+    · subst hc
+      rw [SystemState.runEnqueueAdmitted_runQueueOnCore_self,
+        SchedulerState.setRunQueueOnCore_runQueueOnCore_self]
+    · rw [SystemState.runEnqueueAdmitted_runQueueOnCore_ne _ _ _ _ _ hc,
+        SchedulerState.setRunQueueOnCore_runQueueOnCore_ne _ _ _ _ hc]
+  · simp only [SystemState.runEnqueueAdmitted_scheduler, SchedulerState.setRunQueueOnCore_currentOnCore,
+      SchedulerState.setRunQueueEndsOnCore_currentOnCore]
+
+/-- A bare insert into a run queue keeps the bundle: membership only grows. -/
+theorem ipcInvariantFull_of_runQueueInsert (S : SystemState) (c : CoreId)
+    (t : SeLe4n.ThreadId) (p : SeLe4n.Priority) (h : ipcInvariantFull S) :
+    ipcInvariantFull { S with scheduler := S.scheduler.setRunQueueOnCore c ((S.scheduler.runQueueOnCore c).insert t p) } := by
+  refine ipcInvariantFull_of_getElem_eq (s1 := S) (fun oid => rfl) ?_ h
+  refine passiveServerIdle_of_frame
+    (passiveServerIdleFrame_of_backward_monotone (st := S)
+      (fun t tcb'' h => ⟨tcb'', h, rfl, rfl⟩) (fun y hy => ?_) (by simp))
+    h.passiveServerIdle
+  show y ∈ (S.scheduler.setRunQueueOnCore c _).runQueueOnCore Concurrency.bootCoreId
+  by_cases hc : c = Concurrency.bootCoreId
+  · subst hc
+    rw [SchedulerState.setRunQueueOnCore_runQueueOnCore_self, RunQueue.mem_insert]
+    exact Or.inl hy
+  · rw [SchedulerState.setRunQueueOnCore_runQueueOnCore_ne _ _ _ _ hc]
+    exact hy
+
+/-- The guarded enqueue keeps the bundle: the admitted insert only grows the
+queue, and a declined enqueue is the state as it was. -/
+theorem ipcInvariantFull_runEnqueueOnCore (S : SystemState) (c : CoreId)
+    (t : SeLe4n.ThreadId) (p : SeLe4n.Priority) (h0 : ipcInvariantFull S) :
+    ipcInvariantFull (S.runEnqueueOnCore c t p) := by
+  unfold SystemState.runEnqueueOnCore
+  split
+  · exact ipcInvariantFull_runEnqueueAdmitted S c t p (ipcInvariantFull_of_runQueueInsert S c t p h0)
+  · exact h0
 
 /-- **WS-RR RR2.5**: `applyReplyDonation` preserves the whole twenty-conjunct IPC
 bundle — the return (`returnDonatedSchedContext_preserves_ipcInvariantFull`)
@@ -2020,7 +2157,7 @@ theorem applyReplyDonation_preserves_ipcInvariantFull
     rw [hPEq] at hPPost
     rw [hEq]
     refine ipcInvariantFull_of_descheduleFrame st' _ hFull'
-      (removeRunnable_preserves_objects st' holderVtid.val)
+      (removeRunnable_objectsAgreeOffRunLinks st' holderVtid.val)
       (removeRunnable_passiveServerIdleFrame st' holderVtid.val (fun tcb hTcb => ?_))
     have hEqT : { pTcb with schedContextBinding := .unbound } = tcb :=
       Option.some.inj (hPPost.symm.trans ((getTcb?_eq_some_iff st' _ tcb).mpr hTcb))
@@ -2154,7 +2291,7 @@ theorem applyReplyDonation_establishes_ipcInvariantFull_of_except
       rw [hPEq] at hPPost
       rw [hEq]
       refine ipcInvariantFull_of_descheduleFrame st' _ hFull'
-        (removeRunnable_preserves_objects st' holderVtid.val)
+        (removeRunnable_objectsAgreeOffRunLinks st' holderVtid.val)
         (removeRunnable_passiveServerIdleFrame st' holderVtid.val (fun tcb hTcb => ?_))
       have hEqT : { pTcb with schedContextBinding := .unbound } = tcb :=
         Option.some.inj (hPPost.symm.trans ((getTcb?_eq_some_iff st' _ tcb).mpr hTcb))
@@ -2177,8 +2314,8 @@ theorem applyReplyDonation_preserves_objects_invExt
   rcases applyReplyDonation_ok_decompose st st'' rid targetVtid h with
     ⟨_, hEq⟩ | ⟨scId, holderVtid, newOwner?, st', _, _, hR, hEq⟩
   · rw [hEq]; exact hObjInv
-  · rw [hEq, show (removeRunnable st' holderVtid.val).objects = st'.objects from
-      removeRunnable_preserves_objects st' holderVtid.val]
+  · rw [hEq]
+    refine removeRunnable_objects_invExt _ _ ?_
     exact returnDonatedSchedContext_preserves_objects_invExt st st' holderVtid.val scId
       (replyDonationRecipient st scId targetVtid.val) hObjInv newOwner? hR
 
@@ -2202,31 +2339,41 @@ no thread's membership.  Everything the bundle reads is therefore intact. -/
 theorem updatePipBoostOnCore_preserves_ipcInvariantFull (st : SystemState) (c : CoreId)
     (tid : SeLe4n.ThreadId) (hObjInv : st.objects.invExt) (hInv : ipcInvariantFull st) :
     ipcInvariantFull (updatePipBoostOnCore st c tid) := by
-  have hSelf : st.getTcb? tid = none → ipcInvariantFull (updatePipBoostOnCore st c tid) := by
-    intro hNone
-    rw [updatePipBoostOnCore_eq_self_of_getTcb?_none st c tid hNone]
-    exact hInv
-  cases hAt : st.getTcb? tid with
-  | none => exact hSelf hAt
-  | some tcb =>
-      obtain ⟨p, hPost⟩ := updatePipBoostOnCore_objects_at st c tid tcb hAt hObjInv
-      have hAtRaw := (getTcb?_eq_some_iff st tid tcb).mp hAt
-      have hPostRaw := (getTcb?_eq_some_iff (updatePipBoostOnCore st c tid) tid _).mp hPost
-      have hFrame : ∀ (oid : SeLe4n.ObjId), oid ≠ tid.toObjId →
-          (updatePipBoostOnCore st c tid).objects[oid]? = st.objects[oid]? := fun oid hNe =>
-        updatePipBoostOnCore_objects_ne st c tid oid
-          (by simpa using fun h => hNe h.symm) hObjInv
-      refine ipcInvariantFull_of_tcbFieldUpdate st _ tid.toObjId tcb _ hInv hAtRaw hPostRaw
-        hFrame rfl rfl rfl rfl rfl rfl rfl rfl rfl ?_
-      refine passiveServerIdleFrame_of_backward_monotone (fun x tcb' hTcb' => ?_)
-        (fun y hy => (updatePipBoostOnCore_mem_runQueueOnCore st c bootCoreId tid y).mpr hy)
-        (updatePipBoostOnCore_currentOnCore st c bootCoreId tid)
-      by_cases hEq : x.toObjId = tid.toObjId
-      · rw [hEq] at hTcb'
-        obtain rfl : { tcb with pipBoost := p } = tcb' := by
-          simpa only [Option.some.injEq, KernelObject.tcb.injEq] using hPostRaw.symm.trans hTcb'
-        exact ⟨tcb, by rw [hEq]; exact hAtRaw, rfl, rfl⟩
-      · exact ⟨tcb', by rw [← hFrame x.toObjId hEq]; exact hTcb', rfl, rfl⟩
+  -- The boost's object write keeps the bundle; the re-key then rewrites
+  -- run-queue links only (WS-ZA ZA4.5), and moves no thread's membership.
+  have hSch : (pipBoostWrite st tid).scheduler = st.scheduler := by
+    rw [pipBoostWrite_eq_objects st tid]
+  have hRefInv : ipcInvariantFull (pipBoostWrite st tid) := by
+    cases hAt : st.getTcb? tid with
+    | none => rw [pipBoostWrite_eq_self_of_getTcb?_none st tid hAt]; exact hInv
+    | some tcb =>
+        obtain ⟨p, hPost⟩ := pipBoostWrite_objects_at st tid tcb hAt hObjInv
+        have hAtRaw := (getTcb?_eq_some_iff st tid tcb).mp hAt
+        have hPostRaw := (getTcb?_eq_some_iff (pipBoostWrite st tid) tid _).mp hPost
+        have hFrame : ∀ (oid : SeLe4n.ObjId), oid ≠ tid.toObjId →
+            (pipBoostWrite st tid).objects[oid]? = st.objects[oid]? := fun oid hNe =>
+          pipBoostWrite_objects_ne st tid oid (by simpa using fun h => hNe h.symm) hObjInv
+        refine ipcInvariantFull_of_tcbFieldUpdate st _ tid.toObjId tcb _ hInv hAtRaw hPostRaw
+          hFrame rfl rfl rfl rfl rfl rfl rfl rfl rfl ?_
+        refine passiveServerIdleFrame_of_backward_monotone (fun x tcb' hTcb' => ?_)
+          (fun y hy => by rw [hSch]; exact hy) (by rw [hSch])
+        by_cases hEq : x.toObjId = tid.toObjId
+        · rw [hEq] at hTcb'
+          obtain rfl : { tcb with pipBoost := p } = tcb' := by
+            simpa only [Option.some.injEq, KernelObject.tcb.injEq] using hPostRaw.symm.trans hTcb'
+          exact ⟨tcb, by rw [hEq]; exact hAtRaw, rfl, rfl⟩
+        · exact ⟨tcb', by rw [← hFrame x.toObjId hEq]; exact hTcb', rfl, rfl⟩
+  refine ipcInvariantFull_of_objectsAgreeOffRunLinks
+    (updatePipBoostOnCore_objectsAgreeOffRunLinks st c tid) ?_ hRefInv
+  exact passiveServerIdle_of_frame
+    (passiveServerIdleFrame_of_backward_monotone
+      (fun x tcb' h =>
+        let ⟨tcb, _, hPre, hE⟩ := updatePipBoostOnCore_tcb_backward st c tid hObjInv x tcb' h
+        ⟨tcb, hPre, (TCB.proj_eq_of_withoutRunLinks_eq TCB.ipcState hE).symm,
+          (TCB.proj_eq_of_withoutRunLinks_eq TCB.schedContextBinding hE).symm⟩)
+      (fun y hy => (updatePipBoostOnCore_mem_runQueueOnCore st c bootCoreId tid y).mpr hy)
+      (updatePipBoostOnCore_currentOnCore st c bootCoreId tid))
+    hInv.passiveServerIdle
 
 /-- WS-RR RR2.6: the cross-core PIP boost with wake preserves the bundle — its
 state component is exactly `updatePipBoostOnCore` on the thread's home core; the

@@ -431,11 +431,10 @@ def schedContextConfigureBoundPropagate (stStored : SystemState)
       -- priority and the bucket from being computed by two expressions.
       let effectivePri : SeLe4n.Priority := boundTcb2.boostedPriority
       let boundHome := determineTargetCore stWithTcb boundTid
-      if boundTid ∈ (stWithTcb.scheduler.runQueueOnCore boundHome) then
-        let rqRemoved := (stWithTcb.scheduler.runQueueOnCore boundHome).remove boundTid
-        let rqInserted := rqRemoved.insert boundTid effectivePri
-        { stWithTcb with scheduler :=
-          stWithTcb.scheduler.setRunQueueOnCore boundHome rqInserted }
+      -- The thread leaves its bucket and rejoins the new one through its TCB
+      -- run-queue links (WS-ZA ZA4.5).
+      if stWithTcb.queuedOn boundHome boundTid then
+        stWithTcb.runRequeueOnCore boundHome boundTid effectivePri
       else stWithTcb
   -- The domain half reads the record the priority half may have rewritten, so
   -- it resolves the thread again -- through the witnessed lookup, whose
@@ -454,7 +453,7 @@ def schedContextConfigureBoundPropagate (stStored : SystemState)
   | none => stProp
 
 /-- The propagation tail keeps the object store's invariant: its two writes are
-TCB rewrites, and the re-bucket touches the scheduler only.  The chain re-walk
+TCB rewrites, and the re-bucket writes only run-queue links and the scheduler.  The chain re-walk
 `schedContextConfigure` runs after it needs this. -/
 theorem schedContextConfigureBoundPropagate_preserves_objects_invExt (stStored : SystemState)
     (scId : SeLe4n.SchedContextId) (boundTid : SeLe4n.ThreadId) (boundTcb : TCB)
@@ -487,7 +486,7 @@ theorem schedContextConfigureBoundPropagate_preserves_objects_invExt (stStored :
       (KernelObject.tcb { boundTcb with priority := ⟨priority⟩ })
       (SystemState.rewriteAdmissible_tcb hBound _) hInv
     split
-    · exact hW
+    · exact SystemState.runRequeueOnCore_objects_invExt _ _ _ _ hW
     · exact hW
 
 /-- Z5-F3: Configure a SchedContext's scheduling parameters.
@@ -727,10 +726,14 @@ write, an *argument* rather than a store lookup — and the bind's own rewrite o
 that SchedContext changes `boundThread` and `donationOrigin`, never
 `budgetRemaining`. -/
 theorem bindPlacesParkedThread_congr {st st' : SystemState} (tid : SeLe4n.ThreadId)
-    (tcb : TCB) (sc : SchedContext) (h : st'.scheduler = st.scheduler) :
+    (tcb : TCB) (sc : SchedContext) (h : st'.scheduler = st.scheduler)
+    (hQ : SystemState.RunCoresAgree st' st) :
     bindPlacesParkedThread st' tid tcb sc = bindPlacesParkedThread st tid tcb sc := by
   unfold bindPlacesParkedThread placedCoreOf?
-  rw [h]
+  have hF : (fun c => st'.queuedOn c tid || st'.scheduler.currentOnCore c == some tid) =
+      (fun c => st.queuedOn c tid || st.scheduler.currentOnCore c == some tid) := by
+    funext c; rw [hQ.queuedOn, h]
+  rw [hF]
 
 /-- Z5-G1/G2/G3: Bind a thread to a SchedContext.
 1. Precondition: SchedContext has no bound thread, TCB is unbound
@@ -854,17 +857,15 @@ def schedContextBind (vScId : ValidObjId) (vThreadId : ValidThreadId) : Kernel U
             -- SAME one the re-bucket arm uses, so the two arms cannot disagree
             -- about which bucket a bound thread belongs in.
             let bindHome := determineTargetCore st2 vThreadId.val
-            let st3 := if vThreadId.val ∈ (st2.scheduler.runQueueOnCore bindHome) then
-              let rqRemoved := (st2.scheduler.runQueueOnCore bindHome).remove vThreadId.val
-              let rqInserted := rqRemoved.insert vThreadId.val (resolveInsertPriority st2 vThreadId.val sc)
-              { st2 with scheduler := st2.scheduler.setRunQueueOnCore bindHome rqInserted }
+            -- Both arms move the thread through its TCB run-queue links
+            -- (WS-ZA ZA4.5).
+            let st3 := if st2.queuedOn bindHome vThreadId.val then
+              st2.runRequeueOnCore bindHome vThreadId.val (resolveInsertPriority st2 vThreadId.val sc)
             else if bindPlacesParkedThread st2 vThreadId.val tcb sc then
-              let rqInserted := (st2.scheduler.runQueueOnCore bindHome).insert vThreadId.val
-                (resolveInsertPriority st2 vThreadId.val sc)
               -- The reschedule-SGI accumulator (KSC-1): the placement is a
               -- wake on `bindHome` (the diff's queue rule), flagged as such.
-              { st2 with scheduler := (st2.scheduler.setRunQueueOnCore bindHome rqInserted)
-                  |>.markReschedulePendingOnCore bindHome }
+              (st2.runEnqueueOnCore bindHome vThreadId.val
+                (resolveInsertPriority st2 vThreadId.val sc)).markReschedulePendingOnCore bindHome
             else st2
             -- S-05/PERF-O1: Add thread to per-SchedContext thread index
             let st4 := { st3 with scThreadIndex :=
@@ -881,6 +882,125 @@ def schedContextBind (vScId : ValidObjId) (vThreadId : ValidThreadId) : Kernel U
 -- ============================================================================
 -- Z5-H1/H2/H3: schedContextUnbind
 -- ============================================================================
+
+/-- WS-ZA ZA4.5: the unbind's run-queue stage on the thread's home core — a
+queued thread is re-keyed at its legacy priority, a thread that was current is
+placed there (a wake, flagged), and any other is left where it is.  Both moves go
+through the thread's TCB run-queue links. -/
+def schedContextUnbindQueueStage (st0 : SystemState) (home : Concurrency.CoreId)
+    (tid : SeLe4n.ThreadId) (prio : SeLe4n.Priority) (wasCurrent : Bool) : SystemState :=
+  if st0.queuedOn home tid then st0.runRequeueOnCore home tid prio
+  else if wasCurrent then (st0.runEnqueueOnCore home tid prio).markReschedulePendingOnCore home
+  else st0
+
+/-- The unbind's run-queue stage writes objects only in run-queue links. -/
+theorem schedContextUnbindQueueStage_objectsAgreeOffRunLinks (st0 : SystemState)
+    (home : Concurrency.CoreId) (tid : SeLe4n.ThreadId) (prio : SeLe4n.Priority) (wasCurrent : Bool) :
+    (schedContextUnbindQueueStage st0 home tid prio wasCurrent).objectsAgreeOffRunLinks st0 := by
+  unfold schedContextUnbindQueueStage
+  split
+  · exact SystemState.runRequeueOnCore_objectsAgreeOffRunLinks _ _ _ _
+  · split
+    · exact SystemState.runEnqueueOnCore_objectsAgreeOffRunLinks _ _ _ _
+    · exact SystemState.objectsAgreeOffRunLinks.refl _
+
+/-- The unbind's run-queue stage keeps the object store's invariant. -/
+theorem schedContextUnbindQueueStage_objects_invExt (st0 : SystemState)
+    (home : Concurrency.CoreId) (tid : SeLe4n.ThreadId) (prio : SeLe4n.Priority) (wasCurrent : Bool)
+    (hInv : st0.objects.invExt) :
+    (schedContextUnbindQueueStage st0 home tid prio wasCurrent).objects.invExt := by
+  unfold schedContextUnbindQueueStage
+  split
+  · exact SystemState.runRequeueOnCore_objects_invExt _ _ _ _ hInv
+  · split
+    · exact SystemState.runEnqueueOnCore_objects_invExt _ _ _ _ hInv
+    · exact hInv
+
+/-- The unbind's run-queue stage writes no replenish queue. -/
+@[simp] theorem schedContextUnbindQueueStage_replenishQueueOnCore (st0 : SystemState)
+    (home : Concurrency.CoreId) (tid : SeLe4n.ThreadId) (prio : SeLe4n.Priority) (wasCurrent : Bool)
+    (c : Concurrency.CoreId) :
+    (schedContextUnbindQueueStage st0 home tid prio wasCurrent).scheduler.replenishQueueOnCore c =
+      st0.scheduler.replenishQueueOnCore c := by
+  unfold schedContextUnbindQueueStage
+  split
+  · simp
+  · split
+    · simp [SystemState.markReschedulePendingOnCore]
+    · rfl
+
+/-! The unbind's run-queue stage writes only its home core's queue and flag:
+every other observable per-core slot comes through unchanged. -/
+@[simp] theorem schedContextUnbindQueueStage_machine (st0 : SystemState)
+    (home : Concurrency.CoreId) (tid : SeLe4n.ThreadId) (prio : SeLe4n.Priority) (wasCurrent : Bool) :
+    (schedContextUnbindQueueStage st0 home tid prio wasCurrent).machine = st0.machine := by
+  unfold schedContextUnbindQueueStage
+  split
+  · simp
+  · split
+    · simp [SystemState.markReschedulePendingOnCore]
+    · rfl
+
+@[simp] theorem schedContextUnbindQueueStage_currentOnCore (st0 : SystemState)
+    (home : Concurrency.CoreId) (tid : SeLe4n.ThreadId) (prio : SeLe4n.Priority) (wasCurrent : Bool)
+    (c : Concurrency.CoreId) :
+    (schedContextUnbindQueueStage st0 home tid prio wasCurrent).scheduler.currentOnCore c =
+      st0.scheduler.currentOnCore c := by
+  unfold schedContextUnbindQueueStage
+  split
+  · simp
+  · split
+    · simp [SystemState.markReschedulePendingOnCore]
+    · rfl
+
+@[simp] theorem schedContextUnbindQueueStage_activeDomainOnCore (st0 : SystemState)
+    (home : Concurrency.CoreId) (tid : SeLe4n.ThreadId) (prio : SeLe4n.Priority) (wasCurrent : Bool)
+    (c : Concurrency.CoreId) :
+    (schedContextUnbindQueueStage st0 home tid prio wasCurrent).scheduler.activeDomainOnCore c =
+      st0.scheduler.activeDomainOnCore c := by
+  unfold schedContextUnbindQueueStage
+  split
+  · simp
+  · split
+    · simp [SystemState.markReschedulePendingOnCore]
+    · rfl
+
+@[simp] theorem schedContextUnbindQueueStage_domainTimeRemainingOnCore (st0 : SystemState)
+    (home : Concurrency.CoreId) (tid : SeLe4n.ThreadId) (prio : SeLe4n.Priority) (wasCurrent : Bool)
+    (c : Concurrency.CoreId) :
+    (schedContextUnbindQueueStage st0 home tid prio wasCurrent).scheduler.domainTimeRemainingOnCore c =
+      st0.scheduler.domainTimeRemainingOnCore c := by
+  unfold schedContextUnbindQueueStage
+  split
+  · simp
+  · split
+    · simp [SystemState.markReschedulePendingOnCore]
+    · rfl
+
+@[simp] theorem schedContextUnbindQueueStage_domainScheduleIndexOnCore (st0 : SystemState)
+    (home : Concurrency.CoreId) (tid : SeLe4n.ThreadId) (prio : SeLe4n.Priority) (wasCurrent : Bool)
+    (c : Concurrency.CoreId) :
+    (schedContextUnbindQueueStage st0 home tid prio wasCurrent).scheduler.domainScheduleIndexOnCore c =
+      st0.scheduler.domainScheduleIndexOnCore c := by
+  unfold schedContextUnbindQueueStage
+  split
+  · simp
+  · split
+    · simp [SystemState.markReschedulePendingOnCore]
+    · rfl
+
+@[simp] theorem schedContextUnbindQueueStage_runQueueOnCore_ne (st0 : SystemState)
+    (home : Concurrency.CoreId) (tid : SeLe4n.ThreadId) (prio : SeLe4n.Priority) (wasCurrent : Bool)
+    (c : Concurrency.CoreId) (hne : home ≠ c) :
+    (schedContextUnbindQueueStage st0 home tid prio wasCurrent).scheduler.runQueueOnCore c =
+      st0.scheduler.runQueueOnCore c := by
+  unfold schedContextUnbindQueueStage
+  split
+  · simp [hne]
+  · split
+    · simp [SystemState.markReschedulePendingOnCore,
+        SystemState.runEnqueueOnCore_runQueueOnCore_ne _ _ _ _ _ hne]
+    · rfl
 
 /-- Z5-H1/H2/H3: Unbind a thread from a SchedContext.
 1. Verify the SchedContext has a bound thread
@@ -986,22 +1106,11 @@ def schedContextUnbind (vScId : ValidObjId) : Kernel Unit :=
           -- priority, which is the re-bucket the docstring always described.
           let updatedTcb := { tcb with schedContextBinding := SchedContextBinding.unbound }
           let legacyPrio := updatedTcb.boostedPriority
-          let homeQueue := sched0.runQueueOnCore unbindHome
-          let rebucketed := (homeQueue.remove tid).insert tid legacyPrio
-          -- The reschedule-SGI accumulator (KSC-1): a thread that was current
-          -- is PLACED on its home here (a wake there, flagged as such); a
-          -- queued thread is re-bucketed, and the key hook at the end flags
-          -- its home exactly when the legacy key differs.
-          let sched1 :=
-            if tid ∈ homeQueue then sched0.setRunQueueOnCore unbindHome rebucketed
-            else if wasCurrent then (sched0.setRunQueueOnCore unbindHome rebucketed)
-              |>.markReschedulePendingOnCore unbindHome
-            else sched0
-          -- The scheduler stage is a scheduler-only update of the pre-state
+          -- The current-slot stage is a scheduler-only update of the pre-state
           -- (`v0.35.71`): its object table IS the pre-state's, definitionally,
           -- so the witness the SchedContext lookup above carries is the stage's
           -- own and the rewrite below takes it directly.
-          let st1 : SystemState := { st with scheduler := sched1 }
+          let st1 : SystemState := { st with scheduler := sched0 }
           -- Z5-H2 cont: Clear both sides of the binding
           -- **WS-HP HP10.4**: and the origin, for the bind's reason in the other
           -- direction — the reservation stops being owned at all, so a recorded
@@ -1016,6 +1125,13 @@ def schedContextUnbind (vScId : ValidObjId) : Kernel Unit :=
           -- the two lookups above admit.
           let st3 := st2.updateTcb tid fun t =>
             { t with schedContextBinding := SchedContextBinding.unbound }
+          -- The run-queue stage, after the object writes (it reads none of
+          -- them): through the thread's TCB run-queue links (WS-ZA ZA4.5).
+          -- The reschedule-SGI accumulator (KSC-1): a thread that was current
+          -- is PLACED on its home here (a wake there, flagged as such); a
+          -- queued thread is re-bucketed, and the key hook at the end flags
+          -- its home exactly when the legacy key differs.
+          let st3q := schedContextUnbindQueueStage st3 unbindHome tid legacyPrio wasCurrent
           -- Z5-H3: Remove SchedContext from replenish queue.
           -- WS-SM SM8.B (PR #861 review round 17): on `unbindHome`, the same
           -- core this operation already re-buckets the run queue on.  The
@@ -1023,7 +1139,7 @@ def schedContextUnbind (vScId : ValidObjId) : Kernel Unit :=
           -- side was missed, so an unbind left the SC's eligibility entry
           -- queued on its home core with nothing bound to consume it.
           let scIdTyped : SchedContextId := ⟨vScId.val.toNat⟩
-          let st4 := purgeReplenishmentOnCore st3 unbindHome scIdTyped
+          let st4 := purgeReplenishmentOnCore st3q unbindHome scIdTyped
           -- S-05/PERF-O1: Remove thread from per-SchedContext thread index
           let st5 := { st4 with scThreadIndex :=
             (scThreadIndexRemove st4.scThreadIndex scIdTyped tid) }
@@ -1112,10 +1228,10 @@ def schedContextYieldTo (st : SystemState) (fromScId targetScId : SchedContextId
           -- AG1-A: Use effective priority (base + PIP boost) for RunQueue insertion
           -- WS-SM SM8.B (review round 13): re-enqueue on the thread's HOME core.
           let refillHome := determineTargetCore st2 tid
-          if tid ∉ (st2.scheduler.runQueueOnCore refillHome) && (st2.scheduler.currentOnCore refillHome) != some tid then
-            -- The reschedule-SGI accumulator (KSC-1): a wake on `refillHome`.
-            { st2 with scheduler := (st2.scheduler.setRunQueueOnCore refillHome ((st2.scheduler.runQueueOnCore refillHome).insert tid (resolveInsertPriority st2 tid targetSc)))
-                |>.markReschedulePendingOnCore refillHome }
+          if !st2.queuedOn refillHome tid && (st2.scheduler.currentOnCore refillHome) != some tid then
+            -- The insert writes the thread's run-queue links (WS-ZA ZA4.5).  The
+            -- reschedule-SGI accumulator (KSC-1): a wake on `refillHome`.
+            (st2.runEnqueueOnCore refillHome tid (resolveInsertPriority st2 tid targetSc)).markReschedulePendingOnCore refillHome
           else st2
         | none => st2
       else st2
@@ -1126,39 +1242,64 @@ def schedContextYieldTo (st : SystemState) (fromScId targetScId : SchedContextId
 -- WS-RR RR8.12 Cut B2: the placement's payoff
 -- ============================================================================
 
-/-- **Cut B2**: a state whose scheduler differs by one run-queue insert of `tid`
-has `tid` on a run queue.
-
-Stated over an arbitrary queue and priority so both of the bind's queue-writing
-arms — the re-bucket and the placement — are one application: neither claim is
-about *which* bucket the thread lands in, only that it lands on one, which is
-what `chooseThreadOnCore` scans. -/
-private theorem runnableOnSomeCore_of_insert (s : SystemState)
-    (c : SeLe4n.Kernel.Concurrency.CoreId) (tid : SeLe4n.ThreadId) (q : RunQueue)
-    (pr : SeLe4n.Priority) :
-    runnableOnSomeCore
-        { s with scheduler := s.scheduler.setRunQueueOnCore c (q.insert tid pr) } tid = true := by
+/-- A re-key leaves the thread on core `c`'s run queue. -/
+private theorem runnableOnSomeCore_of_requeue (s : SystemState)
+    (c : SeLe4n.Kernel.Concurrency.CoreId) (tid : SeLe4n.ThreadId) (pr : SeLe4n.Priority)
+    (hT : (s.getTcb? tid).isSome) :
+    runnableOnSomeCore (s.runRequeueOnCore c tid pr) tid = true := by
   rw [runnableOnSomeCore]
   refine List.any_eq_true.mpr ⟨c, SeLe4n.Kernel.Concurrency.mem_allCores c, ?_⟩
-  rw [SchedulerState.setRunQueueOnCore_runQueueOnCore_self,
-    ← RunQueue.mem_iff_contains, RunQueue.mem_insert]
-  exact Or.inr rfl
+  rw [SystemState.runRequeueOnCore_queuedOn, if_pos rfl, hT]
+  simp
 
-/-- `runnableOnSomeCore_of_insert` for the placement arm's shape, whose
-run-queue write carries the home core's reschedule-pending mark (the KSC-1
-accumulator) — the mark leaves every run queue as it was. -/
-private theorem runnableOnSomeCore_of_insert_marked (s : SystemState)
-    (c c' : SeLe4n.Kernel.Concurrency.CoreId) (tid : SeLe4n.ThreadId) (q : RunQueue)
-    (pr : SeLe4n.Priority) :
-    runnableOnSomeCore
-        { s with scheduler := (s.scheduler.setRunQueueOnCore c (q.insert tid pr))
-            |>.markReschedulePendingOnCore c' } tid = true := by
+/-- The placement arm's shape: a link enqueue on core `c`, carrying the home
+core's reschedule-pending mark (the KSC-1 accumulator) — the mark leaves every
+run queue as it was. -/
+private theorem runnableOnSomeCore_of_enqueue_marked (s : SystemState)
+    (c c' : SeLe4n.Kernel.Concurrency.CoreId) (tid : SeLe4n.ThreadId) (pr : SeLe4n.Priority)
+    (hT : (s.getTcb? tid).isSome) :
+    runnableOnSomeCore ((s.runEnqueueOnCore c tid pr).markReschedulePendingOnCore c') tid = true := by
+  -- Admitted, the enqueue places the thread on `c`; declined, its links already
+  -- name the core whose queue holds it.
+  obtain ⟨c0, hc0⟩ := SystemState.runEnqueueOnCore_queuedOn_somewhere pr hT
   rw [runnableOnSomeCore]
-  refine List.any_eq_true.mpr ⟨c, SeLe4n.Kernel.Concurrency.mem_allCores c, ?_⟩
-  rw [SchedulerState.markReschedulePendingOnCore_runQueueOnCore,
-    SchedulerState.setRunQueueOnCore_runQueueOnCore_self,
-    ← RunQueue.mem_iff_contains, RunQueue.mem_insert]
-  exact Or.inr rfl
+  exact List.any_eq_true.mpr ⟨c0, SeLe4n.Kernel.Concurrency.mem_allCores c0, hc0⟩
+
+/-- The bind's two object writes — the reservation rewrite and the thread's
+binding — move no run-queue link, so they keep the link agreement and the
+thread's TCB. -/
+private theorem bindWrites_runQueueRefined (st : SystemState) (id : SeLe4n.ObjId)
+    (sc' : SchedContext) (pf : st.rewriteAdmissible id (.schedContext sc'))
+    (t : SeLe4n.ThreadId) (f : TCB → TCB) (hf : ∀ x c, (f x).runLinkOn c = x.runLinkOn c)
+    (hInv : st.objects.invExt) (hR : st.runQueueRefined) (hT : (st.getTcb? t).isSome) :
+    ((st.rewriteObject id (.schedContext sc') pf).updateTcb t f).runQueueRefined ∧
+      (((st.rewriteObject id (.schedContext sc') pf).updateTcb t f).getTcb? t).isSome := by
+  have hInv1 := SystemState.rewriteObject_preserves_objects_invExt st id _ pf hInv
+  have hR1 : (st.rewriteObject id (.schedContext sc') pf).runQueueRefined :=
+    SystemState.runQueueRefined_of_frame (st := st) (fun c x => by
+      unfold SystemState.runLinkOn
+      rw [SystemState.rewriteObject_schedContext_getTcb? st id sc' pf hInv]) rfl rfl hR
+  refine ⟨SystemState.updateTcb_runQueueRefined hInv1 hf hR1, ?_⟩
+  rw [SystemState.updateTcb_getTcb?_self _ _ _ hInv1,
+    SystemState.rewriteObject_schedContext_getTcb? st id sc' pf hInv]
+  obtain ⟨x, hx⟩ := Option.isSome_iff_exists.mp hT
+  rw [hx]; rfl
+
+/-- The bind's two object writes keep every thread's run-queue core. -/
+private theorem bindWrites_runCoresAgree (st : SystemState) (id : SeLe4n.ObjId)
+    (sc' : SchedContext) (pf : st.rewriteAdmissible id (.schedContext sc'))
+    (t : SeLe4n.ThreadId) (f : TCB → TCB) (hf : ∀ x, (f x).runCoreCode = x.runCoreCode)
+    (hInv : st.objects.invExt) :
+    SystemState.RunCoresAgree ((st.rewriteObject id (.schedContext sc') pf).updateTcb t f) st :=
+  SystemState.RunCoresAgree.trans
+    (SystemState.updateTcb_runCoreCode _ t f hf
+      (SystemState.rewriteObject_preserves_objects_invExt st id _ pf hInv))
+    (fun y => by rw [SystemState.rewriteObject_schedContext_getTcb? st id sc' pf hInv])
+
+/-- The thread index is not a run queue. -/
+private theorem runnableOnSomeCore_withScThreadIndex (s : SystemState) (idx)
+    (tid : SeLe4n.ThreadId) :
+    runnableOnSomeCore { s with scThreadIndex := idx } tid = runnableOnSomeCore s tid := rfl
 
 /-- **Cut B2 (`v0.35.182`): a parked runnable thread the bind admits ends up on a
 run queue.**
@@ -1181,6 +1322,7 @@ theorem schedContextBind_places_parked_thread
     (hTcb : st.getTcb? vThreadId.val = some tcb)
     (hScB : st.getSchedContext? (SchedContextId.ofObjId vScId.val) = some scB)
     (hPark : bindPlacesParkedThread st vThreadId.val tcb scB = true)
+    (hInv : st.objects.invExt) (hR : st.runQueueRefined)
     (h : schedContextBind vScId vThreadId st = .ok ((), st')) :
     runnableOnSomeCore st' vThreadId.val = true := by
   unfold schedContextBind at h
@@ -1201,7 +1343,8 @@ theorem schedContextBind_places_parked_thread
             · split at h
               · dsimp only at h
                 rw [Except.ok.injEq, Prod.mk.injEq] at h
-                rw [← h.2, markKeyChangeFor_runnableOnSomeCore]
+                rw [← h.2, markKeyChangeFor_runnableOnSomeCore,
+                  runnableOnSomeCore_withScThreadIndex]
                 -- The guard transports from the pre-state: both of the bind's
                 -- writes are object rewrites, so the intermediate state's
                 -- scheduler IS the pre-state's.
@@ -1213,15 +1356,20 @@ theorem schedContextBind_places_parked_thread
                   rw [SystemState.updateTcb_scheduler, SystemState.rewriteObject_scheduler]
                 split
                 · -- The re-bucket arm: the thread was already queued, so it stays.
-                  exact runnableOnSomeCore_of_insert _ _ _ _ _
+                  exact runnableOnSomeCore_of_requeue _ _ _ _ (bindWrites_runQueueRefined st _ _ _ _ _
+                    (by intro _ _; rfl) hInv hR (by rw [hTcb]; rfl)).2
                 · split
                   · -- The placement arm: Cut B2's own write.
-                    exact runnableOnSomeCore_of_insert_marked _ _ _ _ _ _
+                    apply runnableOnSomeCore_of_enqueue_marked
+                    exact (bindWrites_runQueueRefined st _ _ _ _ _
+                      (by intro _ _; rfl) hInv hR (by rw [hTcb]; rfl)).2
                   · -- The identity arm is UNREACHABLE under the hypothesis: the
                     -- guard is the pre-state's, which this arm's condition denies.
                     rename_i hParkArm
                     exfalso
-                    rw [bindPlacesParkedThread_congr _ _ _ (hSched _ _ _ _ _)] at hParkArm
+                    rw [bindPlacesParkedThread_congr _ _ _ (hSched _ _ _ _ _)
+                      (bindWrites_runCoresAgree st _ _ _ _ _ ?_ hInv)] at hParkArm
+                    rotate_left; · intro _; rfl
                     rw [hPark] at hParkArm
                     simp at hParkArm
               · exact absurd h (by simp)
@@ -1248,23 +1396,29 @@ theorem schedContextBind_leaves_unplaced_of_exhausted
     (hScB : st.getSchedContext? (SchedContextId.ofObjId vScId.val) = some scB)
     (hExhausted : scB.budgetRemaining.isPositive = false)
     (hUnplaced : placedCoreOf? st vThreadId.val = none)
+    (hInv : st.objects.invExt)
     (h : schedContextBind vScId vThreadId st = .ok ((), st')) :
     placedCoreOf? st' vThreadId.val = none := by
-  -- `placedCoreOf?` reads the scheduler alone.
+  -- `placedCoreOf?` reads the scheduler and the thread's run-queue core.
   have hPlacedCongr : ∀ (a b : SystemState), a.scheduler = b.scheduler →
+      SystemState.RunCoresAgree a b →
       placedCoreOf? a vThreadId.val = placedCoreOf? b vThreadId.val := by
-    intro a b hab
+    intro a b hab hQ
     unfold placedCoreOf?
-    rw [hab]
+    have hF : (fun c => a.queuedOn c vThreadId.val ||
+          a.scheduler.currentOnCore c == some vThreadId.val) =
+        (fun c => b.queuedOn c vThreadId.val ||
+          b.scheduler.currentOnCore c == some vThreadId.val) := by
+      funext c; rw [hQ.queuedOn, hab]
+    rw [hF]
   -- A thread placed nowhere is on no run queue.
-  have hNotQueued : ∀ c, vThreadId.val ∉ st.scheduler.runQueueOnCore c := by
-    intro c hMem
+  have hNotQueued : ∀ c, st.queuedOn c vThreadId.val = false := by
+    intro c
     unfold placedCoreOf? at hUnplaced
     rw [List.find?_eq_none] at hUnplaced
     have := hUnplaced c (SeLe4n.Kernel.Concurrency.mem_allCores c)
-    have hContains : (st.scheduler.runQueueOnCore c).contains vThreadId.val = true :=
-      RunQueue.mem_iff_contains.mp hMem
-    simp [hContains] at this
+    simp only [Bool.or_eq_true, not_or] at this
+    exact Bool.eq_false_iff.mpr this.1
   unfold schedContextBind at h
   split at h
   · rename_i sc hSc _
@@ -1293,8 +1447,10 @@ theorem schedContextBind_leaves_unplaced_of_exhausted
                 · -- The re-bucket arm needs the thread on a run queue, which it is not.
                   rename_i hMem
                   exfalso
-                  rw [hSched] at hMem
-                  exact hNotQueued _ hMem
+                  rw [(bindWrites_runCoresAgree st _ _ _ _ _ ?_ hInv).queuedOn,
+                    hNotQueued] at hMem
+                  · exact Bool.false_ne_true hMem
+                  · intro _; rfl
                 · split
                   · -- The placement arm needs the guard, whose budget conjunct is false.
                     rename_i hParkArm
@@ -1302,12 +1458,182 @@ theorem schedContextBind_leaves_unplaced_of_exhausted
                     rw [bindPlacesParkedThread_of_exhausted _ _ _ _ hExhausted] at hParkArm
                     exact Bool.false_ne_true hParkArm
                   · -- The identity arm moves no scheduler slot.
-                    rw [hPlacedCongr _ st (by
-                      show (((st.rewriteObject _ _ _).updateTcb _ _).scheduler) = st.scheduler
-                      exact hSched _ _ _ _ _)]
-                    exact hUnplaced
+                    refine (hPlacedCongr _ st ?_ ?_).trans hUnplaced
+                    · show (((st.rewriteObject _ _ _).updateTcb _ _).scheduler) = st.scheduler
+                      exact hSched _ _ _ _ _
+                    · exact SystemState.RunCoresAgree.trans (SystemState.RunCoresAgree.of_objects rfl)
+                        (bindWrites_runCoresAgree st _ _ _ _ _ (by intro _; rfl) hInv)
               · exact absurd h (by simp)
         · exact absurd h (by simp)
   · exact absurd h (by simp)
+
+
+-- ============================================================================
+-- The unbind's run-queue agreement and current placement (WS-ZA ZA4.5)
+-- ============================================================================
+
+/-- The unbind's run-queue stage keeps the run queues in agreement with the
+links: a re-key of a thread its home queue holds, or a guarded enqueue. -/
+theorem schedContextUnbindQueueStage_runQueueStage (st0 : SystemState)
+    (home : Concurrency.CoreId) (tid : SeLe4n.ThreadId) (prio : SeLe4n.Priority) (wasCurrent : Bool) :
+    SystemState.RunQueueStage st0 (schedContextUnbindQueueStage st0 home tid prio wasCurrent) := by
+  intro hInv hR
+  unfold schedContextUnbindQueueStage
+  split
+  · rename_i hMem
+    have hq : (st0.runLinkOn home tid).queued = true := by
+      rw [← SystemState.queuedOn_eq_runLinkOn]; exact hMem
+    exact SystemState.RunQueueStage.runRequeueOnCore _ _ _ _ hq hInv hR
+  · split
+    · have hE : SystemState.RunQueueStage st0 (st0.runEnqueueOnCore home tid prio) :=
+        fun h r => ⟨SystemState.runEnqueueOnCore_objects_invExt _ _ _ _ h,
+          SystemState.runEnqueueOnCore_refined r⟩
+      exact (hE.trans (SystemState.RunQueueStage.markReschedulePendingOnCore _ home)) hInv hR
+    · exact ⟨hInv, hR⟩
+
+/-- The unbind's run-queue stage is a current-placement frame for a core whose
+current thread is not the one it places. -/
+theorem schedContextUnbindQueueStage_currentPlacementFrame (st0 : SystemState)
+    (home : Concurrency.CoreId) (tid : SeLe4n.ThreadId) (prio : SeLe4n.Priority) (wasCurrent : Bool)
+    (c : Concurrency.CoreId) (hNe : wasCurrent = true → st0.scheduler.currentOnCore c ≠ some tid) :
+    SystemState.CurrentPlacementFrame c st0
+      (schedContextUnbindQueueStage st0 home tid prio wasCurrent) := by
+  unfold schedContextUnbindQueueStage
+  split
+  · rename_i hMem
+    exact SystemState.CurrentPlacementFrame.runRequeueOnCore _ _ _ _ _ hMem
+  · split
+    · rename_i hW
+      exact (SystemState.CurrentPlacementFrame.runEnqueueOnCore _ _ _ _ _ (hNe hW)).trans
+        (SystemState.CurrentPlacementFrame.of_frame rfl
+          (by simp [SystemState.markReschedulePendingOnCore]))
+    · exact .refl _ _
+
+/-- The unbind keeps the run queues in agreement with the links: the current
+slot and the flag are not read by it, the two object writes move no link, and
+the queue stage is one (`schedContextUnbindQueueStage_runQueueStage`). -/
+theorem schedContextUnbind_runQueueStage (vScId : SeLe4n.ValidObjId) (st st' : SystemState)
+    (hStep : schedContextUnbind vScId st = .ok ((), st')) : SystemState.RunQueueStage st st' := by
+  unfold schedContextUnbind at hStep
+  split at hStep
+  · rename_i sc hSc _
+    split at hStep
+    · contradiction
+    · rename_i tid hBound
+      split at hStep
+      · rename_i tcb hTcb
+        dsimp only [] at hStep
+        split at hStep
+        · contradiction
+        · have hScRaw := (SystemState.getSchedContext?_eq_some_iff st
+            (SchedContextId.ofObjId vScId.val) sc).mp hSc
+          cases hStep
+          refine SystemState.RunQueueStage.trans ?_ (markKeyChangeFor_runQueueStage _ _ _)
+          refine SystemState.RunQueueStage.trans ?_ (SystemState.RunQueueStage.withScThreadIndex _ _)
+          refine SystemState.RunQueueStage.trans (st' := schedContextUnbindQueueStage _ _ _ _ _) ?_
+            (SystemState.RunQueueStage.of_frame rfl rfl rfl)
+          refine SystemState.RunQueueStage.trans (st' := SystemState.updateTcb _ _ _) ?_
+            (schedContextUnbindQueueStage_runQueueStage _ _ _ _ _)
+          refine SystemState.RunQueueStage.trans (st' := SystemState.rewriteObject _ _ _ _) ?_
+            (SystemState.RunQueueStage.updateTcb _ _
+              (f := fun t => { t with schedContextBinding := SchedContextBinding.unbound })
+              (by intro _ _; rfl))
+          refine SystemState.RunQueueStage.trans
+            (st' := { st with scheduler := match runningCoreOf? st tid with
+              | some r => (st.scheduler.setCurrentOnCore r none).markReschedulePendingOnCore r
+              | none => st.scheduler })
+            (SystemState.RunQueueStage.of_frame rfl (by split <;> rfl) (by split <;> rfl)) ?_
+          exact SystemState.RunQueueStage.insert rfl rfl rfl
+            (fun c => by dsimp only; rw [show st.objects[vScId.val]? = _ from hScRaw]; rfl)
+      · dsimp only [] at hStep
+        cases hStep
+        have hScRaw := (SystemState.getSchedContext?_eq_some_iff st
+          (SchedContextId.ofObjId vScId.val) sc).mp hSc
+        refine SystemState.RunQueueStage.trans ?_ (SystemState.RunQueueStage.withScThreadIndex _ _)
+        refine SystemState.RunQueueStage.trans ?_ (SystemState.RunQueueStage.of_frame
+          (purgeReplenishmentFromAllCores_frame (·.objects) _ (fun _ _ => rfl) _)
+          (purgeReplenishmentFromAllCores_frame (·.scheduler.runQueue) _ (fun _ _ => rfl) _)
+          (purgeReplenishmentFromAllCores_frame (·.scheduler.runQueueEnds) _ (fun _ _ => rfl) _))
+        exact SystemState.RunQueueStage.insert rfl rfl rfl
+          (fun c => by rw [show st.objects[vScId.val]? = _ from hScRaw]; rfl)
+  · contradiction
+
+/-- The unbind is a current-placement frame for any core whose current thread is
+current nowhere else: it clears the unbound thread's core, and places that
+thread on its home only when it was current, so never a thread still current on
+`c`. -/
+theorem schedContextUnbind_currentPlacementFrame (vScId : SeLe4n.ValidObjId) (st st' : SystemState)
+    (c : Concurrency.CoreId) (hInv : st.objects.invExt)
+    (hU : ∀ c' t, st.scheduler.currentOnCore c = some t → st.scheduler.currentOnCore c' = some t →
+      c' = c)
+    (hStep : schedContextUnbind vScId st = .ok ((), st')) :
+    SystemState.CurrentPlacementFrame c st st' := by
+  unfold schedContextUnbind at hStep
+  split at hStep
+  · rename_i sc hSc _
+    split at hStep
+    · contradiction
+    · rename_i tid hBound
+      split at hStep
+      · rename_i tcb hTcb
+        dsimp only [] at hStep
+        split at hStep
+        · contradiction
+        · cases hStep
+          refine SystemState.CurrentPlacementFrame.trans ?_
+            (markKeyChangeFor_currentPlacementFrame _ _ _ c)
+          refine SystemState.CurrentPlacementFrame.trans ?_ (SystemState.CurrentPlacementFrame.withScThreadIndex _ _ c)
+          refine SystemState.CurrentPlacementFrame.trans (s2 := schedContextUnbindQueueStage _ _ _ _ _)
+            ?_ (SystemState.CurrentPlacementFrame.of_frame rfl
+              (purgeReplenishmentOnCore_currentOnCore _ _ _ c))
+          refine SystemState.CurrentPlacementFrame.trans (s2 := SystemState.updateTcb _ _ _) ?_
+            (schedContextUnbindQueueStage_currentPlacementFrame _ _ _ _ _ c ?hNe)
+          case hNe =>
+            intro hW hcur
+            simp only [SystemState.updateTcb_scheduler, SystemState.rewriteObject_scheduler] at hcur
+            cases hRC : runningCoreOf? st tid with
+            | none => simp [hRC] at hW
+            | some r =>
+              have hCurR : st.scheduler.currentOnCore r = some tid := by
+                have := List.find?_some hRC
+                simpa using this
+              simp only [hRC] at hcur
+              by_cases hrc : r = c
+              · subst hrc
+                simp at hcur
+              · rw [SchedulerState.markReschedulePendingOnCore_currentOnCore,
+                  SchedulerState.setCurrentOnCore_currentOnCore_ne _ _ _ _ hrc] at hcur
+                exact hrc (hU r tid hcur hCurR)
+          have hInv1 : ({ st with scheduler := match runningCoreOf? st tid with
+              | some r => (st.scheduler.setCurrentOnCore r none).markReschedulePendingOnCore r
+              | none => st.scheduler } : SystemState).objects.invExt := hInv
+          refine SystemState.CurrentPlacementFrame.trans (s2 := SystemState.rewriteObject _ _ _ _) ?_
+            (SystemState.CurrentPlacementFrame.updateTcb c _ _ _ (fun _ => rfl)
+              (SystemState.rewriteObject_preserves_objects_invExt _ _ _ _ hInv1))
+          refine SystemState.CurrentPlacementFrame.trans
+            (s2 := { st with scheduler := match runningCoreOf? st tid with
+              | some r => (st.scheduler.setCurrentOnCore r none).markReschedulePendingOnCore r
+              | none => st.scheduler }) ?_
+            (SystemState.CurrentPlacementFrame.rewriteObject_schedContext c _ hInv1)
+          intro y hy
+          refine ⟨?_, id, fun c' _ hm => ?_⟩
+          · revert hy
+            split
+            · rename_i r _
+              intro hy
+              by_cases hrc : r = c
+              · subst hrc; simp at hy
+              · rwa [SchedulerState.markReschedulePendingOnCore_currentOnCore,
+                  SchedulerState.setCurrentOnCore_currentOnCore_ne _ _ _ _ hrc] at hy
+            · exact id
+          · exact hm
+      · dsimp only [] at hStep
+        cases hStep
+        refine SystemState.CurrentPlacementFrame.trans ?_ (SystemState.CurrentPlacementFrame.withScThreadIndex _ _ c)
+        refine SystemState.CurrentPlacementFrame.trans ?_ (SystemState.CurrentPlacementFrame.of_frame
+          (purgeReplenishmentFromAllCores_frame (·.objects) _ (fun _ _ => rfl) _)
+          (purgeReplenishmentFromAllCores_currentOnCore _ _ c))
+        exact SystemState.CurrentPlacementFrame.rewriteObject_schedContext c _ hInv
+  · contradiction
 
 end SeLe4n.Kernel.SchedContextOps

@@ -365,7 +365,7 @@ theorem replyRecvPostReceiveDonation_preserves_replenishQueueAffinityConsistent_
       replenishQueueAffinityConsistent_smp (descheduleAtPlacement s t) :=
     fun s t hc c => (replenishQueueAffinityConsistentOnCore_frame
       (descheduleAtPlacement_replenishQueueOnCore _ _ _)
-      (descheduleAtPlacement_preserves_objects _ _)).mpr (hc c)
+      (descheduleAtPlacement_objectsAgreeOffRunLinks _ _)).mpr (hc c)
   unfold replyRecvPostReceiveDonation at h
   cases returned? with
   | none => simp only [] at h; cases h; exact hPip st hObjInv hCons
@@ -675,7 +675,7 @@ theorem replyRecvPopDonation_preserves_ipcInvariantFull
             have hInvM : ipcInvariantFull (migrateSchedContextReplenishment st1' oldScId
                 (determineTargetCore st holder)
                 (determineTargetCore st (replyDonationRecipient st oldScId target))) :=
-              ipcInvariantFull_of_descheduleFrame st1' _ hInv1' hObjsM
+              ipcInvariantFull_of_descheduleFrame st1' _ hInv1' (.of_objects_eq hObjsM)
                 (passiveServerIdleFrame.of_objects_scheduler_eq hObjsM hRqM.1 hRqM.2)
             exact h.2 ▸ hInvM
 
@@ -769,7 +769,7 @@ theorem replyRecvPostReceiveDonation_preserves_ipcInvariantFull
           split
           · rename_i c _
             refine ipcInvariantFull_of_descheduleFrame _ _ hInv
-              (removeRunnableOnCore_preserves_objects _ _ _)
+              (removeRunnableOnCore_objectsAgreeOffRunLinks _ _ _)
               (removeRunnableOnCore_passiveServerIdleFrame _ holder c ?_)
             intro tcb hTcb
             right
@@ -786,14 +786,16 @@ theorem replyRecvPostReceiveDonation_preserves_ipcInvariantFull
         -- donation's object-level hypotheses transport verbatim; what it does
         -- write is the run queue, which is the `descheduleFrame` the false arm
         -- below already discharges from `hServerIdleAllowed`.
-        have hObjEq : (replyRecvHolderDeschedule tid holder st).objects
-            = st.objects := by
+        have hA : (replyRecvHolderDeschedule tid holder st).objectsAgreeOffRunLinks st := by
           unfold replyRecvHolderDeschedule
           split
-          · rfl
-          · exact descheduleAtPlacement_preserves_objects _ _
+          · exact .refl _
+          · exact descheduleAtPlacement_objectsAgreeOffRunLinks _ _
         have hSObj : (replyRecvHolderDeschedule tid holder st).objects.invExt := by
-          rw [hObjEq]; exact hObjInv
+          unfold replyRecvHolderDeschedule
+          split
+          · exact hObjInv
+          · exact descheduleAtPlacement_preserves_objects_invExt _ _ hObjInv
         have hSInv : ipcInvariantFull
             (replyRecvHolderDeschedule tid holder st) := by
           unfold replyRecvHolderDeschedule descheduleAtPlacement descheduleAt
@@ -802,7 +804,7 @@ theorem replyRecvPostReceiveDonation_preserves_ipcInvariantFull
           · split
             · rename_i c _
               refine ipcInvariantFull_of_descheduleFrame _ _ hInv
-                (removeRunnableOnCore_preserves_objects _ _ _)
+                (removeRunnableOnCore_objectsAgreeOffRunLinks _ _ _)
                 (removeRunnableOnCore_passiveServerIdleFrame _ holder c ?_)
               intro tcb hTcb
               right
@@ -814,10 +816,9 @@ theorem replyRecvPostReceiveDonation_preserves_ipcInvariantFull
             (replyRecvHolderDeschedule tid holder st).getTcb? tid'
               = some tcb → tcb.schedContextBinding ≠ .donated scId tid := by
           intro tid' tcb scId hTcb
-          refine hReceiverNotOwner tid' tcb scId ?_
-          rw [SystemState.getTcb?_eq_some_iff] at hTcb ⊢
-          rw [hObjEq] at hTcb
-          exact hTcb
+          rw [SystemState.getTcb?_eq_some_iff] at hTcb
+          run_links_back hA at tcb hTcb
+          exact hReceiverNotOwner tid' tcb scId ((SystemState.getTcb?_eq_some_iff _ _ _).mpr hTcb)
         cases hDon : applyRendezvousCallDonation
             (replyRecvHolderDeschedule tid holder st) tid nextThread with
         | error e => rw [hDon] at h; simp only [] at h; cases h
@@ -827,10 +828,7 @@ theorem replyRecvPostReceiveDonation_preserves_ipcInvariantFull
             -- arm the donation takes is the arm the guard selected.
             have hCallD : rendezvousDequeuedCall
                 (replyRecvHolderDeschedule tid holder st) nextThread = true := by
-              unfold rendezvousDequeuedCall at hCall ⊢
-              rw [lookupTcb_congr_getElem (s1 := st)
-                (s2 := replyRecvHolderDeschedule tid holder st)
-                (fun k => by rw [hObjEq]) nextThread]
+              rw [rendezvousDequeuedCall_of_objectsAgreeOffRunLinks hA]
               exact hCall
             have hStep : applyReceiveRendezvousDonation
                 (replyRecvHolderDeschedule tid holder st)

@@ -1055,21 +1055,66 @@ an `f` that rebuilds its argument writes it in place. -/
     (f : RegisterFile → RegisterFile) : MachineState :=
   { ms with coreRegs := ⟨ms.coreRegs.toArray.modify c.val f, by simp⟩ }
 
+/-- `b`, read as `a` when the two agree.  `RegisterFile.overwriteWith` builds
+every field through it so that no field of the result is a bare field of `src`
+(see there). -/
+@[inline] def RegisterFile.pickWord (a b : UInt64) : UInt64 := if a = b then a else b
+
+theorem RegisterFile.pickWord_eq (a b : UInt64) : RegisterFile.pickWord a b = b := by
+  unfold RegisterFile.pickWord; split <;> simp_all
+
 /-- WS-ZA ZA4: **`src`'s words written into `rf`** — `src` itself
 (`RegisterFile.overwriteWith_eq`), built in `rf`'s object when `rf` is the only
 reference to it, so a holder that owns its file takes another file's words
-without sharing it.  The test on `x0` keeps `rf`'s constructor live for the
-compiler to reuse, as `InFlightContext.snapshotInto` does. -/
+without sharing it.  Every field is read through `pickWord` rather than as a
+bare field of `src`: the compiler builds an update whose fields are bare fields
+of `src` as an update of `src` itself, which returned `src` shared (or wrote
+into it) and left the next write into either holder to copy it, and every
+word of `src` is read before `rf` is touched, which is what has the compiler
+build the result in `rf`'s object rather than in `src`'s (WS-ZA ZA4.5). -/
 def RegisterFile.overwriteWith (src : @& RegisterFile) (rf : RegisterFile) : RegisterFile :=
-  if rf.x0 = src.x0 then { rf with x1 := src.x1, x2 := src.x2, x3 := src.x3, x4 := src.x4, x5 := src.x5, x6 := src.x6, x7 := src.x7, x8 := src.x8, x9 := src.x9, x10 := src.x10, x11 := src.x11, x12 := src.x12, x13 := src.x13, x14 := src.x14, x15 := src.x15, x16 := src.x16, x17 := src.x17, x18 := src.x18, x19 := src.x19, x20 := src.x20, x21 := src.x21, x22 := src.x22, x23 := src.x23, x24 := src.x24, x25 := src.x25, x26 := src.x26, x27 := src.x27, x28 := src.x28, x29 := src.x29, x30 := src.x30, sp := src.sp, pc := src.pc, pstate := src.pstate, tpidr := src.tpidr }
-  else { rf with x0 := src.x0, x1 := src.x1, x2 := src.x2, x3 := src.x3, x4 := src.x4, x5 := src.x5, x6 := src.x6, x7 := src.x7, x8 := src.x8, x9 := src.x9, x10 := src.x10, x11 := src.x11, x12 := src.x12, x13 := src.x13, x14 := src.x14, x15 := src.x15, x16 := src.x16, x17 := src.x17, x18 := src.x18, x19 := src.x19, x20 := src.x20, x21 := src.x21, x22 := src.x22, x23 := src.x23, x24 := src.x24, x25 := src.x25, x26 := src.x26, x27 := src.x27, x28 := src.x28, x29 := src.x29, x30 := src.x30, sp := src.sp, pc := src.pc, pstate := src.pstate, tpidr := src.tpidr }
+  let s_x0 := src.x0
+  let s_x1 := src.x1
+  let s_x2 := src.x2
+  let s_x3 := src.x3
+  let s_x4 := src.x4
+  let s_x5 := src.x5
+  let s_x6 := src.x6
+  let s_x7 := src.x7
+  let s_x8 := src.x8
+  let s_x9 := src.x9
+  let s_x10 := src.x10
+  let s_x11 := src.x11
+  let s_x12 := src.x12
+  let s_x13 := src.x13
+  let s_x14 := src.x14
+  let s_x15 := src.x15
+  let s_x16 := src.x16
+  let s_x17 := src.x17
+  let s_x18 := src.x18
+  let s_x19 := src.x19
+  let s_x20 := src.x20
+  let s_x21 := src.x21
+  let s_x22 := src.x22
+  let s_x23 := src.x23
+  let s_x24 := src.x24
+  let s_x25 := src.x25
+  let s_x26 := src.x26
+  let s_x27 := src.x27
+  let s_x28 := src.x28
+  let s_x29 := src.x29
+  let s_x30 := src.x30
+  let s_sp := src.sp
+  let s_pc := src.pc
+  let s_pstate := src.pstate
+  let s_tpidr := src.tpidr
+  { rf with x0 := pickWord rf.x0 s_x0, x1 := pickWord rf.x1 s_x1, x2 := pickWord rf.x2 s_x2, x3 := pickWord rf.x3 s_x3, x4 := pickWord rf.x4 s_x4, x5 := pickWord rf.x5 s_x5, x6 := pickWord rf.x6 s_x6, x7 := pickWord rf.x7 s_x7, x8 := pickWord rf.x8 s_x8, x9 := pickWord rf.x9 s_x9, x10 := pickWord rf.x10 s_x10, x11 := pickWord rf.x11 s_x11, x12 := pickWord rf.x12 s_x12, x13 := pickWord rf.x13 s_x13, x14 := pickWord rf.x14 s_x14, x15 := pickWord rf.x15 s_x15, x16 := pickWord rf.x16 s_x16, x17 := pickWord rf.x17 s_x17, x18 := pickWord rf.x18 s_x18, x19 := pickWord rf.x19 s_x19, x20 := pickWord rf.x20 s_x20, x21 := pickWord rf.x21 s_x21, x22 := pickWord rf.x22 s_x22, x23 := pickWord rf.x23 s_x23, x24 := pickWord rf.x24 s_x24, x25 := pickWord rf.x25 s_x25, x26 := pickWord rf.x26 s_x26, x27 := pickWord rf.x27 s_x27, x28 := pickWord rf.x28 s_x28, x29 := pickWord rf.x29 s_x29, x30 := pickWord rf.x30 s_x30, sp := pickWord rf.sp s_sp, pc := pickWord rf.pc s_pc, pstate := pickWord rf.pstate s_pstate, tpidr := pickWord rf.tpidr s_tpidr }
 
 theorem RegisterFile.overwriteWith_eq (src rf : RegisterFile) :
     RegisterFile.overwriteWith src rf = src := by
   unfold RegisterFile.overwriteWith
-  split
-  · next h => cases rf; cases src; simp only at h; subst h; rfl
-  · rfl
+  cases rf; cases src
+  simp only [RegisterFile.pickWord_eq]
 
 /-- The rewrite is the write of `f` applied to the file the core holds. -/
 theorem MachineState.modifyRegsOnCore_eq (ms : MachineState) (c : CoreId)

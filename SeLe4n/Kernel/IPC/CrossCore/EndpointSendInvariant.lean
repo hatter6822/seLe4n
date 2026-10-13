@@ -279,10 +279,9 @@ theorem endpointSendDualOnCore_preserves_objects_invExt
             | error e => simp only; exact hObjInv
             | ok st2 =>
               simp only
-              show (removeRunnableOnCore st2 sender executingCore).objects.invExt
-              rw [removeRunnableOnCore_preserves_objects]
-              exact storeTcbIpcStateAndMessage_preserves_objects_invExt st1 st2 sender _ _
-                hObjInv1 hStore
+              exact removeRunnableOnCore_objects_invExt _ _ _
+                (storeTcbIpcStateAndMessage_preserves_objects_invExt st1 st2 sender _ _
+                  hObjInv1 hStore)
 
 -- ============================================================================
 -- §4 RR2.14 — the whole-bundle theorem the live `.send` arm was missing
@@ -341,7 +340,7 @@ theorem endpointSendDualOnCore_preserves_ipcInvariantFull
   rcases endpointSendDualOnCore_post_agrees endpointId sender msg executingCore st hObjInv with
     hPre | ⟨r1, hStep1, hAgree⟩
   · rw [hPre]; exact hInv
-  · exact ipcInvariantFull_of_getElem_eq hAgree.objects hPsi'
+  · exact ipcInvariantFull_of_objectsAgreeOffRunLinks hAgree.objects hPsi'
       (endpointSendDual_preserves_ipcInvariantFull st r1 endpointId sender msg hInv hObjInv
         hAllBudgetsNone
         hFreshSender hSendTailFresh hSenderNotRecv

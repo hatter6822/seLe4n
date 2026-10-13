@@ -79,16 +79,8 @@ theorem updatePipBoost_eq_updatePipBoostOnCore_bootCore (st : SystemState) (tid 
 `objects.insert` nor the scheduler bucket migration touches it. -/
 theorem updatePipBoostOnCore_preserves_objectIndex (st : SystemState) (c : CoreId)
     (tid : ThreadId) :
-    (updatePipBoostOnCore st c tid).objectIndex = st.objectIndex := by
-  simp only [updatePipBoostOnCore]
-  split
-  · rename_i tcb _
-    split
-    · rfl
-    · split
-      · split <;> (rw [markKeyChangeFor_objectIndex]; rfl)
-      · rw [markKeyChangeFor_objectIndex]; rfl
-  · rfl
+    (updatePipBoostOnCore st c tid).objectIndex = st.objectIndex :=
+  congrArg (·.objectIndex) (updatePipBoostOnCore_onlyObjectsSchedulerDiffer st c tid)
 
 /-- WS-SM SM5.F.2 (PIP graph invariant): `updatePipBoostOnCore` preserves
 `blockingServer` for every thread.  The blocking graph (which reads only
@@ -97,36 +89,10 @@ only `pipBoost`, and other threads' objects are untouched.  Mirrors the
 single-core `updatePipBoost_preserves_blockingServer`. -/
 theorem updatePipBoostOnCore_preserves_blockingServer (st : SystemState) (c : CoreId)
     (tid : ThreadId) (hObjInv : st.objects.invExt) (t : ThreadId) :
-    blockingServer (updatePipBoostOnCore st c tid) t = blockingServer st t := by
-  by_cases hEq : t = tid
-  · rw [hEq]
-    -- The transition discriminates on the witnessed lookup, so the split is
-    -- the typed accessor's two arms carried in by the lookup's equations; the
-    -- congruence lemma wants the store form, which `getTcb?_eq_some_iff`
-    -- supplies without a second reading.  The split precedes the unfold: the
-    -- witnessed lookup's type mentions `st.getTcb? tid`.
-    cases hTid : st.getTcb? tid with
-    | none =>
-      unfold updatePipBoostOnCore
-      rw [SystemState.getTcbWitnessed?_eq_none hTid]
-    | some tcb =>
-      have hRaw : st.objects[tid.toObjId]? = some (.tcb tcb) :=
-        (SystemState.getTcb?_eq_some_iff st tid tcb).mp hTid
-      unfold updatePipBoostOnCore
-      simp only [SystemState.getTcbWitnessed?_eq_some hTid]
-      split
-      · rfl
-      · refine blockingServer_ipcState_congr _ _ _
-          { tcb with pipBoost := computeMaxWaiterPriority st tid } tcb ?_ hRaw rfl
-        -- `.get?`-method form (AK7-clean: no raw `[·]?` bracket in the proof source).
-        have hSelf := RHTable_get?_insert_self st.objects tid.toObjId
-          (.tcb { tcb with pipBoost := computeMaxWaiterPriority st tid }) hObjInv
-        by_cases hRQ : tid ∈ (st.scheduler.runQueueOnCore c)
-        · simp only [hRQ, ite_true]; split <;> (rw [markKeyChangeFor_objects]; exact hSelf)
-        · simp only [hRQ, ite_false, markKeyChangeFor_objects]; exact hSelf
-  · exact blockingServer_congr_objects _ _ _
-      (updatePipBoostOnCore_objects_ne st c tid t.toObjId
-        (fun h => hEq (ThreadId.toObjId_injective tid t (eq_of_beq h)).symm) hObjInv)
+    blockingServer (updatePipBoostOnCore st c tid) t = blockingServer st t :=
+  (blockingServer_of_objectsAgreeOffRunLinks _ _ t
+    (updatePipBoostOnCore_objectsAgreeOffRunLinks st c tid)).trans
+    (pipBoostWrite_preserves_blockingServer st tid hObjInv t)
 
 /-- WS-SM SM5.F.2: `updatePipBoostOnCore` preserves blocking-graph acyclicity —
 it preserves `blockingServer` (graph topology) and `objectIndex` (fuel). -/
@@ -137,26 +103,6 @@ theorem updatePipBoostOnCore_preserves_blockingAcyclic (st : SystemState) (c : C
     (fun t => updatePipBoostOnCore_preserves_blockingServer st c tid hObjInv t)
     (updatePipBoostOnCore_preserves_objectIndex st c tid)
 
-/-- WS-SM SM5.F.2 (cross-core frame): a PIP boost on core `c` leaves every *other*
-core `c' ≠ c`'s run-queue slot untouched — the bucket migration writes only core
-`c`'s slot. -/
-theorem updatePipBoostOnCore_runQueueOnCore_ne (st : SystemState) (c c' : CoreId)
-    (tid : ThreadId) (h : c ≠ c') :
-    (updatePipBoostOnCore st c tid).scheduler.runQueueOnCore c'
-      = st.scheduler.runQueueOnCore c' := by
-  simp only [updatePipBoostOnCore]
-  split
-  · rename_i tcb _
-    split
-    · rfl
-    · split
-      · split
-        · rw [markKeyChangeFor_runQueueOnCore]
-          exact SchedulerState.setRunQueueOnCore_runQueueOnCore_ne st.scheduler c c' _ h
-        · rw [markKeyChangeFor_runQueueOnCore]; rfl
-      · rw [markKeyChangeFor_runQueueOnCore]; rfl
-  · rfl
-
 /-- WS-SM SM5.F.2: the holder's post-boost `pipBoost` is the GLOBAL
 `computeMaxWaiterPriority st tid` — whether the update fired (`pipBoost := newBoost`)
 or was a no-op (the pre-state `pipBoost` already equalled `newBoost`).  This is the
@@ -166,10 +112,14 @@ theorem updatePipBoostOnCore_getTcb?_pipBoost (st : SystemState) (c : CoreId) (t
     (tcb : TCB) (hTcb : st.getTcb? tid = some tcb) (hInv : st.objects.invExt) :
     ∃ tcb', (updatePipBoostOnCore st c tid).getTcb? tid = some tcb' ∧
       tcb'.pipBoost = computeMaxWaiterPriority st tid := by
-  -- The transition discriminates on the witnessed lookup, driven by the
-  -- hypothesis through the lookup's own equation.
-  unfold updatePipBoostOnCore
-  simp only [SystemState.getTcbWitnessed?_eq_some hTcb]
+  -- The object write's TCB carries the boost; the re-key's link writes leave
+  -- `pipBoost` alone (WS-ZA ZA4.5).
+  suffices hRef : ∃ tcb', (pipBoostWrite st tid).getTcb? tid = some tcb' ∧
+      tcb'.pipBoost = computeMaxWaiterPriority st tid by
+    obtain ⟨t0, h0, hB⟩ := hRef
+    obtain ⟨t', h', hE⟩ := (updatePipBoostOnCore_objectsAgreeOffRunLinks st c tid).getTcb?_some h0
+    exact ⟨t', h', (TCB.proj_eq_of_withoutRunLinks_eq TCB.pipBoost hE).trans hB⟩
+  simp only [pipBoostWrite, SystemState.getTcbWitnessed?_eq_some hTcb]
   split
   · -- no-op: pipBoost already equals newBoost
     rename_i hEq
@@ -177,11 +127,8 @@ theorem updatePipBoostOnCore_getTcb?_pipBoost (st : SystemState) (c : CoreId) (t
   · -- update: pipBoost := newBoost
     refine ⟨{ tcb with pipBoost := computeMaxWaiterPriority st tid }, ?_, rfl⟩
     rw [SystemState.getTcb?_eq_some_iff]
-    have hSelf := RHTable_get?_insert_self st.objects tid.toObjId
+    exact RHTable_get?_insert_self st.objects tid.toObjId
       (.tcb { tcb with pipBoost := computeMaxWaiterPriority st tid }) hInv
-    by_cases hRQ : tid ∈ (st.scheduler.runQueueOnCore c)
-    · simp only [hRQ, ite_true]; split <;> (rw [markKeyChangeFor_objects]; exact hSelf)
-    · simp only [hRQ, ite_false, markKeyChangeFor_objects]; exact hSelf
 
 -- ============================================================================
 -- §2  SM5.F.1 / SM5.F.3 — pipBoost_perCore_consistent
@@ -246,7 +193,7 @@ condition under which `updatePipBoostOnCore` performs its run-queue bucket migra
 theorem pipBoostWithWake_emits_sgi_if_remote (st : SystemState) (tid : ThreadId) (ec : CoreId)
     (t t' : TCB)
     (hRemote : determineTargetCore st tid ≠ ec)
-    (hRunnable : tid ∈ st.scheduler.runQueueOnCore (determineTargetCore st tid))
+    (hRunnable : st.queuedOn (determineTargetCore st tid) tid = true)
     (hPre : st.getTcb? tid = some t)
     (hPost : (updatePipBoostOnCore st (determineTargetCore st tid) tid).getTcb? tid = some t')
     (hMaterial : (resolveEffectivePrioDeadline st t).1
@@ -272,7 +219,7 @@ is next re-enqueued there).  Closes the spurious-cross-core-IPI gap for blocked-
 boosts (the common PIP case: the boosted holder is itself blocked deeper in the
 chain). -/
 theorem pipBoostWithWake_no_sgi_if_not_runnable (st : SystemState) (tid : ThreadId) (ec : CoreId)
-    (hNotRun : tid ∉ st.scheduler.runQueueOnCore (determineTargetCore st tid)) :
+    (hNotRun : st.queuedOn (determineTargetCore st tid) tid = false) :
     (pipBoostWithWake st tid ec).2 = none := by
   simp [pipBoostWithWake, hNotRun]
 
@@ -408,7 +355,7 @@ poked.  The substantive cross-core content. -/
 theorem propagatePipChainCrossCore_head_sgi_remote (st : SystemState) (tid : ThreadId)
     (ec : CoreId) (n : Nat) (t t' : TCB)
     (hRemote : determineTargetCore st tid ≠ ec)
-    (hRunnable : tid ∈ st.scheduler.runQueueOnCore (determineTargetCore st tid))
+    (hRunnable : st.queuedOn (determineTargetCore st tid) tid = true)
     (hPre : st.getTcb? tid = some t)
     (hPost : (updatePipBoostOnCore st (determineTargetCore st tid) tid).getTcb? tid = some t')
     (hMaterial : (resolveEffectivePrioDeadline st t).1
@@ -491,17 +438,14 @@ theorem restoreToReadyOnCore_pipBoost_recomputed (st : SystemState) (c : CoreId)
   unfold restoreToReadyOnCore
   -- The enqueue preserves `tid`'s pipBoost: no-op keeps the mid-state; the fresh
   -- branch sets only `ipcState` (`enqueueRunnableOnCore_makes_ready`).
-  by_cases hRun : runnableOnSomeCore (restoreToReadyMidState st tid) tid = true
-  · have hEq : enqueueRunnableOnCore (restoreToReadyMidState st tid) c tid
-        = restoreToReadyMidState st tid := by
-      unfold enqueueRunnableOnCore; rw [SystemState.getTcbWitnessed?_eq_some hSt2Tcb]; simp [hRun]
-    rw [hEq]
+  by_cases hRun : wakeDeclines (restoreToReadyMidState st tid) c tid = true
+  · rw [enqueueRunnableOnCore_eq_self_of_declines _ _ _ hRun]
     exact ⟨_, hSt2Tcb, rfl⟩
-  · have hFresh : runnableOnSomeCore (restoreToReadyMidState st tid) tid = false := by
+  · have hFresh : wakeDeclines (restoreToReadyMidState st tid) c tid = false := by
       simpa using hRun
-    refine ⟨{ t1 with pipBoost := computeMaxWaiterPriority (restoreToReady st tid) tid, ipcState := .ready }, ?_, rfl⟩
-    exact enqueueRunnableOnCore_makes_ready (restoreToReadyMidState st tid) c tid
+    obtain ⟨t', h', ht⟩ := enqueueRunnableOnCore_makes_ready (restoreToReadyMidState st tid) c tid
       { t1 with pipBoost := computeMaxWaiterPriority (restoreToReady st tid) tid } hSt2Tcb hInv2 hFresh
+    exact ⟨t', h', TCB.proj_eq_of_withoutRunLinks_eq TCB.pipBoost ht⟩
 
 -- §5b  SM5.F.6 — restoreToReadyWithWake (cross-core resume wake)
 
@@ -704,17 +648,8 @@ consumes it. -/
 theorem updatePipBoostOnCore_getTcb?_cpuAffinity (st : SystemState) (c : CoreId) (tid : ThreadId)
     (tcb : TCB) (hTcb : st.getTcb? tid = some tcb) (hInv : st.objects.invExt) :
     ∃ t', (updatePipBoostOnCore st c tid).getTcb? tid = some t' ∧ t'.cpuAffinity = tcb.cpuAffinity := by
-  unfold updatePipBoostOnCore
-  simp only [SystemState.getTcbWitnessed?_eq_some hTcb]
-  split
-  · exact ⟨tcb, hTcb, rfl⟩
-  · refine ⟨{ tcb with pipBoost := computeMaxWaiterPriority st tid }, ?_, rfl⟩
-    rw [SystemState.getTcb?_eq_some_iff]
-    have hSelf := RHTable_get?_insert_self st.objects tid.toObjId
-      (.tcb { tcb with pipBoost := computeMaxWaiterPriority st tid }) hInv
-    by_cases hRQ : tid ∈ (st.scheduler.runQueueOnCore c)
-    · simp only [hRQ, ite_true]; split <;> (rw [markKeyChangeFor_objects]; exact hSelf)
-    · simp only [hRQ, ite_false, markKeyChangeFor_objects]; exact hSelf
+  obtain ⟨p, t', h', hE⟩ := updatePipBoostOnCore_objects_at st c tid tcb hTcb hInv
+  exact ⟨t', h', TCB.proj_eq_of_withoutRunLinks_eq TCB.cpuAffinity hE⟩
 
 /-- WS-SM SM5.F.4 (cpuAffinity-stability / home-core stability): a PIP boost
 preserves *every* thread's home core (`determineTargetCore`).  `determineTargetCore`
@@ -723,26 +658,8 @@ walk's home-core decisions are stable as the boosts accumulate.  This is the
 invariant the single-core bridge and the deadlock-freedom argument rest on. -/
 theorem updatePipBoostOnCore_preserves_determineTargetCore (st : SystemState) (c : CoreId)
     (tid t : ThreadId) (hInv : st.objects.invExt) :
-    determineTargetCore (updatePipBoostOnCore st c tid) t = determineTargetCore st t := by
-  by_cases hEq : t = tid
-  · subst hEq
-    cases hTcb : st.getTcb? t with
-    | none => rw [updatePipBoostOnCore_eq_self_of_getTcb?_none st c t hTcb]
-    | some tcb =>
-      obtain ⟨t', hPost, hAff⟩ := updatePipBoostOnCore_getTcb?_cpuAffinity st c t tcb hTcb hInv
-      simp only [determineTargetCore, hPost, hTcb, hAff]
-  · unfold determineTargetCore
-    -- AK7-clean: frame `getTcb? t` via the `.get?`-method form (no raw `[·]?` bracket
-    -- in the proof source); the bracket-form `objects_ne` is applied under the
-    -- `RHTable_getElem?_eq_get?` bridge.
-    have hGet : (updatePipBoostOnCore st c tid).getTcb? t = st.getTcb? t := by
-      have hObjNe : (updatePipBoostOnCore st c tid).objects.get? t.toObjId
-          = st.objects.get? t.toObjId := by
-        rw [← RHTable_getElem?_eq_get?, ← RHTable_getElem?_eq_get?]
-        exact updatePipBoostOnCore_objects_ne st c tid t.toObjId
-          (fun h => hEq (ThreadId.toObjId_injective tid t (eq_of_beq h)).symm) hInv
-      unfold SystemState.getTcb?; simp only [RHTable_getElem?_eq_get?, hObjNe]
-    rw [hGet]
+    determineTargetCore (updatePipBoostOnCore st c tid) t = determineTargetCore st t :=
+  updatePipBoostOnCore_determineTargetCore st c tid t hInv
 
 /-- WS-SM SM5.F.3 (plan §3.6, post-boost dominance): after a cross-core PIP boost,
 the boosted holder's effective priority bounds *every* core's pre-state waiter slice
@@ -868,8 +785,8 @@ theorem propagatePipChainCrossCore_second_link_sgi_remote (st : SystemState) (ti
     (ec : CoreId) (n : Nat) (nextServer : ThreadId) (t t' : TCB)
     (hBS : blockingServer st tid = some nextServer)
     (hRemote : determineTargetCore (pipBoostWithWake st tid ec).1 nextServer ≠ ec)
-    (hRunnable : nextServer ∈ (pipBoostWithWake st tid ec).1.scheduler.runQueueOnCore
-                  (determineTargetCore (pipBoostWithWake st tid ec).1 nextServer))
+    (hRunnable : (pipBoostWithWake st tid ec).1.queuedOn
+                  (determineTargetCore (pipBoostWithWake st tid ec).1 nextServer) nextServer = true)
     (hPre : (pipBoostWithWake st tid ec).1.getTcb? nextServer = some t)
     (hPost : (updatePipBoostOnCore (pipBoostWithWake st tid ec).1
               (determineTargetCore (pipBoostWithWake st tid ec).1 nextServer) nextServer).getTcb?
@@ -1038,7 +955,7 @@ theorem resumeReadyMidState_getTcb?_ready (st : SystemState) (tid : ThreadId) (t
     ∃ tm, (resumeReadyMidState st tid).getTcb? tid = some tm ∧ tm.threadState = .Ready := by
   have hst1Inv : (restoreToReady st tid).objects.invExt := restoreToReady_objects_invExt st tid hInv
   have hst1 : (restoreToReady st tid).getTcb? tid
-      = some { tcb with ipcState := .ready, queuePrev := none, queueNext := none, queuePPrev := none, pendingReceiveReply := none } := by
+      = some { tcb with ipcState := .ready, queuePrevCode := 0, queueNextCode := 0, queuePPrevCode := 0, pendingReceiveReply := none } := by
     unfold restoreToReady restoreToReadyStaging
     rw [SystemState.updateTcb_getTcb?_self _ _ _ hInv, hGet]
     rfl
@@ -1097,13 +1014,13 @@ theorem resumeThreadOnCore_sets_threadState (st : SystemState) (vtid : SeLe4n.Va
   have hst3 : ∃ t3, (enqueueRunnableOnCore (markKeyChangeFrom st (resumeReadyMidState st vtid.val) vtid.val)
         (determineTargetCore st vtid.val) vtid.val).getTcb? vtid.val = some t3
         ∧ t3.threadState = .Ready := by
-    by_cases hRun : runnableOnSomeCore (markKeyChangeFrom st (resumeReadyMidState st vtid.val) vtid.val) vtid.val = true
-    · rw [SeLe4n.Kernel.enqueueRunnableOnCore_eq_self_of_runnable _ _ _ hRun]
+    by_cases hRun : wakeDeclines (markKeyChangeFrom st (resumeReadyMidState st vtid.val) vtid.val) (determineTargetCore st vtid.val) vtid.val = true
+    · rw [SeLe4n.Kernel.enqueueRunnableOnCore_eq_self_of_declines _ _ _ hRun]
       exact ⟨tm, hmid, hmidReady⟩
-    · have hFresh : runnableOnSomeCore (markKeyChangeFrom st (resumeReadyMidState st vtid.val) vtid.val) vtid.val = false := by
+    · have hFresh : wakeDeclines (markKeyChangeFrom st (resumeReadyMidState st vtid.val) vtid.val) (determineTargetCore st vtid.val) vtid.val = false := by
         simpa using hRun
-      exact ⟨{ tm with ipcState := .ready },
-        SeLe4n.Kernel.enqueueRunnableOnCore_makes_ready _ _ _ tm hmid hmidInv hFresh, hmidReady⟩
+      obtain ⟨t', h', ht⟩ := SeLe4n.Kernel.enqueueRunnableOnCore_makes_ready _ _ _ tm hmid hmidInv hFresh
+      exact ⟨t', h', (TCB.proj_eq_of_withoutRunLinks_eq TCB.threadState ht).trans hmidReady⟩
   obtain ⟨t3, hst3get, hst3ready⟩ := hst3
   -- `tid` is not `ec`'s current in `st3` (the resume prefix preserves `currentOnCore`).
   have hst3cur : (enqueueRunnableOnCore (markKeyChangeFrom st (resumeReadyMidState st vtid.val) vtid.val)
@@ -1128,8 +1045,10 @@ theorem resumeThreadOnCore_sets_threadState (st : SystemState) (vtid : SeLe4n.Va
       simp only [Except.ok.injEq, Prod.mk.injEq] at h
       obtain ⟨hst4, _⟩ := h
       subst hst4
-      rw [handleRescheduleSgiOnCore_getTcb?_ne_current _ ec vtid.val st4 hst3inv hst3cur hH]
-      exact ⟨t3, hst3get, hst3ready⟩
+      have hM := handleRescheduleSgiOnCore_getTcb?_ne_current _ ec vtid.val st4 hst3inv hst3cur hH
+      rw [hst3get] at hM
+      obtain ⟨t4, h4, hE⟩ := TCB.exists_of_map_withoutRunLinks_eq hM
+      exact ⟨t4, h4, (TCB.proj_eq_of_withoutRunLinks_eq TCB.threadState hE).trans hst3ready⟩
   · -- REMOTE: the result is the enqueued state `st3` directly.
     simp only [Bool.not_eq_true] at hLoc
     simp only [hLoc, Bool.false_eq_true, if_false] at h
@@ -1241,12 +1160,12 @@ theorem restoreToReadyWithWake_sets_threadState (st : SystemState) (tid : Thread
   obtain ⟨tm, hmid, hmidReady⟩ := resumeReadyMidState_getTcb?_ready st tid tcb hGet hInv
   have hmidInv : (resumeReadyMidState st tid).objects.invExt :=
     resumeReadyMidState_objects_invExt st tid hInv
-  by_cases hRun : runnableOnSomeCore (resumeReadyMidState st tid) tid = true
-  · rw [SeLe4n.Kernel.enqueueRunnableOnCore_eq_self_of_runnable _ _ _ hRun]
+  by_cases hRun : wakeDeclines (resumeReadyMidState st tid) (determineTargetCore st tid) tid = true
+  · rw [SeLe4n.Kernel.enqueueRunnableOnCore_eq_self_of_declines _ _ _ hRun]
     exact ⟨tm, hmid, hmidReady⟩
-  · have hFresh : runnableOnSomeCore (resumeReadyMidState st tid) tid = false := by simpa using hRun
-    exact ⟨{ tm with ipcState := .ready },
-      SeLe4n.Kernel.enqueueRunnableOnCore_makes_ready _ _ _ tm hmid hmidInv hFresh, hmidReady⟩
+  · have hFresh : wakeDeclines (resumeReadyMidState st tid) (determineTargetCore st tid) tid = false := by simpa using hRun
+    obtain ⟨t', h', ht⟩ := SeLe4n.Kernel.enqueueRunnableOnCore_makes_ready _ _ _ tm hmid hmidInv hFresh
+    exact ⟨t', h', (TCB.proj_eq_of_withoutRunLinks_eq TCB.threadState ht).trans hmidReady⟩
 
 -- ============================================================================
 -- §12  SM5.F.4 — cross-core wake dispatch (the SM6 runtime firing layer)
@@ -1321,14 +1240,14 @@ def crossCoreSgiBody (pre post : SystemState) (execCore : CoreId) (oid : ObjId)
     match pre.getTcb? tpost.tid with
     | some tpre =>
       let home := SeLe4n.Kernel.determineTargetCore post tpost.tid
-      if tpost.tid ∈ post.scheduler.runQueueOnCore home then
+      if post.queuedOn home tpost.tid then
         -- QUEUE rules (wake / re-bucketing), home-keyed: a queued thread lives
         -- on its home core's run queue (the SM5.H.4 migration maintains this).
         -- A home on the executing core needs no poke (single-core inert); fire
         -- UNLESS the thread was already runnable on `home` (not a wake) AND its
         -- effective bucket is unchanged (not a re-bucketing).
         if home == execCore then none
-        else if (tpost.tid ∈ pre.scheduler.runQueueOnCore home)
+        else if pre.queuedOn home tpost.tid
             && ((SeLe4n.Kernel.effectiveSchedParams pre tpre).1
                   == (SeLe4n.Kernel.effectiveSchedParams post tpost).1)
             && ((SeLe4n.Kernel.effectiveSchedParams pre tpre).2.1.val
@@ -1854,10 +1773,8 @@ theorem crossCoreSgiBody_remote_wake (pre post : SystemState) (execCore : CoreId
     (hPost : post.objects[oid]? = some (.tcb tpost))
     (hPre : pre.getTcb? tpost.tid = some tpre)
     (hRemote : SeLe4n.Kernel.determineTargetCore post tpost.tid ≠ execCore)
-    (hPostRq : tpost.tid ∈
-        post.scheduler.runQueueOnCore (SeLe4n.Kernel.determineTargetCore post tpost.tid))
-    (hPreNotRq : tpost.tid ∉
-        pre.scheduler.runQueueOnCore (SeLe4n.Kernel.determineTargetCore post tpost.tid)) :
+    (hPostRq : post.queuedOn (SeLe4n.Kernel.determineTargetCore post tpost.tid) tpost.tid = true)
+    (hPreNotRq : pre.queuedOn (SeLe4n.Kernel.determineTargetCore post tpost.tid) tpost.tid = false) :
     crossCoreSgiBody pre post execCore oid
       = some (SeLe4n.Kernel.determineTargetCore post tpost.tid, SgiKind.reschedule) := by
   unfold crossCoreSgiBody SystemState.getObject?
@@ -1878,8 +1795,8 @@ theorem crossCoreSgiBody_remote_deschedule (pre post : SystemState) (execCore : 
     (oid : ObjId) (tpost tpre : TCB) (preCur : CoreId)
     (hPost : post.objects[oid]? = some (.tcb tpost))
     (hPre : pre.getTcb? tpost.tid = some tpre)
-    (hPostNotRq : tpost.tid ∉
-        post.scheduler.runQueueOnCore (SeLe4n.Kernel.determineTargetCore post tpost.tid))
+    (hPostNotRq : post.queuedOn (SeLe4n.Kernel.determineTargetCore post tpost.tid) tpost.tid
+        = false)
     (hFind : SeLe4n.Kernel.Concurrency.allCores.find? (fun c =>
         pre.scheduler.currentOnCore c == some tpost.tid) = some preCur)
     (hRemote : preCur ≠ execCore)
@@ -1889,7 +1806,7 @@ theorem crossCoreSgiBody_remote_deschedule (pre post : SystemState) (execCore : 
   unfold crossCoreSgiBody SystemState.getObject?
   rw [hPost]
   simp only [hPre, hFind]
-  rw [if_neg hPostNotRq, if_neg (by simpa using hRemote),
+  rw [if_neg (by simp [hPostNotRq]), if_neg (by simpa using hRemote),
       if_pos (by simp [hPostNotCur])]
 
 /-- WS-SM SM6.E (the deboosted-current rule, positive direction — PR #831
@@ -1903,8 +1820,8 @@ theorem crossCoreSgiBody_remote_deboost_current (pre post : SystemState)
     (execCore : CoreId) (oid : ObjId) (tpost tpre : TCB) (preCur : CoreId)
     (hPost : post.objects[oid]? = some (.tcb tpost))
     (hPre : pre.getTcb? tpost.tid = some tpre)
-    (hPostNotRq : tpost.tid ∉
-        post.scheduler.runQueueOnCore (SeLe4n.Kernel.determineTargetCore post tpost.tid))
+    (hPostNotRq : post.queuedOn (SeLe4n.Kernel.determineTargetCore post tpost.tid) tpost.tid
+        = false)
     (hFind : SeLe4n.Kernel.Concurrency.allCores.find? (fun c =>
         pre.scheduler.currentOnCore c == some tpost.tid) = some preCur)
     (hRemote : preCur ≠ execCore)
@@ -1916,7 +1833,7 @@ theorem crossCoreSgiBody_remote_deboost_current (pre post : SystemState)
   unfold crossCoreSgiBody SystemState.getObject?
   rw [hPost]
   simp only [hPre, hFind]
-  rw [if_neg hPostNotRq, if_neg (by simpa using hRemote),
+  rw [if_neg (by simp [hPostNotRq]), if_neg (by simpa using hRemote),
       if_neg (by simp [hPostCur]), if_pos (by simp [SeLe4n.Kernel.effectiveSchedParams_fst_eq_resolve, hDrop])]
 
 /-- WS-SM SM5.F.4: every SGI the diff-based dispatch emits is a `.reschedule` — it

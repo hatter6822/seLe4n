@@ -221,19 +221,68 @@ private theorem list_filter_append_singleton_unobs
   rw [List.filter_append]
   simp [List.filter, hPa]
 
+/-- WS-ZA ZA4.5: the projection strips every run-queue field from a TCB, so two
+stores agreeing off those fields project equally. -/
+theorem projectObjects_of_objectsAgreeOffRunLinks
+    (ctx : LabelingContext) (observer : IfObserver) {st st' : SystemState}
+    (h : st'.objectsAgreeOffRunLinks st) :
+    projectObjects ctx observer st' = projectObjects ctx observer st := by
+  funext oid
+  unfold projectObjects SystemState.getObject?
+  split
+  · cases e : st.objects[oid]? with
+    | none => rw [h.get_none_iff.mpr e]
+    | some o => cases o with
+      | tcb t =>
+        obtain ⟨t', _, _, _, _, _, _, ht', rfl⟩ := h.get_tcb_fwd e
+        rw [ht']; rfl
+      | _ => rw [h.get_of_not_tcb (fun _ e => KernelObject.noConfusion e) e]
+  · rfl
+
+/-- A step that changes nothing outside the object table, and nothing the
+observer projects inside it, preserves the projection. -/
+theorem projectState_of_objects_only (ctx : LabelingContext) (observer : IfObserver)
+    {s st : SystemState} (hS : s = { st with objects := s.objects })
+    (hO : projectObjects ctx observer s = projectObjects ctx observer st) :
+    projectState ctx observer s = projectState ctx observer st := by
+  unfold projectState
+  rw [hO, hS]
+  rfl
+
+/-- WS-ZA ZA4.4: a signal's pop writes the old head and its successor, each only
+in its notification links; with both threads high the projection is unchanged. -/
+theorem detachNtfnHead_preserves_projection (ctx : LabelingContext) (observer : IfObserver)
+    (st : SystemState) (head : SeLe4n.ThreadId) (next : Option SeLe4n.ThreadId)
+    (hHead : objectObservable ctx observer head.toObjId = false)
+    (hNext : ∀ n, next = some n → objectObservable ctx observer n.toObjId = false)
+    (hInv : st.objects.invExt) :
+    projectState ctx observer (detachNtfnHead st head next) = projectState ctx observer st := by
+  refine projectState_of_objects_only ctx observer (detachNtfnHead_eq_objects st head next hInv) ?_
+  funext o
+  unfold projectObjects SystemState.getObject?
+  split
+  · rename_i hObs
+    rw [detachNtfnHead_objects_ne st head next hInv o
+      (fun e => by rw [e, hObs] at hHead; cases hHead)
+      (fun n hn e => by have h := hNext n hn; rw [e, hObs] at h; cases h)]
+  · rfl
+
 /-- Removing a non-observable thread preserves low-equivalence projection. -/
 theorem removeRunnable_preserves_projection
     (ctx : LabelingContext) (observer : IfObserver)
     (st : SystemState) (tid : SeLe4n.ThreadId)
     (hTidHigh : threadObservable ctx observer tid = false) :
     projectState ctx observer (removeRunnable st tid) = projectState ctx observer st := by
+  have hS := removeRunnable_scheduler st tid
+  have hD := removeRunnable_onlyObjectsSchedulerDiffer st tid
+  unfold SystemState.onlyObjectsSchedulerDiffer at hD
   have hRun : projectRunnable ctx observer (removeRunnable st tid) = projectRunnable ctx observer st := by
-    simp only [projectRunnable, removeRunnable, SchedulerState.runnable,
+    simp only [projectRunnable, hS, SchedulerState.runnable,
       SchedulerState.markReschedulePendingOnCoreIf_runQueueOnCore,
       SchedulerState.setCurrentOnCore_runQueueOnCore, SchedulerState.setRunQueueOnCore_runQueueOnCore_self]
     exact RunQueue.toList_filter_remove_neg _ tid (threadObservable ctx observer) hTidHigh
   have hCur : projectCurrent ctx observer (removeRunnable st tid) = projectCurrent ctx observer st := by
-    simp only [projectCurrent, removeRunnable,
+    simp only [projectCurrent, hS,
       SchedulerState.markReschedulePendingOnCoreIf_currentOnCore,
       SchedulerState.setCurrentOnCore_currentOnCore_self]
     cases hC : st.scheduler.currentOnCore bootCoreId with
@@ -242,24 +291,32 @@ theorem removeRunnable_preserves_projection
       by_cases hEq : some x = some tid
       · rw [if_pos hEq]; cases (Option.some.inj hEq); simp [hTidHigh]
       · rw [if_neg hEq]
-  have hObj : projectObjects ctx observer (removeRunnable st tid) = projectObjects ctx observer st := rfl
+  have hObj : projectObjects ctx observer (removeRunnable st tid) = projectObjects ctx observer st :=
+    projectObjects_of_objectsAgreeOffRunLinks ctx observer (removeRunnable_objectsAgreeOffRunLinks st tid)
   have hSvc : projectServicePresence ctx observer (removeRunnable st tid) =
-      projectServicePresence ctx observer st := funext fun _ => rfl
+      projectServicePresence ctx observer st := funext fun _ => by rw [hD]; rfl
   have hDom : projectActiveDomain ctx observer (removeRunnable st tid) =
-      projectActiveDomain ctx observer st := rfl
+      projectActiveDomain ctx observer st := by
+    rw [hD]; first | rfl | simp [projectActiveDomain, hS]
   have hIrq : projectIrqHandlers ctx observer (removeRunnable st tid) =
-      projectIrqHandlers ctx observer st := rfl
+      projectIrqHandlers ctx observer st := by
+    rw [hD]; rfl
   have hIdx : projectObjectIndex ctx observer (removeRunnable st tid) =
-      projectObjectIndex ctx observer st := rfl
+      projectObjectIndex ctx observer st := by
+    rw [hD]; rfl
   have hDTR : projectDomainTimeRemaining ctx observer (removeRunnable st tid) =
-      projectDomainTimeRemaining ctx observer st := rfl
+      projectDomainTimeRemaining ctx observer st := by
+    rw [hD]; first | rfl | simp [projectDomainTimeRemaining, hS]
   have hDS : projectDomainSchedule ctx observer (removeRunnable st tid) =
-      projectDomainSchedule ctx observer st := rfl
+      projectDomainSchedule ctx observer st := by
+    rw [hD]; first | rfl | simp [projectDomainSchedule, hS]
   have hDSI : projectDomainScheduleIndex ctx observer (removeRunnable st tid) =
-      projectDomainScheduleIndex ctx observer st := rfl
+      projectDomainScheduleIndex ctx observer st := by
+    rw [hD]; first | rfl | simp [projectDomainScheduleIndex, hS]
   have hMR : projectMachineRegs ctx observer (removeRunnable st tid) =
       projectMachineRegs ctx observer st := by
-    simp only [projectMachineRegs, removeRunnable,
+    rw [hD]
+    simp only [projectMachineRegs, hS,
       SchedulerState.markReschedulePendingOnCoreIf_currentOnCore,
       SchedulerState.setCurrentOnCore_currentOnCore_self]
     cases hC : st.scheduler.currentOnCore bootCoreId with
@@ -270,9 +327,9 @@ theorem removeRunnable_preserves_projection
       · rw [if_neg hEq]
   have hMem : projectMemory ctx observer (removeRunnable st tid) =
       projectMemory ctx observer st :=
-    projectMemory_eq_of_memory_eq ctx observer (removeRunnable st tid) st rfl
+    projectMemory_eq_of_memory_eq ctx observer (removeRunnable st tid) st (by rw [hD])
   have hSvcReg : projectServiceRegistry ctx observer (removeRunnable st tid) =
-      projectServiceRegistry ctx observer st := funext fun _ => rfl
+      projectServiceRegistry ctx observer st := funext fun _ => by rw [hD]; rfl
   simp only [projectState, hObj, hRun, hCur, hSvc, hDom, hIrq, hIdx, hDTR, hDS, hDSI, hMR, hMem, hSvcReg]
 
 /-- Adding a non-observable thread to runnable preserves low-equivalence projection. -/
@@ -281,29 +338,41 @@ theorem ensureRunnable_preserves_projection
     (st : SystemState) (tid : SeLe4n.ThreadId)
     (hTidHigh : threadObservable ctx observer tid = false) :
     projectState ctx observer (ensureRunnable st tid) = projectState ctx observer st := by
+  have hObj := projectObjects_of_objectsAgreeOffRunLinks ctx observer
+    (ensureRunnable_objectsAgreeOffRunLinks st tid)
   -- AN10-B: post-migration `ensureRunnable` reads via `getTcb?`.
-  unfold ensureRunnable
+  unfold ensureRunnable at hObj ⊢
   split
   · rfl
   · rename_i hNotMem
     cases hTcb : st.getTcb? tid with
     | none => rfl
     | some tcb =>
-          show projectState ctx observer
-              { st with scheduler := (st.scheduler.setRunQueueOnCore bootCoreId
-                  ((st.scheduler.runQueueOnCore bootCoreId).insert tid tcb.boostedPriority))
-                  |>.markReschedulePendingOnCore bootCoreId } =
-              projectState ctx observer st
-          -- setRunQueueOnCore frames every projection except projectRunnable.
+          simp only [hNotMem, hTcb] at hObj
+          by_cases hAdm : st.runEnqueueAdmits bootCoreId tid = true
+          case neg => simp only [hAdm, Bool.false_eq_true, if_false]
+          simp only [hAdm, if_true] at hObj ⊢
+          have hD := SystemState.runEnqueueAdmitted_onlyObjectsSchedulerDiffer st bootCoreId tid
+            tcb.boostedPriority
+          unfold SystemState.onlyObjectsSchedulerDiffer at hD
+          rw [hD] at hObj ⊢
+          -- the enqueue frames every projection except the objects (equal off
+          -- run-queue fields) and projectRunnable.
           simp only [projectState, projectCurrent, projectActiveDomain, projectDomainTimeRemaining,
             projectDomainScheduleIndex, projectMachineRegs,
-            SchedulerState.markReschedulePendingOnCore_currentOnCore, SchedulerState.setRunQueueOnCore_currentOnCore, SchedulerState.markReschedulePendingOnCore_activeDomainOnCore, SchedulerState.setRunQueueOnCore_activeDomainOnCore,
+            SystemState.runEnqueueAdmitted_scheduler,
+            SchedulerState.markReschedulePendingOnCore_currentOnCore, SchedulerState.setRunQueueOnCore_currentOnCore,
+            SchedulerState.setRunQueueEndsOnCore_currentOnCore,
+            SchedulerState.markReschedulePendingOnCore_activeDomainOnCore, SchedulerState.setRunQueueOnCore_activeDomainOnCore,
+            SchedulerState.setRunQueueEndsOnCore_activeDomainOnCore,
             SchedulerState.markReschedulePendingOnCore_domainTimeRemainingOnCore, SchedulerState.setRunQueueOnCore_domainTimeRemainingOnCore,
-            SchedulerState.markReschedulePendingOnCore_domainScheduleIndexOnCore, SchedulerState.setRunQueueOnCore_domainScheduleIndexOnCore]
+            SchedulerState.setRunQueueEndsOnCore_domainTimeRemainingOnCore,
+            SchedulerState.markReschedulePendingOnCore_domainScheduleIndexOnCore, SchedulerState.setRunQueueOnCore_domainScheduleIndexOnCore,
+            SchedulerState.setRunQueueEndsOnCore_domainScheduleIndexOnCore]
           congr 1
           simp only [projectRunnable, SchedulerState.runnable,
             SchedulerState.markReschedulePendingOnCore_runQueueOnCore, SchedulerState.setRunQueueOnCore_runQueueOnCore_self]
-          exact RunQueue.toList_filter_insert_neg _ _ _ _ hTidHigh hNotMem
+          exact RunQueue.toList_filter_insert_neg' _ _ _ _ hTidHigh
 
 /-- storeTcbIpcState at a non-observable object preserves projection (single-state). -/
 theorem storeTcbIpcState_preserves_projection
@@ -1204,7 +1273,10 @@ theorem lifecycleRetypeObject_preserves_lowEquivalent
 -- WS-F3/F-21: notificationSignal non-interference
 -- ============================================================================
 
-/-- WS-F3/F-21: notificationSignal at non-observable entities preserves projection. -/
+/-- WS-F3/F-21: notificationSignal at non-observable entities preserves projection.
+WS-ZA ZA4.4: a wake also clears the woken head's successor's predecessor link
+(seL4's `tcbEPDequeue`), so the successor it relinks must be non-observable too,
+as a blocking wait's old tail is. -/
 theorem notificationSignal_projection_preserved
     (ctx : LabelingContext) (observer : IfObserver)
     (notificationId : SeLe4n.ObjId) (badge : SeLe4n.Badge)
@@ -1214,7 +1286,9 @@ theorem notificationSignal_projection_preserved
         threadObservable ctx observer tid = false →
         objectObservable ctx observer tid.toObjId = false)
     (hWaiterDomain : ∀ ntfn tid, st.objects[notificationId]? = some (.notification ntfn) →
-        tid ∈ ntfn.waitingThreads → threadObservable ctx observer tid = false)
+        ntfn.waitHead = some tid → threadObservable ctx observer tid = false)
+    (hSuccHigh : ∀ t, notificationSignalSuccessor? st notificationId = some t →
+        objectObservable ctx observer t.toObjId = false)
     (hObjInv : st.objects.invExt)
     (hStep : notificationSignal notificationId badge st = .ok ((), st')) :
     projectState ctx observer st' = projectState ctx observer st := by
@@ -1226,22 +1300,15 @@ theorem notificationSignal_projection_preserved
     | tcb _ | endpoint _ | cnode _ | vspaceRoot _ | untyped _ | schedContext _ | reply _ | frame _ | pageTable _ => simp [hObj] at hStep
     | notification ntfn =>
       simp [hObj] at hStep
-      -- WS-RC R4.C: signal pops via `NoDupList.tail?`.
-      cases hWaiters : ntfn.waitingThreads.tail? with
+      cases hWaiters : ntfn.waitHead with
       | none =>
         -- No waiters: just storeObject on notification
         simp [hWaiters] at hStep
         exact storeObject_preserves_projection ctx observer st st' notificationId _ hNtfnHigh hObjInv hStep
-      | some headTail =>
-        obtain ⟨waiter, rest⟩ := headTail
+      | some waiter =>
         simp [hWaiters] at hStep
         -- Waiter path: storeObject + storeTcbIpcStateAndMessage + ensureRunnable (R3-A/M-16)
-        -- WS-RC R4.C: waiter is in the underlying list (List.Mem.head from cons equation).
-        have hValEq : ntfn.waitingThreads.val = waiter :: rest.val :=
-          (SeLe4n.NoDupList.tail?_eq_some_iff ntfn.waitingThreads waiter rest).mp hWaiters
-        have hWaiterIn : waiter ∈ ntfn.waitingThreads := by
-          show waiter ∈ ntfn.waitingThreads.val; rw [hValEq]; exact List.Mem.head _
-        have hWaiterHigh := hWaiterDomain ntfn waiter hObj hWaiterIn
+        have hWaiterHigh := hWaiterDomain ntfn waiter hObj hWaiters
         have hWaiterObjHigh := hCoherent waiter hWaiterHigh
         revert hStep
         cases hStore : storeObject notificationId _ st with
@@ -1254,7 +1321,12 @@ theorem notificationSignal_projection_preserved
           | ok st2 =>
             simp only [Except.ok.injEq, Prod.mk.injEq]; intro ⟨_, hEq⟩; subst hEq
             have hObjInvMid := storeObject_preserves_objects_invExt' st notificationId _ pair hObjInv hStore
-            rw [ensureRunnable_preserves_projection ctx observer st2 waiter hWaiterHigh,
+            rw [ensureRunnable_preserves_projection ctx observer _ waiter hWaiterHigh,
+                detachNtfnHead_preserves_projection ctx observer st2 waiter _ hWaiterObjHigh
+                  (fun n hn => hSuccHigh n
+                    ((notificationSignalSuccessor?_eq_wake st notificationId ntfn waiter hObj
+                      hWaiters).trans hn))
+                  (storeTcbIpcStateAndMessage_preserves_objects_invExt _ _ _ _ _ hObjInvMid hTcb),
                 storeTcbIpcStateAndMessage_preserves_projection ctx observer pair.2 st2 waiter _ _ hWaiterObjHigh hObjInvMid hTcb,
                 storeObject_preserves_projection ctx observer st pair.2 notificationId _ hNtfnHigh hObjInv hStore]
 
@@ -1269,9 +1341,13 @@ theorem notificationSignal_preserves_lowEquivalent
         threadObservable ctx observer tid = false →
         objectObservable ctx observer tid.toObjId = false)
     (hWaiterDomain₁ : ∀ ntfn tid, s₁.objects[notificationId]? = some (.notification ntfn) →
-        tid ∈ ntfn.waitingThreads → threadObservable ctx observer tid = false)
+        ntfn.waitHead = some tid → threadObservable ctx observer tid = false)
+    (hSuccHigh₁ : ∀ t, notificationSignalSuccessor? s₁ notificationId = some t →
+        objectObservable ctx observer t.toObjId = false)
     (hWaiterDomain₂ : ∀ ntfn tid, s₂.objects[notificationId]? = some (.notification ntfn) →
-        tid ∈ ntfn.waitingThreads → threadObservable ctx observer tid = false)
+        ntfn.waitHead = some tid → threadObservable ctx observer tid = false)
+    (hSuccHigh₂ : ∀ t, notificationSignalSuccessor? s₂ notificationId = some t →
+        objectObservable ctx observer t.toObjId = false)
     (hObjInv₁ : s₁.objects.invExt)
     (hObjInv₂ : s₂.objects.invExt)
     (hStep₁ : notificationSignal notificationId badge s₁ = .ok ((), s₁'))
@@ -1281,16 +1357,16 @@ theorem notificationSignal_preserves_lowEquivalent
     suffices h₂ : projectState ctx observer s₂' = projectState ctx observer s₂ by
       unfold lowEquivalent; rw [h₁, h₂]; exact hLow
     exact notificationSignal_projection_preserved ctx observer notificationId badge s₂ s₂'
-      hNtfnHigh hCoherent hWaiterDomain₂ hObjInv₂ hStep₂
+      hNtfnHigh hCoherent hWaiterDomain₂ hSuccHigh₂ hObjInv₂ hStep₂
   exact notificationSignal_projection_preserved ctx observer notificationId badge s₁ s₁'
-    hNtfnHigh hCoherent hWaiterDomain₁ hObjInv₁ hStep₁
+    hNtfnHigh hCoherent hWaiterDomain₁ hSuccHigh₁ hObjInv₁ hStep₁
 
 -- ============================================================================
 -- WS-F3/F-21: notificationWait non-interference
 -- ============================================================================
 
-/-- WS-F3/F-21: notificationWait at non-observable entities preserves projection. -/
-theorem notificationWait_projection_preserved
+/-- WS-F3/F-21: the wait's park at non-observable entities preserves projection. -/
+theorem notificationWaitPark_projection_preserved
     (ctx : LabelingContext) (observer : IfObserver)
     (notificationId : SeLe4n.ObjId) (waiter : SeLe4n.ThreadId)
     (result : Option SeLe4n.Badge)
@@ -1299,9 +1375,9 @@ theorem notificationWait_projection_preserved
     (hWaiterHigh : threadObservable ctx observer waiter = false)
     (hWaiterObjHigh : objectObservable ctx observer waiter.toObjId = false)
     (hObjInv : st.objects.invExt)
-    (hStep : notificationWait notificationId waiter st = .ok (result, st')) :
+    (hStep : notificationWaitPark notificationId waiter st = .ok (result, st')) :
     projectState ctx observer st' = projectState ctx observer st := by
-  unfold notificationWait SystemState.getObject? at hStep
+  unfold notificationWaitPark SystemState.getObject? at hStep
   cases hObj : st.objects[notificationId]? with
   | none => simp [hObj] at hStep
   | some obj =>
@@ -1334,11 +1410,7 @@ theorem notificationWait_projection_preserved
           simp only [hLk] at hStep
           by_cases hBlocked : tcb.ipcState = .blockedOnNotification notificationId
           · simp [hBlocked] at hStep
-          · -- WS-RC R4.C: consWithGuard? case-split
-            cases hCons : ntfn.waitingThreads.consWithGuard? waiter with
-            | none => simp [hBlocked, hCons] at hStep
-            | some wt' =>
-            simp [hBlocked, hCons] at hStep; revert hStep
+          · simp [hBlocked] at hStep; revert hStep
             cases hStore : storeObject notificationId _ st with
             | error e => simp
             | ok pair =>
@@ -1354,6 +1426,53 @@ theorem notificationWait_projection_preserved
                     storeTcbIpcStateAndMessage_preserves_projection ctx observer pair.2 st2 waiter _ _ hWaiterObjHigh hObjInvMid hTcb,
                     storeObject_preserves_projection ctx observer st pair.2 notificationId _ hNtfnHigh hObjInv hStore]
 
+/-- WS-ZA ZA4.4: a TCB field write at a **high** thread preserves the observer
+projection — the write is one `storeObject` at the thread's key. -/
+theorem modifyTcb_preserves_projection (ctx : LabelingContext) (observer : IfObserver)
+    {st st' : SystemState} {tid : SeLe4n.ThreadId} {f : TCB → TCB}
+    (hHigh : objectObservable ctx observer tid.toObjId = false)
+    (hObjInv : st.objects.invExt) (h : modifyTcb st tid f = .ok st') :
+    projectState ctx observer st' = projectState ctx observer st := by
+  obtain ⟨_, _, hS⟩ := modifyTcb_ok_decompose h
+  exact storeObject_preserves_projection ctx observer st st' tid.toObjId _ hHigh hObjInv hS
+
+/-- WS-ZA ZA4.4: the optional form, high whenever a thread is named. -/
+theorem modifyTcbOpt_preserves_projection (ctx : LabelingContext) (observer : IfObserver)
+    {st st' : SystemState} {t? : Option SeLe4n.ThreadId} {f : TCB → TCB}
+    (hHigh : ∀ t, t? = some t → objectObservable ctx observer t.toObjId = false)
+    (hObjInv : st.objects.invExt) (h : modifyTcbOpt st t? f = .ok st') :
+    projectState ctx observer st' = projectState ctx observer st := by
+  cases t? with
+  | none => unfold modifyTcbOpt at h; cases h; rfl
+  | some t => exact modifyTcb_preserves_projection ctx observer (hHigh t rfl) hObjInv h
+
+/-- WS-F3/F-21: notificationWait at non-observable entities preserves projection.
+WS-ZA ZA4.4: a wait that blocks also writes the queue's old tail (its successor
+link), so the tail it relinks must be non-observable too. -/
+theorem notificationWait_projection_preserved
+    (ctx : LabelingContext) (observer : IfObserver)
+    (notificationId : SeLe4n.ObjId) (waiter : SeLe4n.ThreadId)
+    (result : Option SeLe4n.Badge)
+    (st st' : SystemState)
+    (hNtfnHigh : objectObservable ctx observer notificationId = false)
+    (hWaiterHigh : threadObservable ctx observer waiter = false)
+    (hWaiterObjHigh : objectObservable ctx observer waiter.toObjId = false)
+    (hTailHigh : ∀ t, notificationWaitTail? st notificationId = some t →
+      objectObservable ctx observer t.toObjId = false)
+    (hObjInv : st.objects.invExt)
+    (hStep : notificationWait notificationId waiter st = .ok (result, st')) :
+    projectState ctx observer st' = projectState ctx observer st := by
+  rcases notificationWait_ok_cases hStep with ⟨b, _, hP⟩ | ⟨_, stP, hP, hL⟩
+  · exact notificationWaitPark_projection_preserved ctx observer notificationId waiter _ st st'
+      hNtfnHigh hWaiterHigh hWaiterObjHigh hObjInv hP
+  · obtain ⟨st3, h3, h4⟩ := linkNtfnWaiter_ok_cases hL
+    have hInvP := notificationWaitPark_preserves_objects_invExt hObjInv hP
+    rw [modifyTcbOpt_preserves_projection ctx observer hTailHigh
+          (modifyTcb_preserves_objects_invExt hInvP h3) h4,
+        modifyTcb_preserves_projection ctx observer hWaiterObjHigh hInvP h3,
+        notificationWaitPark_projection_preserved ctx observer notificationId waiter _ st stP
+          hNtfnHigh hWaiterHigh hWaiterObjHigh hObjInv hP]
+
 /-- WS-F3/F-21: notificationWait preserves low-equivalence. -/
 theorem notificationWait_preserves_lowEquivalent
     (ctx : LabelingContext) (observer : IfObserver)
@@ -1364,6 +1483,10 @@ theorem notificationWait_preserves_lowEquivalent
     (hNtfnHigh : objectObservable ctx observer notificationId = false)
     (hWaiterHigh : threadObservable ctx observer waiter = false)
     (hWaiterObjHigh : objectObservable ctx observer waiter.toObjId = false)
+    (hTailHigh₁ : ∀ t, notificationWaitTail? s₁ notificationId = some t →
+      objectObservable ctx observer t.toObjId = false)
+    (hTailHigh₂ : ∀ t, notificationWaitTail? s₂ notificationId = some t →
+      objectObservable ctx observer t.toObjId = false)
     (hObjInv₁ : s₁.objects.invExt)
     (hObjInv₂ : s₂.objects.invExt)
     (hStep₁ : notificationWait notificationId waiter s₁ = .ok (result₁, s₁'))
@@ -1373,9 +1496,9 @@ theorem notificationWait_preserves_lowEquivalent
     suffices h₂ : projectState ctx observer s₂' = projectState ctx observer s₂ by
       unfold lowEquivalent; rw [h₁, h₂]; exact hLow
     exact notificationWait_projection_preserved ctx observer notificationId waiter result₂ s₂ s₂'
-      hNtfnHigh hWaiterHigh hWaiterObjHigh hObjInv₂ hStep₂
+      hNtfnHigh hWaiterHigh hWaiterObjHigh hTailHigh₂ hObjInv₂ hStep₂
   exact notificationWait_projection_preserved ctx observer notificationId waiter result₁ s₁ s₁'
-    hNtfnHigh hWaiterHigh hWaiterObjHigh hObjInv₁ hStep₁
+    hNtfnHigh hWaiterHigh hWaiterObjHigh hTailHigh₁ hObjInv₁ hStep₁
 
 -- ============================================================================
 -- WS-F3/CRIT-03: Additional NI theorems for API coverage

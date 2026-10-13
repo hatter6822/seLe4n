@@ -199,8 +199,20 @@ def rpi5ProductionAdapterProofHooks :
       simp only [hTcb, Bool.and_eq_true] at hStable
       have hRegs : (newRegs == tcb.registerContext) = true :=
         hStable.1.1.1.1.1
+      -- The check reads the thread's own run-queue links; the link agreement
+      -- (the bundle's last conjunct) carries that to the abstract queue.
       have hNotRunnable : newTid ∉ st.scheduler.runnable := by
-        have h := hStable.1.1.1.1.2; simp at h; exact h
+        have h := hStable.1.1.1.1.2
+        have hR : st.runQueueRefined := hInv.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2
+        intro hMem
+        have hC : (st.scheduler.runQueueOnCore bootCoreId).contains newTid = true :=
+          RunQueue.mem_iff_contains.mp
+            (((st.scheduler.runQueueOnCore bootCoreId).mem_toList_iff_mem newTid).mp hMem)
+        rw [← (hR bootCoreId).queuedOn] at hC
+        unfold SystemState.queuedOn at hC
+        rw [hTcb] at hC
+        simp at h hC
+        exact h hC
       have hTimeSlice : tcb.timeSlice > 0 := by
         have h := hStable.1.1.1.2; simp at h; exact h
       have hIpcReady : tcb.ipcState = .ready := by

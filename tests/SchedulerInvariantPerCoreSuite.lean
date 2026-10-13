@@ -376,7 +376,7 @@ private def runDefaultFoundationChecks : IO Unit := do
     (allCores.all (fun c => decide ((default : SystemState).scheduler.currentOnCore c = none)))
   assertBool "default.runQueueOnCore.toList = [] on every core"
     (allCores.all (fun c => decide
-      (((default : SystemState).scheduler.runQueueOnCore c).toList = [])))
+      (((default : SystemState).runQueueWalk c) = [])))
   assertBool "default.domainTimeRemainingOnCore = 5 on every core"
     (allCores.all (fun c => decide
       ((default : SystemState).scheduler.domainTimeRemainingOnCore c = 5)))

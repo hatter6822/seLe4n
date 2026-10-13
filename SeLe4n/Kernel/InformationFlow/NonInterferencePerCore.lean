@@ -640,17 +640,26 @@ discipline a theorem instead of a convention. -/
 nothing else. -/
 theorem ensureRunnable_confinedToBootCore (st : SystemState) (tid : SeLe4n.ThreadId) :
     observableSlotsConfinedToCore st (ensureRunnable st tid) bootCoreId := by
-  refine ⟨?_, ?_, ?_, ?_, ?_, ?_⟩ <;> intro c hc <;>
+  have hD := ensureRunnable_onlyObjectsSchedulerDiffer st tid
+  unfold SystemState.onlyObjectsSchedulerDiffer at hD
+  have hM : (ensureRunnable st tid).machine = st.machine := by rw [hD]
+  refine ⟨?_, ?_, ?_, ?_, ?_, fun c _ => by rw [hM]⟩ <;> intro c hc <;>
     unfold ensureRunnable <;>
     (split
      · rfl
-     · split <;> simp [Ne.symm hc])
+     · split
+       · split
+         · simp [SystemState.runEnqueueAdmitted_runQueueOnCore_ne _ _ _ _ _ (Ne.symm hc)]
+         · rfl
+       · rfl)
 
 /-- `removeRunnable` removes from **the boot core's** run queue and clears the
 boot core's current slot; every other core is untouched. -/
 theorem removeRunnable_confinedToBootCore (st : SystemState) (tid : SeLe4n.ThreadId) :
     observableSlotsConfinedToCore st (removeRunnable st tid) bootCoreId := by
-  refine ⟨?_, ?_, ?_, ?_, ?_, ?_⟩ <;> intro c hc <;> simp [removeRunnable, Ne.symm hc]
+  have hM := removeRunnable_machine_eq st tid
+  refine ⟨?_, ?_, ?_, ?_, ?_, fun c _ => by rw [hM]⟩ <;> intro c hc <;>
+    simp [removeRunnable, Ne.symm hc]
 
 /-- `setCurrentThread` writes the boot core's current slot. -/
 theorem setCurrentThread_confinedToBootCore (st st' : SystemState)
@@ -833,13 +842,12 @@ theorem notificationSignal_confinedToBootCore (st st' : SystemState)
     cases obj with
     | notification ntfn =>
       simp only [hObj] at hStep
-      cases hTail : ntfn.waitingThreads.tail? with
+      cases hHead : ntfn.waitHead with
       | none =>
-        simp only [hTail] at hStep
+        simp only [hHead] at hStep
         exact storeObject_confinedToCore st st' notificationId _ bootCoreId hStep
-      | some p =>
-        obtain ⟨waiter, rest⟩ := p
-        simp only [hTail] at hStep
+      | some waiter =>
+        simp only [hHead] at hStep
         split at hStep
         · simp at hStep
         · next st1 hStore =>
@@ -853,17 +861,22 @@ theorem notificationSignal_confinedToBootCore (st st' : SystemState)
               (storeObject_confinedToCore st st1 notificationId _ bootCoreId hStore) ?_
             refine observableSlotsConfinedToCore_trans
               (storeTcbIpcStateAndMessage_confinedToCore st1 st2 waiter _ _ bootCoreId hStore2) ?_
-            exact ensureRunnable_confinedToBootCore st2 waiter
+            -- The pop's link rewrite writes no scheduler slot or register.
+            refine observableSlotsConfinedToCore_trans
+              (observableSlotsConfinedToCore_of_scheduler_machine_eq bootCoreId
+                (detachNtfnHead_scheduler st2 waiter (ntfnSuccessor? st waiter))
+                (detachNtfnHead_machine st2 waiter (ntfnSuccessor? st waiter))) ?_
+            exact ensureRunnable_confinedToBootCore _ waiter
     | tcb _ | cnode _ | endpoint _ | vspaceRoot _ | untyped _ | schedContext _ | reply _ | frame _ | pageTable _ =>
       simp [hObj] at hStep
 
-/-- SM8.B.3: `notificationWait` writes only the boot core. -/
-theorem notificationWait_confinedToBootCore (st st' : SystemState)
+/-- SM8.B.3: the park writes only the boot core. -/
+theorem notificationWaitPark_confinedToBootCore (st st' : SystemState)
     (notificationId : SeLe4n.ObjId) (waiter : SeLe4n.ThreadId)
     (result : Option SeLe4n.Badge)
-    (hStep : SeLe4n.Kernel.notificationWait notificationId waiter st = .ok (result, st')) :
+    (hStep : SeLe4n.Kernel.notificationWaitPark notificationId waiter st = .ok (result, st')) :
     observableSlotsConfinedToCore st st' bootCoreId := by
-  unfold SeLe4n.Kernel.notificationWait SystemState.getObject? at hStep
+  unfold SeLe4n.Kernel.notificationWaitPark SystemState.getObject? at hStep
   cases hObj : st.objects[notificationId]? with
   | none => simp [hObj] at hStep
   | some obj =>
@@ -895,24 +908,44 @@ theorem notificationWait_confinedToBootCore (st st' : SystemState)
           · simp at hStep
           · split at hStep
             · simp at hStep
-            · next wt' _ =>
+            · next st1 hStore =>
               split at hStep
               · simp at hStep
-              · next st1 hStore =>
-                split at hStep
-                · simp at hStep
-                · next st2 hStore2 =>
-                  simp only [Except.ok.injEq, Prod.mk.injEq] at hStep
-                  obtain ⟨_, hEq⟩ := hStep
-                  subst hEq
-                  refine observableSlotsConfinedToCore_trans
-                    (storeObject_confinedToCore st st1 notificationId _ bootCoreId hStore) ?_
-                  refine observableSlotsConfinedToCore_trans
-                    (storeTcbIpcStateAndMessage_fromTcb_confinedToCore st1 st2 waiter tcb _ _
-                      bootCoreId hStore2) ?_
-                  exact removeRunnable_confinedToBootCore st2 waiter
+              · next st2 hStore2 =>
+                simp only [Except.ok.injEq, Prod.mk.injEq] at hStep
+                obtain ⟨_, hEq⟩ := hStep
+                subst hEq
+                refine observableSlotsConfinedToCore_trans
+                  (storeObject_confinedToCore st st1 notificationId _ bootCoreId hStore) ?_
+                refine observableSlotsConfinedToCore_trans
+                  (storeTcbIpcStateAndMessage_fromTcb_confinedToCore st1 st2 waiter tcb _ _
+                    bootCoreId hStore2) ?_
+                exact removeRunnable_confinedToBootCore st2 waiter
     | tcb _ | cnode _ | endpoint _ | vspaceRoot _ | untyped _ | schedContext _ | reply _ | frame _ | pageTable _ =>
       simp [hObj] at hStep
+
+/-- WS-ZA ZA4.4: the link-in writes TCB links only, so it writes no core. -/
+theorem linkNtfnWaiter_confinedToCore {st st' : SystemState} {waiter : SeLe4n.ThreadId}
+    {tail : Option SeLe4n.ThreadId} (c₀ : CoreId)
+    (hStep : linkNtfnWaiter st waiter tail = .ok st') :
+    observableSlotsConfinedToCore st st' c₀ := by
+  obtain ⟨st3, h3, h4⟩ := linkNtfnWaiter_ok_cases hStep
+  exact observableSlotsConfinedToCore_of_scheduler_machine_eq c₀
+    (by rw [modifyTcbOpt_scheduler_eq h4, modifyTcb_scheduler_eq h3])
+    (by rw [modifyTcbOpt_machine_eq h4, modifyTcb_machine_eq h3])
+
+/-- SM8.B.3: `notificationWait` writes only the boot core: the park does, and
+the link-in writes none. -/
+theorem notificationWait_confinedToBootCore (st st' : SystemState)
+    (notificationId : SeLe4n.ObjId) (waiter : SeLe4n.ThreadId)
+    (result : Option SeLe4n.Badge)
+    (hStep : SeLe4n.Kernel.notificationWait notificationId waiter st = .ok (result, st')) :
+    observableSlotsConfinedToCore st st' bootCoreId := by
+  rcases notificationWait_ok_cases hStep with ⟨_, _, hP⟩ | ⟨_, stP, hP, hL⟩
+  · exact notificationWaitPark_confinedToBootCore st st' _ _ _ hP
+  · exact observableSlotsConfinedToCore_trans
+      (notificationWaitPark_confinedToBootCore st stP _ _ _ hP)
+      (linkNtfnWaiter_confinedToCore bootCoreId hL)
 
 /-- SM8.B.3: `endpointSendDual` writes only the boot core. -/
 theorem endpointSendDual_confinedToBootCore (st st' : SystemState)
@@ -1760,11 +1793,13 @@ theorem nonInterference_perCore_notificationSignal (ctx : LabelingContext) (obse
     (hCoherent : ∀ tid : SeLe4n.ThreadId, threadObservable ctx observer tid = false →
       objectObservable ctx observer tid.toObjId = false)
     (hWaiterDomain : ∀ ntfn tid, st.objects[notificationId]? = some (.notification ntfn) →
-      tid ∈ ntfn.waitingThreads → threadObservable ctx observer tid = false)
+      ntfn.waitHead = some tid → threadObservable ctx observer tid = false)
+    (hSuccHigh : ∀ t, notificationSignalSuccessor? st notificationId = some t →
+      objectObservable ctx observer t.toObjId = false)
     (hStep : SeLe4n.Kernel.notificationSignal notificationId badge st = .ok ((), st')) :
     lowEquivalent_smp ctx observer st' st :=
   nonInterference_perCore ctx observer st st' hObjInv hIdxComplete hObjSetInv
-    (.notificationSignal notificationId badge hNtfnHigh hCoherent hWaiterDomain hStep)
+    (.notificationSignal notificationId badge hNtfnHigh hCoherent hWaiterDomain hSuccHigh hStep)
     (notificationSignal_confinedToBootCore st st' notificationId badge hStep)
 
 theorem nonInterference_perCore_notificationWait (ctx : LabelingContext) (observer : IfObserver)
@@ -1775,10 +1810,13 @@ theorem nonInterference_perCore_notificationWait (ctx : LabelingContext) (observ
     (hNtfnHigh : objectObservable ctx observer notificationId = false)
     (hWaiterHigh : threadObservable ctx observer waiter = false)
     (hWaiterObjHigh : objectObservable ctx observer waiter.toObjId = false)
+    (hTailHigh : ∀ t, notificationWaitTail? st notificationId = some t →
+      objectObservable ctx observer t.toObjId = false)
     (hStep : SeLe4n.Kernel.notificationWait notificationId waiter st = .ok (result, st')) :
     lowEquivalent_smp ctx observer st' st :=
   nonInterference_perCore ctx observer st st' hObjInv hIdxComplete hObjSetInv
-    (.notificationWait notificationId waiter result hNtfnHigh hWaiterHigh hWaiterObjHigh hStep)
+    (.notificationWait notificationId waiter result hNtfnHigh hWaiterHigh hWaiterObjHigh
+      hTailHigh hStep)
     (notificationWait_confinedToBootCore st st' notificationId waiter result hStep)
 
 theorem nonInterference_perCore_cspaceInsertSlot (ctx : LabelingContext) (observer : IfObserver)

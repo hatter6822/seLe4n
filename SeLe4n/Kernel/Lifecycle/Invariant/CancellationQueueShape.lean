@@ -305,9 +305,9 @@ so proofs can quantify over it. -/
 def restoredTcb (tcb : TCB) (frame : Option Architecture.SyscallReturnFrame) : TCB :=
   let cleared : TCB := { tcb with
       ipcState := .ready
-      queuePrev := none
-      queueNext := none
-      queuePPrev := none
+      queuePrevCode := 0
+      queueNextCode := 0
+      queuePPrevCode := 0
       pendingReceiveReply := none }
   match frame with
   | some f => cleared.withReturnFrame f
@@ -337,9 +337,9 @@ theorem restoredTcb_eq (tcb : TCB) (frame : Option Architecture.SyscallReturnFra
     restoredTcb tcb frame =
       { tcb with
           ipcState := .ready
-          queuePrev := none
-          queueNext := none
-          queuePPrev := none
+          queuePrevCode := 0
+          queueNextCode := 0
+          queuePPrevCode := 0
           pendingReceiveReply := none
           registerContext := (restoredTcb tcb frame).registerContext } := by
   unfold restoredTcb; cases frame <;> rfl
@@ -1016,7 +1016,7 @@ theorem removeFromAllEndpointQueues_getSchedContext?_eq (st : SystemState)
 
 The fold writes endpoints, which can never alias a TCB-holding key, so at every
 thread key the sweep's reading *is* the splice's — not merely agreeing on one
-field.  Extracted from `removeFromAllEndpointQueues_affinity_frame`, which proved
+field.  Extracted from `removeFromAllEndpointQueues_placement_frame`, which proved
 it inline and then threw it away: register row 63 needs the same equality for
 `schedContextBinding`, and re-deriving it per field is this project's *a field is
 not the relation*.
@@ -1046,18 +1046,18 @@ theorem removeFromAllEndpointQueues_getTcb?_eq_splice (st : SystemState)
 
 The fold writes endpoints only, so every TCB reading the sweep leaves is the
 splice's — and the splice moves no thread
-(`spliceOutMidQueueNode_affinity_frame`).  The `Option`-level equality is proved
-first and the affinity frame applied to it, rather than refining twice: the two
-states' TCB readings are *equal* here, not merely affinity-agreeing.
+(`spliceOutMidQueueNode_placement_frame`).  The `Option`-level equality is proved
+first and the placement frame applied to it, rather than refining twice: the two
+states' TCB readings are *equal* here, not merely placement-agreeing.
 
 Beside `removeFromAllEndpointQueues_nonEndpoint`, and moved here at `v0.35.166`
 for the reason the `getSchedContext?` frame above was. -/
-theorem removeFromAllEndpointQueues_affinity_frame (st : SystemState)
+theorem removeFromAllEndpointQueues_placement_frame (st : SystemState)
     (tid : SeLe4n.ThreadId) (hInv : st.objects.invExt) (x : SeLe4n.ThreadId) :
-    ((removeFromAllEndpointQueues st tid).getTcb? x).map (·.cpuAffinity)
-      = (st.getTcb? x).map (·.cpuAffinity) := by
+    ((removeFromAllEndpointQueues st tid).getTcb? x).map TCB.placement
+      = (st.getTcb? x).map TCB.placement := by
   rw [removeFromAllEndpointQueues_getTcb?_eq_splice st tid hInv x]
-  exact spliceOutMidQueueNode_affinity_frame st tid hInv x
+  exact spliceOutMidQueueNode_placement_frame st tid hInv x
 
 /-- **`v0.35.183` (register row 63): the endpoint sweep frames every thread's
 scheduling-context binding.**
@@ -1129,11 +1129,11 @@ theorem spliceOutMidQueueNode_tcb_forward (st : SystemState) (tid : SeLe4n.Threa
     have r1 : tcbQueueLinkRewrite t1 t0 := by
       rcases hc1 with rfl | rfl
       · exact tcbQueueLinkRewrite.refl _
-      · exact ⟨t0.queuePrev, t0.queuePPrev, tcb.queueNext, rfl⟩
+      · exact ⟨t0.queuePrevCode, t0.queuePPrevCode, tcb.queueNextCode, t0.ntfnPrevCode, t0.ntfnNextCode, rfl⟩
     have r2 : tcbQueueLinkRewrite t2 t1 := by
       rcases hc2 with rfl | rfl
       · exact tcbQueueLinkRewrite.refl _
-      · exact ⟨tcb.queuePrev, tcb.queuePPrev, t1.queueNext, rfl⟩
+      · exact ⟨tcb.queuePrevCode, tcb.queuePPrevCode, t1.queueNextCode, t1.ntfnPrevCode, t1.ntfnNextCode, rfl⟩
     exact ⟨t2, h2, r2.trans r1⟩
 
 /-- The composite, read forwards away from the swept thread. -/
@@ -1158,7 +1158,7 @@ theorem sweptAndRestored_sameSchedContextBindings
   obtain ⟨t0, h0, hcase⟩ :=
     sweptAndRestored_tcb_pullback st v frame tcbV hInv hLink hAcyc hLookup tid.toObjId tcb' hTcb'
   refine ⟨t0, h0, ?_⟩
-  rcases hcase with ⟨_, qp, qpp, qn, rfl⟩ | ⟨_, rfl⟩
+  rcases hcase with ⟨_, qp, qpp, qn, np, nn, rfl⟩ | ⟨_, rfl⟩
   · rfl
   · rw [restoredTcb_eq]
 
@@ -1173,7 +1173,7 @@ theorem sweptAndRestored_timeoutBudgetFrame
   obtain ⟨t0, h0, hcase⟩ :=
     sweptAndRestored_tcb_pullback st v frame tcbV hInv hLink hAcyc hLookup tid.toObjId tcb' hTcb'
   refine ⟨t0, h0, ?_⟩
-  rcases hcase with ⟨_, qp, qpp, qn, rfl⟩ | ⟨_, rfl⟩
+  rcases hcase with ⟨_, qp, qpp, qn, np, nn, rfl⟩ | ⟨_, rfl⟩
   · rfl
   · rw [restoredTcb_eq]
 
@@ -1192,7 +1192,7 @@ theorem sweptAndRestored_passiveServerIdleFrame
   refine ⟨fun tid tcb' hTcb' hUnbound hNotQ hNotCur hNA => ?_⟩
   obtain ⟨t0, h0, hcase⟩ :=
     sweptAndRestored_tcb_pullback st v frame tcbV hInv hLink hAcyc hLookup tid.toObjId tcb' hTcb'
-  rcases hcase with ⟨_, qp, qpp, qn, rfl⟩ | ⟨_, rfl⟩
+  rcases hcase with ⟨_, qp, qpp, qn, np, nn, rfl⟩ | ⟨_, rfl⟩
   · exact ⟨t0, h0, hUnbound, by rw [hSched] at hNotQ; exact hNotQ,
       by rw [hSched] at hNotCur; exact hNotCur, rfl⟩
   · exact absurd (by rw [restoredTcb_ipcState]; exact Or.inl rfl) hNA
@@ -1222,7 +1222,7 @@ theorem sweptAndRestored_donationOwnerFrame
       exact hNotReply ep rt hb
     obtain ⟨t1, h1, hr⟩ := sweptAndRestored_tcb_forward st v frame hInv
       owner.toObjId ownerTcb hne hOwner
-    obtain ⟨qp, qpp, qn, rfl⟩ := hr
+    obtain ⟨qp, qpp, qn, np, nn, rfl⟩ := hr
     exact ⟨_, h1, hUnbound, hBlocked⟩
 
 /-- The composite frames the reply linkage, given that the swept thread holds no
@@ -1243,7 +1243,7 @@ theorem sweptAndRestored_replyLinkageFrame
     obtain ⟨t0, h0, hcase⟩ :=
       sweptAndRestored_tcb_pullback st v frame tcbV hInv hLink hAcyc hLookup tid.toObjId tcb' hTcb'
     refine ⟨t0, h0, ?_⟩
-    rcases hcase with ⟨_, qp, qpp, qn, rfl⟩ | ⟨_, rfl⟩
+    rcases hcase with ⟨_, qp, qpp, qn, np, nn, rfl⟩ | ⟨_, rfl⟩
     · rfl
     · rw [restoredTcb_eq]
   · intro tid tcb rid hTcb hRO
@@ -1255,7 +1255,7 @@ theorem sweptAndRestored_replyLinkageFrame
       cases hRO
     obtain ⟨t1, h1, hr⟩ := sweptAndRestored_tcb_forward st v frame hInv
       tid.toObjId tcb hne hTcb
-    obtain ⟨qp, qpp, qn, rfl⟩ := hr
+    obtain ⟨qp, qpp, qn, np, nn, rfl⟩ := hr
     exact ⟨_, h1, rfl, fun ep rt hb => ⟨ep, rt, hb⟩⟩
 
 -- ============================================================================
@@ -1345,9 +1345,9 @@ theorem spliceOutMidQueueNode_tcb_value (st : SystemState) (tid : SeLe4n.ThreadI
     (hPre : st.objects[a.toObjId]? = some (.tcb t0)) :
     (spliceOutMidQueueNode st tid).objects[a.toObjId]? =
       some (.tcb { t0 with
-        queueNext := if tcbV.queuePrev = some a then tcbV.queueNext else t0.queueNext,
-        queuePrev := if tcbV.queueNext = some a then tcbV.queuePrev else t0.queuePrev,
-        queuePPrev := if tcbV.queueNext = some a then tcbV.queuePPrev else t0.queuePPrev }) := by
+        queueNextCode := if tcbV.queuePrev = some a then tcbV.queueNextCode else t0.queueNextCode,
+        queuePrevCode := if tcbV.queueNext = some a then tcbV.queuePrevCode else t0.queuePrevCode,
+        queuePPrevCode := if tcbV.queueNext = some a then tcbV.queuePPrevCode else t0.queuePPrevCode }) := by
   rw [spliceOutMidQueueNode_eq_patches, hLookup]
   simp only
   have h1 := queueNeighbourPatch_tcb_value st.objects tcbV.queuePrev
@@ -1370,9 +1370,9 @@ theorem sweptAndRestored_tcb_value (st : SystemState) (v : SeLe4n.ThreadId)
     (hPre : st.objects[a.toObjId]? = some (.tcb t0)) :
     (sweptAndRestored st v frame).objects[a.toObjId]? =
       some (.tcb { t0 with
-        queueNext := if tcbV.queuePrev = some a then tcbV.queueNext else t0.queueNext,
-        queuePrev := if tcbV.queueNext = some a then tcbV.queuePrev else t0.queuePrev,
-        queuePPrev := if tcbV.queueNext = some a then tcbV.queuePPrev else t0.queuePPrev }) :=
+        queueNextCode := if tcbV.queuePrev = some a then tcbV.queueNextCode else t0.queueNextCode,
+        queuePrevCode := if tcbV.queueNext = some a then tcbV.queuePrevCode else t0.queuePrevCode,
+        queuePPrevCode := if tcbV.queueNext = some a then tcbV.queuePPrevCode else t0.queuePPrevCode }) :=
   (sweptAndRestored_tcb_iff st v frame hInv a.toObjId _
     (fun hEq => hav (SeLe4n.ThreadId.toObjId_injective _ _ hEq))).mpr
     (spliceOutMidQueueNode_tcb_value st v tcbV hInv hLookup a t0 hPre)
@@ -1420,7 +1420,7 @@ theorem sweptAndRestored_no_next_to_victim
     rw [sweptAndRestored_tcb_value st b frame tcbV hInv hLookup a t0 hav h0] at hA
     have hx : tcbA = _ := (KernelObject.tcb.inj (Option.some.inj hA)).symm
     rw [hx] at hNext
-    simp only at hNext
+    simp only [TCB.queueNext_mk, apply_ite SeLe4n.ThreadId.ofOptCode, TCB.ofOptCode_queueNextCode] at hNext
     by_cases hp : tcbV.queuePrev = some a
     · rw [if_pos hp] at hNext
       exact hAcyc b (.single b b tcbV hVObj hNext)
@@ -1569,7 +1569,7 @@ theorem sweptAndRestored_membership_witness
           exact hAcyc v (.single v v tcbV hVObj hPNext)
         refine ⟨p, _,
           sweptAndRestored_tcb_value st v frame tcbV hInv hLookup p pTcb hpv2 hP, ?_⟩
-        show (if tcbV.queuePrev = some p then tcbV.queueNext else pTcb.queueNext) = some tid
+        rw [TCB.queueNext_mk, apply_ite SeLe4n.ThreadId.ofOptCode, TCB.ofOptCode_queueNextCode]
         rw [if_pos hq]
         exact hPN
     · right
@@ -1582,7 +1582,7 @@ theorem sweptAndRestored_membership_witness
         exact hidv (Option.some.inj hAN)
       · refine ⟨prev, _,
           sweptAndRestored_tcb_value st v frame tcbV hInv hLookup prev prevTcb hpv hPrev, ?_⟩
-        show (if tcbV.queuePrev = some prev then tcbV.queueNext else prevTcb.queueNext) = some tid
+        rw [TCB.queueNext_mk, apply_ite SeLe4n.ThreadId.ofOptCode, TCB.ofOptCode_queueNextCode]
         rw [if_neg hpp]
         exact hPN
 
@@ -1631,7 +1631,7 @@ theorem sweptAndRestored_allPendingMessagesBounded
   intro tid tcb' msg hTcb' hMsg
   obtain ⟨t0, h0, hcase⟩ :=
     sweptAndRestored_tcb_pullback st v frame tcbV hInv hLink hAcyc hLookup tid.toObjId tcb' hTcb'
-  rcases hcase with ⟨_, qp, qpp, qn, rfl⟩ | ⟨_, rfl⟩
+  rcases hcase with ⟨_, qp, qpp, qn, np, nn, rfl⟩ | ⟨_, rfl⟩
   · exact h tid t0 msg h0 hMsg
   · exact h tid t0 msg h0 (by rw [restoredTcb_eq] at hMsg; exact hMsg)
 
@@ -1647,7 +1647,7 @@ theorem sweptAndRestored_blockedThreadsPendingMessageConsistent
   intro tid tcb' hTcb'
   obtain ⟨t0, h0, hcase⟩ :=
     sweptAndRestored_tcb_pullback st v frame tcbV hInv hLink hAcyc hLookup tid.toObjId tcb' hTcb'
-  rcases hcase with ⟨_, qp, qpp, qn, rfl⟩ | ⟨_, rfl⟩
+  rcases hcase with ⟨_, qp, qpp, qn, np, nn, rfl⟩ | ⟨_, rfl⟩
   · exact h tid t0 h0
   · rw [restoredTcb_eq]
     simp only
@@ -1664,7 +1664,7 @@ theorem sweptAndRestored_blockedOnReplyHasTarget
   intro tid tcb' epId rt hTcb' hBlocked
   obtain ⟨t0, h0, hcase⟩ :=
     sweptAndRestored_tcb_pullback st v frame tcbV hInv hLink hAcyc hLookup tid.toObjId tcb' hTcb'
-  rcases hcase with ⟨_, qp, qpp, qn, rfl⟩ | ⟨_, rfl⟩
+  rcases hcase with ⟨_, qp, qpp, qn, np, nn, rfl⟩ | ⟨_, rfl⟩
   · exact h tid t0 epId rt h0 hBlocked
   · rw [restoredTcb_ipcState] at hBlocked
     cases hBlocked
@@ -1900,7 +1900,7 @@ theorem sweptAndRestored_replyCallerLinkage
     obtain ⟨t0, h0, hcase⟩ :=
       sweptAndRestored_tcb_pullback st v frame tcbV hInv hLink hAcyc hLookup tid.toObjId tcb' hTcb'
     have hROpre : t0.replyObject = some rid := by
-      rcases hcase with ⟨_, qp, qpp, qn, rfl⟩ | ⟨_, rfl⟩
+      rcases hcase with ⟨_, qp, qpp, qn, np, nn, rfl⟩ | ⟨_, rfl⟩
       · exact hRO
       · rw [restoredTcb_eq] at hRO; exact hRO
     obtain ⟨r, hr, hrc⟩ := h.1.1 tid t0 rid h0 hROpre
@@ -1916,7 +1916,7 @@ theorem sweptAndRestored_replyCallerLinkage
     obtain ⟨t1, h1, hrw⟩ :=
       sweptAndRestored_tcb_forward st v frame hInv tid.toObjId t0
         (fun hEq => hidv (SeLe4n.ThreadId.toObjId_injective _ _ hEq)) h0
-    obtain ⟨qp, qpp, qn, rfl⟩ := hrw
+    obtain ⟨qp, qpp, qn, np, nn, rfl⟩ := hrw
     exact ⟨_, h1, hRO, ep, rt, hBlk⟩
   · intro tid tcb' ep rt hTcb' hBlk
     by_cases hidv : tid = v
@@ -1932,7 +1932,7 @@ theorem sweptAndRestored_replyCallerLinkage
         sweptAndRestored_tcb_ipcState st v frame tcbV hInv hLookup tid tcb' t0 hidv hTcb' h0
       obtain ⟨rid, hrid⟩ := h.2 tid t0 ep rt h0 (by rw [← hIp]; exact hBlk)
       refine ⟨rid, ?_⟩
-      rcases hcase with ⟨_, qp, qpp, qn, rfl⟩ | ⟨hEq, _⟩
+      rcases hcase with ⟨_, qp, qpp, qn, np, nn, rfl⟩ | ⟨hEq, _⟩
       · exact hrid
       · exact absurd (SeLe4n.ThreadId.toObjId_injective _ _ hEq) hidv
 
@@ -1960,7 +1960,7 @@ theorem sweptAndRestored_pendingReceiveReplyWellFormed
       (SystemState.getTcb?_eq_some_iff _ tid tcb').mp hTcb'
     obtain ⟨t0, h0, hcase⟩ :=
       sweptAndRestored_tcb_pullback st v frame tcbV hInv hLink hAcyc hLookup tid.toObjId tcb' hObj
-    rcases hcase with ⟨_, qp, qpp, qn, rfl⟩ | ⟨_, rfl⟩
+    rcases hcase with ⟨_, qp, qpp, qn, np, nn, rfl⟩ | ⟨_, rfl⟩
     · exact ⟨t0, (SystemState.getTcb?_eq_some_iff _ tid t0).mpr h0, hStash, rfl⟩
     · rw [restoredTcb_pendingReceiveReply] at hStash
       cases hStash
@@ -2010,7 +2010,7 @@ theorem sweptAndRestored_queueHeadBlockedConsistent
     have hdv : hd ≠ v := hPromNeV ep0.receiveQ hd hRHead
     obtain ⟨t0, h0, hcase⟩ := sweptAndRestored_tcb_pullback st v frame tcbV hInv hLink hAcyc
       hLookup hd.toObjId tcbHd hHd
-    rcases hcase with ⟨_, qp, qpp, qn, rfl⟩ | ⟨hEq, _⟩
+    rcases hcase with ⟨_, qp, qpp, qn, np, nn, rfl⟩ | ⟨hEq, _⟩
     · by_cases hc : ep0.receiveQ.head = some v
       · rw [if_pos hc] at hRHead
         exact (hTgt v hd tcbV t0 hVObj h0 hRHead).1 epId
@@ -2023,7 +2023,7 @@ theorem sweptAndRestored_queueHeadBlockedConsistent
     have hdv : hd ≠ v := hPromNeV ep0.sendQ hd hSHead
     obtain ⟨t0, h0, hcase⟩ := sweptAndRestored_tcb_pullback st v frame tcbV hInv hLink hAcyc
       hLookup hd.toObjId tcbHd hHd
-    rcases hcase with ⟨_, qp, qpp, qn, rfl⟩ | ⟨hEq, _⟩
+    rcases hcase with ⟨_, qp, qpp, qn, np, nn, rfl⟩ | ⟨hEq, _⟩
     · by_cases hc : ep0.sendQ.head = some v
       · rw [if_pos hc] at hSHead
         exact (hTgt v hd tcbV t0 hVObj h0 hSHead).2 epId
@@ -2068,7 +2068,7 @@ theorem sweptAndRestored_endpointQueueTailBlockedConsistent
     have htv : tl ≠ v := hPromNeV ep0.receiveQ tl hRTail
     obtain ⟨t0, h0, hcase⟩ := sweptAndRestored_tcb_pullback st v frame tcbV hInv hLink hAcyc
       hLookup tl.toObjId tcbTl hTl
-    rcases hcase with ⟨_, qp, qpp, qn, rfl⟩ | ⟨hEq, _⟩
+    rcases hcase with ⟨_, qp, qpp, qn, np, nn, rfl⟩ | ⟨hEq, _⟩
     · by_cases hc : ep0.receiveQ.tail = some v
       · rw [if_pos hc] at hRTail
         exact (hPred epId ep0 tcbV hEp0 hLookup tl hRTail t0 h0).2 hc
@@ -2080,7 +2080,7 @@ theorem sweptAndRestored_endpointQueueTailBlockedConsistent
     have htv : tl ≠ v := hPromNeV ep0.sendQ tl hSTail
     obtain ⟨t0, h0, hcase⟩ := sweptAndRestored_tcb_pullback st v frame tcbV hInv hLink hAcyc
       hLookup tl.toObjId tcbTl hTl
-    rcases hcase with ⟨_, qp, qpp, qn, rfl⟩ | ⟨hEq, _⟩
+    rcases hcase with ⟨_, qp, qpp, qn, np, nn, rfl⟩ | ⟨hEq, _⟩
     · by_cases hc : ep0.sendQ.tail = some v
       · rw [if_pos hc] at hSTail
         exact (hPred epId ep0 tcbV hEp0 hLookup tl hSTail t0 h0).1 hc

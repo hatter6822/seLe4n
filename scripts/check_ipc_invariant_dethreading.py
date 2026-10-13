@@ -267,6 +267,19 @@ MACHINERY_PINS = {
     ("SeLe4n/Kernel/Concurrency/Locks/SerializabilityInventory.lean", "syntax"): 1,
     ("SeLe4n/Kernel/Concurrency/PhaseTheoremManifest.lean", "macro"): 2,
     ("SeLe4n/Kernel/Concurrency/PhaseTheoremManifest.lean", "run_cmd"): 2,
+    # WS-ZA ZA4.5: the `run_queue_stage` tactic and its step rules -- each
+    # `macro_rules` adds one tactic-category alternative (a step's stage) and
+    # `macro` declares the driver tactics; none mints a declaration.
+    ("SeLe4n/Kernel/IPC/Invariant/RunQueueAgreement/Capability.lean", "macro"): 1,
+    ("SeLe4n/Kernel/IPC/Invariant/RunQueueAgreement/Capability.lean", "macro_rules"): 8,
+    ("SeLe4n/Kernel/IPC/Invariant/RunQueueAgreement/Endpoint.lean", "macro"): 2,
+    ("SeLe4n/Kernel/IPC/Invariant/RunQueueAgreement/Endpoint.lean", "macro_rules"): 21,
+    ("SeLe4n/Kernel/IPC/Invariant/RunQueueAgreement/Endpoint.lean", "syntax"): 2,
+    ("SeLe4n/Kernel/IPC/Invariant/RunQueueAgreement/Ipc.lean", "macro_rules"): 5,
+    # PR #932 review: the `ntfn_links_back` / `ntfn_links_fwd` tactics, which
+    # swap a TCB across a notification-link rewrite; neither mints a declaration.
+    ("SeLe4n/Kernel/IPC/Operations/Endpoint.lean", "macro_rules"): 2,
+    ("SeLe4n/Kernel/IPC/Operations/Endpoint.lean", "syntax"): 2,
     ("SeLe4n/Kernel/InformationFlow/NonInterferencePerCore.lean", "macro_rules"): 1,
     ("SeLe4n/Kernel/InformationFlow/NonInterferencePerCore.lean", "syntax"): 1,
     ("SeLe4n/Kernel/Scheduler/Invariant/PerCoreInvariantSuiteInventory.lean", "macro_rules"): 1,
@@ -285,6 +298,10 @@ MACHINERY_PINS = {
     ("SeLe4n/Kernel/Scheduler/Operations/PerCoreWcrtInventory.lean", "syntax"): 1,
     ("SeLe4n/Kernel/Scheduler/PriorityInheritance/PerCoreInventory.lean", "macro_rules"): 1,
     ("SeLe4n/Kernel/Scheduler/PriorityInheritance/PerCoreInventory.lean", "syntax"): 1,
+    # WS-ZA ZA4.5: the `run_links_back` / `run_links_fwd` tactics -- two
+    # tactic-category macros; they mint no declaration.
+    ("SeLe4n/Kernel/Scheduler/RunQueueLinkFrame.lean", "macro_rules"): 2,
+    ("SeLe4n/Kernel/Scheduler/RunQueueLinkFrame.lean", "syntax"): 2,
     ("SeLe4n/Platform/FFI.lean", "initialize"): 2,
     # PR #889 review round 17: the boot entry's contract, decided over the
     # elaborated environment.  One `run_cmd`; it mints no declaration.

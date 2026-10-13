@@ -478,7 +478,7 @@ theorem notificationSignal_badge_stored_fresh
     (badge : SeLe4n.Badge)
     (ntfn : Notification)
     (hObj : st.objects[notifId]? = some (.notification ntfn))
-    (hNoWaiters : ntfn.waitingThreads.val = [])
+    (hNoWaiters : ntfn.waitHead = none)
     (hNoPending : ntfn.pendingBadge = none)
     (hObjInv : st.objects.invExt)
     (hSignal : notificationSignal notifId badge st = .ok ((), st')) :
@@ -486,11 +486,8 @@ theorem notificationSignal_badge_stored_fresh
       st'.objects[notifId]? = some (.notification ntfn') ∧
       ntfn'.pendingBadge = some (SeLe4n.Badge.ofNatMasked badge.toNat) := by
   unfold notificationSignal SystemState.getObject? at hSignal
-  -- WS-RC R4.C: rewrite via the structural `tail?` derived from the empty `.val`.
-  have hTailNone : ntfn.waitingThreads.tail? = none :=
-    (SeLe4n.NoDupList.tail?_eq_none_iff _).mpr hNoWaiters
-  simp [hObj, hTailNone, hNoPending] at hSignal
-  exact ⟨{ state := .active, waitingThreads := SeLe4n.NoDupList.empty,
+  simp [hObj, hNoWaiters, hNoPending] at hSignal
+  exact ⟨{ state := .active, 
            hasPendingBadge := true, pendingWord := (SeLe4n.Badge.ofNatMasked badge.toNat), boundTCB := ntfn.boundTCB },
     by rw [← storeObject_objects_eq st st' notifId _ hObjInv hSignal], rfl⟩
 
@@ -506,61 +503,10 @@ theorem notificationWait_recovers_pending_badge
     ∃ ntfn,
       st.objects[notifId]? = some (.notification ntfn) ∧
       ntfn.pendingBadge = some badge := by
-  unfold notificationWait SystemState.getObject? at hWait
-  cases hObj : st.objects[notifId]? with
-  | none => simp [hObj] at hWait
-  | some obj =>
-      cases obj with
-      | notification ntfn =>
-          refine ⟨ntfn, rfl, ?_⟩
-          simp only [hObj] at hWait
-          cases hPending : ntfn.pendingBadge with
-          | none =>
-              exfalso; simp only [hPending] at hWait
-              -- WS-G7: match on lookupTcb
-              cases hLk : lookupTcb st waiter with
-              | none => simp [hLk] at hWait
-              | some tcb =>
-                simp only [hLk] at hWait
-                split at hWait
-                · simp at hWait
-                · -- WS-RC R4.C: consWithGuard? case-split
-                  split at hWait
-                  · simp at hWait
-                  · revert hWait
-                    cases hStore : storeObject notifId _ st with
-                  | error e => simp
-                  | ok pair =>
-                      simp only []
-                      have hLk' := lookupTcb_preserved_by_storeObject_notification hLk hObj hObjInv hStore
-                      simp only [storeTcbIpcStateAndMessage_fromTcb_eq hLk']
-                      intro hWait
-                      revert hWait
-                      cases storeTcbIpcStateAndMessage pair.2 waiter _ none with
-                      | error e => simp
-                      | ok st2 =>
-                          simp only [Except.ok.injEq, Prod.mk.injEq]
-                          intro ⟨h, _⟩
-                          exact absurd h (by simp)
-          | some b =>
-              simp only [hPending] at hWait
-              let newNtfn : Notification :=
-                { state := .idle, waitingThreads := SeLe4n.NoDupList.empty,
-                  hasPendingBadge := false, pendingWord := SeLe4n.Badge.zero, boundTCB := ntfn.boundTCB }
-              revert hWait
-              cases hStore : storeObject notifId (.notification newNtfn) st with
-              | error e => simp
-              | ok pair =>
-                  simp only []
-                  intro hWait
-                  revert hWait
-                  cases storeTcbIpcState pair.2 waiter .ready with
-                  | error e => simp
-                  | ok st2 =>
-                      simp only [Except.ok.injEq, Prod.mk.injEq]
-                      intro ⟨hBadgeEq, _⟩
-                      exact hBadgeEq
-      | tcb _ | endpoint _ | cnode _ | vspaceRoot _ | untyped _ | schedContext _ | reply _ | frame _ | pageTable _ => simp [hObj] at hWait
+  rcases notificationWait_ok_cases hWait with ⟨b, hb, hP⟩ | ⟨hr, _⟩
+  · obtain ⟨ntfn, _, _, _, hN, hB, _⟩ := notificationWaitPark_badge_objects hObjInv hP
+    exact ⟨ntfn, hN, hB.trans (congrArg some (Option.some.inj hb).symm)⟩
+  · cases hr
 
 /-- (H-03) End-to-end badge routing consistency.
 
@@ -579,7 +525,7 @@ theorem badge_notification_routing_consistent
     (ntfn : Notification)
     (_hMint : cspaceMint src dst rights (some badge) st₁ = .ok ((), st₂))
     (hNtfnObj : st₂.objects[notifId]? = some (.notification ntfn))
-    (hNoWaiters : ntfn.waitingThreads.val = [])
+    (hNoWaiters : ntfn.waitHead = none)
     (hNoPending : ntfn.pendingBadge = none)
     (hObjInv2 : st₂.objects.invExt)
     (hSignal : notificationSignal notifId badge st₂ = .ok ((), st₃))

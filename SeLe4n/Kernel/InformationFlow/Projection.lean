@@ -292,7 +292,16 @@ def projectKernelObject (ctx : LabelingContext) (observer : IfObserver) (obj : K
                        -- is; the lazy switch (`Architecture.fpAccessOnCore` /
                        -- `fpReleaseOnCore`) writes it, and an observer that saw
                        -- it would see every value the thread computed in FP.
-                       fpContext := default }
+                       fpContext := default,
+                       -- WS-ZA ZA4.5: the run-queue links (seL4's
+                       -- `tcbSchedNext`/`tcbSchedPrev`) name the threads
+                       -- queued beside this one on its core, whatever their
+                       -- domain; erased as `cpuAffinity` is — the scheduler's
+                       -- own projection carries what an observer may see of
+                       -- the run queue.
+                       runCoreCode := 0, runPrio := ⟨0⟩, runPrevCode := 0,
+                       runNextCode := 0, runBucketPrevCode := 0,
+                       runBucketNextCode := 0 }
   | .schedContext sc =>
       -- AI4-A: Strip boundThread — internal scheduling plumbing binding a
       -- SchedContext to its owning thread. Donation chain changes modify only
@@ -654,7 +663,7 @@ def projectObjects (ctx : LabelingContext) (observer : IfObserver) (st : SystemS
       none
 
 /-- Project runnable queue to observer-visible threads only. -/
-def projectRunnable (ctx : LabelingContext) (observer : IfObserver) (st : SystemState) :
+noncomputable def projectRunnable (ctx : LabelingContext) (observer : IfObserver) (st : SystemState) :
     List SeLe4n.ThreadId :=
   st.scheduler.runnable.filter (threadObservable ctx observer)
 
@@ -931,7 +940,7 @@ kernel-internal monotonic counter — projecting it unconditionally would
 create a covert timing channel (observers could infer other domains'
 execution by watching timer increments). Memory projection deferred to
 WS-H11 (VSpace domain ownership model required). -/
-def projectState (ctx : LabelingContext) (observer : IfObserver) (st : SystemState) : ObservableState :=
+noncomputable def projectState (ctx : LabelingContext) (observer : IfObserver) (st : SystemState) : ObservableState :=
   {
     objects := projectObjects ctx observer st
     runnable := projectRunnable ctx observer st

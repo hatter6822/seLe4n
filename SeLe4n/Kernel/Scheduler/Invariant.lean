@@ -438,7 +438,8 @@ def runnableThreadsAreTCBs (st : SystemState) : Prop :=
 theorem default_runnableThreadsAreTCBs :
     runnableThreadsAreTCBs (default : SystemState) := by
   intro tid hMem
-  have : (default : SystemState).scheduler.runnable = [] := by decide
+  have : (default : SystemState).scheduler.runnable = [] := by
+      show ((default : SchedulerState).runQueueOnCore bootCoreId).toList = []; simp
   rw [this] at hMem; simp at hMem
 
 
@@ -446,7 +447,7 @@ theorem default_runnableThreadsAreTCBs :
 -- WS-H6: RunQueue priority-match predicate
 -- ============================================================================
 
-/-- WS-H6/AI3-A: The RunQueue's recorded `threadPriority` mapping matches the
+/-- WS-H6/AI3-A: The RunQueue's recorded priority (`priorityOf`) matches the
 effective priority for every run-queue member.
 
 AI3-A (M-04) → AK2-B (S-H04): Updated from `TCB.boostedPriority` (TCB
@@ -467,7 +468,7 @@ def schedulerPriorityMatch (st : SystemState) : Prop :=
   ∀ tid, tid ∈ (st.scheduler.runQueueOnCore bootCoreId) →
     match st.objects[tid.toObjId]? with
     | some (.tcb tcb) =>
-        (st.scheduler.runQueueOnCore bootCoreId).threadPriority[tid]? = some (tcb.boostedPriority)
+        (st.scheduler.runQueueOnCore bootCoreId).priorityOf tid = some (tcb.boostedPriority)
     | _ => True
 
 /-- V5-H (M-HW-7): The scheduler's `domainTimeRemaining` is always positive (> 0).
@@ -564,7 +565,7 @@ theorem schedulerPriorityMatch_insert
     ∀ tid, tid ∈ (st.scheduler.runQueueOnCore bootCoreId).insert curTid (curTcb.boostedPriority) →
       match st.objects[tid.toObjId]? with
       | some (.tcb tcb) =>
-        ((st.scheduler.runQueueOnCore bootCoreId).insert curTid (curTcb.boostedPriority)).threadPriority[tid]?
+        ((st.scheduler.runQueueOnCore bootCoreId).insert curTid (curTcb.boostedPriority)).priorityOf tid
           = some (tcb.boostedPriority)
       | _ => True := by
   intro tid hMem
@@ -574,23 +575,16 @@ theorem schedulerPriorityMatch_insert
   have hContF : (st.scheduler.runQueueOnCore bootCoreId).contains curTid = false := by
     cases h : (st.scheduler.runQueueOnCore bootCoreId).contains curTid; rfl; exact absurd h hNotMem
   rw [RunQueue.mem_insert] at hMem
-  rw [RunQueue.insert_threadPriority]; simp only [hContF, Bool.false_eq_true, ↓reduceIte]
+  rw [RunQueue.priorityOf_insert]; simp only [hContF, Bool.false_eq_true, ↓reduceIte]
   cases hMem with
   | inl hOld =>
-    have hNeq : curTid ≠ tid := fun h => hNotMem (h ▸ hOld)
-    have hBEq : (curTid == tid) = false := by
-      cases h : (curTid == tid) <;> simp_all
-    simp only [RHTable_getElem?_eq_get?]
-    rw [RHTable_getElem?_insert (st.scheduler.runQueueOnCore bootCoreId).threadPriority _ _ (st.scheduler.runQueueOnCore bootCoreId).threadPrio_invExtK.1]
-    simp only [hBEq, Bool.false_eq_true, ↓reduceIte]
-    have := hPM tid hOld
-    simp only [RHTable_getElem?_eq_get?] at this; exact this
+    have hNeq : tid ≠ curTid := fun h => hNotMem (h ▸ hOld)
+    simp only [hNeq, ↓reduceIte]
+    exact hPM tid hOld
   | inr hEq =>
     subst hEq
-    simp only [RHTable_getElem?_eq_get?]
-    rw [RHTable_getElem?_insert (st.scheduler.runQueueOnCore bootCoreId).threadPriority _ _ (st.scheduler.runQueueOnCore bootCoreId).threadPrio_invExtK.1]
-    simp only [beq_self_eq_true, ↓reduceIte]
-    simp only [RHTable_getElem?_eq_get?] at hObj; rw [hObj]
+    simp only [↓reduceIte]
+    simp only [RHTable_getElem?_eq_get?] at hObj ⊢; rw [hObj]
 
 -- ============================================================================
 -- Z4-K: budgetPositive invariant
@@ -617,7 +611,8 @@ def budgetPositive (st : SystemState) : Prop :=
 theorem default_budgetPositive :
     budgetPositive (default : SystemState) := by
   intro tid hMem
-  have : (default : SystemState).scheduler.runnable = [] := by decide
+  have : (default : SystemState).scheduler.runnable = [] := by
+      show ((default : SchedulerState).runQueueOnCore bootCoreId).toList = []; simp
   rw [this] at hMem; simp at hMem
 
 -- ============================================================================
@@ -967,8 +962,8 @@ theorem default_schedContextBindingConsistent :
 -- Z4-P: effectiveParamsMatchRunQueue invariant
 -- ============================================================================
 
-/-- Z4-P: for every run-queue member, the RunQueue's cached `threadPriority`
-entry is that thread's **base** priority.
+/-- Z4-P: for every run-queue member, the RunQueue's recorded priority
+(`priorityOf`) is that thread's **base** priority.
 
 WS-RR (`v0.35.133`): this used to be a three-armed case analysis on the binding,
 whose `.bound` arm demanded the recorded bucket equal the RESERVATION's
@@ -991,17 +986,17 @@ def effectiveParamsMatchRunQueue (st : SystemState) : Prop :=
   ∀ tid, tid ∈ (st.scheduler.runQueueOnCore bootCoreId) →
     match st.objects[tid.toObjId]? with
     | some (.tcb tcb) =>
-      (st.scheduler.runQueueOnCore bootCoreId).threadPriority[tid]? = some tcb.priority
+      (st.scheduler.runQueueOnCore bootCoreId).priorityOf tid = some tcb.priority
     | _ => True
 
 /-- Z4-P: Default state has empty run queue — vacuously true. -/
 theorem default_effectiveParamsMatchRunQueue :
     effectiveParamsMatchRunQueue (default : SystemState) := by
   intro tid hMem
-  have hEmpty : ((default : SystemState).scheduler.runQueueOnCore bootCoreId).membership.contains tid = false :=
-    RobinHood.RHSet.contains_empty tid
-  simp [Membership.mem, RunQueue.contains] at hMem
-  simp [hEmpty] at hMem
+  have h0 : (default : SystemState).scheduler.runQueueOnCore bootCoreId = RunQueue.empty :=
+    SchedulerState.runQueueOnCore_default bootCoreId
+  rw [h0] at hMem
+  exact absurd hMem (RunQueue.not_mem_empty tid)
 
 -- ============================================================================
 -- AE3-A/U-11: boundThreadDomainConsistent invariant

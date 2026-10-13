@@ -127,21 +127,31 @@ theorem endpointQueueNoDup_of_objects_eq
   have ⟨hK1, hK2⟩ := hInv oid ep hEp
   exact ⟨fun tid tcb hTcb => by rw [hLk] at hTcb; exact hK1 tid tcb hTcb, hK2⟩
 
-/-- ensureRunnable preserves endpointQueueNoDup (scheduler only, objects unchanged). -/
+/-- WS-ZA ZA4.5: a write that changes nothing but TCB run-queue links keeps
+`endpointQueueNoDup` (it reads endpoints and `queueNext`). -/
+theorem endpointQueueNoDup_of_objectsAgreeOffRunLinks {st st' : SystemState}
+    (h : SystemState.objectsAgreeOffRunLinks st' st) (hInv : endpointQueueNoDup st) :
+    endpointQueueNoDup st' := by
+  intro oid ep hEp
+  have ⟨hK1, hK2⟩ := hInv oid ep (h.get_endpoint_iff.mp hEp)
+  refine ⟨fun tid tcb hTcb => ?_, hK2⟩
+  run_links_back h at tcb hTcb
+  exact hK1 tid tcb hTcb
+
+/-- ensureRunnable preserves endpointQueueNoDup (its object writes are run-queue links). -/
 theorem ensureRunnable_preserves_endpointQueueNoDup
     (st : SystemState) (tid : SeLe4n.ThreadId)
     (hInv : endpointQueueNoDup st) :
     endpointQueueNoDup (ensureRunnable st tid) :=
-  endpointQueueNoDup_of_objects_eq st (ensureRunnable st tid)
-    (fun x => congrArg (·.get? x) (ensureRunnable_preserves_objects st tid)) hInv
+  endpointQueueNoDup_of_objectsAgreeOffRunLinks (ensureRunnable_objectsAgreeOffRunLinks st tid) hInv
 
 /-- removeRunnable preserves endpointQueueNoDup (scheduler only, objects unchanged). -/
 theorem removeRunnable_preserves_endpointQueueNoDup
     (st : SystemState) (tid : SeLe4n.ThreadId)
     (hInv : endpointQueueNoDup st) :
     endpointQueueNoDup (removeRunnable st tid) :=
-  endpointQueueNoDup_of_objects_eq st (removeRunnable st tid)
-    (fun x => congrArg (·.get? x) (removeRunnable_preserves_objects st tid)) hInv
+  endpointQueueNoDup_of_objectsAgreeOffRunLinks
+    (removeRunnable_objectsAgreeOffRunLinks st tid) hInv
 
 /-- Storing a TCB (via storeTcbIpcStateAndMessage) preserves endpointQueueNoDup.
 K-2 preserved because endpoint objects are unchanged by TCB stores.
@@ -301,6 +311,19 @@ theorem storeTcbPendingMessage_preserves_endpointQueueNoDup
 -- Section 3: Per-operation preservation proofs
 -- ============================================================================
 
+/-- WS-ZA ZA4.4: a step that rewrites notification-queue links and nothing else
+keeps the endpoint queues free of duplicates: neither endpoints nor the
+endpoint-queue links move. -/
+theorem endpointQueueNoDup_of_ntfnLinksRewritten {st s : SystemState}
+    (h : ntfnLinksRewritten st s) (hInv : endpointQueueNoDup st) : endpointQueueNoDup s := by
+  intro oid ep hObj
+  obtain ⟨hSelf, hDisj⟩ := hInv oid ep
+    ((h.obj_iff oid _ (fun _ => KernelObject.noConfusion)).mp hObj)
+  refine ⟨fun tid tcb hTcb => ?_, hDisj⟩
+  obtain ⟨ty, hSt, hQN⟩ := h.field_bwd TCB.queueNext (fun _ _ _ => rfl) hTcb
+  rw [hQN]
+  exact hSelf tid ty hSt
+
 /-- V3-K-op-9a: notificationSignal preserves endpointQueueNoDup.
 Notification operations only modify notification objects and TCBs; no endpoint change. -/
 theorem notificationSignal_preserves_endpointQueueNoDup
@@ -316,10 +339,9 @@ theorem notificationSignal_preserves_endpointQueueNoDup
     | tcb _ | cnode _ | endpoint _ | vspaceRoot _ | untyped _ | schedContext _ | reply _ | frame _ | pageTable _ => simp [hObj] at hStep
     | notification ntfn =>
       simp only [hObj] at hStep
-      -- WS-RC R4.C: `notificationSignal` pops via `tail?` (NoDupList smart accessor).
-      cases hWaiters : ntfn.waitingThreads.tail? with
-      | some headTail =>
-        obtain ⟨waiter, rest⟩ := headTail
+      -- WS-ZA ZA4.4: `notificationSignal` wakes the queue head.
+      cases hWaiters : ntfn.waitHead with
+      | some waiter =>
         -- Wake path: storeObject notification → storeTcbIpcStateAndMessage → ensureRunnable
         simp only [hWaiters] at hStep
         generalize hStore1 : storeObject notificationId _ st = r1 at hStep
@@ -338,6 +360,8 @@ theorem notificationSignal_preserves_endpointQueueNoDup
             simp only [Except.ok.injEq, Prod.mk.injEq] at hStep
             obtain ⟨_, rfl⟩ := hStep
             exact ensureRunnable_preserves_endpointQueueNoDup _ _ <|
+              endpointQueueNoDup_of_ntfnLinksRewritten (detachNtfnHead_linksRewritten _ _ _
+                (storeTcbIpcStateAndMessage_preserves_objects_invExt _ _ _ _ _ hObjInv1 hMsg)) <|
               storeTcbIpcStateAndMessage_preserves_endpointQueueNoDup _ _ _ _ _ hInv1 hObjInv1 hMsg
       | none =>
         -- Accumulate path: storeObject notification only
@@ -347,14 +371,14 @@ theorem notificationSignal_preserves_endpointQueueNoDup
           (fun ep => by intro h; cases h) (fun tcb => by intro h; cases h) hStep
 
 /-- V3-K-op-9b: notificationWait preserves endpointQueueNoDup. -/
-theorem notificationWait_preserves_endpointQueueNoDup
+theorem notificationWaitPark_preserves_endpointQueueNoDup
     (st st' : SystemState) (notificationId : SeLe4n.ObjId) (waiter : SeLe4n.ThreadId)
     (result : Option SeLe4n.Badge)
     (hInv : endpointQueueNoDup st)
     (hObjInv : st.objects.invExt)
-    (hStep : notificationWait notificationId waiter st = .ok (result, st')) :
+    (hStep : notificationWaitPark notificationId waiter st = .ok (result, st')) :
     endpointQueueNoDup st' := by
-  unfold notificationWait SystemState.getObject? at hStep
+  unfold notificationWaitPark SystemState.getObject? at hStep
   cases hObj : st.objects[notificationId]? with
   | none => simp [hObj] at hStep
   | some obj => cases obj with
@@ -390,11 +414,7 @@ theorem notificationWait_preserves_endpointQueueNoDup
           simp only [hLookup] at hStep
           split at hStep
           · simp at hStep
-          · -- WS-RC R4.C: case-split on consWithGuard? before the storeObject
-            cases hCons : ntfn.waitingThreads.consWithGuard? waiter with
-            | none => simp [hCons] at hStep
-            | some wt' =>
-            simp only [hCons] at hStep
+          · -- WS-ZA ZA4.4: the park records the waiter as the queue's tail
             generalize hStore1 : storeObject notificationId _ st = r1 at hStep
             cases r1 with
             | error e => simp at hStep
@@ -520,7 +540,7 @@ theorem endpointReply_preserves_endpointQueueNoDup
                       st st1 target tcb .ready (some msg) hInv hObjInv hLookup hMsg
                 -- PR #827 #3 fold: peel the atomic consume (no-op when unlinked).
                 have hObjInvMid : (ensureRunnable st1 target).objects.invExt := by
-                  rw [ensureRunnable_preserves_objects]
+                  apply ensureRunnable_objects_invExt
                   have hMsg' := hMsg
                   rw [storeTcbIpcStateAndMessage_fromTcb_eq hLookup] at hMsg'
                   exact storeTcbIpcStateAndMessage_preserves_objects_invExt
@@ -756,57 +776,29 @@ theorem endpointQueuePopHead_preserves_endpointQueueNoDup
       exact (hInv oid ep' hBack).2
 
 -- ============================================================================
--- WS-RC R4.C — Structural witness theorems for `Notification.waitingThreads`
--- no-duplicate property (closes DEEP-IPC-05; subsumes DEEP-IPC-01).
--- Per the WS-RC §1.5 structural-fix policy: codify the closure as named
--- proof-system witnesses so a future audit / refactor cannot regress the
--- runtime guard or the invariant chain without breaking the build.
+-- WS-RC R4.C, WS-ZA ZA4.4 — the duplicate-wait guard (DEEP-IPC-01, DEEP-IPC-05)
 -- ============================================================================
+--
+-- A waiter's place in a notification queue is its own pair of TCB links, so a
+-- thread cannot be queued twice: there is nowhere to put the second entry.  What
+-- remains to state is that the O(1) guard `notificationWait` runs — the
+-- waiter's `ipcState` is not `.blockedOnNotification` of this notification — is
+-- the right one: such a thread is neither end of the queue.
 
-/-- WS-RC R4.C / DEEP-IPC-05: plan-named canonical witness — every
-    `Notification` has a Nodup waiter list structurally, derived
-    directly from `NoDupList.hNodup` on the underlying
-    `Notification.waitingThreads` field.
-
-    This is the canonical discharge for the DEEP-IPC-05 finding: an
-    auditor or contributor refactoring `Notification` can re-derive
-    the closure by elaborating this theorem alone, without re-reading
-    the full preservation chain in
-    `NotificationPreservation/Wait.lean` and
-    `NotificationPreservation/Signal.lean`.  The state-level
-    `uniqueWaiters` predicate and its substantive
-    `notification_waitingThreads_nodup_witness` were deleted in the
-    WS-RC R4.C close-out; structural codification subsumes them. -/
-theorem notification_waiters_nodup (n : Notification) :
-    n.waitingThreads.val.Nodup :=
-  n.waitingThreads.hNodup
-
-/-- WS-RC R4.C (DEEP-IPC-01 closure): structural witness that the
-    runtime duplicate guard at `IPC/Operations/Endpoint.lean:723` is
-    equivalent to list non-membership under the cross-subsystem
-    `notificationWaiterConsistent` invariant.
-
-    A waiter whose TCB `ipcState` is **not** `.blockedOnNotification
-    notifId` cannot already be in the notification's waiting list, so
-    prepending the waiter preserves Nodup. This witness theorem is a
-    re-export of `not_mem_waitingThreads_of_ipcState_ne` under the
-    WS-RC discharge-index name, so the DEEP-IPC-01 closure is reachable
-    via a single `#check` against this identifier without re-reading
-    the cross-subsystem invariant chain.
-
-    The runtime guard at line 723 is retained as defence-in-depth and
-    is now provably equivalent to the type-level Nodup discharge by
-    composing this theorem with `notification_waiters_nodup` (the
-    plan-named structural discharge from `NoDupList.hNodup`). -/
-theorem notificationWait_runtime_check_implied_by_nodup
+/-- WS-RC R4.C (DEEP-IPC-01 closure), WS-ZA ZA4.4: under
+    `notificationWaiterConsistent`, a waiter whose TCB `ipcState` is **not**
+    `.blockedOnNotification notifId` is neither end of that notification's
+    queue, so appending it cannot alias an end.  A re-export of
+    `not_mem_queueEnds_of_ipcState_ne` under the discharge-index name. -/
+theorem notificationWait_runtime_check_implies_not_queued
     (st : SystemState) (notifId : SeLe4n.ObjId) (ntfn : Notification)
     (waiter : SeLe4n.ThreadId) (tcb : TCB)
     (hConsist : notificationWaiterConsistent st)
     (hNtfn : st.objects[notifId]? = some (KernelObject.notification ntfn))
     (hTcb : st.getTcb? waiter = some tcb)
     (hNotBlocked : tcb.ipcState ≠ .blockedOnNotification notifId) :
-    waiter ∉ ntfn.waitingThreads :=
-  not_mem_waitingThreads_of_ipcState_ne st notifId ntfn waiter tcb
+    waiter ∉ ntfn.queueEnds :=
+  not_mem_queueEnds_of_ipcState_ne st notifId ntfn waiter tcb
     hConsist hNtfn ((SystemState.getTcb?_eq_some_iff st waiter tcb).mp hTcb) hNotBlocked
 
 end SeLe4n.Kernel

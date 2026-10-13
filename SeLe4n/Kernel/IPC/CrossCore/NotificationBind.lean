@@ -163,7 +163,7 @@ theorem notificationSignalBoundOnCore_preserves_objects_invExt
 /-- WS-SM SM6.B: the bound-aware cross-core signal preserves the `ipcInvariant`
 notification well-formedness.  Delivery path: `endpointQueueRemoveDual` preserves
 it (queue links only), the TCB store does not write a notification, and the wake
-is object-invisible on the just-`.ready` bound TCB. -/
+is invisible off run-queue links on the just-`.ready` bound TCB. -/
 theorem notificationSignalBoundOnCore_preserves_ipcInvariant
     (notificationId : SeLe4n.ObjId) (badge : SeLe4n.Badge) (executingCore : CoreId)
     (st : SystemState) (hInv : ipcInvariant st) (hObjInv : st.objects.invExt) :
@@ -193,7 +193,8 @@ theorem notificationSignalBoundOnCore_preserves_ipcInvariant
           storeTcbReceiveComplete_getTcb?_ipcState p.2 st2 t _ hObj1 hStore
         show ipcInvariant (wakeThread st2 t executingCore).1
         exact fun oid ntfn' h => hInv2 oid ntfn'
-          (by rwa [wakeThread_objects_getElem_eq_of_ready st2 t executingCore tr hTrGet hTrReady hObj2 oid] at h)
+          ((wakeThread_objectsAgreeOffRunLinks_of_ready st2 t executingCore tr hTrGet hTrReady
+            hObj2).get_notification_iff.mp h)
 
 open SeLe4n.Model.SystemState in
 /-- **WS-RR RR7.22 (residual)**: the bound-aware cross-core signal preserves the
@@ -298,9 +299,8 @@ theorem notificationSignalBoundOnCore_preserves_ipcInvariantFull
         obtain ⟨tr, hTrGet, hTrReady⟩ :=
           storeTcbReceiveComplete_getTcb?_ipcState p.2 st2 t _ hObj1 hStore
         show ipcInvariantFull (wakeThread st2 t executingCore).1
-        exact ipcInvariantFull_of_getElem_eq
-          (fun oid => wakeThread_objects_getElem_eq_of_ready st2 t executingCore tr hTrGet
-            hTrReady hObj2 oid)
+        exact ipcInvariantFull_of_objectsAgreeOffRunLinks
+          (wakeThread_objectsAgreeOffRunLinks_of_ready st2 t executingCore tr hTrGet hTrReady hObj2)
           (passiveServerIdle_of_frame
             ((passiveServerIdleFrameOnCore_boot_iff st2 (wakeThread st2 t executingCore).1).mp
               (wakeThread_passiveServerIdleFrameOnCore_of_ready st2 t executingCore tr hTrGet

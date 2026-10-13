@@ -488,6 +488,7 @@ be read at the pipeline's entry state rather than at the sweep's: the occupancy
 set is the same on both. -/
 theorem lifecyclePreRetypeCleanup_confinedToCores
     (st stClean : SystemState) (target : SeLe4n.ObjId) (currentObj newObj : KernelObject)
+    (hInv : st.objects.invExt)
     (hOk : lifecyclePreRetypeCleanup st target currentObj newObj = .ok stClean) :
     observableSlotsConfinedToCores st stClean (lifecycleRetypeWriteSetOf st currentObj) := by
   cases currentObj with
@@ -514,8 +515,9 @@ theorem lifecyclePreRetypeCleanup_confinedToCores
       -- post-state is the entry state's, because the arm keeps every run queue
       -- and current slot.
       have hOcc : threadOccupiedCores stArm tcb.tid = threadOccupiedCores st tcb.tid :=
-        threadOccupiedCores_congr_of_runQueue_current tcb.tid
-          (fun c => cancelDonationArmOnCore_runQueue_current_eq st stArm tcb.tid tcb c hArm)
+        threadOccupiedCores_congr_of_runCores_current tcb.tid
+          (cancelDonationArmOnCore_runCoresAgree hInv hArm)
+          (fun c => (cancelDonationArmOnCore_runQueue_current_eq st stArm tcb.tid tcb c hArm).2)
       have hTrans := observableSlotsConfinedToCores_trans
         (cancelDonationArmOnCore_confinedToCores st stArm tcb.tid tcb hArm)
         (cleanupTcbReferences_confinedToCores stArm tcb.tid)
@@ -576,7 +578,7 @@ scrub (`machine.memory`, and `machine.regs` is a field beside it) and the object
 store — so the whole transition's bound is the cleanup's. -/
 theorem lifecycleRetypeDirectWithCleanup_confinedToCores
     (authCap : Capability) (target : SeLe4n.ObjId) (newObj : KernelObject)
-    (st st' : SystemState)
+    (st st' : SystemState) (hInv : st.objects.invExt)
     (h : lifecycleRetypeDirectWithCleanup authCap target newObj st = .ok ((), st')) :
     observableSlotsConfinedToCores st st' (lifecycleRetypeWriteSet st target) := by
   unfold lifecycleRetypeDirectWithCleanup SystemState.getObject? at h
@@ -596,7 +598,7 @@ theorem lifecycleRetypeDirectWithCleanup_confinedToCores
       · exact absurd h (by simp)
       · next stClean hClean =>
         have hCleanConf :=
-          lifecyclePreRetypeCleanup_confinedToCores st stClean target currentObj newObj hClean
+          lifecyclePreRetypeCleanup_confinedToCores st stClean target currentObj newObj hInv hClean
         obtain ⟨hs, hm⟩ := lifecycleRetypeDirect_scheduler_machine_eq authCap target newObj _ st' h
         -- the scrub writes `machine.memory`, so the suffix frame here is the
         -- register-bank one rather than whole-machine equality
@@ -618,7 +620,7 @@ theorem lifecycleRetypeDirectWithCleanup_confinedToCores
 TLB maintenance is not scheduling. -/
 theorem lifecycleRetypeDirectWithCleanupShootdown_confinedToCores
     (executingCore : CoreId) (authCap : Capability) (target : SeLe4n.ObjId)
-    (newObj : KernelObject) (st st' : SystemState)
+    (newObj : KernelObject) (st st' : SystemState) (hInv : st.objects.invExt)
     (h : lifecycleRetypeDirectWithCleanupShootdown executingCore authCap target newObj st
       = .ok ((), st')) :
     observableSlotsConfinedToCores st st' (lifecycleRetypeWriteSet st target) := by
@@ -636,12 +638,13 @@ theorem lifecycleRetypeDirectWithCleanupShootdown_confinedToCores
     subst he
     exact observableSlotsConfinedToCores_of_framed_suffix
       (retypeAsidRoundFold_scheduler _ _ _) (retypeAsidRoundFold_machine _ _ _)
-      (lifecycleRetypeDirectWithCleanup_confinedToCores authCap target newObj st stBase hBase)
+      (lifecycleRetypeDirectWithCleanup_confinedToCores authCap target newObj st stBase hInv
+        hBase)
 
 /-- SM8.B.2: nor does the initiator's own per-core view drain. -/
 theorem lifecycleRetypeDirectWithCleanupShootdownPerCore_confinedToCores
     (executingCore : CoreId) (authCap : Capability) (target : SeLe4n.ObjId)
-    (newObj : KernelObject) (st st' : SystemState)
+    (newObj : KernelObject) (st st' : SystemState) (hInv : st.objects.invExt)
     (h : lifecycleRetypeDirectWithCleanupShootdownPerCore executingCore authCap target
       newObj st = .ok ((), st')) :
     observableSlotsConfinedToCores st st' (lifecycleRetypeWriteSet st target) := by
@@ -660,7 +663,7 @@ theorem lifecycleRetypeDirectWithCleanupShootdownPerCore_confinedToCores
     exact observableSlotsConfinedToCores_of_framed_suffix
       (retypeInitiatorDrain_scheduler _ _ _) (retypeInitiatorDrain_machine _ _ _)
       (lifecycleRetypeDirectWithCleanupShootdown_confinedToCores executingCore authCap target
-        newObj st stRound hRound)
+        newObj st stRound hInv hRound)
 
 /-- SM8.B.2 (**the live `.lifecycleRetype` bound**): a retype writes no core the
 destroyed object did not occupy.
@@ -672,13 +675,13 @@ running one is visible only where it ran. Retyping anything that is not a TCB
 has an empty write set outright. -/
 theorem lifecycleRetypeDirectWithCleanupShootdownPerCoreIcache_confinedToCores
     (executingCore : CoreId) (authCap : Capability) (target : SeLe4n.ObjId)
-    (newObj : KernelObject) (st st' : SystemState)
+    (newObj : KernelObject) (st st' : SystemState) (hInv : st.objects.invExt)
     (h : lifecycleRetypeDirectWithCleanupShootdownPerCoreIcache executingCore authCap
       target newObj st = .ok ((), st')) :
     observableSlotsConfinedToCores st st' (lifecycleRetypeWriteSet st target) :=
   withIcacheBroadcast_confinedToCores _ _ _ st st'
     (fun _ hk => lifecycleRetypeDirectWithCleanupShootdownPerCore_confinedToCores
-      executingCore authCap target newObj st _ hk) h
+      executingCore authCap target newObj st _ hInv hk) h
 
 /-- SM8.B.2: destroying an object that is not a TCB writes **no** core.
 

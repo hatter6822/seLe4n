@@ -27,7 +27,7 @@ object-store integrity (`objects.invExt`) and the IPC `ipcInvariant`
 (notification well-formedness).  Each cross-core operation differs from its
 single-core form only in the *scheduler* placement of the woken waiter / blocked
 caller; `ipcInvariant` is **lookup-only** (it reads the state solely through
-`objects[·]?`), so the cross-core receiver wake (`wakeThread`, object-invisible
+`objects[·]?`), so the cross-core receiver wake (`wakeThread`, invisible off run-queue links
 on the already-`.ready` waiter — the §2 keystone of `EndpointCallInvariant`) and
 the per-core deschedule (`removeRunnableOnCore`, an object-store frame) cannot
 disturb it.  The notification-store / TCB-store steps reuse the single-core
@@ -67,14 +67,13 @@ theorem notificationSignalOnCore_preserves_objects_invExt
   | none => simp only; split <;> exact hObjInv
   | some ntfn =>
     simp only
-    cases hWaiters : ntfn.waitingThreads.tail? with
+    cases hWaiters : ntfn.waitHead with
     | none =>
       simp only
       cases hStore : storeObject notificationId _ st with
       | error e => simp only; exact hObjInv
       | ok pair => simp only; exact storeObject_preserves_objects_invExt' st notificationId _ pair hObjInv hStore
-    | some headTail =>
-      obtain ⟨waiter, rest⟩ := headTail
+    | some waiter =>
       simp only
       cases hStore : storeObject notificationId _ st with
       | error e => simp only; exact hObjInv
@@ -87,8 +86,9 @@ theorem notificationSignalOnCore_preserves_objects_invExt
         | ok st'' =>
           simp only
           have hObj2 := storeTcbIpcStateAndMessage_preserves_objects_invExt pair.2 st'' waiter _ _ hObj1 hTcb
-          show (wakeThread st'' waiter executingCore).1.objects.invExt
-          exact wakeThread_preserves_objects_invExt st'' waiter executingCore hObj2
+          show (wakeThread _ waiter executingCore).1.objects.invExt
+          exact wakeThread_preserves_objects_invExt _ waiter executingCore
+            (detachNtfnHead_linksRewritten _ _ _ hObj2).2.1
 
 /-- WS-SM SM6.B.1: the cross-core notification wait preserves object-store
 integrity (`invExt`) on every control path. -/
@@ -120,32 +120,32 @@ theorem notificationWaitOnCore_preserves_objects_invExt
         simp only
         split
         · exact hObjInv
-        · cases hCons : ntfn.waitingThreads.consWithGuard? waiter with
-          | none => simp only; exact hObjInv
-          | some wt' =>
+        · cases hStore : storeObject notificationId _ st with
+          | error e => simp only; exact hObjInv
+          | ok pair =>
             simp only
-            cases hStore : storeObject notificationId _ st with
+            have hObj1 := storeObject_preserves_objects_invExt' st notificationId _ pair hObjInv hStore
+            cases hTcb : storeTcbIpcStateAndMessage_fromTcb pair.2 waiter tcb
+                (.blockedOnNotification notificationId) none with
             | error e => simp only; exact hObjInv
-            | ok pair =>
+            | ok st2 =>
               simp only
-              have hObj1 := storeObject_preserves_objects_invExt' st notificationId _ pair hObjInv hStore
-              cases hTcb : storeTcbIpcStateAndMessage_fromTcb pair.2 waiter tcb
-                  (.blockedOnNotification notificationId) none with
+              have hObj2 : st2.objects.invExt := by
+                unfold storeTcbIpcStateAndMessage_fromTcb at hTcb
+                cases hSO : storeObject waiter.toObjId
+                    (.tcb { tcb with ipcState := .blockedOnNotification notificationId, pendingMessage := none })
+                    pair.2 with
+                | error e => simp [hSO] at hTcb
+                | ok p =>
+                  simp only [hSO] at hTcb
+                  have hE := Except.ok.inj hTcb; subst hE
+                  exact storeObject_preserves_objects_invExt' pair.2 waiter.toObjId _ p hObj1 hSO
+              cases hLink : linkNtfnWaiter st2 waiter ntfn.waitTail with
               | error e => simp only; exact hObjInv
               | ok st'' =>
                 simp only
-                have hObj2 : st''.objects.invExt := by
-                  unfold storeTcbIpcStateAndMessage_fromTcb at hTcb
-                  cases hSO : storeObject waiter.toObjId
-                      (.tcb { tcb with ipcState := .blockedOnNotification notificationId, pendingMessage := none })
-                      pair.2 with
-                  | error e => simp [hSO] at hTcb
-                  | ok p =>
-                    simp only [hSO] at hTcb
-                    have hE := Except.ok.inj hTcb; subst hE
-                    exact storeObject_preserves_objects_invExt' pair.2 waiter.toObjId _ p hObj1 hSO
-                show (removeRunnableOnCore st'' waiter executingCore).objects.invExt
-                rw [removeRunnableOnCore_preserves_objects]; exact hObj2
+                exact removeRunnableOnCore_objects_invExt _ _ _
+                  (linkNtfnWaiter_preserves_objects_invExt hObj2 hLink)
 
 -- ============================================================================
 -- §2  `ipcInvariant` (notification well-formedness) preservation
@@ -165,7 +165,7 @@ theorem notificationSignalOnCore_preserves_ipcInvariant
   | none => simp only; split <;> exact hInv
   | some ntfn =>
     simp only
-    cases hWaiters : ntfn.waitingThreads.tail? with
+    cases hWaiters : ntfn.waitHead with
     | none =>
       simp only
       cases hStore : storeObject notificationId _ st with
@@ -173,16 +173,15 @@ theorem notificationSignalOnCore_preserves_ipcInvariant
       | ok pair =>
         simp only
         exact storeObject_notification_preserves_ipcInvariant st pair.2 notificationId _ hInv hObjInv
-          hStore (notificationSignal_result_wellFormed_merge _)
-    | some headTail =>
-      obtain ⟨waiter, rest⟩ := headTail
+          hStore (notificationSignal_result_wellFormed_merge _ _)
+    | some waiter =>
       simp only
       cases hStore : storeObject notificationId _ st with
       | error e => simp only; exact hInv
       | ok pair =>
         simp only
         have hInv1 := storeObject_notification_preserves_ipcInvariant st pair.2 notificationId _ hInv
-          hObjInv hStore (notificationSignal_result_wellFormed_wake rest)
+          hObjInv hStore (notificationSignal_result_wellFormed_wake ntfn _)
         have hObjInv1 := storeObject_preserves_objects_invExt' st notificationId _ pair hObjInv hStore
         cases hTcb : storeTcbIpcStateAndMessage pair.2 waiter .ready
             (some { IpcMessage.empty with badge := some badge }) with
@@ -193,9 +192,13 @@ theorem notificationSignalOnCore_preserves_ipcInvariant
           have hObj2 := storeTcbIpcStateAndMessage_preserves_objects_invExt pair.2 st'' waiter _ _ hObjInv1 hTcb
           obtain ⟨tr, hTrGet, hTrReady⟩ :=
             storeTcbIpcStateAndMessage_getTcb?_ipcState pair.2 st'' waiter .ready _ hObjInv1 hTcb
-          show ipcInvariant (wakeThread st'' waiter executingCore).1
+          have hD := detachNtfnHead_linksRewritten st'' waiter (ntfnSuccessor? st waiter) hObj2
+          obtain ⟨tr3, hTrGet3, ⟨_, _, rfl⟩⟩ := hD.getTcb?_fwd hTrGet
+          show ipcInvariant (wakeThread _ waiter executingCore).1
           exact fun oid ntfn' h => hInv2 oid ntfn'
-            (by rwa [wakeThread_objects_getElem_eq_of_ready st'' waiter executingCore tr hTrGet hTrReady hObj2 oid] at h)
+            ((hD.obj_iff _ _ (fun _ e => by cases e)).mp
+              ((wakeThread_objectsAgreeOffRunLinks_of_ready _ waiter executingCore _ hTrGet3
+                hTrReady hD.2.1).get_notification_iff.mp h))
 
 /-- WS-SM SM6.B.1: the cross-core notification wait preserves the IPC
 `ipcInvariant`.  Mirrors `notificationWait_preserves_ipcInvariant`, with the
@@ -219,7 +222,7 @@ theorem notificationWaitOnCore_preserves_ipcInvariant
         simp only
         have hObjInv1 := storeObject_preserves_objects_invExt' st notificationId _ pair hObjInv hStore
         have hInv1 := storeObject_notification_preserves_ipcInvariant st pair.2 notificationId _ hInv
-          hObjInv hStore notificationWait_result_wellFormed_badge
+          hObjInv hStore (notificationWait_result_wellFormed_badge _)
         cases hTcb : storeTcbIpcState pair.2 waiter .ready with
         | error e => simp only; exact hInv
         | ok st'' =>
@@ -233,33 +236,33 @@ theorem notificationWaitOnCore_preserves_ipcInvariant
         simp only
         split
         · exact hInv
-        · cases hCons : ntfn.waitingThreads.consWithGuard? waiter with
-          | none => simp only; exact hInv
-          | some wt' =>
+        · cases hStore : storeObject notificationId _ st with
+          | error e => simp only; exact hInv
+          | ok pair =>
             simp only
-            have hConsEq : wt'.val = waiter :: ntfn.waitingThreads.val :=
-              ((SeLe4n.NoDupList.consWithGuard?_eq_some_iff waiter ntfn.waitingThreads wt').mp hCons).2
-            cases hStore : storeObject notificationId _ st with
+            have hObjRaw : st.objects[notificationId]? = some (.notification ntfn) :=
+              (SystemState.getNotification?_eq_some_iff st notificationId ntfn).mp hObjN
+            have hLk' := lookupTcb_preserved_by_storeObject_notification hLk hObjRaw hObjInv hStore
+            have hObjInv1 := storeObject_preserves_objects_invExt' st notificationId _ pair hObjInv hStore
+            have hInv1 := storeObject_notification_preserves_ipcInvariant st pair.2 notificationId _ hInv
+              hObjInv hStore (notificationWait_result_wellFormed_wait ntfn waiter)
+            cases hTcb : storeTcbIpcStateAndMessage_fromTcb pair.2 waiter tcb
+                (.blockedOnNotification notificationId) none with
             | error e => simp only; exact hInv
-            | ok pair =>
+            | ok st2 =>
               simp only
-              have hObjRaw : st.objects[notificationId]? = some (.notification ntfn) :=
-                (SystemState.getNotification?_eq_some_iff st notificationId ntfn).mp hObjN
-              have hLk' := lookupTcb_preserved_by_storeObject_notification hLk hObjRaw hObjInv hStore
-              have hObjInv1 := storeObject_preserves_objects_invExt' st notificationId _ pair hObjInv hStore
-              have hInv1 := storeObject_notification_preserves_ipcInvariant st pair.2 notificationId _ hInv
-                hObjInv hStore (notificationWait_result_wellFormed_wait waiter ntfn.waitingThreads wt' hConsEq)
-              cases hTcb : storeTcbIpcStateAndMessage_fromTcb pair.2 waiter tcb
-                  (.blockedOnNotification notificationId) none with
+              rw [storeTcbIpcStateAndMessage_fromTcb_eq hLk'] at hTcb
+              have hInv2 := storeTcbIpcStateAndMessage_preserves_ipcInvariant pair.2 st2 waiter
+                (.blockedOnNotification notificationId) none hInv1 hObjInv1 hTcb
+              have hObj2 := storeTcbIpcStateAndMessage_preserves_objects_invExt pair.2 st2 waiter _ _
+                hObjInv1 hTcb
+              cases hLink : linkNtfnWaiter st2 waiter ntfn.waitTail with
               | error e => simp only; exact hInv
               | ok st'' =>
                 simp only
-                rw [storeTcbIpcStateAndMessage_fromTcb_eq hLk'] at hTcb
-                have hInv2 := storeTcbIpcStateAndMessage_preserves_ipcInvariant pair.2 st'' waiter
-                  (.blockedOnNotification notificationId) none hInv1 hObjInv1 hTcb
-                show ipcInvariant (removeRunnableOnCore st'' waiter executingCore)
-                exact fun oid ntfn' h => hInv2 oid ntfn'
-                  (by rwa [removeRunnableOnCore_preserves_objects] at h)
+                have hInv3 := linkNtfnWaiter_preserves_ipcInvariant hObj2 hLink hInv2
+                exact ipcInvariant_of_objectsAgreeOffRunLinks
+                  (removeRunnableOnCore_objectsAgreeOffRunLinks st'' waiter executingCore) hInv3
 
 -- ============================================================================
 -- §3  SM6.D: per-core passive-server frames for the cross-core transitions
@@ -281,7 +284,7 @@ theorem notificationSignalOnCore_passiveServerIdleFrameOnCore
   | none => simp only; split <;> exact passiveServerIdleFrameOnCore.refl st
   | some ntfn =>
     simp only
-    cases hWaiters : ntfn.waitingThreads.tail? with
+    cases hWaiters : ntfn.waitHead with
     | none =>
       simp only
       cases hStore : storeObject notificationId _ st with
@@ -290,8 +293,7 @@ theorem notificationSignalOnCore_passiveServerIdleFrameOnCore
         simp only
         exact storeObject_oldNonTcb_passiveServerIdleFrameOnCore st pair.2
           notificationId (.notification _) (fun _ => by simp) hObjInv hStore
-    | some headTail =>
-      obtain ⟨waiter, rest⟩ := headTail
+    | some waiter =>
       simp only
       cases hStore : storeObject notificationId _ st with
       | error e => simp only; exact passiveServerIdleFrameOnCore.refl st
@@ -311,10 +313,13 @@ theorem notificationSignalOnCore_passiveServerIdleFrameOnCore
             hObjInv1 hTcb
           obtain ⟨tr, hTrGet, hTrReady⟩ :=
             storeTcbIpcStateAndMessage_getTcb?_ipcState pair.2 st2 waiter .ready _ hObjInv1 hTcb
-          show passiveServerIdleFrameOnCore st (wakeThread st2 waiter executingCore).1 c
+          have hD := detachNtfnHead_linksRewritten st2 waiter (ntfnSuccessor? st waiter) hObjInv2
+          obtain ⟨tr3, hTrGet3, ⟨_, _, rfl⟩⟩ := hD.getTcb?_fwd hTrGet
+          show passiveServerIdleFrameOnCore st (wakeThread _ waiter executingCore).1 c
           exact (hF1.trans hF2).trans
-            (wakeThread_passiveServerIdleFrameOnCore_of_ready st2 waiter executingCore tr
-              hTrGet hTrReady hObjInv2)
+            ((passiveServerIdleFrameOnCore.of_ntfnLinksRewritten hD).trans
+              (wakeThread_passiveServerIdleFrameOnCore_of_ready _ waiter executingCore _
+                hTrGet3 hTrReady hD.2.1))
 
 open SeLe4n.Model.SystemState in
 /-- WS-SM SM6.D: `notificationWaitOnCore` frames every core's
@@ -357,34 +362,39 @@ theorem notificationWaitOnCore_passiveServerIdleFrameOnCore
         simp only
         split
         · exact passiveServerIdleFrameOnCore.refl st
-        · cases hCons : ntfn.waitingThreads.consWithGuard? waiter with
-          | none => simp only; exact passiveServerIdleFrameOnCore.refl st
-          | some wt' =>
+        · cases hStore : storeObject notificationId _ st with
+          | error e => simp only; exact passiveServerIdleFrameOnCore.refl st
+          | ok pair =>
             simp only
-            cases hStore : storeObject notificationId _ st with
+            have hF1 := storeObject_oldNonTcb_passiveServerIdleFrameOnCore (c := c) st pair.2
+              notificationId (.notification _) (fun _ => by simp) hObjInv hStore
+            have hObjInv1 := storeObject_preserves_objects_invExt' st notificationId _ pair hObjInv hStore
+            have hObjRaw : st.objects[notificationId]? = some (.notification ntfn) :=
+              (SystemState.getNotification?_eq_some_iff st notificationId ntfn).mp hObjN
+            have hLk' := lookupTcb_preserved_by_storeObject_notification hLk hObjRaw hObjInv hStore
+            cases hTcb : storeTcbIpcStateAndMessage_fromTcb pair.2 waiter tcb
+                (.blockedOnNotification notificationId) none with
             | error e => simp only; exact passiveServerIdleFrameOnCore.refl st
-            | ok pair =>
+            | ok st2 =>
               simp only
-              have hF1 := storeObject_oldNonTcb_passiveServerIdleFrameOnCore (c := c) st pair.2
-                notificationId (.notification _) (fun _ => by simp) hObjInv hStore
-              have hObjInv1 := storeObject_preserves_objects_invExt' st notificationId _ pair hObjInv hStore
-              have hObjRaw : st.objects[notificationId]? = some (.notification ntfn) :=
-                (SystemState.getNotification?_eq_some_iff st notificationId ntfn).mp hObjN
-              have hLk' := lookupTcb_preserved_by_storeObject_notification hLk hObjRaw hObjInv hStore
-              cases hTcb : storeTcbIpcStateAndMessage_fromTcb pair.2 waiter tcb
-                  (.blockedOnNotification notificationId) none with
+              rw [storeTcbIpcStateAndMessage_fromTcb_eq hLk'] at hTcb
+              have hObj2 := storeTcbIpcStateAndMessage_preserves_objects_invExt pair.2 st2 waiter _ _
+                hObjInv1 hTcb
+              cases hLink : linkNtfnWaiter st2 waiter ntfn.waitTail with
               | error e => simp only; exact passiveServerIdleFrameOnCore.refl st
-              | ok st2 =>
+              | ok st'' =>
                 simp only
-                rw [storeTcbIpcStateAndMessage_fromTcb_eq hLk'] at hTcb
-                show passiveServerIdleFrameOnCore st (removeRunnableOnCore st2 waiter executingCore) c
-                refine (hF1.trans (storeTcbIpcStateAndMessage_passiveServerIdleFrameOnCore (c := c) pair.2 st2
-                    waiter (.blockedOnNotification notificationId) none
+                show passiveServerIdleFrameOnCore st (removeRunnableOnCore st'' waiter executingCore) c
+                refine ((hF1.trans (storeTcbIpcStateAndMessage_passiveServerIdleFrameOnCore (c := c)
+                    pair.2 st2 waiter (.blockedOnNotification notificationId) none
                     (Or.inl (Or.inr (Or.inl ⟨notificationId, Or.inr rfl⟩))) hObjInv1 hTcb)).trans
-                  (removeRunnableOnCore_passiveServerIdleFrameOnCore st2 waiter executingCore
+                    (linkNtfnWaiter_passiveServerIdleFrameOnCore hObj2 hLink)).trans
+                  (removeRunnableOnCore_passiveServerIdleFrameOnCore st'' waiter executingCore
                     (fun tcb' hTcb' => Or.inr ?_))
-                rw [storeTcbIpcStateAndMessage_ipcState_eq pair.2 st2 waiter _ _ hObjInv1 hTcb tcb'
-                  ((getTcb?_eq_some_iff st2 waiter tcb').mp hTcb')]
+                obtain ⟨ty, hy, np, nn, rfl⟩ := linkNtfnWaiter_tcb_backward hObj2 hLink
+                  waiter.toObjId tcb' ((getTcb?_eq_some_iff st'' waiter tcb').mp hTcb')
+                show ty.ipcState = _ ∨ _
+                rw [storeTcbIpcStateAndMessage_ipcState_eq pair.2 st2 waiter _ _ hObjInv1 hTcb ty hy]
                 exact Or.inr (Or.inl ⟨notificationId, Or.inr rfl⟩)
 
 -- ============================================================================
@@ -412,7 +422,7 @@ theorem notificationSignalOnCore_post_agrees
     have hObjRaw : st.objects[notificationId]? = some (.notification ntfn) :=
       (SystemState.getNotification?_eq_some_iff st notificationId ntfn).mp hObjN
     simp only
-    cases hWaiters : ntfn.waitingThreads.tail? with
+    cases hWaiters : ntfn.waitHead with
     | none =>
       simp only
       -- Resolve the `mergedBadge` scrutinee first: the two definitions
@@ -440,8 +450,7 @@ theorem notificationSignalOnCore_post_agrees
           refine ⟨pair.2, ?_, OffSchedulerAgrees.refl pair.2⟩
           unfold notificationSignal SystemState.getObject?
           simp only [hObjRaw, hWaiters, hPB, hStore]
-    | some headTail =>
-      obtain ⟨waiter, rest⟩ := headTail
+    | some waiter =>
       simp only
       cases hStore : storeObject notificationId _ st with
       | error e => left; rfl
@@ -458,12 +467,15 @@ theorem notificationSignalOnCore_post_agrees
             hObjInv1 hTcb
           obtain ⟨tr, hTrGet, hTrReady⟩ :=
             storeTcbIpcStateAndMessage_getTcb?_ipcState pair.2 st2 waiter .ready _ hObjInv1 hTcb
-          refine ⟨ensureRunnable st2 waiter, ?_, ?_⟩
+          have hD := detachNtfnHead_linksRewritten st2 waiter (ntfnSuccessor? st waiter) hObjInv2
+          obtain ⟨tr3, hTrGet3, ⟨_, _, rfl⟩⟩ := hD.getTcb?_fwd hTrGet
+          refine ⟨ensureRunnable (detachNtfnHead st2 waiter (ntfnSuccessor? st waiter)) waiter,
+            ?_, ?_⟩
           · unfold notificationSignal SystemState.getObject?
             simp only [hObjRaw, hWaiters, hStore, hTcb]
-          · exact (ensureRunnable_offSchedulerAgrees st2 waiter).symm.trans
-              (wakeThread_offSchedulerAgrees_of_ready st2 waiter executingCore tr hTrGet
-                hTrReady hObjInv2)
+          · exact (ensureRunnable_offSchedulerAgrees _ waiter).symm.trans
+              (wakeThread_offSchedulerAgrees_of_ready _ waiter executingCore _ hTrGet3
+                hTrReady hD.2.1)
 
 open SeLe4n.Model.SystemState in
 /-- WS-SM SM6.D: agreement dichotomy for the cross-core wait.  Either the
@@ -475,7 +487,7 @@ deschedule (`removeRunnableOnCore … executingCore` vs `removeRunnable`), both
 scheduler-only. -/
 theorem notificationWaitOnCore_post_agrees
     (notificationId : SeLe4n.ObjId) (waiter : SeLe4n.ThreadId) (executingCore : CoreId)
-    (st : SystemState) :
+    (st : SystemState) (hObjInv : st.objects.invExt) :
     (notificationWaitOnCore notificationId waiter executingCore st).1 = st ∨
     ∃ r1 result, notificationWait notificationId waiter st = .ok (result, r1) ∧
       OffSchedulerAgrees r1 (notificationWaitOnCore notificationId waiter executingCore st).1 := by
@@ -499,7 +511,7 @@ theorem notificationWaitOnCore_post_agrees
           right
           simp only
           refine ⟨st2, some badge, ?_, OffSchedulerAgrees.refl st2⟩
-          unfold notificationWait SystemState.getObject?
+          unfold notificationWait notificationWaitPark SystemState.getObject?
           simp only [hObjRaw, hBadge, hStore, hTcb]
     | none =>
       simp only
@@ -510,25 +522,39 @@ theorem notificationWaitOnCore_post_agrees
         split
         · left; rfl
         · rename_i hIpcNe
-          cases hCons : ntfn.waitingThreads.consWithGuard? waiter with
-          | none => left; rfl
-          | some wt' =>
+          cases hStore : storeObject notificationId _ st with
+          | error e => left; rfl
+          | ok pair =>
             simp only
-            cases hStore : storeObject notificationId _ st with
+            have hObjInv1 := storeObject_preserves_objects_invExt' st notificationId _ pair hObjInv hStore
+            cases hTcb : storeTcbIpcStateAndMessage_fromTcb pair.2 waiter tcb
+                (.blockedOnNotification notificationId) none with
             | error e => left; rfl
-            | ok pair =>
+            | ok st2 =>
               simp only
-              cases hTcb : storeTcbIpcStateAndMessage_fromTcb pair.2 waiter tcb
-                  (.blockedOnNotification notificationId) none with
+              have hObj2 : st2.objects.invExt := by
+                have hLk' := lookupTcb_preserved_by_storeObject_notification hLk hObjRaw hObjInv hStore
+                rw [storeTcbIpcStateAndMessage_fromTcb_eq hLk'] at hTcb
+                exact storeTcbIpcStateAndMessage_preserves_objects_invExt pair.2 st2 waiter _ _
+                  hObjInv1 hTcb
+              cases hLink : linkNtfnWaiter st2 waiter ntfn.waitTail with
               | error e => left; rfl
-              | ok st2 =>
+              | ok st'' =>
                 right
                 simp only
-                refine ⟨removeRunnable st2 waiter, none, ?_, ?_⟩
-                · unfold notificationWait SystemState.getObject?
-                  simp only [hObjRaw, hBadge, hLk, if_neg hIpcNe, hCons, hStore, hTcb]
-                · exact (removeRunnable_offSchedulerAgrees st2 waiter).symm.trans
-                    (removeRunnableOnCore_offSchedulerAgrees st2 waiter executingCore)
+                obtain ⟨r1, hL1, hAg⟩ := linkNtfnWaiter_offSchedulerAgrees waiter ntfn.waitTail
+                  (removeRunnable_offSchedulerAgrees st2 waiter).symm
+                  (removeRunnable_objects_invExt st2 waiter hObj2) hObj2 hLink
+                refine ⟨r1, none, ?_, hAg.trans
+                  (removeRunnableOnCore_offSchedulerAgrees st'' waiter executingCore)⟩
+                have hTail : notificationWaitTail? st notificationId = ntfn.waitTail := by
+                  unfold notificationWaitTail?; simp only [hObjN, hBadge]
+                unfold notificationWait
+                have hPark : notificationWaitPark notificationId waiter st
+                    = .ok (none, removeRunnable st2 waiter) := by
+                  unfold notificationWaitPark SystemState.getObject?
+                  simp only [hObjRaw, hBadge, hLk, if_neg hIpcNe, hStore, hTcb]
+                simp only [hPark, hTail, hL1]
 
 -- ============================================================================
 -- §5  SM6.D: whole-bundle `ipcInvariantFull` preservation (cross-core)
@@ -559,7 +585,7 @@ theorem notificationSignalOnCore_preserves_ipcInvariantFull
   rcases notificationSignalOnCore_post_agrees notificationId badge executingCore st hObjInv with
     hPre | ⟨r1, hStep1, hAgree⟩
   · rw [hPre]; exact hInv
-  · exact ipcInvariantFull_of_getElem_eq hAgree.objects hPsi'
+  · exact ipcInvariantFull_of_objectsAgreeOffRunLinks hAgree.objects hPsi'
       (notificationSignal_preserves_ipcInvariantFull st r1 notificationId badge hInv hObjInv
         hNWC hAllBudgetsNone hStep1)
 
@@ -588,10 +614,10 @@ theorem notificationWaitOnCore_preserves_ipcInvariantFull
         (notificationWaitOnCore_passiveServerIdleFrameOnCore notificationId waiter executingCore
           st bootCoreId hObjInv)
         ((passiveServerIdle_perCore_bootCore_iff st).mpr hInv.passiveServerIdle))
-  rcases notificationWaitOnCore_post_agrees notificationId waiter executingCore st with
+  rcases notificationWaitOnCore_post_agrees notificationId waiter executingCore st hObjInv with
     hPre | ⟨r1, result, hStep1, hAgree⟩
   · rw [hPre]; exact hInv
-  · exact ipcInvariantFull_of_getElem_eq hAgree.objects hPsi'
+  · exact ipcInvariantFull_of_objectsAgreeOffRunLinks hAgree.objects hPsi'
       (notificationWait_preserves_ipcInvariantFull st r1 notificationId waiter result hInv hObjInv
         hWaiterNotRecv
         (fun tcb hRaw => hWaiterNotReply tcb ((getTcb?_eq_some_iff st waiter tcb).mpr hRaw))
@@ -696,7 +722,7 @@ theorem notificationWaitOnCore_observer_atomic
     (cnRoot : SeLe4n.ObjId) (observed : SeLe4n.ObjId)
     (s : LockedSystemState) :
     notificationDeliveryObserver observed
-        (withLockSet (lockSet_notificationWait caller cnRoot notificationId)
+        (withLockSet (lockSet_notificationWaitOnCore s.kernel notificationId caller cnRoot)
           executingCore (notificationWaitOnCore notificationId caller executingCore) s).1.kernel
       = notificationDeliveryObserver observed
           (notificationWaitOnCore notificationId caller executingCore s.kernel).1 :=
@@ -710,7 +736,7 @@ theorem notificationWaitOnCore_thread_observer_atomic
     (cnRoot : SeLe4n.ObjId) (observed : SeLe4n.ThreadId)
     (s : LockedSystemState) :
     threadIpcStateObserver observed
-        (withLockSet (lockSet_notificationWait caller cnRoot notificationId)
+        (withLockSet (lockSet_notificationWaitOnCore s.kernel notificationId caller cnRoot)
           executingCore (notificationWaitOnCore notificationId caller executingCore) s).1.kernel
       = threadIpcStateObserver observed
           (notificationWaitOnCore notificationId caller executingCore s.kernel).1 :=

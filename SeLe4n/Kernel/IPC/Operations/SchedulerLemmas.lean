@@ -45,21 +45,14 @@ theorem removeRunnable_runnable_mem
     (st : SystemState) (tid x : SeLe4n.ThreadId) :
     x ∈ (removeRunnable st tid).scheduler.runnable ↔
     x ∈ st.scheduler.runnable ∧ x ≠ tid := by
-  simp only [SchedulerState.runnable, removeRunnable_runQueueOnCore, RunQueue.toList]
-  unfold RunQueue.remove
-  constructor
-  · intro hx
-    have ⟨hFlat, hNe⟩ := List.mem_filter.mp hx
-    exact ⟨hFlat, by simpa using hNe⟩
-  · intro ⟨hFlat, hNe⟩
-    exact List.mem_filter.mpr ⟨hFlat, by simpa using hNe⟩
+  simp only [SchedulerState.runnable, removeRunnable_runQueueOnCore, RunQueue.toList_remove,
+    List.mem_filter, ne_eq, decide_eq_true_eq]
 
 theorem removeRunnable_nodup
     (st : SystemState) (tid : SeLe4n.ThreadId)
     (hNodup : st.scheduler.runnable.Nodup) :
     (removeRunnable st tid).scheduler.runnable.Nodup := by
-  simp only [SchedulerState.runnable, removeRunnable_runQueueOnCore, RunQueue.toList] at *
-  unfold RunQueue.remove at *
+  simp only [SchedulerState.runnable, removeRunnable_runQueueOnCore, RunQueue.toList_remove] at *
   exact hNodup.sublist List.filter_sublist
 
 theorem ensureRunnable_scheduler_current
@@ -68,12 +61,17 @@ theorem ensureRunnable_scheduler_current
   unfold ensureRunnable
   split
   · rfl
-  · split <;> simp
+  · split
+    · split
+      · simp [SystemState.runEnqueueAdmitted_scheduler]
+      · rfl
+    · rfl
 
 theorem ensureRunnable_mem_self
     (st : SystemState) (tid : SeLe4n.ThreadId)
-    (hTcb : ∃ tcb, st.objects[tid.toObjId]? = some (.tcb tcb)) :
-    tid ∈ ((ensureRunnable st tid).scheduler.runQueueOnCore bootCoreId) := by
+    (hTcb : ∃ tcb, st.objects[tid.toObjId]? = some (.tcb tcb))
+    (hAdm : st.runEnqueueAdmits bootCoreId tid = true) :
+    (ensureRunnable st tid).queuedOn bootCoreId tid = true := by
   obtain ⟨tcb, hTcb⟩ := hTcb
   -- AN10-B: post-migration `ensureRunnable` reads via `getTcb?`; bridge
   -- from the raw lookup hypothesis via the iff lemma.
@@ -82,9 +80,10 @@ theorem ensureRunnable_mem_self
   unfold ensureRunnable
   split
   · assumption
-  · simp only [hTcbTyped, SchedulerState.markReschedulePendingOnCore_runQueueOnCore, SchedulerState.setRunQueueOnCore_runQueueOnCore_self]
-    rw [RunQueue.mem_insert]
-    exact Or.inr rfl
+  · simp only [hTcbTyped]
+    show (st.runEnqueueAdmitted bootCoreId tid tcb.boostedPriority).queuedOn bootCoreId tid = true
+    rw [SystemState.runEnqueueAdmitted_queuedOn, if_pos rfl, hTcbTyped]
+    simp
 
 theorem ensureRunnable_mem_old
     (st : SystemState) (tid x : SeLe4n.ThreadId)
@@ -94,8 +93,10 @@ theorem ensureRunnable_mem_old
   split
   · exact hMem
   · split
-    · simp only [SchedulerState.markReschedulePendingOnCore_runQueueOnCore, SchedulerState.setRunQueueOnCore_runQueueOnCore_self]
-      rw [RunQueue.mem_insert]; exact Or.inl hMem
+    · split
+      · simp only [SchedulerState.markReschedulePendingOnCore_runQueueOnCore, SystemState.runEnqueueAdmitted_scheduler, SchedulerState.setRunQueueOnCore_runQueueOnCore_self]
+        rw [RunQueue.mem_insert]; exact Or.inl hMem
+      · exact hMem
     · exact hMem
 
 /-- WS-G4: Flat-list version of `ensureRunnable_mem_old` for proof compatibility.
@@ -110,9 +111,13 @@ theorem ensureRunnable_runnable_mem_old
   · rename_i hNotMem
     split
     · rename_i tcb hTcb
-      simp only [SchedulerState.runnable, SchedulerState.markReschedulePendingOnCore_runQueueOnCore, SchedulerState.setRunQueueOnCore_runQueueOnCore_self]
-      rw [RunQueue.toList_insert_not_mem _ _ _ hNotMem]
-      exact List.mem_append_left _ hMem
+      split
+      · simp only [SchedulerState.runnable, SchedulerState.markReschedulePendingOnCore_runQueueOnCore, SystemState.runEnqueueAdmitted_scheduler, SchedulerState.setRunQueueOnCore_runQueueOnCore_self]
+        rw [RunQueue.toList_insert]
+        split
+        · exact hMem
+        · exact List.mem_append_left _ hMem
+      · exact hMem
     · exact hMem
 
 theorem ensureRunnable_nodup
@@ -125,15 +130,10 @@ theorem ensureRunnable_nodup
   · rename_i hNotMem
     split
     · rename_i tcb hTcb
-      simp only [SchedulerState.runnable, SchedulerState.markReschedulePendingOnCore_runQueueOnCore, SchedulerState.setRunQueueOnCore_runQueueOnCore_self]
-      rw [RunQueue.toList_insert_not_mem _ _ _ hNotMem]
-      have hNotFlat : tid ∉ st.scheduler.runnable :=
-        RunQueue.not_mem_toList_of_not_mem _ _ hNotMem
-      refine List.nodup_append.2 ⟨hNodup, List.pairwise_singleton _ _, ?_⟩
-      intro x hx y hy
-      have : y = tid := by simpa using hy
-      subst this; intro hEq; subst hEq
-      exact hNotFlat hx
+      split
+      · simp only [SchedulerState.runnable, SchedulerState.markReschedulePendingOnCore_runQueueOnCore, SystemState.runEnqueueAdmitted_scheduler, SchedulerState.setRunQueueOnCore_runQueueOnCore_self]
+        exact RunQueue.toList_nodup _
+      · exact hNodup
     · exact hNodup
 
 /-- Alias referencing the canonical `ThreadId.toObjId_injective` in Prelude. -/
@@ -151,16 +151,17 @@ theorem threadId_toObjId_injective {a b : SeLe4n.ThreadId}
     yield/timer/switch. -/
 theorem ensureRunnable_inserts_at_effective_priority
     (st : SystemState) (tid : SeLe4n.ThreadId) (tcb : TCB)
-    (hNotMem : tid ∉ (st.scheduler.runQueueOnCore bootCoreId))
-    (hTcb : st.objects[tid.toObjId]? = some (.tcb tcb)) :
+    (hNotQ : st.queuedOn bootCoreId tid = false)
+    (hTcb : st.objects[tid.toObjId]? = some (.tcb tcb))
+    (hAdm : st.runEnqueueAdmits bootCoreId tid = true) :
     ((ensureRunnable st tid).scheduler.runQueueOnCore bootCoreId) =
       (st.scheduler.runQueueOnCore bootCoreId).insert tid tcb.boostedPriority := by
   -- AN10-B: post-migration `ensureRunnable` reads via `getTcb?`.
   have hTcbTyped : st.getTcb? tid = some tcb :=
     (SystemState.getTcb?_eq_some_iff st tid tcb).mpr hTcb
   unfold ensureRunnable
-  rw [if_neg hNotMem]
-  simp only [hTcbTyped, SchedulerState.markReschedulePendingOnCore_runQueueOnCore, SchedulerState.setRunQueueOnCore_runQueueOnCore_self]
+  rw [if_neg (by simp [hNotQ])]
+  simp only [hTcbTyped, hAdm, if_true, SchedulerState.markReschedulePendingOnCore_runQueueOnCore, SystemState.runEnqueueAdmitted_scheduler, SchedulerState.setRunQueueOnCore_runQueueOnCore_self]
 
 /-- AK1-E (I-M03): PIP-boosted threads are inserted at their boosted
     priority (not their base priority) when awakened via `ensureRunnable`.
@@ -168,13 +169,14 @@ theorem ensureRunnable_inserts_at_effective_priority
     specialised to the case where `tcb.pipBoost = some boost ∧ tcb.priority < boost`. -/
 theorem ensureRunnable_honors_pipBoost
     (st : SystemState) (tid : SeLe4n.ThreadId) (tcb : TCB)
-    (hNotMem : tid ∉ (st.scheduler.runQueueOnCore bootCoreId))
+    (hNotQ : st.queuedOn bootCoreId tid = false)
     (hTcb : st.objects[tid.toObjId]? = some (.tcb tcb))
+    (hAdm : st.runEnqueueAdmits bootCoreId tid = true)
     (boost : SeLe4n.Priority)
     (hBoost : tcb.pipBoost = some boost) :
     ((ensureRunnable st tid).scheduler.runQueueOnCore bootCoreId) =
       (st.scheduler.runQueueOnCore bootCoreId).insert tid ⟨Nat.max tcb.priority.val boost.val⟩ := by
-  rw [ensureRunnable_inserts_at_effective_priority st tid tcb hNotMem hTcb]
+  rw [ensureRunnable_inserts_at_effective_priority st tid tcb hNotQ hTcb hAdm]
   congr 1
   -- Since `v0.35.28` the reading goes through `TCB.boostedPriority` and
   -- `Priority.raisedBy`, both transparent to `simp`, so the boost hypothesis
@@ -217,13 +219,11 @@ theorem ensureRunnable_mem_reverse
   · rename_i hNotMem
     split at hMem
     · -- TCB case: runnable = (rq.insert tid prio).toList
-      simp only [SchedulerState.runnable, SchedulerState.markReschedulePendingOnCore_runQueueOnCore, SchedulerState.setRunQueueOnCore_runQueueOnCore_self,
-        RunQueue.toList] at hMem ⊢
-      unfold RunQueue.insert at hMem
       split at hMem
+      · simp only [SchedulerState.runnable, SchedulerState.markReschedulePendingOnCore_runQueueOnCore, SystemState.runEnqueueAdmitted_scheduler, SchedulerState.setRunQueueOnCore_runQueueOnCore_self,
+          RunQueue.mem_toList_iff_mem, RunQueue.mem_insert] at hMem ⊢
+        exact hMem
       · exact .inl hMem
-      · simp only [List.mem_append, List.mem_singleton] at hMem
-        exact hMem.elim .inl .inr
     · exact .inl hMem
 
 /-- WS-E3/H-09: A thread is never in its own removeRunnable result. -/
@@ -769,7 +769,8 @@ theorem donateSchedContext_ok_server_donated
 -- ============================================================================
 
 /-- AK1-E (I-M03 / MEDIUM): When `notificationSignal` successfully wakes a
-    queued waiter, that waiter appears in the post-state runQueue.
+    queued waiter, that waiter is queued on the boot core in the post-state:
+    its own run-queue links place it there (WS-ZA ZA4.5).
     Combined with `ensureRunnable_inserts_at_effective_priority`, this
     ensures the waiter is inserted at its PIP-effective priority — i.e.,
     `tcb.boostedPriority`. This is the correctness witness
@@ -779,50 +780,50 @@ theorem donateSchedContext_ok_server_donated
 theorem notificationSignal_respects_pipBoost
     (notificationId : SeLe4n.ObjId) (badge : SeLe4n.Badge)
     (st st' : SystemState)
-    (waiter : SeLe4n.ThreadId) (rest : SeLe4n.NoDupList SeLe4n.ThreadId)
+    (waiter : SeLe4n.ThreadId)
     (ntfn : Notification)
     (hObjInv : st.objects.invExt)
     (hNtfn : st.objects[notificationId]? = some (.notification ntfn))
-    (hWaiters : ntfn.waitingThreads.tail? = some (waiter, rest))
+    (hHead : ntfn.waitHead = some waiter)
+    (hAdm : st.runEnqueueAdmits bootCoreId waiter = true)
     (hStep : notificationSignal notificationId badge st = .ok ((), st')) :
-    waiter ∈ (st'.scheduler.runQueueOnCore bootCoreId) := by
+    st'.queuedOn bootCoreId waiter = true := by
   -- The transition reads through the kind-agnostic accessor; this proof works
   -- in store terms, so it is unfolded once here.
   unfold notificationSignal SystemState.getObject? at hStep
-  -- WS-RC R4.C: `notificationSignal` pops via `tail?`; the hypothesis
-  -- `hWaiters` reduces the `match` directly to the cons branch.
-  simp only [hNtfn, hWaiters] at hStep
-  cases hStore : storeObject notificationId _ st with
-  | error e => rw [hStore] at hStep; cases hStep
-  | ok pair =>
-    rw [hStore] at hStep
-    simp only at hStep
-    have hObjInvStore : pair.2.objects.invExt :=
-      storeObject_preserves_objects_invExt st pair.2 notificationId _ hObjInv hStore
-    cases hMsg : storeTcbIpcStateAndMessage pair.2 waiter .ready _ with
-    | error e => rw [hMsg] at hStep; cases hStep
-    | ok st'' =>
-      rw [hMsg] at hStep
+  simp only [hNtfn, hHead] at hStep
+  split at hStep
+  · cases hStep
+  · next st1 hStore =>
+    split at hStep
+    · cases hStep
+    · next st3 hMsg =>
       simp only [Except.ok.injEq, Prod.mk.injEq] at hStep
       obtain ⟨_, rfl⟩ := hStep
-      apply ensureRunnable_mem_self
-      -- storeTcbIpcStateAndMessage .ok ⇒ waiter had a TCB pre-store AND
-      -- post-store has a TCB at waiter.toObjId (via _tcb_exists_at_target).
-      unfold storeTcbIpcStateAndMessage modifyTcb at hMsg
-      cases hLk : lookupTcb pair.2 waiter with
-      | none => simp [hLk] at hMsg
-      | some tcb =>
-        simp only [hLk] at hMsg
-        have hPreTcb : pair.2.objects[waiter.toObjId]? = some (.tcb tcb) :=
-          lookupTcb_some_objects pair.2 waiter tcb hLk
-        -- storeObject is unconditional .ok (see Model/State.lean); directly
-        -- destructure via the definitional equality.
-        generalize hStore2 : storeObject waiter.toObjId
-          (.tcb { tcb with ipcState := .ready, pendingMessage := _ }) pair.2 = store2result at hMsg
-        match store2result, hMsg with
-        | .ok pair2, hMsg =>
-          simp only [Except.ok.injEq] at hMsg
-          subst hMsg
-          exact ⟨_, storeObject_objects_eq' pair.2 waiter.toObjId _ pair2 hObjInvStore hStore2⟩
+      -- storeTcbIpcStateAndMessage .ok ⇒ the waiter's key holds a TCB after it.
+      obtain ⟨tcb, hLk, hS⟩ := modifyTcb_ok_decompose hMsg
+      have hInv1 := storeObject_preserves_objects_invExt st st1 _ _ hObjInv hStore
+      have h3 := storeObject_objects_eq st1 st3 waiter.toObjId _ hInv1 hS
+      -- The pop's link writes rewrite the waiter's notification links only.
+      have hR := detachNtfnHead_linksRewritten st3 waiter (ntfnSuccessor? st waiter)
+        (storeObject_preserves_objects_invExt _ _ _ _ hInv1 hS)
+      obtain ⟨t4, h4, ⟨np, nn, hT4⟩⟩ := hR.tcb_fwd h3
+      refine ensureRunnable_mem_self _ _ ⟨_, h4⟩ ?_
+      -- Admission reads only the waiter's placement code, which neither store
+      -- changes: the notification store is at another key (the waiter's key
+      -- holds a TCB in `st1`), and the waiter store rewrites its IPC fields.
+      have h1 := lookupTcb_some_objects st1 waiter tcb hLk
+      have hNe : waiter.toObjId ≠ notificationId := by
+        intro hEq
+        have h1' := h1
+        rw [hEq, storeObject_objects_eq st st1 notificationId _ hObjInv hStore] at h1'
+        cases h1'
+      have h0 : st.objects[waiter.toObjId]? = some (.tcb tcb) := by
+        rw [← storeObject_objects_ne st st1 notificationId waiter.toObjId _ hNe hObjInv hStore]
+        exact h1
+      unfold SystemState.runEnqueueAdmits at hAdm ⊢
+      rw [(SystemState.getTcb?_eq_some_iff _ _ _).mpr h0] at hAdm
+      rw [(SystemState.getTcb?_eq_some_iff _ _ _).mpr h4, hT4]
+      exact hAdm
 
 end SeLe4n.Kernel

@@ -140,9 +140,8 @@ private def baseObjects : SystemState :=
 
 /-- `srv` queued on core 1 at 5; `cur1` current on core 1. -/
 private def stBase : SystemState :=
-  { baseObjects with
-      scheduler := baseObjects.scheduler.setRunQueueOnCore core1 (RunQueue.ofList [(srv, ⟨5⟩)])
-        |>.setCurrentOnCore core1 (some cur1) }
+  let q := enqueueAllOnCore baseObjects core1 [(srv, ⟨5⟩)]
+  { q with scheduler := q.scheduler.setCurrentOnCore core1 (some cur1) }
 
 /-- `srv` parked (no run queue anywhere); `cur1` current on core 1. -/
 private def stNoRq : SystemState :=
@@ -154,7 +153,7 @@ private def stImmaterial : SystemState :=
   let base := ((BootstrapBuilder.empty.withObject srvHi.toObjId
       (.tcb (mkReadyTcb 202 10 (some core1) .Ready))).withObject
     cliLo.toObjId (.tcb (mkWaiterTcb 203 5 202))).build
-  { base with scheduler := base.scheduler.setRunQueueOnCore core1 (RunQueue.ofList [(srvHi, ⟨10⟩)]) }
+  enqueueAllOnCore base core1 [(srvHi, ⟨10⟩)]
 
 private def assertBool (name : String) (b : Bool) : IO Unit := do
   if b then
@@ -299,7 +298,7 @@ private def runAffinityChecks : IO Unit := do
   checkDiff "migration core1 → core2" stBase post core0 true
   assertBool "migration: the destination core 2 is flagged" (flagOf post core2)
   assertBool "migration: the queued thread now lives on core 2"
-    (decide (srv ∈ post.scheduler.runQueueOnCore core2))
+    (post.queuedOn core2 srv)
 
 /-- The lent scheduling context of §2.7, deadline 9. -/
 private def scLent : SeLe4n.SchedContextId := SeLe4n.SchedContextId.ofNat 300
@@ -316,9 +315,8 @@ private def stLent : SystemState :=
     |>.withObject scLent.toObjId (.schedContext { SchedContext.empty scLent with
         boundThread := some lendSrv, deadline := ⟨9⟩ })
     |>.build
-  { base with
-      scheduler := base.scheduler.setRunQueueOnCore core1 (RunQueue.ofList [(lendOrigin, ⟨6⟩)])
-        |>.setCurrentOnCore core0 (some lendSrv) }
+  let q := enqueueAllOnCore base core1 [(lendOrigin, ⟨6⟩)]
+  { q with scheduler := q.scheduler.setCurrentOnCore core0 (some lendSrv) }
 
 /-- §2.7 the scheduling-context return (`returnDonatedSchedContext`): the
 recipient's effective deadline moves to the context's, and the recipient is
@@ -347,8 +345,7 @@ private def stBound : SystemState :=
     |>.withObject scBound.toObjId (.schedContext { SchedContext.empty scBound with
         boundThread := some boundTid, deadline := ⟨9⟩ })
     |>.build
-  { base with
-      scheduler := base.scheduler.setRunQueueOnCore core1 (RunQueue.ofList [(boundTid, ⟨6⟩)]) }
+  enqueueAllOnCore base core1 [(boundTid, ⟨6⟩)]
 
 /-- §2.8 the bound unbind (`cancelBoundDonationOnCore`): the thread's effective
 deadline stops being the context's, and the thread is queued on another core,
@@ -399,9 +396,8 @@ private def stBoundCurrent (withSrv : Bool) : SystemState :=
         boundThread := some boundTid, deadline := ⟨9⟩ })
     |>.withObject srv.toObjId (.tcb (mkReadyTcb 200 5 (some core1) .Ready))
     |>.build
-  let sched := base.scheduler.setCurrentOnCore core1 (some boundTid)
-  { base with scheduler :=
-      if withSrv then sched.setRunQueueOnCore core1 (RunQueue.ofList [(srv, ⟨5⟩)]) else sched }
+  let withCurrent := { base with scheduler := base.scheduler.setCurrentOnCore core1 (some boundTid) }
+  if withSrv then withCurrent.runEnqueueOnCore core1 srv ⟨5⟩ else withCurrent
 
 /-- Run core 1's reschedule handler, as the SGI the flag sends would. -/
 private def receiveOnCore1 (name : String) (st : SystemState) : IO SystemState := do
@@ -426,7 +422,7 @@ private def runDomainEvictionChecks : IO Unit := do
   assertBool "eviction to idle: core 1 runs nothing"
     (idle.scheduler.currentOnCore core1 == none)
   assertBool "eviction to idle: the thread stays queued on core 1"
-    (boundTid ∈ (idle.scheduler.runQueueOnCore core1))
+    (idle.queuedOn core1 boundTid)
   assertBool "eviction to idle: core 1's flag is cleared" (!flagOf idle core1)
   let preSrv := stBoundCurrent true
   let movedSrv ← configureBound 1 preSrv
@@ -434,7 +430,7 @@ private def runDomainEvictionChecks : IO Unit := do
   assertBool "eviction to a lower-priority thread: srv runs on core 1"
     (switched.scheduler.currentOnCore core1 == some srv)
   assertBool "eviction to a lower-priority thread: the evicted thread is queued"
-    (boundTid ∈ (switched.scheduler.runQueueOnCore core1))
+    (switched.queuedOn core1 boundTid)
   let kept ← configureBound 0 preSrv
   let stays ← receiveOnCore1 "reconfigure that keeps the domain" kept
   assertBool "reconfigure that keeps the domain: the incumbent keeps running"
@@ -462,7 +458,7 @@ private def runLocalDomainEvictionChecks : IO Unit := do
   assertBool "local eviction to idle: core 1 runs nothing"
     (idle.scheduler.currentOnCore core1 == none)
   assertBool "local eviction to idle: the thread stays queued on core 1"
-    (boundTid ∈ (idle.scheduler.runQueueOnCore core1))
+    (idle.queuedOn core1 boundTid)
   assertBool "local eviction to idle: core 1's flag is cleared" (!flagOf idle core1)
   assertBool "local eviction to idle: core 1 resumes the idle loop, not the evicted thread"
     (match Architecture.restoreTargetOnCore idle core1 with | .idle => true | _ => false)

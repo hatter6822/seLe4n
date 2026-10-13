@@ -79,8 +79,9 @@ private def lookupThreadPriority (objects : List (SeLe4n.ObjId × KernelObject))
   | some (_, .tcb tcb) => tcb.priority
   | _ => ⟨0⟩
 
-/-- Materialize a full `SystemState` from the builder tables. -/
-def build (builder : BootstrapBuilder) : SystemState :=
+/-- Materialize a full `SystemState` from the builder tables, before the run
+queue is populated. -/
+private def buildUnqueued (builder : BootstrapBuilder) : SystemState :=
   {
     machine := builder.machine
     objects := SeLe4n.Kernel.RobinHood.RHTable.ofList builder.objects
@@ -88,9 +89,7 @@ def build (builder : BootstrapBuilder) : SystemState :=
     objectIndexSet := SeLe4n.Kernel.RobinHood.RHSet.ofList (builder.objects.map Prod.fst)
     services := SeLe4n.Kernel.RobinHood.RHTable.ofList builder.services
     -- SM4.B: per-core scheduler fields; the test builder populates only the boot core.
-    scheduler := ((default : SchedulerState).setRunQueueOnCore SeLe4n.Kernel.Concurrency.bootCoreId
-        (SeLe4n.Kernel.RunQueue.ofList (builder.runnable.map (fun tid =>
-          (tid, lookupThreadPriority builder.objects tid))))).setCurrentOnCore
+    scheduler := (default : SchedulerState).setCurrentOnCore
           SeLe4n.Kernel.Concurrency.bootCoreId builder.current
     irqHandlers := SeLe4n.Kernel.RobinHood.RHTable.ofList builder.irqHandlers
     lifecycle := {
@@ -103,6 +102,16 @@ def build (builder : BootstrapBuilder) : SystemState :=
       | _ => none)
   }
 
+/-- Materialize a full `SystemState` from the builder tables.  The boot core's
+run queue is filled by the kernel's own enqueue (`runEnqueueOnCore`), so each
+runnable thread's TCB carries the run-queue links the selector walks (WS-ZA
+ZA4.5). -/
+def build (builder : BootstrapBuilder) : SystemState :=
+  builder.runnable.foldl (fun st tid =>
+      st.runEnqueueOnCore SeLe4n.Kernel.Concurrency.bootCoreId tid
+        (lookupThreadPriority builder.objects tid))
+    builder.buildUnqueued
+
 /-- S2-F: Build a `SystemState` with post-construction invariant validation.
     Returns the state or throws if structural invariants are violated.
     Validates (runtime approximation of formal Builder invariants):
@@ -112,7 +121,11 @@ def build (builder : BootstrapBuilder) : SystemState :=
     4. CNode slot table capacity bounds (4 ≤ capacity, size < capacity)
     5. IRQ handlers reference existing objects
     6. VSpaceRoot ASID uniqueness (no two VSpaceRoots share an ASID)
-    7. Current thread (if set) is in the runnable list -/
+    7. Current thread (if set) is not in the runnable list
+    8. No supplied TCB claims a run-queue place (`runCoreCode = 0`, as
+       `bootSafeTcbCheck` requires of a boot TCB): `build` places exactly the
+       `runnable` threads, and a TCB naming a core would make its enqueue
+       skip (boot core) or be refused (another core) -/
 def buildValidated (builder : BootstrapBuilder) : Except String SystemState :=
   let st := builder.build
   let oids := builder.objects.map Prod.fst
@@ -144,6 +157,13 @@ def buildValidated (builder : BootstrapBuilder) : Except String SystemState :=
     | .cnode cn => cn.slots.capacity < 4 || cn.slots.size >= cn.slots.capacity
     | _ => false) then
     .error "BuilderTestState check 4 failed: CNode slots violate capacity bounds (need 4 ≤ capacity, size < capacity)"
+  -- Check 8 (PR #932 review): no supplied TCB already claims a run-queue
+  -- place, so the fold over `runnable` builds the queue the builder names.
+  else if builder.objects.any (fun (_, obj) =>
+    match obj with | .tcb t => t.runCoreCode != 0 | _ => false) then
+    let bad := builder.objects.filterMap (fun (oid, obj) =>
+      match obj with | .tcb t => if t.runCoreCode != 0 then some oid else none | _ => none)
+    .error s!"BuilderTestState check 8 failed: supplied TCB(s) carry run-queue placement (runCoreCode ≠ 0): {bad}"
   -- Check 5: IRQ handlers reference existing objects
   else if builder.irqHandlers.any (fun (_, oid) => !oids.contains oid) then
     .error "BuilderTestState check 5 failed: IRQ handler references non-existent object"
@@ -309,5 +329,37 @@ def dispatchSyscallCheckedAsCurrent (ctx : SeLe4n.Kernel.LabelingContext)
     (decoded : SyscallDecodeResult) (tid : SeLe4n.ThreadId) (core : SeLe4n.Kernel.Concurrency.CoreId)
     (st : SystemState) : Except KernelError (Unit × SystemState) :=
   SeLe4n.Kernel.dispatchSyscallChecked ctx decoded tid core (withCurrentOnCore st core tid)
+
+/-- Queue `entries` on core `c`, in order, through the kernel's own enqueue
+(`runEnqueueOnCore`): each thread's TCB carries the run-queue links the kernel
+reads (WS-ZA ZA4.5), so a fixture built this way is one the kernel could have
+reached.  Each thread's TCB must already be in `st`. -/
+def enqueueAllOnCore (st : SystemState) (c : SeLe4n.Kernel.Concurrency.CoreId)
+    (entries : List (SeLe4n.ThreadId × SeLe4n.Priority)) : SystemState :=
+  entries.foldl (fun s e => s.runEnqueueOnCore c e.1 e.2) st
+
+/-- Replace core `c`'s run queue with `entries`: every thread now queued on `c` is
+removed and `entries` are queued in order, all through the kernel's own removal
+and enqueue, so the TCB links the kernel reads describe the new queue.  A write
+to the scheduler's ghost queue alone (`setRunQueueOnCore`) changes nothing the
+compiled kernel reads. -/
+def replaceRunQueueOnCore (st : SystemState) (c : SeLe4n.Kernel.Concurrency.CoreId)
+    (entries : List (SeLe4n.ThreadId × SeLe4n.Priority)) : SystemState :=
+  enqueueAllOnCore ((st.runQueueWalk c).foldl (fun s t => s.runRemoveOnCore c t) st) c entries
+
+/-- Runtime form of `chooseThreadOnCoreSelects`: core `c`'s selection read
+through the threads' run-queue links (`chooseThreadOnCoreByLinks`, equal to
+`chooseThreadOnCore` under the link refinement by `chooseThreadOnCoreByLinks_eq`). -/
+def selectsByLinks (st : SystemState) (c : SeLe4n.Kernel.Concurrency.CoreId)
+    (tid : SeLe4n.ThreadId) : Bool :=
+  match SeLe4n.Kernel.chooseThreadOnCoreByLinks st c with
+  | .ok (some t) => t == tid
+  | _ => false
+
+/-- Runtime form of `chooseThreadOnCoreIdleFallback` (see `selectsByLinks`). -/
+def idleFallbackByLinks (st : SystemState) (c : SeLe4n.Kernel.Concurrency.CoreId) : Bool :=
+  match SeLe4n.Kernel.chooseThreadOnCoreByLinks st c with
+  | .ok none => true
+  | _ => false
 
 end SeLe4n.Testing

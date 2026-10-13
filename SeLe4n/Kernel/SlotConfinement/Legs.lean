@@ -366,18 +366,16 @@ theorem notificationSignalWriteSet_eq_lockSet_waiter (st : SystemState)
   split
   · next ntfn hN =>
     split
-    · next headWaiter rest hT =>
+    · next headWaiter hT =>
       have hResolve : notificationSignalWaiter? st notificationId = some headWaiter := by
-        simp only [notificationSignalWaiter?, hN]
-        exact SeLe4n.NoDupList.head?_eq_of_tail? hT
+        simp only [notificationSignalWaiter?, hN, hT]
       rw [hResolve] at hWaiter
       simp only [Option.some.injEq] at hWaiter
       subst hWaiter
       rfl
     · next hT =>
       have hResolve : notificationSignalWaiter? st notificationId = none := by
-        simp only [notificationSignalWaiter?, hN,
-          SeLe4n.NoDupList.head?_eq_none_of_tail?_eq_none hT]
+        simp only [notificationSignalWaiter?, hN, hT]
       rw [hResolve] at hWaiter; exact absurd hWaiter (by simp)
   · next hN =>
     have hResolve : notificationSignalWaiter? st notificationId = none := by
@@ -407,13 +405,13 @@ theorem notificationSignalOnCore_confinedToCores (notificationId : SeLe4n.ObjId)
     split <;> exact observableSlotsConfinedToCores_of_eq _ rfl
   | some ntfn =>
     simp only []
-    cases hT : ntfn.waitingThreads.tail? with
+    cases hT : ntfn.waitHead with
     | none =>
       simp only []
       split
       · exact observableSlotsConfinedToCores_of_eq _ rfl
       · next st1 hStore => exact storeObject_confinedToCores st st1 _ _ hStore
-    | some pair =>
+    | some w =>
       simp only []
       split
       · exact observableSlotsConfinedToCores_of_eq _ rfl
@@ -424,20 +422,30 @@ theorem notificationSignalOnCore_confinedToCores (notificationId : SeLe4n.ObjId)
           have hInv' : st1.objects.invExt :=
             storeObject_preserves_objects_invExt st st1 notificationId _ hObjInv hStore
           have hNtfn' := storeObject_objects_eq st st1 notificationId _ hObjInv hStore
-          have hNe : notificationId ≠ pair.1.toObjId :=
-            notification_ne_waiter_of_store st1 st2 notificationId pair.1 _ .ready _
+          have hNe : notificationId ≠ w.toObjId :=
+            notification_ne_waiter_of_store st1 st2 notificationId w _ .ready _
               hNtfn' hMsg
-          have hTarget : determineTargetCore st2 pair.1 = determineTargetCore st pair.1 := by
-            rw [storeTcbIpcStateAndMessage_determineTargetCore_eq st1 st2 pair.1 .ready _
-                  pair.1 hInv' hMsg,
-                storeObject_determineTargetCore_eq st st1 notificationId _ pair.1 hNe
+          have hTarget : determineTargetCore st2 w = determineTargetCore st w := by
+            rw [storeTcbIpcStateAndMessage_determineTargetCore_eq st1 st2 w .ready _
+                  w hInv' hMsg,
+                storeObject_determineTargetCore_eq st st1 notificationId _ w hNe
                   hObjInv hStore]
+          -- The pop's link rewrite writes TCB links only: no scheduler slot.
+          have hInv2 : st2.objects.invExt :=
+            storeTcbIpcStateAndMessage_preserves_objects_invExt _ _ _ _ _ hInv' hMsg
+          have hDetach : observableSlotsConfinedToCores st2
+              (detachNtfnHead st2 w (ntfnSuccessor? st w)) [] :=
+            observableSlotsConfinedToCores_nil_of_scheduler_machine_eq
+              (detachNtfnHead_scheduler _ _ _) (detachNtfnHead_machine _ _ _)
           have hChain := observableSlotsConfinedToCores_trans
             (observableSlotsConfinedToCores_trans
-              (storeObject_confinedToCores st st1 _ _ hStore)
-              (storeTcbIpcStateAndMessage_confinedToCores st1 st2 pair.1 .ready _ hMsg))
-            (wakeThread_confinedToCores st2 pair.1 executingCore)
-          rw [hTarget] at hChain
+              (observableSlotsConfinedToCores_trans
+                (storeObject_confinedToCores st st1 _ _ hStore)
+                (storeTcbIpcStateAndMessage_confinedToCores st1 st2 w .ready _ hMsg))
+              hDetach)
+            (wakeThread_confinedToCores (detachNtfnHead st2 w (ntfnSuccessor? st w)) w
+              executingCore)
+          rw [(detachNtfnHead_linksRewritten st2 w _ hInv2).targetCore_eq, hTarget] at hChain
           exact hChain
 
 /-- SM8.B.2 (**SM6.B, cross-core**): a notification *wait* never writes another
@@ -478,18 +486,26 @@ theorem notificationWaitOnCore_confinedToCores (notificationId : SeLe4n.ObjId)
         · exact observableSlotsConfinedToCores_of_eq _ rfl
         · split
           · exact observableSlotsConfinedToCores_of_eq _ rfl
-          · next wt' hGuard =>
+          · next st1 hStore =>
             split
             · exact observableSlotsConfinedToCores_of_eq _ rfl
-            · next st1 hStore =>
+            · next st2 hIpc =>
               split
               · exact observableSlotsConfinedToCores_of_eq _ rfl
-              · next st2 hIpc =>
+              · next st4 hL =>
+                -- WS-ZA ZA4.4: the link-in writes TCB links only.
+                obtain ⟨st3, hL, hR⟩ := linkNtfnWaiter_ok_cases hL
+                have hLink : observableSlotsConfinedToCores st2 st4 [] :=
+                  observableSlotsConfinedToCores_nil_of_scheduler_machine_eq
+                    (by rw [modifyTcbOpt_scheduler_eq hR, modifyTcb_scheduler_eq hL])
+                    (by rw [modifyTcbOpt_machine_eq hR, modifyTcb_machine_eq hL])
                 exact observableSlotsConfinedToCores_trans
                   (observableSlotsConfinedToCores_trans
-                    (storeObject_confinedToCores st st1 _ _ hStore)
-                    (storeTcbIpcStateAndMessage_fromTcb_confinedToCores st1 st2 waiter tcb _ _ hIpc))
-                  (removeRunnableOnCore_confinedToCores st2 waiter executingCore)
+                    (observableSlotsConfinedToCores_trans
+                      (storeObject_confinedToCores st st1 _ _ hStore)
+                      (storeTcbIpcStateAndMessage_fromTcb_confinedToCores st1 st2 waiter tcb _ _ hIpc))
+                    hLink)
+                  (removeRunnableOnCore_confinedToCores st4 waiter executingCore)
 
 -- SM8.B.2, relocated at **WS-RR RR8.12**: `notificationSignalBoundWriteSet` is
 -- declared in `IPC/CrossCore/NotificationBind.lean`, beside
@@ -941,6 +957,11 @@ theorem updatePipBoostOnCore_confinedToCores (st : SystemState) (c : CoreId)
     | (simp only [markKeyChangeFor_activeDomainOnCore,
         markKeyChangeFor_domainTimeRemainingOnCore,
         markKeyChangeFor_domainScheduleIndexOnCore, markKeyChangeFor_machine,
+        SystemState.runRequeueOnCore_scheduler, SystemState.runRequeueOnCore_machine,
+        SystemState.rewriteObject_scheduler, SystemState.rewriteObject_machine,
+        SchedulerState.setRunQueueEndsOnCore_activeDomainOnCore,
+        SchedulerState.setRunQueueEndsOnCore_domainTimeRemainingOnCore,
+        SchedulerState.setRunQueueEndsOnCore_domainScheduleIndexOnCore,
         SchedulerState.setRunQueueOnCore_activeDomainOnCore,
         SchedulerState.setRunQueueOnCore_domainTimeRemainingOnCore,
         SchedulerState.setRunQueueOnCore_domainScheduleIndexOnCore]
@@ -1062,7 +1083,7 @@ executing core, so the honest statement names it.  Where no donation is resolved
 the holder list is empty and this is the pre-OD1.7 statement at the placed core
 (`cancelIpcBlockingOnCore_confinedToCores_of_no_donation`). -/
 theorem cancelIpcBlockingOnCore_confinedToCores (victim : SeLe4n.ThreadId) (tcb : TCB)
-    (executingCore : CoreId) (st : SystemState) :
+    (executingCore : CoreId) (st : SystemState) (hInv : st.objects.invExt) :
     observableSlotsConfinedToCores st
       (cancelIpcBlockingOnCore victim tcb executingCore st).1
       ((cancelUnboundHolderCore? st (cancelIpcBlockingMigrated victim tcb st)
@@ -1075,8 +1096,8 @@ theorem cancelIpcBlockingOnCore_confinedToCores (victim : SeLe4n.ThreadId) (tcb 
   simp only [List.mem_append] at hc ⊢
   rcases hc with hw | hd
   · exact Or.inl hw
-  · rw [descheduleAtPlacementCores_eq_toList, cancelIpcBlockingReclaimed_placedCoreOf?_victim]
-      at hd
+  · rw [descheduleAtPlacementCores_eq_toList,
+      cancelIpcBlockingReclaimed_placedCoreOf?_victim _ _ _ hInv] at hd
     rw [descheduleAtPlacementCores_eq_toList]
     exact Or.inr hd
 
@@ -1085,12 +1106,12 @@ reclaim deschedules nobody, so the composite is confined to the victim's placed
 core exactly as it was before OD1.7 — which is every arm but a reply arm whose
 caller had donated. -/
 theorem cancelIpcBlockingOnCore_confinedToCores_of_no_donation (victim : SeLe4n.ThreadId)
-    (tcb : TCB) (executingCore : CoreId) (st : SystemState)
+    (tcb : TCB) (executingCore : CoreId) (st : SystemState) (hInv : st.objects.invExt)
     (h : Lifecycle.Suspend.cancelledCallerDonation? st victim tcb = none) :
     observableSlotsConfinedToCores st
       (cancelIpcBlockingOnCore victim tcb executingCore st).1
       (descheduleAtPlacementCores st victim) := by
-  have hW := cancelIpcBlockingOnCore_confinedToCores victim tcb executingCore st
+  have hW := cancelIpcBlockingOnCore_confinedToCores victim tcb executingCore st hInv
   rwa [cancelUnboundHolderCore?_of_no_donation _ _ victim tcb h, Option.toList,
     List.nil_append] at hW
 

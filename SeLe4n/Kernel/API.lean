@@ -94,13 +94,13 @@ Previously it was just an import barrel (finding L-01); it now defines:
 
 | Entry point | Subsystem | Stability |
 |---|---|---|
-| `schedule`, `handleYield` | Scheduler | Stable (unchecked — internal kernel paths under `currentThreadValid`) |
-| `scheduleChecked`, `handleYieldChecked` | Scheduler (X2-I) | Stable (**production entry point** — `saveOutgoingContextChecked` guard) |
-| `timerTick` | Scheduler (M-04) | Stable (unchecked — internal kernel paths under `currentThreadValid`) |
-| `timerTickChecked` | Scheduler (M-04/X2-I) | Stable (**production entry point** — `saveOutgoingContextChecked` guard) |
-| `scheduleDomain`, `switchDomain` | Scheduler (M-05) | Stable (unchecked — internal kernel paths under `currentThreadValid`) |
-| `switchDomainChecked` | Scheduler (M-05/X2-I) | Stable (**production entry point** — `saveOutgoingContextChecked` guard) |
-| `chooseThread`, `chooseThreadInDomain` | Scheduler | Stable |
+| `schedule`, `handleYield` | Scheduler | Single-core reference, proof-only (WS-ZA ZA4.5: writes the run queue through its ghost; the live forms are `scheduleEffectiveOnCore`, `yieldOnCore`) |
+| `scheduleChecked`, `handleYieldChecked` | Scheduler (X2-I) | Single-core reference, proof-only — `withOutgoingContextChecked` guard |
+| `timerTick` | Scheduler (M-04) | Single-core reference, proof-only (live form `timerTickOnCore`) |
+| `timerTickChecked` | Scheduler (M-04/X2-I) | Single-core reference, proof-only — `withOutgoingContextChecked` guard |
+| `scheduleDomain`, `switchDomain` | Scheduler (M-05) | Single-core reference, proof-only (live forms `scheduleDomainOnCore`, `switchDomainOnCore`) |
+| `switchDomainChecked` | Scheduler (M-05/X2-I) | Single-core reference, proof-only — `withOutgoingContextChecked` guard |
+| `chooseThread`, `chooseThreadInDomain` | Scheduler | Single-core reference, proof-only (live form `chooseThreadEffectiveOnCore`) |
 | `cspaceLookupSlot`, `cspaceLookupPath` | Capability | Stable |
 | `cspaceMint`, `cspaceCopy`, `cspaceMove` | Capability | Stable (C-01: dispatch path now uses `cspaceMintWithCdt` for CDT-tracked derivation; `cspaceMint` is the untracked base used only for internal composition and proofs) |
 | `cspaceMutate`, `cspaceInsertSlot`, `cspaceDeleteSlot` | Capability | Stable |
@@ -180,48 +180,42 @@ scheduler operation. On failure (`false` return), they propagate
 register context. Under correct invariant maintenance the failure branch
 is never taken; the guard exists to surface invariant violations early. -/
 
+/-- X2-I: the checked guard the four wrappers below share: save the outgoing
+context through `saveOutgoingContextChecked`, then run `op`; a failed save
+surfaces `schedulerInvariantViolation` before any scheduler write.  WS-ZA ZA4.5:
+taking the operation as a parameter lets the suites run the guard in front of the
+live per-core operations, since the single-core ones it guards here write the run
+queue only through its proof-only ghost. -/
+def withOutgoingContextChecked (op : Kernel Unit) : Kernel Unit :=
+  fun st =>
+    let (stSaved, ok) := saveOutgoingContextChecked st
+    if ok then
+      op stSaved
+    else
+      .error .schedulerInvariantViolation
+
 /-- X2-I: Checked `schedule` wrapper. Verifies the outgoing context save
 succeeds before delegating to the core scheduler. Under `currentThreadValid`
 the failure branch is unreachable. -/
-def scheduleChecked : Kernel Unit :=
-  fun st =>
-    let (stSaved, ok) := saveOutgoingContextChecked st
-    if ok then
-      schedule stSaved
-    else
-      .error .schedulerInvariantViolation
+noncomputable def scheduleChecked : Kernel Unit :=
+  withOutgoingContextChecked schedule
 
 /-- X2-I: Checked `handleYield` wrapper. Verifies the outgoing context save
 succeeds before delegating to the core yield handler. -/
-def handleYieldChecked : Kernel Unit :=
-  fun st =>
-    let (stSaved, ok) := saveOutgoingContextChecked st
-    if ok then
-      handleYield stSaved
-    else
-      .error .schedulerInvariantViolation
+noncomputable def handleYieldChecked : Kernel Unit :=
+  withOutgoingContextChecked handleYield
 
 /-- X2-I: Checked `timerTick` wrapper. Verifies the outgoing context save
 succeeds before delegating to the core timer tick handler. -/
-def timerTickChecked : Kernel Unit :=
-  fun st =>
-    let (stSaved, ok) := saveOutgoingContextChecked st
-    if ok then
-      timerTick stSaved
-    else
-      .error .schedulerInvariantViolation
+noncomputable def timerTickChecked : Kernel Unit :=
+  withOutgoingContextChecked timerTick
 
 /-- X2-I: Checked `switchDomain` wrapper. Verifies the outgoing context save
 succeeds before delegating to the core domain switch. Note: `switchDomain`
 also calls `saveOutgoingContext` internally; the outer check ensures failure
 is detected before any scheduler state mutation. -/
-def switchDomainChecked : Kernel Unit :=
-  fun st =>
-    let (stSaved, ok) := saveOutgoingContextChecked st
-    if ok then
-      switchDomain stSaved
-    else
-      .error .schedulerInvariantViolation
+noncomputable def switchDomainChecked : Kernel Unit :=
+  withOutgoingContextChecked switchDomain
 
 -- ============================================================================
 -- WS-H15c/A-42: Syscall Capability-Checking Wrappers
@@ -3174,6 +3168,9 @@ theorem dispatchCapabilityOnly_preserves_ipcInvariantFull
     (hObjInv : st.objects.invExt)
     (hInv : ipcInvariantFull st)
     (hPack : capabilityDispatchQuiescence decoded cap st)
+    (hR : st.runQueueRefined) (hAdm : st.currentRequeueAdmitted executingCore)
+    (hU : ∀ c' t, st.scheduler.currentOnCore executingCore = some t →
+      st.scheduler.currentOnCore c' = some t → c' = executingCore)
     (hStep : k st = .ok ((), st')) :
     ipcInvariantFull st' := by
   unfold dispatchCapabilityOnly at hArm
@@ -3356,9 +3353,7 @@ theorem dispatchCapabilityOnly_preserves_ipcInvariantFull
                   exact schedContextUnbindOnCore_preserves_ipcInvariantFull st st' vScId _
                     sgiU hObjInv hInv
                     (hPack.unbindBoundThreadPassive scId hSy hTgt vScId hVal)
-                    (fun stMid h => schedContextUnbind_preserves_objects_invExt vScId st
-                      stMid hObjInv h)
-                    hUn
+                    hR hAdm hU hUn
     all_goals try cases hStep
   case tcbBindNotification =>
     cases hTgt : cap.target <;> simp only [hTgt] at hStep
@@ -3423,7 +3418,7 @@ theorem dispatchCapabilityOnly_preserves_ipcInvariantFull
                   exact suspendThreadOnCore_preserves_ipcInvariantFull st st' vtid _ sgiU
                     hObjInv (hPack.targetThreadQuiescent objId (Or.inl hSy) hTgt vtid hVal)
                     hPack.bindingBidirectional hInv
-                    hPack.replyStacksSettleOnWaitingDonors hSus
+                    hPack.replyStacksSettleOnWaitingDonors hR hAdm hSus
     all_goals try cases hStep
   case tcbResume =>
     cases hTgt : cap.target <;> simp only [hTgt] at hStep
@@ -3450,7 +3445,8 @@ theorem dispatchCapabilityOnly_preserves_ipcInvariantFull
                 (retirePendingFaultForResume_preserves_objects_invExt st _ hObjInv)
                 (threadIpcFieldsQuiescent_retirePendingFaultForResume st _ hObjInv
                   (hPack.targetThreadQuiescent objId (Or.inr hSy) hTgt vtid hVal))
-                (retirePendingFaultForResume_preserves_ipcInvariantFull st _ hObjInv hInv) hRes
+                (retirePendingFaultForResume_preserves_ipcInvariantFull st _ hObjInv hInv)
+                (retirePendingFaultForResume_currentRequeueAdmitted st _ _ hObjInv hAdm) hRes
     all_goals try cases hStep
   case tcbSetPriority =>
     cases hTgt : cap.target <;> simp only [hTgt] at hStep
@@ -3477,7 +3473,7 @@ theorem dispatchCapabilityOnly_preserves_ipcInvariantFull
                       simp only [hSet] at hStep
                       cases hStep
                       exact setPriorityOnCore_preserves_ipcInvariantFull st st' vCallerTid
-                        vTargetTid _ _ sgiU hObjInv hInv hSet
+                        vTargetTid _ _ sgiU hObjInv hInv hAdm hSet
     all_goals try cases hStep
   case tcbSetMCPriority =>
     cases hTgt : cap.target <;> simp only [hTgt] at hStep
@@ -3504,7 +3500,7 @@ theorem dispatchCapabilityOnly_preserves_ipcInvariantFull
                       simp only [hSet] at hStep
                       cases hStep
                       exact setMCPriorityOnCore_preserves_ipcInvariantFull st st' vCallerTid
-                        vTargetTid _ _ sgiU hObjInv hInv hSet
+                        vTargetTid _ _ sgiU hObjInv hInv hAdm hSet
     all_goals try cases hStep
   case tcbSetIPCBuffer =>
     cases hTgt : cap.target <;> simp only [hTgt] at hStep

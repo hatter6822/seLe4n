@@ -2783,7 +2783,7 @@ theorem auditDrain_preserves_proofLayerInvariantBundle (ctx : GenericLabelingCon
     (hInv : Architecture.proofLayerInvariantBundle st)
     (hStep : auditDrainVisiblePrefix ctx monitorClearance c count st = .ok (n, st')) :
     Architecture.proofLayerInvariantBundle st' := by
-  have hBounded : auditLogBounded st.declassificationAuditLog := hInv.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2
+  have hBounded : auditLogBounded st.declassificationAuditLog := hInv.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.1
   have hBounded' := auditDrain_preserves_auditLogBounded ctx monitorClearance c count st n st'
     hBounded hStep
   obtain ⟨hSt', -, -⟩ := auditDrain_frame ctx monitorClearance c count st n st' hStep

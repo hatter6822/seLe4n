@@ -354,9 +354,13 @@ theorem notificationSignalChecked_NI
         threadObservable ctx observer tid = false →
         objectObservable ctx observer tid.toObjId = false)
     (hWaiterDomain₁ : ∀ ntfn tid, s₁.objects[notificationId]? = some (.notification ntfn) →
-        tid ∈ ntfn.waitingThreads → threadObservable ctx observer tid = false)
+        ntfn.waitHead = some tid → threadObservable ctx observer tid = false)
+    (hSuccHigh₁ : ∀ t, notificationSignalSuccessor? s₁ notificationId = some t →
+        objectObservable ctx observer t.toObjId = false)
     (hWaiterDomain₂ : ∀ ntfn tid, s₂.objects[notificationId]? = some (.notification ntfn) →
-        tid ∈ ntfn.waitingThreads → threadObservable ctx observer tid = false)
+        ntfn.waitHead = some tid → threadObservable ctx observer tid = false)
+    (hSuccHigh₂ : ∀ t, notificationSignalSuccessor? s₂ notificationId = some t →
+        objectObservable ctx observer t.toObjId = false)
     (hObjInv₁ : s₁.objects.invExt)
     (hObjInv₂ : s₂.objects.invExt)
     (hStep₁ : notificationSignalChecked ctx notificationId signaler badge s₁ = .ok ((), s₁'))
@@ -371,7 +375,7 @@ theorem notificationSignalChecked_NI
   rw [notificationSignalChecked_eq_notificationSignal_when_allowed ctx notificationId signaler badge s₁ hFlow] at hStep₁
   rw [notificationSignalChecked_eq_notificationSignal_when_allowed ctx notificationId signaler badge s₂ hFlow] at hStep₂
   exact notificationSignal_preserves_lowEquivalent ctx observer notificationId badge
-    s₁ s₂ s₁' s₂' hLow hNtfnHigh hCoherent hWaiterDomain₁ hWaiterDomain₂ hObjInv₁ hObjInv₂ hStep₁ hStep₂
+    s₁ s₂ s₁' s₂' hLow hNtfnHigh hCoherent hWaiterDomain₁ hSuccHigh₁ hWaiterDomain₂ hSuccHigh₂ hObjInv₁ hObjInv₂ hStep₁ hStep₂
 
 /-- R5-A/M-01: cspaceCopyChecked NI — projection-based (internalized).
 Replaces the prior hypothesis-accepting version. -/
@@ -1420,7 +1424,7 @@ theorem storeTcbQueueLinks_preserves_projection
   | some tcb =>
     simp only [hLookup] at hStep
     cases hStore : storeObject tid.toObjId
-        (.tcb { tcb with queuePrev := prev, queuePPrev := pprev, queueNext := next }) st with
+        (.tcb { tcb with queuePrevCode := SeLe4n.ThreadId.optCode prev, queuePPrevCode := QueuePPrev.optCode pprev, queueNextCode := SeLe4n.ThreadId.optCode next }) st with
     | error e => simp [hStore] at hStep
     | ok pair =>
       simp only [hStore, Except.ok.injEq] at hStep; subst hStep
@@ -2008,7 +2012,7 @@ theorem endpointReceiveDual_preserves_projection
                   st1 st2 sender _ _ hSenderObjHigh hObjInv1 hIpc
               have hProjEns := ensureRunnable_preserves_projection ctx observer st2 sender hSenderHigh
               have hObjInvEns : (ensureRunnable st2 sender).objects.invExt := by
-                rw [ensureRunnable_preserves_objects]; exact hObjInv2
+                exact ensureRunnable_objects_invExt _ _ hObjInv2
               -- AK1-D: atomic (.ready, senderMsg) receiver update
               cases hPend : storeTcbIpcStateAndMessage (ensureRunnable st2 sender) receiver .ready
                   senderTcb.pendingMessage with
@@ -2183,7 +2187,7 @@ theorem endpointReply_preserves_projection
           | some rid =>
             simp only [hRO] at hStep
             have hObjInvMid : (ensureRunnable stMid target).objects.invExt := by
-              rw [ensureRunnable_preserves_objects]
+              apply ensureRunnable_objects_invExt
               exact storeTcbIpcStateAndMessage_preserves_objects_invExt st stMid target _ _
                 hObjInv hStore
             have hIdxMid : ∀ oid,
@@ -2316,7 +2320,7 @@ theorem endpointCall_preserves_projection
                 st1 st2 receiver _ _ hRecvObjHigh hObjInv1 hTcbStore
             have hProjEns := ensureRunnable_preserves_projection ctx observer st2 receiver hRecvHigh
             have hObjInvEns : (ensureRunnable st2 receiver).objects.invExt := by
-              rw [ensureRunnable_preserves_objects]; exact hObjInv2
+              exact ensureRunnable_objects_invExt _ _ hObjInv2
             -- WS-SM SM6.D (#7.3 fold): thread objectIndexSet-completeness/invExt to st3.
             -- PopHead / storeTcbIpcStateAndMessage / ensureRunnable only mutate existing keys.
             obtain ⟨hIdxPop, hObjSetPop⟩ :=
@@ -2520,7 +2524,7 @@ theorem endpointReplyRecv_preserves_projection
           have hProjEns := ensureRunnable_preserves_projection ctx observer stReply replyTarget
               hReplyTargetHigh
           have hObjInvEns : (ensureRunnable stReply replyTarget).objects.invExt := by
-            rw [ensureRunnable_preserves_objects]; exact hObjInvReply
+            exact ensureRunnable_objects_invExt _ _ hObjInvReply
           -- Transfer endpoint objects from the intermediate state back to st: the
           -- store only rewrites replyTarget's slot to a `.tcb`, so an `.endpoint`
           -- witness at endpointId transports (forcing endpointId ≠ replyTarget.toObjId).
@@ -2528,7 +2532,7 @@ theorem endpointReplyRecv_preserves_projection
               (ensureRunnable stReply replyTarget).objects[endpointId]? = some (.endpoint ep') →
               st.objects[endpointId]? = some (.endpoint ep') := by
             intro ep' hEp'
-            rw [ensureRunnable_preserves_objects stReply replyTarget] at hEp'
+            rw [(ensureRunnable_objectsAgreeOffRunLinks stReply replyTarget).get_endpoint_iff] at hEp'
             by_cases hEq : endpointId = replyTarget.toObjId
             · obtain ⟨t1, hT1⟩ := storeTcbIpcStateAndMessage_tcb_exists_at_target st stReply
                 replyTarget _ _ hObjInv hStore
@@ -2552,6 +2556,7 @@ theorem endpointReplyRecv_preserves_projection
               objectObservable ctx observer nextTid'.toObjId = false := by
             intro ep' sender' senderTcb' nextTid' hEp' hHead hSenderTcb hNext
             replace hEp' := hEpBackMid ep' hEp'
+            run_links_back (ensureRunnable_objectsAgreeOffRunLinks stReply replyTarget) at senderTcb' hSenderTcb
             by_cases hSenderNe : sender'.toObjId = replyTarget.toObjId
             · -- sender at same ObjId as replyTarget — queueNext preserved
               unfold storeTcbIpcStateAndMessage modifyTcb at hStore; simp only [hLookup] at hStore
@@ -2560,17 +2565,16 @@ theorem endpointReplyRecv_preserves_projection
               | error e => simp [hStObj] at hStore
               | ok pair =>
                 simp only [hStObj, Except.ok.injEq] at hStore; subst hStore
-                have hTcbMid : (ensureRunnable pair.2 replyTarget).objects[sender'.toObjId]? =
+                have hTcbMid : pair.2.objects[sender'.toObjId]? =
                     some (.tcb { tcb with ipcState := .ready, pendingMessage := some replyMsg }) := by
-                  rw [ensureRunnable_preserves_objects pair.2 replyTarget, hSenderNe]
+                  rw [hSenderNe]
                   exact storeObject_objects_eq st pair.2 replyTarget.toObjId _ hObjInv hStObj
                 rw [hTcbMid] at hSenderTcb; cases hSenderTcb
                 have hOrigTcb := lookupTcb_some_objects st replyTarget tcb hLookup
                 rw [← hSenderNe] at hOrigTcb
                 exact hSendQueueNextHigh ep' sender' tcb nextTid' hEp' hHead hOrigTcb hNext
-            · have hSenderObj : (ensureRunnable stReply replyTarget).objects[sender'.toObjId]? =
+            · have hSenderObj : stReply.objects[sender'.toObjId]? =
                   st.objects[sender'.toObjId]? := by
-                rw [ensureRunnable_preserves_objects stReply replyTarget]
                 exact storeTcbIpcStateAndMessage_preserves_objects_ne st stReply replyTarget _ _
                     sender'.toObjId hSenderNe hObjInv hStore
               rw [hSenderObj] at hSenderTcb
@@ -3368,13 +3372,17 @@ private theorem updatePipBoost_preserves_projection
     projectState ctx observer st := by
   have hObjHigh := hCoherent tid hTidHigh
   simp only [projectState]; congr 1
-  · -- projectObjects: updatePipBoost only modifies objects at tid.toObjId (non-observable)
+  · -- projectObjects: the boost's store is its object write's off the run-queue
+    -- links the projection strips (WS-ZA ZA4.5), and the write is at
+    -- tid.toObjId (non-observable)
+    refine (projectObjects_of_objectsAgreeOffRunLinks ctx observer
+      (PriorityInheritance.updatePipBoostOnCore_objectsAgreeOffRunLinks st bootCoreId tid)).trans ?_
     funext oid
     simp only [projectObjects, SystemState.getObject?]
     cases hObs : objectObservable ctx observer oid
     · rfl
     · simp only [ite_true]; congr 1
-      exact PriorityInheritance.updatePipBoost_objects_ne st tid oid (by
+      exact PriorityInheritance.pipBoostWrite_objects_ne st tid oid (by
         intro h; rw [(eq_of_beq h).symm] at hObs; simp [hObjHigh] at hObs) hObjInv
   · -- projectRunnable: filter by threadObservable excludes non-observable tid
     simp only [projectRunnable, SchedulerState.runnable]
@@ -4116,7 +4124,7 @@ entry keep their shape — this is the frame they rewrite through for the
 writers' marks and the scheduling points' clears. -/
 theorem reschedulePending_write_preserves_projection
     (ctx : LabelingContext) (observer : IfObserver) (st : SystemState)
-    (v : _root_.Vector Bool SeLe4n.Kernel.Concurrency.numCores) :
+    (v : PerCoreFlags) :
     projectState ctx observer
         { st with scheduler := { st.scheduler with reschedulePending := v } } =
       projectState ctx observer st := rfl
@@ -4321,6 +4329,41 @@ theorem runQueue_remove_insert_preserves_projection_at_high
 -- AK6-F Step 2: migrateRunQueueBucket preservation
 -- ============================================================================
 
+/-- WS-ZA ZA4.5: re-keying a non-observable thread on any core preserves the
+projection: the store agrees off the run-queue links, which the projection
+strips, and `projectRunnable` reads the boot core's queue filtered to observable
+threads, where removing and re-inserting a high thread changes nothing. -/
+theorem runRequeueOnCore_preserves_projection
+    (ctx : LabelingContext) (observer : IfObserver)
+    (st : SystemState) (c : SeLe4n.Kernel.Concurrency.CoreId) (tid : SeLe4n.ThreadId)
+    (p : SeLe4n.Priority) (hTidHigh : threadObservable ctx observer tid = false) :
+    projectState ctx observer (st.runRequeueOnCore c tid p) = projectState ctx observer st := by
+  have hObj := projectObjects_of_objectsAgreeOffRunLinks ctx observer
+    (SystemState.runRequeueOnCore_objectsAgreeOffRunLinks st c tid p)
+  have hD := SystemState.runRequeueOnCore_onlyObjectsSchedulerDiffer st c tid p
+  unfold SystemState.onlyObjectsSchedulerDiffer at hD
+  rw [hD] at hObj ⊢
+  simp only [projectState, projectCurrent, projectActiveDomain,
+    projectDomainTimeRemaining, projectDomainScheduleIndex, projectMachineRegs,
+    SystemState.runRequeueOnCore_scheduler,
+    SchedulerState.setRunQueueOnCore_currentOnCore,
+    SchedulerState.setRunQueueOnCore_activeDomainOnCore,
+    SchedulerState.setRunQueueOnCore_domainTimeRemainingOnCore,
+    SchedulerState.setRunQueueOnCore_domainScheduleIndexOnCore,
+    SchedulerState.setRunQueueEndsOnCore_currentOnCore,
+    SchedulerState.setRunQueueEndsOnCore_activeDomainOnCore,
+    SchedulerState.setRunQueueEndsOnCore_domainTimeRemainingOnCore,
+    SchedulerState.setRunQueueEndsOnCore_domainScheduleIndexOnCore]
+  congr 1
+  simp only [projectRunnable, SchedulerState.runnable]
+  by_cases hc : c = bootCoreId
+  · subst hc
+    rw [SchedulerState.setRunQueueOnCore_runQueueOnCore_self]
+    exact SeLe4n.Kernel.RunQueue.toList_filter_rekey_neg
+      (st.scheduler.runQueueOnCore bootCoreId) tid p (threadObservable ctx observer) hTidHigh
+  · rw [SchedulerState.setRunQueueOnCore_runQueueOnCore_ne _ _ _ _ hc,
+      SchedulerState.setRunQueueEndsOnCore_runQueueOnCore]
+
 /-- WS-SM SM8.B: the **per-core** bucket migration preserves the projection.
 
 Two shapes, and the remote one is the reason the generalisation is free:
@@ -4336,18 +4379,7 @@ theorem migrateRunQueueBucketOnCore_preserves_projection
     projectState ctx observer st := by
   unfold SchedContext.PriorityManagement.migrateRunQueueBucketOnCore
   split
-  · by_cases hc : c = bootCoreId
-    · subst hc
-      exact runQueue_remove_insert_preserves_projection_at_high ctx observer st tid _ hTidHigh
-    · simp only [projectState, projectRunnable, projectCurrent, projectActiveDomain,
-        projectDomainTimeRemaining, projectDomainScheduleIndex, projectMachineRegs,
-        SchedulerState.runnable,
-        SchedulerState.setRunQueueOnCore_currentOnCore,
-        SchedulerState.setRunQueueOnCore_activeDomainOnCore,
-        SchedulerState.setRunQueueOnCore_domainTimeRemainingOnCore,
-        SchedulerState.setRunQueueOnCore_domainScheduleIndexOnCore,
-        SchedulerState.setRunQueueOnCore_runQueueOnCore_ne _ _ _ _ hc]
-      rfl
+  · exact runRequeueOnCore_preserves_projection ctx observer st c tid _ hTidHigh
   · rfl
 
 /-- AK6-F Step 2: `migrateRunQueueBucket` preserves projection when the
@@ -4417,8 +4449,7 @@ theorem updatePipBoostOnCore_preserves_projection
       split
       · split
         · rw [markKeyChangeFor_preserves_projection,
-            runQueueOnCore_remove_insert_preserves_projection_at_high ctx observer _ c tid _
-              hTidHigh]
+            runRequeueOnCore_preserves_projection ctx observer _ c tid _ hTidHigh]
           exact hObj _ _
         · rw [markKeyChangeFor_preserves_projection]; exact hObj _ _
       · rw [markKeyChangeFor_preserves_projection]; exact hObj _ _
@@ -4533,11 +4564,28 @@ theorem migrateRunQueueOnAffinityChange_preserves_projection
   · rfl
   · split
     · rfl
-    · rename_i tcb _
+    · rename_i hne _ tcb _
       split
-      · -- write branch: the two-core run-queue update.
+      · -- write branch: the two-core run-queue update, through the TCB run-queue
+        -- links (WS-ZA ZA4.5): the store agrees off those links, which the
+        -- projection strips.
+        have hA : SystemState.objectsAgreeOffRunLinks
+            ((st.runRemoveOnCore fromCore tid).runEnqueueAdmitted toCore tid tcb.boostedPriority) st :=
+          (SystemState.runEnqueueAdmitted_objectsAgreeOffRunLinks _ _ _ _).trans
+            (SystemState.runRemoveOnCore_objectsAgreeOffRunLinks _ _ _)
+        have hObj := projectObjects_of_objectsAgreeOffRunLinks ctx observer hA
+        have hD := ((SystemState.runEnqueueAdmitted_onlyObjectsSchedulerDiffer _ toCore tid
+          tcb.boostedPriority).trans (SystemState.runRemoveOnCore_onlyObjectsSchedulerDiffer st fromCore tid))
+        unfold SystemState.onlyObjectsSchedulerDiffer at hD
+        dsimp only
+        rw [hD] at hObj ⊢
         simp only [projectState, projectCurrent, projectActiveDomain,
           projectDomainTimeRemaining, projectDomainScheduleIndex, projectMachineRegs,
+          runMoveOnCore_scheduler _ _ _ _ _ hne,
+          SchedulerState.setRunQueueEndsOnCore_currentOnCore,
+          SchedulerState.setRunQueueEndsOnCore_activeDomainOnCore,
+          SchedulerState.setRunQueueEndsOnCore_domainTimeRemainingOnCore,
+          SchedulerState.setRunQueueEndsOnCore_domainScheduleIndexOnCore,
           SchedulerState.markReschedulePendingOnCore_currentOnCore,
           SchedulerState.markReschedulePendingOnCore_activeDomainOnCore,
           SchedulerState.markReschedulePendingOnCore_domainTimeRemainingOnCore,
@@ -4548,7 +4596,8 @@ theorem migrateRunQueueOnAffinityChange_preserves_projection
           SchedulerState.setRunQueueOnCore_domainScheduleIndexOnCore]
         congr 1
         simp only [projectRunnable, SchedulerState.runnable,
-          SchedulerState.markReschedulePendingOnCore_runQueueOnCore]
+          SchedulerState.markReschedulePendingOnCore_runQueueOnCore,
+          SchedulerState.setRunQueueEndsOnCore_runQueueOnCore]
         -- Reduce the boot-core run-queue read through the two writes (the
         -- destination core's reschedule-pending mark reads out above).
         by_cases hTo : toCore = bootCoreId

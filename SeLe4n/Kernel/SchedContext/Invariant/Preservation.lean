@@ -269,16 +269,15 @@ theorem schedContextUnbind_output_cleared
 -- ============================================================================
 
 /-- Z5-N1/N2: The priority used for RunQueue re-insertion in `schedContextBind`
-matches the SchedContext's configured priority. `RunQueue.insert` stores
-`sc.priority` in the `threadPriority` map when `¬contains tid`, which holds
+matches the SchedContext's configured priority. `RunQueue.insert` records
+`sc.priority` as the thread's queued priority when `¬contains tid`, which holds
 after `RunQueue.remove`. After bind, `effectiveSchedParams` resolves from the
 SchedContext, so the RunQueue entry's priority is consistent. -/
 theorem schedContextBind_runQueue_insert_uses_sc_priority
     (sc : SchedContext) (rq : RunQueue) (tid : ThreadId)
     (hNotContains : (rq.remove tid).contains tid = false) :
-    ((rq.remove tid).insert tid sc.priority).threadPriority =
-    (rq.remove tid).threadPriority.insert tid sc.priority := by
-  simp [RunQueue.insert, hNotContains]
+    ((rq.remove tid).insert tid sc.priority).priorityOf tid = some sc.priority := by
+  simp [RunQueue.priorityOf_insert, hNotContains]
 
 -- ============================================================================
 -- Z5-M (admission): collectSchedContexts exclusion well-formedness

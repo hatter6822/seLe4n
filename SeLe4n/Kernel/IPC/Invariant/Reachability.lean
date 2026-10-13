@@ -96,14 +96,20 @@ conjunct **here** rather than of `ipcInvariantFull`, which has exactly twenty
 conjuncts and a theorem family whose size a Tier-0 gate holds equal to the prose
 quoting it; and it is *preserved* rather than assumed — `donationChainFrame`
 (`IPC.Invariant.Defs`) is what every transition discharges it through, so it is
-an invariant rather than a hypothesis wearing an invariant's name. -/
+an invariant rather than a hypothesis wearing an invariant's name.
+
+**WS-ZA ZA4.5**: `runQueueRefined` joins them on the same terms.  Every core's
+run queue agrees with the run-queue links its threads carry, and every kernel
+entry keeps it: each one is a `RunQueueStage` (`IPC.Invariant.RunQueueAgreement`),
+so the agreement the dispatch reads is carried, not assumed. -/
 def ipcReachable (st : SystemState) : Prop :=
   ipcInvariantFull st ∧
   st.objects.invExt ∧
   allTimeoutBudgetsNone st ∧
   pendingMessageCapBadgesWellFormed st ∧
   notificationWaiterConsistent st ∧
-  donationChainWellFormed st
+  donationChainWellFormed st ∧
+  st.runQueueRefined
 
 namespace ipcReachable
 
@@ -119,7 +125,10 @@ theorem notificationWaiterConsistent {st : SystemState} (h : ipcReachable st) :
     _root_.SeLe4n.Kernel.notificationWaiterConsistent st := h.2.2.2.2.1
 /-- WS-OD OD2.6: the SchedContext donation chain is well formed. -/
 theorem donationChainWellFormed {st : SystemState} (h : ipcReachable st) :
-    _root_.SeLe4n.Kernel.donationChainWellFormed st := h.2.2.2.2.2
+    _root_.SeLe4n.Kernel.donationChainWellFormed st := h.2.2.2.2.2.1
+/-- WS-ZA ZA4.5: every core's run queue agrees with the threads' run-queue links. -/
+theorem runQueueRefined {st : SystemState} (h : ipcReachable st) : st.runQueueRefined :=
+  h.2.2.2.2.2.2
 
 end ipcReachable
 
@@ -345,7 +354,7 @@ Every conjunct is discharged from the empty boot object store, the IPC bundle
 through the architecture layer's `default_ipcInvariantFull`. -/
 theorem ipcReachable_default : ipcReachable (default : SystemState) := by
   refine ⟨Architecture.default_ipcInvariantFull, ?_, ?_, ?_,
-    default_notificationWaiterConsistent, ?_⟩
+    default_notificationWaiterConsistent, ?_, SystemState.default_runQueueRefined⟩
   · exact capabilityInvariantBundle.objectsInvExt
       (Architecture.default_system_state_proofLayerInvariantBundle).2.1
   · intro tid tcb hTcb

@@ -49,11 +49,11 @@ enforcement, and scheduling.
 
 | Attribute | Value |
 |-----------|-------|
-| **Package version** | `0.36.78` (`lakefile.toml`) |
+| **Package version** | `0.36.82` (`lakefile.toml`) |
 | **Lean toolchain** | `v4.28.0` (`lean-toolchain`) |
-| **Production LoC** | 441,684 across 391 Lean files |
-| **Test LoC** | 87,225 across 70 Lean test suites |
-| **Proved declarations** | 14,738 theorem/lemma declarations (zero sorry/axiom) |
+| **Production LoC** | 456,717 across 405 Lean files |
+| **Test LoC** | 87,277 across 70 Lean test suites |
+| **Proved declarations** | 15,772 theorem/lemma declarations (zero sorry/axiom) |
 | **Target hardware** | Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A) |
 | **Latest audit** | pre-SM10 completeness audit at `v0.34.3` — [`UNFINISHED_SMP_WORK.md`](../planning/UNFINISHED_SMP_WORK.md), 171 confirmed findings. Prior baselines in [`docs/audits/`](../audits) |
 | **Active workstream** | **WS-BP (the bare-metal boot path)** — SM10.1's content, unblocked at v0.35.203; **BP0 (cross-implementation agreement) landed at v0.36.2** (§6.2.2), and **BP1 (aarch64 Lean object code) at v0.36.2** (§6.2.3), **BP2.1 (the Lean heap)** at v0.36.2 (§6.2.4), **BP2.2 (the kernel's Lean runtime, in Rust)** at v0.36.2 (§6.2.5), **BP2.3/BP2.4 (the library initializer, failing closed)** at v0.36.2 (§6.2.6), **BP2.6 (the boot map built from constants)** at v0.36.2 (§6.2.7), and **BP3 (the RPi5 deployment, which boots, and the proof-layer bundle of the state it installs)** at v0.36.2 (§6.2.8, §8.14.2), and **BP4.1/BP4.2 (the `lean_kernel_main` entry, and the install ordered before the secondaries by a type)** at v0.36.2 (§6.2.9), and **BP4.3/BP4.4 (the firmware's device tree reaching Lean, and the entry booting the deployment on the variant it describes)** at v0.36.2 (§6.2.10), and **BP4.5 (the image's loaded bytes cleaned to the Point of Unification before any thread can fetch)** at v0.36.2 (§6.2.11), and **BP4.6 (the verified board's RAM outside the kernel's extent mapped, and the boot map sealed before any secondary is released)** and **BP4.7 (that RAM handed to the root task as untypeds)** at v0.36.2 (§6.2.12), and **BP5.1 (the kernel image, a bare-metal binary entered at `_start` under `link.ld`)** and **BP5.2 (the Lean kernel linked into it, under `--gc-sections` from the archive lane's roots)** and **BP5.3 (the firmware's boot files, `kernel8.img` and `config.txt`, cut from that image and checked against it)** and **BP5.4 (its size and section map published with every CI run)** at v0.36.2 (§6.2.13), and **BP5.5 (the firmware's EL2 entry dropped to EL1, with the PSCI conduit following the entry level)** at v0.36.2 (§6.2.15), and **BP6 (every PE marks itself ready after its own per-PE runtime handshake and before it unmasks IRQs, and the boot halts unless every declared PE serves the kernel)** at v0.36.2 (§6.2.16), and **BP7.10 (the first gigabyte's RAM read off the firmware's account, and the constant boot map shrunk to the kernel's reserved extent)** at v0.36.3 (§6.2.17), and **BP7.1 slices 1–3 (frame capabilities, the untyped carve that mints them, and the untyped reset that returns their memory)** at v0.36.4, v0.36.5 and v0.36.6, slice 4a (child untypeds and subtree resets) at v0.36.8, the in-place VSpace-root refusal at v0.36.9, and slice 4b's VSpace-root carve at v0.36.10, `.tcbSetSpace` (a thread runs in a carved address space) at v0.36.11, intermediate page tables at v0.36.12, and every configured address space owning a table page at v0.36.13, which completes BP7.1 (§8.10.2a); BP7.2's user window and 16-bit hardware ASIDs at v0.36.14 and its physical-write ledger and translation install at v0.36.15; BP7.3–BP7.9 at v0.36.16–v0.36.22 (the whole trap frame saved, per-core restore staging, unblock-frame delivery, the live context restore, the delivered declassified badge, overflow message registers, lazily switched FP/SIMD state); and BP7.11 (the boot starts both initial threads, one per domain) at v0.36.23, which completes BP7; BP8.1's first slice (the image built for QEMU's `virt` — its device map from `src/board.rs`, its link script derived from `link.ld`, an arm64 Image header on `_start` — booted there at EL1 and at EL2 by `scripts/test_qemu.sh`) at v0.36.24, and its second (the Lean `virt` binding `SeLe4n/Platform/QemuVirt/` — its board check the RPi5 bridge's own coverage predicates, the RPi5 deployment's layout on it with every boot gate decided, and its own boot entry `lean_kernel_main_qemu_virt`, held by the boot-entry contract's table to its own approved call) at v0.36.25, and its third (the Lean-linked image booted by `scripts/test_qemu.sh --lean-kernel` on four PEs at EL1 and EL2 to every core's first idle dispatch, on every PR — §6.2.18) at v0.36.26, completing BP8.1, and BP8.2 (the four-PE bring-up gate, executed on every PR — §6.2.18) at v0.36.27. **WS-RR (SMP release readiness)** is complete (v0.34.26 → v0.35.203, RR0–RR8). SM10 (release closure → v1.0.0) follows WS-BP. See [`REGISTERED_DEBT.md`](../REGISTERED_DEBT.md) |
@@ -87,7 +87,7 @@ security model while introducing improvements that the Lean 4 proof framework en
 | **CDT representation** | Mutable doubly-linked list | Node-stable CDT with O(1) slot transfer via pointer/backpointer fixup |
 | **IPC queuing** | Intrusive linked list | Dual-queue model (`sendQ`/`receiveQ`) with O(1) arbitrary removal; `blockedOnCall` state for call/reply semantics; reply-target scoping for confused-deputy prevention; formal `dualQueueSystemInvariant` with doubly-linked integrity (WS-H5) and back-pointer agreement — `queuePPrev` against `queuePrev`, which is what makes the O(1) removal's own precondition discharged rather than assumed (`dualQueueRemovalGuardHolds`, WS-RR RR8.3).  That pairing is *pointwise*, so it cannot reach a queue's **head**, whose `queuePrev = none` is legitimate; the head's back-pointer is therefore a clause of the **queue's** own boundary (`intrusiveQueueWellFormed`'s P2, `v0.35.106`), preserved through a fifth bundle conjunct that a thread heads at most one endpoint queue (`endpointQueueHeadDisjoint`) — itself a consequence of `queueHeadBlockedConsistent` rather than a new assumption (`queueHeadExclusive`), so a removal's `queuePPrev` hypothesis is now discharged for **any** member of a well-formed queue, head included (`dualQueueRemovalGuardHolds_of_member`).  Both the pairing and the head-disjointness conjunct are **checked at runtime** as well as proved (`queuePPrevAgreesWithPrevChecks`, `endpointQueueHeadDisjointChecks`); the second arrived a cut later than its conjunct, and until `v0.35.108` no check in `stateInvariantChecksFor` was cross-endpoint at all, so a state the bundle refuses — two endpoints sharing one singleton head — passed the whole harness surface; all three removals write one definition of what unlinking does — `queueUnlinkPredecessor` / `queueUnlinkSuccessor` to the neighbours (WS-OD OD3.9) and `queueRemoveBoundary` to the queue's own head and tail (WS-RR RR8.4), the latter reading `q.tail = some tid` rather than inferring tail-ness from the removed thread's `queueNext`, with the two readings' agreement checked by the removal's guard.  The removal's whole store-free precondition is one **model**-level predicate over an `IntrusiveQueue` and a `TCB` (`dualQueueRemovalEnabled`, `Model/Object/Types.lean`), so the frozen execution mirror — which imports no kernel module — refuses exactly what the live removal refuses rather than a subset of it (`v0.35.59`); its *discharges* stay in the kernel layer, where the invariants that entail them are |
 | **Information flow** | Binary high/low partition | Parameterized N-domain labels with per-endpoint flow policies |
-| **Scheduling** | Priority-based round-robin | Priority + EDF scheduling with dequeue-on-dispatch semantics, per-TCB register context with inline context switch, and domain-aware partitioning |
+| **Scheduling** | Priority-based round-robin | Priority + EDF scheduling with dequeue-on-dispatch semantics, per-TCB register context with inline context switch, and domain-aware partitioning; the per-core run queue links through TCB fields as seL4's does, with the abstract queue kept as an erased ghost and proven to agree with the links on every reachable state (`runQueueRefined`) |
 | **Revocation** | Silent error swallowing | Strict variant (`cspaceRevokeCdtStrict`) reporting first failure with context; CDT node preserved on slot deletion failure (AH3-A) |
 | **Syscall boundary** *(WS-J1-A/B/C/D completed; WS-V V2 complete)* | C code extracts args from registers | Typed register wrappers (J1-A) + total decode layer with `RegisterDecode.lean`, complete round-trip proof surface for all 3 decode components (`decodeCapPtr_roundtrip`, `decodeSyscallId_roundtrip`, `decodeMsgInfo_roundtrip` with bitwise `Nat.testBit` extensionality, plus composite `decode_components_roundtrip`), determinism proof, and error exclusivity (J1-B) + `syscallEntry` register-sourced entry point with capability-gated dispatch to all 17 kernel operations of the V2 era (13 original + `notificationSignal`/`notificationWait`/`replyRecv` added in V2; the dispatch surface has since grown to all 34 `SyscallId` variants — see §8.10), soundness theorems (J1-C) + invariant preservation and NI coverage for decode/dispatch path with `registerDecodeConsistent` predicate and 2 new `NonInterferenceStep` constructors (J1-D); `MessageInfo` label field bounded to 20 bits (seL4 convention, V2-E/V2-H); cap transfer slot base configurable via `capRecvSlot` (V2-F/V2-G) |
 
@@ -4344,7 +4344,8 @@ alongside the latent inventory (closing SMP-H3).
    retirement).
 
    **The reschedule-pending flag (`v0.36.51`, KSC-1 PR A).**  An eighth
-   per-core field, `reschedulePending : Vector Bool numCores`, read through
+   per-core field, `reschedulePending : PerCoreFlags` (one bit per core in a
+   word since `v0.36.82`, so a snapshot of it is a scalar), read through
    `reschedulePendingOnCore` and written only by `markReschedulePendingOnCore`
    / `markReschedulePendingOnCoreIf` (set) and `clearReschedulePendingOnCore`
    (clear), with the same store/load algebra, `ext_perCore` hypothesis and
@@ -5567,20 +5568,16 @@ type-level structural promotion:
   by `SeLe4n.Kernel.retypeTarget_implies_scrub_token_held :
   ∀ st (rt : RetypeTarget st), SeLe4n.Kernel.ScrubToken st rt.id`.
   Defined in `SeLe4n/Kernel/Capability/Invariant/Defs.lean`.
-* **R4.C (DEEP-IPC-05; subsumes DEEP-IPC-01)** —
-  `Notification.waitingThreads : List ThreadId` →
-  `Notification.waitingThreads : SeLe4n.NoDupList SeLe4n.ThreadId`.
-  The wrapper (`SeLe4n/Model/Object/NoDupList.lean`) carries
-  `List.Nodup` **structurally** at construction time.  `notificationSignal`
-  pops via `NoDupList.tail?`; `notificationWait` cons site is
-  gated by `NoDupList.consWithGuard?` (runtime membership check
-  returning `Option`) so the duplicate rejection is
-  structural rather than upstream-convention.  The state-level
-  `uniqueWaiters` invariant is now **trivially derivable** via
-  `SeLe4n.Kernel.uniqueWaiters_holds`.  Structural witness theorems:
-  `SeLe4n.NoDupList.nodup_witness`,
-  `SeLe4n.Kernel.notification_waitingThreads_nodup_witness`, and
-  `SeLe4n.Kernel.notificationWait_runtime_check_implied_by_nodup`.
+* **R4.C (DEEP-IPC-05; subsumes DEEP-IPC-01)** — a notification's
+  waiters cannot hold a thread twice.  R4.C first carried this as a
+  `NoDupList` waiter list; since `v0.36.82` (WS-ZA ZA4.4) the waiters are
+  an intrusive first-in-first-out queue linked through the waiting TCBs
+  (`TCB.ntfnPrev` / `TCB.ntfnNext`, with `Notification.waitHead` /
+  `waitTail` naming its ends), as seL4's `tcbEPAppend` / `tcbEPDequeue`.
+  A TCB has one pair of notification links, so a thread is linked into at
+  most one place; `notificationWaiterConsistent` (the IPC invariants below) states the links'
+  consistency and every transition preserves it.  A wait refuses a thread
+  already blocked on the notification (`.alreadyWaiting`) before it writes.
 * **R4.D (DEEP-CAP-02)** — `cspaceMutate` null-cap rejection.  Two
   witness theorems in
   `SeLe4n/Kernel/Capability/Invariant/Preservation/CopyMoveMutate.lean`:
@@ -5597,8 +5594,7 @@ The R4 closure-form discharge index is anchored by
 canonical
 [`docs/audits/AUDIT_v0.30.11_DISCHARGE_INDEX.md`](../audits/AUDIT_v0.30.11_DISCHARGE_INDEX.md)
 §3 (sections D/E/F).  Companion foundation-readiness markers:
-`SeLe4n.Kernel.uniqueSlotMap_module_ready` and
-`SeLe4n.Kernel.noDupList_module_ready`.
+`SeLe4n.Kernel.uniqueSlotMap_module_ready`.
 
 ### 8.10.8 Scheduler / Lifecycle Behaviour Symmetry
 WS-RC R5 closes the seven scheduler/lifecycle audit findings whose
@@ -6069,8 +6065,8 @@ premise the fault path itself refutes.
 
 **Invariants** (`ipcInvariantFull` 20 conjuncts — the first 15 forming
 `ipcInvariantCore` after WS-RC R4.C.7's close-out
-retired the `uniqueWaiters` state-level slot to a structural witness on
-`Notification.waitingThreads : SeLe4n.NoDupList ThreadId`):
+retired the `uniqueWaiters` state-level slot; waiter uniqueness is now carried
+by the intrusive notification queue's links, `notificationWaiterConsistent`):
 - `donationChainAcyclic`: no circular donation chains (A→B and B→A)
 - `donationOwnerValid`: donated bindings reference valid objects; the donor
   relinquished its SchedContext on donation (Finding F-3:
@@ -6888,12 +6884,18 @@ retired the `uniqueWaiters` state-level slot to a structural witness on
   for donated states (the donor is `.unbound`; only the server's `.donated`
   references the SchedContext)
 - `uniqueWaiters` (RETIRED at WS-RC R4.C.7): no notification has duplicate
-  thread IDs in `waitingThreads` (AG1-C, F-T02) — content now carried
-  structurally by `NoDupList.hNodup` on every `Notification.waitingThreads`.
-  The state-level predicate is retained as a `True` alias for backward
-  compatibility with vestigial hypothesis parameters; discharge via
-  `SeLe4n.Kernel.uniqueWaiters_trivial` or the per-Notification
-  `SeLe4n.Kernel.notification_waiters_nodup` witness.
+  waiters.  Since `v0.36.82` the waiters are an intrusive queue through the
+  TCBs' `ntfnPrev` / `ntfnNext` links, one pair per TCB, whose consistency is
+  `notificationWaiterConsistent` (part of `ipcReachable`): each end is a TCB
+  blocked on the notification, and each blocked TCB is the head or has a
+  predecessor linking back, and is the tail or has a successor blocked on the
+  same notification that names it back; and each blocked TCB is reached from
+  its notification's head along the successor links (`notificationQueueReaches`),
+  so every queue is acyclic (`notificationQueue_acyclic`).  A queue's head has
+  no predecessor link, and a TCB blocked on no notification holds no
+  notification link: a signal's pop clears the woken thread's links and the
+  new head's predecessor, and a cancellation clears the victim's, as seL4's
+  `tcbEPDequeue` does (PR #932 review); boot refuses a TCB carrying one.
 
 **Production receive cleanup** (AI4-A, v0.27.11): `cleanupPreReceiveDonation` is
 wired into the `endpointReceiveDual` no-sender branch (Transport.lean). When a

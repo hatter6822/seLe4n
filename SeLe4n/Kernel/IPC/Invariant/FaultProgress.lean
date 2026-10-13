@@ -300,10 +300,11 @@ theorem faultDeliverOnCoreChecked_leaves_thread_not_runnable (lctx : LabelingCon
 /-- **WS-BP BP7.6**: the reschedule handler makes no thread dispatchable on its
 core except the one it chose, and it chooses from that core's run queue — so a
 thread that was not dispatchable there stays so.  The chooser's pick is a member
-of the queue whatever state it scans (`chooseThreadEffectiveOnCore_some_mem_runQueueOnCore`,
-by the queue's own `RunQueue.bucket_wf`). -/
+of the queue wherever the queue agrees with the threads' links, which the
+chooser walks (`chooseThreadEffectiveOnCore_some_mem_runQueueOnCore`). -/
 theorem handleRescheduleSgiOnCore_preserves_not_dispatchable
     (st st' : SystemState) (c : CoreId) (u : SeLe4n.ThreadId)
+    (hR : st.runQueueRefinedOnCore c)
     (hStep : handleRescheduleSgiOnCore st c = .ok st')
     (h : ¬ dispatchableOnCore st u c) :
     ¬ dispatchableOnCore st' u c := by
@@ -329,7 +330,7 @@ theorem handleRescheduleSgiOnCore_preserves_not_dispatchable
     · rename_i tid hChoose _
       have hMem : tid ∈ st.scheduler.runQueueOnCore c :=
         (RunQueue.mem_toList_iff_mem _ tid).mp
-          (chooseThreadEffectiveOnCore_some_mem_runQueueOnCore st c tid hChoose)
+          (chooseThreadEffectiveOnCore_some_mem_runQueueOnCore st c tid hR hChoose)
       have hu : u ≠ tid := fun hEq => hQ (hEq ▸ hMem)
       split at hStep
       · rename_i sSw hSw

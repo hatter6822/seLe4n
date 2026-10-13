@@ -836,7 +836,7 @@ fact**.  Strengthens `fold_preserves`: under the table invariant, every entry
 the fold body visits satisfies `t.get? k = some v`
 (`slot_entry_implies_get`), so the step hypothesis may consume the lookup —
 the keystone for per-key characterisations of object-store sweeps
-(`removeFromAllEndpointQueues` / `removeFromAllNotificationWaitLists`),
+(`removeFromAllEndpointQueues` / `removeFromNotificationWaitQueue`),
 where the step must know that the visited key's stored value has the kind
 the body dispatched on. -/
 theorem RHTable.fold_preserves_of_lookup [BEq α] [Hashable α] [LawfulBEq α]

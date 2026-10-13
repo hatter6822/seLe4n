@@ -87,6 +87,14 @@ theorem ipcStateFrame_of_objects_eq {st st' : SystemState}
   intro t tcb' hTcb
   exact ⟨tcb', by rw [← h]; exact hTcb, rfl⟩
 
+/-- WS-ZA ZA4.5: a step that writes only run-queue links frames every
+`ipcState`. -/
+theorem ipcStateFrame_of_objectsAgreeOffRunLinks {st st' : SystemState}
+    (h : st'.objectsAgreeOffRunLinks st) : ipcStateFrame st st' := by
+  intro t tcb' hTcb
+  obtain ⟨t0, h0, hE⟩ := h.get_tcb' hTcb
+  exact ⟨t0, h0, (TCB.proj_eq_of_withoutRunLinks_eq TCB.ipcState hE).symm⟩
+
 /-- WS-RR RR8.16: the donation read agreement frames every `ipcState`.
 
 Its `tcbBwd` clause already states exactly this conjunct, so every transition with
@@ -145,11 +153,11 @@ theorem linkServerStashedReply_ipcStateFrame
     linkServerStashedReply_tcb_ipcState_backward st st' caller server y tcbY' hObjInv
       hStep hTcb
 
-/-- WS-RR RR8.16: a run-queue removal writes no object. -/
+/-- WS-RR RR8.16: a run-queue removal writes only run-queue links. -/
 theorem removeRunnableOnCore_ipcStateFrame (st : SystemState)
     (tid : SeLe4n.ThreadId) (c : CoreId) :
     ipcStateFrame st (removeRunnableOnCore st tid c) :=
-  ipcStateFrame_of_objects_eq (removeRunnableOnCore_preserves_objects st tid c)
+  ipcStateFrame_of_objectsAgreeOffRunLinks (removeRunnableOnCore_objectsAgreeOffRunLinks st tid c)
 
 /-- WS-RR RR8.16: a priority-inheritance boost frames every `ipcState`.
 
@@ -230,9 +238,9 @@ exists for, and why the flow fact rides a wake with no gate. -/
 theorem enqueueRunnableOnCore_blockedSenderShrinks (st : SystemState) (c : CoreId)
     (tid : SeLe4n.ThreadId) (hInv : st.objects.invExt) :
     blockedSenderShrinks st (enqueueRunnableOnCore st c tid) := by
-  cases hFresh : runnableOnSomeCore st tid with
+  cases hFresh : wakeDeclines st c tid with
   | true =>
-      rw [enqueueRunnableOnCore_eq_self_of_runnable st c tid hFresh]
+      rw [enqueueRunnableOnCore_eq_self_of_declines st c tid hFresh]
       exact blockedSenderShrinks.refl st
   | false =>
       intro other t' epId hLook hB
@@ -247,12 +255,15 @@ theorem enqueueRunnableOnCore_blockedSenderShrinks (st : SystemState) (c : CoreI
             rw [enqueueRunnableOnCore_no_tcb_noop st c other hPre] at hGet
             exact absurd (hPre.symm.trans hGet) (by simp)
         | some tcb =>
-            rw [enqueueRunnableOnCore_makes_ready st c other tcb hPre hInv hFresh] at hGet
-            have : t'.ipcState = ThreadIpcState.ready := by
-              simp only [Option.some.injEq] at hGet; rw [← hGet]
+            obtain ⟨t₁, h₁, ht⟩ := enqueueRunnableOnCore_makes_ready st c other tcb hPre hInv hFresh
+            rw [h₁, Option.some.injEq] at hGet
+            subst hGet
+            have : t₁.ipcState = ThreadIpcState.ready :=
+              TCB.proj_eq_of_withoutRunLinks_eq TCB.ipcState ht
             rcases hB with h | h <;> rw [this] at h <;> exact absurd h (by simp)
-      · rw [enqueueRunnableOnCore_getTcb?_ne st c tid other hInv hEq] at hGet
-        exact ⟨t', by unfold lookupTcb; rw [if_neg hNotRes]; exact hGet, hB⟩
+      · obtain ⟨t, hT, ht⟩ := enqueueRunnableOnCore_getTcb?_ne_back st c tid other hInv hEq hGet
+        refine ⟨t, by unfold lookupTcb; rw [if_neg hNotRes]; exact hT, ?_⟩
+        rwa [← TCB.proj_eq_of_withoutRunLinks_eq TCB.ipcState ht]
 
 /-- WS-RR RR8.16: and so does the cross-core wake, which is that enqueue on the
 woken thread's home core. -/
@@ -754,8 +765,8 @@ theorem endpointSendDualOnCore_sameSchedContextBindings
               simp only []
               exact (hS1.trans (storeTcbIpcStateAndMessage_sameSchedContextBindings st1 st2
                 sender _ (some msg) hInv1 hIpc)).trans
-                (sameSchedContextBindings.of_objects_eq
-                  (removeRunnableOnCore_preserves_objects st2 sender executingCore))
+                (sameSchedContextBindings.of_objectsAgreeOffRunLinks
+                  (removeRunnableOnCore_objectsAgreeOffRunLinks st2 sender executingCore))
         | some _ =>
           simp only []
           cases hSnd : st.getTcb? sender with
@@ -885,7 +896,7 @@ theorem propagatePipChainCrossCore_sameSchedContextBindings (st : SystemState)
   obtain ⟨tcb, p, hPre, hEq⟩ :=
     PriorityInheritance.propagatePipChainCrossCore_tcb_backward st tid ec fuel hInv t tcb'
       hTcb'
-  exact ⟨tcb, hPre, by rw [hEq]⟩
+  exact ⟨tcb, hPre, (TCB.proj_eq_of_withoutRunLinks_eq TCB.schedContextBinding hEq).symm⟩
 
 /-- **WS-RR RR8.16 (`v0.35.196`)**: the cross-core call donation carries the
 donation flow fact, given the flow the rendezvous established between its two

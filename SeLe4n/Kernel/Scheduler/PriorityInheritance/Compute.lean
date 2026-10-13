@@ -9,6 +9,7 @@
 
 import SeLe4n.Kernel.Scheduler.PriorityInheritance.BlockingGraph
 import SeLe4n.Kernel.Scheduler.Operations.Selection
+import SeLe4n.Kernel.Scheduler.RunQueueLinkFrame
 
 namespace SeLe4n.Kernel.PriorityInheritance
 
@@ -164,6 +165,75 @@ theorem computeMaxWaiterPriority_frame
   rw [computeMaxWaiterPriority_eq_cmwpFoldBody, computeMaxWaiterPriority_eq_cmwpFoldBody,
       waitersOf_frame st st' tid hObjects hObjIdx]
   exact computeMaxWaiterPriority_foldBody_frame st st' (waitersOf st tid) hObjects none
+
+/-! WS-ZA ZA4.5: the same reads across a step that writes only run-queue
+links.  A waiter's blocking edge, its priority, deadline, domain and binding are
+none of them run-queue fields, so every read agrees. -/
+
+theorem waitersOf_of_objectsAgreeOffRunLinks
+    (st st' : SystemState) (tid : ThreadId) (h : st'.objectsAgreeOffRunLinks st)
+    (hObjIdx : st'.objectIndex = st.objectIndex) :
+    waitersOf st' tid = waitersOf st tid := by
+  unfold waitersOf SystemState.getObject?
+  rw [hObjIdx]
+  congr 1
+  funext objId
+  cases e : st.objects[objId]? with
+  | none => rw [h.get_none_iff.mpr e]
+  | some o => cases o with
+    | tcb t =>
+      obtain ⟨t', _, _, _, _, _, _, ht', rfl⟩ := h.get_tcb_fwd e
+      rw [ht']; rfl
+    | _ => rw [h.get_of_not_tcb (fun _ e => KernelObject.noConfusion e) e]
+
+private theorem cmwpFoldBody_of_objectsAgreeOffRunLinks
+    (st st' : SystemState) (h : st'.objectsAgreeOffRunLinks st)
+    (acc : Option SeLe4n.Priority) (waiterTid : ThreadId) :
+    cmwpFoldBody st' acc waiterTid = cmwpFoldBody st acc waiterTid := by
+  unfold cmwpFoldBody
+  cases e : st.getTcb? waiterTid with
+  | none =>
+    have hn : st'.getTcb? waiterTid = none := by
+      have := h.getTcb?_isSome waiterTid
+      rw [e] at this
+      exact Option.not_isSome_iff_eq_none.mp (by rw [this]; decide)
+    rw [hn]
+  | some tc =>
+    obtain ⟨tc', _, _, _, _, _, _, ht', rfl⟩ :=
+      h.get_tcb_fwd ((SystemState.getTcb?_eq_some_iff st waiterTid tc).mp e)
+    rw [(SystemState.getTcb?_eq_some_iff st' waiterTid tc').mpr ht']
+    simp only [effectiveSchedParams_of_objectsAgreeOffRunLinks st st' _ h]
+    rfl
+
+theorem computeMaxWaiterPriority_of_objectsAgreeOffRunLinks
+    (st st' : SystemState) (tid : ThreadId) (h : st'.objectsAgreeOffRunLinks st)
+    (hObjIdx : st'.objectIndex = st.objectIndex) :
+    computeMaxWaiterPriority st' tid = computeMaxWaiterPriority st tid := by
+  rw [computeMaxWaiterPriority_eq_cmwpFoldBody, computeMaxWaiterPriority_eq_cmwpFoldBody,
+      waitersOf_of_objectsAgreeOffRunLinks st st' tid h hObjIdx]
+  generalize (none : Option SeLe4n.Priority) = acc
+  induction (waitersOf st tid) generalizing acc with
+  | nil => rfl
+  | cons hd tl ih =>
+    simp only [List.foldl_cons]
+    rw [cmwpFoldBody_of_objectsAgreeOffRunLinks st st' h acc hd]
+    exact ih _
+
+theorem blockingServer_of_objectsAgreeOffRunLinks
+    (st st' : SystemState) (t : ThreadId) (h : st'.objectsAgreeOffRunLinks st) :
+    blockingServer st' t = blockingServer st t := by
+  unfold blockingServer
+  cases e : st.getTcb? t with
+  | none =>
+    have hn : st'.getTcb? t = none := by
+      have := h.getTcb?_isSome t
+      rw [e] at this
+      exact Option.not_isSome_iff_eq_none.mp (by rw [this]; decide)
+    rw [hn]
+  | some tc =>
+    obtain ⟨tc', _, _, _, _, _, _, ht', rfl⟩ :=
+      h.get_tcb_fwd ((SystemState.getTcb?_eq_some_iff st t tc).mp e)
+    rw [(SystemState.getTcb?_eq_some_iff st' t tc').mpr ht']; rfl
 
 -- ============================================================================
 -- WS-RC R5.B.2 / Phase P1: Per-field frame for computeMaxWaiterPriority

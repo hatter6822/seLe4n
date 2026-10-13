@@ -105,16 +105,12 @@ theorem schedContextUnbind_confinedToCores (vScId : SeLe4n.ValidObjId)
           -- their five frames were carried here and never fired
           simp_all [SystemState.updateTcb_scheduler, SystemState.rewriteObject_scheduler,
             SystemState.updateTcb_machine, SystemState.rewriteObject_machine,
+            SchedContextOps.schedContextUnbindQueueStage_runQueueOnCore_ne,
             SchedulerState.setCurrentOnCore_runQueueOnCore,
-            SchedulerState.setRunQueueOnCore_runQueueOnCore_ne,
             SchedulerState.setCurrentOnCore_currentOnCore_ne,
-            SchedulerState.setRunQueueOnCore_currentOnCore,
             SchedulerState.setCurrentOnCore_activeDomainOnCore,
-            SchedulerState.setRunQueueOnCore_activeDomainOnCore,
             SchedulerState.setCurrentOnCore_domainTimeRemainingOnCore,
-            SchedulerState.setRunQueueOnCore_domainTimeRemainingOnCore,
-            SchedulerState.setCurrentOnCore_domainScheduleIndexOnCore,
-            SchedulerState.setRunQueueOnCore_domainScheduleIndexOnCore]
+            SchedulerState.setCurrentOnCore_domainScheduleIndexOnCore]
       · next hNoTcb =>
         rw [Except.ok.injEq, Prod.mk.injEq] at hStep
         obtain ⟨-, hs⟩ := hStep
@@ -218,47 +214,50 @@ theorem schedContextBind_confinedToCores (vScId : SeLe4n.ValidObjId)
             · have hne : determineTargetCore st vThreadId.val ≠ c := fun h => hc h.symm
               -- KSC-1: the key-change flag wraps the bind's final state and the
               -- placement arm raises the home core's flag; neither moves a slot.
+              -- WS-ZA ZA4.5: both queue arms write through the thread's TCB
+              -- run-queue links, on the home core only.
               refine (markKeyChangeFor_runQueueOnCore _ _ _ _).trans ?_
               split
-              · exact SchedulerState.setRunQueueOnCore_runQueueOnCore_ne _ _ c _ (hHome ▸ hne)
+              · rw [SystemState.runRequeueOnCore_runQueueOnCore_ne _ _ c _ _ (hHome ▸ hne)]
               · split
-                · exact (SchedulerState.markReschedulePendingOnCore_runQueueOnCore _ _ _).trans
-                    (SchedulerState.setRunQueueOnCore_runQueueOnCore_ne _ _ c _ (hHome ▸ hne))
+                · rw [SystemState.markReschedulePendingOnCore, SchedulerState.markReschedulePendingOnCore_runQueueOnCore,
+                    SystemState.runEnqueueOnCore_runQueueOnCore_ne _ _ c _ _ (hHome ▸ hne)]
                 · rfl
             · refine (markKeyChangeFor_currentOnCore _ _ _ _).trans ?_
               split
-              · exact SchedulerState.setRunQueueOnCore_currentOnCore _ _ c _
+              · rw [SystemState.runRequeueOnCore_currentOnCore]
               · split
-                · exact (SchedulerState.markReschedulePendingOnCore_currentOnCore _ _ _).trans
-                    (SchedulerState.setRunQueueOnCore_currentOnCore _ _ c _)
+                · rw [SystemState.markReschedulePendingOnCore, SchedulerState.markReschedulePendingOnCore_currentOnCore,
+                    SystemState.runEnqueueOnCore_currentOnCore]
                 · rfl
             · refine (markKeyChangeFor_activeDomainOnCore _ _ _ _).trans ?_
               split
-              · exact SchedulerState.setRunQueueOnCore_activeDomainOnCore _ _ c _
+              · rw [SystemState.runRequeueOnCore_activeDomainOnCore]
               · split
-                · exact (SchedulerState.markReschedulePendingOnCore_activeDomainOnCore _ _ _).trans
-                    (SchedulerState.setRunQueueOnCore_activeDomainOnCore _ _ c _)
+                · rw [SystemState.markReschedulePendingOnCore, SchedulerState.markReschedulePendingOnCore_activeDomainOnCore,
+                    SystemState.runEnqueueOnCore_activeDomainOnCore]
                 · rfl
             · refine (markKeyChangeFor_domainTimeRemainingOnCore _ _ _ _).trans ?_
               split
-              · exact SchedulerState.setRunQueueOnCore_domainTimeRemainingOnCore _ _ c _
+              · rw [SystemState.runRequeueOnCore_domainTimeRemainingOnCore]
               · split
-                · exact (SchedulerState.markReschedulePendingOnCore_domainTimeRemainingOnCore _ _ _).trans
-                    (SchedulerState.setRunQueueOnCore_domainTimeRemainingOnCore _ _ c _)
+                · rw [SystemState.markReschedulePendingOnCore, SchedulerState.markReschedulePendingOnCore_domainTimeRemainingOnCore,
+                    SystemState.runEnqueueOnCore_domainTimeRemainingOnCore]
                 · rfl
             · refine (markKeyChangeFor_domainScheduleIndexOnCore _ _ _ _).trans ?_
               split
-              · exact SchedulerState.setRunQueueOnCore_domainScheduleIndexOnCore _ _ c _
+              · rw [SystemState.runRequeueOnCore_domainScheduleIndexOnCore]
               · split
-                · exact (SchedulerState.markReschedulePendingOnCore_domainScheduleIndexOnCore _ _ _).trans
-                    (SchedulerState.setRunQueueOnCore_domainScheduleIndexOnCore _ _ c _)
+                · rw [SystemState.markReschedulePendingOnCore, SchedulerState.markReschedulePendingOnCore_domainScheduleIndexOnCore,
+                    SystemState.runEnqueueOnCore_domainScheduleIndexOnCore]
                 · rfl
-            · -- registers: untouched on all three arms, but the projection only
-              -- reduces once the run-queue `if`s are resolved.
+            · -- registers: untouched on all three arms.
               refine (congrArg (fun m => m.regsOnCore c) (markKeyChangeFor_machine _ _ _)).trans ?_
               split
-              · rfl
-              · split <;> rfl
+              · rw [SystemState.runRequeueOnCore_machine]
+              · split
+                · rw [SystemState.markReschedulePendingOnCore, SystemState.runEnqueueOnCore_machine]
+                · rfl
           · exact absurd hStep (by simp)
       · exact absurd hStep (by simp)
   · exact absurd hStep (by simp)
@@ -465,17 +464,34 @@ theorem schedContextConfigureBoundPropagate_tcbChainFields (stStored : SystemSta
     · rfl
   · rw [if_neg hPrioEq]
     try dsimp only []
-    by_cases hMem : boundTid ∈ stStored.scheduler.runQueueOnCore
+    by_cases hMem : ({ stStored with objects := (stStored.objects.insert boundTid.toObjId
+          (.tcb { boundTcb with priority := ⟨priority⟩ })) } : SystemState).queuedOn
         (determineTargetCore { stStored with objects := (stStored.objects.insert boundTid.toObjId
-          (.tcb { boundTcb with priority := ⟨priority⟩ })) } boundTid)
+          (.tcb { boundTcb with priority := ⟨priority⟩ })) } boundTid) boundTid = true
     · rw [if_pos hMem]
+      -- The re-key moves only the thread's TCB run-queue links (WS-ZA ZA4.5),
+      -- which neither field reads.
+      have hQ := (SystemState.runRequeueOnCore_objectsAgreeOffRunLinks
+        { stStored with objects := (stStored.objects.insert boundTid.toObjId
+          (.tcb { boundTcb with priority := ⟨priority⟩ })) }
+        (determineTargetCore { stStored with objects := (stStored.objects.insert boundTid.toObjId
+          (.tcb { boundTcb with priority := ⟨priority⟩ })) } boundTid) boundTid
+        { boundTcb with priority := ⟨priority⟩ }.boostedPriority)
+      have hQt := (TCB.map_proj_eq_of_map_withoutRunLinks_eq (fun x => (x.cpuAffinity, x.ipcState))
+        (hQ.getTcb? t)).trans (hW t)
+      have hInvQ := SystemState.runRequeueOnCore_objects_invExt
+        { stStored with objects := (stStored.objects.insert boundTid.toObjId
+          (.tcb { boundTcb with priority := ⟨priority⟩ })) }
+        (determineTargetCore { stStored with objects := (stStored.objects.insert boundTid.toObjId
+          (.tcb { boundTcb with priority := ⟨priority⟩ })) } boundTid) boundTid
+        { boundTcb with priority := ⟨priority⟩ }.boostedPriority hInvW
       split
       · rename_i cur hCur _
         split
-        · exact hW t
+        · exact hQt
         · exact (insertTcb_tcbChainFields _ _ boundTid cur { cur with domain := ⟨domain⟩ }
-            hInvW (hRaw _ _ hCur) rfl rfl rfl t).trans (hW t)
-      · exact hW t
+            hInvQ (hRaw _ _ hCur) rfl rfl rfl t).trans hQt
+      · exact hQt
     · rw [if_neg hMem]
       split
       · rename_i cur hCur _
@@ -650,33 +666,51 @@ theorem schedContextConfigure_confinedToCores (vScId : SeLe4n.ValidObjId)
                 ((try dsimp only [SystemState.rewriteObject]); repeat' split) <;>
                 first
                   -- KSC-1: every propagate arm is wrapped by the key-change
-                  -- flag write, which moves no slot; strip it first.
+                  -- flag write, which moves no slot; strip it first.  The
+                  -- re-bucket alternative goes first in each group: a plain
+                  -- `exact` against a link-write state unfolds it and runs out
+                  -- of heartbeats instead of failing.
                   | (rw [markKeyChangeFor_runQueueOnCore]
                      first
-                       | exact hStoredConf.runQueue c hNil
-                       | (rw [SchedulerState.setRunQueueOnCore_runQueueOnCore_ne _ _ c _ hne]
-                          exact hStoredConf.runQueue c hNil))
+                       | (rw [SystemState.runRequeueOnCore_runQueueOnCore_ne _ _ c _ _ hne]
+                          exact hStoredConf.runQueue c hNil)
+                       | exact hStoredConf.runQueue c hNil)
                   | (rw [markKeyChangeFor_currentOnCore]
                      first
-                       | exact hStoredConf.current c hNil
-                       | (rw [SchedulerState.setRunQueueOnCore_currentOnCore]
-                          exact hStoredConf.current c hNil))
+                       | (rw [SystemState.runRequeueOnCore_currentOnCore]
+                          exact hStoredConf.current c hNil)
+                       | exact hStoredConf.current c hNil)
                   | (rw [markKeyChangeFor_activeDomainOnCore]
                      first
-                       | exact hStoredConf.activeDomain c hNil
-                       | (rw [SchedulerState.setRunQueueOnCore_activeDomainOnCore]
-                          exact hStoredConf.activeDomain c hNil))
+                       | (rw [SystemState.runRequeueOnCore_activeDomainOnCore]
+                          exact hStoredConf.activeDomain c hNil)
+                       | exact hStoredConf.activeDomain c hNil)
                   | (rw [markKeyChangeFor_domainTimeRemainingOnCore]
                      first
-                       | exact hStoredConf.domainTimeRemaining c hNil
-                       | (rw [SchedulerState.setRunQueueOnCore_domainTimeRemainingOnCore]
-                          exact hStoredConf.domainTimeRemaining c hNil))
+                       | (rw [SystemState.runRequeueOnCore_domainTimeRemainingOnCore]
+                          exact hStoredConf.domainTimeRemaining c hNil)
+                       | exact hStoredConf.domainTimeRemaining c hNil)
                   | (rw [markKeyChangeFor_domainScheduleIndexOnCore]
                      first
-                       | exact hStoredConf.domainScheduleIndex c hNil
-                       | (rw [SchedulerState.setRunQueueOnCore_domainScheduleIndexOnCore]
-                          exact hStoredConf.domainScheduleIndex c hNil))
-                  | (rw [markKeyChangeFor_machine]; exact hStoredConf.regs c hNil)
+                       | (rw [SystemState.runRequeueOnCore_domainScheduleIndexOnCore]
+                          exact hStoredConf.domainScheduleIndex c hNil)
+                       | exact hStoredConf.domainScheduleIndex c hNil)
+                  | (rw [markKeyChangeFor_machine]
+                     first
+                       | (rw [SystemState.runRequeueOnCore_machine]; exact hStoredConf.regs c hNil)
+                       | exact hStoredConf.regs c hNil)
+                  -- arms that take the run-queue re-bucket but no flag
+                  | (rw [SystemState.runRequeueOnCore_runQueueOnCore_ne _ _ c _ _ hne]
+                     exact hStoredConf.runQueue c hNil)
+                  | (rw [SystemState.runRequeueOnCore_currentOnCore]
+                     exact hStoredConf.current c hNil)
+                  | (rw [SystemState.runRequeueOnCore_activeDomainOnCore]
+                     exact hStoredConf.activeDomain c hNil)
+                  | (rw [SystemState.runRequeueOnCore_domainTimeRemainingOnCore]
+                     exact hStoredConf.domainTimeRemaining c hNil)
+                  | (rw [SystemState.runRequeueOnCore_domainScheduleIndexOnCore]
+                     exact hStoredConf.domainScheduleIndex c hNil)
+                  | (rw [SystemState.runRequeueOnCore_machine]; exact hStoredConf.regs c hNil)
                   -- arms that stop at `stStored` / `stWithTcb` (object writes only)
                   | exact hStoredConf.runQueue c hNil
                   | exact hStoredConf.current c hNil
@@ -684,17 +718,6 @@ theorem schedContextConfigure_confinedToCores (vScId : SeLe4n.ValidObjId)
                   | exact hStoredConf.domainTimeRemaining c hNil
                   | exact hStoredConf.domainScheduleIndex c hNil
                   | exact hStoredConf.regs c hNil
-                  -- arms that additionally take the run-queue re-bucket
-                  | (rw [SchedulerState.setRunQueueOnCore_runQueueOnCore_ne _ _ c _ hne]
-                     exact hStoredConf.runQueue c hNil)
-                  | (rw [SchedulerState.setRunQueueOnCore_currentOnCore]
-                     exact hStoredConf.current c hNil)
-                  | (rw [SchedulerState.setRunQueueOnCore_activeDomainOnCore]
-                     exact hStoredConf.activeDomain c hNil)
-                  | (rw [SchedulerState.setRunQueueOnCore_domainTimeRemainingOnCore]
-                     exact hStoredConf.domainTimeRemaining c hNil)
-                  | (rw [SchedulerState.setRunQueueOnCore_domainScheduleIndexOnCore]
-                     exact hStoredConf.domainScheduleIndex c hNil)
                   | rfl
             · -- the bound TCB vanished behind the store: no scheduling effect
               next hNoTcb =>

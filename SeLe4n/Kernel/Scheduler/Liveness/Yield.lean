@@ -20,13 +20,13 @@ open SeLe4n.Model
 /-- D5-G: `rotateToBack` preserves membership. Re-export of RunQueue lemma. -/
 theorem rotateToBack_preserves_contains (rq : RunQueue) (tid t : ThreadId) :
     (rq.rotateToBack tid).contains t = rq.contains t :=
-  RunQueue.rotateToBack_contains rq tid t
+  RunQueue.contains_rotateToBack rq tid t
 
 /-- D5-G: After yield, the yielding thread is still in the run queue (it was
 re-inserted and rotated to back). The thread does NOT leave the queue on yield. -/
 theorem yield_preserves_membership (rq : RunQueue) (tid : ThreadId) (prio : Priority) :
     ((rq.insert tid prio).rotateToBack tid).contains tid = true := by
-  rw [RunQueue.rotateToBack_contains]
+  rw [RunQueue.contains_rotateToBack]
   have : tid ∈ rq.insert tid prio := (RunQueue.mem_insert rq tid prio tid).mpr (Or.inr rfl)
   exact this
 

@@ -261,8 +261,8 @@ def perCoreCbsTheorems : List PerCoreCbsTheorem :=
     -- ── SM5.H.4 (§6c) the full-thread-migration run-queue move (.migration) ──
     pccbst! "migrateRunQueueOnAffinityChange: the run-queue migration on an affinity change (SM5.H.4 full thread migration)"
       migrateRunQueueOnAffinityChange .migration,
-    pccbst! "migrateRunQueueOnAffinityChange_objects: the run-queue migration never touches the object store"
-      migrateRunQueueOnAffinityChange_objects .migration,
+    pccbst! "migrateRunQueueOnAffinityChange_objectsAgreeOffRunLinks: the run-queue migration touches the object store only in run-queue links"
+      migrateRunQueueOnAffinityChange_objectsAgreeOffRunLinks .migration,
     pccbst! "migrateRunQueueOnAffinityChange_machine: the run-queue migration never advances the timer"
       migrateRunQueueOnAffinityChange_machine .migration,
     pccbst! "migrateRunQueueOnAffinityChange_replenishQueueOnCore: the run-queue migration frames every replenish queue"

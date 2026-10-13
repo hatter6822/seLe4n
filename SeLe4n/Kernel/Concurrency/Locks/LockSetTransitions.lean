@@ -1271,14 +1271,22 @@ five-argument form survives unchanged. -/
 
 /-- WS-SM SM3.B.3: `lockSet` for `notificationWait`.
 
-Caller TCB blocks (write); notification mutates (waiter list
-append OR badge consumption); CSpace read. -/
+Caller TCB blocks (write); notification mutates (waiter queue
+append OR badge consumption); CSpace read.
+
+**WS-ZA ZA4.4**: and the queue's old tail, whose successor link a blocking wait
+points at the caller (the waiters link through their TCBs).  `none` when the
+queue is empty or the wait consumes a badge; the state-resolved instance is
+`lockSet_notificationWaitOnCore`. -/
 def lockSet_notificationWait (callerTid : ThreadId)
-    (cnodeRootObjId : ObjId) (notificationObjId : ObjId) : LockSet :=
-  lockSetOfList
-    [(tcbLock callerTid, .write),
-     (cnodeLock cnodeRootObjId, .read),
-     (notificationLock notificationObjId, .write)]
+    (cnodeRootObjId : ObjId) (notificationObjId : ObjId)
+    (tailTcb : Option ThreadId) : LockSet :=
+  lockSetExtendOpt
+    (lockSetOfList
+      [(tcbLock callerTid, .write),
+       (cnodeLock cnodeRootObjId, .read),
+       (notificationLock notificationObjId, .write)])
+    (tailTcb.map (fun t => (tcbLock t, .write)))
 
 /-! ## Capability syscalls (4 transitions) -/
 
@@ -2600,23 +2608,34 @@ theorem lockSet_replyRecv_endpoint_write_mem (callerTid : ThreadId)
 /-- **WS-RR RR7.11**: `.notificationWait`'s caller TCB — it blocks, or consumes
 a pending badge into its own message field. -/
 theorem lockSet_notificationWait_caller_tcb_write_mem (callerTid : ThreadId)
-    (cnodeRootObjId notificationObjId : ObjId) :
+    (cnodeRootObjId notificationObjId : ObjId) (tailTcb : Option ThreadId) :
     (tcbLock callerTid, AccessMode.write)
-      ∈ (lockSet_notificationWait callerTid cnodeRootObjId notificationObjId).pairs := by
+      ∈ (lockSet_notificationWait callerTid cnodeRootObjId notificationObjId tailTcb).pairs := by
   unfold lockSet_notificationWait lockSetOfList
   simp only [List.foldl]
-  exact LockSet.mem_insertOrMerge_write_of_mem_write _ _ _ _
+  exact mem_write_lockSetExtendOpt _ _ _
     (LockSet.mem_insertOrMerge_write_of_mem_write _ _ _ _
-      (LockSet.mem_insertOrMerge_write_self _ _))
+      (LockSet.mem_insertOrMerge_write_of_mem_write _ _ _ _
+        (LockSet.mem_insertOrMerge_write_self _ _)))
 
 /-- **WS-RR RR7.11**: and the notification it waits on, whose waiter list or
 badge the wait mutates. -/
 theorem lockSet_notificationWait_notification_write_mem (callerTid : ThreadId)
-    (cnodeRootObjId notificationObjId : ObjId) :
+    (cnodeRootObjId notificationObjId : ObjId) (tailTcb : Option ThreadId) :
     (notificationLock notificationObjId, AccessMode.write)
-      ∈ (lockSet_notificationWait callerTid cnodeRootObjId notificationObjId).pairs := by
+      ∈ (lockSet_notificationWait callerTid cnodeRootObjId notificationObjId tailTcb).pairs := by
   unfold lockSet_notificationWait lockSetOfList
   simp only [List.foldl]
+  exact mem_write_lockSetExtendOpt _ _ _ (LockSet.mem_insertOrMerge_write_self _ _)
+
+/-- **WS-ZA ZA4.4**: and the old tail, whose successor link the blocking wait
+writes. -/
+theorem lockSet_notificationWait_tail_tcb_write_mem (callerTid : ThreadId)
+    (cnodeRootObjId notificationObjId : ObjId) (t : ThreadId) :
+    (tcbLock t, AccessMode.write)
+      ∈ (lockSet_notificationWait callerTid cnodeRootObjId notificationObjId (some t)).pairs := by
+  unfold lockSet_notificationWait
+  simp only [lockSetExtendOpt, Option.map_some]
   exact LockSet.mem_insertOrMerge_write_self _ _
 
 /-- **WS-RR RR7.11**: the receive leg's capability install declares the
@@ -5970,10 +5989,10 @@ theorem lockSet_consistent_declassifySignal (callerTid : ThreadId)
 
 /-- WS-SM SM3.B.4 for `.notificationWait`. -/
 theorem lockSet_consistent_notificationWait (callerTid : ThreadId)
-    (cnRoot nId : ObjId) :
-    ∀ p ∈ (lockSet_notificationWait callerTid cnRoot nId).pairs,
+    (cnRoot nId : ObjId) (tailTcb : Option ThreadId) :
+    ∀ p ∈ (lockSet_notificationWait callerTid cnRoot nId tailTcb).pairs,
       p.fst.kind ∈ permittedKinds .notificationWait :=
-  lockSet_consistent_of_extended_base _ _
+  lockSet_consistent_base_plus_opt _ _ _
     (by intro p hMem
         rcases List.mem_cons.mp hMem with h | hMem
         · rw [h]; simp; decide
@@ -5982,6 +6001,10 @@ theorem lockSet_consistent_notificationWait (callerTid : ThreadId)
         rcases List.mem_cons.mp hMem with h | hMem
         · rw [h]; simp; decide
         exact absurd hMem (by intro h; cases h))
+    (by intro pp hpp
+        cases tailTcb with
+        | none => simp at hpp
+        | some t => simp at hpp; rw [← hpp]; simp; decide)
 
 /-- WS-SM SM3.B.4 for `.cspaceMint`. -/
 theorem lockSet_consistent_cspaceMint (callerTid : ThreadId)

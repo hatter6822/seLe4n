@@ -129,7 +129,7 @@ seLe4n uses `Std.HashMap` and `Std.HashSet` for all kernel hot paths. This is a 
 | Object store | Array indexed by ID | `RHTable ObjId KernelObject` (verified Robin Hood table since WS-Q2) |
 | CNode slots | Array indexed by slot | `UniqueSlotMap Capability` (WS-RC R4.A structural promotion of the WS-N4 `RHTable Slot Capability`) |
 | VSpace mappings | Page table tree | `RHTable VAddr (PAddr × PagePermissions)` with W^X enforcement (WS-Q2) |
-| Run queue | Linked list | `RHTable`/`RHSet`-backed `RunQueue` (+ `threadPriority`/`flat`/`size` indices) with dequeue-on-dispatch (WS-H12b, WS-Q2) |
+| Run queue | Linked list | Per-core doubly linked list with a list per priority, links in the TCBs (as seL4) and the ends per core, written in place; dequeue-on-dispatch (WS-H12b, WS-Q2, WS-ZA ZA4.5) |
 | CDT children | Linked list | `RHTable CdtNodeId (List CdtNodeId)` (WS-Q2) |
 
 HashMap key uniqueness is structural (guaranteed by the data structure), so properties like `slotsUnique` become trivially true. This eliminated entire classes of proof obligations during the WS-G migration.

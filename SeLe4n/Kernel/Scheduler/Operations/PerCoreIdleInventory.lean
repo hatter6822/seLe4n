@@ -139,8 +139,8 @@ def perCoreIdleTheorems : List PerCoreIdleTheorem :=
     -- ── SM5.E.3 enqueue op + frame / membership / preservation (.enqueue) ──
     pcit! "enqueueIdleThreadOnCore: make core c's idle thread run-queue-resident (SM5.E.3)"
       enqueueIdleThreadOnCore .enqueue,
-    pcit! "enqueueIdleThreadOnCore_objects: the enqueue's object-store write (definitional)"
-      enqueueIdleThreadOnCore_objects .enqueue,
+    pcit! "enqueueIdleThreadOnCore_objectsAgreeOffRunLinks: the enqueue's object-store write, off the run-queue links"
+      enqueueIdleThreadOnCore_objectsAgreeOffRunLinks .enqueue,
     pcit! "enqueueIdleThreadOnCore_scheduler: the enqueue's scheduler write (definitional)"
       enqueueIdleThreadOnCore_scheduler .enqueue,
     pcit! "enqueueIdleThreadOnCore_runQueueOnCore_self: core c's run queue gains the idle thread"
@@ -230,8 +230,8 @@ def perCoreIdleTheorems : List PerCoreIdleTheorem :=
       scheduleOrIdleOnCore .dispatch,
     pcit! "dispatchIdleOnCore_currentOnCore: dispatching idle sets current to the idle thread"
       dispatchIdleOnCore_currentOnCore .dispatch,
-    pcit! "dispatchIdleOnCore_objects: dispatching idle never touches the object store"
-      dispatchIdleOnCore_objects .dispatch,
+    pcit! "dispatchIdleOnCore_objectsAgreeOffRunLinks: dispatching idle touches the object store only in run-queue links"
+      dispatchIdleOnCore_objectsAgreeOffRunLinks .dispatch,
     pcit! "dispatchIdleOnCore_runQueueOnCore: idle is removed from the run queue (dequeue-on-dispatch)"
       dispatchIdleOnCore_runQueueOnCore .dispatch,
     pcit! "dispatchIdleOnCore_activeDomainOnCore: dispatching idle frames the active domain"

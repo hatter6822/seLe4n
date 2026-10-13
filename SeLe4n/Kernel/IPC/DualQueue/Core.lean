@@ -1095,7 +1095,7 @@ open SeLe4n.Kernel.RobinHood
     cancellation reclaim needs the same statement about `cpuAffinity`, and the
     four-insert chain's analysis is a property of the *operation*, not of the
     field.  The two instances are `endpointQueueRemove_getTcb_upToReg` and
-    `endpointQueueRemove_getTcb_upToAffinity` below. -/
+    `endpointQueueRemove_getTcb_upToPlacement` below. -/
 private def FieldRefines {α : Type} (f : TCB → α)
     (base T : RHTable SeLe4n.ObjId KernelObject) : Prop :=
   ∀ k x, base.get? k = some (.tcb x) →
@@ -1154,9 +1154,8 @@ private theorem FieldRefines.insert_link_update {α : Type} (f : TCB → α)
     alone.  The four conditional inserts write queue links and the removed
     thread's own link clear, so `f` carries whenever it reads none of those. -/
 theorem endpointQueueRemove_getTcb_upToField {α : Type} (f : TCB → α)
-    (hLinkFree : ∀ (t : TCB) (qp : Option SeLe4n.ThreadId) (qpp : Option QueuePPrev)
-      (qn : Option SeLe4n.ThreadId),
-      f { t with queuePrev := qp, queuePPrev := qpp, queueNext := qn } = f t)
+    (hLinkFree : ∀ (t : TCB) (qp qpp qn : Nat),
+      f { t with queuePrevCode := qp, queuePPrevCode := qpp, queueNextCode := qn } = f t)
     (endpointId : SeLe4n.ObjId) (isReceiveQ : Bool) (tid : SeLe4n.ThreadId)
     (st st' : SystemState) (hInv : st.objects.invExt)
     (h : endpointQueueRemove endpointId isReceiveQ tid st = .ok st')
@@ -1240,33 +1239,33 @@ theorem endpointQueueRemove_getTcb_upToField {α : Type} (f : TCB → α)
                       exact FieldRefines.insert_link_update f st.objects st.objects
                         nextTid.toObjId nt _ hInv (FieldRefines.rfl_self f st.objects) hN1 (hLinkFree _ _ _ _).symm
                     | endpoint _ | notification _ | cnode _ | vspaceRoot _ | untyped _ | schedContext _ | reply _ | frame _ | pageTable _ =>
-                      simp only []; exact FieldRefines.rfl_self f st.objects
+                      (try simp only []); exact FieldRefines.rfl_self f st.objects
                 | some pobj => cases pobj with
                   | tcb pt =>
-                    simp only []
+                    (try simp only [])
                     -- objs₁ = st.objects.insert prevTid (.tcb {pt with queueNext := some nextTid})
                     have hR1 : FieldRefines f st.objects
                         (st.objects.insert prevTid.toObjId
-                          (.tcb { pt with queueNext := some nextTid })) :=
+                          (.tcb { pt with queueNextCode := tcb.queueNextCode })) :=
                       FieldRefines.insert_link_update f st.objects st.objects prevTid.toObjId
                         pt _ hInv (FieldRefines.rfl_self f st.objects) hP1 (hLinkFree _ _ _ _).symm
                     have hT1 : (st.objects.insert prevTid.toObjId
-                        (.tcb { pt with queueNext := some nextTid })).invExt :=
+                        (.tcb { pt with queueNextCode := tcb.queueNextCode })).invExt :=
                       RHTable.insert_preserves_invExt _ _ _ hInv
                     cases hN1 : (st.objects.insert prevTid.toObjId
-                        (.tcb { pt with queueNext := some nextTid }))[nextTid.toObjId]? with
-                    | none => simp only []; exact hR1
+                        (.tcb { pt with queueNextCode := tcb.queueNextCode }))[nextTid.toObjId]? with
+                    | none => (try simp only []); exact hR1
                     | some nobj => cases nobj with
                       | tcb nt =>
-                        simp only []
+                        (try simp only [])
                         exact FieldRefines.insert_link_update f st.objects
                           (st.objects.insert prevTid.toObjId
-                            (.tcb { pt with queueNext := some nextTid }))
+                            (.tcb { pt with queueNextCode := tcb.queueNextCode }))
                           nextTid.toObjId nt _ hT1 hR1 hN1 (hLinkFree _ _ _ _).symm
                       | endpoint _ | notification _ | cnode _ | vspaceRoot _ | untyped _ | schedContext _ | reply _ | frame _ | pageTable _ =>
-                        simp only []; exact hR1
+                        (try simp only []); exact hR1
                   | endpoint _ | notification _ | cnode _ | vspaceRoot _ | untyped _ | schedContext _ | reply _ | frame _ | pageTable _ =>
-                    simp only []
+                    (try simp only [])
                     -- objs₁ = st.objects (predecessor lookup is not a TCB)
                     cases hN1 : st.objects[nextTid.toObjId]? with
                     | none => simp only []; exact FieldRefines.rfl_self f st.objects
@@ -1289,7 +1288,7 @@ theorem endpointQueueRemove_getTcb_upToField {α : Type} (f : TCB → α)
           injection hx with hx2
           injection hx2 with hxt
           subst hxt
-          exact ⟨{ tcb with queuePrev := none, queuePPrev := none, queueNext := none },
+          exact ⟨{ tcb with queuePrevCode := 0, queuePPrevCode := 0, queueNextCode := 0 },
                  rfl, (hLinkFree _ _ _ _).symm⟩
 
 /-- SM5.I: `endpointQueueRemove` preserves every pre-state TCB at its key with
@@ -1306,16 +1305,16 @@ theorem endpointQueueRemove_getTcb_upToReg
   endpointQueueRemove_getTcb_upToField (fun t => t.registerContext)
     (fun _ _ _ _ => rfl) endpointId isReceiveQ tid st st' hInv h a ot ha
 
-/-- WS-OD OD1.4: the `cpuAffinity` instance.  The cancellation reclaim's
-    `_tcb_lookup` frame carries affinity across the holder abort, and the abort's
+/-- WS-OD OD1.4: the `TCB.placement` instance (home core and run-queue links).  The
+    cancellation reclaim's `_tcb_lookup` frame carries placement across the holder abort, and the abort's
     first write is this splice. -/
-theorem endpointQueueRemove_getTcb_upToAffinity
+theorem endpointQueueRemove_getTcb_upToPlacement
     (endpointId : SeLe4n.ObjId) (isReceiveQ : Bool) (tid : SeLe4n.ThreadId)
     (st st' : SystemState) (hInv : st.objects.invExt)
     (h : endpointQueueRemove endpointId isReceiveQ tid st = .ok st')
     (a : SeLe4n.ObjId) (ot : TCB) (ha : st.objects.get? a = some (.tcb ot)) :
-    ∃ ot', st'.objects.get? a = some (.tcb ot') ∧ ot.cpuAffinity = ot'.cpuAffinity :=
-  endpointQueueRemove_getTcb_upToField (fun t => t.cpuAffinity)
+    ∃ ot', st'.objects.get? a = some (.tcb ot') ∧ ot.placement = ot'.placement :=
+  endpointQueueRemove_getTcb_upToField TCB.placement
     (fun _ _ _ _ => rfl) endpointId isReceiveQ tid st st' hInv h a ot ha
 
 /-- WS-OD OD1.4: the **backward** direction of `FieldRefines` — every TCB `T`
@@ -1368,9 +1367,8 @@ private theorem FieldRefinesBack.insert_link_update {α : Type} {f : TCB → α}
 /-- WS-OD OD1.4: the splice's backward field frame — the donation invariants
     read post-state TCBs and need the pre-state one. -/
 theorem endpointQueueRemove_getTcb_backward_upToField {α : Type} (f : TCB → α)
-    (hLinkFree : ∀ (t : TCB) (qp : Option SeLe4n.ThreadId) (qpp : Option QueuePPrev)
-      (qn : Option SeLe4n.ThreadId),
-      f { t with queuePrev := qp, queuePPrev := qpp, queueNext := qn } = f t)
+    (hLinkFree : ∀ (t : TCB) (qp qpp qn : Nat),
+      f { t with queuePrevCode := qp, queuePPrevCode := qpp, queueNextCode := qn } = f t)
     (endpointId : SeLe4n.ObjId) (isReceiveQ : Bool) (tid : SeLe4n.ThreadId)
     (st st' : SystemState) (hInv : st.objects.invExt)
     (h : endpointQueueRemove endpointId isReceiveQ tid st = .ok st')
