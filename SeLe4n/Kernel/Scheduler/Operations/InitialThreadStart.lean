@@ -17,14 +17,14 @@ The boot installs a deployment's threads `.Inactive`: `bootSafeTcbCheck`
 requires it, since a configuration describing a thread mid flight would describe
 state no boot built.  A thread the deployment **designates** as an initial
 thread is then *started* by this operation — marked `.Ready` and placed on its
-home core's run queue — after the idle enqueue, so each core's first scheduling
-point dispatches it ahead of that core's idle thread by priority.
+home core's run queue — after the idle store, so each core's first scheduling
+point dispatches it; the core's idle thread runs only when its queue is empty.
 
 **One body, the kernel model's.**  The start is `enqueueRunnableOnCore` — the
 step every wake and resume ends in — preceded by the one field it does not
 write, the thread-state flag.  A queued thread whose flag still read `.Inactive`
 would falsify `threadInactiveFlagConsistent` on the first state the kernel runs.
-It is the boot's counterpart of `enqueueIdleThreadOnCore` and lives in the
+It is the boot's counterpart of `storeIdleThreadOnCore` and lives in the
 kernel model for the same reason (`v0.35.68`): a second body in the boot would
 be a second answer to "what does it mean to make a thread runnable".
 

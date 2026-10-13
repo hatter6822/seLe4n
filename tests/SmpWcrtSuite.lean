@@ -29,9 +29,9 @@ Tier-2 (runtime) + Tier-3 (surface anchor) coverage for the WS-SM Phase SM5.J
   SM5.J.5 WCRT scenarios): the per-op exact lock-WCRT values, the RPi5
   `≤ maxLockSetSize · 3 · tCs` bound, the typical-syscall `< 1 ms` tick-budget fit,
   the combined `WCRT_smp` decomposition + monotonicity, the per-core idle no-stall
-  on a concrete idle-enqueued fixture **including the ∀-core form on an
+  on a concrete idle-stored fixture **including the ∀-core form on an
   idle-on-all-4-cores fixture** (the non-vacuity witness for
-  `schedulerNoStall_smp_of_idleAvailableB`'s premise), the completion-pass
+  `schedulerNoStall_smp`'s premise), the completion-pass
   refinement checks (execution bridge / cycle-commensurate units / access-mode
   soundness), and the SM5.J inventory partition counts.
 -/
@@ -100,9 +100,7 @@ open SeLe4n.Testing
 #check @kernelWait_le_WCRT_lockSet_of_length_eq
 
 -- SM5.J.4 no-thread-starves-under-SMP liveness (the genuine eventually-scheduled keystone):
-#check @schedulerNoStallOnCore
 #check @schedulerNoStall_smp
-#check @schedulerNoStall_smp_of_idleAvailableB
 #check @boundedKernelWait_smp
 #check @thread_eventually_scheduled_onCore
 #check @thread_eventually_scheduled_within_smp_bound
@@ -184,14 +182,13 @@ example (e : Concurrency.KernelExecution) (c : CoreId) (op : Concurrency.KernelO
     Concurrency.WCRT e c op tCs ≤ WCRT_lockSet ls tCs :=
   kernelWait_le_WCRT_lockSet_of_length_eq e c op ls tCs hlen
 
--- SM5.J.4 (decidable no-stall discharge): the no-stall premise is established by `decide`
--- on any concrete state where every core's idle is available — not assumed.
-example (st : SystemState)
-    (hwf : ∀ c, (st.scheduler.runQueueOnCore c).wellFormed)
-    (hRunnable : ∀ c, runnableThreadsAreTCBsOnCore st c) (hR : st.runQueueRefined)
-    (hAvail : ∀ c, idleAvailableOnCoreB st c = true) :
-    ∀ c : CoreId, ∃ tid, chooseThreadOnCore st c = .ok (some tid) :=
-  schedulerNoStall_smp_of_idleAvailableB st hRunnable hR hAvail
+-- SM5.J.4 (∀-core no-stall): the premise is the decidable `idleDispatchableOnCore`,
+-- established by `decide` on a concrete state and by the boot on the production one.
+example (st : SystemState) (hInv : st.objects.invExt)
+    (hIdle : ∀ c, idleDispatchableOnCore st c = true) :
+    ∀ (c : CoreId) (st' : SystemState), scheduleEffectiveOnCore st c = .ok st' →
+      (st'.scheduler.currentOnCore c).isSome :=
+  schedulerNoStall_smp st hInv hIdle
 
 -- SM5.J.4 (extends R5): an R5-scheduled thread is within the combined SMP bound.
 example (trace : Liveness.SchedulerTrace) (tid : SeLe4n.ThreadId)
@@ -219,16 +216,22 @@ private def tCs60 : Nat := 60
 /-- Core 1 — a non-boot core, used by the per-core footprint scenarios. -/
 private def core1 : CoreId := ⟨1, by decide⟩
 
-/-- Empty boot state, and the same state with the boot core's idle thread enqueued
-(`idleAvailableOnCoreB` then holds — the SM5.J.4 per-core non-stall fixture). -/
+/-- Empty boot state, and the same state with the boot core's idle thread stored
+(`idleDispatchableOnCore` then holds — the SM5.J.4 per-core non-stall fixture). -/
 private def stEmpty : SystemState := BootstrapBuilder.empty.build
-private def stEmptyIdle : SystemState := enqueueIdleThreadOnCore stEmpty bootCoreId
+private def stEmptyIdle : SystemState := storeIdleThreadOnCore stEmpty bootCoreId
 
-/-- The empty boot state with **every** core's idle thread enqueued — the concrete
-∀-core witness for `schedulerNoStall_smp_of_idleAvailableB`'s premise (idle
-available on all `numCores` cores simultaneously). -/
+/-- The empty boot state with **every** core's idle thread stored — the concrete
+∀-core witness for `schedulerNoStall_smp`'s premise (idle dispatchable on all
+`numCores` cores simultaneously). -/
 private def stAllIdle : SystemState :=
-  allCores.foldl (fun st c => enqueueIdleThreadOnCore st c) stEmpty
+  allCores.foldl (fun st c => storeIdleThreadOnCore st c) stEmpty
+
+/-- The current thread core `c`'s scheduling point leaves. -/
+private def scheduledCurrent (st : SystemState) (c : CoreId) : Option SeLe4n.ThreadId :=
+  match scheduleEffectiveOnCore st c with
+  | .ok s => s.scheduler.currentOnCore c
+  | .error _ => none
 
 /-- §3.1: SM5.J.3 — the per-operation lock-WCRT exact values at `tCs = 60`.
 `perLockWaitCost 60 = (numCores − 1) · 60 = 3 · 60 = 180`, so each op's lock-WCRT is
@@ -358,28 +361,26 @@ private def runWcrtSmpChecks : IO Unit := do
               ≤ WCRT_lockSet (chooseThreadOnCoreLockSet bootCoreId) 60))
 
 /-- §3.4: SM5.J.4 — the per-core idle thread guarantees no core stalls.  On the
-idle-enqueued fixture, `idleAvailableOnCoreB` holds and `chooseThreadOnCore` selects
-some thread; on the bare empty core it signals idle-fallback (`.ok none`). -/
+idle-stored fixture, `idleDispatchableOnCore` holds and the scheduling point runs
+the idle thread from the selection fallback; the bare empty core has no idle to
+run. -/
 private def runNoStallChecks : IO Unit := do
-  IO.println "--- §3.4 SM5.J.4 per-core no-stall (idle fallback guarantees a selection) ---"
-  assertBool "after enqueue: idleAvailableOnCoreB holds (idle is an in-domain candidate)"
-    (decide (idleAvailableOnCoreB stEmptyIdle bootCoreId = true))
-  assertBool "after enqueue: chooseThreadOnCore SELECTS the idle thread (no stall)"
-    (selectsByLinks stEmptyIdle bootCoreId (idleThreadId bootCoreId))
-  assertBool "after enqueue: the selection is success (.ok), not an error"
-    (match chooseThreadOnCoreByLinks stEmptyIdle bootCoreId with | .ok (some _) => true | _ => false)
-  assertBool "bare empty core signals idle-fallback (.ok none) — the SM5.E hook"
-    (idleFallbackByLinks stEmpty bootCoreId)
-  -- The ∀-CORE non-vacuity witness: `schedulerNoStall_smp_of_idleAvailableB`'s premise
-  -- (every core's idle available) is genuinely satisfiable — enqueue idle on ALL 4
-  -- cores and `decide` the premise + per-core selection on the concrete state.
-  assertBool "all-cores fixture: idleAvailableOnCoreB holds on EVERY core (the ∀-core premise)"
-    (allCores.all (fun c => idleAvailableOnCoreB stAllIdle c))
-  assertBool "all-cores fixture: EVERY core selects its own idle thread (no core stalls)"
-    (allCores.all (fun c => selectsByLinks stAllIdle c (idleThreadId c)))
-  assertBool "all-cores fixture: each core's idle stays on its own queue (no cross-core leak)"
-    (allCores.all (fun c => allCores.all (fun c' =>
-      c == c' || !decide (idleThreadId c ∈ (stAllIdle.runQueueWalk c')))))
+  IO.println "--- §3.4 SM5.J.4 per-core no-stall (the idle fallback leaves a current thread) ---"
+  assertBool "after the store: idleDispatchableOnCore holds"
+    (decide (idleDispatchableOnCore stEmptyIdle bootCoreId = true))
+  assertBool "after the store: the scheduling point runs the idle thread (no stall)"
+    (decide (scheduledCurrent stEmptyIdle bootCoreId = some (idleThreadId bootCoreId)))
+  assertBool "bare empty core: no idle thread is dispatchable"
+    (decide (idleDispatchableOnCore stEmpty bootCoreId = false))
+  -- The ∀-CORE non-vacuity witness: `schedulerNoStall_smp`'s premise (every
+  -- core's idle dispatchable) is genuinely satisfiable — store idle on ALL 4
+  -- cores and `decide` the premise + per-core scheduling point on the concrete state.
+  assertBool "all-cores fixture: idleDispatchableOnCore holds on EVERY core (the ∀-core premise)"
+    (allCores.all (fun c => idleDispatchableOnCore stAllIdle c))
+  assertBool "all-cores fixture: EVERY core runs its own idle thread (no core stalls)"
+    (allCores.all (fun c => scheduledCurrent stAllIdle c == some (idleThreadId c)))
+  assertBool "all-cores fixture: no idle thread is on any run queue"
+    (allCores.all (fun c' => stAllIdle.runQueueWalk c' == []))
 
 /-- §3.5: the completion-pass refinements — the execution-sensitive bridge formula,
 the cycle-commensurate combined bound, and the access-mode soundness. -/
@@ -411,8 +412,8 @@ private def runRefinementChecks : IO Unit := do
 /-- §3.6: the SM5.J theorem-inventory partition counts (compiled-`decide` guards). -/
 private def runInventoryChecks : IO Unit := do
   IO.println "--- §3.6 SM5.J inventory partition counts ---"
-  assertBool "inventory has 44 entries"
-    (decide (perCoreWcrtTheorems.length = 44))
+  assertBool "inventory has 42 entries"
+    (decide (perCoreWcrtTheorems.length = 42))
   assertBool "lockSetWcrt category has 10 entries"
     (decide ((perCoreWcrtTheorems.filter (fun t => t.category == .lockSetWcrt)).length = 10))
   assertBool "rpi5Bound category has 10 entries"
@@ -421,8 +422,8 @@ private def runInventoryChecks : IO Unit := do
     (decide ((perCoreWcrtTheorems.filter (fun t => t.category == .perOp)).length = 14))
   assertBool "executionBridge category has 2 entries"
     (decide ((perCoreWcrtTheorems.filter (fun t => t.category == .executionBridge)).length = 2))
-  assertBool "liveness category has 8 entries"
-    (decide ((perCoreWcrtTheorems.filter (fun t => t.category == .liveness)).length = 8))
+  assertBool "liveness category has 6 entries"
+    (decide ((perCoreWcrtTheorems.filter (fun t => t.category == .liveness)).length = 6))
   assertBool "inventory identifiers are duplicate-free"
     (decide (perCoreWcrtTheorems.map (·.identifier)).Nodup)
 

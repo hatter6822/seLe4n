@@ -739,7 +739,7 @@ theorem switchDomainOnCore_domainTriple_eq_advanceDomainOnCore (st : SystemState
 
 /-- WS-SM SM5.G.5: the rotation footprint's projected keys form a valid `withLockSet`
 acquisition order (trivially — a singleton).  Mirrors the sibling
-`enqueueIdleThreadOnCoreLockSet_pairwise_le`. -/
+`storeIdleThreadOnCoreLockSet_pairwise_le`. -/
 theorem advanceDomainOnCoreLockSet_pairwise_le (c : CoreId) :
     ((advanceDomainOnCoreLockSet c).map (·.1)).Pairwise (· ≤ ·) := by
   simp only [advanceDomainOnCoreLockSet, List.map_cons, List.map_nil]

@@ -105,7 +105,7 @@ invariant.
   SMP-preservation engine plus `<op>_preserves_schedulerInvariantStructural_smp`
   (and the register-bank-extended `…StructuralReg_smp` and the
   Nodup-extended `…StructuralRegNodup_smp`) for every SM5 per-core transition
-  (wake, switch, dispatch, timer tick, domain rotate, idle enqueue, …), and — on
+  (wake, switch, dispatch, timer tick, domain rotate, idle store, …), and — on
   the *operated* core — the strongest per-core establishment each transition
   delivers (including, for the two dispatch transitions, the
   `contextMatchesCurrentOnCore` *establishment* the per-core register banks
@@ -749,34 +749,26 @@ theorem handleRescheduleSgiOnCore_preserves_schedulerInvariantStructural_smp
     · rw [Except.ok.injEq] at h; subst h
       exact clearReschedulePendingOnCore_preserves_schedulerInvariantStructural_smp _ _ hPre           -- does not outrank: st' = st
 
--- ── §3.6  Per-core idle-thread enqueue (`enqueueIdleThreadOnCore`) ──
+-- ── §3.6  Per-core idle-thread store (`storeIdleThreadOnCore`) ──
 
-/-- WS-SM SM5.I.8: enqueuing core `c₀`'s idle thread preserves the structural SMP
-invariant.  On core `c₀` the four conjuncts are preserved by the SM5.E
-`enqueueIdleThreadOnCore_preserves_*` lemmas (the `hNotCur` precondition — the idle
-thread is not core `c₀`'s running thread — is the documented "idle is enqueued as a
-fallback, never while running" discipline); sibling cores are framed; the only
-object change (the idle slot's `createIdleThread`) keeps every key a TCB. -/
-theorem enqueueIdleThreadOnCore_preserves_schedulerInvariantStructural_smp
+/-- WS-SM SM5.I.8: storing core `c₀`'s idle TCB preserves the structural SMP
+invariant.  The store writes no scheduler field — the idle thread is on no run
+queue (seL4's posture) — so every core is framed: current slots and queues are
+unchanged, and the only object change (the idle slot's `readyIdleThread`) keeps
+every resolving key a TCB. -/
+theorem storeIdleThreadOnCore_preserves_schedulerInvariantStructural_smp
     (st : SystemState) (c₀ : CoreId)
     (hInv : st.objects.invExt)
-    (hNotCur : st.scheduler.currentOnCore c₀ ≠ some (idleThreadId c₀))
     (hPre : schedulerInvariantStructural_smp st) :
-    schedulerInvariantStructural_smp (enqueueIdleThreadOnCore st c₀) := by
-  refine schedulerInvariantStructural_smp_of_establish_and_frame (c₀ := c₀) hPre ?_ ?_ ?_ ?_
-  · refine ⟨?_, ?_, ?_, ?_⟩
-    · exact enqueueIdleThreadOnCore_preserves_queueCurrentConsistentOnCore st c₀ hNotCur (hPre c₀).1
-    · exact enqueueIdleThreadOnCore_preserves_currentThreadValidOnCore st c₀ hInv (hPre c₀).2.1
-    · exact enqueueIdleThreadOnCore_preserves_runnableThreadsAreTCBsOnCore st c₀ hInv (hPre c₀).2.2.1
-    · exact enqueueIdleThreadOnCore_preserves_runQueueOnCore_wellFormed st c₀ (hPre c₀).2.2.2
-  · exact fun c' _ => enqueueIdleThreadOnCore_currentOnCore st c₀ c'
-  · exact fun c' hc => enqueueIdleThreadOnCore_runQueueOnCore_ne st c₀ c' hc
-  · intro t hsome
-    by_cases hEq : t = idleThreadId c₀
-    · subst hEq
-      obtain ⟨i, hi, _⟩ := enqueueIdleThreadOnCore_getTcb?_self st c₀ hInv
-      rw [hi]; rfl
-    · rw [enqueueIdleThreadOnCore_getTcb?_ne_isSome st c₀ t hInv hEq]; exact hsome
+    schedulerInvariantStructural_smp (storeIdleThreadOnCore st c₀) := by
+  intro c'
+  refine schedulerInvariantStructural_perCore_frame
+    (storeIdleThreadOnCore_currentOnCore st c₀ c')
+    (storeIdleThreadOnCore_runQueueOnCore st c₀ c') (fun t hsome => ?_) (hPre c')
+  by_cases hEq : t = idleThreadId c₀
+  · subst hEq
+    rw [storeIdleThreadOnCore_getTcb?_self st c₀ hInv]; rfl
+  · rw [storeIdleThreadOnCore_getTcb?_ne st c₀ t hInv hEq]; exact hsome
 
 -- ── §3.7  Per-core CBS replenishment (`replenishOnCore`) ──
 
@@ -1289,35 +1281,33 @@ theorem decrementDomainTimeOnCore_preserves_schedulerInvariantStructuralReg_smp
   exact ⟨tcb, by rw [show (decrementDomainTimeOnCore st c₀).getTcb? tid = st.getTcb? tid from by
     unfold SystemState.getTcb?; rw [decrementDomainTimeOnCore_objects_eq]]; exact ht, rfl⟩
 
-/-- WS-SM SM5.I.8 (register-bank payoff): making core `c₀`'s idle thread available
-preserves the register-bank-extended structural SMP invariant.  The enqueue
-overwrites the idle TCB (`createIdleThread c₀`, register context `default`), so —
+/-- WS-SM SM5.I.8 (register-bank payoff): storing core `c₀`'s idle TCB
+preserves the register-bank-extended structural SMP invariant.  The store
+overwrites the idle TCB (`readyIdleThread c₀`, register context `default`), so —
 unlike the other non-dispatch transitions — `contextMatches` is preserved only
 when the idle thread is **not current on any core** (`hNotCurAny`).  This is the
 seL4-faithful "make idle available while it is not running" precondition (idle is
 core-`c₀`-pinned, so it can only be current on `c₀`; the `∀ c'` form states the
 invariant the dispatch maintains without appealing to affinity placement). -/
-theorem enqueueIdleThreadOnCore_preserves_schedulerInvariantStructuralReg_smp
+theorem storeIdleThreadOnCore_preserves_schedulerInvariantStructuralReg_smp
     (st : SystemState) (c₀ : CoreId)
     (hInv : st.objects.invExt)
     (hNotCurAny : ∀ c', st.scheduler.currentOnCore c' ≠ some (idleThreadId c₀))
     (hPre : schedulerInvariantStructuralReg_smp st) :
-    schedulerInvariantStructuralReg_smp (enqueueIdleThreadOnCore st c₀) := by
+    schedulerInvariantStructuralReg_smp (storeIdleThreadOnCore st c₀) := by
   refine schedulerInvariantStructuralReg_smp_of_base_and_ctx
-    (enqueueIdleThreadOnCore_preserves_schedulerInvariantStructural_smp st c₀ hInv
-      (hNotCurAny c₀) (fun c => (hPre c).1)) ?_
+    (storeIdleThreadOnCore_preserves_schedulerInvariantStructural_smp st c₀ hInv
+      (fun c => (hPre c).1)) ?_
   intro c'
   refine contextMatchesCurrentOnCore_frame_at
-    (enqueueIdleThreadOnCore_currentOnCore st c₀ c')
-    (by rw [enqueueIdleThreadOnCore_machine]) ?_ (hPre c').1.2.1 (hPre c').2
+    (storeIdleThreadOnCore_currentOnCore st c₀ c')
+    (by rw [storeIdleThreadOnCore_machine]) ?_ (hPre c').1.2.1 (hPre c').2
   intro tid tcb hcur htcb
-  -- `tid = current c' ≠ idleThreadId c₀`, so the enqueue's only object write frames it.
+  -- `tid = current c' ≠ idleThreadId c₀`, so the store's only object write frames it.
   have hne : tid ≠ idleThreadId c₀ := by
     intro he; subst he; exact hNotCurAny c' hcur
-  obtain ⟨t', ht', hw⟩ := enqueueIdleThreadOnCore_getTcb?_ne_fwd st c₀ tid hInv hne htcb
-  refine ⟨t', ht', ?_⟩
-  rw [TCB.proj_eq_of_withoutRunLinks_eq TCB.registerContext hw]
-  exact RegisterFile.beq_self _
+  rw [storeIdleThreadOnCore_getTcb?_ne st c₀ tid hInv hne]
+  exact ⟨tcb, htcb, RegisterFile.beq_self _⟩
 
 -- ============================================================================
 -- §4.4  The Nodup-extended structural invariant (`runQueueUniqueOnCore` 6th conjunct)
@@ -1846,22 +1836,20 @@ theorem handleRescheduleSgiOnCore_preserves_schedulerInvariantStructuralRegNodup
     · rw [Except.ok.injEq] at h; subst h
       exact clearReschedulePendingOnCore_preserves_schedulerInvariantStructuralRegNodup_smp _ _ hPre
 
-theorem enqueueIdleThreadOnCore_preserves_schedulerInvariantStructuralRegNodup_smp
+theorem storeIdleThreadOnCore_preserves_schedulerInvariantStructuralRegNodup_smp
     (st : SystemState) (c₀ : CoreId)
     (hInv : st.objects.invExt)
     (hNotCurAny : ∀ c', st.scheduler.currentOnCore c' ≠ some (idleThreadId c₀))
     (hPre : schedulerInvariantStructuralRegNodup_smp st) :
-    schedulerInvariantStructuralRegNodup_smp (enqueueIdleThreadOnCore st c₀) := by
+    schedulerInvariantStructuralRegNodup_smp (storeIdleThreadOnCore st c₀) := by
   refine schedulerInvariantStructuralRegNodup_smp_of_reg_and_nodup
-    (enqueueIdleThreadOnCore_preserves_schedulerInvariantStructuralReg_smp st c₀ hInv hNotCurAny
+    (storeIdleThreadOnCore_preserves_schedulerInvariantStructuralReg_smp st c₀ hInv hNotCurAny
       (fun c => (hPre c).1)) ?_
-  refine runQueueUniqueOnCore_smp_of_operated_and_frame (c₀ := c₀) (fun c => (hPre c).2) ?_
-    (fun c' hc => enqueueIdleThreadOnCore_runQueueOnCore_ne st c₀ c' hc)
-  -- operated core: the enqueue rebuckets idle (`remove` then `insert`).
+  -- No queue is written.
+  intro c'
   unfold runQueueUniqueOnCore
-  rw [enqueueIdleThreadOnCore_runQueueOnCore_self]
-  exact RunQueue.insert_preserves_toList_nodup _ _ _
-    (RunQueue.remove_preserves_toList_nodup _ _ (hPre c₀).2)
+  rw [storeIdleThreadOnCore_runQueueOnCore]
+  exact (hPre c').2
 
 -- ============================================================================
 -- §8  Composite live-tick transition preservation (SM5.I.8 completion)
@@ -4668,17 +4656,15 @@ theorem timerTickOnCore_preserves_allThreadsTimeSlicePositive (st : SystemState)
 -- moved below the `handleRescheduleSgiOnCore` timeslice lemma it now cites
 -- for the local replenish-wake reschedule arms.
 
-/-- `enqueueIdleThreadOnCore` preserves `allThreadsTimeSlicePositive` — it inserts
-the idle TCB (`createIdleThread c`, `timeSlice` the positive TCB default). -/
-theorem enqueueIdleThreadOnCore_preserves_allThreadsTimeSlicePositive (st : SystemState)
+/-- `storeIdleThreadOnCore` preserves `allThreadsTimeSlicePositive` — it inserts
+the idle TCB (`readyIdleThread c`, `timeSlice` the positive TCB default). -/
+theorem storeIdleThreadOnCore_preserves_allThreadsTimeSlicePositive (st : SystemState)
     (c : CoreId) (hInv : st.objects.invExt) (h : allThreadsTimeSlicePositive st) :
-    allThreadsTimeSlicePositive (enqueueIdleThreadOnCore st c) :=
-  allThreadsTimeSlicePositive_of_objectsAgreeOffRunLinks
-    (enqueueIdleThreadOnCore_objectsAgreeOffRunLinks st c hInv)
-    (allThreadsTimeSlicePositive_of_insert_pos hInv
-      (SystemState.withObjectStored_objects st (idleThreadId c).toObjId
-        (KernelObject.tcb (queuedIdleThread c)))
-      (by show 0 < 5; decide) h)
+    allThreadsTimeSlicePositive (storeIdleThreadOnCore st c) :=
+  allThreadsTimeSlicePositive_of_insert_pos hInv
+    (SystemState.withObjectStored_objects st (idleThreadId c).toObjId
+      (KernelObject.tcb (readyIdleThread c)))
+    (by show 0 < 5; decide) h
 
 /-- `switchDomainOnCore` preserves `allThreadsTimeSlicePositive` — its only object
 write is the outgoing register-context save (`saveOutgoingContextOnCore`); the
@@ -4852,13 +4838,13 @@ theorem handleRescheduleSgiOnCore_preserves_schedulerInvariantStrong_smp
   ⟨handleRescheduleSgiOnCore_preserves_schedulerInvariantStructuralRegNodup_smp st c₀ st' hInv hPre.1 hStep,
    handleRescheduleSgiOnCore_preserves_allThreadsTimeSlicePositive st c₀ st' hInv hStep hPre.2⟩
 
-theorem enqueueIdleThreadOnCore_preserves_schedulerInvariantStrong_smp
+theorem storeIdleThreadOnCore_preserves_schedulerInvariantStrong_smp
     (st : SystemState) (c₀ : CoreId) (hInv : st.objects.invExt)
     (hNotCurAny : ∀ c', st.scheduler.currentOnCore c' ≠ some (idleThreadId c₀))
     (hPre : schedulerInvariantStrong_smp st) :
-    schedulerInvariantStrong_smp (enqueueIdleThreadOnCore st c₀) :=
-  ⟨enqueueIdleThreadOnCore_preserves_schedulerInvariantStructuralRegNodup_smp st c₀ hInv hNotCurAny hPre.1,
-   enqueueIdleThreadOnCore_preserves_allThreadsTimeSlicePositive st c₀ hInv hPre.2⟩
+    schedulerInvariantStrong_smp (storeIdleThreadOnCore st c₀) :=
+  ⟨storeIdleThreadOnCore_preserves_schedulerInvariantStructuralRegNodup_smp st c₀ hInv hNotCurAny hPre.1,
+   storeIdleThreadOnCore_preserves_allThreadsTimeSlicePositive st c₀ hInv hPre.2⟩
 
 theorem switchDomainOnCore_preserves_schedulerInvariantStrong_smp
     (st : SystemState) (c₀ : CoreId) (st' : SystemState) (hInv : st.objects.invExt)

@@ -211,7 +211,7 @@ import SeLe4n.Kernel.Scheduler.Invariant.PerCorePreservation
 -- `schedulerInvariantStructural_smp_of_establish_and_frame`.  Transitions
 -- proven to preserve `schedulerInvariantStructural_smp`: advanceDomainOnCore,
 -- enqueueRunnableOnCore, wakeThread, scheduleEffectiveOnCore / scheduleOrIdleOnCore,
--- switchToThreadOnCore, handleRescheduleSgiOnCore, enqueueIdleThreadOnCore,
+-- switchToThreadOnCore, handleRescheduleSgiOnCore, storeIdleThreadOnCore,
 -- replenishOnCore, decrementDomainTimeOnCore.  Plus the suite index (SM5.I.1–I.7,
 -- I.9) bridging the structural core to the full SM4.C aggregate and the SM4.D
 -- cross-subsystem suite.  Every theorem depends only on the standard
@@ -351,16 +351,16 @@ import SeLe4n.Kernel.PerCoreTimerEntry
 -- this module's elaboration.
 import SeLe4n.Kernel.Scheduler.Operations.PerCoreTimerInventory
 -- WS-SM SM5.E: the per-core idle-thread theorem surface — SM5.E.5
--- `idleThread_priority_zero` + field lemmas, the SM5.E.3 `enqueueIdleThreadOnCore`
--- run-queue primitive (frame / membership / `invExt` + run-queue-wellFormed +
--- runnable-are-TCBs preservation), the SM5.E.6 keystone
--- `chooseThreadOnCore_always_succeeds` (+ the `idleThreadEnqueuedOnCore` discharge
--- predicate, its constructive establishment, and the end-to-end non-vacuity
--- witness), and the SM5.E.4 `idleThread_core_locality` (affinity-based + frame
--- companion).  The idle *TCB* and its identities live in
--- `Kernel/Scheduler/IdleThread.lean` and the enqueue primitive
--- `enqueueIdleThreadOnCore` in the production module
--- `Kernel/Scheduler/Operations/IdleEnqueue.lean` (v0.35.68: it is what the
+-- `idleThread_priority_zero` + field lemmas, the SM5.E.3 `storeIdleThreadOnCore`
+-- store primitive (frames / `invExt` + runnable-are-TCBs preservation; the idle
+-- thread is on no run queue, seL4's posture), the SM5.E.6 keystone
+-- `scheduleEffectiveOnCore_current_isSome` (a scheduling point always leaves a
+-- current thread when the idle thread is dispatchable, discharged on the
+-- production boot state), and the SM5.E.4 `idleThread_core_locality`
+-- (affinity-based + frame companion).  The idle *TCB* and its identities live in
+-- `Kernel/Scheduler/IdleThread.lean` and the store primitive
+-- `storeIdleThreadOnCore` in the production module
+-- `Kernel/Scheduler/Operations/IdleStore.lean` (v0.35.68: it is what the
 -- boot runs), which this module consumes; SM5.I's per-core dispatch loop is
 -- the first runtime exerciser.
 import SeLe4n.Kernel.Scheduler.Operations.PerCoreIdle
@@ -373,8 +373,8 @@ import SeLe4n.Kernel.Scheduler.Operations.PerCoreIdle
 -- case.  The production defs (`idleDispatchableOnCore` / `dispatchIdleOnCore` /
 -- `scheduleOrIdleOnCore`) live in `Scheduler.Operations.Core`.
 import SeLe4n.Kernel.Scheduler.Operations.PerCoreDispatch
--- WS-SM SM5.E: the per-core-idle theorem inventory (categories field / enqueue /
--- preservation / lockSet / alwaysSucceeds / locality / dispatch) with the `pcit!`
+-- WS-SM SM5.E: the per-core-idle theorem inventory (categories field / store /
+-- preservation / lockSet / noStall / locality / dispatch) with the `pcit!`
 -- compile-time identifier-validation macro + per-category count + partition-sum +
 -- Nodup witnesses; mirrors `PerCoreTimerInventory`.  A renamed/removed SM5.E
 -- theorem fails this module's elaboration.
@@ -461,15 +461,15 @@ import SeLe4n.Kernel.Scheduler.Operations.PerCoreTickCbsAffinity
 -- SM5.J.3 the per-operation bounds (chooseThread / switch / wake / timerTick /
 -- replenish + advanceDomain / SGI handler / complete tick), and SM5.J.4
 -- no-thread-starves-under-SMP liveness — the genuine 3-way `no_starvation_under_smp`
--- capstone: `schedulerNoStall_smp` per-core non-stall (+ the decidable
--- `schedulerNoStall_smp_of_idleAvailableB` discharge), the eventually-scheduled
+-- capstone: `schedulerNoStall_smp` ∀-core non-stall (discharged on the boot
+-- state by `bootFromPlatformCheckedWithIdleThreads_idleDispatchableOnCore`), the eventually-scheduled
 -- keystone `thread_eventually_scheduled_onCore` (via the production per-core R5
 -- generalisation `Liveness.bounded_scheduling_latency_exists_onCore`), and
 -- `boundedKernelWait_smp` no-unbounded-inversion.  The per-core op footprints are
 -- production-reached; SM5.I's live per-core run loop is the runtime exerciser that
 -- acquires them under `withLockSet`.
 import SeLe4n.Kernel.Scheduler.Operations.PerCoreWcrt
--- WS-SM SM5.J: the WCRT-under-fine-locks theorem inventory — a 44-entry typed
+-- WS-SM SM5.J: the WCRT-under-fine-locks theorem inventory — a 42-entry typed
 -- inventory (5 categories: lockSetWcrt / rpi5Bound / perOp / executionBridge /
 -- liveness) with the `pcwt!` compile-time identifier-validation macro +
 -- per-category count witnesses + partition-sum + kernel-sound

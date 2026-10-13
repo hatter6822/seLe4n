@@ -272,10 +272,16 @@ MACHINERY_PINS = {
     # `macro` declares the driver tactics; none mints a declaration.
     ("SeLe4n/Kernel/IPC/Invariant/RunQueueAgreement/Capability.lean", "macro"): 1,
     ("SeLe4n/Kernel/IPC/Invariant/RunQueueAgreement/Capability.lean", "macro_rules"): 8,
-    ("SeLe4n/Kernel/IPC/Invariant/RunQueueAgreement/Endpoint.lean", "macro"): 2,
-    ("SeLe4n/Kernel/IPC/Invariant/RunQueueAgreement/Endpoint.lean", "macro_rules"): 21,
-    ("SeLe4n/Kernel/IPC/Invariant/RunQueueAgreement/Endpoint.lean", "syntax"): 2,
-    ("SeLe4n/Kernel/IPC/Invariant/RunQueueAgreement/Ipc.lean", "macro_rules"): 5,
+    ("SeLe4n/Kernel/IPC/Invariant/RunQueueAgreement/Endpoint.lean", "macro"): 4,
+    ("SeLe4n/Kernel/IPC/Invariant/RunQueueAgreement/Endpoint.lean", "macro_rules"): 23,
+    ("SeLe4n/Kernel/IPC/Invariant/RunQueueAgreement/Endpoint.lean", "syntax"): 3,
+    ("SeLe4n/Kernel/IPC/Invariant/RunQueueAgreement/Ipc.lean", "macro_rules"): 11,
+    # The `run_queue_current_nowhere` / `run_queue_slot_same` tactics carrying
+    # the scheduler's placement invariant across a step, and the
+    # `tcb_state_mono` / `current_frame` / `obj_state_mono` tactics that
+    # discharge a step's state-monotonicity and current-slot frame; none mints
+    # a declaration.
+    ("SeLe4n/Kernel/Scheduler/RunQueueThreadLinks.lean", "macro"): 3,
     # PR #932 review: the `ntfn_links_back` / `ntfn_links_fwd` tactics, which
     # swap a TCB across a notification-link rewrite; neither mints a declaration.
     ("SeLe4n/Kernel/IPC/Operations/Endpoint.lean", "macro_rules"): 2,

@@ -182,7 +182,7 @@ c)`, idle installed + dispatchable) or falls back to the legacy `current = none`
 runnable at all** — so it never preempts a runnable user thread of *any* priority,
 including priority `0`.  This is strictly stronger than `idleThread_no_starvation`
 (which only rules out *higher*-priority threads).  Unlike the run-queue-resident
-form (`enqueueIdleThreadOnCore` + `chooseThreadOnCore`, where idle is a priority-`0`
+form (`storeIdleThreadOnCore` + `chooseThreadOnCore`, where idle is a priority-`0`
 peer and FIFO could pick it over a same-priority-`0` user thread), the production
 dispatcher never makes that mistake.
 

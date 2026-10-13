@@ -2578,13 +2578,15 @@ def deployment_starts_both_initial_threads : IO Unit := do
     unless chosen started.state boot == some root &&
         chosen started.state rpi5UntrustedCore == some untrusted do
       throw <| IO.userError s!"the first scheduling point does not select the initial threads on {v.ramSize}"
-    -- CONTROL: on the idle stage the same cores select their idle threads.
-    unless chosen idle.state boot == some (SeLe4n.Kernel.idleThreadId boot) do
-      throw <| IO.userError s!"idle stage's boot core does not select idle on {v.ramSize}"
+    -- CONTROL: on the idle stage the queues are empty, so the selection finds
+    -- nothing and the core falls back to its idle thread (seL4's posture).
+    unless chosen idle.state boot == none &&
+        SeLe4n.Kernel.idleDispatchableOnCore idle.state boot do
+      throw <| IO.userError s!"idle stage's boot core does not fall back to idle on {v.ramSize}"
   IO.println "deployment starts both initial threads, one per domain, on every variant: PASS"
 
 /-- **WS-BP BP7.11**: the stage **refuses** a named thread it cannot start —
-absent, an idle thread (already queued), or named twice (queued by its first
+absent, an idle thread (never queued), or named twice (queued by its first
 start) — rather than skipping it; and naming none is the idle boot. -/
 def boot_refuses_unstartable_initial_threads : IO Unit := do
   let cores := SeLe4n.Platform.PlatformBinding.declaredCores (platform := RPi5Platform)

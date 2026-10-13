@@ -2093,7 +2093,7 @@ theorem storeObject_inserted_object_lookup (st : SystemState)
 /-- The store adds at most one index entry: a key already in the index leaves
     it alone, a new key is consed onto it.  Hypothesis-free — the bound is a
     fact about the write, not about the pre-state's capacity — so a pure
-    transition built on `withObjectStored` (the boot's idle enqueue, through
+    transition built on `withObjectStored` (the boot's idle store, through
     `withObjectStored_objectIndex_length_le`) can read it without carrying
     `objectIndexBounded`, which it neither has nor needs. -/
 theorem storeObject_objectIndex_length_le

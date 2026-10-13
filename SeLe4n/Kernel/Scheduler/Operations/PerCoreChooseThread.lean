@@ -699,10 +699,10 @@ theorem chooseThreadOnCore_none_no_eligible
 
 /-- WS-SM SM5.A.4 (idle-fallback completeness, plan §3.5.2 foundation): when
 core `c`'s run queue holds a runnable thread in its active domain, the
-selection succeeds with `some`.  This is the conditional form SM5.E
-discharges by supplying the per-core idle thread as the always-present
-in-domain candidate, yielding the unconditional
-`chooseThreadOnCore_always_succeeds`. -/
+selection succeeds with `some`.  The idle thread is not such a candidate —
+it is on no queue — so when this does not apply the scheduling point runs the
+idle thread from the selection fallback instead
+(`scheduleEffectiveOnCore_current_isSome`). -/
 theorem chooseThreadOnCore_some_of_eligible
     (st : SystemState) (c : CoreId)
     (hRunnable : runnableThreadsAreTCBsOnCore st c)

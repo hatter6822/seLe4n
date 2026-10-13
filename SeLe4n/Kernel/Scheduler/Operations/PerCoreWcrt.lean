@@ -618,30 +618,20 @@ theorem WCRT_smp_cycles_decomposition (cyclesPerTick D L_max N B P : Nat)
 -- §4  SM5.J.4 — Liveness: no thread starves under SMP
 -- ============================================================================
 
-/-- WS-SM SM5.J.4 (per-core non-stall): on any core `c` whose idle thread is
-enqueued (the SM5.E `idleThreadEnqueuedOnCore` invariant) with a well-formed run
-queue and runnable-are-TCBs, `chooseThreadOnCore` always selects *some* thread.
-The idle thread is the priority-0 fallback, so no core ever stalls with nothing to
-run — a runnable thread can never be starved by a core that has stopped making
-scheduling decisions.  Lifts the SM5.E keystone `chooseThreadOnCore_always_succeeds`
-as the SMP no-stall guarantee. -/
-theorem schedulerNoStallOnCore (st : SystemState) (c : CoreId)
-    (hRunnable : runnableThreadsAreTCBsOnCore st c)
-    (hIdle : idleThreadEnqueuedOnCore st c) :
-    ∃ tid, chooseThreadOnCore st c = .ok (some tid) :=
-  chooseThreadOnCore_always_succeeds st c hRunnable hIdle
-
-/-- WS-SM SM5.J.4 (SMP no-stall, ∀-core form): if every core has its idle thread
-enqueued with a well-formed run queue + runnable-are-TCBs, then every core selects
-some thread — no core in the system stalls.  This is the structural SMP
-no-starvation guarantee the per-core idle threads (SM5.E) provide: a high-priority
-thread that becomes runnable on core `c` is dispatched by core `c`'s own scheduler,
-which is always live. -/
-theorem schedulerNoStall_smp (st : SystemState)
-    (hRunnable : ∀ c, runnableThreadsAreTCBsOnCore st c)
-    (hIdle : ∀ c, idleThreadEnqueuedOnCore st c) :
-    ∀ c : CoreId, ∃ tid, chooseThreadOnCore st c = .ok (some tid) :=
-  fun c => chooseThreadOnCore_always_succeeds st c (hRunnable c) (hIdle c)
+/-- WS-SM SM5.J.4 (SMP no-stall, ∀-core form): on a state where every core's
+idle thread is dispatchable (`idleDispatchableOnCore`), every core's scheduling
+point leaves it a current thread — no core in the system stalls.  The idle
+thread is on no run queue (seL4's posture); it is the selection fallback a core
+runs when its queue offers nothing, so a high-priority thread that becomes
+runnable on core `c` is dispatched by core `c`'s own scheduler, which is always
+live.  Lifts the SM5.E keystone `scheduleEffectiveOnCore_current_isSome`; the
+production boot discharges the premise
+(`bootFromPlatformCheckedWithIdleThreads_idleDispatchableOnCore`). -/
+theorem schedulerNoStall_smp (st : SystemState) (hInv : st.objects.invExt)
+    (hIdle : ∀ c, idleDispatchableOnCore st c = true) :
+    ∀ (c : CoreId) (st' : SystemState), scheduleEffectiveOnCore st c = .ok st' →
+      (st'.scheduler.currentOnCore c).isSome :=
+  fun c _ h => scheduleEffectiveOnCore_current_isSome hInv (hIdle c) h
 
 /-- WS-SM SM5.J.4 (no unbounded priority inversion under SMP): a higher-priority
 thread waiting for a kernel lock held by a lower-priority thread on another core
@@ -660,20 +650,6 @@ theorem boundedKernelWait_smp (e : Concurrency.KernelExecution) (c : CoreId)
   obtain ⟨hNoDeadlock, hb⟩ := Concurrency.boundedWait_under_2pl e c op tCs h2pl hOrder
   refine ⟨hNoDeadlock, ?_⟩
   rwa [rpi5OtherCoreCount] at hb
-
-/-- WS-SM SM5.J.4 (per-core no-stall, decidable discharge — closes the
-"hypothesis never discharged" gap): the no-stall precondition is *not* an
-unfounded assumption.  `idleAvailableOnCoreB st c` (a `Bool`) decides whether core
-`c`'s idle thread is an in-domain run-queue candidate, so on **any concrete
-reachable state** the no-stall premise is established by `decide` (not assumed) —
-the constructive form `chooseThreadOnCore_always_succeeds_of_idleAvailableB`.  The
-∀-core form: if every core's idle is available, every core selects some thread. -/
-theorem schedulerNoStall_smp_of_idleAvailableB (st : SystemState)
-    (hRunnable : ∀ c, runnableThreadsAreTCBsOnCore st c) (hR : st.runQueueRefined)
-    (hAvail : ∀ c, idleAvailableOnCoreB st c = true) :
-    ∀ c : CoreId, ∃ tid, chooseThreadOnCore st c = .ok (some tid) :=
-  fun c => chooseThreadOnCore_always_succeeds_of_idleAvailableB st c (hRunnable c) (hR c)
-    (hAvail c)
 
 /-- WS-SM SM5.J.4 (**the genuine per-core eventually-scheduled liveness** — the
 real fix for "no thread starves"): a thread `tid` runnable on core `c` with
@@ -749,7 +725,7 @@ theorem thread_eventually_scheduled_within_smp_bound
 guarantees that together establish no thread starves under SMP:
 
 1. **No core stalls** (`schedulerNoStall_smp`): the per-core idle thread guarantees
-   every core always makes a scheduling decision.
+   every core's scheduling point leaves it a current thread.
 2. **The runnable thread makes progress** (`thread_eventually_scheduled_onCore`):
    the *specific* thread `tid` runnable on core `c` *is selected on `c`* within
    `wcrtBound` ticks — the genuine eventually-scheduled property (not merely "the
@@ -764,8 +740,8 @@ theorem no_starvation_under_smp (st : SystemState)
     (tid : ThreadId) (c : CoreId) (trace : Liveness.SchedulerTrace)
     (e : Concurrency.KernelExecution) (op : Concurrency.KernelOperation) (tCs : Nat)
     (hyp : Liveness.WCRTHypothesesOnCore st tid c)
-    (hRunnable : ∀ c, runnableThreadsAreTCBsOnCore st c)
-    (hIdle : ∀ c, idleThreadEnqueuedOnCore st c)
+    (hInv : st.objects.invExt)
+    (hIdle : ∀ c, idleDispatchableOnCore st c = true)
     (hValid : Liveness.ValidTrace st trace)
     (hDomainActiveRunnable : ∃ k₁, k₁ ≤ Liveness.domainRotationBound
         st.scheduler.domainSchedule.length
@@ -783,7 +759,8 @@ theorem no_starvation_under_smp (st : SystemState)
     (h2pl : Concurrency.executionFollows2PL e)
     (hOrder : Concurrency.executionAcquiresInLockKeyOrder e) :
     -- (1) no core stalls:
-    (∀ c' : CoreId, ∃ tid', chooseThreadOnCore st c' = .ok (some tid')) ∧
+    (∀ (c' : CoreId) (st' : SystemState), scheduleEffectiveOnCore st c' = .ok st' →
+      (st'.scheduler.currentOnCore c').isSome) ∧
     -- (2) the runnable thread `tid` is genuinely selected on core `c` within the bound:
     (∃ k, k ≤ Liveness.wcrtBound st.scheduler.domainSchedule.length
               (Liveness.maxDomainLength st.scheduler.domainSchedule) hyp.N hyp.B hyp.P ∧
@@ -791,7 +768,7 @@ theorem no_starvation_under_smp (st : SystemState)
     -- (3) no unbounded lock-contention inversion:
     (∀ c' : CoreId, Concurrency.noDeadlock e ∧
       Concurrency.WCRT e c' op tCs ≤ maxLockSetSize * (3 * tCs)) :=
-  ⟨schedulerNoStall_smp st hRunnable hIdle,
+  ⟨schedulerNoStall_smp st hInv hIdle,
    thread_eventually_scheduled_onCore st tid c trace hyp hValid hDomainActiveRunnable hBandProgress,
    fun c' => boundedKernelWait_smp e c' op tCs h2pl hOrder⟩
 

@@ -1246,21 +1246,21 @@ It used to be `bootFromPlatformChecked`, which installs no idle threads at all:
 `setCurrentOnCore c none` arm — every core would stall with nothing to run at its
 first scheduling point.  Meanwhile SM5.J's `schedulerNoStall_smp` and the
 `no_starvation_under_smp` capstone both take `hIdle : ∀ c,
-idleThreadEnqueuedOnCore st c` **by hypothesis**, and no reachable state
-discharged it.  The idle-installing wrapper that existed
-(`bootFromPlatformWithIdleThreads`) had no runtime caller and, because it sets
-current slots without enqueuing, would not have discharged it either.
+idleDispatchableOnCore st c = true` **by hypothesis**, which no state without
+idle TCBs satisfies.
 
 The new entry is a thin composition over `bootFromPlatformChecked` — same
 validation, same rejections, the seven results characterizing it unchanged — that
-folds a per-core idle enqueue over `allCores`.  The hypothesis is discharged from
-the state the kernel actually comes up in
-(`bootFromPlatformCheckedWithIdleThreads_idleThreadEnqueuedOnCore`).
+folds a per-core idle store over `allCores`.  The idle threads are on no run
+queue (seL4's posture): each core runs its idle thread from the selection
+fallback when its queue is empty.  The hypothesis is discharged from the state
+the kernel actually comes up in
+(`bootFromPlatformCheckedWithIdleThreads_idleDispatchableOnCore`).
 
 **WS-BP BP7.11 — and then starts the configuration's initial threads.**  The idle
 stage installs every configured thread `.Inactive`, so until BP7.11 no deployment
 thread ever ran.  The wrapper now runs `bootFromPlatformCheckedStartedFor`: the
-idle-enqueued boot, then each thread `PlatformConfig.initialThreads` names
+idle-storing boot, then each thread `PlatformConfig.initialThreads` names
 started through the kernel model's own start (`Kernel.startInitialThreadOnCore`)
 — `.Ready`, on its home core's run queue, no current slot set — refusing the boot
 for a named thread it cannot start.  With no named thread the stage is the idle

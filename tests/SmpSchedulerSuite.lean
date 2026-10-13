@@ -90,11 +90,11 @@ private def stFourCore : SystemState :=
   enqueueAllOnCore (enqueueAllOnCore (enqueueAllOnCore (enqueueAllOnCore base
     c0 [(tA, ⟨10⟩)]) c1 [(tB, ⟨20⟩)]) c2 [(tC, ⟨15⟩)]) c3 [(tD, ⟨25⟩)]
 
-/-- `stFourCore` with core 0's run queue emptied and its idle thread enqueued — the
+/-- `stFourCore` with core 0's run queue emptied and its idle thread stored — the
 SM5.J.4 / SM5.E no-stall fixture (core 0 has no user thread but must not stall). -/
 private def stCore0Idle : SystemState :=
   let emptied := replaceRunQueueOnCore stFourCore c0 []
-  enqueueIdleThreadOnCore emptied c0
+  storeIdleThreadOnCore emptied c0
 
 -- ============================================================================
 -- Decidable trace/label helpers
@@ -127,6 +127,14 @@ private def switchCurrentLabel (st : SystemState) (c : CoreId) (tid : SeLe4n.Thr
                | some t => threadLabel t
                | none   => "none"
   | .error _ => "switch-error"
+
+/-- The thread core `c`'s scheduling point leaves current on state `st`. -/
+private def scheduledLabel (st : SystemState) (c : CoreId) : String :=
+  match scheduleEffectiveOnCore st c with
+  | .ok st' => match st'.scheduler.currentOnCore c with
+               | some t => if t == idleThreadId c then "the idle thread" else threadLabel t
+               | none   => "none"
+  | .error _ => "schedule-error"
 
 private def assertBool (name : String) (b : Bool) : IO Unit := do
   if b then
@@ -279,17 +287,19 @@ private def runWcrtScenarios : IO Unit := do
     (decide (¬ (maxLockSetSize * (3 * 60) ≤ rpi5TickBudgetMicros)))
 
 -- ============================================================================
--- §7  Idle fallback — an empty core with idle enqueued never stalls
+-- §7  Idle fallback — an empty core with its idle thread stored never stalls
 -- ============================================================================
 
 private def runIdleScenarios : IO Unit := do
   IO.println "--- §7 idle fallback (no core stalls — SM5.E / SM5.J.4) ---"
-  assertBool "core 0 (emptied) with idle enqueued: idle is an in-domain candidate"
-    (decide (idleAvailableOnCoreB stCore0Idle c0 = true))
-  assertBool "core 0 (emptied) with idle enqueued: selects the idle thread (no stall)"
-    (selectsByLinks stCore0Idle c0 (idleThreadId c0))
-  assertBool "core 0 (emptied) with idle enqueued: selection succeeds (.ok some)"
-    (match chooseThreadOnCoreByLinks stCore0Idle c0 with | .ok (some _) => true | _ => false)
+  assertBool "core 0 (emptied) with idle stored: idle is dispatchable"
+    (decide (idleDispatchableOnCore stCore0Idle c0 = true))
+  assertBool "core 0 (emptied) with idle stored: selection signals the fallback (idle is never queued)"
+    (idleFallbackByLinks stCore0Idle c0)
+  assertBool "core 0 (emptied) with idle stored: the scheduling point runs idle (no stall)"
+    (match scheduleEffectiveOnCore stCore0Idle c0 with
+     | .ok s => s.scheduler.currentOnCore c0 == some (idleThreadId c0)
+     | .error _ => false)
   -- The idle thread does not leak onto the other cores' run queues.
   assertBool "core 0's idle thread is NOT on core 1's run queue (locality)"
     (!decide (idleThreadId c0 ∈ (stCore0Idle.runQueueWalk c1)))
@@ -401,7 +411,7 @@ private def fourCoreTraceLines : List String :=
   , s!"[smp-4core] wake D from core 0 emits {wakeSgiLabel stFourCore tD c0}"
   , s!"[smp-4core] wake A from core 0 emits {wakeSgiLabel stFourCore tA c0}"
   , s!"[smp-4core] switch core 1 to B sets current = {switchCurrentLabel stFourCore c1 tB}"
-  , s!"[smp-4core] core 0 emptied with idle enqueued selects {selLabel stCore0Idle c0}"
+  , s!"[smp-4core] core 0 emptied with idle stored runs {scheduledLabel stCore0Idle c0}"
   -- The multi-step cross-core round-trip (§8): wake blocked E onto core 3, then the
   -- target-core handler dispatches it — the dynamic counterpart of the snapshot above.
   , s!"[smp-4core] round-trip: wake blocked E from core 0 emits {roundTripSgiLabel}"

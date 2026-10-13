@@ -29,8 +29,8 @@ Four categories matching the plan §3.9 / §5 SM5.J sub-tasks (32 entries):
 * `.perOp` — SM5.J.3: the per-operation WCRT bounds (chooseThread / switchToThread /
   wake / timerTick / replenish / advanceDomain), each with its exact value and its
   `≤ maxLockSetSize · 3 · tCs` headline, plus the generic `wcrt_op_bounded_of_size`.
-* `.liveness` — SM5.J.4: no thread starves under SMP — the per-core non-stall
-  (`schedulerNoStall*`), the bounded-lock-wait no-unbounded-inversion
+* `.liveness` — SM5.J.4: no thread starves under SMP — the ∀-core non-stall
+  (`schedulerNoStall_smp`), the bounded-lock-wait no-unbounded-inversion
   (`boundedKernelWait_smp`), the capstone `no_starvation_under_smp`, and the
   R5-latency bridge `r5_latency_within_smp_bound`.
 
@@ -183,12 +183,8 @@ def perCoreWcrtTheorems : List PerCoreWcrtTheorem :=
     pcwt! "kernelWait_le_WCRT_lockSet_of_length_eq: the execution-sensitive Concurrency.WCRT ≤ the static WCRT_lockSet"
       kernelWait_le_WCRT_lockSet_of_length_eq .executionBridge,
     -- ── SM5.J.4 no-thread-starves-under-SMP liveness (.liveness) ──
-    pcwt! "schedulerNoStallOnCore: per-core idle fallback ⇒ chooseThreadOnCore succeeds (SM5.J.4)"
-      schedulerNoStallOnCore .liveness,
-    pcwt! "schedulerNoStall_smp: every core makes a scheduling decision (∀-core no-stall)"
+    pcwt! "schedulerNoStall_smp: every core's scheduling point leaves a current thread (∀-core no-stall)"
       schedulerNoStall_smp .liveness,
-    pcwt! "schedulerNoStall_smp_of_idleAvailableB: the decidable no-stall discharge (closes the hypothesis-never-discharged gap)"
-      schedulerNoStall_smp_of_idleAvailableB .liveness,
     pcwt! "boundedKernelWait_smp: deadlock-free + WCRT ≤ maxLockSetSize · 3 · tCs (no unbounded inversion)"
       boundedKernelWait_smp .liveness,
     pcwt! "thread_eventually_scheduled_onCore: the GENUINE per-core eventually-scheduled liveness (SM5.J.4 keystone)"
@@ -200,13 +196,14 @@ def perCoreWcrtTheorems : List PerCoreWcrtTheorem :=
     pcwt! "r5_latency_within_smp_bound: single-core R5 selection within the combined SMP bound"
       r5_latency_within_smp_bound .liveness]
 
-/-- WS-SM SM5.J: the inventory has 44 substantive entries (32 at the SM5.J initial
+/-- WS-SM SM5.J: the inventory has 42 substantive entries (32 at the SM5.J initial
 landing + 12 from the completion pass: the genuine per-core eventually-scheduled
 liveness, the execution-sensitive bridge, the cycle-commensurate units, the honest
 config-free grounding, the access-mode-soundness, and the SGI-handler /
-complete-timer per-op bounds).  A regression that adds a new SM5.J theorem without
+complete-timer per-op bounds; less two when the no-stall surface was restated
+over the selection fallback, idle off the run queues).  A regression that adds a new SM5.J theorem without
 registering it fails this count witness at the Tier-3 surface check. -/
-theorem perCoreWcrtTheorems_count : perCoreWcrtTheorems.length = 44 := by decide
+theorem perCoreWcrtTheorems_count : perCoreWcrtTheorems.length = 42 := by decide
 
 /-- WS-SM SM5.J: 10 entries in the `lockSetWcrt` category (+1: access-mode soundness). -/
 theorem perCoreWcrtTheorems_lockSetWcrt_count :
@@ -224,10 +221,11 @@ theorem perCoreWcrtTheorems_perOp_count :
 theorem perCoreWcrtTheorems_executionBridge_count :
     (perCoreWcrtTheorems.filter (fun t => t.category == .executionBridge)).length = 2 := by decide
 
-/-- WS-SM SM5.J: 8 entries in the `liveness` category (+3: decidable no-stall discharge +
-the genuine eventually-scheduled keystone + the combined-bound progress). -/
+/-- WS-SM SM5.J: 6 entries in the `liveness` category (the ∀-core no-stall, the
+bounded lock wait, the genuine eventually-scheduled keystone, the combined-bound
+progress, the capstone and the R5 bridge). -/
 theorem perCoreWcrtTheorems_liveness_count :
-    (perCoreWcrtTheorems.filter (fun t => t.category == .liveness)).length = 8 := by decide
+    (perCoreWcrtTheorems.filter (fun t => t.category == .liveness)).length = 6 := by decide
 
 /-- WS-SM SM5.J: per-category counts sum to the total. -/
 theorem perCoreWcrtTheorems_partition_sum :
