@@ -267,6 +267,15 @@ MACHINERY_PINS = {
     ("SeLe4n/Kernel/Concurrency/Locks/SerializabilityInventory.lean", "syntax"): 1,
     ("SeLe4n/Kernel/Concurrency/PhaseTheoremManifest.lean", "macro"): 2,
     ("SeLe4n/Kernel/Concurrency/PhaseTheoremManifest.lean", "run_cmd"): 2,
+    # WS-ZA ZA4.5: the `run_queue_stage` tactic and its step rules -- each
+    # `macro_rules` adds one tactic-category alternative (a step's stage) and
+    # `macro` declares the driver tactics; none mints a declaration.
+    ("SeLe4n/Kernel/IPC/Invariant/RunQueueAgreement/Capability.lean", "macro"): 1,
+    ("SeLe4n/Kernel/IPC/Invariant/RunQueueAgreement/Capability.lean", "macro_rules"): 8,
+    ("SeLe4n/Kernel/IPC/Invariant/RunQueueAgreement/Endpoint.lean", "macro"): 2,
+    ("SeLe4n/Kernel/IPC/Invariant/RunQueueAgreement/Endpoint.lean", "macro_rules"): 21,
+    ("SeLe4n/Kernel/IPC/Invariant/RunQueueAgreement/Endpoint.lean", "syntax"): 2,
+    ("SeLe4n/Kernel/IPC/Invariant/RunQueueAgreement/Ipc.lean", "macro_rules"): 5,
     ("SeLe4n/Kernel/InformationFlow/NonInterferencePerCore.lean", "macro_rules"): 1,
     ("SeLe4n/Kernel/InformationFlow/NonInterferencePerCore.lean", "syntax"): 1,
     ("SeLe4n/Kernel/Scheduler/Invariant/PerCoreInvariantSuiteInventory.lean", "macro_rules"): 1,

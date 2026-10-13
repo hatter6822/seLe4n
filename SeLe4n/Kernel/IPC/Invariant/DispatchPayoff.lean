@@ -52,17 +52,6 @@ open Architecture.SyscallArgDecode
 -- §1  `resolveExtraCaps` — CDT-only writes, badge-valid outputs
 -- ============================================================================
 
-private theorem ensureCdtNodeForSlotChecked_scheduler_eq
-    (st : SystemState) (ref : SlotRef) (node : CdtNodeId) (st' : SystemState)
-    (h : SystemState.ensureCdtNodeForSlotChecked st ref = some (node, st')) :
-    st'.scheduler = st.scheduler := by
-  unfold SystemState.ensureCdtNodeForSlotChecked at h
-  split at h
-  · cases h; rfl
-  · split at h
-    · cases h; rfl
-    · cases h
-
 /-- Resolution mints CDT nodes only: objects and scheduler are framed, and
 every resolved capability's badge is valid, because each one is read out of a
 CNode slot of a state whose store is the pre-state's. -/
@@ -101,7 +90,7 @@ private theorem resolveExtraCaps_shape
             exact hCapWf oid cn slot c b hCn hLk2 hB2
           refine ⟨(SystemState.ensureCdtNodeForSlotChecked_objects_eq acc.2 ref node
               stNode hNode).trans hO,
-            (ensureCdtNodeForSlotChecked_scheduler_eq acc.2 ref node stNode
+            (SystemState.ensureCdtNodeForSlotChecked_scheduler_eq acc.2 ref node stNode
               hNode).trans hS, ?_⟩
           intro j c hc b hBadge
           rw [Array.getElem?_push] at hc

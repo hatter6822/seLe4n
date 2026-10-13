@@ -85,9 +85,9 @@ theorem cspaceDeleteSlot_keyInputsEq (st st' : SystemState) (addr : CSpaceAddr)
 /-- The CDT bookkeeping writes no object and no scheduler state. -/
 theorem ensureCdtNodeForSlot_objects_scheduler (st : SystemState) (ref : SlotRef) :
     (SystemState.ensureCdtNodeForSlot st ref).snd.objects = st.objects ∧
-    (SystemState.ensureCdtNodeForSlot st ref).snd.scheduler = st.scheduler := by
-  unfold SystemState.ensureCdtNodeForSlot
-  split <;> exact ⟨rfl, rfl⟩
+    (SystemState.ensureCdtNodeForSlot st ref).snd.scheduler = st.scheduler :=
+  ⟨SystemState.ensureCdtNodeForSlot_objects_eq st ref,
+   SystemState.ensureCdtNodeForSlot_scheduler_eq st ref⟩
 
 /-- The CDT edge every `WithCdt` form ends with writes no object and no scheduler
 state. -/

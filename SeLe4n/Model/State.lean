@@ -5136,6 +5136,11 @@ theorem ensureCdtNodeForSlot_objects_eq (st : SystemState) (ref : SlotRef) :
   unfold ensureCdtNodeForSlot
   split <;> rfl
 
+theorem ensureCdtNodeForSlot_scheduler_eq (st : SystemState) (ref : SlotRef) :
+    (ensureCdtNodeForSlot st ref).snd.scheduler = st.scheduler := by
+  unfold ensureCdtNodeForSlot
+  split <;> rfl
+
 /-- AK7-J (F-M09 / MEDIUM): `ensureCdtNodeForSlotChecked` preserves the
 `cdtNextNodeBounded` invariant — whenever it returns `some (_, st')`,
 the post-state satisfies the bound.
@@ -5165,6 +5170,17 @@ theorem ensureCdtNodeForSlotChecked_objects_eq
     (st : SystemState) (ref : SlotRef) (node : CdtNodeId) (st' : SystemState)
     (h : ensureCdtNodeForSlotChecked st ref = some (node, st')) :
     st'.objects = st.objects := by
+  unfold ensureCdtNodeForSlotChecked at h
+  split at h
+  · cases h; rfl
+  · split at h
+    · cases h; rfl
+    · cases h
+
+theorem ensureCdtNodeForSlotChecked_scheduler_eq
+    (st : SystemState) (ref : SlotRef) (node : CdtNodeId) (st' : SystemState)
+    (h : ensureCdtNodeForSlotChecked st ref = some (node, st')) :
+    st'.scheduler = st.scheduler := by
   unfold ensureCdtNodeForSlotChecked at h
   split at h
   · cases h; rfl

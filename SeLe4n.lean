@@ -215,6 +215,10 @@ import SeLe4n.Kernel.IPC.CrossCore.EndpointReplyDispatchInvariant
 -- `DispatchInvariant` — the shape `SyscallSchedContainment` and
 -- `IPC.Invariant.CancellationBundle` already have.  Production-clean.
 import SeLe4n.Kernel.IPC.Invariant.BlockedSenderPreservation
+-- WS-ZA ZA4.5: the run-queue link agreement carried through the syscall arms
+-- (`IPC.Invariant.RunQueueAgreement.{Endpoint,Capability,Ipc}`: each arm a
+-- `RunQueueStage`).  Production-clean.
+import SeLe4n.Kernel.IPC.Invariant.RunQueueAgreement.Ipc
 -- WS-RR (bind/unbind affinity closure): the replenish-queue invariant surface
 -- for the two live arms that create and destroy a SchedContext's binding —
 -- the orphan-freedom invariant (`replenishQueueEntriesBound_smp`), the
