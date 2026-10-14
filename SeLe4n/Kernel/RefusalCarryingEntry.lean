@@ -26,7 +26,7 @@ open SeLe4n.Model
 
 /-- `syscallEntryChecked`, refusing in the state it was handed
 (`syscallEntryCheckedR_eq`).  A signal, wait, yield, capability-free send or call,
-or receive whose arguments all sit in registers is routed on the register file
+reply or receive whose arguments all sit in registers is routed on the register file
 itself (`registerRoutedSyscall`),
 before any decode record exists: the decode writes nothing and such a call
 fills no TLB entry (`tlbFillIpcBufferOnCore_zero`), so its dispatch is handed
@@ -71,6 +71,11 @@ specification's form. -/
             (SeLe4n.Kernel.Architecture.RegisterDecode.extractMessageRegisters
               (layout.msgRegs.map (readReg tcb.registerContext)) msgInfo)
             tid executingCore st
+        -- WS-ZA ZA4.7: a reply; one whose checks all pass before its first
+        -- write writes in place.
+        | .reply capAddr msgInfo =>
+          dispatchReplyCheckedR ctx capAddr msgInfo
+            (layout.msgRegs.map (readReg tcb.registerContext)) tid executingCore st
         -- WS-ZA ZA4.7: a receive, with or without a reply object; one that
         -- blocks checks everything, the reply object included, before its
         -- first write.
@@ -155,6 +160,15 @@ theorem syscallEntryCheckedR_eq (ctx : LabelingContext)
             simp [Architecture.SyscallArgDecode.decodeExtraCapAddrs, hInfo, hX]; rfl
           rw [dispatchCallCheckedR_eq ctx decoded _ tid executingCore hCall hCaps hSlot
             (by rw [hRegs', hInfo])]
+          simp only [RefusalCarrying.ofKernel, syscallEntryChecked, hCtx, hCur, hRegs, hDec,
+            hZero, Bool.false_eq_true, ↓reduceIte,
+            SeLe4n.Kernel.Architecture.tlbFillIpcBufferOnCore_zero]
+        · next capAddr msgInfo hReplyRegs =>
+          obtain ⟨decoded, hDec, hReply, hCap, hZero, hInfo, hRegs'⟩ :=
+            SeLe4n.Kernel.Architecture.RegisterDecode.decodeSyscallArgsFromState_of_routedReply
+              st tid layout tcb.registerContext regCount capAddr msgInfo hReplyRegs
+          subst hCap hInfo
+          rw [← hRegs', dispatchReplyCheckedR_eq ctx decoded tid executingCore hReply]
           simp only [RefusalCarrying.ofKernel, syscallEntryChecked, hCtx, hCur, hRegs, hDec,
             hZero, Bool.false_eq_true, ↓reduceIte,
             SeLe4n.Kernel.Architecture.tlbFillIpcBufferOnCore_zero]
