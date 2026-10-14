@@ -321,10 +321,12 @@ theorem syscallDispatchCrossCoreStep_sgis_cover_diff {ctx : LabelingContext} {e 
     (hMem : (c, k) ∈ PriorityInheritance.computeCrossCoreSgis st (PriorityInheritance.settleResidencyOnCore
       (PriorityInheritance.scheduleLocalSuccessor st
         (Architecture.stageCallerReturn st st' e outcome) e) e) e) :
-    (c, SgiKind.reschedule) ∈ (syscallDispatchCrossCoreStep ctx e syscallId x0 x1 x2 x3 x4 x5
-        ipcBufferAddr elr spsr spEl0 x30 st).1.2.1 ∨
+    (c, SgiKind.reschedule) ∈ sgisOfRaised (syscallDispatchCrossCoreStep ctx e syscallId x0 x1 x2
+        x3 x4 x5 ipcBufferAddr elr spsr spEl0 x30 st).1.2.1 ∨
       st.scheduler.reschedulePendingOnCore c = true := by
   rw [syscallDispatchCrossCoreStep_of_ok h]
+  dsimp only
+  rw [← rescheduleSgisFromFlags_eq_sgisOfRaised]
   exact computeCrossCoreSgis_mem_flags_of_covers hId
     (syscallDispatchCrossCoreStep_stepCovers hInv hBi hPlaced hDet h).1 hMem
 

@@ -108,10 +108,14 @@ DECLARED_TAINT_WRITERS = {
     # pre-state fields it reads (`applySyscallTaintAfter_pre` says the two
     # agree), and the signal arm's step over its own taint case
     # (`signalTaintStep_eq`), and the wait arm's step on the capability its
-    # operand resolved to (`waitTaintStep_eq`).
+    # operand resolved to (`waitTaintStep_eq`).  WS-ZA ZA4.7: the send's step
+    # (shared by call and reply) and the receive's, each without the plan
+    # (`sendTaintStep_eq`, `replyTaintStep_eq`, `receiveTaintStep_eq`).
     "SeLe4n.Kernel.applySyscallTaintAfter",
     "SeLe4n.Kernel.signalTaintStep",
     "SeLe4n.Kernel.waitTaintStepOfCap",
+    "SeLe4n.Kernel.sendTaintStep",
+    "SeLe4n.Kernel.receiveTaintStep",
 }
 
 # **`v0.35.60`: the FROZEN propagation surface, as mirrors.**
@@ -167,6 +171,13 @@ DECLARED_TAINT_CONSUMERS = {
     "SeLe4n.Kernel.dispatchCheckedArmThenTaint",
     "SeLe4n.Kernel.signalResolvedArmThenTaintR",
     "SeLe4n.Kernel.waitOperandArmThenTaintR",
+    # WS-ZA ZA4.7: the IPC arms' arm-then-apply steps on the register path
+    # (`sendOperandArmThenTaintR_eq`, `callOperandArmThenTaintR_eq`,
+    # `receiveOperandArmThenTaintR_eq`, `replyOperandArmThenTaintR_eq`).
+    "SeLe4n.Kernel.sendOperandArmThenTaintR",
+    "SeLe4n.Kernel.callOperandArmThenTaintR",
+    "SeLe4n.Kernel.receiveOperandArmThenTaintR",
+    "SeLe4n.Kernel.replyOperandArmThenTaintR",
     "SeLe4n.Kernel.TaintTable.empty",
     # PR #873 round 16: the builder's provenance seed.  The one-writer rule
     # governs the **propagation** surface -- within a running system only
@@ -194,6 +205,8 @@ DECLARED_FIELD_WRITERS = {
     "SeLe4n.Kernel.applySyscallTaintAfter",
     "SeLe4n.Kernel.signalTaintStep",
     "SeLe4n.Kernel.waitTaintStepOfCap",
+    "SeLe4n.Kernel.sendTaintStep",
+    "SeLe4n.Kernel.receiveTaintStep",
 }
 
 CONTENT_CHANNELS = [

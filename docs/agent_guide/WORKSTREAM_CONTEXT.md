@@ -139,7 +139,13 @@ no run queue (a core runs idle when its queue is empty).  At `v0.36.84` (ZA4.6)
 reply waiters are a queue linked through the TCBs and priority inheritance
 walks it with no object scan (`replyWaitersConsistent`, a conjunct of
 `ipcReachable`): a call reads 166 (184 before), a reply 94 (112), a receive
-that blocks 100 and a send to a waiting receiver 86.  ZA4 measures the other
+that blocks 100 and a send to a waiting receiver 86.  At `v0.36.85` (ZA4.7, first
+part) send, receive, call and reply are routed on the register file and their
+rendezvous written in place, each fast arm proven equal to its specification:
+a call reads 16, a reply 9, a send to a waiting receiver 15 and a receive that
+blocks 5.  What is left on those paths is mostly the delivered message itself
+(a word array and a record kept in the receiver's TCB), which ZA4.7's second
+part removes by changing where a message lives.  ZA4 measures the other
 syscalls and entries.  Plan:
 [`docs/planning/ZERO_ALLOCATION_SYSCALL_PLAN.md`](../planning/ZERO_ALLOCATION_SYSCALL_PLAN.md)
 (phases ZA1–ZA4).

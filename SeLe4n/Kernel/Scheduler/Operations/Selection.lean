@@ -1353,6 +1353,22 @@ def restoreIncomingContextOnCoreUnlessCurrent (st : SystemState) (c : CoreId)
   if st.scheduler.currentOnCore c == some tid then st
   else restoreIncomingContextOnCore st c tid
 
+/-- WS-ZA ZA4.7: the compiled `restoreIncomingContextOnCoreUnlessCurrent`: the
+current slot is compared in place (`Option.isEqSome`), with no `some tid` cell
+built to compare against. -/
+def restoreIncomingContextOnCoreUnlessCurrentImpl (st : SystemState) (c : CoreId)
+    (tid : SeLe4n.ThreadId) : SystemState :=
+  if (st.scheduler.currentOnCore c).isEqSome tid then st
+  else restoreIncomingContextOnCore st c tid
+
+@[csimp] theorem restoreIncomingContextOnCoreUnlessCurrent_eq_impl :
+    @restoreIncomingContextOnCoreUnlessCurrent = @restoreIncomingContextOnCoreUnlessCurrentImpl := by
+  funext st c tid
+  unfold restoreIncomingContextOnCoreUnlessCurrent restoreIncomingContextOnCoreUnlessCurrentImpl
+  cases st.scheduler.currentOnCore c with
+  | none => rfl
+  | some x => simp [Option.isEqSome]
+
 /-- The self-switch case: when `tid` is already current, the conditional restore is
 the identity (no register roll-back). -/
 theorem restoreIncomingContextOnCoreUnlessCurrent_self (st : SystemState) (c : CoreId)
@@ -1677,6 +1693,34 @@ def runnableOnSomeCore (st : SystemState) (tid : SeLe4n.ThreadId) : Bool :=
   (SeLe4n.Kernel.Concurrency.allCores).any
     (fun c => st.queuedOn c tid)
 
+/-- WS-ZA ZA4.7: the compiled `runnableOnSomeCore`: the thread's run-core code
+read once and compared with the core range, with no closure over the core list
+and one lookup instead of one per core (`runnableOnSomeCore_eq_impl`). -/
+@[inline] def runnableOnSomeCoreImpl (st : SystemState) (tid : SeLe4n.ThreadId) : Bool :=
+  match st.getTcb? tid with
+  | some tcb => tcb.runCoreCode != 0 && tcb.runCoreCode ≤ SeLe4n.Kernel.Concurrency.numCores
+  | none => false
+
+@[csimp] theorem runnableOnSomeCore_eq_impl :
+    @runnableOnSomeCore = @runnableOnSomeCoreImpl := by
+  funext st tid
+  unfold runnableOnSomeCore runnableOnSomeCoreImpl
+  cases h : st.objects[tid.toObjId]? with
+  | none => simp [SystemState.queuedOn, SystemState.getTcb?, h]
+  | some o =>
+    cases o with
+    | tcb tcb =>
+      simp only [SystemState.queuedOn, SystemState.getTcb?, h]
+      apply Bool.eq_iff_iff.mpr
+      simp only [List.any_eq_true, beq_iff_eq, Bool.and_eq_true, bne_iff_ne, ne_eq,
+        decide_eq_true_eq]
+      constructor
+      · rintro ⟨c, _, hc⟩; rw [hc]; exact ⟨by omega, c.isLt⟩
+      · rintro ⟨h0, hle⟩
+        exact ⟨⟨tcb.runCoreCode - 1, by omega⟩, SeLe4n.Kernel.Concurrency.mem_allCores _,
+          by simp only []; omega⟩
+    | _ => simp [SystemState.queuedOn, SystemState.getTcb?, h]
+
 /-- WS-SM SM5.D.4 (audit-pass-2 / Codex-P2): is `tid` the *current* (running)
 thread on *some* core?  A running thread is dequeued-on-dispatch, so it is absent
 from every run queue — `runnableOnSomeCore` (run-queue membership) does NOT catch
@@ -1834,6 +1878,46 @@ def enqueueRunnableOnCore (st : SystemState) (c : CoreId)
         -- stales `c`'s decision (the diff's wake rule).
         { st' with scheduler := st'.scheduler.markReschedulePendingOnCore c }
   | none => st
+
+/-- WS-ZA ZA4.7: the compiled `enqueueRunnableOnCore`.  The `.ready` mark is
+written into the thread's own slot (`RHTable.modify`), with the priority read
+first, so on an exclusively owned state the TCB is not copied
+(`enqueueRunnableOnCore_eq_impl`). -/
+def enqueueRunnableOnCoreImpl (st : SystemState) (c : CoreId)
+    (tid : SeLe4n.ThreadId) : SystemState :=
+  match st.getTcb? tid with
+  | some tcb =>
+      let prio := tcb.boostedPriority
+      if wakeDeclines st c tid then st
+      else
+        let st' := (st.modifyObject tid.toObjId
+          (SystemState.mapTcbObject fun t => { t with ipcState := .ready })).runEnqueueAdmitted c tid prio
+        { st' with scheduler := st'.scheduler.markReschedulePendingOnCore c }
+  | none => st
+
+@[csimp] theorem enqueueRunnableOnCore_eq_impl :
+    @enqueueRunnableOnCore = @enqueueRunnableOnCoreImpl := by
+  funext st c tid
+  unfold enqueueRunnableOnCore enqueueRunnableOnCoreImpl
+  have hNone : (∀ t, st.objects[tid.toObjId]? ≠ some (.tcb t)) →
+      st.getTcbWitnessed? tid = none := by
+    intro hN
+    unfold SystemState.getTcbWitnessed?
+    split
+    · next t hx => exact absurd hx (hN t)
+    · rfl
+  cases hx : st.objects[tid.toObjId]? with
+  | none => rw [hNone (by intro t h; rw [hx] at h; cases h)]; simp only [SystemState.getTcb?, hx]
+  | some o =>
+    cases o with
+    | tcb tcb =>
+      rw [SystemState.getTcbWitnessed?_eq_some ((SystemState.getTcb?_eq_some_iff _ _ _).mpr hx)]
+      simp only [SystemState.getTcb?, hx]
+      split
+      · rfl
+      · rw [SystemState.modifyObject, SeLe4n.Kernel.RobinHood.RHTable.modify_of_get? hx]
+        rfl
+    | _ => rw [hNone (by intro t h; rw [hx] at h; cases h)]; simp only [SystemState.getTcb?, hx]
 
 /-- WS-ZA ZA4.5: the enqueue writes only the object store (the `.ready` mark
 and the woken thread's run-queue links) and the scheduler. -/
@@ -2815,6 +2899,26 @@ def wakeThread (st : SystemState) (tid : SeLe4n.ThreadId)
     | none   => none
     | some _ => if target == executingCore then none else some (target, SgiKind.reschedule)
   (st', sgi)
+
+/-- WS-ZA ZA4.7: the compiled `wakeThread`.  The SGI is decided from the
+pre-state before the enqueue writes, so nothing keeps the pre-state across the
+writes (`ZERO_ALLOCATION_SYSCALL_PLAN.md` D1).  Proven equal
+(`wakeThread_eq_impl`). -/
+def wakeThreadImpl (st : SystemState) (tid : SeLe4n.ThreadId)
+    (executingCore : CoreId) : SystemState × Option (CoreId × SgiKind) :=
+  let target := determineTargetCore st tid
+  match st.getTcb? tid with
+  | none => (enqueueRunnableOnCore st target tid, none)
+  | some _ =>
+      if target == executingCore then (enqueueRunnableOnCore st target tid, none)
+      else (enqueueRunnableOnCore st target tid, some (target, SgiKind.reschedule))
+
+@[csimp] theorem wakeThread_eq_impl : @wakeThread = @wakeThreadImpl := by
+  funext st tid executingCore
+  unfold wakeThread wakeThreadImpl
+  cases st.getTcb? tid with
+  | none => rfl
+  | some _ => simp only []; split <;> rfl
 
 /-- WS-SM SM5.C.5 (audit-pass-3; selection-aligned since PR #880 round 7): does
 the budget-eligible candidate `tid` outrank core `c`'s current thread — in the

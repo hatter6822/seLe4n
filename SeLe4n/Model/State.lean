@@ -104,6 +104,16 @@ theorem ext {m₁ m₂ : PerCoreFlags} (h : ∀ c : CoreId, m₁.get c = m₂.ge
   cases m₁; cases m₂; congr 1
   apply BitVec.eq_of_getLsbD_eq; intro i hi; exact h ⟨i, hi⟩
 
+/-- WS-ZA ZA4.7: the flags that went up between `pre` and `post` — set in
+`post`, clear in `pre` — as one word. -/
+def raised (pre post : PerCoreFlags) : PerCoreFlags := ⟨post.bits &&& ~~~pre.bits⟩
+
+@[simp] theorem get_raised (pre post : PerCoreFlags) (c : CoreId) :
+    (raised pre post).get c = (!pre.get c && post.get c) := by
+  simp only [get, raised, BitVec.getLsbD_and, BitVec.getLsbD_not, c.isLt, decide_true,
+    Bool.true_and]
+  exact Bool.and_comm _ _
+
 end PerCoreFlags
 
 structure SchedulerState where
@@ -3808,6 +3818,27 @@ def replyIsStashed (st : SystemState) (rid : SeLe4n.ReplyId) : Bool :=
           | .blockedOnReceive _ => t.pendingReceiveReply == some rid
           | _ => false
       | _ => false
+
+/-- WS-ZA ZA4.7: the compiled `replyIsStashed`: the stash compared without
+building `some rid` (`replyIsStashed_eq_impl`). -/
+def replyIsStashedImpl (st : SystemState) (rid : SeLe4n.ReplyId) : Bool :=
+  st.objects.fold (init := false) fun acc _oid obj =>
+    acc || match obj with
+      | .tcb t =>
+          match t.ipcState with
+          | .blockedOnReceive _ => t.pendingReceiveReply.isEqSome rid
+          | _ => false
+      | _ => false
+
+@[csimp] theorem replyIsStashed_eq_impl : @replyIsStashed = @replyIsStashedImpl := by
+  funext st rid
+  unfold replyIsStashed replyIsStashedImpl
+  congr
+  funext acc _oid obj
+  rcases obj with t | _ | _ | _ | _ | _ | _ | _ | _ | _ <;> try rfl
+  simp only []
+  split <;> try rfl
+  cases t.pendingReceiveReply <;> simp [Option.isEqSome]
 
 /-- WS-SM SM6.D (PR #827 review #6): is a server-supplied reply object valid to
 *stash* on a blocked receiver?  A plain receive (`none`) clears any stale stash and

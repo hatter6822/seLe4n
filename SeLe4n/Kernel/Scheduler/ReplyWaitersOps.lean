@@ -165,6 +165,58 @@ def unlinkReplyWaiter (st : SystemState) (w s : ThreadId) : SystemState :=
     replyWaitersCount := x.replyWaitersCount - 1 }
   st3.mapTcbInPlace w fun x => { x with replyWaiterPrevCode := 0, replyWaiterNextCode := 0 }
 
+/-- `linkReplyWaiter`'s three TCB writes on the object table alone, given the
+server's old head code. -/
+def linkReplyObjects (o : Kernel.RobinHood.RHTable ObjId KernelObject) (w s : ThreadId) (h : Nat) :
+    Kernel.RobinHood.RHTable ObjId KernelObject :=
+  let o1 := o.mapValueAt w.toObjId (KernelObject.mapTcb fun x => { x with
+    replyWaiterPrevCode := 0, replyWaiterNextCode := h })
+  let o2 := if h = 0 then o1 else
+    o1.mapValueAt (decode h).toObjId (KernelObject.mapTcb fun x => { x with replyWaiterPrevCode := code w })
+  o2.mapValueAt s.toObjId (KernelObject.mapTcb fun x => { x with
+    replyWaitersHeadCode := code w, replyWaitersCount := x.replyWaitersCount + 1 })
+
+/-- WS-ZA ZA4.7: the compiled `linkReplyWaiter`.  The head code is read first;
+the state record is then rebuilt once around the table writes, with no branch
+between taking it apart and rebuilding it, so an exclusive state is rewritten
+in place (the branch in `updateTcbAtCode` had made every call copy the record). -/
+def linkReplyWaiterImpl (st : SystemState) (w s : ThreadId) : SystemState :=
+  let h := st.replyHeadCode s
+  { st with objects := linkReplyObjects st.objects w s h }
+
+@[csimp] theorem linkReplyWaiter_eq_impl : @linkReplyWaiter = @linkReplyWaiterImpl := by
+  funext st w s
+  unfold linkReplyWaiter linkReplyWaiterImpl linkReplyObjects updateTcbAtCode mapTcbInPlace
+  dsimp only
+  split <;> rfl
+
+/-- `unlinkReplyWaiter`'s four TCB writes on the object table alone, given
+`w`'s old predecessor and successor codes. -/
+def unlinkReplyObjects (o : Kernel.RobinHood.RHTable ObjId KernelObject) (w s : ThreadId) (pv nx : Nat) :
+    Kernel.RobinHood.RHTable ObjId KernelObject :=
+  let o1 := if pv = 0 then o else
+    o.mapValueAt (decode pv).toObjId (KernelObject.mapTcb fun x => { x with replyWaiterNextCode := nx })
+  let o2 := if nx = 0 then o1 else
+    o1.mapValueAt (decode nx).toObjId (KernelObject.mapTcb fun x => { x with replyWaiterPrevCode := pv })
+  let o3 := o2.mapValueAt s.toObjId (KernelObject.mapTcb fun x => { x with
+    replyWaitersHeadCode := if pv = 0 then nx else x.replyWaitersHeadCode,
+    replyWaitersCount := x.replyWaitersCount - 1 })
+  o3.mapValueAt w.toObjId (KernelObject.mapTcb fun x => { x with
+    replyWaiterPrevCode := 0, replyWaiterNextCode := 0 })
+
+/-- WS-ZA ZA4.7: the compiled `unlinkReplyWaiter`, rebuilding the state record
+once around the table writes, as `linkReplyWaiterImpl`. -/
+def unlinkReplyWaiterImpl (st : SystemState) (w s : ThreadId) : SystemState :=
+  let pv := st.replyPrevCode w
+  let nx := st.replyNextCode w
+  { st with objects := unlinkReplyObjects st.objects w s pv nx }
+
+@[csimp] theorem unlinkReplyWaiter_eq_impl : @unlinkReplyWaiter = @unlinkReplyWaiterImpl := by
+  funext st w s
+  unfold unlinkReplyWaiter unlinkReplyWaiterImpl unlinkReplyObjects updateTcbAtCode mapTcbInPlace
+  dsimp only
+  split <;> split <;> rfl
+
 theorem objReplyView_map_mapTcb {g : TCB → TCB} {gv : ReplyView → ReplyView}
     (hg : ∀ x, (g x).replyView = gv x.replyView) (o : Option KernelObject) :
     objReplyView (o.map (KernelObject.mapTcb g)) = (objReplyView o).map gv := by

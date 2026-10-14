@@ -837,6 +837,67 @@ theorem dedupCrossCoreSgis_nodup_cores (sgis : List (CoreId × SgiKind)) :
     ((dedupCrossCoreSgis sgis).map (·.1)).Nodup :=
   dedupFold_nodup_cores sgis [] (by simp)
 
+/-- The dedup fold leaves a list whose cores are already distinct as it is. -/
+private theorem dedupFold_of_nodup (l : List (CoreId × SgiKind)) :
+    ∀ (acc : List (CoreId × SgiKind)), ((acc ++ l).map (·.1)).Nodup →
+      l.foldl (fun acc s => if acc.any (fun a => a.1 == s.1) then acc else acc ++ [s])
+        acc = acc ++ l := by
+  induction l with
+  | nil => intro acc _; simp
+  | cons head tail ih =>
+    intro acc h
+    simp only [List.foldl_cons]
+    have hNo : (acc.any (fun a => a.1 == head.1)) = false := by
+      rw [List.map_append, List.map_cons, List.nodup_append] at h
+      apply Bool.eq_false_iff.mpr
+      intro hAny
+      obtain ⟨a, ha, hEq⟩ := List.any_eq_true.mp hAny
+      exact h.2.2 a.1 (List.mem_map_of_mem ha) head.1 (List.mem_cons_self ..)
+        (beq_iff_eq.mp hEq)
+    rw [if_neg (by simp [hNo]), ih (acc ++ [head]) (by simpa using h)]
+    simp
+
+/-- A list whose cores are distinct is its own dedup. -/
+theorem dedupCrossCoreSgis_of_nodup (sgis : List (CoreId × SgiKind))
+    (h : (sgis.map (·.1)).Nodup) : dedupCrossCoreSgis sgis = sgis :=
+  dedupFold_of_nodup sgis [] (by simpa using h)
+
+/-- WS-ZA ZA4.7: poke, in core order, every core of `cores` whose flag `m`
+sets.  Recursion rather than a fold, so the runtime builds no list and no
+closure. -/
+def fireRaisedOver (m : SeLe4n.Model.PerCoreFlags) : List CoreId → BaseIO Unit
+  | [] => pure ()
+  | c :: cs => do
+      if m.get c then sendSgiToCore c SgiKind.reschedule
+      fireRaisedOver m cs
+
+/-- WS-ZA ZA4.7: **fire a raised-flag word** (`PerCoreFlags.raised`): one
+`.reschedule` SGI per core whose flag went up, in core order.  It is
+`fireCrossCoreSgis` of the SGIs the word names (`fireRaisedReschedules_eq`),
+with neither the list nor its dedup built. -/
+def fireRaisedReschedules (m : SeLe4n.Model.PerCoreFlags) : BaseIO Unit :=
+  fireRaisedOver m allCores
+
+theorem fireRaisedOver_eq (m : SeLe4n.Model.PerCoreFlags) (cores : List CoreId) :
+    fireRaisedOver m cores =
+      ((cores.filter m.get).map fun c => (c, SgiKind.reschedule)).forM
+        (fun s => sendSgiToCore s.1 s.2) := by
+  induction cores with
+  | nil => rfl
+  | cons c cs ih =>
+    simp only [fireRaisedOver, List.filter_cons, ih]
+    cases m.get c
+    · rfl
+    · simp
+
+theorem fireRaisedReschedules_eq (m : SeLe4n.Model.PerCoreFlags) :
+    fireRaisedReschedules m =
+      fireCrossCoreSgis ((allCores.filter m.get).map fun c => (c, SgiKind.reschedule)) := by
+  unfold fireRaisedReschedules fireCrossCoreSgis
+  rw [dedupCrossCoreSgis_of_nodup, fireRaisedOver_eq]
+  simp only [List.map_map, Function.comp_def, List.map_id']
+  exact allCores_nodup.filter _
+
 -- ============================================================================
 -- WS-SM SM7.A.3 — Shootdown acknowledgment-flag typed wrappers
 -- ============================================================================

@@ -17,18 +17,20 @@ WS-ZA ZA1.3.  `Platform.FFI.syscallDispatchFromAbi` answers a refused syscall
 from the state the syscall was handed (the cap-fault delivery and the refusal
 record).  Against `Kernel`, which drops the state on `.error`, that means
 keeping the state alive across the whole dispatch, so every table the syscall
-writes is shared and copied whole.  This module gives the entry a
-`RefusalCarrying` form proven equal to `RefusalCarrying.ofKernel` of the
-specification (`syscallEntryCheckedR_eq`): its refusals carry exactly the state
-it was handed, so the caller reads that state off the refusal.
+writes is shared and copied whole.  This module gives the signal, the wait and
+the yield dispatches a `RefusalCarrying` form proven equal to
+`RefusalCarrying.ofKernel` of the specification: their refusals carry exactly
+the state they were handed, so the caller reads that state off the refusal.
+`RefusalCarryingEndpoint` does the same for the endpoint syscalls, and
+`RefusalCarryingEntry` routes the entry to them (`syscallEntryCheckedR_eq`).
 
 A path refuses in the state it was handed without keeping it only when it
 checks everything before its first write.  The notification signal does, on
 a call with no overflow words: its refusals all come before the store, and the
 cross-core signal itself answers a refusal with the state it was handed
-(`notificationSignalBoundOnCore_error_state`).  Every other syscall, and a
-signal with overflow words, takes `RefusalCarrying.ofKernel` of the
-specification, which keeps the state as before.
+(`notificationSignalBoundOnCore_error_state`).  A syscall that does not takes
+`RefusalCarrying.ofKernel` of the specification, which keeps the state as
+before.
 -/
 
 namespace SeLe4n.Kernel
@@ -772,109 +774,5 @@ theorem yieldOnCoreR_eq (st : SystemState) (c : Concurrency.CoreId) :
         cases st.getSchedContextWitnessed? scId with
         | none => rfl
         | some q => obtain ⟨sc, hSc⟩ := q; simp only [scheduleEffectiveOnCoreTotal_eq]
-
-/-- `syscallEntryChecked`, refusing in the state it was handed
-(`syscallEntryCheckedR_eq`).  A signal or wait whose arguments all sit in
-registers is routed on the register file itself (`registerRoutedSyscall`),
-before any decode record exists: the decode writes nothing and such a call
-fills no TLB entry (`tlbFillIpcBufferOnCore_zero`), so its dispatch is handed
-the entry's own state and refuses in it.  Every other call keeps the
-specification's form. -/
-@[inline] def syscallEntryCheckedR (ctx : LabelingContext)
-    (layout : SeLe4n.SyscallRegisterLayout)
-    (executingCore : Concurrency.CoreId)
-    (regCount : Nat := 32) : RefusalCarrying Unit :=
-  fun st =>
-    if isInsecureDefaultContext ctx then .error (.policyDenied, st)
-    else
-    match st.scheduler.currentOnCore executingCore with
-    | none => .error (.illegalState, st)
-    | some tid =>
-      -- `lookupThreadRegisterContext`, read in place: its `.ok (regs, st)` is
-      -- two cells this match never needs.
-      match st.getObject? tid.toObjId with
-      | some (.tcb tcb) =>
-        match SeLe4n.Kernel.Architecture.RegisterDecode.registerRoutedSyscall
-                layout tcb.registerContext regCount with
-        | .signal capAddr badge =>
-          dispatchSignalCheckedR ctx capAddr (.ok { badge }) tid executingCore st
-        | .wait capAddr =>
-          dispatchWaitCheckedR ctx capAddr tid executingCore st
-        -- WS-ZA ZA4.3: a yield reads no operand and checks nothing a write
-        -- precedes, so a refusal is in the entry's own state.
-        | .yield =>
-          match yieldOnCoreR st executingCore with
-          | .error r => .error r
-          | .ok st' => .ok ((), st')
-        | .viaDecode =>
-          RefusalCarrying.ofKernel (syscallEntryChecked ctx layout executingCore regCount) st
-      | some _ => .error (.illegalState, st)
-      | none => .error (.objectNotFound, st)
-
-theorem syscallEntryCheckedR_eq (ctx : LabelingContext)
-    (layout : SeLe4n.SyscallRegisterLayout) (executingCore : Concurrency.CoreId)
-    (regCount : Nat) :
-    syscallEntryCheckedR ctx layout executingCore regCount =
-      RefusalCarrying.ofKernel (syscallEntryChecked ctx layout executingCore regCount) := by
-  funext st
-  simp only [syscallEntryCheckedR]
-  split
-  · next hCtx => simp only [RefusalCarrying.ofKernel, syscallEntryChecked, hCtx, ↓reduceIte]
-  · next hCtx =>
-    split
-    · next hCur => simp only [RefusalCarrying.ofKernel, syscallEntryChecked, hCtx, hCur,
-        Bool.false_eq_true, ↓reduceIte]
-    · next tid hCur =>
-      split
-      · next tcb hObj =>
-        have hRegs : lookupThreadRegisterContext tid st = .ok (tcb.registerContext, st) := by
-          simp only [lookupThreadRegisterContext, hObj]
-        split
-        · next capAddr badge hSigRegs =>
-          obtain ⟨decoded, hDec, hSig, hCap, hZero, h0, hBadge⟩ :=
-            SeLe4n.Kernel.Architecture.RegisterDecode.decodeSyscallArgsFromState_of_routedSignal
-              st tid layout tcb.registerContext regCount capAddr badge hSigRegs
-          subst hCap
-          have hArgs : (.ok { badge } : Except KernelError
-                Architecture.SyscallArgDecode.NotificationSignalArgs) =
-              Architecture.SyscallArgDecode.decodeNotificationSignalArgs decoded := by
-            simp only [Architecture.SyscallArgDecode.decodeNotificationSignalArgs,
-              Architecture.SyscallArgDecode.requireMsgReg, h0, ↓reduceDIte, hBadge, bind,
-              Except.bind, pure, Except.pure]
-          rw [dispatchSignalCheckedR_eq ctx decoded _ tid executingCore hSig hArgs]
-          simp only [RefusalCarrying.ofKernel, syscallEntryChecked, hCtx, hCur, hRegs, hDec,
-            hZero, Bool.false_eq_true, ↓reduceIte,
-            SeLe4n.Kernel.Architecture.tlbFillIpcBufferOnCore_zero]
-        · next capAddr hWaitRegs =>
-          obtain ⟨decoded, hDec, hWait, hCap, hZero⟩ :=
-            SeLe4n.Kernel.Architecture.RegisterDecode.decodeSyscallArgsFromState_of_routedWait
-              st tid layout tcb.registerContext regCount capAddr hWaitRegs
-          subst hCap
-          rw [dispatchWaitCheckedR_eq ctx decoded tid executingCore hWait]
-          simp only [RefusalCarrying.ofKernel, syscallEntryChecked, hCtx, hCur, hRegs, hDec,
-            hZero, Bool.false_eq_true, ↓reduceIte,
-            SeLe4n.Kernel.Architecture.tlbFillIpcBufferOnCore_zero]
-        · next hYieldRegs =>
-          obtain ⟨decoded, hDec, hYield, hZero⟩ :=
-            SeLe4n.Kernel.Architecture.RegisterDecode.decodeSyscallArgsFromState_of_routedYield
-              st tid layout tcb.registerContext regCount hYieldRegs
-          simp only [RefusalCarrying.ofKernel, syscallEntryChecked, hCtx, hCur, hRegs, hDec,
-            hZero, Bool.false_eq_true, ↓reduceIte,
-            SeLe4n.Kernel.Architecture.tlbFillIpcBufferOnCore_zero,
-            dispatchSyscallChecked, hYield, ne_eq, not_true_eq_false, dispatchYield,
-            yieldOnCoreR_eq]
-          cases yieldOnCore st executingCore <;> rfl
-        · rfl
-      · next o hNot hObj =>
-        have hRegs : lookupThreadRegisterContext tid st = .error .illegalState := by
-          unfold lookupThreadRegisterContext; rw [hObj]
-          cases o <;> first | rfl | exact absurd rfl (hNot _)
-        simp only [RefusalCarrying.ofKernel, syscallEntryChecked, hCtx, hCur, hRegs,
-          Bool.false_eq_true, ↓reduceIte]
-      · next hObj =>
-        have hRegs : lookupThreadRegisterContext tid st = .error .objectNotFound := by
-          simp only [lookupThreadRegisterContext, hObj]
-        simp only [RefusalCarrying.ofKernel, syscallEntryChecked, hCtx, hCur, hRegs,
-          Bool.false_eq_true, ↓reduceIte]
 
 end SeLe4n.Kernel
