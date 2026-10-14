@@ -693,6 +693,9 @@ inductive RegisterRoutedSyscall where
       words: its operand address and its message info; the words are the
       inline message registers. -/
   | send (capAddr : CPtr) (msgInfo : MessageInfo)
+  /-- WS-ZA ZA4.7: a receive that names no reply object (message length 0):
+      its operand address. -/
+  | receive (capAddr : CPtr)
   | viaDecode
 
 /-- WS-ZA ZA4.2: register `r`'s word, as `readReg` reads it, without the
@@ -733,6 +736,9 @@ theorem readReg_val_eq_word (rf : RegisterFile) (r : RegName) :
         else if (readReg regs layout.syscallNumReg).val = SyscallId.send.toNat ∧
             msgInfo.extraCaps = 0 then
           .send capAddr msgInfo
+        else if (readReg regs layout.syscallNumReg).val = SyscallId.receive.toNat ∧
+            msgInfo.length = 0 then
+          .receive capAddr
         else .viaDecode
       else .viaDecode
   else .viaDecode
@@ -792,7 +798,7 @@ theorem decodeSyscallArgsFromState_of_routedSignal
         · cases h
       · split at h
         · cases h
-        · split at h <;> (try split at h) <;> cases h
+        · split at h <;> (try split at h) <;> (try split at h) <;> cases h
     · cases h
   · cases h
 
@@ -821,7 +827,7 @@ theorem decodeSyscallArgsFromState_of_routedWait
           cases h
           exact ⟨_, decodeSyscallArgsFromState_of_routed st tid layout regs regCount _ mi _
             hB hC hM hLen hS, rfl, rfl, rfl⟩
-        · split at h <;> (try split at h) <;> cases h
+        · split at h <;> (try split at h) <;> (try split at h) <;> cases h
     · cases h
   · cases h
 
@@ -851,7 +857,7 @@ theorem decodeSyscallArgsFromState_of_routedYield
           · next hS =>
             exact ⟨_, decodeSyscallArgsFromState_of_routed st tid layout regs regCount _ mi _
               hB hC hM hLen hS, rfl, rfl⟩
-          · split at h <;> cases h
+          · split at h <;> (try split at h) <;> cases h
     · cases h
   · cases h
 
@@ -889,7 +895,45 @@ theorem decodeSyscallArgsFromState_of_routedSend
               cases h
               exact ⟨_, decodeSyscallArgsFromState_of_routed st tid layout regs regCount _ _ _
                 hB hC hM hLen hS.1, rfl, rfl, rfl, rfl, hS.2, rfl, rfl⟩
+            · split at h <;> cases h
+    · cases h
+  · cases h
+
+/-- WS-ZA ZA4.7: what a routed receive pins about the decode — it succeeds, as
+`.receive`, at `capAddr`, with message length 0 and no overflow words. -/
+theorem decodeSyscallArgsFromState_of_routedReceive
+    (st : SystemState) (tid : ThreadId)
+    (layout : SyscallRegisterLayout) (regs : RegisterFile) (regCount : Nat)
+    (capAddr : CPtr)
+    (h : registerRoutedSyscall layout regs regCount = .receive capAddr) :
+    ∃ decoded, decodeSyscallArgsFromState st tid layout regs regCount = .ok decoded ∧
+      decoded.syscallId = .receive ∧ decoded.capAddr = capAddr ∧
+      decoded.overflowCount = 0 ∧ decoded.msgInfo.length = 0 ∧
+      decoded.capRecvSlot = SeLe4n.Slot.ofNat 0 := by
+  unfold registerRoutedSyscall at h
+  split at h
+  · next hB =>
+    rcases hC : decodeCapPtr (readReg regs layout.capPtrReg) with e | c
+    · simp only [hC] at h; cases h
+    rcases hM : decodeMsgInfo (readReg regs layout.msgInfoReg) with e | mi
+    · simp only [hC, hM] at h; cases h
+    simp only [hC, hM] at h
+    split at h
+    · next hLen =>
+      split at h
+      · split at h <;> cases h
+      · split at h
+        · cases h
+        · split at h
+          · cases h
+          · split at h
             · cases h
+            · split at h
+              · next hS =>
+                cases h
+                exact ⟨_, decodeSyscallArgsFromState_of_routed st tid layout regs regCount _ _ _
+                  hB hC hM hLen hS.1, rfl, rfl, rfl, hS.2, rfl⟩
+              · cases h
     · cases h
   · cases h
 

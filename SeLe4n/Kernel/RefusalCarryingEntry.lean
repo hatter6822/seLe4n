@@ -25,8 +25,8 @@ namespace SeLe4n.Kernel
 open SeLe4n.Model
 
 /-- `syscallEntryChecked`, refusing in the state it was handed
-(`syscallEntryCheckedR_eq`).  A signal, wait, yield or capability-free send
-whose arguments all sit in registers is routed on the register file itself (`registerRoutedSyscall`),
+(`syscallEntryCheckedR_eq`).  A signal, wait, yield, capability-free send or
+receive naming no reply object whose arguments all sit in registers is routed on the register file itself (`registerRoutedSyscall`),
 before any decode record exists: the decode writes nothing and such a call
 fills no TLB entry (`tlbFillIpcBufferOnCore_zero`), so its dispatch is handed
 the entry's own state and refuses in it.  Every other call keeps the
@@ -64,6 +64,10 @@ specification's form. -/
             (SeLe4n.Kernel.Architecture.RegisterDecode.extractMessageRegisters
               (layout.msgRegs.map (readReg tcb.registerContext)) msgInfo)
             tid executingCore st
+        -- WS-ZA ZA4.7: a receive that names no reply object; one that blocks
+        -- checks everything before its first write.
+        | .receive capAddr =>
+          dispatchReceiveCheckedR ctx capAddr tid executingCore st
         | .viaDecode =>
           RefusalCarrying.ofKernel (syscallEntryChecked ctx layout executingCore regCount) st
       | some _ => .error (.illegalState, st)
@@ -131,6 +135,15 @@ theorem syscallEntryCheckedR_eq (ctx : LabelingContext)
             simp [Architecture.SyscallArgDecode.decodeExtraCapAddrs, hInfo, hX]; rfl
           rw [dispatchSendCheckedR_eq ctx decoded _ tid executingCore hSend hCaps hSlot
             (by rw [hRegs', hInfo])]
+          simp only [RefusalCarrying.ofKernel, syscallEntryChecked, hCtx, hCur, hRegs, hDec,
+            hZero, Bool.false_eq_true, ↓reduceIte,
+            SeLe4n.Kernel.Architecture.tlbFillIpcBufferOnCore_zero]
+        · next capAddr hRecvRegs =>
+          obtain ⟨decoded, hDec, hRecv, hCap, hZero, hLen, hSlot⟩ :=
+            SeLe4n.Kernel.Architecture.RegisterDecode.decodeSyscallArgsFromState_of_routedReceive
+              st tid layout tcb.registerContext regCount capAddr hRecvRegs
+          subst hCap
+          rw [dispatchReceiveCheckedR_eq ctx decoded tid executingCore hRecv hLen hSlot]
           simp only [RefusalCarrying.ofKernel, syscallEntryChecked, hCtx, hCur, hRegs, hDec,
             hZero, Bool.false_eq_true, ↓reduceIte,
             SeLe4n.Kernel.Architecture.tlbFillIpcBufferOnCore_zero]
