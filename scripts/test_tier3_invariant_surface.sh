@@ -394,8 +394,10 @@ run_check "INVARIANT" rg -n '^\s*schedulerInvariantBundle st ∧ capabilityInvar
 # WS-H12a: endpointQueueWellFormed/endpointObjectValid removed (subsumed by dualQueueSystemInvariant).
 run_check "INVARIANT" rg -n '^inductive ThreadIpcState($|[ ({:\[\]])' SeLe4n/Model/Object/Types.lean
 run_check "INVARIANT" rg -n '^\s*ipcState\s*:\s*ThreadIpcState' SeLe4n/Model/Object/Types.lean
-run_check "INVARIANT" rg -n '^\s*sendQ\s*:\s*IntrusiveQueue' SeLe4n/Model/Object/Types.lean
-run_check "INVARIANT" rg -n '^\s*receiveQ\s*:\s*IntrusiveQueue' SeLe4n/Model/Object/Types.lean
+# WS-ZA ZA4.7: the endpoint stores its queue ends as codes; the two queues are
+# derived views of the old type.
+run_check "INVARIANT" rg -n '^@\[inline\] def Endpoint\.sendQ \(e : Endpoint\) : IntrusiveQueue :=' SeLe4n/Model/Object/Types.lean
+run_check "INVARIANT" rg -n '^@\[inline\] def Endpoint\.receiveQ \(e : Endpoint\) : IntrusiveQueue :=' SeLe4n/Model/Object/Types.lean
 
 
 # M4-A step-1 lifecycle metadata anchors must remain present.  v0.35.78: the
