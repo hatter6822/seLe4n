@@ -104,6 +104,7 @@ which holds the standing constraints `CLAUDE.md` used to carry.
 | Claim | Where it is made | Check it with | Artefact |
 |-------|------------------|---------------|----------|
 | Per-core scheduler state, selection, wake, timer tick, PIP, domains and CBS are verified per core, not boot-core pinned | `SELE4N_SPEC.md`, README | `./scripts/test_full.sh` | `Scheduler/Invariant/PerCore*.lean` |
+| Priority inheritance reads a server's reply waiters from a queue linked through their TCBs, with no object scan; every IPC arm the dispatcher runs keeps the queues consistent | `SELE4N_SPEC.md` §8.13 | `lake build SeLe4n.Kernel.IPC.CrossCore.ReplyWaitersDispatch`, `./scripts/test_full.sh` | `Scheduler/ReplyWaiters.lean` (`replyWaitersConsistent`), `IPC/CrossCore/ReplyWaiters*.lean`, `ipcReachable` |
 | Cross-core IPC — call, reply, notification, cancellation — preserves the IPC bundle | `SELE4N_SPEC.md` | `lake exe smp_ipc_suite` | `IPC/CrossCore/` |
 | Every cross-core SchedContext hand-off migrates the CBS replenish queue | `SELE4N_SPEC.md` | `lake exe smp_ipc_suite` | `migrateSchedContextReplenishment`, `replenishQueueAffinityConsistent_smp` |
 | TLB shootdown is a verified protocol with bounded wait and generation-tagged descriptors | `SELE4N_SPEC.md` | `lake exe smp_tlb_shootdown_suite` | `Architecture/TlbShootdownProtocol.lean` |
