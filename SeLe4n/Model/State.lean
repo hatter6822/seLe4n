@@ -3809,6 +3809,27 @@ def replyIsStashed (st : SystemState) (rid : SeLe4n.ReplyId) : Bool :=
           | _ => false
       | _ => false
 
+/-- WS-ZA ZA4.7: the compiled `replyIsStashed`: the stash compared without
+building `some rid` (`replyIsStashed_eq_impl`). -/
+def replyIsStashedImpl (st : SystemState) (rid : SeLe4n.ReplyId) : Bool :=
+  st.objects.fold (init := false) fun acc _oid obj =>
+    acc || match obj with
+      | .tcb t =>
+          match t.ipcState with
+          | .blockedOnReceive _ => t.pendingReceiveReply.isEqSome rid
+          | _ => false
+      | _ => false
+
+@[csimp] theorem replyIsStashed_eq_impl : @replyIsStashed = @replyIsStashedImpl := by
+  funext st rid
+  unfold replyIsStashed replyIsStashedImpl
+  congr
+  funext acc _oid obj
+  rcases obj with t | _ | _ | _ | _ | _ | _ | _ | _ | _ <;> try rfl
+  simp only []
+  split <;> try rfl
+  cases t.pendingReceiveReply <;> simp [Option.isEqSome]
+
 /-- WS-SM SM6.D (PR #827 review #6): is a server-supplied reply object valid to
 *stash* on a blocked receiver?  A plain receive (`none`) clears any stale stash and
 is always valid; `some rid` is valid iff the Reply is **present**, **free**

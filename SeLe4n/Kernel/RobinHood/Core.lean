@@ -405,8 +405,9 @@ def RHTable.erase [BEq α] [Hashable α] [LawfulBEq α] (t : RHTable α β) (k :
 -- N1-G: Fold, Resize, and Utility Operations
 -- ============================================================================
 
-/-- N1-G1: Fold over all occupied entries in the table. -/
-def RHTable.fold (t : RHTable α β) (init : γ) (f : γ → α → β → γ) : γ :=
+/-- N1-G1: Fold over all occupied entries in the table.  Inlined so a fold's
+body is specialised in rather than passed as a closure (WS-ZA ZA4.7). -/
+@[inline] def RHTable.fold (t : RHTable α β) (init : γ) (f : γ → α → β → γ) : γ :=
   t.slots.foldl (fun acc slot =>
     match slot with
     | none => acc

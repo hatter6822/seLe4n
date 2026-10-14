@@ -1693,6 +1693,34 @@ def runnableOnSomeCore (st : SystemState) (tid : SeLe4n.ThreadId) : Bool :=
   (SeLe4n.Kernel.Concurrency.allCores).any
     (fun c => st.queuedOn c tid)
 
+/-- WS-ZA ZA4.7: the compiled `runnableOnSomeCore`: the thread's run-core code
+read once and compared with the core range, with no closure over the core list
+and one lookup instead of one per core (`runnableOnSomeCore_eq_impl`). -/
+@[inline] def runnableOnSomeCoreImpl (st : SystemState) (tid : SeLe4n.ThreadId) : Bool :=
+  match st.objects[tid.toObjId]? with
+  | some (.tcb tcb) => tcb.runCoreCode != 0 && tcb.runCoreCode ≤ SeLe4n.Kernel.Concurrency.numCores
+  | _ => false
+
+@[csimp] theorem runnableOnSomeCore_eq_impl :
+    @runnableOnSomeCore = @runnableOnSomeCoreImpl := by
+  funext st tid
+  unfold runnableOnSomeCore runnableOnSomeCoreImpl
+  cases h : st.objects[tid.toObjId]? with
+  | none => simp [SystemState.queuedOn, SystemState.getTcb?, h]
+  | some o =>
+    cases o with
+    | tcb tcb =>
+      simp only [SystemState.queuedOn, SystemState.getTcb?, h]
+      apply Bool.eq_iff_iff.mpr
+      simp only [List.any_eq_true, beq_iff_eq, Bool.and_eq_true, bne_iff_ne, ne_eq,
+        decide_eq_true_eq]
+      constructor
+      · rintro ⟨c, _, hc⟩; rw [hc]; exact ⟨by omega, c.isLt⟩
+      · rintro ⟨h0, hle⟩
+        exact ⟨⟨tcb.runCoreCode - 1, by omega⟩, SeLe4n.Kernel.Concurrency.mem_allCores _,
+          by simp only []; omega⟩
+    | _ => simp [SystemState.queuedOn, SystemState.getTcb?, h]
+
 /-- WS-SM SM5.D.4 (audit-pass-2 / Codex-P2): is `tid` the *current* (running)
 thread on *some* core?  A running thread is dequeued-on-dispatch, so it is absent
 from every run queue — `runnableOnSomeCore` (run-queue membership) does NOT catch
@@ -1850,6 +1878,47 @@ def enqueueRunnableOnCore (st : SystemState) (c : CoreId)
         -- stales `c`'s decision (the diff's wake rule).
         { st' with scheduler := st'.scheduler.markReschedulePendingOnCore c }
   | none => st
+
+/-- WS-ZA ZA4.7: the compiled `enqueueRunnableOnCore`.  The `.ready` mark is
+written into the thread's own slot (`RHTable.modify`), with the priority read
+first, so on an exclusively owned state the TCB is not copied
+(`enqueueRunnableOnCore_eq_impl`). -/
+def enqueueRunnableOnCoreImpl (st : SystemState) (c : CoreId)
+    (tid : SeLe4n.ThreadId) : SystemState :=
+  match st.objects[tid.toObjId]? with
+  | some (.tcb tcb) =>
+      let prio := tcb.boostedPriority
+      if wakeDeclines st c tid then st
+      else
+        let objs := st.objects.modify tid.toObjId
+          (SystemState.mapTcbObject fun t => { t with ipcState := .ready })
+        let st' := ({ st with objects := objs }).runEnqueueAdmitted c tid prio
+        { st' with scheduler := st'.scheduler.markReschedulePendingOnCore c }
+  | _ => st
+
+@[csimp] theorem enqueueRunnableOnCore_eq_impl :
+    @enqueueRunnableOnCore = @enqueueRunnableOnCoreImpl := by
+  funext st c tid
+  unfold enqueueRunnableOnCore enqueueRunnableOnCoreImpl
+  have hNone : (∀ t, st.objects[tid.toObjId]? ≠ some (.tcb t)) →
+      st.getTcbWitnessed? tid = none := by
+    intro hN
+    unfold SystemState.getTcbWitnessed?
+    split
+    · next t hx => exact absurd hx (hN t)
+    · rfl
+  cases hx : st.objects[tid.toObjId]? with
+  | none => rw [hNone (by intro t h; rw [hx] at h; cases h)]
+  | some o =>
+    cases o with
+    | tcb tcb =>
+      rw [SystemState.getTcbWitnessed?_eq_some ((SystemState.getTcb?_eq_some_iff _ _ _).mpr hx)]
+      simp only []
+      split
+      · rfl
+      · rw [SeLe4n.Kernel.RobinHood.RHTable.modify_of_get? hx]
+        rfl
+    | _ => rw [hNone (by intro t h; rw [hx] at h; cases h)]
 
 /-- WS-ZA ZA4.5: the enqueue writes only the object store (the `.ready` mark
 and the woken thread's run-queue links) and the scheduler. -/

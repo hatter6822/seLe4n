@@ -640,10 +640,11 @@ def endpointReceiveDualOnCore (endpointId : SeLe4n.ObjId) (receiver : SeLe4n.Thr
 to its receive queue. -/
 @[inline] def receiveBlockEndpoint (receiver : SeLe4n.ThreadId)
     (tail? : Option SeLe4n.ThreadId) : KernelObject → KernelObject
-  | .endpoint e => .endpoint { e with receiveQ :=
+  | .endpoint e =>
+      let r := some receiver
       match tail? with
-      | none => { head := some receiver, tail := some receiver }
-      | some _ => { head := e.receiveQ.head, tail := some receiver } }
+      | none => .endpoint { e with receiveQ := { e.receiveQ with head := r, tail := r } }
+      | some _ => .endpoint { e with receiveQ := { e.receiveQ with tail := r } }
   | o => o
 
 /-- WS-ZA ZA4.7: the receiver's queue links after it is appended behind `tail?`.
@@ -741,7 +742,7 @@ theorem receiveEnqueue_inPlace_eq (st : SystemState) (endpointId : SeLe4n.ObjId)
     rw [SeLe4n.Kernel.RobinHood.RHTable.modify_of_get? hE]
   have hNotV : ∀ r, receiveBlockEndpoint receiver ep.receiveQ.tail (.endpoint ep) ≠
       .vspaceRoot r := by
-    intro r h; simp only [receiveBlockEndpoint] at h; cases h
+    intro r h; simp only [receiveBlockEndpoint] at h; split at h <;> cases h
   have hF1 : ∀ k, S1.objects.findsInPlace k = st.objects.findsInPlace k := fun k => by
     rw [hS1]; exact SeLe4n.Kernel.RobinHood.RHTable.findsInPlace_insert_of_findsInPlace k _ hFE
   have hG1 : ∀ k, endpointId ≠ k → S1.objects[k]? = st.objects[k]? := fun k hk => by

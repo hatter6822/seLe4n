@@ -117,10 +117,12 @@ def endpointSendDualOnCore (endpointId : SeLe4n.ObjId) (sender : SeLe4n.ThreadId
 starts at the popped head's successor. -/
 @[inline] def sendRendezvousEndpoint (next : Option SeLe4n.ThreadId) :
     KernelObject → KernelObject
-  | .endpoint e => .endpoint { e with receiveQ :=
+  | .endpoint e =>
+      -- branched outside the record, each arm rewriting the queue record it
+      -- was handed, so neither the endpoint nor its queue is rebuilt
       match next with
-      | some n => { head := some n, tail := e.receiveQ.tail }
-      | none => {} }
+      | some n => .endpoint { e with receiveQ := { e.receiveQ with head := some n } }
+      | none => .endpoint { e with receiveQ := { e.receiveQ with head := none, tail := none } }
   | o => o
 
 /-- WS-ZA ZA4.7: the receive completion a send rendezvous writes into the
@@ -206,7 +208,7 @@ theorem sendRendezvous_inPlace_eq (st : SystemState) (endpointId : SeLe4n.ObjId)
     rw [hS1]; unfold SystemState.modifyObject
     rw [SeLe4n.Kernel.RobinHood.RHTable.modify_of_get? hE]
   have hNotV : ∀ r, sendRendezvousEndpoint ht.queueNext (.endpoint ep) ≠ .vspaceRoot r := by
-    intro r h; simp only [sendRendezvousEndpoint] at h; cases h
+    intro r h; simp only [sendRendezvousEndpoint] at h; split at h <;> cases h
   have hF1 : ∀ k, S1.objects.findsInPlace k = st.objects.findsInPlace k := fun k => by
     rw [hS1]; exact SeLe4n.Kernel.RobinHood.RHTable.findsInPlace_insert_of_findsInPlace k _ hFE
   have hG1 : ∀ k, endpointId ≠ k → S1.objects[k]? = st.objects[k]? := fun k hk => by
