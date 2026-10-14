@@ -2095,7 +2095,7 @@ def syscallReturnOutcomeImpl (syscallId : UInt32) (st : SystemState)
     (tid : SeLe4n.ThreadId) : Architecture.SyscallOutcome :=
   let blocked :=
     match st.getTcb? tid with
-    | some tcb => Architecture.ipcStateBlocksReturn tcb.ipcState
+    | some tcb => Architecture.tcbBlocksReturn tcb
     | none => false
   if blocked then
     .blocks
@@ -2108,6 +2108,7 @@ def syscallReturnOutcomeImpl (syscallId : UInt32) (st : SystemState)
     @syscallReturnOutcome = @syscallReturnOutcomeImpl := by
   funext syscallId st tid
   unfold syscallReturnOutcome syscallReturnOutcomeImpl
+  simp only [Architecture.tcbBlocksReturn_eq]
   generalize ((SyscallId.ofNat? syscallId.toNat).map Architecture.syscallReturnShape).getD .unit
     = shape
   cases shape <;> rfl
@@ -3108,7 +3109,7 @@ built. -/
     (tid : SeLe4n.ThreadId) : UInt64 × UInt64 × UInt64 × UInt64 × UInt64 × UInt64 × UInt64 :=
   match st.getTcb? tid with
   | some tcb =>
-      if Architecture.ipcStateBlocksReturn tcb.ipcState then (1, 0, 0, 0, 0, 0, 0)
+      if Architecture.tcbBlocksReturn tcb then (1, 0, 0, 0, 0, 0, 0)
       else
         match ((SyscallId.ofNat? syscallId.toNat).map Architecture.syscallReturnShape).getD
             .unit with
@@ -3121,6 +3122,7 @@ built. -/
 theorem returnOutcomeWords_eq (syscallId : UInt32) (st : SystemState) (tid : SeLe4n.ThreadId) :
     (syscallReturnOutcome syscallId st tid).words = returnOutcomeWords syscallId st tid := by
   unfold syscallReturnOutcome returnOutcomeWords
+  simp only [Architecture.tcbBlocksReturn_eq]
   cases hT : st.getTcb? tid with
   | none =>
     simp only [Bool.false_eq_true, ↓reduceIte, Architecture.SyscallOutcome.words,

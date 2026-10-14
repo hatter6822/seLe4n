@@ -89,7 +89,6 @@ private def baseState : SystemState :=
       cspaceRoot := cnodeId
       vspaceRoot := ⟨20⟩
       ipcBuffer := (SeLe4n.VAddr.ofNat 2048)
-      ipcState := .ready
     })
     |>.withObject ⟨7⟩ (.tcb {
       tid := ⟨7⟩
@@ -98,7 +97,6 @@ private def baseState : SystemState :=
       cspaceRoot := cnodeId
       vspaceRoot := ⟨20⟩
       ipcBuffer := (SeLe4n.VAddr.ofNat 4096)
-      ipcState := .ready
     })
     |>.withObject ⟨8⟩ (.tcb {
       tid := ⟨8⟩
@@ -107,7 +105,6 @@ private def baseState : SystemState :=
       cspaceRoot := cnodeId
       vspaceRoot := ⟨20⟩
       ipcBuffer := (SeLe4n.VAddr.ofNat 8192)
-      ipcState := .ready
     })
     |>.withObject ⟨9⟩ (.tcb {
       tid := ⟨9⟩
@@ -116,7 +113,6 @@ private def baseState : SystemState :=
       cspaceRoot := cnodeId
       vspaceRoot := ⟨20⟩
       ipcBuffer := (SeLe4n.VAddr.ofNat 12288)
-      ipcState := .ready
     })
     |>.withObject notificationId (.notification { state := .idle, hasPendingBadge := false, pendingWord := SeLe4n.Badge.zero })
     |>.withObject ⟨20⟩ (.vspaceRoot { asid := asidPrimary, mappings := {} })
@@ -898,7 +894,6 @@ private def runDualQueueEndpointFifoNegativeChecks : IO Unit := do
         cspaceRoot := cnodeId
         vspaceRoot := ⟨20⟩
         ipcBuffer := (SeLe4n.VAddr.ofNat 4096)
-        ipcState := .ready
       })
       |>.withObject ⟨8⟩ (.tcb {
         tid := ⟨8⟩
@@ -907,7 +902,6 @@ private def runDualQueueEndpointFifoNegativeChecks : IO Unit := do
         cspaceRoot := cnodeId
         vspaceRoot := ⟨20⟩
         ipcBuffer := (SeLe4n.VAddr.ofNat 8192)
-        ipcState := .ready
       })
       |>.withRunnable [⟨8⟩]
       |>.withCurrent (some (SeLe4n.ThreadId.ofNat 7))
@@ -930,7 +924,6 @@ private def runDualQueueEndpointFifoNegativeChecks : IO Unit := do
             cspaceRoot := cnodeId
             vspaceRoot := ⟨20⟩
             ipcBuffer := (SeLe4n.VAddr.ofNat 4096)
-            ipcState := .ready
           }) } : SystemState).runEnqueueOnCore bootCoreId (SeLe4n.ThreadId.ofNat 7) ⟨80⟩
   let crossDomainState : SystemState :=
     { crossDomainEnqueued with
@@ -961,7 +954,6 @@ private def runDualQueueEndpointFifoNegativeChecks : IO Unit := do
         cspaceRoot := cnodeId
         vspaceRoot := ⟨20⟩
         ipcBuffer := (SeLe4n.VAddr.ofNat 12288)
-        ipcState := .ready
       })
       |>.withObject ⟨11⟩ (.tcb {
         tid := ⟨11⟩
@@ -971,7 +963,6 @@ private def runDualQueueEndpointFifoNegativeChecks : IO Unit := do
         cspaceRoot := cnodeId
         vspaceRoot := ⟨20⟩
         ipcBuffer := (SeLe4n.VAddr.ofNat 16384)
-        ipcState := .ready
       })
       |>.withObject ⟨12⟩ (.tcb {
         tid := ⟨12⟩
@@ -981,7 +972,6 @@ private def runDualQueueEndpointFifoNegativeChecks : IO Unit := do
         cspaceRoot := cnodeId
         vspaceRoot := ⟨20⟩
         ipcBuffer := (SeLe4n.VAddr.ofNat 20480)
-        ipcState := .ready
       })
       |>.withRunnable [⟨12⟩, ⟨10⟩, ⟨11⟩]
       |>.withCurrent none
@@ -2172,8 +2162,8 @@ private def runWSH13Checks : IO Unit := do
     (BootstrapBuilder.empty
       |>.withObject ⟨1⟩ (.tcb {
         tid := ⟨1⟩, priority := ⟨100⟩, domain := ⟨0⟩,
-        cspaceRoot := ⟨10⟩, vspaceRoot := ⟨20⟩, ipcBuffer := (SeLe4n.VAddr.ofNat 4096),
-        ipcState := .ready })
+        cspaceRoot := ⟨10⟩, vspaceRoot := ⟨20⟩, ipcBuffer := (SeLe4n.VAddr.ofNat 4096)
+        })
       |>.withService svcA {
         identity := { sid := svcA, backingObject := ⟨1⟩, owner := ⟨10⟩ }
         dependencies := [svcB]
@@ -2368,7 +2358,6 @@ def runWSH16LifecycleChecks : IO Unit := do
         cspaceRoot := h16CnodeId
         vspaceRoot := ⟨20⟩
         ipcBuffer := (SeLe4n.VAddr.ofNat 4096)
-        ipcState := .ready
       })
       |>.withLifecycleObjectType h16TargetId .endpoint
       |>.withLifecycleObjectType h16CnodeId .cnode
@@ -2533,7 +2522,7 @@ def runAN4A5LifecycleVisibilityChecks : IO Unit := do
   let a5Tcb : TCB :=
     { tid := ⟨170⟩, priority := ⟨10⟩, domain := ⟨0⟩
     , cspaceRoot := a5CnodeId, vspaceRoot := ⟨20⟩
-    , ipcBuffer := (SeLe4n.VAddr.ofNat 4096), ipcState := .ready }
+    , ipcBuffer := (SeLe4n.VAddr.ofNat 4096) }
   let a5State : SystemState :=
     (BootstrapBuilder.empty
       |>.withObject a5RetypeTcbId (.tcb a5Tcb)
@@ -2891,8 +2880,8 @@ private def runWSKGServiceIpcChecks : IO Unit := do
     (BootstrapBuilder.empty
       |>.withObject svcBackingId (.tcb {
         tid := ⟨801⟩, priority := ⟨10⟩, domain := ⟨0⟩,
-        cspaceRoot := ⟨10⟩, vspaceRoot := ⟨20⟩, ipcBuffer := (SeLe4n.VAddr.ofNat 4096),
-        ipcState := .ready })
+        cspaceRoot := ⟨10⟩, vspaceRoot := ⟨20⟩, ipcBuffer := (SeLe4n.VAddr.ofNat 4096)
+        })
       |>.withService svcPolicyId {
         identity := { sid := svcPolicyId, backingObject := svcBackingId, owner := ⟨10⟩ }
         dependencies := []
@@ -3035,12 +3024,10 @@ def runWSL4BlockedThreadChecks : IO Unit := do
       |>.withObject ⟨7⟩ (.tcb {
         tid := ⟨7⟩, priority := ⟨10⟩, domain := ⟨0⟩,
         cspaceRoot := ⟨10⟩, vspaceRoot := ⟨20⟩, ipcBuffer := (SeLe4n.VAddr.ofNat 4096),
-        ipcState := .ready
       })
       |>.withObject ⟨8⟩ (.tcb {
         tid := ⟨8⟩, priority := ⟨20⟩, domain := ⟨0⟩,
         cspaceRoot := ⟨10⟩, vspaceRoot := ⟨20⟩, ipcBuffer := (SeLe4n.VAddr.ofNat 8192),
-        ipcState := .ready
       })
       |>.withRunnable [⟨7⟩, ⟨8⟩]
     ).buildChecked
@@ -3187,7 +3174,6 @@ def runL13CapTransferShortCircuitChecks : IO Unit := do
     vspaceRoot := senderRoot,
     ipcBuffer := (SeLe4n.VAddr.ofNat 0),
     timeSlice := 5,
-    ipcState := .ready,
     schedContextBinding := .unbound
   }
 
@@ -4042,7 +4028,7 @@ private def runS2HLifecycleErrorTests : IO Unit := do
     (SeLe4n.Kernel.retypeFromUntyped f2UntypedAuthSlot f2UntypedObjId ⟨90⟩
       (.tcb { tid := ⟨90⟩, priority := ⟨10⟩, domain := ⟨0⟩,
               cspaceRoot := cnodeId, vspaceRoot := ⟨20⟩,
-              ipcBuffer := (SeLe4n.VAddr.ofNat 0), ipcState := .ready }) 0 f2UntypedState)
+              ipcBuffer := (SeLe4n.VAddr.ofNat 0) }) 0 f2UntypedState)
     .untypedAllocSizeTooSmall
 
   -- S2-H-02: retypeFromUntyped with device untyped → TCB rejection
@@ -4051,7 +4037,7 @@ private def runS2HLifecycleErrorTests : IO Unit := do
     (SeLe4n.Kernel.retypeFromUntyped f2UntypedAuthSlot f2DeviceUntypedId ⟨91⟩
       (.tcb { tid := ⟨91⟩, priority := ⟨10⟩, domain := ⟨0⟩,
               cspaceRoot := cnodeId, vspaceRoot := ⟨20⟩,
-              ipcBuffer := (SeLe4n.VAddr.ofNat 0), ipcState := .ready }) 64 f2DeviceState)
+              ipcBuffer := (SeLe4n.VAddr.ofNat 0) }) 64 f2DeviceState)
     .untypedDeviceRestriction
 
   -- S2-H-03: retypeFromUntyped targeting non-untyped object → typeMismatch
@@ -4251,7 +4237,7 @@ private def runX2RuntimeInvariantTests : IO Unit := do
     tid := x2Tid, priority := ⟨100⟩, domain := ⟨0⟩,
     cspaceRoot := SeLe4n.ObjId.ofNat 0, vspaceRoot := SeLe4n.ObjId.ofNat 0,
     ipcBuffer := SeLe4n.VAddr.ofNat 0, timeSlice := 9,
-    ipcState := .ready, schedContextBinding := .unbound }
+    schedContextBinding := .unbound }
   let x2Base : SystemState :=
     (BootstrapBuilder.empty
       |>.withObject x2Tid.toObjId (.tcb x2Tcb)
@@ -4535,11 +4521,11 @@ private def r1BaseState : SystemState :=
     |>.withObject r1CallerTid.toObjId (.tcb
         { tid := r1CallerTid, priority := ⟨1⟩, domain := ⟨0⟩,
           cspaceRoot := r1CallerCNode, vspaceRoot := ⟨0⟩,
-          ipcBuffer := (SeLe4n.VAddr.ofNat 0), ipcState := .ready })
+          ipcBuffer := (SeLe4n.VAddr.ofNat 0) })
     |>.withObject r1ReceiverTid.toObjId (.tcb
         { tid := r1ReceiverTid, priority := ⟨1⟩, domain := ⟨0⟩,
           cspaceRoot := r1ReceiverCNode, vspaceRoot := ⟨0⟩,
-          ipcBuffer := (SeLe4n.VAddr.ofNat 0), ipcState := .ready })
+          ipcBuffer := (SeLe4n.VAddr.ofNat 0) })
     |>.withObject r1ReplyId.toObjId (.reply { replyId := r1ReplyId })
     |>.withRunnable [r1CallerTid, r1ReceiverTid]
     |>.buildChecked)
@@ -4641,7 +4627,6 @@ private def r5eOrphanedBoundState : SystemState :=
         { tid := r5eOrphanedTid, priority := ⟨1⟩, domain := ⟨0⟩,
           cspaceRoot := ⟨0⟩, vspaceRoot := ⟨0⟩,
           ipcBuffer := (SeLe4n.VAddr.ofNat 0),
-          ipcState := .ready,
           schedContextBinding := .bound r5eOrphanedScId,
           timeSlice := 1 })
     |>.withCurrent r5eOrphanedTid

@@ -598,7 +598,7 @@ mirror without it would place a thread the live bind now leaves parked — the
 direction that matters on a differential surface. -/
 def frozenBindPlacesParkedThread (st : FrozenSystemState) (tid : SeLe4n.ThreadId)
     (tcb : TCB) (sc : SeLe4n.Kernel.SchedContext) : Bool :=
-  !frozenQueuedAnywhere st tid && tcb.ipcState == .ready
+  !frozenQueuedAnywhere st tid && decide (tcb.ipcState = .ready)
     && tcb.threadState != SeLe4n.Model.ThreadState.Inactive
     && sc.budgetRemaining.isPositive
 
@@ -1293,7 +1293,7 @@ def frozenStoreTcbIpcState (st : FrozenSystemState) (tid : SeLe4n.ThreadId)
   match frozenLookupTcb st tid with
   | none => .error .objectNotFound
   | some tcb =>
-      match frozenStoreTcb tid { tcb with ipcState := ipcState } st with
+      match frozenStoreTcb tid (tcb.setIpcState ipcState) st with
       | .error e => .error e
       | .ok ((), st') => .ok st'
 
@@ -1311,7 +1311,7 @@ def frozenStoreTcbIpcStateAndMessage (st : FrozenSystemState)
   | none => .error .objectNotFound
   | some tcb =>
       match frozenStoreTcb tid
-          { tcb with ipcState := ipcState, pendingMessage := msg? } st with
+          (TCB.setIpcState { tcb with pendingMessage := msg? } ipcState) st with
       | .error e => .error e
       | .ok ((), st') => .ok st'
 

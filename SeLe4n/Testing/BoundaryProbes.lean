@@ -131,7 +131,7 @@ def saveProbeState (tid : UInt64) : SeLe4n.Model.SystemState :=
     [(t.toObjId, .tcb
       { tid := t, priority := ⟨0⟩, domain := ⟨0⟩,
         cspaceRoot := ⟨0⟩, vspaceRoot := ⟨0⟩,
-        ipcBuffer := SeLe4n.VAddr.ofNat 0, ipcState := .ready,
+        ipcBuffer := SeLe4n.VAddr.ofNat 0,
         threadState := .Running })]
   { (default : SeLe4n.Model.SystemState) with
     objects := SeLe4n.Kernel.RobinHood.RHTable.ofList objs

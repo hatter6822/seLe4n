@@ -2597,12 +2597,12 @@ theorem endpointReplyRecv_preserves_projection
             · -- sender at same ObjId as replyTarget — queueNext preserved
               unfold storeTcbIpcStateAndMessage modifyTcb at hStore; simp only [hLookup] at hStore
               cases hStObj : storeObject replyTarget.toObjId
-                  (.tcb { tcb with ipcState := .ready, pendingMessage := some replyMsg }) st with
+                  (.tcb (TCB.setIpcState { tcb with pendingMessage := some replyMsg } .ready)) st with
               | error e => simp [hStObj] at hStore
               | ok pair =>
                 simp only [hStObj, Except.ok.injEq] at hStore; subst hStore
                 have hTcbMid : pair.2.objects[sender'.toObjId]? =
-                    some (.tcb { tcb with ipcState := .ready, pendingMessage := some replyMsg }) := by
+                    some (.tcb (TCB.setIpcState { tcb with pendingMessage := some replyMsg } .ready)) := by
                   rw [hSenderNe]
                   exact storeObject_objects_eq st pair.2 replyTarget.toObjId _ hObjInv hStObj
                 rw [hTcbMid] at hSenderTcb; cases hSenderTcb

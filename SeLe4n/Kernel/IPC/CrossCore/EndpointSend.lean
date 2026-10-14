@@ -130,7 +130,7 @@ passes it without building an `Option`. -/
 /-- WS-ZA ZA4.7: the receive completion a send rendezvous writes into the
 woken receiver. -/
 @[inline] def receiveCompleteTcb (msg : IpcMessage) (t : TCB) : TCB :=
-  { t with ipcState := .ready, pendingMessage := some msg, pendingReceiveReply := none }
+  (TCB.setIpcState { t with pendingMessage := some msg, pendingReceiveReply := none } .ready)
 
 /-- WS-ZA ZA4.7: a thread taken off an endpoint queue: its three link codes
 cleared (`tcbWithQueueLinks t none none none` by definition). -/
@@ -467,9 +467,9 @@ theorem wakeThread_bootCore_eq_ensureRunnable (st : SystemState) (tid : SeLe4n.T
       exact ⟨bootCoreId, SeLe4n.Kernel.Concurrency.mem_allCores _, h⟩
   -- `hReady` makes the wake's object write a re-store of the value already
   -- present: structure eta collapses the update to the TCB itself.
-  have hEta : ({ tcb with ipcState := (.ready : ThreadIpcState) } : TCB) = tcb := by
-    rw [← hReady]
-  have hObj : st.objects.insert tid.toObjId (.tcb { tcb with ipcState := .ready })
+  have hEta : ((tcb.setIpcState (.ready : ThreadIpcState)) : TCB) = tcb := by
+    rw [← hReady, TCB.setIpcState_ipcState]
+  have hObj : st.objects.insert tid.toObjId (.tcb (tcb.setIpcState .ready))
       = st.objects := by
     refine SeLe4n.Kernel.RobinHood.RHTable.insert_eq_self_of_get? _ _ _ hNoResize ?_
     have hRaw := (SystemState.getTcb?_eq_some_iff st tid tcb).mp hTcb
@@ -477,7 +477,7 @@ theorem wakeThread_bootCore_eq_ensureRunnable (st : SystemState) (tid : SeLe4n.T
     rw [hEta]
     exact hRaw
   have hSt : ({ st with objects :=
-      (st.objects.insert tid.toObjId (.tcb { tcb with ipcState := .ready })) } : SystemState)
+      (st.objects.insert tid.toObjId (.tcb (tcb.setIpcState .ready))) } : SystemState)
       = st := by
     rw [hObj]
   simp only [hSt]

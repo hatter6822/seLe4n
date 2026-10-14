@@ -785,14 +785,14 @@ theorem updateTcb_storeLeaves {st : SystemState} {tid : SeLe4n.ThreadId}
   exact storeLeavesIndexAndTypes_insert_inPlace hF (fun r h => by cases h) h
 
 def storeTcbIpcState (st : SystemState) (tid : SeLe4n.ThreadId) (ipcState : ThreadIpcState) : Except KernelError SystemState :=
-  modifyTcb st tid (fun tcb => { tcb with ipcState := ipcState })
+  modifyTcb st tid (fun tcb => (tcb.setIpcState ipcState))
 
 /-- WS-L1/L1-C: Variant of `storeTcbIpcState` that accepts a pre-looked-up
 TCB, bypassing the internal `lookupTcb`. Use when the caller has already
 validated the TCB and no intervening operation has modified it. -/
 def storeTcbIpcState_fromTcb (st : SystemState) (tid : SeLe4n.ThreadId)
     (tcb : TCB) (ipcState : ThreadIpcState) : Except KernelError SystemState :=
-  match storeObject tid.toObjId (.tcb { tcb with ipcState := ipcState }) st with
+  match storeObject tid.toObjId (.tcb (tcb.setIpcState ipcState)) st with
   | .error e => .error e
   | .ok ((), st') => .ok st'
 
@@ -814,7 +814,7 @@ def storeTcbPendingMessage (st : SystemState) (tid : SeLe4n.ThreadId) (msg : Opt
 Avoids two separate storeObject calls and simplifies proof tracking. -/
 def storeTcbIpcStateAndMessage (st : SystemState) (tid : SeLe4n.ThreadId)
     (ipcState : ThreadIpcState) (msg : Option IpcMessage) : Except KernelError SystemState :=
-  modifyTcb st tid (fun tcb => { tcb with ipcState := ipcState, pendingMessage := msg })
+  modifyTcb st tid (fun tcb => (TCB.setIpcState { tcb with pendingMessage := msg } ipcState))
 
 /-- WS-L1/L1-B: Variant of `storeTcbIpcStateAndMessage` that accepts a
 pre-looked-up TCB, bypassing the internal `lookupTcb`. Use when the caller
@@ -822,7 +822,7 @@ has already validated the TCB on the same state. -/
 def storeTcbIpcStateAndMessage_fromTcb (st : SystemState) (tid : SeLe4n.ThreadId)
     (tcb : TCB) (ipcState : ThreadIpcState) (msg : Option IpcMessage)
     : Except KernelError SystemState :=
-  match storeObject tid.toObjId (.tcb { tcb with ipcState := ipcState, pendingMessage := msg }) st with
+  match storeObject tid.toObjId (.tcb (TCB.setIpcState { tcb with pendingMessage := msg } ipcState)) st with
   | .error e => .error e
   | .ok ((), st') => .ok st'
 
@@ -1372,7 +1372,7 @@ theorem storeTcbIpcStateAndMessage_fromTcb_kindPreservingWrite
     kindPreservingWrite st st' := by
   unfold storeTcbIpcStateAndMessage_fromTcb at hStore
   cases hS : storeObject tid.toObjId
-      (.tcb { tcb with ipcState := ipcState, pendingMessage := msg }) st with
+      (.tcb (TCB.setIpcState { tcb with pendingMessage := msg } ipcState)) st with
   | error e => rw [hS] at hStore; cases hStore
   | ok p =>
     obtain ⟨_, s1⟩ := p
@@ -1392,7 +1392,7 @@ theorem storeTcbIpcStateAndMessage_fromTcb_cdt_eq
     st'.cdt = st.cdt ∧ st'.cdtNodeSlot = st.cdtNodeSlot := by
   unfold storeTcbIpcStateAndMessage_fromTcb at hStore
   cases hS : storeObject tid.toObjId
-      (.tcb { tcb with ipcState := ipcState, pendingMessage := msg }) st with
+      (.tcb (TCB.setIpcState { tcb with pendingMessage := msg } ipcState)) st with
   | error e => rw [hS] at hStore; cases hStore
   | ok p =>
     obtain ⟨_, s1⟩ := p
@@ -1423,7 +1423,7 @@ the `Call` rendezvous, where `linkServerStashedReply` consumes it. -/
 def storeTcbReceiveComplete (st : SystemState) (tid : SeLe4n.ThreadId)
     (msg : Option IpcMessage) : Except KernelError SystemState :=
   modifyTcb st tid
-    (fun tcb => { tcb with ipcState := .ready, pendingMessage := msg, pendingReceiveReply := none })
+    (fun tcb => (TCB.setIpcState { tcb with pendingMessage := msg, pendingReceiveReply := none } .ready))
 
 /-- WS-L1: `lookupTcb` is preserved when `storeObject` targets a notification
 (different ObjId from any TCB). Used to justify `_fromTcb` usage after an
@@ -8945,7 +8945,7 @@ theorem storeTcbIpcStateAndMessage_tcb_backward_fields
   | some tcb =>
     simp only [hLookup] at hStep
     cases hStore : storeObject tid.toObjId
-        (.tcb { tcb with ipcState := ipc, pendingMessage := msg }) st with
+        (.tcb (TCB.setIpcState { tcb with pendingMessage := msg } ipc)) st with
     | error e => simp [hStore] at hStep
     | ok pair =>
       obtain ⟨⟨⟩, st''⟩ := pair
@@ -8955,7 +8955,7 @@ theorem storeTcbIpcStateAndMessage_tcb_backward_fields
       · subst hs
         rw [storeObject_objects_eq st st'' tid.toObjId _ hObjInv hStore] at hObj
         obtain rfl := KernelObject.tcb.inj (Option.some.inj hObj)
-        exact ⟨tcb, lookupTcb_some_objects st tid tcb hLookup, rfl, rfl, Or.inr rfl⟩
+        exact ⟨tcb, lookupTcb_some_objects st tid tcb hLookup, rfl, rfl, Or.inr (TCB.ipcState_setIpcState _ _)⟩
       · rw [storeObject_objects_ne st st'' tid.toObjId s _ hs hObjInv hStore] at hObj
         exact ⟨tx, hObj, rfl, rfl, Or.inl rfl⟩
 
@@ -9183,7 +9183,7 @@ theorem storeTcbIpcState_cnode_backward
       simp [hLookup] at hStep;
     | some tcb =>
       simp only [hLookup] at hStep
-      cases hStore : storeObject tid.toObjId (.tcb { tcb with ipcState := ipc }) st with
+      cases hStore : storeObject tid.toObjId (.tcb (tcb.setIpcState ipc)) st with
       | error e => simp [hStore] at hStep
       | ok pair =>
         simp only [hStore] at hStep
@@ -9210,7 +9210,7 @@ theorem storeTcbIpcState_endpoint_backward
       simp [hLookup] at hStep;
     | some tcb =>
       simp only [hLookup] at hStep
-      cases hStore : storeObject tid.toObjId (.tcb { tcb with ipcState := ipc }) st with
+      cases hStore : storeObject tid.toObjId (.tcb (tcb.setIpcState ipc)) st with
       | error e => simp [hStore] at hStep
       | ok pair =>
         simp only [hStore] at hStep
@@ -9589,8 +9589,8 @@ theorem notificationWaitPark_block_objects {st st' : SystemState} {nid : SeLe4n.
       tcb.ipcState ≠ .blockedOnNotification nid ∧
       st'.objects[nid]? = some (.notification (ntfn.withWaiterAppended waiter)) ∧
       (∃ t', st'.objects[waiter.toObjId]? = some (.tcb t') ∧
-        t'.withoutRunLinks = ({ tcb with
-          ipcState := .blockedOnNotification nid, pendingMessage := none } : TCB).withoutRunLinks) ∧
+        t'.withoutRunLinks = ((TCB.setIpcState { tcb with
+          pendingMessage := none } (.blockedOnNotification nid)) : TCB).withoutRunLinks) ∧
       (∀ x, x ≠ nid → x ≠ waiter.toObjId →
         (st'.objects[x]?).map KernelObject.withoutRunLinks =
           (st.objects[x]?).map KernelObject.withoutRunLinks) := by
@@ -9654,7 +9654,7 @@ theorem notificationWaitPark_badge_objects {st st' : SystemState} {nid : SeLe4n.
       st.objects[waiter.toObjId]? = some (.tcb tcb) ∧
       st1.objects[nid]? = some (.notification ntfn') ∧
       (∀ x, x ≠ nid → st1.objects[x]? = st.objects[x]?) ∧
-      st'.objects[waiter.toObjId]? = some (.tcb { tcb with ipcState := .ready }) ∧
+      st'.objects[waiter.toObjId]? = some (.tcb (tcb.setIpcState .ready)) ∧
       (∀ x, x ≠ waiter.toObjId → st'.objects[x]? = st1.objects[x]?) := by
   unfold notificationWaitPark SystemState.getObject? at h
   cases hObj : st.objects[nid]? with

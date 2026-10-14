@@ -921,6 +921,83 @@ inductive ThreadIpcState where
   | blockedOnCall (endpoint : SeLe4n.ObjId)
   deriving Repr, DecidableEq
 
+namespace ThreadIpcState
+
+/-! WS-ZA ZA4.7: a thread's IPC state as two scalar codes, the form the TCB
+stores it in (`TCB.ipcObjectCode`, `TCB.ipcStateCode`): a constructor with a
+payload is a heap cell, so a store of `.blockedOnReceive ep` or
+`.blockedOnReply ep (some r)` allocated on every IPC that blocks.  The pair
+`(objectCode, stateCode)` is a bijection with `ThreadIpcState` (`ofCodes_codes`,
+`objectCode_ofCodes`, `stateCode_ofCodes`): state `0` is `ready` at object `0`
+and `blockedOnSend o` at object `o + 1`; states `1`–`3` are receive,
+notification and call on the object; state `c + 4` is `blockedOnReply` on the
+object with the reply target whose `ThreadId.optCode` is `c`. -/
+
+/-- The object word of the state's code. -/
+@[inline] def objectCode : ThreadIpcState → Nat
+  | .ready => 0
+  | .blockedOnSend e => e.val + 1
+  | .blockedOnReceive e => e.val
+  | .blockedOnNotification n => n.val
+  | .blockedOnReply e _ => e.val
+  | .blockedOnCall e => e.val
+
+/-- The state word of the state's code. -/
+@[inline] def stateCode : ThreadIpcState → Nat
+  | .ready => 0
+  | .blockedOnSend _ => 0
+  | .blockedOnReceive _ => 1
+  | .blockedOnNotification _ => 2
+  | .blockedOnReply _ t => SeLe4n.ThreadId.optCode t + 4
+  | .blockedOnCall _ => 3
+
+/-- The state a pair of codes stands for. -/
+@[inline] def ofCodes (obj state : Nat) : ThreadIpcState :=
+  match state with
+  | 0 => match obj with
+    | 0 => .ready
+    | o + 1 => .blockedOnSend ⟨o⟩
+  | 1 => .blockedOnReceive ⟨obj⟩
+  | 2 => .blockedOnNotification ⟨obj⟩
+  | 3 => .blockedOnCall ⟨obj⟩
+  | c + 4 => .blockedOnReply ⟨obj⟩ (SeLe4n.ThreadId.ofOptCode c)
+
+@[simp] theorem ofCodes_codes (s : ThreadIpcState) :
+    ofCodes s.objectCode s.stateCode = s := by
+  cases s <;> simp [ofCodes, objectCode, stateCode]
+
+@[simp] theorem ofCodes_zero_zero : ofCodes 0 0 = .ready := rfl
+
+@[simp] theorem objectCode_ofCodes (obj state : Nat) :
+    (ofCodes obj state).objectCode = obj := by
+  unfold ofCodes
+  split
+  · split <;> rfl
+  all_goals rfl
+
+@[simp] theorem stateCode_ofCodes (obj state : Nat) :
+    (ofCodes obj state).stateCode = state := by
+  unfold ofCodes
+  split
+  · split <;> rfl
+  all_goals simp [stateCode]
+
+/-- A pair of codes stands for `s` exactly when it is `s`'s pair. -/
+theorem ofCodes_eq_iff (obj state : Nat) (s : ThreadIpcState) :
+    ofCodes obj state = s ↔ obj = s.objectCode ∧ state = s.stateCode := by
+  constructor
+  · rintro rfl; exact ⟨(objectCode_ofCodes _ _).symm, (stateCode_ofCodes _ _).symm⟩
+  · rintro ⟨rfl, rfl⟩; exact ofCodes_codes s
+
+/-- Deciding which state a pair of codes stands for compares the two words, so
+a test of a thread's state (`decide (tcb.ipcState = .ready)`) builds no
+constructor cell. -/
+instance (priority := high) decEqOfCodes (obj state : Nat) (s : ThreadIpcState) :
+    Decidable (ofCodes obj state = s) :=
+  decidable_of_iff (obj = s.objectCode ∧ state = s.stateCode) (ofCodes_eq_iff obj state s).symm
+
+end ThreadIpcState
+
 /-- V8-G1: Explicit thread lifecycle state.
 Previously, thread state was inferred from queue membership and `ThreadIpcState`.
 This enum makes the state machine explicit, improving debuggability and
@@ -995,7 +1072,12 @@ structure TCB where
   cspaceRoot : SeLe4n.ObjId
   vspaceRoot : SeLe4n.ObjId
   ipcBuffer : SeLe4n.VAddr
-  ipcState : ThreadIpcState := .ready
+  /-- WS-ZA ZA4.7: the object word of the thread's IPC state, read with
+      `ipcStateCode` through `TCB.ipcState` and written with it through
+      `TCB.setIpcState` (`ThreadIpcState.objectCode`).  Two words rather than
+      a `ThreadIpcState` field, so a block or a rendezvous writes scalars
+      instead of a fresh constructor cell. -/
+  ipcObjectCode : Nat := 0
   /-- V8-G1: Explicit lifecycle state. Default `.Inactive` for freshly created
       threads; set to `.Ready` when enqueued, `.Running` when dispatched. -/
   threadState : ThreadState := .Inactive
@@ -1209,6 +1291,9 @@ structure TCB where
   /-- How many threads are reply-blocked on this thread: the length of the
       queue from `replyWaitersHead`, and so the bound of every walk over it. -/
   replyWaitersCount : Nat := 0
+  /-- WS-ZA ZA4.7: the state word of the thread's IPC state
+      (`ThreadIpcState.stateCode`); see `ipcObjectCode`. -/
+  ipcStateCode : Nat := 0
   deriving Repr
 
 /-- WS-ZA ZA4.5: where a thread runs — its home core and its place in a run
@@ -1237,6 +1322,177 @@ theorem TCB.map_cpuAffinity_of_placement {o o' : Option TCB}
     o.map (·.cpuAffinity) = o'.map (·.cpuAffinity) := by
   cases o <;> cases o' <;> simp_all [TCB.placement]
 
+/-- WS-ZA ZA4.7: the thread's IPC state, read from its two codes.  Reducible,
+so a record update that leaves both codes alone reads the old state by `rfl`
+at every transparency, as it did when the state was a field. -/
+@[reducible, inline] def TCB.ipcState (t : TCB) : ThreadIpcState :=
+  ThreadIpcState.ofCodes t.ipcObjectCode t.ipcStateCode
+
+/-- The record with its IPC state set to `s`: the one write of the two codes.
+Reducible, so `simp` and `rfl` read every other field of the result as the
+record's, as they did through a record update; `simp` leaves it folded, so a
+hypothesis naming a stored record stays in normal form as written. -/
+@[reducible, inline] def TCB.setIpcState (t : TCB) (s : ThreadIpcState) : TCB :=
+  { t with ipcObjectCode := s.objectCode, ipcStateCode := s.stateCode }
+
+/-! The fields of a record with its state set: the two codes are the state's,
+every other field is the record's. -/
+
+@[simp] theorem TCB.setIpcState_ipcObjectCode (t : TCB) (s : ThreadIpcState) :
+    (t.setIpcState s).ipcObjectCode = s.objectCode := rfl
+
+@[simp] theorem TCB.setIpcState_ipcStateCode (t : TCB) (s : ThreadIpcState) :
+    (t.setIpcState s).ipcStateCode = s.stateCode := rfl
+
+@[simp] theorem TCB.ipcState_setIpcState (t : TCB) (s : ThreadIpcState) :
+    (t.setIpcState s).ipcState = s :=
+  ThreadIpcState.ofCodes_codes s
+
+@[simp] theorem TCB.setIpcState_tid (t : TCB) (s : ThreadIpcState) :
+    (t.setIpcState s).tid = t.tid := rfl
+
+@[simp] theorem TCB.setIpcState_priority (t : TCB) (s : ThreadIpcState) :
+    (t.setIpcState s).priority = t.priority := rfl
+
+@[simp] theorem TCB.setIpcState_domain (t : TCB) (s : ThreadIpcState) :
+    (t.setIpcState s).domain = t.domain := rfl
+
+@[simp] theorem TCB.setIpcState_cspaceRoot (t : TCB) (s : ThreadIpcState) :
+    (t.setIpcState s).cspaceRoot = t.cspaceRoot := rfl
+
+@[simp] theorem TCB.setIpcState_vspaceRoot (t : TCB) (s : ThreadIpcState) :
+    (t.setIpcState s).vspaceRoot = t.vspaceRoot := rfl
+
+@[simp] theorem TCB.setIpcState_ipcBuffer (t : TCB) (s : ThreadIpcState) :
+    (t.setIpcState s).ipcBuffer = t.ipcBuffer := rfl
+
+@[simp] theorem TCB.setIpcState_threadState (t : TCB) (s : ThreadIpcState) :
+    (t.setIpcState s).threadState = t.threadState := rfl
+
+@[simp] theorem TCB.setIpcState_timeSlice (t : TCB) (s : ThreadIpcState) :
+    (t.setIpcState s).timeSlice = t.timeSlice := rfl
+
+@[simp] theorem TCB.setIpcState_deadline (t : TCB) (s : ThreadIpcState) :
+    (t.setIpcState s).deadline = t.deadline := rfl
+
+@[simp] theorem TCB.setIpcState_queuePrevCode (t : TCB) (s : ThreadIpcState) :
+    (t.setIpcState s).queuePrevCode = t.queuePrevCode := rfl
+
+@[simp] theorem TCB.setIpcState_queuePPrevCode (t : TCB) (s : ThreadIpcState) :
+    (t.setIpcState s).queuePPrevCode = t.queuePPrevCode := rfl
+
+@[simp] theorem TCB.setIpcState_queueNextCode (t : TCB) (s : ThreadIpcState) :
+    (t.setIpcState s).queueNextCode = t.queueNextCode := rfl
+
+@[simp] theorem TCB.setIpcState_pendingMessage (t : TCB) (s : ThreadIpcState) :
+    (t.setIpcState s).pendingMessage = t.pendingMessage := rfl
+
+@[simp] theorem TCB.setIpcState_registerContext (t : TCB) (s : ThreadIpcState) :
+    (t.setIpcState s).registerContext = t.registerContext := rfl
+
+@[simp] theorem TCB.setIpcState_faultHandler (t : TCB) (s : ThreadIpcState) :
+    (t.setIpcState s).faultHandler = t.faultHandler := rfl
+
+@[simp] theorem TCB.setIpcState_boundNotification (t : TCB) (s : ThreadIpcState) :
+    (t.setIpcState s).boundNotification = t.boundNotification := rfl
+
+@[simp] theorem TCB.setIpcState_schedContextBinding (t : TCB) (s : ThreadIpcState) :
+    (t.setIpcState s).schedContextBinding = t.schedContextBinding := rfl
+
+@[simp] theorem TCB.setIpcState_timeoutBudget (t : TCB) (s : ThreadIpcState) :
+    (t.setIpcState s).timeoutBudget = t.timeoutBudget := rfl
+
+@[simp] theorem TCB.setIpcState_maxControlledPriority (t : TCB) (s : ThreadIpcState) :
+    (t.setIpcState s).maxControlledPriority = t.maxControlledPriority := rfl
+
+@[simp] theorem TCB.setIpcState_pipBoost (t : TCB) (s : ThreadIpcState) :
+    (t.setIpcState s).pipBoost = t.pipBoost := rfl
+
+@[simp] theorem TCB.setIpcState_timedOut (t : TCB) (s : ThreadIpcState) :
+    (t.setIpcState s).timedOut = t.timedOut := rfl
+
+@[simp] theorem TCB.setIpcState_cpuAffinity (t : TCB) (s : ThreadIpcState) :
+    (t.setIpcState s).cpuAffinity = t.cpuAffinity := rfl
+
+@[simp] theorem TCB.setIpcState_replyObject (t : TCB) (s : ThreadIpcState) :
+    (t.setIpcState s).replyObject = t.replyObject := rfl
+
+@[simp] theorem TCB.setIpcState_pendingReceiveReply (t : TCB) (s : ThreadIpcState) :
+    (t.setIpcState s).pendingReceiveReply = t.pendingReceiveReply := rfl
+
+@[simp] theorem TCB.setIpcState_pendingFault (t : TCB) (s : ThreadIpcState) :
+    (t.setIpcState s).pendingFault = t.pendingFault := rfl
+
+@[simp] theorem TCB.setIpcState_fpContext (t : TCB) (s : ThreadIpcState) :
+    (t.setIpcState s).fpContext = t.fpContext := rfl
+
+@[simp] theorem TCB.setIpcState_ntfnPrevCode (t : TCB) (s : ThreadIpcState) :
+    (t.setIpcState s).ntfnPrevCode = t.ntfnPrevCode := rfl
+
+@[simp] theorem TCB.setIpcState_ntfnNextCode (t : TCB) (s : ThreadIpcState) :
+    (t.setIpcState s).ntfnNextCode = t.ntfnNextCode := rfl
+
+@[simp] theorem TCB.setIpcState_runCoreCode (t : TCB) (s : ThreadIpcState) :
+    (t.setIpcState s).runCoreCode = t.runCoreCode := rfl
+
+@[simp] theorem TCB.setIpcState_runPrio (t : TCB) (s : ThreadIpcState) :
+    (t.setIpcState s).runPrio = t.runPrio := rfl
+
+@[simp] theorem TCB.setIpcState_runPrevCode (t : TCB) (s : ThreadIpcState) :
+    (t.setIpcState s).runPrevCode = t.runPrevCode := rfl
+
+@[simp] theorem TCB.setIpcState_runNextCode (t : TCB) (s : ThreadIpcState) :
+    (t.setIpcState s).runNextCode = t.runNextCode := rfl
+
+@[simp] theorem TCB.setIpcState_runBucketPrevCode (t : TCB) (s : ThreadIpcState) :
+    (t.setIpcState s).runBucketPrevCode = t.runBucketPrevCode := rfl
+
+@[simp] theorem TCB.setIpcState_runBucketNextCode (t : TCB) (s : ThreadIpcState) :
+    (t.setIpcState s).runBucketNextCode = t.runBucketNextCode := rfl
+
+@[simp] theorem TCB.setIpcState_replyWaiterPrevCode (t : TCB) (s : ThreadIpcState) :
+    (t.setIpcState s).replyWaiterPrevCode = t.replyWaiterPrevCode := rfl
+
+@[simp] theorem TCB.setIpcState_replyWaiterNextCode (t : TCB) (s : ThreadIpcState) :
+    (t.setIpcState s).replyWaiterNextCode = t.replyWaiterNextCode := rfl
+
+@[simp] theorem TCB.setIpcState_replyWaitersHeadCode (t : TCB) (s : ThreadIpcState) :
+    (t.setIpcState s).replyWaitersHeadCode = t.replyWaitersHeadCode := rfl
+
+@[simp] theorem TCB.setIpcState_replyWaitersCount (t : TCB) (s : ThreadIpcState) :
+    (t.setIpcState s).replyWaitersCount = t.replyWaitersCount := rfl
+
+
+@[simp] theorem TCB.ipcState_mk (f1 f2 f3 f4 f5 f6 f7 f8 f9 f10 f11 f12 f13 f14 f15 f16 f17 f18 f19 f20 f21 f22 f23 f24 f25 f26 f27 f28 f29 f30 f31 f32 f33 f34 f35 f36 f37 f38 f39 f40) :
+    (TCB.mk f1 f2 f3 f4 f5 f6 f7 f8 f9 f10 f11 f12 f13 f14 f15 f16 f17 f18 f19 f20 f21 f22 f23 f24 f25 f26 f27 f28 f29 f30 f31 f32 f33 f34 f35 f36 f37 f38 f39 f40).ipcState = ThreadIpcState.ofCodes f7 f40 := rfl
+
+theorem TCB.ofCodes_ipcCodes (t : TCB) :
+    ThreadIpcState.ofCodes t.ipcObjectCode t.ipcStateCode = t.ipcState := rfl
+
+@[simp] theorem TCB.objectCode_ipcState (t : TCB) :
+    t.ipcState.objectCode = t.ipcObjectCode :=
+  ThreadIpcState.objectCode_ofCodes _ _
+
+@[simp] theorem TCB.stateCode_ipcState (t : TCB) :
+    t.ipcState.stateCode = t.ipcStateCode :=
+  ThreadIpcState.stateCode_ofCodes _ _
+
+/-- Setting the state a record already holds leaves it unchanged. -/
+@[simp] theorem TCB.setIpcState_ipcState (t : TCB) : t.setIpcState t.ipcState = t := by
+  simp [TCB.setIpcState]
+
+/-- A record's state is `s` exactly when its two codes are `s`'s. -/
+theorem TCB.ipcState_eq_iff_codes (t : TCB) (s : ThreadIpcState) :
+    t.ipcState = s ↔ t.ipcObjectCode = s.objectCode ∧ t.ipcStateCode = s.stateCode :=
+  ThreadIpcState.ofCodes_eq_iff _ _ s
+
+/-- Two records agree when their states and every other field do. -/
+theorem TCB.ipcState_ext {a b : TCB} (h : a.ipcState = b.ipcState) :
+    a.ipcObjectCode = b.ipcObjectCode ∧ a.ipcStateCode = b.ipcStateCode := by
+  rw [← TCB.objectCode_ipcState, ← TCB.stateCode_ipcState, h,
+    TCB.objectCode_ipcState, TCB.stateCode_ipcState]
+  exact ⟨rfl, rfl⟩
+
 /-- The predecessor link, read from its scalar code (`TCB.queuePrevCode`). -/
 @[inline] def TCB.queuePrev (t : TCB) : Option SeLe4n.ThreadId :=
   SeLe4n.ThreadId.ofOptCode t.queuePrevCode
@@ -1253,14 +1509,14 @@ theorem TCB.map_cpuAffinity_of_placement {o o' : Option TCB}
 view when a code is copied from another record: together they let `simp` read
 a written link as the value written and an untouched link as the old view. -/
 
-@[simp] theorem TCB.queuePrev_mk (f1 f2 f3 f4 f5 f6 f7 f8 f9 f10 f11 f12 f13 f14 f15 f16 f17 f18 f19 f20 f21 f22 f23 f24 f25 f26 f27 f28 f29 f30 f31 f32 f33 f34 f35 f36 f37 f38 f39) :
-    (TCB.mk f1 f2 f3 f4 f5 f6 f7 f8 f9 f10 f11 f12 f13 f14 f15 f16 f17 f18 f19 f20 f21 f22 f23 f24 f25 f26 f27 f28 f29 f30 f31 f32 f33 f34 f35 f36 f37 f38 f39).queuePrev = SeLe4n.ThreadId.ofOptCode f11 := rfl
+@[simp] theorem TCB.queuePrev_mk (f1 f2 f3 f4 f5 f6 f7 f8 f9 f10 f11 f12 f13 f14 f15 f16 f17 f18 f19 f20 f21 f22 f23 f24 f25 f26 f27 f28 f29 f30 f31 f32 f33 f34 f35 f36 f37 f38 f39 f40) :
+    (TCB.mk f1 f2 f3 f4 f5 f6 f7 f8 f9 f10 f11 f12 f13 f14 f15 f16 f17 f18 f19 f20 f21 f22 f23 f24 f25 f26 f27 f28 f29 f30 f31 f32 f33 f34 f35 f36 f37 f38 f39 f40).queuePrev = SeLe4n.ThreadId.ofOptCode f11 := rfl
 
-@[simp] theorem TCB.queuePPrev_mk (f1 f2 f3 f4 f5 f6 f7 f8 f9 f10 f11 f12 f13 f14 f15 f16 f17 f18 f19 f20 f21 f22 f23 f24 f25 f26 f27 f28 f29 f30 f31 f32 f33 f34 f35 f36 f37 f38 f39) :
-    (TCB.mk f1 f2 f3 f4 f5 f6 f7 f8 f9 f10 f11 f12 f13 f14 f15 f16 f17 f18 f19 f20 f21 f22 f23 f24 f25 f26 f27 f28 f29 f30 f31 f32 f33 f34 f35 f36 f37 f38 f39).queuePPrev = QueuePPrev.ofOptCode f12 := rfl
+@[simp] theorem TCB.queuePPrev_mk (f1 f2 f3 f4 f5 f6 f7 f8 f9 f10 f11 f12 f13 f14 f15 f16 f17 f18 f19 f20 f21 f22 f23 f24 f25 f26 f27 f28 f29 f30 f31 f32 f33 f34 f35 f36 f37 f38 f39 f40) :
+    (TCB.mk f1 f2 f3 f4 f5 f6 f7 f8 f9 f10 f11 f12 f13 f14 f15 f16 f17 f18 f19 f20 f21 f22 f23 f24 f25 f26 f27 f28 f29 f30 f31 f32 f33 f34 f35 f36 f37 f38 f39 f40).queuePPrev = QueuePPrev.ofOptCode f12 := rfl
 
-@[simp] theorem TCB.queueNext_mk (f1 f2 f3 f4 f5 f6 f7 f8 f9 f10 f11 f12 f13 f14 f15 f16 f17 f18 f19 f20 f21 f22 f23 f24 f25 f26 f27 f28 f29 f30 f31 f32 f33 f34 f35 f36 f37 f38 f39) :
-    (TCB.mk f1 f2 f3 f4 f5 f6 f7 f8 f9 f10 f11 f12 f13 f14 f15 f16 f17 f18 f19 f20 f21 f22 f23 f24 f25 f26 f27 f28 f29 f30 f31 f32 f33 f34 f35 f36 f37 f38 f39).queueNext = SeLe4n.ThreadId.ofOptCode f13 := rfl
+@[simp] theorem TCB.queueNext_mk (f1 f2 f3 f4 f5 f6 f7 f8 f9 f10 f11 f12 f13 f14 f15 f16 f17 f18 f19 f20 f21 f22 f23 f24 f25 f26 f27 f28 f29 f30 f31 f32 f33 f34 f35 f36 f37 f38 f39 f40) :
+    (TCB.mk f1 f2 f3 f4 f5 f6 f7 f8 f9 f10 f11 f12 f13 f14 f15 f16 f17 f18 f19 f20 f21 f22 f23 f24 f25 f26 f27 f28 f29 f30 f31 f32 f33 f34 f35 f36 f37 f38 f39 f40).queueNext = SeLe4n.ThreadId.ofOptCode f13 := rfl
 
 /-- The notification-queue predecessor, read from its scalar code. -/
 @[inline] def TCB.ntfnPrev (t : TCB) : Option SeLe4n.ThreadId :=
@@ -1270,11 +1526,11 @@ a written link as the value written and an untouched link as the old view. -/
 @[inline] def TCB.ntfnNext (t : TCB) : Option SeLe4n.ThreadId :=
   SeLe4n.ThreadId.ofOptCode t.ntfnNextCode
 
-@[simp] theorem TCB.ntfnPrev_mk (f1 f2 f3 f4 f5 f6 f7 f8 f9 f10 f11 f12 f13 f14 f15 f16 f17 f18 f19 f20 f21 f22 f23 f24 f25 f26 f27 f28 f29 f30 f31 f32 f33 f34 f35 f36 f37 f38 f39) :
-    (TCB.mk f1 f2 f3 f4 f5 f6 f7 f8 f9 f10 f11 f12 f13 f14 f15 f16 f17 f18 f19 f20 f21 f22 f23 f24 f25 f26 f27 f28 f29 f30 f31 f32 f33 f34 f35 f36 f37 f38 f39).ntfnPrev = SeLe4n.ThreadId.ofOptCode f28 := rfl
+@[simp] theorem TCB.ntfnPrev_mk (f1 f2 f3 f4 f5 f6 f7 f8 f9 f10 f11 f12 f13 f14 f15 f16 f17 f18 f19 f20 f21 f22 f23 f24 f25 f26 f27 f28 f29 f30 f31 f32 f33 f34 f35 f36 f37 f38 f39 f40) :
+    (TCB.mk f1 f2 f3 f4 f5 f6 f7 f8 f9 f10 f11 f12 f13 f14 f15 f16 f17 f18 f19 f20 f21 f22 f23 f24 f25 f26 f27 f28 f29 f30 f31 f32 f33 f34 f35 f36 f37 f38 f39 f40).ntfnPrev = SeLe4n.ThreadId.ofOptCode f28 := rfl
 
-@[simp] theorem TCB.ntfnNext_mk (f1 f2 f3 f4 f5 f6 f7 f8 f9 f10 f11 f12 f13 f14 f15 f16 f17 f18 f19 f20 f21 f22 f23 f24 f25 f26 f27 f28 f29 f30 f31 f32 f33 f34 f35 f36 f37 f38 f39) :
-    (TCB.mk f1 f2 f3 f4 f5 f6 f7 f8 f9 f10 f11 f12 f13 f14 f15 f16 f17 f18 f19 f20 f21 f22 f23 f24 f25 f26 f27 f28 f29 f30 f31 f32 f33 f34 f35 f36 f37 f38 f39).ntfnNext = SeLe4n.ThreadId.ofOptCode f29 := rfl
+@[simp] theorem TCB.ntfnNext_mk (f1 f2 f3 f4 f5 f6 f7 f8 f9 f10 f11 f12 f13 f14 f15 f16 f17 f18 f19 f20 f21 f22 f23 f24 f25 f26 f27 f28 f29 f30 f31 f32 f33 f34 f35 f36 f37 f38 f39 f40) :
+    (TCB.mk f1 f2 f3 f4 f5 f6 f7 f8 f9 f10 f11 f12 f13 f14 f15 f16 f17 f18 f19 f20 f21 f22 f23 f24 f25 f26 f27 f28 f29 f30 f31 f32 f33 f34 f35 f36 f37 f38 f39 f40).ntfnNext = SeLe4n.ThreadId.ofOptCode f29 := rfl
 
 @[simp] theorem TCB.ofOptCode_ntfnPrevCode (t : TCB) :
     SeLe4n.ThreadId.ofOptCode t.ntfnPrevCode = t.ntfnPrev := rfl
@@ -1578,7 +1834,7 @@ instance : BEq TCB where
 just readied asks: the bind's parked-thread placement and the replenishment
 wake. -/
 @[inline] def TCB.isRunnable (tcb : TCB) : Bool :=
-  tcb.ipcState == .ready && tcb.threadState != .Inactive
+  decide (tcb.ipcState = .ready) && tcb.threadState != .Inactive
 
 /-- **The priority a thread is actually scheduled at** -- its own, raised to any
 priority it has inherited.
@@ -1689,24 +1945,24 @@ resume writes `.Ready` and recomputes the boost from the blocking graph, a
 cancellation writes neither.  The third is what `restoreToReadyStaging`'s frame
 argument stages on top, which is why that helper takes one and this does not. -/
 @[inline] def TCB.restoredToReady (tcb : TCB) : TCB :=
-  { tcb with
-      ipcState := .ready
-      queuePrevCode := 0
-      queueNextCode := 0
-      queuePPrevCode := 0
-      pendingReceiveReply := none }
+  TCB.setIpcState
+    { tcb with
+        queuePrevCode := 0
+        queueNextCode := 0
+        queuePPrevCode := 0
+        pendingReceiveReply := none } .ready
 
 /-- Transparent to `simp`, for the reason `TCB.boostedPriority_eq` above is: a
 proof that unfolded the inline record update reduces this exactly as it reduced
 that, so single-sourcing the clear costs no existing proof. -/
 @[simp] theorem TCB.restoredToReady_eq (tcb : TCB) :
     tcb.restoredToReady =
-      { tcb with
-          ipcState := .ready
-          queuePrevCode := 0
-          queueNextCode := 0
-          queuePPrevCode := 0
-          pendingReceiveReply := none } := rfl
+      TCB.setIpcState
+        { tcb with
+            queuePrevCode := 0
+            queueNextCode := 0
+            queuePPrevCode := 0
+            pendingReceiveReply := none } .ready := rfl
 
 /-- **WS-RR RR8.16 (`v0.35.190`): what a CDT revocation may do to a message in
 flight.**
@@ -1848,12 +2104,15 @@ theorem TCB.ext {a b : TCB}
   have hQNextC : a.queueNextCode = b.queueNextCode := by
     rw [TCB.queueNextCode_eq a, TCB.queueNextCode_eq b, hQNext]
   clear hQPrev hQPPrev hQNext
+  obtain ⟨hIpcO, hIpcS⟩ := TCB.ipcState_ext hIpc
+  clear hIpc
   cases a; cases b
   simp at *
-  exact ⟨hTid, hPrio, hDom, hCsp, hVsp, hBuf, hIpc, hTs, hSlice, hDeadline,
+  exact ⟨hTid, hPrio, hDom, hCsp, hVsp, hBuf, hIpcO, hTs, hSlice, hDeadline,
          hQPrevC, hQPPrevC, hQNextC, hPend, hRC, hFh, hBn, hSc, hTb, hMcp, hPip, hTo,
          hCpuAff, hReply, hPendReply, hPendFault, hFp, hNPrevC, hNNextC,
-         hRCore, hRPrio, hRPrev, hRNext, hRBPrev, hRBNext, hWPrev, hWNext, hWHead, hWCount⟩
+         hRCore, hRPrio, hRPrev, hRNext, hRBPrev, hRBNext, hWPrev, hWNext, hWHead, hWCount,
+         hIpcS⟩
 
 /-- Intrusive FIFO queue metadata for endpoint wait queues.
 

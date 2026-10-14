@@ -260,7 +260,7 @@ private def sendMsgE : IpcMessage :=
 
 private def mkTcb (tid : Nat) (prio : Nat) (aff : Option CoreId) : TCB :=
   { tid := ⟨tid⟩, priority := ⟨prio⟩, domain := ⟨0⟩, cspaceRoot := cnRoot,
-    vspaceRoot := vsRoot, ipcBuffer := SeLe4n.VAddr.ofNat 4096, ipcState := .ready,
+    vspaceRoot := vsRoot, ipcBuffer := SeLe4n.VAddr.ofNat 4096,
     cpuAffinity := aff }
 
 /-- The 4-thread / 4-core IPC workload: two client/server pairs, one per core
@@ -970,11 +970,10 @@ private def donCaller2Reply : SeLe4n.ReplyId := ⟨849⟩
 /-- The queued caller as the endpoint left it: blocked awaiting a reply from the
 server, still holding its own SchedContext, and linked to its own Reply. -/
 private def donCaller2Tcb : TCB :=
-  { mkTcb 848 40 (some c3) with
+  (TCB.setIpcState { mkTcb 848 40 (some c3) with
       schedContextBinding := .bound scCaller2
-      ipcState := .blockedOnReply donEp (some donServer)
       replyObject := some donCaller2Reply
-      threadState := ThreadState.Ready }
+      threadState := ThreadState.Ready } (.blockedOnReply donEp (some donServer)))
 
 /-- **WS-RM (`v0.35.6`)**: the two donation steps `endpointReplyRecvOnCore` performs, run
 back to back with the receive leg elided.
@@ -1914,8 +1913,7 @@ private def popOuter : SeLe4n.ThreadId := ⟨83⟩
 up its binding and waits on a reply.  Named so the negatives can vary one clause
 at a time rather than deleting the caller outright. -/
 private def popWaitingDonor : TCB :=
-  { mkTcb 83 40 none with
-      ipcState := .blockedOnReply (SeLe4n.ObjId.ofNat 76) (some popClient) }
+  ((mkTcb 83 40 none).setIpcState (.blockedOnReply (SeLe4n.ObjId.ofNat 76) (some popClient)))
 
 /-- A donation return's pre-state: the context is bound to the server, which
 holds it `.donated` from the client.  `head?` says whether the context heads a
@@ -2215,9 +2213,8 @@ private def pushStoreShaped (donorBinding : SchedContextBinding)
     -- checks below pass for the wrong reason.  Two local re-spellings of this TCB
     -- collapse onto `pushOuterBlockedTcb` with it.
     |>.withObject pushOuter.toObjId
-        (.tcb { mkTcb 93 50 none with
-                  ipcState := .blockedOnReply (SeLe4n.ObjId.ofNat 97) (some pushDonor),
-                  replyObject := some pushOuterReply })
+        (.tcb (TCB.setIpcState { mkTcb 93 50 none with
+                  replyObject := some pushOuterReply } (.blockedOnReply (SeLe4n.ObjId.ofNat 97) (some pushDonor))))
     |>.build)
 
 /-- The donor's own reply object, fresh: linked to the donor, on no stack —
@@ -2237,9 +2234,8 @@ again locally — and one of those spellings carried a note saying no assertion 
 the `replyObject`, which WS-HP HP5.1 made false by keying the cancellation reclaim's
 trigger on that very field. -/
 private def pushOuterBlockedTcb : TCB :=
-  { mkTcb 93 50 none with
-      ipcState := .blockedOnReply (SeLe4n.ObjId.ofNat 97) (some pushDonor),
-      replyObject := some pushOuterReply }
+  (TCB.setIpcState { mkTcb 93 50 none with
+      replyObject := some pushOuterReply } (.blockedOnReply (SeLe4n.ObjId.ofNat 97) (some pushDonor)))
 
 private def pushBindingOf (st : SystemState) (tid : SeLe4n.ThreadId) :
     Option SchedContextBinding :=
@@ -2633,10 +2629,9 @@ One definition, because the in-order contrast, the in-order reply and the
 depth-two accounting differential all need it and three of them used to spell it
 again locally. -/
 private def replyRemovalInOrderDonorTcb : TCB :=
-  { mkTcb 91 40 none with
+  (TCB.setIpcState { mkTcb 91 40 none with
       schedContextBinding := SchedContextBinding.unbound,
-      ipcState := ThreadIpcState.blockedOnReply (SeLe4n.ObjId.ofNat 97) (some pushServer),
-      replyObject := some pushDonorReply }
+      replyObject := some pushDonorReply } (ThreadIpcState.blockedOnReply (SeLe4n.ObjId.ofNat 97) (some pushServer)))
 
 /-- **WS-RM**: the removal witness's state, from a pushed depth-2 chain: the outer
 caller reply-blocked on the intermediate one, plus the **delegate** that holds a
@@ -3230,11 +3225,9 @@ private def depth3Chain : Except KernelError SystemState :=
                 (.reply { replyId := depth3Reply, caller := some pushServer })).insert
                 depth3Server.toObjId (.tcb (mkTcb 101 25 none))).insert
                 pushServer.toObjId
-                (.tcb { mkTcb 92 30 none with
+                (.tcb (TCB.setIpcState { mkTcb 92 30 none with
                           schedContextBinding := .donated pushSc pushDonor,
-                          ipcState := .blockedOnReply (SeLe4n.ObjId.ofNat 97)
-                            (some depth3Server),
-                          replyObject := some depth3Reply }) }
+                          replyObject := some depth3Reply } (.blockedOnReply (SeLe4n.ObjId.ofNat 97) (some depth3Server)))) }
       match donateSchedContext stReady pushServer depth3Server pushSc with
       | .error e => .error e
       | .ok depth3 =>
@@ -3245,11 +3238,9 @@ private def depth3Chain : Except KernelError SystemState :=
           -- removal and the in-order contrast below run on the same live shape.
           .ok { depth3 with
                   objects := depth3.objects.insert pushDonor.toObjId
-                    (.tcb { mkTcb 91 40 none with
+                    (.tcb (TCB.setIpcState { mkTcb 91 40 none with
                               schedContextBinding := .unbound,
-                              ipcState := .blockedOnReply (SeLe4n.ObjId.ofNat 97)
-                                (some pushServer),
-                              replyObject := some pushDonorReply }) }
+                              replyObject := some pushDonorReply } (.blockedOnReply (SeLe4n.ObjId.ofNat 97) (some pushServer)))) }
 
 private def runMiddleRemovalDepthThreeChecks : IO Unit := do
   IO.println "--- §3.22 WS-RM: a middle removal at stack depth three ---"
@@ -3417,11 +3408,9 @@ private def depth4Chain : Except KernelError SystemState :=
                 (.reply { replyId := depth4Reply, caller := some depth3Server })).insert
                 depth4Server.toObjId (.tcb (mkTcb 103 20 none))).insert
                 depth3Server.toObjId
-                (.tcb { mkTcb 101 25 none with
+                (.tcb (TCB.setIpcState { mkTcb 101 25 none with
                           schedContextBinding := .donated pushSc pushServer,
-                          ipcState := .blockedOnReply (SeLe4n.ObjId.ofNat 97)
-                            (some depth4Server),
-                          replyObject := some depth4Reply }) }
+                          replyObject := some depth4Reply } (.blockedOnReply (SeLe4n.ObjId.ofNat 97) (some depth4Server)))) }
       donateSchedContext stReady depth3Server depth4Server pushSc
 
 /-- **WS-HP HP10.5: the reservation origin cannot outlive the thread it names.**
@@ -3553,9 +3542,8 @@ private def runDonationOriginRedirectChecks : IO Unit := do
             (.reply { replyId := redirectHeadReply, caller := some pushServer,
                       next := some (.head pushSc) })).insert
             pushServer.toObjId
-            (.tcb { mkTcb 92 30 none with
-                      ipcState := .blockedOnReply (SeLe4n.ObjId.ofNat 97) (some pushDonor),
-                      replyObject := some redirectHeadReply })).insert
+            (.tcb (TCB.setIpcState { mkTcb 92 30 none with
+                      replyObject := some redirectHeadReply } (.blockedOnReply (SeLe4n.ObjId.ofNat 97) (some pushDonor))))).insert
             pushDonor.toObjId
             (.tcb { mkTcb 91 40 none with
                       schedContextBinding := .donated pushSc pushServer,
@@ -3566,9 +3554,8 @@ private def runDonationOriginRedirectChecks : IO Unit := do
   -- re-Call donated nothing, so it pushed none.  Homed on core 1, where nothing
   -- else in the chain is.
   let recalledClient : TCB :=
-    { mkTcb 93 50 (some c1) with
-        ipcState := .blockedOnReply (SeLe4n.ObjId.ofNat 97) (some pushServer),
-        replyObject := some pushOuterReply }
+    (TCB.setIpcState { mkTcb 93 50 (some c1) with
+        replyObject := some pushOuterReply } (.blockedOnReply (SeLe4n.ObjId.ofNat 97) (some pushServer)))
   let withFreshFrame (st : SystemState) : SystemState :=
     { st with
         objects := st.objects.insert pushOuterReply.toObjId
@@ -4071,20 +4058,18 @@ private def stOrphanHeadReplyRecv : SystemState :=
     |>.withObject orphanReply.toObjId (.reply
         { replyId := orphanReply, caller := some orphanClient,
           next := some (.head orphanSc) })
-    |>.withObject orphanClient.toObjId (.tcb { mkTcb 862 30 (some c1) with
-        ipcState := .blockedOnReply orphanEp (some orphanS1),
+    |>.withObject orphanClient.toObjId (.tcb (TCB.setIpcState { mkTcb 862 30 (some c1) with
         threadState := .BlockedReply,
         replyObject := some orphanReply,
-        schedContextBinding := SchedContextBinding.unbound })
+        schedContextBinding := SchedContextBinding.unbound } (.blockedOnReply orphanEp (some orphanS1))))
     |>.withObject orphanS1.toObjId (.tcb { mkTcb 861 40 (some c2) with
         schedContextBinding := .bound orphanS1Sc })
     |>.withObject orphanHolder.toObjId (.tcb { mkTcb 863 50 (some c3) with
         schedContextBinding := .donated orphanSc orphanClient })
-    |>.withObject orphanSender.toObjId (.tcb { mkTcb 864 20 (some c0) with
-        ipcState := .blockedOnSend orphanEp,
+    |>.withObject orphanSender.toObjId (.tcb (TCB.setIpcState { mkTcb 864 20 (some c0) with
         threadState := .BlockedSend,
         queuePPrevCode := 1,
-        pendingMessage := some IpcMessage.empty })
+        pendingMessage := some IpcMessage.empty } (.blockedOnSend orphanEp)))
     |>.withObject orphanDelegate.toObjId (.tcb { mkTcb 865 25 (some c0) with
         schedContextBinding := SchedContextBinding.unbound })
     |>.withObject orphanSc.toObjId (.schedContext { SchedContext.empty orphanSc with
@@ -4103,7 +4088,7 @@ private def stAgreeingHeadReplyRecv : SystemState :=
   | some t =>
       { stOrphanHeadReplyRecv with
           objects := stOrphanHeadReplyRecv.objects.insert orphanClient.toObjId
-            (.tcb { t with ipcState := .blockedOnReply orphanEp (some orphanHolder) }) }
+            (.tcb (t.setIpcState (.blockedOnReply orphanEp (some orphanHolder)))) }
 
 private def runReplyRecvHolderDescheduleChecks : IO Unit := do
   IO.println "--- §3.27 WS-RR RR8.12: the `.replyRecv` deschedule names the pop's holder ---"

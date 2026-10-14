@@ -621,10 +621,10 @@ def reply_inUse_retype_rejected : IO Unit := do
   -- stash reserves the Reply only while the server is STILL `.blockedOnReceive`
   -- (a woken `.ready` server no longer reserves it — see `replyIsStashed`).
   let stashTcb : TCB :=
+    (TCB.setIpcState
     { tid := ⟨600⟩, priority := ⟨0⟩, domain := ⟨0⟩, cspaceRoot := ⟨0⟩,
       vspaceRoot := ⟨0⟩, ipcBuffer := SeLe4n.VAddr.ofNat 0,
-      ipcState := .blockedOnReceive ⟨700⟩,
-      pendingReceiveReply := some ⟨505⟩ }
+      pendingReceiveReply := some ⟨505⟩ } (.blockedOnReceive ⟨700⟩))
   let stStashed : SystemState :=
     (SeLe4n.Testing.BootstrapBuilder.empty |>.withObject ⟨600⟩ (.tcb stashTcb) |>.build)
   match SeLe4n.Kernel.lifecyclePreRetypeCleanup stStashed target freeReply newObj with
@@ -637,7 +637,6 @@ def reply_inUse_retype_rejected : IO Unit := do
   let wokenStashTcb : TCB :=
     { tid := ⟨603⟩, priority := ⟨0⟩, domain := ⟨0⟩, cspaceRoot := ⟨0⟩,
       vspaceRoot := ⟨0⟩, ipcBuffer := SeLe4n.VAddr.ofNat 0,
-      ipcState := .ready,
       pendingReceiveReply := some ⟨505⟩ }
   let stWokenStash : SystemState :=
     (SeLe4n.Testing.BootstrapBuilder.empty |>.withObject ⟨603⟩ (.tcb wokenStashTcb) |>.build)
@@ -672,10 +671,10 @@ def pendingReceiveReply_stash_injective : IO Unit := do
   let reservedRid : SeLe4n.ReplyId := ⟨505⟩
   let otherRid    : SeLe4n.ReplyId := ⟨506⟩
   let serverTcb : TCB :=
+    (TCB.setIpcState
     { tid := ⟨600⟩, priority := ⟨0⟩, domain := ⟨0⟩, cspaceRoot := ⟨0⟩,
       vspaceRoot := ⟨0⟩, ipcBuffer := SeLe4n.VAddr.ofNat 0,
-      ipcState := .blockedOnReceive ⟨700⟩,
-      pendingReceiveReply := some reservedRid }
+      pendingReceiveReply := some reservedRid } (.blockedOnReceive ⟨700⟩))
   let st : SystemState :=
     (SeLe4n.Testing.BootstrapBuilder.empty |>.withObject ⟨600⟩ (.tcb serverTcb) |>.build)
   -- the reserved rid is detected as stashed → a second `resolveRecvReplyId` for it
@@ -701,7 +700,6 @@ def replyStash_validated_against_preBlock_state : IO Unit := do
   let readyTcb : TCB :=
     { tid := ⟨603⟩, priority := ⟨0⟩, domain := ⟨0⟩, cspaceRoot := ⟨0⟩,
       vspaceRoot := ⟨0⟩, ipcBuffer := SeLe4n.VAddr.ofNat 0,
-      ipcState := .ready,
       pendingReceiveReply := some rid }
   let stReady : SystemState :=
     (SeLe4n.Testing.BootstrapBuilder.empty |>.withObject ⟨603⟩ (.tcb readyTcb) |>.build)
@@ -709,7 +707,7 @@ def replyStash_validated_against_preBlock_state : IO Unit := do
     (!stReady.replyIsStashed rid)
   -- The SAME receiver once `.blockedOnReceive` DOES self-reserve `rid` — so validating the
   -- stash against this post-block state (the pre-#7 behaviour) would falsely reject.
-  let blockedTcb : TCB := { readyTcb with ipcState := .blockedOnReceive ⟨700⟩ }
+  let blockedTcb : TCB := (readyTcb.setIpcState (.blockedOnReceive ⟨700⟩))
   let stBlocked : SystemState :=
     (SeLe4n.Testing.BootstrapBuilder.empty |>.withObject ⟨603⟩ (.tcb blockedTcb) |>.build)
   expect "the same receiver post-block self-reserves rid (the false-rejection #7 avoids)"
@@ -772,7 +770,7 @@ def replyCallerLinkage_holds_at_call_rendezvous_boundary : IO Unit := do
   let rid    : SeLe4n.ReplyId := ⟨707⟩
   let mkReadyTcb (n : Nat) : TCB :=
     { tid := ⟨n⟩, priority := ⟨0⟩, domain := ⟨0⟩, cspaceRoot := ⟨0⟩,
-      vspaceRoot := ⟨0⟩, ipcBuffer := SeLe4n.VAddr.ofNat 0, ipcState := .ready }
+      vspaceRoot := ⟨0⟩, ipcBuffer := SeLe4n.VAddr.ofNat 0 }
   let st0 : SystemState :=
     (SeLe4n.Testing.BootstrapBuilder.empty
       |>.withObject epId (.endpoint {})
@@ -814,7 +812,7 @@ def direct_reply_consumes_caller_link_single_use : IO Unit := do
   let rid    : SeLe4n.ReplyId := ⟨707⟩
   let mkReadyTcb (n : Nat) : TCB :=
     { tid := ⟨n⟩, priority := ⟨0⟩, domain := ⟨0⟩, cspaceRoot := ⟨0⟩,
-      vspaceRoot := ⟨0⟩, ipcBuffer := SeLe4n.VAddr.ofNat 0, ipcState := .ready }
+      vspaceRoot := ⟨0⟩, ipcBuffer := SeLe4n.VAddr.ofNat 0 }
   let st0 : SystemState :=
     (SeLe4n.Testing.BootstrapBuilder.empty
       |>.withObject epId (.endpoint {})
@@ -856,7 +854,7 @@ def call_without_reply_object_fails_closed_no_unanswerable_block : IO Unit := do
   let epId   : SeLe4n.ObjId := ⟨10⟩
   let mkReadyTcb (n : Nat) : TCB :=
     { tid := ⟨n⟩, priority := ⟨0⟩, domain := ⟨0⟩, cspaceRoot := ⟨0⟩,
-      vspaceRoot := ⟨0⟩, ipcBuffer := SeLe4n.VAddr.ofNat 0, ipcState := .ready }
+      vspaceRoot := ⟨0⟩, ipcBuffer := SeLe4n.VAddr.ofNat 0 }
   let st0 : SystemState :=
     (SeLe4n.Testing.BootstrapBuilder.empty
       |>.withObject epId (.endpoint {})

@@ -254,7 +254,7 @@ theorem storeTcbIpcStateAndMessage_preserves_queueNextBlockingConsistent
   | none => simp [hLookup] at hStep
   | some origTcb =>
     simp only [hLookup] at hStep
-    cases hStore : storeObject tid.toObjId (.tcb { origTcb with ipcState := ipcState, pendingMessage := msg }) st with
+    cases hStore : storeObject tid.toObjId (.tcb (TCB.setIpcState { origTcb with pendingMessage := msg } ipcState)) st with
     | error e => simp [hStore] at hStep
     | ok pair =>
       simp only [hStore] at hStep
@@ -270,12 +270,12 @@ theorem storeTcbIpcStateAndMessage_preserves_queueNextBlockingConsistent
       by_cases hEqA : a.toObjId = tid.toObjId
       · -- a is the target
         rw [hEqA] at hA; rw [hEqAt] at hA
-        have hIpcA : tcbA.ipcState = ipcState := by cases Option.some.inj hA; rfl
+        have hIpcA : tcbA.ipcState = ipcState := by cases Option.some.inj hA; simp
         have hQNA : tcbA.queueNext = origTcb.queueNext := by cases Option.some.inj hA; rfl
         by_cases hEqB : b.toObjId = tid.toObjId
         · -- b also at target
           rw [hEqB] at hB; rw [hEqAt] at hB
-          have hIpcB : tcbB.ipcState = ipcState := by cases Option.some.inj hB; rfl
+          have hIpcB : tcbB.ipcState = ipcState := by cases Option.some.inj hB; simp
           show queueNextBlockingMatch tcbA.ipcState tcbB.ipcState
           rw [hIpcA, hIpcB]; exact queueNextBlockingMatch_self _
         · -- b not at target
@@ -288,7 +288,7 @@ theorem storeTcbIpcStateAndMessage_preserves_queueNextBlockingConsistent
         by_cases hEqB : b.toObjId = tid.toObjId
         · -- b at target
           rw [hEqB] at hB; rw [hEqAt] at hB
-          have hIpcB : tcbB.ipcState = ipcState := by cases Option.some.inj hB; rfl
+          have hIpcB : tcbB.ipcState = ipcState := by cases Option.some.inj hB; simp
           have hBTid := SeLe4n.ThreadId.toObjId_injective b tid hEqB; subst hBTid
           show queueNextBlockingMatch tcbA.ipcState tcbB.ipcState
           rw [hIpcB]
@@ -375,7 +375,7 @@ theorem storeTcbIpcStateAndMessage_preserves_queueHeadBlockedConsistent
   | some tcb =>
     simp only [hLookup] at hStep
     cases hSt : storeObject tid.toObjId
-        (.tcb { tcb with ipcState := ipcState, pendingMessage := msg }) st with
+        (.tcb (TCB.setIpcState { tcb with pendingMessage := msg } ipcState)) st with
     | error e => simp [hSt] at hStep
     | ok pair =>
       simp only [hSt, Except.ok.injEq] at hStep; subst hStep
@@ -474,7 +474,7 @@ theorem storeTcbReceiveComplete_preserves_queueNextBlockingConsistent
   | none => simp [hLookup] at hStep
   | some origTcb =>
     simp only [hLookup] at hStep
-    cases hStore : storeObject tid.toObjId (.tcb { origTcb with ipcState := .ready, pendingMessage := msg, pendingReceiveReply := none }) st with
+    cases hStore : storeObject tid.toObjId (.tcb (TCB.setIpcState { origTcb with pendingMessage := msg, pendingReceiveReply := none } .ready)) st with
     | error e => simp [hStore] at hStep
     | ok pair =>
       simp only [hStore, Except.ok.injEq] at hStep; subst hStep
@@ -518,7 +518,7 @@ theorem storeTcbReceiveComplete_preserves_queueHeadBlockedConsistent
   | none => simp [hLookup] at hStep
   | some tcb =>
     simp only [hLookup] at hStep
-    cases hSt : storeObject tid.toObjId (.tcb { tcb with ipcState := .ready, pendingMessage := msg, pendingReceiveReply := none }) st with
+    cases hSt : storeObject tid.toObjId (.tcb (TCB.setIpcState { tcb with pendingMessage := msg, pendingReceiveReply := none } .ready)) st with
     | error e => simp [hSt] at hStep
     | ok pair =>
       simp only [hSt, Except.ok.injEq] at hStep; subst hStep
@@ -558,7 +558,7 @@ theorem storeTcbReceiveComplete_preserves_endpointQueueTailBlockedConsistent
   | some tcb =>
     simp only [hLookup] at hStep
     cases hSt : storeObject tid.toObjId
-        (.tcb { tcb with ipcState := .ready, pendingMessage := msg, pendingReceiveReply := none })
+        (.tcb (TCB.setIpcState { tcb with pendingMessage := msg, pendingReceiveReply := none } .ready))
         st with
     | error e => simp [hSt] at hStep
     | ok pair =>
@@ -833,7 +833,7 @@ theorem storeTcbIpcState_preserves_queueNextBlockingConsistent
   | none => simp [hLookup] at hStep
   | some origTcb =>
     simp only [hLookup] at hStep
-    cases hStore : storeObject tid.toObjId (.tcb { origTcb with ipcState := ipcState }) st with
+    cases hStore : storeObject tid.toObjId (.tcb (origTcb.setIpcState ipcState)) st with
     | error e => simp [hStore] at hStep
     | ok pair =>
       simp only [hStore, Except.ok.injEq] at hStep; subst hStep
@@ -844,11 +844,11 @@ theorem storeTcbIpcState_preserves_queueNextBlockingConsistent
       intro a b tcbA tcbB hA hB hN
       by_cases hEqA : a.toObjId = tid.toObjId
       · rw [hEqA] at hA; rw [hEqAt] at hA
-        have hIpcA : tcbA.ipcState = ipcState := by cases Option.some.inj hA; rfl
+        have hIpcA : tcbA.ipcState = ipcState := by cases Option.some.inj hA; simp
         have hQNA : tcbA.queueNext = origTcb.queueNext := by cases Option.some.inj hA; rfl
         by_cases hEqB : b.toObjId = tid.toObjId
         · rw [hEqB] at hB; rw [hEqAt] at hB
-          have hIpcB : tcbB.ipcState = ipcState := by cases Option.some.inj hB; rfl
+          have hIpcB : tcbB.ipcState = ipcState := by cases Option.some.inj hB; simp
           rw [hIpcA, hIpcB]; exact queueNextBlockingMatch_self _
         · rw [hFrame b.toObjId hEqB] at hB
           rw [hIpcA]; rw [hQNA] at hN
@@ -856,7 +856,7 @@ theorem storeTcbIpcState_preserves_queueNextBlockingConsistent
       · rw [hFrame a.toObjId hEqA] at hA
         by_cases hEqB : b.toObjId = tid.toObjId
         · rw [hEqB] at hB; rw [hEqAt] at hB
-          have hIpcB : tcbB.ipcState = ipcState := by cases Option.some.inj hB; rfl
+          have hIpcB : tcbB.ipcState = ipcState := by cases Option.some.inj hB; simp
           have hBTid := SeLe4n.ThreadId.toObjId_injective b tid hEqB; subst hBTid
           rw [hIpcB]
           exact hBwd a tcbA origTcb hA hN hOrigTcb
@@ -996,7 +996,7 @@ theorem storeTcbIpcState_preserves_queueHeadBlockedConsistent
   | none => simp [hLookup] at hStep
   | some tcb =>
     simp only [hLookup] at hStep
-    cases hSt : storeObject tid.toObjId (.tcb { tcb with ipcState := ipcState }) st with
+    cases hSt : storeObject tid.toObjId (.tcb (tcb.setIpcState ipcState)) st with
     | error e => simp [hSt] at hStep
     | ok pair =>
       simp only [hSt, Except.ok.injEq] at hStep; subst hStep
@@ -1123,7 +1123,7 @@ theorem storeTcbIpcStateAndMessage_preserves_endpointQueueTailBlockedConsistent
   | some tcb =>
     simp only [hLookup] at hStep
     cases hSt : storeObject tid.toObjId
-        (.tcb { tcb with ipcState := ipcState, pendingMessage := msg }) st with
+        (.tcb (TCB.setIpcState { tcb with pendingMessage := msg } ipcState)) st with
     | error e => simp [hSt] at hStep
     | ok pair =>
       simp only [hSt, Except.ok.injEq] at hStep; subst hStep
@@ -1193,7 +1193,7 @@ theorem storeTcbIpcState_preserves_endpointQueueTailBlockedConsistent
   | none => simp [hLookup] at hStep
   | some tcb =>
     simp only [hLookup] at hStep
-    cases hSt : storeObject tid.toObjId (.tcb { tcb with ipcState := ipcState }) st with
+    cases hSt : storeObject tid.toObjId (.tcb (tcb.setIpcState ipcState)) st with
     | error e => simp [hSt] at hStep
     | ok pair =>
       simp only [hSt, Except.ok.injEq] at hStep; subst hStep
@@ -1832,7 +1832,7 @@ theorem storeTcbIpcStateAndMessage_preserves_queueNextTargetBlocked
   | none => simp [hLookup] at hStep
   | some origTcb =>
     simp only [hLookup] at hStep
-    cases hStore : storeObject tid.toObjId (.tcb { origTcb with ipcState := ipcState, pendingMessage := msg }) st with
+    cases hStore : storeObject tid.toObjId (.tcb (TCB.setIpcState { origTcb with pendingMessage := msg } ipcState)) st with
     | error e => simp [hStore] at hStep
     | ok pair =>
       simp only [hStore] at hStep
@@ -1844,11 +1844,11 @@ theorem storeTcbIpcStateAndMessage_preserves_queueNextTargetBlocked
       intro a b tcbA tcbB hA hB hN
       by_cases hEqA : a.toObjId = tid.toObjId
       · rw [hEqA] at hA; rw [hEqAt] at hA
-        have hIpcA : tcbA.ipcState = ipcState := by cases Option.some.inj hA; rfl
+        have hIpcA : tcbA.ipcState = ipcState := by cases Option.some.inj hA; simp
         have hQNA : tcbA.queueNext = origTcb.queueNext := by cases Option.some.inj hA; rfl
         by_cases hEqB : b.toObjId = tid.toObjId
         · rw [hEqB] at hB; rw [hEqAt] at hB
-          have hIpcB : tcbB.ipcState = ipcState := by cases Option.some.inj hB; rfl
+          have hIpcB : tcbB.ipcState = ipcState := by cases Option.some.inj hB; simp
           rw [hIpcA, hIpcB]; exact ⟨fun _ h => h, fun _ h => h⟩
         · rw [hFrame b.toObjId hEqB] at hB
           rw [hIpcA]; rw [hQNA] at hN
@@ -1856,7 +1856,7 @@ theorem storeTcbIpcStateAndMessage_preserves_queueNextTargetBlocked
       · rw [hFrame a.toObjId hEqA] at hA
         by_cases hEqB : b.toObjId = tid.toObjId
         · rw [hEqB] at hB; rw [hEqAt] at hB
-          have hIpcB : tcbB.ipcState = ipcState := by cases Option.some.inj hB; rfl
+          have hIpcB : tcbB.ipcState = ipcState := by cases Option.some.inj hB; simp
           have hBTid := SeLe4n.ThreadId.toObjId_injective b tid hEqB; subst hBTid
           rw [hIpcB]
           exact hBwd a tcbA origTcb hA hN hOrigTcb
@@ -1983,7 +1983,7 @@ theorem storeTcbIpcState_preserves_queueNextTargetBlocked
   | none => simp [hLookup] at hStep
   | some origTcb =>
     simp only [hLookup] at hStep
-    cases hStore : storeObject tid.toObjId (.tcb { origTcb with ipcState := ipcState }) st with
+    cases hStore : storeObject tid.toObjId (.tcb (origTcb.setIpcState ipcState)) st with
     | error e => simp [hStore] at hStep
     | ok pair =>
       simp only [hStore, Except.ok.injEq] at hStep; subst hStep
@@ -1994,11 +1994,11 @@ theorem storeTcbIpcState_preserves_queueNextTargetBlocked
       intro a b tcbA tcbB hA hB hN
       by_cases hEqA : a.toObjId = tid.toObjId
       · rw [hEqA] at hA; rw [hEqAt] at hA
-        have hIpcA : tcbA.ipcState = ipcState := by cases Option.some.inj hA; rfl
+        have hIpcA : tcbA.ipcState = ipcState := by cases Option.some.inj hA; simp
         have hQNA : tcbA.queueNext = origTcb.queueNext := by cases Option.some.inj hA; rfl
         by_cases hEqB : b.toObjId = tid.toObjId
         · rw [hEqB] at hB; rw [hEqAt] at hB
-          have hIpcB : tcbB.ipcState = ipcState := by cases Option.some.inj hB; rfl
+          have hIpcB : tcbB.ipcState = ipcState := by cases Option.some.inj hB; simp
           rw [hIpcA, hIpcB]; exact ⟨fun _ h => h, fun _ h => h⟩
         · rw [hFrame b.toObjId hEqB] at hB
           rw [hIpcA]; rw [hQNA] at hN
@@ -2006,7 +2006,7 @@ theorem storeTcbIpcState_preserves_queueNextTargetBlocked
       · rw [hFrame a.toObjId hEqA] at hA
         by_cases hEqB : b.toObjId = tid.toObjId
         · rw [hEqB] at hB; rw [hEqAt] at hB
-          have hIpcB : tcbB.ipcState = ipcState := by cases Option.some.inj hB; rfl
+          have hIpcB : tcbB.ipcState = ipcState := by cases Option.some.inj hB; simp
           have hBTid := SeLe4n.ThreadId.toObjId_injective b tid hEqB; subst hBTid
           rw [hIpcB]
           exact hBwd a tcbA origTcb hA hN hOrigTcb
@@ -2058,7 +2058,7 @@ theorem storeTcbIpcStateAndMessage_tcb_queueNext_backward
   | some origTcb =>
     simp only [hLookup] at hStep
     cases hStore : storeObject tid.toObjId
-        (.tcb { origTcb with ipcState := ipcState, pendingMessage := msg }) st with
+        (.tcb (TCB.setIpcState { origTcb with pendingMessage := msg } ipcState)) st with
     | error e => simp [hStore] at hStep
     | ok pair =>
       simp only [hStore] at hStep
@@ -2066,7 +2066,7 @@ theorem storeTcbIpcStateAndMessage_tcb_queueNext_backward
       by_cases hEqY : y.toObjId = tid.toObjId
       · rw [hEqY] at hTcb'
         rw [storeObject_objects_eq' st tid.toObjId _ pair hObjInv hStore] at hTcb'
-        obtain rfl : ({ origTcb with ipcState := ipcState, pendingMessage := msg } : TCB) = tcb' := by
+        obtain rfl : ((TCB.setIpcState { origTcb with pendingMessage := msg } ipcState) : TCB) = tcb' := by
           simpa using hTcb'
         exact ⟨origTcb, by rw [hEqY]; exact lookupTcb_some_objects st tid origTcb hLookup, rfl⟩
       · rw [storeObject_objects_ne' st tid.toObjId y.toObjId _ pair hEqY hObjInv hStore] at hTcb'
@@ -2085,7 +2085,7 @@ theorem storeTcbIpcState_tcb_queueNext_backward
   | none => simp [hLookup] at hStep
   | some origTcb =>
     simp only [hLookup] at hStep
-    cases hStore : storeObject tid.toObjId (.tcb { origTcb with ipcState := ipcState }) st with
+    cases hStore : storeObject tid.toObjId (.tcb (origTcb.setIpcState ipcState)) st with
     | error e => simp [hStore] at hStep
     | ok pair =>
       simp only [hStore] at hStep
@@ -2093,7 +2093,7 @@ theorem storeTcbIpcState_tcb_queueNext_backward
       by_cases hEqY : y.toObjId = tid.toObjId
       · rw [hEqY] at hTcb'
         rw [storeObject_objects_eq' st tid.toObjId _ pair hObjInv hStore] at hTcb'
-        obtain rfl : ({ origTcb with ipcState := ipcState } : TCB) = tcb' := by simpa using hTcb'
+        obtain rfl : ((origTcb.setIpcState ipcState) : TCB) = tcb' := by simpa using hTcb'
         exact ⟨origTcb, by rw [hEqY]; exact lookupTcb_some_objects st tid origTcb hLookup, rfl⟩
       · rw [storeObject_objects_ne' st tid.toObjId y.toObjId _ pair hEqY hObjInv hStore] at hTcb'
         exact ⟨tcb', hTcb', rfl⟩
@@ -2257,7 +2257,7 @@ theorem storeTcbReceiveComplete_preserves_queueNextTargetBlocked
   | some origTcb =>
     simp only [hLookup] at hStep
     cases hStore : storeObject tid.toObjId
-        (.tcb { origTcb with ipcState := .ready, pendingMessage := msg, pendingReceiveReply := none }) st with
+        (.tcb (TCB.setIpcState { origTcb with pendingMessage := msg, pendingReceiveReply := none } .ready)) st with
     | error e => simp [hStore] at hStep
     | ok pair =>
       simp only [hStore] at hStep

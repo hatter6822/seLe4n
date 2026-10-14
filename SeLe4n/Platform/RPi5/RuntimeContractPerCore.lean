@@ -50,7 +50,7 @@ def registerContextStableCheckOnCore (_st st' : SystemState) (c : CoreId) : Bool
       st'.machine.regsOnCore c == tcb.registerContext &&
       tcb.runCoreCode != c.val + 1 &&
       (tcb.timeSlice > 0) &&
-      (tcb.ipcState == .ready) &&
+      (decide (tcb.ipcState = .ready)) &&
       (tcb.deadline.toNat == 0) &&
       budgetSufficientCheck st' tcb
     | none => false

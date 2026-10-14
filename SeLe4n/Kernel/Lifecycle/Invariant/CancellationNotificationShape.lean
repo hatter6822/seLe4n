@@ -542,7 +542,7 @@ theorem purgedAndRestored_blockedThreadsPendingMessageConsistent
     ⟨_, t0, h0, _, _, rfl⟩ | ⟨_, t1, ⟨_, _, rfl⟩, rfl⟩
   · exact h tid t0 h0
   · rw [restoredTcb_eq]
-    simp only
+    simp only [TCB.ipcState_setIpcState]
 
 theorem purgedAndRestored_blockedOnReplyHasTarget
     (st : SystemState) (v : SeLe4n.ThreadId)

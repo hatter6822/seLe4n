@@ -96,7 +96,7 @@ private def buildAbiState
       |>.withObject tid.toObjId (.tcb {
           tid := tid, priority := ⟨50⟩, domain := ⟨0⟩,
           cspaceRoot := cnodeId, vspaceRoot := vsId,
-          ipcBuffer := ipcBufferVA, ipcState := .ready,
+          ipcBuffer := ipcBufferVA,
           registerContext := SeLe4n.RegisterFile.withGprs 0x1000 0x8000 (fun i => (regFile ⟨i⟩).val.toUInt64)
       })
       |>.withObject cnodeId (.cnode {

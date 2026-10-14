@@ -199,9 +199,8 @@ private def sr011_frozenSuspendInactive : IO Unit := do
 private def sr012_suspendBlockedOnSend : IO Unit := do
   let tid : SeLe4n.ThreadId := ⟨1⟩
   let epId : SeLe4n.ObjId := ⟨10⟩
-  let tcb := { mkTcb 1 .Ready with
-    ipcState := .blockedOnSend epId
-    threadState := .BlockedSend }
+  let tcb := (TCB.setIpcState { mkTcb 1 .Ready with
+    threadState := .BlockedSend } (.blockedOnSend epId))
   let st := mkState [(⟨1⟩, .tcb tcb)]
   match bootSuspendThread st ⟨tid, by decide⟩ with
   | .ok st' =>
@@ -216,9 +215,8 @@ private def sr012_suspendBlockedOnSend : IO Unit := do
 private def sr013_suspendBlockedOnReceive : IO Unit := do
   let tid : SeLe4n.ThreadId := ⟨1⟩
   let epId : SeLe4n.ObjId := ⟨10⟩
-  let tcb := { mkTcb 1 .Ready with
-    ipcState := .blockedOnReceive epId
-    threadState := .BlockedRecv }
+  let tcb := (TCB.setIpcState { mkTcb 1 .Ready with
+    threadState := .BlockedRecv } (.blockedOnReceive epId))
   let st := mkState [(⟨1⟩, .tcb tcb)]
   match bootSuspendThread st ⟨tid, by decide⟩ with
   | .ok st' =>
@@ -233,9 +231,8 @@ private def sr013_suspendBlockedOnReceive : IO Unit := do
 private def sr014_suspendBlockedOnCall : IO Unit := do
   let tid : SeLe4n.ThreadId := ⟨1⟩
   let epId : SeLe4n.ObjId := ⟨10⟩
-  let tcb := { mkTcb 1 .Ready with
-    ipcState := .blockedOnCall epId
-    threadState := .BlockedCall }
+  let tcb := (TCB.setIpcState { mkTcb 1 .Ready with
+    threadState := .BlockedCall } (.blockedOnCall epId))
   let st := mkState [(⟨1⟩, .tcb tcb)]
   match bootSuspendThread st ⟨tid, by decide⟩ with
   | .ok st' =>
@@ -250,9 +247,8 @@ private def sr014_suspendBlockedOnCall : IO Unit := do
 private def sr015_suspendBlockedOnReply : IO Unit := do
   let tid : SeLe4n.ThreadId := ⟨1⟩
   let epId : SeLe4n.ObjId := ⟨10⟩
-  let tcb := { mkTcb 1 .Ready with
-    ipcState := .blockedOnReply epId none
-    threadState := .BlockedReply }
+  let tcb := (TCB.setIpcState { mkTcb 1 .Ready with
+    threadState := .BlockedReply } (.blockedOnReply epId none))
   let st := mkState [(⟨1⟩, .tcb tcb)]
   match bootSuspendThread st ⟨tid, by decide⟩ with
   | .ok st' =>
@@ -267,9 +263,8 @@ private def sr015_suspendBlockedOnReply : IO Unit := do
 private def sr016_suspendBlockedOnNotification : IO Unit := do
   let tid : SeLe4n.ThreadId := ⟨1⟩
   let notifId : SeLe4n.ObjId := ⟨10⟩
-  let tcb := { mkTcb 1 .Ready with
-    ipcState := .blockedOnNotification notifId
-    threadState := .BlockedNotif }
+  let tcb := (TCB.setIpcState { mkTcb 1 .Ready with
+    threadState := .BlockedNotif } (.blockedOnNotification notifId))
   let st := mkState [(⟨1⟩, .tcb tcb)]
   match bootSuspendThread st ⟨tid, by decide⟩ with
   | .ok st' =>
@@ -486,8 +481,7 @@ private def sr027b_resumeRecomputesPipBoostWithWaiters : IO Unit := do
   -- `waitersOf` reads `tcb.tid` (not the ObjId key), so set tcb.tid to
   -- waiterTid and ensure its ipcState targets `tid`.
   let waiterBaseTcb := mkTcb 2 .Ready 99
-  let waiterTcb := { waiterBaseTcb with
-    ipcState := .blockedOnReply endpointId (some tid) }
+  let waiterTcb := (waiterBaseTcb.setIpcState (.blockedOnReply endpointId (some tid)))
   let st := mkState [
     (⟨1⟩, .tcb tidTcb),
     (⟨2⟩, .tcb waiterTcb)
@@ -521,8 +515,7 @@ private def sr027c_resumeThreadPreservesBlockingAcyclic : IO Unit := do
   let endpointId : SeLe4n.ObjId := ⟨50⟩
   let tidTcb := { mkTcb 1 .Inactive with pipBoost := some ⟨50⟩ }
   let waiterBaseTcb := mkTcb 2 .Ready 99
-  let waiterTcb := { waiterBaseTcb with
-    ipcState := .blockedOnReply endpointId (some tid) }
+  let waiterTcb := (waiterBaseTcb.setIpcState (.blockedOnReply endpointId (some tid)))
   let st := mkState [(⟨1⟩, .tcb tidTcb), (⟨2⟩, .tcb waiterTcb)]
   match bootResumeThread st ⟨tid, by decide⟩ with
   | .ok st' =>
@@ -556,8 +549,7 @@ private def sr027d_resumeThreadPipBoostMatchesGraph : IO Unit := do
   let endpointId : SeLe4n.ObjId := ⟨50⟩
   let tidTcb := { mkTcb 1 .Inactive with pipBoost := some ⟨50⟩ }
   let waiterBaseTcb := mkTcb 2 .Ready 99
-  let waiterTcb := { waiterBaseTcb with
-    ipcState := .blockedOnReply endpointId (some tid) }
+  let waiterTcb := (waiterBaseTcb.setIpcState (.blockedOnReply endpointId (some tid)))
   let st := mkState [(⟨1⟩, .tcb tidTcb), (⟨2⟩, .tcb waiterTcb)]
   match bootResumeThread st ⟨tid, by decide⟩ with
   | .ok st' =>
@@ -580,14 +572,13 @@ private def sr027d_resumeThreadPipBoostMatchesGraph : IO Unit := do
     link fields on the target TCB. -/
 private def sr028_restoreToReadyClearsIpcFields : IO Unit := do
   let tid : SeLe4n.ThreadId := ⟨1⟩
-  let tcb := { mkTcb 1 .Ready with
-    ipcState := .blockedOnSend ⟨50⟩,
+  let tcb := (TCB.setIpcState { mkTcb 1 .Ready with
     queuePrevCode := SeLe4n.ThreadId.optCode (some ⟨3⟩), queueNextCode := SeLe4n.ThreadId.optCode (some ⟨4⟩),
     queuePPrevCode := 1,
     -- `v0.35.134`: the fifth field `TCB.restoredToReady` clears was asserted by
     -- nothing, which is how the frozen mirror came to omit it for as long as it
     -- did -- a clear nobody measures is a clear nobody notices missing.
-    pendingReceiveReply := some ⟨7⟩ }
+    pendingReceiveReply := some ⟨7⟩ } (.blockedOnSend ⟨50⟩))
   let st := mkState [(⟨1⟩, .tcb tcb)]
   let st' := restoreToReady st tid
   match st'.objects[tid.toObjId]? with
@@ -676,7 +667,7 @@ nowhere else -- the code is deleted, the evidence is kept -- and it is computed
 beside the live clear so SR-032 is known to discriminate rather than merely to
 pass. -/
 private def retiredFrozenResumeClear (tcb : TCB) : TCB :=
-  { tcb with ipcState := .ready }
+  (tcb.setIpcState .ready)
 
 /-- The **retired** frozen preemption reading: the two **base** priorities. -/
 private def retiredFrozenPreempts (resumed current : TCB) : Bool :=
@@ -692,11 +683,10 @@ clears, not `ipcState` alone.  The stashed receive Reply is the one that matters
 beyond hygiene: left set, `replyIsStashed` keeps that Reply permanently in use. -/
 private def sr032_frozenResumeClearsEveryRestoredField : IO Unit := do
   let tid : SeLe4n.ThreadId := ⟨1⟩
-  let stale := { mkTcb 1 .Inactive with
-    ipcState := .blockedOnSend ⟨50⟩,
+  let stale := (TCB.setIpcState { mkTcb 1 .Inactive with
     queuePrevCode := SeLe4n.ThreadId.optCode (some ⟨3⟩), queueNextCode := SeLe4n.ThreadId.optCode (some ⟨4⟩),
     queuePPrevCode := 1,
-    pendingReceiveReply := some ⟨7⟩ }
+    pendingReceiveReply := some ⟨7⟩ } (.blockedOnSend ⟨50⟩))
   -- The retired clear leaves four of the five fields set, so the assertions
   -- below are known to separate the two readings.
   let retired := retiredFrozenResumeClear stale
@@ -739,8 +729,7 @@ private def sr033_frozenResumeRecomputesPipBoost : IO Unit := do
     | _ => throw <| IO.userError "frozen TCB not found (a)"
   | .error e => throw <| IO.userError s!"frozen resume (a) failed: {repr e}"
   -- (b) under-boost: a waiter acquired while Inactive must raise the boost.
-  let waiter := { mkTcb 2 .Ready 90 with
-                    ipcState := .blockedOnReply epId (some tid) }
+  let waiter := ((mkTcb 2 .Ready 90).setIpcState (.blockedOnReply epId (some tid)))
   let unboosted := mkTcb 1 .Inactive
   let fstB := mkFrozenState [(⟨1⟩, .tcb unboosted), (⟨2⟩, .tcb waiter)]
   match frozenResumeThread tid fstB with
@@ -765,8 +754,7 @@ private def sr034_frozenResumePreemptsOnEffectivePriority : IO Unit := do
   let curTid : SeLe4n.ThreadId := ⟨3⟩
   let epId : SeLe4n.ObjId := ⟨50⟩
   -- (a) base 10 + an earned boost of 90 against a current thread at base 50.
-  let waiter := { mkTcb 2 .Ready 90 with
-                    ipcState := .blockedOnReply epId (some tid) }
+  let waiter := ((mkTcb 2 .Ready 90).setIpcState (.blockedOnReply epId (some tid)))
   let resumed := mkTcb 1 .Inactive 10
   let current := mkTcb 3 .Ready 50
   let boostedResumed := { resumed with pipBoost := some ⟨90⟩ }

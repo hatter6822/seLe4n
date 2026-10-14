@@ -54,7 +54,7 @@ open SeLe4n.Kernel.RobinHood
 `ipcState := .ready` because that is what the enqueue writes (a configured
 thread already carries it, `bootSafeTcbCheck`). -/
 def startedThread (tcb : TCB) : TCB :=
-  { tcb with threadState := .Ready, ipcState := .ready }
+  (TCB.setIpcState { tcb with threadState := .Ready } .ready)
 
 /-- **WS-BP BP7.11**: may the boot start `tid`?  It is a stored thread, still
 `.Inactive`, carrying no inherited boost (so its run-queue key is its own base

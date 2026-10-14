@@ -104,13 +104,12 @@ def abortPendingIpcOnEndpoint
       -- spellings).  `timedOut := true` stays: it is the *kernel-side* fact the
       -- scheduler and the invariants read; the frame is the *userspace-side*
       -- answer, and neither substitutes for the other.
-      let tcb' : TCB := ({ tcb with
-        ipcState := .ready,
+      let tcb' : TCB := ((TCB.setIpcState { tcb with
         pendingMessage := none,
         timeoutBudget := none,
         threadState := .Ready,
         timedOut := true,
-        pendingReceiveReply := none } : TCB).withReturnFrame
+        pendingReceiveReply := none } .ready) : TCB).withReturnFrame
           Architecture.timeoutFrame
       match storeObject tid.toObjId (.tcb tcb') st1 with
       | .error e => .error e
@@ -219,13 +218,12 @@ theorem abortPendingIpcOnEndpoint_tcb_lookup
         have hTcbAt := lookupTcb_some_objects st1 tid tcb hLk
         rw [hTcbAt] at hk1
         obtain rfl : t1 = tcb := (KernelObject.tcb.inj (Option.some.inj hk1)).symm
-        refine ⟨(({ t1 with
-                    ipcState := .ready
+        refine ⟨(((TCB.setIpcState { t1 with
                     pendingMessage := none
                     timeoutBudget := none
                     threadState := .Ready
                     timedOut := true
-                    pendingReceiveReply := none } : TCB).withReturnFrame
+                    pendingReceiveReply := none } .ready) : TCB).withReturnFrame
                   Architecture.timeoutFrame), ?_, hAff1.symm⟩
         rw [RHTable_getElem?_eq_get?, RHTable_getElem?_insert _ _ _ hInv1,
           if_pos (beq_self_eq_true tid.toObjId)]

@@ -409,7 +409,9 @@ theorem abortPendingIpcOnEndpoint_replyViews {eid : SeLe4n.ObjId} {isRecv : Bool
         refine ⟨tcb.replyView, hW, ?_, ?_⟩
         · rw [← hV1]
           exact replyViews_storeObject_tcb hI1 hS hO1 (by
-            simp only [TCB.replyView, TCB.withReturnFrame, TCB.blockingServer?])
+            simp only [TCB.replyView, TCB.withReturnFrame, TCB.blockingServer?,
+              TCB.ipcState_mk, TCB.ofCodes_ipcCodes, TCB.ipcState_setIpcState,
+              ThreadIpcState.ofCodes_codes])
         · unfold timeoutBlockingServerOf? lookupTcb
           rw [if_neg (by simp [hRes]), (getTcb?_eq_some_iff st tid t0).2 hO0]
           rw [← hv0]; rfl

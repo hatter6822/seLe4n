@@ -2286,7 +2286,7 @@ theorem ipcStateQueueConsistent_of_objectsAgreeOffRunLinks {st st' : SystemState
   run_links_back hA at tcb hT
   have hPre := h tid tcb hT
   revert hPre
-  dsimp only
+  dsimp only [TCB.ipcState_mk, TCB.ofCodes_ipcCodes]
   split <;> intro hPre
   all_goals first
     | trivial
@@ -2301,7 +2301,7 @@ theorem ipcStateQueueConsistent_of_ntfnLinksRewritten {st st' : SystemState}
   ntfn_links_back hA at tcb hT
   have hPre := h tid tcb hT
   revert hPre
-  dsimp only
+  dsimp only [TCB.ipcState_mk, TCB.ofCodes_ipcCodes]
   split <;> intro hPre
   all_goals first
     | trivial

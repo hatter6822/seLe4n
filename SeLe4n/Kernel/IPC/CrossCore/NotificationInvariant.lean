@@ -133,7 +133,7 @@ theorem notificationWaitOnCore_preserves_objects_invExt
               have hObj2 : st2.objects.invExt := by
                 unfold storeTcbIpcStateAndMessage_fromTcb at hTcb
                 cases hSO : storeObject waiter.toObjId
-                    (.tcb { tcb with ipcState := .blockedOnNotification notificationId, pendingMessage := none })
+                    (.tcb (TCB.setIpcState { tcb with pendingMessage := none } (.blockedOnNotification notificationId)))
                     pair.2 with
                 | error e => simp [hSO] at hTcb
                 | ok p =>

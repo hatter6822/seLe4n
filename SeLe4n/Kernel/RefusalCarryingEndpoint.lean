@@ -921,7 +921,7 @@ in place (`receiveBlocksInPlace`). -/
       ep.sendQ.head.isNone &&
       (match st.getTcb? receiver with
        | some rt => receiveBlockAdmits rt &&
-           receiveBlocksInPlace st endpointId receiver ep.receiveQ.tail replyId
+           receiveBlocksInPlaceCode st endpointId receiver ep.recvTailCode replyId
        | none => false)
   | none => false
 
@@ -1058,6 +1058,7 @@ theorem endpointReceiveCheckedArmR_eq (ctx : LabelingContext)
               simp only [SystemState.getTcb?, hR] at hO
               simp only [Bool.and_eq_true] at hO
               obtain ⟨hA, hG⟩ := hO
+              rw [receiveBlocksInPlaceCode_eq, Endpoint.ofOptCode_recvTailCode] at hG
               have hE := (SystemState.getEndpoint?_eq_some_iff _ _ _).mp hEp
               have hTail : receiveQueueTailCode st epId = ep.recvTailCode := by
                 simp only [receiveQueueTailCode, hEp]

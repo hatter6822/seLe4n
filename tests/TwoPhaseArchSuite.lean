@@ -194,7 +194,7 @@ private def tph005b_receiveBlocks : IO Unit := do
 /-- TPH-005c: Frozen endpoint call — caller sends then blocks for reply. -/
 private def tph005c_callBlocksForReply : IO Unit := do
   -- Set up an endpoint with a receiver already waiting
-  let recvTcb : TCB := { mkTcb 2 with ipcState := .blockedOnReceive ⟨10⟩ }
+  let recvTcb : TCB := ((mkTcb 2).setIpcState (.blockedOnReceive ⟨10⟩))
   let ep : Endpoint := (Endpoint.ofQueues {} { head := some ⟨2⟩, tail := some ⟨2⟩ })
   let callerTcb := mkTcb 3
   let fst := mkFrozenState [
@@ -242,7 +242,7 @@ private def tph006a_timerTickActive : IO Unit := do
 private def tph006b_timerTickExpiry : IO Unit := do
   -- Thread with timeSlice=1, so the tick will expire it.
   -- byPriority has the thread so frozenSchedule can re-select it.
-  let tcb1 : TCB := { mkTcb 1 10 0 with timeSlice := 1, ipcState := .ready }
+  let tcb1 : TCB := (TCB.setIpcState { mkTcb 1 10 0 with timeSlice := 1 } .ready)
   let byPrioRt := (RHTable.empty 16 : RHTable Priority (List ThreadId))
     |>.insert ⟨10⟩ [⟨1⟩]
   let memberRt := (RHTable.empty 16 : RHTable ThreadId Unit)
@@ -278,7 +278,7 @@ private def tph006b_timerTickExpiry : IO Unit := do
     semantic verification). Verifies that frozenTimerTick resets the time slice
     to the platform-configured value, not the hardcoded default. -/
 private def tph006c_timerTickExpiryCustomConfig : IO Unit := do
-  let tcb1 : TCB := { mkTcb 1 10 0 with timeSlice := 1, ipcState := .ready }
+  let tcb1 : TCB := (TCB.setIpcState { mkTcb 1 10 0 with timeSlice := 1 } .ready)
   let byPrioRt := (RHTable.empty 16 : RHTable Priority (List ThreadId))
     |>.insert ⟨10⟩ [⟨1⟩]
   let memberRt := (RHTable.empty 16 : RHTable ThreadId Unit)
@@ -389,8 +389,8 @@ private def tph012_preallocatedSlot : IO Unit := do
 /-- TPH-014a: Frozen schedule — select eligible thread from byPriority. -/
 private def tph014a_frozenSchedule : IO Unit := do
   -- Set up frozen state with two threads in byPriority
-  let tcb1 : TCB := { mkTcb 1 10 0 with ipcState := .ready }
-  let tcb2 : TCB := { mkTcb 2 5 0 with ipcState := .ready }
+  let tcb1 : TCB := ((mkTcb 1 10 0).setIpcState .ready)
+  let tcb2 : TCB := ((mkTcb 2 5 0).setIpcState .ready)
   let byPrioRt := (RHTable.empty 16 : RHTable Priority (List ThreadId))
     |>.insert ⟨10⟩ [⟨1⟩]
     |>.insert ⟨5⟩ [⟨2⟩]
@@ -418,7 +418,7 @@ private def tph014a_frozenSchedule : IO Unit := do
 
 /-- TPH-014b: Frozen yield — re-enqueue current and reschedule. -/
 private def tph014b_frozenYield : IO Unit := do
-  let tcb1 : TCB := { mkTcb 1 10 0 with ipcState := .ready }
+  let tcb1 : TCB := ((mkTcb 1 10 0).setIpcState .ready)
   let byPrioRt := (RHTable.empty 16 : RHTable Priority (List ThreadId))
     |>.insert ⟨10⟩ [⟨1⟩]
   let memberRt := (RHTable.empty 16 : RHTable ThreadId Unit)
@@ -446,7 +446,7 @@ private def tph014b_frozenYield : IO Unit := do
 /-- TPH-014c: Frozen schedule with no eligible threads — current stays none. -/
 private def tph014c_scheduleNoEligible : IO Unit := do
   -- All threads blocked (not ready)
-  let tcb1 : TCB := { mkTcb 1 10 0 with ipcState := .blockedOnReceive ⟨99⟩ }
+  let tcb1 : TCB := ((mkTcb 1 10 0).setIpcState (.blockedOnReceive ⟨99⟩))
   let byPrioRt := (RHTable.empty 16 : RHTable Priority (List ThreadId))
     |>.insert ⟨10⟩ [⟨1⟩]
   let memberRt := (RHTable.empty 16 : RHTable ThreadId Unit)

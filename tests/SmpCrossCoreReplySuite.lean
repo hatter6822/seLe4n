@@ -267,9 +267,10 @@ private def replyMsg2 : IpcMessage :=
   { registers := #[SeLe4n.RegValue.ofNat 999], caps := #[], badge := none }
 
 private def mkTcb (tid : Nat) (prio : Nat) (aff : Option CoreId) (ipc : ThreadIpcState) : TCB :=
+  (TCB.setIpcState
   { tid := ⟨tid⟩, priority := ⟨prio⟩, domain := ⟨0⟩, cspaceRoot := cnRoot,
-    vspaceRoot := ⟨310⟩, ipcBuffer := SeLe4n.VAddr.ofNat 4096, ipcState := ipc,
-    cpuAffinity := aff }
+    vspaceRoot := ⟨310⟩, ipcBuffer := SeLe4n.VAddr.ofNat 4096,
+    cpuAffinity := aff } ipc)
 
 /-- Endpoint + a ready (unbound) server (replier) + two clients `BlockedOnReply`
 recording the server as the authorised replier: an unbound (local-home) client and

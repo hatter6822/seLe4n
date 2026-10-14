@@ -3622,19 +3622,17 @@ the timeout increment staged on top — definitionally, so the split is a way of
 reading one record update rather than a second one. -/
 theorem abortStagedTcb_eq (tcb : TCB) :
     TCB.withReturnFrame
-        ({ tcb with
-           ipcState := .ready
+        ((TCB.setIpcState { tcb with
            pendingMessage := none
            timeoutBudget := none
            threadState := .Ready
            timedOut := true
-           pendingReceiveReply := none })
+           pendingReceiveReply := none } .ready))
         Architecture.timeoutFrame
       = timeoutStagedTcb
-          ({ tcb with
-             ipcState := .ready
+          ((TCB.setIpcState { tcb with
              pendingMessage := none
-             pendingReceiveReply := none }) := rfl
+             pendingReceiveReply := none } .ready)) := rfl
 
 /-- **WS-OD OD1.3 — the timeout increment preserves the whole bundle.**
 

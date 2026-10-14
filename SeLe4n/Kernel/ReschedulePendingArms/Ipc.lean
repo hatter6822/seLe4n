@@ -192,7 +192,7 @@ theorem storeTcbIpcStateAndMessage_keyFrame {st st' : SystemState} {tid : SeLe4n
     {ipc : ThreadIpcState} {msg : Option IpcMessage} (hInv : st.objects.invExt)
     (h : storeTcbIpcStateAndMessage st tid ipc msg = .ok st') : capabilityKeyFrame st st' := by
   unfold storeTcbIpcStateAndMessage at h
-  exact modifyTcb_keyFrame (f := fun tcb => { tcb with ipcState := ipc, pendingMessage := msg })
+  exact modifyTcb_keyFrame (f := fun tcb => (TCB.setIpcState { tcb with pendingMessage := msg } ipc))
     (fun _ => rfl) hInv h
 
 theorem storeTcbReceiveComplete_keyFrame {st st' : SystemState} {tid : SeLe4n.ThreadId}
@@ -200,7 +200,7 @@ theorem storeTcbReceiveComplete_keyFrame {st st' : SystemState} {tid : SeLe4n.Th
     (h : storeTcbReceiveComplete st tid msg = .ok st') : capabilityKeyFrame st st' := by
   unfold storeTcbReceiveComplete at h
   exact modifyTcb_keyFrame
-    (f := fun tcb => { tcb with ipcState := .ready, pendingMessage := msg, pendingReceiveReply := none })
+    (f := fun tcb => (TCB.setIpcState { tcb with pendingMessage := msg, pendingReceiveReply := none } .ready))
     (fun _ => rfl) hInv h
 
 /-! ### The scheduler writes -/
@@ -1179,7 +1179,7 @@ theorem storeTcbIpcState_keyFrame {st st' : SystemState} {tid : SeLe4n.ThreadId}
     {ipc : ThreadIpcState} (hInv : st.objects.invExt)
     (h : storeTcbIpcState st tid ipc = .ok st') : capabilityKeyFrame st st' := by
   unfold storeTcbIpcState at h
-  exact modifyTcb_keyFrame (f := fun tcb => { tcb with ipcState := ipc }) (fun _ => rfl) hInv h
+  exact modifyTcb_keyFrame (f := fun tcb => (tcb.setIpcState ipc)) (fun _ => rfl) hInv h
 
 /-- PR #932 review: the signal's pop rewrites only notification links, which
 are no key input. -/

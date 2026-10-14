@@ -97,7 +97,7 @@ object.  A `blockedOnReply` caller with NO `replyObject` link is rejected
 `reply.caller` and consumes it.  (The success path with a linked Reply object is
 FO-004b.) -/
 private def fo004_endpointReply : IO Unit := do
-  let callerTcb : TCB := { mkTcb 2 with ipcState := .blockedOnReply ⟨10⟩ (some ⟨3⟩) }
+  let callerTcb : TCB := ((mkTcb 2).setIpcState (.blockedOnReply ⟨10⟩ (some ⟨3⟩)))
   let fst := mkFrozenState [(⟨2⟩, .tcb callerTcb)]
   let msg : IpcMessage := { registers := #[], caps := #[], badge := Badge.ofNatMasked 0 }
   match frozenEndpointReply ⟨3⟩ ⟨2⟩ (⟨505⟩ : SeLe4n.ReplyId) msg fst with
@@ -110,8 +110,8 @@ the Reply object's `caller` back-link, mirroring the runtime `consumeCallerReply
 single-use semantics. -/
 private def fo004b_endpointReplyConsumesLink : IO Unit := do
   let rid : SeLe4n.ReplyId := ⟨505⟩
-  let callerTcb : TCB := { mkTcb 2 with
-    ipcState := .blockedOnReply ⟨10⟩ (some ⟨3⟩), replyObject := some rid }
+  let callerTcb : TCB := (TCB.setIpcState { mkTcb 2 with
+    replyObject := some rid } (.blockedOnReply ⟨10⟩ (some ⟨3⟩)))
   let replyObj : SeLe4n.Kernel.Reply := { replyId := rid, caller := some ⟨2⟩ }
   -- The replier is a live TCB: the reply's provenance is read from the thread
   -- that composed it, so an unresolvable one is refused (SM9.D audit).
@@ -145,8 +145,8 @@ assertion while losing the client's budget. -/
 private def fo004c_replyToStackHeadPopsDonation : IO Unit := do
   let rid  : SeLe4n.ReplyId := ⟨505⟩
   let scId : SeLe4n.SchedContextId := ⟨77⟩
-  let callerTcb : TCB := { mkTcb 2 with
-    ipcState := .blockedOnReply ⟨10⟩ (some ⟨3⟩), replyObject := some rid }
+  let callerTcb : TCB := (TCB.setIpcState { mkTcb 2 with
+    replyObject := some rid } (.blockedOnReply ⟨10⟩ (some ⟨3⟩)))
   -- The passive server holds the caller's context by donation, and the context
   -- heads the reply stack at `rid` — the live depth-1 `Call` shape.
   let serverTcb : TCB := { mkTcb 3 with schedContextBinding := .donated scId ⟨2⟩ }
@@ -197,8 +197,8 @@ would pass a deschedule assertion without the deschedule ever running. -/
 private def fo004e_replyDeschedulesTheServer : IO Unit := do
   let rid  : SeLe4n.ReplyId := ⟨505⟩
   let scId : SeLe4n.SchedContextId := ⟨77⟩
-  let callerTcb : TCB := { mkTcb 2 with
-    ipcState := .blockedOnReply ⟨10⟩ (some ⟨3⟩), replyObject := some rid }
+  let callerTcb : TCB := (TCB.setIpcState { mkTcb 2 with
+    replyObject := some rid } (.blockedOnReply ⟨10⟩ (some ⟨3⟩)))
   let serverTcb : TCB := { mkTcb 3 with schedContextBinding := .donated scId ⟨2⟩ }
   let sc : SeLe4n.Kernel.SchedContext := { scId := scId, budget := ⟨100⟩, period := ⟨1000⟩, priority := ⟨0⟩, deadline := ⟨0⟩, domain := ⟨0⟩, budgetRemaining := ⟨50⟩, boundThread := some ⟨3⟩, scReply := some rid }
   let replyObj : SeLe4n.Kernel.Reply :=
@@ -247,10 +247,9 @@ server outright (FO-004e). -/
 private def fo004f_replyRevertsPriorityInheritance : IO Unit := do
   let rid : SeLe4n.ReplyId := ⟨505⟩
   -- ⟨2⟩ is the client being answered, ⟨4⟩ a second client still waiting.
-  let answered : TCB := { mkTcb 2 200 with
-    ipcState := .blockedOnReply ⟨10⟩ (some ⟨3⟩), replyObject := some rid }
-  let stillWaiting : TCB := { mkTcb 4 150 with
-    ipcState := .blockedOnReply ⟨10⟩ (some ⟨3⟩) }
+  let answered : TCB := (TCB.setIpcState { mkTcb 2 200 with
+    replyObject := some rid } (.blockedOnReply ⟨10⟩ (some ⟨3⟩)))
+  let stillWaiting : TCB := ((mkTcb 4 150).setIpcState (.blockedOnReply ⟨10⟩ (some ⟨3⟩)))
   -- The server's own priority is 10; it has inherited 200 from ⟨2⟩.
   let serverTcb : TCB := { mkTcb 3 10 with pipBoost := some ⟨200⟩ }
   let replyObj : SeLe4n.Kernel.Reply := { replyId := rid, caller := some ⟨2⟩ }
@@ -297,8 +296,8 @@ private def fo004g_replyNeedsARecordedServer : IO Unit := do
   let replyObj : SeLe4n.Kernel.Reply := { replyId := rid, caller := some ⟨2⟩ }
   let mkState (server? : Option SeLe4n.ThreadId) : FrozenSystemState :=
     mkFrozenState
-      [(⟨2⟩, .tcb { mkTcb 2 with
-                    ipcState := .blockedOnReply ⟨10⟩ server?, replyObject := some rid }),
+      [(⟨2⟩, .tcb (TCB.setIpcState { mkTcb 2 with
+                    replyObject := some rid } (.blockedOnReply ⟨10⟩ server?))),
        (⟨3⟩, .tcb (mkTcb 3)), (rid.toObjId, .reply replyObj)]
   let msg : IpcMessage := { registers := #[], caps := #[], badge := Badge.ofNatMasked 0 }
   match frozenEndpointReply ⟨3⟩ ⟨2⟩ rid msg (mkState none) with
@@ -324,8 +323,8 @@ leg answer the same state — the control that keeps FO-004c honest about WHERE
 the pop belongs. -/
 private def fo004d_replyOffStackNeedsNoPop : IO Unit := do
   let rid : SeLe4n.ReplyId := ⟨505⟩
-  let callerTcb : TCB := { mkTcb 2 with
-    ipcState := .blockedOnReply ⟨10⟩ (some ⟨3⟩), replyObject := some rid }
+  let callerTcb : TCB := (TCB.setIpcState { mkTcb 2 with
+    replyObject := some rid } (.blockedOnReply ⟨10⟩ (some ⟨3⟩)))
   let replyObj : SeLe4n.Kernel.Reply := { replyId := rid, caller := some ⟨2⟩ }
   let fst := mkFrozenState
     [(⟨2⟩, .tcb callerTcb), (⟨3⟩, .tcb (mkTcb 3)), (rid.toObjId, .reply replyObj)]
@@ -351,7 +350,7 @@ delegatable), exactly like the live `.reply` path. -/
 private def fo005_replyDelegatedReplier : IO Unit := do
   let rid : SeLe4n.ReplyId := ⟨505⟩
   let callerTcb : TCB :=
-    { mkTcb 2 with ipcState := .blockedOnReply ⟨10⟩ (some ⟨3⟩), replyObject := some rid }
+    (TCB.setIpcState { mkTcb 2 with replyObject := some rid } (.blockedOnReply ⟨10⟩ (some ⟨3⟩)))
   let replyObj : SeLe4n.Kernel.Reply := { replyId := rid, caller := some ⟨2⟩ }
   -- ⟨99⟩ is a live thread that is simply *not* the recorded server — which is
   -- what delegation means.  It was absent from the map before, which made the
@@ -375,7 +374,7 @@ thread without the reply cap cannot deliver/consume the reply. -/
 private def fo005b_replyWrongPresentedCap : IO Unit := do
   let rid : SeLe4n.ReplyId := ⟨505⟩
   let callerTcb : TCB :=
-    { mkTcb 2 with ipcState := .blockedOnReply ⟨10⟩ (some ⟨3⟩), replyObject := some rid }
+    (TCB.setIpcState { mkTcb 2 with replyObject := some rid } (.blockedOnReply ⟨10⟩ (some ⟨3⟩)))
   let replyObj : SeLe4n.Kernel.Reply := { replyId := rid, caller := some ⟨2⟩ }
   let fst := mkFrozenState [(⟨2⟩, .tcb callerTcb), (rid.toObjId, .reply replyObj)]
   let msg : IpcMessage := { registers := #[], caps := #[], badge := Badge.ofNatMasked 0 }
@@ -841,7 +840,7 @@ private def frozenDeliveryIsHonest : IO Unit := do
   -- than reading the total table's empty default and silently under-tagging.
   let rid : SeLe4n.ReplyId := ⟨505⟩
   let callerTcb : TCB :=
-    { mkTcb 2 with ipcState := .blockedOnReply ⟨10⟩ (some ⟨3⟩), replyObject := some rid }
+    (TCB.setIpcState { mkTcb 2 with replyObject := some rid } (.blockedOnReply ⟨10⟩ (some ⟨3⟩)))
   let replyObj : SeLe4n.Kernel.Reply := { replyId := rid, caller := some ⟨2⟩ }
   let fstRep := mkFrozenState [(⟨2⟩, .tcb callerTcb), (rid.toObjId, .reply replyObj)]
   let msg : IpcMessage := { registers := #[], caps := #[], badge := Badge.ofNatMasked 0 }
@@ -909,7 +908,7 @@ private def frozenParkedSenderCarriesItsMessage : IO Unit := do
   -- The malformed snapshot: parked to send, holding nothing.
   let fstEmpty := mkFrozenState
     [(⟨10⟩, .endpoint epParked),
-     (⟨3⟩, .tcb { mkTcb 3 with ipcState := .blockedOnSend ⟨10⟩, pendingMessage := none }),
+     (⟨3⟩, .tcb (TCB.setIpcState { mkTcb 3 with pendingMessage := none } (.blockedOnSend ⟨10⟩))),
      (⟨4⟩, .tcb (mkTcb 4))]
   expect "FO-024: a message-less parked sender is refused rather than dequeued"
     (match frozenEndpointReceive ⟨10⟩ ⟨4⟩ none fstEmpty with
@@ -920,7 +919,7 @@ private def frozenParkedSenderCarriesItsMessage : IO Unit := do
   -- the hand-built queue.
   let fstFull := mkFrozenState
     [(⟨10⟩, .endpoint epParked),
-     (⟨3⟩, .tcb { mkTcb 3 with ipcState := .blockedOnSend ⟨10⟩, pendingMessage := some msg }),
+     (⟨3⟩, .tcb (TCB.setIpcState { mkTcb 3 with pendingMessage := some msg } (.blockedOnSend ⟨10⟩))),
      (⟨4⟩, .tcb (mkTcb 4))]
   expect "FO-024: the same shape WITH a message still delivers"
     (match frozenEndpointReceive ⟨10⟩ ⟨4⟩ none fstFull with
@@ -956,7 +955,7 @@ private def frozenBoundNotificationDelivery : IO Unit := do
     { state := .idle, hasPendingBadge := false, pendingWord := SeLe4n.Badge.zero,
       boundTCB := some bound }
   let boundTcb : TCB :=
-    { mkTcb 42 with ipcState := .blockedOnReceive epId, queuePPrevCode := 1 }
+    (TCB.setIpcState { mkTcb 42 with queuePPrevCode := 1 } (.blockedOnReceive epId))
   let fst := mkFrozenState
     [(epId, .endpoint ep),
      (notifId, .notification ntfn),
@@ -1216,7 +1215,7 @@ private def differentialNotificationSignalAgrees : IO Unit := do
   let ntfn : Notification :=
     { state := .idle, hasPendingBadge := false, pendingWord := SeLe4n.Badge.zero,
       boundTCB := some diffA }
-  let boundTcb : TCB := { diffTcb 62 with ipcState := .blockedOnReceive diffEpId, queuePPrevCode := 1 }
+  let boundTcb : TCB := (TCB.setIpcState { diffTcb 62 with queuePPrevCode := 1 } (.blockedOnReceive diffEpId))
   let ist := diffAddTcb (diffAddTcb (diffAddNotification
     (diffAddEndpoint (diffAddCSpace mkEmptyIntermediateState [(SeLe4n.Slot.ofNat 0, diffObjCap diffNotifId)]) diffEpId ep) diffNotifId ntfn) boundTcb) (diffTcb 63)
   -- Control (the FO-031 discipline): both sides really deliver, so the
@@ -1342,7 +1341,7 @@ sender that carries its message — the rendezvous the round-11 guard admits. -/
 private def differentialEndpointReceiveAgrees : IO Unit := do
   let msg : IpcMessage := { registers := #[⟨7⟩], caps := #[], badge := none }
   let ep : Endpoint := (Endpoint.ofQueues { head := some diffA, tail := some diffA } {})
-  let parked : TCB := { diffTcb 62 with ipcState := .blockedOnSend diffEpId, pendingMessage := some msg, queuePPrevCode := 1 }
+  let parked : TCB := (TCB.setIpcState { diffTcb 62 with pendingMessage := some msg, queuePPrevCode := 1 } (.blockedOnSend diffEpId))
   let ist := diffAddTcb (diffAddTcb
     (diffAddEndpoint (diffAddCSpace mkEmptyIntermediateState [(SeLe4n.Slot.ofNat 0, diffObjCap diffEpId)]) diffEpId ep) parked) (diffTcb 63)
   -- Control: the rendezvous really completes on both sides.
@@ -1388,7 +1387,7 @@ private def differentialEndpointReplyAgrees : IO Unit := do
   -- both sides refuse with `.replyCapInvalid` and the comparison passes without
   -- ever running a reply — a check that agrees because nothing happened.
   let rid : SeLe4n.ReplyId := ⟨505⟩
-  let caller : TCB := { diffTcb 62 with ipcState := .blockedOnReply diffEpId (some diffB), replyObject := some rid }
+  let caller : TCB := (TCB.setIpcState { diffTcb 62 with replyObject := some rid } (.blockedOnReply diffEpId (some diffB)))
   let ist := diffAddReply (diffAddTcb (diffAddTcb
     (diffAddEndpoint mkEmptyIntermediateState diffEpId {}) caller) (diffTcb 63))
     rid { replyId := rid, caller := some diffA }
@@ -1460,8 +1459,8 @@ not merely named — the Lean pair
 private def differentialEndpointReplyOperationAgrees : IO Unit := do
   let msg : IpcMessage := { registers := #[⟨13⟩], caps := #[], badge := none }
   let rid : SeLe4n.ReplyId := ⟨505⟩
-  let caller : TCB := { diffTcb 62 with
-    ipcState := .blockedOnReply diffEpId (some diffB), replyObject := some rid }
+  let caller : TCB := (TCB.setIpcState { diffTcb 62 with
+    replyObject := some rid } (.blockedOnReply diffEpId (some diffB)))
   -- The server has inherited the caller's priority; answering the caller is
   -- what makes that boost stale.
   let server : TCB := { diffTcb 63 with pipBoost := some ⟨200⟩ }
@@ -1488,8 +1487,8 @@ private def differentialEndpointReplyOperationAgrees : IO Unit := do
   -- The refusal half: a caller whose `ipcState` records no server at all.  Both
   -- sides must decline it with the same error — the live one has since AK1-B
   -- (I-H02), which rated letting a reply through there a confused-deputy risk.
-  let unrecorded : TCB := { diffTcb 62 with
-    ipcState := .blockedOnReply diffEpId none, replyObject := some rid }
+  let unrecorded : TCB := (TCB.setIpcState { diffTcb 62 with
+    replyObject := some rid } (.blockedOnReply diffEpId none))
   let ist' := diffAddReply (diffAddTcb (diffAddTcb
     (diffAddEndpoint mkEmptyIntermediateState diffEpId {}) unrecorded) (diffTcb 63))
     rid { replyId := rid, caller := some diffA }
@@ -1558,9 +1557,9 @@ private def differentialEndpointReplyDonationAgrees : IO Unit := do
   let rid : SeLe4n.ReplyId := ⟨506⟩
   -- The answered caller: blocked on its reply, holding the frame, and `.unbound`
   -- because it donated its context away at the `Call`.
-  let caller : TCB := { diffTcb 62 with
-    ipcState := .blockedOnReply diffEpId (some diffB), replyObject := some rid,
-    schedContextBinding := SeLe4n.Kernel.SchedContextBinding.unbound }
+  let caller : TCB := (TCB.setIpcState { diffTcb 62 with
+    replyObject := some rid,
+    schedContextBinding := SeLe4n.Kernel.SchedContextBinding.unbound } (.blockedOnReply diffEpId (some diffB)))
   -- The recorded server: holds the donation, runnable, and carrying the boost the
   -- reversion must clear, so the two live steps are both observable.
   let server : TCB := { diffTcb 63 with
@@ -1632,9 +1631,9 @@ private def differentialEndpointReplyDonationAgrees : IO Unit := do
   -- The guard is head-driven-specific: under the binding-driven reading the
   -- recipient was the binding's own recorded owner, which the operation had
   -- already seen hold nothing, so this half could not have existed before HP4.
-  let ownCaller : TCB := { diffTcb 62 with
-    ipcState := .blockedOnReply diffEpId (some diffB), replyObject := some rid,
-    schedContextBinding := .bound diffOwnScId }
+  let ownCaller : TCB := (TCB.setIpcState { diffTcb 62 with
+    replyObject := some rid,
+    schedContextBinding := .bound diffOwnScId } (.blockedOnReply diffEpId (some diffB)))
   let bound := diffAddSchedContext (diffAddSchedContext (diffAddReply (diffAddTcb (diffAddTcb
     (diffAddEndpoint mkEmptyIntermediateState diffEpId {}) ownCaller) server)
     rid { replyId := rid, caller := some diffA, next := some (.head diffScId) })
@@ -1728,9 +1727,9 @@ private def differentialEndpointReplyMiddleFrameSplices : IO Unit := do
   let midRid    : SeLe4n.ReplyId := ⟨508⟩
   let topRid    : SeLe4n.ReplyId := ⟨509⟩
   -- The answered caller holds the MIDDLE frame.
-  let caller : TCB := { diffTcb 62 with
-    ipcState := .blockedOnReply diffEpId (some diffB), replyObject := some midRid,
-    schedContextBinding := SeLe4n.Kernel.SchedContextBinding.unbound }
+  let caller : TCB := (TCB.setIpcState { diffTcb 62 with
+    replyObject := some midRid,
+    schedContextBinding := SeLe4n.Kernel.SchedContextBinding.unbound } (.blockedOnReply diffEpId (some diffB)))
   -- The recorded server, holding the donation the TOP frame heads.
   let server : TCB := { diffTcb 63 with
     schedContextBinding := .donated diffScId diffA }
@@ -1878,9 +1877,9 @@ private def differentialEndpointReplyRedirectsToOrigin : IO Unit := do
   let rid : SeLe4n.ReplyId := SeLe4n.ReplyId.ofNat 71
   let msg : IpcMessage := { registers := #[], caps := #[], badge := Badge.ofNatMasked 0 }
   -- The answered caller: reply-blocked on the recorded server, holding nothing.
-  let caller : TCB := { diffTcb 62 with
-    ipcState := .blockedOnReply diffEpId (some diffB), replyObject := some rid,
-    schedContextBinding := SeLe4n.Kernel.SchedContextBinding.unbound }
+  let caller : TCB := (TCB.setIpcState { diffTcb 62 with
+    replyObject := some rid,
+    schedContextBinding := SeLe4n.Kernel.SchedContextBinding.unbound } (.blockedOnReply diffEpId (some diffB)))
   -- The recorded server, holding the donation.
   let server : TCB := { diffTcb 63 with
     schedContextBinding := .donated diffScId diffA }
@@ -2042,7 +2041,7 @@ private def differentialReceiveFromBlockedCallerAgrees : IO Unit := do
   let msg : IpcMessage := { registers := #[⟨21⟩], caps := #[], badge := none }
   let rid : SeLe4n.ReplyId := ⟨506⟩
   let ep : Endpoint := (Endpoint.ofQueues { head := some diffA, tail := some diffA } {})
-  let parkedCaller : TCB := { diffTcb 62 with ipcState := .blockedOnCall diffEpId, pendingMessage := some msg, queuePPrevCode := 1 }
+  let parkedCaller : TCB := (TCB.setIpcState { diffTcb 62 with pendingMessage := some msg, queuePPrevCode := 1 } (.blockedOnCall diffEpId))
   let ist := diffAddReply (diffAddTcb (diffAddTcb
     (diffAddEndpoint (diffAddCSpace mkEmptyIntermediateState
       [(SeLe4n.Slot.ofNat 0, diffObjCap diffEpId)]) diffEpId ep) parkedCaller) (diffTcb 63))
@@ -2076,7 +2075,7 @@ private def differentialTaintedSignalAgrees : IO Unit := do
   let ntfn : Notification :=
     { state := .idle, hasPendingBadge := false, pendingWord := SeLe4n.Badge.zero,
       boundTCB := some diffA }
-  let boundTcb : TCB := { diffTcb 62 with ipcState := .blockedOnReceive diffEpId, queuePPrevCode := 1 }
+  let boundTcb : TCB := (TCB.setIpcState { diffTcb 62 with queuePPrevCode := 1 } (.blockedOnReceive diffEpId))
   let ist0 := diffAddTcb (diffAddTcb (diffAddNotification
     (diffAddEndpoint (diffAddCSpace mkEmptyIntermediateState
         [(SeLe4n.Slot.ofNat 0, diffObjCap diffNotifId)]) diffEpId ep)
@@ -2167,17 +2166,15 @@ private def differentialRemovalGuardRefusalsAgree : IO Unit := do
   -- `diffA` heads the send queue, carries `.endpointHead`, and has NO successor;
   -- the queue's tail names `diffB`.  So the tail field and `queueNext` disagree.
   let tcbA : TCB :=
-    { diffTcb 62 with
-        ipcState := .blockedOnSend diffEpId,
+    (TCB.setIpcState { diffTcb 62 with
         queuePrevCode := 0,
         queuePPrevCode := 1,
-        queueNextCode := 0 }
+        queueNextCode := 0 } (.blockedOnSend diffEpId))
   let tcbB : TCB :=
-    { diffTcb 63 with
-        ipcState := .blockedOnSend diffEpId,
+    (TCB.setIpcState { diffTcb 63 with
         queuePrevCode := SeLe4n.ThreadId.optCode (some diffA),
         queuePPrevCode := QueuePPrev.optCode (some (.tcbNext diffA)),
-        queueNextCode := 0 }
+        queueNextCode := 0 } (.blockedOnSend diffEpId))
   let ep : Endpoint :=
     (Endpoint.ofQueues { head := some diffA, tail := some diffB } {})
   let ist := diffAddEndpoint (diffAddTcb (diffAddTcb mkEmptyIntermediateState tcbA) tcbB)
@@ -2234,11 +2231,10 @@ The three:
 private def differentialRemovalRefusalSetAgrees : IO Unit := do
   -- ── (1) populated boundaries: an EMPTY queue, `pprev = .tcbNext` ──
   let tcbEmptyQ : TCB :=
-    { diffTcb 62 with
-        ipcState := .blockedOnSend diffEpId,
+    (TCB.setIpcState { diffTcb 62 with
         queuePrevCode := SeLe4n.ThreadId.optCode (some diffB),
         queuePPrevCode := QueuePPrev.optCode (some (.tcbNext diffB)),
-        queueNextCode := SeLe4n.ThreadId.optCode (some diffB) }
+        queueNextCode := SeLe4n.ThreadId.optCode (some diffB) } (.blockedOnSend diffEpId))
   let epEmpty : Endpoint := (Endpoint.ofQueues {} {})
   let istEmpty := diffAddEndpoint (diffAddTcb mkEmptyIntermediateState tcbEmptyQ) diffEpId epEmpty
   expect "FO-046 control: the guard itself ADMITS an empty queue with a .tcbNext back-pointer"
@@ -2258,17 +2254,15 @@ private def differentialRemovalRefusalSetAgrees : IO Unit := do
   -- predecessor, but `diffA.queueNext` names nobody.  Removing `diffB` therefore
   -- passes the whole enabling condition and fails on the predecessor's link.
   let headNotNaming : TCB :=
-    { diffTcb 62 with
-        ipcState := .blockedOnSend diffEpId,
+    (TCB.setIpcState { diffTcb 62 with
         queuePrevCode := 0,
         queuePPrevCode := 1,
-        queueNextCode := 0 }
+        queueNextCode := 0 } (.blockedOnSend diffEpId))
   let tailNamingIt : TCB :=
-    { diffTcb 63 with
-        ipcState := .blockedOnSend diffEpId,
+    (TCB.setIpcState { diffTcb 63 with
         queuePrevCode := SeLe4n.ThreadId.optCode (some diffA),
         queuePPrevCode := QueuePPrev.optCode (some (.tcbNext diffA)),
-        queueNextCode := 0 }
+        queueNextCode := 0 } (.blockedOnSend diffEpId))
   let epOneSided : Endpoint :=
     (Endpoint.ofQueues { head := some diffA, tail := some diffB } {})
   let istOneSided :=
@@ -2287,11 +2281,10 @@ private def differentialRemovalRefusalSetAgrees : IO Unit := do
 
   -- ── (3) the error CODE on the no-back-pointer arm ──
   let detached : TCB :=
-    { diffTcb 62 with
-        ipcState := .blockedOnSend diffEpId,
+    (TCB.setIpcState { diffTcb 62 with
         queuePrevCode := 0,
         queuePPrevCode := 0,
-        queueNextCode := 0 }
+        queueNextCode := 0 } (.blockedOnSend diffEpId))
   let istDetached :=
     diffAddEndpoint (diffAddTcb mkEmptyIntermediateState detached) diffEpId
       (Endpoint.ofQueues { head := some diffA, tail := some diffA } {})
@@ -2380,10 +2373,9 @@ private def differentialQueueNeighbourResolutionAgrees : IO Unit := do
   let mover : SeLe4n.ThreadId := ⟨71⟩
   let parked (t : SeLe4n.ThreadId) (prev : Option SeLe4n.ThreadId)
       (pprev : Option QueuePPrev) (next : Option SeLe4n.ThreadId) : TCB :=
-    { diffTcb t.toNat with
-        ipcState := .blockedOnSend epId,
+    (TCB.setIpcState { diffTcb t.toNat with
         pendingMessage := some msg,
-        queuePrevCode := SeLe4n.ThreadId.optCode prev, queuePPrevCode := QueuePPrev.optCode pprev, queueNextCode := SeLe4n.ThreadId.optCode next }
+        queuePrevCode := SeLe4n.ThreadId.optCode prev, queuePPrevCode := QueuePPrev.optCode pprev, queueNextCode := SeLe4n.ThreadId.optCode next } (.blockedOnSend epId))
   -- One `IntermediateState` per half, through the **ordinary builder**, so each
   -- is the live state and its own freeze rather than two stores built side by
   -- side.  `Builder.createObject` accepts a reserved `ObjId` — measured rather
@@ -2400,7 +2392,7 @@ private def differentialQueueNeighbourResolutionAgrees : IO Unit := do
     (diffAddEndpoint mkEmptyIntermediateState epId
       (Endpoint.ofQueues { head := some sentinelTid, tail := some sentinelTid } {}))
     (parked sentinelTid none (some .endpointHead) none))
-    { diffTcb mover.toNat with ipcState := .ready }
+    ((diffTcb mover.toNat).setIpcState .ready)
   expect "FO-049 control: the store really holds a TCB at the sentinel slot"
     ((rawFrozenNeighbourRead (freeze aIst) sentinelTid).isSome
       && (aIst.state.getTcb? sentinelTid).isSome)
@@ -2449,19 +2441,17 @@ private def differentialQueueNeighbourResolutionAgrees : IO Unit := do
   -- is what makes this half the severe one.  The three above need a reserved id
   -- in the store; this one needs only a receive queue two deep.
   let recvHead : TCB :=
-    { diffTcb 62 with
-        ipcState := .blockedOnReceive diffEpId,
-        queuePrevCode := 0, queuePPrevCode := 1, queueNextCode := SeLe4n.ThreadId.optCode (some diffB) }
+    (TCB.setIpcState { diffTcb 62 with
+        queuePrevCode := 0, queuePPrevCode := 1, queueNextCode := SeLe4n.ThreadId.optCode (some diffB) } (.blockedOnReceive diffEpId))
   let recvNext : TCB :=
-    { diffTcb 63 with
-        ipcState := .blockedOnReceive diffEpId,
-        queuePrevCode := SeLe4n.ThreadId.optCode (some diffA), queuePPrevCode := QueuePPrev.optCode (some (.tcbNext diffA)), queueNextCode := 0 }
+    (TCB.setIpcState { diffTcb 63 with
+        queuePrevCode := SeLe4n.ThreadId.optCode (some diffA), queuePPrevCode := QueuePPrev.optCode (some (.tcbNext diffA)), queueNextCode := 0 } (.blockedOnReceive diffEpId))
   let twoDeep : Endpoint :=
     (Endpoint.ofQueues {} { head := some diffA, tail := some diffB })
   let ist := diffAddTcb (diffAddTcb (diffAddTcb
     (diffAddEndpoint (diffAddCSpace mkEmptyIntermediateState
       [(SeLe4n.Slot.ofNat 0, diffObjCap diffEpId)]) diffEpId twoDeep)
-    recvHead) recvNext) { diffTcb 65 with ipcState := .ready }
+    recvHead) recvNext) ((diffTcb 65).setIpcState .ready)
   let behindTheHead := some (some diffA, some (QueuePPrev.tcbNext diffA), none)
   let promotedToHead := some ((none : Option SeLe4n.ThreadId),
     some QueuePPrev.endpointHead, (none : Option SeLe4n.ThreadId))
@@ -2650,7 +2640,7 @@ private def differentialSchedContextBindPlacesParked : IO Unit := do
   -- default, which is `.Inactive`, and the guard refuses a suspended thread.  The
   -- live parked holder carries `.Ready` (measured on `SmpCancellationSuite` §3.26b),
   -- so this is the shape the kernel reaches rather than a fixture convenience.
-  let parkedTcb : TCB := { diffTcb 62 with ipcState := .ready, threadState := .Ready }
+  let parkedTcb : TCB := (TCB.setIpcState { diffTcb 62 with threadState := .Ready } .ready)
   let scFree : SeLe4n.Kernel.SchedContext :=
     { scId := diffScId, budget := ⟨100⟩, period := ⟨1000⟩, priority := ⟨40⟩,
       deadline := ⟨0⟩, domain := ⟨0⟩, budgetRemaining := ⟨50⟩,
@@ -2673,7 +2663,7 @@ private def differentialSchedContextBindPlacesParked : IO Unit := do
       (SeLe4n.Kernel.SchedContextOps.bindPlacesParkedThread stParked diffA t scFree)
     expect "FO-050 NEGATIVE: ...and refuses it once BLOCKED"
       (!SeLe4n.Kernel.SchedContextOps.bindPlacesParkedThread stParked diffA
-        { t with ipcState := .blockedOnReceive diffEpId } scFree)
+        (t.setIpcState (.blockedOnReceive diffEpId)) scFree)
     expect "FO-050 NEGATIVE: ...and once SUSPENDED"
       (!SeLe4n.Kernel.SchedContextOps.bindPlacesParkedThread stParked diffA
         { t with threadState := .Inactive } scFree)
@@ -2807,9 +2797,9 @@ private def differentialSchedContextBindRefusalsAgree : IO Unit := do
   let aboveReply : SeLe4n.Kernel.Reply :=
     { replyId := aboveRid, caller := some diffB, prev := some ownRid }
   let owedTcb : TCB :=
-    { diffTcb 62 with
-      replyObject := some ownRid,
-      ipcState := .blockedOnReply diffEpId diffB }
+    (TCB.setIpcState { diffTcb 62 with
+      replyObject := some ownRid
+      } (.blockedOnReply diffEpId diffB))
   let istOwed := diffAddSchedContext (diffAddReply (diffAddReply
     (diffAddTcb (diffAddTcb mkEmptyIntermediateState owedTcb) (diffTcb 63))
     ownRid ownReply) aboveRid aboveReply) diffScId scDomainZero
@@ -2824,9 +2814,9 @@ private def differentialSchedContextBindRefusalsAgree : IO Unit := do
   -- link refuses": a frame whose upward link nothing answers is owed nothing, and
   -- binding it is an operation both sides support.
   let staleTcb : TCB :=
-    { diffTcb 62 with
-      replyObject := some ownRid,
-      ipcState := .blockedOnReply diffEpId diffB }
+    (TCB.setIpcState { diffTcb 62 with
+      replyObject := some ownRid
+      } (.blockedOnReply diffEpId diffB))
   let staleAbove : SeLe4n.Kernel.Reply := { replyId := aboveRid, caller := some diffB }
   let istStale := diffAddSchedContext (diffAddReply (diffAddReply
     (diffAddTcb (diffAddTcb mkEmptyIntermediateState staleTcb) (diffTcb 63))
@@ -2987,7 +2977,7 @@ private def differentialSendFromAbsentSenderAgrees : IO Unit := do
   let msg : IpcMessage := { registers := #[⟨31⟩], caps := #[], badge := none }
   let ghost : SeLe4n.ThreadId := ⟨9997⟩
   let ep : Endpoint := (Endpoint.ofQueues {} { head := some diffA, tail := some diffA })
-  let parkedReceiver : TCB := { diffTcb 62 with ipcState := .blockedOnReceive diffEpId, queuePPrevCode := 1 }
+  let parkedReceiver : TCB := (TCB.setIpcState { diffTcb 62 with queuePPrevCode := 1 } (.blockedOnReceive diffEpId))
   let ist := diffAddTcb (diffAddTcb
     (diffAddEndpoint (diffAddCSpace mkEmptyIntermediateState
       [(SeLe4n.Slot.ofNat 0, diffObjCap diffEpId)]) diffEpId ep) parkedReceiver) (diffTcb 63)
@@ -3027,7 +3017,7 @@ private def differentialSendRendezvousDeliversAgrees : IO Unit := do
   let ep : Endpoint := (Endpoint.ofQueues {} { head := some diffA, tail := some diffA })
   -- The server parked on a server-first `Recv`, reply object stashed: the state
   -- the D3/F-1 clear exists for.
-  let parkedReceiver : TCB := { diffTcb 62 with ipcState := .blockedOnReceive diffEpId, queuePPrevCode := 1, pendingReceiveReply := some rid }
+  let parkedReceiver : TCB := (TCB.setIpcState { diffTcb 62 with queuePPrevCode := 1, pendingReceiveReply := some rid } (.blockedOnReceive diffEpId))
   let ist := diffAddReply (diffAddTcb (diffAddTcb
     (diffAddEndpoint (diffAddCSpace mkEmptyIntermediateState
       [(SeLe4n.Slot.ofNat 0, diffObjCap diffEpId)]) diffEpId ep) parkedReceiver) (diffTcb 63))
@@ -3066,7 +3056,7 @@ private def differentialWakeAtUnqueuedPriorityAgrees : IO Unit := do
       boundTCB := some diffA }
   -- Priority 5: `diffTcb 63`, the only runnable thread, is at 0, so nothing put
   -- a bucket here and the wake is the first thing that needs one.
-  let parkedServer : TCB := { diffTcb 62 with priority := ⟨5⟩, ipcState := .blockedOnReceive diffEpId, queuePPrevCode := 1 }
+  let parkedServer : TCB := (TCB.setIpcState { diffTcb 62 with priority := ⟨5⟩, queuePPrevCode := 1 } (.blockedOnReceive diffEpId))
   let ist := diffAddTcb (diffAddTcb (diffAddNotification
     (diffAddEndpoint (diffAddCSpace mkEmptyIntermediateState
       [(SeLe4n.Slot.ofNat 0, diffObjCap diffNotifId)]) diffEpId ep) diffNotifId ntfn)
@@ -3180,7 +3170,7 @@ private def differentialComparisonHasBite : IO Unit := do
   let ntfn : Notification :=
     { state := .idle, hasPendingBadge := false, pendingWord := SeLe4n.Badge.zero,
       boundTCB := some diffA }
-  let boundTcb : TCB := { diffTcb 62 with ipcState := .blockedOnReceive diffEpId, queuePPrevCode := 1 }
+  let boundTcb : TCB := (TCB.setIpcState { diffTcb 62 with queuePPrevCode := 1 } (.blockedOnReceive diffEpId))
   let ist := diffAddTcb (diffAddTcb (diffAddNotification
     (diffAddEndpoint mkEmptyIntermediateState diffEpId ep) diffNotifId ntfn) boundTcb) (diffTcb 63)
   expect "FO-033: NEGATIVE — the table-named counterpart does NOT agree"

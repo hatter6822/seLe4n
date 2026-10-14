@@ -4802,13 +4802,13 @@ private theorem restoreToReady_getElem_eq_of_quiescent
       -- than over a copy of its field list, so a field added to the restore
       -- reaches this proof instead of leaving it quietly weaker.
       have hSame : tcb.restoredToReady = tcb := by
-        have h1 := hQ.ready tcb hLk
+        have h1 := (TCB.ipcState_eq_iff_codes _ _).1 (hQ.ready tcb hLk)
         have h2 := hQ.noNext tcb hLk
         have h3 := hQ.noPrev tcb hLk
         have h4 := hQ.noPPrev tcb hLk
         have h5 := hQ.noStash tcb hLk
         cases tcb
-        simp_all
+        simp_all [ThreadIpcState.objectCode, ThreadIpcState.stateCode]
       rw [hSame]
       have hPre : st.objects[tid.toObjId]? = some (.tcb tcb) :=
         (SystemState.getTcb?_eq_some_iff st tid tcb).mp hLk

@@ -805,7 +805,7 @@ private def runReplenishNoWakeBlockedChecks : IO Unit := do
   let base : TCB := { mkTcb 312 20 0 with schedContextBinding := .bound scB, threadState := .Ready }
   let cases : List (String × TCB) :=
     [("blocked in receive",
-        { base with ipcState := .blockedOnReceive (ObjId.ofNat 900), threadState := .BlockedRecv }),
+        (TCB.setIpcState { base with threadState := .BlockedRecv } (.blockedOnReceive (ObjId.ofNat 900)))),
      ("suspended", { base with threadState := .Inactive })]
   for (label, tcb) in cases do
     let st := mkState tcb
@@ -830,10 +830,9 @@ private def mkTimeoutWakeState (aff : Option CoreId) : SystemState :=
   let scW : SeLe4n.SchedContextId := ⟨90⟩
   let epW : SeLe4n.ObjId := ⟨91⟩
   let tcbCur : TCB := { mkTcb 320 15 0 with schedContextBinding := .bound scW }
-  let tcbW : TCB := { mkTcb 321 12 0 with
+  let tcbW : TCB := (TCB.setIpcState { mkTcb 321 12 0 with
     schedContextBinding := .bound scW, cpuAffinity := aff,
-    ipcState := .blockedOnSend epW,
-    queuePrevCode := 0, queueNextCode := 0, queuePPrevCode := 1 }
+    queuePrevCode := 0, queueNextCode := 0, queuePPrevCode := 1 } (.blockedOnSend epW))
   let scObj : SchedContext :=
     { (default : SchedContext) with
         priority := ⟨15⟩, boundThread := some tidCur,

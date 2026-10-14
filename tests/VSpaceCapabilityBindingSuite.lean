@@ -228,7 +228,7 @@ private def scenario (cap : Capability) : Option SystemState :=
       |>.withObject attacker.toObjId (.tcb
           { tid := attacker, priority := ⟨40⟩, domain := ⟨0⟩,
             cspaceRoot := attackerCn, vspaceRoot := attackerVsp,
-            ipcBuffer := SeLe4n.VAddr.ofNat 4096, ipcState := .ready })
+            ipcBuffer := SeLe4n.VAddr.ofNat 4096 })
       |>.withRunnable [attacker]
       |>.build)
   match vspaceMapPageWithFlush victimAsid victimVaddr victimPaddr execPerms base with
@@ -602,7 +602,7 @@ private def carveScenario : SystemState :=
       |>.withObject carveOwner.toObjId (.tcb
           { tid := carveOwner, priority := ⟨40⟩, domain := ⟨0⟩,
             cspaceRoot := carveCn, vspaceRoot := carveVsp,
-            ipcBuffer := SeLe4n.VAddr.ofNat 4096, ipcState := .ready })
+            ipcBuffer := SeLe4n.VAddr.ofNat 4096 })
       |>.withRunnable [carveOwner]
       |>.build)
   let m1 := SeLe4n.writeMem st.machine (SeLe4n.PAddr.ofNat carveUtBase) 0xAB
@@ -836,7 +836,6 @@ private def runResetChecks : IO Unit := do
       let inFlight : TCB :=
         { tid := ⟨990⟩, priority := ⟨10⟩, domain := ⟨0⟩, cspaceRoot := carveCn,
           vspaceRoot := carveVsp, ipcBuffer := SeLe4n.VAddr.ofNat 8192,
-          ipcState := .ready,
           pendingMessage := some
             { registers := #[],
               caps := #[TransferCap.fromNode (frameCapability (SeLe4n.ObjId.ofNat 950)) 0] } }
@@ -1470,7 +1469,7 @@ private def spaceScenario : SystemState :=
   let worker : TCB :=
     { tid := spaceWorker, priority := ⟨10⟩, domain := ⟨0⟩,
       cspaceRoot := carveCn, vspaceRoot := carveVsp,
-      ipcBuffer := SeLe4n.VAddr.ofNat 4096, ipcState := .ready }
+      ipcBuffer := SeLe4n.VAddr.ofNat 4096 }
   let st1 := match storeObject spaceWorker.toObjId (.tcb worker) st with
     | .ok ((), s) => s
     | .error _ => st
@@ -1801,7 +1800,6 @@ private def runPageTableChecks : IO Unit := do
           let parked : TCB :=
             { tid := ⟨990⟩, priority := ⟨10⟩, domain := ⟨0⟩, cspaceRoot := carveCn,
               vspaceRoot := carveVsp, ipcBuffer := SeLe4n.VAddr.ofNat 8192,
-              ipcState := .ready,
               pendingMessage := some
                 { registers := #[],
                   caps := #[TransferCap.fromNode (pageTableCapability (SeLe4n.ObjId.ofNat 983)) 0] } }

@@ -607,7 +607,7 @@ private def tidB : SeLe4n.ThreadId := ThreadId.ofNat 202
 
 private def stBlocked : SystemState :=
   (BootstrapBuilder.empty.withObject tidB.toObjId
-    (.tcb { mkTcb 202 10 0 with ipcState := .blockedOnSend (ObjId.ofNat 50) })).build
+    (.tcb ((mkTcb 202 10 0).setIpcState (.blockedOnSend (ObjId.ofNat 50))))).build
 
 /-- §3.8 (audit-pass-1): the new soundness / liveness / ghost-guard scenarios. -/
 private def runAuditPass1Checks : IO Unit := do

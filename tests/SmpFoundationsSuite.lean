@@ -860,10 +860,11 @@ private def runPipChainFootprintChecks : IO Unit := do
   let low : SeLe4n.ThreadId := ⟨5⟩
   let stChain : SeLe4n.Model.SystemState := { st with
     objects := st.objects.insert high.toObjId
-      (.tcb { tid := high, priority := ⟨10⟩, domain := ⟨0⟩,
+      (.tcb (SeLe4n.Model.TCB.setIpcState
+            { tid := high, priority := ⟨10⟩, domain := ⟨0⟩,
               cspaceRoot := SeLe4n.ObjId.ofNat 0, vspaceRoot := SeLe4n.ObjId.ofNat 0,
-              ipcBuffer := SeLe4n.VAddr.ofNat 0,
-              ipcState := .blockedOnReply (SeLe4n.ObjId.ofNat 0) (some low) }) }
+              ipcBuffer := SeLe4n.VAddr.ofNat 0
+              } (.blockedOnReply (SeLe4n.ObjId.ofNat 0) (some low)))) }
   let descending := SeLe4n.Kernel.PriorityInheritance.pipChainVisited stChain high 4
   assertBool "a higher-numbered thread blocking on a lower one walks downward"
     (decide (descending = [high, low]))

@@ -209,7 +209,7 @@ theorem storeTcbIpcState_fromTcb_confinedToCores (st st' : SystemState)
     (hStep : storeTcbIpcState_fromTcb st tid tcb ipc = .ok st') :
     observableSlotsConfinedToCores st st' [] := by
   unfold storeTcbIpcState_fromTcb at hStep
-  cases hStore : storeObject tid.toObjId (.tcb { tcb with ipcState := ipc }) st with
+  cases hStore : storeObject tid.toObjId (.tcb (tcb.setIpcState ipc)) st with
   | error e => simp [hStore] at hStep
   | ok pair =>
     simp only [hStore] at hStep

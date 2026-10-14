@@ -1630,12 +1630,12 @@ def runInformationFlowChecks : IO Unit := do
               slots := SeLe4n.UniqueSlotMap.ofListWF [((SeLe4n.Slot.ofNat 0), cap1)] })
         |>.withObject senderTid.toObjId (.tcb
             { tid := senderTid, priority := ⟨1⟩, domain := ⟨0⟩,
-              cspaceRoot := senderCNode, vspaceRoot := ⟨0⟩, ipcBuffer := (SeLe4n.VAddr.ofNat 0),
-              ipcState := .ready })
+              cspaceRoot := senderCNode, vspaceRoot := ⟨0⟩, ipcBuffer := (SeLe4n.VAddr.ofNat 0)
+              })
         |>.withObject receiverTid.toObjId (.tcb
             { tid := receiverTid, priority := ⟨1⟩, domain := ⟨0⟩,
-              cspaceRoot := ⟨3799⟩, vspaceRoot := ⟨0⟩, ipcBuffer := (SeLe4n.VAddr.ofNat 0),
-              ipcState := .ready })
+              cspaceRoot := ⟨3799⟩, vspaceRoot := ⟨0⟩, ipcBuffer := (SeLe4n.VAddr.ofNat 0)
+              })
         |>.withRunnable [senderTid, receiverTid]
         |>.buildChecked)
     -- Enqueue receiver via API.
@@ -1693,12 +1693,12 @@ def runInformationFlowChecks : IO Unit := do
                 slots := SeLe4n.UniqueSlotMap.ofListWF [((SeLe4n.Slot.ofNat 0), cap1)] })
           |>.withObject callerTid.toObjId (.tcb
               { tid := callerTid, priority := ⟨1⟩, domain := ⟨0⟩,
-                cspaceRoot := callerCNode, vspaceRoot := ⟨0⟩, ipcBuffer := (SeLe4n.VAddr.ofNat 0),
-                ipcState := .ready })
+                cspaceRoot := callerCNode, vspaceRoot := ⟨0⟩, ipcBuffer := (SeLe4n.VAddr.ofNat 0)
+                })
           |>.withObject receiverTid.toObjId (.tcb
               { tid := receiverTid, priority := ⟨1⟩, domain := ⟨0⟩,
-                cspaceRoot := ⟨3799⟩, vspaceRoot := ⟨0⟩, ipcBuffer := (SeLe4n.VAddr.ofNat 0),
-                ipcState := .ready })
+                cspaceRoot := ⟨3799⟩, vspaceRoot := ⟨0⟩, ipcBuffer := (SeLe4n.VAddr.ofNat 0)
+                })
           |>.withRunnable [callerTid, receiverTid]
           |>.buildChecked)
       -- Enqueue the receiver via API.

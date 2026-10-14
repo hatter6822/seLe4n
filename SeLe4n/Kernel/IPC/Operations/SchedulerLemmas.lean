@@ -199,13 +199,13 @@ theorem storeTcbIpcState_ipcState_eq
     simp [hLookup] at hStep
   | some tcb' =>
     simp only [hLookup] at hStep
-    cases hStore : storeObject tid.toObjId (.tcb { tcb' with ipcState := ipc }) st with
+    cases hStore : storeObject tid.toObjId (.tcb ((tcb').setIpcState ipc)) st with
     | error e => simp [hStore] at hStep
     | ok pair =>
       simp only [hStore] at hStep
       have hEq := Except.ok.inj hStep; subst hEq
       have hAt := storeObject_objects_eq' st tid.toObjId _ pair hObjInv hStore
-      rw [hAt] at hTcb; cases hTcb; rfl
+      rw [hAt] at hTcb; cases hTcb; simp
 
 /-- WS-E3/H-09: Reverse membership for ensureRunnable. If a thread is in the runnable
     queue after ensureRunnable, it was either already there or it is the added thread. -/
@@ -267,12 +267,12 @@ theorem storeTcbIpcState_tcb_exists_at_target
     simp [hLookup] at hStep
   | some tcb =>
     simp only [hLookup] at hStep
-    cases hStore : storeObject tid.toObjId (.tcb { tcb with ipcState := ipc }) st with
+    cases hStore : storeObject tid.toObjId (.tcb (tcb.setIpcState ipc)) st with
     | error e => simp [hStore] at hStep
     | ok pair =>
       simp only [hStore] at hStep
       have := Except.ok.inj hStep; subst this
-      exact ⟨{ tcb with ipcState := ipc }, storeObject_objects_eq' st tid.toObjId _ pair hObjInv hStore⟩
+      exact ⟨(tcb.setIpcState ipc), storeObject_objects_eq' st tid.toObjId _ pair hObjInv hStore⟩
 
 -- ============================================================================
 -- WS-F1: Supporting lemmas for storeTcbIpcStateAndMessage / storeTcbPendingMessage
@@ -383,7 +383,7 @@ theorem storeTcbIpcStateAndMessage_endpoint_backward
     | none => simp [hLookup] at hStep
     | some tcb =>
       simp only [hLookup] at hStep
-      cases hStore : storeObject tid.toObjId (.tcb { tcb with ipcState := ipc, pendingMessage := msg }) st with
+      cases hStore : storeObject tid.toObjId (.tcb (TCB.setIpcState { tcb with pendingMessage := msg } ipc)) st with
       | error e => simp [hStore] at hStep
       | ok pair =>
         simp only [hStore] at hStep
@@ -427,13 +427,13 @@ theorem storeTcbIpcStateAndMessage_ipcState_eq
   | none => simp [hLookup] at hStep
   | some tcb' =>
     simp only [hLookup] at hStep
-    cases hStore : storeObject tid.toObjId (.tcb { tcb' with ipcState := ipc, pendingMessage := msg }) st with
+    cases hStore : storeObject tid.toObjId (.tcb (TCB.setIpcState { tcb' with pendingMessage := msg } ipc)) st with
     | error e => simp [hStore] at hStep
     | ok pair =>
       simp only [hStore] at hStep
       have hEq := Except.ok.inj hStep; subst hEq
       have hAt := storeObject_objects_eq' st tid.toObjId _ pair hObjInv hStore
-      rw [hAt] at hTcb; cases hTcb; rfl
+      rw [hAt] at hTcb; cases hTcb; simp
 
 /-- Finding F-1: IPC state read-back for `storeTcbReceiveComplete` — the stored
 TCB is `.ready`.  Mirror of `storeTcbIpcStateAndMessage_ipcState_eq` with the
@@ -450,7 +450,7 @@ theorem storeTcbReceiveComplete_ipcState_eq
   | none => simp [hLookup] at hStep
   | some tcb' =>
     simp only [hLookup] at hStep
-    cases hStore : storeObject tid.toObjId (.tcb { tcb' with ipcState := .ready, pendingMessage := msg, pendingReceiveReply := none }) st with
+    cases hStore : storeObject tid.toObjId (.tcb (TCB.setIpcState { tcb' with pendingMessage := msg, pendingReceiveReply := none } .ready)) st with
     | error e => simp [hStore] at hStep
     | ok pair =>
       simp only [hStore] at hStep
@@ -471,7 +471,7 @@ theorem storeTcbIpcStateAndMessage_tcb_exists_at_target
   | none => simp [hLookup] at hStep
   | some tcb =>
     simp only [hLookup] at hStep
-    cases hStore : storeObject tid.toObjId (.tcb { tcb with ipcState := ipc, pendingMessage := msg }) st with
+    cases hStore : storeObject tid.toObjId (.tcb (TCB.setIpcState { tcb with pendingMessage := msg } ipc)) st with
     | error e => simp [hStore] at hStep
     | ok pair =>
       simp only [hStore] at hStep
@@ -492,7 +492,7 @@ theorem storeTcbReceiveComplete_tcb_exists_at_target
   | none => simp [hLookup] at hStep
   | some tcb =>
     simp only [hLookup] at hStep
-    cases hStore : storeObject tid.toObjId (.tcb { tcb with ipcState := .ready, pendingMessage := msg, pendingReceiveReply := none }) st with
+    cases hStore : storeObject tid.toObjId (.tcb (TCB.setIpcState { tcb with pendingMessage := msg, pendingReceiveReply := none } .ready)) st with
     | error e => simp [hStore] at hStep
     | ok pair =>
       simp only [hStore] at hStep
@@ -665,7 +665,7 @@ theorem storeTcbIpcStateAndMessage_preserves_objectIndexSetComplete
   | none => simp [hLookup] at hStep
   | some tcb =>
     simp only [hLookup] at hStep
-    cases hStore : storeObject tid.toObjId (.tcb { tcb with ipcState := ipc, pendingMessage := msg }) st with
+    cases hStore : storeObject tid.toObjId (.tcb (TCB.setIpcState { tcb with pendingMessage := msg } ipc)) st with
     | error e => simp [hStore] at hStep
     | ok pair =>
       simp only [hStore] at hStep
@@ -684,7 +684,7 @@ theorem storeTcbIpcStateAndMessage_preserves_objectIndexSet_invExt
   | none => simp [hLookup] at hStep
   | some tcb =>
     simp only [hLookup] at hStep
-    cases hStore : storeObject tid.toObjId (.tcb { tcb with ipcState := ipc, pendingMessage := msg }) st with
+    cases hStore : storeObject tid.toObjId (.tcb (TCB.setIpcState { tcb with pendingMessage := msg } ipc)) st with
     | error e => simp [hStore] at hStep
     | ok pair =>
       simp only [hStore] at hStep

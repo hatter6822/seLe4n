@@ -862,7 +862,7 @@ private theorem storeTcbIpcState_cdt_eq
   | none => simp [hTcb] at hStep
   | some tcb =>
     simp only [hTcb] at hStep
-    cases hStore : storeObject tid.toObjId (.tcb { tcb with ipcState := ipc }) st with
+    cases hStore : storeObject tid.toObjId (.tcb (tcb.setIpcState ipc)) st with
     | error e => simp [hStore] at hStep
     | ok pair =>
       simp only [hStore] at hStep
@@ -1150,7 +1150,7 @@ private theorem cdtPredicates_through_blocking_path
     | none => simp [hLookup] at hTcb
     | some tcb =>
       simp only [hLookup] at hTcb
-      cases hS : storeObject target.toObjId (.tcb { tcb with ipcState := ipc }) st1 with
+      cases hS : storeObject target.toObjId (.tcb (tcb.setIpcState ipc)) st1 with
       | error e => simp [hS] at hTcb
       | ok pair =>
         simp only [hS] at hTcb
@@ -1194,7 +1194,7 @@ private theorem cdtPredicates_through_handshake_path
     | none => simp [hLookup] at hTcb
     | some tcb =>
       simp only [hLookup] at hTcb
-      cases hS : storeObject target.toObjId (.tcb { tcb with ipcState := .ready }) st1 with
+      cases hS : storeObject target.toObjId (.tcb (tcb.setIpcState .ready)) st1 with
       | error e => simp [hS] at hTcb
       | ok pair =>
         simp only [hS] at hTcb
@@ -1230,7 +1230,7 @@ theorem cdtPredicates_through_reply_path
     | none => simp [hL] at hTcb
     | some tcb =>
       simp only [hL] at hTcb
-      cases hS : storeObject target.toObjId (.tcb { tcb with ipcState := ipc, pendingMessage := msg }) st with
+      cases hS : storeObject target.toObjId (.tcb (TCB.setIpcState { tcb with pendingMessage := msg } ipc)) st with
       | error e => simp [hS] at hTcb
       | ok pair =>
         simp only [hS] at hTcb; have hEq := Except.ok.inj hTcb; subst hEq
@@ -1242,7 +1242,7 @@ theorem cdtPredicates_through_reply_path
     | none => simp [hL] at hTcb
     | some tcb =>
       simp only [hL] at hTcb
-      cases hS : storeObject target.toObjId (.tcb { tcb with ipcState := ipc, pendingMessage := msg }) st with
+      cases hS : storeObject target.toObjId (.tcb (TCB.setIpcState { tcb with pendingMessage := msg } ipc)) st with
       | error e => simp [hS] at hTcb
       | ok pair =>
         simp only [hS] at hTcb; have hEq := Except.ok.inj hTcb; subst hEq

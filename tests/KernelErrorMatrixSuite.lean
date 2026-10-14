@@ -511,8 +511,7 @@ private def row_replyCapInvalid_no_target : KernelErrorRejection :=
       let endpointId : ObjId := ObjId.ofNat 130
       let replierId : ThreadId := ThreadId.ofNat 50
       let targetId  : ThreadId := ThreadId.ofNat 51
-      let targetTcb : TCB := { mkTcb 51 with
-        ipcState := .blockedOnReply endpointId none }
+      let targetTcb : TCB := ((mkTcb 51).setIpcState (.blockedOnReply endpointId none))
       let st : SystemState := { (default : SystemState) with
         objects := ((default : SystemState).objects.insert
           targetId.toObjId (.tcb targetTcb)).insert
@@ -582,8 +581,7 @@ private def row_alreadyWaiting_enqueue_blocked : KernelErrorRejection :=
     runScenario   := fun _ =>
       let endpointId : ObjId := ObjId.ofNat 150
       let tid : ThreadId := ThreadId.ofNat 70
-      let blocked : TCB := { mkTcb 70 with
-        ipcState := .blockedOnSend endpointId }
+      let blocked : TCB := ((mkTcb 70).setIpcState (.blockedOnSend endpointId))
       let ep : Endpoint := {}
       let st : SystemState := { (default : SystemState) with
         objects := ((default : SystemState).objects.insert endpointId

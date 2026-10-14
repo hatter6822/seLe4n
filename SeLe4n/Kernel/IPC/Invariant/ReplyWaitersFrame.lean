@@ -81,14 +81,14 @@ theorem replyViews_storeTcbIpcState {st st' : SystemState} {t : ThreadId} {s : T
     (hInv : st.objects.invExt) (h : storeTcbIpcState st t s = .ok st') :
     st'.replyViews = ReplyViews.setServer st.replyViews t (ipcServer? s) :=
   replyViews_modifyTcb hInv h (fun x => by
-    simp only [TCB.replyView, blockingServer?_eq_ipcServer?])
+    simp only [TCB.replyView, blockingServer?_eq_ipcServer?, TCB.ipcState_setIpcState])
 
 theorem replyViews_storeTcbIpcStateAndMessage {st st' : SystemState} {t : ThreadId}
     {s : ThreadIpcState} {m : Option IpcMessage}
     (hInv : st.objects.invExt) (h : storeTcbIpcStateAndMessage st t s m = .ok st') :
     st'.replyViews = ReplyViews.setServer st.replyViews t (ipcServer? s) :=
   replyViews_modifyTcb hInv h (fun x => by
-    simp only [TCB.replyView, blockingServer?_eq_ipcServer?])
+    simp only [TCB.replyView, blockingServer?_eq_ipcServer?, TCB.ipcState_setIpcState])
 
 /-- **A store of an object with no view over a slot with none keeps the views.** -/
 theorem replyViews_storeObject_eq {st st' : SystemState} {k : ObjId} {obj : KernelObject}
@@ -151,7 +151,7 @@ theorem enqueueRunnableOnCore_replyViews_eq (st : SystemState) (c : CoreId) (tid
       split
       · rename_i hx; subst hx
         rw [replyViews_of_tcb hO, objReplyView_tcb]
-        simp only [TCB.replyView, TCB.blockingServer?] at hSv ⊢
+        simp only [TCB.replyView, TCB.blockingServer?, TCB.ipcState_setIpcState] at hSv ⊢
         rw [hSv]
       · rfl
   · rfl
@@ -507,7 +507,7 @@ theorem replyViews_storeTcbIpcStateAndMessage_fromTcb {st st' : SystemState} {t 
   · rename_i st1 hS
     cases h
     exact replyViews_storeObject_tcb hInv hS hOld (by
-      simp only [TCB.replyView, blockingServer?_eq_ipcServer?])
+      simp only [TCB.replyView, blockingServer?_eq_ipcServer?, TCB.ipcState_setIpcState])
 
 theorem storeTcbIpcStateAndMessage_fromTcb_objects_invExt {st st' : SystemState} {t : ThreadId}
     {tcb : TCB} {s : ThreadIpcState} {m : Option IpcMessage} (hInv : st.objects.invExt)
