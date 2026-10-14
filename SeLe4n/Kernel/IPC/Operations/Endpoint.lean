@@ -662,6 +662,128 @@ def modifyTcb (st : SystemState) (tid : SeLe4n.ThreadId) (f : TCB → TCB) :
       | .error e => .error e
       | .ok ((), st') => .ok st'
 
+/-- WS-ZA ZA4.7: the compiled `modifyTcb`.  When the store changes only
+`objects` (`storeLeavesIndexAndTypes`, the case of every write to an existing
+TCB), the TCB is rewritten in its slot (`modifyObject`, `RHTable.modify`), so on
+an exclusively owned state neither the table entry nor the TCB is rebuilt and
+no `Option` carries the looked-up record; otherwise the specification's body. -/
+@[specialize] def modifyTcbImpl (st : SystemState) (tid : SeLe4n.ThreadId) (f : TCB → TCB) :
+    Except KernelError SystemState :=
+  if tid.isReserved then .error .objectNotFound
+  else
+  match st.objects[tid.toObjId]? with
+  | some (.tcb tcb) =>
+      if storeLeavesIndexAndTypes st tid.toObjId .tcb then
+        .ok (st.modifyObject tid.toObjId (SystemState.mapTcbObject f))
+      else
+      match storeObject tid.toObjId (.tcb (f tcb)) st with
+      | .error e => .error e
+      | .ok ((), st') => .ok st'
+  | _ => .error .objectNotFound
+
+@[csimp] theorem modifyTcb_eq_impl : @modifyTcb = @modifyTcbImpl := by
+  funext st tid f
+  unfold modifyTcb modifyTcbImpl lookupTcb
+  by_cases hR : tid.isReserved = true
+  · simp only [hR, ↓reduceIte]
+  · simp only [hR, Bool.false_eq_true, ↓reduceIte]
+    cases hx : st.objects[tid.toObjId]? with
+    | none =>
+      have : st.getTcb? tid = none := by unfold SystemState.getTcb?; rw [hx]
+      rw [this]
+    | some o =>
+      cases o with
+      | tcb tcb =>
+        rw [(SystemState.getTcb?_eq_some_iff st tid tcb).mpr hx]
+        simp only []
+        by_cases hL : storeLeavesIndexAndTypes st tid.toObjId .tcb = true
+        · rw [if_pos hL, storeObject_eq_of_leaves (obj := .tcb (f tcb)) hL]
+          simp only [SystemState.modifyObject, SeLe4n.Kernel.RobinHood.RHTable.modify_of_get? hx]
+          rfl
+        · rw [if_neg hL]
+      | _ =>
+        have : st.getTcb? tid = none := by unfold SystemState.getTcb?; rw [hx]
+        rw [this]
+
+/-- WS-ZA ZA4.7: a store that changes only `objects` still does after an
+in-place insert of an object that is not a VSpace root: the index and type
+tables are untouched, and the slot asked about holds the new object or the old. -/
+theorem storeLeavesIndexAndTypes_insert_inPlace {st : SystemState} {k id : SeLe4n.ObjId}
+    {v : KernelObject} {ty : KernelObjectType}
+    (hF : st.objects.findsInPlace k = true) (hv : ∀ r, v ≠ .vspaceRoot r)
+    (h : storeLeavesIndexAndTypes st id ty = true) :
+    storeLeavesIndexAndTypes { st with objects := st.objects.insert k v } id ty = true := by
+  unfold storeLeavesIndexAndTypes at h ⊢
+  simp only [Bool.and_eq_true] at h ⊢
+  obtain ⟨⟨⟨h1, h2⟩, h3⟩, h4⟩ := h
+  refine ⟨⟨⟨h1, h2⟩, h3⟩, ?_⟩
+  show (match (st.objects.insert k v).get? id with
+    | some (.vspaceRoot _) => false | _ => true) = true
+  by_cases hk : k = id
+  · subst hk
+    rw [SeLe4n.Kernel.RobinHood.RHTable.get?_insert_self_of_findsInPlace v hF]
+    cases v with
+    | vspaceRoot r => exact absurd rfl (hv r)
+    | _ => rfl
+  · rw [SeLe4n.Kernel.RobinHood.RHTable.get?_insert_ne_of_findsInPlace id v hF hk]
+    exact h4
+
+/-- WS-ZA ZA4.7: a TCB write to a present, unreserved thread whose store
+changes only `objects` is the one insert. -/
+theorem modifyTcb_eq_insert {st : SystemState} {tid : SeLe4n.ThreadId} {t : TCB}
+    (f : TCB → TCB) (hR : tid.isReserved = false)
+    (hT : st.objects[tid.toObjId]? = some (.tcb t))
+    (hL : storeLeavesIndexAndTypes st tid.toObjId .tcb = true) :
+    modifyTcb st tid f = .ok { st with objects := st.objects.insert tid.toObjId (.tcb (f t)) } := by
+  unfold modifyTcb lookupTcb
+  simp only [hR, Bool.false_eq_true, ↓reduceIte]
+  rw [(SystemState.getTcb?_eq_some_iff st tid t).mpr hT]
+  simp only []
+  rw [storeObject_eq_of_leaves (obj := .tcb (f t)) hL]
+
+/-- WS-ZA ZA4.7: a TCB write to a present, unreserved thread whose store
+changes only `objects` is `updateTcb`. -/
+theorem modifyTcb_eq_updateTcb {st : SystemState} {tid : SeLe4n.ThreadId} {t : TCB}
+    (f : TCB → TCB) (hR : tid.isReserved = false) (hT : st.getTcb? tid = some t)
+    (hL : storeLeavesIndexAndTypes st tid.toObjId .tcb = true) :
+    modifyTcb st tid f = .ok (st.updateTcb tid f) := by
+  rw [modifyTcb_eq_insert f hR ((SystemState.getTcb?_eq_some_iff _ _ _).mp hT) hL,
+    SystemState.updateTcb_eq_of_some hT]
+
+/-- WS-ZA ZA4.7: an in-place `updateTcb` reads back what it wrote. -/
+theorem updateTcb_getTcb?_self_of_findsInPlace {st : SystemState} {tid : SeLe4n.ThreadId}
+    {t : TCB} (f : TCB → TCB) (hT : st.getTcb? tid = some t)
+    (hF : st.objects.findsInPlace tid.toObjId = true) :
+    (st.updateTcb tid f).getTcb? tid = some (f t) := by
+  rw [SystemState.updateTcb_eq_of_some hT, SystemState.getTcb?_eq_some_iff]
+  exact SeLe4n.Kernel.RobinHood.RHTable.get?_insert_self_of_findsInPlace _ hF
+
+/-- WS-ZA ZA4.7: an in-place `updateTcb` leaves every other slot. -/
+theorem updateTcb_get?_ne_of_findsInPlace {st : SystemState} {tid : SeLe4n.ThreadId}
+    {t : TCB} (f : TCB → TCB) (hT : st.getTcb? tid = some t)
+    (hF : st.objects.findsInPlace tid.toObjId = true) {k : SeLe4n.ObjId}
+    (hNe : tid.toObjId ≠ k) :
+    (st.updateTcb tid f).objects[k]? = st.objects[k]? := by
+  rw [SystemState.updateTcb_eq_of_some hT]
+  exact SeLe4n.Kernel.RobinHood.RHTable.get?_insert_ne_of_findsInPlace k _ hF hNe
+
+/-- WS-ZA ZA4.7: an in-place `updateTcb` leaves every in-place question. -/
+theorem updateTcb_findsInPlace {st : SystemState} {tid : SeLe4n.ThreadId}
+    {t : TCB} (f : TCB → TCB) (hT : st.getTcb? tid = some t)
+    (hF : st.objects.findsInPlace tid.toObjId = true) (k : SeLe4n.ObjId) :
+    (st.updateTcb tid f).objects.findsInPlace k = st.objects.findsInPlace k := by
+  rw [SystemState.updateTcb_eq_of_some hT]
+  exact SeLe4n.Kernel.RobinHood.RHTable.findsInPlace_insert_of_findsInPlace k _ hF
+
+/-- WS-ZA ZA4.7: an in-place `updateTcb` leaves every store-locality answer. -/
+theorem updateTcb_storeLeaves {st : SystemState} {tid : SeLe4n.ThreadId}
+    {t : TCB} (f : TCB → TCB) (hT : st.getTcb? tid = some t)
+    (hF : st.objects.findsInPlace tid.toObjId = true) {id : SeLe4n.ObjId}
+    {ty : KernelObjectType} (h : storeLeavesIndexAndTypes st id ty = true) :
+    storeLeavesIndexAndTypes (st.updateTcb tid f) id ty = true := by
+  rw [SystemState.updateTcb_eq_of_some hT]
+  exact storeLeavesIndexAndTypes_insert_inPlace hF (fun r h => by cases h) h
+
 def storeTcbIpcState (st : SystemState) (tid : SeLe4n.ThreadId) (ipcState : ThreadIpcState) : Except KernelError SystemState :=
   modifyTcb st tid (fun tcb => { tcb with ipcState := ipcState })
 

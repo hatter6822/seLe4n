@@ -113,6 +113,271 @@ def endpointSendDualOnCore (endpointId : SeLe4n.ObjId) (sender : SeLe4n.ThreadId
       if (st.getObject? endpointId).isSome then (st, .error .invalidCapability)
       else (st, .error .objectNotFound)
 
+/-- WS-ZA ZA4.7: the endpoint a send rendezvous leaves: its receive queue
+starts at the popped head's successor. -/
+@[inline] def sendRendezvousEndpoint (next : Option SeLe4n.ThreadId) :
+    KernelObject → KernelObject
+  | .endpoint e => .endpoint { e with receiveQ :=
+      match next with
+      | some n => { head := some n, tail := e.receiveQ.tail }
+      | none => {} }
+  | o => o
+
+/-- WS-ZA ZA4.7: the receive completion a send rendezvous writes into the
+woken receiver. -/
+@[inline] def receiveCompleteTcb (msg : IpcMessage) (t : TCB) : TCB :=
+  { t with ipcState := .ready, pendingMessage := some msg, pendingReceiveReply := none }
+
+/-- WS-ZA ZA4.7: the send rendezvous's writes, each in its slot: the head
+popped off the receive queue, its successor made the new head, the popped
+receiver unlinked and handed the message.  Compiled as its own function so
+each update is specialised in. -/
+@[noinline] def storeSendRendezvous (st : SystemState) (endpointId : SeLe4n.ObjId)
+    (head : SeLe4n.ThreadId) (next : Option SeLe4n.ThreadId) (msg : IpcMessage) :
+    SystemState :=
+  let s1 := st.modifyObject endpointId (sendRendezvousEndpoint next)
+  let s2 := match next with
+    | none => s1
+    | some n => s1.updateTcb n (fun t => tcbWithQueueLinks t none (some .endpointHead) t.queueNext)
+  (s2.updateTcb head (fun t => tcbWithQueueLinks t none none none)).updateTcb head
+    (receiveCompleteTcb msg)
+
+/-- WS-ZA ZA4.7: **the send rendezvous writes only its slots** — the endpoint,
+the popped receiver and its successor each rewritten where it stands
+(`RHTable.findsInPlace`), each store changing only `objects`
+(`storeLeavesIndexAndTypes`), the receiver and its successor distinct,
+unreserved TCBs. -/
+@[inline] def sendWakesInPlace (st : SystemState) (endpointId : SeLe4n.ObjId)
+    (head : SeLe4n.ThreadId) (next : Option SeLe4n.ThreadId) : Bool :=
+  !head.isReserved &&
+  storeLeavesIndexAndTypes st endpointId .endpoint &&
+  st.objects.findsInPlace endpointId &&
+  storeLeavesIndexAndTypes st head.toObjId .tcb &&
+  st.objects.findsInPlace head.toObjId &&
+  (match next with
+   | none => true
+   | some n => !n.isReserved && n != head &&
+       storeLeavesIndexAndTypes st n.toObjId .tcb &&
+       st.objects.findsInPlace n.toObjId &&
+       (st.getTcb? n).isSome)
+
+/-- WS-ZA ZA4.7: the guarded send rendezvous's writes are the specification's
+pop and receive completion. -/
+theorem sendRendezvous_inPlace_eq (st : SystemState) (endpointId : SeLe4n.ObjId)
+    (ep : Endpoint) (head : SeLe4n.ThreadId) (ht : TCB) (msg : IpcMessage)
+    (hE : st.objects[endpointId]? = some (.endpoint ep))
+    (hH : ep.receiveQ.head = some head)
+    (hT : st.objects[head.toObjId]? = some (.tcb ht))
+    (hG : sendWakesInPlace st endpointId head ht.queueNext = true) :
+    (match endpointQueuePopHead endpointId true st with
+      | .error _ => none
+      | .ok (r, _, st') =>
+          match storeTcbReceiveComplete st' r (some msg) with
+          | .error _ => none
+          | .ok st'' => some (r, st''))
+      = some (head, storeSendRendezvous st endpointId head ht.queueNext msg) := by
+  simp only [sendWakesInPlace, Bool.and_eq_true, Bool.not_eq_true'] at hG
+  obtain ⟨⟨⟨⟨⟨hRes, hLE⟩, hFE⟩, hLH⟩, hFH⟩, hNx⟩ := hG
+  have hNeEH : endpointId ≠ head.toObjId := by
+    intro h; rw [h, hT] at hE; cases hE
+  have hLook : lookupTcb st head = some ht := by
+    simp only [lookupTcb, hRes, Bool.false_eq_true, ↓reduceIte]
+    exact (SystemState.getTcb?_eq_some_iff _ _ _).mpr hT
+  -- the endpoint store, as one state both sides name
+  obtain ⟨S1, hS1⟩ : ∃ S1 : SystemState, S1 = { st with objects :=
+      (st.objects.insert endpointId (sendRendezvousEndpoint ht.queueNext (.endpoint ep))) } :=
+    ⟨_, rfl⟩
+  have hMo : st.modifyObject endpointId (sendRendezvousEndpoint ht.queueNext) = S1 := by
+    rw [hS1]; unfold SystemState.modifyObject
+    rw [SeLe4n.Kernel.RobinHood.RHTable.modify_of_get? hE]
+  have hNotV : ∀ r, sendRendezvousEndpoint ht.queueNext (.endpoint ep) ≠ .vspaceRoot r := by
+    intro r h; simp only [sendRendezvousEndpoint] at h; cases h
+  have hF1 : ∀ k, S1.objects.findsInPlace k = st.objects.findsInPlace k := fun k => by
+    rw [hS1]; exact SeLe4n.Kernel.RobinHood.RHTable.findsInPlace_insert_of_findsInPlace k _ hFE
+  have hG1 : ∀ k, endpointId ≠ k → S1.objects[k]? = st.objects[k]? := fun k hk => by
+    rw [hS1]; exact SeLe4n.Kernel.RobinHood.RHTable.get?_insert_ne_of_findsInPlace k _ hFE hk
+  have hL1 : ∀ {id ty}, storeLeavesIndexAndTypes st id ty = true →
+      storeLeavesIndexAndTypes S1 id ty = true := fun h => by
+    rw [hS1]; exact storeLeavesIndexAndTypes_insert_inPlace hFE hNotV h
+  have hT1 : S1.getTcb? head = some ht :=
+    (SystemState.getTcb?_eq_some_iff _ _ _).mpr ((hG1 _ hNeEH).trans hT)
+  unfold endpointQueuePopHead storeSendRendezvous
+  simp only [SystemState.getObject?, hE, hH, hLook, Bool.not_true, Bool.false_and,
+    Bool.false_eq_true, ↓reduceIte]
+  rw [hMo]
+  cases hN : ht.queueNext with
+  | none =>
+    have hSt : storeObject endpointId (.endpoint { ep with receiveQ := {} }) st = .ok ((), S1) := by
+      rw [storeObject_eq_of_leaves (by simpa only [KernelObject.objectType] using hLE), hS1, hN]; rfl
+    simp only [hSt]
+    have hQ : storeTcbQueueLinks S1 head none none none =
+        .ok (S1.updateTcb head (fun t => tcbWithQueueLinks t none none none)) :=
+      modifyTcb_eq_updateTcb _ hRes hT1 (hL1 hLH)
+    rw [hQ]
+    simp only []
+    have hT3 := updateTcb_getTcb?_self_of_findsInPlace
+      (fun t => tcbWithQueueLinks t none none none) hT1 ((hF1 _).trans hFH)
+    have hRC : storeTcbReceiveComplete
+        (S1.updateTcb head (fun t => tcbWithQueueLinks t none none none)) head (some msg) =
+        .ok ((S1.updateTcb head (fun t => tcbWithQueueLinks t none none none)).updateTcb head
+          (receiveCompleteTcb msg)) :=
+      modifyTcb_eq_updateTcb _ hRes hT3
+        (updateTcb_storeLeaves _ hT1 ((hF1 _).trans hFH) (hL1 hLH))
+    rw [hRC]
+  | some n =>
+    rw [hN] at hNx
+    simp only [Bool.and_eq_true, Bool.not_eq_true', bne_iff_ne, ne_eq] at hNx
+    obtain ⟨⟨⟨⟨hRn, hNeH⟩, hLN⟩, hFN⟩, hTnB⟩ := hNx
+    obtain ⟨nt, hTn⟩ := Option.isSome_iff_exists.mp hTnB
+    have hNeEN : endpointId ≠ n.toObjId := by
+      intro h; rw [h, (SystemState.getTcb?_eq_some_iff _ _ _).mp hTn] at hE; cases hE
+    have hNeNH : n.toObjId ≠ head.toObjId := fun h => hNeH (SeLe4n.ThreadId.toObjId_injective _ _ h)
+    have hSt : storeObject endpointId
+        (.endpoint { ep with receiveQ := { head := some n, tail := ep.receiveQ.tail } }) st =
+        .ok ((), S1) := by
+      rw [storeObject_eq_of_leaves (by simpa only [KernelObject.objectType] using hLE), hS1, hN]; rfl
+    simp only [hSt]
+    have hTn1 : S1.getTcb? n = some nt :=
+      (SystemState.getTcb?_eq_some_iff _ _ _).mpr
+        ((hG1 _ hNeEN).trans ((SystemState.getTcb?_eq_some_iff _ _ _).mp hTn))
+    have hLookN : lookupTcb S1 n = some nt := by
+      simp only [lookupTcb, hRn, Bool.false_eq_true, ↓reduceIte]; exact hTn1
+    rw [hLookN]
+    simp only []
+    let g := fun t => tcbWithQueueLinks t none (some QueuePPrev.endpointHead) t.queueNext
+    have hQn : storeTcbQueueLinks S1 n none (some .endpointHead) nt.queueNext =
+        .ok (S1.updateTcb n g) := by
+      have := modifyTcb_eq_updateTcb (fun t => tcbWithQueueLinks t none (some .endpointHead)
+        nt.queueNext) hRn hTn1 (hL1 hLN)
+      rw [show storeTcbQueueLinks S1 n none (some .endpointHead) nt.queueNext =
+        modifyTcb S1 n (fun t => tcbWithQueueLinks t none (some .endpointHead) nt.queueNext)
+        from rfl, this, SystemState.updateTcb_eq_of_some hTn1, SystemState.updateTcb_eq_of_some hTn1]
+    rw [hQn]
+    simp only []
+    obtain ⟨S2, hS2⟩ : ∃ S2 : SystemState, S2 = S1.updateTcb n g := ⟨_, rfl⟩
+    rw [← hS2]
+    have hFn1 : S1.objects.findsInPlace n.toObjId = true := (hF1 _).trans hFN
+    have hT2 : S2.getTcb? head = some ht := by
+      rw [hS2, SystemState.getTcb?_eq_some_iff,
+        updateTcb_get?_ne_of_findsInPlace g hTn1 hFn1 hNeNH]
+      exact (SystemState.getTcb?_eq_some_iff _ _ _).mp hT1
+    have hF2 : ∀ k, S2.objects.findsInPlace k = st.objects.findsInPlace k := fun k => by
+      rw [hS2, updateTcb_findsInPlace g hTn1 hFn1, hF1]
+    have hL2 : storeLeavesIndexAndTypes S2 head.toObjId .tcb = true := by
+      rw [hS2]; exact updateTcb_storeLeaves g hTn1 hFn1 (hL1 hLH)
+    have hQ : storeTcbQueueLinks S2 head none none none =
+        .ok (S2.updateTcb head (fun t => tcbWithQueueLinks t none none none)) :=
+      modifyTcb_eq_updateTcb _ hRes hT2 hL2
+    rw [hQ]
+    simp only []
+    have hT3 := updateTcb_getTcb?_self_of_findsInPlace
+      (fun t => tcbWithQueueLinks t none none none) hT2 ((hF2 _).trans hFH)
+    have hRC : storeTcbReceiveComplete
+        (S2.updateTcb head (fun t => tcbWithQueueLinks t none none none)) head (some msg) =
+        .ok ((S2.updateTcb head (fun t => tcbWithQueueLinks t none none none)).updateTcb head
+          (receiveCompleteTcb msg)) :=
+      modifyTcb_eq_updateTcb _ hRes hT3
+        (updateTcb_storeLeaves _ hT2 ((hF2 _).trans hFH) hL2)
+    rw [hRC]
+
+/-- WS-ZA ZA4.7: the compiled `endpointSendDualOnCore`.  A rendezvous whose
+writes stay in their slots (`sendWakesInPlace`) makes them in place
+(`storeSendRendezvous`, `sendRendezvous_inPlace_eq`) and holds no pre-state
+for a refusal that cannot happen (`ZERO_ALLOCATION_SYSCALL_PLAN.md` D1);
+otherwise the specification's body. -/
+def endpointSendDualOnCoreImpl (endpointId : SeLe4n.ObjId) (sender : SeLe4n.ThreadId)
+    (msg : IpcMessage) (executingCore : CoreId) (st : SystemState) :
+    SystemState × Except KernelError (Option (CoreId × SgiKind)) :=
+  if msg.registers.size > maxMessageRegisters then (st, .error .ipcMessageTooLarge)
+  else if msg.caps.size > maxExtraCaps then (st, .error .ipcMessageTooManyCaps)
+  else
+  match st.getEndpoint? endpointId with
+  | some ep =>
+      match ep.receiveQ.head with
+      | some head =>
+          match st.getTcb? sender with
+          | none => (st, .error .objectNotFound)
+          | some _ =>
+          match st.objects[head.toObjId]? with
+          | some (KernelObject.tcb ht) =>
+              if sendWakesInPlace st endpointId head ht.queueNext then
+                let (stWoken, wakeSgi) := wakeThread
+                  (storeSendRendezvous st endpointId head ht.queueNext msg) head executingCore
+                (stWoken, .ok wakeSgi)
+              else
+              match endpointQueuePopHead endpointId true st with
+              | .error e => (st, .error e)
+              | .ok (receiver, _tcb, st') =>
+                  match storeTcbReceiveComplete st' receiver (some msg) with
+                  | .error e => (st, .error e)
+                  | .ok st'' =>
+                      let (stWoken, wakeSgi) := wakeThread st'' receiver executingCore
+                      (stWoken, .ok wakeSgi)
+          | _ =>
+              match endpointQueuePopHead endpointId true st with
+              | .error e => (st, .error e)
+              | .ok (receiver, _tcb, st') =>
+                  match storeTcbReceiveComplete st' receiver (some msg) with
+                  | .error e => (st, .error e)
+                  | .ok st'' =>
+                      let (stWoken, wakeSgi) := wakeThread st'' receiver executingCore
+                      (stWoken, .ok wakeSgi)
+      | none =>
+          match endpointQueueEnqueue endpointId false sender st with
+          | .error e => (st, .error e)
+          | .ok st' =>
+              match storeTcbIpcStateAndMessage st' sender (.blockedOnSend endpointId)
+                  (some msg) with
+              | .error e => (st, .error e)
+              | .ok st'' => (removeRunnableOnCore st'' sender executingCore, .ok none)
+  | none =>
+      if (st.getObject? endpointId).isSome then (st, .error .invalidCapability)
+      else (st, .error .objectNotFound)
+
+@[csimp] theorem endpointSendDualOnCore_eq_impl :
+    @endpointSendDualOnCore = @endpointSendDualOnCoreImpl := by
+  funext endpointId sender msg executingCore st
+  unfold endpointSendDualOnCore endpointSendDualOnCoreImpl
+  split
+  · rfl
+  · split
+    · rfl
+    · cases hEp : st.getEndpoint? endpointId with
+      | none => rfl
+      | some ep =>
+        dsimp only
+        cases hH : ep.receiveQ.head with
+        | none => rfl
+        | some head =>
+          dsimp only
+          cases hS : st.getTcb? sender with
+          | none => rfl
+          | some _ =>
+            dsimp only
+            cases hTo : st.objects[head.toObjId]? with
+            | none => rfl
+            | some o =>
+              cases o with
+              | tcb ht =>
+                dsimp only
+                by_cases hG : sendWakesInPlace st endpointId head ht.queueNext = true
+                · rw [if_pos hG]
+                  have h := sendRendezvous_inPlace_eq st endpointId ep head ht msg
+                    ((SystemState.getEndpoint?_eq_some_iff _ _ _).mp hEp) hH hTo hG
+                  revert h
+                  split
+                  · intro h; cases h
+                  · next r _ st' hPop =>
+                    split
+                    · intro h; cases h
+                    · next st'' hRC =>
+                      intro h
+                      simp only [Option.some.injEq, Prod.mk.injEq] at h
+                      obtain ⟨rfl, rfl⟩ := h
+                      rfl
+                · rw [if_neg hG]
+              | _ => rfl
+
 /-- WS-SM SM6: the absent-endpoint arm is fail-closed — the pre-state is
 returned untouched.
 
@@ -351,6 +616,41 @@ def endpointSendDualWithCapsOnCore
             | none => (st', .error .invalidCapability)
           | none => (st', .ok ({ results := #[] }, sgi))
         | none => (st', .ok ({ results := #[] }, sgi))
+
+/-- WS-ZA ZA4.7: the compiled `endpointSendDualWithCapsOnCore`.  The receive
+queue's head is read once, before the send, so the pre-state is not held across
+the send's writes for a second read of the endpoint
+(`ZERO_ALLOCATION_SYSCALL_PLAN.md` D1). -/
+def endpointSendDualWithCapsOnCoreImpl
+    (endpointId : SeLe4n.ObjId) (sender : SeLe4n.ThreadId)
+    (msg : IpcMessage) (endpointRights : AccessRightSet)
+    (receiverSlotBase : SeLe4n.Slot)
+    (executingCore : CoreId) (st : SystemState) :
+    SystemState × Except KernelError (CapTransferSummary × Option (CoreId × SgiKind)) :=
+  let receiverHead? := match st.getEndpoint? endpointId with
+    | some ep => ep.receiveQ.head
+    | none => none
+  match endpointSendDualOnCore endpointId sender { msg with capsGranted := endpointRights.mem .grant } executingCore st with
+  | (st', .error e) => (st', .error e)
+  | (st', .ok sgi) =>
+      if !receiverHead?.isSome || msg.caps.isEmpty then (st', .ok ({ results := #[] }, sgi))
+      else
+        match receiverHead? with
+        | some receiverId =>
+            match lookupCspaceRoot st' receiverId with
+            | some recvRoot =>
+              match ipcUnwrapCaps { msg with capsGranted := endpointRights.mem .grant } recvRoot
+                  receiverSlotBase (endpointRights.mem .grant) st' with
+              | .error e => (st', .error e)
+              | .ok (summary, st'') => (st'', .ok (summary, sgi))
+            | none => (st', .error .invalidCapability)
+        | none => (st', .ok ({ results := #[] }, sgi))
+
+@[csimp] theorem endpointSendDualWithCapsOnCore_eq_impl :
+    @endpointSendDualWithCapsOnCore = @endpointSendDualWithCapsOnCoreImpl := by
+  funext endpointId sender msg endpointRights receiverSlotBase executingCore st
+  unfold endpointSendDualWithCapsOnCore endpointSendDualWithCapsOnCoreImpl
+  cases st.getEndpoint? endpointId <;> rfl
 
 /-- WS-SM SM6: with no capabilities to transfer, the WithCaps cross-core send is
 exactly the bare cross-core send (empty transfer summary), so its surfaced SGI is
