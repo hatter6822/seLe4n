@@ -25,8 +25,8 @@ namespace SeLe4n.Kernel
 open SeLe4n.Model
 
 /-- `syscallEntryChecked`, refusing in the state it was handed
-(`syscallEntryCheckedR_eq`).  A signal, wait, yield, capability-free send or
-receive whose arguments all sit in registers is routed on the register file
+(`syscallEntryCheckedR_eq`).  A signal, wait, yield, capability-free send or call,
+or receive whose arguments all sit in registers is routed on the register file
 itself (`registerRoutedSyscall`),
 before any decode record exists: the decode writes nothing and such a call
 fills no TLB entry (`tlbFillIpcBufferOnCore_zero`), so its dispatch is handed
@@ -62,6 +62,12 @@ specification's form. -/
         -- everything before its first write.
         | .send capAddr msgInfo =>
           dispatchSendCheckedR ctx capAddr
+            (SeLe4n.Kernel.Architecture.RegisterDecode.extractMessageRegisters
+              (layout.msgRegs.map (readReg tcb.registerContext)) msgInfo)
+            tid executingCore st
+        -- WS-ZA ZA4.7: a call with no capabilities to transfer.
+        | .call capAddr msgInfo =>
+          dispatchCallCheckedR ctx capAddr
             (SeLe4n.Kernel.Architecture.RegisterDecode.extractMessageRegisters
               (layout.msgRegs.map (readReg tcb.registerContext)) msgInfo)
             tid executingCore st
@@ -136,6 +142,18 @@ theorem syscallEntryCheckedR_eq (ctx : LabelingContext)
           have hCaps : Architecture.SyscallArgDecode.decodeExtraCapAddrs decoded = #[] := by
             simp [Architecture.SyscallArgDecode.decodeExtraCapAddrs, hInfo, hX]; rfl
           rw [dispatchSendCheckedR_eq ctx decoded _ tid executingCore hSend hCaps hSlot
+            (by rw [hRegs', hInfo])]
+          simp only [RefusalCarrying.ofKernel, syscallEntryChecked, hCtx, hCur, hRegs, hDec,
+            hZero, Bool.false_eq_true, ↓reduceIte,
+            SeLe4n.Kernel.Architecture.tlbFillIpcBufferOnCore_zero]
+        · next capAddr msgInfo hCallRegs =>
+          obtain ⟨decoded, hDec, hCall, hCap, hZero, hInfo, hX, hSlot, hRegs'⟩ :=
+            SeLe4n.Kernel.Architecture.RegisterDecode.decodeSyscallArgsFromState_of_routedCall
+              st tid layout tcb.registerContext regCount capAddr msgInfo hCallRegs
+          subst hCap
+          have hCaps : Architecture.SyscallArgDecode.decodeExtraCapAddrs decoded = #[] := by
+            simp [Architecture.SyscallArgDecode.decodeExtraCapAddrs, hInfo, hX]; rfl
+          rw [dispatchCallCheckedR_eq ctx decoded _ tid executingCore hCall hCaps hSlot
             (by rw [hRegs', hInfo])]
           simp only [RefusalCarrying.ofKernel, syscallEntryChecked, hCtx, hCur, hRegs, hDec,
             hZero, Bool.false_eq_true, ↓reduceIte,
