@@ -1442,7 +1442,7 @@ private def runSendReceiveCancelChecks : IO Unit := do
   IO.println "--- §3.13 SM6.E cancel send-/receive-blocked victims ---"
   let stSend :=
     (BootstrapBuilder.empty
-      |>.withObject epId (.endpoint { sendQ := { head := some victimTid, tail := some victimTid } })
+      |>.withObject epId (.endpoint (Endpoint.ofQueues { head := some victimTid, tail := some victimTid } {}))
       |>.withObject victimTid.toObjId (.tcb { mkTcb 710 30 (some core1) with
           ipcState := .blockedOnSend epId })
       |>.build)
@@ -1458,7 +1458,7 @@ private def runSendReceiveCancelChecks : IO Unit := do
           | _ => false))
   let stRecv :=
     (BootstrapBuilder.empty
-      |>.withObject epId (.endpoint { receiveQ := { head := some victimTid, tail := some victimTid } })
+      |>.withObject epId (.endpoint (Endpoint.ofQueues {} { head := some victimTid, tail := some victimTid }))
       |>.withObject victimTid.toObjId (.tcb { mkTcb 710 30 (some core1) with
           ipcState := .blockedOnReceive epId })
       |>.build)
@@ -2456,7 +2456,7 @@ private def stStrandedHolderReclaim : SystemState :=
   let base :=
     (BootstrapBuilder.empty
       |>.withObject epId (.endpoint
-          { sendQ := { head := some serverTid, tail := some serverTid }, receiveQ := {} })
+          (Endpoint.ofQueues { head := some serverTid, tail := some serverTid } {}))
       |>.withObject rId.toObjId (.reply
           { replyId := rId, caller := some victimTid, next := some (.head scId) })
       |>.withObject victimTid.toObjId (.tcb { mkTcb 710 30 (some core1) with

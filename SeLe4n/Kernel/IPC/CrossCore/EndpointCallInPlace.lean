@@ -194,7 +194,7 @@ theorem popHead_inPlace (st : SystemState) (endpointId : SeLe4n.ObjId)
   rw [hMo]
   cases hN : ht.queueNext with
   | none =>
-    have hSt : storeObject endpointId (.endpoint { ep with receiveQ := {} }) st = .ok ((), S1) := by
+    have hSt : storeObject endpointId (.endpoint (ep.withReceiveQ {})) st = .ok ((), S1) := by
       rw [storeObject_eq_of_leaves (by simpa only [KernelObject.objectType] using hLE), hS1, hN]; rfl
     simp only [hSt]
     have hQ : storeTcbQueueLinks S1 head none none none =
@@ -218,7 +218,7 @@ theorem popHead_inPlace (st : SystemState) (endpointId : SeLe4n.ObjId)
     have hNeNH : n.toObjId ≠ head.toObjId := fun h =>
       hNeH (SeLe4n.ThreadId.toObjId_injective _ _ h)
     have hSt : storeObject endpointId
-        (.endpoint { ep with receiveQ := { head := some n, tail := ep.receiveQ.tail } }) st =
+        (.endpoint (ep.withReceiveQ { head := some n, tail := ep.receiveQ.tail })) st =
         .ok ((), S1) := by
       rw [storeObject_eq_of_leaves (by simpa only [KernelObject.objectType] using hLE), hS1, hN]; rfl
     simp only [hSt]

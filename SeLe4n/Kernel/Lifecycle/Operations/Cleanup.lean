@@ -306,9 +306,7 @@ def removeFromAllEndpointQueues (st : SystemState) (tid : SeLe4n.ThreadId) : Sys
         -- TCBs).
         if ep.sendQ.head == some tid || ep.sendQ.tail == some tid
             || ep.receiveQ.head == some tid || ep.receiveQ.tail == some tid then
-          let ep' : Endpoint := {
-            sendQ := removeThreadFromQueue stSpliced ep.sendQ tid,
-            receiveQ := removeThreadFromQueue stSpliced ep.receiveQ tid }
+          let ep' : Endpoint := (Endpoint.ofQueues (removeThreadFromQueue stSpliced ep.sendQ tid) (removeThreadFromQueue stSpliced ep.receiveQ tid))
           acc.rewriteObject oid (.endpoint ep') (SystemState.rewriteAdmissible_endpoint hEp ep')
         else acc
       | none => acc

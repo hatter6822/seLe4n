@@ -581,8 +581,8 @@ private def frozenQueuePopHead (endpointId : SeLe4n.ObjId) (isReceiveQ : Bool)
               let newTail := if newHead = none then none else queue.tail
               let queue' : IntrusiveQueue := { head := newHead, tail := newTail }
               let ep' := if isReceiveQ
-                then { ep with receiveQ := queue' }
-                else { ep with sendQ := queue' }
+                then (ep.withReceiveQ queue')
+                else (ep.withSendQ queue')
               -- Clear queue links on dequeued TCB (U-H01: must also clear queuePPrev
               -- to allow re-enqueue via frozenQueuePushTail, which rejects
               -- threads with queuePPrev.isSome)

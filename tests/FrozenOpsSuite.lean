@@ -589,7 +589,7 @@ private def fo015_notificationWait : IO Unit := do
 /-- FO-016: frozenEndpointSend — no receiver, sender is enqueued in sendQ (M-FRZ-1) -/
 private def fo016_sendEnqueuesSender : IO Unit := do
   let senderTcb := mkTcb 3
-  let ep : Endpoint := { sendQ := {}, receiveQ := {} }
+  let ep : Endpoint := (Endpoint.ofQueues {} {})
   let fst := mkFrozenState [(⟨3⟩, .tcb senderTcb), (⟨10⟩, .endpoint ep)]
   let msg : IpcMessage := { registers := #[⟨42⟩], caps := #[], badge := Badge.ofNatMasked 0 }
   match frozenEndpointSend ⟨10⟩ ⟨3⟩ msg fst with
@@ -611,7 +611,7 @@ private def fo016_sendEnqueuesSender : IO Unit := do
 /-- FO-017: frozenEndpointReceive — no sender, receiver is enqueued in receiveQ (M-FRZ-2) -/
 private def fo017_receiveEnqueuesReceiver : IO Unit := do
   let recvTcb := mkTcb 4
-  let ep : Endpoint := { sendQ := {}, receiveQ := {} }
+  let ep : Endpoint := (Endpoint.ofQueues {} {})
   let fst := mkFrozenState [(⟨4⟩, .tcb recvTcb), (⟨10⟩, .endpoint ep)]
   match frozenEndpointReceive ⟨10⟩ ⟨4⟩ none fst with
   | .ok (_, fst') =>
@@ -631,7 +631,7 @@ private def fo017_receiveEnqueuesReceiver : IO Unit := do
 /-- FO-018: frozenEndpointCall — no receiver, caller enqueued in sendQ with blockedOnCall (M-FRZ-3) -/
 private def fo018_callEnqueuesCaller : IO Unit := do
   let callerTcb := mkTcb 5
-  let ep : Endpoint := { sendQ := {}, receiveQ := {} }
+  let ep : Endpoint := (Endpoint.ofQueues {} {})
   let fst := mkFrozenState [(⟨5⟩, .tcb callerTcb), (⟨10⟩, .endpoint ep)]
   let msg : IpcMessage := { registers := #[⟨99⟩], caps := #[], badge := Badge.ofNatMasked 0 }
   match frozenEndpointCall ⟨10⟩ ⟨5⟩ msg fst with
@@ -717,7 +717,7 @@ send (enqueue sender in sendQ) → receive (pop sender, deliver) → send again.
 private def fo021_popThenPushRegression : IO Unit := do
   let senderTcb := mkTcb 3
   let receiverTcb := mkTcb 4
-  let ep : Endpoint := { sendQ := {}, receiveQ := {} }
+  let ep : Endpoint := (Endpoint.ofQueues {} {})
   let fst := mkFrozenState [
     (⟨3⟩, .tcb senderTcb),
     (⟨4⟩, .tcb receiverTcb),
@@ -763,7 +763,7 @@ the negative that says the transport does not keep what it handed on. -/
 private def frozenProvenanceFollowsContent : IO Unit := do
   let senderTcb := mkTcb 3
   let receiverTcb := mkTcb 4
-  let ep : Endpoint := { sendQ := {}, receiveQ := {} }
+  let ep : Endpoint := (Endpoint.ofQueues {} {})
   let ntfn : Notification := { state := .idle, 
                                hasPendingBadge := false, pendingWord := SeLe4n.Badge.zero }
   let base := mkFrozenState [
@@ -869,7 +869,7 @@ private def frozenDeliveryIsHonest : IO Unit := do
   -- (d) …and the send's source, on BOTH orderings.  The blocking path always
   -- resolved the sender; the rendezvous path did not, so whether a nonexistent
   -- sender was refused depended on whether a receiver happened to be waiting.
-  let epEmpty : Endpoint := { sendQ := {}, receiveQ := {} }
+  let epEmpty : Endpoint := (Endpoint.ofQueues {} {})
   let fstNoRecv := mkFrozenState [(⟨10⟩, .endpoint epEmpty)]
   let sendMsg : IpcMessage :=
     { registers := #[], caps := #[], badge := Badge.ofNatMasked 0 }
@@ -904,7 +904,7 @@ The state is malformed rather than reachable — the frozen send path parks with
 `pendingMessage := some msg` — which is exactly why it has to be refused
 structurally: a hand-built snapshot is what a frozen state IS. -/
 private def frozenParkedSenderCarriesItsMessage : IO Unit := do
-  let epParked : Endpoint := { sendQ := { head := some ⟨3⟩, tail := some ⟨3⟩ }, receiveQ := {} }
+  let epParked : Endpoint := (Endpoint.ofQueues { head := some ⟨3⟩, tail := some ⟨3⟩ } {})
   let msg : IpcMessage := { registers := #[], caps := #[], badge := Badge.ofNatMasked 0 }
   -- The malformed snapshot: parked to send, holding nothing.
   let fstEmpty := mkFrozenState
@@ -951,7 +951,7 @@ private def frozenBoundNotificationDelivery : IO Unit := do
   let badge := Badge.ofNatMasked 77
   -- The bound TCB is parked on the endpoint's receive queue, and the
   -- notification has no ordinary waiter — the live bound-delivery shape.
-  let ep : Endpoint := { sendQ := {}, receiveQ := { head := some bound, tail := some bound } }
+  let ep : Endpoint := (Endpoint.ofQueues {} { head := some bound, tail := some bound })
   let ntfn : Notification :=
     { state := .idle, hasPendingBadge := false, pendingWord := SeLe4n.Badge.zero,
       boundTCB := some bound }
@@ -1212,7 +1212,7 @@ runs.  A notification with no ordinary waiter and a bound TCB parked on an
 endpoint — the shape whose frozen handling diverged twice. -/
 private def differentialNotificationSignalAgrees : IO Unit := do
   let badge := SeLe4n.Badge.ofNatMasked 77
-  let ep : Endpoint := { sendQ := {}, receiveQ := { head := some diffA, tail := some diffA } }
+  let ep : Endpoint := (Endpoint.ofQueues {} { head := some diffA, tail := some diffA })
   let ntfn : Notification :=
     { state := .idle, hasPendingBadge := false, pendingWord := SeLe4n.Badge.zero,
       boundTCB := some diffA }
@@ -1341,7 +1341,7 @@ private def differentialNotificationWaitConsumesBoundAgrees : IO Unit := do
 sender that carries its message — the rendezvous the round-11 guard admits. -/
 private def differentialEndpointReceiveAgrees : IO Unit := do
   let msg : IpcMessage := { registers := #[⟨7⟩], caps := #[], badge := none }
-  let ep : Endpoint := { sendQ := { head := some diffA, tail := some diffA }, receiveQ := {} }
+  let ep : Endpoint := (Endpoint.ofQueues { head := some diffA, tail := some diffA } {})
   let parked : TCB := { diffTcb 62 with ipcState := .blockedOnSend diffEpId, pendingMessage := some msg, queuePPrevCode := 1 }
   let ist := diffAddTcb (diffAddTcb
     (diffAddEndpoint (diffAddCSpace mkEmptyIntermediateState [(SeLe4n.Slot.ofNat 0, diffObjCap diffEpId)]) diffEpId ep) parked) (diffTcb 63)
@@ -2041,7 +2041,7 @@ rendezvous rather than a shared refusal. -/
 private def differentialReceiveFromBlockedCallerAgrees : IO Unit := do
   let msg : IpcMessage := { registers := #[⟨21⟩], caps := #[], badge := none }
   let rid : SeLe4n.ReplyId := ⟨506⟩
-  let ep : Endpoint := { sendQ := { head := some diffA, tail := some diffA }, receiveQ := {} }
+  let ep : Endpoint := (Endpoint.ofQueues { head := some diffA, tail := some diffA } {})
   let parkedCaller : TCB := { diffTcb 62 with ipcState := .blockedOnCall diffEpId, pendingMessage := some msg, queuePPrevCode := 1 }
   let ist := diffAddReply (diffAddTcb (diffAddTcb
     (diffAddEndpoint (diffAddCSpace mkEmptyIntermediateState
@@ -2072,7 +2072,7 @@ thread's tag makes the step observable, so this is what stops the like-layer
 composition from being decoration. -/
 private def differentialTaintedSignalAgrees : IO Unit := do
   let badge := SeLe4n.Badge.ofNatMasked 77
-  let ep : Endpoint := { sendQ := {}, receiveQ := { head := some diffA, tail := some diffA } }
+  let ep : Endpoint := (Endpoint.ofQueues {} { head := some diffA, tail := some diffA })
   let ntfn : Notification :=
     { state := .idle, hasPendingBadge := false, pendingWord := SeLe4n.Badge.zero,
       boundTCB := some diffA }
@@ -2179,7 +2179,7 @@ private def differentialRemovalGuardRefusalsAgree : IO Unit := do
         queuePPrevCode := QueuePPrev.optCode (some (.tcbNext diffA)),
         queueNextCode := 0 }
   let ep : Endpoint :=
-    { sendQ := { head := some diffA, tail := some diffB }, receiveQ := {} }
+    (Endpoint.ofQueues { head := some diffA, tail := some diffB } {})
   let ist := diffAddEndpoint (diffAddTcb (diffAddTcb mkEmptyIntermediateState tcbA) tcbB)
     diffEpId ep
   let q : IntrusiveQueue := ep.sendQ
@@ -2239,7 +2239,7 @@ private def differentialRemovalRefusalSetAgrees : IO Unit := do
         queuePrevCode := SeLe4n.ThreadId.optCode (some diffB),
         queuePPrevCode := QueuePPrev.optCode (some (.tcbNext diffB)),
         queueNextCode := SeLe4n.ThreadId.optCode (some diffB) }
-  let epEmpty : Endpoint := { sendQ := {}, receiveQ := {} }
+  let epEmpty : Endpoint := (Endpoint.ofQueues {} {})
   let istEmpty := diffAddEndpoint (diffAddTcb mkEmptyIntermediateState tcbEmptyQ) diffEpId epEmpty
   expect "FO-046 control: the guard itself ADMITS an empty queue with a .tcbNext back-pointer"
     (SeLe4n.Model.dualQueueRemovalGuard epEmpty.sendQ diffA tcbEmptyQ (.tcbNext diffB) == true)
@@ -2270,7 +2270,7 @@ private def differentialRemovalRefusalSetAgrees : IO Unit := do
         queuePPrevCode := QueuePPrev.optCode (some (.tcbNext diffA)),
         queueNextCode := 0 }
   let epOneSided : Endpoint :=
-    { sendQ := { head := some diffA, tail := some diffB }, receiveQ := {} }
+    (Endpoint.ofQueues { head := some diffA, tail := some diffB } {})
   let istOneSided :=
     diffAddEndpoint (diffAddTcb (diffAddTcb mkEmptyIntermediateState headNotNaming) tailNamingIt)
       diffEpId epOneSided
@@ -2294,7 +2294,7 @@ private def differentialRemovalRefusalSetAgrees : IO Unit := do
         queueNextCode := 0 }
   let istDetached :=
     diffAddEndpoint (diffAddTcb mkEmptyIntermediateState detached) diffEpId
-      { sendQ := { head := some diffA, tail := some diffA }, receiveQ := {} }
+      (Endpoint.ofQueues { head := some diffA, tail := some diffA } {})
   expect "FO-046: the live removal answers .endpointQueueEmpty for no back-pointer"
     (refusesQueueEmpty
       (SeLe4n.Kernel.endpointQueueRemoveDual diffEpId false diffA istDetached.state))
@@ -2398,7 +2398,7 @@ private def differentialQueueNeighbourResolutionAgrees : IO Unit := do
   -- ── (1) the ENQUEUE's tail neighbour ──
   let aIst := diffAddTcb (diffAddTcb
     (diffAddEndpoint mkEmptyIntermediateState epId
-      { sendQ := { head := some sentinelTid, tail := some sentinelTid }, receiveQ := {} })
+      (Endpoint.ofQueues { head := some sentinelTid, tail := some sentinelTid } {}))
     (parked sentinelTid none (some .endpointHead) none))
     { diffTcb mover.toNat with ipcState := .ready }
   expect "FO-049 control: the store really holds a TCB at the sentinel slot"
@@ -2415,7 +2415,7 @@ private def differentialQueueNeighbourResolutionAgrees : IO Unit := do
 
   -- ── (2) the REMOVAL's predecessor ──
   let bEp : Endpoint :=
-    { sendQ := { head := some sentinelTid, tail := some mover }, receiveQ := {} }
+    (Endpoint.ofQueues { head := some sentinelTid, tail := some mover } {})
   let bMover : TCB := parked mover (some sentinelTid) (some (.tcbNext sentinelTid)) none
   let bIst := diffAddTcb (diffAddTcb
     (diffAddEndpoint mkEmptyIntermediateState epId bEp)
@@ -2430,7 +2430,7 @@ private def differentialQueueNeighbourResolutionAgrees : IO Unit := do
 
   -- ── (3) the REMOVAL's successor ──
   let cEp : Endpoint :=
-    { sendQ := { head := some mover, tail := some sentinelTid }, receiveQ := {} }
+    (Endpoint.ofQueues { head := some mover, tail := some sentinelTid } {})
   let cMover : TCB := parked mover none (some .endpointHead) (some sentinelTid)
   let cIst := diffAddTcb (diffAddTcb
     (diffAddEndpoint mkEmptyIntermediateState epId cEp) cMover)
@@ -2457,7 +2457,7 @@ private def differentialQueueNeighbourResolutionAgrees : IO Unit := do
         ipcState := .blockedOnReceive diffEpId,
         queuePrevCode := SeLe4n.ThreadId.optCode (some diffA), queuePPrevCode := QueuePPrev.optCode (some (.tcbNext diffA)), queueNextCode := 0 }
   let twoDeep : Endpoint :=
-    { sendQ := {}, receiveQ := { head := some diffA, tail := some diffB } }
+    (Endpoint.ofQueues {} { head := some diffA, tail := some diffB })
   let ist := diffAddTcb (diffAddTcb (diffAddTcb
     (diffAddEndpoint (diffAddCSpace mkEmptyIntermediateState
       [(SeLe4n.Slot.ofNat 0, diffObjCap diffEpId)]) diffEpId twoDeep)
@@ -2986,7 +2986,7 @@ delivered. -/
 private def differentialSendFromAbsentSenderAgrees : IO Unit := do
   let msg : IpcMessage := { registers := #[⟨31⟩], caps := #[], badge := none }
   let ghost : SeLe4n.ThreadId := ⟨9997⟩
-  let ep : Endpoint := { sendQ := {}, receiveQ := { head := some diffA, tail := some diffA } }
+  let ep : Endpoint := (Endpoint.ofQueues {} { head := some diffA, tail := some diffA })
   let parkedReceiver : TCB := { diffTcb 62 with ipcState := .blockedOnReceive diffEpId, queuePPrevCode := 1 }
   let ist := diffAddTcb (diffAddTcb
     (diffAddEndpoint (diffAddCSpace mkEmptyIntermediateState
@@ -3024,7 +3024,7 @@ in `ensureRunnable receiver` and the frozen one in `frozenEnsureRunnable`, and
 private def differentialSendRendezvousDeliversAgrees : IO Unit := do
   let msg : IpcMessage := { registers := #[⟨37⟩], caps := #[], badge := none }
   let rid : SeLe4n.ReplyId := ⟨507⟩
-  let ep : Endpoint := { sendQ := {}, receiveQ := { head := some diffA, tail := some diffA } }
+  let ep : Endpoint := (Endpoint.ofQueues {} { head := some diffA, tail := some diffA })
   -- The server parked on a server-first `Recv`, reply object stashed: the state
   -- the D3/F-1 clear exists for.
   let parkedReceiver : TCB := { diffTcb 62 with ipcState := .blockedOnReceive diffEpId, queuePPrevCode := 1, pendingReceiveReply := some rid }
@@ -3060,7 +3060,7 @@ The bound TCB is parked at a priority no runnable thread holds, so the signal's
 wake has to create the bucket on both sides. -/
 private def differentialWakeAtUnqueuedPriorityAgrees : IO Unit := do
   let badge := SeLe4n.Badge.ofNatMasked 77
-  let ep : Endpoint := { sendQ := {}, receiveQ := { head := some diffA, tail := some diffA } }
+  let ep : Endpoint := (Endpoint.ofQueues {} { head := some diffA, tail := some diffA })
   let ntfn : Notification :=
     { state := .idle, hasPendingBadge := false, pendingWord := SeLe4n.Badge.zero,
       boundTCB := some diffA }
@@ -3176,7 +3176,7 @@ the six scenarios above evidence rather than decoration — a comparison that
 returned `true` for everything would pass them all. -/
 private def differentialComparisonHasBite : IO Unit := do
   let badge := SeLe4n.Badge.ofNatMasked 77
-  let ep : Endpoint := { sendQ := {}, receiveQ := { head := some diffA, tail := some diffA } }
+  let ep : Endpoint := (Endpoint.ofQueues {} { head := some diffA, tail := some diffA })
   let ntfn : Notification :=
     { state := .idle, hasPendingBadge := false, pendingWord := SeLe4n.Badge.zero,
       boundTCB := some diffA }

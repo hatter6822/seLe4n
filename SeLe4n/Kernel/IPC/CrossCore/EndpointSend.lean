@@ -121,8 +121,8 @@ starts at the popped head's successor. -/
       -- branched outside the record, each arm rewriting the queue record it
       -- was handed, so neither the endpoint nor its queue is rebuilt
       match next with
-      | some n => .endpoint { e with receiveQ := { e.receiveQ with head := some n } }
-      | none => .endpoint { e with receiveQ := { e.receiveQ with head := none, tail := none } }
+      | some n => .endpoint (e.withReceiveQ { e.receiveQ with head := some n })
+      | none => .endpoint (e.withReceiveQ { e.receiveQ with head := none, tail := none })
   | o => o
 
 /-- WS-ZA ZA4.7: the receive completion a send rendezvous writes into the
@@ -224,7 +224,7 @@ theorem sendRendezvous_inPlace_eq (st : SystemState) (endpointId : SeLe4n.ObjId)
   rw [hMo]
   cases hN : ht.queueNext with
   | none =>
-    have hSt : storeObject endpointId (.endpoint { ep with receiveQ := {} }) st = .ok ((), S1) := by
+    have hSt : storeObject endpointId (.endpoint (ep.withReceiveQ {})) st = .ok ((), S1) := by
       rw [storeObject_eq_of_leaves (by simpa only [KernelObject.objectType] using hLE), hS1, hN]; rfl
     simp only [hSt]
     have hQ : storeTcbQueueLinks S1 head none none none =
@@ -250,7 +250,7 @@ theorem sendRendezvous_inPlace_eq (st : SystemState) (endpointId : SeLe4n.ObjId)
       intro h; rw [h, (SystemState.getTcb?_eq_some_iff _ _ _).mp hTn] at hE; cases hE
     have hNeNH : n.toObjId ≠ head.toObjId := fun h => hNeH (SeLe4n.ThreadId.toObjId_injective _ _ h)
     have hSt : storeObject endpointId
-        (.endpoint { ep with receiveQ := { head := some n, tail := ep.receiveQ.tail } }) st =
+        (.endpoint (ep.withReceiveQ { head := some n, tail := ep.receiveQ.tail })) st =
         .ok ((), S1) := by
       rw [storeObject_eq_of_leaves (by simpa only [KernelObject.objectType] using hLE), hS1, hN]; rfl
     simp only [hSt]

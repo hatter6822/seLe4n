@@ -2777,7 +2777,7 @@ theorem endpointQueueRemove_eq_patches (endpointId : SeLe4n.ObjId) (isReceiveQ :
          (queueNeighbourPatch st.objects tcb.queuePrev (queueUnlinkPredecessor tcb))
          tcb.queueNext (queueUnlinkSuccessor tcb)
        let q' : IntrusiveQueue := queueRemoveBoundary q tid tcb
-       let ep' := if isReceiveQ then { ep with receiveQ := q' } else { ep with sendQ := q' }
+       let ep' := if isReceiveQ then (ep.withReceiveQ q') else (ep.withSendQ q')
        .ok { st with objects :=
          ((objs.insert endpointId (.endpoint ep')).insert tid.toObjId
            (.tcb (tcbWithQueueLinks tcb none none none))) }) := by
@@ -3247,9 +3247,7 @@ def endpointSweepBody (stSpliced : SystemState) (tid : SeLe4n.ThreadId)
       | some ⟨ep, hEp⟩ =>
         if ep.sendQ.head == some tid || ep.sendQ.tail == some tid
             || ep.receiveQ.head == some tid || ep.receiveQ.tail == some tid then
-          let ep' : Endpoint := {
-            sendQ := removeThreadFromQueue stSpliced ep.sendQ tid,
-            receiveQ := removeThreadFromQueue stSpliced ep.receiveQ tid }
+          let ep' : Endpoint := (Endpoint.ofQueues (removeThreadFromQueue stSpliced ep.sendQ tid) (removeThreadFromQueue stSpliced ep.receiveQ tid))
           acc.rewriteObject oid (.endpoint ep') (SystemState.rewriteAdmissible_endpoint hEp ep')
         else acc
       | none => acc
@@ -3378,7 +3376,7 @@ theorem removeFromAllEndpointQueues_endpoint_value (st : SystemState) (tid : SeL
             = some (KernelObject.endpoint ep) := hGet
         rw [he0] at hGet'
         obtain rfl : e0 = ep := KernelObject.endpoint.inj (Option.some.inj hGet')
-        exact ⟨rfl, rfl⟩
+        exact ⟨by simp, by simp⟩
       · refine ⟨hE, ?_⟩
         intro e he e0 he0
         rw [hA, he0] at he

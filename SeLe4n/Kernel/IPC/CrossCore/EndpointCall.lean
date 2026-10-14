@@ -1314,7 +1314,7 @@ theorem endpointQueuePopHead_determineTargetCore_eq (endpointId : SeLe4n.ObjId)
           · simp
           cases hStore : storeObject endpointId
               (.endpoint (if isReceiveQ
-                then { ep with receiveQ := _ } else { ep with sendQ := _ })) st with
+                then (ep.withReceiveQ _) else (ep.withSendQ _))) st with
           | error e => simp
           | ok pair =>
             have hInv1 : pair.2.objects.invExt :=
@@ -1419,8 +1419,8 @@ theorem endpointQueueEnqueue_determineTargetCore_eq (endpointId : SeLe4n.ObjId)
                 simp only
                 cases hStore : storeObject endpointId
                     (.endpoint (if isReceiveQ
-                      then { ep with receiveQ := { head := some tid, tail := some tid } }
-                      else { ep with sendQ := { head := some tid, tail := some tid } })) st with
+                      then (ep.withReceiveQ { head := some tid, tail := some tid })
+                      else (ep.withSendQ { head := some tid, tail := some tid }))) st with
                 | error e => simp
                 | ok pair =>
                   simp only
@@ -1444,12 +1444,8 @@ theorem endpointQueueEnqueue_determineTargetCore_eq (endpointId : SeLe4n.ObjId)
                   simp only
                   cases hStore : storeObject endpointId
                       (.endpoint (if isReceiveQ
-                        then { ep with receiveQ :=
-                          { head := (if isReceiveQ then ep.receiveQ else ep.sendQ).head,
-                            tail := some tid } }
-                        else { ep with sendQ :=
-                          { head := (if isReceiveQ then ep.receiveQ else ep.sendQ).head,
-                            tail := some tid } })) st with
+                        then (ep.withReceiveQ { head := (if isReceiveQ then ep.receiveQ else ep.sendQ).head, tail := some tid })
+                        else (ep.withSendQ { head := (if isReceiveQ then ep.receiveQ else ep.sendQ).head, tail := some tid }))) st with
                   | error e => simp
                   | ok pair =>
                     simp only
@@ -1702,7 +1698,7 @@ theorem endpointQueuePopHead_getSchedContext?_eq (endpointId : SeLe4n.ObjId)
           · simp
           cases hStore : storeObject endpointId
               (.endpoint (if isReceiveQ
-                then { ep with receiveQ := _ } else { ep with sendQ := _ })) st with
+                then (ep.withReceiveQ _) else (ep.withSendQ _))) st with
           | error e => simp
           | ok pair =>
             have hInv1 : pair.2.objects.invExt :=
@@ -1776,8 +1772,8 @@ theorem endpointQueueEnqueue_getSchedContext?_eq (endpointId : SeLe4n.ObjId)
                 simp only
                 cases hStore : storeObject endpointId
                     (.endpoint (if isReceiveQ
-                      then { ep with receiveQ := { head := some tid, tail := some tid } }
-                      else { ep with sendQ := { head := some tid, tail := some tid } })) st with
+                      then (ep.withReceiveQ { head := some tid, tail := some tid })
+                      else (ep.withSendQ { head := some tid, tail := some tid }))) st with
                 | error e => simp
                 | ok pair =>
                   simp only
@@ -1801,12 +1797,8 @@ theorem endpointQueueEnqueue_getSchedContext?_eq (endpointId : SeLe4n.ObjId)
                   simp only
                   cases hStore : storeObject endpointId
                       (.endpoint (if isReceiveQ
-                        then { ep with receiveQ :=
-                          { head := (if isReceiveQ then ep.receiveQ else ep.sendQ).head,
-                            tail := some tid } }
-                        else { ep with sendQ :=
-                          { head := (if isReceiveQ then ep.receiveQ else ep.sendQ).head,
-                            tail := some tid } })) st with
+                        then (ep.withReceiveQ { head := (if isReceiveQ then ep.receiveQ else ep.sendQ).head, tail := some tid })
+                        else (ep.withSendQ { head := (if isReceiveQ then ep.receiveQ else ep.sendQ).head, tail := some tid }))) st with
                   | error e => simp
                   | ok pair =>
                     simp only

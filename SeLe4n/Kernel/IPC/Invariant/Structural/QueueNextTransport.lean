@@ -1780,8 +1780,8 @@ theorem endpointQueuePopHead_preserves_dualQueueSystemInvariant
           | none =>
             simp only [hNext] at hStep
             cases hStoreEp : storeObject endpointId
-                (.endpoint (if isReceiveQ then { ep with receiveQ := {} }
-                 else { ep with sendQ := {} })) st with
+                (.endpoint (if isReceiveQ then (ep.withReceiveQ {})
+                 else (ep.withSendQ {}))) st with
             | error e => simp [hStoreEp] at hStep
             | ok pair =>
               simp only [hStoreEp] at hStep
@@ -1830,8 +1830,8 @@ theorem endpointQueuePopHead_preserves_dualQueueSystemInvariant
                     k e hObjInvEp hSt2 hE
                   rwa [storeObject_objects_ne st pair.2 endpointId k _ hNe hObjInv hStoreEp] at h1
                 have hEpNewA : st3.objects[endpointId]? =
-                    some (.endpoint (if isReceiveQ then { ep with receiveQ := {} }
-                      else { ep with sendQ := {} })) := by
+                    some (.endpoint (if isReceiveQ then (ep.withReceiveQ {})
+                      else (ep.withSendQ {}))) := by
                   rw [storeTcbQueueLinks_preserves_objects_ne pair.2 st3 headTid none none none
                     endpointId hNeEpHead hObjInvEp hSt2]
                   exact storeObject_objects_eq st pair.2 endpointId _ hObjInv hStoreEp
@@ -1885,9 +1885,9 @@ theorem endpointQueuePopHead_preserves_dualQueueSystemInvariant
             -- Steps: storeObject ep → lookupTcb nextTid → storeTcbQueueLinks nextTid → storeTcbQueueLinks headTid (clear)
             cases hStoreEpB : storeObject endpointId
                 (.endpoint (if isReceiveQ then
-                  { ep with receiveQ := ⟨some nextTid, (if isReceiveQ then ep.receiveQ else ep.sendQ).tail⟩ }
+                  (ep.withReceiveQ (⟨some nextTid, (if isReceiveQ then ep.receiveQ else ep.sendQ).tail⟩))
                  else
-                  { ep with sendQ := ⟨some nextTid, (if isReceiveQ then ep.receiveQ else ep.sendQ).tail⟩ })) st with
+                  (ep.withSendQ (⟨some nextTid, (if isReceiveQ then ep.receiveQ else ep.sendQ).tail⟩)))) st with
             | error e => simp [hStoreEpB] at hStep
             | ok pairB =>
               cases hLkN : lookupTcb pairB.2 nextTid with
@@ -2075,7 +2075,7 @@ theorem endpointQueuePopHead_preserves_dualQueueSystemInvariant
                           · -- sendQ = ⟨some nextTid, q.tail⟩ (new queue)
                             simp only [Bool.false_eq_true, ↓reduceIte]
                             exact storeTcbQueueLinks_preserves_iqwf st2 st3 headTid _ _ _ hObjInvSt2B hClH
-                              _ hWfQNewSt2 (hClearOk _ (by simp [hNextNeHeadTid])) (fun _ _ _ => rfl)
+                              _ (by simpa only [Endpoint.sendQ_withReceiveQ, Endpoint.receiveQ_withReceiveQ, Endpoint.sendQ_withSendQ, Endpoint.receiveQ_withSendQ] using hWfQNewSt2) (hClearOk _ (by simp [hNextNeHeadTid])) (fun _ _ _ => rfl)
                           · -- receiveQ unchanged
                             simp only [Bool.false_eq_true, ↓reduceIte]
                             exact storeTcbQueueLinks_preserves_iqwf st2 st3 headTid _ _ _ hObjInvSt2B hClH
@@ -2098,7 +2098,7 @@ theorem endpointQueuePopHead_preserves_dualQueueSystemInvariant
                           · -- receiveQ = ⟨some nextTid, q.tail⟩ (new queue)
                             simp only [↓reduceIte]
                             exact storeTcbQueueLinks_preserves_iqwf st2 st3 headTid _ _ _ hObjInvSt2B hClH
-                              _ hWfQNewSt2 (hClearOk _ (by simp [hNextNeHeadTid])) (fun _ _ _ => rfl)
+                              _ (by simpa only [Endpoint.sendQ_withReceiveQ, Endpoint.receiveQ_withReceiveQ, Endpoint.sendQ_withSendQ, Endpoint.receiveQ_withSendQ] using hWfQNewSt2) (hClearOk _ (by simp [hNextNeHeadTid])) (fun _ _ _ => rfl)
                       · have hObjSt' : st.objects[epId']? = some (.endpoint ep') := by
                           rw [storeObject_objects_ne st pairB.2 endpointId epId' _ hNe hObjInv hStoreEpB] at hObjPB
                           exact hObjPB
@@ -2243,8 +2243,8 @@ theorem endpointQueueEnqueue_preserves_dualQueueSystemInvariant
               simp only [hRQ] at hStep
               -- Store endpoint with new head/tail
               generalize hStoreEp : storeObject endpointId (.endpoint
-                (if isReceiveQ then { ep with receiveQ := { head := some enqueueTid, tail := some enqueueTid } }
-                 else { ep with sendQ := { head := some enqueueTid, tail := some enqueueTid } })) st
+                (if isReceiveQ then (ep.withReceiveQ { head := some enqueueTid, tail := some enqueueTid })
+                 else (ep.withSendQ { head := some enqueueTid, tail := some enqueueTid }))) st
                 = rEp at hStep
               cases rEp with
               | error e => simp at hStep
@@ -2359,8 +2359,8 @@ theorem endpointQueueEnqueue_preserves_dualQueueSystemInvariant
                 -- Store endpoint with new tail
                 generalize hStoreEpB : storeObject endpointId (.endpoint
                   (if isReceiveQ
-                   then { ep with receiveQ := { head := (if isReceiveQ then ep.receiveQ else ep.sendQ).head, tail := some enqueueTid } }
-                   else { ep with sendQ := { head := (if isReceiveQ then ep.receiveQ else ep.sendQ).head, tail := some enqueueTid } })) st
+                   then (ep.withReceiveQ { head := (if isReceiveQ then ep.receiveQ else ep.sendQ).head, tail := some enqueueTid })
+                   else (ep.withSendQ { head := (if isReceiveQ then ep.receiveQ else ep.sendQ).head, tail := some enqueueTid }))) st
                   = rEpB at hStep
                 cases rEpB with
                 | error e => simp at hStep
@@ -2577,14 +2577,14 @@ theorem endpointQueueEnqueue_preserves_dualQueueSystemInvariant
                         have hFH := hFreshTid endpointId ep hObj
                         cases isReceiveQ
                         · simp only [] at hModWf hTFH ⊢
-                          exact ⟨hModWf, hUnmodWfSt3B ep.receiveQ hEpWf.2
+                          exact ⟨by simpa only [Bool.false_eq_true, ↓reduceIte, Endpoint.sendQ_withReceiveQ, Endpoint.receiveQ_withReceiveQ, Endpoint.sendQ_withSendQ, Endpoint.receiveQ_withSendQ] using hModWf, hUnmodWfSt3B ep.receiveQ hEpWf.2
                             (fun tl hTl hOid => by rw [threadId_toObjId_injective hOid] at hTl; exact absurd hTl hTFH)
                             (fun hd hHd hOid => by rw [threadId_toObjId_injective hOid] at hHd; exact absurd hHd hFH.2.2.1)⟩
                         · simp only [] at hModWf hTFH ⊢
                           exact ⟨hUnmodWfSt3B ep.sendQ hEpWf.1
                             (fun tl hTl hOid => by rw [threadId_toObjId_injective hOid] at hTl; exact absurd hTl hTFH)
                             (fun hd hHd hOid => by rw [threadId_toObjId_injective hOid] at hHd; exact absurd hHd hFH.1),
-                            hModWf⟩
+                            by simpa only [Bool.false_eq_true, ↓reduceIte, Endpoint.sendQ_withReceiveQ, Endpoint.receiveQ_withReceiveQ, Endpoint.sendQ_withSendQ, Endpoint.receiveQ_withSendQ] using hModWf⟩
                       · -- Different endpoint
                         have hObjSt : st.objects[epId']? = some (.endpoint ep'F) := by
                           rwa [storeObject_objects_ne st pairB.2 endpointId epId' _ hNeEp hObjInv hStoreEpB] at hObj'1

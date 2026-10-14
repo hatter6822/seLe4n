@@ -1224,7 +1224,7 @@ def endpointQueueRemoveDual
                       match pprev with
                       | .endpointHead =>
                           let q' : IntrusiveQueue := { head := tcb.queueNext, tail := q.tail }
-                          let ep' : Endpoint := if isReceiveQ then { ep with receiveQ := q' } else { ep with sendQ := q' }
+                          let ep' : Endpoint := if isReceiveQ then (ep.withReceiveQ q') else (ep.withSendQ q')
                           match storeObject endpointId (.endpoint ep') st with
                           | .error e => .error e
                           | .ok ((), st1) => .ok st1
@@ -1272,7 +1272,7 @@ def endpointQueueRemoveDual
                           -- factor refuses that state outright, which is what
                           -- retires OD1.3's stated connectivity hypothesis.
                           let q' : IntrusiveQueue := queueRemoveBoundary q tid tcb
-                          let ep' : Endpoint := if isReceiveQ then { ep with receiveQ := q' } else { ep with sendQ := q' }
+                          let ep' : Endpoint := if isReceiveQ then (ep.withReceiveQ q') else (ep.withSendQ q')
                           match storeObject endpointId (.endpoint ep') st2 with
                           | .error e => .error e
                           | .ok ((), st3) =>
@@ -3242,8 +3242,8 @@ theorem endpointQueueEnqueue_then_popHead_succeeds
   -- Step 4: queueNext = none, so q' = {}, single element path
   simp only [hNextNone]
   -- Step 5: storeObject always succeeds
-  -- The ep constructed in popHead: if isReceiveQ then { ep' with receiveQ := {} }
-  --                                 else { ep' with sendQ := {} }
+  -- The ep constructed in popHead: if isReceiveQ then (ep'.withReceiveQ {})
+  --                                 else (ep'.withSendQ {})
   -- storeObject endpointId (.endpoint ...) st' produces some ((), st1)
   have hObjInv' := endpointQueueEnqueue_preserves_objects_invExt endpointId isReceiveQ tid st st' hObjInv hStep
   cases hStoreEp : storeObject endpointId _ st' with

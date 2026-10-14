@@ -643,8 +643,8 @@ to its receive queue. -/
   | .endpoint e =>
       let r := some receiver
       match tail? with
-      | none => .endpoint { e with receiveQ := { e.receiveQ with head := r, tail := r } }
-      | some _ => .endpoint { e with receiveQ := { e.receiveQ with tail := r } }
+      | none => .endpoint (e.withReceiveQ { e.receiveQ with head := r, tail := r })
+      | some _ => .endpoint (e.withReceiveQ { e.receiveQ with tail := r })
   | o => o
 
 /-- WS-ZA ZA4.7: the receiver's queue links after it is appended behind `tail?`.
@@ -758,8 +758,7 @@ theorem receiveEnqueue_inPlace_eq (st : SystemState) (endpointId : SeLe4n.ObjId)
   rw [hMo]
   cases hTail : ep.receiveQ.tail with
   | none =>
-    have hSt : storeObject endpointId (.endpoint { ep with receiveQ :=
-        { head := some receiver, tail := some receiver } }) st = .ok ((), S1) := by
+    have hSt : storeObject endpointId (.endpoint (ep.withReceiveQ { head := some receiver, tail := some receiver })) st = .ok ((), S1) := by
       rw [storeObject_eq_of_leaves (by simpa only [KernelObject.objectType] using hLE), hS1,
         hTail]; rfl
     simp only [hSt]
@@ -782,8 +781,7 @@ theorem receiveEnqueue_inPlace_eq (st : SystemState) (endpointId : SeLe4n.ObjId)
     have hLookP : lookupTcb st p = some pt := by
       simp only [lookupTcb, hRp, Bool.false_eq_true, ↓reduceIte]; exact hTp
     simp only [hLookP]
-    have hSt : storeObject endpointId (.endpoint { ep with receiveQ :=
-        { head := ep.receiveQ.head, tail := some receiver } }) st = .ok ((), S1) := by
+    have hSt : storeObject endpointId (.endpoint (ep.withReceiveQ { head := ep.receiveQ.head, tail := some receiver })) st = .ok ((), S1) := by
       rw [storeObject_eq_of_leaves (by simpa only [KernelObject.objectType] using hLE), hS1,
         hTail]; rfl
     simp only [hSt]

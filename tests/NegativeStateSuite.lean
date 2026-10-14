@@ -212,11 +212,8 @@ private def corruptEndpointQueueHeads
   | some (.endpoint ep) =>
       .ok {
         st with
-        objects := st.objects.insert epId (.endpoint {
-          ep with
-          sendQ := { head := sendHead, tail := sendHead }
-          receiveQ := { head := recvHead, tail := recvHead }
-        })
+        objects := st.objects.insert epId (.endpoint (Endpoint.ofQueues { head := sendHead, tail := sendHead }
+          { head := recvHead, tail := recvHead }))
       }
   | _ => .error .objectNotFound
 
@@ -2210,7 +2207,7 @@ private def runWSH15Checks : IO Unit := do
       (SeLe4n.Slot.ofNat 1, readOnlyCap)
     ]
   }
-  let ep : KernelObject := .endpoint { sendQ := {}, receiveQ := {} }
+  let ep : KernelObject := .endpoint (Endpoint.ofQueues {} {})
   let st : SystemState :=
     (BootstrapBuilder.empty
       |>.withObject cnodeId (.cnode cn)
@@ -3033,7 +3030,7 @@ def runWSL4BlockedThreadChecks : IO Unit := do
 
   let blockedState : SystemState :=
     (BootstrapBuilder.empty
-      |>.withObject epId (.endpoint { sendQ := {}, receiveQ := {} })
+      |>.withObject epId (.endpoint (Endpoint.ofQueues {} {}))
       |>.withObject ntfnId (.notification { state := .idle, hasPendingBadge := false, pendingWord := SeLe4n.Badge.zero })
       |>.withObject ⟨7⟩ (.tcb {
         tid := ⟨7⟩, priority := ⟨10⟩, domain := ⟨0⟩,
@@ -3080,14 +3077,14 @@ def runWSL4BlockedThreadChecks : IO Unit := do
   -- which checks ipcState ≠ .ready and rejects with alreadyWaiting
   let epId2 : SeLe4n.ObjId := ⟨41⟩
   let stRecvBlockedWithEp2 : SystemState := { stRecvBlocked with
-    objects := stRecvBlocked.objects.insert epId2 (.endpoint { sendQ := {}, receiveQ := {} }) }
+    objects := stRecvBlocked.objects.insert epId2 (.endpoint (Endpoint.ofQueues {} {})) }
   expectErr "blocked-on-receive rejects send to different endpoint"
     (SeLe4n.Kernel.endpointSendDual epId2 tid7 .empty stRecvBlockedWithEp2)
     .alreadyWaiting
 
   -- Cross-type: blocked on send → receive from DIFFERENT endpoint rejected
   let stSendBlockedWithEp2 : SystemState := { stSendBlocked with
-    objects := stSendBlocked.objects.insert epId2 (.endpoint { sendQ := {}, receiveQ := {} }) }
+    objects := stSendBlocked.objects.insert epId2 (.endpoint (Endpoint.ofQueues {} {})) }
   expectErr "blocked-on-send rejects receive from different endpoint"
     (SeLe4n.Kernel.endpointReceiveDual epId2 tid7 none stSendBlockedWithEp2)
     .alreadyWaiting

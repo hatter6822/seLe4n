@@ -360,7 +360,7 @@ def endpointQueuePopHead
                 match next with
                 | some nextTid => { head := some nextTid, tail := q.tail }
                 | none => {}
-              let ep' : Endpoint := if isReceiveQ then { ep with receiveQ := q' } else { ep with sendQ := q' }
+              let ep' : Endpoint := if isReceiveQ then (ep.withReceiveQ q') else (ep.withSendQ q')
               match storeObject endpointId (.endpoint ep') st with
               | .error e => .error e
               | .ok ((), st1) =>
@@ -479,7 +479,7 @@ def endpointQueueEnqueue
             match q.tail with
             | none =>
                 let q' : IntrusiveQueue := { head := some tid, tail := some tid }
-                let ep' : Endpoint := if isReceiveQ then { ep with receiveQ := q' } else { ep with sendQ := q' }
+                let ep' : Endpoint := if isReceiveQ then (ep.withReceiveQ q') else (ep.withSendQ q')
                 match storeObject endpointId (.endpoint ep') st with
                 | .error e => .error e
                 | .ok ((), st1) => storeTcbQueueLinks st1 tid none (some .endpointHead) none
@@ -488,7 +488,7 @@ def endpointQueueEnqueue
                 | none => .error .objectNotFound
                 | some tailTcb =>
                     let q' : IntrusiveQueue := { head := q.head, tail := some tid }
-                    let ep' : Endpoint := if isReceiveQ then { ep with receiveQ := q' } else { ep with sendQ := q' }
+                    let ep' : Endpoint := if isReceiveQ then (ep.withReceiveQ q') else (ep.withSendQ q')
                     match storeObject endpointId (.endpoint ep') st with
                     | .error e => .error e
                     | .ok ((), st1) =>
@@ -956,7 +956,7 @@ def endpointQueueRemove
       -- not: its tail was inferred from the removed thread's `queuePPrev`, which
       -- needs a connectivity fact the bundle does not carry.  See the definition.
       let q' : IntrusiveQueue := queueRemoveBoundary q tid tcb
-      let ep' := if isReceiveQ then { ep with receiveQ := q' } else { ep with sendQ := q' }
+      let ep' := if isReceiveQ then (ep.withReceiveQ q') else (ep.withSendQ q')
       let objs := objs.insert endpointId (.endpoint ep')
       -- Step 4: Clear removed thread's queue links.  WS-RR RR8.4: spelled through
       -- `tcbWithQueueLinks`, the record update the dual removal's own clear goes
