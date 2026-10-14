@@ -8,6 +8,7 @@
 -/
 
 import SeLe4n.Kernel.RefusalCarryingDispatch
+import SeLe4n.Kernel.IPC.CrossCore.EndpointCallInPlace
 
 /-!
 # The endpoint syscalls, refusing in the state they were refused in
@@ -207,9 +208,9 @@ theorem dispatchSendCheckedR_eq (ctx : LabelingContext)
   exact hArm
 
 /-- The checked call arm (`dispatchWithCapChecked`'s `.call` case) for a
-message with no capabilities to transfer, refusing in the state it was handed
-(`endpointCallCheckedArmR_eq`). -/
-@[inline] def endpointCallCheckedArmR (ctx : LabelingContext) (body : Array SeLe4n.RegValue)
+message with no capabilities to transfer, through the specification's dispatch,
+refusing in the state it was handed. -/
+def endpointCallCheckedArmGeneralR (ctx : LabelingContext) (body : Array SeLe4n.RegValue)
     (tid : SeLe4n.ThreadId) (executingCore : Concurrency.CoreId) (cap : Capability) :
     RefusalCarrying Unit :=
   fun st =>
@@ -225,6 +226,82 @@ message with no capabilities to transfer, refusing in the state it was handed
         | (_, .error e) => .error (e, st)
     | _ => .error (.invalidCapability, st)
 
+/-- The checked call arm (`dispatchWithCapChecked`'s `.call` case) for a
+message with no capabilities to transfer, refusing in the state it was handed
+(`endpointCallCheckedArmR_eq`).  WS-ZA ZA4.7: a rendezvous whose checks all
+pass before any write (`callWakesInPlace`, the seL4 decode/perform split) writes
+in place on a state nothing else holds (`performCallRendezvous`,
+`callDispatchChecked_inPlace`); any other call takes the general arm. -/
+@[inline] def endpointCallCheckedArmR (ctx : LabelingContext) (body : Array SeLe4n.RegValue)
+    (tid : SeLe4n.ThreadId) (executingCore : Concurrency.CoreId) (cap : Capability) :
+    RefusalCarrying Unit :=
+  fun st =>
+    match cap.target with
+    | .object epId =>
+        match st.objects[epId]? with
+        | some (.endpoint ep) =>
+            match ep.receiveQ.head with
+            | some r =>
+                match st.objects[r.toObjId]? with
+                | some (.tcb rt) =>
+                    match rt.pendingReceiveReply with
+                    | some rid =>
+                        if !decide (body.size > maxMessageRegisters) &&
+                            endpointFlowGate ctx epId (ctx.threadLabelOf tid)
+                              (ctx.endpointLabelOf epId) &&
+                            callWakesInPlace st epId tid r rt rid then
+                          .ok ((), Architecture.stageWokenDelivery
+                            (performCallRendezvous st epId tid r rt.queueNext rid
+                              { registers := body, caps := #[], badge := cap.badge,
+                                capsGranted := cap.rights.mem .grant } executingCore)
+                            (some r) 0)
+                        else endpointCallCheckedArmGeneralR ctx body tid executingCore cap st
+                    | none => endpointCallCheckedArmGeneralR ctx body tid executingCore cap st
+                | _ => endpointCallCheckedArmGeneralR ctx body tid executingCore cap st
+            | none => endpointCallCheckedArmGeneralR ctx body tid executingCore cap st
+        | _ => endpointCallCheckedArmGeneralR ctx body tid executingCore cap st
+    | _ => .error (.invalidCapability, st)
+
+theorem endpointCallCheckedArmR_eq_general (ctx : LabelingContext)
+    (body : Array SeLe4n.RegValue) (tid : SeLe4n.ThreadId)
+    (executingCore : Concurrency.CoreId) (cap : Capability) :
+    endpointCallCheckedArmR ctx body tid executingCore cap =
+      endpointCallCheckedArmGeneralR ctx body tid executingCore cap := by
+  funext st
+  unfold endpointCallCheckedArmR
+  split
+  · next epId hTgt =>
+    split
+    · next ep hE =>
+      split
+      · next r hH =>
+        split
+        · next rt hT =>
+          split
+          · next rid hRid =>
+            split
+            · next hG =>
+              simp only [Bool.and_eq_true, Bool.not_eq_true', decide_eq_false_iff_not] at hG
+              obtain ⟨⟨hSz, hFlow⟩, hW⟩ := hG
+              obtain ⟨sgi, hD⟩ := callDispatchChecked_inPlace ctx st epId ep tid r rt rid
+                { registers := body, caps := #[], badge := cap.badge,
+                  capsGranted := cap.rights.mem .grant } cap.rights (SeLe4n.Slot.ofNat 0)
+                executingCore rfl rfl hSz hE hH hT hRid hW hFlow
+              have hEp : st.getEndpoint? epId = some ep :=
+                (SystemState.getEndpoint?_eq_some_iff _ _ _).mpr hE
+              simp only [endpointCallCheckedArmGeneralR, hTgt, hEp, Option.bind_some, hH, hD]
+              rfl
+            · rfl
+          · rfl
+        · rfl
+      · rfl
+    · rfl
+  · next hTgt =>
+    unfold endpointCallCheckedArmGeneralR
+    split
+    · next epId h => exact absurd h (hTgt epId)
+    · rfl
+
 theorem endpointCallCheckedArmR_eq (ctx : LabelingContext)
     (decoded : SyscallDecodeResult) (tid : SeLe4n.ThreadId)
     (executingCore : Concurrency.CoreId) (gate : SyscallGate) (cap : Capability)
@@ -236,8 +313,9 @@ theorem endpointCallCheckedArmR_eq (ctx : LabelingContext)
     endpointCallCheckedArmR ctx body tid executingCore cap =
       RefusalCarrying.ofKernel (dispatchWithCapChecked ctx decoded tid executingCore gate cap) := by
   subst hBody
+  rw [endpointCallCheckedArmR_eq_general]
   funext st
-  simp only [endpointCallCheckedArmR, RefusalCarrying.ofKernel, dispatchWithCapChecked,
+  simp only [endpointCallCheckedArmGeneralR, RefusalCarrying.ofKernel, dispatchWithCapChecked,
     dispatchCapabilityOnly, hCall, hCaps, hSlot, resolveExtraCaps_empty]
   cases cap.target with
   | object epId =>
