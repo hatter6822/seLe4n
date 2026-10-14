@@ -1300,9 +1300,14 @@ CBS replenishment of `scId` should make runnable.
 
 Returns `some tid` exactly when the SchedContext was **exhausted before the
 refill** (`stPre`'s `budgetRemaining = 0`) **and is positive after** (`refilled`'s
-`budgetRemaining > 0`) **and is bound** to `tid` — i.e. the thread genuinely
-transitioned from budget-starved to runnable.  A no-op refill (already-positive
-budget) or an unbound SC yields `none` (no wake).  Factored out of
+`budgetRemaining > 0`) **and is bound** to `tid` **and `tid` is runnable**
+(`TCB.isRunnable`) — i.e. the thread genuinely transitioned from budget-starved
+to runnable.  A no-op refill (already-positive budget) or an unbound SC yields
+`none` (no wake), and so does a bound thread blocked in IPC or suspended: its
+context gets its budget back, but the thread stays where it is, as in seL4, whose
+release queue holds only runnable threads.  The wake writes the thread's IPC
+state to `.ready`, so waking a blocked thread would detach it from the endpoint
+queue that still links it, and waking a suspended one would run it.  Factored out of
 `processOneReplenishmentOnCore` so the latter's state result is cleanly either the
 refilled state or a `wakeThread` on top of it.  AK7-clean (typed
 `getSchedContext?`). -/
@@ -1312,7 +1317,10 @@ def replenishWakeTarget (stPre refilled : SystemState)
     | some sc => sc.budgetRemaining.isZero
     | none    => false
   match refilled.getSchedContext? scId with
-  | some sc => if wasExhausted && sc.budgetRemaining.isPositive then sc.boundThread else none
+  | some sc =>
+    if wasExhausted && sc.budgetRemaining.isPositive then
+      sc.boundThread.filter fun t => (refilled.getTcb? t).any TCB.isRunnable
+    else none
   | none    => none
 
 /-- WS-SM SM5.D.4 (cross-core CBS replenish wakes remote): process **one** due
@@ -2016,7 +2024,9 @@ theorem threadQueuedOnSomeCore_eq_runnableOnSomeCore
 /-- V8-G3: Infer the `ThreadState` for a thread based on observable system state.
 This is the canonical definition of what each `ThreadState` value means:
 - `Running`: thread is the current thread of some core
-- `Ready`: thread is in some core's run queue
+- `Ready`: thread is in some core's run queue, or is an idle thread its core is
+  not running: an idle thread is never queued (seL4 never enqueues it) and is
+  always ready, the thread its core falls back to when its queue is empty
 - `BlockedSend`/`BlockedRecv`/`BlockedCall`/`BlockedReply`/`BlockedNotif`: matches `ipcState`
 - `Inactive`: none of the above (ipcState.ready but not queued/current)
 
@@ -2025,10 +2035,10 @@ tests above read `currentOnCore bootCoreId` / `runQueueOnCore bootCoreId`, so a
 thread running on a secondary core classified `.Inactive`: its own core's current
 slot pointed at it, but no boot-core slot did.  That is register §7 finding 42,
 and it stops being latent the moment the boot path installs per-core idle
-threads — the boot state queues each core's idle thread as `queuedIdleThread`
+threads — the boot state stores each core's idle thread as `readyIdleThread`
 (`.Ready`; before the PR #889 review round it stored the dispatched
-`createIdleThread` form, `.Running`), so under the boot-core tests core 1's idle
-TCB would be re-inferred `.Inactive`, `threadStateConsistent` would be false of
+`createIdleThread` form, `.Running`), so a classification that missed it would
+re-infer core 1's idle TCB `.Inactive`, `threadStateConsistent` would be false of
 the boot state, and `assertStateInvariantsFor` (which syncs before it checks)
 would *rewrite the field* rather than report the mismatch.  RR5.13/RR5.14 make
 that boot state the production one, which is why this lift lands first.
@@ -2041,6 +2051,7 @@ shape of every pre-RR5.14 boot state — `threadRunningOnSomeCore` and
 def inferThreadState (st : SystemState) (tid : SeLe4n.ThreadId) (tcb : TCB) : ThreadState :=
   if threadRunningOnSomeCore st tid then .Running
   else if threadQueuedOnSomeCore st tid then .Ready
+  else if isIdleThreadId tid then .Ready
   else match tcb.ipcState with
   | .blockedOnSend _ => .BlockedSend
   | .blockedOnReceive _ => .BlockedRecv
@@ -2193,6 +2204,7 @@ theorem inferThreadState_eq_bootCore_of_secondaries_quiescent
     inferThreadState st tid tcb =
       (if (st.scheduler.currentOnCore bootCoreId) == some tid then .Running
        else if st.queuedOn bootCoreId tid then .Ready
+       else if isIdleThreadId tid then .Ready
        else match tcb.ipcState with
          | .blockedOnSend _ => .BlockedSend
          | .blockedOnReceive _ => .BlockedRecv
@@ -2227,11 +2239,13 @@ def threadPlacedOnSomeCore (st : SystemState) (tid : SeLe4n.ThreadId) : Bool :=
 theorem inferThreadState_eq_inactive_iff (st : SystemState) (tid : SeLe4n.ThreadId)
     (tcb : TCB) :
     inferThreadState st tid tcb = .Inactive ↔
-      (threadPlacedOnSomeCore st tid = false ∧ tcb.ipcState = .ready) := by
+      (threadPlacedOnSomeCore st tid = false ∧ isIdleThreadId tid = false ∧
+        tcb.ipcState = .ready) := by
   unfold inferThreadState threadPlacedOnSomeCore
   cases hRun : threadRunningOnSomeCore st tid <;>
     cases hQ : threadQueuedOnSomeCore st tid <;>
-      cases hIpc : tcb.ipcState <;> simp
+      cases hI : isIdleThreadId tid <;>
+        cases hIpc : tcb.ipcState <;> simp
 
 
 theorem threadInactiveFlagConsistent_of_frame (st st' : SystemState)
@@ -2253,7 +2267,7 @@ theorem threadInactiveFlagConsistent_of_frame_placing (st st' : SystemState)
     (hTcb : ∀ (oid : SeLe4n.ObjId) (tcb' : TCB), st'.objects[oid]? = some (.tcb tcb') →
       ∃ tcb, st.objects[oid]? = some (.tcb tcb) ∧
         tcb'.threadState = tcb.threadState ∧ tcb'.ipcState = tcb.ipcState)
-    (hOthers : ∀ tid, tid ≠ moved →
+    (hOthers : ∀ tid, tid ≠ moved → isIdleThreadId tid = false →
       threadPlacedOnSomeCore st' tid = threadPlacedOnSomeCore st tid)
     (hMovedNow : threadPlacedOnSomeCore st' moved = true)
     (hMovedActive : ∀ tcb, st.getTcb? moved = some tcb →
@@ -2273,9 +2287,12 @@ theorem threadInactiveFlagConsistent_of_frame_placing (st st' : SystemState)
     · intro hInf
       rw [inferThreadState_eq_inactive_iff, hMovedNow] at hInf
       exact absurd hInf.1 (by simp)
-  · rw [hState, inferThreadState_eq_inactive_iff, hIpc, hOthers _ hEq,
-      ← inferThreadState_eq_inactive_iff]
-    exact h oid tcb hPre
+  · have hOld := h oid tcb hPre
+    rw [inferThreadState_eq_inactive_iff] at hOld
+    rw [hState, inferThreadState_eq_inactive_iff, hIpc]
+    cases hI : isIdleThreadId ⟨oid.toNat⟩
+    · rw [hOthers _ hEq hI]; rw [hI] at hOld; exact hOld
+    · simpa [hI] using hOld
 
 
 /-- **WS-RR RR8.12 (Cut 4)**: placement is a question about `u`'s **own** slots,
@@ -2531,8 +2548,8 @@ somewhere, and `hActive` that the dispatched thread is not one the state
 classifies `.Inactive`. -/
 theorem threadInactiveFlagConsistent_dispatch (st : SystemState) (c : CoreId)
     (tid : SeLe4n.ThreadId)
-    (hOutgoing : ∀ u, u ≠ tid → st.scheduler.currentOnCore c = some u →
-      threadQueuedOnSomeCore st u = true)
+    (hOutgoing : ∀ u, u ≠ tid → isIdleThreadId u = false →
+      st.scheduler.currentOnCore c = some u → threadQueuedOnSomeCore st u = true)
     (hActive : ∀ tcb, st.getTcb? tid = some tcb →
       inferThreadState st tid tcb ≠ .Inactive)
     (h : threadInactiveFlagConsistent st) :
@@ -2544,7 +2561,7 @@ theorem threadInactiveFlagConsistent_dispatch (st : SystemState) (c : CoreId)
       let ⟨t0, h0, hE⟩ := (SystemState.runRemoveOnCore_objectsAgreeOffRunLinks st c tid).get_tcb' hObj
       ⟨t0, h0, TCB.proj_eq_of_withoutRunLinks_eq TCB.threadState hE,
         TCB.proj_eq_of_withoutRunLinks_eq TCB.ipcState hE⟩)
-    (fun u hu => threadPlacedOnSomeCore_dispatch_ne st c tid u hu (hOutgoing u hu))
+    (fun u hu hI => threadPlacedOnSomeCore_dispatch_ne st c tid u hu (hOutgoing u hu hI))
     (threadPlacedOnSomeCore_dispatch_self st c tid) hActive h
 
 
@@ -2612,7 +2629,7 @@ already name. -/
 theorem preemptCurrentOnCore_outgoing_queued (st : SystemState) (c : CoreId)
     (tid u : SeLe4n.ThreadId) (hObjInv : st.objects.invExt)
     (hu : u ≠ tid) (hCur : st.scheduler.currentOnCore c = some u)
-    (hTcb : (st.getTcb? u).isSome) :
+    (hTcb : (st.getTcb? u).isSome) (hI : isIdleThreadId u = false) :
     threadQueuedOnSomeCore (preemptCurrentOnCore st c tid) u = true := by
   obtain ⟨prevTcb, hPrev⟩ := Option.isSome_iff_exists.mp hTcb
   rw [threadQueuedOnSomeCore_eq_true_iff]
@@ -2621,7 +2638,7 @@ theorem preemptCurrentOnCore_outgoing_queued (st : SystemState) (c : CoreId)
   dsimp only
   rw [if_neg (by simpa using hu), SystemState.getTcbWitnessed?_eq_some hPrev]
   dsimp only
-  refine SystemState.runEnqueueOnCore_queuedOn_somewhere _ ?_
+  refine SystemState.runEnqueueOnCore_queuedOn_somewhere _ ?_ hI
   rw [SystemState.rewriteObject_tcb_getTcb?_self _ _ _ _ hObjInv]; rfl
 
 /-- **WS-RR RR7.36**: the per-core context switch preserves the inactive-flag
@@ -2659,13 +2676,13 @@ theorem switchToThreadOnCore_preserves_threadInactiveFlagConsistent
       -- The preempt carries the relation, and the dispatch step is applied to it.
       have hP : threadInactiveFlagConsistent (preemptCurrentOnCore st c tid) :=
         preemptCurrentOnCore_preserves_threadInactiveFlagConsistent st c tid hObjInv h
-      have hOutgoing : ∀ u, u ≠ tid →
+      have hOutgoing : ∀ u, u ≠ tid → isIdleThreadId u = false →
           (preemptCurrentOnCore st c tid).scheduler.currentOnCore c = some u →
           threadQueuedOnSomeCore (preemptCurrentOnCore st c tid) u = true := by
-        intro u hu hCurP
+        intro u hu hI hCurP
         rw [preemptCurrentOnCore_currentOnCore] at hCurP
         exact preemptCurrentOnCore_outgoing_queued st c tid u hObjInv hu hCurP
-          (hCurrentValid u hCurP)
+          (hCurrentValid u hCurP) hI
       have hActiveP : ∀ tcb, (preemptCurrentOnCore st c tid).getTcb? tid = some tcb →
           inferThreadState (preemptCurrentOnCore st c tid) tid tcb ≠ .Inactive := by
         intro tcb hGet hInactive
@@ -2772,10 +2789,11 @@ inactive-flag preservation, narrowed from *every thread current on `c`* to the
 one thread this frame is about — which is all a per-thread frame can need.
 `preemptCurrentOnCore` re-enqueues the outgoing thread only when its TCB
 resolves — its `none` arm is the identity — and the `setCurrentOnCore` that
-follows then displaces it with nothing to fall back to. -/
+follows then displaces it with nothing to fall back to.  An idle thread is the
+exception by design: the switch leaves it off every queue, as seL4 does. -/
 theorem switchToThreadOnCore_preserves_threadPlacedOnSomeCore
     (st st' : SystemState) (c : CoreId) (tid u : SeLe4n.ThreadId)
-    (hTcb : (st.getTcb? u).isSome)
+    (hTcb : (st.getTcb? u).isSome) (hI : isIdleThreadId u = false)
     (hObjInv : st.objects.invExt)
     (hStep : switchToThreadOnCore st c tid = .ok st')
     (h : threadPlacedOnSomeCore st u = true) :
@@ -2789,7 +2807,7 @@ theorem switchToThreadOnCore_preserves_threadPlacedOnSomeCore
     · exact h
     · intro hCurP
       rw [preemptCurrentOnCore_currentOnCore] at hCurP
-      exact preemptCurrentOnCore_outgoing_queued st c tid u hObjInv hu hCurP hTcb
+      exact preemptCurrentOnCore_outgoing_queued st c tid u hObjInv hu hCurP hTcb hI
 
 /-- **`v0.35.158`**: the other direction — a context switch keeps an
 **unplaced** thread unplaced, given it is not the thread being dispatched.

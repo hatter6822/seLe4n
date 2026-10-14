@@ -371,11 +371,12 @@ theorem endpointReplyCrossCoreDispatch_confinedToCores (replier target : SeLe4n.
 -- `schedLockSet_replyTransferOnCore` (`IPC/CrossCore/Fault.lean` §6) declares.
 --
 -- **What the extra core costs, measured rather than assumed.**  The abandon's
--- deschedule names `determineTargetCore st' faulted`, read at the dispatch's
--- post-state, and every arm on which the dispatch succeeds opens its write set
--- with `[determineTargetCore st target]`, read at the pre-state — and no step of
--- the dispatch writes a `cpuAffinity`.  So on this tree the appended core is a
--- **duplicate** of one the dispatch already names, which
+-- deschedule names `faultAbandonCore st' faulted`, read at the dispatch's
+-- post-state: the core the dispatch's wake placed the faulted thread on, which
+-- is `determineTargetCore` of it — and every arm on which the dispatch succeeds
+-- opens its write set with `[determineTargetCore st target]`, read at the
+-- pre-state, and no step of the dispatch writes a `cpuAffinity`.  So on this
+-- tree the appended core is a **duplicate** of one the dispatch already names, which
 -- `tests/FaultHandlingSuite.lean` §7c measures directly (the dispatch's set opens
 -- with `c0`, and the abandon's is that set `++ [c0]`).  The arm's write set is
 -- derived from the arm's own structure all the same, because a declaration
@@ -415,8 +416,8 @@ theorem faultAbandonOnCore_confinedToCores (st : SystemState) (tid : SeLe4n.Thre
         (faultAbandonOnCore_machine_eq st tid cc)))
 
 /-- **Cut C6d**: the decoded outcome writes exactly the cores
-`faultReplyApplyCores` names — none on a restart, the faulted thread's own home
-core on an abandon.  The two arms are the definition's own two arms, so the
+`faultReplyApplyCores` names — none on a restart, the core the faulted thread is
+placed on on an abandon.  The two arms are the definition's own two arms, so the
 write set and the transition cannot disagree about which branch names a core. -/
 theorem faultReplyApplyOnCore_confinedToCores (st : SystemState)
     (faulted : SeLe4n.ThreadId) (outcome : Architecture.FaultReplyOutcome) :
@@ -426,7 +427,7 @@ theorem faultReplyApplyOnCore_confinedToCores (st : SystemState)
   cases outcome with
   | restart frame => exact applyFaultRestart_confinedToCores st faulted frame
   | abandon =>
-    exact faultAbandonOnCore_confinedToCores st faulted (determineTargetCore st faulted)
+    exact faultAbandonOnCore_confinedToCores st faulted (faultAbandonCore st faulted)
 
 /-- **Cut C6d**: the fault reply writes no core outside `faultReplyWriteSet` —
 the dispatch's own set at the empty message, then the outcome's, read at the

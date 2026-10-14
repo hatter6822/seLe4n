@@ -408,7 +408,7 @@ def PlatformBinding.bootCoreModelId [PlatformBinding platform] :
       (PlatformBinding.coreCountLe (platform := platform))⟩
 
 /-- PR #889 review round 5: the boot core is a declared core — so the checked
-    platform boot enqueues an idle thread on it. -/
+    platform boot stores an idle thread for it. -/
 theorem PlatformBinding.bootCoreModelId_mem_declaredCores [PlatformBinding platform] :
     PlatformBinding.bootCoreModelId (platform := platform) ∈
       PlatformBinding.declaredCores (platform := platform) :=

@@ -479,6 +479,25 @@ theorem runRemoveOnCore_objectsAgreeOffRunLinks (st : SystemState) (c : CoreId)
   · exact .congr h rfl (runUnlinkLinks_objectsAgreeOffRunLinks _ _ _ _ _ _)
   · exact .of_objects_eq h
 
+/-- A step that writes only run-queue links keeps the state fields. -/
+theorem StateMono.of_agreeOffRunLinks {st st' : SystemState} (h : objectsAgreeOffRunLinks st' st) :
+    StateMono st st' :=
+  StateMono.of_stateFields fun t =>
+    TCB.map_proj_eq_of_map_withoutRunLinks_eq (fun x => (x.ipcState, x.threadState)) (h.getTcb? t)
+
+theorem RunQueueStage.runRemoveOnCore (st : SystemState) (c : CoreId) (t : SeLe4n.ThreadId) :
+    RunQueueStage st (st.runRemoveOnCore c t) :=
+  RunQueueStage.of_link (fun h r => ⟨runRemoveOnCore_objects_invExt st c t h, runRemoveOnCore_refined r⟩)
+    (fun c' y h' => by
+      rw [SchedulerState.currentOnCore, runRemoveOnCore_current] at h'
+      exact h')
+    (fun c' y h' => by
+      rw [runRemoveOnCore_queuedOn] at h'; split at h'
+      · cases h'
+      · exact h')
+    (StateMono.of_agreeOffRunLinks (runRemoveOnCore_objectsAgreeOffRunLinks st c t))
+
+
 -- ============================================================================
 -- Only the object store and the scheduler change
 -- ============================================================================
@@ -1054,27 +1073,183 @@ theorem runQueueRefined.not_contains_of_queued {st : SystemState} (hR : st.runQu
 /-- Re-keying a thread its core's links queue keeps the agreement. -/
 theorem RunQueueStage.runRequeueOnCore (st : SystemState) (c : CoreId) (t : SeLe4n.ThreadId)
     (p : SeLe4n.Priority) (hq : (st.runLinkOn c t).queued = true) :
-    RunQueueStage st (st.runRequeueOnCore c t p) := fun hInv hR =>
-  ⟨runRequeueOnCore_objects_invExt st c t p hInv, by
-    obtain ⟨tcb, hT, -⟩ := (runLinkOn_queued_iff st c t).mp hq
-    have hc : (st.scheduler.runQueueOnCore c).contains t = true := by
-      rw [← (hR c).contains]; exact hq
-    have hEq : st.runRequeueOnCore c t p = (st.runRemoveOnCore c t).runEnqueueAdmitted c t p := by
-      unfold SystemState.runRequeueOnCore; dsimp only
-      rw [RunQueue.rekey, if_pos hc, ← runRemoveOnCore_runQueueOnCore_self,
-        ← runEnqueueAdmitted_runQueueOnCore_self, SchedulerState.setRunQueueOnCore_runQueueOnCore]
-    rw [hEq]
-    refine runEnqueueAdmitted_refined (runRemoveOnCore_refined hR) ?_ ?_
-    · rw [runRemoveOnCore_getTcb?_isSome, hT]; rfl
-    · intro c' hne
-      rw [runRemoveOnCore_runQueueOnCore_ne st c c' t (Ne.symm hne)]
-      exact hR.not_contains_of_queued hq hne⟩
+    RunQueueStage st (st.runRequeueOnCore c t p) := by
+  refine RunQueueStage.of_link ?_
+    (fun c' y h' => by
+      simpa only [runRequeueOnCore_scheduler, SchedulerState.setRunQueueOnCore_currentOnCore,
+        SchedulerState.setRunQueueEndsOnCore_currentOnCore] using h')
+    (fun c' y h' => by
+      rwa [runRequeueOnCore_queuedOn_of_queued p
+        ((queuedOn_eq_runLinkOn st c t).trans hq)] at h')
+    (StateMono.of_agreeOffRunLinks (runRequeueOnCore_objectsAgreeOffRunLinks st c t p))
+  intro hInv hR
+  refine ⟨runRequeueOnCore_objects_invExt st c t p hInv, ?_⟩
+  obtain ⟨tcb, hT, -⟩ := (runLinkOn_queued_iff st c t).mp hq
+  have hc : (st.scheduler.runQueueOnCore c).contains t = true := by
+    rw [← (hR c).contains]; exact hq
+  have hEq : st.runRequeueOnCore c t p = (st.runRemoveOnCore c t).runEnqueueAdmitted c t p := by
+    unfold SystemState.runRequeueOnCore; dsimp only
+    rw [RunQueue.rekey, if_pos hc, ← runRemoveOnCore_runQueueOnCore_self,
+      ← runEnqueueAdmitted_runQueueOnCore_self, SchedulerState.setRunQueueOnCore_runQueueOnCore]
+  rw [hEq]
+  refine runEnqueueAdmitted_refined (runRemoveOnCore_refined hR) ?_ ?_
+  · rw [runRemoveOnCore_getTcb?_isSome, hT]; rfl
+  · intro c' hne
+    rw [runRemoveOnCore_runQueueOnCore_ne st c c' t (Ne.symm hne)]
+    exact hR.not_contains_of_queued hq hne
 
 /-- Taking a thread off a core keeps the agreement: the dequeue is one, and the
 `current` slot and the reschedule flag are not read by it. -/
 theorem RunQueueStage.runDescheduleOnCore (st : SystemState) (c : CoreId)
     (t : SeLe4n.ThreadId) : RunQueueStage st (st.runDescheduleOnCore c t) :=
-  (RunQueueStage.runRemoveOnCore st c t).trans (RunQueueStage.of_frame rfl rfl rfl)
+  (RunQueueStage.runRemoveOnCore st c t).trans (RunQueueStage.of_frame_vacate rfl rfl rfl
+    (fun c' y h' => by
+      unfold SystemState.runDescheduleOnCore at h'; dsimp only at h'
+      simp only [SchedulerState.markReschedulePendingOnCoreIf_currentOnCore] at h'
+      by_cases hc : c' = c
+      · subst hc
+        rw [SchedulerState.setCurrentOnCore_currentOnCore_self] at h'
+        split at h'
+        · cases h'
+        · simpa only [SchedulerState.currentOnCore, runRemoveOnCore_current] using h'
+      · rwa [SchedulerState.setCurrentOnCore_currentOnCore_ne _ _ _ _ (Ne.symm hc)] at h'))
+
+theorem runEnqueueOnCore_current (st : SystemState) (c : CoreId) (t : SeLe4n.ThreadId)
+    (p : SeLe4n.Priority) : (st.runEnqueueOnCore c t p).scheduler.current = st.scheduler.current := by
+  unfold runEnqueueOnCore runEnqueueAdmitted runAppendOnCore
+  split
+  · dsimp only; split <;>
+      simp [runAppendLinks_scheduler, SchedulerState.setRunQueueOnCore,
+        SchedulerState.setRunQueueEndsOnCore]
+  · rfl
+
+/-- The guarded enqueue keeps the link agreement whichever thread it places. -/
+theorem RunQueueLinkStage.runEnqueueOnCore (st : SystemState) (c : CoreId) (t : SeLe4n.ThreadId)
+    (p : SeLe4n.Priority) : RunQueueLinkStage st (st.runEnqueueOnCore c t p) :=
+  fun h r => ⟨runEnqueueOnCore_objects_invExt st c t p h, runEnqueueOnCore_refined r⟩
+
+/-- The guarded enqueue of a runnable thread current on no core is a stage:
+every current thread stays off the queues, and every queued one is runnable. -/
+theorem RunQueueStage.runEnqueueOnCore (st : SystemState) (c : CoreId) (t : SeLe4n.ThreadId)
+    (p : SeLe4n.Priority) (hNC : ∀ c', st.scheduler.currentOnCore c' ≠ some t)
+    (hRun : st.runnable t) :
+    RunQueueStage st (st.runEnqueueOnCore c t p) :=
+  RunQueueStage.of_link' (RunQueueLinkStage.runEnqueueOnCore st c t p)
+    (fun c' y h' => by rwa [SchedulerState.currentOnCore, runEnqueueOnCore_current] at h')
+    (fun c' y hy c'' h' => by
+      rw [runEnqueueOnCore_queuedOn, if_neg (fun h => hNC _ (h.1 ▸ hy))] at h'
+      exact h')
+    (fun y hy c'' h' => by
+      rw [runEnqueueOnCore_queuedOn] at h'
+      split at h'
+      · rename_i h; obtain ⟨rfl, hA⟩ := h
+        rw [runEnqueueAdmits_not_idle hA] at hy; cases hy
+      · exact h')
+    (fun c' y h' => by
+      rw [runEnqueueOnCore_queuedOn] at h'
+      split at h'
+      · rename_i h; obtain ⟨rfl, -⟩ := h
+        exact .inr ((StateMono.of_agreeOffRunLinks
+          (runEnqueueOnCore_objectsAgreeOffRunLinks st c y p) y).1 hRun)
+      · exact .inl h')
+    (StateMono.of_agreeOffRunLinks (runEnqueueOnCore_objectsAgreeOffRunLinks st c t p))
+
+/-- A stage, then the enqueue of a thread runnable before it and current nowhere
+after it: the stage keeps the thread runnable. -/
+theorem RunQueueStage.then_enqueue {st s : SystemState} {c : CoreId} {t : SeLe4n.ThreadId}
+    {p : SeLe4n.Priority} (h1 : RunQueueStage st s)
+    (hNC : ∀ c', s.scheduler.currentOnCore c' ≠ some t) (hRun : st.runnable t) :
+    RunQueueStage st (s.runEnqueueOnCore c t p) :=
+  ⟨h1.1.trans (RunQueueLinkStage.runEnqueueOnCore s c t p), fun e h r r'' d =>
+    let ⟨h', r'⟩ := h1.1 h r
+    (RunQueueStage.runEnqueueOnCore s c t p hNC ((h1.2.2 h r).runnable hRun)).2.1 e h' r' r''
+      (h1.2.1 e h r r' d),
+    fun h r =>
+      let ⟨h', r'⟩ := h1.1 h r
+      (h1.2.2 h r).trans
+        ((RunQueueStage.runEnqueueOnCore s c t p hNC ((h1.2.2 h r).runnable hRun)).2.2 h' r')⟩
+
+/-- **A preemption**: the guarded enqueue of core `c`'s current thread back on
+`c`'s queue keeps `c`'s scheduling point open. -/
+theorem RunQueueWindowStage.requeueCurrent (st : SystemState) (c : CoreId)
+    (t : SeLe4n.ThreadId) (p : SeLe4n.Priority) (hCur : st.scheduler.currentOnCore c = some t) :
+    RunQueueWindowStage (.preempt c) st (st.runEnqueueOnCore c t p) :=
+  ⟨RunQueueLinkStage.runEnqueueOnCore st c t p, fun _ _ _ d =>
+    currentDequeuedUniqueExcept_of_requeue d
+      (fun c' => by unfold SchedulerState.currentOnCore; rw [runEnqueueOnCore_current])
+      (fun c' x hq => by
+        rw [runEnqueueOnCore_queuedOn] at hq
+        split at hq
+        · rename_i h; obtain ⟨rfl, hA⟩ := h
+          exact .inr ⟨hCur, of_decide_eq_true hq, runEnqueueAdmits_not_idle hA⟩
+        · exact .inl hq)
+      (StateMono.of_agreeOffRunLinks (runEnqueueOnCore_objectsAgreeOffRunLinks st c t p))⟩
+
+/-- The deschedule empties core `c`'s slot if it held `t`, and keeps every other
+slot. -/
+theorem runDescheduleOnCore_currentOnCore (st : SystemState) (c : CoreId) (t : SeLe4n.ThreadId)
+    (c' : CoreId) :
+    (st.runDescheduleOnCore c t).scheduler.currentOnCore c' =
+      if c' = c ∧ st.scheduler.currentOnCore c = some t then none
+      else st.scheduler.currentOnCore c' := by
+  unfold runDescheduleOnCore; dsimp only
+  simp only [SchedulerState.markReschedulePendingOnCoreIf_currentOnCore]
+  by_cases hc : c' = c
+  · subst hc
+    rw [SchedulerState.setCurrentOnCore_currentOnCore_self]
+    by_cases h : st.scheduler.currentOnCore c' = some t
+    · rw [if_pos h, if_pos ⟨rfl, h⟩]
+    · rw [if_neg h, if_neg (fun h' => h h'.2)]
+  · rw [SchedulerState.setCurrentOnCore_currentOnCore_ne _ _ _ _ (Ne.symm hc),
+      if_neg (fun h => hc h.1)]
+    simp only [SchedulerState.currentOnCore, runRemoveOnCore_current]
+
+/-- The deschedule's TCBs differ from the old ones in run-queue links alone. -/
+theorem runDescheduleOnCore_getTcb?_ipcState (st : SystemState) (c : CoreId)
+    (t u : SeLe4n.ThreadId) :
+    ((st.runDescheduleOnCore c t).getTcb? u).map TCB.ipcState = (st.getTcb? u).map TCB.ipcState :=
+  TCB.map_proj_eq_of_map_withoutRunLinks_eq _
+    ((runDescheduleOnCore_objectsAgreeOffRunLinks st c t).getTcb? u)
+
+/-- Taking core `c`'s current thread off `c` empties `c`'s slot alone. -/
+theorem runDescheduleOnCore_currentOnCore_of_current (st : SystemState) (c : CoreId)
+    (t : SeLe4n.ThreadId) (hCur : st.scheduler.currentOnCore c = some t) (c' : CoreId) :
+    (st.runDescheduleOnCore c t).scheduler.currentOnCore c' =
+      if c' = c then none else st.scheduler.currentOnCore c' := by
+  unfold runDescheduleOnCore; dsimp only
+  simp only [SchedulerState.markReschedulePendingOnCoreIf_currentOnCore]
+  by_cases hc : c' = c
+  · subst hc
+    rw [SchedulerState.setCurrentOnCore_currentOnCore_self, if_pos hCur, if_pos rfl]
+  · rw [SchedulerState.setCurrentOnCore_currentOnCore_ne _ _ _ _ (Ne.symm hc), if_neg hc]
+    simp only [SchedulerState.currentOnCore, runRemoveOnCore_current]
+
+/-- ...so afterwards no core runs `t`, which ran on `c` alone. -/
+theorem runDescheduleOnCore_currentNowhere {st : SystemState} {c : CoreId} {t : SeLe4n.ThreadId}
+    {e : Option SchedPoint} (hD : st.currentDequeuedUniqueExcept e)
+    (hCur : st.scheduler.currentOnCore c = some t) :
+    (st.runDescheduleOnCore c t).currentNowhere t := fun c' h => by
+  rw [runDescheduleOnCore_currentOnCore_of_current st c t hCur] at h
+  split at h
+  · cases h
+  · rename_i hc; exact hc ((hD.current c t hCur).2.1 c' h)
+
+/-- **The dispatch that closes a block**: taking core `c`'s current thread off
+`c` empties `c`'s slot, leaves every other slot alone and queues no one. -/
+theorem RunQueueDispatchStage.descheduleCurrent (st : SystemState) (c : CoreId)
+    (t : SeLe4n.ThreadId) (hCur : st.scheduler.currentOnCore c = some t) :
+    RunQueueDispatchStage c st (st.runDescheduleOnCore c t) :=
+  have hM := StateMono.of_agreeOffRunLinks (runDescheduleOnCore_objectsAgreeOffRunLinks st c t)
+  ⟨(RunQueueStage.runDescheduleOnCore st c t).1, fun _ _ he _ _ _ d =>
+    currentDequeuedUniqueExcept_of_dispatch (new := none) d he
+      (runDescheduleOnCore_currentOnCore_of_current st c t hCur)
+      (fun _ h => by cases h) (fun _ h => by cases h)
+      (fun c' x hq => by
+        rw [runDescheduleOnCore_queuedOn] at hq
+        split at hq
+        · cases hq
+        · exact .inl hq)
+      hM, fun _ _ => hM⟩
 
 /-- A reschedule flag is not read by the agreement. -/
 theorem RunQueueStage.markReschedulePendingOnCore (st : SystemState) (c : CoreId) :

@@ -19,28 +19,28 @@ typed inventory with size and per-category witnesses.  Mirrors the SM5.C
 `CrossCoreWakeInventory.lean` and SM5.D `PerCoreTimerInventory.lean` patterns
 (and, further back, the SM3.B `LockSetInventory.lean`).
 
-Seven categories matching the plan §3.5 / §4.3 / §5 sub-tasks (62 entries):
+Seven categories matching the plan §3.5 / §4.3 / §5 sub-tasks (59 entries):
 
 * `.field` — SM5.E.1 / SM5.E.2 / SM5.E.5: the idle-thread definitions
   (`idleThreadId`, `createIdleThread`) and field lemmas (`idleThread_priority_zero`,
   `createIdleThread_domain_zero`, `createIdleThread_cpuAffinity`,
   `createIdleThread_tid`).
-* `.enqueue` — SM5.E.3 (run-queue form): `enqueueIdleThreadOnCore` plus its
-  definitional / frame / membership / resolution / preservation lemmas.
+* `.store` — SM5.E.3: `storeIdleThreadOnCore` plus its definitional / frame /
+  resolution / preservation lemmas.  The idle thread is stored, never queued
+  (seL4's posture).
 * `.preservation` — SM5.E.3: the per-core scheduler-invariant preservation surface
-  for `enqueueIdleThreadOnCore` (the SM5.I consumption surface — current-thread
-  validity, the conditional dequeue-on-dispatch / current-in-domain, idempotency,
-  and self-core affinity consistency).
-* `.lockSet` — SM5.E.3: the `enqueueIdleThreadOnCoreLockSet` cross-domain
-  object-store + run-queue WRITE footprint over SM5.A's `LockKey` and its
-  seven witnesses (SM5.A–D parity).
-* `.alwaysSucceeds` — SM5.E.6: the `idleThreadEnqueuedOnCore` discharge
-  predicate, its constructive establishment, the keystone
-  `chooseThreadOnCore_always_succeeds`, the end-to-end non-vacuity witness, and the
-  decidable `idleAvailableOnCoreB` companion + bridge.
+  for `storeIdleThreadOnCore` (the SM5.I consumption surface — current-thread
+  validity, dequeue-on-dispatch, the conditional current-in-domain, idle
+  residency, and self-core affinity consistency).
+* `.lockSet` — SM5.E.3: the `storeIdleThreadOnCoreLockSet` object-store WRITE
+  footprint over SM5.A's `LockKey` and its witnesses.
+* `.noStall` — SM5.E.6: the keystone `scheduleEffectiveOnCore_current_isSome`
+  (a scheduling point leaves a current thread whenever the core's idle thread is
+  dispatchable), the SM5.E.5 `scheduleEffectiveOnCore_idle_only_when_none`, and
+  their discharge on the store and on the production boot state.
 * `.locality` — SM5.E.4: `idleThread_core_locality` (affinity-based) + the
   operational frame companion + the `∀c` aggregate + the supporting
-  `runQueueAffinityConsistentOnCore`, plus the SM5.E.5 `idleThread_no_starvation`.
+  `runQueueAffinityConsistentOnCore` and `idleTcbResidentOnCore`.
 * `.dispatch` — SM5.E (SM5.I seed): the production idle-aware dispatcher
   `scheduleOrIdleOnCore` — `idleDispatchableOnCore` / `dispatchIdleOnCore` + frame
   lemmas, the headline `scheduleOrIdleOnCore_runs_idle`, and the soundness surface
@@ -61,15 +61,15 @@ namespace SeLe4n.Kernel
 inductive PerCoreIdleCategory where
   /-- SM5.E.1 / SM5.E.2 / SM5.E.5 idle-thread definitions + field lemmas. -/
   | field
-  /-- SM5.E.3 `enqueueIdleThreadOnCore` op + frame / membership / preservation. -/
-  | enqueue
+  /-- SM5.E.3 `storeIdleThreadOnCore` op + frames. -/
+  | store
   /-- SM5.E.3 per-core scheduler-invariant preservation (SM5.I consumption surface). -/
   | preservation
-  /-- SM5.E.3 `enqueueIdleThreadOnCoreLockSet` cross-domain footprint (SM5.A–D parity). -/
+  /-- SM5.E.3 `storeIdleThreadOnCoreLockSet` cross-domain footprint (SM5.A–D parity). -/
   | lockSet
-  /-- SM5.E.6 `chooseThreadOnCore_always_succeeds` + discharge predicate + witnesses. -/
-  | alwaysSucceeds
-  /-- SM5.E.4 `idleThread_core_locality` + companions + no-starvation. -/
+  /-- SM5.E.6 no-stall: a scheduling point always leaves a current thread. -/
+  | noStall
+  /-- SM5.E.4 `idleThread_core_locality` + companions. -/
   | locality
   /-- SM5.E (SM5.I seed) `scheduleOrIdleOnCore` idle-aware dispatcher establishment. -/
   | dispatch
@@ -136,89 +136,79 @@ def perCoreIdleTheorems : List PerCoreIdleTheorem :=
       createIdleThread_cpuAffinity .field,
     pcit! "createIdleThread_tid: the idle TCB's id is idleThreadId c (SM5.E.1)"
       createIdleThread_tid .field,
-    -- ── SM5.E.3 enqueue op + frame / membership / preservation (.enqueue) ──
-    pcit! "enqueueIdleThreadOnCore: make core c's idle thread run-queue-resident (SM5.E.3)"
-      enqueueIdleThreadOnCore .enqueue,
-    pcit! "enqueueIdleThreadOnCore_objectsAgreeOffRunLinks: the enqueue's object-store write, off the run-queue links"
-      enqueueIdleThreadOnCore_objectsAgreeOffRunLinks .enqueue,
-    pcit! "enqueueIdleThreadOnCore_scheduler: the enqueue's scheduler write (definitional)"
-      enqueueIdleThreadOnCore_scheduler .enqueue,
-    pcit! "enqueueIdleThreadOnCore_runQueueOnCore_self: core c's run queue gains the idle thread"
-      enqueueIdleThreadOnCore_runQueueOnCore_self .enqueue,
-    pcit! "enqueueIdleThreadOnCore_runQueueOnCore_ne: a different core's run queue is untouched"
-      enqueueIdleThreadOnCore_runQueueOnCore_ne .enqueue,
-    pcit! "enqueueIdleThreadOnCore_activeDomainOnCore: no core's active domain changes"
-      enqueueIdleThreadOnCore_activeDomainOnCore .enqueue,
-    pcit! "enqueueIdleThreadOnCore_currentOnCore: no core's current slot changes"
-      enqueueIdleThreadOnCore_currentOnCore .enqueue,
-    pcit! "enqueueIdleThreadOnCore_mem_runQueueOnCore_self: idle is a member of core c's run queue"
-      enqueueIdleThreadOnCore_mem_runQueueOnCore_self .enqueue,
-    pcit! "enqueueIdleThreadOnCore_getTcb?_self: idle resolves to the idle TCB"
-      enqueueIdleThreadOnCore_getTcb?_self .enqueue,
-    pcit! "enqueueIdleThreadOnCore_getTcb?_ne: every other thread's resolution is framed"
-      enqueueIdleThreadOnCore_getTcb?_ne .enqueue,
-    pcit! "enqueueIdleThreadOnCore_preserves_objects_invExt: object-store invariant preserved"
-      enqueueIdleThreadOnCore_preserves_objects_invExt .enqueue,
-    pcit! "enqueueIdleThreadOnCore_preserves_runQueueOnCore_wellFormed: run-queue well-formedness preserved"
-      enqueueIdleThreadOnCore_preserves_runQueueOnCore_wellFormed .enqueue,
-    pcit! "enqueueIdleThreadOnCore_preserves_runnableThreadsAreTCBsOnCore: runnable-are-TCBs preserved"
-      enqueueIdleThreadOnCore_preserves_runnableThreadsAreTCBsOnCore .enqueue,
+    -- ── SM5.E.3 idle store + frames (.store) ──
+    pcit! "storeIdleThreadOnCore: store core c's ready idle TCB, queueing nothing (SM5.E.3)"
+      storeIdleThreadOnCore .store,
+    pcit! "storeIdleThreadOnCore_scheduler: the store writes no scheduler field"
+      storeIdleThreadOnCore_scheduler .store,
+    pcit! "storeIdleThreadOnCore_runQueueOnCore: no core's run queue changes"
+      storeIdleThreadOnCore_runQueueOnCore .store,
+    pcit! "storeIdleThreadOnCore_activeDomainOnCore: no core's active domain changes"
+      storeIdleThreadOnCore_activeDomainOnCore .store,
+    pcit! "storeIdleThreadOnCore_currentOnCore: no core's current slot changes"
+      storeIdleThreadOnCore_currentOnCore .store,
+    pcit! "storeIdleThreadOnCore_objects_self: the idle slot holds the ready idle TCB"
+      storeIdleThreadOnCore_objects_self .store,
+    pcit! "storeIdleThreadOnCore_objects_ne: every other slot is framed"
+      storeIdleThreadOnCore_objects_ne .store,
+    pcit! "storeIdleThreadOnCore_getTcb?_self: idle resolves to the idle TCB"
+      storeIdleThreadOnCore_getTcb?_self .store,
+    pcit! "storeIdleThreadOnCore_getTcb?_ne: every other thread's resolution is framed"
+      storeIdleThreadOnCore_getTcb?_ne .store,
+    pcit! "storeIdleThreadOnCore_runQueueRefined: the queues keep agreeing with the run-queue links"
+      storeIdleThreadOnCore_runQueueRefined .store,
+    pcit! "storeIdleThreadOnCore_preserves_objects_invExt: object-store invariant preserved"
+      storeIdleThreadOnCore_preserves_objects_invExt .store,
+    pcit! "storeIdleThreadOnCore_preserves_runnableThreadsAreTCBsOnCore: runnable-are-TCBs preserved"
+      storeIdleThreadOnCore_preserves_runnableThreadsAreTCBsOnCore .store,
     -- ── SM5.E.3 per-core scheduler-invariant preservation (.preservation) ──
-    pcit! "enqueueIdleThreadOnCore_preserves_currentThreadValidOnCore: current-thread validity preserved (unconditional)"
-      enqueueIdleThreadOnCore_preserves_currentThreadValidOnCore .preservation,
-    pcit! "enqueueIdleThreadOnCore_preserves_queueCurrentConsistentOnCore: dequeue-on-dispatch preserved (current ≠ idle)"
-      enqueueIdleThreadOnCore_preserves_queueCurrentConsistentOnCore .preservation,
-    pcit! "enqueueIdleThreadOnCore_preserves_currentThreadInActiveDomainOnCore: current-in-domain preserved (current ≠ idle)"
-      enqueueIdleThreadOnCore_preserves_currentThreadInActiveDomainOnCore .preservation,
-    pcit! "enqueueIdleThreadOnCore_mem_idempotent: re-enqueuing idle adds no duplicate"
-      enqueueIdleThreadOnCore_mem_idempotent .preservation,
-    pcit! "enqueueIdleThreadOnCore_preserves_runQueueAffinityConsistentOnCore_self: idle admitted on its own core"
-      enqueueIdleThreadOnCore_preserves_runQueueAffinityConsistentOnCore_self .preservation,
+    pcit! "storeIdleThreadOnCore_preserves_currentThreadValidOnCore: current-thread validity preserved (unconditional)"
+      storeIdleThreadOnCore_preserves_currentThreadValidOnCore .preservation,
+    pcit! "storeIdleThreadOnCore_preserves_queueCurrentConsistentOnCore: dequeue-on-dispatch preserved"
+      storeIdleThreadOnCore_preserves_queueCurrentConsistentOnCore .preservation,
+    pcit! "storeIdleThreadOnCore_preserves_currentThreadInActiveDomainOnCore: current-in-domain preserved (current ≠ idle)"
+      storeIdleThreadOnCore_preserves_currentThreadInActiveDomainOnCore .preservation,
+    pcit! "storeIdleThreadOnCore_idleTcbResidentOnCore: the store makes the idle TCB resident"
+      storeIdleThreadOnCore_idleTcbResidentOnCore .preservation,
+    pcit! "storeIdleThreadOnCore_preserves_runQueueAffinityConsistentOnCore_self: affinity coherence kept on its own core"
+      storeIdleThreadOnCore_preserves_runQueueAffinityConsistentOnCore_self .preservation,
     -- ── SM5.E.3 lock-set footprint (.lockSet) ──
-    pcit! "enqueueIdleThreadOnCoreLockSet: cross-domain object-store + run-queue WRITE footprint (§4.4)"
-      enqueueIdleThreadOnCoreLockSet .lockSet,
-    pcit! "enqueueIdleThreadOnCoreLockSet_length: the footprint is the two-lock set"
-      enqueueIdleThreadOnCoreLockSet_length .lockSet,
-    pcit! "enqueueIdleThreadOnCoreLockSet_write_only: every lock is WRITE mode"
-      enqueueIdleThreadOnCoreLockSet_write_only .lockSet,
-    pcit! "enqueueIdleThreadOnCoreLockSet_contains_objStore_write: object-store write lock present"
-      enqueueIdleThreadOnCoreLockSet_contains_objStore_write .lockSet,
-    pcit! "enqueueIdleThreadOnCoreLockSet_contains_runQueue_write: run-queue write lock present"
-      enqueueIdleThreadOnCoreLockSet_contains_runQueue_write .lockSet,
-    pcit! "enqueueIdleThreadOnCoreLockSet_object_before_runQueue: §4.4 object-before-run-queue order"
-      enqueueIdleThreadOnCoreLockSet_object_before_runQueue .lockSet,
-    pcit! "enqueueIdleThreadOnCoreLockSet_keys_nodup: footprint keys are duplicate-free"
-      enqueueIdleThreadOnCoreLockSet_keys_nodup .lockSet,
-    pcit! "enqueueIdleThreadOnCoreLockSet_pairwise_le: keys form a valid withLockSet acquisition order"
-      enqueueIdleThreadOnCoreLockSet_pairwise_le .lockSet,
-    -- ── SM5.E.6 always-succeeds (.alwaysSucceeds) ──
-    pcit! "idleThreadEnqueuedOnCore: the SM5.E.6 discharge predicate (idle is an in-domain candidate)"
-      idleThreadEnqueuedOnCore .alwaysSucceeds,
-    pcit! "enqueueIdleThreadOnCore_establishes_idleThreadEnqueuedOnCore: the discharge is satisfiable"
-      enqueueIdleThreadOnCore_establishes_idleThreadEnqueuedOnCore .alwaysSucceeds,
-    pcit! "chooseThreadOnCore_always_succeeds: selection succeeds when idle is enqueued (SM5.E.6)"
-      chooseThreadOnCore_always_succeeds .alwaysSucceeds,
-    pcit! "enqueueIdleThreadOnCore_chooseThreadOnCore_succeeds: end-to-end non-vacuity witness"
-      enqueueIdleThreadOnCore_chooseThreadOnCore_succeeds .alwaysSucceeds,
-    pcit! "idleAvailableOnCoreB: decidable companion to idleThreadEnqueuedOnCore"
-      idleAvailableOnCoreB .alwaysSucceeds,
-    pcit! "chooseThreadOnCore_always_succeeds_of_idleAvailableB: the decidable always-succeeds"
-      chooseThreadOnCore_always_succeeds_of_idleAvailableB .alwaysSucceeds,
-    pcit! "idleThreadEnqueuedOnCore_idleAvailableOnCoreB: Prop discharge implies the Bool companion"
-      idleThreadEnqueuedOnCore_idleAvailableOnCoreB .alwaysSucceeds,
-    -- ── SM5.E.4 core locality + no-starvation (.locality) ──
+    pcit! "storeIdleThreadOnCoreLockSet: object-store WRITE footprint, no run-queue lock (§4.4)"
+      storeIdleThreadOnCoreLockSet .lockSet,
+    pcit! "storeIdleThreadOnCoreLockSet_length: the footprint is the one-lock set"
+      storeIdleThreadOnCoreLockSet_length .lockSet,
+    pcit! "storeIdleThreadOnCoreLockSet_write_only: every lock is WRITE mode"
+      storeIdleThreadOnCoreLockSet_write_only .lockSet,
+    pcit! "storeIdleThreadOnCoreLockSet_contains_objStore_write: object-store write lock present"
+      storeIdleThreadOnCoreLockSet_contains_objStore_write .lockSet,
+    pcit! "storeIdleThreadOnCoreLockSet_pairwise_le: keys form a valid withLockSet acquisition order"
+      storeIdleThreadOnCoreLockSet_pairwise_le .lockSet,
+    -- ── SM5.E.6 no stall (.noStall) ──
+    pcit! "idleDispatchableOnCore_saveOutgoingContextOnCore: saving the outgoing context keeps idle dispatchable"
+      idleDispatchableOnCore_saveOutgoingContextOnCore .noStall,
+    pcit! "scheduleEffectiveOnCore_current_isSome: a scheduling point leaves a current thread when idle is dispatchable (SM5.E.6)"
+      scheduleEffectiveOnCore_current_isSome .noStall,
+    pcit! "scheduleEffectiveOnCore_idle_only_when_none: idle runs only when the queue offers nothing (SM5.E.5)"
+      scheduleEffectiveOnCore_idle_only_when_none .noStall,
+    pcit! "storeIdleThreadOnCore_idleDispatchableOnCore: the store makes idle dispatchable"
+      storeIdleThreadOnCore_idleDispatchableOnCore .noStall,
+    pcit! "bootFromPlatformCheckedWithIdleThreads_idleDispatchableOnCore: the production boot makes every idle dispatchable"
+      bootFromPlatformCheckedWithIdleThreads_idleDispatchableOnCore .noStall,
+    pcit! "bootFromPlatformCheckedWithIdleThreads_scheduleEffectiveOnCore_current_isSome: no core stalls on the boot state"
+      bootFromPlatformCheckedWithIdleThreads_scheduleEffectiveOnCore_current_isSome .noStall,
+    -- ── SM5.E.4 core locality (.locality) ──
     pcit! "runQueueAffinityConsistentOnCore: run-queue and affinity coherence predicate"
       runQueueAffinityConsistentOnCore .locality,
+    pcit! "idleTcbResidentOnCore: core c's idle slot holds its ready idle TCB"
+      idleTcbResidentOnCore .locality,
     pcit! "idleThread_core_locality: idle c never on another core's run queue (SM5.E.4)"
       idleThread_core_locality .locality,
-    pcit! "idleThread_core_locality_of_enqueue: enqueuing idle c does not leak it to another core"
-      idleThread_core_locality_of_enqueue .locality,
+    pcit! "idleThread_core_locality_of_store: storing idle c does not leak it to another core"
+      idleThread_core_locality_of_store .locality,
     pcit! "idleThread_core_locality_forall: the ∀c SMP locality aggregate"
       idleThread_core_locality_forall .locality,
-    pcit! "enqueueIdleThreadOnCore_selection_inputs_framed: a different core's selection inputs are framed"
-      enqueueIdleThreadOnCore_selection_inputs_framed .locality,
-    pcit! "idleThread_no_starvation: idle is selected only when not outranked in the top bucket (SM5.E.5)"
-      idleThread_no_starvation .locality,
+    pcit! "storeIdleThreadOnCore_selection_inputs_framed: every core's selection inputs are framed"
+      storeIdleThreadOnCore_selection_inputs_framed .locality,
     -- ── SM5.E idle-aware dispatcher (SM5.I seed) (.dispatch) ──
     pcit! "idleDispatchableOnCore: the idle-dispatch admission gate"
       idleDispatchableOnCore .dispatch,
@@ -259,32 +249,32 @@ def perCoreIdleTheorems : List PerCoreIdleTheorem :=
     pcit! "scheduleDomainOnCore_runs_idle: the folded idle dispatch is reachable on the live per-core domain-tick path (review #4 closure)"
       scheduleDomainOnCore_runs_idle .dispatch]
 
-/-- WS-SM SM5.E: the inventory has 64 substantive entries.  A regression that
+/-- WS-SM SM5.E: the inventory has 59 substantive entries.  A regression that
 adds a new SM5.E theorem without registering it fails this count witness at the
 Tier-3 surface check. -/
-theorem perCoreIdleTheorems_count : perCoreIdleTheorems.length = 64 := by decide
+theorem perCoreIdleTheorems_count : perCoreIdleTheorems.length = 59 := by decide
 
 /-- WS-SM SM5.E: 6 entries in the `field` category (SM5.E.1 / .2 / .5). -/
 theorem perCoreIdleTheorems_field_count :
     (perCoreIdleTheorems.filter (fun t => t.category == .field)).length = 6 := by decide
 
-/-- WS-SM SM5.E: 13 entries in the `enqueue` category (SM5.E.3). -/
-theorem perCoreIdleTheorems_enqueue_count :
-    (perCoreIdleTheorems.filter (fun t => t.category == .enqueue)).length = 13 := by decide
+/-- WS-SM SM5.E: 12 entries in the `store` category (SM5.E.3). -/
+theorem perCoreIdleTheorems_store_count :
+    (perCoreIdleTheorems.filter (fun t => t.category == .store)).length = 12 := by decide
 
 /-- WS-SM SM5.E: 5 entries in the `preservation` category (SM5.E.3 invariant preservation). -/
 theorem perCoreIdleTheorems_preservation_count :
     (perCoreIdleTheorems.filter (fun t => t.category == .preservation)).length = 5 := by decide
 
-/-- WS-SM SM5.E: 8 entries in the `lockSet` category (SM5.E.3 footprint). -/
+/-- WS-SM SM5.E: 5 entries in the `lockSet` category (SM5.E.3 footprint). -/
 theorem perCoreIdleTheorems_lockSet_count :
-    (perCoreIdleTheorems.filter (fun t => t.category == .lockSet)).length = 8 := by decide
+    (perCoreIdleTheorems.filter (fun t => t.category == .lockSet)).length = 5 := by decide
 
-/-- WS-SM SM5.E: 7 entries in the `alwaysSucceeds` category (SM5.E.6). -/
-theorem perCoreIdleTheorems_alwaysSucceeds_count :
-    (perCoreIdleTheorems.filter (fun t => t.category == .alwaysSucceeds)).length = 7 := by decide
+/-- WS-SM SM5.E: 6 entries in the `noStall` category (SM5.E.6). -/
+theorem perCoreIdleTheorems_noStall_count :
+    (perCoreIdleTheorems.filter (fun t => t.category == .noStall)).length = 6 := by decide
 
-/-- WS-SM SM5.E: 6 entries in the `locality` category (SM5.E.4 + no-starvation). -/
+/-- WS-SM SM5.E: 6 entries in the `locality` category (SM5.E.4). -/
 theorem perCoreIdleTheorems_locality_count :
     (perCoreIdleTheorems.filter (fun t => t.category == .locality)).length = 6 := by decide
 
@@ -296,10 +286,10 @@ theorem perCoreIdleTheorems_dispatch_count :
 /-- WS-SM SM5.E: per-category counts sum to the total. -/
 theorem perCoreIdleTheorems_partition_sum :
     (perCoreIdleTheorems.filter (fun t => t.category == .field)).length +
-    (perCoreIdleTheorems.filter (fun t => t.category == .enqueue)).length +
+    (perCoreIdleTheorems.filter (fun t => t.category == .store)).length +
     (perCoreIdleTheorems.filter (fun t => t.category == .preservation)).length +
     (perCoreIdleTheorems.filter (fun t => t.category == .lockSet)).length +
-    (perCoreIdleTheorems.filter (fun t => t.category == .alwaysSucceeds)).length +
+    (perCoreIdleTheorems.filter (fun t => t.category == .noStall)).length +
     (perCoreIdleTheorems.filter (fun t => t.category == .locality)).length +
     (perCoreIdleTheorems.filter (fun t => t.category == .dispatch)).length =
     perCoreIdleTheorems.length := by decide

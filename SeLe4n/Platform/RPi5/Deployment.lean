@@ -704,11 +704,11 @@ theorem rpi5BoundPlatformConfigAt_checked (v : BCM2712Config) (hv : v.Admissible
 -- ============================================================================
 
 /-- **WS-BP BP7.11**: the idle stage of this deployment's boot on variant `v` —
-    the checked boot with each declared core's idle thread enqueued, every
+    the checked boot with each declared core's idle thread stored, every
     configured thread still `.Inactive`.  (It was `rpi5DeploymentBootStateAt`
     until BP7.11, which added the stage that starts the initial threads.) -/
 def rpi5DeploymentIdleStateAt (v : BCM2712Config) : IntermediateState :=
-  (PlatformBinding.declaredCores (platform := RPi5Platform)).foldl enqueueIdleThread
+  (PlatformBinding.declaredCores (platform := RPi5Platform)).foldl storeIdleThread
     (bootEnableInterruptsOp
       (installBootVSpaceRoot (bootFromPlatform (rpi5BoundPlatformConfigAt v))
         rpi5BootVSpaceRootEntry.id rpi5BootVSpaceRootEntry.root

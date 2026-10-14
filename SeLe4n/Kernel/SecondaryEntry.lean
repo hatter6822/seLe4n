@@ -39,10 +39,8 @@ A freshly-onlined core has `currentOnCore c = none`
 `candidateOutranksCurrentOnCore` gate admits any budget-eligible candidate
 and the verified `handleRescheduleSgiOnCore` transition dispatches the
 highest-priority runnable thread assigned to this core — the core's idle
-thread when nothing else is enqueued (the idle-installing boot path parks
-`idleThreadId c` in core `c`'s run queue at priority 0), or the identity
-when the run queue is empty (the state then keeps the legacy
-`current = none` idle representation until the first wake or tick).  One
+thread when nothing is enqueued (the idle thread is on no run queue, as in
+seL4: the selection fallback dispatches it when the queue is empty).  One
 verified step serves the bring-up and SGI-receiver seams; the bring-up
 correctness witness is `perCoreRescheduleStep_switches_current`, and there
 is no bespoke bring-up transition to prove or to drift.

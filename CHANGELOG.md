@@ -1,3 +1,44 @@
+## v0.36.83 — WS-ZA: every kernel entry carries ct_not_in_q, idle threads off the run queues
+
+**The scheduler's placement invariant is carried, not assumed.**
+`currentDequeuedUnique` (`RunQueueThreadLinks.lean`) states seL4's
+`ct_not_in_q`, current uniqueness and `valid_idle` together: every core's
+current thread is on no run queue, current on that core alone, runnable and
+active; no idle thread is queued; an idle thread runs only on its own core and
+is always runnable; and every TCB's two state fields agree (`TCB.Coherent`).
+`RunQueueStage` now carries it across every step (`currentDequeuedUniqueExcept`
+names the one exception an open scheduling point allows: a preempted current
+still queued, or a blocked one not yet replaced), and every kernel entry
+discharges `RunQueueEntryStage`.  The dispatch payoffs in `DispatchPayoff.lean`
+drop their two bare premises (`hCurAdm`, `hCurU`), closing the debt row
+registered at `v0.36.82`.
+
+- **Idle threads are on no run queue (as in seL4).**  The boot stores each
+  core's idle TCB (`storeIdleThreadOnCore`, `readyIdleThread`) and writes no
+  scheduler field; a core runs its idle thread only when its queue is empty
+  (`idleFallbackOnCore`), and the run-queue enqueue refuses an idle thread
+  (`runEnqueueAdmits`).  `IdleEnqueue.lean` is now `IdleStore.lean`.
+  `schedulerNoStall_smp` is restated: a scheduling point on a core whose idle
+  thread is dispatchable always leaves a current thread.
+- **The boot establishes the invariant.**  For the idle boot
+  (`bootFromPlatformCheckedWithIdleThreads_currentDequeuedUnique`) and for the
+  started boot, each initial-thread start being a run-queue stage
+  (`startInitialThreadOnCore_runQueueStage`,
+  `bootFromPlatformCheckedStartedFor_allCores_currentDequeuedUnique`).
+- **Fix: a replenishment woke a blocked or suspended thread.**  A scheduling
+  context's refill re-queued its bound thread whatever its state, so a thread
+  blocked in IPC or `.Inactive` could be dispatched.  `replenishWakeTarget` now
+  names only a runnable thread, and a bind places only a runnable parked thread
+  (`TCB.isRunnable`).  Test: `SmpTimerSuite` §3.13b.
+- **An idle thread never traps.**  It runs the kernel's own loop at EL1, so the
+  syscall seam refuses a syscall attributed to one with `.illegalState`, as on
+  a core with no thread, and the fault entry delivers nothing for one.  Test:
+  `SyscallDispatchSuite` SD-038.
+- **A fault abandon deschedules where the thread is placed**
+  (`faultAbandonCore`, its run-queue links or current slot, else its home
+  core), as seL4's `tcbSchedDequeue` reads the thread's own membership.  Test:
+  `FaultHandlingSuite` abandon placement checks.
+
 ## v0.36.82 — WS-ZA ZA4.4 and ZA4.5: notification and run queues linked through the TCB, yield allocates nothing
 
 One PR (#932) carrying the ZA4.4 and ZA4.5 rows and the fixes its review asked for; the four parts below were committed separately and ship as this one version.

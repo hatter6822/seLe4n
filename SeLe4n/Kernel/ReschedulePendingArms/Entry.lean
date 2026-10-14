@@ -183,6 +183,8 @@ theorem syscallDispatchFromAbi_stepCovers {ctx : LabelingContext} {e : CoreId}
   split at h
   · cases h; exact ⟨stepCovers_refl e st, hInv⟩
   rename_i tid hCur
+  split at h
+  · cases h; exact ⟨stepCovers_refl e st, hInv⟩
   have hW := writeFfiRegistersToTcb_keyFrame st tid syscallId x0 x1 x2 x3 x4 x5 hInv
   dsimp only at h
   split at h
@@ -226,6 +228,8 @@ theorem faultEntryDeliver_stepCovers (lctx : LabelingContext) (st : SystemState)
   split
   · exact dispatchVacatedCore_stepCovers c st hInv
   · rename_i tid _
+    split
+    · exact stepCovers_refl c st
     obtain ⟨hD, hDInv⟩ := faultDeliveredState_stepCovers c (lctx := lctx) (st := st) (f := f)
       (ectx := ectx) (w := w) (c := c) (tid := tid) hInv
     exact stepCovers_trans hD (scheduleLocalSuccessorFrom_stepCovers c (some tid) _ hDInv)
@@ -275,7 +279,11 @@ theorem faultEntryDeliver_sgis_eq_flags (lctx : LabelingContext) (st : SystemSta
       rescheduleSgisFromFlags st.scheduler.reschedulePending
         (faultEntryDeliver lctx st f ectx w c).2.scheduler.reschedulePending := by
   unfold faultEntryDeliver
-  split <;> rfl
+  split
+  · rfl
+  · split
+    · exact (rescheduleSgisFromFlags_nil_of_eq _).symm
+    · rfl
 
 /-- **The fault entry fires every SGI the diff names**, unless it was already
 outstanding. -/

@@ -101,7 +101,7 @@
         {
           "name": "perCoreIdleTheorems",
           "module": "SeLe4n/Kernel/Scheduler/Operations/PerCoreIdleInventory.lean",
-          "count": 64
+          "count": 59
         },
         {
           "name": "perCorePipTheorems",
@@ -126,11 +126,11 @@
         {
           "name": "perCoreWcrtTheorems",
           "module": "SeLe4n/Kernel/Scheduler/Operations/PerCoreWcrtInventory.lean",
-          "count": 44
+          "count": 42
         }
       ],
-      "entryCount": 676,
-      "theoremCount": 602
+      "entryCount": 669,
+      "theoremCount": 596
     },
     {
       "phase": "SM6",
@@ -178,10 +178,10 @@
       "theoremCount": 0
     }
   ],
-  "entryTotal": 967,
-  "theoremTotal": 787,
+  "entryTotal": 960,
+  "theoremTotal": 781,
   "ledgerEntryTotal": 16,
-  "registeredEntryTotal": 983,
+  "registeredEntryTotal": 976,
   "theoremInventoryCount": 12,
   "ledgerInventoryCount": 2
 }

@@ -3563,6 +3563,10 @@ theorem returnDonatedSchedContext_runQueueStage {st st' : SystemState}
     (by rw [hS]) (by rw [hS])
     (fun hInv x => returnDonatedSchedContext_getTcb?_placement_eq st st' serverTid scId
       originalOwner hInv newOwner? h x)
+    (fun hInv => SystemState.StateMono.of_stateFields
+      (returnDonatedSchedContext_getTcb?_stateFields_eq st st' serverTid scId originalOwner
+        hInv newOwner? h))
+    (by rw [hS])
 
 theorem returnDonatedSchedContextResolved_runQueueStage {st st' : SystemState}
     {serverTid : SeLe4n.ThreadId} {scId : SeLe4n.SchedContextId}
@@ -3624,6 +3628,10 @@ theorem cancelBoundDonationOnCore_runQueueStage {st st' : SystemState}
     · intro hInv x
       exact congrArg (Option.map TCB.placement)
         (SystemState.updateSchedContext_getTcb? st scId _ hInv x)
+    · exact fun hInv => SystemState.StateMono.of_getTcb
+        (SystemState.updateSchedContext_getTcb? st scId _ hInv)
+    · show (st.updateSchedContext scId _).scheduler.current = _
+      rw [hU]
   · cases h
 
 /-- The retype's donation arm: the identity, the in-place unbind, or the

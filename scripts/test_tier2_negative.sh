@@ -277,9 +277,9 @@ run_check_with_timeout "TRACE" lake exe smp_timer_suite
 
 # WS-SM SM5.E — per-core idle threads.  Runtime assertions for the SM5.E
 # scenarios: SM5.E.1/.2/.5 idle field facts (priority 0, cpuAffinity = some c,
-# distinct ids), SM5.E.6 chooseThreadOnCore_always_succeeds (empty core ⇒ idle
-# fallback; after enqueueIdleThreadOnCore the selection picks idle), SM5.E.5
-# priority-0 ⇒ a higher-priority user thread still outranks idle (no starvation),
+# distinct ids), SM5.E.6 no stall (the store queues nothing; an empty core's
+# scheduling point runs its idle thread from the selection fallback), SM5.E.5
+# a runnable user thread is dispatched instead of idle (no starvation),
 # SM5.E.4 per-core idle locality (frame + affinity + cross-core), and the SM5.E
 # theorem-inventory partition counts.
 run_check_with_timeout "TRACE" lake exe smp_idle_suite

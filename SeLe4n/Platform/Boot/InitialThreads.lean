@@ -8,20 +8,22 @@
 -/
 
 import SeLe4n.Platform.Boot
+import SeLe4n.Kernel.IPC.Invariant.RunQueueAgreement
 
 /-!
 # WS-BP BP7.11 — the boot starts its designated threads
 
-The checked, idle-enqueued boot (`bootFromPlatformCheckedWithIdleThreadsFor`)
-installs every configured thread `.Inactive` and queues nothing but each
-declared core's idle thread, so until this stage no deployment thread ever ran:
+The checked, idle-storing boot (`bootFromPlatformCheckedWithIdleThreadsFor`)
+installs every configured thread `.Inactive` and queues nothing (each declared
+core's idle thread is stored, never queued), so until this stage no deployment
+thread ever ran:
 nothing held a capability to either initial thread's TCB outside that thread's
 own CSpace, and nothing resumed it.  This module is the stage after the idle
-enqueue that **starts** the threads a configuration names
+store that **starts** the threads a configuration names
 (`PlatformConfig.initialThreads`) — each through the kernel model's own start
 (`Kernel.startInitialThreadOnCore`), so it is `.Ready` and queued on its home
-core, and each core's first scheduling point dispatches it ahead of idle by
-priority.  A platform binding names the threads its hardware boot starts
+core, and each core's first scheduling point dispatches it; idle runs only
+when its core's queue is empty.  A platform binding names the threads its hardware boot starts
 (`Platform.FFI.bindPlatformConfig`): the labeling's two separation witnesses,
 one per domain, so the witnesses the labeling guard is decided on are threads
 that run.
@@ -57,7 +59,7 @@ open SeLe4n.Kernel.Concurrency (bootCoreId)
 
 /-- **WS-BP BP7.11**: start `tid` on a boot `IntermediateState` — the kernel
 model's start on the state, and its four structural witnesses carried by that
-operation's own preservation theorems (the shape `enqueueIdleThread` takes). -/
+operation's own preservation theorems (the shape `storeIdleThread` takes). -/
 def startInitialThread (ist : IntermediateState) (tid : SeLe4n.ThreadId) :
     IntermediateState where
   state := startInitialThreadOnCore ist.state tid
@@ -91,7 +93,7 @@ def startInitialThreads : List SeLe4n.ThreadId → IntermediateState →
         .error unstartableInitialThreadBootError
 
 /-- **WS-BP BP7.11**: the boot's started stage over a declared core list — the
-idle-enqueued boot, then the configuration's named threads started. -/
+idle-storing boot, then the configuration's named threads started. -/
 def bootFromPlatformCheckedStartedFor
     (cores : List SeLe4n.Kernel.Concurrency.CoreId) (config : PlatformConfig) :
     Except String IntermediateState :=
@@ -346,6 +348,47 @@ theorem bootFromPlatformCheckedStartedFor_allCores_threadInactiveFlagConsistent
   threadStateConsistent_implies_threadInactiveFlagConsistent _
     (bootFromPlatformCheckedStartedFor_allCores_threadStateConsistent config ist h)
 
+/-- **The start of a startable thread is a run-queue stage**: the `.Ready` mark
+leaves its run links alone and suspends nothing, and the wake that follows
+queues a thread no core runs, now active. -/
+theorem startInitialThreadOnCore_runQueueStage (st : SystemState) (tid : SeLe4n.ThreadId)
+    (hs : initialThreadStartable st tid = true) :
+    SystemState.RunQueueStage st (startInitialThreadOnCore st tid) :=
+  SystemState.RunQueueStage.of_invExt fun hInv => by
+    obtain ⟨tcb, hT, -, -, -, -, hRun⟩ := initialThreadStartable_spec hs
+    unfold startInitialThreadOnCore
+    refine (SystemState.RunQueueStage.updateTcb st tid (f := fun t => { t with threadState := .Ready })
+      (fun _ _ => rfl)).trans (enqueueRunnableOnCore_runQueueStage _ _ tid ?_ ?_)
+    · have h0 : st.currentNowhere tid := fun c hc => by
+        simp only [runningOnSomeCore, SeLe4n.Kernel.Concurrency.allCores,
+          List.any_eq_false] at hRun
+        exact hRun c (List.mem_finRange c) (by simp [hc])
+      exact SystemState.currentNowhere.of_scheduler_eq
+        (by rw [SystemState.updateTcb_scheduler]) h0
+    · refine ⟨{ tcb with threadState := .Ready }, ?_, by simp [TCB.Active]⟩
+      rw [SystemState.updateTcb_getTcb?_self _ _ _ hInv, hT]; rfl
+
+/-- **The started boot keeps every current thread off the run queues** — the
+idle boot's `currentDequeuedUnique`
+(`bootFromPlatformCheckedWithIdleThreads_currentDequeuedUnique`) carried across
+every start, each a run-queue stage. -/
+theorem bootFromPlatformCheckedStartedFor_allCores_currentDequeuedUnique
+    (config : PlatformConfig) (ist : IntermediateState)
+    (h : bootFromPlatformCheckedStartedFor SeLe4n.Kernel.Concurrency.allCores config = .ok ist) :
+    ist.state.runQueueRefined ∧ ist.state.currentDequeuedUnique := by
+  obtain ⟨base, hBase, hStart⟩ := bootFromPlatformCheckedStartedFor_ok _ config ist h
+  obtain ⟨_, _, _, _, _, hRun, _⟩ := bootFromPlatformCheckedWithIdleThreadsFor_bootStartShape _
+    SeLe4n.Kernel.Concurrency.allCores_nodup config base hBase
+  rw [bootFromPlatformCheckedWithIdleThreadsFor_allCores] at hBase
+  exact startInitialThreads_induct
+    (fun i => i.state.runQueueRefined ∧ i.state.currentDequeuedUnique)
+    (fun i t hs hP => by
+      have hS := (startInitialThreadOnCore_runQueueStage _ _ hs).entry
+      have hR' := (hS.1 i.hAllTables.1.1 hP.1).2
+      exact ⟨hR', hS.2 i.hAllTables.1.1 hP.1 hR' hP.2⟩)
+    _ _ _ hStart
+    ⟨hRun, bootFromPlatformCheckedWithIdleThreads_currentDequeuedUnique config base hBase⟩
+
 /-- **WS-BP BP7.11** (frame): the starts write the object store and the
 scheduler, and nothing else — the machine the boot configured is the machine it
 installs. -/
@@ -418,8 +461,7 @@ theorem startInitialThreads_eq_foldl :
 /-- **WS-BP BP7.11**: **on the all-cores idle boot, a configured thread is
 startable** exactly when its own record allows it — a positive time slice and no
 inherited boost.  Everything else is the boot's: the thread resolves, it is on no
-queue (the idle boot queues only idle threads, and a configured thread is not
-one) and on no current slot, and the idle boot's classification makes it
+queue (the idle boot queues nothing) and on no current slot, and the idle boot's classification makes it
 `.Inactive` because it is unplaced and `.ready`. -/
 theorem bootFromPlatformCheckedWithIdleThreads_initialThreadStartable
     (config : PlatformConfig) (ist : IntermediateState)
@@ -439,9 +481,13 @@ theorem bootFromPlatformCheckedWithIdleThreads_initialThreadStartable
     rw [List.any_eq_false]
     intro c _ hMem
     rw [(bootFromPlatformCheckedWithIdleThreads_runQueueRefined config ist h c).queuedOn] at hMem
-    have hIn := (SeLe4n.Kernel.RunQueue.mem_toList_iff_mem _ _).mpr hMem
-    rw [bootFromPlatformCheckedWithIdleThreads_mem_runQueueOnCore_iff config ist h c] at hIn
-    exact hNotIdle c hIn
+    exact bootFromPlatformCheckedWithIdleThreads_not_mem_runQueueOnCore config ist h c tid
+      ((SeLe4n.Kernel.RunQueue.mem_toList_iff_mem _ _).mpr hMem)
+  have hI : isIdleThreadId tid = false := by
+    cases hI : isIdleThreadId tid
+    · rfl
+    · obtain ⟨c, hc⟩ := (isIdleThreadId_iff tid).mp hI
+      exact absurd hc (hNotIdle c)
   have hObj := (SystemState.getTcb?_eq_some_iff _ _ _).mp hT
   have hCons := bootFromPlatformCheckedWithIdleThreads_threadStateConsistent config ist h _ _ hObj
   rw [← bootFromPlatformCheckedWithIdleThreadsFor_allCores] at h
@@ -450,10 +496,10 @@ theorem bootFromPlatformCheckedWithIdleThreads_initialThreadStartable
     rw [hCons]
     unfold inferThreadState threadRunningOnSomeCore threadQueuedOnSomeCore
     have hEta : (⟨tid.toObjId.toNat⟩ : SeLe4n.ThreadId) = tid := rfl
-    rw [hEta, hRun, hQ, hIpc]
+    rw [hEta, hRun, hQ, hI, hIpc]
     rfl
   unfold initialThreadStartable
-  rw [hT, hRun, hQ]
+  rw [hT, hRun, hQ, hI]
   simp [hInactive, hBoost, hSlice]
 
 end SeLe4n.Platform.Boot

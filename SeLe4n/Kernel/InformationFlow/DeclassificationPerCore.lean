@@ -3430,6 +3430,7 @@ theorem refusalLedger_occupancy_is_not_a_covert_channel
     (hLedgerOp : op.readsStructure = .declassificationRefusalLedger)
     (hPartial : auditMonitorAuthorized (liftLegacyContext ctx) monitorClearance reader = false)
     (hCur : st.scheduler.currentOnCore executingCore = some tid)
+    (hNI : SeLe4n.Kernel.isIdleThreadId tid = false)
     (hSyscall :
       syscallEntryChecked ctx SeLe4n.arm64DefaultLayout executingCore 32
           (SeLe4n.Platform.FFI.writeFfiRegistersToTcb st tid syscallId x0 x1 x2 x3 x4 x5)
@@ -3467,7 +3468,7 @@ theorem refusalLedger_occupancy_is_not_a_covert_channel
             { st with declassificationRefusals := L₂ } op) := by
   refine ⟨recordRefusal_never_refuses L r log e hFullTrail, ?_, ?_, ?_, ?_⟩
   · exact SeLe4n.Platform.FFI.refusalLedger_write_is_caller_invisible ctx executingCore
-      syscallId x0 x1 x2 x3 x4 x5 ipcBufferAddr elr spsr spEl0 x30 st tid ke hCur
+      syscallId x0 x1 x2 x3 x4 x5 ipcBufferAddr elr spsr spEl0 x30 st tid ke hCur hNI
       hSyscall hNoCapFault
   · obtain ⟨L', hEq⟩ :=
       SeLe4n.Platform.FFI.recordSyscallRefusal_frame ctx executingCore syscallId tid ke x0 st

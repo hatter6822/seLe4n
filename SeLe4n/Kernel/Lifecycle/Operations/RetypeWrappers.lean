@@ -230,7 +230,7 @@ theorem lifecycleRetypeWithCleanup_ok_runnable_no_dangling
         -- state; `_` lets Lean unify it with the arm's post-state, which keeps
         -- the run-queue link agreement (the arm is a `RunQueueStage`).
         exact cleanupTcbReferences_removes_from_runnable _ tcb.tid
-          ((cancelDonationArmOnCore_runQueueStage hArm) hInv hR).2
+          ((cancelDonationArmOnCore_runQueueStage hArm).1 hInv hR).2
 
 -- ============================================================================
 -- WS-K-D: Lifecycle syscall dispatch helpers

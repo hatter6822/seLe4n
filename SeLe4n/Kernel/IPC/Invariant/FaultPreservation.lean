@@ -530,7 +530,7 @@ theorem faultReplyOnCore_preserves_ipcInvariantFull
               | abandon =>
                   simpa only [hOut] using
                     faultAbandonOnCore_preserves_ipcInvariantFull stR faulted
-                      (determineTargetCore stR faulted) hRepObj hAbandonIdleAllowed hRep
+                      (faultAbandonCore stR faulted) hRepObj hAbandonIdleAllowed hRep
 
 /-- WS-RR RR4.18: and the reply preserves the object-store invariant. -/
 theorem faultReplyOnCore_preserves_objects_invExt
@@ -561,7 +561,7 @@ theorem faultReplyOnCore_preserves_objects_invExt
               | abandon =>
                   simpa only [hOut] using
                     faultAbandonOnCore_preserves_objects_invExt stR faulted
-                      (determineTargetCore stR faulted) hRepObj
+                      (faultAbandonCore stR faulted) hRepObj
 
 -- ============================================================================
 -- WS-RM RM5.2 — the fault reply frames the donation chain
@@ -620,7 +620,7 @@ theorem faultReplyApplyOnCore_donationChainFrame (st : SystemState)
   | abandon =>
       simpa only [faultReplyApplyOnCore] using
         faultAbandonOnCore_donationChainFrame st faulted
-          (determineTargetCore st faulted) hObjInv
+          (faultAbandonCore st faulted) hObjInv
 
 /-- **WS-RM RM5.2**: the fault reply preserves the donation chain.
 

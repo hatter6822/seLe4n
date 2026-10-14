@@ -23,13 +23,13 @@ core's idle thread when nothing else is runnable, and the dispatcher is
 *upstream* of `Platform.Boot` in the import graph.
 
 The idle *TCB* lives here too since `v0.35.68` — `createIdleThread` (the
-dispatched form) and `queuedIdleThread` (the enqueued form), with their field
-lemmas — because the kernel model's idle enqueue (`enqueueIdleThreadOnCore`,
-`Scheduler/Operations/IdleEnqueue.lean`) builds the TCB it stores, and that
-operation is what the production boot now *runs*: `Platform.Boot.enqueueIdleThread`
-is the kernel-model enqueue on the intermediate state's `state`, so the module
+dispatched form) and `readyIdleThread` (the stored form), with their field
+lemmas — because the kernel model's idle store (`storeIdleThreadOnCore`,
+`Scheduler/Operations/IdleStore.lean`) builds the TCB it stores, and that
+operation is what the production boot now *runs*: `Platform.Boot.storeIdleThread`
+is the kernel-model store on the intermediate state's `state`, so the module
 holding the TCB has to sit upstream of both.  Only the boot *installers*
-(`installIdleThread`, `bootFromPlatformWithIdleThreads`, `enqueueIdleThread`)
+(`installIdleThread`, `bootFromPlatformWithIdleThreads`, `storeIdleThread`)
 remain in `Platform.Boot`, where the `IntermediateState` / `Builder` machinery
 they carry witnesses through is; the SM5.E theorems
 (`Scheduler/Operations/PerCoreIdle.lean`) consume all of it.
@@ -136,7 +136,7 @@ theorem isIdleThreadId_iff (tid : SeLe4n.ThreadId) :
 
 /-- **WS-RR RR5.13** (PR #889 review): is `oid` some core's idle **object** slot?
     The object-store key form of `isIdleThreadId`, for the boot validator: a
-    platform config may not place an object at an idle slot, or the idle enqueue
+    platform config may not place an object at an idle slot, or the idle store
     would overwrite it. -/
 def isIdleObjId (oid : SeLe4n.ObjId) : Bool :=
   isIdleThreadId (SeLe4n.ThreadId.ofNat oid.toNat)
@@ -179,9 +179,9 @@ theorem idleThreadId_toObjId_ne_of_not_isIdleObjId (oid : SeLe4n.ObjId)
   exact Bool.noConfusion h
 
 -- ============================================================================
--- The per-core idle TCB — its dispatched and its enqueued form (SM4.G / SM5.E.2;
+-- The per-core idle TCB — its dispatched and its stored form (SM4.G / SM5.E.2;
 -- moved here from `Platform.Boot` at v0.35.68, when the boot's idle install
--- became the kernel model's own enqueue)
+-- became the kernel model's own store)
 -- ============================================================================
 
 /-- **WS-SM SM4.G** (plan §3.7) / **WS-SM SM5.E.2** (plan §3.5): the per-core
@@ -211,7 +211,7 @@ theorem idleThreadId_toObjId_ne_of_not_isIdleObjId (oid : SeLe4n.ObjId)
 
     This is the *dispatched* form: SM4.G's `installIdleThread`
     (`Platform.Boot`) points a core's current slot at it.  The production boot
-    stores the *enqueued* form, `queuedIdleThread`, below. -/
+    stores the *enqueued* form, `readyIdleThread`, below. -/
 def createIdleThread (c : CoreId) : SeLe4n.Model.TCB :=
   { tid          := idleThreadId c
     priority     := ⟨0⟩
@@ -222,25 +222,25 @@ def createIdleThread (c : CoreId) : SeLe4n.Model.TCB :=
     threadState  := .Running
     cpuAffinity  := some c }
 
-/-- **WS-RR RR5.11** (PR #889 review): the idle TCB as it is **enqueued** —
+/-- **WS-RR RR5.11** (PR #889 review): the idle TCB as it is **stored** at boot —
     `createIdleThread c` with `threadState := .Ready`.
 
     `createIdleThread` is the *dispatched* form: SM4.G's `installIdleThread`
     points a core's current slot at it, so `.Running` is the state the
     classification infers for it (`inferThreadState`: current on some core).  The
-    kernel model's enqueue (`enqueueIdleThreadOnCore`) — and through it the
-    production boot (`Platform.Boot.enqueueIdleThread`) — does the opposite: it
-    puts idle on the core's run queue and leaves the current slot `none`, and the
-    classification infers `.Ready` for a queued, non-current thread.  Storing the
-    dispatched form on the enqueue path made every successful production boot
+    kernel model's idle store (`storeIdleThreadOnCore`) — and through it the
+    production boot (`Platform.Boot.storeIdleThread`) — dispatches nothing and
+    queues nothing (seL4 never queues an idle thread), and the classification
+    infers `.Ready` for an idle thread its core is not running.  Storing the
+    dispatched form at boot made every successful production boot
     violate `threadStateConsistent` on every core, which the harness never saw
     because `assertStateInvariantsFor` syncs the field before it checks it.  The
     stored field now says what the state says
     (`Platform.Boot.bootFromPlatformCheckedWithIdleThreads_idle_threadState`).
 
-    Every other field is `createIdleThread`'s, so the enqueue-side theorems that
+    Every other field is `createIdleThread`'s, so the store-side theorems that
     read priority, domain, affinity or id go through by `rfl` exactly as before. -/
-def queuedIdleThread (c : CoreId) : SeLe4n.Model.TCB :=
+def readyIdleThread (c : CoreId) : SeLe4n.Model.TCB :=
   { createIdleThread c with threadState := .Ready }
 
 /-- WS-SM SM5.E.5 (plan §3.5, Theorem `idleThread_priority_zero`): the idle
@@ -269,34 +269,34 @@ def queuedIdleThread (c : CoreId) : SeLe4n.Model.TCB :=
 @[simp] theorem createIdleThread_tid (c : CoreId) :
     (createIdleThread c).tid = idleThreadId c := rfl
 
-/-- **WS-RR RR5.11** (PR #889 review): the **queued** idle TCB — what the enqueue
-    surface stores — has `createIdleThread`'s priority, domain, affinity and id;
-    only `threadState` differs (`.Ready`, `queuedIdleThread_threadState`), because
-    a thread on a run queue and in no current slot is what `inferThreadState`
-    classifies `.Ready`.  Each is `rfl`, so every enqueue-side theorem reads the
+/-- **WS-RR RR5.11** (PR #889 review): the **stored** idle TCB has
+    `createIdleThread`'s priority, domain, affinity and id; only `threadState`
+    differs (`.Ready`, `readyIdleThread_threadState`), because an idle thread in
+    no current slot is what `inferThreadState` classifies `.Ready`.  Each is
+    `rfl`, so every store-side theorem reads the
     field through these exactly as it read `createIdleThread`'s before. -/
-@[simp] theorem queuedIdleThread_priority (c : CoreId) :
-    (queuedIdleThread c).priority = ⟨0⟩ := rfl
+@[simp] theorem readyIdleThread_priority (c : CoreId) :
+    (readyIdleThread c).priority = ⟨0⟩ := rfl
 
-@[simp] theorem queuedIdleThread_domain (c : CoreId) :
-    (queuedIdleThread c).domain = ⟨0⟩ := rfl
+@[simp] theorem readyIdleThread_domain (c : CoreId) :
+    (readyIdleThread c).domain = ⟨0⟩ := rfl
 
-@[simp] theorem queuedIdleThread_cpuAffinity (c : CoreId) :
-    (queuedIdleThread c).cpuAffinity = some c := rfl
+@[simp] theorem readyIdleThread_cpuAffinity (c : CoreId) :
+    (readyIdleThread c).cpuAffinity = some c := rfl
 
-@[simp] theorem queuedIdleThread_tid (c : CoreId) :
-    (queuedIdleThread c).tid = idleThreadId c := rfl
+@[simp] theorem readyIdleThread_tid (c : CoreId) :
+    (readyIdleThread c).tid = idleThreadId c := rfl
 
-/-- **WS-RR RR5.11**: the queued idle TCB's state is `.Ready` — the fact the
+/-- **WS-RR RR5.11**: the stored idle TCB's state is `.Ready` — the fact the
     boot's consistency theorem rewrites with. -/
-@[simp] theorem queuedIdleThread_threadState (c : CoreId) :
-    (queuedIdleThread c).threadState = .Ready := rfl
+@[simp] theorem readyIdleThread_threadState (c : CoreId) :
+    (readyIdleThread c).threadState = .Ready := rfl
 
-/-- **WS-RR RR5.11**: the queued form differs from the dispatched form in the
+/-- **WS-RR RR5.11**: the stored form differs from the dispatched form in the
     one field the state determines — the negative pin, so the two cannot silently
     collapse into one. -/
-theorem queuedIdleThread_ne_createIdleThread (c : CoreId) :
-    queuedIdleThread c ≠ createIdleThread c := by
+theorem readyIdleThread_ne_createIdleThread (c : CoreId) :
+    readyIdleThread c ≠ createIdleThread c := by
   intro h
   have hState : SeLe4n.Model.ThreadState.Ready = SeLe4n.Model.ThreadState.Running :=
     congrArg SeLe4n.Model.TCB.threadState h

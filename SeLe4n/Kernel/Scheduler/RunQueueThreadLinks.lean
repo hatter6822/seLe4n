@@ -9,6 +9,7 @@
 
 import SeLe4n.Model.State
 import SeLe4n.Kernel.RobinHood.Invariant.MapValueAt
+import SeLe4n.Kernel.Scheduler.IdleThread
 
 /-!
 # The run queue's links in the threads (WS-ZA ZA4.5)
@@ -108,6 +109,59 @@ theorem TCB.runLinkOn_eq_none_of_not_queued {tcb : TCB} {c : CoreId}
     RunQueueLink.withPrevIfQueued v RunQueue.RunQueueLink.none = RunQueue.RunQueueLink.none := rfl
 @[simp] theorem RunQueueLink.withBucketPrevIfQueued_none (v : Nat) :
     RunQueueLink.withBucketPrevIfQueued v RunQueue.RunQueueLink.none = RunQueue.RunQueueLink.none := rfl
+
+/-- A thread a core may run: ready in IPC and not suspended — seL4's
+`runnable` thread states. -/
+def TCB.Runnable (t : TCB) : Prop := t.ipcState = .ready ∧ t.threadState ≠ .Inactive
+
+/-- The executable test reads the property. -/
+theorem TCB.runnable_of_isRunnable {t : TCB} (h : t.isRunnable = true) : t.Runnable := by
+  unfold TCB.isRunnable at h
+  simp only [Bool.and_eq_true, bne_iff_ne, ne_eq] at h
+  exact ⟨by simpa using h.1, h.2⟩
+
+/-- A thread's two state fields agree: a thread blocked in IPC is not
+suspended.  seL4 keeps one thread state, so the two can never disagree there;
+here the suspend clears the IPC state before it marks the thread inactive. -/
+def TCB.Coherent (t : TCB) : Prop := t.ipcState = .ready ∨ t.threadState ≠ .Inactive
+
+/-- A thread not suspended. -/
+def TCB.Active (t : TCB) : Prop := t.threadState ≠ .Inactive
+
+/-- One TCB replaced by another **monotonely**: a ready thread stays ready and
+an active one active, so a runnable thread stays runnable and a coherent one
+coherent.  Every write that leaves both state fields alone is one; so is every
+write that makes a thread ready. -/
+def TCB.StepMono (x x' : TCB) : Prop :=
+  (x.ipcState = .ready → x'.ipcState = .ready) ∧ (x.Active → x'.Active)
+
+theorem TCB.StepMono.runnable {x x' : TCB} (h : x.StepMono x') (hr : x.Runnable) :
+    x'.Runnable :=
+  ⟨h.1 hr.1, h.2 hr.2⟩
+
+theorem TCB.StepMono.coherent {x x' : TCB} (h : x.StepMono x') (hc : x.Coherent) :
+    x'.Coherent :=
+  hc.imp h.1 h.2
+
+/-- A TCB write that is a monotone step on every TCB. -/
+abbrev TCB.StateMono (f : TCB → TCB) : Prop := ∀ x : TCB, TCB.StepMono x (f x)
+
+/-- A scheduling point open on one core: the window between the step that
+takes core `c`'s current thread out of the steady state and the dispatch that
+replaces it (seL4's scheduler action other than `resume_cur_thread`). -/
+inductive SchedPoint where
+  /-- A preemption: `c`'s current thread, still runnable, may be back on `c`'s
+  queue. -/
+  | preempt (c : CoreId)
+  /-- A block: `c`'s current thread is no longer runnable and holds `c`'s slot
+  until the dispatch. -/
+  | block (c : CoreId)
+  deriving DecidableEq
+
+/-- The core a scheduling point is open on. -/
+def SchedPoint.core : SchedPoint → CoreId
+  | .preempt c => c
+  | .block c => c
 
 end SeLe4n.Model
 
@@ -619,16 +673,24 @@ def runAppendOnCoreImpl (st : SystemState) (c : CoreId) (t : SeLe4n.ThreadId)
   funext st c t p
   simp only [runAppendOnCore, runAppendOnCoreImpl, SchedulerState.modifyRunQueueEndsOnCore_eq]
 
-/-- WS-ZA ZA4.5: may `t` join core `c`'s queue?  Only a thread — a TCB — on no
-core's queue, or already on `c`'s: a TCB holds one run core, so a thread is on
-at most one queue, as seL4's single `tcbQueued` bit keeps it.  A run-core code
-naming no core places the thread on no queue. -/
-def runEnqueueAdmits (st : SystemState) (c : CoreId) (t : SeLe4n.ThreadId) : Bool :=
+/-- The link half of `runEnqueueAdmits`: a TCB on no core's queue, or already
+on `c`'s. -/
+def runLinksAdmit (st : SystemState) (c : CoreId) (t : SeLe4n.ThreadId) : Bool :=
   match st.getTcb? t with
   | some tcb =>
       tcb.runCoreCode == c.val + 1 || tcb.runCoreCode == 0 ||
         decide (Concurrency.numCores < tcb.runCoreCode)
   | none => false
+
+/-- WS-ZA ZA4.5: may `t` join core `c`'s queue?  Only a thread — a TCB — on no
+core's queue, or already on `c`'s: a TCB holds one run core, so a thread is on
+at most one queue, as seL4's single `tcbQueued` bit keeps it.  A run-core code
+naming no core places the thread on no queue.  An idle thread never joins a
+queue: seL4 runs the idle thread only when nothing is queued and never
+enqueues it, so a preemption of an idle core leaves its idle thread off every
+queue. -/
+def runEnqueueAdmits (st : SystemState) (c : CoreId) (t : SeLe4n.ThreadId) : Bool :=
+  !Kernel.isIdleThreadId t && st.runLinksAdmit c t
 
 /-- WS-ZA ZA4.5: the enqueue of an admitted thread — `RunQueue.insert` on the
 core's queue, written through the threads; a thread already queued there is
@@ -673,7 +735,7 @@ theorem runEnqueueOnCore_of_not_admits {st : SystemState} {c : CoreId} {t : SeLe
 theorem runEnqueueAdmits_congr {st st' : SystemState} {y : SeLe4n.ThreadId}
     (h : (st'.getTcb? y).map TCB.runCoreCode = (st.getTcb? y).map TCB.runCoreCode)
     (c : CoreId) : st'.runEnqueueAdmits c y = st.runEnqueueAdmits c y := by
-  unfold runEnqueueAdmits
+  unfold runEnqueueAdmits runLinksAdmit
   cases h1 : st'.getTcb? y <;> cases h2 : st.getTcb? y <;> rw [h1, h2] at h <;>
     simp only [Option.map_none, Option.map_some, reduceCtorEq, Option.some.injEq] at h <;>
     simp only [h]
@@ -806,10 +868,11 @@ def currentRequeueAdmitted (st : SystemState) (c : CoreId) : Prop :=
 /-- A thread on no queue other than `c`'s is admitted. -/
 theorem runEnqueueAdmits_of_refined {st : SystemState} {c : CoreId} {t : SeLe4n.ThreadId}
     (hR : st.runQueueRefined) (hT : (st.getTcb? t).isSome)
-    (hOther : ∀ c', c' ≠ c → (st.scheduler.runQueueOnCore c').contains t = false) :
+    (hOther : ∀ c', c' ≠ c → (st.scheduler.runQueueOnCore c').contains t = false)
+    (hI : Kernel.isIdleThreadId t = false) :
     st.runEnqueueAdmits c t = true := by
   obtain ⟨tcb, hTcb⟩ := Option.isSome_iff_exists.mp hT
-  unfold runEnqueueAdmits; rw [hTcb]
+  unfold runEnqueueAdmits runLinksAdmit; rw [hI, hTcb, Bool.not_false, Bool.true_and]
   by_cases h0 : tcb.runCoreCode = 0
   · simp [h0]
   · obtain ⟨k, hk⟩ := Nat.exists_eq_succ_of_ne_zero h0
@@ -824,13 +887,13 @@ theorem runEnqueueAdmits_of_refined {st : SystemState} {c : CoreId} {t : SeLe4n.
       · simp only [hk, Bool.or_eq_true, beq_iff_eq, decide_eq_true_eq]
         omega
 
-/-- An admitted thread is on no other core's queue. -/
-theorem runEnqueueAdmits_not_contains {st : SystemState} {c : CoreId} {t : SeLe4n.ThreadId}
-    (hR : st.runQueueRefined) (h : st.runEnqueueAdmits c t = true) :
+/-- A thread whose links admit core `c` is on no other core's queue. -/
+theorem runLinksAdmit_not_contains {st : SystemState} {c : CoreId} {t : SeLe4n.ThreadId}
+    (hR : st.runQueueRefined) (h : st.runLinksAdmit c t = true) :
     ∀ c', c' ≠ c → (st.scheduler.runQueueOnCore c').contains t = false := by
   intro c' hne
   rw [← (hR c').contains, runLinkOn]
-  unfold runEnqueueAdmits at h
+  unfold runLinksAdmit at h
   cases hT : st.getTcb? t with
   | none => rfl
   | some tcb =>
@@ -848,9 +911,24 @@ theorem runEnqueueAdmits_not_contains {st : SystemState} {c : CoreId} {t : SeLe4
       · omega
     · rw [if_neg hc]; rfl
 
+/-- An admitted thread is on no other core's queue. -/
+theorem runEnqueueAdmits_not_contains {st : SystemState} {c : CoreId} {t : SeLe4n.ThreadId}
+    (hR : st.runQueueRefined) (h : st.runEnqueueAdmits c t = true) :
+    ∀ c', c' ≠ c → (st.scheduler.runQueueOnCore c').contains t = false :=
+  runLinksAdmit_not_contains hR ((Bool.and_eq_true _ _).mp h).2
+
+/-- An admitted thread is no idle thread. -/
+theorem runEnqueueAdmits_not_idle {st : SystemState} {c : CoreId} {t : SeLe4n.ThreadId}
+    (h : st.runEnqueueAdmits c t = true) : Kernel.isIdleThreadId t = false := by
+  have h1 := ((Bool.and_eq_true _ _).mp h).1
+  cases hI : Kernel.isIdleThreadId t
+  · rfl
+  · rw [hI] at h1; cases h1
+
 theorem runEnqueueAdmits_isSome {st : SystemState} {c : CoreId} {t : SeLe4n.ThreadId}
     (h : st.runEnqueueAdmits c t = true) : (st.getTcb? t).isSome := by
-  unfold runEnqueueAdmits at h
+  replace h := ((Bool.and_eq_true _ _).mp h).2
+  unfold runLinksAdmit at h
   cases hT : st.getTcb? t with
   | none => rw [hT] at h; cases h
   | some _ => rfl
@@ -858,10 +936,11 @@ theorem runEnqueueAdmits_isSome {st : SystemState} {c : CoreId} {t : SeLe4n.Thre
 /-- A thread is admitted on `c` exactly when it is a TCB its links queue on no
 other core. -/
 theorem runEnqueueAdmits_iff {st : SystemState} {c : CoreId} {t : SeLe4n.ThreadId}
-    (hT : (st.getTcb? t).isSome) :
+    (hT : (st.getTcb? t).isSome) (hI : Kernel.isIdleThreadId t = false) :
     st.runEnqueueAdmits c t = true ↔ ∀ c', c' ≠ c → st.queuedOn c' t = false := by
   obtain ⟨tcb, hTcb⟩ := Option.isSome_iff_exists.mp hT
-  unfold runEnqueueAdmits queuedOn
+  unfold runEnqueueAdmits runLinksAdmit queuedOn
+  rw [hI, Bool.not_false, Bool.true_and]
   simp only [hTcb, Bool.or_eq_true, beq_iff_eq, decide_eq_true_eq, beq_eq_false_iff_ne]
   constructor
   · rintro ((h1 | h0) | hlt) c' hne he
@@ -906,12 +985,13 @@ theorem runEnqueueOnCore_queuedOn_imp_ne {st : SystemState} {c c' : CoreId} {t y
 /-- An enqueue leaves a thread with a TCB queued on some core, read off its own
 links: on `c` when admitted, otherwise on the core its links already name. -/
 theorem runEnqueueOnCore_queuedOn_somewhere {st : SystemState} {c : CoreId}
-    {t : SeLe4n.ThreadId} (p : SeLe4n.Priority) (hT : (st.getTcb? t).isSome) :
+    {t : SeLe4n.ThreadId} (p : SeLe4n.Priority) (hT : (st.getTcb? t).isSome)
+    (hI : Kernel.isIdleThreadId t = false) :
     ∃ c', (st.runEnqueueOnCore c t p).queuedOn c' t = true := by
   cases hA : st.runEnqueueAdmits c t
   · obtain ⟨tcb, hTcb⟩ := Option.isSome_iff_exists.mp hT
     have hA' := hA
-    simp only [runEnqueueAdmits, hTcb, Bool.or_eq_false_iff, beq_eq_false_iff_ne,
+    simp only [runEnqueueAdmits, runLinksAdmit, hI, Bool.not_false, Bool.true_and, hTcb, Bool.or_eq_false_iff, beq_eq_false_iff_ne,
       decide_eq_false_iff_not, Nat.not_lt] at hA'
     obtain ⟨⟨_, h0⟩, hle⟩ := hA'
     refine ⟨⟨tcb.runCoreCode - 1, by omega⟩, ?_⟩
@@ -1012,11 +1092,12 @@ theorem currentRequeueAdmitted.transport {c : CoreId} {st st' : SystemState}
   obtain ⟨hy0, hT, hQ⟩ := hF y hy
   have hA := h y hy0
   have hT0 := runEnqueueAdmits_isSome hA
-  refine (runEnqueueAdmits_iff (hT hT0)).mpr fun c' hne => ?_
+  have hI := runEnqueueAdmits_not_idle hA
+  refine (runEnqueueAdmits_iff (hT hT0) hI).mpr fun c' hne => ?_
   cases hc : st'.queuedOn c' y with
   | false => rfl
   | true =>
-    have h1 := (runEnqueueAdmits_iff hT0).mp hA c' hne
+    have h1 := (runEnqueueAdmits_iff hT0 hI).mp hA c' hne
     rw [hQ c' hne hc] at h1; cases h1
 
 /-- An admitted enqueue on `c` leaves `t` admitted on `c`: it is on `c`'s
@@ -1036,7 +1117,8 @@ theorem runEnqueueAdmitted_runEnqueueAdmits_self (st : SystemState) (c : CoreId)
       refine (updateTcbAtCode_runCoreCode _ _ (fun x => { x with runNextCode := code t })
         (fun _ => rfl) t).trans ?_
       rw [mapTcbInPlace_getTcb?_self, hT]; rfl
-    unfold runEnqueueAdmits
+    unfold runEnqueueAdmits runLinksAdmit
+    rw [runEnqueueAdmits_not_idle h, Bool.not_false, Bool.true_and]
     cases hA : (st.runAppendLinks c t p).getTcb? t with
     | none => rw [hA] at hCode; cases hCode
     | some x =>
@@ -1119,7 +1201,7 @@ theorem runEnqueueAdmits_rewriteObject_tcb {st : SystemState} {tid : SeLe4n.Thre
     (hT : st.getTcb? tid = some t) (hCode : t'.runCoreCode = t.runCoreCode)
     (c : CoreId) (x : SeLe4n.ThreadId) :
     (st.rewriteObject tid.toObjId (.tcb t') h).runEnqueueAdmits c x = st.runEnqueueAdmits c x := by
-  unfold runEnqueueAdmits
+  unfold runEnqueueAdmits runLinksAdmit
   by_cases hx : x = tid
   · subst hx
     rw [rewriteObject_tcb_getTcb?_self st x t' h hInv, hT]
@@ -1143,16 +1225,17 @@ theorem runEnqueueAdmits_rewriteObject_schedContext {st : SystemState}
         have h1 := (getTcb?_eq_some_iff st x t).mp hT
         have h2 := (getSchedContext?_eq_some_iff st scId sc).mp hSc
         rw [hx, h1] at h2; cases h2
-    have hA : st.runEnqueueAdmits c x = false := by unfold runEnqueueAdmits; rw [hNone]
+    have hA : st.runEnqueueAdmits c x = false := by
+      unfold runEnqueueAdmits runLinksAdmit; rw [hNone]; simp
     rw [hA]
-    unfold runEnqueueAdmits
+    unfold runEnqueueAdmits runLinksAdmit
     unfold getTcb?
     rw [← hx, rewriteObject_objects_self st _ _ h hInv]
     obtain ⟨old, hOld, hTy, _⟩ := h
     rw [(getSchedContext?_eq_some_iff st scId sc).mp hSc] at hOld
     cases hOld
-    cases new <;> first | rfl | cases hTy
-  · unfold runEnqueueAdmits
+    cases new <;> first | (dsimp only; exact Bool.and_false _) | cases hTy
+  · unfold runEnqueueAdmits runLinksAdmit
     rw [rewriteObject_getTcb?_ne st _ _ h hInv x hx]
 
 /-- An enqueue on `c` adds at most `t` to `c`'s queue. -/
@@ -1168,14 +1251,15 @@ theorem runEnqueueOnCore_mem_runQueueOnCore_self {st : SystemState} {c : CoreId}
 /-- Under the link agreement an enqueue leaves a thread queued on some core: on
 `c` when admitted, and otherwise on the core its links already name. -/
 theorem runEnqueueOnCore_queued_somewhere {st : SystemState} {c : CoreId} {t : SeLe4n.ThreadId}
-    (p : SeLe4n.Priority) (hR : st.runQueueRefined) (hT : (st.getTcb? t).isSome) :
+    (p : SeLe4n.Priority) (hR : st.runQueueRefined) (hT : (st.getTcb? t).isSome)
+    (hI : Kernel.isIdleThreadId t = false) :
     ∃ c', t ∈ (st.runEnqueueOnCore c t p).scheduler.runQueueOnCore c' := by
   cases hA : st.runEnqueueAdmits c t
   · rw [runEnqueueOnCore_of_not_admits p hA]
     refine Classical.byContradiction fun hNo => ?_
     have hAll : ∀ c', c' ≠ c → (st.scheduler.runQueueOnCore c').contains t = false :=
       fun c' _ => Bool.eq_false_iff.mpr fun hc => hNo ⟨c', hc⟩
-    rw [runEnqueueAdmits_of_refined hR hT hAll] at hA
+    rw [runEnqueueAdmits_of_refined hR hT hAll hI] at hA
     cases hA
   · refine ⟨c, ?_⟩
     rw [runEnqueueOnCore_runQueueOnCore_self p hA, RunQueue.mem_insert]
@@ -1975,18 +2059,804 @@ theorem runRemoveOnCore_queuedOn (st : SystemState) (c : CoreId) (t : SeLe4n.Thr
     · rfl
 
 -- ============================================================================
+-- The current threads are off the run queues and current on one core each
+-- ============================================================================
+
+/-- Closes `TCB.StateMono f` for a record update that leaves both state fields
+alone, or that only marks the thread ready or active. -/
+macro "tcb_state_mono" : tactic => `(tactic| first
+  | (intro _; exact ⟨id, id⟩)
+  | (intro _; exact ⟨fun _ => rfl, id⟩)
+  | (intro _; exact ⟨id, fun _ => by simp [TCB.Active]⟩)
+  | (intro _; exact ⟨fun _ => rfl, fun _ => by simp [TCB.Active]⟩))
+
+/-- Closes `st'.scheduler.current = st.scheduler.current` for a step that
+leaves the current slots alone: by definition, or from a hypothesis that
+equates the whole scheduler (or its `current` field) with the old one. -/
+macro "current_frame" : tactic =>
+  `(tactic| first
+    | rfl
+    | exact congrArg SchedulerState.current (by assumption)
+    | (rw [‹SystemState.scheduler _ = _›]))
+
+/-- `t` is a thread a core may run: its TCB is ready in IPC and not suspended
+(seL4's `st_tcb_at runnable`). -/
+def runnable (st : SystemState) (t : SeLe4n.ThreadId) : Prop :=
+  ∃ tcb, st.getTcb? t = some tcb ∧ tcb.Runnable
+
+/-- `t`'s TCB, if it has one, has coherent state fields (`TCB.Coherent`). -/
+def coherentAt (st : SystemState) (t : SeLe4n.ThreadId) : Prop :=
+  ∀ tcb, st.getTcb? t = some tcb → tcb.Coherent
+
+/-- `t` has a TCB that is not suspended. -/
+def activeAt (st : SystemState) (t : SeLe4n.ThreadId) : Prop :=
+  ∃ tcb, st.getTcb? t = some tcb ∧ tcb.Active
+
+/-- A runnable thread is active. -/
+theorem runnable.activeAt {st : SystemState} {t : SeLe4n.ThreadId} (h : st.runnable t) :
+    st.activeAt t :=
+  let ⟨x, hx, hr⟩ := h; ⟨x, hx, hr.2⟩
+
+/-- An active thread's TCB is coherent. -/
+theorem activeAt.coherentAt {st : SystemState} {t : SeLe4n.ThreadId} (h : st.activeAt t) :
+    st.coherentAt t := fun y hy => by
+  obtain ⟨x, hx, ha⟩ := h
+  rw [hx] at hy; cases hy; exact .inr ha
+
+/-- A step that keeps every runnable thread runnable, every coherent TCB
+coherent and every active thread active: what every step but a block or a
+suspend does to the state fields. -/
+def StateMono (st st' : SystemState) : Prop :=
+  ∀ t, (st.runnable t → st'.runnable t) ∧ (st.coherentAt t → st'.coherentAt t) ∧
+    (st.activeAt t → st'.activeAt t)
+
+theorem StateMono.runnable {st st' : SystemState} (h : StateMono st st') {t : SeLe4n.ThreadId}
+    (hr : st.runnable t) : st'.runnable t := (h t).1 hr
+
+theorem StateMono.coherentAt {st st' : SystemState} (h : StateMono st st') {t : SeLe4n.ThreadId}
+    (hc : st.coherentAt t) : st'.coherentAt t := (h t).2.1 hc
+
+theorem StateMono.activeAt {st st' : SystemState} (h : StateMono st st') {t : SeLe4n.ThreadId}
+    (ha : st.activeAt t) : st'.activeAt t := (h t).2.2 ha
+
+theorem StateMono.refl (st : SystemState) : StateMono st st := fun _ => ⟨id, id, id⟩
+
+theorem StateMono.trans {st st' st'' : SystemState} (h1 : StateMono st st')
+    (h2 : StateMono st' st'') : StateMono st st'' :=
+  fun _ => ⟨fun h => h2.runnable (h1.runnable h), fun h => h2.coherentAt (h1.coherentAt h),
+    fun h => h2.activeAt (h1.activeAt h)⟩
+
+/-- A step is state-monotone when, thread by thread, a TCB it keeps is
+replaced by a monotone step of it and a TCB it creates is coherent. -/
+theorem StateMono.of_pointwise {st st' : SystemState}
+    (h1 : ∀ t x, st.getTcb? t = some x → ∃ x', st'.getTcb? t = some x' ∧ x.StepMono x')
+    (h2 : ∀ t x', st'.getTcb? t = some x' → (∀ x, st.getTcb? t = some x → x.Coherent) →
+      x'.Coherent) : StateMono st st' := fun t =>
+  ⟨fun ⟨x, hx, hr⟩ => let ⟨x', hx', hm⟩ := h1 t x hx; ⟨x', hx', hm.runnable hr⟩,
+    fun hc x' hx' => h2 t x' hx' hc,
+    fun ⟨x, hx, ha⟩ => let ⟨x', hx', hm⟩ := h1 t x hx; ⟨x', hx', hm.2 ha⟩⟩
+
+/-- The same, read off a step that rewrites every TCB through a monotone map
+and adds or removes none. -/
+theorem StateMono.of_map {st st' : SystemState} {f : SeLe4n.ThreadId → TCB → TCB}
+    (h : ∀ t, st'.getTcb? t = (st.getTcb? t).map (f t)) (hm : ∀ t, TCB.StateMono (f t)) :
+    StateMono st st' :=
+  StateMono.of_pointwise (fun t x hx => ⟨f t x, by rw [h, hx]; rfl, hm t x⟩)
+    (fun t x' hx' hc => by
+      rw [h] at hx'
+      cases hT : st.getTcb? t with
+      | none => rw [hT] at hx'; cases hx'
+      | some x => rw [hT] at hx'; cases hx'; exact (hm t x).coherent (hc x hT))
+
+/-- A step that keeps every thread's TCB keeps the state fields. -/
+theorem StateMono.of_getTcb {st st' : SystemState} (h : ∀ t, st'.getTcb? t = st.getTcb? t) :
+    StateMono st st' :=
+  StateMono.of_map (f := fun _ x => x) (fun t => by rw [h]; cases st.getTcb? t <;> rfl)
+    (fun _ _ => ⟨id, id⟩)
+
+/-- A step that keeps every TCB's two state fields keeps them monotone. -/
+theorem StateMono.of_stateFields {st st' : SystemState}
+    (h : ∀ t, (st'.getTcb? t).map (fun x => (x.ipcState, x.threadState)) =
+      (st.getTcb? t).map (fun x => (x.ipcState, x.threadState))) : StateMono st st' := by
+  have hs : ∀ x x' : TCB, x'.ipcState = x.ipcState → x'.threadState = x.threadState →
+      x.StepMono x' := fun x x' e1 e2 =>
+    ⟨fun h => e1.trans h, fun h => by unfold TCB.Active; rw [e2]; exact h⟩
+  refine StateMono.of_pointwise (fun t x hx => ?_) (fun t x' hx' hc => ?_)
+  · have ht := h t
+    rw [hx] at ht
+    cases hT : st'.getTcb? t with
+    | none => rw [hT] at ht; cases ht
+    | some x' =>
+      rw [hT] at ht
+      simp only [Option.map_some, Option.some.injEq, Prod.mk.injEq] at ht
+      exact ⟨x', rfl, hs x x' ht.1 ht.2⟩
+  · have ht := h t
+    rw [hx'] at ht
+    cases hT : st.getTcb? t with
+    | none => rw [hT] at ht; cases ht
+    | some x =>
+      rw [hT] at ht
+      simp only [Option.map_some, Option.some.injEq, Prod.mk.injEq] at ht
+      exact (hs x x' ht.1 ht.2).coherent (hc x hT)
+
+theorem StateMono.of_objects {st st' : SystemState} (h : st'.objects = st.objects) :
+    StateMono st st' :=
+  StateMono.of_getTcb fun t => by unfold getTcb?; rw [h]
+
+/-- A typed read-modify-write of one TCB through a state-monotone update. -/
+theorem StateMono.updateTcb {st : SystemState} (hInv : st.objects.invExt) (tid : SeLe4n.ThreadId)
+    {f : TCB → TCB} (hm : TCB.StateMono f) : StateMono st (st.updateTcb tid f) := by
+  classical
+  refine StateMono.of_map (f := fun t => if tid.toObjId = t.toObjId then f else id)
+    (fun t => ?_) (fun t => ?_)
+  · dsimp only
+    by_cases h : tid.toObjId = t.toObjId
+    · have e1 : ∀ s : SystemState, s.getTcb? t = s.getTcb? tid := fun s => by
+        unfold getTcb?; rw [h]
+      rw [if_pos h, e1, e1, updateTcb_getTcb?_self _ _ _ hInv]
+    · rw [if_neg h, updateTcb_getTcb?_ne _ _ _ hInv t h]
+      cases st.getTcb? t <;> rfl
+  · dsimp only
+    split
+    · exact hm
+    · exact fun _ => ⟨id, id⟩
+
+/-- The TCB an object slot holds, if any. -/
+def objTcb? : Option KernelObject → Option TCB
+  | some (.tcb t) => some t
+  | _ => none
+
+theorem getTcb?_eq_objTcb? (st : SystemState) (t : SeLe4n.ThreadId) :
+    st.getTcb? t = objTcb? st.objects[t.toObjId]? := by
+  unfold getTcb?
+  cases h : st.objects[t.toObjId]? with
+  | none => rfl
+  | some o => cases o <;> rfl
+
+/-- An object stored over a slot keeps the state fields monotone: a TCB is
+replaced by a monotone step of it, and a TCB it stores is coherent whenever the
+one it replaces was (or there was none). -/
+def objStateMono (old : Option KernelObject) (new : KernelObject) : Prop :=
+  (∀ x, objTcb? old = some x → ∃ x', objTcb? (some new) = some x' ∧ x.StepMono x') ∧
+  (∀ x', objTcb? (some new) = some x' → (∀ x, objTcb? old = some x → x.Coherent) → x'.Coherent)
+
+/-- A TCB stored over a TCB through a monotone step. -/
+theorem objStateMono_tcb {x x' : TCB} (h : x.StepMono x') :
+    objStateMono (some (.tcb x)) (.tcb x') :=
+  ⟨fun y hy => by cases hy; exact ⟨x', rfl, h⟩,
+    fun y hy hc => by cases hy; exact h.coherent (hc x rfl)⟩
+
+/-- An object other than a TCB stored over an object other than a TCB. -/
+theorem objStateMono_nonTcb {old : Option KernelObject} {new : KernelObject}
+    (hOld : objTcb? old = none) (hNew : objTcb? (some new) = none) : objStateMono old new :=
+  ⟨fun _ hy => (by rw [hOld] at hy; cases hy), fun _ hy _ => (by rw [hNew] at hy; cases hy)⟩
+
+/-- Closes `objStateMono (some (.tcb old)) (.tcb new)` the same way. -/
+macro "obj_state_mono" : tactic => `(tactic| first
+  | exact objStateMono_tcb ⟨id, id⟩
+  | exact objStateMono_tcb ⟨fun _ => rfl, id⟩
+  | exact objStateMono_nonTcb rfl rfl)
+
+/-- One object slot rewritten monotonely: the `objStateMono` relation with the
+new slot possibly empty. -/
+def slotStateMono (old new : Option KernelObject) : Prop :=
+  (∀ x, objTcb? old = some x → ∃ x', objTcb? new = some x' ∧ x.StepMono x') ∧
+  (∀ x', objTcb? new = some x' → (∀ x, objTcb? old = some x → x.Coherent) → x'.Coherent)
+
+theorem slotStateMono.of_eq {old new : Option KernelObject} (h : new = old) :
+    slotStateMono old new :=
+  by subst h; exact ⟨fun x hx => ⟨x, hx, ⟨id, id⟩⟩, fun x' hx' hc => hc x' hx'⟩
+
+theorem slotStateMono.of_obj {old new : Option KernelObject} {o : KernelObject}
+    (h : new = some o) (hm : objStateMono old o) : slotStateMono old new := by
+  subst h; exact hm
+
+/-- A step that rewrites every object slot monotonely keeps the state fields
+monotone. -/
+theorem StateMono.of_slots {st st' : SystemState}
+    (h : ∀ oid : SeLe4n.ObjId, slotStateMono st.objects[oid]? st'.objects[oid]?) :
+    StateMono st st' :=
+  StateMono.of_pointwise
+    (fun t x hx => by rw [getTcb?_eq_objTcb?] at hx ⊢; exact (h _).1 x hx)
+    (fun t x' hx' hc => by
+      rw [getTcb?_eq_objTcb?] at hx'
+      exact (h _).2 x' hx' fun x hx => hc x (by rw [getTcb?_eq_objTcb?]; exact hx))
+
+theorem StateMono.insert {st st' : SystemState} {k : SeLe4n.ObjId} {obj : KernelObject}
+    (hInv : st.objects.invExt) (hO : st'.objects = st.objects.insert k obj)
+    (hm : objStateMono st.objects[k]? obj) : StateMono st st' := by
+  have key : ∀ t, st'.getTcb? t =
+      if k = t.toObjId then objTcb? (some obj) else st.getTcb? t := fun t => by
+    rw [getTcb?_eq_objTcb?, getTcb?_eq_objTcb?, hO]
+    simp only [RHTable_getElem?_eq_get?]
+    split
+    · rename_i hk; subst hk; rw [RHTable.getElem?_insert_self st.objects _ obj hInv]
+    · rename_i hk
+      rw [RHTable.getElem?_insert_ne st.objects _ _ obj (fun hb => hk (eq_of_beq hb)) hInv]
+  have hold : ∀ t, k = t.toObjId → st.getTcb? t = objTcb? st.objects[k]? := fun t hk => by
+    rw [getTcb?_eq_objTcb?, hk]
+  refine StateMono.of_pointwise (fun t x hx => ?_) (fun t x' hx' hc => ?_)
+  · rw [key]; split
+    · rename_i hk; exact hm.1 x (by rw [← hold t hk]; exact hx)
+    · exact ⟨x, hx, ⟨id, id⟩⟩
+  · rw [key] at hx'; split at hx'
+    · rename_i hk; exact hm.2 x' hx' (fun x h => hc x (by rw [hold t hk]; exact h))
+    · exact hc x' hx'
+
+/-- **seL4's `ct_not_in_q`, `ct_in_state activatable`, `valid_queues`'
+runnability and the idle-thread placement facts, on every core, with one core's
+scheduling point open.**  Between scheduling points (`e = none`) a core's
+current thread is runnable, queued on no run queue (read off its run-queue
+links), and run by no other core.  Inside core `c`'s scheduling point
+(`e = some p`, `p.core = c`), `c`'s current thread may be queued on `c` after a
+preemption (`.preempt c`), or no longer runnable after a block (`.block c`),
+until the dispatch that replaces it; seL4 states the same exceptions by asking
+these facts only while the scheduler action is `resume_cur_thread`.  The two
+exceptions cannot meet: every queued thread is runnable.  In every case no idle thread is queued (seL4 never enqueues the idle
+thread), an idle thread runs only on its own core and is always runnable, and
+every TCB's two state fields agree (`TCB.Coherent`). -/
+structure currentDequeuedUniqueExcept (st : SystemState) (e : Option SchedPoint) : Prop where
+  current : ∀ c t, st.scheduler.currentOnCore c = some t →
+    (∀ c', st.queuedOn c' t = true → e = some (.preempt c) ∧ c' = c) ∧
+    (∀ c', st.scheduler.currentOnCore c' = some t → c' = c) ∧
+    (e = some (.block c) ∨ st.runnable t)
+  idleOff : ∀ t, Kernel.isIdleThreadId t = true → ∀ c', st.queuedOn c' t = false
+  idleHome : ∀ c c', st.scheduler.currentOnCore c' = some (Kernel.idleThreadId c) → c' = c
+  queuedRunnable : ∀ c t, st.queuedOn c t = true → st.runnable t
+  coherent : ∀ t, st.coherentAt t
+  idleRunnable : ∀ c, st.runnable (Kernel.idleThreadId c)
+  currentActive : ∀ c t, st.scheduler.currentOnCore c = some t → st.activeAt t
+
+/-- `t` is no core's current thread: the premise a wake of `t` needs. -/
+def currentNowhere (st : SystemState) (t : SeLe4n.ThreadId) : Prop :=
+  ∀ c, st.scheduler.currentOnCore c ≠ some t
+
+/-- A step that keeps every current slot keeps a thread current nowhere. -/
+theorem currentNowhere.of_current_eq {st st' : SystemState} {t : SeLe4n.ThreadId}
+    (h : st'.scheduler.current = st.scheduler.current) (hN : st.currentNowhere t) :
+    st'.currentNowhere t := fun c => by
+  unfold SchedulerState.currentOnCore; rw [h]; exact hN c
+
+/-- ...and so does a step that keeps the whole scheduler. -/
+theorem currentNowhere.of_scheduler_eq {st st' : SystemState} {t : SeLe4n.ThreadId}
+    (h : st'.scheduler = st.scheduler) (hN : st.currentNowhere t) : st'.currentNowhere t :=
+  hN.of_current_eq (by rw [h])
+
+/-- The property between scheduling points: every core's current thread is on
+no run queue and runs on that core alone. -/
+def currentDequeuedUnique (st : SystemState) : Prop := st.currentDequeuedUniqueExcept none
+
+/-- Between scheduling points a current thread is on no queue. -/
+theorem currentDequeuedUnique.not_queued {st : SystemState} (h : st.currentDequeuedUnique)
+    {c : CoreId} {t : SeLe4n.ThreadId} (ht : st.scheduler.currentOnCore c = some t)
+    (c' : CoreId) : st.queuedOn c' t = false := by
+  cases hq : st.queuedOn c' t
+  · rfl
+  · exact absurd ((h.current c t ht).1 c' hq).1 (fun h => by cases h)
+
+/-- Between scheduling points a current thread is runnable. -/
+theorem currentDequeuedUnique.runnable {st : SystemState} (h : st.currentDequeuedUnique)
+    {c : CoreId} {t : SeLe4n.ThreadId} (ht : st.scheduler.currentOnCore c = some t) :
+    st.runnable t :=
+  ((h.current c t ht).2.2).resolve_left (fun h => by cases h)
+
+/-- What holds between scheduling points holds inside any one. -/
+theorem currentDequeuedUnique.except {st : SystemState} (h : st.currentDequeuedUnique)
+    (e : Option SchedPoint) : st.currentDequeuedUniqueExcept e :=
+  ⟨fun c t ht => ⟨fun c' hq => absurd ((h.current c t ht).1 c' hq).1 (fun h => by cases h),
+    (h.current c t ht).2.1, .inr (h.runnable ht)⟩,
+    h.idleOff, h.idleHome, h.queuedRunnable, h.coherent, h.idleRunnable, h.currentActive⟩
+
+/-- Between scheduling points a thread runs on one core alone. -/
+theorem currentDequeuedUnique.currentUnique {st : SystemState} (h : st.currentDequeuedUnique)
+    (c c' : CoreId) (t : SeLe4n.ThreadId) (ht : st.scheduler.currentOnCore c = some t)
+    (ht' : st.scheduler.currentOnCore c' = some t) : c' = c :=
+  (h.current c t ht).2.1 c' ht'
+
+/-- **seL4's `ct_not_in_q` at a preemption**: between scheduling points a
+core's current thread, when it is no idle thread, may go back on that core's
+queue — it is on no queue at all. -/
+theorem currentDequeuedUnique.currentRequeueAdmitted {st : SystemState} {c : CoreId}
+    (h : st.currentDequeuedUnique)
+    (hNI : ∀ t, st.scheduler.currentOnCore c = some t → Kernel.isIdleThreadId t = false) :
+    st.currentRequeueAdmitted c := by
+  intro t ht
+  obtain ⟨tcb, hT, -⟩ := h.currentActive c t ht
+  unfold runEnqueueAdmits runLinksAdmit
+  rw [hNI t ht, hT, Bool.not_false, Bool.true_and]
+  by_cases h0 : tcb.runCoreCode = 0
+  · simp [h0]
+  · obtain ⟨k, hk⟩ := Nat.exists_eq_succ_of_ne_zero h0
+    by_cases hlt : k < Concurrency.numCores
+    · exfalso
+      have hq := h.not_queued ht ⟨k, hlt⟩
+      unfold queuedOn at hq
+      rw [hT] at hq
+      simp [hk] at hq
+    · simp only [hk, Bool.or_eq_true, beq_iff_eq, decide_eq_true_eq]
+      omega
+
+/-- A step that empties or keeps every current slot, takes no current thread
+and no idle thread onto a queue, queues only runnable threads and keeps the
+state fields monotone keeps the property whatever point is open. -/
+theorem currentDequeuedUniqueExcept_of_frame {st st' : SystemState} {e : Option SchedPoint}
+    (hC : ∀ c t, st'.scheduler.currentOnCore c = some t → st.scheduler.currentOnCore c = some t)
+    (hQ : ∀ c t, st.scheduler.currentOnCore c = some t → ∀ c',
+      st'.queuedOn c' t = true → st.queuedOn c' t = true)
+    (hI : ∀ t, Kernel.isIdleThreadId t = true → ∀ c',
+      st'.queuedOn c' t = true → st.queuedOn c' t = true)
+    (hN : ∀ c t, st'.queuedOn c t = true → st.queuedOn c t = true ∨ st'.runnable t)
+    (hM : StateMono st st')
+    (h : st.currentDequeuedUniqueExcept e) : st'.currentDequeuedUniqueExcept e := by
+  refine ⟨fun c t hc => ?_, fun t ht c' => ?_, fun c c' hc => h.idleHome c c' (hC c' _ hc),
+    fun c t hq => ?_, fun t => (hM t).2.1 (h.coherent t), fun c => (hM _).1 (h.idleRunnable c),
+    fun c t hc => hM.activeAt (h.currentActive c t (hC c t hc))⟩
+  · have hc0 := hC c t hc
+    obtain ⟨h1, h2, h3⟩ := h.current c t hc0
+    exact ⟨fun c' hq => h1 c' (hQ c t hc0 c' hq), fun c' hc' => h2 c' (hC c' t hc'),
+      h3.imp_right (hM t).1⟩
+  · cases hq : st'.queuedOn c' t
+    · rfl
+    · have h' := hI t ht c' hq
+      rw [h.idleOff t ht c'] at h'
+      cases h'
+  · rcases hN c t hq with h' | h'
+    · exact (hM t).1 (h.queuedRunnable c t h')
+    · exact h'
+
+/-- The same, for a step whose queues only lose threads. -/
+theorem currentDequeuedUniqueExcept_of_shrink {st st' : SystemState} {e : Option SchedPoint}
+    (hC : ∀ c t, st'.scheduler.currentOnCore c = some t → st.scheduler.currentOnCore c = some t)
+    (hQ : ∀ c t, st'.queuedOn c t = true → st.queuedOn c t = true)
+    (hM : StateMono st st')
+    (h : st.currentDequeuedUniqueExcept e) : st'.currentDequeuedUniqueExcept e :=
+  currentDequeuedUniqueExcept_of_frame hC (fun _ t _ c' => hQ c' t) (fun t _ c' => hQ c' t)
+    (fun c t h' => .inl (hQ c t h')) hM h
+
+/-- The same, for a step that keeps every core's current slot and every
+thread's run-queue entry. -/
+theorem currentDequeuedUniqueExcept_of_eq {st st' : SystemState} {e : Option SchedPoint}
+    (hC : st'.scheduler.current = st.scheduler.current)
+    (hL : ∀ c t, st'.runLinkOn c t = st.runLinkOn c t)
+    (hM : StateMono st st')
+    (h : st.currentDequeuedUniqueExcept e) : st'.currentDequeuedUniqueExcept e :=
+  currentDequeuedUniqueExcept_of_shrink
+    (fun c t h' => by rw [SchedulerState.currentOnCore, hC] at h'; exact h')
+    (fun c t h' => by rw [queuedOn_eq_runLinkOn, hL, ← queuedOn_eq_runLinkOn] at h'; exact h')
+    hM h
+
+/-- A thread's links name one core: it is queued on at most one. -/
+theorem queuedOn_core_unique {st : SystemState} {c c' : CoreId} {t : SeLe4n.ThreadId}
+    (h : st.queuedOn c t = true) (h' : st.queuedOn c' t = true) : c = c' := by
+  unfold queuedOn at h h'
+  cases hT : st.getTcb? t with
+  | none => rw [hT] at h; cases h
+  | some tcb =>
+    rw [hT, beq_iff_eq] at h h'
+    exact Fin.ext (by omega)
+
+/-- **A dispatch on core `c`** — `c`'s slot gets `new`, every other core's slot
+is kept, and every thread queued afterwards was queued before or is `c`'s
+outgoing (non-idle, runnable) thread — closes `c`'s scheduling point, when the
+incoming thread ends queued nowhere, runs on no other core, is runnable, and is
+an idle thread only if it is `c`'s own.  Any other core's open point stays open
+(`he`). -/
+theorem currentDequeuedUniqueExcept_of_dispatch {st st' : SystemState} {c : CoreId}
+    {new : Option SeLe4n.ThreadId} {e e' : Option SchedPoint}
+    (hD : st.currentDequeuedUniqueExcept e)
+    (he : ∀ p, e = some p → p.core ≠ c → e' = some p)
+    (hCur : ∀ c', st'.scheduler.currentOnCore c' =
+      if c' = c then new else st.scheduler.currentOnCore c')
+    (hNew : ∀ t, new = some t →
+      (∀ c', st'.queuedOn c' t = false) ∧
+      (∀ c', c' ≠ c → st.scheduler.currentOnCore c' ≠ some t) ∧ st'.runnable t)
+    (hIdle : ∀ c0, new = some (Kernel.idleThreadId c0) → c0 = c)
+    (hQ : ∀ c' x, st'.queuedOn c' x = true → st.queuedOn c' x = true ∨
+      (st.scheduler.currentOnCore c = some x ∧ Kernel.isIdleThreadId x = false ∧
+        st'.runnable x))
+    (hM : StateMono st st') :
+    st'.currentDequeuedUniqueExcept e' := by
+  refine ⟨fun c1 t h1 => ?_, fun t ht c' => ?_, fun c0 c' h' => ?_, fun c' x hq => ?_,
+    fun t => (hM t).2.1 (hD.coherent t), fun c0 => (hM _).1 (hD.idleRunnable c0),
+    fun c1 t h1 => ?_⟩
+  rotate_left 4
+  · rw [hCur] at h1
+    by_cases hc : c1 = c
+    · rw [if_pos hc] at h1; exact (hNew t h1).2.2.activeAt
+    · rw [if_neg hc] at h1; exact hM.activeAt (hD.currentActive c1 t h1)
+  · rw [hCur] at h1
+    by_cases hc : c1 = c
+    · rw [if_pos hc] at h1
+      refine ⟨fun c' hq => ?_, fun c' hc' => ?_, .inr (hNew t h1).2.2⟩
+      · rw [(hNew t h1).1 c'] at hq; cases hq
+      · rw [hCur] at hc'
+        by_cases hc'c : c' = c
+        · rw [hc'c, hc]
+        · rw [if_neg hc'c] at hc'; exact absurd hc' ((hNew t h1).2.1 c' hc'c)
+    · rw [if_neg hc] at h1
+      obtain ⟨hNo, hU, hRun⟩ := hD.current c1 t h1
+      refine ⟨fun c' hq => ?_, fun c' hc' => ?_, ?_⟩
+      · rcases hQ c' t hq with h | ⟨h, _⟩
+        · obtain ⟨he1, hc'⟩ := hNo c' h
+          exact ⟨he _ he1 hc, hc'⟩
+        · exact absurd (hU c h).symm hc
+      · rw [hCur] at hc'
+        by_cases hc'c : c' = c
+        · rw [if_pos hc'c] at hc'; exact absurd h1 ((hNew t hc').2.1 c1 hc)
+        · rw [if_neg hc'c] at hc'; exact hU c' hc'
+      · rcases hRun with h | h
+        · exact .inl (he _ h hc)
+        · exact .inr ((hM t).1 h)
+  · cases hq : st'.queuedOn c' t
+    · rfl
+    · rcases hQ c' t hq with h | ⟨_, h, _⟩
+      · rw [hD.idleOff t ht c'] at h; cases h
+      · rw [ht] at h; cases h
+  · rw [hCur] at h'
+    by_cases hc : c' = c
+    · rw [if_pos hc] at h'; rw [hc, hIdle c0 h']
+    · rw [if_neg hc] at h'; exact hD.idleHome c0 c' h'
+  · rcases hQ c' x hq with h | ⟨_, _, h⟩
+    · exact (hM x).1 (hD.queuedRunnable c' x h)
+    · exact h
+
+/-- **A preemption on core `c`** — every slot kept, and every thread queued
+afterwards was queued before or is `c`'s current (non-idle) thread, now queued
+on `c` — keeps `c`'s preemption point open.  The requeued thread is runnable:
+a preemption point does not let `c`'s current thread block. -/
+theorem currentDequeuedUniqueExcept_of_requeue {st st' : SystemState} {c : CoreId}
+    (hD : st.currentDequeuedUniqueExcept (some (.preempt c)))
+    (hC : ∀ c', st'.scheduler.currentOnCore c' = st.scheduler.currentOnCore c')
+    (hQ : ∀ c' x, st'.queuedOn c' x = true → st.queuedOn c' x = true ∨
+      (st.scheduler.currentOnCore c = some x ∧ c' = c ∧ Kernel.isIdleThreadId x = false))
+    (hM : StateMono st st') :
+    st'.currentDequeuedUniqueExcept (some (.preempt c)) := by
+  refine ⟨fun c1 t h1 => ?_, fun t ht c' => ?_,
+    fun c0 c' h' => hD.idleHome c0 c' (by rw [← hC]; exact h'), fun c' x hq => ?_,
+    fun t => (hM t).2.1 (hD.coherent t), fun c0 => (hM _).1 (hD.idleRunnable c0),
+    fun c1 t h1 => hM.activeAt (hD.currentActive c1 t (by rw [← hC]; exact h1))⟩
+  · rw [hC] at h1
+    obtain ⟨hNo, hU, hRun⟩ := hD.current c1 t h1
+    refine ⟨fun c' hq => ?_, fun c' hc' => hU c' (by rw [← hC]; exact hc'),
+      hRun.imp_right (hM t).1⟩
+    rcases hQ c' t hq with h | ⟨h, hc', _⟩
+    · exact hNo c' h
+    · have h0 := hU c h
+      subst h0; exact ⟨rfl, hc'⟩
+  · cases hq : st'.queuedOn c' t
+    · rfl
+    · rcases hQ c' t hq with h | ⟨_, _, h⟩
+      · rw [hD.idleOff t ht c'] at h; cases h
+      · rw [ht] at h; cases h
+  · rcases hQ c' x hq with h | ⟨hx, _, _⟩
+    · exact (hM x).1 (hD.queuedRunnable c' x h)
+    · exact (hM x).1 ((hD.current c x hx).2.2.resolve_left (fun h => by cases h))
+
+/-- **A block on core `c`** — a write that leaves every current slot and every
+run-queue entry alone and changes the state fields of `c`'s current thread `t`
+only, leaving it coherent — keeps `c`'s block point open when `t` is no idle
+thread: a blocked current thread is the exception a block point allows, and
+the point already keeps `t` off the queues. -/
+theorem currentDequeuedUniqueExcept_of_block {st st' : SystemState} {c : CoreId}
+    {t : SeLe4n.ThreadId}
+    (hD : st.currentDequeuedUniqueExcept (some (.block c)))
+    (ht : st.scheduler.currentOnCore c = some t)
+    (hC : st'.scheduler.current = st.scheduler.current)
+    (hL : ∀ c u, st'.runLinkOn c u = st.runLinkOn c u)
+    (hNI : Kernel.isIdleThreadId t = false)
+    (hM : ∀ u, u ≠ t → (st.runnable u → st'.runnable u) ∧ (st.coherentAt u → st'.coherentAt u) ∧
+      (st.activeAt u → st'.activeAt u))
+    (hA : st'.activeAt t) :
+    st'.currentDequeuedUniqueExcept (some (.block c)) := by
+  have hNQ : ∀ c', st.queuedOn c' t = false := fun c' => by
+    cases hq : st.queuedOn c' t
+    · rfl
+    · cases ((hD.current c t ht).1 c' hq).1
+  have hCur : ∀ c', st'.scheduler.currentOnCore c' = st.scheduler.currentOnCore c' := fun c' => by
+    unfold SchedulerState.currentOnCore; rw [hC]
+  have hQ : ∀ c' u, st'.queuedOn c' u = st.queuedOn c' u := fun c' u => by
+    rw [queuedOn_eq_runLinkOn, hL, ← queuedOn_eq_runLinkOn]
+  refine ⟨fun c1 u h1 => ?_, fun u hu c' => by rw [hQ]; exact hD.idleOff u hu c',
+    fun c0 c' h' => hD.idleHome c0 c' (by rw [← hCur]; exact h'), fun c' u hq => ?_,
+    fun u => ?_, fun c0 => ?_, fun c1 u h1 => ?_⟩
+  · rw [hCur] at h1
+    obtain ⟨hNo, hU, hRun⟩ := hD.current c1 u h1
+    refine ⟨fun c' hq => hNo c' (by rw [← hQ]; exact hq),
+      fun c' hc' => hU c' (by rw [← hCur]; exact hc'), ?_⟩
+    by_cases hc : c1 = c
+    · exact .inl (by rw [hc])
+    · have hne : u ≠ t := fun h => hc (by subst h; exact (hD.current c u ht).2.1 c1 h1)
+      rcases hRun with h | h
+      · cases h; exact absurd rfl hc
+      · exact .inr ((hM u hne).1 h)
+  · rw [hQ] at hq
+    have hne : u ≠ t := fun h => by subst h; rw [hNQ c'] at hq; cases hq
+    exact (hM u hne).1 (hD.queuedRunnable c' u hq)
+  · by_cases hu : u = t
+    · subst hu; exact hA.coherentAt
+    · exact (hM u hu).2.1 (hD.coherent u)
+  · have hne : Kernel.idleThreadId c0 ≠ t := fun h => by
+      rw [← h, Kernel.isIdleThreadId_idleThreadId] at hNI; cases hNI
+    exact (hM _ hne).1 (hD.idleRunnable c0)
+  · rw [hCur] at h1
+    by_cases hu : u = t
+    · subst hu; exact hA
+    · exact (hM u hu).2.2 (hD.currentActive c1 u h1)
+
+/-- **A write to a thread off every core and every queue** — one that leaves
+every current slot and run-queue entry alone, changes the state fields of a
+thread `t` no core runs and no queue holds, and leaves `t` coherent — keeps
+the property whatever point is open, `t` being no idle thread.  The fault
+suspend's `.Inactive` mark after the deschedule is one. -/
+theorem currentDequeuedUniqueExcept_of_offWrite {st st' : SystemState} {e : Option SchedPoint}
+    {t : SeLe4n.ThreadId}
+    (hD : st.currentDequeuedUniqueExcept e) (hNC : st.currentNowhere t)
+    (hNQ : ∀ c, st.queuedOn c t = false)
+    (hC : st'.scheduler.current = st.scheduler.current)
+    (hL : ∀ c u, st'.runLinkOn c u = st.runLinkOn c u) (hNI : Kernel.isIdleThreadId t = false)
+    (hM : ∀ u, u ≠ t → (st.runnable u → st'.runnable u) ∧ (st.coherentAt u → st'.coherentAt u) ∧
+      (st.activeAt u → st'.activeAt u))
+    (hCo : st'.coherentAt t) : st'.currentDequeuedUniqueExcept e := by
+  have hCur : ∀ c', st'.scheduler.currentOnCore c' = st.scheduler.currentOnCore c' := fun c' => by
+    unfold SchedulerState.currentOnCore; rw [hC]
+  have hQ : ∀ c' u, st'.queuedOn c' u = st.queuedOn c' u := fun c' u => by
+    rw [queuedOn_eq_runLinkOn, hL, ← queuedOn_eq_runLinkOn]
+  have hNe : ∀ c u, st.scheduler.currentOnCore c = some u → u ≠ t := fun c u h hu => by
+    subst hu; exact hNC c h
+  refine ⟨fun c1 u h1 => ?_, fun u hu c' => by rw [hQ]; exact hD.idleOff u hu c',
+    fun c0 c' h' => hD.idleHome c0 c' (by rw [← hCur]; exact h'), fun c' u hq => ?_,
+    fun u => ?_, fun c0 => ?_, fun c1 u h1 => ?_⟩
+  · rw [hCur] at h1
+    obtain ⟨hNo, hU, hRun⟩ := hD.current c1 u h1
+    exact ⟨fun c' hq => hNo c' (by rw [← hQ]; exact hq),
+      fun c' hc' => hU c' (by rw [← hCur]; exact hc'), hRun.imp_right (hM u (hNe c1 u h1)).1⟩
+  · rw [hQ] at hq
+    have hne : u ≠ t := fun h => by subst h; rw [hNQ c'] at hq; cases hq
+    exact (hM u hne).1 (hD.queuedRunnable c' u hq)
+  · by_cases hu : u = t
+    · subst hu; exact hCo
+    · exact (hM u hu).2.1 (hD.coherent u)
+  · have hne : Kernel.idleThreadId c0 ≠ t := fun h => by
+      rw [← h, Kernel.isIdleThreadId_idleThreadId] at hNI; cases hNI
+    exact (hM _ hne).1 (hD.idleRunnable c0)
+  · rw [hCur] at h1
+    exact (hM u (hNe c1 u h1)).2.2 (hD.currentActive c1 u h1)
+
+-- ============================================================================
 -- Stages
 -- ============================================================================
 
 /-- WS-ZA ZA4.5: **a step that keeps the run queues in agreement with the
 threads' links** — from a state whose object store keeps its table invariant
-and whose queues agree with the links, it reaches such a state.  Stages compose
-(`RunQueueStage.trans`), so a transition's agreement proof is the composition
-of its steps' stages. -/
-def RunQueueStage (st st' : SystemState) : Prop :=
+and whose queues agree with the links, it reaches such a state. -/
+def RunQueueLinkStage (st st' : SystemState) : Prop :=
   st.objects.invExt → st.runQueueRefined → st'.objects.invExt ∧ st'.runQueueRefined
 
-theorem RunQueueStage.refl (st : SystemState) : RunQueueStage st st := fun h r => ⟨h, r⟩
+/-- WS-ZA ZA4.5: **a step that keeps the run-queue placement invariants** —
+the link agreement, `currentDequeuedUniqueExcept` whichever scheduling point
+is open, and the state fields monotone (`StateMono`: a stage blocks and
+suspends no thread).  Stages compose (`RunQueueStage.trans`), so a transition's proof is the
+composition of its steps' stages. -/
+def RunQueueStage (st st' : SystemState) : Prop :=
+  RunQueueLinkStage st st' ∧
+  (∀ e, st.objects.invExt → st.runQueueRefined → st'.runQueueRefined →
+    st.currentDequeuedUniqueExcept e → st'.currentDequeuedUniqueExcept e) ∧
+  (st.objects.invExt → st.runQueueRefined → StateMono st st')
+
+/-- **A step inside core `c`'s scheduling point**: it keeps the link agreement
+and keeps the point open.  A preemption's requeue of `c`'s outgoing thread is
+one; so is every stage. -/
+def RunQueueWindowStage (p : SchedPoint) (st st' : SystemState) : Prop :=
+  RunQueueLinkStage st st' ∧
+  (st.objects.invExt → st.runQueueRefined → st'.runQueueRefined →
+    st.currentDequeuedUniqueExcept (some p) → st'.currentDequeuedUniqueExcept (some p))
+
+/-- **A dispatch on core `c`**: it keeps the link agreement and closes `c`'s
+scheduling point, leaving any other core's open. -/
+def RunQueueDispatchStage (c : CoreId) (st st' : SystemState) : Prop :=
+  RunQueueLinkStage st st' ∧
+  (∀ e e', (∀ p, e = some p → p.core ≠ c → e' = some p) →
+    st.objects.invExt → st.runQueueRefined → st'.runQueueRefined →
+    st.currentDequeuedUniqueExcept e → st'.currentDequeuedUniqueExcept e') ∧
+  (st.objects.invExt → st.runQueueRefined → StateMono st st')
+
+/-- **A whole kernel entry**: from a state between scheduling points to one. -/
+def RunQueueEntryStage (st st' : SystemState) : Prop :=
+  RunQueueLinkStage st st' ∧
+  (st.objects.invExt → st.runQueueRefined → st'.runQueueRefined →
+    st.currentDequeuedUnique → st'.currentDequeuedUnique)
+
+theorem RunQueueLinkStage.refl (st : SystemState) : RunQueueLinkStage st st := fun h r => ⟨h, r⟩
+
+theorem RunQueueLinkStage.trans {st st' st'' : SystemState}
+    (h1 : RunQueueLinkStage st st') (h2 : RunQueueLinkStage st' st'') :
+    RunQueueLinkStage st st'' :=
+  fun h r => (h1 h r).elim h2
+
+theorem RunQueueStage.refl (st : SystemState) : RunQueueStage st st :=
+  ⟨RunQueueLinkStage.refl st, fun _ _ _ _ d => d, fun _ _ => StateMono.refl st⟩
+
+/-- A stage keeps the state fields monotone. -/
+theorem RunQueueStage.mono {st st' : SystemState} (h : RunQueueStage st st')
+    (hInv : st.objects.invExt) (hR : st.runQueueRefined) : StateMono st st' :=
+  h.2.2 hInv hR
+
+/-- A step that writes neither the objects nor the run queues and their ends
+keeps the link agreement, whatever it does to the current slots. -/
+theorem RunQueueLinkStage.of_frame {st st' : SystemState} (hO : st'.objects = st.objects)
+    (hQ : st'.scheduler.runQueue = st.scheduler.runQueue)
+    (hE : st'.scheduler.runQueueEnds = st.scheduler.runQueueEnds) : RunQueueLinkStage st st' :=
+  fun h r => ⟨hO ▸ h, runQueueRefined_of_frame (fun c t => runLinkOn_of_objects hO c t) hQ hE r⟩
+
+/-- A stage's link half. -/
+theorem RunQueueLinkStage.of_stage {st st' : SystemState} (h : RunQueueStage st st') :
+    RunQueueLinkStage st st' := h.1
+
+/-- A stage is a step inside any core's scheduling point. -/
+theorem RunQueueStage.window {st st' : SystemState} (h : RunQueueStage st st') (p : SchedPoint) :
+    RunQueueWindowStage p st st' :=
+  ⟨h.1, h.2.1 (some p)⟩
+
+/-- A stage is a kernel entry. -/
+theorem RunQueueStage.entry {st st' : SystemState} (h : RunQueueStage st st') :
+    RunQueueEntryStage st st' :=
+  ⟨h.1, h.2.1 none⟩
+
+/-- A dispatch is a stage: an open point it closes reads as still open. -/
+theorem RunQueueDispatchStage.stage {st st' : SystemState} {c : CoreId}
+    (h : RunQueueDispatchStage c st st') : RunQueueStage st st' :=
+  ⟨h.1, fun e => h.2.1 e e (fun _ he _ => he), h.2.2⟩
+
+theorem RunQueueWindowStage.refl (p : SchedPoint) (st : SystemState) : RunQueueWindowStage p st st :=
+  (RunQueueStage.refl st).window p
+
+theorem RunQueueWindowStage.trans {p : SchedPoint} {st st' st'' : SystemState}
+    (h1 : RunQueueWindowStage p st st') (h2 : RunQueueWindowStage p st' st'') :
+    RunQueueWindowStage p st st'' :=
+  ⟨h1.1.trans h2.1, fun h r r'' d =>
+    let ⟨h', r'⟩ := h1.1 h r
+    h2.2 h' r' r'' (h1.2 h r r' d)⟩
+
+/-- A step inside a point that holds from a state whose object store keeps its
+invariant. -/
+theorem RunQueueWindowStage.of_invExt {p : SchedPoint} {st st' : SystemState}
+    (H : st.objects.invExt → RunQueueWindowStage p st st') : RunQueueWindowStage p st st' :=
+  ⟨fun h r => (H h).1 h r, fun h r r' d => (H h).2 h r r' d⟩
+
+theorem RunQueueEntryStage.trans {st st' st'' : SystemState}
+    (h1 : RunQueueEntryStage st st') (h2 : RunQueueEntryStage st' st'') :
+    RunQueueEntryStage st st'' :=
+  ⟨h1.1.trans h2.1, fun h r r'' d =>
+    let ⟨h', r'⟩ := h1.1 h r
+    h2.2 h' r' r'' (h1.2 h r r' d)⟩
+
+/-- **A scheduling point**: steps inside core `c`'s point, then the dispatch
+that closes it, make a kernel entry's worth of steps. -/
+theorem RunQueueWindowStage.dispatch {p : SchedPoint} {st st' st'' : SystemState}
+    (h1 : RunQueueWindowStage p st st') (h2 : RunQueueDispatchStage p.core st' st'') :
+    RunQueueEntryStage st st'' :=
+  ⟨h1.1.trans h2.1, fun h r r'' d =>
+    let ⟨h', r'⟩ := h1.1 h r
+    h2.2.1 (some p) none (fun _ he hne => absurd (by cases he; rfl) hne) h' r' r''
+      (h1.2 h r r' (d.except _))⟩
+
+/-- A stage before a dispatch is part of it. -/
+theorem RunQueueStage.dispatch {c : CoreId} {st st' st'' : SystemState}
+    (h1 : RunQueueStage st st') (h2 : RunQueueDispatchStage c st' st'') :
+    RunQueueDispatchStage c st st'' :=
+  ⟨h1.1.trans h2.1, fun e e' he h r r'' d =>
+    let ⟨h', r'⟩ := h1.1 h r
+    h2.2.1 e e' he h' r' r'' (h1.2.1 e h r r' d),
+    fun h r => let ⟨h', r'⟩ := h1.1 h r; (h1.2.2 h r).trans (h2.2.2 h' r')⟩
+
+/-- A stage after a dispatch is part of it. -/
+theorem RunQueueDispatchStage.trans_stage {c : CoreId} {st st' st'' : SystemState}
+    (h1 : RunQueueDispatchStage c st st') (h2 : RunQueueStage st' st'') :
+    RunQueueDispatchStage c st st'' :=
+  ⟨h1.1.trans h2.1, fun e e' he h r r'' d =>
+    let ⟨h', r'⟩ := h1.1 h r
+    h2.2.1 e' h' r' r'' (h1.2.1 e e' he h r r' d),
+    fun h r => let ⟨h', r'⟩ := h1.1 h r; (h1.2.2 h r).trans (h2.2.2 h' r')⟩
+
+/-- **A switch on core `c`**: a dispatch on `c` that first puts `c`'s outgoing
+thread back on `c`'s queue.  It closes any point but a block on `c`, whose
+outgoing thread is blocked and must not be queued; the block path closes its
+point with the deschedule (`RunQueueDispatchStage.descheduleCurrent`) instead. -/
+def RunQueueSwitchStage (c : CoreId) (st st' : SystemState) : Prop :=
+  RunQueueLinkStage st st' ∧
+  (∀ e e', (∀ p, e = some p → p.core ≠ c → e' = some p) → e ≠ some (.block c) →
+    st.objects.invExt → st.runQueueRefined → st'.runQueueRefined →
+    st.currentDequeuedUniqueExcept e → st'.currentDequeuedUniqueExcept e') ∧
+  (st.objects.invExt → st.runQueueRefined → StateMono st st')
+
+/-- A dispatch is a switch. -/
+theorem RunQueueDispatchStage.switch {c : CoreId} {st st' : SystemState}
+    (h : RunQueueDispatchStage c st st') : RunQueueSwitchStage c st st' :=
+  ⟨h.1, fun e e' he _ => h.2.1 e e' he, h.2.2⟩
+
+/-- A stage before a switch is part of it. -/
+theorem RunQueueStage.switch {c : CoreId} {st st' st'' : SystemState}
+    (h1 : RunQueueStage st st') (h2 : RunQueueSwitchStage c st' st'') :
+    RunQueueSwitchStage c st st'' :=
+  ⟨h1.1.trans h2.1, fun e e' he hb h r r'' d =>
+    let ⟨h', r'⟩ := h1.1 h r
+    h2.2.1 e e' he hb h' r' r'' (h1.2.1 e h r r' d),
+    fun h r => let ⟨h', r'⟩ := h1.1 h r; (h1.2.2 h r).trans (h2.2.2 h' r')⟩
+
+/-- A stage after a switch is part of it. -/
+theorem RunQueueSwitchStage.trans_stage {c : CoreId} {st st' st'' : SystemState}
+    (h1 : RunQueueSwitchStage c st st') (h2 : RunQueueStage st' st'') :
+    RunQueueSwitchStage c st st'' :=
+  ⟨h1.1.trans h2.1, fun e e' he hb h r r'' d =>
+    let ⟨h', r'⟩ := h1.1 h r
+    h2.2.1 e' h' r' r'' (h1.2.1 e e' he hb h r r' d),
+    fun h r => let ⟨h', r'⟩ := h1.1 h r; (h1.2.2 h r).trans (h2.2.2 h' r')⟩
+
+/-- A switch is a kernel entry. -/
+theorem RunQueueSwitchStage.entry {c : CoreId} {st st' : SystemState}
+    (h : RunQueueSwitchStage c st st') : RunQueueEntryStage st st' :=
+  ⟨h.1, h.2.1 none none (fun _ h => by cases h) (fun h => by cases h)⟩
+
+/-- **A preemption point**: steps inside core `c`'s preemption point, then the
+switch that closes it, make a kernel entry's worth of steps. -/
+theorem RunQueueWindowStage.switch {c : CoreId} {st st' st'' : SystemState}
+    (h1 : RunQueueWindowStage (.preempt c) st st') (h2 : RunQueueSwitchStage c st' st'') :
+    RunQueueEntryStage st st'' :=
+  ⟨h1.1.trans h2.1, fun h r r'' d =>
+    let ⟨h', r'⟩ := h1.1 h r
+    h2.2.1 (some (.preempt c)) none (fun _ he hne => absurd (by cases he; rfl) hne)
+      (fun h => by cases h) h' r' r'' (h1.2 h r r' (d.except _))⟩
+
+/-- A kernel entry run from a state that has all three properties. -/
+theorem RunQueueEntryStage.run {st st' : SystemState} (h : RunQueueEntryStage st st')
+    (hInv : st.objects.invExt) (hR : st.runQueueRefined) (hD : st.currentDequeuedUnique) :
+    st'.objects.invExt ∧ st'.runQueueRefined ∧ st'.currentDequeuedUnique :=
+  let ⟨h', r'⟩ := h.1 hInv hR
+  ⟨h', r', h.2 hInv hR r' hD⟩
+
+/-- A stage run from a state that has all three properties. -/
+theorem RunQueueStage.run {st st' : SystemState} (h : RunQueueStage st st')
+    (hInv : st.objects.invExt) (hR : st.runQueueRefined) (hD : st.currentDequeuedUnique) :
+    st'.objects.invExt ∧ st'.runQueueRefined ∧ st'.currentDequeuedUnique :=
+  h.entry.run hInv hR hD
+
+/-- A link stage that keeps every current slot or empties it, and takes no
+current thread and no idle thread onto a queue, is a stage. -/
+theorem RunQueueStage.of_link' {st st' : SystemState} (hL : RunQueueLinkStage st st')
+    (hC : ∀ c t, st'.scheduler.currentOnCore c = some t → st.scheduler.currentOnCore c = some t)
+    (hQ : ∀ c t, st.scheduler.currentOnCore c = some t → ∀ c',
+      st'.queuedOn c' t = true → st.queuedOn c' t = true)
+    (hI : ∀ t, Kernel.isIdleThreadId t = true → ∀ c',
+      st'.queuedOn c' t = true → st.queuedOn c' t = true)
+    (hN : ∀ c t, st'.queuedOn c t = true → st.queuedOn c t = true ∨ st'.runnable t)
+    (hM : StateMono st st') : RunQueueStage st st' :=
+  ⟨hL, fun _ _ _ _ d => currentDequeuedUniqueExcept_of_frame hC hQ hI hN hM d, fun _ _ => hM⟩
+
+/-- A link stage that is a stage from a state between scheduling points is a
+kernel entry. -/
+theorem RunQueueEntryStage.of_cond {st st' : SystemState} (hL : RunQueueLinkStage st st')
+    (H : st.currentDequeuedUnique → RunQueueStage st st') : RunQueueEntryStage st st' :=
+  ⟨hL, fun h r r' d => (H d).2.1 none h r r' d⟩
+
+/-- A link stage that is a kernel entry from a state with all three
+properties is a kernel entry. -/
+theorem RunQueueEntryStage.of_inv {st st' : SystemState} (hL : RunQueueLinkStage st st')
+    (H : st.objects.invExt → st.runQueueRefined → st.currentDequeuedUnique →
+      RunQueueEntryStage st st') : RunQueueEntryStage st st' :=
+  ⟨hL, fun h r r' d => (H h r d).2 h r r' d⟩
+
+/-- A stage that holds from a state whose object store keeps its invariant. -/
+theorem RunQueueStage.of_invExt {st st' : SystemState}
+    (H : st.objects.invExt → RunQueueStage st st') : RunQueueStage st st' :=
+  ⟨fun h r => (H h).1 h r, fun e h r r' d => (H h).2.1 e h r r' d, fun h r => (H h).2.2 h r⟩
+
+/-- A link stage that gives no thread a current slot and whose queues only
+lose threads is a stage. -/
+theorem RunQueueStage.of_link {st st' : SystemState} (hL : RunQueueLinkStage st st')
+    (hC : ∀ c t, st'.scheduler.currentOnCore c = some t → st.scheduler.currentOnCore c = some t)
+    (hQ : ∀ c t, st'.queuedOn c t = true → st.queuedOn c t = true)
+    (hM : StateMono st st') : RunQueueStage st st' :=
+  ⟨hL, fun _ _ _ _ d => currentDequeuedUniqueExcept_of_shrink hC hQ hM d, fun _ _ => hM⟩
 
 /-- Under the link agreement, a thread its links queue on `c` is on `c`'s
 queue, and conversely. -/
@@ -2011,16 +2881,36 @@ theorem queuedOn_congr_of_refined {st st' : SystemState} (hR : st.runQueueRefine
 
 theorem RunQueueStage.trans {st st' st'' : SystemState}
     (h1 : RunQueueStage st st') (h2 : RunQueueStage st' st'') : RunQueueStage st st'' :=
-  fun h r => (h1 h r).elim h2
+  ⟨h1.1.trans h2.1, fun e h r r'' d =>
+    let ⟨h', r'⟩ := h1.1 h r
+    h2.2.1 e h' r' r'' (h1.2.1 e h r r' d),
+    fun h r => let ⟨h', r'⟩ := h1.1 h r; (h1.2.2 h r).trans (h2.2.2 h' r')⟩
 
 theorem RunQueueStage.of_eq {st st' : SystemState} (h : st' = st) : RunQueueStage st st' :=
   h ▸ RunQueueStage.refl st
 
-/-- A step that writes neither the objects nor the run queues and their ends. -/
+/-- A step that writes neither the objects, the run queues and their ends, nor
+any core's current slot. -/
 theorem RunQueueStage.of_frame {st st' : SystemState} (hO : st'.objects = st.objects)
     (hQ : st'.scheduler.runQueue = st.scheduler.runQueue)
-    (hE : st'.scheduler.runQueueEnds = st.scheduler.runQueueEnds) : RunQueueStage st st' :=
-  fun h r => ⟨hO ▸ h, runQueueRefined_of_frame (fun c t => runLinkOn_of_objects hO c t) hQ hE r⟩
+    (hE : st'.scheduler.runQueueEnds = st.scheduler.runQueueEnds)
+    (hC : st'.scheduler.current = st.scheduler.current := by current_frame) : RunQueueStage st st' :=
+  ⟨fun h r => ⟨hO ▸ h, runQueueRefined_of_frame (fun c t => runLinkOn_of_objects hO c t) hQ hE r⟩,
+    fun _ _ _ _ d => currentDequeuedUniqueExcept_of_eq hC (fun c t => runLinkOn_of_objects hO c t)
+      (StateMono.of_objects hO) d, fun _ _ => StateMono.of_objects hO⟩
+
+/-- A step that writes neither the objects nor the run queues and their ends,
+and only empties or keeps each core's current slot. -/
+theorem RunQueueStage.of_frame_vacate {st st' : SystemState} (hO : st'.objects = st.objects)
+    (hQ : st'.scheduler.runQueue = st.scheduler.runQueue)
+    (hE : st'.scheduler.runQueueEnds = st.scheduler.runQueueEnds)
+    (hC : ∀ c t, st'.scheduler.currentOnCore c = some t →
+      st.scheduler.currentOnCore c = some t) : RunQueueStage st st' :=
+  RunQueueStage.of_link
+    (fun h r => ⟨hO ▸ h, runQueueRefined_of_frame (fun c t => runLinkOn_of_objects hO c t) hQ hE r⟩)
+    hC (fun c t h' => by
+      rw [queuedOn_eq_runLinkOn, runLinkOn_of_objects hO, ← queuedOn_eq_runLinkOn] at h'
+      exact h') (StateMono.of_objects hO)
 
 /-- A write of the SchedContext thread index alone. -/
 theorem RunQueueStage.withScThreadIndex (s : SystemState)
@@ -2028,13 +2918,120 @@ theorem RunQueueStage.withScThreadIndex (s : SystemState)
     RunQueueStage s { s with scThreadIndex := x } :=
   RunQueueStage.of_frame rfl rfl rfl
 
-theorem RunQueueStage.updateTcb (st : SystemState) (tid : SeLe4n.ThreadId) {f : TCB → TCB}
-    (hf : ∀ x c, (f x).runLinkOn c = x.runLinkOn c) : RunQueueStage st (st.updateTcb tid f) :=
+/-- A TCB write that keeps the run-queue fields keeps the link agreement. -/
+theorem RunQueueLinkStage.updateTcb (st : SystemState) (tid : SeLe4n.ThreadId) {f : TCB → TCB}
+    (hf : ∀ x c, (f x).runLinkOn c = x.runLinkOn c) : RunQueueLinkStage st (st.updateTcb tid f) :=
   fun h r => ⟨updateTcb_preserves_objects_invExt st tid f h, updateTcb_runQueueRefined h hf r⟩
 
-theorem RunQueueStage.runRemoveOnCore (st : SystemState) (c : CoreId) (t : SeLe4n.ThreadId) :
-    RunQueueStage st (st.runRemoveOnCore c t) :=
-  fun h r => ⟨runRemoveOnCore_objects_invExt st c t h, runRemoveOnCore_refined r⟩
+theorem RunQueueStage.updateTcb (st : SystemState) (tid : SeLe4n.ThreadId) {f : TCB → TCB}
+    (hf : ∀ x c, (f x).runLinkOn c = x.runLinkOn c)
+    (hm : TCB.StateMono f := by tcb_state_mono) : RunQueueStage st (st.updateTcb tid f) :=
+  ⟨RunQueueLinkStage.updateTcb st tid hf,
+    fun _ h _ _ d => currentDequeuedUniqueExcept_of_eq (by rw [updateTcb_scheduler]) (fun c x => by
+      unfold SystemState.updateTcb; split
+      · rename_i t hT _; exact runLinkOn_rewriteObject_tcb _ h hT (hf t) c x
+      · rfl) (StateMono.updateTcb h tid hm) d, fun h _ => StateMono.updateTcb h tid hm⟩
+
+/-- A typed read-modify-write of a thread off every core and every queue,
+leaving it coherent: the property holds whatever point is open. -/
+theorem currentDequeuedUniqueExcept_updateTcb_offWrite {st : SystemState} {e : Option SchedPoint}
+    {tid : SeLe4n.ThreadId} {f : TCB → TCB} (hInv : st.objects.invExt)
+    (hD : st.currentDequeuedUniqueExcept e) (hNC : st.currentNowhere tid)
+    (hNQ : ∀ c, st.queuedOn c tid = false) (hNI : Kernel.isIdleThreadId tid = false)
+    (hf : ∀ x c, (f x).runLinkOn c = x.runLinkOn c)
+    (hCo : ∀ x, st.getTcb? tid = some x → (f x).Coherent) :
+    (st.updateTcb tid f).currentDequeuedUniqueExcept e := by
+  have hNe : ∀ u, u ≠ tid → (st.updateTcb tid f).getTcb? u = st.getTcb? u := fun u hu =>
+    updateTcb_getTcb?_ne _ _ _ hInv u (fun h => hu (ThreadId.toObjId_injective _ _ h).symm)
+  refine currentDequeuedUniqueExcept_of_offWrite hD hNC hNQ (by rw [updateTcb_scheduler])
+    (fun c x => by
+      unfold SystemState.updateTcb; split
+      · rename_i t hT _; exact runLinkOn_rewriteObject_tcb _ hInv hT (hf t) c x
+      · rfl) hNI (fun u hu => ?_) (fun y hy => ?_)
+  · refine ⟨fun ⟨x, hx, hr⟩ => ⟨x, by rw [hNe u hu]; exact hx, hr⟩,
+      fun hc x hx => hc x (by rw [← hNe u hu]; exact hx),
+      fun ⟨x, hx, ha⟩ => ⟨x, by rw [hNe u hu]; exact hx, ha⟩⟩
+  · rw [updateTcb_getTcb?_self _ _ _ hInv] at hy
+    cases hT : st.getTcb? tid with
+    | none => rw [hT] at hy; cases hy
+    | some x => rw [hT] at hy; cases hy; exact hCo x hT
+
+/-- **An object stored over a thread no core runs and no queue holds** — the
+destroy path's retype of a descheduled thread: the thread is gone, every other
+thread keeps its TCB, and a TCB stored in its place is coherent.  The property
+holds whatever point is open, the destroyed thread being no idle thread. -/
+theorem currentDequeuedUniqueExcept_insert_offTcb {st st' : SystemState}
+    {e : Option SchedPoint} {k : SeLe4n.ObjId} {obj : KernelObject} {x : TCB}
+    (hInv : st.objects.invExt) (hO : st'.objects = st.objects.insert k obj)
+    (hC : st'.scheduler.current = st.scheduler.current)
+    (hL : ∀ c u, st'.runLinkOn c u = st.runLinkOn c u)
+    (hk : x.tid.toObjId = k)
+    (hD : st.currentDequeuedUniqueExcept e) (hNC : st.currentNowhere x.tid)
+    (hNQ : ∀ c, st.queuedOn c x.tid = false) (hNI : Kernel.isIdleThreadId x.tid = false)
+    (hNew : ∀ y, objTcb? (some obj) = some y → y.Coherent) :
+    st'.currentDequeuedUniqueExcept e := by
+  have key : ∀ t, st'.getTcb? t =
+      if k = t.toObjId then objTcb? (some obj) else st.getTcb? t := fun t => by
+    rw [getTcb?_eq_objTcb?, getTcb?_eq_objTcb?, hO]
+    simp only [RHTable_getElem?_eq_get?]
+    split
+    · rename_i hk; subst hk; rw [RHTable.getElem?_insert_self st.objects _ obj hInv]
+    · rename_i hk
+      rw [RHTable.getElem?_insert_ne st.objects _ _ obj (fun hb => hk (eq_of_beq hb)) hInv]
+  have hNe : ∀ u, u ≠ x.tid → st'.getTcb? u = st.getTcb? u := fun u hu => by
+    rw [key, if_neg (fun h => hu (ThreadId.toObjId_injective _ _ (hk.trans h)).symm)]
+  refine currentDequeuedUniqueExcept_of_offWrite hD hNC hNQ hC hL hNI (fun u hu => ?_)
+    (fun y hy => ?_)
+  · refine ⟨fun ⟨z, hz, hr⟩ => ⟨z, by rw [hNe u hu]; exact hz, hr⟩,
+      fun hc z hz => hc z (by rw [← hNe u hu]; exact hz),
+      fun ⟨z, hz, ha⟩ => ⟨z, by rw [hNe u hu]; exact hz, ha⟩⟩
+  · rw [key, if_pos hk.symm] at hy
+    exact hNew y hy
+
+/-- A typed read-modify-write keeping a thread's run-queue entries keeps
+every thread's. -/
+theorem updateTcb_runLinkOn {st : SystemState} {tid : SeLe4n.ThreadId} {f : TCB → TCB}
+    (hInv : st.objects.invExt) (hf : ∀ x c, (f x).runLinkOn c = x.runLinkOn c)
+    (c : CoreId) (x : SeLe4n.ThreadId) :
+    (st.updateTcb tid f).runLinkOn c x = st.runLinkOn c x := by
+  unfold SystemState.updateTcb; split
+  · rename_i t hT _; exact runLinkOn_rewriteObject_tcb _ hInv hT (hf t) c x
+  · rfl
+
+/-- Two typed read-modify-writes of a thread off every core and every queue,
+leaving it coherent: the property holds whatever point is open.  The suspend's
+pending-state clear and `.Inactive` mark are one. -/
+theorem currentDequeuedUniqueExcept_updateTcb₂_offWrite {st : SystemState}
+    {e : Option SchedPoint} {tid : SeLe4n.ThreadId} {f g : TCB → TCB}
+    (hInv : st.objects.invExt) (hD : st.currentDequeuedUniqueExcept e)
+    (hNC : st.currentNowhere tid) (hNQ : ∀ c, st.queuedOn c tid = false)
+    (hNI : Kernel.isIdleThreadId tid = false)
+    (hf : ∀ x c, (f x).runLinkOn c = x.runLinkOn c)
+    (hg : ∀ x c, (g x).runLinkOn c = x.runLinkOn c)
+    (hCo : ∀ x, st.getTcb? tid = some x → (g (f x)).Coherent) :
+    ((st.updateTcb tid f).updateTcb tid g).currentDequeuedUniqueExcept e := by
+  have hInv1 := updateTcb_preserves_objects_invExt st tid f hInv
+  have hNe : ∀ u, u ≠ tid → ((st.updateTcb tid f).updateTcb tid g).getTcb? u = st.getTcb? u :=
+    fun u hu => by
+      have hne : tid.toObjId ≠ u.toObjId := fun h => hu (ThreadId.toObjId_injective _ _ h).symm
+      rw [updateTcb_getTcb?_ne _ _ _ hInv1 u hne, updateTcb_getTcb?_ne _ _ _ hInv u hne]
+  refine currentDequeuedUniqueExcept_of_offWrite hD hNC hNQ
+    (by rw [updateTcb_scheduler, updateTcb_scheduler])
+    (fun c x => by rw [updateTcb_runLinkOn hInv1 hg, updateTcb_runLinkOn hInv hf]) hNI
+    (fun u hu => ?_) (fun y hy => ?_)
+  · refine ⟨fun ⟨x, hx, hr⟩ => ⟨x, by rw [hNe u hu]; exact hx, hr⟩,
+      fun hc x hx => hc x (by rw [← hNe u hu]; exact hx),
+      fun ⟨x, hx, ha⟩ => ⟨x, by rw [hNe u hu]; exact hx, ha⟩⟩
+  · rw [updateTcb_getTcb?_self _ _ _ hInv1, updateTcb_getTcb?_self _ _ _ hInv] at hy
+    cases hT : st.getTcb? tid with
+    | none => rw [hT] at hy; cases hy
+    | some x => rw [hT] at hy; cases hy; exact hCo x hT
+
+theorem runRemoveOnCore_current (st : SystemState) (c : CoreId) (t : SeLe4n.ThreadId) :
+    (st.runRemoveOnCore c t).scheduler.current = st.scheduler.current := by
+  unfold runRemoveOnCore; dsimp only; split <;>
+    simp [runUnlinkLinks_scheduler, SchedulerState.setRunQueueOnCore,
+      SchedulerState.setRunQueueEndsOnCore]
 
 /-- The run-queue entry an object slot gives a thread on core `c`: a TCB's, or
 the empty entry for any other slot. -/
@@ -2071,10 +3068,14 @@ theorem RunQueueStage.insert {st st' : SystemState} {k : SeLe4n.ObjId} {obj : Ke
     (hO : st'.objects = st.objects.insert k obj)
     (hQ : st'.scheduler.runQueue = st.scheduler.runQueue)
     (hE : st'.scheduler.runQueueEnds = st.scheduler.runQueueEnds)
-    (h : ∀ c, objRunLinkOn (some obj) c = objRunLinkOn st.objects[k]? c) :
+    (h : ∀ c, objRunLinkOn (some obj) c = objRunLinkOn st.objects[k]? c)
+    (hm : objStateMono st.objects[k]? obj)
+    (hC : st'.scheduler.current = st.scheduler.current := by current_frame) :
     RunQueueStage st st' :=
-  fun hInv r => ⟨hO ▸ RHTable_insert_preserves_invExt st.objects k obj hInv,
-    runQueueRefined_of_frame (runLinkOn_insert hInv hO h) hQ hE r⟩
+  ⟨fun hInv r => ⟨hO ▸ RHTable_insert_preserves_invExt st.objects k obj hInv,
+    runQueueRefined_of_frame (runLinkOn_insert hInv hO h) hQ hE r⟩,
+    fun _ hInv _ _ d => currentDequeuedUniqueExcept_of_eq hC (runLinkOn_insert hInv hO h)
+      (StateMono.insert hInv hO hm) d, fun hInv _ => StateMono.insert hInv hO hm⟩
 
 /-- A TCB's run-queue entries are read off its placement fields. -/
 theorem _root_.SeLe4n.Model.TCB.runLinkOn_of_placement {a b : TCB}
@@ -2105,19 +3106,33 @@ theorem RunQueueStage.of_placement {st st' : SystemState}
     (hQ : st'.scheduler.runQueue = st.scheduler.runQueue)
     (hE : st'.scheduler.runQueueEnds = st.scheduler.runQueueEnds)
     (hP : st.objects.invExt → ∀ x,
-      (st'.getTcb? x).map TCB.placement = (st.getTcb? x).map TCB.placement) :
+      (st'.getTcb? x).map TCB.placement = (st.getTcb? x).map TCB.placement)
+    (hM : st.objects.invExt → StateMono st st')
+    (hC : st'.scheduler.current = st.scheduler.current := by current_frame) :
     RunQueueStage st st' :=
-  fun h r => ⟨hInv h, runQueueRefined_of_frame (runLinkOn_of_placement (hP h)) hQ hE r⟩
+  ⟨fun h r => ⟨hInv h, runQueueRefined_of_frame (runLinkOn_of_placement (hP h)) hQ hE r⟩,
+    fun _ h _ _ d => currentDequeuedUniqueExcept_of_eq hC (runLinkOn_of_placement (hP h)) (hM h) d,
+    fun h _ => hM h⟩
 
 /-- **One object store that gives every thread the run-queue entries the
 replaced slot gave** keeps the agreement: a TCB stored over a TCB with the same
 run-queue fields, or any other object stored over any other object. -/
 theorem RunQueueStage.storeObject {st st' : SystemState} {k : SeLe4n.ObjId}
     {obj : KernelObject} (hS : SeLe4n.Model.storeObject k obj st = .ok ((), st'))
-    (h : ∀ c, objRunLinkOn (some obj) c = objRunLinkOn st.objects[k]? c) :
+    (h : ∀ c, objRunLinkOn (some obj) c = objRunLinkOn st.objects[k]? c)
+    (hm : objStateMono st.objects[k]? obj) :
     RunQueueStage st st' := by
   unfold SeLe4n.Model.storeObject at hS; cases hS
-  exact RunQueueStage.insert rfl rfl rfl h
+  exact RunQueueStage.insert rfl rfl rfl h hm
+
+/-- A store keeping the run-queue entry its slot gives keeps the link agreement. -/
+theorem RunQueueLinkStage.storeObject {st st' : SystemState} {k : SeLe4n.ObjId}
+    {obj : KernelObject} (hS : SeLe4n.Model.storeObject k obj st = .ok ((), st'))
+    (h : ∀ c, objRunLinkOn (some obj) c = objRunLinkOn st.objects[k]? c) :
+    RunQueueLinkStage st st' := by
+  unfold SeLe4n.Model.storeObject at hS; cases hS
+  exact fun hInv r => ⟨RHTable_insert_preserves_invExt st.objects k obj hInv,
+    runQueueRefined_of_frame (runLinkOn_insert hInv rfl h) rfl rfl r⟩
 
 /-- The store of an object other than a TCB over an object other than a TCB. -/
 theorem RunQueueStage.storeObject_nonTcb {st st' : SystemState} {k : SeLe4n.ObjId}
@@ -2127,12 +3142,54 @@ theorem RunQueueStage.storeObject_nonTcb {st st' : SystemState} {k : SeLe4n.ObjI
   RunQueueStage.storeObject hS (fun c => by
     rw [hOld]
     cases obj <;> cases old <;> first | rfl | exact absurd rfl (hObj _) | exact absurd rfl (hOldT _))
+    (objStateMono_nonTcb (by rw [hOld]; cases old <;> first | rfl | exact absurd rfl (hOldT _))
+      (by cases obj <;> first | rfl | exact absurd rfl (hObj _)))
 
 /-- The store of a TCB over a TCB with the same run-queue fields. -/
 theorem RunQueueStage.storeObject_tcb {st st' : SystemState} {k : SeLe4n.ObjId}
     {t old : TCB} (hS : SeLe4n.Model.storeObject k (.tcb t) st = .ok ((), st'))
-    (hOld : st.objects[k]? = some (.tcb old)) (h : ∀ c, t.runLinkOn c = old.runLinkOn c) :
+    (hOld : st.objects[k]? = some (.tcb old)) (h : ∀ c, t.runLinkOn c = old.runLinkOn c)
+    (hm : objStateMono (some (.tcb old)) (.tcb t) := by obj_state_mono) :
     RunQueueStage st st' :=
-  RunQueueStage.storeObject hS (fun c => by rw [hOld]; exact h c)
+  RunQueueStage.storeObject hS (fun c => by rw [hOld]; exact h c) (by rw [hOld]; exact hm)
+
+
+/-- **The block write**: a TCB stored over core `c`'s current thread `t` that
+keeps its run-queue links and its thread state — the IPC state store that
+blocks it — keeps `c`'s block point open, `t` being no idle thread. -/
+theorem RunQueueWindowStage.storeObject_block {st st' : SystemState} {c : CoreId}
+    {t : SeLe4n.ThreadId} {old new : TCB}
+    (hS : SeLe4n.Model.storeObject t.toObjId (.tcb new) st = .ok ((), st'))
+    (hOld : st.getTcb? t = some old) (h : ∀ c, new.runLinkOn c = old.runLinkOn c)
+    (hT : new.threadState = old.threadState)
+    (hCur : st.scheduler.currentOnCore c = some t) (hNI : Kernel.isIdleThreadId t = false) :
+    RunQueueWindowStage (.block c) st st' := by
+  have hO : st'.objects = st.objects.insert t.toObjId (.tcb new) := by
+    unfold SeLe4n.Model.storeObject at hS; cases hS; rfl
+  have hSc : st'.scheduler = st.scheduler := by
+    unfold SeLe4n.Model.storeObject at hS; cases hS; rfl
+  have hRaw : st.objects[t.toObjId]? = some (.tcb old) := (getTcb?_eq_some_iff st t old).mp hOld
+  have hLk : ∀ c, objRunLinkOn (some (KernelObject.tcb new)) c =
+      objRunLinkOn st.objects[t.toObjId]? c := fun c => by rw [hRaw]; exact h c
+  refine ⟨fun hInv r => ⟨hO ▸ RHTable_insert_preserves_invExt st.objects _ _ hInv,
+    runQueueRefined_of_frame (runLinkOn_insert hInv hO hLk) (by rw [hSc]) (by rw [hSc]) r⟩,
+    fun hInv _ _ d => ?_⟩
+  have hGet : ∀ u, st'.getTcb? u = if u = t then some new else st.getTcb? u := fun u => by
+    rw [getTcb?_eq_objTcb?, getTcb?_eq_objTcb? st u, hO]
+    simp only [RHTable_getElem?_eq_get?]
+    split
+    · rename_i hu; subst hu; rw [RHTable.getElem?_insert_self st.objects _ _ hInv]; rfl
+    · rename_i hu
+      rw [RHTable.getElem?_insert_ne st.objects _ _ _ (fun hb => hu
+        (ThreadId.toObjId_injective _ _ (eq_of_beq hb)).symm) hInv]
+  refine currentDequeuedUniqueExcept_of_block d hCur (by rw [hSc]) (runLinkOn_insert hInv hO hLk)
+    hNI (fun u hu => ?_) ?_
+  · have e : st'.getTcb? u = st.getTcb? u := by rw [hGet, if_neg hu]
+    refine ⟨fun ⟨x, hx, hr⟩ => ⟨x, by rw [e]; exact hx, hr⟩,
+      fun hc x hx => hc x (by rw [← e]; exact hx),
+      fun ⟨x, hx, ha⟩ => ⟨x, by rw [e]; exact hx, ha⟩⟩
+  · obtain ⟨x, hx, ha⟩ := d.currentActive c t hCur
+    rw [hOld] at hx; cases hx
+    exact ⟨new, by rw [hGet, if_pos rfl], by unfold TCB.Active; rw [hT]; exact ha⟩
 
 end SeLe4n.Model.SystemState

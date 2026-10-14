@@ -118,6 +118,7 @@ def abiEntryPlan (ctx : LabelingContext) (executingCore : CoreId)
     match st.scheduler.currentOnCore executingCore with
     | none => none
     | some tid =>
+      if isIdleThreadId tid then none else
       let stRegs := Platform.FFI.writeFfiRegistersToTcb st tid syscallId x0 x1 x2 x3 x4 x5
       match lookupThreadRegisterContext tid stRegs with
       | .error _ => none
@@ -174,6 +175,9 @@ theorem abiEntryPlan_dispatches (ctx : LabelingContext) (executingCore : CoreId)
     | some tid' =>
       rw [hCur] at h
       simp only at h
+      by_cases hI : isIdleThreadId tid' = true
+      · rw [if_pos hI] at h; exact absurd h (by simp)
+      rw [if_neg hI] at h
       cases hRegs : lookupThreadRegisterContext tid'
           (Platform.FFI.writeFfiRegistersToTcb st tid' syscallId x0 x1 x2 x3 x4 x5) with
       | error e => rw [hRegs] at h; exact absurd h (by simp)
@@ -194,7 +198,7 @@ theorem abiEntryPlan_dispatches (ctx : LabelingContext) (executingCore : CoreId)
           -- the spill frames the scheduler, so it reads the same caller.
           have hSched := Platform.FFI.writeFfiRegistersToTcb_scheduler st tid'
             syscallId x0 x1 x2 x3 x4 x5
-          simp only [syscallEntryChecked, hCtx, hSched, hCur, hRegs, hDec,
+          simp only [syscallEntryChecked, hCtx, hSched, hCur, hI, hRegs, hDec,
             Bool.false_eq_true, if_false]
           rfl
 
@@ -228,6 +232,9 @@ theorem abiEntryPlan_components (ctx : LabelingContext) (executingCore : CoreId)
     | some tid' =>
       rw [hCur] at h
       simp only at h
+      by_cases hI : isIdleThreadId tid' = true
+      · rw [if_pos hI] at h; exact absurd h (by simp)
+      rw [if_neg hI] at h
       cases hRegs : lookupThreadRegisterContext tid'
           (Platform.FFI.writeFfiRegistersToTcb st tid' syscallId x0 x1 x2 x3 x4 x5) with
       | error e => rw [hRegs] at h; exact absurd h (by simp)

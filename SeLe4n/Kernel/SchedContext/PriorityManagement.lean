@@ -506,7 +506,8 @@ theorem updatePrioritySource_runQueueStage (st : SystemState) (tid : SeLe4n.Thre
     SystemState.RunQueueStage st (updatePrioritySource st tid tcb newPriority) := by
   unfold updatePrioritySource
   split
-  · refine SystemState.RunQueueStage.trans (fun h r => ⟨?_, ?_⟩)
+  · refine SystemState.RunQueueStage.trans (SystemState.RunQueueStage.of_invExt fun h0 =>
+      SystemState.RunQueueStage.of_link (fun h r => ⟨?_, ?_⟩) ?_ ?_ ?_)
       (SystemState.RunQueueStage.updateTcb _ tid (fun _ _ => rfl))
     · exact SystemState.updateSchedContext_preserves_objects_invExt _ _ _ h
     · exact SystemState.runQueueRefined_of_frame
@@ -514,6 +515,10 @@ theorem updatePrioritySource_runQueueStage (st : SystemState) (tid : SeLe4n.Thre
           (SystemState.updateSchedContext_getTcb? _ _ _ h t) c)
         (by rw [SystemState.updateSchedContext_scheduler])
         (by rw [SystemState.updateSchedContext_scheduler]) r
+    · intro c t h'; rwa [SystemState.updateSchedContext_scheduler] at h'
+    · intro c t h'
+      rwa [SystemState.queuedOn_of_getTcb? (SystemState.updateSchedContext_getTcb? _ _ _ h0 t)] at h'
+    · exact SystemState.StateMono.of_getTcb (SystemState.updateSchedContext_getTcb? _ _ _ h0)
   · exact SystemState.RunQueueStage.updateTcb _ tid (fun _ _ => rfl)
 
 /-- WS-ZA ZA4.5: the priority write keeps every thread's core code. -/
@@ -545,14 +550,13 @@ its home queue holds, which under the agreement that core's links queue. -/
 theorem migrateRunQueueBucketOnCore_runQueueStage (st : SystemState)
     (tid : SeLe4n.ThreadId) (newPriority : SeLe4n.Priority) (homeCore : Concurrency.CoreId) :
     SystemState.RunQueueStage st (migrateRunQueueBucketOnCore st tid newPriority homeCore) := by
-  intro hInv hR
   unfold migrateRunQueueBucketOnCore
   split
   · rename_i hMem
     have hq : (st.runLinkOn homeCore tid).queued = true := by
       rw [← SystemState.queuedOn_eq_runLinkOn]; exact hMem
-    exact SystemState.RunQueueStage.runRequeueOnCore _ _ _ _ hq hInv hR
-  · exact ⟨hInv, hR⟩
+    exact SystemState.RunQueueStage.runRequeueOnCore _ _ _ _ hq
+  · exact .refl _
 
 /-- WS-ZA ZA4.5: the bucket migration is a current-placement frame. -/
 theorem migrateRunQueueBucketOnCore_currentPlacementFrame (st : SystemState)

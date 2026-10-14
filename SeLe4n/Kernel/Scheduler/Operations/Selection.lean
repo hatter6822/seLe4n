@@ -1773,8 +1773,9 @@ theorem wakeDeclines_eq_false_iff {st : SystemState} {c : CoreId} {tid : SeLe4n.
 everywhere, so a wake declines it only when it is already runnable. -/
 theorem wakeDeclines_of_refined {st : SystemState} {c : CoreId} {tid : SeLe4n.ThreadId}
     (hR : st.runQueueRefined) (hT : (st.getTcb? tid).isSome)
-    (hF : runnableOnSomeCore st tid = false) : wakeDeclines st c tid = false := by
-  refine wakeDeclines_eq_false_iff.mpr ⟨hF, SystemState.runEnqueueAdmits_of_refined hR hT ?_⟩
+    (hF : runnableOnSomeCore st tid = false) (hI : isIdleThreadId tid = false) :
+    wakeDeclines st c tid = false := by
+  refine wakeDeclines_eq_false_iff.mpr ⟨hF, SystemState.runEnqueueAdmits_of_refined hR hT ?_ hI⟩
   intro c' _
   have hC := List.any_eq_false.mp hF c' (SeLe4n.Kernel.Concurrency.mem_allCores c')
   rw [← (hR c').queuedOn]
@@ -2126,6 +2127,18 @@ is unchanged. -/
 def runningCoreOf? (st : SystemState) (tid : SeLe4n.ThreadId) : Option CoreId :=
   SeLe4n.Kernel.Concurrency.allCores.find? (fun c =>
     st.scheduler.currentOnCore c == some tid)
+
+/-- A thread no core runs is current on no core. -/
+theorem runningCoreOf?_none_currentOnCore {st : SystemState} {tid : SeLe4n.ThreadId}
+    (h : runningCoreOf? st tid = none) (c : CoreId) : st.scheduler.currentOnCore c ≠ some tid := by
+  intro hc
+  have := List.find?_eq_none.mp h c (SeLe4n.Kernel.Concurrency.mem_allCores c)
+  simp [hc] at this
+
+/-- The core `runningCoreOf?` names runs the thread. -/
+theorem runningCoreOf?_some_currentOnCore {st : SystemState} {tid : SeLe4n.ThreadId} {r : CoreId}
+    (h : runningCoreOf? st tid = some r) : st.scheduler.currentOnCore r = some tid := by
+  simpa using List.find?_some h
 
 /-- **WS-RR RR7.30**: the routing decision never names a PE the board does not
 have.

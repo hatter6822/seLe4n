@@ -276,9 +276,9 @@ theorem qemuVirtBoundPlatformConfig_checked :
 -- The deployment boots, with both witnesses installed and started
 -- ============================================================================
 
-/-- The idle stage: the checked boot with each core's idle thread enqueued. -/
+/-- The idle stage: the checked boot with each core's idle thread stored. -/
 def qemuVirtDeploymentIdleState : IntermediateState :=
-  (PlatformBinding.declaredCores (platform := QemuVirtPlatform)).foldl enqueueIdleThread
+  (PlatformBinding.declaredCores (platform := QemuVirtPlatform)).foldl storeIdleThread
     (bootEnableInterruptsOp
       (installBootVSpaceRoot (bootFromPlatform qemuVirtBoundPlatformConfig)
         qemuVirtBootVSpaceRootEntry.id qemuVirtBootVSpaceRootEntry.root

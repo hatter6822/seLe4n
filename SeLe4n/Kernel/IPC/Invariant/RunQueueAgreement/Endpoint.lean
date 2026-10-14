@@ -10,9 +10,11 @@ import SeLe4n.Kernel.IPC.CrossCore.EndpointReply
 # Send and receive keep the run-queue link agreement
 
 WS-ZA ZA4.5 part 2.  The send and receive legs, with and without capability
-transfer, are `RunQueueStage`s (`SystemState.RunQueueStage`): each wakes or
-deschedules through the stages `IPC.Invariant.RunQueueAgreement` proves and
-writes no other run-queue field.
+transfer, are kernel entries (`SystemState.RunQueueEntryStage`): a rendezvous
+wakes the blocked partner it pops through the stages
+`IPC.Invariant.RunQueueAgreement` proves, and a block opens core `c`'s
+scheduling point with the IPC-state store over `c`'s current thread and closes
+it with that thread's deschedule (`RunQueueStage.blockThenDeschedule`).
 
 The proofs are the `run_queue_stage` tactic, declared here: it peels a goal's
 steps off one at a time, last step first, with the stage of whichever step it
@@ -48,6 +50,34 @@ macro "run_queue_stage" : tactic => `(tactic| repeat (first
   | with_reducible exact RunQueueStage.refl _
   | run_queue_stage_step))
 
+/-- One step of `run_queue_current_nowhere`: walk back over a step that keeps
+the scheduler, or close the premise at the state it is stated on. -/
+syntax "run_queue_current_nowhere_step" : tactic
+
+/-- Close the premise a wake leaves, that the woken thread is current nowhere:
+walk back over the steps before it, which keep the scheduler, to the state its
+caller's premise speaks of. -/
+macro "run_queue_current_nowhere" : tactic => `(tactic| repeat (first
+  | (exact (by assumption : SystemState.currentNowhere _ _))
+  | run_queue_current_nowhere_step))
+
+macro_rules | `(tactic| run_queue_current_nowhere_step) => `(tactic|
+  refine SystemState.currentNowhere.of_scheduler_eq
+    (storeTcbIpcStateAndMessage_scheduler_eq _ _ _ _ _ (by with_reducible assumption)) ?_)
+macro_rules | `(tactic| run_queue_current_nowhere_step) => `(tactic|
+  refine SystemState.currentNowhere.of_scheduler_eq
+    (storeTcbReceiveComplete_scheduler_eq _ _ _ _ (by with_reducible assumption)) ?_)
+macro_rules | `(tactic| run_queue_current_nowhere_step) => `(tactic|
+  refine SystemState.currentNowhere.of_scheduler_eq
+    (storeObject_scheduler_eq _ _ _ _ (by with_reducible assumption)) ?_)
+macro_rules | `(tactic| run_queue_current_nowhere_step) => `(tactic|
+  exact endpointHeadsWakeable.popped (by assumption) (by with_reducible assumption))
+
+/-- Close the premise a wake leaves, that the woken thread was blocked when the
+steps before it began: it is the head a pop returned. -/
+macro "run_queue_blocked" : tactic => `(tactic|
+  exact endpointHeadsWakeable.popped_blocked (by assumption) (by with_reducible assumption))
+
 /-- Split every `match` and `if` in a stage goal or its hypotheses' way. -/
 macro "run_queue_stage_split" : tactic => `(tactic| repeat' (first | split | dsimp only))
 
@@ -70,14 +100,15 @@ macro_rules | `(tactic| run_queue_slot_same) => `(tactic|
 
 macro_rules | `(tactic| run_queue_stage_step) => `(tactic|
   refine RunQueueStage.trans ?_
-    (RunQueueStage.storeObject (by with_reducible assumption) (fun _ => by run_queue_slot_same)))
+    (RunQueueStage.storeObject (by with_reducible assumption) (fun _ => by run_queue_slot_same)
+      (SystemState.objStateMono_nonTcb (by run_queue_slot_same) rfl)))
 macro_rules | `(tactic| run_queue_stage_step) => `(tactic|
   refine RunQueueStage.trans ?_ (removeRunnableOnCore_runQueueStage _ _ _))
 macro_rules | `(tactic| run_queue_stage_step) => `(tactic|
-  refine RunQueueStage.trans ?_ (wakeThread_runQueueStage _ _ _))
+  refine RunQueueStage.then_wake ?_ _ ?_ ?_)
 macro_rules | `(tactic| run_queue_stage_step) => `(tactic|
-  refine RunQueueStage.trans ?_
-    (RunQueueStage.of_fst_eq (wakeThread_runQueueStage _ _ _) (by with_reducible assumption)))
+  refine RunQueueStage.of_fst_eq (RunQueueStage.then_wake ?_ _ ?_ ?_)
+    (by with_reducible assumption))
 macro_rules | `(tactic| run_queue_stage_step) => `(tactic|
   refine RunQueueStage.trans ?_ (endpointQueuePopHead_runQueueStage (by with_reducible assumption)))
 macro_rules | `(tactic| run_queue_stage_step) => `(tactic|
@@ -85,30 +116,73 @@ macro_rules | `(tactic| run_queue_stage_step) => `(tactic|
 macro_rules | `(tactic| run_queue_stage_step) => `(tactic|
   refine RunQueueStage.trans ?_ (storeTcbReceiveComplete_runQueueStage (by with_reducible assumption)))
 macro_rules | `(tactic| run_queue_stage_step) => `(tactic|
-  refine RunQueueStage.trans ?_ (storeTcbIpcStateAndMessage_runQueueStage (by with_reducible assumption)))
+  refine RunQueueStage.trans ?_ (storeTcbIpcStateAndMessage_runQueueStage (by with_reducible assumption) rfl))
 macro_rules | `(tactic| run_queue_stage_step) => `(tactic|
   refine RunQueueStage.trans ?_ (ipcUnwrapCaps_runQueueStage (by with_reducible assumption)))
 
-theorem endpointSendDualOnCore_runQueueStage (endpointId : SeLe4n.ObjId)
+/-- **The send** of core `c`'s current thread: the rendezvous wakes the
+receive-queue head it pops (`hHeads`); the block enqueues the sender, blocks
+it and deschedules it. -/
+theorem endpointSendDualOnCore_runQueueEntryStage (endpointId : SeLe4n.ObjId)
     (sender : SeLe4n.ThreadId) (msg : IpcMessage) (c : Concurrency.CoreId)
-    (st : SystemState) :
-    RunQueueStage st (endpointSendDualOnCore endpointId sender msg c st).1 := by
+    (st : SystemState) (hHeads : endpointHeadsWakeable st)
+    (hCur : st.scheduler.currentOnCore c = some sender) (hNI : isIdleThreadId sender = false) :
+    SystemState.RunQueueEntryStage st (endpointSendDualOnCore endpointId sender msg c st).1 := by
   unfold endpointSendDualOnCore
-  run_queue_stage_split
-  all_goals run_queue_stage
+  split
+  · exact (RunQueueStage.refl _).entry
+  split
+  · exact (RunQueueStage.refl _).entry
+  split
+  · split
+    · split
+      · exact (RunQueueStage.refl _).entry
+      · split
+        · exact (RunQueueStage.refl _).entry
+        · rename_i receiver _ st1 hPop
+          split
+          · exact (RunQueueStage.refl _).entry
+          · rename_i st2 hS2
+            exact (((endpointQueuePopHead_runQueueStage hPop).trans
+              (storeTcbReceiveComplete_runQueueStage hS2)).then_wake c
+              ((hHeads.popped hPop).of_scheduler_eq
+                (storeTcbReceiveComplete_scheduler_eq _ _ _ _ hS2))
+              (hHeads.popped_blocked hPop)).entry
+    · split
+      · exact (RunQueueStage.refl _).entry
+      · rename_i st1 hE
+        split
+        · exact (RunQueueStage.refl _).entry
+        · rename_i st2 hS2
+          have hC1 := currentOnCore_of_scheduler_eq
+            (endpointQueueEnqueue_scheduler_eq _ _ _ _ _ hE) hCur
+          exact (endpointQueueEnqueue_runQueueStage hE).blockThenDeschedule hS2
+            (RunQueueStage.refl _) hC1
+            (currentOnCore_of_scheduler_eq
+              (storeTcbIpcStateAndMessage_scheduler_eq _ _ _ _ _ hS2) hC1) hNI
+  · split <;> exact (RunQueueStage.refl _).entry
 
-macro_rules | `(tactic| run_queue_stage_step) => `(tactic|
-  refine RunQueueStage.trans ?_
-    (RunQueueStage.of_fst_eq (endpointSendDualOnCore_runQueueStage _ _ _ _ _) (by with_reducible assumption)))
-
-theorem endpointSendDualWithCapsOnCore_runQueueStage (endpointId : SeLe4n.ObjId)
+theorem endpointSendDualWithCapsOnCore_runQueueEntryStage (endpointId : SeLe4n.ObjId)
     (sender : SeLe4n.ThreadId) (msg : IpcMessage) (rights : AccessRightSet)
-    (base : SeLe4n.Slot) (c : Concurrency.CoreId) (st : SystemState) :
-    RunQueueStage st
+    (base : SeLe4n.Slot) (c : Concurrency.CoreId) (st : SystemState)
+    (hHeads : endpointHeadsWakeable st) (hCur : st.scheduler.currentOnCore c = some sender)
+    (hNI : isIdleThreadId sender = false) :
+    SystemState.RunQueueEntryStage st
       (endpointSendDualWithCapsOnCore endpointId sender msg rights base c st).1 := by
+  have s0 := endpointSendDualOnCore_runQueueEntryStage endpointId sender
+    { msg with capsGranted := rights.mem .grant } c st hHeads hCur hNI
   unfold endpointSendDualWithCapsOnCore
-  run_queue_stage_split
-  all_goals run_queue_stage
+  generalize endpointSendDualOnCore endpointId sender { msg with capsGranted := rights.mem .grant }
+    c st = r at s0 ⊢
+  obtain ⟨st1, r⟩ := r
+  cases r with
+  | error e => exact s0
+  | ok sgi =>
+    dsimp only
+    repeat' split
+    all_goals first
+      | exact s0
+      | (rename_i hU; exact s0.trans (ipcUnwrapCaps_runQueueStage hU).entry)
 
 theorem cleanupPreReceiveDonationChecked_runQueueStage {st st' : SystemState}
     {receiver : SeLe4n.ThreadId} (h : cleanupPreReceiveDonationChecked st receiver = .ok st') :
@@ -143,25 +217,105 @@ macro_rules | `(tactic| run_queue_stage_step) => `(tactic|
   refine RunQueueStage.trans ?_
     (storeObject_tcbOver_runQueueStage (by with_reducible assumption) (by with_reducible assumption) (by intro; rfl)))
 
-theorem endpointReceiveDualOnCore_runQueueStage (endpointId : SeLe4n.ObjId)
+/-- **The receive** of core `c`'s current thread: a rendezvous with a calling
+sender hands it to `.blockedOnReply` (it was blocked, so the store moves no
+thread off the steady state); with any other sender it wakes the send-queue
+head it pops (`hHeads`); the block enqueues the receiver, blocks it, stashes its
+reply object and deschedules it. -/
+theorem endpointReceiveDualOnCore_runQueueEntryStage (endpointId : SeLe4n.ObjId)
     (receiver : SeLe4n.ThreadId) (replyId : Option SeLe4n.ReplyId) (c : Concurrency.CoreId)
-    (st : SystemState) :
-    RunQueueStage st (endpointReceiveDualOnCore endpointId receiver replyId c st).1 := by
+    (st : SystemState) (hHeads : endpointHeadsWakeable st)
+    (hCur : st.scheduler.currentOnCore c = some receiver)
+    (hNI : isIdleThreadId receiver = false) :
+    SystemState.RunQueueEntryStage st
+      (endpointReceiveDualOnCore endpointId receiver replyId c st).1 := by
   unfold endpointReceiveDualOnCore
-  run_queue_stage_split
-  all_goals run_queue_stage
+  split
+  · split
+    · split
+      · exact (RunQueueStage.refl _).entry
+      · rename_i sender senderTcb st1 hPop
+        dsimp only
+        split
+        · rename_i hCall
+          have hB : senderTcb.ipcState ≠ .ready := by rw [hCall]; exact fun h => by cases h
+          simp only [↓reduceIte]
+          split
+          · exact (RunQueueStage.refl _).entry
+          · rename_i st2 hS2
+            split
+            · exact (RunQueueStage.refl _).entry
+            · split
+              · exact (RunQueueStage.refl _).entry
+              · rename_i st3 hL
+                split
+                · rename_i st4 hS4
+                  exact ((endpointQueuePopHead_then_blockedStore_runQueueStage hPop hS2 hB).trans
+                    ((linkCallerReply_runQueueStage hL).trans
+                      (storeTcbIpcStateAndMessage_runQueueStage hS4 rfl))).entry
+                · exact (RunQueueStage.refl _).entry
+        · simp only [Bool.false_eq_true, ↓reduceIte]
+          split
+          · exact (RunQueueStage.refl _).entry
+          · rename_i st2 hS2
+            split
+            · rename_i st4 hS4
+              exact ((((endpointQueuePopHead_runQueueStage hPop).trans
+                (storeTcbIpcStateAndMessage_runQueueStage hS2 rfl)).then_wake c
+                ((hHeads.popped hPop).of_scheduler_eq
+                  (storeTcbIpcStateAndMessage_scheduler_eq _ _ _ _ _ hS2))
+                (hHeads.popped_blocked hPop)).trans
+                (storeTcbIpcStateAndMessage_runQueueStage hS4 rfl)).entry
+            · exact (RunQueueStage.refl _).entry
+    · split
+      · exact (RunQueueStage.refl _).entry
+      · rename_i stC hC
+        split
+        · exact (RunQueueStage.refl _).entry
+        · rename_i st1 hE
+          split
+          · exact (RunQueueStage.refl _).entry
+          · rename_i st2 hS2
+            have pre := (cleanupPreReceiveDonationMigrated_runQueueStage hC).trans
+              (endpointQueueEnqueue_runQueueStage hE)
+            have hC1 : st1.scheduler.currentOnCore c = some receiver :=
+              currentOnCore_of_scheduler_eq (endpointQueueEnqueue_scheduler_eq _ _ _ _ _ hE)
+                ((cleanupPreReceiveDonationMigrated_currentOnCore _ _ _ hC c).trans hCur)
+            have hC2 : st2.scheduler.currentOnCore c = some receiver :=
+              currentOnCore_of_scheduler_eq
+                (storeTcbIpcStateAndMessage_scheduler_eq _ _ _ _ _ hS2) hC1
+            split
+            · exact pre.blockThenDeschedule hS2 (RunQueueStage.refl _) hC1 hC2 hNI
+            · rename_i rTcb hT
+              split
+              · split
+                · exact (RunQueueStage.refl _).entry
+                · rename_i st3 hS3
+                  exact pre.blockThenDeschedule hS2
+                    (storeObject_tcbOver_runQueueStage hT hS3 (fun _ => rfl)) hC1
+                    (currentOnCore_of_scheduler_eq (storeObject_scheduler_eq _ _ _ _ hS3) hC2) hNI
+              · exact (RunQueueStage.refl _).entry
+  · split <;> exact (RunQueueStage.refl _).entry
 
-macro_rules | `(tactic| run_queue_stage_step) => `(tactic|
-  refine RunQueueStage.trans ?_
-    (RunQueueStage.of_fst_eq (endpointReceiveDualOnCore_runQueueStage _ _ _ _ _) (by with_reducible assumption)))
-
-theorem endpointReceiveDualWithCapsOnCore_runQueueStage (endpointId : SeLe4n.ObjId)
+theorem endpointReceiveDualWithCapsOnCore_runQueueEntryStage (endpointId : SeLe4n.ObjId)
     (receiver : SeLe4n.ThreadId) (replyId : Option SeLe4n.ReplyId) (root : SeLe4n.ObjId)
-    (base : SeLe4n.Slot) (c : Concurrency.CoreId) (st : SystemState) :
-    RunQueueStage st
+    (base : SeLe4n.Slot) (c : Concurrency.CoreId) (st : SystemState)
+    (hHeads : endpointHeadsWakeable st) (hCur : st.scheduler.currentOnCore c = some receiver)
+    (hNI : isIdleThreadId receiver = false) :
+    SystemState.RunQueueEntryStage st
       (endpointReceiveDualWithCapsOnCore endpointId receiver replyId root base c st).1 := by
+  have s0 := endpointReceiveDualOnCore_runQueueEntryStage endpointId receiver replyId c st
+    hHeads hCur hNI
   unfold endpointReceiveDualWithCapsOnCore
-  run_queue_stage_split
-  all_goals run_queue_stage
+  generalize endpointReceiveDualOnCore endpointId receiver replyId c st = r at s0 ⊢
+  obtain ⟨st1, r⟩ := r
+  cases r with
+  | error e => exact s0
+  | ok res =>
+    dsimp only
+    repeat' split
+    all_goals first
+      | exact s0
+      | (rename_i hU; exact s0.trans (ipcUnwrapCaps_runQueueStage hU).entry)
 
 end SeLe4n.Kernel

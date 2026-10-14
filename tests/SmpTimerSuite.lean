@@ -737,8 +737,9 @@ private def runLocalReplenishRescheduleChecks : IO Unit := do
   let tidLo := ThreadId.ofNat 310   -- low-priority current, unbound, slice not expiring
   let tidHi := ThreadId.ofNat 311   -- high-priority, bound to an exhausted SC
   let scHi : SeLe4n.SchedContextId := ⟨88⟩
-  let tcbLo : TCB := { mkTcb 310 5 0 with schedContextBinding := .unbound, timeSlice := 10 }
-  let tcbHi : TCB := { mkTcb 311 20 0 with schedContextBinding := .bound scHi }
+  let tcbLo : TCB :=
+    { mkTcb 310 5 0 with schedContextBinding := .unbound, timeSlice := 10, threadState := .Ready }
+  let tcbHi : TCB := { mkTcb 311 20 0 with schedContextBinding := .bound scHi, threadState := .Ready }
   let scObj : SchedContext :=
     { (default : SchedContext) with
         priority := ⟨20⟩, boundThread := some tidHi,
@@ -784,6 +785,40 @@ private def runLocalReplenishRescheduleChecks : IO Unit := do
     (match timerTickOnCore stBusy bootCoreId with
      | .ok r => r.1.scheduler.currentOnCore bootCoreId == some tidLo
      | .error _ => false)
+
+/-- §3.13b a replenishment wakes only a runnable bound thread: a thread blocked
+in IPC or suspended (`.Inactive`) keeps its state and stays off the run queue
+when its scheduling context refills (as in seL4, where the refill only re-queues
+a runnable thread). -/
+private def runReplenishNoWakeBlockedChecks : IO Unit := do
+  IO.println "--- §3.13b replenishment never wakes a blocked or suspended thread ---"
+  let tidB := ThreadId.ofNat 312
+  let scB : SeLe4n.SchedContextId := ⟨89⟩
+  let scObj : SchedContext :=
+    { (default : SchedContext) with
+        priority := ⟨20⟩, boundThread := some tidB,
+        budget := ⟨5⟩, period := ⟨10⟩, budgetRemaining := ⟨0⟩,
+        replenishments := [{ amount := ⟨5⟩, eligibleAt := 0 }] }
+  let mkState (tcb : TCB) : SystemState :=
+    (((BootstrapBuilder.empty.withObject tidB.toObjId (.tcb tcb)).withObject
+        scB.toObjId (.schedContext scObj))).build
+  let base : TCB := { mkTcb 312 20 0 with schedContextBinding := .bound scB, threadState := .Ready }
+  let cases : List (String × TCB) :=
+    [("blocked in receive",
+        { base with ipcState := .blockedOnReceive (ObjId.ofNat 900), threadState := .BlockedRecv }),
+     ("suspended", { base with threadState := .Inactive })]
+  for (label, tcb) in cases do
+    let st := mkState tcb
+    let stDue := replenishOnCore st bootCoreId scB st.machine.timer
+    assertBool s!"{label}: the refill names no wake target"
+      (replenishWakeTarget st (refillSchedContext st scB st.machine.timer) scB == none)
+    assertBool s!"{label}: the tick raises no local-wake bit"
+      ((timerTickOnCorePrepared stDue bootCoreId).2.2 == false)
+    assertBool s!"{label}: the tick queues the thread nowhere"
+      (match timerTickOnCore stDue bootCoreId with
+       | .ok r => !(r.1.queuedOn bootCoreId tidB) &&
+           r.1.scheduler.currentOnCore bootCoreId != some tidB
+       | .error _ => false)
 
 /-- §3.14 fixture: core 1 runs `tidCur` (bound to an SC one charge from
 exhaustion); `tidW` — blocked on the endpoint's send queue, budget-bounded by
@@ -953,6 +988,7 @@ def runAll : IO Unit := do
   runClockAdvanceFlagChecks
   runClockAdvanceReplenishChecks
   runLocalReplenishRescheduleChecks
+  runReplenishNoWakeBlockedChecks
   runAffinityTimeoutWakeChecks
   runTimeoutFrameStagingChecks
   runTimeoutFrameDeliveryChecks

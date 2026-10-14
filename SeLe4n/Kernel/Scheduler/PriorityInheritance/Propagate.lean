@@ -214,24 +214,25 @@ TCB write changes `pipBoost` alone, its re-key moves a thread the queue holds
 nothing the agreement reads. -/
 theorem updatePipBoostOnCore_runQueueStage (st : SystemState) (c : CoreId) (tid : ThreadId) :
     SystemState.RunQueueStage st (updatePipBoostOnCore st c tid) := by
-  intro hInv hR
+  refine SystemState.RunQueueStage.of_invExt fun hInv => ?_
   cases hT : st.getTcb? tid with
   | none =>
     unfold updatePipBoostOnCore
     rw [SystemState.getTcbWitnessed?_eq_none hT]
-    exact ⟨hInv, hR⟩
+    exact .refl _
   | some tcb =>
     unfold updatePipBoostOnCore
     simp only [SystemState.getTcbWitnessed?_eq_some hT]
     by_cases hb : (tcb.pipBoost == computeMaxWaiterPriority st tid) = true
-    · simp only [hb, if_true]; exact ⟨hInv, hR⟩
+    · simp only [hb, if_true]; exact .refl _
     · simp only [hb, Bool.false_eq_true, if_false]
       have hW : SystemState.RunQueueStage st
           (st.rewriteObject tid.toObjId (.tcb { tcb with pipBoost := computeMaxWaiterPriority st tid })
             (SystemState.rewriteAdmissible_tcb hT _)) :=
-        fun hInv hR => ⟨SystemState.rewriteObject_preserves_objects_invExt _ _ _ _ hInv,
-          SystemState.rewriteObject_tcb_runQueueRefined _ hInv hT (fun _ => rfl) hR⟩
-      obtain ⟨hInv1, hR1⟩ := hW hInv hR
+        SystemState.RunQueueStage.insert rfl rfl rfl
+          (fun _ => by rw [(SystemState.getTcb?_eq_some_iff _ _ _).mp hT]; rfl)
+          (by rw [(SystemState.getTcb?_eq_some_iff _ _ _).mp hT]; obj_state_mono)
+      refine hW.trans ?_
       split
       · rename_i hMem
         have hq : ((st.rewriteObject tid.toObjId
@@ -242,10 +243,10 @@ theorem updatePipBoostOnCore_runQueueStage (st : SystemState) (c : CoreId) (tid 
               (t' := { tcb with pipBoost := computeMaxWaiterPriority st tid }) _ hInv hT rfl]
           exact hMem
         split
-        · exact ((SystemState.RunQueueStage.runRequeueOnCore _ c tid _ hq).trans
-            (markKeyChangeFor_runQueueStage _ _ _)) hInv1 hR1
-        · exact markKeyChangeFor_runQueueStage _ _ _ hInv1 hR1
-      · exact markKeyChangeFor_runQueueStage _ _ _ hInv1 hR1
+        · exact (SystemState.RunQueueStage.runRequeueOnCore _ c tid _ hq).trans
+            (markKeyChangeFor_runQueueStage _ _ _)
+        · exact markKeyChangeFor_runQueueStage _ _ _
+      · exact markKeyChangeFor_runQueueStage _ _ _
 
 /-- The boost gives no thread a new place on another core: its TCB write keeps
 every TCB, and its re-key moves a thread within the queue that holds it. -/

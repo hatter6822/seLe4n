@@ -173,8 +173,8 @@ def perCoreInvariantSuiteTheorems : List PerCoreInvariantSuiteTheorem :=
       switchToThreadOnCore_preserves_schedulerInvariantStructural_smp .preservation,
     pcist! "handleRescheduleSgiOnCore_preserves_schedulerInvariantStructural_smp: the reschedule-SGI handler preserves the structural SMP invariant"
       handleRescheduleSgiOnCore_preserves_schedulerInvariantStructural_smp .preservation,
-    pcist! "enqueueIdleThreadOnCore_preserves_schedulerInvariantStructural_smp: the idle enqueue preserves the structural SMP invariant"
-      enqueueIdleThreadOnCore_preserves_schedulerInvariantStructural_smp .preservation,
+    pcist! "storeIdleThreadOnCore_preserves_schedulerInvariantStructural_smp: the idle store preserves the structural SMP invariant"
+      storeIdleThreadOnCore_preserves_schedulerInvariantStructural_smp .preservation,
     pcist! "replenishOnCore_preserves_schedulerInvariantStructural_smp: the CBS replenishment preserves the structural SMP invariant"
       replenishOnCore_preserves_schedulerInvariantStructural_smp .preservation,
     pcist! "decrementDomainTimeOnCore_preserves_schedulerInvariantStructural_smp: the non-boundary domain decrement preserves the structural SMP invariant"
@@ -241,8 +241,8 @@ def perCoreInvariantSuiteTheorems : List PerCoreInvariantSuiteTheorem :=
       switchToThreadOnCore_preserves_schedulerInvariantStructuralReg_smp .registerBank,
     pcist! "handleRescheduleSgiOnCore_preserves_schedulerInvariantStructuralReg_smp: the reschedule-SGI handler preserves the Reg invariant"
       handleRescheduleSgiOnCore_preserves_schedulerInvariantStructuralReg_smp .registerBank,
-    pcist! "enqueueIdleThreadOnCore_preserves_schedulerInvariantStructuralReg_smp: the idle enqueue preserves the Reg invariant"
-      enqueueIdleThreadOnCore_preserves_schedulerInvariantStructuralReg_smp .registerBank,
+    pcist! "storeIdleThreadOnCore_preserves_schedulerInvariantStructuralReg_smp: the idle store preserves the Reg invariant"
+      storeIdleThreadOnCore_preserves_schedulerInvariantStructuralReg_smp .registerBank,
     pcist! "replenishOnCore_preserves_schedulerInvariantStructuralReg_smp: the CBS replenishment preserves the Reg invariant"
       replenishOnCore_preserves_schedulerInvariantStructuralReg_smp .registerBank,
     pcist! "decrementDomainTimeOnCore_preserves_schedulerInvariantStructuralReg_smp: the domain decrement preserves the Reg invariant"
@@ -269,8 +269,8 @@ def perCoreInvariantSuiteTheorems : List PerCoreInvariantSuiteTheorem :=
       switchToThreadOnCore_preserves_schedulerInvariantStructuralRegNodup_smp .registerBank,
     pcist! "handleRescheduleSgiOnCore_preserves_schedulerInvariantStructuralRegNodup_smp: the reschedule-SGI handler preserves the Nodup invariant"
       handleRescheduleSgiOnCore_preserves_schedulerInvariantStructuralRegNodup_smp .registerBank,
-    pcist! "enqueueIdleThreadOnCore_preserves_schedulerInvariantStructuralRegNodup_smp: the idle enqueue preserves the Nodup invariant"
-      enqueueIdleThreadOnCore_preserves_schedulerInvariantStructuralRegNodup_smp .registerBank,
+    pcist! "storeIdleThreadOnCore_preserves_schedulerInvariantStructuralRegNodup_smp: the idle store preserves the Nodup invariant"
+      storeIdleThreadOnCore_preserves_schedulerInvariantStructuralRegNodup_smp .registerBank,
     pcist! "replenishOnCore_preserves_schedulerInvariantStructuralRegNodup_smp: the CBS replenishment preserves the Nodup invariant"
       replenishOnCore_preserves_schedulerInvariantStructuralRegNodup_smp .registerBank,
     pcist! "decrementDomainTimeOnCore_preserves_schedulerInvariantStructuralRegNodup_smp: the domain decrement preserves the Nodup invariant"

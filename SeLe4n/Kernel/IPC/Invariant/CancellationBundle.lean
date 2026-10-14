@@ -708,6 +708,7 @@ theorem cancelIpcBlocking_runQueueStage (st : SystemState) (victim : SeLe4n.Thre
     (fun hInv => Lifecycle.Suspend.cancelIpcBlocking_preserves_objects_invExt st victim tcb hInv)
     (by rw [hS]) (by rw [hS])
     (fun hInv x => cancelIpcBlocking_placement_frame st victim tcb hInv x)
+    (fun hInv => cancelIpcBlocking_stateMono st victim tcb hInv)
 
 /-- ...and so does the teardown with its replenishment migration. -/
 theorem cancelIpcBlockingMigrated_runQueueStage (st : SystemState) (victim : SeLe4n.ThreadId)
@@ -881,6 +882,45 @@ theorem cancelSuspendDonation_runQueueStage (st st' : SystemState)
   | bound _ => exact cancelBoundDonationOnCore_runQueueStage
   | donated _ _ => exact cancelDonatedDonationOnCore_runQueueStage
 
+/-- The suspend's donation-cancellation dispatcher moves no thread between
+scheduler slots: both arms write no current slot and keep every thread's run
+core, so every thread's placement is the pre-state's. -/
+theorem cancelSuspendDonation_placedCoreOf? (st st' : SystemState)
+    (tid : SeLe4n.ThreadId) (tcb : TCB) (home : CoreId) (u : SeLe4n.ThreadId)
+    (hInv : st.objects.invExt)
+    (hStep : (match tcb.schedContextBinding with
+              | .unbound => (Except.ok st : Except KernelError SystemState)
+              | .bound _ => cancelBoundDonationOnCore st tid tcb home
+              | .donated _ _ => cancelDonatedDonationOnCore st tid tcb) = .ok st') :
+    placedCoreOf? st' u = placedCoreOf? st u := by
+  revert hStep
+  cases tcb.schedContextBinding with
+  | unbound => intro hStep; cases hStep; rfl
+  | bound _ =>
+    intro hStep
+    exact placedCoreOf?_congr_of_runCores_current_eq u
+      (cancelBoundDonationOnCore_runCoresAgree hInv hStep)
+      (fun c => (cancelBoundDonationOnCore_runQueue_current_eq st st' tid tcb home c hStep).2)
+  | donated _ _ =>
+    intro hStep
+    exact placedCoreOf?_congr_of_runCores_current_eq u
+      (cancelDonatedDonationOnCore_runCoresAgree hInv hStep)
+      (fun c => (cancelDonatedDonationOnCore_runQueue_current_eq st st' tid tcb c hStep).2)
+
+/-- The suspend's teardown leaves an active victim runnable: the cancellation
+makes it `.ready` (`cancelIpcBlocking_victim_ready`) and blocks or suspends no
+thread, and the reclaim moves only run-queue links. -/
+theorem cancelIpcBlockingReclaimed_victim_runnable (st : SystemState) (v : SeLe4n.ThreadId)
+    (tcbV : TCB) (hInv : st.objects.invExt) (hNR : v.isReserved = false)
+    (hT : st.getTcb? v = some tcbV) (hA : tcbV.threadState ≠ .Inactive) :
+    (cancelIpcBlockingReclaimed v tcbV st).runnable v := by
+  have hLookup : lookupTcb st v = some tcbV := by simp [lookupTcb, hNR, hT]
+  obtain ⟨z, hz, hzA⟩ := (cancelIpcBlocking_stateMono st v tcbV hInv).activeAt ⟨tcbV, hT, hA⟩
+  have hzR := cancelIpcBlocking_victim_ready st v tcbV hInv hLookup z
+    ((SystemState.getTcb?_eq_some_iff _ _ _).mp hz)
+  exact (SystemState.StateMono.of_agreeOffRunLinks
+    (cancelIpcBlockingReclaimed_objectsAgreeOffRunLinks v tcbV st)).runnable ⟨z, hz, hzR, hzA⟩
+
 /-- **`v0.35.158` — the payoff: a `.tcbSuspend` of a client does not hand the
 server it called the CPU on nobody's budget.**
 
@@ -937,7 +977,7 @@ theorem suspendThreadOnCore_holder_unplaced
         ∨ (cancelIpcBlockingMigrated vtid.val tcb st).scheduler.currentOnCore c'
             = some holder) →
       c = c' := by
-    have hRM := (cancelIpcBlockingMigrated_runQueueStage st vtid.val tcb hInv hR).2
+    have hRM := ((cancelIpcBlockingMigrated_runQueueStage st vtid.val tcb).1 hInv hR).2
     intro c c' hc hc'
     replace hc := hc.imp_left (SystemState.mem_runQueueOnCore_of_queuedOn hRM)
     replace hc' := hc'.imp_left (SystemState.mem_runQueueOnCore_of_queuedOn hRM)
@@ -970,7 +1010,7 @@ theorem suspendThreadOnCore_holder_unplaced
         cases PriorityInheritance.blockingServer st vtid.val with
         | none => exact hP1
         | some serverId =>
-            rw [propagatePipChainCrossCore_threadPlacedOnSomeCore _ _ _ _ _ (hS1 hInv hR).1]
+            rw [propagatePipChainCrossCore_threadPlacedOnSomeCore _ _ _ _ _ (hS1.1 hInv hR).1]
             exact hP1
       have hS2 : SystemState.RunQueueStage st
           (match PriorityInheritance.blockingServer st vtid.val with
@@ -990,7 +1030,7 @@ theorem suspendThreadOnCore_holder_unplaced
         -- G3 — the donation arm.
         have hP3 : threadPlacedOnSomeCore s3 holder = false := by
           rw [cancelSuspendDonation_threadPlacedOnSomeCore _ s3 vtid.val _
-            (determineTargetCore st vtid.val) holder (hS2 hInv hR).1 hDon]
+            (determineTargetCore st vtid.val) holder (hS2.1 hInv hR).1 hDon]
           exact hP2
         have hS3 := hS2.trans (cancelSuspendDonation_runQueueStage _ s3 vtid.val _
           (determineTargetCore st vtid.val) hDon)
@@ -1004,7 +1044,7 @@ theorem suspendThreadOnCore_holder_unplaced
             ((Lifecycle.Suspend.clearPendingState
               (descheduleAt s3 vtid.val (placedCoreOf? st vtid.val)) vtid.val).updateTcb
                 vtid.val (fun t => { t with threadState := .Inactive })) holder = false := by
-          have hInv4 := (hS4 hInv hR).1
+          have hInv4 := (hS4.1 hInv hR).1
           rw [threadPlacedOnSomeCore_updateTcb _ _ _ (fun t => { t with threadState := .Inactive })
               (fun _ => rfl)
               (by unfold Lifecycle.Suspend.clearPendingState
@@ -1014,13 +1054,13 @@ theorem suspendThreadOnCore_holder_unplaced
               pendingMessage := none, timeoutBudget := none, queuePrevCode := 0,
               queueNextCode := 0, queuePPrevCode := 0 }) (fun _ => rfl) hInv4]
           exact hP4
-        have hS6 : SystemState.RunQueueStage st
+        have hS6 : SystemState.RunQueueLinkStage st
             ((clearPendingStateValid (descheduleAt s3 vtid.val (placedCoreOf? st vtid.val))
               vtid).updateTcb vtid.val (fun t => { t with threadState := .Inactive })) :=
-          (hS4.trans (by
+          (hS4.1.trans (by
             unfold clearPendingStateValid clearPendingState
-            exact SystemState.RunQueueStage.updateTcb _ vtid.val (fun _ _ => rfl))).trans
-          (SystemState.RunQueueStage.updateTcb _ vtid.val (fun _ _ => rfl))
+            exact SystemState.RunQueueLinkStage.updateTcb _ vtid.val (fun _ _ => rfl))).trans
+          (SystemState.RunQueueLinkStage.updateTcb _ vtid.val (fun _ _ => rfl))
         -- G7 — the local scheduling point.
         exact suspendRescheduleOnCore_preserves_unplaced _ st' _ executingCore
           _ _ sgi? holder (hS6 hInv hR).1 ((hS6 hInv hR).2 executingCore) hStep hP6

@@ -9,6 +9,6 @@
 [smp-4core] wake D from core 0 emits SGI reschedule to core 3
 [smp-4core] wake A from core 0 emits no SGI (local)
 [smp-4core] switch core 1 to B sets current = thread B
-[smp-4core] core 0 emptied with idle enqueued selects the idle thread
+[smp-4core] core 0 emptied with idle stored runs the idle thread
 [smp-4core] round-trip: wake blocked E from core 0 emits SGI reschedule to core 3
 [smp-4core] round-trip: core 3 handler dispatches current = thread E

@@ -17,14 +17,14 @@ The boot installs a deployment's threads `.Inactive`: `bootSafeTcbCheck`
 requires it, since a configuration describing a thread mid flight would describe
 state no boot built.  A thread the deployment **designates** as an initial
 thread is then *started* by this operation — marked `.Ready` and placed on its
-home core's run queue — after the idle enqueue, so each core's first scheduling
-point dispatches it ahead of that core's idle thread by priority.
+home core's run queue — after the idle store, so each core's first scheduling
+point dispatches it; the core's idle thread runs only when its queue is empty.
 
 **One body, the kernel model's.**  The start is `enqueueRunnableOnCore` — the
 step every wake and resume ends in — preceded by the one field it does not
 write, the thread-state flag.  A queued thread whose flag still read `.Inactive`
 would falsify `threadInactiveFlagConsistent` on the first state the kernel runs.
-It is the boot's counterpart of `enqueueIdleThreadOnCore` and lives in the
+It is the boot's counterpart of `storeIdleThreadOnCore` and lives in the
 kernel model for the same reason (`v0.35.68`): a second body in the boot would
 be a second answer to "what does it mean to make a thread runnable".
 
@@ -58,12 +58,15 @@ def startedThread (tcb : TCB) : TCB :=
 
 /-- **WS-BP BP7.11**: may the boot start `tid`?  It is a stored thread, still
 `.Inactive`, carrying no inherited boost (so its run-queue key is its own base
-priority), with a positive time slice, and placed on no core.
+priority), with a positive time slice, and placed on no core.  An idle thread is
+never started: it runs only when its core has nothing queued, and never joins a
+queue.
 
 Fail-closed at the caller: a thread the boot cannot start refuses the boot
 rather than being skipped, and a thread named twice is refused at its second
 occurrence, by which point it is `.Ready` and queued. -/
 def initialThreadStartable (st : SystemState) (tid : SeLe4n.ThreadId) : Bool :=
+  !isIdleThreadId tid &&
   match st.getTcb? tid with
   | some tcb =>
       (tcb.threadState == .Inactive) && tcb.pipBoost.isNone &&
@@ -84,6 +87,7 @@ theorem initialThreadStartable_spec {st : SystemState} {tid : SeLe4n.ThreadId}
       tcb.pipBoost = none ∧ 0 < tcb.timeSlice ∧
       runnableOnSomeCore st tid = false ∧ runningOnSomeCore st tid = false := by
   unfold initialThreadStartable at h
+  replace h := ((Bool.and_eq_true _ _).mp h).2
   cases hT : st.getTcb? tid with
   | none => rw [hT] at h; cases h
   | some tcb =>
@@ -92,6 +96,14 @@ theorem initialThreadStartable_spec {st : SystemState} {tid : SeLe4n.ThreadId}
       Option.isNone_iff_eq_none] at h
     obtain ⟨⟨⟨⟨h1, h2⟩, h3⟩, h4⟩, h5⟩ := h
     exact ⟨tcb, rfl, h1, h2, h3, h4, h5⟩
+
+/-- A startable thread is no idle thread. -/
+theorem initialThreadStartable_not_idle {st : SystemState} {tid : SeLe4n.ThreadId}
+    (h : initialThreadStartable st tid = true) : isIdleThreadId tid = false := by
+  have h1 := ((Bool.and_eq_true _ _).mp h).1
+  cases hI : isIdleThreadId tid
+  · rfl
+  · rw [hI] at h1; cases h1
 
 /-- WS-ZA ZA4.5: does the start's enqueue place the thread?  It does when the
 thread is queued on no core and its run-queue links admit its home core
@@ -118,7 +130,7 @@ theorem startFresh_ready {st : SystemState} {tid : SeLe4n.ThreadId} {tcb : TCB}
   have hA : ({ st with objects := (st.objects.insert tid.toObjId
       (.tcb { tcb with threadState := .Ready })) } : SystemState).runEnqueueAdmits
         (determineTargetCore st tid) tid = st.runEnqueueAdmits (determineTargetCore st tid) tid := by
-    unfold SystemState.runEnqueueAdmits; rw [hT1, hT]
+    unfold SystemState.runEnqueueAdmits SystemState.runLinksAdmit; rw [hT1, hT]
   have hRn : runnableOnSomeCore ({ st with objects := (st.objects.insert tid.toObjId
       (.tcb { tcb with threadState := .Ready })) } : SystemState) tid =
         runnableOnSomeCore st tid := by
@@ -568,8 +580,9 @@ theorem startFresh_of_startable {st : SystemState} {tid : SeLe4n.ThreadId}
     startFresh st tid = true := by
   obtain ⟨tcb, hT, _, _, _, hNR, _⟩ := initialThreadStartable_spec hStart
   have hA : st.runEnqueueAdmits (determineTargetCore st tid) tid = true :=
-    SystemState.runEnqueueAdmits_of_refined hR (by rw [hT]; rfl) fun c' _ =>
-      RunQueue.contains_false_of_not_mem (not_mem_runQueueOnCore_of_runnableOnSomeCore_false hR hNR c')
+    SystemState.runEnqueueAdmits_of_refined hR (by rw [hT]; rfl) (fun c' _ =>
+      RunQueue.contains_false_of_not_mem (not_mem_runQueueOnCore_of_runnableOnSomeCore_false hR hNR c'))
+      (initialThreadStartable_not_idle hStart)
   unfold startFresh
   rw [hNR, hA]; rfl
 
@@ -724,6 +737,8 @@ theorem initialThreadStartable_of_start_ne {st : SystemState} {tid tid' : SeLe4n
     initialThreadStartable (startInitialThreadOnCore st tid) tid' = true := by
   have hNeO : tid.toObjId ≠ tid'.toObjId := fun hk => hNe (ThreadId.toObjId_injective _ _ hk).symm
   unfold initialThreadStartable at h ⊢
+  obtain ⟨hIdle, h⟩ := (Bool.and_eq_true _ _).mp h
+  rw [hIdle, Bool.true_and]
   rw [startInitialThreadOnCore_runnableOnSomeCore_ne st tid tid' hNe hInv,
     startInitialThreadOnCore_runningOnSomeCore]
   cases hT0 : st.getTcb? tid' with

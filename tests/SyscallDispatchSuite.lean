@@ -479,6 +479,26 @@ private def sd033_dispatchFromAbi_total : IO Unit := do
       failLine "sd033_dispatchFromAbi_returns_ok"
         "syscallDispatchFromAbi must never return Except.error"
 
+/-- SD-038: an idle thread never traps.  It runs the kernel's own loop at EL1
+and makes no system call (as in seL4), so a syscall the model attributes to a
+core whose current thread is its idle thread is refused like one on a core with
+no thread: the `.illegalState` frame, and the idle thread's TCB left exactly as
+it was (no argument spill, no refusal record against it). -/
+private def sd038_idleCallerRefused : IO Unit := do
+  let idle := idleThreadId bootCoreId
+  let st := mkState [(idle.toObjId, .tcb (readyIdleThread bootCoreId))] (some idle)
+  let ctx := SeLe4n.Kernel.testLabelingContext
+  match syscallDispatchFromAbi ctx bootCoreId 0 0xdead 1 2 3 4 5 0 0 0 0 0 st with
+  | .ok (outcome, st') =>
+      expect "sd038a_idle_caller_gets_illegalState"
+        (isErrorFrameFor outcome .illegalState)
+        "a syscall attributed to an idle thread must be refused with .illegalState"
+      expect "sd038b_idle_tcb_untouched"
+        (st'.getTcb? idle == st.getTcb? idle)
+        "the refusal must leave the idle thread's TCB unwritten"
+  | .error _ =>
+      failLine "sd038_idle_caller_refused" "syscallDispatchFromAbi must never return .error"
+
 /-- SD-036 (`v0.36.47` audit): the arm the hardware never reaches — the entry
 handed no context.  `syscallEntryContextOrFaulted` is the pure owner of that
 arm: `none` is the `.faulted` outcome tag and nothing else (no state is read,
@@ -781,7 +801,8 @@ private def sd043_bootInitialise_insecureContext_rejects : IO Unit := do
       initialiseKernelState cleanSt
 
 /-- SD-045 (**WS-RR RR5.14**): the *production* boot wrapper comes up with a
-    dispatchable idle thread on every core.
+    dispatchable idle thread on every core, on no run queue (seL4's posture,
+    since `v0.36.83`).
 
 Before RR5.14 `bootAndInitialiseFromPlatform` ran `bootFromPlatformChecked`,
 which installs no idle threads at all: `getTcb? (idleThreadId c) = none` and an
@@ -804,16 +825,19 @@ private def sd045_bootInitialise_installs_percore_idle : IO Unit := do
       -- what a subsequent syscall entry would see.
       let st ← getKernelState
       for c in SeLe4n.Kernel.Concurrency.allCores do
-        expect s!"sd045_idle_enqueued_core_{c.val}"
-          (decide (SeLe4n.Kernel.idleThreadId c ∈
-            (st.runQueueWalk c)))
-          "each core's idle thread must be on that core's own run queue"
+        expect s!"sd045_idle_dispatchable_core_{c.val}"
+          (idleDispatchableOnCore st c)
+          "each core's idle thread must be dispatchable on that core"
+        expect s!"sd045_idle_on_no_queue_core_{c.val}"
+          (SeLe4n.Kernel.Concurrency.allCores.all fun c' =>
+            !((st.runQueueWalk c').contains (SeLe4n.Kernel.idleThreadId c)))
+          "no idle thread is on any run queue (seL4: a core runs idle when its queue is empty)"
         expect s!"sd045_idle_resolves_core_{c.val}"
           (st.getTcb? (SeLe4n.Kernel.idleThreadId c)).isSome
           "each core's idle TCB must be in the object store"
         expect s!"sd045_nothing_dispatched_core_{c.val}"
           (decide (st.scheduler.currentOnCore c = none))
-          "boot enqueues idle without dispatching it (queueCurrentConsistent)"
+          "boot stores idle without dispatching it"
 
 -- ============================================================================
 -- Driver
@@ -1120,8 +1144,9 @@ private def sd055_witnesses_installed_and_binding_cores : IO Unit := do
       let c1 : SeLe4n.Kernel.Concurrency.CoreId := ⟨1, by decide⟩
       expect "sd055_single_core_installs_idle_0"
         ((st.getTcb? (SeLe4n.Kernel.idleThreadId c0)).isSome &&
-         decide (SeLe4n.Kernel.idleThreadId c0 ∈ (st.runQueueWalk c0)))
-        "the single-core binding must install and enqueue idle 0"
+         idleDispatchableOnCore st c0 &&
+         !(st.runQueueWalk c0).contains (SeLe4n.Kernel.idleThreadId c0))
+        "the single-core binding must install idle 0, dispatchable and on no queue"
       expect "sd055_single_core_installs_no_idle_1"
         ((st.getTcb? (SeLe4n.Kernel.idleThreadId c1)).isNone &&
          (st.runQueueWalk c1).isEmpty)
@@ -1322,16 +1347,16 @@ private def sd057_rawSuspendSeamRefusesIdleIds : IO Unit := do
       let idle0 : SeLe4n.ThreadId := SeLe4n.Kernel.idleThreadId c0
       let invalidArgument := KernelError.toUInt32 .invalidArgument
       let st ← getKernelState
-      -- The finding: the transition alone removes the idle thread.
-      expect "sd057_transition_alone_would_dequeue_idle"
+      -- The finding: the transition alone suspends the idle thread.
+      expect "sd057_transition_alone_would_suspend_idle"
         (match idle0.toValid? with
          | some vIdle =>
            match suspendThreadOnCore st vIdle c0 with
            | Except.ok (st', _) =>
-             decide (idle0 ∉ (st'.runQueueWalk c0))
+             (st'.getTcb? idle0).map (·.threadState) == some .Inactive
            | Except.error _ => false
          | none => false)
-        "without the seam's check, suspendThreadOnCore dequeues idle 0"
+        "without the seam's check, suspendThreadOnCore suspends idle 0"
       -- The seam refuses before the transition runs — the step, committed
       -- through the kernel-state reference exactly as the export commits it.
       let (status, sgis) ← modifyGetKernelState
@@ -1340,9 +1365,8 @@ private def sd057_rawSuspendSeamRefusesIdleIds : IO Unit := do
         (status == invalidArgument && sgis.isEmpty)
         s!"expected the sentinel's discriminant {invalidArgument} and no SGI, got {status}"
       let st' ← getKernelState
-      expect "sd057_idle_thread_still_installed_queued_and_ready"
-        ((st'.getTcb? idle0).isSome &&
-         decide (idle0 ∈ (st'.runQueueWalk c0)) &&
+      expect "sd057_idle_thread_still_installed_dispatchable_and_ready"
+        ((st'.getTcb? idle0).isSome && idleDispatchableOnCore st' c0 &&
          ((st'.getTcb? idle0).map (·.threadState) == some .Ready))
         "the refusal must commit nothing"
       -- The pure step, the theorem's subject: refused, no SGI, state untouched.
@@ -1350,7 +1374,7 @@ private def sd057_rawSuspendSeamRefusesIdleIds : IO Unit := do
         (match suspendThreadCrossCoreStep idle0.toNat.toUInt64 c0 st with
          | ((code, sgis), stAfter) =>
            code == invalidArgument && sgis.isEmpty &&
-           decide (idle0 ∈ (stAfter.runQueueWalk c0)))
+           stAfter.getTcb? idle0 == st.getTcb? idle0)
         "the pure step must refuse an idle id without deriving an SGI"
       expect "sd057_every_core_idle_id_refused"
         (SeLe4n.Kernel.Concurrency.allCores.all (fun c =>
@@ -2278,6 +2302,7 @@ def main : IO Unit := do
   sd033_dispatchFromAbi_total
   sd035_sequentialDispatches
   sd036_entryWithoutContext_faults
+  sd038_idleCallerRefused
   sd037_overflowWordsCrossInRuns
   IO.println "--- R2.A: bootAndInitialiseFromPlatform integration ---"
   sd040_bootInitialise_emptyConfig_succeeds

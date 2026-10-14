@@ -2132,6 +2132,23 @@ private def runResidentFrameChecks : IO Unit := do
     (stC.scheduler.currentOnCore c1 == some handler &&
       stC.machine.residentOnCore c1 == some handler)
 
+/-- An abandon deschedules the faulted thread where it is placed.  `orphan` is
+queued on core 2; its affinity is then pointed at core 3 without moving it, so
+its home core (`determineTargetCore`) and its placement disagree.  The abandon
+reads the placement (`faultAbandonCore`, as seL4's `tcbSchedDequeue` reads the
+thread's own queue membership) and leaves it queued nowhere. -/
+private def runAbandonPlacementChecks : IO Unit := do
+  IO.println "--- abandon deschedules where the thread is placed ---"
+  let st := stFault.updateTcb orphan fun t => { t with cpuAffinity := some c3 }
+  assertBool "the moved affinity names core 3 as home, while the thread sits on core 2"
+    (determineTargetCore st orphan == c3 && st.queuedOn c2 orphan)
+  assertBool "the abandon core is the placement, core 2"
+    (faultAbandonCore st orphan == c2)
+  let st' := faultReplyApplyOnCore st orphan .abandon
+  assertBool "after the abandon the thread is on no core's queue"
+    (!(st'.queuedOn c2 orphan) && !(st'.queuedOn c3 orphan) &&
+      !((st'.runQueueWalk c2).contains orphan))
+
 def runFaultHandlingChecks : IO Unit := do
   IO.println "WS-RR RR4.26 — Fault handling suite (fault IPC, resume, restart, progress)"
   IO.println "===================================="
@@ -2152,6 +2169,7 @@ def runFaultHandlingChecks : IO Unit := do
   runSyscallCapFaultChecks
   runResumeChecks
   runRestartChecks
+  runAbandonPlacementChecks
   runReplySeamChecks
   runFaultDonationChecks
   runProgressChecks

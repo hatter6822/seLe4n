@@ -109,7 +109,7 @@ syscall-level resolver alone; a new
 declared arm adds its `case` to `dispatchWithCapChecked_coversWrites` in the
 same cut, or the seam theorem does not elaborate).
 
-### WS-ZA A syscall that allocates nothing — IN FLIGHT (registered v0.36.72; ZA1 and most of ZA2 v0.36.73; 9 at v0.36.74; the signal at 0 at v0.36.75; the pending-badge wait at 0 at v0.36.76; the wide-badge signal at 0 at v0.36.77; yield at v0.36.78; intrusive notification waiters at v0.36.82; runs beside WS-CV, before WS-CB)
+### WS-ZA A syscall that allocates nothing — IN FLIGHT (registered v0.36.72; ZA1 and most of ZA2 v0.36.73; 9 at v0.36.74; the signal at 0 at v0.36.75; the pending-badge wait at 0 at v0.36.76; the wide-badge signal at 0 at v0.36.77; yield at v0.36.78; intrusive notification waiters at v0.36.82; ct_not_in_q carried and idle threads off the run queues at v0.36.83; runs beside WS-CV, before WS-CB)
 
 The continuing syscall round trip makes no heap allocation.  At `v0.36.71` it
 makes 118: 55 are register-context sites WS-CV's rows already remove, 62 are
@@ -132,7 +132,10 @@ only the queue's ends; the abstract queue is an erased ghost proven to agree
 with the links on every reachable state (`runQueueRefined`, a conjunct of
 `ipcReachable`).  Yield stays 0, a signal to a waiter reads 33 and a call 184.
 The single-core reference scheduler operations are proof-only from then on: run
-code, suites included, uses the per-core forms.  ZA4 measures the other
+code, suites included, uses the per-core forms.  At `v0.36.83` every kernel
+entry carries `currentDequeuedUnique` (seL4's `ct_not_in_q`, current
+uniqueness and `valid_idle`) and the boot establishes it; idle threads are on
+no run queue (a core runs idle when its queue is empty).  ZA4 measures the other
 syscalls and entries.  Plan:
 [`docs/planning/ZERO_ALLOCATION_SYSCALL_PLAN.md`](../planning/ZERO_ALLOCATION_SYSCALL_PLAN.md)
 (phases ZA1–ZA4).
@@ -147,7 +150,10 @@ through `Notification.waitHead` and each waiter's `TCB.ntfnNext`, never a list
 in the notification; a thread blocked on a notification is linked by its own
 `ntfnPrev`/`ntfnNext` and is reached from that notification's head
 (`notificationQueueReaches`), so a step that blocks or unblocks a waiter keeps
-it linked into, or out of, exactly one queue.
+it linked into, or out of, exactly one queue.  No idle thread is ever enqueued
+(`runEnqueueAdmits` refuses one) and none ever traps (the syscall seam and the
+fault entry refuse one); a kernel entry's proof discharges
+`RunQueueEntryStage`, which carries `currentDequeuedUnique`.
 
 ### WS-CB Hierarchical constant-bandwidth servers — PLANNED (registered v0.34.49; opens after WS-CV)
 
