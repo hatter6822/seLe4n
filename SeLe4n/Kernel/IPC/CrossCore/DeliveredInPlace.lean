@@ -312,6 +312,51 @@ theorem storeReplyRendezvous_eq_hold (st : SystemState) (c server : SeLe4n.Threa
   rw [updateTcb_msg _ _ _ _ _ _ _ hNo3 ?_, unlinkReplyWaiter_msg]
   intros; rfl
 
+/-- A TCB rewrite in its slot leaves every Reply and SchedContext as it was,
+so the state before it is a donation-chain frame of the state after it. -/
+theorem donationChainFrame_of_mapTcbInPlace_rev (st : SystemState) (t : SeLe4n.ThreadId)
+    (g : TCB → TCB) : donationChainFrame (st.mapTcbInPlace t g) st where
+  replyLinks oid := by
+    rw [SystemState.objects_mapTcbInPlace]
+    split
+    · cases st.objects[oid]? with
+      | none => rfl
+      | some o => cases o <;> rfl
+    · rfl
+  stackHeads oid := by
+    rw [SystemState.objects_mapTcbInPlace]
+    split
+    · cases st.objects[oid]? with
+      | none => rfl
+      | some o => cases o <;> rfl
+    · rfl
+  callerKept oid r' h hc := by
+    refine ⟨r', ?_, hc⟩
+    rw [SystemState.objects_mapTcbInPlace]
+    split
+    · rw [h]; rfl
+    · exact h
+
+/-- **The in-place reply keeps the donation chain**, its caller woken with no
+message held: the reply that holds the message keeps it
+(`storeReplyRendezvous_preserves_donationChainWellFormed`), and the message is
+one TCB write on top of this state (`storeReplyRendezvous_eq_hold`), which
+touches no Reply and no SchedContext. -/
+theorem storeReplyRendezvousReady_preserves_donationChainWellFormed (st : SystemState)
+    (c server : SeLe4n.ThreadId) (ct : TCB) (ep : SeLe4n.ObjId) (rid : SeLe4n.ReplyId)
+    (core : Concurrency.CoreId)
+    (hT : st.objects[c.toObjId]? = some (.tcb ct))
+    (hIpc : ct.ipcState = .blockedOnReply ep (some server))
+    (hRO : ct.replyObject = some rid)
+    (hG : replyWakesInPlace st c ct rid = true)
+    (hObjInv : st.objects.invExt) (hNo : st.objects.noResizeDue)
+    (hChain : donationChainWellFormed st) :
+    donationChainWellFormed (storeReplyRendezvousReady st c server rid) := by
+  have h := storeReplyRendezvous_preserves_donationChainWellFormed st c server ct ep rid
+    { registers := #[] } core (by simp) (by simp) hT hIpc hRO hG hObjInv hChain
+  rw [storeReplyRendezvous_eq_hold _ _ _ _ _ hNo] at h
+  exact donationChainWellFormed_of_frame (donationChainFrame_of_mapTcbInPlace_rev _ _ _) h
+
 /-- **The reply, delivered**: the caller woken without the message, the
 server's priority walk, then the reply's frame written into the caller's saved
 registers. -/
