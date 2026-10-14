@@ -9,6 +9,7 @@
 
 import SeLe4n.Kernel.RefusalCarryingDispatch
 import SeLe4n.Kernel.IPC.CrossCore.EndpointReplyInPlace
+import SeLe4n.Kernel.IPC.CrossCore.DeliveredInPlace
 
 /-!
 # The endpoint syscalls, refusing in the state they were refused in
@@ -250,11 +251,8 @@ in place on a state nothing else holds (`performCallRendezvous`,
                             endpointFlowGate ctx epId (ctx.threadLabelOf tid)
                               (ctx.endpointLabelOf epId) &&
                             callWakesInPlace st epId tid r rt rid then
-                          .ok ((), Architecture.stageWokenDelivery
-                            (performCallRendezvous st epId tid r rt.queueNext rid
-                              { registers := body, caps := #[], badge := cap.badge,
-                                capsGranted := cap.rights.mem .grant } executingCore)
-                            (some r) 0)
+                          .ok ((), callRendezvousDelivered st epId tid r rt.queueNext rid body
+                            cap.badge (cap.rights.mem .grant) executingCore)
                         else endpointCallCheckedArmGeneralR ctx body tid executingCore cap st
                     | none => endpointCallCheckedArmGeneralR ctx body tid executingCore cap st
                 | none => endpointCallCheckedArmGeneralR ctx body tid executingCore cap st
@@ -288,6 +286,7 @@ theorem endpointCallCheckedArmR_eq_general (ctx : LabelingContext)
                   capsGranted := cap.rights.mem .grant } cap.rights (SeLe4n.Slot.ofNat 0)
                 executingCore rfl rfl hSz ((SystemState.getEndpoint?_eq_some_iff _ _ _).mp hE) hH
                 ((SystemState.getTcb?_eq_some_iff _ _ _).mp hT) hRid hW hFlow
+              rw [callRendezvousDelivered_eq _ _ _ _ _ _ _ _ _ _ hW]
               simp only [endpointCallCheckedArmGeneralR, hTgt, hE, Option.bind_some, hH, hD]
               rfl
             · rfl
@@ -510,9 +509,8 @@ takes the general arm. -/
                                   maxMessageRegisters) &&
                                 securityFlowsTo (ctx.threadLabelOf tid) (ctx.threadLabelOf c) &&
                                 !server.isReserved && replyWakesInPlace st c ct rid then
-                              .ok ((), performReplyRendezvous st c server rid
-                                { registers := extractMessageRegisters regs mi, caps := #[],
-                                  badge := cap.badge } executingCore)
+                              .ok ((), replyRendezvousDelivered st c server rid
+                                (extractMessageRegisters regs mi) cap.badge executingCore)
                             else endpointReplyCheckedArmGeneralR ctx mi regs tid executingCore cap st
                         | none => endpointReplyCheckedArmGeneralR ctx mi regs tid executingCore cap st
                     | _ => endpointReplyCheckedArmGeneralR ctx mi regs tid executingCore cap st
@@ -546,6 +544,7 @@ theorem endpointReplyCheckedArmR_eq_general (ctx : LabelingContext) (mi : Messag
                 obtain ⟨⟨⟨hSz, hFlow⟩, hSRes⟩, hW⟩ := hG
                 have hAns : replyAnsweredCaller? st rid0 = some c := by
                   rw [replyAnsweredCaller?_of_getReply st rid0 rp0 hR0, hC]
+                rw [replyRendezvousDelivered_eq _ _ _ _ _ _ _ _ hW]
                 simp only [endpointReplyCheckedArmGeneralR, hTgt, hAns, hFlow, ↓reduceIte]
                 rw [replyTransferChecked_inPlace ctx st tid c server ct ep rid mi regs _
                   executingCore hSz rfl ((SystemState.getTcb?_eq_some_iff _ _ _).mp hT) hIpc hRO
