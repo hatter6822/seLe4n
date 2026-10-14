@@ -440,6 +440,13 @@ theorem writeReturnFrameToTcb_keyFrame (st : SystemState) (tid : SeLe4n.ThreadId
    Architecture.writeReturnFrameToTcb_scheduler_eq st tid frame,
    writeReturnFrameToTcb_preserves_objects_invExt st tid frame hObjInv⟩
 
+theorem writeDeliveredFrameToTcb_keyFrame (st : SystemState) (tid : SeLe4n.ThreadId)
+    (frame : Architecture.SyscallReturnFrame) (hObjInv : st.objects.invExt) :
+    capabilityKeyFrame st (Architecture.writeDeliveredFrameToTcb st tid frame) :=
+  ⟨keyInputsEq_updateTcb hObjInv (fun _ => rfl),
+   Architecture.writeDeliveredFrameToTcb_scheduler_eq st tid frame,
+   writeDeliveredFrameToTcb_preserves_objects_invExt st tid frame hObjInv⟩
+
 theorem setIPCBufferOp_keyFrame (st st' : SystemState) (vtid : SeLe4n.ValidThreadId)
     (addr : SeLe4n.VAddr) (hObjInv : st.objects.invExt)
     (hStep : Architecture.IpcBufferValidation.setIPCBufferOp st vtid addr = .ok st') :

@@ -597,7 +597,7 @@ structure donationReadAgreement (st st' : SystemState) : Prop where
   /-- a post-state TCB is its pre-state self up to the binding -/
   tcbBwd : ∀ (oid : SeLe4n.ObjId) (tx : TCB), st'.objects[oid]? = some (.tcb tx) →
     ∃ ty, st.objects[oid]? = some (.tcb ty) ∧
-      tx.ipcState = ty.ipcState ∧ pendingMessageReadAgrees tx.pendingMessage ty.pendingMessage ∧
+      tx.ipcState = ty.ipcState ∧ pendingMessageReadAgrees ty.ipcState tx.pendingMessage ty.pendingMessage ∧
       tx.queueNext = ty.queueNext ∧ tx.queuePrev = ty.queuePrev ∧
       tx.queuePPrev = ty.queuePPrev ∧
       tx.timeoutBudget = ty.timeoutBudget ∧ tx.replyObject = ty.replyObject ∧
@@ -605,7 +605,7 @@ structure donationReadAgreement (st st' : SystemState) : Prop where
   /-- and conversely -/
   tcbFwd : ∀ (oid : SeLe4n.ObjId) (ty : TCB), st.objects[oid]? = some (.tcb ty) →
     ∃ tx, st'.objects[oid]? = some (.tcb tx) ∧
-      tx.ipcState = ty.ipcState ∧ pendingMessageReadAgrees tx.pendingMessage ty.pendingMessage ∧
+      tx.ipcState = ty.ipcState ∧ pendingMessageReadAgrees ty.ipcState tx.pendingMessage ty.pendingMessage ∧
       tx.queueNext = ty.queueNext ∧ tx.queuePrev = ty.queuePrev ∧
       tx.queuePPrev = ty.queuePPrev ∧
       tx.timeoutBudget = ty.timeoutBudget ∧ tx.replyObject = ty.replyObject ∧
@@ -648,13 +648,13 @@ theorem trans {st st' st'' : SystemState}
     intro oid tx hx
     obtain ⟨ty, hy, e1, e2, e3, e4, e5, e6, e7, e8⟩ := h2.tcbBwd oid tx hx
     obtain ⟨tz, hz, f1, f2, f3, f4, f5, f6, f7, f8⟩ := h1.tcbBwd oid ty hy
-    exact ⟨tz, hz, e1.trans f1, pendingMessageReadAgrees_trans e2 f2, e3.trans f3,
+    exact ⟨tz, hz, e1.trans f1, pendingMessageReadAgrees_trans e2 f2 f1, e3.trans f3,
       e4.trans f4, e5.trans f5, e6.trans f6, e7.trans f7, e8.trans f8⟩
   tcbFwd := by
     intro oid ty hy
     obtain ⟨tx, hx, e1, e2, e3, e4, e5, e6, e7, e8⟩ := h1.tcbFwd oid ty hy
     obtain ⟨tz, hz, f1, f2, f3, f4, f5, f6, f7, f8⟩ := h2.tcbFwd oid tx hx
-    exact ⟨tz, hz, f1.trans e1, pendingMessageReadAgrees_trans f2 e2, f3.trans e3,
+    exact ⟨tz, hz, f1.trans e1, pendingMessageReadAgrees_trans f2 e2 e1, f3.trans e3,
       f4.trans e4, f5.trans e5, f6.trans e6, f7.trans e7, f8.trans e8⟩
   otherKind := fun oid k hk hsc hr =>
     (h2.otherKind oid k hk hsc hr).trans (h1.otherKind oid k hk hsc hr)
@@ -717,13 +717,13 @@ every other object alone, agrees.
 Stated over the post-state *readings* rather than over `storeObject`, so a
 transition that writes through `RHTable.insert` directly (the PIP boost) or that
 frames by construction can instantiate it too. -/
-theorem donationReadAgreement_of_tcbFieldUpdate
+theorem donationReadAgreement_of_tcbFieldUpdateAgree
     (st st' : SystemState) (key : SeLe4n.ObjId) (oldTcb newTcb : TCB)
     (hPre : st.objects[key]? = some (.tcb oldTcb))
     (hAt : st'.objects[key]? = some (.tcb newTcb))
     (hFrame : ∀ (oid : SeLe4n.ObjId), oid ≠ key → st'.objects[oid]? = st.objects[oid]?)
     (hIpc : newTcb.ipcState = oldTcb.ipcState)
-    (hMsg : newTcb.pendingMessage = oldTcb.pendingMessage)
+    (hMsg : pendingMessageReadAgrees oldTcb.ipcState newTcb.pendingMessage oldTcb.pendingMessage)
     (hNext : newTcb.queueNext = oldTcb.queueNext)
     (hPrev : newTcb.queuePrev = oldTcb.queuePrev)
     (hPPrev : newTcb.queuePPrev = oldTcb.queuePPrev)
@@ -737,7 +737,7 @@ theorem donationReadAgreement_of_tcbFieldUpdate
     · rw [hEq, hAt] at hx
       obtain rfl : newTcb = tx := by
         simpa only [Option.some.injEq, KernelObject.tcb.injEq] using hx
-      exact ⟨oldTcb, by rw [hEq]; exact hPre, hIpc, pendingMessageReadAgrees_of_eq hMsg,
+      exact ⟨oldTcb, by rw [hEq]; exact hPre, hIpc, hMsg,
         hNext, hPrev, hPPrev, hBudget,
         hReply, hStash⟩
     · rw [hFrame oid hEq] at hx
@@ -747,7 +747,7 @@ theorem donationReadAgreement_of_tcbFieldUpdate
     · rw [hEq, hPre] at hy
       obtain rfl : oldTcb = ty := by
         simpa only [Option.some.injEq, KernelObject.tcb.injEq] using hy
-      exact ⟨newTcb, by rw [hEq]; exact hAt, hIpc, pendingMessageReadAgrees_of_eq hMsg,
+      exact ⟨newTcb, by rw [hEq]; exact hAt, hIpc, hMsg,
         hNext, hPrev, hPPrev, hBudget,
         hReply, hStash⟩
     · exact ⟨ty, by rw [hFrame oid hEq]; exact hy, rfl, pendingMessageReadAgrees_refl _, rfl, rfl, rfl,
@@ -771,6 +771,24 @@ theorem donationReadAgreement_of_tcbFieldUpdate
     by_cases hEq : oid = key
     · rw [hEq, hPre] at h; cases h
     · exact ⟨sc, by rw [hFrame oid hEq]; exact h⟩
+
+/-- The equality instance of the constructor above. -/
+theorem donationReadAgreement_of_tcbFieldUpdate
+    (st st' : SystemState) (key : SeLe4n.ObjId) (oldTcb newTcb : TCB)
+    (hPre : st.objects[key]? = some (.tcb oldTcb))
+    (hAt : st'.objects[key]? = some (.tcb newTcb))
+    (hFrame : ∀ (oid : SeLe4n.ObjId), oid ≠ key → st'.objects[oid]? = st.objects[oid]?)
+    (hIpc : newTcb.ipcState = oldTcb.ipcState)
+    (hMsg : newTcb.pendingMessage = oldTcb.pendingMessage)
+    (hNext : newTcb.queueNext = oldTcb.queueNext)
+    (hPrev : newTcb.queuePrev = oldTcb.queuePrev)
+    (hPPrev : newTcb.queuePPrev = oldTcb.queuePPrev)
+    (hBudget : newTcb.timeoutBudget = oldTcb.timeoutBudget)
+    (hReply : newTcb.replyObject = oldTcb.replyObject)
+    (hStash : newTcb.pendingReceiveReply = oldTcb.pendingReceiveReply) :
+    donationReadAgreement st st' :=
+  donationReadAgreement_of_tcbFieldUpdateAgree st st' key oldTcb newTcb hPre hAt hFrame hIpc
+    (pendingMessageReadAgrees_of_eq hMsg) hNext hPrev hPPrev hBudget hReply hStash
 
 /-- WS-RR RR2.5: a `storeObject` replacing one TCB with another that differs
 **only** in `schedContextBinding` establishes the read agreement. -/
@@ -1176,14 +1194,14 @@ This is the binding-*preserving* companion of
 five donation conjuncts come for free rather than being supplied.  The PIP boost
 (`updatePipBoostOnCore`, which writes `pipBoost` and re-keys a run-queue bucket)
 is exactly this shape, and it is the middle of both live dispatch chains. -/
-theorem ipcInvariantFull_of_tcbFieldUpdate
+theorem ipcInvariantFull_of_tcbFieldUpdateAgree
     (st st' : SystemState) (key : SeLe4n.ObjId) (oldTcb newTcb : TCB)
     (hInv : ipcInvariantFull st)
     (hPre : st.objects[key]? = some (.tcb oldTcb))
     (hAt : st'.objects[key]? = some (.tcb newTcb))
     (hFrame : ∀ (oid : SeLe4n.ObjId), oid ≠ key → st'.objects[oid]? = st.objects[oid]?)
     (hIpc : newTcb.ipcState = oldTcb.ipcState)
-    (hMsg : newTcb.pendingMessage = oldTcb.pendingMessage)
+    (hMsg : pendingMessageReadAgrees oldTcb.ipcState newTcb.pendingMessage oldTcb.pendingMessage)
     (hNext : newTcb.queueNext = oldTcb.queueNext)
     (hPrev : newTcb.queuePrev = oldTcb.queuePrev)
     (hPPrev : newTcb.queuePPrev = oldTcb.queuePPrev)
@@ -1193,7 +1211,7 @@ theorem ipcInvariantFull_of_tcbFieldUpdate
     (hBind : newTcb.schedContextBinding = oldTcb.schedContextBinding)
     (hPassive : passiveServerIdleFrame st st') :
     ipcInvariantFull st' := by
-  have hAgree := donationReadAgreement_of_tcbFieldUpdate st st' key oldTcb newTcb hPre hAt
+  have hAgree := donationReadAgreement_of_tcbFieldUpdateAgree st st' key oldTcb newTcb hPre hAt
     hFrame hIpc hMsg hNext hPrev hPPrev hBudget hReply hStash
   -- Backward transport of a post-state TCB, *with* its binding.
   have hBwd : ∀ (oid : SeLe4n.ObjId) (tx : TCB), st'.objects[oid]? = some (.tcb tx) →
@@ -1248,6 +1266,27 @@ theorem ipcInvariantFull_of_tcbFieldUpdate
     obtain ⟨y2, hy2, _, e2⟩ := hBwd t2.toObjId tcb2 h2
     exact hInv.donationOwnerUnique t1 t2 y1 y2 s1 s2 owner hy1 hy2 (e1 ▸ hB1) (e2 ▸ hB2)
 
+
+/-- The equality instance of the transport above. -/
+theorem ipcInvariantFull_of_tcbFieldUpdate
+    (st st' : SystemState) (key : SeLe4n.ObjId) (oldTcb newTcb : TCB)
+    (hInv : ipcInvariantFull st)
+    (hPre : st.objects[key]? = some (.tcb oldTcb))
+    (hAt : st'.objects[key]? = some (.tcb newTcb))
+    (hFrame : ∀ (oid : SeLe4n.ObjId), oid ≠ key → st'.objects[oid]? = st.objects[oid]?)
+    (hIpc : newTcb.ipcState = oldTcb.ipcState)
+    (hMsg : newTcb.pendingMessage = oldTcb.pendingMessage)
+    (hNext : newTcb.queueNext = oldTcb.queueNext)
+    (hPrev : newTcb.queuePrev = oldTcb.queuePrev)
+    (hPPrev : newTcb.queuePPrev = oldTcb.queuePPrev)
+    (hBudget : newTcb.timeoutBudget = oldTcb.timeoutBudget)
+    (hReply : newTcb.replyObject = oldTcb.replyObject)
+    (hStash : newTcb.pendingReceiveReply = oldTcb.pendingReceiveReply)
+    (hBind : newTcb.schedContextBinding = oldTcb.schedContextBinding)
+    (hPassive : passiveServerIdleFrame st st') :
+    ipcInvariantFull st' :=
+  ipcInvariantFull_of_tcbFieldUpdateAgree st st' key oldTcb newTcb hInv hPre hAt hFrame hIpc
+    (pendingMessageReadAgrees_of_eq hMsg) hNext hPrev hPPrev hBudget hReply hStash hBind hPassive
 
 /-- WS-ZA ZA4.4: a write of one thread's notification-queue links preserves the
 whole bundle: no conjunct reads those links. -/

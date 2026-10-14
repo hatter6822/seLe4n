@@ -632,8 +632,8 @@ theorem stageDeliveredMessage_keyFrame (st : SystemState) (tid : SeLe4n.ThreadId
   split
   · split
     · split
-      · exact (writeReturnFrameToTcb_keyFrame st tid _ hInv).trans
-          (recordPhysicalWrites_keyFrame (writeReturnFrameToTcb_keyFrame st tid _ hInv).2.2 _)
+      · exact (writeDeliveredFrameToTcb_keyFrame st tid _ hInv).trans
+          (recordPhysicalWrites_keyFrame (writeDeliveredFrameToTcb_keyFrame st tid _ hInv).2.2 _)
       · exact hRefl
     · exact hRefl
   · exact hRefl

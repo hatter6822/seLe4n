@@ -379,6 +379,19 @@ private def ipcStateIs (st : SystemState) (tid : SeLe4n.ThreadId)
   | some t => decide (t.ipcState = expected)
   | none => false
 
+/-- WS-ZA ZA4.7: a delivered message lives in the receiver's saved registers —
+badge in `x0`, the first four words in `x2`-`x5` — and the receiver keeps no
+copy of it. -/
+private def deliveredInRegisters (st : SystemState) (tid : SeLe4n.ThreadId)
+    (msg : IpcMessage) : Bool :=
+  let got := Architecture.readReturnFrame st tid
+  let want := Architecture.returnFrameOfMessage msg 0 0
+  got.x0 == want.x0 && got.x2 == want.x2 && got.x3 == want.x3 && got.x4 == want.x4 &&
+    got.x5 == want.x5 &&
+    (match st.getTcb? tid with
+     | some t => t.pendingMessage.isNone
+     | none => false)
+
 /-- Decidable predicate: `tid`'s delivered message in `st` equals `expected`. -/
 private def pendingMessageIs (st : SystemState) (tid : SeLe4n.ThreadId)
     (expected : Option IpcMessage) : Bool :=
@@ -606,7 +619,7 @@ private def runReplyRecvLoopChecks : IO Unit := do
       assertBool "replyRecv installs no capabilities from a capability-free Call"
         (summary.installedCount == 0)
       assertBool "replyRecv's reply leg resumes client A with the reply payload"
-        (ipcStateIs st4 clientA .ready && pendingMessageIs st4 clientA (some replyMsgB))
+        (ipcStateIs st4 clientA .ready && deliveredInRegisters st4 clientA replyMsgB)
       assertBool "replyRecv's reply leg queues A on its home core 0"
         ((st4.queuedOn c0 clientA))
       assertBool "replyRecv's receive leg pops C into blockedOnReply (recorded receiver B)"

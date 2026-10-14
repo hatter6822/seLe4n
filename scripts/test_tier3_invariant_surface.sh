@@ -7673,7 +7673,7 @@ run_negative_check "INVARIANT" rg -n '^def writeUInt64' SeLe4n/Kernel/Architectu
 run_check "INVARIANT" rg -n 'match IpcBufferRead\.ipcBufferSlotPAddr\? st tcb idx true with' SeLe4n/Kernel/Architecture/SyscallReturn.lean
 run_negative_check "INVARIANT" rg -n 'ipcBufferSlotPAddr\? st tcb idx false' SeLe4n/Kernel/Architecture/SyscallReturn.lean
 run_check "INVARIANT" rg -n '^  \{ length    := min \(min msg\.registers\.size \(4 \+ overflow\)\) maxMessageRegisters$' SeLe4n/Kernel/Architecture/SyscallReturn.lean
-run_check "INVARIANT" rg -n -U '^            recordPhysicalWrites\n              \(writeReturnFrameToTcb st tid \(returnFrameOfMessage msg installedCaps\n                \(messageOverflowWrites st tcb msg\)\.length\)\)$' SeLe4n/Kernel/Architecture/SyscallReturn.lean
+run_check "INVARIANT" rg -n -U '^            recordPhysicalWrites\n              \(writeDeliveredFrameToTcb st tid \(returnFrameOfMessage msg installedCaps\n                \(messageOverflowWrites st tcb msg\)\.length\)\)$' SeLe4n/Kernel/Architecture/SyscallReturn.lean
 run_check "INVARIANT" rg -n -U '^    Platform\.FFI\.completePhysicalWrites r\.2\.2\.2\.1\n    Concurrency\.fireCrossCoreSgis r\.1\n    Platform\.FFI\.completeIcacheMaintenance r\.2\.2\.2\.2$' SeLe4n/Kernel/FaultEntry.lean
 run_check "INVARIANT" rg -n -U '^          Platform\.FFI\.completePhysicalWrites r\.2\.2\.2\.1\n          Concurrency\.fireCrossCoreSgis r\.1\n          Platform\.FFI\.completeIcacheMaintenance r\.2\.2\.2\.2$' SeLe4n/Kernel/FaultEntry.lean
 run_check "INVARIANT" rg -n 'addr\.is_multiple_of\(8\) && page >= KERNEL_RESERVED_END && covered\(page, PAGE_BYTES\)' rust/sele4n-hal/src/user_translation.rs
@@ -21340,7 +21340,7 @@ run_negative_check "INVARIANT" rg -n '^def revokeCdtFoldBody' SeLe4n/Kernel/Capa
 # than the bundle reads: only two conjuncts read it, the write is a DROP, and a
 # drop is what both survive.
 run_check "INVARIANT" bash -lc 'rg -U -n "^def pendingMessageReadAgrees[^\n]*(\n([ \t][^\n]*)?)*mx\.isSome = my\.isSome" SeLe4n/Kernel/IPC/Invariant/Defs.lean'
-run_check "INVARIANT" bash -lc 'rg -U -n "^structure donationReadAgreement[^\n]*(\n([ \t][^\n]*)?)*pendingMessageReadAgrees tx\.pendingMessage ty\.pendingMessage" SeLe4n/Kernel/IPC/Invariant/DonationPreservation.lean'
+run_check "INVARIANT" bash -lc 'rg -U -n "^structure donationReadAgreement[^\n]*(\n([ \t][^\n]*)?)*pendingMessageReadAgrees ty\.ipcState tx\.pendingMessage ty\.pendingMessage" SeLe4n/Kernel/IPC/Invariant/DonationPreservation.lean'
 run_negative_check "INVARIANT" bash -lc 'rg -U -n "^structure donationReadAgreement[^\n]*(\n([ \t][^\n]*)?)*tx\.pendingMessage = ty\.pendingMessage" SeLe4n/Kernel/IPC/Invariant/DonationPreservation.lean'
 run_check "INVARIANT" bash -lc 'rg -U -n "^def TCB\.pendingCapsDropped[^\n]*(\n([ \t][^\n]*)?)*some m, some m. => m.\.registers = m\.registers" SeLe4n/Model/Object/Types.lean'
 # ...and the binding-frame table is SYMMETRIC: `donationChainAcyclic` carries

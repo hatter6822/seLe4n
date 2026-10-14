@@ -646,6 +646,42 @@ theorem writeReturnFrameToTcb_preserves_projection
             · simp [hEq]
           · rfl)
 
+/-- **WS-ZA ZA4.7**: so is the delivery write: the projection strips both the
+saved registers and the pending message it drops. -/
+theorem writeDeliveredFrameToTcb_preserves_projection
+    (ctx : LabelingContext) (observer : IfObserver) (st : SystemState)
+    (tid : SeLe4n.ThreadId) (frame : Architecture.SyscallReturnFrame)
+    (hObjInv : st.objects.invExt) :
+    projectState ctx observer (Architecture.writeDeliveredFrameToTcb st tid frame)
+      = projectState ctx observer st := by
+  cases hTcb : st.getTcb? tid with
+  | none => rw [Architecture.writeDeliveredFrameToTcb_id_when_not_tcb st tid frame hTcb]
+  | some tcb =>
+      have hRaw : st.objects[tid.toObjId]? = some (.tcb tcb) :=
+        (SystemState.getTcb?_eq_some_iff st tid tcb).mp hTcb
+      unfold Architecture.writeDeliveredFrameToTcb
+      rw [SystemState.updateTcb_eq_of_some hTcb]
+      simp only [projectState]
+      congr 1
+      · exact funext (fun oid => by
+          simp only [projectObjects, SystemState.getObject?]
+          split
+          · simp only [Option.map]
+            simp only [RHTable_getElem?_eq_get?]
+            rw [RHTable_getElem?_insert st.objects _ _ hObjInv]
+            by_cases hEq : tid.toObjId == oid
+            · simp only [hEq, ↓reduceIte, projectKernelObject]
+              have hEq' := beq_iff_eq.mp hEq
+              subst hEq'
+              rw [← RHTable_getElem?_eq_get?]
+              simp only [hRaw]
+              -- The two projected TCBs differ only in `registerContext` and
+              -- `pendingMessage`, which both sides override — definitionally
+              -- equal field for field.
+              rfl
+            · simp [hEq]
+          · rfl)
+
 /-- WS-RA RA.B.6: the arm-level delivery staging is projection-invisible —
 `stageDeliveredMessage` either stages via `writeReturnFrameToTcb` (covered
 by the blanket above) or is the identity. -/
@@ -663,7 +699,7 @@ theorem stageDeliveredMessage_preserves_projection
         cases tcb.pendingMessage with
         | none => rfl
         | some msg =>
-            exact writeReturnFrameToTcb_preserves_projection ctx observer st tid _ hObjInv
+            exact writeDeliveredFrameToTcb_preserves_projection ctx observer st tid _ hObjInv
       · simp [hReady]
 
 /-- WS-RA RA.B.5b: the woken-counterparty delivery stager is

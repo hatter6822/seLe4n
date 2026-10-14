@@ -383,8 +383,33 @@ private def pendingFaultOf (st : SystemState) (tid : SeLe4n.ThreadId) : Option T
 private def savedPcOf (st : SystemState) (tid : SeLe4n.ThreadId) : Option Nat :=
   (st.getTcb? tid).map (·.registerContext.pc.toNat)
 
+/-- The message a thread received, read back the way it reads it: badge from `x0`,
+label and length from the `MessageInfo` in `x1`, words from `x2`-`x5` (WS-ZA
+ZA4.7: a delivered message lives in the registers, and the thread keeps no copy).
+A receive taken at the operation level, below the syscall arm that stages it,
+still holds the message itself, and that copy is what it received.  `none` while
+the thread is blocked.  Words past the fourth are read from the IPC-buffer stores
+the delivery left on the physical-write ledger, slot by slot. -/
 private def deliveredMessageOf (st : SystemState) (tid : SeLe4n.ThreadId) : Option IpcMessage :=
-  (st.getTcb? tid).bind (·.pendingMessage)
+  match st.getTcb? tid with
+  | some t =>
+      if let some m := t.pendingMessage then (if t.ipcState = .ready then some m else none)
+      else if t.ipcState = .ready then
+        let fr := SeLe4n.Kernel.Architecture.readReturnFrame st tid
+        (MessageInfo.decode fr.x1.toNat).map fun info =>
+          let overflow : List UInt64 := (List.range (info.length - 4)).filterMap fun idx =>
+            (SeLe4n.Kernel.Architecture.IpcBufferRead.ipcBufferSlotPAddr? st t idx true).bind
+              fun pa => (st.pendingPhysicalWrites.reverse.findSome? fun w =>
+                match w with
+                | .storeUserWord a v => if a == pa then some v else none
+                | _ => none)
+          { registers := ((#[fr.x2, fr.x3, fr.x4, fr.x5] ++ overflow.toArray).map
+              (fun w => (⟨w.toNat⟩ : SeLe4n.RegValue))).extract 0 info.length
+            caps := #[]
+            badge := if fr.x0 == 0 then none else some (SeLe4n.Badge.ofWord fr.x0)
+            label := info.label }
+      else none
+  | none => none
 
 /-- Is `tid` dispatchable on core `c` — in its run queue or its current thread?
 The runtime reading of `dispatchableOnCore`, which RR4.19 forbids of a thread
@@ -561,7 +586,7 @@ private def runResolutionChecks : IO Unit := do
       assertBool "…and the reply object links the faulting thread as its caller"
         ((stG.getReply? replyH).bind (·.caller) == some grantReplyFaulter)
       assertBool "…carrying that capability's own badge"
-        ((deliveredMessageOf stG handler).bind (·.badge) == some (SeLe4n.Badge.ofNat 9))
+        ((Architecture.readReturnFrame stG handler).x0 == (SeLe4n.Badge.ofNat 9).word)
   | (_, .error e) =>
       assertBool s!"handler recv must succeed (got {repr e})" false
 
@@ -884,7 +909,8 @@ private def runQueuedDeliveryChecks : IO Unit := do
       assertBool "the queued faulter is not dispatchable on the core it faulted on"
         (!dispatchableOn q.afterFault faulter c0)
       assertBool "the handler is untouched until it asks"
-        (deliveredMessageOf q.afterFault handler == none)
+        (SeLe4n.Kernel.Architecture.readReturnFrame q.afterFault handler ==
+          SeLe4n.Kernel.Architecture.readReturnFrame stRunning handler)
       -- The receive dequeues the fault: the message the handler gets is the
       -- one the kernel built, label included.
       assertBool "the handler's receive dequeues the fault message"
@@ -1104,22 +1130,33 @@ private def runUnknownSyscallChecks : IO Unit := do
           (pendingFaultOf stU faulter).map (·.fault) == some (.unknownSyscall (trapWindow.gprAt 7)))
       assertBool "the fault's syscall number is x7 of the window, not the link register"
         ((pendingFaultOf stU faulter).map (·.fault) == some (.unknownSyscall 0x18))
-      match deliveredMessageOf stU handler with
-      | none => assertBool "the handler must receive the unknown-syscall message" false
-      | some m =>
-          assertBool "the message carries the UnknownSyscall tag"
-            (m.label == FaultLabel.unknownSyscall)
-          assertBool "the message is thirteen words" (m.registers.size == 13)
+      -- The message the kernel builds from the recorded fault (seL4's
+      -- `setMRs_fault`): thirteen words.
+      match pendingFaultOf stU faulter with
+      | none => assertBool "the faulter must record the unknown-syscall fault" false
+      | some pf =>
+          let km := faultMessage pf.fault pf.context none
+          assertBool "the message is thirteen words" (km.registers.size == 13)
           assertBool "MR0-MR7 are the trap frame's argument window"
-            ((List.range 8).all (fun i => wordAt m.registers i == trapWindow.gprAt i))
+            ((List.range 8).all (fun i => wordAt km.registers i == trapWindow.gprAt i))
           assertBool "MR8 is the restart PC — the instruction after the SVC"
-            (wordAt m.registers 8 == svcCtx.elr)
+            (wordAt km.registers 8 == svcCtx.elr)
           assertBool "MR9 is SP_EL0 and MR10 is the link register, from the trap frame"
-            (wordAt m.registers 9 == trapWindow.sp && wordAt m.registers 10 == trapWindow.lr)
-          assertBool "MR12 is the syscall number" (wordAt m.registers 12 == 0x18)
+            (wordAt km.registers 9 == trapWindow.sp && wordAt km.registers 10 == trapWindow.lr)
+          assertBool "MR12 is the syscall number" (wordAt km.registers 12 == 0x18)
           assertBool "the handler can recover the fault from the message"
-            (decodeFault { length := 13, extraCaps := 0, label := m.label } m.registers ==
+            (decodeFault { length := 13, extraCaps := 0, label := km.label } km.registers ==
               some (.unknownSyscall 0x18))
+          -- What reaches the handler: the tag and MR0-MR3 in its registers.  Its
+          -- IPC buffer is not mapped writable in this fixture, so the words past
+          -- the fourth are refused and the length says so, as seL4's `copyMRs`.
+          match deliveredMessageOf stU handler with
+          | none => assertBool "the handler must receive the unknown-syscall message" false
+          | some m =>
+              assertBool "the message carries the UnknownSyscall tag"
+                (m.label == FaultLabel.unknownSyscall)
+              assertBool "the handler receives MR0-MR3, the prefix its registers hold"
+                (m.registers == km.registers.extract 0 4)
       assertBool "the delivery pokes the handler's core"
         (sgis == [(c1, SgiKind.reschedule)])
       assertBool "the thread that issued the unknown syscall is not dispatchable on core 0"

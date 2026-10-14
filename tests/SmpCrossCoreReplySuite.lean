@@ -195,6 +195,19 @@ example (ctx : LabelingContext) (observer : IfObserver)
 -- §3  Runtime assertions (Tier-2): the SM6.C cross-core reply scenarios
 -- ============================================================================
 
+/-- WS-ZA ZA4.7: a delivered message lives in the receiver's saved registers —
+badge in `x0`, the first four words in `x2`-`x5` — and the receiver keeps no
+copy of it. -/
+private def deliveredInRegisters (st : SystemState) (tid : SeLe4n.ThreadId)
+    (msg : IpcMessage) : Bool :=
+  let got := Architecture.readReturnFrame st tid
+  let want := Architecture.returnFrameOfMessage msg 0 0
+  got.x0 == want.x0 && got.x2 == want.x2 && got.x3 == want.x3 && got.x4 == want.x4 &&
+    got.x5 == want.x5 &&
+    (match st.getTcb? tid with
+     | some t => t.pendingMessage.isNone
+     | none => false)
+
 private def assertBool (name : String) (b : Bool) : IO Unit := do
   if b then IO.println s!"  PASS: {name}"
   else
@@ -556,9 +569,9 @@ private def runReplyRecvChecks : IO Unit := do
     assertBool "replyRecv installs no capabilities when nothing was received"
       (summary.installedCount == 0)
     assertBool "replyRecv reply leg delivers the payload to the caller (.ready + registers)"
-      (match st'.getTcb? clientLocalTid with
-       | some t => decide (t.ipcState = .ready ∧ t.pendingMessage = some replyMsg)
-       | none => false)
+      ((match st'.getTcb? clientLocalTid with
+        | some t => decide (t.ipcState = .ready)
+        | none => false) && deliveredInRegisters st' clientLocalTid replyMsg)
     -- The receive leg blocks the server on the endpoint (no sender was waiting).
     assertBool "replyRecv receive leg blocks the server on the endpoint (no waiting sender)"
       (match st'.getTcb? serverTid with

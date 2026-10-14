@@ -3998,7 +3998,7 @@ private theorem tcb_replyObject_store_tcb_forward
     (hStore : storeObject id (.tcb { tcb with replyObject := v }) st = .ok ((), st')) :
     ∀ (s : SeLe4n.ObjId) (tx : TCB), st'.objects[s]? = some (.tcb tx) →
       ∃ ty, st.objects[s]? = some (.tcb ty) ∧
-        tx.ipcState = ty.ipcState ∧ pendingMessageReadAgrees tx.pendingMessage ty.pendingMessage ∧
+        tx.ipcState = ty.ipcState ∧ pendingMessageReadAgrees ty.ipcState tx.pendingMessage ty.pendingMessage ∧
         tx.queueNext = ty.queueNext ∧ tx.queuePrev = ty.queuePrev ∧
         tx.queuePPrev = ty.queuePPrev ∧ tx.schedContextBinding = ty.schedContextBinding ∧
         tx.timeoutBudget = ty.timeoutBudget := by
@@ -4025,7 +4025,7 @@ private theorem tcb_replyObject_store_tcb_backward
     (hStore : storeObject id (.tcb { tcb with replyObject := v }) st = .ok ((), st')) :
     ∀ (s : SeLe4n.ObjId) (ty : TCB), st.objects[s]? = some (.tcb ty) →
       ∃ tx, st'.objects[s]? = some (.tcb tx) ∧
-        tx.ipcState = ty.ipcState ∧ pendingMessageReadAgrees tx.pendingMessage ty.pendingMessage ∧
+        tx.ipcState = ty.ipcState ∧ pendingMessageReadAgrees ty.ipcState tx.pendingMessage ty.pendingMessage ∧
         tx.queueNext = ty.queueNext ∧ tx.queuePrev = ty.queuePrev ∧
         tx.queuePPrev = ty.queuePPrev ∧ tx.schedContextBinding = ty.schedContextBinding ∧
         tx.timeoutBudget = ty.timeoutBudget := by
@@ -4057,7 +4057,7 @@ private theorem queueNextPath_backward_of_readAgreement
     {st st' : SystemState}
     (hFwd : ∀ (s : SeLe4n.ObjId) (tx : TCB), st'.objects[s]? = some (.tcb tx) →
       ∃ ty, st.objects[s]? = some (.tcb ty) ∧
-        tx.ipcState = ty.ipcState ∧ pendingMessageReadAgrees tx.pendingMessage ty.pendingMessage ∧
+        tx.ipcState = ty.ipcState ∧ pendingMessageReadAgrees ty.ipcState tx.pendingMessage ty.pendingMessage ∧
         tx.queueNext = ty.queueNext ∧ tx.queuePrev = ty.queuePrev ∧
         tx.queuePPrev = ty.queuePPrev ∧ tx.timeoutBudget = ty.timeoutBudget)
     {a b : SeLe4n.ThreadId} (hPath : QueueNextPath st' a b) :
@@ -4078,7 +4078,7 @@ private theorem intrusiveQueueWellFormed_forward_of_readAgreement
     {st st' : SystemState}
     (hBwd : ∀ (s : SeLe4n.ObjId) (ty : TCB), st.objects[s]? = some (.tcb ty) →
       ∃ tx, st'.objects[s]? = some (.tcb tx) ∧
-        tx.ipcState = ty.ipcState ∧ pendingMessageReadAgrees tx.pendingMessage ty.pendingMessage ∧
+        tx.ipcState = ty.ipcState ∧ pendingMessageReadAgrees ty.ipcState tx.pendingMessage ty.pendingMessage ∧
         tx.queueNext = ty.queueNext ∧ tx.queuePrev = ty.queuePrev ∧
         tx.queuePPrev = ty.queuePPrev ∧ tx.timeoutBudget = ty.timeoutBudget)
     {q : IntrusiveQueue} (hWF : intrusiveQueueWellFormed q st) :
@@ -4101,12 +4101,12 @@ private theorem tcbQueueLinkIntegrity_forward_of_readAgreement
     {st st' : SystemState}
     (hFwd : ∀ (s : SeLe4n.ObjId) (tx : TCB), st'.objects[s]? = some (.tcb tx) →
       ∃ ty, st.objects[s]? = some (.tcb ty) ∧
-        tx.ipcState = ty.ipcState ∧ pendingMessageReadAgrees tx.pendingMessage ty.pendingMessage ∧
+        tx.ipcState = ty.ipcState ∧ pendingMessageReadAgrees ty.ipcState tx.pendingMessage ty.pendingMessage ∧
         tx.queueNext = ty.queueNext ∧ tx.queuePrev = ty.queuePrev ∧
         tx.queuePPrev = ty.queuePPrev ∧ tx.timeoutBudget = ty.timeoutBudget)
     (hBwd : ∀ (s : SeLe4n.ObjId) (ty : TCB), st.objects[s]? = some (.tcb ty) →
       ∃ tx, st'.objects[s]? = some (.tcb tx) ∧
-        tx.ipcState = ty.ipcState ∧ pendingMessageReadAgrees tx.pendingMessage ty.pendingMessage ∧
+        tx.ipcState = ty.ipcState ∧ pendingMessageReadAgrees ty.ipcState tx.pendingMessage ty.pendingMessage ∧
         tx.queueNext = ty.queueNext ∧ tx.queuePrev = ty.queuePrev ∧
         tx.queuePPrev = ty.queuePPrev ∧ tx.timeoutBudget = ty.timeoutBudget)
     (hLI : tcbQueueLinkIntegrity st) :
@@ -4169,12 +4169,12 @@ theorem ipcInvariantCore_of_nonBindingAgreements
       ∃ sc', st'.objects[s]? = some (.schedContext sc'))
     (hFwd : ∀ (s : SeLe4n.ObjId) (tx : TCB), st'.objects[s]? = some (.tcb tx) →
       ∃ ty, st.objects[s]? = some (.tcb ty) ∧
-        tx.ipcState = ty.ipcState ∧ pendingMessageReadAgrees tx.pendingMessage ty.pendingMessage ∧
+        tx.ipcState = ty.ipcState ∧ pendingMessageReadAgrees ty.ipcState tx.pendingMessage ty.pendingMessage ∧
         tx.queueNext = ty.queueNext ∧ tx.queuePrev = ty.queuePrev ∧
         tx.queuePPrev = ty.queuePPrev ∧ tx.timeoutBudget = ty.timeoutBudget)
     (hBwd : ∀ (s : SeLe4n.ObjId) (ty : TCB), st.objects[s]? = some (.tcb ty) →
       ∃ tx, st'.objects[s]? = some (.tcb tx) ∧
-        tx.ipcState = ty.ipcState ∧ pendingMessageReadAgrees tx.pendingMessage ty.pendingMessage ∧
+        tx.ipcState = ty.ipcState ∧ pendingMessageReadAgrees ty.ipcState tx.pendingMessage ty.pendingMessage ∧
         tx.queueNext = ty.queueNext ∧ tx.queuePrev = ty.queuePrev ∧
         tx.queuePPrev = ty.queuePPrev ∧ tx.timeoutBudget = ty.timeoutBudget)
     (hAcyclic : donationChainAcyclic st') (hOwnerValid : donationOwnerValid st')
@@ -4248,7 +4248,10 @@ theorem ipcInvariantCore_of_nonBindingAgreements
     -- **WS-RR RR8.16 (`v0.35.190`)**: this conjunct reads only whether a message
     -- is PRESENT, which the agreement carries; its content may shrink.
     have hPrev := hInv.blockedThreadsPendingMessageConsistent tid ty hStObj
-    have hSome : tcb.pendingMessage.isSome = ty.pendingMessage.isSome := hPM.1
+    -- WS-ZA ZA4.7: a ready thread is unconstrained, so it may drop its message.
+    by_cases hR : ty.ipcState = .ready
+    · rw [hIS, hR]; trivial
+    have hSome : tcb.pendingMessage.isSome = ty.pendingMessage.isSome := hPM.isSome_eq hR
     have hNone : tcb.pendingMessage = none ↔ ty.pendingMessage = none := by
       constructor
       · intro h
@@ -4385,13 +4388,13 @@ theorem storeObject_tcb_ipcInvariantCore_of_agreements
       (st'.objects[s]? = some k ↔ st.objects[s]? = some k))
     (hFwd : ∀ (s : SeLe4n.ObjId) (tx : TCB), st'.objects[s]? = some (.tcb tx) →
       ∃ ty, st.objects[s]? = some (.tcb ty) ∧
-        tx.ipcState = ty.ipcState ∧ pendingMessageReadAgrees tx.pendingMessage ty.pendingMessage ∧
+        tx.ipcState = ty.ipcState ∧ pendingMessageReadAgrees ty.ipcState tx.pendingMessage ty.pendingMessage ∧
         tx.queueNext = ty.queueNext ∧ tx.queuePrev = ty.queuePrev ∧
         tx.queuePPrev = ty.queuePPrev ∧ tx.schedContextBinding = ty.schedContextBinding ∧
         tx.timeoutBudget = ty.timeoutBudget)
     (hBwd : ∀ (s : SeLe4n.ObjId) (ty : TCB), st.objects[s]? = some (.tcb ty) →
       ∃ tx, st'.objects[s]? = some (.tcb tx) ∧
-        tx.ipcState = ty.ipcState ∧ pendingMessageReadAgrees tx.pendingMessage ty.pendingMessage ∧
+        tx.ipcState = ty.ipcState ∧ pendingMessageReadAgrees ty.ipcState tx.pendingMessage ty.pendingMessage ∧
         tx.queueNext = ty.queueNext ∧ tx.queuePrev = ty.queuePrev ∧
         tx.queuePPrev = ty.queuePPrev ∧ tx.schedContextBinding = ty.schedContextBinding ∧
         tx.timeoutBudget = ty.timeoutBudget)
@@ -4399,7 +4402,7 @@ theorem storeObject_tcb_ipcInvariantCore_of_agreements
     ipcInvariantCore st' := by
   have hFwd' : ∀ (s : SeLe4n.ObjId) (tx : TCB), st'.objects[s]? = some (.tcb tx) →
       ∃ ty, st.objects[s]? = some (.tcb ty) ∧
-        tx.ipcState = ty.ipcState ∧ pendingMessageReadAgrees tx.pendingMessage ty.pendingMessage ∧
+        tx.ipcState = ty.ipcState ∧ pendingMessageReadAgrees ty.ipcState tx.pendingMessage ty.pendingMessage ∧
         tx.queueNext = ty.queueNext ∧ tx.queuePrev = ty.queuePrev ∧
         tx.queuePPrev = ty.queuePPrev ∧ tx.timeoutBudget = ty.timeoutBudget := by
     intro s tx h
@@ -4407,7 +4410,7 @@ theorem storeObject_tcb_ipcInvariantCore_of_agreements
     exact ⟨ty, h1, e1, e2, e3, e4, e5, e7⟩
   have hBwd' : ∀ (s : SeLe4n.ObjId) (ty : TCB), st.objects[s]? = some (.tcb ty) →
       ∃ tx, st'.objects[s]? = some (.tcb tx) ∧
-        tx.ipcState = ty.ipcState ∧ pendingMessageReadAgrees tx.pendingMessage ty.pendingMessage ∧
+        tx.ipcState = ty.ipcState ∧ pendingMessageReadAgrees ty.ipcState tx.pendingMessage ty.pendingMessage ∧
         tx.queueNext = ty.queueNext ∧ tx.queuePrev = ty.queuePrev ∧
         tx.queuePPrev = ty.queuePPrev ∧ tx.timeoutBudget = ty.timeoutBudget := by
     intro s ty h
@@ -4499,7 +4502,7 @@ private theorem tcb_pendingReceiveReply_store_tcb_forward
     (hStore : storeObject id (.tcb { tcb with pendingReceiveReply := v }) st = .ok ((), st')) :
     ∀ (s : SeLe4n.ObjId) (tx : TCB), st'.objects[s]? = some (.tcb tx) →
       ∃ ty, st.objects[s]? = some (.tcb ty) ∧
-        tx.ipcState = ty.ipcState ∧ pendingMessageReadAgrees tx.pendingMessage ty.pendingMessage ∧
+        tx.ipcState = ty.ipcState ∧ pendingMessageReadAgrees ty.ipcState tx.pendingMessage ty.pendingMessage ∧
         tx.queueNext = ty.queueNext ∧ tx.queuePrev = ty.queuePrev ∧
         tx.queuePPrev = ty.queuePPrev ∧ tx.schedContextBinding = ty.schedContextBinding ∧
         tx.timeoutBudget = ty.timeoutBudget := by
@@ -4523,7 +4526,7 @@ private theorem tcb_pendingReceiveReply_store_tcb_backward
     (hStore : storeObject id (.tcb { tcb with pendingReceiveReply := v }) st = .ok ((), st')) :
     ∀ (s : SeLe4n.ObjId) (ty : TCB), st.objects[s]? = some (.tcb ty) →
       ∃ tx, st'.objects[s]? = some (.tcb tx) ∧
-        tx.ipcState = ty.ipcState ∧ pendingMessageReadAgrees tx.pendingMessage ty.pendingMessage ∧
+        tx.ipcState = ty.ipcState ∧ pendingMessageReadAgrees ty.ipcState tx.pendingMessage ty.pendingMessage ∧
         tx.queueNext = ty.queueNext ∧ tx.queuePrev = ty.queuePrev ∧
         tx.queuePPrev = ty.queuePPrev ∧ tx.schedContextBinding = ty.schedContextBinding ∧
         tx.timeoutBudget = ty.timeoutBudget := by

@@ -91,6 +91,11 @@ theorem writeReturnFrameToTcb_replyViews_eq (st : SystemState) (t : SeLe4n.Threa
     (Architecture.writeReturnFrameToTcb st t fr).replyViews = st.replyViews :=
   replyViews_updateTcb_eq st t hInv (fun _ => rfl)
 
+theorem writeDeliveredFrameToTcb_replyViews_eq (st : SystemState) (t : SeLe4n.ThreadId)
+    (fr : Architecture.SyscallReturnFrame) (hInv : st.objects.invExt) :
+    (Architecture.writeDeliveredFrameToTcb st t fr).replyViews = st.replyViews :=
+  replyViews_updateTcb_eq st t hInv (fun _ => rfl)
+
 theorem stageDeliveredMessage_replyViews_eq (st : SystemState) (t : SeLe4n.ThreadId) (n : Nat)
     (hInv : st.objects.invExt) :
     (Architecture.stageDeliveredMessage st t n).replyViews = st.replyViews := by
@@ -98,7 +103,7 @@ theorem stageDeliveredMessage_replyViews_eq (st : SystemState) (t : SeLe4n.Threa
   split
   · split
     · split
-      · rw [recordPhysicalWrites_replyViews_eq, writeReturnFrameToTcb_replyViews_eq _ _ _ hInv]
+      · rw [recordPhysicalWrites_replyViews_eq, writeDeliveredFrameToTcb_replyViews_eq _ _ _ hInv]
       · rfl
     · rfl
   · rfl

@@ -785,6 +785,11 @@ theorem writeReturnFrameToTcb_runQueueStage (st : SystemState) (tid : SeLe4n.Thr
     RunQueueStage st (Architecture.writeReturnFrameToTcb st tid frame) :=
   RunQueueStage.updateTcb st tid (fun _ _ => rfl)
 
+theorem writeDeliveredFrameToTcb_runQueueStage (st : SystemState) (tid : SeLe4n.ThreadId)
+    (frame : Architecture.SyscallReturnFrame) :
+    RunQueueStage st (Architecture.writeDeliveredFrameToTcb st tid frame) :=
+  RunQueueStage.updateTcb st tid (fun _ _ => rfl)
+
 theorem recordPhysicalWrites_runQueueStage (st : SystemState)
     (ws : List Architecture.PhysicalWrite) :
     RunQueueStage st (Architecture.recordPhysicalWrites st ws) :=
@@ -796,7 +801,7 @@ theorem stageDeliveredMessage_runQueueStage (st : SystemState) (tid : SeLe4n.Thr
   repeat' split
   all_goals first
     | exact RunQueueStage.refl _
-    | exact (writeReturnFrameToTcb_runQueueStage _ _ _).trans
+    | exact (writeDeliveredFrameToTcb_runQueueStage _ _ _).trans
         (recordPhysicalWrites_runQueueStage _ _)
 
 theorem stageWokenDelivery_runQueueStage (st : SystemState) (w? : Option SeLe4n.ThreadId)
