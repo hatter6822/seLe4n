@@ -1417,6 +1417,70 @@ def scheduleLocalSuccessorFrom (caller? : Option SeLe4n.ThreadId) (post : System
     | .error _ => post
   else post
 
+/-- WS-ZA ZA4.7: `handleRescheduleSgiOnCore` as the total state function the
+local successor rule uses: every refusal (`switchToThreadOnCore`'s two lookups)
+precedes the switch's writes, so it answers the state it was handed, and the
+selection is read as a thread code (`chooseThreadEffectiveOnCore_eq_code`).
+Nothing keeps the post-state for a refusal, so the switch writes in place
+(`scheduleLocalSuccessorFrom_eq_impl`). -/
+def handleRescheduleSgiOnCoreTotal (st : SystemState) (c : CoreId) : SystemState :=
+  match chooseThreadEffectiveOnCoreCode st c with
+  | 0 =>
+      if currentOutsideActiveDomainOnCore st c then
+        (dropCurrentOnCore st c).clearReschedulePendingOnCore c
+      else st.clearReschedulePendingOnCore c
+  | k + 1 =>
+      let tid : SeLe4n.ThreadId := ⟨k⟩
+      if currentOutsideActiveDomainOnCore st c || candidateOutranksCurrentOnCore st c tid then
+        match st.getTcb? tid with
+        | some tidTcb =>
+            if affinityAdmitsCore tidTcb c then
+              let stPreempt := preemptCurrentOnCore st c tid
+              let stDequeued := stPreempt.runRemoveOnCore c tid
+              let stRestored := restoreIncomingContextOnCoreUnlessCurrent stDequeued c tid
+              { stRestored with scheduler := (stRestored.scheduler.setCurrentSomeOnCore c tid)
+                |>.clearReschedulePendingOnCore c }
+            else st
+        | none => st
+      else st.clearReschedulePendingOnCore c
+
+/-- WS-ZA ZA4.7: the compiled `scheduleLocalSuccessorFrom`. -/
+def scheduleLocalSuccessorFromImpl (caller? : Option SeLe4n.ThreadId) (post : SystemState)
+    (execCore : CoreId) : SystemState :=
+  if localSuccessorNeededFrom caller? post execCore then
+    handleRescheduleSgiOnCoreTotal post execCore
+  else post
+
+theorem handleRescheduleSgiOnCore_total (st : SystemState) (c : CoreId) :
+    (match handleRescheduleSgiOnCore st c with
+      | .ok s => s
+      | .error _ => st) = handleRescheduleSgiOnCoreTotal st c := by
+  unfold handleRescheduleSgiOnCore handleRescheduleSgiOnCoreTotal
+  rw [chooseThreadEffectiveOnCore_eq_code]
+  cases chooseThreadEffectiveOnCoreCode st c with
+  | zero =>
+    by_cases hO : currentOutsideActiveDomainOnCore st c = true <;> simp only [hO] <;> rfl
+  | succ k =>
+    by_cases hG : (currentOutsideActiveDomainOnCore st c ||
+        candidateOutranksCurrentOnCore st c ⟨k⟩) = true
+    · simp only [hG, ↓reduceIte]
+      unfold switchToThreadOnCore
+      cases st.getTcb? ⟨k⟩ with
+      | none => rfl
+      | some tidTcb =>
+        by_cases hA : affinityAdmitsCore tidTcb c = true
+        · simp only [hA, ↓reduceIte, SchedulerState.setCurrentSomeOnCore_eq]; rfl
+        · simp only [hA, Bool.false_eq_true, ↓reduceIte]
+    · simp only [hG, Bool.false_eq_true, ↓reduceIte]
+
+@[csimp] theorem scheduleLocalSuccessorFrom_eq_impl :
+    @scheduleLocalSuccessorFrom = @scheduleLocalSuccessorFromImpl := by
+  funext caller? post execCore
+  unfold scheduleLocalSuccessorFrom scheduleLocalSuccessorFromImpl
+  split
+  · exact handleRescheduleSgiOnCore_total post execCore
+  · rfl
+
 /-- `scheduleLocalSuccessorFrom` with the caller read off the pre-state. -/
 def scheduleLocalSuccessor (pre post : SystemState) (execCore : CoreId) : SystemState :=
   scheduleLocalSuccessorFrom (pre.scheduler.currentOnCore execCore) post execCore
