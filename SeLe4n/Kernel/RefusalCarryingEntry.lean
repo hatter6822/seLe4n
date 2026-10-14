@@ -61,17 +61,17 @@ specification's form. -/
         -- WS-ZA ZA4.7: a send with no capabilities to transfer checks
         -- everything before its first write.
         | .send capAddr msgInfo =>
-          dispatchSendCheckedR ctx capAddr layout tcb.registerContext msgInfo
+          dispatchSendCheckedR ctx capAddr layout tcb.registerContext msgInfo.length
             tid executingCore st
         -- WS-ZA ZA4.7: a call with no capabilities to transfer.
         | .call capAddr msgInfo =>
-          dispatchCallCheckedR ctx capAddr layout tcb.registerContext msgInfo
+          dispatchCallCheckedR ctx capAddr layout tcb.registerContext msgInfo.length
             tid executingCore st
         -- WS-ZA ZA4.7: a reply; one whose checks all pass before its first
         -- write writes in place.
         | .reply capAddr msgInfo =>
-          dispatchReplyCheckedR ctx capAddr layout tcb.registerContext msgInfo
-            tid executingCore st
+          dispatchReplyCheckedR ctx capAddr layout tcb.registerContext msgInfo.length
+            msgInfo.extraCaps msgInfo.label tid executingCore st
         -- WS-ZA ZA4.7: a receive, with or without a reply object; one that
         -- blocks checks everything, the reply object included, before its
         -- first write.
