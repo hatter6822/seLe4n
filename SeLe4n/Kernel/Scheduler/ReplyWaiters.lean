@@ -59,9 +59,10 @@ def objReplyView : Option KernelObject → Option ReplyView
 
 @[simp] theorem objReplyView_tcb (t : TCB) : objReplyView (some (.tcb t)) = some t.replyView := rfl
 
-/-- The reply view of every slot of the store. -/
+/-- The reply view of every slot of the store: none for an empty slot or a
+non-TCB object, so the slot is read kind-agnostically. -/
 def SystemState.replyViews (st : SystemState) (k : ObjId) : Option ReplyView :=
-  objReplyView st.objects[k]?
+  objReplyView (st.getObject? k)
 
 /-- The views of a store, as a function of slots. -/
 abbrev ReplyViews := ObjId → Option ReplyView
@@ -108,12 +109,12 @@ theorem SystemState.replyWaitersConsistent.of_views {st st' : SystemState}
 /-- A TCB at a slot gives that slot its view. -/
 theorem SystemState.replyViews_of_tcb {st : SystemState} {k : ObjId} {t : TCB}
     (h : st.objects[k]? = some (.tcb t)) : st.replyViews k = some t.replyView := by
-  unfold replyViews; rw [h]; rfl
+  unfold replyViews getObject?; rw [h]; rfl
 
 /-- A view at a slot is the view of a TCB there. -/
 theorem SystemState.tcb_of_replyViews {st : SystemState} {k : ObjId} {v : ReplyView}
     (h : st.replyViews k = some v) : ∃ t, st.objects[k]? = some (.tcb t) ∧ t.replyView = v := by
-  unfold replyViews at h
+  unfold replyViews getObject? at h
   cases hO : st.objects[k]? with
   | none => rw [hO] at h; cases h
   | some o =>
@@ -198,7 +199,7 @@ theorem SystemState.waiterOf_iff {st : SystemState} {w s : ThreadId} :
 /-- A thread's TCB read through its view. -/
 theorem SystemState.getTcb?_map_replyView (st : SystemState) (w : ThreadId) :
     (st.getTcb? w).map TCB.replyView = st.replyViews w.toObjId := by
-  unfold getTcb? replyViews
+  unfold getTcb? replyViews getObject?
   cases st.objects[w.toObjId]? with
   | none => rfl
   | some o => cases o <;> rfl

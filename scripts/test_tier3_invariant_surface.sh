@@ -1365,14 +1365,16 @@ run_check "INVARIANT" rg -n '^theorem cancelIpcBlocking_reply_no_donation_to_vic
 # it runs *after* the reclaim (on whose success it is the identity) and *before*
 # the caller link is consumed, so the whole nesting is pinned rather than the
 # pair, and a splice moved outside that window is refused.
-run_check "INVARIANT" bash -lc 'rg -U -n "consumeReplyLink\n      \(restoreToReadyCancelled\n        \(spliceThreadReplyFrameOut \(returnDonationToCancelledCaller st tid tcb\) tcb\) tid\)" SeLe4n/Kernel/Lifecycle/Suspend.lean'
+# WS-ZA ZA4.6: and the unlink from the server's reply-waiter queue wraps the
+# whole nesting, so it runs last.
+run_check "INVARIANT" bash -lc 'rg -U -n "unlinkReplyWaiterOpt\n      \(consumeReplyLink\n        \(restoreToReadyCancelled\n          \(spliceThreadReplyFrameOut \(returnDonationToCancelledCaller st tid tcb\) tcb\) tid\)" SeLe4n/Kernel/Lifecycle/Suspend.lean'
 # NEGATIVE: the pre-remediation arm, which cleared the reply link and left the
 # donation with the server, must not come back.
 run_negative_check "INVARIANT" bash -lc 'rg -U -n "consumeReplyLink \(restoreToReadyCancelled st tid\) tid tcb" SeLe4n/Kernel/Lifecycle/Suspend.lean'
 # NEGATIVE: ...nor the `v0.35.3` arm, which reclaimed but left a non-head frame
 # on its stack with its caller consumed — the dead frame this cut removes.  The
 # mutation keeps the reclaim and the restore and drops only the splice.
-run_negative_check "INVARIANT" bash -lc 'rg -U -n "consumeReplyLink\n      \(restoreToReadyCancelled \(returnDonationToCancelledCaller st tid tcb\) tid\)" SeLe4n/Kernel/Lifecycle/Suspend.lean'
+run_negative_check "INVARIANT" bash -lc 'rg -U -n "consumeReplyLink\n *\(restoreToReadyCancelled \(returnDonationToCancelledCaller st tid tcb\) tid\)" SeLe4n/Kernel/Lifecycle/Suspend.lean'
 # ...and the removal itself is O(1) on the frame ABOVE the cancelled one, which is
 # what the upward link makes possible: a single-linked stack cannot find it.
 run_check "INVARIANT" rg -n '^def spliceThreadReplyFrameOut($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Operations/Endpoint.lean
@@ -11675,8 +11677,9 @@ run_negative_check "INVARIANT" bash -lc 'rg -U -n "^theorem cancelBoundDonationO
 # The witness computes the retired cleanup beside the live retype on both
 # binding shapes, with the unbound control on which the two agree.
 run_check "INVARIANT" rg -n '\(a\) NEGATIVE \(the defect\): the retired retype FALSIFIES the affinity invariant' tests/SmpIpcSuite.lean
-run_check "INVARIANT" rg -n '\(a\) PAYOFF: the retype migrated the replenishment to the client.s home \(core 0\)' tests/SmpIpcSuite.lean
-run_check "INVARIANT" rg -n '\(a\) the live retype.s replenish queues are the arm.s, then the sweep.s, on every core' tests/SmpIpcSuite.lean
+run_check "INVARIANT" rg -n '\(a\) PAYOFF: the arm migrated the replenishment to the client.s home \(core 0\)' tests/SmpIpcSuite.lean
+# A holder with a reply waiter is refused by the retype (WS-ZA ZA4.6).
+run_check "INVARIANT" rg -n '\(a\) the live retype of a holder with a reply waiter is refused' tests/SmpIpcSuite.lean
 run_check "INVARIANT" rg -n '\(b\) NEGATIVE \(the defect\): the retired retype FALSIFIES the binding invariant' tests/SmpIpcSuite.lean
 run_check "INVARIANT" rg -n '\(b\) PAYOFF: the replenishment was purged from the destroyed thread.s home' tests/SmpIpcSuite.lean
 run_check "INVARIANT" rg -n '\(c\) CONTROL: on an unbound target the two readings agree on every replenish queue' tests/SmpIpcSuite.lean

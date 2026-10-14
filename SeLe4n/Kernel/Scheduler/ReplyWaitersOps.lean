@@ -162,7 +162,7 @@ theorem replyViews_mapTcbInPlace (st : SystemState) (t : ThreadId) {g : TCB → 
     {gv : ReplyView → ReplyView} (hg : ∀ x, (g x).replyView = gv x.replyView) :
     (st.mapTcbInPlace t g).replyViews = ReplyViews.mapAt st.replyViews t gv := by
   funext k
-  unfold replyViews ReplyViews.mapAt
+  unfold replyViews getObject? ReplyViews.mapAt
   rw [objects_mapTcbInPlace]
   by_cases h : t.toObjId = k
   · rw [if_pos (by simpa using h), if_pos h, objReplyView_map_mapTcb hg]
@@ -192,7 +192,7 @@ theorem replyViews_updateTcbAtCode (st : SystemState) (c : Nat) {g : TCB → TCB
 
 theorem replyHeadCode_eq (st : SystemState) (s : ThreadId) :
     st.replyHeadCode s = ReplyViews.headCodeOf st.replyViews s := by
-  unfold replyHeadCode ReplyViews.headCodeOf replyViews
+  unfold replyHeadCode ReplyViews.headCodeOf replyViews getObject?
   rw [objects_get?_eq_objectEntry?]
   cases st.objectEntry? s.toObjId with
   | none => rfl
@@ -200,7 +200,7 @@ theorem replyHeadCode_eq (st : SystemState) (s : ThreadId) :
 
 theorem replyPrevCode_eq (st : SystemState) (w : ThreadId) :
     st.replyPrevCode w = ReplyViews.prevCodeOf st.replyViews w := by
-  unfold replyPrevCode ReplyViews.prevCodeOf replyViews
+  unfold replyPrevCode ReplyViews.prevCodeOf replyViews getObject?
   rw [objects_get?_eq_objectEntry?]
   cases st.objectEntry? w.toObjId with
   | none => rfl
@@ -208,7 +208,7 @@ theorem replyPrevCode_eq (st : SystemState) (w : ThreadId) :
 
 theorem replyNextCode_eq (st : SystemState) (w : ThreadId) :
     st.replyNextCode w = ReplyViews.nextCodeOf st.replyViews w := by
-  unfold replyNextCode ReplyViews.nextCodeOf replyViews
+  unfold replyNextCode ReplyViews.nextCodeOf replyViews getObject?
   rw [objects_get?_eq_objectEntry?]
   cases st.objectEntry? w.toObjId with
   | none => rfl
@@ -360,7 +360,7 @@ waiter list reads nothing else (`waitersOf_of_replyViews`). -/
 
 theorem replyViews_congr {a b : SystemState} (h : a.objects = b.objects) :
     a.replyViews = b.replyViews := by
-  unfold replyViews; rw [h]
+  unfold replyViews getObject?; rw [h]
 
 theorem mapTcbInPlace_replyViews_eq (st : SystemState) (t : ThreadId) {g : TCB → TCB}
     (hg : ∀ x, (g x).replyView = x.replyView) :

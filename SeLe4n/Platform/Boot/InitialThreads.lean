@@ -185,7 +185,7 @@ theorem replyLinkCodes_insert_tcb (st : SystemState) (hInv : st.objects.invExt)
     (j : SeLe4n.ObjId) :
     replyLinkCodes (objReplyView (st.objects.insert k (.tcb t'))[j]?) =
       replyLinkCodes (st.replyViews j) := by
-  unfold SystemState.replyViews
+  unfold SystemState.replyViews SystemState.getObject?
   by_cases h : k = j
   · subst h
     change replyLinkCodes (objReplyView ((st.objects.insert k _).get? k)) = _
@@ -245,7 +245,7 @@ theorem startInitialThread_preserves_bootStartShape (ist : IntermediateState)
       -- its run-queue links; every shape field reads past all three, and the
       -- reply-waiter link codes are untouched (`startInitialThreadOnCore_replyLinkCodes`).
       have hc := startInitialThreadOnCore_replyLinkCodes ist.state tid hInv oid
-      rw [SystemState.replyViews, SystemState.replyViews, show (startInitialThreadOnCore ist.state tid).objects[oid]? = _ from hObj, hT] at hc
+      rw [SystemState.replyViews, SystemState.replyViews, SystemState.getObject?, SystemState.getObject?, show (startInitialThreadOnCore ist.state tid).objects[oid]? = _ from hObj, hT] at hc
       simp only [objReplyView_tcb, replyLinkCodes, Option.map_some, Option.some.injEq,
         Prod.mk.injEq, TCB.replyView] at hc
       obtain ⟨c1, c2, c3, c4⟩ := hc

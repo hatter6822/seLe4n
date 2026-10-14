@@ -63,7 +63,7 @@ theorem waitersOf_frame
     (st st' : SystemState) (tid : ThreadId)
     (hObjects : st'.objects = st.objects) :
     waitersOf st' tid = waitersOf st tid :=
-  SystemState.replyWaitersOf_of_replyViews (by unfold SystemState.replyViews; rw [hObjects]) tid
+  SystemState.replyWaitersOf_of_replyViews (by unfold SystemState.replyViews SystemState.getObject?; rw [hObjects]) tid
 
 /-- WS-ZA ZA4.6: `waitersOf` reads reply views and nothing else. -/
 theorem waitersOf_of_replyViews
@@ -397,7 +397,7 @@ theorem waitersOf_frame_per_field
     (hEquiv : ∀ objId, computeMaxWaiterPriority_lookup_equiv st st' objId) :
     waitersOf st' tid = waitersOf st tid := by
   refine waitersOf_of_replyViews st st' tid (funext fun k => ?_)
-  unfold SystemState.replyViews
+  unfold SystemState.replyViews SystemState.getObject?
   rcases hEquiv k with hSame | ⟨tcb, tcb', hPre, hPost, hView, _⟩
   · rw [hSame]
   · rw [hPre, hPost, objReplyView_tcb, objReplyView_tcb, hView]

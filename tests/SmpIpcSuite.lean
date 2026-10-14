@@ -184,7 +184,7 @@ example (endpointId : SeLe4n.ObjId) (caller : SeLe4n.ThreadId) (msg : IpcMessage
         caller (.blockedOnReply endpointId (some receiver)) none = .ok st4)
     (hLink : SystemState.linkServerStashedReply caller receiver st4 = .ok ((), st5)) :
     endpointCallOnCore endpointId caller msg executingCore st
-      = (removeRunnableOnCore st5 caller executingCore,
+      = ((removeRunnableOnCore st5 caller executingCore).linkReplyWaiter caller receiver,
          .ok (wakeThread st'' receiver executingCore).2) :=
   endpointCallOnCore_rendezvous_eq endpointId caller msg executingCore st ep receiver
     recvTcb0 st' st'' st4 st5 hSz1 hSz2 hObj hHead hPop hStore hCallerStore hLink
@@ -4903,32 +4903,27 @@ private def runRetypeReservationChecks : IO Unit := do
             && replenishCountFor stOld c1 scClient == 1 && replenishCountFor stOld c0 scClient == 0)
         assertBool "(a) NEGATIVE (the defect): the retired retype FALSIFIES the affinity invariant"
           (!replenishAffinityConsistentB stOld)
-      -- PAYOFF: the live retype migrates with the return.
-      match liveRetypeTcb stDon donServer with
-      | none => assertBool "(a) the live retype of the donated holder succeeds" false
-      | some stNew =>
-        assertBool "(a) PAYOFF: the destroyed slot holds the replacement"
-          (match stNew.getObject? donServer.toObjId with
-           | some (.endpoint _) => true | _ => false)
+      -- REFUSAL: the client waits on the holder for its reply, so the live retype
+      -- refuses (`revocationRequired`): destroying a thread with reply waiters would
+      -- leave them naming a server whose id a later retype reuses.
+      assertBool "(a) the live retype of a holder with a reply waiter is refused"
+        (liveRetypeTcb stDon donServer).isNone
+      -- PAYOFF: the reservation arm the retype runs (also the suspend's G3 arm)
+      -- migrates the replenishment with the return.
+      match okExcept (cancelDonationArmOnCore stDon donServer serverTcb) with
+      | none => assertBool "(a) the reservation arm succeeds on the holder" false
+      | some stArm =>
+        let stNew := cleanupTcbReferences stArm donServer
         assertBool "(a) PAYOFF: the context is bound back to the client"
           (boundThreadOf stNew scClient == some donClient
             && (match stNew.getTcb? donClient with
                 | some t => t.schedContextBinding == .bound scClient | none => false))
-        assertBool "(a) PAYOFF: the retype migrated the replenishment to the client's home (core 0)"
+        assertBool "(a) PAYOFF: the arm migrated the replenishment to the client's home (core 0)"
           (replenishCountFor stNew c0 scClient == 1 && replenishCountFor stNew c1 scClient == 0)
-        assertBool "(a) PAYOFF: the affinity invariant holds after the retype"
+        assertBool "(a) PAYOFF: the affinity invariant holds after the arm"
           (replenishAffinityConsistentB stNew)
-        assertBool "(a) PAYOFF: the binding invariant holds after the retype"
+        assertBool "(a) PAYOFF: the binding invariant holds after the arm"
           (schedContextBindingConsistentB stNew)
-        -- The pipeline's first step IS the suspend's G3 arm: the live post-state's
-        -- replenish queues are the arm-then-sweep reading's, core for core.
-        match okExcept (cancelDonationArmOnCore stDon donServer serverTcb) with
-        | none => assertBool "(a) the reservation arm succeeds on the holder" false
-        | some stArm =>
-          let stArmSwept := cleanupTcbReferences stArm donServer
-          assertBool "(a) the live retype's replenish queues are the arm's, then the sweep's, on every core"
-            (allCores.all (fun c =>
-              replenishEntriesOn stNew c == replenishEntriesOn stArmSwept c))
   -- (b) BOUND: the client owns its context, pinned to core 1 with its replenishment
   --     there (`stPreReturnSameCore`), and is retyped.
   let stBound := withRetypeTypes stPreReturnSameCore donFixtureTypes
