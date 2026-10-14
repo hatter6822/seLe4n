@@ -1,3 +1,59 @@
+## v0.36.87 — WS-ZA ZA4.7 (fields as codes, first step): endpoint queue ends and the message length
+
+**A reply now allocates nothing, and a send to a waiting receiver allocates one
+cell.**  The endpoint keeps its four queue ends as scalar codes, the rendezvous
+and blocking stores take a queue successor or tail as its code, the taint step
+carries the thread it reaches across the arm as a code, and the register fast
+paths read only the length of a message's info word.  Each executed form is
+proven equal to the specification's, so every theorem about the specification
+holds of it.
+
+Normal-build allocations per syscall (QEMU exerciser, core 0), against
+`v0.36.86`:
+
+| Scenario | v0.36.86 | v0.36.87 |
+|---|---|---|
+| reply | 1 | 0 |
+| send to a waiting receiver | 3 | 1 |
+| receive that blocks | 5 | 3 |
+| call | 8 | 7 |
+
+Signal, wait, wide-badge signal and yield stay at 0; wait that blocks (6) and
+signal that wakes a waiter (9) are unchanged.
+
+- **Endpoint queue ends as codes.**  `Endpoint` holds `sendHeadCode`,
+  `sendTailCode`, `recvHeadCode` and `recvTailCode` (`0` for none, `t + 1` for
+  `some t`, as ZA4.4's links).  `Endpoint.sendQ` and `Endpoint.receiveQ` are
+  derived views with the old type, so every read keeps its statement; writes go
+  through `withSendQ`, `withReceiveQ` and `ofQueues`, with `@[simp]` view
+  lemmas and `ext_queues`.  A write of one end alone is a write of its code
+  (`withReceiveQ_head`, `withReceiveQ_tail`), so a blocking receive and a
+  rendezvous rewrite the endpoint in its cell.
+- **Codes across call boundaries.**  An `Option` handed to an out-of-line
+  function or captured by an object write's closure is built as a cell.
+  `sendRendezvousEndpoint` and `receiveBlockEndpoint` take the successor or
+  tail as its code, and so do the delivered-in-place stores
+  (`storeSendRendezvousReady`, `storeCallRendezvousReady`,
+  `performSendDelivered`, `performCallDelivered`, `storeReceiveBlock`); their
+  statements take `ThreadId.optCode` of the old argument.
+- **The taint step.**  `sendTaintStep` and `receiveTaintStep` take the code of
+  the thread the content reaches (`sendTaintHeadCode`,
+  `receiveTaintSourceCode`), read from the pre-state before the arm, so the
+  value live across the arm is a word.
+- **The message length.**  The cell the entry built on every send, call, reply
+  and receive was the `MessageInfo` record.  `regMessageBody`,
+  `regMessageLength`, `regMessageWord`, `regMessageInfoWord` and
+  `regMessageFrame` take the length (`regMessageBody_eq_extract` relates the
+  body to the specification's extract), and the reply chain carries the three
+  fields, building the record only where its general arm hands it to the
+  specification's transfer.
+
+**What remains.**  A blocking receive and a call write `ipcState`
+(`.blockedOnReceive`, `.blockedOnReply ep (some r)`), `replyObject`,
+`pendingReceiveReply` and `Reply.caller` as fresh cells; the priority walk's
+maximum and the per-core current thread are the rest.  Those are the next
+steps of ZA4.7's fields-as-codes part, then blocked senders and reply-receive.
+
 ## v0.36.86 — WS-ZA ZA4.7 (second part): a delivered message lives in the receiver's registers
 
 **As in seL4, a delivered IPC message now lives only in the receiver's saved
