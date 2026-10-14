@@ -301,7 +301,13 @@ def projectKernelObject (ctx : LabelingContext) (observer : IfObserver) (obj : K
                        -- the run queue.
                        runCoreCode := 0, runPrio := ⟨0⟩, runPrevCode := 0,
                        runNextCode := 0, runBucketPrevCode := 0,
-                       runBucketNextCode := 0 }
+                       runBucketNextCode := 0,
+                       -- WS-ZA ZA4.6: the reply-waiter links and ends name the
+                       -- callers reply-blocked on the same server, whatever
+                       -- their domain; erased as `pipBoost`, which they feed,
+                       -- and `replyObject` are.
+                       replyWaiterPrevCode := 0, replyWaiterNextCode := 0,
+                       replyWaitersHeadCode := 0, replyWaitersCount := 0 }
   | .schedContext sc =>
       -- AI4-A: Strip boundThread — internal scheduling plumbing binding a
       -- SchedContext to its owning thread. Donation chain changes modify only

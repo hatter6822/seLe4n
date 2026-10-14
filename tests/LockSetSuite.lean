@@ -1215,7 +1215,8 @@ private def runLubMergeChecks : IO Unit := do
   -- reply-stack head, relinking the queue-structure TCB its receive leg writes
   -- (WS-OD OD3.13), WS-OD (`v0.35.4`)'s head its pop clears and old head its
   -- re-donation's push rewrites, and — PR #894's review — the five objects the
-  -- INVOKING receiver's own pre-receive return touches: twenty-one, which is
+  -- INVOKING receiver's own pre-receive return touches, and (WS-ZA ZA4.6) the
+  -- three reply-waiter TCBs its unlink and link rewrite: twenty-seven, which is
   -- what `maxLockSetSize` is measured against.
   let widestReplyRecv := lockSet_replyRecv ⟨5⟩ (ObjId.ofNat 10) ⟨7⟩
                           (ObjId.ofNat 20) (some ⟨8⟩) (some ⟨42⟩) (some ⟨11⟩)
@@ -1224,20 +1225,24 @@ private def runLubMergeChecks : IO Unit := do
                           (some ⟨45⟩) (some ⟨46⟩)
                           (some ⟨47⟩) (some ⟨14⟩) (some ⟨48⟩) (some ⟨49⟩)
                           (some ⟨15⟩) (some ⟨50⟩) (some ⟨51⟩) (some ⟨16⟩)
-  assertBool "the widest declarable .replyRecv has 24 locks (= maxLockSetSize)"
-    (decide (widestReplyRecv.size = 24))
+                          -- WS-ZA ZA4.6: the answered caller's two reply-waiter
+                          -- links and the old head of the receive leg's server.
+                          (some ⟨17⟩) (some ⟨18⟩) (some ⟨19⟩)
+  assertBool "the widest declarable .replyRecv has 27 locks (= maxLockSetSize)"
+    (decide (widestReplyRecv.size = 27))
   -- **WS-HP HP3.1**: and the frame *below* the answered reply is a member of its
   -- own -- dropping it alone drops the widest shape by exactly one, so the
   -- `22 -> 23` raise is a genuine `+1` and not a member that merges with the
   -- frame above it or with the head the pop clears.
-  assertBool "…and dropping only the frame below the answered reply drops it to 22"
+  assertBool "…and dropping only the frame below the answered reply drops it to 26"
     (decide ((lockSet_replyRecv ⟨5⟩ (ObjId.ofNat 10) ⟨7⟩
                 (ObjId.ofNat 20) (some ⟨8⟩) (some ⟨42⟩) (some ⟨11⟩)
                 (some ⟨60⟩) true (some ⟨9⟩) (some ⟨43⟩)
                 (some ⟨44⟩) (some ⟨12⟩) (some ⟨13⟩)
                 (some ⟨45⟩) (some ⟨46⟩)
                 (some ⟨47⟩) (some ⟨14⟩) (some ⟨48⟩) (some ⟨49⟩)
-                (some ⟨15⟩) (some ⟨50⟩) none (some ⟨16⟩)).size = 23))
+                (some ⟨15⟩) (some ⟨50⟩) none (some ⟨16⟩)
+                (some ⟨17⟩) (some ⟨18⟩) (some ⟨19⟩)).size = 26))
   assertBool "the frame below the answered reply is declared WRITE"
     (decide ((replyLock ⟨51⟩, AccessMode.write) ∈ widestReplyRecv.pairs))
   -- **WS-HP HP10.6**: and so is the origin a bottom-of-stack pop redirects the
@@ -1361,7 +1366,7 @@ private def runLubMergeChecks : IO Unit := do
                 none none none none none (some ⟨50⟩) (some ⟨51⟩) none).size + 1
              = rendezvousReplyRecv.size))
   -- NEGATIVE: no reachable shape reaches the ceiling, which is the whole
-  -- content of `lockSet_endpointReplyRecvOnCore_size_le_eighteen` -- a witness
+  -- content of `lockSet_endpointReplyRecvOnCore_size_le_twentyone` -- a witness
   -- asserting only `≤ maxLockSetSize` would pass with the slack claim false.
   assertBool "NEGATIVE: no reachable .replyRecv shape reaches maxLockSetSize"
     (!decide (blockingReplyRecv.size = maxLockSetSize

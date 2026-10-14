@@ -1,3 +1,58 @@
+## v0.36.84 — WS-ZA ZA4.6: reply waiters link through the TCB; priority inheritance without a scan
+
+**Priority inheritance no longer scans the object store.**  A thread blocked
+on a reply is linked into its server's reply-waiter queue through four new TCB
+fields (`replyWaiterPrevCode`, `replyWaiterNextCode`, and on the server
+`replyWaitersHeadCode`, `replyWaitersCount`), as seL4 links endpoint queues.
+`waitersOf` is the queue read off those links, and the compiled maximum waiter
+priority walks the codes with no object-index walk and no `List`.
+
+- **Link and unlink.**  The call rendezvous and the receive of a call link the
+  caller under the server, last in the operation; reply, the cancellation of a
+  reply wait and timeout unlink it (`linkReplyWaiter`, `unlinkReplyWaiter`).
+  Every consumer is restated over the new post-states: the links are erased by
+  the information-flow projection, agree off run links, carry no scheduling
+  key and write no scheduler or machine slot, so each proof gains one
+  transport step.
+- **The invariant.**  `replyWaitersConsistent`
+  (`SeLe4n/Kernel/Scheduler/ReplyWaiters.lean`): each server's queue is a list
+  of distinct threads linked both ways from its head, as long as its count,
+  whose members are exactly the threads reply-blocked on it; a reply-blocked
+  thread's server is a live thread other than itself; a thread blocked on no
+  server holds no reply-waiter links.  It is stated over the store's reply
+  views, so a step that keeps every view keeps it.  Every IPC arm the
+  dispatcher runs preserves it (`IPC/CrossCore/ReplyWaitersDispatch.lean`:
+  send, receive and call with capability transfer, the cross-core call and
+  reply, reply-receive, fault delivery and reply, signal, wait), as do
+  cancellation, timeout and the priority-inheritance walks.  It joins
+  `ipcReachable`; the boot and the dispatch-payoff witnesses establish it, and
+  the runtime invariant checks walk every queue.
+- **Lock footprints.**  Every footprint whose operation links or unlinks a
+  reply waiter declares the TCBs those writes touch (the server's old head on
+  call and receive, the answered caller's neighbours on reply, the victim's
+  links and server on cancel).  The widest reply-receive shape grows by three,
+  so `maxLockSetSize` moves 24 → 27 (admissible critical section 13 → 12 µs,
+  uniform envelope 4320 → 4860 µs); the cancel bound moves 13 → 16 and the
+  suspend bound 17 → 20.
+- **Fix: destroying a server with reply waiters left them naming it.**
+  `cleanupTcbReferences` skipped reply waiters and `waitersOf` matched by id,
+  so a TCB retyped at the destroyed thread's id inherited their priority boost
+  past its own maximum controlled priority (Medium).  The destroy is now
+  refused with `revocationRequired` while the server's reply-waiter queue is
+  non-empty, as a Reply with a waiting caller already was
+  (`lifecyclePreRetypeCleanup`).  Regression: `SmpIpcSuite`'s retype witness
+  asserts the live retype of a holder with a reply waiter is refused with
+  `revocationRequired`.
+- **Allocations (normal build, QEMU exerciser).**  Call 184 → 166, reply
+  112 → 94, a receive that blocks 106 → 100, send to a waiting receiver
+  90 → 86, a wait that blocks 48 → 42, signal to a waiter 33 → 29; signal,
+  wait-pending, wide-badge signal and yield stay 0.
+- **Registered debt.**  The single-core reference and frozen IPC operations do
+  not link reply waiters; `replyWaitersConsistent` is not yet stated for the
+  non-IPC entries; `RunQueue.wellFormed` is always true and only pinned by
+  proofs.  The negative suite's reply-receive scenario now runs the per-core
+  arms.
+
 ## v0.36.83 — WS-ZA: every kernel entry carries ct_not_in_q, idle threads off the run queues
 
 **The scheduler's placement invariant is carried, not assumed.**

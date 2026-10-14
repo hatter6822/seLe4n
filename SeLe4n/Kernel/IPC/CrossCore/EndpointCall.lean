@@ -243,6 +243,10 @@ def lockSet_endpointCallOnCore (st : SystemState) (endpointId : SeLe4n.ObjId)
     -- context `endpointCallDonatedSc?` resolves, so the footprint and the push
     -- cannot disagree about which stack is extended.
     ((endpointCallDonatedSc? st endpointId caller).bind (replyStackHead? st))
+    -- **WS-ZA ZA4.6**: and the receiver's old reply-waiter head, which the
+    -- rendezvous's `linkReplyWaiter caller receiver` relinks -- read off the
+    -- receiver `endpointCallReceiver?` resolves.
+    ((endpointCallReceiver? st endpointId).bind (SystemState.replyWaitersHead? st))
 
 /-- **WS-RR RR7.8**: the capless resolved call footprint is definitionally the
 pre-RR7.8 one, so every statement and fixture taken over the four-argument form
@@ -259,7 +263,9 @@ theorem lockSet_endpointCallOnCore_capless (st : SystemState)
           -- so the neighbour member is resolved here rather than `none`.
           (sendSideQueueStructureNeighbor? st endpointId)
           -- **WS-OD (`v0.35.4`)**: and the old head, for the same reason.
-          ((endpointCallDonatedSc? st endpointId caller).bind (replyStackHead? st)) := rfl
+          ((endpointCallDonatedSc? st endpointId caller).bind (replyStackHead? st))
+          -- **WS-ZA ZA4.6**: and the reply-waiter head, for the same reason.
+          ((endpointCallReceiver? st endpointId).bind (SystemState.replyWaitersHead? st)) := rfl
 
 /-- **WS-RR RR7.8**: the concrete lock-set a cross-core caps-carrying `.send`
 acquires. The send side had no resolved footprint at all — its capless shape
@@ -313,9 +319,11 @@ def lockSet_endpointCallWithCaps (callerTid : SeLe4n.ThreadId)
     -- destCnodeObjId`, so every member the base declares it declares too.
     (queueNeighbour : Option SeLe4n.ThreadId := none)
     -- **WS-OD (`v0.35.4`)**: and the old head the donation push rewrites.
-    (donationOldHeadReplyId : Option SeLe4n.ReplyId := none) : LockSet :=
+    (donationOldHeadReplyId : Option SeLe4n.ReplyId := none)
+    -- **WS-ZA ZA4.6**: and the receiver's old reply-waiter head.
+    (replyWaiterOldHead : Option SeLe4n.ThreadId := none) : LockSet :=
   lockSet_endpointCall callerTid cnodeRootObjId endpointObjId receiverTid donatedScId
-    replyId (some destCnodeObjId) queueNeighbour donationOldHeadReplyId
+    replyId (some destCnodeObjId) queueNeighbour donationOldHeadReplyId replyWaiterOldHead
 
 /-- **WS-RR RR7.7**: the caps footprint *is* the base footprint at `some`, by
 `rfl`. A refactor that reintroduces a second definition breaks this marker at
@@ -326,12 +334,14 @@ theorem lockSet_endpointCallWithCaps_eq_call_some (callerTid : SeLe4n.ThreadId)
     (donatedScId : Option SeLe4n.SchedContextId)
     (replyId : Option SeLe4n.ReplyId)
     (queueNeighbour : Option SeLe4n.ThreadId)
-    (donationOldHeadReplyId : Option SeLe4n.ReplyId) :
+    (donationOldHeadReplyId : Option SeLe4n.ReplyId)
+    (replyWaiterOldHead : Option SeLe4n.ThreadId) :
     lockSet_endpointCallWithCaps callerTid cnodeRootObjId destCnodeObjId endpointObjId
         receiverTid donatedScId replyId queueNeighbour donationOldHeadReplyId
+        replyWaiterOldHead
       = lockSet_endpointCall callerTid cnodeRootObjId endpointObjId receiverTid
           donatedScId replyId (some destCnodeObjId) queueNeighbour
-          donationOldHeadReplyId := rfl
+          donationOldHeadReplyId replyWaiterOldHead := rfl
 
 -- ============================================================================
 -- §4 The cross-core endpoint-call transition (plan §3.2)
@@ -382,7 +392,11 @@ def endpointCallOnCore (endpointId : SeLe4n.ObjId) (caller : SeLe4n.ThreadId)
                       match SystemState.linkServerStashedReply caller receiver st4 with
                       | .error e => (st, .error e)
                       | .ok ((), st5) =>
-                          (removeRunnableOnCore st5 caller executingCore,
+                          -- WS-ZA ZA4.6: the caller joins the server's reply-waiter
+                          -- queue (seL4 links the reply object into the caller's
+                          -- call stack here), last, off every other field.
+                          ((removeRunnableOnCore st5 caller executingCore).linkReplyWaiter
+                              caller receiver,
                            .ok (wakeThread st'' receiver executingCore).2)
       | none =>
           match endpointQueueEnqueue endpointId false caller st with
@@ -426,7 +440,7 @@ theorem endpointCallOnCore_rendezvous_eq
     -- with a stashed reply object — the production dispatch always provides one).
     (hLink : SystemState.linkServerStashedReply caller receiver st4 = .ok ((), st5)) :
     endpointCallOnCore endpointId caller msg executingCore st
-      = (removeRunnableOnCore st5 caller executingCore,
+      = ((removeRunnableOnCore st5 caller executingCore).linkReplyWaiter caller receiver,
          .ok (wakeThread st'' receiver executingCore).2) := by
   unfold endpointCallOnCore
   rw [if_neg hSz1, if_neg hSz2]
@@ -515,7 +529,8 @@ theorem endpointCallOnCore_replenishQueueOnCore (endpointId : SeLe4n.ObjId)
                 | error e => rfl
                 | ok pr =>
                   obtain ⟨_, st5⟩ := pr
-                  simp only [removeRunnableOnCore_replenishQueueOnCore]
+                  simp only [SystemState.linkReplyWaiter_scheduler,
+                    removeRunnableOnCore_replenishQueueOnCore]
                   rw [linkServerStashedReply_scheduler_eq st4 st5 caller receiver hLink,
                     storeTcbIpcStateAndMessage_scheduler_eq _ st4 caller _ _ hStore2,
                     wakeThread_replenishQueueOnCore,
@@ -633,6 +648,7 @@ theorem lockSet_endpointCallOnCore_correct
     (rendezvousCapsDestination? st endpointId msg)
     (sendSideQueueStructureNeighbor? st endpointId)
     ((endpointCallDonatedSc? st endpointId caller).bind (replyStackHead? st))
+    ((endpointCallReceiver? st endpointId).bind (SystemState.replyWaitersHead? st))
 
 /-- **WS-RR RR7.8**: the send footprint's kinds are permitted too, over every
 message — the send side's first resolved-footprint correctness statement. -/
@@ -677,6 +693,8 @@ theorem lockSet_endpointCallOnCore_covers_capsDestination
   unfold lockSet_endpointCallOnCore lockSet_endpointCall
   rw [hDest]
   -- WS-OD OD3.11: one more extension outside (the queue-structure neighbour).
+  -- WS-ZA ZA4.6: the receiver's old reply-waiter head is outermost.
+  refine mem_write_lockSetExtendOpt _ _ _ ?_
   exact mem_write_lockSetExtendOpt _ _ _
     (mem_write_lockSetExtendOpt _ _ _ (LockSet.mem_insertOrMerge_write_self _ _))
 
@@ -691,6 +709,8 @@ theorem lockSet_endpointCallOnCore_covers_cdt
       ∈ (lockSet_endpointCallOnCore st endpointId caller cnodeRootObjId msg).pairs := by
   unfold lockSet_endpointCallOnCore lockSet_endpointCall
   rw [hDest]
+  -- WS-ZA ZA4.6: the receiver's old reply-waiter head is outermost.
+  refine mem_write_lockSetExtendOpt _ _ _ ?_
   exact mem_write_lockSetExtendOpt _ _ _ (LockSet.mem_insertOrMerge_write_self _ _)
 
 /-- **WS-RR RR7.8**: the same two members on the send arm — the same transfer,
@@ -728,6 +748,8 @@ theorem lockSet_endpointCallOnCore_covers_queueNeighbour
       ∈ (lockSet_endpointCallOnCore st endpointId caller cnodeRootObjId msg).pairs := by
   unfold lockSet_endpointCallOnCore lockSet_endpointCall
   rw [hq]
+  -- WS-ZA ZA4.6: the receiver's old reply-waiter head is outermost.
+  refine mem_write_lockSetExtendOpt _ _ _ ?_
   exact LockSet.mem_insertOrMerge_write_self _ _
 
 /-- **WS-OD OD4.7 / `v0.35.4`: the resolved `.call` footprint declares every
@@ -773,10 +795,10 @@ theorem lockSet_endpointCallOnCore_covers_donationPush
         ∈ (lockSet_endpointCallOnCore st endpointId caller cnodeRootObjId msg).pairs := by
   unfold lockSet_endpointCallOnCore
   rw [hSc, hRid, hRecv]
-  exact ⟨lockSet_endpointCall_donatedSc_write_mem _ _ _ _ _ _ _ _ _,
-    lockSet_endpointCall_reply_write_mem _ _ _ _ _ _ _ _ _,
-    lockSet_endpointCall_caller_tcb_write_mem_unconditional _ _ _ _ _ _ _ _ _,
-    lockSet_endpointCall_receiver_tcb_write_mem _ _ _ _ _ _ _ _ _⟩
+  exact ⟨lockSet_endpointCall_donatedSc_write_mem _ _ _ _ _ _ _ _ _ _,
+    lockSet_endpointCall_reply_write_mem _ _ _ _ _ _ _ _ _ _,
+    lockSet_endpointCall_caller_tcb_write_mem_unconditional _ _ _ _ _ _ _ _ _ _,
+    lockSet_endpointCall_receiver_tcb_write_mem _ _ _ _ _ _ _ _ _ _⟩
 
 /-- **WS-OD (`v0.35.4`)**: the fifth key of the push -- the donated context's
 old head, rewritten by `storeDonationFramePush` -- is a declared write of the
@@ -795,7 +817,26 @@ theorem lockSet_endpointCallOnCore_covers_donationOldHead
   rw [hSc]
   have h2 : Option.bind (some scId) (replyStackHead? st) = some oldHead := hOld
   rw [h2]
-  exact lockSet_endpointCall_donationOldHead_write_mem _ _ _ _ _ _ _ _ _
+  exact lockSet_endpointCall_donationOldHead_write_mem _ _ _ _ _ _ _ _ _ _
+
+/-- **WS-ZA ZA4.6**: the receiver's old reply-waiter head -- the thread the
+rendezvous's `linkReplyWaiter caller receiver` relinks back to the caller -- is a
+declared write of the resolved `.call` footprint.  Stated over the two
+resolvers the member is derived from. -/
+theorem lockSet_endpointCallOnCore_covers_replyWaiterOldHead
+    (st : SystemState) (endpointId : SeLe4n.ObjId) (caller : SeLe4n.ThreadId)
+    (cnodeRootObjId : SeLe4n.ObjId) (msg : IpcMessage)
+    (receiver oldHead : SeLe4n.ThreadId)
+    (hRecv : endpointCallReceiver? st endpointId = some receiver)
+    (hHead : st.replyWaitersHead? receiver = some oldHead) :
+    (tcbLock oldHead, AccessMode.write)
+        ∈ (lockSet_endpointCallOnCore st endpointId caller cnodeRootObjId msg).pairs := by
+  unfold lockSet_endpointCallOnCore
+  rw [hRecv]
+  have h2 : Option.bind (some receiver) (SystemState.replyWaitersHead? st) = some oldHead :=
+    hHead
+  rw [h2]
+  exact lockSet_endpointCall_replyWaiterOldHead_write_mem _ _ _ _ _ _ _ _ _ _
 
 /-- **WS-RR RR8.16 (`v0.35.189`)**: the member is `none` on the arm that donates
 nothing because there is nobody to donate to.
@@ -1925,6 +1966,7 @@ theorem endpointCallOnCore_perCore_blocking
       ≠ some caller := by
   rw [endpointCallOnCore_rendezvous_eq endpointId caller msg executingCore st ep receiver
         recvTcb0 st' st'' st4 st5 hSz1 hSz2 hObj hHead hPop hStore hCallerStore hLink]
+  simp only [SystemState.linkReplyWaiter_scheduler]
   exact ⟨removeRunnableOnCore_not_mem_self st5 caller executingCore,
          removeRunnableOnCore_currentOnCore_ne_self st5 caller executingCore⟩
 
@@ -2013,7 +2055,8 @@ theorem endpointCallOnCore_preserves_objects_invExt
               obtain ⟨_, st5⟩ := pL
               simp only
               have h5 := linkServerStashedReply_preserves_objects_invExt st4 st5 caller pair.1 h4 hLink
-              exact removeRunnableOnCore_objects_invExt _ _ _ h5
+              exact SystemState.linkReplyWaiter_objects_invExt _ _ _
+                (removeRunnableOnCore_objects_invExt _ _ _ h5)
 
 /-- **WS-RR RR8.16** (`v0.35.200`): the cross-core Call leg is a
 `kindPreservingWrite`.
@@ -2092,9 +2135,9 @@ theorem endpointCallOnCore_kindPreservingWrite
               simp only
               have w5 := SystemState.linkServerStashedReply_kindPreservingWrite st4 st5 caller
                 pair.1 h4 hLink
-              show kindPreservingWrite st (removeRunnableOnCore st5 caller executingCore)
-              exact ((((w1.trans w2).trans w3).trans w4).trans w5).trans
-                (removeRunnableOnCore_objectsAgreeOffRunLinks _ _ _).kindPreserving
+              exact (((((w1.trans w2).trans w3).trans w4).trans w5).trans
+                (removeRunnableOnCore_objectsAgreeOffRunLinks _ _ _).kindPreserving).trans
+                (SystemState.linkReplyWaiter_kindPreservingWrite _ _ _)
 
 /-- **WS-RR RR8.16** (`v0.35.200`): ...and the Call leg writes neither CDT table
 on any path. -/
@@ -2160,9 +2203,11 @@ theorem endpointCallOnCore_cdt_eq
                   ∧ (wakeThread st2 pair.1 executingCore).1.cdtNodeSlot = st2.cdtNodeSlot := by
                 rw [wakeThread_state_eq_enqueue]; exact e3
               refine ⟨?_, ?_⟩
-              · rw [(removeRunnableOnCore_cdt st5 caller executingCore).1, e5.1, e4.1, eW.1,
+              · rw [SystemState.linkReplyWaiter_cdt,
+                  (removeRunnableOnCore_cdt st5 caller executingCore).1, e5.1, e4.1, eW.1,
                   e2.1, e1.1]
-              · rw [(removeRunnableOnCore_cdt st5 caller executingCore).2, e5.2, e4.2, eW.2,
+              · rw [SystemState.linkReplyWaiter_cdtNodeSlot,
+                  (removeRunnableOnCore_cdt st5 caller executingCore).2, e5.2, e4.2, eW.2,
                   e2.2, e1.2]
 
 open SeLe4n.Model.SystemState in
@@ -2254,8 +2299,9 @@ theorem endpointCallOnCore_sameSchedContextBindings
               obtain ⟨_, st5⟩ := pL
               simp only
               have hS5 := hS4.trans (linkServerStashedReply_sameSchedContextBindings st4 st5 caller pair.1 hObjInv4 hLink)
-              show sameSchedContextBindings st (removeRunnableOnCore st5 caller executingCore)
-              exact hS5.trans (sameSchedContextBindings.of_objectsAgreeOffRunLinks (removeRunnableOnCore_objectsAgreeOffRunLinks st5 caller executingCore))
+              exact (hS5.trans (sameSchedContextBindings.of_objectsAgreeOffRunLinks (removeRunnableOnCore_objectsAgreeOffRunLinks st5 caller executingCore))).trans
+                (sameSchedContextBindings.of_objectsAgreeOffRunLinks
+                  (SystemState.linkReplyWaiter_objectsAgreeOffRunLinks _ _ _))
 
 /-- Finding F-1: a `storeTcbReceiveComplete` that succeeds resolves the target TCB
 and sets its `ipcState` to `.ready`. Mirror of
@@ -2321,7 +2367,8 @@ theorem endpointCallOnCore_reply_linkage_under_lockSet
   obtain ⟨tb, hTb, hIpcEq⟩ :=
     linkServerStashedReply_tcb_ipcState_backward st4 st5 caller receiver caller t' hObjInv4 hLink hT5
   obtain ⟨t'', hT6, hE⟩ :=
-    (removeRunnableOnCore_objectsAgreeOffRunLinks st5 caller executingCore).get_tcb hT5
+    ((SystemState.linkReplyWaiter_objectsAgreeOffRunLinks _ caller receiver).trans
+      (removeRunnableOnCore_objectsAgreeOffRunLinks st5 caller executingCore)).get_tcb hT5
   refine ⟨t'', (SystemState.getTcb?_eq_some_iff _ caller t'').mpr hT6, ?_⟩
   have hbt : t = tb := by simpa using hT4.symm.trans hTb
   rw [TCB.proj_eq_of_withoutRunLinks_eq TCB.ipcState hE, ← hIpcEq, ← hbt]; exact hIpc
@@ -2372,7 +2419,7 @@ theorem lockSet_endpointCall_caller_tcb_write_mem
     (tcbLock caller, AccessMode.write)
       ∈ (lockSet_endpointCall caller cnRoot endpointId receiver? donatedSc?).pairs :=
   lockSet_endpointCall_caller_tcb_write_mem_unconditional caller cnRoot endpointId
-    receiver? donatedSc? none none none none
+    receiver? donatedSc? none none none none none
 
 -- ============================================================================
 -- §9 WS-RR RR2.4 — the scheduler-domain footprint of the cross-core `.call`
@@ -2469,7 +2516,7 @@ theorem applyCallDonationOnCoreLockSet_size_le_maxLockSetSize
   have hSeg := schedFootprintOfCores_length_le (runCores := ([] : List CoreId))
     (replenishCores := [donorHome, doneeHome])
   have hN : Concurrency.numCores = 4 := rfl
-  have hM : Concurrency.maxLockSetSize = 24 := rfl
+  have hM : Concurrency.maxLockSetSize = 27 := rfl
   unfold applyCallDonationOnCoreLockSet
   omega
 
@@ -2661,9 +2708,10 @@ theorem endpointCallOnCore_preserves_schedulerInvariantBase_smp
                   (linkServerStashedReply_scheduler_eq st4 st5 caller pair.1 hLink)
                   (SystemState.linkServerStashedReply_kindPreservingWrite st4 st5 caller pair.1
                     hInv4 hLink)
-              show schedulerInvariantBase_smp (removeRunnableOnCore st5 caller executingCore)
-              exact removeRunnableOnCore_preserves_schedulerInvariantBase_smp caller
-                executingCore h5
+              exact schedulerInvariantBase_smp_of_kindPreserving
+                (removeRunnableOnCore_preserves_schedulerInvariantBase_smp caller executingCore h5)
+                (SystemState.linkReplyWaiter_scheduler _ _ _)
+                (SystemState.linkReplyWaiter_kindPreservingWrite _ _ _)
 
 /-- **WS-RR RR8.16** (`v0.35.200`): the **state-level** reading of the wake's
 `hNotCur` — *no endpoint's receive-queue head is current on the core its own

@@ -12,6 +12,7 @@ import SeLe4n.Kernel.Lifecycle.Invariant.CancellationNotificationShape
 -- carriage lives here.  The dependency runs cancellation -> donation and never
 -- the reverse, so no cycle closes.
 import SeLe4n.Kernel.IPC.Invariant.DonationPreservation
+import SeLe4n.Kernel.IPC.Invariant.CancellationPlacementFrame
 
 /-!
 # WS-RR RR7.22 (residual, remediation) — the cancelled caller's donation
@@ -607,11 +608,15 @@ theorem cancelIpcBlocking_passiveServerIdleFrame
     exact purgedAndRestored_passiveServerIdleFrame st v _ tcbV hInv hLookup
   | blockedOnReply ep rt =>
     rw [show Lifecycle.Suspend.cancelIpcBlocking st v tcbV =
-        Lifecycle.Suspend.consumeReplyLink
+        (Lifecycle.Suspend.consumeReplyLink
           (Lifecycle.Suspend.restoreToReadyCancelled
             (spliceThreadReplyFrameOut
-              (Lifecycle.Suspend.returnDonationToCancelledCaller st v tcbV) tcbV) v) v tcbV by
+              (Lifecycle.Suspend.returnDonationToCancelledCaller st v tcbV) tcbV) v) v tcbV
+          ).unlinkReplyWaiterOpt v tcbV.blockingServer? by
       unfold Lifecycle.Suspend.cancelIpcBlocking; rw [hIp]]
+    refine passiveServerIdleFrame.trans ?_ (passiveServerIdleFrame.of_objectsAgreeOffRunLinks
+      (SystemState.unlinkReplyWaiterOpt_objectsAgreeOffRunLinks _ v _)
+      (SystemState.unlinkReplyWaiterOpt_scheduler _ v _))
     have hF1 := returnDonationToCancelledCaller_passiveServerIdleFrame st v tcbV hInv hMem
     have hI1 := Lifecycle.Suspend.returnDonationToCancelledCaller_preserves_objects_invExt
       st v tcbV hInv
@@ -683,13 +688,17 @@ theorem cancelIpcBlocking_reply_no_donation_to_victim
       = some (.tcb tcb)) :
     tcb.schedContextBinding ≠ .donated scId v := by
   have hArm : Lifecycle.Suspend.cancelIpcBlocking st v tcbV =
-      Lifecycle.Suspend.consumeReplyLink
+      (Lifecycle.Suspend.consumeReplyLink
         (Lifecycle.Suspend.restoreToReadyCancelled
           (spliceThreadReplyFrameOut
-            (Lifecycle.Suspend.returnDonationToCancelledCaller st v tcbV) tcbV) v) v tcbV := by
+            (Lifecycle.Suspend.returnDonationToCancelledCaller st v tcbV) tcbV) v) v tcbV
+        ).unlinkReplyWaiterOpt v tcbV.blockingServer? := by
     unfold Lifecycle.Suspend.cancelIpcBlocking
     rw [hBlocked]
   rw [hArm] at hTcb
+  obtain ⟨tcbU, hTcbU, hEU⟩ :=
+    (SystemState.unlinkReplyWaiterOpt_objectsAgreeOffRunLinks _ v _).get_tcb' hTcb
+  rw [TCB.proj_eq_of_withoutRunLinks_eq TCB.schedContextBinding hEU]
   have hInvR := Lifecycle.Suspend.returnDonationToCancelledCaller_preserves_objects_invExt st v tcbV hInv
   have hInvD := spliceThreadReplyFrameOut_preserves_objects_invExt _ tcbV hInvR
   have hInvS := Lifecycle.Suspend.restoreToReadyCancelled_invExt _ v hInvD
@@ -702,7 +711,7 @@ theorem cancelIpcBlocking_reply_no_donation_to_victim
     ((spliceThreadReplyFrameOut_sameSchedContextBindings _ tcbV hInvR).trans
       (restoreToReadyStaging_sameSchedContextBindings _ v _ hInvD)).trans
       (consumeReplyLink_sameSchedContextBindings _ v tcbV hInvS)
-  obtain ⟨t0, h0, hEqB⟩ := hSame tid tcb hTcb
+  obtain ⟨t0, h0, hEqB⟩ := hSame tid tcbU hTcbU
   intro hBind
   exact returnDonationToCancelledCaller_no_donation_to_victim st v tcbV hInv hLookup hOwner
     hChain hHolder hStack tid t0 scId h0 (by rw [hEqB]; exact hBind)
@@ -732,6 +741,37 @@ theorem consumeReplyLink_other_tcb_eq (st : SystemState) (tid : SeLe4n.ThreadId)
     exact SystemState.consumeCallerReply_tcb_other st _ tid rid hInv
       (SystemState.consumeCallerReply_eq_link st tid rid) k t0 hNe hPre
 
+/-- **WS-ZA ZA4.6: the reply arm's last write.**  The victim leaves its server's
+reply-waiter queue; that writes the victim, the server and the two neighbours the
+victim's links name — read at the pre-state, since nothing before the unlink
+moves a reply-waiter link (`cancelReplyPrefix_linkFrame`) — and no other key. -/
+theorem cancelReplyUnlink_objects_ne (st : SystemState) (v : SeLe4n.ThreadId) (tcbV : TCB)
+    (hInv : st.objects.invExt) (k : SeLe4n.ObjId) (hNe : k ≠ v.toObjId)
+    (hkServer : ∀ s, tcbV.blockingServer? = some s → k ≠ s.toObjId)
+    (hkPrev : ∀ p, SeLe4n.ThreadId.ofOptCode (st.replyPrevCode v) = some p → k ≠ p.toObjId)
+    (hkNext : ∀ n, SeLe4n.ThreadId.ofOptCode (st.replyNextCode v) = some n → k ≠ n.toObjId) :
+    ((Lifecycle.Suspend.consumeReplyLink
+        (Lifecycle.Suspend.restoreToReadyCancelled
+          (spliceThreadReplyFrameOut
+            (Lifecycle.Suspend.returnDonationToCancelledCaller st v tcbV) tcbV) v) v tcbV
+        ).unlinkReplyWaiterOpt v tcbV.blockingServer?).objects[k]?
+      = (Lifecycle.Suspend.consumeReplyLink
+          (Lifecycle.Suspend.restoreToReadyCancelled
+            (spliceThreadReplyFrameOut
+              (Lifecycle.Suspend.returnDonationToCancelledCaller st v tcbV) tcbV) v) v tcbV
+        ).objects[k]? := by
+  cases hS : tcbV.blockingServer? with
+  | none => rfl
+  | some s =>
+    obtain ⟨hP, hN⟩ := SystemState.replyNeighbourCodes_of_linkFrame
+      (a := Lifecycle.Suspend.consumeReplyLink
+        (Lifecycle.Suspend.restoreToReadyCancelled
+          (spliceThreadReplyFrameOut
+            (Lifecycle.Suspend.returnDonationToCancelledCaller st v tcbV) tcbV) v) v tcbV)
+      (cancelReplyPrefix_linkFrame st v tcbV (some Architecture.cancelledIpcFrame) hInv v)
+    exact SystemState.unlinkReplyWaiter_objects_ne _ v s k hNe (hkServer s hS)
+      (by rw [hP]; exact hkPrev) (by rw [hN]; exact hkNext)
+
 /-- **WS-OD OD3.5: the reply arm writes no queue neighbour** — on the shape where
 the reclaim is inert.
 
@@ -748,7 +788,12 @@ additionally runs `returnDonationToCancelledCaller`, whose writes land on the
 holder, its two queue neighbours and the cancelled caller — every one a declared
 member of its own.  The two are kept apart because the inert shape needs no
 holder hypotheses at all, and a caller that has established
-`cancelledCallerDonation? = none` should not have to supply them. -/
+`cancelledCallerDonation? = none` should not have to supply them.
+
+WS-ZA ZA4.6: the arm's last step takes the victim off its server's reply-waiter
+queue, which writes the server and the victim's two reply-waiter neighbours (as
+the pre-state links name them); those three are declared members of the reply
+arm's footprint and are excluded here by hypothesis. -/
 theorem cancelIpcBlocking_replyArm_noDonation_tcb_frame (st : SystemState)
     (v : SeLe4n.ThreadId) (tcbV : TCB) (ep : SeLe4n.ObjId)
     (rt : Option SeLe4n.ThreadId)
@@ -756,15 +801,21 @@ theorem cancelIpcBlocking_replyArm_noDonation_tcb_frame (st : SystemState)
     (hBlocked : tcbV.ipcState = .blockedOnReply ep rt)
     (hNoDonation : Lifecycle.Suspend.cancelledCallerDonation? st v tcbV = none)
     (k : SeLe4n.ObjId) (t0 : TCB) (hNe : k ≠ v.toObjId)
+    (hkServer : ∀ s, tcbV.blockingServer? = some s → k ≠ s.toObjId)
+    (hkPrev : ∀ p, SeLe4n.ThreadId.ofOptCode (st.replyPrevCode v) = some p → k ≠ p.toObjId)
+    (hkNext : ∀ n, SeLe4n.ThreadId.ofOptCode (st.replyNextCode v) = some n → k ≠ n.toObjId)
     (hPre : st.objects[k]? = some (.tcb t0)) :
     (Lifecycle.Suspend.cancelIpcBlocking st v tcbV).objects[k]? = some (.tcb t0) := by
   have hArm : Lifecycle.Suspend.cancelIpcBlocking st v tcbV =
-      Lifecycle.Suspend.consumeReplyLink
+      (Lifecycle.Suspend.consumeReplyLink
         (Lifecycle.Suspend.restoreToReadyCancelled
-          (spliceThreadReplyFrameOut st tcbV) v) v tcbV := by
+          (spliceThreadReplyFrameOut
+            (Lifecycle.Suspend.returnDonationToCancelledCaller st v tcbV) tcbV) v) v tcbV
+        ).unlinkReplyWaiterOpt v tcbV.blockingServer? := by
     unfold Lifecycle.Suspend.cancelIpcBlocking
-    rw [hBlocked, Lifecycle.Suspend.returnDonationToCancelledCaller_none st v tcbV hNoDonation]
-  rw [hArm]
+    rw [hBlocked]
+  rw [hArm, cancelReplyUnlink_objects_ne st v tcbV hInv k hNe hkServer hkPrev hkNext,
+    Lifecycle.Suspend.returnDonationToCancelledCaller_none st v tcbV hNoDonation]
   -- `v0.35.4`: the frame splice writes only Reply objects, so every TCB is untouched.
   have hInvD := spliceThreadReplyFrameOut_preserves_objects_invExt st tcbV hInv
   refine consumeReplyLink_other_tcb_eq _ v tcbV
@@ -946,16 +997,20 @@ theorem cancelIpcBlocking_replyArm_tcb_frame (st : SystemState)
     (hkV : k ≠ v.toObjId) (hkHolder : k ≠ holder.toObjId)
     (hkPrev : ∀ p, holderTcb.queuePrev = some p → k ≠ p.toObjId)
     (hkNext : ∀ n, holderTcb.queueNext = some n → k ≠ n.toObjId)
+    (hkServer : ∀ s, tcbV.blockingServer? = some s → k ≠ s.toObjId)
+    (hkReplyPrev : ∀ p, SeLe4n.ThreadId.ofOptCode (st.replyPrevCode v) = some p → k ≠ p.toObjId)
+    (hkReplyNext : ∀ n, SeLe4n.ThreadId.ofOptCode (st.replyNextCode v) = some n → k ≠ n.toObjId)
     (hPre : st.objects[k]? = some (.tcb t0)) :
     (Lifecycle.Suspend.cancelIpcBlocking st v tcbV).objects[k]? = some (.tcb t0) := by
   have hArm : Lifecycle.Suspend.cancelIpcBlocking st v tcbV =
-      Lifecycle.Suspend.consumeReplyLink
+      (Lifecycle.Suspend.consumeReplyLink
         (Lifecycle.Suspend.restoreToReadyCancelled
           (spliceThreadReplyFrameOut
-            (Lifecycle.Suspend.returnDonationToCancelledCaller st v tcbV) tcbV) v) v tcbV := by
+            (Lifecycle.Suspend.returnDonationToCancelledCaller st v tcbV) tcbV) v) v tcbV
+        ).unlinkReplyWaiterOpt v tcbV.blockingServer? := by
     unfold Lifecycle.Suspend.cancelIpcBlocking
     rw [hBlocked]
-  rw [hArm]
+  rw [hArm, cancelReplyUnlink_objects_ne st v tcbV hInv k hkV hkServer hkReplyPrev hkReplyNext]
   -- Stage 1: the reclaim — the abort's splice, then the pop's two rebinds.
   have hReclaim :
       (Lifecycle.Suspend.returnDonationToCancelledCaller st v tcbV).objects[k]?
@@ -1099,9 +1154,10 @@ theorem cancelIpcBlocking_reply_arm_below_the_cut
     (hRO : tcbV.replyObject = some rid)
     (hDonatedOnward : replyFrameAbove? st rid = some above) :
     Lifecycle.Suspend.cancelIpcBlocking st v tcbV =
-      Lifecycle.Suspend.consumeReplyLink
+      (Lifecycle.Suspend.consumeReplyLink
         (Lifecycle.Suspend.restoreToReadyCancelled
-          (spliceThreadReplyFrameOut st tcbV) v) v tcbV := by
+          (spliceThreadReplyFrameOut st tcbV) v) v tcbV).unlinkReplyWaiterOpt
+        v tcbV.blockingServer? := by
   obtain ⟨_, _, hIdent⟩ :=
     cancelledCallerDonation?_none_below_the_cut st v tcbV ep rt rid above hIpc hRO
       hDonatedOnward
@@ -2744,11 +2800,15 @@ alone leaves a woken caller whose Reply still names it, which
 `replyCallerLinkageReciprocal` forbids, and the teardown alone would clear a
 still-blocked caller's reply object, which the third clause forbids.  Run in this
 order they are each other's repair, so the pair carries all twenty conjuncts while
-the two halves carry nineteen and a relaxation between them. -/
+the two halves carry nineteen and a relaxation between them.
+
+WS-ZA ZA4.6: the victim then leaves its server's reply-waiter queue, last; that
+writes reply-waiter links alone, which no conjunct reads. -/
 def restoredAndConsumed (st : SystemState) (v : SeLe4n.ThreadId) (tcbV : TCB)
     (frame : Option Architecture.SyscallReturnFrame) : SystemState :=
-  Lifecycle.Suspend.consumeReplyLink
-    (Lifecycle.Suspend.restoreToReadyStaging st v frame) v tcbV
+  (Lifecycle.Suspend.consumeReplyLink
+    (Lifecycle.Suspend.restoreToReadyStaging st v frame) v tcbV).unlinkReplyWaiterOpt
+      v tcbV.blockingServer?
 
 /-- **WS-RR RR8.7 — the teardown pair's keystone**: it preserves `ipcInvariantFull`.
 
@@ -2770,6 +2830,12 @@ theorem restoredAndConsumed_preserves_ipcInvariantFull (st : SystemState)
   have hGet : st.getTcb? v = some tcbV := by
     rw [SystemState.getTcb?_eq_some_iff]; exact lookupTcb_some_objects st v tcbV hLookup
   unfold restoredAndConsumed
+  have hL := SystemState.unlinkReplyWaiterOpt_objectsAgreeOffRunLinks
+    (Lifecycle.Suspend.consumeReplyLink (Lifecycle.Suspend.restoreToReadyStaging st v frame) v tcbV)
+    v tcbV.blockingServer?
+  refine (fun h => ipcInvariantFull_of_objectsAgreeOffRunLinks hL
+    (passiveServerIdle_of_frame (passiveServerIdleFrame.of_objectsAgreeOffRunLinks hL
+      (SystemState.unlinkReplyWaiterOpt_scheduler _ v _)) h.passiveServerIdle) h) ?_
   exact consumeReplyLink_closes_exceptReplyLinkage _ v tcbV (restoredTcb tcbV frame)
     (Lifecycle.Suspend.restoreToReadyStaging_invExt st v frame hInv)
     (restoreToReadyStaging_objects_self st v frame tcbV hInv hGet)
@@ -3195,14 +3261,17 @@ theorem returnDonationToCancelledCaller_victim_tcb_rewrite (st : SystemState)
 /-- **WS-RR RR8.7: the teardown pair is a function of the TCB's reply object.**
 
 `consumeReplyLink` reads `tcb.replyObject` and nothing else of the record it is
-handed, so two TCBs agreeing there drive the pair to the same state.  The reply
+handed, and the closing unlink reads its blocking server (WS-ZA ZA4.6), so two
+TCBs agreeing there drive the pair to the same state.  The reply
 arm needs exactly this: it passes the **pre-cancellation** TCB to the teardown
 while the state the teardown runs on holds that TCB with its `schedContextBinding`
 rewritten by the reclaim, and those differ. -/
 theorem restoredAndConsumed_congr (st : SystemState) (v : SeLe4n.ThreadId) (t1 t2 : TCB)
-    (frame : Option Architecture.SyscallReturnFrame) (h : t1.replyObject = t2.replyObject) :
+    (frame : Option Architecture.SyscallReturnFrame) (h : t1.replyObject = t2.replyObject)
+    (hB : t1.blockingServer? = t2.blockingServer?) :
     restoredAndConsumed st v t1 frame = restoredAndConsumed st v t2 frame := by
   unfold restoredAndConsumed
+  rw [hB]
   cases hR : t1.replyObject with
   | none =>
     rw [Lifecycle.Suspend.consumeReplyLink_none _ v t1 hR,
@@ -3321,7 +3390,7 @@ theorem cancelIpcBlocking_replyArm_preserves_ipcInvariantFull
     exact hOff tcbV hLookup
   -- Steps 3 and 4: the teardown pair, at the TCB the state actually holds.
   rw [cancelIpcBlocking_reply_arm_eq st v tcbV epV rtV hBlocked,
-    restoredAndConsumed_congr _ v tcbV tcbR _ (by rw [hEqR])]
+    restoredAndConsumed_congr _ v tcbV tcbR _ (by rw [hEqR]) (by rw [hEqR] <;> rfl)]
   exact restoredAndConsumed_preserves_ipcInvariantFull _ v tcbR _ epV rtV hInvS hLkS
     (by rw [hEqR]; exact hBlocked) hBundleS hBudgetsS hOffS hNotOwnerS
 

@@ -124,6 +124,17 @@ theorem of_ntfnLinksRewritten {st st' : SystemState} {c : CoreId}
   ntfn_links_back h at tcb' hT'
   exact ⟨tcb', (SystemState.getTcb?_eq_some_iff _ tid tcb').mpr hT', hU, hQ, hC, rfl⟩
 
+/-- WS-ZA ZA4.6: a step that writes only run-queue or reply-waiter links and
+no scheduler state frames every core's slice. -/
+theorem of_objectsAgreeOffRunLinks {st st' : SystemState} {c : CoreId}
+    (h : st'.objectsAgreeOffRunLinks st) (hS : st'.scheduler = st.scheduler) :
+    passiveServerIdleFrameOnCore st st' c := by
+  refine ⟨fun tid tcb' hT hU hQ hC _ => ?_⟩
+  rw [hS] at hQ hC
+  have hT' := (SystemState.getTcb?_eq_some_iff _ tid tcb').mp hT
+  run_links_back h at tcb' hT'
+  exact ⟨tcb', (SystemState.getTcb?_eq_some_iff _ tid tcb').mpr hT', hU, hQ, hC, rfl⟩
+
 end passiveServerIdleFrameOnCore
 
 /-- WS-SM SM6.D.2: a transition that preserves every TCB's `ipcState` and

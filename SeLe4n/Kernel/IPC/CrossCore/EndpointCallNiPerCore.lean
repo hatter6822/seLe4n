@@ -282,6 +282,29 @@ theorem linkServerStashedReply_preserves_projectionOnCore (ctx : LabelingContext
       hCallerObjHigh hServerObjHigh hIdxComplete hObjInv hStep)
     (by rw [hSched]) (by rw [hSched]) (by rw [hSched]) (by rw [hSched]) (by rw [hSched]) (by rw [hMach])
 
+/-- WS-ZA ZA4.6: the per-core form of `linkReplyWaiter_preserves_projection`.
+The link writes reply-waiter fields alone, which the projection erases, and no
+scheduler or machine state, so every core's view is unchanged. -/
+theorem linkReplyWaiter_preserves_projectionOnCore (ctx : LabelingContext)
+    (observer : IfObserver) (st : SystemState) (w s : SeLe4n.ThreadId) (c : CoreId) :
+    projectStateOnCore ctx observer (st.linkReplyWaiter w s) c
+      = projectStateOnCore ctx observer st c := by
+  have hSched := SystemState.linkReplyWaiter_scheduler st w s
+  exact projectStateOnCore_congr ctx observer (linkReplyWaiter_preserves_projection ctx observer st w s)
+    (by rw [hSched]) (by rw [hSched]) (by rw [hSched]) (by rw [hSched]) (by rw [hSched])
+    (by rw [SystemState.linkReplyWaiter_machine])
+
+/-- WS-ZA ZA4.6: the per-core form of `unlinkReplyWaiter_preserves_projection`. -/
+theorem unlinkReplyWaiter_preserves_projectionOnCore (ctx : LabelingContext)
+    (observer : IfObserver) (st : SystemState) (w s : SeLe4n.ThreadId) (c : CoreId) :
+    projectStateOnCore ctx observer (st.unlinkReplyWaiter w s) c
+      = projectStateOnCore ctx observer st c := by
+  have hSched := SystemState.unlinkReplyWaiter_scheduler st w s
+  exact projectStateOnCore_congr ctx observer
+    (unlinkReplyWaiter_preserves_projection ctx observer st w s)
+    (by rw [hSched]) (by rw [hSched]) (by rw [hSched]) (by rw [hSched]) (by rw [hSched])
+    (by rw [SystemState.unlinkReplyWaiter_machine])
+
 /-- WS-SM SM6.D (PR #827 review #3 fold): the per-core form of
 `consumeCallerReply_preserves_projection`.  The reply primitives' folded
 single-use link teardown preserves every core's per-core observer projection when
@@ -400,9 +423,11 @@ theorem endpointCallOnCore_call_path_NI_smp
     = projectStateOnCore ctx observer st c
   rw [endpointCallOnCore_rendezvous_eq endpointId caller msg executingCore st ep receiver
         recvTcb0 st' st'' st4 st5 hSz1 hSz2 hObj hHead hPop hStore hCallerStore hLink]
-  show projectStateOnCore ctx observer (removeRunnableOnCore st5 caller executingCore) c
+  show projectStateOnCore ctx observer
+      ((removeRunnableOnCore st5 caller executingCore).linkReplyWaiter caller receiver) c
     = projectStateOnCore ctx observer st c
-  rw [removeRunnableOnCore_preserves_projectionOnCore ctx observer st5 caller executingCore c
+  rw [linkReplyWaiter_preserves_projectionOnCore,
+      removeRunnableOnCore_preserves_projectionOnCore ctx observer st5 caller executingCore c
         hCallerHigh,
       linkServerStashedReply_preserves_projectionOnCore ctx observer st4 st5 caller receiver c
         hCallerObjHigh hReceiverObjHigh hIdxSt4 hObjInv4 hLink,

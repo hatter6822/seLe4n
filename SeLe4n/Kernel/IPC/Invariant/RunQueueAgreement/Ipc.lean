@@ -297,14 +297,17 @@ theorem endpointReplyOnCore_runQueueStage (replier target : SeLe4n.ThreadId) (ms
   repeat' (first | split | dsimp only)
   all_goals first
     | exact RunQueueStage.refl _
-    | (refine (storeTcbIpcStateAndMessage_fromTcb_runQueueStage (by assumption) (by assumption)
-          rfl).then_wake _ ?_ (blockedAt_of_blockedOnReply (by assumption) (by assumption))
-       run_queue_current_nowhere; done)
-    | (refine ((storeTcbIpcStateAndMessage_fromTcb_runQueueStage (by assumption)
-        (by assumption) rfl).then_wake _ ?_
-          (blockedAt_of_blockedOnReply (by assumption) (by assumption))).trans
-        (removeCallerReplyFrame_runQueueStage (by assumption))
-       run_queue_current_nowhere; done)
+    | (refine RunQueueStage.trans ?_ (SystemState.unlinkReplyWaiter_runQueueStage _ _ _)
+       first
+        | (refine (storeTcbIpcStateAndMessage_fromTcb_runQueueStage (by assumption)
+              (by assumption) rfl).then_wake _ ?_
+              (blockedAt_of_blockedOnReply (by assumption) (by assumption))
+           run_queue_current_nowhere; done)
+        | (refine ((storeTcbIpcStateAndMessage_fromTcb_runQueueStage (by assumption)
+            (by assumption) rfl).then_wake _ ?_
+              (blockedAt_of_blockedOnReply (by assumption) (by assumption))).trans
+            (removeCallerReplyFrame_runQueueStage (by assumption))
+           run_queue_current_nowhere; done))
 
 theorem applyReplyDonationOnCore_runQueueStage {st st' : SystemState} {rid : SeLe4n.ReplyId}
     {targetV : SeLe4n.ValidThreadId} {holderHome ownerHome : Concurrency.CoreId}
@@ -524,9 +527,11 @@ theorem endpointReplyOnCore_currentOnCore (replier target : SeLe4n.ThreadId) (ms
     (endpointReplyOnCore replier target msg c st).1.scheduler.currentOnCore c' =
       st.scheduler.currentOnCore c' := by
   rcases endpointReplyOnCore_state_eq replier target msg c st with
-    hEq | ⟨tcb, st1, -, hStore, hTail⟩
+    hEq | ⟨tcb, st1, server, pre, -, hStore, hPost, hTail⟩
   · rw [hEq]
-  · have hS1 := storeTcbIpcStateAndMessage_fromTcb_scheduler_eq hStore
+  · rw [hPost, SchedulerState.currentOnCore, SystemState.unlinkReplyWaiter_scheduler,
+      ← SchedulerState.currentOnCore]
+    have hS1 := storeTcbIpcStateAndMessage_fromTcb_scheduler_eq hStore
     rcases hTail with ⟨-, hEq⟩ | ⟨rid, -, hR⟩
     · rw [hEq, wakeThread_state_eq_enqueue, enqueueRunnableOnCore_currentOnCore, hS1]
     · rw [removeCallerReplyFrame_scheduler_eq _ _ _ _ hR, wakeThread_state_eq_enqueue,
@@ -541,9 +546,12 @@ theorem endpointReplyOnCore_preserves_queueHeadBlockedConsistent (replier target
     queueHeadBlockedConsistent (endpointReplyOnCore replier target msg c st).1 := by
   obtain ⟨-, -, tcb0, e, ex, -, hL0, hS0, -⟩ := endpointReplyOnCore_ok_decompose _ _ _ _ _ hOk
   rcases endpointReplyOnCore_state_eq replier target msg c st with
-    hEq | ⟨tcb, st1, hL, hStore, hTail⟩
+    hEq | ⟨tcb, st1, server, pre, hL, hStore, hPost, hTail⟩
   · rw [hEq]; exact hQ
-  · obtain rfl : tcb0 = tcb := Option.some.inj (hL0.symm.trans hL)
+  · rw [hPost]
+    refine queueHeadBlockedConsistent_of_readViewAgreement (.of_objectsAgreeOffRunLinks
+      (SystemState.unlinkReplyWaiter_objectsAgreeOffRunLinks _ _ _)) ?_
+    obtain rfl : tcb0 = tcb := Option.some.inj (hL0.symm.trans hL)
     have hStore' : storeTcbIpcStateAndMessage st target .ready (some msg) = .ok st1 := by
       rw [← storeTcbIpcStateAndMessage_fromTcb_eq hL]; exact hStore
     have hTo := lookupTcb_some_objects st target tcb0 hL

@@ -839,6 +839,9 @@ def cancelArmSpliceNeighbors? (tcb : TCB) :
     Option SeLe4n.ThreadId × Option SeLe4n.ThreadId :=
   if (cancelBlockedEndpoint? tcb).isSome then queueSpliceNeighbors? tcb
   else if (cancelBlockedNotification? tcb).isSome then (tcb.ntfnPrev, tcb.ntfnNext)
+  else if tcb.blockingServer?.isSome then
+    (SeLe4n.ThreadId.ofOptCode tcb.replyWaiterPrevCode,
+      SeLe4n.ThreadId.ofOptCode tcb.replyWaiterNextCode)
   else (none, none)
 
 /-- WS-OD OD3.5: on the arm that splices, the narrowed resolver **is** the
@@ -865,12 +868,30 @@ notification-queue links. -/
   rw [hE, h]
   rfl
 
+/-- WS-ZA ZA4.6: on the reply arm with a recorded server it is the victim's
+two reply-waiter links -- the TCBs `unlinkReplyWaiter` links past the victim. -/
+@[simp] theorem cancelArmSpliceNeighbors?_of_blockingServer (tcb : TCB)
+    (server : SeLe4n.ThreadId) (h : tcb.blockingServer? = some server) :
+    cancelArmSpliceNeighbors? tcb
+      = (SeLe4n.ThreadId.ofOptCode tcb.replyWaiterPrevCode,
+          SeLe4n.ThreadId.ofOptCode tcb.replyWaiterNextCode) := by
+  have hE : cancelBlockedEndpoint? tcb = none := by
+    unfold TCB.blockingServer? at h; unfold cancelBlockedEndpoint?
+    split at h <;> simp_all
+  have hN : cancelBlockedNotification? tcb = none := by
+    unfold TCB.blockingServer? at h; unfold cancelBlockedNotification?
+    split at h <;> simp_all
+  unfold cancelArmSpliceNeighbors?
+  rw [hE, hN, h]
+  rfl
+
 /-- WS-OD OD3.5: and on every other arm it is empty. -/
 @[simp] theorem cancelArmSpliceNeighbors?_of_unqueued (tcb : TCB)
-    (h : cancelBlockedEndpoint? tcb = none) (hN : cancelBlockedNotification? tcb = none) :
+    (h : cancelBlockedEndpoint? tcb = none) (hN : cancelBlockedNotification? tcb = none)
+    (hR : tcb.blockingServer? = none) :
     cancelArmSpliceNeighbors? tcb = (none, none) := by
   unfold cancelArmSpliceNeighbors?
-  rw [h, hN]
+  rw [h, hN, hR]
   rfl
 
 /-- WS-SM SM6.E.3: the SchedContext a donation cancellation would write —
@@ -931,7 +952,7 @@ frame has something above it is not the innermost live caller, so no reclaim is
 resolved for it) and are declared independently because the footprint does not
 get to assume that.  The outer caller stays **read**: the pop validates it
 (`outerCallerAcceptable`) and names it as the new owner without writing its TCB.
-`lockSet_cancelIpcBlockingOnCore_size_le_thirteen` is the bound over all argument
+`lockSet_cancelIpcBlockingOnCore_size_le_sixteen` is the bound over all argument
 values (`lockSet_cancelIpcBlockingOnCore_size_le` is its corollary at the
 ceiling); the reachable reply-arm figure is still ten, by the two merges above. -/
 def lockSet_cancelIpcBlocking (victimTid : SeLe4n.ThreadId)
@@ -1385,7 +1406,7 @@ def lockSet_cancelIpcBlockingOnCore (st : SystemState)
       -- PR #831 review 4: the splice's neighbour-TCB writes (`queuePrev`'s
       -- `queueNext` patch + `queueNext`'s `queuePrev` patch) are footprint
       -- members, resolved from the victim's interior links.
-      lockSetExtendOpt
+      lockSetExtendOpt (lockSetExtendOpt
         (lockSetExtendOpt
           (lockSet_cancelIpcBlocking victimTid (cancelBlockedEndpoint? tcb)
             (cancelBlockedNotification? tcb) (cancelConsumedReply? tcb)
@@ -1414,13 +1435,19 @@ def lockSet_cancelIpcBlockingOnCore (st : SystemState)
           -- `.ready` arms these two extensions are `none` and the footprint
           -- stops declaring write locks on threads the operation never touches.
           ((cancelArmSpliceNeighbors? tcb).1.map (fun p => (tcbLock p, .write))))
-        ((cancelArmSpliceNeighbors? tcb).2.map (fun n => (tcbLock n, .write)))
+        ((cancelArmSpliceNeighbors? tcb).2.map (fun n => (tcbLock n, .write))))
+        -- **WS-ZA ZA4.6**: and, on the reply arm, the recorded server whose
+        -- reply-waiter head and count `unlinkReplyWaiter` rewrites.
+        (tcb.blockingServer?.map (fun s => (tcbLock s, .write)))
   | none =>
       lockSet_cancelIpcBlocking victimTid none none none none none none (none, none) none none
         none none none
 
-/-- **WS-OD OD3.5: the reply arm's resolved footprint has no neighbour members
-at all.**
+/-- **WS-OD OD3.5: the reply arm's resolved footprint has no endpoint-queue
+neighbour members** -- and, since **WS-ZA ZA4.6**, it declares instead the victim's
+two reply-waiter links and its recorded server, which `unlinkReplyWaiter`
+rewrites when the victim waits on a server (`rt = some _`); a victim with no
+recorded server is on no reply-waiter queue and declares none of the three.
 
 Stated as an equation rather than as a `∉`, because a `∉` would be false for an
 accidental reason — the victim's `queuePrev` could happen to *be* the donation
@@ -1441,26 +1468,39 @@ theorem lockSet_cancelIpcBlockingOnCore_replyArm_eq (st : SystemState)
     (hT : st.getTcb? victimTid = some tcb)
     (hIp : tcb.ipcState = .blockedOnReply ep rt) :
     lockSet_cancelIpcBlockingOnCore st victimTid
-      = lockSet_cancelIpcBlocking victimTid none none (cancelConsumedReply? tcb)
-          ((Lifecycle.Suspend.cancelledCallerDonation? st victimTid tcb).map Prod.fst)
-          ((Lifecycle.Suspend.cancelledCallerDonation? st victimTid tcb).map Prod.snd)
-          (cancelHolderBlockedEndpoint? st
-            ((Lifecycle.Suspend.cancelledCallerDonation? st victimTid tcb).map Prod.snd))
-          (cancelHolderSpliceNeighbors? st
-            ((Lifecycle.Suspend.cancelledCallerDonation? st victimTid tcb).map Prod.snd))
-          (cancelBelowHeadReads? st victimTid tcb).1
-          (cancelBelowHeadReads? st victimTid tcb).2
-          (cancelReclaimHead? st victimTid tcb)
-          (cancelSplicedFrameAbove? st tcb)
-          (cancelSplicedFrameBelow? st tcb) := by
+      = lockSetExtendOpt (lockSetExtendOpt (lockSetExtendOpt
+          (lockSet_cancelIpcBlocking victimTid none none (cancelConsumedReply? tcb)
+            ((Lifecycle.Suspend.cancelledCallerDonation? st victimTid tcb).map Prod.fst)
+            ((Lifecycle.Suspend.cancelledCallerDonation? st victimTid tcb).map Prod.snd)
+            (cancelHolderBlockedEndpoint? st
+              ((Lifecycle.Suspend.cancelledCallerDonation? st victimTid tcb).map Prod.snd))
+            (cancelHolderSpliceNeighbors? st
+              ((Lifecycle.Suspend.cancelledCallerDonation? st victimTid tcb).map Prod.snd))
+            (cancelBelowHeadReads? st victimTid tcb).1
+            (cancelBelowHeadReads? st victimTid tcb).2
+            (cancelReclaimHead? st victimTid tcb)
+            (cancelSplicedFrameAbove? st tcb)
+            (cancelSplicedFrameBelow? st tcb))
+          (rt.bind fun _ => (SeLe4n.ThreadId.ofOptCode tcb.replyWaiterPrevCode).map
+            fun p => (tcbLock p, AccessMode.write)))
+          (rt.bind fun _ => (SeLe4n.ThreadId.ofOptCode tcb.replyWaiterNextCode).map
+            fun n => (tcbLock n, AccessMode.write)))
+          (rt.map fun s => (tcbLock s, AccessMode.write)) := by
   have hE : cancelBlockedEndpoint? tcb = none := by
     unfold cancelBlockedEndpoint?; rw [hIp]
   have hN : cancelBlockedNotification? tcb = none := by
     unfold cancelBlockedNotification?; rw [hIp]
   unfold lockSet_cancelIpcBlockingOnCore
   rw [hT]
-  simp only [hE, hN, cancelArmSpliceNeighbors?_of_unqueued tcb hE hN,
-    Option.map_none, lockSetExtendOpt]
+  cases rt with
+  | none =>
+    have hR : tcb.blockingServer? = none := by unfold TCB.blockingServer?; rw [hIp]
+    simp only [hE, hN, hR, cancelArmSpliceNeighbors?_of_unqueued tcb hE hN hR,
+      Option.map_none, Option.bind_none]
+  | some server =>
+    have hR : tcb.blockingServer? = some server := by unfold TCB.blockingServer?; rw [hIp]
+    simp only [hE, hN, hR, cancelArmSpliceNeighbors?_of_blockingServer tcb server hR,
+      Option.map_some, Option.bind_some]
 
 /-- **WS-OD OD3.5**: …and the arm that *does* splice keeps both members.  The
 narrowing is a change of *which arm* declares them, not a removal: on an
@@ -1475,6 +1515,8 @@ theorem lockSet_cancelIpcBlockingOnCore_endpointArm_covers_prev (st : SystemStat
   rw [hT]
   simp only [cancelArmSpliceNeighbors?_of_blockedEndpoint tcb ep hE, queueSpliceNeighbors?,
     hPrev]
+  -- WS-ZA ZA4.6: the recorded server's member sits outside.
+  refine mem_write_lockSetExtendOpt _ _ _ ?_
   exact mem_write_lockSetExtendOpt _ _ _ (LockSet.mem_insertOrMerge_write_self _ _)
 
 /-- **WS-OD OD3.5**: and the successor's. -/
@@ -1488,6 +1530,8 @@ theorem lockSet_cancelIpcBlockingOnCore_endpointArm_covers_next (st : SystemStat
   rw [hT]
   simp only [cancelArmSpliceNeighbors?_of_blockedEndpoint tcb ep hE, queueSpliceNeighbors?,
     hNext]
+  -- WS-ZA ZA4.6: the recorded server's member sits outside.
+  refine mem_write_lockSetExtendOpt _ _ _ ?_
   exact LockSet.mem_insertOrMerge_write_self _ _
 
 /-- WS-ZA ZA4.4: the notification arm declares the victim's queue predecessor,
@@ -1501,6 +1545,8 @@ theorem lockSet_cancelIpcBlockingOnCore_notificationArm_covers_prev (st : System
   unfold lockSet_cancelIpcBlockingOnCore
   rw [hT]
   simp only [cancelArmSpliceNeighbors?_of_blockedNotification tcb n hN, hPrev]
+  -- WS-ZA ZA4.6: the recorded server's member sits outside.
+  refine mem_write_lockSetExtendOpt _ _ _ ?_
   exact mem_write_lockSetExtendOpt _ _ _ (LockSet.mem_insertOrMerge_write_self _ _)
 
 /-- WS-ZA ZA4.4: and its successor, whose predecessor link the unlink rewrites. -/
@@ -1513,6 +1559,49 @@ theorem lockSet_cancelIpcBlockingOnCore_notificationArm_covers_next (st : System
   unfold lockSet_cancelIpcBlockingOnCore
   rw [hT]
   simp only [cancelArmSpliceNeighbors?_of_blockedNotification tcb n hN, hNext]
+  -- WS-ZA ZA4.6: the recorded server's member sits outside.
+  refine mem_write_lockSetExtendOpt _ _ _ ?_
+  exact LockSet.mem_insertOrMerge_write_self _ _
+
+/-- **WS-ZA ZA4.6**: the reply arm with a recorded server declares that server,
+whose reply-waiter head and count `unlinkReplyWaiter` rewrites. -/
+theorem lockSet_cancelIpcBlockingOnCore_replyArm_covers_server (st : SystemState)
+    (victimTid : SeLe4n.ThreadId) (tcb : TCB) (server : SeLe4n.ThreadId)
+    (hT : st.getTcb? victimTid = some tcb)
+    (hR : tcb.blockingServer? = some server) :
+    (tcbLock server, AccessMode.write)
+      ∈ (lockSet_cancelIpcBlockingOnCore st victimTid).pairs := by
+  unfold lockSet_cancelIpcBlockingOnCore
+  rw [hT]
+  simp only [hR]
+  exact LockSet.mem_insertOrMerge_write_self _ _
+
+/-- **WS-ZA ZA4.6**: and the victim's reply-waiter predecessor, whose successor
+link the unlink rewrites. -/
+theorem lockSet_cancelIpcBlockingOnCore_replyArm_covers_prev (st : SystemState)
+    (victimTid : SeLe4n.ThreadId) (tcb : TCB) (server p : SeLe4n.ThreadId)
+    (hT : st.getTcb? victimTid = some tcb)
+    (hR : tcb.blockingServer? = some server)
+    (hPrev : SeLe4n.ThreadId.ofOptCode tcb.replyWaiterPrevCode = some p) :
+    (tcbLock p, AccessMode.write) ∈ (lockSet_cancelIpcBlockingOnCore st victimTid).pairs := by
+  unfold lockSet_cancelIpcBlockingOnCore
+  rw [hT]
+  simp only [cancelArmSpliceNeighbors?_of_blockingServer tcb server hR, hPrev]
+  refine mem_write_lockSetExtendOpt _ _ _ ?_
+  exact mem_write_lockSetExtendOpt _ _ _ (LockSet.mem_insertOrMerge_write_self _ _)
+
+/-- **WS-ZA ZA4.6**: and its successor, whose predecessor link the unlink
+rewrites. -/
+theorem lockSet_cancelIpcBlockingOnCore_replyArm_covers_next (st : SystemState)
+    (victimTid : SeLe4n.ThreadId) (tcb : TCB) (server x : SeLe4n.ThreadId)
+    (hT : st.getTcb? victimTid = some tcb)
+    (hR : tcb.blockingServer? = some server)
+    (hNext : SeLe4n.ThreadId.ofOptCode tcb.replyWaiterNextCode = some x) :
+    (tcbLock x, AccessMode.write) ∈ (lockSet_cancelIpcBlockingOnCore st victimTid).pairs := by
+  unfold lockSet_cancelIpcBlockingOnCore
+  rw [hT]
+  simp only [cancelArmSpliceNeighbors?_of_blockingServer tcb server hR, hNext]
+  refine mem_write_lockSetExtendOpt _ _ _ ?_
   exact LockSet.mem_insertOrMerge_write_self _ _
 
 /-- **WS-OD (`v0.35.4`)**: the three reply-stack objects the donated arm's pop
@@ -1763,29 +1852,24 @@ theorem lockSet_cancelIpcBlockingOnCore_correct (st : SystemState)
   unfold lockSet_cancelIpcBlockingOnCore
   cases st.getTcb? victimTid with
   | some tcb =>
-      -- PR #831 review 4: the two neighbour-TCB extensions are `.tcb`-kind
-      -- writes, already permitted for `.tcbSuspend`.
-      refine lockSet_consistent_extendOpt _ _ _
+      -- PR #831 review 4: the neighbour-TCB extensions (and, since WS-ZA ZA4.6,
+      -- the recorded server) are `.tcb`-kind writes, permitted for `.tcbSuspend`.
+      have hTcb : ∀ (o : Option SeLe4n.ThreadId) pp,
+          o.map (fun x => (tcbLock x, AccessMode.write)) = some pp →
+            pp.fst.kind ∈ permittedKinds .tcbSuspend := by
+        intro o pp hEq
+        cases o with
+        | none => cases hEq
+        | some x =>
+          injection hEq with h
+          rw [← h]
+          show (tcbLock x).kind ∈ permittedKinds .tcbSuspend
+          rw [tcbLock_kind]; decide
+      exact lockSet_consistent_extendOpt _ _ _
         (lockSet_consistent_extendOpt _ _ _
-          (lockSet_consistent_cancelIpcBlocking victimTid _ _ _ _ _ _ _ _ _ _ _ _) ?_) ?_
-      · intro pp hEq
-        cases h1 : (cancelArmSpliceNeighbors? tcb).1 with
-        | none => rw [h1] at hEq; cases hEq
-        | some n =>
-          rw [h1] at hEq
-          injection hEq with h
-          rw [← h]
-          show (tcbLock n).kind ∈ permittedKinds .tcbSuspend
-          rw [tcbLock_kind]; decide
-      · intro pp hEq
-        cases h2 : (cancelArmSpliceNeighbors? tcb).2 with
-        | none => rw [h2] at hEq; cases hEq
-        | some n =>
-          rw [h2] at hEq
-          injection hEq with h
-          rw [← h]
-          show (tcbLock n).kind ∈ permittedKinds .tcbSuspend
-          rw [tcbLock_kind]; decide
+          (lockSet_consistent_extendOpt _ _ _
+            (lockSet_consistent_cancelIpcBlocking victimTid _ _ _ _ _ _ _ _ _ _ _ _)
+            (hTcb _)) (hTcb _)) (hTcb _)
   | none =>
       exact lockSet_consistent_cancelIpcBlocking victimTid none none none none none none
         (none, none) none none none none none
@@ -2321,7 +2405,7 @@ theorem lockSet_cancelIpcBlockingOnCore_covers_victim (st : SystemState)
       ∈ (lockSet_cancelIpcBlockingOnCore st victimTid).pairs := by
   unfold lockSet_cancelIpcBlockingOnCore
   split
-  · iterate 2 apply mem_write_lockSetExtendOpt
+  · iterate 3 apply mem_write_lockSetExtendOpt
     exact lockSet_cancelIpcBlocking_victim_tcb_write_mem _ _ _ _ _ _ _ _ _ _ _ _ _
   · exact lockSet_cancelIpcBlocking_victim_tcb_write_mem _ _ _ _ _ _ _ _ _ _ _ _ _
 
@@ -2334,7 +2418,7 @@ theorem lockSet_cancelIpcBlockingOnCore_covers_blockedEndpoint (st : SystemState
   unfold lockSet_cancelIpcBlockingOnCore
   rw [hT]
   simp only [hE]
-  iterate 2 apply mem_write_lockSetExtendOpt
+  iterate 3 apply mem_write_lockSetExtendOpt
   exact lockSet_cancelIpcBlocking_blocked_endpoint_write_mem _ _ _ _ _ _ _ _ _ _ _ _ _
 
 /-- WS-OD (`v0.35.4`): the blocked notification's, on the notification arm. -/
@@ -2346,7 +2430,7 @@ theorem lockSet_cancelIpcBlockingOnCore_covers_blockedNotification (st : SystemS
   unfold lockSet_cancelIpcBlockingOnCore
   rw [hT]
   simp only [hN]
-  iterate 2 apply mem_write_lockSetExtendOpt
+  iterate 3 apply mem_write_lockSetExtendOpt
   exact lockSet_cancelIpcBlocking_blocked_notification_write_mem _ _ _ _ _ _ _ _ _ _ _ _ _
 
 /-- WS-OD (`v0.35.4`): the consumed Reply's, on the reply arm. -/
@@ -2358,7 +2442,7 @@ theorem lockSet_cancelIpcBlockingOnCore_covers_consumedReply (st : SystemState)
   unfold lockSet_cancelIpcBlockingOnCore
   rw [hT]
   simp only [hR]
-  iterate 2 apply mem_write_lockSetExtendOpt
+  iterate 3 apply mem_write_lockSetExtendOpt
   exact lockSet_cancelIpcBlocking_consumed_reply_write_mem _ _ _ _ _ _ _ _ _ _ _ _ _
 
 /-- **WS-OD (`v0.35.4`)**: **the reclaim's writes are declared** — the context
@@ -2388,19 +2472,19 @@ theorem lockSet_cancelIpcBlockingOnCore_covers_reclaim (st : SystemState)
   simp only [hRes, Option.map_some, cancelBelowHeadReads?_of_donation st victimTid tcb scId holder hRes,
     cancelReclaimHead?_of_donation st victimTid tcb scId holder hRes]
   refine ⟨?_, ?_, ?_, ?_, ?_⟩
-  · iterate 2 apply mem_write_lockSetExtendOpt
+  · iterate 3 apply mem_write_lockSetExtendOpt
     exact lockSet_cancelIpcBlocking_returned_donation_sc_write_mem _ _ _ _ _ _ _ _ _ _ _ _ _
-  · iterate 2 apply mem_write_lockSetExtendOpt
+  · iterate 3 apply mem_write_lockSetExtendOpt
     exact lockSet_cancelIpcBlocking_donation_holder_tcb_write_mem _ _ _ _ _ _ _ _ _ _ _ _ _
-  · iterate 2 apply mem_write_lockSetExtendOpt
+  · iterate 3 apply mem_write_lockSetExtendOpt
     exact lockSet_cancelIpcBlocking_stateLevel_write_mem _ _ _ _ _ _ _ _ _ _ _ _ _
   · intro head hHead
     rw [hHead]
-    iterate 2 apply mem_write_lockSetExtendOpt
+    iterate 3 apply mem_write_lockSetExtendOpt
     exact lockSet_cancelIpcBlocking_reclaim_head_write_mem _ _ _ _ _ _ _ _ _ _ _ _ _
   · intro below hBelow
     rw [hBelow]
-    iterate 2 apply mem_write_lockSetExtendOpt
+    iterate 3 apply mem_write_lockSetExtendOpt
     exact lockSet_cancelIpcBlocking_below_head_write_mem _ _ _ _ _ _ _ _ _ _ _ _ _
 
 /-- WS-OD (`v0.35.4`): the outer caller the reclaim validates is a declared key. -/
@@ -2415,7 +2499,7 @@ theorem lockSet_cancelIpcBlockingOnCore_covers_outerCaller_key (st : SystemState
   rw [hT]
   simp only [hRes, Option.map_some, cancelBelowHeadReads?_of_donation st victimTid tcb scId holder hRes,
     cancelReclaimHead?_of_donation st victimTid tcb scId holder hRes, hOuter]
-  iterate 2 apply containsKey_lockSetExtendOpt_of_containsKey
+  iterate 3 apply containsKey_lockSetExtendOpt_of_containsKey
   exact lockSet_cancelIpcBlocking_outer_caller_containsKey _ _ _ _ _ _ _ _ _ _ _ _ _
 
 /-- WS-OD (`v0.35.4`): the frame above the cut, which the splice rewrites, is a
@@ -2429,7 +2513,7 @@ theorem lockSet_cancelIpcBlockingOnCore_covers_splicedFrameAbove (st : SystemSta
   unfold lockSet_cancelIpcBlockingOnCore
   rw [hT]
   simp only [hA]
-  iterate 2 apply mem_write_lockSetExtendOpt
+  iterate 3 apply mem_write_lockSetExtendOpt
   exact lockSet_cancelIpcBlocking_spliced_frame_above_write_mem _ _ _ _ _ _ _ _ _ _ _ _ _
 
 /-- **WS-HP HP3.4**: and the frame the splice re-links *below* the cut is one too
@@ -2447,7 +2531,7 @@ theorem lockSet_cancelIpcBlockingOnCore_covers_splicedFrameBelow (st : SystemSta
   unfold lockSet_cancelIpcBlockingOnCore
   rw [hT]
   simp only [hB]
-  iterate 2 apply mem_write_lockSetExtendOpt
+  iterate 3 apply mem_write_lockSetExtendOpt
   exact lockSet_cancelIpcBlocking_spliced_frame_below_write_mem _ _ _ _ _ _ _ _ _ _ _ _ _
 
 -- ============================================================================
@@ -2665,10 +2749,10 @@ The CNode member is the **caller's** CSpace root, not the victim's — the
 cap-resolution root `syscallLookupCap` reads to turn the caller's capability
 pointer into the target capability.
 
-`lockSet_tcbSuspendOnCore_size_le_seventeen` is its bound
-(`Concurrency/Locks/ResolvedFootprintBounds.lean`): sixteen on the widest shape
-— a reply-arm victim owed a donation at depth ≥ 3 — which is why
-`maxLockSetSize` is sixteen. -/
+`lockSet_tcbSuspendOnCore_size_le_twenty` is its bound
+(`Concurrency/Locks/ResolvedFootprintBounds.lean`): twenty on the widest shape
+— a reply-arm victim owed a donation at depth ≥ 3 — inside `maxLockSetSize`,
+which the `.replyRecv` footprint sets. -/
 def lockSet_tcbSuspendOnCore (st : SystemState) (callerTid : SeLe4n.ThreadId)
     (cnodeRootObjId : SeLe4n.ObjId) (targetTid : SeLe4n.ThreadId) : LockSet :=
   lockSetExtendOpt (lockSetExtendOpt (lockSetExtendOpt (lockSetExtendOpt (lockSetExtendOpt

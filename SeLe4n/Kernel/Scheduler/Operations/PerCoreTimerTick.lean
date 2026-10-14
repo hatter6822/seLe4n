@@ -832,7 +832,8 @@ theorem timeoutThread_preserves_objects_invExt (epId : SeLe4n.ObjId) (isRecvQ : 
         subst hStep
         first
           | (apply revertPriorityInheritance_preserves_objects_invExt
-             exact wakeThread_preserves_objects_invExt _ _ execCore hInv2)
+             exact SystemState.unlinkReplyWaiter_objects_invExt _ _ _
+               (wakeThread_preserves_objects_invExt _ _ execCore hInv2))
           | (exact wakeThread_preserves_objects_invExt _ _ execCore hInv2)
 
 /-- WS-SM SM5.D.5 (preservation): `timeoutBlockedThreads` preserves the

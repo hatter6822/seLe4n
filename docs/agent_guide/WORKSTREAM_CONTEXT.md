@@ -135,7 +135,11 @@ The single-core reference scheduler operations are proof-only from then on: run
 code, suites included, uses the per-core forms.  At `v0.36.83` every kernel
 entry carries `currentDequeuedUnique` (seL4's `ct_not_in_q`, current
 uniqueness and `valid_idle`) and the boot establishes it; idle threads are on
-no run queue (a core runs idle when its queue is empty).  ZA4 measures the other
+no run queue (a core runs idle when its queue is empty).  At `v0.36.84` (ZA4.6)
+reply waiters are a queue linked through the TCBs and priority inheritance
+walks it with no object scan (`replyWaitersConsistent`, a conjunct of
+`ipcReachable`): a call reads 166 (184 before), a reply 94 (112), a receive
+that blocks 100 and a send to a waiting receiver 86.  ZA4 measures the other
 syscalls and entries.  Plan:
 [`docs/planning/ZERO_ALLOCATION_SYSCALL_PLAN.md`](../planning/ZERO_ALLOCATION_SYSCALL_PLAN.md)
 (phases ZA1–ZA4).
@@ -3642,7 +3646,7 @@ code may assume:
   which were the one member of the family that did not.  The widest arm is the
   reply arm, at **eight** after OD3.5 and **ten** since OD3.7
   (`lockSet_cancelIpcBlockingOnCore_size_le_ten` then; the live bound is
-  `lockSet_cancelIpcBlockingOnCore_size_le_thirteen`); the endpoint arm is four and
+  `lockSet_cancelIpcBlockingOnCore_size_le_sixteen`); the endpoint arm is four and
   the notification arm two.  Before the OD3.5 split the reply arm declared two
   TCB write locks for a splice it does not perform, which also put it at ten —
   the same number for the opposite reason, so read the theorem rather than the

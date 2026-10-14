@@ -2842,13 +2842,24 @@ theorem timeoutThread_preserves_schedulerInvariantStructuralRegNodup_smp
       st2 tid execCore hInv2 hNotCur2 hPre2
     have hInv3 : (wakeThread st2 tid execCore).1.objects.invExt :=
       wakeThread_preserves_objects_invExt _ _ execCore hInv2
+    have hInv3U : ∀ s, ((wakeThread st2 tid execCore).1.unlinkReplyWaiter tid s).objects.invExt :=
+      fun s => SystemState.unlinkReplyWaiter_objects_invExt _ _ _ hInv3
+    -- WS-ZA ZA4.6: the unlink from the server's reply-waiter queue writes
+    -- reply links alone.
+    have hPre3U : ∀ s, schedulerInvariantStructuralRegNodup_smp ((wakeThread st2 tid execCore).1.unlinkReplyWaiter tid s) :=
+      fun s c => schedulerInvariantStructuralRegNodup_perCore_of_flagOnlyWrite
+        (SystemState.unlinkReplyWaiter_objectsAgreeOffRunLinks _ _ _)
+        (SystemState.unlinkReplyWaiter_machine _ _ _)
+        (fun _ => by rw [SystemState.unlinkReplyWaiter_scheduler])
+        (fun _ => by rw [SystemState.unlinkReplyWaiter_scheduler])
+        (hPre3 c)
     simp only [] at hStep
     split at hStep <;>
       · simp only [Except.ok.injEq] at hStep
         subst hStep
         first
           | exact revertPriorityInheritance_preserves_schedulerInvariantStructuralRegNodup_smp
-              _ _ _ hInv3 hPre3
+              _ _ _ (hInv3U _) (hPre3U _)
           | exact hPre3
 
 open SeLe4n.Kernel.PriorityInheritance in
@@ -2880,7 +2891,9 @@ theorem timeoutThread_currentOnCore_eq
       · simp only [Except.ok.injEq] at hStep
         subst hStep
         first
-          | rw [revert_currentOnCore_eq, hWake, hAbortSched]
+          | rw [revert_currentOnCore_eq, SchedulerState.currentOnCore,
+              SystemState.unlinkReplyWaiter_scheduler, ← SchedulerState.currentOnCore, hWake,
+              hAbortSched]
           | rw [hWake, hAbortSched]
 
 /-- WS-SM SM5.I.8 (timeout atom): `timeoutBlockedThreads` preserves the base
@@ -3279,11 +3292,19 @@ theorem timeoutThread_preserves_runQueueSafetyOnCore
     have h3 := wakeThread_preserves_runQueueSafetyOnCore st2 tid execCore c hInv2 h2
     have hInv3 : (wakeThread st2 tid execCore).1.objects.invExt :=
       wakeThread_preserves_objects_invExt _ _ execCore hInv2
+    have hInv3U : ∀ s, ((wakeThread st2 tid execCore).1.unlinkReplyWaiter tid s).objects.invExt :=
+      fun s => SystemState.unlinkReplyWaiter_objects_invExt _ _ _ hInv3
+    have h3U : ∀ s, runQueueSafetyOnCore ((wakeThread st2 tid execCore).1.unlinkReplyWaiter tid s) c := fun s =>
+      objects_frame_preserves_runQueueSafetyOnCore _ _ c
+        (SystemState.unlinkReplyWaiter_scheduler _ _ _)
+        (fun x hx => by
+          rw [(SystemState.unlinkReplyWaiter_objectsAgreeOffRunLinks _ _ _).getTcb?_isSome x]
+          exact hx) h3
     simp only [] at hStep
     split at hStep
     · simp only [Except.ok.injEq] at hStep
       subst hStep
-      exact revertPriorityInheritance_preserves_runQueueSafetyOnCore _ _ _ _ hInv3 h3
+      exact revertPriorityInheritance_preserves_runQueueSafetyOnCore _ _ _ _ (hInv3U _) (h3U _)
     · simp only [Except.ok.injEq] at hStep
       subst hStep
       exact h3
@@ -3652,7 +3673,10 @@ theorem timeoutThread_preserves_allThreadsTimeSlicePositive
       · simp only [Except.ok.injEq] at hStep
         subst hStep
         first
-          | exact revertPriorityInheritance_preserves_allThreadsTimeSlicePositive _ _ _ hInv3 h3
+          | exact revertPriorityInheritance_preserves_allThreadsTimeSlicePositive _ _ _
+              (SystemState.unlinkReplyWaiter_objects_invExt _ _ _ hInv3)
+              (allThreadsTimeSlicePositive_of_objectsAgreeOffRunLinks
+                (SystemState.unlinkReplyWaiter_objectsAgreeOffRunLinks _ _ _) h3)
           | exact h3
 
 /-- WS-SM SM5.I global strengthening: `timeoutBlockedThreads` preserves

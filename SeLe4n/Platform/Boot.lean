@@ -862,7 +862,9 @@ def cnodeReferencesReservedIdleSlot (cn : CNode) : Bool :=
       capabilities, by their targets; `schedContextBinding`,
       `timeoutBudget` — SchedContext ids and the donation owner;
       `replyObject`, `pendingReceiveReply` — reply object ids; `ntfnPrevCode`,
-      `ntfnNextCode` (WS-ZA ZA4.4) — thread ids, the notification-queue links.
+      `ntfnNextCode` (WS-ZA ZA4.4) — thread ids, the notification-queue links;
+      `replyWaiterPrevCode`, `replyWaiterNextCode`, `replyWaitersHeadCode`
+      (WS-ZA ZA4.6) — thread ids, the reply-waiter links and queue head.
     * `priority`, `domain`, `ipcBuffer` (a virtual address), `ipcState`,
       `threadState`, `timeSlice`, `deadline`, `registerContext`,
       `faultHandler` (a CPtr into the thread's own CSpace, not an id),
@@ -876,7 +878,8 @@ def tcbReferencesReservedIdleSlot (tcb : TCB) : Bool :=
      _faultHandler, boundNotification, schedContextBinding, timeoutBudget,
      _maxControlledPriority, _pipBoost, _timedOut, _cpuAffinity, replyObject,
      pendingReceiveReply, _pendingFault, _fpContext, ntfnPrevCode, ntfnNextCode,
-     _runCoreCode, _runPrio, _runPrevCode, _runNextCode, _runBucketPrevCode, _runBucketNextCode⟩ =>
+     _runCoreCode, _runPrio, _runPrevCode, _runNextCode, _runBucketPrevCode, _runBucketNextCode,
+     replyWaiterPrevCode, replyWaiterNextCode, replyWaitersHeadCode, _replyWaitersCount⟩ =>
     SeLe4n.Kernel.isIdleThreadId tid ||
     SeLe4n.Kernel.isIdleObjId cspaceRoot || SeLe4n.Kernel.isIdleObjId vspaceRoot ||
     boundNotification.any SeLe4n.Kernel.isIdleObjId ||
@@ -896,7 +899,10 @@ def tcbReferencesReservedIdleSlot (tcb : TCB) : Bool :=
     replyObject.any (fun rid => SeLe4n.Kernel.isIdleObjId rid.toObjId) ||
     pendingReceiveReply.any (fun rid => SeLe4n.Kernel.isIdleObjId rid.toObjId) ||
     (SeLe4n.ThreadId.ofOptCode ntfnNextCode).any SeLe4n.Kernel.isIdleThreadId ||
-    (SeLe4n.ThreadId.ofOptCode ntfnPrevCode).any SeLe4n.Kernel.isIdleThreadId
+    (SeLe4n.ThreadId.ofOptCode ntfnPrevCode).any SeLe4n.Kernel.isIdleThreadId ||
+    (SeLe4n.ThreadId.ofOptCode replyWaiterNextCode).any SeLe4n.Kernel.isIdleThreadId ||
+    (SeLe4n.ThreadId.ofOptCode replyWaiterPrevCode).any SeLe4n.Kernel.isIdleThreadId ||
+    (SeLe4n.ThreadId.ofOptCode replyWaitersHeadCode).any SeLe4n.Kernel.isIdleThreadId
 
 /-- PR #889 review round 8: the TCB reference check in projection form —
     the same Boolean, read off the fields rather than the constructor.  Proved
@@ -925,7 +931,10 @@ theorem tcbReferencesReservedIdleSlot_def (tcb : TCB) :
        tcb.replyObject.any (fun rid => SeLe4n.Kernel.isIdleObjId rid.toObjId) ||
        tcb.pendingReceiveReply.any (fun rid => SeLe4n.Kernel.isIdleObjId rid.toObjId) ||
        tcb.ntfnNext.any SeLe4n.Kernel.isIdleThreadId ||
-       tcb.ntfnPrev.any SeLe4n.Kernel.isIdleThreadId) :=
+       tcb.ntfnPrev.any SeLe4n.Kernel.isIdleThreadId ||
+       tcb.replyWaiterNext.any SeLe4n.Kernel.isIdleThreadId ||
+       tcb.replyWaiterPrev.any SeLe4n.Kernel.isIdleThreadId ||
+       tcb.replyWaitersHead.any SeLe4n.Kernel.isIdleThreadId) :=
   rfl
 
 /-- PR #889 review round 8: a **VSpace root** — an ASID, a virtual-to-physical
@@ -1792,7 +1801,10 @@ theorem bootSafeCnodeCheck_caps {cn : CNode}
     dequeue), so a boot TCB carrying one is refused; the run-queue
     fields (`runPrio`, `runPrevCode`, `runNextCode`, `runBucketPrevCode`,
     `runBucketNextCode`) likewise are read only while `runCoreCode` names a
-    core, and the enqueue that sets it writes them all. -/
+    core, and the enqueue that sets it writes them all.  The reply-waiter
+    fields (WS-ZA ZA4.6) must be empty: a boot thread is reply-blocked on no
+    server, so the reply-waiter invariant gives it no links, and no thread is
+    reply-blocked on it, so its own queue is empty with a count of zero. -/
 def bootSafeTcbCheck (tcb : TCB) : Bool :=
   match tcb with
   | ⟨_tid, _priority, _domain, _cspaceRoot, _vspaceRoot, _ipcBuffer, _ipcState, _threadState,
@@ -1800,7 +1812,8 @@ def bootSafeTcbCheck (tcb : TCB) : Bool :=
      _registerContext, _faultHandler, _boundNotification, _schedContextBinding, _timeoutBudget,
      _maxControlledPriority, _pipBoost, _timedOut, _cpuAffinity, _replyObject,
      _pendingReceiveReply, _pendingFault, _fpContext, _ntfnPrevCode, _ntfnNextCode,
-     _runCoreCode, _runPrio, _runPrevCode, _runNextCode, _runBucketPrevCode, _runBucketNextCode⟩ =>
+     _runCoreCode, _runPrio, _runPrevCode, _runNextCode, _runBucketPrevCode, _runBucketNextCode,
+     _replyWaiterPrevCode, _replyWaiterNextCode, _replyWaitersHeadCode, _replyWaitersCount⟩ =>
     tcb.pendingMessage.isNone && decide (tcb.ipcState = .ready) &&
     tcb.queueNext.isNone && tcb.queuePrev.isNone && tcb.queuePPrev.isNone &&
     tcb.timeoutBudget.isNone &&
@@ -1809,7 +1822,9 @@ def bootSafeTcbCheck (tcb : TCB) : Bool :=
     tcb.pendingReceiveReply.isNone &&
     decide (tcb.threadState = .Inactive) &&
     decide (tcb.runCoreCode = 0) &&
-    tcb.ntfnPrev.isNone && tcb.ntfnNext.isNone
+    tcb.ntfnPrev.isNone && tcb.ntfnNext.isNone &&
+    tcb.replyWaiterPrev.isNone && tcb.replyWaiterNext.isNone &&
+    tcb.replyWaitersHead.isNone && decide (tcb.replyWaitersCount = 0)
 
 @[simp] theorem bootSafeTcbCheck_def (tcb : TCB) :
     bootSafeTcbCheck tcb =
@@ -1821,7 +1836,9 @@ def bootSafeTcbCheck (tcb : TCB) : Bool :=
        tcb.pendingReceiveReply.isNone &&
        decide (tcb.threadState = .Inactive) &&
        decide (tcb.runCoreCode = 0) &&
-       tcb.ntfnPrev.isNone && tcb.ntfnNext.isNone) := rfl
+       tcb.ntfnPrev.isNone && tcb.ntfnNext.isNone &&
+       tcb.replyWaiterPrev.isNone && tcb.replyWaiterNext.isNone &&
+       tcb.replyWaitersHead.isNone && decide (tcb.replyWaitersCount = 0)) := rfl
 
 /-- A boot **untyped** region is *pristine*: nothing has been carved from it
     and it descends from nothing.  `watermark = 0` and `children = []`,
@@ -1988,7 +2005,9 @@ private theorem bootSafeObjectCheck_sound_core (obj : KernelObject)
       tcb.replyObject = none ∧
       tcb.pendingReceiveReply = none ∧
       tcb.threadState = .Inactive ∧ tcb.runCoreCode = 0 ∧
-      tcb.ntfnPrev = none ∧ tcb.ntfnNext = none) ∧
+      tcb.ntfnPrev = none ∧ tcb.ntfnNext = none ∧
+      tcb.replyWaiterPrev = none ∧ tcb.replyWaiterNext = none ∧
+      tcb.replyWaitersHead = none ∧ tcb.replyWaitersCount = 0) ∧
     -- WS-BP BP3.2: a configured VSpaceRoot is a thread's — admitted iff
     -- bootSafeUserVSpaceRoot (a user ASID, no mappings)
     (∀ vs, obj = .vspaceRoot vs →
@@ -2042,10 +2061,11 @@ private theorem bootSafeObjectCheck_sound_core (obj : KernelObject)
   | tcb tcb =>
     simp only [bootSafeObjectCheck, bootSafeTcbCheck_def, Bool.and_eq_true,
       decide_eq_true_eq] at h
-    obtain ⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨h1, h2⟩, h3⟩, h4⟩, h4b⟩, h5⟩, h6⟩, h7⟩, h8⟩, h9⟩, hRun⟩, hNP⟩, hNN⟩ := h
+    obtain ⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨h1, h2⟩, h3⟩, h4⟩, h4b⟩, h5⟩, h6⟩, h7⟩, h8⟩, h9⟩, hRun⟩, hNP⟩, hNN⟩,
+      hWP⟩, hWN⟩, hWH⟩, hWC⟩ := h
     exact ⟨fun _ he => by injection he, fun _ he => by injection he,
            fun _ he => by injection he,
-           fun _ he => by injection he; subst_vars; exact ⟨Option.eq_none_of_isNone h1, h2, Option.eq_none_of_isNone h3, Option.eq_none_of_isNone h4, Option.eq_none_of_isNone h4b, Option.eq_none_of_isNone h5, h6, Option.eq_none_of_isNone h7, Option.eq_none_of_isNone h8, h9, hRun, Option.eq_none_of_isNone hNP, Option.eq_none_of_isNone hNN⟩,
+           fun _ he => by injection he; subst_vars; exact ⟨Option.eq_none_of_isNone h1, h2, Option.eq_none_of_isNone h3, Option.eq_none_of_isNone h4, Option.eq_none_of_isNone h4b, Option.eq_none_of_isNone h5, h6, Option.eq_none_of_isNone h7, Option.eq_none_of_isNone h8, h9, hRun, Option.eq_none_of_isNone hNP, Option.eq_none_of_isNone hNN, Option.eq_none_of_isNone hWP, Option.eq_none_of_isNone hWN, Option.eq_none_of_isNone hWH, hWC⟩,
            fun _ he => by injection he, fun _ he => by injection he,
            fun _ he => by injection he, fun _ he => by injection he⟩
   | vspaceRoot vsr =>
@@ -2138,7 +2158,9 @@ theorem bootSafeObjectCheck_sound (obj : KernelObject)
       tcb.replyObject = none ∧
       tcb.pendingReceiveReply = none ∧
       tcb.threadState = .Inactive ∧ tcb.runCoreCode = 0 ∧
-      tcb.ntfnPrev = none ∧ tcb.ntfnNext = none) ∧
+      tcb.ntfnPrev = none ∧ tcb.ntfnNext = none ∧
+      tcb.replyWaiterPrev = none ∧ tcb.replyWaiterNext = none ∧
+      tcb.replyWaitersHead = none ∧ tcb.replyWaitersCount = 0) ∧
     (∀ vs, obj = .vspaceRoot vs →
       SeLe4n.Platform.RPi5.VSpaceBoot.bootSafeUserVSpaceRoot vs) ∧
     (∀ sc, obj = .schedContext sc →
@@ -3995,7 +4017,8 @@ def tcbAffinityDeclared (cores : List SeLe4n.Kernel.Concurrency.CoreId) (tcb : T
      _registerContext, _faultHandler, _boundNotification, _schedContextBinding, _timeoutBudget,
      _maxControlledPriority, _pipBoost, _timedOut, _cpuAffinity, _replyObject,
      _pendingReceiveReply, _pendingFault, _fpContext, _ntfnPrevCode, _ntfnNextCode,
-     _runCoreCode, _runPrio, _runPrevCode, _runNextCode, _runBucketPrevCode, _runBucketNextCode⟩ =>
+     _runCoreCode, _runPrio, _runPrevCode, _runNextCode, _runBucketPrevCode, _runBucketNextCode,
+     _replyWaiterPrevCode, _replyWaiterNextCode, _replyWaitersHeadCode, _replyWaitersCount⟩ =>
     match tcb.cpuAffinity with
     | some c => cores.contains c
     | none   => true
@@ -5099,7 +5122,9 @@ def bootSafeObject (obj : KernelObject) : Prop :=
     tcb.runCoreCode = 0 ∧
     -- PR #932 review: and on no notification queue (seL4 clears both links
     -- on dequeue; the notification-waiter invariant requires it).
-    tcb.ntfnPrev = none ∧ tcb.ntfnNext = none) ∧
+    tcb.ntfnPrev = none ∧ tcb.ntfnNext = none ∧
+    tcb.replyWaiterPrev = none ∧ tcb.replyWaiterNext = none ∧
+    tcb.replyWaitersHead = none ∧ tcb.replyWaitersCount = 0) ∧
   -- WS-BP BP3.2: a configured VSpaceRoot is a thread's — admitted iff
   -- bootSafeUserVSpaceRoot (a user ASID, no mappings)
   (∀ vs, obj = .vspaceRoot vs →
@@ -5201,7 +5226,9 @@ def bootObjectShape (obj : KernelObject) : Prop :=
     tcb.schedContextBinding = .unbound ∧
     tcb.replyObject = none ∧
     tcb.pendingReceiveReply = none ∧
-    tcb.ntfnPrev = none ∧ tcb.ntfnNext = none) ∧
+    tcb.ntfnPrev = none ∧ tcb.ntfnNext = none ∧
+    tcb.replyWaiterPrev = none ∧ tcb.replyWaiterNext = none ∧
+    tcb.replyWaitersHead = none ∧ tcb.replyWaitersCount = 0) ∧
   (∀ vs, obj = .vspaceRoot vs →
     SeLe4n.Platform.RPi5.VSpaceBoot.bootVSpaceRootMappingsSafe vs) ∧
   (∀ sc, obj = .schedContext sc →
@@ -5243,7 +5270,7 @@ theorem bootSafeVSpaceRoot_bootObjectShape {vs : VSpaceRoot}
 theorem readyIdleThread_bootObjectShape (c : SeLe4n.Kernel.Concurrency.CoreId) :
     bootObjectShape (.tcb (readyIdleThread c)) := by
   refine ⟨?_, ?_, ?_, ?_, ?_, ?_, ?_⟩ <;> intro x hx <;> cases hx
-  exact ⟨rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl⟩
+  exact ⟨rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl⟩
 
 -- ============================================================================
 -- V4-A4b: Boot-safe object bridge — connect boot state objects to bootSafe
@@ -5954,7 +5981,7 @@ theorem proofLayerInvariantBundle_of_bootShape (ist : IntermediateState)
       rw [((hBS oid _ hObj).2.1 ntfn rfl).2.1] at hH; cases hH
     · -- and no boot TCB holds a notification link
       have hTcbProps := (hBS tid.toObjId _ hObj).2.2.2.1 tcb rfl
-      exact ⟨hTcbProps.2.2.2.2.2.2.2.2.2.1, hTcbProps.2.2.2.2.2.2.2.2.2.2⟩
+      exact ⟨hTcbProps.2.2.2.2.2.2.2.2.2.1, hTcbProps.2.2.2.2.2.2.2.2.2.2.1⟩
     all_goals
       have hTcbProps := (hBS tid.toObjId _ hObj).2.2.2.1 tcb rfl
       rw [hTcbProps.2.1] at hBl; cases hBl
@@ -6505,7 +6532,9 @@ theorem bootFromPlatformChecked_ok_tcb_bootSafeFields (config : PlatformConfig)
       tcb.replyObject = none ∧
       tcb.pendingReceiveReply = none ∧
       tcb.threadState = .Inactive ∧ tcb.runCoreCode = 0 ∧
-      tcb.ntfnPrev = none ∧ tcb.ntfnNext = none := by
+      tcb.ntfnPrev = none ∧ tcb.ntfnNext = none ∧
+      tcb.replyWaiterPrev = none ∧ tcb.replyWaiterNext = none ∧
+      tcb.replyWaitersHead = none ∧ tcb.replyWaitersCount = 0 := by
   obtain ⟨_, hSafe, hShape⟩ := bootFromPlatformChecked_ok_shape config ist h
   have hPlain : (bootFromPlatform config).state.objects[oid]? = some (KernelObject.tcb tcb) := by
     rcases hShape with ⟨_, rfl⟩ | ⟨entry, _, rfl⟩

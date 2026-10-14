@@ -594,7 +594,9 @@ theorem endpointCallOnCore_preserves_blockedSenderFlowsToEndpoint
                           hInv4 hLink))
                   exact blockedSenderFlowsToEndpoint_of_shrinks hPre5
                     (blockedSenderShrinks_of_ipcStateFrame
-                      (removeRunnableOnCore_ipcStateFrame st5 caller executingCore))
+                      (ipcStateFrame_of_objectsAgreeOffRunLinks
+                        ((SystemState.linkReplyWaiter_objectsAgreeOffRunLinks _ caller receiver).trans
+                          (removeRunnableOnCore_objectsAgreeOffRunLinks st5 caller executingCore))))
 
 /-- WS-RR RR8.16: and the caps-carrying call form, for the send's reason. -/
 theorem endpointCallWithCapsOnCore_preserves_blockedSenderFlowsToEndpoint

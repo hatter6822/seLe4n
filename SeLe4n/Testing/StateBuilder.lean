@@ -102,15 +102,28 @@ private def buildUnqueued (builder : BootstrapBuilder) : SystemState :=
       | _ => none)
   }
 
+/-- Link every supplied reply-blocked thread onto its server's reply-waiter
+queue through the kernel's own link (`SystemState.linkReplyWaiter`), in object
+order, so priority inheritance reads the waiters the TCBs name (WS-ZA ZA4.6). -/
+private def linkReplyWaiters (objects : List (SeLe4n.ObjId × KernelObject))
+    (st : SystemState) : SystemState :=
+  objects.foldl (fun st (oid, obj) =>
+    match obj with
+    | .tcb t =>
+      match t.blockingServer? with
+      | some server => st.linkReplyWaiter (SeLe4n.ThreadId.ofNat oid.toNat) server
+      | none => st
+    | _ => st) st
+
 /-- Materialize a full `SystemState` from the builder tables.  The boot core's
 run queue is filled by the kernel's own enqueue (`runEnqueueOnCore`), so each
 runnable thread's TCB carries the run-queue links the selector walks (WS-ZA
-ZA4.5). -/
+ZA4.5), and each reply-blocked thread is linked under its server (ZA4.6). -/
 def build (builder : BootstrapBuilder) : SystemState :=
   builder.runnable.foldl (fun st tid =>
       st.runEnqueueOnCore SeLe4n.Kernel.Concurrency.bootCoreId tid
         (lookupThreadPriority builder.objects tid))
-    builder.buildUnqueued
+    (linkReplyWaiters builder.objects builder.buildUnqueued)
 
 /-- S2-F: Build a `SystemState` with post-construction invariant validation.
     Returns the state or throws if structural invariants are violated.
@@ -164,6 +177,19 @@ def buildValidated (builder : BootstrapBuilder) : Except String SystemState :=
     let bad := builder.objects.filterMap (fun (oid, obj) =>
       match obj with | .tcb t => if t.runCoreCode != 0 then some oid else none | _ => none)
     .error s!"BuilderTestState check 8 failed: supplied TCB(s) carry run-queue placement (runCoreCode ≠ 0): {bad}"
+  -- Check 9 (WS-ZA ZA4.6): no supplied TCB already carries reply-waiter links;
+  -- `build` links each reply-blocked thread under the server it names.
+  else if builder.objects.any (fun (_, obj) =>
+    match obj with
+    | .tcb t => t.replyWaiterPrevCode != 0 || t.replyWaiterNextCode != 0 ||
+        t.replyWaitersHeadCode != 0 || t.replyWaitersCount != 0
+    | _ => false) then
+    let bad := builder.objects.filterMap (fun (oid, obj) =>
+      match obj with
+      | .tcb t => if t.replyWaiterPrevCode != 0 || t.replyWaiterNextCode != 0 ||
+          t.replyWaitersHeadCode != 0 || t.replyWaitersCount != 0 then some oid else none
+      | _ => none)
+    .error s!"BuilderTestState check 9 failed: supplied TCB(s) carry reply-waiter links: {bad}"
   -- Check 5: IRQ handlers reference existing objects
   else if builder.irqHandlers.any (fun (_, oid) => !oids.contains oid) then
     .error "BuilderTestState check 5 failed: IRQ handler references non-existent object"

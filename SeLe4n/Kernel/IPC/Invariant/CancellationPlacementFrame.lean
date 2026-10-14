@@ -26,13 +26,46 @@ namespace SeLe4n.Kernel
 open SeLe4n.Model
 open SeLe4n.Kernel.Concurrency (CoreId bootCoreId)
 
+/-- WS-ZA ZA4.6: what no step of the cancellation reads or writes beside the
+blocking state: a thread's placement (home core and run-queue links) and its
+reply-waiter links.  The frames below are stated over this pair so the
+placement and the reply-waiter links carry through one proof. -/
+def _root_.SeLe4n.Model.TCB.linkFrame (t : TCB) :=
+  (t.placement, t.replyWaiterPrevCode, t.replyWaiterNextCode, t.replyWaitersHeadCode,
+    t.replyWaitersCount)
+
+theorem _root_.SeLe4n.Model.TCB.map_placement_of_linkFrame {o o' : Option TCB}
+    (h : o.map TCB.linkFrame = o'.map TCB.linkFrame) :
+    o.map TCB.placement = o'.map TCB.placement := by
+  cases o <;> cases o' <;> simp_all [TCB.linkFrame]
+
+/-- The reply-waiter link codes, as one tuple. -/
+def _root_.SeLe4n.Model.TCB.replyLinkCodes (t : TCB) : Nat × Nat × Nat × Nat :=
+  (t.replyWaiterPrevCode, t.replyWaiterNextCode, t.replyWaitersHeadCode, t.replyWaitersCount)
+
+theorem _root_.SeLe4n.Model.TCB.map_replyLinkCodes_of_linkFrame {o o' : Option TCB}
+    (h : o.map TCB.linkFrame = o'.map TCB.linkFrame) :
+    o.map TCB.replyLinkCodes = o'.map TCB.replyLinkCodes := by
+  cases o <;> cases o' <;> simp_all [TCB.linkFrame, TCB.replyLinkCodes]
+
+/-- Two states whose lookups agree on `w`'s link frame agree on `w`'s
+reply-waiter neighbour codes. -/
+theorem _root_.SeLe4n.Model.SystemState.replyNeighbourCodes_of_linkFrame
+    {a b : SystemState} {w : SeLe4n.ThreadId}
+    (h : (a.getTcb? w).map TCB.linkFrame = (b.getTcb? w).map TCB.linkFrame) :
+    a.replyPrevCode w = b.replyPrevCode w ∧ a.replyNextCode w = b.replyNextCode w := by
+  rw [SystemState.replyPrevCode_eq_getTcb?, SystemState.replyPrevCode_eq_getTcb?,
+    SystemState.replyNextCode_eq_getTcb?, SystemState.replyNextCode_eq_getTcb?]
+  revert h
+  cases a.getTcb? w <;> cases b.getTcb? w <;> simp_all [TCB.linkFrame]
+
 /-- WS-RR RR8.11: the restore rewrites the victim's own TCB and writes nothing
 where no TCB was. -/
-private theorem restoreToReadyStaging_placement_frame (st : SystemState)
+private theorem restoreToReadyStaging_linkFrame_frame (st : SystemState)
     (tid : SeLe4n.ThreadId) (frame : Option Architecture.SyscallReturnFrame)
     (hInv : st.objects.invExt) (x : SeLe4n.ThreadId) :
-    ((Lifecycle.Suspend.restoreToReadyStaging st tid frame).getTcb? x).map TCB.placement
-      = (st.getTcb? x).map TCB.placement := by
+    ((Lifecycle.Suspend.restoreToReadyStaging st tid frame).getTcb? x).map TCB.linkFrame
+      = (st.getTcb? x).map TCB.linkFrame := by
   cases hT : st.getTcb? tid with
   | none =>
     rw [Lifecycle.Suspend.restoreToReadyStaging_eq_self_of_getTcb?_none st tid frame hT]
@@ -47,8 +80,8 @@ private theorem restoreToReadyStaging_placement_frame (st : SystemState)
           (SeLe4n.Kernel.RobinHood.RHTable.getElem?_insert_self st.objects x.toObjId _ hInv)
       rw [hPost, hT]
       cases frame with
-      | none => simp [restoredTcb, TCB.placement]
-      | some f => simp [restoredTcb, TCB.withReturnFrame, TCB.placement]
+      | none => simp [restoredTcb, TCB.placement, TCB.linkFrame]
+      | some f => simp [restoredTcb, TCB.withReturnFrame, TCB.placement, TCB.linkFrame]
     · have hPost : (Lifecycle.Suspend.restoreToReadyStaging st tid frame).getTcb? x
           = st.getTcb? x := by
         unfold SystemState.getTcb?
@@ -58,12 +91,12 @@ private theorem restoreToReadyStaging_placement_frame (st : SystemState)
 
 /-- WS-RR RR8.11: a store of one TCB at a key that already held a TCB with the same
 `TCB.placement` frames every thread's home core and run-queue links. -/
-private theorem storeObject_tcb_placement_frame {st st' : SystemState} {k : SeLe4n.ObjId}
+private theorem storeObject_tcb_linkFrame_frame {st st' : SystemState} {k : SeLe4n.ObjId}
     {t t' : TCB}
     (hInv : st.objects.invExt) (hPre : st.objects[k]? = some (.tcb t))
-    (hAff : t'.placement = t.placement)
+    (hAff : t'.linkFrame = t.linkFrame)
     (hStore : storeObject k (.tcb t') st = .ok ((), st')) (x : SeLe4n.ThreadId) :
-    (st'.getTcb? x).map TCB.placement = (st.getTcb? x).map TCB.placement := by
+    (st'.getTcb? x).map TCB.linkFrame = (st.getTcb? x).map TCB.linkFrame := by
   by_cases hk : x.toObjId = k
   · subst hk
     rw [show st'.getTcb? x = some t' from
@@ -96,12 +129,12 @@ theorem endpointQueueRemove_map_frame {α : Type} (f : TCB → α)
       ((SystemState.getTcb?_eq_some_iff _ x t').mp hT')
     exact ⟨ot, (SystemState.getTcb?_eq_some_iff st x ot).mpr hL⟩
 
-private theorem endpointQueueRemove_placement_frame {endpointId : SeLe4n.ObjId}
+private theorem endpointQueueRemove_linkFrame_frame {endpointId : SeLe4n.ObjId}
     {isReceiveQ : Bool} {tid : SeLe4n.ThreadId} {st st' : SystemState}
     (hInv : st.objects.invExt)
     (h : endpointQueueRemove endpointId isReceiveQ tid st = .ok st') (x : SeLe4n.ThreadId) :
-    (st'.getTcb? x).map TCB.placement = (st.getTcb? x).map TCB.placement :=
-  endpointQueueRemove_map_frame TCB.placement (fun _ _ _ _ => rfl) hInv h x
+    (st'.getTcb? x).map TCB.linkFrame = (st.getTcb? x).map TCB.linkFrame :=
+  endpointQueueRemove_map_frame TCB.linkFrame (fun _ _ _ _ => rfl) hInv h x
 
 /-- The queue removal writes queue links alone: every thread's state fields
 stay. -/
@@ -117,16 +150,22 @@ theorem endpointQueueRemove_stateMono {endpointId : SeLe4n.ObjId}
 /-- The IPC abort a timeout or a reclaim runs: the queue removal patches queue
 links, and the aborted thread's TCB is stored over itself with the same
 placement. -/
+theorem abortPendingIpcOnEndpoint_linkFrame_frame {epId : SeLe4n.ObjId} {isReceiveQ : Bool}
+    {tid : SeLe4n.ThreadId} {st st' : SystemState} (hInv : st.objects.invExt)
+    (hA : abortPendingIpcOnEndpoint epId isReceiveQ tid st = .ok st') (x : SeLe4n.ThreadId) :
+    (st'.getTcb? x).map TCB.linkFrame = (st.getTcb? x).map TCB.linkFrame := by
+  obtain ⟨st1, tcb1, hRem, hLook, hStore⟩ := abortPendingIpcOnEndpoint_shape hA
+  have hInv1 := endpointQueueRemove_preserves_objects_invExt _ _ _ _ _ hInv hRem
+  rw [storeObject_tcb_linkFrame_frame (hInv := hInv1)
+        (hPre := lookupTcb_some_objects _ _ _ hLook) (hStore := hStore)
+        (hAff := by simp [TCB.withReturnFrame, TCB.placement, TCB.linkFrame]) (x := x),
+    endpointQueueRemove_linkFrame_frame hInv hRem x]
+
 theorem abortPendingIpcOnEndpoint_placement_frame {epId : SeLe4n.ObjId} {isReceiveQ : Bool}
     {tid : SeLe4n.ThreadId} {st st' : SystemState} (hInv : st.objects.invExt)
     (hA : abortPendingIpcOnEndpoint epId isReceiveQ tid st = .ok st') (x : SeLe4n.ThreadId) :
-    (st'.getTcb? x).map TCB.placement = (st.getTcb? x).map TCB.placement := by
-  obtain ⟨st1, tcb1, hRem, hLook, hStore⟩ := abortPendingIpcOnEndpoint_shape hA
-  have hInv1 := endpointQueueRemove_preserves_objects_invExt _ _ _ _ _ hInv hRem
-  rw [storeObject_tcb_placement_frame (hInv := hInv1)
-        (hPre := lookupTcb_some_objects _ _ _ hLook) (hStore := hStore)
-        (hAff := by simp [TCB.withReturnFrame, TCB.placement]) (x := x),
-    endpointQueueRemove_placement_frame hInv hRem x]
+    (st'.getTcb? x).map TCB.placement = (st.getTcb? x).map TCB.placement :=
+  TCB.map_placement_of_linkFrame (abortPendingIpcOnEndpoint_linkFrame_frame hInv hA x)
 
 /-- The abort makes the aborted thread ready and leaves it active. -/
 theorem abortPendingIpcOnEndpoint_stateMono {epId : SeLe4n.ObjId} {isReceiveQ : Bool}
@@ -156,19 +195,19 @@ theorem abortPendingIpcOnEndpoint_runQueueStage {epId : SeLe4n.ObjId} {isReceive
 
 /-- WS-RR RR8.11: the holder abort ends an outstanding send or call and moves no
 thread's home core. -/
-private theorem abortHolderPendingIpc_placement_frame (st : SystemState)
+private theorem abortHolderPendingIpc_linkFrame_frame (st : SystemState)
     (holder : SeLe4n.ThreadId) (hInv : st.objects.invExt) (x : SeLe4n.ThreadId) :
-    ((Lifecycle.Suspend.abortHolderPendingIpc st holder).getTcb? x).map TCB.placement
-      = (st.getTcb? x).map TCB.placement := by
+    ((Lifecycle.Suspend.abortHolderPendingIpc st holder).getTcb? x).map TCB.linkFrame
+      = (st.getTcb? x).map TCB.linkFrame := by
   have hArm : ∀ (epId : SeLe4n.ObjId),
       (((match abortPendingIpcOnEndpoint epId false holder st with
         | .ok s => s
-        | .error _ => st : SystemState)).getTcb? x).map TCB.placement
-        = (st.getTcb? x).map TCB.placement := by
+        | .error _ => st : SystemState)).getTcb? x).map TCB.linkFrame
+        = (st.getTcb? x).map TCB.linkFrame := by
     intro epId
     cases hA : abortPendingIpcOnEndpoint epId false holder st with
     | error _ => rfl
-    | ok stA => exact abortPendingIpcOnEndpoint_placement_frame hInv hA x
+    | ok stA => exact abortPendingIpcOnEndpoint_linkFrame_frame hInv hA x
   unfold Lifecycle.Suspend.abortHolderPendingIpc
   split
   · rfl
@@ -181,10 +220,10 @@ private theorem abortHolderPendingIpc_placement_frame (st : SystemState)
 /-- WS-RR RR8.11: the reclaim moves no thread's home core — its abort prefix
 patches queue links and blocking state, and the pop rebinds scheduling contexts
 (`returnDonatedSchedContext_getTcb?_placement_eq`). -/
-private theorem returnDonationToCancelledCaller_placement_frame (st : SystemState)
+private theorem returnDonationToCancelledCaller_linkFrame_frame (st : SystemState)
     (v : SeLe4n.ThreadId) (tcbV : TCB) (hInv : st.objects.invExt) (x : SeLe4n.ThreadId) :
-    ((Lifecycle.Suspend.returnDonationToCancelledCaller st v tcbV).getTcb? x).map TCB.placement
-      = (st.getTcb? x).map TCB.placement := by
+    ((Lifecycle.Suspend.returnDonationToCancelledCaller st v tcbV).getTcb? x).map TCB.linkFrame
+      = (st.getTcb? x).map TCB.linkFrame := by
   unfold Lifecycle.Suspend.returnDonationToCancelledCaller
   cases hD : Lifecycle.Suspend.cancelledCallerDonation? st v tcbV with
   | none => rfl
@@ -199,10 +238,10 @@ private theorem returnDonationToCancelledCaller_placement_frame (st : SystemStat
       | error _ => rfl
       | ok st' =>
         obtain ⟨newOwner?, _, hPop⟩ := returnDonatedSchedContextResolved_ok_decompose hRet
-        rw [returnDonatedSchedContext_getTcb?_placement_eq _ st' holder scId v
-            (Lifecycle.Suspend.abortHolderPendingIpc_preserves_objects_invExt st holder hInv)
+        rw [returnDonatedSchedContext_getTcb?_map_eq TCB.linkFrame (fun _ _ => rfl) _ st' holder
+            scId v (Lifecycle.Suspend.abortHolderPendingIpc_preserves_objects_invExt st holder hInv)
             newOwner? hPop x,
-          abortHolderPendingIpc_placement_frame st holder hInv x]
+          abortHolderPendingIpc_linkFrame_frame st holder hInv x]
 
 /-- WS-RR RR8.11: **the consume materialises no thread.**  The backward half the
 tree lacked: its two stores are at keys their own lookups found occupied, so a TCB
@@ -275,6 +314,28 @@ private theorem consumeReplyLink_map_frame {α : Type} (f : TCB → α)
         (SystemState.consumeCallerReply_tcb_other st _ tid rid hInv hStep x.toObjId t0 hk
           ((SystemState.getTcb?_eq_some_iff st x t0).mp hT0)), rfl⟩
 
+/-- **WS-ZA ZA4.6**: the reply arm's prefix — reclaim, splice, restore and the
+reply-link teardown — leaves every thread's placement and reply-waiter links
+alone; only the final unlink writes reply-waiter links. -/
+theorem cancelReplyPrefix_linkFrame (st : SystemState) (v : SeLe4n.ThreadId)
+    (tcbV : TCB) (frame : Option Architecture.SyscallReturnFrame)
+    (hInv : st.objects.invExt) (x : SeLe4n.ThreadId) :
+    ((Lifecycle.Suspend.consumeReplyLink
+        (Lifecycle.Suspend.restoreToReadyStaging
+          (spliceThreadReplyFrameOut
+            (Lifecycle.Suspend.returnDonationToCancelledCaller st v tcbV) tcbV) v frame)
+        v tcbV).getTcb? x).map TCB.linkFrame
+      = (st.getTcb? x).map TCB.linkFrame := by
+  have hR := Lifecycle.Suspend.returnDonationToCancelledCaller_preserves_objects_invExt
+    st v tcbV hInv
+  have hS := spliceThreadReplyFrameOut_preserves_objects_invExt
+    (Lifecycle.Suspend.returnDonationToCancelledCaller st v tcbV) tcbV hR
+  rw [consumeReplyLink_map_frame TCB.linkFrame (fun _ => rfl) _ v tcbV
+      (Lifecycle.Suspend.restoreToReadyStaging_invExt _ v _ hS) x,
+    restoreToReadyStaging_linkFrame_frame _ v _ hS x,
+    spliceThreadReplyFrameOut_getTcb?_eq _ tcbV hR x,
+    returnDonationToCancelledCaller_linkFrame_frame st v tcbV hInv x]
+
 /-- **WS-RR RR8.11: the teardown moves no thread's home core.**  The composite of
 the per-step frames above, stated in the `Option.map` form so its `none` case is
 the statement that the teardown materialises no thread — which is what a reader of
@@ -288,31 +349,25 @@ theorem cancelIpcBlocking_placement_frame (st : SystemState) (v : SeLe4n.ThreadI
   cases hIp : tcbV.ipcState with
   | ready => rfl
   | blockedOnSend _ =>
-    rw [restoreToReadyStaging_placement_frame _ v _
-        (removeFromAllEndpointQueues_preserves_objects_invExt st v hInv) x,
+    rw [TCB.map_placement_of_linkFrame (restoreToReadyStaging_linkFrame_frame _ v _
+        (removeFromAllEndpointQueues_preserves_objects_invExt st v hInv) x),
       removeFromAllEndpointQueues_placement_frame st v hInv x]
   | blockedOnReceive _ =>
-    rw [restoreToReadyStaging_placement_frame _ v _
-        (removeFromAllEndpointQueues_preserves_objects_invExt st v hInv) x,
+    rw [TCB.map_placement_of_linkFrame (restoreToReadyStaging_linkFrame_frame _ v _
+        (removeFromAllEndpointQueues_preserves_objects_invExt st v hInv) x),
       removeFromAllEndpointQueues_placement_frame st v hInv x]
   | blockedOnCall _ =>
-    rw [restoreToReadyStaging_placement_frame _ v _
-        (removeFromAllEndpointQueues_preserves_objects_invExt st v hInv) x,
+    rw [TCB.map_placement_of_linkFrame (restoreToReadyStaging_linkFrame_frame _ v _
+        (removeFromAllEndpointQueues_preserves_objects_invExt st v hInv) x),
       removeFromAllEndpointQueues_placement_frame st v hInv x]
   | blockedOnNotification _ =>
-    rw [restoreToReadyStaging_placement_frame _ v _
-        (removeFromNotificationWaitQueue_preserves_objects_invExt st v hInv) x,
+    rw [TCB.map_placement_of_linkFrame (restoreToReadyStaging_linkFrame_frame _ v _
+        (removeFromNotificationWaitQueue_preserves_objects_invExt st v hInv) x),
       removeFromNotificationWaitQueue_placement_frame st v hInv x]
   | blockedOnReply ep rt =>
-    have hR := Lifecycle.Suspend.returnDonationToCancelledCaller_preserves_objects_invExt
-      st v tcbV hInv
-    have hS := spliceThreadReplyFrameOut_preserves_objects_invExt
-      (Lifecycle.Suspend.returnDonationToCancelledCaller st v tcbV) tcbV hR
-    rw [consumeReplyLink_map_frame TCB.placement (fun _ => rfl) _ v tcbV
-        (Lifecycle.Suspend.restoreToReadyStaging_invExt _ v _ hS) x,
-      restoreToReadyStaging_placement_frame _ v _ hS x,
-      spliceThreadReplyFrameOut_getTcb?_eq _ tcbV hR x,
-      returnDonationToCancelledCaller_placement_frame st v tcbV hInv x]
+    rw [(SystemState.unlinkReplyWaiterOpt_objectsAgreeOffReplyLinks _ v _).getTcb?_map
+        TCB.placement (fun _ => rfl) x]
+    exact TCB.map_placement_of_linkFrame (cancelReplyPrefix_linkFrame st v tcbV _ hInv x)
 
 /-- **WS-ZA ZA4.5**: the teardown moves no thread's run-queue core. -/
 theorem cancelIpcBlocking_runCoresAgree (st : SystemState) (v : SeLe4n.ThreadId)
@@ -407,8 +462,11 @@ theorem cancelIpcBlocking_stateMono (st : SystemState) (v : SeLe4n.ThreadId)
     exact (((returnDonationToCancelledCaller_stateMono st v tcbV hInv).trans
       (SystemState.StateMono.of_getTcb (spliceThreadReplyFrameOut_getTcb?_eq _ tcbV hR))).trans
       (restoreToReadyStaging_stateMono _ v _ hS)).trans
-      (SystemState.StateMono.of_stateFields fun t =>
+      ((SystemState.StateMono.of_stateFields fun t =>
         consumeReplyLink_map_frame (fun x => (x.ipcState, x.threadState)) (fun _ => rfl) _ v tcbV
-          (Lifecycle.Suspend.restoreToReadyStaging_invExt _ v _ hS) t)
+          (Lifecycle.Suspend.restoreToReadyStaging_invExt _ v _ hS) t).trans
+        (SystemState.StateMono.of_stateFields fun t =>
+          (SystemState.unlinkReplyWaiterOpt_objectsAgreeOffReplyLinks _ v _).getTcb?_map
+            (fun x => (x.ipcState, x.threadState)) (fun _ => rfl) t))
 
 end SeLe4n.Kernel

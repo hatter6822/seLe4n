@@ -474,8 +474,13 @@ theorem cancelIpcBlocking_stepCovers (e : CoreId) (st : SystemState) (tid : SeLe
       (stepCovers_trans (stepCovers_of_keys_sched (spliceThreadReplyFrameOut_keyInputsEq _ tcb h1)
         (spliceThreadReplyFrameOut_scheduler_eq _ tcb))
       (stepCovers_trans (hRestore _ h2)
-        (stepCovers_of_keys_sched (consumeReplyLink_keyInputsEq _ tid tcb h3)
-          (Lifecycle.Suspend.consumeReplyLink_scheduler_eq _ tid tcb))))
+        (stepCovers_trans
+          (stepCovers_of_keys_sched (consumeReplyLink_keyInputsEq _ tid tcb h3)
+            (Lifecycle.Suspend.consumeReplyLink_scheduler_eq _ tid tcb))
+          (stepCovers_of_keys_sched
+            (keyInputsEq_of_objectsAgreeOffReplyLinks
+              (SystemState.unlinkReplyWaiterOpt_objectsAgreeOffReplyLinks _ tid _))
+            (SystemState.unlinkReplyWaiterOpt_scheduler _ tid _)))))
 
 /-! ### The donation cancellations -/
 

@@ -303,6 +303,7 @@ theorem timeoutThread_machine (epId : SeLe4n.ObjId) (isReceiveQ : Bool)
         first
           | rw [PriorityInheritance.revert_preserves_machine]
           | skip
+        try rw [SystemState.unlinkReplyWaiter_machine]
         rw [wakeThread_state_eq_enqueue, enqueueRunnableOnCore_machine_eq]
         show st2.machine = st.machine
         rw [hMach2]

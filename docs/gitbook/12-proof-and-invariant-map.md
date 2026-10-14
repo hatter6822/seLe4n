@@ -727,7 +727,7 @@ platform rather than with the lock.
 > coincidence delegation breaks; two threads cannot share a scheduling context,
 > so a delegated `.replyRecv` wrote four kernel objects under no declared lock.
 > **No reachable state takes up the whole ceiling**:
-> `lockSet_endpointReplyRecvOnCore_size_le_eighteen` bounds every state at
+> `lockSet_endpointReplyRecvOnCore_size_le_twentyone` bounds every state at
 > eighteen with no hypothesis, because the re-donation members and the
 > pre-receive return are mutually exclusive on the send queue.  WS-HP HP6.2
 > (`v0.35.44`) retired the sharper seventeen and made this one unconditional; the

@@ -8,6 +8,7 @@
 -/
 
 import SeLe4n.Model.State
+import SeLe4n.Kernel.Scheduler.ReplyWaiters
 
 namespace SeLe4n.Kernel.PriorityInheritance
 
@@ -37,18 +38,13 @@ def BlockedOnThread (st : SystemState) (waiter server : ThreadId) : Prop :=
 -- D4-C2: waitersOf (direct dependents)
 -- ============================================================================
 
-/-- D4-C2: Collect all threads directly blocked on `tid` via Reply IPC.
-Folds over the object index, filtering for TCBs with `blockedOnReply _ (some tid)`. -/
+/-- D4-C2: the threads directly blocked on `tid` via Reply IPC, read from
+`tid`'s reply-waiter queue (WS-ZA ZA4.6, `SystemState.replyWaitersOf`): no walk
+of the object index.  Under `SystemState.replyWaitersConsistent` the list holds
+exactly the threads whose `TCB.blockingServer?` is `tid`
+(`SystemState.mem_replyWaitersOf`), each once (`replyWaitersOf_nodup`). -/
 def waitersOf (st : SystemState) (tid : ThreadId) : List ThreadId :=
-  st.objectIndex.filterMap fun objId =>
-    match st.getObject? objId with
-    | some (KernelObject.tcb tcb) =>
-      -- `TCB.blockingServer?` (`Model/Object/Types.lean`) is the one reading of
-      -- "which server is this thread blocked on"; `blockingServer` below asks it
-      -- of one thread and this asks it of every thread, so the two cannot come
-      -- to disagree about what the blocking edge is.
-      if tcb.blockingServer? == some tid then some tcb.tid else none
-    | _ => none
+  st.replyWaitersOf tid
 
 -- ============================================================================
 -- D4-C3: blockingChain (transitive closure — upward walk)

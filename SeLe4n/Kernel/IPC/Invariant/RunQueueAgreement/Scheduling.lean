@@ -1019,7 +1019,8 @@ theorem timeoutThread_runQueueWindowStage {p : SchedPoint}
     dsimp only at h
     split at h
     · rw [Except.ok.injEq] at h; subst h
-      exact hS.trans ((revertPriorityInheritance_runQueueStage _ _ _).window p)
+      exact hS.trans (((SystemState.unlinkReplyWaiter_runQueueStage _ _ _).trans
+        (revertPriorityInheritance_runQueueStage _ _ _)).window p)
     · rw [Except.ok.injEq] at h; subst h; exact hS
 
 /-- The bound-context timeout pass: a fold of timeouts, each of a thread blocked

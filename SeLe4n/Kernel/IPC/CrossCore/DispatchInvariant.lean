@@ -64,7 +64,7 @@ theorem endpointCallOnCore_ok_rendezvous_decompose
         (.blockedOnReply endpointId (some receiver)) none = .ok st4 ∧
       SystemState.linkServerStashedReply caller receiver st4 = .ok ((), st5) ∧
       (endpointCallOnCore endpointId caller msg executingCore st).1
-        = removeRunnableOnCore st5 caller executingCore := by
+        = (removeRunnableOnCore st5 caller executingCore).linkReplyWaiter caller receiver := by
   revert hOk
   unfold endpointCallOnCore
   split
@@ -160,7 +160,8 @@ theorem endpointCallOnCore_rendezvous_post_ipcState
   rw [hEq]
   constructor
   · intro tcb hTcb
-    obtain ⟨t5, hT5, hR⟩ := (removeRunnableOnCore_objectsAgreeOffRunLinks st5 caller executingCore).get_tcb'
+    obtain ⟨t5, hT5, hR⟩ := ((SystemState.linkReplyWaiter_objectsAgreeOffRunLinks _ caller receiver).trans
+      (removeRunnableOnCore_objectsAgreeOffRunLinks st5 caller executingCore)).get_tcb'
       ((getTcb?_eq_some_iff _ caller tcb).mp hTcb)
     obtain ⟨tcb4, hTcb4, hIpcEq⟩ := linkServerStashedReply_tcb_ipcState_backward st4 st5
       caller receiver caller t5 hInv4 hLink hT5
@@ -169,7 +170,8 @@ theorem endpointCallOnCore_rendezvous_post_ipcState
     exact ⟨endpointId, some receiver, by
       rw [TCB.proj_eq_of_withoutRunLinks_eq TCB.ipcState hR, ← hIpcEq, this]; exact hCallerBlocked⟩
   · intro tcb hTcb
-    obtain ⟨t5, hT5, hR⟩ := (removeRunnableOnCore_objectsAgreeOffRunLinks st5 caller executingCore).get_tcb'
+    obtain ⟨t5, hT5, hR⟩ := ((SystemState.linkReplyWaiter_objectsAgreeOffRunLinks _ caller receiver).trans
+      (removeRunnableOnCore_objectsAgreeOffRunLinks st5 caller executingCore)).get_tcb'
       ((getTcb?_eq_some_iff _ receiver tcb).mp hTcb)
     obtain ⟨tcb4, hTcb4, hIpcEq⟩ := linkServerStashedReply_tcb_ipcState_backward st4 st5
       caller receiver receiver t5 hInv4 hLink hT5

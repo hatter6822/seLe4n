@@ -462,10 +462,13 @@ open SeLe4n.Testing
 #check @lockSet_cancelIpcBlockingOnCore_endpointArm_covers_next
 #check @lockSet_cancelIpcBlockingOnCore_notificationArm_covers_prev
 #check @lockSet_cancelIpcBlockingOnCore_notificationArm_covers_next
-#check @lockSet_cancelIpcBlockingOnCore_size_le_thirteen
+#check @lockSet_cancelIpcBlockingOnCore_replyArm_covers_server
+#check @lockSet_cancelIpcBlockingOnCore_replyArm_covers_prev
+#check @lockSet_cancelIpcBlockingOnCore_replyArm_covers_next
+#check @lockSet_cancelIpcBlockingOnCore_size_le_sixteen
 #check @lockSet_cancelIpcBlockingOnCore_size_le_of_no_donation
 #check @lockSet_cancelIpcBlockingOnCore_size_le_of_donation
-#check @lockSet_tcbSuspendOnCore_size_le_seventeen
+#check @lockSet_tcbSuspendOnCore_size_le_twenty
 #check @lockSet_tcbSuspendOnCore_size_le
 -- ...and the frames that license it: the arms that declare no neighbour write
 -- none.
@@ -988,10 +991,14 @@ private def runReplyCancelChecks : IO Unit := do
     (decide (cancelArmSpliceNeighbors? staleTcb = (none, none)))
   let lsStale := lockSet_cancelIpcBlockingOnCore stReplyBlockedStaleLinks victimTid
   assertBool "no neighbour TCB write lock in the reply arm's footprint"
-    (decide ((tcbLock bystanderTid, AccessMode.write) ∉ lsStale.pairs
-      ∧ (tcbLock ownerTid, AccessMode.write) ∉ lsStale.pairs))
-  assertBool "...and the reply arm's footprint is within the sharp eight-member bound"
-    (decide (lsStale.size ≤ 8))
+    (decide ((tcbLock bystanderTid, AccessMode.write) ∉ lsStale.pairs))
+  -- WS-ZA ZA4.6: the stale successor happens to be the victim's recorded server,
+  -- which the reply arm now declares on its own account: `unlinkReplyWaiter`
+  -- rewrites the server's reply-waiter head and count.
+  assertBool "...the recorded server is declared, as the reply-waiter unlink writes it"
+    (decide ((tcbLock ownerTid, AccessMode.write) ∈ lsStale.pairs))
+  assertBool "...and the reply arm's footprint is within the sharp nine-member bound"
+    (decide (lsStale.size ≤ 9))
 
 -- ----------------------------------------------------------------------------
 -- Scenario D: actively RUNNING victim on a remote core (cross-core suspend).

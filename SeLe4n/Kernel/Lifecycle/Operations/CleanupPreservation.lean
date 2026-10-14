@@ -2055,7 +2055,15 @@ def lifecyclePreRetypeCleanup (st : SystemState) (target : SeLe4n.ObjId)
     -- pointing at the gone thread, so the later `.reply` resolves a stale caller and
     -- never consumes the Reply.  Mirrors the Reply reject + seL4 revoke-before-
     -- destroy: the outstanding reply must be replied-to / cancelled first.
-    if tcb.replyObject.isSome then .error .revocationRequired else .ok st
+    --
+    -- **WS-ZA ZA4.6: nor a server with callers still waiting on its reply.**
+    -- Destroying it left each waiter naming it as its server, and a TCB later
+    -- retyped at the same id inherited their priority boost past its own
+    -- maximum controlled priority.  A non-empty reply-waiter queue (its head
+    -- code is set) refuses the destroy until those callers are answered or
+    -- cancelled, as a Reply with a waiting caller is refused above.
+    if tcb.replyObject.isSome || tcb.replyWaitersHeadCode != 0 then .error .revocationRequired
+    else .ok st
   | .schedContext sc =>
     -- **WS-OD OD5.4: a scheduling context that heads a reply stack cannot be
     -- retyped.**
@@ -2354,11 +2362,11 @@ theorem lifecyclePreRetypeCleanup_flat_subset
       -- TCB still holding a reply link (`.error`, vacuous on `.ok`); reduce the
       -- reject-`if` away on the `.ok` path and finish the cleanup-identity proof.
       simp only [] at hOk
-      have hRO : tcb.replyObject.isSome = false := by
-        cases hr : tcb.replyObject.isSome with
+      have hRO : (tcb.replyObject.isSome || tcb.replyWaitersHeadCode != 0) = false := by
+        cases hr : (tcb.replyObject.isSome || tcb.replyWaitersHeadCode != 0) with
         | false => rfl
         | true => rw [if_pos hr] at hOk; exact absurd hOk (by simp)
-      rw [if_neg (by simp [hRO])] at hOk
+      rw [if_neg (by simp only [hRO]; exact Bool.false_ne_true)] at hOk
       injection hOk with hOk; subst hOk
       rw [cleanupTcbReferences_scheduler_eq_removeRunnableFromAllCores] at h
       -- Take the sweep off first (it handles its own per-core guard), then
@@ -2439,11 +2447,11 @@ theorem lifecyclePreRetypeCleanup_tlbShootdown_eq
       have hArmShoot : stArm.tlbShootdown = st.tlbShootdown :=
         cancelDonationArmOnCore_tlbShootdown_eq st stArm tcb.tid tcb hArm
       simp only [] at hOk
-      have hRO : tcb.replyObject.isSome = false := by
-        cases hr : tcb.replyObject.isSome with
+      have hRO : (tcb.replyObject.isSome || tcb.replyWaitersHeadCode != 0) = false := by
+        cases hr : (tcb.replyObject.isSome || tcb.replyWaitersHeadCode != 0) with
         | false => rfl
         | true => rw [if_pos hr] at hOk; exact absurd hOk (by simp)
-      rw [if_neg (by simp [hRO])] at hOk
+      rw [if_neg (by simp only [hRO]; exact Bool.false_ne_true)] at hOk
       injection hOk with hOk; subst hOk
       rw [cleanupTcbReferences_tlbShootdown_eq]
       exact hArmShoot

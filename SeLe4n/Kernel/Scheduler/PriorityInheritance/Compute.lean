@@ -10,6 +10,7 @@
 import SeLe4n.Kernel.Scheduler.PriorityInheritance.BlockingGraph
 import SeLe4n.Kernel.Scheduler.Operations.Selection
 import SeLe4n.Kernel.Scheduler.RunQueueLinkFrame
+import SeLe4n.Kernel.Scheduler.ReplyWaitersOps
 
 namespace SeLe4n.Kernel.PriorityInheritance
 
@@ -55,15 +56,21 @@ theorem computeMaxWaiterPriority_no_waiters (st : SystemState) (tid : ThreadId)
 -- ============================================================================
 
 /-- WS-RC R5.B.2 / Phase P1: `waitersOf` is invariant under an operation that
-    preserves the object table and object index.  This is the
-    `objects/objectIndex`-frame for the waiter list. -/
+    preserves the object table.  This is the `objects`-frame for the waiter
+    list; since WS-ZA ZA4.6 the list reads only reply views
+    (`waitersOf_of_replyViews`). -/
 theorem waitersOf_frame
     (st st' : SystemState) (tid : ThreadId)
-    (hObjects : st'.objects = st.objects)
-    (hObjIdx : st'.objectIndex = st.objectIndex) :
-    waitersOf st' tid = waitersOf st tid := by
-  unfold waitersOf SystemState.getObject?
-  rw [hObjIdx, hObjects]
+    (hObjects : st'.objects = st.objects) :
+    waitersOf st' tid = waitersOf st tid :=
+  SystemState.replyWaitersOf_of_replyViews (by unfold SystemState.replyViews SystemState.getObject?; rw [hObjects]) tid
+
+/-- WS-ZA ZA4.6: `waitersOf` reads reply views and nothing else. -/
+theorem waitersOf_of_replyViews
+    (st st' : SystemState) (tid : ThreadId)
+    (hR : st'.replyViews = st.replyViews) :
+    waitersOf st' tid = waitersOf st tid :=
+  SystemState.replyWaitersOf_of_replyViews hR tid
 
 /-- WS-RC R5.B.2 / Phase P1: `getSchedContext?` is invariant under an
     operation that preserves the object table. -/
@@ -142,8 +149,109 @@ private theorem computeMaxWaiterPriority_eq_cmwpFoldBody (st : SystemState) (tid
     computeMaxWaiterPriority st tid = (waitersOf st tid).foldl (cmwpFoldBody st) none := by
   rfl
 
+/-! WS-ZA ZA4.6: **the maximum as compiled.**  `computeMaxWaiterPriority` folds
+the waiter list; the compiled form walks the server's reply-waiter queue by its
+link codes and keeps the running maximum as a code (`0` for none, `p + 1` for
+priority `p`), so it builds neither the list nor an `Option` per waiter, and
+reads each TCB through `objectEntry?`, which allocates nothing. -/
+
+/-- The running maximum as an optional priority: `0` is none. -/
+@[inline] def maxCodeToPriority : Nat → Option SeLe4n.Priority
+  | 0 => none
+  | k + 1 => some ⟨k⟩
+
+/-- The walk of at most `n` waiters from the one code `c` names, folding each
+waiter's effective priority into the maximum code `acc`. -/
+def maxWaiterCode (st : SystemState) : Nat → Nat → Nat → Nat
+  | 0, _, acc => acc
+  | n + 1, c, acc =>
+    if c = 0 then acc else
+    match st.objectEntry? (⟨c - 1⟩ : ThreadId).toObjId with
+    | some e => match e.value with
+      | .tcb t => maxWaiterCode st n t.replyWaiterNextCode (Nat.max acc (t.boostedPriority.val + 1))
+      | _ => acc
+    | none => acc
+
+/-- WS-ZA ZA4.6: the compiled `computeMaxWaiterPriority` (see above). -/
+def computeMaxWaiterPriorityImpl (st : SystemState) (tid : ThreadId) : Option SeLe4n.Priority :=
+  maxCodeToPriority (match st.objectEntry? tid.toObjId with
+    | some e => match e.value with
+      | .tcb ts => maxWaiterCode st ts.replyWaitersCount ts.replyWaitersHeadCode 0
+      | _ => 0
+    | none => 0)
+
+/-- A TCB read through `objectEntry?` is the `getTcb?` read. -/
+private theorem objectEntry?_tcb_match (st : SystemState) (tid : ThreadId) {α : Sort _}
+    (f : TCB → α) (d : α) :
+    (match st.objectEntry? tid.toObjId with
+      | some e => match e.value with
+        | .tcb t => f t
+        | _ => d
+      | none => d) = (match st.getTcb? tid with
+        | some t => f t
+        | none => d) := by
+  unfold SystemState.getTcb?
+  rw [SystemState.objects_get?_eq_objectEntry?]
+  cases st.objectEntry? tid.toObjId with
+  | none => rfl
+  | some e => cases h : e.value <;> simp [h]
+
+private theorem cmwpFoldBody_code (st : SystemState) (a : Nat) (w : ThreadId) (t : TCB)
+    (h : st.getTcb? w = some t) :
+    cmwpFoldBody st (maxCodeToPriority a) w =
+      maxCodeToPriority (Nat.max a (t.boostedPriority.val + 1)) := by
+  unfold cmwpFoldBody
+  rw [h]
+  simp only []
+  rw [show (effectiveSchedParams st t) = ((effectiveSchedParams st t).1,
+      (effectiveSchedParams st t).2) from rfl, effectiveSchedParams_fst_eq_boostedPriority]
+  cases a with
+  | zero => simp [maxCodeToPriority]
+  | succ k => simp [maxCodeToPriority, Nat.succ_max_succ]
+
+private theorem maxWaiterCode_eq_fold (st : SystemState) :
+    ∀ (n : Nat) (cur : Option ThreadId) (a : Nat),
+      (st.replyWaitersWalk n cur).foldl (cmwpFoldBody st) (maxCodeToPriority a) =
+        maxCodeToPriority (maxWaiterCode st n (ThreadId.optCode cur) a)
+  | 0, _, _ => rfl
+  | _ + 1, none, _ => rfl
+  | n + 1, some w, a => by
+    simp only [SystemState.replyWaitersWalk, List.foldl_cons, maxWaiterCode, ThreadId.optCode,
+      Nat.add_one_ne_zero, if_false, Nat.add_sub_cancel]
+    have hE := objectEntry?_tcb_match st w
+      (fun t => maxWaiterCode st n t.replyWaiterNextCode (Nat.max a (t.boostedPriority.val + 1))) a
+    simp only [] at hE
+    rw [show (⟨w.val⟩ : ThreadId) = w from rfl, hE]
+    cases hT : st.getTcb? w with
+    | none =>
+      simp only [Option.bind_none]
+      unfold cmwpFoldBody; rw [hT]
+      cases n <;> rfl
+    | some t =>
+      simp only [Option.bind_some]
+      rw [cmwpFoldBody_code st a w t hT, maxWaiterCode_eq_fold st n t.replyWaiterNext]
+      simp only [TCB.replyWaiterNext, SeLe4n.ThreadId.optCode_ofOptCode]
+
+@[csimp] theorem computeMaxWaiterPriority_eq_impl :
+    @computeMaxWaiterPriority = @computeMaxWaiterPriorityImpl := by
+  funext st tid
+  rw [computeMaxWaiterPriority_eq_cmwpFoldBody]
+  unfold computeMaxWaiterPriorityImpl
+  have hE := objectEntry?_tcb_match st tid
+    (fun ts => maxWaiterCode st ts.replyWaitersCount ts.replyWaitersHeadCode 0) 0
+  simp only [] at hE
+  rw [hE]
+  unfold waitersOf SystemState.replyWaitersOf
+  cases st.getTcb? tid with
+  | none => rfl
+  | some ts =>
+    simp only []
+    rw [show (none : Option SeLe4n.Priority) = maxCodeToPriority 0 from rfl,
+      maxWaiterCode_eq_fold]
+    simp only [TCB.replyWaitersHead, SeLe4n.ThreadId.optCode_ofOptCode]
+
 /-- WS-RC R5.B.2 / Phase P1: `computeMaxWaiterPriority` is invariant under
-    an operation that preserves the object table and object index.
+    an operation that preserves the object table.
 
     This is the simplest "full frame": when the objects table is unchanged,
     every read site of `computeMaxWaiterPriority` (waitersOf,
@@ -156,35 +264,19 @@ private theorem computeMaxWaiterPriority_eq_cmwpFoldBody (st : SystemState) (tid
     `tcb.registerContext` — fields not read by `computeMaxWaiterPriority`. -/
 theorem computeMaxWaiterPriority_frame
     (st st' : SystemState) (tid : ThreadId)
-    (hObjects : st'.objects = st.objects)
-    (hObjIdx : st'.objectIndex = st.objectIndex) :
+    (hObjects : st'.objects = st.objects) :
     computeMaxWaiterPriority st' tid = computeMaxWaiterPriority st tid := by
-  -- Both reads (`waitersOf` and the fold body) only touch `st.objects` and
-  -- `st.objectIndex`; if both fields agree across `st` and `st'`, the
-  -- results agree.
+  -- Both reads (`waitersOf` and the fold body) only touch `st.objects`; if it
+  -- agrees across `st` and `st'`, the results agree.
   rw [computeMaxWaiterPriority_eq_cmwpFoldBody, computeMaxWaiterPriority_eq_cmwpFoldBody,
-      waitersOf_frame st st' tid hObjects hObjIdx]
+      waitersOf_frame st st' tid hObjects]
   exact computeMaxWaiterPriority_foldBody_frame st st' (waitersOf st tid) hObjects none
 
 /-! WS-ZA ZA4.5: the same reads across a step that writes only run-queue
 links.  A waiter's blocking edge, its priority, deadline, domain and binding are
-none of them run-queue fields, so every read agrees. -/
-
-theorem waitersOf_of_objectsAgreeOffRunLinks
-    (st st' : SystemState) (tid : ThreadId) (h : st'.objectsAgreeOffRunLinks st)
-    (hObjIdx : st'.objectIndex = st.objectIndex) :
-    waitersOf st' tid = waitersOf st tid := by
-  unfold waitersOf SystemState.getObject?
-  rw [hObjIdx]
-  congr 1
-  funext objId
-  cases e : st.objects[objId]? with
-  | none => rw [h.get_none_iff.mpr e]
-  | some o => cases o with
-    | tcb t =>
-      obtain ⟨t', _, _, _, _, _, _, ht', rfl⟩ := h.get_tcb_fwd e
-      rw [ht']; rfl
-    | _ => rw [h.get_of_not_tcb (fun _ e => KernelObject.noConfusion e) e]
+none of them run-queue fields, so every read agrees.  `objectsAgreeOffRunLinks`
+also leaves reply-waiter links free (WS-ZA ZA4.6), which the waiter list reads,
+so the step's caller states that the reply views agree (`hR`). -/
 
 private theorem cmwpFoldBody_of_objectsAgreeOffRunLinks
     (st st' : SystemState) (h : st'.objectsAgreeOffRunLinks st)
@@ -199,7 +291,7 @@ private theorem cmwpFoldBody_of_objectsAgreeOffRunLinks
       exact Option.not_isSome_iff_eq_none.mp (by rw [this]; decide)
     rw [hn]
   | some tc =>
-    obtain ⟨tc', _, _, _, _, _, _, ht', rfl⟩ :=
+    obtain ⟨tc', _, _, _, _, _, _, _, _, _, _, ht', rfl⟩ :=
       h.get_tcb_fwd ((SystemState.getTcb?_eq_some_iff st waiterTid tc).mp e)
     rw [(SystemState.getTcb?_eq_some_iff st' waiterTid tc').mpr ht']
     simp only [effectiveSchedParams_of_objectsAgreeOffRunLinks st st' _ h]
@@ -207,10 +299,10 @@ private theorem cmwpFoldBody_of_objectsAgreeOffRunLinks
 
 theorem computeMaxWaiterPriority_of_objectsAgreeOffRunLinks
     (st st' : SystemState) (tid : ThreadId) (h : st'.objectsAgreeOffRunLinks st)
-    (hObjIdx : st'.objectIndex = st.objectIndex) :
+    (hR : st'.replyViews = st.replyViews) :
     computeMaxWaiterPriority st' tid = computeMaxWaiterPriority st tid := by
   rw [computeMaxWaiterPriority_eq_cmwpFoldBody, computeMaxWaiterPriority_eq_cmwpFoldBody,
-      waitersOf_of_objectsAgreeOffRunLinks st st' tid h hObjIdx]
+      waitersOf_of_replyViews st st' tid hR]
   generalize (none : Option SeLe4n.Priority) = acc
   induction (waitersOf st tid) generalizing acc with
   | nil => rfl
@@ -231,7 +323,7 @@ theorem blockingServer_of_objectsAgreeOffRunLinks
       exact Option.not_isSome_iff_eq_none.mp (by rw [this]; decide)
     rw [hn]
   | some tc =>
-    obtain ⟨tc', _, _, _, _, _, _, ht', rfl⟩ :=
+    obtain ⟨tc', _, _, _, _, _, _, _, _, _, _, ht', rfl⟩ :=
       h.get_tcb_fwd ((SystemState.getTcb?_eq_some_iff st t tc).mp e)
     rw [(SystemState.getTcb?_eq_some_iff st' t tc').mpr ht']; rfl
 
@@ -239,10 +331,10 @@ theorem blockingServer_of_objectsAgreeOffRunLinks
 -- WS-RC R5.B.2 / Phase P1: Per-field frame for computeMaxWaiterPriority
 -- ============================================================================
 --
--- `computeMaxWaiterPriority` reads from `objects` (and `objectIndex`).  The
--- fields it actually consumes from each TCB are:
---   * `ipcState` (via `waitersOf` for waiterhood and `effectiveSchedParams`
---     for the binding lookup site).
+-- `computeMaxWaiterPriority` reads from `objects`.  The fields it actually
+-- consumes from each TCB are:
+--   * the reply view (`TCB.replyView`, via `waitersOf`, which walks the
+--     server's reply-waiter queue).
 --   * `priority`, `deadline`, `domain`, `pipBoost`, `schedContextBinding`
 --     (via `effectiveSchedParams` for the waiter's scheduling params).
 -- And from each SchedContext (via `effectiveSchedParams`):
@@ -280,7 +372,7 @@ theorem effectiveSchedParams_frame_per_field
     `computeMaxWaiterPriority`.  An object lookup at `objId` is either:
     - Identical in both states, or
     - A TCB rewrite preserving every field read by `waitersOf` and
-      `effectiveSchedParams` (i.e., `tid`, `ipcState`,
+      `effectiveSchedParams` (i.e., the reply view,
       `schedContextBinding`, `priority`, `deadline`, `domain`,
       `pipBoost`).
 
@@ -293,8 +385,7 @@ def computeMaxWaiterPriority_lookup_equiv
   ∃ tcb tcb',
     st.objects[objId]? = some (.tcb tcb) ∧
     st'.objects[objId]? = some (.tcb tcb') ∧
-    tcb'.tid = tcb.tid ∧
-    tcb'.ipcState = tcb.ipcState ∧
+    tcb'.replyView = tcb.replyView ∧
     tcb'.schedContextBinding = tcb.schedContextBinding ∧
     tcb'.priority = tcb.priority ∧
     tcb'.deadline = tcb.deadline ∧
@@ -303,48 +394,13 @@ def computeMaxWaiterPriority_lookup_equiv
 
 theorem waitersOf_frame_per_field
     (st st' : SystemState) (tid : ThreadId)
-    (hObjIdx : st'.objectIndex = st.objectIndex)
     (hEquiv : ∀ objId, computeMaxWaiterPriority_lookup_equiv st st' objId) :
     waitersOf st' tid = waitersOf st tid := by
-  unfold waitersOf
-  rw [hObjIdx]
-  -- Induction on the object index list.  At each objId, the filterMap body
-  -- reads objects[objId]? and (if TCB) tcb.ipcState and tcb.tid — all preserved.
-  induction st.objectIndex with
-  | nil => rfl
-  | cons head tail ih =>
-    simp only [List.filterMap]
-    -- Case-split on the lookup equivalence at `head` and on the result.
-    rcases hEquiv head with hSame | ⟨tcb, tcb', hPre, hPost, hTid, hIpc, _, _, _, _, _⟩
-    · -- Same lookup: rewrite st' to st in the discriminant.  Then both sides have
-      -- the same outer match; split on it.  `lookup_equiv` is stated over the
-      -- store, so the accessor is unfolded to meet it.
-      rw [SystemState.getObject?_congr_at hSame]
-      split
-      · exact ih
-      · rw [ih]
-    · -- TCB rewrite preserving tid + ipcState.  The per-slot equations are
-      -- stated over the store; `getObject?` is definitionally that read, so
-      -- they retype into accessor form in a local `have` and the rewrite then
-      -- touches only `head` -- unfolding the accessor in the goal would also
-      -- rewrite the tail and desynchronise `ih`.
-      have hPreA : st.getObject? head = some (.tcb tcb) := hPre
-      have hPostA : st'.getObject? head = some (.tcb tcb') := hPost
-      rw [hPreA, hPostA]
-      -- `waitersOf` reads the blocking edge through `TCB.blockingServer?` since
-      -- `v0.35.28`.  Its *frame* is what is needed here, not its equation: the
-      -- equation is universally quantified, so `simp only` with it rewrites the
-      -- tail's bound `tcb` too and desynchronises `ih` -- the hazard the comment
-      -- above already names, one accessor down.
-      -- The *frame*, not the equation: `TCB.blockingServer?_eq` is universally
-      -- quantified, so `simp only` with it rewrites the tail's bound `tcb` too
-      -- and desynchronises `ih` -- the hazard the comment above already names,
-      -- one accessor down.  `_congr hIpc` is an instance at these two terms, so
-      -- it reduces the head's match and touches nothing else.
-      simp only [TCB.blockingServer?_congr hIpc, hTid]
-      split
-      · exact ih
-      · rw [ih]
+  refine waitersOf_of_replyViews st st' tid (funext fun k => ?_)
+  unfold SystemState.replyViews SystemState.getObject?
+  rcases hEquiv k with hSame | ⟨tcb, tcb', hPre, hPost, hView, _⟩
+  · rw [hSame]
+  · rw [hPre, hPost, objReplyView_tcb, objReplyView_tcb, hView]
 
 /-- Helper: pointwise-equal closures produce equal `cmwpFoldBody` folds
     under the per-field equivalence frame.  This is the inductive
@@ -362,7 +418,7 @@ private theorem cmwpFoldBody_frame_per_field
     simp only [List.foldl_cons]
     have hStep : cmwpFoldBody st' acc head = cmwpFoldBody st acc head := by
       unfold cmwpFoldBody
-      rcases hEquiv head.toObjId with hSame | ⟨tcb, tcb', hPre, hPost, _, _, hBind, hPrio, hDl, hDom, hPip⟩
+      rcases hEquiv head.toObjId with hSame | ⟨tcb, tcb', hPre, hPost, _, hBind, hPrio, hDl, hDom, hPip⟩
       · rw [SystemState.getTcb?_congr_at hSame]
         -- After rewriting, both sides have same discriminant.  The inner bodies
         -- differ on effectiveSchedParams st' vs st.  Bridge via frame_per_field.
@@ -400,10 +456,10 @@ private theorem cmwpFoldBody_frame_per_field
     under a per-slot lookup-equivalence frame.
 
     For each `objId`, the lookup either is unchanged or is a TCB rewrite
-    preserving every field read by `waitersOf` (`tid`, `ipcState`) and
+    preserving every field read by `waitersOf` (the reply view) and
     by `effectiveSchedParams` (`schedContextBinding`, `priority`,
-    `deadline`, `domain`, `pipBoost`).  Together with `objectIndex`
-    preservation and `getSchedContext?` preservation, this implies
+    `deadline`, `domain`, `pipBoost`).  Together with `getSchedContext?`
+    preservation, this implies
     `computeMaxWaiterPriority` is preserved.
 
     Used by `schedule_preserves_computeMaxWaiterPriority` (Phase Q2):
@@ -411,12 +467,11 @@ private theorem cmwpFoldBody_frame_per_field
     `computeMaxWaiterPriority`), so the per-field frame applies. -/
 theorem computeMaxWaiterPriority_frame_per_field
     (st st' : SystemState) (tid : ThreadId)
-    (hObjIdx : st'.objectIndex = st.objectIndex)
     (hEquiv : ∀ objId, computeMaxWaiterPriority_lookup_equiv st st' objId)
     (hSc : ∀ scId, st'.getSchedContext? scId = st.getSchedContext? scId) :
     computeMaxWaiterPriority st' tid = computeMaxWaiterPriority st tid := by
   rw [computeMaxWaiterPriority_eq_cmwpFoldBody, computeMaxWaiterPriority_eq_cmwpFoldBody,
-      waitersOf_frame_per_field st st' tid hObjIdx hEquiv]
+      waitersOf_frame_per_field st st' tid hEquiv]
   exact cmwpFoldBody_frame_per_field st st' (waitersOf st tid) hEquiv hSc none
 
 -- ============================================================================
@@ -607,16 +662,15 @@ private theorem cmwpFoldBodyOnCore_fold_frame (st st' : SystemState) (c : CoreId
     exact ih _
 
 /-- WS-SM SM5.F.1: `computeMaxWaiterPriorityOnCore` is invariant under an operation
-that preserves the object table and object index — every read site
+that preserves the object table — every read site
 (`waitersOf`, `determineTargetCore`, `effectiveSchedParams`) depends only on
-`objects` / `objectIndex`.  The per-core analogue of `computeMaxWaiterPriority_frame`. -/
+`objects`.  The per-core analogue of `computeMaxWaiterPriority_frame`. -/
 theorem computeMaxWaiterPriorityOnCore_frame
     (st st' : SystemState) (c : CoreId) (tid : ThreadId)
-    (hObjects : st'.objects = st.objects)
-    (hObjIdx : st'.objectIndex = st.objectIndex) :
+    (hObjects : st'.objects = st.objects) :
     computeMaxWaiterPriorityOnCore st' c tid = computeMaxWaiterPriorityOnCore st c tid := by
   rw [computeMaxWaiterPriorityOnCore_eq_foldBody, computeMaxWaiterPriorityOnCore_eq_foldBody,
-      waitersOf_frame st st' tid hObjects hObjIdx]
+      waitersOf_frame st st' tid hObjects]
   exact cmwpFoldBodyOnCore_fold_frame st st' c (waitersOf st tid) hObjects none
 
 -- ============================================================================

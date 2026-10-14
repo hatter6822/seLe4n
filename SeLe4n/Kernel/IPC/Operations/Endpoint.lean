@@ -10,6 +10,7 @@
 import SeLe4n.Model.State
 import SeLe4n.Kernel.Scheduler.Operations.ReschedulePending
 import SeLe4n.Kernel.Scheduler.RunQueueLinkFrame
+import SeLe4n.Kernel.Scheduler.ReplyWaitersOps
 
 /-! # AN3-E.5 (IPC-M09) — `cleanupPreReceiveDonation` co-location banner.
 
@@ -6887,7 +6888,7 @@ The origin member is live only at the bottom of a stack, and at the bottom there
 no frame below the head to re-head and no outer caller to validate.  This is the
 same shape HP3.1 used for the splice's member — declared ceiling `+1`, reachable
 bounds unmoved — and it is what
-`lockSet_endpointReplyRecvOnCore_size_le_eighteen` consumes. -/
+`lockSet_endpointReplyRecvOnCore_size_le_twentyone` consumes. -/
 theorem replyStackBelowHead?_of_originRecipient (st : SystemState)
     {scId : SeLe4n.SchedContextId} {o : SeLe4n.ThreadId}
     (h : donationOriginRecipient? st scId = some o) :
@@ -8916,6 +8917,19 @@ theorem ensureRunnable_objectsAgreeOffRunLinks (st : SystemState) (tid : SeLe4n.
       · exact SystemState.runEnqueueAdmitted_objectsAgreeOffRunLinks _ _ _ _
       · exact .refl _
     · exact .refl _
+
+/-- WS-ZA ZA4.6: `ensureRunnable` writes run-queue links alone, so it keeps every
+reply view. -/
+theorem ensureRunnable_replyViews_eq (st : SystemState) (tid : SeLe4n.ThreadId) :
+    (ensureRunnable st tid).replyViews = st.replyViews := by
+  unfold ensureRunnable
+  split
+  · rfl
+  · split
+    · split
+      · exact SystemState.runEnqueueAdmitted_replyViews_eq _ _ _ _
+      · rfl
+    · rfl
 
 theorem ensureRunnable_objects_invExt (st : SystemState) (tid : SeLe4n.ThreadId)
     (hInv : st.objects.invExt) : (ensureRunnable st tid).objects.invExt := by

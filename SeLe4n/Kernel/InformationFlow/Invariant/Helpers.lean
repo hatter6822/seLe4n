@@ -234,7 +234,7 @@ theorem projectObjects_of_objectsAgreeOffRunLinks
     | none => rw [h.get_none_iff.mpr e]
     | some o => cases o with
       | tcb t =>
-        obtain ⟨t', _, _, _, _, _, _, ht', rfl⟩ := h.get_tcb_fwd e
+        obtain ⟨t', _, _, _, _, _, _, _, _, _, _, ht', rfl⟩ := h.get_tcb_fwd e
         rw [ht']; rfl
       | _ => rw [h.get_of_not_tcb (fun _ e => KernelObject.noConfusion e) e]
   · rfl
@@ -248,6 +248,31 @@ theorem projectState_of_objects_only (ctx : LabelingContext) (observer : IfObser
   unfold projectState
   rw [hO, hS]
   rfl
+
+/-- WS-ZA ZA4.6: joining a server's reply-waiter queue writes only reply-waiter
+links, which the projection erases, so the projection is unchanged whoever the
+caller, server and old head are. -/
+theorem linkReplyWaiter_preserves_projection (ctx : LabelingContext) (observer : IfObserver)
+    (st : SystemState) (w s : SeLe4n.ThreadId) :
+    projectState ctx observer (st.linkReplyWaiter w s) = projectState ctx observer st :=
+  projectState_of_objects_only ctx observer (SystemState.linkReplyWaiter_eq_objects st w s)
+    (projectObjects_of_objectsAgreeOffRunLinks ctx observer
+      (SystemState.linkReplyWaiter_objectsAgreeOffRunLinks st w s))
+
+/-- WS-ZA ZA4.6: leaving a server's reply-waiter queue, likewise. -/
+theorem unlinkReplyWaiter_preserves_projection (ctx : LabelingContext) (observer : IfObserver)
+    (st : SystemState) (w s : SeLe4n.ThreadId) :
+    projectState ctx observer (st.unlinkReplyWaiter w s) = projectState ctx observer st :=
+  projectState_of_objects_only ctx observer (SystemState.unlinkReplyWaiter_eq_objects st w s)
+    (projectObjects_of_objectsAgreeOffRunLinks ctx observer
+      (SystemState.unlinkReplyWaiter_objectsAgreeOffRunLinks st w s))
+
+theorem unlinkReplyWaiterOpt_preserves_projection (ctx : LabelingContext)
+    (observer : IfObserver) (st : SystemState) (w : SeLe4n.ThreadId) (s? : Option SeLe4n.ThreadId) :
+    projectState ctx observer (st.unlinkReplyWaiterOpt w s?) = projectState ctx observer st := by
+  cases s? with
+  | none => rfl
+  | some s => exact unlinkReplyWaiter_preserves_projection ctx observer st w s
 
 /-- WS-ZA ZA4.4: a signal's pop writes the old head and its successor, each only
 in its notification links; with both threads high the projection is unchanged. -/
