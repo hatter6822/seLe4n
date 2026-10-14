@@ -968,11 +968,11 @@ the honest constant is the one the definition can produce.
 first factor (`maxLockSetSize · (numCores − 1) · tCs`), so each raise narrows the
 per-lock critical section the 1 ms budget allows: 37 µs at nine, 30 µs at eleven,
 25 µs at thirteen, 23 µs at fourteen, 20 µs at sixteen, 15 µs at twenty-one and
-twenty-two, 14 µs at twenty-three and 13 µs at twenty-four
-(`admissibleCriticalSection_rpi5Tick`), widening the CC-5 contention bound in
+twenty-two, 14 µs at twenty-three, 13 µs at twenty-four and 12 µs at
+twenty-seven (`admissibleCriticalSection_rpi5Tick`), widening the CC-5 contention bound in
 proportion each time.
 
-At the value above, the declared lock-set ceiling is **24**, the RPi5 tick admits **13 µs** per lock, and the uniform 60 µs envelope is **4320 µs**.
+At the value above, the declared lock-set ceiling is **27**, the RPi5 tick admits **12 µs** per lock, and the uniform 60 µs envelope is **4860 µs**.
 The figure is *derived* from this constant and must be
 read off that theorem rather than from this paragraph: at twenty-two the tick
 admits `22 · 3 · 15 = 990 µs ≤ 1000`, and quoting a superseded per-lock cost
@@ -1075,7 +1075,7 @@ caller — are `some` only when it **is**.  (That exclusion needed a *stated*
 coherence fact until WS-HP HP6.2 repointed the footprints onto the pop's own
 trigger, under which a frame heading a context provably has no frame above it
 (`answeredReplyFrameAbove?_none_of_headContext`), so
-`lockSet_endpointReplyRecvOnCore_size_le_eighteen` states it with no hypothesis at
+`lockSet_endpointReplyRecvOnCore_size_le_twentyone` states it with no hypothesis at
 all; HP7 then deleted the fact, which by then had no consumer.)  So a
 reachable footprint trades three members for one and the reachable figures do not
 move; twenty-two is the union over argument values no state realises together.
@@ -1097,7 +1097,7 @@ transition goes live only after the proofs that cover it.  It is resolved
 `answeredReplyFrameAbove?` first), so a frame with nothing above it declares no
 below-member with no invariant at all, and the two reachable `.replyRecv` figures
 are unmoved at eighteen and seventeen; what absorbs it is the unconditional
-`lockSet_endpointReplyRecvOnCore_size_le_twenty`.  This raise *does* cost the
+`lockSet_endpointReplyRecvOnCore_size_le_twentytwo`.  This raise *does* cost the
 admissible section: `1000 / (23 · 3) = 14` µs, and the uniform 60 µs envelope
 moves 3960 → 4140 µs.
 
@@ -1111,7 +1111,16 @@ the origin member is live only at the bottom of a stack, where the two below-hea
 members are absent (`replyStackBelowHead?_of_originRecipient`), so a reachable
 footprint trades two members for one — and the cost is the admissible section
 again: `1000 / (24 · 3) = 13` µs, with the uniform 60 µs envelope moving
-4140 → 4320 µs. -/
-def maxLockSetSize : Nat := 24
+4140 → 4320 µs.
+
+**WS-ZA ZA4.6 takes it to twenty-seven**, for the reply-waiter queue that
+priority inheritance walks: the reply leg's `unlinkReplyWaiter` links the
+answered caller's predecessor and successor past it, and the receive leg's call
+rendezvous relinks the replier's old head (`linkReplyWaiter`), three TCBs no
+member covered.  The reachable figures move with it, by three on a rendezvous and
+by two on a blocking receive, where no caller is linked; the admissible section
+becomes `1000 / (27 · 3) = 12` µs, and the uniform 60 µs envelope moves
+4320 → 4860 µs. -/
+def maxLockSetSize : Nat := 27
 
 end SeLe4n.Kernel.Concurrency

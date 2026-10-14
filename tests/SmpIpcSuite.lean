@@ -4908,6 +4908,14 @@ private def runRetypeReservationChecks : IO Unit := do
       -- leave them naming a server whose id a later retype reuses.
       assertBool "(a) the live retype of a holder with a reply waiter is refused"
         (liveRetypeTcb stDon donServer).isNone
+      -- WS-ZA ZA4.6 regression: the refusal is `revocationRequired`, and it is the
+      -- reply-waiter clause that refuses (the server holds no reply object, above).
+      assertBool "(a) REGRESSION: the refusal is revocationRequired, from the reply-waiter queue"
+        ((match lifecycleRetypeDirectWithCleanup (retypeCapOn donServer.toObjId)
+              donServer.toObjId retypeReplacement stDon with
+          | .error .revocationRequired => true
+          | _ => false)
+          && serverTcb.replyWaitersHeadCode != 0)
       -- PAYOFF: the reservation arm the retype runs (also the suspend's G3 arm)
       -- migrates the replenishment with the return.
       match okExcept (cancelDonationArmOnCore stDon donServer serverTcb) with

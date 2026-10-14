@@ -124,6 +124,21 @@ open SeLe4n.Kernel.LinkedQueue
     | _ => 0
   | none => 0
 
+/-- `s`'s reply-waiter head: the thread `linkReplyWaiter _ s` relinks, which a
+lock footprint that links onto `s`'s queue declares. -/
+def replyWaitersHead? (st : SystemState) (s : ThreadId) : Option ThreadId :=
+  ThreadId.ofOptCode (st.replyHeadCode s)
+
+/-- `w`'s reply-waiter predecessor: one of the two threads
+`unlinkReplyWaiter w _` relinks. -/
+def replyWaiterPrev? (st : SystemState) (w : ThreadId) : Option ThreadId :=
+  ThreadId.ofOptCode (st.replyPrevCode w)
+
+/-- `w`'s reply-waiter successor: the other thread `unlinkReplyWaiter w _`
+relinks. -/
+def replyWaiterNext? (st : SystemState) (w : ThreadId) : Option ThreadId :=
+  ThreadId.ofOptCode (st.replyNextCode w)
+
 /-- WS-ZA ZA4.6: **`w` joins the front of server `s`'s reply-waiter queue**:
 `w` links forward to the old head, the old head links back to `w`, and `s`'s
 head and count move.  For a thread on no reply-waiter queue; the caller writes

@@ -68,6 +68,10 @@ open SeLe4n.Testing
 #check @sendSideQueueStructureNeighbor?_rendezvous
 #check @sendSideQueueStructureNeighbor?_block
 #check @lockSet_endpointCallOnCore_covers_queueNeighbour
+#check @lockSet_endpointCallOnCore_covers_replyWaiterOldHead
+#check @lockSet_endpointReceiveOnCore_covers_replyWaiterOldHead
+#check @lockSet_endpointReplyOnCore_covers_replyWaiterNeighbours
+#check @lockSet_endpointReplyRecvOnCore_covers_replyWaiters
 #check @lockSet_endpointSendOnCore_covers_queueNeighbour
 #check @lockSetForSyscall_call_covers_queueNeighbour
 #check @lockSetForSyscall_send_covers_queueNeighbour
