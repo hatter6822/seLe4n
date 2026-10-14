@@ -693,9 +693,10 @@ inductive RegisterRoutedSyscall where
       words: its operand address and its message info; the words are the
       inline message registers. -/
   | send (capAddr : CPtr) (msgInfo : MessageInfo)
-  /-- WS-ZA ZA4.7: a receive that names no reply object (message length 0):
-      its operand address. -/
-  | receive (capAddr : CPtr)
+  /-- WS-ZA ZA4.7: a receive: its operand address, its message length and,
+      when the length is nonzero, the first message register (the reply
+      object's capability address), read as the decode reads it. -/
+  | receive (capAddr : CPtr) (len mr0 : Nat)
   | viaDecode
 
 /-- WS-ZA ZA4.2: register `r`'s word, as `readReg` reads it, without the
@@ -736,9 +737,10 @@ theorem readReg_val_eq_word (rf : RegisterFile) (r : RegName) :
         else if (readReg regs layout.syscallNumReg).val = SyscallId.send.toNat ∧
             msgInfo.extraCaps = 0 then
           .send capAddr msgInfo
-        else if (readReg regs layout.syscallNumReg).val = SyscallId.receive.toNat ∧
-            msgInfo.length = 0 then
-          .receive capAddr
+        else if (readReg regs layout.syscallNumReg).val = SyscallId.receive.toNat then
+          if h0 : 0 < layout.msgRegs.size then
+            .receive capAddr msgInfo.length (readReg regs layout.msgRegs[0]).val
+          else .receive capAddr msgInfo.length 0
         else .viaDecode
       else .viaDecode
   else .viaDecode
@@ -798,7 +800,7 @@ theorem decodeSyscallArgsFromState_of_routedSignal
         · cases h
       · split at h
         · cases h
-        · split at h <;> (try split at h) <;> (try split at h) <;> cases h
+        · split at h <;> (try split at h) <;> (try split at h) <;> (try split at h) <;> cases h
     · cases h
   · cases h
 
@@ -827,7 +829,7 @@ theorem decodeSyscallArgsFromState_of_routedWait
           cases h
           exact ⟨_, decodeSyscallArgsFromState_of_routed st tid layout regs regCount _ mi _
             hB hC hM hLen hS, rfl, rfl, rfl⟩
-        · split at h <;> (try split at h) <;> (try split at h) <;> cases h
+        · split at h <;> (try split at h) <;> (try split at h) <;> (try split at h) <;> cases h
     · cases h
   · cases h
 
@@ -857,7 +859,7 @@ theorem decodeSyscallArgsFromState_of_routedYield
           · next hS =>
             exact ⟨_, decodeSyscallArgsFromState_of_routed st tid layout regs regCount _ mi _
               hB hC hM hLen hS, rfl, rfl⟩
-          · split at h <;> (try split at h) <;> cases h
+          · split at h <;> (try split at h) <;> (try split at h) <;> cases h
     · cases h
   · cases h
 
@@ -895,7 +897,7 @@ theorem decodeSyscallArgsFromState_of_routedSend
               cases h
               exact ⟨_, decodeSyscallArgsFromState_of_routed st tid layout regs regCount _ _ _
                 hB hC hM hLen hS.1, rfl, rfl, rfl, rfl, hS.2, rfl, rfl⟩
-            · split at h <;> cases h
+            · split at h <;> (try split at h) <;> cases h
     · cases h
   · cases h
 
@@ -904,12 +906,13 @@ theorem decodeSyscallArgsFromState_of_routedSend
 theorem decodeSyscallArgsFromState_of_routedReceive
     (st : SystemState) (tid : ThreadId)
     (layout : SyscallRegisterLayout) (regs : RegisterFile) (regCount : Nat)
-    (capAddr : CPtr)
-    (h : registerRoutedSyscall layout regs regCount = .receive capAddr) :
+    (capAddr : CPtr) (len mr0 : Nat)
+    (h : registerRoutedSyscall layout regs regCount = .receive capAddr len mr0) :
     ∃ decoded, decodeSyscallArgsFromState st tid layout regs regCount = .ok decoded ∧
       decoded.syscallId = .receive ∧ decoded.capAddr = capAddr ∧
-      decoded.overflowCount = 0 ∧ decoded.msgInfo.length = 0 ∧
-      decoded.capRecvSlot = SeLe4n.Slot.ofNat 0 := by
+      decoded.overflowCount = 0 ∧ decoded.msgInfo.length = len ∧
+      decoded.capRecvSlot = SeLe4n.Slot.ofNat 0 ∧
+      (len ≠ 0 → decoded.msgRegs[0]? = some ⟨mr0⟩) := by
   unfold registerRoutedSyscall at h
   split at h
   · next hB =>
@@ -930,9 +933,17 @@ theorem decodeSyscallArgsFromState_of_routedReceive
             · cases h
             · split at h
               · next hS =>
-                cases h
-                exact ⟨_, decodeSyscallArgsFromState_of_routed st tid layout regs regCount _ _ _
-                  hB hC hM hLen hS.1, rfl, rfl, rfl, hS.2, rfl⟩
+                have hD := decodeSyscallArgsFromState_of_routed st tid layout regs regCount _ _ _
+                  hB hC hM hLen hS
+                split at h
+                · next h0 =>
+                  cases h
+                  refine ⟨_, hD, rfl, rfl, rfl, rfl, rfl, fun _ => ?_⟩
+                  simp only [Array.getElem?_map, Array.getElem?_eq_getElem h0, Option.map_some]
+                · next h0 =>
+                  cases h
+                  refine ⟨_, hD, rfl, rfl, rfl, rfl, rfl, fun hN => ?_⟩
+                  exact absurd (Nat.lt_of_lt_of_le (Nat.pos_of_ne_zero hN) hLen) h0
               · cases h
     · cases h
   · cases h
