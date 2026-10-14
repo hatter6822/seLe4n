@@ -48,6 +48,15 @@ theorem messageOverflowWrites_of_size_le (st : SystemState) (tcb : TCB) (msg : I
   rw [List.drop_eq_nil_of_le (by simpa using h)]
   rfl
 
+/-- The delivered frame's six words written into a thread's saved registers,
+the held message dropped: `TCB.withDeliveredFrame` with the frame's words as
+arguments, so the write captures six machine words and no frame record. -/
+@[inline] def withFrameWords (w0 w1 w2 w3 w4 w5 : UInt64) (t : TCB) : TCB :=
+  let rf := t.registerContext
+  let rf' : SeLe4n.RegisterFile :=
+    { rf with x0 := w0, x1 := w1, x2 := w2, x3 := w3, x4 := w4, x5 := w5 }
+  { t with registerContext := rf', pendingMessage := none }
+
 /-- **The delivered frame, written into a ready thread's saved registers**; a
 thread that is not ready is handed to `otherwise`, and a key holding no thread
 is left alone.  What the specification's stage does to a thread holding a
@@ -55,7 +64,8 @@ message of at most four words (`stageDeliveredMessage_holdMessage`). -/
 @[inline] def writeDeliveredFrameIfReady (st : SystemState) (r : SeLe4n.ThreadId)
     (f : Architecture.SyscallReturnFrame) (otherwise : Unit → SystemState) : SystemState :=
   match st.getTcb? r with
-  | some t => if t.ipcState = .ready then Architecture.writeDeliveredFrameToTcb st r f
+  | some t => if t.ipcState = .ready then
+        st.mapTcbInPlace r (withFrameWords f.x0 f.x1 f.x2 f.x3 f.x4 f.x5)
       else otherwise ()
   | none => st
 
@@ -76,8 +86,7 @@ theorem stageDeliveredMessage_holdMessage (X : SystemState) (r : SeLe4n.ThreadId
     split
     · rw [messageOverflowWrites_of_size_le _ _ _ hSz, Architecture.recordPhysicalWrites_nil]
       unfold Architecture.writeDeliveredFrameToTcb
-      rw [SystemState.updateTcb_eq_mapTcbInPlace _ _ _ hNo,
-        SystemState.updateTcb_eq_mapTcbInPlace (X.mapTcbInPlace r (holdMessage msg)) _ _ hNo,
+      rw [SystemState.updateTcb_eq_mapTcbInPlace (X.mapTcbInPlace r (holdMessage msg)) _ _ hNo,
         SystemState.mapTcbInPlace_mapTcbInPlace]
       rfl
     · rfl
@@ -215,6 +224,15 @@ theorem propagatePipChainCrossCore_noResizeDue (st : SystemState) (tid : SeLe4n.
   rw [PriorityInheritance.propagatePipChainCrossCore_eq_walks]
   exact propagatePipChainStateWalk_noResizeDue st tid _ hNo
 
+/-- The fallback of a delivery: the message built and held, as the
+specification holds it.  Kept out of line so the message record is built only
+on this path, never shared with the frame's reads. -/
+@[noinline] def holdDeliveredBody (X : SystemState) (r : SeLe4n.ThreadId)
+    (body : Array SeLe4n.RegValue) (badge : Option SeLe4n.Badge) (granted : Bool) :
+    SystemState :=
+  X.mapTcbInPlace r
+    (holdMessage { registers := body, caps := #[], badge := badge, capsGranted := granted })
+
 /-- **The call rendezvous, delivered**: the receiver woken without the message,
 the priority walk, then the message's frame written into the receiver's saved
 registers.  The message is built only where the receiver is, unexpectedly, not
@@ -228,8 +246,7 @@ ready (`writeDeliveredFrameIfReady`'s `otherwise`). -/
   writeDeliveredFrameIfReady X r
     (Architecture.returnFrameOfMessage
       { registers := body, caps := #[], badge := badge, capsGranted := granted } 0 0)
-    (fun _ => X.mapTcbInPlace r
-      (holdMessage { registers := body, caps := #[], badge := badge, capsGranted := granted }))
+    (fun _ => holdDeliveredBody X r body badge granted)
 
 /-- **The staged call rendezvous is the delivered one** for a message of at most
 four words. -/
@@ -248,6 +265,7 @@ theorem stageWokenDelivery_performCallRendezvous (st : SystemState) (endpointId 
   rw [storeCallRendezvous_eq_hold _ _ _ _ _ _ _ _ hNo hNe,
     propagatePipChainCrossCore_msg _ _ _ _ _ _ hNoS, Architecture.stageWokenDelivery_some,
     stageDeliveredMessage_holdMessage _ _ _ (propagatePipChainCrossCore_noResizeDue _ _ _ hNoS) hSz]
+  rfl
 
 /-- `storeReplyRendezvous` with the caller woken holding no message. -/
 @[noinline] def storeReplyRendezvousReady (st : SystemState) (c server : SeLe4n.ThreadId)
@@ -299,7 +317,7 @@ registers. -/
     (storeReplyRendezvousReady st c server rid) server core).1
   writeDeliveredFrameIfReady X c
     (Architecture.returnFrameOfMessage { registers := body, caps := #[], badge := badge } 0 0)
-    (fun _ => X.mapTcbInPlace c (holdMessage { registers := body, caps := #[], badge := badge }))
+    (fun _ => holdDeliveredBody X c body badge false)
 
 /-- **The reply rendezvous is the delivered one** for a message of at most four
 words. -/
@@ -312,6 +330,7 @@ theorem performReplyRendezvous_eq_delivered (st : SystemState) (c server : SeLe4
   unfold performReplyRendezvous performReplyDelivered
   rw [storeReplyRendezvous_eq_hold _ _ _ _ _ hNo, propagatePipChainCrossCore_msg _ _ _ _ _ _ hNoS,
     stageDeliveredMessage_holdMessage _ _ _ (propagatePipChainCrossCore_noResizeDue _ _ _ hNoS) hSz]
+  rfl
 
 theorem callWakesInPlace_noResizeDue {st : SystemState} {endpointId : SeLe4n.ObjId}
     {caller r : SeLe4n.ThreadId} {rt : TCB} {rid : SeLe4n.ReplyId}
