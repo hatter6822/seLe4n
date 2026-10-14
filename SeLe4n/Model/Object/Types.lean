@@ -2347,6 +2347,10 @@ namespace Endpoint
 @[simp] theorem receiveQ_ofQueues (s r : IntrusiveQueue) : (ofQueues s r).receiveQ = r := by
   simp only [receiveQ, ofQueues, SeLe4n.ThreadId.ofOptCode_optCode]
 
+/-- The send queue's head read from its code is the view's head. -/
+theorem ofOptCode_sendHeadCode (e : Endpoint) :
+    SeLe4n.ThreadId.ofOptCode e.sendHeadCode = e.sendQ.head := rfl
+
 /-- The receive queue's head read from its code is the view's head. -/
 theorem ofOptCode_recvHeadCode (e : Endpoint) :
     SeLe4n.ThreadId.ofOptCode e.recvHeadCode = e.receiveQ.head := rfl
