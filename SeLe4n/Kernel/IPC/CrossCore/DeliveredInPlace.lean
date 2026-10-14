@@ -24,7 +24,7 @@ open SeLe4n.Model SeLe4n.Kernel.RobinHood SeLe4n.Kernel.Concurrency
 
 /-- The write that holds a delivered message in the receiver's TCB. -/
 abbrev holdMessage (msg : IpcMessage) : TCB → TCB :=
-  TCB.withMessageSlots id (fun _ => some msg)
+  TCB.withMessageSlots id (fun _ => some msg) id
 
 theorem mapTcbInPlace_eq_self_of_getTcb?_none (st : SystemState) (t : SeLe4n.ThreadId)
     (g : TCB → TCB) (h : st.getTcb? t = none) : st.mapTcbInPlace t g = st := by
@@ -145,12 +145,12 @@ end NoResize
 theorem modifyObject_msg (r : SeLe4n.ThreadId) (ρ : SeLe4n.RegisterFile → SeLe4n.RegisterFile)
     (μ : Option IpcMessage → Option IpcMessage) (st : SystemState) (x : SeLe4n.ObjId)
     (F : KernelObject → KernelObject) (hNo : st.objects.noResizeDue)
-    (hF : ∀ o, F (KernelObject.mapTcb (TCB.withMessageSlots ρ μ) o) =
-      KernelObject.mapTcb (TCB.withMessageSlots ρ μ) (F o)) :
-    (st.mapTcbInPlace r (TCB.withMessageSlots ρ μ)).modifyObject x F =
-      (st.modifyObject x F).mapTcbInPlace r (TCB.withMessageSlots ρ μ) := by
+    (hF : ∀ o, F (KernelObject.mapTcb (TCB.withMessageSlots ρ μ π) o) =
+      KernelObject.mapTcb (TCB.withMessageSlots ρ μ π) (F o)) :
+    (st.mapTcbInPlace r (TCB.withMessageSlots ρ μ π)).modifyObject x F =
+      (st.modifyObject x F).mapTcbInPlace r (TCB.withMessageSlots ρ μ π) := by
   rw [SystemState.modifyObject_eq_mapValueAt _ _ _ hNo,
-    SystemState.modifyObject_eq_mapValueAt (st.mapTcbInPlace r (TCB.withMessageSlots ρ μ)) _ _ hNo]
+    SystemState.modifyObject_eq_mapValueAt (st.mapTcbInPlace r (TCB.withMessageSlots ρ μ π)) _ _ hNo]
   exact SystemState.mapTcbInPlace_swap_objects st r _ x F (fun _ => hF)
 
 /-- The receiver a call or a reply wakes, ready, with no message held. -/
@@ -204,19 +204,19 @@ theorem storeCallRendezvous_eq_hold (st : SystemState) (endpointId : SeLe4n.ObjI
       holdMessage_receiverReady]
   have hNo2 := updateTcb_noResizeDue _ r receiverReady hNo1
   generalize (storePopHead st endpointId r next).updateTcb r receiverReady = s2 at hHold hNo2
-  rw [hHold, determineTargetCore_msg, enqueueRunnableOnCore_msg _ _ _ _ _ _ hNo2]
+  rw [hHold, determineTargetCore_msg, enqueueRunnableOnCore_msg _ _ _ _ _ _ _ hNo2]
   have hNo3 := enqueueRunnableOnCore_noResizeDue s2 (determineTargetCore s2 r) r hNo2
   generalize enqueueRunnableOnCore s2 (determineTargetCore s2 r) r = s3 at hNo3
-  rw [updateTcb_msg _ _ _ _ _ _ hNo3 (fun h => absurd h hNe)]
+  rw [updateTcb_msg _ _ _ _ _ _ _ hNo3 (fun h => absurd h hNe)]
   have hNo4 := updateTcb_noResizeDue s3 caller (callCallerTcb endpointId r) hNo3
   generalize s3.updateTcb caller (callCallerTcb endpointId r) = s4 at hNo4
   rw [modifyObject_msg _ _ _ _ _ _ hNo4 (fun o => by cases o <;> rfl)]
   have hNo5 := modifyObject_noResizeDue s4 rid.toObjId (replyWithCaller caller) hNo4
   generalize s4.modifyObject rid.toObjId (replyWithCaller caller) = s5 at hNo5
-  rw [updateTcb_msg _ _ _ _ _ _ hNo5 (fun h => absurd h hNe)]
+  rw [updateTcb_msg _ _ _ _ _ _ _ hNo5 (fun h => absurd h hNe)]
   have hNo6 := updateTcb_noResizeDue s5 caller (fun t => { t with replyObject := some rid }) hNo5
   generalize s5.updateTcb caller (fun t => { t with replyObject := some rid }) = s6 at hNo6
-  rw [updateTcb_msg _ _ _ _ _ _ hNo6 ?_, removeRunnableOnCore_msg, linkReplyWaiter_msg]
+  rw [updateTcb_msg _ _ _ _ _ _ _ hNo6 ?_, removeRunnableOnCore_msg, linkReplyWaiter_msg]
   intros; rfl
 
 theorem propagatePipChainCrossCore_noResizeDue (st : SystemState) (tid : SeLe4n.ThreadId)
@@ -266,7 +266,7 @@ theorem stageWokenDelivery_performCallRendezvous (st : SystemState) (endpointId 
   have hNoS := storeCallRendezvousReady_noResizeDue st endpointId caller r next rid core hNo
   unfold performCallRendezvous performCallDelivered
   rw [storeCallRendezvous_eq_hold _ _ _ _ _ _ _ _ hNo hNe,
-    propagatePipChainCrossCore_msg _ _ _ _ _ _ hNoS, Architecture.stageWokenDelivery_some,
+    propagatePipChainCrossCore_msg _ _ _ _ _ _ _ hNoS, Architecture.stageWokenDelivery_some,
     stageDeliveredMessage_holdMessage _ _ _ (propagatePipChainCrossCore_noResizeDue _ _ _ hNoS)
       (by rw [Architecture.regMessageBody_size]; exact hSz),
     Architecture.returnFrameOfMessage_regMessageBody]
@@ -303,13 +303,13 @@ theorem storeReplyRendezvous_eq_hold (st : SystemState) (c server : SeLe4n.Threa
       holdMessage_receiverReady]
   have hNo1 := updateTcb_noResizeDue st c receiverReady hNo
   generalize st.updateTcb c receiverReady = s1 at hHold hNo1
-  rw [hHold, determineTargetCore_msg, enqueueRunnableOnCore_msg _ _ _ _ _ _ hNo1]
+  rw [hHold, determineTargetCore_msg, enqueueRunnableOnCore_msg _ _ _ _ _ _ _ hNo1]
   have hNo2 := enqueueRunnableOnCore_noResizeDue s1 (determineTargetCore s1 c) c hNo1
   generalize enqueueRunnableOnCore s1 (determineTargetCore s1 c) c = s2 at hNo2
   rw [modifyObject_msg _ _ _ _ _ _ hNo2 (fun o => by cases o <;> rfl)]
   have hNo3 := modifyObject_noResizeDue s2 rid.toObjId replyConsumedObject hNo2
   generalize s2.modifyObject rid.toObjId replyConsumedObject = s3 at hNo3
-  rw [updateTcb_msg _ _ _ _ _ _ hNo3 ?_, unlinkReplyWaiter_msg]
+  rw [updateTcb_msg _ _ _ _ _ _ _ hNo3 ?_, unlinkReplyWaiter_msg]
   intros; rfl
 
 /-- **The reply, delivered**: the caller woken without the message, the
@@ -339,7 +339,7 @@ theorem performReplyRendezvous_eq_delivered (st : SystemState) (c server : SeLe4
       performReplyDelivered st c server rid layout rf mi badge core := by
   have hNoS := storeReplyRendezvousReady_noResizeDue st c server rid hNo
   unfold performReplyRendezvous performReplyDelivered
-  rw [storeReplyRendezvous_eq_hold _ _ _ _ _ hNo, propagatePipChainCrossCore_msg _ _ _ _ _ _ hNoS,
+  rw [storeReplyRendezvous_eq_hold _ _ _ _ _ hNo, propagatePipChainCrossCore_msg _ _ _ _ _ _ _ hNoS,
     stageDeliveredMessage_holdMessage _ _ _ (propagatePipChainCrossCore_noResizeDue _ _ _ hNoS)
       (by rw [Architecture.regMessageBody_size]; exact hSz),
     Architecture.returnFrameOfMessage_regMessageBody]
@@ -422,5 +422,114 @@ theorem replyRendezvousDelivered_eq (st : SystemState) (c server : SeLe4n.Thread
   · next hSz => exact (performReplyRendezvous_eq_delivered _ _ _ _ _ _ _ _ _
       (replyWakesInPlace_noResizeDue hG) hSz).symm
   · rfl
+
+/-! ### Send -/
+
+/-- The send rendezvous's writes, the popped receiver's last write `g`: the
+specification's `storeSendRendezvous` with `g := receiveCompleteTcb msg`. -/
+@[inline] def storeSendRendezvousWith (st : SystemState) (endpointId : SeLe4n.ObjId)
+    (head : SeLe4n.ThreadId) (next : Option SeLe4n.ThreadId) (g : TCB → TCB) : SystemState :=
+  let s1 := st.modifyObject endpointId (sendRendezvousEndpoint next)
+  let s2 := match next with
+    | none => s1
+    | some n => s1.updateTcb n tcbAsQueueHead
+  (s2.updateTcb head tcbOffQueue).updateTcb head g
+
+theorem storeSendRendezvous_eq_with (st : SystemState) (endpointId : SeLe4n.ObjId)
+    (head : SeLe4n.ThreadId) (next : Option SeLe4n.ThreadId) (msg : IpcMessage) :
+    storeSendRendezvous st endpointId head next msg =
+      storeSendRendezvousWith st endpointId head next (receiveCompleteTcb msg) := rfl
+
+theorem storeSendRendezvousWith_comp (st : SystemState) (endpointId : SeLe4n.ObjId)
+    (head : SeLe4n.ThreadId) (next : Option SeLe4n.ThreadId) (f g : TCB → TCB)
+    (hNo : st.objects.noResizeDue) :
+    storeSendRendezvousWith st endpointId head next (f ∘ g) =
+      (storeSendRendezvousWith st endpointId head next g).mapTcbInPlace head f := by
+  unfold storeSendRendezvousWith
+  dsimp only
+  have h1 := modifyObject_noResizeDue st endpointId (sendRendezvousEndpoint next) hNo
+  generalize st.modifyObject endpointId (sendRendezvousEndpoint next) = s1 at h1
+  have h2 : (match next with
+      | none => s1
+      | some n => s1.updateTcb n tcbAsQueueHead).objects.noResizeDue := by
+    cases next with
+    | none => exact h1
+    | some n => exact updateTcb_noResizeDue _ _ _ h1
+  generalize (match next with
+      | none => s1
+      | some n => s1.updateTcb n tcbAsQueueHead) = s2 at h2
+  have h3 := updateTcb_noResizeDue s2 head tcbOffQueue h2
+  generalize s2.updateTcb head tcbOffQueue = s3 at h3
+  rw [SystemState.updateTcb_eq_mapTcbInPlace _ _ _ h3,
+    SystemState.updateTcb_eq_mapTcbInPlace _ _ _ h3, SystemState.mapTcbInPlace_mapTcbInPlace]
+
+theorem storeSendRendezvousWith_noResizeDue (st : SystemState) (endpointId : SeLe4n.ObjId)
+    (head : SeLe4n.ThreadId) (next : Option SeLe4n.ThreadId) (g : TCB → TCB)
+    (hNo : st.objects.noResizeDue) :
+    (storeSendRendezvousWith st endpointId head next g).objects.noResizeDue := by
+  unfold storeSendRendezvousWith
+  dsimp only
+  have h1 := modifyObject_noResizeDue st endpointId (sendRendezvousEndpoint next) hNo
+  apply updateTcb_noResizeDue _ _ _ (updateTcb_noResizeDue _ _ _ _)
+  cases next with
+  | none => exact h1
+  | some n => exact updateTcb_noResizeDue _ _ _ h1
+
+/-- A wake commutes with a message-slot write. -/
+theorem wakeThread_msg (r : SeLe4n.ThreadId) (ρ : SeLe4n.RegisterFile → SeLe4n.RegisterFile)
+    (μ : Option IpcMessage → Option IpcMessage) (π : Option SeLe4n.ReplyId → Option SeLe4n.ReplyId)
+    (st : SystemState) (t : SeLe4n.ThreadId) (core : CoreId) (hNo : st.objects.noResizeDue) :
+    wakeThread (st.mapTcbInPlace r (TCB.withMessageSlots ρ μ π)) t core =
+      ((wakeThread st t core).1.mapTcbInPlace r (TCB.withMessageSlots ρ μ π),
+        (wakeThread st t core).2) := by
+  unfold wakeThread
+  dsimp only
+  rw [determineTargetCore_msg, enqueueRunnableOnCore_msg _ _ _ _ _ _ _ hNo]
+  rcases getTcb?_msg_cases r ρ μ π st t with h | ⟨_, h⟩ <;> rw [h]
+  cases st.getTcb? t <;> rfl
+
+/-- The receiver a send wakes, ready, holding no message and no stashed reply. -/
+@[inline] def receiveReadyTcb (t : TCB) : TCB :=
+  { t with ipcState := .ready, pendingMessage := none, pendingReceiveReply := none }
+
+/-- The receiver made ready, its message slots as they were. -/
+@[inline] def ipcReadyTcb (t : TCB) : TCB := { t with ipcState := .ready }
+
+/-- A message delivered with the receiver's stashed reply dropped: the
+specification's receive completion past the ready state. -/
+abbrev receiveCompleteSlots (msg : IpcMessage) : TCB → TCB :=
+  TCB.withMessageSlots id (fun _ => some msg) (fun _ => none)
+
+/-- The receiver's message slots emptied. -/
+abbrev clearMessageSlots : TCB → TCB :=
+  TCB.withMessageSlots id (fun _ => none) (fun _ => none)
+
+theorem receiveCompleteTcb_eq_slots (msg : IpcMessage) :
+    receiveCompleteTcb msg = receiveCompleteSlots msg ∘ ipcReadyTcb := rfl
+
+theorem receiveReadyTcb_eq_slots : receiveReadyTcb = clearMessageSlots ∘ ipcReadyTcb := rfl
+
+theorem holdMessage_clearMessageSlots (msg : IpcMessage) :
+    holdMessage msg ∘ clearMessageSlots = receiveCompleteSlots msg := rfl
+
+/-- `storeSendRendezvous` with the receiver woken holding no message. -/
+@[noinline] def storeSendRendezvousReady (st : SystemState) (endpointId : SeLe4n.ObjId)
+    (head : SeLe4n.ThreadId) (next : Option SeLe4n.ThreadId) : SystemState :=
+  storeSendRendezvousWith st endpointId head next receiveReadyTcb
+
+/-- **The send rendezvous, delivered**: the receiver woken without the message,
+then the message's frame written into its saved registers.  The message is
+built only where the receiver is, unexpectedly, not ready. -/
+@[noinline] def performSendDelivered (st : SystemState) (endpointId : SeLe4n.ObjId)
+    (r : SeLe4n.ThreadId) (next : Option SeLe4n.ThreadId)
+    (layout : SeLe4n.SyscallRegisterLayout) (rf : SeLe4n.RegisterFile) (mi : MessageInfo)
+    (badge : Option SeLe4n.Badge) (granted : Bool) (core : CoreId) : SystemState :=
+  let X := (wakeThread (storeSendRendezvousReady st endpointId r next) r core).1
+  writeDeliveredFrameIfReady X r (Architecture.regMessageFrame layout rf mi badge)
+    (fun _ => holdDeliveredBody X r layout rf mi badge granted)
+
+theorem wakeThread_noResizeDue (st : SystemState) (t : SeLe4n.ThreadId) (core : CoreId)
+    (hNo : st.objects.noResizeDue) : (wakeThread st t core).1.objects.noResizeDue :=
+  enqueueRunnableOnCore_noResizeDue _ _ _ hNo
 
 end SeLe4n.Kernel

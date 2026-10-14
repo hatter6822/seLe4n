@@ -61,9 +61,7 @@ specification's form. -/
         -- WS-ZA ZA4.7: a send with no capabilities to transfer checks
         -- everything before its first write.
         | .send capAddr msgInfo =>
-          dispatchSendCheckedR ctx capAddr
-            (SeLe4n.Kernel.Architecture.RegisterDecode.extractMessageRegisters
-              (layout.msgRegs.map (readReg tcb.registerContext)) msgInfo)
+          dispatchSendCheckedR ctx capAddr layout tcb.registerContext msgInfo
             tid executingCore st
         -- WS-ZA ZA4.7: a call with no capabilities to transfer.
         | .call capAddr msgInfo =>
@@ -144,8 +142,8 @@ theorem syscallEntryCheckedR_eq (ctx : LabelingContext)
           subst hCap
           have hCaps : Architecture.SyscallArgDecode.decodeExtraCapAddrs decoded = #[] := by
             simp [Architecture.SyscallArgDecode.decodeExtraCapAddrs, hInfo, hX]; rfl
-          rw [dispatchSendCheckedR_eq ctx decoded _ tid executingCore hSend hCaps hSlot
-            (by rw [hRegs', hInfo])]
+          rw [dispatchSendCheckedR_eq ctx decoded _ _ _ tid executingCore hSend hCaps hSlot
+            (by rw [hRegs', hInfo]; rfl)]
           simp only [RefusalCarrying.ofKernel, syscallEntryChecked, hCtx, hCur, hRegs, hDec,
             hZero, Bool.false_eq_true, ↓reduceIte,
             SeLe4n.Kernel.Architecture.tlbFillIpcBufferOnCore_zero]
