@@ -151,6 +151,14 @@ private def expectOkSt
   assertStateInvariantsFor label invariantObjectIds st
   pure result
 
+/-- A per-core arm's `(state, result)` pair as `expectOkSt` reads it. -/
+private def expectOkOnCore
+    (label : String)
+    (actual : SystemState × Except KernelError α) : IO (α × SystemState) :=
+  expectOkSt label (match actual with
+    | (st, .ok a) => .ok (a, st)
+    | (_, .error e) => .error e)
+
 private def expectOkVal
     (label : String)
     (actual : Except KernelError α) : IO α :=
@@ -1784,11 +1792,16 @@ private def runAuditCoverageChecks : IO Unit := do
   let rrSetupState : SystemState :=
     { baseState with objects :=
         baseState.objects.insert rrReplyId.toObjId (.reply { replyId := rrReplyId }) }
-  let (_, stCallSetup1) ← expectOkSt "replyRecv setup: receiver blocks on receive"
-    (SeLe4n.Kernel.endpointReceiveDual endpointId (SeLe4n.ThreadId.ofNat 8) (some rrReplyId) rrSetupState)
+  -- WS-ZA ZA4.6: through the per-core arms the kernel runs, which link the
+  -- caller on the server's reply-waiter queue (the single-core references do
+  -- not; `docs/REGISTERED_DEBT.md`), so the invariant checks hold.
+  let (_, stCallSetup1) ← expectOkOnCore "replyRecv setup: receiver blocks on receive"
+    (SeLe4n.Kernel.endpointReceiveDualOnCore endpointId (SeLe4n.ThreadId.ofNat 8) (some rrReplyId)
+      bootCoreId rrSetupState)
   -- Caller calls endpoint (handshakes with queued receiver, caller blocks for reply)
-  let (_, stCallSetup2) ← expectOkSt "replyRecv setup: caller calls endpoint"
-    (SeLe4n.Kernel.endpointCall endpointId (SeLe4n.ThreadId.ofNat 7) .empty stCallSetup1)
+  let (_, stCallSetup2) ← expectOkOnCore "replyRecv setup: caller calls endpoint"
+    (SeLe4n.Kernel.endpointCallOnCore endpointId (SeLe4n.ThreadId.ofNat 7) .empty bootCoreId
+      stCallSetup1)
   -- Verify caller is now blocked on reply
   match (stCallSetup2.objects[(SeLe4n.ThreadId.ofNat 7).toObjId]? : Option KernelObject) with
   | some (KernelObject.tcb callerTcb) =>
@@ -1800,8 +1813,8 @@ private def runAuditCoverageChecks : IO Unit := do
   | _ => throw <| IO.userError "replyRecv setup: expected caller TCB"
   -- Now execute replyRecv: receiver replies to caller and waits on endpoint
   let (_, stReplyRecv) ← expectOkSt "replyRecv success"
-    (SeLe4n.Kernel.endpointReplyRecv endpointId (SeLe4n.ThreadId.ofNat 8) (SeLe4n.ThreadId.ofNat 7)
-      .empty none stCallSetup2)
+    (SeLe4n.Kernel.endpointReplyRecvOnCore endpointId (SeLe4n.ThreadId.ofNat 8) rrReplyId
+      (SeLe4n.ThreadId.ofNat 7) .empty cnodeId (SeLe4n.Slot.ofNat 0) bootCoreId stCallSetup2)
   -- Verify caller is unblocked (ready)
   match (stReplyRecv.objects[(SeLe4n.ThreadId.ofNat 7).toObjId]? : Option KernelObject) with
   | some (KernelObject.tcb unblocked) =>

@@ -17106,6 +17106,24 @@ run_check "INVARIANT" rg -n '^theorem lockSet_endpointReplyRecvOnCore_covers_rep
 run_check "INVARIANT" rg -n '^theorem lockSet_cancelIpcBlockingOnCore_replyArm_covers_server($|[ ({:\[\]])' SeLe4n/Kernel/IPC/CrossCore/Cancellation.lean
 run_check "INVARIANT" rg -n '^theorem lockSet_cancelIpcBlockingOnCore_replyArm_covers_prev($|[ ({:\[\]])' SeLe4n/Kernel/IPC/CrossCore/Cancellation.lean
 run_check "INVARIANT" rg -n '^theorem lockSet_cancelIpcBlockingOnCore_replyArm_covers_next($|[ ({:\[\]])' SeLe4n/Kernel/IPC/CrossCore/Cancellation.lean
+# WS-ZA ZA4.6: the reply-waiter queues stay consistent across every IPC arm the
+# dispatcher runs, cancellation and timeout; the walk reads the queue.
+run_check "INVARIANT" rg -n '^theorem endpointReceiveDualWithCapsOnCore_preserves_replyWaitersConsistent($|[ ({:\[\]])' SeLe4n/Kernel/IPC/CrossCore/ReplyWaitersDispatch.lean
+run_check "INVARIANT" rg -n '^theorem endpointCallWithCapsOnCore_preserves_replyWaitersConsistent($|[ ({:\[\]])' SeLe4n/Kernel/IPC/CrossCore/ReplyWaitersDispatch.lean
+run_check "INVARIANT" rg -n '^theorem endpointCallCrossCoreDispatch_preserves_replyWaitersConsistent($|[ ({:\[\]])' SeLe4n/Kernel/IPC/CrossCore/ReplyWaitersDispatch.lean
+run_check "INVARIANT" rg -n '^theorem endpointReplyCrossCoreDispatch_preserves_replyWaitersConsistent($|[ ({:\[\]])' SeLe4n/Kernel/IPC/CrossCore/ReplyWaitersDispatch.lean
+run_check "INVARIANT" rg -n '^theorem faultDeliverOnCore_preserves_replyWaitersConsistent($|[ ({:\[\]])' SeLe4n/Kernel/IPC/CrossCore/ReplyWaitersDispatch.lean
+run_check "INVARIANT" rg -n '^theorem faultReplyOnCore_preserves_replyWaitersConsistent($|[ ({:\[\]])' SeLe4n/Kernel/IPC/CrossCore/ReplyWaitersDispatch.lean
+run_check "INVARIANT" rg -n '^theorem endpointReplyRecvOnCore_preserves_replyWaitersConsistent($|[ ({:\[\]])' SeLe4n/Kernel/IPC/CrossCore/ReplyWaitersDispatch.lean
+run_check "INVARIANT" rg -n '^theorem endpointSendDualOnCore_preserves_replyWaitersConsistent($|[ ({:\[\]])' SeLe4n/Kernel/IPC/CrossCore/ReplyWaitersDispatch.lean
+run_check "INVARIANT" rg -n '^theorem endpointSendDualWithCapsOnCore_preserves_replyWaitersConsistent($|[ ({:\[\]])' SeLe4n/Kernel/IPC/CrossCore/ReplyWaitersDispatch.lean
+run_check "INVARIANT" rg -n '^theorem notificationSignalOnCore_preserves_replyWaitersConsistent($|[ ({:\[\]])' SeLe4n/Kernel/IPC/CrossCore/ReplyWaitersDispatch.lean
+run_check "INVARIANT" rg -n '^theorem notificationWaitOnCore_preserves_replyWaitersConsistent($|[ ({:\[\]])' SeLe4n/Kernel/IPC/CrossCore/ReplyWaitersDispatch.lean
+run_check "INVARIANT" rg -n '^theorem cancelIpcBlocking_preserves_replyWaitersConsistent($|[ ({:\[\]])' SeLe4n/Kernel/IPC/CrossCore/ReplyWaitersCancellation.lean
+run_check "INVARIANT" rg -n '^theorem cancelIpcBlockingOnCore_preserves_replyWaitersConsistent($|[ ({:\[\]])' SeLe4n/Kernel/IPC/CrossCore/ReplyWaitersCancellation.lean
+run_check "INVARIANT" rg -n '^theorem timeoutThread_preserves_replyWaitersConsistent($|[ ({:\[\]])' SeLe4n/Kernel/IPC/CrossCore/ReplyWaitersPreservation.lean
+run_check "INVARIANT" rg -n '^theorem SystemState\.replyWaitersOf_eq_queue($|[ ({:\[\]])' SeLe4n/Kernel/Scheduler/ReplyWaiters.lean
+run_check "INVARIANT" rg -n '^theorem SystemState\.replyWaitersConsistent_of_idle($|[ ({:\[\]])' SeLe4n/Kernel/Scheduler/ReplyWaiters.lean
 # ...and the fourth local coherence fact HP2.2's converse needed,
 # `donatedContextHeadsStack`, which `donationChainWellFormed` does not entail.
 # WS-HP HP7 (`v0.35.46`): it and HP2.2's converse are **DELETED** -- both were
