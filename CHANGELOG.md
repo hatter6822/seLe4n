@@ -1,3 +1,49 @@
+## v0.36.88 — WS-ZA ZA4.7 (fields as codes, second step): a thread's IPC state as two words
+
+**A blocking receive now allocates one cell (the per-core current thread's),
+and a call five.**  A thread's IPC state is stored as two scalar words in its
+TCB, decided on those words wherever the kernel asks whether the thread is
+ready or blocked, so the state constructor is never built on a syscall path.
+Each executed form is proven equal to the specification's.
+
+Normal-build allocations per syscall (QEMU exerciser, core 0), against
+`v0.36.87`:
+
+| Scenario | v0.36.87 | v0.36.88 |
+|---|---|---|
+| receive that blocks | 3 | 1 |
+| call | 7 | 5 |
+| wait that blocks | 6 | 5 |
+
+Signal, wait, wide-badge signal, yield and reply stay at 0; a send to a
+waiting receiver (1) and a signal that wakes a waiter (9) are unchanged.
+
+- **Two codes, a bijection.**  `TCB.ipcObjectCode` replaces the `ipcState`
+  field and `TCB.ipcStateCode` is appended: `(0, 0)` is `.ready`,
+  `(o + 1, 0)` blocked sending on `o`, `(o, 1)`, `(o, 2)` and `(o, 3)` blocked
+  receiving, on a notification and on a call, and `(o, c + 4)` blocked on a
+  reply whose target has code `c`.  Every pair decodes to a state and every
+  state encodes to one pair (`ThreadIpcState.ofCodes_codes`,
+  `objectCode_ofCodes`, `stateCode_ofCodes`), so no canonicity field or
+  invariant is needed.  `TCB.ipcState` is the derived view, so every read
+  keeps its statement; every write goes through `TCB.setIpcState`, with
+  `@[simp]` lemmas for the view and each other field.
+- **Deciding on the words.**  The derived `DecidableEq` on `ThreadIpcState`
+  builds the state to compare it.  `ThreadIpcState.decEqOfCodes` decides
+  `ofCodes o c = s` by comparing words, and the kernel's readiness tests are
+  stated as `decide (tcb.ipcState = .ready)` so they take it.
+  `Architecture.tcbBlocksReturn` answers the return path's "did the caller
+  block" from the codes (`tcbBlocksReturn_eq`).
+- **The receive guard.**  The blocking receive's guard read the receive
+  queue's tail through the `IntrusiveQueue` view and built it;
+  `receiveBlocksInPlaceCode` decodes the tail code in its own match
+  (`receiveBlocksInPlaceCode_eq`).
+
+**What remains.**  A call writes `replyObject`, `pendingReceiveReply` and
+`Reply.caller` as fresh cells; the priority walk's maximum and the per-core
+current thread (`reuseSome`) are the rest of the fields-as-codes part, then
+blocked senders and reply-receive.
+
 ## v0.36.87 — WS-ZA ZA4.7 (fields as codes, first step): endpoint queue ends and the message length
 
 **A reply now allocates nothing, and a send to a waiting receiver allocates one
