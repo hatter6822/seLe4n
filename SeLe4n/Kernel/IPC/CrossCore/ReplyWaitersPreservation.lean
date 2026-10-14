@@ -28,6 +28,7 @@ namespace SeLe4n.Kernel
 open SeLe4n.Model
 open SeLe4n.Model.SystemState
 open SeLe4n.Kernel.Concurrency (CoreId)
+open SeLe4n.Kernel.PriorityInheritance
 
 /-- Thread `t` waits on no server in the views (or has none). -/
 def _root_.SeLe4n.Model.ReplyViews.serverFree (V : ReplyViews) (t : SeLe4n.ThreadId) : Prop :=
@@ -297,5 +298,155 @@ theorem endpointReplyOnCore_preserves_replyWaitersConsistent (replier target : S
               exact hU
             · exact hC
     · exact hC
+
+/-! Priority inheritance writes the boost and the run-queue placement alone. -/
+
+theorem runRequeueOnCore_replyViews_eq (st : SystemState) (c : CoreId) (t : SeLe4n.ThreadId)
+    (p : SeLe4n.Priority) : (st.runRequeueOnCore c t p).replyViews = st.replyViews := by
+  rw [replyViews_congr (runRequeueOnCore_objects st c t p), runEnqueueAdmitted_replyViews_eq,
+    runRemoveOnCore_replyViews_eq]
+
+theorem markKeyChangeFor_replyViews_eq (st : SystemState) (t : SeLe4n.ThreadId)
+    (k : SeLe4n.Priority × SeLe4n.Deadline × SeLe4n.DomainId) :
+    (markKeyChangeFor st t k).replyViews = st.replyViews :=
+  replyViews_congr (markKeyChangeFor_objects st t k)
+
+theorem updatePipBoostOnCore_replyViews_eq (st : SystemState) (c : CoreId) (t : SeLe4n.ThreadId)
+    (hInv : st.objects.invExt) : (updatePipBoostOnCore st c t).replyViews = st.replyViews := by
+  unfold updatePipBoostOnCore
+  split
+  · rename_i tcb hT _
+    have hO := (getTcb?_eq_some_iff st t tcb).1 hT
+    have hW : (st.rewriteObject t.toObjId (.tcb { tcb with pipBoost := computeMaxWaiterPriority st t })
+        (SystemState.rewriteAdmissible_tcb hT _)).replyViews = st.replyViews := by
+      funext x
+      rw [replyViews_rewriteObject _ _ _ _ hInv]
+      split
+      · rename_i hx; subst hx; rw [replyViews_of_tcb hO]; rfl
+      · rfl
+    dsimp only
+    split
+    · rfl
+    · split
+      · split
+        · rw [markKeyChangeFor_replyViews_eq, runRequeueOnCore_replyViews_eq, hW]
+        · rw [markKeyChangeFor_replyViews_eq, hW]
+      · rw [markKeyChangeFor_replyViews_eq, hW]
+  · rfl
+
+theorem updatePipBoost_replyViews_eq (st : SystemState) (t : SeLe4n.ThreadId)
+    (hInv : st.objects.invExt) : (updatePipBoost st t).replyViews = st.replyViews :=
+  updatePipBoostOnCore_replyViews_eq st _ t hInv
+
+theorem propagatePipChainCrossCore_replyViews_eq (st : SystemState) (t : SeLe4n.ThreadId)
+    (ec : CoreId) (fuel : Nat) (hInv : st.objects.invExt) :
+    (propagatePipChainCrossCore st t ec fuel).1.replyViews = st.replyViews := by
+  induction fuel generalizing st t with
+  | zero => rfl
+  | succ n ih =>
+    rw [propagatePipChainCrossCore_step]
+    have hB := pipBoostWithWake_preserves_objects_invExt st t ec hInv
+    have hV : (pipBoostWithWake st t ec).1.replyViews = st.replyViews := by
+      rw [pipBoostWithWake_state]; exact updatePipBoostOnCore_replyViews_eq _ _ _ hInv
+    cases blockingServer st t with
+    | none => exact hV
+    | some s => exact (ih _ s hB).trans hV
+
+theorem propagatePriorityInheritance_replyViews_eq (st : SystemState) (t : SeLe4n.ThreadId)
+    (fuel : Nat) (hInv : st.objects.invExt) :
+    (PriorityInheritance.propagatePriorityInheritance st t fuel).replyViews = st.replyViews := by
+  induction fuel generalizing st t with
+  | zero => rfl
+  | succ n ih =>
+    unfold PriorityInheritance.propagatePriorityInheritance
+    have hB := updatePipBoostOnCore_preserves_objects_invExt st Concurrency.bootCoreId t hInv
+    cases blockingServer st t with
+    | none => exact updatePipBoost_replyViews_eq st t hInv
+    | some s => exact (ih _ s hB).trans (updatePipBoost_replyViews_eq st t hInv)
+
+theorem revertPriorityInheritance_replyViews_eq (st : SystemState) (t : SeLe4n.ThreadId)
+    (fuel : Nat) (hInv : st.objects.invExt) :
+    (PriorityInheritance.revertPriorityInheritance st t fuel).replyViews = st.replyViews := by
+  induction fuel generalizing st t with
+  | zero => rfl
+  | succ n ih =>
+    unfold PriorityInheritance.revertPriorityInheritance
+    have hB := updatePipBoostOnCore_preserves_objects_invExt st Concurrency.bootCoreId t hInv
+    cases blockingServer st t with
+    | none => exact updatePipBoost_replyViews_eq st t hInv
+    | some s => exact (ih _ s hB).trans (updatePipBoost_replyViews_eq st t hInv)
+
+/-- **The timeout's abort readies the thread**: its server is cleared and
+nothing else in a view moves; the server cleared is the one the timeout reads. -/
+theorem abortPendingIpcOnEndpoint_replyViews {eid : SeLe4n.ObjId} {isRecv : Bool}
+    {tid : SeLe4n.ThreadId} {st st' : SystemState} (hInv : st.objects.invExt)
+    (h : abortPendingIpcOnEndpoint eid isRecv tid st = .ok st') :
+    ∃ v, st.replyViews tid.toObjId = some v ∧
+      st'.replyViews = ReplyViews.setServer st.replyViews tid none ∧
+      timeoutBlockingServerOf? st tid = v.server := by
+  unfold abortPendingIpcOnEndpoint at h
+  split at h
+  · cases h
+  · rename_i st1 hR
+    have hI1 := endpointQueueRemove_preserves_objects_invExt _ _ _ _ _ hInv hR
+    have hV1 := endpointQueueRemove_replyViews_eq hInv hR
+    split at h
+    · cases h
+    · rename_i tcb hL
+      have hO1 := lookupTcb_some_objects st1 tid tcb hL
+      have hW := replyViews_of_tcb hO1
+      rw [hV1] at hW
+      obtain ⟨t0, hO0, hv0⟩ := tcb_of_replyViews hW
+      have hRes : tid.isReserved = false := by
+        unfold lookupTcb at hL; split at hL
+        · cases hL
+        · simpa using ‹¬tid.isReserved = true›
+      dsimp only at h
+      split at h
+      · cases h
+      · rename_i st2 hS
+        cases h
+        refine ⟨tcb.replyView, hW, ?_, ?_⟩
+        · rw [← hV1]
+          exact replyViews_storeObject_tcb hI1 hS hO1 (by
+            simp only [TCB.replyView, TCB.withReturnFrame, TCB.blockingServer?])
+        · unfold timeoutBlockingServerOf? lookupTcb
+          rw [if_neg (by simp [hRes]), (getTcb?_eq_some_iff st tid t0).2 hO0]
+          rw [← hv0]; rfl
+
+/-- **The timeout keeps the reply-waiter queues consistent.**  A thread timed
+out of a reply wait leaves its server's queue as it is readied (an
+`UnlinkStep`); any other timed-out thread waited on no server. -/
+theorem timeoutThread_preserves_replyWaitersConsistent (eid : SeLe4n.ObjId) (isRecv : Bool)
+    (tid : SeLe4n.ThreadId) (c : CoreId) {st st' : SystemState}
+    {sgi : Option (CoreId × Concurrency.SgiKind)} (hInv : st.objects.invExt) (hC : st.replyWaitersConsistent)
+    (h : timeoutThread eid isRecv tid c st = .ok (st', sgi)) : st'.replyWaitersConsistent := by
+  unfold timeoutThread at h
+  split at h
+  · cases h
+  · rename_i st2 hA
+    obtain ⟨v, hW0, hV2, hSrv⟩ := abortPendingIpcOnEndpoint_replyViews hInv hA
+    have hI2 := abortPendingIpcOnEndpoint_preserves_objects_invExt _ _ _ _ _ hInv hA
+    have hV3 : (wakeThread st2 tid c).1.replyViews = ReplyViews.setServer st.replyViews tid none := by
+      rw [wakeThread_replyViews_eq _ _ _ hI2 (by
+        rw [hV2]; exact ReplyViews.serverFree_setServer_none _ _), hV2]
+    dsimp only at h
+    split at h
+    · rename_i s hs
+      cases h
+      have hI3 := wakeThread_preserves_objects_invExt _ tid c hI2
+      refine replyWaitersConsistent.of_views (revertPriorityInheritance_replyViews_eq _ _ _
+        (SystemState.unlinkReplyWaiter_objects_invExt _ _ _ hI3)) ?_
+      show ReplyViews.consistent _
+      rw [replyViews_unlinkReplyWaiter, hV3]
+      have hWSrv : v.server = some s := hSrv ▸ hs
+      obtain ⟨vs0, hS0⟩ := hC.2.1 tid v s hW0 hWSrv
+      exact (ReplyViews.unlinkStep_of_unlink hC hW0 hWSrv hS0).consistent hC
+    · rename_i hs
+      cases h
+      show ReplyViews.consistent (wakeThread st2 tid c).1.replyViews
+      rw [hV3, ReplyViews.setServer_of_server (fun v' hv' => by
+        rw [hW0] at hv'; cases hv'; exact hSrv ▸ hs)]
+      exact hC
 
 end SeLe4n.Kernel

@@ -517,4 +517,20 @@ theorem storeTcbIpcStateAndMessage_fromTcb_objects_invExt {st st' : SystemState}
   · cases h
   · rename_i st1 hS; cases h; exact storeObject_preserves_objects_invExt _ _ _ _ hInv hS
 
+/-- **The endpoint-queue removal writes queue links alone.** -/
+theorem endpointQueueRemove_replyViews_eq {eid : ObjId} {isRecv : Bool} {tid : ThreadId}
+    {st st' : SystemState} (hInv : st.objects.invExt)
+    (h : endpointQueueRemove eid isRecv tid st = .ok st') : st'.replyViews = st.replyViews :=
+  replyViews_eq_of_tcbs
+    (fun k t0 hk => by
+      rw [RHTable_getElem?_eq_get?] at hk
+      obtain ⟨t', h', hv⟩ := endpointQueueRemove_getTcb_upToField TCB.replyView
+        (fun _ _ _ _ => rfl) _ _ _ _ _ hInv h k t0 hk
+      rw [← RHTable_getElem?_eq_get?] at h'
+      exact ⟨t', h', hv.symm⟩)
+    (fun k t' hk => by
+      obtain ⟨t0, h0, -⟩ := endpointQueueRemove_getTcb_backward_upToField TCB.replyView
+        (fun _ _ _ _ => rfl) _ _ _ _ _ hInv h k t' hk
+      exact ⟨t0, h0⟩)
+
 end SeLe4n.Model.SystemState
