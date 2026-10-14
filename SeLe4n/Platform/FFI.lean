@@ -7,7 +7,7 @@
   under certain conditions. See: https://github.com/hatter6822/seLe4n/blob/main/LICENSE
 -/
 import SeLe4n.Kernel.API
-import SeLe4n.Kernel.RefusalCarryingDispatch
+import SeLe4n.Kernel.RefusalCarryingEntry
 import SeLe4n.Kernel.Architecture.SyscallReturn
 import SeLe4n.Kernel.Lifecycle.Suspend
 import SeLe4n.Platform.Boot

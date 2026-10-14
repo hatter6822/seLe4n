@@ -740,6 +740,45 @@ theorem endpointSendCrossCoreDispatchChecked_flow_allowed
   simp [endpointSendCrossCoreDispatchChecked, hTooLarge, hTooMany,
     endpointFlowGate_of ctx endpointId _ _ hAllow hOverride]
 
+/-- WS-ZA ZA4.7: the cross-core send answers a refusal with the state it was
+handed: every refusal precedes its first write or returns the pre-state. -/
+theorem endpointSendDualOnCore_error_state (endpointId : SeLe4n.ObjId)
+    (sender : SeLe4n.ThreadId) (msg : IpcMessage) (executingCore : CoreId)
+    (st : SystemState) (e : KernelError)
+    (h : (endpointSendDualOnCore endpointId sender msg executingCore st).2 = .error e) :
+    (endpointSendDualOnCore endpointId sender msg executingCore st).1 = st := by
+  unfold endpointSendDualOnCore at h ⊢
+  repeat' split at h <;> (try simp only [] at h ⊢) <;> (try split) <;> (try rfl) <;>
+    (try simp_all)
+
+/-- WS-ZA ZA4.7: with no capabilities to transfer, the checked cross-core send
+answers a refusal with the state it was handed. -/
+theorem endpointSendCrossCoreDispatchChecked_error_state
+    (ctx : LabelingContext) (endpointId : SeLe4n.ObjId) (sender : SeLe4n.ThreadId)
+    (msg : IpcMessage) (endpointRights : AccessRightSet)
+    (receiverSlotBase : SeLe4n.Slot) (executingCore : CoreId) (st : SystemState)
+    (e : KernelError) (hCaps : msg.caps.isEmpty = true)
+    (h : (endpointSendCrossCoreDispatchChecked ctx endpointId sender msg endpointRights
+      receiverSlotBase executingCore st).2 = .error e) :
+    (endpointSendCrossCoreDispatchChecked ctx endpointId sender msg endpointRights
+      receiverSlotBase executingCore st).1 = st := by
+  unfold endpointSendCrossCoreDispatchChecked at h ⊢
+  split
+  · rfl
+  · split
+    · rfl
+    · split
+      · next hG =>
+        rw [if_neg (by assumption), if_neg (by assumption), if_pos hG] at h
+        rw [endpointSendDualWithCapsOnCore_no_caps _ _ _ _ _ _ _ hCaps] at h ⊢
+        simp only at h ⊢
+        apply endpointSendDualOnCore_error_state _ _ _ _ _ e
+        revert h
+        cases endpointSendDualOnCore endpointId sender
+          { msg with capsGranted := endpointRights.mem AccessRight.grant } executingCore st with
+        | mk s r => cases r <;> simp [Except.map]
+      · rfl
+
 /-- **WS-RR RR8.12 (frame)**: a cross-core send touches **no** core's replenish
 queue.
 
