@@ -128,6 +128,21 @@ woken receiver. -/
 @[inline] def receiveCompleteTcb (msg : IpcMessage) (t : TCB) : TCB :=
   { t with ipcState := .ready, pendingMessage := some msg, pendingReceiveReply := none }
 
+/-- WS-ZA ZA4.7: a thread taken off an endpoint queue: its three link codes
+cleared (`tcbWithQueueLinks t none none none` by definition). -/
+@[inline] def tcbOffQueue (t : TCB) : TCB :=
+  { t with queuePrevCode := 0, queuePPrevCode := 0, queueNextCode := 0 }
+
+/-- WS-ZA ZA4.7: a queue's new head: no predecessor, its back-pointer the
+queue head, as codes (`tcbAsQueueHead_eq`). -/
+@[inline] def tcbAsQueueHead (t : TCB) : TCB :=
+  { t with queuePrevCode := 0, queuePPrevCode := 1 }
+
+theorem tcbAsQueueHead_eq (t : TCB) :
+    tcbAsQueueHead t = tcbWithQueueLinks t none (some .endpointHead) t.queueNext := by
+  simp only [tcbAsQueueHead, tcbWithQueueLinks, TCB.optCode_queueNext]
+  rfl
+
 /-- WS-ZA ZA4.7: the send rendezvous's writes, each in its slot: the head
 popped off the receive queue, its successor made the new head, the popped
 receiver unlinked and handed the message.  Compiled as its own function so
@@ -138,8 +153,8 @@ each update is specialised in. -/
   let s1 := st.modifyObject endpointId (sendRendezvousEndpoint next)
   let s2 := match next with
     | none => s1
-    | some n => s1.updateTcb n (fun t => tcbWithQueueLinks t none (some .endpointHead) t.queueNext)
-  (s2.updateTcb head (fun t => tcbWithQueueLinks t none none none)).updateTcb head
+    | some n => s1.updateTcb n tcbAsQueueHead
+  (s2.updateTcb head tcbOffQueue).updateTcb head
     (receiveCompleteTcb msg)
 
 /-- WS-ZA ZA4.7: **the send rendezvous writes only its slots** — the endpoint,
@@ -211,15 +226,15 @@ theorem sendRendezvous_inPlace_eq (st : SystemState) (endpointId : SeLe4n.ObjId)
       rw [storeObject_eq_of_leaves (by simpa only [KernelObject.objectType] using hLE), hS1, hN]; rfl
     simp only [hSt]
     have hQ : storeTcbQueueLinks S1 head none none none =
-        .ok (S1.updateTcb head (fun t => tcbWithQueueLinks t none none none)) :=
+        .ok (S1.updateTcb head tcbOffQueue) :=
       modifyTcb_eq_updateTcb _ hRes hT1 (hL1 hLH)
     rw [hQ]
     simp only []
     have hT3 := updateTcb_getTcb?_self_of_findsInPlace
-      (fun t => tcbWithQueueLinks t none none none) hT1 ((hF1 _).trans hFH)
+      tcbOffQueue hT1 ((hF1 _).trans hFH)
     have hRC : storeTcbReceiveComplete
-        (S1.updateTcb head (fun t => tcbWithQueueLinks t none none none)) head (some msg) =
-        .ok ((S1.updateTcb head (fun t => tcbWithQueueLinks t none none none)).updateTcb head
+        (S1.updateTcb head tcbOffQueue) head (some msg) =
+        .ok ((S1.updateTcb head tcbOffQueue).updateTcb head
           (receiveCompleteTcb msg)) :=
       modifyTcb_eq_updateTcb _ hRes hT3
         (updateTcb_storeLeaves _ hT1 ((hF1 _).trans hFH) (hL1 hLH))
@@ -244,7 +259,7 @@ theorem sendRendezvous_inPlace_eq (st : SystemState) (endpointId : SeLe4n.ObjId)
       simp only [lookupTcb, hRn, Bool.false_eq_true, ↓reduceIte]; exact hTn1
     rw [hLookN]
     simp only []
-    let g := fun t => tcbWithQueueLinks t none (some QueuePPrev.endpointHead) t.queueNext
+    let g := tcbAsQueueHead
     have hQn : storeTcbQueueLinks S1 n none (some .endpointHead) nt.queueNext =
         .ok (S1.updateTcb n g) := by
       have := modifyTcb_eq_updateTcb (fun t => tcbWithQueueLinks t none (some .endpointHead)
@@ -252,6 +267,7 @@ theorem sendRendezvous_inPlace_eq (st : SystemState) (endpointId : SeLe4n.ObjId)
       rw [show storeTcbQueueLinks S1 n none (some .endpointHead) nt.queueNext =
         modifyTcb S1 n (fun t => tcbWithQueueLinks t none (some .endpointHead) nt.queueNext)
         from rfl, this, SystemState.updateTcb_eq_of_some hTn1, SystemState.updateTcb_eq_of_some hTn1]
+      simp only [g, tcbAsQueueHead_eq]
     rw [hQn]
     simp only []
     obtain ⟨S2, hS2⟩ : ∃ S2 : SystemState, S2 = S1.updateTcb n g := ⟨_, rfl⟩
@@ -266,15 +282,15 @@ theorem sendRendezvous_inPlace_eq (st : SystemState) (endpointId : SeLe4n.ObjId)
     have hL2 : storeLeavesIndexAndTypes S2 head.toObjId .tcb = true := by
       rw [hS2]; exact updateTcb_storeLeaves g hTn1 hFn1 (hL1 hLH)
     have hQ : storeTcbQueueLinks S2 head none none none =
-        .ok (S2.updateTcb head (fun t => tcbWithQueueLinks t none none none)) :=
+        .ok (S2.updateTcb head tcbOffQueue) :=
       modifyTcb_eq_updateTcb _ hRes hT2 hL2
     rw [hQ]
     simp only []
     have hT3 := updateTcb_getTcb?_self_of_findsInPlace
-      (fun t => tcbWithQueueLinks t none none none) hT2 ((hF2 _).trans hFH)
+      tcbOffQueue hT2 ((hF2 _).trans hFH)
     have hRC : storeTcbReceiveComplete
-        (S2.updateTcb head (fun t => tcbWithQueueLinks t none none none)) head (some msg) =
-        .ok ((S2.updateTcb head (fun t => tcbWithQueueLinks t none none none)).updateTcb head
+        (S2.updateTcb head tcbOffQueue) head (some msg) =
+        .ok ((S2.updateTcb head tcbOffQueue).updateTcb head
           (receiveCompleteTcb msg)) :=
       modifyTcb_eq_updateTcb _ hRes hT3
         (updateTcb_storeLeaves _ hT2 ((hF2 _).trans hFH) hL2)

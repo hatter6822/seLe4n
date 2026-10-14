@@ -646,11 +646,24 @@ to its receive queue. -/
       | some _ => { head := e.receiveQ.head, tail := some receiver } }
   | o => o
 
-/-- WS-ZA ZA4.7: the receiver's queue links after it is appended behind `tail?`. -/
+/-- WS-ZA ZA4.7: the receiver's queue links after it is appended behind `tail?`.
+Written as link codes, so no `some` cell is built to be encoded; the codes are
+`tcbWithQueueLinks`'s by definition. -/
 @[inline] def receiveBlockLinks (tail? : Option SeLe4n.ThreadId) (t : TCB) : TCB :=
   match tail? with
-  | none => tcbWithQueueLinks t none (some .endpointHead) none
-  | some p => tcbWithQueueLinks t (some p) (some (.tcbNext p)) none
+  | none => { t with queuePrevCode := 0, queuePPrevCode := 1, queueNextCode := 0 }
+  | some p => { t with queuePrevCode := p.val + 1, queuePPrevCode := p.val + 2,
+                       queueNextCode := 0 }
+
+/-- WS-ZA ZA4.7: a queue tail's successor link pointed at `next`, as a code
+(`tcbWithQueueNext_eq`). -/
+@[inline] def tcbWithQueueNext (next : SeLe4n.ThreadId) (t : TCB) : TCB :=
+  { t with queueNextCode := next.val + 1 }
+
+theorem tcbWithQueueNext_eq (next : SeLe4n.ThreadId) (t : TCB) :
+    tcbWithQueueNext next t = tcbWithQueueLinks t t.queuePrev t.queuePPrev (some next) := by
+  simp only [tcbWithQueueNext, tcbWithQueueLinks, TCB.optCode_queuePrev, TCB.optCode_queuePPrev]
+  rfl
 
 /-- WS-ZA ZA4.7: the enqueue a blocking receive performs, each write in its
 slot: the endpoint's receive queue, the old tail's successor link, the
@@ -660,7 +673,7 @@ receiver's own links. -/
   let s1 := st.modifyObject endpointId (receiveBlockEndpoint receiver tail?)
   let s2 := match tail? with
     | none => s1
-    | some p => s1.updateTcb p (fun t => tcbWithQueueLinks t t.queuePrev t.queuePPrev (some receiver))
+    | some p => s1.updateTcb p (tcbWithQueueNext receiver)
   s2.updateTcb receiver (receiveBlockLinks tail?)
 
 /-- WS-ZA ZA4.7: **a blocking receive writes only its slots** — the endpoint,
@@ -776,7 +789,7 @@ theorem receiveEnqueue_inPlace_eq (st : SystemState) (endpointId : SeLe4n.ObjId)
     have hTp1 : S1.getTcb? p = some pt :=
       (SystemState.getTcb?_eq_some_iff _ _ _).mpr
         ((hG1 _ hNeEP).trans ((SystemState.getTcb?_eq_some_iff _ _ _).mp hTp))
-    let g := fun t : TCB => tcbWithQueueLinks t t.queuePrev t.queuePPrev (some receiver)
+    let g := tcbWithQueueNext receiver
     have hQp : storeTcbQueueLinks S1 p pt.queuePrev pt.queuePPrev (some receiver) =
         .ok (S1.updateTcb p g) := by
       have := modifyTcb_eq_updateTcb (fun t => tcbWithQueueLinks t pt.queuePrev pt.queuePPrev
@@ -785,6 +798,7 @@ theorem receiveEnqueue_inPlace_eq (st : SystemState) (endpointId : SeLe4n.ObjId)
         modifyTcb S1 p (fun t => tcbWithQueueLinks t pt.queuePrev pt.queuePPrev (some receiver))
         from rfl, this, SystemState.updateTcb_eq_of_some hTp1,
         SystemState.updateTcb_eq_of_some hTp1]
+      simp only [g, tcbWithQueueNext_eq]
     rw [hQp]
     simp only []
     obtain ⟨S2, hS2⟩ : ∃ S2 : SystemState, S2 = S1.updateTcb p g := ⟨_, rfl⟩

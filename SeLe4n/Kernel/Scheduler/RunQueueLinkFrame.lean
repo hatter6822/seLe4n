@@ -694,9 +694,16 @@ def runDescheduleOnCoreImpl (st : SystemState) (c : CoreId) (t : SeLe4n.ThreadId
   let cur := st.scheduler.currentOnCore c
   let wasT := cur.isEqSome t
   let st' := st.runRemoveOnCore c t
-  { st' with
-      scheduler := SchedulerState.markReschedulePendingOnCoreIf
-        (st'.scheduler.setCurrentOnCore c (if wasT then none else cur)) c wasT }
+  -- One record update per branch: a branch inside the field makes a join point
+  -- the compiler rebuilds the state record at, rather than rewriting `st'`.
+  if wasT then
+    { st' with
+        scheduler := SchedulerState.markReschedulePendingOnCoreIf
+          (st'.scheduler.setCurrentOnCore c none) c true }
+  else
+    { st' with
+        scheduler := SchedulerState.markReschedulePendingOnCoreIf
+          (st'.scheduler.setCurrentOnCore c cur) c false }
 
 @[csimp] theorem runDescheduleOnCore_eq_impl :
     @runDescheduleOnCore = @runDescheduleOnCoreImpl := by
@@ -707,7 +714,8 @@ def runDescheduleOnCoreImpl (st : SystemState) (c : CoreId) (t : SeLe4n.ThreadId
   | some x =>
     by_cases hx : x = t
     · subst hx; simp [Option.isEqSome]
-    · simp [Option.isEqSome, hx]
+    · have hb : (x == t) = false := by simp [hx]
+      simp [Option.isEqSome, hx, hb]
 
 theorem runDescheduleOnCore_onlyObjectsSchedulerDiffer (st : SystemState) (c : CoreId)
     (t : SeLe4n.ThreadId) : onlyObjectsSchedulerDiffer (st.runDescheduleOnCore c t) st :=
