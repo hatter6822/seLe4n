@@ -621,7 +621,7 @@ def endpointSendDualWithCapsOnCore
 queue's head is read once, before the send, so the pre-state is not held across
 the send's writes for a second read of the endpoint
 (`ZERO_ALLOCATION_SYSCALL_PLAN.md` D1). -/
-def endpointSendDualWithCapsOnCoreImpl
+@[inline] def endpointSendDualWithCapsOnCoreImpl
     (endpointId : SeLe4n.ObjId) (sender : SeLe4n.ThreadId)
     (msg : IpcMessage) (endpointRights : AccessRightSet)
     (receiverSlotBase : SeLe4n.Slot)
@@ -630,7 +630,10 @@ def endpointSendDualWithCapsOnCoreImpl
   let receiverHead? := match st.getEndpoint? endpointId with
     | some ep => ep.receiveQ.head
     | none => none
-  match endpointSendDualOnCore endpointId sender { msg with capsGranted := endpointRights.mem .grant } executingCore st with
+  -- A message already stamped with the grant bit is sent as it is.
+  let stamped := if msg.capsGranted == endpointRights.mem .grant then msg
+    else { msg with capsGranted := endpointRights.mem .grant }
+  match endpointSendDualOnCore endpointId sender stamped executingCore st with
   | (st', .error e) => (st', .error e)
   | (st', .ok sgi) =>
       if !receiverHead?.isSome || msg.caps.isEmpty then (st', .ok ({ results := #[] }, sgi))
@@ -649,7 +652,14 @@ def endpointSendDualWithCapsOnCoreImpl
 @[csimp] theorem endpointSendDualWithCapsOnCore_eq_impl :
     @endpointSendDualWithCapsOnCore = @endpointSendDualWithCapsOnCoreImpl := by
   funext endpointId sender msg endpointRights receiverSlotBase executingCore st
+  have hStamp : (if msg.capsGranted == endpointRights.mem .grant then msg
+      else { msg with capsGranted := endpointRights.mem .grant }) =
+      { msg with capsGranted := endpointRights.mem .grant } := by
+    split
+    · next h => cases msg; simp only [beq_iff_eq] at h; subst h; rfl
+    · rfl
   unfold endpointSendDualWithCapsOnCore endpointSendDualWithCapsOnCoreImpl
+  rw [hStamp]
   cases st.getEndpoint? endpointId <;> rfl
 
 /-- WS-SM SM6: with no capabilities to transfer, the WithCaps cross-core send is

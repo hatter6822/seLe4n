@@ -2816,6 +2816,26 @@ def wakeThread (st : SystemState) (tid : SeLe4n.ThreadId)
     | some _ => if target == executingCore then none else some (target, SgiKind.reschedule)
   (st', sgi)
 
+/-- WS-ZA ZA4.7: the compiled `wakeThread`.  The SGI is decided from the
+pre-state before the enqueue writes, so nothing keeps the pre-state across the
+writes (`ZERO_ALLOCATION_SYSCALL_PLAN.md` D1).  Proven equal
+(`wakeThread_eq_impl`). -/
+def wakeThreadImpl (st : SystemState) (tid : SeLe4n.ThreadId)
+    (executingCore : CoreId) : SystemState × Option (CoreId × SgiKind) :=
+  let target := determineTargetCore st tid
+  match st.getTcb? tid with
+  | none => (enqueueRunnableOnCore st target tid, none)
+  | some _ =>
+      if target == executingCore then (enqueueRunnableOnCore st target tid, none)
+      else (enqueueRunnableOnCore st target tid, some (target, SgiKind.reschedule))
+
+@[csimp] theorem wakeThread_eq_impl : @wakeThread = @wakeThreadImpl := by
+  funext st tid executingCore
+  unfold wakeThread wakeThreadImpl
+  cases st.getTcb? tid with
+  | none => rfl
+  | some _ => simp only []; split <;> rfl
+
 /-- WS-SM SM5.C.5 (audit-pass-3; selection-aligned since PR #880 round 7): does
 the budget-eligible candidate `tid` outrank core `c`'s current thread — in the
 **selector's own strict-preference order**?
