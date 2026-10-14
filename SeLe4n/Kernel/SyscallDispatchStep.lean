@@ -57,7 +57,7 @@ result where it is computed and the nested tuple is never built. -/
 @[inline] def syscallDispatchCrossCoreStep (ctx : LabelingContext) (execCore : CoreId)
     (syscallId : UInt32) (x0 x1 x2 x3 x4 x5 : UInt64)
     (ipcBufferAddr elr spsr spEl0 x30 : UInt64) (st : SystemState) :
-    (Architecture.SyscallOutcome × List (CoreId × SgiKind) × List CoreId ×
+    (Architecture.SyscallOutcome × PerCoreFlags × List CoreId ×
       List Architecture.TlbInvalidation × (Nat × Nat) ×
       List Architecture.ICacheInvalidation × List Architecture.PhysicalWrite ×
       Architecture.RestoreTarget × Option SeLe4n.ThreadId) × SystemState :=
@@ -81,7 +81,7 @@ result where it is computed and the nested tuple is never built. -/
       -- KSC-1: a remote core is poked when the step raised its reschedule flag
       -- (`syscallDispatchCrossCoreStep_sgis_cover_diff`: the flags cover the old
       -- whole-index diff, which stays as the specification).
-      ((outcome, rescheduleSgisFromFlags pending0 st''.scheduler.reschedulePending,
+      ((outcome, pending0.raised st''.scheduler.reschedulePending,
         Architecture.shootdownChangedTargetsFrom tlb0 st'',
         Architecture.shootdownPostedOpsFrom tlb0 st'',
         Architecture.shootdownRoundWindowFrom tlb0 st'',
@@ -110,7 +110,7 @@ theorem syscallDispatchCrossCoreStep_of_ok {ctx : LabelingContext} {execCore : C
           (Architecture.stageCallerReturnFor (st.scheduler.currentOnCore execCore) st' execCore
             outcome) execCore) execCore
       ((outcome,
-        rescheduleSgisFromFlags st.scheduler.reschedulePending st''.scheduler.reschedulePending,
+        st.scheduler.reschedulePending.raised st''.scheduler.reschedulePending,
         Architecture.shootdownChangedTargetsFrom st.tlbShootdown st'',
         Architecture.shootdownPostedOpsFrom st.tlbShootdown st'',
         Architecture.shootdownRoundWindowFrom st.tlbShootdown st'',
@@ -178,7 +178,7 @@ value-returning syscall builds neither its outcome nor its frame. -/
     (syscallId : UInt32) (x0 x1 x2 x3 x4 x5 : UInt64)
     (ipcBufferAddr elr spsr spEl0 x30 : UInt64) (st : SystemState) :
     (UInt64 × UInt64 × UInt64 × UInt64 × UInt64 × UInt64 × UInt64 ×
-      List (CoreId × SgiKind) × List CoreId ×
+      PerCoreFlags × List CoreId ×
       List Architecture.TlbInvalidation × (Nat × Nat) ×
       List Architecture.ICacheInvalidation × List Architecture.PhysicalWrite ×
       Architecture.RestoreTarget × Option SeLe4n.ThreadId) × SystemState :=
@@ -192,7 +192,7 @@ value-returning syscall builds neither its outcome nor its frame. -/
       let st'' := PriorityInheritance.settleResidencyOnCore
         (PriorityInheritance.scheduleLocalSuccessorFrom caller? stR execCore) execCore
       ((tag, w0, w1, w2, w3, w4, w5,
-        rescheduleSgisFromFlags pending0 st''.scheduler.reschedulePending,
+        pending0.raised st''.scheduler.reschedulePending,
         Architecture.shootdownChangedTargetsFrom tlb0 st'',
         Architecture.shootdownPostedOpsFrom tlb0 st'',
         Architecture.shootdownRoundWindowFrom tlb0 st'',

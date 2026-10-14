@@ -104,6 +104,16 @@ theorem ext {m₁ m₂ : PerCoreFlags} (h : ∀ c : CoreId, m₁.get c = m₂.ge
   cases m₁; cases m₂; congr 1
   apply BitVec.eq_of_getLsbD_eq; intro i hi; exact h ⟨i, hi⟩
 
+/-- WS-ZA ZA4.7: the flags that went up between `pre` and `post` — set in
+`post`, clear in `pre` — as one word. -/
+def raised (pre post : PerCoreFlags) : PerCoreFlags := ⟨post.bits &&& ~~~pre.bits⟩
+
+@[simp] theorem get_raised (pre post : PerCoreFlags) (c : CoreId) :
+    (raised pre post).get c = (!pre.get c && post.get c) := by
+  simp only [get, raised, BitVec.getLsbD_and, BitVec.getLsbD_not, c.isLt, decide_true,
+    Bool.true_and]
+  exact Bool.and_comm _ _
+
 end PerCoreFlags
 
 structure SchedulerState where

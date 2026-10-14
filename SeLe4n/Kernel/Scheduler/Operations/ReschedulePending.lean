@@ -171,6 +171,20 @@ def rescheduleSgisFromFlags (pre post : PerCoreFlags) :
   (allCores.filter fun c => !pre.get c && post.get c).map
     fun c => (c, SgiKind.reschedule)
 
+/-- WS-ZA ZA4.7: the `.reschedule` SGIs a raised-flag word names, one per set
+core in core order.  A seam hands the runtime the word
+(`PerCoreFlags.raised`) and the runtime fires from it without building this
+list; the list is how the word is read in proofs. -/
+def sgisOfRaised (m : PerCoreFlags) : List (CoreId × SgiKind) :=
+  (allCores.filter m.get).map fun c => (c, SgiKind.reschedule)
+
+theorem rescheduleSgisFromFlags_eq_sgisOfRaised (pre post : PerCoreFlags) :
+    rescheduleSgisFromFlags pre post = sgisOfRaised (pre.raised post) := by
+  unfold rescheduleSgisFromFlags sgisOfRaised
+  congr 2
+  funext c
+  exact (PerCoreFlags.get_raised pre post c).symm
+
 /-- The flag set a seam captures before its transition.  A call rather than
 a field read on purpose: the compiler sinks a projection to its use, which would
 hold the pre-state's scheduler alive across the transition and force the

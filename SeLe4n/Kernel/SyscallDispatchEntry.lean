@@ -68,7 +68,7 @@ cases — see `crossCoreSgiBody_remote_wake` for the wake direction.)
 **Single-core inertness (trace safety).** On the boot core,
 `PriorityInheritance.computeCrossCoreSgis pre post bootCoreId = []` whenever every
 thread's home core is the boot core (`computeCrossCoreSgis_nil_single_core`), and
-`Concurrency.fireCrossCoreSgis [] = pure ()`.  So on the single-core
+a word with no flag raised fires nothing (`Concurrency.fireRaisedReschedules`).  So on the single-core
 configuration the entry is observably identical to the boot-pinned
 `syscallDispatchInner` — it commits the same state and performs no IPI.  The
 model-layer trace harness exercises the pure `syscallEntry`, not this BaseIO
@@ -494,7 +494,7 @@ and never kept: the state receives its words through the save's copy.  Inlined, 
 step's own application and the record is never built at runtime. -/
 @[inline] def syscallDispatchBracket (ctx : LabelingContext) (execCore : CoreId)
     (syscallId : UInt32) (trapped : Architecture.InFlightContext) :
-    BracketSpec (Architecture.SyscallOutcome × List (CoreId × SgiKind) × List CoreId ×
+    BracketSpec (Architecture.SyscallOutcome × PerCoreFlags × List CoreId ×
       List Architecture.TlbInvalidation × (Nat × Nat) ×
       List Architecture.ICacheInvalidation × List Architecture.PhysicalWrite ×
       Architecture.RestoreTarget × Option SeLe4n.ThreadId) where
@@ -514,7 +514,7 @@ the entry, its definitional marker and the suites call. -/
 @[inline] def syscallDispatchCrossCoreBracketedStep (ctx : LabelingContext)
     (execCore : CoreId) (syscallId : UInt32) (trapped : Architecture.InFlightContext)
     (st : SystemState) :
-    (Architecture.SyscallOutcome × List (CoreId × SgiKind) × List CoreId ×
+    (Architecture.SyscallOutcome × PerCoreFlags × List CoreId ×
       List Architecture.TlbInvalidation × (Nat × Nat) ×
       List Architecture.ICacheInvalidation × List Architecture.PhysicalWrite ×
       Architecture.RestoreTarget × Option SeLe4n.ThreadId) × SystemState :=
@@ -543,7 +543,7 @@ def syscallDispatchCrossCoreBracketedStepWords (ctx : LabelingContext)
     (execCore : CoreId) (syscallId : UInt32) (trapped : Architecture.InFlightContext)
     (st : SystemState) :
     (UInt64 × UInt64 × UInt64 × UInt64 × UInt64 × UInt64 × UInt64 ×
-      List (CoreId × SgiKind) × List CoreId ×
+      PerCoreFlags × List CoreId ×
       List Architecture.TlbInvalidation × (Nat × Nat) ×
       List Architecture.ICacheInvalidation × List Architecture.PhysicalWrite ×
       Architecture.RestoreTarget × Option SeLe4n.ThreadId) × SystemState :=
@@ -556,7 +556,7 @@ def syscallDispatchCrossCoreBracketedStepWords (ctx : LabelingContext)
     (execCore : CoreId) (syscallId : UInt32) (trapped : Architecture.InFlightContext)
     (st : SystemState) :
     (UInt64 × UInt64 × UInt64 × UInt64 × UInt64 × UInt64 × UInt64 ×
-      List (CoreId × SgiKind) × List CoreId ×
+      PerCoreFlags × List CoreId ×
       List Architecture.TlbInvalidation × (Nat × Nat) ×
       List Architecture.ICacheInvalidation × List Architecture.PhysicalWrite ×
       Architecture.RestoreTarget × Option SeLe4n.ThreadId) × SystemState :=
@@ -782,7 +782,7 @@ def syscallDispatchCrossCoreEntry (syscallId : UInt32) : BaseIO UInt64 := do
   -- must not refill its TLB from a descriptor the model has already cleared,
   -- and a carved page must be zero before anything can name it.
   Platform.FFI.completePhysicalWrites rest.2.2.2.2.2.1
-  Concurrency.fireCrossCoreSgis rest.1
+  Concurrency.fireRaisedReschedules rest.1
   -- WS-SM SM7.B: run the shootdown round(s) this commit posted (inert
   -- when the syscall touched no pending-shootdown queue).
   completeShootdownRounds rest.2.1 rest.2.2.1 rest.2.2.2.1.1
@@ -819,7 +819,7 @@ def syscallDispatchCrossCoreEntry (syscallId : UInt32) : BaseIO UInt64 := do
 /-- **WS-SM SM6.A** structural marker: `syscallDispatchCrossCoreEntry` unfolds to
 the read-context / read-core / commit-dispatch / fire-SGIs / record-current /
 return-encoded driver.  Pins the body shape (atomic `modifyGetKernelState` over
-`syscallDispatchFromAbi`, then `fireCrossCoreSgis` of the diff-recovered SGIs,
+`syscallDispatchFromAbi`, then `fireRaisedReschedules` of the flags the step raised,
 then — **WS-RR RR7.26** — the HAL current-thread record of the value the same
 atomic step read off the committed post-state) so a refactor that drops the SGI
 firing, the state commit or the record breaks this marker at elaboration;
@@ -850,7 +850,7 @@ theorem syscallDispatchCrossCoreEntry_def (syscallId : UInt32) :
                 Architecture.restoreAsidOnCore r.2 execCore), r.2)
         Platform.FFI.ffiSyscallReturnFrame w0 w1 w2 w3 w4 w5
         Platform.FFI.completePhysicalWrites rest.2.2.2.2.2.1
-        Concurrency.fireCrossCoreSgis rest.1
+        Concurrency.fireRaisedReschedules rest.1
         completeShootdownRounds rest.2.1 rest.2.2.1 rest.2.2.2.1.1
           rest.2.2.2.1.2 execCore
         Platform.FFI.completeIcacheMaintenance rest.2.2.2.2.1
