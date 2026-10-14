@@ -1697,9 +1697,9 @@ def runnableOnSomeCore (st : SystemState) (tid : SeLe4n.ThreadId) : Bool :=
 read once and compared with the core range, with no closure over the core list
 and one lookup instead of one per core (`runnableOnSomeCore_eq_impl`). -/
 @[inline] def runnableOnSomeCoreImpl (st : SystemState) (tid : SeLe4n.ThreadId) : Bool :=
-  match st.objects[tid.toObjId]? with
-  | some (.tcb tcb) => tcb.runCoreCode != 0 && tcb.runCoreCode ≤ SeLe4n.Kernel.Concurrency.numCores
-  | _ => false
+  match st.getTcb? tid with
+  | some tcb => tcb.runCoreCode != 0 && tcb.runCoreCode ≤ SeLe4n.Kernel.Concurrency.numCores
+  | none => false
 
 @[csimp] theorem runnableOnSomeCore_eq_impl :
     @runnableOnSomeCore = @runnableOnSomeCoreImpl := by
@@ -1885,16 +1885,15 @@ first, so on an exclusively owned state the TCB is not copied
 (`enqueueRunnableOnCore_eq_impl`). -/
 def enqueueRunnableOnCoreImpl (st : SystemState) (c : CoreId)
     (tid : SeLe4n.ThreadId) : SystemState :=
-  match st.objects[tid.toObjId]? with
-  | some (.tcb tcb) =>
+  match st.getTcb? tid with
+  | some tcb =>
       let prio := tcb.boostedPriority
       if wakeDeclines st c tid then st
       else
-        let objs := st.objects.modify tid.toObjId
-          (SystemState.mapTcbObject fun t => { t with ipcState := .ready })
-        let st' := ({ st with objects := objs }).runEnqueueAdmitted c tid prio
+        let st' := (st.modifyObject tid.toObjId
+          (SystemState.mapTcbObject fun t => { t with ipcState := .ready })).runEnqueueAdmitted c tid prio
         { st' with scheduler := st'.scheduler.markReschedulePendingOnCore c }
-  | _ => st
+  | none => st
 
 @[csimp] theorem enqueueRunnableOnCore_eq_impl :
     @enqueueRunnableOnCore = @enqueueRunnableOnCoreImpl := by
@@ -1908,17 +1907,17 @@ def enqueueRunnableOnCoreImpl (st : SystemState) (c : CoreId)
     · next t hx => exact absurd hx (hN t)
     · rfl
   cases hx : st.objects[tid.toObjId]? with
-  | none => rw [hNone (by intro t h; rw [hx] at h; cases h)]
+  | none => rw [hNone (by intro t h; rw [hx] at h; cases h)]; simp only [SystemState.getTcb?, hx]
   | some o =>
     cases o with
     | tcb tcb =>
       rw [SystemState.getTcbWitnessed?_eq_some ((SystemState.getTcb?_eq_some_iff _ _ _).mpr hx)]
-      simp only []
+      simp only [SystemState.getTcb?, hx]
       split
       · rfl
-      · rw [SeLe4n.Kernel.RobinHood.RHTable.modify_of_get? hx]
+      · rw [SystemState.modifyObject, SeLe4n.Kernel.RobinHood.RHTable.modify_of_get? hx]
         rfl
-    | _ => rw [hNone (by intro t h; rw [hx] at h; cases h)]
+    | _ => rw [hNone (by intro t h; rw [hx] at h; cases h)]; simp only [SystemState.getTcb?, hx]
 
 /-- WS-ZA ZA4.5: the enqueue writes only the object store (the `.ready` mark
 and the woken thread's run-queue links) and the scheduler. -/

@@ -382,12 +382,12 @@ holding no reply object, the reply object free, and no SchedContext donated. -/
   st.objects.findsInPlace caller.toObjId &&
   storeLeavesIndexAndTypes st rid.toObjId .reply &&
   st.objects.findsInPlace rid.toObjId &&
-  (match st.objects[caller.toObjId]? with
-   | some (.tcb ct) => ct.replyObject.isNone && callDonatesNothing ct rt
-   | _ => false) &&
-  (match st.objects[rid.toObjId]? with
-   | some (.reply rp) => rp.isFree
-   | _ => false)
+  (match st.getTcb? caller with
+   | some ct => ct.replyObject.isNone && callDonatesNothing ct rt
+   | none => false) &&
+  (match st.getReply? rid with
+   | some rp => rp.isFree
+   | none => false)
 
 /-- The call rendezvous's writes up to the priority walk, each in its slot: the
 receiver popped and handed the message, woken on its home core; the caller
@@ -430,12 +430,12 @@ theorem callRendezvous_inPlace (st : SystemState) (endpointId : SeLe4n.ObjId) (e
     split at hCT
     · next ct hCo =>
       simp only [Bool.and_eq_true, Option.isNone_iff_eq_none] at hCT
-      exact ⟨ct, hCo, hCT.1, hCT.2⟩
+      exact ⟨ct, (SystemState.getTcb?_eq_some_iff _ _ _).mp hCo, hCT.1, hCT.2⟩
     · cases hCT
   obtain ⟨rp, hRo, hFree⟩ : ∃ rp, st.objects[rid.toObjId]? = some (.reply rp) ∧
       rp.isFree = true := by
     split at hRp
-    · next rp hRo => exact ⟨rp, hRo, hRp⟩
+    · next rp hRo => exact ⟨rp, (SystemState.getReply?_eq_some_iff _ _ _).mp hRo, hRp⟩
     · cases hRp
   have hNk : ∀ n, rt.queueNext = some n →
       caller ≠ n ∧ ∃ nt, st.objects[n.toObjId]? = some (.tcb nt) := by

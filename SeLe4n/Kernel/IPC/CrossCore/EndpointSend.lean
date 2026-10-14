@@ -316,8 +316,8 @@ def endpointSendDualOnCoreImpl (endpointId : SeLe4n.ObjId) (sender : SeLe4n.Thre
           match st.getTcb? sender with
           | none => (st, .error .objectNotFound)
           | some _ =>
-          match st.objects[head.toObjId]? with
-          | some (KernelObject.tcb ht) =>
+          match st.getTcb? head with
+          | some ht =>
               if sendWakesInPlace st endpointId head ht.queueNext then
                 let (stWoken, wakeSgi) := wakeThread
                   (storeSendRendezvous st endpointId head ht.queueNext msg) head executingCore
@@ -331,7 +331,7 @@ def endpointSendDualOnCoreImpl (endpointId : SeLe4n.ObjId) (sender : SeLe4n.Thre
                   | .ok st'' =>
                       let (stWoken, wakeSgi) := wakeThread st'' receiver executingCore
                       (stWoken, .ok wakeSgi)
-          | _ =>
+          | none =>
               match endpointQueuePopHead endpointId true st with
               | .error e => (st, .error e)
               | .ok (receiver, _tcb, st') =>
@@ -372,16 +372,15 @@ def endpointSendDualOnCoreImpl (endpointId : SeLe4n.ObjId) (sender : SeLe4n.Thre
           | none => rfl
           | some _ =>
             dsimp only
-            cases hTo : st.objects[head.toObjId]? with
+            cases hTo : st.getTcb? head with
             | none => rfl
-            | some o =>
-              cases o with
-              | tcb ht =>
+            | some ht =>
                 dsimp only
                 by_cases hG : sendWakesInPlace st endpointId head ht.queueNext = true
                 · rw [if_pos hG]
                   have h := sendRendezvous_inPlace_eq st endpointId ep head ht msg
-                    ((SystemState.getEndpoint?_eq_some_iff _ _ _).mp hEp) hH hTo hG
+                    ((SystemState.getEndpoint?_eq_some_iff _ _ _).mp hEp) hH
+                    ((SystemState.getTcb?_eq_some_iff _ _ _).mp hTo) hG
                   revert h
                   split
                   · intro h; cases h
@@ -394,7 +393,6 @@ def endpointSendDualOnCoreImpl (endpointId : SeLe4n.ObjId) (sender : SeLe4n.Thre
                       obtain ⟨rfl, rfl⟩ := h
                       rfl
                 · rw [if_neg hG]
-              | _ => rfl
 
 /-- WS-SM SM6: the absent-endpoint arm is fail-closed — the pre-state is
 returned untouched.

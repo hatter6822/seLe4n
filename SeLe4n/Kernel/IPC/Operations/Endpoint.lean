@@ -671,15 +671,15 @@ no `Option` carries the looked-up record; otherwise the specification's body. -/
     Except KernelError SystemState :=
   if tid.isReserved then .error .objectNotFound
   else
-  match st.objects[tid.toObjId]? with
-  | some (.tcb tcb) =>
+  match st.getTcb? tid with
+  | some tcb =>
       if storeLeavesIndexAndTypes st tid.toObjId .tcb then
         .ok (st.modifyObject tid.toObjId (SystemState.mapTcbObject f))
       else
       match storeObject tid.toObjId (.tcb (f tcb)) st with
       | .error e => .error e
       | .ok ((), st') => .ok st'
-  | _ => .error .objectNotFound
+  | none => .error .objectNotFound
 
 @[csimp] theorem modifyTcb_eq_impl : @modifyTcb = @modifyTcbImpl := by
   funext st tid f

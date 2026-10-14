@@ -238,12 +238,12 @@ in place on a state nothing else holds (`performCallRendezvous`,
   fun st =>
     match cap.target with
     | .object epId =>
-        match st.objects[epId]? with
-        | some (.endpoint ep) =>
+        match st.getEndpoint? epId with
+        | some ep =>
             match ep.receiveQ.head with
             | some r =>
-                match st.objects[r.toObjId]? with
-                | some (.tcb rt) =>
+                match st.getTcb? r with
+                | some rt =>
                     match rt.pendingReceiveReply with
                     | some rid =>
                         if !decide (body.size > maxMessageRegisters) &&
@@ -257,9 +257,9 @@ in place on a state nothing else holds (`performCallRendezvous`,
                             (some r) 0)
                         else endpointCallCheckedArmGeneralR ctx body tid executingCore cap st
                     | none => endpointCallCheckedArmGeneralR ctx body tid executingCore cap st
-                | _ => endpointCallCheckedArmGeneralR ctx body tid executingCore cap st
+                | none => endpointCallCheckedArmGeneralR ctx body tid executingCore cap st
             | none => endpointCallCheckedArmGeneralR ctx body tid executingCore cap st
-        | _ => endpointCallCheckedArmGeneralR ctx body tid executingCore cap st
+        | none => endpointCallCheckedArmGeneralR ctx body tid executingCore cap st
     | _ => .error (.invalidCapability, st)
 
 theorem endpointCallCheckedArmR_eq_general (ctx : LabelingContext)
@@ -286,10 +286,9 @@ theorem endpointCallCheckedArmR_eq_general (ctx : LabelingContext)
               obtain ⟨sgi, hD⟩ := callDispatchChecked_inPlace ctx st epId ep tid r rt rid
                 { registers := body, caps := #[], badge := cap.badge,
                   capsGranted := cap.rights.mem .grant } cap.rights (SeLe4n.Slot.ofNat 0)
-                executingCore rfl rfl hSz hE hH hT hRid hW hFlow
-              have hEp : st.getEndpoint? epId = some ep :=
-                (SystemState.getEndpoint?_eq_some_iff _ _ _).mpr hE
-              simp only [endpointCallCheckedArmGeneralR, hTgt, hEp, Option.bind_some, hH, hD]
+                executingCore rfl rfl hSz ((SystemState.getEndpoint?_eq_some_iff _ _ _).mp hE) hH
+                ((SystemState.getTcb?_eq_some_iff _ _ _).mp hT) hRid hW hFlow
+              simp only [endpointCallCheckedArmGeneralR, hTgt, hE, Option.bind_some, hH, hD]
               rfl
             · rfl
           · rfl
@@ -497,12 +496,12 @@ takes the general arm. -/
   fun st =>
     match cap.target with
     | .replyCap rid0 =>
-        match st.objects[rid0.toObjId]? with
-        | some (.reply rp0) =>
+        match st.getReply? rid0 with
+        | some rp0 =>
             match rp0.caller with
             | some c =>
-                match st.objects[c.toObjId]? with
-                | some (.tcb ct) =>
+                match st.getTcb? c with
+                | some ct =>
                     match ct.ipcState with
                     | .blockedOnReply _ (some server) =>
                         match ct.replyObject with
@@ -517,9 +516,9 @@ takes the general arm. -/
                             else endpointReplyCheckedArmGeneralR ctx mi regs tid executingCore cap st
                         | none => endpointReplyCheckedArmGeneralR ctx mi regs tid executingCore cap st
                     | _ => endpointReplyCheckedArmGeneralR ctx mi regs tid executingCore cap st
-                | _ => endpointReplyCheckedArmGeneralR ctx mi regs tid executingCore cap st
+                | none => endpointReplyCheckedArmGeneralR ctx mi regs tid executingCore cap st
             | none => endpointReplyCheckedArmGeneralR ctx mi regs tid executingCore cap st
-        | _ => endpointReplyCheckedArmGeneralR ctx mi regs tid executingCore cap st
+        | none => endpointReplyCheckedArmGeneralR ctx mi regs tid executingCore cap st
     | _ => .error (.invalidCapability, st)
 
 theorem endpointReplyCheckedArmR_eq_general (ctx : LabelingContext) (mi : MessageInfo)
@@ -546,11 +545,11 @@ theorem endpointReplyCheckedArmR_eq_general (ctx : LabelingContext) (mi : Messag
                 simp only [Bool.and_eq_true, Bool.not_eq_true', decide_eq_false_iff_not] at hG
                 obtain ⟨⟨⟨hSz, hFlow⟩, hSRes⟩, hW⟩ := hG
                 have hAns : replyAnsweredCaller? st rid0 = some c := by
-                  rw [replyAnsweredCaller?_of_getReply st rid0 rp0
-                    ((SystemState.getReply?_eq_some_iff _ _ _).mpr hR0), hC]
+                  rw [replyAnsweredCaller?_of_getReply st rid0 rp0 hR0, hC]
                 simp only [endpointReplyCheckedArmGeneralR, hTgt, hAns, hFlow, ↓reduceIte]
                 rw [replyTransferChecked_inPlace ctx st tid c server ct ep rid mi regs _
-                  executingCore hSz rfl hT hIpc hRO hSRes hW hFlow]
+                  executingCore hSz rfl ((SystemState.getTcb?_eq_some_iff _ _ _).mp hT) hIpc hRO
+                  hSRes hW hFlow]
               · rfl
             · rfl
           · rfl
@@ -663,10 +662,10 @@ in place (`receiveBlocksInPlace`). -/
   match st.getEndpoint? endpointId with
   | some ep =>
       ep.sendQ.head.isNone &&
-      (match st.objects[receiver.toObjId]? with
-       | some (.tcb rt) => receiveBlockAdmits rt &&
+      (match st.getTcb? receiver with
+       | some rt => receiveBlockAdmits rt &&
            receiveBlocksInPlace st endpointId receiver ep.receiveQ.tail replyId
-       | _ => false)
+       | none => false)
   | none => false
 
 /-- The CSpace root of the calling thread, as the syscall gate reads it. -/
@@ -795,11 +794,11 @@ theorem endpointReceiveCheckedArmR_eq (ctx : LabelingContext)
           simp only [Bool.and_eq_true, Option.isNone_iff_eq_none] at hF
           obtain ⟨hS, hO⟩ := hF
           cases hR : st.objects[tid.toObjId]? with
-          | none => rw [hR] at hO; cases hO
+          | none => simp only [SystemState.getTcb?, hR] at hO; cases hO
           | some o =>
             cases o with
             | tcb rt =>
-              rw [hR] at hO
+              simp only [SystemState.getTcb?, hR] at hO
               simp only [Bool.and_eq_true] at hO
               obtain ⟨hA, hG⟩ := hO
               have hE := (SystemState.getEndpoint?_eq_some_iff _ _ _).mp hEp
@@ -828,7 +827,7 @@ theorem endpointReceiveCheckedArmR_eq (ctx : LabelingContext)
               simp only [hS, Option.bind_some, Architecture.stageWokenSendCompletion_none]
               unfold Architecture.stageDeliveredMessage
               simp only [hT, hB, reduceCtorEq, ↓reduceIte]
-            | _ => rw [hR] at hO; cases hO
+            | _ => simp only [SystemState.getTcb?, hR] at hO; cases hO
       · rw [if_neg hF]
         simp only [hRoot, hSlot]
         rcases endpointReceiveDualWithCapsOnCore epId tid rid gate.cspaceRoot

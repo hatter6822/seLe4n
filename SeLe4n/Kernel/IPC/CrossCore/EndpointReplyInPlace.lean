@@ -4,6 +4,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 -/
 import SeLe4n.Kernel.IPC.CrossCore.EndpointCallInPlace
 import SeLe4n.Kernel.IPC.CrossCore.Fault
+import SeLe4n.Kernel.IPC.CrossCore.EndpointReplyDispatchInvariant
 
 /-!
 # The reply, written in place
@@ -52,9 +53,9 @@ stack and below no frame. -/
   storeLeavesIndexAndTypes st rid.toObjId .reply &&
   st.objects.findsInPlace rid.toObjId &&
   ct.pendingFault.isNone &&
-  (match st.objects[rid.toObjId]? with
-   | some (.reply rp) => rp.next.isNone
-   | _ => false)
+  (match st.getReply? rid with
+   | some rp => rp.next.isNone
+   | none => false)
 
 /-- The reply's writes up to the priority walk, each in its slot: the caller
 handed the message and woken on its home core, its reply object consumed and
@@ -95,7 +96,8 @@ theorem replyOnCore_inPlace (st : SystemState) (replier c server : SeLe4n.Thread
   obtain ⟨rp, hRo, hNext⟩ : ∃ rp, st.objects[rid.toObjId]? = some (.reply rp) ∧
       rp.next = none := by
     split at hRp
-    · next rp hRo => exact ⟨rp, hRo, Option.isNone_iff_eq_none.mp hRp⟩
+    · next rp hRo =>
+      exact ⟨rp, (SystemState.getReply?_eq_some_iff _ _ _).mp hRo, Option.isNone_iff_eq_none.mp hRp⟩
     · cases hRp
   have hNeCQ : c.toObjId ≠ rid.toObjId := fun h => by rw [h, hRo] at hT; cases hT
   have hNeQC : rid.toObjId ≠ c.toObjId := fun h => hNeCQ h.symm
@@ -231,5 +233,35 @@ theorem replyTransferChecked_inPlace (ctx : LabelingContext) (st : SystemState)
   unfold applyReplyDonationOnCore
   rw [SeLe4n.ThreadId.toValid?_some_val_eq _ _ hcv, hHead]
   rfl
+
+/-- **The in-place reply keeps the donation chain.**  Its reply object heads no
+frame (`replyWakesInPlace` asks `next = none`), so the specification's reply
+takes the chain-preserving case of `endpointReplyOnCore_donationChain_cases`,
+and the in-place store is that state (`replyOnCore_inPlace`). -/
+theorem storeReplyRendezvous_preserves_donationChainWellFormed (st : SystemState)
+    (c server : SeLe4n.ThreadId) (ct : TCB) (ep : SeLe4n.ObjId) (rid : SeLe4n.ReplyId)
+    (msg : IpcMessage) (core : Concurrency.CoreId)
+    (hSz : ¬ msg.registers.size > maxMessageRegisters) (hCp : ¬ msg.caps.size > maxExtraCaps)
+    (hT : st.objects[c.toObjId]? = some (.tcb ct))
+    (hIpc : ct.ipcState = .blockedOnReply ep (some server))
+    (hRO : ct.replyObject = some rid)
+    (hG : replyWakesInPlace st c ct rid = true)
+    (hObjInv : st.objects.invExt) (hChain : donationChainWellFormed st) :
+    donationChainWellFormed (storeReplyRendezvous st c server rid msg) := by
+  have hEq := (replyOnCore_inPlace st server c server ct ep rid msg core hSz hCp hT hIpc hRO hG).1
+  rcases endpointReplyOnCore_donationChain_cases server c msg core st hObjInv hChain with
+    h | ⟨tcb, rid', r, scId, hLk, hRo', hR, hNext, _, _⟩
+  · rw [hEq] at h; exact h
+  · exfalso
+    have hTcb : tcb = ct := by
+      have h1 := lookupTcb_some_objects st c tcb hLk
+      rw [hT] at h1; cases h1; rfl
+    subst hTcb
+    rw [hRO] at hRo'; cases hRo'
+    simp only [replyWakesInPlace, Bool.and_eq_true] at hG
+    have hRp := hG.2
+    rw [hR] at hRp
+    simp only [Option.isNone_iff_eq_none] at hRp
+    rw [hRp] at hNext; cases hNext
 
 end SeLe4n.Kernel
