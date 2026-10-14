@@ -40,8 +40,10 @@ read and cut to the declared length (`extractMessageRegisters`). -/
 @[inline] def regWord (rf : SeLe4n.RegisterFile) (r : SeLe4n.RegName) : UInt64 :=
   if r.val < 31 then rf.word r.val else 0
 
-/-- Word `i` of the body, `0` past its length. -/
-@[inline] def regMessageWord (layout : SeLe4n.SyscallRegisterLayout) (rf : SeLe4n.RegisterFile)
+/-- Word `i` of the body, `0` past its length.  Out of line: it returns a bare
+machine word, so a frame built from such words is built after every branch, not
+at a join of them. -/
+@[noinline] def regMessageWord (layout : SeLe4n.SyscallRegisterLayout) (rf : SeLe4n.RegisterFile)
     (mi : MessageInfo) (i : Nat) : UInt64 :=
   if h : i < regMessageLength layout mi then
     regWord rf (layout.msgRegs[i]'(Nat.lt_of_lt_of_le h
@@ -75,15 +77,26 @@ theorem regMessageBody_word (layout : SeLe4n.SyscallRegisterLayout) (rf : SeLe4n
     rw [Array.getElem?_eq_none hs]
     rfl
 
+/-- The badge word a frame carries, `0` for none.  Out of line, as
+`regMessageWord`. -/
+@[noinline] def badgeWordOrZero (badge : Option SeLe4n.Badge) : UInt64 :=
+  (badge.map SeLe4n.Badge.word).getD 0
+
+/-- The message-info word a frame of a register-routed message carries.  Out of
+line, as `regMessageWord`. -/
+@[noinline] def regMessageInfoWord (layout : SeLe4n.SyscallRegisterLayout) (mi : MessageInfo) :
+    UInt64 :=
+  (({ length := min (min (regMessageLength layout mi) 4) maxMessageRegisters
+      extraCaps := min 0 Model.maxExtraCaps
+      label := min 0 (errorLabelBase - 1) } : MessageInfo).encode).toUInt64
+
 /-- The frame a register-routed message of at most four words delivers:
 `returnFrameOfMessage` of its body (`returnFrameOfMessage_regMessageBody`), each
 word read from the register file. -/
 @[inline] def regMessageFrame (layout : SeLe4n.SyscallRegisterLayout) (rf : SeLe4n.RegisterFile)
     (mi : MessageInfo) (badge : Option SeLe4n.Badge) : SyscallReturnFrame :=
-  { x0 := (badge.map SeLe4n.Badge.word).getD 0
-    x1 := (({ length := min (min (regMessageLength layout mi) 4) maxMessageRegisters
-              extraCaps := min 0 Model.maxExtraCaps
-              label := min 0 (errorLabelBase - 1) } : MessageInfo).encode).toUInt64
+  { x0 := badgeWordOrZero badge
+    x1 := regMessageInfoWord layout mi
     x2 := regMessageWord layout rf mi 0
     x3 := regMessageWord layout rf mi 1
     x4 := regMessageWord layout rf mi 2
@@ -95,7 +108,8 @@ theorem returnFrameOfMessage_regMessageBody (layout : SeLe4n.SyscallRegisterLayo
         { registers := regMessageBody layout rf mi, caps := #[], badge := badge,
           capsGranted := g } 0 0 =
       regMessageFrame layout rf mi badge := by
-  simp only [returnFrameOfMessage, returnMessageInfo, regMessageFrame, regMessageBody_size,
+  simp only [returnFrameOfMessage, returnMessageInfo, regMessageFrame, badgeWordOrZero,
+    regMessageInfoWord, regMessageBody_size,
     regMessageBody_word, Nat.add_zero]
 
 end SeLe4n.Kernel.Architecture
