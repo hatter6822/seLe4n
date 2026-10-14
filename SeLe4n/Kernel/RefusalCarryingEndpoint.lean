@@ -138,9 +138,11 @@ theorem sendRendezvous_eq_delivered (st : SystemState) (endpointId : SeLe4n.ObjI
             { registers := Architecture.regMessageBody layout rf mi, caps := #[], badge := badge,
               capsGranted := granted }) r core).1)
         (some r) 0 =
-      performSendDelivered st endpointId r next layout rf mi badge granted core := by
+      performSendDelivered st endpointId r (ThreadId.optCode next) layout rf mi badge
+        granted core := by
   have hNo0 := storeSendRendezvousWith_noResizeDue st endpointId r next ipcReadyTcb hNo
   unfold performSendDelivered storeSendRendezvousReady
+  rw [SeLe4n.ThreadId.ofOptCode_optCode]
   rw [storeSendRendezvous_eq_with, receiveCompleteTcb_eq_slots, receiveReadyTcb_eq_slots,
     storeSendRendezvousWith_comp _ _ _ _ _ _ hNo, storeSendRendezvousWith_comp _ _ _ _ _ _ hNo]
   simp only [receiveCompleteSlots, clearMessageSlots]
@@ -192,7 +194,7 @@ the general arm. -/
                         endpointFlowGate ctx epId (ctx.threadLabelOf tid)
                           (ctx.endpointLabelOf epId) &&
                         sendWakesInPlace st epId r rt.queueNext then
-                      .ok ((), performSendDelivered st epId r rt.queueNext layout rf mi
+                      .ok ((), performSendDelivered st epId r rt.queueNextCode layout rf mi
                         cap.badge (cap.rights.mem .grant) executingCore)
                     else endpointSendCheckedArmRegsR ctx layout rf mi tid executingCore cap st
                 | none => endpointSendCheckedArmRegsR ctx layout rf mi tid executingCore cap st
@@ -231,7 +233,8 @@ theorem endpointSendCheckedArmR_eq_general (ctx : LabelingContext)
             rw [sendDispatchChecked_inPlace ctx st epId ep tid r rt _ cap.rights executingCore
               rfl rfl hSz' hE hH hT hS hW hFlow]
             simp only []
-            rw [← sendRendezvous_eq_delivered _ _ _ _ _ _ _ _ _ _ hNo hSz]
+            rw [← TCB.optCode_queueNext,
+              ← sendRendezvous_eq_delivered _ _ _ _ _ _ _ _ _ _ hNo hSz]
             rfl
           · rfl
         · rfl
@@ -443,7 +446,7 @@ in place on a state nothing else holds (`performCallRendezvous`,
                             endpointFlowGate ctx epId (ctx.threadLabelOf tid)
                               (ctx.endpointLabelOf epId) &&
                             callWakesInPlace st epId tid r rt rid then
-                          .ok ((), callRendezvousDelivered st epId tid r rt.queueNext rid
+                          .ok ((), callRendezvousDelivered st epId tid r rt.queueNextCode rid
                             layout rf mi
                             cap.badge (cap.rights.mem .grant) executingCore)
                         else endpointCallCheckedArmRegsR ctx layout rf mi tid executingCore cap st
@@ -871,12 +874,12 @@ theorem dispatchReplyCheckedR_eq (ctx : LabelingContext)
   simp only [hReply] at hArm ⊢
   exact hArm
 
-/-- WS-ZA ZA4.7: the tail of an endpoint's receive queue. -/
-@[inline] def receiveQueueTail? (st : SystemState) (endpointId : SeLe4n.ObjId) :
-    Option SeLe4n.ThreadId :=
+/-- WS-ZA ZA4.7: the tail of an endpoint's receive queue, as its code
+(`SeLe4n.ThreadId.optCode`): read without building an `Option`. -/
+@[inline] def receiveQueueTailCode (st : SystemState) (endpointId : SeLe4n.ObjId) : Nat :=
   match st.getEndpoint? endpointId with
-  | some ep => ep.receiveQ.tail
-  | none => none
+  | some ep => ep.recvTailCode
+  | none => 0
 
 /-- WS-ZA ZA4.7: a receive blocks, and writes only its slots: no sender is
 waiting, the receiver may block (`receiveBlockAdmits`) and every write stays
@@ -969,7 +972,7 @@ included, precedes the first write; a receive that blocks in place
       | .ok rid =>
         if receiveBlocksFast st epId tid rid then
           .ok ((), removeRunnableOnCore
-            (storeReceiveBlock st epId tid (receiveQueueTail? st epId) rid) tid executingCore)
+            (storeReceiveBlock st epId tid (receiveQueueTailCode st epId) rid) tid executingCore)
         else
           let wokenSender? := (st.getEndpoint? epId).bind (·.sendQ.head)
           match endpointReceiveDualWithCapsOnCore epId tid rid (callerCspaceRoot st tid)
@@ -1026,8 +1029,8 @@ theorem endpointReceiveCheckedArmR_eq (ctx : LabelingContext)
               simp only [Bool.and_eq_true] at hO
               obtain ⟨hA, hG⟩ := hO
               have hE := (SystemState.getEndpoint?_eq_some_iff _ _ _).mp hEp
-              have hTail : receiveQueueTail? st epId = ep.receiveQ.tail := by
-                simp only [receiveQueueTail?, hEp]
+              have hTail : receiveQueueTailCode st epId = ep.recvTailCode := by
+                simp only [receiveQueueTailCode, hEp]
               obtain ⟨t, hT, hB⟩ := receiveBlock_receiver_blocked st epId ep tid rt rid
                 executingCore hE hR hA hG
               unfold endpointReceiveDualWithCapsOnCore
@@ -1036,7 +1039,7 @@ theorem endpointReceiveCheckedArmR_eq (ctx : LabelingContext)
                 simp [receiveRendezvousSender?, hEp, hS]
               simp only [hSnd, ↓reduceIte, hTail]
               have hNoCall : rendezvousDequeuedCall (removeRunnableOnCore
-                  (storeReceiveBlock st epId tid ep.receiveQ.tail rid) tid executingCore) tid =
+                  (storeReceiveBlock st epId tid ep.recvTailCode rid) tid executingCore) tid =
                   false := by
                 unfold rendezvousDequeuedCall
                 rw [show lookupTcb _ tid = some t from by
