@@ -171,6 +171,56 @@ theorem bootFromPlatformCheckedStartedFor_ok
 -- §3  The bundle
 -- ============================================================================
 
+/-- WS-ZA ZA4.6: a slot's reply-waiter link codes — the four TCB fields the
+start never writes (its flag, its `.ready` mark and its run-queue links leave
+them). -/
+def replyLinkCodes : Option ReplyView → Option (Nat × Nat × Nat × Nat) :=
+  Option.map fun v => (v.prevCode, v.nextCode, v.headCode, v.count)
+
+/-- WS-ZA ZA4.6: overwriting a TCB with one of the same link codes keeps every
+slot's link codes. -/
+theorem replyLinkCodes_insert_tcb (st : SystemState) (hInv : st.objects.invExt)
+    {k : SeLe4n.ObjId} {t t' : TCB} (hOld : st.objects[k]? = some (.tcb t))
+    (hc : replyLinkCodes (some t'.replyView) = replyLinkCodes (some t.replyView))
+    (j : SeLe4n.ObjId) :
+    replyLinkCodes (objReplyView (st.objects.insert k (.tcb t'))[j]?) =
+      replyLinkCodes (st.replyViews j) := by
+  unfold SystemState.replyViews
+  by_cases h : k = j
+  · subst h
+    change replyLinkCodes (objReplyView ((st.objects.insert k _).get? k)) = _
+    rw [SeLe4n.Kernel.RobinHood.RHTable.getElem?_insert_self _ _ _ hInv, hOld]; exact hc
+  · change replyLinkCodes (objReplyView ((st.objects.insert k _).get? j)) = _
+    rw [SeLe4n.Kernel.RobinHood.RHTable.getElem?_insert_ne _ _ _ _ (by simpa using h) hInv]; rfl
+
+/-- WS-ZA ZA4.6: the start keeps every slot's reply-waiter link codes. -/
+theorem startInitialThreadOnCore_replyLinkCodes (st : SystemState)
+    (tid : SeLe4n.ThreadId) (hInv : st.objects.invExt) (j : SeLe4n.ObjId) :
+    replyLinkCodes ((startInitialThreadOnCore st tid).replyViews j) =
+      replyLinkCodes (st.replyViews j) := by
+  have hU : ∀ j, replyLinkCodes ((st.updateTcb tid fun t =>
+      { t with threadState := .Ready }).replyViews j) = replyLinkCodes (st.replyViews j) := by
+    intro j
+    cases hT : st.getTcb? tid with
+    | none => rw [SystemState.updateTcb_eq_self_of_none hT]
+    | some t =>
+      rw [SystemState.updateTcb_eq_of_some hT]
+      exact replyLinkCodes_insert_tcb st hInv (t' := { t with threadState := .Ready })
+        ((SystemState.getTcb?_eq_some_iff _ _ _).mp hT) rfl j
+  have hInv1 := SystemState.updateTcb_preserves_objects_invExt st tid
+    (fun t => { t with threadState := .Ready }) hInv
+  unfold startInitialThreadOnCore enqueueRunnableOnCore
+  generalize st.updateTcb tid (fun t => { t with threadState := .Ready }) = s1 at hU hInv1
+  split
+  · rename_i tcb h _
+    split
+    · exact hU j
+    · show replyLinkCodes ((SystemState.runEnqueueAdmitted _ _ tid _).replyViews j) = _
+      rw [SystemState.runEnqueueAdmitted_replyViews_eq, ← hU j]
+      exact replyLinkCodes_insert_tcb s1 hInv1 (t' := { tcb with ipcState := .ready })
+        ((SystemState.getTcb?_eq_some_iff _ _ _).mp h) rfl j
+  · exact hU j
+
 /-- **WS-BP BP7.11**: **a start keeps the boot shape.**  The written TCB was
 boot-shaped and the start moves only its flag and its IPC state to `.ready`;
 nothing else in the object store moves, so the ASID table, the untypeds and
@@ -190,9 +240,22 @@ theorem startInitialThread_preserves_bootStartShape (ist : IntermediateState)
     · exact hShape oid obj hB
     · obtain ⟨h1, h2, h3, h4, h5, h6, h7⟩ := hShape oid _ hT
       refine ⟨?_, ?_, ?_, ?_, ?_, ?_, ?_⟩ <;> intro x hx <;> cases hx
-      obtain ⟨t1, t2, t3, t4, t5, t6, t7, t8, t9, t10, t11⟩ := h4 t rfl
+      obtain ⟨t1, t2, t3, t4, t5, t6, t7, t8, t9, t10, t11, t12, t13, t14, t15⟩ := h4 t rfl
       -- The start writes the thread's state, its IPC state (to `.ready`) and
-      -- its run-queue links; every shape field reads past all three.
+      -- its run-queue links; every shape field reads past all three, and the
+      -- reply-waiter link codes are untouched (`startInitialThreadOnCore_replyLinkCodes`).
+      have hc := startInitialThreadOnCore_replyLinkCodes ist.state tid hInv oid
+      rw [SystemState.replyViews, SystemState.replyViews, show (startInitialThreadOnCore ist.state tid).objects[oid]? = _ from hObj, hT] at hc
+      simp only [objReplyView_tcb, replyLinkCodes, Option.map_some, Option.some.injEq,
+        Prod.mk.injEq, TCB.replyView] at hc
+      obtain ⟨c1, c2, c3, c4⟩ := hc
+      have r1 : t'.replyWaiterPrev = none := by
+        simp only [TCB.replyWaiterPrev, c1]; exact t12
+      have r2 : t'.replyWaiterNext = none := by
+        simp only [TCB.replyWaiterNext, c2]; exact t13
+      have r3 : t'.replyWaitersHead = none := by
+        simp only [TCB.replyWaitersHead, c3]; exact t14
+      have r4 : t'.replyWaitersCount = 0 := c4.trans t15
       rcases he with he | he | he <;>
       exact ⟨(TCB.proj_eq_of_withoutRunLinks_eq TCB.pendingMessage he).trans t1,
         (TCB.proj_eq_of_withoutRunLinks_eq TCB.ipcState he).trans (by first | exact t2 | rfl),
@@ -204,7 +267,7 @@ theorem startInitialThread_preserves_bootStartShape (ist : IntermediateState)
         (TCB.proj_eq_of_withoutRunLinks_eq TCB.replyObject he).trans t8,
         (TCB.proj_eq_of_withoutRunLinks_eq TCB.pendingReceiveReply he).trans t9,
         (TCB.proj_eq_of_withoutRunLinks_eq TCB.ntfnPrev he).trans t10,
-        (TCB.proj_eq_of_withoutRunLinks_eq TCB.ntfnNext he).trans t11⟩
+        (TCB.proj_eq_of_withoutRunLinks_eq TCB.ntfnNext he).trans t11, r1, r2, r3, r4⟩
   · show bootQuiescentFields (startInitialThreadOnCore ist.state tid)
     rw [hFrame]; exact hFields
   · show Architecture.asidTableConsistent (startInitialThreadOnCore ist.state tid)

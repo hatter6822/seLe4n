@@ -1220,14 +1220,14 @@ theorem ensureRunnable_blockingServer_eq
 -- ============================================================================
 
 /-- WS-RC R5.B.2 / Phase Q2: `ensureRunnable` preserves
-    `computeMaxWaiterPriority`: it writes only run-queue links and keeps the
-    object index, and the waiter fold reads neither. -/
+    `computeMaxWaiterPriority`: it writes only run-queue links and keeps every
+    reply view, and the waiter fold reads neither. -/
 theorem ensureRunnable_preserves_computeMaxWaiterPriority
     (st : SystemState) (tid : SeLe4n.ThreadId) (target : SeLe4n.ThreadId) :
     PriorityInheritance.computeMaxWaiterPriority (ensureRunnable st tid) target
       = PriorityInheritance.computeMaxWaiterPriority st target := by
   exact PriorityInheritance.computeMaxWaiterPriority_of_objectsAgreeOffRunLinks st _ target
-    (ensureRunnable_objectsAgreeOffRunLinks st tid) (ensureRunnable_objectIndex_eq st tid)
+    (ensureRunnable_objectsAgreeOffRunLinks st tid) (ensureRunnable_replyViews_eq st tid)
 
 -- ============================================================================
 -- WS-RC R5.B.2 / Phase Q2: restoreIncomingContext helper frames
@@ -1306,7 +1306,7 @@ theorem saveOutgoingContext_lookup_equiv
             show (st.objects.insert outTid.toObjId (.tcb outTcbNew)).get? objId = _
             rw [hEq]
             exact RobinHood.RHTable.getElem?_insert_self _ outTid.toObjId _ hObjInv
-          refine ⟨outTcb, outTcbNew, hLookPre, hLookPost, rfl, rfl, rfl, rfl, rfl, rfl, rfl⟩
+          refine ⟨outTcb, outTcbNew, hLookPre, hLookPost, rfl, rfl, rfl, rfl, rfl, rfl⟩
         · -- objId ≠ outTid.toObjId: lookup unchanged.
           left
           have hLookPost : stPost.objects[objId]? = st.objects[objId]? := by
@@ -1539,13 +1539,12 @@ theorem schedule_objectIndex_eq
     preserves `computeMaxWaiterPriority` at every thread.
 
     Substantive proof: composes `schedule_lookup_equiv` (per-slot field
-    preservation), `schedule_getSchedContext?_eq`, and
-    `schedule_objectIndex_eq` to apply Phase P1's
+    preservation) and `schedule_getSchedContext?_eq` to apply Phase P1's
     `computeMaxWaiterPriority_frame_per_field`.
 
     The conclusion follows because `computeMaxWaiterPriority` reads only
-    fields preserved by schedule (`waitersOf` reads `ipcState` + `tid` +
-    `objectIndex`; `effectiveSchedParams` reads bound TCB fields +
+    fields preserved by schedule (`waitersOf` reads the reply view;
+    `effectiveSchedParams` reads bound TCB fields +
     `getSchedContext?` for the bound SC). -/
 theorem schedule_preserves_computeMaxWaiterPriority
     (st st' : SystemState) (target : SeLe4n.ThreadId)
@@ -1554,7 +1553,6 @@ theorem schedule_preserves_computeMaxWaiterPriority
     PriorityInheritance.computeMaxWaiterPriority st' target
       = PriorityInheritance.computeMaxWaiterPriority st target := by
   apply PriorityInheritance.computeMaxWaiterPriority_frame_per_field
-  · exact schedule_objectIndex_eq st st' hOk
   · exact schedule_lookup_equiv st st' hObjInv hOk
   · intro scId
     exact schedule_getSchedContext?_eq st st' scId hObjInv hOk

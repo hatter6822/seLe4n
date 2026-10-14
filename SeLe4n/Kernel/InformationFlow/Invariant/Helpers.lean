@@ -234,7 +234,7 @@ theorem projectObjects_of_objectsAgreeOffRunLinks
     | none => rw [h.get_none_iff.mpr e]
     | some o => cases o with
       | tcb t =>
-        obtain ⟨t', _, _, _, _, _, _, ht', rfl⟩ := h.get_tcb_fwd e
+        obtain ⟨t', _, _, _, _, _, _, _, _, _, _, ht', rfl⟩ := h.get_tcb_fwd e
         rw [ht']; rfl
       | _ => rw [h.get_of_not_tcb (fun _ e => KernelObject.noConfusion e) e]
   · rfl
