@@ -220,7 +220,7 @@ theorem popHead_inPlace (st : SystemState) (endpointId : SeLe4n.ObjId)
     have hSt : storeObject endpointId
         (.endpoint (ep.withReceiveQ { head := some n, tail := ep.receiveQ.tail })) st =
         .ok ((), S1) := by
-      rw [storeObject_eq_of_leaves (by simpa only [KernelObject.objectType] using hLE), hS1, hN]; rfl
+      rw [Endpoint.withReceiveQ_head, storeObject_eq_of_leaves (by simpa only [KernelObject.objectType] using hLE), hS1, hN]; rfl
     simp only [hSt]
     have hTn1 : S1.getTcb? n = some nt :=
       (SystemState.getTcb?_eq_some_iff _ _ _).mpr
