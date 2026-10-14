@@ -168,11 +168,17 @@ theorem cancelIpcBlocking_victim_ready
     | none =>
       rw [Lifecycle.Suspend.consumeReplyLink_none _ v tcbV hRO]
       intro t' h
+      obtain ⟨t0, h, e⟩ :=
+        (SystemState.unlinkReplyWaiterOpt_objectsAgreeOffRunLinks _ v _).get_tcb' h
+      rw [TCB.proj_eq_of_withoutRunLinks_eq TCB.ipcState e]
       rw [hAtY] at h
       cases h
       exact hReadyY
     | some rid =>
       intro t' h
+      obtain ⟨t0, h, e⟩ :=
+        (SystemState.unlinkReplyWaiterOpt_objectsAgreeOffRunLinks _ v _).get_tcb' h
+      rw [TCB.proj_eq_of_withoutRunLinks_eq TCB.ipcState e]
       rw [Lifecycle.Suspend.consumeReplyLink_some _ v tcbV rid hRO] at h
       have hIY : (Lifecycle.Suspend.restoreToReadyStaging
           (spliceThreadReplyFrameOut
@@ -371,6 +377,10 @@ theorem cancelIpcBlocking_unboundHolder_binding_or_allowed (st : SystemState)
   have hAtS := spliceThreadReplyFrameOut_tcb_eq _ tcbV hInvR holder.toObjId t1 hAt1
   have hInvS := spliceThreadReplyFrameOut_preserves_objects_invExt _ tcbV hInvR
   unfold restoredAndConsumed at hAt
+  obtain ⟨t0, hAt, e⟩ :=
+    (SystemState.unlinkReplyWaiterOpt_objectsAgreeOffRunLinks _ v _).get_tcb' hAt
+  rw [TCB.proj_eq_of_withoutRunLinks_eq TCB.schedContextBinding e,
+    TCB.proj_eq_of_withoutRunLinks_eq TCB.ipcState e]
   have hAtR : (Lifecycle.Suspend.restoreToReadyStaging
       (spliceThreadReplyFrameOut (Lifecycle.Suspend.returnDonationToCancelledCaller st v tcbV)
         tcbV) v (some Architecture.cancelledIpcFrame)).objects[holder.toObjId]?
@@ -381,7 +391,7 @@ theorem cancelIpcBlocking_unboundHolder_binding_or_allowed (st : SystemState)
     Lifecycle.Suspend.restoreToReadyStaging_invExt _ v (some Architecture.cancelledIpcFrame) hInvS
   have hAtC := consumeReplyLink_other_tcb_eq _ v tcbV hInvRR holder.toObjId t1 hNeK hAtR
   rw [hAtC] at hAt
-  have hEqT : t1 = t := KernelObject.tcb.inj (Option.some.inj hAt)
+  have hEqT : t1 = t0 := KernelObject.tcb.inj (Option.some.inj hAt)
   rw [← hEqT]
   exact hDisj
 
@@ -639,7 +649,9 @@ theorem cancelIpcBlocking_getSchedContext?_eq_of_reclaim_frame (st : SystemState
       st v tcbV hInv
     have hS := spliceThreadReplyFrameOut_preserves_objects_invExt
       (Lifecycle.Suspend.returnDonationToCancelledCaller st v tcbV) tcbV hR
-    rw [consumeReplyLink_getSchedContext?_eq _ v tcbV
+    dsimp only
+    rw [(SystemState.unlinkReplyWaiterOpt_objectsAgreeOffRunLinks _ v _).getSchedContext?,
+      consumeReplyLink_getSchedContext?_eq _ v tcbV
         (Lifecycle.Suspend.restoreToReadyStaging_invExt _ v _ hS),
       restoreToReadyStaging_getSchedContext?_eq _ v _ hS,
       spliceThreadReplyFrameOut_getSchedContext?_eq _ tcbV hR, hReclaim]

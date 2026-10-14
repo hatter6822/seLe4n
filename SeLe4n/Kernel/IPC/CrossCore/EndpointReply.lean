@@ -134,7 +134,7 @@ def endpointReplyOnCore (_replier : SeLe4n.ThreadId) (target : SeLe4n.ThreadId)
       | .blockedOnReply _ replyTarget =>
           match replyTarget with
           | none => (st, .error .replyCapInvalid)
-          | some _expected =>
+          | some server =>
             -- PR #822 review 6J-lYm: authority flows from **holding the reply
             -- capability**, not from the syscall issuer being the originally-called
             -- server.  The live `.reply`/`.replyRecv` arms resolve the reply cap to
@@ -170,13 +170,18 @@ def endpointReplyOnCore (_replier : SeLe4n.ThreadId) (target : SeLe4n.ThreadId)
                 -- (`removeCallerReplyFrame_eq_consume_of_no_frame_above`).  Both
                 -- legs are total, so the error surface and the surfaced wake SGI
                 -- are unchanged.
+                --
+                -- WS-ZA ZA4.6: and the answered caller leaves its server's
+                -- reply-waiter queue, last, off every other field.
                 match tcb.replyObject with
-                | none => ((wakeThread st' target executingCore).1,
+                | none => ((wakeThread st' target executingCore).1.unlinkReplyWaiter
+                              target server,
                            .ok (wakeThread st' target executingCore).2)
                 | some rid =>
                     match removeCallerReplyFrame target rid
                         (wakeThread st' target executingCore).1 with
-                    | .ok ((), st'') => (st'', .ok (wakeThread st' target executingCore).2)
+                    | .ok ((), st'') => (st''.unlinkReplyWaiter target server,
+                                         .ok (wakeThread st' target executingCore).2)
                     | .error e => (st, .error e)
       | _ => (st, .error .replyCapInvalid)
 
@@ -572,7 +577,9 @@ def endpointReceiveDualOnCore (endpointId : SeLe4n.ObjId) (receiver : SeLe4n.Thr
                         | .error e => (st, .error e)
                         | .ok ((), stLinked) =>
                             match storeTcbIpcStateAndMessage stLinked receiver .ready senderMsg with
-                            | .ok st''' => (st''', .ok (sender, none))
+                            -- WS-ZA ZA4.6: the caller joins the receiver's reply-waiter
+                            -- queue, last, off every other field.
+                            | .ok st''' => (st'''.linkReplyWaiter sender receiver, .ok (sender, none))
                             | .error e => (st, .error e)
               else
                 match storeTcbIpcStateAndMessage st' sender .ready none with
@@ -1581,7 +1588,8 @@ theorem endpointReplyOnCore_reply_eq
     (hStore : storeTcbIpcStateAndMessage_fromTcb st target tcb .ready (some msg) = .ok st')
     (hRO : tcb.replyObject = none) :
     endpointReplyOnCore replier target msg executingCore st
-      = ((wakeThread st' target executingCore).1, .ok (wakeThread st' target executingCore).2) := by
+      = ((wakeThread st' target executingCore).1.unlinkReplyWaiter target expected,
+          .ok (wakeThread st' target executingCore).2) := by
   unfold endpointReplyOnCore
   rw [if_neg hSz1, if_neg hSz2]
   simp only [hLk, hIpc]
@@ -1612,7 +1620,8 @@ theorem endpointReplyOnCore_reply_eq_linked
     ∃ st'', removeCallerReplyFrame target rid
         (wakeThread st' target executingCore).1 = .ok ((), st'')
       ∧ endpointReplyOnCore replier target msg executingCore st
-          = (st'', .ok (wakeThread st' target executingCore).2) := by
+          = (st''.unlinkReplyWaiter target expected,
+              .ok (wakeThread st' target executingCore).2) := by
   obtain ⟨st'', hCons⟩ := removeCallerReplyFrame_isOk
     (wakeThread st' target executingCore).1 target rid
   refine ⟨st'', hCons, ?_⟩
@@ -1682,7 +1691,8 @@ theorem endpointReplyOnCore_delegated_replier_eq
     (hStore : storeTcbIpcStateAndMessage_fromTcb st target tcb .ready (some msg) = .ok st')
     (hRO : tcb.replyObject = none) :
     endpointReplyOnCore replier target msg executingCore st
-      = ((wakeThread st' target executingCore).1, .ok (wakeThread st' target executingCore).2) :=
+      = ((wakeThread st' target executingCore).1.unlinkReplyWaiter target expected,
+          .ok (wakeThread st' target executingCore).2) :=
   endpointReplyOnCore_reply_eq replier target msg executingCore st st' tcb ep expected
     hSz1 hSz2 hLk hIpc hStore hRO
 
@@ -1966,7 +1976,10 @@ theorem endpointReplyOnCore_perCore_delivery
   | none =>
       rw [endpointReplyOnCore_reply_eq replier target msg executingCore st st' tcb ep expected
             hSz1 hSz2 hLk hIpc hStore hRO]
-      exact ⟨tW, hWake, hWIpc, hWMsg⟩
+      obtain ⟨tU, hU, hUE⟩ := SystemState.getTcb?_of_objectsAgreeOffRunLinks
+        (SystemState.unlinkReplyWaiter_objectsAgreeOffRunLinks _ target expected) hWake
+      exact ⟨tU, hU, (TCB.proj_eq_of_withoutRunLinks_eq TCB.ipcState hUE).trans hWIpc,
+        (TCB.proj_eq_of_withoutRunLinks_eq TCB.pendingMessage hUE).trans hWMsg⟩
   | some rid =>
       obtain ⟨st'', hCons, hEq⟩ := endpointReplyOnCore_reply_eq_linked replier target msg
         executingCore st st' tcb ep expected rid hSz1 hSz2 hLk hIpc hStore hRO
@@ -1979,8 +1992,11 @@ theorem endpointReplyOnCore_perCore_delivery
         removeCallerReplyFrame_tcb_backward
           (wakeThread st' target executingCore).1 st'' target rid hInvW hCons
           target.toObjId tW hObjW
-      exact ⟨tx, (SystemState.getTcb?_eq_some_iff st'' target tx).mpr hTx,
-        by rw [hIpcEq, hWIpc], by rw [hMsgEq, hWMsg]⟩
+      obtain ⟨tU, hU, hUE⟩ := SystemState.getTcb?_of_objectsAgreeOffRunLinks
+        (SystemState.unlinkReplyWaiter_objectsAgreeOffRunLinks st'' target expected)
+        ((SystemState.getTcb?_eq_some_iff st'' target tx).mpr hTx)
+      exact ⟨tU, hU, (TCB.proj_eq_of_withoutRunLinks_eq TCB.ipcState hUE).trans (by rw [hIpcEq, hWIpc]),
+        (TCB.proj_eq_of_withoutRunLinks_eq TCB.pendingMessage hUE).trans (by rw [hMsgEq, hWMsg])⟩
 
 /-- **WS-RR RR8.16 (`v0.35.195`)**: a successful reply leg reduces to its own
 preconditions.
@@ -2937,6 +2953,7 @@ theorem endpointReplyOnCore_perCore_consistent
   | none =>
       rw [endpointReplyOnCore_reply_eq replier target msg executingCore st st' tcb ep expected
             hSz1 hSz2 hLk hIpc hStore hRO]
+      simp only [SystemState.unlinkReplyWaiter_scheduler]
       exact ⟨by rw [hRQ, hSched], by rw [hCur, hSched]⟩
   | some rid =>
       obtain ⟨st'', hCons, hEq⟩ := endpointReplyOnCore_reply_eq_linked replier target msg
@@ -2948,10 +2965,12 @@ theorem endpointReplyOnCore_perCore_consistent
           (wakeThread st' target executingCore).1 st'' target rid hCons
       rw [hEq]
       constructor
-      · show st''.scheduler.runQueueOnCore c' = st.scheduler.runQueueOnCore c'
-        rw [hSchedC, hRQ, hSched]
-      · show st''.scheduler.currentOnCore c' = st.scheduler.currentOnCore c'
-        rw [hSchedC, hCur, hSched]
+      · show (st''.unlinkReplyWaiter target expected).scheduler.runQueueOnCore c'
+            = st.scheduler.runQueueOnCore c'
+        rw [SystemState.unlinkReplyWaiter_scheduler, hSchedC, hRQ, hSched]
+      · show (st''.unlinkReplyWaiter target expected).scheduler.currentOnCore c'
+            = st.scheduler.currentOnCore c'
+        rw [SystemState.unlinkReplyWaiter_scheduler, hSchedC, hCur, hSched]
 
 -- ============================================================================
 -- WS-RR RR2.10 — the scheduler-domain footprint of the cross-core `.reply`
@@ -3215,8 +3234,9 @@ theorem endpointReceiveDualOnCore_preserves_objects_invExt
                 cases hS2 : storeTcbIpcStateAndMessage stLinked receiver .ready
                     senderTcb.pendingMessage with
                 | ok st3 =>
-                    exact storeTcbIpcStateAndMessage_preserves_objects_invExt stLinked st3
-                      receiver _ _ hObjInv3 hS2
+                    exact SystemState.linkReplyWaiter_objects_invExt _ _ _
+                      (storeTcbIpcStateAndMessage_preserves_objects_invExt stLinked st3
+                        receiver _ _ hObjInv3 hS2)
                 | error e => simp only; exact hObjInv
         · -- A plain `Send`: complete the sender, wake it on its home core, deliver.
           cases hS1 : storeTcbIpcStateAndMessage st' sender .ready none with
@@ -3341,8 +3361,10 @@ theorem endpointReceiveDualOnCore_determineTargetCore_eq_of_rendezvous
                     | error e => rfl
                     | ok st4 =>
                         dsimp only
-                        exact (storeTcbIpcStateAndMessage_determineTargetCore_eq st3 st4 receiver
-                          .ready popTcb.pendingMessage x hI3 hS4).trans hF3
+                        exact (determineTargetCore_of_objectsAgreeOffRunLinks
+                          (SystemState.linkReplyWaiter_objectsAgreeOffRunLinks _ _ _) x).trans
+                          ((storeTcbIpcStateAndMessage_determineTargetCore_eq st3 st4 receiver
+                          .ready popTcb.pendingMessage x hI3 hS4).trans hF3)
       · -- plain `Send` rendezvous: the sender is made `.ready` and woken.
         cases hS2 : storeTcbIpcStateAndMessage st1 popTid .ready none with
         | error e => rfl
@@ -3468,8 +3490,9 @@ theorem endpointReceiveDualOnCore_getSchedContext?_eq_of_rendezvous
                     | error e => rfl
                     | ok st4 =>
                         dsimp only
-                        exact (storeTcbIpcStateAndMessage_getSchedContext?_eq st3 st4 receiver
-                          .ready popTcb.pendingMessage scId hI3 hS4).trans hF3
+                        exact ((SystemState.linkReplyWaiter_objectsAgreeOffRunLinks _ _ _).getSchedContext?
+                          scId).trans ((storeTcbIpcStateAndMessage_getSchedContext?_eq st3 st4 receiver
+                          .ready popTcb.pendingMessage scId hI3 hS4).trans hF3)
       · -- plain `Send` rendezvous: the sender is made `.ready` and woken.
         cases hS2 : storeTcbIpcStateAndMessage st1 popTid .ready none with
         | error e => rfl
@@ -3600,8 +3623,10 @@ theorem endpointReceiveDualOnCore_sameSchedContextBindings_of_rendezvous
                     | error e => exact sameSchedContextBindings.refl st
                     | ok st4 =>
                         dsimp only
-                        exact hF3.trans (storeTcbIpcStateAndMessage_sameSchedContextBindings st3
-                          st4 receiver .ready popTcb.pendingMessage hI3 hS4)
+                        exact (hF3.trans (storeTcbIpcStateAndMessage_sameSchedContextBindings st3
+                          st4 receiver .ready popTcb.pendingMessage hI3 hS4)).trans
+                          (sameSchedContextBindings.of_objectsAgreeOffRunLinks
+                            (SystemState.linkReplyWaiter_objectsAgreeOffRunLinks _ _ _))
       · -- plain `Send` rendezvous: the sender is made `.ready` and woken.
         cases hS2 : storeTcbIpcStateAndMessage st1 popTid .ready none with
         | error e => exact sameSchedContextBindings.refl st
@@ -3775,7 +3800,8 @@ theorem endpointReceiveDualOnCore_replenishQueueOnCore_of_rendezvous (epId : SeL
           · next st3 hLink =>
             split
             · next st4 hMsg =>
-              simp only [storeTcbIpcStateAndMessage_scheduler_eq st3 st4 _ _ _ hMsg,
+              simp only [SystemState.linkReplyWaiter_scheduler,
+                storeTcbIpcStateAndMessage_scheduler_eq st3 st4 _ _ _ hMsg,
                 linkCallerReply_scheduler_eq st2 st3 sender' rid hLink,
                 storeTcbIpcStateAndMessage_scheduler_eq st1 st2 _ _ _ hIpc, hPopSched]
             · rfl

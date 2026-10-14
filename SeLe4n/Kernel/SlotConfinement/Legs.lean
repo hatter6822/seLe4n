@@ -266,6 +266,27 @@ theorem linkCallerReply_confinedToCores (caller : SeLe4n.ThreadId) (rid : SeLe4n
     (linkCallerReply_scheduler_eq st st' caller rid hStep)
     (linkCallerReply_machine_eq st st' caller rid hStep)
 
+/-- WS-ZA ZA4.6: a step that ends by linking a thread onto, or unlinking it from,
+a server's reply-waiter queue is confined where the step before it was: the link
+writes TCB reply links alone, no scheduler or machine slot. -/
+theorem observableSlotsConfinedToCores_then_linkReplyWaiter {st st' : SystemState}
+    {cs : List CoreId} (w s : SeLe4n.ThreadId) (h : observableSlotsConfinedToCores st st' cs) :
+    observableSlotsConfinedToCores st (st'.linkReplyWaiter w s) cs :=
+  observableSlotsConfinedToCores_mono (by intro c hc; simpa using hc)
+    (observableSlotsConfinedToCores_trans h
+      (observableSlotsConfinedToCores_nil_of_scheduler_machine_eq
+        (SystemState.linkReplyWaiter_scheduler st' w s)
+        (SystemState.linkReplyWaiter_machine st' w s)))
+
+theorem observableSlotsConfinedToCores_then_unlinkReplyWaiter {st st' : SystemState}
+    {cs : List CoreId} (w s : SeLe4n.ThreadId) (h : observableSlotsConfinedToCores st st' cs) :
+    observableSlotsConfinedToCores st (st'.unlinkReplyWaiter w s) cs :=
+  observableSlotsConfinedToCores_mono (by intro c hc; simpa using hc)
+    (observableSlotsConfinedToCores_trans h
+      (observableSlotsConfinedToCores_nil_of_scheduler_machine_eq
+        (SystemState.unlinkReplyWaiter_scheduler st' w s)
+        (SystemState.unlinkReplyWaiter_machine st' w s)))
+
 theorem endpointQueueRemoveDual_confinedToCores (endpointId : SeLe4n.ObjId)
     (isReceiveQ : Bool) (tid : SeLe4n.ThreadId) (st st' : SystemState)
     (hStep : endpointQueueRemoveDual endpointId isReceiveQ tid st = .ok ((), st')) :
@@ -664,7 +685,8 @@ theorem endpointCallOnCore_confinedToCores (endpointId : SeLe4n.ObjId)
                         (linkServerStashedReply_confinedToCores caller recvTid st4 st5 hLink))
                       (removeRunnableOnCore_confinedToCores st5 caller executingCore))
                   rw [hT2, hT1, hRecv] at hChain
-                  exact observableSlotsConfinedToCores_mono (by intro c hc; simpa using hc) hChain
+                  exact observableSlotsConfinedToCores_then_linkReplyWaiter caller recvTid
+                    (observableSlotsConfinedToCores_mono (by intro c hc; simpa using hc) hChain)
 
 -- ============================================================================
 -- §4 SM6.C — the reply transition
@@ -713,12 +735,13 @@ theorem endpointReplyOnCore_confinedToCores (replier target : SeLe4n.ThreadId)
                 (wakeThread_confinedToCores st1 target executingCore)
               rw [hT1] at hPre
               split
-              · exact hPre
+              · exact observableSlotsConfinedToCores_then_unlinkReplyWaiter _ _ hPre
               · next rid hReply =>
                 split
                 · next unit st2 hConsume =>
-                  exact observableSlotsConfinedToCores_trans hPre
-                    (removeCallerReplyFrame_confinedToCores _ st2 target rid hConsume)
+                  exact observableSlotsConfinedToCores_then_unlinkReplyWaiter _ _
+                    (observableSlotsConfinedToCores_trans hPre
+                      (removeCallerReplyFrame_confinedToCores _ st2 target rid hConsume))
                 · exact observableSlotsConfinedToCores_of_eq _ rfl
         · exact observableSlotsConfinedToCores_of_eq _ rfl
 
@@ -833,12 +856,13 @@ theorem endpointReceiveDualOnCore_confinedToCores (endpointId : SeLe4n.ObjId)
                 split
                 · next st4 hMsg =>
                   exact observableSlotsConfinedToCores_widen_any
+                    (observableSlotsConfinedToCores_then_linkReplyWaiter sender receiver
                     (observableSlotsConfinedToCores_trans
                       (observableSlotsConfinedToCores_trans hPopConf
                         (storeTcbIpcStateAndMessage_confinedToCores st1 st2 sender _ _ hIpc))
                       (observableSlotsConfinedToCores_trans
                         (linkCallerReply_confinedToCores sender rid st2 st3 hLink)
-                        (storeTcbIpcStateAndMessage_confinedToCores st3 st4 receiver _ _ hMsg)))
+                        (storeTcbIpcStateAndMessage_confinedToCores st3 st4 receiver _ _ hMsg))))
                 · exact observableSlotsConfinedToCores_of_eq _ rfl
         · -- `blockedOnSend` sender: woken on its own home core.
           rw [if_neg (by simp)]

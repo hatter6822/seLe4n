@@ -10,6 +10,7 @@
 import SeLe4n.Kernel.Scheduler.PriorityInheritance.BlockingGraph
 import SeLe4n.Kernel.Scheduler.Operations.Selection
 import SeLe4n.Kernel.Scheduler.RunQueueLinkFrame
+import SeLe4n.Kernel.Scheduler.ReplyWaitersOps
 
 namespace SeLe4n.Kernel.PriorityInheritance
 

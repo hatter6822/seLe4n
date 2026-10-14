@@ -661,7 +661,8 @@ theorem endpointCallOnCore_runQueueEntryStage (endpointId : SeLe4n.ObjId)
                 (hHeads.popped_blocked hPop)).window (.block c) |>.trans
                 ((storeTcbIpcStateAndMessage_runQueueBlockStage hS4 hC3 hNI).trans
                 ((linkServerStashedReply_runQueueStage hS5).window _))).dispatch
-                (SystemState.RunQueueDispatchStage.descheduleCurrent st5 c caller hC5)
+                ((SystemState.RunQueueDispatchStage.descheduleCurrent st5 c caller hC5).trans_stage
+                  (SystemState.linkReplyWaiter_runQueueStage _ caller receiver))
     · split
       · exact (RunQueueStage.refl _).entry
       · rename_i st1 hE

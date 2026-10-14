@@ -817,6 +817,9 @@ theorem cancelIpcBlocking_blockedOnReply_preserves_projection
             (Lifecycle.Suspend.returnDonationToCancelledCaller st victim tcb) tcb) victim) :=
     consumeReplyLink_preserves_projection_high ctx observer _ victim tcb hObjHigh hCompD
       (restoreToReadyCancelled_preserves_objects_invExt _ victim hInvD)
+  -- WS-ZA ZA4.6: the arm's last write unlinks the victim from its server's
+  -- reply-waiter queue, which the projection erases.
+  refine (unlinkReplyWaiterOpt_preserves_projection ctx observer _ victim _).trans ?_
   exact h1.trans
     ((restoreToReadyCancelled_preserves_projection_high ctx observer _ victim hObjHigh
       hInvD).trans

@@ -382,7 +382,11 @@ def endpointCallOnCore (endpointId : SeLe4n.ObjId) (caller : SeLe4n.ThreadId)
                       match SystemState.linkServerStashedReply caller receiver st4 with
                       | .error e => (st, .error e)
                       | .ok ((), st5) =>
-                          (removeRunnableOnCore st5 caller executingCore,
+                          -- WS-ZA ZA4.6: the caller joins the server's reply-waiter
+                          -- queue (seL4 links the reply object into the caller's
+                          -- call stack here), last, off every other field.
+                          ((removeRunnableOnCore st5 caller executingCore).linkReplyWaiter
+                              caller receiver,
                            .ok (wakeThread st'' receiver executingCore).2)
       | none =>
           match endpointQueueEnqueue endpointId false caller st with
@@ -426,7 +430,7 @@ theorem endpointCallOnCore_rendezvous_eq
     -- with a stashed reply object — the production dispatch always provides one).
     (hLink : SystemState.linkServerStashedReply caller receiver st4 = .ok ((), st5)) :
     endpointCallOnCore endpointId caller msg executingCore st
-      = (removeRunnableOnCore st5 caller executingCore,
+      = ((removeRunnableOnCore st5 caller executingCore).linkReplyWaiter caller receiver,
          .ok (wakeThread st'' receiver executingCore).2) := by
   unfold endpointCallOnCore
   rw [if_neg hSz1, if_neg hSz2]
@@ -515,7 +519,8 @@ theorem endpointCallOnCore_replenishQueueOnCore (endpointId : SeLe4n.ObjId)
                 | error e => rfl
                 | ok pr =>
                   obtain ⟨_, st5⟩ := pr
-                  simp only [removeRunnableOnCore_replenishQueueOnCore]
+                  simp only [SystemState.linkReplyWaiter_scheduler,
+                    removeRunnableOnCore_replenishQueueOnCore]
                   rw [linkServerStashedReply_scheduler_eq st4 st5 caller receiver hLink,
                     storeTcbIpcStateAndMessage_scheduler_eq _ st4 caller _ _ hStore2,
                     wakeThread_replenishQueueOnCore,
@@ -1925,6 +1930,7 @@ theorem endpointCallOnCore_perCore_blocking
       ≠ some caller := by
   rw [endpointCallOnCore_rendezvous_eq endpointId caller msg executingCore st ep receiver
         recvTcb0 st' st'' st4 st5 hSz1 hSz2 hObj hHead hPop hStore hCallerStore hLink]
+  simp only [SystemState.linkReplyWaiter_scheduler]
   exact ⟨removeRunnableOnCore_not_mem_self st5 caller executingCore,
          removeRunnableOnCore_currentOnCore_ne_self st5 caller executingCore⟩
 
@@ -2013,7 +2019,8 @@ theorem endpointCallOnCore_preserves_objects_invExt
               obtain ⟨_, st5⟩ := pL
               simp only
               have h5 := linkServerStashedReply_preserves_objects_invExt st4 st5 caller pair.1 h4 hLink
-              exact removeRunnableOnCore_objects_invExt _ _ _ h5
+              exact SystemState.linkReplyWaiter_objects_invExt _ _ _
+                (removeRunnableOnCore_objects_invExt _ _ _ h5)
 
 /-- **WS-RR RR8.16** (`v0.35.200`): the cross-core Call leg is a
 `kindPreservingWrite`.
@@ -2092,9 +2099,9 @@ theorem endpointCallOnCore_kindPreservingWrite
               simp only
               have w5 := SystemState.linkServerStashedReply_kindPreservingWrite st4 st5 caller
                 pair.1 h4 hLink
-              show kindPreservingWrite st (removeRunnableOnCore st5 caller executingCore)
-              exact ((((w1.trans w2).trans w3).trans w4).trans w5).trans
-                (removeRunnableOnCore_objectsAgreeOffRunLinks _ _ _).kindPreserving
+              exact (((((w1.trans w2).trans w3).trans w4).trans w5).trans
+                (removeRunnableOnCore_objectsAgreeOffRunLinks _ _ _).kindPreserving).trans
+                (SystemState.linkReplyWaiter_kindPreservingWrite _ _ _)
 
 /-- **WS-RR RR8.16** (`v0.35.200`): ...and the Call leg writes neither CDT table
 on any path. -/
@@ -2160,9 +2167,11 @@ theorem endpointCallOnCore_cdt_eq
                   ∧ (wakeThread st2 pair.1 executingCore).1.cdtNodeSlot = st2.cdtNodeSlot := by
                 rw [wakeThread_state_eq_enqueue]; exact e3
               refine ⟨?_, ?_⟩
-              · rw [(removeRunnableOnCore_cdt st5 caller executingCore).1, e5.1, e4.1, eW.1,
+              · rw [SystemState.linkReplyWaiter_cdt,
+                  (removeRunnableOnCore_cdt st5 caller executingCore).1, e5.1, e4.1, eW.1,
                   e2.1, e1.1]
-              · rw [(removeRunnableOnCore_cdt st5 caller executingCore).2, e5.2, e4.2, eW.2,
+              · rw [SystemState.linkReplyWaiter_cdtNodeSlot,
+                  (removeRunnableOnCore_cdt st5 caller executingCore).2, e5.2, e4.2, eW.2,
                   e2.2, e1.2]
 
 open SeLe4n.Model.SystemState in
@@ -2254,8 +2263,9 @@ theorem endpointCallOnCore_sameSchedContextBindings
               obtain ⟨_, st5⟩ := pL
               simp only
               have hS5 := hS4.trans (linkServerStashedReply_sameSchedContextBindings st4 st5 caller pair.1 hObjInv4 hLink)
-              show sameSchedContextBindings st (removeRunnableOnCore st5 caller executingCore)
-              exact hS5.trans (sameSchedContextBindings.of_objectsAgreeOffRunLinks (removeRunnableOnCore_objectsAgreeOffRunLinks st5 caller executingCore))
+              exact (hS5.trans (sameSchedContextBindings.of_objectsAgreeOffRunLinks (removeRunnableOnCore_objectsAgreeOffRunLinks st5 caller executingCore))).trans
+                (sameSchedContextBindings.of_objectsAgreeOffRunLinks
+                  (SystemState.linkReplyWaiter_objectsAgreeOffRunLinks _ _ _))
 
 /-- Finding F-1: a `storeTcbReceiveComplete` that succeeds resolves the target TCB
 and sets its `ipcState` to `.ready`. Mirror of
@@ -2321,7 +2331,8 @@ theorem endpointCallOnCore_reply_linkage_under_lockSet
   obtain ⟨tb, hTb, hIpcEq⟩ :=
     linkServerStashedReply_tcb_ipcState_backward st4 st5 caller receiver caller t' hObjInv4 hLink hT5
   obtain ⟨t'', hT6, hE⟩ :=
-    (removeRunnableOnCore_objectsAgreeOffRunLinks st5 caller executingCore).get_tcb hT5
+    ((SystemState.linkReplyWaiter_objectsAgreeOffRunLinks _ caller receiver).trans
+      (removeRunnableOnCore_objectsAgreeOffRunLinks st5 caller executingCore)).get_tcb hT5
   refine ⟨t'', (SystemState.getTcb?_eq_some_iff _ caller t'').mpr hT6, ?_⟩
   have hbt : t = tb := by simpa using hT4.symm.trans hTb
   rw [TCB.proj_eq_of_withoutRunLinks_eq TCB.ipcState hE, ← hIpcEq, ← hbt]; exact hIpc
@@ -2661,9 +2672,10 @@ theorem endpointCallOnCore_preserves_schedulerInvariantBase_smp
                   (linkServerStashedReply_scheduler_eq st4 st5 caller pair.1 hLink)
                   (SystemState.linkServerStashedReply_kindPreservingWrite st4 st5 caller pair.1
                     hInv4 hLink)
-              show schedulerInvariantBase_smp (removeRunnableOnCore st5 caller executingCore)
-              exact removeRunnableOnCore_preserves_schedulerInvariantBase_smp caller
-                executingCore h5
+              exact schedulerInvariantBase_smp_of_kindPreserving
+                (removeRunnableOnCore_preserves_schedulerInvariantBase_smp caller executingCore h5)
+                (SystemState.linkReplyWaiter_scheduler _ _ _)
+                (SystemState.linkReplyWaiter_kindPreservingWrite _ _ _)
 
 /-- **WS-RR RR8.16** (`v0.35.200`): the **state-level** reading of the wake's
 `hNotCur` — *no endpoint's receive-queue head is current on the core its own

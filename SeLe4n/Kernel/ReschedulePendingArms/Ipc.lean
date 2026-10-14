@@ -26,6 +26,21 @@ open SeLe4n.Kernel.Concurrency (CoreId SgiKind)
 
 /-! ### The TCB and endpoint writes -/
 
+/-- WS-ZA ZA4.6: linking a thread onto, or unlinking it from, a server's
+reply-waiter queue writes reply links alone, which carry no scheduling key. -/
+theorem linkReplyWaiter_stepCovers (e : CoreId) (st : SystemState) (w s : SeLe4n.ThreadId) :
+    stepCovers e st (st.linkReplyWaiter w s) :=
+  stepCovers_of_keys_sched
+    (keyInputsEq_of_objectsAgreeOffReplyLinks (SystemState.linkReplyWaiter_objectsAgreeOffReplyLinks _ _ _))
+    (SystemState.linkReplyWaiter_scheduler _ _ _)
+
+theorem unlinkReplyWaiter_stepCovers (e : CoreId) (st : SystemState) (w s : SeLe4n.ThreadId) :
+    stepCovers e st (st.unlinkReplyWaiter w s) :=
+  stepCovers_of_keys_sched
+    (keyInputsEq_of_objectsAgreeOffReplyLinks
+      (SystemState.unlinkReplyWaiter_objectsAgreeOffReplyLinks _ _ _))
+    (SystemState.unlinkReplyWaiter_scheduler _ _ _)
+
 /-- A TCB write that keeps the key fields moves no key input. -/
 theorem modifyTcb_keyFrame {st st' : SystemState} {tid : SeLe4n.ThreadId} {f : TCB → TCB}
     (hF : ∀ t, tcbKeyFields (f t) = tcbKeyFields t) (hInv : st.objects.invExt)
@@ -399,7 +414,8 @@ theorem endpointReceiveDualOnCore_stepCovers (e : CoreId) {endpointId : SeLe4n.O
                 split
                 · rename_i st4 hRdy
                   have hF4 := hF3.trans (storeTcbIpcStateAndMessage_keyFrame hF3.2.2 hRdy)
-                  exact ⟨hF4.stepCovers, hF4.2.2⟩
+                  exact ⟨stepCovers_trans hF4.stepCovers (linkReplyWaiter_stepCovers e _ _ _),
+                    SystemState.linkReplyWaiter_objects_invExt _ _ _ hF4.2.2⟩
                 · exact hRefl
         · split
           · exact hRefl
@@ -696,8 +712,11 @@ theorem endpointCallOnCore_stepCovers (e : CoreId) {endpointId : SeLe4n.ObjId}
             · exact hRefl
             · rename_i st5 hLink
               have hF5 := hF4.trans (linkServerStashedReply_keyFrame hF4.2.2 hLink)
-              exact ⟨stepCovers_trans (stepCovers_trans (stepCovers_trans hF2.stepCovers hW)
-                hF5.stepCovers) (removeRunnableOnCore_stepCovers e _ _ _), removeRunnableOnCore_objects_invExt _ _ _ hF5.2.2⟩
+              exact ⟨stepCovers_trans (stepCovers_trans (stepCovers_trans
+                (stepCovers_trans hF2.stepCovers hW) hF5.stepCovers)
+                (removeRunnableOnCore_stepCovers e _ _ _)) (linkReplyWaiter_stepCovers e _ _ _),
+                SystemState.linkReplyWaiter_objects_invExt _ _ _
+                  (removeRunnableOnCore_objects_invExt _ _ _ hF5.2.2)⟩
     · split
       · exact hRefl
       · rename_i st1 hEnq
@@ -849,11 +868,14 @@ theorem endpointReplyOnCore_stepCovers (e : CoreId) {replier target : SeLe4n.Thr
           obtain ⟨hW, hWInv⟩ := wakeThread_stepCovers e st1 target executingCore hF1.2.2
           have hPre := stepCovers_trans hF1.stepCovers hW
           split
-          · exact ⟨hPre, hWInv⟩
+          · exact ⟨stepCovers_trans hPre (unlinkReplyWaiter_stepCovers e _ _ _),
+              SystemState.unlinkReplyWaiter_objects_invExt _ _ _ hWInv⟩
           · split
             · rename_i st2 hR
               have hF2 := removeCallerReplyFrame_keyFrame hWInv hR
-              exact ⟨stepCovers_trans hPre hF2.stepCovers, hF2.2.2⟩
+              exact ⟨stepCovers_trans (stepCovers_trans hPre hF2.stepCovers)
+                (unlinkReplyWaiter_stepCovers e _ _ _),
+                SystemState.unlinkReplyWaiter_objects_invExt _ _ _ hF2.2.2⟩
             · exact hRefl
     · exact hRefl
 

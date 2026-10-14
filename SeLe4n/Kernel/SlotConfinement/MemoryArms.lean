@@ -504,11 +504,11 @@ theorem lifecyclePreRetypeCleanup_confinedToCores
     | ok stArm =>
       rw [hArm] at hOk
       simp only [] at hOk
-      have hRO : tcb.replyObject.isSome = false := by
-        cases hr : tcb.replyObject.isSome with
+      have hRO : (tcb.replyObject.isSome || tcb.replyWaitersHeadCode != 0) = false := by
+        cases hr : (tcb.replyObject.isSome || tcb.replyWaitersHeadCode != 0) with
         | false => rfl
         | true => rw [if_pos hr] at hOk; exact absurd hOk (by simp)
-      rw [if_neg (by simp [hRO])] at hOk
+      rw [if_neg (by simp only [hRO]; exact Bool.false_ne_true)] at hOk
       injection hOk with hOk; subst hOk
       simp only [lifecycleRetypeWriteSetOf]
       -- The arm writes no observable slot; the sweep's write set at the arm's

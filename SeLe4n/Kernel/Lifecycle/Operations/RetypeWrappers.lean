@@ -220,11 +220,11 @@ theorem lifecycleRetypeWithCleanup_ok_runnable_no_dangling
         rw [hArm] at hClean; simp only [] at hClean
         -- PR #822 review: the final `.tcb` arm rejects a TCB still holding a reply
         -- link (`.error`, vacuous on `.ok`); reduce the reject-`if` on the `.ok` path.
-        have hRO : tcb.replyObject.isSome = false := by
-          cases hr : tcb.replyObject.isSome with
+        have hRO : (tcb.replyObject.isSome || tcb.replyWaitersHeadCode != 0) = false := by
+          cases hr : (tcb.replyObject.isSome || tcb.replyWaitersHeadCode != 0) with
           | false => rfl
           | true => rw [if_pos hr] at hClean; exact absurd hClean (by simp)
-        rw [if_neg (by simp [hRO])] at hClean
+        rw [if_neg (by simp only [hRO]; exact Bool.false_ne_true)] at hClean
         injection hClean with hClean; subst hClean
         -- `cleanupTcbReferences_removes_from_runnable` is polymorphic in the input
         -- state; `_` lets Lean unify it with the arm's post-state, which keeps

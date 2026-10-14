@@ -112,9 +112,14 @@ theorem endpointReplyOnCore_donationChain_cases
         donationChainWellFormedExcept
           (endpointReplyOnCore replier target msg executingCore st).1 rid := by
   rcases endpointReplyOnCore_state_eq replier target msg executingCore st with
-    hEq | ⟨tcb, st', hLk, hStore, hTail⟩
+    hEq | ⟨tcb, st', server, pre, hLk, hStore, hPost, hTail⟩
   · exact Or.inl (by rw [hEq]; exact hChain)
-  · have hStore' : storeTcbIpcStateAndMessage st target .ready (some msg) = .ok st' := by
+  · rw [hPost]
+    -- the closing unlink writes only reply-waiter links: no chain data moves
+    have hU := SystemState.unlinkReplyWaiter_objectsAgreeOffRunLinks pre target server
+    have hFrameU : donationChainFrame pre (pre.unlinkReplyWaiter target server) :=
+      donationChainFrame.of_objectsAgreeOffRunLinks hU
+    have hStore' : storeTcbIpcStateAndMessage st target .ready (some msg) = .ok st' := by
       rw [← storeTcbIpcStateAndMessage_fromTcb_eq hLk]; exact hStore
     have hTargetObj : st.objects[target.toObjId]? = some (.tcb tcb) :=
       lookupTcb_some_objects st target tcb hLk
@@ -154,7 +159,7 @@ theorem endpointReplyOnCore_donationChain_cases
     have hInvWake : (wakeThread st' target executingCore).1.objects.invExt :=
       wakeThread_preserves_objects_invExt st' target executingCore hObjInv1
     rcases hTail with ⟨_, hEq⟩ | ⟨rid, hRO, hRun⟩
-    · exact Or.inl (by rw [hEq]; exact hChainWake)
+    · exact Or.inl (donationChainWellFormed_of_frame hFrameU (by rw [hEq]; exact hChainWake))
     · by_cases hHead : ∃ (r : Reply) (scId : SeLe4n.SchedContextId),
           (wakeThread st' target executingCore).1.getReply? rid = some r ∧
             r.next = some (.head scId)
@@ -169,12 +174,16 @@ theorem endpointReplyOnCore_donationChain_cases
         have hRPre : st.getReply? rid = some r := by
           rw [SystemState.getReply?_eq_some_iff, ← hStNe rid.toObjId hRidNe]
           exact hRObj'
+        obtain ⟨r1, hR1, hN1⟩ :=
+          removeCallerReplyFrame_head_getReply?_next _ target rid r scId hInvWake hR hNext _ hRun
         exact Or.inr ⟨tcb, rid, r, scId, hLk, hRO, hRPre, hNext,
-          removeCallerReplyFrame_head_getReply?_next _ target rid r scId hInvWake hR hNext _ hRun,
-          removeCallerReplyFrame_head_preserves_donationChainWellFormedExcept _ _ target rid r scId
-            hInvWake hChainWake hR hNext hRun⟩
-      · exact Or.inl (removeCallerReplyFrame_preserves_donationChainWellFormed _ _ target rid
-          hInvWake hChainWake (fun r sc hR hN => hHead ⟨r, sc, hR, hN⟩) hRun)
+          ⟨r1, by rw [hU.getReply?]; exact hR1, hN1⟩,
+          donationChainWellFormedExcept_of_frame hFrameU
+            (removeCallerReplyFrame_head_preserves_donationChainWellFormedExcept _ _ target rid r
+              scId hInvWake hChainWake hR hNext hRun)⟩
+      · exact Or.inl (donationChainWellFormed_of_frame hFrameU
+          (removeCallerReplyFrame_preserves_donationChainWellFormed _ _ target rid
+            hInvWake hChainWake (fun r sc hR hN => hHead ⟨r, sc, hR, hN⟩) hRun))
 
 -- ============================================================================
 -- §2  RR2.11 — the per-core donation return

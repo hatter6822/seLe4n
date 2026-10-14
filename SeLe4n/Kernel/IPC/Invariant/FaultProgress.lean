@@ -77,23 +77,26 @@ open SeLe4n.Kernel.Concurrency
 -- §2  The Call chain leaves its caller descheduled
 -- ============================================================================
 
-/-- Both of `endpointCallOnCore`'s success paths end in
-`removeRunnableOnCore … caller executingCore`: the rendezvous arm blocks the
-caller `.blockedOnReply`, the queued arm `.blockedOnCall`, and each
-deschedules it. -/
+/-- Both of `endpointCallOnCore`'s success paths leave the scheduler as
+`removeRunnableOnCore … caller executingCore` does: the rendezvous arm blocks
+the caller `.blockedOnReply` and then links it onto the server's reply-waiter
+queue (a write to TCB links alone), the queued arm blocks it `.blockedOnCall`,
+and each deschedules it. -/
 theorem endpointCallOnCore_deschedules_caller
     (epId : SeLe4n.ObjId) (caller : SeLe4n.ThreadId) (msg : IpcMessage)
     (executingCore : CoreId) (st st' : SystemState)
     (sgi? : Option (CoreId × SgiKind))
     (hStep : endpointCallOnCore epId caller msg executingCore st = (st', .ok sgi?)) :
-    ∃ stPre, st' = removeRunnableOnCore stPre caller executingCore := by
+    ∃ stPre, st'.scheduler = (removeRunnableOnCore stPre caller executingCore).scheduler := by
   unfold endpointCallOnCore at hStep
   repeat' split at hStep
   all_goals (try (simp only [] at hStep))
   all_goals (repeat' split at hStep)
   all_goals first
-    | exact ⟨_, (congrArg Prod.fst hStep).symm⟩
+    | exact ⟨_, congrArg SystemState.scheduler (congrArg Prod.fst hStep).symm⟩
     | simp_all
+  all_goals (obtain ⟨h1, -⟩ := hStep; subst h1
+             exact ⟨_, SystemState.linkReplyWaiter_scheduler _ _ _⟩)
 
 /-- WS-RR RR4.19: a caller that completed a cross-core `endpointCallOnCore`
 is neither queued on nor current on the core it called from. -/
@@ -104,8 +107,9 @@ theorem endpointCallOnCore_caller_not_runnable
     (hStep : endpointCallOnCore epId caller msg executingCore st = (st', .ok sgi?)) :
     caller ∉ st'.scheduler.runQueueOnCore executingCore ∧
     st'.scheduler.currentOnCore executingCore ≠ some caller := by
-  obtain ⟨stPre, rfl⟩ :=
+  obtain ⟨stPre, hS⟩ :=
     endpointCallOnCore_deschedules_caller epId caller msg executingCore st st' sgi? hStep
+  rw [SchedulerState.currentOnCore, hS, ← SchedulerState.currentOnCore]
   exact ⟨removeRunnableOnCore_not_mem_self stPre caller executingCore,
          removeRunnableOnCore_currentOnCore_ne_self stPre caller executingCore⟩
 

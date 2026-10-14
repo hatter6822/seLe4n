@@ -83,12 +83,13 @@ theorem endpointReplyOnCore_reply_path_NI
   | none =>
     rw [endpointReplyOnCore_reply_eq replier target msg executingCore st st' tcb ep expected
           hSz1 hSz2 hLk hIpc hStore hRO]
-    exact hChain
+    exact (unlinkReplyWaiter_preserves_projection ctx observer _ target expected).trans hChain
   | some rid =>
     obtain ⟨stC, hCons, hEq⟩ := endpointReplyOnCore_reply_eq_linked replier target msg
       executingCore st st' tcb ep expected rid hSz1 hSz2 hLk hIpc hStore hRO
     rw [hEq]
-    show projectState ctx observer stC = projectState ctx observer st
+    show projectState ctx observer (stC.unlinkReplyWaiter target expected) = projectState ctx observer st
+    rw [unlinkReplyWaiter_preserves_projection ctx observer _ target expected]
     have hInvWake : (wakeThread st' target executingCore).1.objects.invExt :=
       wakeThread_preserves_objects_invExt st' target executingCore hInv'
     have hComplete' : objectIndexSetComplete st' :=
@@ -158,12 +159,13 @@ theorem endpointReplyOnCore_reply_path_NI_smp
   | none =>
     rw [endpointReplyOnCore_reply_eq replier target msg executingCore st st' tcb ep expected
           hSz1 hSz2 hLk hIpc hStore hRO]
-    exact hChain
+    exact (unlinkReplyWaiter_preserves_projectionOnCore ctx observer _ target expected c).trans hChain
   | some rid =>
     obtain ⟨stC, hCons, hEq⟩ := endpointReplyOnCore_reply_eq_linked replier target msg
       executingCore st st' tcb ep expected rid hSz1 hSz2 hLk hIpc hStore hRO
     rw [hEq]
-    show projectStateOnCore ctx observer stC c = projectStateOnCore ctx observer st c
+    show projectStateOnCore ctx observer (stC.unlinkReplyWaiter target expected) c = projectStateOnCore ctx observer st c
+    rw [unlinkReplyWaiter_preserves_projectionOnCore ctx observer _ target expected c]
     have hInvWake : (wakeThread st' target executingCore).1.objects.invExt :=
       wakeThread_preserves_objects_invExt st' target executingCore hInv'
     have hComplete' : objectIndexSetComplete st' :=

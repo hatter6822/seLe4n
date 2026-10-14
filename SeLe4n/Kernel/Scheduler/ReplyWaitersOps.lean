@@ -422,6 +422,58 @@ theorem unlinkReplyWaiter_objectsAgreeOffRunLinks (st : SystemState) (w s : Thre
       (.trans (updateTcbAtCode_objectsAgreeOffRunLinks _ _ (fun _ => rfl))
         (updateTcbAtCode_objectsAgreeOffRunLinks _ _ (fun _ => rfl))))
 
+/-- A thread's TCB carries across any write that agrees off run-queue (and
+reply-waiter) links, equal up to those links. -/
+theorem getTcb?_of_objectsAgreeOffRunLinks {st st' : SystemState}
+    (h : objectsAgreeOffRunLinks st' st) {t : ThreadId} {tc : TCB}
+    (hT : st.getTcb? t = some tc) :
+    ∃ tc', st'.getTcb? t = some tc' ∧ tc'.withoutRunLinks = tc.withoutRunLinks := by
+  obtain ⟨tc', h', e⟩ := h.get_tcb ((getTcb?_eq_some_iff _ t tc).mp hT)
+  exact ⟨tc', (getTcb?_eq_some_iff _ t tc').mpr h', e⟩
+
+/-- `w`'s predecessor code, read through its TCB lookup. -/
+theorem replyPrevCode_eq_getTcb? (st : SystemState) (w : ThreadId) :
+    st.replyPrevCode w = ((st.getTcb? w).map TCB.replyWaiterPrevCode).getD 0 := by
+  unfold replyPrevCode getTcb?
+  rw [objects_get?_eq_objectEntry?]
+  cases st.objectEntry? w.toObjId with
+  | none => rfl
+  | some e => cases h : e.value <;> simp [h]
+
+/-- `w`'s successor code, read through its TCB lookup. -/
+theorem replyNextCode_eq_getTcb? (st : SystemState) (w : ThreadId) :
+    st.replyNextCode w = ((st.getTcb? w).map TCB.replyWaiterNextCode).getD 0 := by
+  unfold replyNextCode getTcb?
+  rw [objects_get?_eq_objectEntry?]
+  cases st.objectEntry? w.toObjId with
+  | none => rfl
+  | some e => cases h : e.value <;> simp [h]
+
+/-- A code-addressed write leaves every key but the one its code names. -/
+theorem updateTcbAtCode_objects_ne (st : SystemState) (c : Nat) (g : TCB → TCB)
+    (x : SeLe4n.ObjId) (hx : ∀ t, ThreadId.ofOptCode c = some t → x ≠ t.toObjId) :
+    (st.updateTcbAtCode c g).objects[x]? = st.objects[x]? := by
+  unfold updateTcbAtCode
+  split
+  · rfl
+  · rename_i hc
+    obtain ⟨k, rfl⟩ : ∃ k, c = k + 1 := ⟨c - 1, by omega⟩
+    rw [objects_mapTcbInPlace, if_neg]
+    intro e
+    exact hx ⟨k⟩ rfl (by simpa [SeLe4n.Kernel.LinkedQueue.decode] using (beq_iff_eq.mp e).symm)
+
+/-- **The unlink's footprint**: it writes the waiter, its server and the two
+neighbours the waiter's own links name, and no other key. -/
+theorem unlinkReplyWaiter_objects_ne (st : SystemState) (w s : ThreadId) (x : SeLe4n.ObjId)
+    (hw : x ≠ w.toObjId) (hs : x ≠ s.toObjId)
+    (hp : ∀ t, ThreadId.ofOptCode (st.replyPrevCode w) = some t → x ≠ t.toObjId)
+    (hn : ∀ t, ThreadId.ofOptCode (st.replyNextCode w) = some t → x ≠ t.toObjId) :
+    (st.unlinkReplyWaiter w s).objects[x]? = st.objects[x]? := by
+  unfold unlinkReplyWaiter; dsimp only
+  rw [objects_mapTcbInPlace, if_neg (fun e => hw (beq_iff_eq.mp e).symm),
+    objects_mapTcbInPlace, if_neg (fun e => hs (beq_iff_eq.mp e).symm),
+    updateTcbAtCode_objects_ne _ _ _ _ hn, updateTcbAtCode_objects_ne _ _ _ _ hp]
+
 /-- The link writes the object store alone. -/
 theorem linkReplyWaiter_eq_objects (st : SystemState) (w s : ThreadId) :
     st.linkReplyWaiter w s = { st with objects := (st.linkReplyWaiter w s).objects } := by
@@ -443,5 +495,370 @@ theorem unlinkReplyWaiter_objects_invExt (st : SystemState) (w s : ThreadId)
   unfold unlinkReplyWaiter; dsimp only
   exact mapTcbInPlace_objects_invExt _ _ _ (mapTcbInPlace_objects_invExt _ _ _
     (updateTcbAtCode_objects_invExt _ _ _ (updateTcbAtCode_objects_invExt _ _ _ h)))
+
+end SeLe4n.Model.SystemState
+
+namespace SeLe4n.Model.SystemState
+
+open SeLe4n
+
+/-! WS-ZA ZA4.6: what the link and unlink leave alone, in the forms the
+operations' existing proofs consume: every state field but the object store,
+every object's kind, and the run-queue agreement. -/
+
+section Fields
+variable (st : SystemState) (w s : ThreadId)
+
+@[simp] theorem linkReplyWaiter_scheduler : (st.linkReplyWaiter w s).scheduler = st.scheduler :=
+  (congrArg SystemState.scheduler (linkReplyWaiter_eq_objects st w s) :)
+@[simp] theorem linkReplyWaiter_machine : (st.linkReplyWaiter w s).machine = st.machine :=
+  (congrArg SystemState.machine (linkReplyWaiter_eq_objects st w s) :)
+@[simp] theorem linkReplyWaiter_cdt : (st.linkReplyWaiter w s).cdt = st.cdt :=
+  (congrArg SystemState.cdt (linkReplyWaiter_eq_objects st w s) :)
+@[simp] theorem linkReplyWaiter_cdtNodeSlot : (st.linkReplyWaiter w s).cdtNodeSlot = st.cdtNodeSlot :=
+  (congrArg SystemState.cdtNodeSlot (linkReplyWaiter_eq_objects st w s) :)
+@[simp] theorem linkReplyWaiter_cdtSlotNode : (st.linkReplyWaiter w s).cdtSlotNode = st.cdtSlotNode :=
+  (congrArg SystemState.cdtSlotNode (linkReplyWaiter_eq_objects st w s) :)
+@[simp] theorem linkReplyWaiter_lifecycle : (st.linkReplyWaiter w s).lifecycle = st.lifecycle :=
+  (congrArg SystemState.lifecycle (linkReplyWaiter_eq_objects st w s) :)
+@[simp] theorem linkReplyWaiter_objectIndex : (st.linkReplyWaiter w s).objectIndex = st.objectIndex :=
+  (congrArg SystemState.objectIndex (linkReplyWaiter_eq_objects st w s) :)
+@[simp] theorem linkReplyWaiter_objectIndexSet :
+    (st.linkReplyWaiter w s).objectIndexSet = st.objectIndexSet :=
+  (congrArg SystemState.objectIndexSet (linkReplyWaiter_eq_objects st w s) :)
+@[simp] theorem unlinkReplyWaiter_scheduler : (st.unlinkReplyWaiter w s).scheduler = st.scheduler :=
+  (congrArg SystemState.scheduler (unlinkReplyWaiter_eq_objects st w s) :)
+@[simp] theorem unlinkReplyWaiter_machine : (st.unlinkReplyWaiter w s).machine = st.machine :=
+  (congrArg SystemState.machine (unlinkReplyWaiter_eq_objects st w s) :)
+@[simp] theorem unlinkReplyWaiter_cdt : (st.unlinkReplyWaiter w s).cdt = st.cdt :=
+  (congrArg SystemState.cdt (unlinkReplyWaiter_eq_objects st w s) :)
+@[simp] theorem unlinkReplyWaiter_cdtNodeSlot :
+    (st.unlinkReplyWaiter w s).cdtNodeSlot = st.cdtNodeSlot :=
+  (congrArg SystemState.cdtNodeSlot (unlinkReplyWaiter_eq_objects st w s) :)
+@[simp] theorem unlinkReplyWaiter_cdtSlotNode :
+    (st.unlinkReplyWaiter w s).cdtSlotNode = st.cdtSlotNode :=
+  (congrArg SystemState.cdtSlotNode (unlinkReplyWaiter_eq_objects st w s) :)
+@[simp] theorem unlinkReplyWaiter_lifecycle : (st.unlinkReplyWaiter w s).lifecycle = st.lifecycle :=
+  (congrArg SystemState.lifecycle (unlinkReplyWaiter_eq_objects st w s) :)
+@[simp] theorem unlinkReplyWaiter_objectIndex :
+    (st.unlinkReplyWaiter w s).objectIndex = st.objectIndex :=
+  (congrArg SystemState.objectIndex (unlinkReplyWaiter_eq_objects st w s) :)
+@[simp] theorem unlinkReplyWaiter_objectIndexSet :
+    (st.unlinkReplyWaiter w s).objectIndexSet = st.objectIndexSet :=
+  (congrArg SystemState.objectIndexSet (unlinkReplyWaiter_eq_objects st w s) :)
+
+@[simp] theorem linkReplyWaiter_serviceRegistry :
+    (st.linkReplyWaiter w s).serviceRegistry = st.serviceRegistry :=
+  (congrArg SystemState.serviceRegistry (linkReplyWaiter_eq_objects st w s) :)
+@[simp] theorem unlinkReplyWaiter_serviceRegistry :
+    (st.unlinkReplyWaiter w s).serviceRegistry = st.serviceRegistry :=
+  (congrArg SystemState.serviceRegistry (unlinkReplyWaiter_eq_objects st w s) :)
+
+end Fields
+
+theorem linkReplyWaiter_kindPreservingWrite (st : SystemState) (w s : ThreadId) :
+    kindPreservingWrite st (st.linkReplyWaiter w s) :=
+  (linkReplyWaiter_objectsAgreeOffRunLinks st w s).kindPreserving
+
+theorem unlinkReplyWaiter_kindPreservingWrite (st : SystemState) (w s : ThreadId) :
+    kindPreservingWrite st (st.unlinkReplyWaiter w s) :=
+  (unlinkReplyWaiter_objectsAgreeOffRunLinks st w s).kindPreserving
+
+theorem mapTcbInPlace_runQueueRefined_of_runLinks (st : SystemState) (t : ThreadId)
+    {g : TCB → TCB} (hg : ∀ x c, (g x).runLinkOn c = x.runLinkOn c)
+    (h : st.runQueueRefined) : (st.mapTcbInPlace t g).runQueueRefined :=
+  runQueueRefined_of_frame (st := st) (st' := st.mapTcbInPlace t g) (fun c x => by
+      rw [runLinkOn_mapTcbInPlace_map st t g c id (fun tcb => hg tcb c) rfl x]
+      try (split <;> rfl))
+    rfl rfl h
+
+theorem updateTcbAtCode_runQueueRefined_of_runLinks (st : SystemState) (k : Nat)
+    {g : TCB → TCB} (hg : ∀ x c, (g x).runLinkOn c = x.runLinkOn c)
+    (h : st.runQueueRefined) : (st.updateTcbAtCode k g).runQueueRefined := by
+  unfold updateTcbAtCode; split
+  · exact h
+  · exact mapTcbInPlace_runQueueRefined_of_runLinks _ _ hg h
+
+theorem linkReplyWaiter_runQueueRefined (st : SystemState) (w s : ThreadId)
+    (h : st.runQueueRefined) : (st.linkReplyWaiter w s).runQueueRefined := by
+  unfold linkReplyWaiter; dsimp only
+  exact mapTcbInPlace_runQueueRefined_of_runLinks _ _ (fun _ _ => rfl)
+    (updateTcbAtCode_runQueueRefined_of_runLinks _ _ (fun _ _ => rfl)
+      (mapTcbInPlace_runQueueRefined_of_runLinks _ _ (fun _ _ => rfl) h))
+
+theorem unlinkReplyWaiter_runQueueRefined (st : SystemState) (w s : ThreadId)
+    (h : st.runQueueRefined) : (st.unlinkReplyWaiter w s).runQueueRefined := by
+  unfold unlinkReplyWaiter; dsimp only
+  exact mapTcbInPlace_runQueueRefined_of_runLinks _ _ (fun _ _ => rfl)
+    (mapTcbInPlace_runQueueRefined_of_runLinks _ _ (fun _ _ => rfl)
+      (updateTcbAtCode_runQueueRefined_of_runLinks _ _ (fun _ _ => rfl)
+        (updateTcbAtCode_runQueueRefined_of_runLinks _ _ (fun _ _ => rfl) h)))
+
+end SeLe4n.Model.SystemState
+
+namespace SeLe4n.Model.SystemState
+
+open SeLe4n
+
+/-- WS-ZA ZA4.6: unlink `w` from the queue of the server its blocking state
+named, if it named one (a reply wait recorded with no server is on no queue). -/
+@[inline] def unlinkReplyWaiterOpt (st : SystemState) (w : ThreadId) :
+    Option ThreadId → SystemState
+  | some s => st.unlinkReplyWaiter w s
+  | none => st
+
+section Opt
+variable (st : SystemState) (w : ThreadId) (s? : Option ThreadId)
+
+theorem unlinkReplyWaiterOpt_objectsAgreeOffRunLinks :
+    objectsAgreeOffRunLinks (st.unlinkReplyWaiterOpt w s?) st := by
+  cases s? with
+  | none => exact .refl _
+  | some s => exact unlinkReplyWaiter_objectsAgreeOffRunLinks st w s
+
+theorem unlinkReplyWaiterOpt_eq_objects :
+    st.unlinkReplyWaiterOpt w s? = { st with objects := (st.unlinkReplyWaiterOpt w s?).objects } := by
+  cases s? with
+  | none => rfl
+  | some s => exact unlinkReplyWaiter_eq_objects st w s
+
+theorem unlinkReplyWaiterOpt_objects_invExt (h : st.objects.invExt) :
+    (st.unlinkReplyWaiterOpt w s?).objects.invExt := by
+  cases s? with
+  | none => exact h
+  | some s => exact unlinkReplyWaiter_objects_invExt st w s h
+
+theorem unlinkReplyWaiterOpt_kindPreservingWrite :
+    kindPreservingWrite st (st.unlinkReplyWaiterOpt w s?) :=
+  (unlinkReplyWaiterOpt_objectsAgreeOffRunLinks st w s?).kindPreserving
+
+theorem unlinkReplyWaiterOpt_runQueueRefined (h : st.runQueueRefined) :
+    (st.unlinkReplyWaiterOpt w s?).runQueueRefined := by
+  cases s? with
+  | none => exact h
+  | some s => exact unlinkReplyWaiter_runQueueRefined st w s h
+
+@[simp] theorem unlinkReplyWaiterOpt_scheduler :
+    (st.unlinkReplyWaiterOpt w s?).scheduler = st.scheduler := by cases s? <;> simp [unlinkReplyWaiterOpt]
+@[simp] theorem unlinkReplyWaiterOpt_machine :
+    (st.unlinkReplyWaiterOpt w s?).machine = st.machine := by cases s? <;> simp [unlinkReplyWaiterOpt]
+@[simp] theorem unlinkReplyWaiterOpt_cdt :
+    (st.unlinkReplyWaiterOpt w s?).cdt = st.cdt := by cases s? <;> simp [unlinkReplyWaiterOpt]
+@[simp] theorem unlinkReplyWaiterOpt_cdtNodeSlot :
+    (st.unlinkReplyWaiterOpt w s?).cdtNodeSlot = st.cdtNodeSlot := by
+  cases s? <;> simp [unlinkReplyWaiterOpt]
+@[simp] theorem unlinkReplyWaiterOpt_lifecycle :
+    (st.unlinkReplyWaiterOpt w s?).lifecycle = st.lifecycle := by
+  cases s? <;> simp [unlinkReplyWaiterOpt]
+@[simp] theorem unlinkReplyWaiterOpt_objectIndex :
+    (st.unlinkReplyWaiterOpt w s?).objectIndex = st.objectIndex := by
+  cases s? <;> simp [unlinkReplyWaiterOpt]
+
+@[simp] theorem unlinkReplyWaiterOpt_serviceRegistry :
+    (st.unlinkReplyWaiterOpt w s?).serviceRegistry = st.serviceRegistry := by
+  cases s? <;> simp [unlinkReplyWaiterOpt]
+
+end Opt
+
+end SeLe4n.Model.SystemState
+
+namespace SeLe4n.Model
+
+/-! WS-ZA ZA4.6: **agreement off the reply-waiter links.**  The link and unlink
+write the four reply-waiter fields of a few TCBs and nothing else; every reading
+that ignores those fields (a thread's placement, its state, its binding, any
+non-TCB object) carries across them through this relation, as readings that
+ignore run-queue links carry across `objectsAgreeOffRunLinks`. -/
+
+/-- A TCB with its reply-waiter links cleared. -/
+def TCB.withoutReplyLinks (t : TCB) : TCB :=
+  { t with replyWaiterPrevCode := 0, replyWaiterNextCode := 0,
+           replyWaitersHeadCode := 0, replyWaitersCount := 0 }
+
+/-- An object with its reply-waiter links cleared (only a TCB has any). -/
+def KernelObject.withoutReplyLinks : KernelObject → KernelObject
+  | .tcb t => .tcb t.withoutReplyLinks
+  | o => o
+
+theorem KernelObject.withoutReplyLinks_eq_tcb {o : KernelObject} {t : TCB}
+    (h : o.withoutReplyLinks = (KernelObject.tcb t).withoutReplyLinks) :
+    ∃ t', o = .tcb t' ∧ t'.withoutReplyLinks = t.withoutReplyLinks := by
+  cases o with
+  | tcb t' => exact ⟨t', rfl, KernelObject.tcb.inj h⟩
+  | _ => cases h
+
+theorem KernelObject.withoutReplyLinks_eq_of_not_tcb {o o' : KernelObject}
+    (h : o'.withoutReplyLinks = o.withoutReplyLinks) (hNot : ∀ t, o ≠ .tcb t) : o' = o := by
+  cases o with
+  | tcb t => exact absurd rfl (hNot t)
+  | _ =>
+    cases o' with
+    | tcb t' => cases h
+    | _ => exact h
+
+end SeLe4n.Model
+
+namespace SeLe4n.Model.SystemState
+
+open SeLe4n
+
+/-- Two stores hold the same objects, up to the TCBs' reply-waiter links. -/
+def objectsAgreeOffReplyLinks (st' st : SystemState) : Prop :=
+  ∀ x : SeLe4n.ObjId,
+    (st'.objects[x]?).map KernelObject.withoutReplyLinks =
+      (st.objects[x]?).map KernelObject.withoutReplyLinks
+
+namespace objectsAgreeOffReplyLinks
+
+theorem refl (st : SystemState) : objectsAgreeOffReplyLinks st st := fun _ => rfl
+
+theorem symm {st st' : SystemState} (h : objectsAgreeOffReplyLinks st' st) :
+    objectsAgreeOffReplyLinks st st' := fun x => (h x).symm
+
+theorem trans {st st' st'' : SystemState} (h₂ : objectsAgreeOffReplyLinks st'' st')
+    (h₁ : objectsAgreeOffReplyLinks st' st) : objectsAgreeOffReplyLinks st'' st :=
+  fun x => (h₂ x).trans (h₁ x)
+
+variable {st st' : SystemState} (h : objectsAgreeOffReplyLinks st' st)
+include h
+
+theorem get_of_not_tcb {x : SeLe4n.ObjId} {o : KernelObject}
+    (hNot : ∀ t, o ≠ .tcb t) (hx : st.objects[x]? = some o) : st'.objects[x]? = some o := by
+  have hx' := h x
+  rw [hx] at hx'
+  cases e : st'.objects[x]? with
+  | none => rw [e] at hx'; cases hx'
+  | some o' =>
+      rw [e] at hx'
+      exact congrArg some (KernelObject.withoutReplyLinks_eq_of_not_tcb (Option.some.inj hx') hNot)
+
+theorem get_of_not_tcb' {x : SeLe4n.ObjId} {o : KernelObject}
+    (hNot : ∀ t, o ≠ .tcb t) (hx : st'.objects[x]? = some o) : st.objects[x]? = some o :=
+  h.symm.get_of_not_tcb hNot hx
+
+theorem get_tcb {x : SeLe4n.ObjId} {t : TCB} (hx : st.objects[x]? = some (.tcb t)) :
+    ∃ t', st'.objects[x]? = some (.tcb t') ∧ t'.withoutReplyLinks = t.withoutReplyLinks := by
+  have hx' := h x
+  rw [hx] at hx'
+  cases e : st'.objects[x]? with
+  | none => rw [e] at hx'; cases hx'
+  | some o' =>
+      rw [e] at hx'
+      obtain ⟨t', rfl, ht⟩ := KernelObject.withoutReplyLinks_eq_tcb (Option.some.inj hx')
+      exact ⟨t', rfl, ht⟩
+
+theorem get_tcb' {x : SeLe4n.ObjId} {t' : TCB} (hx : st'.objects[x]? = some (.tcb t')) :
+    ∃ t, st.objects[x]? = some (.tcb t) ∧ t'.withoutReplyLinks = t.withoutReplyLinks := by
+  obtain ⟨t, ht, e⟩ := h.symm.get_tcb hx
+  exact ⟨t, ht, e.symm⟩
+
+theorem get_none_iff {x : SeLe4n.ObjId} : st'.objects[x]? = none ↔ st.objects[x]? = none := by
+  have hx := h x
+  constructor
+  · intro e; rw [e] at hx; cases f : st.objects[x]? with
+    | none => rfl
+    | some _ => rw [f] at hx; cases hx
+  · intro e; rw [e] at hx; cases f : st'.objects[x]? with
+    | none => rfl
+    | some _ => rw [f] at hx; cases hx
+
+/-- A thread that resolves to no TCB in `st` resolves to none in `st'`. -/
+theorem getTcb?_none {t : ThreadId} (hT : st.getTcb? t = none) : st'.getTcb? t = none := by
+  cases hX : st'.getTcb? t with
+  | none => rfl
+  | some t' =>
+    obtain ⟨t0, h0, -⟩ := h.get_tcb' ((getTcb?_eq_some_iff _ t t').mp hX)
+    rw [(getTcb?_eq_some_iff _ t t0).mpr h0] at hT; cases hT
+
+/-- Any reading of a thread's TCB that ignores the reply-waiter links agrees. -/
+theorem getTcb?_map {α : Type _} (f : TCB → α)
+    (hf : ∀ u : TCB, f u.withoutReplyLinks = f u := by intro; rfl) (t : ThreadId) :
+    (st'.getTcb? t).map f = (st.getTcb? t).map f := by
+  cases hT : st.getTcb? t with
+  | none => rw [h.getTcb?_none hT]
+  | some tc =>
+    obtain ⟨tc', h', e⟩ := h.get_tcb ((getTcb?_eq_some_iff _ t tc).mp hT)
+    rw [(getTcb?_eq_some_iff _ t tc').mpr h']
+    show some (f tc') = some (f tc)
+    rw [← hf tc', ← hf tc, e]
+
+end objectsAgreeOffReplyLinks
+
+theorem mapTcbInPlace_objectsAgreeOffReplyLinks (st : SystemState) (tid : ThreadId)
+    {g : TCB → TCB} (hg : ∀ x, (g x).withoutReplyLinks = x.withoutReplyLinks) :
+    objectsAgreeOffReplyLinks (st.mapTcbInPlace tid g) st := by
+  intro x
+  rw [objects_mapTcbInPlace]
+  split
+  · cases st.objects[x]? with
+    | none => rfl
+    | some o => cases o <;> simp [KernelObject.mapTcb, KernelObject.withoutReplyLinks, hg _]
+  · rfl
+
+theorem updateTcbAtCode_objectsAgreeOffReplyLinks (st : SystemState) (k : Nat)
+    {g : TCB → TCB} (hg : ∀ x, (g x).withoutReplyLinks = x.withoutReplyLinks) :
+    objectsAgreeOffReplyLinks (st.updateTcbAtCode k g) st := by
+  unfold updateTcbAtCode; split
+  · exact .refl _
+  · exact mapTcbInPlace_objectsAgreeOffReplyLinks _ _ hg
+
+theorem linkReplyWaiter_objectsAgreeOffReplyLinks (st : SystemState) (w s : ThreadId) :
+    objectsAgreeOffReplyLinks (st.linkReplyWaiter w s) st := by
+  unfold linkReplyWaiter; dsimp only
+  exact .trans (mapTcbInPlace_objectsAgreeOffReplyLinks _ _ (fun _ => rfl))
+    (.trans (updateTcbAtCode_objectsAgreeOffReplyLinks _ _ (fun _ => rfl))
+      (mapTcbInPlace_objectsAgreeOffReplyLinks _ _ (fun _ => rfl)))
+
+theorem unlinkReplyWaiter_objectsAgreeOffReplyLinks (st : SystemState) (w s : ThreadId) :
+    objectsAgreeOffReplyLinks (st.unlinkReplyWaiter w s) st := by
+  unfold unlinkReplyWaiter; dsimp only
+  exact .trans (mapTcbInPlace_objectsAgreeOffReplyLinks _ _ (fun _ => rfl))
+    (.trans (mapTcbInPlace_objectsAgreeOffReplyLinks _ _ (fun _ => rfl))
+      (.trans (updateTcbAtCode_objectsAgreeOffReplyLinks _ _ (fun _ => rfl))
+        (updateTcbAtCode_objectsAgreeOffReplyLinks _ _ (fun _ => rfl))))
+
+theorem unlinkReplyWaiterOpt_objectsAgreeOffReplyLinks (st : SystemState) (w : ThreadId)
+    (s? : Option ThreadId) : objectsAgreeOffReplyLinks (st.unlinkReplyWaiterOpt w s?) st := by
+  cases s? with
+  | none => exact .refl _
+  | some s => exact unlinkReplyWaiter_objectsAgreeOffReplyLinks st w s
+
+end SeLe4n.Model.SystemState
+
+namespace SeLe4n.Model.SystemState
+
+open SeLe4n
+
+/-- A step that writes only reply-waiter links and no scheduler field is a
+run-queue stage: every run link, current slot and thread state reads as before. -/
+theorem RunQueueStage.of_objectsAgreeOffReplyLinks {st st' : SystemState}
+    (hA : objectsAgreeOffReplyLinks st' st) (hS : st'.scheduler = st.scheduler)
+    (hI : st.objects.invExt → st'.objects.invExt) : RunQueueStage st st' := by
+  have hL : ∀ c t, st'.runLinkOn c t = st.runLinkOn c t := by
+    intro c t
+    have e := hA.getTcb?_map (fun x => x.runLinkOn c) (t := t)
+    unfold runLinkOn
+    cases h1 : st'.getTcb? t <;> cases h2 : st.getTcb? t <;> rw [h1, h2] at e <;>
+      first | rfl | cases e | exact Option.some.inj e
+  have hM : StateMono st st' :=
+    StateMono.of_stateFields (fun t => hA.getTcb?_map _ (t := t))
+  exact ⟨fun h r => ⟨hI h, runQueueRefined_of_frame hL (by rw [hS]) (by rw [hS]) r⟩,
+    fun _ _ _ _ d => currentDequeuedUniqueExcept_of_eq (by rw [hS]) hL hM d, fun _ _ => hM⟩
+
+theorem linkReplyWaiter_runQueueStage (st : SystemState) (w s : ThreadId) :
+    RunQueueStage st (st.linkReplyWaiter w s) :=
+  .of_objectsAgreeOffReplyLinks (linkReplyWaiter_objectsAgreeOffReplyLinks st w s)
+    (linkReplyWaiter_scheduler st w s) (linkReplyWaiter_objects_invExt st w s)
+
+theorem unlinkReplyWaiter_runQueueStage (st : SystemState) (w s : ThreadId) :
+    RunQueueStage st (st.unlinkReplyWaiter w s) :=
+  .of_objectsAgreeOffReplyLinks (unlinkReplyWaiter_objectsAgreeOffReplyLinks st w s)
+    (unlinkReplyWaiter_scheduler st w s) (unlinkReplyWaiter_objects_invExt st w s)
+
+theorem unlinkReplyWaiterOpt_runQueueStage (st : SystemState) (w : ThreadId)
+    (s? : Option ThreadId) : RunQueueStage st (st.unlinkReplyWaiterOpt w s?) := by
+  cases s? with
+  | none => exact .refl _
+  | some s => exact unlinkReplyWaiter_runQueueStage st w s
 
 end SeLe4n.Model.SystemState

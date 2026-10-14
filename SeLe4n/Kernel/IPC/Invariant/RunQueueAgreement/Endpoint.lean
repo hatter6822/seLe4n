@@ -252,7 +252,8 @@ theorem endpointReceiveDualOnCore_runQueueEntryStage (endpointId : SeLe4n.ObjId)
                 · rename_i st4 hS4
                   exact ((endpointQueuePopHead_then_blockedStore_runQueueStage hPop hS2 hB).trans
                     ((linkCallerReply_runQueueStage hL).trans
-                      (storeTcbIpcStateAndMessage_runQueueStage hS4 rfl))).entry
+                      ((storeTcbIpcStateAndMessage_runQueueStage hS4 rfl).trans
+                        (SystemState.linkReplyWaiter_runQueueStage _ _ _)))).entry
                 · exact (RunQueueStage.refl _).entry
         · simp only [Bool.false_eq_true, ↓reduceIte]
           split

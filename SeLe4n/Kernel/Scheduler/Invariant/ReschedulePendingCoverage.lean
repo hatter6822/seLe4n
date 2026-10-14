@@ -737,6 +737,16 @@ theorem keyInputsEq_of_objectsAgreeOffRunLinks {pre post : SystemState}
     keyInputsEq pre post := fun oid =>
   keyInputsOf_eq_of_offRunLinks (h oid) (runCoreCode_eq_of_slot (hRun _))
 
+/-- WS-ZA ZA4.6: the reply-waiter links are no key input either. -/
+theorem keyInputsEq_of_objectsAgreeOffReplyLinks {pre post : SystemState}
+    (h : post.objectsAgreeOffReplyLinks pre) : keyInputsEq pre post := fun oid => by
+  have hv : ∀ x : Option KernelObject,
+      keyInputsOf (x.map KernelObject.withoutReplyLinks) = keyInputsOf x := by
+    intro x; rcases x with _ | o
+    · rfl
+    · cases o <;> rfl
+  rw [← hv post.objects[oid]?, h oid, hv]
+
 /-- Equal key inputs place every thread on the same run-queue core. -/
 theorem keyInputsEq.runCoresAgree {pre post : SystemState} (h : keyInputsEq pre post) :
     SystemState.RunCoresAgree post pre := fun y => by

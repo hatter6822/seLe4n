@@ -775,10 +775,16 @@ def cancelIpcBlocking (st : SystemState) (tid : SeLe4n.ThreadId)
     -- validates reciprocity for instead -- see `CLAUDE.md`'s WS-RM section), so no
     -- frame is ever left dead on a stack.  It runs
     -- after the reclaim, on whose success it is the identity.
-    consumeReplyLink
-      (restoreToReadyCancelled
-        (spliceThreadReplyFrameOut (returnDonationToCancelledCaller st tid tcb) tcb) tid)
-      tid tcb
+    --
+    -- WS-ZA ZA4.6: and the caller leaves its server's reply-waiter queue, last,
+    -- off every other field (seL4's `reply_remove_tcb` unlinks the reply from
+    -- the caller's call stack in the same step).
+    SystemState.unlinkReplyWaiterOpt
+      (consumeReplyLink
+        (restoreToReadyCancelled
+          (spliceThreadReplyFrameOut (returnDonationToCancelledCaller st tid tcb) tcb) tid)
+        tid tcb)
+      tid tcb.blockingServer?
   | .blockedOnNotification _ =>
     restoreToReadyCancelled (removeFromNotificationWaitQueue st tid) tid
 

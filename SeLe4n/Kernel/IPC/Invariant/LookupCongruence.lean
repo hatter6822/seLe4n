@@ -294,6 +294,23 @@ theorem removeRunnable_offSchedulerAgrees (st : SystemState) (tid : SeLe4n.Threa
   .of_runLinkStep (removeRunnable_onlyObjectsSchedulerDiffer st tid)
     (removeRunnable_objectsAgreeOffRunLinks st tid)
 
+/-- WS-ZA ZA4.6: joining a reply-waiter queue writes the object store alone,
+off the run-queue (and reply-waiter) links. -/
+theorem linkReplyWaiter_offSchedulerAgrees (st : SystemState) (w s : SeLe4n.ThreadId) :
+    OffSchedulerAgrees st (st.linkReplyWaiter w s) :=
+  .of_runLinkStep (by
+      unfold SystemState.onlyObjectsSchedulerDiffer
+      rw [SystemState.linkReplyWaiter_eq_objects st w s])
+    (SystemState.linkReplyWaiter_objectsAgreeOffRunLinks st w s)
+
+/-- WS-ZA ZA4.6: leaving a reply-waiter queue, likewise. -/
+theorem unlinkReplyWaiter_offSchedulerAgrees (st : SystemState) (w s : SeLe4n.ThreadId) :
+    OffSchedulerAgrees st (st.unlinkReplyWaiter w s) :=
+  .of_runLinkStep (by
+      unfold SystemState.onlyObjectsSchedulerDiffer
+      rw [SystemState.unlinkReplyWaiter_eq_objects st w s])
+    (SystemState.unlinkReplyWaiter_objectsAgreeOffRunLinks st w s)
+
 /-- SM6.D: `removeRunnableOnCore` (the per-core dequeue) agrees with its
 input off-scheduler. -/
 theorem removeRunnableOnCore_offSchedulerAgrees (st : SystemState)

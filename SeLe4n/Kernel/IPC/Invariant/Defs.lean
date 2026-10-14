@@ -3393,6 +3393,16 @@ theorem of_objects_scheduler_eq {st st' : SystemState}
     ⟨tcb', by rw [hObjs] at h; exact h, hU, by rw [hRq] at hQ; exact hQ,
       by rw [hCur] at hC; exact hC, rfl⟩⟩
 
+/-- WS-ZA ZA4.6: a step that writes only run-queue or reply-waiter links and
+no scheduler state frames passive servers: every TCB keeps its binding and IPC
+state. -/
+theorem of_objectsAgreeOffRunLinks {st st' : SystemState} (h : st'.objectsAgreeOffRunLinks st)
+    (hS : st'.scheduler = st.scheduler) : passiveServerIdleFrame st st' := by
+  refine ⟨fun tid tcb' hT hU hQ hC _ => ?_⟩
+  rw [hS] at hQ hC
+  run_links_back h at tcb' hT
+  exact ⟨tcb', hT, hU, hQ, hC, rfl⟩
+
 /-- WS-ZA ZA4.4: a rewrite of notification-queue links frames passive servers:
 the scheduler is untouched and every TCB keeps its binding and IPC state. -/
 theorem of_ntfnLinksRewritten {st st' : SystemState} (h : ntfnLinksRewritten st st') :

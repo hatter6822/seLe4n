@@ -244,9 +244,11 @@ theorem endpointCallOnCore_call_path_NI
     none hInvW hCallerStore
   rw [endpointCallOnCore_rendezvous_eq endpointId caller msg executingCore st ep receiver
         recvTcb0 st' st'' st4 st5 hSz1 hSz2 hObj hHead hPop hStore hCallerStore hLink]
-  show projectState ctx observer (removeRunnableOnCore st5 caller executingCore)
+  show projectState ctx observer
+      ((removeRunnableOnCore st5 caller executingCore).linkReplyWaiter caller receiver)
     = projectState ctx observer st
-  rw [removeRunnableOnCore_preserves_projection ctx observer st5 caller executingCore hCallerHigh,
+  rw [linkReplyWaiter_preserves_projection,
+      removeRunnableOnCore_preserves_projection ctx observer st5 caller executingCore hCallerHigh,
       linkServerStashedReply_preserves_projection ctx observer st4 st5 caller receiver
         hCallerObjHigh hReceiverObjHigh hIdxSt4 hObjInv4 hLink,
       storeTcbIpcStateAndMessage_preserves_projection ctx observer

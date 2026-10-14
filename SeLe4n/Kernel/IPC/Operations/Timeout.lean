@@ -558,9 +558,14 @@ def timeoutThread
     -- Now that the client's ipcState is cleared, waitersOf won't include it,
     -- so revertPriorityInheritance correctly recomputes the server's pipBoost
     -- from remaining waiters only.
+    --
+    -- WS-ZA ZA4.6: the server's waiters are its reply-waiter queue, so the
+    -- timed-out client leaves that queue first and the revert recomputes over
+    -- the remaining waiters.
     match maybeBlockingServer with
     | some serverId =>
-      .ok (PriorityInheritance.revertPriorityInheritance woken.1 serverId, woken.2)
+      .ok (PriorityInheritance.revertPriorityInheritance
+        (woken.1.unlinkReplyWaiter tid serverId) serverId, woken.2)
     | none => .ok woken
 
 /-- AK1-H (I-M06): Composition — `timeoutThread` succeeds whenever the

@@ -164,6 +164,7 @@ theorem endpointCallOnCore_preserves_ipcInvariant
               obtain ⟨_, st5⟩ := pL
               simp only
               have hInv5 := linkServerStashedReply_preserves_ipcInvariant st4 st5 caller pair.1 hInv4 hObjInv4 hLink
+              refine ipcInvariant_of_readViewAgreement (ipcReadViewAgreement.of_objectsAgreeOffRunLinks (SystemState.linkReplyWaiter_objectsAgreeOffRunLinks _ _ _)) ?_
               show ipcInvariant (removeRunnableOnCore st5 caller executingCore)
               exact ipcInvariant_of_objectsAgreeOffRunLinks (removeRunnableOnCore_objectsAgreeOffRunLinks _ _ _) hInv5
 
@@ -256,6 +257,7 @@ theorem endpointCallOnCore_establishes_blockedOnReplyHasReplyObject
               obtain ⟨_, st5⟩ := pL
               simp only
               have hP5 := linkServerStashedReply_establishes_blockedOnReplyHasReplyObject st4 st5 caller pair.1 hObjInv4 hThirdExc hLink
+              refine blockedOnReplyHasReplyObject_of_readViewAgreement (ipcReadViewAgreement.of_objectsAgreeOffRunLinks (SystemState.linkReplyWaiter_objectsAgreeOffRunLinks _ _ _)) ?_
               show blockedOnReplyHasReplyObject (removeRunnableOnCore st5 caller executingCore)
               exact blockedOnReplyHasReplyObject_of_objectsAgreeOffRunLinks (removeRunnableOnCore_objectsAgreeOffRunLinks st5 caller executingCore) hP5
 
@@ -437,6 +439,7 @@ theorem endpointCallOnCore_timeoutBudgetFrame
               obtain ⟨_, st5⟩ := pL
               simp only
               have hS5 := hS4.trans (linkServerStashedReply_timeoutBudgetFrame st4 st5 caller pair.1 hObjInv4 hLink)
+              refine (fun h => h.trans (timeoutBudgetFrame.of_objectsAgreeOffRunLinks (SystemState.linkReplyWaiter_objectsAgreeOffRunLinks _ _ _))) (?_ : timeoutBudgetFrame st (removeRunnableOnCore st5 caller executingCore))
               show timeoutBudgetFrame st (removeRunnableOnCore st5 caller executingCore)
               exact hS5.trans (timeoutBudgetFrame.of_objectsAgreeOffRunLinks (removeRunnableOnCore_objectsAgreeOffRunLinks st5 caller executingCore))
 
@@ -533,6 +536,7 @@ theorem endpointCallOnCore_passiveServerIdleFrame
             | ok pL =>
               obtain ⟨_, st5⟩ := pL
               simp only
+              refine (fun h => h.trans (passiveServerIdleFrame.of_objectsAgreeOffRunLinks (SystemState.linkReplyWaiter_objectsAgreeOffRunLinks _ _ _) (SystemState.linkReplyWaiter_scheduler _ _ _))) (?_ : passiveServerIdleFrame st (removeRunnableOnCore st5 caller executingCore))
               show passiveServerIdleFrame st (removeRunnableOnCore st5 caller executingCore)
               have hF5 := hF4.trans (linkServerStashedReply_passiveServerIdleFrame st4 st5 caller pair.1 hObjInv4 hLink)
               refine hF5.trans (removeRunnableOnCore_passiveServerIdleFrame st5 caller executingCore (fun tcb hTcb => Or.inr ?_))
@@ -628,6 +632,9 @@ theorem endpointCallOnCore_preserves_blockedThreadsPendingMessageConsistent
             | ok pL =>
               obtain ⟨_, st5⟩ := pL
               simp only
+              refine blockedThreadsPendingMessageConsistent_of_readViewAgreement
+                (ipcReadViewAgreement.of_objectsAgreeOffRunLinks
+                  (SystemState.linkReplyWaiter_objectsAgreeOffRunLinks _ _ _)) ?_
               show blockedThreadsPendingMessageConsistent
                 (removeRunnableOnCore st5 caller executingCore)
               refine blockedThreadsPendingMessageConsistent_of_readViewAgreement
@@ -747,6 +754,7 @@ theorem endpointCallOnCore_preserves_replyCallerLinkageReciprocal
             | ok pL =>
               obtain ⟨_, st5⟩ := pL
               simp only
+              refine replyCallerLinkageReciprocal_of_readViewAgreement (ipcReadViewAgreement.of_objectsAgreeOffRunLinks (SystemState.linkReplyWaiter_objectsAgreeOffRunLinks _ _ _)) ?_
               show replyCallerLinkageReciprocal (removeRunnableOnCore st5 caller executingCore)
               have hRecip5 : replyCallerLinkageReciprocal st5 :=
                 linkServerStashedReply_establishes_replyCallerLinkageReciprocal st4 st5 caller
@@ -864,6 +872,7 @@ theorem endpointCallOnCore_donationOwnerFrame
               obtain ⟨_, st5⟩ := pL
               simp only
               have hF5 := linkServerStashedReply_donationOwnerFrame st4 st5 caller pair.1 hObjInv4 hLink
+              refine (fun h => h.trans (donationOwnerFrame.of_objectsAgreeOffRunLinks (SystemState.linkReplyWaiter_objectsAgreeOffRunLinks _ _ _))) (?_ : donationOwnerFrame st (removeRunnableOnCore st5 caller executingCore))
               show donationOwnerFrame st (removeRunnableOnCore st5 caller executingCore)
               exact ((((hF1.trans hF2).trans hF3).trans hF4).trans hF5).trans
                 (donationOwnerFrame.of_objectsAgreeOffRunLinks (removeRunnableOnCore_objectsAgreeOffRunLinks st5 caller executingCore))
@@ -936,6 +945,7 @@ theorem endpointCallOnCore_establishes_blockedOnReplyHasTarget
               obtain ⟨_, st5⟩ := pL
               simp only
               have hP5 := linkServerStashedReply_preserves_blockedOnReplyHasTarget st4 st5 caller pair.1 hObjInv4 hP4 hLink
+              refine blockedOnReplyHasTarget_of_readViewAgreement (ipcReadViewAgreement.of_objectsAgreeOffRunLinks (SystemState.linkReplyWaiter_objectsAgreeOffRunLinks _ _ _)) ?_
               show blockedOnReplyHasTarget (removeRunnableOnCore st5 caller executingCore)
               exact blockedOnReplyHasTarget_of_objectsAgreeOffRunLinks (removeRunnableOnCore_objectsAgreeOffRunLinks st5 caller executingCore) hP5
 
@@ -1109,6 +1119,7 @@ theorem endpointCallOnCore_preserves_dualQueueSystemInvariant
               obtain ⟨_, st5⟩ := pL
               simp only
               have hInv5 := linkServerStashedReply_preserves_dualQueueSystemInvariant st4 st5 caller pair.1 hObjInv4 hLink hInv4
+              refine dualQueueSystemInvariant_of_readViewAgreement (ipcReadViewAgreement.of_objectsAgreeOffRunLinks (SystemState.linkReplyWaiter_objectsAgreeOffRunLinks _ _ _)) ?_
               show dualQueueSystemInvariant (removeRunnableOnCore st5 caller executingCore)
               exact removeRunnableOnCore_preserves_dualQueueSystemInvariant st5 caller executingCore hInv5
 
@@ -1189,8 +1200,10 @@ theorem endpointReceiveDualOnCore_preserves_dualQueueSystemInvariant
                 | error e => simp only [hMsg]; exact hInv
                 | ok st3 =>
                   simp only [hMsg]
-                  exact storeTcbIpcStateAndMessage_preserves_dualQueueSystemInvariant
-                    stLinked _ receiver .ready pair.2.1.pendingMessage hObjInvLink hMsg hInvLink
+                  exact dualQueueSystemInvariant_of_objectsAgreeOffRunLinks
+                    (SystemState.linkReplyWaiter_objectsAgreeOffRunLinks _ _ _)
+                    (storeTcbIpcStateAndMessage_preserves_dualQueueSystemInvariant
+                      stLinked _ receiver .ready pair.2.1.pendingMessage hObjInvLink hMsg hInvLink)
         | ready | blockedOnSend _ | blockedOnReceive _
           | blockedOnReply _ _ | blockedOnNotification _ =>
           simp only [hSenderIpc]
@@ -1423,6 +1436,7 @@ theorem endpointCallOnCore_preserves_endpointQueueNoDup
               obtain ⟨_, st5⟩ := pL
               simp only
               have hND5 := linkServerStashedReply_preserves_endpointQueueNoDup st4 st5 caller pair.1 hND4 hObjInv4 hLink
+              refine endpointQueueNoDup_of_readViewAgreement (ipcReadViewAgreement.of_objectsAgreeOffRunLinks (SystemState.linkReplyWaiter_objectsAgreeOffRunLinks _ _ _)) ?_
               show endpointQueueNoDup (removeRunnableOnCore st5 caller executingCore)
               exact removeRunnableOnCore_preserves_endpointQueueNoDup st5 caller executingCore hND5
 
@@ -1536,6 +1550,7 @@ theorem endpointCallOnCore_preserves_ipcStateQueueMembershipConsistent
               obtain ⟨_, st5⟩ := pL
               simp only
               have hV3J5 := linkServerStashedReply_preserves_ipcStateQueueMembershipConsistent st4 st5 caller pair.1 hV3J4 hObjInv4 hLink
+              refine ipcStateQueueMembershipConsistent_of_readViewAgreement (ipcReadViewAgreement.of_objectsAgreeOffRunLinks (SystemState.linkReplyWaiter_objectsAgreeOffRunLinks _ _ _)) ?_
               show ipcStateQueueMembershipConsistent (removeRunnableOnCore st5 caller executingCore)
               exact removeRunnableOnCore_preserves_ipcStateQueueMembershipConsistent st5 caller executingCore hV3J5
     | none =>
@@ -1774,6 +1789,7 @@ theorem endpointCallOnCore_preserves_queueNextBlockingConsistent
               simp only
               have hInv5 := linkServerStashedReply_preserves_queueNextBlockingConsistent
                 st4 st5 caller pair.1 hObjInv4 hInv4 hLink
+              refine queueNextBlockingConsistent_of_readViewAgreement (ipcReadViewAgreement.of_objectsAgreeOffRunLinks (SystemState.linkReplyWaiter_objectsAgreeOffRunLinks _ _ _)) ?_
               show queueNextBlockingConsistent (removeRunnableOnCore st5 caller executingCore)
               exact removeRunnableOnCore_preserves_queueNextBlockingConsistent st5 caller executingCore hInv5
 
@@ -1919,6 +1935,7 @@ theorem endpointCallOnCore_preserves_queueNextTargetBlocked
               simp only
               have hQNTB5 := linkServerStashedReply_preserves_queueNextTargetBlocked
                 st4 st5 caller pair.1 hObjInv4 hQNTB4 hLink
+              refine queueNextTargetBlocked_of_readViewAgreement (ipcReadViewAgreement.of_objectsAgreeOffRunLinks (SystemState.linkReplyWaiter_objectsAgreeOffRunLinks _ _ _)) ?_
               show queueNextTargetBlocked (removeRunnableOnCore st5 caller executingCore)
               exact removeRunnableOnCore_preserves_queueNextTargetBlocked st5 caller executingCore hQNTB5
 
@@ -2074,6 +2091,7 @@ theorem endpointCallOnCore_preserves_queueHeadBlockedConsistent
               simp only
               have hQHBC5 := linkServerStashedReply_preserves_queueHeadBlockedConsistent
                 st4 st5 caller pair.1 hObjInv4 hQHBC4 hLink
+              refine queueHeadBlockedConsistent_of_readViewAgreement (ipcReadViewAgreement.of_objectsAgreeOffRunLinks (SystemState.linkReplyWaiter_objectsAgreeOffRunLinks _ _ _)) ?_
               show queueHeadBlockedConsistent (removeRunnableOnCore st5 caller executingCore)
               exact removeRunnableOnCore_preserves_queueHeadBlockedConsistent st5 caller executingCore hQHBC5
 
@@ -2205,6 +2223,7 @@ theorem endpointCallOnCore_preserves_endpointQueueTailBlockedConsistent
               simp only
               have hTail5 := linkServerStashedReply_preserves_endpointQueueTailBlockedConsistent
                 st4 st5 caller pair.1 hObjInv4 hTail4 hLink
+              refine endpointQueueTailBlockedConsistent_of_readViewAgreement (ipcReadViewAgreement.of_objectsAgreeOffRunLinks (SystemState.linkReplyWaiter_objectsAgreeOffRunLinks _ _ _)) ?_
               show endpointQueueTailBlockedConsistent (removeRunnableOnCore st5 caller executingCore)
               exact removeRunnableOnCore_preserves_endpointQueueTailBlockedConsistent st5 caller executingCore hTail5
 
@@ -2331,6 +2350,7 @@ theorem endpointCallOnCore_preserves_badgeWellFormed
               obtain ⟨_, st5⟩ := pL
               simp only
               have hInv5 := linkServerStashedReply_preserves_badgeWellFormed st4 st5 caller pair.1 hInv4 hObjInv4 hLink
+              refine badgeWellFormed_of_objectsAgreeOffRunLinks (SystemState.linkReplyWaiter_objectsAgreeOffRunLinks _ _ _) ?_
               show badgeWellFormed (removeRunnableOnCore st5 caller executingCore)
               exact removeRunnableOnCore_preserves_badgeWellFormed st5 caller executingCore hInv5
 
@@ -2412,6 +2432,7 @@ theorem endpointCallOnCore_preserves_allPendingMessagesBounded
               obtain ⟨_, st5⟩ := pL
               simp only
               have hInv5 := linkServerStashedReply_preserves_allPendingMessagesBounded st4 st5 caller pair.1 hObjInv4 hLink hInv4
+              refine allPendingMessagesBounded_of_readViewAgreement (ipcReadViewAgreement.of_objectsAgreeOffRunLinks (SystemState.linkReplyWaiter_objectsAgreeOffRunLinks _ _ _)) ?_
               show allPendingMessagesBounded (removeRunnableOnCore st5 caller executingCore)
               exact removeRunnableOnCore_preserves_allPendingMessagesBounded st5 caller executingCore hInv5
 
@@ -2576,6 +2597,7 @@ theorem endpointCallOnCore_preserves_pendingReceiveReplyWellFormed
                   obtain ⟨tc0₁, hTc0₁, hStash0₁, _⟩ := hBackTcb tid₁ tcb₁ hT4₁
                   obtain ⟨tc0₂, hTc0₂, hStash0₂, _⟩ := hBackTcb tid₂ tcb₂ hT4₂
                   exact hP1.2 tid₁ tid₂ tc0₁ tc0₂ ridX hTc0₁ hTc0₂ (hStash0₁.trans hStash4₁) (hStash0₂.trans hStash4₂)
+              refine pendingReceiveReplyWellFormed_of_readViewAgreement (ipcReadViewAgreement.of_objectsAgreeOffRunLinks (SystemState.linkReplyWaiter_objectsAgreeOffRunLinks _ _ _)) ?_
               show pendingReceiveReplyWellFormed (removeRunnableOnCore st5 caller executingCore)
               exact pendingReceiveReplyWellFormed_of_objectsAgreeOffRunLinks
                 (removeRunnableOnCore_objectsAgreeOffRunLinks st5 caller executingCore) hP5
@@ -2796,6 +2818,7 @@ theorem endpointCallOnCore_passiveServerIdleFrameOnCore
             | ok pL =>
               obtain ⟨_, st5⟩ := pL
               simp only
+              refine (fun h => h.trans (passiveServerIdleFrameOnCore.of_objectsAgreeOffRunLinks (SystemState.linkReplyWaiter_objectsAgreeOffRunLinks _ _ _) (SystemState.linkReplyWaiter_scheduler _ _ _))) (?_ : passiveServerIdleFrameOnCore st (removeRunnableOnCore st5 caller executingCore) c)
               show passiveServerIdleFrameOnCore st (removeRunnableOnCore st5 caller executingCore) c
               have hF5 := hF4.trans (linkServerStashedReply_passiveServerIdleFrameOnCore st4 st5 caller pair.1 hObjInv4 hLink)
               refine hF5.trans (removeRunnableOnCore_passiveServerIdleFrameOnCore st5 caller executingCore (fun tcb hTcb => Or.inr ?_))

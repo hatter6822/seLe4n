@@ -1344,6 +1344,7 @@ theorem timeoutThread_replenishQueueOnCore (epId : SeLe4n.ObjId) (isReceiveQ : B
         first
           | rw [revertPriorityInheritance_replenishQueueOnCore]
           | skip
+        try rw [SystemState.unlinkReplyWaiter_scheduler]
         rw [wakeThread_replenishQueueOnCore]
         show st2.scheduler.replenishQueueOnCore c = st.scheduler.replenishQueueOnCore c
         rw [hSched2]

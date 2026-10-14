@@ -753,8 +753,8 @@ theorem cancelIpcBlocking_scheduler_eq
     -- WS-RR RR7.22 (residual, remediation): so does the donation return — its
     -- three `storeObject`s leave the scheduler alone, which is why the
     -- replenishment migration sits at the `OnCore` layer and not here.
-    simp only [consumeReplyLink_scheduler_eq, restoreToReadyCancelled_scheduler_eq,
-      spliceThreadReplyFrameOut_scheduler_eq]
+    simp only [SystemState.unlinkReplyWaiterOpt_scheduler, consumeReplyLink_scheduler_eq,
+      restoreToReadyCancelled_scheduler_eq, spliceThreadReplyFrameOut_scheduler_eq]
     exact returnDonationToCancelledCaller_scheduler_eq st tid tcb
   | blockedOnNotification _ =>
     rw [restoreToReadyCancelled_scheduler_eq, removeFromNotificationWaitQueue_scheduler_eq]
@@ -779,7 +779,9 @@ theorem cancelIpcBlocking_machine_eq
   | blockedOnSend _ | blockedOnReceive _ | blockedOnCall _ =>
     rw [restoreToReadyCancelled_machine_eq, removeFromAllEndpointQueues_machine_eq]
   | blockedOnReply _ _ =>
-    rw [consumeReplyLink_machine_eq, restoreToReadyCancelled_machine_eq,
+    dsimp only
+    rw [SystemState.unlinkReplyWaiterOpt_machine, consumeReplyLink_machine_eq,
+      restoreToReadyCancelled_machine_eq,
       spliceThreadReplyFrameOut_machine_eq, returnDonationToCancelledCaller_machine_eq]
   | blockedOnNotification _ =>
     rw [restoreToReadyCancelled_machine_eq, removeFromNotificationWaitQueue_machine_eq]
@@ -858,7 +860,9 @@ theorem cancelIpcBlocking_serviceRegistry_eq
   | blockedOnSend _ | blockedOnReceive _ | blockedOnCall _ =>
     rw [restoreToReadyCancelled_serviceRegistry_eq, removeFromAllEndpointQueues_serviceRegistry_eq]
   | blockedOnReply _ _ =>
-    rw [consumeReplyLink_serviceRegistry_eq, restoreToReadyCancelled_serviceRegistry_eq,
+    dsimp only
+    rw [SystemState.unlinkReplyWaiterOpt_serviceRegistry, consumeReplyLink_serviceRegistry_eq,
+      restoreToReadyCancelled_serviceRegistry_eq,
       spliceThreadReplyFrameOut_serviceRegistry_eq,
       returnDonationToCancelledCaller_serviceRegistry_eq]
   | blockedOnNotification _ =>
@@ -1721,10 +1725,11 @@ theorem cancelIpcBlocking_preserves_objects_invExt
     exact restoreToReadyCancelled_invExt _ _
       (removeFromAllEndpointQueues_preserves_objects_invExt st tid hInv)
   | blockedOnReply _ _ =>
-    exact consumeReplyLink_preserves_objects_invExt _ _ _
+    exact SystemState.unlinkReplyWaiterOpt_objects_invExt _ _ _
+      (consumeReplyLink_preserves_objects_invExt _ _ _
       (restoreToReadyCancelled_invExt _ _
         (spliceThreadReplyFrameOut_preserves_objects_invExt _ tcb
-          (returnDonationToCancelledCaller_preserves_objects_invExt st tid tcb hInv)))
+          (returnDonationToCancelledCaller_preserves_objects_invExt st tid tcb hInv))))
   | blockedOnNotification _ =>
     exact restoreToReadyCancelled_invExt _ _
       (removeFromNotificationWaitQueue_preserves_objects_invExt st tid hInv)
@@ -1852,7 +1857,9 @@ theorem cancelIpcBlocking_tcb_lookup
         (restoreToReadyCancelled
           (spliceThreadReplyFrameOut (returnDonationToCancelledCaller st tid tcb) tcb) tid)
         tid tcb k t₁ (restoreToReadyCancelled_invExt _ tid hInvD) hL1
-    exact ⟨t₂, hL2, ((hAff2.trans hAff1).trans hAff0)⟩
+    obtain ⟨t₃, hL3, hE3⟩ :=
+      (SystemState.unlinkReplyWaiterOpt_objectsAgreeOffReplyLinks _ tid _).get_tcb hL2
+    exact ⟨t₃, hL3, (((congrArg TCB.placement hE3 :).trans hAff2).trans hAff1).trans hAff0⟩
   | blockedOnNotification _ =>
     obtain ⟨hInvN, t₁, hL1, hAff1⟩ :=
       removeFromNotificationWaitQueue_tcb_lookup st tid k t0 hInv hPre
@@ -1913,6 +1920,7 @@ theorem cancelIpcBlocking_getTcb?_none
     rw [restoreToReadyCancelled_eq_self_of_getTcb?_none _ tid hTE]
     exact hTE
   | blockedOnReply _ _ =>
+    refine (SystemState.unlinkReplyWaiterOpt_objectsAgreeOffReplyLinks _ tid _).getTcb?_none ?_
     show (consumeReplyLink
       (restoreToReadyCancelled
         (spliceThreadReplyFrameOut (returnDonationToCancelledCaller st tid tcb) tcb) tid)
@@ -2094,11 +2102,13 @@ theorem cancelIpcBlocking_preserves_ipcInvariant
   | blockedOnReply _ _ =>
     have hInvR := returnDonationToCancelledCaller_preserves_objects_invExt st tid tcb hInv
     have hInvD := spliceThreadReplyFrameOut_preserves_objects_invExt _ tcb hInvR
-    exact consumeReplyLink_preserves_ipcInvariant _ tid tcb
+    exact ipcInvariant_of_objectsAgreeOffRunLinks
+      (SystemState.unlinkReplyWaiterOpt_objectsAgreeOffRunLinks _ tid _)
+      (consumeReplyLink_preserves_ipcInvariant _ tid tcb
       (restoreToReadyCancelled_invExt _ tid hInvD)
       (restoreToReadyCancelled_preserves_ipcInvariant _ tid hInvD
         (spliceThreadReplyFrameOut_preserves_ipcInvariant _ tcb hInvR
-          (returnDonationToCancelledCaller_preserves_ipcInvariant st tid tcb hInv hIpc)))
+          (returnDonationToCancelledCaller_preserves_ipcInvariant st tid tcb hInv hIpc))))
   | blockedOnNotification _ =>
     exact restoreToReadyCancelled_preserves_ipcInvariant _ tid
       (removeFromNotificationWaitQueue_preserves_objects_invExt st tid hInv)
