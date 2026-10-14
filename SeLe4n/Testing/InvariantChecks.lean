@@ -420,6 +420,37 @@ private def notificationWaiterConsistentChecks (objectIds : List SeLe4n.ObjId) (
             tcb.ntfnPrev.isNone && tcb.ntfnNext.isNone) :: acc
       | none => acc) []
 
+/-- WS-ZA ZA4.6: runtime check for `SystemState.replyWaitersConsistent`.  Each
+thread's reply-waiter queue, walked from its head one step past its recorded
+length, has exactly that length, holds no thread twice, links each waiter back
+to the one before it and holds only threads reply-blocked on it; every thread
+reply-blocked on it is in it.  A thread waits on no reply from itself, the
+server it waits on is a live thread, and a thread waiting on no reply holds no
+reply-waiter link. -/
+private def replyWaitersConsistentChecks (objectIds : List SeLe4n.ObjId) (st : SystemState) :
+    List (String × Bool) :=
+  objectIds.foldr (fun oid acc =>
+    let tid := SeLe4n.ThreadId.ofNat oid.toNat
+    match st.getTcb? tid with
+    | none => acc
+    | some tcb =>
+        let q := st.replyWaitersWalk (tcb.replyWaitersCount + 1) tcb.replyWaitersHead
+        let waitsOn (w : SeLe4n.ThreadId) : Bool :=
+          (st.getTcb? w).any (·.blockingServer? == some tid)
+        let queueOk :=
+          q.length == tcb.replyWaitersCount && q.eraseDups.length == q.length &&
+          q.all waitsOn &&
+          ((none :: q.map some).zip q).all (fun (p, w) =>
+            (st.getTcb? w).any (·.replyWaiterPrev == p)) &&
+          objectIds.all (fun o =>
+            let w := SeLe4n.ThreadId.ofNat o.toNat
+            !waitsOn w || q.contains w)
+        let selfOk :=
+          tcb.blockingServer? != some tid &&
+          tcb.blockingServer?.all (fun s => (st.getTcb? s).isSome) &&
+          (tcb.blockingServer?.isSome || (tcb.replyWaiterPrev.isNone && tcb.replyWaiterNext.isNone))
+        (s!"reply-waiter queue consistent: tid={oid}", queueOk && selfOk) :: acc) []
+
 /-- WS-G4: RunQueue internal consistency — every thread the boot core's queue
     walks to, along its TCB's run-queue links, records a priority and sits in
     that priority's bucket walk.  The link agreement maintains this
@@ -604,6 +635,7 @@ def stateInvariantChecksFor (objectIds : List SeLe4n.ObjId) (st : SystemState)
     ++ asidTableConsistencyChecks objectIds st
     ++ untypedWatermarkChecks objectIds st
     ++ notificationWaiterConsistentChecks objectIds st
+    ++ replyWaitersConsistentChecks objectIds st
     ++ cdtChildMapConsistentCheck st
     ++ cdtParentMapConsistentCheck st
     ++ blockedOnSendNotRunnableChecks objectIds st

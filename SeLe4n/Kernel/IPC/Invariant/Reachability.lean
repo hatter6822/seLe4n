@@ -20,6 +20,7 @@
 import SeLe4n.Kernel.IPC.Invariant.Structural
 import SeLe4n.Kernel.Architecture.Invariant
 import SeLe4n.Kernel.InformationFlow.Invariant.Composition
+import SeLe4n.Kernel.IPC.CrossCore.ReplyWaitersDispatch
 
 /-!
 # WS-RR RR3.13 — discharging the IPC bundles' pre-state preconditions
@@ -101,7 +102,13 @@ an invariant rather than a hypothesis wearing an invariant's name.
 **WS-ZA ZA4.5**: `runQueueRefined` joins them on the same terms.  Every core's
 run queue agrees with the run-queue links its threads carry, and every kernel
 entry keeps it: each one is a `RunQueueStage` (`IPC.Invariant.RunQueueAgreement`),
-so the agreement the dispatch reads is carried, not assumed. -/
+so the agreement the dispatch reads is carried, not assumed.
+
+**WS-ZA ZA4.6**: `replyWaitersConsistent` joins them.  Every server's reply-waiter
+queue, linked through its waiters' TCBs, is exactly the threads reply-blocked on
+it, so priority inheritance reads its waiters off the links.  Each transition that
+links or unlinks a waiter, and each live IPC arm around it, keeps it
+(`IPC.CrossCore.ReplyWaitersPreservation`, `…Cancellation`, `…Dispatch`). -/
 def ipcReachable (st : SystemState) : Prop :=
   ipcInvariantFull st ∧
   st.objects.invExt ∧
@@ -109,7 +116,8 @@ def ipcReachable (st : SystemState) : Prop :=
   pendingMessageCapBadgesWellFormed st ∧
   notificationWaiterConsistent st ∧
   donationChainWellFormed st ∧
-  st.runQueueRefined
+  st.runQueueRefined ∧
+  st.replyWaitersConsistent
 
 namespace ipcReachable
 
@@ -128,7 +136,11 @@ theorem donationChainWellFormed {st : SystemState} (h : ipcReachable st) :
     _root_.SeLe4n.Kernel.donationChainWellFormed st := h.2.2.2.2.2.1
 /-- WS-ZA ZA4.5: every core's run queue agrees with the threads' run-queue links. -/
 theorem runQueueRefined {st : SystemState} (h : ipcReachable st) : st.runQueueRefined :=
-  h.2.2.2.2.2.2
+  h.2.2.2.2.2.2.1
+/-- WS-ZA ZA4.6: every server's reply-waiter queue is consistent with its waiters. -/
+theorem replyWaitersConsistent {st : SystemState} (h : ipcReachable st) :
+    st.replyWaitersConsistent :=
+  h.2.2.2.2.2.2.2
 
 end ipcReachable
 
@@ -354,7 +366,8 @@ Every conjunct is discharged from the empty boot object store, the IPC bundle
 through the architecture layer's `default_ipcInvariantFull`. -/
 theorem ipcReachable_default : ipcReachable (default : SystemState) := by
   refine ⟨Architecture.default_ipcInvariantFull, ?_, ?_, ?_,
-    default_notificationWaiterConsistent, ?_, SystemState.default_runQueueRefined⟩
+    default_notificationWaiterConsistent, ?_, SystemState.default_runQueueRefined,
+    SystemState.replyWaitersConsistent_of_idle fun k v hv => ?_⟩
   · exact capabilityInvariantBundle.objectsInvExt
       (Architecture.default_system_state_proofLayerInvariantBundle).2.1
   · intro tid tcb hTcb
@@ -372,6 +385,10 @@ theorem ipcReachable_default : ipcReachable (default : SystemState) := by
     · intro scId sc hSc
       rw [Architecture.default_objects_none] at hSc
       cases hSc
+  · -- WS-ZA ZA4.6: the empty boot store holds no thread, so no view.
+    unfold SystemState.replyViews SystemState.getObject? at hv
+    rw [Architecture.default_objects_none] at hv
+    cases hv
 
 /-- **WS-RR RR8.16 (`v0.35.196`)**: and the labelled pack is inhabited too, under
 **every** labelling.
@@ -690,5 +707,114 @@ theorem donationChainWitness_wellFormed :
     intro scId sc hSc
     obtain ⟨rfl, rfl⟩ := hScCases scId sc hSc
     exact ⟨2, [donationChainWitnessInner, donationChainWitnessOuter], donationChainWitness_chain⟩
+
+-- ============================================================================
+-- §6  WS-ZA ZA4.6 — the live arms carry the reply-waiter queues
+-- ============================================================================
+
+section ReplyWaiters
+
+open SeLe4n.Model.SystemState
+open SeLe4n.Kernel.Concurrency (CoreId)
+
+/-- A thread whose block names no server waits on no reply. -/
+theorem serverFree_of_tcb {st : SystemState} {t : SeLe4n.ThreadId} {tcb : TCB}
+    (hT : st.objects[t.toObjId]? = some (.tcb tcb)) (hS : tcb.blockingServer? = none) :
+    ReplyViews.serverFree st.replyViews t := by
+  intro v hv
+  rw [replyViews_of_tcb hT] at hv
+  cases hv; exact hS
+
+/-- The head of a receive queue is blocked on the receive, so it waits on no
+server. -/
+theorem receiveHead_serverFree {st : SystemState} (hQ : queueHeadBlockedConsistent st)
+    {eid : SeLe4n.ObjId} {ep : Endpoint} {r : SeLe4n.ThreadId}
+    (hE : st.objects[eid]? = some (.endpoint ep)) (hH : ep.receiveQ.head = some r) :
+    ReplyViews.serverFree st.replyViews r := by
+  intro v hv
+  obtain ⟨t, hT, rfl⟩ := tcb_of_replyViews hv
+  have hR := (hQ eid ep r t hE hT).1 hH
+  simp only [TCB.replyView, TCB.blockingServer?, hR]
+
+/-- The head of a send queue is blocked on the send or the call, so it waits
+on no server. -/
+theorem sendHead_serverFree {st : SystemState} (hQ : queueHeadBlockedConsistent st)
+    {eid : SeLe4n.ObjId} {ep : Endpoint} {s : SeLe4n.ThreadId}
+    (hE : st.objects[eid]? = some (.endpoint ep)) (hH : ep.sendQ.head = some s) :
+    ReplyViews.serverFree st.replyViews s := by
+  intro v hv
+  obtain ⟨t, hT, rfl⟩ := tcb_of_replyViews hv
+  rcases (hQ eid ep s t hE hT).2 hH with hS | hS <;>
+    simp only [TCB.replyView, TCB.blockingServer?, hS]
+
+/-- The head of a notification's wait queue is blocked on it, so it waits on
+no server. -/
+theorem notificationHead_serverFree {st : SystemState} (hN : notificationWaiterConsistent st)
+    {nid : SeLe4n.ObjId} {n : Notification} {w : SeLe4n.ThreadId}
+    (hG : st.getNotification? nid = some n) (hH : n.waitHead = some w) :
+    ReplyViews.serverFree st.replyViews w := by
+  obtain ⟨t, hT, hB⟩ := (hN.1 nid n ((getNotification?_eq_some_iff st nid n).1 hG)).2.1 w hH
+  exact serverFree_of_tcb hT (by simp only [TCB.blockingServer?, hB])
+
+/-- **The live call carries the reply-waiter queues**, its side conditions read
+off the reachable-state pack and the running caller. -/
+theorem endpointCallCrossCoreDispatch_preserves_replyWaitersConsistent_of_reachable
+    (endpointId : SeLe4n.ObjId) (caller : SeLe4n.ThreadId) (msg : IpcMessage)
+    (rights : AccessRightSet) (base : SeLe4n.Slot) (c : CoreId) (st : SystemState)
+    (hReach : ipcReachable st) (tcb : TCB) (hT : st.objects[caller.toObjId]? = some (.tcb tcb))
+    (hReady : tcb.ipcState = .ready) :
+    (endpointCallCrossCoreDispatch endpointId caller msg rights base c
+      st).1.replyWaitersConsistent :=
+  have hI := hReach.ipcInvariantFull
+  endpointCallCrossCoreDispatch_preserves_replyWaitersConsistent endpointId caller msg rights
+    base c st hReach.objects_invExt hReach.replyWaitersConsistent
+    (serverFree_of_tcb hT (by simp only [TCB.blockingServer?, hReady]))
+    (fun ep r hE hH => ⟨fun h => by
+        subst h
+        exact (readyThread_endpointQueueFresh st _ tcb hI.queueHeadBlockedConsistent
+          hI.endpointQueueTailBlockedConsistent hT hReady endpointId ep hE).2.2.1 hH,
+      receiveHead_serverFree hI.queueHeadBlockedConsistent hE hH⟩)
+
+/-- **The live receive carries the reply-waiter queues**, likewise. -/
+theorem endpointReceiveDualWithCapsOnCore_preserves_replyWaitersConsistent_of_reachable
+    (endpointId : SeLe4n.ObjId) (receiver : SeLe4n.ThreadId)
+    (replyId : Option SeLe4n.ReplyId) (root : SeLe4n.ObjId) (base : SeLe4n.Slot) (c : CoreId)
+    (st : SystemState) (hReach : ipcReachable st) (tcb : TCB)
+    (hT : st.objects[receiver.toObjId]? = some (.tcb tcb)) (hReady : tcb.ipcState = .ready) :
+    (endpointReceiveDualWithCapsOnCore endpointId receiver replyId root base c
+      st).1.replyWaitersConsistent :=
+  have hI := hReach.ipcInvariantFull
+  endpointReceiveDualWithCapsOnCore_preserves_replyWaitersConsistent endpointId receiver
+    replyId root base c st hReach.objects_invExt hReach.replyWaitersConsistent
+    (serverFree_of_tcb hT (by simp only [TCB.blockingServer?, hReady]))
+    (fun ep s hE hH => ⟨fun h => by
+        subst h
+        exact (readyThread_endpointQueueFresh st _ tcb hI.queueHeadBlockedConsistent
+          hI.endpointQueueTailBlockedConsistent hT hReady endpointId ep hE).1 hH,
+      sendHead_serverFree hI.queueHeadBlockedConsistent hE hH⟩)
+
+/-- **The live send carries the reply-waiter queues**, likewise. -/
+theorem endpointSendDualWithCapsOnCore_preserves_replyWaitersConsistent_of_reachable
+    (endpointId : SeLe4n.ObjId) (sender : SeLe4n.ThreadId) (msg : IpcMessage)
+    (rights : AccessRightSet) (base : SeLe4n.Slot) (c : CoreId) (st : SystemState)
+    (hReach : ipcReachable st) (tcb : TCB) (hT : st.objects[sender.toObjId]? = some (.tcb tcb))
+    (hReady : tcb.ipcState = .ready) :
+    (endpointSendDualWithCapsOnCore endpointId sender msg rights base c
+      st).1.replyWaitersConsistent :=
+  endpointSendDualWithCapsOnCore_preserves_replyWaitersConsistent endpointId sender msg rights
+    base c st hReach.objects_invExt hReach.replyWaitersConsistent
+    (serverFree_of_tcb hT (by simp only [TCB.blockingServer?, hReady]))
+    (fun _ _ hE hH => receiveHead_serverFree hReach.ipcInvariantFull.queueHeadBlockedConsistent hE hH)
+
+/-- **Signal carries the reply-waiter queues**, its waiter read off the
+notification queue invariant. -/
+theorem notificationSignalOnCore_preserves_replyWaitersConsistent_of_reachable (nid : SeLe4n.ObjId)
+    (badge : SeLe4n.Badge) (c : CoreId) (st : SystemState) (hReach : ipcReachable st) :
+    (notificationSignalOnCore nid badge c st).1.replyWaitersConsistent :=
+  notificationSignalOnCore_preserves_replyWaitersConsistent nid badge c st hReach.objects_invExt
+    hReach.replyWaitersConsistent
+    (fun _ _ hG hH => notificationHead_serverFree hReach.notificationWaiterConsistent hG hH)
+
+end ReplyWaiters
 
 end SeLe4n.Kernel

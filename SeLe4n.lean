@@ -19,6 +19,10 @@ import SeLe4n.Kernel.API
 -- `v0.35.60` lesson: a module outside the root is exempt from most of this
 -- tree's defences by omission rather than by decision).
 import SeLe4n.Kernel.IPC.Invariant.CancellationBundle
+-- WS-ZA ZA4.6: the reply-waiter queues are kept consistent by every transition
+-- that links or unlinks a waiter and by each live IPC arm around it.  No kernel
+-- module consumes these theorems, so the root is what keeps them built.
+import SeLe4n.Kernel.IPC.CrossCore.ReplyWaitersDispatch
 import SeLe4n.Kernel.Architecture.VSpaceBackend
 import SeLe4n.Kernel.Architecture.TlbModel
 import SeLe4n.Kernel.Architecture.RegisterDecode

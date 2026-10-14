@@ -2062,8 +2062,16 @@ private theorem witnessSt3_no_stack_head (scId : SeLe4n.SchedContextId)
     · simp at hLk
     · cases hLk
 
+/-- WS-ZA ZA4.6: the witness state's one thread waits on no reply and heads no
+queue. -/
+private theorem witnessSt3_tcb_idle (k : SeLe4n.ObjId) (t : TCB)
+    (hO : witnessSt3.objects[k]? = some (.tcb t)) : t.replyView = ReplyView.idle := by
+  have h : witnessSt3.getTcb? (SeLe4n.ThreadId.ofObjId k) = some t := by
+    unfold SystemState.getTcb?; rw [SeLe4n.ThreadId.toObjId_ofObjId, hO]
+  rw [witnessSt3_getTcb_unique _ t h]; rfl
+
 private theorem witnessReachable3 : ipcReachable witnessSt3 := by
-  refine ⟨witnessInv3, witnessObjInv3, ?_, ?_, ?_, ?_, ?_⟩
+  refine ⟨witnessInv3, witnessObjInv3, ?_, ?_, ?_, ?_, ?_, ?_⟩
   · intro tid tcb hLk
     rw [witnessSt3_lookup] at hLk
     split at hLk
@@ -2115,6 +2123,10 @@ private theorem witnessReachable3 : ipcReachable witnessSt3 := by
   · -- WS-ZA ZA4.5: the boot's empty run queues, and the one thread names no core.
     exact SystemState.runQueueRefined_of_default_queues rfl rfl
       (fun t tcb h => by rw [witnessSt3_getTcb_unique t tcb h]; rfl)
+  · -- WS-ZA ZA4.6: the one thread is unlinked.
+    refine SystemState.replyWaitersConsistent_of_idle fun k v hv => ?_
+    obtain ⟨t, hO, rfl⟩ := SystemState.tcb_of_replyViews hv
+    exact witnessSt3_tcb_idle k t hO
 
 private def witnessDecoded : SyscallDecodeResult :=
   { capAddr := SeLe4n.CPtr.ofNat 0, msgInfo := default, syscallId := .send }
@@ -2910,7 +2922,7 @@ private theorem witnessInv4 : ipcInvariantFull witnessSt4 := by
 
 set_option maxHeartbeats 1000000 in
 private theorem witnessReachable4 : ipcReachable witnessSt4 := by
-  refine ⟨witnessInv4, witnessObjInv4, ?_, ?_, ?_, ?_, ?_⟩
+  refine ⟨witnessInv4, witnessObjInv4, ?_, ?_, ?_, ?_, ?_, ?_⟩
   · intro tid tcb hLk
     rw [witnessSt4_lookup] at hLk
     split at hLk
@@ -2966,6 +2978,13 @@ private theorem witnessReachable4 : ipcReachable witnessSt4 := by
     · rw [if_pos hk] at h; simp at h
     · rw [if_neg hk] at h
       rw [witnessSt3_getTcb_unique t tcb h]; rfl
+  · -- WS-ZA ZA4.6: the fresh Reply is no thread; `witnessSt3`'s one is unlinked.
+    refine SystemState.replyWaitersConsistent_of_idle fun k v hv => ?_
+    obtain ⟨t, hO, rfl⟩ := SystemState.tcb_of_replyViews hv
+    rw [witnessSt4_lookup] at hO
+    split at hO
+    · cases hO
+    · exact witnessSt3_tcb_idle k t hO
 
 private theorem witnessSt4_getTcb :
     witnessSt4.getTcb? witnessTid = some witnessTcbBound := by

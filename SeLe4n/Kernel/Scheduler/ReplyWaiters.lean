@@ -122,6 +122,23 @@ theorem SystemState.tcb_of_replyViews {st : SystemState} {k : ObjId} {v : ReplyV
     cases o <;> simp only [objReplyView, Option.some.injEq, reduceCtorEq] at h
     exact ⟨_, rfl, h⟩
 
+/-- No thread waiting on a reply and no queue: every view is unlinked. -/
+def ReplyView.idle : ReplyView := ⟨none, 0, 0, 0, 0⟩
+
+/-- **A store in which every thread is unlinked has consistent queues** (each
+one empty).  What the boot store and the test witnesses satisfy. -/
+theorem SystemState.replyWaitersConsistent_of_idle {st : SystemState}
+    (h : ∀ k v, st.replyViews k = some v → v = ReplyView.idle) : st.replyWaitersConsistent := by
+  refine ⟨fun s vs hs => ⟨[], ?_, ?_, List.nodup_nil, fun w => ?_⟩, fun w vw s hw hs => ?_,
+    fun w vw hw _ => ?_, fun w vw hw hs => ?_⟩
+  · rw [h _ _ hs]; rfl
+  · rw [h _ _ hs]; rfl
+  · refine ⟨fun hm => absurd hm (List.not_mem_nil), fun ⟨v, hv, hsv⟩ => ?_⟩
+    rw [h _ _ hv] at hsv; cases hsv
+  · rw [h _ _ hw] at hs; cases hs
+  · rw [h _ _ hw]; exact ⟨rfl, rfl⟩
+  · rw [h _ _ hw] at hs; cases hs
+
 /-- The threads reached from `cur` along successor links, at most `fuel` of them. -/
 def SystemState.replyWaitersWalk (st : SystemState) : Nat → Option ThreadId → List ThreadId
   | 0, _ => []
