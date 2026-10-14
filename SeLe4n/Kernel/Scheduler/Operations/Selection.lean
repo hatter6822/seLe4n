@@ -1353,6 +1353,22 @@ def restoreIncomingContextOnCoreUnlessCurrent (st : SystemState) (c : CoreId)
   if st.scheduler.currentOnCore c == some tid then st
   else restoreIncomingContextOnCore st c tid
 
+/-- WS-ZA ZA4.7: the compiled `restoreIncomingContextOnCoreUnlessCurrent`: the
+current slot is compared in place (`Option.isEqSome`), with no `some tid` cell
+built to compare against. -/
+def restoreIncomingContextOnCoreUnlessCurrentImpl (st : SystemState) (c : CoreId)
+    (tid : SeLe4n.ThreadId) : SystemState :=
+  if (st.scheduler.currentOnCore c).isEqSome tid then st
+  else restoreIncomingContextOnCore st c tid
+
+@[csimp] theorem restoreIncomingContextOnCoreUnlessCurrent_eq_impl :
+    @restoreIncomingContextOnCoreUnlessCurrent = @restoreIncomingContextOnCoreUnlessCurrentImpl := by
+  funext st c tid
+  unfold restoreIncomingContextOnCoreUnlessCurrent restoreIncomingContextOnCoreUnlessCurrentImpl
+  cases st.scheduler.currentOnCore c with
+  | none => rfl
+  | some x => simp [Option.isEqSome]
+
 /-- The self-switch case: when `tid` is already current, the conditional restore is
 the identity (no register roll-back). -/
 theorem restoreIncomingContextOnCoreUnlessCurrent_self (st : SystemState) (c : CoreId)

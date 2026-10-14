@@ -686,6 +686,29 @@ def runDescheduleOnCore (st : SystemState) (c : CoreId) (t : SeLe4n.ThreadId) : 
             else st.scheduler.currentOnCore c))
         c (st.scheduler.currentOnCore c == some t) }
 
+/-- WS-ZA ZA4.7: the compiled `runDescheduleOnCore`.  The core's `current`
+slot is read before the dequeue, so nothing holds the state the dequeue
+rewrites, and the scheduler record and the state are rewritten in place. -/
+def runDescheduleOnCoreImpl (st : SystemState) (c : CoreId) (t : SeLe4n.ThreadId) :
+    SystemState :=
+  let cur := st.scheduler.currentOnCore c
+  let wasT := cur.isEqSome t
+  let st' := st.runRemoveOnCore c t
+  { st' with
+      scheduler := SchedulerState.markReschedulePendingOnCoreIf
+        (st'.scheduler.setCurrentOnCore c (if wasT then none else cur)) c wasT }
+
+@[csimp] theorem runDescheduleOnCore_eq_impl :
+    @runDescheduleOnCore = @runDescheduleOnCoreImpl := by
+  funext st c t
+  unfold runDescheduleOnCore runDescheduleOnCoreImpl
+  cases h : st.scheduler.currentOnCore c with
+  | none => rfl
+  | some x =>
+    by_cases hx : x = t
+    · subst hx; simp [Option.isEqSome]
+    · simp [Option.isEqSome, hx]
+
 theorem runDescheduleOnCore_onlyObjectsSchedulerDiffer (st : SystemState) (c : CoreId)
     (t : SeLe4n.ThreadId) : onlyObjectsSchedulerDiffer (st.runDescheduleOnCore c t) st :=
   (runRemoveOnCore_onlyObjectsSchedulerDiffer st c t).withScheduler _

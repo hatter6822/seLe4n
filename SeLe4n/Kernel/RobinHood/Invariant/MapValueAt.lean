@@ -32,6 +32,19 @@ is unchanged (the probe answers `capacity`, past the array). -/
       slots     := t.slots.modify i (RHEntry.mapValue f)
       hSlotsLen := by rw [Array.size_modify]; exact t.hSlotsLen }
 
+/-- WS-ZA ZA4.7: the compiled `RHTable.mapValueAt`: the slot is rewritten
+through `RHTable.modifySlots`, which applies `f` with no closure. -/
+@[specialize] def RHTable.mapValueAtImpl (t : RHTable α β) (k : α) (f : β → β) :
+    RHTable α β :=
+  let i := findIdxLoop t.capacity (idealIndex k t.capacity t.hCapPos) k 0 t.slots
+    t.capacity t.hSlotsLen t.hCapPos
+  { t with
+      slots     := RHTable.modifySlots t.slots i (RHEntry.mapValue f)
+      hSlotsLen := by rw [RHTable.modifySlots, Array.size_modify]; exact t.hSlotsLen }
+
+@[csimp] theorem RHTable.mapValueAt_eq_impl :
+    @RHTable.mapValueAt = @RHTable.mapValueAtImpl := rfl
+
 @[simp] theorem RHTable.mapValueAt_size (t : RHTable α β) (k : α) (f : β → β) :
     (t.mapValueAt k f).size = t.size := rfl
 
