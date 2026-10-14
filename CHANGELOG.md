@@ -1,3 +1,61 @@
+## v0.36.85 — WS-ZA ZA4.7 (first part): IPC rendezvous written in place
+
+**Send, receive, call and reply now run on the register file and write their
+rendezvous in place.**  Each arm decides every refusal on the state it was
+handed, then performs the rendezvous on a state nothing else holds, so the
+object table, the endpoint and the TCBs are rewritten in their slots instead
+of copied.  Every fast arm is proven equal to its specification arm, so the
+specification and its theorems are unchanged.
+
+Normal-build allocations per syscall (QEMU exerciser, core 0), against
+`v0.36.84`:
+
+| Scenario | v0.36.84 | v0.36.85 |
+|---|---|---|
+| receive that blocks | 100 | 5 |
+| send to a waiting receiver | 86 | 15 |
+| wait that blocks | 42 | 6 |
+| signal that wakes a waiter | 29 | 10 |
+| call | 166 | 16 |
+| reply | 94 | 9 |
+
+Signal, wait, wide-badge signal and yield stay at 0.
+
+- **Routing.**  Capability-free send and call, receive naming a reply object,
+  and reply join the entry's register-file routing (`RegisterRoutedSyscall`
+  in `SeLe4n/Kernel/Architecture/RegisterDecode.lean`, with a decode-equality
+  theorem per route), dispatching to the checked arms of
+  `SeLe4n/Kernel/RefusalCarryingEndpoint.lean`.
+- **Checks before writes.**  A capability-free send, a plain receive that
+  blocks, a call and a reply refuse in the state they were handed.  Each arm
+  states its in-place preconditions as one Boolean guard on that state
+  (`sendWakesInPlace`, `callWakesInPlace`, `replyWakesInPlace`) and falls back
+  to the general arm when it fails.
+- **In-place stores.**  `storeSendRendezvous`, `storeCallRendezvous` and
+  `storeReplyRendezvous` (`SeLe4n/Kernel/IPC/CrossCore/`) write through
+  `RHTable.modify`/`mapValueAt`; `RHTable.findsInPlace`, `objectsKeepFinds`
+  and `storeLeavesIndexAndTypes` show that no write moves a key, so no
+  table-extension invariant is threaded.  `callDispatchChecked_inPlace` and
+  `replyTransferChecked_inPlace` state the equalities.
+- **Shared wake path.**  The receive-queue head pops in place; the wake
+  decides its SGI before it writes and a syscall fires its reschedule SGIs
+  from one per-core flag word; the priority-inheritance boost and key hook
+  rewrite the TCB in place; deschedule reads the current thread first and
+  rewrites the state once; queue links are written as codes.
+- **Reply-waiter queues.**  `linkReplyWaiter` and `unlinkReplyWaiter` had
+  allocated a fresh state record on every call (a branch sat between taking
+  the record apart and rebuilding it); their compiled forms rebuild it once
+  (`linkReplyWaiter_eq_impl`, `unlinkReplyWaiter_eq_impl`).
+- **Debt registered.**  A receive naming a reply object still scans every
+  object to learn whether the reply is stashed (`replyIsStashed`); a row in
+  `docs/REGISTERED_DEBT.md` records the field that will replace the scan.
+
+**What remains (ZA4.7, second part).**  Most of what is left on these paths is
+the delivered message: the entry builds a word array, delivery keeps an
+`IpcMessage` record in the receiver's TCB, and the return frame is built from
+it.  A state holding a fresh array cannot be produced without allocating, so
+the second part changes where a message lives (plan R2).
+
 ## v0.36.84 — WS-ZA ZA4.6: reply waiters link through the TCB; priority inheritance without a scan
 
 **Priority inheritance no longer scans the object store.**  A thread blocked
