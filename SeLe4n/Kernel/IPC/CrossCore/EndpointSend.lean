@@ -118,11 +118,11 @@ starts at the popped head's successor. -/
 @[inline] def sendRendezvousEndpoint (next : Option SeLe4n.ThreadId) :
     KernelObject → KernelObject
   | .endpoint e =>
-      -- branched outside the record, each arm rewriting the queue record it
-      -- was handed, so neither the endpoint nor its queue is rebuilt
+      -- the queue ends are codes in the endpoint, rewritten in its cell
+      -- (`Endpoint.withReceiveQ_head`)
       match next with
-      | some n => .endpoint (e.withReceiveQ { e.receiveQ with head := some n })
-      | none => .endpoint (e.withReceiveQ { e.receiveQ with head := none, tail := none })
+      | some n => .endpoint { e with recvHeadCode := n.val + 1 }
+      | none => .endpoint { e with recvHeadCode := 0, recvTailCode := 0 }
   | o => o
 
 /-- WS-ZA ZA4.7: the receive completion a send rendezvous writes into the
@@ -252,7 +252,7 @@ theorem sendRendezvous_inPlace_eq (st : SystemState) (endpointId : SeLe4n.ObjId)
     have hSt : storeObject endpointId
         (.endpoint (ep.withReceiveQ { head := some n, tail := ep.receiveQ.tail })) st =
         .ok ((), S1) := by
-      rw [storeObject_eq_of_leaves (by simpa only [KernelObject.objectType] using hLE), hS1, hN]; rfl
+      rw [Endpoint.withReceiveQ_head, storeObject_eq_of_leaves (by simpa only [KernelObject.objectType] using hLE), hS1, hN]; rfl
     simp only [hSt]
     have hTn1 : S1.getTcb? n = some nt :=
       (SystemState.getTcb?_eq_some_iff _ _ _).mpr

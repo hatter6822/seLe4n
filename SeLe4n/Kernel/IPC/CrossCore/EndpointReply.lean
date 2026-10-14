@@ -641,10 +641,11 @@ to its receive queue. -/
 @[inline] def receiveBlockEndpoint (receiver : SeLe4n.ThreadId)
     (tail? : Option SeLe4n.ThreadId) : KernelObject → KernelObject
   | .endpoint e =>
-      let r := some receiver
+      -- the queue ends are codes in the endpoint, rewritten in its cell
+      -- (`Endpoint.withReceiveQ_tail`)
       match tail? with
-      | none => .endpoint (e.withReceiveQ { e.receiveQ with head := r, tail := r })
-      | some _ => .endpoint (e.withReceiveQ { e.receiveQ with tail := r })
+      | none => .endpoint { e with recvHeadCode := receiver.val + 1, recvTailCode := receiver.val + 1 }
+      | some _ => .endpoint { e with recvTailCode := receiver.val + 1 }
   | o => o
 
 /-- WS-ZA ZA4.7: the receiver's queue links after it is appended behind `tail?`.
@@ -782,7 +783,7 @@ theorem receiveEnqueue_inPlace_eq (st : SystemState) (endpointId : SeLe4n.ObjId)
       simp only [lookupTcb, hRp, Bool.false_eq_true, ↓reduceIte]; exact hTp
     simp only [hLookP]
     have hSt : storeObject endpointId (.endpoint (ep.withReceiveQ { head := ep.receiveQ.head, tail := some receiver })) st = .ok ((), S1) := by
-      rw [storeObject_eq_of_leaves (by simpa only [KernelObject.objectType] using hLE), hS1,
+      rw [Endpoint.withReceiveQ_tail, storeObject_eq_of_leaves (by simpa only [KernelObject.objectType] using hLE), hS1,
         hTail]; rfl
     simp only [hSt]
     have hTp1 : S1.getTcb? p = some pt :=

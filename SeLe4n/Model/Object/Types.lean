@@ -2347,6 +2347,30 @@ namespace Endpoint
 @[simp] theorem receiveQ_ofQueues (s r : IntrusiveQueue) : (ofQueues s r).receiveQ = r := by
   simp only [receiveQ, ofQueues, SeLe4n.ThreadId.ofOptCode_optCode]
 
+/-- A write of the receive queue's head alone is a write of its code. -/
+theorem withReceiveQ_head (e : Endpoint) (h : Option SeLe4n.ThreadId) :
+    e.withReceiveQ { head := h, tail := e.receiveQ.tail } =
+      { e with recvHeadCode := SeLe4n.ThreadId.optCode h } := by
+  simp only [withReceiveQ, receiveQ, SeLe4n.ThreadId.optCode_ofOptCode]
+
+/-- A write of the receive queue's tail alone is a write of its code. -/
+theorem withReceiveQ_tail (e : Endpoint) (t : Option SeLe4n.ThreadId) :
+    e.withReceiveQ { head := e.receiveQ.head, tail := t } =
+      { e with recvTailCode := SeLe4n.ThreadId.optCode t } := by
+  simp only [withReceiveQ, receiveQ, SeLe4n.ThreadId.optCode_ofOptCode]
+
+/-- A write of the send queue's head alone is a write of its code. -/
+theorem withSendQ_head (e : Endpoint) (h : Option SeLe4n.ThreadId) :
+    e.withSendQ { head := h, tail := e.sendQ.tail } =
+      { e with sendHeadCode := SeLe4n.ThreadId.optCode h } := by
+  simp only [withSendQ, sendQ, SeLe4n.ThreadId.optCode_ofOptCode]
+
+/-- A write of the send queue's tail alone is a write of its code. -/
+theorem withSendQ_tail (e : Endpoint) (t : Option SeLe4n.ThreadId) :
+    e.withSendQ { head := e.sendQ.head, tail := t } =
+      { e with sendTailCode := SeLe4n.ThreadId.optCode t } := by
+  simp only [withSendQ, sendQ, SeLe4n.ThreadId.optCode_ofOptCode]
+
 @[simp] theorem sendQ_default : (({} : Endpoint)).sendQ = {} := rfl
 
 @[simp] theorem receiveQ_default : (({} : Endpoint)).receiveQ = {} := rfl
