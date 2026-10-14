@@ -199,6 +199,47 @@ theorem writeReturnFrameToTcb_preserves_ipcInvariantFull
         (passiveServerIdleFrame_of_tcbFieldUpdate tid.toObjId tcb (tcb.withReturnFrame frame)
           hPre hAt hFrame rfl rfl hSched)
 
+/-- **WS-ZA ZA4.7**: the delivery write keeps the object-store invariant. -/
+theorem writeDeliveredFrameToTcb_preserves_objects_invExt
+    (st : SystemState) (tid : SeLe4n.ThreadId) (frame : Architecture.SyscallReturnFrame)
+    (hObjInv : st.objects.invExt) :
+    (Architecture.writeDeliveredFrameToTcb st tid frame).objects.invExt :=
+  SystemState.updateTcb_preserves_objects_invExt st tid _ hObjInv
+
+/-- **WS-ZA ZA4.7**: the delivery write on a `.ready` thread keeps the bundle.  It
+rewrites the saved registers, which no conjunct reads, and drops the message,
+which no conjunct asks of a ready thread (`pendingMessageReadAgrees_ready_none`). -/
+theorem writeDeliveredFrameToTcb_preserves_ipcInvariantFull
+    (st : SystemState) (tid : SeLe4n.ThreadId) (frame : Architecture.SyscallReturnFrame)
+    (hObjInv : st.objects.invExt)
+    (hReady : ∀ tcb, st.getTcb? tid = some tcb → tcb.ipcState = .ready)
+    (hInv : ipcInvariantFull st) :
+    ipcInvariantFull (Architecture.writeDeliveredFrameToTcb st tid frame) := by
+  cases hT : st.getTcb? tid with
+  | none =>
+      unfold Architecture.writeDeliveredFrameToTcb
+      rw [SystemState.updateTcb_eq_self_of_none hT]
+      exact hInv
+  | some tcb =>
+      have hPre : st.objects[tid.toObjId]? = some (.tcb tcb) :=
+        (SystemState.getTcb?_eq_some_iff st tid tcb).mp hT
+      have hAt : (Architecture.writeDeliveredFrameToTcb st tid frame).objects[tid.toObjId]?
+          = some (.tcb (tcb.withDeliveredFrame frame)) := by
+        unfold Architecture.writeDeliveredFrameToTcb
+        rw [SystemState.updateTcb_eq_of_some hT]
+        exact RobinHood.RHTable.getElem?_insert_self st.objects tid.toObjId _ hObjInv
+      have hFrame : ∀ oid : SeLe4n.ObjId, oid ≠ tid.toObjId →
+          (Architecture.writeDeliveredFrameToTcb st tid frame).objects[oid]? = st.objects[oid]? :=
+        fun oid hNe => Architecture.writeDeliveredFrameToTcb_objects_ne st tid frame oid hNe hObjInv
+      have hSched := Architecture.writeDeliveredFrameToTcb_scheduler_eq st tid frame
+      have hMsg : pendingMessageReadAgrees tcb.ipcState (tcb.withDeliveredFrame frame).pendingMessage
+          tcb.pendingMessage := by
+        rw [hReady tcb hT]; exact pendingMessageReadAgrees_ready_none _
+      exact ipcInvariantFull_of_tcbFieldUpdateAgree st _ tid.toObjId tcb
+        (tcb.withDeliveredFrame frame) hInv hPre hAt hFrame rfl hMsg rfl rfl rfl rfl rfl rfl rfl
+        (passiveServerIdleFrame_of_tcbFieldUpdate tid.toObjId tcb (tcb.withDeliveredFrame frame)
+          hPre hAt hFrame rfl rfl hSched)
+
 -- ============================================================================
 -- §5  One-TCB field stores (`.tcbSetIPCBuffer` and friends)
 -- ============================================================================
@@ -1093,13 +1134,13 @@ theorem revokePendingTransfersFrom_preserves_ipcInvariantFull
     · intro oid tx hx
       obtain ⟨ty, hy, hD⟩ := hBwd oid tx hx
       obtain ⟨hIs, hQN, hQP, hQPP, hTB, hRO, hPRR, _⟩ := TCB.pendingCapsDropped_fields hD
-      exact ⟨ty, hy, hIs, ⟨TCB.pendingCapsDropped_isSome hD,
+      exact ⟨ty, hy, hIs, ⟨.inl (TCB.pendingCapsDropped_isSome hD),
         fun m m' hm hm' hb => TCB.pendingCapsDropped_bounded hD hm hm' hb⟩,
         hQN, hQP, hQPP, hTB, hRO, hPRR⟩
     · intro oid ty hy
       obtain ⟨tx, hx, hD⟩ := hFwd oid ty hy
       obtain ⟨hIs, hQN, hQP, hQPP, hTB, hRO, hPRR, _⟩ := TCB.pendingCapsDropped_fields hD
-      exact ⟨tx, hx, hIs, ⟨TCB.pendingCapsDropped_isSome hD,
+      exact ⟨tx, hx, hIs, ⟨.inl (TCB.pendingCapsDropped_isSome hD),
         fun m m' hm hm' hb => TCB.pendingCapsDropped_bounded hD hm hm' hb⟩,
         hQN, hQP, hQPP, hTB, hRO, hPRR⟩
     · intro oid k hT _ _; exact hOther oid k hT
@@ -5807,16 +5848,18 @@ theorem stageDeliveredMessage_preserves_ipcInvariantFull
     (hObjInv : st.objects.invExt) (hInv : ipcInvariantFull st) :
     ipcInvariantFull (Architecture.stageDeliveredMessage st tid installedCaps) := by
   unfold Architecture.stageDeliveredMessage
-  cases st.getTcb? tid with
+  cases hLk : st.getTcb? tid with
   | none => exact hInv
   | some tcb =>
       dsimp only []
       split
-      · cases tcb.pendingMessage with
+      · rename_i hReadyT
+        cases tcb.pendingMessage with
         | none => exact hInv
         | some msg =>
             exact ipcInvariantFull_recordPhysicalWrites
-              (writeReturnFrameToTcb_preserves_ipcInvariantFull st tid _ hObjInv hInv)
+              (writeDeliveredFrameToTcb_preserves_ipcInvariantFull st tid _ hObjInv
+                (fun t ht => by rw [hLk] at ht; cases ht; exact hReadyT) hInv)
       · exact hInv
 
 /-- Woken-delivery staging: `stageDeliveredMessage` on the woken thread. -/
@@ -5845,7 +5888,7 @@ theorem stageDeliveredMessage_preserves_objects_invExt
       split
       · cases tcb.pendingMessage with
         | none => exact hObjInv
-        | some msg => exact writeReturnFrameToTcb_preserves_objects_invExt st tid _ hObjInv
+        | some msg => exact writeDeliveredFrameToTcb_preserves_objects_invExt st tid _ hObjInv
       · exact hObjInv
 
 /-- Review round (PR #887): and so does the woken-delivery wrapper. -/
@@ -5892,7 +5935,7 @@ theorem stageDeliveredMessage_objects_invExt
       · cases tcb.pendingMessage with
         | none => exact hObjInv
         | some msg =>
-            exact writeReturnFrameToTcb_preserves_objects_invExt st tid _ hObjInv
+            exact writeDeliveredFrameToTcb_preserves_objects_invExt st tid _ hObjInv
       · exact hObjInv
 
 theorem stageWokenSendCompletion_objects_invExt
@@ -5931,6 +5974,24 @@ theorem writeReturnFrameToTcb_donationChainFrame
         (by rw [(SystemState.getTcb?_eq_some_iff st tid tcb).mp hLk]; rfl)
         (fun _ h => by cases h)
 
+/-- **WS-ZA ZA4.7**: and so does the delivery write, a `.tcb` over a `.tcb`. -/
+theorem writeDeliveredFrameToTcb_donationChainFrame
+    (st : SystemState) (tid : SeLe4n.ThreadId) (frame : Architecture.SyscallReturnFrame)
+    (hObjInv : st.objects.invExt) :
+    donationChainFrame st (Architecture.writeDeliveredFrameToTcb st tid frame) := by
+  cases hLk : st.getTcb? tid with
+  | none =>
+      unfold Architecture.writeDeliveredFrameToTcb
+      rw [SystemState.updateTcb_eq_self_of_none hLk]
+      exact donationChainFrame.refl st
+  | some tcb =>
+      unfold Architecture.writeDeliveredFrameToTcb
+      rw [SystemState.updateTcb_eq_of_some hLk]
+      exact donationChainFrame_of_objects_insert hObjInv
+        (by rw [(SystemState.getTcb?_eq_some_iff st tid tcb).mp hLk]; rfl)
+        (by rw [(SystemState.getTcb?_eq_some_iff st tid tcb).mp hLk]; rfl)
+        (fun _ h => by cases h)
+
 /-- **WS-RM (`v0.35.6`)**: and so does delivery staging — every arm is that
 writeback or the identity. -/
 theorem stageDeliveredMessage_donationChainFrame
@@ -5948,7 +6009,7 @@ theorem stageDeliveredMessage_donationChainFrame
         | some msg =>
             simp only []
             exact recordPhysicalWrites_donationChainFrame st _ _
-              (writeReturnFrameToTcb_donationChainFrame st tid _ hObjInv)
+              (writeDeliveredFrameToTcb_donationChainFrame st tid _ hObjInv)
       · exact donationChainFrame.refl st
 
 /-- **WS-RM (`v0.35.6`)**: and so does the woken sender's completion frame. -/

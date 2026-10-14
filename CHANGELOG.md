@@ -1,3 +1,57 @@
+## v0.36.86 — WS-ZA ZA4.7 (second part): a delivered message lives in the receiver's registers
+
+**As in seL4, a delivered IPC message now lives only in the receiver's saved
+registers (and IPC buffer).**  Delivery writes the return frame into the
+receiver's register file and clears its `pendingMessage`; nothing read a ready
+thread's copy after delivery.  Call, reply and a send to a waiting receiver read
+a message of at most four words straight from the sender's registers and write
+it into the receiver's as six machine words, with no word array, message record
+or frame record on the way.  Each fast arm is proven equal to the specification
+arm, so every theorem about the specification holds of the executed arm.
+
+Normal-build allocations per syscall (QEMU exerciser, core 0), against
+`v0.36.85`:
+
+| Scenario | v0.36.85 | v0.36.86 |
+|---|---|---|
+| send to a waiting receiver | 15 | 3 |
+| call | 16 | 8 |
+| reply | 9 | 1 |
+| signal that wakes a waiter | 10 | 9 |
+
+Receive that blocks (5) and wait that blocks (6) are unchanged; signal, wait,
+wide-badge signal and yield stay at 0.
+
+- **Specification change.**  `stageDeliveredMessage` writes the frame through
+  `writeDeliveredFrameToTcb`, which also clears `pendingMessage`, in one
+  `updateTcb`.  The IPC bundle's read agreement takes the thread's IPC state
+  (`pendingMessageReadAgrees`) and lets a `.ready` thread drop its message,
+  the one state no conjunct constrains.  Suites that read the delivered message
+  from `pendingMessage` now read it back from the registers.
+- **The message read in place.**  `SeLe4n/Kernel/Architecture/RegisterMessage.lean`
+  gives a register-routed message's length, words and delivered frame read
+  from the register file (`regMessageBody_size`, `regMessageBody_word`,
+  `returnFrameOfMessage_regMessageBody`); only the general arms build the body.
+  The words are read out of line, so the compiler builds no frame record where
+  their branches join.
+- **Commutation, no invariants.**  On an object table with no resize due every
+  TCB write is a slot write (`updateTcb_eq_mapTcbInPlace`,
+  `modifyObject_eq_mapValueAt`), so a write to one thread's message slots
+  (`TCB.withMessageSlots`) commutes with the run-queue enqueue and dequeue,
+  the reply-waiter link and unlink, the key-change flags, the wake and the
+  whole priority-inheritance walk (`SeLe4n/Kernel/IPC/CrossCore/DeliveryCommute.lean`).
+  The delivered rendezvous is proven equal to the staged one from these alone
+  (`stageWokenDelivery_performCallRendezvous`,
+  `performReplyRendezvous_eq_delivered`, `sendRendezvous_eq_delivered`).
+- **Send.**  The checked send arm gains the call's fast path
+  (`performSendDelivered`, `sendDispatchChecked_inPlace`); any other send takes
+  the specification's arm (`endpointSendCheckedArmGeneralR`).
+
+**What remains.**  Call and reply's remainder is option-valued TCB and reply
+fields written as fresh `some` cells, the priority walk's maximum and the FFI
+boundary.  A blocked sender still keeps its message as a record, and
+reply-receive is not yet on the register path; both are the next ZA4.7 step.
+
 ## v0.36.85 — WS-ZA ZA4.7 (first part): IPC rendezvous written in place
 
 **Send, receive, call and reply now run on the register file and write their

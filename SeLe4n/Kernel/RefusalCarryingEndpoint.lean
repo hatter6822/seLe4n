@@ -9,6 +9,7 @@
 
 import SeLe4n.Kernel.RefusalCarryingDispatch
 import SeLe4n.Kernel.IPC.CrossCore.EndpointReplyInPlace
+import SeLe4n.Kernel.IPC.CrossCore.DeliveredInPlace
 
 /-!
 # The endpoint syscalls, refusing in the state they were refused in
@@ -30,11 +31,11 @@ open Architecture.RegisterDecode
 open Architecture.SyscallArgDecode
 
 /-- The checked send arm (`dispatchWithCapChecked`'s `.send` case) for a
-message with no capabilities to transfer, refusing in the state it was handed
-(`endpointSendCheckedArmR_eq`).  It takes the message words rather than the
-decode, so a caller that reads them from the register file builds no decode
-record. -/
-@[inline] def endpointSendCheckedArmR (ctx : LabelingContext) (body : Array SeLe4n.RegValue)
+message with no capabilities to transfer, through the specification's send,
+refusing in the state it was handed (`endpointSendCheckedArmGeneralR_eq`).  It
+takes the message words rather than the decode, so a caller that reads them
+from the register file builds no decode record. -/
+def endpointSendCheckedArmGeneralR (ctx : LabelingContext) (body : Array SeLe4n.RegValue)
     (tid : SeLe4n.ThreadId) (executingCore : Concurrency.CoreId) (cap : Capability) :
     RefusalCarrying Unit :=
   fun st =>
@@ -51,7 +52,7 @@ record. -/
         | (st', .error e) => .error (e, st')
     | _ => .error (.invalidCapability, st)
 
-theorem endpointSendCheckedArmR_eq (ctx : LabelingContext)
+theorem endpointSendCheckedArmGeneralR_eq (ctx : LabelingContext)
     (decoded : SyscallDecodeResult) (tid : SeLe4n.ThreadId)
     (executingCore : Concurrency.CoreId) (gate : SyscallGate) (cap : Capability)
     (body : Array SeLe4n.RegValue)
@@ -59,11 +60,11 @@ theorem endpointSendCheckedArmR_eq (ctx : LabelingContext)
     (hCaps : decodeExtraCapAddrs decoded = #[])
     (hSlot : decoded.capRecvSlot = SeLe4n.Slot.ofNat 0)
     (hBody : body = extractMessageRegisters decoded.msgRegs decoded.msgInfo) :
-    endpointSendCheckedArmR ctx body tid executingCore cap =
+    endpointSendCheckedArmGeneralR ctx body tid executingCore cap =
       RefusalCarrying.ofKernel (dispatchWithCapChecked ctx decoded tid executingCore gate cap) := by
   subst hBody
   funext st
-  simp only [endpointSendCheckedArmR, RefusalCarrying.ofKernel, dispatchWithCapChecked,
+  simp only [endpointSendCheckedArmGeneralR, RefusalCarrying.ofKernel, dispatchWithCapChecked,
     dispatchCapabilityOnly, hSend, hCaps, hSlot, resolveExtraCaps_empty]
   cases cap.target with
   | object epId =>
@@ -79,6 +80,183 @@ theorem endpointSendCheckedArmR_eq (ctx : LabelingContext)
       rw [hst]
     · simp only [clearWokenReceiverStash_eq_pure]
   | _ => rfl
+
+/-- WS-ZA ZA4.7: **a checked send to a waiting receiver, in place**: with no
+capabilities to transfer, the grant bit already stamped, the sender present and
+the rendezvous's writes in their slots (`sendWakesInPlace`), the checked send is
+the in-place rendezvous and the receiver's wake. -/
+theorem sendDispatchChecked_inPlace (ctx : LabelingContext) (st : SystemState)
+    (endpointId : SeLe4n.ObjId) (ep : Endpoint) (sender r : SeLe4n.ThreadId) (rt : TCB)
+    (msg : IpcMessage) (rights : AccessRightSet) (executingCore : Concurrency.CoreId)
+    (hCaps : msg.caps = #[]) (hGrant : msg.capsGranted = rights.mem .grant)
+    (hSz : ¬ msg.registers.size > maxMessageRegisters)
+    (hE : st.getEndpoint? endpointId = some ep) (hH : ep.receiveQ.head = some r)
+    (hT : st.getTcb? r = some rt) (hS : (st.getTcb? sender).isSome = true)
+    (hW : sendWakesInPlace st endpointId r rt.queueNext = true)
+    (hFlow : endpointFlowGate ctx endpointId (ctx.threadLabelOf sender)
+      (ctx.endpointLabelOf endpointId) = true) :
+    endpointSendCrossCoreDispatchChecked ctx endpointId sender msg rights
+        (SeLe4n.Slot.ofNat 0) executingCore st =
+      ((wakeThread (storeSendRendezvous st endpointId r rt.queueNext msg) r executingCore).1,
+        .ok ({ results := #[] },
+          (wakeThread (storeSendRendezvous st endpointId r rt.queueNext msg) r
+            executingCore).2)) := by
+  have hStamp : { msg with capsGranted := rights.mem .grant } = msg := by
+    cases msg; simp only at hGrant; subst hGrant; rfl
+  obtain ⟨sTcb, hSTcb⟩ := Option.isSome_iff_exists.mp hS
+  unfold endpointSendCrossCoreDispatchChecked
+  rw [if_neg hSz, if_neg (by rw [hCaps]; decide), if_pos hFlow,
+    endpointSendDualWithCapsOnCore_eq_impl]
+  unfold endpointSendDualWithCapsOnCoreImpl
+  simp only [hE, hH, hGrant, beq_self_eq_true, ↓reduceIte, hCaps, Array.isEmpty_empty,
+    Option.isSome_some, Bool.not_true, Bool.false_or]
+  rw [endpointSendDualOnCore_eq_impl]
+  unfold endpointSendDualOnCoreImpl
+  simp only [hSz, hCaps, ↓reduceIte, hE, hH, hSTcb, hT, hW]
+  rfl
+
+/-- Dropping the stash of a thread whose last write left none drops nothing. -/
+theorem clearWokenReceiverStashPure_mapTcbInPlace (Y : SystemState) (r : SeLe4n.ThreadId)
+    (g : TCB → TCB) (h : ∀ t, (g t).pendingReceiveReply = none) :
+    clearWokenReceiverStashPure (some r) (Y.mapTcbInPlace r g) = Y.mapTcbInPlace r g := by
+  unfold clearWokenReceiverStashPure
+  simp only [SystemState.getTcb?_mapTcbInPlace, ↓reduceIte]
+  cases Y.getTcb? r with
+  | none => rfl
+  | some t => simp only [Option.map_some, h]
+
+/-- WS-ZA ZA4.7: **the staged send rendezvous is the delivered one** for a
+message of at most four words read in the sender's registers. -/
+theorem sendRendezvous_eq_delivered (st : SystemState) (endpointId : SeLe4n.ObjId)
+    (r : SeLe4n.ThreadId) (next : Option SeLe4n.ThreadId)
+    (layout : SeLe4n.SyscallRegisterLayout) (rf : SeLe4n.RegisterFile) (mi : MessageInfo)
+    (badge : Option SeLe4n.Badge) (granted : Bool) (core : Concurrency.CoreId)
+    (hNo : st.objects.noResizeDue) (hSz : Architecture.regMessageLength layout mi ≤ 4) :
+    Architecture.stageWokenDelivery
+        (clearWokenReceiverStashPure (some r)
+          (wakeThread (storeSendRendezvous st endpointId r next
+            { registers := Architecture.regMessageBody layout rf mi, caps := #[], badge := badge,
+              capsGranted := granted }) r core).1)
+        (some r) 0 =
+      performSendDelivered st endpointId r next layout rf mi badge granted core := by
+  have hNo0 := storeSendRendezvousWith_noResizeDue st endpointId r next ipcReadyTcb hNo
+  unfold performSendDelivered storeSendRendezvousReady
+  rw [storeSendRendezvous_eq_with, receiveCompleteTcb_eq_slots, receiveReadyTcb_eq_slots,
+    storeSendRendezvousWith_comp _ _ _ _ _ _ hNo, storeSendRendezvousWith_comp _ _ _ _ _ _ hNo]
+  simp only [receiveCompleteSlots, clearMessageSlots]
+  rw [wakeThread_msg _ _ _ _ _ _ _ hNo0, wakeThread_msg _ _ _ _ _ _ _ hNo0]
+  dsimp only
+  have hD : ∀ M : IpcMessage,
+      TCB.withMessageSlots id (fun _ => some M) (fun _ : Option SeLe4n.ReplyId => none) =
+        holdMessage M ∘ TCB.withMessageSlots id (fun _ => none) (fun _ => none) := fun _ => rfl
+  rw [clearWokenReceiverStashPure_mapTcbInPlace _ _ _ (fun _ => rfl),
+    hD, ← SystemState.mapTcbInPlace_mapTcbInPlace,
+    Architecture.stageWokenDelivery_some,
+    stageDeliveredMessage_holdMessage _ _ _
+      ((SystemState.mapTcbInPlace_noResizeDue _ _ _).mpr (wakeThread_noResizeDue _ _ _ hNo0))
+      (by rw [Architecture.regMessageBody_size]; exact hSz),
+    Architecture.returnFrameOfMessage_regMessageBody]
+  rfl
+
+/-- The general send arm on a message read in registers: the body is built
+where this is called, so only the general arm builds it. -/
+@[inline] def endpointSendCheckedArmRegsR (ctx : LabelingContext)
+    (layout : SeLe4n.SyscallRegisterLayout) (rf : SeLe4n.RegisterFile) (mi : MessageInfo)
+    (tid : SeLe4n.ThreadId) (executingCore : Concurrency.CoreId) (cap : Capability) :
+    RefusalCarrying Unit :=
+  endpointSendCheckedArmGeneralR ctx (Architecture.regMessageBody layout rf mi) tid
+    executingCore cap
+
+/-- WS-ZA ZA4.7: the checked send arm (`dispatchWithCapChecked`'s `.send` case)
+for a message with no capabilities to transfer, refusing in the state it was
+handed (`endpointSendCheckedArmR_eq`).  A send of at most four words to a
+waiting receiver whose checks all pass before any write (`sendWakesInPlace`)
+wakes the receiver in place and writes the words into its saved registers
+(`performSendDelivered`, `sendRendezvous_eq_delivered`); any other send takes
+the general arm. -/
+@[inline] def endpointSendCheckedArmR (ctx : LabelingContext)
+    (layout : SeLe4n.SyscallRegisterLayout) (rf : SeLe4n.RegisterFile) (mi : MessageInfo)
+    (tid : SeLe4n.ThreadId) (executingCore : Concurrency.CoreId) (cap : Capability) :
+    RefusalCarrying Unit :=
+  fun st =>
+    match cap.target with
+    | .object epId =>
+        match st.getEndpoint? epId with
+        | some ep =>
+            match ep.receiveQ.head with
+            | some r =>
+                match st.getTcb? r with
+                | some rt =>
+                    if decide (Architecture.regMessageLength layout mi ≤ 4) &&
+                        (st.getTcb? tid).isSome &&
+                        endpointFlowGate ctx epId (ctx.threadLabelOf tid)
+                          (ctx.endpointLabelOf epId) &&
+                        sendWakesInPlace st epId r rt.queueNext then
+                      .ok ((), performSendDelivered st epId r rt.queueNext layout rf mi
+                        cap.badge (cap.rights.mem .grant) executingCore)
+                    else endpointSendCheckedArmRegsR ctx layout rf mi tid executingCore cap st
+                | none => endpointSendCheckedArmRegsR ctx layout rf mi tid executingCore cap st
+            | none => endpointSendCheckedArmRegsR ctx layout rf mi tid executingCore cap st
+        | none => endpointSendCheckedArmRegsR ctx layout rf mi tid executingCore cap st
+    | _ => .error (.invalidCapability, st)
+
+theorem endpointSendCheckedArmR_eq_general (ctx : LabelingContext)
+    (layout : SeLe4n.SyscallRegisterLayout) (rf : SeLe4n.RegisterFile) (mi : MessageInfo)
+    (tid : SeLe4n.ThreadId) (executingCore : Concurrency.CoreId) (cap : Capability) :
+    endpointSendCheckedArmR ctx layout rf mi tid executingCore cap =
+      endpointSendCheckedArmGeneralR ctx (Architecture.regMessageBody layout rf mi) tid
+        executingCore cap := by
+  funext st
+  unfold endpointSendCheckedArmR
+  split
+  · next epId hTgt =>
+    split
+    · next ep hE =>
+      split
+      · next r hH =>
+        split
+        · next rt hT =>
+          split
+          · next hG =>
+            simp only [Bool.and_eq_true, decide_eq_true_eq] at hG
+            obtain ⟨⟨⟨hSz, hS⟩, hFlow⟩, hW⟩ := hG
+            have hNo : st.objects.noResizeDue := by
+              simp only [sendWakesInPlace, Bool.and_eq_true] at hW
+              exact RobinHood.RHTable.noResizeDue_of_findsInPlace hW.1.1.1.2
+            have hSz' :
+                ¬ (Architecture.regMessageBody layout rf mi).size > maxMessageRegisters := by
+              rw [Architecture.regMessageBody_size]; unfold maxMessageRegisters; omega
+            unfold endpointSendCheckedArmGeneralR
+            simp only [hTgt, hE, Option.bind_some, hH]
+            rw [sendDispatchChecked_inPlace ctx st epId ep tid r rt _ cap.rights executingCore
+              rfl rfl hSz' hE hH hT hS hW hFlow]
+            simp only []
+            rw [← sendRendezvous_eq_delivered _ _ _ _ _ _ _ _ _ _ hNo hSz]
+            rfl
+          · rfl
+        · rfl
+      · rfl
+    · rfl
+  · next hTgt =>
+    unfold endpointSendCheckedArmGeneralR
+    split
+    · next epId h => exact absurd h (hTgt epId)
+    · rfl
+
+theorem endpointSendCheckedArmR_eq (ctx : LabelingContext)
+    (decoded : SyscallDecodeResult) (tid : SeLe4n.ThreadId)
+    (executingCore : Concurrency.CoreId) (gate : SyscallGate) (cap : Capability)
+    (layout : SeLe4n.SyscallRegisterLayout) (rf : SeLe4n.RegisterFile) (mi : MessageInfo)
+    (hSend : decoded.syscallId = .send)
+    (hCaps : decodeExtraCapAddrs decoded = #[])
+    (hSlot : decoded.capRecvSlot = SeLe4n.Slot.ofNat 0)
+    (hBody : Architecture.regMessageBody layout rf mi =
+      extractMessageRegisters decoded.msgRegs decoded.msgInfo) :
+    endpointSendCheckedArmR ctx layout rf mi tid executingCore cap =
+      RefusalCarrying.ofKernel (dispatchWithCapChecked ctx decoded tid executingCore gate cap) := by
+  rw [endpointSendCheckedArmR_eq_general]
+  exact endpointSendCheckedArmGeneralR_eq ctx decoded tid executingCore gate cap _ hSend hCaps
+    hSlot hBody
 
 /-- The receiver a send's content reaches, read from the pre-state before the
 arm: the head of the receive queue of the endpoint its capability names
@@ -128,7 +306,8 @@ theorem sendTaintStep_eq (st : SystemState) (tid : SeLe4n.ThreadId)
 /-- The send's slot check, gate, arm and taint step on the capability its
 operand resolved to, every refusal carrying the state it was handed
 (`sendOperandArmThenTaintR_eq`). -/
-@[inline] def sendOperandArmThenTaintR (ctx : LabelingContext) (body : Array SeLe4n.RegValue)
+@[inline] def sendOperandArmThenTaintR (ctx : LabelingContext)
+    (layout : SeLe4n.SyscallRegisterLayout) (rf : SeLe4n.RegisterFile) (mi : MessageInfo)
     (tid : SeLe4n.ThreadId) (executingCore : Concurrency.CoreId) (requiredRight : AccessRight)
     (preTaint : TaintTable) (operand : Option Capability) : RefusalCarrying Unit :=
   fun st =>
@@ -138,7 +317,7 @@ operand resolved to, every refusal carrying the state it was handed
         if SeLe4n.Kernel.capTargetsReservedIdleObject cap then .error (.invalidCapability, st)
         else if cap.hasRight requiredRight then
           let head? := sendTaintHead? st cap
-          match endpointSendCheckedArmR ctx body tid executingCore cap st with
+          match endpointSendCheckedArmR ctx layout rf mi tid executingCore cap st with
           | .error refusal => .error refusal
           | .ok ((), stPost) => .ok ((), sendTaintStep head? tid preTaint stPost)
         else .error (.illegalAuthority, st)
@@ -148,14 +327,15 @@ theorem sendOperandArmThenTaintR_eq (ctx : LabelingContext)
     (executingCore : Concurrency.CoreId) (gate : SyscallGate)
     (preEpoch : Nat) (preLog : DeclassificationAuditLog)
     (preTaint : TaintTable) (st : SystemState) (ref : CSpaceAddr)
-    (body : Array SeLe4n.RegValue)
+    (layout : SeLe4n.SyscallRegisterLayout) (rf : SeLe4n.RegisterFile) (mi : MessageInfo)
     (hSend : decoded.syscallId = .send)
     (hCaps : decodeExtraCapAddrs decoded = #[])
     (hSlot : decoded.capRecvSlot = SeLe4n.Slot.ofNat 0)
-    (hBody : body = extractMessageRegisters decoded.msgRegs decoded.msgInfo)
+    (hBody : Architecture.regMessageBody layout rf mi =
+      extractMessageRegisters decoded.msgRegs decoded.msgInfo)
     (hRef : resolveCapAddress gate.cspaceRoot gate.capAddr gate.capDepth st = .ok ref)
     (hOperand : syscallOperandCap? st tid decoded.capAddr = SystemState.lookupSlotCap st ref) :
-    sendOperandArmThenTaintR ctx body tid executingCore gate.requiredRight
+    sendOperandArmThenTaintR ctx layout rf mi tid executingCore gate.requiredRight
         preTaint (SystemState.lookupSlotCap st ref) st =
       RefusalCarrying.ofKernel (dispatchCheckedArmThenTaint ctx decoded tid executingCore gate
         (syscallTaintPlan st tid decoded) preEpoch preLog preTaint) st := by
@@ -171,8 +351,8 @@ theorem sendOperandArmThenTaintR_eq (ctx : LabelingContext)
     · simp only [hIdle, ↓reduceIte]
     · by_cases hRight : cap.hasRight gate.requiredRight = true
       · simp only [hIdle, hRight, ↓reduceIte, Bool.false_eq_true]
-        rw [endpointSendCheckedArmR_eq ctx decoded tid executingCore gate cap body hSend hCaps
-          hSlot hBody]
+        rw [endpointSendCheckedArmR_eq ctx decoded tid executingCore gate cap layout rf mi hSend
+          hCaps hSlot hBody]
         simp only [RefusalCarrying.ofKernel]
         rcases dispatchWithCapChecked ctx decoded tid executingCore gate cap st with
           _ | ⟨⟨⟩, stPost⟩ <;> rfl
@@ -181,19 +361,21 @@ theorem sendOperandArmThenTaintR_eq (ctx : LabelingContext)
 /-- The send's dispatch for a message with no capabilities to transfer:
 `dispatchOperandCheckedR` with the send's arm (`dispatchSendCheckedR_eq`). -/
 @[inline] def dispatchSendCheckedR (ctx : LabelingContext) (capAddr : SeLe4n.CPtr)
-    (body : Array SeLe4n.RegValue) (tid : SeLe4n.ThreadId)
-    (executingCore : Concurrency.CoreId) : RefusalCarrying Unit :=
+    (layout : SeLe4n.SyscallRegisterLayout) (rf : SeLe4n.RegisterFile) (mi : MessageInfo)
+    (tid : SeLe4n.ThreadId) (executingCore : Concurrency.CoreId) : RefusalCarrying Unit :=
   dispatchOperandCheckedR capAddr tid executingCore
-    (sendOperandArmThenTaintR ctx body tid executingCore (syscallRequiredRight .send))
+    (sendOperandArmThenTaintR ctx layout rf mi tid executingCore (syscallRequiredRight .send))
 
 theorem dispatchSendCheckedR_eq (ctx : LabelingContext)
-    (decoded : SyscallDecodeResult) (body : Array SeLe4n.RegValue) (tid : SeLe4n.ThreadId)
-    (executingCore : Concurrency.CoreId)
+    (decoded : SyscallDecodeResult)
+    (layout : SeLe4n.SyscallRegisterLayout) (rf : SeLe4n.RegisterFile) (mi : MessageInfo)
+    (tid : SeLe4n.ThreadId) (executingCore : Concurrency.CoreId)
     (hSend : decoded.syscallId = .send)
     (hCaps : decodeExtraCapAddrs decoded = #[])
     (hSlot : decoded.capRecvSlot = SeLe4n.Slot.ofNat 0)
-    (hBody : body = extractMessageRegisters decoded.msgRegs decoded.msgInfo) :
-    dispatchSendCheckedR ctx decoded.capAddr body tid executingCore =
+    (hBody : Architecture.regMessageBody layout rf mi =
+      extractMessageRegisters decoded.msgRegs decoded.msgInfo) :
+    dispatchSendCheckedR ctx decoded.capAddr layout rf mi tid executingCore =
       RefusalCarrying.ofKernel (dispatchSyscallChecked ctx decoded tid executingCore) := by
   apply dispatchOperandCheckedR_eq ctx decoded tid executingCore _ (by rw [hSend]; rfl)
     (by rw [hSend]; decide)
@@ -202,7 +384,7 @@ theorem dispatchSendCheckedR_eq (ctx : LabelingContext)
     { callerId := tid, cspaceRoot := tcb.cspaceRoot, capAddr := decoded.capAddr,
       capDepth := rootCn.depth, requiredRight := syscallRequiredRight decoded.syscallId }
     st.declassificationAuditEpoch st.declassificationAuditLog st.declassificationTaint
-    st ref body hSend hCaps hSlot hBody hRef
+    st ref layout rf mi hSend hCaps hSlot hBody hRef
     (syscallOperandCap?_of_resolved st tid _ tcb rootCn ref hTcb hRoot hRef)
   simp only [hSend] at hArm ⊢
   exact hArm
@@ -226,13 +408,23 @@ def endpointCallCheckedArmGeneralR (ctx : LabelingContext) (body : Array SeLe4n.
         | (_, .error e) => .error (e, st)
     | _ => .error (.invalidCapability, st)
 
+/-- The general call arm on a message read in registers: the body is built
+where this is called, so only the general arm builds it. -/
+@[inline] def endpointCallCheckedArmRegsR (ctx : LabelingContext)
+    (layout : SeLe4n.SyscallRegisterLayout) (rf : SeLe4n.RegisterFile) (mi : MessageInfo)
+    (tid : SeLe4n.ThreadId) (executingCore : Concurrency.CoreId) (cap : Capability) :
+    RefusalCarrying Unit :=
+  endpointCallCheckedArmGeneralR ctx (Architecture.regMessageBody layout rf mi) tid
+    executingCore cap
+
 /-- The checked call arm (`dispatchWithCapChecked`'s `.call` case) for a
 message with no capabilities to transfer, refusing in the state it was handed
 (`endpointCallCheckedArmR_eq`).  WS-ZA ZA4.7: a rendezvous whose checks all
 pass before any write (`callWakesInPlace`, the seL4 decode/perform split) writes
 in place on a state nothing else holds (`performCallRendezvous`,
 `callDispatchChecked_inPlace`); any other call takes the general arm. -/
-@[inline] def endpointCallCheckedArmR (ctx : LabelingContext) (body : Array SeLe4n.RegValue)
+@[inline] def endpointCallCheckedArmR (ctx : LabelingContext)
+    (layout : SeLe4n.SyscallRegisterLayout) (rf : SeLe4n.RegisterFile) (mi : MessageInfo)
     (tid : SeLe4n.ThreadId) (executingCore : Concurrency.CoreId) (cap : Capability) :
     RefusalCarrying Unit :=
   fun st =>
@@ -246,27 +438,27 @@ in place on a state nothing else holds (`performCallRendezvous`,
                 | some rt =>
                     match rt.pendingReceiveReply with
                     | some rid =>
-                        if !decide (body.size > maxMessageRegisters) &&
+                        if !decide (Architecture.regMessageLength layout mi >
+                              maxMessageRegisters) &&
                             endpointFlowGate ctx epId (ctx.threadLabelOf tid)
                               (ctx.endpointLabelOf epId) &&
                             callWakesInPlace st epId tid r rt rid then
-                          .ok ((), Architecture.stageWokenDelivery
-                            (performCallRendezvous st epId tid r rt.queueNext rid
-                              { registers := body, caps := #[], badge := cap.badge,
-                                capsGranted := cap.rights.mem .grant } executingCore)
-                            (some r) 0)
-                        else endpointCallCheckedArmGeneralR ctx body tid executingCore cap st
-                    | none => endpointCallCheckedArmGeneralR ctx body tid executingCore cap st
-                | none => endpointCallCheckedArmGeneralR ctx body tid executingCore cap st
-            | none => endpointCallCheckedArmGeneralR ctx body tid executingCore cap st
-        | none => endpointCallCheckedArmGeneralR ctx body tid executingCore cap st
+                          .ok ((), callRendezvousDelivered st epId tid r rt.queueNext rid
+                            layout rf mi
+                            cap.badge (cap.rights.mem .grant) executingCore)
+                        else endpointCallCheckedArmRegsR ctx layout rf mi tid executingCore cap st
+                    | none => endpointCallCheckedArmRegsR ctx layout rf mi tid executingCore cap st
+                | none => endpointCallCheckedArmRegsR ctx layout rf mi tid executingCore cap st
+            | none => endpointCallCheckedArmRegsR ctx layout rf mi tid executingCore cap st
+        | none => endpointCallCheckedArmRegsR ctx layout rf mi tid executingCore cap st
     | _ => .error (.invalidCapability, st)
 
 theorem endpointCallCheckedArmR_eq_general (ctx : LabelingContext)
-    (body : Array SeLe4n.RegValue) (tid : SeLe4n.ThreadId)
-    (executingCore : Concurrency.CoreId) (cap : Capability) :
-    endpointCallCheckedArmR ctx body tid executingCore cap =
-      endpointCallCheckedArmGeneralR ctx body tid executingCore cap := by
+    (layout : SeLe4n.SyscallRegisterLayout) (rf : SeLe4n.RegisterFile) (mi : MessageInfo)
+    (tid : SeLe4n.ThreadId) (executingCore : Concurrency.CoreId) (cap : Capability) :
+    endpointCallCheckedArmR ctx layout rf mi tid executingCore cap =
+      endpointCallCheckedArmGeneralR ctx (Architecture.regMessageBody layout rf mi) tid
+        executingCore cap := by
   funext st
   unfold endpointCallCheckedArmR
   split
@@ -284,10 +476,13 @@ theorem endpointCallCheckedArmR_eq_general (ctx : LabelingContext)
               simp only [Bool.and_eq_true, Bool.not_eq_true', decide_eq_false_iff_not] at hG
               obtain ⟨⟨hSz, hFlow⟩, hW⟩ := hG
               obtain ⟨sgi, hD⟩ := callDispatchChecked_inPlace ctx st epId ep tid r rt rid
-                { registers := body, caps := #[], badge := cap.badge,
-                  capsGranted := cap.rights.mem .grant } cap.rights (SeLe4n.Slot.ofNat 0)
-                executingCore rfl rfl hSz ((SystemState.getEndpoint?_eq_some_iff _ _ _).mp hE) hH
+                { registers := Architecture.regMessageBody layout rf mi, caps := #[],
+                  badge := cap.badge, capsGranted := cap.rights.mem .grant } cap.rights
+                (SeLe4n.Slot.ofNat 0) executingCore rfl rfl
+                (by rw [Architecture.regMessageBody_size]; exact hSz)
+                ((SystemState.getEndpoint?_eq_some_iff _ _ _).mp hE) hH
                 ((SystemState.getTcb?_eq_some_iff _ _ _).mp hT) hRid hW hFlow
+              rw [callRendezvousDelivered_eq _ _ _ _ _ _ _ _ _ _ _ _ hW]
               simp only [endpointCallCheckedArmGeneralR, hTgt, hE, Option.bind_some, hH, hD]
               rfl
             · rfl
@@ -304,15 +499,15 @@ theorem endpointCallCheckedArmR_eq_general (ctx : LabelingContext)
 theorem endpointCallCheckedArmR_eq (ctx : LabelingContext)
     (decoded : SyscallDecodeResult) (tid : SeLe4n.ThreadId)
     (executingCore : Concurrency.CoreId) (gate : SyscallGate) (cap : Capability)
-    (body : Array SeLe4n.RegValue)
+    (layout : SeLe4n.SyscallRegisterLayout) (rf : SeLe4n.RegisterFile) (mi : MessageInfo)
     (hCall : decoded.syscallId = .call)
     (hCaps : decodeExtraCapAddrs decoded = #[])
     (hSlot : decoded.capRecvSlot = SeLe4n.Slot.ofNat 0)
-    (hBody : body = extractMessageRegisters decoded.msgRegs decoded.msgInfo) :
-    endpointCallCheckedArmR ctx body tid executingCore cap =
+    (hBody : Architecture.regMessageBody layout rf mi =
+      extractMessageRegisters decoded.msgRegs decoded.msgInfo) :
+    endpointCallCheckedArmR ctx layout rf mi tid executingCore cap =
       RefusalCarrying.ofKernel (dispatchWithCapChecked ctx decoded tid executingCore gate cap) := by
-  subst hBody
-  rw [endpointCallCheckedArmR_eq_general]
+  rw [endpointCallCheckedArmR_eq_general, hBody]
   funext st
   simp only [endpointCallCheckedArmGeneralR, RefusalCarrying.ofKernel, dispatchWithCapChecked,
     dispatchCapabilityOnly, hCall, hCaps, hSlot, resolveExtraCaps_empty]
@@ -328,7 +523,8 @@ theorem endpointCallCheckedArmR_eq (ctx : LabelingContext)
 /-- The call's slot check, gate, arm and taint step on the capability its
 operand resolved to; a call moves content as a send does (`sendTaintStep`).
 Every refusal carries the state it was handed (`callOperandArmThenTaintR_eq`). -/
-@[inline] def callOperandArmThenTaintR (ctx : LabelingContext) (body : Array SeLe4n.RegValue)
+@[inline] def callOperandArmThenTaintR (ctx : LabelingContext)
+    (layout : SeLe4n.SyscallRegisterLayout) (rf : SeLe4n.RegisterFile) (mi : MessageInfo)
     (tid : SeLe4n.ThreadId) (executingCore : Concurrency.CoreId) (requiredRight : AccessRight)
     (preTaint : TaintTable) (operand : Option Capability) : RefusalCarrying Unit :=
   fun st =>
@@ -338,7 +534,7 @@ Every refusal carries the state it was handed (`callOperandArmThenTaintR_eq`). -
         if SeLe4n.Kernel.capTargetsReservedIdleObject cap then .error (.invalidCapability, st)
         else if cap.hasRight requiredRight then
           let head? := sendTaintHead? st cap
-          match endpointCallCheckedArmR ctx body tid executingCore cap st with
+          match endpointCallCheckedArmR ctx layout rf mi tid executingCore cap st with
           | .error refusal => .error refusal
           | .ok ((), stPost) => .ok ((), sendTaintStep head? tid preTaint stPost)
         else .error (.illegalAuthority, st)
@@ -348,14 +544,15 @@ theorem callOperandArmThenTaintR_eq (ctx : LabelingContext)
     (executingCore : Concurrency.CoreId) (gate : SyscallGate)
     (preEpoch : Nat) (preLog : DeclassificationAuditLog)
     (preTaint : TaintTable) (st : SystemState) (ref : CSpaceAddr)
-    (body : Array SeLe4n.RegValue)
+    (layout : SeLe4n.SyscallRegisterLayout) (rf : SeLe4n.RegisterFile) (mi : MessageInfo)
     (hCall : decoded.syscallId = .call)
     (hCaps : decodeExtraCapAddrs decoded = #[])
     (hSlot : decoded.capRecvSlot = SeLe4n.Slot.ofNat 0)
-    (hBody : body = extractMessageRegisters decoded.msgRegs decoded.msgInfo)
+    (hBody : Architecture.regMessageBody layout rf mi =
+      extractMessageRegisters decoded.msgRegs decoded.msgInfo)
     (hRef : resolveCapAddress gate.cspaceRoot gate.capAddr gate.capDepth st = .ok ref)
     (hOperand : syscallOperandCap? st tid decoded.capAddr = SystemState.lookupSlotCap st ref) :
-    callOperandArmThenTaintR ctx body tid executingCore gate.requiredRight
+    callOperandArmThenTaintR ctx layout rf mi tid executingCore gate.requiredRight
         preTaint (SystemState.lookupSlotCap st ref) st =
       RefusalCarrying.ofKernel (dispatchCheckedArmThenTaint ctx decoded tid executingCore gate
         (syscallTaintPlan st tid decoded) preEpoch preLog preTaint) st := by
@@ -371,7 +568,8 @@ theorem callOperandArmThenTaintR_eq (ctx : LabelingContext)
     · simp only [hIdle, ↓reduceIte]
     · by_cases hRight : cap.hasRight gate.requiredRight = true
       · simp only [hIdle, hRight, ↓reduceIte, Bool.false_eq_true]
-        rw [endpointCallCheckedArmR_eq ctx decoded tid executingCore gate cap body hCall hCaps
+        rw [endpointCallCheckedArmR_eq ctx decoded tid executingCore gate cap layout rf mi hCall
+          hCaps
           hSlot hBody]
         simp only [RefusalCarrying.ofKernel]
         rcases dispatchWithCapChecked ctx decoded tid executingCore gate cap st with
@@ -381,19 +579,21 @@ theorem callOperandArmThenTaintR_eq (ctx : LabelingContext)
 /-- The call's dispatch for a message with no capabilities to transfer:
 `dispatchOperandCheckedR` with the call's arm (`dispatchCallCheckedR_eq`). -/
 @[inline] def dispatchCallCheckedR (ctx : LabelingContext) (capAddr : SeLe4n.CPtr)
-    (body : Array SeLe4n.RegValue) (tid : SeLe4n.ThreadId)
-    (executingCore : Concurrency.CoreId) : RefusalCarrying Unit :=
+    (layout : SeLe4n.SyscallRegisterLayout) (rf : SeLe4n.RegisterFile) (mi : MessageInfo)
+    (tid : SeLe4n.ThreadId) (executingCore : Concurrency.CoreId) : RefusalCarrying Unit :=
   dispatchOperandCheckedR capAddr tid executingCore
-    (callOperandArmThenTaintR ctx body tid executingCore (syscallRequiredRight .call))
+    (callOperandArmThenTaintR ctx layout rf mi tid executingCore (syscallRequiredRight .call))
 
 theorem dispatchCallCheckedR_eq (ctx : LabelingContext)
-    (decoded : SyscallDecodeResult) (body : Array SeLe4n.RegValue) (tid : SeLe4n.ThreadId)
-    (executingCore : Concurrency.CoreId)
+    (decoded : SyscallDecodeResult)
+    (layout : SeLe4n.SyscallRegisterLayout) (rf : SeLe4n.RegisterFile) (mi : MessageInfo)
+    (tid : SeLe4n.ThreadId) (executingCore : Concurrency.CoreId)
     (hCall : decoded.syscallId = .call)
     (hCaps : decodeExtraCapAddrs decoded = #[])
     (hSlot : decoded.capRecvSlot = SeLe4n.Slot.ofNat 0)
-    (hBody : body = extractMessageRegisters decoded.msgRegs decoded.msgInfo) :
-    dispatchCallCheckedR ctx decoded.capAddr body tid executingCore =
+    (hBody : Architecture.regMessageBody layout rf mi =
+      extractMessageRegisters decoded.msgRegs decoded.msgInfo) :
+    dispatchCallCheckedR ctx decoded.capAddr layout rf mi tid executingCore =
       RefusalCarrying.ofKernel (dispatchSyscallChecked ctx decoded tid executingCore) := by
   apply dispatchOperandCheckedR_eq ctx decoded tid executingCore _ (by rw [hCall]; rfl)
     (by rw [hCall]; decide)
@@ -402,7 +602,7 @@ theorem dispatchCallCheckedR_eq (ctx : LabelingContext)
     { callerId := tid, cspaceRoot := tcb.cspaceRoot, capAddr := decoded.capAddr,
       capDepth := rootCn.depth, requiredRight := syscallRequiredRight decoded.syscallId }
     st.declassificationAuditEpoch st.declassificationAuditLog st.declassificationTaint
-    st ref body hCall hCaps hSlot hBody hRef
+    st ref layout rf mi hCall hCaps hSlot hBody hRef
     (syscallOperandCap?_of_resolved st tid _ tcb rootCn ref hTcb hRoot hRef)
   simp only [hCall] at hArm ⊢
   exact hArm
@@ -484,14 +684,24 @@ theorem endpointReplyCheckedArmGeneralR_eq (ctx : LabelingContext)
       · rfl
   | _ => rfl
 
+/-- The general reply arm on a message read in registers: the registers are read
+where this is called, so only the general arm reads them. -/
+@[inline] def endpointReplyCheckedArmRegsR (ctx : LabelingContext)
+    (layout : SeLe4n.SyscallRegisterLayout) (rf : SeLe4n.RegisterFile) (mi : MessageInfo)
+    (tid : SeLe4n.ThreadId) (executingCore : Concurrency.CoreId) (cap : Capability) :
+    RefusalCarrying Unit :=
+  endpointReplyCheckedArmGeneralR ctx mi (Architecture.regMessageRegs layout rf) tid
+    executingCore cap
+
 /-- WS-ZA ZA4.7: the checked reply arm (`dispatchWithCapChecked`'s `.reply`
 case), refusing in the state it was handed (`endpointReplyCheckedArmR_eq`).  A
 reply to an unfaulted caller blocked on it whose checks all pass before any
 write (`replyWakesInPlace`) writes in place on a state nothing else holds
 (`performReplyRendezvous`, `replyTransferChecked_inPlace`); any other reply
 takes the general arm. -/
-@[inline] def endpointReplyCheckedArmR (ctx : LabelingContext) (mi : MessageInfo)
-    (regs : Array SeLe4n.RegValue) (tid : SeLe4n.ThreadId)
+@[inline] def endpointReplyCheckedArmR (ctx : LabelingContext)
+    (layout : SeLe4n.SyscallRegisterLayout) (rf : SeLe4n.RegisterFile) (mi : MessageInfo)
+    (tid : SeLe4n.ThreadId)
     (executingCore : Concurrency.CoreId) (cap : Capability) : RefusalCarrying Unit :=
   fun st =>
     match cap.target with
@@ -506,26 +716,28 @@ takes the general arm. -/
                     | .blockedOnReply _ (some server) =>
                         match ct.replyObject with
                         | some rid =>
-                            if !decide ((extractMessageRegisters regs mi).size >
+                            if !decide (Architecture.regMessageLength layout mi >
                                   maxMessageRegisters) &&
                                 securityFlowsTo (ctx.threadLabelOf tid) (ctx.threadLabelOf c) &&
                                 !server.isReserved && replyWakesInPlace st c ct rid then
-                              .ok ((), performReplyRendezvous st c server rid
-                                { registers := extractMessageRegisters regs mi, caps := #[],
-                                  badge := cap.badge } executingCore)
-                            else endpointReplyCheckedArmGeneralR ctx mi regs tid executingCore cap st
-                        | none => endpointReplyCheckedArmGeneralR ctx mi regs tid executingCore cap st
-                    | _ => endpointReplyCheckedArmGeneralR ctx mi regs tid executingCore cap st
-                | none => endpointReplyCheckedArmGeneralR ctx mi regs tid executingCore cap st
-            | none => endpointReplyCheckedArmGeneralR ctx mi regs tid executingCore cap st
-        | none => endpointReplyCheckedArmGeneralR ctx mi regs tid executingCore cap st
+                              .ok ((), replyRendezvousDelivered st c server rid
+                                layout rf mi cap.badge executingCore)
+                            else endpointReplyCheckedArmRegsR ctx layout rf mi
+                                tid executingCore cap st
+                        | none => endpointReplyCheckedArmRegsR ctx layout rf mi
+                            tid executingCore cap st
+                    | _ => endpointReplyCheckedArmRegsR ctx layout rf mi tid executingCore cap st
+                | none => endpointReplyCheckedArmRegsR ctx layout rf mi tid executingCore cap st
+            | none => endpointReplyCheckedArmRegsR ctx layout rf mi tid executingCore cap st
+        | none => endpointReplyCheckedArmRegsR ctx layout rf mi tid executingCore cap st
     | _ => .error (.invalidCapability, st)
 
-theorem endpointReplyCheckedArmR_eq_general (ctx : LabelingContext) (mi : MessageInfo)
-    (regs : Array SeLe4n.RegValue) (tid : SeLe4n.ThreadId)
-    (executingCore : Concurrency.CoreId) (cap : Capability) :
-    endpointReplyCheckedArmR ctx mi regs tid executingCore cap =
-      endpointReplyCheckedArmGeneralR ctx mi regs tid executingCore cap := by
+theorem endpointReplyCheckedArmR_eq_general (ctx : LabelingContext)
+    (layout : SeLe4n.SyscallRegisterLayout) (rf : SeLe4n.RegisterFile) (mi : MessageInfo)
+    (tid : SeLe4n.ThreadId) (executingCore : Concurrency.CoreId) (cap : Capability) :
+    endpointReplyCheckedArmR ctx layout rf mi tid executingCore cap =
+      endpointReplyCheckedArmGeneralR ctx mi (Architecture.regMessageRegs layout rf) tid
+        executingCore cap := by
   funext st
   unfold endpointReplyCheckedArmR
   split
@@ -546,10 +758,13 @@ theorem endpointReplyCheckedArmR_eq_general (ctx : LabelingContext) (mi : Messag
                 obtain ⟨⟨⟨hSz, hFlow⟩, hSRes⟩, hW⟩ := hG
                 have hAns : replyAnsweredCaller? st rid0 = some c := by
                   rw [replyAnsweredCaller?_of_getReply st rid0 rp0 hR0, hC]
+                rw [replyRendezvousDelivered_eq _ _ _ _ _ _ _ _ _ _ hW]
                 simp only [endpointReplyCheckedArmGeneralR, hTgt, hAns, hFlow, ↓reduceIte]
-                rw [replyTransferChecked_inPlace ctx st tid c server ct ep rid mi regs _
-                  executingCore hSz rfl ((SystemState.getTcb?_eq_some_iff _ _ _).mp hT) hIpc hRO
-                  hSRes hW hFlow]
+                rw [replyTransferChecked_inPlace ctx st tid c server ct ep rid mi
+                  (Architecture.regMessageRegs layout rf) _ executingCore
+                  (by rw [← Architecture.regMessageBody_size layout rf mi] at hSz; exact hSz) rfl
+                  ((SystemState.getTcb?_eq_some_iff _ _ _).mp hT) hIpc hRO hSRes hW hFlow]
+                rfl
               · rfl
             · rfl
           · rfl
@@ -565,18 +780,21 @@ theorem endpointReplyCheckedArmR_eq_general (ctx : LabelingContext) (mi : Messag
 theorem endpointReplyCheckedArmR_eq (ctx : LabelingContext)
     (decoded : SyscallDecodeResult) (tid : SeLe4n.ThreadId)
     (executingCore : Concurrency.CoreId) (gate : SyscallGate) (cap : Capability)
-    (hReply : decoded.syscallId = .reply) :
-    endpointReplyCheckedArmR ctx decoded.msgInfo decoded.msgRegs tid executingCore cap =
+    (layout : SeLe4n.SyscallRegisterLayout) (rf : SeLe4n.RegisterFile)
+    (hReply : decoded.syscallId = .reply)
+    (hRegs : Architecture.regMessageRegs layout rf = decoded.msgRegs) :
+    endpointReplyCheckedArmR ctx layout rf decoded.msgInfo tid executingCore cap =
       RefusalCarrying.ofKernel (dispatchWithCapChecked ctx decoded tid executingCore gate cap) := by
-  rw [endpointReplyCheckedArmR_eq_general]
+  rw [endpointReplyCheckedArmR_eq_general, hRegs]
   exact endpointReplyCheckedArmGeneralR_eq ctx decoded tid executingCore gate cap hReply
 
 /-- WS-ZA ZA4.7: the reply's slot check, gate, arm and taint step on the
 capability its operand resolved to; a reply moves content to the answered
 caller (`replyTaintCaller?`).  Every refusal carries the state it was handed
 (`replyOperandArmThenTaintR_eq`). -/
-@[inline] def replyOperandArmThenTaintR (ctx : LabelingContext) (mi : MessageInfo)
-    (regs : Array SeLe4n.RegValue) (tid : SeLe4n.ThreadId)
+@[inline] def replyOperandArmThenTaintR (ctx : LabelingContext)
+    (layout : SeLe4n.SyscallRegisterLayout) (rf : SeLe4n.RegisterFile) (mi : MessageInfo)
+    (tid : SeLe4n.ThreadId)
     (executingCore : Concurrency.CoreId) (requiredRight : AccessRight)
     (preTaint : TaintTable) (operand : Option Capability) : RefusalCarrying Unit :=
   fun st =>
@@ -586,7 +804,7 @@ caller (`replyTaintCaller?`).  Every refusal carries the state it was handed
         if SeLe4n.Kernel.capTargetsReservedIdleObject cap then .error (.invalidCapability, st)
         else if cap.hasRight requiredRight then
           let caller? := replyTaintCaller? st cap
-          match endpointReplyCheckedArmR ctx mi regs tid executingCore cap st with
+          match endpointReplyCheckedArmR ctx layout rf mi tid executingCore cap st with
           | .error refusal => .error refusal
           | .ok ((), stPost) => .ok ((), sendTaintStep caller? tid preTaint stPost)
         else .error (.illegalAuthority, st)
@@ -596,10 +814,12 @@ theorem replyOperandArmThenTaintR_eq (ctx : LabelingContext)
     (executingCore : Concurrency.CoreId) (gate : SyscallGate)
     (preEpoch : Nat) (preLog : DeclassificationAuditLog)
     (preTaint : TaintTable) (st : SystemState) (ref : CSpaceAddr)
+    (layout : SeLe4n.SyscallRegisterLayout) (rf : SeLe4n.RegisterFile)
     (hReply : decoded.syscallId = .reply)
+    (hRegs : Architecture.regMessageRegs layout rf = decoded.msgRegs)
     (hRef : resolveCapAddress gate.cspaceRoot gate.capAddr gate.capDepth st = .ok ref)
     (hOperand : syscallOperandCap? st tid decoded.capAddr = SystemState.lookupSlotCap st ref) :
-    replyOperandArmThenTaintR ctx decoded.msgInfo decoded.msgRegs tid executingCore
+    replyOperandArmThenTaintR ctx layout rf decoded.msgInfo tid executingCore
         gate.requiredRight preTaint (SystemState.lookupSlotCap st ref) st =
       RefusalCarrying.ofKernel (dispatchCheckedArmThenTaint ctx decoded tid executingCore gate
         (syscallTaintPlan st tid decoded) preEpoch preLog preTaint) st := by
@@ -615,7 +835,8 @@ theorem replyOperandArmThenTaintR_eq (ctx : LabelingContext)
     · simp only [hIdle, ↓reduceIte]
     · by_cases hRight : cap.hasRight gate.requiredRight = true
       · simp only [hIdle, hRight, ↓reduceIte, Bool.false_eq_true]
-        rw [endpointReplyCheckedArmR_eq ctx decoded tid executingCore gate cap hReply]
+        rw [endpointReplyCheckedArmR_eq ctx decoded tid executingCore gate cap layout rf hReply
+          hRegs]
         simp only [RefusalCarrying.ofKernel]
         rcases dispatchWithCapChecked ctx decoded tid executingCore gate cap st with
           _ | ⟨⟨⟩, stPost⟩ <;> rfl
@@ -624,16 +845,19 @@ theorem replyOperandArmThenTaintR_eq (ctx : LabelingContext)
 /-- WS-ZA ZA4.7: the reply's dispatch: `dispatchOperandCheckedR` with the
 reply's arm (`dispatchReplyCheckedR_eq`). -/
 @[inline] def dispatchReplyCheckedR (ctx : LabelingContext) (capAddr : SeLe4n.CPtr)
-    (mi : MessageInfo) (regs : Array SeLe4n.RegValue) (tid : SeLe4n.ThreadId)
+    (layout : SeLe4n.SyscallRegisterLayout) (rf : SeLe4n.RegisterFile) (mi : MessageInfo)
+    (tid : SeLe4n.ThreadId)
     (executingCore : Concurrency.CoreId) : RefusalCarrying Unit :=
   dispatchOperandCheckedR capAddr tid executingCore
-    (replyOperandArmThenTaintR ctx mi regs tid executingCore (syscallRequiredRight .reply))
+    (replyOperandArmThenTaintR ctx layout rf mi tid executingCore (syscallRequiredRight .reply))
 
 theorem dispatchReplyCheckedR_eq (ctx : LabelingContext)
     (decoded : SyscallDecodeResult) (tid : SeLe4n.ThreadId)
     (executingCore : Concurrency.CoreId)
-    (hReply : decoded.syscallId = .reply) :
-    dispatchReplyCheckedR ctx decoded.capAddr decoded.msgInfo decoded.msgRegs tid executingCore =
+    (layout : SeLe4n.SyscallRegisterLayout) (rf : SeLe4n.RegisterFile)
+    (hReply : decoded.syscallId = .reply)
+    (hRegs : Architecture.regMessageRegs layout rf = decoded.msgRegs) :
+    dispatchReplyCheckedR ctx decoded.capAddr layout rf decoded.msgInfo tid executingCore =
       RefusalCarrying.ofKernel (dispatchSyscallChecked ctx decoded tid executingCore) := by
   apply dispatchOperandCheckedR_eq ctx decoded tid executingCore _ (by rw [hReply]; rfl)
     (by rw [hReply]; decide)
@@ -642,7 +866,7 @@ theorem dispatchReplyCheckedR_eq (ctx : LabelingContext)
     { callerId := tid, cspaceRoot := tcb.cspaceRoot, capAddr := decoded.capAddr,
       capDepth := rootCn.depth, requiredRight := syscallRequiredRight decoded.syscallId }
     st.declassificationAuditEpoch st.declassificationAuditLog st.declassificationTaint
-    st ref hReply hRef
+    st ref layout rf hReply hRegs hRef
     (syscallOperandCap?_of_resolved st tid _ tcb rootCn ref hTcb hRoot hRef)
   simp only [hReply] at hArm ⊢
   exact hArm

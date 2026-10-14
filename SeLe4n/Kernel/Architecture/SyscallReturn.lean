@@ -465,7 +465,7 @@ inline window plus those words, never more than the message holds.  Like
 receiver whose buffer resolves nowhere reads a length of at most four, which is
 seL4's own answer for a receiver with no IPC buffer (`copyMRs` copies the
 registers alone). -/
-def returnMessageInfo (msg : IpcMessage) (installedCaps overflow : Nat) : MessageInfo :=
+@[inline] def returnMessageInfo (msg : IpcMessage) (installedCaps overflow : Nat) : MessageInfo :=
   { length    := min (min msg.registers.size (4 + overflow)) maxMessageRegisters
     extraCaps := min installedCaps Model.maxExtraCaps
     label     := min msg.label (errorLabelBase - 1) }
@@ -529,7 +529,7 @@ The **single** place a message becomes a frame, used by every RA.B.5b
 staging site, so the synthesis cannot drift between sites.
 `installedCaps` per `returnMessageInfo`: the count of caps actually
 installed by this delivery's transfer, `0` for paths that run none. -/
-def returnFrameOfMessage (msg : IpcMessage) (installedCaps overflow : Nat) :
+@[inline] def returnFrameOfMessage (msg : IpcMessage) (installedCaps overflow : Nat) :
     SyscallReturnFrame :=
   { x0 := (msg.badge.map Badge.word).getD 0
     x1 := (returnMessageInfo msg installedCaps overflow).encode.toUInt64
@@ -550,7 +550,7 @@ def returnFrameOfBadge (b : Badge) : SyscallReturnFrame :=
 /-- Stage a return frame into a register file: `x0`-`x5` overwritten with
 the frame, every other register (including `x7`, `pc`, `sp`) untouched.
 The dual of the argument spill's register writes. -/
-def _root_.SeLe4n.RegisterFile.stageReturnFrame
+@[inline] def _root_.SeLe4n.RegisterFile.stageReturnFrame
     (rf : SeLe4n.RegisterFile) (f : SyscallReturnFrame) : SeLe4n.RegisterFile :=
   { rf with x0 := f.x0, x1 := f.x1, x2 := f.x2, x3 := f.x3, x4 := f.x4, x5 := f.x5 }
 
@@ -664,6 +664,25 @@ them keeps downstream `simp` sets one identifier long. -/
     (tcb.withReturnFrame f).registerContext
       = tcb.registerContext.stageReturnFrame f := rfl
 
+/-- **WS-ZA ZA4.7**: stage a delivered message's frame and drop the message —
+seL4 keeps a delivered message only in the receiver's registers and IPC buffer,
+never in a ready TCB.  `withReturnFrame` then `pendingMessage := none`. -/
+@[inline] def _root_.SeLe4n.Model.TCB.withDeliveredFrame (tcb : TCB) (f : SyscallReturnFrame) : TCB :=
+  { tcb with registerContext := tcb.registerContext.stageReturnFrame f, pendingMessage := none }
+
+@[simp] theorem _root_.SeLe4n.Model.TCB.withDeliveredFrame_ipcState
+    (tcb : TCB) (f : SyscallReturnFrame) :
+    (tcb.withDeliveredFrame f).ipcState = tcb.ipcState := rfl
+
+@[simp] theorem _root_.SeLe4n.Model.TCB.withDeliveredFrame_pendingMessage
+    (tcb : TCB) (f : SyscallReturnFrame) :
+    (tcb.withDeliveredFrame f).pendingMessage = none := rfl
+
+@[simp] theorem _root_.SeLe4n.Model.TCB.withDeliveredFrame_registerContext
+    (tcb : TCB) (f : SyscallReturnFrame) :
+    (tcb.withDeliveredFrame f).registerContext
+      = tcb.registerContext.stageReturnFrame f := rfl
+
 -- ============================================================================
 -- §4c  Staging into and reading out of a SystemState (RA.B.1, RA.B.2)
 -- ============================================================================
@@ -693,6 +712,51 @@ posture stated above (`writeReturnFrameToTcb_id_when_not_tcb`). -/
 def writeReturnFrameToTcb (st : SystemState) (tid : SeLe4n.ThreadId)
     (frame : SyscallReturnFrame) : SystemState :=
   st.updateTcb tid (·.withReturnFrame frame)
+
+/-- **WS-ZA ZA4.7**: the delivery write — `writeReturnFrameToTcb` that also
+drops the delivered message (`TCB.withDeliveredFrame`), one `updateTcb`. -/
+def writeDeliveredFrameToTcb (st : SystemState) (tid : SeLe4n.ThreadId)
+    (frame : SyscallReturnFrame) : SystemState :=
+  st.updateTcb tid (·.withDeliveredFrame frame)
+
+theorem writeDeliveredFrameToTcb_id_when_not_tcb (st : SystemState) (tid : SeLe4n.ThreadId)
+    (frame : SyscallReturnFrame) (hNot : st.getTcb? tid = none) :
+    writeDeliveredFrameToTcb st tid frame = st :=
+  SystemState.updateTcb_eq_self_of_none hNot _
+
+theorem writeDeliveredFrameToTcb_objects_ne (st : SystemState) (tid : SeLe4n.ThreadId)
+    (frame : SyscallReturnFrame) (oid : SeLe4n.ObjId) (hNe : oid ≠ tid.toObjId)
+    (hObjInv : st.objects.invExt) :
+    (writeDeliveredFrameToTcb st tid frame).objects[oid]? = st.objects[oid]? :=
+  SystemState.updateTcb_objects_ne st tid _ oid (fun h => hNe h.symm) hObjInv
+
+theorem writeDeliveredFrameToTcb_scheduler_eq (st : SystemState) (tid : SeLe4n.ThreadId)
+    (frame : SyscallReturnFrame) :
+    (writeDeliveredFrameToTcb st tid frame).scheduler = st.scheduler :=
+  SystemState.updateTcb_scheduler st tid _
+
+theorem writeDeliveredFrameToTcb_machine_eq (st : SystemState) (tid : SeLe4n.ThreadId)
+    (frame : SyscallReturnFrame) :
+    (writeDeliveredFrameToTcb st tid frame).machine = st.machine :=
+  SystemState.updateTcb_machine st tid _
+
+theorem writeDeliveredFrameToTcb_declassificationAuditLog_eq (st : SystemState)
+    (tid : SeLe4n.ThreadId) (frame : SyscallReturnFrame) :
+    (writeDeliveredFrameToTcb st tid frame).declassificationAuditLog =
+      st.declassificationAuditLog := by
+  unfold writeDeliveredFrameToTcb
+  rw [SystemState.updateTcb_eq_objects_update]
+
+theorem writeDeliveredFrameToTcb_kindPreservingWrite (st : SystemState)
+    (tid : SeLe4n.ThreadId) (frame : SyscallReturnFrame) (hObjInv : st.objects.invExt) :
+    SeLe4n.Model.kindPreservingWrite st (writeDeliveredFrameToTcb st tid frame) :=
+  SystemState.updateTcb_kindPreservingWrite st tid _ hObjInv
+
+theorem writeDeliveredFrameToTcb_cdt_eq (st : SystemState) (tid : SeLe4n.ThreadId)
+    (frame : SyscallReturnFrame) :
+    (writeDeliveredFrameToTcb st tid frame).cdt = st.cdt
+    ∧ (writeDeliveredFrameToTcb st tid frame).cdtNodeSlot = st.cdtNodeSlot :=
+  ⟨SystemState.updateTcb_cdt st tid _, SystemState.updateTcb_cdtNodeSlot st tid _⟩
 
 /-- WS-RA RA.B.2: read the staged return frame back out of a thread's
 register context — `Platform.FFI.readReturnValue` generalised to the
@@ -732,6 +796,37 @@ theorem readReturnFrame_writeReturnFrame
   simp only [SeLe4n.Model.TCB.withReturnFrame_registerContext, h0, h1, h2, h3, h4, h5]
   cases frame
   simp [UInt64.ofNat_toNat]
+
+/-- **WS-ZA ZA4.7**: the delivery write reads back the same frame. -/
+theorem readReturnFrame_writeDeliveredFrame
+    (st : SystemState) (tid : SeLe4n.ThreadId)
+    (frame : SyscallReturnFrame)
+    (tcb : TCB) (hTcb : st.getTcb? tid = some tcb)
+    (hObjInv : st.objects.invExt) :
+    readReturnFrame (writeDeliveredFrameToTcb st tid frame) tid = frame := by
+  have hRead : (writeDeliveredFrameToTcb st tid frame).getTcb? tid
+      = some (tcb.withDeliveredFrame frame) := by
+    unfold writeDeliveredFrameToTcb
+    rw [SystemState.updateTcb_getTcb?_self st tid _ hObjInv, hTcb]
+    rfl
+  unfold readReturnFrame
+  rw [hRead]
+  simp only
+  have hReads := (tcb.registerContext).stageReturnFrame_reads_back frame
+  obtain ⟨h0, h1, h2, h3, h4, h5⟩ := hReads
+  simp only [SeLe4n.Model.TCB.withDeliveredFrame_registerContext, h0, h1, h2, h3, h4, h5]
+  cases frame
+  simp [UInt64.ofNat_toNat]
+
+/-- **WS-ZA ZA4.7**: and leaves the thread holding no message. -/
+theorem writeDeliveredFrameToTcb_getTcb?_self
+    (st : SystemState) (tid : SeLe4n.ThreadId) (frame : SyscallReturnFrame)
+    (tcb : TCB) (hTcb : st.getTcb? tid = some tcb) (hObjInv : st.objects.invExt) :
+    (writeDeliveredFrameToTcb st tid frame).getTcb? tid
+      = some (tcb.withDeliveredFrame frame) := by
+  unfold writeDeliveredFrameToTcb
+  rw [SystemState.updateTcb_getTcb?_self st tid _ hObjInv, hTcb]
+  rfl
 
 /-- WS-RA RA.B.1 frame lemma: objects off the target are untouched. -/
 theorem writeReturnFrameToTcb_objects_ne
@@ -814,6 +909,21 @@ def messageOverflowWrites (st : SystemState) (tcb : TCB) (msg : IpcMessage) :
     List PhysicalWrite :=
   overflowDeliveryWrites st tcb (msg.registers.toList.drop 4) 0
 
+/-- **WS-ZA ZA4.7**: the compiled `messageOverflowWrites` — a message of at most
+four words writes nothing, answered without listing its words. -/
+@[inline] def messageOverflowWritesImpl (st : SystemState) (tcb : TCB) (msg : IpcMessage) :
+    List PhysicalWrite :=
+  if msg.registers.size ≤ 4 then [] else overflowDeliveryWrites st tcb (msg.registers.toList.drop 4) 0
+
+@[csimp] theorem messageOverflowWrites_eq_impl : @messageOverflowWrites = @messageOverflowWritesImpl := by
+  funext st tcb msg
+  unfold messageOverflowWrites messageOverflowWritesImpl
+  split
+  · next h =>
+    rw [List.drop_eq_nil_of_le (by simpa using h)]
+    rfl
+  · rfl
+
 /-- Every word a delivery writes is a user-word store. -/
 theorem overflowDeliveryWrites_storeUserWord (st : SystemState) (tcb : TCB) :
     ∀ (ws : List SeLe4n.RegValue) (idx : Nat) (w : PhysicalWrite),
@@ -871,7 +981,7 @@ def stageDeliveredMessage (st : SystemState) (tid : SeLe4n.ThreadId)
         match tcb.pendingMessage with
         | some msg =>
             recordPhysicalWrites
-              (writeReturnFrameToTcb st tid (returnFrameOfMessage msg installedCaps
+              (writeDeliveredFrameToTcb st tid (returnFrameOfMessage msg installedCaps
                 (messageOverflowWrites st tcb msg).length))
               (messageOverflowWrites st tcb msg)
         | none => st
@@ -906,7 +1016,7 @@ theorem stageDeliveredMessage_scheduler_eq
       · simp only [hReady, if_pos]
         cases tcb.pendingMessage with
         | none => rfl
-        | some msg => exact writeReturnFrameToTcb_scheduler_eq st tid _
+        | some msg => exact writeDeliveredFrameToTcb_scheduler_eq st tid _
       · simp [hReady]
 
 /-- RA.B.5b frame lemma: delivery staging never touches the machine — the
@@ -922,7 +1032,7 @@ theorem stageDeliveredMessage_machine_eq
       · simp only [hReady, if_pos]
         cases tcb.pendingMessage with
         | none => rfl
-        | some msg => exact writeReturnFrameToTcb_machine_eq st tid _
+        | some msg => exact writeDeliveredFrameToTcb_machine_eq st tid _
       · simp [hReady]
 
 /-- WS-SM SM9.C.8 frame lemma: delivery staging never touches the
@@ -940,7 +1050,7 @@ theorem stageDeliveredMessage_declassificationAuditLog_eq
       · simp only [hReady, if_pos]
         cases tcb.pendingMessage with
         | none => rfl
-        | some msg => exact writeReturnFrameToTcb_declassificationAuditLog_eq st tid _
+        | some msg => exact writeDeliveredFrameToTcb_declassificationAuditLog_eq st tid _
       · simp [hReady]
 
 /-- A blocked caller stages nothing — `stageDeliveredMessage` is the
@@ -1086,7 +1196,7 @@ theorem stageDeliveredMessage_kindPreservingWrite (st : SystemState)
       · simp only [hReady, if_pos]
         cases tcb.pendingMessage with
         | none => exact SeLe4n.Model.kindPreservingWrite.refl st
-        | some msg => exact writeReturnFrameToTcb_kindPreservingWrite st tid _ hObjInv
+        | some msg => exact writeDeliveredFrameToTcb_kindPreservingWrite st tid _ hObjInv
       · simp only [hReady, if_false]
         exact SeLe4n.Model.kindPreservingWrite.refl st
 
@@ -1103,7 +1213,7 @@ theorem stageDeliveredMessage_cdt_eq (st : SystemState) (tid : SeLe4n.ThreadId)
       · simp only [hReady, if_pos]
         cases tcb.pendingMessage with
         | none => constructor <;> first | rfl | trivial
-        | some msg => exact writeReturnFrameToTcb_cdt_eq st tid _
+        | some msg => exact writeDeliveredFrameToTcb_cdt_eq st tid _
       · simp only [hReady, if_false]
         constructor <;> first | rfl | trivial
 
@@ -1198,7 +1308,7 @@ theorem blockedReturn_staged_in_waiter_frame
   unfold stageDeliveredMessage
   rw [hTcb]
   simp only [hReady, hMsg]
-  exact readReturnFrame_writeReturnFrame st w
+  exact readReturnFrame_writeDeliveredFrame st w
     (returnFrameOfMessage msg installedCaps (messageOverflowWrites st tcb msg).length)
     tcb hTcb hObjInv
 

@@ -61,21 +61,17 @@ specification's form. -/
         -- WS-ZA ZA4.7: a send with no capabilities to transfer checks
         -- everything before its first write.
         | .send capAddr msgInfo =>
-          dispatchSendCheckedR ctx capAddr
-            (SeLe4n.Kernel.Architecture.RegisterDecode.extractMessageRegisters
-              (layout.msgRegs.map (readReg tcb.registerContext)) msgInfo)
+          dispatchSendCheckedR ctx capAddr layout tcb.registerContext msgInfo
             tid executingCore st
         -- WS-ZA ZA4.7: a call with no capabilities to transfer.
         | .call capAddr msgInfo =>
-          dispatchCallCheckedR ctx capAddr
-            (SeLe4n.Kernel.Architecture.RegisterDecode.extractMessageRegisters
-              (layout.msgRegs.map (readReg tcb.registerContext)) msgInfo)
+          dispatchCallCheckedR ctx capAddr layout tcb.registerContext msgInfo
             tid executingCore st
         -- WS-ZA ZA4.7: a reply; one whose checks all pass before its first
         -- write writes in place.
         | .reply capAddr msgInfo =>
-          dispatchReplyCheckedR ctx capAddr msgInfo
-            (layout.msgRegs.map (readReg tcb.registerContext)) tid executingCore st
+          dispatchReplyCheckedR ctx capAddr layout tcb.registerContext msgInfo
+            tid executingCore st
         -- WS-ZA ZA4.7: a receive, with or without a reply object; one that
         -- blocks checks everything, the reply object included, before its
         -- first write.
@@ -146,8 +142,8 @@ theorem syscallEntryCheckedR_eq (ctx : LabelingContext)
           subst hCap
           have hCaps : Architecture.SyscallArgDecode.decodeExtraCapAddrs decoded = #[] := by
             simp [Architecture.SyscallArgDecode.decodeExtraCapAddrs, hInfo, hX]; rfl
-          rw [dispatchSendCheckedR_eq ctx decoded _ tid executingCore hSend hCaps hSlot
-            (by rw [hRegs', hInfo])]
+          rw [dispatchSendCheckedR_eq ctx decoded _ _ _ tid executingCore hSend hCaps hSlot
+            (by rw [hRegs', hInfo]; rfl)]
           simp only [RefusalCarrying.ofKernel, syscallEntryChecked, hCtx, hCur, hRegs, hDec,
             hZero, Bool.false_eq_true, ↓reduceIte,
             SeLe4n.Kernel.Architecture.tlbFillIpcBufferOnCore_zero]
@@ -158,8 +154,8 @@ theorem syscallEntryCheckedR_eq (ctx : LabelingContext)
           subst hCap
           have hCaps : Architecture.SyscallArgDecode.decodeExtraCapAddrs decoded = #[] := by
             simp [Architecture.SyscallArgDecode.decodeExtraCapAddrs, hInfo, hX]; rfl
-          rw [dispatchCallCheckedR_eq ctx decoded _ tid executingCore hCall hCaps hSlot
-            (by rw [hRegs', hInfo])]
+          rw [dispatchCallCheckedR_eq ctx decoded _ _ _ tid executingCore hCall hCaps hSlot
+            (by rw [hRegs', hInfo]; rfl)]
           simp only [RefusalCarrying.ofKernel, syscallEntryChecked, hCtx, hCur, hRegs, hDec,
             hZero, Bool.false_eq_true, ↓reduceIte,
             SeLe4n.Kernel.Architecture.tlbFillIpcBufferOnCore_zero]
@@ -168,7 +164,8 @@ theorem syscallEntryCheckedR_eq (ctx : LabelingContext)
             SeLe4n.Kernel.Architecture.RegisterDecode.decodeSyscallArgsFromState_of_routedReply
               st tid layout tcb.registerContext regCount capAddr msgInfo hReplyRegs
           subst hCap hInfo
-          rw [← hRegs', dispatchReplyCheckedR_eq ctx decoded tid executingCore hReply]
+          rw [dispatchReplyCheckedR_eq ctx decoded tid executingCore layout tcb.registerContext
+            hReply hRegs'.symm]
           simp only [RefusalCarrying.ofKernel, syscallEntryChecked, hCtx, hCur, hRegs, hDec,
             hZero, Bool.false_eq_true, ↓reduceIte,
             SeLe4n.Kernel.Architecture.tlbFillIpcBufferOnCore_zero]

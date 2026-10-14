@@ -908,35 +908,60 @@ be given an agreement at all.
 Stated in the direction the transports use it: `mx` is the post-state reading and
 `my` the pre-state one, so a *shrinking* rewrite qualifies and a growing one does
 not.  Equality gives it outright (`pendingMessageReadAgrees_of_eq`), so every
-existing producer is unchanged. -/
-def pendingMessageReadAgrees (mx my : Option IpcMessage) : Prop :=
-  mx.isSome = my.isSome ∧
+existing producer is unchanged.
+
+**WS-ZA ZA4.7**: `s` is the thread's IPC state, which every agreement holds
+fixed.  A `.ready` thread may drop its message outright: the delivery that woke it
+has written the message into its saved registers, and no conjunct asks a ready
+thread whether it holds one (`blockedThreadsPendingMessageConsistent` constrains
+only the four blocked states), as seL4 keeps no message in a ready TCB. -/
+def pendingMessageReadAgrees (s : ThreadIpcState) (mx my : Option IpcMessage) : Prop :=
+  (mx.isSome = my.isSome ∨ (s = .ready ∧ mx = none)) ∧
   ∀ m m', mx = some m → my = some m' → m'.bounded → m.bounded
 
 /-- Equality is agreement — the shape every pre-`v0.35.190` producer supplies. -/
-theorem pendingMessageReadAgrees_of_eq {mx my : Option IpcMessage} (h : mx = my) :
-    pendingMessageReadAgrees mx my := by
+theorem pendingMessageReadAgrees_of_eq {s : ThreadIpcState} {mx my : Option IpcMessage}
+    (h : mx = my) : pendingMessageReadAgrees s mx my := by
   subst h
-  refine ⟨rfl, fun m m' hm hm' hb => ?_⟩
+  refine ⟨.inl rfl, fun m m' hm hm' hb => ?_⟩
   rw [hm] at hm'
   exact (Option.some.inj hm').symm ▸ hb
 
 /-- Reflexivity. -/
-@[simp] theorem pendingMessageReadAgrees_refl (m : Option IpcMessage) :
-    pendingMessageReadAgrees m m := pendingMessageReadAgrees_of_eq rfl
+@[simp] theorem pendingMessageReadAgrees_refl {s : ThreadIpcState} (m : Option IpcMessage) :
+    pendingMessageReadAgrees s m m := pendingMessageReadAgrees_of_eq rfl
 
-/-- Transitivity — what `donationReadAgreement.trans` composes. -/
-theorem pendingMessageReadAgrees_trans {ma mb mc : Option IpcMessage}
-    (h1 : pendingMessageReadAgrees ma mb) (h2 : pendingMessageReadAgrees mb mc) :
-    pendingMessageReadAgrees ma mc := by
-  refine ⟨h1.1.trans h2.1, fun m m'' hm hm'' hb => ?_⟩
-  cases hb' : mb with
-  | none =>
-      have hFalse : (none : Option IpcMessage).isSome = (some m'').isSome := by
-        rw [← hb', h2.1, hm'']
-      simp at hFalse
-  | some m' =>
-      exact h1.2 m m' hm hb' (h2.2 m' m'' hb' hm'' hb)
+/-- **WS-ZA ZA4.7**: a ready thread's delivered message may be dropped. -/
+theorem pendingMessageReadAgrees_ready_none (my : Option IpcMessage) :
+    pendingMessageReadAgrees .ready none my :=
+  ⟨.inr ⟨rfl, rfl⟩, fun _ _ h => by cases h⟩
+
+/-- Off `.ready` the agreement keeps whether a message is present. -/
+theorem pendingMessageReadAgrees.isSome_eq {s : ThreadIpcState} {mx my : Option IpcMessage}
+    (h : pendingMessageReadAgrees s mx my) (hs : s ≠ .ready) : mx.isSome = my.isSome :=
+  h.1.elim id (fun h' => absurd h'.1 hs)
+
+/-- Transitivity — what `donationReadAgreement.trans` composes, across the one IPC
+state both steps hold. -/
+theorem pendingMessageReadAgrees_trans {s s' : ThreadIpcState} {ma mb mc : Option IpcMessage}
+    (h1 : pendingMessageReadAgrees s ma mb) (h2 : pendingMessageReadAgrees s' mb mc)
+    (hs : s = s') : pendingMessageReadAgrees s' ma mc := by
+  subst hs
+  refine ⟨?_, fun m m'' hm hm'' hb => ?_⟩
+  · rcases h1.1 with h1e | ⟨hr, hn⟩
+    · rcases h2.1 with h2e | ⟨hr2, hn2⟩
+      · exact .inl (h1e.trans h2e)
+      · cases ma with
+        | none => exact .inr ⟨hr2, rfl⟩
+        | some _ => rw [hn2] at h1e; cases h1e
+    · exact .inr ⟨hr, hn⟩
+  · cases hb' : mb with
+    | none =>
+        rcases h1.1 with h1e | ⟨_, hn⟩
+        · rw [hm, hb'] at h1e; cases h1e
+        · rw [hm] at hn; cases hn
+    | some m' =>
+        exact h1.2 m m' hm hb' (h2.2 m' m'' hb' hm'' hb)
 
 /-- WS-RR RR3.11: **every in-flight message satisfies `P`** — the shape shared by
 every property of messages parked in a TCB's `pendingMessage`.
