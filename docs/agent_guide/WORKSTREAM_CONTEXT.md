@@ -143,9 +143,11 @@ that blocks 100 and a send to a waiting receiver 86.  At `v0.36.85` (ZA4.7, firs
 part) send, receive, call and reply are routed on the register file and their
 rendezvous written in place, each fast arm proven equal to its specification:
 a call reads 16, a reply 9, a send to a waiting receiver 15 and a receive that
-blocks 5.  What is left on those paths is mostly the delivered message itself
-(a word array and a record kept in the receiver's TCB), which ZA4.7's second
-part removes by changing where a message lives.  ZA4 measures the other
+blocks 5.  At `v0.36.86` (ZA4.7, second part, receiver side) a delivered
+message lives only in the receiver's saved registers, as in seL4, and call,
+reply and a send to a waiting receiver carry it from register file to register
+file: a send to a waiting receiver reads 3, a call 8 and a reply 1.  Blocked
+senders and reply-receive are the next steps.  ZA4 measures the other
 syscalls and entries.  Plan:
 [`docs/planning/ZERO_ALLOCATION_SYSCALL_PLAN.md`](../planning/ZERO_ALLOCATION_SYSCALL_PLAN.md)
 (phases ZA1–ZA4).
