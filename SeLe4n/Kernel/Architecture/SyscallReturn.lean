@@ -465,7 +465,7 @@ inline window plus those words, never more than the message holds.  Like
 receiver whose buffer resolves nowhere reads a length of at most four, which is
 seL4's own answer for a receiver with no IPC buffer (`copyMRs` copies the
 registers alone). -/
-def returnMessageInfo (msg : IpcMessage) (installedCaps overflow : Nat) : MessageInfo :=
+@[inline] def returnMessageInfo (msg : IpcMessage) (installedCaps overflow : Nat) : MessageInfo :=
   { length    := min (min msg.registers.size (4 + overflow)) maxMessageRegisters
     extraCaps := min installedCaps Model.maxExtraCaps
     label     := min msg.label (errorLabelBase - 1) }
@@ -529,7 +529,7 @@ The **single** place a message becomes a frame, used by every RA.B.5b
 staging site, so the synthesis cannot drift between sites.
 `installedCaps` per `returnMessageInfo`: the count of caps actually
 installed by this delivery's transfer, `0` for paths that run none. -/
-def returnFrameOfMessage (msg : IpcMessage) (installedCaps overflow : Nat) :
+@[inline] def returnFrameOfMessage (msg : IpcMessage) (installedCaps overflow : Nat) :
     SyscallReturnFrame :=
   { x0 := (msg.badge.map Badge.word).getD 0
     x1 := (returnMessageInfo msg installedCaps overflow).encode.toUInt64
@@ -550,7 +550,7 @@ def returnFrameOfBadge (b : Badge) : SyscallReturnFrame :=
 /-- Stage a return frame into a register file: `x0`-`x5` overwritten with
 the frame, every other register (including `x7`, `pc`, `sp`) untouched.
 The dual of the argument spill's register writes. -/
-def _root_.SeLe4n.RegisterFile.stageReturnFrame
+@[inline] def _root_.SeLe4n.RegisterFile.stageReturnFrame
     (rf : SeLe4n.RegisterFile) (f : SyscallReturnFrame) : SeLe4n.RegisterFile :=
   { rf with x0 := f.x0, x1 := f.x1, x2 := f.x2, x3 := f.x3, x4 := f.x4, x5 := f.x5 }
 
@@ -667,7 +667,7 @@ them keeps downstream `simp` sets one identifier long. -/
 /-- **WS-ZA ZA4.7**: stage a delivered message's frame and drop the message —
 seL4 keeps a delivered message only in the receiver's registers and IPC buffer,
 never in a ready TCB.  `withReturnFrame` then `pendingMessage := none`. -/
-def _root_.SeLe4n.Model.TCB.withDeliveredFrame (tcb : TCB) (f : SyscallReturnFrame) : TCB :=
+@[inline] def _root_.SeLe4n.Model.TCB.withDeliveredFrame (tcb : TCB) (f : SyscallReturnFrame) : TCB :=
   { tcb with registerContext := tcb.registerContext.stageReturnFrame f, pendingMessage := none }
 
 @[simp] theorem _root_.SeLe4n.Model.TCB.withDeliveredFrame_ipcState
@@ -908,6 +908,21 @@ def overflowDeliveryWrites (st : SystemState) (tcb : TCB) :
 def messageOverflowWrites (st : SystemState) (tcb : TCB) (msg : IpcMessage) :
     List PhysicalWrite :=
   overflowDeliveryWrites st tcb (msg.registers.toList.drop 4) 0
+
+/-- **WS-ZA ZA4.7**: the compiled `messageOverflowWrites` — a message of at most
+four words writes nothing, answered without listing its words. -/
+@[inline] def messageOverflowWritesImpl (st : SystemState) (tcb : TCB) (msg : IpcMessage) :
+    List PhysicalWrite :=
+  if msg.registers.size ≤ 4 then [] else overflowDeliveryWrites st tcb (msg.registers.toList.drop 4) 0
+
+@[csimp] theorem messageOverflowWrites_eq_impl : @messageOverflowWrites = @messageOverflowWritesImpl := by
+  funext st tcb msg
+  unfold messageOverflowWrites messageOverflowWritesImpl
+  split
+  · next h =>
+    rw [List.drop_eq_nil_of_le (by simpa using h)]
+    rfl
+  · rfl
 
 /-- Every word a delivery writes is a user-word store. -/
 theorem overflowDeliveryWrites_storeUserWord (st : SystemState) (tcb : TCB) :
