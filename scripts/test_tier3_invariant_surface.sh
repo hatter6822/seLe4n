@@ -4301,7 +4301,7 @@ run_check "INVARIANT" rg -n 'an unaligned virtual address inside a complete walk
 # ledger and leaves the physical one.
 run_check "INVARIANT" rg -n '^       Architecture\.clearPhysicalWrites \(Architecture\.clearIcacheMaintenance st'"''"'\)\)$' SeLe4n/Kernel/SyscallDispatchStep.lean
 run_negative_check "INVARIANT" rg -n '^       Architecture\.clearIcacheMaintenance st'"''"'\)$' SeLe4n/Kernel/SyscallDispatchStep.lean
-run_check "INVARIANT" rg -n -U '^  Platform\.FFI\.ffiSyscallReturnFrame [^\n]*\n([ \t]*\n)*  Platform\.FFI\.completePhysicalWrites rest\.2\.2\.2\.2\.2\.1\n  Concurrency\.fireCrossCoreSgis rest\.1$' SeLe4n/Kernel/SyscallDispatchEntry.lean
+run_check "INVARIANT" rg -n -U '^  Platform\.FFI\.ffiSyscallReturnFrame [^\n]*\n([ \t]*\n)*  Platform\.FFI\.completePhysicalWrites rest\.2\.2\.2\.2\.2\.1\n  Concurrency\.fireRaisedReschedules rest\.1$' SeLe4n/Kernel/SyscallDispatchEntry.lean
 run_check "INVARIANT" rg -n '^theorem syscallDispatchCrossCoreStep_drains_physicalWrites($|[ ({:\[\]])' SeLe4n/Kernel/SyscallDispatchStep.lean
 run_check "INVARIANT" rg -n '^theorem completePhysicalWrites_cons($|[ ({:\[\]])' SeLe4n/Platform/FFI.lean
 run_check "INVARIANT" rg -n '^  owed\.forM physicalWriteApply$' SeLe4n/Platform/FFI.lean

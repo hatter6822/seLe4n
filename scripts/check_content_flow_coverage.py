@@ -171,6 +171,13 @@ DECLARED_TAINT_CONSUMERS = {
     "SeLe4n.Kernel.dispatchCheckedArmThenTaint",
     "SeLe4n.Kernel.signalResolvedArmThenTaintR",
     "SeLe4n.Kernel.waitOperandArmThenTaintR",
+    # WS-ZA ZA4.7: the IPC arms' arm-then-apply steps on the register path
+    # (`sendOperandArmThenTaintR_eq`, `callOperandArmThenTaintR_eq`,
+    # `receiveOperandArmThenTaintR_eq`, `replyOperandArmThenTaintR_eq`).
+    "SeLe4n.Kernel.sendOperandArmThenTaintR",
+    "SeLe4n.Kernel.callOperandArmThenTaintR",
+    "SeLe4n.Kernel.receiveOperandArmThenTaintR",
+    "SeLe4n.Kernel.replyOperandArmThenTaintR",
     "SeLe4n.Kernel.TaintTable.empty",
     # PR #873 round 16: the builder's provenance seed.  The one-writer rule
     # governs the **propagation** surface -- within a running system only

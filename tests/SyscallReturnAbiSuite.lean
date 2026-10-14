@@ -1224,7 +1224,11 @@ private def declassifiedBadgeRun (ctx : LabelingContext) :
   let (r2, st2) := entryStepOn ctx core1 SyscallId.declassifySignal.toNat 1
     capPtrValue.toUInt64 declassBadge.toUInt64 st1
   let st3 := ((SeLe4n.Kernel.rescheduleBracket 0).run st2).2
-  (r1.1, r2.1, r2.2.1, st2.declassificationAuditLog,
+  -- The step reports the cores whose reschedule flag it raised as one word;
+  -- these are the SGIs it fires (`fireRaisedReschedules_eq`).
+  let sgis := (SeLe4n.Kernel.Concurrency.allCores.filter r2.2.1.get).map
+    fun c => (c, SeLe4n.Kernel.Concurrency.SgiKind.reschedule)
+  (r1.1, r2.1, sgis, st2.declassificationAuditLog,
     (SeLe4n.Kernel.Concurrency.restoreTargetAt st3 0).deliveredFrame?)
 
 private def runDeclassifiedBadgeDeliveryWitnesses : IO Unit := do
