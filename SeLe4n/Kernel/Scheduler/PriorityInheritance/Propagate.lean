@@ -67,6 +67,59 @@ def updatePipBoostOnCore (st : SystemState) (c : CoreId) (tid : ThreadId) : Syst
       else markKeyChangeFor st' tid preKey
   | none => st
 
+/-- WS-ZA ZA4.7: the compiled `updatePipBoostOnCore`.  Everything the boost
+reads of the holder — its key before the write, its run-core code, its new
+effective priority — is read off the TCB as fields before the write; the write
+is `updateTcb`, which rewrites the TCB in its slot, and the key hook takes the
+old key as parts (`markKeyChangeParts`).  So no TCB, key triple or state is
+copied.  Proven equal (`updatePipBoostOnCore_eq_impl`). -/
+def updatePipBoostOnCoreImpl (st : SystemState) (c : CoreId) (tid : ThreadId) : SystemState :=
+  match st.getTcb? tid with
+  | some tcb =>
+    let newBoost := computeMaxWaiterPriority st tid
+    if tcb.pipBoost == newBoost then st
+    else
+      let p0 := tcb.boostedPriority
+      let d0 := effectiveDeadline st tcb
+      let dom0 := tcb.domain
+      let newPrio := tcb.priority.raisedBy newBoost
+      let queued := tcb.runCoreCode == c.val + 1
+      let st' := st.updateTcb tid fun x => { x with pipBoost := newBoost }
+      let st'' := if queued && p0 != newPrio then st'.runRequeueOnCore c tid newPrio else st'
+      markKeyChangeParts st'' tid p0 d0 dom0
+  | none => st
+
+@[csimp] theorem updatePipBoostOnCore_eq_impl :
+    @updatePipBoostOnCore = @updatePipBoostOnCoreImpl := by
+  funext st c tid
+  unfold updatePipBoostOnCore updatePipBoostOnCoreImpl
+  split
+  · next tcb hT hW =>
+    rw [hT]
+    dsimp only
+    split
+    · rfl
+    · have hW : st.rewriteObject tid.toObjId
+          (KernelObject.tcb { tcb with pipBoost := computeMaxWaiterPriority st tid })
+          (SystemState.rewriteAdmissible_tcb hT _) =
+          st.updateTcb tid fun x => { x with pipBoost := computeMaxWaiterPriority st tid } := by
+        rw [SystemState.updateTcb_eq_of_some hT]; rfl
+      rw [hW, resolveEffectivePrioDeadline_fst_eq_boostedPriority,
+        resolveEffectivePrioDeadline_fst_eq_boostedPriority, markKeyChangeFor_eq_parts,
+        markKeyChangeFor_eq_parts, effectiveSchedParams_eq_parts]
+      have hQ : st.queuedOn c tid = (tcb.runCoreCode == c.val + 1) := by
+        simp [SystemState.queuedOn, hT]
+      rw [hQ]
+      simp only [TCB.boostedPriority]
+      by_cases h1 : (tcb.runCoreCode == c.val + 1) = true <;>
+        by_cases h2 : (tcb.priority.raisedBy tcb.pipBoost !=
+          tcb.priority.raisedBy (computeMaxWaiterPriority st tid)) = true <;>
+        simp only [h1, h2, Bool.true_and, Bool.false_and, Bool.false_eq_true, ↓reduceIte]
+  · next hW =>
+    cases hT : st.getTcb? tid with
+    | none => rfl
+    | some tcb => rw [SystemState.getTcbWitnessed?_eq_some hT] at hW; cases hW
+
 /-- D4-G / AN5-C: the single-core PIP boost update — `updatePipBoostOnCore` at
 the boot core.  Up to `v0.35.65` this was a second copy of that body with the
 core fixed to `bootCoreId`, held to it by
@@ -715,6 +768,58 @@ theorem propagatePipChainCrossCore_step (st : SystemState) (tid : ThreadId) (ec 
         let tailRes := propagatePipChainCrossCore res.1 nextServer ec n
         (tailRes.1, here ++ tailRes.2)
       | none => (res.1, here) := rfl
+
+/-- WS-ZA ZA4.7: the chain walk's state alone.  The next holder is read before
+the boost consumes the state, and each boost is the holder's home-core
+`updatePipBoostOnCore` with no SGI decision beside it, so nothing holds a state
+across a boost. -/
+def propagatePipChainStateWalk (st : SystemState) (startTid : ThreadId) : Nat → SystemState
+  | 0 => st
+  | fuel' + 1 =>
+    match blockingServer st startTid with
+    | some nextServer =>
+      propagatePipChainStateWalk
+        (updatePipBoostOnCore st (determineTargetCore st startTid) startTid) nextServer fuel'
+    | none => updatePipBoostOnCore st (determineTargetCore st startTid) startTid
+
+/-- WS-ZA ZA4.7: the chain walk's SGI list alone, as the specification builds
+it. -/
+def propagatePipChainSgis (st : SystemState) (startTid : ThreadId) (executingCore : CoreId) :
+    Nat → List (CoreId × SgiKind)
+  | 0 => []
+  | fuel' + 1 =>
+    let res := pipBoostWithWake st startTid executingCore
+    let here : List (CoreId × SgiKind) := match res.2 with | some s => [s] | none => []
+    match blockingServer st startTid with
+    | some nextServer => here ++ propagatePipChainSgis res.1 nextServer executingCore fuel'
+    | none => here
+
+/-- WS-ZA ZA4.7: the compiled `propagatePipChainCrossCore`, its two halves
+walked apart.  Inlined, so a caller that keeps only the state (every executed
+caller does) compiles to `propagatePipChainStateWalk` and builds no SGI list. -/
+@[inline] def propagatePipChainCrossCoreImpl (st : SystemState) (startTid : ThreadId)
+    (executingCore : CoreId) (fuel : Nat := st.objectIndex.length) :
+    SystemState × List (CoreId × SgiKind) :=
+  (propagatePipChainStateWalk st startTid fuel,
+   propagatePipChainSgis st startTid executingCore fuel)
+
+theorem propagatePipChainCrossCore_eq_walks (st : SystemState) (startTid : ThreadId)
+    (ec : CoreId) (fuel : Nat) :
+    propagatePipChainCrossCore st startTid ec fuel =
+      (propagatePipChainStateWalk st startTid fuel, propagatePipChainSgis st startTid ec fuel) := by
+  induction fuel generalizing st startTid with
+  | zero => rfl
+  | succ n ih =>
+    rw [propagatePipChainCrossCore_step]
+    simp only [propagatePipChainStateWalk, propagatePipChainSgis]
+    cases blockingServer st startTid with
+    | none => rfl
+    | some nx => simp only [ih]; rfl
+
+@[csimp] theorem propagatePipChainCrossCore_eq_impl :
+    @propagatePipChainCrossCore = @propagatePipChainCrossCoreImpl := by
+  funext st startTid ec fuel
+  exact propagatePipChainCrossCore_eq_walks st startTid ec fuel
 
 /-- The executing core steers only the chain walk's SGI list, never its state:
 each step's boost is `updatePipBoostOnCore` at the holder's home core

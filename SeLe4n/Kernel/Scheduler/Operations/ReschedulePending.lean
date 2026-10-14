@@ -127,6 +127,121 @@ theorem markKeyChangeFor_extract_frame {F : Type} (extract : SystemState → F)
   unfold markKeyChangeFor
   exact markReschedulePendingWhere_extract_frame extract h st _ allCores
 
+/-- WS-ZA ZA4.7: a thread's effective deadline, `effectiveSchedParams`'s middle
+component, read without building the triple. -/
+@[inline] def effectiveDeadline (st : SystemState) (tcb : TCB) : SeLe4n.Deadline :=
+  match tcb.schedContextBinding with
+  | .unbound => tcb.deadline
+  | .bound scId =>
+    match st.getSchedContext? scId with
+    | some sc => sc.deadline
+    | none => tcb.deadline
+  | .donated scId _ =>
+    match st.getSchedContext? scId with
+    | some sc => sc.deadline
+    | none => tcb.deadline
+
+theorem effectiveSchedParams_eq_parts (st : SystemState) (tcb : TCB) :
+    effectiveSchedParams st tcb = (tcb.boostedPriority, effectiveDeadline st tcb, tcb.domain) := by
+  unfold effectiveSchedParams effectiveDeadline
+  cases tcb.schedContextBinding with
+  | unbound => rfl
+  | bound scId => cases h : st.getSchedContext? scId <;> simp only [h]
+  | donated scId _ => cases h : st.getSchedContext? scId <;> simp only [h]
+
+/-- WS-ZA ZA4.7: the key hook's flag writes over `cores`, with the re-keyed
+thread's run-core code `rc` and its weakening already read: a core is flagged
+when it queues the thread, or when the key weakened and it runs the thread.
+Recursion over the cores, so no predicate closure is built. -/
+def markKeyFlagsOver (st : SystemState) (tid : SeLe4n.ThreadId) (rc : Nat) (weakened : Bool) :
+    List CoreId → SystemState
+  | [] => st
+  | c :: cs => markKeyFlagsOver
+      (if rc == c.val + 1 || (weakened && (st.scheduler.currentOnCore c).isEqSome tid)
+       then st.markReschedulePendingOnCore c else st) tid rc weakened cs
+
+/-- WS-ZA ZA4.7: `markKeyChangeFor` with the pre-write key handed in as its
+three parts.  The thread's new key is read off its TCB as fields; an unmoved
+key flags nothing, so the state is answered as it is. -/
+def markKeyChangeParts (st : SystemState) (tid : SeLe4n.ThreadId) (p0 : SeLe4n.Priority)
+    (d0 : SeLe4n.Deadline) (dom0 : SeLe4n.DomainId) : SystemState :=
+  match st.getTcb? tid with
+  | some t =>
+    let p := t.boostedPriority
+    let d := effectiveDeadline st t
+    if p0 == p && d0.val == d.val && dom0 == t.domain then st
+    else
+      markKeyFlagsOver st tid t.runCoreCode
+        (p.val < p0.val || d0.val < d.val || dom0 != t.domain) allCores
+  | none => st
+
+theorem markReschedulePendingWhere_of_false (st : SystemState) (p : CoreId → Bool)
+    (cs : List CoreId) (h : ∀ c, p c = false) : markReschedulePendingWhere st p cs = st := by
+  induction cs generalizing st with
+  | nil => rfl
+  | cons c cs ih => simp only [markReschedulePendingWhere, h c, Bool.false_eq_true, ↓reduceIte, ih]
+
+/-- The flag loop is the hook's fold: the predicate reads the current slots of
+the state the fold started from, which the marks never move. -/
+theorem markReschedulePendingWhere_eq_markKeyFlagsOver (st0 : SystemState)
+    (tid : SeLe4n.ThreadId) (rc : Nat) (w : Bool) (cs : List CoreId) :
+    ∀ st : SystemState, (∀ c, st.scheduler.currentOnCore c = st0.scheduler.currentOnCore c) →
+      markReschedulePendingWhere st
+          (fun c => rc == c.val + 1 || (w && st0.scheduler.currentOnCore c == some tid)) cs =
+        markKeyFlagsOver st tid rc w cs := by
+  induction cs with
+  | nil => intro _ _; rfl
+  | cons c cs ih =>
+    intro st hCur
+    have hEq : (st0.scheduler.currentOnCore c == some tid) =
+        (st.scheduler.currentOnCore c).isEqSome tid := by
+      rw [hCur c]; cases st0.scheduler.currentOnCore c <;> rfl
+    simp only [markReschedulePendingWhere, markKeyFlagsOver, hEq]
+    apply ih
+    intro c'
+    split
+    · simp only [SystemState.markReschedulePendingOnCore_scheduler,
+        SchedulerState.markReschedulePendingOnCore_currentOnCore, hCur]
+    · exact hCur c'
+
+theorem markKeyChangeFor_eq_parts (st : SystemState) (tid : SeLe4n.ThreadId)
+    (k : SeLe4n.Priority × SeLe4n.Deadline × SeLe4n.DomainId) :
+    markKeyChangeFor st tid k = markKeyChangeParts st tid k.1 k.2.1 k.2.2 := by
+  obtain ⟨p0, d0, dom0⟩ := k
+  unfold markKeyChangeFor markKeyChangeParts
+  cases hT : st.getTcb? tid with
+  | none =>
+    apply markReschedulePendingWhere_of_false
+    intro c
+    simp [SystemState.queuedOn, hT]
+  | some t =>
+    simp only [Option.map_some, effectiveSchedParams_eq_parts]
+    by_cases hK : (p0 == t.boostedPriority && d0.val == (effectiveDeadline st t).val &&
+        dom0 == t.domain) = true
+    · rw [if_pos hK]
+      apply markReschedulePendingWhere_of_false
+      intro c
+      simp only [Bool.and_eq_true, beq_iff_eq] at hK
+      obtain ⟨⟨h1, h2⟩, h3⟩ := hK
+      subst h1 h3
+      simp [h2]
+    · rw [if_neg hK]
+      simp only [Bool.eq_false_iff.mpr hK, Bool.not_false, Bool.true_and]
+      have hQ : ∀ c, st.queuedOn c tid = (t.runCoreCode == c.val + 1) := fun c => by
+        simp [SystemState.queuedOn, hT]
+      simp only [hQ]
+      exact markReschedulePendingWhere_eq_markKeyFlagsOver st tid _ _ allCores st (fun _ => rfl)
+
+/-- WS-ZA ZA4.7: the compiled `markKeyChangeFor`.  Inlined, so a caller that
+builds the key as a triple hands its parts straight in. -/
+@[inline] def markKeyChangeForImpl (st : SystemState) (tid : SeLe4n.ThreadId)
+    (k : SeLe4n.Priority × SeLe4n.Deadline × SeLe4n.DomainId) : SystemState :=
+  markKeyChangeParts st tid k.1 k.2.1 k.2.2
+
+@[csimp] theorem markKeyChangeFor_eq_impl : @markKeyChangeFor = @markKeyChangeForImpl := by
+  funext st tid k
+  exact markKeyChangeFor_eq_parts st tid k
+
 /-- The key hook for a writer that hands in its **pre-state** rather than a key
 it already read: `tid`'s key is read on `pre`, the flags are raised on `post`.
 A thread with no TCB in `pre` had no key, so every core still holding it in a
