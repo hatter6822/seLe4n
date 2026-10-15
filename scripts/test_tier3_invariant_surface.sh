@@ -19871,7 +19871,7 @@ run_check "INVARIANT" bash -lc 'rg -n -U "^@\[inline\] def TCB.restoredToReady[^
 run_check "INVARIANT" bash -lc 'rg -n -U "^def restoreToReadyStaging[^\n]*(\n([ \t][^\n]*)?)*" SeLe4n/Kernel/Lifecycle/Suspend.lean | rg -F ".restoredToReady"'
 run_negative_check "INVARIANT" bash -lc 'rg -n -U "^def restoreToReadyStaging[^\n]*(\n([ \t][^\n]*)?)*" SeLe4n/Kernel/Lifecycle/Suspend.lean | rg -F "pendingReceiveReply := none"'
 run_check "INVARIANT" bash -lc 'rg -n -U "^def frozenResumeThread[^\n]*(\n([ \t][^\n]*)?)*" SeLe4n/Kernel/FrozenOps/Operations.lean | rg -F ".tcb tcb.restoredToReady"'
-run_negative_check "INVARIANT" bash -lc 'rg -n -U "^def frozenResumeThread[^\n]*(\n([ \t][^\n]*)?)*" SeLe4n/Kernel/FrozenOps/Operations.lean | rg -F "setIpcState .ready"'
+run_negative_check "INVARIANT" bash -lc 'rg -n -U "^def frozenResumeThread[^\n]*(\n([ \t][^\n]*)?)*" SeLe4n/Kernel/FrozenOps/Operations.lean | rg -e "setIpcState" -e "ipcObjectCode" -e "ipcStateCode"'
 # (2) THE FROZEN RESUME RE-DERIVES THE BOOST from the blocking graph, on the
 # CLEARED state -- a thread its own `ipcState` recorded as blocked on itself
 # must not count itself, which is why the order is pinned and not just the call.
