@@ -2333,7 +2333,7 @@ theorem restoreToReadyStaging_blockedThreadsPendingMessageConsistent (st : Syste
     tid.toObjId tcb' hTcb' with ⟨_, h0⟩ | ⟨_, rfl⟩
   · exact h tid tcb' h0
   · rw [restoredTcb_eq]
-    simp only
+    simp only [TCB.ipcState_setIpcState]
 
 theorem restoreToReadyStaging_blockedOnReplyHasTarget (st : SystemState)
     (v : SeLe4n.ThreadId) (frame : Option Architecture.SyscallReturnFrame) (tcbV : TCB)

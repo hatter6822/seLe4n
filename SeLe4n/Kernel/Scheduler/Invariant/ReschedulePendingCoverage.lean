@@ -277,7 +277,7 @@ def schedKeyFieldsEq (a b : TCB) : Prop :=
     b.domain = a.domain
 
 theorem schedKeyFieldsEq_ipcState (a : TCB) (s : ThreadIpcState) :
-    schedKeyFieldsEq a { a with ipcState := s } := ⟨rfl, rfl, rfl, rfl, rfl⟩
+    schedKeyFieldsEq a (a.setIpcState s) := ⟨rfl, rfl, rfl, rfl, rfl⟩
 
 /-- The effective key reads only the key fields and the scheduling contexts. -/
 theorem resolveEffectivePrioDeadline_congr {st st' : SystemState} {a b : TCB}

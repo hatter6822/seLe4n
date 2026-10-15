@@ -262,7 +262,7 @@ theorem storeTcbIpcState_passiveServerIdleFrameOnCore
   | none => simp [hL] at hStep
   | some tcb =>
     simp only [hL] at hStep
-    cases hSO : storeObject tid0.toObjId (.tcb { tcb with ipcState := ipc }) st with
+    cases hSO : storeObject tid0.toObjId (.tcb (tcb.setIpcState ipc)) st with
     | error e => simp [hSO] at hStep
     | ok p =>
       obtain ⟨_, st''⟩ := p
@@ -270,9 +270,9 @@ theorem storeTcbIpcState_passiveServerIdleFrameOnCore
       subst hStep
       have hOrig := lookupTcb_some_objects st tid0 tcb hL
       refine storeObject_modifiedTcb_passiveServerIdleFrameOnCore st st'' tid0.toObjId tcb
-        { tcb with ipcState := ipc } hOrig rfl ?_ hObjInv hSO
+        (tcb.setIpcState ipc) hOrig rfl ?_ hObjInv hSO
       rcases hAllowedOrBound with hA | hB
-      · exact Or.inl hA
+      · exact Or.inl (by simpa using hA)
       · exact Or.inr (hB tcb ((getTcb?_eq_some_iff st tid0 tcb).mpr hOrig))
 
 open SeLe4n.Model.SystemState in
@@ -291,7 +291,7 @@ theorem storeTcbIpcStateAndMessage_passiveServerIdleFrameOnCore
   | none => simp [hL] at hStep
   | some tcb =>
     simp only [hL] at hStep
-    cases hSO : storeObject tid0.toObjId (.tcb { tcb with ipcState := ipc, pendingMessage := msg }) st with
+    cases hSO : storeObject tid0.toObjId (.tcb (TCB.setIpcState { tcb with pendingMessage := msg } ipc)) st with
     | error e => simp [hSO] at hStep
     | ok p =>
       obtain ⟨_, st''⟩ := p
@@ -299,9 +299,9 @@ theorem storeTcbIpcStateAndMessage_passiveServerIdleFrameOnCore
       subst hStep
       have hOrig := lookupTcb_some_objects st tid0 tcb hL
       refine storeObject_modifiedTcb_passiveServerIdleFrameOnCore st st'' tid0.toObjId tcb
-        { tcb with ipcState := ipc, pendingMessage := msg } hOrig rfl ?_ hObjInv hSO
+        (TCB.setIpcState { tcb with pendingMessage := msg } ipc) hOrig rfl ?_ hObjInv hSO
       rcases hAllowedOrBound with hA | hB
-      · exact Or.inl hA
+      · exact Or.inl (by simpa using hA)
       · exact Or.inr (hB tcb ((getTcb?_eq_some_iff st tid0 tcb).mpr hOrig))
 
 open SeLe4n.Model.SystemState in
@@ -317,7 +317,7 @@ theorem storeTcbReceiveComplete_passiveServerIdleFrameOnCore
   | none => simp [hL] at hStep
   | some tcb =>
     simp only [hL] at hStep
-    cases hSO : storeObject tid0.toObjId (.tcb { tcb with ipcState := .ready, pendingMessage := msg, pendingReceiveReply := none }) st with
+    cases hSO : storeObject tid0.toObjId (.tcb (TCB.setIpcState { tcb with pendingMessage := msg, pendingReceiveReply := none } .ready)) st with
     | error e => simp [hSO] at hStep
     | ok p =>
       obtain ⟨_, st''⟩ := p
@@ -325,7 +325,7 @@ theorem storeTcbReceiveComplete_passiveServerIdleFrameOnCore
       subst hStep
       have hOrig := lookupTcb_some_objects st tid0 tcb hL
       exact storeObject_modifiedTcb_passiveServerIdleFrameOnCore st st'' tid0.toObjId tcb
-        { tcb with ipcState := .ready, pendingMessage := msg, pendingReceiveReply := none }
+        (TCB.setIpcState { tcb with pendingMessage := msg, pendingReceiveReply := none } .ready)
         hOrig rfl (Or.inl (Or.inl rfl)) hObjInv hSO
 
 /-- SM6.D.2: `ensureRunnable` leaves every core's `current` slot untouched

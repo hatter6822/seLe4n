@@ -1891,8 +1891,8 @@ private def sd051_receiveLinkCaller : IO Unit := do
   let stReady : SystemState :=
     (SeLe4n.Testing.BootstrapBuilder.empty
       |>.withObject epId (.endpoint {})
-      |>.withObject server.toObjId (.tcb { mkTcb 1 with ipcState := .ready })
-      |>.withObject caller.toObjId (.tcb { mkTcb 2 with ipcState := .ready })
+      |>.withObject server.toObjId (.tcb ((mkTcb 1).setIpcState .ready))
+      |>.withObject caller.toObjId (.tcb ((mkTcb 2).setIpcState .ready))
       |>.withObject rid.toObjId (.reply { replyId := rid })
       |>.withRunnable [server, caller]
       |>.build)
@@ -1941,9 +1941,9 @@ private def sd052_endpointReplyRecvOnCore : IO Unit := do
   let st : SystemState :=
     (SeLe4n.Testing.BootstrapBuilder.empty
       |>.withObject epId (.endpoint {})
-      |>.withObject server.toObjId (.tcb { mkTcb 1 with ipcState := .ready })
+      |>.withObject server.toObjId (.tcb ((mkTcb 1).setIpcState .ready))
       |>.withObject clientA.toObjId
-          (.tcb { mkTcb 2 with ipcState := .blockedOnReply epId (some server), replyObject := some rid })
+          (.tcb (TCB.setIpcState { mkTcb 2 with replyObject := some rid } (.blockedOnReply epId (some server))))
       |>.withObject rid.toObjId (.reply { replyId := rid, caller := some clientA })
       |>.withRunnable [server]
       |>.build)
@@ -1985,15 +1985,15 @@ private def sd052b_replyRecv_donation_switch : IO Unit := do
     (SeLe4n.Testing.BootstrapBuilder.empty
       |>.withObject epId (.endpoint {})
       |>.withObject server.toObjId
-          (.tcb { mkTcb 1 with ipcState := .ready, schedContextBinding := .donated scA clientA })
+          (.tcb (TCB.setIpcState { mkTcb 1 with schedContextBinding := .donated scA clientA } .ready))
       |>.withObject clientA.toObjId
           -- **WS-HP HP4.6**: a donor that has donated its context is `.unbound`,
           -- not `.bound` -- two threads bound to one SchedContext is the
           -- malformation the pop's recipient guard refuses, and the binding-driven
           -- trigger never looked at the recipient so nothing caught it here.
-          (.tcb { mkTcb 2 with ipcState := .blockedOnReply epId (some server), replyObject := some rid, schedContextBinding := SeLe4n.Kernel.SchedContextBinding.unbound })
+          (.tcb (TCB.setIpcState { mkTcb 2 with replyObject := some rid, schedContextBinding := SeLe4n.Kernel.SchedContextBinding.unbound } (.blockedOnReply epId (some server))))
       |>.withObject clientB.toObjId
-          (.tcb { mkTcb 3 with ipcState := .ready, schedContextBinding := .bound scB })
+          (.tcb (TCB.setIpcState { mkTcb 3 with schedContextBinding := .bound scB } .ready))
       -- **WS-OD OD4.1 / WS-HP HP4**: a `.donated` binding always has a FRAME on
       -- the context's reply stack -- `donateSchedContext` is a four-store push
       -- that is fail-closed on the donor's `replyObject`, so a donation with no
@@ -2058,15 +2058,15 @@ private def sd052c_replyRecv_delegated_returns_recorded_server_donation : IO Uni
     (SeLe4n.Testing.BootstrapBuilder.empty
       |>.withObject epId (.endpoint {})
       |>.withObject server.toObjId
-          (.tcb { mkTcb 1 with ipcState := .ready, schedContextBinding := .donated scA clientA })
+          (.tcb (TCB.setIpcState { mkTcb 1 with schedContextBinding := .donated scA clientA } .ready))
       |>.withObject clientA.toObjId
           -- **WS-HP HP4.6**: a donor that has donated its context is `.unbound`,
           -- not `.bound` -- two threads bound to one SchedContext is the
           -- malformation the pop's recipient guard refuses, and the binding-driven
           -- trigger never looked at the recipient so nothing caught it here.
-          (.tcb { mkTcb 2 with ipcState := .blockedOnReply epId (some server), replyObject := some rid, schedContextBinding := SeLe4n.Kernel.SchedContextBinding.unbound })
+          (.tcb (TCB.setIpcState { mkTcb 2 with replyObject := some rid, schedContextBinding := SeLe4n.Kernel.SchedContextBinding.unbound } (.blockedOnReply epId (some server))))
       |>.withObject delegate.toObjId
-          (.tcb { mkTcb 5 with ipcState := .ready, schedContextBinding := .unbound })
+          (.tcb (TCB.setIpcState { mkTcb 5 with schedContextBinding := .unbound } .ready))
       -- The reply stack the donating Call left, as in sd052b above: a `.donated`
       -- binding with no frame is unreachable, and the head-driven pop reads the
       -- frame rather than the binding.
@@ -2118,7 +2118,7 @@ private def sd053_serverFirstLink : IO Unit := do
   let stA : SystemState :=
     (SeLe4n.Testing.BootstrapBuilder.empty
       |>.withObject epId (.endpoint {})
-      |>.withObject server.toObjId (.tcb { mkTcb 1 with ipcState := .ready })
+      |>.withObject server.toObjId (.tcb ((mkTcb 1).setIpcState .ready))
       |>.withObject rid.toObjId (.reply { replyId := rid })
       |>.withRunnable [server]
       |>.build)
@@ -2139,8 +2139,8 @@ private def sd053_serverFirstLink : IO Unit := do
   let stBBase : SystemState :=
     (SeLe4n.Testing.BootstrapBuilder.empty
       |>.withObject epId (.endpoint {})
-      |>.withObject server.toObjId (.tcb { mkTcb 1 with ipcState := .ready })
-      |>.withObject caller.toObjId (.tcb { mkTcb 2 with ipcState := .ready })
+      |>.withObject server.toObjId (.tcb ((mkTcb 1).setIpcState .ready))
+      |>.withObject caller.toObjId (.tcb ((mkTcb 2).setIpcState .ready))
       |>.withObject rid.toObjId (.reply { replyId := rid })
       |>.withRunnable [server, caller]
       |>.build)
@@ -2166,7 +2166,7 @@ private def sd053_serverFirstLink : IO Unit := do
     (SeLe4n.Testing.BootstrapBuilder.empty
       |>.withObject epId (.endpoint {})
       |>.withObject server.toObjId
-          (.tcb { mkTcb 1 with ipcState := .ready, pendingReceiveReply := some rid })
+          (.tcb (TCB.setIpcState { mkTcb 1 with pendingReceiveReply := some rid } .ready))
       |>.withRunnable [server]
       |>.build)
   match SeLe4n.Kernel.endpointReceiveDual epId server none stStale with
@@ -2182,8 +2182,8 @@ private def sd053_serverFirstLink : IO Unit := do
   let stDBase : SystemState :=
     (SeLe4n.Testing.BootstrapBuilder.empty
       |>.withObject epId (.endpoint {})
-      |>.withObject server.toObjId (.tcb { mkTcb 1 with ipcState := .ready })
-      |>.withObject caller.toObjId (.tcb { mkTcb 2 with ipcState := .ready })
+      |>.withObject server.toObjId (.tcb ((mkTcb 1).setIpcState .ready))
+      |>.withObject caller.toObjId (.tcb ((mkTcb 2).setIpcState .ready))
       |>.withRunnable [server, caller]
       |>.build)
   match SeLe4n.Kernel.endpointReceiveDual epId server none stDBase with
@@ -2205,7 +2205,7 @@ private def sd053_serverFirstLink : IO Unit := do
   let stWoken : SystemState :=
     (SeLe4n.Testing.BootstrapBuilder.empty
       |>.withObject server.toObjId
-          (.tcb { mkTcb 1 with ipcState := .ready, pendingReceiveReply := some rid })
+          (.tcb (TCB.setIpcState { mkTcb 1 with pendingReceiveReply := some rid } .ready))
       |>.withObject rid.toObjId (.reply { replyId := rid })
       |>.build)
   match SeLe4n.Kernel.clearWokenReceiverStash (some server) stWoken with
@@ -2221,7 +2221,7 @@ private def sd053_serverFirstLink : IO Unit := do
   -- (the common case — guarantees the byte-identical trace on stash-free sends).
   let stNoStashReceiver : SystemState :=
     (SeLe4n.Testing.BootstrapBuilder.empty
-      |>.withObject server.toObjId (.tcb { mkTcb 1 with ipcState := .ready })
+      |>.withObject server.toObjId (.tcb ((mkTcb 1).setIpcState .ready))
       |>.build)
   match SeLe4n.Kernel.clearWokenReceiverStash (some server) stNoStashReceiver with
   | .ok ((), st') =>
@@ -2252,7 +2252,7 @@ private def sd053g_bound_notification_wake_clears_stash : IO Unit := do
       |>.withObject nId (.notification
           { state := .idle, boundTCB := some server })
       |>.withObject server.toObjId
-          (.tcb { mkTcb 1 with ipcState := .blockedOnReceive epId, pendingReceiveReply := some rid })
+          (.tcb (TCB.setIpcState { mkTcb 1 with pendingReceiveReply := some rid } (.blockedOnReceive epId)))
       |>.withObject rid.toObjId (.reply { replyId := rid })
       |>.build)
   expect "sd053g_bound_target_resolved"
@@ -2264,7 +2264,7 @@ private def sd053g_bound_notification_wake_clears_stash : IO Unit := do
   let stWoken : SystemState :=
     (SeLe4n.Testing.BootstrapBuilder.empty
       |>.withObject server.toObjId
-          (.tcb { mkTcb 1 with ipcState := .ready, pendingReceiveReply := some rid })
+          (.tcb (TCB.setIpcState { mkTcb 1 with pendingReceiveReply := some rid } .ready))
       |>.withObject rid.toObjId (.reply { replyId := rid })
       |>.build)
   match SeLe4n.Kernel.clearWokenReceiverStash (some server) stWoken with

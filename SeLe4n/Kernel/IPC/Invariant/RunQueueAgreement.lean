@@ -272,7 +272,7 @@ theorem enqueueRunnableOnCore_stateMono (st : SystemState) (c : Concurrency.Core
     cases hD : wakeDeclines st c tid
     · have hRaw := (SystemState.getTcb?_eq_some_iff st tid tcb).mp hT
       have h1 : SystemState.StateMono st { st with objects := (st.objects.insert
-          tid.toObjId (.tcb { tcb with ipcState := .ready })) } :=
+          tid.toObjId (.tcb (tcb.setIpcState .ready))) } :=
         SystemState.StateMono.insert hInv rfl
           (by rw [hRaw]; exact SystemState.objStateMono_tcb ⟨fun _ => rfl, id⟩)
       exact h1.trans (SystemState.StateMono.of_agreeOffRunLinks
@@ -289,7 +289,7 @@ theorem enqueueRunnableOnCore_runnable (st : SystemState) (c : Concurrency.CoreI
   obtain ⟨tcb, hT, ha⟩ := hA
   have hM := SystemState.StateMono.of_agreeOffRunLinks
     (enqueueRunnableOnCore_objectsAgree_marked st c tid tcb hT hD)
-  refine hM.runnable ⟨{ tcb with ipcState := .ready }, ?_, rfl, ha⟩
+  refine hM.runnable ⟨(tcb.setIpcState .ready), ?_, rfl, ha⟩
   unfold SystemState.getTcb?
   simp only [RHTable_getElem?_eq_get?]
   rw [RobinHood.RHTable.getElem?_insert_self st.objects _ _ hInv]

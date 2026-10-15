@@ -880,7 +880,7 @@ theorem storeTcbIpcState_preserves_contextMatchesCurrent
   | none => simp [hLookup] at hStep
   | some tcb =>
     simp only [hLookup] at hStep
-    cases hStore : storeObject tid.toObjId (.tcb { tcb with ipcState := ipc }) st with
+    cases hStore : storeObject tid.toObjId (.tcb (tcb.setIpcState ipc)) st with
     | error e => simp [hStore] at hStep
     | ok pair =>
       simp only [hStore, Except.ok.injEq] at hStep; subst hStep
@@ -888,7 +888,7 @@ theorem storeTcbIpcState_preserves_contextMatchesCurrent
         (fun tid' tcb' hCur hEq hObj => by
           have hTcbObj := lookupTcb_some_objects st tid tcb hLookup
           rw [hTcbObj] at hObj; cases hObj
-          exact ⟨{ tcb with ipcState := ipc }, rfl, rfl⟩)
+          exact ⟨(tcb.setIpcState ipc), rfl, rfl⟩)
 
 theorem storeTcbIpcStateAndMessage_preserves_contextMatchesCurrent
     (st st' : SystemState) (tid : SeLe4n.ThreadId) (ipc : ThreadIpcState) (msg : Option IpcMessage)
@@ -902,7 +902,7 @@ theorem storeTcbIpcStateAndMessage_preserves_contextMatchesCurrent
   | none => simp [hLookup] at hStep
   | some tcb =>
     simp only [hLookup] at hStep
-    cases hStore : storeObject tid.toObjId (.tcb { tcb with ipcState := ipc, pendingMessage := msg }) st with
+    cases hStore : storeObject tid.toObjId (.tcb (TCB.setIpcState { tcb with pendingMessage := msg } ipc)) st with
     | error e => simp [hStore] at hStep
     | ok pair =>
       simp only [hStore, Except.ok.injEq] at hStep; subst hStep
@@ -910,7 +910,7 @@ theorem storeTcbIpcStateAndMessage_preserves_contextMatchesCurrent
         (fun tid' tcb' hCur hEq hObj => by
           have hTcbObj := lookupTcb_some_objects st tid tcb hLookup
           rw [hTcbObj] at hObj; cases hObj
-          exact ⟨{ tcb with ipcState := ipc, pendingMessage := msg }, rfl, rfl⟩)
+          exact ⟨(TCB.setIpcState { tcb with pendingMessage := msg } ipc), rfl, rfl⟩)
 
 theorem storeTcbPendingMessage_preserves_contextMatchesCurrent
     (st st' : SystemState) (tid : SeLe4n.ThreadId) (msg : Option IpcMessage)
@@ -1059,7 +1059,7 @@ theorem storeTcbIpcState_preserves_allPendingMessagesBounded
   | none => simp [hLookup] at hStep
   | some tcb =>
       simp only [hLookup] at hStep
-      cases hStore : storeObject tid.toObjId (.tcb { tcb with ipcState := ipc }) st with
+      cases hStore : storeObject tid.toObjId (.tcb (tcb.setIpcState ipc)) st with
       | error e => simp [hStore] at hStep
       | ok pair =>
           simp only [hStore] at hStep; have := Except.ok.inj hStep; subst this
@@ -1091,7 +1091,7 @@ theorem storeTcbIpcStateAndMessage_preserves_pendingMessagesSatisfy
   | some tcb =>
       simp only [hLookup] at hStep
       cases hStore : storeObject tid.toObjId
-        (.tcb { tcb with ipcState := ipc, pendingMessage := msg }) st with
+        (.tcb (TCB.setIpcState { tcb with pendingMessage := msg } ipc)) st with
       | error e => simp [hStore] at hStep
       | ok pair =>
           simp only [hStore] at hStep; have := Except.ok.inj hStep; subst this
@@ -1135,7 +1135,7 @@ theorem storeTcbReceiveComplete_preserves_allPendingMessagesBounded
   | some tcb =>
       simp only [hLookup] at hStep
       cases hStore : storeObject tid.toObjId
-        (.tcb { tcb with ipcState := .ready, pendingMessage := msg, pendingReceiveReply := none }) st with
+        (.tcb (TCB.setIpcState { tcb with pendingMessage := msg, pendingReceiveReply := none } .ready)) st with
       | error e => simp [hStore] at hStep
       | ok pair =>
           simp only [hStore] at hStep; have := Except.ok.inj hStep; subst this

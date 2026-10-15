@@ -413,7 +413,7 @@ theorem storeTcbIpcState_preserves_projection
     simp [hLookup] at hStep
   | some tcb =>
     simp only [hLookup] at hStep
-    cases hStore : storeObject tid.toObjId (.tcb { tcb with ipcState := ipc }) st with
+    cases hStore : storeObject tid.toObjId (.tcb (tcb.setIpcState ipc)) st with
     | error e => simp [hStore] at hStep
     | ok pair =>
       simp only [hStore] at hStep
@@ -510,7 +510,7 @@ theorem storeTcbIpcStateAndMessage_preserves_projection
   | some tcb =>
     simp only [hLookup] at hStep
     cases hStore : storeObject tid.toObjId
-        (.tcb { tcb with ipcState := ipc, pendingMessage := msg }) st with
+        (.tcb (TCB.setIpcState { tcb with pendingMessage := msg } ipc)) st with
     | error e => simp [hStore] at hStep
     | ok pair =>
       simp only [hStore, Except.ok.injEq] at hStep; subst hStep
@@ -590,7 +590,7 @@ theorem storeTcbReceiveComplete_preserves_projection
   | some tcb =>
     simp only [hLookup] at hStep
     cases hStore : storeObject tid.toObjId
-        (.tcb { tcb with ipcState := .ready, pendingMessage := msg, pendingReceiveReply := none }) st with
+        (.tcb (TCB.setIpcState { tcb with pendingMessage := msg, pendingReceiveReply := none } .ready)) st with
     | error e => simp [hStore] at hStep
     | ok pair =>
       obtain ⟨⟨⟩, st''⟩ := pair

@@ -506,7 +506,7 @@ def an10_e_cancelIpcBlockingValid_reduces : IO Bool := do
   let vtid : ValidThreadId := ⟨tid, by decide⟩
   let epId : ObjId := ObjId.ofNat 99
   -- TCB is blockedOnSend → the function clears IPC fields via restoreToReadyCancelled.
-  let tcb : TCB := { mkTcb 5 with ipcState := .blockedOnSend epId }
+  let tcb : TCB := ((mkTcb 5).setIpcState (.blockedOnSend epId))
   let st : SystemState := { (default : SystemState) with
     objects := (default : SystemState).objects.insert tid.toObjId (.tcb tcb) }
   let viaWrapper : SystemState := SeLe4n.Kernel.Lifecycle.Suspend.cancelIpcBlockingValid st vtid tcb
@@ -679,8 +679,7 @@ def an10_e_returnDonatedSchedContextValid_reduces : IO Bool := do
   -- arm must be a *waiting donor* — `.unbound` and `.blockedOnReply`.  A plain
   -- TCB here is a state the kernel refuses, which would make the two arms differ
   -- for the wrong reason and say nothing about the wrapper.
-  let outerTcb : TCB := { mkTcb 3 with
-                            ipcState := .blockedOnReply (ObjId.ofNat 200) (some originalOwnerTid) }
+  let outerTcb : TCB := ((mkTcb 3).setIpcState (.blockedOnReply (ObjId.ofNat 200) (some originalOwnerTid)))
   let stPop : SystemState := { (default : SystemState) with
     objects := ((default : SystemState).objects
       |>.insert scId.toObjId (.schedContext sc)

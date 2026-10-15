@@ -126,7 +126,7 @@ theorem enqueueRunnableOnCore_preserves_projection
       (projectObjects_of_objectsAgreeOffRunLinks ctx observer
         (enqueueRunnableOnCore_objectsAgree_marked st c tid tcb hTcb hF)).trans
         (projectObjects_insert_high ctx observer st _ tid
-          (.tcb { tcb with ipcState := .ready }) rfl hHighObj hObjInv)
+          (.tcb (tcb.setIpcState .ready)) rfl hHighObj hObjInv)
     have hObj2 : ∀ S, projectObjects ctx observer
         { st with objects := (enqueueRunnableOnCore st c tid).objects, scheduler := S }
         = projectObjects ctx observer st := fun _ => hObj

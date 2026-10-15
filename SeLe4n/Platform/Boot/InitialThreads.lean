@@ -217,7 +217,7 @@ theorem startInitialThreadOnCore_replyLinkCodes (st : SystemState)
     · exact hU j
     · show replyLinkCodes ((SystemState.runEnqueueAdmitted _ _ tid _).replyViews j) = _
       rw [SystemState.runEnqueueAdmitted_replyViews_eq, ← hU j]
-      exact replyLinkCodes_insert_tcb s1 hInv1 (t' := { tcb with ipcState := .ready })
+      exact replyLinkCodes_insert_tcb s1 hInv1 (t' := (tcb.setIpcState .ready))
         ((SystemState.getTcb?_eq_some_iff _ _ _).mp h) rfl j
   · exact hU j
 

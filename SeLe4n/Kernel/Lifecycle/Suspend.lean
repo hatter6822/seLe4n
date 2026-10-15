@@ -1883,7 +1883,7 @@ noncomputable def resumeThread (st : SystemState) (vtid : SeLe4n.ValidThreadId)
             (t', st.rewriteObject tid.toObjId (.tcb t') (SystemState.rewriteAdmissible_tcb h t'))
         | none =>
             let t' : TCB :=
-              { tcb with threadState := .Ready, ipcState := .ready, pipBoost := newPipBoost }
+              (TCB.setIpcState { tcb with threadState := .Ready, pipBoost := newPipBoost } .ready)
             (t', st.withObjectStored tid.toObjId (.tcb t'))
       -- H4: Insert into run queue at effective priority
       let st := ensureRunnable st tid

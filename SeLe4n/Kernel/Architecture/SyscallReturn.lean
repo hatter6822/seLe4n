@@ -1676,6 +1676,20 @@ def ipcStateBlocksReturn : ThreadIpcState → Bool
 @[simp] theorem ipcStateBlocksReturn_ready :
     ipcStateBlocksReturn .ready = false := rfl
 
+/-- `ipcStateBlocksReturn` read straight off a TCB's two IPC-state codes:
+only `.ready` has both codes zero, so the caller blocked exactly when either
+code is nonzero.  The compiled return paths ask this, so the state itself is
+never built to be matched on (WS-ZA ZA4.7). -/
+@[inline] def tcbBlocksReturn (tcb : TCB) : Bool :=
+  tcb.ipcObjectCode != 0 || tcb.ipcStateCode != 0
+
+theorem tcbBlocksReturn_eq (tcb : TCB) :
+    tcbBlocksReturn tcb = ipcStateBlocksReturn tcb.ipcState := by
+  unfold tcbBlocksReturn TCB.ipcState
+  generalize tcb.ipcObjectCode = o
+  generalize tcb.ipcStateCode = c
+  rcases c with _ | _ | _ | _ | c <;> rcases o with _ | o <;> rfl
+
 /-- §3.3's shape-driven boundary read: a `.unit` syscall's frame is
 **constructed**, never read from the staged registers — reading them back
 would return the caller's own staged arguments, which is the §1.2 defect.

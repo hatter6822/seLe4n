@@ -216,7 +216,7 @@ def rpi5ProductionAdapterProofHooks :
       have hTimeSlice : tcb.timeSlice > 0 := by
         have h := hStable.1.1.1.2; simp at h; exact h
       have hIpcReady : tcb.ipcState = .ready := by
-        have h := hStable.1.1.2; exact eq_of_beq h
+        have h := hStable.1.1.2; exact eq_of_beq (by simpa using h)
       have hDeadline : tcb.deadline.toNat = 0 := by
         have h := hStable.1.2; exact eq_of_beq h
       have hBudgetPost : currentBudgetPositive (contextSwitchState newTid newRegs st) :=

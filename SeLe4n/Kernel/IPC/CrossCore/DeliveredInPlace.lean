@@ -156,7 +156,7 @@ theorem modifyObject_msg (r : SeLe4n.ThreadId) (ρ : SeLe4n.RegisterFile → SeL
 
 /-- The receiver a call or a reply wakes, ready, with no message held. -/
 @[inline] def receiverReady (t : TCB) : TCB :=
-  { t with ipcState := .ready, pendingMessage := none }
+  (TCB.setIpcState { t with pendingMessage := none } .ready)
 
 theorem holdMessage_receiverReady (msg : IpcMessage) :
     holdMessage msg ∘ receiverReady = callReceiverTcb msg := rfl
@@ -544,10 +544,10 @@ theorem wakeThread_msg (r : SeLe4n.ThreadId) (ρ : SeLe4n.RegisterFile → SeLe4
 
 /-- The receiver a send wakes, ready, holding no message and no stashed reply. -/
 @[inline] def receiveReadyTcb (t : TCB) : TCB :=
-  { t with ipcState := .ready, pendingMessage := none, pendingReceiveReply := none }
+  (TCB.setIpcState { t with pendingMessage := none, pendingReceiveReply := none } .ready)
 
 /-- The receiver made ready, its message slots as they were. -/
-@[inline] def ipcReadyTcb (t : TCB) : TCB := { t with ipcState := .ready }
+@[inline] def ipcReadyTcb (t : TCB) : TCB := (t.setIpcState .ready)
 
 /-- A message delivered with the receiver's stashed reply dropped: the
 specification's receive completion past the ready state. -/

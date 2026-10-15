@@ -127,7 +127,7 @@ def registerContextStableCheck (_st st' : SystemState) : Bool :=
       (tcb.timeSlice > 0) &&
       -- IPC readiness (AG7-D): enables derivation of currentNotEndpointQueueHead
       -- and currentNotOnNotificationWaitList from pre-state IPC invariants
-      (tcb.ipcState == .ready) &&
+      (decide (tcb.ipcState = .ready)) &&
       -- EDF compatibility: zero deadline trivially satisfies earliest-deadline
       -- ordering (AG7-D)
       (tcb.deadline.toNat == 0) &&
@@ -401,7 +401,7 @@ theorem registerContextStableCheck_ipcReady
   unfold registerContextStableCheck SystemState.getTcb? at hStable
   simp only [hCur, hObj, Bool.and_eq_true] at hStable
   have h := hStable.1.1.2
-  exact beq_iff_eq.mp h
+  exact beq_iff_eq.mp (by simpa using h)
 
 /-- AN7-C: EDF compatibility conjunct — the dispatched TCB's deadline is
     zero (trivially earliest among any EDF ordering). -/

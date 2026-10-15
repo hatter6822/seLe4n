@@ -3106,7 +3106,7 @@ private def probeLabelingWithMemory : LabelingContext :=
 
 private def mkTcb (tid : Nat) (prio : Nat) (aff : Option CoreId) : TCB :=
   { tid := ⟨tid⟩, priority := ⟨prio⟩, domain := ⟨0⟩, cspaceRoot := cnRoot,
-    vspaceRoot := vsRoot, ipcBuffer := SeLe4n.VAddr.ofNat 4096, ipcState := .ready,
+    vspaceRoot := vsRoot, ipcBuffer := SeLe4n.VAddr.ofNat 4096,
     cpuAffinity := aff }
 
 private def mkServiceEntry (sid : ServiceId) (backing : SeLe4n.ObjId) : ServiceGraphEntry :=
@@ -4330,13 +4330,11 @@ private def rendezvousState : SystemState :=
   { crossCoreState with
       objects :=
         ((crossCoreState.objects.insert crossCoreReceiver.toObjId
-            (.tcb { mkTcb 1020 40 (some c2) with
-                      ipcState := .blockedOnReceive crossCoreEndpoint })).insert
+            (.tcb ((mkTcb 1020 40 (some c2)).setIpcState (.blockedOnReceive crossCoreEndpoint)))).insert
           crossCoreEndpoint
             (.endpoint (Endpoint.ofQueues {} { head := some crossCoreReceiver, tail := some crossCoreReceiver }))).insert
           crossCoreWaiter.toObjId
-            (.tcb { mkTcb 1021 40 (some c2) with
-                      ipcState := .blockedOnNotification highNotification }) }
+            (.tcb ((mkTcb 1021 40 (some c2)).setIpcState (.blockedOnNotification highNotification))) }
 
 /-- The same state with a **waiter** parked on the high notification, so the
 notification write set computes its non-degenerate branch too. -/
@@ -4459,7 +4457,7 @@ private def runVisibleRemoteWakeChecks : IO Unit := do
 homed on core 2 — the teardown really has queue work to do here, so the
 per-core-silence of the teardown is exercised rather than assumed. -/
 private def cancelledVictimTcb : TCB :=
-  { mkTcb 1021 40 (some c2) with ipcState := .blockedOnNotification highNotification }
+  ((mkTcb 1021 40 (some c2)).setIpcState (.blockedOnNotification highNotification))
 
 private def cancelPost : SystemState :=
   (SeLe4n.Kernel.cancelIpcBlockingOnCore crossCoreWaiter cancelledVictimTcb c0
@@ -4501,14 +4499,15 @@ private def blockedSenderState : SystemState :=
   { crossCoreState with
       objects :=
         (crossCoreState.objects.insert crossCoreSender.toObjId
-            (.tcb { mkTcb 1022 40 (some c2) with
-                      ipcState := .blockedOnSend crossCoreEndpoint
+            (.tcb (TCB.setIpcState
+                    { mkTcb 1022 40 (some c2) with
                       -- PR #873 round 11: a thread parked to deliver carries what
                       -- it delivers (`blockedThreadsPendingMessageConsistent`), and
                       -- the dequeue refuses a head that does not -- so a fixture
                       -- without this models a state the kernel cannot reach.
                       pendingMessage := some { registers := #[], caps := #[],
-                                               badge := none } })).insert
+                                               badge := none } }
+                    (.blockedOnSend crossCoreEndpoint)))).insert
           crossCoreEndpoint
             (.endpoint (Endpoint.ofQueues { head := some crossCoreSender, tail := some crossCoreSender } {})) }
 
@@ -4530,11 +4529,10 @@ private def boundNotificationState : SystemState :=
         -- the whole group would be checking an inert transition.  The
         -- non-inertness assertion below is what caught its absence.
         ((crossCoreState.objects.insert boundTcbThread.toObjId
-            (.tcb { mkTcb 1023 40 (some c2) with
-                      ipcState := .blockedOnReceive crossCoreEndpoint
+            (.tcb (TCB.setIpcState { mkTcb 1023 40 (some c2) with
                       queuePrevCode := 0
                       queuePPrevCode := 1
-                      queueNextCode := 0 })).insert
+                      queueNextCode := 0 } (.blockedOnReceive crossCoreEndpoint)))).insert
           crossCoreEndpoint
             (.endpoint (Endpoint.ofQueues {} { head := some boundTcbThread, tail := some boundTcbThread }))).insert
           highNotification
@@ -4556,9 +4554,8 @@ private def replyBlockedCaller : SeLe4n.ThreadId := ⟨1024⟩
 private def replyRecvState : SystemState :=
   { blockedSenderState with
       objects := blockedSenderState.objects.insert replyBlockedCaller.toObjId
-        (.tcb { mkTcb 1024 40 (some c3) with
-                  ipcState := .blockedOnReply crossCoreEndpoint (some remoteHomedThread)
-                  replyObject := none }) }
+        (.tcb (TCB.setIpcState { mkTcb 1024 40 (some c3) with
+                  replyObject := none } (.blockedOnReply crossCoreEndpoint (some remoteHomedThread)))) }
 
 private def replyRecvMsg : IpcMessage :=
   { registers := #[], caps := #[], badge := none }
@@ -7740,9 +7737,9 @@ donation members followed the transition's own guard, the fixture could leave it
 still fired.  Parking it properly is what makes each of them decided by the
 `schedContextBinding` alone, which is what each one claims to be about. -/
 private def ipcSenderTcb : TCB :=
-  { mkTcb 1044 40 (some c0) with
-      pendingMessage := some ipcCapsMessage,
-      ipcState := .blockedOnCall lowEndpoint }
+  (TCB.setIpcState { mkTcb 1044 40 (some c0) with
+      pendingMessage := some ipcCapsMessage
+      } (.blockedOnCall lowEndpoint))
 
 private def ipcFootprintState : SystemState :=
   { niState with
@@ -7769,10 +7766,9 @@ capless message.  This is the arm OD3.6 exists for — it writes
 `SystemState.scThreadIndex` and installs no capability, so a state-level member
 conditioned on `installsCaps` alone would be absent exactly here. -/
 private def ipcDonatingCaplessSenderTcb : TCB :=
-  { mkTcb 1044 40 (some c0) with
+  (TCB.setIpcState { mkTcb 1044 40 (some c0) with
       pendingMessage := some ipcCaplessMessage,
-      ipcState := .blockedOnCall lowEndpoint,
-      schedContextBinding := .bound ipcDonatedScId }
+      schedContextBinding := .bound ipcDonatedScId } (.blockedOnCall lowEndpoint))
 
 /-- The fixture with a donating, caps-carrying rendezvous sender. -/
 private def ipcDonatingFootprintState : SystemState :=
@@ -7792,9 +7788,9 @@ private def ipcInertFootprintState : SystemState :=
   { ipcFootprintState with
       objects :=
         ipcFootprintState.objects.insert ipcSender.toObjId
-          (.tcb { mkTcb 1044 40 (some c0) with
-                    pendingMessage := some ipcCaplessMessage,
-                    ipcState := .blockedOnCall lowEndpoint }) }
+          (.tcb (TCB.setIpcState { mkTcb 1044 40 (some c0) with
+                    pendingMessage := some ipcCaplessMessage
+                    } (.blockedOnCall lowEndpoint))) }
 
 /-- The operands a live `.send` supplies: the endpoint its capability names and
 the message it built. -/
@@ -11918,23 +11914,21 @@ private def abortNeighbourTid : SeLe4n.ThreadId := ⟨1202⟩
 queue.  That is the shape `abortHolderPendingIpc` aborts — a thread the reclaim
 found holding a donated reservation while it is itself waiting to be received. -/
 private def abortHolderTcb : TCB :=
-  { mkTcb 1201 40 none with
-      ipcState := .blockedOnCall abortEp
+  (TCB.setIpcState { mkTcb 1201 40 none with
       threadState := .BlockedCall
       queuePrevCode := 0
       queuePPrevCode := 1
-      queueNextCode := SeLe4n.ThreadId.optCode (some abortNeighbourTid) }
+      queueNextCode := SeLe4n.ThreadId.optCode (some abortNeighbourTid) } (.blockedOnCall abortEp))
 
 /-- The thread queued **behind** it — the one the removal's successor patch
 rewrites, and the one whose label no fact of this tree constrains against the
 holder's. -/
 private def abortNeighbourTcb : TCB :=
-  { mkTcb 1202 40 none with
-      ipcState := .blockedOnSend abortEp
+  (TCB.setIpcState { mkTcb 1202 40 none with
       threadState := .BlockedSend
       queuePrevCode := SeLe4n.ThreadId.optCode (some abortHolderTid)
       queuePPrevCode := QueuePPrev.optCode (some (.tcbNext abortHolderTid))
-      queueNextCode := 0 }
+      queueNextCode := 0 } (.blockedOnSend abortEp))
 
 private def abortState : SystemState :=
   (BootstrapBuilder.empty

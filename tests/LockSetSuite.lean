@@ -1527,8 +1527,8 @@ private def runQueueOwnerFootprintChecks : IO Unit := do
     { tid := ThreadId.ofNat 3, priority := ⟨10⟩, domain := ⟨0⟩,
       cspaceRoot := ObjId.ofNat 0, vspaceRoot := ObjId.ofNat 0,
       ipcBuffer := SeLe4n.VAddr.ofNat 0 }
-  let blockedTcb : TCB := { baseTcb with ipcState := .blockedOnSend (ObjId.ofNat 20) }
-  let readyTcb : TCB := { baseTcb with ipcState := .ready }
+  let blockedTcb : TCB := (baseTcb.setIpcState (.blockedOnSend (ObjId.ofNat 20)))
+  let readyTcb : TCB := (baseTcb.setIpcState .ready)
   assertBool "queueOwnerOf? reads the owner off a blocked thread's ipcState"
     (decide (queueOwnerOf? blockedTcb = some (.endpoint (ObjId.ofNat 20))))
   assertBool "NEGATIVE: a ready thread is in no object-owned queue"

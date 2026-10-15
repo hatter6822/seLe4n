@@ -128,7 +128,7 @@ theorem enqueueRunnableOnCore_boundThread (st : SystemState) (c : CoreId)
       -- write no SchedContext lookup sees.
       have hRaw := (SystemState.getTcb?_eq_some_iff st tid0 tcb).mp hTcb
       rw [(enqueueRunnableOnCore_objectsAgree_marked st c tid0 tcb hTcb hR).getSchedContext? scId,
-        getSchedContext?_insert_tcb_eq st _ tid0 tcb { tcb with ipcState := .ready }
+        getSchedContext?_insert_tcb_eq st _ tid0 tcb (tcb.setIpcState .ready)
           hInv hRaw rfl scId]
 
 /-- WS-SM SM5.I: `refillSchedContext` (a budget/replenishment SchedContext write)

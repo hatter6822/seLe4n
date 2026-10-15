@@ -315,10 +315,10 @@ theorem enqueueRunnableOnCore_makes_ready (st : SystemState) (c : CoreId)
     (hTcb : st.getTcb? tid = some tcb) (hInv : st.objects.invExt)
     (hFresh : wakeDeclines st c tid = false) :
     ∃ t', (enqueueRunnableOnCore st c tid).getTcb? tid = some t' ∧
-      t'.withoutRunLinks = ({ tcb with ipcState := .ready } : TCB).withoutRunLinks := by
+      t'.withoutRunLinks = ((tcb.setIpcState .ready) : TCB).withoutRunLinks := by
   have hM : ({ st with objects := (st.objects.insert tid.toObjId
-      (.tcb { tcb with ipcState := .ready })) } : SystemState).getTcb? tid
-        = some { tcb with ipcState := .ready } := by
+      (.tcb (tcb.setIpcState .ready))) } : SystemState).getTcb? tid
+        = some (tcb.setIpcState .ready) := by
     simp only [SystemState.getTcb?_eq_some_iff, RHTable_getElem?_eq_get?]
     exact RHTable_get?_insert_self st.objects tid.toObjId _ hInv
   have h := (enqueueRunnableOnCore_objectsAgree_marked st c tid tcb hTcb hFresh).getTcb? tid
@@ -574,7 +574,7 @@ theorem enqueueRunnableOnCore_objectsAgreeOffRunLinks_of_ready
     (hInv : st.objects.invExt) :
     (enqueueRunnableOnCore st c tid).objectsAgreeOffRunLinks st := by
   have hObjTcb := (SystemState.getTcb?_eq_some_iff st tid tcb).mp hTcb
-  have hVal : (KernelObject.tcb { tcb with ipcState := .ready }) = .tcb tcb := by rw [← hReady]
+  have hVal : (KernelObject.tcb (tcb.setIpcState .ready)) = .tcb tcb := by rw [← hReady, TCB.setIpcState_ipcState]
   unfold enqueueRunnableOnCore
   simp only [SystemState.getTcbWitnessed?_eq_some hTcb]
   split
@@ -582,7 +582,7 @@ theorem enqueueRunnableOnCore_objectsAgreeOffRunLinks_of_ready
   · refine SystemState.objectsAgreeOffRunLinks.congr rfl rfl
       ((SystemState.runEnqueueAdmitted_objectsAgreeOffRunLinks _ c tid _).trans
         (.of_getElem_eq fun oid => ?_))
-    show (st.objects.insert tid.toObjId (.tcb { tcb with ipcState := .ready }))[oid]?
+    show (st.objects.insert tid.toObjId (.tcb (tcb.setIpcState .ready)))[oid]?
         = st.objects[oid]?
     rw [hVal]
     by_cases hEq : oid = tid.toObjId

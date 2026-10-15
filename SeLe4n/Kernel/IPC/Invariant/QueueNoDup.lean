@@ -168,7 +168,7 @@ theorem storeTcbIpcStateAndMessage_preserves_endpointQueueNoDup
   | none => simp [hLookup] at hStore
   | some tcb =>
     simp only [hLookup] at hStore
-    cases hSt : storeObject tid.toObjId (.tcb { tcb with ipcState := ipcState, pendingMessage := msg }) st with
+    cases hSt : storeObject tid.toObjId (.tcb (TCB.setIpcState { tcb with pendingMessage := msg } ipcState)) st with
     | error e => simp [hSt] at hStore
     | ok pair =>
       simp only [hSt, Except.ok.injEq] at hStore; subst hStore
@@ -206,7 +206,7 @@ theorem storeTcbReceiveComplete_preserves_endpointQueueNoDup
   | none => simp [hLookup] at hStore
   | some tcb =>
     simp only [hLookup] at hStore
-    cases hSt : storeObject tid.toObjId (.tcb { tcb with ipcState := .ready, pendingMessage := msg, pendingReceiveReply := none }) st with
+    cases hSt : storeObject tid.toObjId (.tcb (TCB.setIpcState { tcb with pendingMessage := msg, pendingReceiveReply := none } .ready)) st with
     | error e => simp [hSt] at hStore
     | ok pair =>
       simp only [hSt, Except.ok.injEq] at hStore; subst hStore
@@ -251,7 +251,7 @@ theorem storeTcbIpcState_preserves_endpointQueueNoDup
   | none => simp [hLookup] at hStore
   | some tcb =>
     simp only [hLookup] at hStore
-    cases hSt : storeObject tid.toObjId (.tcb { tcb with ipcState := ipcState }) st with
+    cases hSt : storeObject tid.toObjId (.tcb (tcb.setIpcState ipcState)) st with
     | error e => simp [hSt] at hStore
     | ok pair =>
       simp only [hSt, Except.ok.injEq] at hStore

@@ -897,7 +897,7 @@ theorem storeTcbIpcState_preserves_dualQueueSystemInvariant
   | none => simp [hLookup] at hStep
   | some tcb =>
       simp only [hLookup] at hStep
-      cases hStore : storeObject tid.toObjId (.tcb { tcb with ipcState := ipc }) st with
+      cases hStore : storeObject tid.toObjId (.tcb (tcb.setIpcState ipc)) st with
       | error e => simp [hStore] at hStep
       | ok pair =>
           simp only [hStore] at hStep; have := Except.ok.inj hStep; subst this
@@ -911,13 +911,13 @@ theorem storeTcbIpcState_preserves_dualQueueSystemInvariant
                 | tcb t => simp only [h, Option.some.injEq] at hLookup; cases hLookup; rfl
                 | endpoint _ | cnode _ | vspaceRoot _ | notification _ | untyped _ | schedContext _ | reply _ | frame _ | pageTable _ =>
                     simp [h] at hLookup
-          have hPrev : ({ tcb with ipcState := ipc } : TCB).queuePrev = tcb.queuePrev := rfl
-          have hNext : ({ tcb with ipcState := ipc } : TCB).queueNext = tcb.queueNext := rfl
-          have hPPrev : ({ tcb with ipcState := ipc } : TCB).queuePPrev = tcb.queuePPrev := rfl
+          have hPrev : ((tcb.setIpcState ipc) : TCB).queuePrev = tcb.queuePrev := rfl
+          have hNext : ((tcb.setIpcState ipc) : TCB).queueNext = tcb.queueNext := rfl
+          have hPPrev : ((tcb.setIpcState ipc) : TCB).queuePPrev = tcb.queuePPrev := rfl
           refine ⟨?_, storeObject_tcb_preserves_tcbQueueLinkIntegrity st pair.2
-                       tid.toObjId tcb { tcb with ipcState := ipc } hPrev hNext hTcbPre hObjInv hStore hLink,
+                       tid.toObjId tcb (tcb.setIpcState ipc) hPrev hNext hTcbPre hObjInv hStore hLink,
                  storeObject_tcb_preserves_tcbQueueChainAcyclic st pair.2
-                       tid.toObjId tcb { tcb with ipcState := ipc } hNext hTcbPre hObjInv hStore hAcyclic,
+                       tid.toObjId tcb (tcb.setIpcState ipc) hNext hTcbPre hObjInv hStore hAcyclic,
                        storeObject_tcb_preserves_queuePPrevAgreesWithPrev st pair.2 _ _
                              (TCB.queuePPrevAgreesWithPrev_of_pairEq hPrev hPPrev (hPP _ tcb hTcbPre))
                              hObjInv hStore hPP,
@@ -992,7 +992,7 @@ theorem storeTcbIpcStateAndMessage_preserves_dualQueueSystemInvariant
   | some tcb =>
       simp only [hLookup] at hStep
       cases hStore : storeObject tid.toObjId
-        (.tcb { tcb with ipcState := ipc, pendingMessage := msg }) st with
+        (.tcb (TCB.setIpcState { tcb with pendingMessage := msg } ipc)) st with
       | error e => simp [hStore] at hStep
       | ok pair =>
           simp only [hStore] at hStep; have := Except.ok.inj hStep; subst this
@@ -1005,9 +1005,9 @@ theorem storeTcbIpcStateAndMessage_preserves_dualQueueSystemInvariant
                 | tcb t => simp only [h, Option.some.injEq] at hLookup; cases hLookup; rfl
                 | endpoint _ | cnode _ | vspaceRoot _ | notification _ | untyped _ | schedContext _ | reply _ | frame _ | pageTable _ =>
                     simp [h] at hLookup
-          have hPrev : ({ tcb with ipcState := ipc, pendingMessage := msg } : TCB).queuePrev = tcb.queuePrev := rfl
-          have hNext : ({ tcb with ipcState := ipc, pendingMessage := msg } : TCB).queueNext = tcb.queueNext := rfl
-          have hPPrev : ({ tcb with ipcState := ipc, pendingMessage := msg } : TCB).queuePPrev = tcb.queuePPrev := rfl
+          have hPrev : ((TCB.setIpcState { tcb with pendingMessage := msg } ipc) : TCB).queuePrev = tcb.queuePrev := rfl
+          have hNext : ((TCB.setIpcState { tcb with pendingMessage := msg } ipc) : TCB).queueNext = tcb.queueNext := rfl
+          have hPPrev : ((TCB.setIpcState { tcb with pendingMessage := msg } ipc) : TCB).queuePPrev = tcb.queuePPrev := rfl
           refine ⟨?_, storeObject_tcb_preserves_tcbQueueLinkIntegrity st pair.2
                        tid.toObjId tcb _ hPrev hNext hTcbPre hObjInv hStore hLink,
                  storeObject_tcb_preserves_tcbQueueChainAcyclic st pair.2
@@ -1048,7 +1048,7 @@ theorem storeTcbReceiveComplete_preserves_dualQueueSystemInvariant
   | some tcb =>
       simp only [hLookup] at hStep
       cases hStore : storeObject tid.toObjId
-        (.tcb { tcb with ipcState := .ready, pendingMessage := msg, pendingReceiveReply := none }) st with
+        (.tcb (TCB.setIpcState { tcb with pendingMessage := msg, pendingReceiveReply := none } .ready)) st with
       | error e => simp [hStore] at hStep
       | ok pair =>
           simp only [hStore] at hStep; have := Except.ok.inj hStep; subst this
@@ -1061,9 +1061,9 @@ theorem storeTcbReceiveComplete_preserves_dualQueueSystemInvariant
                 | tcb t => simp only [h, Option.some.injEq] at hLookup; cases hLookup; rfl
                 | endpoint _ | cnode _ | vspaceRoot _ | notification _ | untyped _ | schedContext _ | reply _ | frame _ | pageTable _ =>
                     simp [h] at hLookup
-          have hPrev : ({ tcb with ipcState := .ready, pendingMessage := msg, pendingReceiveReply := none } : TCB).queuePrev = tcb.queuePrev := rfl
-          have hNext : ({ tcb with ipcState := .ready, pendingMessage := msg, pendingReceiveReply := none } : TCB).queueNext = tcb.queueNext := rfl
-          have hPPrev : ({ tcb with ipcState := .ready, pendingMessage := msg, pendingReceiveReply := none } : TCB).queuePPrev = tcb.queuePPrev := rfl
+          have hPrev : ((TCB.setIpcState { tcb with pendingMessage := msg, pendingReceiveReply := none } .ready) : TCB).queuePrev = tcb.queuePrev := rfl
+          have hNext : ((TCB.setIpcState { tcb with pendingMessage := msg, pendingReceiveReply := none } .ready) : TCB).queueNext = tcb.queueNext := rfl
+          have hPPrev : ((TCB.setIpcState { tcb with pendingMessage := msg, pendingReceiveReply := none } .ready) : TCB).queuePPrev = tcb.queuePPrev := rfl
           refine ⟨?_, storeObject_tcb_preserves_tcbQueueLinkIntegrity st pair.2
                        tid.toObjId tcb _ hPrev hNext hTcbPre hObjInv hStore hLink,
                  storeObject_tcb_preserves_tcbQueueChainAcyclic st pair.2

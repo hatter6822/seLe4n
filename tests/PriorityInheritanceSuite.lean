@@ -30,10 +30,11 @@ private def mkTcb (tid : Nat) (prio : Nat := 10)
     (ipcState : ThreadIpcState := .ready)
     (state : ThreadState := .Ready)
     (pipBoost : Option SeLe4n.Priority := none) : TCB :=
-  { tid := ⟨tid⟩, priority := ⟨prio⟩, domain := ⟨0⟩,
-    cspaceRoot := ⟨0⟩, vspaceRoot := ⟨0⟩, ipcBuffer := (SeLe4n.VAddr.ofNat 0),
-    ipcState := ipcState, threadState := state,
-    pipBoost := pipBoost }
+  TCB.setIpcState
+    { tid := ⟨tid⟩, priority := ⟨prio⟩, domain := ⟨0⟩,
+      cspaceRoot := ⟨0⟩, vspaceRoot := ⟨0⟩, ipcBuffer := (SeLe4n.VAddr.ofNat 0),
+      threadState := state,
+      pipBoost := pipBoost } ipcState
 
 private def mkState (objs : List (ObjId × KernelObject))
     (current : Option SeLe4n.ThreadId := none)

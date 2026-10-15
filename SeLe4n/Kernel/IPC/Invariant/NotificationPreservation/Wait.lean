@@ -347,7 +347,7 @@ theorem storeTcbIpcStateAndMessage_preserves_notificationWaiterConsistent
   unfold storeTcbIpcStateAndMessage at hStep
   obtain ⟨tcb, _, hT0, hT1, hO⟩ := modifyTcb_objects hObjInv hStep
   exact notificationWaiterConsistent_of_unblocked_tcb_write hConsist
-    ⟨tcb, hT0, hPre tcb hT0⟩ ⟨_, hT1, hIpc⟩
+    ⟨tcb, hT0, hPre tcb hT0⟩ ⟨_, hT1, (by simpa using hIpc)⟩
     (fun _ _ h0 h1 => by rw [hT0] at h0; cases h0; rw [hT1] at h1; cases h1; exact ⟨rfl, rfl⟩) hO
 
 /-- `notificationSignal` keeps the queues consistent: the wake pops the head
@@ -646,7 +646,7 @@ theorem notificationWaitPark_preserves_blockedThreadsPendingMessageConsistent
                 have hSelf := storeObject_objects_eq st1 pair waiter.toObjId _ hObjInv1 hSO2
                 rw [hTidEq] at hObj'; rw [hSelf] at hObj'
                 simp only [Option.some.injEq, KernelObject.tcb.injEq] at hObj'; subst hObj'
-                dsimp only []
+                simp only [TCB.ipcState_setIpcState]
               · -- Different thread: frame
                 have hFrame := storeObject_objects_ne st1 pair waiter.toObjId tid'.toObjId
                   _ hTidEq hObjInv1 hSO2

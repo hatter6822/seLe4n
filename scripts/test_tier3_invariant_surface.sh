@@ -393,7 +393,7 @@ run_check "INVARIANT" rg -n '^\s*schedulerInvariantBundle st ∧ capabilityInvar
 # WS-H12a: waitingReceiver removed from Endpoint (dual-queue uses sendQ/receiveQ).
 # WS-H12a: endpointQueueWellFormed/endpointObjectValid removed (subsumed by dualQueueSystemInvariant).
 run_check "INVARIANT" rg -n '^inductive ThreadIpcState($|[ ({:\[\]])' SeLe4n/Model/Object/Types.lean
-run_check "INVARIANT" rg -n '^\s*ipcState\s*:\s*ThreadIpcState' SeLe4n/Model/Object/Types.lean
+run_check "INVARIANT" rg -n '^@\[reducible, inline\] def TCB\.ipcState \(t : TCB\) : ThreadIpcState :=' SeLe4n/Model/Object/Types.lean
 # WS-ZA ZA4.7: the endpoint stores its queue ends as codes; the two queues are
 # derived views of the old type.
 run_check "INVARIANT" rg -n '^@\[inline\] def Endpoint\.sendQ \(e : Endpoint\) : IntrusiveQueue :=' SeLe4n/Model/Object/Types.lean
@@ -3087,7 +3087,7 @@ run_negative_check "INVARIANT" bash -lc 'rg -U -n "^def saveOutgoingContextOnCor
 # `enqueueRunnableOnCore` writes the woken TCB through `rewriteObject` under the
 # witnessed lookup; the scheduler write beside it is unchanged.
 run_check "INVARIANT" bash -lc 'rg -U -n "^def enqueueRunnableOnCore \(st : SystemState\)[^\n]*(\n([ \t][^\n]*)?)*match st\.getTcbWitnessed\? tid with" SeLe4n/Kernel/Scheduler/Operations/Selection.lean'
-run_check "INVARIANT" bash -lc 'rg -U -n "^def enqueueRunnableOnCore \(st : SystemState\)[^\n]*(\n([ \t][^\n]*)?)*st\.rewriteObject tid\.toObjId \(\.tcb \{ tcb with ipcState := \.ready \}\)" SeLe4n/Kernel/Scheduler/Operations/Selection.lean'
+run_check "INVARIANT" bash -lc 'rg -U -n "^def enqueueRunnableOnCore \(st : SystemState\)[^\n]*(\n([ \t][^\n]*)?)*st\.rewriteObject tid\.toObjId \(\.tcb \(tcb\.setIpcState \.ready\)\)" SeLe4n/Kernel/Scheduler/Operations/Selection.lean'
 run_negative_check "INVARIANT" bash -lc 'rg -U -n "^def enqueueRunnableOnCore \(st : SystemState\)[^\n]*(\n([ \t][^\n]*)?)*objects\.insert" SeLe4n/Kernel/Scheduler/Operations/Selection.lean'
 # The single-thread PIP boost update is `updatePipBoostOnCore`, and
 # `updatePipBoost` is its boot-core INSTANCE -- the body is exactly that call,
@@ -19860,7 +19860,7 @@ run_check "INVARIANT" bash -lc 'rg -n -U "def getCurrentPriorityChecked[^\n]*(\n
 # five fields.  A frozen mirror carrying its own list is how four of them went
 # missing.
 run_check "INVARIANT" rg -F -n 'def TCB.restoredToReady (tcb : TCB) : TCB :=' SeLe4n/Model/Object/Types.lean
-run_check "INVARIANT" bash -lc 'rg -n -U "^@\[inline\] def TCB.restoredToReady[^\n]*(\n([ \t][^\n]*)?)*" SeLe4n/Model/Object/Types.lean | rg -F "ipcState := .ready"'
+run_check "INVARIANT" bash -lc 'rg -n -U "^@\[inline\] def TCB.restoredToReady[^\n]*(\n([ \t][^\n]*)?)*" SeLe4n/Model/Object/Types.lean | rg -F "} .ready"'
 run_check "INVARIANT" bash -lc 'rg -n -U "^@\[inline\] def TCB.restoredToReady[^\n]*(\n([ \t][^\n]*)?)*" SeLe4n/Model/Object/Types.lean | rg -F "queuePrevCode := 0"'
 run_check "INVARIANT" bash -lc 'rg -n -U "^@\[inline\] def TCB.restoredToReady[^\n]*(\n([ \t][^\n]*)?)*" SeLe4n/Model/Object/Types.lean | rg -F "queueNextCode := 0"'
 run_check "INVARIANT" bash -lc 'rg -n -U "^@\[inline\] def TCB.restoredToReady[^\n]*(\n([ \t][^\n]*)?)*" SeLe4n/Model/Object/Types.lean | rg -F "queuePPrevCode := 0"'
@@ -19871,7 +19871,7 @@ run_check "INVARIANT" bash -lc 'rg -n -U "^@\[inline\] def TCB.restoredToReady[^
 run_check "INVARIANT" bash -lc 'rg -n -U "^def restoreToReadyStaging[^\n]*(\n([ \t][^\n]*)?)*" SeLe4n/Kernel/Lifecycle/Suspend.lean | rg -F ".restoredToReady"'
 run_negative_check "INVARIANT" bash -lc 'rg -n -U "^def restoreToReadyStaging[^\n]*(\n([ \t][^\n]*)?)*" SeLe4n/Kernel/Lifecycle/Suspend.lean | rg -F "pendingReceiveReply := none"'
 run_check "INVARIANT" bash -lc 'rg -n -U "^def frozenResumeThread[^\n]*(\n([ \t][^\n]*)?)*" SeLe4n/Kernel/FrozenOps/Operations.lean | rg -F ".tcb tcb.restoredToReady"'
-run_negative_check "INVARIANT" bash -lc 'rg -n -U "^def frozenResumeThread[^\n]*(\n([ \t][^\n]*)?)*" SeLe4n/Kernel/FrozenOps/Operations.lean | rg -F "ipcState := .ready"'
+run_negative_check "INVARIANT" bash -lc 'rg -n -U "^def frozenResumeThread[^\n]*(\n([ \t][^\n]*)?)*" SeLe4n/Kernel/FrozenOps/Operations.lean | rg -e "setIpcState" -e "ipcObjectCode" -e "ipcStateCode"'
 # (2) THE FROZEN RESUME RE-DERIVES THE BOOST from the blocking graph, on the
 # CLEARED state -- a thread its own `ipcState` recorded as blocked on itself
 # must not count itself, which is why the order is pinned and not just the call.
@@ -20031,7 +20031,7 @@ run_check "INVARIANT" bash -lc 'rg -U -n "let poppedFrom \(st : SystemState\) : 
 # different threads, or the pop's step 4 overwrites its own step 3), with the
 # re-called client `.unbound`, reply-blocked on its NEXT call, its frame on no
 # stack -- which is exactly the shape the proxy refused.
-run_check "INVARIANT" bash -lc 'rg -U -n "let recalledClient : TCB :=[^\n]*(\n([ \t][^\n]*)?)*ipcState := \.blockedOnReply \(SeLe4n\.ObjId\.ofNat 97\) \(some pushServer\)," tests/SmpIpcSuite.lean'
+run_check "INVARIANT" bash -lc 'rg -U -n "let recalledClient : TCB :=[^\n]*(\n([ \t][^\n]*)?)*\(\.blockedOnReply \(SeLe4n\.ObjId\.ofNat 97\) \(some pushServer\)\)" tests/SmpIpcSuite.lean'
 run_check "INVARIANT" rg -F -n '  let stRedirect : SystemState := withFreshFrame (redirectStore recalledClient)' tests/SmpIpcSuite.lean
 # The retired reading lives in the witness that refutes it, and nowhere else --
 # computed beside the live guard so the assertions are known to discriminate.

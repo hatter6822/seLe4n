@@ -82,7 +82,8 @@ theorem restoreToReadyCancelled_replyViews (st : SystemState) (tid : SeLe4n.Thre
     · rename_i hx; subst hx
       rw [replyViews_of_tcb hO]
       simp only [objReplyView_tcb, Option.map_some]
-      simp only [TCB.replyView, TCB.restoredToReady, TCB.withReturnFrame, TCB.blockingServer?]
+      simp only [TCB.replyView, TCB.restoredToReady, TCB.withReturnFrame, TCB.blockingServer?,
+        TCB.ipcState_mk, TCB.ofCodes_ipcCodes, TCB.ipcState_setIpcState, ThreadIpcState.ofCodes_codes]
     · rfl
   · rename_i hN
     have hV : st.replyViews tid.toObjId = none := by

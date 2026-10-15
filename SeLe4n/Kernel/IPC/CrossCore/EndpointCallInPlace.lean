@@ -110,7 +110,7 @@ theorem enqueueRunnableOnCore_agree_of_findsInPlace
     (hF : st.objects.findsInPlace tid.toObjId = true) :
     (enqueueRunnableOnCore st c tid).objectsAgreeOffRunLinks st := by
   have hObjTcb := (SystemState.getTcb?_eq_some_iff st tid tcb).mp hTcb
-  have hVal : (KernelObject.tcb { tcb with ipcState := .ready }) = .tcb tcb := by rw [← hReady]
+  have hVal : (KernelObject.tcb (tcb.setIpcState .ready)) = .tcb tcb := by rw [← hReady, TCB.setIpcState_ipcState]
   unfold enqueueRunnableOnCore
   simp only [SystemState.getTcbWitnessed?_eq_some hTcb]
   split
@@ -118,7 +118,7 @@ theorem enqueueRunnableOnCore_agree_of_findsInPlace
   · refine SystemState.objectsAgreeOffRunLinks.congr rfl rfl
       ((SystemState.runEnqueueAdmitted_objectsAgreeOffRunLinks _ c tid _).trans
         (.of_getElem_eq fun oid => ?_))
-    show (st.objects.insert tid.toObjId (.tcb { tcb with ipcState := .ready }))[oid]?
+    show (st.objects.insert tid.toObjId (.tcb (tcb.setIpcState .ready)))[oid]?
         = st.objects[oid]?
     rw [hVal]
     simp only [RHTable_getElem?_eq_get?]
@@ -364,11 +364,11 @@ receiver from a caller holding a SchedContext. -/
 
 /-- The receiver a call wakes: ready, holding the message. -/
 @[inline] def callReceiverTcb (msg : IpcMessage) (t : TCB) : TCB :=
-  { t with ipcState := .ready, pendingMessage := some msg }
+  (TCB.setIpcState { t with pendingMessage := some msg } .ready)
 
 /-- The caller a call blocks: waiting on the receiver's reply. -/
 @[inline] def callCallerTcb (endpointId : SeLe4n.ObjId) (r : SeLe4n.ThreadId) (t : TCB) : TCB :=
-  { t with ipcState := .blockedOnReply endpointId (some r), pendingMessage := none }
+  (TCB.setIpcState { t with pendingMessage := none } (.blockedOnReply endpointId (some r)))
 
 /-- **The call rendezvous writes only its slots**: the send rendezvous's slots
 (`sendWakesInPlace`), the caller and the reply object each rewritten where they

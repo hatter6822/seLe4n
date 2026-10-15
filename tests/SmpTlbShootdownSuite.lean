@@ -1843,7 +1843,7 @@ private def udState (slots : List (SeLe4n.Slot × Capability)) :
     |>.withObject udCaller.toObjId (.tcb
         { tid := udCaller, priority := ⟨40⟩, domain := ⟨0⟩,
           cspaceRoot := udCn, vspaceRoot := udVsp,
-          ipcBuffer := SeLe4n.VAddr.ofNat 4096, ipcState := .ready })
+          ipcBuffer := SeLe4n.VAddr.ofNat 4096 })
     |>.withRunnable [udCaller]
     |>.build)
 

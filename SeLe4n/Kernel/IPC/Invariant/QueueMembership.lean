@@ -258,7 +258,7 @@ theorem storeTcbIpcStateAndMessage_preserves_ipcStateQueueMembershipConsistent
   | some tcb =>
     simp only [hLookup] at hStore
     cases hSt : storeObject tid.toObjId
-        (.tcb { tcb with ipcState := ipcState, pendingMessage := msg }) st with
+        (.tcb (TCB.setIpcState { tcb with pendingMessage := msg } ipcState)) st with
     | error e => simp [hSt] at hStore
     | ok pair =>
       simp only [hSt, Except.ok.injEq] at hStore; subst hStore
@@ -275,7 +275,7 @@ theorem storeTcbIpcStateAndMessage_preserves_ipcStateQueueMembershipConsistent
         intro tid2 prev prevTcb hPrev hNext
         by_cases hPrevEq : prev.toObjId = tid.toObjId
         · rw [hPrevEq] at hPrev; rw [hTcbObj] at hPrev; cases hPrev
-          exact ⟨{ tcb with ipcState := ipcState, pendingMessage := msg },
+          exact ⟨(TCB.setIpcState { tcb with pendingMessage := msg } ipcState),
             by rw [hPrevEq]; exact hEqAt, hNext⟩
         · exact ⟨prevTcb, by rw [hFrame _ hPrevEq]; exact hPrev, hNext⟩
       intro tid2 tcb2 hTcb2
@@ -353,7 +353,7 @@ theorem storeTcbIpcState_preserves_ipcStateQueueMembershipConsistent
   | none => simp [hLookup] at hStore
   | some tcb =>
     simp only [hLookup] at hStore
-    cases hSt : storeObject tid.toObjId (.tcb { tcb with ipcState := ipcState }) st with
+    cases hSt : storeObject tid.toObjId (.tcb (tcb.setIpcState ipcState)) st with
     | error e => simp [hSt] at hStore
     | ok pair =>
       simp only [hSt, Except.ok.injEq] at hStore; subst hStore
@@ -369,7 +369,7 @@ theorem storeTcbIpcState_preserves_ipcStateQueueMembershipConsistent
         intro tid2 prev prevTcb hPrev hNext
         by_cases hPrevEq : prev.toObjId = tid.toObjId
         · rw [hPrevEq] at hPrev; rw [hTcbObj] at hPrev; cases hPrev
-          exact ⟨{ tcb with ipcState := ipcState },
+          exact ⟨(tcb.setIpcState ipcState),
             by rw [hPrevEq]; exact hEqAt, hNext⟩
         · exact ⟨prevTcb, by rw [hFrame _ hPrevEq]; exact hPrev, hNext⟩
       intro tid2 tcb2 hTcb2
@@ -445,7 +445,7 @@ theorem storeTcbIpcState_general_preserves_ipcStateQueueMembershipConsistent
   | none => simp [hLookup] at hStore
   | some tcb =>
     simp only [hLookup] at hStore
-    cases hSt : storeObject tid.toObjId (.tcb { tcb with ipcState := ipcState }) st with
+    cases hSt : storeObject tid.toObjId (.tcb (tcb.setIpcState ipcState)) st with
     | error e => simp [hSt] at hStore
     | ok pair =>
       simp only [hSt, Except.ok.injEq] at hStore; subst hStore
@@ -461,7 +461,7 @@ theorem storeTcbIpcState_general_preserves_ipcStateQueueMembershipConsistent
         intro tid2 prev prevTcb hPrev hNext
         by_cases hPrevEq : prev.toObjId = tid.toObjId
         · rw [hPrevEq] at hPrev; rw [hTcbObj] at hPrev; cases hPrev
-          exact ⟨{ tcb with ipcState := ipcState },
+          exact ⟨(tcb.setIpcState ipcState),
             by rw [hPrevEq]; exact hEqAt, hNext⟩
         · exact ⟨prevTcb, by rw [hFrame _ hPrevEq]; exact hPrev, hNext⟩
       intro tid2 tcb2 hTcb2
@@ -469,7 +469,7 @@ theorem storeTcbIpcState_general_preserves_ipcStateQueueMembershipConsistent
       · have hTidEq := ThreadId.toObjId_injective tid2 tid hEq; subst hTidEq
         rw [hEqAt] at hTcb2
         simp only [Option.some.injEq, KernelObject.tcb.injEq] at hTcb2; subst hTcb2
-        simp only []
+        simp only [TCB.ipcState_setIpcState]
         match ipcState with
         | .ready => trivial
         | .blockedOnReply _ _ => trivial
@@ -930,7 +930,7 @@ theorem storeTcbIpcStateAndMessage_general_preserves_ipcStateQueueMembershipCons
   | some tcb =>
     simp only [hLookup] at hStore
     cases hSt : storeObject tid.toObjId
-        (.tcb { tcb with ipcState := ipcState, pendingMessage := msg }) st with
+        (.tcb (TCB.setIpcState { tcb with pendingMessage := msg } ipcState)) st with
     | error e => simp [hSt] at hStore
     | ok pair =>
       simp only [hSt, Except.ok.injEq] at hStore; subst hStore
@@ -947,7 +947,7 @@ theorem storeTcbIpcStateAndMessage_general_preserves_ipcStateQueueMembershipCons
         intro tid2 prev prevTcb hPrev hNext
         by_cases hPrevEq : prev.toObjId = tid.toObjId
         · rw [hPrevEq] at hPrev; rw [hTcbObj] at hPrev; cases hPrev
-          exact ⟨{ tcb with ipcState := ipcState, pendingMessage := msg },
+          exact ⟨(TCB.setIpcState { tcb with pendingMessage := msg } ipcState),
             by rw [hPrevEq]; exact hEqAt, hNext⟩
         · exact ⟨prevTcb, by rw [hFrame _ hPrevEq]; exact hPrev, hNext⟩
       intro tid2 tcb2 hTcb2
@@ -957,7 +957,7 @@ theorem storeTcbIpcStateAndMessage_general_preserves_ipcStateQueueMembershipCons
         rw [hEqAt] at hTcb2
         simp only [Option.some.injEq, KernelObject.tcb.injEq] at hTcb2; subst hTcb2
         -- The updated TCB has ipcState = ipcState; case split on ipcState
-        simp only []
+        simp only [TCB.ipcState_setIpcState]
         match ipcState with
         | .ready => trivial
         | .blockedOnReply _ _ => trivial
@@ -1470,7 +1470,7 @@ theorem storeTcbIpcStateAndMessage_partial_preserves_ipcStateQueueMembershipCons
   | some tcb =>
     simp only [hLookup] at hStore
     cases hSt : storeObject tid.toObjId
-        (.tcb { tcb with ipcState := ipcState, pendingMessage := msg }) st with
+        (.tcb (TCB.setIpcState { tcb with pendingMessage := msg } ipcState)) st with
     | error e => simp [hSt] at hStore
     | ok pair =>
       simp only [hSt, Except.ok.injEq] at hStore; subst hStore
@@ -1487,7 +1487,7 @@ theorem storeTcbIpcStateAndMessage_partial_preserves_ipcStateQueueMembershipCons
         intro tid2 prev' prevTcb hPrev hNext
         by_cases hPrevEq : prev'.toObjId = tid.toObjId
         · rw [hPrevEq] at hPrev; rw [hTcbObj] at hPrev; cases hPrev
-          exact ⟨{ tcb with ipcState := ipcState, pendingMessage := msg },
+          exact ⟨(TCB.setIpcState { tcb with pendingMessage := msg } ipcState),
             by rw [hPrevEq]; exact hEqAt, hNext⟩
         · exact ⟨prevTcb, by rw [hFrame _ hPrevEq]; exact hPrev, hNext⟩
       intro tid2 tcb2 hTcb2
@@ -1575,7 +1575,7 @@ theorem storeTcbReceiveComplete_partial_preserves_ipcStateQueueMembershipConsist
   | some tcb =>
     simp only [hLookup] at hStore
     cases hSt : storeObject tid.toObjId
-        (.tcb { tcb with ipcState := .ready, pendingMessage := msg, pendingReceiveReply := none }) st with
+        (.tcb (TCB.setIpcState { tcb with pendingMessage := msg, pendingReceiveReply := none } .ready)) st with
     | error e => simp [hSt] at hStore
     | ok pair =>
       simp only [hSt, Except.ok.injEq] at hStore; subst hStore
@@ -1592,7 +1592,7 @@ theorem storeTcbReceiveComplete_partial_preserves_ipcStateQueueMembershipConsist
         intro tid2 prev' prevTcb hPrev hNext
         by_cases hPrevEq : prev'.toObjId = tid.toObjId
         · rw [hPrevEq] at hPrev; rw [hTcbObj] at hPrev; cases hPrev
-          exact ⟨{ tcb with ipcState := .ready, pendingMessage := msg, pendingReceiveReply := none },
+          exact ⟨(TCB.setIpcState { tcb with pendingMessage := msg, pendingReceiveReply := none } .ready),
             by rw [hPrevEq]; exact hEqAt, hNext⟩
         · exact ⟨prevTcb, by rw [hFrame _ hPrevEq]; exact hPrev, hNext⟩
       intro tid2 tcb2 hTcb2

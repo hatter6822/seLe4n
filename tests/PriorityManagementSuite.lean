@@ -1550,8 +1550,7 @@ private def pipWaiterState (callerTid serverTid waiterTid : SeLe4n.ThreadId)
     (callerTid.toObjId, .tcb (mkTcb callerTid.toNat (prio := 200))),
     (serverTid.toObjId, .tcb { mkTcb serverTid.toNat (prio := 10) with
       pipBoost := some ⟨50⟩, cpuAffinity := some core2 }),
-    (waiterTid.toObjId, .tcb { mkTcb waiterTid.toNat (prio := 50) (binding := waiterBinding) with
-      ipcState := .blockedOnReply ⟨70⟩ (some serverTid) })
+    (waiterTid.toObjId, .tcb ((mkTcb waiterTid.toNat (prio := 50) (binding := waiterBinding)).setIpcState (.blockedOnReply ⟨70⟩ (some serverTid))))
   ] ++ extra)
 
 private def serverBoost (st : SystemState) (serverTid : SeLe4n.ThreadId) :

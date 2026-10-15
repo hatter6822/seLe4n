@@ -243,7 +243,7 @@ private def replyId : SeLe4n.ReplyId := ⟨420⟩
 
 private def mkTcb (tid : Nat) (prio : Nat) (aff : Option CoreId) : TCB :=
   { tid := ⟨tid⟩, priority := ⟨prio⟩, domain := ⟨0⟩, cspaceRoot := cnRoot,
-    vspaceRoot := ⟨310⟩, ipcBuffer := SeLe4n.VAddr.ofNat 4096, ipcState := .ready,
+    vspaceRoot := ⟨310⟩, ipcBuffer := SeLe4n.VAddr.ofNat 4096,
     cpuAffinity := aff }
 
 /-- Endpoint + unbound caller + unbound (local) receiver + core1-bound (remote)
@@ -1224,9 +1224,10 @@ private def runDelegatedReplyRecvFootprintChecks : IO Unit := do
   let rid : SeLe4n.ReplyId := ⟨21⟩
   let mkTcb := fun (t : SeLe4n.ThreadId) (ipc : SeLe4n.Model.ThreadIpcState) =>
     SeLe4n.Model.KernelObject.tcb
+      (TCB.setIpcState
       { tid := t, priority := ⟨10⟩, domain := ⟨0⟩,
         cspaceRoot := SeLe4n.ObjId.ofNat 0, vspaceRoot := SeLe4n.ObjId.ofNat 0,
-        ipcBuffer := SeLe4n.VAddr.ofNat 0, ipcState := ipc }
+        ipcBuffer := SeLe4n.VAddr.ofNat 0 } ipc)
   -- The reply object answers `prevCaller`; `prevCaller` records `replier` as the
   -- server it is blocked on.  That is the ordinary, non-delegated shape.
   let base : SystemState := { (default : SystemState) with

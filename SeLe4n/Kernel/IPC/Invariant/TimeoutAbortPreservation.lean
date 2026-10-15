@@ -39,13 +39,12 @@ theorem abortPendingIpcOnEndpoint_shape
       lookupTcb st1 tid = some tcb1 ∧
       storeObject tid.toObjId
         (.tcb (TCB.withReturnFrame
-          ({ tcb1 with
-             ipcState := .ready
+          ((TCB.setIpcState { tcb1 with
              pendingMessage := none
              timeoutBudget := none
              threadState := .Ready
              timedOut := true
-             pendingReceiveReply := none }) Architecture.timeoutFrame)) st1
+             pendingReceiveReply := none } .ready)) Architecture.timeoutFrame)) st1
         = .ok ((), st') := by
   unfold abortPendingIpcOnEndpoint at hStep
   cases hRem : endpointQueueRemove endpointId isReceiveQ tid st with
@@ -203,10 +202,9 @@ theorem abortPendingIpcOnEndpoint_preserves_ipcInvariantFull
   obtain ⟨hNoHead, hNoTail, hNoIncoming⟩ := hDetached st1 hRem
   -- Step 1 of the two-step reading: the receive-completing store.
   obtain ⟨sRc, hStoreRc⟩ : ∃ s, storeObject tid.toObjId
-      (.tcb ({ tcb1 with
-               ipcState := .ready
+      (.tcb ((TCB.setIpcState { tcb1 with
                pendingMessage := none
-               pendingReceiveReply := none })) st1 = .ok ((), s) := ⟨_, rfl⟩
+               pendingReceiveReply := none } .ready))) st1 = .ok ((), s) := ⟨_, rfl⟩
   have hRc : storeTcbReceiveComplete st1 tid none = .ok sRc := by
     unfold storeTcbReceiveComplete modifyTcb
     rw [hT1]
@@ -224,10 +222,9 @@ theorem abortPendingIpcOnEndpoint_preserves_ipcInvariantFull
       hExcept hRc
   have hIRc : sRc.objects.invExt :=
     storeObject_preserves_objects_invExt st1 sRc tid.toObjId _ hI1 hStoreRc
-  have hRcTcb : sRc.getTcb? tid = some ({ tcb1 with
-      ipcState := .ready
+  have hRcTcb : sRc.getTcb? tid = some ((TCB.setIpcState { tcb1 with
       pendingMessage := none
-      pendingReceiveReply := none }) :=
+      pendingReceiveReply := none } .ready)) :=
     (SystemState.getTcb?_eq_some_iff sRc tid _).mpr
       (storeObject_objects_eq st1 sRc tid.toObjId _ hI1 hStoreRc)
   have hAllNoneRc : allTimeoutBudgetsNone sRc := by
@@ -240,10 +237,9 @@ theorem abortPendingIpcOnEndpoint_preserves_ipcInvariantFull
       exact hAllNone1 t tcbT hT
   -- Step 2: the timeout increment, staged on top.
   obtain ⟨sStage, hStage⟩ : ∃ s, storeObject tid.toObjId
-      (.tcb (timeoutStagedTcb ({ tcb1 with
-              ipcState := .ready
+      (.tcb (timeoutStagedTcb ((TCB.setIpcState { tcb1 with
               pendingMessage := none
-              pendingReceiveReply := none }))) sRc = .ok ((), s) := ⟨_, rfl⟩
+              pendingReceiveReply := none } .ready)))) sRc = .ok ((), s) := ⟨_, rfl⟩
   have hFullStage : ipcInvariantFull sStage :=
     timeoutStaging_preserves_ipcInvariantFull hIRc hRcTcb rfl hAllNoneRc hStage hFullRc
   -- The two-step reading and the operation's single store agree pointwise.

@@ -182,7 +182,7 @@ private def witnessState : SystemState :=
     |>.withObject callerTid.toObjId (.tcb
         { tid := callerTid, priority := ⟨40⟩, domain := ⟨0⟩,
           cspaceRoot := callerCn, vspaceRoot := callerVsp,
-          ipcBuffer := SeLe4n.VAddr.ofNat 4096, ipcState := .ready,
+          ipcBuffer := SeLe4n.VAddr.ofNat 4096,
           threadState := .Running })
     |>.withRunnable [callerTid]
     |>.withCurrent (some callerTid)
@@ -283,12 +283,12 @@ private def twoThreadState : SystemState :=
     |>.withObject callerTid.toObjId (.tcb
         { tid := callerTid, priority := ⟨40⟩, domain := ⟨0⟩,
           cspaceRoot := callerCn, vspaceRoot := callerVsp,
-          ipcBuffer := SeLe4n.VAddr.ofNat 4096, ipcState := .ready,
+          ipcBuffer := SeLe4n.VAddr.ofNat 4096,
           threadState := .Running })
     |>.withObject peerTid.toObjId (.tcb
         { tid := peerTid, priority := ⟨40⟩, domain := ⟨0⟩,
           cspaceRoot := callerCn, vspaceRoot := callerVsp,
-          ipcBuffer := SeLe4n.VAddr.ofNat 8192, ipcState := .ready,
+          ipcBuffer := SeLe4n.VAddr.ofNat 8192,
           threadState := .Running })
     |>.withRunnable [callerTid]
     |>.withCurrent (some callerTid)
@@ -309,16 +309,16 @@ private def replyPendingState : SystemState :=
           hasPendingBadge := false, pendingWord := SeLe4n.Badge.zero, boundTCB := none })
     |>.withObject epId (.endpoint {})
     |>.withObject callerTid.toObjId (.tcb
+        (TCB.setIpcState
         { tid := callerTid, priority := ⟨40⟩, domain := ⟨0⟩,
           cspaceRoot := callerCn, vspaceRoot := callerVsp,
           ipcBuffer := SeLe4n.VAddr.ofNat 4096,
-          ipcState := .blockedOnReply epId (some peerTid),
           threadState := .BlockedReply,
-          replyObject := some replyRid })
+          replyObject := some replyRid } (.blockedOnReply epId (some peerTid))))
     |>.withObject peerTid.toObjId (.tcb
         { tid := peerTid, priority := ⟨40⟩, domain := ⟨0⟩,
           cspaceRoot := callerCn, vspaceRoot := callerVsp,
-          ipcBuffer := SeLe4n.VAddr.ofNat 8192, ipcState := .ready,
+          ipcBuffer := SeLe4n.VAddr.ofNat 8192,
           threadState := .Running })
     |>.withObject replyRid.toObjId (.reply
         { replyId := replyRid, caller := some callerTid })
@@ -677,7 +677,7 @@ private def auditWitnessState : SystemState :=
       |>.withObject callerTid.toObjId (.tcb
           { tid := callerTid, priority := ⟨40⟩, domain := ⟨0⟩,
             cspaceRoot := callerCn, vspaceRoot := callerVsp,
-            ipcBuffer := SeLe4n.VAddr.ofNat 4096, ipcState := .ready,
+            ipcBuffer := SeLe4n.VAddr.ofNat 4096,
             threadState := .Running })
       |>.withRunnable [callerTid]
       |>.withCurrent (some callerTid)
@@ -1384,7 +1384,7 @@ private def runOverflowDeliveryWitnesses : IO Unit := do
   let stW : SystemState :=
     match st0.objects[callerTid.toObjId]? with
     | some (.tcb tcb) =>
-        let tcbW : TCB := { tcb with ipcState := .ready, pendingMessage := some thirteen }
+        let tcbW : TCB := (TCB.setIpcState { tcb with pendingMessage := some thirteen } .ready)
         { st0 with objects := st0.objects.insert callerTid.toObjId (.tcb tcbW) }
     | _ => st0
   let stD := Kernel.Architecture.stageWokenDelivery stW (some callerTid) 0

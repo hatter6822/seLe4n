@@ -1211,7 +1211,7 @@ theorem storeTcbIpcStateAndMessage_fromTcb_determineTargetCore_eq (st st' : Syst
     simp only [Except.ok.injEq] at hStep
     subst hStep
     exact storeObject_tcb_determineTargetCore_eq st st1 tid tcb
-      { tcb with ipcState := ipc, pendingMessage := msg } x hOld rfl hObjInv hStore
+      (TCB.setIpcState { tcb with pendingMessage := msg } ipc) x hOld rfl hObjInv hStore
 
 /-- SM8.B.2: a queue-link store is not a migration. -/
 theorem storeTcbQueueLinks_determineTargetCore_eq (st st' : SystemState)
@@ -1275,13 +1275,13 @@ theorem storeTcbReceiveComplete_determineTargetCore_eq (st st' : SystemState)
   | none => simp [hTcb] at hStep
   | some tcb =>
     simp only [hTcb] at hStep
-    cases hStore : storeObject tid.toObjId (.tcb { tcb with ipcState := .ready, pendingMessage := msg, pendingReceiveReply := none }) st with
+    cases hStore : storeObject tid.toObjId (.tcb (TCB.setIpcState { tcb with pendingMessage := msg, pendingReceiveReply := none } .ready)) st with
     | error e => simp [hStore] at hStep
     | ok pair =>
       simp only [hStore] at hStep
       have hEq := Except.ok.inj hStep; subst hEq
       exact storeObject_tcb_determineTargetCore_eq st pair.2 tid tcb
-        { tcb with ipcState := .ready, pendingMessage := msg, pendingReceiveReply := none } x
+        (TCB.setIpcState { tcb with pendingMessage := msg, pendingReceiveReply := none } .ready) x
         ((SystemState.getTcb?_eq_some_iff st tid tcb).mpr
           (lookupTcb_some_objects st tid tcb hTcb)) rfl hObjInv hStore
 
@@ -1488,7 +1488,7 @@ theorem storeTcbIpcStateAndMessage_determineTargetCore_eq
   | none => simp [hLk] at hStep
   | some tcb =>
     simp only [hLk] at hStep
-    cases hSO : storeObject tid.toObjId (.tcb { tcb with ipcState := ipc, pendingMessage := msg }) st with
+    cases hSO : storeObject tid.toObjId (.tcb (TCB.setIpcState { tcb with pendingMessage := msg } ipc)) st with
     | error e => simp [hSO] at hStep
     | ok pair =>
       simp only [hSO] at hStep
@@ -1841,13 +1841,13 @@ theorem storeTcbIpcStateAndMessage_getSchedContext?_eq
   | some tcb =>
     simp only [hLk] at hStep
     cases hSO : storeObject tid.toObjId
-        (.tcb { tcb with ipcState := ipc, pendingMessage := msg }) st with
+        (.tcb (TCB.setIpcState { tcb with pendingMessage := msg } ipc)) st with
     | error e => simp [hSO] at hStep
     | ok pair =>
       simp only [hSO] at hStep
       have hEq := Except.ok.inj hStep; subst hEq
       exact storeObject_tcb_getSchedContext?_eq st pair.2 tid tcb
-        { tcb with ipcState := ipc, pendingMessage := msg } scId
+        (TCB.setIpcState { tcb with pendingMessage := msg } ipc) scId
         ((SystemState.getTcb?_eq_some_iff st tid tcb).mpr
           (lookupTcb_some_objects st tid tcb hLk)) hObjInv (by rw [hSO])
 

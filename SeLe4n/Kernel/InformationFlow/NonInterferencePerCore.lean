@@ -564,7 +564,7 @@ theorem storeTcbReceiveComplete_confinedToCore (st st' : SystemState)
   | none => simp [hTcb] at hStep
   | some tcb =>
     simp only [hTcb] at hStep
-    cases hStore : storeObject tid.toObjId (.tcb { tcb with ipcState := .ready, pendingMessage := msg, pendingReceiveReply := none }) st with
+    cases hStore : storeObject tid.toObjId (.tcb (TCB.setIpcState { tcb with pendingMessage := msg, pendingReceiveReply := none } .ready)) st with
     | error e => simp [hStore] at hStep
     | ok pair =>
       simp only [hStore] at hStep
@@ -803,7 +803,7 @@ theorem storeTcbIpcState_fromTcb_confinedToCore (st st' : SystemState)
     (hStep : storeTcbIpcState_fromTcb st tid tcb ipc = .ok st') :
     observableSlotsConfinedToCore st st' c₀ := by
   unfold storeTcbIpcState_fromTcb at hStep
-  cases hStore : storeObject tid.toObjId (.tcb { tcb with ipcState := ipc }) st with
+  cases hStore : storeObject tid.toObjId (.tcb (tcb.setIpcState ipc)) st with
   | error e => simp [hStore] at hStep
   | ok pair =>
     simp only [hStore] at hStep
@@ -816,7 +816,7 @@ theorem storeTcbIpcStateAndMessage_fromTcb_confinedToCore (st st' : SystemState)
     (hStep : storeTcbIpcStateAndMessage_fromTcb st tid tcb ipc msg = .ok st') :
     observableSlotsConfinedToCore st st' c₀ := by
   unfold storeTcbIpcStateAndMessage_fromTcb at hStep
-  cases hStore : storeObject tid.toObjId (.tcb { tcb with ipcState := ipc, pendingMessage := msg }) st with
+  cases hStore : storeObject tid.toObjId (.tcb (TCB.setIpcState { tcb with pendingMessage := msg } ipc)) st with
   | error e => simp [hStore] at hStep
   | ok pair =>
     simp only [hStore] at hStep

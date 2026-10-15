@@ -156,7 +156,7 @@ Compiled as its own function so each update is specialised in. -/
     (waiter : SeLe4n.ThreadId) (next : Option SeLe4n.ThreadId) (msg : IpcMessage) :
     SystemState :=
   detachNtfnHead ((st.modifyObject notificationId (signalPoppedObject next)).updateTcb waiter
-    (fun t => { t with ipcState := .ready, pendingMessage := some msg })) waiter next
+    (fun t => (TCB.setIpcState { t with pendingMessage := some msg } .ready))) waiter next
 
 /-- WS-ZA ZA4.4: **the wake path writes only its two objects' slots** — the
 notification rewritten where it stands (`RHTable.findsInPlace`), the woken
@@ -374,7 +374,7 @@ so each update is specialised in rather than carried as a closure. -/
 @[noinline] def storeWaitConsumed (st : SystemState) (notificationId : SeLe4n.ObjId)
     (waiter : SeLe4n.ThreadId) : SystemState :=
   (st.modifyObject notificationId waitConsumedObject).updateTcb waiter
-    (fun t => { t with ipcState := .ready })
+    (fun t => (t.setIpcState .ready))
 
 /-- WS-ZA ZA4: **the badge-consume path writes only the two objects' slots.**
 The waiter is an unreserved TCB, both stores change only `objects`
@@ -403,8 +403,8 @@ function so each update is specialised in rather than carried as a closure. -/
 @[noinline] def storeWaitBlocked (st : SystemState) (notificationId : SeLe4n.ObjId)
     (waiter : SeLe4n.ThreadId) (tail : Option SeLe4n.ThreadId) : SystemState :=
   let st1 := st.modifyObject notificationId (waitAppendedObject waiter)
-  let st2 := st1.updateTcb waiter (fun t => { t with
-    ipcState := .blockedOnNotification notificationId, pendingMessage := none })
+  let st2 := st1.updateTcb waiter (fun t => (TCB.setIpcState { t with
+    pendingMessage := none } (.blockedOnNotification notificationId)))
   let st3 := st2.updateTcb waiter (fun t => { t with
     ntfnPrevCode := SeLe4n.ThreadId.optCode tail,
     ntfnNextCode := SeLe4n.ThreadId.optCode none })
@@ -567,7 +567,7 @@ theorem notificationWaitOnCore_block_inPlace_eq (notificationId : SeLe4n.ObjId)
   have hT1 : O1[waiter.toObjId]? = some (.tcb tcb) := by rw [hO1 _ hNe]; exact hT
   -- The waiter blocked, then linked, each written where it stands.
   let W : TCB :=
-    { tcb with ipcState := .blockedOnNotification notificationId, pendingMessage := none }
+    (TCB.setIpcState { tcb with pendingMessage := none } (.blockedOnNotification notificationId))
   let O2 := O1.insert waiter.toObjId (.tcb W)
   have hW2 : O2[waiter.toObjId]? = some (.tcb W) :=
     SeLe4n.Kernel.RobinHood.RHTable.get?_insert_self_of_findsInPlace _ hInW1
@@ -610,8 +610,8 @@ theorem notificationWaitOnCore_block_inPlace_eq (notificationId : SeLe4n.ObjId)
     unfold SystemState.modifyObject
     rw [SeLe4n.Kernel.RobinHood.RHTable.modify_of_get? hNo]
     rfl
-  have hR2 : ({ st with objects := O1 } : SystemState).updateTcb waiter (fun t => { t with
-      ipcState := .blockedOnNotification notificationId, pendingMessage := none })
+  have hR2 : ({ st with objects := O1 } : SystemState).updateTcb waiter (fun t => (TCB.setIpcState { t with
+      pendingMessage := none } (.blockedOnNotification notificationId)))
       = { st with objects := O2 } :=
     SystemState.updateTcb_eq_of_some ((SystemState.getTcb?_eq_some_iff _ _ _).mpr hT1) _
   have hR3 : ({ st with objects := O2 } : SystemState).updateTcb waiter (fun t => { t with

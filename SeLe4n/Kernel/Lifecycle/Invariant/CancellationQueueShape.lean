@@ -303,12 +303,11 @@ theorem sweptQueue_wellFormed
 /-- **WS-RR RR7.22 (residual)**: the TCB `restoreToReadyStaging` installs, named
 so proofs can quantify over it. -/
 def restoredTcb (tcb : TCB) (frame : Option Architecture.SyscallReturnFrame) : TCB :=
-  let cleared : TCB := { tcb with
-      ipcState := .ready
+  let cleared : TCB := (TCB.setIpcState { tcb with
       queuePrevCode := 0
       queueNextCode := 0
       queuePPrevCode := 0
-      pendingReceiveReply := none }
+      pendingReceiveReply := none } .ready)
   match frame with
   | some f => cleared.withReturnFrame f
   | none => cleared
@@ -335,13 +334,12 @@ update rather than as a list of fields that agree, so a field added to `TCB` is
 covered by construction. -/
 theorem restoredTcb_eq (tcb : TCB) (frame : Option Architecture.SyscallReturnFrame) :
     restoredTcb tcb frame =
-      { tcb with
-          ipcState := .ready
+      (TCB.setIpcState { tcb with
           queuePrevCode := 0
           queueNextCode := 0
           queuePPrevCode := 0
           pendingReceiveReply := none
-          registerContext := (restoredTcb tcb frame).registerContext } := by
+          registerContext := (restoredTcb tcb frame).registerContext } .ready) := by
   unfold restoredTcb; cases frame <;> rfl
 
 @[simp] theorem restoredTcb_ipcState (tcb : TCB)
@@ -1650,7 +1648,7 @@ theorem sweptAndRestored_blockedThreadsPendingMessageConsistent
   rcases hcase with ⟨_, qp, qpp, qn, np, nn, rfl⟩ | ⟨_, rfl⟩
   · exact h tid t0 h0
   · rw [restoredTcb_eq]
-    simp only
+    simp only [TCB.ipcState_setIpcState]
 
 /-- **WS-RR RR7.22 (residual)**: a `.blockedOnReply` thread in the post-state was
 one in the pre-state — the swept thread is not, since it is `.ready`. -/

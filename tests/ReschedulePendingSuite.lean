@@ -119,15 +119,16 @@ private def mkReadyTcb (tidN : Nat) (prio : Nat) (aff : Option CoreId)
     (state : ThreadState) (mcp : Nat := 0xFF) : TCB :=
   { tid := ThreadId.ofNat tidN, priority := ⟨prio⟩, domain := ⟨0⟩,
     cspaceRoot := ObjId.ofNat 0, vspaceRoot := ObjId.ofNat 0,
-    ipcBuffer := SeLe4n.VAddr.ofNat 0, ipcState := .ready, threadState := state,
+    ipcBuffer := SeLe4n.VAddr.ofNat 0, threadState := state,
     cpuAffinity := aff, maxControlledPriority := ⟨mcp⟩ }
 
 /-- An unbound waiter blocked on reply to `server`. -/
 private def mkWaiterTcb (tidN : Nat) (prio : Nat) (server : Nat) : TCB :=
+  (TCB.setIpcState
   { tid := ThreadId.ofNat tidN, priority := ⟨prio⟩, domain := ⟨0⟩,
     cspaceRoot := ObjId.ofNat 0, vspaceRoot := ObjId.ofNat 0,
-    ipcBuffer := SeLe4n.VAddr.ofNat 0, threadState := .BlockedReply,
-    ipcState := .blockedOnReply (ObjId.ofNat 50) (some (ThreadId.ofNat server)) }
+    ipcBuffer := SeLe4n.VAddr.ofNat 0, threadState := .BlockedReply
+    } (.blockedOnReply (ObjId.ofNat 50) (some (ThreadId.ofNat server))))
 
 /-- The objects every fixture shares; the scheduler slots differ per fixture. -/
 private def baseObjects : SystemState :=

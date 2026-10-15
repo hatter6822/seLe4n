@@ -264,12 +264,12 @@ theorem enqueueRunnableOnCore_msg (st : SystemState) (c : CoreId) (t : SeLe4n.Th
       (if wakeDeclines st c t = true then st.mapTcbInPlace r (TCB.withMessageSlots ρ μ π)
        else
         let st' := ((st.mapTcbInPlace r (TCB.withMessageSlots ρ μ π)).modifyObject t.toObjId
-          (SystemState.mapTcbObject fun x => { x with ipcState := .ready })).runEnqueueAdmitted c t prio
+          (SystemState.mapTcbObject fun x => (x.setIpcState .ready))).runEnqueueAdmitted c t prio
         { st' with scheduler := st'.scheduler.markReschedulePendingOnCore c }) =
       (if wakeDeclines st c t = true then st
        else
         let st' := (st.modifyObject t.toObjId
-          (SystemState.mapTcbObject fun x => { x with ipcState := .ready })).runEnqueueAdmitted c t prio
+          (SystemState.mapTcbObject fun x => (x.setIpcState .ready))).runEnqueueAdmitted c t prio
         { st' with scheduler := st'.scheduler.markReschedulePendingOnCore c }).mapTcbInPlace r
           (TCB.withMessageSlots ρ μ π) := by
     intro prio

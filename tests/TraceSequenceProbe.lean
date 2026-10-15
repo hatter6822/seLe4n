@@ -53,8 +53,8 @@ def probeBaseState (threadCount : Nat) : SystemState :=
     let tid := n + 1
     (SeLe4n.ObjId.ofNat tid, KernelObject.tcb {
       tid := SeLe4n.ThreadId.ofNat tid, priority := SeLe4n.Priority.ofNat 0, domain := default,
-      cspaceRoot := probeCNodeId, vspaceRoot := default, ipcBuffer := default,
-      ipcState := .ready })
+      cspaceRoot := probeCNodeId, vspaceRoot := default, ipcBuffer := default
+      })
   -- WS-F7/D2c: CNode with one slot per thread targeting the endpoint
   let cnodeSlots : List (SeLe4n.Slot × Capability) :=
     (List.range threadCount).map fun n =>

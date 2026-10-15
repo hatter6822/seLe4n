@@ -138,7 +138,7 @@ def frozenChooseThread (st : FrozenSystemState)
               match st.getTcb? tid with
               | some tcb =>
                   tcb.domain == (st.scheduler.activeDomain) &&
-                  tcb.ipcState == .ready
+                  decide (tcb.ipcState = .ready)
               | _ => false)
   .ok (result, st)
 
@@ -160,7 +160,7 @@ def frozenSchedule : FrozenKernel Unit :=
         match st'.getTcb? tid with
         | some tcb =>
             if tcb.domain == (st'.scheduler.activeDomain) &&
-               tcb.ipcState == .ready then
+               decide (tcb.ipcState = .ready) then
               match frozenSaveOutgoingContext st' with
               | .error e => .error e
               | .ok stSaved =>
@@ -367,11 +367,10 @@ def frozenNotificationSignal (notificationId : SeLe4n.ObjId)
                   -- TCB was `.blockedOnReceive` and no `Call` arrived, which is
                   -- what `storeTcbReceiveComplete` does on the live path.
                   match frozenStoreTcb boundTid
-                      { boundTcb with
-                        ipcState := .ready,
+                      (TCB.setIpcState { boundTcb with
                         pendingReceiveReply := none,
                         pendingMessage :=
-                          some { IpcMessage.empty with badge := some badge } } st1 with
+                          some { IpcMessage.empty with badge := some badge } } .ready) st1 with
                   | .error e => .error e
                   | .ok ((), st2) =>
                       -- PR #873 round 15: the woken thread re-enters the run
@@ -416,12 +415,11 @@ def frozenNotificationSignal (notificationId : SeLe4n.ObjId)
                   -- links, and its successor heads it with no predecessor
                   -- (the live `detachNtfnHead`).
                   match (frozenStoreTcb waiter
-                      { waiterTcb with
-                        ipcState := .ready,
+                      (TCB.setIpcState { waiterTcb with
                         pendingMessage :=
                           some { IpcMessage.empty with badge := some badge },
                         ntfnPrevCode := SeLe4n.ThreadId.optCode none,
-                        ntfnNextCode := SeLe4n.ThreadId.optCode none } st').bind
+                        ntfnNextCode := SeLe4n.ThreadId.optCode none } .ready) st').bind
                       (fun r => (frozenModifyTcbOpt r.2 next
                         (fun t => { t with ntfnPrevCode := SeLe4n.ThreadId.optCode none })).map
                         (fun s => ((), s))) with
@@ -681,7 +679,7 @@ def frozenEndpointSend (endpointId : SeLe4n.ObjId) (sender : SeLe4n.ThreadId)
                     -- claimed-checked branch was not being compared.  FO-037 is
                     -- the delivery-ordering comparison, with the stash seeded so
                     -- this field is what the scenario measures.
-                    let recvTcb' := { recvTcb with ipcState := ThreadIpcState.ready, pendingMessage := some msg, pendingReceiveReply := none }
+                    let recvTcb' := (TCB.setIpcState { recvTcb with pendingMessage := some msg, pendingReceiveReply := none } ThreadIpcState.ready)
                     match frozenStoreTcb receiver recvTcb' st' with
                     | .error e => .error e
                     | .ok ((), st'') =>
@@ -701,9 +699,8 @@ def frozenEndpointSend (endpointId : SeLe4n.ObjId) (sender : SeLe4n.ThreadId)
             -- already the sender's, so there is nothing to propagate here.
             -- `senderTcb` is the one resolved above, shared with the rendezvous
             -- ordering so the two cannot disagree about what a valid sender is.
-            let senderTcb' := { senderTcb with
-              ipcState := .blockedOnSend endpointId
-              pendingMessage := some msg }
+            let senderTcb' := (TCB.setIpcState { senderTcb with
+              pendingMessage := some msg } (.blockedOnSend endpointId))
             match frozenStoreTcb sender senderTcb' st with
             | .error e => .error e
             | .ok ((), st') =>
@@ -755,7 +752,7 @@ def frozenEndpointReceive (endpointId : SeLe4n.ObjId)
                     let senderNext : ThreadIpcState :=
                       if senderWasCall then .blockedOnReply endpointId (some receiver)
                       else ThreadIpcState.ready
-                    let senderTcbUpdated := { senderTcb' with ipcState := senderNext, pendingMessage := none }
+                    let senderTcbUpdated := (TCB.setIpcState { senderTcb' with pendingMessage := none } senderNext)
                     match frozenStoreTcb sender senderTcbUpdated st' with
                     | .error e => .error e
                     | .ok ((), stSender) =>
@@ -782,7 +779,7 @@ def frozenEndpointReceive (endpointId : SeLe4n.ObjId)
                             -- field (AK1-D's atomic pair), and a mirror that
                             -- writes one field of the pair is one stale
                             -- invariant away from diverging on the other.
-                            let recvTcb' := { recvTcb with ipcState := ThreadIpcState.ready, pendingMessage := senderMsg }
+                            let recvTcb' := (TCB.setIpcState { recvTcb with pendingMessage := senderMsg } ThreadIpcState.ready)
                             match frozenStoreTcb receiver recvTcb' st'' with
                             | .error e => .error e
                             | .ok ((), stDelivered) =>
@@ -809,7 +806,7 @@ def frozenEndpointReceive (endpointId : SeLe4n.ObjId)
             -- No sender: block receiver, then enqueue into receiveQ (T1-C/M-FRZ-2)
             match frozenLookupTcb st receiver with
             | some recvTcb =>
-                let recvTcb' := { recvTcb with ipcState := .blockedOnReceive endpointId }
+                let recvTcb' := (recvTcb.setIpcState (.blockedOnReceive endpointId))
                 match frozenStoreTcb receiver recvTcb' st with
                 | .error e => .error e
                 | .ok ((), st') =>
@@ -842,15 +839,14 @@ def frozenEndpointCall (endpointId : SeLe4n.ObjId) (caller : SeLe4n.ThreadId)
             | .ok (receiver, _tcb, st') =>
                 match frozenLookupTcb st' receiver with
                 | some recvTcb =>
-                    let recvTcb' := { recvTcb with ipcState := ThreadIpcState.ready, pendingMessage := some msg }
+                    let recvTcb' := (TCB.setIpcState { recvTcb with pendingMessage := some msg } ThreadIpcState.ready)
                     match frozenStoreTcb receiver recvTcb' st' with
                     | .error e => .error e
                     | .ok ((), st'') =>
                         -- Block caller waiting for reply
                         match frozenLookupTcb st'' caller with
                         | some callerTcb =>
-                            let callerTcb' := { callerTcb with
-                              ipcState := .blockedOnReply endpointId (some receiver) }
+                            let callerTcb' := (callerTcb.setIpcState (.blockedOnReply endpointId (some receiver)))
                             match frozenStoreTcb caller callerTcb' st'' with
                             | .error e => .error e
                             | .ok ((), st''') =>
@@ -871,9 +867,8 @@ def frozenEndpointCall (endpointId : SeLe4n.ObjId) (caller : SeLe4n.ThreadId)
             -- No receiver: block caller with message, then enqueue into sendQ (T1-D/M-FRZ-3)
             match frozenLookupTcb st caller with
             | some callerTcb =>
-                let callerTcb' := { callerTcb with
-                  ipcState := .blockedOnCall endpointId
-                  pendingMessage := some msg }
+                let callerTcb' := (TCB.setIpcState { callerTcb with
+                  pendingMessage := some msg } (.blockedOnCall endpointId))
                 match frozenStoreTcb caller callerTcb' st with
                 | .error e => .error e
                 | .ok ((), st') =>
@@ -944,10 +939,9 @@ def frozenEndpointReply (replierId : SeLe4n.ThreadId)
             match replyTarget with
             | none => .error .replyCapInvalid
             | some _expected =>
-            let targetTcb' := { targetTcb with
-              ipcState := ThreadIpcState.ready
+            let targetTcb' := (TCB.setIpcState { targetTcb with
               pendingMessage := some msg
-              replyObject := none }
+              replyObject := none } ThreadIpcState.ready)
             match targetTcb.replyObject with
             | none => .error .replyCapInvalid
             | some fwdRid =>
@@ -1718,14 +1712,13 @@ def frozenSuspendThread (tid : SeLe4n.ThreadId) : FrozenKernel Unit :=
     | some tcb =>
       if tcb.threadState == .Inactive then .error .illegalState
       else
-        let tcb' := { tcb with
+        let tcb' := (TCB.setIpcState { tcb with
           threadState := .Inactive
-          ipcState := .ready
           pendingMessage := none
           timeoutBudget := none
           queuePrevCode := 0
           queueNextCode := 0
-          queuePPrevCode := 0 }
+          queuePPrevCode := 0 } .ready)
         match frozenWithObjectStored st tid.toObjId (.tcb tcb') with
         | .ok stored => .ok ((), frozenRemoveRunnable stored tid)
         | .error e => .error e

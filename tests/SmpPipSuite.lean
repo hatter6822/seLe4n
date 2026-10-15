@@ -309,15 +309,16 @@ private def cli : SeLe4n.ThreadId := ThreadId.ofNat 201
 private def mkServerTcb (tidN : Nat) (prio : Nat) (aff : CoreId) : TCB :=
   { tid := ThreadId.ofNat tidN, priority := ⟨prio⟩, domain := ⟨0⟩,
     cspaceRoot := ObjId.ofNat 0, vspaceRoot := ObjId.ofNat 0,
-    ipcBuffer := SeLe4n.VAddr.ofNat 0, ipcState := .ready, cpuAffinity := some aff }
+    ipcBuffer := SeLe4n.VAddr.ofNat 0, cpuAffinity := some aff }
 
 /-- A waiter TCB (unbound, so it homes to the boot core) blocked on reply to
 `server`, priority `prio`. -/
 private def mkWaiterTcb (tidN : Nat) (prio : Nat) (server : Nat) : TCB :=
+  (TCB.setIpcState
   { tid := ThreadId.ofNat tidN, priority := ⟨prio⟩, domain := ⟨0⟩,
     cspaceRoot := ObjId.ofNat 0, vspaceRoot := ObjId.ofNat 0,
-    ipcBuffer := SeLe4n.VAddr.ofNat 0,
-    ipcState := .blockedOnReply (ObjId.ofNat 50) (some (ThreadId.ofNat server)) }
+    ipcBuffer := SeLe4n.VAddr.ofNat 0
+    } (.blockedOnReply (ObjId.ofNat 50) (some (ThreadId.ofNat server))))
 
 /-- The cross-core blocking scenario: a server `srv` bound to the **remote** core
 1, with a high-priority (10) waiter `cli` blocked on reply to it.  `cli` is

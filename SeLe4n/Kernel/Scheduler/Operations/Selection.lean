@@ -1872,7 +1872,7 @@ def enqueueRunnableOnCore (st : SystemState) (c : CoreId)
       else
         -- WS-ZA ZA4.5: the insert writes the thread's run-queue links
         -- (`runEnqueueAdmitted`), after the `.ready` mark.
-        let st' := (st.rewriteObject tid.toObjId (.tcb { tcb with ipcState := .ready })
+        let st' := (st.rewriteObject tid.toObjId (.tcb (tcb.setIpcState .ready))
             (SystemState.rewriteAdmissible_tcb h _)).runEnqueueAdmitted c tid tcb.boostedPriority
         -- The reschedule-SGI accumulator (KSC-1): a run-queue insert on `c`
         -- stales `c`'s decision (the diff's wake rule).
@@ -1891,7 +1891,7 @@ def enqueueRunnableOnCoreImpl (st : SystemState) (c : CoreId)
       if wakeDeclines st c tid then st
       else
         let st' := (st.modifyObject tid.toObjId
-          (SystemState.mapTcbObject fun t => { t with ipcState := .ready })).runEnqueueAdmitted c tid prio
+          (SystemState.mapTcbObject fun t => (t.setIpcState .ready))).runEnqueueAdmitted c tid prio
         { st' with scheduler := st'.scheduler.markReschedulePendingOnCore c }
   | none => st
 
@@ -1968,7 +1968,7 @@ theorem enqueueRunnableOnCore_runEnqueueAdmits {st : SystemState} (c : CoreId)
     · exact h
     · show (SystemState.runEnqueueAdmitted _ c tid _).runEnqueueAdmits c y = true
       have h' := SystemState.runEnqueueAdmits_rewriteObject_tcb
-        (t' := { tcb with ipcState := .ready }) (SystemState.rewriteAdmissible_tcb hT _) hInv hT
+        (t' := (tcb.setIpcState .ready)) (SystemState.rewriteAdmissible_tcb hT _) hInv hT
         rfl c y
       rw [← h'] at h
       by_cases hy : y = tid
@@ -2063,7 +2063,7 @@ theorem enqueueRunnableOnCore_objectsAgree_marked (st : SystemState) (c : CoreId
     (tid : SeLe4n.ThreadId) (tcb : TCB) (hTcb : st.getTcb? tid = some tcb)
     (hFresh : wakeDeclines st c tid = false) :
     (enqueueRunnableOnCore st c tid).objectsAgreeOffRunLinks
-      { st with objects := st.objects.insert tid.toObjId (.tcb { tcb with ipcState := .ready }) } := by
+      { st with objects := st.objects.insert tid.toObjId (.tcb (tcb.setIpcState .ready)) } := by
   simp only [enqueueRunnableOnCore, SystemState.getTcbWitnessed?_eq_some hTcb, hFresh,
     Bool.false_eq_true, if_false]
   exact SystemState.objectsAgreeOffRunLinks.congr rfl rfl

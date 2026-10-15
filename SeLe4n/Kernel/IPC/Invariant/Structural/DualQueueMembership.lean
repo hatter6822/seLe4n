@@ -5149,7 +5149,7 @@ theorem storeTcbIpcStateAndMessage_nonBlocked_preserves_blockedOnReplyHasReplyOb
   | none => simp [hL] at hStep
   | some tcb =>
     simp only [hL] at hStep
-    cases hSO : storeObject tid.toObjId (.tcb { tcb with ipcState := ipc, pendingMessage := msg }) st with
+    cases hSO : storeObject tid.toObjId (.tcb (TCB.setIpcState { tcb with pendingMessage := msg } ipc)) st with
     | error e => simp [hSO] at hStep
     | ok p =>
       obtain ⟨_, st''⟩ := p
@@ -5159,7 +5159,7 @@ theorem storeTcbIpcStateAndMessage_nonBlocked_preserves_blockedOnReplyHasReplyOb
         (fun t ep rt ho hb => ?_) hSO
       simp only [KernelObject.tcb.injEq] at ho
       subst ho
-      exact absurd hb (hNotBlocked ep rt)
+      exact absurd hb (by simpa using hNotBlocked ep rt)
 
 open SeLe4n.Model.SystemState in
 /-- Finding F-1: `storeTcbReceiveComplete` preserves the third clause — the stored
@@ -5178,7 +5178,7 @@ theorem storeTcbReceiveComplete_nonBlocked_preserves_blockedOnReplyHasReplyObjec
   | none => simp [hL] at hStep
   | some tcb =>
     simp only [hL] at hStep
-    cases hSO : storeObject tid.toObjId (.tcb { tcb with ipcState := .ready, pendingMessage := msg, pendingReceiveReply := none }) st with
+    cases hSO : storeObject tid.toObjId (.tcb (TCB.setIpcState { tcb with pendingMessage := msg, pendingReceiveReply := none } .ready)) st with
     | error e => simp [hSO] at hStep
     | ok p =>
       obtain ⟨_, st''⟩ := p
@@ -5206,7 +5206,7 @@ theorem storeTcbIpcState_nonBlocked_preserves_blockedOnReplyHasReplyObject
   | none => simp [hL] at hStep
   | some tcb =>
     simp only [hL] at hStep
-    cases hSO : storeObject tid.toObjId (.tcb { tcb with ipcState := ipc }) st with
+    cases hSO : storeObject tid.toObjId (.tcb (tcb.setIpcState ipc)) st with
     | error e => simp [hSO] at hStep
     | ok p =>
       obtain ⟨_, st''⟩ := p
@@ -5216,7 +5216,7 @@ theorem storeTcbIpcState_nonBlocked_preserves_blockedOnReplyHasReplyObject
         (fun t ep rt ho hb => ?_) hSO
       simp only [KernelObject.tcb.injEq] at ho
       subst ho
-      exact absurd hb (hNotBlocked ep rt)
+      exact absurd hb (by simpa using hNotBlocked ep rt)
 
 open SeLe4n.Model.SystemState in
 /-- IPC de-threading D2: `storeTcbQueueLinks` writes only queue-link fields
@@ -6307,7 +6307,7 @@ theorem storeTcbIpcStateAndMessage_replyLinkageFrame_of_unlinked
   | none => simp [hL] at hStep
   | some tcb =>
     simp only [hL] at hStep
-    cases hSO : storeObject tid.toObjId (.tcb { tcb with ipcState := ipc, pendingMessage := msg }) st with
+    cases hSO : storeObject tid.toObjId (.tcb (TCB.setIpcState { tcb with pendingMessage := msg } ipc)) st with
     | error e => simp [hSO] at hStep
     | ok pr =>
       obtain ⟨⟨⟩, st''⟩ := pr
@@ -6315,7 +6315,7 @@ theorem storeTcbIpcStateAndMessage_replyLinkageFrame_of_unlinked
       subst hStep
       have hOrig := lookupTcb_some_objects st tid tcb hL
       exact storeObject_modifiedTcb_replyLinkageFrame st st'' tid.toObjId tcb
-        { tcb with ipcState := ipc, pendingMessage := msg } hOrig rfl
+        (TCB.setIpcState { tcb with pendingMessage := msg } ipc) hOrig rfl
         (fun ⟨rid, hRid⟩ => absurd hRid (by rw [hUnlinked tcb hOrig]; simp)) hObjInv hSO
 
 open SeLe4n.Model.SystemState in
@@ -6329,14 +6329,14 @@ theorem storeTcbIpcStateAndMessage_fromTcb_replyLinkageFrame_of_unlinked
     (hStep : storeTcbIpcStateAndMessage_fromTcb st tid tcb ipc msg = .ok st') :
     replyLinkageFrame st st' := by
   unfold storeTcbIpcStateAndMessage_fromTcb at hStep
-  cases hSO : storeObject tid.toObjId (.tcb { tcb with ipcState := ipc, pendingMessage := msg }) st with
+  cases hSO : storeObject tid.toObjId (.tcb (TCB.setIpcState { tcb with pendingMessage := msg } ipc)) st with
   | error e => simp [hSO] at hStep
   | ok pr =>
     obtain ⟨⟨⟩, st''⟩ := pr
     simp only [hSO, Except.ok.injEq] at hStep
     subst hStep
     exact storeObject_modifiedTcb_replyLinkageFrame st st'' tid.toObjId tcb
-      { tcb with ipcState := ipc, pendingMessage := msg } hOrig rfl
+      (TCB.setIpcState { tcb with pendingMessage := msg } ipc) hOrig rfl
       (fun ⟨rid, hRid⟩ => absurd hRid (by rw [hUnlinked]; simp)) hObjInv hSO
 
 open SeLe4n.Model.SystemState in
@@ -6352,7 +6352,7 @@ theorem storeTcbIpcState_replyLinkageFrame_of_unlinked
   | none => simp [hL] at hStep
   | some tcb =>
     simp only [hL] at hStep
-    cases hSO : storeObject tid.toObjId (.tcb { tcb with ipcState := ipc }) st with
+    cases hSO : storeObject tid.toObjId (.tcb (tcb.setIpcState ipc)) st with
     | error e => simp [hSO] at hStep
     | ok pr =>
       obtain ⟨⟨⟩, st''⟩ := pr
@@ -6360,7 +6360,7 @@ theorem storeTcbIpcState_replyLinkageFrame_of_unlinked
       subst hStep
       have hOrig := lookupTcb_some_objects st tid tcb hL
       exact storeObject_modifiedTcb_replyLinkageFrame st st'' tid.toObjId tcb
-        { tcb with ipcState := ipc } hOrig rfl
+        (tcb.setIpcState ipc) hOrig rfl
         (fun ⟨rid, hRid⟩ => absurd hRid (by rw [hUnlinked tcb hOrig]; simp)) hObjInv hSO
 
 open SeLe4n.Model.SystemState in
@@ -6379,7 +6379,7 @@ theorem storeTcbReceiveComplete_replyLinkageFrame_of_unlinked
   | some tcb =>
     simp only [hL] at hStep
     cases hSO : storeObject tid.toObjId
-        (.tcb { tcb with ipcState := .ready, pendingMessage := msg, pendingReceiveReply := none }) st with
+        (.tcb (TCB.setIpcState { tcb with pendingMessage := msg, pendingReceiveReply := none } .ready)) st with
     | error e => simp [hSO] at hStep
     | ok pr =>
       obtain ⟨⟨⟩, st''⟩ := pr
@@ -6387,7 +6387,7 @@ theorem storeTcbReceiveComplete_replyLinkageFrame_of_unlinked
       subst hStep
       have hOrig := lookupTcb_some_objects st tid tcb hL
       exact storeObject_modifiedTcb_replyLinkageFrame st st'' tid.toObjId tcb
-        { tcb with ipcState := .ready, pendingMessage := msg, pendingReceiveReply := none }
+        (TCB.setIpcState { tcb with pendingMessage := msg, pendingReceiveReply := none } .ready)
         hOrig rfl
         (fun ⟨rid, hRid⟩ => absurd hRid (by rw [hUnlinked tcb hOrig]; simp)) hObjInv hSO
 
@@ -6636,7 +6636,7 @@ theorem storeTcbIpcState_fromTcb_nonBlocked_preserves_blockedOnReplyHasReplyObje
     (hStep : storeTcbIpcState_fromTcb st tid tcb ipc = .ok st') :
     blockedOnReplyHasReplyObject st' := by
   unfold storeTcbIpcState_fromTcb at hStep
-  cases hSO : storeObject tid.toObjId (.tcb { tcb with ipcState := ipc }) st with
+  cases hSO : storeObject tid.toObjId (.tcb (tcb.setIpcState ipc)) st with
   | error e => simp [hSO] at hStep
   | ok p =>
     obtain ⟨_, st''⟩ := p
@@ -6646,7 +6646,7 @@ theorem storeTcbIpcState_fromTcb_nonBlocked_preserves_blockedOnReplyHasReplyObje
       (fun t ep rt ho hb => ?_) hSO
     simp only [KernelObject.tcb.injEq] at ho
     subst ho
-    exact absurd hb (hNotBlocked ep rt)
+    exact absurd hb (by simpa using hNotBlocked ep rt)
 
 open SeLe4n.Model.SystemState in
 /-- WS-RR RR3.5: the `storeTcbIpcStateAndMessage_fromTcb` twin of the frame above.
@@ -6663,7 +6663,7 @@ theorem storeTcbIpcStateAndMessage_fromTcb_nonBlocked_preserves_blockedOnReplyHa
     blockedOnReplyHasReplyObject st' := by
   unfold storeTcbIpcStateAndMessage_fromTcb at hStep
   cases hSO : storeObject tid.toObjId
-      (.tcb { tcb with ipcState := ipc, pendingMessage := msg }) st with
+      (.tcb (TCB.setIpcState { tcb with pendingMessage := msg } ipc)) st with
   | error e => simp [hSO] at hStep
   | ok p =>
     obtain ⟨_, st''⟩ := p
@@ -6673,7 +6673,7 @@ theorem storeTcbIpcStateAndMessage_fromTcb_nonBlocked_preserves_blockedOnReplyHa
       (fun t ep rt ho hb => ?_) hSO
     simp only [KernelObject.tcb.injEq] at ho
     subst ho
-    exact absurd hb (hNotBlocked ep rt)
+    exact absurd hb (by simpa using hNotBlocked ep rt)
 
 open SeLe4n.Model.SystemState in
 /-- IPC de-threading D2: `notificationSignal` **preserves** the third clause — it never
@@ -7163,14 +7163,14 @@ theorem storeTcbIpcState_sameSchedContextBindings
   | none => simp [hL] at hStep
   | some tcb =>
     simp only [hL] at hStep
-    cases hSO : storeObject tid.toObjId (.tcb { tcb with ipcState := ipc }) st with
+    cases hSO : storeObject tid.toObjId (.tcb (tcb.setIpcState ipc)) st with
     | error e => simp [hSO] at hStep
     | ok p =>
       obtain ⟨_, st''⟩ := p
       simp only [hSO, Except.ok.injEq] at hStep
       subst hStep
       exact storeObject_modifiedTcb_sameSchedContextBindings st st'' tid.toObjId tcb
-        { tcb with ipcState := ipc } (lookupTcb_some_objects st tid tcb hL) rfl hObjInv hSO
+        (tcb.setIpcState ipc) (lookupTcb_some_objects st tid tcb hL) rfl hObjInv hSO
 
 open SeLe4n.Model.SystemState in
 /-- D6: `storeTcbIpcState_fromTcb` preserves every TCB's binding (the pre-state slot
@@ -7182,14 +7182,14 @@ theorem storeTcbIpcState_fromTcb_sameSchedContextBindings
     (hStep : storeTcbIpcState_fromTcb st tid tcb ipc = .ok st') :
     sameSchedContextBindings st st' := by
   unfold storeTcbIpcState_fromTcb at hStep
-  cases hSO : storeObject tid.toObjId (.tcb { tcb with ipcState := ipc }) st with
+  cases hSO : storeObject tid.toObjId (.tcb (tcb.setIpcState ipc)) st with
   | error e => simp [hSO] at hStep
   | ok p =>
     obtain ⟨_, st''⟩ := p
     simp only [hSO, Except.ok.injEq] at hStep
     subst hStep
     exact storeObject_modifiedTcb_sameSchedContextBindings st st'' tid.toObjId tcb
-      { tcb with ipcState := ipc } hOrig rfl hObjInv hSO
+      (tcb.setIpcState ipc) hOrig rfl hObjInv hSO
 
 open SeLe4n.Model.SystemState in
 /-- WS-RR RR3.5: the `storeTcbIpcStateAndMessage_fromTcb` twin of the frame above —
@@ -7203,14 +7203,14 @@ theorem storeTcbIpcStateAndMessage_fromTcb_sameSchedContextBindings
     sameSchedContextBindings st st' := by
   unfold storeTcbIpcStateAndMessage_fromTcb at hStep
   cases hSO : storeObject tid.toObjId
-      (.tcb { tcb with ipcState := ipc, pendingMessage := msg }) st with
+      (.tcb (TCB.setIpcState { tcb with pendingMessage := msg } ipc)) st with
   | error e => simp [hSO] at hStep
   | ok p =>
     obtain ⟨_, st''⟩ := p
     simp only [hSO, Except.ok.injEq] at hStep
     subst hStep
     exact storeObject_modifiedTcb_sameSchedContextBindings st st'' tid.toObjId tcb
-      { tcb with ipcState := ipc, pendingMessage := msg } hOrig rfl hObjInv hSO
+      (TCB.setIpcState { tcb with pendingMessage := msg } ipc) hOrig rfl hObjInv hSO
 
 open SeLe4n.Model.SystemState in
 /-- D6: `storeTcbIpcStateAndMessage` preserves every TCB's binding. -/
@@ -7224,14 +7224,14 @@ theorem storeTcbIpcStateAndMessage_sameSchedContextBindings
   | none => simp [hL] at hStep
   | some tcb =>
     simp only [hL] at hStep
-    cases hSO : storeObject tid.toObjId (.tcb { tcb with ipcState := ipc, pendingMessage := msg }) st with
+    cases hSO : storeObject tid.toObjId (.tcb (TCB.setIpcState { tcb with pendingMessage := msg } ipc)) st with
     | error e => simp [hSO] at hStep
     | ok p =>
       obtain ⟨_, st''⟩ := p
       simp only [hSO, Except.ok.injEq] at hStep
       subst hStep
       exact storeObject_modifiedTcb_sameSchedContextBindings st st'' tid.toObjId tcb
-        { tcb with ipcState := ipc, pendingMessage := msg } (lookupTcb_some_objects st tid tcb hL) rfl hObjInv hSO
+        (TCB.setIpcState { tcb with pendingMessage := msg } ipc) (lookupTcb_some_objects st tid tcb hL) rfl hObjInv hSO
 
 open SeLe4n.Model.SystemState in
 /-- D6: `storeTcbReceiveComplete` preserves every TCB's binding. -/
@@ -7245,14 +7245,14 @@ theorem storeTcbReceiveComplete_sameSchedContextBindings
   | none => simp [hL] at hStep
   | some tcb =>
     simp only [hL] at hStep
-    cases hSO : storeObject tid.toObjId (.tcb { tcb with ipcState := .ready, pendingMessage := msg, pendingReceiveReply := none }) st with
+    cases hSO : storeObject tid.toObjId (.tcb (TCB.setIpcState { tcb with pendingMessage := msg, pendingReceiveReply := none } .ready)) st with
     | error e => simp [hSO] at hStep
     | ok p =>
       obtain ⟨_, st''⟩ := p
       simp only [hSO, Except.ok.injEq] at hStep
       subst hStep
       exact storeObject_modifiedTcb_sameSchedContextBindings st st'' tid.toObjId tcb
-        { tcb with ipcState := .ready, pendingMessage := msg, pendingReceiveReply := none }
+        (TCB.setIpcState { tcb with pendingMessage := msg, pendingReceiveReply := none } .ready)
         (lookupTcb_some_objects st tid tcb hL) rfl hObjInv hSO
 
 open SeLe4n.Model.SystemState in
@@ -7338,14 +7338,14 @@ theorem storeTcbReceiveComplete_timeoutBudgetFrame
   | none => simp [hL] at hStep
   | some tcb =>
     simp only [hL] at hStep
-    cases hSO : storeObject tid.toObjId (.tcb { tcb with ipcState := .ready, pendingMessage := msg, pendingReceiveReply := none }) st with
+    cases hSO : storeObject tid.toObjId (.tcb (TCB.setIpcState { tcb with pendingMessage := msg, pendingReceiveReply := none } .ready)) st with
     | error e => simp [hSO] at hStep
     | ok p =>
       obtain ⟨_, st''⟩ := p
       simp only [hSO, Except.ok.injEq] at hStep
       subst hStep
       exact storeObject_modifiedTcb_timeoutBudgetFrame st st'' tid.toObjId tcb
-        { tcb with ipcState := .ready, pendingMessage := msg, pendingReceiveReply := none }
+        (TCB.setIpcState { tcb with pendingMessage := msg, pendingReceiveReply := none } .ready)
         (lookupTcb_some_objects st tid tcb hL) rfl hObjInv hSO
 
 open SeLe4n.Model.SystemState in
@@ -7449,14 +7449,14 @@ theorem storeTcbIpcState_fromTcb_donationOwnerFrame
     (hStep : storeTcbIpcState_fromTcb st tid tcb ipc = .ok st') :
     donationOwnerFrame st st' := by
   unfold storeTcbIpcState_fromTcb at hStep
-  cases hSO : storeObject tid.toObjId (.tcb { tcb with ipcState := ipc }) st with
+  cases hSO : storeObject tid.toObjId (.tcb (tcb.setIpcState ipc)) st with
   | error e => simp [hSO] at hStep
   | ok p =>
     obtain ⟨_, st''⟩ := p
     simp only [hSO, Except.ok.injEq] at hStep
     subst hStep
     exact storeObject_modifiedTcb_donationOwnerFrame st st'' tid.toObjId tcb
-      { tcb with ipcState := ipc } hOrig hPreNotReply hObjInv hSO
+      (tcb.setIpcState ipc) hOrig hPreNotReply hObjInv hSO
 
 open SeLe4n.Model.SystemState in
 /-- WS-RR RR3.5: the `storeTcbIpcStateAndMessage_fromTcb` twin of the frame above. -/
@@ -7470,14 +7470,14 @@ theorem storeTcbIpcStateAndMessage_fromTcb_donationOwnerFrame
     donationOwnerFrame st st' := by
   unfold storeTcbIpcStateAndMessage_fromTcb at hStep
   cases hSO : storeObject tid.toObjId
-      (.tcb { tcb with ipcState := ipc, pendingMessage := msg }) st with
+      (.tcb (TCB.setIpcState { tcb with pendingMessage := msg } ipc)) st with
   | error e => simp [hSO] at hStep
   | ok p =>
     obtain ⟨_, st''⟩ := p
     simp only [hSO, Except.ok.injEq] at hStep
     subst hStep
     exact storeObject_modifiedTcb_donationOwnerFrame st st'' tid.toObjId tcb
-      { tcb with ipcState := ipc, pendingMessage := msg } hOrig hPreNotReply hObjInv hSO
+      (TCB.setIpcState { tcb with pendingMessage := msg } ipc) hOrig hPreNotReply hObjInv hSO
 
 open SeLe4n.Model.SystemState in
 /-- D6: `storeTcbIpcState` frames the owner side forward (pre-state not `.blockedOnReply`). -/
@@ -7493,7 +7493,7 @@ theorem storeTcbIpcState_donationOwnerFrame
   | none => simp [hL] at hStep
   | some tcb =>
     simp only [hL] at hStep
-    cases hSO : storeObject tid.toObjId (.tcb { tcb with ipcState := ipc }) st with
+    cases hSO : storeObject tid.toObjId (.tcb (tcb.setIpcState ipc)) st with
     | error e => simp [hSO] at hStep
     | ok p =>
       obtain ⟨_, st''⟩ := p
@@ -7501,7 +7501,7 @@ theorem storeTcbIpcState_donationOwnerFrame
       subst hStep
       have hOrig := lookupTcb_some_objects st tid tcb hL
       exact storeObject_modifiedTcb_donationOwnerFrame st st'' tid.toObjId tcb
-        { tcb with ipcState := ipc } hOrig (hPreNotReply tcb hOrig) hObjInv hSO
+        (tcb.setIpcState ipc) hOrig (hPreNotReply tcb hOrig) hObjInv hSO
 
 open SeLe4n.Model.SystemState in
 /-- D6: `storeTcbIpcStateAndMessage` frames the owner side forward (pre-state not
@@ -7518,7 +7518,7 @@ theorem storeTcbIpcStateAndMessage_donationOwnerFrame
   | none => simp [hL] at hStep
   | some tcb =>
     simp only [hL] at hStep
-    cases hSO : storeObject tid.toObjId (.tcb { tcb with ipcState := ipc, pendingMessage := msg }) st with
+    cases hSO : storeObject tid.toObjId (.tcb (TCB.setIpcState { tcb with pendingMessage := msg } ipc)) st with
     | error e => simp [hSO] at hStep
     | ok p =>
       obtain ⟨_, st''⟩ := p
@@ -7526,7 +7526,7 @@ theorem storeTcbIpcStateAndMessage_donationOwnerFrame
       subst hStep
       have hOrig := lookupTcb_some_objects st tid tcb hL
       exact storeObject_modifiedTcb_donationOwnerFrame st st'' tid.toObjId tcb
-        { tcb with ipcState := ipc, pendingMessage := msg } hOrig (hPreNotReply tcb hOrig) hObjInv hSO
+        (TCB.setIpcState { tcb with pendingMessage := msg } ipc) hOrig (hPreNotReply tcb hOrig) hObjInv hSO
 
 open SeLe4n.Model.SystemState in
 /-- D6: `storeTcbReceiveComplete` frames the owner side forward (it sets the rewritten thread
@@ -7543,7 +7543,7 @@ theorem storeTcbReceiveComplete_donationOwnerFrame
   | none => simp [hL] at hStep
   | some tcb =>
     simp only [hL] at hStep
-    cases hSO : storeObject tid.toObjId (.tcb { tcb with ipcState := .ready, pendingMessage := msg, pendingReceiveReply := none }) st with
+    cases hSO : storeObject tid.toObjId (.tcb (TCB.setIpcState { tcb with pendingMessage := msg, pendingReceiveReply := none } .ready)) st with
     | error e => simp [hSO] at hStep
     | ok p =>
       obtain ⟨_, st''⟩ := p
@@ -7551,7 +7551,7 @@ theorem storeTcbReceiveComplete_donationOwnerFrame
       subst hStep
       have hOrig := lookupTcb_some_objects st tid tcb hL
       exact storeObject_modifiedTcb_donationOwnerFrame st st'' tid.toObjId tcb
-        { tcb with ipcState := .ready, pendingMessage := msg, pendingReceiveReply := none }
+        (TCB.setIpcState { tcb with pendingMessage := msg, pendingReceiveReply := none } .ready)
         hOrig (hPreNotReply tcb hOrig) hObjInv hSO
 
 open SeLe4n.Model.SystemState in
@@ -7711,7 +7711,7 @@ theorem storeTcbIpcState_passiveServerIdleFrame
   | none => simp [hL] at hStep
   | some tcb =>
     simp only [hL] at hStep
-    cases hSO : storeObject tid0.toObjId (.tcb { tcb with ipcState := ipc }) st with
+    cases hSO : storeObject tid0.toObjId (.tcb (tcb.setIpcState ipc)) st with
     | error e => simp [hSO] at hStep
     | ok p =>
       obtain ⟨_, st''⟩ := p
@@ -7719,9 +7719,9 @@ theorem storeTcbIpcState_passiveServerIdleFrame
       subst hStep
       have hOrig := lookupTcb_some_objects st tid0 tcb hL
       refine storeObject_modifiedTcb_passiveServerIdleFrame st st'' tid0.toObjId tcb
-        { tcb with ipcState := ipc } hOrig rfl ?_ hObjInv hSO
+        (tcb.setIpcState ipc) hOrig rfl ?_ hObjInv hSO
       rcases hAllowedOrBound with hA | hB
-      · exact Or.inl hA
+      · exact Or.inl (by simpa using hA)
       · exact Or.inr (hB tcb hOrig)
 
 open SeLe4n.Model.SystemState in
@@ -7734,14 +7734,14 @@ theorem storeTcbIpcState_fromTcb_passiveServerIdleFrame
     (hStep : storeTcbIpcState_fromTcb st tid0 tcb ipc = .ok st') :
     passiveServerIdleFrame st st' := by
   unfold storeTcbIpcState_fromTcb at hStep
-  cases hSO : storeObject tid0.toObjId (.tcb { tcb with ipcState := ipc }) st with
+  cases hSO : storeObject tid0.toObjId (.tcb (tcb.setIpcState ipc)) st with
   | error e => simp [hSO] at hStep
   | ok p =>
     obtain ⟨_, st''⟩ := p
     simp only [hSO, Except.ok.injEq] at hStep
     subst hStep
     exact storeObject_modifiedTcb_passiveServerIdleFrame st st'' tid0.toObjId tcb
-      { tcb with ipcState := ipc } hOrig rfl hAllowedOrBound hObjInv hSO
+      (tcb.setIpcState ipc) hOrig rfl (by simpa using hAllowedOrBound) hObjInv hSO
 
 open SeLe4n.Model.SystemState in
 /-- D6: `storeTcbIpcStateAndMessage` frames `passiveServerIdle`. -/
@@ -7757,7 +7757,7 @@ theorem storeTcbIpcStateAndMessage_passiveServerIdleFrame
   | none => simp [hL] at hStep
   | some tcb =>
     simp only [hL] at hStep
-    cases hSO : storeObject tid0.toObjId (.tcb { tcb with ipcState := ipc, pendingMessage := msg }) st with
+    cases hSO : storeObject tid0.toObjId (.tcb (TCB.setIpcState { tcb with pendingMessage := msg } ipc)) st with
     | error e => simp [hSO] at hStep
     | ok p =>
       obtain ⟨_, st''⟩ := p
@@ -7765,9 +7765,9 @@ theorem storeTcbIpcStateAndMessage_passiveServerIdleFrame
       subst hStep
       have hOrig := lookupTcb_some_objects st tid0 tcb hL
       refine storeObject_modifiedTcb_passiveServerIdleFrame st st'' tid0.toObjId tcb
-        { tcb with ipcState := ipc, pendingMessage := msg } hOrig rfl ?_ hObjInv hSO
+        (TCB.setIpcState { tcb with pendingMessage := msg } ipc) hOrig rfl ?_ hObjInv hSO
       rcases hAllowedOrBound with hA | hB
-      · exact Or.inl hA
+      · exact Or.inl (by simpa using hA)
       · exact Or.inr (hB tcb hOrig)
 
 open SeLe4n.Model.SystemState in
@@ -7888,14 +7888,14 @@ theorem storeTcbReceiveComplete_passiveServerIdleFrame
   | none => simp [hL] at hStep
   | some tcb =>
     simp only [hL] at hStep
-    cases hSO : storeObject tid0.toObjId (.tcb { tcb with ipcState := .ready, pendingMessage := msg, pendingReceiveReply := none }) st with
+    cases hSO : storeObject tid0.toObjId (.tcb (TCB.setIpcState { tcb with pendingMessage := msg, pendingReceiveReply := none } .ready)) st with
     | error e => simp [hSO] at hStep
     | ok p =>
       obtain ⟨_, st''⟩ := p
       simp only [hSO, Except.ok.injEq] at hStep
       subst hStep
       exact storeObject_modifiedTcb_passiveServerIdleFrame st st'' tid0.toObjId tcb
-        { tcb with ipcState := .ready, pendingMessage := msg, pendingReceiveReply := none }
+        (TCB.setIpcState { tcb with pendingMessage := msg, pendingReceiveReply := none } .ready)
         (lookupTcb_some_objects st tid0 tcb hL) rfl (Or.inl (Or.inl rfl)) hObjInv hSO
 
 -- ============================================================================
@@ -7914,14 +7914,14 @@ theorem storeTcbIpcState_timeoutBudgetFrame
   | none => simp [hL] at hStep
   | some tcb =>
     simp only [hL] at hStep
-    cases hSO : storeObject tid0.toObjId (.tcb { tcb with ipcState := ipc }) st with
+    cases hSO : storeObject tid0.toObjId (.tcb (tcb.setIpcState ipc)) st with
     | error e => simp [hSO] at hStep
     | ok p =>
       obtain ⟨_, st''⟩ := p
       simp only [hSO, Except.ok.injEq] at hStep
       subst hStep
       exact storeObject_modifiedTcb_timeoutBudgetFrame st st'' tid0.toObjId tcb
-        { tcb with ipcState := ipc } (lookupTcb_some_objects st tid0 tcb hL) rfl hObjInv hSO
+        (tcb.setIpcState ipc) (lookupTcb_some_objects st tid0 tcb hL) rfl hObjInv hSO
 
 open SeLe4n.Model.SystemState in
 /-- D5: `storeTcbIpcState_fromTcb` frames `timeoutBudgetFrame`. -/
@@ -7932,14 +7932,14 @@ theorem storeTcbIpcState_fromTcb_timeoutBudgetFrame
     (hStep : storeTcbIpcState_fromTcb st tid0 tcb ipc = .ok st') :
     timeoutBudgetFrame st st' := by
   unfold storeTcbIpcState_fromTcb at hStep
-  cases hSO : storeObject tid0.toObjId (.tcb { tcb with ipcState := ipc }) st with
+  cases hSO : storeObject tid0.toObjId (.tcb (tcb.setIpcState ipc)) st with
   | error e => simp [hSO] at hStep
   | ok p =>
     obtain ⟨_, st''⟩ := p
     simp only [hSO, Except.ok.injEq] at hStep
     subst hStep
     exact storeObject_modifiedTcb_timeoutBudgetFrame st st'' tid0.toObjId tcb
-      { tcb with ipcState := ipc } hOrig rfl hObjInv hSO
+      (tcb.setIpcState ipc) hOrig rfl hObjInv hSO
 
 open SeLe4n.Model.SystemState in
 /-- WS-RR RR3.5: the `storeTcbIpcStateAndMessage_fromTcb` twin of the frame above. -/
@@ -7952,14 +7952,14 @@ theorem storeTcbIpcStateAndMessage_fromTcb_timeoutBudgetFrame
     timeoutBudgetFrame st st' := by
   unfold storeTcbIpcStateAndMessage_fromTcb at hStep
   cases hSO : storeObject tid0.toObjId
-      (.tcb { tcb with ipcState := ipc, pendingMessage := msg }) st with
+      (.tcb (TCB.setIpcState { tcb with pendingMessage := msg } ipc)) st with
   | error e => simp [hSO] at hStep
   | ok p =>
     obtain ⟨_, st''⟩ := p
     simp only [hSO, Except.ok.injEq] at hStep
     subst hStep
     exact storeObject_modifiedTcb_timeoutBudgetFrame st st'' tid0.toObjId tcb
-      { tcb with ipcState := ipc, pendingMessage := msg } hOrig rfl hObjInv hSO
+      (TCB.setIpcState { tcb with pendingMessage := msg } ipc) hOrig rfl hObjInv hSO
 
 open SeLe4n.Model.SystemState in
 /-- D5: `storeTcbIpcStateAndMessage` frames `timeoutBudgetFrame`. -/
@@ -7973,14 +7973,14 @@ theorem storeTcbIpcStateAndMessage_timeoutBudgetFrame
   | none => simp [hL] at hStep
   | some tcb =>
     simp only [hL] at hStep
-    cases hSO : storeObject tid0.toObjId (.tcb { tcb with ipcState := ipc, pendingMessage := msg }) st with
+    cases hSO : storeObject tid0.toObjId (.tcb (TCB.setIpcState { tcb with pendingMessage := msg } ipc)) st with
     | error e => simp [hSO] at hStep
     | ok p =>
       obtain ⟨_, st''⟩ := p
       simp only [hSO, Except.ok.injEq] at hStep
       subst hStep
       exact storeObject_modifiedTcb_timeoutBudgetFrame st st'' tid0.toObjId tcb
-        { tcb with ipcState := ipc, pendingMessage := msg } (lookupTcb_some_objects st tid0 tcb hL) rfl hObjInv hSO
+        (TCB.setIpcState { tcb with pendingMessage := msg } ipc) (lookupTcb_some_objects st tid0 tcb hL) rfl hObjInv hSO
 
 open SeLe4n.Model.SystemState in
 /-- D3: a `storeObject` of a **non-TCB** object frames the clause (vacuous `hNew`). -/
@@ -8011,7 +8011,7 @@ theorem storeTcbIpcStateAndMessage_preserves_blockedOnReplyHasTarget
   | none => simp [hL] at hStep
   | some tcb =>
     simp only [hL] at hStep
-    cases hSO : storeObject tid.toObjId (.tcb { tcb with ipcState := ipc, pendingMessage := msg }) st with
+    cases hSO : storeObject tid.toObjId (.tcb (TCB.setIpcState { tcb with pendingMessage := msg } ipc)) st with
     | error e => simp [hSO] at hStep
     | ok p =>
       obtain ⟨_, st''⟩ := p
@@ -8039,7 +8039,7 @@ theorem storeTcbReceiveComplete_preserves_blockedOnReplyHasTarget
   | none => simp [hL] at hStep
   | some tcb =>
     simp only [hL] at hStep
-    cases hSO : storeObject tid.toObjId (.tcb { tcb with ipcState := .ready, pendingMessage := msg, pendingReceiveReply := none }) st with
+    cases hSO : storeObject tid.toObjId (.tcb (TCB.setIpcState { tcb with pendingMessage := msg, pendingReceiveReply := none } .ready)) st with
     | error e => simp [hSO] at hStep
     | ok p =>
       obtain ⟨_, st''⟩ := p
@@ -8065,7 +8065,7 @@ theorem storeTcbIpcState_preserves_blockedOnReplyHasTarget
   | none => simp [hL] at hStep
   | some tcb =>
     simp only [hL] at hStep
-    cases hSO : storeObject tid.toObjId (.tcb { tcb with ipcState := ipc }) st with
+    cases hSO : storeObject tid.toObjId (.tcb (tcb.setIpcState ipc)) st with
     | error e => simp [hSO] at hStep
     | ok p =>
       obtain ⟨_, st''⟩ := p
@@ -8088,7 +8088,7 @@ theorem storeTcbIpcState_fromTcb_preserves_blockedOnReplyHasTarget
     (hStep : storeTcbIpcState_fromTcb st tid tcb ipc = .ok st') :
     blockedOnReplyHasTarget st' := by
   unfold storeTcbIpcState_fromTcb at hStep
-  cases hSO : storeObject tid.toObjId (.tcb { tcb with ipcState := ipc }) st with
+  cases hSO : storeObject tid.toObjId (.tcb (tcb.setIpcState ipc)) st with
   | error e => simp [hSO] at hStep
   | ok p =>
     obtain ⟨_, st''⟩ := p
@@ -8112,7 +8112,7 @@ theorem storeTcbIpcStateAndMessage_fromTcb_preserves_blockedOnReplyHasTarget
     blockedOnReplyHasTarget st' := by
   unfold storeTcbIpcStateAndMessage_fromTcb at hStep
   cases hSO : storeObject tid.toObjId
-      (.tcb { tcb with ipcState := ipc, pendingMessage := msg }) st with
+      (.tcb (TCB.setIpcState { tcb with pendingMessage := msg } ipc)) st with
   | error e => simp [hSO] at hStep
   | ok p =>
     obtain ⟨_, st''⟩ := p
@@ -13228,14 +13228,14 @@ theorem storeTcbIpcStateAndMessage_donationOwnerFrameExcept
   | some tcb =>
     simp only [hL] at hStep
     cases hSO : storeObject tid.toObjId
-        (.tcb { tcb with ipcState := ipc, pendingMessage := msg }) st with
+        (.tcb (TCB.setIpcState { tcb with pendingMessage := msg } ipc)) st with
     | error e => simp [hSO] at hStep
     | ok p =>
       obtain ⟨_, st''⟩ := p
       simp only [hSO, Except.ok.injEq] at hStep
       subst hStep
       exact storeObject_wokenTcb_donationOwnerFrameExcept st st'' tid tcb
-        { tcb with ipcState := ipc, pendingMessage := msg }
+        (TCB.setIpcState { tcb with pendingMessage := msg } ipc)
         (lookupTcb_some_objects st tid tcb hL) rfl hObjInv hSO
 
 open SeLe4n.Model.SystemState in
@@ -13879,7 +13879,7 @@ theorem storeTcbIpcStateAndMessage_preserves_pendingReceiveReplyWellFormed
   | none => simp [hL] at hStep
   | some tcb =>
     simp only [hL] at hStep
-    cases hSO : storeObject tid.toObjId (.tcb { tcb with ipcState := ipc, pendingMessage := msg }) st with
+    cases hSO : storeObject tid.toObjId (.tcb (TCB.setIpcState { tcb with pendingMessage := msg } ipc)) st with
     | error e => simp [hSO] at hStep
     | ok p =>
       obtain ⟨_, st''⟩ := p
@@ -13888,11 +13888,11 @@ theorem storeTcbIpcStateAndMessage_preserves_pendingReceiveReplyWellFormed
       have hOld : st.getTcb? tid = some tcb :=
         (getTcb?_eq_some_iff st tid tcb).mpr (lookupTcb_some_objects st tid tcb hL)
       refine storeObject_tcb_preserves_pendingReceiveReplyWellFormed st st'' tid tcb
-        { tcb with ipcState := ipc, pendingMessage := msg } hObjInv hOld hInv ?_ ?_ hSO
+        (TCB.setIpcState { tcb with pendingMessage := msg } ipc) hObjInv hOld hInv ?_ ?_ hSO
       · intro rid hStash
         have hStashOld : tcb.pendingReceiveReply = some rid := hStash
         obtain ⟨_, hFree⟩ := hInv.1 tid tcb rid hOld hStashOld
-        exact ⟨hStashOk tcb rid hOld hStashOld, hFree⟩
+        exact ⟨(by simpa using (hStashOk tcb rid hOld hStashOld)), hFree⟩
       · intro rid hStash tid' tcb' hne hTcb' hStash'
         have hStashOld : tcb.pendingReceiveReply = some rid := hStash
         exact hne (hInv.2 tid' tid tcb' tcb rid hTcb' hOld hStash' hStashOld)
@@ -13917,7 +13917,7 @@ theorem storeTcbReceiveComplete_preserves_pendingReceiveReplyWellFormed
   | none => simp [hL] at hStep
   | some tcb =>
     simp only [hL] at hStep
-    cases hSO : storeObject tid.toObjId (.tcb { tcb with ipcState := .ready, pendingMessage := msg, pendingReceiveReply := none }) st with
+    cases hSO : storeObject tid.toObjId (.tcb (TCB.setIpcState { tcb with pendingMessage := msg, pendingReceiveReply := none } .ready)) st with
     | error e => simp [hSO] at hStep
     | ok p =>
       obtain ⟨_, st''⟩ := p
@@ -13926,7 +13926,7 @@ theorem storeTcbReceiveComplete_preserves_pendingReceiveReplyWellFormed
       have hOld : st.getTcb? tid = some tcb :=
         (getTcb?_eq_some_iff st tid tcb).mpr (lookupTcb_some_objects st tid tcb hL)
       refine storeObject_tcb_preserves_pendingReceiveReplyWellFormed st st'' tid tcb
-        { tcb with ipcState := .ready, pendingMessage := msg, pendingReceiveReply := none } hObjInv hOld hInv ?_ ?_ hSO
+        (TCB.setIpcState { tcb with pendingMessage := msg, pendingReceiveReply := none } .ready) hObjInv hOld hInv ?_ ?_ hSO
       · intro rid hStash; simp at hStash
       · intro rid hStash; simp at hStash
 
@@ -13945,7 +13945,7 @@ theorem storeTcbIpcState_preserves_pendingReceiveReplyWellFormed
   | none => simp [hL] at hStep
   | some tcb =>
     simp only [hL] at hStep
-    cases hSO : storeObject tid.toObjId (.tcb { tcb with ipcState := ipc }) st with
+    cases hSO : storeObject tid.toObjId (.tcb (tcb.setIpcState ipc)) st with
     | error e => simp [hSO] at hStep
     | ok p =>
       obtain ⟨_, st''⟩ := p
@@ -13954,11 +13954,11 @@ theorem storeTcbIpcState_preserves_pendingReceiveReplyWellFormed
       have hOld : st.getTcb? tid = some tcb :=
         (getTcb?_eq_some_iff st tid tcb).mpr (lookupTcb_some_objects st tid tcb hL)
       refine storeObject_tcb_preserves_pendingReceiveReplyWellFormed st st'' tid tcb
-        { tcb with ipcState := ipc } hObjInv hOld hInv ?_ ?_ hSO
+        (tcb.setIpcState ipc) hObjInv hOld hInv ?_ ?_ hSO
       · intro rid hStash
         have hStashOld : tcb.pendingReceiveReply = some rid := hStash
         obtain ⟨_, hFree⟩ := hInv.1 tid tcb rid hOld hStashOld
-        exact ⟨hStashOk tcb rid hOld hStashOld, hFree⟩
+        exact ⟨(by simpa using (hStashOk tcb rid hOld hStashOld)), hFree⟩
       · intro rid hStash tid' tcb' hne hTcb' hStash'
         have hStashOld : tcb.pendingReceiveReply = some rid := hStash
         exact hne (hInv.2 tid' tid tcb' tcb rid hTcb' hOld hStash' hStashOld)
@@ -14149,7 +14149,7 @@ theorem storeTcbIpcStateAndMessage_getTcb?_backward
   | none => simp [hL] at hStep
   | some tcb =>
     simp only [hL] at hStep
-    cases hSO : storeObject tid.toObjId (.tcb { tcb with ipcState := ipc, pendingMessage := msg }) st with
+    cases hSO : storeObject tid.toObjId (.tcb (TCB.setIpcState { tcb with pendingMessage := msg } ipc)) st with
     | error e => simp [hSO] at hStep
     | ok p =>
       obtain ⟨_, st''⟩ := p
@@ -14158,7 +14158,7 @@ theorem storeTcbIpcStateAndMessage_getTcb?_backward
       have hOld : st.objects[tid.toObjId]? = some (.tcb tcb) := lookupTcb_some_objects st tid tcb hL
       by_cases hYt : y = tid
       · subst hYt
-        have hStored : st''.objects[y.toObjId]? = some (.tcb { tcb with ipcState := ipc, pendingMessage := msg }) :=
+        have hStored : st''.objects[y.toObjId]? = some (.tcb (TCB.setIpcState { tcb with pendingMessage := msg } ipc)) :=
           storeObject_objects_eq st st'' y.toObjId _ hObjInv hSO
         rw [getTcb?_eq_some_iff, hStored] at hY
         obtain rfl := KernelObject.tcb.inj (Option.some.inj hY)
@@ -14699,14 +14699,14 @@ theorem storeTcbIpcState_preserves_replyIdEstablishFresh
   | none => simp [hTcb] at hStep
   | some tcb =>
     simp only [hTcb] at hStep
-    cases hStore : storeObject tid.toObjId (.tcb { tcb with ipcState := ipc }) st with
+    cases hStore : storeObject tid.toObjId (.tcb (tcb.setIpcState ipc)) st with
     | error e => simp [hStore] at hStep
     | ok pair =>
       simp only [hStore] at hStep
       have hEq : pair.snd = st' := Except.ok.inj hStep
       subst hEq
       exact storeObject_tcb_preserveStash_replyIdEstablishFresh st pair.2 tid tcb
-        { tcb with ipcState := ipc } rid hObjInv
+        (tcb.setIpcState ipc) rid hObjInv
         (lookupTcb_some_objects st tid tcb hTcb) rfl hFresh hStore
 
 open SeLe4n.Model.SystemState in
@@ -14724,14 +14724,14 @@ theorem storeTcbIpcStateAndMessage_preserves_replyIdEstablishFresh
   | none => simp [hTcb] at hStep
   | some tcb =>
     simp only [hTcb] at hStep
-    cases hStore : storeObject tid.toObjId (.tcb { tcb with ipcState := ipc, pendingMessage := msg }) st with
+    cases hStore : storeObject tid.toObjId (.tcb (TCB.setIpcState { tcb with pendingMessage := msg } ipc)) st with
     | error e => simp [hStore] at hStep
     | ok pair =>
       simp only [hStore] at hStep
       have hEq : pair.snd = st' := Except.ok.inj hStep
       subst hEq
       exact storeObject_tcb_preserveStash_replyIdEstablishFresh st pair.2 tid tcb
-        { tcb with ipcState := ipc, pendingMessage := msg } rid hObjInv
+        (TCB.setIpcState { tcb with pendingMessage := msg } ipc) rid hObjInv
         (lookupTcb_some_objects st tid tcb hTcb) rfl hFresh hStore
 
 open SeLe4n.Model.SystemState in
@@ -18133,7 +18133,7 @@ theorem endpointQueueEnqueue_blockStore_establishes_queueHeadBlockedConsistent
     | none => simp [hLk] at hStore
     | some tcb0 =>
       simp only [hLk] at hStore
-      cases hSt : storeObject tid.toObjId (.tcb { tcb0 with ipcState := blockState, pendingMessage := msg }) st1 with
+      cases hSt : storeObject tid.toObjId (.tcb (TCB.setIpcState { tcb0 with pendingMessage := msg } blockState)) st1 with
       | error e => simp [hSt] at hStore
       | ok pair =>
         simp only [hSt, Except.ok.injEq] at hStore; subst hStore
@@ -20209,7 +20209,7 @@ theorem endpointCall_preserves_queueHeadBlockedConsistent
               | some t0 =>
                 simp only [hL] at hMsg
                 cases hSt : storeObject pair.1.toObjId
-                    (.tcb { t0 with ipcState := .ready, pendingMessage := some msg }) pair.2.2 with
+                    (.tcb (TCB.setIpcState { t0 with pendingMessage := some msg } .ready)) pair.2.2 with
                 | error e => simp [hSt] at hMsg
                 | ok p =>
                   simp only [hSt, Except.ok.injEq] at hMsg; subst hMsg
@@ -22116,11 +22116,11 @@ theorem endpointReply_preserves_replyCallerLinkageReciprocal
             -- woken TCB (same `replyObject`), every other slot is unchanged, and
             -- `ensureRunnable` is objects-invariant.
             have hMidTarget : st1.objects[target.toObjId]?
-                = some (.tcb { tcb with ipcState := .ready, pendingMessage := some msg }) := by
+                = some (.tcb (TCB.setIpcState { tcb with pendingMessage := some msg } .ready)) := by
               unfold storeTcbIpcStateAndMessage modifyTcb at hStore
               simp only [hLookup] at hStore
               cases hSt : storeObject target.toObjId
-                  (.tcb { tcb with ipcState := .ready, pendingMessage := some msg }) st with
+                  (.tcb (TCB.setIpcState { tcb with pendingMessage := some msg } .ready)) st with
               | error e => simp [hSt] at hStore
               | ok pair =>
                 simp only [hSt] at hStore
@@ -22137,7 +22137,7 @@ theorem endpointReply_preserves_replyCallerLinkageReciprocal
                 (some msg) hObjInv hStore
             exact replyDelivery_preserves_replyCallerLinkageReciprocal st st1
               (ensureRunnable st1 target) st' target tcb
-              { tcb with ipcState := .ready, pendingMessage := some msg }
+              (TCB.setIpcState { tcb with pendingMessage := some msg } .ready)
               hRecip hTargetObj hMidTarget rfl hMidNe
               (ensureRunnable_objectsAgreeOffRunLinks st1 target) hObjInvMid hStep
         · simp_all
