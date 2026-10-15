@@ -1278,8 +1278,8 @@ theorem endpointQueueEnqueue_preserves_ipcStateQueueMembershipConsistent
                         storeObject_objects_ne' st endpointId oid _ pair h1 hObjInv hStore]
                   -- Endpoint at endpointId in st' (unchanged through link steps)
                   have hEpPost : st'.objects[endpointId]? = some (.endpoint (
-                      if isReceiveQ = true then { ep with receiveQ := { head := (if isReceiveQ = true then ep.receiveQ else ep.sendQ).head, tail := some enqueueTid } }
-                      else { ep with sendQ := { head := (if isReceiveQ = true then ep.receiveQ else ep.sendQ).head, tail := some enqueueTid } })) := by
+                      if isReceiveQ = true then (ep.withReceiveQ { head := (if isReceiveQ = true then ep.receiveQ else ep.sendQ).head, tail := some enqueueTid })
+                      else (ep.withSendQ { head := (if isReceiveQ = true then ep.receiveQ else ep.sendQ).head, tail := some enqueueTid }))) := by
                     rw [storeTcbQueueLinks_preserves_objects_ne st2 st' enqueueTid _ _ _ endpointId hNeEpTid.symm hInvExt2 hLink2,
                         storeTcbQueueLinks_preserves_objects_ne pair.2 st2 tailTid _ _ _ endpointId (hTidEq ▸ hNeEpTid.symm) hInvExt1 hLink1]
                     exact storeObject_objects_eq' st endpointId _ pair hObjInv hStore
@@ -1696,7 +1696,7 @@ theorem endpointQueueEnqueue_thread_reachable
                 have hTcbObj := lookupTcb_some_objects st tid tcb hLookup
                 rw [h] at hTcbObj; rw [hObj] at hTcbObj; cases hTcbObj
               have hEp1 := storeObject_objects_eq' st endpointId _ pair hObjInv hStore
-              have hEp2 : st2.objects[endpointId]? = some (.endpoint (if isReceiveQ then { ep with receiveQ := { head := some tid, tail := some tid } } else { ep with sendQ := { head := some tid, tail := some tid } })) := by
+              have hEp2 : st2.objects[endpointId]? = some (.endpoint (if isReceiveQ then (ep.withReceiveQ { head := some tid, tail := some tid }) else (ep.withSendQ { head := some tid, tail := some tid }))) := by
                 rw [storeTcbQueueLinks_preserves_objects_ne pair.2 st2 tid _ _ _ endpointId hNeT.symm hInv1 hLink]
                 exact hEp1
               exact ⟨_, hEp2, Or.inl (by cases isReceiveQ <;> simp)⟩

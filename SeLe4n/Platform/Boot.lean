@@ -817,11 +817,11 @@ theorem objectIdsUnique_empty : objectIdsUnique [] = true := by
     be classified. -/
 def endpointReferencesReservedIdleSlot (ep : Endpoint) : Bool :=
   match ep with
-  | ⟨sendQ, receiveQ⟩ =>
-    sendQ.head.any SeLe4n.Kernel.isIdleThreadId ||
-    sendQ.tail.any SeLe4n.Kernel.isIdleThreadId ||
-    receiveQ.head.any SeLe4n.Kernel.isIdleThreadId ||
-    receiveQ.tail.any SeLe4n.Kernel.isIdleThreadId
+  | ⟨_sendHead, _sendTail, _recvHead, _recvTail⟩ =>
+    ep.sendQ.head.any SeLe4n.Kernel.isIdleThreadId ||
+    ep.sendQ.tail.any SeLe4n.Kernel.isIdleThreadId ||
+    ep.receiveQ.head.any SeLe4n.Kernel.isIdleThreadId ||
+    ep.receiveQ.tail.any SeLe4n.Kernel.isIdleThreadId
 
 /-- PR #889 review round 8: a boot **notification**'s waiters and (round 4) its
     bound TCB — a boot notification pre-bound to an idle thread would be
@@ -1684,7 +1684,7 @@ a new `VSpaceRoot` field is that checker's to classify, in its own module. -/
 /-- A boot **endpoint** is inert: both intrusive queues empty. -/
 def bootSafeEndpointCheck (ep : Endpoint) : Bool :=
   match ep with
-  | ⟨_sendQ, _receiveQ⟩ =>
+  | ⟨_sendHead, _sendTail, _recvHead, _recvTail⟩ =>
     ep.sendQ.head.isNone && ep.sendQ.tail.isNone &&
     ep.receiveQ.head.isNone && ep.receiveQ.tail.isNone
 

@@ -284,7 +284,7 @@ theorem endpointReply_preserves_ipcInvariant
 --
 -- Structural argument (verified by construction):
 -- 1. endpointQueuePopHead/Enqueue modify ONLY sendQ/receiveQ intrusive fields
--- on the target endpoint (using `{ ep with sendQ := q' }` / `{ ep with receiveQ := q' }`).
+-- on the target endpoint (using `(ep.withSendQ q')` / `(ep.withReceiveQ q')`).
 -- Notification objects are UNCHANGED. Therefore ipcInvariant
 -- (notification well-formedness) is preserved.
 -- 2. All intermediate storeObject calls target either the endpoint ID or

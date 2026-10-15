@@ -4333,8 +4333,7 @@ private def rendezvousState : SystemState :=
             (.tcb { mkTcb 1020 40 (some c2) with
                       ipcState := .blockedOnReceive crossCoreEndpoint })).insert
           crossCoreEndpoint
-            (.endpoint { receiveQ := { head := some crossCoreReceiver
-                                       tail := some crossCoreReceiver } })).insert
+            (.endpoint (Endpoint.ofQueues {} { head := some crossCoreReceiver, tail := some crossCoreReceiver }))).insert
           crossCoreWaiter.toObjId
             (.tcb { mkTcb 1021 40 (some c2) with
                       ipcState := .blockedOnNotification highNotification }) }
@@ -4511,8 +4510,7 @@ private def blockedSenderState : SystemState :=
                       pendingMessage := some { registers := #[], caps := #[],
                                                badge := none } })).insert
           crossCoreEndpoint
-            (.endpoint { sendQ := { head := some crossCoreSender
-                                    tail := some crossCoreSender } }) }
+            (.endpoint (Endpoint.ofQueues { head := some crossCoreSender, tail := some crossCoreSender } {})) }
 
 private def receiveDualPost : SystemState :=
   (SeLe4n.Kernel.endpointReceiveDualOnCore crossCoreEndpoint remoteHomedThread none c0
@@ -4538,8 +4536,7 @@ private def boundNotificationState : SystemState :=
                       queuePPrevCode := 1
                       queueNextCode := 0 })).insert
           crossCoreEndpoint
-            (.endpoint { receiveQ := { head := some boundTcbThread
-                                       tail := some boundTcbThread } })).insert
+            (.endpoint (Endpoint.ofQueues {} { head := some boundTcbThread, tail := some boundTcbThread }))).insert
           highNotification
             (.notification { state := .idle
                              hasPendingBadge := false, pendingWord := SeLe4n.Badge.zero
@@ -7755,8 +7752,7 @@ private def ipcFootprintState : SystemState :=
             ipcReceiver.toObjId (.tcb ipcReceiverTcb)).insert
             ipcSender.toObjId (.tcb ipcSenderTcb)).insert
           lowEndpoint
-          (.endpoint { sendQ := { head := some ipcSender, tail := some ipcSender },
-                       receiveQ := { head := some ipcReceiver, tail := some ipcReceiver } })) }
+          (.endpoint (Endpoint.ofQueues { head := some ipcSender, tail := some ipcSender } { head := some ipcReceiver, tail := some ipcReceiver }))) }
 
 /-- **WS-OD OD3.6** — the SchedContext a rendezvous donates.  Only the sender's
 `schedContextBinding` is read (`endpointCallDonatedSc?`), so the fixture need
@@ -10624,7 +10620,7 @@ private def taintedEndpointState : SystemState :=
   let base : SystemState :=
     { successEntryState with
         objects := successEntryState.objects.insert highEndpoint
-          (.endpoint { sendQ := { head := some taintedSender, tail := some taintedSender } }),
+          (.endpoint (Endpoint.ofQueues { head := some taintedSender, tail := some taintedSender } {})),
         declassificationTaint := taintedEndpointTable }
   match base.getTcb? taintedSender with
   | none => base
@@ -11090,8 +11086,7 @@ private def sendRendezvousState : SystemState :=
   let base : SystemState :=
     { successEntryState with
         objects := successEntryState.objects.insert highEndpoint
-          (.endpoint { receiveQ := { head := some lowCurrent
-                                     tail := some lowCurrent } }) }
+          (.endpoint (Endpoint.ofQueues {} { head := some lowCurrent, tail := some lowCurrent })) }
   -- PR #873 round 5: the send gate requires **Grant** as well as a declared
   -- capability count, because an endpoint capability without it installs nothing
   -- (`ipcUnwrapCaps` answers `.grantDenied` for every cap). The shared probe
@@ -11946,7 +11941,7 @@ private def abortState : SystemState :=
     |>.withObject cnRoot (.cnode rootCNodeValue)
     |>.withObject vsRoot (.vspaceRoot rootVSpaceValue)
     |>.withObject abortEp (.endpoint
-        { sendQ := { head := some abortHolderTid, tail := some abortNeighbourTid } })
+        (Endpoint.ofQueues { head := some abortHolderTid, tail := some abortNeighbourTid } {}))
     |>.withObject abortHolderTid.toObjId (.tcb abortHolderTcb)
     |>.withObject abortNeighbourTid.toObjId (.tcb abortNeighbourTcb)
     |>.build)

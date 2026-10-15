@@ -2283,9 +2283,134 @@ WS-LS LS3.1: the endpoint's lock is a key of the ghost lock table
 (`endpointSendDual`, `endpointReceiveDual`, `endpointCallDual`) declare it in
 write mode and lookups in read mode. -/
 structure Endpoint where
-  sendQ : IntrusiveQueue := {}
-  receiveQ : IntrusiveQueue := {}
+  /-- WS-ZA ZA4.7: the send queue's head, as a scalar code
+      (`SeLe4n.ThreadId.optCode`); read through `Endpoint.sendQ`. -/
+  sendHeadCode : Nat := 0
+  /-- The send queue's tail, as a scalar code. -/
+  sendTailCode : Nat := 0
+  /-- The receive queue's head, as a scalar code; read through
+      `Endpoint.receiveQ`. -/
+  recvHeadCode : Nat := 0
+  /-- The receive queue's tail, as a scalar code. -/
+  recvTailCode : Nat := 0
   deriving Repr, DecidableEq
+
+/-- The send queue's boundaries, read from their codes.  The endpoint keeps
+the four ends as scalar fields of its own (WS-ZA ZA4.7), so a write of one
+queue's ends rewrites the endpoint in place and builds no `some` cell and no
+queue record. -/
+@[inline] def Endpoint.sendQ (e : Endpoint) : IntrusiveQueue :=
+  { head := SeLe4n.ThreadId.ofOptCode e.sendHeadCode,
+    tail := SeLe4n.ThreadId.ofOptCode e.sendTailCode }
+
+/-- The receive queue's boundaries, read from their codes. -/
+@[inline] def Endpoint.receiveQ (e : Endpoint) : IntrusiveQueue :=
+  { head := SeLe4n.ThreadId.ofOptCode e.recvHeadCode,
+    tail := SeLe4n.ThreadId.ofOptCode e.recvTailCode }
+
+/-- The endpoint with its send queue's ends replaced. -/
+@[inline] def Endpoint.withSendQ (e : Endpoint) (q : IntrusiveQueue) : Endpoint :=
+  { e with sendHeadCode := SeLe4n.ThreadId.optCode q.head,
+           sendTailCode := SeLe4n.ThreadId.optCode q.tail }
+
+/-- The endpoint with its receive queue's ends replaced. -/
+@[inline] def Endpoint.withReceiveQ (e : Endpoint) (q : IntrusiveQueue) : Endpoint :=
+  { e with recvHeadCode := SeLe4n.ThreadId.optCode q.head,
+           recvTailCode := SeLe4n.ThreadId.optCode q.tail }
+
+/-- The endpoint whose queues are `s` and `r`. -/
+@[inline] def Endpoint.ofQueues (s r : IntrusiveQueue) : Endpoint :=
+  { sendHeadCode := SeLe4n.ThreadId.optCode s.head,
+    sendTailCode := SeLe4n.ThreadId.optCode s.tail,
+    recvHeadCode := SeLe4n.ThreadId.optCode r.head,
+    recvTailCode := SeLe4n.ThreadId.optCode r.tail }
+
+namespace Endpoint
+
+@[simp] theorem sendQ_withSendQ (e : Endpoint) (q : IntrusiveQueue) :
+    (e.withSendQ q).sendQ = q := by
+  simp only [sendQ, withSendQ, SeLe4n.ThreadId.ofOptCode_optCode]
+
+@[simp] theorem receiveQ_withSendQ (e : Endpoint) (q : IntrusiveQueue) :
+    (e.withSendQ q).receiveQ = e.receiveQ := rfl
+
+@[simp] theorem sendQ_withReceiveQ (e : Endpoint) (q : IntrusiveQueue) :
+    (e.withReceiveQ q).sendQ = e.sendQ := rfl
+
+@[simp] theorem receiveQ_withReceiveQ (e : Endpoint) (q : IntrusiveQueue) :
+    (e.withReceiveQ q).receiveQ = q := by
+  simp only [receiveQ, withReceiveQ, SeLe4n.ThreadId.ofOptCode_optCode]
+
+@[simp] theorem sendQ_ofQueues (s r : IntrusiveQueue) : (ofQueues s r).sendQ = s := by
+  simp only [sendQ, ofQueues, SeLe4n.ThreadId.ofOptCode_optCode]
+
+@[simp] theorem receiveQ_ofQueues (s r : IntrusiveQueue) : (ofQueues s r).receiveQ = r := by
+  simp only [receiveQ, ofQueues, SeLe4n.ThreadId.ofOptCode_optCode]
+
+/-- The send queue's head read from its code is the view's head. -/
+theorem ofOptCode_sendHeadCode (e : Endpoint) :
+    SeLe4n.ThreadId.ofOptCode e.sendHeadCode = e.sendQ.head := rfl
+
+/-- The receive queue's head read from its code is the view's head. -/
+theorem ofOptCode_recvHeadCode (e : Endpoint) :
+    SeLe4n.ThreadId.ofOptCode e.recvHeadCode = e.receiveQ.head := rfl
+
+/-- The receive queue's tail read from its code is the view's tail. -/
+theorem ofOptCode_recvTailCode (e : Endpoint) :
+    SeLe4n.ThreadId.ofOptCode e.recvTailCode = e.receiveQ.tail := rfl
+
+/-- A write of the receive queue's head alone is a write of its code. -/
+theorem withReceiveQ_head (e : Endpoint) (h : Option SeLe4n.ThreadId) :
+    e.withReceiveQ { head := h, tail := e.receiveQ.tail } =
+      { e with recvHeadCode := SeLe4n.ThreadId.optCode h } := by
+  simp only [withReceiveQ, receiveQ, SeLe4n.ThreadId.optCode_ofOptCode]
+
+/-- A write of the receive queue's tail alone is a write of its code. -/
+theorem withReceiveQ_tail (e : Endpoint) (t : Option SeLe4n.ThreadId) :
+    e.withReceiveQ { head := e.receiveQ.head, tail := t } =
+      { e with recvTailCode := SeLe4n.ThreadId.optCode t } := by
+  simp only [withReceiveQ, receiveQ, SeLe4n.ThreadId.optCode_ofOptCode]
+
+/-- A write of the send queue's head alone is a write of its code. -/
+theorem withSendQ_head (e : Endpoint) (h : Option SeLe4n.ThreadId) :
+    e.withSendQ { head := h, tail := e.sendQ.tail } =
+      { e with sendHeadCode := SeLe4n.ThreadId.optCode h } := by
+  simp only [withSendQ, sendQ, SeLe4n.ThreadId.optCode_ofOptCode]
+
+/-- A write of the send queue's tail alone is a write of its code. -/
+theorem withSendQ_tail (e : Endpoint) (t : Option SeLe4n.ThreadId) :
+    e.withSendQ { head := e.sendQ.head, tail := t } =
+      { e with sendTailCode := SeLe4n.ThreadId.optCode t } := by
+  simp only [withSendQ, sendQ, SeLe4n.ThreadId.optCode_ofOptCode]
+
+@[simp] theorem sendQ_default : (({} : Endpoint)).sendQ = {} := rfl
+
+@[simp] theorem receiveQ_default : (({} : Endpoint)).receiveQ = {} := rfl
+
+/-- An endpoint is its two queues: equal queues, equal endpoints. -/
+theorem ext_queues {a b : Endpoint} (hs : a.sendQ = b.sendQ) (hr : a.receiveQ = b.receiveQ) :
+    a = b := by
+  obtain ⟨a1, a2, a3, a4⟩ := a
+  obtain ⟨b1, b2, b3, b4⟩ := b
+  simp only [sendQ, receiveQ, IntrusiveQueue.mk.injEq] at hs hr
+  have inj : ∀ {x y : Nat}, SeLe4n.ThreadId.ofOptCode x = SeLe4n.ThreadId.ofOptCode y → x = y :=
+    fun {x y} h => by
+      rw [← SeLe4n.ThreadId.optCode_ofOptCode x, h, SeLe4n.ThreadId.optCode_ofOptCode]
+  rw [inj hs.1, inj hs.2, inj hr.1, inj hr.2]
+
+theorem ext_queues_iff {a b : Endpoint} : a = b ↔ a.sendQ = b.sendQ ∧ a.receiveQ = b.receiveQ :=
+  ⟨fun h => h ▸ ⟨rfl, rfl⟩, fun ⟨hs, hr⟩ => ext_queues hs hr⟩
+
+@[simp] theorem withSendQ_sendQ (e : Endpoint) : e.withSendQ e.sendQ = e :=
+  ext_queues (by simp) rfl
+
+@[simp] theorem withReceiveQ_receiveQ (e : Endpoint) : e.withReceiveQ e.receiveQ = e :=
+  ext_queues rfl (by simp)
+
+@[simp] theorem ofQueues_sendQ_receiveQ (e : Endpoint) : ofQueues e.sendQ e.receiveQ = e :=
+  ext_queues (by simp) (by simp)
+
+end Endpoint
 
 inductive NotificationState where
   | idle

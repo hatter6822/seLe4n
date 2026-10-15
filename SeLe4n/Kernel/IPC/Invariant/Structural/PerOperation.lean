@@ -833,8 +833,8 @@ theorem endpointQueueRemoveDual_preserves_dualQueueSystemInvariant
                 rename_i hConsist
                 -- applyPrev: storeObject endpointId ep' st → st1
                 cases hStoreEp1 : storeObject endpointId
-                    (.endpoint (if isReceiveQ then { ep with receiveQ := { head := tcb.queueNext, tail := q.tail } }
-                     else { ep with sendQ := { head := tcb.queueNext, tail := q.tail } })) st with
+                    (.endpoint (if isReceiveQ then (ep.withReceiveQ { head := tcb.queueNext, tail := q.tail })
+                     else (ep.withSendQ { head := tcb.queueNext, tail := q.tail }))) st with
                 | error e => simp [hStoreEp1] at hStep
                 | ok pair1 =>
                   simp only [hStoreEp1] at hStep
@@ -1241,10 +1241,10 @@ theorem endpointQueueRemoveDual_preserves_dualQueueSystemInvariant
                                       · exact ⟨tOrig, hFwdOther tl tOrig htT htN hTOrig, hTNextOrig⟩
                                 rw [queueRemoveBoundary_headMore hTailPair hQHeadTid hNext]
                                 cases hRQ : isReceiveQ
-                                · simp only [Bool.false_eq_true, ↓reduceIte] at hWfNew ⊢
+                                · simp only [Bool.false_eq_true, ↓reduceIte, Endpoint.sendQ_withReceiveQ, Endpoint.receiveQ_withReceiveQ, Endpoint.sendQ_withSendQ, Endpoint.receiveQ_withSendQ] at hWfNew ⊢
                                   exact ⟨hWfNew, hIqwfTransport ep.receiveQ hEpWf.2
                                     (by simpa [hRQ] using hOtherKindNe)⟩
-                                · simp only [↓reduceIte] at hWfNew ⊢
+                                · simp only [↓reduceIte, Endpoint.sendQ_withReceiveQ, Endpoint.receiveQ_withReceiveQ, Endpoint.sendQ_withSendQ, Endpoint.receiveQ_withSendQ] at hWfNew ⊢
                                   exact ⟨hIqwfTransport ep.sendQ hEpWf.1
                                     (by simpa [hRQ] using hOtherKindNe), hWfNew⟩
                               · have hObj4St2 : st2.objects[epId']? = some (.endpoint ep') := by
@@ -1601,9 +1601,9 @@ theorem endpointQueueRemoveDual_preserves_dualQueueSystemInvariant
                                     exact ⟨_, hPrevSt4, by simp [tcbWithQueueLinks]⟩
                                 rw [queueRemoveBoundary_midLast hTailPair hQHeadNeTid hNext, hPrevSome]
                                 cases hRQ : isReceiveQ
-                                · simp only [Bool.false_eq_true, ↓reduceIte]
+                                · simp only [Bool.false_eq_true, ↓reduceIte, Endpoint.sendQ_withReceiveQ, Endpoint.receiveQ_withReceiveQ, Endpoint.sendQ_withSendQ, Endpoint.receiveQ_withSendQ]
                                   exact ⟨hWfNew, hIqwfTransportC ep.receiveQ hEpWf.2⟩
-                                · simp only [↓reduceIte]
+                                · simp only [↓reduceIte, Endpoint.sendQ_withReceiveQ, Endpoint.receiveQ_withReceiveQ, Endpoint.sendQ_withSendQ, Endpoint.receiveQ_withSendQ]
                                   exact ⟨hIqwfTransportC ep.sendQ hEpWf.1, hWfNew⟩
                               · have hObj4St1 : stPrev.objects[epId']? = some (.endpoint ep') := by
                                   rwa [storeObject_objects_ne stPrev pair3.2 endpointId epId' _ hNe hObjInv1 hStoreEpC] at hObj4
@@ -1982,11 +1982,11 @@ theorem endpointQueueRemoveDual_preserves_dualQueueSystemInvariant
                                       · -- isReceiveQ = false: sendQ modified (to q'), receiveQ unchanged
                                         simp only [Bool.false_eq_true, ↓reduceIte]
                                         refine ⟨hIqwfD _ ?_, hIqwfD ep.receiveQ hEpWf.2⟩
-                                        rw [← hQ]; simp only [hRQ, Bool.false_eq_true, ↓reduceIte]; exact hEpWf.1
+                                        rw [← hQ]; simp only [hRQ, Bool.false_eq_true, ↓reduceIte, Endpoint.sendQ_withReceiveQ, Endpoint.receiveQ_withReceiveQ, Endpoint.sendQ_withSendQ, Endpoint.receiveQ_withSendQ]; exact hEpWf.1
                                       · -- isReceiveQ = true: receiveQ modified (to q'), sendQ unchanged
                                         simp only [↓reduceIte]
                                         refine ⟨hIqwfD ep.sendQ hEpWf.1, hIqwfD _ ?_⟩
-                                        rw [← hQ]; simp only [hRQ, ↓reduceIte]; exact hEpWf.2
+                                        rw [← hQ]; simp only [hRQ, ↓reduceIte, Endpoint.sendQ_withReceiveQ, Endpoint.receiveQ_withReceiveQ, Endpoint.sendQ_withSendQ, Endpoint.receiveQ_withSendQ]; exact hEpWf.2
                                     · -- Other endpoint: back-transport to original state
                                       have hObjSN : stNext.objects[epId']? = some (.endpoint ep') := by
                                         rwa [storeObject_objects_ne stNext pair4.2 endpointId epId' _ hNe hObjInvSN hStoreEpD] at hObjP4

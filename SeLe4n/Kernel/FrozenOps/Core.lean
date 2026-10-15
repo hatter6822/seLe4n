@@ -1372,8 +1372,8 @@ def frozenQueuePushTailObjects (st : FrozenSystemState)
       -- AE2-D Phase 2: Apply writes (guaranteed to succeed by Phase 1)
       let q' : IntrusiveQueue := { head := some tid, tail := some tid }
       let ep' : Endpoint := if isReceiveQ
-        then { ep with receiveQ := q' }
-        else { ep with sendQ := q' }
+        then (ep.withReceiveQ q')
+        else (ep.withSendQ q')
       let tcb' := { tcb with
         queuePrevCode := 0
         queuePPrevCode := 1
@@ -1409,8 +1409,8 @@ def frozenQueuePushTailObjects (st : FrozenSystemState)
           -- AE2-D Phase 2: Apply writes (guaranteed to succeed by Phase 1)
           let q' : IntrusiveQueue := { head := q.head, tail := some tid }
           let ep' : Endpoint := if isReceiveQ
-            then { ep with receiveQ := q' }
-            else { ep with sendQ := q' }
+            then (ep.withReceiveQ q')
+            else (ep.withSendQ q')
           let tailTcb' := { tailTcb with queueNextCode := SeLe4n.ThreadId.optCode (some tid) }
           let tcb' := { tcb with
             queuePrevCode := SeLe4n.ThreadId.optCode (some tailTid)
@@ -1543,8 +1543,8 @@ def frozenQueueRemove (endpointId : SeLe4n.ObjId) (isReceiveQ : Bool)
           -- agree on `Option ThreadId` by `LawfulBEq`.
           let q' : IntrusiveQueue := queueRemoveBoundary q tid tcb
           let ep' : Endpoint := if isReceiveQ
-            then { ep with receiveQ := q' }
-            else { ep with sendQ := q' }
+            then (ep.withReceiveQ q')
+            else (ep.withSendQ q')
           let tcb' := { tcb with queuePrevCode := 0, queueNextCode := 0, queuePPrevCode := 0 }
           match frozenWithObjectStored st endpointId (.endpoint ep') with
           | .error e => .error e

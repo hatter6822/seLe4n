@@ -838,7 +838,7 @@ private def mkTimeoutWakeState (aff : Option CoreId) : SystemState :=
     { (default : SchedContext) with
         priority := ⟨15⟩, boundThread := some tidCur,
         budget := ⟨5⟩, period := ⟨10⟩, budgetRemaining := ⟨1⟩ }
-  let epObj : Endpoint := { sendQ := { head := some tidW, tail := some tidW } }
+  let epObj : Endpoint := (Endpoint.ofQueues { head := some tidW, tail := some tidW } {})
   let stBase : SystemState :=
     ((((BootstrapBuilder.empty.withObject tidCur.toObjId (.tcb tcbCur)).withObject
         tidW.toObjId (.tcb tcbW)).withObject

@@ -262,7 +262,7 @@ def objectOfTypeTag (typeTag : Nat) (sizeHint : Nat)
       vspaceRoot := SeLe4n.ObjId.sentinel    -- AJ4-D: reserved sentinel (H-06)
       ipcBuffer := SeLe4n.VAddr.ofNat 0
     })
-  | 1 => .ok (.endpoint { sendQ := {}, receiveQ := {} })
+  | 1 => .ok (.endpoint (Endpoint.ofQueues {} {}))
   | 2 => .ok (.notification {
       state := .idle, 
       hasPendingBadge := false, pendingWord := SeLe4n.Badge.zero
@@ -313,7 +313,7 @@ def objectOfKernelType (objType : KernelObjectType) (sizeHint : Nat) : KernelObj
       vspaceRoot := SeLe4n.ObjId.sentinel    -- AJ4-D: reserved sentinel (H-06)
       ipcBuffer := SeLe4n.VAddr.ofNat 0
     }
-  | .endpoint => .endpoint { sendQ := {}, receiveQ := {} }
+  | .endpoint => .endpoint (Endpoint.ofQueues {} {})
   | .notification => .notification {
       state := .idle, 
       hasPendingBadge := false, pendingWord := SeLe4n.Badge.zero

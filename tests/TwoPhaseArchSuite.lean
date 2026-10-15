@@ -136,7 +136,7 @@ private def tph003_freezePopulated : IO Unit := do
   let tcb := KernelObject.tcb (mkTcb 1 10 0)
   let ist1 := Builder.createObject ist ⟨1⟩ tcb
     (fun _ h => nomatch h) (fun _ h => nomatch h)
-  let ep := KernelObject.endpoint { sendQ := {}, receiveQ := {} }
+  let ep := KernelObject.endpoint (Endpoint.ofQueues {} {})
   let ist2 := Builder.createObject ist1 ⟨2⟩ ep
     (fun _ h => nomatch h) (fun _ h => nomatch h)
   -- Add IRQ handler
@@ -165,7 +165,7 @@ private def tph003_freezePopulated : IO Unit := do
 
 /-- TPH-005a: Frozen endpoint send — sender blocks when no receiver. -/
 private def tph005a_sendBlocks : IO Unit := do
-  let ep : Endpoint := { sendQ := {}, receiveQ := {} }
+  let ep : Endpoint := (Endpoint.ofQueues {} {})
   let senderTcb := mkTcb 1
   let fst := mkFrozenState [(⟨10⟩, .endpoint ep), (⟨1⟩, .tcb senderTcb)]
   let msg : IpcMessage := { registers := #[⟨42⟩], caps := #[], badge := Badge.ofNatMasked 0 }
@@ -180,7 +180,7 @@ private def tph005a_sendBlocks : IO Unit := do
 
 /-- TPH-005b: Frozen endpoint receive — receiver blocks when no sender. -/
 private def tph005b_receiveBlocks : IO Unit := do
-  let ep : Endpoint := { sendQ := {}, receiveQ := {} }
+  let ep : Endpoint := (Endpoint.ofQueues {} {})
   let recvTcb := mkTcb 2
   let fst := mkFrozenState [(⟨10⟩, .endpoint ep), (⟨2⟩, .tcb recvTcb)]
   match frozenEndpointReceive ⟨10⟩ ⟨2⟩ none fst with
@@ -195,9 +195,7 @@ private def tph005b_receiveBlocks : IO Unit := do
 private def tph005c_callBlocksForReply : IO Unit := do
   -- Set up an endpoint with a receiver already waiting
   let recvTcb : TCB := { mkTcb 2 with ipcState := .blockedOnReceive ⟨10⟩ }
-  let ep : Endpoint := {
-    receiveQ := { head := some ⟨2⟩, tail := some ⟨2⟩ }
-    sendQ := {} }
+  let ep : Endpoint := (Endpoint.ofQueues {} { head := some ⟨2⟩, tail := some ⟨2⟩ })
   let callerTcb := mkTcb 3
   let fst := mkFrozenState [
     (⟨10⟩, .endpoint ep), (⟨2⟩, .tcb recvTcb), (⟨3⟩, .tcb callerTcb)]
@@ -367,7 +365,7 @@ private def tph012_preallocatedSlot : IO Unit := do
   let fst := mkFrozenState [
     (⟨1⟩, .tcb placeholderTcb),
     (⟨2⟩, .tcb (mkTcb 2 5 0)),
-    (⟨3⟩, .endpoint { sendQ := {}, receiveQ := {} })]
+    (⟨3⟩, .endpoint (Endpoint.ofQueues {} {}))]
   -- Verify pre-allocated slot exists
   expect "TPH-012a slot exists" (fst.objects.get? ⟨1⟩ |>.isSome)
   -- "Retype": replace placeholder with real object via FrozenMap.set

@@ -146,8 +146,12 @@ a call reads 16, a reply 9, a send to a waiting receiver 15 and a receive that
 blocks 5.  At `v0.36.86` (ZA4.7, second part, receiver side) a delivered
 message lives only in the receiver's saved registers, as in seL4, and call,
 reply and a send to a waiting receiver carry it from register file to register
-file: a send to a waiting receiver reads 3, a call 8 and a reply 1.  Blocked
-senders and reply-receive are the next steps.  ZA4 measures the other
+file: a send to a waiting receiver reads 3, a call 8 and a reply 1.  At
+`v0.36.87` the endpoint's queue ends are scalar codes and the fast paths take
+only a message's length: a reply reads 0, a send to a waiting receiver 1, a
+receive that blocks 3 and a call 7.  The fields still written as fresh cells
+(`ipcState`, the reply fields, the priority maximum, the per-core current) come
+next, then blocked senders and reply-receive.  ZA4 measures the other
 syscalls and entries.  Plan:
 [`docs/planning/ZERO_ALLOCATION_SYSCALL_PLAN.md`](../planning/ZERO_ALLOCATION_SYSCALL_PLAN.md)
 (phases ZA1–ZA4).

@@ -54,12 +54,12 @@ def spliceQueue (isReceiveQ : Bool) (ep : Endpoint) : IntrusiveQueue :=
 /-- WS-RR RR7.22: the endpoint that results from installing `q` on the spliced
 side, leaving the other side untouched. -/
 def spliceEndpoint (isReceiveQ : Bool) (ep : Endpoint) (q : IntrusiveQueue) : Endpoint :=
-  if isReceiveQ then { ep with receiveQ := q } else { ep with sendQ := q }
+  if isReceiveQ then (ep.withReceiveQ q) else (ep.withSendQ q)
 
 /-- The spliced side of `spliceEndpoint` is the queue it was given. -/
 theorem spliceQueue_spliceEndpoint (isReceiveQ : Bool) (ep : Endpoint) (q : IntrusiveQueue) :
     spliceQueue isReceiveQ (spliceEndpoint isReceiveQ ep q) = q := by
-  unfold spliceQueue spliceEndpoint; cases isReceiveQ <;> rfl
+  unfold spliceQueue spliceEndpoint; cases isReceiveQ <;> simp
 
 /-- The **other** side of `spliceEndpoint` is untouched.  Stated as the pair of
 head projections, which is what the queue-shape conjuncts read. -/
@@ -1201,25 +1201,25 @@ theorem endpointQueueRemoveDual_preserves_queueNextBlockingConsistent
 theorem spliceEndpoint_receiveQ_head (isReceiveQ : Bool) (ep : Endpoint) (q : IntrusiveQueue) :
     (spliceEndpoint isReceiveQ ep q).receiveQ.head
       = if isReceiveQ then q.head else ep.receiveQ.head := by
-  unfold spliceEndpoint; cases isReceiveQ <;> rfl
+  unfold spliceEndpoint; cases isReceiveQ <;> simp
 
 /-- The spliced endpoint's send-queue head. -/
 theorem spliceEndpoint_sendQ_head (isReceiveQ : Bool) (ep : Endpoint) (q : IntrusiveQueue) :
     (spliceEndpoint isReceiveQ ep q).sendQ.head
       = if isReceiveQ then ep.sendQ.head else q.head := by
-  unfold spliceEndpoint; cases isReceiveQ <;> rfl
+  unfold spliceEndpoint; cases isReceiveQ <;> simp
 
 /-- The spliced endpoint's receive-queue tail. -/
 theorem spliceEndpoint_receiveQ_tail (isReceiveQ : Bool) (ep : Endpoint) (q : IntrusiveQueue) :
     (spliceEndpoint isReceiveQ ep q).receiveQ.tail
       = if isReceiveQ then q.tail else ep.receiveQ.tail := by
-  unfold spliceEndpoint; cases isReceiveQ <;> rfl
+  unfold spliceEndpoint; cases isReceiveQ <;> simp
 
 /-- The spliced endpoint's send-queue tail. -/
 theorem spliceEndpoint_sendQ_tail (isReceiveQ : Bool) (ep : Endpoint) (q : IntrusiveQueue) :
     (spliceEndpoint isReceiveQ ep q).sendQ.tail
       = if isReceiveQ then ep.sendQ.tail else q.tail := by
-  unfold spliceEndpoint; cases isReceiveQ <;> rfl
+  unfold spliceEndpoint; cases isReceiveQ <;> simp
 
 /-- WS-RR RR7.22: what it means for a thread to be blocked on the side of
 `endpointId` the splice is acting on.  Written as the two guarded implications

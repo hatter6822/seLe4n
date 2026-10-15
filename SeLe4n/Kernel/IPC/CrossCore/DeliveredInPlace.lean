@@ -107,7 +107,8 @@ theorem storePopHead_noResizeDue (st : SystemState) (endpointId : SeLe4n.ObjId)
     (head : SeLe4n.ThreadId) (next : Option SeLe4n.ThreadId) (hNo : st.objects.noResizeDue) :
     (storePopHead st endpointId head next).objects.noResizeDue := by
   unfold storePopHead
-  have h1 := modifyObject_noResizeDue st endpointId (sendRendezvousEndpoint next) hNo
+  have h1 := modifyObject_noResizeDue st endpointId
+    (sendRendezvousEndpoint (ThreadId.optCode next)) hNo
   cases next with
   | none => exact updateTcb_noResizeDue _ _ _ h1
   | some n => exact updateTcb_noResizeDue _ _ _ (updateTcb_noResizeDue _ _ _ h1)
@@ -162,9 +163,10 @@ theorem holdMessage_receiverReady (msg : IpcMessage) :
 
 /-- `storeCallRendezvous` with the receiver woken holding no message. -/
 @[noinline] def storeCallRendezvousReady (st : SystemState) (endpointId : SeLe4n.ObjId)
-    (caller r : SeLe4n.ThreadId) (next : Option SeLe4n.ThreadId) (rid : SeLe4n.ReplyId)
+    (caller r : SeLe4n.ThreadId) (nextCode : Nat) (rid : SeLe4n.ReplyId)
     (core : Concurrency.CoreId) : SystemState :=
-  let s2 := (storePopHead st endpointId r next).updateTcb r receiverReady
+  let s2 := (storePopHead st endpointId r (ThreadId.ofOptCode nextCode)).updateTcb r
+    receiverReady
   let s3 := enqueueRunnableOnCore s2 (determineTargetCore s2 r) r
   let s5 := (s3.updateTcb caller (callCallerTcb endpointId r)).modifyObject rid.toObjId
     (replyWithCaller caller)
@@ -173,9 +175,9 @@ theorem holdMessage_receiverReady (msg : IpcMessage) :
   (removeRunnableOnCore s7 caller core).linkReplyWaiter caller r
 
 theorem storeCallRendezvousReady_noResizeDue (st : SystemState) (endpointId : SeLe4n.ObjId)
-    (caller r : SeLe4n.ThreadId) (next : Option SeLe4n.ThreadId) (rid : SeLe4n.ReplyId)
+    (caller r : SeLe4n.ThreadId) (nextCode : Nat) (rid : SeLe4n.ReplyId)
     (core : Concurrency.CoreId) (hNo : st.objects.noResizeDue) :
-    (storeCallRendezvousReady st endpointId caller r next rid core).objects.noResizeDue := by
+    (storeCallRendezvousReady st endpointId caller r nextCode rid core).objects.noResizeDue := by
   unfold storeCallRendezvousReady
   dsimp only
   exact linkReplyWaiter_noResizeDue _ _ _ (removeRunnableOnCore_noResizeDue _ _ _
@@ -191,9 +193,10 @@ theorem storeCallRendezvous_eq_hold (st : SystemState) (endpointId : SeLe4n.ObjI
     (msg : IpcMessage) (core : Concurrency.CoreId) (hNo : st.objects.noResizeDue)
     (hNe : caller ≠ r) :
     storeCallRendezvous st endpointId caller r next rid msg core =
-      (storeCallRendezvousReady st endpointId caller r next rid core).mapTcbInPlace r
-        (holdMessage msg) := by
+      (storeCallRendezvousReady st endpointId caller r (ThreadId.optCode next) rid
+        core).mapTcbInPlace r (holdMessage msg) := by
   unfold storeCallRendezvous storeCallRendezvousReady
+  rw [SeLe4n.ThreadId.ofOptCode_optCode]
   dsimp only
   have hNo1 := storePopHead_noResizeDue st endpointId r next hNo
   have hHold : (storePopHead st endpointId r next).updateTcb r (callReceiverTcb msg) =
@@ -229,10 +232,10 @@ theorem propagatePipChainCrossCore_noResizeDue (st : SystemState) (tid : SeLe4n.
 specification holds it.  Kept out of line so the message record is built only
 on this path, never shared with the frame's reads. -/
 @[noinline] def holdDeliveredBody (X : SystemState) (r : SeLe4n.ThreadId)
-    (layout : SeLe4n.SyscallRegisterLayout) (rf : SeLe4n.RegisterFile) (mi : MessageInfo)
+    (layout : SeLe4n.SyscallRegisterLayout) (rf : SeLe4n.RegisterFile) (len : Nat)
     (badge : Option SeLe4n.Badge) (granted : Bool) : SystemState :=
   X.mapTcbInPlace r (holdMessage
-    { registers := Architecture.regMessageBody layout rf mi, caps := #[], badge := badge,
+    { registers := Architecture.regMessageBody layout rf len, caps := #[], badge := badge,
       capsGranted := granted })
 
 /-- **The call rendezvous, delivered**: the receiver woken without the message,
@@ -240,30 +243,32 @@ the priority walk, then the message's frame written into the receiver's saved
 registers.  The message is built only where the receiver is, unexpectedly, not
 ready (`writeDeliveredFrameIfReady`'s `otherwise`). -/
 @[noinline] def performCallDelivered (st : SystemState) (endpointId : SeLe4n.ObjId)
-    (caller r : SeLe4n.ThreadId) (next : Option SeLe4n.ThreadId) (rid : SeLe4n.ReplyId)
-    (layout : SeLe4n.SyscallRegisterLayout) (rf : SeLe4n.RegisterFile) (mi : MessageInfo)
+    (caller r : SeLe4n.ThreadId) (nextCode : Nat) (rid : SeLe4n.ReplyId)
+    (layout : SeLe4n.SyscallRegisterLayout) (rf : SeLe4n.RegisterFile) (len : Nat)
     (badge : Option SeLe4n.Badge) (granted : Bool)
     (core : Concurrency.CoreId) : SystemState :=
   let X := (PriorityInheritance.propagatePipChainCrossCore
-    (storeCallRendezvousReady st endpointId caller r next rid core) r core).1
-  writeDeliveredFrameIfReady X r (Architecture.regMessageFrame layout rf mi badge)
-    (fun _ => holdDeliveredBody X r layout rf mi badge granted)
+    (storeCallRendezvousReady st endpointId caller r nextCode rid core) r core).1
+  writeDeliveredFrameIfReady X r (Architecture.regMessageFrame layout rf len badge)
+    (fun _ => holdDeliveredBody X r layout rf len badge granted)
 
 /-- **The staged call rendezvous is the delivered one** for a message of at most
 four words. -/
 theorem stageWokenDelivery_performCallRendezvous (st : SystemState) (endpointId : SeLe4n.ObjId)
     (caller r : SeLe4n.ThreadId) (next : Option SeLe4n.ThreadId) (rid : SeLe4n.ReplyId)
-    (layout : SeLe4n.SyscallRegisterLayout) (rf : SeLe4n.RegisterFile) (mi : MessageInfo)
+    (layout : SeLe4n.SyscallRegisterLayout) (rf : SeLe4n.RegisterFile) (len : Nat)
     (badge : Option SeLe4n.Badge) (granted : Bool)
     (core : Concurrency.CoreId) (hNo : st.objects.noResizeDue) (hNe : caller ≠ r)
-    (hSz : Architecture.regMessageLength layout mi ≤ 4) :
+    (hSz : Architecture.regMessageLength layout len ≤ 4) :
     Architecture.stageWokenDelivery
         (performCallRendezvous st endpointId caller r next rid
-          { registers := Architecture.regMessageBody layout rf mi, caps := #[], badge := badge,
+          { registers := Architecture.regMessageBody layout rf len, caps := #[], badge := badge,
             capsGranted := granted } core)
         (some r) 0 =
-      performCallDelivered st endpointId caller r next rid layout rf mi badge granted core := by
-  have hNoS := storeCallRendezvousReady_noResizeDue st endpointId caller r next rid core hNo
+      performCallDelivered st endpointId caller r (ThreadId.optCode next) rid layout rf len
+        badge granted core := by
+  have hNoS := storeCallRendezvousReady_noResizeDue st endpointId caller r
+    (ThreadId.optCode next) rid core hNo
   unfold performCallRendezvous performCallDelivered
   rw [storeCallRendezvous_eq_hold _ _ _ _ _ _ _ _ hNo hNe,
     propagatePipChainCrossCore_msg _ _ _ _ _ _ _ hNoS, Architecture.stageWokenDelivery_some,
@@ -362,26 +367,26 @@ server's priority walk, then the reply's frame written into the caller's saved
 registers. -/
 @[noinline] def performReplyDelivered (st : SystemState) (c server : SeLe4n.ThreadId)
     (rid : SeLe4n.ReplyId)
-    (layout : SeLe4n.SyscallRegisterLayout) (rf : SeLe4n.RegisterFile) (mi : MessageInfo)
+    (layout : SeLe4n.SyscallRegisterLayout) (rf : SeLe4n.RegisterFile) (len : Nat)
     (badge : Option SeLe4n.Badge)
     (core : Concurrency.CoreId) : SystemState :=
   let X := (PriorityInheritance.propagatePipChainCrossCore
     (storeReplyRendezvousReady st c server rid) server core).1
-  writeDeliveredFrameIfReady X c (Architecture.regMessageFrame layout rf mi badge)
-    (fun _ => holdDeliveredBody X c layout rf mi badge false)
+  writeDeliveredFrameIfReady X c (Architecture.regMessageFrame layout rf len badge)
+    (fun _ => holdDeliveredBody X c layout rf len badge false)
 
 /-- **The reply rendezvous is the delivered one** for a message of at most four
 words. -/
 theorem performReplyRendezvous_eq_delivered (st : SystemState) (c server : SeLe4n.ThreadId)
     (rid : SeLe4n.ReplyId)
-    (layout : SeLe4n.SyscallRegisterLayout) (rf : SeLe4n.RegisterFile) (mi : MessageInfo)
+    (layout : SeLe4n.SyscallRegisterLayout) (rf : SeLe4n.RegisterFile) (len : Nat)
     (badge : Option SeLe4n.Badge)
     (core : Concurrency.CoreId) (hNo : st.objects.noResizeDue)
-    (hSz : Architecture.regMessageLength layout mi ≤ 4) :
+    (hSz : Architecture.regMessageLength layout len ≤ 4) :
     performReplyRendezvous st c server rid
-        { registers := Architecture.regMessageBody layout rf mi, caps := #[], badge := badge }
+        { registers := Architecture.regMessageBody layout rf len, caps := #[], badge := badge }
         core =
-      performReplyDelivered st c server rid layout rf mi badge core := by
+      performReplyDelivered st c server rid layout rf len badge core := by
   have hNoS := storeReplyRendezvousReady_noResizeDue st c server rid hNo
   unfold performReplyRendezvous performReplyDelivered
   rw [storeReplyRendezvous_eq_hold _ _ _ _ _ hNo, propagatePipChainCrossCore_msg _ _ _ _ _ _ _ hNoS,
@@ -406,33 +411,35 @@ theorem callWakesInPlace_ne {st : SystemState} {endpointId : SeLe4n.ObjId}
 delivered straight into the receiver's registers (`performCallDelivered`), a
 longer one is held and staged as the specification does. -/
 @[inline] def callRendezvousDelivered (st : SystemState) (endpointId : SeLe4n.ObjId)
-    (caller r : SeLe4n.ThreadId) (next : Option SeLe4n.ThreadId) (rid : SeLe4n.ReplyId)
-    (layout : SeLe4n.SyscallRegisterLayout) (rf : SeLe4n.RegisterFile) (mi : MessageInfo)
+    (caller r : SeLe4n.ThreadId) (nextCode : Nat) (rid : SeLe4n.ReplyId)
+    (layout : SeLe4n.SyscallRegisterLayout) (rf : SeLe4n.RegisterFile) (len : Nat)
     (badge : Option SeLe4n.Badge) (granted : Bool)
     (core : Concurrency.CoreId) : SystemState :=
-  if Architecture.regMessageLength layout mi ≤ 4 then
-    performCallDelivered st endpointId caller r next rid layout rf mi badge granted core
+  if Architecture.regMessageLength layout len ≤ 4 then
+    performCallDelivered st endpointId caller r nextCode rid layout rf len badge granted core
   else Architecture.stageWokenDelivery
-    (performCallRendezvous st endpointId caller r next rid
-      { registers := Architecture.regMessageBody layout rf mi, caps := #[], badge := badge,
+    (performCallRendezvous st endpointId caller r (ThreadId.ofOptCode nextCode) rid
+      { registers := Architecture.regMessageBody layout rf len, caps := #[], badge := badge,
         capsGranted := granted } core)
     (some r) 0
 
 theorem callRendezvousDelivered_eq (st : SystemState) (endpointId : SeLe4n.ObjId)
     (caller r : SeLe4n.ThreadId) (rt : TCB) (rid : SeLe4n.ReplyId)
-    (layout : SeLe4n.SyscallRegisterLayout) (rf : SeLe4n.RegisterFile) (mi : MessageInfo)
+    (layout : SeLe4n.SyscallRegisterLayout) (rf : SeLe4n.RegisterFile) (len : Nat)
     (badge : Option SeLe4n.Badge) (granted : Bool)
     (core : Concurrency.CoreId) (hG : callWakesInPlace st endpointId caller r rt rid = true) :
-    callRendezvousDelivered st endpointId caller r rt.queueNext rid layout rf mi badge granted
-        core =
+    callRendezvousDelivered st endpointId caller r rt.queueNextCode rid layout rf len badge
+        granted core =
       Architecture.stageWokenDelivery
         (performCallRendezvous st endpointId caller r rt.queueNext rid
-          { registers := Architecture.regMessageBody layout rf mi, caps := #[], badge := badge,
+          { registers := Architecture.regMessageBody layout rf len, caps := #[], badge := badge,
             capsGranted := granted } core)
         (some r) 0 := by
   unfold callRendezvousDelivered
   split
-  · next hSz => exact (stageWokenDelivery_performCallRendezvous _ _ _ _ _ _ _ _ _ _ _ _
+  · next hSz =>
+    rw [← TCB.optCode_queueNext]
+    exact (stageWokenDelivery_performCallRendezvous _ _ _ _ _ _ _ _ _ _ _ _
       (callWakesInPlace_noResizeDue hG) (callWakesInPlace_ne hG) hSz).symm
   · rfl
 
@@ -445,22 +452,22 @@ theorem replyWakesInPlace_noResizeDue {st : SystemState} {c : SeLe4n.ThreadId} {
 delivered straight into the caller's registers (`performReplyDelivered`). -/
 @[inline] def replyRendezvousDelivered (st : SystemState) (c server : SeLe4n.ThreadId)
     (rid : SeLe4n.ReplyId)
-    (layout : SeLe4n.SyscallRegisterLayout) (rf : SeLe4n.RegisterFile) (mi : MessageInfo)
+    (layout : SeLe4n.SyscallRegisterLayout) (rf : SeLe4n.RegisterFile) (len : Nat)
     (badge : Option SeLe4n.Badge)
     (core : Concurrency.CoreId) : SystemState :=
-  if Architecture.regMessageLength layout mi ≤ 4 then
-    performReplyDelivered st c server rid layout rf mi badge core
+  if Architecture.regMessageLength layout len ≤ 4 then
+    performReplyDelivered st c server rid layout rf len badge core
   else performReplyRendezvous st c server rid
-    { registers := Architecture.regMessageBody layout rf mi, caps := #[], badge := badge } core
+    { registers := Architecture.regMessageBody layout rf len, caps := #[], badge := badge } core
 
 theorem replyRendezvousDelivered_eq (st : SystemState) (c server : SeLe4n.ThreadId) (ct : TCB)
     (rid : SeLe4n.ReplyId)
-    (layout : SeLe4n.SyscallRegisterLayout) (rf : SeLe4n.RegisterFile) (mi : MessageInfo)
+    (layout : SeLe4n.SyscallRegisterLayout) (rf : SeLe4n.RegisterFile) (len : Nat)
     (badge : Option SeLe4n.Badge)
     (core : Concurrency.CoreId) (hG : replyWakesInPlace st c ct rid = true) :
-    replyRendezvousDelivered st c server rid layout rf mi badge core =
+    replyRendezvousDelivered st c server rid layout rf len badge core =
       performReplyRendezvous st c server rid
-        { registers := Architecture.regMessageBody layout rf mi, caps := #[], badge := badge }
+        { registers := Architecture.regMessageBody layout rf len, caps := #[], badge := badge }
         core := by
   unfold replyRendezvousDelivered
   split
@@ -474,7 +481,7 @@ theorem replyRendezvousDelivered_eq (st : SystemState) (c server : SeLe4n.Thread
 specification's `storeSendRendezvous` with `g := receiveCompleteTcb msg`. -/
 @[inline] def storeSendRendezvousWith (st : SystemState) (endpointId : SeLe4n.ObjId)
     (head : SeLe4n.ThreadId) (next : Option SeLe4n.ThreadId) (g : TCB → TCB) : SystemState :=
-  let s1 := st.modifyObject endpointId (sendRendezvousEndpoint next)
+  let s1 := st.modifyObject endpointId (sendRendezvousEndpoint (ThreadId.optCode next))
   let s2 := match next with
     | none => s1
     | some n => s1.updateTcb n tcbAsQueueHead
@@ -492,8 +499,9 @@ theorem storeSendRendezvousWith_comp (st : SystemState) (endpointId : SeLe4n.Obj
       (storeSendRendezvousWith st endpointId head next g).mapTcbInPlace head f := by
   unfold storeSendRendezvousWith
   dsimp only
-  have h1 := modifyObject_noResizeDue st endpointId (sendRendezvousEndpoint next) hNo
-  generalize st.modifyObject endpointId (sendRendezvousEndpoint next) = s1 at h1
+  have h1 := modifyObject_noResizeDue st endpointId
+    (sendRendezvousEndpoint (ThreadId.optCode next)) hNo
+  generalize st.modifyObject endpointId (sendRendezvousEndpoint (ThreadId.optCode next)) = s1 at h1
   have h2 : (match next with
       | none => s1
       | some n => s1.updateTcb n tcbAsQueueHead).objects.noResizeDue := by
@@ -514,7 +522,8 @@ theorem storeSendRendezvousWith_noResizeDue (st : SystemState) (endpointId : SeL
     (storeSendRendezvousWith st endpointId head next g).objects.noResizeDue := by
   unfold storeSendRendezvousWith
   dsimp only
-  have h1 := modifyObject_noResizeDue st endpointId (sendRendezvousEndpoint next) hNo
+  have h1 := modifyObject_noResizeDue st endpointId
+    (sendRendezvousEndpoint (ThreadId.optCode next)) hNo
   apply updateTcb_noResizeDue _ _ _ (updateTcb_noResizeDue _ _ _ _)
   cases next with
   | none => exact h1
@@ -559,19 +568,19 @@ theorem holdMessage_clearMessageSlots (msg : IpcMessage) :
 
 /-- `storeSendRendezvous` with the receiver woken holding no message. -/
 @[noinline] def storeSendRendezvousReady (st : SystemState) (endpointId : SeLe4n.ObjId)
-    (head : SeLe4n.ThreadId) (next : Option SeLe4n.ThreadId) : SystemState :=
-  storeSendRendezvousWith st endpointId head next receiveReadyTcb
+    (head : SeLe4n.ThreadId) (nextCode : Nat) : SystemState :=
+  storeSendRendezvousWith st endpointId head (ThreadId.ofOptCode nextCode) receiveReadyTcb
 
 /-- **The send rendezvous, delivered**: the receiver woken without the message,
 then the message's frame written into its saved registers.  The message is
 built only where the receiver is, unexpectedly, not ready. -/
 @[noinline] def performSendDelivered (st : SystemState) (endpointId : SeLe4n.ObjId)
-    (r : SeLe4n.ThreadId) (next : Option SeLe4n.ThreadId)
-    (layout : SeLe4n.SyscallRegisterLayout) (rf : SeLe4n.RegisterFile) (mi : MessageInfo)
+    (r : SeLe4n.ThreadId) (nextCode : Nat)
+    (layout : SeLe4n.SyscallRegisterLayout) (rf : SeLe4n.RegisterFile) (len : Nat)
     (badge : Option SeLe4n.Badge) (granted : Bool) (core : CoreId) : SystemState :=
-  let X := (wakeThread (storeSendRendezvousReady st endpointId r next) r core).1
-  writeDeliveredFrameIfReady X r (Architecture.regMessageFrame layout rf mi badge)
-    (fun _ => holdDeliveredBody X r layout rf mi badge granted)
+  let X := (wakeThread (storeSendRendezvousReady st endpointId r nextCode) r core).1
+  writeDeliveredFrameIfReady X r (Architecture.regMessageFrame layout rf len badge)
+    (fun _ => holdDeliveredBody X r layout rf len badge granted)
 
 theorem wakeThread_noResizeDue (st : SystemState) (t : SeLe4n.ThreadId) (core : CoreId)
     (hNo : st.objects.noResizeDue) : (wakeThread st t core).1.objects.noResizeDue :=

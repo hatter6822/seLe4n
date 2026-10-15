@@ -4067,7 +4067,7 @@ private def stOrphanHeadReplyRecv : SystemState :=
         { depth := 4, guardWidth := 0, guardValue := 0, radixWidth := 4,
           slots := SeLe4n.UniqueSlotMap.ofListWF [] })
     |>.withObject orphanEp (.endpoint
-        { sendQ := ({ head := some orphanSender, tail := some orphanSender } : IntrusiveQueue) })
+        (Endpoint.ofQueues ({ head := some orphanSender, tail := some orphanSender } : IntrusiveQueue) {}))
     |>.withObject orphanReply.toObjId (.reply
         { replyId := orphanReply, caller := some orphanClient,
           next := some (.head orphanSc) })
@@ -4860,7 +4860,7 @@ private def retypeCapOn (target : SeLe4n.ObjId) : Capability :=
   { target := .object target, rights := AccessRightSet.ofList [.retype], badge := none }
 
 /-- The replacement object: an empty endpoint, well-formed in any store. -/
-private def retypeReplacement : KernelObject := .endpoint { sendQ := {}, receiveQ := {} }
+private def retypeReplacement : KernelObject := .endpoint (Endpoint.ofQueues {} {})
 
 /-- The RETIRED reading of the pipeline's TCB arm, followed by the same sweep and
 the same store the live pipeline performs: the bare donated-context return, the

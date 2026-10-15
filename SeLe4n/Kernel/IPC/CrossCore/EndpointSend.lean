@@ -114,15 +114,17 @@ def endpointSendDualOnCore (endpointId : SeLe4n.ObjId) (sender : SeLe4n.ThreadId
       else (st, .error .objectNotFound)
 
 /-- WS-ZA ZA4.7: the endpoint a send rendezvous leaves: its receive queue
-starts at the popped head's successor. -/
-@[inline] def sendRendezvousEndpoint (next : Option SeLe4n.ThreadId) :
+starts at the popped head's successor, given as its code
+(`SeLe4n.ThreadId.optCode`), so a caller holding the successor's link code
+passes it without building an `Option`. -/
+@[inline] def sendRendezvousEndpoint (nextCode : Nat) :
     KernelObject → KernelObject
   | .endpoint e =>
-      -- branched outside the record, each arm rewriting the queue record it
-      -- was handed, so neither the endpoint nor its queue is rebuilt
-      match next with
-      | some n => .endpoint { e with receiveQ := { e.receiveQ with head := some n } }
-      | none => .endpoint { e with receiveQ := { e.receiveQ with head := none, tail := none } }
+      -- the queue ends are codes in the endpoint, rewritten in its cell
+      -- (`Endpoint.withReceiveQ_head`)
+      match nextCode with
+      | 0 => .endpoint { e with recvHeadCode := 0, recvTailCode := 0 }
+      | c + 1 => .endpoint { e with recvHeadCode := c + 1 }
   | o => o
 
 /-- WS-ZA ZA4.7: the receive completion a send rendezvous writes into the
@@ -152,7 +154,7 @@ each update is specialised in. -/
 @[noinline] def storeSendRendezvous (st : SystemState) (endpointId : SeLe4n.ObjId)
     (head : SeLe4n.ThreadId) (next : Option SeLe4n.ThreadId) (msg : IpcMessage) :
     SystemState :=
-  let s1 := st.modifyObject endpointId (sendRendezvousEndpoint next)
+  let s1 := st.modifyObject endpointId (sendRendezvousEndpoint (ThreadId.optCode next))
   let s2 := match next with
     | none => s1
     | some n => s1.updateTcb n tcbAsQueueHead
@@ -202,12 +204,15 @@ theorem sendRendezvous_inPlace_eq (st : SystemState) (endpointId : SeLe4n.ObjId)
     exact (SystemState.getTcb?_eq_some_iff _ _ _).mpr hT
   -- the endpoint store, as one state both sides name
   obtain ⟨S1, hS1⟩ : ∃ S1 : SystemState, S1 = { st with objects :=
-      (st.objects.insert endpointId (sendRendezvousEndpoint ht.queueNext (.endpoint ep))) } :=
+      (st.objects.insert endpointId
+        (sendRendezvousEndpoint (ThreadId.optCode ht.queueNext) (.endpoint ep))) } :=
     ⟨_, rfl⟩
-  have hMo : st.modifyObject endpointId (sendRendezvousEndpoint ht.queueNext) = S1 := by
+  have hMo : st.modifyObject endpointId (sendRendezvousEndpoint (ThreadId.optCode ht.queueNext)) =
+      S1 := by
     rw [hS1]; unfold SystemState.modifyObject
     rw [SeLe4n.Kernel.RobinHood.RHTable.modify_of_get? hE]
-  have hNotV : ∀ r, sendRendezvousEndpoint ht.queueNext (.endpoint ep) ≠ .vspaceRoot r := by
+  have hNotV : ∀ r, sendRendezvousEndpoint (ThreadId.optCode ht.queueNext) (.endpoint ep) ≠
+      .vspaceRoot r := by
     intro r h; simp only [sendRendezvousEndpoint] at h; split at h <;> cases h
   have hF1 : ∀ k, S1.objects.findsInPlace k = st.objects.findsInPlace k := fun k => by
     rw [hS1]; exact SeLe4n.Kernel.RobinHood.RHTable.findsInPlace_insert_of_findsInPlace k _ hFE
@@ -224,7 +229,7 @@ theorem sendRendezvous_inPlace_eq (st : SystemState) (endpointId : SeLe4n.ObjId)
   rw [hMo]
   cases hN : ht.queueNext with
   | none =>
-    have hSt : storeObject endpointId (.endpoint { ep with receiveQ := {} }) st = .ok ((), S1) := by
+    have hSt : storeObject endpointId (.endpoint (ep.withReceiveQ {})) st = .ok ((), S1) := by
       rw [storeObject_eq_of_leaves (by simpa only [KernelObject.objectType] using hLE), hS1, hN]; rfl
     simp only [hSt]
     have hQ : storeTcbQueueLinks S1 head none none none =
@@ -250,9 +255,9 @@ theorem sendRendezvous_inPlace_eq (st : SystemState) (endpointId : SeLe4n.ObjId)
       intro h; rw [h, (SystemState.getTcb?_eq_some_iff _ _ _).mp hTn] at hE; cases hE
     have hNeNH : n.toObjId ≠ head.toObjId := fun h => hNeH (SeLe4n.ThreadId.toObjId_injective _ _ h)
     have hSt : storeObject endpointId
-        (.endpoint { ep with receiveQ := { head := some n, tail := ep.receiveQ.tail } }) st =
+        (.endpoint (ep.withReceiveQ { head := some n, tail := ep.receiveQ.tail })) st =
         .ok ((), S1) := by
-      rw [storeObject_eq_of_leaves (by simpa only [KernelObject.objectType] using hLE), hS1, hN]; rfl
+      rw [Endpoint.withReceiveQ_head, storeObject_eq_of_leaves (by simpa only [KernelObject.objectType] using hLE), hS1, hN]; rfl
     simp only [hSt]
     have hTn1 : S1.getTcb? n = some nt :=
       (SystemState.getTcb?_eq_some_iff _ _ _).mpr

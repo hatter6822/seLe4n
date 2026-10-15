@@ -554,8 +554,8 @@ theorem endpointQueueEnqueue_offSchedulerAgrees {s1 s2 r2 : SystemState}
               simp only []
               cases hSO2 : storeObject endpointId
                   (.endpoint (if isReceiveQ
-                    then { ep with receiveQ := { head := some tid, tail := some tid } }
-                    else { ep with sendQ := { head := some tid, tail := some tid } })) s2 with
+                    then (ep.withReceiveQ { head := some tid, tail := some tid })
+                    else (ep.withSendQ { head := some tid, tail := some tid }))) s2 with
               | error e => simp
               | ok p2 =>
                 obtain ⟨⟨⟩, t2⟩ := p2
@@ -563,8 +563,8 @@ theorem endpointQueueEnqueue_offSchedulerAgrees {s1 s2 r2 : SystemState}
                 intro hLinks2
                 cases hSO1 : storeObject endpointId
                     (.endpoint (if isReceiveQ
-                      then { ep with receiveQ := { head := some tid, tail := some tid } }
-                      else { ep with sendQ := { head := some tid, tail := some tid } })) s1 with
+                      then (ep.withReceiveQ { head := some tid, tail := some tid })
+                      else (ep.withSendQ { head := some tid, tail := some tid }))) s1 with
                 | error e => exact absurd hSO1 (by unfold storeObject; simp)
                 | ok p1 =>
                   obtain ⟨⟨⟩, t1⟩ := p1
@@ -586,12 +586,8 @@ theorem endpointQueueEnqueue_offSchedulerAgrees {s1 s2 r2 : SystemState}
                 simp only [hQP, hQPP]
                 cases hSO2 : storeObject endpointId
                     (.endpoint (if isReceiveQ
-                      then { ep with receiveQ :=
-                        { head := (if isReceiveQ then ep.receiveQ else ep.sendQ).head,
-                          tail := some tid } }
-                      else { ep with sendQ :=
-                        { head := (if isReceiveQ then ep.receiveQ else ep.sendQ).head,
-                          tail := some tid } })) s2 with
+                      then (ep.withReceiveQ { head := (if isReceiveQ then ep.receiveQ else ep.sendQ).head, tail := some tid })
+                      else (ep.withSendQ { head := (if isReceiveQ then ep.receiveQ else ep.sendQ).head, tail := some tid }))) s2 with
                 | error e => simp
                 | ok p2 =>
                   obtain ⟨⟨⟩, t2⟩ := p2
@@ -604,12 +600,8 @@ theorem endpointQueueEnqueue_offSchedulerAgrees {s1 s2 r2 : SystemState}
                     intro hLinks2
                     cases hSO1 : storeObject endpointId
                         (.endpoint (if isReceiveQ
-                          then { ep with receiveQ :=
-                            { head := (if isReceiveQ then ep.receiveQ else ep.sendQ).head,
-                              tail := some tid } }
-                          else { ep with sendQ :=
-                            { head := (if isReceiveQ then ep.receiveQ else ep.sendQ).head,
-                              tail := some tid } })) s1 with
+                          then (ep.withReceiveQ { head := (if isReceiveQ then ep.receiveQ else ep.sendQ).head, tail := some tid })
+                          else (ep.withSendQ { head := (if isReceiveQ then ep.receiveQ else ep.sendQ).head, tail := some tid }))) s1 with
                     | error e => exact absurd hSO1 (by unfold storeObject; simp)
                     | ok p1 =>
                       obtain ⟨⟨⟩, t1⟩ := p1

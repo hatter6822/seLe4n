@@ -690,8 +690,7 @@ private def runCapabilityIpcTrace (counter : IO.Ref Nat) (st1 : SystemState) : I
   -- M-01: Dual-queue endpoint send/receive
   let dualEpId : SeLe4n.ObjId := demoEndpoint
   -- Set up fresh state with idle endpoint for dual-queue test
-  let dualEp : KernelObject := .endpoint {
-    sendQ := {}, receiveQ := {} }
+  let dualEp : KernelObject := .endpoint (Endpoint.ofQueues {} {})
   let stDual : SystemState := st1.withObjectStored dualEpId dualEp
   match SeLe4n.Kernel.endpointSendDual dualEpId ⟨1⟩ .empty stDual with
   | .error err => IO.println s!"[CIC-006] endpointSendDual error: {reprStr err}"
@@ -811,8 +810,7 @@ private def runIpcMessageTransferTrace (counter : IO.Ref Nat) (st1 : SystemState
   let receiverId : SeLe4n.ThreadId := ⟨12⟩
   let testMsg : IpcMessage := { registers := #[⟨42⟩, ⟨7⟩], caps := #[], badge := some (Badge.ofNatMasked 123) }
   -- Fresh endpoint for dual-queue test
-  let ep0 : KernelObject := .endpoint {
-    sendQ := {}, receiveQ := {} }
+  let ep0 : KernelObject := .endpoint (Endpoint.ofQueues {} {})
   let st0 : SystemState := st1.withObjectStored epId ep0
   -- Sender sends (no receiver queued → sender blocks with message)
   match SeLe4n.Kernel.endpointSendDual epId senderId testMsg st0 with
@@ -844,8 +842,7 @@ private def runIpcMessageTransferTrace (counter : IO.Ref Nat) (st1 : SystemState
             | none => false
           IO.println s!"[IMT-006] message sender cleared after transfer: {senderCleared}"
   -- F1-02: Rendezvous path — receiver waits first, then send delivers directly
-  let ep1 : KernelObject := .endpoint {
-    sendQ := {}, receiveQ := {} }
+  let ep1 : KernelObject := .endpoint (Endpoint.ofQueues {} {})
   let stR : SystemState := st1.withObjectStored epId ep1
   -- Receiver blocks first (no sender waiting → receiver enqueued)
   match SeLe4n.Kernel.endpointReceiveDual epId receiverId none stR with
@@ -864,7 +861,7 @@ private def runIpcMessageTransferTrace (counter : IO.Ref Nat) (st1 : SystemState
             | none => []
           IO.println s!"[IMT-009] rendezvous delivery registers: {reprStr rendRegs}"
   -- T7-B: Post-mutation invariant check after IPC rendezvous
-  let epRend : KernelObject := .endpoint { sendQ := {}, receiveQ := {} }
+  let epRend : KernelObject := .endpoint (Endpoint.ofQueues {} {})
   let stRMut : SystemState := st1.withObjectStored demoEndpoint epRend
   match SeLe4n.Kernel.endpointReceiveDual demoEndpoint ⟨12⟩ none stRMut with
   | .ok (_, stWaitMut) =>
@@ -875,8 +872,7 @@ private def runIpcMessageTransferTrace (counter : IO.Ref Nat) (st1 : SystemState
   | .error _ => pure ()
   checkInvariants counter "post-ipc-send-receive-rendezvous" st1
   -- F1-03: Call + Reply roundtrip with message payload
-  let ep2 : KernelObject := .endpoint {
-    sendQ := {}, receiveQ := {} }
+  let ep2 : KernelObject := .endpoint (Endpoint.ofQueues {} {})
   -- WS-SM SM6.D (#7.3 fold): the server supplies a Reply object on its server-first
   -- `Recv`; the later `Call` rendezvous links the caller to it atomically.
   let f103ReplyId : SeLe4n.ReplyId := ⟨9004⟩
@@ -914,8 +910,7 @@ private def runIpcMessageTransferTrace (counter : IO.Ref Nat) (st1 : SystemState
               IO.println s!"[IMT-014] call/reply response registers: {reprStr replyRegs}"
   -- WS-H1: Call blocking-path — caller enqueues as blockedOnCall, receiver dequeues,
   -- caller transitions to blockedOnReply (not .ready), then explicit Reply unblocks.
-  let ep3 : KernelObject := .endpoint {
-    sendQ := {}, receiveQ := {} }
+  let ep3 : KernelObject := .endpoint (Endpoint.ofQueues {} {})
   let callerId : SeLe4n.ThreadId := senderId    -- reuse thread 1
   let serverId : SeLe4n.ThreadId := receiverId  -- reuse thread 12
   -- WS-SM SM6.D (#7.1 fold): the server supplies a Reply object on its receive
@@ -1030,7 +1025,7 @@ private def runIpcMessageBoundsTrace (counter : IO.Ref Nat) (st1 : SystemState) 
       TransferCap.fromNode { target := .object ⟨3⟩, rights := AccessRightSet.ofList [] } 3],
     badge := some (Badge.ofNatMasked 999) }
   -- Create a fresh endpoint for this test
-  let ep0 : KernelObject := .endpoint { sendQ := {}, receiveQ := {} }
+  let ep0 : KernelObject := .endpoint (Endpoint.ofQueues {} {})
   let stFresh : SystemState := st1.withObjectStored epId ep0
   match SeLe4n.Kernel.endpointSendDual epId senderId boundaryMsg stFresh with
   | .error err =>
@@ -1300,7 +1295,7 @@ private def runBoundedMessageExtendedTrace (counter : IO.Ref Nat) (st1 : SystemS
   let senderId : SeLe4n.ThreadId := ⟨1⟩
   -- H12f-B01: Zero-length message (empty registers and caps) — should succeed
   let emptyMsg : IpcMessage := { registers := #[], caps := #[], badge := none }
-  let ep0 : KernelObject := .endpoint { sendQ := {}, receiveQ := {} }
+  let ep0 : KernelObject := .endpoint (Endpoint.ofQueues {} {})
   let stFresh : SystemState := st1.withObjectStored epId ep0
   match SeLe4n.Kernel.endpointSendDual epId senderId emptyMsg stFresh with
   | .error err =>
@@ -1362,7 +1357,7 @@ private def runSyscallGateTrace (counter : IO.Ref Nat) (st1 : SystemState) : IO 
     ]
   }
   -- Insert the CNode and a fresh endpoint into the state
-  let ep : KernelObject := .endpoint { sendQ := {}, receiveQ := {} }
+  let ep : KernelObject := .endpoint (Endpoint.ofQueues {} {})
   let stLocal := st1.withObjectStored cnodeId (.cnode cn)
       |>.withObjectStored epId ep
   -- Case 1: Correct gate (slot 0, .write right, depth 4) → success
@@ -1983,7 +1978,7 @@ private def runReplyRecvRoundtripTrace (counter : IO.Ref Nat) (st1 : SystemState
   let callerBId : SeLe4n.ThreadId := ⟨13⟩
   let serverId : SeLe4n.ThreadId := ⟨12⟩
   -- Start with fresh endpoint and a third TCB (caller B) for the rendezvous path
-  let ep : KernelObject := .endpoint { sendQ := {}, receiveQ := {} }
+  let ep : KernelObject := .endpoint (Endpoint.ofQueues {} {})
   let callerB : KernelObject := .tcb {
     tid := callerBId, priority := ⟨50⟩, domain := ⟨0⟩,
     cspaceRoot := ⟨10⟩, vspaceRoot := ⟨20⟩, ipcBuffer := (SeLe4n.VAddr.ofNat 12288),
@@ -2076,7 +2071,7 @@ private def runEndpointLifecycleTrace (counter : IO.Ref Nat) (st1 : SystemState)
   let lcSender2 : SeLe4n.ThreadId := ⟨12⟩
   let lcAuthSlot : SeLe4n.Kernel.CSpaceAddr := { cnode := ⟨10⟩, slot := SeLe4n.Slot.ofNat 0 }
   -- Fresh endpoint and CNode with authority cap for lifecycle retype
-  let lcEp : KernelObject := .endpoint { sendQ := {}, receiveQ := {} }
+  let lcEp : KernelObject := .endpoint (Endpoint.ofQueues {} {})
   let lcCnode : KernelObject := .cnode {
     depth := 0, guardWidth := 0, guardValue := 0, radixWidth := 0,
     slots := SeLe4n.UniqueSlotMap.ofListWF [
@@ -2173,9 +2168,9 @@ private def runMultiEndpointInterleavingTrace (counter : IO.Ref Nat) (st1 : Syst
   let senderId : SeLe4n.ThreadId := ⟨1⟩
   let receiverId : SeLe4n.ThreadId := ⟨12⟩
   -- Create three separate endpoints (L4-D2: 3-endpoint coverage)
-  let ep1 : KernelObject := .endpoint { sendQ := {}, receiveQ := {} }
-  let ep2 : KernelObject := .endpoint { sendQ := {}, receiveQ := {} }
-  let ep3 : KernelObject := .endpoint { sendQ := {}, receiveQ := {} }
+  let ep1 : KernelObject := .endpoint (Endpoint.ofQueues {} {})
+  let ep2 : KernelObject := .endpoint (Endpoint.ofQueues {} {})
+  let ep3 : KernelObject := .endpoint (Endpoint.ofQueues {} {})
   let stFresh : SystemState := st1.withObjectStored epId1 ep1
       |>.withObjectStored epId2 ep2
       |>.withObjectStored epId3 ep3
@@ -2554,7 +2549,7 @@ private def runTimeoutEndpointTrace (_counter : IO.Ref Nat) (st1 : SystemState) 
     cspaceRoot := ⟨10⟩, vspaceRoot := ⟨20⟩, ipcBuffer := (SeLe4n.VAddr.ofNat 8192),
     ipcState := .blockedOnSend epId,
     queuePrevCode := SeLe4n.ThreadId.optCode (some tid1), queueNextCode := 0, queuePPrevCode := QueuePPrev.optCode (some (.tcbNext tid1)) }
-  let ep : Endpoint := { sendQ := { head := some tid1, tail := some tid2 }, receiveQ := {} }
+  let ep : Endpoint := (Endpoint.ofQueues { head := some tid1, tail := some tid2 } {})
   let stQ := st1.withObjectStored epId (.endpoint ep)
       |>.withObjectStored tid1.toObjId (.tcb tcb1)
       |>.withObjectStored tid2.toObjId (.tcb tcb2)
@@ -2641,7 +2636,7 @@ private def runTimeoutEndpointTrace (_counter : IO.Ref Nat) (st1 : SystemState) 
     scId := scH, budget := ⟨1000⟩, period := ⟨1000⟩, priority := ⟨50⟩,
     deadline := ⟨1000⟩, domain := ⟨0⟩, budgetRemaining := ⟨1000⟩,
     boundThread := some hTid, scReply := some rH }
-  let epObj : Endpoint := { sendQ := { head := some hTid, tail := some hTid }, receiveQ := {} }
+  let epObj : Endpoint := (Endpoint.ofQueues { head := some hTid, tail := some hTid } {})
   let stR := st1.withObjectStored epH (.endpoint epObj)
       |>.withObjectStored scH.toObjId (.schedContext holderSc)
       |>.withObjectStored rH.toObjId (.reply victimReply)
@@ -2671,7 +2666,7 @@ private def runTimeoutEndpointTrace (_counter : IO.Ref Nat) (st1 : SystemState) 
   -- makes SCO-020b above a discriminating check rather than one that would read
   -- `true` however the reclaim were written.
   let holderRecvTcb : TCB := { holderTcb with ipcState := .blockedOnReceive epH }
-  let epRecv : Endpoint := { sendQ := {}, receiveQ := { head := some hTid, tail := some hTid } }
+  let epRecv : Endpoint := (Endpoint.ofQueues {} { head := some hTid, tail := some hTid })
   let stRecv := stR.withObjectStored epH (.endpoint epRecv)
       |>.withObjectStored hTid.toObjId (.tcb holderRecvTcb)
   let stRecvAfter := SeLe4n.Kernel.Lifecycle.Suspend.cancelIpcBlocking stRecv vTid victimTcb
@@ -2717,7 +2712,7 @@ private def runTimeoutEndpointTrace (_counter : IO.Ref Nat) (st1 : SystemState) 
   -- where OD1.7's wake, whose guards declined a queued thread, left it running
   -- `.unbound` on nobody's budget.  The resolver names the core the step wrote.
   let holderReady : TCB := { holderPinned with ipcState := .ready, queuePPrevCode := 0 }
-  let epIdle : Endpoint := { sendQ := {}, receiveQ := {} }
+  let epIdle : Endpoint := (Endpoint.ofQueues {} {})
   let stReady := stR.withObjectStored epH (.endpoint epIdle)
       |>.withObjectStored hTid.toObjId (.tcb holderReady)
   let stQueued := SeLe4n.Kernel.enqueueRunnableOnCore stReady ⟨1, by decide⟩ hTid
@@ -2870,7 +2865,7 @@ private def runTimeoutEndpointTrace (_counter : IO.Ref Nat) (st1 : SystemState) 
     cspaceRoot := ⟨10⟩, vspaceRoot := ⟨20⟩, ipcBuffer := (SeLe4n.VAddr.ofNat 12288),
     ipcState := .blockedOnSend epId,
     queuePrevCode := SeLe4n.ThreadId.optCode (some tid2), queueNextCode := 0, queuePPrevCode := QueuePPrev.optCode (some (.tcbNext tid2)) }
-  let ep3q : Endpoint := { sendQ := { head := some tid1, tail := some tid3 }, receiveQ := {} }
+  let ep3q : Endpoint := (Endpoint.ofQueues { head := some tid1, tail := some tid3 } {})
   let stQ3 := st1.withObjectStored epId (.endpoint ep3q)
       |>.withObjectStored tid1.toObjId (.tcb tcb1_3q)
       |>.withObjectStored tid2.toObjId (.tcb tcb2_3q)
@@ -2896,7 +2891,7 @@ private def runTimeoutEndpointTrace (_counter : IO.Ref Nat) (st1 : SystemState) 
     | none => IO.println s!"[SCO-032] endpointQueueRemove mid: endpoint not found"
 
   -- SCO-033: endpointQueueRemove — removal from receiveQ (not just sendQ)
-  let epRecv : Endpoint := { sendQ := {}, receiveQ := { head := some tid1, tail := some tid2 } }
+  let epRecv : Endpoint := (Endpoint.ofQueues {} { head := some tid1, tail := some tid2 })
   let tcb1Recv : TCB := {
     tid := tid1, priority := ⟨50⟩, domain := ⟨0⟩,
     cspaceRoot := ⟨10⟩, vspaceRoot := ⟨20⟩, ipcBuffer := (SeLe4n.VAddr.ofNat 4096),
@@ -2927,7 +2922,7 @@ private def runTimeoutEndpointTrace (_counter : IO.Ref Nat) (st1 : SystemState) 
     cspaceRoot := ⟨10⟩, vspaceRoot := ⟨20⟩, ipcBuffer := (SeLe4n.VAddr.ofNat 4096),
     ipcState := .blockedOnCall epId,
     queuePrevCode := 0, queueNextCode := 0, queuePPrevCode := 1 }
-  let epCall : Endpoint := { sendQ := { head := some tid1, tail := some tid1 }, receiveQ := {} }
+  let epCall : Endpoint := (Endpoint.ofQueues { head := some tid1, tail := some tid1 } {})
   let stCall := st1.withObjectStored epId (.endpoint epCall)
       |>.withObjectStored tid1.toObjId (.tcb tcb1Call)
   match SeLe4n.Kernel.timeoutThread epId false tid1 bootCoreId stCall with
@@ -2944,8 +2939,7 @@ private def runTimeoutEndpointTrace (_counter : IO.Ref Nat) (st1 : SystemState) 
   -- SCO-035: timeoutBlockedThreads — multiple threads with same SC all timed out
   let scIdMulti : SeLe4n.SchedContextId := ⟨6020⟩
   let scMulti : SeLe4n.Kernel.SchedContext := SeLe4n.Kernel.SchedContext.empty scIdMulti
-  let epMulti : Endpoint := {
-    sendQ := { head := some tid1, tail := some tid2 }, receiveQ := {} }
+  let epMulti : Endpoint := (Endpoint.ofQueues { head := some tid1, tail := some tid2 } {})
   let tcbM1 : TCB := {
     tid := tid1, priority := ⟨50⟩, domain := ⟨0⟩,
     cspaceRoot := ⟨10⟩, vspaceRoot := ⟨20⟩, ipcBuffer := (SeLe4n.VAddr.ofNat 4096),

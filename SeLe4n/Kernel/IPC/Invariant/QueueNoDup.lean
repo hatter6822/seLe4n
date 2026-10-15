@@ -745,7 +745,7 @@ theorem endpointQueuePopHead_preserves_endpointQueueNoDup
                         have ⟨nextTcbPre, hNextObj, hNextPrev⟩ := hLinkInt.1 headTid tcb hTcbObj nextTid hNext
                         cases isReceiveQ with
                         | true =>
-                          simp only [↓reduceIte] at hHead ⊢
+                          simp only [↓reduceIte, Endpoint.sendQ_withReceiveQ, Endpoint.receiveQ_withReceiveQ, Endpoint.sendQ_withSendQ, Endpoint.receiveQ_withSendQ] at hHead ⊢
                           -- Target = receiveQ (head → nextTid), opposite = sendQ (unchanged)
                           cases hOppHead : ep.sendQ.head with
                           | none => left; rfl
@@ -760,7 +760,7 @@ theorem endpointQueuePopHead_preserves_endpointQueueNoDup
                         | false =>
                           -- Target = sendQ (head → nextTid), opposite = receiveQ (unchanged)
                           -- Reduce `if false = true then ... else ...`
-                          simp only [if_neg (show ¬(false = true) from by decide)] at hHead ⊢
+                          simp only [if_neg (show ¬(false = true) from by decide), Endpoint.sendQ_withReceiveQ, Endpoint.receiveQ_withReceiveQ, Endpoint.sendQ_withSendQ, Endpoint.receiveQ_withSendQ] at hHead ⊢
                           cases hOppHead : ep.receiveQ.head with
                           | none => right; left; rfl
                           | some oppTid =>
