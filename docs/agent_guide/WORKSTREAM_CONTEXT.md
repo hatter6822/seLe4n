@@ -154,8 +154,12 @@ scalar codes: a receive that blocks reads 1, a call 5 and a wait that blocks 5.
 At `v0.36.89` the reply fields are scalar codes: a call reads 2 and a receive
 naming a reply object 1.  At `v0.36.90` the per-core current and resident
 threads and the priority boost are scalar codes: a call, a reply, a receive for
-a call and a receive that blocks read 0, and a wait that blocks 4.  Blocked
-senders and reply-receive come next.  ZA4 measures the other
+a call and a receive that blocks read 0, and a wait that blocks 4.  At
+`v0.36.91` a wait that blocks and a signal that wakes a waiter are written in
+place: both read 0, as does a send to a waiting receiver; a send that blocks
+reads 27 and a receive from a blocked sender 52.  Blocked senders (message in
+their registers, capabilities looked up at the rendezvous) and reply-receive
+come next.  ZA4 measures the other
 syscalls and entries.  Plan:
 [`docs/planning/ZERO_ALLOCATION_SYSCALL_PLAN.md`](../planning/ZERO_ALLOCATION_SYSCALL_PLAN.md)
 (phases ZA1–ZA4).
