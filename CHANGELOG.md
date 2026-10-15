@@ -1,3 +1,35 @@
+## v0.36.94 — WS-ZA ZA4.11 (first entry after boot): objects own their cells from the moment they enter the store
+
+**The first signal after boot now allocates nothing, and the exerciser fails
+on any nonzero reading.**  A boot image's initial objects and a retype's
+default object are constants, which the compiled kernel holds as shared
+values; the first in-place write to one found it shared and copied it.
+
+Normal-build allocations per syscall (QEMU exerciser, core 0), against
+`v0.36.93`:
+
+| Scenario | v0.36.93 | v0.36.94 |
+|---|---|---|
+| signal, first call after boot | 2 | 0 |
+
+Every other scenario reads 0 on its first call and in steady state.
+
+- **Unshared on entry to the store.**  `KernelObject.unshare` is the identity
+  in the specification (`KernelObject.unshare_eq`); as compiled
+  (`KernelObject.unshare_eq_impl`, `@[csimp]`) it rebuilds the object's
+  record through `opaqueId`, an identity the compiler cannot see through, and
+  rebuilds a thread's register file, a CNode's slot table
+  (`UniqueSlotMap.unshareImpl`) and a VSpace root's mapping table
+  (`RHTable.unshare`) the same way.  Boot (`createBootObject`) and retype
+  (`objectOfKernelType`) apply it, so the one copy happens where the object
+  enters the store.  New module `SeLe4n/Model/Object/Unshare.lean`.
+- **Every first call measured.**  `smp_exercisers.rs` reads each round trip
+  and partner scenario on its first call (`(first call)`) and in steady state,
+  replacing the unmeasured warm-up runs.  `scripts/qemu_exerciser_lib.sh`
+  requires exactly one reading of each and fails the run on any nonzero
+  delta ("a syscall allocated").  The `CLAUDE.md` standing rule and the check
+  over every kernel entry remain ZA4.12.
+
 ## v0.36.93 — WS-ZA ZA4.7 (reply-receive): a reply-receive that answers its caller and blocks allocates nothing
 
 **A reply-receive that answers its caller and then blocks now allocates
