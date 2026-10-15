@@ -540,7 +540,7 @@ installed by this delivery's transfer, `0` for paths that run none. -/
 
 /-- A badge-only frame — `.notificationWait`'s shape: the badge in `x0`,
 success `MessageInfo` (all-zero word) in `x1`, no message registers. -/
-def returnFrameOfBadge (b : Badge) : SyscallReturnFrame :=
+@[inline] def returnFrameOfBadge (b : Badge) : SyscallReturnFrame :=
   { x0 := b.word }
 
 -- ============================================================================
@@ -1101,7 +1101,7 @@ the wake did not actually happen (the transition errored short of the
 wake, the counterparty vanished, or it is still blocked).
 `installedCaps` per `stageDeliveredMessage` (PR #866 round-2): the
 delivering transfer's `installedCount`, `0` on unwrap-free paths. -/
-def stageWokenDelivery (st : SystemState) (woken? : Option SeLe4n.ThreadId)
+@[inline] def stageWokenDelivery (st : SystemState) (woken? : Option SeLe4n.ThreadId)
     (installedCaps : Nat) : SystemState :=
   match woken? with
   | some tid => stageDeliveredMessage st tid installedCaps

@@ -1491,9 +1491,11 @@ const fn partner_step(
 ///   continues;
 /// - a wait that blocks, then a signal that wakes the waiter and continues;
 /// - a receive that blocks holding the reply capability, then a call that
-///   wakes it and blocks for the answer, then the reply, which continues.
+///   wakes it and blocks for the answer, then the reply, which continues;
+/// - a send that blocks, then a receive that takes the blocked sender's
+///   message and continues (WS-ZA ZA4.7).
 #[cfg(feature = "hw_target")]
-const PARTNER_SCENARIOS: [&[RoundTrip]; 3] = [
+const PARTNER_SCENARIOS: [&[RoundTrip]; 4] = [
     &[
         partner_step("receive-blocks", RECEIVE, ENDPOINT_SLOT, 0, [0, 0], true),
         partner_step("send-to-receiver", SEND, ENDPOINT_SLOT, 1, [0x55, 0], false),
@@ -1520,6 +1522,17 @@ const PARTNER_SCENARIOS: [&[RoundTrip]; 3] = [
         ),
         partner_step("call", CALL, ENDPOINT_SLOT, 1, [0x66, 0], true),
         partner_step("reply", REPLY, REPLY_CAP_SLOT, 1, [0x77, 0], false),
+    ],
+    &[
+        partner_step("send-blocks", SEND, ENDPOINT_SLOT, 1, [0x88, 0], true),
+        partner_step(
+            "receive-from-sender",
+            RECEIVE,
+            ENDPOINT_SLOT,
+            0,
+            [0, 0],
+            false,
+        ),
     ],
 ];
 

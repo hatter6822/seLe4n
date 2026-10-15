@@ -8460,7 +8460,7 @@ run_check "INVARIANT" rg -n 'audit ABI: auditRead=31 auditDrain=32 syscalls=42 o
 run_check "INVARIANT" rg -n '^def notificationSignalDeclassifiedOnCore($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/DeclassifiedSignal.lean
 run_check "INVARIANT" rg -n '^def notificationSignalDeclassifiedCrossCoreDispatch($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/DeclassifiedSignal.lean
 run_check "INVARIANT" rg -n '^def declassifiedSignalPlan($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/DeclassifiedSignal.lean
-run_check "INVARIANT" rg -n '^def declassifiedSignalReceiver\?' SeLe4n/Kernel/InformationFlow/DeclassifiedSignal.lean
+run_check "INVARIANT" rg -n '^@\[inline\] def declassifiedSignalReceiver\?' SeLe4n/Kernel/InformationFlow/DeclassifiedSignal.lean
 run_check "INVARIANT" rg -n '^import SeLe4n.Kernel.InformationFlow.DeclassifiedSignal' SeLe4n/Kernel/API.lean
 run_negative_check "INVARIANT" rg -n '^SeLe4n\.Kernel\.InformationFlow\.DeclassifiedSignal$' scripts/staged_module_allowlist.txt
 
@@ -9024,7 +9024,7 @@ run_check "INVARIANT" rg -n 'chain12b: revoking an unrelated slot leaves the tra
 # used to re-read `declassifiedSignalReceiver?` — which cannot tell a bound
 # target from a waiter — and disagreed three times in three rounds.
 run_check "INVARIANT" rg -n '^inductive SignalDelivery where' SeLe4n/Kernel/InformationFlow/TaintPropagation.lean
-run_check "INVARIANT" rg -n '^def signalDelivery ' SeLe4n/Kernel/InformationFlow/TaintPropagation.lean
+run_check "INVARIANT" rg -n '^@\[inline\] def signalDelivery ' SeLe4n/Kernel/InformationFlow/TaintPropagation.lean
 run_check "INVARIANT" rg -n '^def signalBypassedNotification($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/TaintPropagation.lean
 run_check "INVARIANT" rg -n '^theorem signalDelivery_bound_leaves_notification_alone($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/TaintPropagation.lean
 run_check "INVARIANT" rg -n '^theorem signalDelivery_waiter_empties_notification($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/TaintPropagation.lean
@@ -10943,7 +10943,7 @@ run_check "INVARIANT" rg -n '^theorem readReturnFrame_writeReturnFrame($|[ ({:\[
 run_check "INVARIANT" rg -n '^def stageDeliveredMessage($|[ ({:\[\]])' SeLe4n/Kernel/Architecture/SyscallReturn.lean
 # WS-RA RA.B.5b: the blocked-waiter staging seam — the Option-lifted stagers
 # the unblocking arms compose, the plan-named theorem, and its unit dual.
-run_check "INVARIANT" rg -n '^def stageWokenDelivery($|[ ({:\[\]])' SeLe4n/Kernel/Architecture/SyscallReturn.lean
+run_check "INVARIANT" rg -n '^@\[inline\] def stageWokenDelivery($|[ ({:\[\]])' SeLe4n/Kernel/Architecture/SyscallReturn.lean
 run_check "INVARIANT" rg -n '^def stageWokenSendCompletion($|[ ({:\[\]])' SeLe4n/Kernel/Architecture/SyscallReturn.lean
 run_check "INVARIANT" rg -n '^theorem stageWokenSendCompletion_stages_zero($|[ ({:\[\]])' SeLe4n/Kernel/Architecture/SyscallReturn.lean
 run_check "INVARIANT" rg -n '^theorem blockedReturn_staged_in_waiter_frame($|[ ({:\[\]])' SeLe4n/Kernel/Architecture/SyscallReturn.lean

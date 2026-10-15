@@ -991,8 +991,9 @@ theorem ofCodes_eq_iff (obj state : Nat) (s : ThreadIpcState) :
 
 /-- Deciding which state a pair of codes stands for compares the two words, so
 a test of a thread's state (`decide (tcb.ipcState = .ready)`) builds no
-constructor cell. -/
-instance (priority := high) decEqOfCodes (obj state : Nat) (s : ThreadIpcState) :
+constructor cell.  Inlined, so the state it is compared with is never built
+either: its codes are read off the constructor where the test is written. -/
+@[inline] instance (priority := high) decEqOfCodes (obj state : Nat) (s : ThreadIpcState) :
     Decidable (ofCodes obj state = s) :=
   decidable_of_iff (obj = s.objectCode ∧ state = s.stateCode) (ofCodes_eq_iff obj state s).symm
 

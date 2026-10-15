@@ -573,7 +573,9 @@ def ensureRunnable (st : SystemState) (tid : SeLe4n.ThreadId) : SystemState :=
         else st
     | none => st
 
-def lookupTcb (st : SystemState) (tid : SeLe4n.ThreadId) : Option TCB :=
+/-- A thread's TCB, refusing the reserved id.  Inlined (WS-ZA), so a caller
+matches the store read where it is made and the `some` is never built. -/
+@[inline] def lookupTcb (st : SystemState) (tid : SeLe4n.ThreadId) : Option TCB :=
   if tid.isReserved then
     none
   else
@@ -851,6 +853,19 @@ def ntfnSuccessor? (st : SystemState) (tid : SeLe4n.ThreadId) : Option SeLe4n.Th
   match lookupTcb st tid with
   | some tcb => tcb.ntfnNext
   | none => none
+
+/-- WS-ZA ZA4.7: `ntfnSuccessor?` as its code (`ThreadId.optCode`). -/
+@[inline] def ntfnSuccessorCode (st : SystemState) (tid : SeLe4n.ThreadId) : Nat :=
+  match lookupTcb st tid with
+  | some tcb => tcb.ntfnNextCode
+  | none => 0
+
+theorem optCode_ntfnSuccessor? (st : SystemState) (tid : SeLe4n.ThreadId) :
+    SeLe4n.ThreadId.optCode (ntfnSuccessor? st tid) = ntfnSuccessorCode st tid := by
+  unfold ntfnSuccessor? ntfnSuccessorCode
+  split
+  · exact SeLe4n.ThreadId.optCode_ofOptCode _
+  · rfl
 
 /-- WS-ZA ZA4.4: close the gap a waiter leaves in its notification's intrusive
 queue -- the predecessor's next link and the successor's previous link each skip
@@ -8845,12 +8860,28 @@ def notificationWaitTail? (st : SystemState) (notificationId : SeLe4n.ObjId) :
 /-- WS-SM SM6.B.1: the waiter a cross-core signal would wake — the head of the
 notification's waiter list, if any.  Pre-resolved from the pre-state so the
 signaller can assemble the `lockSet_notificationSignal` footprint (the waiter TCB
-write lock is present iff a waiter is blocked). -/
-def notificationSignalWaiter? (st : SystemState) (notificationId : SeLe4n.ObjId) :
+write lock is present iff a waiter is blocked).  Inlined (WS-ZA), so a caller
+matches the head where it reads it and the `some` is never built. -/
+@[inline] def notificationSignalWaiter? (st : SystemState) (notificationId : SeLe4n.ObjId) :
     Option SeLe4n.ThreadId :=
   match st.getNotification? notificationId with
   | some ntfn => ntfn.waitHead
   | none => none
+
+/-- WS-ZA ZA4.7: `notificationSignalWaiter?` as its code (`ThreadId.optCode`),
+so a caller that holds the waiter across the signal holds a word. -/
+@[inline] def notificationSignalWaiterCode (st : SystemState) (notificationId : SeLe4n.ObjId) :
+    Nat :=
+  match st.getNotification? notificationId with
+  | some ntfn => ntfn.waitHeadCode
+  | none => 0
+
+@[simp] theorem ofOptCode_notificationSignalWaiterCode (st : SystemState)
+    (notificationId : SeLe4n.ObjId) :
+    SeLe4n.ThreadId.ofOptCode (notificationSignalWaiterCode st notificationId) =
+      notificationSignalWaiter? st notificationId := by
+  unfold notificationSignalWaiterCode notificationSignalWaiter?
+  split <;> rfl
 
 /-- WS-ZA ZA4.4: the waiter that heads the queue once a signal has woken its
 head -- the head's successor, read from the head's own link, exactly as the

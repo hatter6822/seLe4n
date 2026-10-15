@@ -730,7 +730,7 @@ Mirrors `declassifiedSignalReceiver?` exactly — bound target first, then the h
 waiter — but keeps the two receiver kinds **distinguishable**, which is the
 information `declassifiedSignalReceiver?` discards and which all three consumers
 turned out to need. -/
-def signalDelivery (st : SystemState) (nid : SeLe4n.ObjId) : SignalDelivery :=
+@[inline] def signalDelivery (st : SystemState) (nid : SeLe4n.ObjId) : SignalDelivery :=
   match boundDeliveryTarget? st nid with
   | some (t, _) => .toBound t
   | none =>

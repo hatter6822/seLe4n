@@ -1,3 +1,53 @@
+## v0.36.91 — WS-ZA ZA4.7 (notifications in place): a wait that blocks and a signal that wakes a waiter allocate nothing
+
+**A wait that blocks, a signal that wakes a waiter and a send to a waiting
+receiver now allocate nothing.**  The two blocked-sender paths this release
+starts measuring (a send that blocks, a receive from a blocked sender) still
+allocate; the next step takes them to zero.  A wait that blocks writes its
+thread state and queue link in place, a signal that wakes a waiter writes the badge straight
+into the waiter's saved registers, and a send to a waiting receiver drops its
+last cell.  Each executed form is proven equal to the specification's.
+
+Normal-build allocations per syscall (QEMU exerciser, core 0), against
+`v0.36.90`:
+
+| Scenario | v0.36.90 | v0.36.91 |
+|---|---|---|
+| send to a waiting receiver | 1 | 0 |
+| wait that blocks | 4 | 0 |
+| signal that wakes a waiter | 9 | 0 |
+| send that blocks (new) | — | 27 |
+| receive from a blocked sender (new) | — | 52 |
+
+Signal, wait, wide-badge signal, yield, call, reply, receive for a call and
+receive that blocks stay at 0.  The first signal after boot reads 2.
+
+- **The exerciser measures blocked senders.**  Two new scenarios, a send that
+  blocks and a receive that takes a blocked sender's message, give the next
+  step (blocked senders keep their message in their registers) its baseline.
+- **A wait that blocks, in place.**  The checked wait arm takes the
+  notification's tail as its code (`waitTailCode`) into the guard and the
+  blocking store (`waitBlocksInPlace`, `storeWaitBlocked`), and the arm's
+  equation (`notificationWaitCheckedArmR_eq`) covers the new branch.
+- **A signal that wakes a waiter, in place.**  When no bound thread takes the
+  signal and the waiter queue's head can be woken in place
+  (`signalWakesInPlace`), the arm detaches the head, wakes it and writes its
+  return frame with the badge into its register file
+  (`performSignalWokenDelivered`), proven equal to the general arm
+  (`signalWoken_eq_delivered`, `notificationSignalCheckedArmR_eq_general`).
+  The waiter, its successor and the taint case cross the arm as codes
+  (`notificationSignalWaiterCode`, `ntfnSuccessorCode`, `SignalTaintCase.code`).
+- **Inline readers.**  A non-inline function returning an `Option`, a pair or
+  a record builds it, and a non-inline `Decidable` instance builds the value it
+  compares against, so `lookupTcb`, `wakeThreadImpl`,
+  `ThreadIpcState.decEqOfCodes`, the signal taint and delivery helpers and the
+  return-frame builders are `@[inline]`.
+
+**What remains.**  Blocked senders keep their message in their own registers
+and their extra capabilities are looked up at the rendezvous, as in seL4
+(retiring the parked capability list, the pending-transfer delete guard and the
+revoke filter); then reply-receive.
+
 ## v0.36.90 — WS-ZA ZA4.7 (fields as codes, last step): the current thread and the PIP maximum as words
 
 **A call, a reply and both measured receives now allocate nothing.**  The per-core

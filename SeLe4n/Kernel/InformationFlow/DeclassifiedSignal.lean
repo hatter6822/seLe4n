@@ -361,8 +361,9 @@ cases are mutually exclusive by construction — `boundDeliveryTarget?` requires
 empty waiter list — so this is a resolution rather than a preference.
 
 Read from the **pre**-state, which is the only state that still has it: after
-the signal the waiter is dequeued and woken. -/
-def declassifiedSignalReceiver? (st : SystemState) (notificationId : SeLe4n.ObjId) :
+the signal the waiter is dequeued and woken.  Inlined (WS-ZA), so a caller
+matches the receiver where it resolves it and no `some` is built. -/
+@[inline] def declassifiedSignalReceiver? (st : SystemState) (notificationId : SeLe4n.ObjId) :
     Option SeLe4n.ThreadId :=
   match boundDeliveryTarget? st notificationId with
   | some (t, _) => some t
