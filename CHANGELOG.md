@@ -1,3 +1,56 @@
+## v0.36.92 — WS-ZA ZA4.7 (blocked senders): a sender that blocks keeps its message in its registers; send that blocks and receive from a blocked sender allocate nothing
+
+**A send that blocks and a receive that takes a blocked sender's message now
+allocate nothing.**  As in seL4, a sender that blocks parks no message: its
+words stay in its saved registers and IPC buffer, and the receive that
+dequeues it reads them there.  Its extra capabilities are looked up in its own
+CSpace at that moment, so a capability revoked or deleted while the sender
+waits is never transferred.  Each executed form is proven equal to the
+specification's.
+
+Normal-build allocations per syscall (QEMU exerciser, core 0), against
+`v0.36.91`:
+
+| Scenario | v0.36.91 | v0.36.92 |
+|---|---|---|
+| send that blocks | 27 | 0 |
+| receive from a blocked sender | 52 | 0 |
+
+Every other measured scenario stays at 0.  The first signal after boot reads 2.
+
+- **The message stays with the sender.**  A send or call that blocks writes its
+  badge, grant right and fault flag into its TCB (`TCB.setSendCap`:
+  `ipcBadge`, `ipcBadged`, `ipcCanGrant`, `ipcFaultSend`) and no
+  `IpcMessage`.  The receive reads the message from the sender's saved frame
+  through the entry's own decoder (`blockedSenderMessage`); a fault message is
+  built from the sender's `pendingFault`.  The frozen send, call and receive
+  read through the same definition (`blockedSenderMessageOf`).
+  `blockedThreadsPendingMessageConsistent` now requires every blocked thread
+  to hold no message.
+- **Capabilities looked up at the rendezvous** (Adam's decision, "At the
+  rendezvous").  The receive resolves the sender's extra-capability addresses
+  in the sender's CSpace (`blockedSenderCapRequest`, `receiveTransferCaps`).
+  This retires the parked capability list, the pending-transfer delete and
+  retype guard (`slotHasPendingTransfer`) and the revoke sweep over parked
+  messages (`revokePendingTransfersFrom`) with their theorems, and the
+  information-flow reach gate's one `CONTENT_WRITE_EXEMPT` entry.  Tests
+  revoke a parked sender's source at all four revocation entry points.
+- **A send that blocks, in place.**  The send enqueues the sender and parks
+  its state in place (`storeSendBlock`, `sendBlock_inPlace_eq`), sharing one
+  enqueue proof with the receive that blocks (`storeEndpointEnqueue`,
+  `endpointEnqueue_inPlace_eq`).
+- **A receive from a blocked sender, in place.**  For a sender blocked by a
+  capability-free routed send, the receive pops it, wakes it with its
+  completion frame and writes the six words of its message frame, read from
+  its registers before any write, into the receiver's registers
+  (`performReceiveDelivered`, `receiveTake_delivered`), proven equal to the
+  general arm (`endpointReceiveTakeR_eq`).  `stageWokenSendCompletion` is
+  `@[inline]` so naming the woken sender builds no `Option`.
+- **Debt registered.**  A receive that takes a sender's capabilities does not
+  yet declare a lock on the sender's CSpace root (`docs/REGISTERED_DEBT.md`).
+
+**What remains.**  Reply-receive joins the register path (ZA4.7 (d)).
+
 ## v0.36.91 — WS-ZA ZA4.7 (notifications in place): a wait that blocks and a signal that wakes a waiter allocate nothing
 
 **A wait that blocks, a signal that wakes a waiter and a send to a waiting
