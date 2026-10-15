@@ -162,7 +162,9 @@ sender keeps its message in its registers, its capabilities looked up at the
 rendezvous: a send that blocks and a receive from a blocked sender both read
 0.  The send takes only what its capability contributes (`SendPayload`) and
 reads its words from its own frame on both arms, resolving capabilities only
-on the arm that delivers them.  Reply-receive comes next.  ZA4 measures the other
+on the arm that delivers them.  At `v0.36.93` a reply-receive that answers
+its caller and blocks runs in place on the registers and reads 0, so every
+measured syscall reads 0 except the first signal after boot (2).  ZA4 measures the other
 syscalls and entries.  Plan:
 [`docs/planning/ZERO_ALLOCATION_SYSCALL_PLAN.md`](../planning/ZERO_ALLOCATION_SYSCALL_PLAN.md)
 (phases ZA1–ZA4).
