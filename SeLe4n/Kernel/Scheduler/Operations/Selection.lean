@@ -2867,9 +2867,10 @@ def wakeThread (st : SystemState) (tid : SeLe4n.ThreadId)
 
 /-- WS-ZA ZA4.7: the compiled `wakeThread`.  The SGI is decided from the
 pre-state before the enqueue writes, so nothing keeps the pre-state across the
-writes (`ZERO_ALLOCATION_SYSCALL_PLAN.md` D1).  Proven equal
-(`wakeThread_eq_impl`). -/
-def wakeThreadImpl (st : SystemState) (tid : SeLe4n.ThreadId)
+writes (`ZERO_ALLOCATION_SYSCALL_PLAN.md` D1).  Inlined, so a caller
+projects the state and the SGI where it uses them and the pair is never built.
+Proven equal (`wakeThread_eq_impl`). -/
+@[inline] def wakeThreadImpl (st : SystemState) (tid : SeLe4n.ThreadId)
     (executingCore : CoreId) : SystemState × Option (CoreId × SgiKind) :=
   let target := determineTargetCore st tid
   match st.getTcb? tid with

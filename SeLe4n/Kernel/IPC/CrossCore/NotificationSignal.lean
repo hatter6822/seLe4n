@@ -401,16 +401,16 @@ waiter is blocked with no pending message, its links name the old tail and
 nothing, and the old tail's successor link names it.  Compiled as its own
 function so each update is specialised in rather than carried as a closure. -/
 @[noinline] def storeWaitBlocked (st : SystemState) (notificationId : SeLe4n.ObjId)
-    (waiter : SeLe4n.ThreadId) (tail : Option SeLe4n.ThreadId) : SystemState :=
+    (waiter : SeLe4n.ThreadId) (tailCode : Nat) : SystemState :=
   let st1 := st.modifyObject notificationId (waitAppendedObject waiter)
   let st2 := st1.updateTcb waiter (fun t => (TCB.setIpcState { t with
     pendingMessage := none } (.blockedOnNotification notificationId)))
   let st3 := st2.updateTcb waiter (fun t => { t with
-    ntfnPrevCode := SeLe4n.ThreadId.optCode tail,
+    ntfnPrevCode := tailCode,
     ntfnNextCode := SeLe4n.ThreadId.optCode none })
-  match tail with
-  | none => st3
-  | some t => st3.updateTcb t (fun x => { x with
+  match tailCode with
+  | 0 => st3
+  | k + 1 => st3.updateTcb ⟨k⟩ (fun x => { x with
       ntfnNextCode := SeLe4n.ThreadId.optCode (some waiter) })
 
 /-- WS-ZA ZA4.4: **the blocking path writes only its objects' slots.**  The
@@ -420,15 +420,16 @@ each lookup after a write is its lookup before; the old tail is an unreserved
 TCB other than the waiter, and every store changes only `objects`
 (`storeLeavesIndexAndTypes`). -/
 @[inline] def waitBlocksInPlace (st : SystemState) (notificationId : SeLe4n.ObjId)
-    (waiter : SeLe4n.ThreadId) (tail : Option SeLe4n.ThreadId) : Bool :=
+    (waiter : SeLe4n.ThreadId) (tailCode : Nat) : Bool :=
   !waiter.isReserved &&
   storeLeavesIndexAndTypes st notificationId .notification &&
   st.objects.findsInPlace notificationId &&
   storeLeavesIndexAndTypes st waiter.toObjId .tcb &&
   st.objects.findsInPlace waiter.toObjId &&
-  (match tail with
-   | none => true
-   | some t => !t.isReserved && t != waiter &&
+  (match tailCode with
+   | 0 => true
+   | k + 1 => let t : SeLe4n.ThreadId := ⟨k⟩
+       !t.isReserved && t != waiter &&
        storeLeavesIndexAndTypes st t.toObjId .tcb && (st.getTcb? t).isSome)
 
 /-- WS-ZA ZA4: the compiled `notificationWaitOnCore`.  A wait that consumes a
@@ -464,9 +465,8 @@ def notificationWaitOnCoreImpl (notificationId : SeLe4n.ObjId) (waiter : SeLe4n.
               if tcb.ipcState = .blockedOnNotification notificationId then
                 (st, .error .alreadyWaiting)
               else
-                let tail := ntfn.waitTail
-                if waitBlocksInPlace st notificationId waiter tail then
-                  (removeRunnableOnCore (storeWaitBlocked st notificationId waiter tail) waiter
+                if waitBlocksInPlace st notificationId waiter ntfn.waitTailCode then
+                  (removeRunnableOnCore (storeWaitBlocked st notificationId waiter ntfn.waitTailCode) waiter
                     executingCore, .ok none)
                 else
                 match storeObject notificationId
@@ -484,7 +484,7 @@ def notificationWaitOnCoreImpl (notificationId : SeLe4n.ObjId) (waiter : SeLe4n.
                     | .ok st2 =>
                         -- WS-ZA ZA4.4: linked in behind the old tail, after the
                         -- state write so the pre-read record cannot clobber it.
-                        match linkNtfnWaiter st2 waiter tail with
+                        match linkNtfnWaiter st2 waiter ntfn.waitTail with
                         | .error e => (st, .error e)
                         | .ok st'' => (removeRunnableOnCore st'' waiter executingCore, .ok none)
   | none =>
@@ -540,7 +540,7 @@ theorem notificationWaitOnCore_block_inPlace_eq (notificationId : SeLe4n.ObjId)
     (waiter : SeLe4n.ThreadId) (st : SystemState) (ntfn : Notification) (tcb : TCB)
     (hN : st.getNotification? notificationId = some ntfn)
     (hLk : lookupTcb st waiter = some tcb)
-    (hG : waitBlocksInPlace st notificationId waiter ntfn.waitTail = true) :
+    (hG : waitBlocksInPlace st notificationId waiter ntfn.waitTailCode = true) :
     (match storeObject notificationId (.notification (ntfn.withWaiterAppended waiter)) st with
       | .error _ => none
       | .ok ((), st1) =>
@@ -551,7 +551,8 @@ theorem notificationWaitOnCore_block_inPlace_eq (notificationId : SeLe4n.ObjId)
               match linkNtfnWaiter st2 waiter ntfn.waitTail with
               | .error _ => none
               | .ok st'' => some st'')
-      = some (storeWaitBlocked st notificationId waiter ntfn.waitTail) := by
+      = some (storeWaitBlocked st notificationId waiter ntfn.waitTailCode) := by
+  rw [← Notification.optCode_waitTail] at hG ⊢
   have hNo := (SystemState.getNotification?_eq_some_iff _ _ _).mp hN
   simp only [waitBlocksInPlace, Bool.and_eq_true, Bool.not_eq_true'] at hG
   obtain ⟨⟨⟨⟨⟨hRes, hLeaveN⟩, hInN⟩, hLeaveW⟩, hInW⟩, hTail⟩ := hG
@@ -628,6 +629,9 @@ theorem notificationWaitOnCore_block_inPlace_eq (notificationId : SeLe4n.ObjId)
   | none => intro _; rfl
   | some t =>
     intro hTail
+    dsimp only [SeLe4n.ThreadId.optCode] at hTail ⊢
+    have hEta : (⟨t.val⟩ : SeLe4n.ThreadId) = t := rfl
+    simp only [hEta] at hTail ⊢
     simp only [Bool.and_eq_true, Bool.not_eq_true', bne_iff_ne, ne_eq] at hTail
     obtain ⟨⟨⟨hResT, hTW⟩, hLeaveT⟩, hTcbT⟩ := hTail
     obtain ⟨tt, hTt⟩ := Option.isSome_iff_exists.mp hTcbT
@@ -647,6 +651,7 @@ theorem notificationWaitOnCore_block_inPlace_eq (notificationId : SeLe4n.ObjId)
       rw [hT3]; rw [hTt'] at hLeaveT; exact hLeaveT)]
     simp only [Option.some.injEq]
     rw [SystemState.updateTcb_eq_of_some ((SystemState.getTcb?_eq_some_iff _ _ _).mpr hT3)]
+    rfl
 
 @[csimp] theorem notificationWaitOnCore_eq_impl :
     @notificationWaitOnCore = @notificationWaitOnCoreImpl := by
@@ -676,7 +681,7 @@ theorem notificationWaitOnCore_block_inPlace_eq (notificationId : SeLe4n.ObjId)
         split
         · rfl
         · dsimp only
-          by_cases hG : waitBlocksInPlace st notificationId waiter ntfn.waitTail = true
+          by_cases hG : waitBlocksInPlace st notificationId waiter ntfn.waitTailCode = true
           · rw [if_pos hG]
             have h := notificationWaitOnCore_block_inPlace_eq notificationId waiter st ntfn tcb
               hN hLk hG
