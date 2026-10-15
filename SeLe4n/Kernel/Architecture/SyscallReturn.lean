@@ -1122,8 +1122,11 @@ counterparty's post-state being `.ready` with **no** pending delivery: a
 consumed `Call` sender lands `.blockedOnReply` (frame owed by the reply
 path), and a `.ready` thread WITH a pending delivery is a payload wake
 owed `returnFrameOfMessage` by `stageWokenDelivery` instead — staging
-zero there would clobber a real value. -/
-def stageWokenSendCompletion (st : SystemState)
+zero there would clobber a real value.
+
+`@[inline]` so a caller that names the woken thread (`some s`) builds no
+`Option` cell: the match folds at the call site (WS-ZA ZA4.7). -/
+@[inline] def stageWokenSendCompletion (st : SystemState)
     (woken? : Option SeLe4n.ThreadId) : SystemState :=
   match woken? with
   | none => st

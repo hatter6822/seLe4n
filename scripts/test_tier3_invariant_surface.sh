@@ -10908,7 +10908,7 @@ run_check "INVARIANT" rg -n '^def stageDeliveredMessage($|[ ({:\[\]])' SeLe4n/Ke
 # WS-RA RA.B.5b: the blocked-waiter staging seam — the Option-lifted stagers
 # the unblocking arms compose, the plan-named theorem, and its unit dual.
 run_check "INVARIANT" rg -n '^@\[inline\] def stageWokenDelivery($|[ ({:\[\]])' SeLe4n/Kernel/Architecture/SyscallReturn.lean
-run_check "INVARIANT" rg -n '^def stageWokenSendCompletion($|[ ({:\[\]])' SeLe4n/Kernel/Architecture/SyscallReturn.lean
+run_check "INVARIANT" rg -n '^@\[inline\] def stageWokenSendCompletion($|[ ({:\[\]])' SeLe4n/Kernel/Architecture/SyscallReturn.lean
 run_check "INVARIANT" rg -n '^theorem stageWokenSendCompletion_stages_zero($|[ ({:\[\]])' SeLe4n/Kernel/Architecture/SyscallReturn.lean
 run_check "INVARIANT" rg -n '^theorem blockedReturn_staged_in_waiter_frame($|[ ({:\[\]])' SeLe4n/Kernel/Architecture/SyscallReturn.lean
 run_check "INVARIANT" rg -n '^theorem blockedUnitReturn_staged_in_sender_frame($|[ ({:\[\]])' SeLe4n/Kernel/Architecture/SyscallReturn.lean
