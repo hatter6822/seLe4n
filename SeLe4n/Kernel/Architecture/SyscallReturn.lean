@@ -540,7 +540,7 @@ installed by this delivery's transfer, `0` for paths that run none. -/
 
 /-- A badge-only frame — `.notificationWait`'s shape: the badge in `x0`,
 success `MessageInfo` (all-zero word) in `x1`, no message registers. -/
-def returnFrameOfBadge (b : Badge) : SyscallReturnFrame :=
+@[inline] def returnFrameOfBadge (b : Badge) : SyscallReturnFrame :=
   { x0 := b.word }
 
 -- ============================================================================

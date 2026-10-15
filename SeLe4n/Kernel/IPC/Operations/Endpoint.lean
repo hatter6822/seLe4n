@@ -854,6 +854,19 @@ def ntfnSuccessor? (st : SystemState) (tid : SeLe4n.ThreadId) : Option SeLe4n.Th
   | some tcb => tcb.ntfnNext
   | none => none
 
+/-- WS-ZA ZA4.7: `ntfnSuccessor?` as its code (`ThreadId.optCode`). -/
+@[inline] def ntfnSuccessorCode (st : SystemState) (tid : SeLe4n.ThreadId) : Nat :=
+  match lookupTcb st tid with
+  | some tcb => tcb.ntfnNextCode
+  | none => 0
+
+theorem optCode_ntfnSuccessor? (st : SystemState) (tid : SeLe4n.ThreadId) :
+    SeLe4n.ThreadId.optCode (ntfnSuccessor? st tid) = ntfnSuccessorCode st tid := by
+  unfold ntfnSuccessor? ntfnSuccessorCode
+  split
+  · exact SeLe4n.ThreadId.optCode_ofOptCode _
+  · rfl
+
 /-- WS-ZA ZA4.4: close the gap a waiter leaves in its notification's intrusive
 queue -- the predecessor's next link and the successor's previous link each skip
 it (seL4's `tcbEPDequeue`).  A missing neighbour is a queue end, which the
