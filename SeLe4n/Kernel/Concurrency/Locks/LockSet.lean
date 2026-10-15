@@ -968,11 +968,11 @@ the honest constant is the one the definition can produce.
 first factor (`maxLockSetSize · (numCores − 1) · tCs`), so each raise narrows the
 per-lock critical section the 1 ms budget allows: 37 µs at nine, 30 µs at eleven,
 25 µs at thirteen, 23 µs at fourteen, 20 µs at sixteen, 15 µs at twenty-one and
-twenty-two, 14 µs at twenty-three, 13 µs at twenty-four and 12 µs at
-twenty-seven (`admissibleCriticalSection_rpi5Tick`), widening the CC-5 contention bound in
+twenty-two, 14 µs at twenty-three, 13 µs at twenty-four, 12 µs at
+twenty-seven and 11 µs at twenty-eight (`admissibleCriticalSection_rpi5Tick`), widening the CC-5 contention bound in
 proportion each time.
 
-At the value above, the declared lock-set ceiling is **27**, the RPi5 tick admits **12 µs** per lock, and the uniform 60 µs envelope is **4860 µs**.
+At the value above, the declared lock-set ceiling is **28**, the RPi5 tick admits **11 µs** per lock, and the uniform 60 µs envelope is **5040 µs**.
 The figure is *derived* from this constant and must be
 read off that theorem rather than from this paragraph: at twenty-two the tick
 admits `22 · 3 · 15 = 990 µs ≤ 1000`, and quoting a superseded per-lock cost
@@ -1120,7 +1120,16 @@ rendezvous relinks the replier's old head (`linkReplyWaiter`), three TCBs no
 member covered.  The reachable figures move with it, by three on a rendezvous and
 by two on a blocking receive, where no caller is linked; the admissible section
 becomes `1000 / (27 · 3) = 12` µs, and the uniform 60 µs envelope moves
-4320 → 4860 µs. -/
-def maxLockSetSize : Nat := 27
+4320 → 4860 µs.
+
+**WS-ZA ZA4.7 takes it to twenty-eight**, for the CSpace root of the sender a
+receive dequeues: a blocked sender's extra capabilities are looked up at the
+rendezvous (seL4's `doNormalTransfer` → `lookupExtraCaps`), so the receive reads
+that sender's CSpace, an object no member covered.  The member is live only on a
+rendezvous (`receiveCapRequest` is `none` with no sender queued), so the reachable
+rendezvous figures move by one and the blocking ones not at all; the admissible
+section becomes `1000 / (28 · 3) = 11` µs, and the uniform 60 µs envelope moves
+4860 → 5040 µs. -/
+def maxLockSetSize : Nat := 28
 
 end SeLe4n.Kernel.Concurrency

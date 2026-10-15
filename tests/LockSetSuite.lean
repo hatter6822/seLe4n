@@ -1167,7 +1167,7 @@ private def runLubMergeChecks : IO Unit := do
   let donReplyRecv := lockSet_replyRecv ⟨5⟩ (ObjId.ofNat 10) ⟨7⟩
                        (ObjId.ofNat 20) (some ⟨8⟩) (some ⟨42⟩) (some ⟨7⟩) none false
                        none none none none none none none none none none none none none none
-                       none
+                       none (senderCnodeRootObjId := none)
   assertBool "replyRecv (sender + donation + owner=target=7 collapse) has 7 locks"
     (decide (donReplyRecv.size = 7))
   -- WS-OD OD3.5: a **non-delegated** reply names its recorded server, and that
@@ -1175,7 +1175,7 @@ private def runLubMergeChecks : IO Unit := do
   let selfServedReplyRecv := lockSet_replyRecv ⟨5⟩ (ObjId.ofNat 10) ⟨7⟩
                               (ObjId.ofNat 20) (some ⟨8⟩) (some ⟨42⟩) (some ⟨7⟩) none false
                               (some ⟨5⟩) none none none none none none none none none none none none none
-                              none
+                              none (senderCnodeRootObjId := none)
   assertBool "replyRecv with a non-delegated recorded server still has 7 locks (lub-collapse)"
     (decide (selfServedReplyRecv.size = 7))
   -- ...and a **delegated** one names a third thread, which is the member PR #892
@@ -1183,7 +1183,7 @@ private def runLubMergeChecks : IO Unit := do
   let delegatedReplyRecv := lockSet_replyRecv ⟨5⟩ (ObjId.ofNat 10) ⟨7⟩
                              (ObjId.ofNat 20) (some ⟨8⟩) (some ⟨42⟩) (some ⟨7⟩) none false
                              (some ⟨9⟩) none none none none none none none none none none none none none
-                             none
+                             none (senderCnodeRootObjId := none)
   assertBool "replyRecv with a delegated recorded server has 8 locks"
     (decide (delegatedReplyRecv.size = 8))
   -- ...and the second SchedContext hand-off — the member whose absence made this
@@ -1191,7 +1191,7 @@ private def runLubMergeChecks : IO Unit := do
   let redonatingReplyRecv := lockSet_replyRecv ⟨5⟩ (ObjId.ofNat 10) ⟨7⟩
                               (ObjId.ofNat 20) (some ⟨8⟩) (some ⟨42⟩) (some ⟨7⟩) none false
                               (some ⟨9⟩) (some ⟨43⟩) none none none none none none none none none none none none
-                              none
+                              none (senderCnodeRootObjId := none)
   assertBool "replyRecv that also re-donates has 9 locks (the second hand-off's SC)"
     (decide (redonatingReplyRecv.size = 9))
   -- WS-OD OD3.7: and the two objects the donation return reads *below* the
@@ -1201,13 +1201,13 @@ private def runLubMergeChecks : IO Unit := do
   let belowHeadReplyRecv := lockSet_replyRecv ⟨5⟩ (ObjId.ofNat 10) ⟨7⟩
                              (ObjId.ofNat 20) (some ⟨8⟩) (some ⟨42⟩) (some ⟨7⟩) none false
                              (some ⟨9⟩) (some ⟨43⟩) (some ⟨44⟩) none none none none none none none none none none none
-                             none
+                             none (senderCnodeRootObjId := none)
   assertBool "replyRecv that reads the Reply below the head has 10 locks"
     (decide (belowHeadReplyRecv.size = 10))
   let outerCallerReplyRecv := lockSet_replyRecv ⟨5⟩ (ObjId.ofNat 10) ⟨7⟩
                                (ObjId.ofNat 20) (some ⟨8⟩) (some ⟨42⟩) (some ⟨7⟩) none false
                                (some ⟨9⟩) (some ⟨43⟩) none (some ⟨12⟩) none none none none none none none none none none
-                               none
+                               none (senderCnodeRootObjId := none)
   assertBool "replyRecv that also validates the outer caller's TCB has 10 locks"
     (decide (outerCallerReplyRecv.size = 10))
   -- The widest shape the arm can declare: a delegated, re-donating, caps-carrying
@@ -1216,8 +1216,9 @@ private def runLubMergeChecks : IO Unit := do
   -- (WS-OD OD3.13), WS-OD (`v0.35.4`)'s head its pop clears and old head its
   -- re-donation's push rewrites, and — PR #894's review — the five objects the
   -- INVOKING receiver's own pre-receive return touches, and (WS-ZA ZA4.6) the
-  -- three reply-waiter TCBs its unlink and link rewrite: twenty-seven, which is
-  -- what `maxLockSetSize` is measured against.
+  -- three reply-waiter TCBs its unlink and link rewrite, and (WS-ZA ZA4.7) the
+  -- dequeued sender's CSpace root: twenty-eight, which is what `maxLockSetSize`
+  -- is measured against.
   let widestReplyRecv := lockSet_replyRecv ⟨5⟩ (ObjId.ofNat 10) ⟨7⟩
                           (ObjId.ofNat 20) (some ⟨8⟩) (some ⟨42⟩) (some ⟨11⟩)
                           (some ⟨60⟩) true (some ⟨9⟩) (some ⟨43⟩)
@@ -1228,8 +1229,10 @@ private def runLubMergeChecks : IO Unit := do
                           -- WS-ZA ZA4.6: the answered caller's two reply-waiter
                           -- links and the old head of the receive leg's server.
                           (some ⟨17⟩) (some ⟨18⟩) (some ⟨19⟩)
-  assertBool "the widest declarable .replyRecv has 27 locks (= maxLockSetSize)"
-    (decide (widestReplyRecv.size = 27))
+                          -- WS-ZA ZA4.7: the dequeued sender's CSpace root.
+                          (some (ObjId.ofNat 30))
+  assertBool "the widest declarable .replyRecv has 28 locks (= maxLockSetSize)"
+    (decide (widestReplyRecv.size = 28))
   -- **WS-HP HP3.1**: and the frame *below* the answered reply is a member of its
   -- own -- dropping it alone drops the widest shape by exactly one, so the
   -- `22 -> 23` raise is a genuine `+1` and not a member that merges with the
@@ -1242,7 +1245,7 @@ private def runLubMergeChecks : IO Unit := do
                 (some ⟨45⟩) (some ⟨46⟩)
                 (some ⟨47⟩) (some ⟨14⟩) (some ⟨48⟩) (some ⟨49⟩)
                 (some ⟨15⟩) (some ⟨50⟩) none (some ⟨16⟩)
-                (some ⟨17⟩) (some ⟨18⟩) (some ⟨19⟩)).size = 26))
+                (some ⟨17⟩) (some ⟨18⟩) (some ⟨19⟩) (senderCnodeRootObjId := none)).size = 26))
   assertBool "the frame below the answered reply is declared WRITE"
     (decide ((replyLock ⟨51⟩, AccessMode.write) ∈ widestReplyRecv.pairs))
   -- **WS-HP HP10.6**: and so is the origin a bottom-of-stack pop redirects the
@@ -1256,7 +1259,7 @@ private def runLubMergeChecks : IO Unit := do
                 (some ⟨44⟩) (some ⟨12⟩) (some ⟨13⟩)
                 (some ⟨45⟩) (some ⟨46⟩)
                 (some ⟨47⟩) (some ⟨14⟩) (some ⟨48⟩) (some ⟨49⟩)
-                (some ⟨15⟩) (some ⟨50⟩) (some ⟨51⟩) none).size = 23))
+                (some ⟨15⟩) (some ⟨50⟩) (some ⟨51⟩) none (senderCnodeRootObjId := none)).size = 23))
   assertBool "the redirect's origin is declared WRITE (the pop rebinds that TCB)"
     (decide ((tcbLock ⟨16⟩, AccessMode.write) ∈ widestReplyRecv.pairs))
   assertBool "...and that is exactly maxLockSetSize"
@@ -1282,7 +1285,7 @@ private def runLubMergeChecks : IO Unit := do
                             (some ⟨44⟩) (some ⟨12⟩) (some ⟨13⟩)
                             none (some ⟨46⟩)
                             (some ⟨47⟩) (some ⟨14⟩) (some ⟨48⟩) (some ⟨49⟩)
-                            (some ⟨15⟩) none none none
+                            (some ⟨15⟩) none none none (senderCnodeRootObjId := none)
   assertBool "the widest reachable blocking .replyRecv that pops has 18 locks"
     (decide (blockingReplyRecv.size = 18))
   -- **WS-HP HP10.6: and the redirect's shape is one NARROWER, not one wider.**
@@ -1298,7 +1301,7 @@ private def runLubMergeChecks : IO Unit := do
                             none none (some ⟨13⟩)
                             none (some ⟨46⟩)
                             (some ⟨47⟩) (some ⟨14⟩) (some ⟨48⟩) (some ⟨49⟩)
-                            (some ⟨15⟩) none none (some ⟨16⟩)
+                            (some ⟨15⟩) none none (some ⟨16⟩) (senderCnodeRootObjId := none)
   assertBool "the widest reachable blocking .replyRecv that REDIRECTS has 17 locks"
     (decide (blockingReplyRecvRedirecting.size = 17))
   assertBool "…so the redirect costs the reachable footprint nothing: two out, one in"
@@ -1324,7 +1327,7 @@ private def runLubMergeChecks : IO Unit := do
                             none none (some ⟨13⟩)
                             none none
                             (some ⟨47⟩) (some ⟨14⟩) (some ⟨48⟩) (some ⟨49⟩)
-                            (some ⟨15⟩) (some ⟨50⟩) (some ⟨51⟩) none
+                            (some ⟨15⟩) (some ⟨50⟩) (some ⟨51⟩) none (senderCnodeRootObjId := none)
   assertBool "the widest reachable blocking .replyRecv that splices has 17 locks"
     (decide (blockingReplyRecvSplicing.size = 17))
   assertBool "…so the splice costs the reachable footprint nothing: it is one narrower"
@@ -1337,7 +1340,7 @@ private def runLubMergeChecks : IO Unit := do
                               (some ⟨60⟩) true (some ⟨9⟩) (some ⟨43⟩)
                               (some ⟨44⟩) (some ⟨12⟩) (some ⟨13⟩)
                               (some ⟨45⟩) (some ⟨46⟩)
-                              none none none none none (some ⟨50⟩) (some ⟨51⟩) none
+                              none none none none none (some ⟨50⟩) (some ⟨51⟩) none (senderCnodeRootObjId := none)
   assertBool "the widest UNMERGED rendezvous .replyRecv shape has 18 locks"
     (decide (rendezvousReplyRecv.size = 18))
   -- …and this witness is deliberately the *unmerged* one: its
@@ -1363,7 +1366,7 @@ private def runLubMergeChecks : IO Unit := do
                 (some ⟨60⟩) true (some ⟨9⟩) (some ⟨43⟩)
                 (some ⟨44⟩) (some ⟨12⟩) (some ⟨13⟩)
                 (some ⟨45⟩) (some ⟨46⟩)
-                none none none none none (some ⟨50⟩) (some ⟨51⟩) none).size + 1
+                none none none none none (some ⟨50⟩) (some ⟨51⟩) none (senderCnodeRootObjId := none)).size + 1
              = rendezvousReplyRecv.size))
   -- NEGATIVE: no reachable shape reaches the ceiling, which is the whole
   -- content of `lockSet_endpointReplyRecvOnCore_size_le_twentyone` -- a witness

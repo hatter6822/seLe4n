@@ -980,14 +980,16 @@ run_check "INVARIANT" bash -lc 'rg -U -n "def lockSet_endpointReceiveOnCore[^\n]
 run_check "INVARIANT" bash -lc 'rg -U -n "def lockSet_endpointReplyRecvOnCore[^\n]*(\n([ \t][^\n]*)?)*receiveSideQueueStructureNeighbor\? st endpointObjId" SeLe4n/Kernel/IPC/CrossCore/EndpointReply.lean'
 # The ceiling and the figures derived from it move together -- the point of
 # stating them as theorems rather than paragraphs.
-run_check "INVARIANT" rg -n '^def maxLockSetSize : Nat := 27' SeLe4n/Kernel/Concurrency/Locks/LockSet.lean
-run_check "INVARIANT" bash -lc 'rg -U -n "theorem admissibleCriticalSection_rpi5Tick[^\n]*(\n([ \t][^\n]*)?)*= 12" SeLe4n/Kernel/Scheduler/Operations/PerCoreWcrt.lean'
+run_check "INVARIANT" rg -n '^def maxLockSetSize : Nat := 28' SeLe4n/Kernel/Concurrency/Locks/LockSet.lean
+run_check "INVARIANT" bash -lc 'rg -U -n "theorem admissibleCriticalSection_rpi5Tick[^\n]*(\n([ \t][^\n]*)?)*= 11" SeLe4n/Kernel/Scheduler/Operations/PerCoreWcrt.lean'
 # NEGATIVE: the superseded figure must not come back.  Mutating by deleting the
 # theorem would be caught by the positive; this keeps it at the old number.
 run_negative_check "INVARIANT" bash -lc 'rg -U -n "theorem admissibleCriticalSection_rpi5Tick[^\n]*(\n([ \t][^\n]*)?)*= 20" SeLe4n/Kernel/Scheduler/Operations/PerCoreWcrt.lean'
 run_negative_check "INVARIANT" bash -lc 'rg -U -n "theorem admissibleCriticalSection_rpi5Tick[^\n]*(\n([ \t][^\n]*)?)*= 15" SeLe4n/Kernel/Scheduler/Operations/PerCoreWcrt.lean'
 # WS-HP HP10.6: and the figure this cut supersedes.
 run_negative_check "INVARIANT" bash -lc 'rg -U -n "theorem admissibleCriticalSection_rpi5Tick[^\n]*(\n([ \t][^\n]*)?)*= 14" SeLe4n/Kernel/Scheduler/Operations/PerCoreWcrt.lean'
+# WS-ZA ZA4.7: and the figure this cut supersedes.
+run_negative_check "INVARIANT" bash -lc 'rg -U -n "theorem admissibleCriticalSection_rpi5Tick[^\n]*(\n([ \t][^\n]*)?)*= 12" SeLe4n/Kernel/Scheduler/Operations/PerCoreWcrt.lean'
 # WS-OD OD3.11: `.send` and `.call` declare the one TCB their queue *structure*
 # change writes.  A rendezvous pops the receive queue, relinking the popped
 # receiver's successor into the head; a block enqueues on the send queue,
@@ -2312,7 +2314,7 @@ run_check "INVARIANT" rg -n 'lockSet_endpointReceive \(donation, no caps\) size 
 # OD3.5: the ceiling, and the figure derived from it.  `maxLockSetSize` is the
 # WCRT headline's first factor, so a cut that widens a footprint pays here —
 # visibly, as a theorem rather than a paragraph.
-run_check "INVARIANT" bash -lc 'rg -U -n "^def maxLockSetSize : Nat := 27$" SeLe4n/Kernel/Concurrency/Locks/LockSet.lean'
+run_check "INVARIANT" bash -lc 'rg -U -n "^def maxLockSetSize : Nat := 28$" SeLe4n/Kernel/Concurrency/Locks/LockSet.lean'
 # WS-RM (`v0.35.6`) NEGATIVE: the superseded ceiling must not come back.  The
 # positive above would be satisfied by a *deleted* constant only if the whole
 # definition went, which the build catches; this keeps it at the old value, which
@@ -2321,7 +2323,9 @@ run_negative_check "INVARIANT" bash -lc 'rg -U -n "^def maxLockSetSize : Nat := 
 run_negative_check "INVARIANT" bash -lc 'rg -U -n "^def maxLockSetSize : Nat := 22$" SeLe4n/Kernel/Concurrency/Locks/LockSet.lean'
 # WS-HP HP10.6: and the ceiling this cut supersedes.
 run_negative_check "INVARIANT" bash -lc 'rg -U -n "^def maxLockSetSize : Nat := 23$" SeLe4n/Kernel/Concurrency/Locks/LockSet.lean'
-run_check "INVARIANT" bash -lc 'rg -U -n "^theorem admissibleCriticalSection_rpi5Tick :\n    admissibleCriticalSection rpi5TickBudgetMicros = 12 := by decide" SeLe4n/Kernel/Scheduler/Operations/PerCoreWcrt.lean'
+# WS-ZA ZA4.7: and the ceiling this cut supersedes.
+run_negative_check "INVARIANT" bash -lc 'rg -U -n "^def maxLockSetSize : Nat := 27$" SeLe4n/Kernel/Concurrency/Locks/LockSet.lean'
+run_check "INVARIANT" bash -lc 'rg -U -n "^theorem admissibleCriticalSection_rpi5Tick :\n    admissibleCriticalSection rpi5TickBudgetMicros = 11 := by decide" SeLe4n/Kernel/Scheduler/Operations/PerCoreWcrt.lean'
 run_negative_check "INVARIANT" bash -lc 'rg -U -n "admissibleCriticalSection rpi5TickBudgetMicros = 37" SeLe4n/Kernel/Scheduler/Operations/PerCoreWcrt.lean'
 
 # The projection result got STRONGER: every field the return writes is stripped,
@@ -16529,7 +16533,7 @@ run_negative_check "INVARIANT" rg -n 'lockSet_replyRecv_size_le_twentytwo_of_own
 # figure 18 -> 19, because the frame the removal's splice writes is a member the
 # *definition* can produce alongside either group.
 run_check "INVARIANT" rg -n '^theorem lockSet_endpointReplyRecvOnCore_size_le_twentytwo($|[ ({:\[\]])' SeLe4n/Kernel/Concurrency/Locks/ResolvedFootprintBounds.lean
-run_check "INVARIANT" rg -n '^theorem lockSet_replyRecv_size_le_twentyone_of_no_preReturn_of_no_origin($|[ ({:\[\]])' SeLe4n/Kernel/Concurrency/Locks/Deadlock.lean
+run_check "INVARIANT" rg -n '^theorem lockSet_replyRecv_size_le_twentytwo_of_no_preReturn_of_no_origin($|[ ({:\[\]])' SeLe4n/Kernel/Concurrency/Locks/Deadlock.lean
 run_check "INVARIANT" rg -n '^theorem lockSet_replyRecv_size_le_twentytwo_of_no_sender_of_no_origin($|[ ({:\[\]])' SeLe4n/Kernel/Concurrency/Locks/Deadlock.lean
 # WS-RM (`v0.35.6`): and the *reachable* figure is unmoved at eighteen.  It used to
 # rest on a *local coherence fact* -- the head of the returned context's stack is
@@ -16552,7 +16556,7 @@ run_check "INVARIANT" rg -n '^theorem lockSet_replyRecv_size_le_nineteen_of_no_s
 # stated with the origin free and the two below-head arguments absent -- which is
 # what keeps the reachable figures at twenty and eighteen while the declared
 # ceiling moved 23 -> 24.
-run_check "INVARIANT" rg -n '^theorem lockSet_replyRecv_size_le_twenty_of_no_preReturn_of_no_belowHead($|[ ({:\[\]])' SeLe4n/Kernel/Concurrency/Locks/Deadlock.lean
+run_check "INVARIANT" rg -n '^theorem lockSet_replyRecv_size_le_twentyone_of_no_preReturn_of_no_belowHead($|[ ({:\[\]])' SeLe4n/Kernel/Concurrency/Locks/Deadlock.lean
 run_check "INVARIANT" rg -n '^theorem lockSet_replyRecv_size_le_twentyone_of_no_sender_of_no_belowHead($|[ ({:\[\]])' SeLe4n/Kernel/Concurrency/Locks/Deadlock.lean
 run_check "INVARIANT" rg -n '^theorem lockSet_replyRecv_size_le_nineteen_of_no_sender_of_no_frameAbove_of_no_belowHead($|[ ({:\[\]])' SeLe4n/Kernel/Concurrency/Locks/Deadlock.lean
 # ...and the eighteen is CONDITIONAL: its own signature names the two coherence
@@ -17069,6 +17073,14 @@ run_check "INVARIANT" rg -n '^theorem lockSet_endpointCallOnCore_covers_replyWai
 run_check "INVARIANT" rg -n '^theorem lockSet_endpointReceiveOnCore_covers_replyWaiterOldHead($|[ ({:\[\]])' SeLe4n/Kernel/IPC/CrossCore/EndpointReply.lean
 run_check "INVARIANT" rg -n '^theorem lockSet_endpointReplyOnCore_covers_replyWaiterNeighbours($|[ ({:\[\]])' SeLe4n/Kernel/IPC/CrossCore/EndpointReply.lean
 run_check "INVARIANT" rg -n '^theorem lockSet_endpointReplyRecvOnCore_covers_replyWaiters($|[ ({:\[\]])' SeLe4n/Kernel/IPC/CrossCore/EndpointReply.lean
+# WS-ZA ZA4.7: both receive footprints declare the CSpace root of the sender they
+# dequeue, which the rendezvous reads when it looks the sender's extra
+# capabilities up, resolved through the request the transition installs from.
+run_check "INVARIANT" rg -n '^theorem lockSet_endpointReceiveOnCore_covers_senderCapLookup($|[ ({:\[\]])' SeLe4n/Kernel/IPC/CrossCore/EndpointReply.lean
+run_check "INVARIANT" rg -n '^theorem lockSet_endpointReplyRecvOnCore_covers_senderCapLookup($|[ ({:\[\]])' SeLe4n/Kernel/IPC/CrossCore/EndpointReply.lean
+run_check "INVARIANT" bash -lc 'rg -U -n "def lockSet_endpointReceiveOnCore[^\n]*(\n([ \t][^\n]*)?)*\(\(receiveCapRequest st endpointId\)\.map \(·\.1\)\)" SeLe4n/Kernel/IPC/CrossCore/EndpointReply.lean'
+run_check "INVARIANT" bash -lc 'rg -U -n "def lockSet_endpointReplyRecvOnCore[^\n]*(\n([ \t][^\n]*)?)*\(\(receiveCapRequest st endpointObjId\)\.map \(·\.1\)\)" SeLe4n/Kernel/IPC/CrossCore/EndpointReply.lean'
+run_check "INVARIANT" rg -n '^theorem lockSet_replyRecv_size_le_twenty_of_no_preReturn_of_no_frameAbove_of_no_origin($|[ ({:\[\]])' SeLe4n/Kernel/Concurrency/Locks/Deadlock.lean
 run_check "INVARIANT" rg -n '^theorem lockSet_cancelIpcBlockingOnCore_replyArm_covers_server($|[ ({:\[\]])' SeLe4n/Kernel/IPC/CrossCore/Cancellation.lean
 run_check "INVARIANT" rg -n '^theorem lockSet_cancelIpcBlockingOnCore_replyArm_covers_prev($|[ ({:\[\]])' SeLe4n/Kernel/IPC/CrossCore/Cancellation.lean
 run_check "INVARIANT" rg -n '^theorem lockSet_cancelIpcBlockingOnCore_replyArm_covers_next($|[ ({:\[\]])' SeLe4n/Kernel/IPC/CrossCore/Cancellation.lean

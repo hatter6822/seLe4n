@@ -1725,12 +1725,16 @@ theorem endpointReplyRecvOnCore_observer_atomic
     (preReturnOuterCaller? : Option SeLe4n.ThreadId)
     (answeredFrameAbove? answeredFrameBelow? : Option SeLe4n.ReplyId)
     (originRecipient? : Option SeLe4n.ThreadId)
+    -- **WS-ZA ZA4.6/ZA4.7**: and at the reply-waiter and sender-CSpace-root
+    -- arities, rather than at their defaults.
+    (rwPrev? rwNext? rwHead? : Option SeLe4n.ThreadId) (senderRoot? : Option SeLe4n.ObjId)
     (s : LockedSystemState) :
     let S := lockSet_replyRecv receiver cnRoot prevCaller endpointId newSender? donatedSc?
       donatedOwner? (some replyId) installsCaps donationServer? redonatedSc?
       belowHeadReply? outerCaller? queueNeighbour? redonationOldHead? donatedHead?
       preReturnSc? preReturnOwner? preReturnHead? preReturnBelowHead?
       preReturnOuterCaller? answeredFrameAbove? answeredFrameBelow? originRecipient?
+      rwPrev? rwNext? rwHead? senderRoot?
     let action : SystemState → SystemState × Except KernelError CapTransferSummary :=
       fun s' => match endpointReplyRecvOnCore endpointId receiver replyId prevCaller msg
           receiverCspaceRoot receiverSlotBase executingCore s' with

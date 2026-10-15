@@ -73,9 +73,9 @@ core-count factor is 3, and `WCRT_per_lock` — `tCs` throughout this module —
 Cortex-A76, which is why the whole surface below is parametric in it.  So the
 honest statement is the budget condition solved for the measurable factor:
 `admissibleCriticalSection` gives the largest per-lock cost a budget admits
-(`WCRT_lockSet_le_budget_of_admissible`), which for the RPi5 tick is **12 µs**
+(`WCRT_lockSet_le_budget_of_admissible`), which for the RPi5 tick is **11 µs**
 (`admissibleCriticalSection_rpi5Tick`).  The 60 µs the master plan §7.2 assumed
-does **not** fit — `27 · 3 · 60 = 4860 µs`
+does **not** fit — `28 · 3 · 60 = 5040 µs`
 (`rpi5Tick_refuses_sixty_micro_sections`), nor did it at any previous ceiling —
 and the boundary at that cost is a footprint of five locks
 (`rpi5Tick_sixty_micro_section_footprint_boundary`), which is what the plan's
@@ -319,7 +319,9 @@ derivation did **not** absorb that one: `1000 / (23 · 3)` floors to 14.
 the reservation to, and that one does not absorb either: `1000 / (24 · 3)` floors
 to 13.  **WS-ZA ZA4.6** raised it 24 → 27, for the reply-waiter predecessor and
 successor the reply leg unlinks past and the old head the receive leg relinks:
-`1000 / (27 · 3)` floors to 12.
+`1000 / (27 · 3)` floors to 12.  **WS-ZA ZA4.7** raised it 27 → 28, for the
+CSpace root of the sender a receive dequeues, read when that sender's extra
+capabilities are looked up at the rendezvous: `1000 / (28 · 3)` floors to 11.
 
 How much of the ceiling no reachable state takes up is stated where the
 footprint is, not here: `lockSet_endpointReplyRecvOnCore_size_le_twentytwo` and
@@ -329,12 +331,12 @@ origin member is live only at the bottom of a stack, where the two below-head
 members are absent (`replyStackBelowHead?_of_originRecipient`), so a reachable
 footprint trades two members for one. -/
 theorem admissibleCriticalSection_rpi5Tick :
-    admissibleCriticalSection rpi5TickBudgetMicros = 12 := by decide
+    admissibleCriticalSection rpi5TickBudgetMicros = 11 := by decide
 
 /-- WS-RR RR7.31: **and the plan's own assumption fails it.**  A 60 µs per-lock
-section gives `27 · 3 · 60 = 4860 µs`, which is outside the 1 ms tick — so the
+section gives `28 · 3 · 60 = 5040 µs`, which is outside the 1 ms tick — so the
 §7.2 conclusion "comfortably fits within the 1-ms timer tick budget" is false at
-`maxLockSetSize = 27`.  Stated as a negative so the arithmetic is pinned in the
+`maxLockSetSize = 28`.  Stated as a negative so the arithmetic is pinned in the
 direction that matters: a future cut that raises `maxLockSetSize` again, or that
 grounds `tCs` at 60 µs, has to confront this theorem rather than a paragraph.
 WS-OD OD3.5 is the first cut to have done so.

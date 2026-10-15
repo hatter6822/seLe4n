@@ -2423,6 +2423,15 @@ def receiveCapRequest (st : SystemState) (endpointId : SeLe4n.ObjId) :
     | none => none
     | some tcb => blockedSenderCapRequest st sender tcb
 
+/-- WS-ZA ZA4.7: with no sender queued there is no capability request -- the
+fact the resolved footprints use to drop the sender's CSpace-root member on a
+blocking receive. -/
+theorem receiveCapRequest_of_no_queued_sender (st : SystemState)
+    (endpointId : SeLe4n.ObjId) (hS : receiveRendezvousSender? st endpointId = none) :
+    receiveCapRequest st endpointId = none := by
+  unfold receiveCapRequest
+  rw [hS]
+
 /-- WS-SM SM6 (PR #873 round 8): **may this receive install capabilities?**
 
 The condition the WithCaps receive branches on, read from the same pre-state: a
