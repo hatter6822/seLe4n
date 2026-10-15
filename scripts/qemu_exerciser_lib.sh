@@ -204,12 +204,13 @@ for driver in drivers:
         if len(set(sgis_by_core.values())) != len(sgis_by_core):
             failures.append(f"per-core-stats: two cores report one SGI count ({sgis_by_core}), so a wrong slot could not be told from the right one")
     elif driver == "heap-allocations-per-syscall":
-        # WS-CV CV0.1, WS-ZA ZA4.1: the numbers are evidence, read by review;
-        # the gate holds only that each round trip's steady reading happened
-        # on the boot core, once, after the round trip returned a frame or
-        # blocked as it should, and is a delta.
-        readings = matches(r"\[smp-test\] heap-allocations-per-syscall: ([a-z-]+): core 0: before=(\d+) after=(\d+) delta=(\d+)")
-        returned = matches(r"\[smp-test\] heap-allocations-per-syscall: ([a-z-]+): core 0: (?:returned x0=0x[0-9a-f]+ x1=0x[0-9a-f]+|blocked, the other thread restored)$")
+        # WS-CV CV0.1, WS-ZA ZA4.1: a syscall allocates nothing.  Each round
+        # trip runs twice on the boot core, its first call and its steady
+        # state; the gate holds that each run's reading happened once, after
+        # the round trip returned a frame or blocked as it should, is a delta,
+        # and is zero.
+        readings = matches(r"\[smp-test\] heap-allocations-per-syscall: ([a-z-]+): core 0( \(first call\))?: before=(\d+) after=(\d+) delta=(\d+)")
+        returned = matches(r"\[smp-test\] heap-allocations-per-syscall: ([a-z-]+): core 0( \(first call\))?: (?:returned x0=0x[0-9a-f]+ x1=0x[0-9a-f]+|blocked, the other thread restored)$")
         names = [m.group(1) for m in readings]
         # The scenario set is pinned: a round trip renamed or dropped from
         # `ROUND_TRIPS` or `PARTNER_SCENARIOS` (smp_exercisers.rs) must change this pin too, so the
@@ -221,13 +222,19 @@ for driver in drivers:
         observed = set(names) | {m.group(1) for m in returned}
         if observed != expected:
             failures.append(f"heap-allocations-per-syscall: scenarios {sorted(observed)} are not the pinned set {sorted(expected)}")
+        runs = [(m.group(1), m.group(2) is not None) for m in readings]
+        trips = [(m.group(1), m.group(2) is not None) for m in returned]
         for name in sorted(observed | expected):
-            if names.count(name) != 1 or [m.group(1) for m in returned].count(name) != 1:
-                failures.append(f"heap-allocations-per-syscall: {name}: expected one reading and one returned or blocked round trip on core 0")
+            for first in (True, False):
+                which = "first call" if first else "steady state"
+                if runs.count((name, first)) != 1 or trips.count((name, first)) != 1:
+                    failures.append(f"heap-allocations-per-syscall: {name} ({which}): expected one reading and one returned or blocked round trip on core 0")
         for m in readings:
-            before, after, delta = (int(g) for g in m.groups()[1:])
+            before, after, delta = (int(g) for g in m.groups()[2:])
             if after < before or delta != after - before:
                 failures.append(f"heap-allocations-per-syscall: the reading is not a delta: {m.group(0)!r}")
+            elif delta != 0:
+                failures.append(f"heap-allocations-per-syscall: a syscall allocated: {m.group(0)!r}")
     else:
         failures.append(f"unknown driver {driver!r}")
 for failure in failures:

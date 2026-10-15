@@ -1634,32 +1634,24 @@ fn unmeasured(trip: &RoundTrip, why: &str) -> bool {
 /// (`svc_dispatch::dispatch_svc`), as the `SVC` arm does, reading this core's
 /// own heap counter before and after with IRQs masked across both reads — the
 /// heap is one for every core, and a tick taken in between would charge its
-/// own allocations to the syscall.  The numbers are evidence, read by review;
-/// the verdict is only that both reads happened, the counter did not go back,
-/// and the round trip did what it says (returned a success frame, or blocked
-/// and restored the other thread).
+/// own allocations to the syscall.  The driver's own verdict is that both reads
+/// happened, the counter did not go back, and the round trip did what it says
+/// (returned a success frame, or blocked and restored the other thread); the
+/// readings themselves are judged by the host-side gate.
 ///
-/// Each round trip, and each partner sequence, runs twice; the second run is
-/// the steady state every later syscall sees, and is the number the plan
-/// records.  Only the very first round trip's first call is measured as well:
-/// it is the first write to objects the boot built, which the boot's own state
-/// still shares, so it copies them once.  Every later first run follows the
-/// earlier ones on the same objects, so it is no first touch and runs
-/// unmeasured.
+/// Each round trip, and each partner sequence, runs twice, and both runs are
+/// measured: the first is the first syscall to touch the objects the boot (or
+/// the partner setup) built, the second the steady state every later syscall
+/// sees.  The host-side gate (`scripts/qemu_exerciser_lib.sh`) fails on any
+/// reading but zero.
 #[cfg(feature = "hw_target")]
 fn heap_allocations_per_syscall() -> Option<bool> {
-    for (index, trip) in ROUND_TRIPS.iter().enumerate() {
+    for trip in ROUND_TRIPS.iter() {
         for first in [true, false] {
             if let Some(badge) = trip.primed {
                 if !unmeasured(&signal(trip.name, badge), "the priming signal failed") {
                     return Some(false);
                 }
-            }
-            if first && index != 0 {
-                if !unmeasured(trip, "the unmeasured first call failed") {
-                    return Some(false);
-                }
-                continue;
             }
             let which = if first { " (first call)" } else { "" };
             if heap_allocations_round_trip(trip, which) != Some(true) {
@@ -1674,13 +1666,9 @@ fn heap_allocations_per_syscall() -> Option<bool> {
     }
     for scenario in PARTNER_SCENARIOS.iter() {
         for first in [true, false] {
+            let which = if first { " (first call)" } else { "" };
             for step in scenario.iter() {
-                let ok = if first {
-                    unmeasured(step, "the unmeasured first run failed")
-                } else {
-                    heap_allocations_round_trip(step, "") == Some(true)
-                };
-                if !ok {
+                if heap_allocations_round_trip(step, which) != Some(true) {
                     return Some(false);
                 }
             }
