@@ -385,17 +385,27 @@ section ReplyRecvInPlace
 
 /-- An object that is not a VSpace root, as `storeLeavesIndexAndTypes` asks. -/
 @[inline] def notVSpaceRootAt (s : SystemState) (x : SeLe4n.ObjId) : Bool :=
-  match s.objects[x]? with | some (.vspaceRoot _) => false | _ => true
+  match s.getObject? x with | some (.vspaceRoot _) => false | _ => true
 
-theorem notVSpaceRootAt_eq_view (s : SystemState) (x : SeLe4n.ObjId) :
-    notVSpaceRootAt s x =
-      match (s.objects[x]?).map KernelObject.withoutRunLinks with
-      | some (.vspaceRoot _) => false
-      | _ => true := by
-  unfold notVSpaceRootAt
+/-- `notVSpaceRootAt` reads only the object's kind. -/
+theorem notVSpaceRootAt_eq_type (s : SystemState) (x : SeLe4n.ObjId) :
+    notVSpaceRootAt s x = (s.getObjectType? x != some .vspaceRoot) := by
+  unfold notVSpaceRootAt SystemState.getObjectType?
+  rw [SystemState.getObject?_eq_getElem]
   cases s.objects[x]? with
   | none => rfl
   | some o => cases o <;> rfl
+
+/-- Objects that agree off their run-queue links agree on `notVSpaceRootAt`. -/
+theorem notVSpaceRootAt_of_view {s s' : SystemState} {x : SeLe4n.ObjId}
+    (h : (s'.objects[x]?).map KernelObject.withoutRunLinks =
+      (s.objects[x]?).map KernelObject.withoutRunLinks) :
+    notVSpaceRootAt s' x = notVSpaceRootAt s x := by
+  have e := congrArg (Option.map KernelObject.objectType) h
+  simp only [Option.map_map, Function.comp_def, KernelObject.objectType_withoutRunLinks] at e
+  rw [notVSpaceRootAt_eq_type, notVSpaceRootAt_eq_type]
+  unfold SystemState.getObjectType?
+  rw [e]
 
 /-- **An enqueue's in-place guard carries over** to a state with the same index
 and lifecycle, every key found where it was, no new VSpace root and every
@@ -493,10 +503,9 @@ theorem storeReplyRendezvous_receiveGuard (st : SystemState) (c tid : SeLe4n.Thr
       (((SystemState.mapTcbInPlace_keepsFinds _ _ _).trans hK)) ?_ ?_ hEnq, ?_⟩
     · intro x hx
       rcases hAt x with ⟨_, t, h⟩ | ⟨_, h⟩ | h
-      · unfold notVSpaceRootAt; rw [h]
-      · unfold notVSpaceRootAt; rw [h]
-      · rw [notVSpaceRootAt_eq_view] at hx ⊢
-        rw [h]; exact hx
+      · unfold notVSpaceRootAt; rw [SystemState.getObject?_eq_getElem, h]
+      · unfold notVSpaceRootAt; rw [SystemState.getObject?_eq_getElem, h]
+      · rw [notVSpaceRootAt_of_view h]; exact hx
     · intro p hp
       obtain ⟨t, ht⟩ := Option.isSome_iff_exists.mp hp
       have h1 := (SystemState.getTcb?_eq_some_iff _ _ _).mp ht
