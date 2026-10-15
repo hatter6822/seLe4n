@@ -972,7 +972,7 @@ server, still holding its own SchedContext, and linked to its own Reply. -/
 private def donCaller2Tcb : TCB :=
   (TCB.setIpcState { mkTcb 848 40 (some c3) with
       schedContextBinding := .bound scCaller2
-      replyObject := some donCaller2Reply
+      replyObjectCode := SeLe4n.ReplyId.optCode (some donCaller2Reply)
       threadState := ThreadState.Ready } (.blockedOnReply donEp (some donServer)))
 
 /-- **WS-RM (`v0.35.6`)**: the two donation steps `endpointReplyRecvOnCore` performs, run
@@ -1120,7 +1120,7 @@ private def runDonationMigrationChecks : IO Unit := do
           objects := (((stCall.objects.insert donDelegate.toObjId (.tcb donDelegateTcb)).insert
             donCaller2.toObjId (.tcb donCaller2Tcb)).insert scCaller2.toObjId
               (.schedContext donCaller2Sc)).insert donCaller2Reply.toObjId
-              (.reply { replyId := donCaller2Reply, caller := some donCaller2 })
+              (.reply { replyId := donCaller2Reply, callerCode := SeLe4n.ThreadId.optCode (some donCaller2) })
           scheduler := stCall.scheduler.setReplenishQueueOnCore c3
             ((ReplenishQueue.empty.insert scCaller2 400).insert scCaller2 500) }
     assertBool "pre: the queued caller's SC holds both replenishments on its home core 3"
@@ -1824,7 +1824,7 @@ private def runDonationChainStructureChecks : IO Unit := do
   assertBool "an inert Reply is well formed"
     (decide (Reply.empty chainHeadReply).wellFormed)
   assertBool "a Reply with a caller may carry both stack links"
-    (decide ({ replyId := chainHeadReply, caller := some chainCaller,
+    (decide ({ replyId := chainHeadReply, callerCode := SeLe4n.ThreadId.optCode (some chainCaller),
                next := some (.head chainSc),
                prev := some chainOuterReply } : Reply).wellFormed)
   assertBool "NEGATIVE: a Reply off every stack may not carry a prev link"
@@ -1928,7 +1928,7 @@ private def popStoreShaped (outerTcb : TCB) (head? : Option SeLe4n.ReplyId)
         (.schedContext { SchedContext.empty chainSc with
                            boundThread := some popServer, scReply := head? })
     |>.withObject chainHeadReply.toObjId
-        (.reply { replyId := chainHeadReply, caller := some popClient,
+        (.reply { replyId := chainHeadReply, callerCode := SeLe4n.ThreadId.optCode (some popClient),
                   next := some (.head chainSc), prev := prev? })
     |>.withObject chainOuterReply.toObjId (.reply outerReply)
     |>.withObject popServer.toObjId
@@ -1945,7 +1945,7 @@ private def popStoreShaped (outerTcb : TCB) (head? : Option SeLe4n.ReplyId)
 to the head, with the outer caller still waiting on it.  It names no context —
 only the head does — which is what makes the pop's lookahead one frame deep. -/
 private def popOuterFrame : Reply :=
-  { replyId := chainOuterReply, caller := some popOuter,
+  { replyId := chainOuterReply, callerCode := SeLe4n.ThreadId.optCode (some popOuter),
     next := some (.frame chainHeadReply) }
 
 /-- The pre-state with the outer caller's TCB varied and the frame below the
@@ -1979,7 +1979,7 @@ private def popHeadLinkedTo (up : Option ReplyStackLink) : SystemState :=
                            boundThread := some popServer,
                            scReply := some chainHeadReply })
     |>.withObject chainHeadReply.toObjId
-        (.reply { replyId := chainHeadReply, caller := some popClient, next := up })
+        (.reply { replyId := chainHeadReply, callerCode := SeLe4n.ThreadId.optCode (some popClient), next := up })
     |>.withObject chainOuterReply.toObjId (.reply popOuterFrame)
     |>.withObject popServer.toObjId
         (.tcb { mkTcb 81 50 none with schedContextBinding := .donated chainSc popClient })
@@ -1994,7 +1994,7 @@ still present, so the resolver's verdict here is decided by the frame and not by
 a missing thread. -/
 private def popStoreOuterConsumed : SystemState :=
   popStoreShaped popWaitingDonor (some chainHeadReply) (some chainOuterReply)
-    { popOuterFrame with caller := none }
+    { popOuterFrame with callerCode := 0 }
 
 private def popBindingOf (st : SystemState) (tid : SeLe4n.ThreadId) :
     Option SchedContextBinding :=
@@ -2199,12 +2199,12 @@ private def pushStoreShaped (donorBinding : SchedContextBinding)
         (.schedContext { SchedContext.empty pushSc with
                            boundThread := some pushDonor, scReply := some pushOuterReply })
     |>.withObject pushOuterReply.toObjId
-        (.reply { replyId := pushOuterReply, caller := some pushOuter,
+        (.reply { replyId := pushOuterReply, callerCode := SeLe4n.ThreadId.optCode (some pushOuter),
                   next := some (.head pushSc) })
     |>.withObject pushDonorReply.toObjId (.reply headReply)
     |>.withObject pushDonor.toObjId
         (.tcb { mkTcb 91 40 none with
-                  schedContextBinding := donorBinding, replyObject := donorReply? })
+                  schedContextBinding := donorBinding, replyObjectCode := SeLe4n.ReplyId.optCode donorReply? })
     |>.withObject pushServer.toObjId (.tcb (mkTcb 92 30 none))
     -- **WS-HP HP5 (fixture correction)**: the outer caller names the reply object it
     -- is blocked on.  `pushOuterReply.caller` has always named it back, so the store
@@ -2214,13 +2214,13 @@ private def pushStoreShaped (donorBinding : SchedContextBinding)
     -- collapse onto `pushOuterBlockedTcb` with it.
     |>.withObject pushOuter.toObjId
         (.tcb (TCB.setIpcState { mkTcb 93 50 none with
-                  replyObject := some pushOuterReply } (.blockedOnReply (SeLe4n.ObjId.ofNat 97) (some pushDonor))))
+                  replyObjectCode := SeLe4n.ReplyId.optCode (some pushOuterReply) } (.blockedOnReply (SeLe4n.ObjId.ofNat 97) (some pushDonor))))
     |>.build)
 
 /-- The donor's own reply object, fresh: linked to the donor, on no stack —
 neither link set, which is what `donationPushFrame?` requires of a frame. -/
 private def pushFreshHead : Reply :=
-  { replyId := pushDonorReply, caller := some pushDonor }
+  { replyId := pushDonorReply, callerCode := SeLe4n.ThreadId.optCode (some pushDonor) }
 
 /-- The well-formed depth-2 pre-state. -/
 private def pushStore : SystemState :=
@@ -2235,7 +2235,7 @@ the `replyObject`, which WS-HP HP5.1 made false by keying the cancellation recla
 trigger on that very field. -/
 private def pushOuterBlockedTcb : TCB :=
   (TCB.setIpcState { mkTcb 93 50 none with
-      replyObject := some pushOuterReply } (.blockedOnReply (SeLe4n.ObjId.ofNat 97) (some pushDonor)))
+      replyObjectCode := SeLe4n.ReplyId.optCode (some pushOuterReply) } (.blockedOnReply (SeLe4n.ObjId.ofNat 97) (some pushDonor)))
 
 private def pushBindingOf (st : SystemState) (tid : SeLe4n.ThreadId) :
     Option SchedContextBinding :=
@@ -2342,7 +2342,7 @@ private def runDonationPushChecks : IO Unit := do
   assertBool "NEGATIVE: a donor whose reply has no caller cannot push"
     (match donateSchedContext
         (pushStoreShaped (.donated pushSc pushOuter) (some pushDonorReply)
-          { pushFreshHead with caller := none })
+          { pushFreshHead with callerCode := 0 })
         pushDonor pushServer pushSc with
      | .error e => e == KernelError.illegalState
      | .ok _ => false)
@@ -2354,24 +2354,24 @@ private def runDonationPushChecks : IO Unit := do
   assertBool "OD5.1: an unlinked Reply with no caller may be linked to a new caller"
     (match SystemState.linkReply pushDonorReply pushServer
         (pushStoreShaped (.donated pushSc pushOuter) (some pushDonorReply)
-          { pushFreshHead with caller := none }) with
+          { pushFreshHead with callerCode := 0 }) with
      | .ok _ => true | .error _ => false)
   assertBool "OD5.1 NEGATIVE: a caller-free Reply that still heads a stack is refused"
     (match SystemState.linkReply pushDonorReply pushServer
         (pushStoreShaped (.donated pushSc pushOuter) (some pushDonorReply)
-          { pushFreshHead with caller := none, next := some (.head pushSc) }) with
+          { pushFreshHead with callerCode := 0, next := some (.head pushSc) }) with
      | .error e => e == KernelError.replyCapInvalid
      | .ok _ => false)
   assertBool "OD5.1 NEGATIVE: ...and one that still links down to a frame below"
     (match SystemState.linkReply pushDonorReply pushServer
         (pushStoreShaped (.donated pushSc pushOuter) (some pushDonorReply)
-          { pushFreshHead with caller := none, prev := some pushOuterReply }) with
+          { pushFreshHead with callerCode := 0, prev := some pushOuterReply }) with
      | .error e => e == KernelError.replyCapInvalid
      | .ok _ => false)
   assertBool "OD5.1: ...and the link never CLEARS the stack links instead"
     (match SystemState.linkReply pushOuterReply pushServer
         (pushStoreShaped (.donated pushSc pushOuter) (some pushDonorReply)
-          { pushFreshHead with caller := none }) with
+          { pushFreshHead with callerCode := 0 }) with
      | .error e => e == KernelError.replyCapInvalid
      | .ok _ => false)
   -- OD5.4: retype refuses both halves of a live stack -- the frame and the head.
@@ -2547,10 +2547,10 @@ private def runMiddleCallerRemovalChecks : IO Unit := do
        | .ok _ => false)
     assertBool "the splice is the identity for a frame with nothing above it"
       (pushStackShape (spliceThreadReplyFrameOut pushed
-         { outerTcb with replyObject := some pushDonorReply }) == pushStackShape pushed)
+         { outerTcb with replyObjectCode := SeLe4n.ReplyId.optCode (some pushDonorReply) }) == pushStackShape pushed)
     assertBool "...and for a thread holding no reply object at all"
       (pushStackShape (spliceThreadReplyFrameOut pushed
-         { outerTcb with replyObject := none }) == pushStackShape pushed)
+         { outerTcb with replyObjectCode := 0 }) == pushStackShape pushed)
 
 -- ============================================================================
 -- WS-RM — seL4's `reply_remove` on the reply path (`v0.35.6`)
@@ -2598,10 +2598,10 @@ private def pushOwnerStore : SystemState :=
     |>.withObject pushSc.toObjId
         (.schedContext { SchedContext.empty pushSc with boundThread := some pushOuter })
     |>.withObject pushOuterReply.toObjId
-        (.reply { replyId := pushOuterReply, caller := some pushOuter })
+        (.reply { replyId := pushOuterReply, callerCode := SeLe4n.ThreadId.optCode (some pushOuter) })
     |>.withObject pushDonorReply.toObjId (.reply pushFreshHead)
     |>.withObject pushDonor.toObjId
-        (.tcb { mkTcb 91 40 none with replyObject := some pushDonorReply })
+        (.tcb { mkTcb 91 40 none with replyObjectCode := SeLe4n.ReplyId.optCode (some pushDonorReply) })
     |>.withObject pushServer.toObjId (.tcb (mkTcb 92 30 none))
     |>.withObject pushOuter.toObjId
         (.tcb { pushOuterBlockedTcb with schedContextBinding := .bound pushSc })
@@ -2631,7 +2631,7 @@ again locally. -/
 private def replyRemovalInOrderDonorTcb : TCB :=
   (TCB.setIpcState { mkTcb 91 40 none with
       schedContextBinding := SchedContextBinding.unbound,
-      replyObject := some pushDonorReply } (ThreadIpcState.blockedOnReply (SeLe4n.ObjId.ofNat 97) (some pushServer)))
+      replyObjectCode := SeLe4n.ReplyId.optCode (some pushDonorReply) } (ThreadIpcState.blockedOnReply (SeLe4n.ObjId.ofNat 97) (some pushServer)))
 
 /-- **WS-RM**: the removal witness's state, from a pushed depth-2 chain: the outer
 caller reply-blocked on the intermediate one, plus the **delegate** that holds a
@@ -3222,12 +3222,12 @@ private def depth3Chain : Except KernelError SystemState :=
       let stReady : SystemState :=
         { depth2 with
             objects := ((depth2.objects.insert depth3Reply.toObjId
-                (.reply { replyId := depth3Reply, caller := some pushServer })).insert
+                (.reply { replyId := depth3Reply, callerCode := SeLe4n.ThreadId.optCode (some pushServer) })).insert
                 depth3Server.toObjId (.tcb (mkTcb 101 25 none))).insert
                 pushServer.toObjId
                 (.tcb (TCB.setIpcState { mkTcb 92 30 none with
                           schedContextBinding := .donated pushSc pushDonor,
-                          replyObject := some depth3Reply } (.blockedOnReply (SeLe4n.ObjId.ofNat 97) (some depth3Server)))) }
+                          replyObjectCode := SeLe4n.ReplyId.optCode (some depth3Reply) } (.blockedOnReply (SeLe4n.ObjId.ofNat 97) (some depth3Server)))) }
       match donateSchedContext stReady pushServer depth3Server pushSc with
       | .error e => .error e
       | .ok depth3 =>
@@ -3240,7 +3240,7 @@ private def depth3Chain : Except KernelError SystemState :=
                   objects := depth3.objects.insert pushDonor.toObjId
                     (.tcb (TCB.setIpcState { mkTcb 91 40 none with
                               schedContextBinding := .unbound,
-                              replyObject := some pushDonorReply } (.blockedOnReply (SeLe4n.ObjId.ofNat 97) (some pushServer)))) }
+                              replyObjectCode := SeLe4n.ReplyId.optCode (some pushDonorReply) } (.blockedOnReply (SeLe4n.ObjId.ofNat 97) (some pushServer)))) }
 
 private def runMiddleRemovalDepthThreeChecks : IO Unit := do
   IO.println "--- §3.22 WS-RM: a middle removal at stack depth three ---"
@@ -3405,12 +3405,12 @@ private def depth4Chain : Except KernelError SystemState :=
       let stReady : SystemState :=
         { depth3 with
             objects := ((depth3.objects.insert depth4Reply.toObjId
-                (.reply { replyId := depth4Reply, caller := some depth3Server })).insert
+                (.reply { replyId := depth4Reply, callerCode := SeLe4n.ThreadId.optCode (some depth3Server) })).insert
                 depth4Server.toObjId (.tcb (mkTcb 103 20 none))).insert
                 depth3Server.toObjId
                 (.tcb (TCB.setIpcState { mkTcb 101 25 none with
                           schedContextBinding := .donated pushSc pushServer,
-                          replyObject := some depth4Reply } (.blockedOnReply (SeLe4n.ObjId.ofNat 97) (some depth4Server)))) }
+                          replyObjectCode := SeLe4n.ReplyId.optCode (some depth4Reply) } (.blockedOnReply (SeLe4n.ObjId.ofNat 97) (some depth4Server)))) }
       donateSchedContext stReady depth3Server depth4Server pushSc
 
 /-- **WS-HP HP10.5: the reservation origin cannot outlive the thread it names.**
@@ -3539,15 +3539,15 @@ private def runDonationOriginRedirectChecks : IO Unit := do
                              scReply := some redirectHeadReply,
                              donationOrigin := some pushOuter })).insert
             redirectHeadReply.toObjId
-            (.reply { replyId := redirectHeadReply, caller := some pushServer,
+            (.reply { replyId := redirectHeadReply, callerCode := SeLe4n.ThreadId.optCode (some pushServer),
                       next := some (.head pushSc) })).insert
             pushServer.toObjId
             (.tcb (TCB.setIpcState { mkTcb 92 30 none with
-                      replyObject := some redirectHeadReply } (.blockedOnReply (SeLe4n.ObjId.ofNat 97) (some pushDonor))))).insert
+                      replyObjectCode := SeLe4n.ReplyId.optCode (some redirectHeadReply) } (.blockedOnReply (SeLe4n.ObjId.ofNat 97) (some pushDonor))))).insert
             pushDonor.toObjId
             (.tcb { mkTcb 91 40 none with
                       schedContextBinding := .donated pushSc pushServer,
-                      replyObject := some pushDonorReply })
+                      replyObjectCode := SeLe4n.ReplyId.optCode (some pushDonorReply) })
           |>.insert pushOuter.toObjId (.tcb outerTcb) }
   -- The re-called client: `.unbound`, reply-blocked on its NEXT call, whose frame
   -- is `pushOuterReply` re-linked fresh -- the removal cleared its links and the
@@ -3555,11 +3555,11 @@ private def runDonationOriginRedirectChecks : IO Unit := do
   -- else in the chain is.
   let recalledClient : TCB :=
     (TCB.setIpcState { mkTcb 93 50 (some c1) with
-        replyObject := some pushOuterReply } (.blockedOnReply (SeLe4n.ObjId.ofNat 97) (some pushServer)))
+        replyObjectCode := SeLe4n.ReplyId.optCode (some pushOuterReply) } (.blockedOnReply (SeLe4n.ObjId.ofNat 97) (some pushServer)))
   let withFreshFrame (st : SystemState) : SystemState :=
     { st with
         objects := st.objects.insert pushOuterReply.toObjId
-          (.reply { replyId := pushOuterReply, caller := some pushOuter }) }
+          (.reply { replyId := pushOuterReply, callerCode := SeLe4n.ThreadId.optCode (some pushOuter) }) }
   let stRedirect : SystemState := withFreshFrame (redirectStore recalledClient)
   let poppedFrom (st : SystemState) : Option SystemState :=
     (returnDonatedSchedContextResolved st pushDonor pushSc
@@ -3626,7 +3626,7 @@ private def runDonationOriginRedirectChecks : IO Unit := do
   let liveOwnerStore : SystemState :=
     { redirectStore recalledClient with
         objects := ((redirectStore recalledClient).objects.insert pushOuterReply.toObjId
-          (.reply { replyId := pushOuterReply, caller := some pushOuter,
+          (.reply { replyId := pushOuterReply, callerCode := SeLe4n.ThreadId.optCode (some pushOuter),
                     next := some (.head redirectSc2) })).insert
             redirectSc2.toObjId
             (.schedContext { SchedContext.empty redirectSc2 with
@@ -3659,10 +3659,10 @@ private def runDonationOriginRedirectChecks : IO Unit := do
   let interiorStore : SystemState :=
     { redirectStore recalledClient with
         objects := ((redirectStore recalledClient).objects.insert pushOuterReply.toObjId
-          (.reply { replyId := pushOuterReply, caller := some pushOuter,
+          (.reply { replyId := pushOuterReply, callerCode := SeLe4n.ThreadId.optCode (some pushOuter),
                     next := some (.frame redirectFrameAbove) })).insert
             redirectFrameAbove.toObjId
-            (.reply { replyId := redirectFrameAbove, caller := some pushServer,
+            (.reply { replyId := redirectFrameAbove, callerCode := SeLe4n.ThreadId.optCode (some pushServer),
                       prev := some pushOuterReply, next := some (.head redirectSc2) }) }
   assertBool "NEGATIVE (interior frame): the origin's frame is inside a live stack"
     ((interiorStore.getTcb? pushOuter).map (fun t => replyFrameOnLiveStack interiorStore t)
@@ -4056,11 +4056,11 @@ private def stOrphanHeadReplyRecv : SystemState :=
     |>.withObject orphanEp (.endpoint
         (Endpoint.ofQueues ({ head := some orphanSender, tail := some orphanSender } : IntrusiveQueue) {}))
     |>.withObject orphanReply.toObjId (.reply
-        { replyId := orphanReply, caller := some orphanClient,
+        { replyId := orphanReply, callerCode := SeLe4n.ThreadId.optCode (some orphanClient),
           next := some (.head orphanSc) })
     |>.withObject orphanClient.toObjId (.tcb (TCB.setIpcState { mkTcb 862 30 (some c1) with
         threadState := .BlockedReply,
-        replyObject := some orphanReply,
+        replyObjectCode := SeLe4n.ReplyId.optCode (some orphanReply),
         schedContextBinding := SchedContextBinding.unbound } (.blockedOnReply orphanEp (some orphanS1))))
     |>.withObject orphanS1.toObjId (.tcb { mkTcb 861 40 (some c2) with
         schedContextBinding := .bound orphanS1Sc })

@@ -590,7 +590,7 @@ theorem storeTcbReceiveComplete_preserves_projection
   | some tcb =>
     simp only [hLookup] at hStep
     cases hStore : storeObject tid.toObjId
-        (.tcb (TCB.setIpcState { tcb with pendingMessage := msg, pendingReceiveReply := none } .ready)) st with
+        (.tcb (TCB.setIpcState { tcb with pendingMessage := msg, pendingReceiveReplyCode := 0 } .ready)) st with
     | error e => simp [hStore] at hStep
     | ok pair =>
       obtain ⟨⟨⟩, st''⟩ := pair
@@ -823,7 +823,7 @@ theorem storeObject_reply_caller_preserves_projection
     (hPrev : st.objects[rid]? = some (.reply r))
     (hIdxContains : st.objectIndexSet.contains rid = true)
     (hObjInv : st.objects.invExt)
-    (hStore : storeObject rid (.reply { r with caller := c }) st = .ok ((), st')) :
+    (hStore : storeObject rid (.reply { r with callerCode := SeLe4n.ThreadId.optCode c }) st = .ok ((), st')) :
     projectState ctx observer st' = projectState ctx observer st :=
   storeObject_projectionStable_preserves_projection ctx observer st st' rid _ _ hPrev
     (projectKernelObject_reply_caller_invariant ctx observer r c) hIdxContains hObjInv hStore

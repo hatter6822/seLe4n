@@ -1575,7 +1575,7 @@ theorem storeTcbReceiveComplete_partial_preserves_ipcStateQueueMembershipConsist
   | some tcb =>
     simp only [hLookup] at hStore
     cases hSt : storeObject tid.toObjId
-        (.tcb (TCB.setIpcState { tcb with pendingMessage := msg, pendingReceiveReply := none } .ready)) st with
+        (.tcb (TCB.setIpcState { tcb with pendingMessage := msg, pendingReceiveReplyCode := 0 } .ready)) st with
     | error e => simp [hSt] at hStore
     | ok pair =>
       simp only [hSt, Except.ok.injEq] at hStore; subst hStore
@@ -1592,7 +1592,7 @@ theorem storeTcbReceiveComplete_partial_preserves_ipcStateQueueMembershipConsist
         intro tid2 prev' prevTcb hPrev hNext
         by_cases hPrevEq : prev'.toObjId = tid.toObjId
         · rw [hPrevEq] at hPrev; rw [hTcbObj] at hPrev; cases hPrev
-          exact ⟨(TCB.setIpcState { tcb with pendingMessage := msg, pendingReceiveReply := none } .ready),
+          exact ⟨(TCB.setIpcState { tcb with pendingMessage := msg, pendingReceiveReplyCode := 0 } .ready),
             by rw [hPrevEq]; exact hEqAt, hNext⟩
         · exact ⟨prevTcb, by rw [hFrame _ hPrevEq]; exact hPrev, hNext⟩
       intro tid2 tcb2 hTcb2

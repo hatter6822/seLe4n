@@ -1275,13 +1275,13 @@ theorem storeTcbReceiveComplete_determineTargetCore_eq (st st' : SystemState)
   | none => simp [hTcb] at hStep
   | some tcb =>
     simp only [hTcb] at hStep
-    cases hStore : storeObject tid.toObjId (.tcb (TCB.setIpcState { tcb with pendingMessage := msg, pendingReceiveReply := none } .ready)) st with
+    cases hStore : storeObject tid.toObjId (.tcb (TCB.setIpcState { tcb with pendingMessage := msg, pendingReceiveReplyCode := 0 } .ready)) st with
     | error e => simp [hStore] at hStep
     | ok pair =>
       simp only [hStore] at hStep
       have hEq := Except.ok.inj hStep; subst hEq
       exact storeObject_tcb_determineTargetCore_eq st pair.2 tid tcb
-        (TCB.setIpcState { tcb with pendingMessage := msg, pendingReceiveReply := none } .ready) x
+        (TCB.setIpcState { tcb with pendingMessage := msg, pendingReceiveReplyCode := 0 } .ready) x
         ((SystemState.getTcb?_eq_some_iff st tid tcb).mpr
           (lookupTcb_some_objects st tid tcb hTcb)) rfl hObjInv hStore
 
@@ -1528,7 +1528,7 @@ theorem linkCallerReply_determineTargetCore_eq (st st' : SystemState)
         simp only [hGetR] at hLink
         split at hLink
         · exact storeObject_reply_determineTargetCore_eq st st1 rid.toObjId r
-            { r with caller := some caller } x
+            { r with callerCode := SeLe4n.ThreadId.optCode (some caller) } x
             ((SystemState.getReply?_eq_some_iff st rid r).mp hGetR) hObjInv hLink
         · simp at hLink
     cases hT : st1.getTcb? caller with
@@ -1539,7 +1539,7 @@ theorem linkCallerReply_determineTargetCore_eq (st st' : SystemState)
       · have hInv1 :=
           SystemState.linkReply_preserves_objects_invExt st st1 rid caller hObjInv hLink
         rw [storeObject_tcb_determineTargetCore_eq st1 st' caller tcb
-          { tcb with replyObject := some rid } x hT rfl hInv1 hStep, hFrame1]
+          { tcb with replyObjectCode := SeLe4n.ReplyId.optCode (some rid) } x hT rfl hInv1 hStep, hFrame1]
       · simp at hStep
 
 /-- **WS-RR RR8.12**: and installing the capabilities a parked send was carrying
@@ -1872,7 +1872,7 @@ theorem linkCallerReply_getSchedContext?_eq (st st' : SystemState)
         simp only [hGetR] at hLink
         split at hLink
         · exact storeObject_reply_getSchedContext?_eq st st1 rid.toObjId r
-            { r with caller := some caller } scId
+            { r with callerCode := SeLe4n.ThreadId.optCode (some caller) } scId
             ((SystemState.getReply?_eq_some_iff st rid r).mp hGetR) hObjInv hLink
         · simp at hLink
     cases hT : st1.getTcb? caller with
@@ -1883,7 +1883,7 @@ theorem linkCallerReply_getSchedContext?_eq (st st' : SystemState)
       · have hInv1 :=
           SystemState.linkReply_preserves_objects_invExt st st1 rid caller hObjInv hLink
         rw [storeObject_tcb_getSchedContext?_eq st1 st' caller tcb
-          { tcb with replyObject := some rid } scId hT hInv1 hStep, hFrame1]
+          { tcb with replyObjectCode := SeLe4n.ReplyId.optCode (some rid) } scId hT hInv1 hStep, hFrame1]
       · simp at hStep
 
 /-- `v0.35.161`: installing the capabilities a parked send was carrying writes CNodes

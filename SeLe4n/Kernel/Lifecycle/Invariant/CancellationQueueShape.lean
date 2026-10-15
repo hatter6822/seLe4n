@@ -307,7 +307,7 @@ def restoredTcb (tcb : TCB) (frame : Option Architecture.SyscallReturnFrame) : T
       queuePrevCode := 0
       queueNextCode := 0
       queuePPrevCode := 0
-      pendingReceiveReply := none } .ready)
+      pendingReceiveReplyCode := 0 } .ready)
   match frame with
   | some f => cleared.withReturnFrame f
   | none => cleared
@@ -338,7 +338,7 @@ theorem restoredTcb_eq (tcb : TCB) (frame : Option Architecture.SyscallReturnFra
           queuePrevCode := 0
           queueNextCode := 0
           queuePPrevCode := 0
-          pendingReceiveReply := none
+          pendingReceiveReplyCode := 0
           registerContext := (restoredTcb tcb frame).registerContext } .ready) := by
   unfold restoredTcb; cases frame <;> rfl
 

@@ -1423,7 +1423,7 @@ the `Call` rendezvous, where `linkServerStashedReply` consumes it. -/
 def storeTcbReceiveComplete (st : SystemState) (tid : SeLe4n.ThreadId)
     (msg : Option IpcMessage) : Except KernelError SystemState :=
   modifyTcb st tid
-    (fun tcb => (TCB.setIpcState { tcb with pendingMessage := msg, pendingReceiveReply := none } .ready))
+    (fun tcb => (TCB.setIpcState { tcb with pendingMessage := msg, pendingReceiveReplyCode := 0 } .ready))
 
 /-- WS-L1: `lookupTcb` is preserved when `storeObject` targets a notification
 (different ObjId from any TCB). Used to justify `_fromTcb` usage after an

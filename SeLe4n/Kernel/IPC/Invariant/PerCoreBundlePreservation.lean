@@ -317,7 +317,7 @@ theorem storeTcbReceiveComplete_passiveServerIdleFrameOnCore
   | none => simp [hL] at hStep
   | some tcb =>
     simp only [hL] at hStep
-    cases hSO : storeObject tid0.toObjId (.tcb (TCB.setIpcState { tcb with pendingMessage := msg, pendingReceiveReply := none } .ready)) st with
+    cases hSO : storeObject tid0.toObjId (.tcb (TCB.setIpcState { tcb with pendingMessage := msg, pendingReceiveReplyCode := 0 } .ready)) st with
     | error e => simp [hSO] at hStep
     | ok p =>
       obtain ⟨_, st''⟩ := p
@@ -325,7 +325,7 @@ theorem storeTcbReceiveComplete_passiveServerIdleFrameOnCore
       subst hStep
       have hOrig := lookupTcb_some_objects st tid0 tcb hL
       exact storeObject_modifiedTcb_passiveServerIdleFrameOnCore st st'' tid0.toObjId tcb
-        (TCB.setIpcState { tcb with pendingMessage := msg, pendingReceiveReply := none } .ready)
+        (TCB.setIpcState { tcb with pendingMessage := msg, pendingReceiveReplyCode := 0 } .ready)
         hOrig rfl (Or.inl (Or.inl rfl)) hObjInv hSO
 
 /-- SM6.D.2: `ensureRunnable` leaves every core's `current` slot untouched
@@ -939,7 +939,7 @@ theorem endpointReceiveDual_passiveServerIdleFrameOnCore
                   | false => simp [hb] at hStep
                   | true => rfl
                 rw [if_pos hValid] at hStep
-                cases hStash : storeObject receiver.toObjId (.tcb { rTcb with pendingReceiveReply := replyId }) st2 with
+                cases hStash : storeObject receiver.toObjId (.tcb { rTcb with pendingReceiveReplyCode := SeLe4n.ReplyId.optCode replyId }) st2 with
                 | error e => simp [hStash] at hStep
                 | ok pStash =>
                   obtain ⟨_, stStashed⟩ := pStash
@@ -949,16 +949,16 @@ theorem endpointReceiveDual_passiveServerIdleFrameOnCore
                   have hRTcbIpc : rTcb.ipcState = .blockedOnReceive endpointId :=
                     storeTcbIpcStateAndMessage_ipcState_eq st1 st2 receiver _ _ hObjInvEnq hIpc rTcb hRecvObj
                   have hF3 := hF2.trans (storeObject_modifiedTcb_passiveServerIdleFrameOnCore st2 stStashed receiver.toObjId rTcb
-                    { rTcb with pendingReceiveReply := replyId } hRecvObj rfl
-                    (Or.inl (by rw [show ({ rTcb with pendingReceiveReply := replyId } : TCB).ipcState
+                    { rTcb with pendingReceiveReplyCode := SeLe4n.ReplyId.optCode replyId } hRecvObj rfl
+                    (Or.inl (by rw [show ({ rTcb with pendingReceiveReplyCode := SeLe4n.ReplyId.optCode replyId } : TCB).ipcState
                       = .blockedOnReceive endpointId from hRTcbIpc]; exact Or.inr (Or.inl ⟨endpointId, Or.inl rfl⟩)))
                     hObjInv2 hStash)
                   have hStashObj := storeObject_objects_eq st2 stStashed receiver.toObjId
-                    (.tcb { rTcb with pendingReceiveReply := replyId }) hObjInv2 hStash
+                    (.tcb { rTcb with pendingReceiveReplyCode := SeLe4n.ReplyId.optCode replyId }) hObjInv2 hStash
                   exact hF3.trans (removeRunnable_passiveServerIdleFrameOnCore stStashed receiver (fun tcb hTcb => Or.inr (by
                     have hTcbRaw := (getTcb?_eq_some_iff stStashed receiver tcb).mp hTcb
                     rw [hStashObj] at hTcbRaw; obtain rfl := KernelObject.tcb.inj (Option.some.inj hTcbRaw)
-                    rw [show ({ rTcb with pendingReceiveReply := replyId } : TCB).ipcState
+                    rw [show ({ rTcb with pendingReceiveReplyCode := SeLe4n.ReplyId.optCode replyId } : TCB).ipcState
                       = .blockedOnReceive endpointId from hRTcbIpc]
                     exact Or.inr (Or.inl ⟨endpointId, Or.inl rfl⟩))))
 

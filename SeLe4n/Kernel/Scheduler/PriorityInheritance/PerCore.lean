@@ -955,7 +955,7 @@ theorem resumeReadyMidState_getTcb?_ready (st : SystemState) (tid : ThreadId) (t
     ∃ tm, (resumeReadyMidState st tid).getTcb? tid = some tm ∧ tm.threadState = .Ready := by
   have hst1Inv : (restoreToReady st tid).objects.invExt := restoreToReady_objects_invExt st tid hInv
   have hst1 : (restoreToReady st tid).getTcb? tid
-      = some (TCB.setIpcState { tcb with queuePrevCode := 0, queueNextCode := 0, queuePPrevCode := 0, pendingReceiveReply := none } .ready) := by
+      = some (TCB.setIpcState { tcb with queuePrevCode := 0, queueNextCode := 0, queuePPrevCode := 0, pendingReceiveReplyCode := 0 } .ready) := by
     unfold restoreToReady restoreToReadyStaging
     rw [SystemState.updateTcb_getTcb?_self _ _ _ hInv, hGet]
     rfl

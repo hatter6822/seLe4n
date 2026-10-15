@@ -876,8 +876,8 @@ def tcbReferencesReservedIdleSlot (tcb : TCB) : Bool :=
   | ⟨tid, _priority, _domain, cspaceRoot, vspaceRoot, _ipcBuffer, _ipcObjectCode, _threadState,
      _timeSlice, _deadline, queuePrevCode, queuePPrevCode, queueNextCode, pendingMessage, _registerContext,
      _faultHandler, boundNotification, schedContextBinding, timeoutBudget,
-     _maxControlledPriority, _pipBoost, _timedOut, _cpuAffinity, replyObject,
-     pendingReceiveReply, _pendingFault, _fpContext, ntfnPrevCode, ntfnNextCode,
+     _maxControlledPriority, _pipBoost, _timedOut, _cpuAffinity, replyObjectCode,
+     pendingReceiveReplyCode, _pendingFault, _fpContext, ntfnPrevCode, ntfnNextCode,
      _runCoreCode, _runPrio, _runPrevCode, _runNextCode, _runBucketPrevCode, _runBucketNextCode,
      replyWaiterPrevCode, replyWaiterNextCode, replyWaitersHeadCode, _replyWaitersCount, _ipcStateCode⟩ =>
     SeLe4n.Kernel.isIdleThreadId tid ||
@@ -896,8 +896,9 @@ def tcbReferencesReservedIdleSlot (tcb : TCB) : Bool :=
      | .bound scId => SeLe4n.Kernel.isIdleObjId scId.toObjId
      | .donated scId owner =>
        SeLe4n.Kernel.isIdleObjId scId.toObjId || SeLe4n.Kernel.isIdleThreadId owner) ||
-    replyObject.any (fun rid => SeLe4n.Kernel.isIdleObjId rid.toObjId) ||
-    pendingReceiveReply.any (fun rid => SeLe4n.Kernel.isIdleObjId rid.toObjId) ||
+    (SeLe4n.ReplyId.ofOptCode replyObjectCode).any (fun rid => SeLe4n.Kernel.isIdleObjId rid.toObjId) ||
+    (SeLe4n.ReplyId.ofOptCode pendingReceiveReplyCode).any
+      (fun rid => SeLe4n.Kernel.isIdleObjId rid.toObjId) ||
     (SeLe4n.ThreadId.ofOptCode ntfnNextCode).any SeLe4n.Kernel.isIdleThreadId ||
     (SeLe4n.ThreadId.ofOptCode ntfnPrevCode).any SeLe4n.Kernel.isIdleThreadId ||
     (SeLe4n.ThreadId.ofOptCode replyWaiterNextCode).any SeLe4n.Kernel.isIdleThreadId ||
@@ -997,9 +998,9 @@ def schedContextReferencesReservedIdleSlot (sc : SchedContext) : Bool :=
     (a reply object id) or the scheduling context this frame heads. -/
 def replyReferencesReservedIdleSlot (r : Reply) : Bool :=
   match r with
-  | ⟨replyId, caller, prev, next⟩ =>
+  | ⟨replyId, callerCode, prev, next⟩ =>
     SeLe4n.Kernel.isIdleObjId replyId.toObjId ||
-    caller.any SeLe4n.Kernel.isIdleThreadId ||
+    (SeLe4n.ThreadId.ofOptCode callerCode).any SeLe4n.Kernel.isIdleThreadId ||
     prev.any (fun p => SeLe4n.Kernel.isIdleObjId p.toObjId) ||
     next.any (fun
       | .frame above => SeLe4n.Kernel.isIdleObjId above.toObjId

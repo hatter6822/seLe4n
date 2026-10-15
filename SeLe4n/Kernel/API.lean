@@ -474,7 +474,7 @@ def clearWokenReceiverStash (receiver? : Option SeLe4n.ThreadId) : Kernel Unit :
             match rTcb.pendingReceiveReply with
             | some _ =>
                 storeObject receiver.toObjId
-                  (.tcb { rTcb with pendingReceiveReply := none }) st
+                  (.tcb { rTcb with pendingReceiveReplyCode := 0 }) st
             | none => .ok ((), st)
         | none => .ok ((), st)
 
@@ -685,21 +685,21 @@ theorem clearWokenReceiverStash_preserves_ipcInvariantFull
           (storeObject_tcb_pendingReceiveReply_preserves_ipcInvariantCore st st'
             receiver.toObjId rTcb none hInv.toCore hObjInv hRaw hStep)
           (storeObject_tcb_preserveReplyLinkFields_preserves_replyCallerLinkage st st'
-            receiver rTcb { rTcb with pendingReceiveReply := none } hObjInv hTcb rfl rfl
+            receiver rTcb { rTcb with pendingReceiveReplyCode := 0 } hObjInv hTcb rfl rfl
             hInv.replyCallerLinkage hStep)
           (storeObject_tcb_preserves_pendingReceiveReplyWellFormed st st' receiver rTcb
-            { rTcb with pendingReceiveReply := none } hObjInv hTcb
+            { rTcb with pendingReceiveReplyCode := 0 } hObjInv hTcb
             hInv.pendingReceiveReplyWellFormed
             (fun rid' h => by cases h) (fun rid' h => by cases h) hStep)
           (donationOwnerUnique_of_sameSchedContextBindings
             (storeObject_modifiedTcb_sameSchedContextBindings st st' receiver.toObjId rTcb
-              { rTcb with pendingReceiveReply := none } hRaw rfl hObjInv hStep)
+              { rTcb with pendingReceiveReplyCode := 0 } hRaw rfl hObjInv hStep)
             hInv.donationOwnerUnique)
           (storeObject_tcb_preserveIpc_preserves_endpointQueueTailBlockedConsistent st st'
-            receiver rTcb { rTcb with pendingReceiveReply := none } hObjInv hRaw rfl
+            receiver rTcb { rTcb with pendingReceiveReplyCode := 0 } hObjInv hRaw rfl
             hInv.endpointQueueTailBlockedConsistent hStep)
           (storeObject_tcb_preserveIpcAndQueueNext_preserves_queueNextTargetBlocked st st'
-            receiver rTcb { rTcb with pendingReceiveReply := none } hObjInv hRaw rfl rfl
+            receiver rTcb { rTcb with pendingReceiveReplyCode := 0 } hObjInv hRaw rfl rfl
             hInv.queueNextTargetBlocked hStep)
 
 /-- WS-RR RR2.16: `clearWokenReceiverStash` preserves the Robin Hood object-store

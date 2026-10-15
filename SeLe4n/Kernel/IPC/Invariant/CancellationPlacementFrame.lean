@@ -293,7 +293,7 @@ private theorem consumeCallerReply_getTcb?_backward {st st' : SystemState}
 /-- WS-RR RR8.11: the reply-link teardown clears one TCB field and consumes one
 Reply, so it frames every projection that ignores the reply link. -/
 private theorem consumeReplyLink_map_frame {α : Type} (f : TCB → α)
-    (hf : ∀ t : TCB, f { t with replyObject := none } = f t) (st : SystemState)
+    (hf : ∀ t : TCB, f { t with replyObjectCode := 0 } = f t) (st : SystemState)
     (tid : SeLe4n.ThreadId) (tcb : TCB) (hInv : st.objects.invExt) (x : SeLe4n.ThreadId) :
     ((Lifecycle.Suspend.consumeReplyLink st tid tcb).getTcb? x).map f
       = (st.getTcb? x).map f := by
@@ -305,7 +305,7 @@ private theorem consumeReplyLink_map_frame {α : Type} (f : TCB → α)
     refine SystemState.map_tcbField_eq_of_refines f (fun t0 hT0 => ?_)
       (fun t' hT' => consumeCallerReply_getTcb?_backward hInv hStep x t' hT')
     by_cases hk : x.toObjId = tid.toObjId
-    · refine ⟨{ t0 with replyObject := none }, ?_, hf t0⟩
+    · refine ⟨{ t0 with replyObjectCode := 0 }, ?_, hf t0⟩
       refine (SystemState.getTcb?_eq_some_iff _ x _).mpr ?_
       rw [hk]
       exact SystemState.consumeCallerReply_tcb_caller st _ tid rid hInv hStep t0

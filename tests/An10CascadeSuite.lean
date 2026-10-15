@@ -64,7 +64,7 @@ private def mkEmptyNotification : Notification :=
 donation push records the donation on the donor's own reply object, so a donating
 caller must carry one. -/
 private def mkLinkedReply (rid : Nat) (caller : ThreadId) : Kernel.Reply :=
-  { Kernel.Reply.empty (ReplyId.ofNat rid) with caller := some caller }
+  { Kernel.Reply.empty (ReplyId.ofNat rid) with callerCode := SeLe4n.ThreadId.optCode (some caller) }
 
 /-- Helper: construct a minimal test SchedContext. -/
 private def mkEmptySchedContext (id : Nat := 200) : Kernel.SchedContext :=
@@ -628,7 +628,7 @@ def an10_e_donateSchedContextValid_reduces : IO Bool := do
   let replyId : ReplyId := ReplyId.ofNat 101
   let sc : Kernel.SchedContext := { mkEmptySchedContext 100 with boundThread := some clientTid }
   let clientTcb : TCB := { mkTcb 1 with schedContextBinding := .bound scId,
-                                        replyObject := some replyId }
+                                        replyObjectCode := SeLe4n.ReplyId.optCode (some replyId) }
   let serverTcb : TCB := mkTcb 2
   let stPop : SystemState := { (default : SystemState) with
     objects := ((default : SystemState).objects
@@ -725,7 +725,7 @@ def an10_e_applyCallDonation_wires_h5 : IO Bool := do
   -- WS-OD OD4.1: a donating caller is a `Call` caller, so it carries the reply
   -- object the push records the donation on.
   let callerTcb : TCB := { mkTcb 10 with schedContextBinding := .bound scId,
-                                         replyObject := some replyId }
+                                         replyObjectCode := SeLe4n.ReplyId.optCode (some replyId) }
   -- Receiver is passive (.unbound) — trigger the donation path.
   let receiverTcb : TCB := { mkTcb 20 with schedContextBinding := .unbound }
   let st : SystemState := { (default : SystemState) with
@@ -766,10 +766,10 @@ def an10_e_applyReplyDonation_wires_h6 : IO Bool := do
     boundThread := some replierTid, scReply := some ownerReplyId }
   let replierTcb : TCB := { mkTcb 10 with
     schedContextBinding := .donated scId originalOwnerTid }
-  let ownerTcb : TCB := { mkTcb 20 with replyObject := some ownerReplyId }
+  let ownerTcb : TCB := { mkTcb 20 with replyObjectCode := SeLe4n.ReplyId.optCode (some ownerReplyId) }
   let ownerReply : Kernel.Reply :=
     { Kernel.Reply.empty ownerReplyId with
-        caller := some originalOwnerTid, next := some (.head scId) }
+        callerCode := SeLe4n.ThreadId.optCode (some originalOwnerTid), next := some (.head scId) }
   let st : SystemState := { (default : SystemState) with
     objects := ((default : SystemState).objects
       |>.insert scId.toObjId (.schedContext sc)

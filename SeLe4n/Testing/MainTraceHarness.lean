@@ -2607,7 +2607,7 @@ private def runTimeoutEndpointTrace (_counter : IO.Ref Nat) (st1 : SystemState) 
   let victimTcb : TCB := (TCB.setIpcState {
     tid := vTid, priority := ⟨50⟩, domain := ⟨0⟩,
     cspaceRoot := ⟨10⟩, vspaceRoot := ⟨20⟩, ipcBuffer := (SeLe4n.VAddr.ofNat 4096),
-    replyObject := some rH,
+    replyObjectCode := SeLe4n.ReplyId.optCode (some rH),
     schedContextBinding := .unbound } (.blockedOnReply epH (some hTid)))
   let holderTcb : TCB := (TCB.setIpcState {
     tid := hTid, priority := ⟨50⟩, domain := ⟨0⟩,
@@ -2619,7 +2619,7 @@ private def runTimeoutEndpointTrace (_counter : IO.Ref Nat) (st1 : SystemState) 
   -- the bottom of the stack, so the pop's outer-caller resolution answers `none`
   -- and the reclaim rebinds the victim `.bound scH`.
   let victimReply : SeLe4n.Kernel.Reply := {
-    replyId := rH, caller := some vTid, next := some (.head scH) }
+    replyId := rH, callerCode := SeLe4n.ThreadId.optCode (some vTid), next := some (.head scH) }
   let holderSc : SeLe4n.Kernel.SchedContext := {
     scId := scH, budget := ⟨1000⟩, period := ⟨1000⟩, priority := ⟨50⟩,
     deadline := ⟨1000⟩, domain := ⟨0⟩, budgetRemaining := ⟨1000⟩,
@@ -2965,11 +2965,11 @@ private def runDonationTrace (_counter : IO.Ref Nat) (st1 : SystemState) : IO Un
   -- rather than minting a `.donated` binding the stack does not record.
   let callerReplyId : SeLe4n.ReplyId := ⟨7003⟩
   let callerReply : KernelObject := .reply
-    { SeLe4n.Kernel.Reply.empty callerReplyId with caller := some callerTid }
+    { SeLe4n.Kernel.Reply.empty callerReplyId with callerCode := SeLe4n.ThreadId.optCode (some callerTid) }
   let callerTcb : KernelObject := .tcb (TCB.setIpcState {
     tid := callerTid, priority := ⟨100⟩, domain := ⟨0⟩,
     cspaceRoot := ⟨10⟩, vspaceRoot := ⟨20⟩, ipcBuffer := (SeLe4n.VAddr.ofNat 4096),
-    replyObject := some callerReplyId,
+    replyObjectCode := SeLe4n.ReplyId.optCode (some callerReplyId),
     schedContextBinding := .bound scId } (.blockedOnReply ⟨7010⟩ (some serverTid)))
   let serverTcb : KernelObject := .tcb {
     tid := serverTid, priority := ⟨50⟩, domain := ⟨0⟩,
@@ -3010,7 +3010,7 @@ private def runDonationTrace (_counter : IO.Ref Nat) (st1 : SystemState) : IO Un
   let callerDonated : KernelObject := .tcb (TCB.setIpcState {
     tid := callerTid, priority := ⟨100⟩, domain := ⟨0⟩,
     cspaceRoot := ⟨10⟩, vspaceRoot := ⟨20⟩, ipcBuffer := (SeLe4n.VAddr.ofNat 4096),
-    replyObject := some callerReplyId,
+    replyObjectCode := SeLe4n.ReplyId.optCode (some callerReplyId),
     schedContextBinding := .unbound } (.blockedOnReply ⟨7010⟩ (some serverTid)))
   let serverDonated : KernelObject := .tcb {
     tid := serverTid, priority := ⟨50⟩, domain := ⟨0⟩,
@@ -3078,7 +3078,7 @@ private def runDonationTrace (_counter : IO.Ref Nat) (st1 : SystemState) : IO Un
   -- correction to Z7D-001 for the same reason).
   let callerReplyHead : KernelObject := .reply
     { SeLe4n.Kernel.Reply.empty callerReplyId with
-      caller := some callerTid, next := some (.head scId) }
+      callerCode := SeLe4n.ThreadId.optCode (some callerTid), next := some (.head scId) }
   let scDonatedHead : SeLe4n.Kernel.SchedContext :=
     { scDonated with scReply := some callerReplyId }
   let stReplyDon := st1.withObjectStored callerTid.toObjId callerDonated
@@ -3138,16 +3138,16 @@ private def runDonationTrace (_counter : IO.Ref Nat) (st1 : SystemState) : IO Un
   let outerReplyId : SeLe4n.ReplyId := ⟨7005⟩
   let outerReply : KernelObject := .reply
     { SeLe4n.Kernel.Reply.empty outerReplyId with
-        caller := some outerTid, next := some (.head scId) }
+        callerCode := SeLe4n.ThreadId.optCode (some outerTid), next := some (.head scId) }
   let outerTcb : KernelObject := .tcb (TCB.setIpcState {
     tid := outerTid, priority := ⟨120⟩, domain := ⟨0⟩,
     cspaceRoot := ⟨10⟩, vspaceRoot := ⟨20⟩, ipcBuffer := (SeLe4n.VAddr.ofNat 4096),
-    replyObject := some outerReplyId,
+    replyObjectCode := SeLe4n.ReplyId.optCode (some outerReplyId),
     schedContextBinding := .unbound } (.blockedOnReply ⟨7011⟩ (some callerTid)))
   let midTcb : KernelObject := .tcb (TCB.setIpcState {
     tid := callerTid, priority := ⟨100⟩, domain := ⟨0⟩,
     cspaceRoot := ⟨10⟩, vspaceRoot := ⟨20⟩, ipcBuffer := (SeLe4n.VAddr.ofNat 4096),
-    replyObject := some callerReplyId,
+    replyObjectCode := SeLe4n.ReplyId.optCode (some callerReplyId),
     schedContextBinding := .donated scId outerTid } (.blockedOnReply ⟨7010⟩ (some serverTid)))
   let scDepth2 : SeLe4n.Kernel.SchedContext := {
     SeLe4n.Kernel.SchedContext.empty scId with

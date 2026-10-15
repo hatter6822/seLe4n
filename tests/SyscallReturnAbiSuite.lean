@@ -314,14 +314,14 @@ private def replyPendingState : SystemState :=
           cspaceRoot := callerCn, vspaceRoot := callerVsp,
           ipcBuffer := SeLe4n.VAddr.ofNat 4096,
           threadState := .BlockedReply,
-          replyObject := some replyRid } (.blockedOnReply epId (some peerTid))))
+          replyObjectCode := SeLe4n.ReplyId.optCode (some replyRid) } (.blockedOnReply epId (some peerTid))))
     |>.withObject peerTid.toObjId (.tcb
         { tid := peerTid, priority := ⟨40⟩, domain := ⟨0⟩,
           cspaceRoot := callerCn, vspaceRoot := callerVsp,
           ipcBuffer := SeLe4n.VAddr.ofNat 8192,
           threadState := .Running })
     |>.withObject replyRid.toObjId (.reply
-        { replyId := replyRid, caller := some callerTid })
+        { replyId := replyRid, callerCode := SeLe4n.ThreadId.optCode (some callerTid) })
     |>.build
   { base with scheduler := base.scheduler.setCurrentOnCore core1 (some peerTid) }
 

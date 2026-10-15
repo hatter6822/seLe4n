@@ -1233,7 +1233,7 @@ private def runDelegatedReplyRecvFootprintChecks : IO Unit := do
   let base : SystemState := { (default : SystemState) with
     objects := (((default : SystemState).objects.insert replier.toObjId
         (mkTcb replier .ready)).insert epId (.endpoint { })).insert rid.toObjId
-        (.reply { replyId := rid, caller := some prevCaller }) }
+        (.reply { replyId := rid, callerCode := SeLe4n.ThreadId.optCode (some prevCaller) }) }
   let stOwn : SystemState := { base with
     objects := base.objects.insert prevCaller.toObjId
       (mkTcb prevCaller (.blockedOnReply epId (some replier))) }

@@ -1299,7 +1299,7 @@ theorem endpointReceiveDualOnCore_preserves_dualQueueSystemInvariant
               -- invalid branch returns the pre-state (invariant carried by `hInv`).
               split
               · cases hStash : storeObject receiver.toObjId
-                    (.tcb { rTcb with pendingReceiveReply := replyId }) st2 with
+                    (.tcb { rTcb with pendingReceiveReplyCode := SeLe4n.ReplyId.optCode replyId }) st2 with
                 | error e => simp only [hStash]; exact hInv
                 | ok pStash =>
                   obtain ⟨_, stStashed⟩ := pStash
@@ -1309,7 +1309,7 @@ theorem endpointReceiveDualOnCore_preserves_dualQueueSystemInvariant
                   exact removeRunnableOnCore_preserves_dualQueueSystemInvariant _ receiver executingCore
                     (storeObject_tcb_preserves_dualQueueSystemInvariant_of_queueAgree
                       st2 stStashed receiver.toObjId rTcb
-                      { rTcb with pendingReceiveReply := replyId } rfl rfl rfl
+                      { rTcb with pendingReceiveReplyCode := SeLe4n.ReplyId.optCode replyId } rfl rfl rfl
                       hTcbPre hObjInv2 hStash hInv2)
               · exact hInv
 

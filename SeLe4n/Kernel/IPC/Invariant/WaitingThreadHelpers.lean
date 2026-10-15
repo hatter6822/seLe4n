@@ -200,7 +200,7 @@ theorem storeTcbReceiveComplete_preserves_blockedThreadsPendingMessageConsistent
   | some tcb =>
     simp only [hLk] at hStore
     cases hSO : storeObject tid.toObjId
-        (.tcb (TCB.setIpcState { tcb with pendingMessage := msg, pendingReceiveReply := none } .ready)) st with
+        (.tcb (TCB.setIpcState { tcb with pendingMessage := msg, pendingReceiveReplyCode := 0 } .ready)) st with
     | error e => simp [hSO] at hStore
     | ok pair =>
       simp only [hSO, Except.ok.injEq] at hStore; subst hStore
@@ -208,13 +208,13 @@ theorem storeTcbReceiveComplete_preserves_blockedThreadsPendingMessageConsistent
       by_cases hEq : tid'.toObjId = tid.toObjId
       · -- Same thread: new ipcState `.ready` is non-waiting → trivial
         have hSelf := storeObject_objects_eq st pair.2 tid.toObjId
-          (.tcb (TCB.setIpcState { tcb with pendingMessage := msg, pendingReceiveReply := none } .ready)) hObjInv hSO
+          (.tcb (TCB.setIpcState { tcb with pendingMessage := msg, pendingReceiveReplyCode := 0 } .ready)) hObjInv hSO
         rw [hEq] at hObj'; rw [hSelf] at hObj'
         cases hObj'
         trivial
       · have hNe' : tid'.toObjId ≠ tid.toObjId := hEq
         have hFrame := storeObject_objects_ne st pair.2 tid.toObjId tid'.toObjId
-          (.tcb (TCB.setIpcState { tcb with pendingMessage := msg, pendingReceiveReply := none } .ready))
+          (.tcb (TCB.setIpcState { tcb with pendingMessage := msg, pendingReceiveReplyCode := 0 } .ready))
           hNe' hObjInv hSO
         rw [hFrame] at hObj'
         exact hInv tid' tcb' hObj'

@@ -368,7 +368,7 @@ def frozenNotificationSignal (notificationId : SeLe4n.ObjId)
                   -- what `storeTcbReceiveComplete` does on the live path.
                   match frozenStoreTcb boundTid
                       (TCB.setIpcState { boundTcb with
-                        pendingReceiveReply := none,
+                        pendingReceiveReplyCode := 0,
                         pendingMessage :=
                           some { IpcMessage.empty with badge := some badge } } .ready) st1 with
                   | .error e => .error e
@@ -679,7 +679,7 @@ def frozenEndpointSend (endpointId : SeLe4n.ObjId) (sender : SeLe4n.ThreadId)
                     -- claimed-checked branch was not being compared.  FO-037 is
                     -- the delivery-ordering comparison, with the stash seeded so
                     -- this field is what the scenario measures.
-                    let recvTcb' := (TCB.setIpcState { recvTcb with pendingMessage := some msg, pendingReceiveReply := none } ThreadIpcState.ready)
+                    let recvTcb' := (TCB.setIpcState { recvTcb with pendingMessage := some msg, pendingReceiveReplyCode := 0 } ThreadIpcState.ready)
                     match frozenStoreTcb receiver recvTcb' st' with
                     | .error e => .error e
                     | .ok ((), st'') =>
@@ -941,7 +941,7 @@ def frozenEndpointReply (replierId : SeLe4n.ThreadId)
             | some _expected =>
             let targetTcb' := (TCB.setIpcState { targetTcb with
               pendingMessage := some msg
-              replyObject := none } ThreadIpcState.ready)
+              replyObjectCode := 0 } ThreadIpcState.ready)
             match targetTcb.replyObject with
             | none => .error .replyCapInvalid
             | some fwdRid =>

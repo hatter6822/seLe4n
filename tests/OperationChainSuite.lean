@@ -1121,9 +1121,9 @@ private def replyRecvCapTransferArrivalOrder : IO Unit := do
           slots := SeLe4n.UniqueSlotMap.empty
         })
       |>.withObject server.toObjId (.tcb { tid := server, priority := ⟨40⟩, domain := ⟨0⟩, cspaceRoot := serverCNode, vspaceRoot := ⟨3491⟩, ipcBuffer := (SeLe4n.VAddr.ofNat 4096) })
-      |>.withObject prevCaller.toObjId (.tcb (TCB.setIpcState { tid := prevCaller, priority := ⟨39⟩, domain := ⟨0⟩, cspaceRoot := senderCNode, vspaceRoot := ⟨3492⟩, ipcBuffer := (SeLe4n.VAddr.ofNat 8192), replyObject := some rid } (.blockedOnReply epId (some server))))
+      |>.withObject prevCaller.toObjId (.tcb (TCB.setIpcState { tid := prevCaller, priority := ⟨39⟩, domain := ⟨0⟩, cspaceRoot := senderCNode, vspaceRoot := ⟨3492⟩, ipcBuffer := (SeLe4n.VAddr.ofNat 8192), replyObjectCode := SeLe4n.ReplyId.optCode (some rid) } (.blockedOnReply epId (some server))))
       |>.withObject nextSender.toObjId (.tcb { tid := nextSender, priority := ⟨38⟩, domain := ⟨0⟩, cspaceRoot := senderCNode, vspaceRoot := ⟨3493⟩, ipcBuffer := (SeLe4n.VAddr.ofNat 12288) })
-      |>.withObject rid.toObjId (.reply { replyId := rid, caller := some prevCaller })
+      |>.withObject rid.toObjId (.reply { replyId := rid, callerCode := SeLe4n.ThreadId.optCode (some prevCaller) })
       |>.withRunnable [server, nextSender]
       |>.buildChecked)
 
@@ -3040,14 +3040,14 @@ private def chain31SyscallReply : IO Unit := do
           tid := ⟨503⟩, priority := ⟨40⟩, domain := ⟨0⟩,
           cspaceRoot := cnodeId, vspaceRoot := vsId,
           ipcBuffer := (SeLe4n.VAddr.ofNat 8192),
-          replyObject := some (SeLe4n.ReplyId.ofNat 505),
+          replyObjectCode := SeLe4n.ReplyId.optCode (some (SeLe4n.ReplyId.ofNat 505)),
           registerContext := SeLe4n.RegisterFile.withGprs 0x1000 0x8000 (fun _ => 0)
       } (.blockedOnReply epId (some tid))))
       -- WS-SM SM6.D: the Reply object the replier's reply cap resolves to — its
       -- caller is the blocked sender, so the live `.reply` dispatch resolves
       -- `getReply? rid → caller = 503`, unblocks that caller, and consumes the link.
       |>.withObject ((SeLe4n.ReplyId.ofNat 505).toObjId) (.reply
-          { (SeLe4n.Kernel.Reply.empty (SeLe4n.ReplyId.ofNat 505)) with caller := some ⟨503⟩ })
+          { (SeLe4n.Kernel.Reply.empty (SeLe4n.ReplyId.ofNat 505)) with callerCode := SeLe4n.ThreadId.optCode (some ⟨503⟩) })
       |>.withObject epId (.endpoint {})
       |>.withObject cnodeId (.cnode {
           depth := 4, guardWidth := 0, guardValue := 0, radixWidth := 4,

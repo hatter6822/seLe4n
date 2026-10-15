@@ -1964,7 +1964,7 @@ theorem linkCallerReply_preserves_ipcInvariant
         simp only [hGetR] at hLink
         split at hLink
         · exact storeObject_preserves_ipcInvariant_of_ne_notification st st1 rid.toObjId
-            (.reply { r with caller := some caller }) (fun _ => by exact KernelObject.noConfusion)
+            (.reply { r with callerCode := SeLe4n.ThreadId.optCode (some caller) }) (fun _ => by exact KernelObject.noConfusion)
             hInv hObjInv hLink
         · simp at hLink
     cases hT : st1.getTcb? caller with
@@ -1973,7 +1973,7 @@ theorem linkCallerReply_preserves_ipcInvariant
       simp only [hT] at hStep
       split at hStep
       · exact storeObject_preserves_ipcInvariant_of_ne_notification st1 st' caller.toObjId
-          (.tcb { tcb with replyObject := some rid }) (fun _ => by exact KernelObject.noConfusion)
+          (.tcb { tcb with replyObjectCode := SeLe4n.ReplyId.optCode (some rid) }) (fun _ => by exact KernelObject.noConfusion)
           hInv1 hObjInv1 hStep
       · simp at hStep
 
@@ -2070,7 +2070,7 @@ theorem linkServerStashedReply_preserves_ipcInvariant
       | some sTcb =>
         simp only [hT] at hStep
         exact storeObject_preserves_ipcInvariant_of_ne_notification st1 st' server.toObjId
-          (.tcb { sTcb with pendingReceiveReply := none }) (fun _ => by exact KernelObject.noConfusion)
+          (.tcb { sTcb with pendingReceiveReplyCode := 0 }) (fun _ => by exact KernelObject.noConfusion)
           hInv1 hObjInv1 hStep
 
 open SeLe4n.Model.SystemState in
@@ -4759,7 +4759,7 @@ theorem linkReply_donationChainFrame (st st' : SystemState)
     | true =>
       simp only [if_true]
       intro hStore
-      exact donationChainFrame_of_storeObject_reply (r := { r with caller := some caller })
+      exact donationChainFrame_of_storeObject_reply (r := { r with callerCode := SeLe4n.ThreadId.optCode (some caller) })
         hObjInv ((SystemState.getReply?_eq_some_iff _ _ _).mp hGet) rfl rfl
         (fun h => by simp at h) hStore
 

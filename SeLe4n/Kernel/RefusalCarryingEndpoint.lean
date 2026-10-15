@@ -149,8 +149,8 @@ theorem sendRendezvous_eq_delivered (st : SystemState) (endpointId : SeLe4n.ObjI
   rw [wakeThread_msg _ _ _ _ _ _ _ hNo0, wakeThread_msg _ _ _ _ _ _ _ hNo0]
   dsimp only
   have hD : ∀ M : IpcMessage,
-      TCB.withMessageSlots id (fun _ => some M) (fun _ : Option SeLe4n.ReplyId => none) =
-        holdMessage M ∘ TCB.withMessageSlots id (fun _ => none) (fun _ => none) := fun _ => rfl
+      TCB.withMessageSlots id (fun _ => some M) (fun _ : Nat => 0) =
+        holdMessage M ∘ TCB.withMessageSlots id (fun _ => none) (fun _ => 0) := fun _ => rfl
   rw [clearWokenReceiverStashPure_mapTcbInPlace _ _ _ (fun _ => rfl),
     hD, ← SystemState.mapTcbInPlace_mapTcbInPlace,
     Architecture.stageWokenDelivery_some,
@@ -915,13 +915,13 @@ theorem dispatchReplyCheckedR_eq (ctx : LabelingContext)
 waiting, the receiver may block (`receiveBlockAdmits`) and every write stays
 in place (`receiveBlocksInPlace`). -/
 @[inline] def receiveBlocksFast (st : SystemState) (endpointId : SeLe4n.ObjId)
-    (receiver : SeLe4n.ThreadId) (replyId : Option SeLe4n.ReplyId) : Bool :=
+    (receiver : SeLe4n.ThreadId) (replyCode : Nat) : Bool :=
   match st.getEndpoint? endpointId with
   | some ep =>
       ep.sendQ.head.isNone &&
       (match st.getTcb? receiver with
        | some rt => receiveBlockAdmits rt &&
-           receiveBlocksInPlaceCode st endpointId receiver ep.recvTailCode replyId
+           receiveBlocksInPlaceCode st endpointId receiver ep.recvTailCode replyCode
        | none => false)
   | none => false
 
@@ -983,6 +983,100 @@ theorem resolveRecvReplyIdR_eq (st : SystemState) (tid : SeLe4n.ThreadId)
     subst hCaller hRoot hDepth
     rfl
 
+/-- The reply capability a receive names, checked as `resolveRecvReplyIdR`
+checks it once its slot is found: present, not the idle thread's, carrying the
+write right, naming a reply object that is free of callers and not already
+stashed.  The reply object goes to `onOk` as its code (`SeLe4n.ReplyId.optCode`),
+a refusal to `onErr`, so no `Except` or `some` cell is built. -/
+@[inline] def recvReplyCapK {α : Type} (st : SystemState) (cap? : Option Capability)
+    (onErr : KernelError → α) (onOk : Nat → α) : α :=
+  match cap? with
+  | none => onErr .invalidCapability
+  | some cap =>
+      if SeLe4n.Kernel.capTargetsReservedIdleObject cap then onErr .invalidCapability
+      else if !cap.hasRight .write then onErr .illegalAuthority
+      else
+        match cap.target with
+        | .replyCap rid =>
+            match st.getReply? rid with
+            | some r =>
+                if r.caller.isNone && !st.replyIsStashed rid then onOk (rid.val + 1)
+                else onErr .replyCapInvalid
+            | none => onErr .replyCapInvalid
+        | _ => onErr .invalidCapability
+
+/-- `resolveRecvReplyIdR` in continuation form, the reply object as its code
+(`resolveRecvReplyK_eq`): the slot is resolved through
+`resolveCapAddressKUnrolled`, as the operand is, so the entry builds no gate,
+slot reference or result cell for the receive's reply capability.  WS-ZA ZA4.7. -/
+@[inline] def resolveRecvReplyK {α : Type} (st : SystemState) (tid : SeLe4n.ThreadId)
+    (len mr0 : Nat) (onErr : KernelError → α) (onOk : Nat → α) : α :=
+  if len = 0 then onOk 0 else
+  resolveCapAddressKUnrolled (callerCspaceRoot st tid) (SeLe4n.CPtr.ofNat mr0)
+    (callerCspaceDepth st tid) st onErr
+    (fun cnode slot =>
+      recvReplyCapK st (SystemState.lookupSlotCap st { cnode := cnode, slot := slot })
+        onErr onOk)
+
+theorem resolveRecvReplyK_eq {α : Type} (st : SystemState) (tid : SeLe4n.ThreadId)
+    (len mr0 : Nat) (onErr : KernelError → α) (onOk : Nat → α) :
+    resolveRecvReplyK st tid len mr0 onErr onOk =
+      match resolveRecvReplyIdR st tid len mr0 with
+      | .error e => onErr e
+      | .ok r => onOk (SeLe4n.ReplyId.optCode r) := by
+  unfold resolveRecvReplyK resolveRecvReplyIdR
+  by_cases h0 : len = 0
+  · simp only [h0, ↓reduceIte, SeLe4n.ReplyId.optCode_none]
+  · simp only [h0, ↓reduceIte, syscallLookupCap, syscallResolveCap]
+    rw [resolveCapAddressKUnrolled_eq, resolveCapAddressK_eq]
+    cases resolveCapAddress (callerCspaceRoot st tid) (SeLe4n.CPtr.ofNat mr0)
+        (callerCspaceDepth st tid) st with
+    | error e => rfl
+    | ok ref =>
+      simp only [recvReplyCapK]
+      cases SystemState.lookupSlotCap st ref with
+      | none => rfl
+      | some cap =>
+        simp only []
+        by_cases hIdle : SeLe4n.Kernel.capTargetsReservedIdleObject cap = true
+        · simp only [hIdle, ↓reduceIte]
+        · by_cases hRight : cap.hasRight .write = true
+          · simp only [hIdle, hRight, ↓reduceIte, Bool.false_eq_true, Bool.not_true]
+            unfold extractReplyId
+            cases cap.target <;> try rfl
+            rename_i rid
+            simp only []
+            cases st.getReply? rid with
+            | none => rfl
+            | some r =>
+              simp only []
+              split <;> rfl
+          · simp only [hIdle, hRight, ↓reduceIte, Bool.false_eq_true, Bool.not_false]
+
+/-- The checked receive arm once its reply object is resolved, given as its
+code: the blocking receive written in place when it may be
+(`receiveBlocksFast`), the rendezvous otherwise.  Inlined, so its result is
+matched by the caller rather than built. -/
+@[inline] def endpointReceiveResolvedR (epId : SeLe4n.ObjId) (tid : SeLe4n.ThreadId)
+    (replyCode : Nat) (executingCore : Concurrency.CoreId) : RefusalCarrying Unit :=
+  fun st =>
+    if receiveBlocksFast st epId tid replyCode then
+      .ok ((), removeRunnableOnCore
+        (storeReceiveBlock st epId tid (receiveQueueTailCode st epId) replyCode) tid executingCore)
+    else
+      let rid := SeLe4n.ReplyId.ofOptCode replyCode
+      let wokenSender? := (st.getEndpoint? epId).bind (·.sendQ.head)
+      match endpointReceiveDualWithCapsOnCore epId tid rid (callerCspaceRoot st tid)
+          (SeLe4n.Slot.ofNat 0) executingCore st with
+      | (st', .ok (dequeued, summary, _sgi)) =>
+          match applyReceiveRendezvousHandoff st' tid dequeued executingCore with
+          | .error e => .error (e, st)
+          | .ok stDon =>
+              .ok ((), Architecture.stageDeliveredMessage
+                (Architecture.stageWokenSendCompletion stDon wokenSender?) tid
+                summary.installedCount)
+      | (_, .error e) => .error (e, st)
+
 /-- The checked receive arm (`dispatchWithCapChecked`'s `.receive` case), on
 the message length and first message register, refusing in the state it was
 handed (`endpointReceiveCheckedArmR_eq`).  Every check, the reply object's
@@ -997,24 +1091,8 @@ included, precedes the first write; a receive that blocks in place
       if !endpointFlowGate ctx epId (ctx.endpointLabelOf epId) (ctx.threadLabelOf tid) then
         .error (.flowDenied, st)
       else
-      match resolveRecvReplyIdR st tid len mr0 with
-      | .error e => .error (e, st)
-      | .ok rid =>
-        if receiveBlocksFast st epId tid rid then
-          .ok ((), removeRunnableOnCore
-            (storeReceiveBlock st epId tid (receiveQueueTailCode st epId) rid) tid executingCore)
-        else
-          let wokenSender? := (st.getEndpoint? epId).bind (·.sendQ.head)
-          match endpointReceiveDualWithCapsOnCore epId tid rid (callerCspaceRoot st tid)
-              (SeLe4n.Slot.ofNat 0) executingCore st with
-          | (st', .ok (dequeued, summary, _sgi)) =>
-              match applyReceiveRendezvousHandoff st' tid dequeued executingCore with
-              | .error e => .error (e, st)
-              | .ok stDon =>
-                  .ok ((), Architecture.stageDeliveredMessage
-                    (Architecture.stageWokenSendCompletion stDon wokenSender?) tid
-                    summary.installedCount)
-          | (_, .error e) => .error (e, st)
+      let resolved := fun replyCode => endpointReceiveResolvedR epId tid replyCode executingCore st
+      resolveRecvReplyK st tid len mr0 (fun e => .error (e, st)) resolved
     | _ => .error (.invalidCapability, st)
 
 theorem endpointReceiveCheckedArmR_eq (ctx : LabelingContext)
@@ -1036,12 +1114,12 @@ theorem endpointReceiveCheckedArmR_eq (ctx : LabelingContext)
     simp only []
     split
     · rfl
-    · rw [hRid]
+    · rw [resolveRecvReplyK_eq, hRid]
       cases resolveRecvReplyId gate decoded st with
       | error e => rfl
       | ok rid =>
-      simp only []
-      by_cases hF : receiveBlocksFast st epId tid rid = true
+      simp only [endpointReceiveResolvedR, SeLe4n.ReplyId.ofOptCode_optCode]
+      by_cases hF : receiveBlocksFast st epId tid (SeLe4n.ReplyId.optCode rid) = true
       · rw [if_pos hF]
         unfold receiveBlocksFast at hF
         cases hEp : st.getEndpoint? epId with
@@ -1058,7 +1136,8 @@ theorem endpointReceiveCheckedArmR_eq (ctx : LabelingContext)
               simp only [SystemState.getTcb?, hR] at hO
               simp only [Bool.and_eq_true] at hO
               obtain ⟨hA, hG⟩ := hO
-              rw [receiveBlocksInPlaceCode_eq, Endpoint.ofOptCode_recvTailCode] at hG
+              rw [receiveBlocksInPlaceCode_eq, Endpoint.ofOptCode_recvTailCode,
+                SeLe4n.ReplyId.ofOptCode_optCode] at hG
               have hE := (SystemState.getEndpoint?_eq_some_iff _ _ _).mp hEp
               have hTail : receiveQueueTailCode st epId = ep.recvTailCode := by
                 simp only [receiveQueueTailCode, hEp]
@@ -1070,7 +1149,8 @@ theorem endpointReceiveCheckedArmR_eq (ctx : LabelingContext)
                 simp [receiveRendezvousSender?, hEp, hS]
               simp only [hSnd, ↓reduceIte, hTail]
               have hNoCall : rendezvousDequeuedCall (removeRunnableOnCore
-                  (storeReceiveBlock st epId tid ep.recvTailCode rid) tid executingCore) tid =
+                  (storeReceiveBlock st epId tid ep.recvTailCode (SeLe4n.ReplyId.optCode rid))
+                  tid executingCore) tid =
                   false := by
                 unfold rendezvousDequeuedCall
                 rw [show lookupTcb _ tid = some t from by

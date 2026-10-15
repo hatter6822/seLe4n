@@ -206,7 +206,7 @@ theorem storeTcbReceiveComplete_preserves_endpointQueueNoDup
   | none => simp [hLookup] at hStore
   | some tcb =>
     simp only [hLookup] at hStore
-    cases hSt : storeObject tid.toObjId (.tcb (TCB.setIpcState { tcb with pendingMessage := msg, pendingReceiveReply := none } .ready)) st with
+    cases hSt : storeObject tid.toObjId (.tcb (TCB.setIpcState { tcb with pendingMessage := msg, pendingReceiveReplyCode := 0 } .ready)) st with
     | error e => simp [hSt] at hStore
     | ok pair =>
       simp only [hSt, Except.ok.injEq] at hStore; subst hStore

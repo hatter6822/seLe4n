@@ -615,7 +615,7 @@ theorem endpointReceiveDualOnCore_passiveServerIdleFrameOnCore
               split
               · next hValid =>
                 cases hStash : storeObject receiver.toObjId
-                    (.tcb { rTcb with pendingReceiveReply := replyId }) st2 with
+                    (.tcb { rTcb with pendingReceiveReplyCode := SeLe4n.ReplyId.optCode replyId }) st2 with
                 | error e => simp only; exact passiveServerIdleFrameOnCore.refl st
                 | ok pStash =>
                   obtain ⟨⟨⟩, stStashed⟩ := pStash
@@ -624,20 +624,20 @@ theorem endpointReceiveDualOnCore_passiveServerIdleFrameOnCore
                   have hRTcbIpc : rTcb.ipcState = .blockedOnReceive endpointId :=
                     storeTcbIpcStateAndMessage_ipcState_eq st1 st2 receiver _ _ hObjInvEnq hIpc rTcb hRecvObj
                   have hF3 := hF2.trans (storeObject_modifiedTcb_passiveServerIdleFrameOnCore st2
-                    stStashed receiver.toObjId rTcb { rTcb with pendingReceiveReply := replyId }
+                    stStashed receiver.toObjId rTcb { rTcb with pendingReceiveReplyCode := SeLe4n.ReplyId.optCode replyId }
                     hRecvObj rfl
-                    (Or.inl (by rw [show ({ rTcb with pendingReceiveReply := replyId } : TCB).ipcState
+                    (Or.inl (by rw [show ({ rTcb with pendingReceiveReplyCode := SeLe4n.ReplyId.optCode replyId } : TCB).ipcState
                       = .blockedOnReceive endpointId from hRTcbIpc]
                                 exact Or.inr (Or.inl ⟨endpointId, Or.inl rfl⟩)))
                     hObjInv2 hStash)
                   have hStashObj := storeObject_objects_eq st2 stStashed receiver.toObjId
-                    (.tcb { rTcb with pendingReceiveReply := replyId }) hObjInv2 hStash
+                    (.tcb { rTcb with pendingReceiveReplyCode := SeLe4n.ReplyId.optCode replyId }) hObjInv2 hStash
                   exact hF3.trans (removeRunnableOnCore_passiveServerIdleFrameOnCore stStashed
                     receiver executingCore (fun tcb hTcb => Or.inr (by
                       have hTcbRaw := (getTcb?_eq_some_iff stStashed receiver tcb).mp hTcb
                       rw [hStashObj] at hTcbRaw
                       obtain rfl := KernelObject.tcb.inj (Option.some.inj hTcbRaw)
-                      rw [show ({ rTcb with pendingReceiveReply := replyId } : TCB).ipcState
+                      rw [show ({ rTcb with pendingReceiveReplyCode := SeLe4n.ReplyId.optCode replyId } : TCB).ipcState
                         = .blockedOnReceive endpointId from hRTcbIpc]
                       exact Or.inr (Or.inl ⟨endpointId, Or.inl rfl⟩))))
               · exact passiveServerIdleFrameOnCore.refl st
@@ -813,13 +813,13 @@ theorem endpointReceiveDualOnCore_post_agrees
               split
               · next hValid =>
                 cases hStash' : storeObject receiver.toObjId
-                    (.tcb { rTcb' with pendingReceiveReply := replyId }) st2' with
+                    (.tcb { rTcb' with pendingReceiveReplyCode := SeLe4n.ReplyId.optCode replyId }) st2' with
                 | error e => left; rfl
                 | ok pStash' =>
                   obtain ⟨⟨⟩, stStashed'⟩ := pStash'
                   right
                   obtain ⟨stStashed, hStash⟩ := storeObject_isOk st2 receiver.toObjId
-                    (.tcb { rTcb with pendingReceiveReply := replyId })
+                    (.tcb { rTcb with pendingReceiveReplyCode := SeLe4n.ReplyId.optCode replyId })
                   refine ⟨receiver, removeRunnable stStashed receiver, ?_, ?_⟩
                   · unfold endpointReceiveDual SystemState.getObject?
                     simp only [hEpRaw, hHead, hChecked, hEnq, hStore1, hGetR,

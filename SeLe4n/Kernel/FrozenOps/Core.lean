@@ -787,7 +787,7 @@ def frozenLinkCallerReply (st : FrozenSystemState) (caller : SeLe4n.ThreadId)
       -- docstring records the last time this tree paid for it.
       if r.isFree then
         match frozenWithObjectStored st rid.toObjId
-            (.reply { r with caller := some caller }) with
+            (.reply { r with callerCode := SeLe4n.ThreadId.optCode (some caller) }) with
         | .error e => .error e
         | .ok st1 =>
             match frozenLookupTcb st1 caller with
@@ -795,7 +795,7 @@ def frozenLinkCallerReply (st : FrozenSystemState) (caller : SeLe4n.ThreadId)
             | some tcb =>
                 if tcb.replyObject.isNone then
                   frozenWithObjectStored st1 caller.toObjId
-                    (.tcb { tcb with replyObject := some rid })
+                    (.tcb { tcb with replyObjectCode := SeLe4n.ReplyId.optCode (some rid) })
                 else .error .replyCapInvalid
       else .error .replyCapInvalid
   | _ => .error .replyCapInvalid

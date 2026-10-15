@@ -83,12 +83,25 @@ end ReplyStackLink
 /-- WS-SM SM6.D: first-class Reply kernel object.  See the module docstring. -/
 structure Reply where
   replyId   : SeLe4n.ReplyId
-  caller    : Option SeLe4n.ThreadId       := none
+  /-- WS-ZA ZA4.7: the blocked caller, as a scalar code
+  (`SeLe4n.ThreadId.optCode`); read through the derived view `Reply.caller`, so
+  linking a caller builds no cell. -/
+  callerCode : Nat                          := 0
   prev      : Option SeLe4n.ReplyId        := none
   next      : Option ReplyStackLink         := none
 deriving Repr
 
 namespace Reply
+
+/-- The blocked caller this reply answers, read from its code.  Reducible, so a
+record update that leaves the code alone reads the old caller by `rfl`.
+Written as `callerCode := SeLe4n.ThreadId.optCode c`. -/
+@[reducible, inline] def caller (r : Reply) : Option SeLe4n.ThreadId :=
+  SeLe4n.ThreadId.ofOptCode r.callerCode
+
+@[simp] theorem caller_mk (rid : SeLe4n.ReplyId) (c : Nat) (p : Option SeLe4n.ReplyId)
+    (n : Option ReplyStackLink) : (Reply.mk rid c p n).caller = SeLe4n.ThreadId.ofOptCode c :=
+  rfl
 
 /-- Default Reply: the given id, no caller, no stack links, lock unheld.  Used by
 `retypeFromUntyped` when creating a new Reply object. -/
@@ -224,8 +237,8 @@ refuses the bare spelling in either spine, and
 that names no chain result. -/
 def consumed (r : Reply) : Reply :=
   match r.next with
-  | some (.head _) => { r with caller := none }
-  | _ => { r with caller := none, prev := none, next := none }
+  | some (.head _) => { r with callerCode := 0 }
+  | _ => { r with callerCode := 0, prev := none, next := none }
 
 @[simp] theorem consumed_caller (r : Reply) : r.consumed.caller = none := by
   unfold consumed; split <;> rfl
@@ -235,12 +248,12 @@ def consumed (r : Reply) : Reply :=
 
 /-- A head keeps its links across consumption — the pop that follows clears them. -/
 theorem consumed_of_head (r : Reply) (sc : SeLe4n.SchedContextId)
-    (h : r.next = some (.head sc)) : r.consumed = { r with caller := none } := by
+    (h : r.next = some (.head sc)) : r.consumed = { r with callerCode := 0 } := by
   unfold consumed; rw [h]
 
 /-- A frame that is not a head leaves the structure when it is consumed. -/
 theorem consumed_of_not_head (r : Reply) (h : ∀ sc, r.next ≠ some (.head sc)) :
-    r.consumed = { r with caller := none, prev := none, next := none } := by
+    r.consumed = { r with callerCode := 0, prev := none, next := none } := by
   unfold consumed
   cases hn : r.next with
   | none => rfl
@@ -253,7 +266,7 @@ theorem consumed_of_not_head (r : Reply) (h : ∀ sc, r.next ≠ some (.head sc)
 is every Reply the tree consumed before WS-OD, and every Reply the reply path
 consumes below the first cut-off part. -/
 theorem consumed_of_unlinked (r : Reply) (hPrev : r.prev = none) (hNext : r.next = none) :
-    r.consumed = { r with caller := none } := by
+    r.consumed = { r with callerCode := 0 } := by
   unfold consumed; rw [hNext]; simp [hPrev]
 
 /-- A consumed Reply that is not a head is well formed and free. -/

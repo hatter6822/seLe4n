@@ -564,7 +564,7 @@ theorem storeTcbReceiveComplete_confinedToCore (st st' : SystemState)
   | none => simp [hTcb] at hStep
   | some tcb =>
     simp only [hTcb] at hStep
-    cases hStore : storeObject tid.toObjId (.tcb (TCB.setIpcState { tcb with pendingMessage := msg, pendingReceiveReply := none } .ready)) st with
+    cases hStore : storeObject tid.toObjId (.tcb (TCB.setIpcState { tcb with pendingMessage := msg, pendingReceiveReplyCode := 0 } .ready)) st with
     | error e => simp [hStore] at hStep
     | ok pair =>
       simp only [hStore] at hStep
@@ -1162,7 +1162,7 @@ theorem endpointReceiveDual_confinedToBootCore (st st' : SystemState)
                 simp only [hGet] at hStep
                 split at hStep
                 · cases hStash : storeObject receiver.toObjId
-                      (.tcb { rTcb with pendingReceiveReply := replyId }) st2 with
+                      (.tcb { rTcb with pendingReceiveReplyCode := SeLe4n.ReplyId.optCode replyId }) st2 with
                   | error e => simp [hStash] at hStep
                   | ok pairS =>
                     simp only [hStash, Except.ok.injEq, Prod.mk.injEq] at hStep

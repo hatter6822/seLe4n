@@ -151,8 +151,9 @@ file: a send to a waiting receiver reads 3, a call 8 and a reply 1.  At
 only a message's length: a reply reads 0, a send to a waiting receiver 1, a
 receive that blocks 3 and a call 7.  At `v0.36.88` a thread's IPC state is two
 scalar codes: a receive that blocks reads 1, a call 5 and a wait that blocks 5.
-The fields still written as fresh cells (the reply fields, the priority maximum,
-the per-core current) come next, then blocked senders and reply-receive.  ZA4 measures the other
+At `v0.36.89` the reply fields are scalar codes: a call reads 2 and a receive
+naming a reply object 1.  The cells left in the fields-as-codes part (the
+priority maximum, the per-core current) come next, then blocked senders and reply-receive.  ZA4 measures the other
 syscalls and entries.  Plan:
 [`docs/planning/ZERO_ALLOCATION_SYSCALL_PLAN.md`](../planning/ZERO_ALLOCATION_SYSCALL_PLAN.md)
 (phases ZA1–ZA4).

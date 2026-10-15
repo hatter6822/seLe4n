@@ -607,7 +607,7 @@ def reply_inUse_retype_rejected : IO Unit := do
   let st : SystemState := default
   let target : SeLe4n.ObjId := ⟨505⟩
   let newObj : KernelObject := .reply { replyId := ⟨999⟩ }
-  let inUseReply : KernelObject := .reply { replyId := ⟨505⟩, caller := some ⟨2⟩ }
+  let inUseReply : KernelObject := .reply { replyId := ⟨505⟩, callerCode := SeLe4n.ThreadId.optCode (some ⟨2⟩) }
   match SeLe4n.Kernel.lifecyclePreRetypeCleanup st target inUseReply newObj with
   | .error e => expect "in-use Reply retype → revocationRequired" (e == .revocationRequired)
   | .ok _ => throw <| IO.userError "in-use Reply retype must be rejected"
@@ -624,7 +624,7 @@ def reply_inUse_retype_rejected : IO Unit := do
     (TCB.setIpcState
     { tid := ⟨600⟩, priority := ⟨0⟩, domain := ⟨0⟩, cspaceRoot := ⟨0⟩,
       vspaceRoot := ⟨0⟩, ipcBuffer := SeLe4n.VAddr.ofNat 0,
-      pendingReceiveReply := some ⟨505⟩ } (.blockedOnReceive ⟨700⟩))
+      pendingReceiveReplyCode := SeLe4n.ReplyId.optCode (some ⟨505⟩) } (.blockedOnReceive ⟨700⟩))
   let stStashed : SystemState :=
     (SeLe4n.Testing.BootstrapBuilder.empty |>.withObject ⟨600⟩ (.tcb stashTcb) |>.build)
   match SeLe4n.Kernel.lifecyclePreRetypeCleanup stStashed target freeReply newObj with
@@ -637,7 +637,7 @@ def reply_inUse_retype_rejected : IO Unit := do
   let wokenStashTcb : TCB :=
     { tid := ⟨603⟩, priority := ⟨0⟩, domain := ⟨0⟩, cspaceRoot := ⟨0⟩,
       vspaceRoot := ⟨0⟩, ipcBuffer := SeLe4n.VAddr.ofNat 0,
-      pendingReceiveReply := some ⟨505⟩ }
+      pendingReceiveReplyCode := SeLe4n.ReplyId.optCode (some ⟨505⟩) }
   let stWokenStash : SystemState :=
     (SeLe4n.Testing.BootstrapBuilder.empty |>.withObject ⟨603⟩ (.tcb wokenStashTcb) |>.build)
   match SeLe4n.Kernel.lifecyclePreRetypeCleanup stWokenStash target freeReply newObj with
@@ -648,7 +648,7 @@ def reply_inUse_retype_rejected : IO Unit := do
   let linkedTcb : TCB :=
     { tid := ⟨601⟩, priority := ⟨0⟩, domain := ⟨0⟩, cspaceRoot := ⟨0⟩,
       vspaceRoot := ⟨0⟩, ipcBuffer := SeLe4n.VAddr.ofNat 0,
-      replyObject := some ⟨505⟩ }
+      replyObjectCode := SeLe4n.ReplyId.optCode (some ⟨505⟩) }
   match SeLe4n.Kernel.lifecyclePreRetypeCleanup st ⟨601⟩ (.tcb linkedTcb) newObj with
   | .error e => expect "linked caller TCB retype → revocationRequired" (e == .revocationRequired)
   | .ok _ => throw <| IO.userError "retyping a TCB with an outstanding reply link must be rejected"
@@ -674,7 +674,7 @@ def pendingReceiveReply_stash_injective : IO Unit := do
     (TCB.setIpcState
     { tid := ⟨600⟩, priority := ⟨0⟩, domain := ⟨0⟩, cspaceRoot := ⟨0⟩,
       vspaceRoot := ⟨0⟩, ipcBuffer := SeLe4n.VAddr.ofNat 0,
-      pendingReceiveReply := some reservedRid } (.blockedOnReceive ⟨700⟩))
+      pendingReceiveReplyCode := SeLe4n.ReplyId.optCode (some reservedRid) } (.blockedOnReceive ⟨700⟩))
   let st : SystemState :=
     (SeLe4n.Testing.BootstrapBuilder.empty |>.withObject ⟨600⟩ (.tcb serverTcb) |>.build)
   -- the reserved rid is detected as stashed → a second `resolveRecvReplyId` for it
@@ -700,7 +700,7 @@ def replyStash_validated_against_preBlock_state : IO Unit := do
   let readyTcb : TCB :=
     { tid := ⟨603⟩, priority := ⟨0⟩, domain := ⟨0⟩, cspaceRoot := ⟨0⟩,
       vspaceRoot := ⟨0⟩, ipcBuffer := SeLe4n.VAddr.ofNat 0,
-      pendingReceiveReply := some rid }
+      pendingReceiveReplyCode := SeLe4n.ReplyId.optCode (some rid) }
   let stReady : SystemState :=
     (SeLe4n.Testing.BootstrapBuilder.empty |>.withObject ⟨603⟩ (.tcb readyTcb) |>.build)
   expect "ready receiver's stale stash does NOT reserve rid (pre-block check admits re-stash)"

@@ -9724,7 +9724,7 @@ run_check "INVARIANT" rg -n 'differentialSendFromAbsentSenderAgrees' tests/Froze
 # ordering -- live `storeTcbReceiveComplete` clears the receiver's stashed reply
 # object (D3/F-1) where the frozen mirror kept it.  The mirror is now field-exact
 # and the delivery ordering is compared with the stash seeded.
-run_check "INVARIANT" rg -n 'pendingMessage := some msg, pendingReceiveReply := none' SeLe4n/Kernel/FrozenOps/Operations.lean
+run_check "INVARIANT" rg -n 'pendingMessage := some msg, pendingReceiveReplyCode := 0' SeLe4n/Kernel/FrozenOps/Operations.lean
 run_check "INVARIANT" rg -n 'differentialSendRendezvousDeliversAgrees' tests/FrozenOpsSuite.lean
 run_check "INVARIANT" rg -n 'the live delivery clears the stash' tests/FrozenOpsSuite.lean
 # The consuming waiter is the calling thread: it never blocked, so the live
@@ -16884,7 +16884,7 @@ run_negative_check "INVARIANT" bash -lc 'rg -U -n "^def frozenEndpointReply[^\n]
 # live function keeps a frame's links only when it HEADS a context and clears
 # them otherwise, and spelling that question a second time got the case wrong.
 # NEGATIVE, token-preserving -- it keeps the store and writes the clear inline.
-run_negative_check "INVARIANT" bash -lc 'rg -U -n "^def frozenEndpointReply[^\n]*(\n([ \t][^\n]*)?)*\(\.reply \{ r with caller := none \}\)" SeLe4n/Kernel/FrozenOps/Operations.lean'
+run_negative_check "INVARIANT" bash -lc 'rg -U -n "^def frozenEndpointReply[^\n]*(\n([ \t][^\n]*)?)*\(\.reply \{ r with callerCode := 0 \}\)" SeLe4n/Kernel/FrozenOps/Operations.lean'
 # `Reply.isFree` is the ONE spelling of "may be linked to a new caller": it
 # reads both stack links, and the frozen guard read `caller` alone, so a frame
 # still on a live stack was linkable there while the live kernel refuses it.
@@ -17482,7 +17482,7 @@ run_negative_check "INVARIANT" bash -lc 'rg -U -n "ipcState := \.blockedOnReply 
 # The push store's outer caller names the reply object it is blocked on, which
 # `replyCallerLinkage` always required and which the OD5.2 checks now read -- so the
 # TCB is ONE definition rather than the store's plus two local re-spellings.
-run_check "INVARIANT" bash -lc 'rg -U -n "\|>\.withObject pushOuter\.toObjId[^\n]*(\n([ \t][^\n]*)?)*replyObject := some pushOuterReply" tests/SmpIpcSuite.lean'
+run_check "INVARIANT" bash -lc 'rg -U -n "\|>\.withObject pushOuter\.toObjId[^\n]*(\n([ \t][^\n]*)?)*replyObjectCode := SeLe4n.ReplyId.optCode \(some pushOuterReply\)" tests/SmpIpcSuite.lean'
 run_check "INVARIANT" rg -n '^private def pushOuterBlockedTcb($|[ ({:\[\]])' tests/SmpIpcSuite.lean
 run_check "INVARIANT" rg -n '^private def replyRemovalOuterTcb : TCB := pushOuterBlockedTcb' tests/SmpIpcSuite.lean
 # ...and the declining half runs on the state the LIVE push produces, not on a
@@ -19864,12 +19864,12 @@ run_check "INVARIANT" bash -lc 'rg -n -U "^@\[inline\] def TCB.restoredToReady[^
 run_check "INVARIANT" bash -lc 'rg -n -U "^@\[inline\] def TCB.restoredToReady[^\n]*(\n([ \t][^\n]*)?)*" SeLe4n/Model/Object/Types.lean | rg -F "queuePrevCode := 0"'
 run_check "INVARIANT" bash -lc 'rg -n -U "^@\[inline\] def TCB.restoredToReady[^\n]*(\n([ \t][^\n]*)?)*" SeLe4n/Model/Object/Types.lean | rg -F "queueNextCode := 0"'
 run_check "INVARIANT" bash -lc 'rg -n -U "^@\[inline\] def TCB.restoredToReady[^\n]*(\n([ \t][^\n]*)?)*" SeLe4n/Model/Object/Types.lean | rg -F "queuePPrevCode := 0"'
-run_check "INVARIANT" bash -lc 'rg -n -U "^@\[inline\] def TCB.restoredToReady[^\n]*(\n([ \t][^\n]*)?)*" SeLe4n/Model/Object/Types.lean | rg -F "pendingReceiveReply := none"'
+run_check "INVARIANT" bash -lc 'rg -n -U "^@\[inline\] def TCB.restoredToReady[^\n]*(\n([ \t][^\n]*)?)*" SeLe4n/Model/Object/Types.lean | rg -F "pendingReceiveReplyCode := 0"'
 # ...and BOTH surfaces call it rather than spelling the list.  The negatives are
 # what make the positives a sharing claim rather than a presence check: an
 # inlined copy beside the call satisfies every positive above.
 run_check "INVARIANT" bash -lc 'rg -n -U "^def restoreToReadyStaging[^\n]*(\n([ \t][^\n]*)?)*" SeLe4n/Kernel/Lifecycle/Suspend.lean | rg -F ".restoredToReady"'
-run_negative_check "INVARIANT" bash -lc 'rg -n -U "^def restoreToReadyStaging[^\n]*(\n([ \t][^\n]*)?)*" SeLe4n/Kernel/Lifecycle/Suspend.lean | rg -F "pendingReceiveReply := none"'
+run_negative_check "INVARIANT" bash -lc 'rg -n -U "^def restoreToReadyStaging[^\n]*(\n([ \t][^\n]*)?)*" SeLe4n/Kernel/Lifecycle/Suspend.lean | rg -e "pendingReceiveReplyCode" -e "setIpcState"'
 run_check "INVARIANT" bash -lc 'rg -n -U "^def frozenResumeThread[^\n]*(\n([ \t][^\n]*)?)*" SeLe4n/Kernel/FrozenOps/Operations.lean | rg -F ".tcb tcb.restoredToReady"'
 run_negative_check "INVARIANT" bash -lc 'rg -n -U "^def frozenResumeThread[^\n]*(\n([ \t][^\n]*)?)*" SeLe4n/Kernel/FrozenOps/Operations.lean | rg -e "setIpcState" -e "ipcObjectCode" -e "ipcStateCode"'
 # (2) THE FROZEN RESUME RE-DERIVES THE BOOST from the blocking graph, on the
