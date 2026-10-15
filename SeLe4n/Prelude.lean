@@ -370,6 +370,29 @@ it exactly as it reduced the inline `match` it replaces. -/
 @[simp] theorem raisedBy_some (base boost : Priority) :
     base.raisedBy (some boost) = ⟨Nat.max base.val boost.val⟩ := rfl
 
+/-- WS-ZA ZA4.7: an optional priority as a scalar code, `0` for none and
+`p + 1` for `p`, so a field holding a priority boost stores no `some` cell
+(the same encoding as `ThreadId.optCode`). -/
+@[inline] def optCode : Option Priority → Nat
+  | none => 0
+  | some p => p.val + 1
+
+/-- The optional priority a code stands for; inverse of `optCode`. -/
+@[inline] def ofOptCode : Nat → Option Priority
+  | 0 => none
+  | k + 1 => some ⟨k⟩
+
+@[simp] theorem ofOptCode_optCode (o : Option Priority) : ofOptCode (optCode o) = o := by
+  cases o <;> rfl
+
+@[simp] theorem optCode_ofOptCode (n : Nat) : optCode (ofOptCode n) = n := by
+  cases n <;> rfl
+
+@[simp] theorem ofOptCode_zero : ofOptCode 0 = none := rfl
+
+@[simp] theorem optCode_none : optCode none = 0 := rfl
+
+
 end Priority
 
 /-- M-03/WS-E6: Scheduling deadline for EDF (Earliest Deadline First) tie-breaking.

@@ -1157,8 +1157,10 @@ structure TCB where
       its SchedContext binding. Set by `propagatePriorityInheritance` when
       the thread holds a pending Reply on behalf of a higher-priority client.
       Cleared by `revertPriorityInheritance` when the client is unblocked.
-      Default `none` = no PIP boost (existing effective priority behavior). -/
-  pipBoost : Option SeLe4n.Priority := none
+      Default `none` = no PIP boost (existing effective priority behavior).
+      WS-ZA ZA4.7: stored as a code (`SeLe4n.Priority.optCode`) and read
+      through the `TCB.pipBoost` view, so a boost write builds no cell. -/
+  pipBoostCode : Nat := 0
   /-- AG8-A (H3-IPC-01/I-01): Explicit timeout flag replacing the fragile
       sentinel pattern (`gpr x0 = 0xFFFFFFFF ∧ ipcState = .ready`).
       Set to `true` by `timeoutThread` when a thread's IPC operation times
@@ -1328,6 +1330,12 @@ theorem TCB.map_cpuAffinity_of_placement {o o' : Option TCB}
     (h : o.map TCB.placement = o'.map TCB.placement) :
     o.map (·.cpuAffinity) = o'.map (·.cpuAffinity) := by
   cases o <;> cases o' <;> simp_all [TCB.placement]
+
+/-- WS-ZA ZA4.7: the thread's priority-inheritance boost, read from its code.
+Reducible, so a record update that leaves the code alone reads the old boost
+by `rfl`.  Written as `pipBoostCode := SeLe4n.Priority.optCode p`. -/
+@[reducible, inline] def TCB.pipBoost (t : TCB) : Option SeLe4n.Priority :=
+  SeLe4n.Priority.ofOptCode t.pipBoostCode
 
 /-- WS-ZA ZA4.7: the reply object of this thread's outstanding call, read from
 its code.  Reducible, as `TCB.ipcState` is, so a record update that leaves the
@@ -1816,7 +1824,7 @@ instance : BEq TCB where
     a.schedContextBinding == b.schedContextBinding &&
     a.timeoutBudget == b.timeoutBudget &&
     a.maxControlledPriority == b.maxControlledPriority &&
-    a.pipBoost == b.pipBoost &&
+    a.pipBoostCode == b.pipBoostCode &&
     a.timedOut == b.timedOut &&
     -- WS-SM SM5.B.4: per-TCB CPU affinity participates in structural equality.
     -- `Option CoreId` (`CoreId = Fin numCores`) derives `DecidableEq`, so its
@@ -2139,11 +2147,15 @@ theorem TCB.ext {a b : TCB}
     rw [← SeLe4n.ReplyId.optCode_ofOptCode a.pendingReceiveReplyCode,
       ← SeLe4n.ReplyId.optCode_ofOptCode b.pendingReceiveReplyCode]
     exact congrArg _ hPendReply
-  clear hReply hPendReply
+  have hPipC : a.pipBoostCode = b.pipBoostCode := by
+    rw [← SeLe4n.Priority.optCode_ofOptCode a.pipBoostCode,
+      ← SeLe4n.Priority.optCode_ofOptCode b.pipBoostCode]
+    exact congrArg _ hPip
+  clear hReply hPendReply hPip
   cases a; cases b
   simp at *
   exact ⟨hTid, hPrio, hDom, hCsp, hVsp, hBuf, hIpcO, hTs, hSlice, hDeadline,
-         hQPrevC, hQPPrevC, hQNextC, hPend, hRC, hFh, hBn, hSc, hTb, hMcp, hPip, hTo,
+         hQPrevC, hQPPrevC, hQNextC, hPend, hRC, hFh, hBn, hSc, hTb, hMcp, hPipC, hTo,
          hCpuAff, hReplyC, hPendReplyC, hPendFault, hFp, hNPrevC, hNNextC,
          hRCore, hRPrio, hRPrev, hRNext, hRBPrev, hRBNext, hWPrev, hWNext, hWHead, hWCount,
          hIpcS⟩

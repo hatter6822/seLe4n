@@ -3636,7 +3636,7 @@ theorem cancelBoundDonationOnCore_runQueueStage {st st' : SystemState}
         (SystemState.updateSchedContext_getTcb? st scId _ hInv x)
     · exact fun hInv => SystemState.StateMono.of_getTcb
         (SystemState.updateSchedContext_getTcb? st scId _ hInv)
-    · show (st.updateSchedContext scId _).scheduler.current = _
+    · show (st.updateSchedContext scId _).scheduler.currentCode = _
       rw [hU]
   · cases h
 

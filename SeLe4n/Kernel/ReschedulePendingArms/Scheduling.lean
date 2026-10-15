@@ -68,15 +68,15 @@ theorem updatePipBoostOnCore_stepCovers (e c : CoreId) (st : SystemState)
     split
     · exact stepCovers_refl e st
     have hAdm := SystemState.rewriteAdmissible_tcb hT
-      { tcb with pipBoost := PriorityInheritance.computeMaxWaiterPriority st tid }
+      { tcb with pipBoostCode := SeLe4n.Priority.optCode (PriorityInheritance.computeMaxWaiterPriority st tid) }
     have hK : keyInputsEqExcept tid st (st.rewriteObject tid.toObjId _ hAdm) := by
       have := keyInputsEqExcept_updateTcb (f := fun t => { t with
-        pipBoost := PriorityInheritance.computeMaxWaiterPriority st tid }) hInv (by rw [hT]; rfl)
+        pipBoostCode := SeLe4n.Priority.optCode (PriorityInheritance.computeMaxWaiterPriority st tid) }) hInv (by rw [hT]; rfl)
       unfold SystemState.updateTcb at this
       rw [SystemState.getTcbWitnessed?_eq_some hT] at this
       exact this
     have hAgree := SystemState.RunCoresAgree.rewriteObject_tcb
-      (tcb' := { tcb with pipBoost := PriorityInheritance.computeMaxWaiterPriority st tid })
+      (tcb' := { tcb with pipBoostCode := SeLe4n.Priority.optCode (PriorityInheritance.computeMaxWaiterPriority st tid) })
       hT hAdm hInv rfl
     split
     · split

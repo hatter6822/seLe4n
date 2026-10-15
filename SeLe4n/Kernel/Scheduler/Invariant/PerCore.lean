@@ -812,7 +812,7 @@ over-strong-hypothesis shape this project retires elsewhere. -/
 theorem schedulerInvariantBase_perCore_of_schedulerFields {st st' : SystemState}
     {c : CoreId}
     (h : schedulerInvariantBase_perCore st c)
-    (hCur : st'.scheduler.current = st.scheduler.current)
+    (hCur : st'.scheduler.currentCode = st.scheduler.currentCode)
     (hRq : st'.scheduler.runQueue = st.scheduler.runQueue)
     (hTcb : ∀ tid : SeLe4n.ThreadId, (st.getTcb? tid).isSome → (st'.getTcb? tid).isSome) :
     schedulerInvariantBase_perCore st' c := by
@@ -841,7 +841,7 @@ theorem schedulerInvariantBase_perCore_of_schedulerFields {st st' : SystemState}
 /-- WS-RR RR8.16 (`v0.35.197`): the system-wide instance of the field frame. -/
 theorem schedulerInvariantBase_smp_of_schedulerFields {st st' : SystemState}
     (h : schedulerInvariantBase_smp st)
-    (hCur : st'.scheduler.current = st.scheduler.current)
+    (hCur : st'.scheduler.currentCode = st.scheduler.currentCode)
     (hRq : st'.scheduler.runQueue = st.scheduler.runQueue)
     (hTcb : ∀ tid : SeLe4n.ThreadId, (st.getTcb? tid).isSome → (st'.getTcb? tid).isSome) :
     schedulerInvariantBase_smp st' :=

@@ -429,7 +429,7 @@ private def sr025_cancelDonationUnboundIdentity : IO Unit := do
 private def sr026_resumePipBoostRecomputedNoWaiters : IO Unit := do
   let tid : SeLe4n.ThreadId := ⟨1⟩
   -- Construct an Inactive TCB with a stale pipBoost from before suspend.
-  let tcb := { mkTcb 1 .Inactive with pipBoost := some ⟨50⟩ }
+  let tcb := { mkTcb 1 .Inactive with pipBoostCode := SeLe4n.Priority.optCode (some ⟨50⟩) }
   let st := mkState [(⟨1⟩, .tcb tcb)]
   match bootResumeThread st ⟨tid, by decide⟩ with
   | .ok st' =>
@@ -449,7 +449,7 @@ private def sr026_resumePipBoostRecomputedNoWaiters : IO Unit := do
     graph, not the pre-suspend one. -/
 private def sr027_suspendResumePipReroundtrip : IO Unit := do
   let tid : SeLe4n.ThreadId := ⟨1⟩
-  let tcb := { mkTcb 1 .Ready with pipBoost := some ⟨30⟩ }
+  let tcb := { mkTcb 1 .Ready with pipBoostCode := SeLe4n.Priority.optCode (some ⟨30⟩) }
   let st := mkState [(⟨1⟩, .tcb tcb)]
   match bootSuspendThread st ⟨tid, by decide⟩ with
   | .ok stMid =>
@@ -476,7 +476,7 @@ private def sr027b_resumeRecomputesPipBoostWithWaiters : IO Unit := do
   let waiterTid : SeLe4n.ThreadId := ⟨2⟩
   let endpointId : SeLe4n.ObjId := ⟨50⟩
   -- Construct an Inactive TCB with a stale pipBoost.
-  let tidTcb := { mkTcb 1 .Inactive with pipBoost := some ⟨50⟩ }
+  let tidTcb := { mkTcb 1 .Inactive with pipBoostCode := SeLe4n.Priority.optCode (some ⟨50⟩) }
   -- Construct a waiter blocked on tid's reply slot at priority 99.
   -- `waitersOf` reads `tcb.tid` (not the ObjId key), so set tcb.tid to
   -- waiterTid and ensure its ipcState targets `tid`.
@@ -513,7 +513,7 @@ private def sr027c_resumeThreadPreservesBlockingAcyclic : IO Unit := do
   let tid : SeLe4n.ThreadId := ⟨1⟩
   let waiterTid : SeLe4n.ThreadId := ⟨2⟩
   let endpointId : SeLe4n.ObjId := ⟨50⟩
-  let tidTcb := { mkTcb 1 .Inactive with pipBoost := some ⟨50⟩ }
+  let tidTcb := { mkTcb 1 .Inactive with pipBoostCode := SeLe4n.Priority.optCode (some ⟨50⟩) }
   let waiterBaseTcb := mkTcb 2 .Ready 99
   let waiterTcb := (waiterBaseTcb.setIpcState (.blockedOnReply endpointId (some tid)))
   let st := mkState [(⟨1⟩, .tcb tidTcb), (⟨2⟩, .tcb waiterTcb)]
@@ -547,7 +547,7 @@ private def sr027c_resumeThreadPreservesBlockingAcyclic : IO Unit := do
 private def sr027d_resumeThreadPipBoostMatchesGraph : IO Unit := do
   let tid : SeLe4n.ThreadId := ⟨1⟩
   let endpointId : SeLe4n.ObjId := ⟨50⟩
-  let tidTcb := { mkTcb 1 .Inactive with pipBoost := some ⟨50⟩ }
+  let tidTcb := { mkTcb 1 .Inactive with pipBoostCode := SeLe4n.Priority.optCode (some ⟨50⟩) }
   let waiterBaseTcb := mkTcb 2 .Ready 99
   let waiterTcb := (waiterBaseTcb.setIpcState (.blockedOnReply endpointId (some tid)))
   let st := mkState [(⟨1⟩, .tcb tidTcb), (⟨2⟩, .tcb waiterTcb)]
@@ -718,7 +718,7 @@ private def sr033_frozenResumeRecomputesPipBoost : IO Unit := do
   let tid : SeLe4n.ThreadId := ⟨1⟩
   let epId : SeLe4n.ObjId := ⟨50⟩
   -- (a) over-boost: a stale boost with no waiter left must be cleared.
-  let staleBoosted := { mkTcb 1 .Inactive with pipBoost := some ⟨90⟩ }
+  let staleBoosted := { mkTcb 1 .Inactive with pipBoostCode := SeLe4n.Priority.optCode (some ⟨90⟩) }
   let fstA := mkFrozenState [(⟨1⟩, .tcb staleBoosted)]
   match frozenResumeThread tid fstA with
   | .ok ((), fstA') =>
@@ -757,7 +757,7 @@ private def sr034_frozenResumePreemptsOnEffectivePriority : IO Unit := do
   let waiter := ((mkTcb 2 .Ready 90).setIpcState (.blockedOnReply epId (some tid)))
   let resumed := mkTcb 1 .Inactive 10
   let current := mkTcb 3 .Ready 50
-  let boostedResumed := { resumed with pipBoost := some ⟨90⟩ }
+  let boostedResumed := { resumed with pipBoostCode := SeLe4n.Priority.optCode (some ⟨90⟩) }
   expect "(a) the retired base reading does NOT preempt"
     (retiredFrozenPreempts boostedResumed current == false)
   expect "(a) the live effective reading DOES preempt"
@@ -772,7 +772,7 @@ private def sr034_frozenResumePreemptsOnEffectivePriority : IO Unit := do
       fstA'.scheduler.current.isNone
   | .error e => throw <| IO.userError s!"frozen resume (a) failed: {repr e}"
   -- (b) base 90 with no boost against a current thread at base 10 boosted to 95.
-  let boostedCurrent := { mkTcb 3 .Ready 10 with pipBoost := some ⟨95⟩ }
+  let boostedCurrent := { mkTcb 3 .Ready 10 with pipBoostCode := SeLe4n.Priority.optCode (some ⟨95⟩) }
   let plainResumed := mkTcb 1 .Inactive 90
   expect "(b) the retired base reading DOES preempt"
     (retiredFrozenPreempts plainResumed boostedCurrent)

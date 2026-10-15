@@ -7700,7 +7700,7 @@ run_check "INVARIANT" rg -n '^theorem fpAccessOnCore_saves_owner($|[ ({:\[\]])' 
 # positives name the relation (the save keyed on the resident record; the settle
 # applied to the committed state in each entry), and the witness computes the
 # retired readings beside the live ones.
-run_check "INVARIANT" rg -n '^  resident : _root_\.Vector \(Option ThreadId\) numCores :=$' SeLe4n/Machine.lean
+run_check "INVARIANT" rg -n '^  residentCode : _root_\.Vector Nat numCores :=$' SeLe4n/Machine.lean
 run_check "INVARIANT" rg -n -U '^def saveVacatedFrameOnCore[^\n]*(\n([ \t][^\n]*)?)*    \| none, some tid =>\n      match st\.getTcb\? tid with\n      \| some _ => st\.updateTcb tid fun t => \{ t with registerContext := saved \}$' SeLe4n/Kernel/Architecture/TrapFrameSave.lean
 run_check "INVARIANT" rg -n -U '^  \| some ic =>\n    let rf := ic\.snapshot\n    saveVacatedFrameOnCore \(saveTrapFrameOnCore st c rf\) c rf \(restartAtSvc rf\)$' SeLe4n/Kernel/Architecture/TrapFrameSave.lean
 run_check "INVARIANT" rg -n '^  let st2 := deferResidentElsewhere \(dispatchVacatedCore st c\) c$' SeLe4n/Kernel/Scheduler/PriorityInheritance/PerCore.lean
@@ -19875,7 +19875,7 @@ run_negative_check "INVARIANT" bash -lc 'rg -n -U "^def frozenResumeThread[^\n]*
 # (2) THE FROZEN RESUME RE-DERIVES THE BOOST from the blocking graph, on the
 # CLEARED state -- a thread its own `ipcState` recorded as blocked on itself
 # must not count itself, which is why the order is pinned and not just the call.
-run_check "INVARIANT" bash -lc 'rg -n -U "^def frozenResumeThread[^\n]*(\n([ \t][^\n]*)?)*" SeLe4n/Kernel/FrozenOps/Operations.lean | rg -F "pipBoost := frozenComputeMaxWaiterPriority stCleared tid"'
+run_check "INVARIANT" bash -lc 'rg -n -U "^def frozenResumeThread[^\n]*(\n([ \t][^\n]*)?)*" SeLe4n/Kernel/FrozenOps/Operations.lean | rg -F "pipBoostCode := SeLe4n.Priority.optCode (frozenComputeMaxWaiterPriority stCleared tid)"'
 # (3) AND ITS PREEMPTION TEST READS THE EFFECTIVE PRIORITY, not the two bases.
 run_check "INVARIANT" bash -lc 'rg -n -U "^def frozenResumeThread[^\n]*(\n([ \t][^\n]*)?)*" SeLe4n/Kernel/FrozenOps/Operations.lean | rg -F ".boostedPriority.val > curTcb.boostedPriority.val"'
 run_negative_check "INVARIANT" bash -lc 'rg -n -U "^def frozenResumeThread[^\n]*(\n([ \t][^\n]*)?)*" SeLe4n/Kernel/FrozenOps/Operations.lean | rg -F ".priority.val > curTcb.priority.val"'
@@ -21481,7 +21481,7 @@ run_check "INVARIANT" rg -n '^theorem propagatePipChainCrossCore_sameSchedContex
 # (`blockedSenderShrinks`) and the `schedContextBinding` reading
 # (`donationOwnerFlowsToHolder`) are two instances of one proof.  A mutation
 # that narrows it back to one field keeps the name and breaks the second asker.
-run_check "INVARIANT" bash -lc 'rg -U -n "^theorem updatePipBoostOnCore_tcb_backward[^\n]*(\n([ \t][^\n]*)?)*tcb.\.withoutRunLinks = \{ tcb with pipBoost := p \}\.withoutRunLinks" SeLe4n/Kernel/Scheduler/PriorityInheritance/Propagate.lean'
+run_check "INVARIANT" bash -lc 'rg -U -n "^theorem updatePipBoostOnCore_tcb_backward[^\n]*(\n([ \t][^\n]*)?)*tcb.\.withoutRunLinks = \{ tcb with pipBoostCode := p \}\.withoutRunLinks" SeLe4n/Kernel/Scheduler/PriorityInheritance/Propagate.lean'
 run_check "INVARIANT" rg -n '^theorem propagatePipChainCrossCore_tcb_backward($|[ ({:\[\]])' SeLe4n/Kernel/Scheduler/PriorityInheritance/Propagate.lean
 # (2) The labelled pack is OPT-IN: `ipcReachable` is unchanged and projects out
 # of it, so no existing consumer carries a `ctx` it does not read.

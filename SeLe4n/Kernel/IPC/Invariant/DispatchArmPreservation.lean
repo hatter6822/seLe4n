@@ -4578,7 +4578,7 @@ private theorem retypeTargetDetached_of_objects_scheduler_eq
     {st st2 : SystemState} {target : SeLe4n.ObjId}
     (hObjs : st2.objects = st.objects) (hSched : st2.scheduler = st.scheduler)
     (hFpOwner : st2.machine.fpOwner = st.machine.fpOwner)
-    (hResident : st2.machine.resident = st.machine.resident)
+    (hResident : st2.machine.residentCode = st.machine.residentCode)
     (hDet : retypeTargetDetached st target) : retypeTargetDetached st2 target := by
   constructor
   · intro sc; rw [hObjs]; exact hDet.notSc sc
@@ -4604,8 +4604,9 @@ private theorem retypeTargetDetached_of_objects_scheduler_eq
     rw [hFpOwner]; exact hDet.tcbFpReleased t hT c
   -- PR #904 review (`v0.36.41`): and the residency clause on its own table.
   · intro t hT c; rw [hObjs] at hT
-    show st2.machine.resident.get c ≠ some t.tid
-    rw [hResident]; exact hDet.tcbResidencyReleased t hT c
+    have h := hDet.tcbResidencyReleased t hT c
+    simp only [MachineState.resident, MachineState.residentOnCore] at h ⊢
+    rwa [hResident]
   · intro tid tcb hT; rw [hObjs] at hT; exact hDet.blockedRefsAvoid tid tcb hT
   · intro a tcbA b hA hN; rw [hObjs] at hA; exact hDet.notQueueLinked a tcbA b hA hN
   · intro b tcbB a hB hP; rw [hObjs] at hB; exact hDet.notPrevLinked b tcbB a hB hP
@@ -4680,7 +4681,7 @@ theorem lifecycleRetypeDirectWithCleanup_preserves_ipcInvariantFull
               hFresh
               (retypeTargetDetached_of_objects_scheduler_eq hSO hSS
                 (show stClean.machine.fpOwner = st.machine.fpOwner by rw [hCF])
-                (show stClean.machine.resident = st.machine.resident by rw [hCF]) hDet)
+                (show stClean.machine.residentCode = st.machine.residentCode by rw [hCF]) hDet)
               (ipcInvariantFull_of_objects_scheduler_eq hSO hSS hInv)
               hStep
 
@@ -4854,7 +4855,7 @@ private theorem resumeReadyMidState_preserves_ipcInvariantFull
       rw [SystemState.updateTcb_eq_of_some hLk]
       exact insertObjects_tcbFieldUpdate_preserves_ipcInvariantFull
         (Lifecycle.Suspend.restoreToReady st tid) tid t
-        { t with threadState := .Ready, pipBoost := SeLe4n.Kernel.PriorityInheritance.computeMaxWaiterPriority (Lifecycle.Suspend.restoreToReady st tid) tid }
+        { t with threadState := .Ready, pipBoostCode := SeLe4n.Priority.optCode (SeLe4n.Kernel.PriorityInheritance.computeMaxWaiterPriority (Lifecycle.Suspend.restoreToReady st tid) tid) }
         hObjInv1 hInv1
         ((SystemState.getTcb?_eq_some_iff _ tid t).mp hLk)
         rfl rfl rfl rfl rfl rfl rfl rfl rfl
@@ -4913,11 +4914,11 @@ private theorem resumeReadyMidState_getTcb_ready
       rw [SystemState.updateTcb_eq_of_some hLk] at hT
       have hTobj := (SystemState.getTcb?_eq_some_iff _ tid tcb).mp hT
       dsimp only [] at hTobj
-      have hAt : ((Lifecycle.Suspend.restoreToReady st tid).objects.insert tid.toObjId (KernelObject.tcb { t with threadState := .Ready, pipBoost := SeLe4n.Kernel.PriorityInheritance.computeMaxWaiterPriority (Lifecycle.Suspend.restoreToReady st tid) tid }))[tid.toObjId]? = some (KernelObject.tcb { t with threadState := .Ready, pipBoost := SeLe4n.Kernel.PriorityInheritance.computeMaxWaiterPriority (Lifecycle.Suspend.restoreToReady st tid) tid }) := by
+      have hAt : ((Lifecycle.Suspend.restoreToReady st tid).objects.insert tid.toObjId (KernelObject.tcb { t with threadState := .Ready, pipBoostCode := SeLe4n.Priority.optCode (SeLe4n.Kernel.PriorityInheritance.computeMaxWaiterPriority (Lifecycle.Suspend.restoreToReady st tid) tid) }))[tid.toObjId]? = some (KernelObject.tcb { t with threadState := .Ready, pipBoostCode := SeLe4n.Priority.optCode (SeLe4n.Kernel.PriorityInheritance.computeMaxWaiterPriority (Lifecycle.Suspend.restoreToReady st tid) tid) }) := by
         simp only [RHTable_getElem?_eq_get?]
         exact RobinHood.RHTable.getElem?_insert_self _ _ _ hObjInv1
       rw [hAt] at hTobj
-      obtain rfl : ({ t with threadState := .Ready, pipBoost := SeLe4n.Kernel.PriorityInheritance.computeMaxWaiterPriority (Lifecycle.Suspend.restoreToReady st tid) tid } : TCB) = tcb := by
+      obtain rfl : ({ t with threadState := .Ready, pipBoostCode := SeLe4n.Priority.optCode (SeLe4n.Kernel.PriorityInheritance.computeMaxWaiterPriority (Lifecycle.Suspend.restoreToReady st tid) tid) } : TCB) = tcb := by
         simpa using hTobj
       show t.ipcState = .ready
       have hPre1 := (SystemState.getTcb?_eq_some_iff _ tid t).mp hLk

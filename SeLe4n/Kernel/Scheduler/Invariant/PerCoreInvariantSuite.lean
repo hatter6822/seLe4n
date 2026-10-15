@@ -2512,7 +2512,7 @@ theorem updatePipBoost_preserves_schedulerInvariantStructuralRegNodup_smp
     split
     · exact hPre
     · -- the boost changed: `st' = insert tid {tcb with pipBoost := newBoost}`.
-      let tcb' : TCB := { tcb with pipBoost := computeMaxWaiterPriority st tid }
+      let tcb' : TCB := { tcb with pipBoostCode := SeLe4n.Priority.optCode (computeMaxWaiterPriority st tid) }
       have hst' : schedulerInvariantStructuralRegNodup_smp
           { st with objects := st.objects.insert tid.toObjId (.tcb tcb') } :=
         objects_insert_tcb_sameReg_preserves_schedulerInvariantStructuralRegNodup_smp

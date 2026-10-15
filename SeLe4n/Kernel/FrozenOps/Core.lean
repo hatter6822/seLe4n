@@ -712,7 +712,7 @@ def frozenUpdatePipBoost (st : FrozenSystemState) (tid : SeLe4n.ThreadId)
       let newBoost := frozenComputeMaxWaiterPriority st tid
       if tcb.pipBoost == newBoost then st
       else
-        let tcb' := { tcb with pipBoost := newBoost }
+        let tcb' := { tcb with pipBoostCode := SeLe4n.Priority.optCode newBoost }
         let oldPrio := tcb.boostedPriority
         let newPrio := tcb'.boostedPriority
         let st' : FrozenSystemState :=

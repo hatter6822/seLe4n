@@ -12,41 +12,6 @@ import SeLe4n.Kernel.Concurrency.Sgi
 import SeLe4n.Kernel.Scheduler.IdleThread
 import SeLe4n.Kernel.Scheduler.RunQueueLinkFrame
 
-namespace SeLe4n.Model.SchedulerState
-
-open SeLe4n.Kernel.Concurrency (CoreId)
-
-/-- `some tid`, written into `o`'s cell when `o` is a `some` held by no other
-reference.  Branching on the old thread is what lets the compiler hand the
-cell on: a `match` whose arms build the same value is folded to that value,
-which is a fresh cell (`reuseSome_eq`). -/
-def reuseSome (o : Option SeLe4n.ThreadId) (tid : SeLe4n.ThreadId) : Option SeLe4n.ThreadId :=
-  match o with
-  | some old => if old = tid then some old else some tid
-  | none => some tid
-
-theorem reuseSome_eq (o : Option SeLe4n.ThreadId) (tid : SeLe4n.ThreadId) :
-    reuseSome o tid = some tid := by
-  unfold reuseSome; split
-  · split <;> simp_all
-  · rfl
-
-/-- WS-ZA ZA4.5: core `c`'s current slot set to `some tid`, the slot's old
-`some` cell rewritten in place.  The old value is taken out of the slot (which
-holds `none`, a scalar, meanwhile) so `reuseSome` receives its only reference.
-Proven equal (`setCurrentSomeOnCore_eq`). -/
-@[inline] def setCurrentSomeOnCore (s : SchedulerState) (c : CoreId) (tid : SeLe4n.ThreadId) :
-    SchedulerState :=
-  let o := s.current.get c
-  let cur := s.current.set c.val none c.isLt
-  { s with current := cur.set c.val (reuseSome o tid) c.isLt }
-
-theorem setCurrentSomeOnCore_eq (s : SchedulerState) (c : CoreId) (tid : SeLe4n.ThreadId) :
-    s.setCurrentSomeOnCore c tid = s.setCurrentOnCore c (some tid) := by
-  unfold setCurrentSomeOnCore setCurrentOnCore
-  simp only [Vector.set_set, reuseSome_eq]
-
-end SeLe4n.Model.SchedulerState
 
 namespace SeLe4n.Kernel
 

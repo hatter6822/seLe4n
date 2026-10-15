@@ -678,8 +678,8 @@ theorem scheduleEffectiveOnCoreTotal_eq (st : SystemState) (c : Concurrency.Core
 
 /-- WS-ZA ZA4.5: the compiled `scheduleEffectiveOnCoreTotal`.  The state is
 returned as it is, with no `Except` cell around it; the dispatched thread
-leaves the run queue through its TCB links (`runRemoveOnCore`) and becomes current in
-the old current thread's cell (`setCurrentSomeOnCore`).  The two arms that
+leaves the run queue through its TCB links (`runRemoveOnCore`) and becomes current as
+its code in the core's slot.  The two arms that
 return `st` unchanged are the refusals the scheduling point never takes
 (`scheduleEffectiveOnCore_ne_error`).  Proven equal
 (`scheduleEffectiveOnCoreTotal_eq_impl`). -/
@@ -695,7 +695,7 @@ def scheduleEffectiveOnCoreTotalImpl (st : SystemState) (c : Concurrency.CoreId)
             let stSaved := saveOutgoingContextOnCore st c
             let stDequeued := stSaved.runRemoveOnCore c tid
             let stRestored := restoreIncomingContextOnCore stDequeued c tid
-            { stRestored with scheduler := (stRestored.scheduler.setCurrentSomeOnCore c tid)
+            { stRestored with scheduler := (stRestored.scheduler.setCurrentOnCore c (some tid))
               |>.clearReschedulePendingOnCore c }
           else st
       | none => st
@@ -720,7 +720,7 @@ def scheduleEffectiveOnCoreTotalImpl (st : SystemState) (c : Concurrency.CoreId)
       rw [hT] at hne
       simp only at hne ⊢
       split
-      · simp only [SchedulerState.setCurrentSomeOnCore_eq]
+      · try simp only []
       · next h => rw [if_neg h] at hne; exact absurd rfl (hne _)
 
 /-- WS-ZA ZA4.3: the yield on core `c`, refusing in the state it was handed

@@ -284,7 +284,7 @@ def projectKernelObject (ctx : LabelingContext) (observer : IfObserver) (obj : K
       -- logical identity).  The matching `Reply.caller` back-link is erased by
       -- the `.reply` arm below.
       .tcb { tcb with registerContext := default, schedContextBinding := .unbound,
-                       pipBoost := none, pendingMessage := none, timedOut := false,
+                       pipBoostCode := SeLe4n.Priority.optCode none, pendingMessage := none, timedOut := false,
                        cpuAffinity := none, replyObjectCode := 0,
                        pendingReceiveReplyCode := 0,
                        -- WS-BP BP7.9: the saved FP/SIMD context is the thread's
@@ -1008,7 +1008,7 @@ theorem projectState_scheduler_current_cleared_when_high
     have hLHS : projectCurrent ctx observer
         { st with scheduler := st.scheduler.setCurrentOnCore bootCoreId none } = none := by
       simp only [projectCurrent, SchedulerState.setCurrentOnCore, SchedulerState.currentOnCore,
-        PerCoreVector.get_set_eq]
+        PerCoreVector.get_set_eq, SeLe4n.ThreadId.ofOptCode_optCode]
     rw [hLHS]; unfold projectCurrent
     cases hSome : (st.scheduler.currentOnCore bootCoreId) with
     | none => rfl
@@ -1019,7 +1019,7 @@ theorem projectState_scheduler_current_cleared_when_high
     have hLHS : projectMachineRegs ctx observer
         { st with scheduler := st.scheduler.setCurrentOnCore bootCoreId none } = none := by
       simp only [projectMachineRegs, SchedulerState.setCurrentOnCore, SchedulerState.currentOnCore,
-        PerCoreVector.get_set_eq]
+        PerCoreVector.get_set_eq, SeLe4n.ThreadId.ofOptCode_optCode]
     rw [hLHS]; unfold projectMachineRegs
     cases hSome : (st.scheduler.currentOnCore bootCoreId) with
     | none => rfl

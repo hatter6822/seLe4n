@@ -95,7 +95,7 @@ exclusively owned state both are staged in place and nothing is allocated. -/
 `Option.isEqSome`, so it builds no `some tid` and no equality closure
 (WS-ZA ZA2.2), and a current caller's context and bank each staged in its
 slot (`stageCurrentCallerReturn`). -/
-def stageCallerReturnForImpl (caller? : Option SeLe4n.ThreadId) (post : SystemState)
+@[inline] def stageCallerReturnForImpl (caller? : Option SeLe4n.ThreadId) (post : SystemState)
     (c : CoreId) : SyscallOutcome → SystemState
   | .returns f =>
     match caller? with
@@ -142,11 +142,12 @@ and, when it is current, the core's bank, each in its slot, so no frame
 record is passed.  A call, not inlined, so the state arrives exclusive: inlined
 into the entry, the branches that answer `post` unchanged kept it alive across
 the writes. -/
-@[noinline] def stageCallerReturnWords (caller? : Option SeLe4n.ThreadId) (post : SystemState)
+@[noinline] def stageCallerReturnWords (callerCode : Nat) (post : SystemState)
     (c : CoreId) (tag w0 w1 w2 w3 w4 w5 : UInt64) : SystemState :=
   if tag = 0 then
-    match caller? with
-    | some tid =>
+    match callerCode with
+    | k + 1 =>
+      let tid : SeLe4n.ThreadId := ⟨k⟩
       -- The current-thread test reads `post` before either write, so the
       -- writes find the state exclusive.
       if (post.scheduler.currentOnCore c).isEqSome tid then
@@ -155,17 +156,18 @@ the writes. -/
         { s1 with machine := m }
       else
         post.updateTcb tid (TCB.withReturnWords · w0 w1 w2 w3 w4 w5)
-    | none => post
+    | 0 => post
   else post
 
 theorem stageCallerReturnFor_eq_words (caller? : Option SeLe4n.ThreadId) (post : SystemState)
     (c : CoreId) (o : SyscallOutcome) :
     stageCallerReturnFor caller? post c o =
-      stageCallerReturnWords caller? post c o.words.1 o.words.2.1 o.words.2.2.1
+      stageCallerReturnWords (SeLe4n.ThreadId.optCode caller?) post c o.words.1 o.words.2.1 o.words.2.2.1
         o.words.2.2.2.1 o.words.2.2.2.2.1 o.words.2.2.2.2.2.1 o.words.2.2.2.2.2.2 := by
   rw [stageCallerReturnFor_eq_impl]
   cases o <;> cases caller? <;>
     simp only [stageCallerReturnForImpl, stageCallerReturnWords, SyscallOutcome.words,
+      SeLe4n.ThreadId.optCode,
       SyscallOutcome.tagWord, SyscallOutcome.mailboxFrame, ↓reduceIte, stageCurrentCallerReturn,
       writeReturnFrameToTcb, SeLe4n.Model.TCB.withReturnFrame, stageFrameRegs,
       SeLe4n.RegisterFile.stageReturnFrame, stageReturnWords,

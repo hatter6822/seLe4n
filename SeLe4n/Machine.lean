@@ -1028,8 +1028,8 @@ structure MachineState where
       resident thread, not to nobody), and a thread resident on one core is not
       resumed on another until the first has saved it
       (`Architecture.residentElsewhere`). -/
-  resident : _root_.Vector (Option ThreadId) numCores :=
-    _root_.Vector.replicate numCores none
+  residentCode : _root_.Vector Nat numCores :=
+    _root_.Vector.replicate numCores 0
 
 instance : Inhabited MachineState where
   default := { coreRegs := _root_.Vector.replicate numCores default, memory := (fun _ => 0), timer := 0 }
@@ -1151,24 +1151,29 @@ theorem MachineState.modifyRegsOnCore_eq (ms : MachineState) (c : CoreId)
 /-- **PR #904 review (`v0.36.41`)**: the thread whose EL0 context core `c`'s
 registers hold. -/
 @[inline] def MachineState.residentOnCore (ms : MachineState) (c : CoreId) : Option ThreadId :=
-  ms.resident.get c
+  ThreadId.ofOptCode (ms.residentCode.get c)
+
+/-- Every core's resident thread, decoded (WS-ZA ZA4.7: stored as codes,
+`residentCode`, so a settle writes a scalar). -/
+def MachineState.resident (ms : MachineState) : _root_.Vector (Option ThreadId) numCores :=
+  ms.residentCode.map ThreadId.ofOptCode
 
 /-- **PR #904 review (`v0.36.41`)**: record `t?` as core `c`'s resident thread. -/
 @[inline] def MachineState.setResidentOnCore (ms : MachineState) (c : CoreId)
     (t? : Option ThreadId) : MachineState :=
-  { ms with resident := ms.resident.set c.val t? c.isLt }
+  { ms with residentCode := ms.residentCode.set c.val (ThreadId.optCode t?) c.isLt }
 
 @[simp] theorem MachineState.residentOnCore_setResidentOnCore_self (ms : MachineState)
     (c : CoreId) (t? : Option ThreadId) :
     (ms.setResidentOnCore c t?).residentOnCore c = t? := by
   simp only [MachineState.residentOnCore, MachineState.setResidentOnCore]
-  exact SeLe4n.PerCoreVector.get_set_eq ms.resident c t?
+  rw [SeLe4n.PerCoreVector.get_set_eq ms.residentCode c _, ThreadId.ofOptCode_optCode]
 
 @[simp] theorem MachineState.residentOnCore_setResidentOnCore_ne (ms : MachineState)
     (c c' : CoreId) (t? : Option ThreadId) (h : c ≠ c') :
     (ms.setResidentOnCore c t?).residentOnCore c' = ms.residentOnCore c' := by
   simp only [MachineState.residentOnCore, MachineState.setResidentOnCore]
-  exact SeLe4n.PerCoreVector.get_set_ne ms.resident c c' t? h
+  rw [SeLe4n.PerCoreVector.get_set_ne ms.residentCode c c' _ h]
 
 /-- A residency write touches nothing but the residency table. -/
 @[simp] theorem MachineState.setResidentOnCore_coreRegs (ms : MachineState) (c : CoreId)

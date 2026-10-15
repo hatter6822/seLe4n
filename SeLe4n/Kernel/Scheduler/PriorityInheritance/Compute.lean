@@ -155,11 +155,6 @@ link codes and keeps the running maximum as a code (`0` for none, `p + 1` for
 priority `p`), so it builds neither the list nor an `Option` per waiter, and
 reads each TCB through `objectEntry?`, which allocates nothing. -/
 
-/-- The running maximum as an optional priority: `0` is none. -/
-@[inline] def maxCodeToPriority : Nat → Option SeLe4n.Priority
-  | 0 => none
-  | k + 1 => some ⟨k⟩
-
 /-- The walk of at most `n` waiters from the one code `c` names, folding each
 waiter's effective priority into the maximum code `acc`. -/
 def maxWaiterCode (st : SystemState) : Nat → Nat → Nat → Nat
@@ -172,13 +167,20 @@ def maxWaiterCode (st : SystemState) : Nat → Nat → Nat → Nat
       | _ => acc
     | none => acc
 
+/-- WS-ZA ZA4.7: the maximum waiter priority as its code
+(`SeLe4n.Priority.optCode`), the form the boost write stores in
+`TCB.pipBoostCode`, so the boost never builds the optional priority. -/
+def computeMaxWaiterCode (st : SystemState) (tid : ThreadId) : Nat :=
+  match st.objectEntry? tid.toObjId with
+  | some e => match e.value with
+    | .tcb ts => maxWaiterCode st ts.replyWaitersCount ts.replyWaitersHeadCode 0
+    | _ => 0
+  | none => 0
+
 /-- WS-ZA ZA4.6: the compiled `computeMaxWaiterPriority` (see above). -/
-def computeMaxWaiterPriorityImpl (st : SystemState) (tid : ThreadId) : Option SeLe4n.Priority :=
-  maxCodeToPriority (match st.objectEntry? tid.toObjId with
-    | some e => match e.value with
-      | .tcb ts => maxWaiterCode st ts.replyWaitersCount ts.replyWaitersHeadCode 0
-      | _ => 0
-    | none => 0)
+@[inline] def computeMaxWaiterPriorityImpl (st : SystemState) (tid : ThreadId) :
+    Option SeLe4n.Priority :=
+  SeLe4n.Priority.ofOptCode (computeMaxWaiterCode st tid)
 
 /-- A TCB read through `objectEntry?` is the `getTcb?` read. -/
 private theorem objectEntry?_tcb_match (st : SystemState) (tid : ThreadId) {α : Sort _}
@@ -198,21 +200,21 @@ private theorem objectEntry?_tcb_match (st : SystemState) (tid : ThreadId) {α :
 
 private theorem cmwpFoldBody_code (st : SystemState) (a : Nat) (w : ThreadId) (t : TCB)
     (h : st.getTcb? w = some t) :
-    cmwpFoldBody st (maxCodeToPriority a) w =
-      maxCodeToPriority (Nat.max a (t.boostedPriority.val + 1)) := by
+    cmwpFoldBody st (SeLe4n.Priority.ofOptCode a) w =
+      SeLe4n.Priority.ofOptCode (Nat.max a (t.boostedPriority.val + 1)) := by
   unfold cmwpFoldBody
   rw [h]
   simp only []
   rw [show (effectiveSchedParams st t) = ((effectiveSchedParams st t).1,
       (effectiveSchedParams st t).2) from rfl, effectiveSchedParams_fst_eq_boostedPriority]
   cases a with
-  | zero => simp [maxCodeToPriority]
-  | succ k => simp [maxCodeToPriority, Nat.succ_max_succ]
+  | zero => simp [SeLe4n.Priority.ofOptCode]
+  | succ k => simp [SeLe4n.Priority.ofOptCode, Nat.succ_max_succ]
 
 private theorem maxWaiterCode_eq_fold (st : SystemState) :
     ∀ (n : Nat) (cur : Option ThreadId) (a : Nat),
-      (st.replyWaitersWalk n cur).foldl (cmwpFoldBody st) (maxCodeToPriority a) =
-        maxCodeToPriority (maxWaiterCode st n (ThreadId.optCode cur) a)
+      (st.replyWaitersWalk n cur).foldl (cmwpFoldBody st) (SeLe4n.Priority.ofOptCode a) =
+        SeLe4n.Priority.ofOptCode (maxWaiterCode st n (ThreadId.optCode cur) a)
   | 0, _, _ => rfl
   | _ + 1, none, _ => rfl
   | n + 1, some w, a => by
@@ -236,7 +238,7 @@ private theorem maxWaiterCode_eq_fold (st : SystemState) :
     @computeMaxWaiterPriority = @computeMaxWaiterPriorityImpl := by
   funext st tid
   rw [computeMaxWaiterPriority_eq_cmwpFoldBody]
-  unfold computeMaxWaiterPriorityImpl
+  unfold computeMaxWaiterPriorityImpl computeMaxWaiterCode
   have hE := objectEntry?_tcb_match st tid
     (fun ts => maxWaiterCode st ts.replyWaitersCount ts.replyWaitersHeadCode 0) 0
   simp only [] at hE
@@ -246,9 +248,17 @@ private theorem maxWaiterCode_eq_fold (st : SystemState) :
   | none => rfl
   | some ts =>
     simp only []
-    rw [show (none : Option SeLe4n.Priority) = maxCodeToPriority 0 from rfl,
+    rw [show (none : Option SeLe4n.Priority) = SeLe4n.Priority.ofOptCode 0 from rfl,
       maxWaiterCode_eq_fold]
     simp only [TCB.replyWaitersHead, SeLe4n.ThreadId.optCode_ofOptCode]
+
+
+/-- The boost's stored code is the walk's code. -/
+theorem optCode_computeMaxWaiterPriority (st : SystemState) (tid : ThreadId) :
+    SeLe4n.Priority.optCode (computeMaxWaiterPriority st tid) = computeMaxWaiterCode st tid := by
+  rw [show computeMaxWaiterPriority st tid = computeMaxWaiterPriorityImpl st tid from
+    congrFun (congrFun computeMaxWaiterPriority_eq_impl st) tid]
+  exact SeLe4n.Priority.optCode_ofOptCode _
 
 /-- WS-RC R5.B.2 / Phase P1: `computeMaxWaiterPriority` is invariant under
     an operation that preserves the object table.

@@ -862,7 +862,7 @@ reads (the object store, the queues, their ends). -/
 
 /-- The state a run-queue agreement reads. -/
 private def runQueueReading (s : SystemState) :=
-  (s.objects, s.scheduler.runQueue, s.scheduler.runQueueEnds, s.scheduler.current)
+  (s.objects, s.scheduler.runQueue, s.scheduler.runQueueEnds, s.scheduler.currentCode)
 
 private theorem RunQueueStage_of_reading {st st' : SystemState}
     (h : runQueueReading st' = runQueueReading st) : SystemState.RunQueueStage st st' := by
