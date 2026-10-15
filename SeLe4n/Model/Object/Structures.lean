@@ -792,21 +792,17 @@ WS-H13: Uses `guardWidth` and `radixWidth` fields directly for compressed-path
 resolution. The `bitsRemaining` parameter indicates how many address bits
 remain to be resolved at this level.
 
-S4-C: The input CPtr is masked to 64 bits before guard extraction, ensuring
-that the abstract model's unbounded `Nat` address space produces identical
-results to 64-bit hardware registers. The mask is idempotent for values
-already within word64 bounds: `(n % 2^64) % 2^64 = n % 2^64`. -/
+S4-C: The slot index and guard are bit fields of the address's 64-bit word
+(`CPtr.slotBits`, `CPtr.guardBits`); an address is a machine word since WS-ZA
+ZA4.8, so the word mask in their statement is the identity. -/
 def resolveSlot (node : CNode) (cptr : SeLe4n.CPtr) (bitsRemaining : Nat) : Except ResolveError SeLe4n.Slot :=
   let consumed := node.bitsConsumed
   if bitsRemaining < consumed then
     .error .depthMismatch
   else
-    -- S4-C: Mask CPtr to 64 bits for hardware-faithful bit extraction
-    let maskedAddr := cptr.toNat % SeLe4n.machineWordMax
-    let shiftedAddr := maskedAddr >>> (bitsRemaining - consumed)
-    let radixMask := 2 ^ node.radixWidth
-    let slotIndex := shiftedAddr % radixMask
-    let guardExtracted := (shiftedAddr / radixMask) % (2 ^ node.guardWidth)
+    -- S4-C: the slot index and guard are bit fields of the address word
+    let slotIndex := cptr.slotBits (bitsRemaining - consumed) node.radixWidth
+    let guardExtracted := cptr.guardBits (bitsRemaining - consumed) node.radixWidth node.guardWidth
     if guardExtracted = node.guardValue then
       .ok (SeLe4n.Slot.ofNat slotIndex)
     else
@@ -1062,13 +1058,11 @@ theorem resolveSlot_guardMismatch_of_not_guardBounded
   --   guardExtracted := (shiftedAddr / 2^radixWidth) % 2^guardWidth
   -- which is always < 2^guardWidth by Nat.mod_lt.
   -- Since ¬(guardValue < 2^guardWidth), guardExtracted ≠ guardValue.
-  have hGwPos : 0 < 2 ^ node.guardWidth := Nat.pos_of_ne_zero (fun h => by simp [Nat.pow_eq_zero] at h)
   split
   · -- guardExtracted = guardValue case: derive contradiction
     rename_i hEq
-    have hExtractLt := Nat.mod_lt
-      (cptr.toNat % SeLe4n.machineWordMax >>>
-        (bitsRemaining - node.bitsConsumed) / 2 ^ node.radixWidth) hGwPos
+    have hExtractLt := SeLe4n.CPtr.guardBits_lt cptr (bitsRemaining - node.bitsConsumed)
+      node.radixWidth node.guardWidth
     omega
   · -- guardExtracted ≠ guardValue case: already .error .guardMismatch
     rfl
@@ -1193,12 +1187,12 @@ theorem resolveSlot_slotAddressable
     exact absurd hRes (by simp)
   · simp only [hDepth, if_neg, not_false_eq_true] at hRes
     by_cases hGuard :
-        ((((cptr.toNat % SeLe4n.machineWordMax) >>> (bitsRemaining - node.bitsConsumed))
-          / 2 ^ node.radixWidth) % (2 ^ node.guardWidth)) = node.guardValue
+        cptr.guardBits (bitsRemaining - node.bitsConsumed) node.radixWidth node.guardWidth =
+          node.guardValue
     · simp only [hGuard, if_pos] at hRes
       cases hRes
       unfold slotAddressable slotCount SeLe4n.Slot.toNat SeLe4n.Slot.ofNat
-      exact decide_eq_true (Nat.mod_lt _ (Nat.two_pow_pos node.radixWidth))
+      exact decide_eq_true (SeLe4n.CPtr.slotBits_lt _ _ _)
     · simp only [hGuard, if_neg, not_false_eq_true] at hRes
       exact absurd hRes (by simp)
 

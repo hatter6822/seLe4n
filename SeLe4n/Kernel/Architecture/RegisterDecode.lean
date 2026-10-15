@@ -336,9 +336,9 @@ def mergeOverflowWords (st : SystemState) (tid : ThreadId)
     are inherently 64-bit, so `hBound` is trivially satisfied. -/
 theorem decodeCapPtr_roundtrip (c : CPtr) (hBound : isWord64 c.toNat) :
     decodeCapPtr (encodeCapPtr c) = .ok c := by
-  unfold decodeCapPtr encodeCapPtr CPtr.toNat at *
-  have h64 : isWord64Dec c.val = true := (SeLe4n.isWord64Dec_iff c.val).mpr hBound
-  simp [h64, CPtr.ofNat]
+  have h64 : isWord64Dec c.toNat = true := (SeLe4n.isWord64Dec_iff c.toNat).mpr hBound
+  unfold decodeCapPtr encodeCapPtr
+  simp only [h64, if_true, CPtr.ofNat_toNat]
 
 /-- Round-trip: encoding then decoding a SyscallId recovers the original. -/
 theorem decodeSyscallId_roundtrip (s : SyscallId) :
@@ -753,6 +753,17 @@ theorem readReg_val_eq_word (rf : RegisterFile) (r : RegName) :
   unfold readReg readRegWord RegisterFile.gpr
   split <;> rfl
 
+/-- WS-ZA ZA4.8: a register's capability address always decodes, to the
+address its word names — read as the word, an address `≥ 2^63` builds no
+heap number. -/
+theorem decodeCapPtr_readReg (rf : RegisterFile) (r : RegName) :
+    decodeCapPtr (readReg rf r) = .ok (CPtr.ofWord (readRegWord rf r)) := by
+  have hLt : (readRegWord rf r).toNat < machineWordMax := by
+    unfold machineWordMax machineWordBits
+    exact (readRegWord rf r).toNat_lt
+  unfold decodeCapPtr
+  rw [readReg_val_eq_word, if_pos (by simpa [isWord64Dec] using hLt), CPtr.ofWord_eq_ofNat]
+
 /-- The routed syscall a register file names, read straight from the
     registers: `signal`/`wait` only when the decode succeeds as that syscall
     with no overflow words merged, and carries the same operands
@@ -763,9 +774,7 @@ theorem readReg_val_eq_word (rf : RegisterFile) (r : RegName) :
     (regCount : Nat := 32) : RegisterRoutedSyscall :=
   if layout.capPtrReg.val < regCount ∧ layout.msgInfoReg.val < regCount ∧
       layout.syscallNumReg.val < regCount ∧ layout.msgRegs.all (·.val < regCount) = true then
-    match decodeCapPtr (readReg regs layout.capPtrReg) with
-    | .error _ => .viaDecode
-    | .ok capAddr =>
+    let capAddr := CPtr.ofWord (readRegWord regs layout.capPtrReg)
     match decodeMsgInfo (readReg regs layout.msgInfoReg) with
     | .error _ => .viaDecode
     | .ok msgInfo =>
@@ -833,15 +842,14 @@ theorem decodeSyscallArgsFromState_of_routedSignal
   unfold registerRoutedSyscall at h
   split at h
   · next hB =>
-    rcases hC : decodeCapPtr (readReg regs layout.capPtrReg) with e | c
-    · simp only [hC] at h; cases h
+    have hC := decodeCapPtr_readReg regs layout.capPtrReg
     rcases hM : decodeMsgInfo (readReg regs layout.msgInfoReg) with e | mi
-    · simp only [hC, hM] at h; cases h
-    simp only [hC, hM] at h
+    · simp only [hM] at h; cases h
+    simp only [hM] at h
     split at h
     · next hLen =>
       have hD := fun sid hS =>
-        decodeSyscallArgsFromState_of_routed st tid layout regs regCount c mi sid hB hC hM hLen hS
+        decodeSyscallArgsFromState_of_routed st tid layout regs regCount _ mi sid hB hC hM hLen hS
       repeat' (first | (cases h; done) | split at h)
       cases h
       refine ⟨_, hD .notificationSignal ‹_›, rfl, rfl, rfl,
@@ -861,15 +869,14 @@ theorem decodeSyscallArgsFromState_of_routedWait
   unfold registerRoutedSyscall at h
   split at h
   · next hB =>
-    rcases hC : decodeCapPtr (readReg regs layout.capPtrReg) with e | c
-    · simp only [hC] at h; cases h
+    have hC := decodeCapPtr_readReg regs layout.capPtrReg
     rcases hM : decodeMsgInfo (readReg regs layout.msgInfoReg) with e | mi
-    · simp only [hC, hM] at h; cases h
-    simp only [hC, hM] at h
+    · simp only [hM] at h; cases h
+    simp only [hM] at h
     split at h
     · next hLen =>
       have hD := fun sid hS =>
-        decodeSyscallArgsFromState_of_routed st tid layout regs regCount c mi sid hB hC hM hLen hS
+        decodeSyscallArgsFromState_of_routed st tid layout regs regCount _ mi sid hB hC hM hLen hS
       repeat' (first | (cases h; done) | split at h)
       cases h
       exact ⟨_, hD .notificationWait ‹_›, rfl, rfl, rfl⟩
@@ -887,15 +894,14 @@ theorem decodeSyscallArgsFromState_of_routedYield
   unfold registerRoutedSyscall at h
   split at h
   · next hB =>
-    rcases hC : decodeCapPtr (readReg regs layout.capPtrReg) with e | c
-    · simp only [hC] at h; cases h
+    have hC := decodeCapPtr_readReg regs layout.capPtrReg
     rcases hM : decodeMsgInfo (readReg regs layout.msgInfoReg) with e | mi
-    · simp only [hC, hM] at h; cases h
-    simp only [hC, hM] at h
+    · simp only [hM] at h; cases h
+    simp only [hM] at h
     split at h
     · next hLen =>
       have hD := fun sid hS =>
-        decodeSyscallArgsFromState_of_routed st tid layout regs regCount c mi sid hB hC hM hLen hS
+        decodeSyscallArgsFromState_of_routed st tid layout regs regCount _ mi sid hB hC hM hLen hS
       repeat' (first | (cases h; done) | split at h)
       exact ⟨_, hD .yield ‹_›, rfl, rfl⟩
     · cases h
@@ -917,15 +923,14 @@ theorem decodeSyscallArgsFromState_of_routedSend
   unfold registerRoutedSyscall at h
   split at h
   · next hB =>
-    rcases hC : decodeCapPtr (readReg regs layout.capPtrReg) with e | c
-    · simp only [hC] at h; cases h
+    have hC := decodeCapPtr_readReg regs layout.capPtrReg
     rcases hM : decodeMsgInfo (readReg regs layout.msgInfoReg) with e | mi
-    · simp only [hC, hM] at h; cases h
-    simp only [hC, hM] at h
+    · simp only [hM] at h; cases h
+    simp only [hM] at h
     split at h
     · next hLen =>
       have hD := fun sid hS =>
-        decodeSyscallArgsFromState_of_routed st tid layout regs regCount c mi sid hB hC hM hLen hS
+        decodeSyscallArgsFromState_of_routed st tid layout regs regCount _ mi sid hB hC hM hLen hS
       repeat' (first | (cases h; done) | split at h)
       cases h
       exact ⟨_, hD .send ‹_ = SyscallId.send.toNat ∧ _›.1, rfl, rfl, rfl, rfl,
@@ -949,15 +954,14 @@ theorem decodeSyscallArgsFromState_of_routedCall
   unfold registerRoutedSyscall at h
   split at h
   · next hB =>
-    rcases hC : decodeCapPtr (readReg regs layout.capPtrReg) with e | c
-    · simp only [hC] at h; cases h
+    have hC := decodeCapPtr_readReg regs layout.capPtrReg
     rcases hM : decodeMsgInfo (readReg regs layout.msgInfoReg) with e | mi
-    · simp only [hC, hM] at h; cases h
-    simp only [hC, hM] at h
+    · simp only [hM] at h; cases h
+    simp only [hM] at h
     split at h
     · next hLen =>
       have hD := fun sid hS =>
-        decodeSyscallArgsFromState_of_routed st tid layout regs regCount c mi sid hB hC hM hLen hS
+        decodeSyscallArgsFromState_of_routed st tid layout regs regCount _ mi sid hB hC hM hLen hS
       repeat' (first | (cases h; done) | split at h)
       cases h
       exact ⟨_, hD .call ‹_ = SyscallId.call.toNat ∧ _›.1, rfl, rfl, rfl, rfl,
@@ -980,15 +984,14 @@ theorem decodeSyscallArgsFromState_of_routedReply
   unfold registerRoutedSyscall at h
   split at h
   · next hB =>
-    rcases hC : decodeCapPtr (readReg regs layout.capPtrReg) with e | c
-    · simp only [hC] at h; cases h
+    have hC := decodeCapPtr_readReg regs layout.capPtrReg
     rcases hM : decodeMsgInfo (readReg regs layout.msgInfoReg) with e | mi
-    · simp only [hC, hM] at h; cases h
-    simp only [hC, hM] at h
+    · simp only [hM] at h; cases h
+    simp only [hM] at h
     split at h
     · next hLen =>
       have hD := fun sid hS =>
-        decodeSyscallArgsFromState_of_routed st tid layout regs regCount c mi sid hB hC hM hLen hS
+        decodeSyscallArgsFromState_of_routed st tid layout regs regCount _ mi sid hB hC hM hLen hS
       repeat' (first | (cases h; done) | split at h)
       cases h
       exact ⟨_, hD .reply ‹_ = SyscallId.reply.toNat›, rfl, rfl, rfl, rfl, rfl⟩
@@ -1010,15 +1013,14 @@ theorem decodeSyscallArgsFromState_of_routedReceive
   unfold registerRoutedSyscall at h
   split at h
   · next hB =>
-    rcases hC : decodeCapPtr (readReg regs layout.capPtrReg) with e | c
-    · simp only [hC] at h; cases h
+    have hC := decodeCapPtr_readReg regs layout.capPtrReg
     rcases hM : decodeMsgInfo (readReg regs layout.msgInfoReg) with e | mi
-    · simp only [hC, hM] at h; cases h
-    simp only [hC, hM] at h
+    · simp only [hM] at h; cases h
+    simp only [hM] at h
     split at h
     · next hLen =>
       have hD := fun sid hS =>
-        decodeSyscallArgsFromState_of_routed st tid layout regs regCount c mi sid hB hC hM hLen hS
+        decodeSyscallArgsFromState_of_routed st tid layout regs regCount _ mi sid hB hC hM hLen hS
       repeat' (first | (cases h; done) | split at h)
       all_goals
         cases h
@@ -1045,15 +1047,14 @@ theorem decodeSyscallArgsFromState_of_routedReplyRecv
   unfold registerRoutedSyscall at h
   split at h
   · next hB =>
-    rcases hC : decodeCapPtr (readReg regs layout.capPtrReg) with e | c
-    · simp only [hC] at h; cases h
+    have hC := decodeCapPtr_readReg regs layout.capPtrReg
     rcases hM : decodeMsgInfo (readReg regs layout.msgInfoReg) with e | mi
-    · simp only [hC, hM] at h; cases h
-    simp only [hC, hM] at h
+    · simp only [hM] at h; cases h
+    simp only [hM] at h
     split at h
     · next hLen =>
       have hD := fun sid hS =>
-        decodeSyscallArgsFromState_of_routed st tid layout regs regCount c mi sid hB hC hM hLen hS
+        decodeSyscallArgsFromState_of_routed st tid layout regs regCount _ mi sid hB hC hM hLen hS
       repeat' (first | (cases h; done) | split at h)
       cases h
       exact ⟨_, hD .replyRecv ‹_ = SyscallId.replyRecv.toNat›, rfl, rfl, rfl, rfl, rfl, rfl⟩

@@ -878,7 +878,7 @@ theorem decodeUntypedRetypeArgs_roundtrip (args : UntypedRetypeArgs) :
     rw [Nat.mod_eq_of_lt hLt]; cases t <;> rfl
   simp [hTag', decodeUntypedRetypeArgs, encodeUntypedRetypeArgs, stubDecoded,
     requireMsgReg, hDiv, bind, Except.bind, pure, Except.pure]
-  exact ⟨rfl, rfl, rfl⟩
+  exact ⟨rfl, rfl⟩
 
 /-- T6-C: Round-trip requires that the permissions encode to a valid range.
     `PagePermissions.toNat` always produces values < 32 (5-bit bitfield). -/
@@ -1840,8 +1840,7 @@ def decodeSetFaultHandlerArgs (decoded : SyscallDecodeResult)
 theorem decodeSetFaultHandlerArgs_roundtrip (args : SetFaultHandlerArgs) :
     decodeSetFaultHandlerArgs (stubDecoded (encodeSetFaultHandlerArgs args)) = .ok args := by
   simp [decodeSetFaultHandlerArgs, encodeSetFaultHandlerArgs, stubDecoded, requireMsgReg,
-        Bind.bind, Except.bind, Pure.pure, Except.pure]
-  rfl
+        Bind.bind, Except.bind, Pure.pure, Except.pure, SeLe4n.CPtr.ofNat_toNat]
 
 -- ============================================================================
 -- WS-SM SM9.A.10: audit-trail read and drain arguments
@@ -1937,7 +1936,7 @@ def decodeSetSpaceArgs (decoded : SyscallDecodeResult)
 theorem decodeSetSpaceArgs_roundtrip (args : SetSpaceArgs) :
     decodeSetSpaceArgs (stubDecoded (encodeSetSpaceArgs args)) = .ok args := by
   simp [decodeSetSpaceArgs, encodeSetSpaceArgs, stubDecoded, requireMsgReg, Bind.bind,
-        Except.bind, Pure.pure, Except.pure, SeLe4n.CPtr.ofNat, SeLe4n.CPtr.toNat]
+        Except.bind, Pure.pure, Except.pure, SeLe4n.CPtr.ofNat_toNat]
 
 -- ============================================================================
 -- WS-BP BP7.1 (`v0.36.12`): page-table install decode (`pageTableMap`)
@@ -1968,7 +1967,7 @@ def decodePageTableMapArgs (decoded : SyscallDecodeResult)
 theorem decodePageTableMapArgs_roundtrip (args : PageTableMapArgs) :
     decodePageTableMapArgs (stubDecoded (encodePageTableMapArgs args)) = .ok args := by
   simp [decodePageTableMapArgs, encodePageTableMapArgs, stubDecoded, requireMsgReg, Bind.bind,
-        Except.bind, Pure.pure, Except.pure, SeLe4n.CPtr.ofNat, SeLe4n.CPtr.toNat,
+        Except.bind, Pure.pure, Except.pure, SeLe4n.CPtr.ofNat_toNat,
         SeLe4n.VAddr.ofNat, SeLe4n.VAddr.toNat]
 
 end SeLe4n.Kernel.Architecture.SyscallArgDecode
