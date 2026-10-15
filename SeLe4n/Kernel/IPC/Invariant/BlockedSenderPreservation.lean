@@ -343,20 +343,23 @@ theorem endpointSendDualOnCore_preserves_blockedSenderFlowsToEndpoint
                   (endpointQueueEnqueue_ipcStateFrame endpointId false sender st st1
                     hObjInv hEnq))
             cases hIpc : storeTcbIpcStateAndMessage st1 sender
-                (.blockedOnSend endpointId) (some msg) with
+                (.blockedOnSend endpointId) none with
             | error e => exact hPre
             | ok st2 =>
               simp only []
               have hPre2 : blockedSenderFlowsToEndpoint ctx st2 :=
                 storeTcbIpcStateAndMessage_preserves_blockedSenderFlowsToEndpoint ctx st1 st2
-                  sender _ (some msg) hInv1 hIpc hPre1
+                  sender _ none hInv1 hIpc hPre1
                   (by
                     rintro ep' (h | h)
                     · injection h with h'; subst h'; exact hGate
                     · exact absurd h (by simp))
               exact blockedSenderFlowsToEndpoint_of_shrinks hPre2
                 (blockedSenderShrinks_of_ipcStateFrame
-                  (removeRunnableOnCore_ipcStateFrame st2 sender executingCore))
+                  (ipcStateFrame_of_objectsAgreeOffRunLinks
+                    (SystemState.objectsAgreeOffRunLinks.trans
+                      (recordSendCap_objectsAgreeOffRunLinks _ _ _ _)
+                      (removeRunnableOnCore_objectsAgreeOffRunLinks st2 sender executingCore))))
         | some _ =>
           simp only []
           cases hSnd : st.getTcb? sender with
@@ -525,20 +528,23 @@ theorem endpointCallOnCore_preserves_blockedSenderFlowsToEndpoint
                   (endpointQueueEnqueue_ipcStateFrame endpointId false caller st st1
                     hObjInv hEnq))
             cases hIpc : storeTcbIpcStateAndMessage st1 caller
-                (.blockedOnCall endpointId) (some msg) with
+                (.blockedOnCall endpointId) none with
             | error e => exact hPre
             | ok st2 =>
               simp only []
               have hPre2 : blockedSenderFlowsToEndpoint ctx st2 :=
                 storeTcbIpcStateAndMessage_preserves_blockedSenderFlowsToEndpoint ctx st1 st2
-                  caller _ (some msg) hInv1 hIpc hPre1
+                  caller _ none hInv1 hIpc hPre1
                   (by
                     rintro ep' (h | h)
                     · exact absurd h (by simp)
                     · injection h with h'; subst h'; exact hGate)
               exact blockedSenderFlowsToEndpoint_of_shrinks hPre2
                 (blockedSenderShrinks_of_ipcStateFrame
-                  (removeRunnableOnCore_ipcStateFrame st2 caller executingCore))
+                  (ipcStateFrame_of_objectsAgreeOffRunLinks
+                    (SystemState.objectsAgreeOffRunLinks.trans
+                      (recordSendCap_objectsAgreeOffRunLinks _ _ _ _)
+                      (removeRunnableOnCore_objectsAgreeOffRunLinks st2 caller executingCore))))
         | some _ =>
           simp only []
           cases hPop : endpointQueuePopHead endpointId true st with
@@ -761,14 +767,16 @@ theorem endpointSendDualOnCore_sameSchedContextBindings
             have hInv1 := endpointQueueEnqueue_preserves_objects_invExt endpointId false
               sender st st1 hObjInv hEnq
             cases hIpc : storeTcbIpcStateAndMessage st1 sender
-                (.blockedOnSend endpointId) (some msg) with
+                (.blockedOnSend endpointId) none with
             | error e => exact sameSchedContextBindings.refl st
             | ok st2 =>
               simp only []
               exact (hS1.trans (storeTcbIpcStateAndMessage_sameSchedContextBindings st1 st2
-                sender _ (some msg) hInv1 hIpc)).trans
+                sender _ none hInv1 hIpc)).trans
                 (sameSchedContextBindings.of_objectsAgreeOffRunLinks
-                  (removeRunnableOnCore_objectsAgreeOffRunLinks st2 sender executingCore))
+                  (SystemState.objectsAgreeOffRunLinks.trans
+                    (recordSendCap_objectsAgreeOffRunLinks _ _ _ _)
+                    (removeRunnableOnCore_objectsAgreeOffRunLinks st2 sender executingCore)))
         | some _ =>
           simp only []
           cases hSnd : st.getTcb? sender with

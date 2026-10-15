@@ -10,6 +10,7 @@
 import SeLe4n.Kernel.FrozenOps.Core
 import SeLe4n.Kernel.SchedContext.Budget
 import SeLe4n.Kernel.Architecture.PageTableInstall
+import SeLe4n.Kernel.IPC.DualQueue.SenderMessage
 
 /-!
 # Q7-C: Per-Subsystem Frozen Operations
@@ -529,6 +530,35 @@ def frozenNotificationWait (notificationId : SeLe4n.ObjId)
     | some _ => .error .invalidCapability
     | none => .error .objectNotFound
 
+/-- WS-ZA ZA4.7: an overflow word of a frozen thread's IPC buffer, read as the
+live `ipcBufferReadMr` reads it (slot bound, the thread's VSpace root, the page
+the slot resolves through, then memory), every failure the live decode's
+`.invalidMessageInfo`. -/
+private def frozenReadOverflowWord (st : FrozenSystemState) (tid : SeLe4n.ThreadId)
+    (idx : Nat) : Except KernelError UInt64 :=
+  if idx ≥ Architecture.IpcBufferRead.maxOverflowSlots then .error .invalidMessageInfo else
+  match frozenLookupTcb st tid with
+  | none => .error .invalidMessageInfo
+  | some tcb =>
+    match st.getObject? tcb.vspaceRoot with
+    | some (.vspaceRoot root) =>
+      match root.mappings.get? (Architecture.IpcBufferRead.ipcBufferSlotPage tcb.ipcBuffer idx) with
+      | some (paddr, _) =>
+          .ok (Architecture.readUInt64 st.machine.memory
+            (SeLe4n.PAddr.ofNat (paddr.toNat +
+              (Architecture.IpcBufferRead.ipcBufferSlotAddr tcb.ipcBuffer idx).pageOffset)))
+      | none => .error .invalidMessageInfo
+    | _ => .error .invalidMessageInfo
+
+/-- WS-ZA ZA4.7: **the message a frozen blocked sender holds** — the live
+reader's definition (`blockedSenderMessageOf`) over the frozen decode of the
+sender's saved frame, whose overflow words come from the frozen IPC buffer. -/
+def frozenBlockedSenderMessage (st : FrozenSystemState) (sender : SeLe4n.ThreadId)
+    (tcb : TCB) : IpcMessage :=
+  blockedSenderMessageOf tcb
+    (Architecture.RegisterDecode.decodeSyscallArgsWith (frozenReadOverflowWord st sender)
+      SeLe4n.arm64DefaultLayout tcb.registerContext 32)
+
 /-- Q7-C2/V5-O: Pop head from a frozen intrusive queue.
 Follows `queueNext` link in the head TCB to advance the queue.
 Returns the dequeued ThreadId, its TCB, and updated state.
@@ -538,16 +568,9 @@ with the queue it's being dequeued from (blocked-on-send for send queues,
 blocked-on-receive for receive queues). Returns `.endpointStateMismatch`
 if the head TCB's blocking state doesn't match the queue direction.
 
-PR #873 round 7: **a parked sender must also be carrying its message.**  The
-state check alone accepted a `.blockedOnSend` / `.blockedOnCall` head with
-`pendingMessage := none`, and `frozenEndpointReceive` then stored that `none` in
-the receiver while still joining the sender's provenance — inventing a causal
-predecessor for content that was never delivered.  Structural rather than a guard
-at the one caller: the frozen send path always parks with `pendingMessage := some
-msg`, so a message-less parked sender is a malformed snapshot in exactly the way
-a mismatched blocking state is, and it is refused with the same error.  The
-receive queue is unaffected — a thread parked to *receive* correctly holds
-nothing. -/
+WS-ZA ZA4.7: a parked sender holds no message object -- its message is in its
+saved frame and TCB (`frozenBlockedSenderMessage`), as on the live surface -- so
+the blocking state is the whole of what "parked to send" means here. -/
 private def frozenQueuePopHead (endpointId : SeLe4n.ObjId) (isReceiveQ : Bool)
     (st : FrozenSystemState) : Except KernelError (SeLe4n.ThreadId × TCB × FrozenSystemState) :=
   match st.getEndpoint? endpointId with
@@ -565,13 +588,10 @@ private def frozenQueuePopHead (endpointId : SeLe4n.ObjId) (isReceiveQ : Bool)
                 | .blockedOnReceive epId => epId == endpointId
                 | _ => false
               else
-                -- The parked sender's message is part of what "parked to send"
-                -- means: without it the dequeue would hand the receiver `none`
-                -- while the provenance join claimed a delivery.
-                (match headTcb.ipcState with
-                 | .blockedOnSend epId => epId == endpointId
-                 | .blockedOnCall epId => epId == endpointId
-                 | _ => false) && headTcb.pendingMessage.isSome
+                match headTcb.ipcState with
+                | .blockedOnSend epId => epId == endpointId
+                | .blockedOnCall epId => epId == endpointId
+                | _ => false
               if !stateConsistent then .error .endpointStateMismatch
               else
               -- Advance queue head to next TCB in chain
@@ -694,13 +714,15 @@ def frozenEndpointSend (endpointId : SeLe4n.ObjId) (sender : SeLe4n.ThreadId)
                         .ok ((), frozenTaintFlow st3 receiver.toObjId sender.toObjId)
                 | none => .error .objectNotFound
         | none =>
-            -- No receiver: block sender with message, then enqueue into sendQ (T1-B/M-FRZ-1).
-            -- The message stays in the sender's own TCB, whose provenance is
-            -- already the sender's, so there is nothing to propagate here.
+            -- No receiver: block sender, then enqueue into sendQ (T1-B/M-FRZ-1).
+            -- WS-ZA ZA4.7: the message stays in the sender's own frame, with its
+            -- badge and grant right in its TCB (`TCB.setSendCap`), as on the
+            -- live surface; the sender's provenance already covers it, so there
+            -- is nothing to propagate here.
             -- `senderTcb` is the one resolved above, shared with the rendezvous
             -- ordering so the two cannot disagree about what a valid sender is.
-            let senderTcb' := (TCB.setIpcState { senderTcb with
-              pendingMessage := some msg } (.blockedOnSend endpointId))
+            let senderTcb' := (TCB.setIpcState { senderTcb.setSendCap msg.badge msg.capsGranted with
+              pendingMessage := none } (.blockedOnSend endpointId))
             match frozenStoreTcb sender senderTcb' st with
             | .error e => .error e
             | .ok ((), st') =>
@@ -740,7 +762,9 @@ def frozenEndpointReceive (endpointId : SeLe4n.ObjId)
             match frozenQueuePopHead endpointId false st with
             | .error e => .error e
             | .ok (sender, senderTcb, st') =>
-                let senderMsg := senderTcb.pendingMessage
+                -- WS-ZA ZA4.7: the parked sender's message is read from its
+                -- frame and TCB, as the live receive reads it.
+                let senderMsg := some (frozenBlockedSenderMessage st sender senderTcb)
                 let senderWasCall : Bool :=
                   match senderTcb.ipcState with
                   | .blockedOnCall _ => true
@@ -864,11 +888,12 @@ def frozenEndpointCall (endpointId : SeLe4n.ObjId) (caller : SeLe4n.ThreadId)
                         | none => .error .objectNotFound
                 | none => .error .objectNotFound
         | none =>
-            -- No receiver: block caller with message, then enqueue into sendQ (T1-D/M-FRZ-3)
+            -- No receiver: block caller, then enqueue into sendQ (T1-D/M-FRZ-3); the
+            -- message stays in its frame, as for a blocked send (WS-ZA ZA4.7)
             match frozenLookupTcb st caller with
             | some callerTcb =>
-                let callerTcb' := (TCB.setIpcState { callerTcb with
-                  pendingMessage := some msg } (.blockedOnCall endpointId))
+                let callerTcb' := (TCB.setIpcState { callerTcb.setSendCap msg.badge msg.capsGranted with
+                  pendingMessage := none } (.blockedOnCall endpointId))
                 match frozenStoreTcb caller callerTcb' st with
                 | .error e => .error e
                 | .ok ((), st') =>

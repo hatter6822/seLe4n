@@ -71,7 +71,7 @@ theorem recordPendingFault_preserves_ipcInvariantFull
   | some tcb =>
       rw [SystemState.updateTcb_eq_of_some hT]
       exact insertObjects_tcbFieldUpdate_preserves_ipcInvariantFull st tid tcb
-        { tcb with pendingFault := some tf } hObjInv hInv
+        { tcb with pendingFault := some tf, ipcFaultSend := true } hObjInv hInv
         ((SystemState.getTcb?_eq_some_iff st tid tcb).mp hT)
         rfl rfl rfl rfl rfl rfl rfl rfl rfl
 

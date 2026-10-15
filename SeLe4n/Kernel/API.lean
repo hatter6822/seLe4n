@@ -1166,88 +1166,6 @@ theorem syscallChecksTargetFirst_iff (id : SyscallId) :
     syscallChecksTargetFirst id = true ↔ id = .auditRead ∨ id = .auditDrain := by
   cases id <;> simp [syscallChecksTargetFirst]
 
-/-- M-D01: Resolve extra capability addresses from the sender's CSpace
-into actual capabilities for IPC message transfer.
-
-For each CPtr in `capAddrs`, resolve it via `resolveCapAddress` in the
-sender's CSpace root, then look up the capability at the resolved slot.
-Caps that fail to resolve are silently dropped (seL4 behavior).
-Returns the resolved capabilities as an array. -/
-/- W5-G: Resolves extra capabilities from IPC buffer. Failed resolutions are
-   silently dropped (matching seL4 `lookupExtraCaps` behavior). This means
-   the receiver gets fewer extra caps than the sender specified. For
-   debugging, callers should check `extraCaps.length` against the expected
-   count from `MessageInfo.extraCaps`.
-   X5-I (L-4): Confirmed v0.22.17 audit — silent dropping matches seL4
-   reference semantics. No security impact: caps that fail resolution
-   simply don't transfer.
-
-   **AC3-D / API-01 — Silent-drop semantics**: The returned `Array Capability`
-   contains only successfully resolved capabilities. Its `.size` equals the
-   count of *successfully resolved* extra caps, which may be strictly less than
-   `capAddrs.size` (the sender's requested count). Receivers should compare
-   the actual resolved count against the expected count from the original
-   `MessageInfo.extraCaps` to detect drops. This is seL4-compatible behavior:
-   `lookupExtraCaps` in the C kernel also silently discards unresolvable
-   capabilities and returns only valid ones in the IPC buffer.
-
-   **AI6-A (M-02) — Spec cross-reference**: See `docs/spec/SELE4N_SPEC.md`
-   §8.10.4 "IPC Extra Capability Resolution — Silent-Drop Semantics" for the
-   normative specification, including the seL4 reference C kernel equivalence. -/
-def resolveExtraCaps (cspaceRoot : SeLe4n.ObjId)
-    (capAddrs : Array SeLe4n.CPtr) (depth : Nat) (granted : Bool)
-    (st : SystemState) : Array TransferCap × SystemState :=
-  -- PR #873 round 14: **the authority is checked where the resource is
-  -- committed.**  Resolution mints a persistent CDT node per source slot and
-  -- marks that slot as having a transfer in flight; the Grant right was
-  -- consulted only later, at the unwrap.  So a sender holding Write but not
-  -- Grant spent the bounded global node counter on every send, and
-  -- `nodeHasPendingTransfer` reported its slots as future parents -- making
-  -- `cspaceDeleteSlot` and the CNode retype answer `.revocationRequired` for a
-  -- derivation that could never materialise, since the unwrap was always going
-  -- to deny it.  A commitment made before the authority is checked is a
-  -- commitment that can outlive the authority, which is the same shape round 13
-  -- closed on `capsGranted`: one authority, read once, at the point it decides
-  -- something.
-  if !granted then (#[], st) else
-  capAddrs.foldl (fun acc addr =>
-    match resolveCapAddress cspaceRoot addr depth acc.2 with
-    | .error _ => acc
-    | .ok ref =>
-        match SystemState.lookupSlotCap acc.2 ref with
-        | none => acc
-        -- The derivation node of the real source slot is **minted here**, at
-        -- resolution, and carried in the message.  Two things make that the
-        -- right moment rather than the unwrap:
-        --
-        --   * the unwrap can run in a later syscall (a blocking send parks its
-        --     message), and by then the slot may hold something else entirely —
-        --     a slot address resolved at that point names the new occupant;
-        --   * a node id is stable across slot moves and reuse by construction,
-        --     which is what `CdtNodeId` is for.
-        --
-        -- Minting is idempotent for a slot that already has a node, so this
-        -- costs an allocation only the first time a slot is used as a source.
-        --
-        -- PR #873 round 8: through the **checked** minter.  The unchecked one
-        -- advances `cdtNextNode` without consulting `cdtNextNodeBounded`, and
-        -- this fold runs up to `maxExtraCaps` times per syscall — so a resolver
-        -- near the bound could carry the counter past it in one call, and a
-        -- *blocking* send commits that state before any unwrap runs.  A
-        -- fixed-width runtime allocating node ids past the bound eventually
-        -- reuses one, and a reused derivation node is a revocation that reaches
-        -- the wrong children.
-        --
-        -- Exhaustion drops the cap, which is this resolver's existing semantics
-        -- for an address it cannot resolve (seL4's silent drop) — and it is
-        -- fail-closed: a capability with no derivation node is not transferred,
-        -- so nothing is installed untracked.
-        | some cap =>
-            match SystemState.ensureCdtNodeForSlotChecked acc.2 ref with
-            | none => acc
-            | some (node, stNode) =>
-                (acc.1.push { cap := cap, srcNode := node }, stNode)) (#[], st)
-
 /-- AN7-E (API-M01): Debug-noisy variant of `resolveExtraCaps` that surfaces
     partial resolution explicitly.  Returns the resolved array paired with a
     flag `partial := true` iff at least one input address failed to resolve.
@@ -1360,35 +1278,6 @@ theorem resolveExtraCapsGated_empty
     resolveExtraCapsGated cspaceRoot #[] depth granted st = .ok (#[], st) := by
   unfold resolveExtraCapsGated
   simp [resolveExtraCapsDetailed_empty]
-
-/-- **WS-LS LS2.3**: the resolution writes the derivation tree alone — every
-object and every scheduler slot is as it was.  (The derivation nodes it mints
-are what the transition that follows reads, which is why that transition runs
-from the resolved state and why `.call`'s scheduler footprint is read there.) -/
-theorem resolveExtraCaps_objects_scheduler_eq (cspaceRoot : SeLe4n.ObjId)
-    (capAddrs : Array SeLe4n.CPtr) (depth : Nat) (granted : Bool) (st : SystemState) :
-    (resolveExtraCaps cspaceRoot capAddrs depth granted st).2.objects = st.objects ∧
-      (resolveExtraCaps cspaceRoot capAddrs depth granted st).2.scheduler = st.scheduler := by
-  unfold resolveExtraCaps
-  split
-  · exact ⟨rfl, rfl⟩
-  · refine Array.foldl_induction
-      (motive := fun (_ : Nat) (acc : Array TransferCap × SystemState) =>
-        acc.2.objects = st.objects ∧ acc.2.scheduler = st.scheduler) ⟨rfl, rfl⟩ ?_
-    intro i acc hAcc
-    split
-    · exact hAcc
-    · split
-      · exact hAcc
-      · split
-        · exact hAcc
-        · rename_i node stNode hNode
-          unfold SystemState.ensureCdtNodeForSlotChecked at hNode
-          split at hNode
-          · cases hNode; exact hAcc
-          · split at hNode
-            · cases hNode; exact hAcc
-            · cases hNode
 
 /-- WS-AL AL7-A (cascades AK7-E): lift a raw `ThreadId` to `ValidThreadId`
 at the dispatch boundary. Returns `.error .invalidArgument` if the id

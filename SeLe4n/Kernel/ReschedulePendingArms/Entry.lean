@@ -39,7 +39,7 @@ theorem faultSuspendOnCore_stepCovers (e : CoreId) (st : SystemState) (tid : SeL
 
 theorem recordPendingFault_keyFrame (st : SystemState) (tid : SeLe4n.ThreadId) (tf : ThreadFault)
     (hInv : st.objects.invExt) : capabilityKeyFrame st (recordPendingFault st tid tf) :=
-  updateTcb_keyFrame st tid (f := fun tcb => { tcb with pendingFault := some tf }) (fun _ => rfl)
+  updateTcb_keyFrame st tid (f := fun tcb => { tcb with pendingFault := some tf, ipcFaultSend := true }) (fun _ => rfl)
     hInv
 
 theorem writeFaultRegistersToTcb_keyFrame (st : SystemState) (tid : SeLe4n.ThreadId)

@@ -199,21 +199,6 @@ theorem processRevokeNode_runQueueStage {st st' : SystemState} {node : CdtNodeId
       cases h
       exact (cspaceDeleteSlotCore_runQueueStage hDel).trans (RunQueueStage.of_frame rfl rfl rfl)
 
-/-- The in-flight sweep rewrites blocked senders' pending messages alone. -/
-theorem revokePendingTransfersFrom_runQueueStage (st : SystemState) (nodes : List CdtNodeId) :
-    RunQueueStage st (revokePendingTransfersFrom st nodes) :=
-  RunQueueStage.of_slots fun hInv =>
-    have ⟨hExt, _, _, _, hSched, hObj⟩ := revokePendingTransfersFrom_frame st nodes hInv
-    ⟨hExt, fun oid c => by
-      rcases hObj oid with e | ⟨t, t', hPre, ⟨hT, _⟩, hPost⟩
-      · rw [e]
-      · rw [hPre, hPost, hT]; rfl, fun oid => by
-      rcases hObj oid with e | ⟨t, t', hPre, ⟨hT, _⟩, hPost⟩
-      · exact SystemState.slotStateMono.of_eq e
-      · rw [hPre]
-        exact SystemState.slotStateMono.of_obj hPost (SystemState.objStateMono_tcb
-          ⟨fun h => by rw [hT]; exact h, fun h => by rw [hT]; exact h⟩), hSched⟩
-
 theorem cspaceRevokeCdt_runQueueStage {st st' : SystemState} {addr : CSpaceAddr}
     {pages : List MappedPage} (h : cspaceRevokeCdt addr st = .ok (pages, st')) :
     RunQueueStage st st' := by
@@ -223,8 +208,7 @@ theorem cspaceRevokeCdt_runQueueStage {st st' : SystemState} {addr : CSpaceAddr}
   · exact RunQueueStage.refl _
   · exact (revokeCdtMaterializedTraversal_ok_induct (P := RunQueueStage st)
       (fun _ _ _ hP hSt => hP.trans (processRevokeNode_runQueueStage hSt))
-      st rootNode _ out (RunQueueStage.refl _) hTrav).trans
-      (revokePendingTransfersFrom_runQueueStage _ _)
+      st rootNode _ out (RunQueueStage.refl _) hTrav)
 
 theorem finaliseDestroyedCapabilities_runQueueStage {ec : Concurrency.CoreId} {pre : SystemState}
     {pages : List MappedPage} {st st' : SystemState}

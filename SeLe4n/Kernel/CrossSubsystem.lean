@@ -1855,6 +1855,16 @@ theorem storeTcbQueueLinks_preservesFieldsOutside
       cases hStep
       exact storeObject_preservesFieldsOutside_ipc _ _ _ _ hStore
 
+/-- WS-ZA ZA4.7: recording a blocking sender's badge and grant bit writes only
+its TCB. -/
+theorem recordSendCap_preservesFieldsOutside (st : SystemState) (tid : SeLe4n.ThreadId)
+    (badge : Option SeLe4n.Badge) (grant : Bool) :
+    preservesFieldsOutside ipcEndpointOp_modifiedFields st (recordSendCap st tid badge grant) := by
+  intro f hf
+  cases f <;> first
+    | rfl
+    | exact (hf (by decide)).elim
+
 theorem storeTcbIpcStateAndMessage_preservesFieldsOutside
     (st st' : SystemState) (tid : SeLe4n.ThreadId)
     (ipcState : ThreadIpcState) (msg : Option IpcMessage)
@@ -1896,28 +1906,26 @@ theorem endpointQueuePopHead_preservesFieldsOutside
       · cases hStep
       · split at hStep
         · cases hStep
-        · split at hStep
+        · rename_i st₁ hStore
+          split at hStep
           · cases hStep
-          · rename_i st₁ hStore
+          · rename_i st₂ hRelink
             split at hStep
             · cases hStep
-            · rename_i st₂ hRelink
-              split at hStep
-              · cases hStep
-              · rename_i st₃ hLinks
-                simp only [Except.ok.injEq, Prod.mk.injEq] at hStep
-                obtain ⟨-, -, hEq⟩ := hStep
-                subst hEq
-                refine preservesFieldsOutside_trans
-                  (storeObject_preservesFieldsOutside_ipc _ _ _ _ hStore) ?_
-                refine preservesFieldsOutside_trans ?_
-                  (storeTcbQueueLinks_preservesFieldsOutside _ _ _ _ _ _ hLinks)
-                split at hRelink
+            · rename_i st₃ hLinks
+              simp only [Except.ok.injEq, Prod.mk.injEq] at hStep
+              obtain ⟨-, -, hEq⟩ := hStep
+              subst hEq
+              refine preservesFieldsOutside_trans
+                (storeObject_preservesFieldsOutside_ipc _ _ _ _ hStore) ?_
+              refine preservesFieldsOutside_trans ?_
+                (storeTcbQueueLinks_preservesFieldsOutside _ _ _ _ _ _ hLinks)
+              split at hRelink
+              · cases hRelink
+                exact preservesFieldsOutside_refl _ _
+              · split at hRelink
                 · cases hRelink
-                  exact preservesFieldsOutside_refl _ _
-                · split at hRelink
-                  · cases hRelink
-                  · exact storeTcbQueueLinks_preservesFieldsOutside _ _ _ _ _ _ hRelink
+                · exact storeTcbQueueLinks_preservesFieldsOutside _ _ _ _ _ _ hRelink
   · cases hStep
   · cases hStep
 
@@ -2063,7 +2071,8 @@ theorem endpointSendDual_preservesFieldsOutside
                 (endpointQueueEnqueue_preservesFieldsOutside _ _ _ _ _ hEnq)
                 (preservesFieldsOutside_trans
                   (storeTcbIpcStateAndMessage_preservesFieldsOutside _ _ _ _ _ hBlock)
-                  (removeRunnable_preservesFieldsOutside _ _))
+                  (preservesFieldsOutside_trans (removeRunnable_preservesFieldsOutside _ _)
+                    (recordSendCap_preservesFieldsOutside _ _ _ _)))
       · cases hStep
       · cases hStep
 

@@ -869,8 +869,10 @@ def cnodeReferencesReservedIdleSlot (cn : CNode) : Bool :=
       `threadState`, `timeSlice`, `deadline`, `registerContext`,
       `faultHandler` (a CPtr into the thread's own CSpace, not an id),
       `maxControlledPriority`, `pipBoost`, `timedOut`,
-      `cpuAffinity` (a core) and `pendingFault` (addresses, syndromes and a
-      register window) hold no id. -/
+      `cpuAffinity` (a core), `pendingFault` (addresses, syndromes and a
+      register window) and the blocked-sender fields `ipcBadge`, `ipcBadged`,
+      `ipcCanGrant`, `ipcFaultSend` (WS-ZA ZA4.7: a badge word and three
+      flags) hold no id. -/
 def tcbReferencesReservedIdleSlot (tcb : TCB) : Bool :=
   match tcb with
   | ⟨tid, _priority, _domain, cspaceRoot, vspaceRoot, _ipcBuffer, _ipcObjectCode, _threadState,
@@ -879,7 +881,8 @@ def tcbReferencesReservedIdleSlot (tcb : TCB) : Bool :=
      _maxControlledPriority, _pipBoost, _timedOut, _cpuAffinity, replyObjectCode,
      pendingReceiveReplyCode, _pendingFault, _fpContext, ntfnPrevCode, ntfnNextCode,
      _runCoreCode, _runPrio, _runPrevCode, _runNextCode, _runBucketPrevCode, _runBucketNextCode,
-     replyWaiterPrevCode, replyWaiterNextCode, replyWaitersHeadCode, _replyWaitersCount, _ipcStateCode⟩ =>
+     replyWaiterPrevCode, replyWaiterNextCode, replyWaitersHeadCode, _replyWaitersCount, _ipcStateCode,
+     _ipcBadge, _ipcBadged, _ipcCanGrant, _ipcFaultSend⟩ =>
     SeLe4n.Kernel.isIdleThreadId tid ||
     SeLe4n.Kernel.isIdleObjId cspaceRoot || SeLe4n.Kernel.isIdleObjId vspaceRoot ||
     boundNotification.any SeLe4n.Kernel.isIdleObjId ||
@@ -1805,7 +1808,10 @@ theorem bootSafeCnodeCheck_caps {cn : CNode}
     core, and the enqueue that sets it writes them all.  The reply-waiter
     fields (WS-ZA ZA4.6) must be empty: a boot thread is reply-blocked on no
     server, so the reply-waiter invariant gives it no links, and no thread is
-    reply-blocked on it, so its own queue is empty with a count of zero. -/
+    reply-blocked on it, so its own queue is empty with a count of zero.  The
+    blocked-sender fields (`ipcBadge`, `ipcBadged`, `ipcCanGrant`,
+    `ipcFaultSend`, WS-ZA ZA4.7) are read only while the thread is blocked
+    on a send or call, and the send or fault that blocks it writes them all. -/
 def bootSafeTcbCheck (tcb : TCB) : Bool :=
   match tcb with
   | ⟨_tid, _priority, _domain, _cspaceRoot, _vspaceRoot, _ipcBuffer, _ipcObjectCode, _threadState,
@@ -1814,7 +1820,8 @@ def bootSafeTcbCheck (tcb : TCB) : Bool :=
      _maxControlledPriority, _pipBoost, _timedOut, _cpuAffinity, _replyObject,
      _pendingReceiveReply, _pendingFault, _fpContext, _ntfnPrevCode, _ntfnNextCode,
      _runCoreCode, _runPrio, _runPrevCode, _runNextCode, _runBucketPrevCode, _runBucketNextCode,
-     _replyWaiterPrevCode, _replyWaiterNextCode, _replyWaitersHeadCode, _replyWaitersCount, _ipcStateCode⟩ =>
+     _replyWaiterPrevCode, _replyWaiterNextCode, _replyWaitersHeadCode, _replyWaitersCount, _ipcStateCode,
+     _ipcBadge, _ipcBadged, _ipcCanGrant, _ipcFaultSend⟩ =>
     tcb.pendingMessage.isNone && decide (tcb.ipcState = .ready) &&
     tcb.queueNext.isNone && tcb.queuePrev.isNone && tcb.queuePPrev.isNone &&
     tcb.timeoutBudget.isNone &&
@@ -4019,7 +4026,8 @@ def tcbAffinityDeclared (cores : List SeLe4n.Kernel.Concurrency.CoreId) (tcb : T
      _maxControlledPriority, _pipBoost, _timedOut, _cpuAffinity, _replyObject,
      _pendingReceiveReply, _pendingFault, _fpContext, _ntfnPrevCode, _ntfnNextCode,
      _runCoreCode, _runPrio, _runPrevCode, _runNextCode, _runBucketPrevCode, _runBucketNextCode,
-     _replyWaiterPrevCode, _replyWaiterNextCode, _replyWaitersHeadCode, _replyWaitersCount, _ipcStateCode⟩ =>
+     _replyWaiterPrevCode, _replyWaiterNextCode, _replyWaitersHeadCode, _replyWaitersCount, _ipcStateCode,
+     _ipcBadge, _ipcBadged, _ipcCanGrant, _ipcFaultSend⟩ =>
     match tcb.cpuAffinity with
     | some c => cores.contains c
     | none   => true

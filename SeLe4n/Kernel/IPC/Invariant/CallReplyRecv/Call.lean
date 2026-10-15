@@ -102,12 +102,13 @@ theorem endpointCall_preserves_ipcInvariant
           simp only [hHead, hEnq] at hStep
           have hObjInv1 := endpointQueueEnqueue_preserves_objects_invExt endpointId false caller st st1 hObjInv hEnq
           have hInv1 := endpointQueueEnqueue_preserves_ipcInvariant endpointId false caller st st1 hInv hObjInv hEnq
-          cases hMsg : storeTcbIpcStateAndMessage st1 caller (.blockedOnCall endpointId) (some msg) with
+          cases hMsg : storeTcbIpcStateAndMessage st1 caller (.blockedOnCall endpointId) none with
           | error e => simp [hMsg] at hStep
           | ok st2 =>
             simp only [hMsg, Except.ok.injEq, Prod.mk.injEq] at hStep
             obtain ⟨_, hEq⟩ := hStep; subst hEq
-            have hInv2 := storeTcbIpcStateAndMessage_preserves_ipcInvariant st1 st2 caller _ (some msg) hInv1 hObjInv1 hMsg
+            refine ipcInvariant_of_objectsAgreeOffRunLinks (recordSendCap_objectsAgreeOffRunLinks _ _ _ _) ?_
+            have hInv2 := storeTcbIpcStateAndMessage_preserves_ipcInvariant st1 st2 caller _ none hInv1 hObjInv1 hMsg
             exact fun oid ntfn h => hInv2 oid ntfn ((removeRunnable_objectsAgreeOffRunLinks _ _).get_notification_iff.mp h)
 
 /-- WS-F1/TPI-D09: endpointCall preserves schedulerInvariantBundle. -/
@@ -249,12 +250,13 @@ theorem endpointCall_preserves_schedulerInvariantBundle
           simp only [hHead, hEnq] at hStep
           have hSchedEnq := endpointQueueEnqueue_scheduler_eq endpointId false caller st st1 hEnq
           have hObjInv1 := endpointQueueEnqueue_preserves_objects_invExt endpointId false caller st st1 hObjInv hEnq
-          cases hMsg : storeTcbIpcStateAndMessage st1 caller (.blockedOnCall endpointId) (some msg) with
+          cases hMsg : storeTcbIpcStateAndMessage st1 caller (.blockedOnCall endpointId) none with
           | error e => simp [hMsg] at hStep
           | ok st2 =>
             simp only [hMsg, Except.ok.injEq, Prod.mk.injEq] at hStep
             obtain ⟨_, hEq⟩ := hStep; subst hEq
-            have hSchedMsg := storeTcbIpcStateAndMessage_scheduler_eq st1 st2 caller (.blockedOnCall endpointId) (some msg) hMsg
+            refine schedulerInvariantBundle_of_objectsAgreeOffRunLinks (recordSendCap_objectsAgreeOffRunLinks _ _ _ _) rfl ?_
+            have hSchedMsg := storeTcbIpcStateAndMessage_scheduler_eq st1 st2 caller (.blockedOnCall endpointId) none hMsg
             have hSchedEq : st2.scheduler = st.scheduler := hSchedMsg.trans hSchedEnq
             refine ⟨?_, ?_, ?_⟩
             · unfold queueCurrentConsistent
@@ -286,7 +288,7 @@ theorem endpointCall_preserves_schedulerInvariantBundle
                   rcases hCTV' with ⟨tcbX, hTcbX⟩
                   obtain ⟨tcb1, hTcb1⟩ := endpointQueueEnqueue_tcb_forward endpointId false caller st st1 x.toObjId tcbX hObjInv hEnq hTcbX
                   have hNeTid : x.toObjId ≠ caller.toObjId := fun h => hEq' (threadId_toObjId_injective h)
-                  exact ⟨tcb1, (storeTcbIpcStateAndMessage_preserves_objects_ne st1 st2 caller (.blockedOnCall endpointId) (some msg) x.toObjId hNeTid hObjInv1 hMsg) ▸ hTcb1⟩
+                  exact ⟨tcb1, (storeTcbIpcStateAndMessage_preserves_objects_ne st1 st2 caller (.blockedOnCall endpointId) none x.toObjId hNeTid hObjInv1 hMsg) ▸ hTcb1⟩
 
 /-- WS-F1/TPI-D09: endpointCall preserves ipcSchedulerContractPredicates. -/
 theorem endpointCall_preserves_ipcSchedulerContractPredicates
@@ -489,20 +491,21 @@ theorem endpointCall_preserves_ipcSchedulerContractPredicates
           have hContractEnq := contracts_of_same_scheduler_ipcState st st1 hSchedEnq
             (fun tid tcb' h => endpointQueueEnqueue_tcb_ipcState_backward endpointId false caller st st1 tid tcb' hObjInv hEnq h)
             ⟨hReady, hBlockSend, hBlockRecv, hBlockCall, hBlockReply, hBlockNotif⟩
-          cases hMsg : storeTcbIpcStateAndMessage st1 caller (.blockedOnCall endpointId) (some msg) with
+          cases hMsg : storeTcbIpcStateAndMessage st1 caller (.blockedOnCall endpointId) none with
           | error e => simp [hMsg] at hStep
           | ok st2 =>
             simp only [hMsg, Except.ok.injEq, Prod.mk.injEq] at hStep
             obtain ⟨_, hEq⟩ := hStep; subst hEq
+            refine ipcSchedulerContractPredicates_of_objectsAgreeOffRunLinks (recordSendCap_objectsAgreeOffRunLinks _ _ _ _) rfl ?_
             rcases hContractEnq with ⟨hReady', hBlockSend', hBlockRecv', hBlockCall', hBlockReply', hBlockNotif'⟩
-            have hSchedMsg := storeTcbIpcStateAndMessage_scheduler_eq st1 st2 caller (.blockedOnCall endpointId) (some msg) hMsg
+            have hSchedMsg := storeTcbIpcStateAndMessage_scheduler_eq st1 st2 caller (.blockedOnCall endpointId) none hMsg
             refine ⟨?_, ?_, ?_, ?_, ?_, ?_⟩
             · intro tid tcb' hTcb' hRun'
               run_links_back (removeRunnable_objectsAgreeOffRunLinks _ _) at tcb' hTcb'
               by_cases hNe : tid = caller
               · subst hNe; exact absurd hRun' (removeRunnable_not_mem_self st2 _)
               · have hNeObjId : tid.toObjId ≠ caller.toObjId := fun h => hNe (threadId_toObjId_injective h)
-                have hTcbPre := (storeTcbIpcStateAndMessage_preserves_objects_ne st1 st2 caller _ (some msg) tid.toObjId hNeObjId hObjInvEnq hMsg).symm.trans hTcb'
+                have hTcbPre := (storeTcbIpcStateAndMessage_preserves_objects_ne st1 st2 caller _ none tid.toObjId hNeObjId hObjInvEnq hMsg).symm.trans hTcb'
                 have ⟨hRunSt2, _⟩ := (removeRunnable_runnable_mem st2 caller tid).mp hRun'
                 exact hReady' tid tcb' hTcbPre (show tid ∈ st1.scheduler.runnable by rwa [← hSchedMsg])
             · intro tid tcb' eid hTcb' hIpcState'
@@ -510,7 +513,7 @@ theorem endpointCall_preserves_ipcSchedulerContractPredicates
               by_cases hNe : tid = caller
               · subst hNe; exact removeRunnable_not_mem_self st2 _
               · have hNeObjId : tid.toObjId ≠ caller.toObjId := fun h => hNe (threadId_toObjId_injective h)
-                have hTcbPre := (storeTcbIpcStateAndMessage_preserves_objects_ne st1 st2 caller _ (some msg) tid.toObjId hNeObjId hObjInvEnq hMsg).symm.trans hTcb'
+                have hTcbPre := (storeTcbIpcStateAndMessage_preserves_objects_ne st1 st2 caller _ none tid.toObjId hNeObjId hObjInvEnq hMsg).symm.trans hTcb'
                 intro hRun'
                 have ⟨hRunSt2, _⟩ := (removeRunnable_runnable_mem st2 caller tid).mp hRun'
                 exact hBlockSend' tid tcb' eid hTcbPre hIpcState' (show tid ∈ st1.scheduler.runnable by rwa [← hSchedMsg])
@@ -519,7 +522,7 @@ theorem endpointCall_preserves_ipcSchedulerContractPredicates
               by_cases hNe : tid = caller
               · subst hNe; exact removeRunnable_not_mem_self st2 _
               · have hNeObjId : tid.toObjId ≠ caller.toObjId := fun h => hNe (threadId_toObjId_injective h)
-                have hTcbPre := (storeTcbIpcStateAndMessage_preserves_objects_ne st1 st2 caller _ (some msg) tid.toObjId hNeObjId hObjInvEnq hMsg).symm.trans hTcb'
+                have hTcbPre := (storeTcbIpcStateAndMessage_preserves_objects_ne st1 st2 caller _ none tid.toObjId hNeObjId hObjInvEnq hMsg).symm.trans hTcb'
                 intro hRun'
                 have ⟨hRunSt2, _⟩ := (removeRunnable_runnable_mem st2 caller tid).mp hRun'
                 exact hBlockRecv' tid tcb' eid hTcbPre hIpcState' (show tid ∈ st1.scheduler.runnable by rwa [← hSchedMsg])
@@ -528,7 +531,7 @@ theorem endpointCall_preserves_ipcSchedulerContractPredicates
               by_cases hNe : tid = caller
               · subst hNe; exact removeRunnable_not_mem_self st2 _
               · have hNeObjId : tid.toObjId ≠ caller.toObjId := fun h => hNe (threadId_toObjId_injective h)
-                have hTcbPre := (storeTcbIpcStateAndMessage_preserves_objects_ne st1 st2 caller _ (some msg) tid.toObjId hNeObjId hObjInvEnq hMsg).symm.trans hTcb'
+                have hTcbPre := (storeTcbIpcStateAndMessage_preserves_objects_ne st1 st2 caller _ none tid.toObjId hNeObjId hObjInvEnq hMsg).symm.trans hTcb'
                 intro hRun'
                 have ⟨hRunSt2, _⟩ := (removeRunnable_runnable_mem st2 caller tid).mp hRun'
                 exact hBlockCall' tid tcb' eid hTcbPre hIpcState' (show tid ∈ st1.scheduler.runnable by rwa [← hSchedMsg])
@@ -537,7 +540,7 @@ theorem endpointCall_preserves_ipcSchedulerContractPredicates
               by_cases hNe : tid = caller
               · subst hNe; exact removeRunnable_not_mem_self st2 _
               · have hNeObjId : tid.toObjId ≠ caller.toObjId := fun h => hNe (threadId_toObjId_injective h)
-                have hTcbPre := (storeTcbIpcStateAndMessage_preserves_objects_ne st1 st2 caller _ (some msg) tid.toObjId hNeObjId hObjInvEnq hMsg).symm.trans hTcb'
+                have hTcbPre := (storeTcbIpcStateAndMessage_preserves_objects_ne st1 st2 caller _ none tid.toObjId hNeObjId hObjInvEnq hMsg).symm.trans hTcb'
                 intro hRun'
                 have ⟨hRunSt2, _⟩ := (removeRunnable_runnable_mem st2 caller tid).mp hRun'
                 exact hBlockReply' tid tcb' eid rt hTcbPre hIpcState' (show tid ∈ st1.scheduler.runnable by rwa [← hSchedMsg])
@@ -547,7 +550,7 @@ theorem endpointCall_preserves_ipcSchedulerContractPredicates
               by_cases hNe : tid = caller
               · subst hNe; exact removeRunnable_not_mem_self st2 _
               · have hNeObjId : tid.toObjId ≠ caller.toObjId := fun h => hNe (threadId_toObjId_injective h)
-                have hTcbPre := (storeTcbIpcStateAndMessage_preserves_objects_ne st1 st2 caller _ (some msg) tid.toObjId hNeObjId hObjInvEnq hMsg).symm.trans hTcb'
+                have hTcbPre := (storeTcbIpcStateAndMessage_preserves_objects_ne st1 st2 caller _ none tid.toObjId hNeObjId hObjInvEnq hMsg).symm.trans hTcb'
                 intro hRun'
                 have ⟨hRunSt2, _⟩ := (removeRunnable_runnable_mem st2 caller tid).mp hRun'
                 exact hBlockNotif' tid tcb' nid hTcbPre hIpcState' (show tid ∈ st1.scheduler.runnable by rwa [← hSchedMsg])
@@ -606,7 +609,7 @@ theorem endpointCall_blocked_stays_blocked
         | error e => simp [hEnq] at hStep
         | ok st1 =>
           simp only [hEnq] at hStep
-          cases hMsg : storeTcbIpcStateAndMessage st1 caller (.blockedOnCall endpointId) (some msg) with
+          cases hMsg : storeTcbIpcStateAndMessage st1 caller (.blockedOnCall endpointId) none with
           | error e => simp [hMsg] at hStep
           | ok st2 =>
             simp only [hMsg, Except.ok.injEq, Prod.mk.injEq] at hStep

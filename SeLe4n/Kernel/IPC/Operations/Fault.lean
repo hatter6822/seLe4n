@@ -307,28 +307,6 @@ theorem resolveFaultHandler_readOnly (st : SystemState) (tid : SeLe4n.ThreadId) 
 -- §2  The fault message
 -- ============================================================================
 
-/-- WS-RR RR4.4: the `IpcMessage` a fault is delivered as.
-
-The encoder (`Architecture.encodeFault`) owns the layout; this is the
-model-side envelope: the encoded register array, the encoded `seL4_Fault_tag`
-as the message label, the handler capability's badge (seL4 passes
-`cap_endpoint_cap_get_capEPBadge(handlerCap)` to `sendIPC`, so a handler
-serving several faulting threads through badged capabilities can tell them
-apart), and **no capabilities**.
-
-`capsGranted := false` is not merely the default: a fault message must never
-transfer authority.  It is a diagnostic report the kernel writes about a
-thread, so granting through it would let the *kernel* hand a handler
-capabilities the faulting thread never offered — and it is what makes the
-RR4.20 non-interference argument about a data flow alone. -/
-def faultMessage (f : Fault) (ctx : FaultContext) (badge : Option SeLe4n.Badge) :
-    IpcMessage :=
-  { registers   := (Architecture.encodeFault f ctx).2
-    caps        := #[]
-    badge       := badge
-    capsGranted := false
-    label       := (Architecture.encodeFault f ctx).1.label }
-
 /-- WS-RR RR4.4: the delivered label is the fault's `seL4_Fault_tag` — the
 word that tells the handler which fault it is looking at. -/
 @[simp] theorem faultMessage_label (f : Fault) (ctx : FaultContext)
@@ -364,12 +342,6 @@ theorem faultMessage_within_prefilters (f : Fault) (ctx : FaultContext)
   refine ⟨Nat.not_lt.mpr ?_, by simp⟩
   exact Architecture.encodeFault_within_budget f ctx
 
-/-- WS-RR RR4.6: the message satisfies the model's payload bound predicate. -/
-theorem faultMessage_bounded (f : Fault) (ctx : FaultContext)
-    (badge : Option SeLe4n.Badge) : (faultMessage f ctx badge).bounded := by
-  refine ⟨Architecture.encodeFault_within_budget f ctx, ?_⟩
-  simp [faultMessage, maxExtraCaps]
-
 /-- WS-RR RR4.5: the handler can recover the fault from the message it
 received — the round trip, lifted to the delivered envelope.  Without it the
 encoding would be a write-only format. -/
@@ -398,10 +370,15 @@ inductive FaultDisposition where
 /-- WS-RR RR4: record the fault a thread is blocked on — seL4's
 `tptr->tcbFault = current_fault`, set before the fault IPC is sent so the
 reply that answers it can find it.  Total: a non-TCB target is unchanged.
-The write is the typed in-place rewrite `SystemState.updateTcb` (`v0.35.70`). -/
+The write is the typed in-place rewrite `SystemState.updateTcb` (`v0.35.70`).
+
+WS-ZA ZA4.7: it also marks the fault as the message the thread holds
+(`ipcFaultSend`): a fault Call that blocks parks no message, and the receive
+that takes it builds the message from `pendingFault` (`blockedSenderMessage`),
+as seL4 builds it from `tcbFault`. -/
 def recordPendingFault (st : SystemState) (tid : SeLe4n.ThreadId)
     (tf : ThreadFault) : SystemState :=
-  st.updateTcb tid fun tcb => { tcb with pendingFault := some tf }
+  st.updateTcb tid fun tcb => { tcb with pendingFault := some tf, ipcFaultSend := true }
 
 -- **WS-RR RR8.16** (`v0.35.200`): relocated here from the staged
 -- `IPC/Invariant/FaultPreservation.lean` — a frame over a production transition

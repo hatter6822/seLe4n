@@ -1070,116 +1070,6 @@ theorem cspaceRevoke_preserves_ipcInvariantFull
     hCap hInv
 
 
-/-- **The in-flight sweep preserves the bundle.**
-
-`revokePendingTransfersFrom` is the one transition in the tree that rewrites a
-`TCB.pendingMessage` to a *different* value while the thread stays blocked, which
-is why it needs a frame of its own rather than riding `ipcReadViewAgreement`:
-that relation reads the field, and two of the bundle's conjuncts
-(`allPendingMessagesBounded`, `blockedThreadsPendingMessageConsistent`) read it
-too.
-
-What the sweep does to that field is a **drop** — the registers are kept and the
-capability array shrinks (`TCB.pendingCapsDropped`) — and a drop is exactly what
-those two conjuncts survive: presence is preserved, so the "a blocked sender
-carries a message" clause carries, and a shorter array under an unchanged
-register file is still bounded.  Every other field is untouched, so the binding
-half of the argument is `sameSchedContextBindings` and the rest is
-`donationReadAgreement`. -/
-theorem revokePendingTransfersFrom_preserves_ipcInvariantFull
-    (st : SystemState) (nodes : List CdtNodeId)
-    (hObjInv : st.objects.invExt) (hInv : ipcInvariantFull st) :
-    ipcInvariantFull (revokePendingTransfersFrom st nodes) := by
-  obtain ⟨_, _, _, _, hSched, hObj⟩ := revokePendingTransfersFrom_frame st nodes hObjInv
-  -- The two directions of "a TCB became a TCB with its caps dropped".
-  have hFwd : ∀ (oid : SeLe4n.ObjId) (t : TCB), st.objects[oid]? = some (.tcb t) →
-      ∃ t', (revokePendingTransfersFrom st nodes).objects[oid]? = some (.tcb t') ∧
-        TCB.pendingCapsDropped t t' := by
-    intro oid t h
-    rcases hObj oid with hEq | ⟨u, u', hU, hUD, hU'⟩
-    · exact ⟨t, by rw [hEq]; exact h, TCB.pendingCapsDropped_refl t⟩
-    · rw [h] at hU
-      obtain rfl : t = u := by
-        simpa only [Option.some.injEq, KernelObject.tcb.injEq] using hU
-      exact ⟨u', hU', hUD⟩
-  have hBwd : ∀ (oid : SeLe4n.ObjId) (t' : TCB),
-      (revokePendingTransfersFrom st nodes).objects[oid]? = some (.tcb t') →
-      ∃ t, st.objects[oid]? = some (.tcb t) ∧ TCB.pendingCapsDropped t t' := by
-    intro oid t' h
-    rcases hObj oid with hEq | ⟨u, u'', hU, hUD, hU'⟩
-    · exact ⟨t', by rw [← hEq]; exact h, TCB.pendingCapsDropped_refl t'⟩
-    · rw [h] at hU'
-      obtain rfl : t' = u'' := by
-        simpa only [Option.some.injEq, KernelObject.tcb.injEq] using hU'
-      exact ⟨u, hU, hUD⟩
-  -- Nothing but TCBs moved, so every other kind agrees both ways.
-  have hOther : ∀ (oid : SeLe4n.ObjId) (k : KernelObject), (∀ t, k ≠ .tcb t) →
-      ((revokePendingTransfersFrom st nodes).objects[oid]? = some k ↔
-        st.objects[oid]? = some k) := by
-    intro oid k hK
-    rcases hObj oid with hEq | ⟨_, u', _, _, hU'⟩
-    · rw [hEq]
-    · constructor
-      · intro h; rw [h] at hU'; exact absurd (Option.some.inj hU') (hK u')
-      · intro h
-        rcases hObj oid with hEq' | ⟨_, v', hV, _, _⟩
-        · rw [hEq']; exact h
-        · rw [h] at hV; exact absurd (Option.some.inj hV) (hK _)
-  have hBind : sameSchedContextBindings st (revokePendingTransfersFrom st nodes) := by
-    intro tid tcb' h
-    obtain ⟨t, hPre, hD⟩ := hBwd _ _ h
-    exact ⟨t, hPre, (TCB.pendingCapsDropped_fields hD).2.2.2.2.2.2.2.symm⟩
-  have hAgree : donationReadAgreement st (revokePendingTransfersFrom st nodes) := by
-    refine ⟨?_, ?_, ?_, ?_, ?_⟩
-    · intro oid tx hx
-      obtain ⟨ty, hy, hD⟩ := hBwd oid tx hx
-      obtain ⟨hIs, hQN, hQP, hQPP, hTB, hRO, hPRR, _⟩ := TCB.pendingCapsDropped_fields hD
-      exact ⟨ty, hy, hIs, ⟨.inl (TCB.pendingCapsDropped_isSome hD),
-        fun m m' hm hm' hb => TCB.pendingCapsDropped_bounded hD hm hm' hb⟩,
-        hQN, hQP, hQPP, hTB, hRO, hPRR⟩
-    · intro oid ty hy
-      obtain ⟨tx, hx, hD⟩ := hFwd oid ty hy
-      obtain ⟨hIs, hQN, hQP, hQPP, hTB, hRO, hPRR, _⟩ := TCB.pendingCapsDropped_fields hD
-      exact ⟨tx, hx, hIs, ⟨.inl (TCB.pendingCapsDropped_isSome hD),
-        fun m m' hm hm' hb => TCB.pendingCapsDropped_bounded hD hm hm' hb⟩,
-        hQN, hQP, hQPP, hTB, hRO, hPRR⟩
-    · intro oid k hT _ _; exact hOther oid k hT
-    · intro rid caller
-      constructor
-      · rintro ⟨r, hr, hc⟩
-        exact ⟨r, (hOther rid.toObjId (.reply r) (fun _ h => by cases h)).mp hr, hc⟩
-      · rintro ⟨r, hr, hc⟩
-        exact ⟨r, (hOther rid.toObjId (.reply r) (fun _ h => by cases h)).mpr hr, hc⟩
-    · intro oid sc h
-      exact ⟨sc, (hOther oid (.schedContext sc) (fun _ h => by cases h)).mpr h⟩
-  -- The donation half: bindings are untouched, SchedContexts are untouched, and a
-  -- reply-blocked unbound owner stays one because its whole TCB but for the
-  -- message is the same record.
-  have hFrame : donationOwnerFrame st (revokePendingTransfersFrom st nodes) := by
-    refine ⟨?_, ?_⟩
-    · intro scId sc h
-      exact (hOther scId.toObjId (.schedContext sc) (fun _ h => by cases h)).mpr h
-    · intro owner ownerTcb h hU hR
-      obtain ⟨t', h', hD⟩ := hFwd _ _ h
-      obtain ⟨hIs, _, _, _, _, _, _, hBindEq⟩ := TCB.pendingCapsDropped_fields hD
-      exact ⟨t', h', hBindEq.trans hU, by rw [hIs]; exact hR⟩
-  have hBack : ∀ (tid : SeLe4n.ThreadId) (tcb' : TCB),
-      (revokePendingTransfersFrom st nodes).objects[tid.toObjId]? = some (.tcb tcb') →
-      ∃ tcb, st.objects[tid.toObjId]? = some (.tcb tcb) ∧
-        tcb.ipcState = tcb'.ipcState ∧ tcb.schedContextBinding = tcb'.schedContextBinding := by
-    intro tid tcb' h
-    obtain ⟨t, hPre, hD⟩ := hBwd _ _ h
-    obtain ⟨hIs, _, _, _, _, _, _, hBindEq⟩ := TCB.pendingCapsDropped_fields hD
-    exact ⟨t, hPre, hIs.symm, hBindEq.symm⟩
-  exact ipcInvariantFull_of_donationReadAgreement st _ hInv hAgree
-    (donationChainAcyclic_of_sameSchedContextBindings hBind hInv.donationChainAcyclic)
-    (donationOwnerValid_of_frames hBind hFrame hInv.donationOwnerValid)
-    (passiveServerIdle_of_frame (passiveServerIdleFrame_of_backward hBack hSched)
-      hInv.passiveServerIdle)
-    (donationBudgetTransfer_of_sameSchedContextBindings hBind hInv.donationBudgetTransfer)
-    (donationOwnerUnique_of_sameSchedContextBindings hBind hInv.donationOwnerUnique)
-
-
 /-- **One revoked node preserves the bundle, and the store invariant with it.**
 
 The node's slot deletion is `cspaceDeleteSlotCore`'s; the `cdt` field update that
@@ -1250,14 +1140,12 @@ theorem revokeCdtScaffold_preserves_ipcInvariantFull {ρ : Type}
     revokeCdtScaffold_ok_decompose emptyReport traverse st st' addr r hStep
   rcases hRest with rfl | ⟨rootNode, out, hTrav, rfl⟩
   · exact ⟨hInv, hObjInv⟩
-  · obtain ⟨hOut, hOutExt⟩ := hTraverse st rootNode _ out hInv hObjInv hTrav
-    exact ⟨revokePendingTransfersFrom_preserves_ipcInvariantFull _ _ hOutExt hOut,
-      (revokePendingTransfersFrom_frame _ _ hOutExt).1⟩
+  · exact hTraverse st rootNode _ out hInv hObjInv hTrav
 
 /-- `.cspaceRevoke`: `seL4_CNode_Revoke` preserves the whole bundle.
 
-The arm the dispatcher routes — a read of the source slot, the materialized
-descendant walk, and the in-flight sweep — with every step's obligation
+The arm the dispatcher routes — a read of the source slot and the materialized
+descendant walk — with every step's obligation
 discharged by the theorem that owns it. -/
 theorem cspaceRevokeCdt_preserves_ipcInvariantFull
     (st st' : SystemState) (addr : CSpaceAddr) (pages : List MappedPage)
@@ -1268,27 +1156,6 @@ theorem cspaceRevokeCdt_preserves_ipcInvariantFull
     (fun stL rn ds out h1 h2 h3 =>
       revokeCdtMaterializedTraversal_preserves_ipcInvariantFull stL rn ds out h2 h1 h3)
     st st' addr pages hObjInv hInv hStep).1
-
-/-- A capability read out of a CNode slot carries a valid badge, by the badge
-clause of the pre-state. -/
-theorem lookupSlotCap_badge_valid (st : SystemState) (addr : CSpaceAddr)
-    (cap : Capability) (hCapWf : capabilityBadgesWellFormed st)
-    (hLk : SystemState.lookupSlotCap st addr = some cap) :
-    ∀ b, cap.badge = some b → b.valid := by
-  intro b hB
-  unfold SystemState.lookupSlotCap at hLk
-  cases hCn : SystemState.lookupCNode st addr.cnode with
-  | none => rw [hCn] at hLk; cases hLk
-  | some cn =>
-      rw [hCn] at hLk
-      have hObj : st.objects[addr.cnode]? = some (.cnode cn) := by
-        unfold SystemState.lookupCNode at hCn
-        cases hO : st.objects[addr.cnode]? with
-        | none => rw [hO] at hCn; cases hCn
-        | some obj =>
-          cases obj <;> rw [hO] at hCn <;> cases hCn
-          rfl
-      exact hCapWf addr.cnode cn addr.slot cap b hObj hLk hB
 
 /-- Inversion of a successful `toNonNull?`: the promoted value is the input. -/
 private theorem toNonNull?_val_eq {cap : Capability} {capNN : NonNullCap}

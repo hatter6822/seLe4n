@@ -523,29 +523,22 @@ theorem endpointReceiveDualWithCaps_preserves_dualQueueSystemInvariant
     | none => simp [hRv] at hStep; obtain ⟨⟨rfl, _⟩, rfl⟩ := hStep; exact hInvMid
     | some _ =>
     simp only [hRv] at hStep
-    -- AN10-B: post-migration `endpointReceiveDualWithCaps` reads via
-    -- `getTcb?`; case-split on the typed helper.
-    cases hTcb : stMid.getTcb? receiver with
-    | none => simp [hTcb] at hStep; obtain ⟨⟨rfl, _⟩, rfl⟩ := hStep; exact hInvMid
-    | some receiverTcb =>
-      simp only [hTcb] at hStep
-      cases hMsg : receiverTcb.pendingMessage with
-      | none => simp [hMsg] at hStep; obtain ⟨⟨rfl, _⟩, rfl⟩ := hStep; exact hInvMid
-      | some msg =>
-        simp only [hMsg] at hStep
-        by_cases hEmpty : msg.caps.isEmpty
-        · simp [hEmpty] at hStep; obtain ⟨⟨rfl, _⟩, rfl⟩ := hStep; exact hInvMid
-        · simp [hEmpty] at hStep
-          -- U-H13: match on lookupCspaceRoot — none returns error, some proceeds
-          -- ipcUnwrapCaps path
-          split at hStep
-          · -- ipcUnwrapCaps errored — contradiction with hStep : ... = .ok
-            exact absurd hStep (by simp)
-          · -- ipcUnwrapCaps succeeded
-            rename_i hUnwrapResult
-            obtain ⟨⟨rfl, _⟩, rfl⟩ := hStep
-            exact ipcUnwrapCaps_preserves_dualQueueSystemInvariant msg receiverCspaceRoot
-              receiverSlotBase _ stMid _ _ hInvMid hObjInvMid hUnwrapResult
+    -- WS-ZA ZA4.7: the dequeued sender's capabilities are resolved (CDT nodes
+    -- only) and installed (`receiveTransferCaps_frame`).
+    cases hT : receiveTransferCaps (receiveCapRequest st endpointId) receiverCspaceRoot
+        receiverSlotBase stMid with
+    | error e => simp [hT] at hStep
+    | ok p =>
+      obtain ⟨s, stF⟩ := p
+      simp only [hT, Prod.mk.injEq] at hStep
+      obtain ⟨⟨_, _⟩, rfl⟩ := hStep
+      obtain ⟨stR, caps, hO, _, _, hOr⟩ := receiveTransferCaps_frame hT
+      have hInvR : dualQueueSystemInvariant stR :=
+        dualQueueSystemInvariant_of_storeAgrees (fun k => by rw [hO]) hInvMid
+      rcases hOr with rfl | hU
+      · exact hInvR
+      · exact ipcUnwrapCaps_preserves_dualQueueSystemInvariant _ receiverCspaceRoot
+          receiverSlotBase _ stR _ _ hInvR (hO ▸ hObjInvMid) hU
 /-- WS-RR RR3.11: `endpointCallWithCaps` preserves `dualQueueSystemInvariant` —
 the missing third member of the M3-E4 WithCaps family (send and receive already
 had one, and its absence is why the `.call` bundle threaded the conjunct on its
@@ -715,12 +708,11 @@ theorem endpointCallWithCaps_preserves_badgeWellFormed
               (fun i c hc b hb => hMsgCaps i c b hc hb) hStep
 
 /-- WS-RR RR3.11: `endpointReceiveDualWithCaps` **establishes** `badgeWellFormed`
-from the pre-state, given the pre-state in-flight badge invariant.
+from the pre-state.
 
-The caps this wrapper installs are the ones in the message the base receive just
-delivered into the receiver's `pendingMessage`, so the side condition the transfer
-needs is discharged by transporting `pendingMessageCapBadgesWellFormed` across the
-base receive rather than by assuming anything about the result. -/
+WS-ZA ZA4.7: the caps this wrapper installs are resolved from the dequeued
+sender's own CSpace at the rendezvous, so the side condition the transfer needs is
+the at-rest badge invariant of that CSpace, already part of `badgeWellFormed`. -/
 theorem endpointReceiveDualWithCaps_preserves_badgeWellFormed
     (endpointId : SeLe4n.ObjId) (receiver : SeLe4n.ThreadId)
     (replyId : Option SeLe4n.ReplyId)
@@ -729,7 +721,6 @@ theorem endpointReceiveDualWithCaps_preserves_badgeWellFormed
     (summary : CapTransferSummary)
     (hInv : badgeWellFormed st)
     (hObjInv : st.objects.invExt)
-    (hPendingCaps : pendingMessageCapBadgesWellFormed st)
     (hStep : endpointReceiveDualWithCaps endpointId receiver replyId
              receiverCspaceRoot receiverSlotBase st = .ok ((senderId, summary), st')) :
     badgeWellFormed st' := by
@@ -741,8 +732,6 @@ theorem endpointReceiveDualWithCaps_preserves_badgeWellFormed
     simp only [hRecv] at hStep
     have hMid := endpointReceiveDual_preserves_badgeWellFormed endpointId receiver sid replyId
       st stMid hInv hObjInv hRecv
-    have hPendMid := endpointReceiveDual_preserves_pendingMessageCapBadgesWellFormed
-      endpointId receiver sid replyId st stMid hPendingCaps hObjInv hRecv
     have hObjInvMid : stMid.objects.invExt :=
       endpointReceiveDual_preserves_objects_invExt st stMid endpointId receiver sid replyId
         hObjInv hRecv
@@ -750,32 +739,25 @@ theorem endpointReceiveDualWithCaps_preserves_badgeWellFormed
     | none => simp [hRv] at hStep; obtain ⟨⟨rfl, _⟩, rfl⟩ := hStep; exact hMid
     | some _ =>
     simp only [hRv] at hStep
-    cases hTcb : stMid.getTcb? receiver with
-    | none => simp [hTcb] at hStep; obtain ⟨⟨rfl, _⟩, rfl⟩ := hStep; exact hMid
-    | some receiverTcb =>
-      simp only [hTcb] at hStep
-      cases hMsg : receiverTcb.pendingMessage with
-      | none => simp [hMsg] at hStep; obtain ⟨⟨rfl, _⟩, rfl⟩ := hStep; exact hMid
-      | some msg =>
-        simp only [hMsg] at hStep
-        by_cases hEmpty : msg.caps.isEmpty
-        · simp [hEmpty] at hStep; obtain ⟨⟨rfl, _⟩, rfl⟩ := hStep; exact hMid
-        · simp [hEmpty] at hStep
-          split at hStep
-          · exact absurd hStep (by simp)
-          · rename_i hUnwrapResult
-            obtain ⟨⟨rfl, _⟩, rfl⟩ := hStep
-            -- The delivered message sits in the receiver's `pendingMessage` in the
-            -- intermediate state, so its caps satisfy the transported in-flight
-            -- badge invariant.
-            have hCaps : ∀ (i : Nat) (c : TransferCap), msg.caps[i]? = some c →
-                ∀ b, c.cap.badge = some b → b.valid := by
-              intro i c hc b hb
-              exact hPendMid receiver receiverTcb msg
-                ((SystemState.getTcb?_eq_some_iff stMid receiver receiverTcb).mp hTcb)
-                hMsg i c b hc hb
-            exact ipcUnwrapCaps_preserves_badgeWellFormed msg receiverCspaceRoot
-              receiverSlotBase _ stMid _ _ hMid hObjInvMid hCaps hUnwrapResult
+    -- WS-ZA ZA4.7: the installed capabilities are the sender's own, resolved from
+    -- its CSpace at the rendezvous, so their badges are valid because the badges
+    -- at rest in that CSpace are (`receiveTransferCaps_frame`).
+    cases hT : receiveTransferCaps (receiveCapRequest st endpointId) receiverCspaceRoot
+        receiverSlotBase stMid with
+    | error e => simp [hT] at hStep
+    | ok p =>
+      obtain ⟨s, stF⟩ := p
+      simp only [hT, Prod.mk.injEq] at hStep
+      obtain ⟨⟨_, _⟩, rfl⟩ := hStep
+      obtain ⟨stR, caps, hO, _, hCaps, hOr⟩ := receiveTransferCaps_frame hT
+      have hMidR : badgeWellFormed stR :=
+        ⟨fun oid n b h hb => hMid.1 oid n b (hO ▸ h) hb,
+         fun oid cn slot cap b h => hMid.2 oid cn slot cap b (hO ▸ h)⟩
+      rcases hOr with rfl | hU
+      · exact hMidR
+      · exact ipcUnwrapCaps_preserves_badgeWellFormed _ receiverCspaceRoot
+          receiverSlotBase _ stR _ _ hMidR (hO ▸ hObjInvMid)
+          (fun i c hc b hb => hCaps hMid.2 i c hc b hb) hU
 
 
 theorem endpointQueueRemoveDual_preserves_dualQueueSystemInvariant
@@ -2082,10 +2064,6 @@ theorem endpointQueuePopHead_preserves_blockedThreadsPendingMessageConsistent
         | none => simp
         | some htcb =>
           simp only []
-          -- PR #873 round 11: the send-queue message-presence guard --
-          -- a head that fails it errors, so it is not this `.ok`.
-          split
-          · simp
           cases hStore : storeObject endpointId _ st with
           | error e => simp
           | ok pair =>
@@ -2241,14 +2219,14 @@ theorem endpointSendDual_preserves_blockedThreadsPendingMessageConsistent
             endpointId false sender st st1 hObjInv hEnq
           have hInv1 := endpointQueueEnqueue_preserves_blockedThreadsPendingMessageConsistent
             endpointId false sender st st1 hObjInv hInv hEnq
-          cases hMsg : storeTcbIpcStateAndMessage st1 sender (.blockedOnSend endpointId) (some msg) with
+          cases hMsg : storeTcbIpcStateAndMessage st1 sender (.blockedOnSend endpointId) none with
           | error e => simp [hMsg] at hStep
           | ok st2 =>
             simp only [hMsg, Except.ok.injEq, Prod.mk.injEq] at hStep
             obtain ⟨_, hEq⟩ := hStep; subst hEq
             have hInv2 := storeTcbIpcStateAndMessage_preserves_blockedThreadsPendingMessageConsistent
-              st1 st2 sender (.blockedOnSend endpointId) (some msg) hObjInv1 hMsg hInv1 rfl
-            exact removeRunnable_preserves_blockedThreadsPendingMessageConsistent _ _ hInv2
+              st1 st2 sender (.blockedOnSend endpointId) none hObjInv1 hMsg hInv1 rfl
+            exact blockedThreadsPendingMessageConsistent_of_objectsAgreeOffRunLinks (recordSendCap_objectsAgreeOffRunLinks _ _ _ _) <| removeRunnable_preserves_blockedThreadsPendingMessageConsistent _ _ hInv2
 
 /-- WS-SM SM6.D (#7.1 fold): `linkCallerReply` preserves
 `blockedThreadsPendingMessageConsistent`. The `.reply` store inside `linkReply`
@@ -2597,15 +2575,15 @@ theorem endpointCall_preserves_blockedThreadsPendingMessageConsistent
                 endpointId false caller st st1 hObjInv hEnq
               have hInvEnq := endpointQueueEnqueue_preserves_blockedThreadsPendingMessageConsistent
                 endpointId false caller st st1 hObjInv hInv hEnq
-              cases hMsg : storeTcbIpcStateAndMessage st1 caller (.blockedOnCall endpointId) (some msg) with
+              cases hMsg : storeTcbIpcStateAndMessage st1 caller (.blockedOnCall endpointId) none with
               | error e => simp [hMsg] at hStep
               | ok st2 =>
                 simp only [hMsg, Except.ok.injEq, Prod.mk.injEq] at hStep
                 obtain ⟨_, hEq⟩ := hStep; subst hEq
                 have hInv2 := storeTcbIpcStateAndMessage_preserves_blockedThreadsPendingMessageConsistent
-                  st1 st2 caller (.blockedOnCall endpointId) (some msg)
+                  st1 st2 caller (.blockedOnCall endpointId) none
                   hObjInvEnq hMsg hInvEnq rfl
-                exact removeRunnable_preserves_blockedThreadsPendingMessageConsistent _ _ hInv2
+                exact blockedThreadsPendingMessageConsistent_of_objectsAgreeOffRunLinks (recordSendCap_objectsAgreeOffRunLinks _ _ _ _) <| removeRunnable_preserves_blockedThreadsPendingMessageConsistent _ _ hInv2
 
 -- ============================================================================
 -- V3-G: endpointReply preservation

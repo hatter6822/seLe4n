@@ -796,18 +796,19 @@ theorem endpointSendDual_passiveServerIdleFrameOnCore
           simp only [hHead, hEnq] at hStep
           have hObjInv1 := endpointQueueEnqueue_preserves_objects_invExt endpointId false sender st st1 hObjInv hEnq
           have hF1 := endpointQueueEnqueue_passiveServerIdleFrameOnCore (c := c) endpointId false sender st st1 hObjInv hEnq
-          cases hMsg : storeTcbIpcStateAndMessage st1 sender (.blockedOnSend endpointId) (some msg) with
+          cases hMsg : storeTcbIpcStateAndMessage st1 sender (.blockedOnSend endpointId) none with
           | error e => simp [hMsg] at hStep
           | ok st2 =>
             simp only [hMsg, Except.ok.injEq, Prod.mk.injEq] at hStep
             obtain ⟨_, hEq⟩ := hStep; subst hEq
-            refine (hF1.trans (storeTcbIpcStateAndMessage_passiveServerIdleFrameOnCore st1 st2 sender (.blockedOnSend endpointId) (some msg)
+            refine (hF1.trans (storeTcbIpcStateAndMessage_passiveServerIdleFrameOnCore st1 st2 sender (.blockedOnSend endpointId) none
               (Or.inr (fun tcb hTcb => ?_)) hObjInv1 hMsg)).trans
               (removeRunnable_passiveServerIdleFrameOnCore st2 sender (fun tcb hTcb => Or.inl ?_))
+              |>.trans (passiveServerIdleFrameOnCore.of_objectsAgreeOffRunLinks (recordSendCap_objectsAgreeOffRunLinks _ _ _ _) (recordSendCap_scheduler _ _ _ _))
             · obtain ⟨tcb0, hTcb0, hBindEq⟩ := endpointQueueEnqueue_sameSchedContextBindings endpointId false sender st st1 hObjInv hEnq sender tcb
                 ((getTcb?_eq_some_iff st1 sender tcb).mp hTcb)
               exact hBindEq ▸ hSenderNotUnbound tcb0 ((getTcb?_eq_some_iff st sender tcb0).mpr hTcb0)
-            · obtain ⟨tcb1, hTcb1, hBindEq1⟩ := storeTcbIpcStateAndMessage_sameSchedContextBindings st1 st2 sender (.blockedOnSend endpointId) (some msg) hObjInv1 hMsg sender tcb
+            · obtain ⟨tcb1, hTcb1, hBindEq1⟩ := storeTcbIpcStateAndMessage_sameSchedContextBindings st1 st2 sender (.blockedOnSend endpointId) none hObjInv1 hMsg sender tcb
                 ((getTcb?_eq_some_iff st2 sender tcb).mp hTcb)
               obtain ⟨tcb0, hTcb0, hBindEq0⟩ := endpointQueueEnqueue_sameSchedContextBindings endpointId false sender st st1 hObjInv hEnq sender tcb1 hTcb1
               exact hBindEq1 ▸ hBindEq0 ▸ hSenderNotUnbound tcb0 ((getTcb?_eq_some_iff st sender tcb0).mpr hTcb0)
@@ -1033,18 +1034,19 @@ theorem endpointCall_passiveServerIdleFrameOnCore
           simp only [hHead, hEnq] at hStep
           have hObjInv1 := endpointQueueEnqueue_preserves_objects_invExt endpointId false caller st st1 hObjInv hEnq
           have hF1 := endpointQueueEnqueue_passiveServerIdleFrameOnCore (c := c) endpointId false caller st st1 hObjInv hEnq
-          cases hMsg : storeTcbIpcStateAndMessage st1 caller (.blockedOnCall endpointId) (some msg) with
+          cases hMsg : storeTcbIpcStateAndMessage st1 caller (.blockedOnCall endpointId) none with
           | error e => simp [hMsg] at hStep
           | ok st2 =>
             simp only [hMsg, Except.ok.injEq, Prod.mk.injEq] at hStep
             obtain ⟨_, hEq⟩ := hStep; subst hEq
-            refine (hF1.trans (storeTcbIpcStateAndMessage_passiveServerIdleFrameOnCore st1 st2 caller (.blockedOnCall endpointId) (some msg)
+            refine (hF1.trans (storeTcbIpcStateAndMessage_passiveServerIdleFrameOnCore st1 st2 caller (.blockedOnCall endpointId) none
               (Or.inr (fun tcb hTcb => ?_)) hObjInv1 hMsg)).trans
               (removeRunnable_passiveServerIdleFrameOnCore st2 caller (fun tcb hTcb => Or.inl ?_))
+              |>.trans (passiveServerIdleFrameOnCore.of_objectsAgreeOffRunLinks (recordSendCap_objectsAgreeOffRunLinks _ _ _ _) (recordSendCap_scheduler _ _ _ _))
             · obtain ⟨tcb0, hTcb0, hBindEq⟩ := endpointQueueEnqueue_sameSchedContextBindings endpointId false caller st st1 hObjInv hEnq caller tcb
                 ((getTcb?_eq_some_iff st1 caller tcb).mp hTcb)
               exact hBindEq ▸ hCallerNotUnbound tcb0 ((getTcb?_eq_some_iff st caller tcb0).mpr hTcb0)
-            · obtain ⟨tcb1, hTcb1, hBindEq1⟩ := storeTcbIpcStateAndMessage_sameSchedContextBindings st1 st2 caller (.blockedOnCall endpointId) (some msg) hObjInv1 hMsg caller tcb
+            · obtain ⟨tcb1, hTcb1, hBindEq1⟩ := storeTcbIpcStateAndMessage_sameSchedContextBindings st1 st2 caller (.blockedOnCall endpointId) none hObjInv1 hMsg caller tcb
                 ((getTcb?_eq_some_iff st2 caller tcb).mp hTcb)
               obtain ⟨tcb0, hTcb0, hBindEq0⟩ := endpointQueueEnqueue_sameSchedContextBindings endpointId false caller st st1 hObjInv hEnq caller tcb1 hTcb1
               exact hBindEq1 ▸ hBindEq0 ▸ hCallerNotUnbound tcb0 ((getTcb?_eq_some_iff st caller tcb0).mpr hTcb0)
@@ -1727,25 +1729,20 @@ theorem endpointReceiveDualWithCaps_passiveServerIdleFrameOnCore
     | none => simp [hRv] at hStep; obtain ⟨⟨_, _⟩, rfl⟩ := hStep; exact hFMid
     | some _ =>
     simp [hRv] at hStep
-    cases hTcb : stMid.getTcb? receiver with
-    | none => simp [hTcb] at hStep; obtain ⟨⟨_, _⟩, rfl⟩ := hStep; exact hFMid
-    | some receiverTcb =>
-      simp [hTcb] at hStep
-      cases hMsg : receiverTcb.pendingMessage with
-      | none => simp [hMsg] at hStep; obtain ⟨⟨_, _⟩, rfl⟩ := hStep; exact hFMid
-      | some msg =>
-        simp [hMsg] at hStep
-        split at hStep
-        · obtain ⟨⟨_, _⟩, rfl⟩ := hStep; exact hFMid
-        · cases hUnwrap : ipcUnwrapCaps msg receiverCspaceRoot
-              receiverSlotBase msg.capsGranted stMid with
-          | error e => simp [hUnwrap] at hStep
-          | ok pair =>
-            rcases pair with ⟨s, stFinal⟩
-            simp [hUnwrap] at hStep
-            obtain ⟨⟨_, _⟩, rfl⟩ := hStep
-            exact hFMid.trans (ipcUnwrapCaps_passiveServerIdleFrameOnCore msg
-              receiverCspaceRoot receiverSlotBase _ stMid stFinal s hObjInvMid hUnwrap)
+    -- WS-ZA ZA4.7: the dequeued sender's capabilities are resolved (CDT nodes
+    -- only) and installed (`receiveTransferCaps_frame`).
+    cases hT : receiveTransferCaps (receiveCapRequest st endpointId) receiverCspaceRoot
+        receiverSlotBase stMid with
+    | error e => simp [hT] at hStep
+    | ok pT =>
+      obtain ⟨sT, stT⟩ := pT
+      simp only [hT, Except.ok.injEq, Prod.mk.injEq] at hStep
+      obtain ⟨⟨_, _⟩, rfl⟩ := hStep
+      obtain ⟨stR, caps, hO, hS, _, hOr⟩ := receiveTransferCaps_frame hT
+      have hAR : stR.objectsAgreeOffRunLinks stMid := fun _ => by rw [hO]
+      rcases hOr with rfl | hU
+      · exact hFMid.trans (passiveServerIdleFrameOnCore.of_objectsAgreeOffRunLinks hAR hS)
+      · exact (hFMid.trans (passiveServerIdleFrameOnCore.of_objectsAgreeOffRunLinks hAR hS)).trans (ipcUnwrapCaps_passiveServerIdleFrameOnCore _ receiverCspaceRoot receiverSlotBase _ stR _ _ (hO ▸ hObjInvMid) hU)
 
 open SeLe4n.Model.SystemState in
 /-- SM6.D.2: `endpointCallWithCaps` frames every core's slice

@@ -616,8 +616,8 @@ theorem lifecycleRetypeObject_preserves_blockedThreadsPendingMessageConsistent
         match t.ipcState with
         | .blockedOnReceive _ => t.pendingMessage = none
         | .blockedOnNotification _ => t.pendingMessage = none
-        | .blockedOnSend _ => t.pendingMessage.isSome
-        | .blockedOnCall _ => t.pendingMessage.isSome
+        | .blockedOnSend _ => t.pendingMessage = none
+        | .blockedOnCall _ => t.pendingMessage = none
         | _ => True)
     (hStep : lifecycleRetypeObject authority target newObj st = .ok ((), st')) :
     blockedThreadsPendingMessageConsistent st' := by
@@ -1131,8 +1131,8 @@ theorem lifecycleRetypeObject_preserves_coreIpcInvariantBundle
         match t.ipcState with
         | .blockedOnReceive _ => t.pendingMessage = none
         | .blockedOnNotification _ => t.pendingMessage = none
-        | .blockedOnSend _ => t.pendingMessage.isSome
-        | .blockedOnCall _ => t.pendingMessage.isSome
+        | .blockedOnSend _ => t.pendingMessage = none
+        | .blockedOnCall _ => t.pendingMessage = none
         | _ => True)
     -- WS-RR RR3.9: replaces the threaded `hRCLRecip'` — four pre-state obligations
     -- on what the retype creates and what it destroys (see
@@ -1260,8 +1260,8 @@ theorem lifecycleRetypeObject_preserves_lifecycleCompositionInvariantBundle
         match t.ipcState with
         | .blockedOnReceive _ => t.pendingMessage = none
         | .blockedOnNotification _ => t.pendingMessage = none
-        | .blockedOnSend _ => t.pendingMessage.isSome
-        | .blockedOnCall _ => t.pendingMessage.isSome
+        | .blockedOnSend _ => t.pendingMessage = none
+        | .blockedOnCall _ => t.pendingMessage = none
         | _ => True)
     -- WS-RR RR3.9: replaces the threaded `hRCLRecip'` — four pre-state obligations
     -- on what the retype creates and what it destroys (see

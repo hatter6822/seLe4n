@@ -100,8 +100,6 @@ theorem endpointQueuePopHead_keyFrame {endpointId : SeLe4n.ObjId} {isReceiveQ : 
         | none => simp [hLookup] at hStep
         | some tcb =>
           simp only [hLookup] at hStep
-          split at hStep
-          · simp at hStep
           revert hStep
           cases hStore : storeObject endpointId _ st with
           | error e => simp
@@ -218,6 +216,20 @@ theorem removeRunnableOnCore_stepCovers (e : CoreId) (st : SystemState) (tid : S
     (c : CoreId) : stepCovers e st (removeRunnableOnCore st tid c) :=
   ⟨removeRunnableOnCore_covers e st tid c, removeRunnableOnCore_monotone e st tid c⟩
 
+/-- WS-ZA ZA4.7: the send-cap record of a blocking sender writes a badge word and
+two flags, none a key input. -/
+theorem recordSendCap_keyFrame (st : SystemState) (tid : SeLe4n.ThreadId)
+    (badge : Option SeLe4n.Badge) (grant : Bool) (hInv : st.objects.invExt) :
+    capabilityKeyFrame st (recordSendCap st tid badge grant) :=
+  ⟨keyInputsEq_of_objectsAgreeOffRunLinks (recordSendCap_objectsAgreeOffRunLinks _ _ _ _)
+      (fun y => by
+        unfold recordSendCap
+        by_cases h : y = tid
+        · subst h; rw [SystemState.mapTcbInPlace_getTcb?_self]; cases st.getTcb? y <;> rfl
+        · rw [SystemState.mapTcbInPlace_getTcb?_ne _ _ _ _
+            (fun e => h (SeLe4n.ThreadId.toObjId_injective _ _ e).symm)]),
+    recordSendCap_scheduler _ _ _ _, recordSendCap_objects_invExt _ _ _ _ hInv⟩
+
 /-! ### Send -/
 
 /-- The per-core send covers on every outcome: an error returns the pre-state,
@@ -260,8 +272,10 @@ theorem endpointSendDualOnCore_stepCovers (e : CoreId) {endpointId : SeLe4n.ObjI
           have hInv1 := endpointQueueEnqueue_preserves_objects_invExt _ _ _ _ _ hInv hEnq
           have hF2 := storeTcbIpcStateAndMessage_keyFrame hInv1 hBlk
           have hInv2 := storeTcbIpcStateAndMessage_preserves_objects_invExt _ _ _ _ _ hInv1 hBlk
-          exact ⟨stepCovers_trans (hF1.trans hF2).stepCovers
-            (removeRunnableOnCore_stepCovers e st2 sender executingCore), removeRunnableOnCore_objects_invExt st2 sender executingCore hInv2⟩
+          have hF3 := recordSendCap_keyFrame _ sender msg.badge msg.capsGranted
+            (removeRunnableOnCore_objects_invExt st2 sender executingCore hInv2)
+          exact ⟨stepCovers_trans (stepCovers_trans (hF1.trans hF2).stepCovers
+            (removeRunnableOnCore_stepCovers e st2 sender executingCore)) hF3.stepCovers, hF3.2.2⟩
   · split <;> exact ⟨stepCovers_refl e st, hInv⟩
 
 /-- Installing transferred capabilities writes CNodes and the CDT only. -/
@@ -275,6 +289,19 @@ theorem ipcUnwrapCaps_keyFrame {msg : IpcMessage} {receiverRoot : SeLe4n.ObjId}
       (fun s => ipcUnwrapCaps_getSchedContext?_eq _ _ _ _ _ _ _ s hInv h),
     ipcUnwrapCaps_preserves_scheduler _ _ _ _ _ _ _ h,
     ipcUnwrapCaps_preserves_objects_invExt _ _ _ _ _ _ _ hInv h⟩
+
+/-- WS-ZA ZA4.7: the rendezvous capability lookup mints CDT nodes in the sender's
+CSpace and installs into the receiver's CNodes: no key input. -/
+theorem receiveTransferCaps_keyFrame
+    {req : Option (SeLe4n.ObjId × Array SeLe4n.CPtr × Nat)} {root : SeLe4n.ObjId}
+    {base : SeLe4n.Slot} {st st' : SystemState} {summary : CapTransferSummary}
+    (hInv : st.objects.invExt) (h : receiveTransferCaps req root base st = .ok (summary, st')) :
+    capabilityKeyFrame st st' := by
+  obtain ⟨stR, _, hO, hS, _, hOr⟩ := receiveTransferCaps_frame h
+  have h1 := capabilityKeyFrame_of_objects_scheduler_eq hInv hO hS
+  rcases hOr with rfl | hU
+  · exact h1
+  · exact h1.trans (ipcUnwrapCaps_keyFrame h1.2.2 hU)
 
 /-- The send with capability transfer covers on every outcome. -/
 theorem endpointSendDualWithCapsOnCore_stepCovers (e : CoreId) {endpointId : SeLe4n.ObjId}
@@ -481,7 +508,7 @@ theorem endpointReceiveDualWithCapsOnCore_stepCovers (e : CoreId) {endpointId : 
     all_goals first
       | exact ⟨hRcv, hRcvInv⟩
       | (rename_i hU
-         have hF := ipcUnwrapCaps_keyFrame hRcvInv hU
+         have hF := receiveTransferCaps_keyFrame hRcvInv hU
          exact ⟨stepCovers_trans hRcv hF.stepCovers, hF.2.2⟩)
 
 /-! ### The donation lend -/
@@ -725,8 +752,11 @@ theorem endpointCallOnCore_stepCovers (e : CoreId) {endpointId : SeLe4n.ObjId}
         · exact hRefl
         · rename_i st2 hBlk
           have hF2 := hF1.trans (storeTcbIpcStateAndMessage_keyFrame hF1.2.2 hBlk)
-          exact ⟨stepCovers_trans hF2.stepCovers (removeRunnableOnCore_stepCovers e _ _ _),
-            removeRunnableOnCore_objects_invExt _ _ _ hF2.2.2⟩
+          have hF3 := recordSendCap_keyFrame (removeRunnableOnCore st2 caller executingCore)
+            caller msg.badge msg.capsGranted
+            (removeRunnableOnCore_objects_invExt _ _ _ hF2.2.2)
+          exact ⟨stepCovers_trans (stepCovers_trans hF2.stepCovers
+            (removeRunnableOnCore_stepCovers e _ _ _)) hF3.stepCovers, hF3.2.2⟩
   · split <;> exact hRefl
 
 theorem endpointCallWithCapsOnCore_stepCovers (e : CoreId) {endpointId : SeLe4n.ObjId}

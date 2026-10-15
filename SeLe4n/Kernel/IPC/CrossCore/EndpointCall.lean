@@ -402,9 +402,11 @@ def endpointCallOnCore (endpointId : SeLe4n.ObjId) (caller : SeLe4n.ThreadId)
           match endpointQueueEnqueue endpointId false caller st with
           | .error e => (st, .error e)
           | .ok st' =>
-              match storeTcbIpcStateAndMessage st' caller (.blockedOnCall endpointId) (some msg) with
+              match storeTcbIpcStateAndMessage st' caller (.blockedOnCall endpointId) none with
               | .error e => (st, .error e)
-              | .ok st'' => (removeRunnableOnCore st'' caller executingCore, .ok none)
+              | .ok st'' =>
+                  (recordSendCap (removeRunnableOnCore st'' caller executingCore) caller
+                    msg.badge msg.capsGranted, .ok none)
   | none =>
       -- Typed-accessor dispatch (AK7 cascade discipline): `getEndpoint?` is
       -- `none` for both an absent object and a wrong-kinded one, so the
@@ -459,10 +461,11 @@ theorem endpointCallOnCore_noReceiver_eq
     (hObj : st.objects[endpointId]? = some (.endpoint ep))
     (hHead : ep.receiveQ.head = none)
     (hEnq : endpointQueueEnqueue endpointId false caller st = .ok st')
-    (hStore : storeTcbIpcStateAndMessage st' caller (.blockedOnCall endpointId) (some msg)
+    (hStore : storeTcbIpcStateAndMessage st' caller (.blockedOnCall endpointId) none
         = .ok st'') :
     endpointCallOnCore endpointId caller msg executingCore st
-      = (removeRunnableOnCore st'' caller executingCore, .ok none) := by
+      = (recordSendCap (removeRunnableOnCore st'' caller executingCore) caller
+          msg.badge msg.capsGranted, .ok none) := by
   unfold endpointCallOnCore
   rw [if_neg hSz1, if_neg hSz2]
   have hObjE : st.getEndpoint? endpointId = some ep :=
@@ -502,10 +505,10 @@ theorem endpointCallOnCore_replenishQueueOnCore (endpointId : SeLe4n.ObjId)
           | ok st' =>
             simp only []
             cases hStore : storeTcbIpcStateAndMessage st' caller (.blockedOnCall endpointId)
-                (some msg) with
+                none with
             | error e => rfl
             | ok st'' =>
-              simp only [removeRunnableOnCore_replenishQueueOnCore]
+              simp only [recordSendCap_scheduler, removeRunnableOnCore_replenishQueueOnCore]
               rw [storeTcbIpcStateAndMessage_scheduler_eq st' st'' caller _ _ hStore,
                 endpointQueueEnqueue_scheduler_eq endpointId false caller st st' hEnq]
         | some _ =>
@@ -605,7 +608,7 @@ theorem endpointCallOnCore_noReceiver_no_sgi
     (hObj : st.objects[endpointId]? = some (.endpoint ep))
     (hHead : ep.receiveQ.head = none)
     (hEnq : endpointQueueEnqueue endpointId false caller st = .ok st')
-    (hStore : storeTcbIpcStateAndMessage st' caller (.blockedOnCall endpointId) (some msg)
+    (hStore : storeTcbIpcStateAndMessage st' caller (.blockedOnCall endpointId) none
         = .ok st'') :
     (endpointCallOnCore endpointId caller msg executingCore st).2 = .ok none := by
   rw [endpointCallOnCore_noReceiver_eq endpointId caller msg executingCore st ep st' st''
@@ -1308,10 +1311,6 @@ theorem endpointQueuePopHead_determineTargetCore_eq (endpointId : SeLe4n.ObjId)
         | none => simp
         | some headTcb =>
           simp only []
-          -- PR #873 round 11: the send-queue message-presence guard --
-          -- a head that fails it errors, so it is not this `.ok`.
-          split
-          · simp
           cases hStore : storeObject endpointId
               (.endpoint (if isReceiveQ
                 then (ep.withReceiveQ _) else (ep.withSendQ _))) st with
@@ -1694,8 +1693,6 @@ theorem endpointQueuePopHead_getSchedContext?_eq (endpointId : SeLe4n.ObjId)
         | none => simp
         | some headTcb =>
           simp only []
-          split
-          · simp
           cases hStore : storeObject endpointId
               (.endpoint (if isReceiveQ
                 then (ep.withReceiveQ _) else (ep.withSendQ _))) st with
@@ -2014,12 +2011,12 @@ theorem endpointCallOnCore_preserves_objects_invExt
       | ok st' =>
         simp only
         have h1 := endpointQueueEnqueue_preserves_objects_invExt endpointId false caller st st' hObjInv hEnq
-        cases hMsg : storeTcbIpcStateAndMessage st' caller (.blockedOnCall endpointId) (some msg) with
+        cases hMsg : storeTcbIpcStateAndMessage st' caller (.blockedOnCall endpointId) none with
         | error e => simp only; exact hObjInv
         | ok st'' =>
           simp only
           have h2 := storeTcbIpcStateAndMessage_preserves_objects_invExt st' st'' caller _ _ h1 hMsg
-          exact removeRunnableOnCore_objects_invExt _ _ _ h2
+          exact recordSendCap_objects_invExt _ _ _ _ (removeRunnableOnCore_objects_invExt _ _ _ h2)
     | some _ =>
       simp only
       cases hPop : endpointQueuePopHead endpointId true st with
@@ -2084,14 +2081,14 @@ theorem endpointCallOnCore_kindPreservingWrite
         have w1 := endpointQueueEnqueue_kindPreservingWrite hObjInv hEnq
         have h1 := endpointQueueEnqueue_preserves_objects_invExt endpointId false caller st st'
           hObjInv hEnq
-        cases hMsg : storeTcbIpcStateAndMessage st' caller (.blockedOnCall endpointId) (some msg) with
+        cases hMsg : storeTcbIpcStateAndMessage st' caller (.blockedOnCall endpointId) none with
         | error e => simp only; exact kindPreservingWrite.refl st
         | ok st'' =>
           simp only
           have w2 := storeTcbIpcStateAndMessage_kindPreservingWrite h1 hMsg
-          show kindPreservingWrite st (removeRunnableOnCore st'' caller executingCore)
-          exact (w1.trans w2).trans
-            (removeRunnableOnCore_objectsAgreeOffRunLinks _ _ _).kindPreserving
+          exact ((w1.trans w2).trans
+            (removeRunnableOnCore_objectsAgreeOffRunLinks _ _ _).kindPreserving).trans
+            (recordSendCap_objectsAgreeOffRunLinks _ _ _ _).kindPreserving
     | some _ =>
       simp only
       cases hPop : endpointQueuePopHead endpointId true st with
@@ -2157,7 +2154,7 @@ theorem endpointCallOnCore_cdt_eq
       | ok st' =>
         simp only
         have e1 := endpointQueueEnqueue_cdt_eq hEnq
-        cases hMsg : storeTcbIpcStateAndMessage st' caller (.blockedOnCall endpointId) (some msg) with
+        cases hMsg : storeTcbIpcStateAndMessage st' caller (.blockedOnCall endpointId) none with
         | error e => simp only; constructor <;> first | rfl | trivial
         | ok st'' =>
           simp only
@@ -2252,13 +2249,13 @@ theorem endpointCallOnCore_sameSchedContextBindings
         simp only
         have hS1 := endpointQueueEnqueue_sameSchedContextBindings endpointId false caller st st' hObjInv hEnq
         have hObj1 := endpointQueueEnqueue_preserves_objects_invExt endpointId false caller st st' hObjInv hEnq
-        cases hMsg : storeTcbIpcStateAndMessage st' caller (.blockedOnCall endpointId) (some msg) with
+        cases hMsg : storeTcbIpcStateAndMessage st' caller (.blockedOnCall endpointId) none with
         | error e => simp only; exact sameSchedContextBindings.refl st
         | ok st'' =>
           simp only
-          have hS2 := hS1.trans (storeTcbIpcStateAndMessage_sameSchedContextBindings st' st'' caller (.blockedOnCall endpointId) (some msg) hObj1 hMsg)
-          show sameSchedContextBindings st (removeRunnableOnCore st'' caller executingCore)
-          exact hS2.trans (sameSchedContextBindings.of_objectsAgreeOffRunLinks (removeRunnableOnCore_objectsAgreeOffRunLinks st'' caller executingCore))
+          have hS2 := hS1.trans (storeTcbIpcStateAndMessage_sameSchedContextBindings st' st'' caller (.blockedOnCall endpointId) none hObj1 hMsg)
+          exact (hS2.trans (sameSchedContextBindings.of_objectsAgreeOffRunLinks (removeRunnableOnCore_objectsAgreeOffRunLinks st'' caller executingCore))).trans
+            (sameSchedContextBindings.of_objectsAgreeOffRunLinks (recordSendCap_objectsAgreeOffRunLinks _ _ _ _))
     | some _ =>
       simp only
       cases hPop : endpointQueuePopHead endpointId true st with
@@ -2623,7 +2620,7 @@ theorem endpointCallOnCore_preserves_schedulerInvariantBase_smp
             (endpointQueueEnqueue_kindPreservingWrite hObjInv hEnq)
         have hInv1 := endpointQueueEnqueue_preserves_objects_invExt endpointId false caller st st'
           hObjInv hEnq
-        cases hMsg : storeTcbIpcStateAndMessage st' caller (.blockedOnCall endpointId) (some msg) with
+        cases hMsg : storeTcbIpcStateAndMessage st' caller (.blockedOnCall endpointId) none with
         | error e => simp only; exact h
         | ok st'' =>
           simp only
@@ -2631,9 +2628,10 @@ theorem endpointCallOnCore_preserves_schedulerInvariantBase_smp
             schedulerInvariantBase_smp_of_kindPreserving h1
               (storeTcbIpcStateAndMessage_scheduler_eq st' st'' caller _ _ hMsg)
               (storeTcbIpcStateAndMessage_kindPreservingWrite hInv1 hMsg)
-          show schedulerInvariantBase_smp (removeRunnableOnCore st'' caller executingCore)
-          exact removeRunnableOnCore_preserves_schedulerInvariantBase_smp caller
-            executingCore h2
+          exact schedulerInvariantBase_smp_of_kindPreserving
+            (removeRunnableOnCore_preserves_schedulerInvariantBase_smp caller executingCore h2)
+            (recordSendCap_scheduler _ _ _ _)
+            (recordSendCap_objectsAgreeOffRunLinks _ _ _ _).kindPreserving
     | some headTid =>
       -- The rendezvous branch: the queued receiver is popped, delivered and woken.
       simp only

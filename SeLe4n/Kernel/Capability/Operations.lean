@@ -1038,300 +1038,6 @@ def cspaceMint
             | .error e => .error e
             | .ok child => cspaceInsertSlot dst child st'
 
-/-- **Is this derivation node the parent of a transfer still in flight?**
-
-A capability resolved for IPC carries its derivation node in the message, and a
-blocking send parks that message until some receiver arrives.  Between those two
-syscalls the node has no child *yet* — the edge is recorded at the unwrap — so a
-children-only guard sees an unused node and permits the source slot to be
-deleted.  `cspaceDeleteSlotCore` then detaches the slot from the node, and the
-later unwrap installs the transferred copy under a parent no slot points at:
-no revoke can reach it.
-
-The reservation is **derived from the parked messages themselves** rather than
-recorded in a side table, and that is the point.  A counter would have to be
-incremented at resolution and decremented at every path that discards a parked
-message — delivery, cancellation, thread teardown — and a missed decrement leaks
-an undeletable slot while a missed increment reopens this hole.  Reading the
-messages cannot drift: when a cancellation drops `pendingMessage`, the
-reservation disappears with it, because it *was* the message.
-
-**Parked is a property of the sender, not of the message.**  The first version
-of this read every TCB's `pendingMessage`, which is not the same question: a
-delivered message keeps its `caps` array in the receiver's TCB, so the
-reservation outlived the transfer and never ended on its own.  Gating on the
-sender's `ipcState` restores the intended meaning — the window is open exactly
-while a sender is queued on an endpoint — and it keeps the anti-drift property
-above, because the state is dropped by the same transitions that drop the
-message.
-
-Cost is a scan of the object store, which is acceptable here: this is consulted
-only when deleting a capability slot, never on the IPC path. -/
-def nodeHasPendingTransfer (st : SystemState) (node : CdtNodeId) : Bool :=
-  st.objects.toList.any (fun entry =>
-    match entry.2 with
-    | .tcb tcb =>
-        -- **Only a parked sender's message is in flight.**  The message a
-        -- rendezvous delivers stays in the *receiver's* `pendingMessage` with
-        -- its `caps` array intact — return-frame staging rewrites registers,
-        -- not the message — so scanning every TCB reported a transfer as
-        -- pending forever after it had completed.  The source slot then stayed
-        -- undeletable even once `cspaceRevokeCdt` had removed the installed
-        -- descendants, until the receiver happened to overwrite its message:
-        -- a receiver could pin the sender's capability storage indefinitely.
-        --
-        -- `blockedOnSend` / `blockedOnCall` are exactly the states a sender
-        -- holds while queued on an endpoint with its message not yet
-        -- transferred; a `Call` sender leaves the queue as `blockedOnReply`,
-        -- by which point the unwrap has run and the CDT edges exist, so
-        -- `hasCdtChildren` is what covers it from then on.  The two halves of
-        -- `slotIsDerivationParent` therefore partition the lifetime rather
-        -- than overlapping in a way that never ends.
-        match tcb.ipcState with
-        | .blockedOnSend _ | .blockedOnCall _ =>
-            match tcb.pendingMessage with
-            | some msg => msg.caps.any (fun tc => tc.srcNode == node)
-            | none => false
-        | _ => false
-    | _ => false)
-
-/-- **Does a slot have a transfer in flight from it?** — the slot-addressed form
-of `nodeHasPendingTransfer`, for the delete guard. -/
-def slotHasPendingTransfer (st : SystemState) (addr : CSpaceAddr) : Bool :=
-  match st.lookupCdtNodeOfSlot addr with
-  | none => false
-  | some node => nodeHasPendingTransfer st node
-
-/-- **Revoke the derivations that have not landed yet** (PR #873 round 13).
-
-A capability in flight **is** a derived capability.  `cspaceRevokeCdt` destroys
-the CDT descendants that exist when it runs, and a caps-bearing send that parked
-carries its derivation in the sender's `pendingMessage` — an edge that comes into
-existence only when a receiver collects it.  So revoking a source reported
-success while the transfer sat queued, and the later receive installed the
-snapshot and added the child edge *after* the revocation: the receiver kept
-authority the revoker had destroyed.
-
-`nodeHasPendingTransfer` already knew about that window — `cspaceDeleteSlot` and
-CNode retype consult it through `slotIsDerivationParent`.  Revoke, whose entire
-job is to destroy derived authority, did not.
-
-**Consumed, not refused.**  Two reasons.  Destroying the in-flight copy is what
-revocation *means* for a derived capability, so refusing would answer the wrong
-question; and refusing would let an uncooperative sender block revocation
-indefinitely by keeping a transfer parked.  The parked message survives with its
-registers — only the capabilities derived from the revoked nodes are dropped, so
-the receiver sees exactly what it would have seen had the transfer never been
-authorized.
-
-**Why the whole revoked set and not just the root.**  Only the root actually
-needs it: `ipcTransferSingleCap` already declines (`CapTransferResult.sourceRevoked`)
-when the source node has no live slot, which covers every descendant, whose slot
-the revoke deletes.  The root is the one node that deliberately survives its own
-revocation, so it is the one the install-time guard cannot see.  Passing the full
-set anyway costs nothing and lets the postcondition be stated over the subtree
-rather than over a special case. -/
-private def revokePendingTransfersStep (nodes : List CdtNodeId)
-    (stAcc : SystemState) (oid : SeLe4n.ObjId) : SystemState :=
-  -- Read the TCB out of the **accumulator**, not out of the enumerated entry.
-  -- The entry supplies a candidate key and nothing else, which is what lets the
-  -- frame lemma below compose: each step establishes for itself that the key it
-  -- writes already held a TCB, instead of resting on the enumeration being
-  -- faithful to the store it came from.
-  -- ...through the witnessed lookup (`v0.35.72`), so the write below is the
-  -- typed in-place rewrite under the store's own proof for the record it read.
-  match stAcc.getTcbWitnessed? (SeLe4n.ThreadId.ofNat oid.toNat) with
-  | some ⟨tcb, hTcb⟩ =>
-      match tcb.ipcState with
-      | .blockedOnSend _ | .blockedOnCall _ =>
-          match tcb.pendingMessage with
-          | none => stAcc
-          | some msg =>
-              if msg.caps.any (fun tc => nodes.contains tc.srcNode) then
-                let msg' : IpcMessage :=
-                  { msg with caps := msg.caps.filter (fun tc => !nodes.contains tc.srcNode) }
-                let tcb' : TCB := { tcb with pendingMessage := some msg' }
-                stAcc.rewriteObject (SeLe4n.ThreadId.ofNat oid.toNat).toObjId (.tcb tcb')
-                  (SystemState.rewriteAdmissible_tcb hTcb tcb')
-              else stAcc
-      | _ => stAcc
-  | none => stAcc
-
-def revokePendingTransfersFrom (st : SystemState) (nodes : List CdtNodeId) :
-    SystemState :=
-  (st.objects.toList.map (·.1)).foldl (revokePendingTransfersStep nodes) st
-
-/-- One sweep step writes the object store alone: the scheduler and the machine
-are the accumulator's. -/
-private theorem revokePendingTransfersStep_scheduler_machine (nodes : List CdtNodeId)
-    (stAcc : SystemState) (oid : SeLe4n.ObjId) :
-    (revokePendingTransfersStep nodes stAcc oid).scheduler = stAcc.scheduler ∧
-    (revokePendingTransfersStep nodes stAcc oid).machine = stAcc.machine := by
-  unfold revokePendingTransfersStep
-  repeat' split
-  all_goals exact ⟨rfl, rfl⟩
-
-/-- **WS-BP BP7.1 (`v0.36.7`)**: the in-flight sweep writes neither the scheduler
-nor the machine — what the finalising revocation's cross-core confinement reads. -/
-theorem revokePendingTransfersFrom_scheduler_machine (st : SystemState)
-    (nodes : List CdtNodeId) :
-    (revokePendingTransfersFrom st nodes).scheduler = st.scheduler ∧
-    (revokePendingTransfersFrom st nodes).machine = st.machine := by
-  unfold revokePendingTransfersFrom
-  suffices h : ∀ (keys : List SeLe4n.ObjId) (s : SystemState),
-      (keys.foldl (revokePendingTransfersStep nodes) s).scheduler = s.scheduler ∧
-      (keys.foldl (revokePendingTransfersStep nodes) s).machine = s.machine from h _ st
-  intro keys
-  induction keys with
-  | nil => intro s; exact ⟨rfl, rfl⟩
-  | cons k rest ih =>
-    intro s
-    simp only [List.foldl_cons]
-    obtain ⟨h1, h2⟩ := ih (revokePendingTransfersStep nodes s k)
-    obtain ⟨h3, h4⟩ := revokePendingTransfersStep_scheduler_machine nodes s k
-    exact ⟨h1.trans h3, h2.trans h4⟩
-
-/-- **A step either does nothing, or replaces one TCB with a TCB.**
-
-The shape every frame below rests on, stated once so the case analysis happens
-here rather than at each use. -/
-private theorem revokePendingTransfersStep_cases (nodes : List CdtNodeId)
-    (stAcc : SystemState) (key : SeLe4n.ObjId) :
-    revokePendingTransfersStep nodes stAcc key = stAcc ∨
-      ∃ tcb tcb', stAcc.objects[(SeLe4n.ThreadId.ofNat key.toNat).toObjId]? = some (.tcb tcb) ∧
-        -- **WS-RR RR8.16 (`v0.35.190`)**: and the rewrite is a message *drop* —
-        -- the fact `ipcInvariantFull` needs of this sweep, which "a TCB replaced
-        -- a TCB" does not give.  Stated here rather than at the fold because it
-        -- is a property of the one write, and `TCB.pendingCapsDropped` composes.
-        TCB.pendingCapsDropped tcb tcb' ∧
-        revokePendingTransfersStep nodes stAcc key
-          = { stAcc with objects :=
-              stAcc.objects.insert (SeLe4n.ThreadId.ofNat key.toNat).toObjId (.tcb tcb') } := by
-  -- Resolve the lookup on the typed accessor first and reduce the site's
-  -- witnessed match with its equation lemma — the recipe every migrated site
-  -- follows (`v0.35.64`, item (4)).  Each arm of the step is then a NAMED case
-  -- split on the field that arm branches on, closed by one tactic: the
-  -- hypotheses a branch needs are the ones its own `cases` introduced, so there
-  -- is nothing for a `first` to search and no inaccessible position to guess.
-  cases hT : stAcc.getTcb? (SeLe4n.ThreadId.ofNat key.toNat) with
-  | none =>
-    exact Or.inl (by
-      simp only [revokePendingTransfersStep, SystemState.getTcbWitnessed?_eq_none hT])
-  | some tcb =>
-    -- The store fact every `Or.inr` witness carries, read off the typed lookup
-    -- through the accessor's own characterisation rather than respelled.
-    have hKey :=
-      (SystemState.getTcb?_eq_some_iff stAcc (SeLe4n.ThreadId.ofNat key.toNat) tcb).mp hT
-    cases hS : tcb.ipcState with
-    | blockedOnSend ep | blockedOnCall ep =>
-      cases hM : tcb.pendingMessage with
-      | none =>
-        exact Or.inl (by
-          simp only [revokePendingTransfersStep, SystemState.getTcbWitnessed?_eq_some hT, hS, hM])
-      | some msg =>
-        cases hAny : msg.caps.any (fun tc => nodes.contains tc.srcNode) with
-        | false =>
-          exact Or.inl (by
-            simp only [revokePendingTransfersStep, SystemState.getTcbWitnessed?_eq_some hT,
-              hS, hM, hAny, Bool.false_eq_true, ↓reduceIte])
-        | true =>
-          -- The one write: the parked message keeps its registers and loses the
-          -- capabilities derived from the revoked nodes.
-          refine Or.inr ⟨tcb,
-            { tcb with
-                pendingMessage := some { msg with
-                  caps := msg.caps.filter (fun tc => !nodes.contains tc.srcNode) } },
-            hKey, ⟨rfl, ?_⟩, ?_⟩
-          · rw [hM]
-            exact ⟨rfl, Array.size_filter_le⟩
-          · simp only [revokePendingTransfersStep, SystemState.getTcbWitnessed?_eq_some hT,
-              hS, hM, hAny, ↓reduceIte, SystemState.rewriteObject]
-    | ready | blockedOnReceive _ | blockedOnNotification _ | blockedOnReply _ _ =>
-      -- Enumerated rather than `_`, on purpose: the definition's own `| _ =>` arm
-      -- would absorb a new `ThreadIpcState` constructor silently, and this proof
-      -- failing to elaborate is what makes somebody decide whether it should.
-      exact Or.inl (by
-        simp only [revokePendingTransfersStep, SystemState.getTcbWitnessed?_eq_some hT, hS])
-
-/-- **The whole sweep writes only TCBs, and only where one already was.**
-
-Lifted from `revokePendingTransfersStep_cases` by induction on the key list, and
-carrying `invExt` because the object-store lookup lemmas need it at every step.
-
-Both halves of the last conjunct are used downstream: "unchanged" transfers a
-CNode backwards into the pre-state, and "a TCB replaced a TCB" rules out a
-`.reply` key having been overwritten.  Every conjunct of
-`capabilityInvariantBundle` quantifies over `.cnode` (and, for
-`replyCapPointsToValidReply`, `.reply`) lookups, so together they frame it. -/
-private theorem revokePendingTransfersGo_frame (nodes : List CdtNodeId) :
-    ∀ (keys : List SeLe4n.ObjId) (st : SystemState), st.objects.invExt →
-      (keys.foldl (revokePendingTransfersStep nodes) st).objects.invExt ∧
-      (keys.foldl (revokePendingTransfersStep nodes) st).cdt = st.cdt ∧
-      (keys.foldl (revokePendingTransfersStep nodes) st).cdtNodeSlot = st.cdtNodeSlot ∧
-      (keys.foldl (revokePendingTransfersStep nodes) st).cdtSlotNode = st.cdtSlotNode ∧
-      (keys.foldl (revokePendingTransfersStep nodes) st).scheduler = st.scheduler ∧
-      ∀ (oid : SeLe4n.ObjId), (keys.foldl (revokePendingTransfersStep nodes) st).objects[oid]?
-          = st.objects[oid]? ∨
-        ∃ t t', st.objects[oid]? = some (KernelObject.tcb t) ∧
-          TCB.pendingCapsDropped t t' ∧
-          (keys.foldl (revokePendingTransfersStep nodes) st).objects[oid]?
-            = some (KernelObject.tcb t') := by
-  intro keys
-  induction keys with
-  | nil => intro st hExt; exact ⟨hExt, rfl, rfl, rfl, rfl, fun _ => Or.inl rfl⟩
-  | cons key rest ih =>
-    intro st hExt
-    simp only [List.foldl_cons]
-    rcases revokePendingTransfersStep_cases nodes st key with hEq | ⟨tcb, tcb', hKey, hDrop, hEq⟩
-    · rw [hEq]; exact ih st hExt
-    · have hExt' : (revokePendingTransfersStep nodes st key).objects.invExt := by
-        rw [hEq]; exact RHTable_insert_preserves_invExt _ key _ hExt
-      obtain ⟨hE, hC, hNS, hSN, hSch, hO⟩ := ih (revokePendingTransfersStep nodes st key) hExt'
-      refine ⟨hE, ?_, ?_, ?_, ?_, ?_⟩
-      · rw [hC, hEq]
-      · rw [hNS, hEq]
-      · rw [hSN, hEq]
-      · rw [hSch, hEq]
-      · intro oid
-        have hStep : (revokePendingTransfersStep nodes st key).objects[oid]? = st.objects[oid]? ∨
-            (∃ u u', st.objects[oid]? = some (KernelObject.tcb u) ∧ TCB.pendingCapsDropped u u' ∧
-              (revokePendingTransfersStep nodes st key).objects[oid]? = some (KernelObject.tcb u')) := by
-          by_cases hOid : key = oid
-          · subst hOid
-            exact Or.inr ⟨tcb, tcb', hKey, hDrop,
-              by rw [hEq]; exact RHTable_get?_insert_self _ key _ hExt⟩
-          · exact Or.inl (by
-              rw [hEq]
-              exact RHTable_get?_insert_ne _ key oid _ (by simp [hOid]) hExt)
-        rcases hO oid with hRest | ⟨v, v', hV, hVD, hV'⟩
-        · rcases hStep with hS | ⟨u, u', hU, hUD, hU'⟩
-          · exact Or.inl (hRest.trans hS)
-          · exact Or.inr ⟨u, u', hU, hUD, hRest.trans hU'⟩
-        · rcases hStep with hS | ⟨u, u', hU, hUD, hU'⟩
-          · exact Or.inr ⟨v, v', hS ▸ hV, hVD, hV'⟩
-          · refine Or.inr ⟨u, v', hU, ?_, hV'⟩
-            have : u' = v := by
-              rw [hU'] at hV
-              simpa only [Option.some.injEq, KernelObject.tcb.injEq] using hV
-            exact TCB.pendingCapsDropped_trans hUD (this ▸ hVD)
-
-
-/-- The frame in the caller's vocabulary: `revokePendingTransfersFrom` rewrites
-only TCBs, leaves the CDT alone, and preserves the store invariant. -/
-theorem revokePendingTransfersFrom_frame (st : SystemState) (nodes : List CdtNodeId)
-    (hExt : st.objects.invExt) :
-    (revokePendingTransfersFrom st nodes).objects.invExt ∧
-    (revokePendingTransfersFrom st nodes).cdt = st.cdt ∧
-    (revokePendingTransfersFrom st nodes).cdtNodeSlot = st.cdtNodeSlot ∧
-    (revokePendingTransfersFrom st nodes).cdtSlotNode = st.cdtSlotNode ∧
-    (revokePendingTransfersFrom st nodes).scheduler = st.scheduler ∧
-    ∀ (oid : SeLe4n.ObjId),
-      (revokePendingTransfersFrom st nodes).objects[oid]? = st.objects[oid]? ∨
-      ∃ t t', st.objects[oid]? = some (KernelObject.tcb t) ∧
-        TCB.pendingCapsDropped t t' ∧
-        (revokePendingTransfersFrom st nodes).objects[oid]? = some (KernelObject.tcb t') :=
-  revokePendingTransfersGo_frame nodes _ st hExt
-
 /-- U-H03: Check whether a CSpace slot has CDT children (derived capabilities).
 Returns `true` if the slot's CDT node has any children, indicating that
 `cspaceRevoke` must be called before deletion. -/
@@ -1340,20 +1046,23 @@ def hasCdtChildren (st : SystemState) (addr : CSpaceAddr) : Bool :=
   | none => false  -- no CDT node → no children
   | some node => !(st.cdt.childrenOf node).isEmpty
 
-/-- **Is this slot still standing as a derivation parent?**
+/-- **Is this slot still standing as a derivation parent?** — it has CDT
+children.  Destroying such a slot severs `cdtNodeSlot` while the node and its
+edges survive, and `cspaceRevokeCdt` resolves *through* that mapping — so the
+derived capabilities would keep their authority with nothing able to revoke
+them.
 
-The two ways a slot can be one: it already has CDT children, or a capability
-resolved from it is in flight and becomes a child when the receiving end runs.
-Destroying such a slot severs `cdtNodeSlot` while the node and its edges
-survive, and `cspaceRevokeCdt` resolves *through* that mapping — so the derived
-capabilities keep their authority with nothing able to revoke them.
+No capability is ever in flight between syscalls (WS-ZA ZA4.7): a blocked
+sender keeps only the addresses of the capabilities it sends, in its saved
+registers, and the receive that takes the message resolves them in the
+sender's CSpace as it then stands and installs them in the same step, as seL4
+does.  So the children are the whole question.
 
 Factored out because it has more than one caller and they must test the same
 condition: `cspaceDeleteSlot` destroys one slot, and retyping a CNode destroys
-every slot it contains.  A second call site spelling the disjunction out again
-is a second place for the two halves to drift apart. -/
+every slot it contains. -/
 def slotIsDerivationParent (st : SystemState) (addr : CSpaceAddr) : Bool :=
-  hasCdtChildren st addr || slotHasPendingTransfer st addr
+  hasCdtChildren st addr
 
 /-- **Does any slot of this CNode still stand as a derivation parent?**
 
@@ -1386,10 +1095,8 @@ Returns `.revocationRequired` if children are found, enforcing the
 `revokeBeforeDelete` proof obligation as a runtime check. -/
 def cspaceDeleteSlot (addr : CSpaceAddr) : Kernel Unit :=
   fun st =>
-    -- `slotIsDerivationParent` is the disjunction of the two ways a slot can
-    -- still be one — children already recorded, or a transfer in flight — so
-    -- `hasCdtChildren` keeps its exact meaning and this guard reads the same
-    -- condition the CNode retype guard reads.
+    -- `slotIsDerivationParent` is the condition the CNode retype guard reads
+    -- too, so the two destroyers refuse on one answer.
     if slotIsDerivationParent st addr then
       .error .revocationRequired
     else
@@ -1428,24 +1135,7 @@ theorem cspaceDeleteSlot_scheduler_machine (addr : CSpaceAddr) (st st' : SystemS
   · cases h
   · exact cspaceDeleteSlotCore_scheduler_machine addr st st' h
 
-/-- **A slot with a transfer in flight from it cannot be deleted.**
-
-The parked-window property.  Between a blocking send and the unwrap that
-completes it, the source slot has no CDT child — the edge is recorded at the
-unwrap — so a children-only guard would permit the delete, `cspaceDeleteSlotCore`
-would detach the slot from its node, and the transferred copy would be installed
-under a parent no slot points at.  Nothing could then revoke it.
-
-Stated against `slotHasPendingTransfer` rather than against the message store
-directly, so the guard and this theorem read the same predicate. -/
-theorem cspaceDeleteSlot_refuses_pending_transfer (st : SystemState) (addr : CSpaceAddr)
-    (h : slotHasPendingTransfer st addr = true) :
-    cspaceDeleteSlot addr st = .error .revocationRequired := by
-  simp [cspaceDeleteSlot, slotIsDerivationParent, h]
-
-/-- The guard's other half, unchanged: an existing child still forces a revoke
-first.  Kept as its own statement so the disjunction cannot silently collapse to
-one side. -/
+/-- The guard: an existing child forces a revoke first. -/
 theorem cspaceDeleteSlot_refuses_existing_children (st : SystemState) (addr : CSpaceAddr)
     (h : hasCdtChildren st addr = true) :
     cspaceDeleteSlot addr st = .error .revocationRequired := by
@@ -1824,18 +1514,9 @@ structure RevokeCdtStrictReport where
 /-- **What a revocation traversal produced.**
 
 `report` is the policy-specific payload the caller sees; `state` is the store
-after the deletions; `revokedNodes` is the set of CDT nodes this traversal
-*actually* destroyed — not the set it was asked to destroy.
-
-The distinction is load-bearing.  `cspaceRevokeCdtStrict` commits partial
-progress: when a descendant's deletion fails it halts and reports, leaving the
-remaining descendants' slots alive.  Consuming in-flight derivations from those
-survivors would destroy authority the operation did not destroy, and would do it
-silently — `deletedSlots` would not mention it.  So the traversal reports what it
-revoked and the scaffold consumes exactly that. -/
+after the deletions. -/
 structure RevokeTraversalOutcome (ρ : Type) where
   report : ρ
-  revokedNodes : List CdtNodeId
   state : SystemState
 
 /-- **CDT revocation, once.**
@@ -1848,26 +1529,12 @@ The shape they share is not a coincidence to be re-typed four times:
    step destroys nothing (see *what the prologue must not do* below),
 2. look up the source slot's CDT node — no node means nothing was derived,
 3. walk the subtree (the part that differs: materialized fold, streaming BFS,
-   strict report, validate-then-apply),
-4. consume the derivations that have not landed yet
-   (`revokePendingTransfersFrom`).
+   strict report, validate-then-apply).
 
-Step 4 is why this exists.  It was added to `cspaceRevokeCdt` and
-`cspaceRevokeCdtStreaming` as an epilogue at each call site, and the two
-reporting variants — written earlier, byte-identical in their folds — did not
-get it: a successful `cspaceRevokeCdtStrict` reported revocation while a parked
-caps-bearing send still carried a capability derived from the revoked root.
-Adding the epilogue to those two as well would have left the next variant to
-remember it.  Here a variant *is* its traversal, so there is nothing to
-remember: the prologue and the epilogue are not the variant's to write.
-
-**Why the root is in the consumed set unconditionally.**  The traversal leaves
-the source slot itself present — it deletes the source's descendants, not the
-slot the caller named.  Every descendant's slot is deleted by the traversal,
-so `ipcTransferSingleCap` declines an in-flight derivation from a descendant on
-its own (`CapTransferResult.sourceRevoked`, "no live slot").  The root is the
-one node that survives its own revocation, so it is the one node the
-install-time guard cannot see.
+A variant *is* its traversal: the prologue is not the variant's to write.
+No derivation is ever in flight between syscalls (WS-ZA ZA4.7: a blocked
+sender keeps capability addresses, not capabilities, and the receive resolves
+and installs them in one step), so the traversal's state is the result.
 
 **What the prologue must not do** (PR #900 review, `v0.36.1`).  Step 1 was the
 local `cspaceRevoke` until `v0.36.1`, and that sweep matches on the **target**:
@@ -1896,9 +1563,7 @@ def revokeCdtScaffold {ρ : Type} (emptyReport : ρ)
         | some rootNode =>
             match traverse st rootNode (st.cdt.descendantsOf rootNode) with
             | .error e => .error e
-            | .ok out =>
-                .ok (out.report,
-                  revokePendingTransfersFrom out.state (rootNode :: out.revokedNodes))
+            | .ok out => .ok (out.report, out.state)
 
 /-- **What a successful scaffold run is made of.**
 
@@ -1924,7 +1589,7 @@ theorem revokeCdtScaffold_ok_decompose {ρ : Type} (emptyReport : ρ)
       (st' = st ∨
         ∃ (rootNode : CdtNodeId) (out : RevokeTraversalOutcome ρ),
           traverse st rootNode (st.cdt.descendantsOf rootNode) = .ok out ∧
-          st' = revokePendingTransfersFrom out.state (rootNode :: out.revokedNodes)) := by
+          st' = out.state) := by
   unfold revokeCdtScaffold at hStep
   split at hStep
   · simp at hStep
@@ -2069,7 +1734,7 @@ def revokeCdtMaterializedTraversal (stLocal : SystemState) (_rootNode : CdtNodeI
       -- Reaching `.ok` means every descendant was processed, so the traversal
       -- revoked the whole list it was handed, and `pages` is what the
       -- capabilities it destroyed had mapped.
-      .ok { report := pages, revokedNodes := descendants, state := stDone }
+      .ok { report := pages, state := stDone }
 
 /-- **The traversal's induction, over any state predicate.**
 
@@ -2197,8 +1862,8 @@ theorem processRevokeNode_scheduler_machine (st st' : SystemState) (node : CdtNo
       exact cspaceDeleteSlotCore_scheduler_machine descAddr st stDel hDel
 
 /-- **WS-BP BP7.1 (`v0.36.7`)**: the CDT revocation writes neither the scheduler
-nor the machine — the shared scaffold's decomposition, the traversal's induction
-at that pair, then the in-flight sweep's frame. -/
+nor the machine — the shared scaffold's decomposition and the traversal's
+induction at that pair. -/
 theorem cspaceRevokeCdt_scheduler_machine (addr : CSpaceAddr) (st st' : SystemState)
     (pages : List MappedPage) (h : cspaceRevokeCdt addr st = .ok (pages, st')) :
     st'.scheduler = st.scheduler ∧ st'.machine = st.machine := by
@@ -2212,9 +1877,7 @@ theorem cspaceRevokeCdt_scheduler_machine (addr : CSpaceAddr) (st st' : SystemSt
         obtain ⟨h1, h2⟩ := processRevokeNode_scheduler_machine stA stB nd hSt
         exact ⟨h1.trans hP.1, h2.trans hP.2⟩)
       st rootNode _ out ⟨rfl, rfl⟩ hTrav
-    obtain ⟨h1, h2⟩ := revokePendingTransfersFrom_scheduler_machine out.state
-      (rootNode :: out.revokedNodes)
-    exact ⟨h1.trans hOut.1, h2.trans hOut.2⟩
+    exact hOut
 
 -- ============================================================================
 -- M-P04: Streaming CDT revocation (WS-M5)
@@ -2252,8 +1915,7 @@ descendant list. Peak memory: O(max branching factor) instead of O(N).
 
 Fuel = the CDT's edge count, which bounds the number of nodes reachable from the
 root; running out is `.error .resourceExhausted` rather than a silent partial
-revocation, so the scaffold discards the state and no in-flight derivation is
-consumed for a revocation that did not happen. -/
+revocation, so the scaffold discards the state. -/
 def revokeCdtStreamingTraversal (stLocal : SystemState) (rootNode : CdtNodeId)
     (descendants : List CdtNodeId)
     : Except KernelError (RevokeTraversalOutcome Unit) :=
@@ -2263,7 +1925,7 @@ def revokeCdtStreamingTraversal (stLocal : SystemState) (rootNode : CdtNodeId)
   | .ok ((), stDone) =>
       -- An empty BFS queue is the only `.ok`, so every node reachable from the
       -- root was processed: the same set the materialized fold walks.
-      .ok { report := (), revokedNodes := descendants, state := stDone }
+      .ok { report := (), state := stDone }
 
 /-- M-P04: Streaming CDT revocation — interleaves BFS discovery with deletion.
 
@@ -2313,22 +1975,13 @@ def revokeCdtReportingStep (acc : RevokeCdtStrictReport × SystemState)
               ({ report with deletedSlots := descAddr :: report.deletedSlots },
                { stDel with cdt := stDel.cdt.removeNode node })
 
-/-- **The reporting traversal's outcome**, shared by both reporting variants.
-
-`revokedNodes` is the descendant list only when the fold ran to completion. A
-halted strict fold left the remaining descendants' slots alive, so reporting
-them as revoked would have the scaffold consume in-flight derivations from
-capabilities this call did not destroy — and `deletedSlots`, the caller's only
-record of what happened, would not mention it. The descendants it *did* delete
-are covered without being listed: their slots are gone, so `ipcTransferSingleCap`
-declines an in-flight derivation from them on its own. -/
+/-- **The reporting traversal's outcome**, shared by both reporting variants. -/
 def revokeCdtReportingOutcome (stLocal : SystemState) (descendants : List CdtNodeId)
     : RevokeTraversalOutcome RevokeCdtStrictReport :=
   match descendants.foldl revokeCdtReportingStep
       ({ deletedSlots := [], firstFailure := none }, stLocal) with
   | (report, stFinal) =>
       { report := { report with deletedSlots := report.deletedSlots.reverse }
-        revokedNodes := if report.firstFailure.isNone then descendants else []
         state := stFinal }
 
 /-- Best-effort reporting traversal: fold, recording the first failure. -/
@@ -2456,9 +2109,9 @@ theorem cspaceRevokeCdtTransactional_requires_source_slot
 
 /-- **Every revocation entry point is the scaffold at a traversal.**
 
-Four `rfl`s, and they are the reason the in-flight consumption cannot be
-forgotten by a fifth variant: there is nothing for it to forget, because the
-prologue and the epilogue are not written at the entry point.  A variant that
+Four `rfl`s, and they are the reason the prologue cannot be forgotten by a
+fifth variant: there is nothing for it to forget, because it is not written at
+the entry point.  A variant that
 did not appear here would be a variant that reimplemented the walk — which is
 what happened, and what these pin against.
 
@@ -2484,39 +2137,6 @@ theorem cspaceRevokeCdtTransactional_routes_through_scaffold :
       = revokeCdtScaffold { deletedSlots := [], firstFailure := none }
           revokeCdtTransactionalTraversal := rfl
 
-/-- **A successful revocation either found nothing derived, or consumed.**
-
-The scaffold's post-state is not the traversal's post-state: it is always
-`revokePendingTransfersFrom` applied to it.  The only escape is the branch where
-the source slot has no CDT node at all — nothing was ever derived from it, so
-there is no in-flight derivation to consume, and (since `v0.36.1`) nothing is
-destroyed either: that branch is the identity.
-
-Held over an arbitrary traversal, so it covers the variants that exist and the
-ones that do not exist yet. -/
-theorem revokeCdtScaffold_ok_consumed_or_nothing_derived {ρ : Type}
-    (emptyReport : ρ)
-    (traverse : SystemState → CdtNodeId → List CdtNodeId →
-      Except KernelError (RevokeTraversalOutcome ρ))
-    (addr : CSpaceAddr) (st st' : SystemState) (r : ρ)
-    (hOk : revokeCdtScaffold emptyReport traverse addr st = .ok (r, st')) :
-    (st' = st ∧ SystemState.lookupCdtNodeOfSlot st addr = none) ∨
-    (∃ (rootNode : CdtNodeId) (out : RevokeTraversalOutcome ρ),
-        st' = revokePendingTransfersFrom out.state (rootNode :: out.revokedNodes)) := by
-  unfold revokeCdtScaffold at hOk
-  split at hOk
-  · simp at hOk
-  · split at hOk
-    · rename_i hNoRoot
-      simp only [Except.ok.injEq, Prod.mk.injEq] at hOk
-      exact Or.inl ⟨hOk.2.symm, hNoRoot⟩
-    · rename_i rootNode _
-      split at hOk
-      · simp at hOk
-      · rename_i out _
-        simp only [Except.ok.injEq, Prod.mk.injEq] at hOk
-        exact Or.inr ⟨rootNode, out, hOk.2.symm⟩
-
 -- ============================================================================
 -- M-D01: IPC capability transfer operations
 -- ============================================================================
@@ -2535,10 +2155,8 @@ slot address.  That is a weaker question, and the local sibling sweep went
 straight through it: `cspaceRevoke` empties every sibling naming the revoked
 target (`revokeTargetLocal` filters them out of the CNode) and touches no CDT
 map, so `cdtNodeSlot` keeps every swept sibling's entry.  The mapping
-outlived the capability, so a transfer parked against a swept sibling passed the
-check and installed under a node `cspaceRevokeCdt` cannot enter.  The swept
-sibling is neither the revoked root nor one of its descendants, so the in-flight
-consumption does not cover it either — it is a distinct hole in the same wall.
+outlived the capability, so a transfer from a swept sibling passed the check and
+installed under a node `cspaceRevokeCdt` cannot enter.
 
 **Since `v0.36.1` no revocation entry point runs that sweep** — it was
 `revokeCdtScaffold`'s prologue, and it destroyed capabilities that were not
@@ -2659,14 +2277,14 @@ def ipcTransferSingleCap
             -- **The source must still be a live slot at the moment the edge is
             -- made.**
             --
-            -- This is the one place an `.ipcTransfer` edge comes into existence,
-            -- and it can run a whole syscall after the capability was resolved:
-            -- a blocking send parks its message until a receiver arrives.  In
-            -- between, the source slot can be destroyed — deleted, retyped away
-            -- with its CNode, swept as a descendant by a revoke, or emptied as a
-            -- same-target sibling by a local revoke.  Installing anyway would
-            -- hand the receiver authority beneath a parent no revocation can
-            -- reach, which nothing could subsequently destroy.
+            -- This is the one place an `.ipcTransfer` edge comes into existence.
+            -- Since WS-ZA ZA4.7 it runs in the same step as the resolution that
+            -- found the capability (a blocked sender keeps addresses, not
+            -- capabilities), so no destroyer can run in between; the check is
+            -- the install's own guarantee all the same, against any caller that
+            -- hands it a capability whose source slot is gone.  Installing
+            -- anyway would hand the receiver authority beneath a parent no
+            -- revocation can reach, which nothing could subsequently destroy.
             --
             -- The condition is `cdtNodeIsRevocable`, which is revocation's own
             -- precondition rather than a restatement of it.  Round 18: this
@@ -2679,8 +2297,7 @@ def ipcTransferSingleCap
             -- Checking here rather than at each destroyer is deliberate.  The
             -- destroyers are open-ended — delete, CNode retype and revoke
             -- today, and whatever later transition frees a slot — and any one of
-            -- them that forgets to consult the in-flight set reopens the hole
-            -- silently.  The creator is exactly one function.
+            -- them that forgets a guard reopens the hole silently.  The creator is exactly one function.
             -- `cspaceDeleteSlot` and the CNode retype guard still refuse up
             -- front, because `.revocationRequired` tells a caller to revoke
             -- first and that is a better answer than a silently dropped

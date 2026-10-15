@@ -1002,7 +1002,8 @@ theorem endpointSendDual_confinedToBootCore (st st' : SystemState)
                 hEnq) ?_
             refine observableSlotsConfinedToCore_trans
               (storeTcbIpcStateAndMessage_confinedToCore st1 st2 sender _ _ bootCoreId hStore) ?_
-            exact removeRunnable_confinedToBootCore st2 sender
+            exact observableSlotsConfinedToCore_trans (removeRunnable_confinedToBootCore st2 sender)
+              (observableSlotsConfinedToCore_of_scheduler_machine_eq _ (recordSendCap_scheduler _ _ _ _) rfl)
     | tcb _ | cnode _ | notification _ | vspaceRoot _ | untyped _ | schedContext _ | reply _ | frame _ | pageTable _ =>
       simp [hObj] at hStep
 
@@ -1090,7 +1091,7 @@ theorem endpointReceiveDual_confinedToBootCore (st st' : SystemState)
                 | ok pairL =>
                   simp only [hLink] at hStep
                   cases hStore2 : storeTcbIpcStateAndMessage pairL.2 receiver .ready
-                      senderTcb.pendingMessage with
+                      (some (blockedSenderMessage st1 sender senderTcb)) with
                   | error e => simp [hStore2] at hStep
                   | ok st3 =>
                     simp only [hStore2, Except.ok.injEq, Prod.mk.injEq] at hStep
@@ -1116,7 +1117,7 @@ theorem endpointReceiveDual_confinedToBootCore (st st' : SystemState)
                 | ok st2 =>
                   simp only [hStore] at hStep
                   cases hStore2 : storeTcbIpcStateAndMessage (ensureRunnable st2 sender) receiver
-                      .ready senderTcb.pendingMessage with
+                      .ready (some (blockedSenderMessage st1 sender senderTcb)) with
                   | error e => simp [hStore2] at hStep
                   | ok st3 =>
                     simp only [hStore2, Except.ok.injEq, Prod.mk.injEq] at hStep
@@ -1244,7 +1245,8 @@ theorem endpointCall_confinedToBootCore (st st' : SystemState)
                 hEnq) ?_
             refine observableSlotsConfinedToCore_trans
               (storeTcbIpcStateAndMessage_confinedToCore st1 st2 caller _ _ bootCoreId hStore) ?_
-            exact removeRunnable_confinedToBootCore st2 caller
+            exact observableSlotsConfinedToCore_trans (removeRunnable_confinedToBootCore st2 caller)
+              (observableSlotsConfinedToCore_of_scheduler_machine_eq _ (recordSendCap_scheduler _ _ _ _) rfl)
     | tcb _ | cnode _ | notification _ | vspaceRoot _ | untyped _ | schedContext _ | reply _ | frame _ | pageTable _ =>
       simp [hObj] at hStep
 

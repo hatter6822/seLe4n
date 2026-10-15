@@ -194,6 +194,39 @@ def decodeSyscallArgsFromState
              inlineCount   := inlineSize,
              overflowCount := overflowNeeded }
 
+/-- WS-ZA ZA4.7: **the same two-stage decode, with the overflow read
+supplied.**  The reader is the only state the decode consults, so a surface that keeps
+the IPC buffer elsewhere (the frozen store) decodes a saved frame through this
+with its own reader, and `decodeSyscallArgsFromState_eq_with` pins the live
+decode to it. -/
+def decodeSyscallArgsWith (readOverflow : Nat → Except KernelError UInt64)
+    (layout : SyscallRegisterLayout) (regs : RegisterFile)
+    (regCount : Nat := 32) : Except KernelError SyscallDecodeResult := do
+  let base ← decodeSyscallArgs layout regs regCount
+  let inlineSize := base.msgRegs.size
+  let totalLen := base.msgInfo.length
+  if totalLen ≤ inlineSize then
+    pure { base with
+             msgRegs       := base.msgRegs,
+             inlineCount   := inlineSize,
+             overflowCount := 0 }
+  else
+    let overflowNeeded := totalLen - inlineSize
+    let overflowNats ← (List.range overflowNeeded).mapM readOverflow
+    let overflowRegs : Array RegValue :=
+      (overflowNats.map (fun w => (⟨w.toNat⟩ : RegValue))).toArray
+    pure { base with
+             msgRegs       := base.msgRegs ++ overflowRegs,
+             inlineCount   := inlineSize,
+             overflowCount := overflowNeeded }
+
+/-- WS-ZA ZA4.7: the live decode is `decodeSyscallArgsWith` over the live IPC
+buffer read. -/
+theorem decodeSyscallArgsFromState_eq_with (st : SystemState) (tid : ThreadId)
+    (layout : SyscallRegisterLayout) (regs : RegisterFile) (regCount : Nat) :
+    decodeSyscallArgsFromState st tid layout regs regCount =
+      decodeSyscallArgsWith (readOverflowWord st tid) layout regs regCount := rfl
+
 /-- Bound-checking the message registers in one `mapM` pass refuses with
     `.invalidRegister` exactly when some register is out of bounds, and
     otherwise reads them all. -/

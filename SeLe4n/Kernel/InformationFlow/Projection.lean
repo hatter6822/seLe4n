@@ -307,7 +307,13 @@ def projectKernelObject (ctx : LabelingContext) (observer : IfObserver) (obj : K
                        -- their domain; erased as `pipBoost`, which they feed,
                        -- and `replyObject` are.
                        replyWaiterPrevCode := 0, replyWaiterNextCode := 0,
-                       replyWaitersHeadCode := 0, replyWaitersCount := 0 }
+                       replyWaitersHeadCode := 0, replyWaitersCount := 0,
+                       -- WS-ZA ZA4.7: a blocked sender's badge, grant bit and
+                       -- fault flag are the parked half of its message (seL4's
+                       -- `blockingIPCBadge`/`blockingIPCCanGrant`/`blockingIPCIsCall`);
+                       -- erased as `pendingMessage`, the field they replace, is.
+                       ipcBadge := 0, ipcBadged := false, ipcCanGrant := false,
+                       ipcFaultSend := false }
   | .schedContext sc =>
       -- AI4-A: Strip boundThread — internal scheduling plumbing binding a
       -- SchedContext to its owning thread. Donation chain changes modify only

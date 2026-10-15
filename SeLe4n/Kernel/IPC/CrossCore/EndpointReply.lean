@@ -555,8 +555,13 @@ def endpointReceiveDualOnCore (endpointId : SeLe4n.ObjId) (receiver : SeLe4n.Thr
           match endpointQueuePopHead endpointId false st with
           | .error e => (st, .error e)
           | .ok (sender, senderTcb, st') =>
+              -- WS-ZA ZA4.7: the sender's message is read where it blocked holding
+              -- it -- its saved registers and IPC buffer, its badge and grant right
+              -- in its TCB (`blockedSenderMessage`).  The returned TCB is the
+              -- pre-pop one; the pop changes only queue links, none of which the
+              -- read uses.
               let (senderMsg, senderWasCall) :=
-                (senderTcb.pendingMessage, match senderTcb.ipcState with
+                (some (blockedSenderMessage st' sender senderTcb), match senderTcb.ipcState with
                   | .blockedOnCall _ => true
                   | _ => false)
               if senderWasCall then
@@ -961,27 +966,25 @@ The cross-core sibling of `endpointReceiveDualWithCaps`, and the one the live
 `.receive` arm runs — exactly as `endpointSendDualWithCapsOnCore` is the sibling
 of `endpointSendDualWithCaps` and the one the live `.send` arm runs.
 
-**Why it had to exist.**  `endpointSendDualWithCaps`' own docstring already said
-what should happen: "If no receiver was waiting (sender enqueued): caps stay in
-the message stored in the sender's TCB.  *They will be unwrapped when a receiver
-later dequeues the sender.*"  Nothing did.  The live `.receive` ran the bare
-`endpointReceiveDualOnCore`, which moves the parked sender's `pendingMessage`
-across wholesale and installs nothing, while an immediate rendezvous transferred
-the capabilities — so whether a capability arrived depended on which side reached
-the endpoint first.  The verified receive-side transition existed and had no live
-caller; this is that transition on the per-core base the live arm needs.
+**Why it had to exist.**  Whether a capability arrives must not depend on which
+side reaches the endpoint first.  An immediate rendezvous on the send side
+transfers the sender's capabilities; this is the receive-side half, on the
+per-core base the live arm needs.
 
-**Whose grant right.**  The message's own (`IpcMessage.capsGranted`), recorded by
-the sender when it built the message from its endpoint capability.  Not the
-receiver's endpoint rights, which is what the single-core sibling used to consult:
-that is a different principal's authority, and consulting it here would have left
-the orderings disagreeing whenever a granting sender met a non-granting receiver
-— the same order-dependence one case narrower.
+**When the capabilities are looked up.**  At the rendezvous (WS-ZA ZA4.7, as
+seL4): the sender's request -- its capability addresses, read from the frame it
+blocked with, and its grant right, recorded in its TCB from the endpoint
+capability it sent through -- is resolved in its CSpace now
+(`receiveTransferCaps`).  A capability revoked while the sender waited is
+therefore never transferred, and nothing is held in flight between syscalls.
+
+**Whose grant right.**  The sender's, recorded when it blocked.  Not the
+receiver's endpoint rights: that is a different principal's authority, and
+consulting it would leave the two orderings disagreeing whenever a granting
+sender met a non-granting receiver.
 
 Returns the post-state, the dequeued sender, the transfer summary, and the
-receive's cross-core SGI.  The AK1-I fail-closed `.invalidCapability` on a sender
-with no CSpace root is preserved, keeping the NI symmetry all three transfer
-paths share. -/
+receive's cross-core SGI. -/
 def endpointReceiveDualWithCapsOnCore
     (endpointId : SeLe4n.ObjId) (receiver : SeLe4n.ThreadId)
     (replyId : Option SeLe4n.ReplyId)
@@ -990,46 +993,30 @@ def endpointReceiveDualWithCapsOnCore
     SystemState ×
       Except KernelError
         (SeLe4n.ThreadId × CapTransferSummary × Option (CoreId × SgiKind)) :=
+  -- WS-ZA ZA4.7: what the dequeued sender asks to transfer, read from the
+  -- pre-state the transition branches on (`receiveCapRequest`).
+  let req := receiveCapRequest st endpointId
   match endpointReceiveDualOnCore endpointId receiver replyId executingCore st with
   | (st', .error e) => (st', .error e)
   | (st', .ok (senderId, sgi)) =>
       -- PR #873 round 8: **a receive that dequeued nothing installs nothing.**
       -- `receiveRendezvousSender?` is read at the pre-state, which is what the
-      -- transition above branches on.  Testing `pendingMessage` alone was the
-      -- capability-duplication defect: the blocking branch returns the receiver's
-      -- own id and does not clear that field, so a receiver still holding a
-      -- previously delivered caps-bearing message had those capabilities
-      -- unwrapped a second time into a fresh receive slot — an extra copy of
-      -- authority minted by a receive that consumed no message.
+      -- transition above branches on; the blocking branch returns the
+      -- receiver's own id, so only a rendezvous may install anything.
       if (receiveRendezvousSender? st endpointId).isNone then
         (st', .ok (senderId, { results := #[] }, sgi))
       else
-      -- A receiver that *enqueued* has no delivered message, and a delivered
-      -- message with no caps has nothing to install; both are the empty summary.
-      match st'.getTcb? receiver with
-      | none => (st', .ok (senderId, { results := #[] }, sgi))
-      | some receiverTcb =>
-        match receiverTcb.pendingMessage with
-        | none => (st', .ok (senderId, { results := #[] }, sgi))
-        | some msg =>
-          if msg.caps.isEmpty then (st', .ok (senderId, { results := #[] }, sgi))
-          else
-            -- **WS-RR RR7.33**: the per-core sibling of the single-core receive
-            -- arm, and it loses the same lookup for the same reason.  It read
-            -- the *sender's* CSpace root only to feed `ipcUnwrapCaps`, which
-            -- has not consumed it since the derivation parent moved onto
-            -- `TransferCap.srcNode`; its `.invalidCapability` failed the
-            -- *receiver's* syscall on a fact about the *sender's* TCB.  Leaving
-            -- it here while the single-core arm dropped it would be exactly the
-            -- asymmetry AK1-I exists to prevent, one path apart.
-            match ipcUnwrapCaps msg receiverCspaceRoot receiverSlotBase
-                msg.capsGranted st' with
-            | .error e => (st', .error e)
-            | .ok (summary, st'') => (st'', .ok (senderId, summary, sgi))
+      -- The dequeued sender's capabilities are resolved in its CSpace now and
+      -- installed in the receiver's, as the single-core receive does
+      -- (`receiveTransferCaps`).
+      match receiveTransferCaps req receiverCspaceRoot receiverSlotBase st' with
+      | .error e => (st', .error e)
+      | .ok (summary, st'') => (st'', .ok (senderId, summary, sgi))
 
 /-- WS-SM SM6 (PR #873 round 6): with nothing to install, the WithCaps per-core
 receive is exactly the bare per-core receive — so every capless pin taken against
-the bare transition still describes the live arm. -/
+the bare transition still describes the live arm.  WS-ZA ZA4.7: "nothing to
+install" is the dequeued sender asking for no transfer (`receiveCapRequest`). -/
 theorem endpointReceiveDualWithCapsOnCore_no_caps
     (endpointId : SeLe4n.ObjId) (receiver : SeLe4n.ThreadId)
     (replyId : Option SeLe4n.ReplyId) (receiverCspaceRoot : SeLe4n.ObjId)
@@ -1037,19 +1024,87 @@ theorem endpointReceiveDualWithCapsOnCore_no_caps
     (senderId : SeLe4n.ThreadId) (sgi : Option (CoreId × SgiKind))
     (hRecv : endpointReceiveDualOnCore endpointId receiver replyId executingCore st
       = (st', .ok (senderId, sgi)))
-    (hNoCaps : ∀ tcb, st'.getTcb? receiver = some tcb →
-      ∀ m, tcb.pendingMessage = some m → m.caps.isEmpty = true) :
+    (hNoCaps : receiveCapRequest st endpointId = none) :
     endpointReceiveDualWithCapsOnCore endpointId receiver replyId receiverCspaceRoot
         receiverSlotBase executingCore st
       = (st', .ok (senderId, { results := #[] }, sgi)) := by
   unfold endpointReceiveDualWithCapsOnCore
-  simp only [hRecv]
-  cases hTcb : st'.getTcb? receiver with
-  | none => simp
-  | some tcb =>
-    cases hMsg : tcb.pendingMessage with
-    | none => simp [hMsg]
-    | some m => simp [hMsg, hNoCaps tcb hTcb m hMsg]
+  simp only [hRecv, hNoCaps, receiveTransferCaps]
+  split <;> rfl
+
+/-! WS-ZA ZA4.7: the receive's capability transfer (`receiveTransferCaps`)
+resolves the sender's capabilities -- writing CDT nodes only -- and installs them
+with one `ipcUnwrapCaps`; so it frames everything the unwrap frames. -/
+
+section receiveTransferCapsFrames
+variable {req : Option (SeLe4n.ObjId × Array SeLe4n.CPtr × Nat)} {root : SeLe4n.ObjId}
+  {base : SeLe4n.Slot} {st st'' : SystemState} {summary : CapTransferSummary}
+
+theorem receiveTransferCaps_scheduler_eq
+    (h : receiveTransferCaps req root base st = .ok (summary, st'')) :
+    st''.scheduler = st.scheduler := by
+  obtain ⟨stR, caps, _, hS, _, hOr⟩ := receiveTransferCaps_frame h
+  rcases hOr with rfl | hU
+  · exact hS
+  · rw [ipcUnwrapCaps_preserves_scheduler _ _ _ _ _ _ _ hU, hS]
+
+theorem receiveTransferCaps_objects_invExt (hI : st.objects.invExt)
+    (h : receiveTransferCaps req root base st = .ok (summary, st'')) :
+    st''.objects.invExt := by
+  obtain ⟨stR, caps, hO, _, _, hOr⟩ := receiveTransferCaps_frame h
+  have hIR : stR.objects.invExt := hO ▸ hI
+  rcases hOr with rfl | hU
+  · exact hIR
+  · exact ipcUnwrapCaps_preserves_objects_invExt _ _ _ _ stR _ _ hIR hU
+
+theorem receiveTransferCaps_getSchedContext?_eq (scId : SeLe4n.SchedContextId)
+    (hI : st.objects.invExt)
+    (h : receiveTransferCaps req root base st = .ok (summary, st'')) :
+    st''.getSchedContext? scId = st.getSchedContext? scId := by
+  obtain ⟨stR, caps, hO, _, _, hOr⟩ := receiveTransferCaps_frame h
+  have hIR : stR.objects.invExt := hO ▸ hI
+  have hR : stR.getSchedContext? scId = st.getSchedContext? scId := by
+    unfold SystemState.getSchedContext?; rw [hO]
+  rcases hOr with rfl | hU
+  · exact hR
+  · exact (ipcUnwrapCaps_getSchedContext?_eq _ _ _ _ stR _ _ scId hIR hU).trans hR
+
+theorem receiveTransferCaps_determineTargetCore_eq (x : SeLe4n.ThreadId)
+    (hI : st.objects.invExt)
+    (h : receiveTransferCaps req root base st = .ok (summary, st'')) :
+    determineTargetCore st'' x = determineTargetCore st x := by
+  obtain ⟨stR, caps, hO, _, _, hOr⟩ := receiveTransferCaps_frame h
+  have hIR : stR.objects.invExt := hO ▸ hI
+  have hR := determineTargetCore_of_objectsAgreeOffRunLinks
+    (st := st) (st' := stR) (fun _ => by rw [hO]) x
+  rcases hOr with rfl | hU
+  · exact hR
+  · exact (ipcUnwrapCaps_determineTargetCore_eq _ _ _ _ stR _ _ x hIR hU).trans hR
+
+theorem receiveTransferCaps_sameSchedContextBindings (hI : st.objects.invExt)
+    (h : receiveTransferCaps req root base st = .ok (summary, st'')) :
+    sameSchedContextBindings st st'' := by
+  obtain ⟨stR, caps, hO, _, _, hOr⟩ := receiveTransferCaps_frame h
+  have hIR : stR.objects.invExt := hO ▸ hI
+  have hR : sameSchedContextBindings st stR :=
+    sameSchedContextBindings.of_objectsAgreeOffRunLinks (fun _ => by rw [hO])
+  rcases hOr with rfl | hU
+  · exact hR
+  · exact hR.trans (ipcUnwrapCaps_sameSchedContextBindings _ _ _ _ stR _ _ hIR hU)
+
+theorem receiveTransferCaps_getTcb?_eq (tid : SeLe4n.ThreadId)
+    (hI : st.objects.invExt)
+    (h : receiveTransferCaps req root base st = .ok (summary, st'')) :
+    st''.getTcb? tid = st.getTcb? tid := by
+  obtain ⟨stR, caps, hO, _, _, hOr⟩ := receiveTransferCaps_frame h
+  have hIR : stR.objects.invExt := hO ▸ hI
+  have hR : stR.getTcb? tid = st.getTcb? tid := by
+    unfold SystemState.getTcb?; rw [hO]
+  rcases hOr with rfl | hU
+  · exact hR
+  · exact (ipcUnwrapCaps_getTcb?_eq _ _ _ _ stR _ _ tid hIR hU).trans hR
+
+end receiveTransferCapsFrames
 
 /-- SM8.B.2 (PR #873 round 7), relocated to production at **WS-RR RR8.12**: the
 WithCaps per-core **receive** leaves the scheduler where the bare receive left it.
@@ -1077,7 +1132,7 @@ theorem endpointReceiveDualWithCapsOnCore_scheduler_eq (endpointId : SeLe4n.ObjI
       repeat' split
       all_goals first
         | rfl
-        | (rename_i h; exact ipcUnwrapCaps_preserves_scheduler _ _ _ _ _ _ _ h)
+        | (rename_i h; exact receiveTransferCaps_scheduler_eq h)
 
 /-- **WS-SM SM6 (PR #873 round 8): a receive that dequeued nothing installs
 nothing.**
@@ -3652,7 +3707,7 @@ theorem endpointReceiveDualOnCore_preserves_objects_invExt
                 have hObjInv3 := linkCallerReply_preserves_objects_invExt st'' stLinked
                   sender rid hObjInv2 hLink
                 cases hS2 : storeTcbIpcStateAndMessage stLinked receiver .ready
-                    senderTcb.pendingMessage with
+                    (some (blockedSenderMessage st' sender senderTcb)) with
                 | ok st3 =>
                     exact SystemState.linkReplyWaiter_objects_invExt _ _ _
                       (storeTcbIpcStateAndMessage_preserves_objects_invExt stLinked st3
@@ -3667,7 +3722,7 @@ theorem endpointReceiveDualOnCore_preserves_objects_invExt
               sender _ _ hObjInv1 hS1
             have hObjInvW := wakeThread_preserves_objects_invExt st'' sender executingCore hObjInv2
             cases hS2 : storeTcbIpcStateAndMessage (wakeThread st'' sender executingCore).1
-                receiver .ready senderTcb.pendingMessage with
+                receiver .ready (some (blockedSenderMessage st' sender senderTcb)) with
             | ok st4 =>
                 exact storeTcbIpcStateAndMessage_preserves_objects_invExt _ st4 receiver _ _
                   hObjInvW hS2
@@ -3777,14 +3832,14 @@ theorem endpointReceiveDualOnCore_determineTargetCore_eq_of_rendezvous
                     have hI3 : st3.objects.invExt :=
                       linkCallerReply_preserves_objects_invExt st2 st3 popTid rid hI2 hLink
                     cases hS4 : storeTcbIpcStateAndMessage st3 receiver .ready
-                        popTcb.pendingMessage with
+                        (some (blockedSenderMessage st1 popTid popTcb)) with
                     | error e => rfl
                     | ok st4 =>
                         dsimp only
                         exact (determineTargetCore_of_objectsAgreeOffRunLinks
                           (SystemState.linkReplyWaiter_objectsAgreeOffRunLinks _ _ _) x).trans
                           ((storeTcbIpcStateAndMessage_determineTargetCore_eq st3 st4 receiver
-                          .ready popTcb.pendingMessage x hI3 hS4).trans hF3)
+                          .ready (some (blockedSenderMessage st1 popTid popTcb)) x hI3 hS4).trans hF3)
       · -- plain `Send` rendezvous: the sender is made `.ready` and woken.
         cases hS2 : storeTcbIpcStateAndMessage st1 popTid .ready none with
         | error e => rfl
@@ -3802,12 +3857,12 @@ theorem endpointReceiveDualOnCore_determineTargetCore_eq_of_rendezvous
             have hIW : (wakeThread st2 popTid executingCore).1.objects.invExt :=
               wakeThread_preserves_objects_invExt st2 popTid executingCore hI2
             cases hS3 : storeTcbIpcStateAndMessage (wakeThread st2 popTid executingCore).1
-                receiver .ready popTcb.pendingMessage with
+                receiver .ready (some (blockedSenderMessage st1 popTid popTcb)) with
             | error e => rfl
             | ok st3 =>
                 dsimp only
                 exact (storeTcbIpcStateAndMessage_determineTargetCore_eq _ st3 receiver .ready
-                  popTcb.pendingMessage x hIW hS3).trans hFW
+                  (some (blockedSenderMessage st1 popTid popTcb)) x hIW hS3).trans hFW
 
 /-- **WS-RR RR8.12 (frame)**: and installing the parked send's capabilities moves
 none either, so the whole receive leg the live `.receive` arm runs frames every
@@ -3845,8 +3900,7 @@ theorem endpointReceiveDualWithCapsOnCore_determineTargetCore_eq_of_rendezvous
           all_goals first
             | simpa using hLeg
             | (rename_i hUnwrap
-               rw [ipcUnwrapCaps_determineTargetCore_eq _ receiverCspaceRoot receiverSlotBase _
-                 stRecv _ _ x hLegInv hUnwrap]
+               rw [receiveTransferCaps_determineTargetCore_eq x hLegInv hUnwrap]
                simpa using hLeg)
 
 /-- **`v0.35.161` (frame)**: a cross-core receive that **rendezvouses** resolves every
@@ -3906,13 +3960,13 @@ theorem endpointReceiveDualOnCore_getSchedContext?_eq_of_rendezvous
                     have hI3 : st3.objects.invExt :=
                       linkCallerReply_preserves_objects_invExt st2 st3 popTid rid hI2 hLink
                     cases hS4 : storeTcbIpcStateAndMessage st3 receiver .ready
-                        popTcb.pendingMessage with
+                        (some (blockedSenderMessage st1 popTid popTcb)) with
                     | error e => rfl
                     | ok st4 =>
                         dsimp only
                         exact ((SystemState.linkReplyWaiter_objectsAgreeOffRunLinks _ _ _).getSchedContext?
                           scId).trans ((storeTcbIpcStateAndMessage_getSchedContext?_eq st3 st4 receiver
-                          .ready popTcb.pendingMessage scId hI3 hS4).trans hF3)
+                          .ready (some (blockedSenderMessage st1 popTid popTcb)) scId hI3 hS4).trans hF3)
       · -- plain `Send` rendezvous: the sender is made `.ready` and woken.
         cases hS2 : storeTcbIpcStateAndMessage st1 popTid .ready none with
         | error e => rfl
@@ -3933,12 +3987,12 @@ theorem endpointReceiveDualOnCore_getSchedContext?_eq_of_rendezvous
             have hIW : (wakeThread st2 popTid executingCore).1.objects.invExt :=
               wakeThread_preserves_objects_invExt st2 popTid executingCore hI2
             cases hS3 : storeTcbIpcStateAndMessage (wakeThread st2 popTid executingCore).1
-                receiver .ready popTcb.pendingMessage with
+                receiver .ready (some (blockedSenderMessage st1 popTid popTcb)) with
             | error e => rfl
             | ok st3 =>
                 dsimp only
                 exact (storeTcbIpcStateAndMessage_getSchedContext?_eq _ st3 receiver .ready
-                  popTcb.pendingMessage scId hIW hS3).trans hFW
+                  (some (blockedSenderMessage st1 popTid popTcb)) scId hIW hS3).trans hFW
 
 /-- **`v0.35.161` (frame)**: and installing the parked send's capabilities resolves
 every SchedContext as before too — `ipcUnwrapCaps_getSchedContext?_eq` on the one
@@ -3972,8 +4026,7 @@ theorem endpointReceiveDualWithCapsOnCore_getSchedContext?_eq_of_rendezvous
           all_goals first
             | simpa using hLeg
             | (rename_i hUnwrap
-               rw [ipcUnwrapCaps_getSchedContext?_eq _ receiverCspaceRoot receiverSlotBase _
-                 stRecv _ _ scId hLegInv hUnwrap]
+               rw [receiveTransferCaps_getSchedContext?_eq scId hLegInv hUnwrap]
                simpa using hLeg)
 
 /-- **WS-RR RR8.12 Cut C1 (register row 55, frame)**: a cross-core receive that
@@ -4039,12 +4092,12 @@ theorem endpointReceiveDualOnCore_sameSchedContextBindings_of_rendezvous
                     have hI3 : st3.objects.invExt :=
                       linkCallerReply_preserves_objects_invExt st2 st3 popTid rid hI2 hLink
                     cases hS4 : storeTcbIpcStateAndMessage st3 receiver .ready
-                        popTcb.pendingMessage with
+                        (some (blockedSenderMessage st1 popTid popTcb)) with
                     | error e => exact sameSchedContextBindings.refl st
                     | ok st4 =>
                         dsimp only
                         exact (hF3.trans (storeTcbIpcStateAndMessage_sameSchedContextBindings st3
-                          st4 receiver .ready popTcb.pendingMessage hI3 hS4)).trans
+                          st4 receiver .ready (some (blockedSenderMessage st1 popTid popTcb)) hI3 hS4)).trans
                           (sameSchedContextBindings.of_objectsAgreeOffRunLinks
                             (SystemState.linkReplyWaiter_objectsAgreeOffRunLinks _ _ _))
       · -- plain `Send` rendezvous: the sender is made `.ready` and woken.
@@ -4066,12 +4119,12 @@ theorem endpointReceiveDualOnCore_sameSchedContextBindings_of_rendezvous
             have hIW : (wakeThread st2 popTid executingCore).1.objects.invExt :=
               wakeThread_preserves_objects_invExt st2 popTid executingCore hI2
             cases hS3 : storeTcbIpcStateAndMessage (wakeThread st2 popTid executingCore).1
-                receiver .ready popTcb.pendingMessage with
+                receiver .ready (some (blockedSenderMessage st1 popTid popTcb)) with
             | error e => exact sameSchedContextBindings.refl st
             | ok st3 =>
                 dsimp only
                 exact hFW.trans (storeTcbIpcStateAndMessage_sameSchedContextBindings _ st3
-                  receiver .ready popTcb.pendingMessage hIW hS3)
+                  receiver .ready (some (blockedSenderMessage st1 popTid popTcb)) hIW hS3)
 
 /-- **WS-RR RR8.12 Cut C1 (frame)**: the receive leg the live `.receive` arm runs
 keeps the object store well-formed.  Every branch but the last returns the bare leg's
@@ -4102,8 +4155,7 @@ theorem endpointReceiveDualWithCapsOnCore_preserves_objects_invExt
           all_goals first
             | simpa using hLegInv
             | (rename_i hUnwrap
-               exact ipcUnwrapCaps_preserves_objects_invExt _ receiverCspaceRoot receiverSlotBase
-                 _ stRecv _ _ hLegInv hUnwrap)
+               exact receiveTransferCaps_objects_invExt hLegInv hUnwrap)
 
 /-- **WS-RR RR8.12 Cut C1 (frame)**: and installing the parked send's capabilities
 writes no binding either (`ipcUnwrapCaps_sameSchedContextBindings`), so the whole
@@ -4139,8 +4191,7 @@ theorem endpointReceiveDualWithCapsOnCore_sameSchedContextBindings_of_rendezvous
           all_goals first
             | simpa using hLeg
             | (rename_i hUnwrap
-               exact hLeg'.trans (ipcUnwrapCaps_sameSchedContextBindings _ receiverCspaceRoot
-                 receiverSlotBase _ stRecv _ _ hLegInv hUnwrap))
+               exact hLeg'.trans (receiveTransferCaps_sameSchedContextBindings hLegInv hUnwrap))
 
 /-- **WS-RR RR8.16 (`v0.35.189`): the narrowed receive-side member omits no lock
 the transition takes.**
@@ -4677,11 +4728,9 @@ theorem endpointReceiveDualWithCapsOnCore_preserves_replenishQueueAffinityConsis
             | (rename_i hUnwrap
                exact (replenishQueueAffinityConsistent_smp_congr
                  (fun c => by
-                   rw [ipcUnwrapCaps_preserves_scheduler _ _ _ _ _ _ _ hUnwrap])
-                 (fun scId => ipcUnwrapCaps_getSchedContext?_eq _ receiverCspaceRoot
-                   receiverSlotBase _ stRecv _ _ scId hLegInv hUnwrap)
-                 (fun tid => ipcUnwrapCaps_determineTargetCore_eq _ receiverCspaceRoot
-                   receiverSlotBase _ stRecv _ _ tid hLegInv hUnwrap)).mpr (by simpa using hLeg))
+                   rw [receiveTransferCaps_scheduler_eq hUnwrap])
+                 (fun scId => receiveTransferCaps_getSchedContext?_eq scId hLegInv hUnwrap)
+                 (fun tid => receiveTransferCaps_determineTargetCore_eq tid hLegInv hUnwrap)).mpr (by simpa using hLeg))
 
 
 /-- **WS-RR RR8.12 Cut C1 (register row 55): the queued sender whose `Call` the arm's
@@ -4914,7 +4963,7 @@ theorem endpointReceiveDualOnCore_not_dequeuedCall_of_blockedOnSend
             have hIW : (wakeThread st2 popTid executingCore).1.objects.invExt :=
               wakeThread_preserves_objects_invExt st2 popTid executingCore hI2
             cases hS3 : storeTcbIpcStateAndMessage (wakeThread st2 popTid executingCore).1
-                receiver .ready popTcb.pendingMessage with
+                receiver .ready (some (blockedSenderMessage st1 popTid popTcb)) with
             | error e => simpa using hFail
             | ok st3 =>
                 simp only []
@@ -4922,13 +4971,13 @@ theorem endpointReceiveDualOnCore_not_dequeuedCall_of_blockedOnSend
                 · subst hEqId
                   obtain ⟨t3, hT3, hR3⟩ :=
                     storeTcbIpcStateAndMessage_getTcb?_ipcState _ st3 receiver .ready
-                      popTcb.pendingMessage hIW hS3
+                      _ hIW hS3
                   exact rendezvousDequeuedCall_false_of_getTcb?_ready st3 receiver t3 hT3 hR3
                 · have hNe : popTid.toObjId ≠ receiver.toObjId := fun h =>
                     hEqId (SeLe4n.ThreadId.toObjId_injective _ _ h).symm
                   have hFrame := storeTcbIpcStateAndMessage_preserves_objects_ne
                     (wakeThread st2 popTid executingCore).1 st3 receiver .ready
-                    popTcb.pendingMessage popTid.toObjId hNe hIW hS3
+                    (some (blockedSenderMessage st1 popTid popTcb)) popTid.toObjId hNe hIW hS3
                   refine rendezvousDequeuedCall_false_of_getTcb?_ready st3 popTid tW ?_
                     ((TCB.proj_eq_of_withoutRunLinks_eq TCB.ipcState hWE).trans hR2)
                   simp only [SystemState.getTcb?] at hTW ⊢
@@ -4983,8 +5032,7 @@ theorem endpointReceiveDualWithCapsOnCore_not_dequeuedCall_of_blockedOnSend
               | simpa using hLeg
               | (rename_i hUnwrap
                  refine (rendezvousDequeuedCall_congr_getTcb? _ stRecv sender ?_).trans hLeg
-                 exact ipcUnwrapCaps_getTcb?_eq _ receiverCspaceRoot receiverSlotBase _ stRecv _ _
-                   sender hLegInv hUnwrap)
+                 exact receiveTransferCaps_getTcb?_eq sender hLegInv hUnwrap)
 
 /-- **`v0.35.161` / WS-RR RR8.12 Cut C2 (`v0.35.162`)**: the replenish-queue cores the
 receive leg's BLOCK path migrates between — the receiver's home and its loan's owner's,

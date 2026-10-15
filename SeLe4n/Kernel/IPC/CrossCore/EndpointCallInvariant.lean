@@ -121,11 +121,12 @@ theorem endpointCallOnCore_preserves_ipcInvariant
         simp only
         have hInv1 := endpointQueueEnqueue_preserves_ipcInvariant endpointId false caller st st' hInv hObjInv hEnq
         have hObj1 := endpointQueueEnqueue_preserves_objects_invExt endpointId false caller st st' hObjInv hEnq
-        cases hMsg : storeTcbIpcStateAndMessage st' caller (.blockedOnCall endpointId) (some msg) with
+        cases hMsg : storeTcbIpcStateAndMessage st' caller (.blockedOnCall endpointId) none with
         | error e => simp only; exact hInv
         | ok st'' =>
           simp only
           have hInv2 := storeTcbIpcStateAndMessage_preserves_ipcInvariant st' st'' caller _ _ hInv1 hObj1 hMsg
+          refine ipcInvariant_of_objectsAgreeOffRunLinks (recordSendCap_objectsAgreeOffRunLinks _ _ _ _) ?_
           show ipcInvariant (removeRunnableOnCore st'' caller executingCore)
           exact ipcInvariant_of_objectsAgreeOffRunLinks (removeRunnableOnCore_objectsAgreeOffRunLinks _ _ _) hInv2
     | some _ =>
@@ -215,12 +216,13 @@ theorem endpointCallOnCore_establishes_blockedOnReplyHasReplyObject
         simp only
         have hP1 := endpointQueueEnqueue_preserves_blockedOnReplyHasReplyObject endpointId false caller st st' hObjInv hInv hEnq
         have hObj1 := endpointQueueEnqueue_preserves_objects_invExt endpointId false caller st st' hObjInv hEnq
-        cases hMsg : storeTcbIpcStateAndMessage st' caller (.blockedOnCall endpointId) (some msg) with
+        cases hMsg : storeTcbIpcStateAndMessage st' caller (.blockedOnCall endpointId) none with
         | error e => simp only; exact hInv
         | ok st'' =>
           simp only
           have hP2 := storeTcbIpcStateAndMessage_nonBlocked_preserves_blockedOnReplyHasReplyObject
-            st' st'' caller (.blockedOnCall endpointId) (some msg) hObj1 hP1 (by simp) hMsg
+            st' st'' caller (.blockedOnCall endpointId) none hObj1 hP1 (by simp) hMsg
+          refine blockedOnReplyHasReplyObject_of_objectsAgreeOffRunLinks (recordSendCap_objectsAgreeOffRunLinks _ _ _ _) ?_
           show blockedOnReplyHasReplyObject (removeRunnableOnCore st'' caller executingCore)
           exact blockedOnReplyHasReplyObject_of_objectsAgreeOffRunLinks (removeRunnableOnCore_objectsAgreeOffRunLinks st'' caller executingCore) hP2
     | some _ =>
@@ -400,11 +402,12 @@ theorem endpointCallOnCore_timeoutBudgetFrame
         simp only
         have hS1 := endpointQueueEnqueue_timeoutBudgetFrame endpointId false caller st st' hObjInv hEnq
         have hObj1 := endpointQueueEnqueue_preserves_objects_invExt endpointId false caller st st' hObjInv hEnq
-        cases hMsg : storeTcbIpcStateAndMessage st' caller (.blockedOnCall endpointId) (some msg) with
+        cases hMsg : storeTcbIpcStateAndMessage st' caller (.blockedOnCall endpointId) none with
         | error e => simp only; exact timeoutBudgetFrame.refl st
         | ok st'' =>
           simp only
-          have hS2 := hS1.trans (storeTcbIpcStateAndMessage_timeoutBudgetFrame st' st'' caller (.blockedOnCall endpointId) (some msg) hObj1 hMsg)
+          have hS2 := hS1.trans (storeTcbIpcStateAndMessage_timeoutBudgetFrame st' st'' caller (.blockedOnCall endpointId) none hObj1 hMsg)
+          refine (show timeoutBudgetFrame st (removeRunnableOnCore st'' caller executingCore) from ?_).trans (timeoutBudgetFrame.of_objectsAgreeOffRunLinks (recordSendCap_objectsAgreeOffRunLinks _ _ _ _))
           show timeoutBudgetFrame st (removeRunnableOnCore st'' caller executingCore)
           exact hS2.trans (timeoutBudgetFrame.of_objectsAgreeOffRunLinks (removeRunnableOnCore_objectsAgreeOffRunLinks st'' caller executingCore))
     | some _ =>
@@ -489,17 +492,18 @@ theorem endpointCallOnCore_passiveServerIdleFrame
         simp only
         have hObj1 := endpointQueueEnqueue_preserves_objects_invExt endpointId false caller st st' hObjInv hEnq
         have hF1 := endpointQueueEnqueue_passiveServerIdleFrame endpointId false caller st st' hObjInv hEnq
-        cases hMsg : storeTcbIpcStateAndMessage st' caller (.blockedOnCall endpointId) (some msg) with
+        cases hMsg : storeTcbIpcStateAndMessage st' caller (.blockedOnCall endpointId) none with
         | error e => simp only; exact passiveServerIdleFrame.refl st
         | ok st'' =>
           simp only
+          refine (show passiveServerIdleFrame st (removeRunnableOnCore st'' caller executingCore) from ?_).trans (passiveServerIdleFrame.of_objectsAgreeOffRunLinks (recordSendCap_objectsAgreeOffRunLinks _ _ _ _) (recordSendCap_scheduler _ _ _ _))
           show passiveServerIdleFrame st (removeRunnableOnCore st'' caller executingCore)
           refine (hF1.trans (storeTcbIpcStateAndMessage_passiveServerIdleFrame st' st'' caller
-            (.blockedOnCall endpointId) (some msg) (Or.inr (fun tcb hTcb => ?_)) hObj1 hMsg)).trans
+            (.blockedOnCall endpointId) none (Or.inr (fun tcb hTcb => ?_)) hObj1 hMsg)).trans
             (removeRunnableOnCore_passiveServerIdleFrame st'' caller executingCore (fun tcb hTcb => Or.inl ?_))
           · obtain ⟨tcb0, hTcb0, hBindEq⟩ := endpointQueueEnqueue_sameSchedContextBindings endpointId false caller st st' hObjInv hEnq caller tcb hTcb
             exact hBindEq ▸ hCallerNotUnbound tcb0 hTcb0
-          · obtain ⟨tcb1, hTcb1, hBindEq1⟩ := storeTcbIpcStateAndMessage_sameSchedContextBindings st' st'' caller (.blockedOnCall endpointId) (some msg) hObj1 hMsg caller tcb hTcb
+          · obtain ⟨tcb1, hTcb1, hBindEq1⟩ := storeTcbIpcStateAndMessage_sameSchedContextBindings st' st'' caller (.blockedOnCall endpointId) none hObj1 hMsg caller tcb hTcb
             obtain ⟨tcb0, hTcb0, hBindEq0⟩ := endpointQueueEnqueue_sameSchedContextBindings endpointId false caller st st' hObjInv hEnq caller tcb1 hTcb1
             exact hBindEq1 ▸ hBindEq0 ▸ hCallerNotUnbound tcb0 hTcb0
     | some _ =>
@@ -584,15 +588,16 @@ theorem endpointCallOnCore_preserves_blockedThreadsPendingMessageConsistent
         have hObj1 := endpointQueueEnqueue_preserves_objects_invExt endpointId false caller st st' hObjInv hEnq
         have hInv1 := endpointQueueEnqueue_preserves_blockedThreadsPendingMessageConsistent
           endpointId false caller st st' hObjInv hInv hEnq
-        cases hMsg : storeTcbIpcStateAndMessage st' caller (.blockedOnCall endpointId) (some msg) with
+        cases hMsg : storeTcbIpcStateAndMessage st' caller (.blockedOnCall endpointId) none with
         | error e => simp only; exact hInv
         | ok st'' =>
           simp only
+          refine blockedThreadsPendingMessageConsistent_of_objectsAgreeOffRunLinks (recordSendCap_objectsAgreeOffRunLinks _ _ _ _) ?_
           show blockedThreadsPendingMessageConsistent (removeRunnableOnCore st'' caller executingCore)
           refine blockedThreadsPendingMessageConsistent_of_readViewAgreement
             (.of_objectsAgreeOffRunLinks (removeRunnableOnCore_objectsAgreeOffRunLinks _ _ _)) ?_
           exact storeTcbIpcStateAndMessage_preserves_blockedThreadsPendingMessageConsistent
-            st' st'' caller (.blockedOnCall endpointId) (some msg) hObj1 hMsg hInv1 (by simp)
+            st' st'' caller (.blockedOnCall endpointId) none hObj1 hMsg hInv1 (by simp)
     | some _ =>
       simp only
       cases hPop : endpointQueuePopHead endpointId true st with
@@ -689,14 +694,15 @@ theorem endpointCallOnCore_preserves_replyCallerLinkageReciprocal
         simp only
         have hObj1 := endpointQueueEnqueue_preserves_objects_invExt endpointId false caller st st' hObjInv hEnq
         have hF1 := endpointQueueEnqueue_replyLinkageFrame endpointId false caller st st' hObjInv hEnq
-        cases hMsg : storeTcbIpcStateAndMessage st' caller (.blockedOnCall endpointId) (some msg) with
+        cases hMsg : storeTcbIpcStateAndMessage st' caller (.blockedOnCall endpointId) none with
         | error e => simp only; exact hInv
         | ok st'' =>
           simp only
+          refine replyCallerLinkageReciprocal_of_frame (replyLinkageFrame.of_objectsAgreeOffRunLinks (recordSendCap_objectsAgreeOffRunLinks _ _ _ _)) ?_
           show replyCallerLinkageReciprocal (removeRunnableOnCore st'' caller executingCore)
           refine replyCallerLinkageReciprocal_of_frame ?_ hInv
           refine (hF1.trans (storeTcbIpcStateAndMessage_replyLinkageFrame_of_unlinked st' st''
-            caller (.blockedOnCall endpointId) (some msg)
+            caller (.blockedOnCall endpointId) none
             (hF1.unlinked_forward hCallerUnlinked) hObj1 hMsg)).trans ?_
           exact replyLinkageFrame.of_objectsAgreeOffRunLinks (removeRunnableOnCore_objectsAgreeOffRunLinks st'' caller executingCore)
     | some _ =>
@@ -809,12 +815,13 @@ theorem endpointCallOnCore_donationOwnerFrame
         simp only
         have hF1 := endpointQueueEnqueue_donationOwnerFrame endpointId false caller st st' hObjInv hEnq
         have hObj1 := endpointQueueEnqueue_preserves_objects_invExt endpointId false caller st st' hObjInv hEnq
-        cases hMsg : storeTcbIpcStateAndMessage st' caller (.blockedOnCall endpointId) (some msg) with
+        cases hMsg : storeTcbIpcStateAndMessage st' caller (.blockedOnCall endpointId) none with
         | error e => simp only; exact donationOwnerFrame.refl st
         | ok st'' =>
           simp only
+          refine (show donationOwnerFrame st (removeRunnableOnCore st'' caller executingCore) from ?_).trans (donationOwnerFrame.of_objectsAgreeOffRunLinks (recordSendCap_objectsAgreeOffRunLinks _ _ _ _))
           show donationOwnerFrame st (removeRunnableOnCore st'' caller executingCore)
-          refine (hF1.trans (storeTcbIpcStateAndMessage_donationOwnerFrame st' st'' caller (.blockedOnCall endpointId) (some msg)
+          refine (hF1.trans (storeTcbIpcStateAndMessage_donationOwnerFrame st' st'' caller (.blockedOnCall endpointId) none
             (fun tcb hTcb_s1 ep' rt => ?_) hObj1 hMsg)).trans
             (donationOwnerFrame.of_objectsAgreeOffRunLinks (removeRunnableOnCore_objectsAgreeOffRunLinks st'' caller executingCore))
           obtain ⟨tcb0, hTcb0, hIpc0⟩ := endpointQueueEnqueue_tcb_ipcState_backward endpointId false caller st st'
@@ -903,12 +910,13 @@ theorem endpointCallOnCore_establishes_blockedOnReplyHasTarget
         simp only
         have hP1 := endpointQueueEnqueue_preserves_blockedOnReplyHasTarget endpointId false caller st st' hObjInv hInv hEnq
         have hObj1 := endpointQueueEnqueue_preserves_objects_invExt endpointId false caller st st' hObjInv hEnq
-        cases hMsg : storeTcbIpcStateAndMessage st' caller (.blockedOnCall endpointId) (some msg) with
+        cases hMsg : storeTcbIpcStateAndMessage st' caller (.blockedOnCall endpointId) none with
         | error e => simp only; exact hInv
         | ok st'' =>
           simp only
           have hP2 := storeTcbIpcStateAndMessage_preserves_blockedOnReplyHasTarget
-            st' st'' caller (.blockedOnCall endpointId) (some msg) hObj1 hP1 (by intro ep rt h; cases h) hMsg
+            st' st'' caller (.blockedOnCall endpointId) none hObj1 hP1 (by intro ep rt h; cases h) hMsg
+          refine blockedOnReplyHasTarget_of_objectsAgreeOffRunLinks (recordSendCap_objectsAgreeOffRunLinks _ _ _ _) ?_
           show blockedOnReplyHasTarget (removeRunnableOnCore st'' caller executingCore)
           exact blockedOnReplyHasTarget_of_objectsAgreeOffRunLinks (removeRunnableOnCore_objectsAgreeOffRunLinks st'' caller executingCore) hP2
     | some _ =>
@@ -1073,12 +1081,13 @@ theorem endpointCallOnCore_preserves_dualQueueSystemInvariant
           endpointId false caller st st' hEnq hInv hObjInv hFreshCaller hSendTailFresh
         have hObj1 := endpointQueueEnqueue_preserves_objects_invExt
           endpointId false caller st st' hObjInv hEnq
-        cases hMsg : storeTcbIpcStateAndMessage st' caller (.blockedOnCall endpointId) (some msg) with
+        cases hMsg : storeTcbIpcStateAndMessage st' caller (.blockedOnCall endpointId) none with
         | error e => simp only; exact hInv
         | ok st'' =>
           simp only
           have hInv2 := storeTcbIpcStateAndMessage_preserves_dualQueueSystemInvariant
             st' st'' caller _ _ hObj1 hMsg hInv1
+          refine dualQueueSystemInvariant_of_objectsAgreeOffRunLinks (recordSendCap_objectsAgreeOffRunLinks _ _ _ _) ?_
           show dualQueueSystemInvariant (removeRunnableOnCore st'' caller executingCore)
           exact removeRunnableOnCore_preserves_dualQueueSystemInvariant st'' caller executingCore hInv2
     | some _ =>
@@ -1196,14 +1205,14 @@ theorem endpointReceiveDualOnCore_preserves_dualQueueSystemInvariant
                 have hObjInvLink := linkCallerReply_preserves_objects_invExt st2 stLinked pair.1 rid hObjInv2 hLink
                 have hInvLink := linkCallerReply_preserves_dualQueueSystemInvariant
                   st2 stLinked pair.1 rid hObjInv2 hLink hInv2
-                cases hMsg : storeTcbIpcStateAndMessage stLinked receiver .ready pair.2.1.pendingMessage with
+                cases hMsg : storeTcbIpcStateAndMessage stLinked receiver .ready (some (blockedSenderMessage pair.2.2 pair.1 pair.2.1)) with
                 | error e => simp only [hMsg]; exact hInv
                 | ok st3 =>
                   simp only [hMsg]
                   exact dualQueueSystemInvariant_of_objectsAgreeOffRunLinks
                     (SystemState.linkReplyWaiter_objectsAgreeOffRunLinks _ _ _)
                     (storeTcbIpcStateAndMessage_preserves_dualQueueSystemInvariant
-                      stLinked _ receiver .ready pair.2.1.pendingMessage hObjInvLink hMsg hInvLink)
+                      stLinked _ receiver .ready (some (blockedSenderMessage pair.2.2 pair.1 pair.2.1)) hObjInvLink hMsg hInvLink)
         | ready | blockedOnSend _ | blockedOnReceive _
           | blockedOnReply _ _ | blockedOnNotification _ =>
           simp only [hSenderIpc]
@@ -1221,12 +1230,12 @@ theorem endpointReceiveDualOnCore_preserves_dualQueueSystemInvariant
               st2 pair.1 executingCore tr hTrGet hTrReady hObjInv2 hInv2
             have hObjW := wakeThread_preserves_objects_invExt st2 pair.1 executingCore hObjInv2
             cases hMsg : storeTcbIpcStateAndMessage (wakeThread st2 pair.1 executingCore).1 receiver .ready
-                pair.2.1.pendingMessage with
+                (some (blockedSenderMessage pair.2.2 pair.1 pair.2.1)) with
             | error e => simp only [hMsg]; exact hInv
             | ok st4 =>
               simp only [hMsg]
               exact storeTcbIpcStateAndMessage_preserves_dualQueueSystemInvariant
-                (wakeThread st2 pair.1 executingCore).1 _ receiver .ready pair.2.1.pendingMessage hObjW hMsg hInvW
+                (wakeThread st2 pair.1 executingCore).1 _ receiver .ready (some (blockedSenderMessage pair.2.2 pair.1 pair.2.1)) hObjW hMsg hInvW
     | none =>
       simp only [hHead]
       cases hChecked : cleanupPreReceiveDonationMigrated st receiver with
@@ -1388,12 +1397,13 @@ theorem endpointCallOnCore_preserves_endpointQueueNoDup
             intro ep' hEp'
             have hee : ep = ep' := by simpa using hEpObj.symm.trans hEp'
             subst hee; simpa using hHead) hEnq
-        cases hMsg : storeTcbIpcStateAndMessage st' caller (.blockedOnCall endpointId) (some msg) with
+        cases hMsg : storeTcbIpcStateAndMessage st' caller (.blockedOnCall endpointId) none with
         | error e => simp only; exact hInv
         | ok st'' =>
           simp only
           have hND2 := storeTcbIpcStateAndMessage_preserves_endpointQueueNoDup
             st' st'' caller _ _ hND1 hObj1 hMsg
+          refine endpointQueueNoDup_of_objectsAgreeOffRunLinks (recordSendCap_objectsAgreeOffRunLinks _ _ _ _) ?_
           show endpointQueueNoDup (removeRunnableOnCore st'' caller executingCore)
           exact removeRunnableOnCore_preserves_endpointQueueNoDup st'' caller executingCore hND2
     | some _ =>
@@ -1572,7 +1582,7 @@ theorem endpointCallOnCore_preserves_ipcStateQueueMembershipConsistent
           exact (hFreshCaller endpointId ep hObj).2.1
         have hReach := endpointQueueEnqueue_thread_reachable
           endpointId false caller st st1 hObjInv hNotTail hEnq
-        cases hMsg : storeTcbIpcStateAndMessage st1 caller (.blockedOnCall endpointId) (some msg) with
+        cases hMsg : storeTcbIpcStateAndMessage st1 caller (.blockedOnCall endpointId) none with
         | error e => simp only; exact hInv
         | ok st2 =>
           simp only
@@ -1584,17 +1594,18 @@ theorem endpointCallOnCore_preserves_ipcStateQueueMembershipConsistent
             | some tcb =>
               have := lookupTcb_some_objects st caller tcb hL
               rw [← h, hObj] at this; cases this
+          refine ipcStateQueueMembershipConsistent_of_objectsAgreeOffRunLinks (recordSendCap_objectsAgreeOffRunLinks _ _ _ _) ?_
           show ipcStateQueueMembershipConsistent (removeRunnableOnCore st2 caller executingCore)
           exact removeRunnableOnCore_preserves_ipcStateQueueMembershipConsistent st2 caller executingCore <|
             storeTcbIpcStateAndMessage_general_preserves_ipcStateQueueMembershipConsistent
-              st1 st2 caller (.blockedOnCall endpointId) (some msg) hV3J1 hObjInv1 hMsg
+              st1 st2 caller (.blockedOnCall endpointId) none hV3J1 hObjInv1 hMsg
               (fun _ h => absurd h (by simp))
               (fun _ h => absurd h (by simp))
               (fun epId hEq => by
                 cases hEq
                 obtain ⟨ep', hEp1, hR⟩ := hReach
                 have hEpFrame := storeTcbIpcStateAndMessage_preserves_objects_ne
-                  st1 st2 caller (.blockedOnCall endpointId) (some msg)
+                  st1 st2 caller (.blockedOnCall endpointId) none
                   endpointId hNeCallerEp hObjInv1 hMsg
                 rw [hEpFrame]
                 exact ⟨ep', hEp1, hR.elim Or.inl fun ⟨prev, prevTcb, hP, hQN⟩ => by
@@ -1605,7 +1616,7 @@ theorem endpointCallOnCore_preserves_ipcStateQueueMembershipConsistent
                     rw [hPrevEq] at hP
                     exact absurd hQN (tcbQueueChainAcyclic_no_self_loop hDQSI1.chainAcyclic caller prevTcb hP)
                   rw [storeTcbIpcStateAndMessage_preserves_objects_ne
-                    st1 st2 caller (.blockedOnCall endpointId) (some msg)
+                    st1 st2 caller (.blockedOnCall endpointId) none
                     prev.toObjId hNePrev hObjInv1 hMsg]
                   exact hP⟩)
 
@@ -1727,12 +1738,12 @@ theorem endpointCallOnCore_preserves_queueNextBlockingConsistent
           endpointId false caller st st' hObjInv hInv hEnq
         have hObj1 := endpointQueueEnqueue_preserves_objects_invExt
           endpointId false caller st st' hObjInv hEnq
-        cases hMsg : storeTcbIpcStateAndMessage st' caller (.blockedOnCall endpointId) (some msg) with
+        cases hMsg : storeTcbIpcStateAndMessage st' caller (.blockedOnCall endpointId) none with
         | error e => simp only; exact hInv
         | ok st'' =>
           simp only
           have hInv2 := storeTcbIpcStateAndMessage_preserves_queueNextBlockingConsistent
-            st' st'' caller (.blockedOnCall endpointId) (some msg) hInv1 hObj1 hMsg
+            st' st'' caller (.blockedOnCall endpointId) none hInv1 hObj1 hMsg
             (by
               intro b tcbTid tcbB hSenderObj hSenderNext _
               obtain ⟨tcbS, hS, hSNext⟩ := endpointQueueEnqueue_enqueued_queueNext_none
@@ -1745,6 +1756,7 @@ theorem endpointCallOnCore_preserves_queueNextBlockingConsistent
               rcases (endpointQueueEnqueue_predecessor_blocked endpointId false caller st st' ep
                 hObjInv hObjEp hDQSI hTail hFreshCaller hSendTailFresh hEnq a tcbA hA hANext).2 rfl
                 with h | h <;> rw [h] <;> rfl)
+          refine queueNextBlockingConsistent_of_objectsAgreeOffRunLinks (recordSendCap_objectsAgreeOffRunLinks _ _ _ _) ?_
           show queueNextBlockingConsistent (removeRunnableOnCore st'' caller executingCore)
           exact removeRunnableOnCore_preserves_queueNextBlockingConsistent st'' caller executingCore hInv2
     | some _ =>
@@ -1846,14 +1858,15 @@ theorem endpointCallOnCore_preserves_queueNextTargetBlocked
       | error e => simp only; exact hQNTB
       | ok st' =>
         simp only
-        cases hMsg : storeTcbIpcStateAndMessage st' caller (.blockedOnCall endpointId) (some msg) with
+        cases hMsg : storeTcbIpcStateAndMessage st' caller (.blockedOnCall endpointId) none with
         | error e => simp only; exact hQNTB
         | ok st'' =>
           simp only
+          refine queueNextTargetBlocked_of_objectsAgreeOffRunLinks (recordSendCap_objectsAgreeOffRunLinks _ _ _ _) ?_
           show queueNextTargetBlocked (removeRunnableOnCore st'' caller executingCore)
           exact removeRunnableOnCore_preserves_queueNextTargetBlocked st'' caller executingCore
             (endpointQueueEnqueue_blockStore_establishes_queueNextTargetBlocked endpointId false caller
-              st st' st'' ep (.blockedOnCall endpointId) (some msg) hObjInv hObjEp hQNTB hTail hDQSI
+              st st' st'' ep (.blockedOnCall endpointId) none hObjInv hObjEp hQNTB hTail hDQSI
               hFreshCaller hSendTailFresh (by simp) hEnq hMsg)
     | some _ =>
       simp only
@@ -1979,14 +1992,15 @@ theorem endpointCallOnCore_preserves_queueHeadBlockedConsistent
       | error e => simp only; exact hQHBC
       | ok st' =>
         simp only
-        cases hMsg : storeTcbIpcStateAndMessage st' caller (.blockedOnCall endpointId) (some msg) with
+        cases hMsg : storeTcbIpcStateAndMessage st' caller (.blockedOnCall endpointId) none with
         | error e => simp only; exact hQHBC
         | ok st'' =>
           simp only
+          refine queueHeadBlockedConsistent_of_objectsAgreeOffRunLinks (recordSendCap_objectsAgreeOffRunLinks _ _ _ _) ?_
           show queueHeadBlockedConsistent (removeRunnableOnCore st'' caller executingCore)
           exact removeRunnableOnCore_preserves_queueHeadBlockedConsistent st'' caller executingCore
             (endpointQueueEnqueue_blockStore_establishes_queueHeadBlockedConsistent endpointId false caller
-              st st' st'' ep (.blockedOnCall endpointId) (some msg) hObjInv hObjEp hQHBC hFreshCaller
+              st st' st'' ep (.blockedOnCall endpointId) none hObjInv hObjEp hQHBC hFreshCaller
               (by simp) hEnq hMsg)
     | some _ =>
       simp only
@@ -2159,14 +2173,15 @@ theorem endpointCallOnCore_preserves_endpointQueueTailBlockedConsistent
       | error e => simp only; exact hTail
       | ok st' =>
         simp only
-        cases hMsg : storeTcbIpcStateAndMessage st' caller (.blockedOnCall endpointId) (some msg) with
+        cases hMsg : storeTcbIpcStateAndMessage st' caller (.blockedOnCall endpointId) none with
         | error e => simp only; exact hTail
         | ok st'' =>
           simp only
+          refine endpointQueueTailBlockedConsistent_of_objectsAgreeOffRunLinks (recordSendCap_objectsAgreeOffRunLinks _ _ _ _) ?_
           show endpointQueueTailBlockedConsistent (removeRunnableOnCore st'' caller executingCore)
           exact removeRunnableOnCore_preserves_endpointQueueTailBlockedConsistent st'' caller executingCore <|
             endpointQueueEnqueue_blockStore_establishes_endpointQueueTailBlockedConsistent
-              endpointId false caller st st' st'' ep (.blockedOnCall endpointId) (some msg)
+              endpointId false caller st st' st'' ep (.blockedOnCall endpointId) none
               hObjInv hObjEp hTail
               (fun epId e hE => ⟨(hFreshCaller epId e hE).2.1, (hFreshCaller epId e hE).2.2.2⟩)
               (by simp) hEnq hMsg
@@ -2304,12 +2319,13 @@ theorem endpointCallOnCore_preserves_badgeWellFormed
           endpointId false caller st st' hObjInv hEnq hInv
         have hObj1 := endpointQueueEnqueue_preserves_objects_invExt
           endpointId false caller st st' hObjInv hEnq
-        cases hMsg : storeTcbIpcStateAndMessage st' caller (.blockedOnCall endpointId) (some msg) with
+        cases hMsg : storeTcbIpcStateAndMessage st' caller (.blockedOnCall endpointId) none with
         | error e => simp only; exact hInv
         | ok st'' =>
           simp only
           have hInv2 := storeTcbIpcStateAndMessage_preserves_badgeWellFormed
             st' st'' caller _ _ hInv1 hObj1 hMsg
+          refine badgeWellFormed_of_objectsAgreeOffRunLinks (recordSendCap_objectsAgreeOffRunLinks _ _ _ _) ?_
           show badgeWellFormed (removeRunnableOnCore st'' caller executingCore)
           exact removeRunnableOnCore_preserves_badgeWellFormed st'' caller executingCore hInv2
     | some _ =>
@@ -2385,12 +2401,13 @@ theorem endpointCallOnCore_preserves_allPendingMessagesBounded
           endpointId false caller st st' hObjInv hEnq hInv
         have hObj1 := endpointQueueEnqueue_preserves_objects_invExt
           endpointId false caller st st' hObjInv hEnq
-        cases hMsg : storeTcbIpcStateAndMessage st' caller (.blockedOnCall endpointId) (some msg) with
+        cases hMsg : storeTcbIpcStateAndMessage st' caller (.blockedOnCall endpointId) none with
         | error e => simp only; exact hInv
         | ok st'' =>
           simp only
           have hInv2 := storeTcbIpcStateAndMessage_preserves_allPendingMessagesBounded
-            st' st'' caller _ _ (fun m hm => by cases hm; exact hMsgBounded) hObj1 hMsg hInv1
+            st' st'' caller _ _ (fun m hm => by cases hm) hObj1 hMsg hInv1
+          refine allPendingMessagesBounded_of_objectsAgreeOffRunLinks (recordSendCap_objectsAgreeOffRunLinks _ _ _ _) ?_
           show allPendingMessagesBounded (removeRunnableOnCore st'' caller executingCore)
           exact removeRunnableOnCore_preserves_allPendingMessagesBounded st'' caller executingCore hInv2
     | some _ =>
@@ -2476,13 +2493,14 @@ theorem endpointCallOnCore_preserves_pendingReceiveReplyWellFormed
         simp only
         have hObjInv1 := endpointQueueEnqueue_preserves_objects_invExt endpointId false caller st st1 hObjInv hEnq
         have hP1 := endpointQueueEnqueue_preserves_pendingReceiveReplyWellFormed endpointId false caller st st1 hObjInv hInv hEnq
-        cases hMsg : storeTcbIpcStateAndMessage st1 caller (.blockedOnCall endpointId) (some msg) with
+        cases hMsg : storeTcbIpcStateAndMessage st1 caller (.blockedOnCall endpointId) none with
         | error e => simp only; exact hInv
         | ok st2 =>
           simp only
           have hP2 := storeTcbIpcStateAndMessage_notReceiving_preserves_pendingReceiveReplyWellFormed
-            st1 st2 caller (.blockedOnCall endpointId) (some msg) hObjInv1 hP1 ?_ hMsg
-          · show pendingReceiveReplyWellFormed (removeRunnableOnCore st2 caller executingCore)
+            st1 st2 caller (.blockedOnCall endpointId) none hObjInv1 hP1 ?_ hMsg
+          · refine pendingReceiveReplyWellFormed_of_objectsAgreeOffRunLinks (recordSendCap_objectsAgreeOffRunLinks _ _ _ _) ?_
+            show pendingReceiveReplyWellFormed (removeRunnableOnCore st2 caller executingCore)
             exact pendingReceiveReplyWellFormed_of_objectsAgreeOffRunLinks
               (removeRunnableOnCore_objectsAgreeOffRunLinks st2 caller executingCore) hP2
           · intro tcb' hTcb' ep' h
@@ -2769,18 +2787,19 @@ theorem endpointCallOnCore_passiveServerIdleFrameOnCore
         simp only
         have hObj1 := endpointQueueEnqueue_preserves_objects_invExt endpointId false caller st st' hObjInv hEnq
         have hF1 := endpointQueueEnqueue_passiveServerIdleFrameOnCore (c := c) endpointId false caller st st' hObjInv hEnq
-        cases hMsg : storeTcbIpcStateAndMessage st' caller (.blockedOnCall endpointId) (some msg) with
+        cases hMsg : storeTcbIpcStateAndMessage st' caller (.blockedOnCall endpointId) none with
         | error e => simp only; exact passiveServerIdleFrameOnCore.refl st
         | ok st'' =>
           simp only
+          refine (show passiveServerIdleFrameOnCore st (removeRunnableOnCore st'' caller executingCore) c from ?_).trans (passiveServerIdleFrameOnCore.of_objectsAgreeOffRunLinks (recordSendCap_objectsAgreeOffRunLinks _ _ _ _) (recordSendCap_scheduler _ _ _ _))
           show passiveServerIdleFrameOnCore st (removeRunnableOnCore st'' caller executingCore) c
           refine (hF1.trans (storeTcbIpcStateAndMessage_passiveServerIdleFrameOnCore st' st'' caller
-            (.blockedOnCall endpointId) (some msg) (Or.inr (fun tcb hTcb => ?_)) hObj1 hMsg)).trans
+            (.blockedOnCall endpointId) none (Or.inr (fun tcb hTcb => ?_)) hObj1 hMsg)).trans
             (removeRunnableOnCore_passiveServerIdleFrameOnCore st'' caller executingCore (fun tcb hTcb => Or.inl ?_))
           · obtain ⟨tcb0, hTcb0, hBindEq⟩ := endpointQueueEnqueue_sameSchedContextBindings endpointId false caller st st' hObjInv hEnq caller tcb
               ((getTcb?_eq_some_iff st' caller tcb).mp hTcb)
             exact hBindEq ▸ hCallerNotUnbound tcb0 ((getTcb?_eq_some_iff st caller tcb0).mpr hTcb0)
-          · obtain ⟨tcb1, hTcb1, hBindEq1⟩ := storeTcbIpcStateAndMessage_sameSchedContextBindings st' st'' caller (.blockedOnCall endpointId) (some msg) hObj1 hMsg caller tcb
+          · obtain ⟨tcb1, hTcb1, hBindEq1⟩ := storeTcbIpcStateAndMessage_sameSchedContextBindings st' st'' caller (.blockedOnCall endpointId) none hObj1 hMsg caller tcb
               ((getTcb?_eq_some_iff st'' caller tcb).mp hTcb)
             obtain ⟨tcb0, hTcb0, hBindEq0⟩ := endpointQueueEnqueue_sameSchedContextBindings endpointId false caller st st' hObjInv hEnq caller tcb1 hTcb1
             exact hBindEq1 ▸ hBindEq0 ▸ hCallerNotUnbound tcb0 ((getTcb?_eq_some_iff st caller tcb0).mpr hTcb0)

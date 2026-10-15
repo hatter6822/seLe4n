@@ -174,7 +174,7 @@ private def tph005a_sendBlocks : IO Unit := do
       match frozenLookupTcb fst' ⟨1⟩ with
       | some tcb =>
           expect "TPH-005a sender blocked" (tcb.ipcState == .blockedOnSend ⟨10⟩)
-          expect "TPH-005b message pending" (tcb.pendingMessage.isSome)
+          expect "TPH-005b sender parks no message" (tcb.pendingMessage.isNone)
       | none => throw <| IO.userError "sender TCB missing"
   | .error _ => throw <| IO.userError "send should succeed"
 

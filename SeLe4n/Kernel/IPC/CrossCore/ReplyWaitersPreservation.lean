@@ -130,7 +130,8 @@ theorem endpointCallOnCore_preserves_replyWaitersConsistent (endpointId : SeLe4n
         · exact hC
         · rename_i st'' hStore
           show ReplyViews.consistent _
-          rw [removeRunnableOnCore_replyViews_eq, replyViews_storeTcbIpcStateAndMessage hI1 hStore,
+          rw [recordSendCap_replyViews_eq, removeRunnableOnCore_replyViews_eq,
+            replyViews_storeTcbIpcStateAndMessage hI1 hStore,
             endpointQueueEnqueue_replyViews_eq hInv hEnq]
           exact (ReplyViews.setServer_of_server hCaller).symm ▸ hC
   · split <;> exact hC

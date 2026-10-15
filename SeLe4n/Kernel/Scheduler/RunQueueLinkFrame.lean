@@ -25,12 +25,15 @@ outside the run queue can see.  WS-ZA ZA4.6: and its four reply-waiter fields
 (the links among a server's reply waiters, and a server's queue head and
 count), which only the reply-waiter queues and priority inheritance's walk of
 them read (`SystemState.replyWaitersConsistent`, `replyWaitersOf`); a write of
-either kind of link is a frame for every other reader. -/
+either kind of link is a frame for every other reader.  WS-ZA ZA4.7: and the
+four fields a blocked sender's capability fills in (`TCB.setSendCap`), which
+only the receive that takes its message reads (`blockedSenderMessage`). -/
 def TCB.withoutRunLinks (t : TCB) : TCB :=
   { t with runCoreCode := 0, runPrio := ⟨0⟩, runPrevCode := 0, runNextCode := 0,
            runBucketPrevCode := 0, runBucketNextCode := 0,
            replyWaiterPrevCode := 0, replyWaiterNextCode := 0,
-           replyWaitersHeadCode := 0, replyWaitersCount := 0 }
+           replyWaitersHeadCode := 0, replyWaitersCount := 0,
+           ipcBadge := 0, ipcBadged := false, ipcCanGrant := false, ipcFaultSend := false }
 
 /-- An object with a TCB's run-queue fields cleared; every other kind as is. -/
 def KernelObject.withoutRunLinks : KernelObject → KernelObject
@@ -67,7 +70,9 @@ theorem TCB.eq_withRunLinks_of_withoutRunLinks_eq {t t' : TCB}
                   replyWaiterPrevCode := t'.replyWaiterPrevCode,
                   replyWaiterNextCode := t'.replyWaiterNextCode,
                   replyWaitersHeadCode := t'.replyWaitersHeadCode,
-                  replyWaitersCount := t'.replyWaitersCount } := by
+                  replyWaitersCount := t'.replyWaitersCount,
+                  ipcBadge := t'.ipcBadge, ipcBadged := t'.ipcBadged,
+                  ipcCanGrant := t'.ipcCanGrant, ipcFaultSend := t'.ipcFaultSend } := by
   cases t; cases t'
   simp only [TCB.withoutRunLinks, TCB.mk.injEq] at e ⊢
   simp only [e, and_self]
@@ -106,11 +111,12 @@ theorem TCB.exists_of_map_withoutRunLinks_eq {a : Option TCB} {t : TCB}
 /-- A TCB rewrite that reads no run-queue field: rewriting those fields first
 changes nothing off them. -/
 def TCB.RunLinksBlind (f : TCB → TCB) : Prop :=
-  ∀ (t : TCB) (rc : Nat) (rp : SeLe4n.Priority) (rpv rnx rbpv rbnx rwp rwn rwh rwc : Nat),
+  ∀ (t : TCB) (rc : Nat) (rp : SeLe4n.Priority) (rpv rnx rbpv rbnx rwp rwn rwh rwc : Nat) (ib : UInt64) (ibd icg ifs : Bool),
     (f { t with runCoreCode := rc, runPrio := rp, runPrevCode := rpv, runNextCode := rnx,
                 runBucketPrevCode := rbpv, runBucketNextCode := rbnx,
                     replyWaiterPrevCode := rwp, replyWaiterNextCode := rwn,
-                    replyWaitersHeadCode := rwh, replyWaitersCount := rwc }).withoutRunLinks =
+                    replyWaitersHeadCode := rwh, replyWaitersCount := rwc,
+                    ipcBadge := ib, ipcBadged := ibd, ipcCanGrant := icg, ipcFaultSend := ifs }).withoutRunLinks =
       (f t).withoutRunLinks
 
 theorem KernelObject.withoutRunLinks_eq_of_not_tcb {o o' : KernelObject}
@@ -308,23 +314,25 @@ theorem get_pageTable_iff {x : SeLe4n.ObjId} {pt : PageTableObject} :
 form a proof can `subst`, so every non-run field it reads off the post-state TCB
 is, by definition, the pre-state TCB's. -/
 theorem get_tcb_back {x : SeLe4n.ObjId} {t' : TCB} (hx : st'.objects[x]? = some (.tcb t')) :
-    ∃ t : TCB, ∃ (rc : Nat) (rp : SeLe4n.Priority) (rpv rnx rbpv rbnx rwp rwn rwh rwc : Nat),
+    ∃ t : TCB, ∃ (rc : Nat) (rp : SeLe4n.Priority) (rpv rnx rbpv rbnx rwp rwn rwh rwc : Nat) (ib : UInt64) (ibd icg ifs : Bool),
       st.objects[x]? = some (.tcb t) ∧
       t' = { t with runCoreCode := rc, runPrio := rp, runPrevCode := rpv, runNextCode := rnx,
                     runBucketPrevCode := rbpv, runBucketNextCode := rbnx,
                     replyWaiterPrevCode := rwp, replyWaiterNextCode := rwn,
-                    replyWaitersHeadCode := rwh, replyWaitersCount := rwc } := by
+                    replyWaitersHeadCode := rwh, replyWaitersCount := rwc,
+                    ipcBadge := ib, ipcBadged := ibd, ipcCanGrant := icg, ipcFaultSend := ifs } := by
   obtain ⟨t, ht, e⟩ := h.get_tcb' hx
-  exact ⟨t, _, _, _, _, _, _, _, _, _, _, ht, TCB.eq_withRunLinks_of_withoutRunLinks_eq e⟩
+  exact ⟨t, _, _, _, _, _, _, _, _, _, _, _, _, _, _, ht, TCB.eq_withRunLinks_of_withoutRunLinks_eq e⟩
 
 /-- The same, from `st` to `st'`. -/
 theorem get_tcb_fwd {x : SeLe4n.ObjId} {t : TCB} (hx : st.objects[x]? = some (.tcb t)) :
-    ∃ t' : TCB, ∃ (rc : Nat) (rp : SeLe4n.Priority) (rpv rnx rbpv rbnx rwp rwn rwh rwc : Nat),
+    ∃ t' : TCB, ∃ (rc : Nat) (rp : SeLe4n.Priority) (rpv rnx rbpv rbnx rwp rwn rwh rwc : Nat) (ib : UInt64) (ibd icg ifs : Bool),
       st'.objects[x]? = some (.tcb t') ∧
       t = { t' with runCoreCode := rc, runPrio := rp, runPrevCode := rpv, runNextCode := rnx,
                     runBucketPrevCode := rbpv, runBucketNextCode := rbnx,
                     replyWaiterPrevCode := rwp, replyWaiterNextCode := rwn,
-                    replyWaitersHeadCode := rwh, replyWaitersCount := rwc } :=
+                    replyWaitersHeadCode := rwh, replyWaitersCount := rwc,
+                    ipcBadge := ib, ipcBadged := ibd, ipcCanGrant := icg, ipcFaultSend := ifs } :=
   h.symm.get_tcb_back hx
 
 /-- A key holds a TCB in one store exactly when it does in the other. -/
@@ -1077,7 +1085,7 @@ syntax (name := runLinksBack) "run_links_back " term " at " Lean.Parser.Tactic.r
 set_option hygiene false in
 macro_rules
   | `(tactic| run_links_back $e at $t $h) =>
-    `(tactic| (obtain ⟨$t, _, _, _, _, _, _, _, _, _, _, hPreRunLinks, rfl⟩ :=
+    `(tactic| (obtain ⟨$t, _, _, _, _, _, _, _, _, _, _, _, _, _, _, hPreRunLinks, rfl⟩ :=
                   ($e).get_tcb_back $h
                clear $h
                have $h := hPreRunLinks
@@ -1089,7 +1097,7 @@ syntax (name := runLinksFwd) "run_links_fwd " term " at " Lean.Parser.Tactic.rca
 set_option hygiene false in
 macro_rules
   | `(tactic| run_links_fwd $e at $t $h) =>
-    `(tactic| (obtain ⟨$t, _, _, _, _, _, _, _, _, _, _, hPostRunLinks, rfl⟩ :=
+    `(tactic| (obtain ⟨$t, _, _, _, _, _, _, _, _, _, _, _, _, _, _, hPostRunLinks, rfl⟩ :=
                   ($e).get_tcb_fwd $h
                clear $h
                have $h := hPostRunLinks

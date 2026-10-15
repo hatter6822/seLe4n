@@ -1304,7 +1304,46 @@ structure TCB where
   /-- WS-ZA ZA4.7: the state word of the thread's IPC state
       (`ThreadIpcState.stateCode`); see `ipcObjectCode`. -/
   ipcStateCode : Nat := 0
+  /-- WS-ZA ZA4.7: the badge of the capability a blocked sender sent through,
+      as a machine word (seL4's `blockingIPCBadge`); meaningful while
+      `ipcBadged`.  A blocked sender keeps its message words in its saved
+      registers and IPC buffer, read at the rendezvous
+      (`blockedSenderMessage`), so what its capability contributed has to be
+      kept on the thread: the capability is gone by then.  Read through
+      `TCB.ipcBadgeView`. -/
+  ipcBadge : UInt64 := 0
+  /-- Whether the sending capability carried a badge. -/
+  ipcBadged : Bool := false
+  /-- WS-ZA ZA4.7: may a blocked sender's extra capabilities be transferred —
+      its endpoint capability had the `Grant` right (seL4's
+      `blockingIPCCanGrant`). -/
+  ipcCanGrant : Bool := false
+  /-- WS-ZA ZA4.7: a blocked sender's message is its fault (`pendingFault`)
+      rather than its registers: set by fault delivery, cleared by every user
+      send or call that blocks.  seL4 decides the same question at the
+      rendezvous from `tcbFault`. -/
+  ipcFaultSend : Bool := false
   deriving Repr
+
+/-- WS-ZA ZA4.7: the badge a blocked sender sent under. -/
+@[inline] def TCB.ipcBadgeView (t : TCB) : Option SeLe4n.Badge :=
+  if t.ipcBadged then some (SeLe4n.Badge.ofWord t.ipcBadge) else none
+
+/-- WS-ZA ZA4.7: record what a sender's capability contributed to the message
+it blocks with: its badge and its grant right. -/
+@[inline] def TCB.setSendCap (t : TCB) (badge : Option SeLe4n.Badge) (grant : Bool) : TCB :=
+  { t with ipcBadge := (match badge with | some b => b.word | none => 0),
+           ipcBadged := badge.isSome, ipcCanGrant := grant, ipcFaultSend := false }
+
+@[simp] theorem TCB.setSendCap_ipcBadgeView (t : TCB) (badge : Option SeLe4n.Badge)
+    (grant : Bool) : (t.setSendCap badge grant).ipcBadgeView = badge := by
+  cases badge <;> rfl
+
+@[simp] theorem TCB.setSendCap_ipcCanGrant (t : TCB) (badge : Option SeLe4n.Badge)
+    (grant : Bool) : (t.setSendCap badge grant).ipcCanGrant = grant := rfl
+
+@[simp] theorem TCB.setSendCap_ipcFaultSend (t : TCB) (badge : Option SeLe4n.Badge)
+    (grant : Bool) : (t.setSendCap badge grant).ipcFaultSend = false := rfl
 
 /-- WS-ZA ZA4.5: where a thread runs — its home core and its place in a run
 queue.  The affinity setter and the scheduler's run-queue writes are the only
@@ -1491,14 +1530,14 @@ every other field is the record's. -/
     (t.setIpcState s).replyWaitersCount = t.replyWaitersCount := rfl
 
 
-@[simp] theorem TCB.ipcState_mk (f1 f2 f3 f4 f5 f6 f7 f8 f9 f10 f11 f12 f13 f14 f15 f16 f17 f18 f19 f20 f21 f22 f23 f24 f25 f26 f27 f28 f29 f30 f31 f32 f33 f34 f35 f36 f37 f38 f39 f40) :
-    (TCB.mk f1 f2 f3 f4 f5 f6 f7 f8 f9 f10 f11 f12 f13 f14 f15 f16 f17 f18 f19 f20 f21 f22 f23 f24 f25 f26 f27 f28 f29 f30 f31 f32 f33 f34 f35 f36 f37 f38 f39 f40).ipcState = ThreadIpcState.ofCodes f7 f40 := rfl
+@[simp] theorem TCB.ipcState_mk (f1 f2 f3 f4 f5 f6 f7 f8 f9 f10 f11 f12 f13 f14 f15 f16 f17 f18 f19 f20 f21 f22 f23 f24 f25 f26 f27 f28 f29 f30 f31 f32 f33 f34 f35 f36 f37 f38 f39 f40 f41 f42 f43 f44) :
+    (TCB.mk f1 f2 f3 f4 f5 f6 f7 f8 f9 f10 f11 f12 f13 f14 f15 f16 f17 f18 f19 f20 f21 f22 f23 f24 f25 f26 f27 f28 f29 f30 f31 f32 f33 f34 f35 f36 f37 f38 f39 f40 f41 f42 f43 f44).ipcState = ThreadIpcState.ofCodes f7 f40 := rfl
 
-@[simp] theorem TCB.replyObject_mk (f1 f2 f3 f4 f5 f6 f7 f8 f9 f10 f11 f12 f13 f14 f15 f16 f17 f18 f19 f20 f21 f22 f23 f24 f25 f26 f27 f28 f29 f30 f31 f32 f33 f34 f35 f36 f37 f38 f39 f40) :
-    (TCB.mk f1 f2 f3 f4 f5 f6 f7 f8 f9 f10 f11 f12 f13 f14 f15 f16 f17 f18 f19 f20 f21 f22 f23 f24 f25 f26 f27 f28 f29 f30 f31 f32 f33 f34 f35 f36 f37 f38 f39 f40).replyObject = SeLe4n.ReplyId.ofOptCode f24 := rfl
+@[simp] theorem TCB.replyObject_mk (f1 f2 f3 f4 f5 f6 f7 f8 f9 f10 f11 f12 f13 f14 f15 f16 f17 f18 f19 f20 f21 f22 f23 f24 f25 f26 f27 f28 f29 f30 f31 f32 f33 f34 f35 f36 f37 f38 f39 f40 f41 f42 f43 f44) :
+    (TCB.mk f1 f2 f3 f4 f5 f6 f7 f8 f9 f10 f11 f12 f13 f14 f15 f16 f17 f18 f19 f20 f21 f22 f23 f24 f25 f26 f27 f28 f29 f30 f31 f32 f33 f34 f35 f36 f37 f38 f39 f40 f41 f42 f43 f44).replyObject = SeLe4n.ReplyId.ofOptCode f24 := rfl
 
-@[simp] theorem TCB.pendingReceiveReply_mk (f1 f2 f3 f4 f5 f6 f7 f8 f9 f10 f11 f12 f13 f14 f15 f16 f17 f18 f19 f20 f21 f22 f23 f24 f25 f26 f27 f28 f29 f30 f31 f32 f33 f34 f35 f36 f37 f38 f39 f40) :
-    (TCB.mk f1 f2 f3 f4 f5 f6 f7 f8 f9 f10 f11 f12 f13 f14 f15 f16 f17 f18 f19 f20 f21 f22 f23 f24 f25 f26 f27 f28 f29 f30 f31 f32 f33 f34 f35 f36 f37 f38 f39 f40).pendingReceiveReply = SeLe4n.ReplyId.ofOptCode f25 := rfl
+@[simp] theorem TCB.pendingReceiveReply_mk (f1 f2 f3 f4 f5 f6 f7 f8 f9 f10 f11 f12 f13 f14 f15 f16 f17 f18 f19 f20 f21 f22 f23 f24 f25 f26 f27 f28 f29 f30 f31 f32 f33 f34 f35 f36 f37 f38 f39 f40 f41 f42 f43 f44) :
+    (TCB.mk f1 f2 f3 f4 f5 f6 f7 f8 f9 f10 f11 f12 f13 f14 f15 f16 f17 f18 f19 f20 f21 f22 f23 f24 f25 f26 f27 f28 f29 f30 f31 f32 f33 f34 f35 f36 f37 f38 f39 f40 f41 f42 f43 f44).pendingReceiveReply = SeLe4n.ReplyId.ofOptCode f25 := rfl
 
 theorem TCB.ofCodes_ipcCodes (t : TCB) :
     ThreadIpcState.ofCodes t.ipcObjectCode t.ipcStateCode = t.ipcState := rfl
@@ -1543,14 +1582,14 @@ theorem TCB.ipcState_ext {a b : TCB} (h : a.ipcState = b.ipcState) :
 view when a code is copied from another record: together they let `simp` read
 a written link as the value written and an untouched link as the old view. -/
 
-@[simp] theorem TCB.queuePrev_mk (f1 f2 f3 f4 f5 f6 f7 f8 f9 f10 f11 f12 f13 f14 f15 f16 f17 f18 f19 f20 f21 f22 f23 f24 f25 f26 f27 f28 f29 f30 f31 f32 f33 f34 f35 f36 f37 f38 f39 f40) :
-    (TCB.mk f1 f2 f3 f4 f5 f6 f7 f8 f9 f10 f11 f12 f13 f14 f15 f16 f17 f18 f19 f20 f21 f22 f23 f24 f25 f26 f27 f28 f29 f30 f31 f32 f33 f34 f35 f36 f37 f38 f39 f40).queuePrev = SeLe4n.ThreadId.ofOptCode f11 := rfl
+@[simp] theorem TCB.queuePrev_mk (f1 f2 f3 f4 f5 f6 f7 f8 f9 f10 f11 f12 f13 f14 f15 f16 f17 f18 f19 f20 f21 f22 f23 f24 f25 f26 f27 f28 f29 f30 f31 f32 f33 f34 f35 f36 f37 f38 f39 f40 f41 f42 f43 f44) :
+    (TCB.mk f1 f2 f3 f4 f5 f6 f7 f8 f9 f10 f11 f12 f13 f14 f15 f16 f17 f18 f19 f20 f21 f22 f23 f24 f25 f26 f27 f28 f29 f30 f31 f32 f33 f34 f35 f36 f37 f38 f39 f40 f41 f42 f43 f44).queuePrev = SeLe4n.ThreadId.ofOptCode f11 := rfl
 
-@[simp] theorem TCB.queuePPrev_mk (f1 f2 f3 f4 f5 f6 f7 f8 f9 f10 f11 f12 f13 f14 f15 f16 f17 f18 f19 f20 f21 f22 f23 f24 f25 f26 f27 f28 f29 f30 f31 f32 f33 f34 f35 f36 f37 f38 f39 f40) :
-    (TCB.mk f1 f2 f3 f4 f5 f6 f7 f8 f9 f10 f11 f12 f13 f14 f15 f16 f17 f18 f19 f20 f21 f22 f23 f24 f25 f26 f27 f28 f29 f30 f31 f32 f33 f34 f35 f36 f37 f38 f39 f40).queuePPrev = QueuePPrev.ofOptCode f12 := rfl
+@[simp] theorem TCB.queuePPrev_mk (f1 f2 f3 f4 f5 f6 f7 f8 f9 f10 f11 f12 f13 f14 f15 f16 f17 f18 f19 f20 f21 f22 f23 f24 f25 f26 f27 f28 f29 f30 f31 f32 f33 f34 f35 f36 f37 f38 f39 f40 f41 f42 f43 f44) :
+    (TCB.mk f1 f2 f3 f4 f5 f6 f7 f8 f9 f10 f11 f12 f13 f14 f15 f16 f17 f18 f19 f20 f21 f22 f23 f24 f25 f26 f27 f28 f29 f30 f31 f32 f33 f34 f35 f36 f37 f38 f39 f40 f41 f42 f43 f44).queuePPrev = QueuePPrev.ofOptCode f12 := rfl
 
-@[simp] theorem TCB.queueNext_mk (f1 f2 f3 f4 f5 f6 f7 f8 f9 f10 f11 f12 f13 f14 f15 f16 f17 f18 f19 f20 f21 f22 f23 f24 f25 f26 f27 f28 f29 f30 f31 f32 f33 f34 f35 f36 f37 f38 f39 f40) :
-    (TCB.mk f1 f2 f3 f4 f5 f6 f7 f8 f9 f10 f11 f12 f13 f14 f15 f16 f17 f18 f19 f20 f21 f22 f23 f24 f25 f26 f27 f28 f29 f30 f31 f32 f33 f34 f35 f36 f37 f38 f39 f40).queueNext = SeLe4n.ThreadId.ofOptCode f13 := rfl
+@[simp] theorem TCB.queueNext_mk (f1 f2 f3 f4 f5 f6 f7 f8 f9 f10 f11 f12 f13 f14 f15 f16 f17 f18 f19 f20 f21 f22 f23 f24 f25 f26 f27 f28 f29 f30 f31 f32 f33 f34 f35 f36 f37 f38 f39 f40 f41 f42 f43 f44) :
+    (TCB.mk f1 f2 f3 f4 f5 f6 f7 f8 f9 f10 f11 f12 f13 f14 f15 f16 f17 f18 f19 f20 f21 f22 f23 f24 f25 f26 f27 f28 f29 f30 f31 f32 f33 f34 f35 f36 f37 f38 f39 f40 f41 f42 f43 f44).queueNext = SeLe4n.ThreadId.ofOptCode f13 := rfl
 
 /-- The notification-queue predecessor, read from its scalar code. -/
 @[inline] def TCB.ntfnPrev (t : TCB) : Option SeLe4n.ThreadId :=
@@ -1560,11 +1599,11 @@ a written link as the value written and an untouched link as the old view. -/
 @[inline] def TCB.ntfnNext (t : TCB) : Option SeLe4n.ThreadId :=
   SeLe4n.ThreadId.ofOptCode t.ntfnNextCode
 
-@[simp] theorem TCB.ntfnPrev_mk (f1 f2 f3 f4 f5 f6 f7 f8 f9 f10 f11 f12 f13 f14 f15 f16 f17 f18 f19 f20 f21 f22 f23 f24 f25 f26 f27 f28 f29 f30 f31 f32 f33 f34 f35 f36 f37 f38 f39 f40) :
-    (TCB.mk f1 f2 f3 f4 f5 f6 f7 f8 f9 f10 f11 f12 f13 f14 f15 f16 f17 f18 f19 f20 f21 f22 f23 f24 f25 f26 f27 f28 f29 f30 f31 f32 f33 f34 f35 f36 f37 f38 f39 f40).ntfnPrev = SeLe4n.ThreadId.ofOptCode f28 := rfl
+@[simp] theorem TCB.ntfnPrev_mk (f1 f2 f3 f4 f5 f6 f7 f8 f9 f10 f11 f12 f13 f14 f15 f16 f17 f18 f19 f20 f21 f22 f23 f24 f25 f26 f27 f28 f29 f30 f31 f32 f33 f34 f35 f36 f37 f38 f39 f40 f41 f42 f43 f44) :
+    (TCB.mk f1 f2 f3 f4 f5 f6 f7 f8 f9 f10 f11 f12 f13 f14 f15 f16 f17 f18 f19 f20 f21 f22 f23 f24 f25 f26 f27 f28 f29 f30 f31 f32 f33 f34 f35 f36 f37 f38 f39 f40 f41 f42 f43 f44).ntfnPrev = SeLe4n.ThreadId.ofOptCode f28 := rfl
 
-@[simp] theorem TCB.ntfnNext_mk (f1 f2 f3 f4 f5 f6 f7 f8 f9 f10 f11 f12 f13 f14 f15 f16 f17 f18 f19 f20 f21 f22 f23 f24 f25 f26 f27 f28 f29 f30 f31 f32 f33 f34 f35 f36 f37 f38 f39 f40) :
-    (TCB.mk f1 f2 f3 f4 f5 f6 f7 f8 f9 f10 f11 f12 f13 f14 f15 f16 f17 f18 f19 f20 f21 f22 f23 f24 f25 f26 f27 f28 f29 f30 f31 f32 f33 f34 f35 f36 f37 f38 f39 f40).ntfnNext = SeLe4n.ThreadId.ofOptCode f29 := rfl
+@[simp] theorem TCB.ntfnNext_mk (f1 f2 f3 f4 f5 f6 f7 f8 f9 f10 f11 f12 f13 f14 f15 f16 f17 f18 f19 f20 f21 f22 f23 f24 f25 f26 f27 f28 f29 f30 f31 f32 f33 f34 f35 f36 f37 f38 f39 f40 f41 f42 f43 f44) :
+    (TCB.mk f1 f2 f3 f4 f5 f6 f7 f8 f9 f10 f11 f12 f13 f14 f15 f16 f17 f18 f19 f20 f21 f22 f23 f24 f25 f26 f27 f28 f29 f30 f31 f32 f33 f34 f35 f36 f37 f38 f39 f40 f41 f42 f43 f44).ntfnNext = SeLe4n.ThreadId.ofOptCode f29 := rfl
 
 @[simp] theorem TCB.ofOptCode_ntfnPrevCode (t : TCB) :
     SeLe4n.ThreadId.ofOptCode t.ntfnPrevCode = t.ntfnPrev := rfl
@@ -1853,7 +1892,10 @@ instance : BEq TCB where
     a.replyWaiterPrevCode == b.replyWaiterPrevCode &&
     a.replyWaiterNextCode == b.replyWaiterNextCode &&
     a.replyWaitersHeadCode == b.replyWaitersHeadCode &&
-    a.replyWaitersCount == b.replyWaitersCount
+    a.replyWaitersCount == b.replyWaitersCount &&
+    -- WS-ZA ZA4.7: and what a blocked sender's capability contributed.
+    a.ipcBadge == b.ipcBadge && a.ipcBadged == b.ipcBadged &&
+    a.ipcCanGrant == b.ipcCanGrant && a.ipcFaultSend == b.ipcFaultSend
 
 /-- AJ4-D (L-09): Detect sentinel-initialized (unconfigured) TCBs.
     Returns `true` if the TCB's identity or address-space references use
@@ -1998,91 +2040,6 @@ that, so single-sourcing the clear costs no existing proof. -/
             queuePPrevCode := 0
             pendingReceiveReplyCode := 0 } .ready := rfl
 
-/-- **WS-RR RR8.16 (`v0.35.190`): what a CDT revocation may do to a message in
-flight.**
-
-`revokePendingTransfersFrom` — the tail of every revocation entry point — drops
-from a blocked sender's `pendingMessage` the capabilities whose derivation nodes
-the revocation destroyed.  It is the *only* transition in the tree that rewrites
-`TCB.pendingMessage` to a different value while leaving the thread blocked, and
-stating what it may do is what lets the sweep carry `ipcInvariantFull`: the two
-conjuncts that read the field ask whether a message is present
-(`blockedThreadsPendingMessageConsistent`) and whether it is within the payload
-bounds (`allPendingMessagesBounded`), and a drop settles both.
-
-Reflexive and transitive, so a fold over the object-store keys composes it. -/
-def TCB.pendingCapsDropped (t t' : TCB) : Prop :=
-  t' = { t with pendingMessage := t'.pendingMessage } ∧
-  match t.pendingMessage, t'.pendingMessage with
-  | none, none => True
-  | some m, some m' => m'.registers = m.registers ∧ m'.caps.size ≤ m.caps.size
-  | _, _ => False
-
-/-- Reflexivity — a key the sweep leaves alone. -/
-@[simp] theorem TCB.pendingCapsDropped_refl (t : TCB) : TCB.pendingCapsDropped t t := by
-  refine ⟨rfl, ?_⟩
-  cases t.pendingMessage with
-  | none => trivial
-  | some m => exact ⟨rfl, Nat.le_refl _⟩
-
-/-- Transitivity — two sweep steps at the same key. -/
-theorem TCB.pendingCapsDropped_trans {a b c : TCB}
-    (h1 : TCB.pendingCapsDropped a b) (h2 : TCB.pendingCapsDropped b c) :
-    TCB.pendingCapsDropped a c := by
-  obtain ⟨hb, hmb⟩ := h1
-  obtain ⟨hc, hmc⟩ := h2
-  refine ⟨?_, ?_⟩
-  · rw [hc, hb]
-  · have hbF : b.pendingMessage = { a with pendingMessage := b.pendingMessage }.pendingMessage := by
-      rw [← hb]
-    cases ha : a.pendingMessage <;> cases hbb : b.pendingMessage <;> cases hcc : c.pendingMessage <;>
-      rw [ha, hbb] at hmb <;> rw [hbb, hcc] at hmc <;> simp only [] at hmb hmc ⊢ <;>
-      first
-        | trivial
-        | exact hmb.elim
-        | exact hmc.elim
-        | exact ⟨hmc.1.trans hmb.1, Nat.le_trans hmc.2 hmb.2⟩
-
-/-- A message drop leaves every other field alone — the projection the invariant
-transports read. -/
-theorem TCB.pendingCapsDropped_fields {t t' : TCB} (h : TCB.pendingCapsDropped t t') :
-    t'.ipcState = t.ipcState ∧ t'.queueNext = t.queueNext ∧ t'.queuePrev = t.queuePrev ∧
-      t'.queuePPrev = t.queuePPrev ∧ t'.timeoutBudget = t.timeoutBudget ∧
-      t'.replyObject = t.replyObject ∧ t'.pendingReceiveReply = t.pendingReceiveReply ∧
-      t'.schedContextBinding = t.schedContextBinding := by
-  rw [h.1]
-  exact ⟨rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl⟩
-
-/-- ...and it preserves the *payload*, which is the only part of a parked message
-this kernel's information-flow model tracks as content.
-
-The dropped entries are `IpcMessage.caps` — capability metadata, the declared
-out-of-scope channel (`capabilityBadgeChannel_out_of_scope`) — so a drop rewrites
-a content-tracked **field** while moving no tracked **content**. -/
-theorem TCB.pendingCapsDropped_registers {t t' : TCB} (h : TCB.pendingCapsDropped t t')
-    {m m' : IpcMessage} (hm0 : t.pendingMessage = some m) (hm : t'.pendingMessage = some m') :
-    m'.registers = m.registers := by
-  obtain ⟨_, hrel⟩ := h
-  rw [hm0, hm] at hrel
-  simp only [] at hrel
-  exact hrel.1
-
-/-- ...and it preserves presence, which is the other thing the bundle reads. -/
-theorem TCB.pendingCapsDropped_isSome {t t' : TCB} (h : TCB.pendingCapsDropped t t') :
-    t'.pendingMessage.isSome = t.pendingMessage.isSome := by
-  obtain ⟨_, hm⟩ := h
-  cases ha : t.pendingMessage <;> cases hb : t'.pendingMessage <;>
-    rw [ha, hb] at hm <;> simp only [] at hm ⊢ <;> first | rfl | exact hm.elim
-
-/-- ...and it preserves the payload bounds. -/
-theorem TCB.pendingCapsDropped_bounded {t t' : TCB} (h : TCB.pendingCapsDropped t t')
-    {m m' : IpcMessage} (hm : t'.pendingMessage = some m') (hm0 : t.pendingMessage = some m)
-    (hb : m.bounded) : m'.bounded := by
-  obtain ⟨_, hrel⟩ := h
-  rw [hm0, hm] at hrel
-  simp only [] at hrel
-  exact ⟨hrel.1 ▸ hb.1, Nat.le_trans hrel.2 hb.2⟩
-
 /-- AK7-G (F-M05 / MEDIUM): Sanctioned extensionality lemma for `TCB`.
 
 Use this lemma instead of `==` in any proof that requires propositional
@@ -2124,7 +2081,10 @@ theorem TCB.ext {a b : TCB}
     (hWPrev : a.replyWaiterPrevCode = b.replyWaiterPrevCode)
     (hWNext : a.replyWaiterNextCode = b.replyWaiterNextCode)
     (hWHead : a.replyWaitersHeadCode = b.replyWaitersHeadCode)
-    (hWCount : a.replyWaitersCount = b.replyWaitersCount) :
+    (hWCount : a.replyWaitersCount = b.replyWaitersCount)
+    -- WS-ZA ZA4.7: and what a blocked sender's capability contributed.
+    (hIBadge : a.ipcBadge = b.ipcBadge) (hIBadged : a.ipcBadged = b.ipcBadged)
+    (hIGrant : a.ipcCanGrant = b.ipcCanGrant) (hIFault : a.ipcFaultSend = b.ipcFaultSend) :
     a = b := by
   have hNPrevC : a.ntfnPrevCode = b.ntfnPrevCode := by
     rw [← TCB.optCode_ntfnPrev a, ← TCB.optCode_ntfnPrev b, hNPrev]
@@ -2159,7 +2119,7 @@ theorem TCB.ext {a b : TCB}
          hQPrevC, hQPPrevC, hQNextC, hPend, hRC, hFh, hBn, hSc, hTb, hMcp, hPipC, hTo,
          hCpuAff, hReplyC, hPendReplyC, hPendFault, hFp, hNPrevC, hNNextC,
          hRCore, hRPrio, hRPrev, hRNext, hRBPrev, hRBNext, hWPrev, hWNext, hWHead, hWCount,
-         hIpcS⟩
+         hIpcS, hIBadge, hIBadged, hIGrant, hIFault⟩
 
 /-- Intrusive FIFO queue metadata for endpoint wait queues.
 

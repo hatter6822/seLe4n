@@ -3264,7 +3264,7 @@ run_check "INVARIANT" bash -lc 'rg -U -n "^theorem writeFfiRegistersToTcb_id_whe
 # TCB the operation already resolved, so it takes the store's witness for it
 # and writes through `rewriteObject` under that proof; the operation resolves
 # the thread once, through the witnessed lookup.
-run_check "INVARIANT" bash -lc 'rg -U -n "^def recordPendingFault \(st : SystemState\) \(tid : SeLe4n\.ThreadId\)\n    \(tf : ThreadFault\) : SystemState :=\n  st\.updateTcb tid fun tcb => \{ tcb with pendingFault := some tf \}$" SeLe4n/Kernel/IPC/Operations/Fault.lean'
+run_check "INVARIANT" bash -lc 'rg -U -n "^def recordPendingFault \(st : SystemState\) \(tid : SeLe4n\.ThreadId\)\n    \(tf : ThreadFault\) : SystemState :=\n  st\.updateTcb tid fun tcb => \{ tcb with pendingFault := some tf, ipcFaultSend := true \}$" SeLe4n/Kernel/IPC/Operations/Fault.lean'
 run_check "INVARIANT" bash -lc 'rg -U -n "^def faultSuspend \(st : SystemState\) \(tid : SeLe4n\.ThreadId\) : SystemState :=\n  \(removeRunnable st tid\)\.updateTcb tid fun tcb => \{ tcb with threadState := \.Inactive \}$" SeLe4n/Kernel/IPC/Operations/Fault.lean'
 run_check "INVARIANT" bash -lc 'rg -U -n "^def faultAbandon \(st : SystemState\) \(tid : SeLe4n\.ThreadId\) : SystemState :=\n  \(removeRunnable st tid\)\.updateTcb tid fun tcb =>\n    \{ tcb with threadState := \.Inactive, pendingFault := none \}$" SeLe4n/Kernel/IPC/Operations/Fault.lean'
 run_check "INVARIANT" bash -lc 'rg -U -n "^def applyFaultRestart \(st : SystemState\) \(faulted : SeLe4n\.ThreadId\)\n    \(frame : Architecture\.FaultRestartFrame\) : SystemState :=\n  st\.updateTcb faulted fun tcb => \{ tcb\.withRestartFrame frame with pendingFault := none \}$" SeLe4n/Kernel/IPC/Operations/Fault.lean'
@@ -3406,15 +3406,6 @@ run_negative_check "INVARIANT" rg -n 'tcbStoreOrIdentity_ipcInvariantStage' SeLe
 # dispatch payoff's suspend-clear bundle.
 run_check "INVARIANT" bash -lc 'rg -U -n "^theorem suspendInactiveStore_confinedToCores \(s : SystemState\) \(tid : SeLe4n\.ThreadId\) :\n    observableSlotsConfinedToCores s\n      \(s\.updateTcb tid fun t => \{ t with threadState := \.Inactive \}\) \[\] :=" SeLe4n/Kernel/SlotConfinement/IpcArms.lean'
 run_check "INVARIANT" bash -lc 'rg -U -n "^private theorem suspendClearStore_preserves_ipcInvariantFull[^\n]*(\n([ \t][^\n]*)?)*    ipcInvariantFull \(\(Lifecycle\.Suspend\.clearPendingState stR2 tid\)\.updateTcb tid fun t => \{ t with threadState := \.Inactive \}\) ∧\n    \(\(Lifecycle\.Suspend\.clearPendingState stR2 tid\)\.updateTcb tid fun t => \{ t with threadState := \.Inactive \}\)\.objects\.invExt := by" SeLe4n/Kernel/IPC/Invariant/DispatchArmPreservation.lean'
-# The revoke step: the blocked sender through the witnessed lookup, the
-# filtered message written under its witness.
-run_check "INVARIANT" bash -lc 'rg -U -n "^private def revokePendingTransfersStep[^\n]*(\n([ \t][^\n]*)?)*  match stAcc\.getTcbWitnessed\? \(SeLe4n\.ThreadId\.ofNat oid\.toNat\) with\n  \| some ⟨tcb, hTcb⟩ =>(\n([ \t][^\n]*)?)*                let tcb'"'"' : TCB := \{ tcb with pendingMessage := some msg'"'"' \}\n                stAcc\.rewriteObject \(SeLe4n\.ThreadId\.ofNat oid\.toNat\)\.toObjId \(\.tcb tcb'"'"'\)\n                  \(SystemState\.rewriteAdmissible_tcb hTcb tcb'"'"'\)" SeLe4n/Kernel/Capability/Operations.lean'
-# NEGATIVE: the step neither resolves the sender bare or dependently (the
-# receiver is the accumulator, which the tree-wide dependent-match negative
-# does not spell) nor inserts raw; the `_cases` theorem's literal insert is a
-# statement in its own declaration.
-run_negative_check "INVARIANT" bash -lc 'rg -U -n "^private def revokePendingTransfersStep[^\n]*(\n([ \t][^\n]*)?)*match (\w+ : )?stAcc\.getTcb\? " SeLe4n/Kernel/Capability/Operations.lean'
-run_negative_check "INVARIANT" bash -lc 'rg -U -n "^private def revokePendingTransfersStep[^\n]*(\n([ \t][^\n]*)?)*objects\.insert" SeLe4n/Kernel/Capability/Operations.lean'
 # The origin scrub: the guard outside, the typed rewrite on the enumerated key
 # inside, the untouched accumulator on the other arm.
 run_check "INVARIANT" bash -lc 'rg -U -n "^def clearDonationOriginReferences[^\n]*(\n([ \t][^\n]*)?)*      if sc\.donationOrigin == some tid then(\n([ \t][^\n]*)?)*        acc\.updateSchedContext \(SchedContextId\.ofObjId oid\) fun s =>\n          \{ s with donationOrigin := none \}\n      else acc" SeLe4n/Kernel/Lifecycle/Operations/Cleanup.lean'
@@ -8833,7 +8824,7 @@ run_negative_check "INVARIANT" rg -n 'policyGated "endpointReceiveDualOnCore"' S
 # The receive-side grant gate is the message's, not the receiver's endpoint
 # rights: consulting the receiver's is a different principal's authority and left
 # the orderings disagreeing when a granting sender met a non-granting receiver.
-run_check "INVARIANT" rg -n 'receiverSlotBase msg.capsGranted' SeLe4n/Kernel/IPC/DualQueue/WithCaps.lean
+run_check "INVARIANT" rg -n 'if tcb\.ipcFaultSend \|\| !tcb\.ipcCanGrant then none' SeLe4n/Kernel/IPC/DualQueue/SenderMessage.lean
 run_negative_check "INVARIANT" rg -n 'endpointReceiveDualWithCaps endpointId receiver replyId endpointRights' SeLe4n/Kernel/IPC/DualQueue/WithCaps.lean
 # The regression that measures the property rather than one ordering's outcome.
 run_check "INVARIANT" rg -n 'ipcCapTransferArrivalOrder' tests/OperationChainSuite.lean
@@ -9065,20 +9056,17 @@ run_check "INVARIANT" rg -n '^def _scope_contains($|[ ({:\[\]])' scripts/check_a
 run_check "INVARIANT" rg -n '^def arm_key($|[ ({:\[\]])' scripts/check_content_flow_coverage.py
 run_check "INVARIANT" rg -n 'FAIL_CLOSED_ARMS' scripts/check_content_flow_coverage.py
 run_check "INVARIANT" rg -n 'CF_TRUNCATED' scripts/check_content_flow_coverage.py
-# PR #873 round 11: `pendingMessage` agrees with the blocking state in BOTH
-# directions.  The invariant used to constrain only the two collecting states and
-# say `True` of the two delivering ones, which made "a parked sender carries its
-# message" a convention every consumer had to re-derive -- and the consumers that
-# forgot were the round-7 frozen dequeue and the round-11 live one.  Four pins:
-# the invariant's delivering half, its executable mirror (the harness could not
-# see the violation either), the dequeue's fail-closed complement for states that
-# carry no invariant, and the converse theorem `receiverTaintEdges` reads against.
-run_check "INVARIANT" rg -n '\.blockedOnSend _ => tcb\.pendingMessage\.isSome' SeLe4n/Kernel/IPC/Invariant/Defs.lean
-run_check "INVARIANT" rg -n '\.blockedOnCall _ => tcb\.pendingMessage\.isSome' SeLe4n/Kernel/IPC/Invariant/Defs.lean
+# WS-ZA ZA4.7: no blocked thread holds a message.  A blocked sender keeps its
+# message in its saved registers and IPC buffer (seL4's placement) and the
+# receive reads it there, so the invariant pins `none` for the delivering states
+# as for the collecting ones.  Pins: the invariant's delivering half, its
+# executable mirror, the reader the receive takes the message through, and the
+# regression that drives a parked sender's registers into a receiver.
+run_check "INVARIANT" rg -n '\.blockedOnSend _ => tcb\.pendingMessage = none' SeLe4n/Kernel/IPC/Invariant/Defs.lean
+run_check "INVARIANT" rg -n '\.blockedOnCall _ => tcb\.pendingMessage = none' SeLe4n/Kernel/IPC/Invariant/Defs.lean
 run_check "INVARIANT" rg -n 'blockedThreadPendingMessageChecks' SeLe4n/Testing/InvariantChecks.lean
-run_check "INVARIANT" rg -n 'headTcb\.pendingMessage\.isNone' SeLe4n/Kernel/IPC/DualQueue/Core.lean
-run_check "INVARIANT" rg -n '^theorem endpointQueuePopHead_send_sender_carries_message($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/Defs.lean
-run_check "INVARIANT" rg -n 'receiveRefusesMessagelessParkedSender' tests/OperationChainSuite.lean
+run_check "INVARIANT" rg -n '^def blockedSenderMessage($|[ ({:\[\]])' SeLe4n/Kernel/IPC/DualQueue/SenderMessage.lean
+run_check "INVARIANT" rg -n 'receiveTakesParkedSenderRegisters' tests/OperationChainSuite.lean
 # PR #873 round 12: two defaults inverted, for the same reason each time -- a set
 # of remembered exceptions is a list of the cases someone thought of.  The
 # downgrade's origination is now established from the target actually holding
@@ -9100,49 +9088,30 @@ run_negative_check "INVARIANT" rg -n 'let isUpdate' scripts/check_content_flow_c
 run_check "INVARIANT" rg -n 'storeTcbIpcStateAndMessage st. receiver \(\.blockedOnReceive endpointId\) none' SeLe4n/Kernel/IPC/DualQueue/Transport.lean
 run_check "INVARIANT" rg -n 'storeTcbIpcStateAndMessage st. receiver \(\.blockedOnReceive endpointId\) none' SeLe4n/Kernel/IPC/CrossCore/EndpointReply.lean
 run_negative_check "INVARIANT" rg -n 'storeTcbIpcState st. receiver \(\.blockedOnReceive endpointId\)' SeLe4n/Kernel/IPC/DualQueue/Transport.lean SeLe4n/Kernel/IPC/CrossCore/EndpointReply.lean
-# PR #873 round 13: **an in-flight derivation is a derived capability.**  A
-# capability-bearing send that parks carries its derivation in the sender's
-# `pendingMessage` and becomes a CDT child only when a receiver collects it, so a
-# revoke walked a subtree the pending transfer was not in, reported success, and
-# the later receive installed the snapshot and added the child edge AFTER the
-# revocation.  The fix is at the operation that defines the guarantee rather than
-# at a third reader of the pending-transfer predicate: both revoke wrappers end by
-# consuming the carried derivations, over the revoked root and its whole subtree.
-run_check "INVARIANT" rg -n '^def revokePendingTransfersFrom($|[ ({:\[\]])' SeLe4n/Kernel/Capability/Operations.lean
-run_check "INVARIANT" rg -n '^theorem revokePendingTransfersFrom_frame($|[ ({:\[\]])' SeLe4n/Kernel/Capability/Operations.lean
-# PR #873 round 17: that consumption was an epilogue appended at each entry
-# point, and there were FOUR hand-written traversals to append it to.  Two got
-# it; a successful `cspaceRevokeCdtStrict` or `cspaceRevokeCdtTransactional`
-# returned its folded state with the derivation still parked, and the receiver's
-# later collect installed it.  The entry points are now one scaffold at four
-# traversals, so the prologue and the epilogue are not a variant's to write.
+# WS-ZA ZA4.7: **no derivation is ever in flight.**  A blocked sender keeps the
+# ADDRESSES of the capabilities it sends, in its saved registers, and the receive
+# resolves them in the sender's CSpace as it then stands and installs them in the
+# same step (seL4's placement).  A capability revoked or deleted while the sender
+# waits is simply not found, so revocation needs no sweep over parked messages
+# and deletion no in-flight guard; both retired with the parked capability list.
+run_negative_check "INVARIANT" rg -n 'revokePendingTransfers|nodeHasPendingTransfer|slotHasPendingTransfer|pendingCapsDropped' SeLe4n/
+run_check "INVARIANT" rg -n 'let req := receiveCapRequest st endpointId' SeLe4n/Kernel/IPC/DualQueue/WithCaps.lean
+run_check "INVARIANT" rg -n 'match receiveTransferCaps req receiverCspaceRoot receiverSlotBase st. with' SeLe4n/Kernel/IPC/DualQueue/WithCaps.lean
+# The four revocation entry points are one scaffold at four traversals, so the
+# prologue is not a variant's to write.
 run_check "INVARIANT" rg -n '^def revokeCdtScaffold($|[ ({:\[\]])' SeLe4n/Kernel/Capability/Operations.lean
-run_check "INVARIANT" rg -n 'revokePendingTransfersFrom out.state \(rootNode :: out.revokedNodes\)' SeLe4n/Kernel/Capability/Operations.lean
 # The tie is definitional -- four `rfl`s, so a variant that stopped being the
 # scaffold would fail to elaborate rather than fail to be listed.
 run_check "INVARIANT" rg -n '^theorem cspaceRevokeCdt_routes_through_scaffold($|[ ({:\[\]])' SeLe4n/Kernel/Capability/Operations.lean
 run_check "INVARIANT" rg -n '^theorem cspaceRevokeCdtStreaming_routes_through_scaffold($|[ ({:\[\]])' SeLe4n/Kernel/Capability/Operations.lean
 run_check "INVARIANT" rg -n '^theorem cspaceRevokeCdtStrict_routes_through_scaffold($|[ ({:\[\]])' SeLe4n/Kernel/Capability/Operations.lean
 run_check "INVARIANT" rg -n '^theorem cspaceRevokeCdtTransactional_routes_through_scaffold($|[ ({:\[\]])' SeLe4n/Kernel/Capability/Operations.lean
-# Held over an arbitrary traversal, so it covers the four that exist and the ones
-# that do not exist yet.
-run_check "INVARIANT" rg -n '^theorem revokeCdtScaffold_ok_consumed_or_nothing_derived($|[ ({:\[\]])' SeLe4n/Kernel/Capability/Operations.lean
-# The exact pre-fix return of both reporting variants: the fold's state handed
-# back with no consumption.  Load-bearing negative -- this is the shape that let
-# a revoke report success while the capability was still on its way.
-run_negative_check "INVARIANT" rg -n 'ok \(\{ report with deletedSlots := report.deletedSlots.reverse \}, stFinal\)' SeLe4n/Kernel/Capability/Operations.lean
-# Consuming from a TCB is a write to the object store, so the seven-conjunct
-# capability bundle has to survive it -- proved, not assumed, and in the Invariant
-# layer because Operations cannot name the bundle.
-run_check "INVARIANT" rg -n '^theorem revokePendingTransfersFrom_preserves_capabilityInvariantBundle($|[ ({:\[\]])' SeLe4n/Kernel/Capability/Invariant/Preservation/Revoke.lean
 # The transactional variant had NO preservation theorem: the strict one restated
 # its fold inline instead of naming it, so there was nothing for a second variant
 # over the same fold to reuse.
 run_check "INVARIANT" rg -n '^theorem revokeCdtReportingStep_preserves($|[ ({:\[\]])' SeLe4n/Kernel/Capability/Invariant/Preservation/Revoke.lean
 run_check "INVARIANT" rg -n '^theorem cspaceRevokeCdtTransactional_preserves_capabilityInvariantBundle($|[ ({:\[\]])' SeLe4n/Kernel/Capability/Invariant/Preservation/Revoke.lean
-# And the regression names revocation rather than one function: it ran
-# `cspaceRevokeCdt` alone, which is why it could not see the other three.
-run_check "INVARIANT" rg -n 'revokeConsumesPendingTransfer' tests/OperationChainSuite.lean
+# The regression names revocation rather than one function: every entry point.
 run_check "INVARIANT" rg -n '^private def revocationEntryPoints($|[ ({:\[\]])' tests/OperationChainSuite.lean
 run_check "INVARIANT" rg -n 'revocationEntryPoints.length == 4' tests/OperationChainSuite.lean
 # And the send-side half of round 6's ordering independence.  The wrappers took
@@ -9955,11 +9924,12 @@ run_check "INVARIANT" rg -n 'FO-034: control' tests/FrozenOpsSuite.lean
 run_check "INVARIANT" rg -n '^theorem lockSet_lifecycleRetype_clearedKey_write_mem($|[ ({:\[\]])' SeLe4n/Kernel/Concurrency/Locks/LockSetTransitions.lean
 run_check "INVARIANT" rg -n '^theorem lockSet_lifecycleRetype_nonTarget_kinds($|[ ({:\[\]])' SeLe4n/Kernel/Concurrency/Locks/LockSetTransitions.lean
 run_check "INVARIANT" rg -n '^theorem permittedKinds_lifecycleRetype_admits_every_kind($|[ ({:\[\]])' SeLe4n/Kernel/Concurrency/Locks/LockSetTransitions.lean
-# PR #873 round 7: a frozen parked sender must carry its message — the state
-# check alone let a `.blockedOnSend` head with no `pendingMessage` be dequeued,
-# after which the receiver got `none` and the sender's provenance anyway.
-run_check "INVARIANT" rg -n 'headTcb.pendingMessage.isSome' SeLe4n/Kernel/FrozenOps/Operations.lean
-run_check "INVARIANT" rg -n 'frozenParkedSenderCarriesItsMessage' tests/FrozenOpsSuite.lean
+# WS-ZA ZA4.7: a frozen parked sender holds no message object; the frozen
+# receive reads it from the sender's frame through the live reader's definition.
+run_negative_check "INVARIANT" rg -n 'pendingMessage := some msg \} \(\.blockedOn(Send|Call)' SeLe4n/Kernel/FrozenOps/Operations.lean
+run_check "INVARIANT" rg -n 'let senderMsg := some \(frozenBlockedSenderMessage st sender senderTcb\)' SeLe4n/Kernel/FrozenOps/Operations.lean
+run_check "INVARIANT" rg -n '^  blockedSenderMessageOf tcb$' SeLe4n/Kernel/FrozenOps/Operations.lean
+run_check "INVARIANT" rg -n '^private def frozenParkedSenderMessageFromFrame($|[ ({:\[\]])' tests/FrozenOpsSuite.lean
 # No receive declares a CSpace sink, and PR #873 round 8 corrected the reason:
 # not "the live receive installs nothing" — it has installed since round 6 — but
 # the standing scope decision that a CNode holds no tracked content
@@ -9975,16 +9945,9 @@ run_negative_check "INVARIANT" rg -n 'def parkedCarriesCaps' SeLe4n/Kernel/Infor
 # check below pins out — so requiring its text in this file contradicted that
 # check and could not pass.  The gate itself is unchanged; it is a property of
 # the IPC transition, and this file no longer restates it.
-# PR #873 round 8: the delete guard sees transfers IN FLIGHT, not only children.
-# Between a blocking send and the unwrap that completes it the source slot has no
-# CDT child yet, so a children-only guard permitted the delete, the slot was
-# detached from its node, and the transferred copy landed under a parent no slot
-# pointed at — unreachable by any revoke.
-run_check "INVARIANT" rg -n '^def nodeHasPendingTransfer($|[ ({:\[\]])' SeLe4n/Kernel/Capability/Operations.lean
-run_check "INVARIANT" rg -n '^def slotHasPendingTransfer($|[ ({:\[\]])' SeLe4n/Kernel/Capability/Operations.lean
-run_check "INVARIANT" rg -n '^theorem cspaceDeleteSlot_refuses_pending_transfer($|[ ({:\[\]])' SeLe4n/Kernel/Capability/Operations.lean
+# The delete guard: a slot with CDT children cannot be deleted (no transfer is
+# in flight between syscalls since WS-ZA ZA4.7, so children are the question).
 run_check "INVARIANT" rg -n '^theorem cspaceDeleteSlot_refuses_existing_children($|[ ({:\[\]])' SeLe4n/Kernel/Capability/Operations.lean
-run_check "INVARIANT" rg -n 'hasCdtChildren st addr \|\| slotHasPendingTransfer st addr' SeLe4n/Kernel/Capability/Operations.lean
 
 # The derivation-parent predicate has two callers — the slot delete and the
 # CNode retype — and they must read the same one, so both the factored
@@ -10031,15 +9994,16 @@ run_check "INVARIANT" rg -n '^private def revokeLeavesIndependentSibling($|[ ({:
 run_negative_check "INVARIANT" rg -n 'revokeSweptSiblingBlocksPendingTransfer' tests/
 run_check "INVARIANT" rg -n 'leaves the independent sibling' tests/OperationChainSuite.lean
 run_check "INVARIANT" rg -n 'RETIRED — the local sweep emptied the independent sibling' tests/OperationChainSuite.lean
-run_check "INVARIANT" rg -n 'the install guard declines a transfer whose source slot was emptied' tests/OperationChainSuite.lean
+run_check "INVARIANT" rg -n 'a parked transfer whose source slot was emptied installs nothing' tests/OperationChainSuite.lean
 # NEGATIVE: the CNode retype arm must not go back to branching on the
 # replacement's shape — both shapes destroy the old slots, so both must detach.
 run_negative_check "INVARIANT" rg -n 'CNode → CNode: no CDT cleanup needed' SeLe4n/Kernel/Lifecycle/Operations/CleanupPreservation.lean
-# The load-bearing negative: the parked source provably has NO CDT child, so the
-# old guard would have permitted the delete and the new predicate is doing the work.
-run_check "INVARIANT" rg -n 'chain12b: NEGATIVE . the parked source has no CDT child yet' tests/OperationChainSuite.lean
-run_check "INVARIANT" rg -n 'chain12b: deleting the source of a parked transfer is REFUSED' tests/OperationChainSuite.lean
-run_check "INVARIANT" rg -n 'chain12b: NEGATIVE . an unrelated slot in the same CNode still deletes' tests/OperationChainSuite.lean
+# WS-ZA ZA4.7: a parked send holds only its capability addresses, so deleting the
+# source while it waits is allowed and the later receive transfers nothing; and a
+# revoke of the source's parent at every entry point leaves nothing to transfer.
+run_check "INVARIANT" rg -n 'chain12b: NEGATIVE . a capability deleted while its sender waited is never transferred' tests/OperationChainSuite.lean
+run_check "INVARIANT" rg -n '^private def revokeWhileParkedTransfersNothing($|[ ({:\[\]])' tests/OperationChainSuite.lean
+run_check "INVARIANT" rg -n 'revoke-parked: no capability arrives after' tests/OperationChainSuite.lean
 # PR #873 review round 4: the flow fold reads every source from the PRE-state, so
 # a transfer's root-to-root edge cannot chain into a root-to-subject edge within
 # one commit.  The receiving subject is therefore sourced from the sender's root
@@ -21324,7 +21288,6 @@ run_check "INVARIANT" rg -n 'sd059_local_only_destroys_the_independent_sibling' 
 run_check "INVARIANT" rg -n '^theorem cspaceRevokeCdt_preserves_ipcInvariantFull($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/DispatchArmPreservation.lean
 run_check "INVARIANT" rg -n '^theorem revokeCdtScaffold_preserves_ipcInvariantFull($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/DispatchArmPreservation.lean
 run_check "INVARIANT" rg -n '^theorem processRevokeNode_preserves_ipcInvariantFull($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/DispatchArmPreservation.lean
-run_check "INVARIANT" rg -n '^theorem revokePendingTransfersFrom_preserves_ipcInvariantFull($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/DispatchArmPreservation.lean
 # 4. ONE QUESTION, ONE OWNER: the scaffold's case analysis and the traversal's
 # induction are PREDICATE-FREE and live beside their definitions, so the
 # capability bundle's argument and the IPC bundle's are one answer rather than
@@ -21336,15 +21299,11 @@ run_check "INVARIANT" rg -n '^theorem revokeCdtFold_induct($|[ ({:\[\]])' SeLe4n
 run_check "INVARIANT" rg -n '^theorem revokeCdtMaterializedTraversal_ok_induct($|[ ({:\[\]])' SeLe4n/Kernel/Capability/Operations.lean
 run_check "INVARIANT" bash -lc 'rg -U -n "^def revokeCdtMaterializedTraversal[^\n]*(\n([ \t][^\n]*)?)*descendants\.foldl revokeCdtFoldBody" SeLe4n/Kernel/Capability/Operations.lean'
 run_negative_check "INVARIANT" rg -n '^def revokeCdtFoldBody' SeLe4n/Kernel/Capability/Invariant/Preservation/Revoke.lean
-# 5. A `donationReadAgreement` DOES NOT DEMAND pendingMessage EQUALITY.  The
-# in-flight sweep is the one transition in the tree that rewrites that field to a
-# DIFFERENT value while the thread stays blocked, and equality was strictly more
-# than the bundle reads: only two conjuncts read it, the write is a DROP, and a
-# drop is what both survive.
+# 5. A `donationReadAgreement` DOES NOT DEMAND pendingMessage EQUALITY: only
+# two conjuncts of the bundle read the field, and they read its presence.
 run_check "INVARIANT" bash -lc 'rg -U -n "^def pendingMessageReadAgrees[^\n]*(\n([ \t][^\n]*)?)*mx\.isSome = my\.isSome" SeLe4n/Kernel/IPC/Invariant/Defs.lean'
 run_check "INVARIANT" bash -lc 'rg -U -n "^structure donationReadAgreement[^\n]*(\n([ \t][^\n]*)?)*pendingMessageReadAgrees ty\.ipcState tx\.pendingMessage ty\.pendingMessage" SeLe4n/Kernel/IPC/Invariant/DonationPreservation.lean'
 run_negative_check "INVARIANT" bash -lc 'rg -U -n "^structure donationReadAgreement[^\n]*(\n([ \t][^\n]*)?)*tx\.pendingMessage = ty\.pendingMessage" SeLe4n/Kernel/IPC/Invariant/DonationPreservation.lean'
-run_check "INVARIANT" bash -lc 'rg -U -n "^def TCB\.pendingCapsDropped[^\n]*(\n([ \t][^\n]*)?)*some m, some m. => m.\.registers = m\.registers" SeLe4n/Model/Object/Types.lean'
 # ...and the binding-frame table is SYMMETRIC: `donationChainAcyclic` carries
 # across a binding frame like its two siblings, which it had not since IPC
 # de-threading D6.
@@ -21357,16 +21316,8 @@ run_check "INVARIANT" rg -n '^def declaresStaticLockFootprint($|[ ({:\[\]])' SeL
 run_check "INVARIANT" rg -n '^theorem declaresStaticLockFootprint_false_iff($|[ ({:\[\]])' SeLe4n/Kernel/Concurrency/Locks/LockSetTransitions.lean
 run_check "INVARIANT" bash -lc 'rg -U -n "^theorem lockSet_consistent_aggregate_covers_every_syscall[^\n]*(\n([ \t][^\n]*)?)*\(SyscallId\.all\.filter declaresStaticLockFootprint\)\.length" SeLe4n/Kernel/Concurrency/Locks/LockSetInventory.lean'
 run_negative_check "INVARIANT" bash -lc 'rg -U -n "^theorem lockSet_consistent_aggregate_covers_every_syscall[^\n]*(\n([ \t][^\n]*)?)*= *$\n *SyscallId\.count" SeLe4n/Kernel/Concurrency/Locks/LockSetInventory.lean'
-# 7. IT WRITES A CONTENT-TRACKED FIELD AND MOVES NO TRACKED CONTENT.  The reach
-# gate detects the sweep's `TCB.pendingMessage` write and is right to -- the
-# check is field-granular, which is what makes it a detector rather than a table
-# of promises.  What it cannot decide is what the write LEAVES: the payload is
-# kept and only the capability array shrinks, which is the metadata the mint's
-# boundary already excludes.  That theorem is the gate's justification, and the
-# exemption is reconciled in BOTH directions.
-run_check "INVARIANT" rg -n '^theorem revokePendingTransfersFrom_preserves_trackedContent($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/TaintPropagation.lean
-run_check "INVARIANT" rg -n '^theorem TCB\.pendingCapsDropped_registers' SeLe4n/Model/Object/Types.lean
-run_check "INVARIANT" bash -lc 'rg -U -n "^CONTENT_WRITE_EXEMPT = \{\n *\x22cspaceRevoke\x22: \x22SeLe4n\.Kernel\.revokePendingTransfersFrom_preserves_trackedContent\x22," scripts/check_content_flow_coverage.py'
+# 7. The content-write exemption mechanism keeps its bite in both directions
+# (an exempted arm needs its theorem, and a stale exemption fails).
 run_check "INVARIANT" rg -n 'is exempted from the content-write check but reaches' scripts/check_content_flow_coverage.py
 run_check "INVARIANT" rg -n 'is exempted from the content-write check by' scripts/check_content_flow_coverage.py
 # 8. MEASURED: the witness drives the LIVE dispatch on a state whose derivation

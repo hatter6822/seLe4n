@@ -97,12 +97,13 @@ def endpointSendDualOnCore (endpointId : SeLe4n.ObjId) (sender : SeLe4n.ThreadId
           match endpointQueueEnqueue endpointId false sender st with
           | .error e => (st, .error e)
           | .ok st' =>
-              match storeTcbIpcStateAndMessage st' sender (.blockedOnSend endpointId)
-                  (some msg) with
+              match storeTcbIpcStateAndMessage st' sender (.blockedOnSend endpointId) none with
               | .error e => (st, .error e)
               | .ok st'' =>
-                  -- The sender blocks on the core it is RUNNING on.
-                  (removeRunnableOnCore st'' sender executingCore, .ok none)
+                  -- The sender blocks on the core it is RUNNING on, holding its
+                  -- message in its registers (WS-ZA ZA4.7, `recordSendCap`).
+                  (recordSendCap (removeRunnableOnCore st'' sender executingCore) sender
+                    msg.badge msg.capsGranted, .ok none)
   | none =>
       -- Typed-accessor dispatch (AK7 cascade discipline): `getEndpoint?` is
       -- `none` for both an absent object and a wrong-kinded one, so the
@@ -349,10 +350,11 @@ def endpointSendDualOnCoreImpl (endpointId : SeLe4n.ObjId) (sender : SeLe4n.Thre
           match endpointQueueEnqueue endpointId false sender st with
           | .error e => (st, .error e)
           | .ok st' =>
-              match storeTcbIpcStateAndMessage st' sender (.blockedOnSend endpointId)
-                  (some msg) with
+              match storeTcbIpcStateAndMessage st' sender (.blockedOnSend endpointId) none with
               | .error e => (st, .error e)
-              | .ok st'' => (removeRunnableOnCore st'' sender executingCore, .ok none)
+              | .ok st'' =>
+                  (recordSendCap (removeRunnableOnCore st'' sender executingCore) sender
+                    msg.badge msg.capsGranted, .ok none)
   | none =>
       if (st.getObject? endpointId).isSome then (st, .error .invalidCapability)
       else (st, .error .objectNotFound)
@@ -841,11 +843,11 @@ theorem endpointSendDualOnCore_replenishQueueOnCore (epId : SeLe4n.ObjId)
           | error e => rfl
           | ok st1 =>
             simp only []
-            cases hIpc : storeTcbIpcStateAndMessage st1 sender (.blockedOnSend epId) (some msg) with
+            cases hIpc : storeTcbIpcStateAndMessage st1 sender (.blockedOnSend epId) none with
             | error e => rfl
             | ok st2 =>
               simp only []
-              rw [removeRunnableOnCore_replenishQueueOnCore,
+              rw [recordSendCap_scheduler, removeRunnableOnCore_replenishQueueOnCore,
                 storeTcbIpcStateAndMessage_scheduler_eq st1 st2 _ _ _ hIpc,
                 endpointQueueEnqueue_scheduler_eq epId false sender st st1 hEnq]
         | some _ =>

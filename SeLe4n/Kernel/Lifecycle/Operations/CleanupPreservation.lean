@@ -1995,7 +1995,7 @@ def lifecyclePreRetypeCleanup (st : SystemState) (target : SeLe4n.ObjId)
     -- slot inherits a destroyed one's derivation node, and revoking *that*
     -- node's ancestor takes the unrelated newcomer with it.  Past the guard the
     -- detach is unconditionally correct — every mapping it erases belongs to a
-    -- node with no descendants and no transfer in flight.
+    -- node with no descendants.
     --
     -- **WS-BP BP7.1 (`v0.36.7`): and a slot holding a capability that records a
     -- frame mapping cannot be destroyed here either** — destroying it owes the

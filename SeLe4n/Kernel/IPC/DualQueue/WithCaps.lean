@@ -17,8 +17,9 @@ Wrapper operations that compose existing dual-queue IPC operations with
 
 These wrappers preserve all existing operation signatures and proofs.
 The cap unwrap only occurs when an immediate rendezvous happens (a receiver
-was waiting on the endpoint). When the sender is enqueued (no receiver),
-caps stay in the message and will be unwrapped when a receiver later arrives.
+was waiting on the endpoint). When the sender is enqueued (no receiver), it
+keeps its capability addresses in its own frame, and the receive that later
+dequeues it resolves and installs them (`receiveTransferCaps`).
 
 **Design decision**: The wrappers read the receiver's `cspaceRoot` from the
 receiver's TCB internally, rather than accepting it as a parameter. This
@@ -90,9 +91,9 @@ Semantics:
 - If immediate rendezvous occurred (receiver was waiting): reads the
   receiver's cspaceRoot from their TCB and unwraps `msg.caps` into the
   receiver's CSpace.
-- If no receiver was waiting (sender enqueued): caps stay in the message
-  stored in the sender's TCB. They will be unwrapped when a receiver
-  later dequeues the sender.
+- If no receiver was waiting (sender enqueued): nothing is resolved or
+  installed; the receive that later dequeues the sender resolves its
+  capability addresses then (`receiveTransferCaps`).
 - The `endpointRights` parameter carries the endpoint capability's rights
   from the sender's gate — used to check the `Grant` right gate.
 
@@ -160,9 +161,29 @@ def endpointSendDualWithCaps
             | none => .ok ({ results := #[] }, st')
           | none => .ok ({ results := #[] }, st')
 
+/-- WS-ZA ZA4.7: **resolve and install a receive's capability request** -- the
+capabilities a dequeued sender asked to transfer (`receiveCapRequest`), looked
+up in its CSpace now, as seL4 does at the rendezvous (a capability revoked while
+the sender waited is never transferred), then unwrapped into the receiver's
+CSpace.  The grant right was checked when the request was formed, so the unwrap
+runs granted.  No request, or nothing that resolves, installs nothing. -/
+def receiveTransferCaps (req : Option (SeLe4n.ObjId × Array SeLe4n.CPtr × Nat))
+    (receiverCspaceRoot : SeLe4n.ObjId) (receiverSlotBase : SeLe4n.Slot) :
+    Kernel CapTransferSummary :=
+  fun st =>
+    match req with
+    | none => .ok ({ results := #[] }, st)
+    | some (root, addrs, depth) =>
+        let (caps, st') := resolveExtraCaps root addrs depth true st
+        if caps.isEmpty then .ok ({ results := #[] }, st')
+        else
+          ipcUnwrapCaps { IpcMessage.empty with caps := caps, capsGranted := true }
+            receiverCspaceRoot receiverSlotBase true st'
+
 /-- M-D01: Extended receive with capability transfer. When a sender is
-dequeued (immediate rendezvous on the receive side), unwrap `msg.caps`
-from the sender's pending message into the receiver's CSpace.
+dequeued (immediate rendezvous on the receive side), the capabilities it asked
+to transfer are resolved in its CSpace and installed in the receiver's
+(`receiveTransferCaps`).
 
 When no sender is waiting (receiver enqueues), no cap transfer occurs —
 the receiver will get caps when a sender later arrives via
@@ -173,71 +194,21 @@ def endpointReceiveDualWithCaps
     (receiverCspaceRoot : SeLe4n.ObjId)
     (receiverSlotBase : SeLe4n.Slot) : Kernel (SeLe4n.ThreadId × CapTransferSummary) :=
   fun st =>
-    -- WS-SM SM6.D (#7.1 fold): forward the server-supplied reply object into the
-    -- folded receive transition (atomic reply-linking on a Call rendezvous).
     -- PR #873 round 8: **did this receive dequeue anything?** Read before the
     -- transition, exactly as `endpointSendDualWithCaps` reads `hasReceiver`
-    -- before the send. Without it the blocking branch — which returns the
-    -- receiver's own id and leaves `pendingMessage` untouched — unwrapped a
-    -- *previously delivered* message a second time, installing an extra copy of
-    -- authority for a receive that consumed nothing.
+    -- before the send: the blocking branch returns the receiver's own id, so
+    -- only a rendezvous may install anything.
     let rendezvous := (receiveRendezvousSender? st endpointId).isSome
+    -- WS-ZA ZA4.7: and what the dequeued sender asks to transfer, read from the
+    -- same pre-state (its registers and grant right).
+    let req := receiveCapRequest st endpointId
     match endpointReceiveDual endpointId receiver replyId st with
     | .error e => .error e
     | .ok (senderId, st') =>
         if !rendezvous then .ok ((senderId, { results := #[] }), st') else
-        -- Check if the receiver got a message (sender was dequeued)
-        -- AN10-B (DEF-AK7-F.reader.hygiene): typed-helper migration.
-        match st'.getTcb? receiver with
-        | some receiverTcb =>
-            match receiverTcb.pendingMessage with
-            | some msg =>
-                if msg.caps.isEmpty then
-                  .ok ((senderId, { results := #[] }), st')
-                else
-                  -- **WS-RR RR7.33**: the sender's CSpace root is looked up
-                  -- nowhere here any more, and neither is its absence an error.
-                  --
-                  -- AK1-I made all three capability-transfer paths fail closed
-                  -- on a missing CSpace root, replacing a silent fallback to
-                  -- `senderId.toObjId`. That was right for the *receiver's*
-                  -- root, which is where capabilities are installed and without
-                  -- which the transfer genuinely cannot proceed — the send and
-                  -- call arms still check it. It was never right here: this arm
-                  -- looked up the **sender's** root solely to hand it to
-                  -- `ipcUnwrapCaps`, which has not read it since the
-                  -- revocation-precision fix moved the derivation parent onto
-                  -- the real source node the message carries
-                  -- (`TransferCap.srcNode`, minted at `resolveExtraCaps`
-                  -- against that very root). So the lookup fed a dead
-                  -- parameter, and its error made the *receiver's* syscall fail
-                  -- on a fact about the *sender's* TCB — a one-bit flow from
-                  -- sender-domain state into a receiver-visible `KernelError`,
-                  -- which is the shape AK1-I set out to remove rather than one
-                  -- it needed to add.
-                  --
-                  -- A source slot destroyed between resolution and unwrap is
-                  -- already handled, at the right granularity: the per-cap
-                  -- `CapTransferResult.sourceRevoked`, which declines that
-                  -- capability and installs the rest. Failing the whole
-                  -- transfer on the sender's root was coarser and answered a
-                  -- different question.
-                  --
-                  -- PR #873 round 6: the grant right is the **sender's**, read
-                  -- off the message it sent. It used to be the receiver's
-                  -- endpoint rights, which is a different principal's
-                  -- authority: seL4 gates capability transfer on the sender's
-                  -- endpoint capability, and consulting the receiver's here
-                  -- made the queued ordering disagree with the rendezvous one
-                  -- whenever a granting sender met a non-granting receiver.
-                  match ipcUnwrapCaps msg receiverCspaceRoot
-                      receiverSlotBase msg.capsGranted st' with
-                  | .error e => .error e
-                  | .ok (summary, st'') => .ok ((senderId, summary), st'')
-            | none =>
-                -- Receiver was enqueued (no sender available)
-                .ok ((senderId, { results := #[] }), st')
-        | none => .ok ((senderId, { results := #[] }), st')
+        match receiveTransferCaps req receiverCspaceRoot receiverSlotBase st' with
+        | .error e => .error e
+        | .ok (summary, st'') => .ok ((senderId, summary), st'')
 
 /-- **M-D01 (PR #873 round 8): a receive that dequeued nothing installs
 nothing** — the single-core sibling of

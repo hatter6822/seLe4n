@@ -133,6 +133,19 @@ theorem removeRunnableOnCore_confinedToCores (st : SystemState)
    fun c _ => removeRunnableOnCore_domainScheduleIndexOnCore st tid cc c,
    fun _ _ => by rw [removeRunnableOnCore_machine_eq]⟩
 
+/-- WS-ZA ZA4.7: a blocking sender's deschedule, then its send-cap record (a TCB
+write of a badge word and two flags): core `cc`'s slots alone. -/
+theorem removeRunnableOnCoreThenRecordSendCap_confinedToCores (st : SystemState)
+    (tid : SeLe4n.ThreadId) (cc : CoreId) (badge : Option SeLe4n.Badge) (grant : Bool) :
+    observableSlotsConfinedToCores st
+      (recordSendCap (removeRunnableOnCore st tid cc) tid badge grant) [cc] := by
+  have h := observableSlotsConfinedToCores_trans (removeRunnableOnCore_confinedToCores st tid cc)
+    (observableSlotsConfinedToCores_nil_of_scheduler_regs_eq
+      (st := removeRunnableOnCore st tid cc)
+      (st' := recordSendCap (removeRunnableOnCore st tid cc) tid badge grant)
+      (by rw [recordSendCap_scheduler]) (fun _ => rfl))
+  simpa using h
+
 /-- WS-RR RR8.6: a removal at a pre-resolved placement writes that core's
 run-queue and current slots when there is one, and nothing per-core when the
 placement is `none`. -/
@@ -637,7 +650,8 @@ theorem endpointCallOnCore_confinedToCores (endpointId : SeLe4n.ObjId)
                 (observableSlotsConfinedToCores_trans
                   (endpointQueueEnqueue_confinedToCores endpointId false caller st st1 hEnq)
                   (storeTcbIpcStateAndMessage_confinedToCores st1 st2 caller _ _ hMsg))
-                (removeRunnableOnCore_confinedToCores st2 caller executingCore)
+                (removeRunnableOnCoreThenRecordSendCap_confinedToCores st2 caller executingCore
+                  msg.badge msg.capsGranted)
         | some headRecv =>
           -- Rendezvous path: wake the receiver on its home core, block the caller.
           simp only []

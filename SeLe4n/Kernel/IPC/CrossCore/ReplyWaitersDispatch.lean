@@ -165,6 +165,20 @@ theorem ipcUnwrapCaps_replyViews_eq (msg : IpcMessage) (root : SeLe4n.ObjId)
     (fun k t' hk => ⟨t', ipcUnwrapCaps_tcb_backward msg root base grant st st' sum k t'
       hInv h hk⟩)
 
+/-- The rendezvous capability lookup reads the sender's CSpace and writes the
+receiver's CNodes alone. -/
+theorem receiveTransferCaps_replyViews_eq
+    {req : Option (SeLe4n.ObjId × Array SeLe4n.CPtr × Nat)} {root : SeLe4n.ObjId}
+    {base : SeLe4n.Slot} {st st' : SystemState} {sum : CapTransferSummary}
+    (hInv : st.objects.invExt) (h : receiveTransferCaps req root base st = .ok (sum, st')) :
+    st'.replyViews = st.replyViews := by
+  obtain ⟨stR, _, hO, _, _, hOr⟩ := receiveTransferCaps_frame h
+  have hR : stR.replyViews = st.replyViews := by
+    funext k; unfold SystemState.replyViews SystemState.getObject?; rw [hO]
+  rcases hOr with rfl | hU
+  · exact hR
+  · exact (ipcUnwrapCaps_replyViews_eq _ _ _ _ (hO ▸ hInv) hU).trans hR
+
 -- ============================================================================
 -- §2  The donation steps keep the views
 -- ============================================================================
@@ -295,7 +309,7 @@ theorem endpointReceiveDualWithCapsOnCore_preserves_replyWaitersConsistent
       all_goals first
         | exact hB
         | (rename_i hU; exact replyWaitersConsistent.of_views
-            (ipcUnwrapCaps_replyViews_eq _ _ _ _ hI hU) hB)
+            (receiveTransferCaps_replyViews_eq hI hU) hB)
 
 theorem endpointCallWithCapsOnCore_preserves_replyWaitersConsistent
     (endpointId : SeLe4n.ObjId) (caller : SeLe4n.ThreadId) (msg : IpcMessage)
@@ -635,7 +649,7 @@ theorem endpointSendDualOnCore_preserves_replyWaitersConsistent (endpointId : Se
         · exact hC
         · rename_i st'' hStore
           refine replyWaitersConsistent.of_views ?_ hC
-          rw [removeRunnableOnCore_replyViews_eq, replyViews_storeTcbIpcStateAndMessage hI1 hStore,
+          rw [recordSendCap_replyViews_eq, removeRunnableOnCore_replyViews_eq, replyViews_storeTcbIpcStateAndMessage hI1 hStore,
             hV1]
           exact ReplyViews.setServer_of_server hSender
   · split <;> exact hC

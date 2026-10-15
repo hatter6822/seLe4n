@@ -234,7 +234,7 @@ theorem projectObjects_of_objectsAgreeOffRunLinks
     | none => rw [h.get_none_iff.mpr e]
     | some o => cases o with
       | tcb t =>
-        obtain ⟨t', _, _, _, _, _, _, _, _, _, _, ht', rfl⟩ := h.get_tcb_fwd e
+        obtain ⟨t', _, _, _, _, _, _, _, _, _, _, _, _, _, _, ht', rfl⟩ := h.get_tcb_fwd e
         rw [ht']; rfl
       | _ => rw [h.get_of_not_tcb (fun _ e => KernelObject.noConfusion e) e]
   · rfl
@@ -248,6 +248,15 @@ theorem projectState_of_objects_only (ctx : LabelingContext) (observer : IfObser
   unfold projectState
   rw [hO, hS]
   rfl
+
+/-- WS-ZA ZA4.7: recording a blocking sender's badge and grant bit writes only
+fields the projection erases. -/
+theorem recordSendCap_preserves_projection (ctx : LabelingContext) (observer : IfObserver)
+    (st : SystemState) (tid : SeLe4n.ThreadId) (badge : Option SeLe4n.Badge) (grant : Bool) :
+    projectState ctx observer (recordSendCap st tid badge grant) = projectState ctx observer st :=
+  projectState_of_objects_only ctx observer rfl
+    (projectObjects_of_objectsAgreeOffRunLinks ctx observer
+      (recordSendCap_objectsAgreeOffRunLinks st tid badge grant))
 
 /-- WS-ZA ZA4.6: joining a server's reply-waiter queue writes only reply-waiter
 links, which the projection erases, so the projection is unchanged whoever the

@@ -119,14 +119,17 @@ theorem endpointSendDualOnCore_post_agrees
           | ok st1 =>
             simp only
             cases hStore : storeTcbIpcStateAndMessage st1 sender (.blockedOnSend endpointId)
-                (some msg) with
+                none with
             | error e => left; rfl
             | ok st2 =>
               simp only
               right
-              refine ⟨removeRunnable st2 sender, rfl, ?_⟩
-              exact (removeRunnable_offSchedulerAgrees st2 sender).symm.trans
-                (removeRunnableOnCore_offSchedulerAgrees st2 sender executingCore)
+              refine ⟨recordSendCap (removeRunnable st2 sender) sender msg.badge msg.capsGranted,
+                rfl, ?_⟩
+              exact (recordSendCap_offSchedulerAgrees _ _ _ _).symm.trans
+                ((removeRunnable_offSchedulerAgrees st2 sender).symm.trans
+                  ((removeRunnableOnCore_offSchedulerAgrees st2 sender executingCore).trans
+                    (recordSendCap_offSchedulerAgrees _ _ _ _)))
 
 -- ============================================================================
 -- §2 RR2.15 — the per-core `passiveServerIdle` frame
@@ -202,22 +205,24 @@ theorem endpointSendDualOnCore_passiveServerIdleFrameOnCore
             have hF1 := endpointQueueEnqueue_passiveServerIdleFrameOnCore (c := c) endpointId
               false sender st st1 hObjInv hEnq
             cases hStore : storeTcbIpcStateAndMessage st1 sender (.blockedOnSend endpointId)
-                (some msg) with
+                none with
             | error e => simp only; exact passiveServerIdleFrameOnCore.refl st
             | ok st2 =>
               simp only
               refine (hF1.trans (storeTcbIpcStateAndMessage_passiveServerIdleFrameOnCore st1 st2
-                sender (.blockedOnSend endpointId) (some msg)
+                sender (.blockedOnSend endpointId) none
                 (Or.inr (fun tcb hTcb => ?_)) hObjInv1 hStore)).trans
                 (removeRunnableOnCore_passiveServerIdleFrameOnCore st2 sender executingCore
                   (fun tcb hTcb => Or.inl ?_))
+                |>.trans (passiveServerIdleFrameOnCore.of_objectsAgreeOffRunLinks
+                  (recordSendCap_objectsAgreeOffRunLinks _ _ _ _) (recordSendCap_scheduler _ _ _ _))
               · obtain ⟨tcb0, hTcb0, hBindEq⟩ := endpointQueueEnqueue_sameSchedContextBindings
                   endpointId false sender st st1 hObjInv hEnq sender tcb
                   ((getTcb?_eq_some_iff st1 sender tcb).mp hTcb)
                 exact hBindEq ▸ hSenderNotUnbound tcb0
                   ((getTcb?_eq_some_iff st sender tcb0).mpr hTcb0)
               · obtain ⟨tcb1, hTcb1, hBindEq1⟩ := storeTcbIpcStateAndMessage_sameSchedContextBindings
-                  st1 st2 sender (.blockedOnSend endpointId) (some msg) hObjInv1 hStore sender tcb
+                  st1 st2 sender (.blockedOnSend endpointId) none hObjInv1 hStore sender tcb
                   ((getTcb?_eq_some_iff st2 sender tcb).mp hTcb)
                 obtain ⟨tcb0, hTcb0, hBindEq0⟩ := endpointQueueEnqueue_sameSchedContextBindings
                   endpointId false sender st st1 hObjInv hEnq sender tcb1 hTcb1
@@ -275,11 +280,11 @@ theorem endpointSendDualOnCore_preserves_objects_invExt
             have hObjInv1 := endpointQueueEnqueue_preserves_objects_invExt endpointId false sender
               st st1 hObjInv hEnq
             cases hStore : storeTcbIpcStateAndMessage st1 sender (.blockedOnSend endpointId)
-                (some msg) with
+                none with
             | error e => simp only; exact hObjInv
             | ok st2 =>
               simp only
-              exact removeRunnableOnCore_objects_invExt _ _ _
+              exact recordSendCap_objects_invExt _ _ _ _ <| removeRunnableOnCore_objects_invExt _ _ _
                 (storeTcbIpcStateAndMessage_preserves_objects_invExt st1 st2 sender _ _
                   hObjInv1 hStore)
 

@@ -267,15 +267,17 @@ private def mkTcb (tid : Nat) (prio : Nat) (aff : Option CoreId) : TCB :=
 pair (client A on core 0 ↔ server B homed core 1; client C on core 2 ↔ server D
 homed core 3), each endpoint with a free Reply object the server stashes on its
 `Recv`, each thread runnable on its **own** core's run queue. Client A is
-unbound (home = boot core 0); B/C/D are affinity-bound to cores 1/2/3. -/
+unbound (home = boot core 0); B/C/D are affinity-bound to cores 1/2/3.  Each
+client's saved frame holds its request (WS-ZA ZA4.7), where a server that
+dequeues it after it blocked reads it. -/
 private def stFourCore : SystemState :=
   let base :=
     (BootstrapBuilder.empty
       |>.withObject epAB (.endpoint {})
       |>.withObject epCD (.endpoint {})
-      |>.withObject clientA.toObjId (.tcb (mkTcb 821 40 none))
+      |>.withObject clientA.toObjId (.tcb (SeLe4n.Testing.tcbWithSenderFrame (mkTcb 821 40 none) callMsgA))
       |>.withObject serverB.toObjId (.tcb (mkTcb 822 50 (some c1)))
-      |>.withObject clientC.toObjId (.tcb (mkTcb 823 40 (some c2)))
+      |>.withObject clientC.toObjId (.tcb (SeLe4n.Testing.tcbWithSenderFrame (mkTcb 823 40 (some c2)) callMsgC))
       |>.withObject serverD.toObjId (.tcb (mkTcb 824 50 (some c3)))
       |>.withObject replyB.toObjId (.reply { replyId := replyB })
       |>.withObject replyD.toObjId (.reply { replyId := replyD })
@@ -287,7 +289,7 @@ private def stFourCore : SystemState :=
 /-- `stFourCore` plus a fifth thread `E` (priority 35, bound to core 2) present
 in the object store but in no run queue — the send-rendezvous sender. -/
 private def stWithSenderE : SystemState :=
-  { stFourCore with objects := stFourCore.objects.insert senderE.toObjId (.tcb (mkTcb 825 35 (some c2))) }
+  { stFourCore with objects := stFourCore.objects.insert senderE.toObjId (.tcb (SeLe4n.Testing.tcbWithSenderFrame (mkTcb 825 35 (some c2)) sendMsgE)) }
 
 -- Fail-closed Option plumbing for the multi-step pipelines.
 private def okPair {α : Type} (r : SystemState × Except KernelError α) :
@@ -1634,7 +1636,7 @@ private def stContention (curPrio : Nat) : SystemState :=
       |>.withObject epAB (.endpoint {})
       |>.withObject serverB.toObjId (.tcb (mkTcb 822 50 (some c1)))
       |>.withObject highPrioT.toObjId (.tcb (mkTcb 870 curPrio (some c1)))
-      |>.withObject clientA.toObjId (.tcb (mkTcb 821 40 none))
+      |>.withObject clientA.toObjId (.tcb (SeLe4n.Testing.tcbWithSenderFrame (mkTcb 821 40 none) callMsgA))
       |>.withObject replyB.toObjId (.reply { replyId := replyB })
       |>.withRunnable [clientA]
       |>.build)

@@ -811,14 +811,17 @@ private def runIpcMessageTransferTrace (counter : IO.Ref Nat) (st1 : SystemState
   let ep0 : KernelObject := .endpoint (Endpoint.ofQueues {} {})
   let st0 : SystemState := st1.withObjectStored epId ep0
   -- Sender sends (no receiver queued → sender blocks with message)
-  match SeLe4n.Kernel.endpointSendDual epId senderId testMsg st0 with
+  match SeLe4n.Kernel.endpointSendDual epId senderId testMsg
+      (SeLe4n.Testing.withSenderFrame st0 senderId testMsg) with
   | .error err => IO.println s!"[IMT-001] F1-01 send error: {reprStr err}"
   | .ok (_, stSent) =>
       -- Verify sender has pending message
-      let senderHasMsg := match SeLe4n.Kernel.lookupTcb stSent senderId with
-        | some tcb => tcb.pendingMessage.isSome
+      -- WS-ZA ZA4.7: a blocked sender parks no message; it stays in the
+      -- sender's saved registers until a receiver takes it.
+      let senderParksNone := match SeLe4n.Kernel.lookupTcb stSent senderId with
+        | some tcb => tcb.pendingMessage.isNone
         | none => false
-      IO.println s!"[IMT-002] message sender has pending: {senderHasMsg}"
+      IO.println s!"[IMT-002] blocked sender parks no message: {senderParksNone}"
       -- Receiver dequeues sender → message transferred to receiver
       match SeLe4n.Kernel.endpointReceiveDual epId receiverId none stSent with
       | .error err => IO.println s!"[IMT-003] F1-01 receive error: {reprStr err}"
@@ -1989,7 +1992,8 @@ private def runReplyRecvRoundtripTrace (counter : IO.Ref Nat) (st1 : SystemState
       |>.withObjectStored replyBId.toObjId (.reply { replyId := replyBId })
   -- Step 1: Caller A calls endpoint (no receiver yet → enqueues on sendQ)
   let callMsgA : IpcMessage := { registers := #[⟨50⟩, ⟨60⟩], caps := #[], badge := some (Badge.ofNatMasked 789) }
-  match SeLe4n.Kernel.endpointCall epId callerAId callMsgA stFresh with
+  match SeLe4n.Kernel.endpointCall epId callerAId callMsgA
+      (SeLe4n.Testing.withSenderFrame stFresh callerAId callMsgA) with
   | .error err => IO.println s!"[RRC-001] replyRecv call1 error: {reprStr err}"
   | .ok (_, stCalledA) =>
       -- Step 2: Server receives (dequeues caller A, A → blockedOnReply), supplying
@@ -2007,7 +2011,8 @@ private def runReplyRecvRoundtripTrace (counter : IO.Ref Nat) (st1 : SystemState
           -- Step 3 (L4-A2): Caller B calls the same endpoint while A awaits reply
           -- B enqueues on sendQ with blockedOnCall
           let callMsgB : IpcMessage := { registers := #[⟨70⟩, ⟨80⟩, ⟨90⟩], caps := #[], badge := some (Badge.ofNatMasked 456) }
-          match SeLe4n.Kernel.endpointCall epId callerBId callMsgB stRecvd with
+          match SeLe4n.Kernel.endpointCall epId callerBId callMsgB
+              (SeLe4n.Testing.withSenderFrame stRecvd callerBId callMsgB) with
           | .error err => IO.println s!"[RRC-002] replyRecv callerB call error: {reprStr err}"
           | .ok (_, stCalledB) =>
               -- Step 4: Server uses endpointReplyRecv to reply to A AND receive B's message
@@ -2168,7 +2173,8 @@ private def runMultiEndpointInterleavingTrace (counter : IO.Ref Nat) (st1 : Syst
       |>.withObjectStored epId3 ep3
   -- Send on endpoint 1
   let msg1 : IpcMessage := { registers := #[⟨11⟩, ⟨22⟩], caps := #[], badge := some (Badge.ofNatMasked 100) }
-  match SeLe4n.Kernel.endpointSendDual epId1 senderId msg1 stFresh with
+  match SeLe4n.Kernel.endpointSendDual epId1 senderId msg1
+      (SeLe4n.Testing.withSenderFrame stFresh senderId msg1) with
   | .error err => IO.println s!"[MEI-001] multi-ep send1 error: {reprStr err}"
   | .ok (_, stSent1) =>
       -- Receive from endpoint 1 — should get msg1
@@ -2181,7 +2187,8 @@ private def runMultiEndpointInterleavingTrace (counter : IO.Ref Nat) (st1 : Syst
           IO.println s!"[MEI-001] multi-ep recv1 registers: {reprStr recvRegs1}"
           -- Send on endpoint 2
           let msg2 : IpcMessage := { registers := #[⟨33⟩, ⟨44⟩], caps := #[], badge := some (Badge.ofNatMasked 200) }
-          match SeLe4n.Kernel.endpointSendDual epId2 senderId msg2 stRecv1 with
+          match SeLe4n.Kernel.endpointSendDual epId2 senderId msg2
+              (SeLe4n.Testing.withSenderFrame stRecv1 senderId msg2) with
           | .error err => IO.println s!"[MEI-003] multi-ep send2 error: {reprStr err}"
           | .ok (_, stSent2) =>
               -- Receive from endpoint 2 — should get msg2 (independent from ep1)
@@ -2200,7 +2207,8 @@ private def runMultiEndpointInterleavingTrace (counter : IO.Ref Nat) (st1 : Syst
                   -- L4-D2/D3: 3rd endpoint out-of-order receive
                   -- Send on EP3 via sender, receive EP3 out-of-order (before EP1 second round)
                   let msg3 : IpcMessage := { registers := #[⟨55⟩, ⟨66⟩], caps := #[], badge := some (Badge.ofNatMasked 300) }
-                  match SeLe4n.Kernel.endpointSendDual epId3 senderId msg3 stRecv2 with
+                  match SeLe4n.Kernel.endpointSendDual epId3 senderId msg3
+                      (SeLe4n.Testing.withSenderFrame stRecv2 senderId msg3) with
                   | .error err => IO.println s!"[MEI-004] multi-ep send3 error: {reprStr err}"
                   | .ok (_, stSent3) =>
                       -- Receive from EP3 first (out-of-order w.r.t. creation order)
@@ -2214,7 +2222,8 @@ private def runMultiEndpointInterleavingTrace (counter : IO.Ref Nat) (st1 : Syst
                           -- Now sender is free again (unblocked by EP3 receive)
                           -- Send on EP1 again to verify FIFO with second message
                           let msg4 : IpcMessage := { registers := #[⟨77⟩, ⟨88⟩], caps := #[], badge := some (Badge.ofNatMasked 101) }
-                          match SeLe4n.Kernel.endpointSendDual epId1 senderId msg4 stRecv3 with
+                          match SeLe4n.Kernel.endpointSendDual epId1 senderId msg4
+                              (SeLe4n.Testing.withSenderFrame stRecv3 senderId msg4) with
                           | .error err => IO.println s!"[MEI-005] multi-ep send4-ep1 error: {reprStr err}"
                           | .ok (_, stSent4) =>
                               -- Receive from EP1 (FIFO: should get msg4)

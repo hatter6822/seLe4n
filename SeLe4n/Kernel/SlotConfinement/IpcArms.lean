@@ -765,7 +765,7 @@ theorem endpointReceiveDualWithCapsOnCore_machine_eq (endpointId : SeLe4n.ObjId)
       repeat' split
       all_goals first
         | rfl
-        | (rename_i h; exact ipcUnwrapCaps_preserves_machine _ _ _ _ _ _ _ h)
+        | (rename_i h; exact receiveTransferCaps_preserves_machine h)
 
 /-- SM8.B.2 (**the live `.replyRecv` receive-leg bound**, PR #873 round 7): the
 WithCaps per-core receive — the form `endpointReplyRecvOnCore` now runs — is confined to the
@@ -1497,7 +1497,8 @@ theorem endpointSendDualOnCore_confinedToCores (endpointId : SeLe4n.ObjId)
                 (observableSlotsConfinedToCores_trans
                   (endpointQueueEnqueue_confinedToCores endpointId false sender st st1 hEnq)
                   (storeTcbIpcStateAndMessage_confinedToCores st1 st2 sender _ _ hMsg))
-                (removeRunnableOnCore_confinedToCores st2 sender executingCore)
+                (removeRunnableOnCoreThenRecordSendCap_confinedToCores st2 sender executingCore
+                  msg.badge msg.capsGranted)
         | some headRecv =>
           -- Rendezvous path: the receiver wakes on its own home core.
           simp only []

@@ -96,7 +96,9 @@ theorem endpointCallOnCore_deschedules_caller
     | exact ⟨_, congrArg SystemState.scheduler (congrArg Prod.fst hStep).symm⟩
     | simp_all
   all_goals (obtain ⟨h1, -⟩ := hStep; subst h1
-             exact ⟨_, SystemState.linkReplyWaiter_scheduler _ _ _⟩)
+             first
+               | exact ⟨_, SystemState.linkReplyWaiter_scheduler _ _ _⟩
+               | exact ⟨_, recordSendCap_scheduler _ _ _ _⟩)
 
 /-- WS-RR RR4.19: a caller that completed a cross-core `endpointCallOnCore`
 is neither queued on nor current on the core it called from. -/

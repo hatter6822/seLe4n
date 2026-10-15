@@ -1499,10 +1499,6 @@ theorem endpointQueuePopHead_preserves_projection
         | none => simp
         | some htcb =>
           simp only []
-          -- PR #873 round 11: the send-queue message-presence guard --
-          -- a head that fails it errors, so it is not this `.ok`.
-          split
-          · simp
           cases hStore : storeObject endpointId _ st with
           | error e => simp
           | ok pair =>
@@ -1726,12 +1722,13 @@ theorem endpointSendDual_preserves_projection
               endpointId false sender st st1 hEndpointHigh hSenderObjHigh
               hTailHigh hObjInv hEnq
           cases hTcbStore : storeTcbIpcStateAndMessage st1 sender
-              (.blockedOnSend endpointId) (some msg) with
+              (.blockedOnSend endpointId) none with
           | error e => simp [hTcbStore] at hStep
           | ok st2 =>
             simp only [hTcbStore, Except.ok.injEq, Prod.mk.injEq] at hStep
             obtain ⟨_, hStEq⟩ := hStep; subst hStEq
-            rw [removeRunnable_preserves_projection ctx observer st2 sender hSenderHigh,
+            rw [recordSendCap_preserves_projection,
+                removeRunnable_preserves_projection ctx observer st2 sender hSenderHigh,
                 storeTcbIpcStateAndMessage_preserves_projection ctx observer st1 st2
                 sender _ _ hSenderObjHigh hObjInv1 hTcbStore,
                 hProjEnq]
@@ -1873,10 +1870,6 @@ theorem endpointQueuePopHead_preserves_objectIndexSetComplete_and_invExt
         | none => simp [hLookup] at hStep
         | some tcb =>
           simp only [hLookup] at hStep
-          -- PR #873 round 11: the send-queue message-presence guard --
-          -- a head that fails it errors, so it is not this `.ok`.
-          split at hStep
-          · simp at hStep
           revert hStep
           cases hStore : storeObject endpointId _ st with
           | error e => simp
@@ -2029,7 +2022,7 @@ theorem endpointReceiveDual_preserves_projection
                       st2 stLinked sender rid hObjInv2 hLink
                   -- AK1-D: atomic (.ready, senderMsg) receiver update
                   cases hPend : storeTcbIpcStateAndMessage stLinked receiver .ready
-                      senderTcb.pendingMessage with
+                      (some (blockedSenderMessage st1 sender senderTcb)) with
                   | error e => simp [hPend] at hStep
                   | ok st3 =>
                     simp only [hPend] at hStep
@@ -2051,7 +2044,7 @@ theorem endpointReceiveDual_preserves_projection
                 exact ensureRunnable_objects_invExt _ _ hObjInv2
               -- AK1-D: atomic (.ready, senderMsg) receiver update
               cases hPend : storeTcbIpcStateAndMessage (ensureRunnable st2 sender) receiver .ready
-                  senderTcb.pendingMessage with
+                  (some (blockedSenderMessage st1 sender senderTcb)) with
               | error e => simp [hPend] at hStep
               | ok st3 =>
                 simp only [hPend] at hStep
@@ -2411,12 +2404,13 @@ theorem endpointCall_preserves_projection
               endpointId false caller st st1 hEndpointHigh hCallerObjHigh
               hTailHigh hObjInv hEnq
           cases hTcbStore : storeTcbIpcStateAndMessage st1 caller
-              (.blockedOnCall endpointId) (some msg) with
+              (.blockedOnCall endpointId) none with
           | error e => simp [hTcbStore] at hStep
           | ok st2 =>
             simp only [hTcbStore, Except.ok.injEq, Prod.mk.injEq] at hStep
             obtain ⟨_, hStEq⟩ := hStep; subst hStEq
-            rw [removeRunnable_preserves_projection ctx observer st2 caller hCallerHigh,
+            rw [recordSendCap_preserves_projection,
+                removeRunnable_preserves_projection ctx observer st2 caller hCallerHigh,
                 storeTcbIpcStateAndMessage_preserves_projection ctx observer st1 st2
                 caller _ _ hCallerObjHigh hObjInv1 hTcbStore,
                 hProjEnq]

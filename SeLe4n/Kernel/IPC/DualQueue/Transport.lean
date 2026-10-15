@@ -8,6 +8,7 @@
 -/
 
 import SeLe4n.Kernel.IPC.DualQueue.Core
+import SeLe4n.Kernel.IPC.DualQueue.SenderMessage
 
 namespace SeLe4n.Kernel
 
@@ -38,10 +39,6 @@ theorem endpointQueuePopHead_scheduler_eq
         | none => simp
         | some headTcb =>
           simp only []
-          -- PR #873 round 11: the send-queue message-presence guard --
-          -- a head that fails it errors, so it is not this `.ok`.
-          split
-          · simp
           cases hStore : storeObject endpointId _ st with
           | error e => simp
           | ok pair => simp only []; cases hNext : headTcb.queueNext with
@@ -94,10 +91,6 @@ theorem endpointQueuePopHead_machine_eq
         | none => simp
         | some headTcb =>
           simp only []
-          -- PR #873 round 11: the send-queue message-presence guard --
-          -- a head that fails it errors, so it is not this `.ok`.
-          split
-          · simp
           cases hStore : storeObject endpointId _ st with
           | error e => simp
           | ok pair => simp only []; cases hNext : headTcb.queueNext with
@@ -153,10 +146,6 @@ theorem endpointQueuePopHead_endpoint_backward_ne
         | none => simp
         | some headTcb =>
           simp only []
-          -- PR #873 round 11: the send-queue message-presence guard --
-          -- a head that fails it errors, so it is not this `.ok`.
-          split
-          · simp
           cases hStore : storeObject endpointId _ st with
           | error e => simp
           | ok pair => simp only []; cases hNext : headTcb.queueNext with
@@ -214,10 +203,6 @@ theorem endpointQueuePopHead_endpoint_forward
         | none => simp
         | some headTcbR =>
           simp only []
-          -- PR #873 round 11: the send-queue message-presence guard --
-          -- a head that fails it errors, so it is not this `.ok`.
-          split
-          · simp
           cases headTcbR.queueNext with
           | none =>
             simp only []
@@ -290,10 +275,6 @@ theorem endpointQueuePopHead_notification_backward
         | none => simp
         | some headTcb =>
           simp only []
-          -- PR #873 round 11: the send-queue message-presence guard --
-          -- a head that fails it errors, so it is not this `.ok`.
-          split
-          · simp
           cases hStore : storeObject endpointId _ st with
           | error e => simp
           | ok pair => simp only []; cases hNext : headTcb.queueNext with
@@ -357,10 +338,6 @@ theorem endpointQueuePopHead_tcb_forward
         | none => simp
         | some headTcb =>
           simp only []
-          -- PR #873 round 11: the send-queue message-presence guard --
-          -- a head that fails it errors, so it is not this `.ok`.
-          split
-          · simp
           cases hStore : storeObject endpointId _ st with
           | error e => simp
           | ok pair =>
@@ -420,10 +397,6 @@ theorem endpointQueuePopHead_tcb_ipcState_backward
         | none => simp
         | some headTcb =>
           simp only []
-          -- PR #873 round 11: the send-queue message-presence guard --
-          -- a head that fails it errors, so it is not this `.ok`.
-          split
-          · simp
           cases hStore : storeObject endpointId _ st with
           | error e => simp
           | ok pair =>
@@ -494,10 +467,6 @@ theorem endpointQueuePopHead_preserves_reply
         | none => simp
         | some headTcb =>
           simp only []
-          -- PR #873 round 11: the send-queue message-presence guard --
-          -- a head that fails it errors, so it is not this `.ok`.
-          split
-          · simp
           cases hStore : storeObject endpointId _ st with
           | error e => simp
           | ok pair =>
@@ -559,10 +528,6 @@ theorem endpointQueuePopHead_tcb_pendingReceiveReply_backward
         | none => simp
         | some headTcb =>
           simp only []
-          -- PR #873 round 11: the send-queue message-presence guard --
-          -- a head that fails it errors, so it is not this `.ok`.
-          split
-          · simp
           cases hStore : storeObject endpointId _ st with
           | error e => simp
           | ok pair =>
@@ -2355,10 +2320,15 @@ def endpointSendDual (endpointId : SeLe4n.ObjId) (sender : SeLe4n.ThreadId)
             match endpointQueueEnqueue endpointId false sender st with
             | .error e => .error e
             | .ok st' =>
-                -- WS-F1: Store message in sender's TCB while blocked
-                match storeTcbIpcStateAndMessage st' sender (.blockedOnSend endpointId) (some msg) with
+                -- WS-ZA ZA4.7: the sender blocks holding its message where seL4
+                -- keeps it -- its words in its registers and IPC buffer, its
+                -- capability's badge and grant right in its TCB -- for the
+                -- receive that takes it (`blockedSenderMessage`).
+                match storeTcbIpcStateAndMessage st' sender (.blockedOnSend endpointId) none with
                 | .error e => .error e
-                | .ok st'' => .ok ((), removeRunnable st'' sender)
+                | .ok st'' =>
+                    .ok ((), recordSendCap (removeRunnable st'' sender) sender msg.badge
+                      msg.capsGranted)
     | some _ => .error .invalidCapability
     | none => .error .objectNotFound
 
@@ -2439,21 +2409,31 @@ def receiveSideQueueStructureNeighbor? (st : SystemState) (endpointId : SeLe4n.O
   endpointQueueStructureNeighbor? st (receiveRendezvousSender? st endpointId)
     ((st.getEndpoint? endpointId).bind (·.receiveQ.tail))
 
-/-- WS-SM SM6 (PR #873 round 8): **will this receive install capabilities?**
-
-The condition the WithCaps receive actually branches on, read from the same
-pre-state: a sender is there to dequeue, and the message it parked carries caps.
-Exists so the *declared lock footprint* can be resolved from the same fact the
-transition uses — `lockSet_endpointReceive` / `lockSet_replyRecv` hold the
-receiver's own CSpace root in **write** mode exactly when this is `true`, because
-that is when `ipcTransferSingleCap` writes it. -/
-def receiveInstallsCaps (st : SystemState) (endpointId : SeLe4n.ObjId) : Bool :=
+/-- WS-ZA ZA4.7: **the capabilities a receive will try to transfer** -- the
+request of the sender it dequeues (`blockedSenderCapRequest`), read from the
+pre-state, or `none` when it dequeues nothing or the sender asks for nothing.
+The WithCaps receives resolve and install exactly this (`receiveTransferCaps`),
+and `receiveInstallsCaps` is its `isSome`. -/
+def receiveCapRequest (st : SystemState) (endpointId : SeLe4n.ObjId) :
+    Option (SeLe4n.ObjId × Array SeLe4n.CPtr × Nat) :=
   match receiveRendezvousSender? st endpointId with
-  | none => false
+  | none => none
   | some sender =>
-    match (st.getTcb? sender).bind (·.pendingMessage) with
-    | none => false
-    | some msg => !msg.caps.isEmpty
+    match st.getTcb? sender with
+    | none => none
+    | some tcb => blockedSenderCapRequest st sender tcb
+
+/-- WS-SM SM6 (PR #873 round 8): **may this receive install capabilities?**
+
+The condition the WithCaps receive branches on, read from the same pre-state: a
+sender is there to dequeue and asks to transfer capabilities
+(`receiveCapRequest`).  Exists so the *declared lock footprint* can be resolved
+from the same fact the transition uses -- `lockSet_endpointReceive` /
+`lockSet_replyRecv` hold the receiver's own CSpace root in **write** mode, and
+the state-level lock, whenever this is `true`, because only then can
+`ipcTransferSingleCap` write them. -/
+def receiveInstallsCaps (st : SystemState) (endpointId : SeLe4n.ObjId) : Bool :=
+  (receiveCapRequest st endpointId).isSome
 
 /-- WS-F1/WS-E4/M-01: Receive from endpoint using intrusive dual-queue semantics
 with IPC message transfer.
@@ -2499,11 +2479,13 @@ def endpointReceiveDual (endpointId : SeLe4n.ObjId) (receiver : SeLe4n.ThreadId)
             match endpointQueuePopHead endpointId false st with
             | .error e => .error e
             | .ok (sender, senderTcb, st') =>
-                -- WS-L1/L1-A: Read pendingMessage and ipcState directly from
-                -- returned TCB instead of redundant lookupTcb. These fields are
-                -- unchanged by PopHead (only queue links are modified).
+                -- WS-ZA ZA4.7: the sender's message is read where it blocked holding
+                -- it -- its saved registers and IPC buffer, its badge and grant right
+                -- in its TCB (`blockedSenderMessage`).  The returned TCB is the
+                -- pre-pop one; the pop changes only queue links, none of which the
+                -- read uses.
                 let (senderMsg, senderWasCall) :=
-                  (senderTcb.pendingMessage, match senderTcb.ipcState with
+                  (some (blockedSenderMessage st' sender senderTcb), match senderTcb.ipcState with
                     | .blockedOnCall _ => true
                     | _ => false)
                 -- AK1-D (I-M02 / MEDIUM): Atomic receiver (ipcState,
@@ -2692,10 +2674,13 @@ def endpointCall (endpointId : SeLe4n.ObjId) (caller : SeLe4n.ThreadId)
             match endpointQueueEnqueue endpointId false caller st with
             | .error e => .error e
             | .ok st' =>
-                -- WS-H1/C-01: Store message and mark as blockedOnCall (not blockedOnSend)
-                match storeTcbIpcStateAndMessage st' caller (.blockedOnCall endpointId) (some msg) with
+                -- WS-H1/C-01: mark as blockedOnCall (not blockedOnSend), holding its
+                -- message as a blocked sender does (WS-ZA ZA4.7)
+                match storeTcbIpcStateAndMessage st' caller (.blockedOnCall endpointId) none with
                 | .error e => .error e
-                | .ok st'' => .ok ((), removeRunnable st'' caller)
+                | .ok st'' =>
+                    .ok ((), recordSendCap (removeRunnable st'' caller) caller msg.badge
+                      msg.capsGranted)
     | some _ => .error .invalidCapability
     | none => .error .objectNotFound
 
@@ -3203,23 +3188,14 @@ private theorem tid_not_reserved_of_enqueue
 
 /-- WS-L3/L3-A3: Composed round-trip theorem: if a thread is enqueued into an
 empty queue and then popHead is called on the same queue, popHead succeeds
-returning the same thread.
-
-PR #873 round 11: on the **send** queue the round trip also needs the enqueued
-thread to be carrying its message, because `endpointQueuePopHead` now refuses a
-message-less parked sender — every send-queue dequeue in this kernel is a
-delivery.  The receive-queue direction is unconditional as before, which is what
-the left disjunct says; the hypothesis is read off the post-enqueue state because
-that is the state the dequeue inspects. -/
+returning the same thread. -/
 theorem endpointQueueEnqueue_then_popHead_succeeds
     (endpointId : SeLe4n.ObjId) (isReceiveQ : Bool)
     (tid : SeLe4n.ThreadId) (st st' : SystemState) (ep : Endpoint)
     (hObj : st.objects[endpointId]? = some (.endpoint ep))
     (hEmptyTail : (if isReceiveQ then ep.receiveQ else ep.sendQ).tail = none)
     (hObjInv : st.objects.invExt)
-    (hStep : endpointQueueEnqueue endpointId isReceiveQ tid st = .ok st')
-    (hCarries : ∀ tcb, st'.objects[tid.toObjId]? = some (.tcb tcb) →
-      isReceiveQ = true ∨ tcb.pendingMessage.isSome) :
+    (hStep : endpointQueueEnqueue endpointId isReceiveQ tid st = .ok st') :
     ∃ tcb'' st'', endpointQueuePopHead endpointId isReceiveQ st' = .ok (tid, tcb'', st'') := by
   obtain ⟨ep', hEp', hHead', _⟩ := endpointQueueEnqueue_empty_sets_head
     endpointId isReceiveQ tid st st' ep hObj hEmptyTail hObjInv hStep
@@ -3270,15 +3246,7 @@ theorem endpointQueueEnqueue_then_popHead_succeeds
     | ok pair2 =>
       obtain ⟨_, st2⟩ := pair2
       simp only []
-      -- PR #873 round 11: discharge the send-queue message-presence guard.
-      have hG : (!isReceiveQ && tcb'.pendingMessage.isNone) = false := by
-        rcases hCarries tcb' hTcb' with h | h
-        · simp [h]
-        · cases hp : tcb'.pendingMessage with
-          | none => rw [hp] at h; simp at h
-          | some m => simp
-      refine ⟨tcb', st2, ?_⟩
-      simp [hG]
+      exact ⟨tcb', st2, rfl⟩
 
 -- ============================================================================
 -- Z6-K/M: Transport lemmas for endpointQueueRemove

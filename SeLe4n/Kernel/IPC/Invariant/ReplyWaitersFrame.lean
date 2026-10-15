@@ -182,6 +182,18 @@ theorem removeRunnableOnCore_replyViews_eq (st : SystemState) (tid : ThreadId) (
   unfold removeRunnableOnCore runDescheduleOnCore; dsimp only
   rw [replyViews_withScheduler, runRemoveOnCore_replyViews_eq]
 
+/-- WS-ZA ZA4.7: recording a blocking sender's badge and grant bit touches no
+reply view. -/
+theorem recordSendCap_replyViews_eq (st : SystemState) (tid : ThreadId)
+    (badge : Option SeLe4n.Badge) (grant : Bool) :
+    (recordSendCap st tid badge grant).replyViews = st.replyViews := by
+  unfold recordSendCap
+  rw [replyViews_mapTcbInPlace st tid (g := fun tcb => tcb.setSendCap badge grant) (gv := id)
+    (fun _ => rfl)]
+  funext k
+  unfold ReplyViews.mapAt
+  split <;> simp
+
 /-! Reply-object stores and the TCB writes beside them (the reply-object link,
 the stash, the frame splice) touch no reply view. -/
 
@@ -338,8 +350,6 @@ theorem endpointQueuePopHead_replyViews_eq {eid : ObjId} {isRecv : Bool} {st st'
         | none => simp [hLookup] at hStep
         | some htcb =>
           simp only [hLookup] at hStep
-          split at hStep
-          · simp at hStep
           revert hStep
           cases hStore : storeObject eid _ st with
           | error e => simp

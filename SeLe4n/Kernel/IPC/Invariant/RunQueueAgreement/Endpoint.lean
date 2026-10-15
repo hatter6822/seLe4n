@@ -156,10 +156,10 @@ theorem endpointSendDualOnCore_runQueueEntryStage (endpointId : SeLe4n.ObjId)
         · rename_i st2 hS2
           have hC1 := currentOnCore_of_scheduler_eq
             (endpointQueueEnqueue_scheduler_eq _ _ _ _ _ hE) hCur
-          exact (endpointQueueEnqueue_runQueueStage hE).blockThenDeschedule hS2
+          exact (endpointQueueEnqueue_runQueueStage hE).blockThenDescheduleRecord hS2
             (RunQueueStage.refl _) hC1
             (currentOnCore_of_scheduler_eq
-              (storeTcbIpcStateAndMessage_scheduler_eq _ _ _ _ _ hS2) hC1) hNI
+              (storeTcbIpcStateAndMessage_scheduler_eq _ _ _ _ _ hS2) hC1) hNI _ _
   · split <;> exact (RunQueueStage.refl _).entry
 
 theorem endpointSendDualWithCapsOnCore_runQueueEntryStage (endpointId : SeLe4n.ObjId)
@@ -317,6 +317,6 @@ theorem endpointReceiveDualWithCapsOnCore_runQueueEntryStage (endpointId : SeLe4
     repeat' split
     all_goals first
       | exact s0
-      | (rename_i hU; exact s0.trans (ipcUnwrapCaps_runQueueStage hU).entry)
+      | (rename_i hU; exact s0.trans (receiveTransferCaps_runQueueStage hU).entry)
 
 end SeLe4n.Kernel

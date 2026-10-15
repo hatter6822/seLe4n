@@ -7728,7 +7728,8 @@ private def ipcReceiverTcb : TCB :=
   { mkTcb 1043 40 (some c1) with cspaceRoot := ipcReceiverRoot }
 
 /-- A sender parked with a caps-bearing message — `receiveInstallsCaps`'s
-condition, read from exactly this field.
+condition: the grant right in its TCB and one capability address in its saved
+frame (WS-ZA ZA4.7), resolved in its CSpace root.
 
 **WS-RR RR8.16 (`v0.35.189`)**: it is `.blockedOnCall lowEndpoint`, which is what
 a thread sitting on an endpoint's *send* queue is; before the object-domain
@@ -7737,9 +7738,10 @@ donation members followed the transition's own guard, the fixture could leave it
 still fired.  Parking it properly is what makes each of them decided by the
 `schedContextBinding` alone, which is what each one claims to be about. -/
 private def ipcSenderTcb : TCB :=
-  (TCB.setIpcState { mkTcb 1044 40 (some c0) with
-      pendingMessage := some ipcCapsMessage
-      } (.blockedOnCall lowEndpoint))
+  TCB.setIpcState
+    ((SeLe4n.Testing.tcbWithSenderFrame (mkTcb 1044 40 (some c0)) ipcCapsMessage
+        #[SeLe4n.CPtr.ofNat 0]).setSendCap none true)
+    (.blockedOnCall lowEndpoint)
 
 private def ipcFootprintState : SystemState :=
   { niState with
@@ -7767,7 +7769,6 @@ capless message.  This is the arm OD3.6 exists for — it writes
 conditioned on `installsCaps` alone would be absent exactly here. -/
 private def ipcDonatingCaplessSenderTcb : TCB :=
   (TCB.setIpcState { mkTcb 1044 40 (some c0) with
-      pendingMessage := some ipcCaplessMessage,
       schedContextBinding := .bound ipcDonatedScId } (.blockedOnCall lowEndpoint))
 
 /-- The fixture with a donating, caps-carrying rendezvous sender. -/
@@ -7788,9 +7789,7 @@ private def ipcInertFootprintState : SystemState :=
   { ipcFootprintState with
       objects :=
         ipcFootprintState.objects.insert ipcSender.toObjId
-          (.tcb (TCB.setIpcState { mkTcb 1044 40 (some c0) with
-                    pendingMessage := some ipcCaplessMessage
-                    } (.blockedOnCall lowEndpoint))) }
+          (.tcb (TCB.setIpcState (mkTcb 1044 40 (some c0)) (.blockedOnCall lowEndpoint))) }
 
 /-- The operands a live `.send` supplies: the endpoint its capability names and
 the message it built. -/
