@@ -919,9 +919,9 @@ private def runNotificationCancelChecks : IO Unit := do
 private def stReplyBlocked : SystemState :=
   (BootstrapBuilder.empty
     |>.withObject epId (.endpoint {})
-    |>.withObject rId.toObjId (.reply { replyId := rId, caller := some victimTid })
+    |>.withObject rId.toObjId (.reply { replyId := rId, callerCode := SeLe4n.ThreadId.optCode (some victimTid) })
     |>.withObject victimTid.toObjId (.tcb (TCB.setIpcState { mkTcb 710 30 (some core1) with
-        replyObject := some rId } (.blockedOnReply epId (some ownerTid))))
+        replyObjectCode := SeLe4n.ReplyId.optCode (some rId) } (.blockedOnReply epId (some ownerTid))))
     |>.build)
 
 /-- WS-OD OD3.5: a reply-blocked victim that *also* carries queue links — the
@@ -932,11 +932,11 @@ fields. -/
 private def stReplyBlockedStaleLinks : SystemState :=
   (BootstrapBuilder.empty
     |>.withObject epId (.endpoint {})
-    |>.withObject rId.toObjId (.reply { replyId := rId, caller := some victimTid })
+    |>.withObject rId.toObjId (.reply { replyId := rId, callerCode := SeLe4n.ThreadId.optCode (some victimTid) })
     |>.withObject bystanderTid.toObjId (.tcb (mkTcb 712 20 none))
     |>.withObject ownerTid.toObjId (.tcb (mkTcb 713 20 none))
     |>.withObject victimTid.toObjId (.tcb (TCB.setIpcState { mkTcb 710 30 (some core1) with
-        replyObject := some rId,
+        replyObjectCode := SeLe4n.ReplyId.optCode (some rId),
         queuePrevCode := SeLe4n.ThreadId.optCode (some bystanderTid),
         queueNextCode := SeLe4n.ThreadId.optCode (some ownerTid) } (.blockedOnReply epId (some ownerTid))))
     |>.build)
@@ -1490,10 +1490,10 @@ private def stPipDonation : SystemState :=
   let base :=
     (BootstrapBuilder.empty
       |>.withObject epId (.endpoint {})
-      |>.withObject rId.toObjId (.reply { replyId := rId, caller := some victimTid })
+      |>.withObject rId.toObjId (.reply { replyId := rId, callerCode := SeLe4n.ThreadId.optCode (some victimTid) })
       |>.withObject victimTid.toObjId (.tcb (TCB.setIpcState { mkTcb 710 200 (some core1) with
           threadState := .Running,
-          replyObject := some rId } (.blockedOnReply epId (some serverTid))))
+          replyObjectCode := SeLe4n.ReplyId.optCode (some rId) } (.blockedOnReply epId (some serverTid))))
       |>.withObject serverTid.toObjId (.tcb { mkTcb 716 50 (some core2) with
           threadState := .Ready,
           pipBoost := some ⟨200⟩ })
@@ -1548,10 +1548,10 @@ private def runPipDonationDropChecks : IO Unit := do
       let stBootPip :=
         (BootstrapBuilder.empty
           |>.withObject epId (.endpoint {})
-          |>.withObject rId.toObjId (.reply { replyId := rId, caller := some victimTid })
+          |>.withObject rId.toObjId (.reply { replyId := rId, callerCode := SeLe4n.ThreadId.optCode (some victimTid) })
           |>.withObject victimTid.toObjId (.tcb (TCB.setIpcState { mkTcb 710 200 none with
               threadState := .Running,
-              replyObject := some rId } (.blockedOnReply epId (some serverTid))))
+              replyObjectCode := SeLe4n.ReplyId.optCode (some rId) } (.blockedOnReply epId (some serverTid))))
           |>.withObject serverTid.toObjId (.tcb { mkTcb 716 50 none with
               threadState := .Ready,
               pipBoost := some ⟨200⟩ })
@@ -1581,10 +1581,10 @@ private def stLocalDeboost : SystemState :=
   let base :=
     (BootstrapBuilder.empty
       |>.withObject epId (.endpoint {})
-      |>.withObject rId.toObjId (.reply { replyId := rId, caller := some victimTid })
+      |>.withObject rId.toObjId (.reply { replyId := rId, callerCode := SeLe4n.ThreadId.optCode (some victimTid) })
       |>.withObject victimTid.toObjId (.tcb (TCB.setIpcState { mkTcb 710 200 (some core1) with
           threadState := .Ready,
-          replyObject := some rId } (.blockedOnReply epId (some serverTid))))
+          replyObjectCode := SeLe4n.ReplyId.optCode (some rId) } (.blockedOnReply epId (some serverTid))))
       |>.withObject serverTid.toObjId (.tcb { mkTcb 716 50 none with
           threadState := .Running,
           pipBoost := some ⟨200⟩ })
@@ -1600,10 +1600,10 @@ private def stRemoteDeboost : SystemState :=
   let base :=
     (BootstrapBuilder.empty
       |>.withObject epId (.endpoint {})
-      |>.withObject rId.toObjId (.reply { replyId := rId, caller := some victimTid })
+      |>.withObject rId.toObjId (.reply { replyId := rId, callerCode := SeLe4n.ThreadId.optCode (some victimTid) })
       |>.withObject victimTid.toObjId (.tcb (TCB.setIpcState { mkTcb 710 200 (some core1) with
           threadState := .Ready,
-          replyObject := some rId } (.blockedOnReply epId (some serverTid))))
+          replyObjectCode := SeLe4n.ReplyId.optCode (some rId) } (.blockedOnReply epId (some serverTid))))
       |>.withObject serverTid.toObjId (.tcb { mkTcb 716 50 (some core2) with
           threadState := .Running,
           pipBoost := some ⟨200⟩ })
@@ -2112,9 +2112,9 @@ private def stFrameHeadReclaim : SystemState :=
     (BootstrapBuilder.empty
       |>.withObject epId (.endpoint {})
       |>.withObject rId.toObjId (.reply
-          { replyId := rId, caller := some victimTid, next := some (.head scId) })
+          { replyId := rId, callerCode := SeLe4n.ThreadId.optCode (some victimTid), next := some (.head scId) })
       |>.withObject victimTid.toObjId (.tcb (TCB.setIpcState { mkTcb 710 30 (some core1) with
-          replyObject := some rId,
+          replyObjectCode := SeLe4n.ReplyId.optCode (some rId),
           schedContextBinding := .unbound } (.blockedOnReply epId (some serverTid))))
       |>.withObject serverTid.toObjId (.tcb { mkTcb 716 50 (some core2) with
           schedContextBinding := .donated scId victimTid })
@@ -2154,9 +2154,9 @@ private def stOrphanHeadReclaim : SystemState :=
     (BootstrapBuilder.empty
       |>.withObject epId (.endpoint {})
       |>.withObject rId.toObjId (.reply
-          { replyId := rId, caller := some victimTid, next := some (.head scId) })
+          { replyId := rId, callerCode := SeLe4n.ThreadId.optCode (some victimTid), next := some (.head scId) })
       |>.withObject victimTid.toObjId (.tcb (TCB.setIpcState { mkTcb 710 30 (some core1) with
-          replyObject := some rId,
+          replyObjectCode := SeLe4n.ReplyId.optCode (some rId),
           schedContextBinding := .unbound } (.blockedOnReply epId (some serverTid))))
       |>.withObject serverTid.toObjId (.tcb (mkTcb 716 50 (some core2)))
       |>.withObject runnerTid.toObjId (.tcb { mkTcb 715 40 (some core2) with
@@ -2305,9 +2305,9 @@ private def stRefusedReclaimRemoteHolder : SystemState :=
     (BootstrapBuilder.empty
       |>.withObject epId (.endpoint {})
       |>.withObject rId.toObjId (.reply
-          { replyId := rId, caller := some victimTid, next := some (.head scId) })
+          { replyId := rId, callerCode := SeLe4n.ThreadId.optCode (some victimTid), next := some (.head scId) })
       |>.withObject victimTid.toObjId (.tcb (TCB.setIpcState { mkTcb 710 30 (some core1) with
-          replyObject := some rId,
+          replyObjectCode := SeLe4n.ReplyId.optCode (some rId),
           schedContextBinding := .bound scIdOther } (.blockedOnReply epId (some serverTid))))
       |>.withObject serverTid.toObjId (.tcb { mkTcb 716 50 (some core2) with
           schedContextBinding := .donated scId victimTid })
@@ -2447,10 +2447,10 @@ private def stStrandedHolderReclaim : SystemState :=
       |>.withObject epId (.endpoint
           (Endpoint.ofQueues { head := some serverTid, tail := some serverTid } {}))
       |>.withObject rId.toObjId (.reply
-          { replyId := rId, caller := some victimTid, next := some (.head scId) })
+          { replyId := rId, callerCode := SeLe4n.ThreadId.optCode (some victimTid), next := some (.head scId) })
       |>.withObject victimTid.toObjId (.tcb (TCB.setIpcState { mkTcb 710 30 (some core1) with
           threadState := .BlockedReply,
-          replyObject := some rId,
+          replyObjectCode := SeLe4n.ReplyId.optCode (some rId),
           schedContextBinding := .unbound } (.blockedOnReply epId (some serverTid))))
       |>.withObject serverTid.toObjId (.tcb (TCB.setIpcState { mkTcb 716 50 (some core2) with
           threadState := .BlockedCall,
@@ -2476,10 +2476,10 @@ private def stReadyHolderReclaim : SystemState :=
     (BootstrapBuilder.empty
       |>.withObject epId (.endpoint {})
       |>.withObject rId.toObjId (.reply
-          { replyId := rId, caller := some victimTid, next := some (.head scId) })
+          { replyId := rId, callerCode := SeLe4n.ThreadId.optCode (some victimTid), next := some (.head scId) })
       |>.withObject victimTid.toObjId (.tcb (TCB.setIpcState { mkTcb 710 30 (some core1) with
           threadState := .BlockedReply,
-          replyObject := some rId,
+          replyObjectCode := SeLe4n.ReplyId.optCode (some rId),
           schedContextBinding := .unbound } (.blockedOnReply epId (some serverTid))))
       |>.withObject serverTid.toObjId (.tcb { mkTcb 716 50 (some core2) with
           threadState := .Ready,

@@ -130,7 +130,7 @@ passes it without building an `Option`. -/
 /-- WS-ZA ZA4.7: the receive completion a send rendezvous writes into the
 woken receiver. -/
 @[inline] def receiveCompleteTcb (msg : IpcMessage) (t : TCB) : TCB :=
-  (TCB.setIpcState { t with pendingMessage := some msg, pendingReceiveReply := none } .ready)
+  (TCB.setIpcState { t with pendingMessage := some msg, pendingReceiveReplyCode := 0 } .ready)
 
 /-- WS-ZA ZA4.7: a thread taken off an endpoint queue: its three link codes
 cleared (`tcbWithQueueLinks t none none none` by definition). -/

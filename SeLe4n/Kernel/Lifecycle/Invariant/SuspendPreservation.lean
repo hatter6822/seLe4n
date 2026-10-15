@@ -1006,7 +1006,7 @@ theorem restoreToReady_objects_eq_at_tid
                 queuePrevCode := 0
                 queueNextCode := 0
                 queuePPrevCode := 0
-                pendingReceiveReply := none } .ready)) := by
+                pendingReceiveReplyCode := 0 } .ready)) := by
   unfold restoreToReady restoreToReadyStaging
   exact congrArg SystemState.objects (SystemState.updateTcb_eq_of_some hLook _)
 
@@ -1162,7 +1162,7 @@ theorem restoreToReady_blockingServer_subgraph
           (restoreToReady st tid).objects[t.toObjId]?
             = some (.tcb (TCB.setIpcState
                 { origTcb with queuePrevCode := 0, queueNextCode := 0, queuePPrevCode := 0,
-                               pendingReceiveReply := none } .ready)) := by
+                               pendingReceiveReplyCode := 0 } .ready)) := by
         unfold restoreToReady restoreToReadyStaging
         rw [SystemState.updateTcb_eq_of_some hPre]
         show (st.objects.insert tid.toObjId _).get? t.toObjId = _
@@ -1810,7 +1810,7 @@ theorem consumeReplyLink_tcb_lookup
     have hStep := SystemState.consumeCallerReply_eq_link st tid rid
     by_cases hk : k = tid.toObjId
     · subst hk
-      exact ⟨{ t0 with replyObject := none },
+      exact ⟨{ t0 with replyObjectCode := 0 },
         SystemState.consumeCallerReply_tcb_caller st _ tid rid hInv hStep t0 hPre, rfl⟩
     · exact ⟨t0, SystemState.consumeCallerReply_tcb_other st _ tid rid hInv hStep k t0 hk hPre,
         rfl⟩

@@ -450,7 +450,7 @@ theorem storeTcbReceiveComplete_ipcState_eq
   | none => simp [hLookup] at hStep
   | some tcb' =>
     simp only [hLookup] at hStep
-    cases hStore : storeObject tid.toObjId (.tcb (TCB.setIpcState { tcb' with pendingMessage := msg, pendingReceiveReply := none } .ready)) st with
+    cases hStore : storeObject tid.toObjId (.tcb (TCB.setIpcState { tcb' with pendingMessage := msg, pendingReceiveReplyCode := 0 } .ready)) st with
     | error e => simp [hStore] at hStep
     | ok pair =>
       simp only [hStore] at hStep
@@ -492,7 +492,7 @@ theorem storeTcbReceiveComplete_tcb_exists_at_target
   | none => simp [hLookup] at hStep
   | some tcb =>
     simp only [hLookup] at hStep
-    cases hStore : storeObject tid.toObjId (.tcb (TCB.setIpcState { tcb with pendingMessage := msg, pendingReceiveReply := none } .ready)) st with
+    cases hStore : storeObject tid.toObjId (.tcb (TCB.setIpcState { tcb with pendingMessage := msg, pendingReceiveReplyCode := 0 } .ready)) st with
     | error e => simp [hStore] at hStep
     | ok pair =>
       simp only [hStore] at hStep

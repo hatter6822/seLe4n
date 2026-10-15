@@ -170,8 +170,8 @@ theorem holdMessage_receiverReady (msg : IpcMessage) :
   let s3 := enqueueRunnableOnCore s2 (determineTargetCore s2 r) r
   let s5 := (s3.updateTcb caller (callCallerTcb endpointId r)).modifyObject rid.toObjId
     (replyWithCaller caller)
-  let s7 := (s5.updateTcb caller (fun t => { t with replyObject := some rid })).updateTcb r
-    (fun t => { t with pendingReceiveReply := none })
+  let s7 := (s5.updateTcb caller (fun t => { t with replyObjectCode := SeLe4n.ReplyId.optCode (some rid) })).updateTcb r
+    (fun t => { t with pendingReceiveReplyCode := 0 })
   (removeRunnableOnCore s7 caller core).linkReplyWaiter caller r
 
 theorem storeCallRendezvousReady_noResizeDue (st : SystemState) (endpointId : SeLe4n.ObjId)
@@ -217,8 +217,8 @@ theorem storeCallRendezvous_eq_hold (st : SystemState) (endpointId : SeLe4n.ObjI
   have hNo5 := modifyObject_noResizeDue s4 rid.toObjId (replyWithCaller caller) hNo4
   generalize s4.modifyObject rid.toObjId (replyWithCaller caller) = s5 at hNo5
   rw [updateTcb_msg _ _ _ _ _ _ _ hNo5 (fun h => absurd h hNe)]
-  have hNo6 := updateTcb_noResizeDue s5 caller (fun t => { t with replyObject := some rid }) hNo5
-  generalize s5.updateTcb caller (fun t => { t with replyObject := some rid }) = s6 at hNo6
+  have hNo6 := updateTcb_noResizeDue s5 caller (fun t => { t with replyObjectCode := SeLe4n.ReplyId.optCode (some rid) }) hNo5
+  generalize s5.updateTcb caller (fun t => { t with replyObjectCode := SeLe4n.ReplyId.optCode (some rid) }) = s6 at hNo6
   rw [updateTcb_msg _ _ _ _ _ _ _ hNo6 ?_, removeRunnableOnCore_msg, linkReplyWaiter_msg]
   intros; rfl
 
@@ -283,7 +283,7 @@ theorem stageWokenDelivery_performCallRendezvous (st : SystemState) (endpointId 
   let s1 := st.updateTcb c receiverReady
   let s2 := enqueueRunnableOnCore s1 (determineTargetCore s1 c) c
   let s3 := (s2.modifyObject rid.toObjId replyConsumedObject).updateTcb c
-    (fun t => { t with replyObject := none })
+    (fun t => { t with replyObjectCode := 0 })
   s3.unlinkReplyWaiter c server
 
 theorem storeReplyRendezvousReady_noResizeDue (st : SystemState) (c server : SeLe4n.ThreadId)
@@ -407,9 +407,24 @@ theorem callWakesInPlace_ne {st : SystemState} {endpointId : SeLe4n.ObjId}
   simp only [callWakesInPlace, Bool.and_eq_true] at h
   exact bne_iff_ne.mp h.1.1.1.1.1.1.1.2
 
+/-- A call rendezvous carrying more than four words: held and staged as the
+specification does.  Out of line, so the woken receiver it names is built only
+on this path and never hoisted ahead of the length test (WS-ZA ZA4.7). -/
+@[noinline] def callRendezvousStaged (st : SystemState) (endpointId : SeLe4n.ObjId)
+    (caller r : SeLe4n.ThreadId) (nextCode : Nat) (rid : SeLe4n.ReplyId)
+    (layout : SeLe4n.SyscallRegisterLayout) (rf : SeLe4n.RegisterFile) (len : Nat)
+    (badge : Option SeLe4n.Badge) (granted : Bool)
+    (core : Concurrency.CoreId) : SystemState :=
+  Architecture.stageWokenDelivery
+    (performCallRendezvous st endpointId caller r (ThreadId.ofOptCode nextCode) rid
+      { registers := Architecture.regMessageBody layout rf len, caps := #[], badge := badge,
+        capsGranted := granted } core)
+    (some r) 0
+
 /-- The checked call arm's rendezvous: a message of at most four words is
 delivered straight into the receiver's registers (`performCallDelivered`), a
-longer one is held and staged as the specification does. -/
+longer one is held and staged as the specification does
+(`callRendezvousStaged`). -/
 @[inline] def callRendezvousDelivered (st : SystemState) (endpointId : SeLe4n.ObjId)
     (caller r : SeLe4n.ThreadId) (nextCode : Nat) (rid : SeLe4n.ReplyId)
     (layout : SeLe4n.SyscallRegisterLayout) (rf : SeLe4n.RegisterFile) (len : Nat)
@@ -417,11 +432,7 @@ longer one is held and staged as the specification does. -/
     (core : Concurrency.CoreId) : SystemState :=
   if Architecture.regMessageLength layout len ≤ 4 then
     performCallDelivered st endpointId caller r nextCode rid layout rf len badge granted core
-  else Architecture.stageWokenDelivery
-    (performCallRendezvous st endpointId caller r (ThreadId.ofOptCode nextCode) rid
-      { registers := Architecture.regMessageBody layout rf len, caps := #[], badge := badge,
-        capsGranted := granted } core)
-    (some r) 0
+  else callRendezvousStaged st endpointId caller r nextCode rid layout rf len badge granted core
 
 theorem callRendezvousDelivered_eq (st : SystemState) (endpointId : SeLe4n.ObjId)
     (caller r : SeLe4n.ThreadId) (rt : TCB) (rid : SeLe4n.ReplyId)
@@ -441,7 +452,7 @@ theorem callRendezvousDelivered_eq (st : SystemState) (endpointId : SeLe4n.ObjId
     rw [← TCB.optCode_queueNext]
     exact (stageWokenDelivery_performCallRendezvous _ _ _ _ _ _ _ _ _ _ _ _
       (callWakesInPlace_noResizeDue hG) (callWakesInPlace_ne hG) hSz).symm
-  · rfl
+  · unfold callRendezvousStaged; rfl
 
 theorem replyWakesInPlace_noResizeDue {st : SystemState} {c : SeLe4n.ThreadId} {ct : TCB}
     {rid : SeLe4n.ReplyId} (h : replyWakesInPlace st c ct rid = true) : st.objects.noResizeDue := by
@@ -531,7 +542,7 @@ theorem storeSendRendezvousWith_noResizeDue (st : SystemState) (endpointId : SeL
 
 /-- A wake commutes with a message-slot write. -/
 theorem wakeThread_msg (r : SeLe4n.ThreadId) (ρ : SeLe4n.RegisterFile → SeLe4n.RegisterFile)
-    (μ : Option IpcMessage → Option IpcMessage) (π : Option SeLe4n.ReplyId → Option SeLe4n.ReplyId)
+    (μ : Option IpcMessage → Option IpcMessage) (π : Nat → Nat)
     (st : SystemState) (t : SeLe4n.ThreadId) (core : CoreId) (hNo : st.objects.noResizeDue) :
     wakeThread (st.mapTcbInPlace r (TCB.withMessageSlots ρ μ π)) t core =
       ((wakeThread st t core).1.mapTcbInPlace r (TCB.withMessageSlots ρ μ π),
@@ -544,7 +555,7 @@ theorem wakeThread_msg (r : SeLe4n.ThreadId) (ρ : SeLe4n.RegisterFile → SeLe4
 
 /-- The receiver a send wakes, ready, holding no message and no stashed reply. -/
 @[inline] def receiveReadyTcb (t : TCB) : TCB :=
-  (TCB.setIpcState { t with pendingMessage := none, pendingReceiveReply := none } .ready)
+  (TCB.setIpcState { t with pendingMessage := none, pendingReceiveReplyCode := 0 } .ready)
 
 /-- The receiver made ready, its message slots as they were. -/
 @[inline] def ipcReadyTcb (t : TCB) : TCB := (t.setIpcState .ready)
@@ -552,11 +563,11 @@ theorem wakeThread_msg (r : SeLe4n.ThreadId) (ρ : SeLe4n.RegisterFile → SeLe4
 /-- A message delivered with the receiver's stashed reply dropped: the
 specification's receive completion past the ready state. -/
 abbrev receiveCompleteSlots (msg : IpcMessage) : TCB → TCB :=
-  TCB.withMessageSlots id (fun _ => some msg) (fun _ => none)
+  TCB.withMessageSlots id (fun _ => some msg) (fun _ => 0)
 
 /-- The receiver's message slots emptied. -/
 abbrev clearMessageSlots : TCB → TCB :=
-  TCB.withMessageSlots id (fun _ => none) (fun _ => none)
+  TCB.withMessageSlots id (fun _ => none) (fun _ => 0)
 
 theorem receiveCompleteTcb_eq_slots (msg : IpcMessage) :
     receiveCompleteTcb msg = receiveCompleteSlots msg ∘ ipcReadyTcb := rfl

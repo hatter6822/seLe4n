@@ -1202,8 +1202,12 @@ structure TCB where
       a thread to its reply via `tcb->tcbReply`, not via the blocking-state word).
 
       `none` = no outstanding reply object.  The default keeps every existing TCB
-      construction and the boot trace byte-identical. -/
-  replyObject : Option SeLe4n.ReplyId := none
+      construction and the boot trace byte-identical.
+
+      WS-ZA ZA4.7: stored as a scalar code (`SeLe4n.ReplyId.optCode`) and read
+      through the derived view `TCB.replyObject`, so linking a reply builds no
+      cell. -/
+  replyObjectCode : Nat := 0
   /-- WS-SM SM6.D (faithful seL4-MCS, server-first receive): the Reply object a
       *server* supplied on its `Recv` while no caller was yet queued.  Stashed here
       when the server blocks on receive (`.blockedOnReceive`) so that a later `Call`
@@ -1213,8 +1217,11 @@ structure TCB where
       reply object this thread, acting as a server, will hand to the *next* caller.
       `none` = the server provided no reply object (a plain receive that cannot
       answer a Call).  Default keeps every existing construction + boot trace
-      byte-identical. -/
-  pendingReceiveReply : Option SeLe4n.ReplyId := none
+      byte-identical.
+
+      WS-ZA ZA4.7: stored as a scalar code and read through the derived view
+      `TCB.pendingReceiveReply`. -/
+  pendingReceiveReplyCode : Nat := 0
   /-- WS-RR RR4: **the fault this thread is blocked on** — seL4's `tcbFault`.
 
       Set by the fault-delivery transition (`Kernel.faultDeliverOnCore`) at the
@@ -1321,6 +1328,18 @@ theorem TCB.map_cpuAffinity_of_placement {o o' : Option TCB}
     (h : o.map TCB.placement = o'.map TCB.placement) :
     o.map (·.cpuAffinity) = o'.map (·.cpuAffinity) := by
   cases o <;> cases o' <;> simp_all [TCB.placement]
+
+/-- WS-ZA ZA4.7: the reply object of this thread's outstanding call, read from
+its code.  Reducible, as `TCB.ipcState` is, so a record update that leaves the
+code alone reads the old value by `rfl`.  Written as
+`replyObjectCode := SeLe4n.ReplyId.optCode r`. -/
+@[reducible, inline] def TCB.replyObject (t : TCB) : Option SeLe4n.ReplyId :=
+  SeLe4n.ReplyId.ofOptCode t.replyObjectCode
+
+/-- WS-ZA ZA4.7: the reply object a server stashed on its receive, read from its
+code.  Written as `pendingReceiveReplyCode := SeLe4n.ReplyId.optCode r`. -/
+@[reducible, inline] def TCB.pendingReceiveReply (t : TCB) : Option SeLe4n.ReplyId :=
+  SeLe4n.ReplyId.ofOptCode t.pendingReceiveReplyCode
 
 /-- WS-ZA ZA4.7: the thread's IPC state, read from its two codes.  Reducible,
 so a record update that leaves both codes alone reads the old state by `rfl`
@@ -1465,6 +1484,12 @@ every other field is the record's. -/
 
 @[simp] theorem TCB.ipcState_mk (f1 f2 f3 f4 f5 f6 f7 f8 f9 f10 f11 f12 f13 f14 f15 f16 f17 f18 f19 f20 f21 f22 f23 f24 f25 f26 f27 f28 f29 f30 f31 f32 f33 f34 f35 f36 f37 f38 f39 f40) :
     (TCB.mk f1 f2 f3 f4 f5 f6 f7 f8 f9 f10 f11 f12 f13 f14 f15 f16 f17 f18 f19 f20 f21 f22 f23 f24 f25 f26 f27 f28 f29 f30 f31 f32 f33 f34 f35 f36 f37 f38 f39 f40).ipcState = ThreadIpcState.ofCodes f7 f40 := rfl
+
+@[simp] theorem TCB.replyObject_mk (f1 f2 f3 f4 f5 f6 f7 f8 f9 f10 f11 f12 f13 f14 f15 f16 f17 f18 f19 f20 f21 f22 f23 f24 f25 f26 f27 f28 f29 f30 f31 f32 f33 f34 f35 f36 f37 f38 f39 f40) :
+    (TCB.mk f1 f2 f3 f4 f5 f6 f7 f8 f9 f10 f11 f12 f13 f14 f15 f16 f17 f18 f19 f20 f21 f22 f23 f24 f25 f26 f27 f28 f29 f30 f31 f32 f33 f34 f35 f36 f37 f38 f39 f40).replyObject = SeLe4n.ReplyId.ofOptCode f24 := rfl
+
+@[simp] theorem TCB.pendingReceiveReply_mk (f1 f2 f3 f4 f5 f6 f7 f8 f9 f10 f11 f12 f13 f14 f15 f16 f17 f18 f19 f20 f21 f22 f23 f24 f25 f26 f27 f28 f29 f30 f31 f32 f33 f34 f35 f36 f37 f38 f39 f40) :
+    (TCB.mk f1 f2 f3 f4 f5 f6 f7 f8 f9 f10 f11 f12 f13 f14 f15 f16 f17 f18 f19 f20 f21 f22 f23 f24 f25 f26 f27 f28 f29 f30 f31 f32 f33 f34 f35 f36 f37 f38 f39 f40).pendingReceiveReply = SeLe4n.ReplyId.ofOptCode f25 := rfl
 
 theorem TCB.ofCodes_ipcCodes (t : TCB) :
     ThreadIpcState.ofCodes t.ipcObjectCode t.ipcStateCode = t.ipcState := rfl
@@ -1950,7 +1975,7 @@ argument stages on top, which is why that helper takes one and this does not. -/
         queuePrevCode := 0
         queueNextCode := 0
         queuePPrevCode := 0
-        pendingReceiveReply := none } .ready
+        pendingReceiveReplyCode := 0 } .ready
 
 /-- Transparent to `simp`, for the reason `TCB.boostedPriority_eq` above is: a
 proof that unfolded the inline record update reduces this exactly as it reduced
@@ -1962,7 +1987,7 @@ that, so single-sourcing the clear costs no existing proof. -/
             queuePrevCode := 0
             queueNextCode := 0
             queuePPrevCode := 0
-            pendingReceiveReply := none } .ready := rfl
+            pendingReceiveReplyCode := 0 } .ready := rfl
 
 /-- **WS-RR RR8.16 (`v0.35.190`): what a CDT revocation may do to a message in
 flight.**
@@ -2106,11 +2131,20 @@ theorem TCB.ext {a b : TCB}
   clear hQPrev hQPPrev hQNext
   obtain ⟨hIpcO, hIpcS⟩ := TCB.ipcState_ext hIpc
   clear hIpc
+  have hReplyC : a.replyObjectCode = b.replyObjectCode := by
+    rw [← SeLe4n.ReplyId.optCode_ofOptCode a.replyObjectCode,
+      ← SeLe4n.ReplyId.optCode_ofOptCode b.replyObjectCode]
+    exact congrArg _ hReply
+  have hPendReplyC : a.pendingReceiveReplyCode = b.pendingReceiveReplyCode := by
+    rw [← SeLe4n.ReplyId.optCode_ofOptCode a.pendingReceiveReplyCode,
+      ← SeLe4n.ReplyId.optCode_ofOptCode b.pendingReceiveReplyCode]
+    exact congrArg _ hPendReply
+  clear hReply hPendReply
   cases a; cases b
   simp at *
   exact ⟨hTid, hPrio, hDom, hCsp, hVsp, hBuf, hIpcO, hTs, hSlice, hDeadline,
          hQPrevC, hQPPrevC, hQNextC, hPend, hRC, hFh, hBn, hSc, hTb, hMcp, hPip, hTo,
-         hCpuAff, hReply, hPendReply, hPendFault, hFp, hNPrevC, hNNextC,
+         hCpuAff, hReplyC, hPendReplyC, hPendFault, hFp, hNPrevC, hNNextC,
          hRCore, hRPrio, hRPrev, hRNext, hRBPrev, hRBNext, hWPrev, hWNext, hWHead, hWCount,
          hIpcS⟩
 

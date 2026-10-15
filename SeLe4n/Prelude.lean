@@ -580,6 +580,42 @@ namespace ReplyId
 /-- Convert ObjId to ReplyId. -/
 @[inline] def ofObjId (oid : ObjId) : ReplyId := ⟨oid.toNat⟩
 
+/-- An optional reply object as one scalar: `0` for `none`, `r + 1` for
+`some r`, as `ThreadId.optCode` (WS-ZA ZA4.7).  A bijection with
+`Option ReplyId`, so a field stored as a code and read through `ofOptCode` has
+exactly the values the `Option` field had, and writing a present reply builds
+no cell. -/
+@[inline] def optCode : Option ReplyId → Nat
+  | none => 0
+  | some r => r.val + 1
+
+/-- The optional reply object a code stands for; inverse of `optCode`. -/
+@[inline] def ofOptCode : Nat → Option ReplyId
+  | 0 => none
+  | k + 1 => some ⟨k⟩
+
+@[simp] theorem ofOptCode_optCode (o : Option ReplyId) : ofOptCode (optCode o) = o := by
+  cases o <;> rfl
+
+@[simp] theorem optCode_ofOptCode (n : Nat) : optCode (ofOptCode n) = n := by
+  cases n <;> rfl
+
+@[simp] theorem ofOptCode_zero : ofOptCode 0 = none := rfl
+
+@[simp] theorem optCode_none : optCode none = 0 := rfl
+
+@[simp] theorem ofOptCode_eq_none_iff (n : Nat) : ofOptCode n = none ↔ n = 0 := by
+  cases n <;> simp [ofOptCode]
+
+@[simp] theorem ofOptCode_eq_some_iff (n : Nat) (r : ReplyId) :
+    ofOptCode n = some r ↔ n = r.val + 1 := by
+  cases n with
+  | zero => simp [ofOptCode]
+  | succ k => cases r; simp [ofOptCode]
+
+theorem optCode_injective {a b : Option ReplyId} (h : optCode a = optCode b) : a = b := by
+  rw [← ofOptCode_optCode a, h, ofOptCode_optCode]
+
 /-- `v0.35.187`: `ofObjId` is a section of `toObjId` — the sibling of
 `ThreadId.toObjId_ofObjId`, stated so a stamped identity is provably the key it
 was stamped from. -/

@@ -109,7 +109,7 @@ def abortPendingIpcOnEndpoint
         timeoutBudget := none,
         threadState := .Ready,
         timedOut := true,
-        pendingReceiveReply := none } .ready) : TCB).withReturnFrame
+        pendingReceiveReplyCode := 0 } .ready) : TCB).withReturnFrame
           Architecture.timeoutFrame
       match storeObject tid.toObjId (.tcb tcb') st1 with
       | .error e => .error e
@@ -223,7 +223,7 @@ theorem abortPendingIpcOnEndpoint_tcb_lookup
                     timeoutBudget := none
                     threadState := .Ready
                     timedOut := true
-                    pendingReceiveReply := none } .ready) : TCB).withReturnFrame
+                    pendingReceiveReplyCode := 0 } .ready) : TCB).withReturnFrame
                   Architecture.timeoutFrame), ?_, hAff1.symm⟩
         rw [RHTable_getElem?_eq_get?, RHTable_getElem?_insert _ _ _ hInv1,
           if_pos (beq_self_eq_true tid.toObjId)]

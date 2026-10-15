@@ -2493,7 +2493,7 @@ theorem endpointReceiveDual_preserves_blockedThreadsPendingMessageConsistent
                   | true => rfl
                 rw [if_pos hValid] at hStep
                 cases hStash : storeObject receiver.toObjId
-                    (.tcb { rTcb with pendingReceiveReply := replyId }) st2 with
+                    (.tcb { rTcb with pendingReceiveReplyCode := SeLe4n.ReplyId.optCode replyId }) st2 with
                 | error e => simp [hStash] at hStep
                 | ok pStash =>
                   obtain ⟨_, stStashed⟩ := pStash

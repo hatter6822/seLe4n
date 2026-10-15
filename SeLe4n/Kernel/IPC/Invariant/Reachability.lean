@@ -491,7 +491,7 @@ def witnessChainSchedContext : SchedContext :=
 down to the outer one.  Public for the same reason as `witnessChainSchedContext`. -/
 def witnessChainInnerReply : Reply :=
   { replyId := donationChainWitnessInner,
-    caller := some donationChainWitnessInnerCaller,
+    callerCode := SeLe4n.ThreadId.optCode (some donationChainWitnessInnerCaller),
     prev := some donationChainWitnessOuter,
     next := some (.head donationChainWitnessContext) }
 
@@ -500,7 +500,7 @@ is the bottom of the stack.  Public for the same reason as
 `witnessChainSchedContext`. -/
 def witnessChainOuterReply : Reply :=
   { replyId := donationChainWitnessOuter,
-    caller := some donationChainWitnessOuterCaller,
+    callerCode := SeLe4n.ThreadId.optCode (some donationChainWitnessOuterCaller),
     next := some (.frame donationChainWitnessInner) }
 
 -- The three stores are the pure store (`withObjectStored`, `v0.35.73`): each

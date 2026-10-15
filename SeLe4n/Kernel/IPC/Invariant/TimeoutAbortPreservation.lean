@@ -44,7 +44,7 @@ theorem abortPendingIpcOnEndpoint_shape
              timeoutBudget := none
              threadState := .Ready
              timedOut := true
-             pendingReceiveReply := none } .ready)) Architecture.timeoutFrame)) st1
+             pendingReceiveReplyCode := 0 } .ready)) Architecture.timeoutFrame)) st1
         = .ok ((), st') := by
   unfold abortPendingIpcOnEndpoint at hStep
   cases hRem : endpointQueueRemove endpointId isReceiveQ tid st with
@@ -204,7 +204,7 @@ theorem abortPendingIpcOnEndpoint_preserves_ipcInvariantFull
   obtain ⟨sRc, hStoreRc⟩ : ∃ s, storeObject tid.toObjId
       (.tcb ((TCB.setIpcState { tcb1 with
                pendingMessage := none
-               pendingReceiveReply := none } .ready))) st1 = .ok ((), s) := ⟨_, rfl⟩
+               pendingReceiveReplyCode := 0 } .ready))) st1 = .ok ((), s) := ⟨_, rfl⟩
   have hRc : storeTcbReceiveComplete st1 tid none = .ok sRc := by
     unfold storeTcbReceiveComplete modifyTcb
     rw [hT1]
@@ -224,7 +224,7 @@ theorem abortPendingIpcOnEndpoint_preserves_ipcInvariantFull
     storeObject_preserves_objects_invExt st1 sRc tid.toObjId _ hI1 hStoreRc
   have hRcTcb : sRc.getTcb? tid = some ((TCB.setIpcState { tcb1 with
       pendingMessage := none
-      pendingReceiveReply := none } .ready)) :=
+      pendingReceiveReplyCode := 0 } .ready)) :=
     (SystemState.getTcb?_eq_some_iff sRc tid _).mpr
       (storeObject_objects_eq st1 sRc tid.toObjId _ hI1 hStoreRc)
   have hAllNoneRc : allTimeoutBudgetsNone sRc := by
@@ -239,7 +239,7 @@ theorem abortPendingIpcOnEndpoint_preserves_ipcInvariantFull
   obtain ⟨sStage, hStage⟩ : ∃ s, storeObject tid.toObjId
       (.tcb (timeoutStagedTcb ((TCB.setIpcState { tcb1 with
               pendingMessage := none
-              pendingReceiveReply := none } .ready)))) sRc = .ok ((), s) := ⟨_, rfl⟩
+              pendingReceiveReplyCode := 0 } .ready)))) sRc = .ok ((), s) := ⟨_, rfl⟩
   have hFullStage : ipcInvariantFull sStage :=
     timeoutStaging_preserves_ipcInvariantFull hIRc hRcTcb rfl hAllNoneRc hStage hFullRc
   -- The two-step reading and the operation's single store agree pointwise.

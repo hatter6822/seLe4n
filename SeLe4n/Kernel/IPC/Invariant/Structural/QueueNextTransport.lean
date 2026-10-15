@@ -1048,7 +1048,7 @@ theorem storeTcbReceiveComplete_preserves_dualQueueSystemInvariant
   | some tcb =>
       simp only [hLookup] at hStep
       cases hStore : storeObject tid.toObjId
-        (.tcb (TCB.setIpcState { tcb with pendingMessage := msg, pendingReceiveReply := none } .ready)) st with
+        (.tcb (TCB.setIpcState { tcb with pendingMessage := msg, pendingReceiveReplyCode := 0 } .ready)) st with
       | error e => simp [hStore] at hStep
       | ok pair =>
           simp only [hStore] at hStep; have := Except.ok.inj hStep; subst this
@@ -1061,9 +1061,9 @@ theorem storeTcbReceiveComplete_preserves_dualQueueSystemInvariant
                 | tcb t => simp only [h, Option.some.injEq] at hLookup; cases hLookup; rfl
                 | endpoint _ | cnode _ | vspaceRoot _ | notification _ | untyped _ | schedContext _ | reply _ | frame _ | pageTable _ =>
                     simp [h] at hLookup
-          have hPrev : ((TCB.setIpcState { tcb with pendingMessage := msg, pendingReceiveReply := none } .ready) : TCB).queuePrev = tcb.queuePrev := rfl
-          have hNext : ((TCB.setIpcState { tcb with pendingMessage := msg, pendingReceiveReply := none } .ready) : TCB).queueNext = tcb.queueNext := rfl
-          have hPPrev : ((TCB.setIpcState { tcb with pendingMessage := msg, pendingReceiveReply := none } .ready) : TCB).queuePPrev = tcb.queuePPrev := rfl
+          have hPrev : ((TCB.setIpcState { tcb with pendingMessage := msg, pendingReceiveReplyCode := 0 } .ready) : TCB).queuePrev = tcb.queuePrev := rfl
+          have hNext : ((TCB.setIpcState { tcb with pendingMessage := msg, pendingReceiveReplyCode := 0 } .ready) : TCB).queueNext = tcb.queueNext := rfl
+          have hPPrev : ((TCB.setIpcState { tcb with pendingMessage := msg, pendingReceiveReplyCode := 0 } .ready) : TCB).queuePPrev = tcb.queuePPrev := rfl
           refine ⟨?_, storeObject_tcb_preserves_tcbQueueLinkIntegrity st pair.2
                        tid.toObjId tcb _ hPrev hNext hTcbPre hObjInv hStore hLink,
                  storeObject_tcb_preserves_tcbQueueChainAcyclic st pair.2
@@ -1179,7 +1179,7 @@ theorem consumeCallerReply_preserves_dualQueueSystemInvariant
     | some tcb =>
       simp only [hT] at hStep
       exact storeObject_tcb_preserves_dualQueueSystemInvariant_of_queueAgree st1 st'
-        caller.toObjId tcb { tcb with replyObject := none } rfl rfl rfl
+        caller.toObjId tcb { tcb with replyObjectCode := 0 } rfl rfl rfl
         ((getTcb?_eq_some_iff st1 caller tcb).mp hT) hObjInv1 hStep hInv1
 
 open SeLe4n.Model.SystemState in

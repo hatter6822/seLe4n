@@ -1032,7 +1032,7 @@ theorem endpointReceiveDual_preserves_ipcInvariant
                   | false => simp [hb] at hStep
                   | true => rfl
                 rw [if_pos hValid] at hStep
-                cases hStash : storeObject receiver.toObjId (.tcb { rTcb with pendingReceiveReply := replyId }) st2 with
+                cases hStash : storeObject receiver.toObjId (.tcb { rTcb with pendingReceiveReplyCode := SeLe4n.ReplyId.optCode replyId }) st2 with
                 | error e => simp [hStash] at hStep
                 | ok pStash =>
                   obtain ⟨_, stStashed⟩ := pStash
@@ -1136,9 +1136,9 @@ theorem linkCallerReply_tcb_ipcState_backward
           | some r =>
             simp only [hGetR] at hLink
             split at hLink
-            · exact ⟨⟨{ r with caller := some caller },
+            · exact ⟨⟨{ r with callerCode := SeLe4n.ThreadId.optCode (some caller) },
                 storeObject_inserted_object_lookup st rid.toObjId
-                  (.reply { r with caller := some caller }) hObjInv st1 hLink⟩,
+                  (.reply { r with callerCode := SeLe4n.ThreadId.optCode (some caller) }) hObjInv st1 hLink⟩,
                 fun z hz => storeObject_objects_ne st st1 rid.toObjId z _ hz hObjInv hLink⟩
             · simp at hLink
         -- caller ≠ rid (a TCB and a reply cannot share a slot).
@@ -1148,11 +1148,11 @@ theorem linkCallerReply_tcb_ipcState_backward
         by_cases hyC : y.toObjId = caller.toObjId
         · -- post-state TCB at caller is `{ tcb with replyObject := some rid }`.
           have hStoreLk := storeObject_inserted_object_lookup st1 caller.toObjId
-            (.tcb { tcb with replyObject := some rid }) hInv1 st' hStep
+            (.tcb { tcb with replyObjectCode := SeLe4n.ReplyId.optCode (some rid) }) hInv1 st' hStep
           rw [hyC] at hTcb
           simp only [RHTable_getElem?_eq_get?] at hTcb
           rw [hStoreLk] at hTcb
-          have htcbY' : tcbY' = { tcb with replyObject := some rid } :=
+          have htcbY' : tcbY' = { tcb with replyObjectCode := SeLe4n.ReplyId.optCode (some rid) } :=
             KernelObject.tcb.inj (Option.some.inj hTcb.symm)
           refine ⟨tcb, ?_, ?_⟩
           · rw [hyC, ← hLinkFrame caller.toObjId hCR]; exact hT1obj
@@ -1206,8 +1206,8 @@ theorem linkServerStashedReply_tcb_forward
         · -- server slot: the final store writes a `.tcb` there.
           subst hyS
           have hLk := storeObject_inserted_object_lookup st1 server.toObjId
-            (.tcb { sTcb with pendingReceiveReply := none }) hObjInv1 st' hStep
-          exact ⟨{ sTcb with pendingReceiveReply := none }, by
+            (.tcb { sTcb with pendingReceiveReplyCode := 0 }) hObjInv1 st' hStep
+          exact ⟨{ sTcb with pendingReceiveReplyCode := 0 }, by
             simp only [RHTable_getElem?_eq_get?]; exact hLk⟩
         · -- non-server slot: the final store frames `y`.
           have hFrame := storeObject_objects_ne st1 st' server.toObjId y _ hyS hObjInv1 hStep
@@ -1253,11 +1253,11 @@ theorem linkServerStashedReply_tcb_ipcState_backward
           by_cases hyS : y.toObjId = server.toObjId
           · -- post-state TCB at server is `{ sTcb with pendingReceiveReply := none }`.
             have hStoreLk := storeObject_inserted_object_lookup st1 server.toObjId
-              (.tcb { sTcb with pendingReceiveReply := none }) hObjInv1 st' hStep
+              (.tcb { sTcb with pendingReceiveReplyCode := 0 }) hObjInv1 st' hStep
             rw [hyS] at hTcb
             simp only [RHTable_getElem?_eq_get?] at hTcb
             rw [hStoreLk] at hTcb
-            have htcbY' : tcbY' = { sTcb with pendingReceiveReply := none } :=
+            have htcbY' : tcbY' = { sTcb with pendingReceiveReplyCode := 0 } :=
               KernelObject.tcb.inj (Option.some.inj hTcb.symm)
             refine ⟨sTcb, ?_, ?_⟩
             · rw [hyS]; exact (getTcb?_eq_some_iff st1 server sTcb).mp hT
@@ -1532,7 +1532,7 @@ theorem endpointReceiveDual_preserves_schedulerInvariantBundle
                     | false => simp [hb] at hStep
                     | true => rfl
                   rw [if_pos hValid] at hStep
-                  cases hStash : storeObject receiver.toObjId (.tcb { rTcb with pendingReceiveReply := replyId }) st2 with
+                  cases hStash : storeObject receiver.toObjId (.tcb { rTcb with pendingReceiveReplyCode := SeLe4n.ReplyId.optCode replyId }) st2 with
                   | error e => simp [hStash] at hStep
                   | ok pStash =>
                     obtain ⟨_, stStashed⟩ := pStash
@@ -1920,7 +1920,7 @@ theorem endpointReceiveDual_preserves_ipcSchedulerContractPredicates
                     | false => simp [hb] at hStep
                     | true => rfl
                   rw [if_pos hValid] at hStep
-                  cases hStash : storeObject receiver.toObjId (.tcb { rTcb with pendingReceiveReply := replyId }) st2 with
+                  cases hStash : storeObject receiver.toObjId (.tcb { rTcb with pendingReceiveReplyCode := SeLe4n.ReplyId.optCode replyId }) st2 with
                   | error e => simp [hStash] at hStep
                   | ok pStash =>
                     obtain ⟨_, stStashed⟩ := pStash
@@ -2258,7 +2258,7 @@ theorem endpointReceiveDual_preserves_objects_invExt
                   | false => simp [hb] at hStep
                   | true => rfl
                 rw [if_pos hValid] at hStep
-                cases hStash : storeObject receiver.toObjId (.tcb { rTcb with pendingReceiveReply := replyId }) st2 with
+                cases hStash : storeObject receiver.toObjId (.tcb { rTcb with pendingReceiveReplyCode := SeLe4n.ReplyId.optCode replyId }) st2 with
                 | error e => simp [hStash] at hStep
                 | ok pStash =>
                   obtain ⟨_, stStashed⟩ := pStash

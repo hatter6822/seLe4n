@@ -65,7 +65,7 @@ released, and the caller off the server's reply waiters. -/
   let s1 := st.updateTcb c (callReceiverTcb msg)
   let s2 := enqueueRunnableOnCore s1 (determineTargetCore s1 c) c
   let s3 := (s2.modifyObject rid.toObjId replyConsumedObject).updateTcb c
-    (fun t => { t with replyObject := none })
+    (fun t => { t with replyObjectCode := 0 })
   s3.unlinkReplyWaiter c server
 
 /-- The reply's state: the writes, the server's priority walk, and the
@@ -163,11 +163,11 @@ theorem replyOnCore_inPlace (st : SystemState) (replier c server : SeLe4n.Thread
   have hL3 : storeLeavesIndexAndTypes S3 c.toObjId .tcb = true := by
     rw [← hS3']
     exact storeLeavesIndexAndTypes_insert_inPlace hFR2 (fun _ e => by cases e) (hL2 hLC)
-  have hSt4 : storeObject c.toObjId (.tcb { ct2 with replyObject := none }) S3 =
-      .ok ((), S3.updateTcb c (fun t => { t with replyObject := none })) := by
+  have hSt4 : storeObject c.toObjId (.tcb { ct2 with replyObjectCode := 0 }) S3 =
+      .ok ((), S3.updateTcb c (fun t => { t with replyObjectCode := 0 })) := by
     rw [storeObject_eq_of_leaves (by simpa only [KernelObject.objectType] using hL3),
       SystemState.updateTcb_eq_of_some hT3c]
-  have hO4q : (S3.updateTcb c (fun t => { t with replyObject := none })).objects[rid.toObjId]?
+  have hO4q : (S3.updateTcb c (fun t => { t with replyObjectCode := 0 })).objects[rid.toObjId]?
       = some (.reply rp.consumed) :=
     (updateTcb_get?_ne_of_findsInPlace _ hT3c hFC3 hNeCQ).trans hO3q
   refine ⟨?_, ?_⟩
@@ -186,7 +186,7 @@ theorem replyOnCore_inPlace (st : SystemState) (replier c server : SeLe4n.Thread
     simp only [hRp2, hStR, hT3c, hSt4]
   · apply replyFrameHeadHolder?_of_no_head
     have hR5 := (SystemState.unlinkReplyWaiter_objectsAgreeOffRunLinks
-      (S3.updateTcb c (fun t => { t with replyObject := none })) c server).get_reply_iff.mpr hO4q
+      (S3.updateTcb c (fun t => { t with replyObjectCode := 0 })) c server).get_reply_iff.mpr hO4q
     unfold replyFrameHeadContext?
     rw [(SystemState.getReply?_eq_some_iff _ _ _).mpr hR5]
     simp only [Reply.consumed, hNext]

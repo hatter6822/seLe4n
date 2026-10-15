@@ -359,7 +359,7 @@ receiver from a caller holding a SchedContext. -/
 
 /-- The reply object a call links its caller into. -/
 @[inline] def replyWithCaller (caller : SeLe4n.ThreadId) : KernelObject → KernelObject
-  | .reply r => .reply { r with caller := some caller }
+  | .reply r => .reply { r with callerCode := SeLe4n.ThreadId.optCode (some caller) }
   | o => o
 
 /-- The receiver a call wakes: ready, holding the message. -/
@@ -403,8 +403,8 @@ its core and queued on the receiver's reply waiters. -/
   let s3 := enqueueRunnableOnCore s2 (determineTargetCore s2 r) r
   let s5 := (s3.updateTcb caller (callCallerTcb endpointId r)).modifyObject rid.toObjId
     (replyWithCaller caller)
-  let s7 := (s5.updateTcb caller (fun t => { t with replyObject := some rid })).updateTcb r
-    (fun t => { t with pendingReceiveReply := none })
+  let s7 := (s5.updateTcb caller (fun t => { t with replyObjectCode := SeLe4n.ReplyId.optCode (some rid) })).updateTcb r
+    (fun t => { t with pendingReceiveReplyCode := 0 })
   (removeRunnableOnCore s7 caller core).linkReplyWaiter caller r
 
 /-- **The call rendezvous, in place**: under `callWakesInPlace` the
@@ -531,17 +531,17 @@ theorem callRendezvous_inPlace (st : SystemState) (endpointId : SeLe4n.ObjId) (e
   have hFR4 := (hK4 _).trans hFR
   have hS5 : S4.modifyObject rid.toObjId (replyWithCaller caller) =
       { S4 with objects := (S4.objects.insert rid.toObjId
-          (.reply { rp with caller := some caller })) } := by
+          (.reply { rp with callerCode := SeLe4n.ThreadId.optCode (some caller) })) } := by
     unfold SystemState.modifyObject
     rw [SeLe4n.Kernel.RobinHood.RHTable.modify_of_get? (by exact hO4q)]
     rfl
-  have hStR : storeObject rid.toObjId (.reply { rp with caller := some caller }) S4 =
+  have hStR : storeObject rid.toObjId (.reply { rp with callerCode := SeLe4n.ThreadId.optCode (some caller) }) S4 =
       .ok ((), { S4 with objects := (S4.objects.insert rid.toObjId
-          (.reply { rp with caller := some caller })) }) :=
+          (.reply { rp with callerCode := SeLe4n.ThreadId.optCode (some caller) })) }) :=
     storeObject_eq_of_leaves (by simpa only [KernelObject.objectType] using hL4 hLR)
   rw [hS5]
   generalize hS5' : ({ S4 with objects := (S4.objects.insert rid.toObjId
-      (.reply { rp with caller := some caller })) } : SystemState) = S5 at *
+      (.reply { rp with callerCode := SeLe4n.ThreadId.optCode (some caller) })) } : SystemState) = S5 at *
   have hO5 : ∀ k, rid.toObjId ≠ k → S5.objects[k]? = S4.objects[k]? := fun k hk => by
     rw [← hS5']; exact RHTable.get?_insert_ne_of_findsInPlace k _ hFR4 hk
   have hK5 : ∀ k, S5.objects.findsInPlace k = st.objects.findsInPlace k := fun k => by
@@ -558,20 +558,20 @@ theorem callRendezvous_inPlace (st : SystemState) (endpointId : SeLe4n.ObjId) (e
   have hFC5 := (hK5 _).trans hFC
   have hFR5 := (hK5 _).trans hFH
   have hSt6 : storeObject caller.toObjId
-      (.tcb { callCallerTcb endpointId r ct3 with replyObject := some rid }) S5 =
-      .ok ((), S5.updateTcb caller (fun t => { t with replyObject := some rid })) := by
+      (.tcb { callCallerTcb endpointId r ct3 with replyObjectCode := SeLe4n.ReplyId.optCode (some rid) }) S5 =
+      .ok ((), S5.updateTcb caller (fun t => { t with replyObjectCode := SeLe4n.ReplyId.optCode (some rid) })) := by
     rw [storeObject_eq_of_leaves (by simpa only [KernelObject.objectType] using hL5 hLC),
       SystemState.updateTcb_eq_of_some hT5c]
-  have hT6r : (S5.updateTcb caller (fun t => { t with replyObject := some rid })).getTcb? r =
+  have hT6r : (S5.updateTcb caller (fun t => { t with replyObjectCode := SeLe4n.ReplyId.optCode (some rid) })).getTcb? r =
       some rt3 :=
     (SystemState.getTcb?_eq_some_iff _ _ _).mpr
       ((updateTcb_get?_ne_of_findsInPlace _ hT5c hFC5 hNeCR).trans
         ((SystemState.getTcb?_eq_some_iff _ _ _).mp hT5r))
-  have hSt7 : storeObject r.toObjId (.tcb { rt3 with pendingReceiveReply := none })
-      (S5.updateTcb caller (fun t => { t with replyObject := some rid })) =
-      .ok ((), (S5.updateTcb caller (fun t => { t with replyObject := some rid })).updateTcb r
-        (fun t => { t with pendingReceiveReply := none })) := by
-    have hL6 := updateTcb_storeLeaves (fun t => { t with replyObject := some rid }) hT5c hFC5
+  have hSt7 : storeObject r.toObjId (.tcb { rt3 with pendingReceiveReplyCode := 0 })
+      (S5.updateTcb caller (fun t => { t with replyObjectCode := SeLe4n.ReplyId.optCode (some rid) })) =
+      .ok ((), (S5.updateTcb caller (fun t => { t with replyObjectCode := SeLe4n.ReplyId.optCode (some rid) })).updateTcb r
+        (fun t => { t with pendingReceiveReplyCode := 0 })) := by
+    have hL6 := updateTcb_storeLeaves (fun t => { t with replyObjectCode := SeLe4n.ReplyId.optCode (some rid) }) hT5c hFC5
       (hL5 hLH)
     rw [storeObject_eq_of_leaves (by simpa only [KernelObject.objectType] using hL6),
       SystemState.updateTcb_eq_of_some hT6r]
@@ -595,18 +595,18 @@ theorem callRendezvous_inPlace (st : SystemState) (endpointId : SeLe4n.ObjId) (e
     simp only [hT4r, Option.bind_some, hrt3rid, hRp4, hFree, ↓reduceIte, hStR, hT5c, hRO5, hSt6,
       hT6r, hSt7]
   · have hT6c := updateTcb_getTcb?_self_of_findsInPlace
-      (fun t => { t with replyObject := some rid }) hT5c hFC5
-    have hFR6 := (updateTcb_findsInPlace (fun t => { t with replyObject := some rid }) hT5c hFC5
+      (fun t => { t with replyObjectCode := SeLe4n.ReplyId.optCode (some rid) }) hT5c hFC5
+    have hFR6 := (updateTcb_findsInPlace (fun t => { t with replyObjectCode := SeLe4n.ReplyId.optCode (some rid) }) hT5c hFC5
       r.toObjId).trans hFR5
-    generalize hS6 : S5.updateTcb caller (fun t => { t with replyObject := some rid }) = S6 at *
-    have hT7c : (S6.updateTcb r (fun t => { t with pendingReceiveReply := none })).getTcb? caller
-        = some { callCallerTcb endpointId r ct3 with replyObject := some rid } :=
+    generalize hS6 : S5.updateTcb caller (fun t => { t with replyObjectCode := SeLe4n.ReplyId.optCode (some rid) }) = S6 at *
+    have hT7c : (S6.updateTcb r (fun t => { t with pendingReceiveReplyCode := 0 })).getTcb? caller
+        = some { callCallerTcb endpointId r ct3 with replyObjectCode := SeLe4n.ReplyId.optCode (some rid) } :=
       (SystemState.getTcb?_eq_some_iff _ _ _).mpr
         ((updateTcb_get?_ne_of_findsInPlace _ hT6r hFR6 hNeRC).trans
           ((SystemState.getTcb?_eq_some_iff _ _ _).mp hT6c))
     have hT7r := updateTcb_getTcb?_self_of_findsInPlace
-      (fun t => { t with pendingReceiveReply := none }) hT6r hFR6
-    generalize hS7 : S6.updateTcb r (fun t => { t with pendingReceiveReply := none }) = S7 at *
+      (fun t => { t with pendingReceiveReplyCode := 0 }) hT6r hFR6
+    generalize hS7 : S6.updateTcb r (fun t => { t with pendingReceiveReplyCode := 0 }) = S7 at *
     have hA8 := (SystemState.linkReplyWaiter_objectsAgreeOffRunLinks
       (removeRunnableOnCore S7 caller core) caller r).trans
       (removeRunnableOnCore_objectsAgreeOffRunLinks S7 caller core)

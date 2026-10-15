@@ -832,9 +832,9 @@ private def runBootValidationParityChecks : IO Unit := do
     { target := .object idle0Obj, rights := AccessRightSet.ofList [.write], badge := none }
   assertBool "NEGATIVE: a boot TCB's reply references and carried capabilities are read"
     (SeLe4n.Platform.Boot.bootObjectReferencesReservedIdleSlot
-       (.tcb { tcbWithTid ⟨9⟩ with replyObject := some idleReplyId }) == true &&
+       (.tcb { tcbWithTid ⟨9⟩ with replyObjectCode := SeLe4n.ReplyId.optCode (some idleReplyId) }) == true &&
      SeLe4n.Platform.Boot.bootObjectReferencesReservedIdleSlot
-       (.tcb { tcbWithTid ⟨9⟩ with pendingReceiveReply := some idleReplyId }) == true &&
+       (.tcb { tcbWithTid ⟨9⟩ with pendingReceiveReplyCode := SeLe4n.ReplyId.optCode (some idleReplyId) }) == true &&
      SeLe4n.Platform.Boot.bootObjectReferencesReservedIdleSlot
        (.tcb { tcbWithTid ⟨9⟩ with
                 pendingMessage := some { registers := #[],

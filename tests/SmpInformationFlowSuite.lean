@@ -4555,7 +4555,7 @@ private def replyRecvState : SystemState :=
   { blockedSenderState with
       objects := blockedSenderState.objects.insert replyBlockedCaller.toObjId
         (.tcb (TCB.setIpcState { mkTcb 1024 40 (some c3) with
-                  replyObject := none } (.blockedOnReply crossCoreEndpoint (some remoteHomedThread)))) }
+                  replyObjectCode := 0 } (.blockedOnReply crossCoreEndpoint (some remoteHomedThread)))) }
 
 private def replyRecvMsg : IpcMessage :=
   { registers := #[], caps := #[], badge := none }
@@ -7745,7 +7745,7 @@ private def ipcFootprintState : SystemState :=
   { niState with
       objects :=
         ((((niState.objects.insert ipcReplyId.toObjId
-              (.reply { replyId := ipcReplyId, caller := some lowQueued })).insert
+              (.reply { replyId := ipcReplyId, callerCode := SeLe4n.ThreadId.optCode (some lowQueued) })).insert
             ipcReceiver.toObjId (.tcb ipcReceiverTcb)).insert
             ipcSender.toObjId (.tcb ipcSenderTcb)).insert
           lowEndpoint
@@ -10669,7 +10669,7 @@ private def replyLegState : SystemState :=
               slots := SeLe4n.UniqueSlotMap.ofListWF
                 [(lowSlot, lowSlotCap), (highSlot, highSlotCap),
                  (replyLegSlot, replyLegCap)] })).insert replyLegReply.toObjId
-          (.reply { replyId := replyLegReply, caller := some lowCurrent }),
+          (.reply { replyId := replyLegReply, callerCode := SeLe4n.ThreadId.optCode (some lowCurrent) }),
       declassificationTaint :=
         SeLe4n.Kernel.TaintTable.empty.joinAt highCurrent.toObjId
           (DeclassificationTaint.singleton 57) }

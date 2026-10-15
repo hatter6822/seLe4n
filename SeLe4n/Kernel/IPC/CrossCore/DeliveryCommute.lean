@@ -25,13 +25,13 @@ namespace SeLe4n.Model
 pending message and its stashed receive reply. -/
 @[inline] def TCB.withMessageSlots (ρ : SeLe4n.RegisterFile → SeLe4n.RegisterFile)
     (μ : Option IpcMessage → Option IpcMessage)
-    (π : Option SeLe4n.ReplyId → Option SeLe4n.ReplyId) (t : TCB) : TCB :=
+    (π : Nat → Nat) (t : TCB) : TCB :=
   { t with registerContext := ρ t.registerContext, pendingMessage := μ t.pendingMessage,
-           pendingReceiveReply := π t.pendingReceiveReply }
+           pendingReceiveReplyCode := π t.pendingReceiveReplyCode }
 
 section
 variable (ρ : SeLe4n.RegisterFile → SeLe4n.RegisterFile) (μ : Option IpcMessage → Option IpcMessage)
-  (π : Option SeLe4n.ReplyId → Option SeLe4n.ReplyId) (t : TCB)
+  (π : Nat → Nat) (t : TCB)
 @[simp] theorem TCB.withMessageSlots_pipBoost : (TCB.withMessageSlots ρ μ π t).pipBoost = t.pipBoost := rfl
 @[simp] theorem TCB.withMessageSlots_priority : (TCB.withMessageSlots ρ μ π t).priority = t.priority := rfl
 @[simp] theorem TCB.withMessageSlots_boostedPriority :
@@ -44,8 +44,8 @@ variable (ρ : SeLe4n.RegisterFile → SeLe4n.RegisterFile) (μ : Option IpcMess
     (TCB.withMessageSlots ρ μ π t).registerContext = ρ t.registerContext := rfl
 @[simp] theorem TCB.withMessageSlots_pendingMessage :
     (TCB.withMessageSlots ρ μ π t).pendingMessage = μ t.pendingMessage := rfl
-@[simp] theorem TCB.withMessageSlots_pendingReceiveReply :
-    (TCB.withMessageSlots ρ μ π t).pendingReceiveReply = π t.pendingReceiveReply := rfl
+@[simp] theorem TCB.withMessageSlots_pendingReceiveReplyCode :
+    (TCB.withMessageSlots ρ μ π t).pendingReceiveReplyCode = π t.pendingReceiveReplyCode := rfl
 end
 
 end SeLe4n.Model
@@ -157,7 +157,7 @@ end NoResize
 section MessageSlots
 
 variable (r : SeLe4n.ThreadId) (ρ : SeLe4n.RegisterFile → SeLe4n.RegisterFile)
-  (μ : Option IpcMessage → Option IpcMessage) (π : Option SeLe4n.ReplyId → Option SeLe4n.ReplyId)
+  (μ : Option IpcMessage → Option IpcMessage) (π : Nat → Nat)
 
 /-- The thread's read through the delivery: itself, or its message slots
 rewritten. -/

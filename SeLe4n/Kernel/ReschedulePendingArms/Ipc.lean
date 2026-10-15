@@ -200,7 +200,7 @@ theorem storeTcbReceiveComplete_keyFrame {st st' : SystemState} {tid : SeLe4n.Th
     (h : storeTcbReceiveComplete st tid msg = .ok st') : capabilityKeyFrame st st' := by
   unfold storeTcbReceiveComplete at h
   exact modifyTcb_keyFrame
-    (f := fun tcb => (TCB.setIpcState { tcb with pendingMessage := msg, pendingReceiveReply := none } .ready))
+    (f := fun tcb => (TCB.setIpcState { tcb with pendingMessage := msg, pendingReceiveReplyCode := 0 } .ready))
     (fun _ => rfl) hInv h
 
 /-! ### The scheduler writes -/

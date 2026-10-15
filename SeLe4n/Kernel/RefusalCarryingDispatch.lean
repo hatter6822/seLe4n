@@ -48,7 +48,7 @@ def clearWokenReceiverStashPure (receiver? : Option SeLe4n.ThreadId) (st : Syste
       | some rTcb =>
           match rTcb.pendingReceiveReply with
           | some _ =>
-              st.withObjectStored receiver.toObjId (.tcb { rTcb with pendingReceiveReply := none })
+              st.withObjectStored receiver.toObjId (.tcb { rTcb with pendingReceiveReplyCode := 0 })
           | none => st
       | none => st
 

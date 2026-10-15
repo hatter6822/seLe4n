@@ -3627,12 +3627,12 @@ theorem abortStagedTcb_eq (tcb : TCB) :
            timeoutBudget := none
            threadState := .Ready
            timedOut := true
-           pendingReceiveReply := none } .ready))
+           pendingReceiveReplyCode := 0 } .ready))
         Architecture.timeoutFrame
       = timeoutStagedTcb
           ((TCB.setIpcState { tcb with
              pendingMessage := none
-             pendingReceiveReply := none } .ready)) := rfl
+             pendingReceiveReplyCode := 0 } .ready)) := rfl
 
 /-- **WS-OD OD1.3 — the timeout increment preserves the whole bundle.**
 

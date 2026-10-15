@@ -83,7 +83,7 @@ theorem linkCallerReply_preserves_dualQueueSystemInvariant
         · have hReplyAt : st.objects[rid.toObjId]? = some (.reply r) :=
             (SystemState.getReply?_eq_some_iff st rid r).mp hGetR
           exact storeObject_reply_preserves_dualQueueSystemInvariant st st1 rid.toObjId
-            { r with caller := some caller } hObjInv hLink (Or.inl ⟨r, hReplyAt⟩) hInv
+            { r with callerCode := SeLe4n.ThreadId.optCode (some caller) } hObjInv hLink (Or.inl ⟨r, hReplyAt⟩) hInv
         · simp at hLink
     have hObjInv1 := SystemState.linkReply_preserves_objects_invExt st st1 rid caller hObjInv hLink
     cases hT : st1.getTcb? caller with
@@ -95,7 +95,7 @@ theorem linkCallerReply_preserves_dualQueueSystemInvariant
         have hTcbPre : st1.objects[caller.toObjId]? = some (.tcb tcb) :=
           (SystemState.getTcb?_eq_some_iff st1 caller tcb).mp hT
         exact storeObject_tcb_preserves_dualQueueSystemInvariant_of_queueAgree
-          st1 st' caller.toObjId tcb { tcb with replyObject := some rid } rfl rfl rfl
+          st1 st' caller.toObjId tcb { tcb with replyObjectCode := SeLe4n.ReplyId.optCode (some rid) } rfl rfl rfl
           hTcbPre hObjInv1 hStep hInv1
       · simp at hStep
 
@@ -232,7 +232,7 @@ theorem linkServerStashedReply_preserves_dualQueueSystemInvariant
         have hTcbPre : st1.objects[server.toObjId]? = some (.tcb sTcb) :=
           (SystemState.getTcb?_eq_some_iff st1 server sTcb).mp hT
         exact storeObject_tcb_preserves_dualQueueSystemInvariant_of_queueAgree
-          st1 st' server.toObjId sTcb { sTcb with pendingReceiveReply := none } rfl rfl rfl
+          st1 st' server.toObjId sTcb { sTcb with pendingReceiveReplyCode := 0 } rfl rfl rfl
           hTcbPre hObjInv1 hStep hInv1
 
 /-- WS-SM SM6.D (#7.3 fold): `linkServerStashedReply` preserves `badgeWellFormed`.
@@ -561,7 +561,7 @@ theorem endpointReceiveDual_preserves_dualQueueSystemInvariant
                   | true => rfl
                 rw [if_pos hValid] at hStep
                 cases hStash : storeObject receiver.toObjId
-                    (.tcb { rTcb with pendingReceiveReply := replyId }) st2 with
+                    (.tcb { rTcb with pendingReceiveReplyCode := SeLe4n.ReplyId.optCode replyId }) st2 with
                 | error e => simp [hStash] at hStep
                 | ok pStash =>
                   obtain ⟨_, stStashed⟩ := pStash
@@ -572,7 +572,7 @@ theorem endpointReceiveDual_preserves_dualQueueSystemInvariant
                   exact removeRunnable_preserves_dualQueueSystemInvariant _ _
                     (storeObject_tcb_preserves_dualQueueSystemInvariant_of_queueAgree
                       st2 stStashed receiver.toObjId rTcb
-                      { rTcb with pendingReceiveReply := replyId } rfl rfl rfl
+                      { rTcb with pendingReceiveReplyCode := SeLe4n.ReplyId.optCode replyId } rfl rfl rfl
                       hTcbPre hObjInv2 hStash hInv2)
 
 /-- WS-H12a: endpointReplyRecv preserves dualQueueSystemInvariant.
@@ -1135,7 +1135,7 @@ theorem storeTcbReceiveComplete_preserves_allPendingMessagesBounded
   | some tcb =>
       simp only [hLookup] at hStep
       cases hStore : storeObject tid.toObjId
-        (.tcb (TCB.setIpcState { tcb with pendingMessage := msg, pendingReceiveReply := none } .ready)) st with
+        (.tcb (TCB.setIpcState { tcb with pendingMessage := msg, pendingReceiveReplyCode := 0 } .ready)) st with
       | error e => simp [hStore] at hStep
       | ok pair =>
           simp only [hStore] at hStep; have := Except.ok.inj hStep; subst this
@@ -2450,7 +2450,7 @@ theorem endpointReceiveDual_preserves_pendingMessagesSatisfy
                   | true => rfl
                 rw [if_pos hValid] at hStep
                 cases hStash : storeObject receiver.toObjId
-                    (.tcb { rTcb with pendingReceiveReply := replyId }) st2 with
+                    (.tcb { rTcb with pendingReceiveReplyCode := SeLe4n.ReplyId.optCode replyId }) st2 with
                 | error e => simp [hStash] at hStep
                 | ok pStash =>
                   obtain ⟨_, stStashed⟩ := pStash
@@ -2619,7 +2619,7 @@ theorem endpointReceiveDual_preserves_badgeWellFormed
                   | true => rfl
                 rw [if_pos hValid] at hStep
                 cases hStash : storeObject receiver.toObjId
-                    (.tcb { rTcb with pendingReceiveReply := replyId }) st2 with
+                    (.tcb { rTcb with pendingReceiveReplyCode := SeLe4n.ReplyId.optCode replyId }) st2 with
                 | error e => simp [hStash] at hStep
                 | ok pStash =>
                   obtain ⟨_, stStashed⟩ := pStash

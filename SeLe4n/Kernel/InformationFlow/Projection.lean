@@ -285,8 +285,8 @@ def projectKernelObject (ctx : LabelingContext) (observer : IfObserver) (obj : K
       -- the `.reply` arm below.
       .tcb { tcb with registerContext := default, schedContextBinding := .unbound,
                        pipBoost := none, pendingMessage := none, timedOut := false,
-                       cpuAffinity := none, replyObject := none,
-                       pendingReceiveReply := none,
+                       cpuAffinity := none, replyObjectCode := 0,
+                       pendingReceiveReplyCode := 0,
                        -- WS-BP BP7.9: the saved FP/SIMD context is the thread's
                        -- own register state, erased exactly as `registerContext`
                        -- is; the lazy switch (`Architecture.fpAccessOnCore` /
@@ -357,7 +357,7 @@ def projectKernelObject (ctx : LabelingContext) (observer : IfObserver) (obj : K
       -- internal id would leak a hidden ReplyId through a low-visible Reply object.
       -- Erasing it to the canonical sentinel removes the channel.
       .reply { r with replyId := SeLe4n.ReplyId.sentinel,
-                      caller := none, prev := none, next := none }
+                      callerCode := 0, prev := none, next := none }
   -- WS-SM SM8.B.4 stripped the per-object lock word here, because `RwLockState`
   -- carries core identities (`writerHeld`, `readers`, `waiters`) and an
   -- observer that could see an object would otherwise see the cores operating
@@ -533,7 +533,7 @@ theorem projectKernelObject_normalizes_reply_replyId
 theorem projectKernelObject_reply_caller_invariant
     (ctx : LabelingContext) (observer : IfObserver) (r : SeLe4n.Kernel.Reply)
     (c : Option SeLe4n.ThreadId) :
-    projectKernelObject ctx observer (.reply { r with caller := c })
+    projectKernelObject ctx observer (.reply { r with callerCode := SeLe4n.ThreadId.optCode c })
       = projectKernelObject ctx observer (.reply r) := by
   simp [projectKernelObject]
 

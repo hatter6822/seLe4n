@@ -474,7 +474,7 @@ theorem storeTcbReceiveComplete_preserves_queueNextBlockingConsistent
   | none => simp [hLookup] at hStep
   | some origTcb =>
     simp only [hLookup] at hStep
-    cases hStore : storeObject tid.toObjId (.tcb (TCB.setIpcState { origTcb with pendingMessage := msg, pendingReceiveReply := none } .ready)) st with
+    cases hStore : storeObject tid.toObjId (.tcb (TCB.setIpcState { origTcb with pendingMessage := msg, pendingReceiveReplyCode := 0 } .ready)) st with
     | error e => simp [hStore] at hStep
     | ok pair =>
       simp only [hStore, Except.ok.injEq] at hStep; subst hStep
@@ -518,7 +518,7 @@ theorem storeTcbReceiveComplete_preserves_queueHeadBlockedConsistent
   | none => simp [hLookup] at hStep
   | some tcb =>
     simp only [hLookup] at hStep
-    cases hSt : storeObject tid.toObjId (.tcb (TCB.setIpcState { tcb with pendingMessage := msg, pendingReceiveReply := none } .ready)) st with
+    cases hSt : storeObject tid.toObjId (.tcb (TCB.setIpcState { tcb with pendingMessage := msg, pendingReceiveReplyCode := 0 } .ready)) st with
     | error e => simp [hSt] at hStep
     | ok pair =>
       simp only [hSt, Except.ok.injEq] at hStep; subst hStep
@@ -558,7 +558,7 @@ theorem storeTcbReceiveComplete_preserves_endpointQueueTailBlockedConsistent
   | some tcb =>
     simp only [hLookup] at hStep
     cases hSt : storeObject tid.toObjId
-        (.tcb (TCB.setIpcState { tcb with pendingMessage := msg, pendingReceiveReply := none } .ready))
+        (.tcb (TCB.setIpcState { tcb with pendingMessage := msg, pendingReceiveReplyCode := 0 } .ready))
         st with
     | error e => simp [hSt] at hStep
     | ok pair =>
@@ -2257,7 +2257,7 @@ theorem storeTcbReceiveComplete_preserves_queueNextTargetBlocked
   | some origTcb =>
     simp only [hLookup] at hStep
     cases hStore : storeObject tid.toObjId
-        (.tcb (TCB.setIpcState { origTcb with pendingMessage := msg, pendingReceiveReply := none } .ready)) st with
+        (.tcb (TCB.setIpcState { origTcb with pendingMessage := msg, pendingReceiveReplyCode := 0 } .ready)) st with
     | error e => simp [hStore] at hStep
     | ok pair =>
       simp only [hStore] at hStep

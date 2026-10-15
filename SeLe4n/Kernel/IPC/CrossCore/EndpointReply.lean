@@ -621,7 +621,7 @@ def endpointReceiveDualOnCore (endpointId : SeLe4n.ObjId) (receiver : SeLe4n.Thr
                         -- `replyIsStashed`, which would falsely reject a legitimate re-stash.
                         if st.replyStashValid replyId then
                           match storeObject receiver.toObjId
-                              (.tcb { rTcb with pendingReceiveReply := replyId }) st'' with
+                              (.tcb { rTcb with pendingReceiveReplyCode := SeLe4n.ReplyId.optCode replyId }) st'' with
                           | .error e => (st, .error e)
                           | .ok ((), stStashed) =>
                               (removeRunnableOnCore stStashed receiver executingCore, .ok (receiver, none))
@@ -699,12 +699,27 @@ and the reply object it stashes admissible. -/
        (st.getTcb? p).isSome) &&
   st.replyStashValid replyId
 
-/-- `receiveBlocksInPlace` asked of the receive queue's tail **code**, as the
-compiled guard reads it: the tail is decoded by the match itself, so no
-`some` cell is built for it (WS-ZA ZA4.7). -/
+/-- `SystemState.replyStashValid` asked of the reply object's **code**
+(`replyStashValidCode_eq`), so no `some` cell is built for it. -/
+@[inline] def replyStashValidCode (st : SystemState) (replyCode : Nat) : Bool :=
+  match replyCode with
+  | 0 => true
+  | k + 1 =>
+      let rid : SeLe4n.ReplyId := ⟨k⟩
+      match st.getReply? rid with
+      | some r => r.isFree && !st.replyIsStashed rid
+      | none => false
+
+theorem replyStashValidCode_eq (st : SystemState) (replyCode : Nat) :
+    replyStashValidCode st replyCode =
+      st.replyStashValid (SeLe4n.ReplyId.ofOptCode replyCode) := by
+  rcases replyCode with _ | k <;> rfl
+
+/-- `receiveBlocksInPlace` asked of the receive queue's tail **code** and the
+reply object's code, as the compiled guard reads them: each is decoded by a
+match, so no `some` cell is built for either (WS-ZA ZA4.7). -/
 @[inline] def receiveBlocksInPlaceCode (st : SystemState) (endpointId : SeLe4n.ObjId)
-    (receiver : SeLe4n.ThreadId) (tailCode : Nat)
-    (replyId : Option SeLe4n.ReplyId) : Bool :=
+    (receiver : SeLe4n.ThreadId) (tailCode : Nat) (replyCode : Nat) : Bool :=
   !receiver.isReserved &&
   storeLeavesIndexAndTypes st endpointId .endpoint &&
   st.objects.findsInPlace endpointId &&
@@ -718,13 +733,15 @@ compiled guard reads it: the tail is decoded by the match itself, so no
        storeLeavesIndexAndTypes st p.toObjId .tcb &&
        st.objects.findsInPlace p.toObjId &&
        (st.getTcb? p).isSome) &&
-  st.replyStashValid replyId
+  replyStashValidCode st replyCode
 
 theorem receiveBlocksInPlaceCode_eq (st : SystemState) (endpointId : SeLe4n.ObjId)
-    (receiver : SeLe4n.ThreadId) (tailCode : Nat) (replyId : Option SeLe4n.ReplyId) :
-    receiveBlocksInPlaceCode st endpointId receiver tailCode replyId =
+    (receiver : SeLe4n.ThreadId) (tailCode replyCode : Nat) :
+    receiveBlocksInPlaceCode st endpointId receiver tailCode replyCode =
       receiveBlocksInPlace st endpointId receiver (SeLe4n.ThreadId.ofOptCode tailCode)
-        replyId := by
+        (SeLe4n.ReplyId.ofOptCode replyCode) := by
+  unfold receiveBlocksInPlaceCode
+  rw [replyStashValidCode_eq]
   rcases tailCode with _ | c <;> rfl
 
 /-- WS-ZA ZA4.7: the receiver may block: it is ready, on no queue, and holds no
@@ -856,11 +873,10 @@ theorem receiveEnqueue_inPlace_eq (st : SystemState) (endpointId : SeLe4n.ObjId)
 then the receiver blocked with no message and the reply object it stashes.
 Compiled as its own function so each update is specialised in. -/
 @[noinline] def storeReceiveBlock (st : SystemState) (endpointId : SeLe4n.ObjId)
-    (receiver : SeLe4n.ThreadId) (tailCode : Nat)
-    (replyId : Option SeLe4n.ReplyId) : SystemState :=
+    (receiver : SeLe4n.ThreadId) (tailCode replyCode : Nat) : SystemState :=
   ((storeReceiveEnqueue st endpointId receiver (ThreadId.ofOptCode tailCode)).updateTcb receiver
       (fun t => (TCB.setIpcState { t with pendingMessage := none } (.blockedOnReceive endpointId)))).updateTcb
-    receiver (fun t => { t with pendingReceiveReply := replyId })
+    receiver (fun t => { t with pendingReceiveReplyCode := replyCode })
 
 /-- WS-ZA ZA4.7: the guarded blocking receive is the specification's block
 path. -/
@@ -873,7 +889,8 @@ theorem receiveBlock_inPlace_eq (st : SystemState) (endpointId : SeLe4n.ObjId)
     (hA : receiveBlockAdmits rt = true)
     (hG : receiveBlocksInPlace st endpointId receiver ep.receiveQ.tail replyId = true) :
     endpointReceiveDualOnCore endpointId receiver replyId executingCore st =
-      (removeRunnableOnCore (storeReceiveBlock st endpointId receiver ep.recvTailCode replyId)
+      (removeRunnableOnCore (storeReceiveBlock st endpointId receiver ep.recvTailCode
+        (SeLe4n.ReplyId.optCode replyId))
         receiver executingCore, .ok (receiver, none)) := by
   obtain ⟨hEnq, hT, hF, hL⟩ := receiveEnqueue_inPlace_eq st endpointId ep receiver rt replyId
     hE hR hA hG
@@ -916,7 +933,8 @@ theorem receiveBlock_receiver_blocked (st : SystemState) (endpointId : SeLe4n.Ob
     (hR : st.objects[receiver.toObjId]? = some (.tcb rt))
     (hA : receiveBlockAdmits rt = true)
     (hG : receiveBlocksInPlace st endpointId receiver ep.receiveQ.tail replyId = true) :
-    ∃ t, (removeRunnableOnCore (storeReceiveBlock st endpointId receiver ep.recvTailCode replyId)
+    ∃ t, (removeRunnableOnCore (storeReceiveBlock st endpointId receiver ep.recvTailCode
+        (SeLe4n.ReplyId.optCode replyId))
         receiver executingCore).getTcb? receiver = some t ∧
       t.ipcState = .blockedOnReceive endpointId := by
   obtain ⟨_, hT, hF, _⟩ := receiveEnqueue_inPlace_eq st endpointId ep receiver rt replyId
@@ -929,7 +947,7 @@ theorem receiveBlock_receiver_blocked (st : SystemState) (endpointId : SeLe4n.Ob
   have hF2 : (S.updateTcb receiver g2).objects.findsInPlace receiver.toObjId = true := by
     rw [updateTcb_findsInPlace g2 hT hF]; exact hF
   have hT3 := updateTcb_getTcb?_self_of_findsInPlace
-    (fun t : TCB => { t with pendingReceiveReply := replyId }) hT2 hF2
+    (fun t : TCB => { t with pendingReceiveReplyCode := SeLe4n.ReplyId.optCode replyId }) hT2 hF2
   obtain ⟨t', h', e⟩ := (removeRunnableOnCore_objectsAgreeOffRunLinks _ receiver
     executingCore).getTcb?_some hT3
   refine ⟨t', h', ?_⟩
@@ -3683,7 +3701,7 @@ theorem endpointReceiveDualOnCore_preserves_objects_invExt
               simp only
               split
               · cases hStash : storeObject receiver.toObjId
-                    (.tcb { rTcb with pendingReceiveReply := replyId }) st2 with
+                    (.tcb { rTcb with pendingReceiveReplyCode := SeLe4n.ReplyId.optCode replyId }) st2 with
                 | error e => simp only; exact hObjInv
                 | ok pStash =>
                   obtain ⟨⟨⟩, stStashed⟩ := pStash
@@ -4607,7 +4625,7 @@ theorem endpointReceiveDualOnCore_preserves_replenishQueueAffinityConsistent_smp
               simp only []
               split
               · cases hStash : storeObject receiver.toObjId
-                    (.tcb { rTcb with pendingReceiveReply := replyId }) st2 with
+                    (.tcb { rTcb with pendingReceiveReplyCode := SeLe4n.ReplyId.optCode replyId }) st2 with
                 | error e => exact hCons
                 | ok pStash =>
                   obtain ⟨⟨⟩, st3⟩ := pStash
@@ -4618,7 +4636,7 @@ theorem endpointReceiveDualOnCore_preserves_replenishQueueAffinityConsistent_smp
                       (fun scId => storeObject_tcb_getSchedContext?_eq st2 st3 receiver rTcb _
                         scId hTcb hInv2 hStash)
                       (fun tid => storeObject_tcb_determineTargetCore_eq st2 st3 receiver rTcb
-                        { rTcb with pendingReceiveReply := replyId } tid hTcb rfl hInv2
+                        { rTcb with pendingReceiveReplyCode := SeLe4n.ReplyId.optCode replyId } tid hTcb rfl hInv2
                         hStash)).mpr hCons2
                   exact removeRunnableOnCore_preserves_replenishQueueAffinityConsistent_smp st3
                     receiver executingCore hCons3

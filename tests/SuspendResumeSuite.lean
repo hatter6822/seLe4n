@@ -578,7 +578,7 @@ private def sr028_restoreToReadyClearsIpcFields : IO Unit := do
     -- `v0.35.134`: the fifth field `TCB.restoredToReady` clears was asserted by
     -- nothing, which is how the frozen mirror came to omit it for as long as it
     -- did -- a clear nobody measures is a clear nobody notices missing.
-    pendingReceiveReply := some ⟨7⟩ } (.blockedOnSend ⟨50⟩))
+    pendingReceiveReplyCode := SeLe4n.ReplyId.optCode (some ⟨7⟩) } (.blockedOnSend ⟨50⟩))
   let st := mkState [(⟨1⟩, .tcb tcb)]
   let st' := restoreToReady st tid
   match st'.objects[tid.toObjId]? with
@@ -686,7 +686,7 @@ private def sr032_frozenResumeClearsEveryRestoredField : IO Unit := do
   let stale := (TCB.setIpcState { mkTcb 1 .Inactive with
     queuePrevCode := SeLe4n.ThreadId.optCode (some ⟨3⟩), queueNextCode := SeLe4n.ThreadId.optCode (some ⟨4⟩),
     queuePPrevCode := 1,
-    pendingReceiveReply := some ⟨7⟩ } (.blockedOnSend ⟨50⟩))
+    pendingReceiveReplyCode := SeLe4n.ReplyId.optCode (some ⟨7⟩) } (.blockedOnSend ⟨50⟩))
   -- The retired clear leaves four of the five fields set, so the assertions
   -- below are known to separate the two readings.
   let retired := retiredFrozenResumeClear stale

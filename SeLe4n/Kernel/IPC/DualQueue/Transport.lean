@@ -2608,7 +2608,7 @@ def endpointReceiveDual (endpointId : SeLe4n.ObjId) (receiver : SeLe4n.ThreadId)
                           -- in the input).
                           if st.replyStashValid replyId then
                             match storeObject receiver.toObjId
-                                (.tcb { rTcb with pendingReceiveReply := replyId }) st'' with
+                                (.tcb { rTcb with pendingReceiveReplyCode := SeLe4n.ReplyId.optCode replyId }) st'' with
                             | .error e => .error e
                             | .ok ((), stStashed) =>
                                 .ok (receiver, removeRunnable stStashed receiver)

@@ -409,11 +409,11 @@ private def stLinked : SystemState :=
     |>.withObject serverTid.toObjId (.tcb (mkTcb 601 50 none .ready))
     |>.withObject clientLocalTid.toObjId
         (.tcb { mkTcb 602 30 none (.blockedOnReply epId (some serverTid)) with
-                  replyObject := some replyId707 })
+                  replyObjectCode := SeLe4n.ReplyId.optCode (some replyId707) })
     |>.withObject clientRemoteTid.toObjId
         (.tcb (mkTcb 603 30 (some core1) (.blockedOnReply epId (some serverTid))))
     |>.withObject replyId707.toObjId
-        (.reply { replyId := replyId707, caller := some clientLocalTid })
+        (.reply { replyId := replyId707, callerCode := SeLe4n.ThreadId.optCode (some clientLocalTid) })
     |>.withRunnable [serverTid]
     |>.build)
 
@@ -464,14 +464,14 @@ private def stLinkedWithFrameAbove : SystemState :=
     |>.withObject serverTid.toObjId (.tcb (mkTcb 601 50 none .ready))
     |>.withObject clientLocalTid.toObjId
         (.tcb { mkTcb 602 30 none (.blockedOnReply epId (some serverTid)) with
-                  replyObject := some replyId707 })
+                  replyObjectCode := SeLe4n.ReplyId.optCode (some replyId707) })
     |>.withObject clientRemoteTid.toObjId
         (.tcb (mkTcb 603 30 (some core1) (.blockedOnReply epId (some serverTid))))
     |>.withObject replyId707.toObjId
-        (.reply { replyId := replyId707, caller := some clientLocalTid,
+        (.reply { replyId := replyId707, callerCode := SeLe4n.ThreadId.optCode (some clientLocalTid),
                   next := some (.frame replyId708) })
     |>.withObject replyId708.toObjId
-        (.reply { replyId := replyId708, caller := some clientRemoteTid,
+        (.reply { replyId := replyId708, callerCode := SeLe4n.ThreadId.optCode (some clientRemoteTid),
                   prev := some replyId707 })
     |>.withRunnable [serverTid]
     |>.build)
@@ -534,9 +534,9 @@ private def stReplyRecv : SystemState :=
     |>.withObject serverTid.toObjId (.tcb (mkTcb 601 50 none .ready))
     |>.withObject clientLocalTid.toObjId
         (.tcb { mkTcb 602 30 none (.blockedOnReply epId (some serverTid)) with
-                  replyObject := some replyId709 })
+                  replyObjectCode := SeLe4n.ReplyId.optCode (some replyId709) })
     |>.withObject replyId709.toObjId
-        (.reply { replyId := replyId709, caller := some clientLocalTid })
+        (.reply { replyId := replyId709, callerCode := SeLe4n.ThreadId.optCode (some clientLocalTid) })
     |>.withRunnable [serverTid]
     |>.build)
 
@@ -638,9 +638,9 @@ private def runDonationChecks : IO Unit := do
                     schedContextBinding := .donated scId clientLocalTid })
       |>.withObject clientLocalTid.toObjId
           (.tcb { mkTcb 602 30 none (.blockedOnReply epId (some serverTid)) with
-                    replyObject := some replyId707 })
+                    replyObjectCode := SeLe4n.ReplyId.optCode (some replyId707) })
       |>.withObject replyId707.toObjId
-          (.reply { replyId := replyId707, caller := some clientLocalTid,
+          (.reply { replyId := replyId707, callerCode := SeLe4n.ThreadId.optCode (some clientLocalTid),
                     next := some (.head scId) })
       |>.withObject scId.toObjId
           (.schedContext { SchedContext.empty scId with
@@ -700,9 +700,9 @@ private def runDonationChecks : IO Unit := do
       |>.withObject orphanHolderTid.toObjId (.tcb (mkTcb 605 45 none .ready))
       |>.withObject clientLocalTid.toObjId
           (.tcb { mkTcb 602 30 none (.blockedOnReply epId (some serverTid)) with
-                    replyObject := some replyId709 })
+                    replyObjectCode := SeLe4n.ReplyId.optCode (some replyId709) })
       |>.withObject replyId709.toObjId
-          (.reply { replyId := replyId709, caller := some clientLocalTid,
+          (.reply { replyId := replyId709, callerCode := SeLe4n.ThreadId.optCode (some clientLocalTid),
                     next := some (.head scId) })
       |>.withObject scId.toObjId
           (.schedContext { SchedContext.empty scId with
@@ -766,9 +766,9 @@ private def runDonationChecks : IO Unit := do
                       schedContextBinding := .donated scId clientLocalTid })
         |>.withObject clientLocalTid.toObjId
             (.tcb { mkTcb 602 30 none (.blockedOnReply epId (some serverTid)) with
-                      replyObject := some replyId707 })
+                      replyObjectCode := SeLe4n.ReplyId.optCode (some replyId707) })
         |>.withObject replyId707.toObjId
-            (.reply { replyId := replyId707, caller := some clientLocalTid,
+            (.reply { replyId := replyId707, callerCode := SeLe4n.ThreadId.optCode (some clientLocalTid),
                       next := some (.head scId) })
         |>.withObject scId.toObjId
             (.schedContext { SchedContext.empty scId with
