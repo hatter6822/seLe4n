@@ -668,8 +668,13 @@ def probe_stems() -> tuple[list[str], list[str]]:
     """
     prims = []
     for f in PER_CORE_FIELDS:
-        prims.append(f"{f}OnCore")
-        prims.append(f"set{f[0].upper()}{f[1:]}OnCore")
+        # A slot stored as scalar codes (`currentCode`, WS-ZA) is read and
+        # written through its view's accessors (`currentOnCore`,
+        # `setCurrentOnCore`); the fail-closed stem resolution below refuses a
+        # code field whose view accessors do not exist.
+        v = f[:-len("Code")] if f.endswith("Code") and len(f) > len("Code") else f
+        prims.append(f"{v}OnCore")
+        prims.append(f"set{v[0].upper()}{v[1:]}OnCore")
     # `removeReplenishmentsOnCore` was in the regex list and is NOT a constant
     # in this environment — the probe's fail-closed stem resolution is what
     # surfaced that, after the pattern had sat there matching nothing.
@@ -1084,7 +1089,7 @@ def main() -> int:
         # Round 25: the derivation must see every per-core slot.  A parse that
         # silently returns a subset is the failure mode the hand-written list
         # already demonstrated, so the count is pinned rather than trusted.
-        want_fields = {"runQueue", "current", "activeDomain", "domainTimeRemaining",
+        want_fields = {"runQueue", "currentCode", "activeDomain", "domainTimeRemaining",
                        "domainScheduleIndex", "replenishQueue", "lastTimeoutErrors",
                        "reschedulePending", "runQueueEnds"}
         if set(PER_CORE_FIELDS) != want_fields:

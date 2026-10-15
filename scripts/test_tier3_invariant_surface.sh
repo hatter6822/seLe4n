@@ -7700,7 +7700,7 @@ run_check "INVARIANT" rg -n '^theorem fpAccessOnCore_saves_owner($|[ ({:\[\]])' 
 # positives name the relation (the save keyed on the resident record; the settle
 # applied to the committed state in each entry), and the witness computes the
 # retired readings beside the live ones.
-run_check "INVARIANT" rg -n '^  resident : _root_\.Vector \(Option ThreadId\) numCores :=$' SeLe4n/Machine.lean
+run_check "INVARIANT" rg -n '^  residentCode : _root_\.Vector Nat numCores :=$' SeLe4n/Machine.lean
 run_check "INVARIANT" rg -n -U '^def saveVacatedFrameOnCore[^\n]*(\n([ \t][^\n]*)?)*    \| none, some tid =>\n      match st\.getTcb\? tid with\n      \| some _ => st\.updateTcb tid fun t => \{ t with registerContext := saved \}$' SeLe4n/Kernel/Architecture/TrapFrameSave.lean
 run_check "INVARIANT" rg -n -U '^  \| some ic =>\n    let rf := ic\.snapshot\n    saveVacatedFrameOnCore \(saveTrapFrameOnCore st c rf\) c rf \(restartAtSvc rf\)$' SeLe4n/Kernel/Architecture/TrapFrameSave.lean
 run_check "INVARIANT" rg -n '^  let st2 := deferResidentElsewhere \(dispatchVacatedCore st c\) c$' SeLe4n/Kernel/Scheduler/PriorityInheritance/PerCore.lean

@@ -1,3 +1,47 @@
+## v0.36.90 — WS-ZA ZA4.7 (fields as codes, last step): the current thread and the PIP maximum as words
+
+**A call, a reply and both measured receives now allocate nothing.**  The per-core
+current and resident threads and a TCB's priority-inheritance boost are stored
+as scalar words, and the syscall entry records the committed current thread on
+the HAL from its word.  Each executed form is proven equal to the
+specification's.
+
+Normal-build allocations per syscall (QEMU exerciser, core 0), against
+`v0.36.89`:
+
+| Scenario | v0.36.89 | v0.36.90 |
+|---|---|---|
+| call | 2 | 0 |
+| receive for a call | 1 | 0 |
+| receive that blocks | 1 | 0 |
+| wait that blocks | 5 | 4 |
+
+Signal, wait, wide-badge signal, yield and reply stay at 0; a send to a
+waiting receiver (1) and a signal that wakes a waiter (9) are unchanged.  The
+first signal after boot reads 2.
+
+- **The current and resident threads as codes.**  `SchedulerState.currentCode`
+  and `MachineState.residentCode` are `Vector Nat` (`ThreadId.optCode`), read
+  through the inline views `currentOnCore`/`residentOnCore` and the derived
+  vectors `current`/`resident`.  `setCurrentOnCore` writes the code, so
+  `reuseSome` and `setCurrentSomeOnCore` are retired.  The resident settle
+  computes the new word in its own call (`settledResidentCode`) and writes it
+  in place (`writeResidentCode`); built inline, the update had copied the
+  machine state and the system state.
+- **The boost as a code.**  `TCB.pipBoostCode` replaces `pipBoost`
+  (`Priority.optCode`); `pipBoost` is the derived view.  The waiter walk
+  returns its code (`computeMaxWaiterCode`, with
+  `optCode_computeMaxWaiterPriority`), and the compiled boost compares and
+  stores codes.  `maxCodeToPriority` is retired for `Priority.ofOptCode`.
+- **The entry's current thread as a word.**  The words step hands the entry
+  the committed current thread as its code (`currentAsCode`), so the HAL
+  record decodes a scalar where it is used instead of carrying a `some` cell
+  across the entry's effects.
+
+**What remains.**  Blocked senders keep their message in their registers, then
+reply-receive; the wait-blocks and signal-to-waiter cells (`lookupTcb`,
+`wakeThreadImpl`, the notification arms) are traced next.
+
 ## v0.36.89 — WS-ZA ZA4.7 (fields as codes, third step): the reply fields as words
 
 **A call now allocates two cells, and a receive that names a reply object
