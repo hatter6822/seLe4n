@@ -130,8 +130,12 @@ structure SchedulerState where
       `runQueue` (`SystemState.runQueueRefined`). -/
   runQueueEnds : Vector SeLe4n.Kernel.RunQueueEnds numCores :=
     Vector.replicate numCores SeLe4n.Kernel.RunQueueEnds.empty
-  current : Vector (Option SeLe4n.ThreadId) numCores :=
-    Vector.replicate numCores none
+  /-- WS-ZA ZA4.7: each core's current thread as its code
+      (`SeLe4n.ThreadId.optCode`: `0` for none, `t + 1` for `t`), so a switch
+      writes a scalar into the core's slot rather than a fresh `some` cell.
+      `current` and `currentOnCore` are the derived views. -/
+  currentCode : Vector Nat numCores :=
+    Vector.replicate numCores 0
   /-- M-05/WS-E6: Currently active scheduling domain. Only threads in this
       domain are eligible for selection. Default domain 0. -/
   activeDomain : Vector SeLe4n.DomainId numCores := Vector.replicate numCores ⟨0⟩
@@ -202,8 +206,16 @@ accessors opaque keeps that algebra in control of proof normalisation
 namespace SchedulerState
 
 /-- Per-core current-thread of `s` on core `c`. -/
-def currentOnCore (s : SchedulerState) (c : CoreId) : Option SeLe4n.ThreadId :=
-  s.current.get c
+@[inline] def currentOnCore (s : SchedulerState) (c : CoreId) : Option SeLe4n.ThreadId :=
+  SeLe4n.ThreadId.ofOptCode (s.currentCode.get c)
+/-- Every core's current thread, decoded: the view the proofs read whole
+(WS-ZA ZA4.7); the kernel reads one core's slot (`currentOnCore`). -/
+def current (s : SchedulerState) : Vector (Option SeLe4n.ThreadId) numCores :=
+  s.currentCode.map SeLe4n.ThreadId.ofOptCode
+theorem current_get (s : SchedulerState) (c : CoreId) :
+    s.current.get c = s.currentOnCore c := by
+  simp only [current, currentOnCore, Vector.get, Vector.toArray_map, Array.getElem_map]
+  rfl
 /-- Per-core run queue of `s` on core `c`: ghost state (WS-ZA ZA4.5), read by
 proofs only; the kernel reads the threads' run-queue links and the core's ends. -/
 noncomputable def runQueueOnCore (s : SchedulerState) (c : CoreId) : SeLe4n.Kernel.RunQueue :=
@@ -241,9 +253,11 @@ so the get-after-set reductions (`set…OnCore_…OnCore_*` below) match
 syntactically.  Single-core operations write `bootCoreId`'s slot; SM5
 cross-core operations write the target core's slot. -/
 
-/-- Write core `c`'s current-thread slot. -/
-def setCurrentOnCore (s : SchedulerState) (c : CoreId) (v : Option SeLe4n.ThreadId) :
-    SchedulerState := { s with current := s.current.set c.val v c.isLt }
+/-- Write core `c`'s current-thread slot, as its code; inlined so a known
+`some tid` is stored as `tid + 1` with no cell built. -/
+@[inline] def setCurrentOnCore (s : SchedulerState) (c : CoreId) (v : Option SeLe4n.ThreadId) :
+    SchedulerState :=
+  { s with currentCode := s.currentCode.set c.val (SeLe4n.ThreadId.optCode v) c.isLt }
 /-- Write core `c`'s run-queue slot. -/
 def setRunQueueOnCore (s : SchedulerState) (c : CoreId) (v : SeLe4n.Kernel.RunQueue) :
     SchedulerState := { s with runQueue := s.runQueue.map (·.set c.val v c.isLt) }
@@ -329,7 +343,9 @@ theorem ext_perCore {s₁ s₂ : SchedulerState}
     (hSlice : s₁.configDefaultTimeSlice = s₂.configDefaultTimeSlice)
     (hRQE  : ∀ c : CoreId, s₁.runQueueEndsOnCore c = s₂.runQueueEndsOnCore c) :
     s₁ = s₂ := by
-  have h1 : s₁.current = s₂.current := PerCoreVector.ext fun c => hCur c
+  have h1 : s₁.currentCode = s₂.currentCode := PerCoreVector.ext fun c => by
+    have h := congrArg SeLe4n.ThreadId.optCode (hCur c)
+    simpa only [currentOnCore, SeLe4n.ThreadId.optCode_ofOptCode] using h
   have h2 : s₁.runQueue = s₂.runQueue := SeLe4n.Erased.ext (PerCoreVector.ext fun c => hRQ c)
   have h3 : s₁.replenishQueue = s₂.replenishQueue := PerCoreVector.ext fun c => hRepl c
   have h4 : s₁.activeDomain = s₂.activeDomain := PerCoreVector.ext fun c => hAD c
@@ -383,7 +399,7 @@ runtime suite exercises and that SM5's genuine cross-core writes consume. -/
 @[simp] theorem setCurrentOnCore_currentOnCore_ne (s : SchedulerState) (c c' : CoreId) (v : Option SeLe4n.ThreadId) (h : c ≠ c') :
     (s.setCurrentOnCore c v).currentOnCore c' = s.currentOnCore c' := by
   simp only [SchedulerState.setCurrentOnCore, SchedulerState.currentOnCore]
-  exact SeLe4n.PerCoreVector.get_set_ne s.current c c' v h
+  rw [SeLe4n.PerCoreVector.get_set_ne s.currentCode c c' _ h]
 @[simp] theorem setRunQueueOnCore_runQueueOnCore_ne (s : SchedulerState) (c c' : CoreId) (v : SeLe4n.Kernel.RunQueue) (h : c ≠ c') :
     (s.setRunQueueOnCore c v).runQueueOnCore c' = s.runQueueOnCore c' := by
   simp only [SchedulerState.setRunQueueOnCore, SchedulerState.runQueueOnCore, SeLe4n.Erased.out_map]
@@ -1544,6 +1560,8 @@ theorem default_state_perCoreInitialized (c : CoreId) :
   refine ⟨?_, ?_, ?_, ?_, ?_, ?_, ?_⟩ <;>
     first
     | exact PerCoreVector.replicate_get _ _ c
+    | (show SeLe4n.ThreadId.ofOptCode ((Vector.replicate numCores 0).get c) = none
+       rw [PerCoreVector.replicate_get]; rfl)
     | (simp only [SchedulerState.runQueueOnCore]
        show (SeLe4n.Erased.mk (Vector.replicate numCores SeLe4n.Kernel.RunQueue.empty)).out.get c = _
        rw [SeLe4n.Erased.out_mk]; exact PerCoreVector.replicate_get _ _ c)

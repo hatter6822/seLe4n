@@ -2070,13 +2070,13 @@ macro "tcb_state_mono" : tactic => `(tactic| first
   | (intro _; exact ⟨id, fun _ => by simp [TCB.Active]⟩)
   | (intro _; exact ⟨fun _ => rfl, fun _ => by simp [TCB.Active]⟩))
 
-/-- Closes `st'.scheduler.current = st.scheduler.current` for a step that
+/-- Closes `st'.scheduler.currentCode = st.scheduler.currentCode` for a step that
 leaves the current slots alone: by definition, or from a hypothesis that
 equates the whole scheduler (or its `current` field) with the old one. -/
 macro "current_frame" : tactic =>
   `(tactic| first
     | rfl
-    | exact congrArg SchedulerState.current (by assumption)
+    | exact congrArg SchedulerState.currentCode (by assumption)
     | (rw [‹SystemState.scheduler _ = _›]))
 
 /-- `t` is a thread a core may run: its TCB is ready in IPC and not suspended
@@ -2313,7 +2313,7 @@ def currentNowhere (st : SystemState) (t : SeLe4n.ThreadId) : Prop :=
 
 /-- A step that keeps every current slot keeps a thread current nowhere. -/
 theorem currentNowhere.of_current_eq {st st' : SystemState} {t : SeLe4n.ThreadId}
-    (h : st'.scheduler.current = st.scheduler.current) (hN : st.currentNowhere t) :
+    (h : st'.scheduler.currentCode = st.scheduler.currentCode) (hN : st.currentNowhere t) :
     st'.currentNowhere t := fun c => by
   unfold SchedulerState.currentOnCore; rw [h]; exact hN c
 
@@ -2416,7 +2416,7 @@ theorem currentDequeuedUniqueExcept_of_shrink {st st' : SystemState} {e : Option
 /-- The same, for a step that keeps every core's current slot and every
 thread's run-queue entry. -/
 theorem currentDequeuedUniqueExcept_of_eq {st st' : SystemState} {e : Option SchedPoint}
-    (hC : st'.scheduler.current = st.scheduler.current)
+    (hC : st'.scheduler.currentCode = st.scheduler.currentCode)
     (hL : ∀ c t, st'.runLinkOn c t = st.runLinkOn c t)
     (hM : StateMono st st')
     (h : st.currentDequeuedUniqueExcept e) : st'.currentDequeuedUniqueExcept e :=
@@ -2541,7 +2541,7 @@ theorem currentDequeuedUniqueExcept_of_block {st st' : SystemState} {c : CoreId}
     {t : SeLe4n.ThreadId}
     (hD : st.currentDequeuedUniqueExcept (some (.block c)))
     (ht : st.scheduler.currentOnCore c = some t)
-    (hC : st'.scheduler.current = st.scheduler.current)
+    (hC : st'.scheduler.currentCode = st.scheduler.currentCode)
     (hL : ∀ c u, st'.runLinkOn c u = st.runLinkOn c u)
     (hNI : Kernel.isIdleThreadId t = false)
     (hM : ∀ u, u ≠ t → (st.runnable u → st'.runnable u) ∧ (st.coherentAt u → st'.coherentAt u) ∧
@@ -2592,7 +2592,7 @@ theorem currentDequeuedUniqueExcept_of_offWrite {st st' : SystemState} {e : Opti
     {t : SeLe4n.ThreadId}
     (hD : st.currentDequeuedUniqueExcept e) (hNC : st.currentNowhere t)
     (hNQ : ∀ c, st.queuedOn c t = false)
-    (hC : st'.scheduler.current = st.scheduler.current)
+    (hC : st'.scheduler.currentCode = st.scheduler.currentCode)
     (hL : ∀ c u, st'.runLinkOn c u = st.runLinkOn c u) (hNI : Kernel.isIdleThreadId t = false)
     (hM : ∀ u, u ≠ t → (st.runnable u → st'.runnable u) ∧ (st.coherentAt u → st'.coherentAt u) ∧
       (st.activeAt u → st'.activeAt u))
@@ -2894,7 +2894,7 @@ any core's current slot. -/
 theorem RunQueueStage.of_frame {st st' : SystemState} (hO : st'.objects = st.objects)
     (hQ : st'.scheduler.runQueue = st.scheduler.runQueue)
     (hE : st'.scheduler.runQueueEnds = st.scheduler.runQueueEnds)
-    (hC : st'.scheduler.current = st.scheduler.current := by current_frame) : RunQueueStage st st' :=
+    (hC : st'.scheduler.currentCode = st.scheduler.currentCode := by current_frame) : RunQueueStage st st' :=
   ⟨fun h r => ⟨hO ▸ h, runQueueRefined_of_frame (fun c t => runLinkOn_of_objects hO c t) hQ hE r⟩,
     fun _ _ _ _ d => currentDequeuedUniqueExcept_of_eq hC (fun c t => runLinkOn_of_objects hO c t)
       (StateMono.of_objects hO) d, fun _ _ => StateMono.of_objects hO⟩
@@ -2963,7 +2963,7 @@ holds whatever point is open, the destroyed thread being no idle thread. -/
 theorem currentDequeuedUniqueExcept_insert_offTcb {st st' : SystemState}
     {e : Option SchedPoint} {k : SeLe4n.ObjId} {obj : KernelObject} {x : TCB}
     (hInv : st.objects.invExt) (hO : st'.objects = st.objects.insert k obj)
-    (hC : st'.scheduler.current = st.scheduler.current)
+    (hC : st'.scheduler.currentCode = st.scheduler.currentCode)
     (hL : ∀ c u, st'.runLinkOn c u = st.runLinkOn c u)
     (hk : x.tid.toObjId = k)
     (hD : st.currentDequeuedUniqueExcept e) (hNC : st.currentNowhere x.tid)
@@ -3028,7 +3028,7 @@ theorem currentDequeuedUniqueExcept_updateTcb₂_offWrite {st : SystemState}
     | some x => rw [hT] at hy; cases hy; exact hCo x hT
 
 theorem runRemoveOnCore_current (st : SystemState) (c : CoreId) (t : SeLe4n.ThreadId) :
-    (st.runRemoveOnCore c t).scheduler.current = st.scheduler.current := by
+    (st.runRemoveOnCore c t).scheduler.currentCode = st.scheduler.currentCode := by
   unfold runRemoveOnCore; dsimp only; split <;>
     simp [runUnlinkLinks_scheduler, SchedulerState.setRunQueueOnCore,
       SchedulerState.setRunQueueEndsOnCore]
@@ -3070,7 +3070,7 @@ theorem RunQueueStage.insert {st st' : SystemState} {k : SeLe4n.ObjId} {obj : Ke
     (hE : st'.scheduler.runQueueEnds = st.scheduler.runQueueEnds)
     (h : ∀ c, objRunLinkOn (some obj) c = objRunLinkOn st.objects[k]? c)
     (hm : objStateMono st.objects[k]? obj)
-    (hC : st'.scheduler.current = st.scheduler.current := by current_frame) :
+    (hC : st'.scheduler.currentCode = st.scheduler.currentCode := by current_frame) :
     RunQueueStage st st' :=
   ⟨fun hInv r => ⟨hO ▸ RHTable_insert_preserves_invExt st.objects k obj hInv,
     runQueueRefined_of_frame (runLinkOn_insert hInv hO h) hQ hE r⟩,
@@ -3108,7 +3108,7 @@ theorem RunQueueStage.of_placement {st st' : SystemState}
     (hP : st.objects.invExt → ∀ x,
       (st'.getTcb? x).map TCB.placement = (st.getTcb? x).map TCB.placement)
     (hM : st.objects.invExt → StateMono st st')
-    (hC : st'.scheduler.current = st.scheduler.current := by current_frame) :
+    (hC : st'.scheduler.currentCode = st.scheduler.currentCode := by current_frame) :
     RunQueueStage st st' :=
   ⟨fun h r => ⟨hInv h, runQueueRefined_of_frame (runLinkOn_of_placement (hP h)) hQ hE r⟩,
     fun _ h _ _ d => currentDequeuedUniqueExcept_of_eq hC (runLinkOn_of_placement (hP h)) (hM h) d,

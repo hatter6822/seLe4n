@@ -52,7 +52,7 @@ def updatePipBoostOnCore (st : SystemState) (c : CoreId) (tid : ThreadId) : Syst
       -- running it on a drop, and nothing else flags anything.
       let preKey := effectiveSchedParams st tcb
       -- Update TCB with new (GLOBAL) pipBoost
-      let tcb' := { tcb with pipBoost := newBoost }
+      let tcb' := { tcb with pipBoostCode := SeLe4n.Priority.optCode newBoost }
       let st' := st.rewriteObject tid.toObjId (KernelObject.tcb tcb')
         (SystemState.rewriteAdmissible_tcb h tcb')
       -- Conditional run-queue bucket migration ON CORE c (the holder's home core)
@@ -76,15 +76,15 @@ copied.  Proven equal (`updatePipBoostOnCore_eq_impl`). -/
 def updatePipBoostOnCoreImpl (st : SystemState) (c : CoreId) (tid : ThreadId) : SystemState :=
   match st.getTcb? tid with
   | some tcb =>
-    let newBoost := computeMaxWaiterPriority st tid
-    if tcb.pipBoost == newBoost then st
+    let newCode := computeMaxWaiterCode st tid
+    if tcb.pipBoostCode == newCode then st
     else
       let p0 := tcb.boostedPriority
       let d0 := effectiveDeadline st tcb
       let dom0 := tcb.domain
-      let newPrio := tcb.priority.raisedBy newBoost
+      let newPrio := tcb.priority.raisedBy (SeLe4n.Priority.ofOptCode newCode)
       let queued := tcb.runCoreCode == c.val + 1
-      let st' := st.updateTcb tid fun x => { x with pipBoost := newBoost }
+      let st' := st.updateTcb tid fun x => { x with pipBoostCode := newCode }
       let st'' := if queued && p0 != newPrio then st'.runRequeueOnCore c tid newPrio else st'
       markKeyChangeParts st'' tid p0 d0 dom0
   | none => st
@@ -97,12 +97,20 @@ def updatePipBoostOnCoreImpl (st : SystemState) (c : CoreId) (tid : ThreadId) : 
   · next tcb hT hW =>
     rw [hT]
     dsimp only
+    rw [← optCode_computeMaxWaiterPriority]
+    have hBeq : (tcb.pipBoostCode == SeLe4n.Priority.optCode (computeMaxWaiterPriority st tid)) =
+        (tcb.pipBoost == computeMaxWaiterPriority st tid) := by
+      rw [Bool.eq_iff_iff, beq_iff_eq, beq_iff_eq]
+      constructor
+      · intro h; simp only [TCB.pipBoost, h, SeLe4n.Priority.ofOptCode_optCode]
+      · intro h; rw [← h]; simp only [TCB.pipBoost, SeLe4n.Priority.optCode_ofOptCode]
+    simp only [SeLe4n.Priority.ofOptCode_optCode, hBeq]
     split
     · rfl
     · have hW : st.rewriteObject tid.toObjId
-          (KernelObject.tcb { tcb with pipBoost := computeMaxWaiterPriority st tid })
+          (KernelObject.tcb { tcb with pipBoostCode := SeLe4n.Priority.optCode (computeMaxWaiterPriority st tid) })
           (SystemState.rewriteAdmissible_tcb hT _) =
-          st.updateTcb tid fun x => { x with pipBoost := computeMaxWaiterPriority st tid } := by
+          st.updateTcb tid fun x => { x with pipBoostCode := SeLe4n.Priority.optCode (computeMaxWaiterPriority st tid) } := by
         rw [SystemState.updateTcb_eq_of_some hT]; rfl
       rw [hW, resolveEffectivePrioDeadline_fst_eq_boostedPriority,
         resolveEffectivePrioDeadline_fst_eq_boostedPriority, markKeyChangeFor_eq_parts,
@@ -110,7 +118,7 @@ def updatePipBoostOnCoreImpl (st : SystemState) (c : CoreId) (tid : ThreadId) : 
       have hQ : st.queuedOn c tid = (tcb.runCoreCode == c.val + 1) := by
         simp [SystemState.queuedOn, hT]
       rw [hQ]
-      simp only [TCB.boostedPriority]
+      simp only [TCB.boostedPriority, TCB.pipBoost, SeLe4n.Priority.ofOptCode_optCode]
       by_cases h1 : (tcb.runCoreCode == c.val + 1) = true <;>
         by_cases h2 : (tcb.priority.raisedBy tcb.pipBoost !=
           tcb.priority.raisedBy (computeMaxWaiterPriority st tid)) = true <;>
@@ -156,7 +164,7 @@ def pipBoostWrite (st : SystemState) (tid : ThreadId) : SystemState :=
   | some ⟨tcb, h⟩ =>
     let newBoost := computeMaxWaiterPriority st tid
     if tcb.pipBoost == newBoost then st
-    else st.rewriteObject tid.toObjId (KernelObject.tcb { tcb with pipBoost := newBoost })
+    else st.rewriteObject tid.toObjId (KernelObject.tcb { tcb with pipBoostCode := SeLe4n.Priority.optCode newBoost })
       (SystemState.rewriteAdmissible_tcb h _)
   | none => st
 
@@ -196,11 +204,11 @@ theorem pipBoostWrite_objects_ne (st : SystemState) (tid : ThreadId) (oid : ObjI
 /-- The boost rewrites the thread's TCB in `pipBoost` and nothing else. -/
 theorem pipBoostWrite_objects_at (st : SystemState) (tid : ThreadId) (tcb : TCB)
     (hTcb : st.getTcb? tid = some tcb) (hInv : st.objects.invExt) :
-    ∃ p, (pipBoostWrite st tid).getTcb? tid = some { tcb with pipBoost := p } := by
+    ∃ p, (pipBoostWrite st tid).getTcb? tid = some { tcb with pipBoostCode := p } := by
   simp only [SystemState.getTcb?_eq_some_iff]
   simp only [pipBoostWrite, SystemState.getTcbWitnessed?_eq_some hTcb]
   split
-  · exact ⟨tcb.pipBoost, (SystemState.getTcb?_eq_some_iff st tid tcb).mp hTcb⟩
+  · exact ⟨tcb.pipBoostCode, (SystemState.getTcb?_eq_some_iff st tid tcb).mp hTcb⟩
   · exact ⟨_, SeLe4n.Kernel.RobinHood.RHTable.getElem?_insert_self st.objects tid.toObjId _ hInv⟩
 
 /-- WS-ZA ZA4.5: the boost's store is its object write's, off the run-queue
@@ -280,7 +288,7 @@ theorem updatePipBoostOnCore_runQueueStage (st : SystemState) (c : CoreId) (tid 
     · simp only [hb, if_true]; exact .refl _
     · simp only [hb, Bool.false_eq_true, if_false]
       have hW : SystemState.RunQueueStage st
-          (st.rewriteObject tid.toObjId (.tcb { tcb with pipBoost := computeMaxWaiterPriority st tid })
+          (st.rewriteObject tid.toObjId (.tcb { tcb with pipBoostCode := SeLe4n.Priority.optCode (computeMaxWaiterPriority st tid) })
             (SystemState.rewriteAdmissible_tcb hT _)) :=
         SystemState.RunQueueStage.insert rfl rfl rfl
           (fun _ => by rw [(SystemState.getTcb?_eq_some_iff _ _ _).mp hT]; rfl)
@@ -289,11 +297,11 @@ theorem updatePipBoostOnCore_runQueueStage (st : SystemState) (c : CoreId) (tid 
       split
       · rename_i hMem
         have hq : ((st.rewriteObject tid.toObjId
-            (.tcb { tcb with pipBoost := computeMaxWaiterPriority st tid })
+            (.tcb { tcb with pipBoostCode := SeLe4n.Priority.optCode (computeMaxWaiterPriority st tid) })
             (SystemState.rewriteAdmissible_tcb hT _)).runLinkOn c tid).queued = true := by
           rw [← SystemState.queuedOn_eq_runLinkOn,
             SystemState.rewriteObject_tcb_queuedOn
-              (t' := { tcb with pipBoost := computeMaxWaiterPriority st tid }) _ hInv hT rfl]
+              (t' := { tcb with pipBoostCode := SeLe4n.Priority.optCode (computeMaxWaiterPriority st tid) }) _ hInv hT rfl]
           exact hMem
         split
         · exact (SystemState.RunQueueStage.runRequeueOnCore _ c tid _ hq).trans
@@ -317,7 +325,7 @@ theorem updatePipBoostOnCore_currentPlacementFrame (st : SystemState) (c0 : Core
     split
     · exact .refl c st
     · have hW := SystemState.CurrentPlacementFrame.rewriteObject_tcb c
-        (t := { tcb with pipBoost := computeMaxWaiterPriority st tid })
+        (t := { tcb with pipBoostCode := SeLe4n.Priority.optCode (computeMaxWaiterPriority st tid) })
         (SystemState.rewriteAdmissible_tcb hT _) hInv
         (fun t0 h0 => by rw [hT] at h0; cases h0; rfl)
       split
@@ -326,7 +334,7 @@ theorem updatePipBoostOnCore_currentPlacementFrame (st : SystemState) (c0 : Core
         · refine hW.trans ((SystemState.CurrentPlacementFrame.runRequeueOnCore _ c c0 tid _ ?_).trans
             (markKeyChangeFor_currentPlacementFrame _ _ _ c))
           rw [SystemState.rewriteObject_tcb_queuedOn
-            (t' := { tcb with pipBoost := computeMaxWaiterPriority st tid }) _ hInv hT rfl]
+            (t' := { tcb with pipBoostCode := SeLe4n.Priority.optCode (computeMaxWaiterPriority st tid) }) _ hInv hT rfl]
           exact hMem
         · exact hW.trans (markKeyChangeFor_currentPlacementFrame _ _ _ c)
       · exact hW.trans (markKeyChangeFor_currentPlacementFrame _ _ _ c)
@@ -511,7 +519,7 @@ theorem pipBoostWrite_preserves_blockingServer (st : SystemState) (tid : ThreadI
     | none => rw [pipBoostWrite_eq_self_of_getTcb?_none st t hTid]
     | some tcb =>
       obtain ⟨p, hRef⟩ := pipBoostWrite_objects_at st t tcb hTid hObjInv
-      exact blockingServer_ipcState_congr _ _ _ { tcb with pipBoost := p } tcb
+      exact blockingServer_ipcState_congr _ _ _ { tcb with pipBoostCode := p } tcb
         ((SystemState.getTcb?_eq_some_iff _ t _).mp hRef)
         ((SystemState.getTcb?_eq_some_iff st t tcb).mp hTid) rfl
   · have hObjNe : ¬(tid.toObjId == t.toObjId) = true := by
@@ -559,7 +567,7 @@ theorem updatePipBoostOnCore_objects_at (st : SystemState) (c : CoreId) (tid : T
     (tcb : TCB) (hTcb : st.getTcb? tid = some tcb)
     (hInv : st.objects.invExt) :
     ∃ p t', (updatePipBoostOnCore st c tid).getTcb? tid = some t' ∧
-      t'.withoutRunLinks = { tcb with pipBoost := p }.withoutRunLinks := by
+      t'.withoutRunLinks = { tcb with pipBoostCode := p }.withoutRunLinks := by
   -- The object write's TCB, carried across the bucket re-key's link writes
   -- (WS-ZA ZA4.5).
   obtain ⟨p, hRef⟩ := pipBoostWrite_objects_at st tid tcb hTcb hInv
@@ -603,7 +611,7 @@ theorem updatePipBoostOnCore_queuedOn (st : SystemState) (c c' : CoreId)
     unfold updatePipBoostOnCore
     simp only [SystemState.getTcbWitnessed?_eq_some hT]
     have hW := SystemState.rewriteObject_tcb_queuedOn
-      (t' := { tcb with pipBoost := computeMaxWaiterPriority st tid })
+      (t' := { tcb with pipBoostCode := SeLe4n.Priority.optCode (computeMaxWaiterPriority st tid) })
       (SystemState.rewriteAdmissible_tcb hT _) hInv hT rfl
     split
     · rfl
@@ -1079,17 +1087,17 @@ theorem updatePipBoostOnCore_tcb_backward (st : SystemState) (c : CoreId)
     (tid : ThreadId) (hInv : st.objects.invExt) (t : ThreadId) (tcb' : TCB)
     (h : (updatePipBoostOnCore st c tid).objects[t.toObjId]? = some (.tcb tcb')) :
     ∃ tcb p, st.objects[t.toObjId]? = some (.tcb tcb) ∧
-      tcb'.withoutRunLinks = { tcb with pipBoost := p }.withoutRunLinks := by
+      tcb'.withoutRunLinks = { tcb with pipBoostCode := p }.withoutRunLinks := by
   -- Off the run-queue links the boost's TCB is its object write's (WS-ZA ZA4.5).
   obtain ⟨t0, h0, hE⟩ := (updatePipBoostOnCore_objectsAgreeOffRunLinks st c tid).get_tcb' h
   suffices hRef : ∃ tcb p, st.objects[t.toObjId]? = some (.tcb tcb) ∧
-      t0 = { tcb with pipBoost := p } by
+      t0 = { tcb with pipBoostCode := p } by
     obtain ⟨tcb, p, hPre, rfl⟩ := hRef
     exact ⟨tcb, p, hPre, hE⟩
   cases hT : st.getTcb? tid with
   | none =>
       rw [pipBoostWrite_eq_self_of_getTcb?_none st tid hT] at h0
-      exact ⟨t0, t0.pipBoost, h0, rfl⟩
+      exact ⟨t0, t0.pipBoostCode, h0, rfl⟩
   | some tcb =>
       by_cases hEq : t.toObjId = tid.toObjId
       · obtain ⟨p, hAt⟩ := pipBoostWrite_objects_at st tid tcb hT hInv
@@ -1098,7 +1106,7 @@ theorem updatePipBoostOnCore_tcb_backward (st : SystemState) (c : CoreId)
         · rw [hEq]; exact (SystemState.getTcb?_eq_some_iff st tid tcb).mp hT
         · simp only [Option.some.injEq, KernelObject.tcb.injEq] at h0
           rw [h0]
-      · refine ⟨t0, t0.pipBoost, ?_, rfl⟩
+      · refine ⟨t0, t0.pipBoostCode, ?_, rfl⟩
         rw [← pipBoostWrite_objects_ne st tid t.toObjId
           (by simp only [beq_iff_eq]; exact fun e => hEq e.symm) hInv]
         exact h0
@@ -1118,7 +1126,7 @@ theorem pipBoostWithWake_tcb_backward (st : SystemState) (tid : ThreadId)
     (ec : CoreId) (hInv : st.objects.invExt) (t : ThreadId) (tcb' : TCB)
     (h : (pipBoostWithWake st tid ec).1.objects[t.toObjId]? = some (.tcb tcb')) :
     ∃ tcb p, st.objects[t.toObjId]? = some (.tcb tcb) ∧
-      tcb'.withoutRunLinks = { tcb with pipBoost := p }.withoutRunLinks :=
+      tcb'.withoutRunLinks = { tcb with pipBoostCode := p }.withoutRunLinks :=
   updatePipBoostOnCore_tcb_backward st (determineTargetCore st tid) tid hInv t tcb' h
 
 /-- WS-RR RR8.16 (`v0.35.195`, an instance since `v0.35.196`): its `ipcState`
@@ -1140,11 +1148,11 @@ theorem propagatePipChainCrossCore_tcb_backward (st : SystemState)
     (h : (propagatePipChainCrossCore st tid ec fuel).1.objects[t.toObjId]?
         = some (.tcb tcb')) :
     ∃ tcb p, st.objects[t.toObjId]? = some (.tcb tcb) ∧
-      tcb'.withoutRunLinks = { tcb with pipBoost := p }.withoutRunLinks := by
+      tcb'.withoutRunLinks = { tcb with pipBoostCode := p }.withoutRunLinks := by
   induction fuel generalizing st tid tcb' with
   | zero =>
       rw [propagatePipChainCrossCore_zero] at h
-      exact ⟨tcb', tcb'.pipBoost, h, rfl⟩
+      exact ⟨tcb', tcb'.pipBoostCode, h, rfl⟩
   | succ n ih =>
     rw [propagatePipChainCrossCore_step] at h
     have hNext := pipBoostWithWake_preserves_objects_invExt st tid ec hInv
@@ -1159,9 +1167,9 @@ theorem propagatePipChainCrossCore_tcb_backward (st : SystemState)
         obtain ⟨pre, pPre, hPre, hEqPre⟩ :=
           pipBoostWithWake_tcb_backward st tid ec hInv t mid hMid
         -- `{_ with pipBoost := _}` commutes with clearing the run-queue links.
-        have hSet : ∀ (u : TCB) (q : Option SeLe4n.Priority),
-            ({ u with pipBoost := q } : TCB).withoutRunLinks
-              = { u.withoutRunLinks with pipBoost := q } := fun _ _ => rfl
+        have hSet : ∀ (u : TCB) (q : Nat),
+            ({ u with pipBoostCode := q } : TCB).withoutRunLinks
+              = { u.withoutRunLinks with pipBoostCode := q } := fun _ _ => rfl
         exact ⟨pre, pMid, hPre, hEqMid.trans (by rw [hSet mid pMid, hEqPre]; rfl)⟩
 
 /-- WS-RR RR8.16 (`v0.35.195`, an instance since `v0.35.196`): its `ipcState`
@@ -1571,7 +1579,7 @@ theorem updatePipBoostOnCore_objects_pointwise (st : SystemState) (c : CoreId)
         · subst hEq
           obtain ⟨p, hAt⟩ := pipBoostWrite_objects_at st tid tcb hT hInv
           rw [SystemState.getTcb?_eq_some_iff] at hAt
-          exact Or.inr ⟨tcb, { tcb with pipBoost := p },
+          exact Or.inr ⟨tcb, { tcb with pipBoostCode := p },
             (SystemState.getTcb?_eq_some_iff st tid tcb).mp hT, hAt⟩
         · left
           exact pipBoostWrite_objects_ne st tid oid

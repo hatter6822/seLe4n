@@ -317,7 +317,7 @@ theorem updatePipBoostOnCore_replyViews_eq (st : SystemState) (c : CoreId) (t : 
   split
   · rename_i tcb hT _
     have hO := (getTcb?_eq_some_iff st t tcb).1 hT
-    have hW : (st.rewriteObject t.toObjId (.tcb { tcb with pipBoost := computeMaxWaiterPriority st t })
+    have hW : (st.rewriteObject t.toObjId (.tcb { tcb with pipBoostCode := SeLe4n.Priority.optCode (computeMaxWaiterPriority st t) })
         (SystemState.rewriteAdmissible_tcb hT _)).replyViews = st.replyViews := by
       funext x
       rw [replyViews_rewriteObject _ _ _ _ hInv]

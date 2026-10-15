@@ -1162,7 +1162,7 @@ theorem RunQueueStage.runDescheduleOnCore (st : SystemState) (c : CoreId)
       · rwa [SchedulerState.setCurrentOnCore_currentOnCore_ne _ _ _ _ (Ne.symm hc)] at h'))
 
 theorem runEnqueueOnCore_current (st : SystemState) (c : CoreId) (t : SeLe4n.ThreadId)
-    (p : SeLe4n.Priority) : (st.runEnqueueOnCore c t p).scheduler.current = st.scheduler.current := by
+    (p : SeLe4n.Priority) : (st.runEnqueueOnCore c t p).scheduler.currentCode = st.scheduler.currentCode := by
   unfold runEnqueueOnCore runEnqueueAdmitted runAppendOnCore
   split
   · dsimp only; split <;>

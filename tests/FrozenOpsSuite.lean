@@ -251,7 +251,7 @@ private def fo004f_replyRevertsPriorityInheritance : IO Unit := do
     replyObjectCode := SeLe4n.ReplyId.optCode (some rid) } (.blockedOnReply ⟨10⟩ (some ⟨3⟩)))
   let stillWaiting : TCB := ((mkTcb 4 150).setIpcState (.blockedOnReply ⟨10⟩ (some ⟨3⟩)))
   -- The server's own priority is 10; it has inherited 200 from ⟨2⟩.
-  let serverTcb : TCB := { mkTcb 3 10 with pipBoost := some ⟨200⟩ }
+  let serverTcb : TCB := { mkTcb 3 10 with pipBoostCode := SeLe4n.Priority.optCode (some ⟨200⟩) }
   let replyObj : SeLe4n.Kernel.Reply := { replyId := rid, callerCode := SeLe4n.ThreadId.optCode (some ⟨2⟩) }
   let st0 := mkFrozenState
     [(⟨2⟩, .tcb answered), (⟨3⟩, .tcb serverTcb), (⟨4⟩, .tcb stillWaiting),
@@ -1463,7 +1463,7 @@ private def differentialEndpointReplyOperationAgrees : IO Unit := do
     replyObjectCode := SeLe4n.ReplyId.optCode (some rid) } (.blockedOnReply diffEpId (some diffB)))
   -- The server has inherited the caller's priority; answering the caller is
   -- what makes that boost stale.
-  let server : TCB := { diffTcb 63 with pipBoost := some ⟨200⟩ }
+  let server : TCB := { diffTcb 63 with pipBoostCode := SeLe4n.Priority.optCode (some ⟨200⟩) }
   let ist := diffAddReply (diffAddTcb (diffAddTcb
     (diffAddEndpoint mkEmptyIntermediateState diffEpId {}) caller) server)
     rid { replyId := rid, callerCode := SeLe4n.ThreadId.optCode (some diffA) }
@@ -1503,7 +1503,7 @@ private def differentialEndpointReplyOperationAgrees : IO Unit := do
   -- caller's reply capability without being the recorded server.  `diffDelegate`
   -- is a third thread, so `replier ≠ expected` and the two candidate live
   -- counterparts part company here.
-  let boosted : TCB := { diffTcb 63 with pipBoost := some ⟨200⟩ }
+  let boosted : TCB := { diffTcb 63 with pipBoostCode := SeLe4n.Priority.optCode (some ⟨200⟩) }
   let delegated := diffAddReply (diffAddTcb (diffAddTcb (diffAddTcb
     (diffAddEndpoint mkEmptyIntermediateState diffEpId {}) caller) boosted)
     (diffTcb 65)) rid { replyId := rid, callerCode := SeLe4n.ThreadId.optCode (some diffA) }
@@ -1563,7 +1563,7 @@ private def differentialEndpointReplyDonationAgrees : IO Unit := do
   -- The recorded server: holds the donation, runnable, and carrying the boost the
   -- reversion must clear, so the two live steps are both observable.
   let server : TCB := { diffTcb 63 with
-    pipBoost := some ⟨200⟩, schedContextBinding := .donated diffScId diffA }
+    pipBoostCode := SeLe4n.Priority.optCode (some ⟨200⟩), schedContextBinding := .donated diffScId diffA }
   -- ### Half one: the frame HEADS the context, so both sides pop.
   let heading := diffAddSchedContext (diffAddReply (diffAddTcb (diffAddTcb
     (diffAddEndpoint mkEmptyIntermediateState diffEpId {}) caller) server)

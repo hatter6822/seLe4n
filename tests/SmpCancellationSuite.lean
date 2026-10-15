@@ -1496,7 +1496,7 @@ private def stPipDonation : SystemState :=
           replyObjectCode := SeLe4n.ReplyId.optCode (some rId) } (.blockedOnReply epId (some serverTid))))
       |>.withObject serverTid.toObjId (.tcb { mkTcb 716 50 (some core2) with
           threadState := .Ready,
-          pipBoost := some ⟨200⟩ })
+          pipBoostCode := SeLe4n.Priority.optCode (some ⟨200⟩) })
       |>.build)
   let st1 := enqueueRunnableOnCore base core2 serverTid
   { st1 with scheduler := st1.scheduler.setCurrentOnCore core1 (some victimTid) }
@@ -1554,7 +1554,7 @@ private def runPipDonationDropChecks : IO Unit := do
               replyObjectCode := SeLe4n.ReplyId.optCode (some rId) } (.blockedOnReply epId (some serverTid))))
           |>.withObject serverTid.toObjId (.tcb { mkTcb 716 50 none with
               threadState := .Ready,
-              pipBoost := some ⟨200⟩ })
+              pipBoostCode := SeLe4n.Priority.optCode (some ⟨200⟩) })
           |>.withRunnable [serverTid]
           |>.build)
       match bootSuspendThread stBootPip vtid with
@@ -1587,7 +1587,7 @@ private def stLocalDeboost : SystemState :=
           replyObjectCode := SeLe4n.ReplyId.optCode (some rId) } (.blockedOnReply epId (some serverTid))))
       |>.withObject serverTid.toObjId (.tcb { mkTcb 716 50 none with
           threadState := .Running,
-          pipBoost := some ⟨200⟩ })
+          pipBoostCode := SeLe4n.Priority.optCode (some ⟨200⟩) })
       |>.withObject bystanderTid.toObjId (.tcb { mkTcb 712 100 none with
           threadState := .Ready })
       |>.withRunnable [bystanderTid]
@@ -1606,7 +1606,7 @@ private def stRemoteDeboost : SystemState :=
           replyObjectCode := SeLe4n.ReplyId.optCode (some rId) } (.blockedOnReply epId (some serverTid))))
       |>.withObject serverTid.toObjId (.tcb { mkTcb 716 50 (some core2) with
           threadState := .Running,
-          pipBoost := some ⟨200⟩ })
+          pipBoostCode := SeLe4n.Priority.optCode (some ⟨200⟩) })
       |>.build)
   { base with scheduler := base.scheduler.setCurrentOnCore core2 (some serverTid) }
 

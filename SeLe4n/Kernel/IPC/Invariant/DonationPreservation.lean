@@ -2398,7 +2398,7 @@ theorem updatePipBoostOnCore_preserves_ipcInvariantFull (st : SystemState) (c : 
           (fun y hy => by rw [hSch]; exact hy) (by rw [hSch])
         by_cases hEq : x.toObjId = tid.toObjId
         · rw [hEq] at hTcb'
-          obtain rfl : { tcb with pipBoost := p } = tcb' := by
+          obtain rfl : { tcb with pipBoostCode := p } = tcb' := by
             simpa only [Option.some.injEq, KernelObject.tcb.injEq] using hPostRaw.symm.trans hTcb'
           exact ⟨tcb, by rw [hEq]; exact hAtRaw, rfl, rfl⟩
         · exact ⟨tcb', by rw [← hFrame x.toObjId hEq]; exact hTcb', rfl, rfl⟩

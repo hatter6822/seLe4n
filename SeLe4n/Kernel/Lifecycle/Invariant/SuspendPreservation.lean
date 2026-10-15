@@ -1017,20 +1017,20 @@ any caller that destructures the resumed TCB observes the boost is
 consistent with the graph that produced it.
 
 The theorem follows by inspection of the `tcb'` match arms: both branches
-set the field `pipBoost := newPipBoost` directly, so the post-resumeThread
-TCB's `pipBoost` field is unconditionally `newPipBoost`. -/
+set the boost's code to `newPipBoost`'s directly, so the post-resumeThread
+TCB's `pipBoost` is unconditionally `newPipBoost`. -/
 theorem resumeThread_pipBoost_consistent_post_restore
     (st : SystemState) (tid : SeLe4n.ThreadId) (tcb : TCB) :
     let stPostRestore := restoreToReady st tid
     let newPipBoost := PriorityInheritance.computeMaxWaiterPriority stPostRestore tid
     let tcb' :=
       match stPostRestore.getTcb? tid with
-      | some t => { t with threadState := .Ready, pipBoost := newPipBoost }
-      | none => (TCB.setIpcState { tcb with threadState := .Ready, pipBoost := newPipBoost } .ready)
+      | some t => { t with threadState := .Ready, pipBoostCode := SeLe4n.Priority.optCode newPipBoost }
+      | none => (TCB.setIpcState { tcb with threadState := .Ready, pipBoostCode := SeLe4n.Priority.optCode newPipBoost } .ready)
     tcb'.pipBoost = newPipBoost := by
-  -- Both record-update branches set `pipBoost := newPipBoost` directly.
+  -- Both record-update branches set the boost's code directly.
   simp only []
-  split <;> simp
+  split <;> exact SeLe4n.Priority.ofOptCode_optCode _
 
 -- ============================================================================
 -- R5.B.2 (DEEP-SUSP-01): Plan-named substantive preservation theorems

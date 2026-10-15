@@ -168,6 +168,18 @@ theorem syscallDispatchCrossCoreStep_restoreTarget (ctx : LabelingContext)
   rw [syscallDispatchCrossCoreStep_of_ok h]
   rfl
 
+/-- WS-ZA ZA4.7: the step's commit record with its current thread as its code
+(`SeLe4n.ThreadId.optCode`), the form the words step hands the entry: a scalar
+crosses the entry's effects where an optional thread would be a cell. -/
+@[inline] def currentAsCode :
+    (PerCoreFlags × List CoreId × List Architecture.TlbInvalidation × (Nat × Nat) ×
+      List Architecture.ICacheInvalidation × List Architecture.PhysicalWrite ×
+      Architecture.RestoreTarget × Option SeLe4n.ThreadId) →
+    (PerCoreFlags × List CoreId × List Architecture.TlbInvalidation × (Nat × Nat) ×
+      List Architecture.ICacheInvalidation × List Architecture.PhysicalWrite ×
+      Architecture.RestoreTarget × Nat)
+  | (a, b, c, d, e, f, g, h) => (a, b, c, d, e, f, g, SeLe4n.ThreadId.optCode h)
+
 /-- WS-ZA ZA4: **the step with its outcome as the boundary's words**: what the
 live entry reads of the outcome (`SyscallOutcome.words`) in its place, the
 rest of the result as the step's (`syscallDispatchCrossCoreStepWords_eq`).
@@ -181,16 +193,17 @@ value-returning syscall builds neither its outcome nor its frame. -/
       PerCoreFlags × List CoreId ×
       List Architecture.TlbInvalidation × (Nat × Nat) ×
       List Architecture.ICacheInvalidation × List Architecture.PhysicalWrite ×
-      Architecture.RestoreTarget × Option SeLe4n.ThreadId) × SystemState :=
-  let caller? := st.scheduler.currentOnCore execCore
+      Architecture.RestoreTarget × Nat) × SystemState :=
+  let callerCode := st.scheduler.currentCode.get execCore
   let pending0 := reschedulePendingSnapshot st
   let tlb0 := st.tlbShootdown
   match Platform.FFI.syscallDispatchFromAbiWords ctx execCore syscallId x0 x1 x2 x3 x4 x5
       ipcBufferAddr elr spsr spEl0 x30 st with
   | ((tag, w0, w1, w2, w3, w4, w5), st') =>
-      let stR := Architecture.stageCallerReturnWords caller? st' execCore tag w0 w1 w2 w3 w4 w5
+      let stR := Architecture.stageCallerReturnWords callerCode st' execCore tag w0 w1 w2 w3 w4 w5
       let st'' := PriorityInheritance.settleResidencyOnCore
-        (PriorityInheritance.scheduleLocalSuccessorFrom caller? stR execCore) execCore
+        (PriorityInheritance.scheduleLocalSuccessorFrom (SeLe4n.ThreadId.ofOptCode callerCode) stR
+          execCore) execCore
       ((tag, w0, w1, w2, w3, w4, w5,
         pending0.raised st''.scheduler.reschedulePending,
         Architecture.shootdownChangedTargetsFrom tlb0 st'',
@@ -199,7 +212,7 @@ value-returning syscall builds neither its outcome nor its frame. -/
         st''.pendingIcacheMaintenance,
         st''.pendingPhysicalWrites,
         Architecture.restoreTargetOnCore st'' execCore,
-        st''.scheduler.currentOnCore execCore),
+        st''.scheduler.currentCode.get execCore),
        Architecture.clearPhysicalWrites (Architecture.clearIcacheMaintenance st''))
 
 theorem syscallDispatchCrossCoreStepWords_eq (ctx : LabelingContext)
@@ -210,14 +223,16 @@ theorem syscallDispatchCrossCoreStepWords_eq (ctx : LabelingContext)
       let r := syscallDispatchCrossCoreStep ctx execCore syscallId x0 x1 x2 x3 x4 x5
         ipcBufferAddr elr spsr spEl0 x30 st
       ((r.1.1.words.1, r.1.1.words.2.1, r.1.1.words.2.2.1, r.1.1.words.2.2.2.1,
-        r.1.1.words.2.2.2.2.1, r.1.1.words.2.2.2.2.2.1, r.1.1.words.2.2.2.2.2.2, r.1.2), r.2) := by
+        r.1.1.words.2.2.2.2.1, r.1.1.words.2.2.2.2.2.1, r.1.1.words.2.2.2.2.2.2,
+        currentAsCode r.1.2), r.2) := by
   obtain ⟨outcome, st', h⟩ := Platform.FFI.syscallDispatchFromAbi_total ctx execCore syscallId
     x0 x1 x2 x3 x4 x5 ipcBufferAddr elr spsr spEl0 x30 st
   rw [syscallDispatchCrossCoreStep_of_ok h]
   unfold syscallDispatchCrossCoreStepWords
   rw [Platform.FFI.syscallDispatchFromAbiWords_eq ctx execCore syscallId x0 x1 x2 x3 x4 x5
     ipcBufferAddr elr spsr spEl0 x30 st st' outcome h]
-  simp only [Architecture.stageCallerReturnFor_eq_words]
+  simp only [Architecture.stageCallerReturnFor_eq_words, SchedulerState.currentOnCore,
+    syscallDispatchCrossCoreStep, currentAsCode, SeLe4n.ThreadId.optCode_ofOptCode]
   rfl
 
 end SeLe4n.Kernel

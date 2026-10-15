@@ -269,7 +269,7 @@ def restoreToReadyMidState (st : SystemState) (tid : SeLe4n.ThreadId) : SystemSt
   let newPipBoost : Option SeLe4n.Priority :=
     PriorityInheritance.computeMaxWaiterPriority st1 tid
   -- H3c (pipBoost only): refresh the recomputed boost on the IPC-cleared TCB
-  st1.updateTcb tid fun t => { t with pipBoost := newPipBoost }
+  st1.updateTcb tid fun t => { t with pipBoostCode := SeLe4n.Priority.optCode newPipBoost }
 
 /-- WS-SM SM5.F.5 / SM5.F.6 (plan §3.6, resume H3a+H3b+H4 per-core): restore
 `tid` to ready on core `c`, recomputing its PIP boost from the post-restore
@@ -308,7 +308,7 @@ def resumeReadyMidState (st : SystemState) (tid : SeLe4n.ThreadId) : SystemState
   let st1 := restoreToReady st tid
   let newPipBoost : Option SeLe4n.Priority :=
     PriorityInheritance.computeMaxWaiterPriority st1 tid
-  st1.updateTcb tid fun t => { t with threadState := .Ready, pipBoost := newPipBoost }
+  st1.updateTcb tid fun t => { t with threadState := .Ready, pipBoostCode := SeLe4n.Priority.optCode newPipBoost }
 
 /-- WS-SM SM5.F.6 (plan §3.6, resume cross-core wake): restore `tid` to **Ready** on
 its home core and, if that core is remote (≠ `executingCore`), return the
@@ -1879,11 +1879,11 @@ noncomputable def resumeThread (st : SystemState) (vtid : SeLe4n.ValidThreadId)
       let (tcb', st) : TCB × SystemState :=
         match st.getTcbWitnessed? tid with
         | some ⟨t, h⟩ =>
-            let t' : TCB := { t with threadState := .Ready, pipBoost := newPipBoost }
+            let t' : TCB := { t with threadState := .Ready, pipBoostCode := SeLe4n.Priority.optCode newPipBoost }
             (t', st.rewriteObject tid.toObjId (.tcb t') (SystemState.rewriteAdmissible_tcb h t'))
         | none =>
             let t' : TCB :=
-              (TCB.setIpcState { tcb with threadState := .Ready, pipBoost := newPipBoost } .ready)
+              (TCB.setIpcState { tcb with threadState := .Ready, pipBoostCode := SeLe4n.Priority.optCode newPipBoost } .ready)
             (t', st.withObjectStored tid.toObjId (.tcb t'))
       -- H4: Insert into run queue at effective priority
       let st := ensureRunnable st tid

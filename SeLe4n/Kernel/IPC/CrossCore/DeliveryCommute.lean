@@ -33,6 +33,8 @@ section
 variable (ρ : SeLe4n.RegisterFile → SeLe4n.RegisterFile) (μ : Option IpcMessage → Option IpcMessage)
   (π : Nat → Nat) (t : TCB)
 @[simp] theorem TCB.withMessageSlots_pipBoost : (TCB.withMessageSlots ρ μ π t).pipBoost = t.pipBoost := rfl
+@[simp] theorem TCB.withMessageSlots_pipBoostCode :
+    (TCB.withMessageSlots ρ μ π t).pipBoostCode = t.pipBoostCode := rfl
 @[simp] theorem TCB.withMessageSlots_priority : (TCB.withMessageSlots ρ μ π t).priority = t.priority := rfl
 @[simp] theorem TCB.withMessageSlots_boostedPriority :
     (TCB.withMessageSlots ρ μ π t).boostedPriority = t.boostedPriority := rfl
@@ -134,7 +136,7 @@ theorem updatePipBoostOnCore_noResizeDue (st : SystemState) (c : CoreId) (tid : 
     · exact hNo
     · rw [markKeyChangeParts_objects]
       have h1 : (st.updateTcb tid fun x =>
-          { x with pipBoost := PriorityInheritance.computeMaxWaiterPriority st tid }).objects.noResizeDue := by
+          { x with pipBoostCode := PriorityInheritance.computeMaxWaiterCode st tid }).objects.noResizeDue := by
         rw [SystemState.updateTcb_eq_mapTcbInPlace _ _ _ hNo]; exact hNo
       split
       · exact (runRequeueOnCore_noResizeDue _ c tid _).mpr h1
@@ -487,30 +489,32 @@ theorem updatePipBoostOnCore_msg (st : SystemState) (c : CoreId) (tid : SeLe4n.T
         (TCB.withMessageSlots ρ μ π) := by
   rw [PriorityInheritance.updatePipBoostOnCore_eq_impl]
   unfold PriorityInheritance.updatePipBoostOnCoreImpl
-  rw [computeMaxWaiterPriority_msg]
+  rw [← PriorityInheritance.optCode_computeMaxWaiterPriority, computeMaxWaiterPriority_msg,
+    ← PriorityInheritance.optCode_computeMaxWaiterPriority]
+  simp only [SeLe4n.Priority.ofOptCode_optCode]
   have hBody : ∀ tcb : TCB,
-      (if (tcb.pipBoost == PriorityInheritance.computeMaxWaiterPriority st tid) = true then
+      (if (tcb.pipBoostCode == SeLe4n.Priority.optCode (PriorityInheritance.computeMaxWaiterPriority st tid)) = true then
           st.mapTcbInPlace r (TCB.withMessageSlots ρ μ π)
        else
         markKeyChangeParts
           (if (tcb.runCoreCode == c.val + 1 && tcb.boostedPriority !=
                 tcb.priority.raisedBy (PriorityInheritance.computeMaxWaiterPriority st tid)) = true then
             ((st.mapTcbInPlace r (TCB.withMessageSlots ρ μ π)).updateTcb tid fun x =>
-              { x with pipBoost := PriorityInheritance.computeMaxWaiterPriority st tid }).runRequeueOnCore
+              { x with pipBoostCode := SeLe4n.Priority.optCode (PriorityInheritance.computeMaxWaiterPriority st tid) }).runRequeueOnCore
               c tid (tcb.priority.raisedBy (PriorityInheritance.computeMaxWaiterPriority st tid))
           else (st.mapTcbInPlace r (TCB.withMessageSlots ρ μ π)).updateTcb tid fun x =>
-              { x with pipBoost := PriorityInheritance.computeMaxWaiterPriority st tid })
+              { x with pipBoostCode := SeLe4n.Priority.optCode (PriorityInheritance.computeMaxWaiterPriority st tid) })
           tid tcb.boostedPriority (effectiveDeadline st tcb) tcb.domain) =
-      (if (tcb.pipBoost == PriorityInheritance.computeMaxWaiterPriority st tid) = true then st
+      (if (tcb.pipBoostCode == SeLe4n.Priority.optCode (PriorityInheritance.computeMaxWaiterPriority st tid)) = true then st
        else
         markKeyChangeParts
           (if (tcb.runCoreCode == c.val + 1 && tcb.boostedPriority !=
                 tcb.priority.raisedBy (PriorityInheritance.computeMaxWaiterPriority st tid)) = true then
             (st.updateTcb tid fun x =>
-              { x with pipBoost := PriorityInheritance.computeMaxWaiterPriority st tid }).runRequeueOnCore
+              { x with pipBoostCode := SeLe4n.Priority.optCode (PriorityInheritance.computeMaxWaiterPriority st tid) }).runRequeueOnCore
               c tid (tcb.priority.raisedBy (PriorityInheritance.computeMaxWaiterPriority st tid))
           else st.updateTcb tid fun x =>
-              { x with pipBoost := PriorityInheritance.computeMaxWaiterPriority st tid })
+              { x with pipBoostCode := SeLe4n.Priority.optCode (PriorityInheritance.computeMaxWaiterPriority st tid) })
           tid tcb.boostedPriority (effectiveDeadline st tcb) tcb.domain).mapTcbInPlace r
         (TCB.withMessageSlots ρ μ π) := by
     intro tcb
@@ -528,7 +532,7 @@ theorem updatePipBoostOnCore_msg (st : SystemState) (c : CoreId) (tid : SeLe4n.T
   · cases st.getTcb? tid with
     | none => rfl
     | some tcb =>
-      simp only [Option.map_some, TCB.withMessageSlots_pipBoost, TCB.withMessageSlots_boostedPriority,
+      simp only [Option.map_some, TCB.withMessageSlots_pipBoostCode, TCB.withMessageSlots_boostedPriority,
         TCB.withMessageSlots_domain, TCB.withMessageSlots_runCoreCode, TCB.withMessageSlots_priority,
         effectiveDeadline_withMessageSlots, effectiveDeadline_msg]
       exact hBody tcb

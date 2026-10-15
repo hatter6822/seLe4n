@@ -546,10 +546,11 @@ def syscallDispatchCrossCoreBracketedStepWords (ctx : LabelingContext)
       PerCoreFlags × List CoreId ×
       List Architecture.TlbInvalidation × (Nat × Nat) ×
       List Architecture.ICacheInvalidation × List Architecture.PhysicalWrite ×
-      Architecture.RestoreTarget × Option SeLe4n.ThreadId) × SystemState :=
+      Architecture.RestoreTarget × Nat) × SystemState :=
   let r := syscallDispatchCrossCoreBracketedStep ctx execCore syscallId trapped st
   ((r.1.1.words.1, r.1.1.words.2.1, r.1.1.words.2.2.1, r.1.1.words.2.2.2.1,
-    r.1.1.words.2.2.2.2.1, r.1.1.words.2.2.2.2.2.1, r.1.1.words.2.2.2.2.2.2, r.1.2), r.2)
+    r.1.1.words.2.2.2.2.1, r.1.1.words.2.2.2.2.2.1, r.1.1.words.2.2.2.2.2.2,
+    currentAsCode r.1.2), r.2)
 
 /-- WS-ZA ZA4: the compiled `syscallDispatchCrossCoreBracketedStepWords`. -/
 @[inline] def syscallDispatchCrossCoreBracketedStepWordsImpl (ctx : LabelingContext)
@@ -559,7 +560,7 @@ def syscallDispatchCrossCoreBracketedStepWords (ctx : LabelingContext)
       PerCoreFlags × List CoreId ×
       List Architecture.TlbInvalidation × (Nat × Nat) ×
       List Architecture.ICacheInvalidation × List Architecture.PhysicalWrite ×
-      Architecture.RestoreTarget × Option SeLe4n.ThreadId) × SystemState :=
+      Architecture.RestoreTarget × Nat) × SystemState :=
   syscallDispatchCrossCoreStepWords ctx execCore syscallId
     trapped.x0 trapped.x1 trapped.x2 trapped.x3 trapped.x4 trapped.x5
     trapped.x6 trapped.pc trapped.pstate trapped.sp trapped.x30 st
@@ -808,7 +809,8 @@ def syscallDispatchCrossCoreEntry (syscallId : UInt32) : BaseIO UInt64 := do
   -- step above (after `scheduleLocalSuccessor`, so it is the successor
   -- when the syscall vacated the core), and a syscall that left the core
   -- vacated clears the mirror rather than leaving it naming a blocked caller.
-  Concurrency.recordCommittedCurrentThreadHw (some (execCore, rest.2.2.2.2.2.2.2))
+  Concurrency.recordCommittedCurrentThreadHw
+    (some (execCore, SeLe4n.ThreadId.ofOptCode rest.2.2.2.2.2.2.2))
   -- WS-RA: the export's scalar return is the outcome tag (0 = the mailbox
   -- frame is the caller's return; 1 = the caller blocked, no frame; 2 = the
   -- caller faulted at the seam, no frame — PR #887 review round 5; since WS-BP
@@ -857,7 +859,8 @@ theorem syscallDispatchCrossCoreEntry_def (syscallId : UInt32) :
         Concurrency.releaseSwitchedFpOwnerOnCore execCore
         Platform.FFI.restoreTrapFrameParts restoreKind restoreContext restoreTableBase
           restoreAsid
-        Concurrency.recordCommittedCurrentThreadHw (some (execCore, rest.2.2.2.2.2.2.2))
+        Concurrency.recordCommittedCurrentThreadHw
+          (some (execCore, SeLe4n.ThreadId.ofOptCode rest.2.2.2.2.2.2.2))
         pure tag) := rfl
 
 /-- **WS-SM SM8.B** (PR #861 review rounds 39/41): the gating argument's

@@ -1788,7 +1788,7 @@ def frozenResumeThread (tid : SeLe4n.ThreadId) : FrozenKernel Unit :=
           -- (2) the boost re-derived from the post-restore blocking graph.
           let tcb' := { tcb.restoredToReady with
                           threadState := .Ready
-                          pipBoost := frozenComputeMaxWaiterPriority stCleared tid }
+                          pipBoostCode := SeLe4n.Priority.optCode (frozenComputeMaxWaiterPriority stCleared tid) }
           match frozenWithObjectStored stCleared tid.toObjId (.tcb tcb') with
           | .ok stored =>
             -- (3) preemption on the EFFECTIVE priority, off the record just

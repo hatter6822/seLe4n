@@ -474,8 +474,11 @@ on core `c`.
 clears the mirror rather than leaving it naming a thread that is no longer
 current.  Leaving a stale name is not a harmless omission: `ffi_switch_to_thread`
 is what a dispatch path reads to decide whose context to restore, so a mirror
-that outlives its thread is a restore into a descheduled frame. -/
-def recordCurrentThreadHw (cur? : Option SeLe4n.ThreadId) (c : CoreId) :
+that outlives its thread is a restore into a descheduled frame.
+
+Inlined, so a current thread decoded from the per-core code is matched where
+it is decoded and its `some` is never built (WS-ZA). -/
+@[inline] def recordCurrentThreadHw (cur? : Option SeLe4n.ThreadId) (c : CoreId) :
     BaseIO UInt64 :=
   match cur? with
   | some tid => switchToThreadHw tid c

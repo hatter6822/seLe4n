@@ -124,11 +124,12 @@ theorem updatePipBoostOnCore_getTcb?_pipBoost (st : SystemState) (c : CoreId) (t
   · -- no-op: pipBoost already equals newBoost
     rename_i hEq
     exact ⟨tcb, hTcb, eq_of_beq hEq⟩
-  · -- update: pipBoost := newBoost
-    refine ⟨{ tcb with pipBoost := computeMaxWaiterPriority st tid }, ?_, rfl⟩
+  · -- update: the boost's code is written
+    refine ⟨{ tcb with pipBoostCode := SeLe4n.Priority.optCode (computeMaxWaiterPriority st tid) }, ?_,
+      SeLe4n.Priority.ofOptCode_optCode _⟩
     rw [SystemState.getTcb?_eq_some_iff]
     exact RHTable_get?_insert_self st.objects tid.toObjId
-      (.tcb { tcb with pipBoost := computeMaxWaiterPriority st tid }) hInv
+      (.tcb { tcb with pipBoostCode := SeLe4n.Priority.optCode (computeMaxWaiterPriority st tid) }) hInv
 
 -- ============================================================================
 -- §2  SM5.F.1 / SM5.F.3 — pipBoost_perCore_consistent
@@ -431,7 +432,7 @@ theorem restoreToReadyOnCore_pipBoost_recomputed (st : SystemState) (c : CoreId)
     unfold restoreToReadyMidState
     exact SystemState.updateTcb_preserves_objects_invExt _ _ _ hInv
   have hSt2Tcb : (restoreToReadyMidState st tid).getTcb? tid
-      = some { t1 with pipBoost := computeMaxWaiterPriority (restoreToReady st tid) tid } := by
+      = some { t1 with pipBoostCode := SeLe4n.Priority.optCode (computeMaxWaiterPriority (restoreToReady st tid) tid) } := by
     simp only [restoreToReadyMidState]
     rw [SystemState.updateTcb_getTcb?_self _ _ _ hInv, hTcb1]
     rfl
@@ -440,12 +441,13 @@ theorem restoreToReadyOnCore_pipBoost_recomputed (st : SystemState) (c : CoreId)
   -- branch sets only `ipcState` (`enqueueRunnableOnCore_makes_ready`).
   by_cases hRun : wakeDeclines (restoreToReadyMidState st tid) c tid = true
   · rw [enqueueRunnableOnCore_eq_self_of_declines _ _ _ hRun]
-    exact ⟨_, hSt2Tcb, rfl⟩
+    exact ⟨_, hSt2Tcb, SeLe4n.Priority.ofOptCode_optCode _⟩
   · have hFresh : wakeDeclines (restoreToReadyMidState st tid) c tid = false := by
       simpa using hRun
     obtain ⟨t', h', ht⟩ := enqueueRunnableOnCore_makes_ready (restoreToReadyMidState st tid) c tid
-      { t1 with pipBoost := computeMaxWaiterPriority (restoreToReady st tid) tid } hSt2Tcb hInv2 hFresh
-    exact ⟨t', h', TCB.proj_eq_of_withoutRunLinks_eq TCB.pipBoost ht⟩
+      { t1 with pipBoostCode := SeLe4n.Priority.optCode (computeMaxWaiterPriority (restoreToReady st tid) tid) } hSt2Tcb hInv2 hFresh
+    exact ⟨t', h', (TCB.proj_eq_of_withoutRunLinks_eq TCB.pipBoost ht).trans
+      (SeLe4n.Priority.ofOptCode_optCode _)⟩
 
 -- §5b  SM5.F.6 — restoreToReadyWithWake (cross-core resume wake)
 
@@ -1378,9 +1380,9 @@ thread.
 
 `caller?` is the executing core's pre-entry thread, which the commit seams
 capture before the transition consumes the pre-state (KSC-1). -/
-def localSuccessorNeededFrom (caller? : Option SeLe4n.ThreadId) (post : SystemState)
+@[inline] def localSuccessorNeededFrom (caller? : Option SeLe4n.ThreadId) (post : SystemState)
     (execCore : CoreId) : Bool :=
-  (caller? != none) && (post.scheduler.currentOnCore execCore == none)
+  caller?.isSome && (post.scheduler.currentOnCore execCore).isNone
 
 /-- `localSuccessorNeededFrom` with the caller read off the pre-state. -/
 def localSuccessorNeeded (pre post : SystemState) (execCore : CoreId) : Bool :=
@@ -1438,14 +1440,14 @@ def handleRescheduleSgiOnCoreTotal (st : SystemState) (c : CoreId) : SystemState
               let stPreempt := preemptCurrentOnCore st c tid
               let stDequeued := stPreempt.runRemoveOnCore c tid
               let stRestored := restoreIncomingContextOnCoreUnlessCurrent stDequeued c tid
-              { stRestored with scheduler := (stRestored.scheduler.setCurrentSomeOnCore c tid)
+              { stRestored with scheduler := (stRestored.scheduler.setCurrentOnCore c (some tid))
                 |>.clearReschedulePendingOnCore c }
             else st
         | none => st
       else st.clearReschedulePendingOnCore c
 
 /-- WS-ZA ZA4.7: the compiled `scheduleLocalSuccessorFrom`. -/
-def scheduleLocalSuccessorFromImpl (caller? : Option SeLe4n.ThreadId) (post : SystemState)
+@[inline] def scheduleLocalSuccessorFromImpl (caller? : Option SeLe4n.ThreadId) (post : SystemState)
     (execCore : CoreId) : SystemState :=
   if localSuccessorNeededFrom caller? post execCore then
     handleRescheduleSgiOnCoreTotal post execCore
@@ -1469,7 +1471,7 @@ theorem handleRescheduleSgiOnCore_total (st : SystemState) (c : CoreId) :
       | none => rfl
       | some tidTcb =>
         by_cases hA : affinityAdmitsCore tidTcb c = true
-        · simp only [hA, ↓reduceIte, SchedulerState.setCurrentSomeOnCore_eq]; rfl
+        · simp only [hA, ↓reduceIte]; rfl
         · simp only [hA, Bool.false_eq_true, ↓reduceIte]
     · simp only [hG, Bool.false_eq_true, ↓reduceIte]
 
@@ -1630,6 +1632,33 @@ def settleResidencyOnCore (st : SystemState) (c : CoreId) : SystemState :=
     | _ => none
   { st2 with machine := st2.machine.setResidentOnCore c resident }
 
+/-- The code of the thread `settleResidencyOnCore` records as core `c`'s
+resident: read in a call of its own, so the settled state is not held while
+the record is written (WS-ZA ZA4.7). -/
+@[noinline] def settledResidentCode (st2 : SystemState) (c : CoreId) : Nat :=
+  SeLe4n.ThreadId.optCode (match Architecture.restoreTargetOnCore st2 c with
+    | .user .. => st2.scheduler.currentOnCore c
+    | _ => none)
+
+/-- Core `c`'s resident thread recorded as `code`, in its slot; a call of its
+own, so the code is computed before the state is taken apart. -/
+def writeResidentCode (st : SystemState) (c : CoreId) (code : Nat) : SystemState :=
+  { st with machine :=
+      { st.machine with residentCode := st.machine.residentCode.set c.val code c.isLt } }
+
+/-- WS-ZA ZA4.7: the compiled `settleResidencyOnCore`: the resident is computed
+as its code before the machine is rewritten, so the write finds the state
+exclusive and stores a scalar. -/
+def settleResidencyOnCoreImpl (st : SystemState) (c : CoreId) : SystemState :=
+  let st2 := deferResidentElsewhere (dispatchVacatedCore st c) c
+  writeResidentCode st2 c (settledResidentCode st2 c)
+
+@[csimp] theorem settleResidencyOnCore_eq_impl :
+    @settleResidencyOnCore = @settleResidencyOnCoreImpl := by
+  funext st c
+  simp only [settleResidencyOnCore, settleResidencyOnCoreImpl, writeResidentCode,
+    settledResidentCode, MachineState.setResidentOnCore]
+
 /-- `settleResidencyOnCore` for a per-core entry's raw core id — nothing when the
 id names no core, as the verified steps commit nothing for such an id. -/
 def settleResidencyAt (st : SystemState) (coreId : UInt64) : SystemState :=
@@ -1693,14 +1722,14 @@ theorem localSuccessorNeeded_post_none (pre post : SystemState) (execCore : Core
     (h : localSuccessorNeeded pre post execCore = true) :
     post.scheduler.currentOnCore execCore = none := by
   unfold localSuccessorNeeded localSuccessorNeededFrom at h
-  simp only [Bool.and_eq_true, bne_iff_ne, ne_eq, beq_iff_eq] at h
+  simp only [Bool.and_eq_true, Option.isNone_iff_eq_none] at h
   exact h.2
 
 theorem localSuccessorNeeded_pre_some (pre post : SystemState) (execCore : CoreId)
     (h : localSuccessorNeeded pre post execCore = true) :
     pre.scheduler.currentOnCore execCore ≠ none := by
   unfold localSuccessorNeeded localSuccessorNeededFrom at h
-  simp only [Bool.and_eq_true, bne_iff_ne, ne_eq, beq_iff_eq] at h
+  simp only [Bool.and_eq_true, Option.isSome_iff_ne_none] at h
   exact h.1
 
 /-- WS-SM SM8.B: a vacated core admits **any** candidate — the preemption gate's

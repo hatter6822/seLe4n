@@ -261,7 +261,7 @@ theorem registerContextStableCheck_budget
   have hCur : (contextSwitchState newTid newRegs st).scheduler.currentOnCore
       bootCoreId = some newTid := by
     simp [contextSwitchState, SchedulerState.setCurrentOnCore,
-      SchedulerState.currentOnCore, PerCoreVector.get_set_eq]
+      SchedulerState.currentOnCore, PerCoreVector.get_set_eq, SeLe4n.ThreadId.ofOptCode_optCode]
   have hTcb : (contextSwitchState newTid newRegs st).getTcb? newTid = some tcb :=
     (SystemState.getTcb?_frame (st := st) rfl newTid).trans hTcbPre
   simp only [registerContextStableCheck, hCur, hTcb, Bool.and_eq_true] at hStable
