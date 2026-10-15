@@ -54,13 +54,31 @@ step) and a call to the thread that reply-receive blocked (0).
   different badge or grant right compared equal.  `frozenObjectAgrees` now
   compares them; FO-028 checks a badged send agrees and a re-badged one does
   not.
-- **Debt registered.**  A receive that takes a sender's capabilities does not
-  yet declare a lock on the sender's CSpace root.  The send operations deliver
-  a passed message's words only when a receiver waits (every kernel entry
-  passes its own frame's words, so the two agree); the send is to read its
-  frame on both arms.  The frozen surface carries extra capabilities only in a
-  waiting receiver's `pendingMessage` and installs none
-  (`docs/REGISTERED_DEBT.md`).
+- **The send reads its frame on both arms** (review).  `endpointSendDual`,
+  `endpointCall` and every per-core, capability, checked and frozen form take
+  a `SendPayload` (the capability's badge and grant right, or a fault message)
+  instead of an `IpcMessage`.  The words come from the sender's saved frame on
+  both arms (`sendPayloadMessage`, the reader the blocked-sender receive
+  uses), as seL4's `sendIPC` does, so no caller can make the two arrival
+  orders deliver different words.  The message bound is structural
+  (`sendPayloadMessage_bounded`), so the send and call no longer refuse with
+  `ipcMessageTooLarge` / `ipcMessageTooManyCaps`; the message-info decode is
+  where an oversized frame stops, and the tests now check it there.  The reply
+  paths keep their refusals.
+- **Capabilities resolved only when delivered** (review).  The syscall arms no
+  longer resolve the extra-capability addresses before the operation decides
+  whether it blocks.  The operation asks for them only when a receiver waits
+  (`sendCapRequest`, `none` otherwise) and resolves them in the receiving step
+  (`receiveTransferCaps`), so a send that blocks mints no CDT node.
+- **The receive locks the sender's CSpace root** (review).  A receive or
+  reply-receive that dequeues a sender looks its capabilities up in the
+  sender's CSpace, so both footprints declare that CNode as a read, resolved
+  from the same request the transition installs from.  The widest
+  reply-receive footprint grows by one: `maxLockSetSize` 27 → 28, admissible
+  critical section 12 → 11 µs.
+- **Debt.**  The frozen surface transfers no capabilities on either arrival
+  order; the frozen execute phase is to resolve and install them at the
+  rendezvous as the live receive does (`docs/REGISTERED_DEBT.md`).
 
 **What remains.**  Reply-receive joins the register path (ZA4.7 (d)).
 

@@ -284,9 +284,9 @@ This workstream delivers, in order:
   `lockSet_tcbSuspendOnCore` (`IPC/CrossCore/Cancellation.lean`; the
   single-core `lockSet_tcbSuspend` is retired), at most **17** entries
   (`lockSet_tcbSuspendOnCore_size_le_twenty`), and the ceiling
-  `maxLockSetSize` (`Concurrency/Locks/LockSet.lean`) is **24** since WS-HP
-  HP10.6, set by `lockSet_endpointReplyRecvOnCore`'s bound over all argument
-  values.  The `v0.34.48` figures (eight and eight, then nine and 11 at WS-OD
+  `maxLockSetSize` (`Concurrency/Locks/LockSet.lean`) is **28** since WS-ZA
+  ZA4.7 (`v0.36.92`; 24 at WS-HP HP10.6, 27 at ZA4.6), set by
+  `lockSet_endpointReplyRecvOnCore`'s bound over all argument values.  The `v0.34.48` figures (eight and eight, then nine and 11 at WS-OD
   OD3.5, then 14 at OD3.13) are history; CB4.4 re-measures rather than
   quoting.
 * `schedContextYieldTo` is the one hook already labelled "for hierarchical
@@ -1746,9 +1746,9 @@ IPC unblocks), the IPC block footprints (`removeRunnable`'s callers),
 `lockSet_tcbSuspendOnCore`, the cancellation and fault suspends, retype cleanup,
 and the current-clearing dispatch paths.  `lockSet_tcbSuspendOnCore` (the
 single-core `lockSet_tcbSuspend` is retired) is at most **seventeen** entries
-(`lockSet_tcbSuspendOnCore_size_le_twenty`) and `maxLockSetSize` is **24**
-(WS-HP HP10.6; the widest declared footprint is
-`lockSet_endpointReplyRecvOnCore`, bounded at twenty), so the addition takes
+(`lockSet_tcbSuspendOnCore_size_le_twenty`) and `maxLockSetSize` is **28**
+(WS-ZA ZA4.7; the widest declared footprint is
+`lockSet_endpointReplyRecvOnCore`), so the addition takes
 `lockSet_tcbSuspendOnCore` to nineteen — **inside** the ceiling.  D21's planned
 raise is therefore overtaken: CB4.4 re-proves every `_size_le_maxLockSetSize`
 at the new arity and re-derives the constant-dependent terms of `WCRT_smp` and
