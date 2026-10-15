@@ -10,6 +10,7 @@
 import SeLe4n.Kernel.RefusalCarryingDispatch
 import SeLe4n.Kernel.IPC.CrossCore.EndpointReplyInPlace
 import SeLe4n.Kernel.IPC.CrossCore.DeliveredInPlace
+import SeLe4n.Kernel.IPC.CrossCore.EndpointReceiveInPlace
 
 /-!
 # The endpoint syscalls, refusing in the state they were refused in
@@ -169,12 +170,23 @@ where this is called, so only the general arm builds it. -/
   endpointSendCheckedArmGeneralR ctx (Architecture.regMessageBody layout rf len) tid
     executingCore cap
 
+/-- WS-ZA ZA4.7: a send blocks, and writes only its slots: the sender may be
+enqueued (`enqueueAdmits`) and every write stays in place
+(`enqueuesInPlace`), the send queue's tail read as its code. -/
+@[inline] def sendBlocksFast (st : SystemState) (endpointId : SeLe4n.ObjId)
+    (sender : SeLe4n.ThreadId) (tailCode : Nat) : Bool :=
+  match st.getTcb? sender with
+  | some t => enqueueAdmits t && enqueuesInPlaceCode st endpointId sender tailCode
+  | none => false
+
 /-- WS-ZA ZA4.7: the checked send arm (`dispatchWithCapChecked`'s `.send` case)
 for a message with no capabilities to transfer, refusing in the state it was
 handed (`endpointSendCheckedArmR_eq`).  A send of at most four words to a
 waiting receiver whose checks all pass before any write (`sendWakesInPlace`)
 wakes the receiver in place and writes the words into its saved registers
-(`performSendDelivered`, `sendRendezvous_eq_delivered`); any other send takes
+(`performSendDelivered`, `sendRendezvous_eq_delivered`); a send with no
+receiver waiting whose checks all pass (`sendBlocksFast`) blocks in place,
+its words left in its registers (`sendBlock_inPlace_eq`); any other send takes
 the general arm. -/
 @[inline] def endpointSendCheckedArmR (ctx : LabelingContext)
     (layout : SeLe4n.SyscallRegisterLayout) (rf : SeLe4n.RegisterFile) (len : Nat)
@@ -198,7 +210,14 @@ the general arm. -/
                         cap.badge (cap.rights.mem .grant) executingCore)
                     else endpointSendCheckedArmRegsR ctx layout rf len tid executingCore cap st
                 | none => endpointSendCheckedArmRegsR ctx layout rf len tid executingCore cap st
-            | none => endpointSendCheckedArmRegsR ctx layout rf len tid executingCore cap st
+            | none =>
+                if sendBlocksFast st epId tid ep.sendTailCode &&
+                    endpointFlowGate ctx epId (ctx.threadLabelOf tid)
+                      (ctx.endpointLabelOf epId) then
+                  .ok ((), recordSendCap (removeRunnableOnCore
+                    (storeSendBlock st epId tid ep.sendTailCode) tid executingCore) tid
+                    cap.badge (cap.rights.mem .grant))
+                else endpointSendCheckedArmRegsR ctx layout rf len tid executingCore cap st
         | none => endpointSendCheckedArmRegsR ctx layout rf len tid executingCore cap st
     | _ => .error (.invalidCapability, st)
 
@@ -238,7 +257,36 @@ theorem endpointSendCheckedArmR_eq_general (ctx : LabelingContext)
             rfl
           · rfl
         · rfl
-      · rfl
+      · next hH =>
+        split
+        · next hG =>
+          simp only [Bool.and_eq_true] at hG
+          obtain ⟨hB, hFlow⟩ := hG
+          unfold sendBlocksFast at hB
+          split at hB
+          · next t hT =>
+            simp only [Bool.and_eq_true] at hB
+            obtain ⟨hA, hIP⟩ := hB
+            rw [enqueuesInPlaceCode_eq,
+              show SeLe4n.ThreadId.ofOptCode ep.sendTailCode = ep.sendQ.tail from rfl] at hIP
+            have hSz' :
+                ¬ (Architecture.regMessageBody layout rf len).size > maxMessageRegisters := by
+              rw [Architecture.regMessageBody_size]
+              unfold Architecture.regMessageLength; omega
+            unfold endpointSendCheckedArmGeneralR
+            simp only [hTgt, hE, Option.bind_some, hH]
+            unfold endpointSendCrossCoreDispatchChecked
+            rw [if_neg hSz']
+            dsimp only
+            simp only [Array.size_empty, gt_iff_lt, Nat.not_lt_zero, ↓reduceIte]
+            rw [if_pos hFlow,
+              endpointSendDualWithCapsOnCore_no_caps _ _ _ _ _ _ _ rfl,
+              sendBlock_inPlace_eq _ _ _ _ _ ep t hSz' (Nat.not_lt_zero _)
+                ((SystemState.getEndpoint?_eq_some_iff _ _ _).mp hE) hH
+                ((SystemState.getTcb?_eq_some_iff _ _ _).mp hT) hA hIP]
+            rfl
+          · cases hB
+        · rfl
     · rfl
   · next hTgt =>
     unfold endpointSendCheckedArmGeneralR
@@ -1053,17 +1101,12 @@ theorem resolveRecvReplyK_eq {α : Type} (st : SystemState) (tid : SeLe4n.Thread
               split <;> rfl
           · simp only [hIdle, hRight, ↓reduceIte, Bool.false_eq_true, Bool.not_false]
 
-/-- The checked receive arm once its reply object is resolved, given as its
-code: the blocking receive written in place when it may be
-(`receiveBlocksFast`), the rendezvous otherwise.  Inlined, so its result is
-matched by the caller rather than built. -/
-@[inline] def endpointReceiveResolvedR (epId : SeLe4n.ObjId) (tid : SeLe4n.ThreadId)
+/-- The checked receive arm's rendezvous through the specification: the
+WithCaps receive, the rendezvous hand-off, then the woken sender's completion
+and the receiver's message staged. -/
+@[inline] def endpointReceiveRendezvousR (epId : SeLe4n.ObjId) (tid : SeLe4n.ThreadId)
     (replyCode : Nat) (executingCore : Concurrency.CoreId) : RefusalCarrying Unit :=
   fun st =>
-    if receiveBlocksFast st epId tid replyCode then
-      .ok ((), removeRunnableOnCore
-        (storeReceiveBlock st epId tid (receiveQueueTailCode st epId) replyCode) tid executingCore)
-    else
       let rid := SeLe4n.ReplyId.ofOptCode replyCode
       let wokenSender? := (st.getEndpoint? epId).bind (·.sendQ.head)
       match endpointReceiveDualWithCapsOnCore epId tid rid (callerCspaceRoot st tid)
@@ -1076,6 +1119,80 @@ matched by the caller rather than built. -/
                 (Architecture.stageWokenSendCompletion stDon wokenSender?) tid
                 summary.installedCount)
       | (_, .error e) => .error (e, st)
+
+/-- WS-ZA ZA4.7: the checked receive arm's rendezvous.  A receive that takes a
+sender blocked by a capability-free send (`registerRoutedSyscall` of its saved
+frame), not delivering a fault, whose writes all stay in their slots
+(`receiveTakesInPlace`), takes it in place: the six words of the delivered
+frame are read from the sender's saved registers before any write and written
+into the receiver's (`performReceiveDelivered`, `receiveTake_delivered`).  Any
+other rendezvous goes through the specification
+(`endpointReceiveTakeR_eq`). -/
+@[inline] def endpointReceiveTakeR (epId : SeLe4n.ObjId) (tid : SeLe4n.ThreadId)
+    (replyCode : Nat) (executingCore : Concurrency.CoreId) : RefusalCarrying Unit :=
+  fun st =>
+    match st.getEndpoint? epId with
+    | some ep =>
+      match ep.sendQ.head with
+      | some s =>
+        match st.getTcb? s with
+        | some sTcb =>
+          match Architecture.RegisterDecode.registerRoutedSyscall SeLe4n.arm64DefaultLayout
+              sTcb.registerContext 32 with
+          | .send _ mi =>
+            if !sTcb.ipcFaultSend && receiveTakesInPlace st epId tid s sTcb then
+              let f := Architecture.regMessageFrame SeLe4n.arm64DefaultLayout sTcb.registerContext
+                mi.length sTcb.ipcBadgeView
+              .ok ((), performReceiveDelivered st epId s sTcb.queueNextCode tid executingCore
+                f.x0 f.x1 f.x2 f.x3 f.x4 f.x5)
+            else endpointReceiveRendezvousR epId tid replyCode executingCore st
+          | _ => endpointReceiveRendezvousR epId tid replyCode executingCore st
+        | none => endpointReceiveRendezvousR epId tid replyCode executingCore st
+      | none => endpointReceiveRendezvousR epId tid replyCode executingCore st
+    | none => endpointReceiveRendezvousR epId tid replyCode executingCore st
+
+theorem endpointReceiveTakeR_eq (epId : SeLe4n.ObjId) (tid : SeLe4n.ThreadId)
+    (replyCode : Nat) (executingCore : Concurrency.CoreId) :
+    endpointReceiveTakeR epId tid replyCode executingCore =
+      endpointReceiveRendezvousR epId tid replyCode executingCore := by
+  funext st
+  unfold endpointReceiveTakeR
+  split
+  · next ep hEp =>
+    split
+    · next s hH =>
+      split
+      · next sTcb hT =>
+        split
+        · next capAddr mi hR =>
+          split
+          · next hG =>
+            simp only [Bool.and_eq_true, Bool.not_eq_true'] at hG
+            obtain ⟨hF, hG⟩ := hG
+            obtain ⟨h1, h2, h3⟩ := receiveTake_delivered st epId ep tid
+              (SeLe4n.ReplyId.ofOptCode replyCode) (callerCspaceRoot st tid) (SeLe4n.Slot.ofNat 0)
+              executingCore s sTcb capAddr mi ((SystemState.getEndpoint?_eq_some_iff _ _ _).mp hEp)
+              hH ((SystemState.getTcb?_eq_some_iff _ _ _).mp hT) hG hR hF
+            unfold endpointReceiveRendezvousR
+            simp only [hEp, Option.bind_some, hH, h1, h2, CapTransferSummary.installedCount_empty]
+            rw [h3]
+          · rfl
+        all_goals rfl
+      · rfl
+    · rfl
+  · rfl
+
+/-- The checked receive arm once its reply object is resolved, given as its
+code: the blocking receive written in place when it may be
+(`receiveBlocksFast`), the rendezvous otherwise (`endpointReceiveTakeR`).
+Inlined, so its result is matched by the caller rather than built. -/
+@[inline] def endpointReceiveResolvedR (epId : SeLe4n.ObjId) (tid : SeLe4n.ThreadId)
+    (replyCode : Nat) (executingCore : Concurrency.CoreId) : RefusalCarrying Unit :=
+  fun st =>
+    if receiveBlocksFast st epId tid replyCode then
+      .ok ((), removeRunnableOnCore
+        (storeReceiveBlock st epId tid (receiveQueueTailCode st epId) replyCode) tid executingCore)
+    else endpointReceiveTakeR epId tid replyCode executingCore st
 
 /-- The checked receive arm (`dispatchWithCapChecked`'s `.receive` case), on
 the message length and first message register, refusing in the state it was
@@ -1157,7 +1274,7 @@ theorem endpointReceiveCheckedArmR_eq (ctx : LabelingContext)
                   simp only [lookupTcb]
                   split
                   · next hRes =>
-                    simp only [receiveBlocksInPlace, Bool.and_eq_true, Bool.not_eq_true'] at hG
+                    simp only [receiveBlocksInPlace, enqueuesInPlace, Bool.and_eq_true, Bool.not_eq_true'] at hG
                     rw [hG.1.1.1.1.1.1] at hRes; cases hRes
                   · exact hT]
                 simp only [hB]
@@ -1166,8 +1283,9 @@ theorem endpointReceiveCheckedArmR_eq (ctx : LabelingContext)
               unfold Architecture.stageDeliveredMessage
               simp only [hT, hB, reduceCtorEq, ↓reduceIte]
             | _ => simp only [SystemState.getTcb?, hR] at hO; cases hO
-      · rw [if_neg hF]
-        simp only [hRoot, hSlot]
+      · rw [if_neg hF, endpointReceiveTakeR_eq]
+        unfold endpointReceiveRendezvousR
+        simp only [hRoot, hSlot, SeLe4n.ReplyId.ofOptCode_optCode]
         rcases endpointReceiveDualWithCapsOnCore epId tid rid gate.cspaceRoot
           (SeLe4n.Slot.ofNat 0) executingCore st with ⟨st', _ | ⟨dq, summary, sgi⟩⟩
         · rfl

@@ -14,6 +14,7 @@
 -- WS-SM SM6.C.
 
 import SeLe4n.Kernel.IPC.CrossCore.EndpointCall
+import SeLe4n.Kernel.IPC.CrossCore.EndpointEnqueueInPlace
 -- **WS-RR RR8.12 (PR #897 Codex review)**: the `.receive` arm's replenish
 -- segment is derived from the donation's own guard, so the footprint's module
 -- must see `rendezvousDequeuedCall`.  `Operations.Donation` is a sibling of
@@ -641,68 +642,12 @@ def endpointReceiveDualOnCore (endpointId : SeLe4n.ObjId) (receiver : SeLe4n.Thr
       if (st.getObject? endpointId).isSome then (st, .error .invalidCapability)
       else (st, .error .objectNotFound)
 
-/-- WS-ZA ZA4.7: the endpoint a blocking receive leaves: the receiver appended
-to its receive queue. -/
-@[inline] def receiveBlockEndpoint (receiver : SeLe4n.ThreadId)
-    (tailCode : Nat) : KernelObject → KernelObject
-  | .endpoint e =>
-      -- the queue ends are codes in the endpoint, rewritten in its cell
-      -- (`Endpoint.withReceiveQ_tail`); the old tail is passed as its code
-      -- (`SeLe4n.ThreadId.optCode`), so no `Option` is built to be read
-      match tailCode with
-      | 0 => .endpoint { e with recvHeadCode := receiver.val + 1, recvTailCode := receiver.val + 1 }
-      | _ + 1 => .endpoint { e with recvTailCode := receiver.val + 1 }
-  | o => o
-
-/-- WS-ZA ZA4.7: the receiver's queue links after it is appended behind `tail?`.
-Written as link codes, so no `some` cell is built to be encoded; the codes are
-`tcbWithQueueLinks`'s by definition. -/
-@[inline] def receiveBlockLinks (tail? : Option SeLe4n.ThreadId) (t : TCB) : TCB :=
-  match tail? with
-  | none => { t with queuePrevCode := 0, queuePPrevCode := 1, queueNextCode := 0 }
-  | some p => { t with queuePrevCode := p.val + 1, queuePPrevCode := p.val + 2,
-                       queueNextCode := 0 }
-
-/-- WS-ZA ZA4.7: a queue tail's successor link pointed at `next`, as a code
-(`tcbWithQueueNext_eq`). -/
-@[inline] def tcbWithQueueNext (next : SeLe4n.ThreadId) (t : TCB) : TCB :=
-  { t with queueNextCode := next.val + 1 }
-
-theorem tcbWithQueueNext_eq (next : SeLe4n.ThreadId) (t : TCB) :
-    tcbWithQueueNext next t = tcbWithQueueLinks t t.queuePrev t.queuePPrev (some next) := by
-  simp only [tcbWithQueueNext, tcbWithQueueLinks, TCB.optCode_queuePrev, TCB.optCode_queuePPrev]
-  rfl
-
-/-- WS-ZA ZA4.7: the enqueue a blocking receive performs, each write in its
-slot: the endpoint's receive queue, the old tail's successor link, the
-receiver's own links. -/
-@[inline] def storeReceiveEnqueue (st : SystemState) (endpointId : SeLe4n.ObjId)
-    (receiver : SeLe4n.ThreadId) (tail? : Option SeLe4n.ThreadId) : SystemState :=
-  let s1 := st.modifyObject endpointId (receiveBlockEndpoint receiver (ThreadId.optCode tail?))
-  let s2 := match tail? with
-    | none => s1
-    | some p => s1.updateTcb p (tcbWithQueueNext receiver)
-  s2.updateTcb receiver (receiveBlockLinks tail?)
-
-/-- WS-ZA ZA4.7: **a blocking receive writes only its slots** — the endpoint,
-the receiver and the old tail each rewritten where it stands, each store
-changing only `objects`, the receiver and the tail distinct unreserved TCBs,
-and the reply object it stashes admissible. -/
+/-- WS-ZA ZA4.7: **a blocking receive writes only its slots** — the enqueue's
+(`enqueuesInPlace`) and the reply object it stashes admissible. -/
 @[inline] def receiveBlocksInPlace (st : SystemState) (endpointId : SeLe4n.ObjId)
     (receiver : SeLe4n.ThreadId) (tail? : Option SeLe4n.ThreadId)
     (replyId : Option SeLe4n.ReplyId) : Bool :=
-  !receiver.isReserved &&
-  storeLeavesIndexAndTypes st endpointId .endpoint &&
-  st.objects.findsInPlace endpointId &&
-  storeLeavesIndexAndTypes st receiver.toObjId .tcb &&
-  st.objects.findsInPlace receiver.toObjId &&
-  (match tail? with
-   | none => true
-   | some p => !p.isReserved && p != receiver &&
-       storeLeavesIndexAndTypes st p.toObjId .tcb &&
-       st.objects.findsInPlace p.toObjId &&
-       (st.getTcb? p).isSome) &&
-  st.replyStashValid replyId
+  enqueuesInPlace st endpointId receiver tail? && st.replyStashValid replyId
 
 /-- `SystemState.replyStashValid` asked of the reply object's **code**
 (`replyStashValidCode_eq`), so no `some` cell is built for it. -/
@@ -725,41 +670,26 @@ reply object's code, as the compiled guard reads them: each is decoded by a
 match, so no `some` cell is built for either (WS-ZA ZA4.7). -/
 @[inline] def receiveBlocksInPlaceCode (st : SystemState) (endpointId : SeLe4n.ObjId)
     (receiver : SeLe4n.ThreadId) (tailCode : Nat) (replyCode : Nat) : Bool :=
-  !receiver.isReserved &&
-  storeLeavesIndexAndTypes st endpointId .endpoint &&
-  st.objects.findsInPlace endpointId &&
-  storeLeavesIndexAndTypes st receiver.toObjId .tcb &&
-  st.objects.findsInPlace receiver.toObjId &&
-  (match tailCode with
-   | 0 => true
-   | c + 1 =>
-       let p : SeLe4n.ThreadId := ⟨c⟩
-       !p.isReserved && p != receiver &&
-       storeLeavesIndexAndTypes st p.toObjId .tcb &&
-       st.objects.findsInPlace p.toObjId &&
-       (st.getTcb? p).isSome) &&
-  replyStashValidCode st replyCode
+  enqueuesInPlaceCode st endpointId receiver tailCode && replyStashValidCode st replyCode
 
 theorem receiveBlocksInPlaceCode_eq (st : SystemState) (endpointId : SeLe4n.ObjId)
     (receiver : SeLe4n.ThreadId) (tailCode replyCode : Nat) :
     receiveBlocksInPlaceCode st endpointId receiver tailCode replyCode =
       receiveBlocksInPlace st endpointId receiver (SeLe4n.ThreadId.ofOptCode tailCode)
         (SeLe4n.ReplyId.ofOptCode replyCode) := by
-  unfold receiveBlocksInPlaceCode
-  rw [replyStashValidCode_eq]
-  rcases tailCode with _ | c <;> rfl
+  unfold receiveBlocksInPlaceCode receiveBlocksInPlace
+  rw [replyStashValidCode_eq, enqueuesInPlaceCode_eq]
 
-/-- WS-ZA ZA4.7: the receiver may block: it is ready, on no queue, and holds no
-loaned scheduling context to return first. -/
+/-- WS-ZA ZA4.7: the receiver may block: it may be enqueued (`enqueueAdmits`)
+and holds no loaned scheduling context to return first. -/
 @[inline] def receiveBlockAdmits (t : TCB) : Bool :=
-  decide (t.ipcState = .ready) &&
-  t.queuePPrevCode == 0 && t.queuePrevCode == 0 && t.queueNextCode == 0 &&
+  enqueueAdmits t &&
   (match t.schedContextBinding with
    | .donated _ _ => false
    | _ => true)
 
-/-- WS-ZA ZA4.7: the guarded enqueue is the specification's, and leaves the
-receiver resolving, in its slot, to its linked TCB. -/
+/-- WS-ZA ZA4.7: the guarded enqueue of a blocking receive is the
+specification's (`endpointEnqueue_inPlace_eq` on the receive queue). -/
 theorem receiveEnqueue_inPlace_eq (st : SystemState) (endpointId : SeLe4n.ObjId)
     (ep : Endpoint) (receiver : SeLe4n.ThreadId) (rt : TCB) (replyId : Option SeLe4n.ReplyId)
     (hE : st.objects[endpointId]? = some (.endpoint ep))
@@ -767,119 +697,23 @@ theorem receiveEnqueue_inPlace_eq (st : SystemState) (endpointId : SeLe4n.ObjId)
     (hA : receiveBlockAdmits rt = true)
     (hG : receiveBlocksInPlace st endpointId receiver ep.receiveQ.tail replyId = true) :
     endpointQueueEnqueue endpointId true receiver st =
-        .ok (storeReceiveEnqueue st endpointId receiver ep.receiveQ.tail) ∧
-      (storeReceiveEnqueue st endpointId receiver ep.receiveQ.tail).getTcb? receiver =
-        some (receiveBlockLinks ep.receiveQ.tail rt) ∧
-      (storeReceiveEnqueue st endpointId receiver ep.receiveQ.tail).objects.findsInPlace
+        .ok (storeEndpointEnqueue st endpointId true receiver ep.receiveQ.tail) ∧
+      (storeEndpointEnqueue st endpointId true receiver ep.receiveQ.tail).getTcb? receiver =
+        some (enqueueLinks ep.receiveQ.tail rt) ∧
+      (storeEndpointEnqueue st endpointId true receiver ep.receiveQ.tail).objects.findsInPlace
         receiver.toObjId = true ∧
-      storeLeavesIndexAndTypes (storeReceiveEnqueue st endpointId receiver ep.receiveQ.tail)
+      storeLeavesIndexAndTypes (storeEndpointEnqueue st endpointId true receiver ep.receiveQ.tail)
         receiver.toObjId .tcb = true := by
-  simp only [receiveBlocksInPlace, Bool.and_eq_true, Bool.not_eq_true'] at hG
-  obtain ⟨⟨⟨⟨⟨⟨hRes, hLE⟩, hFE⟩, hLR⟩, hFR⟩, hTl⟩, _⟩ := hG
-  simp only [receiveBlockAdmits, Bool.and_eq_true, decide_eq_true_eq, beq_iff_eq] at hA
-  obtain ⟨⟨⟨⟨hReady, hPP⟩, hPv⟩, hNx⟩, _⟩ := hA
-  have hNeER : endpointId ≠ receiver.toObjId := by
-    intro h; rw [h, hR] at hE; cases hE
-  have hRT : st.getTcb? receiver = some rt := (SystemState.getTcb?_eq_some_iff _ _ _).mpr hR
-  have hLook : lookupTcb st receiver = some rt := by
-    simp only [lookupTcb, hRes, Bool.false_eq_true, ↓reduceIte]; exact hRT
-  have hLinks : (rt.queuePPrev.isSome || rt.queuePrev.isSome || rt.queueNext.isSome) = false := by
-    simp only [TCB.queuePPrev, TCB.queuePrev, TCB.queueNext] at *
-    rw [hPP, hPv, hNx]; rfl
-  obtain ⟨S1, hS1⟩ : ∃ S1 : SystemState, S1 = { st with objects :=
-      (st.objects.insert endpointId
-        (receiveBlockEndpoint receiver (ThreadId.optCode ep.receiveQ.tail) (.endpoint ep))) } :=
-    ⟨_, rfl⟩
-  have hMo : st.modifyObject endpointId
-      (receiveBlockEndpoint receiver (ThreadId.optCode ep.receiveQ.tail)) = S1 := by
-    rw [hS1]; unfold SystemState.modifyObject
-    rw [SeLe4n.Kernel.RobinHood.RHTable.modify_of_get? hE]
-  have hNotV : ∀ r,
-      receiveBlockEndpoint receiver (ThreadId.optCode ep.receiveQ.tail) (.endpoint ep) ≠
-      .vspaceRoot r := by
-    intro r h; simp only [receiveBlockEndpoint] at h; split at h <;> cases h
-  have hF1 : ∀ k, S1.objects.findsInPlace k = st.objects.findsInPlace k := fun k => by
-    rw [hS1]; exact SeLe4n.Kernel.RobinHood.RHTable.findsInPlace_insert_of_findsInPlace k _ hFE
-  have hG1 : ∀ k, endpointId ≠ k → S1.objects[k]? = st.objects[k]? := fun k hk => by
-    rw [hS1]; exact SeLe4n.Kernel.RobinHood.RHTable.get?_insert_ne_of_findsInPlace k _ hFE hk
-  have hL1 : ∀ {id ty}, storeLeavesIndexAndTypes st id ty = true →
-      storeLeavesIndexAndTypes S1 id ty = true := fun h => by
-    rw [hS1]; exact storeLeavesIndexAndTypes_insert_inPlace hFE hNotV h
-  have hRT1 : S1.getTcb? receiver = some rt :=
-    (SystemState.getTcb?_eq_some_iff _ _ _).mpr ((hG1 _ hNeER).trans hR)
-  unfold endpointQueueEnqueue storeReceiveEnqueue
-  simp only [SystemState.getObject?, hE, hLook, hReady, ne_eq, not_true_eq_false,
-    ↓reduceIte, hLinks, Bool.false_eq_true]
-  rw [hMo]
-  cases hTail : ep.receiveQ.tail with
-  | none =>
-    have hSt : storeObject endpointId (.endpoint (ep.withReceiveQ { head := some receiver, tail := some receiver })) st = .ok ((), S1) := by
-      rw [storeObject_eq_of_leaves (by simpa only [KernelObject.objectType] using hLE), hS1,
-        hTail]; rfl
-    simp only [hSt]
-    have hQ : storeTcbQueueLinks S1 receiver none (some .endpointHead) none =
-        .ok (S1.updateTcb receiver (receiveBlockLinks none)) :=
-      modifyTcb_eq_updateTcb _ hRes hRT1 (hL1 hLR)
-    refine ⟨hQ, ?_, ?_, ?_⟩
-    · exact updateTcb_getTcb?_self_of_findsInPlace _ hRT1 ((hF1 _).trans hFR)
-    · rw [updateTcb_findsInPlace _ hRT1 ((hF1 _).trans hFR), hF1]; exact hFR
-    · exact updateTcb_storeLeaves _ hRT1 ((hF1 _).trans hFR) (hL1 hLR)
-  | some p =>
-    rw [hTail] at hTl
-    simp only [Bool.and_eq_true, Bool.not_eq_true', bne_iff_ne, ne_eq] at hTl
-    obtain ⟨⟨⟨⟨hRp, hNePR⟩, hLP⟩, hFP⟩, hTpB⟩ := hTl
-    obtain ⟨pt, hTp⟩ := Option.isSome_iff_exists.mp hTpB
-    have hNeEP : endpointId ≠ p.toObjId := by
-      intro h; rw [h, (SystemState.getTcb?_eq_some_iff _ _ _).mp hTp] at hE; cases hE
-    have hNePRo : p.toObjId ≠ receiver.toObjId :=
-      fun h => hNePR (SeLe4n.ThreadId.toObjId_injective _ _ h)
-    have hLookP : lookupTcb st p = some pt := by
-      simp only [lookupTcb, hRp, Bool.false_eq_true, ↓reduceIte]; exact hTp
-    simp only [hLookP]
-    have hSt : storeObject endpointId (.endpoint (ep.withReceiveQ { head := ep.receiveQ.head, tail := some receiver })) st = .ok ((), S1) := by
-      rw [Endpoint.withReceiveQ_tail, storeObject_eq_of_leaves (by simpa only [KernelObject.objectType] using hLE), hS1,
-        hTail]; rfl
-    simp only [hSt]
-    have hTp1 : S1.getTcb? p = some pt :=
-      (SystemState.getTcb?_eq_some_iff _ _ _).mpr
-        ((hG1 _ hNeEP).trans ((SystemState.getTcb?_eq_some_iff _ _ _).mp hTp))
-    let g := tcbWithQueueNext receiver
-    have hQp : storeTcbQueueLinks S1 p pt.queuePrev pt.queuePPrev (some receiver) =
-        .ok (S1.updateTcb p g) := by
-      have := modifyTcb_eq_updateTcb (fun t => tcbWithQueueLinks t pt.queuePrev pt.queuePPrev
-        (some receiver)) hRp hTp1 (hL1 hLP)
-      rw [show storeTcbQueueLinks S1 p pt.queuePrev pt.queuePPrev (some receiver) =
-        modifyTcb S1 p (fun t => tcbWithQueueLinks t pt.queuePrev pt.queuePPrev (some receiver))
-        from rfl, this, SystemState.updateTcb_eq_of_some hTp1,
-        SystemState.updateTcb_eq_of_some hTp1]
-      simp only [g, tcbWithQueueNext_eq]
-    rw [hQp]
-    simp only []
-    obtain ⟨S2, hS2⟩ : ∃ S2 : SystemState, S2 = S1.updateTcb p g := ⟨_, rfl⟩
-    rw [← hS2]
-    have hFp1 : S1.objects.findsInPlace p.toObjId = true := (hF1 _).trans hFP
-    have hRT2 : S2.getTcb? receiver = some rt := by
-      rw [hS2, SystemState.getTcb?_eq_some_iff,
-        updateTcb_get?_ne_of_findsInPlace g hTp1 hFp1 hNePRo]
-      exact (SystemState.getTcb?_eq_some_iff _ _ _).mp hRT1
-    have hF2 : ∀ k, S2.objects.findsInPlace k = st.objects.findsInPlace k := fun k => by
-      rw [hS2, updateTcb_findsInPlace g hTp1 hFp1, hF1]
-    have hL2 : storeLeavesIndexAndTypes S2 receiver.toObjId .tcb = true := by
-      rw [hS2]; exact updateTcb_storeLeaves g hTp1 hFp1 (hL1 hLR)
-    have hQ : storeTcbQueueLinks S2 receiver (some p) (some (.tcbNext p)) none =
-        .ok (S2.updateTcb receiver (receiveBlockLinks (some p))) :=
-      modifyTcb_eq_updateTcb _ hRes hRT2 hL2
-    refine ⟨hQ, ?_, ?_, ?_⟩
-    · exact updateTcb_getTcb?_self_of_findsInPlace _ hRT2 ((hF2 _).trans hFR)
-    · rw [updateTcb_findsInPlace _ hRT2 ((hF2 _).trans hFR), hF2]; exact hFR
-    · exact updateTcb_storeLeaves _ hRT2 ((hF2 _).trans hFR) hL2
+  simp only [receiveBlocksInPlace, Bool.and_eq_true] at hG
+  simp only [receiveBlockAdmits, Bool.and_eq_true] at hA
+  exact endpointEnqueue_inPlace_eq st endpointId ep true receiver rt _ hE rfl hR hA.1 hG.1
 
 /-- WS-ZA ZA4.7: the blocking receive's writes, each in its slot: the enqueue,
 then the receiver blocked with no message and the reply object it stashes.
 Compiled as its own function so each update is specialised in. -/
 @[noinline] def storeReceiveBlock (st : SystemState) (endpointId : SeLe4n.ObjId)
     (receiver : SeLe4n.ThreadId) (tailCode replyCode : Nat) : SystemState :=
-  ((storeReceiveEnqueue st endpointId receiver (ThreadId.ofOptCode tailCode)).updateTcb receiver
+  ((storeEndpointEnqueue st endpointId true receiver (ThreadId.ofOptCode tailCode)).updateTcb receiver
       (fun t => (TCB.setIpcState { t with pendingMessage := none } (.blockedOnReceive endpointId)))).updateTcb
     receiver (fun t => { t with pendingReceiveReplyCode := replyCode })
 
@@ -899,7 +733,7 @@ theorem receiveBlock_inPlace_eq (st : SystemState) (endpointId : SeLe4n.ObjId)
         receiver executingCore, .ok (receiver, none)) := by
   obtain ⟨hEnq, hT, hF, hL⟩ := receiveEnqueue_inPlace_eq st endpointId ep receiver rt replyId
     hE hR hA hG
-  simp only [receiveBlocksInPlace, Bool.and_eq_true, Bool.not_eq_true'] at hG
+  simp only [receiveBlocksInPlace, enqueuesInPlace, Bool.and_eq_true, Bool.not_eq_true'] at hG
   obtain ⟨⟨⟨⟨⟨⟨hRes, _⟩, _⟩, _⟩, _⟩, _⟩, hV⟩ := hG
   have hNoDon : preReceiveDonation? st receiver = none := by
     have hLook : lookupTcb st receiver = some rt := by
@@ -915,7 +749,7 @@ theorem receiveBlock_inPlace_eq (st : SystemState) (endpointId : SeLe4n.ObjId)
   rw [Endpoint.ofOptCode_recvTailCode]
   simp only [(SystemState.getEndpoint?_eq_some_iff _ _ _).mpr hE, hS,
     cleanupPreReceiveDonationMigrated_of_no_donation st receiver hNoDon, hEnq]
-  generalize storeReceiveEnqueue st endpointId receiver ep.receiveQ.tail = S at hT hF hL ⊢
+  generalize storeEndpointEnqueue st endpointId true receiver ep.receiveQ.tail = S at hT hF hL ⊢
   let g2 := fun t : TCB => (TCB.setIpcState { t with pendingMessage := none } (.blockedOnReceive endpointId))
   have h1 : storeTcbIpcStateAndMessage S receiver (.blockedOnReceive endpointId) none =
       .ok (S.updateTcb receiver g2) := modifyTcb_eq_updateTcb _ hRes hT hL
@@ -946,7 +780,7 @@ theorem receiveBlock_receiver_blocked (st : SystemState) (endpointId : SeLe4n.Ob
     hE hR hA hG
   unfold storeReceiveBlock
   rw [Endpoint.ofOptCode_recvTailCode]
-  generalize storeReceiveEnqueue st endpointId receiver ep.receiveQ.tail = S at hT hF ⊢
+  generalize storeEndpointEnqueue st endpointId true receiver ep.receiveQ.tail = S at hT hF ⊢
   let g2 := fun t : TCB => (TCB.setIpcState { t with pendingMessage := none } (.blockedOnReceive endpointId))
   have hT2 := updateTcb_getTcb?_self_of_findsInPlace g2 hT hF
   have hF2 : (S.updateTcb receiver g2).objects.findsInPlace receiver.toObjId = true := by

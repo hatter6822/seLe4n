@@ -12,6 +12,7 @@
 -- (`API.dispatchWithCap{,Checked}` via `endpointSendDualWithCaps`).
 
 import SeLe4n.Kernel.IPC.CrossCore.EndpointCallDispatch
+import SeLe4n.Kernel.IPC.CrossCore.EndpointEnqueueInPlace
 
 /-!
 # WS-SM SM6 — the cross-core `Send`
@@ -114,18 +115,20 @@ def endpointSendDualOnCore (endpointId : SeLe4n.ObjId) (sender : SeLe4n.ThreadId
       if (st.getObject? endpointId).isSome then (st, .error .invalidCapability)
       else (st, .error .objectNotFound)
 
-/-- WS-ZA ZA4.7: the endpoint a send rendezvous leaves: its receive queue
-starts at the popped head's successor, given as its code
-(`SeLe4n.ThreadId.optCode`), so a caller holding the successor's link code
-passes it without building an `Option`. -/
-@[inline] def sendRendezvousEndpoint (nextCode : Nat) :
+/-- WS-ZA ZA4.7: the endpoint a pop leaves: its receive queue
+(`isReceiveQ`) or its send queue starts at the popped head's successor, given
+as its code (`SeLe4n.ThreadId.optCode`), so a caller holding the successor's
+link code passes it without building an `Option`. -/
+@[inline] def popEndpoint (isReceiveQ : Bool) (nextCode : Nat) :
     KernelObject → KernelObject
   | .endpoint e =>
       -- the queue ends are codes in the endpoint, rewritten in its cell
-      -- (`Endpoint.withReceiveQ_head`)
-      match nextCode with
-      | 0 => .endpoint { e with recvHeadCode := 0, recvTailCode := 0 }
-      | c + 1 => .endpoint { e with recvHeadCode := c + 1 }
+      -- (`Endpoint.withReceiveQ_head`, `Endpoint.withSendQ_head`)
+      match isReceiveQ, nextCode with
+      | true, 0 => .endpoint { e with recvHeadCode := 0, recvTailCode := 0 }
+      | true, c + 1 => .endpoint { e with recvHeadCode := c + 1 }
+      | false, 0 => .endpoint { e with sendHeadCode := 0, sendTailCode := 0 }
+      | false, c + 1 => .endpoint { e with sendHeadCode := c + 1 }
   | o => o
 
 /-- WS-ZA ZA4.7: the receive completion a send rendezvous writes into the
@@ -155,7 +158,7 @@ each update is specialised in. -/
 @[noinline] def storeSendRendezvous (st : SystemState) (endpointId : SeLe4n.ObjId)
     (head : SeLe4n.ThreadId) (next : Option SeLe4n.ThreadId) (msg : IpcMessage) :
     SystemState :=
-  let s1 := st.modifyObject endpointId (sendRendezvousEndpoint (ThreadId.optCode next))
+  let s1 := st.modifyObject endpointId (popEndpoint true (ThreadId.optCode next))
   let s2 := match next with
     | none => s1
     | some n => s1.updateTcb n tcbAsQueueHead
@@ -206,15 +209,15 @@ theorem sendRendezvous_inPlace_eq (st : SystemState) (endpointId : SeLe4n.ObjId)
   -- the endpoint store, as one state both sides name
   obtain ⟨S1, hS1⟩ : ∃ S1 : SystemState, S1 = { st with objects :=
       (st.objects.insert endpointId
-        (sendRendezvousEndpoint (ThreadId.optCode ht.queueNext) (.endpoint ep))) } :=
+        (popEndpoint true (ThreadId.optCode ht.queueNext) (.endpoint ep))) } :=
     ⟨_, rfl⟩
-  have hMo : st.modifyObject endpointId (sendRendezvousEndpoint (ThreadId.optCode ht.queueNext)) =
+  have hMo : st.modifyObject endpointId (popEndpoint true (ThreadId.optCode ht.queueNext)) =
       S1 := by
     rw [hS1]; unfold SystemState.modifyObject
     rw [SeLe4n.Kernel.RobinHood.RHTable.modify_of_get? hE]
-  have hNotV : ∀ r, sendRendezvousEndpoint (ThreadId.optCode ht.queueNext) (.endpoint ep) ≠
+  have hNotV : ∀ r, popEndpoint true (ThreadId.optCode ht.queueNext) (.endpoint ep) ≠
       .vspaceRoot r := by
-    intro r h; simp only [sendRendezvousEndpoint] at h; split at h <;> cases h
+    intro r h; simp only [popEndpoint] at h; split at h <;> cases h
   have hF1 : ∀ k, S1.objects.findsInPlace k = st.objects.findsInPlace k := fun k => by
     rw [hS1]; exact SeLe4n.Kernel.RobinHood.RHTable.findsInPlace_insert_of_findsInPlace k _ hFE
   have hG1 : ∀ k, endpointId ≠ k → S1.objects[k]? = st.objects[k]? := fun k hk => by
@@ -400,6 +403,48 @@ def endpointSendDualOnCoreImpl (endpointId : SeLe4n.ObjId) (sender : SeLe4n.Thre
                       obtain ⟨rfl, rfl⟩ := h
                       rfl
                 · rw [if_neg hG]
+
+/-- WS-ZA ZA4.7: the blocking send's writes, each in its slot: the sender
+appended to the send queue (`storeEndpointEnqueue`), then blocked holding no
+message -- its words stay in its registers.  Compiled as its own function so
+each update is specialised in. -/
+@[noinline] def storeSendBlock (st : SystemState) (endpointId : SeLe4n.ObjId)
+    (sender : SeLe4n.ThreadId) (tailCode : Nat) : SystemState :=
+  (storeEndpointEnqueue st endpointId false sender (ThreadId.ofOptCode tailCode)).updateTcb sender
+    (fun t => TCB.setIpcState { t with pendingMessage := none } (.blockedOnSend endpointId))
+
+/-- WS-ZA ZA4.7: **the guarded blocking send is the specification's block
+path**: with no receiver waiting, a sender that may be enqueued
+(`enqueueAdmits`) and every write in its slot (`enqueuesInPlace`), the send
+is the in-place enqueue and block, the sender descheduled on the executing core
+and its capability's badge and grant bit recorded. -/
+theorem sendBlock_inPlace_eq (endpointId : SeLe4n.ObjId) (sender : SeLe4n.ThreadId)
+    (msg : IpcMessage) (executingCore : CoreId) (st : SystemState) (ep : Endpoint) (t : TCB)
+    (hSz : ¬ msg.registers.size > maxMessageRegisters)
+    (hCaps : ¬ msg.caps.size > maxExtraCaps)
+    (hE : st.objects[endpointId]? = some (.endpoint ep))
+    (hH : ep.receiveQ.head = none)
+    (hR : st.objects[sender.toObjId]? = some (.tcb t))
+    (hA : enqueueAdmits t = true)
+    (hG : enqueuesInPlace st endpointId sender ep.sendQ.tail = true) :
+    endpointSendDualOnCore endpointId sender msg executingCore st =
+      (recordSendCap (removeRunnableOnCore (storeSendBlock st endpointId sender ep.sendTailCode)
+        sender executingCore) sender msg.badge msg.capsGranted, .ok none) := by
+  obtain ⟨hEnq, hT, hF, hL⟩ :=
+    endpointEnqueue_inPlace_eq st endpointId ep false sender t ep.sendQ.tail hE rfl hR hA hG
+  have hRes : sender.isReserved = false := by
+    simp only [enqueuesInPlace, Bool.and_eq_true, Bool.not_eq_true'] at hG
+    exact hG.1.1.1.1.1
+  unfold endpointSendDualOnCore storeSendBlock
+  rw [show SeLe4n.ThreadId.ofOptCode ep.sendTailCode = ep.sendQ.tail from rfl]
+  simp only [hSz, hCaps, ↓reduceIte, (SystemState.getEndpoint?_eq_some_iff _ _ _).mpr hE, hH,
+    hEnq]
+  generalize storeEndpointEnqueue st endpointId false sender ep.sendQ.tail = S at hT hF hL ⊢
+  have h1 : storeTcbIpcStateAndMessage S sender (.blockedOnSend endpointId) none =
+      .ok (S.updateTcb sender
+        (fun t => TCB.setIpcState { t with pendingMessage := none } (.blockedOnSend endpointId))) :=
+    modifyTcb_eq_updateTcb _ hRes hT hL
+  rw [h1]
 
 /-- WS-SM SM6: the absent-endpoint arm is fail-closed — the pre-state is
 returned untouched.

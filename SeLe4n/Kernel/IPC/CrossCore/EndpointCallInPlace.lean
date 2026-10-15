@@ -128,12 +128,13 @@ theorem enqueueRunnableOnCore_agree_of_findsInPlace
       simpa only [RHTable_getElem?_eq_get?] using hObjTcb.symm
     · exact RHTable.get?_insert_ne_of_findsInPlace oid _ hF hEq
 
-/-- The pop of a receive queue's head, each write in its slot: the endpoint's
+/-- The pop of an endpoint queue's head (the receive queue when
+`isReceiveQ`, else the send queue), each write in its slot: the endpoint's
 queue starts at the head's successor, the successor becomes the head, the head
 is unlinked. -/
-@[inline] def storePopHead (st : SystemState) (endpointId : SeLe4n.ObjId)
+@[inline] def storePopHead (st : SystemState) (endpointId : SeLe4n.ObjId) (isReceiveQ : Bool)
     (head : SeLe4n.ThreadId) (next : Option SeLe4n.ThreadId) : SystemState :=
-  let s1 := st.modifyObject endpointId (sendRendezvousEndpoint (ThreadId.optCode next))
+  let s1 := st.modifyObject endpointId (popEndpoint isReceiveQ (ThreadId.optCode next))
   let s2 := match next with
     | none => s1
     | some n => s1.updateTcb n tcbAsQueueHead
@@ -151,18 +152,18 @@ structure PopHeadFrame (st s : SystemState) (endpointId : SeLe4n.ObjId)
   other : ∀ x, endpointId ≠ x → head.toObjId ≠ x → (∀ n, next = some n → n.toObjId ≠ x) →
     s.objects[x]? = st.objects[x]?
 
-/-- **The pop of a receive queue's head, in place**: under `sendWakesInPlace`
-the specification's pop succeeds with `storePopHead`'s state, which keeps the
-pop's frame. -/
-theorem popHead_inPlace (st : SystemState) (endpointId : SeLe4n.ObjId)
+/-- **The pop of an endpoint queue's head, in place**: under
+`sendWakesInPlace` the specification's pop succeeds with `storePopHead`'s
+state, which keeps the pop's frame. -/
+theorem popHead_inPlace (st : SystemState) (endpointId : SeLe4n.ObjId) (isReceiveQ : Bool)
     (ep : Endpoint) (head : SeLe4n.ThreadId) (ht : TCB)
     (hE : st.objects[endpointId]? = some (.endpoint ep))
-    (hH : ep.receiveQ.head = some head)
+    (hH : (if isReceiveQ then ep.receiveQ else ep.sendQ).head = some head)
     (hT : st.objects[head.toObjId]? = some (.tcb ht))
     (hG : sendWakesInPlace st endpointId head ht.queueNext = true) :
-    endpointQueuePopHead endpointId true st =
-        .ok (head, ht, storePopHead st endpointId head ht.queueNext) ∧
-      PopHeadFrame st (storePopHead st endpointId head ht.queueNext) endpointId head
+    endpointQueuePopHead endpointId isReceiveQ st =
+        .ok (head, ht, storePopHead st endpointId isReceiveQ head ht.queueNext) ∧
+      PopHeadFrame st (storePopHead st endpointId isReceiveQ head ht.queueNext) endpointId head
         ht.queueNext ht := by
   simp only [sendWakesInPlace, Bool.and_eq_true, Bool.not_eq_true'] at hG
   obtain ⟨⟨⟨⟨⟨hRes, hLE⟩, hFE⟩, hLH⟩, hFH⟩, hNx⟩ := hG
@@ -173,15 +174,18 @@ theorem popHead_inPlace (st : SystemState) (endpointId : SeLe4n.ObjId)
     exact (SystemState.getTcb?_eq_some_iff _ _ _).mpr hT
   obtain ⟨S1, hS1⟩ : ∃ S1 : SystemState, S1 = { st with objects :=
       (st.objects.insert endpointId
-        (sendRendezvousEndpoint (ThreadId.optCode ht.queueNext) (.endpoint ep))) } :=
+        (popEndpoint isReceiveQ (ThreadId.optCode ht.queueNext) (.endpoint ep))) } :=
     ⟨_, rfl⟩
-  have hMo : st.modifyObject endpointId (sendRendezvousEndpoint (ThreadId.optCode ht.queueNext)) =
-      S1 := by
+  have hMo : st.modifyObject endpointId
+      (popEndpoint isReceiveQ (ThreadId.optCode ht.queueNext)) = S1 := by
     rw [hS1]; unfold SystemState.modifyObject
     rw [SeLe4n.Kernel.RobinHood.RHTable.modify_of_get? hE]
-  have hNotV : ∀ r, sendRendezvousEndpoint (ThreadId.optCode ht.queueNext) (.endpoint ep) ≠
+  have hNotV : ∀ r, popEndpoint isReceiveQ (ThreadId.optCode ht.queueNext) (.endpoint ep) ≠
       .vspaceRoot r := by
-    intro r h; simp only [sendRendezvousEndpoint] at h; split at h <;> cases h
+    intro r h; simp only [popEndpoint] at h; split at h <;> cases h
+  have hLE' : ∀ e : Endpoint, storeLeavesIndexAndTypes st endpointId
+      (KernelObject.endpoint e).objectType = true := fun _ => by
+    simpa only [KernelObject.objectType] using hLE
   have hF1 : ∀ k, S1.objects.findsInPlace k = st.objects.findsInPlace k := fun k => by
     rw [hS1]; exact RHTable.findsInPlace_insert_of_findsInPlace k _ hFE
   have hG1 : ∀ k, endpointId ≠ k → S1.objects[k]? = st.objects[k]? := fun k hk => by
@@ -197,8 +201,9 @@ theorem popHead_inPlace (st : SystemState) (endpointId : SeLe4n.ObjId)
   rw [hMo]
   cases hN : ht.queueNext with
   | none =>
-    have hSt : storeObject endpointId (.endpoint (ep.withReceiveQ {})) st = .ok ((), S1) := by
-      rw [storeObject_eq_of_leaves (by simpa only [KernelObject.objectType] using hLE), hS1, hN]; rfl
+    have hSt : storeObject endpointId (.endpoint (if isReceiveQ then ep.withReceiveQ {}
+        else ep.withSendQ {})) st = .ok ((), S1) := by
+      rw [storeObject_eq_of_leaves (hLE' _), hS1, hN]; cases isReceiveQ <;> rfl
     simp only [hSt]
     have hQ : storeTcbQueueLinks S1 head none none none =
         .ok (S1.updateTcb head tcbOffQueue) :=
@@ -221,9 +226,14 @@ theorem popHead_inPlace (st : SystemState) (endpointId : SeLe4n.ObjId)
     have hNeNH : n.toObjId ≠ head.toObjId := fun h =>
       hNeH (SeLe4n.ThreadId.toObjId_injective _ _ h)
     have hSt : storeObject endpointId
-        (.endpoint (ep.withReceiveQ { head := some n, tail := ep.receiveQ.tail })) st =
-        .ok ((), S1) := by
-      rw [Endpoint.withReceiveQ_head, storeObject_eq_of_leaves (by simpa only [KernelObject.objectType] using hLE), hS1, hN]; rfl
+        (.endpoint (if isReceiveQ then
+          ep.withReceiveQ ⟨some n, (if isReceiveQ then ep.receiveQ else ep.sendQ).tail⟩
+          else ep.withSendQ ⟨some n, (if isReceiveQ then ep.receiveQ else ep.sendQ).tail⟩))
+        st = .ok ((), S1) := by
+      rw [storeObject_eq_of_leaves (hLE' _), hS1, hN]
+      cases isReceiveQ
+      · simp only [Bool.false_eq_true, ↓reduceIte, Endpoint.withSendQ_head]; rfl
+      · simp only [↓reduceIte, Endpoint.withReceiveQ_head]; rfl
     simp only [hSt]
     have hTn1 : S1.getTcb? n = some nt :=
       (SystemState.getTcb?_eq_some_iff _ _ _).mpr
@@ -399,7 +409,7 @@ its core and queued on the receiver's reply waiters. -/
 @[noinline] def storeCallRendezvous (st : SystemState) (endpointId : SeLe4n.ObjId)
     (caller r : SeLe4n.ThreadId) (next : Option SeLe4n.ThreadId) (rid : SeLe4n.ReplyId)
     (msg : IpcMessage) (core : Concurrency.CoreId) : SystemState :=
-  let s2 := (storePopHead st endpointId r next).updateTcb r (callReceiverTcb msg)
+  let s2 := (storePopHead st endpointId true r next).updateTcb r (callReceiverTcb msg)
   let s3 := enqueueRunnableOnCore s2 (determineTargetCore s2 r) r
   let s5 := (s3.updateTcb caller (callCallerTcb endpointId r)).modifyObject rid.toObjId
     (replyWithCaller caller)
@@ -419,7 +429,7 @@ theorem callRendezvous_inPlace (st : SystemState) (endpointId : SeLe4n.ObjId) (e
     (hG : callWakesInPlace st endpointId caller r rt rid = true) :
     endpointCallOnCore endpointId caller msg core st =
         (storeCallRendezvous st endpointId caller r rt.queueNext rid msg core,
-         .ok (wakeThread ((storePopHead st endpointId r rt.queueNext).updateTcb r
+         .ok (wakeThread ((storePopHead st endpointId true r rt.queueNext).updateTcb r
            (callReceiverTcb msg)) r core).2) ∧
       callDonationSchedContext?
         (storeCallRendezvous st endpointId caller r rt.queueNext rid msg core) caller r = none := by
@@ -466,17 +476,17 @@ theorem callRendezvous_inPlace (st : SystemState) (endpointId : SeLe4n.ObjId) (e
   unfold storeCallRendezvous
   dsimp only
   -- The pop.
-  obtain ⟨hPop, hFr⟩ := popHead_inPlace st endpointId ep r rt hE hH hT hSG
-  have hFH1 : (storePopHead st endpointId r rt.queueNext).objects.findsInPlace r.toObjId = true :=
+  obtain ⟨hPop, hFr⟩ := popHead_inPlace st endpointId true ep r rt hE hH hT hSG
+  have hFH1 : (storePopHead st endpointId true r rt.queueNext).objects.findsInPlace r.toObjId = true :=
     (hFr.keepsFinds _).trans hFH
   have hO1c := (hFr.other _ hNeEC hNeRC hNxC).trans hCo
   have hO1q := (hFr.other _ hNeEQ hNeRQ hNxQ).trans hRo
   -- The receiver handed the message.
-  have hM2 : storeTcbIpcStateAndMessage (storePopHead st endpointId r rt.queueNext) r .ready
-      (some msg) = .ok ((storePopHead st endpointId r rt.queueNext).updateTcb r
+  have hM2 : storeTcbIpcStateAndMessage (storePopHead st endpointId true r rt.queueNext) r .ready
+      (some msg) = .ok ((storePopHead st endpointId true r rt.queueNext).updateTcb r
         (callReceiverTcb msg)) :=
     modifyTcb_eq_updateTcb (callReceiverTcb msg) hRRes hFr.head_tcb (hFr.leaves hLH)
-  generalize hS1 : storePopHead st endpointId r rt.queueNext = S1 at *
+  generalize hS1 : storePopHead st endpointId true r rt.queueNext = S1 at *
   have hT2r := updateTcb_getTcb?_self_of_findsInPlace (callReceiverTcb msg) hFr.head_tcb hFH1
   have hO2c := (updateTcb_get?_ne_of_findsInPlace (callReceiverTcb msg) hFr.head_tcb hFH1
     hNeRC).trans hO1c
@@ -667,7 +677,7 @@ theorem callDispatchChecked_inPlace (ctx : LabelingContext) (st : SystemState)
   obtain ⟨rv, hrv⟩ := Option.isSome_iff_exists.mp ((SeLe4n.ThreadId.toValid?_isSome_iff r).mpr hRRes)
   have hcv' := SeLe4n.ThreadId.toValid?_some_val_eq _ _ hcv
   have hrv' := SeLe4n.ThreadId.toValid?_some_val_eq _ _ hrv
-  refine ⟨(wakeThread ((storePopHead st endpointId r rt.queueNext).updateTcb r
+  refine ⟨(wakeThread ((storePopHead st endpointId true r rt.queueNext).updateTcb r
     (callReceiverTcb msg)) r core).2, ?_⟩
   unfold endpointCallCrossCoreDispatchChecked
   rw [if_pos hFlow]

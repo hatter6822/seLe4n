@@ -105,11 +105,12 @@ theorem modifyObject_noResizeDue (st : SystemState) (x : SeLe4n.ObjId)
   rw [SystemState.modifyObject_eq_mapValueAt _ _ _ hNo]; exact hNo
 
 theorem storePopHead_noResizeDue (st : SystemState) (endpointId : SeLe4n.ObjId)
-    (head : SeLe4n.ThreadId) (next : Option SeLe4n.ThreadId) (hNo : st.objects.noResizeDue) :
-    (storePopHead st endpointId head next).objects.noResizeDue := by
+    (isReceiveQ : Bool) (head : SeLe4n.ThreadId) (next : Option SeLe4n.ThreadId)
+    (hNo : st.objects.noResizeDue) :
+    (storePopHead st endpointId isReceiveQ head next).objects.noResizeDue := by
   unfold storePopHead
   have h1 := modifyObject_noResizeDue st endpointId
-    (sendRendezvousEndpoint (ThreadId.optCode next)) hNo
+    (popEndpoint isReceiveQ (ThreadId.optCode next)) hNo
   cases next with
   | none => exact updateTcb_noResizeDue _ _ _ h1
   | some n => exact updateTcb_noResizeDue _ _ _ (updateTcb_noResizeDue _ _ _ h1)
@@ -166,7 +167,7 @@ theorem holdMessage_receiverReady (msg : IpcMessage) :
 @[noinline] def storeCallRendezvousReady (st : SystemState) (endpointId : SeLe4n.ObjId)
     (caller r : SeLe4n.ThreadId) (nextCode : Nat) (rid : SeLe4n.ReplyId)
     (core : Concurrency.CoreId) : SystemState :=
-  let s2 := (storePopHead st endpointId r (ThreadId.ofOptCode nextCode)).updateTcb r
+  let s2 := (storePopHead st endpointId true r (ThreadId.ofOptCode nextCode)).updateTcb r
     receiverReady
   let s3 := enqueueRunnableOnCore s2 (determineTargetCore s2 r) r
   let s5 := (s3.updateTcb caller (callCallerTcb endpointId r)).modifyObject rid.toObjId
@@ -184,7 +185,7 @@ theorem storeCallRendezvousReady_noResizeDue (st : SystemState) (endpointId : Se
   exact linkReplyWaiter_noResizeDue _ _ _ (removeRunnableOnCore_noResizeDue _ _ _
     (updateTcb_noResizeDue _ _ _ (updateTcb_noResizeDue _ _ _ (modifyObject_noResizeDue _ _ _
       (updateTcb_noResizeDue _ _ _ (enqueueRunnableOnCore_noResizeDue _ _ _
-        (updateTcb_noResizeDue _ _ _ (storePopHead_noResizeDue _ _ _ _ hNo))))))))
+        (updateTcb_noResizeDue _ _ _ (storePopHead_noResizeDue _ _ _ _ _ hNo))))))))
 
 /-- **The call rendezvous holds its message in one write**: the receiver woken
 with the message is the receiver woken without it, the message written in
@@ -199,15 +200,15 @@ theorem storeCallRendezvous_eq_hold (st : SystemState) (endpointId : SeLe4n.ObjI
   unfold storeCallRendezvous storeCallRendezvousReady
   rw [SeLe4n.ThreadId.ofOptCode_optCode]
   dsimp only
-  have hNo1 := storePopHead_noResizeDue st endpointId r next hNo
-  have hHold : (storePopHead st endpointId r next).updateTcb r (callReceiverTcb msg) =
-      ((storePopHead st endpointId r next).updateTcb r receiverReady).mapTcbInPlace r
+  have hNo1 := storePopHead_noResizeDue st endpointId true r next hNo
+  have hHold : (storePopHead st endpointId true r next).updateTcb r (callReceiverTcb msg) =
+      ((storePopHead st endpointId true r next).updateTcb r receiverReady).mapTcbInPlace r
         (holdMessage msg) := by
     rw [SystemState.updateTcb_eq_mapTcbInPlace _ _ _ hNo1,
       SystemState.updateTcb_eq_mapTcbInPlace _ _ _ hNo1, SystemState.mapTcbInPlace_mapTcbInPlace,
       holdMessage_receiverReady]
   have hNo2 := updateTcb_noResizeDue _ r receiverReady hNo1
-  generalize (storePopHead st endpointId r next).updateTcb r receiverReady = s2 at hHold hNo2
+  generalize (storePopHead st endpointId true r next).updateTcb r receiverReady = s2 at hHold hNo2
   rw [hHold, determineTargetCore_msg, enqueueRunnableOnCore_msg _ _ _ _ _ _ _ hNo2]
   have hNo3 := enqueueRunnableOnCore_noResizeDue s2 (determineTargetCore s2 r) r hNo2
   generalize enqueueRunnableOnCore s2 (determineTargetCore s2 r) r = s3 at hNo3
@@ -493,7 +494,7 @@ theorem replyRendezvousDelivered_eq (st : SystemState) (c server : SeLe4n.Thread
 specification's `storeSendRendezvous` with `g := receiveCompleteTcb msg`. -/
 @[inline] def storeSendRendezvousWith (st : SystemState) (endpointId : SeLe4n.ObjId)
     (head : SeLe4n.ThreadId) (next : Option SeLe4n.ThreadId) (g : TCB → TCB) : SystemState :=
-  let s1 := st.modifyObject endpointId (sendRendezvousEndpoint (ThreadId.optCode next))
+  let s1 := st.modifyObject endpointId (popEndpoint true (ThreadId.optCode next))
   let s2 := match next with
     | none => s1
     | some n => s1.updateTcb n tcbAsQueueHead
@@ -512,8 +513,8 @@ theorem storeSendRendezvousWith_comp (st : SystemState) (endpointId : SeLe4n.Obj
   unfold storeSendRendezvousWith
   dsimp only
   have h1 := modifyObject_noResizeDue st endpointId
-    (sendRendezvousEndpoint (ThreadId.optCode next)) hNo
-  generalize st.modifyObject endpointId (sendRendezvousEndpoint (ThreadId.optCode next)) = s1 at h1
+    (popEndpoint true (ThreadId.optCode next)) hNo
+  generalize st.modifyObject endpointId (popEndpoint true (ThreadId.optCode next)) = s1 at h1
   have h2 : (match next with
       | none => s1
       | some n => s1.updateTcb n tcbAsQueueHead).objects.noResizeDue := by
@@ -535,7 +536,7 @@ theorem storeSendRendezvousWith_noResizeDue (st : SystemState) (endpointId : SeL
   unfold storeSendRendezvousWith
   dsimp only
   have h1 := modifyObject_noResizeDue st endpointId
-    (sendRendezvousEndpoint (ThreadId.optCode next)) hNo
+    (popEndpoint true (ThreadId.optCode next)) hNo
   apply updateTcb_noResizeDue _ _ _ (updateTcb_noResizeDue _ _ _ _)
   cases next with
   | none => exact h1
