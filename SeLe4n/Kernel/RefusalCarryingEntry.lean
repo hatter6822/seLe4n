@@ -80,7 +80,7 @@ specification's form. -/
         -- WS-ZA ZA4.7: a reply-receive; one that answers a caller blocked on
         -- this server and then blocks writes in place, after every check.
         | .replyRecv capAddr msgInfo =>
-          dispatchReplyRecvCheckedR ctx capAddr layout tcb.registerContext msgInfo.length
+          dispatchReplyRecvCheckedR ctx capAddr SeLe4n.arm64DefaultLayout tcb.registerContext msgInfo.length
             msgInfo.extraCaps msgInfo.label tid executingCore st
         | .viaDecode =>
           RefusalCarrying.ofKernel (syscallEntryChecked ctx SeLe4n.arm64DefaultLayout executingCore 32) st
@@ -195,9 +195,9 @@ theorem syscallEntryCheckedR_eq (ctx : LabelingContext) (executingCore : Concurr
         · next capAddr msgInfo hRRRegs =>
           obtain ⟨decoded, hDec, hRR, hCap, hZero, hInfo, hSlot, hRegs'⟩ :=
             SeLe4n.Kernel.Architecture.RegisterDecode.decodeSyscallArgsFromState_of_routedReplyRecv
-              st tid layout tcb.registerContext regCount capAddr msgInfo hRRRegs
+              st tid SeLe4n.arm64DefaultLayout tcb.registerContext 32 capAddr msgInfo hRRRegs
           subst hCap hInfo
-          rw [dispatchReplyRecvCheckedR_eq ctx decoded tid executingCore layout tcb.registerContext
+          rw [dispatchReplyRecvCheckedR_eq ctx decoded tid executingCore SeLe4n.arm64DefaultLayout tcb.registerContext
             hRR hRegs'.symm hSlot]
           simp only [RefusalCarrying.ofKernel, syscallEntryChecked, hCtx, hCur, hRegs, hDec,
             hZero, Bool.false_eq_true, ↓reduceIte,
