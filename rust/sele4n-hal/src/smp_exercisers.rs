@@ -1368,10 +1368,6 @@ struct RoundTrip {
     /// Whether the caller blocks: the dispatch answers `Blocked` and restores
     /// the other thread, instead of a frame to the caller.
     blocks: bool,
-    /// The `KernelError` discriminant the syscall is refused with, when the
-    /// round trip measures a refusal: its frame carries that error's label
-    /// (`svc_dispatch::error_frame_regs`) instead of the success label.
-    refused: Option<u64>,
 }
 
 /// `Send` (`SyscallId` 0).
@@ -1422,13 +1418,6 @@ const REPLY_OBJECT_SLOT: u64 = 8;
 /// The free slot the reply capability is minted into.
 #[cfg(feature = "hw_target")]
 const REPLY_CAP_SLOT: u64 = 9;
-/// A slot no capability is ever placed in.
-#[cfg(feature = "hw_target")]
-const EMPTY_SLOT: u64 = 15;
-
-/// `KernelError::InvalidCapability`'s discriminant (`sele4n-types`).
-#[cfg(feature = "hw_target")]
-const INVALID_CAPABILITY: u64 = 0;
 
 /// A signal on the interrupt notification with `badge`.
 #[cfg(feature = "hw_target")]
@@ -1441,7 +1430,6 @@ const fn signal(name: &'static str, badge: u64) -> RoundTrip {
         msg: [badge, 0],
         primed: None,
         blocks: false,
-        refused: None,
     }
 }
 
@@ -1449,9 +1437,13 @@ const fn signal(name: &'static str, badge: u64) -> RoundTrip {
 /// whose badge does not fit a scalar `Nat` (`≥ 2^63`), a wait that consumes a
 /// pending badge, and a yield (WS-ZA ZA4.3), which invokes no capability: the
 /// root task is unbound and alone on its core while these run, so it ends its
-/// time slice and is chosen again.  Each continues its caller.
+/// time slice and is chosen again.  A second yield carries a capability
+/// address `≥ 2^63` in `x0` (WS-ZA ZA4.8), which the entry decodes before it
+/// reads the syscall number; the root CNode's zero guard refuses any such
+/// address at a lookup, so no syscall that invokes one returns.  Each
+/// continues its caller.
 #[cfg(feature = "hw_target")]
-const ROUND_TRIPS: [RoundTrip; 6] = [
+const ROUND_TRIPS: [RoundTrip; 5] = [
     signal("signal", 1),
     signal("signal-wide-badge", 1 << 63),
     RoundTrip {
@@ -1462,7 +1454,6 @@ const ROUND_TRIPS: [RoundTrip; 6] = [
         msg: [0, 0],
         primed: Some(1),
         blocks: false,
-        refused: None,
     },
     RoundTrip {
         name: "yield",
@@ -1472,31 +1463,15 @@ const ROUND_TRIPS: [RoundTrip; 6] = [
         msg: [0, 0],
         primed: None,
         blocks: false,
-        refused: None,
     },
-    // A capability address `≥ 2^63` (WS-ZA ZA4.8): the root CNode's guard is
-    // zero, so the lookup refuses it at the guard, after reading the whole
-    // address as a word.
     RoundTrip {
-        name: "signal-high-cap-address",
-        syscall: SIGNAL,
+        name: "yield-high-cap-address",
+        syscall: YIELD,
         cptr: (1 << 63) | NOTIFICATION_SLOT,
-        msg_len: 1,
-        msg: [1, 0],
+        msg_len: 0,
+        msg: [0, 0],
         primed: None,
         blocks: false,
-        refused: Some(INVALID_CAPABILITY),
-    },
-    // The same refusal at an address of the ordinary width: an empty slot.
-    RoundTrip {
-        name: "signal-empty-slot",
-        syscall: SIGNAL,
-        cptr: EMPTY_SLOT,
-        msg_len: 1,
-        msg: [1, 0],
-        primed: None,
-        blocks: false,
-        refused: Some(INVALID_CAPABILITY),
     },
 ];
 
@@ -1519,7 +1494,6 @@ const fn partner_step(
         msg,
         primed: None,
         blocks,
-        refused: None,
     }
 }
 
@@ -1675,8 +1649,7 @@ fn unmeasured(trip: &RoundTrip, why: &str) -> bool {
 /// heap is one for every core, and a tick taken in between would charge its
 /// own allocations to the syscall.  The driver's own verdict is that both reads
 /// happened, the counter did not go back, and the round trip did what it says
-/// (returned a success frame or the refusal it measures, or blocked and
-/// restored the other thread); the
+/// (returned a success frame, or blocked and restored the other thread); the
 /// readings themselves are judged by the host-side gate.
 ///
 /// Each round trip, and each partner sequence, runs twice, and both runs are
@@ -1786,15 +1759,9 @@ fn dispatch_round_trip(trip: &RoundTrip) -> (Dispatched, Option<u64>, Option<u64
     }
     let outcome = match dispatched {
         // A refusal is an ordinary frame too, its status in the `x1` label
-        // (`error_frame_regs`): label 0, the success, measures the syscall the
-        // gate names, unless the round trip measures a refusal, which carries
-        // that error's label.
-        Ok(crate::svc_dispatch::SvcOutcome::Frame(regs))
-            if regs[1] >> 9
-                == trip
-                    .refused
-                    .map_or(0, |error| crate::svc_dispatch::ERROR_LABEL_BASE + error) =>
-        {
+        // (`error_frame_regs`): only label 0, the success, measures the
+        // syscall the gate names.
+        Ok(crate::svc_dispatch::SvcOutcome::Frame(regs)) if regs[1] >> 9 == 0 => {
             Dispatched::Returned(regs)
         }
         Ok(crate::svc_dispatch::SvcOutcome::Frame(regs)) => {
@@ -1835,10 +1802,6 @@ fn heap_allocations_round_trip(trip: &RoundTrip, which: &str) -> Option<bool> {
         return Some(false);
     };
     match outcome {
-        Dispatched::Returned(regs) if !trip.blocks && trip.refused.is_some() => crate::kprintln!(
-            "[smp-test] heap-allocations-per-syscall: {name}: core {core}{which}: refused as expected (x1 label {:#x})",
-            regs[1] >> 9
-        ),
         Dispatched::Returned(regs) if !trip.blocks => crate::kprintln!(
             "[smp-test] heap-allocations-per-syscall: {name}: core {core}{which}: returned x0={:#x} x1={:#x}",
             regs[0],

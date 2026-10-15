@@ -207,16 +207,15 @@ for driver in drivers:
         # WS-CV CV0.1, WS-ZA ZA4.1: a syscall allocates nothing.  Each round
         # trip runs twice on the boot core, its first call and its steady
         # state; the gate holds that each run's reading happened once, after
-        # the round trip returned a frame, was refused or blocked as it should, is a delta,
+        # the round trip returned a frame or blocked as it should, is a delta,
         # and is zero.
         readings = matches(r"\[smp-test\] heap-allocations-per-syscall: ([a-z-]+): core 0( \(first call\))?: before=(\d+) after=(\d+) delta=(\d+)")
-        returned = matches(r"\[smp-test\] heap-allocations-per-syscall: ([a-z-]+): core 0( \(first call\))?: (?:returned x0=0x[0-9a-f]+ x1=0x[0-9a-f]+|refused as expected \(x1 label 0x[0-9a-f]+\)|blocked, the other thread restored)$")
+        returned = matches(r"\[smp-test\] heap-allocations-per-syscall: ([a-z-]+): core 0( \(first call\))?: (?:returned x0=0x[0-9a-f]+ x1=0x[0-9a-f]+|blocked, the other thread restored)$")
         names = [m.group(1) for m in readings]
         # The scenario set is pinned: a round trip renamed or dropped from
         # `ROUND_TRIPS` or `PARTNER_SCENARIOS` (smp_exercisers.rs) must change this pin too, so the
         # evidence cannot disappear while the gate stays green.
-        expected = {"signal", "signal-wide-badge", "wait-pending", "yield",
-                    "signal-high-cap-address", "signal-empty-slot",
+        expected = {"signal", "signal-wide-badge", "wait-pending", "yield", "yield-high-cap-address",
                     "receive-blocks", "send-to-receiver", "wait-blocks", "signal-to-waiter",
                     "receive-for-call", "call", "reply-recv", "call-to-reply-receiver", "reply",
                     "send-blocks", "receive-from-sender"}

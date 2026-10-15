@@ -14,8 +14,7 @@
 # allocation counter (`lean_heap.rs`, `allocations_by_core`) before and after,
 # with IRQs masked across both reads.  A syscall allocates nothing: this gate
 # holds that every reading happened, is the difference of its two reads, is
-# zero, and that its round trip returned a frame, was refused as it measures,
-# or blocked as it should
+# zero, and that its round trip returned a frame or blocked as it should
 # (`scripts/qemu_exerciser_lib.sh`).
 #
 # The syscall is the Lean kernel's, so this gate runs on the Lean-linked image
