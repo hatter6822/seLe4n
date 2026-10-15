@@ -659,10 +659,6 @@ theorem endpointQueuePopHead_preserves_queueNextBlockingConsistent
         | none => simp [hLookup] at hStep
         | some tcb =>
           simp only [hLookup] at hStep
-          -- PR #873 round 11: the send-queue message-presence guard --
-          -- a head that fails it errors, so it is not this `.ok`.
-          split at hStep
-          · simp at hStep
           revert hStep
           cases hStore : storeObject endpointId _ st with
           | error e => simp
@@ -1349,10 +1345,6 @@ theorem endpointQueuePopHead_preserves_endpointQueueTailBlockedConsistent
         | none => simp [hLookup] at hStep
         | some tcb =>
           simp only [hLookup] at hStep
-          -- PR #873 round 11: the send-queue message-presence guard --
-          -- a head that fails it errors, so it is not this `.ok`.
-          split at hStep
-          · simp at hStep
           revert hStep
           cases hStore : storeObject endpointId _ st with
           | error e => simp
@@ -2126,10 +2118,6 @@ theorem endpointQueuePopHead_preserves_queueNextTargetBlocked
         | none => simp [hLookup] at hStep
         | some tcb =>
           simp only [hLookup] at hStep
-          -- PR #873 round 11: the send-queue message-presence guard --
-          -- a head that fails it errors, so it is not this `.ok`.
-          split at hStep
-          · simp at hStep
           revert hStep
           cases hStore : storeObject endpointId _ st with
           | error e => simp
@@ -2202,10 +2190,6 @@ theorem endpointQueuePopHead_popped_queuePrev_none
         | none => simp [hLookup] at hStep
         | some tcb =>
           simp only [hLookup] at hStep
-          -- PR #873 round 11: the send-queue message-presence guard --
-          -- a head that fails it errors, so it is not this `.ok`.
-          split at hStep
-          · simp at hStep
           revert hStep
           cases hStore : storeObject endpointId _ st with
           | error e => simp

@@ -175,16 +175,13 @@ theorem faultDeliverOnCore_preserves_schedulerInvariantBase_smp (st : SystemStat
   | ok tgt =>
       simp only
       cases hCall : endpointCallCrossCoreDispatch tgt.endpoint tid
-          (faultMessage f ctx tgt.cap.badge) tgt.cap.rights
-          (SeLe4n.Slot.ofNat 0) executingCore st with
+          (SendPayload.fault f ctx tgt.cap.badge) (SeLe4n.Slot.ofNat 0) executingCore st with
       | mk stC resC =>
           have hC := endpointCallCrossCoreDispatch_preserves_schedulerInvariantBase_smp
-            tgt.endpoint tid (faultMessage f ctx tgt.cap.badge) tgt.cap.rights
-            (SeLe4n.Slot.ofNat 0) executingCore st hObjInv
+            tgt.endpoint tid (SendPayload.fault f ctx tgt.cap.badge) (SeLe4n.Slot.ofNat 0) executingCore st hObjInv
             (endpointReceiveHeadsNotCurrent_at hHeads tgt.endpoint) h
           have hCObj := endpointCallCrossCoreDispatch_preserves_objects_invExt
-            tgt.endpoint tid (faultMessage f ctx tgt.cap.badge) tgt.cap.rights
-            (SeLe4n.Slot.ofNat 0) executingCore st hObjInv
+            tgt.endpoint tid (SendPayload.fault f ctx tgt.cap.badge) (SeLe4n.Slot.ofNat 0) executingCore st hObjInv
           rw [hCall] at hC hCObj
           simp only at hC hCObj
           cases resC with
@@ -207,10 +204,10 @@ theorem faultDeliverOnCore_preserves_schedulerInvariantBase_smp (st : SystemStat
 /-- **WS-RR RR8.16** (`v0.35.200`): ...and the **capability invariant bundle**,
 with **no** hypothesis at all.
 
-The `.call` chain's capability lift reduces to `ipcUnwrapCaps`'s, and a fault
-delivery never reaches that step: `faultMessage` carries `caps := #[]`
-(`faultMessage_caps_empty`) and `endpointCallWithCapsOnCore` short-circuits on
-`msg.caps.isEmpty` *before* it resolves the receiver's CSpace root.  So the
+The `.call` chain's capability lift reduces to `receiveTransferCaps`'s, and a
+fault delivery never reaches that step: a fault payload requests no transfer
+(`sendCapRequest_fault`) and `endpointCallWithCapsOnCore` short-circuits on an
+empty request *before* it resolves the receiver's CSpace root.  So the
 delivery composes the **no-caps** form and owes nothing — which is the honest
 reading of "a fault's payload is registers", one step further than the reply
 side needed it. -/
@@ -234,15 +231,12 @@ theorem faultDeliverOnCore_preserves_capabilityInvariantBundle (st : SystemState
   | ok tgt =>
       simp only
       cases hCall : endpointCallCrossCoreDispatch tgt.endpoint tid
-          (faultMessage f ctx tgt.cap.badge) tgt.cap.rights
-          (SeLe4n.Slot.ofNat 0) executingCore st with
+          (SendPayload.fault f ctx tgt.cap.badge) (SeLe4n.Slot.ofNat 0) executingCore st with
       | mk stC resC =>
           have hC := endpointCallCrossCoreDispatch_preserves_capabilityInvariantBundle_of_no_caps
-            tgt.endpoint tid (faultMessage f ctx tgt.cap.badge) tgt.cap.rights
-            (SeLe4n.Slot.ofNat 0) executingCore st (faultMessage_caps_empty f ctx tgt.cap.badge) h
+            tgt.endpoint tid (SendPayload.fault f ctx tgt.cap.badge) (SeLe4n.Slot.ofNat 0) executingCore st (sendCapRequest_fault _ _ _ _ _ _) h
           have hCObj := endpointCallCrossCoreDispatch_preserves_objects_invExt
-            tgt.endpoint tid (faultMessage f ctx tgt.cap.badge) tgt.cap.rights
-            (SeLe4n.Slot.ofNat 0) executingCore st hObjInv
+            tgt.endpoint tid (SendPayload.fault f ctx tgt.cap.badge) (SeLe4n.Slot.ofNat 0) executingCore st hObjInv
           rw [hCall] at hC hCObj
           simp only at hC hCObj
           cases resC with

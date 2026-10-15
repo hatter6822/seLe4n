@@ -162,53 +162,6 @@ theorem revokeCdtFold_preserves
        processRevokeNode_preserves_cdtNodeSlot stA stB node hP.2 hStep⟩)
     nodes psInit psFinal stInit stFinal ⟨hInv, hNodeSlotK⟩ hFold).1
 
-/-- **Consuming in-flight transfers preserves the capability bundle.**
-
-Every conjunct quantifies over `.cnode` lookups (and, for
-`replyCapPointsToValidReply`, a `.reply` lookup), and the sweep rewrites only
-TCBs -- so `revokePendingTransfersFrom_frame` frames all seven.  This is what
-lets `cspaceRevokeCdt` close the in-flight hole without weakening anything it
-already proved. -/
-theorem revokePendingTransfersFrom_preserves_capabilityInvariantBundle
-    (st : SystemState) (nodes : List CdtNodeId)
-    (hInv : capabilityInvariantBundle st) :
-    capabilityInvariantBundle (revokePendingTransfersFrom st nodes) := by
-  obtain ⟨hSound, hBounded, hComp, hAcyclic, hDepth, hExt, hReply⟩ := hInv
-  obtain ⟨hExt', hCdt, hNS, _, _, hObj⟩ := revokePendingTransfersFrom_frame st nodes hExt
-  -- Every CNode the post-state exposes was already there: the sweep's only
-  -- writes are TCBs, so the `.tcb` half of the frame cannot produce a `.cnode`.
-  have hCnode : ∀ (oid : SeLe4n.ObjId) (cn : CNode),
-      (revokePendingTransfersFrom st nodes).objects[oid]? = some (KernelObject.cnode cn) →
-      st.objects[oid]? = some (KernelObject.cnode cn) := by
-    intro oid cn h
-    rcases hObj oid with hEq | ⟨_, _, _, _, hT⟩
-    · rw [h] at hEq; exact hEq.symm
-    · rw [h] at hT; cases hT
-  refine ⟨?_, ?_, ?_, ?_, ?_, hExt', ?_⟩
-  · intro cnodeId cn slot cap hCn hLk
-    have hOrig := hSound cnodeId cn slot cap (hCnode cnodeId cn hCn) hLk
-    unfold SystemState.lookupSlotCap SystemState.lookupCNode at hOrig ⊢
-    rw [hCn]
-    rw [hCnode cnodeId cn hCn] at hOrig
-    exact hOrig
-  · intro cnodeId cn hCn; exact hBounded cnodeId cn (hCnode cnodeId cn hCn)
-  · intro nodeId ref hRef
-    have hRef' : st.cdtNodeSlot[nodeId]? = some ref := by rw [← hNS]; exact hRef
-    have hNe := hComp nodeId ref hRef'
-    intro hNone
-    apply hNe
-    rcases hObj ref.cnode with hEq | ⟨_, _, _, _, hT'⟩
-    · rw [← hEq]; exact hNone
-    · rw [hNone] at hT'; cases hT'
-  · unfold cdtAcyclicity at hAcyclic ⊢; rw [hCdt]; exact hAcyclic
-  · intro cnodeId cn hCn; exact hDepth cnodeId cn (hCnode cnodeId cn hCn)
-  · intro oid cn slot cap rid hCn hLk hTarget
-    have hOrig := hReply oid cn slot cap rid (hCnode oid cn hCn) hLk hTarget
-    unfold SystemState.getReply? at hOrig ⊢
-    rcases hObj rid.toObjId with hEq | ⟨_, _, hT, _, _⟩
-    · rw [hEq]; exact hOrig
-    · rw [hT] at hOrig; simp at hOrig
-
 -- **Tombstone (`v0.36.1`)**: `cspaceRevoke_preserves_cdtNodeSlot` — the local
 -- revoke leaves `cdtNodeSlot` alone — is deleted.  It existed to carry the
 -- node→slot map across `revokeCdtScaffold`'s prologue, and since `v0.36.1` that
@@ -219,8 +172,8 @@ theorem revokePendingTransfersFrom_preserves_capabilityInvariantBundle
 /-- **The scaffold preserves the bundle whenever its traversal does.**
 
 The revocation entry points shared a preservation *argument* as well as a
-transition: a read of the source slot, then a walk, then (since the in-flight
-fix) the consuming sweep.  Each variant's theorem re-derived all of it.  Proved
+transition: a read of the source slot, then a walk.  Each variant's theorem
+re-derived all of it.  Proved
 once here, a variant's obligation is exactly its traversal's — which is the only
 part that differs.  Since `v0.36.1` the first step writes nothing (it was the
 local same-target sweep), so the walk starts from the pre-state itself and the
@@ -248,8 +201,7 @@ theorem revokeCdtScaffold_preserves_capabilityInvariantBundle {ρ : Type}
     revokeCdtScaffold_ok_decompose emptyReport traverse st st' addr r hStep
   rcases hRest with rfl | ⟨rootNode, out, hTrav, rfl⟩
   · exact hInv
-  · exact revokePendingTransfersFrom_preserves_capabilityInvariantBundle _ _
-      (hTraverse st rootNode _ out hInv hNodeSlotK hTrav)
+  · exact hTraverse st rootNode _ out hInv hNodeSlotK hTrav
 
 /-- The materialized traversal preserves the bundle: it is `revokeCdtFoldBody`
 under a different spelling. -/

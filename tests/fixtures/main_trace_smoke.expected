@@ -69,7 +69,7 @@
 [CIC-005] cspaceCopy target matches: true
 [CIC-007] dual-queue sender blocked on sendQ non-empty: true
 [CIC-010] endpointReply unblocked target: true
-[IMT-002] message sender has pending: true
+[IMT-002] blocked sender parks no message: true
 [IMT-004] message transfer registers: [42, 7]
 [IMT-005] message transfer badge: some { word := 123 }
 [IMT-006] message sender cleared after transfer: true

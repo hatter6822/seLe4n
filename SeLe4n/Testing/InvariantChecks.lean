@@ -501,17 +501,13 @@ private def blockedOnReceiveNotRunnableChecks (objectIds : List SeLe4n.ObjId) (s
         | _ => acc
     | none => acc) []
 
-/-- V3-G1 (PR #873 round 11): the executable mirror of
-`blockedThreadsPendingMessageConsistent` — `pendingMessage` agrees with the
-blocking state in both directions.
+/-- V3-G1: the executable mirror of `blockedThreadsPendingMessageConsistent` —
+no blocked thread holds a message.
 
-A thread parked to *collect* holds nothing; a thread parked to *deliver* holds
-what it is delivering.  The delivering half is the one the harness could not see
-before: the Lean invariant said `True` of `.blockedOnSend` / `.blockedOnCall`, so
-a message-less parked sender passed every executable check while making the next
-receive hand its receiver `none` and report success.  Both halves are checked
-here so a trace that produces one is caught where it is produced rather than at
-the dequeue that consumes it. -/
+A thread parked to *collect* holds nothing, and (WS-ZA ZA4.7) neither does a
+thread parked to *deliver*: a blocked sender keeps its message in its saved
+registers and IPC buffer, and the receive that takes it reads it there
+(`blockedSenderMessage`), as seL4 does. -/
 private def blockedThreadPendingMessageChecks (objectIds : List SeLe4n.ObjId) (st : SystemState) : List (String × Bool) :=
   objectIds.foldr (fun oid acc =>
     match st.getTcb? ⟨oid.toNat⟩ with
@@ -524,11 +520,11 @@ private def blockedThreadPendingMessageChecks (objectIds : List SeLe4n.ObjId) (s
             (s!"blockedOnNotification holds no message: tid={tcb.tid.toNat}",
               tcb.pendingMessage.isNone) :: acc
         | .blockedOnSend _ =>
-            (s!"blockedOnSend carries its message: tid={tcb.tid.toNat}",
-              tcb.pendingMessage.isSome) :: acc
+            (s!"blockedOnSend holds no message: tid={tcb.tid.toNat}",
+              tcb.pendingMessage.isNone) :: acc
         | .blockedOnCall _ =>
-            (s!"blockedOnCall carries its message: tid={tcb.tid.toNat}",
-              tcb.pendingMessage.isSome) :: acc
+            (s!"blockedOnCall holds no message: tid={tcb.tid.toNat}",
+              tcb.pendingMessage.isNone) :: acc
         | _ => acc
     | none => acc) []
 

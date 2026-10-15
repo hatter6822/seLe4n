@@ -388,4 +388,33 @@ def idleFallbackByLinks (st : SystemState) (c : SeLe4n.Kernel.Concurrency.CoreId
   | .ok none => true
   | _ => false
 
+/-- WS-ZA ZA4.7: **put a message in a sender's saved registers**, where a send
+syscall finds it: syscall number `x7` = send, message-info word `x1` carrying
+the length, and the first four message words in `x2`–`x5` (`arm64DefaultLayout`).
+A blocked sender keeps its message there and a receive reads it at the
+rendezvous (`blockedSenderMessage`), so a fixture that calls a send transition
+directly stages the frame first, exactly as the trap entry saves it.  The extra
+capability addresses (`capAddrs`, counted in the message-info word) follow the
+body, where `decodeExtraCapAddrs` reads them.  Words past the fourth would live
+in the IPC buffer; fixtures here send at most four, body and addresses together. -/
+def tcbWithSenderFrame (tcb : TCB) (msg : IpcMessage)
+    (capAddrs : Array SeLe4n.CPtr := #[]) : TCB :=
+  let words : Array Nat := msg.registers.map (·.val) ++ capAddrs.map (·.val)
+  let w (i : Nat) : UInt64 := (words[i]?.getD 0).toUInt64
+  let info : Nat := (MessageInfo.mk msg.registers.size capAddrs.size 0).encode
+  let regs := SeLe4n.RegisterFile.withGprs tcb.registerContext.pc tcb.registerContext.sp
+    (fun r => if r == 1 then info.toUInt64 else if r == 2 then w 0
+      else if r == 3 then w 1 else if r == 4 then w 2 else if r == 5 then w 3 else 0)
+  { tcb with registerContext := regs }
+
+/-- `tcbWithSenderFrame` on the thread `tid` of a live state. -/
+def withSenderFrame (st : SystemState) (tid : SeLe4n.ThreadId) (msg : IpcMessage)
+    (capAddrs : Array SeLe4n.CPtr := #[]) : SystemState :=
+  match st.getTcb? tid with
+  | none => st
+  | some tcb =>
+      match storeObject tid.toObjId (.tcb (tcbWithSenderFrame tcb msg capAddrs)) st with
+      | .ok ((), st') => st'
+      | .error _ => st
+
 end SeLe4n.Testing

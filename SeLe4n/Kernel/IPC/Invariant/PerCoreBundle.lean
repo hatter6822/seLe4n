@@ -228,8 +228,8 @@ def blockedThreadsPendingMessageConsistent_perCore (st : SystemState) (c : CoreI
     match tcb.ipcState with
     | .blockedOnReceive _ => tcb.pendingMessage = none
     | .blockedOnNotification _ => tcb.pendingMessage = none
-    | .blockedOnSend _ => tcb.pendingMessage.isSome
-    | .blockedOnCall _ => tcb.pendingMessage.isSome
+    | .blockedOnSend _ => tcb.pendingMessage = none
+    | .blockedOnCall _ => tcb.pendingMessage = none
     | _ => True
 
 /-- SM6.D: per-core form of `blockedThreadTimeoutConsistent` (Z6-J).  The

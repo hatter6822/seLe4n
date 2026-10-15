@@ -256,17 +256,6 @@ theorem processRevokeNode_keyFrame (st st' : SystemState) (node : CdtNodeId)
       simp [hDel] at hStep; cases hStep
       exact cspaceDeleteSlotCore_keyInputsEq st stDel descAddr hObjInv hDel
 
-/-- The in-flight sweep rewrites pending messages alone, which no key reads. -/
-theorem revokePendingTransfersFrom_keyFrame (st : SystemState) (nodes : List CdtNodeId)
-    (hObjInv : st.objects.invExt) :
-    capabilityKeyFrame st (revokePendingTransfersFrom st nodes) := by
-  obtain ⟨hExt, _, _, _, hSched, hObj⟩ := revokePendingTransfersFrom_frame st nodes hObjInv
-  refine ⟨?_, hSched, hExt⟩
-  intro oid
-  rcases hObj oid with e | ⟨t, t', hPre, ⟨hT, _⟩, hPost⟩
-  · rw [e]
-  · rw [hPre, hPost, hT]; rfl
-
 theorem cspaceRevokeCdt_keyFrame (st st' : SystemState) (addr : CSpaceAddr)
     (pages : List MappedPage) (hObjInv : st.objects.invExt)
     (hStep : cspaceRevokeCdt addr st = .ok (pages, st')) : capabilityKeyFrame st st' := by
@@ -274,11 +263,9 @@ theorem cspaceRevokeCdt_keyFrame (st st' : SystemState) (addr : CSpaceAddr)
     revokeCdtScaffold_ok_decompose [] revokeCdtMaterializedTraversal st st' addr pages hStep
   rcases hRest with rfl | ⟨rootNode, out, hTrav, rfl⟩
   · exact capabilityKeyFrame_of_objects_scheduler_eq hObjInv rfl rfl
-  · have hOut : capabilityKeyFrame st out.state :=
-      revokeCdtMaterializedTraversal_ok_induct (P := capabilityKeyFrame st)
-        (fun stA stB nd hP hSt => hP.trans (processRevokeNode_keyFrame stA stB nd hP.2.2 hSt))
-        st rootNode _ out (capabilityKeyFrame_of_objects_scheduler_eq hObjInv rfl rfl) hTrav
-    exact hOut.trans (revokePendingTransfersFrom_keyFrame _ _ hOut.2.2)
+  · exact revokeCdtMaterializedTraversal_ok_induct (P := capabilityKeyFrame st)
+      (fun stA stB nd hP hSt => hP.trans (processRevokeNode_keyFrame stA stB nd hP.2.2 hSt))
+      st rootNode _ out (capabilityKeyFrame_of_objects_scheduler_eq hObjInv rfl rfl) hTrav
 
 theorem finaliseDestroyedCapabilities_keyFrame (ec : CoreId) (pre : SystemState)
     (pages : List MappedPage) (st st' : SystemState) (hObjInv : st.objects.invExt)

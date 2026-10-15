@@ -1166,88 +1166,6 @@ theorem syscallChecksTargetFirst_iff (id : SyscallId) :
     syscallChecksTargetFirst id = true ↔ id = .auditRead ∨ id = .auditDrain := by
   cases id <;> simp [syscallChecksTargetFirst]
 
-/-- M-D01: Resolve extra capability addresses from the sender's CSpace
-into actual capabilities for IPC message transfer.
-
-For each CPtr in `capAddrs`, resolve it via `resolveCapAddress` in the
-sender's CSpace root, then look up the capability at the resolved slot.
-Caps that fail to resolve are silently dropped (seL4 behavior).
-Returns the resolved capabilities as an array. -/
-/- W5-G: Resolves extra capabilities from IPC buffer. Failed resolutions are
-   silently dropped (matching seL4 `lookupExtraCaps` behavior). This means
-   the receiver gets fewer extra caps than the sender specified. For
-   debugging, callers should check `extraCaps.length` against the expected
-   count from `MessageInfo.extraCaps`.
-   X5-I (L-4): Confirmed v0.22.17 audit — silent dropping matches seL4
-   reference semantics. No security impact: caps that fail resolution
-   simply don't transfer.
-
-   **AC3-D / API-01 — Silent-drop semantics**: The returned `Array Capability`
-   contains only successfully resolved capabilities. Its `.size` equals the
-   count of *successfully resolved* extra caps, which may be strictly less than
-   `capAddrs.size` (the sender's requested count). Receivers should compare
-   the actual resolved count against the expected count from the original
-   `MessageInfo.extraCaps` to detect drops. This is seL4-compatible behavior:
-   `lookupExtraCaps` in the C kernel also silently discards unresolvable
-   capabilities and returns only valid ones in the IPC buffer.
-
-   **AI6-A (M-02) — Spec cross-reference**: See `docs/spec/SELE4N_SPEC.md`
-   §8.10.4 "IPC Extra Capability Resolution — Silent-Drop Semantics" for the
-   normative specification, including the seL4 reference C kernel equivalence. -/
-def resolveExtraCaps (cspaceRoot : SeLe4n.ObjId)
-    (capAddrs : Array SeLe4n.CPtr) (depth : Nat) (granted : Bool)
-    (st : SystemState) : Array TransferCap × SystemState :=
-  -- PR #873 round 14: **the authority is checked where the resource is
-  -- committed.**  Resolution mints a persistent CDT node per source slot and
-  -- marks that slot as having a transfer in flight; the Grant right was
-  -- consulted only later, at the unwrap.  So a sender holding Write but not
-  -- Grant spent the bounded global node counter on every send, and
-  -- `nodeHasPendingTransfer` reported its slots as future parents -- making
-  -- `cspaceDeleteSlot` and the CNode retype answer `.revocationRequired` for a
-  -- derivation that could never materialise, since the unwrap was always going
-  -- to deny it.  A commitment made before the authority is checked is a
-  -- commitment that can outlive the authority, which is the same shape round 13
-  -- closed on `capsGranted`: one authority, read once, at the point it decides
-  -- something.
-  if !granted then (#[], st) else
-  capAddrs.foldl (fun acc addr =>
-    match resolveCapAddress cspaceRoot addr depth acc.2 with
-    | .error _ => acc
-    | .ok ref =>
-        match SystemState.lookupSlotCap acc.2 ref with
-        | none => acc
-        -- The derivation node of the real source slot is **minted here**, at
-        -- resolution, and carried in the message.  Two things make that the
-        -- right moment rather than the unwrap:
-        --
-        --   * the unwrap can run in a later syscall (a blocking send parks its
-        --     message), and by then the slot may hold something else entirely —
-        --     a slot address resolved at that point names the new occupant;
-        --   * a node id is stable across slot moves and reuse by construction,
-        --     which is what `CdtNodeId` is for.
-        --
-        -- Minting is idempotent for a slot that already has a node, so this
-        -- costs an allocation only the first time a slot is used as a source.
-        --
-        -- PR #873 round 8: through the **checked** minter.  The unchecked one
-        -- advances `cdtNextNode` without consulting `cdtNextNodeBounded`, and
-        -- this fold runs up to `maxExtraCaps` times per syscall — so a resolver
-        -- near the bound could carry the counter past it in one call, and a
-        -- *blocking* send commits that state before any unwrap runs.  A
-        -- fixed-width runtime allocating node ids past the bound eventually
-        -- reuses one, and a reused derivation node is a revocation that reaches
-        -- the wrong children.
-        --
-        -- Exhaustion drops the cap, which is this resolver's existing semantics
-        -- for an address it cannot resolve (seL4's silent drop) — and it is
-        -- fail-closed: a capability with no derivation node is not transferred,
-        -- so nothing is installed untracked.
-        | some cap =>
-            match SystemState.ensureCdtNodeForSlotChecked acc.2 ref with
-            | none => acc
-            | some (node, stNode) =>
-                (acc.1.push { cap := cap, srcNode := node }, stNode)) (#[], st)
-
 /-- AN7-E (API-M01): Debug-noisy variant of `resolveExtraCaps` that surfaces
     partial resolution explicitly.  Returns the resolved array paired with a
     flag `partial := true` iff at least one input address failed to resolve.
@@ -1360,35 +1278,6 @@ theorem resolveExtraCapsGated_empty
     resolveExtraCapsGated cspaceRoot #[] depth granted st = .ok (#[], st) := by
   unfold resolveExtraCapsGated
   simp [resolveExtraCapsDetailed_empty]
-
-/-- **WS-LS LS2.3**: the resolution writes the derivation tree alone — every
-object and every scheduler slot is as it was.  (The derivation nodes it mints
-are what the transition that follows reads, which is why that transition runs
-from the resolved state and why `.call`'s scheduler footprint is read there.) -/
-theorem resolveExtraCaps_objects_scheduler_eq (cspaceRoot : SeLe4n.ObjId)
-    (capAddrs : Array SeLe4n.CPtr) (depth : Nat) (granted : Bool) (st : SystemState) :
-    (resolveExtraCaps cspaceRoot capAddrs depth granted st).2.objects = st.objects ∧
-      (resolveExtraCaps cspaceRoot capAddrs depth granted st).2.scheduler = st.scheduler := by
-  unfold resolveExtraCaps
-  split
-  · exact ⟨rfl, rfl⟩
-  · refine Array.foldl_induction
-      (motive := fun (_ : Nat) (acc : Array TransferCap × SystemState) =>
-        acc.2.objects = st.objects ∧ acc.2.scheduler = st.scheduler) ⟨rfl, rfl⟩ ?_
-    intro i acc hAcc
-    split
-    · exact hAcc
-    · split
-      · exact hAcc
-      · split
-        · exact hAcc
-        · rename_i node stNode hNode
-          unfold SystemState.ensureCdtNodeForSlotChecked at hNode
-          split at hNode
-          · cases hNode; exact hAcc
-          · split at hNode
-            · cases hNode; exact hAcc
-            · cases hNode
 
 /-- WS-AL AL7-A (cascades AK7-E): lift a raw `ThreadId` to `ValidThreadId`
 at the dispatch boundary. Returns `.error .invalidArgument` if the id
@@ -3656,24 +3545,12 @@ def dispatchWithCap (decoded : SyscallDecodeResult) (tid : SeLe4n.ThreadId)
     match cap.target with
     | .object epId =>
       fun st =>
-        let body := extractMessageRegisters decoded.msgRegs decoded.msgInfo
-        let extraCapAddrs := decodeExtraCapAddrs decoded
-        -- Resolution mints a derivation node per source slot, so it returns
-        -- the state carrying them; the transition must run from THAT state,
-        -- or the parents the message names would live only in a discarded copy.
-        let (resolvedCaps, st) := resolveExtraCaps gate.cspaceRoot extraCapAddrs gate.capDepth (cap.rights.mem .grant) st
-        -- PR #873 round 6: **the sender's grant authority travels with the
-        -- message.**  Capability transfer is authorised by the *sender's*
-        -- endpoint capability, and the two rendezvous orderings ask about it at
-        -- different times: on an immediate rendezvous `cap` is still in hand,
-        -- but when the send parks it is gone by the time a receiver dequeues the
-        -- message — and the receiver's own endpoint capability is a different
-        -- principal's authority, not a substitute for it.  Recording the bit on
-        -- the message is what makes capability transfer independent of arrival
-        -- order; seL4 stores the same bit as `blockingIPCCanGrant` on the
-        -- blocked sender's thread state.
-        let msg : IpcMessage := { registers := body, caps := resolvedCaps, badge := cap.badge,
-                                  capsGranted := cap.rights.mem .grant }
+        -- WS-ZA ZA4.7 (seL4 `sendIPC`): the send is handed only the badge and
+        -- the grant bit of the invoked capability.  The words are read from the
+        -- sender's own frame at delivery, and the extra capabilities are looked up
+        -- only on the arm that delivers (a send that blocks resolves none; its
+        -- receiver looks them up at the rendezvous).
+        let payload : SendPayload := .frame cap.badge (cap.rights.mem .grant)
         -- WS-SM SM6.D (PR #822 review): capture the receive-queue head the send will
         -- wake, so its server-first reply stash is cleared once it leaves
         -- `.blockedOnReceive` (a stash lives only on a blocked receiver).
@@ -3688,7 +3565,7 @@ def dispatchWithCap (decoded : SyscallDecodeResult) (tid : SeLe4n.ThreadId)
         -- `endpointSendDualWithCapsOnCore … executingCore` wakes the receiver on
         -- *its* home core and removes the sender from *its own* core; on the boot
         -- core it is the single-core transition.
-        match endpointSendDualWithCapsOnCore epId tid msg cap.rights
+        match endpointSendDualWithCapsOnCore epId tid payload
             decoded.capRecvSlot executingCore st with
         | (_, .error e) => .error e
         | (st', .ok (summary, _)) =>
@@ -3701,7 +3578,7 @@ def dispatchWithCap (decoded : SyscallDecodeResult) (tid : SeLe4n.ThreadId)
                 -- context restore, WS-BP BP7.6).  Inert when the send parked instead.
                 -- PR #866 round-2: the frame's `extraCaps` is the transfer
                 -- summary's INSTALLED count — a grant-denied or slot-exhausted
-                -- transfer reports zero, never the requested `msg.caps.size`.
+                -- transfer reports zero, never the number of addresses the sender named.
                 .ok ((), Architecture.stageWokenDelivery st'' wokenReceiver?
                           summary.installedCount)
     | _ => fun _ => .error .invalidCapability
@@ -3801,24 +3678,12 @@ def dispatchWithCap (decoded : SyscallDecodeResult) (tid : SeLe4n.ThreadId)
     match cap.target with
     | .object epId =>
       fun st =>
-        let body := extractMessageRegisters decoded.msgRegs decoded.msgInfo
-        let extraCapAddrs := decodeExtraCapAddrs decoded
-        -- Resolution mints a derivation node per source slot, so it returns
-        -- the state carrying them; the transition must run from THAT state,
-        -- or the parents the message names would live only in a discarded copy.
-        let (resolvedCaps, st) := resolveExtraCaps gate.cspaceRoot extraCapAddrs gate.capDepth (cap.rights.mem .grant) st
-        -- PR #873 round 6: **the sender's grant authority travels with the
-        -- message.**  Capability transfer is authorised by the *sender's*
-        -- endpoint capability, and the two rendezvous orderings ask about it at
-        -- different times: on an immediate rendezvous `cap` is still in hand,
-        -- but when the send parks it is gone by the time a receiver dequeues the
-        -- message — and the receiver's own endpoint capability is a different
-        -- principal's authority, not a substitute for it.  Recording the bit on
-        -- the message is what makes capability transfer independent of arrival
-        -- order; seL4 stores the same bit as `blockingIPCCanGrant` on the
-        -- blocked sender's thread state.
-        let msg : IpcMessage := { registers := body, caps := resolvedCaps, badge := cap.badge,
-                                  capsGranted := cap.rights.mem .grant }
+        -- WS-ZA ZA4.7 (seL4 `sendIPC`): the send is handed only the badge and
+        -- the grant bit of the invoked capability.  The words are read from the
+        -- sender's own frame at delivery, and the extra capabilities are looked up
+        -- only on the arm that delivers (a send that blocks resolves none; its
+        -- receiver looks them up at the rendezvous).
+        let payload : SendPayload := .frame cap.badge (cap.rights.mem .grant)
         -- WS-SM SM6.A (live cross-core `.call`): route the unchecked `.call`
         -- through the cross-core dispatch (receiver woken on its *home* core,
         -- surfacing a `.reschedule` SGI). `endpointCallCrossCoreDispatch` is the
@@ -3832,11 +3697,11 @@ def dispatchWithCap (decoded : SyscallDecodeResult) (tid : SeLe4n.ThreadId)
         -- message in its `pendingMessage`; stage its return frame (the CALLER
         -- itself always blocks — §3.5 — and is owed its frame by the reply path).
         let wokenReceiver? := (st.getEndpoint? epId).bind (·.receiveQ.head)
-        match endpointCallCrossCoreDispatch epId tid msg cap.rights
+        match endpointCallCrossCoreDispatch epId tid payload
             decoded.capRecvSlot executingCore st with
         -- PR #866 round-2: the woken receiver's `extraCaps` is the transfer
         -- summary's INSTALLED count (zero on grant-denied / slot-exhausted
-        -- transfers), never the requested `msg.caps.size`.
+        -- transfers), never the number of addresses the sender named.
         | (st', .ok (summary, _)) =>
             .ok ((), Architecture.stageWokenDelivery st' wokenReceiver?
                       summary.installedCount)
@@ -4148,24 +4013,12 @@ def dispatchWithCapChecked (ctx : LabelingContext)
     match cap.target with
     | .object epId =>
       fun st =>
-        let body := extractMessageRegisters decoded.msgRegs decoded.msgInfo
-        let extraCapAddrs := decodeExtraCapAddrs decoded
-        -- Resolution mints a derivation node per source slot, so it returns
-        -- the state carrying them; the transition must run from THAT state,
-        -- or the parents the message names would live only in a discarded copy.
-        let (resolvedCaps, st) := resolveExtraCaps gate.cspaceRoot extraCapAddrs gate.capDepth (cap.rights.mem .grant) st
-        -- PR #873 round 6: **the sender's grant authority travels with the
-        -- message.**  Capability transfer is authorised by the *sender's*
-        -- endpoint capability, and the two rendezvous orderings ask about it at
-        -- different times: on an immediate rendezvous `cap` is still in hand,
-        -- but when the send parks it is gone by the time a receiver dequeues the
-        -- message — and the receiver's own endpoint capability is a different
-        -- principal's authority, not a substitute for it.  Recording the bit on
-        -- the message is what makes capability transfer independent of arrival
-        -- order; seL4 stores the same bit as `blockingIPCCanGrant` on the
-        -- blocked sender's thread state.
-        let msg : IpcMessage := { registers := body, caps := resolvedCaps, badge := cap.badge,
-                                  capsGranted := cap.rights.mem .grant }
+        -- WS-ZA ZA4.7 (seL4 `sendIPC`): the send is handed only the badge and
+        -- the grant bit of the invoked capability.  The words are read from the
+        -- sender's own frame at delivery, and the extra capabilities are looked up
+        -- only on the arm that delivers (a send that blocks resolves none; its
+        -- receiver looks them up at the rendezvous).
+        let payload : SendPayload := .frame cap.badge (cap.rights.mem .grant)
         -- AH1-B (H-01 fix): Pass capability transfer params to checked send
         -- WS-SM SM6.D (PR #822 review): clear the woken receiver's server-first reply
         -- stash (mirrors the unchecked `.send` arm).
@@ -4174,7 +4027,7 @@ def dispatchWithCapChecked (ctx : LabelingContext)
         -- (mirrors the unchecked arm; `endpointSendDualChecked` was boot-pinned
         -- through `endpointSendDualWithCaps`).  Bounds first, then the
         -- sender→endpoint flow gate, then the per-core transition.
-        match endpointSendCrossCoreDispatchChecked ctx epId tid msg cap.rights
+        match endpointSendCrossCoreDispatchChecked ctx epId tid payload
             decoded.capRecvSlot executingCore st with
         | (_, .error e) => .error e
         | (st', .ok (summary, _)) =>
@@ -4275,24 +4128,12 @@ def dispatchWithCapChecked (ctx : LabelingContext)
     match cap.target with
     | .object epId =>
       fun st =>
-        let body := extractMessageRegisters decoded.msgRegs decoded.msgInfo
-        let extraCapAddrs := decodeExtraCapAddrs decoded
-        -- Resolution mints a derivation node per source slot, so it returns
-        -- the state carrying them; the transition must run from THAT state,
-        -- or the parents the message names would live only in a discarded copy.
-        let (resolvedCaps, st) := resolveExtraCaps gate.cspaceRoot extraCapAddrs gate.capDepth (cap.rights.mem .grant) st
-        -- PR #873 round 6: **the sender's grant authority travels with the
-        -- message.**  Capability transfer is authorised by the *sender's*
-        -- endpoint capability, and the two rendezvous orderings ask about it at
-        -- different times: on an immediate rendezvous `cap` is still in hand,
-        -- but when the send parks it is gone by the time a receiver dequeues the
-        -- message — and the receiver's own endpoint capability is a different
-        -- principal's authority, not a substitute for it.  Recording the bit on
-        -- the message is what makes capability transfer independent of arrival
-        -- order; seL4 stores the same bit as `blockingIPCCanGrant` on the
-        -- blocked sender's thread state.
-        let msg : IpcMessage := { registers := body, caps := resolvedCaps, badge := cap.badge,
-                                  capsGranted := cap.rights.mem .grant }
+        -- WS-ZA ZA4.7 (seL4 `sendIPC`): the send is handed only the badge and
+        -- the grant bit of the invoked capability.  The words are read from the
+        -- sender's own frame at delivery, and the extra capabilities are looked up
+        -- only on the arm that delivers (a send that blocks resolves none; its
+        -- receiver looks them up at the rendezvous).
+        let payload : SendPayload := .frame cap.badge (cap.rights.mem .grant)
         -- WS-SM SM6.A (live cross-core `.call`): route the checked `.call`
         -- through the cross-core dispatch.  `endpointCallCrossCoreDispatchChecked`
         -- is the cross-core analogue of `endpointCallChecked` + inline donation:
@@ -4308,7 +4149,7 @@ def dispatchWithCapChecked (ctx : LabelingContext)
         -- WS-RA RA.B.5b: the woken receiver's staged frame (checked twin; the
         -- call's own flow gate ran inside the checked dispatch, before the wake).
         let wokenReceiver? := (st.getEndpoint? epId).bind (·.receiveQ.head)
-        match endpointCallCrossCoreDispatchChecked ctx epId tid msg cap.rights
+        match endpointCallCrossCoreDispatchChecked ctx epId tid payload
             decoded.capRecvSlot executingCore st with
         -- PR #866 round-2: `extraCaps` = the summary's INSTALLED count, like
         -- the unchecked arm.
@@ -5886,26 +5727,14 @@ theorem dispatchWithCap_send_uses_withCaps
     (hTarget : cap.target = .object epId) :
     dispatchWithCap decoded tid executingCore gate cap =
       fun st =>
-        let body := extractMessageRegisters decoded.msgRegs decoded.msgInfo
-        let extraCapAddrs := decodeExtraCapAddrs decoded
-        -- Resolution mints a derivation node per source slot, so it returns
-        -- the state carrying them; the transition must run from THAT state,
-        -- or the parents the message names would live only in a discarded copy.
-        let (resolvedCaps, st) := resolveExtraCaps gate.cspaceRoot extraCapAddrs gate.capDepth (cap.rights.mem .grant) st
-        -- PR #873 round 6: **the sender's grant authority travels with the
-        -- message.**  Capability transfer is authorised by the *sender's*
-        -- endpoint capability, and the two rendezvous orderings ask about it at
-        -- different times: on an immediate rendezvous `cap` is still in hand,
-        -- but when the send parks it is gone by the time a receiver dequeues the
-        -- message — and the receiver's own endpoint capability is a different
-        -- principal's authority, not a substitute for it.  Recording the bit on
-        -- the message is what makes capability transfer independent of arrival
-        -- order; seL4 stores the same bit as `blockingIPCCanGrant` on the
-        -- blocked sender's thread state.
-        let msg : IpcMessage := { registers := body, caps := resolvedCaps, badge := cap.badge,
-                                  capsGranted := cap.rights.mem .grant }
+        -- WS-ZA ZA4.7 (seL4 `sendIPC`): the send is handed only the badge and
+        -- the grant bit of the invoked capability.  The words are read from the
+        -- sender's own frame at delivery, and the extra capabilities are looked up
+        -- only on the arm that delivers (a send that blocks resolves none; its
+        -- receiver looks them up at the rendezvous).
+        let payload : SendPayload := .frame cap.badge (cap.rights.mem .grant)
         let wokenReceiver? := (st.getEndpoint? epId).bind (·.receiveQ.head)
-        match endpointSendDualWithCapsOnCore epId tid msg cap.rights
+        match endpointSendDualWithCapsOnCore epId tid payload
             decoded.capRecvSlot executingCore st with
         | (_, .error e) => .error e
         | (st', .ok (summary, _)) =>
@@ -5928,30 +5757,18 @@ theorem dispatchWithCap_call_uses_crossCoreDispatch
     (hTarget : cap.target = .object epId) :
     dispatchWithCap decoded tid executingCore gate cap =
       fun st =>
-        let body := extractMessageRegisters decoded.msgRegs decoded.msgInfo
-        let extraCapAddrs := decodeExtraCapAddrs decoded
-        -- Resolution mints a derivation node per source slot, so it returns
-        -- the state carrying them; the transition must run from THAT state,
-        -- or the parents the message names would live only in a discarded copy.
-        let (resolvedCaps, st) := resolveExtraCaps gate.cspaceRoot extraCapAddrs gate.capDepth (cap.rights.mem .grant) st
-        -- PR #873 round 6: **the sender's grant authority travels with the
-        -- message.**  Capability transfer is authorised by the *sender's*
-        -- endpoint capability, and the two rendezvous orderings ask about it at
-        -- different times: on an immediate rendezvous `cap` is still in hand,
-        -- but when the send parks it is gone by the time a receiver dequeues the
-        -- message — and the receiver's own endpoint capability is a different
-        -- principal's authority, not a substitute for it.  Recording the bit on
-        -- the message is what makes capability transfer independent of arrival
-        -- order; seL4 stores the same bit as `blockingIPCCanGrant` on the
-        -- blocked sender's thread state.
-        let msg : IpcMessage := { registers := body, caps := resolvedCaps, badge := cap.badge,
-                                  capsGranted := cap.rights.mem .grant }
+        -- WS-ZA ZA4.7 (seL4 `sendIPC`): the send is handed only the badge and
+        -- the grant bit of the invoked capability.  The words are read from the
+        -- sender's own frame at delivery, and the extra capabilities are looked up
+        -- only on the arm that delivers (a send that blocks resolves none; its
+        -- receiver looks them up at the rendezvous).
+        let payload : SendPayload := .frame cap.badge (cap.rights.mem .grant)
         -- WS-SM SM6.D (#7.3b fold): server-first reply linkage is atomic with the
         -- rendezvous inside `endpointCallOnCore` (`linkServerStashedReply`); no
         -- separate post-dispatch link step.
         -- WS-RA RA.B.5b: the woken receiver's staged frame rides in the RHS.
         let wokenReceiver? := (st.getEndpoint? epId).bind (·.receiveQ.head)
-        match endpointCallCrossCoreDispatch epId tid msg cap.rights
+        match endpointCallCrossCoreDispatch epId tid payload
             decoded.capRecvSlot executingCore st with
         | (st', .ok (summary, _)) =>
             .ok ((), Architecture.stageWokenDelivery st' wokenReceiver?
@@ -7754,17 +7571,8 @@ theorem dispatchWithCap_send_delegates
     (hSyscall : decoded.syscallId = .send)
     (hTarget : cap.target = .object epId) :
     dispatchWithCap decoded tid executingCore gate cap st =
-      (let (resolvedCaps, st) :=
-         resolveExtraCaps gate.cspaceRoot (decodeExtraCapAddrs decoded) gate.capDepth (cap.rights.mem .grant) st
-       match endpointSendDualWithCapsOnCore epId tid
-              { registers := extractMessageRegisters decoded.msgRegs decoded.msgInfo,
-                caps := resolvedCaps,
-                badge := cap.badge,
-                -- PR #873 round 6: the sender's grant authority travels with the
-                -- message, so a send that parks can still transfer when a
-                -- receiver arrives later.
-                capsGranted := cap.rights.mem .grant }
-              cap.rights decoded.capRecvSlot
+      (match endpointSendDualWithCapsOnCore epId tid (.frame cap.badge (cap.rights.mem .grant))
+              decoded.capRecvSlot
               executingCore st with
        | (_, .error e) => .error e
        | (st', .ok (summary, _)) =>
@@ -7778,7 +7586,7 @@ theorem dispatchWithCap_send_delegates
 
 /-- **The live checked `.send` arm routes to `endpointSendCrossCoreDispatchChecked`.**
 The checked mirror of `dispatchWithCap_send_delegates`; the gate is inside the
-cross-core operation (bounds, then `sender → endpoint`), exactly as
+cross-core operation (the `sender → endpoint` flow check), exactly as
 `endpointSendDualChecked` carried it before the reroute. -/
 theorem dispatchWithCapChecked_send_delegates
     (ctx : LabelingContext) (decoded : SyscallDecodeResult) (tid : SeLe4n.ThreadId) (executingCore : Concurrency.CoreId)
@@ -7786,17 +7594,8 @@ theorem dispatchWithCapChecked_send_delegates
     (hSyscall : decoded.syscallId = .send)
     (hTarget : cap.target = .object epId) :
     dispatchWithCapChecked ctx decoded tid executingCore gate cap st =
-      (let (resolvedCaps, st) :=
-         resolveExtraCaps gate.cspaceRoot (decodeExtraCapAddrs decoded) gate.capDepth (cap.rights.mem .grant) st
-       match endpointSendCrossCoreDispatchChecked ctx epId tid
-              { registers := extractMessageRegisters decoded.msgRegs decoded.msgInfo,
-                caps := resolvedCaps,
-                badge := cap.badge,
-                -- PR #873 round 6: the sender's grant authority travels with the
-                -- message, so a send that parks can still transfer when a
-                -- receiver arrives later.
-                capsGranted := cap.rights.mem .grant }
-              cap.rights decoded.capRecvSlot
+      (match endpointSendCrossCoreDispatchChecked ctx epId tid (.frame cap.badge (cap.rights.mem .grant))
+              decoded.capRecvSlot
               executingCore st with
        | (_, .error e) => .error e
        | (st', .ok (summary, _)) =>
@@ -7897,16 +7696,8 @@ def syscallDelegates : SyscallId → Prop
         decoded.syscallId = .send →
         cap.target = .object epId →
         dispatchWithCap decoded tid executingCore gate cap st =
-          (let (resolvedCaps, st) :=
-             resolveExtraCaps gate.cspaceRoot (decodeExtraCapAddrs decoded) gate.capDepth (cap.rights.mem .grant) st
-           match endpointSendDualWithCapsOnCore epId tid
-                  { registers := extractMessageRegisters decoded.msgRegs decoded.msgInfo,
-                    caps := resolvedCaps,
-                    badge := cap.badge,
-                    -- PR #873 round 6: the sender's grant authority travels with
-                    -- the message, so a parked send can still transfer later.
-                    capsGranted := cap.rights.mem .grant }
-                  cap.rights decoded.capRecvSlot
+          (match endpointSendDualWithCapsOnCore epId tid (.frame cap.badge (cap.rights.mem .grant))
+                  decoded.capRecvSlot
                   executingCore st with
            | (_, .error e) => .error e
            | (st', .ok (summary, _)) =>

@@ -54,15 +54,15 @@ open SeLe4n.Kernel.Concurrency
 over the message, not at its default: whether the footprint carries the
 capability-transfer destination is a property of what the send carries. -/
 theorem lockSet_endpointSendOnCore_size_le (st : SystemState) (endpointId : SeLe4n.ObjId)
-    (sender : SeLe4n.ThreadId) (cnodeRootObjId : SeLe4n.ObjId) (msg : IpcMessage) :
-    (lockSet_endpointSendOnCore st endpointId sender cnodeRootObjId msg).size
+    (sender : SeLe4n.ThreadId) (cnodeRootObjId : SeLe4n.ObjId) (payload : SendPayload) :
+    (lockSet_endpointSendOnCore st endpointId sender cnodeRootObjId payload).size
       ≤ maxLockSetSize :=
   lockSet_endpointSend_size_le _ _ _ _ _ _
 
 /-- The state-resolved **call** footprint. -/
 theorem lockSet_endpointCallOnCore_size_le (st : SystemState) (endpointId : SeLe4n.ObjId)
-    (caller : SeLe4n.ThreadId) (cnodeRootObjId : SeLe4n.ObjId) (msg : IpcMessage) :
-    (lockSet_endpointCallOnCore st endpointId caller cnodeRootObjId msg).size
+    (caller : SeLe4n.ThreadId) (cnodeRootObjId : SeLe4n.ObjId) (payload : SendPayload) :
+    (lockSet_endpointCallOnCore st endpointId caller cnodeRootObjId payload).size
       ≤ maxLockSetSize :=
   lockSet_endpointCall_size_le _ _ _ _ _ _ _ _ _ _
 
@@ -107,13 +107,14 @@ the **invoking** receiver's own pre-receive return touches.
 
 Twenty-one is what the *definition* can produce; no reachable state carries the
 last five and the re-donation members at once, which
-`lockSet_endpointReplyRecvOnCore_size_le_twentyone` states. -/
+`lockSet_endpointReplyRecvOnCore_size_le_twentyone` states.  (The ceiling has since
+grown to `maxLockSetSize`'s twenty-eight; its docstring carries the history.) -/
 theorem lockSet_endpointReplyRecvOnCore_size_le (st : SystemState)
     (replier : SeLe4n.ThreadId) (cnodeRootObjId : SeLe4n.ObjId)
     (target : SeLe4n.ThreadId) (endpointObjId : SeLe4n.ObjId) :
     (lockSet_endpointReplyRecvOnCore st replier cnodeRootObjId target endpointObjId).size
       ≤ maxLockSetSize :=
-  lockSet_replyRecv_size_le _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+  lockSet_replyRecv_size_le _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
 
 /-- WS-OD OD1.5: `none` extends nothing. -/
 private theorem extendOpt_none (S : LockSet) : lockSetExtendOpt S none = S := rfl
@@ -188,7 +189,13 @@ out at the same time as the pop's three members -- that exclusion is the coheren
 fact's, so it belongs to the next theorem.  The two sharp bounds are therefore
 unchanged at eighteen and seventeen, which is what "the reachable bound does not
 move" means: this one is the union over argument values, not a statement about a
-reachable state. -/
+reachable state.
+
+**WS-ZA ZA4.7 spends one of the rendezvous branch's slack members.**  The
+dequeued sender's CSpace root, which the receive leg reads when it looks the
+sender's extra capabilities up, is live exactly on a rendezvous
+(`receiveCapRequest_of_no_queued_sender`), so that branch's figure moves 21 → 22
+and the blocking branch's does not; twenty-two still bounds both. -/
 theorem lockSet_endpointReplyRecvOnCore_size_le_twentytwo (st : SystemState)
     (replier : SeLe4n.ThreadId) (cnodeRootObjId : SeLe4n.ObjId)
     (target : SeLe4n.ThreadId) (endpointObjId : SeLe4n.ObjId) :
@@ -209,12 +216,13 @@ theorem lockSet_endpointReplyRecvOnCore_size_le_twentytwo (st : SystemState)
             receivePreReturnStack?_of_sender st endpointObjId replier sender hS]
           simp only [Option.map_none]
           exact Nat.le_trans
-            (lockSet_replyRecv_size_le_twentyone_of_no_preReturn_of_no_origin
-              _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _)
+            (lockSet_replyRecv_size_le_twentytwo_of_no_preReturn_of_no_origin
+              _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _)
             (by decide)
       | none =>
           rw [receiveRendezvousDonatedSc?_of_no_queued_sender st endpointObjId replier hS,
-            receiveRendezvousReplyWaiterHead?_of_no_queued_sender st endpointObjId replier hS]
+            receiveRendezvousReplyWaiterHead?_of_no_queued_sender st endpointObjId replier hS,
+                receiveCapRequest_of_no_queued_sender st endpointObjId hS]
           simp only [Option.bind_none]
           exact Nat.le_trans
             (lockSet_replyRecv_size_le_twentytwo_of_no_sender_of_no_origin
@@ -231,12 +239,13 @@ theorem lockSet_endpointReplyRecvOnCore_size_le_twentytwo (st : SystemState)
                 receivePreReturnStack?_of_sender st endpointObjId replier sender hS]
               simp only [Option.map_none]
               exact Nat.le_trans
-                (lockSet_replyRecv_size_le_twentyone_of_no_preReturn_of_no_origin
-                  _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _)
+                (lockSet_replyRecv_size_le_twentytwo_of_no_preReturn_of_no_origin
+                  _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _)
                 (by decide)
           | none =>
               rw [receiveRendezvousDonatedSc?_of_no_queued_sender st endpointObjId replier hS,
-                receiveRendezvousReplyWaiterHead?_of_no_queued_sender st endpointObjId replier hS]
+                receiveRendezvousReplyWaiterHead?_of_no_queued_sender st endpointObjId replier hS,
+                receiveCapRequest_of_no_queued_sender st endpointObjId hS]
               simp only [Option.bind_none]
               exact Nat.le_trans
                 (lockSet_replyRecv_size_le_twentytwo_of_no_sender_of_no_origin
@@ -250,12 +259,13 @@ theorem lockSet_endpointReplyRecvOnCore_size_le_twentytwo (st : SystemState)
                 receivePreReturnStack?_of_sender st endpointObjId replier sender hS]
               simp only [Option.map_none]
               exact Nat.le_trans
-                (lockSet_replyRecv_size_le_twenty_of_no_preReturn_of_no_belowHead
-                  _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _)
+                (lockSet_replyRecv_size_le_twentyone_of_no_preReturn_of_no_belowHead
+                  _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _)
                 (by decide)
           | none =>
               rw [receiveRendezvousDonatedSc?_of_no_queued_sender st endpointObjId replier hS,
-                receiveRendezvousReplyWaiterHead?_of_no_queued_sender st endpointObjId replier hS]
+                receiveRendezvousReplyWaiterHead?_of_no_queued_sender st endpointObjId replier hS,
+                receiveCapRequest_of_no_queued_sender st endpointObjId hS]
               simp only [Option.bind_none]
               exact Nat.le_trans
                 (lockSet_replyRecv_size_le_twentyone_of_no_sender_of_no_belowHead
@@ -283,7 +293,13 @@ above it heads nothing (`answeredReplyFrameAbove?_none_of_headContext`,
 the bound holds on *every* state, reachable or not.  That is strictly stronger
 than what it replaces, and it is the first of the two coherence facts the repoint
 left with no consumer.  WS-HP HP7 (`v0.35.46`) then **deleted** both; see the
-tombstone above. -/
+tombstone above.
+
+**WS-ZA ZA4.7**: the dequeued sender's CSpace root is live on the rendezvous
+branches only, and each of them already has two members it provably lacks — the
+below-head pair where no context heads a stack or the redirect fires, the splice's
+pair where one does (`lockSet_replyRecv_size_le_twenty_of_no_preReturn_of_no_frameAbove_of_no_origin`)
+— so the new member fits under the same figure. -/
 theorem lockSet_endpointReplyRecvOnCore_size_le_twentyone (st : SystemState)
     (replier : SeLe4n.ThreadId) (cnodeRootObjId : SeLe4n.ObjId)
     (target : SeLe4n.ThreadId) (endpointObjId : SeLe4n.ObjId) :
@@ -301,13 +317,17 @@ theorem lockSet_endpointReplyRecvOnCore_size_le_twentyone (st : SystemState)
           rw [receivePreReturn?_of_sender st endpointObjId replier sender hS,
             receivePreReturnStack?_of_sender st endpointObjId replier sender hS]
           simp only [Option.map_none]
+          -- **WS-ZA ZA4.7**: the sender's CSpace root is live here, and the pop's
+          -- below-head pair is not (no context heads a stack), so the bound
+          -- stated with that pair absent covers it.
           exact Nat.le_trans
-            (lockSet_replyRecv_size_le_twentyone_of_no_preReturn_of_no_origin
+            (lockSet_replyRecv_size_le_twentyone_of_no_preReturn_of_no_belowHead
               _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _)
             (by decide)
       | none =>
           rw [receiveRendezvousDonatedSc?_of_no_queued_sender st endpointObjId replier hS,
-            receiveRendezvousReplyWaiterHead?_of_no_queued_sender st endpointObjId replier hS]
+            receiveRendezvousReplyWaiterHead?_of_no_queued_sender st endpointObjId replier hS,
+                receiveCapRequest_of_no_queued_sender st endpointObjId hS]
           simp only [Option.bind_none]
           exact Nat.le_trans
             (lockSet_replyRecv_size_le_nineteen_of_no_sender_of_no_head_of_no_origin
@@ -329,13 +349,16 @@ theorem lockSet_endpointReplyRecvOnCore_size_le_twentyone (st : SystemState)
               rw [receivePreReturn?_of_sender st endpointObjId replier sender hS,
                 receivePreReturnStack?_of_sender st endpointObjId replier sender hS]
               simp only [Option.map_none]
+              -- **WS-ZA ZA4.7**: the sender's CSpace root is live here, and the
+              -- splice's two members are not (rewritten away above).
               exact Nat.le_trans
-                (lockSet_replyRecv_size_le_twentyone_of_no_preReturn_of_no_origin
-                  _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _)
+                (lockSet_replyRecv_size_le_twenty_of_no_preReturn_of_no_frameAbove_of_no_origin
+                  _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _)
                 (by decide)
           | none =>
               rw [receiveRendezvousDonatedSc?_of_no_queued_sender st endpointObjId replier hS,
-                receiveRendezvousReplyWaiterHead?_of_no_queued_sender st endpointObjId replier hS]
+                receiveRendezvousReplyWaiterHead?_of_no_queued_sender st endpointObjId replier hS,
+                receiveCapRequest_of_no_queued_sender st endpointObjId hS]
               simp only [Option.bind_none]
               exact Nat.le_trans
                 (lockSet_replyRecv_size_le_twenty_of_no_sender_of_no_frameAbove_of_no_origin
@@ -352,12 +375,13 @@ theorem lockSet_endpointReplyRecvOnCore_size_le_twentyone (st : SystemState)
                 receivePreReturnStack?_of_sender st endpointObjId replier sender hS]
               simp only [Option.map_none]
               exact Nat.le_trans
-                (lockSet_replyRecv_size_le_twenty_of_no_preReturn_of_no_belowHead
-                  _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _)
+                (lockSet_replyRecv_size_le_twentyone_of_no_preReturn_of_no_belowHead
+                  _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _)
                 (by decide)
           | none =>
               rw [receiveRendezvousDonatedSc?_of_no_queued_sender st endpointObjId replier hS,
-                receiveRendezvousReplyWaiterHead?_of_no_queued_sender st endpointObjId replier hS]
+                receiveRendezvousReplyWaiterHead?_of_no_queued_sender st endpointObjId replier hS,
+                receiveCapRequest_of_no_queued_sender st endpointObjId hS]
               simp only [Option.bind_none]
               exact Nat.le_trans
                 (lockSet_replyRecv_size_le_nineteen_of_no_sender_of_no_frameAbove_of_no_belowHead
@@ -400,7 +424,7 @@ theorem lockSet_endpointReceiveOnCore_size_le (st : SystemState)
     (cnodeRootObjId : SeLe4n.ObjId) (replyId : Option SeLe4n.ReplyId) :
     (lockSet_endpointReceiveOnCore st endpointId receiver cnodeRootObjId replyId).size
       ≤ maxLockSetSize :=
-  lockSet_endpointReceive_size_le _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+  lockSet_endpointReceive_size_le _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
 
 -- ============================================================================
 -- §2  The notification footprints

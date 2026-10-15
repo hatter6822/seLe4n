@@ -171,23 +171,21 @@ example (st : SystemState) (tid : SeLe4n.ThreadId) :
 
 /-- SM6.A.1 rendezvous reduction: on a waiting receiver, the cross-core call is
 the receiver wake + caller block, surfacing exactly the wake's SGI. -/
-example (endpointId : SeLe4n.ObjId) (caller : SeLe4n.ThreadId) (msg : IpcMessage)
+example (endpointId : SeLe4n.ObjId) (caller : SeLe4n.ThreadId) (payload : SendPayload)
     (executingCore : CoreId) (st : SystemState) (ep : Endpoint)
     (receiver : SeLe4n.ThreadId) (recvTcb0 : TCB) (st' st'' st4 st5 : SystemState)
-    (hSz1 : ¬ msg.registers.size > maxMessageRegisters)
-    (hSz2 : ¬ msg.caps.size > maxExtraCaps)
     (hObj : st.objects[endpointId]? = some (.endpoint ep))
     (hHead : ep.receiveQ.head = some receiver)
     (hPop : endpointQueuePopHead endpointId true st = .ok (receiver, recvTcb0, st'))
-    (hStore : storeTcbIpcStateAndMessage st' receiver .ready (some msg) = .ok st'')
+    (hStore : storeTcbIpcStateAndMessage st' receiver .ready (some (sendPayloadMessage st caller payload)) = .ok st'')
     (hCallerStore : storeTcbIpcStateAndMessage (wakeThread st'' receiver executingCore).1
         caller (.blockedOnReply endpointId (some receiver)) none = .ok st4)
     (hLink : SystemState.linkServerStashedReply caller receiver st4 = .ok ((), st5)) :
-    endpointCallOnCore endpointId caller msg executingCore st
+    endpointCallOnCore endpointId caller payload executingCore st
       = ((removeRunnableOnCore st5 caller executingCore).linkReplyWaiter caller receiver,
          .ok (wakeThread st'' receiver executingCore).2) :=
-  endpointCallOnCore_rendezvous_eq endpointId caller msg executingCore st ep receiver
-    recvTcb0 st' st'' st4 st5 hSz1 hSz2 hObj hHead hPop hStore hCallerStore hLink
+  endpointCallOnCore_rendezvous_eq endpointId caller payload executingCore st ep receiver
+    recvTcb0 st' st'' st4 st5 hObj hHead hPop hStore hCallerStore hLink
 
 /-- SM6.D: the per-core bundle's thread restriction is the operational wake
 target — the wake path delivers each thread to its `threadHomeCore`. -/
@@ -199,12 +197,12 @@ example (st : SystemState) (tid : SeLe4n.ThreadId) (tcb : TCB)
 /-- SM6.A info-flow gate: a disallowed caller→endpoint flow rejects the checked
 cross-core call before any state change (fail-closed). -/
 example (ctx : LabelingContext) (endpointId : SeLe4n.ObjId) (caller : SeLe4n.ThreadId)
-    (msg : IpcMessage) (endpointRights : AccessRightSet)
+    (payload : SendPayload)
     (receiverSlotBase : SeLe4n.Slot) (executingCore : CoreId) (st : SystemState)
     (hDeny : securityFlowsTo (ctx.threadLabelOf caller) (ctx.endpointLabelOf endpointId) = false) :
-    endpointCallCrossCoreDispatchChecked ctx endpointId caller msg endpointRights
+    endpointCallCrossCoreDispatchChecked ctx endpointId caller payload
         receiverSlotBase executingCore st = (st, .error .flowDenied) :=
-  endpointCallCrossCoreDispatchChecked_flow_denied ctx endpointId caller msg endpointRights
+  endpointCallCrossCoreDispatchChecked_flow_denied ctx endpointId caller payload
     receiverSlotBase executingCore st hDeny
 
 /-- SM6.C info-flow gate: when the replier→target flow is permitted, the checked
@@ -267,15 +265,17 @@ private def mkTcb (tid : Nat) (prio : Nat) (aff : Option CoreId) : TCB :=
 pair (client A on core 0 ↔ server B homed core 1; client C on core 2 ↔ server D
 homed core 3), each endpoint with a free Reply object the server stashes on its
 `Recv`, each thread runnable on its **own** core's run queue. Client A is
-unbound (home = boot core 0); B/C/D are affinity-bound to cores 1/2/3. -/
+unbound (home = boot core 0); B/C/D are affinity-bound to cores 1/2/3.  Each
+client's saved frame holds its request (WS-ZA ZA4.7), where a server that
+dequeues it after it blocked reads it. -/
 private def stFourCore : SystemState :=
   let base :=
     (BootstrapBuilder.empty
       |>.withObject epAB (.endpoint {})
       |>.withObject epCD (.endpoint {})
-      |>.withObject clientA.toObjId (.tcb (mkTcb 821 40 none))
+      |>.withObject clientA.toObjId (.tcb (SeLe4n.Testing.tcbWithSenderFrame (mkTcb 821 40 none) callMsgA))
       |>.withObject serverB.toObjId (.tcb (mkTcb 822 50 (some c1)))
-      |>.withObject clientC.toObjId (.tcb (mkTcb 823 40 (some c2)))
+      |>.withObject clientC.toObjId (.tcb (SeLe4n.Testing.tcbWithSenderFrame (mkTcb 823 40 (some c2)) callMsgC))
       |>.withObject serverD.toObjId (.tcb (mkTcb 824 50 (some c3)))
       |>.withObject replyB.toObjId (.reply { replyId := replyB })
       |>.withObject replyD.toObjId (.reply { replyId := replyD })
@@ -287,7 +287,7 @@ private def stFourCore : SystemState :=
 /-- `stFourCore` plus a fifth thread `E` (priority 35, bound to core 2) present
 in the object store but in no run queue — the send-rendezvous sender. -/
 private def stWithSenderE : SystemState :=
-  { stFourCore with objects := stFourCore.objects.insert senderE.toObjId (.tcb (mkTcb 825 35 (some c2))) }
+  { stFourCore with objects := stFourCore.objects.insert senderE.toObjId (.tcb (SeLe4n.Testing.tcbWithSenderFrame (mkTcb 825 35 (some c2)) sendMsgE)) }
 
 -- Fail-closed Option plumbing for the multi-step pipelines.
 private def okPair {α : Type} (r : SystemState × Except KernelError α) :
@@ -343,10 +343,10 @@ private def roundTripE : Except String RoundTrip := do
   let (afterRecv, _) ← stepPair "step2: server D recv on core 3"
     (endpointReceiveDualOnCore epCD serverD (some replyD) c3 st1)
   let (afterCallA, sgiCallA) ← stepPair "step3: client A call on core 0"
-    (endpointCallOnCore epAB clientA callMsgA c0 afterRecv)
+    (endpointCallOnCore epAB clientA (.frame callMsgA.badge callMsgA.capsGranted) c0 afterRecv)
   let afterSgiB ← stepExcept "step4: core 1 SGI handler" (handleRescheduleSgiOnCore afterCallA c1)
   let (afterCallC, sgiCallC) ← stepPair "step5: client C call on core 2"
-    (endpointCallOnCore epCD clientC callMsgC c2 afterSgiB)
+    (endpointCallOnCore epCD clientC (.frame callMsgC.badge callMsgC.capsGranted) c2 afterSgiB)
   let afterSgiD ← stepExcept "step6: core 3 SGI handler" (handleRescheduleSgiOnCore afterCallC c3)
   let (afterReplyB, sgiReplyB) ← stepPair "step7: server B reply on core 1"
     (endpointReplyOnCore serverB clientA replyMsgB c1 afterSgiD)
@@ -368,7 +368,7 @@ woken by a receive executing on core 1. Returns (post-state, popped sender,
 surfaced SGI). -/
 private def sendRendezvous? :
     Option (SystemState × SeLe4n.ThreadId × Option (CoreId × SgiKind)) := do
-  let ((), st1) ← okExcept (endpointSendDual epAB senderE sendMsgE stWithSenderE)
+  let ((), st1) ← okExcept (endpointSendDual epAB senderE (.frame sendMsgE.badge sendMsgE.capsGranted) stWithSenderE)
   let (st2, (sender, sgi)) ← okPair (endpointReceiveDualOnCore epAB serverB none c1 st1)
   pure (st2, sender, sgi)
 
@@ -521,7 +521,7 @@ private def runFourThreadRendezvousChecks : IO Unit := do
 private def runSendReceiveChecks : IO Unit := do
   IO.println "--- §3.3 cross-core send/receive rendezvous (sender E homed core 2, recv on core 1) ---"
   -- The blocked sender is genuinely blocked before the receive.
-  match okExcept (endpointSendDual epAB senderE sendMsgE stWithSenderE) with
+  match okExcept (endpointSendDual epAB senderE (.frame sendMsgE.badge sendMsgE.capsGranted) stWithSenderE) with
   | none => assertBool "send setup (E blocks on epAB) succeeded" false
   | some ((), stSent) =>
     assertBool "send blocks sender E as blockedOnSend"
@@ -552,7 +552,7 @@ private def runSendReceiveChecks : IO Unit := do
 private def runClientFirstChecks : IO Unit := do
   IO.println "--- §3.4 client-first ordering (call blocks, receive completes the rendezvous) ---"
   -- A call with NO waiting receiver blocks the caller on its own core.
-  match okPair (endpointCallOnCore epAB clientA callMsgA c0 stFourCore) with
+  match okPair (endpointCallOnCore epAB clientA (.frame callMsgA.badge callMsgA.capsGranted) c0 stFourCore) with
   | none => assertBool "no-receiver call succeeded" false
   | some (stCall, sgi0) =>
     assertBool "no-receiver call surfaces no SGI" (sgi0 == none)
@@ -600,9 +600,9 @@ private def runReplyRecvLoopChecks : IO Unit := do
   IO.println "--- §3.5 server steady-state replyRecv (reply A, atomically receive C) ---"
   let pipeline : Option (SystemState × Option (CoreId × SgiKind) × SystemState) := do
     let (st1, _) ← okPair (endpointReceiveDualOnCore epAB serverB (some replyB) c1 stFourCore)
-    let (st2, _) ← okPair (endpointCallOnCore epAB clientA callMsgA c0 st1)
+    let (st2, _) ← okPair (endpointCallOnCore epAB clientA (.frame callMsgA.badge callMsgA.capsGranted) c0 st1)
     -- C's call finds no receiver (B was popped by A's rendezvous) → C blocks.
-    let (st3, sgiC) ← okPair (endpointCallOnCore epAB clientC callMsgC c2 st2)
+    let (st3, sgiC) ← okPair (endpointCallOnCore epAB clientC (.frame callMsgC.badge callMsgC.capsGranted) c2 st2)
     pure (st3, sgiC, st3)
   match pipeline with
   | none => assertBool "replyRecv pipeline setup succeeded" false
@@ -639,14 +639,10 @@ private def runReplyRecvLoopChecks : IO Unit := do
 -- §3.6 Fail-closed error paths (pre-state returned on every error)
 -- ============================================================================
 
-private def bigMsg : IpcMessage :=
-  { registers := Array.replicate (maxMessageRegisters + 1) (SeLe4n.RegValue.ofNat 0),
-    caps := #[], badge := none }
-
 private def runErrorPathChecks : IO Unit := do
   IO.println "--- §3.6 fail-closed error paths (absent / wrong-kind / oversized / no-stash) ---"
   -- Absent endpoint: objectNotFound; pre-state returned.
-  let (stErr1, res1) := endpointCallOnCore ⟨899⟩ clientA callMsgA c0 stFourCore
+  let (stErr1, res1) := endpointCallOnCore ⟨899⟩ clientA (.frame callMsgA.badge callMsgA.capsGranted) c0 stFourCore
   assertBool "call on an absent endpoint fails with objectNotFound"
     (match res1 with | .error .objectNotFound => true | _ => false)
   assertBool "the failed call returns the pre-state (client A still queued on core 0)"
@@ -654,12 +650,13 @@ private def runErrorPathChecks : IO Unit := do
       && ipcStateIs stErr1 clientA .ready)
   -- Wrong-kind object (a Reply object is not an endpoint): invalidCapability.
   assertBool "call on a wrong-kind object fails with invalidCapability"
-    (match (endpointCallOnCore replyB.toObjId clientA callMsgA c0 stFourCore).2 with
+    (match (endpointCallOnCore replyB.toObjId clientA (.frame callMsgA.badge callMsgA.capsGranted) c0 stFourCore).2 with
      | .error .invalidCapability => true | _ => false)
-  -- Oversized payload: rejected at the send boundary (deterministic, no truncation).
-  assertBool "an oversized call payload fails with ipcMessageTooLarge"
-    (match (endpointCallOnCore epAB clientA bigMsg c0 stFourCore).2 with
-     | .error .ipcMessageTooLarge => true | _ => false)
+  -- Oversized payload: a call reads its words from the caller's frame, so the
+  -- bound is the message-info decode's — a word declaring one register too many
+  -- does not decode, and the call never sees it.
+  assertBool "a message-info word declaring an oversized payload does not decode"
+    (MessageInfo.decode (MessageInfo.mk (maxMessageRegisters + 1) 0 0).encode).isNone
   -- Receive-side duals.
   assertBool "receive on an absent endpoint fails with objectNotFound"
     (match (endpointReceiveDualOnCore ⟨899⟩ serverB (some replyB) c1 stFourCore).2 with
@@ -685,7 +682,7 @@ private def runErrorPathChecks : IO Unit := do
   | none => assertBool "no-stash receive setup succeeded" false
   | some (stNoStash, _) =>
     assertBool "a Call rendezvous with a no-stash server fails closed with replyCapInvalid"
-      (match (endpointCallOnCore epAB clientA callMsgA c0 stNoStash).2 with
+      (match (endpointCallOnCore epAB clientA (.frame callMsgA.badge callMsgA.capsGranted) c0 stNoStash).2 with
        | .error .replyCapInvalid => true | _ => false)
 
 -- ============================================================================
@@ -756,8 +753,8 @@ private def runDispatchCoherenceChecks : IO Unit := do
   match okPair (endpointReceiveDualOnCore epAB serverB (some replyB) c1 stFourCore) with
   | none => assertBool "dispatch fixture setup succeeded" false
   | some (stWait, _) =>
-    let (stDisp, resDisp) := endpointCallCrossCoreDispatch epAB clientA callMsgA
-      AccessRightSet.empty (SeLe4n.Slot.ofNat 0) c0 stWait
+    let (stDisp, resDisp) := endpointCallCrossCoreDispatch epAB clientA (.frame callMsgA.badge callMsgA.capsGranted)
+      (SeLe4n.Slot.ofNat 0) c0 stWait
     assertBool "cross-core dispatch rendezvous fires the remote reschedule SGI"
       (match resDisp with
        | .ok (_, some (tgt, kind)) => decide (tgt = c1 ∧ kind = SgiKind.reschedule)
@@ -808,8 +805,8 @@ private def runDonationChecks : IO Unit := do
   match okPair (endpointReceiveDualOnCore donEp donServer (some donReply) c1 stDonBase) with
   | none => assertBool "donation setup (server recv) succeeded" false
   | some (stRecv, _) =>
-    let (stCall, resCall) := endpointCallCrossCoreDispatch donEp donClient IpcMessage.empty
-      AccessRightSet.empty (SeLe4n.Slot.ofNat 0) c0 stRecv
+    let (stCall, resCall) := endpointCallCrossCoreDispatch donEp donClient (.frame none false)
+      (SeLe4n.Slot.ofNat 0) c0 stRecv
     assertBool "donating call succeeds and fires the remote reschedule SGI to core 1"
       (match resCall with
        | .ok (_, some (tgt, kind)) => decide (tgt = c1 ∧ kind = SgiKind.reschedule)
@@ -1023,8 +1020,8 @@ private def runDonationMigrationChecks : IO Unit := do
     assertBool "the receive leaves the replenish queues alone"
       (decide (replenishCountFor stRecv c0 scClient = 2)
         && decide (replenishCountFor stRecv c1 scClient = 0))
-    let (stCall, resCall) := endpointCallCrossCoreDispatch donEp donClient IpcMessage.empty
-      AccessRightSet.empty (SeLe4n.Slot.ofNat 0) c0 stRecv
+    let (stCall, resCall) := endpointCallCrossCoreDispatch donEp donClient (.frame none false)
+      (SeLe4n.Slot.ofNat 0) c0 stRecv
     assertBool "the donating call succeeds"
       (match resCall with | .ok _ => true | .error _ => false)
     -- RR2.2: donor home (core 0) → donee home (core 1).
@@ -1229,12 +1226,6 @@ what must reach the copy installed in the server's CSpace — and the slot has t
 be a real one, since a node no slot points at is the orphan shape the transfer
 declines. -/
 private def payloadSrcSlot : SeLe4n.Slot := SeLe4n.Slot.ofNat 2
-/-- 4 caps > maxExtraCaps (3): rejected at the send boundary, before any source
-is resolved, so a bare node id is the honest fixture here. -/
-private def tooManyCapsMsg : IpcMessage :=
-  { registers := #[], caps := Array.replicate (maxExtraCaps + 1)
-      (TransferCap.fromNode Capability.null 0), badge := none }
-
 /-- **Distinct** single-level CNodes (`depth=4, radixWidth=4, guard=0`) for the
 caller (`capCallerCn`) and the server (`capServerCn`), both empty at the receive
 slot. Separate roots are what let the test prove the transferred cap lands in
@@ -1266,19 +1257,17 @@ private def capSourceMint : SeLe4n.Model.CdtNodeId × SystemState :=
   SystemState.ensureCdtNodeForSlot stCapBase { cnode := capCallerCn, slot := payloadSrcSlot }
 /-- The base state with the payload slot's derivation node bound. -/
 private def stCapBound : SystemState := capSourceMint.2
-private def capMsg : IpcMessage :=
-  { registers := #[],
-    caps := #[{ cap := payloadCap, srcNode := capSourceMint.1 }],
-    badge := none }
+/-- The caller's frame names the payload slot as its one extra capability
+address, as the trap entry saves it; the call resolves it at the rendezvous. -/
+private def capCallerFramed (st : SystemState) : SystemState :=
+  SeLe4n.Testing.withSenderFrame st capCaller IpcMessage.empty
+    #[SeLe4n.CPtr.ofNat payloadSrcSlot.toNat]
 
 /-- `true` iff a transfer summary reports a cap installed into CNode `cn` — the
 receiver-root check (the `.installed` result carries the *receiver's* CSpace root
 per `ipcTransferSingleCap`). -/
 private def summaryInstalledInto (s : CapTransferSummary) (cn : SeLe4n.ObjId) : Bool :=
   s.results.any (fun r => match r with | .installed c _ => c == cn | _ => false)
-/-- `true` iff every result in a transfer summary is grant-denied. -/
-private def summaryAllGrantDenied (s : CapTransferSummary) : Bool :=
-  !s.results.isEmpty && s.results.all (fun r => match r with | .grantDenied => true | _ => false)
 /-- Read the capability in slot `slot` of CNode `cn` (if it holds one). -/
 private def cnodeSlotCap (st : SystemState) (cn : SeLe4n.ObjId) (slot : SeLe4n.Slot) :
     Option Capability :=
@@ -1300,8 +1289,9 @@ private def runCapTransferChecks : IO Unit := do
   | none => assertBool "cap-transfer setup (server recv) succeeded" false
   | some (stRecv, _) =>
     -- WITH grant: the carried cap is installed into the SERVER's CSpace root.
-    let (stGrant, resGrant) := endpointCallWithCapsOnCore capEp capCaller capMsg
-      (AccessRightSet.ofList [.write, .grant]) recvSlot c0 stRecv
+    let (stGrant, resGrant) := endpointCallWithCapsOnCore capEp capCaller
+      (.frame none ((AccessRightSet.ofList [.write, .grant]).mem .grant)) recvSlot c0
+      (capCallerFramed stRecv)
     assertBool "a granted cross-core Call installs the transferred cap into the SERVER's CSpace root"
       (match resGrant with
        | .ok (summary, _) => summaryInstalledInto summary capServerCn
@@ -1314,11 +1304,12 @@ private def runCapTransferChecks : IO Unit := do
       (!slotHoldsPayload stGrant capCallerCn recvSlot
         && !slotHoldsPayload stGrant capCallerCn (SeLe4n.Slot.ofNat 0))
     -- WITHOUT grant: the transfer is denied and the server's CSpace is untouched.
-    let (stNoGrant, resNoGrant) := endpointCallWithCapsOnCore capEp capCaller capMsg
-      (AccessRightSet.ofList [.write]) recvSlot c0 stRecv
-    assertBool "an ungranted cross-core Call denies the transfer (summary = grantDenied)"
+    let (stNoGrant, resNoGrant) := endpointCallWithCapsOnCore capEp capCaller
+      (.frame none ((AccessRightSet.ofList [.write]).mem .grant)) recvSlot c0
+      (capCallerFramed stRecv)
+    assertBool "an ungranted cross-core Call transfers nothing (empty summary)"
       (match resNoGrant with
-       | .ok (summary, _) => summaryAllGrantDenied summary
+       | .ok (summary, _) => summary.results.isEmpty
        | .error _ => false)
     assertBool "an ungranted Call leaves the server's receive slot empty (nothing installed)"
       ((cnodeSlotCap stNoGrant capServerCn recvSlot).isNone)
@@ -1326,12 +1317,12 @@ private def runCapTransferChecks : IO Unit := do
     assertBool "the grant gate reads the endpoint cap's `.grant` right"
       ((AccessRightSet.ofList [.write, .grant]).mem .grant
         && !(AccessRightSet.ofList [.write]).mem .grant)
-  -- Oversized cap payload (4 > maxExtraCaps): rejected at the send boundary.
-  assertBool "a 4-cap message exceeds maxExtraCaps"
-    (decide (tooManyCapsMsg.caps.size > maxExtraCaps))
-  assertBool "an over-capped cross-core call fails with ipcMessageTooManyCaps"
-    (match (endpointCallOnCore capEp capCaller tooManyCapsMsg c0 stCapBase).2 with
-     | .error .ipcMessageTooManyCaps => true | _ => false)
+  -- Over-capped payload (4 > maxExtraCaps): the message-info word's extra-caps
+  -- field is two bits wide, so a word asking for four names at most three.
+  assertBool "a message-info word asking for 4 extra caps decodes to at most 3"
+    (match MessageInfo.decode (MessageInfo.mk 0 (maxExtraCaps + 1) 0).encode with
+     | some mi => decide (mi.extraCaps ≤ maxExtraCaps)
+     | none => true)
 
 -- ============================================================================
 -- §3.11 Info-flow-checked cross-core dispatch (flow-allowed vs flow-denied)
@@ -1369,7 +1360,7 @@ private def runFlowCheckedChecks : IO Unit := do
     -- so a regression that dequeues the server or mutates state before returning
     -- `.flowDenied` fails here, not just an endpoint-object check.
     let (stDenied, resDenied) := endpointCallCrossCoreDispatchChecked callDeniedCtx epAB clientA
-      callMsgA AccessRightSet.empty (SeLe4n.Slot.ofNat 0) c0 rt.afterRecv
+      (.frame callMsgA.badge callMsgA.capsGranted) (SeLe4n.Slot.ofNat 0) c0 rt.afterRecv
     assertBool "a high→low call is denied with .flowDenied"
       (match resDenied with | .error .flowDenied => true | _ => false)
     assertBool "the denied call leaves the whole footprint unchanged (endpoint/server/caller/reply)"
@@ -1386,9 +1377,9 @@ private def runFlowCheckedChecks : IO Unit := do
     -- the SGI, the woken server, the blocked caller, the linked reply object, and the
     -- two cores' run queues (parity with the reply-side check), not just the server.
     let checkedAllowed := endpointCallCrossCoreDispatchChecked allPublicCtx epAB clientA
-      callMsgA AccessRightSet.empty (SeLe4n.Slot.ofNat 0) c0 rt.afterRecv
-    let uncheckedCall := endpointCallCrossCoreDispatch epAB clientA callMsgA
-      AccessRightSet.empty (SeLe4n.Slot.ofNat 0) c0 rt.afterRecv
+      (.frame callMsgA.badge callMsgA.capsGranted) (SeLe4n.Slot.ofNat 0) c0 rt.afterRecv
+    let uncheckedCall := endpointCallCrossCoreDispatch epAB clientA (.frame callMsgA.badge callMsgA.capsGranted)
+      (SeLe4n.Slot.ofNat 0) c0 rt.afterRecv
     assertBool "an allowed checked call equals the unchecked cross-core call (SGI + server/caller/reply/queues)"
       ((match checkedAllowed.2, uncheckedCall.2 with
         | .ok (_, s1), .ok (_, s2) => s1 == s2 | _, _ => false)
@@ -1565,8 +1556,8 @@ private def runSuspendArmChecks : IO Unit := do
       stDonWithReplenishments) with
   | none => assertBool "suspend-arm setup (server recv) succeeded" false
   | some (stRecv, _) =>
-    let (stCall, _) := endpointCallCrossCoreDispatch donEp donClient IpcMessage.empty
-      AccessRightSet.empty (SeLe4n.Slot.ofNat 0) c0 stRecv
+    let (stCall, _) := endpointCallCrossCoreDispatch donEp donClient (.frame none false)
+      (SeLe4n.Slot.ofNat 0) c0 stRecv
     match okExcept (handleRescheduleSgiOnCore stCall c1) with
     | none => assertBool "suspend-arm setup: core 1 handles the call wake SGI" false
     | some stDispatched =>
@@ -1634,7 +1625,7 @@ private def stContention (curPrio : Nat) : SystemState :=
       |>.withObject epAB (.endpoint {})
       |>.withObject serverB.toObjId (.tcb (mkTcb 822 50 (some c1)))
       |>.withObject highPrioT.toObjId (.tcb (mkTcb 870 curPrio (some c1)))
-      |>.withObject clientA.toObjId (.tcb (mkTcb 821 40 none))
+      |>.withObject clientA.toObjId (.tcb (SeLe4n.Testing.tcbWithSenderFrame (mkTcb 821 40 none) callMsgA))
       |>.withObject replyB.toObjId (.reply { replyId := replyB })
       |>.withRunnable [clientA]
       |>.build)
@@ -1644,7 +1635,7 @@ private def stContention (curPrio : Nat) : SystemState :=
 onto core 1), then core 1 handles the reschedule SGI. -/
 private def contentionAfterHandle (curPrio : Nat) : Option SystemState := do
   let (stRecv, _) ← okPair (endpointReceiveDualOnCore epAB serverB (some replyB) c1 (stContention curPrio))
-  let (stCall, _) ← okPair (endpointCallOnCore epAB clientA IpcMessage.empty c0 stRecv)
+  let (stCall, _) ← okPair (endpointCallOnCore epAB clientA (.frame none false) c0 stRecv)
   okExcept (handleRescheduleSgiOnCore stCall c1)
 
 private def runHandlerContentionChecks : IO Unit := do
@@ -2923,15 +2914,15 @@ private def runReplyRecvLoopCompletionChecks : IO Unit := do
   match okPair (endpointReceiveDualOnCore donEp donServer (some donReply) c1 stLoopBase) with
   | none => assertBool "loop setup: the server's first `Recv` succeeds" false
   | some (stRecv, _) =>
-    let (stCall, resCall) := endpointCallCrossCoreDispatch donEp donClient IpcMessage.empty
-      AccessRightSet.empty (SeLe4n.Slot.ofNat 0) c0 stRecv
+    let (stCall, resCall) := endpointCallCrossCoreDispatch donEp donClient (.frame none false)
+      (SeLe4n.Slot.ofNat 0) c0 stRecv
     assertBool "loop setup: the first client's donating `Call` succeeds"
       (match resCall with | .ok _ => true | .error _ => false)
     match okExcept (handleRescheduleSgiOnCore stCall c1) with
     | none => assertBool "loop setup: core 1 handles the call wake SGI" false
     | some stDispatched =>
       let (stQueued, resQueued) := endpointCallCrossCoreDispatch donEp loopCaller2
-        IpcMessage.empty AccessRightSet.empty (SeLe4n.Slot.ofNat 0) c0 stDispatched
+        (.frame none false) (SeLe4n.Slot.ofNat 0) c0 stDispatched
       assertBool "loop setup: the second client's `Call` queues behind the busy server"
         (match resQueued with | .ok _ => true | .error _ => false)
       -- The fact that makes the ORDER of the legs load-bearing: the answered
@@ -3090,7 +3081,7 @@ OD3.14, so a chain blocked behind the caller stopped dead at it. -/
 
 private def runReceivePriorityHandoffChecks : IO Unit := do
   IO.println "--- WS-OD OD3.14 the receive rendezvous' priority hand-off ---"
-  match okPair (endpointCallOnCore donEp donClient IpcMessage.empty c0 stHandoffActiveBase) with
+  match okPair (endpointCallOnCore donEp donClient (.frame none false) c0 stHandoffActiveBase) with
   | none => assertBool "OD3.14 setup: the no-receiver call parks the caller" false
   | some (stParked, _) =>
     assertBool "the caller parks on the endpoint (.blockedOnCall)"
@@ -3159,7 +3150,7 @@ private def runReceivePriorityHandoffChecks : IO Unit := do
   -- NEGATIVE: a plain `Send` rendezvous wakes its sender `.ready` rather than
   -- leaving it reply-blocked, so it lends the receiver nothing and the guard is
   -- false there too.
-  match okPair (endpointSendDualOnCore donEp donClient IpcMessage.empty c0
+  match okPair (endpointSendDualOnCore donEp donClient (.frame none false) c0
       stHandoffActiveBase) with
   | none => assertBool "OD3.14 setup: a plain send with no receiver parks the sender" false
   | some (stSend, _) =>
@@ -3862,7 +3853,7 @@ private def runReceiveReplenishSegmentChecks : IO Unit := do
   IO.println "--- §3.26 WS-RR RR8.12: the `.receive` replenish segment follows the donation ---"
   -- (a) a `Call` rendezvous the donation CARRIES OUT: the server is passive, so the
   --     resolver answers `some` and both cores are declared.
-  match okPair (endpointCallOnCore donEp donClient IpcMessage.empty c0 stDonBase) with
+  match okPair (endpointCallOnCore donEp donClient (.frame none false) c0 stDonBase) with
   | none => assertBool "RR8.12 setup: the no-receiver call parks the caller" false
   | some (stCall, _) =>
     assertBool "the caller parks `.blockedOnCall`" (ipcStateIs stCall donClient (.blockedOnCall donEp))
@@ -3916,7 +3907,7 @@ private def runReceiveReplenishSegmentChecks : IO Unit := do
           (decide (recvSeg = [c0, c1]) && !recvSeg.contains c2 && !recvSeg.contains c3)
   -- (b) a plain `Send` rendezvous: the donation is the identity, so NO replenish
   --     lock is declared.  This is the shape the sender-keyed segment over-declared.
-  match okPair (endpointSendDualOnCore donEp donClient IpcMessage.empty c0
+  match okPair (endpointSendDualOnCore donEp donClient (.frame none false) c0
       stHandoffActiveBase) with
   | none => assertBool "RR8.12 setup: the no-receiver send parks the sender" false
   | some (stSend, _) =>
@@ -3960,7 +3951,7 @@ private def runReceiveReplenishSegmentChecks : IO Unit := do
   --     of its own (`stHandoffActiveBase`'s active server), so the donation is the
   --     identity and NO replenish lock is declared.  This is the shape the
   --     `Call`-keyed segment still over-declared, and the one Cut C1 closes.
-  match okPair (endpointCallOnCore donEp donClient IpcMessage.empty c0 stHandoffActiveBase) with
+  match okPair (endpointCallOnCore donEp donClient (.frame none false) c0 stHandoffActiveBase) with
   | none => assertBool "RR8.12 setup: the no-receiver call parks the caller" false
   | some (stCallActive, _) =>
     assertBool "the caller parks `.blockedOnCall`"
@@ -4198,7 +4189,7 @@ waiting and parks; the passive server takes it with a `Recv`, whose hand-off don
 the client's context and migrates its replenishment to the server's home; the state
 returned is the one the server then abandons the call from. -/
 private def preReturnHandoffState (base : SystemState) : Option SystemState := do
-  let (stCall, _) ← okPair (endpointCallOnCore donEp donClient IpcMessage.empty c0 base)
+  let (stCall, _) ← okPair (endpointCallOnCore donEp donClient (.frame none false) c0 base)
   let (stRecv, (dequeued, _)) ← okPair (endpointReceiveDualOnCore donEp donServer (some donReply) c1 stCall)
   okExcept (applyReceiveRendezvousHandoff stRecv donServer dequeued c1)
 
@@ -4413,12 +4404,12 @@ on `Recv`, the first client `Call`s, the server's home core dispatches it, and t
 second client `Call`s from its own core and queues behind the busy server. -/
 private def fpSteadyState (base : SystemState) : Option SystemState := do
   let (stRecv, _) ← okPair (endpointReceiveDualOnCore donEp donServer (some donReply) c1 base)
-  let (stCall, resCall) := endpointCallCrossCoreDispatch donEp donClient IpcMessage.empty
-    AccessRightSet.empty (SeLe4n.Slot.ofNat 0) c0 stRecv
+  let (stCall, resCall) := endpointCallCrossCoreDispatch donEp donClient (.frame none false)
+    (SeLe4n.Slot.ofNat 0) c0 stRecv
   let _ ← okExcept resCall
   let stDispatched ← okExcept (handleRescheduleSgiOnCore stCall c1)
-  let (stQueued, resQueued) := endpointCallCrossCoreDispatch donEp fpClient2 IpcMessage.empty
-    AccessRightSet.empty (SeLe4n.Slot.ofNat 0) c2 stDispatched
+  let (stQueued, resQueued) := endpointCallCrossCoreDispatch donEp fpClient2 (.frame none false)
+    (SeLe4n.Slot.ofNat 0) c2 stDispatched
   let _ ← okExcept resQueued
   pure stQueued
 
@@ -4427,14 +4418,14 @@ blocks on the second endpoint, its client `Call`s from core 2 donating, and core
 dispatches the delegate — which then answers the FIRST server's client. -/
 private def fpDelegatedState (base : SystemState) : Option SystemState := do
   let (stRecv, _) ← okPair (endpointReceiveDualOnCore donEp donServer (some donReply) c1 base)
-  let (stCall, resCall) := endpointCallCrossCoreDispatch donEp donClient IpcMessage.empty
-    AccessRightSet.empty (SeLe4n.Slot.ofNat 0) c0 stRecv
+  let (stCall, resCall) := endpointCallCrossCoreDispatch donEp donClient (.frame none false)
+    (SeLe4n.Slot.ofNat 0) c0 stRecv
   let _ ← okExcept resCall
   let stDispatched ← okExcept (handleRescheduleSgiOnCore stCall c1)
   let (stRecv2, _) ← okPair (endpointReceiveDualOnCore fpEp2 fpDelegate (some fpReplyX) c3
     stDispatched)
-  let (stCall2, resCall2) := endpointCallCrossCoreDispatch fpEp2 fpClientX IpcMessage.empty
-    AccessRightSet.empty (SeLe4n.Slot.ofNat 0) c2 stRecv2
+  let (stCall2, resCall2) := endpointCallCrossCoreDispatch fpEp2 fpClientX (.frame none false)
+    (SeLe4n.Slot.ofNat 0) c2 stRecv2
   let _ ← okExcept resCall2
   okExcept (handleRescheduleSgiOnCore stCall2 c3)
 
@@ -4667,12 +4658,12 @@ private def runCallReplyFootprintChecks : IO Unit := do
         && determineTargetCore stRecv donServer == c1
         && (match stRecv.getTcb? donServer with
             | some t => t.schedContextBinding == SchedContextBinding.unbound | none => false))
-    let seg := endpointCallDispatchReplenishCores donEp donClient IpcMessage.empty
-      AccessRightSet.empty slot0 c0 stRecv
-    let callWriteSet := endpointCallDispatchWriteSet donEp donClient IpcMessage.empty
-      AccessRightSet.empty slot0 c0 stRecv
-    let fp := schedLockSet_endpointCallOnCore donEp donClient IpcMessage.empty
-      AccessRightSet.empty slot0 c0 stRecv
+    let seg := endpointCallDispatchReplenishCores donEp donClient (.frame none false)
+      slot0 c0 stRecv
+    let callWriteSet := endpointCallDispatchWriteSet donEp donClient (.frame none false)
+      slot0 c0 stRecv
+    let fp := schedLockSet_endpointCallOnCore donEp donClient (.frame none false)
+      slot0 c0 stRecv
     assertBool "(a) the replenish segment is the donation's pair: [caller's home 0, server's home 1]"
       (decide (seg = [c0, c1]))
     assertBool "(a) the write set opens with the server's home and the caller's own core"
@@ -4684,8 +4675,8 @@ private def runCallReplyFootprintChecks : IO Unit := do
     let param := endpointCallCrossCoreDispatchLockSet c0 c1 c0 c1
     assertBool "(a) the derived footprint covers the RR2.4 parametric one at the resolved cores, member for member"
       (param.all (fun p => decide (p ∈ fp)))
-    let (stCall, resCall) := endpointCallCrossCoreDispatch donEp donClient IpcMessage.empty
-      AccessRightSet.empty slot0 c0 stRecv
+    let (stCall, resCall) := endpointCallCrossCoreDispatch donEp donClient (.frame none false)
+      slot0 c0 stRecv
     match resCall with
     | .error e => assertBool s!"(a) the live `.call` must succeed (got {reprStr e})" false
     | .ok _ =>
@@ -4700,10 +4691,10 @@ private def runCallReplyFootprintChecks : IO Unit := do
   | some (stRecvL, _) =>
     assertBool "(b) setup: the client holds no context to hand on"
       (endpointCallDonatedSc? stRecvL donEp donClient == none)
-    let segL := endpointCallDispatchReplenishCores donEp donClient IpcMessage.empty
-      AccessRightSet.empty slot0 c0 stRecvL
-    let fpL := schedLockSet_endpointCallOnCore donEp donClient IpcMessage.empty
-      AccessRightSet.empty slot0 c0 stRecvL
+    let segL := endpointCallDispatchReplenishCores donEp donClient (.frame none false)
+      slot0 c0 stRecvL
+    let fpL := schedLockSet_endpointCallOnCore donEp donClient (.frame none false)
+      slot0 c0 stRecvL
     assertBool "(b) the guard declines for an unbound caller, so the segment is empty and no replenish lock is declared"
       (decide (segL = []) && replenishMemberCount fpL == 0)
     assertBool "(b) ...while the run segment still names the server's home and the caller's core"
@@ -4711,8 +4702,8 @@ private def runCallReplyFootprintChecks : IO Unit := do
     let paramL := endpointCallCrossCoreDispatchLockSet c0 c1 c0 c1
     assertBool "(b) NEGATIVE: the RR2.4 parametric shape declares two replenish locks on this state, the derived one none"
       (replenishMemberCount paramL == 2 && replenishMemberCount fpL == 0)
-    let (stCallL, resL) := endpointCallCrossCoreDispatch donEp donClient IpcMessage.empty
-      AccessRightSet.empty slot0 c0 stRecvL
+    let (stCallL, resL) := endpointCallCrossCoreDispatch donEp donClient (.frame none false)
+      slot0 c0 stRecvL
     match resL with
     | .error e => assertBool s!"(b) the live legacy `.call` must succeed (got {reprStr e})" false
     | .ok _ =>
@@ -4721,10 +4712,10 @@ private def runCallReplyFootprintChecks : IO Unit := do
           replenishCountFor stCallL c fpClient2Sc == replenishCountFor stRecvL c fpClient2Sc
             && replenishCountFor stCallL c scClient == replenishCountFor stRecvL c scClient))
   -- (c) a Call with no receiver waiting: the block path.
-  let segC := endpointCallDispatchReplenishCores donEp donClient IpcMessage.empty
-    AccessRightSet.empty slot0 c0 stFpPassiveBase
-  let fpC := schedLockSet_endpointCallOnCore donEp donClient IpcMessage.empty
-    AccessRightSet.empty slot0 c0 stFpPassiveBase
+  let segC := endpointCallDispatchReplenishCores donEp donClient (.frame none false)
+    slot0 c0 stFpPassiveBase
+  let fpC := schedLockSet_endpointCallOnCore donEp donClient (.frame none false)
+    slot0 c0 stFpPassiveBase
   assertBool "(c) with no receiver the segment is empty and the run segment is the caller's own core alone"
     (endpointCallReceiver? stFpPassiveBase donEp == none && decide (segC = [])
       && hasRunQueueWrite fpC c0 && !hasRunQueueWrite fpC c1 && replenishMemberCount fpC == 0)
@@ -5472,7 +5463,7 @@ private def runObjectDomainDonationMemberChecks : IO Unit := do
         ∈ (lockSet_endpointCallOnCore stWaitActive donEp donClient cnRoot).pairs))
   -- ---- the `.receive` / `.replyRecv` arms ------------------------------------
   -- (c) CONTROL: a queued `Call` from a bound client to a passive server.
-  match okPair (endpointCallOnCore donEp donClient IpcMessage.empty c0 stDonBase) with
+  match okPair (endpointCallOnCore donEp donClient (.frame none false) c0 stDonBase) with
   | none => assertBool "RR8.16 setup (c): the no-receiver call parks the caller" false
   | some (stCallQ, _) =>
     assertBool "(c) CONTROL: the live receive-side member names the context"
@@ -5483,7 +5474,7 @@ private def runObjectDomainDonationMemberChecks : IO Unit := do
       (decide ((Concurrency.schedContextLock scClient, AccessMode.write)
         ∈ (lockSet_endpointReceiveOnCore stCallQ donEp donServer cnRoot (some donReply)).pairs))
   -- (d) THE FIRST DEFECT: a queued plain `Send` — no donation at any depth.
-  match okPair (endpointSendDualOnCore donEp donClient IpcMessage.empty c0
+  match okPair (endpointSendDualOnCore donEp donClient (.frame none false) c0
       stHandoffActiveBase) with
   | none => assertBool "RR8.16 setup (d): the no-receiver send parks the sender" false
   | some (stSendQ, _) =>
@@ -5495,7 +5486,7 @@ private def runObjectDomainDonationMemberChecks : IO Unit := do
       (decide ((Concurrency.schedContextLock scClient, AccessMode.write)
         ∉ (lockSet_endpointReceiveOnCore stSendQ donEp donServer cnRoot (some donReply)).pairs))
   -- (e) THE SECOND DEFECT: a queued `Call` whose receiver already holds a context.
-  match okPair (endpointCallOnCore donEp donClient IpcMessage.empty c0 stHandoffActiveBase) with
+  match okPair (endpointCallOnCore donEp donClient (.frame none false) c0 stHandoffActiveBase) with
   | none => assertBool "RR8.16 setup (e): the no-receiver call parks the caller" false
   | some (stCallQActive, _) =>
     assertBool "(e) the `Call`-narrowed sender resolver still names the caller"

@@ -72,20 +72,20 @@ chain's home cores — with no hypothesis on the clearance of the caller, the
 receiver, or any boosted server. -/
 theorem endpointCallCrossCoreDispatch_crossCoreNonInterference (ctx : LabelingContext)
     (observer : IfObserver) (endpointId : SeLe4n.ObjId) (caller : SeLe4n.ThreadId)
-    (msg : IpcMessage) (endpointRights : AccessRightSet)
+    (payload : SendPayload)
     (receiverSlotBase : SeLe4n.Slot) (executingCore : CoreId) (st : SystemState) (c : CoreId)
     (hObjInv : st.objects.invExt)
-    (hne : c ∉ endpointCallDispatchWriteSet endpointId caller msg endpointRights
+    (hne : c ∉ endpointCallDispatchWriteSet endpointId caller payload
       receiverSlotBase executingCore st)
     (hShared : sharedViewUnchanged ctx observer st
-      (endpointCallCrossCoreDispatch endpointId caller msg endpointRights
+      (endpointCallCrossCoreDispatch endpointId caller payload
         receiverSlotBase executingCore st).1) :
     projectStateOnCore ctx observer
-        (endpointCallCrossCoreDispatch endpointId caller msg endpointRights
+        (endpointCallCrossCoreDispatch endpointId caller payload
           receiverSlotBase executingCore st).1 c
       = projectStateOnCore ctx observer st c :=
   crossCoreNonInterference_ofCores ctx observer hne
-    (endpointCallCrossCoreDispatch_confinedToCores endpointId caller msg endpointRights
+    (endpointCallCrossCoreDispatch_confinedToCores endpointId caller payload
       receiverSlotBase executingCore st hObjInv)
     hShared
 
@@ -165,40 +165,40 @@ invisible on every core outside `endpointSendWriteSet`, with no hypothesis on th
 clearance of the sender or of the woken receiver. -/
 theorem endpointSendDualWithCapsOnCore_crossCoreNonInterference (ctx : LabelingContext)
     (observer : IfObserver) (endpointId : SeLe4n.ObjId) (sender : SeLe4n.ThreadId)
-    (msg : IpcMessage) (endpointRights : AccessRightSet)
+    (payload : SendPayload)
     (receiverSlotBase : SeLe4n.Slot) (executingCore : CoreId) (st : SystemState) (c : CoreId)
     (hObjInv : st.objects.invExt)
     (hne : c ∉ endpointSendWriteSet st endpointId executingCore)
     (hShared : sharedViewUnchanged ctx observer st
-      (endpointSendDualWithCapsOnCore endpointId sender msg endpointRights
+      (endpointSendDualWithCapsOnCore endpointId sender payload
         receiverSlotBase executingCore st).1) :
     projectStateOnCore ctx observer
-        (endpointSendDualWithCapsOnCore endpointId sender msg endpointRights
+        (endpointSendDualWithCapsOnCore endpointId sender payload
           receiverSlotBase executingCore st).1 c
       = projectStateOnCore ctx observer st c :=
   crossCoreNonInterference_ofCores ctx observer hne
-    (endpointSendDualWithCapsOnCore_confinedToCores endpointId sender msg endpointRights
+    (endpointSendDualWithCapsOnCore_confinedToCores endpointId sender payload
       receiverSlotBase executingCore st hObjInv)
     hShared
 
 /-- SM8.B.2 (**the live checked `.send` non-interference**). -/
 theorem endpointSendCrossCoreDispatchChecked_crossCoreNonInterference
     (ctx : LabelingContext) (observer : IfObserver) (endpointId : SeLe4n.ObjId)
-    (sender : SeLe4n.ThreadId) (msg : IpcMessage) (endpointRights : AccessRightSet)
+    (sender : SeLe4n.ThreadId) (payload : SendPayload)
     (receiverSlotBase : SeLe4n.Slot)
     (executingCore : CoreId) (st : SystemState) (c : CoreId)
     (hObjInv : st.objects.invExt)
     (hne : c ∉ endpointSendWriteSet st endpointId executingCore)
     (hShared : sharedViewUnchanged ctx observer st
-      (endpointSendCrossCoreDispatchChecked ctx endpointId sender msg endpointRights
+      (endpointSendCrossCoreDispatchChecked ctx endpointId sender payload
         receiverSlotBase executingCore st).1) :
     projectStateOnCore ctx observer
-        (endpointSendCrossCoreDispatchChecked ctx endpointId sender msg endpointRights
+        (endpointSendCrossCoreDispatchChecked ctx endpointId sender payload
           receiverSlotBase executingCore st).1 c
       = projectStateOnCore ctx observer st c :=
   crossCoreNonInterference_ofCores ctx observer hne
-    (endpointSendCrossCoreDispatchChecked_confinedToCores ctx endpointId sender msg
-      endpointRights receiverSlotBase executingCore st hObjInv)
+    (endpointSendCrossCoreDispatchChecked_confinedToCores ctx endpointId sender payload
+      receiverSlotBase executingCore st hObjInv)
     hShared
 
 /-- SM8.B.2 (**the live `.schedContextUnbind` non-interference**): unbinding is
@@ -480,16 +480,16 @@ invisible to any core that is neither the receiver's home core nor the caller's
 own core. -/
 theorem endpointCallOnCore_crossCoreNonInterference (ctx : LabelingContext)
     (observer : IfObserver) (endpointId : SeLe4n.ObjId) (caller : SeLe4n.ThreadId)
-    (msg : IpcMessage) (executingCore : CoreId) (st : SystemState) (c : CoreId)
+    (payload : SendPayload) (executingCore : CoreId) (st : SystemState) (c : CoreId)
     (hObjInv : st.objects.invExt)
     (hne : c ∉ endpointCallWriteSet st endpointId executingCore)
     (hShared : sharedViewUnchanged ctx observer st
-      (endpointCallOnCore endpointId caller msg executingCore st).1) :
+      (endpointCallOnCore endpointId caller payload executingCore st).1) :
     projectStateOnCore ctx observer
-        (endpointCallOnCore endpointId caller msg executingCore st).1 c
+        (endpointCallOnCore endpointId caller payload executingCore st).1 c
       = projectStateOnCore ctx observer st c :=
   crossCoreNonInterference_ofCores ctx observer hne
-    (endpointCallOnCore_confinedToCores endpointId caller msg executingCore st hObjInv)
+    (endpointCallOnCore_confinedToCores endpointId caller payload executingCore st hObjInv)
     hShared
 
 /-- SM8.B.2 (SM6.C): a cross-core reply is invisible to any core that is not the

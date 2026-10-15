@@ -311,7 +311,7 @@ private def runLockSetChecks : IO Unit := do
   assertBool "replyRecv lock-set kinds all permitted"
     (decide (∀ p ∈ (lockSet_replyRecv serverTid cnRoot clientLocalTid epId none none none
           none false none none none none none none none none none none none none none none
-          none).pairs,
+          none (senderCnodeRootObjId := none)).pairs,
         p.fst.kind ∈ permittedKinds .replyRecv))
   -- SM6.C.1: the state-resolved reply lock-set is hierarchically correct.
   assertBool "state-resolved reply lock-set kinds all permitted"
@@ -334,7 +334,7 @@ private def runLockSetChecks : IO Unit := do
   assertBool "per-object reply write-lock is in the .receive footprint (resolved rid)"
     (decide ((replyLock (⟨707⟩ : SeLe4n.ReplyId), AccessMode.write)
       ∈ (lockSet_endpointReceive serverTid cnRoot epId none (some (⟨707⟩ : SeLe4n.ReplyId))
-          false none).pairs))
+          false none (senderCnodeRootObjId := none)).pairs))
   assertBool "per-object reply write-lock is in the .call footprint (resolved rid)"
     (decide ((replyLock (⟨707⟩ : SeLe4n.ReplyId), AccessMode.write)
       ∈ (lockSet_endpointCall serverTid cnRoot epId none none (some (⟨707⟩ : SeLe4n.ReplyId))).pairs))

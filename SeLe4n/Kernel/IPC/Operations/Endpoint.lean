@@ -818,6 +818,32 @@ def storeTcbIpcStateAndMessage (st : SystemState) (tid : SeLe4n.ThreadId)
     (ipcState : ThreadIpcState) (msg : Option IpcMessage) : Except KernelError SystemState :=
   modifyTcb st tid (fun tcb => (TCB.setIpcState { tcb with pendingMessage := msg } ipcState))
 
+/-- WS-ZA ZA4.7: **what a blocked sender's capability contributed** — its badge
+and grant right (`TCB.setSendCap`), as seL4 keeps `blockingIPCBadge` and
+`blockingIPCCanGrant` in the blocked thread's state.  The message's words stay
+in the sender's saved registers and IPC buffer, and the receive that takes it
+reads them there (`blockedSenderMessage`).  Written last on a send or call that
+blocks, to fields no invariant reads.  Total: a non-TCB target is unchanged. -/
+def recordSendCap (st : SystemState) (tid : SeLe4n.ThreadId)
+    (badge : Option SeLe4n.Badge) (grant : Bool) : SystemState :=
+  st.mapTcbInPlace tid fun tcb => tcb.setSendCap badge grant
+
+/-- The send-cap record changes only fields every reader outside the receive
+skips (`TCB.withoutRunLinks`). -/
+theorem recordSendCap_objectsAgreeOffRunLinks (st : SystemState) (tid : SeLe4n.ThreadId)
+    (badge : Option SeLe4n.Badge) (grant : Bool) :
+    SystemState.objectsAgreeOffRunLinks (recordSendCap st tid badge grant) st :=
+  SystemState.mapTcbInPlace_objectsAgreeOffRunLinks st tid (fun _ => rfl)
+
+@[simp] theorem recordSendCap_scheduler (st : SystemState) (tid : SeLe4n.ThreadId)
+    (badge : Option SeLe4n.Badge) (grant : Bool) :
+    (recordSendCap st tid badge grant).scheduler = st.scheduler := rfl
+
+theorem recordSendCap_objects_invExt (st : SystemState) (tid : SeLe4n.ThreadId)
+    (badge : Option SeLe4n.Badge) (grant : Bool) (h : st.objects.invExt) :
+    (recordSendCap st tid badge grant).objects.invExt :=
+  SystemState.mapTcbInPlace_objects_invExt st tid _ h
+
 /-- WS-L1/L1-B: Variant of `storeTcbIpcStateAndMessage` that accepts a
 pre-looked-up TCB, bypassing the internal `lookupTcb`. Use when the caller
 has already validated the TCB on the same state. -/

@@ -237,25 +237,18 @@ AUDIT_APPEND_EXEMPT = {
     "auditDrain": "SeLe4n.Kernel.newlyRecordedEvents_auditDrain",
 }
 
-# WS-RR RR8.16 (`v0.35.190`): arms that reach a write to a content-tracked FIELD
-# while moving no tracked CONTENT, each with the theorem that says so.
-#
-# Property (A) is field-granular, which is what makes it a detector rather than a
-# table of promises: it asks "does this arm reach a constant that writes
-# `TCB.pendingMessage`", and it cannot ask what the write leaves behind.  For
-# `.cspaceRevoke` the answer to the first question is yes and to the second is
-# nothing: the revocation's last step consumes the derivations that have not
-# landed yet, and that write is a *drop* — `IpcMessage.registers` kept, entries
-# removed from `IpcMessage.caps`, which is capability metadata and therefore the
-# boundary `capabilityBadgeChannel_out_of_scope` already declares out of scope.
+# Arms that reach a write to a content-tracked FIELD while moving no tracked
+# CONTENT, each with the theorem that says so.  Property (A) is field-granular:
+# it asks "does this arm reach a constant that writes `TCB.pendingMessage`", and
+# it cannot ask what the write leaves behind; an entry here answers that with a
+# theorem.  None is needed today (WS-ZA ZA4.7 retired the revocation sweep that
+# rewrote parked messages, the one arm that had one).
 #
 # Same bite as the append exemption above, in both directions: the probe asserts
 # the named theorem is in the elaborated environment, and an exempted arm that
 # has stopped reaching a content write is a stale entry that fails rather than
 # reading as coverage.
-CONTENT_WRITE_EXEMPT = {
-    "cspaceRevoke": "SeLe4n.Kernel.revokePendingTransfersFrom_preserves_trackedContent",
-}
+CONTENT_WRITE_EXEMPT: dict[str, str] = {}
 
 # The self-test's planted channel: a field every inert scheduling arm writes
 # with an open value (`priority := newPrio`).  If the write detector has stopped

@@ -71,7 +71,7 @@ theorem recordPendingFault_preserves_ipcInvariantFull
   | some tcb =>
       rw [SystemState.updateTcb_eq_of_some hT]
       exact insertObjects_tcbFieldUpdate_preserves_ipcInvariantFull st tid tcb
-        { tcb with pendingFault := some tf } hObjInv hInv
+        { tcb with pendingFault := some tf, ipcFaultSend := true } hObjInv hInv
         ((SystemState.getTcb?_eq_some_iff st tid tcb).mp hT)
         rfl rfl rfl rfl rfl rfl rfl rfl rfl
 
@@ -280,17 +280,15 @@ theorem faultDeliverOnCore_preserves_ipcInvariantFull
       (faultSuspendOnCore_preserves_ipcInvariantFull_of_ready st tid c hObjInv
         hCallerReady hInv)
   · have hCall := endpointCallCrossCoreDispatch_preserves_ipcInvariantFull tgt.endpoint tid
-      (faultMessage f ctx tgt.cap.badge) tgt.cap.rights (SeLe4n.Slot.ofNat 0)
+      (SendPayload.fault f ctx tgt.cap.badge) (SeLe4n.Slot.ofNat 0)
       c st hInv hObjInv hAllBudgetsNone
-      (by intro i cap hCap; simp [faultMessage] at hCap)
       hFreshCaller (hSendTailFresh tgt.endpoint) hNotRecv hCallerReady hNotReply
       hCallerNotUnbound (fun ep r hEp hHead => hNotSelf tgt.endpoint ep r hEp hHead)
     have hCallObj := endpointCallCrossCoreDispatch_preserves_objects_invExt tgt.endpoint tid
-      (faultMessage f ctx tgt.cap.badge) tgt.cap.rights (SeLe4n.Slot.ofNat 0)
+      (SendPayload.fault f ctx tgt.cap.badge) (SeLe4n.Slot.ofNat 0)
       c st hObjInv
     rcases hStep : endpointCallCrossCoreDispatch tgt.endpoint tid
-        (faultMessage f ctx tgt.cap.badge) tgt.cap.rights
-        (SeLe4n.Slot.ofNat 0) c st with ⟨stC, res⟩
+        (SendPayload.fault f ctx tgt.cap.badge) (SeLe4n.Slot.ofNat 0) c st with ⟨stC, res⟩
     rw [hStep] at hCall hCallObj
     simp only at hCall hCallObj
     cases res with
@@ -317,11 +315,10 @@ theorem faultDeliverOnCore_preserves_objects_invExt
     exact recordPendingFault_preserves_objects_invExt _ tid _
       (faultSuspendOnCore_preserves_objects_invExt st tid c hObjInv)
   · have hCallObj := endpointCallCrossCoreDispatch_preserves_objects_invExt tgt.endpoint tid
-      (faultMessage f ctx tgt.cap.badge) tgt.cap.rights (SeLe4n.Slot.ofNat 0)
+      (SendPayload.fault f ctx tgt.cap.badge) (SeLe4n.Slot.ofNat 0)
       c st hObjInv
     rcases hStep : endpointCallCrossCoreDispatch tgt.endpoint tid
-        (faultMessage f ctx tgt.cap.badge) tgt.cap.rights
-        (SeLe4n.Slot.ofNat 0) c st with ⟨stC, res⟩
+        (SendPayload.fault f ctx tgt.cap.badge) (SeLe4n.Slot.ofNat 0) c st with ⟨stC, res⟩
     rw [hStep] at hCallObj
     simp only at hCallObj
     cases res with

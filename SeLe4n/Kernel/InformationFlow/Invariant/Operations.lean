@@ -315,30 +315,29 @@ AH1: Updated to use WithCaps variant and CapTransferSummary return type. -/
 theorem endpointSendDualChecked_NI
     (ctx : LabelingContext) (observer : IfObserver)
     (endpointId : SeLe4n.ObjId) (sender : SeLe4n.ThreadId)
-    (msg : IpcMessage)
-    (endpointRights : AccessRightSet)
+    (payload : SendPayload)
     (receiverSlotBase : SeLe4n.Slot)
     (s₁ s₂ : SystemState) (r₁ : CapTransferSummary) (s₁' : SystemState)
     (r₂ : CapTransferSummary) (s₂' : SystemState)
     (hLow : lowEquivalent ctx observer s₁ s₂)
-    (hProjection : ∀ t r t', endpointSendDualWithCaps endpointId sender msg
-        endpointRights receiverSlotBase t = .ok (r, t') →
+    (hProjection : ∀ t r t', endpointSendDualWithCaps endpointId sender payload
+        receiverSlotBase t = .ok (r, t') →
         projectState ctx observer t' = projectState ctx observer t)
-    (hStep₁ : endpointSendDualChecked ctx endpointId sender msg endpointRights
+    (hStep₁ : endpointSendDualChecked ctx endpointId sender payload
         receiverSlotBase s₁ = .ok (r₁, s₁'))
-    (hStep₂ : endpointSendDualChecked ctx endpointId sender msg endpointRights
+    (hStep₂ : endpointSendDualChecked ctx endpointId sender payload
         receiverSlotBase s₂ = .ok (r₂, s₂')) :
     lowEquivalent ctx observer s₁' s₂' := by
   -- WS-SM SM8.C: the gate the wrapper branched on carries both conjuncts; the
   -- rewrite below needs the override half as well as the lattice half.
-  have hGate := enforcementSoundness_endpointSendDualChecked_gate ctx endpointId sender msg
-    endpointRights receiverSlotBase s₁ r₁ s₁' hStep₁
+  have hGate := enforcementSoundness_endpointSendDualChecked_gate ctx endpointId sender payload
+    receiverSlotBase s₁ r₁ s₁' hStep₁
   have hFlow := endpointFlowGate_implies_securityFlowsTo ctx endpointId _ _ hGate
   have hOverride := endpointFlowGate_implies_override ctx endpointId _ _ hGate
-  rw [endpointSendDualChecked_eq_endpointSendDualWithCaps_when_allowed ctx endpointId sender msg
-    endpointRights receiverSlotBase s₁ hFlow hOverride] at hStep₁
-  rw [endpointSendDualChecked_eq_endpointSendDualWithCaps_when_allowed ctx endpointId sender msg
-    endpointRights receiverSlotBase s₂ hFlow hOverride] at hStep₂
+  rw [endpointSendDualChecked_eq_endpointSendDualWithCaps_when_allowed ctx endpointId sender payload
+    receiverSlotBase s₁ hFlow hOverride] at hStep₁
+  rw [endpointSendDualChecked_eq_endpointSendDualWithCaps_when_allowed ctx endpointId sender payload
+    receiverSlotBase s₂ hFlow hOverride] at hStep₂
   unfold lowEquivalent; rw [hProjection s₁ r₁ s₁' hStep₁, hProjection s₂ r₂ s₂' hStep₂]; exact hLow
 
 /-- WS-H8/H-07: If notificationSignalChecked succeeds, the resulting state
@@ -1499,10 +1498,6 @@ theorem endpointQueuePopHead_preserves_projection
         | none => simp
         | some htcb =>
           simp only []
-          -- PR #873 round 11: the send-queue message-presence guard --
-          -- a head that fails it errors, so it is not this `.ok`.
-          split
-          · simp
           cases hStore : storeObject endpointId _ st with
           | error e => simp
           | ok pair =>
@@ -1635,7 +1630,7 @@ theorem endpointQueueEnqueue_preserves_projection
     interacting through a non-observable endpoint are themselves non-observable. -/
 theorem endpointSendDual_preserves_projection
     (ctx : LabelingContext) (observer : IfObserver)
-    (endpointId : SeLe4n.ObjId) (sender : SeLe4n.ThreadId) (msg : IpcMessage)
+    (endpointId : SeLe4n.ObjId) (sender : SeLe4n.ThreadId) (payload : SendPayload)
     (st st' : SystemState)
     (hEndpointHigh : objectObservable ctx observer endpointId = false)
     (hSenderHigh : threadObservable ctx observer sender = false)
@@ -1654,14 +1649,9 @@ theorem endpointSendDual_preserves_projection
     (hSendQueueTailHigh : ∀ ep tailTid, st.objects[endpointId]? = some (.endpoint ep) →
         ep.sendQ.tail = some tailTid → objectObservable ctx observer tailTid.toObjId = false)
     (hObjInv : st.objects.invExt)
-    (hStep : endpointSendDual endpointId sender msg st = .ok ((), st')) :
+    (hStep : endpointSendDual endpointId sender payload st = .ok ((), st')) :
     projectState ctx observer st' = projectState ctx observer st := by
   unfold endpointSendDual SystemState.getObject? at hStep
-  -- Eliminate bounds-check error branches
-  simp only [show ¬(msg.registers.size > maxMessageRegisters) from by
-    intro h; simp [h] at hStep, ↓reduceIte] at hStep
-  simp only [show ¬(msg.caps.size > maxExtraCaps) from by
-    intro h; simp [h] at hStep, ↓reduceIte] at hStep
   cases hObj : st.objects[endpointId]? with
   | none => simp [hObj] at hStep
   | some obj => cases obj with
@@ -1699,7 +1689,7 @@ theorem endpointSendDual_preserves_projection
           have hProjPop := endpointQueuePopHead_preserves_projection ctx observer
               endpointId true st st1 receiver recvTcb hEndpointHigh hRecvObjHigh
               hNextHighForPop hObjInv hPop
-          cases hTcbStore : storeTcbReceiveComplete st1 receiver (some msg) with
+          cases hTcbStore : storeTcbReceiveComplete st1 receiver (some (sendPayloadMessage st sender payload)) with
           | error e => simp [hSnd, hTcbStore] at hStep
           | ok st2 =>
             simp only [hSnd, hTcbStore, Except.ok.injEq, Prod.mk.injEq] at hStep
@@ -1726,12 +1716,13 @@ theorem endpointSendDual_preserves_projection
               endpointId false sender st st1 hEndpointHigh hSenderObjHigh
               hTailHigh hObjInv hEnq
           cases hTcbStore : storeTcbIpcStateAndMessage st1 sender
-              (.blockedOnSend endpointId) (some msg) with
+              (.blockedOnSend endpointId) none with
           | error e => simp [hTcbStore] at hStep
           | ok st2 =>
             simp only [hTcbStore, Except.ok.injEq, Prod.mk.injEq] at hStep
             obtain ⟨_, hStEq⟩ := hStep; subst hStEq
-            rw [removeRunnable_preserves_projection ctx observer st2 sender hSenderHigh,
+            rw [recordSendCap_preserves_projection,
+                removeRunnable_preserves_projection ctx observer st2 sender hSenderHigh,
                 storeTcbIpcStateAndMessage_preserves_projection ctx observer st1 st2
                 sender _ _ hSenderObjHigh hObjInv1 hTcbStore,
                 hProjEnq]
@@ -1873,10 +1864,6 @@ theorem endpointQueuePopHead_preserves_objectIndexSetComplete_and_invExt
         | none => simp [hLookup] at hStep
         | some tcb =>
           simp only [hLookup] at hStep
-          -- PR #873 round 11: the send-queue message-presence guard --
-          -- a head that fails it errors, so it is not this `.ok`.
-          split at hStep
-          · simp at hStep
           revert hStep
           cases hStore : storeObject endpointId _ st with
           | error e => simp
@@ -2029,7 +2016,7 @@ theorem endpointReceiveDual_preserves_projection
                       st2 stLinked sender rid hObjInv2 hLink
                   -- AK1-D: atomic (.ready, senderMsg) receiver update
                   cases hPend : storeTcbIpcStateAndMessage stLinked receiver .ready
-                      senderTcb.pendingMessage with
+                      (some (blockedSenderMessage st1 sender senderTcb)) with
                   | error e => simp [hPend] at hStep
                   | ok st3 =>
                     simp only [hPend] at hStep
@@ -2051,7 +2038,7 @@ theorem endpointReceiveDual_preserves_projection
                 exact ensureRunnable_objects_invExt _ _ hObjInv2
               -- AK1-D: atomic (.ready, senderMsg) receiver update
               cases hPend : storeTcbIpcStateAndMessage (ensureRunnable st2 sender) receiver .ready
-                  senderTcb.pendingMessage with
+                  (some (blockedSenderMessage st1 sender senderTcb)) with
               | error e => simp [hPend] at hStep
               | ok st3 =>
                 simp only [hPend] at hStep
@@ -2283,7 +2270,7 @@ theorem endpointReply_preserves_lowEquivalent
       removeRunnable (caller) -/
 theorem endpointCall_preserves_projection
     (ctx : LabelingContext) (observer : IfObserver)
-    (endpointId : SeLe4n.ObjId) (caller : SeLe4n.ThreadId) (msg : IpcMessage)
+    (endpointId : SeLe4n.ObjId) (caller : SeLe4n.ThreadId) (payload : SendPayload)
     (st st' : SystemState)
     (hEndpointHigh : objectObservable ctx observer endpointId = false)
     (hCallerHigh : threadObservable ctx observer caller = false)
@@ -2307,14 +2294,9 @@ theorem endpointCall_preserves_projection
     (hIdxComplete : ∀ oid, st.objects[oid]? ≠ none →
         st.objectIndexSet.contains oid = true)
     (hObjSetInv : st.objectIndexSet.table.invExt)
-    (hStep : endpointCall endpointId caller msg st = .ok ((), st')) :
+    (hStep : endpointCall endpointId caller payload st = .ok ((), st')) :
     projectState ctx observer st' = projectState ctx observer st := by
   unfold endpointCall SystemState.getObject? at hStep
-  -- Eliminate bounds-check error branches
-  simp only [show ¬(msg.registers.size > maxMessageRegisters) from by
-    intro h; simp [h] at hStep, ↓reduceIte] at hStep
-  simp only [show ¬(msg.caps.size > maxExtraCaps) from by
-    intro h; simp [h] at hStep, ↓reduceIte] at hStep
   cases hObj : st.objects[endpointId]? with
   | none => simp [hObj] at hStep
   | some obj => cases obj with
@@ -2346,7 +2328,7 @@ theorem endpointCall_preserves_projection
           have hProjPop := endpointQueuePopHead_preserves_projection ctx observer
               endpointId true st st1 receiver _recvTcb hEndpointHigh hRecvObjHigh
               hNextHighForPop hObjInv hPop
-          cases hTcbStore : storeTcbIpcStateAndMessage st1 receiver .ready (some msg) with
+          cases hTcbStore : storeTcbIpcStateAndMessage st1 receiver .ready (some (sendPayloadMessage st caller payload)) with
           | error e => simp [hTcbStore] at hStep
           | ok st2 =>
             simp only [hTcbStore] at hStep
@@ -2411,12 +2393,13 @@ theorem endpointCall_preserves_projection
               endpointId false caller st st1 hEndpointHigh hCallerObjHigh
               hTailHigh hObjInv hEnq
           cases hTcbStore : storeTcbIpcStateAndMessage st1 caller
-              (.blockedOnCall endpointId) (some msg) with
+              (.blockedOnCall endpointId) none with
           | error e => simp [hTcbStore] at hStep
           | ok st2 =>
             simp only [hTcbStore, Except.ok.injEq, Prod.mk.injEq] at hStep
             obtain ⟨_, hStEq⟩ := hStep; subst hStEq
-            rw [removeRunnable_preserves_projection ctx observer st2 caller hCallerHigh,
+            rw [recordSendCap_preserves_projection,
+                removeRunnable_preserves_projection ctx observer st2 caller hCallerHigh,
                 storeTcbIpcStateAndMessage_preserves_projection ctx observer st1 st2
                 caller _ _ hCallerObjHigh hObjInv1 hTcbStore,
                 hProjEnq]
@@ -2760,13 +2743,13 @@ theorem endpointReceiveDual_preserves_lowEquivalent
 theorem endpointCall_preserves_lowEquivalent
     (ctx : LabelingContext) (observer : IfObserver)
     (endpointId : SeLe4n.ObjId) (caller : SeLe4n.ThreadId)
-    (msg : IpcMessage)
+    (payload : SendPayload)
     (s₁ s₂ s₁' s₂' : SystemState)
     (hLow : lowEquivalent ctx observer s₁ s₂)
-    (hProjection : ∀ t t', endpointCall endpointId caller msg t = .ok ((), t') →
+    (hProjection : ∀ t t', endpointCall endpointId caller payload t = .ok ((), t') →
         projectState ctx observer t' = projectState ctx observer t)
-    (hStep₁ : endpointCall endpointId caller msg s₁ = .ok ((), s₁'))
-    (hStep₂ : endpointCall endpointId caller msg s₂ = .ok ((), s₂')) :
+    (hStep₁ : endpointCall endpointId caller payload s₁ = .ok ((), s₁'))
+    (hStep₂ : endpointCall endpointId caller payload s₂ = .ok ((), s₂')) :
     lowEquivalent ctx observer s₁' s₂' := by
   unfold lowEquivalent; rw [hProjection s₁ s₁' hStep₁, hProjection s₂ s₂' hStep₂]; exact hLow
 

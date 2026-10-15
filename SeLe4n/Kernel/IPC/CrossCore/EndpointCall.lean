@@ -220,12 +220,12 @@ on a server-first rendezvous). This is the footprint the runtime `withLockSet` b
 `endpointCallOnCore endpointId caller … executingCore st`. -/
 def lockSet_endpointCallOnCore (st : SystemState) (endpointId : SeLe4n.ObjId)
     (caller : SeLe4n.ThreadId) (cnodeRootObjId : SeLe4n.ObjId)
-    -- **WS-RR RR7.8**: the message, because whether this call installs
-    -- capabilities is a property of what it carries. Defaulted to the empty
-    -- message (no registers, and `caps` empty by the field's own default) so
-    -- every capless call site is unchanged and reduces definitionally to the
-    -- pre-RR7.8 footprint.
-    (msg : IpcMessage := { registers := #[] }) : LockSet :=
+    -- **WS-RR RR7.8**: what the call carries in from its capability, because
+    -- whether it installs capabilities depends on its grant right (WS-ZA
+    -- ZA4.7: and on what its frame asks for, `sendCapRequest`). Defaulted to
+    -- an ungranted frame, which transfers nothing, so every capless call site
+    -- reduces definitionally to the pre-RR7.8 footprint.
+    (payload : SendPayload := .frame none false) : LockSet :=
   lockSet_endpointCall caller cnodeRootObjId endpointId
     (endpointCallReceiver? st endpointId) (endpointCallDonatedSc? st endpointId caller)
     (endpointCallServerFirstReply? st endpointId)
@@ -234,7 +234,7 @@ def lockSet_endpointCallOnCore (st : SystemState) (endpointId : SeLe4n.ObjId)
     -- (`rendezvousCapsDestination?`), so the declared footprint and the
     -- transition cannot disagree about which CSpace root is written — the
     -- discipline `receiveInstallsCaps` established for the receive side.
-    (rendezvousCapsDestination? st endpointId msg)
+    (rendezvousCapsDestination? st endpointId caller payload)
     -- **WS-OD OD3.11**: and the queue-structure neighbour, resolved from the
     -- same branch the transition takes.
     (sendSideQueueStructureNeighbor? st endpointId)
@@ -248,8 +248,8 @@ def lockSet_endpointCallOnCore (st : SystemState) (endpointId : SeLe4n.ObjId)
     -- receiver `endpointCallReceiver?` resolves.
     ((endpointCallReceiver? st endpointId).bind (SystemState.replyWaitersHead? st))
 
-/-- **WS-RR RR7.8**: the capless resolved call footprint is definitionally the
-pre-RR7.8 one, so every statement and fixture taken over the four-argument form
+/-- **WS-RR RR7.8**: the capless resolved call footprint is the pre-RR7.8 one
+(an ungranted frame names no destination, `rendezvousCapsDestination?_ungranted`), so every statement and fixture taken over the four-argument form
 survives unchanged. -/
 theorem lockSet_endpointCallOnCore_capless (st : SystemState)
     (endpointId : SeLe4n.ObjId) (caller : SeLe4n.ThreadId)
@@ -265,7 +265,8 @@ theorem lockSet_endpointCallOnCore_capless (st : SystemState)
           -- **WS-OD (`v0.35.4`)**: and the old head, for the same reason.
           ((endpointCallDonatedSc? st endpointId caller).bind (replyStackHead? st))
           -- **WS-ZA ZA4.6**: and the reply-waiter head, for the same reason.
-          ((endpointCallReceiver? st endpointId).bind (SystemState.replyWaitersHead? st)) := rfl
+          ((endpointCallReceiver? st endpointId).bind (SystemState.replyWaitersHead? st)) := by
+  simp only [lockSet_endpointCallOnCore, rendezvousCapsDestination?_ungranted]
 
 /-- **WS-RR RR7.8**: the concrete lock-set a cross-core caps-carrying `.send`
 acquires. The send side had no resolved footprint at all — its capless shape
@@ -277,10 +278,10 @@ destination is `rendezvousCapsDestination?`, the expression
 `endpointSendDualWithCaps` itself evaluates. -/
 def lockSet_endpointSendOnCore (st : SystemState) (endpointId : SeLe4n.ObjId)
     (sender : SeLe4n.ThreadId) (cnodeRootObjId : SeLe4n.ObjId)
-    (msg : IpcMessage := { registers := #[] }) : LockSet :=
+    (payload : SendPayload := .frame none false) : LockSet :=
   lockSet_endpointSend sender cnodeRootObjId endpointId
     (endpointCallReceiver? st endpointId)
-    (rendezvousCapsDestination? st endpointId msg)
+    (rendezvousCapsDestination? st endpointId sender payload)
     -- **WS-OD OD3.11**: and the queue-structure neighbour.
     (sendSideQueueStructureNeighbor? st endpointId)
 
@@ -364,11 +365,8 @@ SgiKind))`: an error on a failed step (pre-state returned, so a `withLockSet`
 bracket still releases cleanly), or `.ok sgi?` with the optional cross-core SGI
 to emit after the state commit. -/
 def endpointCallOnCore (endpointId : SeLe4n.ObjId) (caller : SeLe4n.ThreadId)
-    (msg : IpcMessage) (executingCore : CoreId) (st : SystemState) :
+    (payload : SendPayload) (executingCore : CoreId) (st : SystemState) :
     SystemState × Except KernelError (Option (CoreId × SgiKind)) :=
-  if msg.registers.size > maxMessageRegisters then (st, .error .ipcMessageTooLarge)
-  else if msg.caps.size > maxExtraCaps then (st, .error .ipcMessageTooManyCaps)
-  else
   match st.getEndpoint? endpointId with
   | some ep =>
       match ep.receiveQ.head with
@@ -376,7 +374,10 @@ def endpointCallOnCore (endpointId : SeLe4n.ObjId) (caller : SeLe4n.ThreadId)
           match endpointQueuePopHead endpointId true st with
           | .error e => (st, .error e)
           | .ok (receiver, _tcb, st') =>
-              match storeTcbIpcStateAndMessage st' receiver .ready (some msg) with
+              -- WS-ZA ZA4.7: the words are read from the caller's frame, where
+              -- the receive that takes a blocked caller reads them.
+              match storeTcbIpcStateAndMessage st' receiver .ready
+                  (some (sendPayloadMessage st caller payload)) with
               | .error e => (st, .error e)
               | .ok st'' =>
                   -- Cross-core receiver wake (SM5.C): route to the receiver's
@@ -402,9 +403,11 @@ def endpointCallOnCore (endpointId : SeLe4n.ObjId) (caller : SeLe4n.ThreadId)
           match endpointQueueEnqueue endpointId false caller st with
           | .error e => (st, .error e)
           | .ok st' =>
-              match storeTcbIpcStateAndMessage st' caller (.blockedOnCall endpointId) (some msg) with
+              match storeTcbIpcStateAndMessage st' caller (.blockedOnCall endpointId) none with
               | .error e => (st, .error e)
-              | .ok st'' => (removeRunnableOnCore st'' caller executingCore, .ok none)
+              | .ok st'' =>
+                  (recordSendCap (removeRunnableOnCore st'' caller executingCore) caller
+                    payload.badge payload.grant, .ok none)
   | none =>
       -- Typed-accessor dispatch (AK7 cascade discipline): `getEndpoint?` is
       -- `none` for both an absent object and a wrong-kinded one, so the
@@ -424,26 +427,23 @@ waiting on the endpoint). The post-state is the caller-blocked state with the
 receiver woken (cross-core) and the caller removed from its own core; the
 surfaced SGI is exactly the receiver wake's. -/
 theorem endpointCallOnCore_rendezvous_eq
-    (endpointId : SeLe4n.ObjId) (caller : SeLe4n.ThreadId) (msg : IpcMessage)
+    (endpointId : SeLe4n.ObjId) (caller : SeLe4n.ThreadId) (payload : SendPayload)
     (executingCore : CoreId) (st : SystemState) (ep : Endpoint)
     (receiver : SeLe4n.ThreadId) (recvTcb0 : TCB) (st' st'' st4 st5 : SystemState)
-    (hSz1 : ¬ msg.registers.size > maxMessageRegisters)
-    (hSz2 : ¬ msg.caps.size > maxExtraCaps)
     (hObj : st.objects[endpointId]? = some (.endpoint ep))
     (hHead : ep.receiveQ.head = some receiver)
     (hPop : endpointQueuePopHead endpointId true st = .ok (receiver, recvTcb0, st'))
-    (hStore : storeTcbIpcStateAndMessage st' receiver .ready (some msg) = .ok st'')
+    (hStore : storeTcbIpcStateAndMessage st' receiver .ready (some (sendPayloadMessage st caller payload)) = .ok st'')
     (hCallerStore : storeTcbIpcStateAndMessage (wakeThread st'' receiver executingCore).1
         caller (.blockedOnReply endpointId (some receiver)) none = .ok st4)
     -- WS-SM SM6.D (#7.3b fold): the server-first reply link is folded into the
     -- transition; the rendezvous reduces only when the link succeeds (a server
     -- with a stashed reply object — the production dispatch always provides one).
     (hLink : SystemState.linkServerStashedReply caller receiver st4 = .ok ((), st5)) :
-    endpointCallOnCore endpointId caller msg executingCore st
+    endpointCallOnCore endpointId caller payload executingCore st
       = ((removeRunnableOnCore st5 caller executingCore).linkReplyWaiter caller receiver,
          .ok (wakeThread st'' receiver executingCore).2) := by
   unfold endpointCallOnCore
-  rw [if_neg hSz1, if_neg hSz2]
   have hObjE : st.getEndpoint? endpointId = some ep :=
     (SystemState.getEndpoint?_eq_some_iff st endpointId ep).mpr hObj
   simp only [hObjE, hHead, hPop, hStore, hCallerStore, hLink]
@@ -452,19 +452,17 @@ theorem endpointCallOnCore_rendezvous_eq
 enqueues on the endpoint's send queue as `blockedOnCall`). No wake occurs, so
 no SGI is surfaced; the caller is removed from its own core. -/
 theorem endpointCallOnCore_noReceiver_eq
-    (endpointId : SeLe4n.ObjId) (caller : SeLe4n.ThreadId) (msg : IpcMessage)
+    (endpointId : SeLe4n.ObjId) (caller : SeLe4n.ThreadId) (payload : SendPayload)
     (executingCore : CoreId) (st : SystemState) (ep : Endpoint) (st' st'' : SystemState)
-    (hSz1 : ¬ msg.registers.size > maxMessageRegisters)
-    (hSz2 : ¬ msg.caps.size > maxExtraCaps)
     (hObj : st.objects[endpointId]? = some (.endpoint ep))
     (hHead : ep.receiveQ.head = none)
     (hEnq : endpointQueueEnqueue endpointId false caller st = .ok st')
-    (hStore : storeTcbIpcStateAndMessage st' caller (.blockedOnCall endpointId) (some msg)
+    (hStore : storeTcbIpcStateAndMessage st' caller (.blockedOnCall endpointId) none
         = .ok st'') :
-    endpointCallOnCore endpointId caller msg executingCore st
-      = (removeRunnableOnCore st'' caller executingCore, .ok none) := by
+    endpointCallOnCore endpointId caller payload executingCore st
+      = (recordSendCap (removeRunnableOnCore st'' caller executingCore) caller
+          payload.badge payload.grant, .ok none) := by
   unfold endpointCallOnCore
-  rw [if_neg hSz1, if_neg hSz2]
   have hObjE : st.getEndpoint? endpointId = some ep :=
     (SystemState.getEndpoint?_eq_some_iff st endpointId ep).mpr hObj
   simp only [hObjE, hHead, hEnq, hStore]
@@ -481,61 +479,57 @@ footprint's replenish segment is the donation's, and this is the frame that
 licenses it — a footprint that declared nothing for a leg that migrated would be
 false. -/
 theorem endpointCallOnCore_replenishQueueOnCore (endpointId : SeLe4n.ObjId)
-    (caller : SeLe4n.ThreadId) (msg : IpcMessage) (executingCore : CoreId)
+    (caller : SeLe4n.ThreadId) (payload : SendPayload) (executingCore : CoreId)
     (st : SystemState) (c : CoreId) :
-    (endpointCallOnCore endpointId caller msg executingCore st).1.scheduler.replenishQueueOnCore c
+    (endpointCallOnCore endpointId caller payload executingCore st).1.scheduler.replenishQueueOnCore c
       = st.scheduler.replenishQueueOnCore c := by
   unfold endpointCallOnCore
-  split
-  · rfl
-  · split
-    · rfl
-    · cases hEp : st.getEndpoint? endpointId with
-      | none => simp only []; split <;> rfl
-      | some ep =>
+  cases hEp : st.getEndpoint? endpointId with
+  | none => simp only []; split <;> rfl
+  | some ep =>
+    simp only []
+    cases hHead : ep.receiveQ.head with
+    | none =>
+      simp only []
+      cases hEnq : endpointQueueEnqueue endpointId false caller st with
+      | error e => rfl
+      | ok st' =>
         simp only []
-        cases hHead : ep.receiveQ.head with
-        | none =>
+        cases hStore : storeTcbIpcStateAndMessage st' caller (.blockedOnCall endpointId)
+            none with
+        | error e => rfl
+        | ok st'' =>
+          simp only [recordSendCap_scheduler, removeRunnableOnCore_replenishQueueOnCore]
+          rw [storeTcbIpcStateAndMessage_scheduler_eq st' st'' caller _ _ hStore,
+            endpointQueueEnqueue_scheduler_eq endpointId false caller st st' hEnq]
+    | some _ =>
+      simp only []
+      cases hPop : endpointQueuePopHead endpointId true st with
+      | error e => rfl
+      | ok triple =>
+        obtain ⟨receiver, _headTcb, st'⟩ := triple
+        simp only []
+        cases hStore : storeTcbIpcStateAndMessage st' receiver .ready (some (sendPayloadMessage st caller payload)) with
+        | error e => rfl
+        | ok st'' =>
           simp only []
-          cases hEnq : endpointQueueEnqueue endpointId false caller st with
+          cases hStore2 : storeTcbIpcStateAndMessage
+              (wakeThread st'' receiver executingCore).1 caller
+              (.blockedOnReply endpointId (some receiver)) none with
           | error e => rfl
-          | ok st' =>
+          | ok st4 =>
             simp only []
-            cases hStore : storeTcbIpcStateAndMessage st' caller (.blockedOnCall endpointId)
-                (some msg) with
+            cases hLink : SystemState.linkServerStashedReply caller receiver st4 with
             | error e => rfl
-            | ok st'' =>
-              simp only [removeRunnableOnCore_replenishQueueOnCore]
-              rw [storeTcbIpcStateAndMessage_scheduler_eq st' st'' caller _ _ hStore,
-                endpointQueueEnqueue_scheduler_eq endpointId false caller st st' hEnq]
-        | some _ =>
-          simp only []
-          cases hPop : endpointQueuePopHead endpointId true st with
-          | error e => rfl
-          | ok triple =>
-            obtain ⟨receiver, _headTcb, st'⟩ := triple
-            simp only []
-            cases hStore : storeTcbIpcStateAndMessage st' receiver .ready (some msg) with
-            | error e => rfl
-            | ok st'' =>
-              simp only []
-              cases hStore2 : storeTcbIpcStateAndMessage
-                  (wakeThread st'' receiver executingCore).1 caller
-                  (.blockedOnReply endpointId (some receiver)) none with
-              | error e => rfl
-              | ok st4 =>
-                simp only []
-                cases hLink : SystemState.linkServerStashedReply caller receiver st4 with
-                | error e => rfl
-                | ok pr =>
-                  obtain ⟨_, st5⟩ := pr
-                  simp only [SystemState.linkReplyWaiter_scheduler,
-                    removeRunnableOnCore_replenishQueueOnCore]
-                  rw [linkServerStashedReply_scheduler_eq st4 st5 caller receiver hLink,
-                    storeTcbIpcStateAndMessage_scheduler_eq _ st4 caller _ _ hStore2,
-                    wakeThread_replenishQueueOnCore,
-                    storeTcbIpcStateAndMessage_scheduler_eq st' st'' receiver _ _ hStore,
-                    endpointQueuePopHead_scheduler_eq endpointId true st st' receiver hPop]
+            | ok pr =>
+              obtain ⟨_, st5⟩ := pr
+              simp only [SystemState.linkReplyWaiter_scheduler,
+                removeRunnableOnCore_replenishQueueOnCore]
+              rw [linkServerStashedReply_scheduler_eq st4 st5 caller receiver hLink,
+                storeTcbIpcStateAndMessage_scheduler_eq _ st4 caller _ _ hStore2,
+                wakeThread_replenishQueueOnCore,
+                storeTcbIpcStateAndMessage_scheduler_eq st' st'' receiver _ _ hStore,
+                endpointQueuePopHead_scheduler_eq endpointId true st st' receiver hPop]
 
 /-- WS-SM SM6.A.3 (plan §3.2 Theorem 3.2.1,
 `endpointCall_emits_sgi_if_remote_receiver`). When a cross-core `endpointCall`
@@ -548,24 +542,22 @@ receiver's `ipcState` / `pendingMessage` and the endpoint queue links, never its
 `cpuAffinity`, so this is the same core the plan's pre-state `determineTargetCore
 s receiver` names. -/
 theorem endpointCallOnCore_emits_sgi_if_remote_receiver
-    (endpointId : SeLe4n.ObjId) (caller : SeLe4n.ThreadId) (msg : IpcMessage)
+    (endpointId : SeLe4n.ObjId) (caller : SeLe4n.ThreadId) (payload : SendPayload)
     (executingCore : CoreId) (st : SystemState) (ep : Endpoint)
     (receiver : SeLe4n.ThreadId) (recvTcb0 recvTcb'' : TCB) (st' st'' st4 st5 : SystemState)
-    (hSz1 : ¬ msg.registers.size > maxMessageRegisters)
-    (hSz2 : ¬ msg.caps.size > maxExtraCaps)
     (hObj : st.objects[endpointId]? = some (.endpoint ep))
     (hHead : ep.receiveQ.head = some receiver)
     (hPop : endpointQueuePopHead endpointId true st = .ok (receiver, recvTcb0, st'))
-    (hStore : storeTcbIpcStateAndMessage st' receiver .ready (some msg) = .ok st'')
+    (hStore : storeTcbIpcStateAndMessage st' receiver .ready (some (sendPayloadMessage st caller payload)) = .ok st'')
     (hCallerStore : storeTcbIpcStateAndMessage (wakeThread st'' receiver executingCore).1
         caller (.blockedOnReply endpointId (some receiver)) none = .ok st4)
     (hLink : SystemState.linkServerStashedReply caller receiver st4 = .ok ((), st5))
     (hTcb'' : st''.getTcb? receiver = some recvTcb'')
     (hRemote : determineTargetCore st'' receiver ≠ executingCore) :
-    (endpointCallOnCore endpointId caller msg executingCore st).2
+    (endpointCallOnCore endpointId caller payload executingCore st).2
       = .ok (some (determineTargetCore st'' receiver, SgiKind.reschedule)) := by
-  rw [endpointCallOnCore_rendezvous_eq endpointId caller msg executingCore st ep receiver
-        recvTcb0 st' st'' st4 st5 hSz1 hSz2 hObj hHead hPop hStore hCallerStore hLink]
+  rw [endpointCallOnCore_rendezvous_eq endpointId caller payload executingCore st ep receiver
+        recvTcb0 st' st'' st4 st5 hObj hHead hPop hStore hCallerStore hLink]
   show Except.ok (wakeThread st'' receiver executingCore).2
       = Except.ok (some (determineTargetCore st'' receiver, SgiKind.reschedule))
   rw [wakeThread_emits_sgi_if_remote st'' receiver executingCore recvTcb'' hTcb'' hRemote]
@@ -574,22 +566,20 @@ theorem endpointCallOnCore_emits_sgi_if_remote_receiver
 core = executing core) surfaces **no** SGI — the local scheduler picks the
 newly-runnable receiver up on its next decision. -/
 theorem endpointCallOnCore_no_sgi_if_local_receiver
-    (endpointId : SeLe4n.ObjId) (caller : SeLe4n.ThreadId) (msg : IpcMessage)
+    (endpointId : SeLe4n.ObjId) (caller : SeLe4n.ThreadId) (payload : SendPayload)
     (executingCore : CoreId) (st : SystemState) (ep : Endpoint)
     (receiver : SeLe4n.ThreadId) (recvTcb0 : TCB) (st' st'' st4 st5 : SystemState)
-    (hSz1 : ¬ msg.registers.size > maxMessageRegisters)
-    (hSz2 : ¬ msg.caps.size > maxExtraCaps)
     (hObj : st.objects[endpointId]? = some (.endpoint ep))
     (hHead : ep.receiveQ.head = some receiver)
     (hPop : endpointQueuePopHead endpointId true st = .ok (receiver, recvTcb0, st'))
-    (hStore : storeTcbIpcStateAndMessage st' receiver .ready (some msg) = .ok st'')
+    (hStore : storeTcbIpcStateAndMessage st' receiver .ready (some (sendPayloadMessage st caller payload)) = .ok st'')
     (hCallerStore : storeTcbIpcStateAndMessage (wakeThread st'' receiver executingCore).1
         caller (.blockedOnReply endpointId (some receiver)) none = .ok st4)
     (hLink : SystemState.linkServerStashedReply caller receiver st4 = .ok ((), st5))
     (hLocal : determineTargetCore st'' receiver = executingCore) :
-    (endpointCallOnCore endpointId caller msg executingCore st).2 = .ok none := by
-  rw [endpointCallOnCore_rendezvous_eq endpointId caller msg executingCore st ep receiver
-        recvTcb0 st' st'' st4 st5 hSz1 hSz2 hObj hHead hPop hStore hCallerStore hLink]
+    (endpointCallOnCore endpointId caller payload executingCore st).2 = .ok none := by
+  rw [endpointCallOnCore_rendezvous_eq endpointId caller payload executingCore st ep receiver
+        recvTcb0 st' st'' st4 st5 hObj hHead hPop hStore hCallerStore hLink]
   show Except.ok (wakeThread st'' receiver executingCore).2 = Except.ok none
   rw [wakeThread_no_sgi_if_local st'' receiver executingCore hLocal]
 
@@ -598,18 +588,16 @@ endpoint's send queue as `blockedOnCall`) surfaces no SGI — no thread is woken
 so there is no cross-core poke. Completes the SGI characterisation: a call pokes
 a remote core *only* on a rendezvous with a remote receiver. -/
 theorem endpointCallOnCore_noReceiver_no_sgi
-    (endpointId : SeLe4n.ObjId) (caller : SeLe4n.ThreadId) (msg : IpcMessage)
+    (endpointId : SeLe4n.ObjId) (caller : SeLe4n.ThreadId) (payload : SendPayload)
     (executingCore : CoreId) (st : SystemState) (ep : Endpoint) (st' st'' : SystemState)
-    (hSz1 : ¬ msg.registers.size > maxMessageRegisters)
-    (hSz2 : ¬ msg.caps.size > maxExtraCaps)
     (hObj : st.objects[endpointId]? = some (.endpoint ep))
     (hHead : ep.receiveQ.head = none)
     (hEnq : endpointQueueEnqueue endpointId false caller st = .ok st')
-    (hStore : storeTcbIpcStateAndMessage st' caller (.blockedOnCall endpointId) (some msg)
+    (hStore : storeTcbIpcStateAndMessage st' caller (.blockedOnCall endpointId) none
         = .ok st'') :
-    (endpointCallOnCore endpointId caller msg executingCore st).2 = .ok none := by
-  rw [endpointCallOnCore_noReceiver_eq endpointId caller msg executingCore st ep st' st''
-        hSz1 hSz2 hObj hHead hEnq hStore]
+    (endpointCallOnCore endpointId caller payload executingCore st).2 = .ok none := by
+  rw [endpointCallOnCore_noReceiver_eq endpointId caller payload executingCore st ep st' st''
+        hObj hHead hEnq hStore]
 
 -- ============================================================================
 -- §7 SM6.A.2 — `endpointCall` lock-set correctness
@@ -639,13 +627,13 @@ kind permitted for `.call`. This is the form the runtime acquisition consumes,
 so its correctness is a corollary of the parametric `lockSet_consistent_call`. -/
 theorem lockSet_endpointCallOnCore_correct
     (st : SystemState) (endpointId : SeLe4n.ObjId) (caller : SeLe4n.ThreadId)
-    (cnodeRootObjId : SeLe4n.ObjId) (msg : IpcMessage := { registers := #[] }) :
-    ∀ p ∈ (lockSet_endpointCallOnCore st endpointId caller cnodeRootObjId msg).pairs,
+    (cnodeRootObjId : SeLe4n.ObjId) (payload : SendPayload := .frame none false) :
+    ∀ p ∈ (lockSet_endpointCallOnCore st endpointId caller cnodeRootObjId payload).pairs,
       p.fst.kind ∈ permittedKinds .call :=
   lockSet_consistent_call caller cnodeRootObjId endpointId
     (endpointCallReceiver? st endpointId) (endpointCallDonatedSc? st endpointId caller)
     (endpointCallServerFirstReply? st endpointId)
-    (rendezvousCapsDestination? st endpointId msg)
+    (rendezvousCapsDestination? st endpointId caller payload)
     (sendSideQueueStructureNeighbor? st endpointId)
     ((endpointCallDonatedSc? st endpointId caller).bind (replyStackHead? st))
     ((endpointCallReceiver? st endpointId).bind (SystemState.replyWaitersHead? st))
@@ -654,12 +642,12 @@ theorem lockSet_endpointCallOnCore_correct
 message — the send side's first resolved-footprint correctness statement. -/
 theorem lockSet_endpointSendOnCore_correct
     (st : SystemState) (endpointId : SeLe4n.ObjId) (sender : SeLe4n.ThreadId)
-    (cnodeRootObjId : SeLe4n.ObjId) (msg : IpcMessage := { registers := #[] }) :
-    ∀ p ∈ (lockSet_endpointSendOnCore st endpointId sender cnodeRootObjId msg).pairs,
+    (cnodeRootObjId : SeLe4n.ObjId) (payload : SendPayload := .frame none false) :
+    ∀ p ∈ (lockSet_endpointSendOnCore st endpointId sender cnodeRootObjId payload).pairs,
       p.fst.kind ∈ permittedKinds .send :=
   lockSet_consistent_send sender cnodeRootObjId endpointId
     (endpointCallReceiver? st endpointId)
-    (rendezvousCapsDestination? st endpointId msg)
+    (rendezvousCapsDestination? st endpointId sender payload)
     (sendSideQueueStructureNeighbor? st endpointId)
 
 -- ============================================================================
@@ -686,10 +674,10 @@ expression `endpointSendDualWithCaps` and `endpointCallWithCaps` evaluate
 in **write** mode. -/
 theorem lockSet_endpointCallOnCore_covers_capsDestination
     (st : SystemState) (endpointId : SeLe4n.ObjId) (caller : SeLe4n.ThreadId)
-    (cnodeRootObjId : SeLe4n.ObjId) (msg : IpcMessage) (recvRoot : SeLe4n.ObjId)
-    (hDest : rendezvousCapsDestination? st endpointId msg = some recvRoot) :
+    (cnodeRootObjId : SeLe4n.ObjId) (payload : SendPayload) (recvRoot : SeLe4n.ObjId)
+    (hDest : rendezvousCapsDestination? st endpointId caller payload = some recvRoot) :
     (cnodeLock recvRoot, AccessMode.write)
-      ∈ (lockSet_endpointCallOnCore st endpointId caller cnodeRootObjId msg).pairs := by
+      ∈ (lockSet_endpointCallOnCore st endpointId caller cnodeRootObjId payload).pairs := by
   unfold lockSet_endpointCallOnCore lockSet_endpointCall
   rw [hDest]
   -- WS-OD OD3.11: one more extension outside (the queue-structure neighbour).
@@ -703,10 +691,10 @@ install writes. Without this member two transfers into *different* CSpaces have
 provably disjoint footprints while read-modify-writing one derivation map. -/
 theorem lockSet_endpointCallOnCore_covers_cdt
     (st : SystemState) (endpointId : SeLe4n.ObjId) (caller : SeLe4n.ThreadId)
-    (cnodeRootObjId : SeLe4n.ObjId) (msg : IpcMessage) (recvRoot : SeLe4n.ObjId)
-    (hDest : rendezvousCapsDestination? st endpointId msg = some recvRoot) :
+    (cnodeRootObjId : SeLe4n.ObjId) (payload : SendPayload) (recvRoot : SeLe4n.ObjId)
+    (hDest : rendezvousCapsDestination? st endpointId caller payload = some recvRoot) :
     (stateLevelLock, AccessMode.write)
-      ∈ (lockSet_endpointCallOnCore st endpointId caller cnodeRootObjId msg).pairs := by
+      ∈ (lockSet_endpointCallOnCore st endpointId caller cnodeRootObjId payload).pairs := by
   unfold lockSet_endpointCallOnCore lockSet_endpointCall
   rw [hDest]
   -- WS-ZA ZA4.6: the receiver's old reply-waiter head is outermost.
@@ -717,10 +705,10 @@ theorem lockSet_endpointCallOnCore_covers_cdt
 so the same write set, so the same declaration. -/
 theorem lockSet_endpointSendOnCore_covers_capsDestination
     (st : SystemState) (endpointId : SeLe4n.ObjId) (sender : SeLe4n.ThreadId)
-    (cnodeRootObjId : SeLe4n.ObjId) (msg : IpcMessage) (recvRoot : SeLe4n.ObjId)
-    (hDest : rendezvousCapsDestination? st endpointId msg = some recvRoot) :
+    (cnodeRootObjId : SeLe4n.ObjId) (payload : SendPayload) (recvRoot : SeLe4n.ObjId)
+    (hDest : rendezvousCapsDestination? st endpointId sender payload = some recvRoot) :
     (cnodeLock recvRoot, AccessMode.write)
-      ∈ (lockSet_endpointSendOnCore st endpointId sender cnodeRootObjId msg).pairs := by
+      ∈ (lockSet_endpointSendOnCore st endpointId sender cnodeRootObjId payload).pairs := by
   unfold lockSet_endpointSendOnCore lockSet_endpointSend
   rw [hDest]
   -- WS-OD OD3.11: one more extension outside (the queue-structure neighbour).
@@ -742,10 +730,10 @@ branches this call takes is a property of the pre-state, and the resolver reads
 it from the same expression the transition branches on. -/
 theorem lockSet_endpointCallOnCore_covers_queueNeighbour
     (st : SystemState) (endpointId : SeLe4n.ObjId) (caller : SeLe4n.ThreadId)
-    (cnodeRootObjId : SeLe4n.ObjId) (msg : IpcMessage) (q : SeLe4n.ThreadId)
+    (cnodeRootObjId : SeLe4n.ObjId) (payload : SendPayload) (q : SeLe4n.ThreadId)
     (hq : sendSideQueueStructureNeighbor? st endpointId = some q) :
     (tcbLock q, AccessMode.write)
-      ∈ (lockSet_endpointCallOnCore st endpointId caller cnodeRootObjId msg).pairs := by
+      ∈ (lockSet_endpointCallOnCore st endpointId caller cnodeRootObjId payload).pairs := by
   unfold lockSet_endpointCallOnCore lockSet_endpointCall
   rw [hq]
   -- WS-ZA ZA4.6: the receiver's old reply-waiter head is outermost.
@@ -780,19 +768,19 @@ one of the two members the ceiling moved for at that cut.  The four OD4.7 named
 are stated here as they were. -/
 theorem lockSet_endpointCallOnCore_covers_donationPush
     (st : SystemState) (endpointId : SeLe4n.ObjId) (caller : SeLe4n.ThreadId)
-    (cnodeRootObjId : SeLe4n.ObjId) (msg : IpcMessage)
+    (cnodeRootObjId : SeLe4n.ObjId) (payload : SendPayload)
     (scId : SeLe4n.SchedContextId) (rid : SeLe4n.ReplyId) (receiver : SeLe4n.ThreadId)
     (hSc : endpointCallDonatedSc? st endpointId caller = some scId)
     (hRid : endpointCallServerFirstReply? st endpointId = some rid)
     (hRecv : endpointCallReceiver? st endpointId = some receiver) :
     (schedContextLock scId, AccessMode.write)
-        ∈ (lockSet_endpointCallOnCore st endpointId caller cnodeRootObjId msg).pairs ∧
+        ∈ (lockSet_endpointCallOnCore st endpointId caller cnodeRootObjId payload).pairs ∧
     (replyLock rid, AccessMode.write)
-        ∈ (lockSet_endpointCallOnCore st endpointId caller cnodeRootObjId msg).pairs ∧
+        ∈ (lockSet_endpointCallOnCore st endpointId caller cnodeRootObjId payload).pairs ∧
     (tcbLock caller, AccessMode.write)
-        ∈ (lockSet_endpointCallOnCore st endpointId caller cnodeRootObjId msg).pairs ∧
+        ∈ (lockSet_endpointCallOnCore st endpointId caller cnodeRootObjId payload).pairs ∧
     (tcbLock receiver, AccessMode.write)
-        ∈ (lockSet_endpointCallOnCore st endpointId caller cnodeRootObjId msg).pairs := by
+        ∈ (lockSet_endpointCallOnCore st endpointId caller cnodeRootObjId payload).pairs := by
   unfold lockSet_endpointCallOnCore
   rw [hSc, hRid, hRecv]
   exact ⟨lockSet_endpointCall_donatedSc_write_mem _ _ _ _ _ _ _ _ _ _,
@@ -807,12 +795,12 @@ two resolvers the member is derived from, so it is a statement about the arm
 rather than about an argument value. -/
 theorem lockSet_endpointCallOnCore_covers_donationOldHead
     (st : SystemState) (endpointId : SeLe4n.ObjId) (caller : SeLe4n.ThreadId)
-    (cnodeRootObjId : SeLe4n.ObjId) (msg : IpcMessage)
+    (cnodeRootObjId : SeLe4n.ObjId) (payload : SendPayload)
     (scId : SeLe4n.SchedContextId) (oldHead : SeLe4n.ReplyId)
     (hSc : endpointCallDonatedSc? st endpointId caller = some scId)
     (hOld : replyStackHead? st scId = some oldHead) :
     (replyLock oldHead, AccessMode.write)
-        ∈ (lockSet_endpointCallOnCore st endpointId caller cnodeRootObjId msg).pairs := by
+        ∈ (lockSet_endpointCallOnCore st endpointId caller cnodeRootObjId payload).pairs := by
   unfold lockSet_endpointCallOnCore
   rw [hSc]
   have h2 : Option.bind (some scId) (replyStackHead? st) = some oldHead := hOld
@@ -825,12 +813,12 @@ declared write of the resolved `.call` footprint.  Stated over the two
 resolvers the member is derived from. -/
 theorem lockSet_endpointCallOnCore_covers_replyWaiterOldHead
     (st : SystemState) (endpointId : SeLe4n.ObjId) (caller : SeLe4n.ThreadId)
-    (cnodeRootObjId : SeLe4n.ObjId) (msg : IpcMessage)
+    (cnodeRootObjId : SeLe4n.ObjId) (payload : SendPayload)
     (receiver oldHead : SeLe4n.ThreadId)
     (hRecv : endpointCallReceiver? st endpointId = some receiver)
     (hHead : st.replyWaitersHead? receiver = some oldHead) :
     (tcbLock oldHead, AccessMode.write)
-        ∈ (lockSet_endpointCallOnCore st endpointId caller cnodeRootObjId msg).pairs := by
+        ∈ (lockSet_endpointCallOnCore st endpointId caller cnodeRootObjId payload).pairs := by
   unfold lockSet_endpointCallOnCore
   rw [hRecv]
   have h2 : Option.bind (some receiver) (SystemState.replyWaitersHead? st) = some oldHead :=
@@ -901,10 +889,10 @@ theorem endpointCallDonatedSc?_of_donated (st : SystemState)
 same neighbour and the same declaration. -/
 theorem lockSet_endpointSendOnCore_covers_queueNeighbour
     (st : SystemState) (endpointId : SeLe4n.ObjId) (sender : SeLe4n.ThreadId)
-    (cnodeRootObjId : SeLe4n.ObjId) (msg : IpcMessage) (q : SeLe4n.ThreadId)
+    (cnodeRootObjId : SeLe4n.ObjId) (payload : SendPayload) (q : SeLe4n.ThreadId)
     (hq : sendSideQueueStructureNeighbor? st endpointId = some q) :
     (tcbLock q, AccessMode.write)
-      ∈ (lockSet_endpointSendOnCore st endpointId sender cnodeRootObjId msg).pairs := by
+      ∈ (lockSet_endpointSendOnCore st endpointId sender cnodeRootObjId payload).pairs := by
   unfold lockSet_endpointSendOnCore lockSet_endpointSend
   rw [hq]
   exact LockSet.mem_insertOrMerge_write_self _ _
@@ -912,10 +900,10 @@ theorem lockSet_endpointSendOnCore_covers_queueNeighbour
 /-- **WS-RR RR7.8**: and the send arm's state-level member. -/
 theorem lockSet_endpointSendOnCore_covers_cdt
     (st : SystemState) (endpointId : SeLe4n.ObjId) (sender : SeLe4n.ThreadId)
-    (cnodeRootObjId : SeLe4n.ObjId) (msg : IpcMessage) (recvRoot : SeLe4n.ObjId)
-    (hDest : rendezvousCapsDestination? st endpointId msg = some recvRoot) :
+    (cnodeRootObjId : SeLe4n.ObjId) (payload : SendPayload) (recvRoot : SeLe4n.ObjId)
+    (hDest : rendezvousCapsDestination? st endpointId sender payload = some recvRoot) :
     (stateLevelLock, AccessMode.write)
-      ∈ (lockSet_endpointSendOnCore st endpointId sender cnodeRootObjId msg).pairs := by
+      ∈ (lockSet_endpointSendOnCore st endpointId sender cnodeRootObjId payload).pairs := by
   unfold lockSet_endpointSendOnCore lockSet_endpointSend
   rw [hDest]
   exact mem_write_lockSetExtendOpt _ _ _ (LockSet.mem_insertOrMerge_write_self _ _)
@@ -929,7 +917,8 @@ was registered for. It composes three facts that were each true and separately
 stated: the transfer changes no object but the receiver root
 (`ipcUnwrapCaps_preserves_objects_ne`), the root it is handed is the resolver's
 own output (`endpointSendDualWithCaps_reduces_to_unwrap`, since RR7.8 both read
-the same pre-state), and the resolver's output is declared
+the same pre-state; since WS-ZA ZA4.7 the capability lookup before the unwrap
+writes no object, `receiveTransferCaps_frame`), and the resolver's output is declared
 (`lockSet_endpointSendOnCore_covers_capsDestination`).
 
 Stated contrapositively — *changed implies declared* — because that is the
@@ -937,60 +926,60 @@ shape a 2PL consumer needs: it asks of an object it is about to write whether
 it holds the lock, not of a lock whether something used it. -/
 theorem endpointSendDualWithCaps_object_writes_declared
     (endpointId : SeLe4n.ObjId) (sender : SeLe4n.ThreadId)
-    (msg : IpcMessage) (endpointRights : AccessRightSet)
+    (payload : SendPayload)
     (cnodeRootObjId : SeLe4n.ObjId) (receiverSlotBase : SeLe4n.Slot)
     (st st' st'' : SystemState) (recvRoot : SeLe4n.ObjId)
     (summary : CapTransferSummary) (oid : SeLe4n.ObjId)
-    (hSend : endpointSendDual endpointId sender
-        { msg with capsGranted := endpointRights.mem .grant } st = .ok ((), st'))
-    (hDest : rendezvousCapsDestination? st endpointId msg = some recvRoot)
+    (hSend : endpointSendDual endpointId sender payload st = .ok ((), st'))
+    (hDest : rendezvousCapsDestination? st endpointId sender payload = some recvRoot)
     (hObjInv : st'.objects.invExt)
-    (hStep : endpointSendDualWithCaps endpointId sender msg endpointRights
-        receiverSlotBase st = .ok (summary, st''))
+    (hStep : endpointSendDualWithCaps endpointId sender payload receiverSlotBase st
+      = .ok (summary, st''))
     (hChanged : st''.objects[oid]? ≠ st'.objects[oid]?) :
     (cnodeLock oid, AccessMode.write)
-      ∈ (lockSet_endpointSendOnCore st endpointId sender cnodeRootObjId msg).pairs := by
-  have hUnwrap : ipcUnwrapCaps { msg with capsGranted := endpointRights.mem .grant }
-      recvRoot receiverSlotBase (endpointRights.mem .grant) st'
-      = .ok (summary, st'') := by
-    rw [← endpointSendDualWithCaps_reduces_to_unwrap endpointId sender msg endpointRights
-      receiverSlotBase st st' recvRoot hSend hDest]
-    exact hStep
+      ∈ (lockSet_endpointSendOnCore st endpointId sender cnodeRootObjId payload).pairs := by
+  rw [endpointSendDualWithCaps_reduces_to_unwrap endpointId sender payload
+    receiverSlotBase st st' recvRoot hSend hDest] at hStep
+  -- WS-ZA ZA4.7: the resolution writes no object (`receiveTransferCaps_frame`),
+  -- so only the unwrap into `recvRoot` can change one.
+  obtain ⟨stR, caps, hO, _, _, hOr⟩ := receiveTransferCaps_frame hStep
   by_cases hEq : oid = recvRoot
   · subst hEq
-    exact lockSet_endpointSendOnCore_covers_capsDestination st endpointId sender cnodeRootObjId msg oid hDest
-  · exact absurd
-      (ipcUnwrapCaps_preserves_objects_ne _ _ _ _ _ _ _ _ hEq hObjInv hUnwrap) hChanged
+    exact lockSet_endpointSendOnCore_covers_capsDestination st endpointId sender
+      cnodeRootObjId payload oid hDest
+  · rcases hOr with rfl | hU
+    · exact absurd (by rw [hO]) hChanged
+    · exact absurd ((ipcUnwrapCaps_preserves_objects_ne _ _ _ _ _ _ _ _ hEq
+        (hO ▸ hObjInv) hU).trans (by rw [hO])) hChanged
 
 /-- **WS-RR RR7.8**: and the same capstone on the `.call` arm — the same
 transfer, reached through the same resolver, declared in the same two
 members. -/
 theorem endpointCallWithCaps_object_writes_declared
     (endpointId : SeLe4n.ObjId) (caller : SeLe4n.ThreadId)
-    (msg : IpcMessage) (endpointRights : AccessRightSet)
+    (payload : SendPayload)
     (cnodeRootObjId : SeLe4n.ObjId) (receiverSlotBase : SeLe4n.Slot)
     (st st' st'' : SystemState) (recvRoot : SeLe4n.ObjId)
     (summary : CapTransferSummary) (oid : SeLe4n.ObjId)
-    (hCall : endpointCall endpointId caller
-        { msg with capsGranted := endpointRights.mem .grant } st = .ok ((), st'))
-    (hDest : rendezvousCapsDestination? st endpointId msg = some recvRoot)
+    (hCall : endpointCall endpointId caller payload st = .ok ((), st'))
+    (hDest : rendezvousCapsDestination? st endpointId caller payload = some recvRoot)
     (hObjInv : st'.objects.invExt)
-    (hStep : endpointCallWithCaps endpointId caller msg endpointRights
-        receiverSlotBase st = .ok (summary, st''))
+    (hStep : endpointCallWithCaps endpointId caller payload receiverSlotBase st
+      = .ok (summary, st''))
     (hChanged : st''.objects[oid]? ≠ st'.objects[oid]?) :
     (cnodeLock oid, AccessMode.write)
-      ∈ (lockSet_endpointCallOnCore st endpointId caller cnodeRootObjId msg).pairs := by
-  have hUnwrap : ipcUnwrapCaps { msg with capsGranted := endpointRights.mem .grant }
-      recvRoot receiverSlotBase (endpointRights.mem .grant) st'
-      = .ok (summary, st'') := by
-    rw [← endpointCallWithCaps_reduces_to_unwrap endpointId caller msg endpointRights
-      receiverSlotBase st st' recvRoot hCall hDest]
-    exact hStep
+      ∈ (lockSet_endpointCallOnCore st endpointId caller cnodeRootObjId payload).pairs := by
+  rw [endpointCallWithCaps_reduces_to_unwrap endpointId caller payload
+    receiverSlotBase st st' recvRoot hCall hDest] at hStep
+  obtain ⟨stR, caps, hO, _, _, hOr⟩ := receiveTransferCaps_frame hStep
   by_cases hEq : oid = recvRoot
   · subst hEq
-    exact lockSet_endpointCallOnCore_covers_capsDestination st endpointId caller cnodeRootObjId msg oid hDest
-  · exact absurd
-      (ipcUnwrapCaps_preserves_objects_ne _ _ _ _ _ _ _ _ hEq hObjInv hUnwrap) hChanged
+    exact lockSet_endpointCallOnCore_covers_capsDestination st endpointId caller
+      cnodeRootObjId payload oid hDest
+  · rcases hOr with rfl | hU
+    · exact absurd (by rw [hO]) hChanged
+    · exact absurd ((ipcUnwrapCaps_preserves_objects_ne _ _ _ _ _ _ _ _ hEq
+        (hO ▸ hObjInv) hU).trans (by rw [hO])) hChanged
 
 -- ============================================================================
 -- §8 SM6.A.5 — Donation-chain lock-set extension
@@ -1062,7 +1051,7 @@ table and the action writes the kernel state, so no partial intermediate exists
 for any observer (`lockSet_observer_atomic`); this is the operational atomicity
 the `ipcInvariantFull_perCore` preservation (SM6.D) rests on. -/
 theorem endpointCallOnCore_atomic_under_lockSet
-    (endpointId : SeLe4n.ObjId) (caller : SeLe4n.ThreadId) (msg : IpcMessage)
+    (endpointId : SeLe4n.ObjId) (caller : SeLe4n.ThreadId) (payload : SendPayload)
     (executingCore : CoreId) (cnRoot : SeLe4n.ObjId)
     (receiver? : Option SeLe4n.ThreadId) (donatedSc? : Option SeLe4n.SchedContextId)
     -- WS-SM SM6.D (PR #827 review): the lock-set carries the optional stashed
@@ -1071,11 +1060,11 @@ theorem endpointCallOnCore_atomic_under_lockSet
     (replyId? : Option SeLe4n.ReplyId := none)
     (s : LockedSystemState) :
     withLockSet (lockSet_endpointCall caller cnRoot endpointId receiver? donatedSc? replyId?)
-        executingCore (endpointCallOnCore endpointId caller msg executingCore) s
-      = (⟨(endpointCallOnCore endpointId caller msg executingCore s.kernel).1,
+        executingCore (endpointCallOnCore endpointId caller payload executingCore) s
+      = (⟨(endpointCallOnCore endpointId caller payload executingCore s.kernel).1,
           LockState.bracket executingCore
             (lockSet_endpointCall caller cnRoot endpointId receiver? donatedSc? replyId?) s.locks⟩,
-         (endpointCallOnCore endpointId caller msg executingCore s.kernel).2) :=
+         (endpointCallOnCore endpointId caller payload executingCore s.kernel).2) :=
   lockSet_atomic_under_2pl _ executingCore _ s
 
 -- ============================================================================
@@ -1308,10 +1297,6 @@ theorem endpointQueuePopHead_determineTargetCore_eq (endpointId : SeLe4n.ObjId)
         | none => simp
         | some headTcb =>
           simp only []
-          -- PR #873 round 11: the send-queue message-presence guard --
-          -- a head that fails it errors, so it is not this `.ok`.
-          split
-          · simp
           cases hStore : storeObject endpointId
               (.endpoint (if isReceiveQ
                 then (ep.withReceiveQ _) else (ep.withSendQ _))) st with
@@ -1694,8 +1679,6 @@ theorem endpointQueuePopHead_getSchedContext?_eq (endpointId : SeLe4n.ObjId)
         | none => simp
         | some headTcb =>
           simp only []
-          split
-          · simp
           cases hStore : storeObject endpointId
               (.endpoint (if isReceiveQ
                 then (ep.withReceiveQ _) else (ep.withSendQ _))) st with
@@ -1941,23 +1924,21 @@ targets the receiver's home core; the caller's descheduling is confined to the
 executing core, never disturbing another core's scheduler (the per-core
 locality `chooseThreadOnCore executingCore` then picks the next thread). -/
 theorem endpointCallOnCore_perCore_blocking
-    (endpointId : SeLe4n.ObjId) (caller : SeLe4n.ThreadId) (msg : IpcMessage)
+    (endpointId : SeLe4n.ObjId) (caller : SeLe4n.ThreadId) (payload : SendPayload)
     (executingCore : CoreId) (st : SystemState) (ep : Endpoint)
     (receiver : SeLe4n.ThreadId) (recvTcb0 : TCB) (st' st'' st4 st5 : SystemState)
-    (hSz1 : ¬ msg.registers.size > maxMessageRegisters)
-    (hSz2 : ¬ msg.caps.size > maxExtraCaps)
     (hObj : st.objects[endpointId]? = some (.endpoint ep))
     (hHead : ep.receiveQ.head = some receiver)
     (hPop : endpointQueuePopHead endpointId true st = .ok (receiver, recvTcb0, st'))
-    (hStore : storeTcbIpcStateAndMessage st' receiver .ready (some msg) = .ok st'')
+    (hStore : storeTcbIpcStateAndMessage st' receiver .ready (some (sendPayloadMessage st caller payload)) = .ok st'')
     (hCallerStore : storeTcbIpcStateAndMessage (wakeThread st'' receiver executingCore).1
         caller (.blockedOnReply endpointId (some receiver)) none = .ok st4)
     (hLink : SystemState.linkServerStashedReply caller receiver st4 = .ok ((), st5)) :
-    caller ∉ (endpointCallOnCore endpointId caller msg executingCore st).1.scheduler.runQueueOnCore executingCore ∧
-    (endpointCallOnCore endpointId caller msg executingCore st).1.scheduler.currentOnCore executingCore
+    caller ∉ (endpointCallOnCore endpointId caller payload executingCore st).1.scheduler.runQueueOnCore executingCore ∧
+    (endpointCallOnCore endpointId caller payload executingCore st).1.scheduler.currentOnCore executingCore
       ≠ some caller := by
-  rw [endpointCallOnCore_rendezvous_eq endpointId caller msg executingCore st ep receiver
-        recvTcb0 st' st'' st4 st5 hSz1 hSz2 hObj hHead hPop hStore hCallerStore hLink]
+  rw [endpointCallOnCore_rendezvous_eq endpointId caller payload executingCore st ep receiver
+        recvTcb0 st' st'' st4 st5 hObj hHead hPop hStore hCallerStore hLink]
   simp only [SystemState.linkReplyWaiter_scheduler]
   exact ⟨removeRunnableOnCore_not_mem_self st5 caller executingCore,
          removeRunnableOnCore_currentOnCore_ne_self st5 caller executingCore⟩
@@ -1992,16 +1973,11 @@ either `st`'s (an error / no-op leaf) or the result of the
 pop / store / wake / store / deschedule chain, each step of which preserves
 `invExt`.  Unconditional: an error leaf returns the pre-state unchanged. -/
 theorem endpointCallOnCore_preserves_objects_invExt
-    (endpointId : SeLe4n.ObjId) (caller : SeLe4n.ThreadId) (msg : IpcMessage)
+    (endpointId : SeLe4n.ObjId) (caller : SeLe4n.ThreadId) (payload : SendPayload)
     (executingCore : CoreId) (st : SystemState)
     (hObjInv : st.objects.invExt) :
-    (endpointCallOnCore endpointId caller msg executingCore st).1.objects.invExt := by
+    (endpointCallOnCore endpointId caller payload executingCore st).1.objects.invExt := by
   unfold endpointCallOnCore
-  by_cases hSz1 : msg.registers.size > maxMessageRegisters
-  · simp only [if_pos hSz1]; exact hObjInv
-  by_cases hSz2 : msg.caps.size > maxExtraCaps
-  · simp only [if_neg hSz1, if_pos hSz2]; exact hObjInv
-  simp only [if_neg hSz1, if_neg hSz2]
   cases hEp : st.getEndpoint? endpointId with
   | none => simp only; split <;> exact hObjInv
   | some ep =>
@@ -2014,12 +1990,12 @@ theorem endpointCallOnCore_preserves_objects_invExt
       | ok st' =>
         simp only
         have h1 := endpointQueueEnqueue_preserves_objects_invExt endpointId false caller st st' hObjInv hEnq
-        cases hMsg : storeTcbIpcStateAndMessage st' caller (.blockedOnCall endpointId) (some msg) with
+        cases hMsg : storeTcbIpcStateAndMessage st' caller (.blockedOnCall endpointId) none with
         | error e => simp only; exact hObjInv
         | ok st'' =>
           simp only
           have h2 := storeTcbIpcStateAndMessage_preserves_objects_invExt st' st'' caller _ _ h1 hMsg
-          exact removeRunnableOnCore_objects_invExt _ _ _ h2
+          exact recordSendCap_objects_invExt _ _ _ _ (removeRunnableOnCore_objects_invExt _ _ _ h2)
     | some _ =>
       simp only
       cases hPop : endpointQueuePopHead endpointId true st with
@@ -2027,7 +2003,7 @@ theorem endpointCallOnCore_preserves_objects_invExt
       | ok pair =>
         simp only
         have h1 := endpointQueuePopHead_preserves_objects_invExt endpointId true st pair.2.2 pair.1 _ hObjInv hPop
-        cases hMsg : storeTcbIpcStateAndMessage pair.2.2 pair.1 .ready (some msg) with
+        cases hMsg : storeTcbIpcStateAndMessage pair.2.2 pair.1 .ready (some (sendPayloadMessage st caller payload)) with
         | error e => simp only; exact hObjInv
         | ok st2 =>
           simp only
@@ -2060,16 +2036,11 @@ writes a Reply and two TCBs, and the run-queue removal writes no object at all.
 Composed by `.trans` off the same case analysis the leg's `invExt` proof runs, so
 the two cannot disagree about which stores fire. -/
 theorem endpointCallOnCore_kindPreservingWrite
-    (endpointId : SeLe4n.ObjId) (caller : SeLe4n.ThreadId) (msg : IpcMessage)
+    (endpointId : SeLe4n.ObjId) (caller : SeLe4n.ThreadId) (payload : SendPayload)
     (executingCore : CoreId) (st : SystemState)
     (hObjInv : st.objects.invExt) :
-    kindPreservingWrite st (endpointCallOnCore endpointId caller msg executingCore st).1 := by
+    kindPreservingWrite st (endpointCallOnCore endpointId caller payload executingCore st).1 := by
   unfold endpointCallOnCore
-  by_cases hSz1 : msg.registers.size > maxMessageRegisters
-  · simp only [if_pos hSz1]; exact kindPreservingWrite.refl st
-  by_cases hSz2 : msg.caps.size > maxExtraCaps
-  · simp only [if_neg hSz1, if_pos hSz2]; exact kindPreservingWrite.refl st
-  simp only [if_neg hSz1, if_neg hSz2]
   cases hEp : st.getEndpoint? endpointId with
   | none => simp only; split <;> exact kindPreservingWrite.refl st
   | some ep =>
@@ -2084,14 +2055,14 @@ theorem endpointCallOnCore_kindPreservingWrite
         have w1 := endpointQueueEnqueue_kindPreservingWrite hObjInv hEnq
         have h1 := endpointQueueEnqueue_preserves_objects_invExt endpointId false caller st st'
           hObjInv hEnq
-        cases hMsg : storeTcbIpcStateAndMessage st' caller (.blockedOnCall endpointId) (some msg) with
+        cases hMsg : storeTcbIpcStateAndMessage st' caller (.blockedOnCall endpointId) none with
         | error e => simp only; exact kindPreservingWrite.refl st
         | ok st'' =>
           simp only
           have w2 := storeTcbIpcStateAndMessage_kindPreservingWrite h1 hMsg
-          show kindPreservingWrite st (removeRunnableOnCore st'' caller executingCore)
-          exact (w1.trans w2).trans
-            (removeRunnableOnCore_objectsAgreeOffRunLinks _ _ _).kindPreserving
+          exact ((w1.trans w2).trans
+            (removeRunnableOnCore_objectsAgreeOffRunLinks _ _ _).kindPreserving).trans
+            (recordSendCap_objectsAgreeOffRunLinks _ _ _ _).kindPreserving
     | some _ =>
       simp only
       cases hPop : endpointQueuePopHead endpointId true st with
@@ -2103,7 +2074,7 @@ theorem endpointCallOnCore_kindPreservingWrite
             rw [hPop])
         have h1 := endpointQueuePopHead_preserves_objects_invExt endpointId true st pair.2.2
           pair.1 _ hObjInv hPop
-        cases hMsg : storeTcbIpcStateAndMessage pair.2.2 pair.1 .ready (some msg) with
+        cases hMsg : storeTcbIpcStateAndMessage pair.2.2 pair.1 .ready (some (sendPayloadMessage st caller payload)) with
         | error e => simp only; exact kindPreservingWrite.refl st
         | ok st2 =>
           simp only
@@ -2134,17 +2105,12 @@ theorem endpointCallOnCore_kindPreservingWrite
 /-- **WS-RR RR8.16** (`v0.35.200`): ...and the Call leg writes neither CDT table
 on any path. -/
 theorem endpointCallOnCore_cdt_eq
-    (endpointId : SeLe4n.ObjId) (caller : SeLe4n.ThreadId) (msg : IpcMessage)
+    (endpointId : SeLe4n.ObjId) (caller : SeLe4n.ThreadId) (payload : SendPayload)
     (executingCore : CoreId) (st : SystemState) :
-    (endpointCallOnCore endpointId caller msg executingCore st).1.cdt = st.cdt
-      ∧ (endpointCallOnCore endpointId caller msg executingCore st).1.cdtNodeSlot
+    (endpointCallOnCore endpointId caller payload executingCore st).1.cdt = st.cdt
+      ∧ (endpointCallOnCore endpointId caller payload executingCore st).1.cdtNodeSlot
           = st.cdtNodeSlot := by
   unfold endpointCallOnCore
-  by_cases hSz1 : msg.registers.size > maxMessageRegisters
-  · simp only [if_pos hSz1]; constructor <;> first | rfl | trivial
-  by_cases hSz2 : msg.caps.size > maxExtraCaps
-  · simp only [if_neg hSz1, if_pos hSz2]; constructor <;> first | rfl | trivial
-  simp only [if_neg hSz1, if_neg hSz2]
   cases hEp : st.getEndpoint? endpointId with
   | none => simp only; split <;> constructor <;> first | rfl | trivial
   | some ep =>
@@ -2157,7 +2123,7 @@ theorem endpointCallOnCore_cdt_eq
       | ok st' =>
         simp only
         have e1 := endpointQueueEnqueue_cdt_eq hEnq
-        cases hMsg : storeTcbIpcStateAndMessage st' caller (.blockedOnCall endpointId) (some msg) with
+        cases hMsg : storeTcbIpcStateAndMessage st' caller (.blockedOnCall endpointId) none with
         | error e => simp only; constructor <;> first | rfl | trivial
         | ok st'' =>
           simp only
@@ -2173,7 +2139,7 @@ theorem endpointCallOnCore_cdt_eq
         have e1 := endpointQueuePopHead_cdt_eq
           (show endpointQueuePopHead endpointId true st = .ok (pair.1, pair.2.1, pair.2.2) by
             rw [hPop])
-        cases hMsg : storeTcbIpcStateAndMessage pair.2.2 pair.1 .ready (some msg) with
+        cases hMsg : storeTcbIpcStateAndMessage pair.2.2 pair.1 .ready (some (sendPayloadMessage st caller payload)) with
         | error e => simp only; constructor <;> first | rfl | trivial
         | ok st2 =>
           simp only
@@ -2229,16 +2195,11 @@ open SeLe4n.Model.SystemState in
 mirror of `endpointCall_sameSchedContextBindings`; `wakeThread`/`removeRunnableOnCore` are
 scheduler-only, the store/link ops never write a binding). -/
 theorem endpointCallOnCore_sameSchedContextBindings
-    (endpointId : SeLe4n.ObjId) (caller : SeLe4n.ThreadId) (msg : IpcMessage)
+    (endpointId : SeLe4n.ObjId) (caller : SeLe4n.ThreadId) (payload : SendPayload)
     (executingCore : CoreId) (st : SystemState)
     (hObjInv : st.objects.invExt) :
-    sameSchedContextBindings st (endpointCallOnCore endpointId caller msg executingCore st).1 := by
+    sameSchedContextBindings st (endpointCallOnCore endpointId caller payload executingCore st).1 := by
   unfold endpointCallOnCore
-  by_cases hSz1 : msg.registers.size > maxMessageRegisters
-  · simp only [if_pos hSz1]; exact sameSchedContextBindings.refl st
-  by_cases hSz2 : msg.caps.size > maxExtraCaps
-  · simp only [if_neg hSz1, if_pos hSz2]; exact sameSchedContextBindings.refl st
-  simp only [if_neg hSz1, if_neg hSz2]
   cases hEp : st.getEndpoint? endpointId with
   | none => simp only; split <;> exact sameSchedContextBindings.refl st
   | some ep =>
@@ -2252,13 +2213,13 @@ theorem endpointCallOnCore_sameSchedContextBindings
         simp only
         have hS1 := endpointQueueEnqueue_sameSchedContextBindings endpointId false caller st st' hObjInv hEnq
         have hObj1 := endpointQueueEnqueue_preserves_objects_invExt endpointId false caller st st' hObjInv hEnq
-        cases hMsg : storeTcbIpcStateAndMessage st' caller (.blockedOnCall endpointId) (some msg) with
+        cases hMsg : storeTcbIpcStateAndMessage st' caller (.blockedOnCall endpointId) none with
         | error e => simp only; exact sameSchedContextBindings.refl st
         | ok st'' =>
           simp only
-          have hS2 := hS1.trans (storeTcbIpcStateAndMessage_sameSchedContextBindings st' st'' caller (.blockedOnCall endpointId) (some msg) hObj1 hMsg)
-          show sameSchedContextBindings st (removeRunnableOnCore st'' caller executingCore)
-          exact hS2.trans (sameSchedContextBindings.of_objectsAgreeOffRunLinks (removeRunnableOnCore_objectsAgreeOffRunLinks st'' caller executingCore))
+          have hS2 := hS1.trans (storeTcbIpcStateAndMessage_sameSchedContextBindings st' st'' caller (.blockedOnCall endpointId) none hObj1 hMsg)
+          exact (hS2.trans (sameSchedContextBindings.of_objectsAgreeOffRunLinks (removeRunnableOnCore_objectsAgreeOffRunLinks st'' caller executingCore))).trans
+            (sameSchedContextBindings.of_objectsAgreeOffRunLinks (recordSendCap_objectsAgreeOffRunLinks _ _ _ _))
     | some _ =>
       simp only
       cases hPop : endpointQueuePopHead endpointId true st with
@@ -2267,14 +2228,14 @@ theorem endpointCallOnCore_sameSchedContextBindings
         simp only
         have hS1 := endpointQueuePopHead_sameSchedContextBindings endpointId true st pair.2.2 pair.1 _ hObjInv hPop
         have hObj1 := endpointQueuePopHead_preserves_objects_invExt endpointId true st pair.2.2 pair.1 _ hObjInv hPop
-        cases hMsg : storeTcbIpcStateAndMessage pair.2.2 pair.1 .ready (some msg) with
+        cases hMsg : storeTcbIpcStateAndMessage pair.2.2 pair.1 .ready (some (sendPayloadMessage st caller payload)) with
         | error e => simp only; exact sameSchedContextBindings.refl st
         | ok st2 =>
           simp only
-          have hS2 := hS1.trans (storeTcbIpcStateAndMessage_sameSchedContextBindings pair.2.2 st2 pair.1 .ready (some msg) hObj1 hMsg)
+          have hS2 := hS1.trans (storeTcbIpcStateAndMessage_sameSchedContextBindings pair.2.2 st2 pair.1 .ready (some (sendPayloadMessage st caller payload)) hObj1 hMsg)
           have hObj2 := storeTcbIpcStateAndMessage_preserves_objects_invExt pair.2.2 st2 pair.1 _ _ hObj1 hMsg
           obtain ⟨tr, hTrGet, hTrReady⟩ :=
-            storeTcbIpcStateAndMessage_getTcb?_ipcState pair.2.2 st2 pair.1 .ready (some msg) hObj1 hMsg
+            storeTcbIpcStateAndMessage_getTcb?_ipcState pair.2.2 st2 pair.1 .ready (some (sendPayloadMessage st caller payload)) hObj1 hMsg
           have hS3 := hS2.trans (wakeThread_sameSchedContextBindings_of_ready st2 pair.1 executingCore tr hTrGet hTrReady hObj2)
           have hObjW := wakeThread_preserves_objects_invExt st2 pair.1 executingCore hObj2
           cases hCS : storeTcbIpcStateAndMessage (wakeThread st2 pair.1 executingCore).1 caller
@@ -2322,25 +2283,23 @@ gate of `endpointReply`). This write lands on the caller's TCB, which
 lock), so under the 2PL bracket (`endpointCallOnCore_atomic_under_lockSet`) the
 reply-state allocation is serialised against every other core. -/
 theorem endpointCallOnCore_reply_linkage_under_lockSet
-    (endpointId : SeLe4n.ObjId) (caller : SeLe4n.ThreadId) (msg : IpcMessage)
+    (endpointId : SeLe4n.ObjId) (caller : SeLe4n.ThreadId) (payload : SendPayload)
     (executingCore : CoreId) (st : SystemState) (ep : Endpoint)
     (receiver : SeLe4n.ThreadId) (recvTcb0 : TCB) (st' st'' st4 st5 : SystemState)
-    (hSz1 : ¬ msg.registers.size > maxMessageRegisters)
-    (hSz2 : ¬ msg.caps.size > maxExtraCaps)
     (hObj : st.objects[endpointId]? = some (.endpoint ep))
     (hHead : ep.receiveQ.head = some receiver)
     (hPop : endpointQueuePopHead endpointId true st = .ok (receiver, recvTcb0, st'))
-    (hStore : storeTcbIpcStateAndMessage st' receiver .ready (some msg) = .ok st'')
+    (hStore : storeTcbIpcStateAndMessage st' receiver .ready (some (sendPayloadMessage st caller payload)) = .ok st'')
     (hCallerStore : storeTcbIpcStateAndMessage (wakeThread st'' receiver executingCore).1
         caller (.blockedOnReply endpointId (some receiver)) none = .ok st4)
     (hLink : SystemState.linkServerStashedReply caller receiver st4 = .ok ((), st5))
     (hObjInv : st.objects.invExt) :
-    ∃ t, (endpointCallOnCore endpointId caller msg executingCore st).1.getTcb? caller = some t
+    ∃ t, (endpointCallOnCore endpointId caller payload executingCore st).1.getTcb? caller = some t
       ∧ t.ipcState = .blockedOnReply endpointId (some receiver) := by
   have hInv' : st'.objects.invExt :=
     endpointQueuePopHead_preserves_objects_invExt endpointId true st st' receiver recvTcb0 hObjInv hPop
   have hInv'' : st''.objects.invExt :=
-    storeTcbIpcStateAndMessage_preserves_objects_invExt st' st'' receiver .ready (some msg) hInv' hStore
+    storeTcbIpcStateAndMessage_preserves_objects_invExt st' st'' receiver .ready (some (sendPayloadMessage st caller payload)) hInv' hStore
   have hInvW : (wakeThread st'' receiver executingCore).1.objects.invExt :=
     wakeThread_preserves_objects_invExt st'' receiver executingCore hInv''
   obtain ⟨t, hGet, hIpc⟩ :=
@@ -2352,8 +2311,8 @@ theorem endpointCallOnCore_reply_linkage_under_lockSet
   have hT4 : st4.objects[caller.toObjId]? = some (.tcb t) := (SystemState.getTcb?_eq_some_iff st4 caller t).mp hGet
   -- WS-SM SM6.D (#7.3b fold): the server-first reply link sets the caller's
   -- `replyObject` but leaves its `ipcState` (`.blockedOnReply`) intact.
-  rw [endpointCallOnCore_rendezvous_eq endpointId caller msg executingCore st ep receiver
-        recvTcb0 st' st'' st4 st5 hSz1 hSz2 hObj hHead hPop hStore hCallerStore hLink]
+  rw [endpointCallOnCore_rendezvous_eq endpointId caller payload executingCore st ep receiver
+        recvTcb0 st' st'' st4 st5 hObj hHead hPop hStore hCallerStore hLink]
   obtain ⟨t', hT5⟩ :=
     linkServerStashedReply_tcb_forward st4 st5 caller receiver caller.toObjId t hObjInv4 hLink hT4
   obtain ⟨tb, hTb, hIpcEq⟩ :=
@@ -2508,7 +2467,7 @@ theorem applyCallDonationOnCoreLockSet_size_le_maxLockSetSize
   have hSeg := schedFootprintOfCores_length_le (runCores := ([] : List CoreId))
     (replenishCores := [donorHome, doneeHome])
   have hN : Concurrency.numCores = 4 := rfl
-  have hM : Concurrency.maxLockSetSize = 27 := rfl
+  have hM : Concurrency.maxLockSetSize = 28 := rfl
   unfold applyCallDonationOnCoreLockSet
   omega
 
@@ -2591,20 +2550,15 @@ current-thread-IPC-readiness discipline this tree states at the boot core alone
 (`currentThreadIpcReady`), and `queueCurrentConsistentOnCore` makes a thread's
 absence from every run queue compatible with its being current. -/
 theorem endpointCallOnCore_preserves_schedulerInvariantBase_smp
-    (endpointId : SeLe4n.ObjId) (caller : SeLe4n.ThreadId) (msg : IpcMessage)
+    (endpointId : SeLe4n.ObjId) (caller : SeLe4n.ThreadId) (payload : SendPayload)
     (executingCore : CoreId) (st : SystemState)
     (hObjInv : st.objects.invExt)
     (hNotCur : ∀ ep, st.getEndpoint? endpointId = some ep →
       ∀ r, ep.receiveQ.head = some r →
         st.scheduler.currentOnCore (determineTargetCore st r) ≠ some r)
     (h : schedulerInvariantBase_smp st) :
-    schedulerInvariantBase_smp (endpointCallOnCore endpointId caller msg executingCore st).1 := by
+    schedulerInvariantBase_smp (endpointCallOnCore endpointId caller payload executingCore st).1 := by
   unfold endpointCallOnCore
-  by_cases hSz1 : msg.registers.size > maxMessageRegisters
-  · simp only [if_pos hSz1]; exact h
-  by_cases hSz2 : msg.caps.size > maxExtraCaps
-  · simp only [if_neg hSz1, if_pos hSz2]; exact h
-  simp only [if_neg hSz1, if_neg hSz2]
   cases hEp : st.getEndpoint? endpointId with
   | none => simp only; split <;> exact h
   | some ep =>
@@ -2623,7 +2577,7 @@ theorem endpointCallOnCore_preserves_schedulerInvariantBase_smp
             (endpointQueueEnqueue_kindPreservingWrite hObjInv hEnq)
         have hInv1 := endpointQueueEnqueue_preserves_objects_invExt endpointId false caller st st'
           hObjInv hEnq
-        cases hMsg : storeTcbIpcStateAndMessage st' caller (.blockedOnCall endpointId) (some msg) with
+        cases hMsg : storeTcbIpcStateAndMessage st' caller (.blockedOnCall endpointId) none with
         | error e => simp only; exact h
         | ok st'' =>
           simp only
@@ -2631,9 +2585,10 @@ theorem endpointCallOnCore_preserves_schedulerInvariantBase_smp
             schedulerInvariantBase_smp_of_kindPreserving h1
               (storeTcbIpcStateAndMessage_scheduler_eq st' st'' caller _ _ hMsg)
               (storeTcbIpcStateAndMessage_kindPreservingWrite hInv1 hMsg)
-          show schedulerInvariantBase_smp (removeRunnableOnCore st'' caller executingCore)
-          exact removeRunnableOnCore_preserves_schedulerInvariantBase_smp caller
-            executingCore h2
+          exact schedulerInvariantBase_smp_of_kindPreserving
+            (removeRunnableOnCore_preserves_schedulerInvariantBase_smp caller executingCore h2)
+            (recordSendCap_scheduler _ _ _ _)
+            (recordSendCap_objectsAgreeOffRunLinks _ _ _ _).kindPreserving
     | some headTid =>
       -- The rendezvous branch: the queued receiver is popped, delivered and woken.
       simp only
@@ -2653,7 +2608,7 @@ theorem endpointCallOnCore_preserves_schedulerInvariantBase_smp
             (endpointQueuePopHead_kindPreservingWrite hObjInv hPop')
         have hInv1 := endpointQueuePopHead_preserves_objects_invExt endpointId true st pair.2.2
           pair.1 _ hObjInv hPop
-        cases hMsg : storeTcbIpcStateAndMessage pair.2.2 pair.1 .ready (some msg) with
+        cases hMsg : storeTcbIpcStateAndMessage pair.2.2 pair.1 .ready (some (sendPayloadMessage st caller payload)) with
         | error e => simp only; exact h
         | ok st2 =>
           simp only
@@ -2737,15 +2692,89 @@ theorem endpointReceiveHeadsNotCurrent_at {st : SystemState}
 with no precondition beyond object-store integrity: the leg writes no CNode and
 neither CDT table, and every one of its object writes keeps its key's kind. -/
 theorem endpointCallOnCore_preserves_capabilityInvariantBundle
-    (endpointId : SeLe4n.ObjId) (caller : SeLe4n.ThreadId) (msg : IpcMessage)
+    (endpointId : SeLe4n.ObjId) (caller : SeLe4n.ThreadId) (payload : SendPayload)
     (executingCore : CoreId) (st : SystemState)
     (h : capabilityInvariantBundle st) :
-    capabilityInvariantBundle (endpointCallOnCore endpointId caller msg executingCore st).1 := by
+    capabilityInvariantBundle (endpointCallOnCore endpointId caller payload executingCore st).1 := by
   have hObjInv : st.objects.invExt := h.2.2.2.2.2.1
   exact capabilityInvariantBundle_of_kindPreserving h
-    (endpointCallOnCore_cdt_eq endpointId caller msg executingCore st).2
-    (endpointCallOnCore_cdt_eq endpointId caller msg executingCore st).1
-    (endpointCallOnCore_preserves_objects_invExt endpointId caller msg executingCore st hObjInv)
-    (endpointCallOnCore_kindPreservingWrite endpointId caller msg executingCore st hObjInv)
+    (endpointCallOnCore_cdt_eq endpointId caller payload executingCore st).2
+    (endpointCallOnCore_cdt_eq endpointId caller payload executingCore st).1
+    (endpointCallOnCore_preserves_objects_invExt endpointId caller payload executingCore st hObjInv)
+    (endpointCallOnCore_kindPreservingWrite endpointId caller payload executingCore st hObjInv)
+
+/-! WS-ZA ZA4.7: a capability transfer at the rendezvous (`receiveTransferCaps`,
+the receive's or the send's) resolves the sender's capabilities -- writing CDT nodes only -- and installs them
+with one `ipcUnwrapCaps`; so it frames everything the unwrap frames. -/
+
+section receiveTransferCapsFrames
+variable {req : Option (SeLe4n.ObjId × Array SeLe4n.CPtr × Nat)} {root : SeLe4n.ObjId}
+  {base : SeLe4n.Slot} {st st'' : SystemState} {summary : CapTransferSummary}
+
+theorem receiveTransferCaps_scheduler_eq
+    (h : receiveTransferCaps req root base st = .ok (summary, st'')) :
+    st''.scheduler = st.scheduler := by
+  obtain ⟨stR, caps, _, hS, _, hOr⟩ := receiveTransferCaps_frame h
+  rcases hOr with rfl | hU
+  · exact hS
+  · rw [ipcUnwrapCaps_preserves_scheduler _ _ _ _ _ _ _ hU, hS]
+
+theorem receiveTransferCaps_objects_invExt (hI : st.objects.invExt)
+    (h : receiveTransferCaps req root base st = .ok (summary, st'')) :
+    st''.objects.invExt := by
+  obtain ⟨stR, caps, hO, _, _, hOr⟩ := receiveTransferCaps_frame h
+  have hIR : stR.objects.invExt := hO ▸ hI
+  rcases hOr with rfl | hU
+  · exact hIR
+  · exact ipcUnwrapCaps_preserves_objects_invExt _ _ _ _ stR _ _ hIR hU
+
+theorem receiveTransferCaps_getSchedContext?_eq (scId : SeLe4n.SchedContextId)
+    (hI : st.objects.invExt)
+    (h : receiveTransferCaps req root base st = .ok (summary, st'')) :
+    st''.getSchedContext? scId = st.getSchedContext? scId := by
+  obtain ⟨stR, caps, hO, _, _, hOr⟩ := receiveTransferCaps_frame h
+  have hIR : stR.objects.invExt := hO ▸ hI
+  have hR : stR.getSchedContext? scId = st.getSchedContext? scId := by
+    unfold SystemState.getSchedContext?; rw [hO]
+  rcases hOr with rfl | hU
+  · exact hR
+  · exact (ipcUnwrapCaps_getSchedContext?_eq _ _ _ _ stR _ _ scId hIR hU).trans hR
+
+theorem receiveTransferCaps_determineTargetCore_eq (x : SeLe4n.ThreadId)
+    (hI : st.objects.invExt)
+    (h : receiveTransferCaps req root base st = .ok (summary, st'')) :
+    determineTargetCore st'' x = determineTargetCore st x := by
+  obtain ⟨stR, caps, hO, _, _, hOr⟩ := receiveTransferCaps_frame h
+  have hIR : stR.objects.invExt := hO ▸ hI
+  have hR := determineTargetCore_of_objectsAgreeOffRunLinks
+    (st := st) (st' := stR) (fun _ => by rw [hO]) x
+  rcases hOr with rfl | hU
+  · exact hR
+  · exact (ipcUnwrapCaps_determineTargetCore_eq _ _ _ _ stR _ _ x hIR hU).trans hR
+
+theorem receiveTransferCaps_sameSchedContextBindings (hI : st.objects.invExt)
+    (h : receiveTransferCaps req root base st = .ok (summary, st'')) :
+    sameSchedContextBindings st st'' := by
+  obtain ⟨stR, caps, hO, _, _, hOr⟩ := receiveTransferCaps_frame h
+  have hIR : stR.objects.invExt := hO ▸ hI
+  have hR : sameSchedContextBindings st stR :=
+    sameSchedContextBindings.of_objectsAgreeOffRunLinks (fun _ => by rw [hO])
+  rcases hOr with rfl | hU
+  · exact hR
+  · exact hR.trans (ipcUnwrapCaps_sameSchedContextBindings _ _ _ _ stR _ _ hIR hU)
+
+theorem receiveTransferCaps_getTcb?_eq (tid : SeLe4n.ThreadId)
+    (hI : st.objects.invExt)
+    (h : receiveTransferCaps req root base st = .ok (summary, st'')) :
+    st''.getTcb? tid = st.getTcb? tid := by
+  obtain ⟨stR, caps, hO, _, _, hOr⟩ := receiveTransferCaps_frame h
+  have hIR : stR.objects.invExt := hO ▸ hI
+  have hR : stR.getTcb? tid = st.getTcb? tid := by
+    unfold SystemState.getTcb?; rw [hO]
+  rcases hOr with rfl | hU
+  · exact hR
+  · exact (ipcUnwrapCaps_getTcb?_eq _ _ _ _ stR _ _ tid hIR hU).trans hR
+
+end receiveTransferCapsFrames
 
 end SeLe4n.Kernel

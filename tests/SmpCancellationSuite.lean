@@ -816,7 +816,7 @@ private def stCallBase : SystemState :=
 /-- Drive the victim into `.blockedOnCall epId` via the real cross-core call
 (block path: no receiver waiting). -/
 private def stCallBlocked? : Option SystemState :=
-  match endpointCallOnCore epId victimTid IpcMessage.empty bootCoreId stCallBase with
+  match endpointCallOnCore epId victimTid (.frame none false) bootCoreId stCallBase with
   | (st, .ok none) => some st
   | _ => none
 
@@ -1267,11 +1267,11 @@ private def stThreeDeep? : Option SystemState :=
       |>.withObject nextTid.toObjId (.tcb (mkTcb 714 30 none))
       |>.withRunnable [prevTid, victimTid, nextTid]
       |>.build)
-  match endpointCallOnCore epId prevTid IpcMessage.empty bootCoreId base with
+  match endpointCallOnCore epId prevTid (.frame none false) bootCoreId base with
   | (st1, .ok none) =>
-      match endpointCallOnCore epId victimTid IpcMessage.empty bootCoreId st1 with
+      match endpointCallOnCore epId victimTid (.frame none false) bootCoreId st1 with
       | (st2, .ok none) =>
-          match endpointCallOnCore epId nextTid IpcMessage.empty bootCoreId st2 with
+          match endpointCallOnCore epId nextTid (.frame none false) bootCoreId st2 with
           | (st3, .ok none) => some st3
           | _ => none
       | _ => none
@@ -1902,7 +1902,7 @@ private def stCallBlockedStale? : Option SystemState :=
       |>.withObject bystanderTid.toObjId (.tcb (mkTcb 712 20 none))
       |>.withRunnable [victimTid, bystanderTid]
       |>.build)
-  match endpointCallOnCore epId victimTid IpcMessage.empty bootCoreId base with
+  match endpointCallOnCore epId victimTid (.frame none false) bootCoreId base with
   | (st, .ok none) => some st
   | _ => none
 

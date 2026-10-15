@@ -39,7 +39,7 @@ theorem faultSuspendOnCore_stepCovers (e : CoreId) (st : SystemState) (tid : SeL
 
 theorem recordPendingFault_keyFrame (st : SystemState) (tid : SeLe4n.ThreadId) (tf : ThreadFault)
     (hInv : st.objects.invExt) : capabilityKeyFrame st (recordPendingFault st tid tf) :=
-  updateTcb_keyFrame st tid (f := fun tcb => { tcb with pendingFault := some tf }) (fun _ => rfl)
+  updateTcb_keyFrame st tid (f := fun tcb => { tcb with pendingFault := some tf, ipcFaultSend := true }) (fun _ => rfl)
     hInv
 
 theorem writeFaultRegistersToTcb_keyFrame (st : SystemState) (tid : SeLe4n.ThreadId)
@@ -69,10 +69,10 @@ theorem faultDeliverOnCore_stepCovers (e : CoreId) {st : SystemState} {tid : SeL
   · rename_i tgt _
     dsimp only
     have hC := endpointCallCrossCoreDispatch_stepCovers e (endpointId := tgt.endpoint) (caller := tid)
-      (msg := faultMessage f ctx tgt.cap.badge) (endpointRights := tgt.cap.rights)
+      (payload := SendPayload.fault f ctx tgt.cap.badge)
       (receiverSlotBase := SeLe4n.Slot.ofNat 0) (executingCore := c) hInv
-    generalize endpointCallCrossCoreDispatch tgt.endpoint tid (faultMessage f ctx tgt.cap.badge)
-      tgt.cap.rights (SeLe4n.Slot.ofNat 0) c st = r at hC ⊢
+    generalize endpointCallCrossCoreDispatch tgt.endpoint tid (SendPayload.fault f ctx tgt.cap.badge)
+      (SeLe4n.Slot.ofNat 0) c st = r at hC ⊢
     obtain ⟨st1, res⟩ := r
     obtain ⟨hC, hCInv⟩ := hC
     cases res with

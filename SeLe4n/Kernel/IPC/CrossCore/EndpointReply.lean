@@ -14,6 +14,7 @@
 -- WS-SM SM6.C.
 
 import SeLe4n.Kernel.IPC.CrossCore.EndpointCall
+import SeLe4n.Kernel.IPC.CrossCore.EndpointEnqueueInPlace
 -- **WS-RR RR8.12 (PR #897 Codex review)**: the `.receive` arm's replenish
 -- segment is derived from the donation's own guard, so the footprint's module
 -- must see `rendezvousDequeuedCall`.  `Operations.Donation` is a sibling of
@@ -555,8 +556,13 @@ def endpointReceiveDualOnCore (endpointId : SeLe4n.ObjId) (receiver : SeLe4n.Thr
           match endpointQueuePopHead endpointId false st with
           | .error e => (st, .error e)
           | .ok (sender, senderTcb, st') =>
+              -- WS-ZA ZA4.7: the sender's message is read where it blocked holding
+              -- it -- its saved registers and IPC buffer, its badge and grant right
+              -- in its TCB (`blockedSenderMessage`).  The returned TCB is the
+              -- pre-pop one; the pop changes only queue links, none of which the
+              -- read uses.
               let (senderMsg, senderWasCall) :=
-                (senderTcb.pendingMessage, match senderTcb.ipcState with
+                (some (blockedSenderMessage st' sender senderTcb), match senderTcb.ipcState with
                   | .blockedOnCall _ => true
                   | _ => false)
               if senderWasCall then
@@ -636,68 +642,12 @@ def endpointReceiveDualOnCore (endpointId : SeLe4n.ObjId) (receiver : SeLe4n.Thr
       if (st.getObject? endpointId).isSome then (st, .error .invalidCapability)
       else (st, .error .objectNotFound)
 
-/-- WS-ZA ZA4.7: the endpoint a blocking receive leaves: the receiver appended
-to its receive queue. -/
-@[inline] def receiveBlockEndpoint (receiver : SeLe4n.ThreadId)
-    (tailCode : Nat) : KernelObject → KernelObject
-  | .endpoint e =>
-      -- the queue ends are codes in the endpoint, rewritten in its cell
-      -- (`Endpoint.withReceiveQ_tail`); the old tail is passed as its code
-      -- (`SeLe4n.ThreadId.optCode`), so no `Option` is built to be read
-      match tailCode with
-      | 0 => .endpoint { e with recvHeadCode := receiver.val + 1, recvTailCode := receiver.val + 1 }
-      | _ + 1 => .endpoint { e with recvTailCode := receiver.val + 1 }
-  | o => o
-
-/-- WS-ZA ZA4.7: the receiver's queue links after it is appended behind `tail?`.
-Written as link codes, so no `some` cell is built to be encoded; the codes are
-`tcbWithQueueLinks`'s by definition. -/
-@[inline] def receiveBlockLinks (tail? : Option SeLe4n.ThreadId) (t : TCB) : TCB :=
-  match tail? with
-  | none => { t with queuePrevCode := 0, queuePPrevCode := 1, queueNextCode := 0 }
-  | some p => { t with queuePrevCode := p.val + 1, queuePPrevCode := p.val + 2,
-                       queueNextCode := 0 }
-
-/-- WS-ZA ZA4.7: a queue tail's successor link pointed at `next`, as a code
-(`tcbWithQueueNext_eq`). -/
-@[inline] def tcbWithQueueNext (next : SeLe4n.ThreadId) (t : TCB) : TCB :=
-  { t with queueNextCode := next.val + 1 }
-
-theorem tcbWithQueueNext_eq (next : SeLe4n.ThreadId) (t : TCB) :
-    tcbWithQueueNext next t = tcbWithQueueLinks t t.queuePrev t.queuePPrev (some next) := by
-  simp only [tcbWithQueueNext, tcbWithQueueLinks, TCB.optCode_queuePrev, TCB.optCode_queuePPrev]
-  rfl
-
-/-- WS-ZA ZA4.7: the enqueue a blocking receive performs, each write in its
-slot: the endpoint's receive queue, the old tail's successor link, the
-receiver's own links. -/
-@[inline] def storeReceiveEnqueue (st : SystemState) (endpointId : SeLe4n.ObjId)
-    (receiver : SeLe4n.ThreadId) (tail? : Option SeLe4n.ThreadId) : SystemState :=
-  let s1 := st.modifyObject endpointId (receiveBlockEndpoint receiver (ThreadId.optCode tail?))
-  let s2 := match tail? with
-    | none => s1
-    | some p => s1.updateTcb p (tcbWithQueueNext receiver)
-  s2.updateTcb receiver (receiveBlockLinks tail?)
-
-/-- WS-ZA ZA4.7: **a blocking receive writes only its slots** — the endpoint,
-the receiver and the old tail each rewritten where it stands, each store
-changing only `objects`, the receiver and the tail distinct unreserved TCBs,
-and the reply object it stashes admissible. -/
+/-- WS-ZA ZA4.7: **a blocking receive writes only its slots** — the enqueue's
+(`enqueuesInPlace`) and the reply object it stashes admissible. -/
 @[inline] def receiveBlocksInPlace (st : SystemState) (endpointId : SeLe4n.ObjId)
     (receiver : SeLe4n.ThreadId) (tail? : Option SeLe4n.ThreadId)
     (replyId : Option SeLe4n.ReplyId) : Bool :=
-  !receiver.isReserved &&
-  storeLeavesIndexAndTypes st endpointId .endpoint &&
-  st.objects.findsInPlace endpointId &&
-  storeLeavesIndexAndTypes st receiver.toObjId .tcb &&
-  st.objects.findsInPlace receiver.toObjId &&
-  (match tail? with
-   | none => true
-   | some p => !p.isReserved && p != receiver &&
-       storeLeavesIndexAndTypes st p.toObjId .tcb &&
-       st.objects.findsInPlace p.toObjId &&
-       (st.getTcb? p).isSome) &&
-  st.replyStashValid replyId
+  enqueuesInPlace st endpointId receiver tail? && st.replyStashValid replyId
 
 /-- `SystemState.replyStashValid` asked of the reply object's **code**
 (`replyStashValidCode_eq`), so no `some` cell is built for it. -/
@@ -720,41 +670,26 @@ reply object's code, as the compiled guard reads them: each is decoded by a
 match, so no `some` cell is built for either (WS-ZA ZA4.7). -/
 @[inline] def receiveBlocksInPlaceCode (st : SystemState) (endpointId : SeLe4n.ObjId)
     (receiver : SeLe4n.ThreadId) (tailCode : Nat) (replyCode : Nat) : Bool :=
-  !receiver.isReserved &&
-  storeLeavesIndexAndTypes st endpointId .endpoint &&
-  st.objects.findsInPlace endpointId &&
-  storeLeavesIndexAndTypes st receiver.toObjId .tcb &&
-  st.objects.findsInPlace receiver.toObjId &&
-  (match tailCode with
-   | 0 => true
-   | c + 1 =>
-       let p : SeLe4n.ThreadId := ⟨c⟩
-       !p.isReserved && p != receiver &&
-       storeLeavesIndexAndTypes st p.toObjId .tcb &&
-       st.objects.findsInPlace p.toObjId &&
-       (st.getTcb? p).isSome) &&
-  replyStashValidCode st replyCode
+  enqueuesInPlaceCode st endpointId receiver tailCode && replyStashValidCode st replyCode
 
 theorem receiveBlocksInPlaceCode_eq (st : SystemState) (endpointId : SeLe4n.ObjId)
     (receiver : SeLe4n.ThreadId) (tailCode replyCode : Nat) :
     receiveBlocksInPlaceCode st endpointId receiver tailCode replyCode =
       receiveBlocksInPlace st endpointId receiver (SeLe4n.ThreadId.ofOptCode tailCode)
         (SeLe4n.ReplyId.ofOptCode replyCode) := by
-  unfold receiveBlocksInPlaceCode
-  rw [replyStashValidCode_eq]
-  rcases tailCode with _ | c <;> rfl
+  unfold receiveBlocksInPlaceCode receiveBlocksInPlace
+  rw [replyStashValidCode_eq, enqueuesInPlaceCode_eq]
 
-/-- WS-ZA ZA4.7: the receiver may block: it is ready, on no queue, and holds no
-loaned scheduling context to return first. -/
+/-- WS-ZA ZA4.7: the receiver may block: it may be enqueued (`enqueueAdmits`)
+and holds no loaned scheduling context to return first. -/
 @[inline] def receiveBlockAdmits (t : TCB) : Bool :=
-  decide (t.ipcState = .ready) &&
-  t.queuePPrevCode == 0 && t.queuePrevCode == 0 && t.queueNextCode == 0 &&
+  enqueueAdmits t &&
   (match t.schedContextBinding with
    | .donated _ _ => false
    | _ => true)
 
-/-- WS-ZA ZA4.7: the guarded enqueue is the specification's, and leaves the
-receiver resolving, in its slot, to its linked TCB. -/
+/-- WS-ZA ZA4.7: the guarded enqueue of a blocking receive is the
+specification's (`endpointEnqueue_inPlace_eq` on the receive queue). -/
 theorem receiveEnqueue_inPlace_eq (st : SystemState) (endpointId : SeLe4n.ObjId)
     (ep : Endpoint) (receiver : SeLe4n.ThreadId) (rt : TCB) (replyId : Option SeLe4n.ReplyId)
     (hE : st.objects[endpointId]? = some (.endpoint ep))
@@ -762,119 +697,23 @@ theorem receiveEnqueue_inPlace_eq (st : SystemState) (endpointId : SeLe4n.ObjId)
     (hA : receiveBlockAdmits rt = true)
     (hG : receiveBlocksInPlace st endpointId receiver ep.receiveQ.tail replyId = true) :
     endpointQueueEnqueue endpointId true receiver st =
-        .ok (storeReceiveEnqueue st endpointId receiver ep.receiveQ.tail) ∧
-      (storeReceiveEnqueue st endpointId receiver ep.receiveQ.tail).getTcb? receiver =
-        some (receiveBlockLinks ep.receiveQ.tail rt) ∧
-      (storeReceiveEnqueue st endpointId receiver ep.receiveQ.tail).objects.findsInPlace
+        .ok (storeEndpointEnqueue st endpointId true receiver ep.receiveQ.tail) ∧
+      (storeEndpointEnqueue st endpointId true receiver ep.receiveQ.tail).getTcb? receiver =
+        some (enqueueLinks ep.receiveQ.tail rt) ∧
+      (storeEndpointEnqueue st endpointId true receiver ep.receiveQ.tail).objects.findsInPlace
         receiver.toObjId = true ∧
-      storeLeavesIndexAndTypes (storeReceiveEnqueue st endpointId receiver ep.receiveQ.tail)
+      storeLeavesIndexAndTypes (storeEndpointEnqueue st endpointId true receiver ep.receiveQ.tail)
         receiver.toObjId .tcb = true := by
-  simp only [receiveBlocksInPlace, Bool.and_eq_true, Bool.not_eq_true'] at hG
-  obtain ⟨⟨⟨⟨⟨⟨hRes, hLE⟩, hFE⟩, hLR⟩, hFR⟩, hTl⟩, _⟩ := hG
-  simp only [receiveBlockAdmits, Bool.and_eq_true, decide_eq_true_eq, beq_iff_eq] at hA
-  obtain ⟨⟨⟨⟨hReady, hPP⟩, hPv⟩, hNx⟩, _⟩ := hA
-  have hNeER : endpointId ≠ receiver.toObjId := by
-    intro h; rw [h, hR] at hE; cases hE
-  have hRT : st.getTcb? receiver = some rt := (SystemState.getTcb?_eq_some_iff _ _ _).mpr hR
-  have hLook : lookupTcb st receiver = some rt := by
-    simp only [lookupTcb, hRes, Bool.false_eq_true, ↓reduceIte]; exact hRT
-  have hLinks : (rt.queuePPrev.isSome || rt.queuePrev.isSome || rt.queueNext.isSome) = false := by
-    simp only [TCB.queuePPrev, TCB.queuePrev, TCB.queueNext] at *
-    rw [hPP, hPv, hNx]; rfl
-  obtain ⟨S1, hS1⟩ : ∃ S1 : SystemState, S1 = { st with objects :=
-      (st.objects.insert endpointId
-        (receiveBlockEndpoint receiver (ThreadId.optCode ep.receiveQ.tail) (.endpoint ep))) } :=
-    ⟨_, rfl⟩
-  have hMo : st.modifyObject endpointId
-      (receiveBlockEndpoint receiver (ThreadId.optCode ep.receiveQ.tail)) = S1 := by
-    rw [hS1]; unfold SystemState.modifyObject
-    rw [SeLe4n.Kernel.RobinHood.RHTable.modify_of_get? hE]
-  have hNotV : ∀ r,
-      receiveBlockEndpoint receiver (ThreadId.optCode ep.receiveQ.tail) (.endpoint ep) ≠
-      .vspaceRoot r := by
-    intro r h; simp only [receiveBlockEndpoint] at h; split at h <;> cases h
-  have hF1 : ∀ k, S1.objects.findsInPlace k = st.objects.findsInPlace k := fun k => by
-    rw [hS1]; exact SeLe4n.Kernel.RobinHood.RHTable.findsInPlace_insert_of_findsInPlace k _ hFE
-  have hG1 : ∀ k, endpointId ≠ k → S1.objects[k]? = st.objects[k]? := fun k hk => by
-    rw [hS1]; exact SeLe4n.Kernel.RobinHood.RHTable.get?_insert_ne_of_findsInPlace k _ hFE hk
-  have hL1 : ∀ {id ty}, storeLeavesIndexAndTypes st id ty = true →
-      storeLeavesIndexAndTypes S1 id ty = true := fun h => by
-    rw [hS1]; exact storeLeavesIndexAndTypes_insert_inPlace hFE hNotV h
-  have hRT1 : S1.getTcb? receiver = some rt :=
-    (SystemState.getTcb?_eq_some_iff _ _ _).mpr ((hG1 _ hNeER).trans hR)
-  unfold endpointQueueEnqueue storeReceiveEnqueue
-  simp only [SystemState.getObject?, hE, hLook, hReady, ne_eq, not_true_eq_false,
-    ↓reduceIte, hLinks, Bool.false_eq_true]
-  rw [hMo]
-  cases hTail : ep.receiveQ.tail with
-  | none =>
-    have hSt : storeObject endpointId (.endpoint (ep.withReceiveQ { head := some receiver, tail := some receiver })) st = .ok ((), S1) := by
-      rw [storeObject_eq_of_leaves (by simpa only [KernelObject.objectType] using hLE), hS1,
-        hTail]; rfl
-    simp only [hSt]
-    have hQ : storeTcbQueueLinks S1 receiver none (some .endpointHead) none =
-        .ok (S1.updateTcb receiver (receiveBlockLinks none)) :=
-      modifyTcb_eq_updateTcb _ hRes hRT1 (hL1 hLR)
-    refine ⟨hQ, ?_, ?_, ?_⟩
-    · exact updateTcb_getTcb?_self_of_findsInPlace _ hRT1 ((hF1 _).trans hFR)
-    · rw [updateTcb_findsInPlace _ hRT1 ((hF1 _).trans hFR), hF1]; exact hFR
-    · exact updateTcb_storeLeaves _ hRT1 ((hF1 _).trans hFR) (hL1 hLR)
-  | some p =>
-    rw [hTail] at hTl
-    simp only [Bool.and_eq_true, Bool.not_eq_true', bne_iff_ne, ne_eq] at hTl
-    obtain ⟨⟨⟨⟨hRp, hNePR⟩, hLP⟩, hFP⟩, hTpB⟩ := hTl
-    obtain ⟨pt, hTp⟩ := Option.isSome_iff_exists.mp hTpB
-    have hNeEP : endpointId ≠ p.toObjId := by
-      intro h; rw [h, (SystemState.getTcb?_eq_some_iff _ _ _).mp hTp] at hE; cases hE
-    have hNePRo : p.toObjId ≠ receiver.toObjId :=
-      fun h => hNePR (SeLe4n.ThreadId.toObjId_injective _ _ h)
-    have hLookP : lookupTcb st p = some pt := by
-      simp only [lookupTcb, hRp, Bool.false_eq_true, ↓reduceIte]; exact hTp
-    simp only [hLookP]
-    have hSt : storeObject endpointId (.endpoint (ep.withReceiveQ { head := ep.receiveQ.head, tail := some receiver })) st = .ok ((), S1) := by
-      rw [Endpoint.withReceiveQ_tail, storeObject_eq_of_leaves (by simpa only [KernelObject.objectType] using hLE), hS1,
-        hTail]; rfl
-    simp only [hSt]
-    have hTp1 : S1.getTcb? p = some pt :=
-      (SystemState.getTcb?_eq_some_iff _ _ _).mpr
-        ((hG1 _ hNeEP).trans ((SystemState.getTcb?_eq_some_iff _ _ _).mp hTp))
-    let g := tcbWithQueueNext receiver
-    have hQp : storeTcbQueueLinks S1 p pt.queuePrev pt.queuePPrev (some receiver) =
-        .ok (S1.updateTcb p g) := by
-      have := modifyTcb_eq_updateTcb (fun t => tcbWithQueueLinks t pt.queuePrev pt.queuePPrev
-        (some receiver)) hRp hTp1 (hL1 hLP)
-      rw [show storeTcbQueueLinks S1 p pt.queuePrev pt.queuePPrev (some receiver) =
-        modifyTcb S1 p (fun t => tcbWithQueueLinks t pt.queuePrev pt.queuePPrev (some receiver))
-        from rfl, this, SystemState.updateTcb_eq_of_some hTp1,
-        SystemState.updateTcb_eq_of_some hTp1]
-      simp only [g, tcbWithQueueNext_eq]
-    rw [hQp]
-    simp only []
-    obtain ⟨S2, hS2⟩ : ∃ S2 : SystemState, S2 = S1.updateTcb p g := ⟨_, rfl⟩
-    rw [← hS2]
-    have hFp1 : S1.objects.findsInPlace p.toObjId = true := (hF1 _).trans hFP
-    have hRT2 : S2.getTcb? receiver = some rt := by
-      rw [hS2, SystemState.getTcb?_eq_some_iff,
-        updateTcb_get?_ne_of_findsInPlace g hTp1 hFp1 hNePRo]
-      exact (SystemState.getTcb?_eq_some_iff _ _ _).mp hRT1
-    have hF2 : ∀ k, S2.objects.findsInPlace k = st.objects.findsInPlace k := fun k => by
-      rw [hS2, updateTcb_findsInPlace g hTp1 hFp1, hF1]
-    have hL2 : storeLeavesIndexAndTypes S2 receiver.toObjId .tcb = true := by
-      rw [hS2]; exact updateTcb_storeLeaves g hTp1 hFp1 (hL1 hLR)
-    have hQ : storeTcbQueueLinks S2 receiver (some p) (some (.tcbNext p)) none =
-        .ok (S2.updateTcb receiver (receiveBlockLinks (some p))) :=
-      modifyTcb_eq_updateTcb _ hRes hRT2 hL2
-    refine ⟨hQ, ?_, ?_, ?_⟩
-    · exact updateTcb_getTcb?_self_of_findsInPlace _ hRT2 ((hF2 _).trans hFR)
-    · rw [updateTcb_findsInPlace _ hRT2 ((hF2 _).trans hFR), hF2]; exact hFR
-    · exact updateTcb_storeLeaves _ hRT2 ((hF2 _).trans hFR) hL2
+  simp only [receiveBlocksInPlace, Bool.and_eq_true] at hG
+  simp only [receiveBlockAdmits, Bool.and_eq_true] at hA
+  exact endpointEnqueue_inPlace_eq st endpointId ep true receiver rt _ hE rfl hR hA.1 hG.1
 
 /-- WS-ZA ZA4.7: the blocking receive's writes, each in its slot: the enqueue,
 then the receiver blocked with no message and the reply object it stashes.
 Compiled as its own function so each update is specialised in. -/
 @[noinline] def storeReceiveBlock (st : SystemState) (endpointId : SeLe4n.ObjId)
     (receiver : SeLe4n.ThreadId) (tailCode replyCode : Nat) : SystemState :=
-  ((storeReceiveEnqueue st endpointId receiver (ThreadId.ofOptCode tailCode)).updateTcb receiver
+  ((storeEndpointEnqueue st endpointId true receiver (ThreadId.ofOptCode tailCode)).updateTcb receiver
       (fun t => (TCB.setIpcState { t with pendingMessage := none } (.blockedOnReceive endpointId)))).updateTcb
     receiver (fun t => { t with pendingReceiveReplyCode := replyCode })
 
@@ -894,7 +733,7 @@ theorem receiveBlock_inPlace_eq (st : SystemState) (endpointId : SeLe4n.ObjId)
         receiver executingCore, .ok (receiver, none)) := by
   obtain ⟨hEnq, hT, hF, hL⟩ := receiveEnqueue_inPlace_eq st endpointId ep receiver rt replyId
     hE hR hA hG
-  simp only [receiveBlocksInPlace, Bool.and_eq_true, Bool.not_eq_true'] at hG
+  simp only [receiveBlocksInPlace, enqueuesInPlace, Bool.and_eq_true, Bool.not_eq_true'] at hG
   obtain ⟨⟨⟨⟨⟨⟨hRes, _⟩, _⟩, _⟩, _⟩, _⟩, hV⟩ := hG
   have hNoDon : preReceiveDonation? st receiver = none := by
     have hLook : lookupTcb st receiver = some rt := by
@@ -910,7 +749,7 @@ theorem receiveBlock_inPlace_eq (st : SystemState) (endpointId : SeLe4n.ObjId)
   rw [Endpoint.ofOptCode_recvTailCode]
   simp only [(SystemState.getEndpoint?_eq_some_iff _ _ _).mpr hE, hS,
     cleanupPreReceiveDonationMigrated_of_no_donation st receiver hNoDon, hEnq]
-  generalize storeReceiveEnqueue st endpointId receiver ep.receiveQ.tail = S at hT hF hL ⊢
+  generalize storeEndpointEnqueue st endpointId true receiver ep.receiveQ.tail = S at hT hF hL ⊢
   let g2 := fun t : TCB => (TCB.setIpcState { t with pendingMessage := none } (.blockedOnReceive endpointId))
   have h1 : storeTcbIpcStateAndMessage S receiver (.blockedOnReceive endpointId) none =
       .ok (S.updateTcb receiver g2) := modifyTcb_eq_updateTcb _ hRes hT hL
@@ -941,7 +780,7 @@ theorem receiveBlock_receiver_blocked (st : SystemState) (endpointId : SeLe4n.Ob
     hE hR hA hG
   unfold storeReceiveBlock
   rw [Endpoint.ofOptCode_recvTailCode]
-  generalize storeReceiveEnqueue st endpointId receiver ep.receiveQ.tail = S at hT hF ⊢
+  generalize storeEndpointEnqueue st endpointId true receiver ep.receiveQ.tail = S at hT hF ⊢
   let g2 := fun t : TCB => (TCB.setIpcState { t with pendingMessage := none } (.blockedOnReceive endpointId))
   have hT2 := updateTcb_getTcb?_self_of_findsInPlace g2 hT hF
   have hF2 : (S.updateTcb receiver g2).objects.findsInPlace receiver.toObjId = true := by
@@ -961,27 +800,25 @@ The cross-core sibling of `endpointReceiveDualWithCaps`, and the one the live
 `.receive` arm runs — exactly as `endpointSendDualWithCapsOnCore` is the sibling
 of `endpointSendDualWithCaps` and the one the live `.send` arm runs.
 
-**Why it had to exist.**  `endpointSendDualWithCaps`' own docstring already said
-what should happen: "If no receiver was waiting (sender enqueued): caps stay in
-the message stored in the sender's TCB.  *They will be unwrapped when a receiver
-later dequeues the sender.*"  Nothing did.  The live `.receive` ran the bare
-`endpointReceiveDualOnCore`, which moves the parked sender's `pendingMessage`
-across wholesale and installs nothing, while an immediate rendezvous transferred
-the capabilities — so whether a capability arrived depended on which side reached
-the endpoint first.  The verified receive-side transition existed and had no live
-caller; this is that transition on the per-core base the live arm needs.
+**Why it had to exist.**  Whether a capability arrives must not depend on which
+side reaches the endpoint first.  An immediate rendezvous on the send side
+transfers the sender's capabilities; this is the receive-side half, on the
+per-core base the live arm needs.
 
-**Whose grant right.**  The message's own (`IpcMessage.capsGranted`), recorded by
-the sender when it built the message from its endpoint capability.  Not the
-receiver's endpoint rights, which is what the single-core sibling used to consult:
-that is a different principal's authority, and consulting it here would have left
-the orderings disagreeing whenever a granting sender met a non-granting receiver
-— the same order-dependence one case narrower.
+**When the capabilities are looked up.**  At the rendezvous (WS-ZA ZA4.7, as
+seL4): the sender's request -- its capability addresses, read from the frame it
+blocked with, and its grant right, recorded in its TCB from the endpoint
+capability it sent through -- is resolved in its CSpace now
+(`receiveTransferCaps`).  A capability revoked while the sender waited is
+therefore never transferred, and nothing is held in flight between syscalls.
+
+**Whose grant right.**  The sender's, recorded when it blocked.  Not the
+receiver's endpoint rights: that is a different principal's authority, and
+consulting it would leave the two orderings disagreeing whenever a granting
+sender met a non-granting receiver.
 
 Returns the post-state, the dequeued sender, the transfer summary, and the
-receive's cross-core SGI.  The AK1-I fail-closed `.invalidCapability` on a sender
-with no CSpace root is preserved, keeping the NI symmetry all three transfer
-paths share. -/
+receive's cross-core SGI. -/
 def endpointReceiveDualWithCapsOnCore
     (endpointId : SeLe4n.ObjId) (receiver : SeLe4n.ThreadId)
     (replyId : Option SeLe4n.ReplyId)
@@ -990,46 +827,30 @@ def endpointReceiveDualWithCapsOnCore
     SystemState ×
       Except KernelError
         (SeLe4n.ThreadId × CapTransferSummary × Option (CoreId × SgiKind)) :=
+  -- WS-ZA ZA4.7: what the dequeued sender asks to transfer, read from the
+  -- pre-state the transition branches on (`receiveCapRequest`).
+  let req := receiveCapRequest st endpointId
   match endpointReceiveDualOnCore endpointId receiver replyId executingCore st with
   | (st', .error e) => (st', .error e)
   | (st', .ok (senderId, sgi)) =>
       -- PR #873 round 8: **a receive that dequeued nothing installs nothing.**
       -- `receiveRendezvousSender?` is read at the pre-state, which is what the
-      -- transition above branches on.  Testing `pendingMessage` alone was the
-      -- capability-duplication defect: the blocking branch returns the receiver's
-      -- own id and does not clear that field, so a receiver still holding a
-      -- previously delivered caps-bearing message had those capabilities
-      -- unwrapped a second time into a fresh receive slot — an extra copy of
-      -- authority minted by a receive that consumed no message.
+      -- transition above branches on; the blocking branch returns the
+      -- receiver's own id, so only a rendezvous may install anything.
       if (receiveRendezvousSender? st endpointId).isNone then
         (st', .ok (senderId, { results := #[] }, sgi))
       else
-      -- A receiver that *enqueued* has no delivered message, and a delivered
-      -- message with no caps has nothing to install; both are the empty summary.
-      match st'.getTcb? receiver with
-      | none => (st', .ok (senderId, { results := #[] }, sgi))
-      | some receiverTcb =>
-        match receiverTcb.pendingMessage with
-        | none => (st', .ok (senderId, { results := #[] }, sgi))
-        | some msg =>
-          if msg.caps.isEmpty then (st', .ok (senderId, { results := #[] }, sgi))
-          else
-            -- **WS-RR RR7.33**: the per-core sibling of the single-core receive
-            -- arm, and it loses the same lookup for the same reason.  It read
-            -- the *sender's* CSpace root only to feed `ipcUnwrapCaps`, which
-            -- has not consumed it since the derivation parent moved onto
-            -- `TransferCap.srcNode`; its `.invalidCapability` failed the
-            -- *receiver's* syscall on a fact about the *sender's* TCB.  Leaving
-            -- it here while the single-core arm dropped it would be exactly the
-            -- asymmetry AK1-I exists to prevent, one path apart.
-            match ipcUnwrapCaps msg receiverCspaceRoot receiverSlotBase
-                msg.capsGranted st' with
-            | .error e => (st', .error e)
-            | .ok (summary, st'') => (st'', .ok (senderId, summary, sgi))
+      -- The dequeued sender's capabilities are resolved in its CSpace now and
+      -- installed in the receiver's, as the single-core receive does
+      -- (`receiveTransferCaps`).
+      match receiveTransferCaps req receiverCspaceRoot receiverSlotBase st' with
+      | .error e => (st', .error e)
+      | .ok (summary, st'') => (st'', .ok (senderId, summary, sgi))
 
 /-- WS-SM SM6 (PR #873 round 6): with nothing to install, the WithCaps per-core
 receive is exactly the bare per-core receive — so every capless pin taken against
-the bare transition still describes the live arm. -/
+the bare transition still describes the live arm.  WS-ZA ZA4.7: "nothing to
+install" is the dequeued sender asking for no transfer (`receiveCapRequest`). -/
 theorem endpointReceiveDualWithCapsOnCore_no_caps
     (endpointId : SeLe4n.ObjId) (receiver : SeLe4n.ThreadId)
     (replyId : Option SeLe4n.ReplyId) (receiverCspaceRoot : SeLe4n.ObjId)
@@ -1037,19 +858,13 @@ theorem endpointReceiveDualWithCapsOnCore_no_caps
     (senderId : SeLe4n.ThreadId) (sgi : Option (CoreId × SgiKind))
     (hRecv : endpointReceiveDualOnCore endpointId receiver replyId executingCore st
       = (st', .ok (senderId, sgi)))
-    (hNoCaps : ∀ tcb, st'.getTcb? receiver = some tcb →
-      ∀ m, tcb.pendingMessage = some m → m.caps.isEmpty = true) :
+    (hNoCaps : receiveCapRequest st endpointId = none) :
     endpointReceiveDualWithCapsOnCore endpointId receiver replyId receiverCspaceRoot
         receiverSlotBase executingCore st
       = (st', .ok (senderId, { results := #[] }, sgi)) := by
   unfold endpointReceiveDualWithCapsOnCore
-  simp only [hRecv]
-  cases hTcb : st'.getTcb? receiver with
-  | none => simp
-  | some tcb =>
-    cases hMsg : tcb.pendingMessage with
-    | none => simp [hMsg]
-    | some m => simp [hMsg, hNoCaps tcb hTcb m hMsg]
+  simp only [hRecv, hNoCaps, receiveTransferCaps]
+  split <;> rfl
 
 /-- SM8.B.2 (PR #873 round 7), relocated to production at **WS-RR RR8.12**: the
 WithCaps per-core **receive** leaves the scheduler where the bare receive left it.
@@ -1077,7 +892,7 @@ theorem endpointReceiveDualWithCapsOnCore_scheduler_eq (endpointId : SeLe4n.ObjI
       repeat' split
       all_goals first
         | rfl
-        | (rename_i h; exact ipcUnwrapCaps_preserves_scheduler _ _ _ _ _ _ _ h)
+        | (rename_i h; exact receiveTransferCaps_scheduler_eq h)
 
 /-- **WS-SM SM6 (PR #873 round 8): a receive that dequeued nothing installs
 nothing.**
@@ -1862,6 +1677,11 @@ def lockSet_endpointReplyRecvOnCore (st : SystemState) (replier : SeLe4n.ThreadI
     -- head is that caller's successor, declared beside it.
     (st.replyWaiterPrev? target) (st.replyWaiterNext? target)
     (receiveRendezvousReplyWaiterHead? st endpointObjId replier)
+    -- **WS-ZA ZA4.7**: and the dequeued sender's CSpace root, which the receive
+    -- leg reads when it looks that sender's extra capabilities up at the
+    -- rendezvous -- resolved by the same `receiveCapRequest` the transition
+    -- branches on.
+    ((receiveCapRequest st endpointObjId).map (·.1))
 
 
 /-- **WS-RR RR7.11: the concrete lock-set a cross-core `.receive` acquires.**
@@ -1915,6 +1735,10 @@ def lockSet_endpointReceiveOnCore (st : SystemState) (endpointId : SeLe4n.ObjId)
     -- **WS-ZA ZA4.6**: and the receiver's old reply-waiter head, which the call
     -- rendezvous relinks.
     (receiveRendezvousReplyWaiterHead? st endpointId receiver)
+    -- **WS-ZA ZA4.7**: and the dequeued sender's CSpace root, read when its extra
+    -- capabilities are looked up at the rendezvous (seL4 `lookupExtraCaps`),
+    -- through the same `receiveCapRequest` the transition branches on.
+    ((receiveCapRequest st endpointId).map (·.1))
 
 -- ============================================================================
 -- §3  Path reduction lemmas (full characterisation of each control path)
@@ -2201,28 +2025,30 @@ theorem endpointReplyRecv_lockSet_correct
     -- **WS-HP HP10.6**: and at the origin-recipient arity.
     (originRecipient? : Option SeLe4n.ThreadId)
     -- **WS-ZA ZA4.6**: and at the reply-waiter arity.
-    (rwPrev? rwNext? rwHead? : Option SeLe4n.ThreadId) :
+    (rwPrev? rwNext? rwHead? : Option SeLe4n.ThreadId)
+    -- **WS-ZA ZA4.7**: and at the dequeued sender's CSpace-root arity.
+    (senderRoot? : Option SeLe4n.ObjId) :
     (∀ p ∈ (lockSet_replyRecv replier cnRoot target epId newSender? donatedSc? donatedOwner?
               replyId? installsCaps donationServer? redonatedSc?
               belowHeadReply? outerCaller? queueNeighbour? redonationOldHead?
               donatedHead? preReturnSc? preReturnOwner? preReturnHead? preReturnBelowHead?
-              preReturnOuterCaller? answeredFrameAbove? answeredFrameBelow? originRecipient? rwPrev? rwNext? rwHead?).pairs,
+              preReturnOuterCaller? answeredFrameAbove? answeredFrameBelow? originRecipient? rwPrev? rwNext? rwHead? senderRoot?).pairs,
         p.fst.kind ∈ permittedKinds .replyRecv) ∧
     ((lockSet_replyRecv replier cnRoot target epId newSender? donatedSc? donatedOwner?
         replyId? installsCaps donationServer? redonatedSc?
         belowHeadReply? outerCaller? queueNeighbour? redonationOldHead?
         donatedHead? preReturnSc? preReturnOwner? preReturnHead? preReturnBelowHead?
-        preReturnOuterCaller? answeredFrameAbove? answeredFrameBelow? originRecipient? rwPrev? rwNext? rwHead?).pairs.map
+        preReturnOuterCaller? answeredFrameAbove? answeredFrameBelow? originRecipient? rwPrev? rwNext? rwHead? senderRoot?).pairs.map
         (·.fst)).Nodup :=
   ⟨lockSet_consistent_replyRecv replier cnRoot target epId newSender? donatedSc? donatedOwner?
       replyId? installsCaps donationServer? redonatedSc? belowHeadReply? outerCaller?
       queueNeighbour? redonationOldHead? donatedHead? preReturnSc? preReturnOwner?
-      preReturnHead? preReturnBelowHead? preReturnOuterCaller? answeredFrameAbove? answeredFrameBelow? originRecipient? rwPrev? rwNext? rwHead?,
+      preReturnHead? preReturnBelowHead? preReturnOuterCaller? answeredFrameAbove? answeredFrameBelow? originRecipient? rwPrev? rwNext? rwHead? senderRoot?,
    (lockSet_replyRecv replier cnRoot target epId newSender? donatedSc? donatedOwner?
       replyId? installsCaps donationServer? redonatedSc?
       belowHeadReply? outerCaller? queueNeighbour? redonationOldHead?
       donatedHead? preReturnSc? preReturnOwner? preReturnHead? preReturnBelowHead?
-      preReturnOuterCaller? answeredFrameAbove? answeredFrameBelow? originRecipient? rwPrev? rwNext? rwHead?).hUniqueKeys⟩
+      preReturnOuterCaller? answeredFrameAbove? answeredFrameBelow? originRecipient? rwPrev? rwNext? rwHead? senderRoot?).hUniqueKeys⟩
 
 /-- **WS-OD OD3.13**: the queue-structure neighbour of the **receive leg** is a
 declared write member of the resolved `.replyRecv` footprint.
@@ -2247,8 +2073,9 @@ theorem lockSet_endpointReplyRecvOnCore_covers_queueNeighbour
   -- WS-RM (`v0.35.6`) / WS-HP HP3.1 / WS-HP HP10.6: three extensions sit above
   -- it — the frame above the cut, the frame below it that the splice
   -- re-links, and the origin a bottom-of-stack pop redirects to.
-  -- WS-ZA ZA4.6: and the three reply-waiter members above those.
-  iterate 6 apply mem_write_lockSetExtendOpt
+  -- WS-ZA ZA4.6: and the three reply-waiter members above those; WS-ZA ZA4.7:
+  -- and the sender's CSpace root above all of them.
+  iterate 7 apply mem_write_lockSetExtendOpt
   exact LockSet.mem_insertOrMerge_write_self _ _
 
 /-- **WS-ZA ZA4.6**: the answered caller's reply-waiter predecessor and
@@ -2284,11 +2111,27 @@ theorem lockSet_endpointReplyRecvOnCore_covers_replyWaiters
   refine ⟨fun t h => ?_, fun t h => ?_, fun t h => ?_⟩ <;>
     unfold lockSet_endpointReplyRecvOnCore <;> rw [h]
   · exact lockSet_replyRecv_replyWaiterPrev_write_mem _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
-      _ _ _ _ _ _ _ _
+      _ _ _ _ _ _ _ _ _
   · exact lockSet_replyRecv_replyWaiterNext_write_mem _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
-      _ _ _ _ _ _ _ _
+      _ _ _ _ _ _ _ _ _
   · exact lockSet_replyRecv_replyWaiterOldHead_write_mem _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
-      _ _ _ _ _ _ _ _ _ _
+      _ _ _ _ _ _ _ _ _ _ _
+
+/-- **WS-ZA ZA4.7**: the resolved `.replyRecv` footprint holds the CSpace root
+of the sender its receive leg dequeues, whenever that sender asks for a
+capability transfer -- the CNode `receiveTransferCaps` reads, resolved by the
+same `receiveCapRequest` the transition installs from. -/
+theorem lockSet_endpointReplyRecvOnCore_covers_senderCapLookup
+    (st : SystemState) (replier : SeLe4n.ThreadId) (cnodeRootObjId : SeLe4n.ObjId)
+    (target : SeLe4n.ThreadId) (endpointObjId : SeLe4n.ObjId)
+    (req : SeLe4n.ObjId × Array SeLe4n.CPtr × Nat)
+    (hReq : receiveCapRequest st endpointObjId = some req) :
+    (lockSet_endpointReplyRecvOnCore st replier cnodeRootObjId target
+        endpointObjId).containsKey (cnodeLock req.1) = true := by
+  unfold lockSet_endpointReplyRecvOnCore
+  rw [hReq]
+  exact lockSet_replyRecv_senderRoot_mem _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+    _ _ _ _
 
 /-- WS-SM SM6.C.5: the **state-resolved** replyRecv lock-set is hierarchically
 correct — the form the runtime acquisition consumes. -/
@@ -2299,7 +2142,7 @@ theorem lockSet_endpointReplyRecvOnCore_correct
       p.fst.kind ∈ permittedKinds .replyRecv := by
   unfold lockSet_endpointReplyRecvOnCore
   exact lockSet_consistent_replyRecv replier cnodeRootObjId target endpointObjId
-    _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+    _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
 
 -- ============================================================================
 -- §6  SM6.C.4 / SM6.C.6 — Reply payload delivery + reply-state lifecycle
@@ -2610,18 +2453,21 @@ theorem lockSet_endpointReceive_reply_write_mem
     (preReturnOwnerTid : Option SeLe4n.ThreadId)
     (preReturnHeadReplyId preReturnBelowHeadReplyId : Option SeLe4n.ReplyId)
     (preReturnOuterCallerTid : Option SeLe4n.ThreadId)
-    (replyWaiterOldHead : Option SeLe4n.ThreadId) :
+    (replyWaiterOldHead : Option SeLe4n.ThreadId)
+    -- **WS-ZA ZA4.7**: and at the dequeued sender's CSpace-root arity.
+    (senderRoot? : Option SeLe4n.ObjId) :
     (replyLock rid, AccessMode.write)
       ∈ (lockSet_endpointReceive callerTid cnRoot endpointObjId senderTid (some rid)
           installsCaps donatedScId queueNeighbour donationOldHeadReplyId preReturnScId
           preReturnOwnerTid preReturnHeadReplyId preReturnBelowHeadReplyId
-          preReturnOuterCallerTid replyWaiterOldHead).pairs := by
+          preReturnOuterCallerTid replyWaiterOldHead senderRoot?).pairs := by
   unfold lockSet_endpointReceive
   -- WS-OD OD3.6: one extension deeper -- the donated SchedContext sits between
   -- this member and the state-level lock.  WS-OD OD3.12: and one deeper again.
   -- WS-OD (`v0.35.4`): and six deeper still -- the push's old head and the five
-  -- pre-receive-return members -- nine layers in all.
-  iterate 10 apply mem_write_lockSetExtendOpt
+  -- pre-receive-return members -- nine layers in all.  WS-ZA ZA4.6/ZA4.7: and
+  -- the reply-waiter old head and the sender's CSpace root above those.
+  iterate 11 apply mem_write_lockSetExtendOpt
   exact self_write_mem_insertOrMerge _ (replyLock rid)
 
 /-- **WS-SM SM3.B (PR #873 round 8): a capability-installing receive holds the
@@ -2650,12 +2496,14 @@ theorem lockSet_endpointReceive_capsInstall_write_mem
     (preReturnOwnerTid : Option SeLe4n.ThreadId)
     (preReturnHeadReplyId preReturnBelowHeadReplyId : Option SeLe4n.ReplyId)
     (preReturnOuterCallerTid : Option SeLe4n.ThreadId)
-    (replyWaiterOldHead : Option SeLe4n.ThreadId) :
+    (replyWaiterOldHead : Option SeLe4n.ThreadId)
+    -- **WS-ZA ZA4.7**: and at the dequeued sender's CSpace-root arity.
+    (senderRoot? : Option SeLe4n.ObjId) :
     (cnodeLock cnRoot, AccessMode.write)
       ∈ (lockSet_endpointReceive callerTid cnRoot endpointObjId senderTid replyId
           (installsCaps := true) donatedScId queueNeighbour donationOldHeadReplyId
           preReturnScId preReturnOwnerTid preReturnHeadReplyId preReturnBelowHeadReplyId
-          preReturnOuterCallerTid replyWaiterOldHead).pairs := by
+          preReturnOuterCallerTid replyWaiterOldHead senderRoot?).pairs := by
   unfold lockSet_endpointReceive lockSetOfList
   simp only [List.foldl, if_true, Bool.true_or]
   -- The optional extensions are peeled by count rather than by a hand-nested
@@ -2691,7 +2539,8 @@ theorem lockSet_replyRecv_capsInstall_write_mem
     (answeredFrameBelow? : Option SeLe4n.ReplyId)
     -- **WS-HP HP10.6**: and at the origin-recipient arity.
     (originRecipient? : Option SeLe4n.ThreadId)
-    (replyWaiterPrevTid : Option SeLe4n.ThreadId) (replyWaiterNextTid : Option SeLe4n.ThreadId) (replyWaiterOldHead : Option SeLe4n.ThreadId) :
+    (replyWaiterPrevTid : Option SeLe4n.ThreadId) (replyWaiterNextTid : Option SeLe4n.ThreadId) (replyWaiterOldHead : Option SeLe4n.ThreadId)
+    (senderRoot? : Option SeLe4n.ObjId) :
     (cnodeLock cnRoot, AccessMode.write)
       ∈ (lockSet_replyRecv callerTid cnRoot target endpointObjId newSenderTid
           donatedScId donatedOwnerTid replyId (installsCaps := true)
@@ -2699,7 +2548,7 @@ theorem lockSet_replyRecv_capsInstall_write_mem
           queueNeighbour? redonationOldHead? donatedHead?
           preReturnSc? preReturnOwner? preReturnHead? preReturnBelowHead?
           preReturnOuterCaller? answeredFrameAbove? answeredFrameBelow? originRecipient?
-          replyWaiterPrevTid replyWaiterNextTid replyWaiterOldHead).pairs := by
+          replyWaiterPrevTid replyWaiterNextTid replyWaiterOldHead senderRoot?).pairs := by
   unfold lockSet_replyRecv lockSetOfList
   simp only [List.foldl, if_true]
   -- The optional extensions are peeled by count rather than by a hand-nested
@@ -2724,7 +2573,7 @@ theorem lockSet_endpointReceiveOnCore_covers_cdt
     (receiveRendezvousSender? st endpointId) replyId
     (receiveRendezvousDonatedSc? st endpointId receiver)
     (receiveSideQueueStructureNeighbor? st endpointId)
-    _ _ _ _ _ _ _
+    _ _ _ _ _ _ _ _
 /-- **WS-RR RR7.11**: and the receiver's own CSpace root in **write** mode, the
 member `ipcTransferSingleCap`'s `cspaceInsertSlot` needs. -/
 theorem lockSet_endpointReceiveOnCore_covers_capsDestination
@@ -2739,7 +2588,7 @@ theorem lockSet_endpointReceiveOnCore_covers_capsDestination
     (receiveRendezvousSender? st endpointId) replyId
     (receiveRendezvousDonatedSc? st endpointId receiver)
     (receiveSideQueueStructureNeighbor? st endpointId)
-    _ _ _ _ _ _ _
+    _ _ _ _ _ _ _ _
 
 /-- **WS-OD OD3.12**: the queue-structure neighbour is a declared **write**
 member of the resolved `.receive` footprint.
@@ -2759,9 +2608,25 @@ theorem lockSet_endpointReceiveOnCore_covers_queueNeighbour
       ∈ (lockSet_endpointReceiveOnCore st endpointId receiver cnodeRootObjId replyId).pairs := by
   unfold lockSet_endpointReceiveOnCore lockSet_endpointReceive
   rw [hq]
-  -- WS-ZA ZA4.6: the receiver's old reply-waiter head is outermost.
-  refine mem_write_lockSetExtendOpt _ _ _ ?_
+  -- WS-ZA ZA4.6: the receiver's old reply-waiter head, and (WS-ZA ZA4.7) the
+  -- sender's CSpace root outside it.
+  refine mem_write_lockSetExtendOpt _ _ _ (mem_write_lockSetExtendOpt _ _ _ ?_)
   exact LockSet.mem_insertOrMerge_write_self _ _
+
+/-- **WS-ZA ZA4.7**: the resolved `.receive` footprint holds the CSpace root of
+the sender it dequeues, whenever that sender asks for a capability transfer --
+the CNode `receiveTransferCaps` reads at the rendezvous, resolved by the same
+`receiveCapRequest` the transition installs from. -/
+theorem lockSet_endpointReceiveOnCore_covers_senderCapLookup
+    (st : SystemState) (endpointId : SeLe4n.ObjId) (receiver : SeLe4n.ThreadId)
+    (cnodeRootObjId : SeLe4n.ObjId) (replyId : Option SeLe4n.ReplyId)
+    (req : SeLe4n.ObjId × Array SeLe4n.CPtr × Nat)
+    (hReq : receiveCapRequest st endpointId = some req) :
+    (lockSet_endpointReceiveOnCore st endpointId receiver cnodeRootObjId
+        replyId).containsKey (cnodeLock req.1) = true := by
+  unfold lockSet_endpointReceiveOnCore
+  rw [hReq]
+  exact lockSet_endpointReceive_senderRoot_mem _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
 
 /-- **WS-ZA ZA4.6**: on the arm that dequeues a caller, the receiver's old
 reply-waiter head -- the thread `linkReplyWaiter sender receiver` relinks -- is a
@@ -2775,7 +2640,7 @@ theorem lockSet_endpointReceiveOnCore_covers_replyWaiterOldHead
       ∈ (lockSet_endpointReceiveOnCore st endpointId receiver cnodeRootObjId replyId).pairs := by
   unfold lockSet_endpointReceiveOnCore
   rw [hHead]
-  exact lockSet_endpointReceive_replyWaiterOldHead_write_mem _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+  exact lockSet_endpointReceive_replyWaiterOldHead_write_mem _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
 
 /-- **WS-OD OD3.6: the resolved `.receive` footprint covers the rendezvous
 donation.**
@@ -2798,7 +2663,7 @@ theorem lockSet_endpointReceiveOnCore_covers_donatedSc
   exact lockSet_endpointReceive_donated_sc_write_mem receiver cnodeRootObjId endpointId
     (receiveRendezvousSender? st endpointId) replyId (receiveInstallsCaps st endpointId) scId
     (receiveSideQueueStructureNeighbor? st endpointId)
-    _ _ _ _ _ _ _
+    _ _ _ _ _ _ _ _
 
 /-- WS-OD OD3.6: and the state-level lock, on the donating path — which is the
 passive-server steady state and installs no capability, so the CDT-conditioned
@@ -2815,7 +2680,7 @@ theorem lockSet_endpointReceiveOnCore_covers_donationIndex
   exact lockSet_endpointReceive_donation_stateLevel_write_mem receiver cnodeRootObjId endpointId
     (receiveRendezvousSender? st endpointId) replyId (receiveInstallsCaps st endpointId) scId
     (receiveSideQueueStructureNeighbor? st endpointId)
-    _ _ _ _ _ _ _
+    _ _ _ _ _ _ _ _
 
 /-- **WS-RR RR7.11**: and `.replyRecv`'s resolved footprint declares the same
 state-level write, since its receive leg is the same transition. -/
@@ -2829,7 +2694,7 @@ theorem lockSet_endpointReplyRecvOnCore_covers_cdt
   unfold lockSet_endpointReplyRecvOnCore
   rw [hCaps]
   exact lockSet_replyRecv_stateLevel_write_mem replier cnodeRootObjId target endpointObjId
-    _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+    _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
 
 /-- **WS-OD (`v0.35.4`)**: the old head the rendezvous donation's push rewrites
 is a declared write of the resolved `.receive` footprint. -/
@@ -2845,7 +2710,7 @@ theorem lockSet_endpointReceiveOnCore_covers_donationOldHead
   rw [hSc]
   have h2 : Option.bind (some scId) (replyStackHead? st) = some oldHead := hOld
   rw [h2]
-  exact lockSet_endpointReceive_donationOldHead_write_mem _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+  exact lockSet_endpointReceive_donationOldHead_write_mem _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
 
 /-- **WS-OD (`v0.35.4`)**: the pre-receive return's writes -- the context the
 blocking receiver hands back, the previous owner's TCB, the head cleared and
@@ -2874,18 +2739,18 @@ theorem lockSet_endpointReceiveOnCore_covers_preReturn
   rw [hRet]
   simp only [Option.map_some]
   refine ⟨?_, ?_, ?_, ?_, ?_⟩
-  · exact lockSet_endpointReceive_preReturn_sc_write_mem _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
-  · exact lockSet_endpointReceive_preReturn_owner_tcb_write_mem _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+  · exact lockSet_endpointReceive_preReturn_sc_write_mem _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+  · exact lockSet_endpointReceive_preReturn_owner_tcb_write_mem _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
   · intro head hHead
     rw [hHead]
-    exact lockSet_endpointReceive_preReturn_head_write_mem _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+    exact lockSet_endpointReceive_preReturn_head_write_mem _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
   · intro below hBelow
     rw [hBelow]
-    exact lockSet_endpointReceive_preReturn_belowHead_write_mem _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+    exact lockSet_endpointReceive_preReturn_belowHead_write_mem _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
   · unfold lockSet_endpointReceive
     simp only [Option.isSome_some, Bool.or_true, if_true]
-    exact mem_write_lockSetExtendOpt _ _ _
-      (mem_write_lockSetExtendOpt _ _ _ (LockSet.mem_insertOrMerge_write_self _ _))
+    exact mem_write_lockSetExtendOpt _ _ _ (mem_write_lockSetExtendOpt _ _ _
+      (mem_write_lockSetExtendOpt _ _ _ (LockSet.mem_insertOrMerge_write_self _ _)))
 
 /-- **WS-HP HP6.2 (`v0.35.44`): the donation pop's SchedContext and the TCB it
 unbinds are declared writes of the resolved `.reply` footprint — with no
@@ -2944,9 +2809,9 @@ theorem lockSet_endpointReplyRecvOnCore_covers_donationPop
   simp only [Option.map_some]
   refine ⟨?_, ?_⟩
   · exact lockSet_replyRecv_donatedSc_write_mem _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
-      _ _ _ _ _ _ _ _
+      _ _ _ _ _ _ _ _ _
   · exact lockSet_replyRecv_donatedHolder_tcb_write_mem _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
-      _ _ _ _ _ _ _ _
+      _ _ _ _ _ _ _ _ _
 
 /-- **WS-OD (`v0.35.4`)**: the reply-stack pop's two Reply writes -- the head it
 clears and the frame below it re-heads -- are declared writes of the resolved
@@ -2994,7 +2859,7 @@ theorem lockSet_endpointReplyRecvOnCore_covers_redonationOldHead
   have h2 : Option.bind (some scId) (replyStackHead? st) = some oldHead := hOld
   rw [h2]
   exact lockSet_replyRecv_redonationOldHead_write_mem _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
-    _ _ _ _ _ _ _
+    _ _ _ _ _ _ _ _
 
 set_option maxHeartbeats 1000000 in
 /-- **WS-OD (`v0.35.4`)**: and the reply leg's pop -- the head it clears and the
@@ -3021,11 +2886,11 @@ theorem lockSet_endpointReplyRecvOnCore_covers_pop
     have h2 : Option.bind (some scId) (replyStackHead? st) = some head := hHead
     rw [h2]
     exact lockSet_replyRecv_donatedHead_write_mem _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
-      _ _ _ _ _ _ _
+      _ _ _ _ _ _ _ _
   · intro below hBelow
     rw [hBelow]
     exact lockSet_replyRecv_belowHead_write_mem _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
-      _ _ _ _ _ _ _
+      _ _ _ _ _ _ _ _
 
 /-- **WS-RM (`v0.35.6`)**: the frame the reply leg's splice rewrites is a declared
 write of the resolved `.reply` footprint.
@@ -3062,7 +2927,7 @@ theorem lockSet_endpointReplyRecvOnCore_covers_splicedFrameAbove
   unfold lockSet_endpointReplyRecvOnCore
   rw [hAbove]
   exact lockSet_replyRecv_frameAbove_write_mem _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
-    _ _ _ _ _ _ _
+    _ _ _ _ _ _ _ _
 
 /-- **WS-HP HP3.3**: and the frame the removal re-links *below* the cut is a
 declared write of the resolved `.reply` footprint too — the second half of
@@ -3104,7 +2969,7 @@ theorem lockSet_endpointReplyRecvOnCore_covers_splicedFrameBelow
   unfold lockSet_endpointReplyRecvOnCore
   rw [hBelow]
   exact lockSet_replyRecv_frameBelow_write_mem _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
-    _ _ _ _ _ _ _
+    _ _ _ _ _ _ _ _
 
 /-- **WS-HP HP10.6: the origin a bottom-of-stack pop redirects the reservation to
 is a declared write of the resolved `.reply` footprint.**
@@ -3155,7 +3020,7 @@ theorem lockSet_endpointReplyRecvOnCore_covers_originRecipient
   rw [hHead]
   simp only [Option.map_some, Option.bind_some, hOrigin]
   exact lockSet_replyRecv_originRecipient_write_mem _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
-    _ _ _ _ _ _ _
+    _ _ _ _ _ _ _ _
 
 set_option maxHeartbeats 1000000 in
 /-- **PR #894 review — the invoking receiver's own pre-receive return is
@@ -3200,17 +3065,17 @@ theorem lockSet_endpointReplyRecvOnCore_covers_preReturn
   simp only [Option.map_some]
   refine ⟨?_, ?_, ?_, ?_⟩
   · exact lockSet_replyRecv_preReturn_sc_write_mem _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
-      _ _ _ _ _ _ _
+      _ _ _ _ _ _ _ _
   · exact lockSet_replyRecv_preReturn_owner_tcb_write_mem _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
-      _ _ _ _ _ _ _
+      _ _ _ _ _ _ _ _
   · intro head hHead
     rw [hHead]
     exact lockSet_replyRecv_preReturn_head_write_mem _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
-      _ _ _ _ _ _ _
+      _ _ _ _ _ _ _ _
   · intro below hBelow
     rw [hBelow]
     exact lockSet_replyRecv_preReturn_belowHead_write_mem _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
-      _ _ _ _ _ _ _
+      _ _ _ _ _ _ _ _
 
 /- **WS-OD OD4.7**: the reply **write** member of the `.call` footprint now lives
 beside the footprint it is about, as
@@ -3491,7 +3356,7 @@ theorem applyReplyDonationOnCoreLockSet_size_le_maxLockSetSize
   have hSeg := schedFootprintOfCores_length_le (runCores := [descheduleCore])
     (replenishCores := [replierHome, ownerHome])
   have hN : Concurrency.numCores = 4 := rfl
-  have hM : Concurrency.maxLockSetSize = 27 := rfl
+  have hM : Concurrency.maxLockSetSize = 28 := rfl
   unfold applyReplyDonationOnCoreLockSet
   omega
 
@@ -3652,7 +3517,7 @@ theorem endpointReceiveDualOnCore_preserves_objects_invExt
                 have hObjInv3 := linkCallerReply_preserves_objects_invExt st'' stLinked
                   sender rid hObjInv2 hLink
                 cases hS2 : storeTcbIpcStateAndMessage stLinked receiver .ready
-                    senderTcb.pendingMessage with
+                    (some (blockedSenderMessage st' sender senderTcb)) with
                 | ok st3 =>
                     exact SystemState.linkReplyWaiter_objects_invExt _ _ _
                       (storeTcbIpcStateAndMessage_preserves_objects_invExt stLinked st3
@@ -3667,7 +3532,7 @@ theorem endpointReceiveDualOnCore_preserves_objects_invExt
               sender _ _ hObjInv1 hS1
             have hObjInvW := wakeThread_preserves_objects_invExt st'' sender executingCore hObjInv2
             cases hS2 : storeTcbIpcStateAndMessage (wakeThread st'' sender executingCore).1
-                receiver .ready senderTcb.pendingMessage with
+                receiver .ready (some (blockedSenderMessage st' sender senderTcb)) with
             | ok st4 =>
                 exact storeTcbIpcStateAndMessage_preserves_objects_invExt _ st4 receiver _ _
                   hObjInvW hS2
@@ -3777,14 +3642,14 @@ theorem endpointReceiveDualOnCore_determineTargetCore_eq_of_rendezvous
                     have hI3 : st3.objects.invExt :=
                       linkCallerReply_preserves_objects_invExt st2 st3 popTid rid hI2 hLink
                     cases hS4 : storeTcbIpcStateAndMessage st3 receiver .ready
-                        popTcb.pendingMessage with
+                        (some (blockedSenderMessage st1 popTid popTcb)) with
                     | error e => rfl
                     | ok st4 =>
                         dsimp only
                         exact (determineTargetCore_of_objectsAgreeOffRunLinks
                           (SystemState.linkReplyWaiter_objectsAgreeOffRunLinks _ _ _) x).trans
                           ((storeTcbIpcStateAndMessage_determineTargetCore_eq st3 st4 receiver
-                          .ready popTcb.pendingMessage x hI3 hS4).trans hF3)
+                          .ready (some (blockedSenderMessage st1 popTid popTcb)) x hI3 hS4).trans hF3)
       · -- plain `Send` rendezvous: the sender is made `.ready` and woken.
         cases hS2 : storeTcbIpcStateAndMessage st1 popTid .ready none with
         | error e => rfl
@@ -3802,12 +3667,12 @@ theorem endpointReceiveDualOnCore_determineTargetCore_eq_of_rendezvous
             have hIW : (wakeThread st2 popTid executingCore).1.objects.invExt :=
               wakeThread_preserves_objects_invExt st2 popTid executingCore hI2
             cases hS3 : storeTcbIpcStateAndMessage (wakeThread st2 popTid executingCore).1
-                receiver .ready popTcb.pendingMessage with
+                receiver .ready (some (blockedSenderMessage st1 popTid popTcb)) with
             | error e => rfl
             | ok st3 =>
                 dsimp only
                 exact (storeTcbIpcStateAndMessage_determineTargetCore_eq _ st3 receiver .ready
-                  popTcb.pendingMessage x hIW hS3).trans hFW
+                  (some (blockedSenderMessage st1 popTid popTcb)) x hIW hS3).trans hFW
 
 /-- **WS-RR RR8.12 (frame)**: and installing the parked send's capabilities moves
 none either, so the whole receive leg the live `.receive` arm runs frames every
@@ -3845,8 +3710,7 @@ theorem endpointReceiveDualWithCapsOnCore_determineTargetCore_eq_of_rendezvous
           all_goals first
             | simpa using hLeg
             | (rename_i hUnwrap
-               rw [ipcUnwrapCaps_determineTargetCore_eq _ receiverCspaceRoot receiverSlotBase _
-                 stRecv _ _ x hLegInv hUnwrap]
+               rw [receiveTransferCaps_determineTargetCore_eq x hLegInv hUnwrap]
                simpa using hLeg)
 
 /-- **`v0.35.161` (frame)**: a cross-core receive that **rendezvouses** resolves every
@@ -3906,13 +3770,13 @@ theorem endpointReceiveDualOnCore_getSchedContext?_eq_of_rendezvous
                     have hI3 : st3.objects.invExt :=
                       linkCallerReply_preserves_objects_invExt st2 st3 popTid rid hI2 hLink
                     cases hS4 : storeTcbIpcStateAndMessage st3 receiver .ready
-                        popTcb.pendingMessage with
+                        (some (blockedSenderMessage st1 popTid popTcb)) with
                     | error e => rfl
                     | ok st4 =>
                         dsimp only
                         exact ((SystemState.linkReplyWaiter_objectsAgreeOffRunLinks _ _ _).getSchedContext?
                           scId).trans ((storeTcbIpcStateAndMessage_getSchedContext?_eq st3 st4 receiver
-                          .ready popTcb.pendingMessage scId hI3 hS4).trans hF3)
+                          .ready (some (blockedSenderMessage st1 popTid popTcb)) scId hI3 hS4).trans hF3)
       · -- plain `Send` rendezvous: the sender is made `.ready` and woken.
         cases hS2 : storeTcbIpcStateAndMessage st1 popTid .ready none with
         | error e => rfl
@@ -3933,12 +3797,12 @@ theorem endpointReceiveDualOnCore_getSchedContext?_eq_of_rendezvous
             have hIW : (wakeThread st2 popTid executingCore).1.objects.invExt :=
               wakeThread_preserves_objects_invExt st2 popTid executingCore hI2
             cases hS3 : storeTcbIpcStateAndMessage (wakeThread st2 popTid executingCore).1
-                receiver .ready popTcb.pendingMessage with
+                receiver .ready (some (blockedSenderMessage st1 popTid popTcb)) with
             | error e => rfl
             | ok st3 =>
                 dsimp only
                 exact (storeTcbIpcStateAndMessage_getSchedContext?_eq _ st3 receiver .ready
-                  popTcb.pendingMessage scId hIW hS3).trans hFW
+                  (some (blockedSenderMessage st1 popTid popTcb)) scId hIW hS3).trans hFW
 
 /-- **`v0.35.161` (frame)**: and installing the parked send's capabilities resolves
 every SchedContext as before too — `ipcUnwrapCaps_getSchedContext?_eq` on the one
@@ -3972,8 +3836,7 @@ theorem endpointReceiveDualWithCapsOnCore_getSchedContext?_eq_of_rendezvous
           all_goals first
             | simpa using hLeg
             | (rename_i hUnwrap
-               rw [ipcUnwrapCaps_getSchedContext?_eq _ receiverCspaceRoot receiverSlotBase _
-                 stRecv _ _ scId hLegInv hUnwrap]
+               rw [receiveTransferCaps_getSchedContext?_eq scId hLegInv hUnwrap]
                simpa using hLeg)
 
 /-- **WS-RR RR8.12 Cut C1 (register row 55, frame)**: a cross-core receive that
@@ -4039,12 +3902,12 @@ theorem endpointReceiveDualOnCore_sameSchedContextBindings_of_rendezvous
                     have hI3 : st3.objects.invExt :=
                       linkCallerReply_preserves_objects_invExt st2 st3 popTid rid hI2 hLink
                     cases hS4 : storeTcbIpcStateAndMessage st3 receiver .ready
-                        popTcb.pendingMessage with
+                        (some (blockedSenderMessage st1 popTid popTcb)) with
                     | error e => exact sameSchedContextBindings.refl st
                     | ok st4 =>
                         dsimp only
                         exact (hF3.trans (storeTcbIpcStateAndMessage_sameSchedContextBindings st3
-                          st4 receiver .ready popTcb.pendingMessage hI3 hS4)).trans
+                          st4 receiver .ready (some (blockedSenderMessage st1 popTid popTcb)) hI3 hS4)).trans
                           (sameSchedContextBindings.of_objectsAgreeOffRunLinks
                             (SystemState.linkReplyWaiter_objectsAgreeOffRunLinks _ _ _))
       · -- plain `Send` rendezvous: the sender is made `.ready` and woken.
@@ -4066,12 +3929,12 @@ theorem endpointReceiveDualOnCore_sameSchedContextBindings_of_rendezvous
             have hIW : (wakeThread st2 popTid executingCore).1.objects.invExt :=
               wakeThread_preserves_objects_invExt st2 popTid executingCore hI2
             cases hS3 : storeTcbIpcStateAndMessage (wakeThread st2 popTid executingCore).1
-                receiver .ready popTcb.pendingMessage with
+                receiver .ready (some (blockedSenderMessage st1 popTid popTcb)) with
             | error e => exact sameSchedContextBindings.refl st
             | ok st3 =>
                 dsimp only
                 exact hFW.trans (storeTcbIpcStateAndMessage_sameSchedContextBindings _ st3
-                  receiver .ready popTcb.pendingMessage hIW hS3)
+                  receiver .ready (some (blockedSenderMessage st1 popTid popTcb)) hIW hS3)
 
 /-- **WS-RR RR8.12 Cut C1 (frame)**: the receive leg the live `.receive` arm runs
 keeps the object store well-formed.  Every branch but the last returns the bare leg's
@@ -4102,8 +3965,7 @@ theorem endpointReceiveDualWithCapsOnCore_preserves_objects_invExt
           all_goals first
             | simpa using hLegInv
             | (rename_i hUnwrap
-               exact ipcUnwrapCaps_preserves_objects_invExt _ receiverCspaceRoot receiverSlotBase
-                 _ stRecv _ _ hLegInv hUnwrap)
+               exact receiveTransferCaps_objects_invExt hLegInv hUnwrap)
 
 /-- **WS-RR RR8.12 Cut C1 (frame)**: and installing the parked send's capabilities
 writes no binding either (`ipcUnwrapCaps_sameSchedContextBindings`), so the whole
@@ -4139,8 +4001,7 @@ theorem endpointReceiveDualWithCapsOnCore_sameSchedContextBindings_of_rendezvous
           all_goals first
             | simpa using hLeg
             | (rename_i hUnwrap
-               exact hLeg'.trans (ipcUnwrapCaps_sameSchedContextBindings _ receiverCspaceRoot
-                 receiverSlotBase _ stRecv _ _ hLegInv hUnwrap))
+               exact hLeg'.trans (receiveTransferCaps_sameSchedContextBindings hLegInv hUnwrap))
 
 /-- **WS-RR RR8.16 (`v0.35.189`): the narrowed receive-side member omits no lock
 the transition takes.**
@@ -4677,11 +4538,9 @@ theorem endpointReceiveDualWithCapsOnCore_preserves_replenishQueueAffinityConsis
             | (rename_i hUnwrap
                exact (replenishQueueAffinityConsistent_smp_congr
                  (fun c => by
-                   rw [ipcUnwrapCaps_preserves_scheduler _ _ _ _ _ _ _ hUnwrap])
-                 (fun scId => ipcUnwrapCaps_getSchedContext?_eq _ receiverCspaceRoot
-                   receiverSlotBase _ stRecv _ _ scId hLegInv hUnwrap)
-                 (fun tid => ipcUnwrapCaps_determineTargetCore_eq _ receiverCspaceRoot
-                   receiverSlotBase _ stRecv _ _ tid hLegInv hUnwrap)).mpr (by simpa using hLeg))
+                   rw [receiveTransferCaps_scheduler_eq hUnwrap])
+                 (fun scId => receiveTransferCaps_getSchedContext?_eq scId hLegInv hUnwrap)
+                 (fun tid => receiveTransferCaps_determineTargetCore_eq tid hLegInv hUnwrap)).mpr (by simpa using hLeg))
 
 
 /-- **WS-RR RR8.12 Cut C1 (register row 55): the queued sender whose `Call` the arm's
@@ -4914,7 +4773,7 @@ theorem endpointReceiveDualOnCore_not_dequeuedCall_of_blockedOnSend
             have hIW : (wakeThread st2 popTid executingCore).1.objects.invExt :=
               wakeThread_preserves_objects_invExt st2 popTid executingCore hI2
             cases hS3 : storeTcbIpcStateAndMessage (wakeThread st2 popTid executingCore).1
-                receiver .ready popTcb.pendingMessage with
+                receiver .ready (some (blockedSenderMessage st1 popTid popTcb)) with
             | error e => simpa using hFail
             | ok st3 =>
                 simp only []
@@ -4922,13 +4781,13 @@ theorem endpointReceiveDualOnCore_not_dequeuedCall_of_blockedOnSend
                 · subst hEqId
                   obtain ⟨t3, hT3, hR3⟩ :=
                     storeTcbIpcStateAndMessage_getTcb?_ipcState _ st3 receiver .ready
-                      popTcb.pendingMessage hIW hS3
+                      _ hIW hS3
                   exact rendezvousDequeuedCall_false_of_getTcb?_ready st3 receiver t3 hT3 hR3
                 · have hNe : popTid.toObjId ≠ receiver.toObjId := fun h =>
                     hEqId (SeLe4n.ThreadId.toObjId_injective _ _ h).symm
                   have hFrame := storeTcbIpcStateAndMessage_preserves_objects_ne
                     (wakeThread st2 popTid executingCore).1 st3 receiver .ready
-                    popTcb.pendingMessage popTid.toObjId hNe hIW hS3
+                    (some (blockedSenderMessage st1 popTid popTcb)) popTid.toObjId hNe hIW hS3
                   refine rendezvousDequeuedCall_false_of_getTcb?_ready st3 popTid tW ?_
                     ((TCB.proj_eq_of_withoutRunLinks_eq TCB.ipcState hWE).trans hR2)
                   simp only [SystemState.getTcb?] at hTW ⊢
@@ -4983,8 +4842,7 @@ theorem endpointReceiveDualWithCapsOnCore_not_dequeuedCall_of_blockedOnSend
               | simpa using hLeg
               | (rename_i hUnwrap
                  refine (rendezvousDequeuedCall_congr_getTcb? _ stRecv sender ?_).trans hLeg
-                 exact ipcUnwrapCaps_getTcb?_eq _ receiverCspaceRoot receiverSlotBase _ stRecv _ _
-                   sender hLegInv hUnwrap)
+                 exact receiveTransferCaps_getTcb?_eq sender hLegInv hUnwrap)
 
 /-- **`v0.35.161` / WS-RR RR8.12 Cut C2 (`v0.35.162`)**: the replenish-queue cores the
 receive leg's BLOCK path migrates between — the receiver's home and its loan's owner's,

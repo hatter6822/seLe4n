@@ -282,6 +282,14 @@ derivation whose *source* is gone, the revoke destroys a derivation whose *paren
 edge* was revoked. Neither implies the other, and a future operation that
 destroys authority in a third way owes the same question of itself.
 
+**Superseded at `v0.36.92` (WS-ZA ZA4.7).**  The revoke's half is retired with
+what it guarded: a blocked sender no longer parks resolved capabilities.  As in
+seL4, the receive that takes its message looks the extra capabilities up in
+the sender's CSpace at that moment (`blockedSenderCapRequest`), so no
+derivation is in flight between syscalls and a revoked or deleted source is
+simply not found.  `revokePendingTransfersFrom`, the pending-transfer delete
+guard and the parked list are gone; the creator-side check stays.
+
 Still open, and deliberately: an invariant stating parent-liveness directly
 (`∀ node, node is a derivation parent → cdtNodeSlot[node] ≠ none`) would let the
 proof surface reject a future destroyer at elaboration time rather than relying

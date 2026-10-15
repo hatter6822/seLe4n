@@ -216,7 +216,7 @@ for driver in drivers:
         # evidence cannot disappear while the gate stays green.
         expected = {"signal", "signal-wide-badge", "wait-pending", "yield",
                     "receive-blocks", "send-to-receiver", "wait-blocks", "signal-to-waiter",
-                    "receive-for-call", "call", "reply",
+                    "receive-for-call", "call", "reply-recv", "call-to-reply-receiver", "reply",
                     "send-blocks", "receive-from-sender"}
         observed = set(names) | {m.group(1) for m in returned}
         if observed != expected:

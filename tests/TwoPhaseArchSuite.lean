@@ -169,12 +169,12 @@ private def tph005a_sendBlocks : IO Unit := do
   let senderTcb := mkTcb 1
   let fst := mkFrozenState [(⟨10⟩, .endpoint ep), (⟨1⟩, .tcb senderTcb)]
   let msg : IpcMessage := { registers := #[⟨42⟩], caps := #[], badge := Badge.ofNatMasked 0 }
-  match frozenEndpointSend ⟨10⟩ ⟨1⟩ msg fst with
+  match frozenEndpointSend ⟨10⟩ ⟨1⟩ (.frame msg.badge msg.capsGranted) fst with
   | .ok ((), fst') =>
       match frozenLookupTcb fst' ⟨1⟩ with
       | some tcb =>
           expect "TPH-005a sender blocked" (tcb.ipcState == .blockedOnSend ⟨10⟩)
-          expect "TPH-005b message pending" (tcb.pendingMessage.isSome)
+          expect "TPH-005b sender parks no message" (tcb.pendingMessage.isNone)
       | none => throw <| IO.userError "sender TCB missing"
   | .error _ => throw <| IO.userError "send should succeed"
 
@@ -200,7 +200,7 @@ private def tph005c_callBlocksForReply : IO Unit := do
   let fst := mkFrozenState [
     (⟨10⟩, .endpoint ep), (⟨2⟩, .tcb recvTcb), (⟨3⟩, .tcb callerTcb)]
   let msg : IpcMessage := { registers := #[⟨99⟩], caps := #[], badge := Badge.ofNatMasked 0 }
-  match frozenEndpointCall ⟨10⟩ ⟨3⟩ msg fst with
+  match frozenEndpointCall ⟨10⟩ ⟨3⟩ (.frame msg.badge msg.capsGranted) fst with
   | .ok ((), fst') =>
       -- Receiver should have been unblocked with the message
       match frozenLookupTcb fst' ⟨2⟩ with

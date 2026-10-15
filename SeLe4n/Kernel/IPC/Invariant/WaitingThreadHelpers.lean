@@ -91,8 +91,8 @@ theorem storeObject_nonTcb_preserves_blockedThreadsPendingMessageConsistent
 /-- `storeTcbIpcState` preserves `blockedThreadsPendingMessageConsistent` when the
     new ipcState either exits the invariant's scope (`.ready`, `.blockedOnReply`,
     ...) or enters it with the target thread's `pendingMessage` already in the
-    shape that state requires: absent for the two collecting states, present for
-    the two delivering ones. `hTarget` is that obligation, discharged at each
+    shape that state requires: absent for every blocking state (a parked sender
+    keeps its message in its registers, WS-ZA ZA4.7). `hTarget` is that obligation, discharged at each
     call site from what the transition knows about the thread it is parking. -/
 theorem storeTcbIpcState_preserves_blockedThreadsPendingMessageConsistent
     (st st' : SystemState) (tid : SeLe4n.ThreadId) (ipcState : ThreadIpcState)
@@ -103,8 +103,8 @@ theorem storeTcbIpcState_preserves_blockedThreadsPendingMessageConsistent
       match ipcState with
       | .blockedOnReceive _ => tcb.pendingMessage = none
       | .blockedOnNotification _ => tcb.pendingMessage = none
-      | .blockedOnSend _ => tcb.pendingMessage.isSome
-      | .blockedOnCall _ => tcb.pendingMessage.isSome
+      | .blockedOnSend _ => tcb.pendingMessage = none
+      | .blockedOnCall _ => tcb.pendingMessage = none
       | _ => True) :
     blockedThreadsPendingMessageConsistent st' := by
   unfold storeTcbIpcState modifyTcb at hStore
@@ -149,8 +149,8 @@ theorem storeTcbIpcStateAndMessage_preserves_blockedThreadsPendingMessageConsist
     (hTarget : match ipcState with
       | .blockedOnReceive _ => msg = none
       | .blockedOnNotification _ => msg = none
-      | .blockedOnSend _ => msg.isSome
-      | .blockedOnCall _ => msg.isSome
+      | .blockedOnSend _ => msg = none
+      | .blockedOnCall _ => msg = none
       | _ => True) :
     blockedThreadsPendingMessageConsistent st' := by
   unfold storeTcbIpcStateAndMessage modifyTcb at hStore
@@ -274,8 +274,8 @@ theorem storeTcbPendingMessage_preserves_blockedThreadsPendingMessageConsistent
       match tcb.ipcState with
       | .blockedOnReceive _ => msg = none
       | .blockedOnNotification _ => msg = none
-      | .blockedOnSend _ => msg.isSome
-      | .blockedOnCall _ => msg.isSome
+      | .blockedOnSend _ => msg = none
+      | .blockedOnCall _ => msg = none
       | _ => True) :
     blockedThreadsPendingMessageConsistent st' := by
   unfold storeTcbPendingMessage modifyTcb at hStore

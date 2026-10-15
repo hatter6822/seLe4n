@@ -157,9 +157,12 @@ threads and the priority boost are scalar codes: a call, a reply, a receive for
 a call and a receive that blocks read 0, and a wait that blocks 4.  At
 `v0.36.91` a wait that blocks and a signal that wakes a waiter are written in
 place: both read 0, as does a send to a waiting receiver; a send that blocks
-reads 27 and a receive from a blocked sender 52.  Blocked senders (message in
-their registers, capabilities looked up at the rendezvous) and reply-receive
-come next.  ZA4 measures the other
+reads 27 and a receive from a blocked sender 52.  At `v0.36.92` a blocked
+sender keeps its message in its registers, its capabilities looked up at the
+rendezvous: a send that blocks and a receive from a blocked sender both read
+0.  The send takes only what its capability contributes (`SendPayload`) and
+reads its words from its own frame on both arms, resolving capabilities only
+on the arm that delivers them.  Reply-receive comes next.  ZA4 measures the other
 syscalls and entries.  Plan:
 [`docs/planning/ZERO_ALLOCATION_SYSCALL_PLAN.md`](../planning/ZERO_ALLOCATION_SYSCALL_PLAN.md)
 (phases ZA1–ZA4).
@@ -2345,11 +2348,14 @@ code may assume:
   slot-destroying operations is open-ended.  The guarantee sits in two halves,
   neither implying the other: the single creator of an `.ipcTransfer` edge
   declines (`CapTransferResult.sourceRevoked`) when the **source** node has no
-  live slot, which holds against destroyers not yet written; and revocation
-  consumes the derivations still parked in senders' `pendingMessage`
-  (`revokePendingTransfersFrom`, v0.33.88), because revoking a derived subtree
-  leaves the source slot live and so never trips the creator's check.  New code
-  must not assume a carried `TransferCap` will install.
+  live slot, which holds against destroyers not yet written; and no derivation
+  is parked between syscalls: since `v0.36.92` (WS-ZA ZA4.7) a blocked
+  sender's extra capabilities are looked up in its CSpace by the receive that
+  takes its message (`blockedSenderCapRequest`), as seL4 does, so a capability
+  revoked or deleted while the sender waits is never transferred.  The parked
+  list, the pending-transfer delete guard and the revoke sweep
+  (`revokePendingTransfersFrom`, v0.33.88) are retired.  New code must not park
+  a resolved capability across syscalls.
 - **A footprint's same-kind core segment is `schedCoreSegment`, over a core
   *set*** (WS-RR RR8.12, `v0.35.87`).  A cross-domain footprint that names
   several cores' run queues or replenish queues declares them through

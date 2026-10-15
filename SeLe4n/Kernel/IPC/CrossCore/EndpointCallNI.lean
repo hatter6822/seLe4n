@@ -189,15 +189,13 @@ the receiver wake (routed to a remote core), and the caller block all touch
 only high state. -/
 theorem endpointCallOnCore_call_path_NI
     (ctx : LabelingContext) (observer : IfObserver)
-    (endpointId : SeLe4n.ObjId) (caller : SeLe4n.ThreadId) (msg : IpcMessage)
+    (endpointId : SeLe4n.ObjId) (caller : SeLe4n.ThreadId) (payload : SendPayload)
     (executingCore : CoreId) (st : SystemState) (ep : Endpoint)
     (receiver : SeLe4n.ThreadId) (recvTcb0 : TCB) (st' st'' st4 st5 : SystemState)
-    (hSz1 : ¬ msg.registers.size > maxMessageRegisters)
-    (hSz2 : ¬ msg.caps.size > maxExtraCaps)
     (hObj : st.objects[endpointId]? = some (.endpoint ep))
     (hHead : ep.receiveQ.head = some receiver)
     (hPop : endpointQueuePopHead endpointId true st = .ok (receiver, recvTcb0, st'))
-    (hStore : storeTcbIpcStateAndMessage st' receiver .ready (some msg) = .ok st'')
+    (hStore : storeTcbIpcStateAndMessage st' receiver .ready (some (sendPayloadMessage st caller payload)) = .ok st'')
     (hCallerStore : storeTcbIpcStateAndMessage (wakeThread st'' receiver executingCore).1
         caller (.blockedOnReply endpointId (some receiver)) none = .ok st4)
     -- WS-SM SM6.D (#7.3b fold): the server-first reply link folds into the rendezvous.
@@ -214,12 +212,12 @@ theorem endpointCallOnCore_call_path_NI
     (hCallerObjHigh : objectObservable ctx observer caller.toObjId = false)
     (hNextHigh : ∀ nextTid, recvTcb0.queueNext = some nextTid →
         objectObservable ctx observer nextTid.toObjId = false) :
-    projectState ctx observer (endpointCallOnCore endpointId caller msg executingCore st).1
+    projectState ctx observer (endpointCallOnCore endpointId caller payload executingCore st).1
       = projectState ctx observer st := by
   have hInv' : st'.objects.invExt :=
     endpointQueuePopHead_preserves_objects_invExt endpointId true st st' receiver recvTcb0 hObjInv hPop
   have hInv'' : st''.objects.invExt :=
-    storeTcbIpcStateAndMessage_preserves_objects_invExt st' st'' receiver .ready (some msg) hInv' hStore
+    storeTcbIpcStateAndMessage_preserves_objects_invExt st' st'' receiver .ready (some (sendPayloadMessage st caller payload)) hInv' hStore
   have hInvW : (wakeThread st'' receiver executingCore).1.objects.invExt :=
     wakeThread_preserves_objects_invExt st'' receiver executingCore hInv''
   -- WS-SM SM6.D (#7.3b): propagate `objectIndexSet` completeness/invExt to `st4`
@@ -228,11 +226,11 @@ theorem endpointCallOnCore_call_path_NI
     endpointQueuePopHead_preserves_objectIndexSetComplete_and_invExt endpointId true st st'
       receiver recvTcb0 hObjInv hObjSetInv hIdxComplete hPop
   have hIdxSt'' := storeTcbIpcStateAndMessage_preserves_objectIndexSetComplete st' st'' receiver
-    .ready (some msg) hInv' hObjSetPop hIdxPop hStore
+    .ready (some (sendPayloadMessage st caller payload)) hInv' hObjSetPop hIdxPop hStore
   have hObjSetSt'' := storeTcbIpcStateAndMessage_preserves_objectIndexSet_invExt st' st'' receiver
-    .ready (some msg) hObjSetPop hStore
+    .ready (some (sendPayloadMessage st caller payload)) hObjSetPop hStore
   obtain ⟨recvTcb'', hRecvGet, hRecvReady⟩ :=
-    storeTcbIpcStateAndMessage_getTcb?_ipcState st' st'' receiver .ready (some msg) hInv' hStore
+    storeTcbIpcStateAndMessage_getTcb?_ipcState st' st'' receiver .ready (some (sendPayloadMessage st caller payload)) hInv' hStore
   have hIdxW := wakeThread_preserves_objectIndexSetComplete_of_ready st'' receiver executingCore
     recvTcb'' hRecvGet hRecvReady hInv'' hIdxSt''
   have hObjSetW := wakeThread_preserves_objectIndexSet_invExt st'' receiver executingCore hObjSetSt''
@@ -242,8 +240,8 @@ theorem endpointCallOnCore_call_path_NI
   have hObjInv4 := storeTcbIpcStateAndMessage_preserves_objects_invExt
     (wakeThread st'' receiver executingCore).1 st4 caller (.blockedOnReply endpointId (some receiver))
     none hInvW hCallerStore
-  rw [endpointCallOnCore_rendezvous_eq endpointId caller msg executingCore st ep receiver
-        recvTcb0 st' st'' st4 st5 hSz1 hSz2 hObj hHead hPop hStore hCallerStore hLink]
+  rw [endpointCallOnCore_rendezvous_eq endpointId caller payload executingCore st ep receiver
+        recvTcb0 st' st'' st4 st5 hObj hHead hPop hStore hCallerStore hLink]
   show projectState ctx observer
       ((removeRunnableOnCore st5 caller executingCore).linkReplyWaiter caller receiver)
     = projectState ctx observer st
@@ -257,7 +255,7 @@ theorem endpointCallOnCore_call_path_NI
       wakeThread_preserves_projection ctx observer st'' receiver executingCore
         hReceiverHigh hReceiverObjHigh hInv'',
       storeTcbIpcStateAndMessage_preserves_projection ctx observer st' st'' receiver .ready
-        (some msg) hReceiverObjHigh hInv' hStore]
+        (some (sendPayloadMessage st caller payload)) hReceiverObjHigh hInv' hStore]
   exact endpointQueuePopHead_preserves_projection ctx observer endpointId true st st' receiver
     recvTcb0 hEndpointHigh hReceiverObjHigh hNextHigh hObjInv hPop
 

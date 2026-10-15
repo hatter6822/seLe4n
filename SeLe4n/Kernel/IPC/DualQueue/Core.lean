@@ -352,31 +352,28 @@ def endpointQueuePopHead
           match lookupTcb st tid with
           | none => .error .objectNotFound
           | some headTcb =>
-            if !isReceiveQ && headTcb.pendingMessage.isNone then
-              .error .endpointStateMismatch
-            else
-              let next := headTcb.queueNext
-              let q' : IntrusiveQueue :=
-                match next with
-                | some nextTid => { head := some nextTid, tail := q.tail }
-                | none => {}
-              let ep' : Endpoint := if isReceiveQ then (ep.withReceiveQ q') else (ep.withSendQ q')
-              match storeObject endpointId (.endpoint ep') st with
-              | .error e => .error e
-              | .ok ((), st1) =>
-                  let st2Result :=
-                    match next with
-                    | none => Except.ok st1
-                    | some nextTid =>
-                        match lookupTcb st1 nextTid with
-                        | none => Except.error KernelError.objectNotFound
-                        | some nextTcb => storeTcbQueueLinks st1 nextTid none (some .endpointHead) nextTcb.queueNext
-                  match st2Result with
-                  | .error e => .error e
-                  | .ok st2 =>
-                      match storeTcbQueueLinks st2 tid none none none with
-                      | .error e => .error e
-                      | .ok st3 => .ok (tid, headTcb, st3)
+            let next := headTcb.queueNext
+            let q' : IntrusiveQueue :=
+              match next with
+              | some nextTid => { head := some nextTid, tail := q.tail }
+              | none => {}
+            let ep' : Endpoint := if isReceiveQ then (ep.withReceiveQ q') else (ep.withSendQ q')
+            match storeObject endpointId (.endpoint ep') st with
+            | .error e => .error e
+            | .ok ((), st1) =>
+                let st2Result :=
+                  match next with
+                  | none => Except.ok st1
+                  | some nextTid =>
+                      match lookupTcb st1 nextTid with
+                      | none => Except.error KernelError.objectNotFound
+                      | some nextTcb => storeTcbQueueLinks st1 nextTid none (some .endpointHead) nextTcb.queueNext
+                match st2Result with
+                | .error e => .error e
+                | .ok st2 =>
+                    match storeTcbQueueLinks st2 tid none none none with
+                    | .error e => .error e
+                    | .ok st3 => .ok (tid, headTcb, st3)
   | some _ => .error .invalidCapability
   | none => .error .objectNotFound
 
@@ -408,11 +405,9 @@ theorem endpointQueuePopHead_popped_eq_head
       · intro hPop; cases hPop
       · split
         · intro hPop; cases hPop
-        · split
-          · intro hPop; cases hPop
-          · intro hPop
-            simp only [Except.ok.injEq, Prod.mk.injEq] at hPop
-            exact hPop.1.symm
+        · intro hPop
+          simp only [Except.ok.injEq, Prod.mk.injEq] at hPop
+          exact hPop.1.symm
 
 /-- **WS-RR RR8.12 (PR #897 Codex review)**: and the TCB a successful
 `endpointQueuePopHead` returns **is** that head's pre-state lookup.
@@ -451,13 +446,11 @@ theorem endpointQueuePopHead_popped_tcb_eq_lookup
       · intro hPop; cases hPop
       · split
         · intro hPop; cases hPop
-        · split
-          · intro hPop; cases hPop
-          · intro hPop
-            simp only [Except.ok.injEq, Prod.mk.injEq] at hPop
-            -- `cases hTcb :` has already replaced the goal's `lookupTcb st head`
-            -- with `some headTcb`, so only the record identity is left.
-            exact congrArg some hPop.2.1
+        · intro hPop
+          simp only [Except.ok.injEq, Prod.mk.injEq] at hPop
+          -- `cases hTcb :` has already replaced the goal's `lookupTcb st head`
+          -- with `some headTcb`, so only the record identity is left.
+          exact congrArg some hPop.2.1
 
 
 def endpointQueueEnqueue
@@ -520,10 +513,6 @@ theorem endpointQueuePopHead_preserves_objects_invExt
         | none => simp [hLookup] at hStep
         | some tcb =>
           simp only [hLookup] at hStep
-          -- PR #873 round 11: the send-queue message-presence guard. A head that
-          -- fails it errors, so it cannot be the `.ok` this theorem is given.
-          split at hStep
-          · simp at hStep
           revert hStep
           cases hStore : storeObject endpointId _ st with
           | error e => simp
@@ -583,8 +572,6 @@ theorem endpointQueuePopHead_kindPreservingWrite
         | none => simp [hLookup] at hStep
         | some tcb =>
           simp only [hLookup] at hStep
-          split at hStep
-          · simp at hStep
           revert hStep
           cases hStore : storeObject endpointId _ st with
           | error e => simp
@@ -647,8 +634,6 @@ theorem endpointQueuePopHead_cdt_eq
         | none => simp [hLookup] at hStep
         | some tcb =>
           simp only [hLookup] at hStep
-          split at hStep
-          · simp at hStep
           revert hStep
           cases hStore : storeObject endpointId _ st with
           | error e => simp

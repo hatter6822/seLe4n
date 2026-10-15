@@ -612,13 +612,6 @@ theorem dispatchCapabilityOnly_runQueueEntryStage
 
 /-! ### The wrapping steps of the capability dispatch -/
 
-/-- Resolving the extra capabilities mints CDT nodes only. -/
-theorem resolveExtraCaps_runQueueStage (cspaceRoot : SeLe4n.ObjId)
-    (capAddrs : Array SeLe4n.CPtr) (depth : Nat) (granted : Bool) (st : SystemState) :
-    RunQueueStage st (resolveExtraCaps cspaceRoot capAddrs depth granted st).2 :=
-  let h := resolveExtraCaps_objects_scheduler_eq cspaceRoot capAddrs depth granted st
-  RunQueueStage.of_frame h.1 (by rw [h.2]) (by rw [h.2]) (by rw [h.2])
-
 /-- Clearing a woken receiver's stash rewrites one TCB's stash field. -/
 theorem clearWokenReceiverStash_runQueueStage (receiver? : Option SeLe4n.ThreadId)
     {st st' : SystemState} (h : clearWokenReceiverStash receiver? st = .ok ((), st')) :
@@ -662,27 +655,27 @@ theorem stageWokenDeliveryTwice_runQueueStage (x : SystemState) (w p : Option Se
   (stageWokenDelivery_runQueueStage x w 0).trans (stageWokenDelivery_runQueueStage _ p 0)
 
 theorem endpointSendCrossCoreDispatchChecked_runQueueEntryStage (ctx : LabelingContext)
-    (endpointId : SeLe4n.ObjId) (sender : SeLe4n.ThreadId) (msg : IpcMessage)
-    (rights : AccessRightSet) (base : SeLe4n.Slot) (c : Concurrency.CoreId)
+    (endpointId : SeLe4n.ObjId) (sender : SeLe4n.ThreadId) (payload : SendPayload)
+    (base : SeLe4n.Slot) (c : Concurrency.CoreId)
     (st : SystemState) (P : SyscallArmPremises st c sender) :
     SystemState.RunQueueEntryStage st
-      (endpointSendCrossCoreDispatchChecked ctx endpointId sender msg rights base c st).1 := by
+      (endpointSendCrossCoreDispatchChecked ctx endpointId sender payload base c st).1 := by
   unfold endpointSendCrossCoreDispatchChecked
   repeat' split
   all_goals first
     | exact (RunQueueStage.refl _).entry
-    | exact endpointSendDualWithCapsOnCore_runQueueEntryStage _ _ _ _ _ _ _ P.endpointHeads
+    | exact endpointSendDualWithCapsOnCore_runQueueEntryStage _ _ _ _ _ _ P.endpointHeads
         P.current P.notIdle
 
 theorem endpointCallCrossCoreDispatchChecked_runQueueEntryStage (ctx : LabelingContext)
-    (endpointId : SeLe4n.ObjId) (caller : SeLe4n.ThreadId) (msg : IpcMessage)
-    (rights : AccessRightSet) (base : SeLe4n.Slot) (c : Concurrency.CoreId)
+    (endpointId : SeLe4n.ObjId) (caller : SeLe4n.ThreadId) (payload : SendPayload)
+    (base : SeLe4n.Slot) (c : Concurrency.CoreId)
     (st : SystemState) (P : SyscallArmPremises st c caller) :
     SystemState.RunQueueEntryStage st
-      (endpointCallCrossCoreDispatchChecked ctx endpointId caller msg rights base c st).1 := by
+      (endpointCallCrossCoreDispatchChecked ctx endpointId caller payload base c st).1 := by
   unfold endpointCallCrossCoreDispatchChecked
   split
-  · exact endpointCallCrossCoreDispatch_runQueueEntryStage _ _ _ _ _ _ _ P.endpointHeads
+  · exact endpointCallCrossCoreDispatch_runQueueEntryStage _ _ _ _ _ _ P.endpointHeads
       P.current P.notIdle
   · exact (RunQueueStage.refl _).entry
 
@@ -781,25 +774,12 @@ theorem dispatchWithCapChecked_runQueueEntryStage (ctx : LabelingContext)
     cases hT : cap.target <;> rw [hT] at h <;> dsimp only at h
   all_goals first | (cases h; done) | skip
   case none.send.object epId =>
-    generalize hR : resolveExtraCaps gate.cspaceRoot (decodeExtraCapAddrs decoded)
-      gate.capDepth (cap.rights.mem .grant) st = r at h
-    obtain ⟨caps, s1⟩ := r
-    have hF1 : RunQueueStage st s1 := by
-      have := resolveExtraCaps_runQueueStage gate.cspaceRoot (decodeExtraCapAddrs decoded)
-        gate.capDepth (cap.rights.mem .grant) st
-      rw [hR] at this; exact this
-    have P1 : SyscallArmPremises s1 executingCore tid := by
-      have hFr := resolveExtraCaps_objects_scheduler_eq gate.cspaceRoot
-        (decodeExtraCapAddrs decoded) gate.capDepth (cap.rights.mem .grant) st
-      rw [hR] at hFr
-      exact P.of_ipcFrame hF1 (IpcFrame.of_frame hFr.1 fun _ => by rw [hFr.2])
-    dsimp only at h
     split at h
     · cases h
     rename_i hSend
     exact clearStashStage_runQueueEntryStage
-      (hF1.entry.trans (runQueueStage_of_pair_eq
-        (endpointSendCrossCoreDispatchChecked_runQueueEntryStage _ _ _ _ _ _ _ _ P1) hSend))
+      ((runQueueStage_of_pair_eq
+        (endpointSendCrossCoreDispatchChecked_runQueueEntryStage _ _ _ _ _ _ _ P) hSend))
       (fun x => stageWokenDelivery_runQueueStage x _ _) h
   case none.receive.object epId =>
     repeat' split at h
@@ -813,24 +793,11 @@ theorem dispatchWithCapChecked_runQueueEntryStage (ctx : LabelingContext)
         (stageWokenSendCompletion_runQueueStage _ _)).trans
         (stageDeliveredMessage_runQueueStage _ _ _)).entry
   case none.call.object epId =>
-    generalize hR : resolveExtraCaps gate.cspaceRoot (decodeExtraCapAddrs decoded)
-      gate.capDepth (cap.rights.mem .grant) st = r at h
-    obtain ⟨caps, s1⟩ := r
-    have hF1 : RunQueueStage st s1 := by
-      have := resolveExtraCaps_runQueueStage gate.cspaceRoot (decodeExtraCapAddrs decoded)
-        gate.capDepth (cap.rights.mem .grant) st
-      rw [hR] at this; exact this
-    have P1 : SyscallArmPremises s1 executingCore tid := by
-      have hFr := resolveExtraCaps_objects_scheduler_eq gate.cspaceRoot
-        (decodeExtraCapAddrs decoded) gate.capDepth (cap.rights.mem .grant) st
-      rw [hR] at hFr
-      exact P.of_ipcFrame hF1 (IpcFrame.of_frame hFr.1 fun _ => by rw [hFr.2])
-    dsimp only at h
     split at h
     · rename_i hCall
       cases h
-      exact (hF1.entry.trans (runQueueStage_of_pair_eq
-        (endpointCallCrossCoreDispatchChecked_runQueueEntryStage _ _ _ _ _ _ _ _ P1) hCall)).trans
+      exact ((runQueueStage_of_pair_eq
+        (endpointCallCrossCoreDispatchChecked_runQueueEntryStage _ _ _ _ _ _ _ P) hCall)).trans
         (stageWokenDelivery_runQueueStage _ _ _).entry
     · cases h
   case none.reply.replyCap rid =>
@@ -996,26 +963,13 @@ theorem dispatchWithCap_runQueueEntryStage (decoded : SyscallDecodeResult)
     cases hT : cap.target <;> rw [hT] at h <;> dsimp only at h
   all_goals first | (cases h; done) | skip
   case none.send.object epId =>
-    generalize hR : resolveExtraCaps gate.cspaceRoot (decodeExtraCapAddrs decoded)
-      gate.capDepth (cap.rights.mem .grant) st = r at h
-    obtain ⟨caps, s1⟩ := r
-    have hF1 : RunQueueStage st s1 := by
-      have := resolveExtraCaps_runQueueStage gate.cspaceRoot (decodeExtraCapAddrs decoded)
-        gate.capDepth (cap.rights.mem .grant) st
-      rw [hR] at this; exact this
-    have P1 : SyscallArmPremises s1 executingCore tid := by
-      have hFr := resolveExtraCaps_objects_scheduler_eq gate.cspaceRoot
-        (decodeExtraCapAddrs decoded) gate.capDepth (cap.rights.mem .grant) st
-      rw [hR] at hFr
-      exact P.of_ipcFrame hF1 (IpcFrame.of_frame hFr.1 fun _ => by rw [hFr.2])
-    dsimp only at h
     split at h
     · cases h
     rename_i hSend
     exact clearStashStage_runQueueEntryStage
-      (hF1.entry.trans (runQueueStage_of_pair_eq
-        (endpointSendDualWithCapsOnCore_runQueueEntryStage _ _ _ _ _ _ _ P1.endpointHeads
-          P1.current P1.notIdle) hSend))
+      ((runQueueStage_of_pair_eq
+        (endpointSendDualWithCapsOnCore_runQueueEntryStage _ _ _ _ _ _ P.endpointHeads
+          P.current P.notIdle) hSend))
       (fun x => stageWokenDelivery_runQueueStage x _ _) h
   case none.receive.object epId =>
     repeat' split at h
@@ -1029,25 +983,12 @@ theorem dispatchWithCap_runQueueEntryStage (decoded : SyscallDecodeResult)
         (stageWokenSendCompletion_runQueueStage _ _)).trans
         (stageDeliveredMessage_runQueueStage _ _ _)).entry
   case none.call.object epId =>
-    generalize hR : resolveExtraCaps gate.cspaceRoot (decodeExtraCapAddrs decoded)
-      gate.capDepth (cap.rights.mem .grant) st = r at h
-    obtain ⟨caps, s1⟩ := r
-    have hF1 : RunQueueStage st s1 := by
-      have := resolveExtraCaps_runQueueStage gate.cspaceRoot (decodeExtraCapAddrs decoded)
-        gate.capDepth (cap.rights.mem .grant) st
-      rw [hR] at this; exact this
-    have P1 : SyscallArmPremises s1 executingCore tid := by
-      have hFr := resolveExtraCaps_objects_scheduler_eq gate.cspaceRoot
-        (decodeExtraCapAddrs decoded) gate.capDepth (cap.rights.mem .grant) st
-      rw [hR] at hFr
-      exact P.of_ipcFrame hF1 (IpcFrame.of_frame hFr.1 fun _ => by rw [hFr.2])
-    dsimp only at h
     split at h
     · rename_i hCall
       cases h
-      exact (hF1.entry.trans (runQueueStage_of_pair_eq
-        (endpointCallCrossCoreDispatch_runQueueEntryStage _ _ _ _ _ _ _ P1.endpointHeads
-          P1.current P1.notIdle) hCall)).trans
+      exact ((runQueueStage_of_pair_eq
+        (endpointCallCrossCoreDispatch_runQueueEntryStage _ _ _ _ _ _ P.endpointHeads
+          P.current P.notIdle) hCall)).trans
         (stageWokenDelivery_runQueueStage _ _ _).entry
     · cases h
   case none.reply.replyCap rid =>

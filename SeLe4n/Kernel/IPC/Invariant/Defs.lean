@@ -901,9 +901,7 @@ written, because every transition it covered wrote none.  Only two conjuncts of
 `ipcInvariantFull` read the field at all — `blockedThreadsPendingMessageConsistent`
 asks whether one is present, and `allPendingMessagesBounded` asks whether it is
 within the payload bounds — so equality was strictly more than the agreement
-transports, and the one transition that drops capabilities from a message in
-flight (`revokePendingTransfersFrom`, the tail of every CDT revocation) could not
-be given an agreement at all.
+transports.
 
 Stated in the direction the transports use it: `mx` is the post-state reading and
 `my` the pre-state one, so a *shrinking* rewrite qualifies and a growing one does
@@ -1021,6 +1019,185 @@ def capabilityBadgesWellFormed (st : SystemState) : Prop :=
     cap.badge = some badge →
     badge.valid
 
+/-- A capability read out of a CNode slot carries a valid badge, by the badge
+clause of the pre-state. -/
+theorem lookupSlotCap_badge_valid (st : SystemState) (addr : CSpaceAddr)
+    (cap : Capability) (hCapWf : capabilityBadgesWellFormed st)
+    (hLk : SystemState.lookupSlotCap st addr = some cap) :
+    ∀ b, cap.badge = some b → b.valid := by
+  intro b hB
+  unfold SystemState.lookupSlotCap at hLk
+  cases hCn : SystemState.lookupCNode st addr.cnode with
+  | none => rw [hCn] at hLk; cases hLk
+  | some cn =>
+      rw [hCn] at hLk
+      have hObj : st.objects[addr.cnode]? = some (.cnode cn) := by
+        unfold SystemState.lookupCNode at hCn
+        cases hO : st.objects[addr.cnode]? with
+        | none => rw [hO] at hCn; cases hCn
+        | some obj =>
+          cases obj <;> rw [hO] at hCn <;> cases hCn
+          rfl
+      exact hCapWf addr.cnode cn addr.slot cap b hObj hLk hB
+
+/-- **WS-LS LS2.3**: the resolution writes the derivation tree alone — every
+object and every scheduler slot is as it was.  (The derivation nodes it mints
+are what the transition that follows reads, which is why that transition runs
+from the resolved state and why `.call`'s scheduler footprint is read there.) -/
+theorem resolveExtraCaps_objects_scheduler_eq (cspaceRoot : SeLe4n.ObjId)
+    (capAddrs : Array SeLe4n.CPtr) (depth : Nat) (granted : Bool) (st : SystemState) :
+    (resolveExtraCaps cspaceRoot capAddrs depth granted st).2.objects = st.objects ∧
+      (resolveExtraCaps cspaceRoot capAddrs depth granted st).2.scheduler = st.scheduler := by
+  unfold resolveExtraCaps
+  split
+  · exact ⟨rfl, rfl⟩
+  · refine Array.foldl_induction
+      (motive := fun (_ : Nat) (acc : Array TransferCap × SystemState) =>
+        acc.2.objects = st.objects ∧ acc.2.scheduler = st.scheduler) ⟨rfl, rfl⟩ ?_
+    intro i acc hAcc
+    split
+    · exact hAcc
+    · split
+      · exact hAcc
+      · split
+        · exact hAcc
+        · rename_i node stNode hNode
+          unfold SystemState.ensureCdtNodeForSlotChecked at hNode
+          split at hNode
+          · cases hNode; exact hAcc
+          · split at hNode
+            · cases hNode; exact hAcc
+            · cases hNode
+
+/-- Resolution mints CDT nodes only: objects and scheduler are framed, and
+every resolved capability's badge is valid, because each one is read out of a
+CNode slot of a state whose store is the pre-state's. -/
+theorem resolveExtraCaps_shape
+    (cspaceRoot : SeLe4n.ObjId) (capAddrs : Array SeLe4n.CPtr) (depth : Nat)
+    (granted : Bool) (st : SystemState)
+    (hCapWf : capabilityBadgesWellFormed st) :
+    (resolveExtraCaps cspaceRoot capAddrs depth granted st).2.objects = st.objects ∧
+    (resolveExtraCaps cspaceRoot capAddrs depth granted st).2.scheduler = st.scheduler ∧
+    (∀ (i : Nat) (c : TransferCap),
+      (resolveExtraCaps cspaceRoot capAddrs depth granted st).1[i]? = some c →
+      ∀ b, c.cap.badge = some b → b.valid) := by
+  unfold resolveExtraCaps
+  split
+  · exact ⟨rfl, rfl, fun i c hc => by cases hc⟩
+  · refine Array.foldl_induction
+      (motive := fun (_ : Nat) (acc : Array TransferCap × SystemState) =>
+        acc.2.objects = st.objects ∧ acc.2.scheduler = st.scheduler ∧
+        (∀ (i : Nat) (c : TransferCap), acc.1[i]? = some c →
+          ∀ b, c.cap.badge = some b → b.valid))
+      ⟨rfl, rfl, fun i c hc => by cases hc⟩ ?_
+    intro i acc hAcc
+    obtain ⟨hO, hS, hB⟩ := hAcc
+    split
+    · exact ⟨hO, hS, hB⟩
+    · rename_i ref hRes
+      split
+      · exact ⟨hO, hS, hB⟩
+      · rename_i cap hLk
+        split
+        · exact ⟨hO, hS, hB⟩
+        · rename_i node stNode hNode
+          have hCapWfAcc : capabilityBadgesWellFormed acc.2 := by
+            intro oid cn slot c b hCn hLk2 hB2
+            rw [hO] at hCn
+            exact hCapWf oid cn slot c b hCn hLk2 hB2
+          refine ⟨(SystemState.ensureCdtNodeForSlotChecked_objects_eq acc.2 ref node
+              stNode hNode).trans hO,
+            (SystemState.ensureCdtNodeForSlotChecked_scheduler_eq acc.2 ref node stNode
+              hNode).trans hS, ?_⟩
+          intro j c hc b hBadge
+          rw [Array.getElem?_push] at hc
+          split at hc
+          · obtain rfl : ({ cap := cap, srcNode := node } : TransferCap) = c :=
+              Option.some.inj hc
+            exact lookupSlotCap_badge_valid acc.2 ref cap hCapWfAcc hLk b hBadge
+          · exact hB j c hc b hBadge
+
+
+/-- WS-ZA ZA4.7: **what a receive's capability transfer writes** -- the
+resolution's CDT nodes (objects and scheduler framed) and then, when anything
+resolved, one `ipcUnwrapCaps` of the resolved capabilities, whose badges are
+valid whenever the pre-state's are.  Every WithCaps receive preservation proof
+goes through this one shape. -/
+theorem receiveTransferCaps_frame
+    {req : Option (SeLe4n.ObjId × Array SeLe4n.CPtr × Nat)} {root : SeLe4n.ObjId}
+    {base : SeLe4n.Slot} {st st'' : SystemState} {summary : CapTransferSummary}
+    (h : receiveTransferCaps req root base st = .ok (summary, st'')) :
+    ∃ (stR : SystemState) (caps : Array TransferCap),
+      stR.objects = st.objects ∧ stR.scheduler = st.scheduler ∧
+      (capabilityBadgesWellFormed st →
+        ∀ (i : Nat) (c : TransferCap), caps[i]? = some c →
+          ∀ b, c.cap.badge = some b → b.valid) ∧
+      (st'' = stR ∨
+        ipcUnwrapCaps { IpcMessage.empty with caps := caps, capsGranted := true }
+          root base true stR = .ok (summary, st'')) := by
+  unfold receiveTransferCaps at h
+  cases req with
+  | none =>
+      simp only [Except.ok.injEq, Prod.mk.injEq] at h
+      exact ⟨st, #[], rfl, rfl, (fun _ _ _ hc => by simp at hc), Or.inl h.2.symm⟩
+  | some r =>
+      obtain ⟨cr, addrs, depth⟩ := r
+      simp only at h
+      refine ⟨(resolveExtraCaps cr addrs depth true st).2,
+        (resolveExtraCaps cr addrs depth true st).1,
+        (resolveExtraCaps_objects_scheduler_eq cr addrs depth true st).1,
+        (resolveExtraCaps_objects_scheduler_eq cr addrs depth true st).2,
+        fun hW => (resolveExtraCaps_shape cr addrs depth true st hW).2.2, ?_⟩
+      split at h
+      · simp only [Except.ok.injEq, Prod.mk.injEq] at h
+        exact Or.inl h.2.symm
+      · exact Or.inr h
+
+/-- The resolution writes no register bank or other machine state. -/
+theorem resolveExtraCaps_machine_eq (cspaceRoot : SeLe4n.ObjId)
+    (capAddrs : Array SeLe4n.CPtr) (depth : Nat) (granted : Bool) (st : SystemState) :
+    (resolveExtraCaps cspaceRoot capAddrs depth granted st).2.machine = st.machine := by
+  unfold resolveExtraCaps
+  split
+  · rfl
+  · refine Array.foldl_induction
+      (motive := fun (_ : Nat) (acc : Array TransferCap × SystemState) =>
+        acc.2.machine = st.machine) rfl ?_
+    intro i acc hAcc
+    split
+    · exact hAcc
+    · split
+      · exact hAcc
+      · split
+        · exact hAcc
+        · rename_i node stNode hNode
+          unfold SystemState.ensureCdtNodeForSlotChecked at hNode
+          split at hNode
+          · cases hNode; exact hAcc
+          · split at hNode
+            · cases hNode; exact hAcc
+            · cases hNode
+
+/-- WS-ZA ZA4.7: the rendezvous capability lookup writes no machine state. -/
+theorem receiveTransferCaps_preserves_machine
+    {req : Option (SeLe4n.ObjId × Array SeLe4n.CPtr × Nat)} {root : SeLe4n.ObjId}
+    {base : SeLe4n.Slot} {st st'' : SystemState} {summary : CapTransferSummary}
+    (h : receiveTransferCaps req root base st = .ok (summary, st'')) :
+    st''.machine = st.machine := by
+  unfold receiveTransferCaps at h
+  cases req with
+  | none =>
+      simp only [Except.ok.injEq, Prod.mk.injEq] at h
+      rw [← h.2]
+  | some r =>
+      obtain ⟨cr, addrs, depth⟩ := r
+      simp only at h
+      split at h
+      · simp only [Except.ok.injEq, Prod.mk.injEq] at h
+        rw [← h.2]; exact resolveExtraCaps_machine_eq cr addrs depth true st
+      · exact (ipcUnwrapCaps_preserves_machine _ _ _ _ _ _ _ h).trans
+          (resolveExtraCaps_machine_eq cr addrs depth true st)
+
 /-- WS-F5/D1d: System-wide badge well-formedness — all badges in notifications
 and capabilities are word-bounded to `machineWordBits` (64 bits). -/
 def badgeWellFormed (st : SystemState) : Prop :=
@@ -1056,37 +1233,25 @@ theorem pendingMessageCapBadgesWellFormed_of_getElem_eq {s1 s2 : SystemState}
     (h : pendingMessageCapBadgesWellFormed s1) : pendingMessageCapBadgesWellFormed s2 :=
   pendingMessagesSatisfy_of_getElem_eq hEq h
 
-/-- V3-G1 (M-PRF-5): **`pendingMessage` agrees with the blocking state, in both
-    directions.**
-
-    A thread parked to *collect* holds nothing; a thread parked to *deliver*
-    holds what it is delivering:
+/-- V3-G1 (M-PRF-5) / WS-ZA ZA4.7: **a blocked thread holds no delivered
+    message.**
 
     - `blockedOnReceive` (waiting for a send) — `pendingMessage = none`
     - `blockedOnNotification` (waiting for a signal) — `pendingMessage = none`
-    - `blockedOnSend` (queued to deliver) — `pendingMessage.isSome`
-    - `blockedOnCall` (queued to deliver, awaiting a reply) — `pendingMessage.isSome`
+    - `blockedOnSend` (queued to deliver) — `pendingMessage = none`
+    - `blockedOnCall` (queued to deliver, awaiting a reply) — `pendingMessage = none`
 
-    The receiver direction is the older half: no message has been delivered
-    yet, so a wake path may overwrite `pendingMessage` without losing data.
+    A thread parked to collect has had nothing delivered yet, so a wake path
+    may overwrite `pendingMessage` without losing data.  A thread parked to
+    deliver keeps its message where seL4 keeps it -- the words in its saved
+    registers and IPC buffer, its capability's badge and grant right in its TCB
+    (`ipcBadge`, `ipcCanGrant`), a fault in `pendingFault` -- and the receive
+    that takes it reads it there (`blockedSenderMessage`).  So `pendingMessage`
+    is only ever the slot a delivery lands in, and a parked sender's message
+    can never be stale against the registers it was decoded from.
 
-    The sender direction was added at PR #873 round 11, and the reason is worth
-    stating because its absence was load-bearing.  This docstring used to read
-    "`blockedOnSend` and `blockedOnCall` threads MAY have a pending message",
-    which made "a parked sender is carrying its message" a *convention*: true of
-    every state the live park sites produce (`endpointSendDual` /
-    `endpointCall` both store `some msg` atomically with the block), but not
-    something any consumer could rely on.  So every consumer that read a parked
-    sender had to re-derive it defensively, and each one that did not was a
-    defect — `frozenQueuePopHead` handing a receiver `none` while the provenance
-    join claimed a delivery (round 7), then `endpointReceiveDual` doing the same
-    on the live path (round 11).  Stating it here makes the malformed state
-    unreachable rather than merely refused, so a consumer that forgets to check
-    is no longer wrong.
-
-    `blockedOnReply` threads do hold `pendingMessage = none` in practice (the
-    receive path clears it) but are deliberately not constrained: nothing reads
-    a reply-blocked thread's message, so pinning it would add a preservation
+    `blockedOnReply` threads are deliberately not constrained: nothing reads a
+    reply-blocked thread's message, so pinning it would add a preservation
     obligation with no consumer. -/
 def blockedThreadsPendingMessageConsistent (st : SystemState) : Prop :=
   ∀ (tid : SeLe4n.ThreadId) (tcb : TCB),
@@ -1094,8 +1259,8 @@ def blockedThreadsPendingMessageConsistent (st : SystemState) : Prop :=
     match tcb.ipcState with
     | .blockedOnReceive _ => tcb.pendingMessage = none
     | .blockedOnNotification _ => tcb.pendingMessage = none
-    | .blockedOnSend _ => tcb.pendingMessage.isSome
-    | .blockedOnCall _ => tcb.pendingMessage.isSome
+    | .blockedOnSend _ => tcb.pendingMessage = none
+    | .blockedOnCall _ => tcb.pendingMessage = none
     | _ => True
 
 /-- Full IPC invariant including system-level dual-queue structural
@@ -1222,10 +1387,6 @@ theorem endpointQueuePopHead_returns_head
     | none => simp [hLk] at hPop
     | some headTcb =>
       simp only [hLk] at hPop
-      -- PR #873 round 11: the send-queue message-presence guard --
-      -- a head that fails it errors, so it is not this `.ok`.
-      split at hPop
-      · simp at hPop
       revert hPop
       cases hStore : storeObject endpointId _ st with
       | error e => simp
@@ -1273,10 +1434,6 @@ theorem endpointQueuePopHead_returns_pre_tcb
     | none => simp [hLk] at hPop
     | some tcb =>
       simp only [hLk] at hPop
-      -- PR #873 round 11: the send-queue message-presence guard --
-      -- a head that fails it errors, so it is not this `.ok`.
-      split at hPop
-      · simp at hPop
       revert hPop
       cases hStore : storeObject endpointId _ st with
       | error e => simp
@@ -1307,79 +1464,6 @@ theorem endpointQueuePopHead_returns_pre_tcb
                 simp only [Except.ok.injEq, Prod.mk.injEq]
                 rintro ⟨rfl, rfl, _⟩
                 exact lookupTcb_some_objects st headTid tcb hLk
-
-/-- WS-SM SM6 (PR #873 round 11): **a dequeued sender is carrying its message.**
-
-The converse of the guard in `endpointQueuePopHead`, and the fact the receive
-path needs: a send-queue dequeue that succeeds hands its caller a `TCB` whose
-`pendingMessage` is present, so the delivery it feeds moves real content and the
-provenance edge `receiverTaintEdges` declares has content to join.
-
-This is the *unconditional* form: it holds of every state, invariant or not,
-because the dequeue refuses the malformed head rather than relying on the
-invariant to exclude it.  For states that do satisfy `ipcInvariantFull` the fact
-is available a second way -- `blockedThreadsPendingMessageConsistent` requires
-`.blockedOnSend` / `.blockedOnCall` to carry a message -- and that is the
-carrier the receive paths should be read against; this theorem is what lets a
-consumer below the invariant (a thawed snapshot, a below-API construction) reach
-the same conclusion.  Stated on the returned TCB rather than the queue head
-because that is the value both receives read the message out of. -/
-theorem endpointQueuePopHead_send_sender_carries_message
-    (endpointId : SeLe4n.ObjId) (isReceiveQ : Bool) (st : SystemState)
-    (ep : Endpoint) (tid : SeLe4n.ThreadId) (headTcb : TCB) (st' : SystemState)
-    (hSend : isReceiveQ = false)
-    (hObj : st.objects[endpointId]? = some (.endpoint ep))
-    (hPop : endpointQueuePopHead endpointId isReceiveQ st = .ok (tid, headTcb, st')) :
-    headTcb.pendingMessage.isSome := by
-  have hMsg : ∀ t : TCB,
-      ¬((!isReceiveQ && t.pendingMessage.isNone) = true) → t.pendingMessage.isSome := by
-    intro t h
-    cases hp : t.pendingMessage with
-    | none => rw [hSend, hp] at h; simp at h
-    | some m => simp
-  unfold endpointQueuePopHead SystemState.getObject? at hPop
-  rw [hObj] at hPop; simp only at hPop
-  cases hHead : (if isReceiveQ then ep.receiveQ else ep.sendQ).head with
-  | none => simp [hHead] at hPop
-  | some headTid =>
-    simp only [hHead] at hPop
-    cases hLk : lookupTcb st headTid with
-    | none => simp [hLk] at hPop
-    | some tcb =>
-      simp only [hLk] at hPop
-      split at hPop
-      · simp at hPop
-      · rename_i hGuard
-        revert hPop
-        cases hStore : storeObject endpointId _ st with
-        | error e => simp
-        | ok pair =>
-          simp only []
-          cases tcb.queueNext with
-          | none =>
-            simp only []
-            cases hFinal : storeTcbQueueLinks pair.2 headTid none none none with
-            | error e => simp
-            | ok st3 =>
-              simp only [Except.ok.injEq, Prod.mk.injEq]
-              rintro ⟨_, rfl, _⟩
-              exact hMsg tcb hGuard
-          | some nextTid =>
-            simp only []
-            cases hLkNext : lookupTcb pair.2 nextTid with
-            | none => simp
-            | some nextTcb =>
-              simp only []
-              cases hLink : storeTcbQueueLinks pair.2 nextTid _ _ _ with
-              | error e => simp
-              | ok st2 =>
-                simp only []
-                cases hFinal : storeTcbQueueLinks st2 headTid none none none with
-                | error e => simp
-                | ok st3 =>
-                  simp only [Except.ok.injEq, Prod.mk.injEq]
-                  rintro ⟨_, rfl, _⟩
-                  exact hMsg tcb hGuard
 
 -- ============================================================================
 -- Scheduler invariant bundle preservation
@@ -1900,6 +1984,69 @@ notification. -/
 theorem ipcInvariant_of_objectsAgreeOffRunLinks {st st' : SystemState}
     (hA : st'.objectsAgreeOffRunLinks st) (h : ipcInvariant st) : ipcInvariant st' :=
   fun oid ntfn hL => h oid ntfn (hA.get_notification_iff.mp hL)
+
+open SeLe4n.Model.SystemState in
+/-- WS-ZA ZA4.7: the IPC/scheduler contract reads each thread's `ipcState` and
+the run queue, so a step that writes only fields outside the IPC read view and
+leaves the scheduler alone keeps it. -/
+theorem ipcSchedulerContractPredicates_of_objectsAgreeOffRunLinks {st st' : SystemState}
+    (hA : st'.objectsAgreeOffRunLinks st) (hS : st'.scheduler = st.scheduler)
+    (h : ipcSchedulerContractPredicates st) : ipcSchedulerContractPredicates st' := by
+  obtain ⟨h1, h2, h3, h4, h5, h6⟩ := h
+  refine ⟨?_, ?_, ?_, ?_, ?_, ?_⟩
+  · intro tid tcb hT; run_links_back hA at tcb hT; rw [hS]; exact h1 tid tcb hT
+  · intro tid tcb e hT; run_links_back hA at tcb hT; rw [hS]; exact h2 tid tcb e hT
+  · intro tid tcb e hT; run_links_back hA at tcb hT; rw [hS]; exact h3 tid tcb e hT
+  · intro tid tcb e hT; run_links_back hA at tcb hT; rw [hS]; exact h4 tid tcb e hT
+  · intro tid tcb e r hT; run_links_back hA at tcb hT; rw [hS]; exact h5 tid tcb e r hT
+  · intro tid tcb e hT; run_links_back hA at tcb hT; rw [hS]; exact h6 tid tcb e hT
+
+open SeLe4n.Model.SystemState in
+/-- WS-ZA ZA4.7: a property of every delivered message survives a step that
+writes only fields outside the IPC read view. -/
+theorem pendingMessagesSatisfy_of_objectsAgreeOffRunLinks {P : IpcMessage → Prop}
+    {st st' : SystemState} (hA : st'.objectsAgreeOffRunLinks st)
+    (h : pendingMessagesSatisfy P st) : pendingMessagesSatisfy P st' := by
+  intro tid tcb m hT hm
+  run_links_back hA at tcb hT
+  exact h tid tcb m hT hm
+
+open SeLe4n.Model.SystemState in
+/-- WS-ZA ZA4.7: blocked threads' empty message slots survive a step that
+writes only fields outside the IPC read view (`ipcState` and `pendingMessage`
+are inside it). -/
+theorem blockedThreadsPendingMessageConsistent_of_objectsAgreeOffRunLinks
+    {st st' : SystemState} (hA : st'.objectsAgreeOffRunLinks st)
+    (h : blockedThreadsPendingMessageConsistent st) :
+    blockedThreadsPendingMessageConsistent st' := by
+  intro tid tcb hT
+  run_links_back hA at tcb hT
+  exact h tid tcb hT
+
+theorem allPendingMessagesBounded_of_objectsAgreeOffRunLinks {st st' : SystemState}
+    (hA : st'.objectsAgreeOffRunLinks st) (h : allPendingMessagesBounded st) :
+    allPendingMessagesBounded st' :=
+  pendingMessagesSatisfy_of_objectsAgreeOffRunLinks hA h
+
+/-- WS-ZA ZA4.5: badge well-formedness across stores that agree off the
+run-queue links (notifications and CNodes are untouched). -/
+theorem badgeWellFormed_of_objectsAgreeOffRunLinks {s1 s2 : SystemState}
+    (hA : s2.objectsAgreeOffRunLinks s1) (h : badgeWellFormed s1) : badgeWellFormed s2 :=
+  ⟨fun oid n b hO hb => h.1 oid n b (hA.get_notification_iff.mp hO) hb,
+   fun oid cn slot cap b hO => h.2 oid cn slot cap b (hA.get_cnode_iff.mp hO)⟩
+
+/-- WS-ZA ZA4.7: the scheduler bundle reads the scheduler and whether the
+current thread's TCB exists. -/
+theorem schedulerInvariantBundle_of_objectsAgreeOffRunLinks {st st' : SystemState}
+    (hA : st'.objectsAgreeOffRunLinks st) (hS : st'.scheduler = st.scheduler)
+    (h : schedulerInvariantBundle st) : schedulerInvariantBundle st' := by
+  obtain ⟨h1, h2, h3⟩ := h
+  refine ⟨hS ▸ h1, hS ▸ h2, ?_⟩
+  unfold currentThreadValid at h3 ⊢
+  rw [hS]
+  cases hC : st.scheduler.currentOnCore bootCoreId with
+  | none => trivial
+  | some x => rw [hC] at h3; exact hA.exists_tcb_iff.mpr h3
 
 -- ============================================================================
 -- WS-SM SM6.D (#7.1 fold): upstream reply-link / server-first-stash frames.
@@ -2559,6 +2706,26 @@ def endpointQueueTailBlockedConsistent (st : SystemState) : Prop :=
     (ep.receiveQ.tail = some tl → tcb.ipcState = .blockedOnReceive epId) ∧
     (ep.sendQ.tail = some tl →
       tcb.ipcState = .blockedOnSend epId ∨ tcb.ipcState = .blockedOnCall epId)
+
+open SeLe4n.Model.SystemState in
+/-- WS-ZA ZA4.7: queue heads stay blocked across a step that writes only fields
+outside the IPC read view. -/
+theorem queueHeadBlockedConsistent_of_objectsAgreeOffRunLinks {st st' : SystemState}
+    (hA : st'.objectsAgreeOffRunLinks st) (h : queueHeadBlockedConsistent st) :
+    queueHeadBlockedConsistent st' := by
+  intro epId ep hd tcb hE hT
+  run_links_back hA at tcb hT
+  exact h epId ep hd tcb (hA.get_endpoint_iff.mp hE) hT
+
+open SeLe4n.Model.SystemState in
+/-- WS-ZA ZA4.7: queue tails stay blocked across a step that writes only fields
+outside the IPC read view. -/
+theorem endpointQueueTailBlockedConsistent_of_objectsAgreeOffRunLinks {st st' : SystemState}
+    (hA : st'.objectsAgreeOffRunLinks st) (h : endpointQueueTailBlockedConsistent st) :
+    endpointQueueTailBlockedConsistent st' := by
+  intro epId ep tl tcb hE hT
+  run_links_back hA at tcb hT
+  exact h epId ep tl tcb (hA.get_endpoint_iff.mp hE) hT
 
 /-- IPC de-threading D4 Slice 2c: the *strict* per-link blocking-propagation invariant — the
 intra-queue successor of a blocked thread is blocked on the **same** endpoint/queue.

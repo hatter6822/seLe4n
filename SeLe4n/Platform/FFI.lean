@@ -3073,7 +3073,7 @@ dispatch; a syscall that checks before it writes then owns the state it writes
       if SeLe4n.Kernel.isIdleThreadId tid then
         .ok (.returns (Architecture.errorFrame .illegalState), st) else
       let layout := SeLe4n.arm64DefaultLayout
-      match syscallEntryCheckedR ctx layout executingCore 32
+      match syscallEntryCheckedR ctx executingCore
           (writeFfiRegistersToTcb st tid syscallId x0 x1 x2 x3 x4 x5) with
       | .error (ke, stRefused) =>
           match syscallCapFaultOf layout stRefused tid ke with
@@ -3164,7 +3164,7 @@ its words on as scalars, so no outcome is built. -/
         ((Architecture.SyscallOutcome.returns (Architecture.errorFrame .illegalState)).words, st)
       else
       let layout := SeLe4n.arm64DefaultLayout
-      match syscallEntryCheckedR ctx layout executingCore 32
+      match syscallEntryCheckedR ctx executingCore
           (writeFfiRegistersToTcb st tid syscallId x0 x1 x2 x3 x4 x5) with
       | .error (ke, stRefused) =>
           match syscallCapFaultOf layout stRefused tid ke with

@@ -135,21 +135,11 @@ justified groups:
   (`capabilityBadgeChannel_out_of_scope`) rather than left to a justification
   that does not hold for this arm.
 
-  `cspaceRevoke` writes the tracked **field** and moves no tracked **content**,
-  which is the only arm in this table that does.  `cspaceRevokeCdt` walks the CDT
-  across arbitrary CNodes, so the self-loop claim is plainly false of it, and its
-  last step (`revokePendingTransfersFrom`) rewrites `TCB.pendingMessage` to
-  consume derivations that have not landed yet.  The Tier-1 reach gate detects
-  that write and is right to — the check is field-granular, which is what makes
-  it a detector rather than a table of promises.  What it cannot decide is what
-  the write leaves behind:
-  `revokePendingTransfersFrom_preserves_trackedContent` says the payload
-  (`IpcMessage.registers`) is kept and only `IpcMessage.caps` shrinks, so the
-  bytes that leave are the same capability metadata the mint's boundary already
-  excludes.  That theorem is the gate's `CONTENT_WRITE_EXEMPT` justification, and
-  the exemption is reconciled in both directions: delete the theorem, or let the
-  arm stop reaching a content write, and the gate fails rather than keeping a
-  pass it no longer earns.
+  `cspaceRevoke` is inert on the same scope ground: `cspaceRevokeCdt` walks
+  the CDT across arbitrary CNodes, so the self-loop claim is false of it, but
+  it deletes capabilities and writes no content-tracked field (no capability is
+  in flight in a parked message since WS-ZA ZA4.7, so revocation has no message
+  to rewrite).
 * **Scheduler and lifecycle state** — priorities, affinities, binding, suspend
   and resume move no content between objects; they move a thread's *scheduling*
   attributes.  `.tcbSetIPCBuffer` installs a buffer address, not its contents.
@@ -193,20 +183,10 @@ def contentFlowClass : SyscallId → ContentFlowClass
   | .cspaceMove => .inert
   | .cspaceMint => .inert
   | .cspaceDelete => .inert
-  -- **WS-RR RR8.16 (`v0.35.190`)**: inert on the *scope* ground `.cspaceMint`
-  -- rests on, not the self-loop ground its three siblings above do — the
-  -- self-loop argument is **false** of it, since `cspaceRevokeCdt` walks the CDT
-  -- across arbitrary CNodes.  And unlike `.cspaceMint` it genuinely writes a
-  -- content-tracked field: its last step
-  -- (`revokePendingTransfersFrom`) rewrites `TCB.pendingMessage`, which the
-  -- Tier-1 reach gate detects and is right to.  What the gate cannot decide is
-  -- what that write leaves behind, and
-  -- `revokePendingTransfersFrom_preserves_trackedContent` states it: the
-  -- payload (`IpcMessage.registers`) is kept and only `IpcMessage.caps` shrinks,
-  -- which is capability metadata and so the boundary
-  -- `capabilityBadgeChannel_out_of_scope` already declares out of scope.  That
-  -- theorem is the gate's `CONTENT_WRITE_EXEMPT` justification; delete it and
-  -- this arm goes back to failing rather than keeping a pass it no longer earns.
+  -- Inert on the *scope* ground `.cspaceMint` rests on, not the self-loop
+  -- ground its three siblings above do — `cspaceRevokeCdt` walks the CDT across
+  -- arbitrary CNodes.  It deletes capabilities and writes no content-tracked
+  -- field.
   | .cspaceRevoke => .inert
   | .mintReplyCap => .inert
   -- VSpace and cache/TLB maintenance: page-table entries and cache lines, not
@@ -354,68 +334,6 @@ theorem capabilityBadgeChannel_out_of_scope :
       ("CNode", "slots") ∉ contentTrackedFields := by
   refine ⟨rfl, ?_⟩
   simp [contentTrackedFields]
-
-/-- **WS-RR RR8.16 (`v0.35.190`): the revocation sweep rewrites a content-tracked
-FIELD and moves no tracked CONTENT.**
-
-`revokePendingTransfersFrom` — the last step of every revocation, which consumes
-the derivations that have not landed yet — writes `TCB.pendingMessage`, and that
-field *is* `contentTrackedFields`' first entry.  So the Tier-1 reach gate
-(`scripts/check_content_flow_coverage.py`) sees a content write under an arm
-classified `.inert`, and it is right to: the check is field-granular, which is
-what makes it a detector rather than a table of promises.
-
-What it cannot decide is what this theorem states.  The sweep's write is a
-**drop** (`TCB.pendingCapsDropped`): the message's `registers` — the payload this
-model tracks — are kept, and what leaves is `IpcMessage.caps`, which is
-capability metadata and therefore the boundary
-`capabilityBadgeChannel_out_of_scope` already declares out of scope.  Nothing
-else in the store moves at all, so no notification badge can change either.
-
-Two halves, both quantified over every key, because "the payload at the keys the
-sweep happens to write" would be a statement about the fixture:
-
-* a post-state thread holding a parked message held one before, with the **same
-  registers**; and
-* a notification is in the post-state exactly when it was in the pre-state, so
-  `Notification.pendingBadge` — the other tracked channel — is untouched.
-
-This is the justification `CONTENT_WRITE_EXEMPT` names.  Delete it and
-`.cspaceRevoke` goes back to failing the gate rather than quietly keeping a pass
-it no longer earns, which is the bite `AUDIT_APPEND_EXEMPT` already has. -/
-theorem revokePendingTransfersFrom_preserves_trackedContent
-    (st : SystemState) (nodes : List CdtNodeId) (hExt : st.objects.invExt) :
-    (∀ (oid : SeLe4n.ObjId) (t' : TCB) (m' : IpcMessage),
-        (revokePendingTransfersFrom st nodes).objects[oid]? = some (.tcb t') →
-        t'.pendingMessage = some m' →
-        ∃ t m, st.objects[oid]? = some (.tcb t) ∧ t.pendingMessage = some m ∧
-          m'.registers = m.registers) ∧
-    (∀ (oid : SeLe4n.ObjId) (n : Notification),
-        (revokePendingTransfersFrom st nodes).objects[oid]? = some (.notification n) ↔
-        st.objects[oid]? = some (.notification n)) := by
-  obtain ⟨_, _, _, _, _, hObj⟩ := revokePendingTransfersFrom_frame st nodes hExt
-  constructor
-  · intro oid t' m' hPost hMsg
-    rcases hObj oid with hEq | ⟨u, u', hU, hUD, hU'⟩
-    · exact ⟨t', m', by rw [← hEq]; exact hPost, hMsg, rfl⟩
-    · rw [hPost] at hU'
-      obtain rfl : t' = u' := by
-        simpa only [Option.some.injEq, KernelObject.tcb.injEq] using hU'
-      -- the drop keeps presence, so the pre-state message exists…
-      have hPre : u.pendingMessage.isSome := by
-        have := TCB.pendingCapsDropped_isSome hUD
-        rw [hMsg] at this; exact (this.symm ▸ rfl : u.pendingMessage.isSome = true)
-      obtain ⟨m, hm⟩ := Option.isSome_iff_exists.mp hPre
-      exact ⟨u, m, hU, hm, TCB.pendingCapsDropped_registers hUD hm hMsg⟩
-  · intro oid n
-    rcases hObj oid with hEq | ⟨_, u', _, _, hU'⟩
-    · rw [hEq]
-    · constructor
-      · intro h; rw [h] at hU'; exact absurd (Option.some.inj hU') (by simp)
-      · intro h
-        rcases hObj oid with hEq' | ⟨_, _, hV, _, _⟩
-        · rw [hEq']; exact h
-        · rw [h] at hV; exact absurd (Option.some.inj hV) (by simp)
 
 -- ============================================================================
 -- §2  WS-SM SM9.D.8-.D.11 — the edges
@@ -616,20 +534,11 @@ it holds no content of its own (`senderTaintEdges`), and the head-sender edge is
 exact where an endpoint proxy would over-approximate to every queued sender.
 
 **Why a head sender means content actually moves.**  This reads the queue head
-and not the message, so on its own it would declare an edge for a head parked
-with `pendingMessage := none` — a receiver handed `none` and joined to the
-sender's provenance anyway, which is a causal predecessor for content never
-delivered.  `blockedThreadsPendingMessageConsistent` does not rule that head out: it
-constrains only `.blockedOnReceive` / `.blockedOnNotification`.  What rules it
-out is `blockedThreadsPendingMessageConsistent` (PR #873 round 11), which ties
-`pendingMessage` to the blocking state in *both* directions: a thread parked to
-deliver carries what it is delivering, so a head sender in any state satisfying
-`ipcInvariantFull` has a message by construction.  Below the invariant the
-transport refuses the head outright, so both receives fail closed and the plan is
-never applied to such a state
-(`endpointQueuePopHead_send_sender_carries_message` is that form).  Neither test
-is duplicated here on purpose: a declared edge and a delivered message stay one
-condition apart, not two that can drift.
+and not the message, and that is exact: a sender parked on the send queue keeps
+its message in its own saved registers and TCB (WS-ZA ZA4.7), and both receives
+deliver `some (blockedSenderMessage …)` of the head they dequeue, so every
+dequeued head delivers content.  There is no message-less parked sender for an
+edge to over-approximate.
 
 **No CSpace sink is declared here** — for the same reason `senderTaintEdges`
 declares none, and it is worth saying which reason that is.  It used to be "the

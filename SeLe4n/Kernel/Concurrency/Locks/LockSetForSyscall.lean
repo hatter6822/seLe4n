@@ -122,9 +122,10 @@ capability is a different object with the same number.
 
 The two are separate fields rather than one, because a syscall is directed at
 one or the other and never at both: `.tcbSuspend` names a victim thread,
-`.send` names an endpoint. `message` is here because whether an IPC arm's
+`.send` names an endpoint. `payload` is here because whether a send's
 footprint includes a capability-transfer destination is a property of what the
-message carries (WS-RR RR7.7), and the arms that consume it are RR7.11's.
+sender's capability grants and its frame asks for (WS-RR RR7.7, WS-ZA ZA4.7),
+and the arms that consume it are RR7.11's.
 
 Every field is optional and defaults to absent, so a caller supplies exactly
 what its syscall is directed at and an arm that needs something absent answers
@@ -149,28 +150,27 @@ structure SyscallLockOperands where
   identifiers, and a syscall that names both — `.replyRecv` names an endpoint
   *and* a reply object — cannot express itself with one slot at all. -/
   targetReply : Option ReplyId := none
-  /-- The message an IPC arm carries, for the footprints whose members depend
-  on it — a caps-carrying rendezvous declares the receiver's CSpace root and
-  the state-level lock its CDT write needs, and a capless one must not. -/
+  /-- **WS-ZA ZA4.7**: what a `.send` / `.call` is handed from its capability
+  (`SendPayload`), for the footprints whose members depend on it — a rendezvous
+  that transfers capabilities (`sendCapRequest`) declares the receiver's CSpace
+  root and the state-level lock its CDT write needs, and one that transfers none
+  must not. -/
+  payload : Option SendPayload := none
+  /-- The message a `.reply` / `.replyRecv` carries, which their scheduler
+  footprints read. -/
   message : Option IpcMessage := none
-  /-- **WS-RR RR8.12 Cut C4**: the rights the invoked endpoint capability
-  carries, which `.call`'s SCHEDULER-domain footprint reads.
+  /-- **WS-RR RR8.12 Cut C4**: the receiving thread's capability-transfer slot
+  base, which `.call`'s and `.replyRecv`'s scheduler footprints read.
 
-  The five fields below are the scheduler domain's, and they are here rather
+  This and the fields below are the scheduler domain's, and they are here rather
   than in a record of their own because they are *this syscall's operands* —
   one syscall, one operand record.  The two domains need different subsets of
   them because they ask different questions of the same arm: an object-domain
   footprint names the objects a transition writes, resolved from the capability
   it was invoked through, while a scheduler-domain footprint names the **cores**
   it writes, resolved by re-running the transition's own control flow — which
-  needs the transition's own arguments.
-
-  Every one is optional and defaults to absent, so `lockSetForSyscall` is
-  untouched by their addition and an arm that needs one absent answers `none`,
-  which is the fail-closed direction this record has had since RR7.10. -/
-  endpointRights : Option AccessRightSet := none
-  /-- **Cut C4**: the receiving thread's capability-transfer slot base, which
-  `.call`'s and `.replyRecv`'s scheduler footprints read. -/
+  needs the transition's own arguments.  Every one is optional and defaults to
+  absent, so an arm that needs one absent answers `none`. -/
   receiverSlotBase : Option SeLe4n.Slot := none
   /-- **Cut C4**: the `MessageInfo` a `.reply` carries.  The arm's footprint
   branches on whether the answered caller has a pending fault, and on that
@@ -188,25 +188,17 @@ structure SyscallLockOperands where
   unsupplied operand read as an unpin request, which is a footprint for a
   different transition. -/
   affinity : Option (Option CoreId) := none
-  /-- **WS-LS LS2.3**: the extra-capability addresses a `.send` / `.call`
-  message names.  The arm resolves them — minting a derivation node per source
-  slot — *before* its transition runs, so `.call`'s scheduler footprint, whose
-  write set re-runs the dispatch and reads those nodes, is resolved at the state
-  the resolution leaves (`schedLockSetForSyscall`'s `.call` arm).  `.send`'s
-  write set reads the object store alone, which the resolution leaves
-  unchanged, so its footprint needs no such re-reading. -/
-  extraCapAddrs : Array SeLe4n.CPtr := #[]
 
 /-- **WS-RR RR7.10**: the operands of a thread-directed syscall. -/
 def SyscallLockOperands.ofThreadTarget (caller target : ThreadId) :
     SyscallLockOperands :=
   { caller := caller, targetThread := some target }
 
-/-- **WS-RR RR7.10**: the operands of an object-directed syscall, with the
-message it carries. -/
+/-- **WS-RR RR7.10**: the operands of an object-directed syscall, with what a
+send carries in from its capability. -/
 def SyscallLockOperands.ofObjectTarget (caller : ThreadId) (target : ObjId)
-    (message : Option IpcMessage := none) : SyscallLockOperands :=
-  { caller := caller, targetObject := some target, message := message }
+    (payload : Option SendPayload := none) : SyscallLockOperands :=
+  { caller := caller, targetObject := some target, payload := payload }
 
 /-- **WS-RR RR7.11**: the operands of a reply-shaped syscall.
 
@@ -240,27 +232,27 @@ def lockSetForSyscall (sid : SyscallId) (ops : SyscallLockOperands)
   -- root `syscallLookupCap` resolves the invoked capability through — and a
   -- caller that does not resolve to a TCB has no root to name.
   --
-  -- `.send` and `.call` additionally require the **message**: whether the
+  -- `.send` and `.call` additionally require the **payload**: whether the
   -- rendezvous installs capabilities (and so whether the receiver's CSpace root
-  -- and the state-level lock the CDT write needs are members) is a property of
-  -- what the message carries, RR7.7's optional. With no message supplied the
-  -- arm cannot tell a capless send from an unknown one, so it declares nothing
-  -- — the module docstring's direction, not a defaulted guess: defaulting to
-  -- the empty message would declare the *capless* footprint for a send that may
-  -- carry capabilities, which is the false-footprint failure this file exists
-  -- to refuse.
+  -- and the state-level lock the CDT write needs are members) turns on the
+  -- grant right it carries and what the sender's frame asks for
+  -- (`sendCapRequest`). With no payload supplied the arm cannot tell a capless
+  -- send from an unknown one, so it declares nothing — the module docstring's
+  -- direction, not a defaulted guess: defaulting to an ungranted payload would
+  -- declare the *capless* footprint for a send that may carry capabilities,
+  -- which is the false-footprint failure this file exists to refuse.
   | .send =>
       (st.getTcb? ops.caller).bind fun caller =>
         ops.targetObject.bind fun endpointId =>
-          ops.message.map fun msg =>
-            lockSet_endpointSendOnCore st endpointId ops.caller caller.cspaceRoot msg
+          ops.payload.map fun payload =>
+            lockSet_endpointSendOnCore st endpointId ops.caller caller.cspaceRoot payload
   | .call =>
       (st.getTcb? ops.caller).bind fun caller =>
         ops.targetObject.bind fun endpointId =>
-          ops.message.map fun msg =>
-            lockSet_endpointCallOnCore st endpointId ops.caller caller.cspaceRoot msg
-  -- `.receive` needs no message: what a receive installs comes from the *parked
-  -- sender's* message, which `receiveInstallsCaps` reads from the endpoint.
+          ops.payload.map fun payload =>
+            lockSet_endpointCallOnCore st endpointId ops.caller caller.cspaceRoot payload
+  -- `.receive` needs no payload: what a receive installs comes from the *parked
+  -- sender's* frame, which `receiveInstallsCaps` reads from the endpoint.
   -- The reply object is the server-supplied one (`RecvArgs.replyCPtr`), a
   -- decoded operand, so it travels in `targetReply`; `none` is the plain
   -- receive and declares no reply lock, which is right — a plain receive links
@@ -405,22 +397,22 @@ unconditionally could not satisfy its own `iff`.
     lockSetForSyscall .send ops st
       = (st.getTcb? ops.caller).bind fun caller =>
           ops.targetObject.bind fun endpointId =>
-            ops.message.map fun msg =>
-              lockSet_endpointSendOnCore st endpointId ops.caller caller.cspaceRoot msg := rfl
+            ops.payload.map fun payload =>
+              lockSet_endpointSendOnCore st endpointId ops.caller caller.cspaceRoot payload := rfl
 
 /-- **WS-RR RR7.11**: and it declares exactly when the caller resolves, an
-endpoint is named, and the message is known.
+endpoint is named, and the payload is known.
 
-The message conjunct is the load-bearing one: without it the arm would have to
+The payload conjunct is the load-bearing one: without it the arm would have to
 guess whether capabilities travel, and the capless guess is a footprint that
 omits the receiver's CSpace root and the state-level lock on precisely the path
 that writes them. -/
 theorem lockSetForSyscall_send_isSome_iff
     (ops : SyscallLockOperands) (st : SystemState) :
     (lockSetForSyscall .send ops st).isSome
-      ↔ (st.getTcb? ops.caller).isSome ∧ ops.targetObject.isSome ∧ ops.message.isSome := by
+      ↔ (st.getTcb? ops.caller).isSome ∧ ops.targetObject.isSome ∧ ops.payload.isSome := by
   unfold lockSetForSyscall
-  cases st.getTcb? ops.caller <;> cases ops.targetObject <;> cases ops.message <;> simp
+  cases st.getTcb? ops.caller <;> cases ops.targetObject <;> cases ops.payload <;> simp
 
 /-- **WS-RR RR7.11**: `.call` is wired to the resolved call footprint. -/
 @[simp] theorem lockSetForSyscall_call
@@ -428,17 +420,17 @@ theorem lockSetForSyscall_send_isSome_iff
     lockSetForSyscall .call ops st
       = (st.getTcb? ops.caller).bind fun caller =>
           ops.targetObject.bind fun endpointId =>
-            ops.message.map fun msg =>
-              lockSet_endpointCallOnCore st endpointId ops.caller caller.cspaceRoot msg := rfl
+            ops.payload.map fun payload =>
+              lockSet_endpointCallOnCore st endpointId ops.caller caller.cspaceRoot payload := rfl
 
 /-- **WS-RR RR7.11**: and it declares under the same three conditions as
 `.send`, because it carries capabilities under the same rule. -/
 theorem lockSetForSyscall_call_isSome_iff
     (ops : SyscallLockOperands) (st : SystemState) :
     (lockSetForSyscall .call ops st).isSome
-      ↔ (st.getTcb? ops.caller).isSome ∧ ops.targetObject.isSome ∧ ops.message.isSome := by
+      ↔ (st.getTcb? ops.caller).isSome ∧ ops.targetObject.isSome ∧ ops.payload.isSome := by
   unfold lockSetForSyscall
-  cases st.getTcb? ops.caller <;> cases ops.targetObject <;> cases ops.message <;> simp
+  cases st.getTcb? ops.caller <;> cases ops.targetObject <;> cases ops.payload <;> simp
 
 /-- **WS-RR RR7.11**: `.receive` is wired to the resolved receive footprint. -/
 @[simp] theorem lockSetForSyscall_receive
@@ -669,12 +661,12 @@ every object rather than over the members someone listed.
 footprint of the endpoint it names. -/
 theorem lockSetForSyscall_send_eq
     (ops : SyscallLockOperands) (st : SystemState) (caller : TCB)
-    (endpointId : ObjId) (msg : IpcMessage)
+    (endpointId : ObjId) (payload : SendPayload)
     (hTcb : st.getTcb? ops.caller = some caller)
     (hEp : ops.targetObject = some endpointId)
-    (hMsg : ops.message = some msg) :
+    (hMsg : ops.payload = some payload) :
     lockSetForSyscall .send ops st
-      = some (lockSet_endpointSendOnCore st endpointId ops.caller caller.cspaceRoot msg) := by
+      = some (lockSet_endpointSendOnCore st endpointId ops.caller caller.cspaceRoot payload) := by
   unfold lockSetForSyscall
   rw [hTcb, hEp, hMsg]; rfl
 
@@ -683,14 +675,14 @@ performs — the sender's own TCB (it blocks, or is left runnable, on its own
 core) and the endpoint queue the rendezvous mutates. -/
 theorem lockSetForSyscall_send_covers_writes
     (ops : SyscallLockOperands) (st : SystemState) (caller : TCB)
-    (endpointId : ObjId) (msg : IpcMessage) (S : LockSet)
+    (endpointId : ObjId) (payload : SendPayload) (S : LockSet)
     (hTcb : st.getTcb? ops.caller = some caller)
     (hEp : ops.targetObject = some endpointId)
-    (hMsg : ops.message = some msg)
+    (hMsg : ops.payload = some payload)
     (hDecl : lockSetForSyscall .send ops st = some S) :
     (tcbLock ops.caller, AccessMode.write) ∈ S.pairs ∧
     (endpointLock endpointId, AccessMode.write) ∈ S.pairs := by
-  rw [lockSetForSyscall_send_eq ops st caller endpointId msg hTcb hEp hMsg] at hDecl
+  rw [lockSetForSyscall_send_eq ops st caller endpointId payload hTcb hEp hMsg] at hDecl
   cases hDecl
   exact ⟨lockSet_endpointSend_caller_tcb_write_mem _ _ _ _ _ _,
          lockSet_endpointSend_endpoint_write_mem _ _ _ _ _ _⟩
@@ -705,30 +697,30 @@ bracket acquires named neither until this row, so a rendezvous on one core and a
 both writing it. -/
 theorem lockSetForSyscall_send_covers_queueNeighbour
     (ops : SyscallLockOperands) (st : SystemState) (caller : TCB)
-    (endpointId : ObjId) (msg : IpcMessage) (S : LockSet) (q : ThreadId)
+    (endpointId : ObjId) (payload : SendPayload) (S : LockSet) (q : ThreadId)
     (hTcb : st.getTcb? ops.caller = some caller)
     (hEp : ops.targetObject = some endpointId)
-    (hMsg : ops.message = some msg)
+    (hMsg : ops.payload = some payload)
     (hq : sendSideQueueStructureNeighbor? st endpointId = some q)
     (hDecl : lockSetForSyscall .send ops st = some S) :
     (tcbLock q, AccessMode.write) ∈ S.pairs := by
-  rw [lockSetForSyscall_send_eq ops st caller endpointId msg hTcb hEp hMsg] at hDecl
+  rw [lockSetForSyscall_send_eq ops st caller endpointId payload hTcb hEp hMsg] at hDecl
   cases hDecl
   exact lockSet_endpointSendOnCore_covers_queueNeighbour _ _ _ _ _ _ hq
 
-/-- **WS-RR RR7.11**: and, when the message carries capabilities, the receiver's
+/-- **WS-RR RR7.11**: and, when the send transfers capabilities, the receiver's
 CSpace root and the state-level lock the CDT edge needs. -/
 theorem lockSetForSyscall_send_covers_capsWrites
     (ops : SyscallLockOperands) (st : SystemState) (caller : TCB)
-    (endpointId : ObjId) (msg : IpcMessage) (S : LockSet) (recvRoot : ObjId)
+    (endpointId : ObjId) (payload : SendPayload) (S : LockSet) (recvRoot : ObjId)
     (hTcb : st.getTcb? ops.caller = some caller)
     (hEp : ops.targetObject = some endpointId)
-    (hMsg : ops.message = some msg)
-    (hDest : rendezvousCapsDestination? st endpointId msg = some recvRoot)
+    (hMsg : ops.payload = some payload)
+    (hDest : rendezvousCapsDestination? st endpointId ops.caller payload = some recvRoot)
     (hDecl : lockSetForSyscall .send ops st = some S) :
     (cnodeLock recvRoot, AccessMode.write) ∈ S.pairs ∧
     (stateLevelLock, AccessMode.write) ∈ S.pairs := by
-  rw [lockSetForSyscall_send_eq ops st caller endpointId msg hTcb hEp hMsg] at hDecl
+  rw [lockSetForSyscall_send_eq ops st caller endpointId payload hTcb hEp hMsg] at hDecl
   cases hDecl
   exact ⟨lockSet_endpointSendOnCore_covers_capsDestination _ _ _ _ _ _ hDest,
          lockSet_endpointSendOnCore_covers_cdt _ _ _ _ _ _ hDest⟩
@@ -737,26 +729,26 @@ theorem lockSetForSyscall_send_covers_capsWrites
 footprint. -/
 theorem lockSetForSyscall_call_eq
     (ops : SyscallLockOperands) (st : SystemState) (caller : TCB)
-    (endpointId : ObjId) (msg : IpcMessage)
+    (endpointId : ObjId) (payload : SendPayload)
     (hTcb : st.getTcb? ops.caller = some caller)
     (hEp : ops.targetObject = some endpointId)
-    (hMsg : ops.message = some msg) :
+    (hMsg : ops.payload = some payload) :
     lockSetForSyscall .call ops st
-      = some (lockSet_endpointCallOnCore st endpointId ops.caller caller.cspaceRoot msg) := by
+      = some (lockSet_endpointCallOnCore st endpointId ops.caller caller.cspaceRoot payload) := by
   unfold lockSetForSyscall
   rw [hTcb, hEp, hMsg]; rfl
 
 /-- **WS-RR RR7.11**: `.call`'s two unconditional writes. -/
 theorem lockSetForSyscall_call_covers_writes
     (ops : SyscallLockOperands) (st : SystemState) (caller : TCB)
-    (endpointId : ObjId) (msg : IpcMessage) (S : LockSet)
+    (endpointId : ObjId) (payload : SendPayload) (S : LockSet)
     (hTcb : st.getTcb? ops.caller = some caller)
     (hEp : ops.targetObject = some endpointId)
-    (hMsg : ops.message = some msg)
+    (hMsg : ops.payload = some payload)
     (hDecl : lockSetForSyscall .call ops st = some S) :
     (tcbLock ops.caller, AccessMode.write) ∈ S.pairs ∧
     (endpointLock endpointId, AccessMode.write) ∈ S.pairs := by
-  rw [lockSetForSyscall_call_eq ops st caller endpointId msg hTcb hEp hMsg] at hDecl
+  rw [lockSetForSyscall_call_eq ops st caller endpointId payload hTcb hEp hMsg] at hDecl
   cases hDecl
   exact ⟨lockSet_endpointCall_caller_tcb_write_mem_unconditional ..,
          lockSet_endpointCall_endpoint_write_mem ..⟩
@@ -764,15 +756,15 @@ theorem lockSetForSyscall_call_covers_writes
 /-- **WS-RR RR7.11**: and `.call`'s capability-transfer writes. -/
 theorem lockSetForSyscall_call_covers_capsWrites
     (ops : SyscallLockOperands) (st : SystemState) (caller : TCB)
-    (endpointId : ObjId) (msg : IpcMessage) (S : LockSet) (recvRoot : ObjId)
+    (endpointId : ObjId) (payload : SendPayload) (S : LockSet) (recvRoot : ObjId)
     (hTcb : st.getTcb? ops.caller = some caller)
     (hEp : ops.targetObject = some endpointId)
-    (hMsg : ops.message = some msg)
-    (hDest : rendezvousCapsDestination? st endpointId msg = some recvRoot)
+    (hMsg : ops.payload = some payload)
+    (hDest : rendezvousCapsDestination? st endpointId ops.caller payload = some recvRoot)
     (hDecl : lockSetForSyscall .call ops st = some S) :
     (cnodeLock recvRoot, AccessMode.write) ∈ S.pairs ∧
     (stateLevelLock, AccessMode.write) ∈ S.pairs := by
-  rw [lockSetForSyscall_call_eq ops st caller endpointId msg hTcb hEp hMsg] at hDecl
+  rw [lockSetForSyscall_call_eq ops st caller endpointId payload hTcb hEp hMsg] at hDecl
   cases hDecl
   exact ⟨lockSet_endpointCallOnCore_covers_capsDestination _ _ _ _ _ _ hDest,
          lockSet_endpointCallOnCore_covers_cdt _ _ _ _ _ _ hDest⟩
@@ -780,14 +772,14 @@ theorem lockSetForSyscall_call_covers_capsWrites
 /-- **WS-OD OD3.11**: the `.call` half. -/
 theorem lockSetForSyscall_call_covers_queueNeighbour
     (ops : SyscallLockOperands) (st : SystemState) (caller : TCB)
-    (endpointId : ObjId) (msg : IpcMessage) (S : LockSet) (q : ThreadId)
+    (endpointId : ObjId) (payload : SendPayload) (S : LockSet) (q : ThreadId)
     (hTcb : st.getTcb? ops.caller = some caller)
     (hEp : ops.targetObject = some endpointId)
-    (hMsg : ops.message = some msg)
+    (hMsg : ops.payload = some payload)
     (hq : sendSideQueueStructureNeighbor? st endpointId = some q)
     (hDecl : lockSetForSyscall .call ops st = some S) :
     (tcbLock q, AccessMode.write) ∈ S.pairs := by
-  rw [lockSetForSyscall_call_eq ops st caller endpointId msg hTcb hEp hMsg] at hDecl
+  rw [lockSetForSyscall_call_eq ops st caller endpointId payload hTcb hEp hMsg] at hDecl
   cases hDecl
   exact lockSet_endpointCallOnCore_covers_queueNeighbour _ _ _ _ _ _ hq
 
@@ -1116,52 +1108,48 @@ Stated *changed ⇒ declared* rather than member-by-member, so it quantifies ove
 every object rather than over the ones someone remembered to list. -/
 theorem lockSetForSyscall_send_object_writes_declared
     (ops : SyscallLockOperands) (st : SystemState) (caller : TCB)
-    (endpointId : ObjId) (msg : IpcMessage) (S : LockSet)
-    (endpointRights : AccessRightSet)
+    (endpointId : ObjId) (payload : SendPayload) (S : LockSet)
     (receiverSlotBase : Slot) (st' st'' : SystemState) (recvRoot : ObjId)
     (summary : CapTransferSummary) (oid : ObjId)
     (hTcb : st.getTcb? ops.caller = some caller)
     (hEp : ops.targetObject = some endpointId)
-    (hMsg : ops.message = some msg)
+    (hMsg : ops.payload = some payload)
     (hDecl : lockSetForSyscall .send ops st = some S)
-    (hSend : endpointSendDual endpointId ops.caller
-        { msg with capsGranted := endpointRights.mem .grant } st = .ok ((), st'))
-    (hDest : rendezvousCapsDestination? st endpointId msg = some recvRoot)
+    (hSend : endpointSendDual endpointId ops.caller payload st = .ok ((), st'))
+    (hDest : rendezvousCapsDestination? st endpointId ops.caller payload = some recvRoot)
     (hObjInv : st'.objects.invExt)
-    (hStep : endpointSendDualWithCaps endpointId ops.caller msg endpointRights
+    (hStep : endpointSendDualWithCaps endpointId ops.caller payload
         receiverSlotBase st = .ok (summary, st''))
     (hChanged : st''.objects[oid]? ≠ st'.objects[oid]?) :
     (cnodeLock oid, AccessMode.write) ∈ S.pairs := by
-  rw [lockSetForSyscall_send_eq ops st caller endpointId msg hTcb hEp hMsg] at hDecl
+  rw [lockSetForSyscall_send_eq ops st caller endpointId payload hTcb hEp hMsg] at hDecl
   cases hDecl
-  exact endpointSendDualWithCaps_object_writes_declared endpointId ops.caller msg
-    endpointRights caller.cspaceRoot receiverSlotBase st st' st''
+  exact endpointSendDualWithCaps_object_writes_declared endpointId ops.caller payload
+    caller.cspaceRoot receiverSlotBase st st' st''
     recvRoot summary oid hSend hDest hObjInv hStep hChanged
 
 /-- **WS-RR RR7.11**: and the same capstone on `.call` — the same transfer,
 reached through the same resolver, declared in the same members. -/
 theorem lockSetForSyscall_call_object_writes_declared
     (ops : SyscallLockOperands) (st : SystemState) (caller : TCB)
-    (endpointId : ObjId) (msg : IpcMessage) (S : LockSet)
-    (endpointRights : AccessRightSet)
+    (endpointId : ObjId) (payload : SendPayload) (S : LockSet)
     (receiverSlotBase : Slot) (st' st'' : SystemState) (recvRoot : ObjId)
     (summary : CapTransferSummary) (oid : ObjId)
     (hTcb : st.getTcb? ops.caller = some caller)
     (hEp : ops.targetObject = some endpointId)
-    (hMsg : ops.message = some msg)
+    (hMsg : ops.payload = some payload)
     (hDecl : lockSetForSyscall .call ops st = some S)
-    (hCall : endpointCall endpointId ops.caller
-        { msg with capsGranted := endpointRights.mem .grant } st = .ok ((), st'))
-    (hDest : rendezvousCapsDestination? st endpointId msg = some recvRoot)
+    (hCall : endpointCall endpointId ops.caller payload st = .ok ((), st'))
+    (hDest : rendezvousCapsDestination? st endpointId ops.caller payload = some recvRoot)
     (hObjInv : st'.objects.invExt)
-    (hStep : endpointCallWithCaps endpointId ops.caller msg endpointRights
+    (hStep : endpointCallWithCaps endpointId ops.caller payload
         receiverSlotBase st = .ok (summary, st''))
     (hChanged : st''.objects[oid]? ≠ st'.objects[oid]?) :
     (cnodeLock oid, AccessMode.write) ∈ S.pairs := by
-  rw [lockSetForSyscall_call_eq ops st caller endpointId msg hTcb hEp hMsg] at hDecl
+  rw [lockSetForSyscall_call_eq ops st caller endpointId payload hTcb hEp hMsg] at hDecl
   cases hDecl
-  exact endpointCallWithCaps_object_writes_declared endpointId ops.caller msg
-    endpointRights caller.cspaceRoot receiverSlotBase st st' st''
+  exact endpointCallWithCaps_object_writes_declared endpointId ops.caller payload
+    caller.cspaceRoot receiverSlotBase st st' st''
     recvRoot summary oid hCall hDest hObjInv hStep hChanged
 
 /-! ## The declared arms, and the negative that keeps the rest honest -/
@@ -1244,11 +1232,11 @@ Stated as a congruence over all five at once, so a sixth field added without
 extending it is a field nothing has checked. -/
 theorem lockSetForSyscall_ignores_sched_operands (sid : SyscallId)
     (ops : SyscallLockOperands) (st : SystemState)
-    (rights : Option AccessRightSet) (slotBase : Option SeLe4n.Slot)
+    (msg : Option IpcMessage) (slotBase : Option SeLe4n.Slot)
     (mi : Option MessageInfo) (regs : Option (Array SeLe4n.RegValue))
     (aff : Option (Option CoreId)) :
     lockSetForSyscall sid
-        { ops with endpointRights := rights, receiverSlotBase := slotBase,
+        { ops with message := msg, receiverSlotBase := slotBase,
                    replyMessageInfo := mi, replyRegisters := regs, affinity := aff } st
       = lockSetForSyscall sid ops st := by
   cases sid <;> rfl

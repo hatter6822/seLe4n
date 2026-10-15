@@ -165,6 +165,20 @@ theorem ipcUnwrapCaps_replyViews_eq (msg : IpcMessage) (root : SeLe4n.ObjId)
     (fun k t' hk => ⟨t', ipcUnwrapCaps_tcb_backward msg root base grant st st' sum k t'
       hInv h hk⟩)
 
+/-- The rendezvous capability lookup reads the sender's CSpace and writes the
+receiver's CNodes alone. -/
+theorem receiveTransferCaps_replyViews_eq
+    {req : Option (SeLe4n.ObjId × Array SeLe4n.CPtr × Nat)} {root : SeLe4n.ObjId}
+    {base : SeLe4n.Slot} {st st' : SystemState} {sum : CapTransferSummary}
+    (hInv : st.objects.invExt) (h : receiveTransferCaps req root base st = .ok (sum, st')) :
+    st'.replyViews = st.replyViews := by
+  obtain ⟨stR, _, hO, _, _, hOr⟩ := receiveTransferCaps_frame h
+  have hR : stR.replyViews = st.replyViews := by
+    funext k; unfold SystemState.replyViews SystemState.getObject?; rw [hO]
+  rcases hOr with rfl | hU
+  · exact hR
+  · exact (ipcUnwrapCaps_replyViews_eq _ _ _ _ (hO ▸ hInv) hU).trans hR
+
 -- ============================================================================
 -- §2  The donation steps keep the views
 -- ============================================================================
@@ -295,23 +309,23 @@ theorem endpointReceiveDualWithCapsOnCore_preserves_replyWaitersConsistent
       all_goals first
         | exact hB
         | (rename_i hU; exact replyWaitersConsistent.of_views
-            (ipcUnwrapCaps_replyViews_eq _ _ _ _ hI hU) hB)
+            (receiveTransferCaps_replyViews_eq hI hU) hB)
 
 theorem endpointCallWithCapsOnCore_preserves_replyWaitersConsistent
-    (endpointId : SeLe4n.ObjId) (caller : SeLe4n.ThreadId) (msg : IpcMessage)
-    (rights : AccessRightSet) (base : SeLe4n.Slot) (c : CoreId) (st : SystemState)
+    (endpointId : SeLe4n.ObjId) (caller : SeLe4n.ThreadId) (payload : SendPayload)
+    (base : SeLe4n.Slot) (c : CoreId) (st : SystemState)
     (hInv : st.objects.invExt) (hC : st.replyWaitersConsistent)
     (hCaller : ReplyViews.serverFree st.replyViews caller)
     (hHead : ∀ ep r, st.objects[endpointId]? = some (.endpoint ep) → ep.receiveQ.head = some r →
       r ≠ caller ∧ ReplyViews.serverFree st.replyViews r) :
-    (endpointCallWithCapsOnCore endpointId caller msg rights base c
+    (endpointCallWithCapsOnCore endpointId caller payload base c
       st).1.replyWaitersConsistent := by
   have hB := endpointCallOnCore_preserves_replyWaitersConsistent endpointId caller
-    { msg with capsGranted := rights.mem .grant } c st hInv hC hCaller hHead
+    payload c st hInv hC hCaller hHead
   have hI := endpointCallOnCore_preserves_objects_invExt endpointId caller
-    { msg with capsGranted := rights.mem .grant } c st hInv
+    payload c st hInv
   unfold endpointCallWithCapsOnCore
-  cases hR : endpointCallOnCore endpointId caller { msg with capsGranted := rights.mem .grant } c st with
+  cases hR : endpointCallOnCore endpointId caller payload c st with
   | mk s1 res =>
     rw [hR] at hB hI
     cases res with
@@ -322,26 +336,26 @@ theorem endpointCallWithCapsOnCore_preserves_replyWaitersConsistent
       all_goals first
         | exact hB
         | (rename_i hU; exact replyWaitersConsistent.of_views
-            (ipcUnwrapCaps_replyViews_eq _ _ _ _ hI hU) hB)
+            (receiveTransferCaps_replyViews_eq hI hU) hB)
 
 /-- **The live call keeps the reply-waiter queues consistent**: the call links
 the caller to the receiver it rendezvoused with; the donation and the priority
 walk after it keep the views. -/
 theorem endpointCallCrossCoreDispatch_preserves_replyWaitersConsistent
-    (endpointId : SeLe4n.ObjId) (caller : SeLe4n.ThreadId) (msg : IpcMessage)
-    (rights : AccessRightSet) (base : SeLe4n.Slot) (c : CoreId) (st : SystemState)
+    (endpointId : SeLe4n.ObjId) (caller : SeLe4n.ThreadId) (payload : SendPayload)
+    (base : SeLe4n.Slot) (c : CoreId) (st : SystemState)
     (hInv : st.objects.invExt) (hC : st.replyWaitersConsistent)
     (hCaller : ReplyViews.serverFree st.replyViews caller)
     (hHead : ∀ ep r, st.objects[endpointId]? = some (.endpoint ep) → ep.receiveQ.head = some r →
       r ≠ caller ∧ ReplyViews.serverFree st.replyViews r) :
-    (endpointCallCrossCoreDispatch endpointId caller msg rights base c
+    (endpointCallCrossCoreDispatch endpointId caller payload base c
       st).1.replyWaitersConsistent := by
-  have hB := endpointCallWithCapsOnCore_preserves_replyWaitersConsistent endpointId caller msg
-    rights base c st hInv hC hCaller hHead
-  have hI := endpointCallWithCapsOnCore_preserves_objects_invExt endpointId caller msg rights
+  have hB := endpointCallWithCapsOnCore_preserves_replyWaitersConsistent endpointId caller payload
+    base c st hInv hC hCaller hHead
+  have hI := endpointCallWithCapsOnCore_preserves_objects_invExt endpointId caller payload
     base c st hInv
   unfold endpointCallCrossCoreDispatch
-  cases hR : endpointCallWithCapsOnCore endpointId caller msg rights base c st with
+  cases hR : endpointCallWithCapsOnCore endpointId caller payload base c st with
   | mk s1 res =>
     rw [hR] at hB hI
     cases res with
@@ -407,12 +421,12 @@ theorem faultDeliverOnCore_preserves_replyWaitersConsistent (st : SystemState)
   · exact hSus
   · rename_i tgt _
     have hB := endpointCallCrossCoreDispatch_preserves_replyWaitersConsistent tgt.endpoint tid
-      (faultMessage f ctx tgt.cap.badge) tgt.cap.rights (SeLe4n.Slot.ofNat 0) c st hInv hC
+      (SendPayload.fault f ctx tgt.cap.badge) (SeLe4n.Slot.ofNat 0) c st hInv hC
       hFaulted (hHead tgt.endpoint)
     have hI := endpointCallCrossCoreDispatch_preserves_objects_invExt tgt.endpoint tid
-      (faultMessage f ctx tgt.cap.badge) tgt.cap.rights (SeLe4n.Slot.ofNat 0) c st hInv
-    cases hR : endpointCallCrossCoreDispatch tgt.endpoint tid (faultMessage f ctx tgt.cap.badge)
-        tgt.cap.rights (SeLe4n.Slot.ofNat 0) c st with
+      (SendPayload.fault f ctx tgt.cap.badge) (SeLe4n.Slot.ofNat 0) c st hInv
+    cases hR : endpointCallCrossCoreDispatch tgt.endpoint tid (SendPayload.fault f ctx tgt.cap.badge)
+        (SeLe4n.Slot.ofNat 0) c st with
     | mk s1 res =>
       rw [hR] at hB hI
       cases res with
@@ -589,17 +603,13 @@ theorem replyViews_storeTcbReceiveComplete {st st' : SystemState} {t : SeLe4n.Th
 was blocked on a receive and the sender it blocks was running, so neither waits
 on a server before or after. -/
 theorem endpointSendDualOnCore_preserves_replyWaitersConsistent (endpointId : SeLe4n.ObjId)
-    (sender : SeLe4n.ThreadId) (msg : IpcMessage) (c : CoreId) (st : SystemState)
+    (sender : SeLe4n.ThreadId) (payload : SendPayload) (c : CoreId) (st : SystemState)
     (hInv : st.objects.invExt) (hC : st.replyWaitersConsistent)
     (hSender : ReplyViews.serverFree st.replyViews sender)
     (hHead : ∀ ep r, st.objects[endpointId]? = some (.endpoint ep) → ep.receiveQ.head = some r →
       ReplyViews.serverFree st.replyViews r) :
-    (endpointSendDualOnCore endpointId sender msg c st).1.replyWaitersConsistent := by
+    (endpointSendDualOnCore endpointId sender payload c st).1.replyWaitersConsistent := by
   unfold endpointSendDualOnCore
-  split
-  · exact hC
-  split
-  · exact hC
   split
   · rename_i ep hEp
     have hObj := (getEndpoint?_eq_some_iff st endpointId ep).1 hEp
@@ -635,26 +645,26 @@ theorem endpointSendDualOnCore_preserves_replyWaitersConsistent (endpointId : Se
         · exact hC
         · rename_i st'' hStore
           refine replyWaitersConsistent.of_views ?_ hC
-          rw [removeRunnableOnCore_replyViews_eq, replyViews_storeTcbIpcStateAndMessage hI1 hStore,
+          rw [recordSendCap_replyViews_eq, removeRunnableOnCore_replyViews_eq, replyViews_storeTcbIpcStateAndMessage hI1 hStore,
             hV1]
           exact ReplyViews.setServer_of_server hSender
   · split <;> exact hC
 
 theorem endpointSendDualWithCapsOnCore_preserves_replyWaitersConsistent
-    (endpointId : SeLe4n.ObjId) (sender : SeLe4n.ThreadId) (msg : IpcMessage)
-    (rights : AccessRightSet) (base : SeLe4n.Slot) (c : CoreId) (st : SystemState)
+    (endpointId : SeLe4n.ObjId) (sender : SeLe4n.ThreadId) (payload : SendPayload)
+    (base : SeLe4n.Slot) (c : CoreId) (st : SystemState)
     (hInv : st.objects.invExt) (hC : st.replyWaitersConsistent)
     (hSender : ReplyViews.serverFree st.replyViews sender)
     (hHead : ∀ ep r, st.objects[endpointId]? = some (.endpoint ep) → ep.receiveQ.head = some r →
       ReplyViews.serverFree st.replyViews r) :
-    (endpointSendDualWithCapsOnCore endpointId sender msg rights base c
+    (endpointSendDualWithCapsOnCore endpointId sender payload base c
       st).1.replyWaitersConsistent := by
   have hB := endpointSendDualOnCore_preserves_replyWaitersConsistent endpointId sender
-    { msg with capsGranted := rights.mem .grant } c st hInv hC hSender hHead
+    payload c st hInv hC hSender hHead
   have hI := endpointSendDualOnCore_preserves_objects_invExt endpointId sender
-    { msg with capsGranted := rights.mem .grant } c st hInv
+    payload c st hInv
   unfold endpointSendDualWithCapsOnCore
-  cases hR : endpointSendDualOnCore endpointId sender { msg with capsGranted := rights.mem .grant } c st with
+  cases hR : endpointSendDualOnCore endpointId sender payload c st with
   | mk s1 res =>
     rw [hR] at hB hI
     cases res with
@@ -665,7 +675,7 @@ theorem endpointSendDualWithCapsOnCore_preserves_replyWaitersConsistent
       all_goals first
         | exact hB
         | (rename_i hU; exact replyWaitersConsistent.of_views
-            (ipcUnwrapCaps_replyViews_eq _ _ _ _ hI hU) hB)
+            (receiveTransferCaps_replyViews_eq hI hU) hB)
 
 -- ============================================================================
 -- §5  Notifications: a signalled or waiting thread waits on no server
