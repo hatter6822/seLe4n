@@ -82,8 +82,14 @@ def frozenObjectAgrees (f : FrozenKernelObject) (l : KernelObject) : Bool :=
   -- WS-ZA ZA4.5: a TCB is compared off its run-queue links.  The links are the
   -- live run queue's representation — where on its core's queue the thread
   -- sits — and the frozen surface represents its queue in `byPriority`
-  -- instead; `frozenStateAgrees` compares the two queues directly.
-  | .tcb a,          .tcb b          => a.withoutRunLinks == b.withoutRunLinks
+  -- instead; `frozenStateAgrees` compares the two queues directly.  WS-ZA
+  -- ZA4.7: the erasure also clears what a blocked sender's capability filled in
+  -- (`TCB.setSendCap`), which both surfaces store identically and a later
+  -- receive delivers, so those four fields are compared here.
+  | .tcb a,          .tcb b          =>
+      a.withoutRunLinks == b.withoutRunLinks
+        && a.ipcBadge == b.ipcBadge && a.ipcBadged == b.ipcBadged
+        && a.ipcCanGrant == b.ipcCanGrant && a.ipcFaultSend == b.ipcFaultSend
   | .endpoint a,     .endpoint b     => a == b
   | .notification a, .notification b => a == b
   | .untyped a,      .untyped b      => a == b

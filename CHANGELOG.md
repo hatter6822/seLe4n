@@ -48,8 +48,19 @@ step) and a call to the thread that reply-receive blocked (0).
   (`performReceiveDelivered`, `receiveTake_delivered`), proven equal to the
   general arm (`endpointReceiveTakeR_eq`).  `stageWokenSendCompletion` is
   `@[inline]` so naming the woken sender builds no `Option`.
+- **Frozen agreement compares the parked sender's fields** (review).  The
+  run-link erasure the frozen/live comparison applies to a TCB also clears the
+  four fields `TCB.setSendCap` writes, so a frozen send that parked a
+  different badge or grant right compared equal.  `frozenObjectAgrees` now
+  compares them; FO-028 checks a badged send agrees and a re-badged one does
+  not.
 - **Debt registered.**  A receive that takes a sender's capabilities does not
-  yet declare a lock on the sender's CSpace root (`docs/REGISTERED_DEBT.md`).
+  yet declare a lock on the sender's CSpace root.  The send operations deliver
+  a passed message's words only when a receiver waits (every kernel entry
+  passes its own frame's words, so the two agree); the send is to read its
+  frame on both arms.  The frozen surface carries extra capabilities only in a
+  waiting receiver's `pendingMessage` and installs none
+  (`docs/REGISTERED_DEBT.md`).
 
 **What remains.**  Reply-receive joins the register path (ZA4.7 (d)).
 

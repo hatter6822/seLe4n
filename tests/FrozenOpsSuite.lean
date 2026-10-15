@@ -1254,6 +1254,20 @@ private def differentialEndpointSendAgrees : IO Unit := do
       (frozenEndpointSend diffEpId diffA msg (freeze ist))
       (liveWithTaint .send diffA (SeLe4n.CPtr.ofNat 0)
         (SeLe4n.Kernel.endpointSendDual diffEpId diffA msg) ist.state))
+  -- WS-ZA ZA4.7 (PR #942 review): a parked sender's badge and grant right are
+  -- what a later receive delivers, so agreement compares them.  The same send
+  -- with a badge agrees; a frozen send that parks a different badge does not.
+  let badged : IpcMessage := { msg with badge := some (SeLe4n.Badge.ofNatMasked 7),
+                                        capsGranted := true }
+  let rebadged : IpcMessage := { badged with badge := some (SeLe4n.Badge.ofNatMasked 9) }
+  let liveBadged := liveWithTaint .send diffA (SeLe4n.CPtr.ofNat 0)
+    (SeLe4n.Kernel.endpointSendDual diffEpId diffA badged) ist.state
+  expect "FO-028: a badged frozen send agrees with the live send"
+    (frozenRunAgrees unitResultAgrees
+      (frozenEndpointSend diffEpId diffA badged (freeze ist)) liveBadged)
+  expect "FO-028: a frozen send parking another badge disagrees"
+    (!frozenRunAgrees unitResultAgrees
+      (frozenEndpointSend diffEpId diffA rebadged (freeze ist)) liveBadged)
 
 /-- FO-038: the wait, against `notificationWait`, with nothing pending — the
 idle park.  The waiter goes in already holding a collected `pendingMessage`,
