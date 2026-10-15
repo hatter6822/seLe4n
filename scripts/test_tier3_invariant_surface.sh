@@ -2299,7 +2299,7 @@ run_check "INVARIANT" bash -lc 'rg -U -n "\| \.receive =>\n      \[\.tcb, \.cnod
 # saying nothing about the shape the live arm declares -- the silent-unbounding
 # shape RR7.18's census exists to catch.
 run_check "INVARIANT" bash -lc 'rg -U -n "^theorem lockSet_endpointReceive_size_le[^\n]*(\n([ \t][^\n]*)?)*\(g : Option SchedContextId\)" SeLe4n/Kernel/Concurrency/Locks/Deadlock.lean'
-run_check "INVARIANT" bash -lc 'rg -n "lockSet_endpointReceive a b c d e f g h i j k l m n o\)\.size" SeLe4n/Kernel/Concurrency/Locks/Deadlock.lean'
+run_check "INVARIANT" bash -lc 'rg -n "lockSet_endpointReceive a b c d e f g h i j k l m n o p\)\.size" SeLe4n/Kernel/Concurrency/Locks/Deadlock.lean'
 # The runtime witnesses: a `.receive` resolved against a fixture whose send-queue
 # head is a `.bound` caller, with the passive-server case (donates, installs
 # nothing) asserted positively and an inert rendezvous asserted to declare
@@ -8820,7 +8820,7 @@ run_check "INVARIANT" rg -n '  capsGranted : Bool' SeLe4n/Model/Object/Types.lea
 run_check "INVARIANT" rg -n '^def endpointReceiveDualWithCapsOnCore($|[ ({:\[\]])' SeLe4n/Kernel/IPC/CrossCore/EndpointReply.lean
 run_check "INVARIANT" rg -n '^theorem endpointReceiveDualWithCapsOnCore_no_caps($|[ ({:\[\]])' SeLe4n/Kernel/IPC/CrossCore/EndpointReply.lean
 run_check "INVARIANT" rg -n 'endpointReceiveDualWithCapsOnCore epId tid replyIdOpt' SeLe4n/Kernel/API.lean
-run_check "INVARIANT" rg -n 'capsGranted := cap.rights.mem .grant' SeLe4n/Kernel/API.lean
+run_check "INVARIANT" rg -n 'let payload : SendPayload := \.frame cap\.badge \(cap\.rights\.mem \.grant\)' SeLe4n/Kernel/API.lean
 # The enforcement inventory names the operation the arm REACHES, so it moved with
 # the reroute — and the bare transition must not come back as the classified arm.
 run_check "INVARIANT" rg -n 'policyGated "endpointReceiveDualWithCapsOnCore"' SeLe4n/Kernel/InformationFlow/CovertChannelPerCore.lean
@@ -8828,7 +8828,7 @@ run_negative_check "INVARIANT" rg -n 'policyGated "endpointReceiveDualOnCore"' S
 # The receive-side grant gate is the message's, not the receiver's endpoint
 # rights: consulting the receiver's is a different principal's authority and left
 # the orderings disagreeing when a granting sender met a non-granting receiver.
-run_check "INVARIANT" rg -n 'if tcb\.ipcFaultSend \|\| !tcb\.ipcCanGrant then none' SeLe4n/Kernel/IPC/DualQueue/SenderMessage.lean
+run_check "INVARIANT" rg -n 'if tcb\.ipcFaultSend then none else senderFrameCapRequest st sender tcb tcb\.ipcCanGrant' SeLe4n/Kernel/IPC/DualQueue/SenderMessage.lean
 run_negative_check "INVARIANT" rg -n 'endpointReceiveDualWithCaps endpointId receiver replyId endpointRights' SeLe4n/Kernel/IPC/DualQueue/WithCaps.lean
 # The regression that measures the property rather than one ordering's outcome.
 run_check "INVARIANT" rg -n 'ipcCapTransferArrivalOrder' tests/OperationChainSuite.lean
@@ -9120,15 +9120,12 @@ run_check "INVARIANT" rg -n '^private def revocationEntryPoints($|[ ({:\[\]])' t
 run_check "INVARIANT" rg -n 'revocationEntryPoints.length == 4' tests/OperationChainSuite.lean
 # And the send-side half of round 6's ordering independence.  The wrappers took
 # the grant authority TWICE -- the `endpointRights` argument for the rendezvous
-# arm, `msg.capsGranted` for the parked one -- and never tied them, so a caller
-# passing granting rights on a message at the field's default transferred on
-# rendezvous and nothing after parking, and one passing a CLAIMED grant on a
-# non-granting endpoint transferred after parking.  Deriving the field from the
-# endpoint's rights makes the two inputs one, in both directions.
-run_check "INVARIANT" rg -n 'endpointSendDual endpointId sender \{ msg with capsGranted := endpointRights.mem .grant \}' SeLe4n/Kernel/IPC/DualQueue/WithCaps.lean
-run_check "INVARIANT" rg -n 'endpointCall endpointId caller \{ msg with capsGranted := endpointRights.mem .grant \}' SeLe4n/Kernel/IPC/DualQueue/WithCaps.lean
-run_check "INVARIANT" rg -n 'endpointSendDualOnCore endpointId sender \{ msg with capsGranted := endpointRights.mem .grant \}' SeLe4n/Kernel/IPC/CrossCore/EndpointSend.lean
-run_check "INVARIANT" rg -n 'endpointCallOnCore endpointId caller \{ msg with capsGranted := endpointRights.mem .grant \}' SeLe4n/Kernel/IPC/CrossCore/EndpointCallDispatch.lean
+# arm, `msg.capsGranted` for the parked one -- and never tied them.  Since WS-ZA
+# ZA4.7 the grant right is one field of the one `SendPayload` the wrapper hands
+# its bare operation, so both arms read the same bit.
+run_check "INVARIANT" rg -n 'match endpointSendDual endpointId sender payload st with' SeLe4n/Kernel/IPC/DualQueue/WithCaps.lean
+run_check "INVARIANT" rg -n 'match endpointCall endpointId caller payload st with' SeLe4n/Kernel/IPC/DualQueue/WithCaps.lean
+run_negative_check "INVARIANT" rg -n 'endpointRights' SeLe4n/Kernel/IPC/DualQueue/WithCaps.lean SeLe4n/Kernel/IPC/CrossCore/EndpointSend.lean SeLe4n/Kernel/IPC/CrossCore/EndpointCallDispatch.lean
 # The regression drives the property from the UNSTAMPED message `chain12c`'s
 # fixture deliberately does not prepare -- `chain12c` sets the field from the same
 # rights it passes, so it cannot see the two inputs disagree.
@@ -9335,7 +9332,7 @@ open SeLe4n.Kernel
 #check @abiEntryPlan
 #check @abiEntryPlan_dispatches
 #check @abiEntryGate
-#check @abiEntryMessage
+#check @abiEntryPayload
 #check @abiEntryLockOperands
 #check @abiEntryLockOperands_caller
 #check @abiEntryLockOperands_tcbSuspend_target_valid
@@ -9610,7 +9607,7 @@ run_check "INVARIANT" bash -lc 'rg -U -n "\(hStep : cspaceMintWithCdt src dst ri
 run_check "INVARIANT" bash -lc 'rg -U -n "\(hStep : cspaceCopy src dst st = \.ok \(\(\), st.\)\) :\n    preservesFieldsOutside capabilityOp_modifiedFields st st. := by" SeLe4n/Kernel/CrossSubsystem.lean'
 run_check "INVARIANT" bash -lc 'rg -U -n "\(hStep : cspaceMove src dst st = \.ok \(\(\), st.\)\) :\n    preservesFieldsOutside capabilityOp_modifiedFields st st. := by" SeLe4n/Kernel/CrossSubsystem.lean'
 run_check "INVARIANT" bash -lc 'rg -U -n "\(hStep : cspaceDeleteSlot addr st = \.ok \(\(\), st.\)\) :\n    preservesFieldsOutside capabilityOp_modifiedFields st st. := by" SeLe4n/Kernel/CrossSubsystem.lean'
-run_check "INVARIANT" bash -lc 'rg -U -n "\(hStep : endpointSendDual endpointId sender msg st = \.ok \(\(\), st.\)\) :\n    preservesFieldsOutside ipcEndpointOp_modifiedFields st st. := by" SeLe4n/Kernel/CrossSubsystem.lean'
+run_check "INVARIANT" bash -lc 'rg -U -n "\(hStep : endpointSendDual endpointId sender payload st = \.ok \(\(\), st.\)\) :\n    preservesFieldsOutside ipcEndpointOp_modifiedFields st st. := by" SeLe4n/Kernel/CrossSubsystem.lean'
 run_check "INVARIANT" bash -lc 'rg -U -n "\(hStep : endpointReceiveDual endpointId receiver replyId st = \.ok \(sender, st.\)\) :\n    preservesFieldsOutside ipcEndpointOp_modifiedFields st st. := by" SeLe4n/Kernel/CrossSubsystem.lean'
 # The composites are proved from the primitives, not by a second reading of the
 # operations: the receive theorem composes the donation return's lemma, which
@@ -9697,7 +9694,7 @@ run_check "INVARIANT" rg -n 'differentialSendFromAbsentSenderAgrees' tests/Froze
 # ordering -- live `storeTcbReceiveComplete` clears the receiver's stashed reply
 # object (D3/F-1) where the frozen mirror kept it.  The mirror is now field-exact
 # and the delivery ordering is compared with the stash seeded.
-run_check "INVARIANT" rg -n 'pendingMessage := some msg, pendingReceiveReplyCode := 0' SeLe4n/Kernel/FrozenOps/Operations.lean
+run_check "INVARIANT" rg -n 'pendingMessage := some \(frozenSendPayloadMessage st sender payload\),' SeLe4n/Kernel/FrozenOps/Operations.lean
 run_check "INVARIANT" rg -n 'differentialSendRendezvousDeliversAgrees' tests/FrozenOpsSuite.lean
 run_check "INVARIANT" rg -n 'the live delivery clears the stash' tests/FrozenOpsSuite.lean
 # The consuming waiter is the calling thread: it never blocked, so the live
@@ -9723,8 +9720,9 @@ run_check "INVARIANT" rg -n 'differentialComparisonHasBite' tests/FrozenOpsSuite
 run_check "INVARIANT" rg -n '^theorem resolveExtraCaps_ungranted($|[ ({:\[\]])' SeLe4n/Kernel/API.lean
 run_check "INVARIANT" rg -n '^theorem resolveExtraCapsDetailed_ungranted($|[ ({:\[\]])' SeLe4n/Kernel/API.lean
 # And each live arm passes the endpoint capability's own bit, which the
-# delegation theorems restate and therefore prove rather than assert.
-run_check "INVARIANT" rg -n 'resolveExtraCaps gate.cspaceRoot extraCapAddrs gate.capDepth \(cap.rights.mem .grant\)' SeLe4n/Kernel/API.lean
+# delegation theorems restate and therefore prove rather than assert (WS-ZA
+# ZA4.7: as the payload's grant right, resolved only on the delivering arm).
+run_negative_check "INVARIANT" rg -n 'resolveExtraCaps gate\.cspaceRoot' SeLe4n/Kernel/API.lean
 run_negative_check "INVARIANT" rg -n 'resolveExtraCaps gate.cspaceRoot extraCapAddrs gate.capDepth st' SeLe4n/Kernel/API.lean
 # The anchor gate's two fail-open holes, which are one defect: "I could not
 # analyse this" was read as "this is fine".  A category label outside the
@@ -9932,7 +9930,7 @@ run_check "INVARIANT" rg -n '^theorem permittedKinds_lifecycleRetype_admits_ever
 # receive reads it from the sender's frame through the live reader's definition.
 run_negative_check "INVARIANT" rg -n 'pendingMessage := some msg \} \(\.blockedOn(Send|Call)' SeLe4n/Kernel/FrozenOps/Operations.lean
 run_check "INVARIANT" rg -n 'let senderMsg := some \(frozenBlockedSenderMessage st sender senderTcb\)' SeLe4n/Kernel/FrozenOps/Operations.lean
-run_check "INVARIANT" rg -n '^  blockedSenderMessageOf tcb$' SeLe4n/Kernel/FrozenOps/Operations.lean
+run_check "INVARIANT" rg -n '^  blockedSenderMessageOf tcb \(frozenSenderDecode st sender tcb\)$' SeLe4n/Kernel/FrozenOps/Operations.lean
 run_check "INVARIANT" rg -n '^private def frozenParkedSenderMessageFromFrame($|[ ({:\[\]])' tests/FrozenOpsSuite.lean
 # No receive declares a CSpace sink, and PR #873 round 8 corrected the reason:
 # not "the live receive installs nothing" — it has installed since round 6 — but
@@ -11508,7 +11506,7 @@ run_check "INVARIANT" rg -n '^def schedLockSet_replyTransferOnCore \(' SeLe4n/Ke
 # (the confinement theorem is stated at it), the replenish segment the mirror of the
 # dispatch's own guard.  Mutation: keep `schedFootprintOfCores` and resolve either
 # segment a second way inside the body.
-run_check "INVARIANT" bash -lc 'rg -U -n "^def schedLockSet_endpointCallOnCore[^\n]*(\n([ \t][^\n]*)?)*schedFootprintOfCores\n *\(endpointCallDispatchWriteSet endpointId caller msg endpointRights receiverSlotBase\n *executingCore st\)\n *\(endpointCallDispatchReplenishCores endpointId caller msg endpointRights receiverSlotBase\n *executingCore st\)" SeLe4n/Kernel/IPC/CrossCore/EndpointCallDispatch.lean'
+run_check "INVARIANT" bash -lc 'rg -U -n "^def schedLockSet_endpointCallOnCore[^\n]*(\n([ \t][^\n]*)?)*schedFootprintOfCores\n *\(endpointCallDispatchWriteSet endpointId caller payload receiverSlotBase\n *executingCore st\)\n *\(endpointCallDispatchReplenishCores endpointId caller payload receiverSlotBase\n *executingCore st\)" SeLe4n/Kernel/IPC/CrossCore/EndpointCallDispatch.lean'
 run_check "INVARIANT" bash -lc 'rg -U -n "^def schedLockSet_endpointReplyOnCore[^\n]*(\n([ \t][^\n]*)?)*schedFootprintOfCores \(endpointReplyDispatchWriteSet replier target msg executingCore st\)\n *\(endpointReplyDispatchReplenishCores replier target msg executingCore st\)" SeLe4n/Kernel/IPC/CrossCore/EndpointReplyDispatch.lean'
 run_check "INVARIANT" bash -lc 'rg -U -n "^def schedLockSet_replyTransferOnCore[^\n]*(\n([ \t][^\n]*)?)*schedFootprintOfCores \(replyTransferWriteSet replier callerTid mi regs msg executingCore st\)\n *\(replyTransferReplenishCores replier callerTid msg executingCore st\)" SeLe4n/Kernel/IPC/CrossCore/Fault.lean'
 # The `.call` segment asks the donation's OWN guard at the WithCaps post-state, where
@@ -19326,7 +19324,7 @@ run_check "INVARIANT" bash -lc 'rg -U -n "^theorem endpointCallCrossCoreDispatch
 # `.blockedOnReply` are not blocked-sender states.  A revert that hypothesised the
 # fact at the post-state instead would not name this lemma at all.
 run_check "INVARIANT" rg -F -n 'storeTcbIpcStateAndMessage_preserves_blockedSenderFlowsToEndpoint ctx st1 st2' SeLe4n/Kernel/IPC/Invariant/BlockedSenderPreservation.lean
-run_check "INVARIANT" rg -F -n '                  (by rintro ep' SeLe4n/Kernel/IPC/Invariant/BlockedSenderPreservation.lean
+run_check "INVARIANT" rg -F -n "                rintro ep' (h | h)" SeLe4n/Kernel/IPC/Invariant/BlockedSenderPreservation.lean
 # (3) THE `.ready` WRITERS SHRINK RATHER THAN FRAME.  A wake and a receive
 # completion write `.ready`, which is neither blocked-sender state — so they are
 # `blockedSenderShrinks` and NOT `ipcStateFrame`, and a negative refuses the
@@ -20691,7 +20689,7 @@ run_negative_check "INVARIANT" bash -lc 'rg -U -n "\| \.reply =>[^\n]*(\n([ \t][
 # would make an unsupplied operand read as an unpin request.
 run_check "INVARIANT" rg -F -n 'affinity : Option (Option CoreId) := none' SeLe4n/Kernel/Concurrency/Locks/LockSetForSyscall.lean
 run_negative_check "INVARIANT" bash -lc 'rg -U -n "^  affinity : Option CoreId := none" SeLe4n/Kernel/Concurrency/Locks/LockSetForSyscall.lean'
-run_check "INVARIANT" rg -F -n 'endpointRights : Option AccessRightSet := none' SeLe4n/Kernel/Concurrency/Locks/LockSetForSyscall.lean
+run_check "INVARIANT" rg -F -n 'payload : Option SendPayload := none' SeLe4n/Kernel/Concurrency/Locks/LockSetForSyscall.lean
 run_check "INVARIANT" rg -F -n 'replyRegisters : Option (Array SeLe4n.RegValue) := none' SeLe4n/Kernel/Concurrency/Locks/LockSetForSyscall.lean
 # The per-arm characterisations close the inventory's other drift direction: an
 # arm listed as declared that had become unconditionally `none` could not
@@ -20745,7 +20743,7 @@ run_check "INVARIANT" rg -n '^theorem abiEntrySchedReceiverCspaceRoot \(decoded 
 # and the operand its own scheduler footprint refuses without.  The gap is
 # bounded to the arm's own continuation lines (>= 8 spaces), so it cannot reach a
 # sibling arm at 6.
-run_check "INVARIANT" bash -lc 'rg -U -n "\| \.call, \.object epId =>(\n {8,}[^\n]*)*\n {8,}endpointRights := some cap\.rights" SeLe4n/Kernel/SyscallLockBracket.lean'
+run_check "INVARIANT" bash -lc 'rg -U -n "\| \.call, \.object epId =>(\n {8,}[^\n]*)*\n {8,}payload := some \(abiEntryPayload cap\)" SeLe4n/Kernel/SyscallLockBracket.lean'
 run_check "INVARIANT" bash -lc 'rg -U -n "\| \.call, \.object epId =>(\n {8,}[^\n]*)*\n {8,}receiverSlotBase := some decoded\.capRecvSlot" SeLe4n/Kernel/SyscallLockBracket.lean'
 run_check "INVARIANT" bash -lc 'rg -U -n "\| \.reply, \.replyCap rid =>(\n {8,}[^\n]*)*\n {8,}replyMessageInfo := some decoded\.msgInfo" SeLe4n/Kernel/SyscallLockBracket.lean'
 run_check "INVARIANT" bash -lc 'rg -U -n "\| \.reply, \.replyCap rid =>(\n {8,}[^\n]*)*\n {8,}replyRegisters := some decoded\.msgRegs" SeLe4n/Kernel/SyscallLockBracket.lean'
@@ -21227,7 +21225,7 @@ run_check "INVARIANT" rg -n '^@\[simp\] theorem receiveRendezvousDonatedSc\?_of_
 # needs.  Anchored at the hypothesis/conclusion pairing, since a licence stated
 # the other way round would be the forward direction, which is neither given nor
 # needed.
-run_check "INVARIANT" bash -lc 'rg -U -n "^theorem endpointCallDonatedSc\?_some_of_post[^\n]*(\n([ \t][^\n]*)?)*\(hPost : callDonationSchedContext\?\n *\(endpointCallWithCapsOnCore endpointId caller msg endpointRights receiverSlotBase\n *executingCore st\).1 caller receiver = some scId\) :\n *endpointCallDonatedSc\? st endpointId caller = some scId" SeLe4n/Kernel/IPC/CrossCore/EndpointCallDispatch.lean'
+run_check "INVARIANT" bash -lc 'rg -U -n "^theorem endpointCallDonatedSc\?_some_of_post[^\n]*(\n([ \t][^\n]*)?)*\(hPost : callDonationSchedContext\?\n *\(endpointCallWithCapsOnCore endpointId caller payload receiverSlotBase\n *executingCore st\).1 caller receiver = some scId\) :\n *endpointCallDonatedSc\? st endpointId caller = some scId" SeLe4n/Kernel/IPC/CrossCore/EndpointCallDispatch.lean'
 run_check "INVARIANT" bash -lc 'rg -U -n "^theorem receiveRendezvousDonatedSc\?_some_of_post[^\n]*(\n([ \t][^\n]*)?)*\(hPost : callDonationSchedContext\?\n *\(endpointReceiveDualWithCapsOnCore endpointId receiver replyId receiverCspaceRoot\n *receiverSlotBase executingCore st\).1 sender receiver = some scId\) :\n *receiveRendezvousDonatedSc\? st endpointId receiver = some scId" SeLe4n/Kernel/IPC/CrossCore/EndpointReply.lean'
 # The sending leg's own binding frame, which that licence composes.  It had to
 # move to PRODUCTION: the footprint and the licence are production and the frame
@@ -21644,20 +21642,19 @@ run_check "INVARIANT" bash -lc 'rg -U -n "^theorem endpointCallCrossCoreDispatch
 # `slotCountBounded`, `cspaceSlotCountBounded` is `<=`, and `CNode.insert` at a
 # fresh slot grows the table -- so a lift that took them would be vacuous while
 # its name read as coverage.  A negative refuses the retired pack tree-wide.
-run_check "INVARIANT" rg -n '^def ipcUnwrapCapsPreservesCapabilityBundle($|[ ({:\[\]])' SeLe4n/Kernel/IPC/CrossCore/EndpointCallDispatch.lean
+run_check "INVARIANT" rg -n '^def receiveTransferCapsPreservesCapabilityBundle($|[ ({:\[\]])' SeLe4n/Kernel/IPC/CrossCore/EndpointCallDispatch.lean
 run_negative_check "INVARIANT" rg -n 'CapTransferBundlePremises' SeLe4n/Kernel/IPC/CrossCore/EndpointCallDispatch.lean SeLe4n/Kernel/IPC/Invariant/FaultBundlePreservation.lean
 # The hypothesis is EXHIBITED, which is what stops it being the pack one name
-# over: at `grantRight = false` the transfer is the identity and the reduction
+# over: with no capability request the transfer is the identity and the reduction
 # holds outright.  A hypothesis nothing exhibits is indistinguishable from one
 # that cannot hold.
-run_check "INVARIANT" rg -n '^theorem ipcUnwrapCapsPreservesCapabilityBundle_of_noGrant($|[ ({:\[\]])' SeLe4n/Kernel/IPC/CrossCore/EndpointCallDispatch.lean
-run_check "INVARIANT" bash -lc 'rg -U -n "^theorem endpointCallWithCapsOnCore_preserves_capabilityInvariantBundle[^\n]*(\n([ \t][^\n]*)?)*hTransfer : ipcUnwrapCapsPreservesCapabilityBundle" SeLe4n/Kernel/IPC/CrossCore/EndpointCallDispatch.lean'
-run_check "INVARIANT" bash -lc 'rg -U -n "^theorem endpointCallCrossCoreDispatch_preserves_capabilityInvariantBundle[^\n]*(\n([ \t][^\n]*)?)*hTransfer : ipcUnwrapCapsPreservesCapabilityBundle" SeLe4n/Kernel/IPC/CrossCore/EndpointCallDispatch.lean'
+run_check "INVARIANT" rg -n '^theorem receiveTransferCapsPreservesCapabilityBundle_of_none($|[ ({:\[\]])' SeLe4n/Kernel/IPC/CrossCore/EndpointCallDispatch.lean
+run_check "INVARIANT" bash -lc 'rg -U -n "^theorem endpointCallWithCapsOnCore_preserves_capabilityInvariantBundle[^\n]*(\n([ \t][^\n]*)?)*hTransfer : receiveTransferCapsPreservesCapabilityBundle" SeLe4n/Kernel/IPC/CrossCore/EndpointCallDispatch.lean'
+run_check "INVARIANT" bash -lc 'rg -U -n "^theorem endpointCallCrossCoreDispatch_preserves_capabilityInvariantBundle[^\n]*(\n([ \t][^\n]*)?)*hTransfer : receiveTransferCapsPreservesCapabilityBundle" SeLe4n/Kernel/IPC/CrossCore/EndpointCallDispatch.lean'
 # ...and where the message carries NO capabilities the step is not reached at
 # all, which is the form the fault delivery composes.
 run_check "INVARIANT" rg -n '^theorem endpointCallWithCapsOnCore_preserves_capabilityInvariantBundle_of_no_caps($|[ ({:\[\]])' SeLe4n/Kernel/IPC/CrossCore/EndpointCallDispatch.lean
 run_check "INVARIANT" rg -n '^theorem endpointCallCrossCoreDispatch_preserves_capabilityInvariantBundle_of_no_caps($|[ ({:\[\]])' SeLe4n/Kernel/IPC/CrossCore/EndpointCallDispatch.lean
-run_check "INVARIANT" rg -n '^@\[simp\] theorem faultMessage_caps_empty($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Operations/Fault.lean
 # The state-level reading of `hNotCur`, which the fault delivery takes because it
 # resolves its own handler endpoint.  The per-endpoint form stays at the leg: it
 # is what that lift needs, and a caller who knows the endpoint discharges it.
@@ -21680,9 +21677,9 @@ run_check "INVARIANT" bash -lc 'rg -U -n "^theorem faultReplyOnCore_preserves_sc
 # the delivery's CITATION of the no-caps form -- a negative on the hypothesis
 # alone would be satisfied by a lift that took it under another name.
 run_check "INVARIANT" bash -lc 'rg -U -n "^theorem faultDeliverOnCore_preserves_capabilityInvariantBundle[^\n]*(\n([ \t][^\n]*)?)*endpointCallCrossCoreDispatch_preserves_capabilityInvariantBundle_of_no_caps" SeLe4n/Kernel/IPC/Invariant/FaultBundlePreservation.lean'
-run_check "INVARIANT" bash -lc 'rg -U -n "^theorem faultDeliverOnCore_preserves_capabilityInvariantBundle[^\n]*(\n([ \t][^\n]*)?)*faultMessage_caps_empty" SeLe4n/Kernel/IPC/Invariant/FaultBundlePreservation.lean'
-run_negative_check "INVARIANT" bash -lc 'rg -U -n "^theorem faultDeliverOnCore_preserves_capabilityInvariantBundle[^\n]*(\n([ \t][^\n]*)?)*ipcUnwrapCapsPreservesCapabilityBundle" SeLe4n/Kernel/IPC/Invariant/FaultBundlePreservation.lean'
-run_negative_check "INVARIANT" bash -lc 'rg -U -n "^theorem faultReplyOnCore_preserves_capabilityInvariantBundle[^\n]*(\n([ \t][^\n]*)?)*ipcUnwrapCapsPreservesCapabilityBundle" SeLe4n/Kernel/IPC/Invariant/FaultBundlePreservation.lean'
+run_check "INVARIANT" bash -lc 'rg -U -n "^theorem faultDeliverOnCore_preserves_capabilityInvariantBundle[^\n]*(\n([ \t][^\n]*)?)*sendCapRequest_fault" SeLe4n/Kernel/IPC/Invariant/FaultBundlePreservation.lean'
+run_negative_check "INVARIANT" bash -lc 'rg -U -n "^theorem faultDeliverOnCore_preserves_capabilityInvariantBundle[^\n]*(\n([ \t][^\n]*)?)*receiveTransferCapsPreservesCapabilityBundle" SeLe4n/Kernel/IPC/Invariant/FaultBundlePreservation.lean'
+run_negative_check "INVARIANT" bash -lc 'rg -U -n "^theorem faultReplyOnCore_preserves_capabilityInvariantBundle[^\n]*(\n([ \t][^\n]*)?)*receiveTransferCapsPreservesCapabilityBundle" SeLe4n/Kernel/IPC/Invariant/FaultBundlePreservation.lean'
 # RELOCATIONS.  Each moved frame reads no staged surface and frames a production
 # transition, so leaving it where it was put it out of reach of the production
 # consumer that needed it -- the RR2-closure rule, arriving at eight frames.
