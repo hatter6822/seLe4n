@@ -1,3 +1,44 @@
+## v0.36.89 — WS-ZA ZA4.7 (fields as codes, third step): the reply fields as words
+
+**A call now allocates two cells, and a receive that names a reply object
+one.**  The TCB's reply object and stashed receive reply, and a reply object's
+caller, are stored as scalar words, and the receive resolves its reply
+capability without building a gate, slot reference or result.  Each executed
+form is proven equal to the specification's.
+
+Normal-build allocations per syscall (QEMU exerciser, core 0), against
+`v0.36.88`:
+
+| Scenario | v0.36.88 | v0.36.89 |
+|---|---|---|
+| call | 5 | 2 |
+| receive naming a reply object | 6 | 1 |
+
+Signal, wait, wide-badge signal, yield and reply stay at 0; a receive that
+blocks (1), a send to a waiting receiver (1), a wait that blocks (5) and a
+signal that wakes a waiter (9) are unchanged.
+
+- **Three fields as codes.**  `TCB.replyObjectCode` and
+  `TCB.pendingReceiveReplyCode` replace `replyObject` and
+  `pendingReceiveReply` (`SeLe4n.ReplyId.optCode`: `0` for none, `v + 1` for
+  `v`), and `Reply.callerCode` replaces `caller` (`ThreadId.optCode`).  The old
+  names are derived views, so every read keeps its statement; writes store the
+  code, with `0` for none.  The TCB extensionality lemma derives the code
+  equalities from the views.
+- **The call's long-message branch.**  The compiler hoisted the reply
+  object's `some` ahead of the message-length test in
+  `callRendezvousDelivered`; the more-than-four-word branch is now its own
+  function (`callRendezvousStaged`).
+- **The receive's reply capability.**  `resolveRecvReplyK` resolves it in
+  continuation form through `resolveCapAddressKUnrolled`, as the operand is,
+  and hands the reply object on as its code (`resolveRecvReplyK_eq`).  The
+  blocking guard (`receiveBlocksInPlaceCode`, through `replyStashValidCode`)
+  and the blocking store (`storeReceiveBlock`) take that code.
+
+**What remains.**  The priority walk's maximum and the per-core current thread
+(`reuseSome`) are the rest of the fields-as-codes part, then blocked senders
+and reply-receive.
+
 ## v0.36.88 — WS-ZA ZA4.7 (fields as codes, second step): a thread's IPC state as two words
 
 **A blocking receive now allocates one cell (the per-core current thread's),
