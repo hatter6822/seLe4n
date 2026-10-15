@@ -1382,6 +1382,9 @@ const CALL: u64 = 2;
 /// `Reply` (`SyscallId` 3).
 #[cfg(feature = "hw_target")]
 const REPLY: u64 = 3;
+/// `ReplyRecv` (`SyscallId` 16).
+#[cfg(feature = "hw_target")]
+const REPLY_RECV: u64 = 16;
 /// `NotificationSignal` (`SyscallId` 14).
 #[cfg(feature = "hw_target")]
 const SIGNAL: u64 = 14;
@@ -1491,7 +1494,9 @@ const fn partner_step(
 ///   continues;
 /// - a wait that blocks, then a signal that wakes the waiter and continues;
 /// - a receive that blocks holding the reply capability, then a call that
-///   wakes it and blocks for the answer, then the reply, which continues;
+///   wakes it and blocks for the answer, then a reply-receive that answers it
+///   and blocks for the next caller (WS-ZA ZA4.7), a second call that wakes
+///   the server through that reply object, then the reply, which continues;
 /// - a send that blocks, then a receive that takes the blocked sender's
 ///   message and continues (WS-ZA ZA4.7).
 #[cfg(feature = "hw_target")]
@@ -1521,6 +1526,22 @@ const PARTNER_SCENARIOS: [&[RoundTrip]; 4] = [
             true,
         ),
         partner_step("call", CALL, ENDPOINT_SLOT, 1, [0x66, 0], true),
+        partner_step(
+            "reply-recv",
+            REPLY_RECV,
+            ENDPOINT_SLOT,
+            2,
+            [REPLY_CAP_SLOT, 0x99],
+            true,
+        ),
+        partner_step(
+            "call-to-reply-receiver",
+            CALL,
+            ENDPOINT_SLOT,
+            1,
+            [0xaa, 0],
+            true,
+        ),
         partner_step("reply", REPLY, REPLY_CAP_SLOT, 1, [0x77, 0], false),
     ],
     &[
