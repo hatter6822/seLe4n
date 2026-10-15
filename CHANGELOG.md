@@ -1,8 +1,10 @@
 ## v0.36.91 — WS-ZA ZA4.7 (notifications in place): a wait that blocks and a signal that wakes a waiter allocate nothing
 
-**Every measured notification and endpoint path that ends in a rendezvous or a
-plain block now allocates nothing.**  A wait that blocks writes its thread state
-and queue link in place, a signal that wakes a waiter writes the badge straight
+**A wait that blocks, a signal that wakes a waiter and a send to a waiting
+receiver now allocate nothing.**  The two blocked-sender paths this release
+starts measuring (a send that blocks, a receive from a blocked sender) still
+allocate; the next step takes them to zero.  A wait that blocks writes its
+thread state and queue link in place, a signal that wakes a waiter writes the badge straight
 into the waiter's saved registers, and a send to a waiting receiver drops its
 last cell.  Each executed form is proven equal to the specification's.
 
