@@ -17,6 +17,8 @@ Normal-build allocations per syscall (QEMU exerciser, core 0), against
 | receive from a blocked sender | 52 | 0 |
 
 Every other measured scenario stays at 0.  The first signal after boot reads 2.
+The exerciser now also measures reply-receive (118, the baseline for the next
+step) and a call to the thread that reply-receive blocked (0).
 
 - **The message stays with the sender.**  A send or call that blocks writes its
   badge, grant right and fault flag into its TCB (`TCB.setSendCap`:
