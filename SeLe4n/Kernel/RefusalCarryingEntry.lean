@@ -76,6 +76,8 @@ specification's form. -/
         -- first write.
         | .receive capAddr len mr0 =>
           dispatchReceiveCheckedR ctx capAddr len mr0 tid executingCore st
+        | .replyRecv _ _ =>
+          RefusalCarrying.ofKernel (syscallEntryChecked ctx layout executingCore regCount) st
         | .viaDecode =>
           RefusalCarrying.ofKernel (syscallEntryChecked ctx SeLe4n.arm64DefaultLayout executingCore 32) st
       | some _ => .error (.illegalState, st)
@@ -186,6 +188,7 @@ theorem syscallEntryCheckedR_eq (ctx : LabelingContext) (executingCore : Concurr
           simp only [RefusalCarrying.ofKernel, syscallEntryChecked, hCtx, hCur, hRegs, hDec,
             hZero, Bool.false_eq_true, ↓reduceIte,
             SeLe4n.Kernel.Architecture.tlbFillIpcBufferOnCore_zero]
+        · rfl
         · rfl
       · next o hNot hObj =>
         have hRegs : lookupThreadRegisterContext tid st = .error .illegalState := by
