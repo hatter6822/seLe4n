@@ -782,7 +782,7 @@ def replyCallerLinkage_holds_at_call_rendezvous_boundary : IO Unit := do
   match SeLe4n.Kernel.endpointReceiveDual epId server (some rid) st0 with
   | .error _ => throw <| IO.userError "server-first receive (stash) setup should succeed"
   | .ok (_, stRecv) =>
-    match SeLe4n.Kernel.endpointCall epId caller IpcMessage.empty stRecv with
+    match SeLe4n.Kernel.endpointCall epId caller (.frame none false) stRecv with
     | .error _ => throw <| IO.userError "call rendezvous should succeed and link the caller"
     | .ok ((), st') =>
       -- third clause at the boundary: the blocked caller carries a replyObject.
@@ -824,7 +824,7 @@ def direct_reply_consumes_caller_link_single_use : IO Unit := do
   match SeLe4n.Kernel.endpointReceiveDual epId server (some rid) st0 with
   | .error _ => throw <| IO.userError "server-first receive (stash) setup should succeed"
   | .ok (_, stRecv) =>
-    match SeLe4n.Kernel.endpointCall epId caller IpcMessage.empty stRecv with
+    match SeLe4n.Kernel.endpointCall epId caller (.frame none false) stRecv with
     | .error _ => throw <| IO.userError "call rendezvous should succeed and link the caller"
     | .ok ((), stCalled) =>
       match SeLe4n.Kernel.endpointReply server caller IpcMessage.empty stCalled with
@@ -866,7 +866,7 @@ def call_without_reply_object_fails_closed_no_unanswerable_block : IO Unit := do
   match SeLe4n.Kernel.endpointReceiveDual epId server none st0 with
   | .error _ => throw <| IO.userError "plain (no-reply) receive setup should succeed"
   | .ok (_, stRecv) =>
-    match SeLe4n.Kernel.endpointCall epId caller IpcMessage.empty stRecv with
+    match SeLe4n.Kernel.endpointCall epId caller (.frame none false) stRecv with
     | .error e =>
         expect "Call with no server reply object fails closed (replyCapInvalid)"
           (e == .replyCapInvalid)

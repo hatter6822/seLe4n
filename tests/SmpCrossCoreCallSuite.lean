@@ -158,48 +158,44 @@ open SeLe4n.Testing
 -- ============================================================================
 
 /-- SM6.A.3: a rendezvous unblocking a remote receiver emits the reschedule SGI. -/
-example (endpointId : SeLe4n.ObjId) (caller : SeLe4n.ThreadId) (msg : IpcMessage)
+example (endpointId : SeLe4n.ObjId) (caller : SeLe4n.ThreadId) (payload : SendPayload)
     (executingCore : CoreId) (st : SystemState) (ep : Endpoint)
     (receiver : SeLe4n.ThreadId) (recvTcb0 recvTcb'' : TCB) (st' st'' st4 st5 : SystemState)
-    (hSz1 : ¬ msg.registers.size > maxMessageRegisters)
-    (hSz2 : ¬ msg.caps.size > maxExtraCaps)
     (hObj : st.objects[endpointId]? = some (.endpoint ep))
     (hHead : ep.receiveQ.head = some receiver)
     (hPop : endpointQueuePopHead endpointId true st = .ok (receiver, recvTcb0, st'))
-    (hStore : storeTcbIpcStateAndMessage st' receiver .ready (some msg) = .ok st'')
+    (hStore : storeTcbIpcStateAndMessage st' receiver .ready (some (sendPayloadMessage st caller payload)) = .ok st'')
     (hCallerStore : storeTcbIpcStateAndMessage (wakeThread st'' receiver executingCore).1
         caller (.blockedOnReply endpointId (some receiver)) none = .ok st4)
     (hLink : SystemState.linkServerStashedReply caller receiver st4 = .ok ((), st5))
     (hTcb'' : st''.getTcb? receiver = some recvTcb'')
     (hRemote : determineTargetCore st'' receiver ≠ executingCore) :
-    (endpointCallOnCore endpointId caller msg executingCore st).2
+    (endpointCallOnCore endpointId caller payload executingCore st).2
       = .ok (some (determineTargetCore st'' receiver, SgiKind.reschedule)) :=
-  endpointCallOnCore_emits_sgi_if_remote_receiver endpointId caller msg executingCore st ep
-    receiver recvTcb0 recvTcb'' st' st'' st4 st5 hSz1 hSz2 hObj hHead hPop hStore hCallerStore
+  endpointCallOnCore_emits_sgi_if_remote_receiver endpointId caller payload executingCore st ep
+    receiver recvTcb0 recvTcb'' st' st'' st4 st5 hObj hHead hPop hStore hCallerStore
     hLink hTcb'' hRemote
 
 /-- SM6.A.9 (WS-LS LS2.1: over the pair): the call is a single 2PL-atomic step
 under its lock-set — the ghost bracket's value is the bare transition's. -/
-example (endpointId cnRoot : SeLe4n.ObjId) (caller : SeLe4n.ThreadId) (msg : IpcMessage)
+example (endpointId cnRoot : SeLe4n.ObjId) (caller : SeLe4n.ThreadId) (payload : SendPayload)
     (executingCore : CoreId) (receiver? : Option SeLe4n.ThreadId)
     (donatedSc? : Option SeLe4n.SchedContextId) (s : SystemState) :
     (withLockSet (lockSet_endpointCall caller cnRoot endpointId receiver? donatedSc?)
-        executingCore (endpointCallOnCore endpointId caller msg executingCore)
+        executingCore (endpointCallOnCore endpointId caller payload executingCore)
         ⟨s, LockState.unheld⟩).2
-      = (endpointCallOnCore endpointId caller msg executingCore s).2 := by
+      = (endpointCallOnCore endpointId caller payload executingCore s).2 := by
   rw [endpointCallOnCore_atomic_under_lockSet]
 
 /-- SM6.A.7: a cross-core call between high principals is invisible to a low observer. -/
 example (ctx : LabelingContext) (observer : IfObserver)
-    (endpointId : SeLe4n.ObjId) (caller : SeLe4n.ThreadId) (msg : IpcMessage)
+    (endpointId : SeLe4n.ObjId) (caller : SeLe4n.ThreadId) (payload : SendPayload)
     (executingCore : CoreId) (st : SystemState) (ep : Endpoint)
     (receiver : SeLe4n.ThreadId) (recvTcb0 : TCB) (st' st'' st4 st5 : SystemState)
-    (hSz1 : ¬ msg.registers.size > maxMessageRegisters)
-    (hSz2 : ¬ msg.caps.size > maxExtraCaps)
     (hObj : st.objects[endpointId]? = some (.endpoint ep))
     (hHead : ep.receiveQ.head = some receiver)
     (hPop : endpointQueuePopHead endpointId true st = .ok (receiver, recvTcb0, st'))
-    (hStore : storeTcbIpcStateAndMessage st' receiver .ready (some msg) = .ok st'')
+    (hStore : storeTcbIpcStateAndMessage st' receiver .ready (some (sendPayloadMessage st caller payload)) = .ok st'')
     (hCallerStore : storeTcbIpcStateAndMessage (wakeThread st'' receiver executingCore).1
         caller (.blockedOnReply endpointId (some receiver)) none = .ok st4)
     (hLink : SystemState.linkServerStashedReply caller receiver st4 = .ok ((), st5))
@@ -213,10 +209,10 @@ example (ctx : LabelingContext) (observer : IfObserver)
     (hCallerObjHigh : objectObservable ctx observer caller.toObjId = false)
     (hNextHigh : ∀ nextTid, recvTcb0.queueNext = some nextTid →
         objectObservable ctx observer nextTid.toObjId = false) :
-    projectState ctx observer (endpointCallOnCore endpointId caller msg executingCore st).1
+    projectState ctx observer (endpointCallOnCore endpointId caller payload executingCore st).1
       = projectState ctx observer st :=
-  endpointCallOnCore_call_path_NI ctx observer endpointId caller msg executingCore st ep receiver
-    recvTcb0 st' st'' st4 st5 hSz1 hSz2 hObj hHead hPop hStore hCallerStore hLink hObjInv
+  endpointCallOnCore_call_path_NI ctx observer endpointId caller payload executingCore st ep receiver
+    recvTcb0 st' st'' st4 st5 hObj hHead hPop hStore hCallerStore hLink hObjInv
     hObjSetInv hIdxComplete hEndpointHigh
     hReceiverHigh hReceiverObjHigh hCallerHigh hCallerObjHigh hNextHigh
 
@@ -275,7 +271,7 @@ private def stWithReceiverNoReply (recv : SeLe4n.ThreadId) : Option SystemState 
 
 /-- The optional SGI surfaced by a cross-core call (`none` on a kernel error). -/
 private def callSgi (st : SystemState) (ec : CoreId) : Option (CoreId × SgiKind) :=
-  match (endpointCallOnCore epId callerTid IpcMessage.empty ec st).2 with
+  match (endpointCallOnCore epId callerTid (.frame none false) ec st).2 with
   | .ok sgi => sgi
   | .error _ => none
 
@@ -347,7 +343,7 @@ private def runBlockingChecks : IO Unit := do
 
 private def runNoReceiverChecks : IO Unit := do
   IO.println "--- §3.3 SM6.A.1 no-receiver path (blockedOnCall) ---"
-  let (st', res) := endpointCallOnCore epId callerTid IpcMessage.empty bootCoreId stBase
+  let (st', res) := endpointCallOnCore epId callerTid (.frame none false) bootCoreId stBase
   -- No receiver waiting ⇒ no cross-core wake ⇒ no SGI.
   assertBool "no-receiver call surfaces no SGI"
     (match res with | .ok none => true | _ => false)
@@ -361,11 +357,11 @@ private def runNoReceiverChecks : IO Unit := do
   -- SM6.A.5/.8: WithCaps + the full cross-core dispatch agree with the bare call
   -- on the no-receiver path (no caps to transfer; no donation without a server).
   assertBool "no-receiver WithCaps cross-core call also surfaces no SGI"
-    (match (endpointCallWithCapsOnCore epId callerTid IpcMessage.empty AccessRightSet.empty
+    (match (endpointCallWithCapsOnCore epId callerTid (.frame none false)
         (SeLe4n.Slot.ofNat 0) bootCoreId stBase).2 with
      | .ok (_, none) => true | _ => false)
   assertBool "no-receiver cross-core dispatch performs no donation (= WithCaps)"
-    (match (endpointCallCrossCoreDispatch epId callerTid IpcMessage.empty AccessRightSet.empty
+    (match (endpointCallCrossCoreDispatch epId callerTid (.frame none false)
         (SeLe4n.Slot.ofNat 0) bootCoreId stBase).2 with
      | .ok (_, none) => true | _ => false)
 
@@ -389,7 +385,7 @@ private def runRendezvousChecks : IO Unit := do
          | some (tgt, kind) => decide (tgt = core1 ∧ kind = SgiKind.reschedule)
          | none => false)
       -- The caller blocks on its own core awaiting the reply.
-      let (st', _) := endpointCallOnCore epId callerTid IpcMessage.empty bootCoreId st
+      let (st', _) := endpointCallOnCore epId callerTid (.frame none false) bootCoreId st
       assertBool "rendezvous blocks the caller as blockedOnReply (reply linkage)"
         (match st'.getTcb? callerTid with
          | some t => decide (t.ipcState = .blockedOnReply epId (some recvRemoteTid))
@@ -408,7 +404,7 @@ private def runRendezvousChecks : IO Unit := do
   -- itself fail closed, with no intermediate `.blockedOnReply` caller and no SGI.
   match stWithReceiverNoReply recvRemoteTid with
   | some st =>
-      let (st', res) := endpointCallOnCore epId callerTid IpcMessage.empty bootCoreId st
+      let (st', res) := endpointCallOnCore epId callerTid (.frame none false) bootCoreId st
       assertBool "no-stash rendezvous fails closed with replyCapInvalid"
         (match res with | .error .replyCapInvalid => true | _ => false)
       assertBool "no-stash rendezvous leaves the caller unblocked (no green intermediate)"
@@ -958,14 +954,10 @@ example (st st' : SystemState) (serverTid : SeLe4n.ThreadId)
 transition behind the **live** `.send` dispatch — preserves every core's
 bundle view. -/
 example (endpointId : SeLe4n.ObjId) (sender : SeLe4n.ThreadId)
-    (msg : IpcMessage) (endpointRights : AccessRightSet)
+    (payload : SendPayload)
     (receiverSlotBase : SeLe4n.Slot)
     (st st' : SystemState) (summary : CapTransferSummary) (c : CoreId)
     (hInv : ipcInvariantFull_smp st) (hObjInv : st.objects.invExt)
-    -- WS-RR RR3.11: one condition on the syscall's own message argument, where the
-    -- retired `hDualQueue'` / `hBadge'` were post-state conjuncts the bundle now
-    -- establishes.
-    (hMsgCaps : messageCapBadgesValid msg)
     (hAllBudgetsNone : allTimeoutBudgetsNone st)
     (hFreshSender : ∀ (epId : SeLe4n.ObjId) (ep : Endpoint),
       st.objects[epId]? = some (.endpoint ep) →
@@ -985,12 +977,12 @@ example (endpointId : SeLe4n.ObjId) (sender : SeLe4n.ThreadId)
         ∀ ep rt, tcb.ipcState ≠ .blockedOnReply ep rt)
     (hSenderNotUnbound : ∀ (tcb : TCB), st.getTcb? sender = some tcb →
         tcb.schedContextBinding ≠ .unbound)
-    (hStep : endpointSendDualWithCaps endpointId sender msg endpointRights
+    (hStep : endpointSendDualWithCaps endpointId sender payload
              receiverSlotBase st = .ok (summary, st')) :
     ipcInvariantFull_perCore st' c :=
-  endpointSendDualWithCaps_preserves_ipcInvariantFull_perCore endpointId sender msg
-    endpointRights receiverSlotBase st st' summary hInv hObjInv
-    hMsgCaps hAllBudgetsNone hFreshSender hSendTailFresh
+  endpointSendDualWithCaps_preserves_ipcInvariantFull_perCore endpointId sender payload
+    receiverSlotBase st st' summary hInv hObjInv
+    hAllBudgetsNone hFreshSender hSendTailFresh
     hSenderNotRecv hSenderNotReply hSenderNotUnbound hStep c
 
 /-- **WS-OD OD3.11** fixture (rendezvous branch): two receivers queued, so the
@@ -1006,7 +998,7 @@ private def stTwoReceivers? : Option SystemState :=
 /-- **WS-OD OD3.11** fixture (blocking branch): one sender already parked, so a
 second `.call` enqueues behind it and writes *its* TCB as the old tail. -/
 private def stOneParkedSender? : Option SystemState :=
-  match endpointCallOnCore epId recvLocalTid IpcMessage.empty bootCoreId stBase with
+  match endpointCallOnCore epId recvLocalTid (.frame none false) bootCoreId stBase with
   | (st1, .ok _) => some st1
   | _ => none
 
@@ -1035,7 +1027,7 @@ private def runQueueNeighbourFootprintChecks : IO Unit := do
       let ls := lockSet_endpointCallOnCore st epId callerTid cnRoot
       assertBool "the successor's TCB write lock is declared (rendezvous)"
         (decide ((tcbLock recvRemoteTid, AccessMode.write) ∈ ls.pairs))
-      let (st', _) := endpointCallOnCore epId callerTid IpcMessage.empty bootCoreId st
+      let (st', _) := endpointCallOnCore epId callerTid (.frame none false) bootCoreId st
       assertBool "the call rewrites the promoted head's links"
         (match st'.getTcb? recvRemoteTid with
          | some t => decide (t.queuePrev = none ∧ t.queuePPrev = some .endpointHead)
@@ -1054,7 +1046,7 @@ private def runQueueNeighbourFootprintChecks : IO Unit := do
       let ls := lockSet_endpointCallOnCore st epId callerTid cnRoot
       assertBool "the old tail's TCB write lock is declared (blocking)"
         (decide ((tcbLock recvLocalTid, AccessMode.write) ∈ ls.pairs))
-      let (st', _) := endpointCallOnCore epId callerTid IpcMessage.empty bootCoreId st
+      let (st', _) := endpointCallOnCore epId callerTid (.frame none false) bootCoreId st
       assertBool "the call rewrites the old tail's queueNext"
         (match st'.getTcb? recvLocalTid with
          | some t => decide (t.queueNext = some callerTid)
@@ -1424,7 +1416,7 @@ private def runAbiSchedFootprintChecks : IO Unit := do
        (match abiEntryLockOperands decoded tid stFilled with
         | some ops =>
           decide (Concurrency.lockSetForSyscall decoded.syscallId
-                    { ops with endpointRights := none, receiverSlotBase := none,
+                    { ops with receiverSlotBase := none,
                                replyMessageInfo := none, replyRegisters := none,
                                affinity := none } stFilled
                     = Concurrency.lockSetForSyscall decoded.syscallId ops stFilled)

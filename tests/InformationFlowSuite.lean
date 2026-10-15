@@ -679,8 +679,8 @@ def runInformationFlowChecks : IO Unit := do
   -- Same-domain send should be allowed (same result as unchecked)
   let testMsg : IpcMessage := { registers := #[], caps := #[], badge := none }
   -- AH1-E: Updated to pass cap transfer params (default values — no caps in testMsg)
-  let checkedResult := SeLe4n.Kernel.endpointSendDualChecked publicCtx ⟨10⟩ ⟨1⟩ testMsg default default publicEndpointState
-  let uncheckedResult := SeLe4n.Kernel.endpointSendDual ⟨10⟩ ⟨1⟩ testMsg publicEndpointState
+  let checkedResult := SeLe4n.Kernel.endpointSendDualChecked publicCtx ⟨10⟩ ⟨1⟩ (.frame testMsg.badge testMsg.capsGranted) default publicEndpointState
+  let uncheckedResult := SeLe4n.Kernel.endpointSendDual ⟨10⟩ ⟨1⟩ (.frame testMsg.badge testMsg.capsGranted) publicEndpointState
   expect "same-domain endpointSendDualChecked equals unchecked send"
     (match checkedResult, uncheckedResult with
       | .ok (_, s₁), .ok ((), s₂) => s₁.objects[(⟨10⟩ : SeLe4n.ObjId)]? == s₂.objects[(⟨10⟩ : SeLe4n.ObjId)]?
@@ -694,7 +694,7 @@ def runInformationFlowChecks : IO Unit := do
       endpointLabelOf := fun _ => publicLabel
       serviceLabelOf := fun _ => publicLabel }
 
-  let deniedResult := SeLe4n.Kernel.endpointSendDualChecked secretSenderCtx ⟨10⟩ ⟨1⟩ testMsg default default publicEndpointState
+  let deniedResult := SeLe4n.Kernel.endpointSendDualChecked secretSenderCtx ⟨10⟩ ⟨1⟩ (.frame testMsg.badge testMsg.capsGranted) default publicEndpointState
   expect "secret-to-public endpointSendDualChecked returns flowDenied"
     (match deniedResult with
       | .error .flowDenied => true
@@ -872,15 +872,15 @@ def runInformationFlowChecks : IO Unit := do
     (SeLe4n.Kernel.enforcementBoundary.length == 53)
 
   -- Verify enforcement boundary: denied flows produce errors
-  let deniedSendResult := SeLe4n.Kernel.endpointSendDualChecked secretSenderCtx ⟨10⟩ ⟨1⟩ testMsg default default publicEndpointState
+  let deniedSendResult := SeLe4n.Kernel.endpointSendDualChecked secretSenderCtx ⟨10⟩ ⟨1⟩ (.frame testMsg.badge testMsg.capsGranted) default publicEndpointState
   expect "enforcement boundary blocks cross-domain endpointSendDual"
     (match deniedSendResult with
       | .error .flowDenied => true
       | _ => false)
 
   -- Verify that same-domain operations pass through unchecked
-  let allowedSendResult := SeLe4n.Kernel.endpointSendDualChecked publicCtx ⟨10⟩ ⟨1⟩ testMsg default default publicEndpointState
-  let uncheckedSendResult := SeLe4n.Kernel.endpointSendDual ⟨10⟩ ⟨1⟩ testMsg publicEndpointState
+  let allowedSendResult := SeLe4n.Kernel.endpointSendDualChecked publicCtx ⟨10⟩ ⟨1⟩ (.frame testMsg.badge testMsg.capsGranted) default publicEndpointState
+  let uncheckedSendResult := SeLe4n.Kernel.endpointSendDual ⟨10⟩ ⟨1⟩ (.frame testMsg.badge testMsg.capsGranted) publicEndpointState
   expect "same-domain endpointSendDualChecked matches unchecked"
     (match allowedSendResult, uncheckedSendResult with
       | .ok (_, s₁), .ok ((), s₂) => s₁.objects[(⟨10⟩ : SeLe4n.ObjId)]? == s₂.objects[(⟨10⟩ : SeLe4n.ObjId)]?
@@ -894,7 +894,7 @@ def runInformationFlowChecks : IO Unit := do
   -- denying with a different discriminant, fails here rather than only in a
   -- proof a reader has to go find.
   let deniedCall :=
-    SeLe4n.Kernel.endpointCallChecked secretSenderCtx ⟨10⟩ ⟨1⟩ testMsg default default
+    SeLe4n.Kernel.endpointCallChecked secretSenderCtx ⟨10⟩ ⟨1⟩ (.frame testMsg.badge testMsg.capsGranted) default
       publicEndpointState
   expect "SM8.C: endpointCallChecked denies a cross-domain call"
     (match deniedCall with | .error .flowDenied => true | _ => false)
@@ -1715,11 +1715,12 @@ def runInformationFlowChecks : IO Unit := do
         -- internally fail on the missing-TCB peer (via `endpointQueuePopHead`
         -- → `lookupTcb`), the wrapper propagates an error. The wrapper MUST
         -- NOT return `.ok` — that would be the pre-R1 covert-channel shape.
-        let msgWithCaps : IpcMessage :=
-          { registers := #[], caps := #[TransferCap.fromNode cap1 0], badge := none }
+        -- The caller's frame names one extra capability address (WS-ZA ZA4.7).
+        let stFramed := SeLe4n.Testing.withSenderFrame stFaulty callerTid IpcMessage.empty
+          #[SeLe4n.CPtr.ofNat 0]
         let callResult := SeLe4n.Kernel.endpointCallWithCaps epId callerTid
-          msgWithCaps (AccessRightSet.ofList [.write, .grant])
-          (SeLe4n.Slot.ofNat 0) stFaulty
+          (.frame none ((AccessRightSet.ofList [.write, .grant]).mem .grant))
+          (SeLe4n.Slot.ofNat 0) stFramed
         expect "endpointCallWithCaps never silently succeeds on missing-TCB receiver"
           (match callResult with
            | .ok _ => false

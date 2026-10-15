@@ -756,8 +756,6 @@ open SeLe4n.Kernel.Concurrency (CoreId bootCoreId allCores)
 #check @SeLe4n.Kernel.endpointSendDualOnCore
 #check @SeLe4n.Kernel.endpointSendDualWithCapsOnCore
 #check @SeLe4n.Kernel.endpointSendCrossCoreDispatchChecked
-#check @SeLe4n.Kernel.endpointSendDualOnCore_tooLarge
-#check @SeLe4n.Kernel.endpointSendDualOnCore_tooManyCaps
 #check @SeLe4n.Kernel.endpointSendDualWithCapsOnCore_no_caps
 #check @SeLe4n.Kernel.endpointSendCrossCoreDispatchChecked_flow_denied
 #check @SeLe4n.Kernel.endpointSendCrossCoreDispatchChecked_flow_allowed
@@ -4899,7 +4897,7 @@ private def vacatingSendMsg : IpcMessage :=
 /-- The blocking send: `lowEndpoint` has no receiver, so `lowCurrent` parks on
 its send queue and `removeRunnableOnCore` clears core 0's `current` slot. -/
 private def vacatedPost : SystemState :=
-  (SeLe4n.Kernel.endpointSendDualOnCore lowEndpoint lowCurrent vacatingSendMsg c0 niState).1
+  (SeLe4n.Kernel.endpointSendDualOnCore lowEndpoint lowCurrent (.frame vacatingSendMsg.badge vacatingSendMsg.capsGranted) c0 niState).1
 
 /-- The same state after the entry seam's local reschedule. -/
 private def vacatedRescheduled : SystemState :=
@@ -6220,8 +6218,8 @@ private def crossCoreSendUnder (ctx : LabelingContext) (epId : SeLe4n.ObjId) :
     SystemState ×
       Except KernelError (CapTransferSummary ×
         Option (CoreId × SeLe4n.Kernel.Concurrency.SgiKind)) :=
-  endpointSendCrossCoreDispatchChecked ctx epId lowCurrent IpcMessage.empty
-    (AccessRightSet.ofList [.write]) (SeLe4n.Slot.ofNat 0) c0 niState
+  endpointSendCrossCoreDispatchChecked ctx epId lowCurrent (.frame none false)
+    (SeLe4n.Slot.ofNat 0) c0 niState
 
 /-- §6.8  The live per-endpoint flow policy — SM8.B's registered debt (a). -/
 private def runEndpointPolicyGateChecks : IO Unit := do
@@ -7752,6 +7750,8 @@ private def ipcFootprintState : SystemState :=
             ipcSender.toObjId (.tcb ipcSenderTcb)).insert
           lowEndpoint
           (.endpoint (Endpoint.ofQueues { head := some ipcSender, tail := some ipcSender } { head := some ipcReceiver, tail := some ipcReceiver }))) }
+    |> fun st => SeLe4n.Testing.withSenderFrame st lowCurrent ipcCapsMessage
+        #[SeLe4n.CPtr.ofNat 0]
 
 /-- **WS-OD OD3.6** — the SchedContext a rendezvous donates.  Only the sender's
 `schedContextBinding` is read (`endpointCallDonatedSc?`), so the fixture need
@@ -7792,9 +7792,11 @@ private def ipcInertFootprintState : SystemState :=
           (.tcb (TCB.setIpcState (mkTcb 1044 40 (some c0)) (.blockedOnCall lowEndpoint))) }
 
 /-- The operands a live `.send` supplies: the endpoint its capability names and
-the message it built. -/
+what the capability contributes, the badge and the grant right (WS-ZA ZA4.7).
+The words and capability addresses are in the caller's frame, which
+`ipcFootprintState` stages. -/
 private def ipcSendOperands (msg : IpcMessage) : Concurrency.SyscallLockOperands :=
-  .ofObjectTarget lowCurrent lowEndpoint (some msg)
+  .ofObjectTarget lowCurrent lowEndpoint (some (.frame msg.badge msg.capsGranted))
 
 private def ipcDeclaredMember
     (declared : Option Concurrency.LockSet)
@@ -12121,8 +12123,9 @@ private def flowReceiverFalse : LabelingContext := flowLabeling highLabel highLa
 
 /-- The live checked `.call` dispatch under a labelling. -/
 private def flowCall (ctx : LabelingContext) : SystemState :=
-  (endpointCallCrossCoreDispatchChecked ctx flowEp flowClient IpcMessage.empty
-    (AccessRightSet.ofList [.read, .write, .grant]) (SeLe4n.Slot.ofNat 0) bootCoreId
+  (endpointCallCrossCoreDispatchChecked ctx flowEp flowClient
+    (.frame none ((AccessRightSet.ofList [.read, .write, .grant]).mem .grant))
+    (SeLe4n.Slot.ofNat 0) bootCoreId
     flowState).1
 
 /-- Did the rendezvous lend the client's reservation to the server? -/

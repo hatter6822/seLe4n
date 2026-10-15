@@ -262,29 +262,29 @@ private def row_invalidRegister : KernelErrorRejection :=
     runScenario   := fun _ =>
       SeLe4n.Kernel.Architecture.RegisterDecode.validateRegBound ⟨32⟩ 32 }
 
-/-- Row: `endpointSendDual` rejects message exceeding maxMessageRegisters
+/-- Row: `endpointReply` rejects a reply exceeding maxMessageRegisters
 with `.ipcMessageTooLarge`. -/
 private def row_ipcMessageTooLarge : KernelErrorRejection :=
-  { syscall       := "endpointSendDual"
+  { syscall       := "endpointReply"
     expectedError := .ipcMessageTooLarge
     scenarioTag   := "AN11A.2.ipcMessageTooLarge.over_max"
-    scenarioDesc  := "endpointSendDual rejects message whose register" ++
+    scenarioDesc  := "endpointReply rejects message whose register" ++
                      " count exceeds maxMessageRegisters (120)"
     runScenario   := fun _ =>
       let oversized : IpcMessage :=
         { registers := Array.replicate (maxMessageRegisters + 1) (rv 0)
           caps := #[]
           badge := none }
-      runUnit (endpointSendDual (ObjId.ofNat 1) (ThreadId.ofNat 1)
+      runUnit (endpointReply (ThreadId.ofNat 1) (ThreadId.ofNat 2)
         oversized (default : SystemState)) }
 
-/-- Row: `endpointSendDual` rejects message exceeding maxExtraCaps with
+/-- Row: `endpointReply` rejects a reply exceeding maxExtraCaps with
 `.ipcMessageTooManyCaps`. -/
 private def row_ipcMessageTooManyCaps : KernelErrorRejection :=
-  { syscall       := "endpointSendDual"
+  { syscall       := "endpointReply"
     expectedError := .ipcMessageTooManyCaps
     scenarioTag   := "AN11A.2.ipcMessageTooManyCaps.over_max"
-    scenarioDesc  := "endpointSendDual rejects message whose extra-cap" ++
+    scenarioDesc  := "endpointReply rejects message whose extra-cap" ++
                      " count exceeds maxExtraCaps (3)"
     runScenario   := fun _ =>
       let oversized : IpcMessage :=
@@ -292,7 +292,7 @@ private def row_ipcMessageTooManyCaps : KernelErrorRejection :=
           caps := Array.replicate (maxExtraCaps + 1)
                     (TransferCap.fromNode Capability.null 0)
           badge := none }
-      runUnit (endpointSendDual (ObjId.ofNat 1) (ThreadId.ofNat 1)
+      runUnit (endpointReply (ThreadId.ofNat 1) (ThreadId.ofNat 2)
         oversized (default : SystemState)) }
 
 /-- Row: `syscallEntry` rejects empty current-thread slot with
@@ -555,7 +555,7 @@ private def row_invalidCapability_send_to_nonEndpoint : KernelErrorRejection :=
         objects := (default : SystemState).objects.insert endpointId
           (.notification stuff) }
       runUnit (endpointSendDual endpointId (ThreadId.ofNat 1)
-        IpcMessage.empty st) }
+        (.frame none false) st) }
 
 /-- Row: `endpointSendDual` rejects send to absent endpoint with
 `.objectNotFound`. -/
@@ -567,7 +567,7 @@ private def row_objectNotFound_send_missing : KernelErrorRejection :=
                      " exist in the object store"
     runScenario   := fun _ =>
       runUnit (endpointSendDual (ObjId.ofNat 9999) (ThreadId.ofNat 1)
-        IpcMessage.empty (default : SystemState)) }
+        (.frame none false) (default : SystemState)) }
 
 /-- Row: `endpointQueueEnqueue` on a thread with non-`.ready` ipcState
 returns `.alreadyWaiting`. -/
