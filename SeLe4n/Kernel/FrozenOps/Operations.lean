@@ -550,14 +550,36 @@ private def frozenReadOverflowWord (st : FrozenSystemState) (tid : SeLe4n.Thread
       | none => .error .invalidMessageInfo
     | _ => .error .invalidMessageInfo
 
+/-- WS-ZA ZA4.7: the frozen decode of a sender's saved frame -- the live
+decoder (`decodeSyscallArgsWith`) with the overflow words read from the frozen
+IPC buffer. -/
+def frozenSenderDecode (st : FrozenSystemState) (sender : SeLe4n.ThreadId) (tcb : TCB) :
+    Except KernelError SyscallDecodeResult :=
+  Architecture.RegisterDecode.decodeSyscallArgsWith (frozenReadOverflowWord st sender)
+    SeLe4n.arm64DefaultLayout tcb.registerContext 32
+
 /-- WS-ZA ZA4.7: **the message a frozen blocked sender holds** — the live
 reader's definition (`blockedSenderMessageOf`) over the frozen decode of the
 sender's saved frame, whose overflow words come from the frozen IPC buffer. -/
 def frozenBlockedSenderMessage (st : FrozenSystemState) (sender : SeLe4n.ThreadId)
     (tcb : TCB) : IpcMessage :=
-  blockedSenderMessageOf tcb
-    (Architecture.RegisterDecode.decodeSyscallArgsWith (frozenReadOverflowWord st sender)
-      SeLe4n.arm64DefaultLayout tcb.registerContext 32)
+  blockedSenderMessageOf tcb (frozenSenderDecode st sender tcb)
+
+/-- WS-ZA ZA4.7: **the message a frozen send delivers** to a waiting receiver --
+the live `sendPayloadMessage` over the frozen decode of the sender's frame: a
+fault's message, or the frame under the capability's badge and grant right.  A
+sender that does not exist has no frame, so its decode is a refusal.  The
+blocked-sender read above makes the same read under the recorded badge and
+grant, so the two frozen arrival orders deliver one message, with no
+capabilities on either. -/
+def frozenSendPayloadMessage (st : FrozenSystemState) (sender : SeLe4n.ThreadId) :
+    SendPayload → IpcMessage
+  | .frame b g =>
+      senderFrameMessage
+        (match frozenLookupTcb st sender with
+         | some tcb => frozenSenderDecode st sender tcb
+         | none => .error .objectNotFound) b g
+  | .fault f ctx b => faultMessage f ctx b
 
 /-- Q7-C2/V5-O: Pop head from a frozen intrusive queue.
 Follows `queueNext` link in the head TCB to advance the queue.
@@ -662,11 +684,8 @@ private def frozenQueuePopHead (endpointId : SeLe4n.ObjId) (isReceiveQ : Bool)
 /-- Q7-C2: Frozen endpoint send — send message via frozen endpoint.
 Uses intrusive queue pop/enqueue via TCB queue links. -/
 def frozenEndpointSend (endpointId : SeLe4n.ObjId) (sender : SeLe4n.ThreadId)
-    (msg : IpcMessage) : FrozenKernel Unit :=
+    (payload : SendPayload) : FrozenKernel Unit :=
   fun st =>
-    if msg.registers.size > maxMessageRegisters then .error .ipcMessageTooLarge
-    else if msg.caps.size > maxExtraCaps then .error .ipcMessageTooManyCaps
-    else
     match st.getObject? endpointId with
     | some (.endpoint ep) =>
         -- **The sender is resolved once, for both orderings.**  The blocking
@@ -699,7 +718,11 @@ def frozenEndpointSend (endpointId : SeLe4n.ObjId) (sender : SeLe4n.ThreadId)
                     -- claimed-checked branch was not being compared.  FO-037 is
                     -- the delivery-ordering comparison, with the stash seeded so
                     -- this field is what the scenario measures.
-                    let recvTcb' := (TCB.setIpcState { recvTcb with pendingMessage := some msg, pendingReceiveReplyCode := 0 } ThreadIpcState.ready)
+                    -- WS-ZA ZA4.7: the words are read from the sender's frame,
+                    -- where the receive that takes a blocked sender reads them.
+                    let recvTcb' := (TCB.setIpcState { recvTcb with
+                      pendingMessage := some (frozenSendPayloadMessage st sender payload),
+                      pendingReceiveReplyCode := 0 } ThreadIpcState.ready)
                     match frozenStoreTcb receiver recvTcb' st' with
                     | .error e => .error e
                     | .ok ((), st'') =>
@@ -721,7 +744,7 @@ def frozenEndpointSend (endpointId : SeLe4n.ObjId) (sender : SeLe4n.ThreadId)
             -- is nothing to propagate here.
             -- `senderTcb` is the one resolved above, shared with the rendezvous
             -- ordering so the two cannot disagree about what a valid sender is.
-            let senderTcb' := (TCB.setIpcState { senderTcb.setSendCap msg.badge msg.capsGranted with
+            let senderTcb' := (TCB.setIpcState { senderTcb.setSendCap payload.badge payload.grant with
               pendingMessage := none } (.blockedOnSend endpointId))
             match frozenStoreTcb sender senderTcb' st with
             | .error e => .error e
@@ -848,11 +871,8 @@ def frozenEndpointReceive (endpointId : SeLe4n.ObjId)
 /-- Q7-C2: Frozen endpoint call — send then block for reply.
 Mirrors `endpointCall` using intrusive queue management. -/
 def frozenEndpointCall (endpointId : SeLe4n.ObjId) (caller : SeLe4n.ThreadId)
-    (msg : IpcMessage) : FrozenKernel Unit :=
+    (payload : SendPayload) : FrozenKernel Unit :=
   fun st =>
-    if msg.registers.size > maxMessageRegisters then .error .ipcMessageTooLarge
-    else if msg.caps.size > maxExtraCaps then .error .ipcMessageTooManyCaps
-    else
     match st.getObject? endpointId with
     | some (.endpoint ep) =>
         match ep.receiveQ.head with
@@ -863,7 +883,11 @@ def frozenEndpointCall (endpointId : SeLe4n.ObjId) (caller : SeLe4n.ThreadId)
             | .ok (receiver, _tcb, st') =>
                 match frozenLookupTcb st' receiver with
                 | some recvTcb =>
-                    let recvTcb' := (TCB.setIpcState { recvTcb with pendingMessage := some msg } ThreadIpcState.ready)
+                    -- WS-ZA ZA4.7: the words are read from the caller's frame,
+                    -- in the state the call began in, as the live call reads them.
+                    let recvTcb' := (TCB.setIpcState { recvTcb with
+                      pendingMessage := some (frozenSendPayloadMessage st caller payload) }
+                      ThreadIpcState.ready)
                     match frozenStoreTcb receiver recvTcb' st' with
                     | .error e => .error e
                     | .ok ((), st'') =>
@@ -892,7 +916,7 @@ def frozenEndpointCall (endpointId : SeLe4n.ObjId) (caller : SeLe4n.ThreadId)
             -- message stays in its frame, as for a blocked send (WS-ZA ZA4.7)
             match frozenLookupTcb st caller with
             | some callerTcb =>
-                let callerTcb' := (TCB.setIpcState { callerTcb.setSendCap msg.badge msg.capsGranted with
+                let callerTcb' := (TCB.setIpcState { callerTcb.setSendCap payload.badge payload.grant with
                   pendingMessage := none } (.blockedOnCall endpointId))
                 match frozenStoreTcb caller callerTcb' st with
                 | .error e => .error e

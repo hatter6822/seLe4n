@@ -660,15 +660,11 @@ caller and its deschedule — a scheduling point opened and closed.  The receive
 it wakes is the endpoint's receive-queue head (`hHeads`); the caller is no idle
 thread (an idle thread runs in the kernel and makes no call). -/
 theorem endpointCallOnCore_runQueueEntryStage (endpointId : SeLe4n.ObjId)
-    (caller : SeLe4n.ThreadId) (msg : IpcMessage) (c : Concurrency.CoreId)
+    (caller : SeLe4n.ThreadId) (payload : SendPayload) (c : Concurrency.CoreId)
     (st : SystemState) (hHeads : endpointHeadsWakeable st)
     (hCur : st.scheduler.currentOnCore c = some caller) (hNI : isIdleThreadId caller = false) :
-    SystemState.RunQueueEntryStage st (endpointCallOnCore endpointId caller msg c st).1 := by
+    SystemState.RunQueueEntryStage st (endpointCallOnCore endpointId caller payload c st).1 := by
   unfold endpointCallOnCore
-  split
-  · exact (RunQueueStage.refl _).entry
-  split
-  · exact (RunQueueStage.refl _).entry
   split
   · rename_i ep hEp
     split
@@ -788,17 +784,15 @@ theorem applyCallDonationOnCore_runQueueStage {st st' : SystemState}
 -- ============================================================================
 
 theorem endpointCallWithCapsOnCore_runQueueEntryStage (endpointId : SeLe4n.ObjId)
-    (caller : SeLe4n.ThreadId) (msg : IpcMessage) (rights : AccessRightSet)
+    (caller : SeLe4n.ThreadId) (payload : SendPayload)
     (base : SeLe4n.Slot) (c : Concurrency.CoreId) (st : SystemState)
     (hHeads : endpointHeadsWakeable st) (hCur : st.scheduler.currentOnCore c = some caller)
     (hNI : isIdleThreadId caller = false) :
     SystemState.RunQueueEntryStage st
-      (endpointCallWithCapsOnCore endpointId caller msg rights base c st).1 := by
-  have s0 := endpointCallOnCore_runQueueEntryStage endpointId caller
-    { msg with capsGranted := rights.mem .grant } c st hHeads hCur hNI
+      (endpointCallWithCapsOnCore endpointId caller payload base c st).1 := by
+  have s0 := endpointCallOnCore_runQueueEntryStage endpointId caller payload c st hHeads hCur hNI
   unfold endpointCallWithCapsOnCore
-  generalize endpointCallOnCore endpointId caller { msg with capsGranted := rights.mem .grant }
-    c st = r at s0 ⊢
+  generalize endpointCallOnCore endpointId caller payload c st = r at s0 ⊢
   obtain ⟨st1, r⟩ := r
   cases r with
   | error e => exact s0
@@ -807,19 +801,19 @@ theorem endpointCallWithCapsOnCore_runQueueEntryStage (endpointId : SeLe4n.ObjId
     repeat' split
     all_goals first
       | exact s0
-      | (rename_i hU; exact s0.trans (ipcUnwrapCaps_runQueueStage hU).entry)
+      | (rename_i hU; exact s0.trans (receiveTransferCaps_runQueueStage hU).entry)
 
 theorem endpointCallCrossCoreDispatch_runQueueEntryStage (endpointId : SeLe4n.ObjId)
-    (caller : SeLe4n.ThreadId) (msg : IpcMessage) (rights : AccessRightSet)
+    (caller : SeLe4n.ThreadId) (payload : SendPayload)
     (base : SeLe4n.Slot) (c : Concurrency.CoreId) (st : SystemState)
     (hHeads : endpointHeadsWakeable st) (hCur : st.scheduler.currentOnCore c = some caller)
     (hNI : isIdleThreadId caller = false) :
     SystemState.RunQueueEntryStage st
-      (endpointCallCrossCoreDispatch endpointId caller msg rights base c st).1 := by
-  have s0 := endpointCallWithCapsOnCore_runQueueEntryStage endpointId caller msg rights base c st
+      (endpointCallCrossCoreDispatch endpointId caller payload base c st).1 := by
+  have s0 := endpointCallWithCapsOnCore_runQueueEntryStage endpointId caller payload base c st
     hHeads hCur hNI
   unfold endpointCallCrossCoreDispatch
-  generalize endpointCallWithCapsOnCore endpointId caller msg rights base c st = r at s0 ⊢
+  generalize endpointCallWithCapsOnCore endpointId caller payload base c st = r at s0 ⊢
   obtain ⟨st1, r⟩ := r
   cases r with
   | error e => exact s0
@@ -1033,9 +1027,9 @@ theorem faultDeliverOnCore_runQueueEntryStage (st : SystemState) (tid : SeLe4n.T
   · exact sus
   · rename_i tgt _
     have s0 := endpointCallCrossCoreDispatch_runQueueEntryStage tgt.endpoint tid
-      (faultMessage f fctx tgt.cap.badge) tgt.cap.rights (SeLe4n.Slot.ofNat 0) c st hHeads hCur hNI
+      (SendPayload.fault f fctx tgt.cap.badge) (SeLe4n.Slot.ofNat 0) c st hHeads hCur hNI
     generalize endpointCallCrossCoreDispatch tgt.endpoint tid
-      (faultMessage f fctx tgt.cap.badge) tgt.cap.rights (SeLe4n.Slot.ofNat 0) c st = r at s0 ⊢
+      (SendPayload.fault f fctx tgt.cap.badge) (SeLe4n.Slot.ofNat 0) c st = r at s0 ⊢
     obtain ⟨st1, r⟩ := r
     cases r with
     | error e => exact sus

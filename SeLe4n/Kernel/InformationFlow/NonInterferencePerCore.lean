@@ -949,14 +949,10 @@ theorem notificationWait_confinedToBootCore (st st' : SystemState)
 
 /-- SM8.B.3: `endpointSendDual` writes only the boot core. -/
 theorem endpointSendDual_confinedToBootCore (st st' : SystemState)
-    (endpointId : SeLe4n.ObjId) (sender : SeLe4n.ThreadId) (msg : IpcMessage)
-    (hStep : endpointSendDual endpointId sender msg st = .ok ((), st')) :
+    (endpointId : SeLe4n.ObjId) (sender : SeLe4n.ThreadId) (payload : SendPayload)
+    (hStep : endpointSendDual endpointId sender payload st = .ok ((), st')) :
     observableSlotsConfinedToCore st st' bootCoreId := by
   unfold endpointSendDual SystemState.getObject? at hStep
-  simp only [show ¬(maxMessageRegisters < msg.registers.size) from by
-    intro h; simp [h] at hStep, ↓reduceIte] at hStep
-  simp only [show ¬(maxExtraCaps < msg.caps.size) from by
-    intro h; simp [h] at hStep, ↓reduceIte] at hStep
   cases hObj : st.objects[endpointId]? with
   | none => simp [hObj] at hStep
   | some obj =>
@@ -983,7 +979,7 @@ theorem endpointSendDual_confinedToBootCore (st st' : SystemState)
                 (endpointQueuePopHead_confinedToCore endpointId true st st1 receiver
                   (headTcb := headTcb) bootCoreId hPop) ?_
               refine observableSlotsConfinedToCore_trans
-                (storeTcbReceiveComplete_confinedToCore st1 st2 receiver (some msg)
+                (storeTcbReceiveComplete_confinedToCore st1 st2 receiver (some (sendPayloadMessage st sender payload))
                   bootCoreId hStore) ?_
               exact ensureRunnable_confinedToBootCore st2 receiver
       | none =>
@@ -1182,14 +1178,10 @@ theorem endpointReceiveDual_confinedToBootCore (st st' : SystemState)
 
 /-- SM8.B.3: `endpointCall` writes only the boot core. -/
 theorem endpointCall_confinedToBootCore (st st' : SystemState)
-    (endpointId : SeLe4n.ObjId) (caller : SeLe4n.ThreadId) (msg : IpcMessage)
-    (hStep : endpointCall endpointId caller msg st = .ok ((), st')) :
+    (endpointId : SeLe4n.ObjId) (caller : SeLe4n.ThreadId) (payload : SendPayload)
+    (hStep : endpointCall endpointId caller payload st = .ok ((), st')) :
     observableSlotsConfinedToCore st st' bootCoreId := by
   unfold endpointCall SystemState.getObject? at hStep
-  simp only [show ¬(maxMessageRegisters < msg.registers.size) from by
-    intro h; simp [h] at hStep, ↓reduceIte] at hStep
-  simp only [show ¬(maxExtraCaps < msg.caps.size) from by
-    intro h; simp [h] at hStep, ↓reduceIte] at hStep
   cases hObj : st.objects[endpointId]? with
   | none => simp [hObj] at hStep
   | some obj =>
@@ -1714,7 +1706,7 @@ theorem nonInterference_perCore_chooseThread (ctx : LabelingContext) (observer :
     (.chooseThread next hStep) (chooseThread_confinedToCore st st' next bootCoreId hStep)
 
 theorem nonInterference_perCore_endpointSendDual (ctx : LabelingContext) (observer : IfObserver)
-    (st st' : SystemState) (eid : SeLe4n.ObjId) (sender : SeLe4n.ThreadId) (msg : IpcMessage)
+    (st st' : SystemState) (eid : SeLe4n.ObjId) (sender : SeLe4n.ThreadId) (payload : SendPayload)
     (hObjInv : st.objects.invExt) (hIdxComplete : objectIndexSetComplete st)
     (hObjSetInv : st.objectIndexSet.table.invExt)
     (hEndpointHigh : objectObservable ctx observer eid = false)
@@ -1722,7 +1714,7 @@ theorem nonInterference_perCore_endpointSendDual (ctx : LabelingContext) (observ
     (hSenderObjHigh : objectObservable ctx observer sender.toObjId = false)
     (hCoherent : ∀ tid : SeLe4n.ThreadId, threadObservable ctx observer tid = false →
       objectObservable ctx observer tid.toObjId = false)
-    (hStep : endpointSendDual eid sender msg st = .ok ((), st'))
+    (hStep : endpointSendDual eid sender payload st = .ok ((), st'))
     (hRecvQueueHeadHigh : ∀ ep receiver, st.objects[eid]? = some (.endpoint ep) →
       ep.receiveQ.head = some receiver → threadObservable ctx observer receiver = false)
     (hRecvQueueNextHigh : ∀ ep receiver recvTcb nextTid,
@@ -1733,9 +1725,9 @@ theorem nonInterference_perCore_endpointSendDual (ctx : LabelingContext) (observ
       ep.sendQ.tail = some tailTid → objectObservable ctx observer tailTid.toObjId = false) :
     lowEquivalent_smp ctx observer st' st :=
   nonInterference_perCore ctx observer st st' hObjInv hIdxComplete hObjSetInv
-    (.endpointSendDual eid sender msg hEndpointHigh hSenderHigh hSenderObjHigh hCoherent hStep
+    (.endpointSendDual eid sender payload hEndpointHigh hSenderHigh hSenderObjHigh hCoherent hStep
       hRecvQueueHeadHigh hRecvQueueNextHigh hSendQueueTailHigh)
-    (endpointSendDual_confinedToBootCore st st' eid sender msg hStep)
+    (endpointSendDual_confinedToBootCore st st' eid sender payload hStep)
 
 theorem nonInterference_perCore_cspaceMint (ctx : LabelingContext) (observer : IfObserver)
     (st st' : SystemState) (src dst : CSpaceAddr) (rights : AccessRightSet)
@@ -1953,7 +1945,7 @@ theorem nonInterference_perCore_endpointReceiveDual (ctx : LabelingContext)
 
 theorem nonInterference_perCore_endpointCall (ctx : LabelingContext) (observer : IfObserver)
     (st st' : SystemState) (endpointId : SeLe4n.ObjId) (caller : SeLe4n.ThreadId)
-    (msg : IpcMessage)
+    (payload : SendPayload)
     (hObjInv : st.objects.invExt) (hIdxComplete : objectIndexSetComplete st)
     (hObjSetInv : st.objectIndexSet.table.invExt)
     (hEndpointHigh : objectObservable ctx observer endpointId = false)
@@ -1961,7 +1953,7 @@ theorem nonInterference_perCore_endpointCall (ctx : LabelingContext) (observer :
     (hCallerObjHigh : objectObservable ctx observer caller.toObjId = false)
     (hCoherent : ∀ tid : SeLe4n.ThreadId, threadObservable ctx observer tid = false →
       objectObservable ctx observer tid.toObjId = false)
-    (hStep : endpointCall endpointId caller msg st = .ok ((), st'))
+    (hStep : endpointCall endpointId caller payload st = .ok ((), st'))
     (hRecvQueueHeadHigh : ∀ ep receiver, st.objects[endpointId]? = some (.endpoint ep) →
       ep.receiveQ.head = some receiver → threadObservable ctx observer receiver = false)
     (hRecvQueueNextHigh : ∀ ep receiver recvTcb nextTid,
@@ -1972,9 +1964,9 @@ theorem nonInterference_perCore_endpointCall (ctx : LabelingContext) (observer :
       ep.sendQ.tail = some tailTid → objectObservable ctx observer tailTid.toObjId = false) :
     lowEquivalent_smp ctx observer st' st :=
   nonInterference_perCore ctx observer st st' hObjInv hIdxComplete hObjSetInv
-    (.endpointCallHigh endpointId caller msg hEndpointHigh hCallerHigh hCallerObjHigh hCoherent
+    (.endpointCallHigh endpointId caller payload hEndpointHigh hCallerHigh hCallerObjHigh hCoherent
       hStep hRecvQueueHeadHigh hRecvQueueNextHigh hSendQueueTailHigh)
-    (endpointCall_confinedToBootCore st st' endpointId caller msg hStep)
+    (endpointCall_confinedToBootCore st st' endpointId caller payload hStep)
 
 theorem nonInterference_perCore_endpointReplyRecv (ctx : LabelingContext) (observer : IfObserver)
     (st st' : SystemState) (endpointId : SeLe4n.ObjId)

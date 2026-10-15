@@ -124,15 +124,11 @@ macro_rules | `(tactic| run_queue_stage_step) => `(tactic|
 receive-queue head it pops (`hHeads`); the block enqueues the sender, blocks
 it and deschedules it. -/
 theorem endpointSendDualOnCore_runQueueEntryStage (endpointId : SeLe4n.ObjId)
-    (sender : SeLe4n.ThreadId) (msg : IpcMessage) (c : Concurrency.CoreId)
+    (sender : SeLe4n.ThreadId) (payload : SendPayload) (c : Concurrency.CoreId)
     (st : SystemState) (hHeads : endpointHeadsWakeable st)
     (hCur : st.scheduler.currentOnCore c = some sender) (hNI : isIdleThreadId sender = false) :
-    SystemState.RunQueueEntryStage st (endpointSendDualOnCore endpointId sender msg c st).1 := by
+    SystemState.RunQueueEntryStage st (endpointSendDualOnCore endpointId sender payload c st).1 := by
   unfold endpointSendDualOnCore
-  split
-  · exact (RunQueueStage.refl _).entry
-  split
-  · exact (RunQueueStage.refl _).entry
   split
   · split
     · split
@@ -163,17 +159,15 @@ theorem endpointSendDualOnCore_runQueueEntryStage (endpointId : SeLe4n.ObjId)
   · split <;> exact (RunQueueStage.refl _).entry
 
 theorem endpointSendDualWithCapsOnCore_runQueueEntryStage (endpointId : SeLe4n.ObjId)
-    (sender : SeLe4n.ThreadId) (msg : IpcMessage) (rights : AccessRightSet)
+    (sender : SeLe4n.ThreadId) (payload : SendPayload)
     (base : SeLe4n.Slot) (c : Concurrency.CoreId) (st : SystemState)
     (hHeads : endpointHeadsWakeable st) (hCur : st.scheduler.currentOnCore c = some sender)
     (hNI : isIdleThreadId sender = false) :
     SystemState.RunQueueEntryStage st
-      (endpointSendDualWithCapsOnCore endpointId sender msg rights base c st).1 := by
-  have s0 := endpointSendDualOnCore_runQueueEntryStage endpointId sender
-    { msg with capsGranted := rights.mem .grant } c st hHeads hCur hNI
+      (endpointSendDualWithCapsOnCore endpointId sender payload base c st).1 := by
+  have s0 := endpointSendDualOnCore_runQueueEntryStage endpointId sender payload c st hHeads hCur hNI
   unfold endpointSendDualWithCapsOnCore
-  generalize endpointSendDualOnCore endpointId sender { msg with capsGranted := rights.mem .grant }
-    c st = r at s0 ⊢
+  generalize endpointSendDualOnCore endpointId sender payload c st = r at s0 ⊢
   obtain ⟨st1, r⟩ := r
   cases r with
   | error e => exact s0
@@ -182,7 +176,7 @@ theorem endpointSendDualWithCapsOnCore_runQueueEntryStage (endpointId : SeLe4n.O
     repeat' split
     all_goals first
       | exact s0
-      | (rename_i hU; exact s0.trans (ipcUnwrapCaps_runQueueStage hU).entry)
+      | (rename_i hU; exact s0.trans (receiveTransferCaps_runQueueStage hU).entry)
 
 theorem cleanupPreReceiveDonationChecked_runQueueStage {st st' : SystemState}
     {receiver : SeLe4n.ThreadId} (h : cleanupPreReceiveDonationChecked st receiver = .ok st') :

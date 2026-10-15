@@ -31,13 +31,6 @@ open Architecture.SyscallArgDecode
 
 /-! ### The wrapping steps -/
 
-/-- Resolving the extra capabilities mints CDT nodes only. -/
-theorem resolveExtraCaps_keyFrame (cspaceRoot : SeLe4n.ObjId) (capAddrs : Array SeLe4n.CPtr)
-    (depth : Nat) (granted : Bool) (st : SystemState) (hInv : st.objects.invExt) :
-    capabilityKeyFrame st (resolveExtraCaps cspaceRoot capAddrs depth granted st).2 :=
-  let h := resolveExtraCaps_objects_scheduler_eq cspaceRoot capAddrs depth granted st
-  capabilityKeyFrame_of_objects_scheduler_eq hInv h.1 h.2
-
 theorem clearWokenReceiverStash_keyFrame (receiver? : Option SeLe4n.ThreadId) {st : SystemState}
     {pair : Unit × SystemState} (hInv : st.objects.invExt)
     (h : clearWokenReceiverStash receiver? st = .ok pair) : capabilityKeyFrame st pair.2 := by
@@ -344,20 +337,12 @@ theorem dispatchWithCapChecked_stepCovers (e : CoreId) {ctx : LabelingContext}
     cases hT : cap.target <;> rw [hT] at h <;> dsimp only at h
   all_goals first | (cases h; done) | skip
   case none.send.object epId =>
-    generalize hR : resolveExtraCaps gate.cspaceRoot (decodeExtraCapAddrs decoded) gate.capDepth
-      (cap.rights.mem .grant) st = r at h
-    obtain ⟨caps, s1⟩ := r
-    have hF1 : capabilityKeyFrame st s1 := by
-      have := resolveExtraCaps_keyFrame gate.cspaceRoot (decodeExtraCapAddrs decoded)
-        gate.capDepth (cap.rights.mem .grant) st hInv
-      rw [hR] at this; exact this
-    dsimp only at h
     split at h
     · cases h
     rename_i hSend
     obtain ⟨hS, hSInv⟩ := stepCovers_of_pair_eq
-      (endpointSendCrossCoreDispatchChecked_stepCovers e hF1.2.2) hSend
-    exact stepCovers_clearStash_stage (stepCovers_trans hF1.stepCovers hS) hSInv
+      (endpointSendCrossCoreDispatchChecked_stepCovers e hInv) hSend
+    exact stepCovers_clearStash_stage hS hSInv
       (fun x hx => stageWokenDelivery_keyFrame x _ _ hx) h
   case none.receive.object epId =>
     repeat' split at h
@@ -373,21 +358,12 @@ theorem dispatchWithCapChecked_stepCovers (e : CoreId) {ctx : LabelingContext}
     exact stepCoversInv_trans (stepCovers_trans (stepCovers_trans hV hD) hS1.stepCovers)
       hS2.stepCoversInv
   case none.call.object epId =>
-    generalize hR : resolveExtraCaps gate.cspaceRoot (decodeExtraCapAddrs decoded) gate.capDepth
-      (cap.rights.mem .grant) st = r at h
-    obtain ⟨caps, s1⟩ := r
-    have hF1 : capabilityKeyFrame st s1 := by
-      have := resolveExtraCaps_keyFrame gate.cspaceRoot (decodeExtraCapAddrs decoded)
-        gate.capDepth (cap.rights.mem .grant) st hInv
-      rw [hR] at this; exact this
-    dsimp only at h
     split at h
     · rename_i hCall
       cases h
       obtain ⟨hS, hSInv⟩ := stepCovers_of_pair_eq
-        (endpointCallCrossCoreDispatchChecked_stepCovers e hF1.2.2) hCall
-      exact stepCoversInv_trans (stepCovers_trans hF1.stepCovers hS)
-        (stageWokenDelivery_keyFrame _ _ _ hSInv).stepCoversInv
+        (endpointCallCrossCoreDispatchChecked_stepCovers e hInv) hCall
+      exact stepCoversInv_trans hS (stageWokenDelivery_keyFrame _ _ _ hSInv).stepCoversInv
     · cases h
   case none.reply.replyCap rid =>
     repeat' split at h

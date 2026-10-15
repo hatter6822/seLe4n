@@ -142,6 +142,21 @@ theorem ipcUnwrapCaps_ipcStateFrame
     ⟨tcb', ipcUnwrapCaps_tcb_backward msg receiverRoot slotBase grantRight st st' summary
       t.toObjId tcb' hObjInv hStep hTcb', rfl⟩
 
+/-- WS-ZA ZA4.7: and so does the rendezvous transfer, which resolves the
+sender's capabilities (CDT nodes only) before it installs them. -/
+theorem receiveTransferCaps_ipcStateFrame
+    {req : Option (SeLe4n.ObjId × Array SeLe4n.CPtr × Nat)} {root : SeLe4n.ObjId}
+    {base : SeLe4n.Slot} {st st' : SystemState} {summary : CapTransferSummary}
+    (hObjInv : st.objects.invExt)
+    (hStep : receiveTransferCaps req root base st = .ok (summary, st')) :
+    ipcStateFrame st st' := by
+  obtain ⟨stR, _, hO, _, _, hOr⟩ := receiveTransferCaps_frame hStep
+  have hR : ipcStateFrame st stR := ipcStateFrame_of_objects_eq hO
+  rcases hOr with rfl | hU
+  · exact hR
+  · exact ipcStateFrame.trans hR
+      (ipcUnwrapCaps_ipcStateFrame _ _ _ _ stR _ _ (hO ▸ hObjInv) hU)
+
 /-- WS-RR RR8.16: the server-first reply link writes a Reply and two TCBs' reply
 fields, never an `ipcState`. -/
 theorem linkServerStashedReply_ipcStateFrame
@@ -313,83 +328,79 @@ the checked one alone, because the caps-carrying wrapper composes this one and t
 gate is the same value at both levels. -/
 theorem endpointSendDualOnCore_preserves_blockedSenderFlowsToEndpoint
     (ctx : LabelingContext) (endpointId : SeLe4n.ObjId) (sender : SeLe4n.ThreadId)
-    (msg : IpcMessage) (executingCore : CoreId) (st : SystemState)
+    (payload : SendPayload) (executingCore : CoreId) (st : SystemState)
     (hObjInv : st.objects.invExt)
     (hPre : blockedSenderFlowsToEndpoint ctx st)
     (hGate : securityFlowsTo (ctx.threadLabelOf sender) (ctx.endpointLabelOf endpointId) = true) :
     blockedSenderFlowsToEndpoint ctx
-      (endpointSendDualOnCore endpointId sender msg executingCore st).1 := by
+      (endpointSendDualOnCore endpointId sender payload executingCore st).1 := by
   unfold endpointSendDualOnCore
-  split
-  · exact hPre
-  · split
-    · exact hPre
-    · cases hEp : st.getEndpoint? endpointId with
-      | none => simp only []; split <;> exact hPre
-      | some ep =>
+  cases hEp : st.getEndpoint? endpointId with
+  | none => simp only []; split <;> exact hPre
+  | some ep =>
+    simp only []
+    cases hHead : ep.receiveQ.head with
+    | none =>
+      simp only []
+      cases hEnq : endpointQueueEnqueue endpointId false sender st with
+      | error e => exact hPre
+      | ok st1 =>
         simp only []
-        cases hHead : ep.receiveQ.head with
-        | none =>
+        have hInv1 := endpointQueueEnqueue_preserves_objects_invExt endpointId false
+          sender st st1 hObjInv hEnq
+        have hPre1 : blockedSenderFlowsToEndpoint ctx st1 :=
+          blockedSenderFlowsToEndpoint_of_shrinks hPre
+            (blockedSenderShrinks_of_ipcStateFrame
+              (endpointQueueEnqueue_ipcStateFrame endpointId false sender st st1
+                hObjInv hEnq))
+        cases hIpc : storeTcbIpcStateAndMessage st1 sender
+            (.blockedOnSend endpointId) none with
+        | error e => exact hPre
+        | ok st2 =>
           simp only []
-          cases hEnq : endpointQueueEnqueue endpointId false sender st with
+          have hPre2 : blockedSenderFlowsToEndpoint ctx st2 :=
+            storeTcbIpcStateAndMessage_preserves_blockedSenderFlowsToEndpoint ctx st1 st2
+              sender _ none hInv1 hIpc hPre1
+              (by
+                rintro ep' (h | h)
+                · injection h with h'; subst h'; exact hGate
+                · exact absurd h (by simp))
+          exact blockedSenderFlowsToEndpoint_of_shrinks hPre2
+            (blockedSenderShrinks_of_ipcStateFrame
+              (ipcStateFrame_of_objectsAgreeOffRunLinks
+                (SystemState.objectsAgreeOffRunLinks.trans
+                  (recordSendCap_objectsAgreeOffRunLinks _ _ _ _)
+                  (removeRunnableOnCore_objectsAgreeOffRunLinks st2 sender executingCore))))
+    | some _ =>
+      simp only []
+      cases hSnd : st.getTcb? sender with
+      | none => exact hPre
+      | some _ =>
+        simp only []
+        cases hPop : endpointQueuePopHead endpointId true st with
+        | error e => exact hPre
+        | ok triple =>
+          obtain ⟨receiver, headTcb, st1⟩ := triple
+          simp only []
+          have hInv1 := endpointQueuePopHead_preserves_objects_invExt endpointId true
+            st st1 receiver headTcb hObjInv hPop
+          have hPre1 : blockedSenderFlowsToEndpoint ctx st1 :=
+            blockedSenderFlowsToEndpoint_of_shrinks hPre
+              (blockedSenderShrinks_of_ipcStateFrame
+                (endpointQueuePopHead_ipcStateFrame endpointId true st st1 receiver
+                  headTcb hObjInv hPop))
+          cases hRecv : storeTcbReceiveComplete st1 receiver (some (sendPayloadMessage st sender payload)) with
           | error e => exact hPre
-          | ok st1 =>
+          | ok st2 =>
             simp only []
-            have hInv1 := endpointQueueEnqueue_preserves_objects_invExt endpointId false
-              sender st st1 hObjInv hEnq
-            have hPre1 : blockedSenderFlowsToEndpoint ctx st1 :=
-              blockedSenderFlowsToEndpoint_of_shrinks hPre
-                (blockedSenderShrinks_of_ipcStateFrame
-                  (endpointQueueEnqueue_ipcStateFrame endpointId false sender st st1
-                    hObjInv hEnq))
-            cases hIpc : storeTcbIpcStateAndMessage st1 sender
-                (.blockedOnSend endpointId) none with
-            | error e => exact hPre
-            | ok st2 =>
-              simp only []
-              have hPre2 : blockedSenderFlowsToEndpoint ctx st2 :=
-                storeTcbIpcStateAndMessage_preserves_blockedSenderFlowsToEndpoint ctx st1 st2
-                  sender _ none hInv1 hIpc hPre1
-                  (by
-                    rintro ep' (h | h)
-                    · injection h with h'; subst h'; exact hGate
-                    · exact absurd h (by simp))
-              exact blockedSenderFlowsToEndpoint_of_shrinks hPre2
-                (blockedSenderShrinks_of_ipcStateFrame
-                  (ipcStateFrame_of_objectsAgreeOffRunLinks
-                    (SystemState.objectsAgreeOffRunLinks.trans
-                      (recordSendCap_objectsAgreeOffRunLinks _ _ _ _)
-                      (removeRunnableOnCore_objectsAgreeOffRunLinks st2 sender executingCore))))
-        | some _ =>
-          simp only []
-          cases hSnd : st.getTcb? sender with
-          | none => exact hPre
-          | some _ =>
-            simp only []
-            cases hPop : endpointQueuePopHead endpointId true st with
-            | error e => exact hPre
-            | ok triple =>
-              obtain ⟨receiver, headTcb, st1⟩ := triple
-              simp only []
-              have hInv1 := endpointQueuePopHead_preserves_objects_invExt endpointId true
-                st st1 receiver headTcb hObjInv hPop
-              have hPre1 : blockedSenderFlowsToEndpoint ctx st1 :=
-                blockedSenderFlowsToEndpoint_of_shrinks hPre
-                  (blockedSenderShrinks_of_ipcStateFrame
-                    (endpointQueuePopHead_ipcStateFrame endpointId true st st1 receiver
-                      headTcb hObjInv hPop))
-              cases hRecv : storeTcbReceiveComplete st1 receiver (some msg) with
-              | error e => exact hPre
-              | ok st2 =>
-                simp only []
-                have hInv2 := storeTcbReceiveComplete_preserves_objects_invExt st1 st2
-                  receiver (some msg) hInv1 hRecv
-                have hPre2 : blockedSenderFlowsToEndpoint ctx st2 :=
-                  blockedSenderFlowsToEndpoint_of_shrinks hPre1
-                    (storeTcbReceiveComplete_blockedSenderShrinks st1 st2 receiver
-                      (some msg) hInv1 hRecv)
-                exact blockedSenderFlowsToEndpoint_of_shrinks hPre2
-                  (wakeThread_blockedSenderShrinks st2 receiver executingCore hInv2)
+            have hInv2 := storeTcbReceiveComplete_preserves_objects_invExt st1 st2
+              receiver (some (sendPayloadMessage st sender payload)) hInv1 hRecv
+            have hPre2 : blockedSenderFlowsToEndpoint ctx st2 :=
+              blockedSenderFlowsToEndpoint_of_shrinks hPre1
+                (storeTcbReceiveComplete_blockedSenderShrinks st1 st2 receiver
+                  (some (sendPayloadMessage st sender payload)) hInv1 hRecv)
+            exact blockedSenderFlowsToEndpoint_of_shrinks hPre2
+              (wakeThread_blockedSenderShrinks st2 receiver executingCore hInv2)
 
 /-- WS-RR RR8.16: and so does the caps-carrying form — the capability transfer
 writes the receiver's CSpace and the derivation tree, never an `ipcState`.
@@ -398,22 +409,22 @@ Its error arm returns the *post-send* state rather than the pre-state, which is
 why the fact is established at that state first and the transfer extends it. -/
 theorem endpointSendDualWithCapsOnCore_preserves_blockedSenderFlowsToEndpoint
     (ctx : LabelingContext) (endpointId : SeLe4n.ObjId) (sender : SeLe4n.ThreadId)
-    (msg : IpcMessage) (endpointRights : AccessRightSet)
+    (payload : SendPayload)
     (receiverSlotBase : SeLe4n.Slot) (executingCore : CoreId) (st : SystemState)
     (hObjInv : st.objects.invExt)
     (hPre : blockedSenderFlowsToEndpoint ctx st)
     (hGate : securityFlowsTo (ctx.threadLabelOf sender) (ctx.endpointLabelOf endpointId) = true) :
     blockedSenderFlowsToEndpoint ctx
-      (endpointSendDualWithCapsOnCore endpointId sender msg endpointRights
+      (endpointSendDualWithCapsOnCore endpointId sender payload
         receiverSlotBase executingCore st).1 := by
   have hSendPre := endpointSendDualOnCore_preserves_blockedSenderFlowsToEndpoint ctx
-    endpointId sender { msg with capsGranted := endpointRights.mem .grant } executingCore st
+    endpointId sender payload executingCore st
     hObjInv hPre hGate
   have hSendInv := endpointSendDualOnCore_preserves_objects_invExt endpointId sender
-    { msg with capsGranted := endpointRights.mem .grant } executingCore st hObjInv
+    payload executingCore st hObjInv
   unfold endpointSendDualWithCapsOnCore
   cases hSend : endpointSendDualOnCore endpointId sender
-      { msg with capsGranted := endpointRights.mem .grant } executingCore st with
+      payload executingCore st with
   | mk st' res =>
     rw [hSend] at hSendPre hSendInv
     simp only at hSendPre hSendInv
@@ -421,38 +432,18 @@ theorem endpointSendDualWithCapsOnCore_preserves_blockedSenderFlowsToEndpoint
     | error e => exact hSendPre
     | ok sgi =>
       simp only []
-      -- `hasReceiver` is a `let` over the pre-state endpoint lookup, so the
-      -- lookup has to be resolved before the `if` it guards can be split.
-      cases hEp : st.getEndpoint? endpointId with
-      | none => simp only []; split <;> exact hSendPre
-      | some ep =>
-        simp only []
-        cases hHead : ep.receiveQ.head with
-        | none => simp only []; split <;> exact hSendPre
-        | some receiverId =>
-          simp only []
-          split
-          · exact hSendPre
-          · cases hRoot : lookupCspaceRoot st' receiverId with
-            | none => simp only []; exact hSendPre
-            | some recvRoot =>
-              simp only []
-              cases hUnwrap : ipcUnwrapCaps
-                  { msg with capsGranted := endpointRights.mem .grant } recvRoot
-                  receiverSlotBase (endpointRights.mem .grant) st' with
-              | error e => simp only []; exact hSendPre
-              | ok pair =>
-                obtain ⟨summary, st''⟩ := pair
-                simp only []
-                exact blockedSenderFlowsToEndpoint_of_shrinks hSendPre
-                  (blockedSenderShrinks_of_ipcStateFrame
-                    (ipcUnwrapCaps_ipcStateFrame _ recvRoot receiverSlotBase _ st' st''
-                      summary hSendInv hUnwrap))
+      repeat' split
+      all_goals first
+        | exact hSendPre
+        | (rename_i hT
+           exact blockedSenderFlowsToEndpoint_of_shrinks hSendPre
+             (blockedSenderShrinks_of_ipcStateFrame
+               (receiveTransferCaps_ipcStateFrame hSendInv hT)))
 
 /-- WS-RR RR8.16: **the live `.send` arm carries the blocked-sender flow fact.**
 
-The lift the `v0.35.126` register row named as owed.  Both bounds rejections and
-the flow denial return the pre-state, so they are `blockedSenderShrinks.refl`; the
+The lift the `v0.35.126` register row named as owed.  The flow denial returns
+the pre-state, so it is `blockedSenderShrinks.refl`; the
 admitted branch is the caps-carrying send under exactly the gate the branch
 condition supplies, through `endpointFlowGate_implies_securityFlowsTo`.
 
@@ -460,24 +451,20 @@ It is a theorem about the **checked** arm and is false of the unchecked one: wha
 discharges the blocking store's obligation is the gate this dispatch evaluates. -/
 theorem endpointSendCrossCoreDispatchChecked_preserves_blockedSenderFlowsToEndpoint
     (ctx : LabelingContext) (endpointId : SeLe4n.ObjId) (sender : SeLe4n.ThreadId)
-    (msg : IpcMessage) (endpointRights : AccessRightSet)
+    (payload : SendPayload)
     (receiverSlotBase : SeLe4n.Slot) (executingCore : CoreId) (st : SystemState)
     (hObjInv : st.objects.invExt)
     (hPre : blockedSenderFlowsToEndpoint ctx st) :
     blockedSenderFlowsToEndpoint ctx
-      (endpointSendCrossCoreDispatchChecked ctx endpointId sender msg endpointRights
+      (endpointSendCrossCoreDispatchChecked ctx endpointId sender payload
         receiverSlotBase executingCore st).1 := by
   unfold endpointSendCrossCoreDispatchChecked
   split
+  · rename_i hGate
+    exact endpointSendDualWithCapsOnCore_preserves_blockedSenderFlowsToEndpoint ctx
+      endpointId sender payload receiverSlotBase executingCore st hObjInv hPre
+      (endpointFlowGate_implies_securityFlowsTo ctx endpointId _ _ hGate)
   · exact hPre
-  · split
-    · exact hPre
-    · split
-      · rename_i hGate
-        exact endpointSendDualWithCapsOnCore_preserves_blockedSenderFlowsToEndpoint ctx
-          endpointId sender msg endpointRights receiverSlotBase executingCore st hObjInv hPre
-          (endpointFlowGate_implies_securityFlowsTo ctx endpointId _ _ hGate)
-      · exact hPre
 
 -- ============================================================================
 -- §4  The `.call` chain
@@ -498,131 +485,127 @@ through the same establishment lemma with a **vacuous** `hGate` argument, which 
 exactly what that lemma's "stated for an arbitrary `ipc`" clause is for. -/
 theorem endpointCallOnCore_preserves_blockedSenderFlowsToEndpoint
     (ctx : LabelingContext) (endpointId : SeLe4n.ObjId) (caller : SeLe4n.ThreadId)
-    (msg : IpcMessage) (executingCore : CoreId) (st : SystemState)
+    (payload : SendPayload) (executingCore : CoreId) (st : SystemState)
     (hObjInv : st.objects.invExt)
     (hPre : blockedSenderFlowsToEndpoint ctx st)
     (hGate : securityFlowsTo (ctx.threadLabelOf caller) (ctx.endpointLabelOf endpointId) = true) :
     blockedSenderFlowsToEndpoint ctx
-      (endpointCallOnCore endpointId caller msg executingCore st).1 := by
+      (endpointCallOnCore endpointId caller payload executingCore st).1 := by
   unfold endpointCallOnCore
-  split
-  · exact hPre
-  · split
-    · exact hPre
-    · cases hEp : st.getEndpoint? endpointId with
-      | none => simp only []; split <;> exact hPre
-      | some ep =>
+  cases hEp : st.getEndpoint? endpointId with
+  | none => simp only []; split <;> exact hPre
+  | some ep =>
+    simp only []
+    cases hHead : ep.receiveQ.head with
+    | none =>
+      simp only []
+      cases hEnq : endpointQueueEnqueue endpointId false caller st with
+      | error e => exact hPre
+      | ok st1 =>
         simp only []
-        cases hHead : ep.receiveQ.head with
-        | none =>
+        have hInv1 := endpointQueueEnqueue_preserves_objects_invExt endpointId false
+          caller st st1 hObjInv hEnq
+        have hPre1 : blockedSenderFlowsToEndpoint ctx st1 :=
+          blockedSenderFlowsToEndpoint_of_shrinks hPre
+            (blockedSenderShrinks_of_ipcStateFrame
+              (endpointQueueEnqueue_ipcStateFrame endpointId false caller st st1
+                hObjInv hEnq))
+        cases hIpc : storeTcbIpcStateAndMessage st1 caller
+            (.blockedOnCall endpointId) none with
+        | error e => exact hPre
+        | ok st2 =>
           simp only []
-          cases hEnq : endpointQueueEnqueue endpointId false caller st with
+          have hPre2 : blockedSenderFlowsToEndpoint ctx st2 :=
+            storeTcbIpcStateAndMessage_preserves_blockedSenderFlowsToEndpoint ctx st1 st2
+              caller _ none hInv1 hIpc hPre1
+              (by
+                rintro ep' (h | h)
+                · exact absurd h (by simp)
+                · injection h with h'; subst h'; exact hGate)
+          exact blockedSenderFlowsToEndpoint_of_shrinks hPre2
+            (blockedSenderShrinks_of_ipcStateFrame
+              (ipcStateFrame_of_objectsAgreeOffRunLinks
+                (SystemState.objectsAgreeOffRunLinks.trans
+                  (recordSendCap_objectsAgreeOffRunLinks _ _ _ _)
+                  (removeRunnableOnCore_objectsAgreeOffRunLinks st2 caller executingCore))))
+    | some _ =>
+      simp only []
+      cases hPop : endpointQueuePopHead endpointId true st with
+      | error e => exact hPre
+      | ok triple =>
+        obtain ⟨receiver, headTcb, st1⟩ := triple
+        simp only []
+        have hInv1 := endpointQueuePopHead_preserves_objects_invExt endpointId true
+          st st1 receiver headTcb hObjInv hPop
+        have hPre1 : blockedSenderFlowsToEndpoint ctx st1 :=
+          blockedSenderFlowsToEndpoint_of_shrinks hPre
+            (blockedSenderShrinks_of_ipcStateFrame
+              (endpointQueuePopHead_ipcStateFrame endpointId true st st1 receiver
+                headTcb hObjInv hPop))
+        cases hReady : storeTcbIpcStateAndMessage st1 receiver .ready (some (sendPayloadMessage st caller payload)) with
+        | error e => exact hPre
+        | ok st2 =>
+          simp only []
+          have hInv2 := storeTcbIpcStateAndMessage_preserves_objects_invExt st1 st2
+            receiver _ (some (sendPayloadMessage st caller payload)) hInv1 hReady
+          have hPre2 : blockedSenderFlowsToEndpoint ctx st2 :=
+            storeTcbIpcStateAndMessage_preserves_blockedSenderFlowsToEndpoint ctx st1 st2
+              receiver _ (some (sendPayloadMessage st caller payload)) hInv1 hReady hPre1
+              (by rintro ep' (h | h) <;> exact absurd h (by simp))
+          have hInv3 : (wakeThread st2 receiver executingCore).1.objects.invExt := by
+            rw [wakeThread_state_eq_enqueue]
+            exact enqueueRunnableOnCore_preserves_objects_invExt st2
+              (determineTargetCore st2 receiver) receiver hInv2
+          have hPre3 : blockedSenderFlowsToEndpoint ctx
+              (wakeThread st2 receiver executingCore).1 :=
+            blockedSenderFlowsToEndpoint_of_shrinks hPre2
+              (wakeThread_blockedSenderShrinks st2 receiver executingCore hInv2)
+          cases hReply : storeTcbIpcStateAndMessage (wakeThread st2 receiver executingCore).1
+              caller (.blockedOnReply endpointId (some receiver)) none with
           | error e => exact hPre
-          | ok st1 =>
+          | ok st4 =>
             simp only []
-            have hInv1 := endpointQueueEnqueue_preserves_objects_invExt endpointId false
-              caller st st1 hObjInv hEnq
-            have hPre1 : blockedSenderFlowsToEndpoint ctx st1 :=
-              blockedSenderFlowsToEndpoint_of_shrinks hPre
-                (blockedSenderShrinks_of_ipcStateFrame
-                  (endpointQueueEnqueue_ipcStateFrame endpointId false caller st st1
-                    hObjInv hEnq))
-            cases hIpc : storeTcbIpcStateAndMessage st1 caller
-                (.blockedOnCall endpointId) none with
+            have hInv4 := storeTcbIpcStateAndMessage_preserves_objects_invExt _ st4
+              caller _ none hInv3 hReply
+            have hPre4 : blockedSenderFlowsToEndpoint ctx st4 :=
+              storeTcbIpcStateAndMessage_preserves_blockedSenderFlowsToEndpoint ctx _ st4
+                caller _ none hInv3 hReply hPre3
+                (by rintro ep' (h | h) <;> exact absurd h (by simp))
+            cases hLink : SystemState.linkServerStashedReply caller receiver st4 with
             | error e => exact hPre
-            | ok st2 =>
+            | ok pair =>
+              obtain ⟨u, st5⟩ := pair
               simp only []
-              have hPre2 : blockedSenderFlowsToEndpoint ctx st2 :=
-                storeTcbIpcStateAndMessage_preserves_blockedSenderFlowsToEndpoint ctx st1 st2
-                  caller _ none hInv1 hIpc hPre1
-                  (by
-                    rintro ep' (h | h)
-                    · exact absurd h (by simp)
-                    · injection h with h'; subst h'; exact hGate)
-              exact blockedSenderFlowsToEndpoint_of_shrinks hPre2
+              have hPre5 : blockedSenderFlowsToEndpoint ctx st5 :=
+                blockedSenderFlowsToEndpoint_of_shrinks hPre4
+                  (blockedSenderShrinks_of_ipcStateFrame
+                    (linkServerStashedReply_ipcStateFrame st4 st5 caller receiver
+                      hInv4 hLink))
+              exact blockedSenderFlowsToEndpoint_of_shrinks hPre5
                 (blockedSenderShrinks_of_ipcStateFrame
                   (ipcStateFrame_of_objectsAgreeOffRunLinks
-                    (SystemState.objectsAgreeOffRunLinks.trans
-                      (recordSendCap_objectsAgreeOffRunLinks _ _ _ _)
-                      (removeRunnableOnCore_objectsAgreeOffRunLinks st2 caller executingCore))))
-        | some _ =>
-          simp only []
-          cases hPop : endpointQueuePopHead endpointId true st with
-          | error e => exact hPre
-          | ok triple =>
-            obtain ⟨receiver, headTcb, st1⟩ := triple
-            simp only []
-            have hInv1 := endpointQueuePopHead_preserves_objects_invExt endpointId true
-              st st1 receiver headTcb hObjInv hPop
-            have hPre1 : blockedSenderFlowsToEndpoint ctx st1 :=
-              blockedSenderFlowsToEndpoint_of_shrinks hPre
-                (blockedSenderShrinks_of_ipcStateFrame
-                  (endpointQueuePopHead_ipcStateFrame endpointId true st st1 receiver
-                    headTcb hObjInv hPop))
-            cases hReady : storeTcbIpcStateAndMessage st1 receiver .ready (some msg) with
-            | error e => exact hPre
-            | ok st2 =>
-              simp only []
-              have hInv2 := storeTcbIpcStateAndMessage_preserves_objects_invExt st1 st2
-                receiver _ (some msg) hInv1 hReady
-              have hPre2 : blockedSenderFlowsToEndpoint ctx st2 :=
-                storeTcbIpcStateAndMessage_preserves_blockedSenderFlowsToEndpoint ctx st1 st2
-                  receiver _ (some msg) hInv1 hReady hPre1
-                  (by rintro ep' (h | h) <;> exact absurd h (by simp))
-              have hInv3 : (wakeThread st2 receiver executingCore).1.objects.invExt := by
-                rw [wakeThread_state_eq_enqueue]
-                exact enqueueRunnableOnCore_preserves_objects_invExt st2
-                  (determineTargetCore st2 receiver) receiver hInv2
-              have hPre3 : blockedSenderFlowsToEndpoint ctx
-                  (wakeThread st2 receiver executingCore).1 :=
-                blockedSenderFlowsToEndpoint_of_shrinks hPre2
-                  (wakeThread_blockedSenderShrinks st2 receiver executingCore hInv2)
-              cases hReply : storeTcbIpcStateAndMessage (wakeThread st2 receiver executingCore).1
-                  caller (.blockedOnReply endpointId (some receiver)) none with
-              | error e => exact hPre
-              | ok st4 =>
-                simp only []
-                have hInv4 := storeTcbIpcStateAndMessage_preserves_objects_invExt _ st4
-                  caller _ none hInv3 hReply
-                have hPre4 : blockedSenderFlowsToEndpoint ctx st4 :=
-                  storeTcbIpcStateAndMessage_preserves_blockedSenderFlowsToEndpoint ctx _ st4
-                    caller _ none hInv3 hReply hPre3
-                    (by rintro ep' (h | h) <;> exact absurd h (by simp))
-                cases hLink : SystemState.linkServerStashedReply caller receiver st4 with
-                | error e => exact hPre
-                | ok pair =>
-                  obtain ⟨u, st5⟩ := pair
-                  simp only []
-                  have hPre5 : blockedSenderFlowsToEndpoint ctx st5 :=
-                    blockedSenderFlowsToEndpoint_of_shrinks hPre4
-                      (blockedSenderShrinks_of_ipcStateFrame
-                        (linkServerStashedReply_ipcStateFrame st4 st5 caller receiver
-                          hInv4 hLink))
-                  exact blockedSenderFlowsToEndpoint_of_shrinks hPre5
-                    (blockedSenderShrinks_of_ipcStateFrame
-                      (ipcStateFrame_of_objectsAgreeOffRunLinks
-                        ((SystemState.linkReplyWaiter_objectsAgreeOffRunLinks _ caller receiver).trans
-                          (removeRunnableOnCore_objectsAgreeOffRunLinks st5 caller executingCore))))
+                    ((SystemState.linkReplyWaiter_objectsAgreeOffRunLinks _ caller receiver).trans
+                      (removeRunnableOnCore_objectsAgreeOffRunLinks st5 caller executingCore))))
 
 /-- WS-RR RR8.16: and the caps-carrying call form, for the send's reason. -/
 theorem endpointCallWithCapsOnCore_preserves_blockedSenderFlowsToEndpoint
     (ctx : LabelingContext) (endpointId : SeLe4n.ObjId) (caller : SeLe4n.ThreadId)
-    (msg : IpcMessage) (endpointRights : AccessRightSet)
+    (payload : SendPayload)
     (receiverSlotBase : SeLe4n.Slot) (executingCore : CoreId) (st : SystemState)
     (hObjInv : st.objects.invExt)
     (hPre : blockedSenderFlowsToEndpoint ctx st)
     (hGate : securityFlowsTo (ctx.threadLabelOf caller) (ctx.endpointLabelOf endpointId) = true) :
     blockedSenderFlowsToEndpoint ctx
-      (endpointCallWithCapsOnCore endpointId caller msg endpointRights
+      (endpointCallWithCapsOnCore endpointId caller payload
         receiverSlotBase executingCore st).1 := by
   have hCallPre := endpointCallOnCore_preserves_blockedSenderFlowsToEndpoint ctx endpointId
-    caller { msg with capsGranted := endpointRights.mem .grant } executingCore st hObjInv
+    caller payload executingCore st hObjInv
     hPre hGate
   have hCallInv := endpointCallOnCore_preserves_objects_invExt endpointId caller
-    { msg with capsGranted := endpointRights.mem .grant } executingCore st hObjInv
+    payload executingCore st hObjInv
   unfold endpointCallWithCapsOnCore
   cases hCall : endpointCallOnCore endpointId caller
-      { msg with capsGranted := endpointRights.mem .grant } executingCore st with
+      payload executingCore st with
   | mk stCall res =>
     rw [hCall] at hCallPre hCallInv
     simp only at hCallPre hCallInv
@@ -630,31 +613,13 @@ theorem endpointCallWithCapsOnCore_preserves_blockedSenderFlowsToEndpoint
     | error e => exact hCallPre
     | ok sgi =>
       simp only []
-      cases hEp : st.getEndpoint? endpointId with
-      | none => simp only []; split <;> exact hCallPre
-      | some ep =>
-        simp only []
-        cases hHead : ep.receiveQ.head with
-        | none => simp only []; split <;> exact hCallPre
-        | some receiverId =>
-          simp only []
-          split
-          · exact hCallPre
-          · cases hRoot : lookupCspaceRoot stCall receiverId with
-            | none => simp only []; exact hCallPre
-            | some recvRoot =>
-              simp only []
-              cases hUnwrap : ipcUnwrapCaps
-                  { msg with capsGranted := endpointRights.mem .grant } recvRoot
-                  receiverSlotBase (endpointRights.mem .grant) stCall with
-              | error e => simp only []; exact hCallPre
-              | ok pair =>
-                obtain ⟨summary, stFinal⟩ := pair
-                simp only []
-                exact blockedSenderFlowsToEndpoint_of_shrinks hCallPre
-                  (blockedSenderShrinks_of_ipcStateFrame
-                    (ipcUnwrapCaps_ipcStateFrame _ recvRoot receiverSlotBase _ stCall stFinal
-                      summary hCallInv hUnwrap))
+      repeat' split
+      all_goals first
+        | exact hCallPre
+        | (rename_i hT
+           exact blockedSenderFlowsToEndpoint_of_shrinks hCallPre
+             (blockedSenderShrinks_of_ipcStateFrame
+               (receiveTransferCaps_ipcStateFrame hCallInv hT)))
 
 /-- WS-RR RR8.16: the full cross-core `.call` dispatch carries it too.
 
@@ -665,20 +630,20 @@ own `donationReadAgreement` states that conjunct outright, and the walk writes
 when it reads `blockingServer` from the pre-mutation state. -/
 theorem endpointCallCrossCoreDispatch_preserves_blockedSenderFlowsToEndpoint
     (ctx : LabelingContext) (endpointId : SeLe4n.ObjId) (caller : SeLe4n.ThreadId)
-    (msg : IpcMessage) (endpointRights : AccessRightSet)
+    (payload : SendPayload)
     (receiverSlotBase : SeLe4n.Slot) (executingCore : CoreId) (st : SystemState)
     (hObjInv : st.objects.invExt)
     (hPre : blockedSenderFlowsToEndpoint ctx st)
     (hGate : securityFlowsTo (ctx.threadLabelOf caller) (ctx.endpointLabelOf endpointId) = true) :
     blockedSenderFlowsToEndpoint ctx
-      (endpointCallCrossCoreDispatch endpointId caller msg endpointRights
+      (endpointCallCrossCoreDispatch endpointId caller payload
         receiverSlotBase executingCore st).1 := by
   have hWcPre := endpointCallWithCapsOnCore_preserves_blockedSenderFlowsToEndpoint ctx
-    endpointId caller msg endpointRights receiverSlotBase executingCore st hObjInv hPre hGate
-  have hWcInv := endpointCallWithCapsOnCore_preserves_objects_invExt endpointId caller msg
-    endpointRights receiverSlotBase executingCore st hObjInv
+    endpointId caller payload receiverSlotBase executingCore st hObjInv hPre hGate
+  have hWcInv := endpointCallWithCapsOnCore_preserves_objects_invExt endpointId caller payload
+    receiverSlotBase executingCore st hObjInv
   unfold endpointCallCrossCoreDispatch
-  cases hWc : endpointCallWithCapsOnCore endpointId caller msg endpointRights
+  cases hWc : endpointCallWithCapsOnCore endpointId caller payload
       receiverSlotBase executingCore st with
   | mk st' res =>
     rw [hWc] at hWcPre hWcInv
@@ -714,18 +679,18 @@ denial returns the pre-state; the admitted branch is the full cross-core dispatc
 under the gate the branch condition supplies. -/
 theorem endpointCallCrossCoreDispatchChecked_preserves_blockedSenderFlowsToEndpoint
     (ctx : LabelingContext) (endpointId : SeLe4n.ObjId) (caller : SeLe4n.ThreadId)
-    (msg : IpcMessage) (endpointRights : AccessRightSet)
+    (payload : SendPayload)
     (receiverSlotBase : SeLe4n.Slot) (executingCore : CoreId) (st : SystemState)
     (hObjInv : st.objects.invExt)
     (hPre : blockedSenderFlowsToEndpoint ctx st) :
     blockedSenderFlowsToEndpoint ctx
-      (endpointCallCrossCoreDispatchChecked ctx endpointId caller msg endpointRights
+      (endpointCallCrossCoreDispatchChecked ctx endpointId caller payload
         receiverSlotBase executingCore st).1 := by
   unfold endpointCallCrossCoreDispatchChecked
   split
   · rename_i hGate
     exact endpointCallCrossCoreDispatch_preserves_blockedSenderFlowsToEndpoint ctx endpointId
-      caller msg endpointRights receiverSlotBase executingCore st hObjInv hPre
+      caller payload receiverSlotBase executingCore st hObjInv hPre
       (endpointFlowGate_implies_securityFlowsTo ctx endpointId _ _ hGate)
   · exact hPre
 
@@ -742,86 +707,82 @@ only `.call` donates.  The `.call` chain has had this frame since RR2
 (`endpointCallOnCore_sameSchedContextBindings`); its send counterpart did not
 exist, so a consumer still had to carry the donation fact by hand across a send. -/
 theorem endpointSendDualOnCore_sameSchedContextBindings
-    (endpointId : SeLe4n.ObjId) (sender : SeLe4n.ThreadId) (msg : IpcMessage)
+    (endpointId : SeLe4n.ObjId) (sender : SeLe4n.ThreadId) (payload : SendPayload)
     (executingCore : CoreId) (st : SystemState) (hObjInv : st.objects.invExt) :
     sameSchedContextBindings st
-      (endpointSendDualOnCore endpointId sender msg executingCore st).1 := by
+      (endpointSendDualOnCore endpointId sender payload executingCore st).1 := by
   unfold endpointSendDualOnCore
-  split
-  · exact sameSchedContextBindings.refl st
-  · split
-    · exact sameSchedContextBindings.refl st
-    · cases hEp : st.getEndpoint? endpointId with
-      | none => simp only []; split <;> exact sameSchedContextBindings.refl st
-      | some ep =>
+  cases hEp : st.getEndpoint? endpointId with
+  | none => simp only []; split <;> exact sameSchedContextBindings.refl st
+  | some ep =>
+    simp only []
+    cases hHead : ep.receiveQ.head with
+    | none =>
+      simp only []
+      cases hEnq : endpointQueueEnqueue endpointId false sender st with
+      | error e => exact sameSchedContextBindings.refl st
+      | ok st1 =>
         simp only []
-        cases hHead : ep.receiveQ.head with
-        | none =>
+        have hS1 := endpointQueueEnqueue_sameSchedContextBindings endpointId false
+          sender st st1 hObjInv hEnq
+        have hInv1 := endpointQueueEnqueue_preserves_objects_invExt endpointId false
+          sender st st1 hObjInv hEnq
+        cases hIpc : storeTcbIpcStateAndMessage st1 sender
+            (.blockedOnSend endpointId) none with
+        | error e => exact sameSchedContextBindings.refl st
+        | ok st2 =>
           simp only []
-          cases hEnq : endpointQueueEnqueue endpointId false sender st with
+          exact (hS1.trans (storeTcbIpcStateAndMessage_sameSchedContextBindings st1 st2
+            sender _ none hInv1 hIpc)).trans
+            (sameSchedContextBindings.of_objectsAgreeOffRunLinks
+              (SystemState.objectsAgreeOffRunLinks.trans
+                (recordSendCap_objectsAgreeOffRunLinks _ _ _ _)
+                (removeRunnableOnCore_objectsAgreeOffRunLinks st2 sender executingCore)))
+    | some _ =>
+      simp only []
+      cases hSnd : st.getTcb? sender with
+      | none => exact sameSchedContextBindings.refl st
+      | some _ =>
+        simp only []
+        cases hPop : endpointQueuePopHead endpointId true st with
+        | error e => exact sameSchedContextBindings.refl st
+        | ok triple =>
+          obtain ⟨receiver, headTcb, st1⟩ := triple
+          simp only []
+          have hS1 := endpointQueuePopHead_sameSchedContextBindings endpointId true
+            st st1 receiver headTcb hObjInv hPop
+          have hInv1 := endpointQueuePopHead_preserves_objects_invExt endpointId true
+            st st1 receiver headTcb hObjInv hPop
+          cases hRecv : storeTcbReceiveComplete st1 receiver (some (sendPayloadMessage st sender payload)) with
           | error e => exact sameSchedContextBindings.refl st
-          | ok st1 =>
+          | ok st2 =>
             simp only []
-            have hS1 := endpointQueueEnqueue_sameSchedContextBindings endpointId false
-              sender st st1 hObjInv hEnq
-            have hInv1 := endpointQueueEnqueue_preserves_objects_invExt endpointId false
-              sender st st1 hObjInv hEnq
-            cases hIpc : storeTcbIpcStateAndMessage st1 sender
-                (.blockedOnSend endpointId) none with
-            | error e => exact sameSchedContextBindings.refl st
-            | ok st2 =>
-              simp only []
-              exact (hS1.trans (storeTcbIpcStateAndMessage_sameSchedContextBindings st1 st2
-                sender _ none hInv1 hIpc)).trans
-                (sameSchedContextBindings.of_objectsAgreeOffRunLinks
-                  (SystemState.objectsAgreeOffRunLinks.trans
-                    (recordSendCap_objectsAgreeOffRunLinks _ _ _ _)
-                    (removeRunnableOnCore_objectsAgreeOffRunLinks st2 sender executingCore)))
-        | some _ =>
-          simp only []
-          cases hSnd : st.getTcb? sender with
-          | none => exact sameSchedContextBindings.refl st
-          | some _ =>
-            simp only []
-            cases hPop : endpointQueuePopHead endpointId true st with
-            | error e => exact sameSchedContextBindings.refl st
-            | ok triple =>
-              obtain ⟨receiver, headTcb, st1⟩ := triple
-              simp only []
-              have hS1 := endpointQueuePopHead_sameSchedContextBindings endpointId true
-                st st1 receiver headTcb hObjInv hPop
-              have hInv1 := endpointQueuePopHead_preserves_objects_invExt endpointId true
-                st st1 receiver headTcb hObjInv hPop
-              cases hRecv : storeTcbReceiveComplete st1 receiver (some msg) with
-              | error e => exact sameSchedContextBindings.refl st
-              | ok st2 =>
-                simp only []
-                have hS2 := hS1.trans (storeTcbReceiveComplete_sameSchedContextBindings st1
-                  st2 receiver (some msg) hInv1 hRecv)
-                have hInv2 := storeTcbReceiveComplete_preserves_objects_invExt st1 st2
-                  receiver (some msg) hInv1 hRecv
-                obtain ⟨tr, hTrGet, hTrReady⟩ :=
-                  storeTcbReceiveComplete_getTcb?_ipcState st1 st2 receiver (some msg)
-                    hInv1 hRecv
-                exact hS2.trans (wakeThread_sameSchedContextBindings_of_ready st2 receiver
-                  executingCore tr hTrGet hTrReady hInv2)
+            have hS2 := hS1.trans (storeTcbReceiveComplete_sameSchedContextBindings st1
+              st2 receiver (some (sendPayloadMessage st sender payload)) hInv1 hRecv)
+            have hInv2 := storeTcbReceiveComplete_preserves_objects_invExt st1 st2
+              receiver (some (sendPayloadMessage st sender payload)) hInv1 hRecv
+            obtain ⟨tr, hTrGet, hTrReady⟩ :=
+              storeTcbReceiveComplete_getTcb?_ipcState st1 st2 receiver (some (sendPayloadMessage st sender payload))
+                hInv1 hRecv
+            exact hS2.trans (wakeThread_sameSchedContextBindings_of_ready st2 receiver
+              executingCore tr hTrGet hTrReady hInv2)
 
 /-- WS-RR RR8.16: and neither does the caps-carrying form — the transfer writes
 CNodes and the derivation tree. -/
 theorem endpointSendDualWithCapsOnCore_sameSchedContextBindings
-    (endpointId : SeLe4n.ObjId) (sender : SeLe4n.ThreadId) (msg : IpcMessage)
-    (endpointRights : AccessRightSet) (receiverSlotBase : SeLe4n.Slot)
+    (endpointId : SeLe4n.ObjId) (sender : SeLe4n.ThreadId) (payload : SendPayload)
+    (receiverSlotBase : SeLe4n.Slot)
     (executingCore : CoreId) (st : SystemState) (hObjInv : st.objects.invExt) :
     sameSchedContextBindings st
-      (endpointSendDualWithCapsOnCore endpointId sender msg endpointRights
+      (endpointSendDualWithCapsOnCore endpointId sender payload
         receiverSlotBase executingCore st).1 := by
   have hSend := endpointSendDualOnCore_sameSchedContextBindings endpointId sender
-    { msg with capsGranted := endpointRights.mem .grant } executingCore st hObjInv
+    payload executingCore st hObjInv
   have hSendInv := endpointSendDualOnCore_preserves_objects_invExt endpointId sender
-    { msg with capsGranted := endpointRights.mem .grant } executingCore st hObjInv
+    payload executingCore st hObjInv
   unfold endpointSendDualWithCapsOnCore
   cases hStep : endpointSendDualOnCore endpointId sender
-      { msg with capsGranted := endpointRights.mem .grant } executingCore st with
+      payload executingCore st with
   | mk st' res =>
     rw [hStep] at hSend hSendInv
     simp only at hSend hSendInv
@@ -829,29 +790,10 @@ theorem endpointSendDualWithCapsOnCore_sameSchedContextBindings
     | error e => exact hSend
     | ok sgi =>
       simp only []
-      cases hEp : st.getEndpoint? endpointId with
-      | none => simp only []; split <;> exact hSend
-      | some ep =>
-        simp only []
-        cases hHead : ep.receiveQ.head with
-        | none => simp only []; split <;> exact hSend
-        | some receiverId =>
-          simp only []
-          split
-          · exact hSend
-          · cases hRoot : lookupCspaceRoot st' receiverId with
-            | none => simp only []; exact hSend
-            | some recvRoot =>
-              simp only []
-              cases hUnwrap : ipcUnwrapCaps
-                  { msg with capsGranted := endpointRights.mem .grant } recvRoot
-                  receiverSlotBase (endpointRights.mem .grant) st' with
-              | error e => simp only []; exact hSend
-              | ok pair =>
-                obtain ⟨summary, st''⟩ := pair
-                simp only []
-                exact hSend.trans (ipcUnwrapCaps_sameSchedContextBindings _ recvRoot
-                  receiverSlotBase _ st' st'' summary hSendInv hUnwrap)
+      repeat' split
+      all_goals first
+        | exact hSend
+        | (rename_i hT; exact hSend.trans (receiveTransferCaps_sameSchedContextBindings hSendInv hT))
 
 /-- WS-RR RR8.16: **the live `.send` arm carries the donation flow fact too.**
 
@@ -870,23 +812,19 @@ is §6 below; the two differ in the direction their derivation reads, not in
 strength. -/
 theorem endpointSendCrossCoreDispatchChecked_preserves_donationOwnerFlowsToHolder
     (ctx : LabelingContext) (endpointId : SeLe4n.ObjId) (sender : SeLe4n.ThreadId)
-    (msg : IpcMessage) (endpointRights : AccessRightSet)
+    (payload : SendPayload)
     (receiverSlotBase : SeLe4n.Slot) (executingCore : CoreId) (st : SystemState)
     (hObjInv : st.objects.invExt)
     (hPre : donationOwnerFlowsToHolder ctx st) :
     donationOwnerFlowsToHolder ctx
-      (endpointSendCrossCoreDispatchChecked ctx endpointId sender msg endpointRights
+      (endpointSendCrossCoreDispatchChecked ctx endpointId sender payload
         receiverSlotBase executingCore st).1 := by
   unfold endpointSendCrossCoreDispatchChecked
   split
+  · exact donationOwnerFlowsToHolder_of_sameSchedContextBindings hPre
+      (endpointSendDualWithCapsOnCore_sameSchedContextBindings endpointId sender payload
+        receiverSlotBase executingCore st hObjInv)
   · exact hPre
-  · split
-    · exact hPre
-    · split
-      · exact donationOwnerFlowsToHolder_of_sameSchedContextBindings hPre
-          (endpointSendDualWithCapsOnCore_sameSchedContextBindings endpointId sender msg
-            endpointRights receiverSlotBase executingCore st hObjInv)
-      · exact hPre
 
 -- ============================================================================
 -- §6  `v0.35.196` (register row 183) — the donation flow fact across `.call`
@@ -1048,7 +986,7 @@ leg, so the two are joined by that leg's own binding frame: a guard that fires a
 the post-state resolves a receiver the pre-state also holds. -/
 theorem endpointCallCrossCoreDispatch_preserves_donationOwnerFlowsToHolder
     (ctx : LabelingContext) (endpointId : SeLe4n.ObjId) (caller : SeLe4n.ThreadId)
-    (msg : IpcMessage) (endpointRights : AccessRightSet)
+    (payload : SendPayload)
     (receiverSlotBase : SeLe4n.Slot) (executingCore : CoreId) (st : SystemState)
     (hObjInv : st.objects.invExt)
     (hPre : donationOwnerFlowsToHolder ctx st)
@@ -1057,14 +995,14 @@ theorem endpointCallCrossCoreDispatch_preserves_donationOwnerFlowsToHolder
     (hGate : securityFlowsTo (ctx.threadLabelOf caller)
       (ctx.endpointLabelOf endpointId) = true) :
     donationOwnerFlowsToHolder ctx
-      (endpointCallCrossCoreDispatch endpointId caller msg endpointRights
+      (endpointCallCrossCoreDispatch endpointId caller payload
         receiverSlotBase executingCore st).1 := by
-  have hWcFrame := endpointCallWithCapsOnCore_sameSchedContextBindings endpointId caller msg
-    endpointRights receiverSlotBase executingCore st hObjInv
-  have hWcInv := endpointCallWithCapsOnCore_preserves_objects_invExt endpointId caller msg
-    endpointRights receiverSlotBase executingCore st hObjInv
+  have hWcFrame := endpointCallWithCapsOnCore_sameSchedContextBindings endpointId caller payload
+    receiverSlotBase executingCore st hObjInv
+  have hWcInv := endpointCallWithCapsOnCore_preserves_objects_invExt endpointId caller payload
+    receiverSlotBase executingCore st hObjInv
   unfold endpointCallCrossCoreDispatch
-  cases hWc : endpointCallWithCapsOnCore endpointId caller msg endpointRights
+  cases hWc : endpointCallWithCapsOnCore endpointId caller payload
       receiverSlotBase executingCore st with
   | mk st' res =>
     rw [hWc] at hWcFrame hWcInv
@@ -1120,20 +1058,20 @@ theorem endpointCallCrossCoreDispatch_preserves_donationOwnerFlowsToHolder
 composition needs is the branch condition itself. -/
 theorem endpointCallCrossCoreDispatchChecked_preserves_donationOwnerFlowsToHolder
     (ctx : LabelingContext) (endpointId : SeLe4n.ObjId) (caller : SeLe4n.ThreadId)
-    (msg : IpcMessage) (endpointRights : AccessRightSet)
+    (payload : SendPayload)
     (receiverSlotBase : SeLe4n.Slot) (executingCore : CoreId) (st : SystemState)
     (hObjInv : st.objects.invExt)
     (hPre : donationOwnerFlowsToHolder ctx st)
     (hBlockedReceivers : blockedReceiverFlowsFromEndpoint ctx st)
     (hQueueHeads : queueHeadBlockedConsistent st) :
     donationOwnerFlowsToHolder ctx
-      (endpointCallCrossCoreDispatchChecked ctx endpointId caller msg endpointRights
+      (endpointCallCrossCoreDispatchChecked ctx endpointId caller payload
         receiverSlotBase executingCore st).1 := by
   unfold endpointCallCrossCoreDispatchChecked
   split
   · rename_i hGate
     exact endpointCallCrossCoreDispatch_preserves_donationOwnerFlowsToHolder ctx endpointId
-      caller msg endpointRights receiverSlotBase executingCore st hObjInv hPre
+      caller payload receiverSlotBase executingCore st hObjInv hPre
       hBlockedReceivers hQueueHeads
       (endpointFlowGate_implies_securityFlowsTo ctx endpointId _ _ hGate)
   · exact hPre

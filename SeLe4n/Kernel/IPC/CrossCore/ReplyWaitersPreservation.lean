@@ -68,17 +68,13 @@ woken receiver (blocked on receive, so waiting on no server) becomes the
 caller's server and the caller joins its queue: a `LinkStep`.  With no receiver
 the caller blocks on the send queue and waits on no server. -/
 theorem endpointCallOnCore_preserves_replyWaitersConsistent (endpointId : SeLe4n.ObjId)
-    (caller : SeLe4n.ThreadId) (msg : IpcMessage) (c : CoreId) (st : SystemState)
+    (caller : SeLe4n.ThreadId) (payload : SendPayload) (c : CoreId) (st : SystemState)
     (hInv : st.objects.invExt) (hC : st.replyWaitersConsistent)
     (hCaller : ReplyViews.serverFree st.replyViews caller)
     (hHead : ∀ ep r, st.objects[endpointId]? = some (.endpoint ep) → ep.receiveQ.head = some r →
       r ≠ caller ∧ ReplyViews.serverFree st.replyViews r) :
-    (endpointCallOnCore endpointId caller msg c st).1.replyWaitersConsistent := by
+    (endpointCallOnCore endpointId caller payload c st).1.replyWaitersConsistent := by
   unfold endpointCallOnCore
-  split
-  · exact hC
-  split
-  · exact hC
   split
   · rename_i ep hEp
     have hObj := (getEndpoint?_eq_some_iff st endpointId ep).1 hEp

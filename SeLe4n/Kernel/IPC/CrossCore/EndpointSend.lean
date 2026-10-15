@@ -61,27 +61,25 @@ scheduling calls with their per-core forms:
 Fail-closed on every error arm: the **pre-state** is returned, so a rejected
 send leaves neither the endpoint queues nor the scheduler touched. -/
 def endpointSendDualOnCore (endpointId : SeLe4n.ObjId) (sender : SeLe4n.ThreadId)
-    (msg : IpcMessage) (executingCore : CoreId) (st : SystemState) :
+    (payload : SendPayload) (executingCore : CoreId) (st : SystemState) :
     SystemState × Except KernelError (Option (CoreId × SgiKind)) :=
-  if msg.registers.size > maxMessageRegisters then (st, .error .ipcMessageTooLarge)
-  else if msg.caps.size > maxExtraCaps then (st, .error .ipcMessageTooManyCaps)
-  else
   match st.getEndpoint? endpointId with
   | some ep =>
       match ep.receiveQ.head with
       | some _ =>
-          -- PR #873 round 17: the sender has to exist even though this arm
-          -- never looks it up -- the message goes straight from the argument
-          -- into the receiver's TCB. In lockstep with `endpointSendDual`,
-          -- which is what `endpointSendDualOnCore_eq_single_on_bootCore` ties
-          -- the two to.
+          -- PR #873 round 17: the sender has to exist. In lockstep with
+          -- `endpointSendDual`, which is what
+          -- `endpointSendDualOnCore_eq_single_on_bootCore` ties the two to.
+          -- WS-ZA ZA4.7: its words are read from its frame, where the receive
+          -- that takes a blocked sender reads them (`sendPayloadMessage`).
           match st.getTcb? sender with
           | none => (st, .error .objectNotFound)
           | some _ =>
           match endpointQueuePopHead endpointId true st with
           | .error e => (st, .error e)
           | .ok (receiver, _tcb, st') =>
-              match storeTcbReceiveComplete st' receiver (some msg) with
+              match storeTcbReceiveComplete st' receiver
+                  (some (sendPayloadMessage st sender payload)) with
               | .error e => (st, .error e)
               | .ok st'' =>
                   -- Cross-core receiver wake (SM5.C): route to the receiver's
@@ -104,7 +102,7 @@ def endpointSendDualOnCore (endpointId : SeLe4n.ObjId) (sender : SeLe4n.ThreadId
                   -- The sender blocks on the core it is RUNNING on, holding its
                   -- message in its registers (WS-ZA ZA4.7, `recordSendCap`).
                   (recordSendCap (removeRunnableOnCore st'' sender executingCore) sender
-                    msg.badge msg.capsGranted, .ok none)
+                    payload.badge payload.grant, .ok none)
   | none =>
       -- Typed-accessor dispatch (AK7 cascade discipline): `getEndpoint?` is
       -- `none` for both an absent object and a wrong-kinded one, so the
@@ -313,11 +311,8 @@ writes stay in their slots (`sendWakesInPlace`) makes them in place
 for a refusal that cannot happen (`ZERO_ALLOCATION_SYSCALL_PLAN.md` D1);
 otherwise the specification's body. -/
 def endpointSendDualOnCoreImpl (endpointId : SeLe4n.ObjId) (sender : SeLe4n.ThreadId)
-    (msg : IpcMessage) (executingCore : CoreId) (st : SystemState) :
+    (payload : SendPayload) (executingCore : CoreId) (st : SystemState) :
     SystemState × Except KernelError (Option (CoreId × SgiKind)) :=
-  if msg.registers.size > maxMessageRegisters then (st, .error .ipcMessageTooLarge)
-  else if msg.caps.size > maxExtraCaps then (st, .error .ipcMessageTooManyCaps)
-  else
   match st.getEndpoint? endpointId with
   | some ep =>
       match ep.receiveQ.head with
@@ -325,6 +320,7 @@ def endpointSendDualOnCoreImpl (endpointId : SeLe4n.ObjId) (sender : SeLe4n.Thre
           match st.getTcb? sender with
           | none => (st, .error .objectNotFound)
           | some _ =>
+          let msg := sendPayloadMessage st sender payload
           match st.getTcb? head with
           | some ht =>
               if sendWakesInPlace st endpointId head ht.queueNext then
@@ -357,52 +353,49 @@ def endpointSendDualOnCoreImpl (endpointId : SeLe4n.ObjId) (sender : SeLe4n.Thre
               | .error e => (st, .error e)
               | .ok st'' =>
                   (recordSendCap (removeRunnableOnCore st'' sender executingCore) sender
-                    msg.badge msg.capsGranted, .ok none)
+                    payload.badge payload.grant, .ok none)
   | none =>
       if (st.getObject? endpointId).isSome then (st, .error .invalidCapability)
       else (st, .error .objectNotFound)
 
 @[csimp] theorem endpointSendDualOnCore_eq_impl :
     @endpointSendDualOnCore = @endpointSendDualOnCoreImpl := by
-  funext endpointId sender msg executingCore st
+  funext endpointId sender payload executingCore st
   unfold endpointSendDualOnCore endpointSendDualOnCoreImpl
-  split
-  · rfl
-  · split
-    · rfl
-    · cases hEp : st.getEndpoint? endpointId with
+  cases hEp : st.getEndpoint? endpointId with
+  | none => rfl
+  | some ep =>
+    dsimp only
+    cases hH : ep.receiveQ.head with
+    | none => rfl
+    | some head =>
+      dsimp only
+      cases hS : st.getTcb? sender with
       | none => rfl
-      | some ep =>
+      | some _ =>
         dsimp only
-        cases hH : ep.receiveQ.head with
+        cases hTo : st.getTcb? head with
         | none => rfl
-        | some head =>
-          dsimp only
-          cases hS : st.getTcb? sender with
-          | none => rfl
-          | some _ =>
+        | some ht =>
             dsimp only
-            cases hTo : st.getTcb? head with
-            | none => rfl
-            | some ht =>
-                dsimp only
-                by_cases hG : sendWakesInPlace st endpointId head ht.queueNext = true
-                · rw [if_pos hG]
-                  have h := sendRendezvous_inPlace_eq st endpointId ep head ht msg
-                    ((SystemState.getEndpoint?_eq_some_iff _ _ _).mp hEp) hH
-                    ((SystemState.getTcb?_eq_some_iff _ _ _).mp hTo) hG
-                  revert h
-                  split
-                  · intro h; cases h
-                  · next r _ st' hPop =>
-                    split
-                    · intro h; cases h
-                    · next st'' hRC =>
-                      intro h
-                      simp only [Option.some.injEq, Prod.mk.injEq] at h
-                      obtain ⟨rfl, rfl⟩ := h
-                      rfl
-                · rw [if_neg hG]
+            by_cases hG : sendWakesInPlace st endpointId head ht.queueNext = true
+            · rw [if_pos hG]
+              have h := sendRendezvous_inPlace_eq st endpointId ep head ht
+                (sendPayloadMessage st sender payload)
+                ((SystemState.getEndpoint?_eq_some_iff _ _ _).mp hEp) hH
+                ((SystemState.getTcb?_eq_some_iff _ _ _).mp hTo) hG
+              revert h
+              split
+              · intro h; cases h
+              · next r _ st' hPop =>
+                split
+                · intro h; cases h
+                · next st'' hRC =>
+                  intro h
+                  simp only [Option.some.injEq, Prod.mk.injEq] at h
+                  obtain ⟨rfl, rfl⟩ := h
+                  rfl
+            · rw [if_neg hG]
 
 /-- WS-ZA ZA4.7: the blocking send's writes, each in its slot: the sender
 appended to the send queue (`storeEndpointEnqueue`), then blocked holding no
@@ -419,17 +412,15 @@ path**: with no receiver waiting, a sender that may be enqueued
 is the in-place enqueue and block, the sender descheduled on the executing core
 and its capability's badge and grant bit recorded. -/
 theorem sendBlock_inPlace_eq (endpointId : SeLe4n.ObjId) (sender : SeLe4n.ThreadId)
-    (msg : IpcMessage) (executingCore : CoreId) (st : SystemState) (ep : Endpoint) (t : TCB)
-    (hSz : ¬ msg.registers.size > maxMessageRegisters)
-    (hCaps : ¬ msg.caps.size > maxExtraCaps)
+    (payload : SendPayload) (executingCore : CoreId) (st : SystemState) (ep : Endpoint) (t : TCB)
     (hE : st.objects[endpointId]? = some (.endpoint ep))
     (hH : ep.receiveQ.head = none)
     (hR : st.objects[sender.toObjId]? = some (.tcb t))
     (hA : enqueueAdmits t = true)
     (hG : enqueuesInPlace st endpointId sender ep.sendQ.tail = true) :
-    endpointSendDualOnCore endpointId sender msg executingCore st =
+    endpointSendDualOnCore endpointId sender payload executingCore st =
       (recordSendCap (removeRunnableOnCore (storeSendBlock st endpointId sender ep.sendTailCode)
-        sender executingCore) sender msg.badge msg.capsGranted, .ok none) := by
+        sender executingCore) sender payload.badge payload.grant, .ok none) := by
   obtain ⟨hEnq, hT, hF, hL⟩ :=
     endpointEnqueue_inPlace_eq st endpointId ep false sender t ep.sendQ.tail hE rfl hR hA hG
   have hRes : sender.isReserved = false := by
@@ -437,8 +428,7 @@ theorem sendBlock_inPlace_eq (endpointId : SeLe4n.ObjId) (sender : SeLe4n.Thread
     exact hG.1.1.1.1.1
   unfold endpointSendDualOnCore storeSendBlock
   rw [show SeLe4n.ThreadId.ofOptCode ep.sendTailCode = ep.sendQ.tail from rfl]
-  simp only [hSz, hCaps, ↓reduceIte, (SystemState.getEndpoint?_eq_some_iff _ _ _).mpr hE, hH,
-    hEnq]
+  simp only [(SystemState.getEndpoint?_eq_some_iff _ _ _).mpr hE, hH, hEnq]
   generalize storeEndpointEnqueue st endpointId false sender ep.sendQ.tail = S at hT hF hL ⊢
   have h1 : storeTcbIpcStateAndMessage S sender (.blockedOnSend endpointId) none =
       .ok (S.updateTcb sender
@@ -457,15 +447,13 @@ pre-state, and the statement never mentioned `endpointSendDual` at all
 (PR #861 review round 15). The real bridges are the two theorems below, one per
 success path; this one is renamed to say what it actually checks. -/
 theorem endpointSendDualOnCore_absent_endpoint (endpointId : SeLe4n.ObjId)
-    (sender : SeLe4n.ThreadId) (msg : IpcMessage) (executingCore : CoreId)
+    (sender : SeLe4n.ThreadId) (payload : SendPayload) (executingCore : CoreId)
     (st : SystemState)
-    (hTooLarge : ¬ (msg.registers.size > maxMessageRegisters))
-    (hTooMany : ¬ (msg.caps.size > maxExtraCaps))
     (hNoEndpoint : st.getEndpoint? endpointId = none)
     (hAbsent : (st.objects[endpointId]?).isSome = false) :
-    endpointSendDualOnCore endpointId sender msg executingCore st
+    endpointSendDualOnCore endpointId sender payload executingCore st
       = (st, .error .objectNotFound) := by
-  simp [endpointSendDualOnCore, hTooLarge, hTooMany, hNoEndpoint, hAbsent]
+  simp [endpointSendDualOnCore, hNoEndpoint, hAbsent]
 
 /-- WS-SM SM6 (**the wake bridge**): on the boot core, the per-core wake commits
 exactly what the single-core `ensureRunnable` commits.
@@ -546,18 +534,11 @@ deschedule — `removeRunnableOnCore … bootCoreId` *is* `removeRunnable`
 (`removeRunnableOnCore_bootCoreId`). This is the refinement claim the old
 `…_bootCore_state` docstring wanted and did not make. -/
 theorem endpointSendDualOnCore_bootCore_block_eq_single (endpointId : SeLe4n.ObjId)
-    (sender : SeLe4n.ThreadId) (msg : IpcMessage) (st st' : SystemState) (ep : Endpoint)
+    (sender : SeLe4n.ThreadId) (payload : SendPayload) (st st' : SystemState) (ep : Endpoint)
     (hEp : st.getEndpoint? endpointId = some ep)
     (hNoReceiver : ep.receiveQ.head = none)
-    (hSingle : endpointSendDual endpointId sender msg st = .ok ((), st')) :
-    (endpointSendDualOnCore endpointId sender msg bootCoreId st).1 = st' := by
-  -- The bounds guards are derived, not required: a successful single-core send
-  -- already refutes them, so making the caller re-supply them would be
-  -- redundant. Both sides then reduce past the same two `if`s.
-  have hRegs : ¬ (msg.registers.size > maxMessageRegisters) := by
-    intro h; rw [endpointSendDual] at hSingle; simp [h] at hSingle
-  have hCaps : ¬ (msg.caps.size > maxExtraCaps) := by
-    intro h; rw [endpointSendDual] at hSingle; simp [hRegs, h] at hSingle
+    (hSingle : endpointSendDual endpointId sender payload st = .ok ((), st')) :
+    (endpointSendDualOnCore endpointId sender payload bootCoreId st).1 = st' := by
   -- The single-core form matches the object store directly while the per-core
   -- one goes through `getEndpoint?` (the AK7 typed-accessor discipline), so the
   -- raw form is *recovered here* rather than demanded of the caller — stating it
@@ -565,7 +546,7 @@ theorem endpointSendDualOnCore_bootCore_block_eq_single (endpointId : SeLe4n.Obj
   have hRaw := (SystemState.getEndpoint?_eq_some_iff st endpointId ep).mp hEp
   unfold endpointSendDualOnCore
   unfold endpointSendDual SystemState.getObject? at hSingle
-  simp only [hRegs, hCaps, hRaw, hEp, hNoReceiver, if_false] at hSingle ⊢
+  simp only [hRaw, hEp, hNoReceiver] at hSingle ⊢
   repeat' split at hSingle
   all_goals simp_all [removeRunnableOnCore_bootCoreId]
 
@@ -586,23 +567,19 @@ wake's four side conditions are conditions on the state the wake actually sees,
 and inventing a pre-state form for them would mean asserting frame lemmas this
 module cannot see. -/
 theorem endpointSendDualOnCore_bootCore_rendezvous_eq_single (endpointId : SeLe4n.ObjId)
-    (sender receiver : SeLe4n.ThreadId) (msg : IpcMessage)
+    (sender receiver : SeLe4n.ThreadId) (payload : SendPayload)
     (st st' stPop stRecv : SystemState) (ep : Endpoint) (headTcb rTcb : TCB)
     (hEp : st.getEndpoint? endpointId = some ep)
     (hReceiver : ep.receiveQ.head = some receiver)
     (hPop : endpointQueuePopHead endpointId true st = .ok (receiver, headTcb, stPop))
-    (hStore : storeTcbReceiveComplete stPop receiver (some msg) = .ok stRecv)
+    (hStore : storeTcbReceiveComplete stPop receiver (some (sendPayloadMessage st sender payload)) = .ok stRecv)
     (hTcb : stRecv.getTcb? receiver = some rTcb)
     (hHome : determineTargetCore stRecv receiver = bootCoreId)
     (hNotElsewhere : ∀ c : CoreId, c ≠ bootCoreId → stRecv.queuedOn c receiver = false)
     (hReady : rTcb.ipcState = .ready)
     (hNoResize : ¬ (stRecv.objects.size * 4 ≥ stRecv.objects.capacity * 3))
-    (hSingle : endpointSendDual endpointId sender msg st = .ok ((), st')) :
-    (endpointSendDualOnCore endpointId sender msg bootCoreId st).1 = st' := by
-  have hRegs : ¬ (msg.registers.size > maxMessageRegisters) := by
-    intro h; rw [endpointSendDual] at hSingle; simp [h] at hSingle
-  have hCaps : ¬ (msg.caps.size > maxExtraCaps) := by
-    intro h; rw [endpointSendDual] at hSingle; simp [hRegs, h] at hSingle
+    (hSingle : endpointSendDual endpointId sender payload st = .ok ((), st')) :
+    (endpointSendDualOnCore endpointId sender payload bootCoreId st).1 = st' := by
   have hRaw := (SystemState.getEndpoint?_eq_some_iff st endpointId ep).mp hEp
   unfold endpointSendDualOnCore
   unfold endpointSendDual SystemState.getObject? at hSingle
@@ -612,31 +589,15 @@ theorem endpointSendDualOnCore_bootCore_rendezvous_eq_single (endpointId : SeLe4
   cases hSnd : st.getTcb? sender with
   | none =>
     exfalso
-    simp only [hRegs, hCaps, hRaw, hReceiver, hSnd, if_false] at hSingle
+    simp only [hRaw, hReceiver, hSnd] at hSingle
     simp at hSingle
   | some _ =>
-  simp only [hRegs, hCaps, hRaw, hEp, hReceiver, hSnd, hPop, hStore, if_false] at hSingle ⊢
+  simp only [hRaw, hEp, hReceiver, hSnd, hPop, hStore] at hSingle ⊢
   -- Both sides are now the same mid-state, wired to two different wakes.
   simp only [Except.ok.injEq, Prod.mk.injEq, true_and] at hSingle
   rw [← hSingle]
   exact wakeThread_bootCore_eq_ensureRunnable stRecv receiver rTcb hTcb hHome
     hNotElsewhere hReady hNoResize
-
-/-- WS-SM SM6: the bounds rejections are fail-closed and state-preserving. -/
-theorem endpointSendDualOnCore_tooLarge (endpointId : SeLe4n.ObjId)
-    (sender : SeLe4n.ThreadId) (msg : IpcMessage) (executingCore : CoreId)
-    (st : SystemState) (h : msg.registers.size > maxMessageRegisters) :
-    endpointSendDualOnCore endpointId sender msg executingCore st
-      = (st, .error .ipcMessageTooLarge) := by
-  simp [endpointSendDualOnCore, h]
-
-theorem endpointSendDualOnCore_tooManyCaps (endpointId : SeLe4n.ObjId)
-    (sender : SeLe4n.ThreadId) (msg : IpcMessage) (executingCore : CoreId)
-    (st : SystemState) (hLarge : ¬ (msg.registers.size > maxMessageRegisters))
-    (h : msg.caps.size > maxExtraCaps) :
-    endpointSendDualOnCore endpointId sender msg executingCore st
-      = (st, .error .ipcMessageTooManyCaps) := by
-  simp [endpointSendDualOnCore, hLarge, h]
 
 -- ============================================================================
 -- §2 Cross-core `endpointSendDualWithCaps`
@@ -646,9 +607,9 @@ theorem endpointSendDualOnCore_tooManyCaps (endpointId : SeLe4n.ObjId)
 
 The exact shape of its SM6.A sibling `endpointCallWithCapsOnCore`: the cross-core
 `endpointSendDualOnCore` rendezvous (which surfaces the receiver-wake SGI), then —
-on an immediate rendezvous carrying caps — `ipcUnwrapCaps` installs the
-transferred capabilities into the receiver's CSpace, gated on the endpoint's
-`grant` right. Returns the post-state, the capability-transfer summary, and the
+on an immediate rendezvous whose sender asks to transfer capabilities under the
+grant right (`sendCapRequest`) — `receiveTransferCaps` resolves them in the
+sender's CSpace and installs them into the receiver's. Returns the post-state, the capability-transfer summary, and the
 optional cross-core SGI.
 
 Capability-transfer behaviour is unchanged from `endpointSendDualWithCaps`,
@@ -656,98 +617,43 @@ including the AK1-I fail-closed `.invalidCapability` on a receiver with no CSpac
 root (the NI-symmetry fix shared by all three transfer paths). -/
 def endpointSendDualWithCapsOnCore
     (endpointId : SeLe4n.ObjId) (sender : SeLe4n.ThreadId)
-    (msg : IpcMessage) (endpointRights : AccessRightSet)
-    (receiverSlotBase : SeLe4n.Slot)
+    (payload : SendPayload) (receiverSlotBase : SeLe4n.Slot)
     (executingCore : CoreId) (st : SystemState) :
     SystemState × Except KernelError (CapTransferSummary × Option (CoreId × SgiKind)) :=
-  -- PR #873 round 13: stamp the endpoint's grant right into the message, so the
-  -- queued ordering and the immediate rendezvous read the same authority from the
-  -- same place. See `endpointSendDualWithCaps` for the ordering this removes.
-  let hasReceiver := match st.getEndpoint? endpointId with
-    | some ep => ep.receiveQ.head.isSome
-    | none => false
-  match endpointSendDualOnCore endpointId sender { msg with capsGranted := endpointRights.mem .grant } executingCore st with
+  -- WS-ZA ZA4.7: the capabilities the sender's frame asks to transfer, read
+  -- from the pre-state and `none` unless a receiver waits -- so nothing is
+  -- looked up on the arm that blocks (the receive that takes the sender
+  -- resolves its request then, `receiveTransferCaps`).
+  let req := sendCapRequest st endpointId sender payload
+  let receiver? := (st.getEndpoint? endpointId).bind (·.receiveQ.head)
+  match endpointSendDualOnCore endpointId sender payload executingCore st with
   | (st', .error e) => (st', .error e)
   | (st', .ok sgi) =>
-      if !hasReceiver || msg.caps.isEmpty then (st', .ok ({ results := #[] }, sgi))
+      if req.isNone then (st', .ok ({ results := #[] }, sgi))
       else
-        match st.getEndpoint? endpointId with
-        | some ep =>
-          match ep.receiveQ.head with
-          | some receiverId =>
-            match lookupCspaceRoot st' receiverId with
-            | some recvRoot =>
-              match ipcUnwrapCaps { msg with capsGranted := endpointRights.mem .grant } recvRoot
-                  receiverSlotBase (endpointRights.mem .grant) st' with
-              | .error e => (st', .error e)
-              | .ok (summary, st'') => (st'', .ok (summary, sgi))
-            | none => (st', .error .invalidCapability)
-          | none => (st', .ok ({ results := #[] }, sgi))
-        | none => (st', .ok ({ results := #[] }, sgi))
-
-/-- WS-ZA ZA4.7: the compiled `endpointSendDualWithCapsOnCore`.  The receive
-queue's head is read once, before the send, so the pre-state is not held across
-the send's writes for a second read of the endpoint
-(`ZERO_ALLOCATION_SYSCALL_PLAN.md` D1). -/
-@[inline] def endpointSendDualWithCapsOnCoreImpl
-    (endpointId : SeLe4n.ObjId) (sender : SeLe4n.ThreadId)
-    (msg : IpcMessage) (endpointRights : AccessRightSet)
-    (receiverSlotBase : SeLe4n.Slot)
-    (executingCore : CoreId) (st : SystemState) :
-    SystemState × Except KernelError (CapTransferSummary × Option (CoreId × SgiKind)) :=
-  let receiverHead? := match st.getEndpoint? endpointId with
-    | some ep => ep.receiveQ.head
-    | none => none
-  -- A message already stamped with the grant bit is sent as it is.
-  let stamped := if msg.capsGranted == endpointRights.mem .grant then msg
-    else { msg with capsGranted := endpointRights.mem .grant }
-  match endpointSendDualOnCore endpointId sender stamped executingCore st with
-  | (st', .error e) => (st', .error e)
-  | (st', .ok sgi) =>
-      if !receiverHead?.isSome || msg.caps.isEmpty then (st', .ok ({ results := #[] }, sgi))
-      else
-        match receiverHead? with
+        match receiver? with
         | some receiverId =>
-            match lookupCspaceRoot st' receiverId with
-            | some recvRoot =>
-              match ipcUnwrapCaps { msg with capsGranted := endpointRights.mem .grant } recvRoot
-                  receiverSlotBase (endpointRights.mem .grant) st' with
-              | .error e => (st', .error e)
-              | .ok (summary, st'') => (st'', .ok (summary, sgi))
-            | none => (st', .error .invalidCapability)
+          match lookupCspaceRoot st' receiverId with
+          | some recvRoot =>
+            match receiveTransferCaps req recvRoot receiverSlotBase st' with
+            | .error e => (st', .error e)
+            | .ok (summary, st'') => (st'', .ok (summary, sgi))
+          | none => (st', .error .invalidCapability)
         | none => (st', .ok ({ results := #[] }, sgi))
-
-@[csimp] theorem endpointSendDualWithCapsOnCore_eq_impl :
-    @endpointSendDualWithCapsOnCore = @endpointSendDualWithCapsOnCoreImpl := by
-  funext endpointId sender msg endpointRights receiverSlotBase executingCore st
-  have hStamp : (if msg.capsGranted == endpointRights.mem .grant then msg
-      else { msg with capsGranted := endpointRights.mem .grant }) =
-      { msg with capsGranted := endpointRights.mem .grant } := by
-    split
-    · next h => cases msg; simp only [beq_iff_eq] at h; subst h; rfl
-    · rfl
-  unfold endpointSendDualWithCapsOnCore endpointSendDualWithCapsOnCoreImpl
-  rw [hStamp]
-  cases st.getEndpoint? endpointId <;> rfl
 
 /-- WS-SM SM6: with no capabilities to transfer, the WithCaps cross-core send is
 exactly the bare cross-core send (empty transfer summary), so its surfaced SGI is
 the bare send's. -/
 theorem endpointSendDualWithCapsOnCore_no_caps
-    (endpointId : SeLe4n.ObjId) (sender : SeLe4n.ThreadId) (msg : IpcMessage)
-    (endpointRights : AccessRightSet)
+    (endpointId : SeLe4n.ObjId) (sender : SeLe4n.ThreadId) (payload : SendPayload)
     (receiverSlotBase : SeLe4n.Slot) (executingCore : CoreId) (st : SystemState)
-    (hCaps : msg.caps.isEmpty = true) :
-    endpointSendDualWithCapsOnCore endpointId sender msg endpointRights
-        receiverSlotBase executingCore st
-      = ((endpointSendDualOnCore endpointId sender { msg with capsGranted := endpointRights.mem AccessRight.grant } executingCore st).1,
-         (endpointSendDualOnCore endpointId sender { msg with capsGranted := endpointRights.mem AccessRight.grant } executingCore st).2.map
+    (hCaps : sendCapRequest st endpointId sender payload = none) :
+    endpointSendDualWithCapsOnCore endpointId sender payload receiverSlotBase executingCore st
+      = ((endpointSendDualOnCore endpointId sender payload executingCore st).1,
+         (endpointSendDualOnCore endpointId sender payload executingCore st).2.map
            (fun sgi => ({ results := #[] }, sgi))) := by
-  -- PR #873 round 13: against the **stamped** message, because that is what the
-  -- wrapper transmits. With no capabilities the grant bit changes no behaviour,
-  -- but it is part of the message the send parks.
   unfold endpointSendDualWithCapsOnCore
-  cases h : endpointSendDualOnCore endpointId sender { msg with capsGranted := endpointRights.mem AccessRight.grant } executingCore st with
+  cases h : endpointSendDualOnCore endpointId sender payload executingCore st with
   | mk st' res => cases res with
     | error e => simp [Except.map]
     | ok sgi => simp [hCaps, Except.map]
@@ -758,24 +664,20 @@ theorem endpointSendDualWithCapsOnCore_no_caps
 
 /-- WS-SM SM6 (live `.send` enforcement): the **information-flow-checked**
 cross-core send — the cross-core analogue of `endpointSendDualChecked`. Mirrors
-the single-core checked `.send` arm exactly: message bounds first (so a bounds
-fault is not masked by the flow gate, WS-H12d/A-09), then the SM-IF guard
+the single-core checked `.send` arm exactly: the SM-IF guard
 `securityFlowsTo senderLabel endpointLabel` rejecting with `.flowDenied`, then the
-cross-core WithCaps send. This is the operation the live `dispatchWithCapChecked`
+cross-core WithCaps send.  It checks no message bound: the message is read from
+the sender's frame and is bounded by construction (`sendPayloadMessage_bounded`). This is the operation the live `dispatchWithCapChecked`
 `.send` arm routes through, replacing the boot-pinned `endpointSendDualChecked`. -/
 def endpointSendCrossCoreDispatchChecked
     (ctx : LabelingContext) (endpointId : SeLe4n.ObjId) (sender : SeLe4n.ThreadId)
-    (msg : IpcMessage) (endpointRights : AccessRightSet)
-    (receiverSlotBase : SeLe4n.Slot)
+    (payload : SendPayload) (receiverSlotBase : SeLe4n.Slot)
     (executingCore : CoreId) (st : SystemState) :
     SystemState × Except KernelError (CapTransferSummary × Option (CoreId × SgiKind)) :=
-  if msg.registers.size > maxMessageRegisters then (st, .error .ipcMessageTooLarge)
-  else if msg.caps.size > maxExtraCaps then (st, .error .ipcMessageTooManyCaps)
   -- WS-SM SM8.C: global lattice check AND this endpoint's configured override.
-  else if endpointFlowGate ctx endpointId (ctx.threadLabelOf sender)
+  if endpointFlowGate ctx endpointId (ctx.threadLabelOf sender)
       (ctx.endpointLabelOf endpointId) then
-    endpointSendDualWithCapsOnCore endpointId sender msg endpointRights
-      receiverSlotBase executingCore st
+    endpointSendDualWithCapsOnCore endpointId sender payload receiverSlotBase executingCore st
   else
     (st, .error .flowDenied)
 
@@ -783,79 +685,67 @@ def endpointSendCrossCoreDispatchChecked
 cross-core send is fail-closed (state unchanged, `.flowDenied`). -/
 theorem endpointSendCrossCoreDispatchChecked_flow_denied
     (ctx : LabelingContext) (endpointId : SeLe4n.ObjId) (sender : SeLe4n.ThreadId)
-    (msg : IpcMessage) (endpointRights : AccessRightSet)
-    (receiverSlotBase : SeLe4n.Slot)
+    (payload : SendPayload) (receiverSlotBase : SeLe4n.Slot)
     (executingCore : CoreId) (st : SystemState)
-    (hTooLarge : ¬ (msg.registers.size > maxMessageRegisters))
-    (hTooMany : ¬ (msg.caps.size > maxExtraCaps))
     (hDeny : securityFlowsTo (ctx.threadLabelOf sender)
       (ctx.endpointLabelOf endpointId) = false) :
-    endpointSendCrossCoreDispatchChecked ctx endpointId sender msg endpointRights
+    endpointSendCrossCoreDispatchChecked ctx endpointId sender payload
         receiverSlotBase executingCore st = (st, .error .flowDenied) := by
   -- WS-SM SM8.C: a denied global flow denies the gate whatever the override says.
-  simp [endpointSendCrossCoreDispatchChecked, hTooLarge, hTooMany,
+  simp [endpointSendCrossCoreDispatchChecked,
     endpointFlowGate_false_of_securityFlowsTo_false ctx endpointId _ _ hDeny]
 
-/-- WS-SM SM6: when the flow is permitted (and the message is within bounds, which
-the unchecked path re-checks itself), the checked cross-core send is exactly the
+/-- WS-SM SM6: when the flow is permitted, the checked cross-core send is exactly the
 unchecked cross-core WithCaps send — the guard is a pure precondition. -/
 theorem endpointSendCrossCoreDispatchChecked_flow_allowed
     (ctx : LabelingContext) (endpointId : SeLe4n.ObjId) (sender : SeLe4n.ThreadId)
-    (msg : IpcMessage) (endpointRights : AccessRightSet)
-    (receiverSlotBase : SeLe4n.Slot)
+    (payload : SendPayload) (receiverSlotBase : SeLe4n.Slot)
     (executingCore : CoreId) (st : SystemState)
-    (hTooLarge : ¬ (msg.registers.size > maxMessageRegisters))
-    (hTooMany : ¬ (msg.caps.size > maxExtraCaps))
     (hAllow : securityFlowsTo (ctx.threadLabelOf sender)
       (ctx.endpointLabelOf endpointId) = true)
     -- WS-SM SM8.C: the endpoint's override must admit the flow too.
     (hOverride : endpointOverrideAllows ctx endpointId (ctx.threadLabelOf sender)
       (ctx.endpointLabelOf endpointId) = true) :
-    endpointSendCrossCoreDispatchChecked ctx endpointId sender msg endpointRights
+    endpointSendCrossCoreDispatchChecked ctx endpointId sender payload
         receiverSlotBase executingCore st
-      = endpointSendDualWithCapsOnCore endpointId sender msg endpointRights
+      = endpointSendDualWithCapsOnCore endpointId sender payload
           receiverSlotBase executingCore st := by
-  simp [endpointSendCrossCoreDispatchChecked, hTooLarge, hTooMany,
+  simp [endpointSendCrossCoreDispatchChecked,
     endpointFlowGate_of ctx endpointId _ _ hAllow hOverride]
 
 /-- WS-ZA ZA4.7: the cross-core send answers a refusal with the state it was
 handed: every refusal precedes its first write or returns the pre-state. -/
 theorem endpointSendDualOnCore_error_state (endpointId : SeLe4n.ObjId)
-    (sender : SeLe4n.ThreadId) (msg : IpcMessage) (executingCore : CoreId)
+    (sender : SeLe4n.ThreadId) (payload : SendPayload) (executingCore : CoreId)
     (st : SystemState) (e : KernelError)
-    (h : (endpointSendDualOnCore endpointId sender msg executingCore st).2 = .error e) :
-    (endpointSendDualOnCore endpointId sender msg executingCore st).1 = st := by
+    (h : (endpointSendDualOnCore endpointId sender payload executingCore st).2 = .error e) :
+    (endpointSendDualOnCore endpointId sender payload executingCore st).1 = st := by
   unfold endpointSendDualOnCore at h ⊢
   repeat' split at h <;> (try simp only [] at h ⊢) <;> (try split) <;> (try rfl) <;>
     (try simp_all)
 
-/-- WS-ZA ZA4.7: with no capabilities to transfer, the checked cross-core send
+/-- WS-ZA ZA4.7: a checked cross-core send that transfers no capability
 answers a refusal with the state it was handed. -/
 theorem endpointSendCrossCoreDispatchChecked_error_state
     (ctx : LabelingContext) (endpointId : SeLe4n.ObjId) (sender : SeLe4n.ThreadId)
-    (msg : IpcMessage) (endpointRights : AccessRightSet)
+    (payload : SendPayload)
     (receiverSlotBase : SeLe4n.Slot) (executingCore : CoreId) (st : SystemState)
-    (e : KernelError) (hCaps : msg.caps.isEmpty = true)
-    (h : (endpointSendCrossCoreDispatchChecked ctx endpointId sender msg endpointRights
+    (e : KernelError) (hCaps : sendCapRequest st endpointId sender payload = none)
+    (h : (endpointSendCrossCoreDispatchChecked ctx endpointId sender payload
       receiverSlotBase executingCore st).2 = .error e) :
-    (endpointSendCrossCoreDispatchChecked ctx endpointId sender msg endpointRights
+    (endpointSendCrossCoreDispatchChecked ctx endpointId sender payload
       receiverSlotBase executingCore st).1 = st := by
   unfold endpointSendCrossCoreDispatchChecked at h ⊢
   split
+  · next hG =>
+    rw [if_pos hG] at h
+    rw [endpointSendDualWithCapsOnCore_no_caps _ _ _ _ _ _ hCaps] at h ⊢
+    simp only at h ⊢
+    apply endpointSendDualOnCore_error_state _ _ _ _ _ e
+    revert h
+    cases endpointSendDualOnCore endpointId sender payload executingCore st with
+    | mk s r => cases r <;> simp [Except.map]
   · rfl
-  · split
-    · rfl
-    · split
-      · next hG =>
-        rw [if_neg (by assumption), if_neg (by assumption), if_pos hG] at h
-        rw [endpointSendDualWithCapsOnCore_no_caps _ _ _ _ _ _ _ hCaps] at h ⊢
-        simp only at h ⊢
-        apply endpointSendDualOnCore_error_state _ _ _ _ _ e
-        revert h
-        cases endpointSendDualOnCore endpointId sender
-          { msg with capsGranted := endpointRights.mem AccessRight.grant } executingCore st with
-        | mk s r => cases r <;> simp [Except.map]
-      · rfl
 
 /-- **WS-RR RR8.12 (frame)**: a cross-core send touches **no** core's replenish
 queue.
@@ -868,66 +758,60 @@ writes a run queue alone (the rendezvous' `wakeThread`, the block's
 `.call` donates — so there is nothing in the replenishment domain for it to
 move. -/
 theorem endpointSendDualOnCore_replenishQueueOnCore (epId : SeLe4n.ObjId)
-    (sender : SeLe4n.ThreadId) (msg : IpcMessage) (ec : CoreId) (st : SystemState)
+    (sender : SeLe4n.ThreadId) (payload : SendPayload) (ec : CoreId) (st : SystemState)
     (c : CoreId) :
-    (endpointSendDualOnCore epId sender msg ec st).1.scheduler.replenishQueueOnCore c
+    (endpointSendDualOnCore epId sender payload ec st).1.scheduler.replenishQueueOnCore c
       = st.scheduler.replenishQueueOnCore c := by
   unfold endpointSendDualOnCore
-  split
-  · rfl
-  · split
-    · rfl
-    · cases hEp : st.getEndpoint? epId with
-      | none => simp only []; split <;> rfl
-      | some ep =>
+  cases hEp : st.getEndpoint? epId with
+  | none => simp only []; split <;> rfl
+  | some ep =>
+    simp only []
+    cases hHead : ep.receiveQ.head with
+    | none =>
+      simp only []
+      cases hEnq : endpointQueueEnqueue epId false sender st with
+      | error e => rfl
+      | ok st1 =>
         simp only []
-        cases hHead : ep.receiveQ.head with
-        | none =>
+        cases hIpc : storeTcbIpcStateAndMessage st1 sender (.blockedOnSend epId) none with
+        | error e => rfl
+        | ok st2 =>
           simp only []
-          cases hEnq : endpointQueueEnqueue epId false sender st with
+          rw [recordSendCap_scheduler, removeRunnableOnCore_replenishQueueOnCore,
+            storeTcbIpcStateAndMessage_scheduler_eq st1 st2 _ _ _ hIpc,
+            endpointQueueEnqueue_scheduler_eq epId false sender st st1 hEnq]
+    | some _ =>
+      simp only []
+      cases hSnd : st.getTcb? sender with
+      | none => rfl
+      | some _ =>
+        simp only []
+        cases hPop : endpointQueuePopHead epId true st with
+        | error e => rfl
+        | ok triple =>
+          obtain ⟨receiver, headTcb, st1⟩ := triple
+          simp only []
+          cases hRecv : storeTcbReceiveComplete st1 receiver (some (sendPayloadMessage st sender payload)) with
           | error e => rfl
-          | ok st1 =>
+          | ok st2 =>
             simp only []
-            cases hIpc : storeTcbIpcStateAndMessage st1 sender (.blockedOnSend epId) none with
-            | error e => rfl
-            | ok st2 =>
-              simp only []
-              rw [recordSendCap_scheduler, removeRunnableOnCore_replenishQueueOnCore,
-                storeTcbIpcStateAndMessage_scheduler_eq st1 st2 _ _ _ hIpc,
-                endpointQueueEnqueue_scheduler_eq epId false sender st st1 hEnq]
-        | some _ =>
-          simp only []
-          cases hSnd : st.getTcb? sender with
-          | none => rfl
-          | some _ =>
-            simp only []
-            cases hPop : endpointQueuePopHead epId true st with
-            | error e => rfl
-            | ok triple =>
-              obtain ⟨receiver, headTcb, st1⟩ := triple
-              simp only []
-              cases hRecv : storeTcbReceiveComplete st1 receiver (some msg) with
-              | error e => rfl
-              | ok st2 =>
-                simp only []
-                rw [wakeThread_replenishQueueOnCore,
-                  storeTcbReceiveComplete_scheduler_eq st1 st2 _ _ hRecv,
-                  endpointQueuePopHead_scheduler_eq epId true st st1 receiver hPop]
+            rw [wakeThread_replenishQueueOnCore,
+              storeTcbReceiveComplete_scheduler_eq st1 st2 _ _ hRecv,
+              endpointQueuePopHead_scheduler_eq epId true st st1 receiver hPop]
 
 /-- **WS-RR RR8.12 (frame)**: and neither does the caps-carrying form — the
 capability transfer writes CNodes and the CDT, never the scheduler
-(`ipcUnwrapCaps_preserves_scheduler`). -/
+(`receiveTransferCaps_scheduler_eq`). -/
 theorem endpointSendDualWithCapsOnCore_replenishQueueOnCore (epId : SeLe4n.ObjId)
-    (sender : SeLe4n.ThreadId) (msg : IpcMessage) (rights : AccessRightSet)
+    (sender : SeLe4n.ThreadId) (payload : SendPayload)
     (slotBase : SeLe4n.Slot) (ec : CoreId) (st st' : SystemState) (c : CoreId)
-    (h : (endpointSendDualWithCapsOnCore epId sender msg rights slotBase ec st).1 = st') :
+    (h : (endpointSendDualWithCapsOnCore epId sender payload slotBase ec st).1 = st') :
     st'.scheduler.replenishQueueOnCore c = st.scheduler.replenishQueueOnCore c := by
   subst h
   unfold endpointSendDualWithCapsOnCore
-  have hBare := endpointSendDualOnCore_replenishQueueOnCore epId sender
-    { msg with capsGranted := rights.mem .grant } ec st c
-  cases hSend : endpointSendDualOnCore epId sender
-      { msg with capsGranted := rights.mem .grant } ec st with
+  have hBare := endpointSendDualOnCore_replenishQueueOnCore epId sender payload ec st c
+  cases hSend : endpointSendDualOnCore epId sender payload ec st with
   | mk st1 res =>
     rw [hSend] at hBare
     cases res with
@@ -938,30 +822,25 @@ theorem endpointSendDualWithCapsOnCore_replenishQueueOnCore (epId : SeLe4n.ObjId
       all_goals
         first
           | exact hBare
-          | (rename_i hUnwrap
-             rw [ipcUnwrapCaps_preserves_scheduler _ _ _ _ _ _ _ hUnwrap]
+          | (rename_i hT
+             rw [receiveTransferCaps_scheduler_eq hT]
              exact hBare)
 
 /-- **WS-RR RR8.12 (frame)**: and neither does the **live** `.send` arm.  Its
-three gates each return the pre-state; past them it *is* the caps-carrying
-form. -/
+flow gate returns the pre-state; past it it *is* the caps-carrying form. -/
 theorem endpointSendCrossCoreDispatchChecked_replenishQueueOnCore (ctx : LabelingContext)
-    (epId : SeLe4n.ObjId) (sender : SeLe4n.ThreadId) (msg : IpcMessage)
-    (rights : AccessRightSet) (slotBase : SeLe4n.Slot) (ec : CoreId)
+    (epId : SeLe4n.ObjId) (sender : SeLe4n.ThreadId) (payload : SendPayload)
+    (slotBase : SeLe4n.Slot) (ec : CoreId)
     (st st' : SystemState) (c : CoreId)
-    (h : (endpointSendCrossCoreDispatchChecked ctx epId sender msg rights slotBase ec st).1
+    (h : (endpointSendCrossCoreDispatchChecked ctx epId sender payload slotBase ec st).1
       = st') :
     st'.scheduler.replenishQueueOnCore c = st.scheduler.replenishQueueOnCore c := by
   subst h
   unfold endpointSendCrossCoreDispatchChecked
   split
+  · exact endpointSendDualWithCapsOnCore_replenishQueueOnCore epId sender payload
+      slotBase ec st _ c rfl
   · rfl
-  · split
-    · rfl
-    · split
-      · exact endpointSendDualWithCapsOnCore_replenishQueueOnCore epId sender msg rights
-          slotBase ec st _ c rfl
-      · rfl
 
 /-- WS-SM SM8.B.2, relocated to production at **WS-RR RR8.12**: **the cores a
 cross-core send may write.**  Exactly one, on either path:

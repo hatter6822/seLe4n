@@ -59,14 +59,14 @@ theorem ipcUnwrapCaps_confinedToCores (msg : IpcMessage)
 
 /-- SM8.B.2: and the register banks, by the same case analysis. -/
 theorem endpointCallWithCapsOnCore_machine_eq (endpointId : SeLe4n.ObjId)
-    (caller : SeLe4n.ThreadId) (msg : IpcMessage) (endpointRights : AccessRightSet)
+    (caller : SeLe4n.ThreadId) (payload : SendPayload)
     (receiverSlotBase : SeLe4n.Slot)
     (executingCore : CoreId) (st : SystemState) :
-    (endpointCallWithCapsOnCore endpointId caller msg endpointRights
+    (endpointCallWithCapsOnCore endpointId caller payload
         receiverSlotBase executingCore st).1.machine
-      = (endpointCallOnCore endpointId caller { msg with capsGranted := endpointRights.mem AccessRight.grant } executingCore st).1.machine := by
+      = (endpointCallOnCore endpointId caller payload executingCore st).1.machine := by
   unfold endpointCallWithCapsOnCore
-  cases hCall : endpointCallOnCore endpointId caller { msg with capsGranted := endpointRights.mem AccessRight.grant } executingCore st with
+  cases hCall : endpointCallOnCore endpointId caller payload executingCore st with
   | mk stCall res =>
     cases res with
     | error e => rfl
@@ -75,7 +75,7 @@ theorem endpointCallWithCapsOnCore_machine_eq (endpointId : SeLe4n.ObjId)
       repeat' split
       all_goals first
         | rfl
-        | (rename_i h; exact ipcUnwrapCaps_preserves_machine _ _ _ _ _ _ _ h)
+        | (rename_i h; exact receiveTransferCaps_preserves_machine h)
 
 /-- SM8.B.2: the **WithCaps** cross-core call — the form the live dispatch calls
 — is confined to the bare call's write set. The extra leg is `ipcUnwrapCaps`,
@@ -86,19 +86,19 @@ Proved through the two frames rather than by re-walking the WithCaps branch
 tree: confinement reads only `scheduler` and the register banks, and on both of
 those the WithCaps post-state *is* the bare call's. -/
 theorem endpointCallWithCapsOnCore_confinedToCores (endpointId : SeLe4n.ObjId)
-    (caller : SeLe4n.ThreadId) (msg : IpcMessage) (endpointRights : AccessRightSet)
+    (caller : SeLe4n.ThreadId) (payload : SendPayload)
     (receiverSlotBase : SeLe4n.Slot)
     (executingCore : CoreId) (st : SystemState) (hObjInv : st.objects.invExt) :
     observableSlotsConfinedToCores st
-      (endpointCallWithCapsOnCore endpointId caller msg endpointRights
+      (endpointCallWithCapsOnCore endpointId caller payload
         receiverSlotBase executingCore st).1
       (endpointCallWriteSet st endpointId executingCore) := by
   have h := observableSlotsConfinedToCores_trans
-    (endpointCallOnCore_confinedToCores endpointId caller { msg with capsGranted := endpointRights.mem AccessRight.grant } executingCore st hObjInv)
+    (endpointCallOnCore_confinedToCores endpointId caller payload executingCore st hObjInv)
     (observableSlotsConfinedToCores_nil_of_scheduler_machine_eq
-      (endpointCallWithCapsOnCore_scheduler_eq endpointId caller msg endpointRights
+      (endpointCallWithCapsOnCore_scheduler_eq endpointId caller payload
         receiverSlotBase executingCore st)
-      (endpointCallWithCapsOnCore_machine_eq endpointId caller msg endpointRights
+      (endpointCallWithCapsOnCore_machine_eq endpointId caller payload
         receiverSlotBase executingCore st))
   simpa using h
 
@@ -120,16 +120,16 @@ composes WithCaps, the per-core-silent donation and the chain walk at the
 post-donation state — `endpointCallLive_confinedToCores` instantiated at the
 receiver `ep.receiveQ.head` and the state `applyCallDonation` returns. -/
 theorem endpointCallCrossCoreDispatch_confinedToCores (endpointId : SeLe4n.ObjId)
-    (caller : SeLe4n.ThreadId) (msg : IpcMessage) (endpointRights : AccessRightSet)
+    (caller : SeLe4n.ThreadId) (payload : SendPayload)
     (receiverSlotBase : SeLe4n.Slot)
     (executingCore : CoreId) (st : SystemState) (hObjInv : st.objects.invExt) :
     observableSlotsConfinedToCores st
-      (endpointCallCrossCoreDispatch endpointId caller msg endpointRights
+      (endpointCallCrossCoreDispatch endpointId caller payload
         receiverSlotBase executingCore st).1
-      (endpointCallDispatchWriteSet endpointId caller msg endpointRights
+      (endpointCallDispatchWriteSet endpointId caller payload
         receiverSlotBase executingCore st) := by
-  have hCaps := endpointCallWithCapsOnCore_confinedToCores endpointId caller msg
-    endpointRights receiverSlotBase executingCore st hObjInv
+  have hCaps := endpointCallWithCapsOnCore_confinedToCores endpointId caller payload
+    receiverSlotBase executingCore st hObjInv
   -- A core outside the union is outside the endpoint-call leg, which is what
   -- every arm short of the full rendezvous needs.
   have hWiden : ∀ (stPost : SystemState) (extra : List CoreId),
@@ -141,7 +141,7 @@ theorem endpointCallCrossCoreDispatch_confinedToCores (endpointId : SeLe4n.ObjId
       (fun _ hc => List.mem_append.mpr (Or.inl hc)) h
   unfold endpointCallCrossCoreDispatch endpointCallDispatchWriteSet
     endpointCallDispatchChainWriteSet
-  cases hWith : endpointCallWithCapsOnCore endpointId caller msg endpointRights
+  cases hWith : endpointCallWithCapsOnCore endpointId caller payload
       receiverSlotBase executingCore st with
   | mk stWith res =>
     rw [hWith] at hCaps
@@ -181,7 +181,7 @@ the instantiation is visible rather than buried inside the proof above: the
 chain start is the resolved receiver and the chain state is the post-donation
 state, the two things the second review round said were being supplied by hand. -/
 theorem endpointCallDispatchWriteSet_eq_live_of_rendezvous (endpointId : SeLe4n.ObjId)
-    (caller : SeLe4n.ThreadId) (msg : IpcMessage) (endpointRights : AccessRightSet)
+    (caller : SeLe4n.ThreadId) (payload : SendPayload)
     (receiverSlotBase : SeLe4n.Slot)
     (executingCore : CoreId) (st stWith stDon : SystemState) (receiverTid : SeLe4n.ThreadId)
     (callerV receiverV : SeLe4n.ValidThreadId) (summary : CapTransferSummary)
@@ -189,13 +189,13 @@ theorem endpointCallDispatchWriteSet_eq_live_of_rendezvous (endpointId : SeLe4n.
     (hRecv : (match st.getEndpoint? endpointId with
               | some ep => ep.receiveQ.head
               | none => none) = some receiverTid)
-    (hWith : endpointCallWithCapsOnCore endpointId caller msg endpointRights
+    (hWith : endpointCallWithCapsOnCore endpointId caller payload
       receiverSlotBase executingCore st = (stWith, .ok (summary, sgi)))
     (hCallerV : SeLe4n.ThreadId.toValid? caller = some callerV)
     (hRecvV : SeLe4n.ThreadId.toValid? receiverTid = some receiverV)
     (hDon : applyCallDonationOnCore stWith callerV receiverV
       (determineTargetCore st caller) (determineTargetCore st receiverTid) = .ok stDon) :
-    endpointCallDispatchWriteSet endpointId caller msg endpointRights
+    endpointCallDispatchWriteSet endpointId caller payload
         receiverSlotBase executingCore st
       = endpointCallLiveWriteSet st endpointId executingCore stDon receiverTid := by
   unfold endpointCallDispatchWriteSet endpointCallDispatchChainWriteSet endpointCallLiveWriteSet
@@ -1467,89 +1467,85 @@ Block path: enqueue the sender, store its blocked state, **deschedule it on its
 own core** — `[] ++ [] ++ [executingCore]`. Every fail-closed arm returns the
 pre-state and writes nothing. -/
 theorem endpointSendDualOnCore_confinedToCores (endpointId : SeLe4n.ObjId)
-    (sender : SeLe4n.ThreadId) (msg : IpcMessage) (executingCore : CoreId)
+    (sender : SeLe4n.ThreadId) (payload : SendPayload) (executingCore : CoreId)
     (st : SystemState) (hObjInv : st.objects.invExt) :
     observableSlotsConfinedToCores st
-      (endpointSendDualOnCore endpointId sender msg executingCore st).1
+      (endpointSendDualOnCore endpointId sender payload executingCore st).1
       (endpointSendWriteSet st endpointId executingCore) := by
   unfold endpointSendDualOnCore endpointSendWriteSet endpointCallReceiver?
-  split
-  · exact observableSlotsConfinedToCores_of_eq _ rfl
-  · split
-    · exact observableSlotsConfinedToCores_of_eq _ rfl
-    · cases hEp : st.getEndpoint? endpointId with
-      | none =>
-        simp only []
-        split <;> exact observableSlotsConfinedToCores_of_eq _ rfl
-      | some ep =>
-        simp only []
-        cases hHead : ep.receiveQ.head with
-        | none =>
-          -- Block path: the sender stops on the core it is running on.
-          simp only []
-          split
-          · exact observableSlotsConfinedToCores_of_eq _ rfl
-          · next st1 hEnq =>
-            split
-            · exact observableSlotsConfinedToCores_of_eq _ rfl
-            · next st2 hMsg =>
-              exact observableSlotsConfinedToCores_trans
-                (observableSlotsConfinedToCores_trans
-                  (endpointQueueEnqueue_confinedToCores endpointId false sender st st1 hEnq)
-                  (storeTcbIpcStateAndMessage_confinedToCores st1 st2 sender _ _ hMsg))
-                (removeRunnableOnCoreThenRecordSendCap_confinedToCores st2 sender executingCore
-                  msg.badge msg.capsGranted)
-        | some headRecv =>
-          -- Rendezvous path: the receiver wakes on its own home core.
-          simp only []
-          -- PR #873 round 17: the arm resolves the sender before popping, so
-          -- there is one more split than there used to be.
-          split
-          · exact observableSlotsConfinedToCores_of_eq _ rfl
-          · split
-            · exact observableSlotsConfinedToCores_of_eq _ rfl
-            · next recvTid recvTcb st1 hPop =>
-            split
-            · exact observableSlotsConfinedToCores_of_eq _ rfl
-            · next st2 hMsgR =>
-              have hEpObj : st.objects[endpointId]? = some (.endpoint ep) :=
-                (SystemState.getEndpoint?_eq_some_iff st endpointId ep).mp hEp
-              have hPopHead : ep.receiveQ.head = some recvTid := by
-                have h := endpointQueuePopHead_returns_head endpointId true st ep recvTid
-                  st1 hEpObj hPop
-                simpa using h
-              have hRecv : recvTid = headRecv := by
-                rw [hHead] at hPopHead; simpa using hPopHead.symm
-              have hInv1 : st1.objects.invExt :=
-                endpointQueuePopHead_preserves_objects_invExt endpointId true st st1
-                  recvTid recvTcb hObjInv hPop
-              have hT1 : determineTargetCore st1 recvTid = determineTargetCore st recvTid :=
-                endpointQueuePopHead_determineTargetCore_eq endpointId true st st1
-                  recvTid recvTcb recvTid hObjInv hPop
-              have hT2 : determineTargetCore st2 recvTid = determineTargetCore st1 recvTid :=
-                storeTcbReceiveComplete_determineTargetCore_eq st1 st2 recvTid
-                  (some msg) recvTid hInv1 hMsgR
-              have hChain := observableSlotsConfinedToCores_widen_cons
-                (observableSlotsConfinedToCores_trans
-                  (endpointQueuePopHead_confinedToCores endpointId true st st1 recvTid hPop)
-                  (storeTcbReceiveComplete_confinedToCores st1 st2 recvTid (some msg) hMsgR))
-                (wakeThread_confinedToCores st2 recvTid executingCore)
-              rw [hT2, hT1] at hChain
-              rw [← hRecv]
-              exact hChain
+  cases hEp : st.getEndpoint? endpointId with
+  | none =>
+    simp only []
+    split <;> exact observableSlotsConfinedToCores_of_eq _ rfl
+  | some ep =>
+    simp only []
+    cases hHead : ep.receiveQ.head with
+    | none =>
+      -- Block path: the sender stops on the core it is running on.
+      simp only []
+      split
+      · exact observableSlotsConfinedToCores_of_eq _ rfl
+      · next st1 hEnq =>
+        split
+        · exact observableSlotsConfinedToCores_of_eq _ rfl
+        · next st2 hMsg =>
+          exact observableSlotsConfinedToCores_trans
+            (observableSlotsConfinedToCores_trans
+              (endpointQueueEnqueue_confinedToCores endpointId false sender st st1 hEnq)
+              (storeTcbIpcStateAndMessage_confinedToCores st1 st2 sender _ _ hMsg))
+            (removeRunnableOnCoreThenRecordSendCap_confinedToCores st2 sender executingCore
+              payload.badge payload.grant)
+    | some headRecv =>
+      -- Rendezvous path: the receiver wakes on its own home core.
+      simp only []
+      -- PR #873 round 17: the arm resolves the sender before popping, so
+      -- there is one more split than there used to be.
+      split
+      · exact observableSlotsConfinedToCores_of_eq _ rfl
+      · split
+        · exact observableSlotsConfinedToCores_of_eq _ rfl
+        · next recvTid recvTcb st1 hPop =>
+        split
+        · exact observableSlotsConfinedToCores_of_eq _ rfl
+        · next st2 hMsgR =>
+          have hEpObj : st.objects[endpointId]? = some (.endpoint ep) :=
+            (SystemState.getEndpoint?_eq_some_iff st endpointId ep).mp hEp
+          have hPopHead : ep.receiveQ.head = some recvTid := by
+            have h := endpointQueuePopHead_returns_head endpointId true st ep recvTid
+              st1 hEpObj hPop
+            simpa using h
+          have hRecv : recvTid = headRecv := by
+            rw [hHead] at hPopHead; simpa using hPopHead.symm
+          have hInv1 : st1.objects.invExt :=
+            endpointQueuePopHead_preserves_objects_invExt endpointId true st st1
+              recvTid recvTcb hObjInv hPop
+          have hT1 : determineTargetCore st1 recvTid = determineTargetCore st recvTid :=
+            endpointQueuePopHead_determineTargetCore_eq endpointId true st st1
+              recvTid recvTcb recvTid hObjInv hPop
+          have hT2 : determineTargetCore st2 recvTid = determineTargetCore st1 recvTid :=
+            storeTcbReceiveComplete_determineTargetCore_eq st1 st2 recvTid
+              (some (sendPayloadMessage st sender payload)) recvTid hInv1 hMsgR
+          have hChain := observableSlotsConfinedToCores_widen_cons
+            (observableSlotsConfinedToCores_trans
+              (endpointQueuePopHead_confinedToCores endpointId true st st1 recvTid hPop)
+              (storeTcbReceiveComplete_confinedToCores st1 st2 recvTid (some (sendPayloadMessage st sender payload)) hMsgR))
+            (wakeThread_confinedToCores st2 recvTid executingCore)
+          rw [hT2, hT1] at hChain
+          rw [← hRecv]
+          exact hChain
 
 /-- SM8.B.2: the WithCaps send leaves the bare send's run queues in place — every
 arm either *is* the bare send's post-state or is that state after an
 `ipcUnwrapCaps`, which preserves the scheduler. -/
 theorem endpointSendDualWithCapsOnCore_scheduler_eq (endpointId : SeLe4n.ObjId)
-    (sender : SeLe4n.ThreadId) (msg : IpcMessage) (endpointRights : AccessRightSet)
+    (sender : SeLe4n.ThreadId) (payload : SendPayload)
     (receiverSlotBase : SeLe4n.Slot)
     (executingCore : CoreId) (st : SystemState) :
-    (endpointSendDualWithCapsOnCore endpointId sender msg endpointRights
+    (endpointSendDualWithCapsOnCore endpointId sender payload
         receiverSlotBase executingCore st).1.scheduler
-      = (endpointSendDualOnCore endpointId sender { msg with capsGranted := endpointRights.mem AccessRight.grant } executingCore st).1.scheduler := by
+      = (endpointSendDualOnCore endpointId sender payload executingCore st).1.scheduler := by
   unfold endpointSendDualWithCapsOnCore
-  cases hSend : endpointSendDualOnCore endpointId sender { msg with capsGranted := endpointRights.mem AccessRight.grant } executingCore st with
+  cases hSend : endpointSendDualOnCore endpointId sender payload executingCore st with
   | mk stSend res =>
     cases res with
     | error e => rfl
@@ -1558,18 +1554,18 @@ theorem endpointSendDualWithCapsOnCore_scheduler_eq (endpointId : SeLe4n.ObjId)
       repeat' split
       all_goals first
         | rfl
-        | (rename_i h; exact ipcUnwrapCaps_preserves_scheduler _ _ _ _ _ _ _ h)
+        | (rename_i h; exact receiveTransferCaps_scheduler_eq h)
 
 /-- SM8.B.2: and the register banks, by the same case analysis. -/
 theorem endpointSendDualWithCapsOnCore_machine_eq (endpointId : SeLe4n.ObjId)
-    (sender : SeLe4n.ThreadId) (msg : IpcMessage) (endpointRights : AccessRightSet)
+    (sender : SeLe4n.ThreadId) (payload : SendPayload)
     (receiverSlotBase : SeLe4n.Slot)
     (executingCore : CoreId) (st : SystemState) :
-    (endpointSendDualWithCapsOnCore endpointId sender msg endpointRights
+    (endpointSendDualWithCapsOnCore endpointId sender payload
         receiverSlotBase executingCore st).1.machine
-      = (endpointSendDualOnCore endpointId sender { msg with capsGranted := endpointRights.mem AccessRight.grant } executingCore st).1.machine := by
+      = (endpointSendDualOnCore endpointId sender payload executingCore st).1.machine := by
   unfold endpointSendDualWithCapsOnCore
-  cases hSend : endpointSendDualOnCore endpointId sender { msg with capsGranted := endpointRights.mem AccessRight.grant } executingCore st with
+  cases hSend : endpointSendDualOnCore endpointId sender payload executingCore st with
   | mk stSend res =>
     cases res with
     | error e => rfl
@@ -1578,26 +1574,26 @@ theorem endpointSendDualWithCapsOnCore_machine_eq (endpointId : SeLe4n.ObjId)
       repeat' split
       all_goals first
         | rfl
-        | (rename_i h; exact ipcUnwrapCaps_preserves_machine _ _ _ _ _ _ _ h)
+        | (rename_i h; exact receiveTransferCaps_preserves_machine h)
 
 /-- SM8.B.2 (**the live unchecked `.send` bound**): the WithCaps cross-core send —
 the form `dispatchWithCap_send_delegates` says the live arm calls — is confined to
 the bare send's write set. The extra leg is `ipcUnwrapCaps`, which writes no core
 at all, so the two forms declare the same per-core footprint. -/
 theorem endpointSendDualWithCapsOnCore_confinedToCores (endpointId : SeLe4n.ObjId)
-    (sender : SeLe4n.ThreadId) (msg : IpcMessage) (endpointRights : AccessRightSet)
+    (sender : SeLe4n.ThreadId) (payload : SendPayload)
     (receiverSlotBase : SeLe4n.Slot)
     (executingCore : CoreId) (st : SystemState) (hObjInv : st.objects.invExt) :
     observableSlotsConfinedToCores st
-      (endpointSendDualWithCapsOnCore endpointId sender msg endpointRights
+      (endpointSendDualWithCapsOnCore endpointId sender payload
         receiverSlotBase executingCore st).1
       (endpointSendWriteSet st endpointId executingCore) := by
   have h := observableSlotsConfinedToCores_trans
-    (endpointSendDualOnCore_confinedToCores endpointId sender { msg with capsGranted := endpointRights.mem AccessRight.grant } executingCore st hObjInv)
+    (endpointSendDualOnCore_confinedToCores endpointId sender payload executingCore st hObjInv)
     (observableSlotsConfinedToCores_nil_of_scheduler_machine_eq
-      (endpointSendDualWithCapsOnCore_scheduler_eq endpointId sender msg endpointRights
+      (endpointSendDualWithCapsOnCore_scheduler_eq endpointId sender payload
         receiverSlotBase executingCore st)
-      (endpointSendDualWithCapsOnCore_machine_eq endpointId sender msg endpointRights
+      (endpointSendDualWithCapsOnCore_machine_eq endpointId sender payload
         receiverSlotBase executingCore st))
   simpa using h
 
@@ -1606,22 +1602,17 @@ is confined to the same set. Its three gates — two bounds checks and the
 `sender → endpoint` flow guard — each return the pre-state, which writes nothing;
 past them it *is* the unchecked form. -/
 theorem endpointSendCrossCoreDispatchChecked_confinedToCores (ctx : LabelingContext)
-    (endpointId : SeLe4n.ObjId) (sender : SeLe4n.ThreadId) (msg : IpcMessage)
-    (endpointRights : AccessRightSet)
+    (endpointId : SeLe4n.ObjId) (sender : SeLe4n.ThreadId) (payload : SendPayload)
     (receiverSlotBase : SeLe4n.Slot) (executingCore : CoreId) (st : SystemState)
     (hObjInv : st.objects.invExt) :
     observableSlotsConfinedToCores st
-      (endpointSendCrossCoreDispatchChecked ctx endpointId sender msg endpointRights
+      (endpointSendCrossCoreDispatchChecked ctx endpointId sender payload
         receiverSlotBase executingCore st).1
       (endpointSendWriteSet st endpointId executingCore) := by
   unfold endpointSendCrossCoreDispatchChecked
   split
+  · exact endpointSendDualWithCapsOnCore_confinedToCores endpointId sender payload
+      receiverSlotBase executingCore st hObjInv
   · exact observableSlotsConfinedToCores_of_eq _ rfl
-  · split
-    · exact observableSlotsConfinedToCores_of_eq _ rfl
-    · split
-      · exact endpointSendDualWithCapsOnCore_confinedToCores endpointId sender msg
-          endpointRights receiverSlotBase executingCore st hObjInv
-      · exact observableSlotsConfinedToCores_of_eq _ rfl
 
 end SeLe4n.Kernel

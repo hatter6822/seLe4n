@@ -144,6 +144,22 @@ def blockedSenderDecode (st : SystemState) (sender : SeLe4n.ThreadId) (tcb : TCB
   Architecture.RegisterDecode.decodeSyscallArgsFromState st sender
     SeLe4n.arm64DefaultLayout tcb.registerContext 32
 
+/-- WS-ZA ZA4.7: **the message a sender's frame holds**, given the decode of
+its saved registers and what its capability contributes: the body cut to the
+declared length (`extractMessageRegisters`), the capability's badge and grant
+right, and no capabilities (the transfer resolves those separately).  A frame
+that does not decode delivers no words.  The send that meets a waiting receiver
+and the receive that takes a blocked sender both read the message here, so the
+two arrival orders deliver the same words. -/
+@[inline] def senderFrameMessage (decode : Except KernelError SyscallDecodeResult)
+    (badge : Option SeLe4n.Badge) (grant : Bool) : IpcMessage :=
+  match decode with
+  | .error _ => { IpcMessage.empty with badge := badge, capsGranted := grant }
+  | .ok decoded =>
+      { registers := Architecture.RegisterDecode.extractMessageRegisters decoded.msgRegs
+          decoded.msgInfo,
+        caps := #[], badge := badge, capsGranted := grant }
+
 /-- WS-ZA ZA4.7: **the message a blocked sender holds**, given the decode of
 its saved frame.
 
@@ -166,14 +182,7 @@ definition. -/
     match tcb.pendingFault with
     | some tf => faultMessage tf.fault tf.context tcb.ipcBadgeView
     | none => { IpcMessage.empty with badge := tcb.ipcBadgeView }
-  else
-    match decode with
-    | .error _ =>
-        { IpcMessage.empty with badge := tcb.ipcBadgeView, capsGranted := tcb.ipcCanGrant }
-    | .ok decoded =>
-        { registers := Architecture.RegisterDecode.extractMessageRegisters decoded.msgRegs
-            decoded.msgInfo,
-          caps := #[], badge := tcb.ipcBadgeView, capsGranted := tcb.ipcCanGrant }
+  else senderFrameMessage decode tcb.ipcBadgeView tcb.ipcCanGrant
 
 /-- WS-ZA ZA4.7: **the message a blocked sender holds**, read at the
 rendezvous from where seL4 keeps it (`blockedSenderMessageOf` of the live
@@ -181,6 +190,25 @@ decode of its saved frame). -/
 def blockedSenderMessage (st : SystemState) (sender : SeLe4n.ThreadId) (tcb : TCB) :
     IpcMessage :=
   blockedSenderMessageOf tcb (blockedSenderDecode st sender tcb)
+
+/-- WS-ZA ZA4.7: **the capabilities a sender's frame asks to transfer**, as the
+CSpace root, the addresses and the root's depth they resolve against -- or
+`none` when it transfers nothing: no grant right, a frame that does not decode,
+no capability addresses, or a missing CSpace root.  The send that meets a
+waiting receiver and the receive that takes a blocked sender both resolve this
+request at the rendezvous (`receiveTransferCaps`), so no capability is looked up
+on the arm that blocks. -/
+def senderFrameCapRequest (st : SystemState) (sender : SeLe4n.ThreadId) (tcb : TCB)
+    (grant : Bool) : Option (SeLe4n.ObjId × Array SeLe4n.CPtr × Nat) :=
+  if !grant then none else
+  match blockedSenderDecode st sender tcb with
+  | .error _ => none
+  | .ok decoded =>
+      let addrs := Architecture.SyscallArgDecode.decodeExtraCapAddrs decoded
+      if addrs.isEmpty then none else
+      match st.getCNode? tcb.cspaceRoot with
+      | some rootCn => some (tcb.cspaceRoot, addrs, rootCn.depth)
+      | none => none
 
 /-- WS-ZA ZA4.7: **the capabilities a blocked sender asks to transfer**, as the
 CSpace root, the addresses and the root's depth they resolve against -- or
@@ -191,21 +219,13 @@ CSpace root.  `resolveExtraCaps` of the request is what the receive installs;
 footprint and its install read one answer. -/
 def blockedSenderCapRequest (st : SystemState) (sender : SeLe4n.ThreadId) (tcb : TCB) :
     Option (SeLe4n.ObjId × Array SeLe4n.CPtr × Nat) :=
-  if tcb.ipcFaultSend || !tcb.ipcCanGrant then none else
-  match blockedSenderDecode st sender tcb with
-  | .error _ => none
-  | .ok decoded =>
-      let addrs := Architecture.SyscallArgDecode.decodeExtraCapAddrs decoded
-      if addrs.isEmpty then none else
-      match st.getCNode? tcb.cspaceRoot with
-      | some rootCn => some (tcb.cspaceRoot, addrs, rootCn.depth)
-      | none => none
+  if tcb.ipcFaultSend then none else senderFrameCapRequest st sender tcb tcb.ipcCanGrant
 
 /-- WS-ZA ZA4.7: a blocked sender's message carries no capabilities -- the
 receive resolves them separately (`blockedSenderCapRequest`). -/
 @[simp] theorem blockedSenderMessage_caps (st : SystemState) (sender : SeLe4n.ThreadId)
     (tcb : TCB) : (blockedSenderMessage st sender tcb).caps = #[] := by
-  unfold blockedSenderMessage blockedSenderMessageOf
+  unfold blockedSenderMessage blockedSenderMessageOf senderFrameMessage
   split
   · split <;> rfl
   · split <;> rfl
@@ -215,7 +235,7 @@ budget, and a decoded body is cut to at most `maxMessageRegisters` words. -/
 theorem blockedSenderMessage_bounded (st : SystemState) (sender : SeLe4n.ThreadId)
     (tcb : TCB) : (blockedSenderMessage st sender tcb).bounded := by
   refine ⟨?_, by simp [maxExtraCaps]⟩
-  unfold blockedSenderMessage blockedSenderMessageOf
+  unfold blockedSenderMessage blockedSenderMessageOf senderFrameMessage
   split
   · split
     · exact Architecture.encodeFault_within_budget _ _
@@ -223,5 +243,89 @@ theorem blockedSenderMessage_bounded (st : SystemState) (sender : SeLe4n.ThreadI
   · split
     · simp [IpcMessage.empty]
     · exact Architecture.RegisterDecode.extractMessageRegisters_length _ _
+
+
+/-- WS-ZA ZA4.7: **what a send carries in from its capability** -- all a send
+or call is handed, as seL4's `sendIPC` is handed only the badge and the grant
+right.  The words are not part of it: they are in the sender's saved registers
+and IPC buffer, and whichever arm delivers them reads them there
+(`sendPayloadMessage`), so a send that meets a waiting receiver and one that
+blocks until a receive takes it deliver the same words.
+
+* `frame badge grant` -- an ordinary send: the message is the sender's frame
+  (`senderFrameMessage`) under its capability's badge and grant right.
+* `fault f ctx badge` -- the one message the kernel writes: a fault, delivered
+  under the handler capability's badge (`faultMessage`). -/
+inductive SendPayload where
+  | frame (badge : Option SeLe4n.Badge) (grant : Bool)
+  | fault (f : Fault) (ctx : FaultContext) (badge : Option SeLe4n.Badge)
+
+/-- The badge a send's capability carries. -/
+@[inline] def SendPayload.badge : SendPayload → Option SeLe4n.Badge
+  | .frame b _ => b
+  | .fault _ _ b => b
+
+/-- Whether a send may transfer capabilities: an ordinary send whose capability
+had the grant right; a fault never transfers authority. -/
+@[inline] def SendPayload.grant : SendPayload → Bool
+  | .frame _ g => g
+  | .fault _ _ _ => false
+
+/-- WS-ZA ZA4.7: the decode of a sender's saved frame, looked up by its id: a
+thread that does not exist has no frame, and its decode is a refusal. -/
+def senderFrameDecode (st : SystemState) (sender : SeLe4n.ThreadId) :
+    Except KernelError SyscallDecodeResult :=
+  match st.getTcb? sender with
+  | some tcb => blockedSenderDecode st sender tcb
+  | none => .error .objectNotFound
+
+/-- WS-ZA ZA4.7: **the message a send delivers** to a waiting receiver: the
+fault message for a fault, otherwise the sender's frame under its capability's
+badge and grant right -- the same read the receive that takes a blocked sender
+makes (`sendPayloadMessage_frame_eq_blockedSenderMessage`). -/
+@[inline] def sendPayloadMessage (st : SystemState) (sender : SeLe4n.ThreadId) :
+    SendPayload → IpcMessage
+  | .frame b g => senderFrameMessage (senderFrameDecode st sender) b g
+  | .fault f ctx b => faultMessage f ctx b
+
+/-- WS-ZA ZA4.7: **the capabilities a send transfers** to a waiting receiver:
+the frame's request (`senderFrameCapRequest`) under the capability's grant
+right, none for a fault. -/
+def sendPayloadCapRequest (st : SystemState) (sender : SeLe4n.ThreadId) (tcb : TCB) :
+    SendPayload → Option (SeLe4n.ObjId × Array SeLe4n.CPtr × Nat)
+  | .frame _ g => senderFrameCapRequest st sender tcb g
+  | .fault _ _ _ => none
+
+/-- WS-ZA ZA4.7: **both arrival orders deliver one message**: an ordinary send
+that blocks records its capability's badge and grant right (`TCB.setSendCap`),
+and the receive that takes it reads what the send to a waiting receiver
+delivers. -/
+theorem sendPayloadMessage_frame_eq_blockedSenderMessage (st : SystemState)
+    (sender : SeLe4n.ThreadId) (tcb : TCB) (badge : Option SeLe4n.Badge) (grant : Bool)
+    (hT : st.getTcb? sender = some tcb) :
+    blockedSenderMessageOf (tcb.setSendCap badge grant) (blockedSenderDecode st sender tcb) =
+      sendPayloadMessage st sender (.frame badge grant) := by
+  simp [blockedSenderMessageOf, sendPayloadMessage, senderFrameDecode, hT]
+
+/-- WS-ZA ZA4.7: a delivered message carries no capabilities. -/
+@[simp] theorem sendPayloadMessage_caps (st : SystemState) (sender : SeLe4n.ThreadId)
+    (p : SendPayload) : (sendPayloadMessage st sender p).caps = #[] := by
+  cases p with
+  | frame b g =>
+    simp only [sendPayloadMessage, senderFrameMessage]
+    split <;> rfl
+  | fault f ctx b => rfl
+
+/-- WS-ZA ZA4.7: and it is within the payload bound. -/
+theorem sendPayloadMessage_bounded (st : SystemState) (sender : SeLe4n.ThreadId)
+    (p : SendPayload) : (sendPayloadMessage st sender p).bounded := by
+  cases p with
+  | frame b g =>
+    refine ⟨?_, by simp [maxExtraCaps]⟩
+    simp only [sendPayloadMessage, senderFrameMessage]
+    split
+    · simp [IpcMessage.empty]
+    · exact Architecture.RegisterDecode.extractMessageRegisters_length _ _
+  | fault f ctx b => exact faultMessage_bounded f ctx b
 
 end SeLe4n.Kernel

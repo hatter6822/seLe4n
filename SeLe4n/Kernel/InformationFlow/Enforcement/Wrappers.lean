@@ -32,21 +32,15 @@ def endpointSendDualChecked
     (ctx : LabelingContext)
     (endpointId : SeLe4n.ObjId)
     (sender : SeLe4n.ThreadId)
-    (msg : IpcMessage)
-    (endpointRights : AccessRightSet)
+    (payload : SendPayload)
     (receiverSlotBase : SeLe4n.Slot) : Kernel CapTransferSummary :=
   fun st =>
-    -- WS-H12d/A-09: Enforce message payload bounds before flow check
-    if msg.registers.size > maxMessageRegisters then .error .ipcMessageTooLarge
-    else if msg.caps.size > maxExtraCaps then .error .ipcMessageTooManyCaps
-    else
     let senderLabel := ctx.threadLabelOf sender
     let endpointLabel := ctx.endpointLabelOf endpointId
     -- WS-SM SM8.C: the global lattice check AND this endpoint's configured
     -- override. A conjunction, so the override can only narrow.
     if endpointFlowGate ctx endpointId senderLabel endpointLabel then
-      endpointSendDualWithCaps endpointId sender msg endpointRights
-        receiverSlotBase st
+      endpointSendDualWithCaps endpointId sender payload receiverSlotBase st
     else
       .error .flowDenied
 
@@ -79,8 +73,7 @@ theorem endpointSendDualChecked_eq_endpointSendDualWithCaps_when_allowed
     (ctx : LabelingContext)
     (endpointId : SeLe4n.ObjId)
     (sender : SeLe4n.ThreadId)
-    (msg : IpcMessage)
-    (endpointRights : AccessRightSet)
+    (payload : SendPayload)
     (receiverSlotBase : SeLe4n.Slot)
     (st : SystemState)
     (hFlow : securityFlowsTo (ctx.threadLabelOf sender)
@@ -90,50 +83,30 @@ theorem endpointSendDualChecked_eq_endpointSendDualWithCaps_when_allowed
     -- `endpointOverrideAllows_default` discharges it where none is configured.
     (hOverride : endpointOverrideAllows ctx endpointId (ctx.threadLabelOf sender)
                (ctx.endpointLabelOf endpointId) = true) :
-    endpointSendDualChecked ctx endpointId sender msg endpointRights
-        receiverSlotBase st =
-      endpointSendDualWithCaps endpointId sender msg endpointRights
-        receiverSlotBase st := by
+    endpointSendDualChecked ctx endpointId sender payload receiverSlotBase st =
+      endpointSendDualWithCaps endpointId sender payload receiverSlotBase st := by
   have hGate := endpointFlowGate_of ctx endpointId _ _ hFlow hOverride
-  unfold endpointSendDualChecked
-  -- WS-H12d: Bounds checks are first; when both fail, we reach the flow gate
-  -- which succeeds (hGate), delegating to endpointSendDualWithCaps unchanged
-  simp only []
-  split
-  · -- bounds1 fails: LHS = .error .ipcMessageTooLarge
-    -- endpointSendDualWithCaps delegates to endpointSendDual which checks bounds
-    unfold endpointSendDualWithCaps endpointSendDual SystemState.getObject?; simp [*]
-  · split
-    · unfold endpointSendDualWithCaps endpointSendDual SystemState.getObject?; simp [*]
-    · -- The gate branch: `hGate` in context already reduced the `ite` above, so
-      -- what remains is a reflexivity. Verified load-bearing: dropping `hGate`
-      -- leaves the `if endpointFlowGate … then … else .flowDenied` unreduced and
-      -- `rfl` fails, so `hOverride` is a real premise rather than decoration.
-      rfl
+  -- Verified load-bearing: dropping `hGate` leaves the
+  -- `if endpointFlowGate … then … else .flowDenied` unreduced, so `hOverride`
+  -- is a real premise rather than decoration.
+  simp only [endpointSendDualChecked, hGate, ↓reduceIte]
 
-/-- WS-G7/WS-H12d/AH1-C-2: When the policy denies flow and the message is
-within bounds, the dual-queue checked send returns `flowDenied` without
-modifying state.
-WS-H12d: Bounds checks precede the flow check, so the theorem requires
-`msg.checkBounds = true` to guarantee the flow-denied path is reached. -/
+/-- WS-G7/AH1-C-2: When the policy denies flow, the dual-queue checked send
+returns `flowDenied` without modifying state.  WS-ZA ZA4.7: the send carries
+no message to bound -- its words are its frame's, cut to at most
+`maxMessageRegisters` -- so the flow gate is its first check. -/
 theorem endpointSendDualChecked_flowDenied
     (ctx : LabelingContext)
     (endpointId : SeLe4n.ObjId)
     (sender : SeLe4n.ThreadId)
-    (msg : IpcMessage)
-    (endpointRights : AccessRightSet)
+    (payload : SendPayload)
     (receiverSlotBase : SeLe4n.Slot)
     (st : SystemState)
-    (hBounds : msg.checkBounds = true)
     (hDeny : securityFlowsTo (ctx.threadLabelOf sender)
                (ctx.endpointLabelOf endpointId) = false) :
-    endpointSendDualChecked ctx endpointId sender msg endpointRights
-        receiverSlotBase st =
+    endpointSendDualChecked ctx endpointId sender payload receiverSlotBase st =
       .error .flowDenied := by
   unfold endpointSendDualChecked
-  have ⟨hR, hC⟩ := (IpcMessage.checkBounds_iff_bounded msg).mp hBounds
-  simp only [show ¬(maxMessageRegisters < msg.registers.size) from Nat.not_lt.mpr hR, ite_false]
-  simp only [show ¬(maxExtraCaps < msg.caps.size) from Nat.not_lt.mpr hC, ite_false]
   -- WS-SM SM8.C: a denied global flow denies the gate whatever the override
   -- says, so this theorem keeps the hypothesis it had before the gate existed.
   simp [endpointFlowGate_false_of_securityFlowsTo_false ctx endpointId _ _ hDeny]
@@ -496,24 +469,18 @@ state change. WS-H12d: Bounds checks precede the flow check but also produce
 errors, so the conclusion ¬∃ r st' still holds unconditionally. -/
 theorem endpointSendDualChecked_denied_preserves_state
     (ctx : LabelingContext) (endpointId : SeLe4n.ObjId)
-    (sender : SeLe4n.ThreadId) (msg : IpcMessage)
-    (endpointRights : AccessRightSet)
+    (sender : SeLe4n.ThreadId) (payload : SendPayload)
     (receiverSlotBase : SeLe4n.Slot)
     (st : SystemState)
     (hDeny : securityFlowsTo (ctx.threadLabelOf sender)
                (ctx.endpointLabelOf endpointId) = false) :
     ¬∃ (r : CapTransferSummary) (st' : SystemState),
-        endpointSendDualChecked ctx endpointId
-        sender msg endpointRights receiverSlotBase st =
+        endpointSendDualChecked ctx endpointId sender payload receiverSlotBase st =
         .ok (r, st') := by
   intro ⟨r, st', h⟩
-  unfold endpointSendDualChecked at h
-  -- WS-H12d: Eliminate bounds-check if-branches (error cases contradict h : ... = .ok ...)
-  simp only [show ¬(maxMessageRegisters < msg.registers.size) from by
-    intro hc; simp [hc] at h, ↓reduceIte] at h
-  simp only [show ¬(maxExtraCaps < msg.caps.size) from by
-    intro hc; simp [hc] at h, ↓reduceIte] at h
-  simp [endpointFlowGate_false_of_securityFlowsTo_false ctx endpointId _ _ hDeny] at h
+  rw [endpointSendDualChecked_flowDenied ctx endpointId sender payload receiverSlotBase st
+    hDeny] at h
+  cases h
 
 /-- When the policy denies flow, `cspaceMintChecked` produces no state change. -/
 theorem cspaceMintChecked_denied_preserves_state
@@ -530,46 +497,30 @@ theorem cspaceMintChecked_denied_preserves_state
 -- WS-E5/M-07: Enforcement sufficiency theorems (complete disjunction)
 -- ============================================================================
 
-/-- WS-H12d/AH1: `endpointSendDualChecked` either returns a bounds error,
-delegates to WithCaps (when flow allowed), or returns `flowDenied` (when denied).
-This is the complete disjunction of enforcement outcomes.
-AH1: Updated target from `endpointSendDual` to `endpointSendDualWithCaps`. -/
+/-- AH1: `endpointSendDualChecked` either delegates to WithCaps (when flow
+allowed) or returns `flowDenied` (when denied).  This is the complete
+disjunction of enforcement outcomes; WS-ZA ZA4.7 retired the two bounds
+outcomes with the message argument they checked. -/
 theorem enforcement_sufficiency_endpointSendDual
     (ctx : LabelingContext) (endpointId : SeLe4n.ObjId)
-    (sender : SeLe4n.ThreadId) (msg : IpcMessage)
-    (endpointRights : AccessRightSet)
+    (sender : SeLe4n.ThreadId) (payload : SendPayload)
     (receiverSlotBase : SeLe4n.Slot)
     (st : SystemState) :
-    (msg.registers.size > maxMessageRegisters ∧
-       endpointSendDualChecked ctx endpointId sender msg endpointRights
-         receiverSlotBase st = .error .ipcMessageTooLarge) ∨
-    (msg.caps.size > maxExtraCaps ∧
-       endpointSendDualChecked ctx endpointId sender msg endpointRights
-         receiverSlotBase st = .error .ipcMessageTooManyCaps) ∨
     -- WS-SM SM8.C: the two flow disjuncts are stated against `endpointFlowGate`,
-    -- the predicate the wrapper actually branches on. Leaving them on
-    -- `securityFlowsTo` would make this theorem describe a check the code no
-    -- longer runs, and its "flow allowed ⇒ delegates" arm would be false for a
-    -- configured override.
+    -- the predicate the wrapper actually branches on.
     (endpointFlowGate ctx endpointId (ctx.threadLabelOf sender)
         (ctx.endpointLabelOf endpointId) = true ∧
-       endpointSendDualChecked ctx endpointId sender msg endpointRights
-         receiverSlotBase st =
-       endpointSendDualWithCaps endpointId sender msg endpointRights
-         receiverSlotBase st) ∨
+       endpointSendDualChecked ctx endpointId sender payload receiverSlotBase st =
+       endpointSendDualWithCaps endpointId sender payload receiverSlotBase st) ∨
     (endpointFlowGate ctx endpointId (ctx.threadLabelOf sender)
         (ctx.endpointLabelOf endpointId) = false ∧
-       endpointSendDualChecked ctx endpointId sender msg endpointRights
-         receiverSlotBase st = .error .flowDenied) := by
-  unfold endpointSendDualChecked endpointSendDualWithCaps
-  by_cases hR : maxMessageRegisters < msg.registers.size
-  · left; exact ⟨hR, by simp [hR]⟩
-  · by_cases hC : maxExtraCaps < msg.caps.size
-    · right; left; exact ⟨hC, by simp [hR, hC]⟩
-    · cases hFlow : endpointFlowGate ctx endpointId (ctx.threadLabelOf sender)
-          (ctx.endpointLabelOf endpointId) with
-      | true => right; right; left; exact ⟨rfl, by simp [hR, hC, hFlow]⟩
-      | false => right; right; right; exact ⟨rfl, by simp [hR, hC, hFlow]⟩
+       endpointSendDualChecked ctx endpointId sender payload receiverSlotBase st =
+         .error .flowDenied) := by
+  unfold endpointSendDualChecked
+  cases hFlow : endpointFlowGate ctx endpointId (ctx.threadLabelOf sender)
+      (ctx.endpointLabelOf endpointId) with
+  | true => left; exact ⟨rfl, by simp [hFlow]⟩
+  | false => right; exact ⟨rfl, by simp [hFlow]⟩
 
 /-- `cspaceMintChecked` either delegates to CDT-tracked mint or returns `flowDenied`. -/
 theorem enforcement_sufficiency_cspaceMint
@@ -720,16 +671,14 @@ def endpointCallChecked
     (ctx : LabelingContext)
     (endpointId : SeLe4n.ObjId)
     (caller : SeLe4n.ThreadId)
-    (msg : IpcMessage)
-    (endpointRights : AccessRightSet)
+    (payload : SendPayload)
     (receiverSlotBase : SeLe4n.Slot) : Kernel CapTransferSummary :=
   fun st =>
     let callerLabel := ctx.threadLabelOf caller
     let endpointLabel := ctx.endpointLabelOf endpointId
     -- WS-SM SM8.C: global check ∧ this endpoint's override.
     if endpointFlowGate ctx endpointId callerLabel endpointLabel then
-      endpointCallWithCaps endpointId caller msg endpointRights
-        receiverSlotBase st
+      endpointCallWithCaps endpointId caller payload receiverSlotBase st
     else
       .error .flowDenied
 

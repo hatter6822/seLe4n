@@ -377,27 +377,14 @@ theorem abiEntryGate_components (decoded : SyscallDecodeResult) (tid : SeLe4n.Th
               subst hG
               exact ⟨rfl, rootCn, hRoot, rfl⟩
 
-/-- **WS-RR RR7.12**: the message a sending arm's footprint is a function of.
-
-Built exactly as the live `.send` / `.call` arms build theirs — the same
-`extractMessageRegisters`, the same `decodeExtraCapAddrs`, the same
-`resolveExtraCaps` at the same root, depth and grant bit — and then the
-resolution's **state is discarded**.
-
-Discarding it is the point.  `resolveExtraCaps` mints a CDT node per resolved
-source slot, which is a commitment; the footprint only needs to know *whether*
-capabilities travel and *where they land*, which is a function of the resolved
-array.  Resolving twice therefore costs a discarded allocation in the footprint
-resolver and mints exactly once in the transition, rather than the resolver
-committing state the bracket has not yet acquired locks for. -/
-def abiEntryMessage (decoded : SyscallDecodeResult) (gate : SyscallGate)
-    (cap : Capability) (s : SystemState) : IpcMessage :=
-  let extraCapAddrs := Architecture.SyscallArgDecode.decodeExtraCapAddrs decoded
-  let resolvedCaps :=
-    (resolveExtraCaps gate.cspaceRoot extraCapAddrs gate.capDepth (cap.rights.mem .grant) s).1
-  { registers := Architecture.RegisterDecode.extractMessageRegisters decoded.msgRegs decoded.msgInfo,
-    caps := resolvedCaps, badge := cap.badge,
-    capsGranted := cap.rights.mem .grant }
+/-- **WS-RR RR7.12 / WS-ZA ZA4.7**: what a sending arm's footprint is a function
+of: exactly what the live `.send` / `.call` arms hand the transition -- the
+invoked capability's badge and grant right.  Whether capabilities travel and
+where they land is read from the sender's frame at the state the footprint is
+resolved in (`sendCapRequest`, `rendezvousCapsDestination?`), so nothing is
+resolved, and no derivation node minted, before the bracket holds its locks. -/
+def abiEntryPayload (cap : Capability) : SendPayload :=
+  .frame cap.badge (cap.rights.mem .grant)
 
 /-- **WS-RR RR7.12**: the operands the declared-footprint resolver takes, read
 off the capability the decode addresses.
@@ -410,9 +397,9 @@ dispatch arm names:
   through `validateThreadIdArg` before its handler runs.  Declaring a footprint
   for a syscall the dispatch will reject would have the bracket queue on locks
   for a call that cannot execute;
-* endpoint-directed with a message (`.send`, `.call`) — the endpoint the
-  capability names plus `abiEntryMessage`, because whether the receiver's CSpace
-  root and the state-level lock are members turns on what the message carries;
+* endpoint-directed with a payload (`.send`, `.call`) — the endpoint the
+  capability names plus `abiEntryPayload`, because whether the receiver's CSpace
+  root and the state-level lock are members turns on what the send transfers;
 * endpoint-directed without one (`.receive`, `.notificationSignal`,
   `.notificationWait`) — a receive's capabilities come from the *parked sender*,
   which the endpoint already names, and the two notification arms carry none.
@@ -430,8 +417,7 @@ domain's transition — `declaredSchedulerLockSetForAbiEntry_shares_decode` is t
 statement that it is not.  Two things follow.  Four arms above gained the
 operands the *scheduler* footprints read and the object domain ignores, so their
 object-domain answers are byte-identical to the pre-C4b ones: `.call` the
-invoked capability's rights and the receiver's slot base (its write set re-runs
-the dispatch), `.reply` the `MessageInfo` and register payload `decodeFaultReply`
+receiver's slot base (its write set re-runs the dispatch), `.reply` the `MessageInfo` and register payload `decodeFaultReply`
 reads to tell a restart from an abandon, `.replyRecv` the reply *payload* badged
 with the reply capability's own badge, and `.tcbSetAffinity` the destination core
 — whose own `Option` is the unpin request, so it must not be collapsed with "not
@@ -465,21 +451,15 @@ def abiEntryLockOperands (decoded : SyscallDecodeResult) (tid : SeLe4n.ThreadId)
           | none => none
           | some valid => some (.ofThreadTarget tid valid.val)
       | .send, .object epId =>
-          some { SyscallLockOperands.ofObjectTarget tid epId
-                   (some (abiEntryMessage decoded gate cap s)) with
-                 extraCapAddrs := Architecture.SyscallArgDecode.decodeExtraCapAddrs decoded }
-      -- **WS-RR RR8.12 Cut C4b**: `.call` additionally carries the invoked
-      -- capability's **rights** and the receiver's **slot base**, which are what
-      -- the arm's SCHEDULER-domain footprint needs — `endpointCallDispatchWriteSet`
-      -- re-runs the dispatch, and the live arm hands it exactly `cap.rights` and
-      -- `decoded.capRecvSlot`.  The object domain ignores both, so its answer
-      -- here is byte-identical to the pre-C4b one.
+          some (SyscallLockOperands.ofObjectTarget tid epId (some (abiEntryPayload cap)))
+      -- **WS-RR RR8.12 Cut C4b**: `.call` additionally carries the receiver's
+      -- **slot base**, which the arm's SCHEDULER-domain footprint needs —
+      -- `endpointCallDispatchWriteSet` re-runs the dispatch, and the live arm
+      -- hands it exactly `decoded.capRecvSlot`.  The object domain ignores it.
       | .call, .object epId =>
           some { caller := tid, targetObject := some epId,
-                 message := some (abiEntryMessage decoded gate cap s),
-                 endpointRights := some cap.rights,
-                 receiverSlotBase := some decoded.capRecvSlot,
-                 extraCapAddrs := Architecture.SyscallArgDecode.decodeExtraCapAddrs decoded }
+                 payload := some (abiEntryPayload cap),
+                 receiverSlotBase := some decoded.capRecvSlot }
       | .receive, .object epId =>
           match resolveRecvReplyId gate decoded s with
           | .error _ => none

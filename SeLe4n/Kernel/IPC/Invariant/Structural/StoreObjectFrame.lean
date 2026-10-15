@@ -315,9 +315,9 @@ theorem linkServerStashedReply_preserves_allPendingMessagesBounded
 Requires freshness preconditions for the enqueue path. -/
 theorem endpointSendDual_preserves_dualQueueSystemInvariant
     (endpointId : SeLe4n.ObjId) (sender : SeLe4n.ThreadId)
-    (msg : IpcMessage) (st st' : SystemState)
+    (payload : SendPayload) (st st' : SystemState)
     (hObjInv : st.objects.invExt)
-    (hStep : (endpointSendDual endpointId sender msg) st = .ok ((), st'))
+    (hStep : (endpointSendDual endpointId sender payload) st = .ok ((), st'))
     (hInv : dualQueueSystemInvariant st)
     (hFreshSender : ∀ (epId : SeLe4n.ObjId) (ep : Endpoint),
       st.objects[epId]? = some (.endpoint ep) →
@@ -334,11 +334,6 @@ theorem endpointSendDual_preserves_dualQueueSystemInvariant
           ep'.receiveQ.tail ≠ some tailTid)) :
     dualQueueSystemInvariant st' := by
   unfold endpointSendDual SystemState.getObject? at hStep
-  -- WS-H12d: Eliminate bounds-check if-branches (error cases contradict hStep : ... = .ok ...)
-  simp only [show ¬(maxMessageRegisters < msg.registers.size) from by
-    intro h; simp [h] at hStep, ↓reduceIte] at hStep
-  simp only [show ¬(maxExtraCaps < msg.caps.size) from by
-    intro h; simp [h] at hStep, ↓reduceIte] at hStep
   cases hObj : st.objects[endpointId]? with
   | none => simp [hObj] at hStep
   | some obj =>
@@ -360,7 +355,7 @@ theorem endpointSendDual_preserves_dualQueueSystemInvariant
         | error e => simp [hSnd, hPop] at hStep
         | ok pair =>
           simp only [hSnd, hPop] at hStep
-          cases hStore : storeTcbReceiveComplete pair.2.2 pair.1 (some msg) with
+          cases hStore : storeTcbReceiveComplete pair.2.2 pair.1 (some (sendPayloadMessage st sender payload)) with
           | error e => simp [hStore] at hStep
           | ok st2 =>
             simp only [hStore, Except.ok.injEq, Prod.mk.injEq] at hStep
@@ -372,7 +367,7 @@ theorem endpointSendDual_preserves_dualQueueSystemInvariant
               endpointId true st stPop rcvr headTcb1 hObjInv hPop
             exact ensureRunnable_preserves_dualQueueSystemInvariant _ _
               (storeTcbReceiveComplete_preserves_dualQueueSystemInvariant
-                stPop st2 rcvr (some msg) hObjInv1 hStore hInv1)
+                stPop st2 rcvr (some (sendPayloadMessage st sender payload)) hObjInv1 hStore hInv1)
       | none =>
         -- Path B: enqueue sender, store message, block
         simp only [hHead] at hStep
@@ -739,9 +734,9 @@ theorem endpointReplyRecv_preserves_dualQueueSystemInvariant
 Requires freshness preconditions for the enqueue path. -/
 theorem endpointCall_preserves_dualQueueSystemInvariant
     (endpointId : SeLe4n.ObjId) (caller : SeLe4n.ThreadId)
-    (msg : IpcMessage) (st st' : SystemState)
+    (payload : SendPayload) (st st' : SystemState)
     (hObjInv : st.objects.invExt)
-    (hStep : (endpointCall endpointId caller msg) st = .ok ((), st'))
+    (hStep : (endpointCall endpointId caller payload) st = .ok ((), st'))
     (hInv : dualQueueSystemInvariant st)
     (hFreshCaller : ∀ (epId : SeLe4n.ObjId) (ep : Endpoint),
       st.objects[epId]? = some (.endpoint ep) →
@@ -758,11 +753,6 @@ theorem endpointCall_preserves_dualQueueSystemInvariant
           ep'.receiveQ.tail ≠ some tailTid)) :
     dualQueueSystemInvariant st' := by
   unfold endpointCall SystemState.getObject? at hStep
-  -- WS-H12d: Eliminate bounds-check if-branches (error cases contradict hStep : ... = .ok ...)
-  simp only [show ¬(maxMessageRegisters < msg.registers.size) from by
-    intro h; simp [h] at hStep, ↓reduceIte] at hStep
-  simp only [show ¬(maxExtraCaps < msg.caps.size) from by
-    intro h; simp [h] at hStep, ↓reduceIte] at hStep
   cases hObj : st.objects[endpointId]? with
   | none => simp [hObj] at hStep
   | some obj =>
@@ -782,14 +772,14 @@ theorem endpointCall_preserves_dualQueueSystemInvariant
             _ _ _ _ _ hObjInv hPop hInv
           have hObjInvPop1 := endpointQueuePopHead_preserves_objects_invExt
             endpointId true st pair.2.2 pair.1 pair.2.1 hObjInv hPop
-          cases hStore1 : storeTcbIpcStateAndMessage pair.2.2 pair.1 .ready (some msg) with
+          cases hStore1 : storeTcbIpcStateAndMessage pair.2.2 pair.1 .ready (some (sendPayloadMessage st caller payload)) with
           | error e => simp [hStore1] at hStep
           | ok st2 =>
             simp only [hStore1] at hStep
             have hInv2 := storeTcbIpcStateAndMessage_preserves_dualQueueSystemInvariant
-              pair.2.2 st2 pair.1 .ready (some msg) hObjInvPop1 hStore1 hInv1
+              pair.2.2 st2 pair.1 .ready (some (sendPayloadMessage st caller payload)) hObjInvPop1 hStore1 hInv1
             have hObjInvSt2 := storeTcbIpcStateAndMessage_preserves_objects_invExt
-              pair.2.2 st2 pair.1 .ready (some msg) hObjInvPop1 hStore1
+              pair.2.2 st2 pair.1 .ready (some (sendPayloadMessage st caller payload)) hObjInvPop1 hStore1
             have hObjInvEns2 : (ensureRunnable st2 pair.1).objects.invExt :=
               ensureRunnable_objects_invExt st2 pair.1 hObjInvSt2
             have hInv3 := ensureRunnable_preserves_dualQueueSystemInvariant st2 pair.1 hInv2
@@ -2177,17 +2167,13 @@ Path A: PopHead + storeTcbIpcStateAndMessage(receiver, msg) + ensureRunnable.
 Path B: Enqueue + storeTcbIpcStateAndMessage(sender, msg) + removeRunnable. -/
 theorem endpointSendDual_preserves_allPendingMessagesBounded
     (st st' : SystemState) (endpointId : SeLe4n.ObjId)
-    (sender : SeLe4n.ThreadId) (msg : IpcMessage)
+    (sender : SeLe4n.ThreadId) (payload : SendPayload)
     (hInv : allPendingMessagesBounded st)
     (hObjInv : st.objects.invExt)
-    (hStep : endpointSendDual endpointId sender msg st = .ok ((), st')) :
+    (hStep : endpointSendDual endpointId sender payload st = .ok ((), st')) :
     allPendingMessagesBounded st' := by
   unfold endpointSendDual SystemState.getObject? at hStep
-  have hReg : ¬(maxMessageRegisters < msg.registers.size) := by intro h; simp [h] at hStep
-  simp only [hReg, ↓reduceIte] at hStep
-  have hCap : ¬(maxExtraCaps < msg.caps.size) := by intro h; simp [h] at hStep
-  simp only [hCap, ↓reduceIte] at hStep
-  have hMsgBounded : msg.bounded := ⟨by omega, by omega⟩
+  have hMsgBounded := sendPayloadMessage_bounded st sender payload
   cases hObj : st.objects[endpointId]? with
   | none => simp [hObj] at hStep
   | some obj =>
@@ -2213,7 +2199,7 @@ theorem endpointSendDual_preserves_allPendingMessagesBounded
             endpointId true st stPop receiver headTcb hObjInv hPop hInv
           have hObjInv1 := endpointQueuePopHead_preserves_objects_invExt
             endpointId true st stPop receiver headTcb hObjInv hPop
-          cases hStore : storeTcbReceiveComplete stPop receiver (some msg) with
+          cases hStore : storeTcbReceiveComplete stPop receiver (some (sendPayloadMessage st sender payload)) with
           | error e => simp [hStore] at hStep
           | ok st2 =>
             simp only [hStore, Except.ok.injEq, Prod.mk.injEq] at hStep
@@ -2246,16 +2232,12 @@ theorem endpointSendDual_preserves_allPendingMessagesBounded
 All steps store TCBs or endpoints (not notifications, not CNodes). -/
 theorem endpointSendDual_preserves_badgeWellFormed
     (st st' : SystemState) (endpointId : SeLe4n.ObjId)
-    (sender : SeLe4n.ThreadId) (msg : IpcMessage)
+    (sender : SeLe4n.ThreadId) (payload : SendPayload)
     (hInv : badgeWellFormed st)
     (hObjInv : st.objects.invExt)
-    (hStep : endpointSendDual endpointId sender msg st = .ok ((), st')) :
+    (hStep : endpointSendDual endpointId sender payload st = .ok ((), st')) :
     badgeWellFormed st' := by
   unfold endpointSendDual SystemState.getObject? at hStep
-  have hReg : ¬(maxMessageRegisters < msg.registers.size) := by intro h; simp [h] at hStep
-  simp only [hReg, ↓reduceIte] at hStep
-  have hCap : ¬(maxExtraCaps < msg.caps.size) := by intro h; simp [h] at hStep
-  simp only [hCap, ↓reduceIte] at hStep
   cases hObj : st.objects[endpointId]? with
   | none => simp [hObj] at hStep
   | some obj =>
@@ -2281,7 +2263,7 @@ theorem endpointSendDual_preserves_badgeWellFormed
             endpointId true st stPop receiver headTcb hObjInv hPop hInv
           have hObjInv1 := endpointQueuePopHead_preserves_objects_invExt
             endpointId true st stPop receiver headTcb hObjInv hPop
-          cases hStore : storeTcbReceiveComplete stPop receiver (some msg) with
+          cases hStore : storeTcbReceiveComplete stPop receiver (some (sendPayloadMessage st sender payload)) with
           | error e => simp [hStore] at hStep
           | ok st2 =>
             simp only [hStore, Except.ok.injEq, Prod.mk.injEq] at hStep
@@ -2633,17 +2615,13 @@ Path A: PopHead + storeTcbIpcStateAndMessage(receiver, msg) + ensureRunnable +
 Path B: Enqueue + storeTcbIpcStateAndMessage(caller, msg) + removeRunnable. -/
 theorem endpointCall_preserves_allPendingMessagesBounded
     (st st' : SystemState) (endpointId : SeLe4n.ObjId)
-    (caller : SeLe4n.ThreadId) (msg : IpcMessage)
+    (caller : SeLe4n.ThreadId) (payload : SendPayload)
     (hInv : allPendingMessagesBounded st)
     (hObjInv : st.objects.invExt)
-    (hStep : endpointCall endpointId caller msg st = .ok ((), st')) :
+    (hStep : endpointCall endpointId caller payload st = .ok ((), st')) :
     allPendingMessagesBounded st' := by
   unfold endpointCall SystemState.getObject? at hStep
-  have hReg : ¬(maxMessageRegisters < msg.registers.size) := by intro h; simp [h] at hStep
-  simp only [hReg, ↓reduceIte] at hStep
-  have hCap : ¬(maxExtraCaps < msg.caps.size) := by intro h; simp [h] at hStep
-  simp only [hCap, ↓reduceIte] at hStep
-  have hMsgBounded : msg.bounded := ⟨by omega, by omega⟩
+  have hMsgBounded := sendPayloadMessage_bounded st caller payload
   cases hObj : st.objects[endpointId]? with
   | none => simp [hObj] at hStep
   | some obj =>
@@ -2663,7 +2641,7 @@ theorem endpointCall_preserves_allPendingMessagesBounded
             endpointId true st stPop receiver _tcb hObjInv hPop hInv
           have hObjInv1 := endpointQueuePopHead_preserves_objects_invExt
             endpointId true st stPop receiver _tcb hObjInv hPop
-          cases hStore : storeTcbIpcStateAndMessage stPop receiver .ready (some msg) with
+          cases hStore : storeTcbIpcStateAndMessage stPop receiver .ready (some (sendPayloadMessage st caller payload)) with
           | error e => simp [hStore] at hStep
           | ok st2 =>
             simp only [hStore] at hStep
@@ -2715,16 +2693,12 @@ theorem endpointCall_preserves_allPendingMessagesBounded
 /-- U4-K: endpointCall preserves badgeWellFormed. -/
 theorem endpointCall_preserves_badgeWellFormed
     (st st' : SystemState) (endpointId : SeLe4n.ObjId)
-    (caller : SeLe4n.ThreadId) (msg : IpcMessage)
+    (caller : SeLe4n.ThreadId) (payload : SendPayload)
     (hInv : badgeWellFormed st)
     (hObjInv : st.objects.invExt)
-    (hStep : endpointCall endpointId caller msg st = .ok ((), st')) :
+    (hStep : endpointCall endpointId caller payload st = .ok ((), st')) :
     badgeWellFormed st' := by
   unfold endpointCall SystemState.getObject? at hStep
-  have hReg : ¬(maxMessageRegisters < msg.registers.size) := by intro h; simp [h] at hStep
-  simp only [hReg, ↓reduceIte] at hStep
-  have hCap : ¬(maxExtraCaps < msg.caps.size) := by intro h; simp [h] at hStep
-  simp only [hCap, ↓reduceIte] at hStep
   cases hObj : st.objects[endpointId]? with
   | none => simp [hObj] at hStep
   | some obj =>
@@ -2744,7 +2718,7 @@ theorem endpointCall_preserves_badgeWellFormed
             endpointId true st stPop receiver _tcb hObjInv hPop hInv
           have hObjInv1 := endpointQueuePopHead_preserves_objects_invExt
             endpointId true st stPop receiver _tcb hObjInv hPop
-          cases hStore : storeTcbIpcStateAndMessage stPop receiver .ready (some msg) with
+          cases hStore : storeTcbIpcStateAndMessage stPop receiver .ready (some (sendPayloadMessage st caller payload)) with
           | error e => simp [hStore] at hStep
           | ok st2 =>
             simp only [hStore] at hStep

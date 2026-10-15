@@ -60,9 +60,8 @@ family, and they are answered differently:
   them from `ipcInvariantFull` alone.
 
 What this module deliberately does **not** claim is the argument-shaped
-conditions (`messageCapBadgesValid msg`, reply-object freshness): those are
-about a syscall's arguments, not about the state, and belong to whatever
-resolves those arguments.
+conditions (reply-object freshness): those are about a syscall's arguments,
+not about the state, and belong to whatever resolves those arguments.
 -/
 
 namespace SeLe4n.Kernel
@@ -759,14 +758,14 @@ theorem notificationHead_serverFree {st : SystemState} (hN : notificationWaiterC
 /-- **The live call carries the reply-waiter queues**, its side conditions read
 off the reachable-state pack and the running caller. -/
 theorem endpointCallCrossCoreDispatch_preserves_replyWaitersConsistent_of_reachable
-    (endpointId : SeLe4n.ObjId) (caller : SeLe4n.ThreadId) (msg : IpcMessage)
-    (rights : AccessRightSet) (base : SeLe4n.Slot) (c : CoreId) (st : SystemState)
+    (endpointId : SeLe4n.ObjId) (caller : SeLe4n.ThreadId) (payload : SendPayload)
+    (base : SeLe4n.Slot) (c : CoreId) (st : SystemState)
     (hReach : ipcReachable st) (tcb : TCB) (hT : st.objects[caller.toObjId]? = some (.tcb tcb))
     (hReady : tcb.ipcState = .ready) :
-    (endpointCallCrossCoreDispatch endpointId caller msg rights base c
+    (endpointCallCrossCoreDispatch endpointId caller payload base c
       st).1.replyWaitersConsistent :=
   have hI := hReach.ipcInvariantFull
-  endpointCallCrossCoreDispatch_preserves_replyWaitersConsistent endpointId caller msg rights
+  endpointCallCrossCoreDispatch_preserves_replyWaitersConsistent endpointId caller payload
     base c st hReach.objects_invExt hReach.replyWaitersConsistent
     (serverFree_of_tcb hT (by simp only [TCB.blockingServer?, hReady]))
     (fun ep r hE hH => ⟨fun h => by
@@ -795,13 +794,13 @@ theorem endpointReceiveDualWithCapsOnCore_preserves_replyWaitersConsistent_of_re
 
 /-- **The live send carries the reply-waiter queues**, likewise. -/
 theorem endpointSendDualWithCapsOnCore_preserves_replyWaitersConsistent_of_reachable
-    (endpointId : SeLe4n.ObjId) (sender : SeLe4n.ThreadId) (msg : IpcMessage)
-    (rights : AccessRightSet) (base : SeLe4n.Slot) (c : CoreId) (st : SystemState)
+    (endpointId : SeLe4n.ObjId) (sender : SeLe4n.ThreadId) (payload : SendPayload)
+    (base : SeLe4n.Slot) (c : CoreId) (st : SystemState)
     (hReach : ipcReachable st) (tcb : TCB) (hT : st.objects[sender.toObjId]? = some (.tcb tcb))
     (hReady : tcb.ipcState = .ready) :
-    (endpointSendDualWithCapsOnCore endpointId sender msg rights base c
+    (endpointSendDualWithCapsOnCore endpointId sender payload base c
       st).1.replyWaitersConsistent :=
-  endpointSendDualWithCapsOnCore_preserves_replyWaitersConsistent endpointId sender msg rights
+  endpointSendDualWithCapsOnCore_preserves_replyWaitersConsistent endpointId sender payload
     base c st hReach.objects_invExt hReach.replyWaitersConsistent
     (serverFree_of_tcb hT (by simp only [TCB.blockingServer?, hReady]))
     (fun _ _ hE hH => receiveHead_serverFree hReach.ipcInvariantFull.queueHeadBlockedConsistent hE hH)

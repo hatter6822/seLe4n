@@ -483,10 +483,10 @@ private def runServiceAndStressTrace (counter : IO.Ref Nat) (st1 : SystemState) 
   let stMultiEndpoint : SystemState :=
     st1.withObjectStored demoEndpoint (.endpoint {})
         |>.withObjectStored ⟨31⟩ (.endpoint {})
-  match SeLe4n.Kernel.endpointSendDualChecked SeLe4n.Kernel.harnessLabelingContext demoEndpoint ⟨1⟩ .empty default default stMultiEndpoint with
+  match SeLe4n.Kernel.endpointSendDualChecked SeLe4n.Kernel.harnessLabelingContext demoEndpoint ⟨1⟩ (.frame none false) default stMultiEndpoint with
   | .error err => IO.println s!"[SST-033] multi-endpoint send A error: {reprStr err}"
   | .ok (_, stEp1) =>
-      match SeLe4n.Kernel.endpointSendDualChecked SeLe4n.Kernel.harnessLabelingContext ⟨31⟩ ⟨12⟩ .empty default default stEp1 with
+      match SeLe4n.Kernel.endpointSendDualChecked SeLe4n.Kernel.harnessLabelingContext ⟨31⟩ ⟨12⟩ (.frame none false) default stEp1 with
       | .error err => IO.println s!"[SST-034] multi-endpoint send B error: {reprStr err}"
       | .ok (_, stEp2) =>
           match SeLe4n.Kernel.endpointReceiveDual demoEndpoint ⟨12⟩ none stEp2 with
@@ -624,12 +624,12 @@ private def runLifecycleAndEndpointTrace (counter : IO.Ref Nat) (st1 : SystemSta
               match SeLe4n.Kernel.endpointReceiveDual demoEndpoint ⟨12⟩ none st3 with
                   | .error err => IO.println s!"[LEP-022] endpoint await-receive error: {reprStr err}"
                   | .ok (_, st6) =>
-                      match SeLe4n.Kernel.endpointSendDualChecked SeLe4n.Kernel.harnessLabelingContext demoEndpoint ⟨1⟩ .empty default default st6 with
+                      match SeLe4n.Kernel.endpointSendDualChecked SeLe4n.Kernel.harnessLabelingContext demoEndpoint ⟨1⟩ (.frame none false) default st6 with
                       | .error err => IO.println s!"[LEP-023] endpoint handshake send error: {reprStr err}"
                       | .ok (_, st7) =>
                           IO.println "[LEP-024] handshake send matched waiting receiver"
                           -- Sender blocks (no receiver waiting), then receiver dequeues
-                          match SeLe4n.Kernel.endpointSendDualChecked SeLe4n.Kernel.harnessLabelingContext demoEndpoint ⟨1⟩ .empty default default st7 with
+                          match SeLe4n.Kernel.endpointSendDualChecked SeLe4n.Kernel.harnessLabelingContext demoEndpoint ⟨1⟩ (.frame none false) default st7 with
                           | .error err => IO.println s!"[LEP-025] endpoint send #1 error: {reprStr err}"
                           | .ok (_, st8) =>
                               IO.println "[LEP-026] queued sender on endpoint"
@@ -658,7 +658,7 @@ private def runLifecycleAndEndpointTrace (counter : IO.Ref Nat) (st1 : SystemSta
   -- T7-B: Post-mutation invariant check after IPC handshake chain
   match SeLe4n.Kernel.endpointReceiveDual demoEndpoint ⟨12⟩ none st1 with
   | .ok (_, stIpcMut1) =>
-    match SeLe4n.Kernel.endpointSendDualChecked SeLe4n.Kernel.harnessLabelingContext demoEndpoint ⟨1⟩ .empty default default stIpcMut1 with
+    match SeLe4n.Kernel.endpointSendDualChecked SeLe4n.Kernel.harnessLabelingContext demoEndpoint ⟨1⟩ (.frame none false) default stIpcMut1 with
     | .ok (_, stIpcMut2) => checkInvariants counter "post-ipc-handshake-chain-mutated" stIpcMut2
     | .error _ => pure ()
   | .error _ => pure ()
@@ -690,7 +690,7 @@ private def runCapabilityIpcTrace (counter : IO.Ref Nat) (st1 : SystemState) : I
   -- Set up fresh state with idle endpoint for dual-queue test
   let dualEp : KernelObject := .endpoint (Endpoint.ofQueues {} {})
   let stDual : SystemState := st1.withObjectStored dualEpId dualEp
-  match SeLe4n.Kernel.endpointSendDual dualEpId ⟨1⟩ .empty stDual with
+  match SeLe4n.Kernel.endpointSendDual dualEpId ⟨1⟩ (.frame none false) stDual with
   | .error err => IO.println s!"[CIC-006] endpointSendDual error: {reprStr err}"
   | .ok (_, stSent) =>
       match stSent.getEndpoint? dualEpId with
@@ -811,7 +811,7 @@ private def runIpcMessageTransferTrace (counter : IO.Ref Nat) (st1 : SystemState
   let ep0 : KernelObject := .endpoint (Endpoint.ofQueues {} {})
   let st0 : SystemState := st1.withObjectStored epId ep0
   -- Sender sends (no receiver queued → sender blocks with message)
-  match SeLe4n.Kernel.endpointSendDual epId senderId testMsg
+  match SeLe4n.Kernel.endpointSendDual epId senderId (.frame testMsg.badge testMsg.capsGranted)
       (SeLe4n.Testing.withSenderFrame st0 senderId testMsg) with
   | .error err => IO.println s!"[IMT-001] F1-01 send error: {reprStr err}"
   | .ok (_, stSent) =>
@@ -851,7 +851,7 @@ private def runIpcMessageTransferTrace (counter : IO.Ref Nat) (st1 : SystemState
   | .ok (_, stWait) =>
       -- Sender sends with message (receiver queued → rendezvous)
       let rendezvousMsg : IpcMessage := { registers := #[⟨99⟩], caps := #[], badge := none }
-      match SeLe4n.Kernel.endpointSendDual epId senderId rendezvousMsg stWait with
+      match SeLe4n.Kernel.endpointSendDual epId senderId (.frame rendezvousMsg.badge rendezvousMsg.capsGranted) (SeLe4n.Testing.withSenderFrame stWait senderId rendezvousMsg) with
       | .error err => IO.println s!"[IMT-008] F1-02 send error: {reprStr err}"
       | .ok (_, stRend) =>
           let rendMsg := match SeLe4n.Kernel.lookupTcb stRend receiverId with
@@ -867,7 +867,7 @@ private def runIpcMessageTransferTrace (counter : IO.Ref Nat) (st1 : SystemState
   match SeLe4n.Kernel.endpointReceiveDual demoEndpoint ⟨12⟩ none stRMut with
   | .ok (_, stWaitMut) =>
     let rendMsg : IpcMessage := { registers := #[⟨99⟩], caps := #[], badge := none }
-    match SeLe4n.Kernel.endpointSendDual demoEndpoint ⟨1⟩ rendMsg stWaitMut with
+    match SeLe4n.Kernel.endpointSendDual demoEndpoint ⟨1⟩ (.frame rendMsg.badge rendMsg.capsGranted) (SeLe4n.Testing.withSenderFrame stWaitMut ⟨1⟩ rendMsg) with
     | .ok (_, stRendMut) => checkInvariants counter "post-ipc-rendezvous-mutated" stRendMut
     | .error _ => pure ()
   | .error _ => pure ()
@@ -886,7 +886,7 @@ private def runIpcMessageTransferTrace (counter : IO.Ref Nat) (st1 : SystemState
   | .ok (_, stWait2) =>
       -- Caller calls with message
       let callMsg : IpcMessage := { registers := #[⟨10⟩, ⟨20⟩, ⟨30⟩], caps := #[], badge := some (Badge.ofNatMasked 456) }
-      match SeLe4n.Kernel.endpointCall epId senderId callMsg stWait2 with
+      match SeLe4n.Kernel.endpointCall epId senderId (.frame callMsg.badge callMsg.capsGranted) (SeLe4n.Testing.withSenderFrame stWait2 senderId callMsg) with
       | .error err => IO.println s!"[IMT-011] F1-03 call error: {reprStr err}"
       | .ok (_, stCalled) =>
           -- Verify caller is blocked on reply
@@ -924,7 +924,7 @@ private def runIpcMessageTransferTrace (counter : IO.Ref Nat) (st1 : SystemState
         |>.withObjectStored h1ReplyId.toObjId h1Reply
   -- No receiver queued → caller enqueues on sendQ with blockedOnCall
   let h1CallMsg : IpcMessage := { registers := #[⟨77⟩], caps := #[], badge := none }
-  match SeLe4n.Kernel.endpointCall epId callerId h1CallMsg stH1 with
+  match SeLe4n.Kernel.endpointCall epId callerId (.frame h1CallMsg.badge h1CallMsg.capsGranted) (SeLe4n.Testing.withSenderFrame stH1 callerId h1CallMsg) with
   | .error err => IO.println s!"[IMT-015] H1-01 call error: {reprStr err}"
   | .ok (_, stBlocked) =>
       -- Verify caller is blockedOnCall (not blockedOnSend)
@@ -966,7 +966,7 @@ private def runIpcMessageTransferTrace (counter : IO.Ref Nat) (st1 : SystemState
               -- WS-H1/M-02: Verify unauthorized reply fails
               let unauthorizedId : SeLe4n.ThreadId := ⟨99⟩
               -- Re-block caller for the unauthorized test
-              match SeLe4n.Kernel.endpointCall epId callerId h1CallMsg stH1 with
+              match SeLe4n.Kernel.endpointCall epId callerId (.frame h1CallMsg.badge h1CallMsg.capsGranted) (SeLe4n.Testing.withSenderFrame stH1 callerId h1CallMsg) with
               | .error _ => IO.println "[IMT-022] H1 unauthorized setup skipped"
               | .ok (_, stBlocked2) =>
                   match SeLe4n.Kernel.endpointReceiveDual epId serverId (some h1ReplyId) stBlocked2 with
@@ -989,61 +989,52 @@ private def runIpcMessageBoundsTrace (counter : IO.Ref Nat) (st1 : SystemState) 
   let epId : SeLe4n.ObjId := demoEndpoint
   let senderId : SeLe4n.ThreadId := ⟨1⟩
 
-  -- H12d-01: Message with too many registers (> 120) should be rejected
-  let oversizedRegs : IpcMessage := {
-    registers := Array.mk (List.replicate 121 ⟨0⟩), caps := #[], badge := none }
-  match SeLe4n.Kernel.endpointSendDual epId senderId oversizedRegs st1 with
-  | .error .ipcMessageTooLarge =>
-      IO.println s!"[IMB-001] H12d oversized registers rejected: true"
-  | .error err =>
-      IO.println s!"[IMB-002] H12d oversized registers unexpected error: {reprStr err}"
-  | .ok _ =>
-      IO.println s!"[IMB-003] H12d oversized registers rejected: false"
+  -- H12d-01: a send's words come from the sender's frame (WS-ZA ZA4.7), so the
+  -- register bound lives in the message-info decode: a word declaring 121
+  -- registers does not decode.
+  let oversizedRegsInfo : Nat := (MessageInfo.mk 121 0 0).encode
+  IO.println s!"[IMB-001] H12d oversized registers rejected: {(MessageInfo.decode oversizedRegsInfo).isNone}"
 
-  -- H12d-02: Message with too many caps (> 3) should be rejected
-  let oversizedCaps : IpcMessage := {
-    registers := #[],
-    caps := #[
-      TransferCap.fromNode { target := .object ⟨1⟩, rights := AccessRightSet.ofList [] } 1,
-      TransferCap.fromNode { target := .object ⟨2⟩, rights := AccessRightSet.ofList [] } 2,
-      TransferCap.fromNode { target := .object ⟨3⟩, rights := AccessRightSet.ofList [] } 3,
-      TransferCap.fromNode { target := .object ⟨4⟩, rights := AccessRightSet.ofList [] } 4],
-    badge := none }
-  match SeLe4n.Kernel.endpointSendDual epId senderId oversizedCaps st1 with
-  | .error .ipcMessageTooManyCaps =>
-      IO.println s!"[IMB-004] H12d oversized caps rejected: true"
-  | .error err =>
-      IO.println s!"[IMB-005] H12d oversized caps unexpected error: {reprStr err}"
-  | .ok _ =>
-      IO.println s!"[IMB-006] H12d oversized caps rejected: false"
+  -- H12d-02: and the word's two-bit extra-caps field names at most three
+  -- capabilities, whatever a word asking for four decodes to.
+  let oversizedCapsInfo : Nat := (MessageInfo.mk 0 4 0).encode
+  let capsBounded : Bool := match MessageInfo.decode oversizedCapsInfo with
+    | some mi => decide (mi.extraCaps ≤ maxExtraCaps)
+    | none => true
+  IO.println s!"[IMB-004] H12d oversized caps rejected: {capsBounded}"
 
   -- H12d-03: Message at exact boundary (120 regs, 3 caps) should be accepted
   let boundaryMsg : IpcMessage := {
-    registers := Array.mk (List.replicate 120 ⟨42⟩),
-    caps := #[
-      TransferCap.fromNode { target := .object ⟨1⟩, rights := AccessRightSet.ofList [] } 1,
-      TransferCap.fromNode { target := .object ⟨2⟩, rights := AccessRightSet.ofList [] } 2,
-      TransferCap.fromNode { target := .object ⟨3⟩, rights := AccessRightSet.ofList [] } 3],
+    registers := Array.mk (List.replicate 120 ⟨42⟩), caps := #[],
     badge := some (Badge.ofNatMasked 999) }
+  let boundaryCaps : Array SeLe4n.CPtr :=
+    #[SeLe4n.CPtr.ofNat 1, SeLe4n.CPtr.ofNat 2, SeLe4n.CPtr.ofNat 3]
   -- Create a fresh endpoint for this test
   let ep0 : KernelObject := .endpoint (Endpoint.ofQueues {} {})
-  let stFresh : SystemState := st1.withObjectStored epId ep0
-  match SeLe4n.Kernel.endpointSendDual epId senderId boundaryMsg stFresh with
+  let stFresh : SystemState :=
+    SeLe4n.Testing.withSenderFrame (st1.withObjectStored epId ep0) senderId boundaryMsg
+      boundaryCaps
+  match SeLe4n.Kernel.endpointSendDual epId senderId
+      (.frame boundaryMsg.badge false) stFresh with
   | .error err =>
       IO.println s!"[IMB-007] H12d boundary message accepted: false (error: {reprStr err})"
   | .ok _ =>
       IO.println s!"[IMB-008] H12d boundary message accepted: true"
 
-  -- H12d-04: endpointCall with oversized message should be rejected
-  match SeLe4n.Kernel.endpointCall epId senderId oversizedRegs st1 with
-  | .error .ipcMessageTooLarge =>
-      IO.println s!"[IMB-009] H12d call oversized rejected: true"
-  | .error err =>
-      IO.println s!"[IMB-010] H12d call oversized unexpected error: {reprStr err}"
-  | .ok _ =>
-      IO.println s!"[IMB-011] H12d call oversized rejected: false"
+  -- H12d-04: a call reads the same frame, so a caller whose frame declares an
+  -- oversized message delivers no words rather than an unbounded message.
+  let stOversized : SystemState :=
+    match st1.getTcb? senderId with
+    | none => st1
+    | some tcb =>
+        let regs := SeLe4n.writeReg tcb.registerContext ⟨1⟩ oversizedRegsInfo.toUInt64
+        st1.withObjectStored senderId.toObjId (.tcb { tcb with registerContext := regs })
+  let callMsg := SeLe4n.Kernel.sendPayloadMessage stOversized senderId (.frame none false)
+  IO.println s!"[IMB-009] H12d call oversized rejected: {callMsg.registers.size == 0}"
 
   -- H12d-05: endpointReply with oversized message should be rejected
+  let oversizedRegs : IpcMessage := {
+    registers := Array.mk (List.replicate 121 ⟨0⟩), caps := #[], badge := none }
   match SeLe4n.Kernel.endpointReply senderId ⟨12⟩ oversizedRegs st1 with
   | .error .ipcMessageTooLarge =>
       IO.println s!"[IMB-012] H12d reply oversized rejected: true"
@@ -1298,7 +1289,7 @@ private def runBoundedMessageExtendedTrace (counter : IO.Ref Nat) (st1 : SystemS
   let emptyMsg : IpcMessage := { registers := #[], caps := #[], badge := none }
   let ep0 : KernelObject := .endpoint (Endpoint.ofQueues {} {})
   let stFresh : SystemState := st1.withObjectStored epId ep0
-  match SeLe4n.Kernel.endpointSendDual epId senderId emptyMsg stFresh with
+  match SeLe4n.Kernel.endpointSendDual epId senderId (.frame emptyMsg.badge emptyMsg.capsGranted) (SeLe4n.Testing.withSenderFrame stFresh senderId emptyMsg) with
   | .error err =>
       IO.println s!"[BME-001] H12f empty message accepted: false (error: {reprStr err})"
   | .ok _ =>
@@ -1307,7 +1298,7 @@ private def runBoundedMessageExtendedTrace (counter : IO.Ref Nat) (st1 : SystemS
   let subBoundaryMsg : IpcMessage := {
     registers := Array.mk (List.replicate 119 ⟨1⟩), caps := #[], badge := none }
   let stFresh2 : SystemState := st1.withObjectStored epId ep0
-  match SeLe4n.Kernel.endpointSendDual epId senderId subBoundaryMsg stFresh2 with
+  match SeLe4n.Kernel.endpointSendDual epId senderId (.frame subBoundaryMsg.badge subBoundaryMsg.capsGranted) (SeLe4n.Testing.withSenderFrame stFresh2 senderId subBoundaryMsg) with
   | .error err =>
       IO.println s!"[BME-003] H12f sub-boundary message accepted: false (error: {reprStr err})"
   | .ok _ =>
@@ -1321,7 +1312,7 @@ private def runBoundedMessageExtendedTrace (counter : IO.Ref Nat) (st1 : SystemS
       TransferCap.fromNode { target := .object ⟨3⟩, rights := AccessRightSet.ofList [.grant] } 3],
     badge := some (Badge.ofNatMasked 42) }
   let stFresh3 : SystemState := st1.withObjectStored epId ep0
-  match SeLe4n.Kernel.endpointSendDual epId senderId maxCapsMsg stFresh3 with
+  match SeLe4n.Kernel.endpointSendDual epId senderId (.frame maxCapsMsg.badge maxCapsMsg.capsGranted) (SeLe4n.Testing.withSenderFrame stFresh3 senderId maxCapsMsg) with
   | .error err =>
       IO.println s!"[BME-005] H12f max caps message accepted: false (error: {reprStr err})"
   | .ok _ =>
@@ -1371,7 +1362,7 @@ private def runSyscallGateTrace (counter : IO.Ref Nat) (st1 : SystemState) : IO 
   let sendViaGate (gate : SeLe4n.Kernel.SyscallGate) (st : SystemState) :=
     SeLe4n.Kernel.syscallInvoke { gate with requiredRight := .write }
       (fun cap => if cap.target ≠ .object epId then fun _ => .error .invalidCapability
-        else SeLe4n.Kernel.endpointSendDual epId gate.callerId msg) st
+        else SeLe4n.Kernel.endpointSendDual epId gate.callerId (.frame msg.badge msg.capsGranted)) st
   match sendViaGate goodGate stLocal with
   | .ok _ => IO.println "[SGT-001] H15e syscall gate send (correct): ok"
   | .error e => IO.println s!"[SGT-002] H15e syscall gate send (correct): error {reprStr e}"
@@ -1992,7 +1983,7 @@ private def runReplyRecvRoundtripTrace (counter : IO.Ref Nat) (st1 : SystemState
       |>.withObjectStored replyBId.toObjId (.reply { replyId := replyBId })
   -- Step 1: Caller A calls endpoint (no receiver yet → enqueues on sendQ)
   let callMsgA : IpcMessage := { registers := #[⟨50⟩, ⟨60⟩], caps := #[], badge := some (Badge.ofNatMasked 789) }
-  match SeLe4n.Kernel.endpointCall epId callerAId callMsgA
+  match SeLe4n.Kernel.endpointCall epId callerAId (.frame callMsgA.badge callMsgA.capsGranted)
       (SeLe4n.Testing.withSenderFrame stFresh callerAId callMsgA) with
   | .error err => IO.println s!"[RRC-001] replyRecv call1 error: {reprStr err}"
   | .ok (_, stCalledA) =>
@@ -2011,7 +2002,7 @@ private def runReplyRecvRoundtripTrace (counter : IO.Ref Nat) (st1 : SystemState
           -- Step 3 (L4-A2): Caller B calls the same endpoint while A awaits reply
           -- B enqueues on sendQ with blockedOnCall
           let callMsgB : IpcMessage := { registers := #[⟨70⟩, ⟨80⟩, ⟨90⟩], caps := #[], badge := some (Badge.ofNatMasked 456) }
-          match SeLe4n.Kernel.endpointCall epId callerBId callMsgB
+          match SeLe4n.Kernel.endpointCall epId callerBId (.frame callMsgB.badge callMsgB.capsGranted)
               (SeLe4n.Testing.withSenderFrame stRecvd callerBId callMsgB) with
           | .error err => IO.println s!"[RRC-002] replyRecv callerB call error: {reprStr err}"
           | .ok (_, stCalledB) =>
@@ -2100,11 +2091,11 @@ private def runEndpointLifecycleTrace (counter : IO.Ref Nat) (st1 : SystemState)
     ).buildChecked
   -- B1: Block both senders on the endpoint's sendQ
   let msg1 : IpcMessage := { registers := #[⟨10⟩, ⟨20⟩], caps := #[], badge := none }
-  match SeLe4n.Kernel.endpointSendDual lcEpId lcSender1 msg1 stBase with
+  match SeLe4n.Kernel.endpointSendDual lcEpId lcSender1 (.frame msg1.badge msg1.capsGranted) (SeLe4n.Testing.withSenderFrame stBase lcSender1 msg1) with
   | .error err => IO.println s!"[ELC-001] lifecycle sender1 block error: {reprStr err}"
   | .ok (_, stBlk1) =>
       let msg2 : IpcMessage := { registers := #[⟨30⟩, ⟨40⟩], caps := #[], badge := none }
-      match SeLe4n.Kernel.endpointSendDual lcEpId lcSender2 msg2 stBlk1 with
+      match SeLe4n.Kernel.endpointSendDual lcEpId lcSender2 (.frame msg2.badge msg2.capsGranted) (SeLe4n.Testing.withSenderFrame stBlk1 lcSender2 msg2) with
       | .error err => IO.println s!"[ELC-001] lifecycle sender2 block error: {reprStr err}"
       | .ok (_, stBlk2) =>
           -- Verify both senders are blockedOnSend
@@ -2146,7 +2137,7 @@ private def runEndpointLifecycleTrace (counter : IO.Ref Nat) (st1 : SystemState)
               -- pattern-matches `some (.endpoint ep)` which fails → falls to
               -- `some _ => .error .invalidCapability`
               let msg3 : IpcMessage := { registers := #[⟨99⟩], caps := #[], badge := none }
-              let staleResult := SeLe4n.Kernel.endpointSendDual lcEpId ⟨1⟩ msg3 stRetyped
+              let staleResult := SeLe4n.Kernel.endpointSendDual lcEpId ⟨1⟩ (.frame msg3.badge msg3.capsGranted) (SeLe4n.Testing.withSenderFrame stRetyped ⟨1⟩ msg3)
               let staleRejected := match staleResult with
                 | .error .invalidCapability => true
                 | _ => false
@@ -2173,7 +2164,7 @@ private def runMultiEndpointInterleavingTrace (counter : IO.Ref Nat) (st1 : Syst
       |>.withObjectStored epId3 ep3
   -- Send on endpoint 1
   let msg1 : IpcMessage := { registers := #[⟨11⟩, ⟨22⟩], caps := #[], badge := some (Badge.ofNatMasked 100) }
-  match SeLe4n.Kernel.endpointSendDual epId1 senderId msg1
+  match SeLe4n.Kernel.endpointSendDual epId1 senderId (.frame msg1.badge msg1.capsGranted)
       (SeLe4n.Testing.withSenderFrame stFresh senderId msg1) with
   | .error err => IO.println s!"[MEI-001] multi-ep send1 error: {reprStr err}"
   | .ok (_, stSent1) =>
@@ -2187,7 +2178,7 @@ private def runMultiEndpointInterleavingTrace (counter : IO.Ref Nat) (st1 : Syst
           IO.println s!"[MEI-001] multi-ep recv1 registers: {reprStr recvRegs1}"
           -- Send on endpoint 2
           let msg2 : IpcMessage := { registers := #[⟨33⟩, ⟨44⟩], caps := #[], badge := some (Badge.ofNatMasked 200) }
-          match SeLe4n.Kernel.endpointSendDual epId2 senderId msg2
+          match SeLe4n.Kernel.endpointSendDual epId2 senderId (.frame msg2.badge msg2.capsGranted)
               (SeLe4n.Testing.withSenderFrame stRecv1 senderId msg2) with
           | .error err => IO.println s!"[MEI-003] multi-ep send2 error: {reprStr err}"
           | .ok (_, stSent2) =>
@@ -2207,7 +2198,7 @@ private def runMultiEndpointInterleavingTrace (counter : IO.Ref Nat) (st1 : Syst
                   -- L4-D2/D3: 3rd endpoint out-of-order receive
                   -- Send on EP3 via sender, receive EP3 out-of-order (before EP1 second round)
                   let msg3 : IpcMessage := { registers := #[⟨55⟩, ⟨66⟩], caps := #[], badge := some (Badge.ofNatMasked 300) }
-                  match SeLe4n.Kernel.endpointSendDual epId3 senderId msg3
+                  match SeLe4n.Kernel.endpointSendDual epId3 senderId (.frame msg3.badge msg3.capsGranted)
                       (SeLe4n.Testing.withSenderFrame stRecv2 senderId msg3) with
                   | .error err => IO.println s!"[MEI-004] multi-ep send3 error: {reprStr err}"
                   | .ok (_, stSent3) =>
@@ -2222,7 +2213,7 @@ private def runMultiEndpointInterleavingTrace (counter : IO.Ref Nat) (st1 : Syst
                           -- Now sender is free again (unblocked by EP3 receive)
                           -- Send on EP1 again to verify FIFO with second message
                           let msg4 : IpcMessage := { registers := #[⟨77⟩, ⟨88⟩], caps := #[], badge := some (Badge.ofNatMasked 101) }
-                          match SeLe4n.Kernel.endpointSendDual epId1 senderId msg4
+                          match SeLe4n.Kernel.endpointSendDual epId1 senderId (.frame msg4.badge msg4.capsGranted)
                               (SeLe4n.Testing.withSenderFrame stRecv3 senderId msg4) with
                           | .error err => IO.println s!"[MEI-005] multi-ep send4-ep1 error: {reprStr err}"
                           | .ok (_, stSent4) =>

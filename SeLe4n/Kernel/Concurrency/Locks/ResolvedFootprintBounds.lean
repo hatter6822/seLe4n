@@ -54,15 +54,15 @@ open SeLe4n.Kernel.Concurrency
 over the message, not at its default: whether the footprint carries the
 capability-transfer destination is a property of what the send carries. -/
 theorem lockSet_endpointSendOnCore_size_le (st : SystemState) (endpointId : SeLe4n.ObjId)
-    (sender : SeLe4n.ThreadId) (cnodeRootObjId : SeLe4n.ObjId) (msg : IpcMessage) :
-    (lockSet_endpointSendOnCore st endpointId sender cnodeRootObjId msg).size
+    (sender : SeLe4n.ThreadId) (cnodeRootObjId : SeLe4n.ObjId) (payload : SendPayload) :
+    (lockSet_endpointSendOnCore st endpointId sender cnodeRootObjId payload).size
       ≤ maxLockSetSize :=
   lockSet_endpointSend_size_le _ _ _ _ _ _
 
 /-- The state-resolved **call** footprint. -/
 theorem lockSet_endpointCallOnCore_size_le (st : SystemState) (endpointId : SeLe4n.ObjId)
-    (caller : SeLe4n.ThreadId) (cnodeRootObjId : SeLe4n.ObjId) (msg : IpcMessage) :
-    (lockSet_endpointCallOnCore st endpointId caller cnodeRootObjId msg).size
+    (caller : SeLe4n.ThreadId) (cnodeRootObjId : SeLe4n.ObjId) (payload : SendPayload) :
+    (lockSet_endpointCallOnCore st endpointId caller cnodeRootObjId payload).size
       ≤ maxLockSetSize :=
   lockSet_endpointCall_size_le _ _ _ _ _ _ _ _ _ _
 

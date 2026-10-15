@@ -421,13 +421,13 @@ its core and queued on the receiver's reply waiters. -/
 specification's call returns `storeCallRendezvous`'s state with the receiver
 wake's SGI, and that state donates nothing. -/
 theorem callRendezvous_inPlace (st : SystemState) (endpointId : SeLe4n.ObjId) (ep : Endpoint)
-    (caller r : SeLe4n.ThreadId) (rt : TCB) (rid : SeLe4n.ReplyId) (msg : IpcMessage)
-    (core : Concurrency.CoreId)
-    (hSz : ¬ msg.registers.size > maxMessageRegisters) (hCp : ¬ msg.caps.size > maxExtraCaps)
+    (caller r : SeLe4n.ThreadId) (rt : TCB) (rid : SeLe4n.ReplyId) (payload : SendPayload)
+    (msg : IpcMessage) (core : Concurrency.CoreId)
+    (hM : sendPayloadMessage st caller payload = msg)
     (hE : st.objects[endpointId]? = some (.endpoint ep)) (hH : ep.receiveQ.head = some r)
     (hT : st.objects[r.toObjId]? = some (.tcb rt)) (hRid : rt.pendingReceiveReply = some rid)
     (hG : callWakesInPlace st endpointId caller r rt rid = true) :
-    endpointCallOnCore endpointId caller msg core st =
+    endpointCallOnCore endpointId caller payload core st =
         (storeCallRendezvous st endpointId caller r rt.queueNext rid msg core,
          .ok (wakeThread ((storePopHead st endpointId true r rt.queueNext).updateTcb r
            (callReceiverTcb msg)) r core).2) ∧
@@ -591,7 +591,7 @@ theorem callRendezvous_inPlace (st : SystemState) (endpointId : SeLe4n.ObjId) (e
   have hRp4 : S4.getReply? rid = some rp := (SystemState.getReply?_eq_some_iff _ _ _).mpr hO4q
   refine ⟨?_, ?_⟩
   · unfold endpointCallOnCore
-    rw [if_neg hSz, if_neg hCp, hEp]
+    rw [hM, hEp]
     dsimp only
     rw [hH]
     dsimp only
@@ -647,20 +647,20 @@ call dispatch commits on a rendezvous that donates nothing. -/
     (storeCallRendezvous st endpointId caller r next rid msg core) r core).1
 
 /-- **The checked call dispatch, in place**: under the flow gate and
-`callWakesInPlace`, a capability-free call that finds a receiver commits
+`callWakesInPlace`, a call that finds a receiver and transfers no capability commits
 `performCallRendezvous`'s state with an empty transfer summary. -/
 theorem callDispatchChecked_inPlace (ctx : LabelingContext) (st : SystemState)
     (endpointId : SeLe4n.ObjId) (ep : Endpoint) (caller r : SeLe4n.ThreadId) (rt : TCB)
-    (rid : SeLe4n.ReplyId) (msg : IpcMessage) (rights : AccessRightSet) (slot : SeLe4n.Slot)
+    (rid : SeLe4n.ReplyId) (payload : SendPayload) (msg : IpcMessage) (slot : SeLe4n.Slot)
     (core : Concurrency.CoreId)
-    (hCaps : msg.caps = #[]) (hGrant : msg.capsGranted = rights.mem .grant)
-    (hSz : ¬ msg.registers.size > maxMessageRegisters)
+    (hM : sendPayloadMessage st caller payload = msg)
+    (hReq : sendCapRequest st endpointId caller payload = none)
     (hE : st.objects[endpointId]? = some (.endpoint ep)) (hH : ep.receiveQ.head = some r)
     (hT : st.objects[r.toObjId]? = some (.tcb rt)) (hRid : rt.pendingReceiveReply = some rid)
     (hG : callWakesInPlace st endpointId caller r rt rid = true)
     (hFlow : endpointFlowGate ctx endpointId (ctx.threadLabelOf caller)
       (ctx.endpointLabelOf endpointId) = true) :
-    ∃ sgi, endpointCallCrossCoreDispatchChecked ctx endpointId caller msg rights slot core st =
+    ∃ sgi, endpointCallCrossCoreDispatchChecked ctx endpointId caller payload slot core st =
       (performCallRendezvous st endpointId caller r rt.queueNext rid msg core,
        .ok ({ results := #[] }, sgi)) := by
   have hG' := hG
@@ -669,10 +669,8 @@ theorem callDispatchChecked_inPlace (ctx : LabelingContext) (st : SystemState)
   have hRRes : r.isReserved = false := hG'.1.1.1.1.1.1.1.1.1.1.1.1.1.1
   have hEp : st.getEndpoint? endpointId = some ep :=
     (SystemState.getEndpoint?_eq_some_iff _ _ _).mpr hE
-  have hStamp : { msg with capsGranted := rights.mem .grant } = msg := by
-    rw [← hGrant]
-  obtain ⟨hEq, hDon⟩ := callRendezvous_inPlace st endpointId ep caller r rt rid msg core hSz
-    (by rw [hCaps]; decide) hE hH hT hRid hG
+  obtain ⟨hEq, hDon⟩ := callRendezvous_inPlace st endpointId ep caller r rt rid payload msg core hM
+    hE hH hT hRid hG
   obtain ⟨cv, hcv⟩ := Option.isSome_iff_exists.mp ((SeLe4n.ThreadId.toValid?_isSome_iff caller).mpr hCRes)
   obtain ⟨rv, hrv⟩ := Option.isSome_iff_exists.mp ((SeLe4n.ThreadId.toValid?_isSome_iff r).mpr hRRes)
   have hcv' := SeLe4n.ThreadId.toValid?_some_val_eq _ _ hcv
@@ -682,7 +680,7 @@ theorem callDispatchChecked_inPlace (ctx : LabelingContext) (st : SystemState)
   unfold endpointCallCrossCoreDispatchChecked
   rw [if_pos hFlow]
   unfold endpointCallCrossCoreDispatch
-  rw [endpointCallWithCapsOnCore_no_caps _ _ _ _ _ _ _ (by rw [hCaps]; rfl), hStamp, hEq]
+  rw [endpointCallWithCapsOnCore_no_caps _ _ _ _ _ _ hReq, hEq]
   simp only [Except.map, hEp, hH, hcv, hrv]
   unfold applyCallDonationOnCore
   rw [applyCallDonation_eq_ok_self_of_no_donation _ _ _ (by rw [hcv', hrv']; exact hDon)]

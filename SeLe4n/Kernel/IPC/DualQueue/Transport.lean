@@ -2262,35 +2262,32 @@ theorem endpointQueueRemoveDual_tcb_cpuAffinity_backward
 with IPC message transfer.
 
 Sender checks the intrusive receive queue first. If a receiver is waiting,
-rendezvous: transfer `msg` to receiver's TCB and unblock receiver.
-Otherwise, enqueue sender in intrusive sendQ, store `msg` in sender's
-TCB for later retrieval, and block.
+rendezvous: deliver the sender's message to the receiver's TCB and unblock the
+receiver. Otherwise, enqueue the sender in the intrusive sendQ, record what its
+capability contributed, and block.
 
-Badge propagation: if `msg.badge` is set, it is carried through to the
-receiver, modeling seL4 badge delivery through endpoint capabilities.
-
-**U5-I/U-M28: Message truncation semantics**: Messages exceeding receiver
-buffer bounds are rejected at the send boundary with explicit errors
-(`ipcMessageTooLarge` / `ipcMessageTooManyCaps`). This is stricter than
-seL4's silent truncation behavior — seLe4n treats oversized messages as
-errors rather than silently truncating to buffer size. This design choice
-provides deterministic behavior: the sender always knows whether the full
-message was delivered. The `maxMessageRegisters` (120) and `maxExtraCaps`
-(3) bounds match seL4's `seL4_MsgMaxLength` and `seL4_MsgMaxExtraCaps`. -/
+**WS-ZA ZA4.7: the send is handed only what its capability contributes**
+(`SendPayload`: the badge and the grant right, or a fault), as seL4's `sendIPC`
+is.  The words stay in the sender's saved registers and IPC buffer, and both
+arms read them there: the arm that meets a waiting receiver delivers
+`sendPayloadMessage` of the sender's frame now, and the arm that blocks leaves
+them for the receive that takes it (`blockedSenderMessage`), which reads the
+same frame under the recorded badge and grant
+(`sendPayloadMessage_frame_eq_blockedSenderMessage`).  So the two arrival
+orders deliver one message, and no caller can hand the send words its frame
+does not hold.  The payload bound holds by construction
+(`sendPayloadMessage_bounded`): a body is cut to its declared length, at most
+`maxMessageRegisters` (seL4's `seL4_MsgMaxLength`). -/
 def endpointSendDual (endpointId : SeLe4n.ObjId) (sender : SeLe4n.ThreadId)
-    (msg : IpcMessage) : Kernel Unit :=
+    (payload : SendPayload) : Kernel Unit :=
   fun st =>
-    -- WS-H12d/A-09: Enforce message payload bounds at send boundary
-    if msg.registers.size > maxMessageRegisters then .error .ipcMessageTooLarge
-    else if msg.caps.size > maxExtraCaps then .error .ipcMessageTooManyCaps
-    else
     match st.getObject? endpointId with
     | some (.endpoint ep) =>
         match ep.receiveQ.head with
         | some _ =>
             -- **The sender has to exist even when nothing looks it up**
-            -- (PR #873 round 17).  On this arm the message goes straight from
-            -- the argument into the receiver's TCB, so `sender` was never
+            -- (PR #873 round 17).  On this arm the message once went straight
+            -- from the argument into the receiver's TCB, so `sender` was never
             -- resolved: a caller naming a nonexistent thread, or a non-TCB
             -- object, delivered anyway and the receiver held a message
             -- attributed to it.  Only the parking arm below failed, and only
@@ -2313,7 +2310,10 @@ def endpointSendDual (endpointId : SeLe4n.ObjId) (sender : SeLe4n.ThreadId)
                 -- IPC de-threading D3 (Finding F-1): a plain `Send` completing a
                 -- server-first `Recv` clears the receiver's `pendingReceiveReply` stash
                 -- (no `Call` arrived, so the stashed reply object is moot).
-                match storeTcbReceiveComplete st' receiver (some msg) with
+                -- WS-ZA ZA4.7: the words are read from the sender's frame, where
+                -- the receive that takes a blocked sender reads them.
+                match storeTcbReceiveComplete st' receiver
+                    (some (sendPayloadMessage st sender payload)) with
                 | .error e => .error e
                 | .ok st'' => .ok ((), ensureRunnable st'' receiver)
         | none =>
@@ -2327,8 +2327,8 @@ def endpointSendDual (endpointId : SeLe4n.ObjId) (sender : SeLe4n.ThreadId)
                 match storeTcbIpcStateAndMessage st' sender (.blockedOnSend endpointId) none with
                 | .error e => .error e
                 | .ok st'' =>
-                    .ok ((), recordSendCap (removeRunnable st'' sender) sender msg.badge
-                      msg.capsGranted)
+                    .ok ((), recordSendCap (removeRunnable st'' sender) sender payload.badge
+                      payload.grant)
     | some _ => .error .invalidCapability
     | none => .error .objectNotFound
 
@@ -2422,6 +2422,38 @@ def receiveCapRequest (st : SystemState) (endpointId : SeLe4n.ObjId) :
     match st.getTcb? sender with
     | none => none
     | some tcb => blockedSenderCapRequest st sender tcb
+
+/-- WS-ZA ZA4.7: **the capabilities a send or call will transfer** -- the
+request its frame makes under its capability's grant right
+(`sendPayloadCapRequest`), read from the pre-state, or `none` when no receiver
+waits (the send blocks, and the receive that takes it resolves the request
+then) or the sender asks for nothing.  The WithCaps sends resolve and install
+exactly this (`receiveTransferCaps`), only on the arm that delivers. -/
+def sendCapRequest (st : SystemState) (endpointId : SeLe4n.ObjId)
+    (sender : SeLe4n.ThreadId) (payload : SendPayload) :
+    Option (SeLe4n.ObjId × Array SeLe4n.CPtr × Nat) :=
+  match (st.getEndpoint? endpointId).bind (·.receiveQ.head) with
+  | none => none
+  | some _ =>
+    match st.getTcb? sender with
+    | none => none
+    | some tcb => sendPayloadCapRequest st sender tcb payload
+
+/-- WS-ZA ZA4.7: a send that blocks transfers nothing. -/
+theorem sendCapRequest_of_no_receiver (st : SystemState) (endpointId : SeLe4n.ObjId)
+    (sender : SeLe4n.ThreadId) (payload : SendPayload)
+    (h : (st.getEndpoint? endpointId).bind (·.receiveQ.head) = none) :
+    sendCapRequest st endpointId sender payload = none := by
+  simp [sendCapRequest, h]
+
+/-- WS-ZA ZA4.7: a fault transfers nothing. -/
+@[simp] theorem sendCapRequest_fault (st : SystemState) (endpointId : SeLe4n.ObjId)
+    (sender : SeLe4n.ThreadId) (f : Fault) (ctx : FaultContext) (b : Option SeLe4n.Badge) :
+    sendCapRequest st endpointId sender (.fault f ctx b) = none := by
+  unfold sendCapRequest
+  split
+  · rfl
+  · split <;> rfl
 
 /-- WS-ZA ZA4.7: with no sender queued there is no capability request -- the
 fact the resolved footprints use to drop the sender's CSpace-root member on a
@@ -2613,9 +2645,10 @@ def endpointReceiveDual (endpointId : SeLe4n.ObjId) (receiver : SeLe4n.ThreadId)
 
 /-- WS-F1/WS-E4/M-12: Call operation — send then block for reply, with message transfer.
 
-If a receiver is queued: handshake with receiver (transfer `msg`), then block caller for reply.
+If a receiver is queued: handshake with receiver (deliver the caller's message, read from
+its frame as `endpointSendDual` reads it), then block caller for reply.
 WS-H1/M-02: The caller's `blockedOnReply` records the receiver's ThreadId as `replyTarget`.
-If no receiver queued: enqueue caller as sender with message stored in TCB.
+If no receiver queued: enqueue caller as sender; its words stay in its frame.
 WS-H1/C-01: The caller is enqueued with `blockedOnCall` (not `blockedOnSend`) so that
 when a receiver later dequeues, the caller transitions to `blockedOnReply` instead of `.ready`.
 
@@ -2638,12 +2671,9 @@ production seL4 deployments, this is mitigated by:
 The abstract model faithfully captures this: there is no timeout parameter
 to `endpointCall` and no automatic unblocking mechanism. -/
 def endpointCall (endpointId : SeLe4n.ObjId) (caller : SeLe4n.ThreadId)
-    (msg : IpcMessage) : Kernel Unit :=
+    (payload : SendPayload) : Kernel Unit :=
   fun st =>
     -- WS-H12d/A-09: Enforce message payload bounds at send boundary
-    if msg.registers.size > maxMessageRegisters then .error .ipcMessageTooLarge
-    else if msg.caps.size > maxExtraCaps then .error .ipcMessageTooManyCaps
-    else
     match st.getObject? endpointId with
     | some (.endpoint ep) =>
         match ep.receiveQ.head with
@@ -2654,7 +2684,10 @@ def endpointCall (endpointId : SeLe4n.ObjId) (caller : SeLe4n.ThreadId)
             | .error e => .error e
             | .ok (receiver, _tcb, st') =>
                 -- WS-F1: Transfer message to receiver and unblock
-                match storeTcbIpcStateAndMessage st' receiver .ready (some msg) with
+                -- WS-ZA ZA4.7: the words are read from the caller's frame, where
+                -- the receive that takes a blocked caller reads them.
+                match storeTcbIpcStateAndMessage st' receiver .ready
+                    (some (sendPayloadMessage st caller payload)) with
                 | .error e => .error e
                 | .ok st'' =>
                     let st''' := ensureRunnable st'' receiver
@@ -2688,8 +2721,8 @@ def endpointCall (endpointId : SeLe4n.ObjId) (caller : SeLe4n.ThreadId)
                 match storeTcbIpcStateAndMessage st' caller (.blockedOnCall endpointId) none with
                 | .error e => .error e
                 | .ok st'' =>
-                    .ok ((), recordSendCap (removeRunnable st'' caller) caller msg.badge
-                      msg.capsGranted)
+                    .ok ((), recordSendCap (removeRunnable st'' caller) caller payload.badge
+                      payload.grant)
     | some _ => .error .invalidCapability
     | none => .error .objectNotFound
 

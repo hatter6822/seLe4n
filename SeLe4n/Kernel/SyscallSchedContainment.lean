@@ -136,21 +136,21 @@ A send rendezvous wakes a receiver on the receiver's home core and may park the
 sender on its own, which is the two-element run segment; it moves no scheduling
 context, so the replenish segment is empty and the frame is whole-state. -/
 theorem schedLockSet_endpointSendOnCore_coversWrites (ctx : LabelingContext)
-    (endpointId : SeLe4n.ObjId) (sender : SeLe4n.ThreadId) (msg : IpcMessage)
-    (endpointRights : AccessRightSet) (receiverSlotBase : SeLe4n.Slot)
+    (endpointId : SeLe4n.ObjId) (sender : SeLe4n.ThreadId) (payload : SendPayload)
+    (receiverSlotBase : SeLe4n.Slot)
     (executingCore : CoreId) (st : SystemState) (S : LockSet)
     (hObjInv : st.objects.invExt)
     (hS : LockSet.ofList? (schedLockSet_endpointSendOnCore st endpointId executingCore)
       = some S) :
     footprintCoversWrites S st
-      (endpointSendCrossCoreDispatchChecked ctx endpointId sender msg endpointRights
+      (endpointSendCrossCoreDispatchChecked ctx endpointId sender payload
         receiverSlotBase executingCore st).1 :=
   footprintCoversWrites_of_confined S (endpointSendWriteSet st endpointId executingCore)
     [] st _ (LockSet.ofList?_pairs hS)
-    (endpointSendCrossCoreDispatchChecked_confinedToCores ctx endpointId sender msg
-      endpointRights receiverSlotBase executingCore st hObjInv)
+    (endpointSendCrossCoreDispatchChecked_confinedToCores ctx endpointId sender payload
+      receiverSlotBase executingCore st hObjInv)
     (fun d _ => endpointSendCrossCoreDispatchChecked_replenishQueueOnCore ctx endpointId sender
-      msg endpointRights receiverSlotBase executingCore st _ d rfl)
+      payload receiverSlotBase executingCore st _ d rfl)
 
 -- ============================================================================
 -- §4  The three TCB-control arms
@@ -278,23 +278,23 @@ The replenish segment's branch structure and the dispatch's are the *same*
 structure by construction (Cut C3a), which is what makes the exactness frame one
 case split rather than a second reading of the transition. -/
 theorem schedLockSet_endpointCallOnCore_coversWrites (endpointId : SeLe4n.ObjId)
-    (caller : SeLe4n.ThreadId) (msg : IpcMessage) (endpointRights : AccessRightSet)
+    (caller : SeLe4n.ThreadId) (payload : SendPayload)
     (receiverSlotBase : SeLe4n.Slot) (executingCore : CoreId) (st : SystemState)
     (S : LockSet) (hObjInv : st.objects.invExt)
-    (hS : LockSet.ofList? (schedLockSet_endpointCallOnCore endpointId caller msg
-      endpointRights receiverSlotBase executingCore st) = some S) :
+    (hS : LockSet.ofList? (schedLockSet_endpointCallOnCore endpointId caller payload
+      receiverSlotBase executingCore st) = some S) :
     footprintCoversWrites S st
-      (endpointCallCrossCoreDispatch endpointId caller msg endpointRights receiverSlotBase
+      (endpointCallCrossCoreDispatch endpointId caller payload receiverSlotBase
         executingCore st).1 :=
   footprintCoversWrites_of_confined S
-    (endpointCallDispatchWriteSet endpointId caller msg endpointRights receiverSlotBase
+    (endpointCallDispatchWriteSet endpointId caller payload receiverSlotBase
       executingCore st)
-    (endpointCallDispatchReplenishCores endpointId caller msg endpointRights receiverSlotBase
+    (endpointCallDispatchReplenishCores endpointId caller payload receiverSlotBase
       executingCore st) st _ (LockSet.ofList?_pairs hS)
-    (endpointCallCrossCoreDispatch_confinedToCores endpointId caller msg endpointRights
+    (endpointCallCrossCoreDispatch_confinedToCores endpointId caller payload
       receiverSlotBase executingCore st hObjInv)
-    (fun d hd => endpointCallCrossCoreDispatch_replenishQueueOnCore_ne endpointId caller msg
-      endpointRights receiverSlotBase executingCore st d hd)
+    (fun d hd => endpointCallCrossCoreDispatch_replenishQueueOnCore_ne endpointId caller payload
+      receiverSlotBase executingCore st d hd)
 
 /-- **WS-RR RR8.12 Cut C6d**: `.reply`'s footprint covers its writes — of the
 **arm**, `replyTransferOnCore`, not of the dispatch beneath it.

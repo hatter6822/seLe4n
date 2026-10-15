@@ -72,94 +72,25 @@ both arms read the receiver's root from `st` as well. (They read it from the
 is a fact about the tree that a later transition could falsify silently, while
 "both read the same state" is a fact about the code.)
 
-`none` covers the three shapes that install nothing: a message carrying no
-capabilities, an endpoint with no waiting receiver, and a receiver whose TCB
-does not resolve. The last is the fail-closed arm the transitions take as
+`none` covers the three shapes that install nothing: a send asking to transfer
+no capabilities (`sendCapRequest`), an endpoint with no waiting receiver, and a
+receiver whose TCB does not resolve. The last is the fail-closed arm the transitions take as
 `.error .invalidCapability`; it declares no destination because it writes
 none. -/
 def rendezvousCapsDestination? (st : SystemState) (endpointId : SeLe4n.ObjId)
-    (msg : IpcMessage) : Option SeLe4n.ObjId :=
-  if msg.caps.isEmpty then none
+    (sender : SeLe4n.ThreadId) (payload : SendPayload) : Option SeLe4n.ObjId :=
+  if (sendCapRequest st endpointId sender payload).isNone then none
   else ((st.getEndpoint? endpointId).bind (·.receiveQ.head)).bind (lookupCspaceRoot st)
 
-/-- M-D01: Extended send with capability transfer. Composes `endpointSendDual`
-with `ipcUnwrapCaps` as a post-step when immediate rendezvous occurs.
-
-Semantics:
-- First checks if a receiver is waiting on the endpoint's receiveQ.
-- Sends the message via `endpointSendDual`.
-- If immediate rendezvous occurred (receiver was waiting): reads the
-  receiver's cspaceRoot from their TCB and unwraps `msg.caps` into the
-  receiver's CSpace.
-- If no receiver was waiting (sender enqueued): nothing is resolved or
-  installed; the receive that later dequeues the sender resolves its
-  capability addresses then (`receiveTransferCaps`).
-- The `endpointRights` parameter carries the endpoint capability's rights
-  from the sender's gate — used to check the `Grant` right gate.
-
-Returns the cap transfer summary (empty if no immediate rendezvous or if
-the endpoint lacks Grant right). -/
-def endpointSendDualWithCaps
-    (endpointId : SeLe4n.ObjId) (sender : SeLe4n.ThreadId)
-    (msg : IpcMessage) (endpointRights : AccessRightSet)
-    (receiverSlotBase : SeLe4n.Slot) : Kernel CapTransferSummary :=
-  fun st =>
-    -- PR #873 round 13: **the endpoint's grant right is stamped into the
-    -- message**, because the message is where both orderings read it. The
-    -- immediate rendezvous below consulted `endpointRights` while a queued send
-    -- left `msg.capsGranted` untouched for the later unwrap to read, so a caller
-    -- that passed granting rights with the field's `false` default transferred
-    -- capabilities on rendezvous and none after parking -- capability delivery
-    -- decided by which side reached the endpoint first, the order-dependence
-    -- round 6 removed from the receive side. One authority, recorded once, read
-    -- once.
-    -- Check if a receiver is waiting BEFORE the send.
-    -- AJ1-C (M-02): `endpointQueuePopHead_returns_head` proves the pre-inspected
-    -- receiver matches the thread actually dequeued, ensuring capability transfer
-    -- targets the correct thread.
-    -- AN10-B (DEF-AK7-F.reader.hygiene): typed-helper migration.
-    let hasReceiver := match st.getEndpoint? endpointId with
-      | some ep => ep.receiveQ.head.isSome
-      | none => false
-    match endpointSendDual endpointId sender { msg with capsGranted := endpointRights.mem .grant } st with
-    | .error e => .error e
-    | .ok ((), st') =>
-        if !hasReceiver || msg.caps.isEmpty then
-          -- No immediate rendezvous or no caps to transfer
-          .ok ({ results := #[] }, st')
-        else
-          -- Immediate rendezvous occurred — find receiver's cspaceRoot
-          -- The receiver was the head of the receiveQ before the send.
-          -- After send, the receiver's TCB has been updated with the message.
-          -- We need to find who was dequeued. Look at endpoint state pre-send.
-          -- AN10-B (DEF-AK7-F.reader.hygiene): typed-helper migration.
-          match st.getEndpoint? endpointId with
-          | some ep =>
-            match ep.receiveQ.head with
-            | some receiverId =>
-              match lookupCspaceRoot st receiverId with
-              | some recvRoot =>
-                ipcUnwrapCaps { msg with capsGranted := endpointRights.mem .grant } recvRoot
-                  receiverSlotBase (endpointRights.mem .grant) st'
-              | none =>
-                -- AK1-I (I-M07 / MEDIUM, NI L-1): Symmetric with the
-                -- `endpointReceiveDualWithCaps` and `endpointCallWithCaps`
-                -- arms below. Previous behavior returned
-                -- `.ok ({ results := #[] }, st')` — a silent success on
-                -- missing receiver CSpace root. This asymmetry was an NI
-                -- distinguisher: send and receive (and later call)
-                -- observed different kernel-result shapes for the same
-                -- structural fault, giving a per-domain covert channel
-                -- via `KernelError`. All three IPC capability-transfer
-                -- paths now fail closed with `.invalidCapability`,
-                -- preserving NI symmetry. The message payload itself was
-                -- already delivered by `endpointSendDual` at line above;
-                -- the `.error` indicates the capability-transfer side
-                -- channel failed and allows the caller to surface a clean
-                -- protocol-level error.
-                .error .invalidCapability
-            | none => .ok ({ results := #[] }, st')
-          | none => .ok ({ results := #[] }, st')
+/-- WS-ZA ZA4.7: a frame sent without the grant right asks to transfer nothing,
+so it names no capability destination. -/
+theorem rendezvousCapsDestination?_ungranted (st : SystemState) (endpointId : SeLe4n.ObjId)
+    (sender : SeLe4n.ThreadId) (badge : Option SeLe4n.Badge) :
+    rendezvousCapsDestination? st endpointId sender (.frame badge false) = none := by
+  unfold rendezvousCapsDestination? sendCapRequest
+  split
+  · rfl
+  · split <;> rfl
 
 /-- WS-ZA ZA4.7: **resolve and install a receive's capability request** -- the
 capabilities a dequeued sender asked to transfer (`receiveCapRequest`), looked
@@ -179,6 +110,37 @@ def receiveTransferCaps (req : Option (SeLe4n.ObjId × Array SeLe4n.CPtr × Nat)
         else
           ipcUnwrapCaps { IpcMessage.empty with caps := caps, capsGranted := true }
             receiverCspaceRoot receiverSlotBase true st'
+
+/-- M-D01: Extended send with capability transfer.
+
+Semantics:
+- Sends via `endpointSendDual`.
+- If a receiver was waiting (immediate rendezvous): resolves the capabilities
+  the sender's frame asks to transfer (`sendCapRequest`, under its capability's
+  grant right) in its CSpace now, and installs them in the receiver's CSpace
+  (`receiveTransferCaps`, the receive side's own transfer).
+- If no receiver was waiting (sender enqueued): nothing is resolved or
+  installed; the receive that later dequeues the sender resolves its
+  capability addresses then.
+
+So capabilities are looked up only on the arm that delivers them, at the
+rendezvous, on either arrival order (WS-ZA ZA4.7; seL4 `doIPCTransfer`).
+Returns the cap transfer summary (empty when nothing is transferred). -/
+def endpointSendDualWithCaps
+    (endpointId : SeLe4n.ObjId) (sender : SeLe4n.ThreadId)
+    (payload : SendPayload) (receiverSlotBase : SeLe4n.Slot) : Kernel CapTransferSummary :=
+  fun st =>
+    let req := sendCapRequest st endpointId sender payload
+    let dest? := ((st.getEndpoint? endpointId).bind (·.receiveQ.head)).bind (lookupCspaceRoot st)
+    match endpointSendDual endpointId sender payload st with
+    | .error e => .error e
+    | .ok ((), st') =>
+        match req with
+        | none => .ok ({ results := #[] }, st')
+        | some _ =>
+            match dest? with
+            | some recvRoot => receiveTransferCaps req recvRoot receiverSlotBase st'
+            | none => .error .invalidCapability
 
 /-- M-D01: Extended receive with capability transfer. When a sender is
 dequeued (immediate rendezvous on the receive side), the capabilities it asked
@@ -231,62 +193,23 @@ theorem endpointReceiveDualWithCaps_blocked_installs_nothing
       = .ok ((senderId, { results := #[] }), st') := by
   simp [endpointReceiveDualWithCaps, hRecv, hBlocked]
 
-/-- M-D01: Extended call with capability transfer. Composes `endpointCall`
-with `ipcUnwrapCaps` for the immediate-rendezvous path. Same structure as
+/-- M-D01: Extended call with capability transfer. Same structure as
 `endpointSendDualWithCaps` but using `endpointCall` as the base operation. -/
 def endpointCallWithCaps
     (endpointId : SeLe4n.ObjId) (caller : SeLe4n.ThreadId)
-    (msg : IpcMessage) (endpointRights : AccessRightSet)
-    (receiverSlotBase : SeLe4n.Slot) : Kernel CapTransferSummary :=
+    (payload : SendPayload) (receiverSlotBase : SeLe4n.Slot) : Kernel CapTransferSummary :=
   fun st =>
-    -- PR #873 round 13: **the endpoint's grant right is stamped into the
-    -- message**, because the message is where both orderings read it. The
-    -- immediate rendezvous below consulted `endpointRights` while a queued send
-    -- left `msg.capsGranted` untouched for the later unwrap to read, so a caller
-    -- that passed granting rights with the field's `false` default transferred
-    -- capabilities on rendezvous and none after parking -- capability delivery
-    -- decided by which side reached the endpoint first, the order-dependence
-    -- round 6 removed from the receive side. One authority, recorded once, read
-    -- once.
-    -- AN10-B (DEF-AK7-F.reader.hygiene): typed-helper migration.
-    let hasReceiver := match st.getEndpoint? endpointId with
-      | some ep => ep.receiveQ.head.isSome
-      | none => false
-    match endpointCall endpointId caller { msg with capsGranted := endpointRights.mem .grant } st with
+    let req := sendCapRequest st endpointId caller payload
+    let dest? := ((st.getEndpoint? endpointId).bind (·.receiveQ.head)).bind (lookupCspaceRoot st)
+    match endpointCall endpointId caller payload st with
     | .error e => .error e
     | .ok ((), st') =>
-        if !hasReceiver || msg.caps.isEmpty then
-          .ok ({ results := #[] }, st')
-        else
-          -- AN10-B (DEF-AK7-F.reader.hygiene): typed-helper migration.
-          match st.getEndpoint? endpointId with
-          | some ep =>
-            match ep.receiveQ.head with
-            | some receiverId =>
-              match lookupCspaceRoot st receiverId with
-              | some recvRoot =>
-                ipcUnwrapCaps { msg with capsGranted := endpointRights.mem .grant } recvRoot
-                  receiverSlotBase (endpointRights.mem .grant) st'
-              | none =>
-                -- WS-RC R1 (DEEP-IPC-03 / MEDIUM, NI L-1): Symmetric with
-                -- the `endpointSendDualWithCaps` and
-                -- `endpointReceiveDualWithCaps` arms above. Previous
-                -- behavior returned `.ok ({ results := #[] }, st')` — a
-                -- silent success on missing receiver CSpace root. This
-                -- asymmetry was an NI distinguisher: the call path
-                -- observed a different kernel-result shape from the
-                -- send/receive paths for the same structural fault,
-                -- giving a per-domain covert channel via `KernelError`.
-                -- All three IPC capability-transfer paths now fail
-                -- closed with `.invalidCapability` on this branch,
-                -- preserving NI symmetry. The message payload itself
-                -- was already delivered by `endpointCall` at line
-                -- above; the `.error` indicates the capability-transfer
-                -- side channel failed and allows the caller to surface
-                -- a clean protocol-level error.
-                .error .invalidCapability
-            | none => .ok ({ results := #[] }, st')
-          | none => .ok ({ results := #[] }, st')
+        match req with
+        | none => .ok ({ results := #[] }, st')
+        | some _ =>
+            match dest? with
+            | some recvRoot => receiveTransferCaps req recvRoot receiverSlotBase st'
+            | none => .error .invalidCapability
 
 /-- **WS-RR RR7.8**: when the pre-state names a destination, the send arm's whole
 effect is the base transition followed by `ipcUnwrapCaps` **at that root**.
@@ -297,62 +220,85 @@ one fact rather than two that agree today. A refactor that changes which root
 the arm installs into — or which state it reads it from — fails here. -/
 theorem endpointSendDualWithCaps_reduces_to_unwrap
     (endpointId : SeLe4n.ObjId) (sender : SeLe4n.ThreadId)
-    (msg : IpcMessage) (endpointRights : AccessRightSet)
-    (receiverSlotBase : SeLe4n.Slot)
+    (payload : SendPayload) (receiverSlotBase : SeLe4n.Slot)
     (st st' : SystemState) (recvRoot : SeLe4n.ObjId)
-    (hSend : endpointSendDual endpointId sender
-        { msg with capsGranted := endpointRights.mem .grant } st = .ok ((), st'))
-    (hDest : rendezvousCapsDestination? st endpointId msg = some recvRoot) :
-    endpointSendDualWithCaps endpointId sender msg endpointRights
-        receiverSlotBase st
-      = ipcUnwrapCaps { msg with capsGranted := endpointRights.mem .grant }
-          recvRoot receiverSlotBase (endpointRights.mem .grant) st' := by
-  unfold endpointSendDualWithCaps
+    (hSend : endpointSendDual endpointId sender payload st = .ok ((), st'))
+    (hDest : rendezvousCapsDestination? st endpointId sender payload = some recvRoot) :
+    endpointSendDualWithCaps endpointId sender payload receiverSlotBase st
+      = receiveTransferCaps (sendCapRequest st endpointId sender payload)
+          recvRoot receiverSlotBase st' := by
   unfold rendezvousCapsDestination? at hDest
-  by_cases hEmpty : msg.caps.isEmpty = true
-  · simp [hEmpty] at hDest
-  · simp only [hEmpty] at hDest
-    cases hEp : st.getEndpoint? endpointId with
-    | none => simp [hEp] at hDest
-    | some ep =>
-      cases hHead : ep.receiveQ.head with
-      | none => simp [hEp, hHead] at hDest
-      | some receiverId =>
-        simp only [hEp, hHead, Option.bind_some] at hDest
-        simp only [hSend, hHead, Option.isSome_some, hEmpty,
-          Bool.not_true, Bool.false_or]
-        simp only [Bool.false_eq_true, if_false] at hDest ⊢
-        rw [hDest]
+  unfold endpointSendDualWithCaps
+  simp only [hSend]
+  cases hReq : sendCapRequest st endpointId sender payload with
+  | none => simp [hReq] at hDest
+  | some r => simp only [hReq, Option.isNone_some, Bool.false_eq_true, ↓reduceIte] at hDest ⊢; rw [hDest]
 
 /-- **WS-RR RR7.8**: the call arm's reduction, identically shaped — the same
 condition, the same resolver, the same root. -/
 theorem endpointCallWithCaps_reduces_to_unwrap
     (endpointId : SeLe4n.ObjId) (caller : SeLe4n.ThreadId)
-    (msg : IpcMessage) (endpointRights : AccessRightSet)
-    (receiverSlotBase : SeLe4n.Slot)
+    (payload : SendPayload) (receiverSlotBase : SeLe4n.Slot)
     (st st' : SystemState) (recvRoot : SeLe4n.ObjId)
-    (hCall : endpointCall endpointId caller
-        { msg with capsGranted := endpointRights.mem .grant } st = .ok ((), st'))
-    (hDest : rendezvousCapsDestination? st endpointId msg = some recvRoot) :
-    endpointCallWithCaps endpointId caller msg endpointRights
-        receiverSlotBase st
-      = ipcUnwrapCaps { msg with capsGranted := endpointRights.mem .grant }
-          recvRoot receiverSlotBase (endpointRights.mem .grant) st' := by
-  unfold endpointCallWithCaps
+    (hCall : endpointCall endpointId caller payload st = .ok ((), st'))
+    (hDest : rendezvousCapsDestination? st endpointId caller payload = some recvRoot) :
+    endpointCallWithCaps endpointId caller payload receiverSlotBase st
+      = receiveTransferCaps (sendCapRequest st endpointId caller payload)
+          recvRoot receiverSlotBase st' := by
   unfold rendezvousCapsDestination? at hDest
-  by_cases hEmpty : msg.caps.isEmpty = true
-  · simp [hEmpty] at hDest
-  · simp only [hEmpty] at hDest
-    cases hEp : st.getEndpoint? endpointId with
-    | none => simp [hEp] at hDest
-    | some ep =>
-      cases hHead : ep.receiveQ.head with
-      | none => simp [hEp, hHead] at hDest
-      | some receiverId =>
-        simp only [hEp, hHead, Option.bind_some] at hDest
-        simp only [hCall, hHead, Option.isSome_some, hEmpty,
-          Bool.not_true, Bool.false_or]
-        simp only [Bool.false_eq_true, if_false] at hDest ⊢
-        rw [hDest]
+  unfold endpointCallWithCaps
+  simp only [hCall]
+  cases hReq : sendCapRequest st endpointId caller payload with
+  | none => simp [hReq] at hDest
+  | some r => simp only [hReq, Option.isNone_some, Bool.false_eq_true, ↓reduceIte] at hDest ⊢; rw [hDest]
+
+
+/-- WS-ZA ZA4.7: **a WithCaps send is its send and then one transfer**: a
+successful `endpointSendDualWithCaps` is the base send followed by
+`receiveTransferCaps` of the sender's request at some destination (a request of
+`none` installs nothing).  Every WithCaps send preservation proof goes through
+this and `receiveTransferCaps_frame`, the receive's shape. -/
+theorem endpointSendDualWithCaps_transfer_of
+    {endpointId : SeLe4n.ObjId} {sender : SeLe4n.ThreadId} {payload : SendPayload}
+    {receiverSlotBase : SeLe4n.Slot} {st stMid st' : SystemState}
+    {summary : CapTransferSummary}
+    (hSend : endpointSendDual endpointId sender payload st = .ok ((), stMid))
+    (hStep : endpointSendDualWithCaps endpointId sender payload receiverSlotBase st =
+      .ok (summary, st')) :
+    ∃ recvRoot, receiveTransferCaps (sendCapRequest st endpointId sender payload) recvRoot
+      receiverSlotBase stMid = .ok (summary, st') := by
+  unfold endpointSendDualWithCaps at hStep
+  simp only [hSend] at hStep
+  cases hReq : sendCapRequest st endpointId sender payload with
+  | none =>
+    simp only [hReq] at hStep
+    exact ⟨endpointId, hStep⟩
+  | some r =>
+    simp only [hReq] at hStep
+    split at hStep
+    · exact ⟨_, hStep⟩
+    · cases hStep
+
+/-- WS-ZA ZA4.7: the call's twin of `endpointSendDualWithCaps_transfer_of`. -/
+theorem endpointCallWithCaps_transfer_of
+    {endpointId : SeLe4n.ObjId} {caller : SeLe4n.ThreadId} {payload : SendPayload}
+    {receiverSlotBase : SeLe4n.Slot} {st stMid st' : SystemState}
+    {summary : CapTransferSummary}
+    (hCall : endpointCall endpointId caller payload st = .ok ((), stMid))
+    (hStep : endpointCallWithCaps endpointId caller payload receiverSlotBase st =
+      .ok (summary, st')) :
+    ∃ recvRoot, receiveTransferCaps (sendCapRequest st endpointId caller payload) recvRoot
+      receiverSlotBase stMid = .ok (summary, st') := by
+  unfold endpointCallWithCaps at hStep
+  simp only [hCall] at hStep
+  cases hReq : sendCapRequest st endpointId caller payload with
+  | none =>
+    simp only [hReq] at hStep
+    exact ⟨endpointId, hStep⟩
+  | some r =>
+    simp only [hReq] at hStep
+    split at hStep
+    · exact ⟨_, hStep⟩
+    · cases hStep
 
 end SeLe4n.Kernel

@@ -158,7 +158,7 @@ handler, resolved from the pre-state in one pass.
 
 `cspaceRoot` is the *faulting thread's* CSpace root, threaded because the Call
 the delivery composes takes it as the source of any capabilities the message
-transfers.  A fault message transfers none (`faultMessage_caps`), so it is
+transfers.  A fault payload transfers none (`sendCapRequest_fault`), so it is
 inert on this path — but naming the faulting thread's own root, rather than a
 synthesised value, keeps the delivery a real instance of the Call rather than
 one with a fabricated argument. -/
@@ -393,19 +393,6 @@ theorem recordPendingFault_preserves_objects_invExt
     (recordPendingFault st tid tf).objects.invExt := by
   unfold recordPendingFault
   exact SystemState.updateTcb_preserves_objects_invExt _ _ _ hObjInv
-
-/-- **WS-RR RR8.16** (`v0.35.200`): **a fault message carries no capabilities.**
-
-Stated because the fault delivery's capability-bundle lift rests on it: the
-`.call` leg short-circuits on `msg.caps.isEmpty` before it resolves the
-receiver's CSpace root, so a fault delivery never reaches `ipcUnwrapCaps` and its
-lift needs no transfer hypothesis.  A fault's payload is *registers*, encoded
-into `registers`; there is no capability to hand a handler. -/
-@[simp] theorem faultMessage_caps_empty (f : Fault) (ctx : FaultContext)
-    (badge : Option SeLe4n.Badge) :
-    (faultMessage f ctx badge).caps.isEmpty = true := by
-  unfold faultMessage
-  rfl
 
 /-- **WS-RR RR8.16** (`v0.35.200`): recording a fault is a `kindPreservingWrite`
 and writes neither derivation table — `updateTcb`'s own facts. -/

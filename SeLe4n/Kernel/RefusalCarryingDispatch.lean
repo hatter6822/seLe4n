@@ -664,6 +664,60 @@ both straight from the register file and builds no decode record. -/
     | some _ => .error (.illegalState, st)
     | none   => .error (.objectNotFound, st)
 
+/-- `dispatchOperandCheckedR` is `dispatchSyscallChecked`, at one state, for a
+syscall that resolves its operand before its arm (`hFirst`), given an `arm`
+that is the specification's arm and taint step at that state on every
+capability the operand resolves to (`hArm`). -/
+theorem dispatchOperandCheckedR_eq_at (ctx : LabelingContext)
+    (decoded : SyscallDecodeResult) (tid : SeLe4n.ThreadId)
+    (executingCore : Concurrency.CoreId)
+    (arm : TaintTable → Option Capability → RefusalCarrying Unit)
+    (hFirst : syscallChecksTargetFirst decoded.syscallId = false)
+    (hNotYield : decoded.syscallId ≠ .yield)
+    (st : SystemState)
+    (hArm : ∀ (tcb : TCB) (rootCn : CNode) (ref : CSpaceAddr),
+      st.getObject? tid.toObjId = some (.tcb tcb) →
+      st.getObject? tcb.cspaceRoot = some (.cnode rootCn) →
+      resolveCapAddress tcb.cspaceRoot decoded.capAddr rootCn.depth st = .ok ref →
+      arm st.declassificationTaint (SystemState.lookupSlotCap st ref) st =
+        RefusalCarrying.ofKernel (dispatchCheckedArmThenTaint ctx decoded tid executingCore
+          { callerId := tid, cspaceRoot := tcb.cspaceRoot, capAddr := decoded.capAddr,
+            capDepth := rootCn.depth, requiredRight := syscallRequiredRight decoded.syscallId }
+          (syscallTaintPlan st tid decoded) st.declassificationAuditEpoch
+          st.declassificationAuditLog st.declassificationTaint) st) :
+    dispatchOperandCheckedR decoded.capAddr tid executingCore arm st =
+      RefusalCarrying.ofKernel (dispatchSyscallChecked ctx decoded tid executingCore) st := by
+  rw [dispatchSyscallChecked_eq_impl]
+  simp only [dispatchOperandCheckedR, RefusalCarrying.ofKernel, dispatchSyscallCheckedImpl]
+  by_cases hCur : st.scheduler.currentOnCore executingCore = some tid
+  · have hIs : (st.scheduler.currentOnCore executingCore).isEqSome tid = true :=
+      (threadId_isEqSome_iff _ _).2 hCur
+    have hNot : ¬ (st.scheduler.currentOnCore executingCore ≠ some tid) := fun h => h hCur
+    rw [if_neg (by simp only [hIs, Bool.not_true, Bool.false_eq_true, not_false_eq_true]),
+      if_neg hNot, if_neg hNotYield]
+    split
+    · next tcb hTcb =>
+      split
+      · next rootCn hRoot =>
+        simp only [hTcb, hRoot]
+        rw [resolveCapAddressKUnrolled_eq, resolveCapAddressK_eq]
+        rcases hRef : resolveCapAddress tcb.cspaceRoot decoded.capAddr rootCn.depth st with
+          e | ref
+        · simp only [dispatchCheckedArmThenTaint, hFirst, Bool.false_eq_true, ↓reduceIte,
+            syscallInvoke, syscallLookupCap, syscallResolveCap, hRef]
+        · have h := hArm tcb rootCn ref hTcb hRoot hRef
+          simp only [RefusalCarrying.ofKernel] at h
+          exact h
+      · next hRoot => simp only [hTcb, hRoot]
+      · next hRoot => simp only [hTcb, hRoot]
+    · next hTcb => simp only [hTcb]
+    · next hTcb => simp only [hTcb]
+  · have hIs : (st.scheduler.currentOnCore executingCore).isEqSome tid = false := by
+      cases h : (st.scheduler.currentOnCore executingCore).isEqSome tid
+      · rfl
+      · exact absurd ((threadId_isEqSome_iff _ _).1 h) hCur
+    rw [if_pos (by simp only [hIs, Bool.not_false]), if_pos hCur]
+
 /-- `dispatchOperandCheckedR` is `dispatchSyscallChecked` for a syscall that
 resolves its operand before its arm (`hFirst`), given an `arm` that is the
 specification's arm and taint step on every capability the operand resolves
@@ -687,36 +741,8 @@ theorem dispatchOperandCheckedR_eq (ctx : LabelingContext)
     dispatchOperandCheckedR decoded.capAddr tid executingCore arm =
       RefusalCarrying.ofKernel (dispatchSyscallChecked ctx decoded tid executingCore) := by
   funext st
-  rw [dispatchSyscallChecked_eq_impl]
-  simp only [dispatchOperandCheckedR, RefusalCarrying.ofKernel, dispatchSyscallCheckedImpl]
-  by_cases hCur : st.scheduler.currentOnCore executingCore = some tid
-  · have hIs : (st.scheduler.currentOnCore executingCore).isEqSome tid = true :=
-      (threadId_isEqSome_iff _ _).2 hCur
-    have hNot : ¬ (st.scheduler.currentOnCore executingCore ≠ some tid) := fun h => h hCur
-    rw [if_neg (by simp only [hIs, Bool.not_true, Bool.false_eq_true, not_false_eq_true]),
-      if_neg hNot, if_neg hNotYield]
-    split
-    · next tcb hTcb =>
-      split
-      · next rootCn hRoot =>
-        simp only [hTcb, hRoot]
-        rw [resolveCapAddressKUnrolled_eq, resolveCapAddressK_eq]
-        rcases hRef : resolveCapAddress tcb.cspaceRoot decoded.capAddr rootCn.depth st with
-          e | ref
-        · simp only [dispatchCheckedArmThenTaint, hFirst, Bool.false_eq_true, ↓reduceIte,
-            syscallInvoke, syscallLookupCap, syscallResolveCap, hRef]
-        · have h := hArm st tcb rootCn ref hTcb hRoot hRef
-          simp only [RefusalCarrying.ofKernel] at h
-          exact h
-      · next hRoot => simp only [hTcb, hRoot]
-      · next hRoot => simp only [hTcb, hRoot]
-    · next hTcb => simp only [hTcb]
-    · next hTcb => simp only [hTcb]
-  · have hIs : (st.scheduler.currentOnCore executingCore).isEqSome tid = false := by
-      cases h : (st.scheduler.currentOnCore executingCore).isEqSome tid
-      · rfl
-      · exact absurd ((threadId_isEqSome_iff _ _).1 h) hCur
-    rw [if_pos (by simp only [hIs, Bool.not_false]), if_pos hCur]
+  exact dispatchOperandCheckedR_eq_at ctx decoded tid executingCore arm hFirst hNotYield st
+    (hArm st)
 
 /-- The operand a dispatch resolves is the one the taint plan reads. -/
 theorem syscallOperandCap?_of_resolved (st : SystemState) (tid : SeLe4n.ThreadId)

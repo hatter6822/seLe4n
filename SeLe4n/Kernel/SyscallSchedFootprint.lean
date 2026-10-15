@@ -164,24 +164,17 @@ def schedLockSetForSyscall (sid : SyscallId) (ops : SyscallLockOperands)
             LockSet.ofList?
               (schedLockSet_endpointReceiveOnCore st epId ops.caller ops.targetReply
                 receiver.cspaceRoot slotBase executingCore)
-  -- **WS-LS LS2.3**: read at the state the arm's own extra-capability
-  -- resolution leaves.  `endpointCallDispatchWriteSet` re-runs the dispatch,
-  -- and the dispatch reads the derivation nodes that resolution mints, so a
-  -- footprint read before it would be a footprint for a leg run on a different
-  -- derivation tree.  The root and depth are the caller's own, as the gate's
-  -- are (`abiEntryGate_components`); the grant bit travels on the message.
+  -- **WS-ZA ZA4.7**: read at the entry's own state.  The call resolves no
+  -- capability before it runs -- the transfer is looked up at the rendezvous
+  -- (`sendCapRequest`) -- so the write set, which re-runs the dispatch, reads
+  -- the state the dispatch itself starts from.
   | .call =>
       ops.targetObject.bind fun epId =>
-        ops.message.bind fun msg =>
-          ops.endpointRights.bind fun rights =>
-            ops.receiverSlotBase.bind fun slotBase =>
-              (st.getTcb? ops.caller).bind fun callerTcb =>
-                (st.getCNode? callerTcb.cspaceRoot).bind fun rootCn =>
-                  LockSet.ofList?
-                    (schedLockSet_endpointCallOnCore epId ops.caller msg rights slotBase
-                      executingCore
-                      (resolveExtraCaps callerTcb.cspaceRoot ops.extraCapAddrs rootCn.depth
-                        msg.capsGranted st).2)
+        ops.payload.bind fun payload =>
+          ops.receiverSlotBase.bind fun slotBase =>
+            LockSet.ofList?
+              (schedLockSet_endpointCallOnCore epId ops.caller payload slotBase
+                executingCore st)
   | .reply =>
       ops.targetReply.bind fun rid =>
         (replyAnsweredCaller? st rid).bind fun answered =>
@@ -369,24 +362,15 @@ theorem schedLockSetForSyscall_lifecycle_isSome_iff
           simp [hV, LockSet.ofList?, schedLockSet_suspendThreadOnCore,
             schedLockSet_resumeThreadOnCore, schedFootprintOfCores_keys_nodup])
 
-/-- `.call` needs the endpoint, the message, the invoked capability's rights,
-the receiver's slot base, and (**WS-LS LS2.3**) the caller's TCB and CSpace
-root — its write set re-runs the dispatch at the state the arm's
-extra-capability resolution leaves, which reads all of them. -/
+/-- `.call` needs the endpoint, the payload and the receiver's slot base; its
+write set re-runs the dispatch, which reads all of them. -/
 theorem schedLockSetForSyscall_call_isSome_iff
     (ops : SyscallLockOperands) (executingCore : CoreId) (st : SystemState) :
     (schedLockSetForSyscall .call ops executingCore st).isSome
-      ↔ ops.targetObject.isSome ∧ ops.message.isSome ∧ ops.endpointRights.isSome ∧
-        ops.receiverSlotBase.isSome ∧
-        ∃ callerTcb, st.getTcb? ops.caller = some callerTcb ∧
-          (st.getCNode? callerTcb.cspaceRoot).isSome := by
+      ↔ ops.targetObject.isSome ∧ ops.payload.isSome ∧ ops.receiverSlotBase.isSome := by
   unfold schedLockSetForSyscall
-  cases ops.targetObject <;> cases ops.message <;> cases ops.endpointRights <;>
-    cases ops.receiverSlotBase <;> cases hT : st.getTcb? ops.caller <;>
-      simp [LockSet.ofList?, schedLockSet_endpointCallOnCore,
-        schedFootprintOfCores_keys_nodup]
-  rename_i callerTcb
-  cases st.getCNode? callerTcb.cspaceRoot <;> simp
+  cases ops.targetObject <;> cases ops.payload <;> cases ops.receiverSlotBase <;>
+    simp [LockSet.ofList?, schedLockSet_endpointCallOnCore, schedFootprintOfCores_keys_nodup]
 
 /-- `.reply` needs the Reply object to resolve to an answered caller, and the
 message, `MessageInfo` and register payload `decodeFaultReply` reads. -/

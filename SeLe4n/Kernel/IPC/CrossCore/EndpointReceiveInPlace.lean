@@ -128,18 +128,63 @@ theorem blockedSender_of_routedSend (st : SystemState) (s : SeLe4n.ThreadId) (sT
   obtain ⟨d, hDec, _, _, _, hMi, hX, _, hRegs⟩ :=
     Architecture.RegisterDecode.decodeSyscallArgsFromState_of_routedSend st s _ _ 32 capAddr mi h
   refine ⟨?_, ?_⟩
-  · unfold blockedSenderCapRequest blockedSenderDecode
-    rw [hDec]
-    have hE : (Architecture.SyscallArgDecode.decodeExtraCapAddrs d).isEmpty = true := by
+  · have hE : (Architecture.SyscallArgDecode.decodeExtraCapAddrs d).isEmpty = true := by
       unfold Architecture.SyscallArgDecode.decodeExtraCapAddrs
       rw [hMi, hX]
       rfl
-    simp only [hF, Bool.false_or, hE, ↓reduceIte]
-    split <;> rfl
+    unfold blockedSenderCapRequest senderFrameCapRequest blockedSenderDecode
+    rw [hDec]
+    simp only [hF, Bool.false_eq_true, ↓reduceIte, hE, ite_self]
   · unfold blockedSenderMessage blockedSenderMessageOf blockedSenderDecode
     rw [hDec]
-    simp only [hF, Bool.false_eq_true, ↓reduceIte, hRegs, hMi]
+    simp only [hF, Bool.false_eq_true, ↓reduceIte, senderFrameMessage, hRegs, hMi]
     rfl
+
+/-- WS-ZA ZA4.7: **what a thread whose saved frame routes as a capability-free
+send or call sends**: the message a send of its frame delivers is the inline
+words of that frame under the capability's badge and grant right, and it asks
+to transfer no capability -- so the send's register fast path, which writes
+those words straight into the receiver's saved registers, delivers exactly what
+the specification's send does. -/
+theorem sendFrame_of_routed (st : SystemState) (s : SeLe4n.ThreadId) (tcb : TCB)
+    (hT : st.getTcb? s = some tcb) (capAddr : SeLe4n.CPtr) (mi : MessageInfo)
+    (h : Architecture.RegisterDecode.registerRoutedSyscall SeLe4n.arm64DefaultLayout
+        tcb.registerContext 32 = .send capAddr mi ∨
+      Architecture.RegisterDecode.registerRoutedSyscall SeLe4n.arm64DefaultLayout
+        tcb.registerContext 32 = .call capAddr mi)
+    (endpointId : SeLe4n.ObjId) (badge : Option SeLe4n.Badge) (grant : Bool) :
+    sendPayloadMessage st s (.frame badge grant) =
+        { registers := Architecture.regMessageBody SeLe4n.arm64DefaultLayout
+            tcb.registerContext mi.length,
+          caps := #[], badge := badge, capsGranted := grant } ∧
+      sendCapRequest st endpointId s (.frame badge grant) = none := by
+  obtain ⟨d, hDec, hMi, hX, hRegs⟩ : ∃ d, blockedSenderDecode st s tcb = .ok d ∧
+      d.msgInfo = mi ∧ mi.extraCaps = 0 ∧
+      d.msgRegs = SeLe4n.arm64DefaultLayout.msgRegs.map
+        (SeLe4n.readReg tcb.registerContext) := by
+    rcases h with h | h
+    · obtain ⟨d, hDec, _, _, _, hMi, hX, _, hRegs⟩ :=
+        Architecture.RegisterDecode.decodeSyscallArgsFromState_of_routedSend st s _ _ 32
+          capAddr mi h
+      exact ⟨d, hDec, hMi, hX, hRegs⟩
+    · obtain ⟨d, hDec, _, _, _, hMi, hX, _, hRegs⟩ :=
+        Architecture.RegisterDecode.decodeSyscallArgsFromState_of_routedCall st s _ _ 32
+          capAddr mi h
+      exact ⟨d, hDec, hMi, hX, hRegs⟩
+  refine ⟨?_, ?_⟩
+  · simp only [sendPayloadMessage, senderFrameDecode, hT, hDec, senderFrameMessage, hRegs, hMi]
+    rfl
+  · unfold sendCapRequest
+    split
+    · rfl
+    · rw [hT]
+      simp only [sendPayloadCapRequest, senderFrameCapRequest, hDec]
+      have hE : (Architecture.SyscallArgDecode.decodeExtraCapAddrs d).isEmpty = true := by
+        unfold Architecture.SyscallArgDecode.decodeExtraCapAddrs
+        rw [hMi, hX]
+        rfl
+      simp only [hE, ↓reduceIte]
+      split <;> rfl
 
 /-- A woken sender's completion frame commutes with a message-slot write at
 another thread. -/

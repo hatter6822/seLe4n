@@ -459,16 +459,11 @@ and TCB queue links; notification objects are unchanged. See TPI-D08
 structural argument above. -/
 theorem endpointSendDual_preserves_ipcInvariant
     (st st' : SystemState) (endpointId : SeLe4n.ObjId)
-    (sender : SeLe4n.ThreadId) (msg : IpcMessage)
+    (sender : SeLe4n.ThreadId) (payload : SendPayload)
     (hInv : ipcInvariant st) (hObjInv : st.objects.invExt)
-    (hStep : endpointSendDual endpointId sender msg st = .ok ((), st')) :
+    (hStep : endpointSendDual endpointId sender payload st = .ok ((), st')) :
     ipcInvariant st' := by
   unfold endpointSendDual SystemState.getObject? at hStep
-  -- WS-H12d: Eliminate bounds-check if-branches (error cases contradict hStep : ... = .ok ...)
-  simp only [show ¬(maxMessageRegisters < msg.registers.size) from by
-    intro h; simp [h] at hStep, ↓reduceIte] at hStep
-  simp only [show ¬(maxExtraCaps < msg.caps.size) from by
-    intro h; simp [h] at hStep, ↓reduceIte] at hStep
   cases hObj : st.objects[endpointId]? with
   | none => simp [hObj] at hStep
   | some obj => cases obj with
@@ -493,12 +488,12 @@ theorem endpointSendDual_preserves_ipcInvariant
           have hObjInv1 : pair.2.2.objects.invExt :=
             endpointQueuePopHead_preserves_objects_invExt endpointId true st pair.2.2 pair.1 pair.2.1 hObjInv hPop
           have hInv1 := endpointQueuePopHead_preserves_ipcInvariant endpointId true st pair.2.2 pair.1 hInv hObjInv hPop
-          cases hMsg : storeTcbReceiveComplete pair.2.2 pair.1 (some msg) with
+          cases hMsg : storeTcbReceiveComplete pair.2.2 pair.1 (some (sendPayloadMessage st sender payload)) with
           | error e => simp [hMsg] at hStep
           | ok st2 =>
             simp only [hMsg, Except.ok.injEq, Prod.mk.injEq] at hStep
             obtain ⟨_, hEq⟩ := hStep; subst hEq
-            have hInv2 := storeTcbReceiveComplete_preserves_ipcInvariant pair.2.2 st2 pair.1 (some msg) hInv1 hObjInv1 hMsg
+            have hInv2 := storeTcbReceiveComplete_preserves_ipcInvariant pair.2.2 st2 pair.1 (some (sendPayloadMessage st sender payload)) hInv1 hObjInv1 hMsg
             exact fun oid ntfn h => hInv2 oid ntfn ((ensureRunnable_objectsAgreeOffRunLinks _ _).get_notification_iff.mp h)
       | none =>
         -- Blocking path: Enqueue → storeTcbIpcStateAndMessage → removeRunnable
@@ -518,34 +513,21 @@ theorem endpointSendDual_preserves_ipcInvariant
             have hInv2 := storeTcbIpcStateAndMessage_preserves_ipcInvariant st1 st2 sender (.blockedOnSend endpointId) none hInv1 hObjInv1 hMsg
             exact fun oid ntfn h => hInv2 oid ntfn ((removeRunnable_objectsAgreeOffRunLinks _ _).get_notification_iff.mp h)
 
-/-- WS-H12d/A-09: If `endpointSendDual` succeeds, the message satisfies payload bounds.
-The bounds check at the top of `endpointSendDual` ensures that only bounded
-messages pass through to the state-modifying paths. -/
+/-- WS-H12d/A-09, restated by WS-ZA ZA4.7: the message `endpointSendDual`
+delivers satisfies the payload bounds.  The send carries no message of its own
+to check; what it delivers is the sender's frame cut to its declared length, or
+a fault encoded inside the budget (`sendPayloadMessage_bounded`). -/
 theorem endpointSendDual_message_bounded
-    (st st' : SystemState) (endpointId : SeLe4n.ObjId)
-    (sender : SeLe4n.ThreadId) (msg : IpcMessage)
-    (hStep : endpointSendDual endpointId sender msg st = .ok ((), st')) :
-    msg.bounded := by
-  unfold endpointSendDual SystemState.getObject? at hStep
-  -- If bounds checks fail, hStep contradicts .ok
-  by_cases hR : maxMessageRegisters < msg.registers.size
-  · simp [hR] at hStep
-  · by_cases hC : maxExtraCaps < msg.caps.size
-    · simp [hR, hC] at hStep
-    · exact ⟨Nat.not_lt.mp hR, Nat.not_lt.mp hC⟩
+    (st : SystemState) (sender : SeLe4n.ThreadId) (payload : SendPayload) :
+    (sendPayloadMessage st sender payload).bounded :=
+  sendPayloadMessage_bounded st sender payload
 
-/-- WS-H12d/A-09: If `endpointCall` succeeds, the message satisfies payload bounds. -/
+/-- WS-H12d/A-09, restated by WS-ZA ZA4.7: the message `endpointCall`
+delivers satisfies the payload bounds. -/
 theorem endpointCall_message_bounded
-    (st st' : SystemState) (endpointId : SeLe4n.ObjId)
-    (caller : SeLe4n.ThreadId) (msg : IpcMessage)
-    (hStep : endpointCall endpointId caller msg st = .ok ((), st')) :
-    msg.bounded := by
-  unfold endpointCall SystemState.getObject? at hStep
-  by_cases hR : maxMessageRegisters < msg.registers.size
-  · simp [hR] at hStep
-  · by_cases hC : maxExtraCaps < msg.caps.size
-    · simp [hR, hC] at hStep
-    · exact ⟨Nat.not_lt.mp hR, Nat.not_lt.mp hC⟩
+    (st : SystemState) (caller : SeLe4n.ThreadId) (payload : SendPayload) :
+    (sendPayloadMessage st caller payload).bounded :=
+  sendPayloadMessage_bounded st caller payload
 
 /-- WS-H12d/A-09: If `endpointReply` succeeds, the reply message satisfies payload bounds. -/
 theorem endpointReply_message_bounded
@@ -577,19 +559,14 @@ theorem endpointReplyRecv_message_bounded
 /-- WS-F1/TPI-D08: endpointSendDual preserves schedulerInvariantBundle. -/
 theorem endpointSendDual_preserves_schedulerInvariantBundle
     (st st' : SystemState) (endpointId : SeLe4n.ObjId)
-    (sender : SeLe4n.ThreadId) (msg : IpcMessage)
+    (sender : SeLe4n.ThreadId) (payload : SendPayload)
     (hInv : schedulerInvariantBundle st)
     (hCurrNotHead : currentNotEndpointQueueHead st)
     (hObjInv : st.objects.invExt)
-    (hStep : endpointSendDual endpointId sender msg st = .ok ((), st')) :
+    (hStep : endpointSendDual endpointId sender payload st = .ok ((), st')) :
     schedulerInvariantBundle st' := by
   rcases hInv with ⟨hQCC, hRQU, hCTV⟩
   unfold endpointSendDual SystemState.getObject? at hStep
-  -- WS-H12d: Eliminate bounds-check if-branches (error cases contradict hStep : ... = .ok ...)
-  simp only [show ¬(maxMessageRegisters < msg.registers.size) from by
-    intro h; simp [h] at hStep, ↓reduceIte] at hStep
-  simp only [show ¬(maxExtraCaps < msg.caps.size) from by
-    intro h; simp [h] at hStep, ↓reduceIte] at hStep
   cases hObj : st.objects[endpointId]? with
   | none => simp [hObj] at hStep
   | some obj => cases obj with
@@ -614,12 +591,12 @@ theorem endpointSendDual_preserves_schedulerInvariantBundle
           have hObjInv1 : pair.2.2.objects.invExt :=
             endpointQueuePopHead_preserves_objects_invExt endpointId true st pair.2.2 pair.1 pair.2.1 hObjInv hPop
           have hSchedPop := endpointQueuePopHead_scheduler_eq endpointId true st pair.2.2 pair.1 hPop
-          cases hMsg : storeTcbReceiveComplete pair.2.2 pair.1 (some msg) with
+          cases hMsg : storeTcbReceiveComplete pair.2.2 pair.1 (some (sendPayloadMessage st sender payload)) with
           | error e => simp [hMsg] at hStep
           | ok st2 =>
             simp only [hMsg, Except.ok.injEq, Prod.mk.injEq] at hStep
             obtain ⟨_, hEq⟩ := hStep; subst hEq
-            have hSchedMsg := storeTcbReceiveComplete_scheduler_eq pair.2.2 st2 pair.1 (some msg) hMsg
+            have hSchedMsg := storeTcbReceiveComplete_scheduler_eq pair.2.2 st2 pair.1 (some (sendPayloadMessage st sender payload)) hMsg
             have hSchedEq : st2.scheduler = st.scheduler := hSchedMsg.trans hSchedPop
             refine ⟨?_, ?_, ?_⟩
             · unfold queueCurrentConsistent
@@ -650,9 +627,9 @@ theorem endpointSendDual_preserves_schedulerInvariantBundle
                 obtain ⟨tcb1, hTcb1⟩ := endpointQueuePopHead_tcb_forward endpointId true st pair.2.2 pair.1 x.toObjId tcbX hObjInv hPop hTcbX
                 by_cases hNeTid : x.toObjId = pair.1.toObjId
                 · have hTargetTcb : ∃ t, pair.2.2.objects[pair.1.toObjId]? = some (.tcb t) := hNeTid ▸ ⟨tcb1, hTcb1⟩
-                  have h := storeTcbReceiveComplete_tcb_exists_at_target pair.2.2 st2 pair.1 (some msg) hObjInv1 hMsg hTargetTcb
+                  have h := storeTcbReceiveComplete_tcb_exists_at_target pair.2.2 st2 pair.1 (some (sendPayloadMessage st sender payload)) hObjInv1 hMsg hTargetTcb
                   rwa [← hNeTid] at h
-                · exact ⟨tcb1, (storeTcbReceiveComplete_preserves_objects_ne pair.2.2 st2 pair.1 (some msg) x.toObjId hNeTid hObjInv1 hMsg) ▸ hTcb1⟩
+                · exact ⟨tcb1, (storeTcbReceiveComplete_preserves_objects_ne pair.2.2 st2 pair.1 (some (sendPayloadMessage st sender payload)) x.toObjId hNeTid hObjInv1 hMsg) ▸ hTcb1⟩
       | none =>
         -- Blocking: Enqueue → storeTcbIpcStateAndMessage(.blockedOnSend) → removeRunnable
         cases hEnq : endpointQueueEnqueue endpointId false sender st with
@@ -705,18 +682,13 @@ theorem endpointSendDual_preserves_schedulerInvariantBundle
 /-- WS-F1/TPI-D08: endpointSendDual preserves ipcSchedulerContractPredicates. -/
 theorem endpointSendDual_preserves_ipcSchedulerContractPredicates
     (st st' : SystemState) (endpointId : SeLe4n.ObjId)
-    (sender : SeLe4n.ThreadId) (msg : IpcMessage)
+    (sender : SeLe4n.ThreadId) (payload : SendPayload)
     (hContract : ipcSchedulerContractPredicates st)
     (hObjInv : st.objects.invExt)
-    (hStep : endpointSendDual endpointId sender msg st = .ok ((), st')) :
+    (hStep : endpointSendDual endpointId sender payload st = .ok ((), st')) :
     ipcSchedulerContractPredicates st' := by
   rcases hContract with ⟨hReady, hBlockSend, hBlockRecv, hBlockCall, hBlockReply, hBlockNotif⟩
   unfold endpointSendDual SystemState.getObject? at hStep
-  -- WS-H12d: Eliminate bounds-check if-branches (error cases contradict hStep : ... = .ok ...)
-  simp only [show ¬(maxMessageRegisters < msg.registers.size) from by
-    intro h; simp [h] at hStep, ↓reduceIte] at hStep
-  simp only [show ¬(maxExtraCaps < msg.caps.size) from by
-    intro h; simp [h] at hStep, ↓reduceIte] at hStep
   cases hObj : st.objects[endpointId]? with
   | none => simp [hObj] at hStep
   | some obj => cases obj with
@@ -748,20 +720,20 @@ theorem endpointSendDual_preserves_ipcSchedulerContractPredicates
             (fun tid tcb' h => endpointQueuePopHead_tcb_ipcState_backward endpointId true st pair.2.2 pair.1 tid tcb' hObjInv hPop h)
             ⟨hReady, hBlockSend, hBlockRecv, hBlockCall, hBlockReply, hBlockNotif⟩
           -- Now storeTcbIpcStateAndMessage(.ready, receiver) + ensureRunnable
-          cases hMsg : storeTcbReceiveComplete pair.2.2 pair.1 (some msg) with
+          cases hMsg : storeTcbReceiveComplete pair.2.2 pair.1 (some (sendPayloadMessage st sender payload)) with
           | error e => simp [hMsg] at hStep
           | ok st2 =>
             simp only [hMsg, Except.ok.injEq, Prod.mk.injEq] at hStep
             obtain ⟨_, hEq⟩ := hStep; subst hEq
             rcases hContractPop with ⟨hReady', hBlockSend', hBlockRecv', hBlockCall', hBlockReply', hBlockNotif'⟩
-            have hSchedMsg := storeTcbReceiveComplete_scheduler_eq pair.2.2 st2 pair.1 (some msg) hMsg
+            have hSchedMsg := storeTcbReceiveComplete_scheduler_eq pair.2.2 st2 pair.1 (some (sendPayloadMessage st sender payload)) hMsg
             refine ⟨?_, ?_, ?_, ?_, ?_, ?_⟩
             · -- runnableThreadIpcReady
               intro tid tcb' hTcb' hRun'
               run_links_back (ensureRunnable_objectsAgreeOffRunLinks _ _) at tcb' hTcb'
               by_cases hNe : tid.toObjId = pair.1.toObjId
-              · exact storeTcbReceiveComplete_ipcState_eq pair.2.2 st2 pair.1 (some msg) hObjInv1 hMsg tcb' (hNe ▸ hTcb')
-              · have hTcbPre := (storeTcbReceiveComplete_preserves_objects_ne pair.2.2 st2 pair.1 (some msg) tid.toObjId hNe hObjInv1 hMsg).symm.trans hTcb'
+              · exact storeTcbReceiveComplete_ipcState_eq pair.2.2 st2 pair.1 (some (sendPayloadMessage st sender payload)) hObjInv1 hMsg tcb' (hNe ▸ hTcb')
+              · have hTcbPre := (storeTcbReceiveComplete_preserves_objects_ne pair.2.2 st2 pair.1 (some (sendPayloadMessage st sender payload)) tid.toObjId hNe hObjInv1 hMsg).symm.trans hTcb'
                 have hNeTid : tid ≠ pair.1 := fun h => hNe (congrArg ThreadId.toObjId h)
                 rcases ensureRunnable_mem_reverse st2 pair.1 tid hRun' with hOld | hEq
                 · exact hReady' tid tcb' hTcbPre (show tid ∈ pair.2.2.scheduler.runnable by rwa [← hSchedMsg])
@@ -770,10 +742,10 @@ theorem endpointSendDual_preserves_ipcSchedulerContractPredicates
               intro tid tcb' eid hTcb' hIpcState'
               run_links_back (ensureRunnable_objectsAgreeOffRunLinks _ _) at tcb' hTcb'
               by_cases hNe : tid.toObjId = pair.1.toObjId
-              · have := storeTcbReceiveComplete_ipcState_eq pair.2.2 st2 pair.1 (some msg) hObjInv1 hMsg tcb' (hNe ▸ hTcb')
+              · have := storeTcbReceiveComplete_ipcState_eq pair.2.2 st2 pair.1 (some (sendPayloadMessage st sender payload)) hObjInv1 hMsg tcb' (hNe ▸ hTcb')
                 rw [this] at hIpcState'; cases hIpcState'
               · have hNeTid : tid ≠ pair.1 := fun h => hNe (congrArg ThreadId.toObjId h)
-                have hTcbPre := (storeTcbReceiveComplete_preserves_objects_ne pair.2.2 st2 pair.1 (some msg) tid.toObjId hNe hObjInv1 hMsg).symm.trans hTcb'
+                have hTcbPre := (storeTcbReceiveComplete_preserves_objects_ne pair.2.2 st2 pair.1 (some (sendPayloadMessage st sender payload)) tid.toObjId hNe hObjInv1 hMsg).symm.trans hTcb'
                 intro hRun'
                 rcases ensureRunnable_mem_reverse st2 pair.1 tid hRun' with hOld | hEq
                 · exact hBlockSend' tid tcb' eid hTcbPre hIpcState' (show tid ∈ pair.2.2.scheduler.runnable by rwa [← hSchedMsg])
@@ -782,10 +754,10 @@ theorem endpointSendDual_preserves_ipcSchedulerContractPredicates
               intro tid tcb' eid hTcb' hIpcState'
               run_links_back (ensureRunnable_objectsAgreeOffRunLinks _ _) at tcb' hTcb'
               by_cases hNe : tid.toObjId = pair.1.toObjId
-              · have := storeTcbReceiveComplete_ipcState_eq pair.2.2 st2 pair.1 (some msg) hObjInv1 hMsg tcb' (hNe ▸ hTcb')
+              · have := storeTcbReceiveComplete_ipcState_eq pair.2.2 st2 pair.1 (some (sendPayloadMessage st sender payload)) hObjInv1 hMsg tcb' (hNe ▸ hTcb')
                 rw [this] at hIpcState'; cases hIpcState'
               · have hNeTid : tid ≠ pair.1 := fun h => hNe (congrArg ThreadId.toObjId h)
-                have hTcbPre := (storeTcbReceiveComplete_preserves_objects_ne pair.2.2 st2 pair.1 (some msg) tid.toObjId hNe hObjInv1 hMsg).symm.trans hTcb'
+                have hTcbPre := (storeTcbReceiveComplete_preserves_objects_ne pair.2.2 st2 pair.1 (some (sendPayloadMessage st sender payload)) tid.toObjId hNe hObjInv1 hMsg).symm.trans hTcb'
                 intro hRun'
                 rcases ensureRunnable_mem_reverse st2 pair.1 tid hRun' with hOld | hEq
                 · exact hBlockRecv' tid tcb' eid hTcbPre hIpcState' (show tid ∈ pair.2.2.scheduler.runnable by rwa [← hSchedMsg])
@@ -794,10 +766,10 @@ theorem endpointSendDual_preserves_ipcSchedulerContractPredicates
               intro tid tcb' eid hTcb' hIpcState'
               run_links_back (ensureRunnable_objectsAgreeOffRunLinks _ _) at tcb' hTcb'
               by_cases hNe : tid.toObjId = pair.1.toObjId
-              · have := storeTcbReceiveComplete_ipcState_eq pair.2.2 st2 pair.1 (some msg) hObjInv1 hMsg tcb' (hNe ▸ hTcb')
+              · have := storeTcbReceiveComplete_ipcState_eq pair.2.2 st2 pair.1 (some (sendPayloadMessage st sender payload)) hObjInv1 hMsg tcb' (hNe ▸ hTcb')
                 rw [this] at hIpcState'; cases hIpcState'
               · have hNeTid : tid ≠ pair.1 := fun h => hNe (congrArg ThreadId.toObjId h)
-                have hTcbPre := (storeTcbReceiveComplete_preserves_objects_ne pair.2.2 st2 pair.1 (some msg) tid.toObjId hNe hObjInv1 hMsg).symm.trans hTcb'
+                have hTcbPre := (storeTcbReceiveComplete_preserves_objects_ne pair.2.2 st2 pair.1 (some (sendPayloadMessage st sender payload)) tid.toObjId hNe hObjInv1 hMsg).symm.trans hTcb'
                 intro hRun'
                 rcases ensureRunnable_mem_reverse st2 pair.1 tid hRun' with hOld | hEq
                 · exact hBlockCall' tid tcb' eid hTcbPre hIpcState' (show tid ∈ pair.2.2.scheduler.runnable by rwa [← hSchedMsg])
@@ -806,10 +778,10 @@ theorem endpointSendDual_preserves_ipcSchedulerContractPredicates
               intro tid tcb' eid rt hTcb' hIpcState'
               run_links_back (ensureRunnable_objectsAgreeOffRunLinks _ _) at tcb' hTcb'
               by_cases hNe : tid.toObjId = pair.1.toObjId
-              · have := storeTcbReceiveComplete_ipcState_eq pair.2.2 st2 pair.1 (some msg) hObjInv1 hMsg tcb' (hNe ▸ hTcb')
+              · have := storeTcbReceiveComplete_ipcState_eq pair.2.2 st2 pair.1 (some (sendPayloadMessage st sender payload)) hObjInv1 hMsg tcb' (hNe ▸ hTcb')
                 rw [this] at hIpcState'; cases hIpcState'
               · have hNeTid : tid ≠ pair.1 := fun h => hNe (congrArg ThreadId.toObjId h)
-                have hTcbPre := (storeTcbReceiveComplete_preserves_objects_ne pair.2.2 st2 pair.1 (some msg) tid.toObjId hNe hObjInv1 hMsg).symm.trans hTcb'
+                have hTcbPre := (storeTcbReceiveComplete_preserves_objects_ne pair.2.2 st2 pair.1 (some (sendPayloadMessage st sender payload)) tid.toObjId hNe hObjInv1 hMsg).symm.trans hTcb'
                 intro hRun'
                 rcases ensureRunnable_mem_reverse st2 pair.1 tid hRun' with hOld | hEq
                 · exact hBlockReply' tid tcb' eid rt hTcbPre hIpcState' (show tid ∈ pair.2.2.scheduler.runnable by rwa [← hSchedMsg])
@@ -818,10 +790,10 @@ theorem endpointSendDual_preserves_ipcSchedulerContractPredicates
               intro tid tcb' nid hTcb' hIpcState'
               run_links_back (ensureRunnable_objectsAgreeOffRunLinks _ _) at tcb' hTcb'
               by_cases hNe : tid.toObjId = pair.1.toObjId
-              · have := storeTcbReceiveComplete_ipcState_eq pair.2.2 st2 pair.1 (some msg) hObjInv1 hMsg tcb' (hNe ▸ hTcb')
+              · have := storeTcbReceiveComplete_ipcState_eq pair.2.2 st2 pair.1 (some (sendPayloadMessage st sender payload)) hObjInv1 hMsg tcb' (hNe ▸ hTcb')
                 rw [this] at hIpcState'; cases hIpcState'
               · have hNeTid : tid ≠ pair.1 := fun h => hNe (congrArg ThreadId.toObjId h)
-                have hTcbPre := (storeTcbReceiveComplete_preserves_objects_ne pair.2.2 st2 pair.1 (some msg) tid.toObjId hNe hObjInv1 hMsg).symm.trans hTcb'
+                have hTcbPre := (storeTcbReceiveComplete_preserves_objects_ne pair.2.2 st2 pair.1 (some (sendPayloadMessage st sender payload)) tid.toObjId hNe hObjInv1 hMsg).symm.trans hTcb'
                 intro hRun'
                 rcases ensureRunnable_mem_reverse st2 pair.1 tid hRun' with hOld | hEq
                 · exact hBlockNotif' tid tcb' nid hTcbPre hIpcState' (show tid ∈ pair.2.2.scheduler.runnable by rwa [← hSchedMsg])
@@ -2098,15 +2070,11 @@ theorem ipcUnwrapCaps_preserves_ipcInvariant
 /-- endpointSendDual preserves st.objects.invExt. -/
 theorem endpointSendDual_preserves_objects_invExt
     (st stMid : SystemState) (endpointId : SeLe4n.ObjId)
-    (sender : SeLe4n.ThreadId) (msg : IpcMessage)
+    (sender : SeLe4n.ThreadId) (payload : SendPayload)
     (hObjInv : st.objects.invExt)
-    (hStep : endpointSendDual endpointId sender msg st = .ok ((), stMid)) :
+    (hStep : endpointSendDual endpointId sender payload st = .ok ((), stMid)) :
     stMid.objects.invExt := by
   unfold endpointSendDual SystemState.getObject? at hStep
-  simp only [show ¬(maxMessageRegisters < msg.registers.size) from by
-    intro h; simp [h] at hStep, ↓reduceIte] at hStep
-  simp only [show ¬(maxExtraCaps < msg.caps.size) from by
-    intro h; simp [h] at hStep, ↓reduceIte] at hStep
   cases hObj : st.objects[endpointId]? with
   | none => simp [hObj] at hStep
   | some obj => cases obj with
@@ -2129,7 +2097,7 @@ theorem endpointSendDual_preserves_objects_invExt
           simp only [hHead, hSnd, hPop] at hStep
           have hObjInvPop : pair.2.2.objects.invExt :=
             endpointQueuePopHead_preserves_objects_invExt endpointId true st pair.2.2 pair.1 pair.2.1 hObjInv hPop
-          cases hMsg : storeTcbReceiveComplete pair.2.2 pair.1 (some msg) with
+          cases hMsg : storeTcbReceiveComplete pair.2.2 pair.1 (some (sendPayloadMessage st sender payload)) with
           | error e => simp [hMsg] at hStep
           | ok st2 =>
             simp only [hMsg, Except.ok.injEq, Prod.mk.injEq] at hStep
@@ -2278,53 +2246,41 @@ passes through ipcUnwrapCaps (preserved by ipcUnwrapCaps_preserves_ipcInvariant,
 which requires no precondition). -/
 theorem endpointSendDualWithCaps_preserves_ipcInvariant
     (endpointId : SeLe4n.ObjId) (sender : SeLe4n.ThreadId)
-    (msg : IpcMessage) (endpointRights : AccessRightSet)
-    (receiverSlotBase : SeLe4n.Slot)
+    (payload : SendPayload) (receiverSlotBase : SeLe4n.Slot)
     (st st' : SystemState) (summary : CapTransferSummary)
     (hInv : ipcInvariant st)
     (hObjInv : st.objects.invExt)
-    (hStep : endpointSendDualWithCaps endpointId sender msg endpointRights
-             receiverSlotBase st = .ok (summary, st')) :
+    (hStep : endpointSendDualWithCaps endpointId sender payload receiverSlotBase st
+      = .ok (summary, st')) :
     ipcInvariant st' := by
-  -- PR #873 round 13: the wrapper stamps the endpoint's grant right into the
-  -- message before sending, so the transition under it is the stamped one.
   simp only [endpointSendDualWithCaps] at hStep
-  cases hSend : endpointSendDual endpointId sender { msg with capsGranted := endpointRights.mem AccessRight.grant } st with
+  cases hSend : endpointSendDual endpointId sender payload st with
   | error e => simp [hSend] at hStep
   | ok pair =>
     rcases pair with ⟨_, stMid⟩
     have hInvMid := endpointSendDual_preserves_ipcInvariant st stMid endpointId sender
-      { msg with capsGranted := endpointRights.mem AccessRight.grant } hInv hObjInv hSend
+      payload hInv hObjInv hSend
     have hObjInvMid := endpointSendDual_preserves_objects_invExt st stMid endpointId sender
-      { msg with capsGranted := endpointRights.mem AccessRight.grant } hObjInv hSend
-    simp [hSend] at hStep
-    -- AN10-B: post-migration `endpointSendDualWithCaps` reads via
-    -- `getEndpoint?`; case-split on the typed helper.
-    cases hEp : st.getEndpoint? endpointId with
+      payload hObjInv hSend
+    simp only [hSend] at hStep
+    -- WS-ZA ZA4.7: nothing to transfer returns the send's post-state; otherwise
+    -- the sender's capabilities are resolved (CDT nodes only) and installed
+    -- (`receiveTransferCaps_frame`), as on the receive side.
+    cases hReq : sendCapRequest st endpointId sender payload with
     | none =>
-      -- hasReceiver = false → if-then branch taken
-      simp [hEp] at hStep; obtain ⟨_, rfl⟩ := hStep; exact hInvMid
-    | some ep =>
-      simp [hEp] at hStep
-      cases hHead : ep.receiveQ.head with
-      | none =>
-        -- hasReceiver = false → if-then branch
-        simp [hHead] at hStep; obtain ⟨_, rfl⟩ := hStep; exact hInvMid
-      | some receiverId =>
-        simp [hHead] at hStep
-        -- hasReceiver = true, condition reduces to msg.caps.isEmpty
-        by_cases hEmpty : msg.caps = #[]
-        · simp [hEmpty] at hStep; obtain ⟨_, rfl⟩ := hStep; exact hInvMid
-        · simp [hEmpty] at hStep
-          -- WS-RR RR7.8: the destination is read from the **pre**-state, which
-          -- is the state whose locks the bracket took; the case split follows
-          -- the transition.
-          cases hLookup : lookupCspaceRoot st receiverId with
-          | none => simp [hLookup] at hStep -- AK1-I: fail-closed, vacuous
-          | some recvRoot =>
-            simp [hLookup] at hStep
-            exact ipcUnwrapCaps_preserves_ipcInvariant { msg with capsGranted := endpointRights.mem AccessRight.grant } recvRoot
-              receiverSlotBase _ stMid st' summary hInvMid hObjInvMid hStep
+      simp only [hReq, Except.ok.injEq, Prod.mk.injEq] at hStep
+      obtain ⟨_, rfl⟩ := hStep; exact hInvMid
+    | some r =>
+      simp only [hReq] at hStep
+      split at hStep
+      · rename_i recvRoot _
+        obtain ⟨stR, caps, hO, _, _, hOr⟩ := receiveTransferCaps_frame hStep
+        have hInvR : ipcInvariant stR := fun oid ntfn h => hInvMid oid ntfn (hO ▸ h)
+        rcases hOr with rfl | hU
+        · exact hInvR
+        · exact ipcUnwrapCaps_preserves_ipcInvariant _ recvRoot
+            receiverSlotBase _ stR _ summary hInvR (hO ▸ hObjInvMid) hU
+      · cases hStep
 
 /-- M3-E4: endpointReceiveDualWithCaps preserves ipcInvariant. -/
 theorem endpointReceiveDualWithCaps_preserves_ipcInvariant

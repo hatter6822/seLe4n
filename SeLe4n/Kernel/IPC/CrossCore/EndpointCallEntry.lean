@@ -55,12 +55,12 @@ so it is not given a C `@[export]` (a 2-arg empty-context export would bypass th
 syscall-ABI decode and capability/flow validation — PR #820 review #4). -/
 def endpointCallCrossCoreEntry
     (endpointId : SeLe4n.ObjId) (caller : SeLe4n.ThreadId)
-    (msg : IpcMessage) (endpointRights : AccessRightSet)
+    (payload : SendPayload)
     (receiverSlotBase : SeLe4n.Slot) :
     BaseIO (Except KernelError CapTransferSummary) := do
   let executingCore ← Concurrency.currentCoreId
   let result ← Platform.FFI.modifyGetKernelState (fun st =>
-    let (st', res) := endpointCallCrossCoreDispatch endpointId caller msg endpointRights
+    let (st', res) := endpointCallCrossCoreDispatch endpointId caller payload
       receiverSlotBase executingCore st
     match res with
     -- Fail-closed atomicity: on any dispatch error commit the *original* `st`,
@@ -86,15 +86,14 @@ def endpointCallCrossCoreEntry
 /-- WS-SM SM6.A.10: the reference driver's three-phase shape — read the executing
 core, atomically commit the dispatch, then fire the surfaced SGI. -/
 theorem endpointCallCrossCoreEntry_def
-    (endpointId : SeLe4n.ObjId) (caller : SeLe4n.ThreadId) (msg : IpcMessage)
-    (endpointRights : AccessRightSet)
+    (endpointId : SeLe4n.ObjId) (caller : SeLe4n.ThreadId) (payload : SendPayload)
     (receiverSlotBase : SeLe4n.Slot) :
-    endpointCallCrossCoreEntry endpointId caller msg endpointRights
+    endpointCallCrossCoreEntry endpointId caller payload
         receiverSlotBase
       = (do
           let executingCore ← Concurrency.currentCoreId
           let result ← Platform.FFI.modifyGetKernelState (fun st =>
-            let (st', res) := endpointCallCrossCoreDispatch endpointId caller msg endpointRights
+            let (st', res) := endpointCallCrossCoreDispatch endpointId caller payload
               receiverSlotBase executingCore st
             match res with
             | .error e => ((Except.error e, (none : Option (CoreId × SgiKind))), st)

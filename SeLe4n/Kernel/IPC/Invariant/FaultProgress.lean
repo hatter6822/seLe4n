@@ -83,10 +83,10 @@ the caller `.blockedOnReply` and then links it onto the server's reply-waiter
 queue (a write to TCB links alone), the queued arm blocks it `.blockedOnCall`,
 and each deschedules it. -/
 theorem endpointCallOnCore_deschedules_caller
-    (epId : SeLe4n.ObjId) (caller : SeLe4n.ThreadId) (msg : IpcMessage)
+    (epId : SeLe4n.ObjId) (caller : SeLe4n.ThreadId) (payload : SendPayload)
     (executingCore : CoreId) (st st' : SystemState)
     (sgi? : Option (CoreId × SgiKind))
-    (hStep : endpointCallOnCore epId caller msg executingCore st = (st', .ok sgi?)) :
+    (hStep : endpointCallOnCore epId caller payload executingCore st = (st', .ok sgi?)) :
     ∃ stPre, st'.scheduler = (removeRunnableOnCore stPre caller executingCore).scheduler := by
   unfold endpointCallOnCore at hStep
   repeat' split at hStep
@@ -103,37 +103,36 @@ theorem endpointCallOnCore_deschedules_caller
 /-- WS-RR RR4.19: a caller that completed a cross-core `endpointCallOnCore`
 is neither queued on nor current on the core it called from. -/
 theorem endpointCallOnCore_caller_not_runnable
-    (epId : SeLe4n.ObjId) (caller : SeLe4n.ThreadId) (msg : IpcMessage)
+    (epId : SeLe4n.ObjId) (caller : SeLe4n.ThreadId) (payload : SendPayload)
     (executingCore : CoreId) (st st' : SystemState)
     (sgi? : Option (CoreId × SgiKind))
-    (hStep : endpointCallOnCore epId caller msg executingCore st = (st', .ok sgi?)) :
+    (hStep : endpointCallOnCore epId caller payload executingCore st = (st', .ok sgi?)) :
     caller ∉ st'.scheduler.runQueueOnCore executingCore ∧
     st'.scheduler.currentOnCore executingCore ≠ some caller := by
   obtain ⟨stPre, hS⟩ :=
-    endpointCallOnCore_deschedules_caller epId caller msg executingCore st st' sgi? hStep
+    endpointCallOnCore_deschedules_caller epId caller payload executingCore st st' sgi? hStep
   rw [SchedulerState.currentOnCore, hS, ← SchedulerState.currentOnCore]
   exact ⟨removeRunnableOnCore_not_mem_self stPre caller executingCore,
          removeRunnableOnCore_currentOnCore_ne_self stPre caller executingCore⟩
 
-/-- A message carrying no capabilities makes the WithCaps leg exactly the
-rendezvous: `endpointCallWithCapsOnCore` short-circuits its transfer on
-`msg.caps.isEmpty`.  A fault message is such a message
-(`faultMessage_caps`), which is why the fault delivery inherits the
+/-- A send requesting no capabilities makes the WithCaps leg exactly the
+rendezvous: `endpointCallWithCapsOnCore` short-circuits its transfer on an empty
+`sendCapRequest`.  A fault payload requests none
+(`sendCapRequest_fault`), which is why the fault delivery inherits the
 rendezvous's descheduling directly. -/
 theorem endpointCallWithCapsOnCore_caller_not_runnable
-    (epId : SeLe4n.ObjId) (caller : SeLe4n.ThreadId) (msg : IpcMessage)
-    (rights : AccessRightSet) (slotBase : SeLe4n.Slot)
+    (epId : SeLe4n.ObjId) (caller : SeLe4n.ThreadId) (payload : SendPayload)
+    (slotBase : SeLe4n.Slot)
     (executingCore : CoreId) (st st' : SystemState)
     (summary : CapTransferSummary) (sgi? : Option (CoreId × SgiKind))
-    (hNoCaps : msg.caps.isEmpty = true)
-    (hStep : endpointCallWithCapsOnCore epId caller msg rights slotBase
+    (hNoCaps : sendCapRequest st epId caller payload = none)
+    (hStep : endpointCallWithCapsOnCore epId caller payload slotBase
         executingCore st = (st', .ok (summary, sgi?))) :
     caller ∉ st'.scheduler.runQueueOnCore executingCore ∧
     st'.scheduler.currentOnCore executingCore ≠ some caller := by
-  rw [endpointCallWithCapsOnCore_no_caps epId caller msg rights slotBase
+  rw [endpointCallWithCapsOnCore_no_caps epId caller payload slotBase
     executingCore st hNoCaps] at hStep
-  cases hCall : endpointCallOnCore epId caller
-      { msg with capsGranted := rights.mem AccessRight.grant } executingCore st with
+  cases hCall : endpointCallOnCore epId caller payload executingCore st with
   | mk stC res =>
       rw [hCall] at hStep
       simp only at hStep
@@ -146,7 +145,7 @@ theorem endpointCallWithCapsOnCore_caller_not_runnable
             sgi hCall
 
 /-- WS-RR RR4.19: **the live `.call` chain leaves its caller descheduled**, for
-a message that transfers no capabilities.
+a send that transfers no capabilities.
 
 The rendezvous deschedules the caller; the donation leg writes no scheduler
 slot at all (`applyCallDonationOnCore_runQueue_current_eq`); and the
@@ -154,18 +153,18 @@ priority-inheritance walk migrates buckets of threads already queued and
 touches no `current` slot (§1).  So the caller comes out of the chain exactly
 as the rendezvous left it. -/
 theorem endpointCallCrossCoreDispatch_caller_not_runnable
-    (epId : SeLe4n.ObjId) (caller : SeLe4n.ThreadId) (msg : IpcMessage)
-    (rights : AccessRightSet) (slotBase : SeLe4n.Slot)
+    (epId : SeLe4n.ObjId) (caller : SeLe4n.ThreadId) (payload : SendPayload)
+    (slotBase : SeLe4n.Slot)
     (executingCore : CoreId) (st st' : SystemState)
     (summary : CapTransferSummary) (sgi? : Option (CoreId × SgiKind))
-    (hNoCaps : msg.caps.isEmpty = true)
-    (hStep : endpointCallCrossCoreDispatch epId caller msg rights slotBase
+    (hNoCaps : sendCapRequest st epId caller payload = none)
+    (hStep : endpointCallCrossCoreDispatch epId caller payload slotBase
         executingCore st = (st', .ok (summary, sgi?))) :
     caller ∉ st'.scheduler.runQueueOnCore executingCore ∧
     st'.scheduler.currentOnCore executingCore ≠ some caller := by
   unfold endpointCallCrossCoreDispatch at hStep
   simp only at hStep
-  cases hWc : endpointCallWithCapsOnCore epId caller msg rights slotBase
+  cases hWc : endpointCallWithCapsOnCore epId caller payload slotBase
       executingCore st with
   | mk stW resW =>
       rw [hWc] at hStep
@@ -173,7 +172,7 @@ theorem endpointCallCrossCoreDispatch_caller_not_runnable
       | error e => exact absurd (congrArg Prod.snd hStep) (by simp)
       | ok r =>
           obtain ⟨summaryW, sgiW⟩ := r
-          have hW := endpointCallWithCapsOnCore_caller_not_runnable epId caller msg rights
+          have hW := endpointCallWithCapsOnCore_caller_not_runnable epId caller payload
             slotBase executingCore st stW summaryW sgiW hNoCaps hWc
           simp only at hStep
           -- The donation / PIP tail either returns `stW` unchanged or extends it.
@@ -232,8 +231,7 @@ theorem faultDeliverOnCore_not_dispatchable (st : SystemState)
     · simp only [faultDeliverOnCore, hRes, recordPendingFault_scheduler_eq]
       exact faultSuspendOnCore_not_runnable _ tid c
     · rcases hCall : endpointCallCrossCoreDispatch tgt.endpoint tid
-          (faultMessage f ctx tgt.cap.badge) tgt.cap.rights
-          (SeLe4n.Slot.ofNat 0) c st with ⟨stC, res⟩
+          (SendPayload.fault f ctx tgt.cap.badge) (SeLe4n.Slot.ofNat 0) c st with ⟨stC, res⟩
       cases res with
       | error e =>
           simp only [faultDeliverOnCore, hRes, hCall, recordPendingFault_scheduler_eq]
@@ -243,8 +241,8 @@ theorem faultDeliverOnCore_not_dispatchable (st : SystemState)
           simp only [faultDeliverOnCore, hRes, hCall, recordPendingFault_scheduler_eq,
             Architecture.stageWokenDelivery_scheduler_eq]
           exact endpointCallCrossCoreDispatch_caller_not_runnable tgt.endpoint tid _
-            tgt.cap.rights (SeLe4n.Slot.ofNat 0) c st stC summary sgi?
-            (by rw [faultMessage_caps f ctx tgt.cap.badge]; rfl) hCall
+            (SeLe4n.Slot.ofNat 0) c st stC summary sgi?
+            (sendCapRequest_fault _ _ _ _ _ _) hCall
   rintro (hQ | hC)
   · exact hNot.1 hQ
   · exact hNot.2 hC

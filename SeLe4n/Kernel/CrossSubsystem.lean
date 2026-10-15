@@ -2031,50 +2031,46 @@ theorem cleanupPreReceiveDonationChecked_preservesFieldsOutside
       exact preservesFieldsOutside_refl _ _
 
 theorem endpointSendDual_preservesFieldsOutside
-    (endpointId : SeLe4n.ObjId) (sender : SeLe4n.ThreadId) (msg : IpcMessage)
+    (endpointId : SeLe4n.ObjId) (sender : SeLe4n.ThreadId) (payload : SendPayload)
     (st st' : SystemState)
-    (hStep : endpointSendDual endpointId sender msg st = .ok ((), st')) :
+    (hStep : endpointSendDual endpointId sender payload st = .ok ((), st')) :
     preservesFieldsOutside ipcEndpointOp_modifiedFields st st' := by
   unfold endpointSendDual SystemState.getObject? at hStep
   split at hStep
-  · cases hStep
   · split at hStep
-    · cases hStep
     · split at hStep
+      · cases hStep
       · split at hStep
-        · split at hStep
+        · cases hStep
+        · rename_i receiver tcb st₁ hPop
+          split at hStep
           · cases hStep
-          · split at hStep
-            · cases hStep
-            · rename_i receiver tcb st₁ hPop
-              split at hStep
-              · cases hStep
-              · rename_i st₂ hComplete
-                simp only [Except.ok.injEq, Prod.mk.injEq] at hStep
-                obtain ⟨-, hEq⟩ := hStep
-                subst hEq
-                exact preservesFieldsOutside_trans
-                  (endpointQueuePopHead_preservesFieldsOutside _ _ _ _ _ _ hPop)
-                  (preservesFieldsOutside_trans
-                    (storeTcbReceiveComplete_preservesFieldsOutside _ _ _ _ hComplete)
-                    (ensureRunnable_preservesFieldsOutside _ _))
-        · split at hStep
-          · cases hStep
-          · rename_i st₁ hEnq
-            split at hStep
-            · cases hStep
-            · rename_i st₂ hBlock
-              simp only [Except.ok.injEq, Prod.mk.injEq] at hStep
-              obtain ⟨-, hEq⟩ := hStep
-              subst hEq
-              exact preservesFieldsOutside_trans
-                (endpointQueueEnqueue_preservesFieldsOutside _ _ _ _ _ hEnq)
-                (preservesFieldsOutside_trans
-                  (storeTcbIpcStateAndMessage_preservesFieldsOutside _ _ _ _ _ hBlock)
-                  (preservesFieldsOutside_trans (removeRunnable_preservesFieldsOutside _ _)
-                    (recordSendCap_preservesFieldsOutside _ _ _ _)))
+          · rename_i st₂ hComplete
+            simp only [Except.ok.injEq, Prod.mk.injEq] at hStep
+            obtain ⟨-, hEq⟩ := hStep
+            subst hEq
+            exact preservesFieldsOutside_trans
+              (endpointQueuePopHead_preservesFieldsOutside _ _ _ _ _ _ hPop)
+              (preservesFieldsOutside_trans
+                (storeTcbReceiveComplete_preservesFieldsOutside _ _ _ _ hComplete)
+                (ensureRunnable_preservesFieldsOutside _ _))
+    · split at hStep
       · cases hStep
-      · cases hStep
+      · rename_i st₁ hEnq
+        split at hStep
+        · cases hStep
+        · rename_i st₂ hBlock
+          simp only [Except.ok.injEq, Prod.mk.injEq] at hStep
+          obtain ⟨-, hEq⟩ := hStep
+          subst hEq
+          exact preservesFieldsOutside_trans
+            (endpointQueueEnqueue_preservesFieldsOutside _ _ _ _ _ hEnq)
+            (preservesFieldsOutside_trans
+              (storeTcbIpcStateAndMessage_preservesFieldsOutside _ _ _ _ _ hBlock)
+              (preservesFieldsOutside_trans (removeRunnable_preservesFieldsOutside _ _)
+                (recordSendCap_preservesFieldsOutside _ _ _ _)))
+  · cases hStep
+  · cases hStep
 
 theorem endpointReceiveDual_preservesFieldsOutside
     (endpointId : SeLe4n.ObjId) (receiver : SeLe4n.ThreadId) (replyId : Option SeLe4n.ReplyId)

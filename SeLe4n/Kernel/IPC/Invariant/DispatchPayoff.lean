@@ -298,26 +298,12 @@ structure syscallDispatchQuiescence (decoded : SyscallDecodeResult)
   mintBadgeValid : ∀ args, decoded.syscallId = .cspaceMint →
     decodeCSpaceMintArgs decoded = .ok args → args.badge.valid
   sendStage : ∀ epId, decoded.syscallId = .send → cap.target = .object epId →
-    ∀ st1 res, endpointSendDualWithCapsOnCore epId tid
-      { registers := extractMessageRegisters decoded.msgRegs decoded.msgInfo,
-        caps := (resolveExtraCaps gate.cspaceRoot (decodeExtraCapAddrs decoded)
-          gate.capDepth (cap.rights.mem .grant) st).1,
-        badge := cap.badge, capsGranted := cap.rights.mem .grant } cap.rights
-      decoded.capRecvSlot
-      executingCore
-      (resolveExtraCaps gate.cspaceRoot (decodeExtraCapAddrs decoded) gate.capDepth
-        (cap.rights.mem .grant) st).2 = (st1, res) →
+    ∀ st1 res, endpointSendDualWithCapsOnCore epId tid (.frame cap.badge (cap.rights.mem .grant))
+      decoded.capRecvSlot executingCore st = (st1, res) →
     st1.objects.invExt
   callStage : ∀ epId, decoded.syscallId = .call → cap.target = .object epId →
-    ∀ st1 res, endpointCallCrossCoreDispatch epId tid
-      { registers := extractMessageRegisters decoded.msgRegs decoded.msgInfo,
-        caps := (resolveExtraCaps gate.cspaceRoot (decodeExtraCapAddrs decoded)
-          gate.capDepth (cap.rights.mem .grant) st).1,
-        badge := cap.badge, capsGranted := cap.rights.mem .grant } cap.rights
-      decoded.capRecvSlot
-      executingCore
-      (resolveExtraCaps gate.cspaceRoot (decodeExtraCapAddrs decoded) gate.capDepth
-        (cap.rights.mem .grant) st).2 = (st1, res) →
+    ∀ st1 res, endpointCallCrossCoreDispatch epId tid (.frame cap.badge (cap.rights.mem .grant))
+      decoded.capRecvSlot executingCore st = (st1, res) →
     st1.objects.invExt
   callNotSelfRendezvous : ∀ epId, decoded.syscallId = .call → cap.target = .object epId →
     ∀ ep receiverTid, st.getEndpoint? epId = some ep →
@@ -613,85 +599,68 @@ theorem dispatchWithCap_preserves_ipcInvariantFull
       case send =>
         cases hTgt : cap.target <;> simp only [hTgt] at hStep
         case object epId =>
-          cases hRes : resolveExtraCaps gate.cspaceRoot (decodeExtraCapAddrs decoded)
-              gate.capDepth (cap.rights.mem .grant) st with
-          | mk resolvedCaps stR =>
-              simp only [hRes] at hStep
-              obtain ⟨hRO, hRS, hRB⟩ := resolveExtraCaps_shape gate.cspaceRoot
-                (decodeExtraCapAddrs decoded) gate.capDepth (cap.rights.mem .grant) st
-                hInv.badgeWellFormed.2
-              rw [hRes] at hRO hRS hRB
-              have hInvR : ipcInvariantFull stR :=
-                ipcInvariantFull_of_objects_scheduler_eq hRO hRS hInv
-              have hObjInvR : stR.objects.invExt := by rw [hRO]; exact hObjInv
-              have hBudgetsR : allTimeoutBudgetsNone stR := by
-                intro t tcb hT
-                exact hBudgets t tcb (by rw [← hRO]; exact hT)
-              obtain ⟨tcbC, hTC, hReadyC, hBoundC⟩ := hPack.callerShape
-              have hTCR : stR.getTcb? tid = some tcbC :=
-                (SystemState.getTcb?_eq_some_iff stR tid tcbC).mpr
-                  (by rw [hRO]; exact (SystemState.getTcb?_eq_some_iff st tid tcbC).mp hTC)
-              have hFreshR := readyThread_endpointQueueFresh stR tid tcbC
-                hInvR.queueHeadBlockedConsistent hInvR.endpointQueueTailBlockedConsistent
-                ((SystemState.getTcb?_eq_some_iff stR tid tcbC).mp hTCR) hReadyC
-              have hTailR := sendTailCrossQueueFresh stR epId
-                hInvR.dualQueueSystemInvariant hInvR.endpointQueueTailBlockedConsistent
-              have hSendInv := endpointSendDualWithCapsOnCore_preserves_ipcInvariantFull
-                epId tid { registers := extractMessageRegisters decoded.msgRegs decoded.msgInfo, caps := resolvedCaps, badge := cap.badge, capsGranted := cap.rights.mem .grant }
-                cap.rights decoded.capRecvSlot
-                executingCore stR
-                hInvR hObjInvR hBudgetsR hRB hFreshR hTailR
-                (fun tcb hTcb => by
-                  rw [hTCR] at hTcb
-                  obtain rfl := Option.some.inj hTcb
-                  exact readyThread_notBlockedOnReceive tcbC hReadyC)
-                (fun tcb hTcb => by
-                  rw [hTCR] at hTcb
-                  obtain rfl := Option.some.inj hTcb
-                  exact readyThread_notBlockedOnReply tcbC hReadyC)
-                (fun tcb hTcb => by
-                  rw [hTCR] at hTcb
-                  obtain rfl := Option.some.inj hTcb
-                  exact hBoundC)
-              cases hSend : endpointSendDualWithCapsOnCore epId tid
-                  { registers := extractMessageRegisters decoded.msgRegs decoded.msgInfo, caps := resolvedCaps, badge := cap.badge, capsGranted := cap.rights.mem .grant }
-                  cap.rights decoded.capRecvSlot
-                  executingCore stR with
-              | mk st1 res1 =>
-                  rw [hSend] at hStep hSendInv
-                  cases res1 with
-                  | error e => simp only [] at hStep; cases hStep
-                  | ok pair1 =>
-                      obtain ⟨summary, sgi1⟩ := pair1
-                      simp only [] at hStep
-                      have hObjInv1 : st1.objects.invExt :=
-                        hPack.sendStage epId hSy hTgt st1 _ (by rw [hRes]; exact hSend)
-                      cases hClear : clearWokenReceiverStash
-                          ((stR.getEndpoint? epId).bind (·.receiveQ.head)) st1 with
-                      | error e => rw [hClear] at hStep; cases hStep
-                      | ok pair2 =>
-                          rw [hClear] at hStep
-                          simp only [Except.ok.injEq, Prod.mk.injEq, true_and] at hStep
-                          have hClearInv := clearWokenReceiverStash_preserves_ipcInvariantFull
-                            _ st1 pair2 hObjInv1 hSendInv hClear
-                          have hClearObjInv : pair2.2.objects.invExt := by
-                            unfold clearWokenReceiverStash at hClear
-                            cases hW : (stR.getEndpoint? epId).bind (·.receiveQ.head) with
-                            | none => rw [hW] at hClear; cases hClear; exact hObjInv1
-                            | some receiver =>
-                                rw [hW] at hClear
+          obtain ⟨tcbC, hTC, hReadyC, hBoundC⟩ := hPack.callerShape
+          have hFreshR := readyThread_endpointQueueFresh st tid tcbC
+            hInv.queueHeadBlockedConsistent hInv.endpointQueueTailBlockedConsistent
+            ((SystemState.getTcb?_eq_some_iff st tid tcbC).mp hTC) hReadyC
+          have hTailR := sendTailCrossQueueFresh st epId
+            hInv.dualQueueSystemInvariant hInv.endpointQueueTailBlockedConsistent
+          have hSendInv := endpointSendDualWithCapsOnCore_preserves_ipcInvariantFull
+            epId tid (.frame cap.badge (cap.rights.mem .grant))
+            decoded.capRecvSlot
+            executingCore st
+            hInv hObjInv hBudgets hFreshR hTailR
+            (fun tcb hTcb => by
+              rw [hTC] at hTcb
+              obtain rfl := Option.some.inj hTcb
+              exact readyThread_notBlockedOnReceive tcbC hReadyC)
+            (fun tcb hTcb => by
+              rw [hTC] at hTcb
+              obtain rfl := Option.some.inj hTcb
+              exact readyThread_notBlockedOnReply tcbC hReadyC)
+            (fun tcb hTcb => by
+              rw [hTC] at hTcb
+              obtain rfl := Option.some.inj hTcb
+              exact hBoundC)
+          cases hSend : endpointSendDualWithCapsOnCore epId tid
+              (.frame cap.badge (cap.rights.mem .grant))
+              decoded.capRecvSlot
+              executingCore st with
+          | mk st1 res1 =>
+              rw [hSend] at hStep hSendInv
+              cases res1 with
+              | error e => simp only [] at hStep; cases hStep
+              | ok pair1 =>
+                  obtain ⟨summary, sgi1⟩ := pair1
+                  simp only [] at hStep
+                  have hObjInv1 : st1.objects.invExt :=
+                    hPack.sendStage epId hSy hTgt st1 _ hSend
+                  cases hClear : clearWokenReceiverStash
+                      ((st.getEndpoint? epId).bind (·.receiveQ.head)) st1 with
+                  | error e => rw [hClear] at hStep; cases hStep
+                  | ok pair2 =>
+                      rw [hClear] at hStep
+                      simp only [Except.ok.injEq, Prod.mk.injEq, true_and] at hStep
+                      have hClearInv := clearWokenReceiverStash_preserves_ipcInvariantFull
+                        _ st1 pair2 hObjInv1 hSendInv hClear
+                      have hClearObjInv : pair2.2.objects.invExt := by
+                        unfold clearWokenReceiverStash at hClear
+                        cases hW : (st.getEndpoint? epId).bind (·.receiveQ.head) with
+                        | none => rw [hW] at hClear; cases hClear; exact hObjInv1
+                        | some receiver =>
+                            rw [hW] at hClear
+                            simp only [] at hClear
+                            cases hTcb2 : st1.getTcb? receiver with
+                            | none => rw [hTcb2] at hClear; cases hClear; exact hObjInv1
+                            | some tcb2 =>
+                                rw [hTcb2] at hClear
                                 simp only [] at hClear
-                                cases hTcb2 : st1.getTcb? receiver with
-                                | none => rw [hTcb2] at hClear; cases hClear; exact hObjInv1
-                                | some tcb2 =>
-                                    rw [hTcb2] at hClear
-                                    simp only [] at hClear
-                                    split at hClear <;> cases hClear
-                                    · exact RHTable_insert_preserves_invExt _ _ _ hObjInv1
-                                    · exact hObjInv1
-                          rw [← hStep]
-                          exact stageWokenDelivery_preserves_ipcInvariantFull pair2.2 _ _
-                            hClearObjInv hClearInv
+                                split at hClear <;> cases hClear
+                                · exact RHTable_insert_preserves_invExt _ _ _ hObjInv1
+                                · exact hObjInv1
+                      rw [← hStep]
+                      exact stageWokenDelivery_preserves_ipcInvariantFull pair2.2 _ _
+                        hClearObjInv hClearInv
         all_goals try cases hStep
       case receive =>
         cases hTgt : cap.target <;> simp only [hTgt] at hStep
@@ -775,75 +744,51 @@ theorem dispatchWithCap_preserves_ipcInvariantFull
       case call =>
         cases hTgt : cap.target <;> simp only [hTgt] at hStep
         case object epId =>
-          cases hRes : resolveExtraCaps gate.cspaceRoot (decodeExtraCapAddrs decoded)
-              gate.capDepth (cap.rights.mem .grant) st with
-          | mk resolvedCaps stR =>
-              simp only [hRes] at hStep
-              obtain ⟨hRO, hRS, hRB⟩ := resolveExtraCaps_shape gate.cspaceRoot
-                (decodeExtraCapAddrs decoded) gate.capDepth (cap.rights.mem .grant) st
-                hInv.badgeWellFormed.2
-              rw [hRes] at hRO hRS hRB
-              have hInvR : ipcInvariantFull stR :=
-                ipcInvariantFull_of_objects_scheduler_eq hRO hRS hInv
-              have hObjInvR : stR.objects.invExt := by rw [hRO]; exact hObjInv
-              have hBudgetsR : allTimeoutBudgetsNone stR := by
-                intro t tcb hT
-                exact hBudgets t tcb (by rw [← hRO]; exact hT)
-              obtain ⟨tcbC, hTC, hReadyC, hBoundC⟩ := hPack.callerShape
-              have hTCR : stR.getTcb? tid = some tcbC :=
-                (SystemState.getTcb?_eq_some_iff stR tid tcbC).mpr
-                  (by rw [hRO]; exact (SystemState.getTcb?_eq_some_iff st tid tcbC).mp hTC)
-              have hFreshR := readyThread_endpointQueueFresh stR tid tcbC
-                hInvR.queueHeadBlockedConsistent hInvR.endpointQueueTailBlockedConsistent
-                ((SystemState.getTcb?_eq_some_iff stR tid tcbC).mp hTCR) hReadyC
-              have hTailR := sendTailCrossQueueFresh stR epId
-                hInvR.dualQueueSystemInvariant hInvR.endpointQueueTailBlockedConsistent
-              have hNeR : ∀ ep receiverTid, stR.getEndpoint? epId = some ep →
-                  ep.receiveQ.head = some receiverTid → tid ≠ receiverTid := by
-                intro ep receiverTid hEp hHead
-                refine hPack.callNotSelfRendezvous epId hSy hTgt ep receiverTid ?_ hHead
-                rw [show st.getEndpoint? epId = stR.getEndpoint? epId from by
-                  unfold SystemState.getEndpoint?
-                  rw [hRO]]
-                exact hEp
-              have hCallInv := endpointCallCrossCoreDispatch_preserves_ipcInvariantFull
-                epId tid { registers := extractMessageRegisters decoded.msgRegs decoded.msgInfo, caps := resolvedCaps, badge := cap.badge, capsGranted := cap.rights.mem .grant }
-                cap.rights decoded.capRecvSlot
-                executingCore stR
-                hInvR hObjInvR hBudgetsR hRB hFreshR hTailR
-                (fun tcb hTcb => by
-                  rw [hTCR] at hTcb
-                  obtain rfl := Option.some.inj hTcb
-                  exact readyThread_notBlockedOnReceive tcbC hReadyC)
-                (fun tcb hTcb => by
-                  rw [hTCR] at hTcb
-                  obtain rfl := Option.some.inj hTcb
-                  exact hReadyC)
-                (fun tcb hTcb => by
-                  rw [hTCR] at hTcb
-                  obtain rfl := Option.some.inj hTcb
-                  exact readyThread_notBlockedOnReply tcbC hReadyC)
-                (fun tcb hTcb => by
-                  rw [hTCR] at hTcb
-                  obtain rfl := Option.some.inj hTcb
-                  exact hBoundC)
-                hNeR
-              cases hCall : endpointCallCrossCoreDispatch epId tid
-                  { registers := extractMessageRegisters decoded.msgRegs decoded.msgInfo, caps := resolvedCaps, badge := cap.badge, capsGranted := cap.rights.mem .grant }
-                  cap.rights decoded.capRecvSlot
-                  executingCore stR with
-              | mk st1 res1 =>
-                  rw [hCall] at hStep hCallInv
-                  cases res1 with
-                  | error e => simp only [] at hStep; cases hStep
-                  | ok pair1 =>
-                      obtain ⟨summary, sgi1⟩ := pair1
-                      simp only [Except.ok.injEq, Prod.mk.injEq, true_and] at hStep
-                      have hObjInv1 : st1.objects.invExt :=
-                        hPack.callStage epId hSy hTgt st1 _ (by rw [hRes]; exact hCall)
-                      rw [← hStep]
-                      exact stageWokenDelivery_preserves_ipcInvariantFull st1 _ _
-                        hObjInv1 hCallInv
+          obtain ⟨tcbC, hTC, hReadyC, hBoundC⟩ := hPack.callerShape
+          have hFreshR := readyThread_endpointQueueFresh st tid tcbC
+            hInv.queueHeadBlockedConsistent hInv.endpointQueueTailBlockedConsistent
+            ((SystemState.getTcb?_eq_some_iff st tid tcbC).mp hTC) hReadyC
+          have hTailR := sendTailCrossQueueFresh st epId
+            hInv.dualQueueSystemInvariant hInv.endpointQueueTailBlockedConsistent
+          have hNeR := hPack.callNotSelfRendezvous epId hSy hTgt
+          have hCallInv := endpointCallCrossCoreDispatch_preserves_ipcInvariantFull
+            epId tid (.frame cap.badge (cap.rights.mem .grant))
+            decoded.capRecvSlot
+            executingCore st
+            hInv hObjInv hBudgets hFreshR hTailR
+            (fun tcb hTcb => by
+              rw [hTC] at hTcb
+              obtain rfl := Option.some.inj hTcb
+              exact readyThread_notBlockedOnReceive tcbC hReadyC)
+            (fun tcb hTcb => by
+              rw [hTC] at hTcb
+              obtain rfl := Option.some.inj hTcb
+              exact hReadyC)
+            (fun tcb hTcb => by
+              rw [hTC] at hTcb
+              obtain rfl := Option.some.inj hTcb
+              exact readyThread_notBlockedOnReply tcbC hReadyC)
+            (fun tcb hTcb => by
+              rw [hTC] at hTcb
+              obtain rfl := Option.some.inj hTcb
+              exact hBoundC)
+            hNeR
+          cases hCall : endpointCallCrossCoreDispatch epId tid
+              (.frame cap.badge (cap.rights.mem .grant))
+              decoded.capRecvSlot
+              executingCore st with
+          | mk st1 res1 =>
+              rw [hCall] at hStep hCallInv
+              cases res1 with
+              | error e => simp only [] at hStep; cases hStep
+              | ok pair1 =>
+                  obtain ⟨summary, sgi1⟩ := pair1
+                  simp only [Except.ok.injEq, Prod.mk.injEq, true_and] at hStep
+                  have hObjInv1 : st1.objects.invExt :=
+                    hPack.callStage epId hSy hTgt st1 _ hCall
+                  rw [← hStep]
+                  exact stageWokenDelivery_preserves_ipcInvariantFull st1 _ _
+                    hObjInv1 hCallInv
         all_goals try cases hStep
       case reply =>
         cases hTgt : cap.target <;> simp only [hTgt] at hStep
@@ -1241,37 +1186,23 @@ theorem dispatchWithCapChecked_preserves_ipcInvariantFull
       case send =>
         cases hTgt : cap.target <;> simp only [hTgt] at hStep
         case object epId =>
-          cases hRes : resolveExtraCaps gate.cspaceRoot (decodeExtraCapAddrs decoded)
-              gate.capDepth (cap.rights.mem .grant) st with
-          | mk resolvedCaps stR =>
-              simp only [hRes] at hStep
-              cases hDisp : endpointSendCrossCoreDispatchChecked ctx epId tid
-                  { registers := extractMessageRegisters decoded.msgRegs decoded.msgInfo,
-                    caps := resolvedCaps, badge := cap.badge,
-                    capsGranted := cap.rights.mem .grant } cap.rights
-                  decoded.capRecvSlot executingCore stR with
-              | mk st1 res1 =>
-                  rw [hDisp] at hStep
-                  unfold endpointSendCrossCoreDispatchChecked at hDisp
-                  split at hDisp
-                  · injection hDisp with hA hB
-                    subst hB
-                    simp only [] at hStep; cases hStep
-                  split at hDisp
-                  · injection hDisp with hA hB
-                    subst hB
-                    simp only [] at hStep; cases hStep
-                  split at hDisp
-                  · have hU : dispatchWithCap decoded tid executingCore gate cap st
-                        = .ok ((), st') := by
-                      unfold dispatchWithCap
-                      simp only [hCapOnly0, hSy, hTgt, hRes, hDisp]
-                      exact hStep
-                    exact dispatchWithCap_preserves_ipcInvariantFull decoded tid executingCore gate
-                      cap st st' hQ.base hD hNotIdle hU
-                  · injection hDisp with hA hB
-                    subst hB
-                    simp only [] at hStep; cases hStep
+          cases hDisp : endpointSendCrossCoreDispatchChecked ctx epId tid
+              (.frame cap.badge (cap.rights.mem .grant))
+              decoded.capRecvSlot executingCore st with
+          | mk st1 res1 =>
+              rw [hDisp] at hStep
+              unfold endpointSendCrossCoreDispatchChecked at hDisp
+              split at hDisp
+              · have hU : dispatchWithCap decoded tid executingCore gate cap st
+                    = .ok ((), st') := by
+                  unfold dispatchWithCap
+                  simp only [hCapOnly0, hSy, hTgt, hDisp]
+                  exact hStep
+                exact dispatchWithCap_preserves_ipcInvariantFull decoded tid executingCore gate
+                  cap st st' hQ.base hD hNotIdle hU
+              · injection hDisp with hA hB
+                subst hB
+                simp only [] at hStep; cases hStep
         all_goals cases hStep
       case receive =>
         cases hTgt : cap.target <;> simp only [hTgt] at hStep
@@ -1288,29 +1219,23 @@ theorem dispatchWithCapChecked_preserves_ipcInvariantFull
       case call =>
         cases hTgt : cap.target <;> simp only [hTgt] at hStep
         case object epId =>
-          cases hRes : resolveExtraCaps gate.cspaceRoot (decodeExtraCapAddrs decoded)
-              gate.capDepth (cap.rights.mem .grant) st with
-          | mk resolvedCaps stR =>
-              simp only [hRes] at hStep
-              cases hDisp : endpointCallCrossCoreDispatchChecked ctx epId tid
-                  { registers := extractMessageRegisters decoded.msgRegs decoded.msgInfo,
-                    caps := resolvedCaps, badge := cap.badge,
-                    capsGranted := cap.rights.mem .grant } cap.rights
-                  decoded.capRecvSlot executingCore stR with
-              | mk st1 res1 =>
-                  rw [hDisp] at hStep
-                  unfold endpointCallCrossCoreDispatchChecked at hDisp
-                  split at hDisp
-                  · have hU : dispatchWithCap decoded tid executingCore gate cap st
-                        = .ok ((), st') := by
-                      unfold dispatchWithCap
-                      simp only [hCapOnly0, hSy, hTgt, hRes, hDisp]
-                      exact hStep
-                    exact dispatchWithCap_preserves_ipcInvariantFull decoded tid executingCore gate
-                      cap st st' hQ.base hD hNotIdle hU
-                  · injection hDisp with hA hB
-                    subst hB
-                    simp only [] at hStep; cases hStep
+          cases hDisp : endpointCallCrossCoreDispatchChecked ctx epId tid
+              (.frame cap.badge (cap.rights.mem .grant))
+              decoded.capRecvSlot executingCore st with
+          | mk st1 res1 =>
+              rw [hDisp] at hStep
+              unfold endpointCallCrossCoreDispatchChecked at hDisp
+              split at hDisp
+              · have hU : dispatchWithCap decoded tid executingCore gate cap st
+                    = .ok ((), st') := by
+                  unfold dispatchWithCap
+                  simp only [hCapOnly0, hSy, hTgt, hDisp]
+                  exact hStep
+                exact dispatchWithCap_preserves_ipcInvariantFull decoded tid executingCore gate
+                  cap st st' hQ.base hD hNotIdle hU
+              · injection hDisp with hA hB
+                subst hB
+                simp only [] at hStep; cases hStep
         all_goals cases hStep
       case reply =>
         cases hTgt : cap.target <;> simp only [hTgt] at hStep

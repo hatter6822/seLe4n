@@ -598,15 +598,11 @@ theorem endpointReply_preserves_ipcSchedulerContractPredicates
 /-- endpointCall preserves objects.invExt through all sub-operations. -/
 theorem endpointCall_preserves_objects_invExt
     (st st' : SystemState) (endpointId : SeLe4n.ObjId)
-    (caller : SeLe4n.ThreadId) (msg : IpcMessage)
+    (caller : SeLe4n.ThreadId) (payload : SendPayload)
     (hObjInv : st.objects.invExt)
-    (hStep : endpointCall endpointId caller msg st = .ok ((), st')) :
+    (hStep : endpointCall endpointId caller payload st = .ok ((), st')) :
     st'.objects.invExt := by
   unfold endpointCall SystemState.getObject? at hStep
-  simp only [show ¬(maxMessageRegisters < msg.registers.size) from by
-    intro h; simp [h] at hStep, ↓reduceIte] at hStep
-  simp only [show ¬(maxExtraCaps < msg.caps.size) from by
-    intro h; simp [h] at hStep, ↓reduceIte] at hStep
   cases hObj : st.objects[endpointId]? with
   | none => simp [hObj] at hStep
   | some obj => cases obj with
@@ -620,11 +616,11 @@ theorem endpointCall_preserves_objects_invExt
         | ok pair =>
           simp only [hHead, hPop] at hStep
           have hObjInv1 := endpointQueuePopHead_preserves_objects_invExt endpointId true st pair.2.2 pair.1 pair.2.1 hObjInv hPop
-          cases hMsg : storeTcbIpcStateAndMessage pair.2.2 pair.1 .ready (some msg) with
+          cases hMsg : storeTcbIpcStateAndMessage pair.2.2 pair.1 .ready (some (sendPayloadMessage st caller payload)) with
           | error e => simp [hMsg] at hStep
           | ok st2 =>
             simp only [hMsg] at hStep
-            have hObjInvMsg := storeTcbIpcStateAndMessage_preserves_objects_invExt pair.2.2 st2 pair.1 .ready (some msg) hObjInv1 hMsg
+            have hObjInvMsg := storeTcbIpcStateAndMessage_preserves_objects_invExt pair.2.2 st2 pair.1 .ready (some (sendPayloadMessage st caller payload)) hObjInv1 hMsg
             have hObjInvEns : (ensureRunnable st2 pair.1).objects.invExt := ensureRunnable_objects_invExt _ _ (by assumption)
             -- AK1-C (I-M01): storeTcbIpcStateAndMessage replaces storeTcbIpcState to atomically clear caller's pendingMessage
             cases hIpc : storeTcbIpcStateAndMessage (ensureRunnable st2 pair.1) caller (.blockedOnReply endpointId (some pair.1)) none with
@@ -665,48 +661,42 @@ endpointSendDualWithCaps: every branch either returns the post-call state
 preservation). -/
 theorem endpointCallWithCaps_preserves_ipcInvariant
     (endpointId : SeLe4n.ObjId) (caller : SeLe4n.ThreadId)
-    (msg : IpcMessage) (endpointRights : AccessRightSet)
+    (payload : SendPayload)
     (receiverSlotBase : SeLe4n.Slot)
     (st st' : SystemState) (summary : CapTransferSummary)
     (hInv : ipcInvariant st)
     (hObjInv : st.objects.invExt)
-    (hStep : endpointCallWithCaps endpointId caller msg endpointRights
+    (hStep : endpointCallWithCaps endpointId caller payload
              receiverSlotBase st = .ok (summary, st')) :
     ipcInvariant st' := by
-  -- PR #873 round 13: the wrapper stamps the endpoint's grant right into the
-  -- message before the call, so the transition under it is the stamped one.
   simp only [endpointCallWithCaps] at hStep
-  cases hCall : endpointCall endpointId caller { msg with capsGranted := endpointRights.mem AccessRight.grant } st with
+  cases hCall : endpointCall endpointId caller payload st with
   | error e => simp [hCall] at hStep
   | ok pair =>
     rcases pair with ⟨_, stMid⟩
     have hInvMid := endpointCall_preserves_ipcInvariant st stMid endpointId caller
-      { msg with capsGranted := endpointRights.mem AccessRight.grant } hInv hObjInv hCall
+      payload hInv hObjInv hCall
     have hObjInvMid : stMid.objects.invExt := endpointCall_preserves_objects_invExt st stMid
-      endpointId caller { msg with capsGranted := endpointRights.mem AccessRight.grant } hObjInv hCall
-    simp [hCall] at hStep
-    -- AN10-B: post-migration `endpointCallWithCaps` reads via `getEndpoint?`.
-    cases hEp : st.getEndpoint? endpointId with
+      endpointId caller payload hObjInv hCall
+    simp only [hCall] at hStep
+    -- WS-ZA ZA4.7: nothing to transfer returns the call's post-state; otherwise
+    -- the caller's capabilities are resolved (CDT nodes only) and installed
+    -- (`receiveTransferCaps_frame`).
+    cases hReq : sendCapRequest st endpointId caller payload with
     | none =>
-      simp [hEp] at hStep; obtain ⟨_, rfl⟩ := hStep; exact hInvMid
-    | some ep =>
-      simp [hEp] at hStep
-      cases hHead : ep.receiveQ.head with
-      | none =>
-        simp [hHead] at hStep; obtain ⟨_, rfl⟩ := hStep; exact hInvMid
-      | some receiverId =>
-        simp [hHead] at hStep
-        by_cases hEmpty : msg.caps = #[]
-        · simp [hEmpty] at hStep; obtain ⟨_, rfl⟩ := hStep; exact hInvMid
-        · simp [hEmpty] at hStep
-          -- WS-RR RR7.8: the destination is read from the **pre**-state (see
-          -- `endpointCallWithCaps`), so the case split names `st`.
-          cases hLookup : lookupCspaceRoot st receiverId with
-          | none => simp [hLookup] at hStep -- WS-RC R1 (DEEP-IPC-03): fail-closed, vacuous
-          | some recvRoot =>
-            simp [hLookup] at hStep
-            exact ipcUnwrapCaps_preserves_ipcInvariant { msg with capsGranted := endpointRights.mem AccessRight.grant } recvRoot
-              receiverSlotBase _ stMid st' summary hInvMid hObjInvMid hStep
+      simp only [hReq, Except.ok.injEq, Prod.mk.injEq] at hStep
+      obtain ⟨_, rfl⟩ := hStep; exact hInvMid
+    | some r =>
+      simp only [hReq] at hStep
+      split at hStep
+      · rename_i recvRoot _
+        obtain ⟨stR, caps, hO, _, _, hOr⟩ := receiveTransferCaps_frame hStep
+        have hInvR : ipcInvariant stR := fun oid ntfn h => hInvMid oid ntfn (hO ▸ h)
+        rcases hOr with rfl | hU
+        · exact hInvR
+        · exact ipcUnwrapCaps_preserves_ipcInvariant _ recvRoot
+            receiverSlotBase _ stR _ summary hInvR (hO ▸ hObjInvMid) hU
+      · cases hStep
 
 -- ============================================================================
 -- V3-G5 (M-PRF-5): blockedThreadsPendingMessageConsistent preservation

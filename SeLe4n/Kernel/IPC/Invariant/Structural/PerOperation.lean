@@ -418,7 +418,7 @@ The CNode precondition requires that when immediate rendezvous occurs, the
 receiver's cspaceRoot points to an actual CNode in the intermediate state. -/
 theorem endpointSendDualWithCaps_preserves_dualQueueSystemInvariant
     (endpointId : SeLe4n.ObjId) (sender : SeLe4n.ThreadId)
-    (msg : IpcMessage) (endpointRights : AccessRightSet)
+    (payload : SendPayload)
     (receiverSlotBase : SeLe4n.Slot)
     (st st' : SystemState) (summary : CapTransferSummary)
     (hInv : dualQueueSystemInvariant st)
@@ -442,41 +442,28 @@ theorem endpointSendDualWithCaps_preserves_dualQueueSystemInvariant
     -- transfer's frame now covers the non-CNode case itself
     -- (`ipcUnwrapCaps_state_eq_of_root_not_cnode`: it writes nothing).
     (hObjInv : st.objects.invExt)
-    (hStep : endpointSendDualWithCaps endpointId sender msg endpointRights
+    (hStep : endpointSendDualWithCaps endpointId sender payload
               receiverSlotBase st = .ok (summary, st')) :
     dualQueueSystemInvariant st' := by
+  have hStepW := hStep
   simp only [endpointSendDualWithCaps] at hStep
-  cases hSend : endpointSendDual endpointId sender { msg with capsGranted := endpointRights.mem AccessRight.grant } st with
+  cases hSend : endpointSendDual endpointId sender payload st with
   | error e => simp [hSend] at hStep
   | ok pair =>
     rcases pair with ⟨_, stMid⟩
     simp only [hSend] at hStep
-    have hInvMid := endpointSendDual_preserves_dualQueueSystemInvariant endpointId sender { msg with capsGranted := endpointRights.mem AccessRight.grant }
+    have hInvMid := endpointSendDual_preserves_dualQueueSystemInvariant endpointId sender payload
       st stMid hObjInv hSend hInv hFreshSender hSendTailFresh
     have hObjInvMid : stMid.objects.invExt :=
-      endpointSendDual_preserves_objects_invExt st stMid endpointId sender { msg with capsGranted := endpointRights.mem AccessRight.grant } hObjInv hSend
-    -- AN10-B: post-migration `endpointSendDualWithCaps` reads via
-    -- `getEndpoint?`; case-split on the typed helper.
-    cases hObj : st.getEndpoint? endpointId with
-    | none =>
-      simp [hObj] at hStep; obtain ⟨_, rfl⟩ := hStep; exact hInvMid
-    | some ep =>
-      cases hHead : ep.receiveQ.head with
-      | none =>
-        simp [hObj, hHead] at hStep; obtain ⟨_, rfl⟩ := hStep; exact hInvMid
-      | some receiverId =>
-        -- hasReceiver = true, guard = msg.caps.isEmpty
-        by_cases hEmpty : msg.caps.isEmpty = true
-        · simp [hObj, hHead, hEmpty] at hStep; obtain ⟨_, rfl⟩ := hStep; exact hInvMid
-        · -- Cap transfer path
-          simp [hObj, hHead, hEmpty] at hStep
-          -- WS-RR RR7.8: the destination is read from the pre-state.
-          cases hLookup : lookupCspaceRoot st receiverId with
-          | none => simp [hLookup] at hStep -- AK1-I: fail-closed, vacuous
-          | some recvRoot =>
-            simp only [hLookup] at hStep
-            exact ipcUnwrapCaps_preserves_dualQueueSystemInvariant { msg with capsGranted := endpointRights.mem AccessRight.grant }
-              recvRoot receiverSlotBase _ stMid st' summary hInvMid hObjInvMid hStep
+      endpointSendDual_preserves_objects_invExt st stMid endpointId sender payload hObjInv hSend
+    obtain ⟨recvRoot, hT⟩ := endpointSendDualWithCaps_transfer_of hSend hStepW
+    obtain ⟨stR, caps, hO, _, _, hOr⟩ := receiveTransferCaps_frame hT
+    have hInvR : dualQueueSystemInvariant stR :=
+      dualQueueSystemInvariant_of_storeAgrees (fun k => by rw [hO]) hInvMid
+    rcases hOr with rfl | hU
+    · exact hInvR
+    · exact ipcUnwrapCaps_preserves_dualQueueSystemInvariant _ recvRoot
+        receiverSlotBase _ stR _ _ hInvR (hO ▸ hObjInvMid) hU
 
 /-- M3-E4: endpointReceiveDualWithCaps preserves dualQueueSystemInvariant.
 Composes endpointReceiveDual base preservation with ipcUnwrapCaps preservation. -/
@@ -545,7 +532,7 @@ had one, and its absence is why the `.call` bundle threaded the conjunct on its
 post-state). Composes the base call preservation with the cap-transfer frame. -/
 theorem endpointCallWithCaps_preserves_dualQueueSystemInvariant
     (endpointId : SeLe4n.ObjId) (caller : SeLe4n.ThreadId)
-    (msg : IpcMessage) (endpointRights : AccessRightSet)
+    (payload : SendPayload)
     (receiverSlotBase : SeLe4n.Slot)
     (st st' : SystemState) (summary : CapTransferSummary)
     (hInv : dualQueueSystemInvariant st)
@@ -563,149 +550,117 @@ theorem endpointCallWithCaps_preserves_dualQueueSystemInvariant
           ep'.sendQ.tail ≠ some tailTid ∧ ep'.receiveQ.tail ≠ some tailTid) ∧
         (epId' = endpointId →
           ep'.receiveQ.tail ≠ some tailTid))
-    (hStep : endpointCallWithCaps endpointId caller msg endpointRights
+    (hStep : endpointCallWithCaps endpointId caller payload
              receiverSlotBase st = .ok (summary, st')) :
     dualQueueSystemInvariant st' := by
+  have hStepW := hStep
   simp only [endpointCallWithCaps] at hStep
   cases hCall : endpointCall endpointId caller
-      { msg with capsGranted := endpointRights.mem AccessRight.grant } st with
+      payload st with
   | error e => simp [hCall] at hStep
   | ok pair =>
     rcases pair with ⟨_, stMid⟩
     have hMid := endpointCall_preserves_dualQueueSystemInvariant endpointId caller
-      { msg with capsGranted := endpointRights.mem AccessRight.grant } st stMid hObjInv
+      payload st stMid hObjInv
       hCall hInv hFreshCaller hSendTailFresh
     have hObjInvMid := endpointCall_preserves_objects_invExt st stMid endpointId caller
-      { msg with capsGranted := endpointRights.mem AccessRight.grant } hObjInv hCall
-    simp [hCall] at hStep
-    cases hEp : st.getEndpoint? endpointId with
-    | none => simp [hEp] at hStep; obtain ⟨_, rfl⟩ := hStep; exact hMid
-    | some ep =>
-      simp [hEp] at hStep
-      cases hHead : ep.receiveQ.head with
-      | none => simp [hHead] at hStep; obtain ⟨_, rfl⟩ := hStep; exact hMid
-      | some receiverId =>
-        simp [hHead] at hStep
-        by_cases hEmpty : msg.caps = #[]
-        · simp [hEmpty] at hStep; obtain ⟨_, rfl⟩ := hStep; exact hMid
-        · simp [hEmpty] at hStep
-          -- WS-RR RR7.8: the destination is read from the pre-state.
-          cases hLookup : lookupCspaceRoot st receiverId with
-          | none => simp [hLookup] at hStep
-          | some recvRoot =>
-            simp [hLookup] at hStep
-            exact ipcUnwrapCaps_preserves_dualQueueSystemInvariant
-              { msg with capsGranted := endpointRights.mem AccessRight.grant }
-              recvRoot receiverSlotBase _ stMid st' summary hMid hObjInvMid hStep
+      payload hObjInv hCall
+    obtain ⟨recvRoot, hT⟩ := endpointCallWithCaps_transfer_of hCall hStepW
+    obtain ⟨stR, caps, hO, _, _, hOr⟩ := receiveTransferCaps_frame hT
+    have hInvR : dualQueueSystemInvariant stR :=
+      dualQueueSystemInvariant_of_storeAgrees (fun k => by rw [hO]) hMid
+    rcases hOr with rfl | hU
+    · exact hInvR
+    · exact ipcUnwrapCaps_preserves_dualQueueSystemInvariant _ recvRoot
+        receiverSlotBase _ stR _ _ hInvR (hO ▸ hObjInvMid) hU
 
 -- ============================================================================
 -- WS-RR RR3.11: `badgeWellFormed` for the WithCaps wrappers.
 --
 -- Each wrapper is its bare transition followed by `ipcUnwrapCaps`, and only the
 -- transfer can affect `badgeWellFormed` (the bare transitions write TCBs,
--- endpoints and replies, never a CNode). The transfer's own frame needs one
--- side condition -- validity of the badges on the *caps it installs* -- and that
--- is a property of the operation's input, not of its result:
+-- endpoints and replies, never a CNode). The transfer's own frame needs the
+-- badges on the caps it installs to be valid:
 --
--- * send / call carry the caps in the syscall's `msg` argument, so the
--- condition is stated directly on `msg.caps`;
+-- * send / call resolve the caps from the sender's CSpace at the rendezvous
+-- (`sendCapRequest`, ZA4.7), and a capability at rest already carries a valid
+-- badge, so `receiveTransferCaps_frame` supplies the condition from the
+-- pre-state and the theorems need no side condition;
 -- * receive carries them in the message it just delivered, which lives in a
 -- TCB's `pendingMessage`, so the condition is the *pre*-state in-flight
 -- invariant `pendingMessageCapBadgesWellFormed`, transported across the base
 -- receive by `endpointReceiveDual_preserves_pendingMessageCapBadgesWellFormed`.
 --
--- Neither can be satisfied by the transition it constrains, which is exactly what
--- separates a precondition from the threaded post-state conjunct these three
--- theorems replace.
 -- ============================================================================
 
 /-- WS-RR RR3.11: `endpointSendDualWithCaps` **establishes** `badgeWellFormed`
-from the pre-state, given that the badges carried in the message are valid. -/
+from the pre-state; the caps it installs are resolved from the sender's CSpace. -/
 theorem endpointSendDualWithCaps_preserves_badgeWellFormed
     (endpointId : SeLe4n.ObjId) (sender : SeLe4n.ThreadId)
-    (msg : IpcMessage) (endpointRights : AccessRightSet)
+    (payload : SendPayload)
     (receiverSlotBase : SeLe4n.Slot)
     (st st' : SystemState) (summary : CapTransferSummary)
     (hInv : badgeWellFormed st)
     (hObjInv : st.objects.invExt)
-    (hMsgCaps : messageCapBadgesValid msg)
-    (hStep : endpointSendDualWithCaps endpointId sender msg endpointRights
+    (hStep : endpointSendDualWithCaps endpointId sender payload
              receiverSlotBase st = .ok (summary, st')) :
     badgeWellFormed st' := by
+  have hStepW := hStep
   simp only [endpointSendDualWithCaps] at hStep
   cases hSend : endpointSendDual endpointId sender
-      { msg with capsGranted := endpointRights.mem AccessRight.grant } st with
+      payload st with
   | error e => simp [hSend] at hStep
   | ok pair =>
     rcases pair with ⟨_, stMid⟩
     simp only [hSend] at hStep
     have hMid := endpointSendDual_preserves_badgeWellFormed st stMid endpointId sender
-      { msg with capsGranted := endpointRights.mem AccessRight.grant } hInv hObjInv hSend
+      payload hInv hObjInv hSend
     have hObjInvMid := endpointSendDual_preserves_objects_invExt st stMid endpointId sender
-      { msg with capsGranted := endpointRights.mem AccessRight.grant } hObjInv hSend
-    cases hObj : st.getEndpoint? endpointId with
-    | none => simp [hObj] at hStep; obtain ⟨_, rfl⟩ := hStep; exact hMid
-    | some ep =>
-      cases hHead : ep.receiveQ.head with
-      | none => simp [hObj, hHead] at hStep; obtain ⟨_, rfl⟩ := hStep; exact hMid
-      | some receiverId =>
-        by_cases hEmpty : msg.caps.isEmpty = true
-        · simp [hObj, hHead, hEmpty] at hStep; obtain ⟨_, rfl⟩ := hStep; exact hMid
-        · simp [hObj, hHead, hEmpty] at hStep
-          -- WS-RR RR7.8: the destination is read from the pre-state.
-          cases hLookup : lookupCspaceRoot st receiverId with
-          | none => simp [hLookup] at hStep
-          | some recvRoot =>
-            simp only [hLookup] at hStep
-            exact ipcUnwrapCaps_preserves_badgeWellFormed
-              { msg with capsGranted := endpointRights.mem AccessRight.grant }
-              recvRoot receiverSlotBase _ stMid st' summary hMid hObjInvMid
-              (fun i c hc b hb => hMsgCaps i c b hc hb) hStep
+      payload hObjInv hSend
+    obtain ⟨recvRoot, hT⟩ := endpointSendDualWithCaps_transfer_of hSend hStepW
+    obtain ⟨stR, caps, hO, _, hCaps, hOr⟩ := receiveTransferCaps_frame hT
+    have hMidR : badgeWellFormed stR :=
+      ⟨fun oid n b h hb => hMid.1 oid n b (hO ▸ h) hb,
+       fun oid cn slot cap b h => hMid.2 oid cn slot cap b (hO ▸ h)⟩
+    rcases hOr with rfl | hU
+    · exact hMidR
+    · exact ipcUnwrapCaps_preserves_badgeWellFormed _ recvRoot
+        receiverSlotBase _ stR _ _ hMidR (hO ▸ hObjInvMid)
+        (fun i c hc b hb => hCaps hMid.2 i c hc b hb) hU
 
 /-- WS-RR RR3.11: `endpointCallWithCaps` **establishes** `badgeWellFormed`
-from the pre-state, given that the badges carried in the message are valid. -/
+from the pre-state; the caps it installs are resolved from the caller's CSpace. -/
 theorem endpointCallWithCaps_preserves_badgeWellFormed
     (endpointId : SeLe4n.ObjId) (caller : SeLe4n.ThreadId)
-    (msg : IpcMessage) (endpointRights : AccessRightSet)
+    (payload : SendPayload)
     (receiverSlotBase : SeLe4n.Slot)
     (st st' : SystemState) (summary : CapTransferSummary)
     (hInv : badgeWellFormed st)
     (hObjInv : st.objects.invExt)
-    (hMsgCaps : messageCapBadgesValid msg)
-    (hStep : endpointCallWithCaps endpointId caller msg endpointRights
+    (hStep : endpointCallWithCaps endpointId caller payload
              receiverSlotBase st = .ok (summary, st')) :
     badgeWellFormed st' := by
+  have hStepW := hStep
   simp only [endpointCallWithCaps] at hStep
   cases hCall : endpointCall endpointId caller
-      { msg with capsGranted := endpointRights.mem AccessRight.grant } st with
+      payload st with
   | error e => simp [hCall] at hStep
   | ok pair =>
     rcases pair with ⟨_, stMid⟩
     have hMid := endpointCall_preserves_badgeWellFormed st stMid endpointId caller
-      { msg with capsGranted := endpointRights.mem AccessRight.grant } hInv hObjInv hCall
+      payload hInv hObjInv hCall
     have hObjInvMid := endpointCall_preserves_objects_invExt st stMid endpointId caller
-      { msg with capsGranted := endpointRights.mem AccessRight.grant } hObjInv hCall
-    simp [hCall] at hStep
-    cases hEp : st.getEndpoint? endpointId with
-    | none => simp [hEp] at hStep; obtain ⟨_, rfl⟩ := hStep; exact hMid
-    | some ep =>
-      simp [hEp] at hStep
-      cases hHead : ep.receiveQ.head with
-      | none => simp [hHead] at hStep; obtain ⟨_, rfl⟩ := hStep; exact hMid
-      | some receiverId =>
-        simp [hHead] at hStep
-        by_cases hEmpty : msg.caps = #[]
-        · simp [hEmpty] at hStep; obtain ⟨_, rfl⟩ := hStep; exact hMid
-        · simp [hEmpty] at hStep
-          -- WS-RR RR7.8: the destination is read from the pre-state.
-          cases hLookup : lookupCspaceRoot st receiverId with
-          | none => simp [hLookup] at hStep
-          | some recvRoot =>
-            simp [hLookup] at hStep
-            exact ipcUnwrapCaps_preserves_badgeWellFormed
-              { msg with capsGranted := endpointRights.mem AccessRight.grant }
-              recvRoot receiverSlotBase _ stMid st' summary hMid hObjInvMid
-              (fun i c hc b hb => hMsgCaps i c b hc hb) hStep
+      payload hObjInv hCall
+    obtain ⟨recvRoot, hT⟩ := endpointCallWithCaps_transfer_of hCall hStepW
+    obtain ⟨stR, caps, hO, _, hCaps, hOr⟩ := receiveTransferCaps_frame hT
+    have hMidR : badgeWellFormed stR :=
+      ⟨fun oid n b h hb => hMid.1 oid n b (hO ▸ h) hb,
+       fun oid cn slot cap b h => hMid.2 oid cn slot cap b (hO ▸ h)⟩
+    rcases hOr with rfl | hU
+    · exact hMidR
+    · exact ipcUnwrapCaps_preserves_badgeWellFormed _ recvRoot
+        receiverSlotBase _ stR _ _ hMidR (hO ▸ hObjInvMid)
+        (fun i c hc b hb => hCaps hMid.2 i c hc b hb) hU
 
 /-- WS-RR RR3.11: `endpointReceiveDualWithCaps` **establishes** `badgeWellFormed`
 from the pre-state.
@@ -2167,17 +2122,13 @@ theorem endpointQueueEnqueue_preserves_blockedThreadsPendingMessageConsistent
     `.blockedOnSend` is outside the invariant scope (⇒ `True`), so both paths preserve. -/
 theorem endpointSendDual_preserves_blockedThreadsPendingMessageConsistent
     (st st' : SystemState) (endpointId : SeLe4n.ObjId)
-    (sender : SeLe4n.ThreadId) (msg : IpcMessage)
+    (sender : SeLe4n.ThreadId) (payload : SendPayload)
     (hObjInv : st.objects.invExt)
     (hInv : blockedThreadsPendingMessageConsistent st)
-    (hStep : endpointSendDual endpointId sender msg st = .ok ((), st')) :
+    (hStep : endpointSendDual endpointId sender payload st = .ok ((), st')) :
     blockedThreadsPendingMessageConsistent st' := by
   unfold endpointSendDual SystemState.getObject? at hStep
   -- Eliminate bounds-check if-branches
-  simp only [show ¬(maxMessageRegisters < msg.registers.size) from by
-    intro h; simp [h] at hStep, ↓reduceIte] at hStep
-  simp only [show ¬(maxExtraCaps < msg.caps.size) from by
-    intro h; simp [h] at hStep, ↓reduceIte] at hStep
   cases hObj : st.objects[endpointId]? with
   | none => simp [hObj] at hStep
   | some obj => cases obj with
@@ -2201,13 +2152,13 @@ theorem endpointSendDual_preserves_blockedThreadsPendingMessageConsistent
             endpointId true st triple.2.2 triple.1 triple.2.1 hObjInv hPop
           have hInv1 := endpointQueuePopHead_preserves_blockedThreadsPendingMessageConsistent
             endpointId true st triple.2.2 triple.1 triple.2.1 hObjInv hInv hPop
-          cases hMsg : storeTcbReceiveComplete triple.2.2 triple.1 (some msg) with
+          cases hMsg : storeTcbReceiveComplete triple.2.2 triple.1 (some (sendPayloadMessage st sender payload)) with
           | error e => simp [hMsg] at hStep
           | ok st2 =>
             simp only [hMsg, Except.ok.injEq, Prod.mk.injEq] at hStep
             obtain ⟨_, hEq⟩ := hStep; subst hEq
             have hInv2 := storeTcbReceiveComplete_preserves_blockedThreadsPendingMessageConsistent
-              triple.2.2 st2 triple.1 (some msg) hObjInv1 hMsg hInv1
+              triple.2.2 st2 triple.1 (some (sendPayloadMessage st sender payload)) hObjInv1 hMsg hInv1
             exact ensureRunnable_preserves_blockedThreadsPendingMessageConsistent _ _ hInv2
       | none =>
         -- Block path: enqueue → storeTcbIpcStateAndMessage .blockedOnSend → removeRunnable
@@ -2498,92 +2449,87 @@ theorem endpointReceiveDual_preserves_blockedThreadsPendingMessageConsistent
 -- ============================================================================
 
 /-- `endpointCall` preserves `blockedThreadsPendingMessageConsistent`.
-    Handshake path: popHead + storeTcbIpcStateAndMessage(.ready, msg) + ensureRunnable
+    Handshake path: popHead + storeTcbIpcStateAndMessage(.ready, payload) + ensureRunnable
       + storeTcbIpcState(.blockedOnReply) + removeRunnable.
-    Block path: enqueue + storeTcbIpcStateAndMessage(.blockedOnCall, msg) + removeRunnable.
+    Block path: enqueue + storeTcbIpcStateAndMessage(.blockedOnCall, payload) + removeRunnable.
     All ipcState transitions are to non-receiver-blocking states, so hTarget is trivial. -/
 theorem endpointCall_preserves_blockedThreadsPendingMessageConsistent
     (st st' : SystemState) (endpointId : SeLe4n.ObjId)
-    (caller : SeLe4n.ThreadId) (msg : IpcMessage)
+    (caller : SeLe4n.ThreadId) (payload : SendPayload)
     (hObjInv : st.objects.invExt)
     (hInv : blockedThreadsPendingMessageConsistent st)
-    (hStep : endpointCall endpointId caller msg st = .ok ((), st')) :
+    (hStep : endpointCall endpointId caller payload st = .ok ((), st')) :
     blockedThreadsPendingMessageConsistent st' := by
   unfold endpointCall SystemState.getObject? at hStep
-  -- Eliminate message bounds checks
-  split at hStep
-  · simp at hStep
-  · split at hStep
-    · simp at hStep
-    · cases hObj : st.objects[endpointId]? with
-      | none => simp [hObj] at hStep
-      | some obj => cases obj with
-        | tcb _ | cnode _ | notification _ | vspaceRoot _ | untyped _ | schedContext _ | reply _ | frame _ | pageTable _ => simp [hObj] at hStep
-        | endpoint ep =>
-          simp only [hObj] at hStep
-          cases hHead : ep.receiveQ.head with
-          | some _ =>
-            -- Handshake path: popHead + storeTcbIpcStateAndMessage(.ready) + ensureRunnable
-            -- + storeTcbIpcState(.blockedOnReply) + removeRunnable
-            cases hPop : endpointQueuePopHead endpointId true st with
-            | error e => simp [hHead, hPop] at hStep
-            | ok pair =>
-              simp only [hHead, hPop] at hStep
-              have hObjInvPop := endpointQueuePopHead_preserves_objects_invExt
-                endpointId true st pair.2.2 pair.1 pair.2.1 hObjInv hPop
-              have hInvPop := endpointQueuePopHead_preserves_blockedThreadsPendingMessageConsistent
-                endpointId true st pair.2.2 pair.1 pair.2.1 hObjInv hInv hPop
-              cases hMsg : storeTcbIpcStateAndMessage pair.2.2 pair.1 .ready (some msg) with
-              | error e => simp [hMsg] at hStep
-              | ok st1 =>
-                simp only [hMsg] at hStep
-                have hObjInv1 := storeTcbIpcStateAndMessage_preserves_objects_invExt
-                  pair.2.2 st1 pair.1 _ _ hObjInvPop hMsg
-                have hInv1 := storeTcbIpcStateAndMessage_preserves_blockedThreadsPendingMessageConsistent
-                  pair.2.2 st1 pair.1 .ready (some msg) hObjInvPop hMsg hInvPop trivial
-                have hInvEns := ensureRunnable_preserves_blockedThreadsPendingMessageConsistent st1 pair.1 hInv1
-                have hObjInvEns : (ensureRunnable st1 pair.1).objects.invExt := by
-                  exact ensureRunnable_objects_invExt _ _ (by assumption)
-                -- AK1-C (I-M01): storeTcbIpcStateAndMessage atomically clears caller's pendingMessage
-                cases hIpc : storeTcbIpcStateAndMessage (ensureRunnable st1 pair.1) caller
-                    (.blockedOnReply endpointId (some pair.1)) none with
-                | error e => simp [hIpc] at hStep
-                | ok st2 =>
-                  simp only [hIpc] at hStep
-                  have hInv2 := storeTcbIpcStateAndMessage_preserves_blockedThreadsPendingMessageConsistent
-                    _ st2 caller (.blockedOnReply endpointId (some pair.1)) none
-                    hObjInvEns hIpc hInvEns trivial
-                  have hObjInv2 := storeTcbIpcStateAndMessage_preserves_objects_invExt
-                    _ st2 caller _ none hObjInvEns hIpc
-                  -- WS-SM SM6.D (#7.3 fold): thread the server-first reply link.
-                  cases hLink : SystemState.linkServerStashedReply caller pair.1 st2 with
-                  | error e => simp [hLink] at hStep
-                  | ok pL =>
-                    obtain ⟨_, st5⟩ := pL
-                    simp only [hLink, Except.ok.injEq, Prod.mk.injEq] at hStep
-                    obtain ⟨_, hEq⟩ := hStep; subst hEq
-                    have hInv5 := linkServerStashedReply_preserves_blockedThreadsPendingMessageConsistent
-                      st2 st5 caller pair.1 hObjInv2 hLink hInv2
-                    exact removeRunnable_preserves_blockedThreadsPendingMessageConsistent _ _ hInv5
-          | none =>
-            -- Block path: enqueue + storeTcbIpcStateAndMessage(.blockedOnCall) + removeRunnable
-            cases hEnq : endpointQueueEnqueue endpointId false caller st with
-            | error e => simp [hHead, hEnq] at hStep
-            | ok st1 =>
-              simp only [hHead, hEnq] at hStep
-              have hObjInvEnq := endpointQueueEnqueue_preserves_objects_invExt
-                endpointId false caller st st1 hObjInv hEnq
-              have hInvEnq := endpointQueueEnqueue_preserves_blockedThreadsPendingMessageConsistent
-                endpointId false caller st st1 hObjInv hInv hEnq
-              cases hMsg : storeTcbIpcStateAndMessage st1 caller (.blockedOnCall endpointId) none with
-              | error e => simp [hMsg] at hStep
-              | ok st2 =>
-                simp only [hMsg, Except.ok.injEq, Prod.mk.injEq] at hStep
+  cases hObj : st.objects[endpointId]? with
+  | none => simp [hObj] at hStep
+  | some obj => cases obj with
+    | tcb _ | cnode _ | notification _ | vspaceRoot _ | untyped _ | schedContext _ | reply _ | frame _ | pageTable _ => simp [hObj] at hStep
+    | endpoint ep =>
+      simp only [hObj] at hStep
+      cases hHead : ep.receiveQ.head with
+      | some _ =>
+        -- Handshake path: popHead + storeTcbIpcStateAndMessage(.ready) + ensureRunnable
+        -- + storeTcbIpcState(.blockedOnReply) + removeRunnable
+        cases hPop : endpointQueuePopHead endpointId true st with
+        | error e => simp [hHead, hPop] at hStep
+        | ok pair =>
+          simp only [hHead, hPop] at hStep
+          have hObjInvPop := endpointQueuePopHead_preserves_objects_invExt
+            endpointId true st pair.2.2 pair.1 pair.2.1 hObjInv hPop
+          have hInvPop := endpointQueuePopHead_preserves_blockedThreadsPendingMessageConsistent
+            endpointId true st pair.2.2 pair.1 pair.2.1 hObjInv hInv hPop
+          cases hMsg : storeTcbIpcStateAndMessage pair.2.2 pair.1 .ready (some (sendPayloadMessage st caller payload)) with
+          | error e => simp [hMsg] at hStep
+          | ok st1 =>
+            simp only [hMsg] at hStep
+            have hObjInv1 := storeTcbIpcStateAndMessage_preserves_objects_invExt
+              pair.2.2 st1 pair.1 _ _ hObjInvPop hMsg
+            have hInv1 := storeTcbIpcStateAndMessage_preserves_blockedThreadsPendingMessageConsistent
+              pair.2.2 st1 pair.1 .ready (some (sendPayloadMessage st caller payload)) hObjInvPop hMsg hInvPop trivial
+            have hInvEns := ensureRunnable_preserves_blockedThreadsPendingMessageConsistent st1 pair.1 hInv1
+            have hObjInvEns : (ensureRunnable st1 pair.1).objects.invExt := by
+              exact ensureRunnable_objects_invExt _ _ (by assumption)
+            -- AK1-C (I-M01): storeTcbIpcStateAndMessage atomically clears caller's pendingMessage
+            cases hIpc : storeTcbIpcStateAndMessage (ensureRunnable st1 pair.1) caller
+                (.blockedOnReply endpointId (some pair.1)) none with
+            | error e => simp [hIpc] at hStep
+            | ok st2 =>
+              simp only [hIpc] at hStep
+              have hInv2 := storeTcbIpcStateAndMessage_preserves_blockedThreadsPendingMessageConsistent
+                _ st2 caller (.blockedOnReply endpointId (some pair.1)) none
+                hObjInvEns hIpc hInvEns trivial
+              have hObjInv2 := storeTcbIpcStateAndMessage_preserves_objects_invExt
+                _ st2 caller _ none hObjInvEns hIpc
+              -- WS-SM SM6.D (#7.3 fold): thread the server-first reply link.
+              cases hLink : SystemState.linkServerStashedReply caller pair.1 st2 with
+              | error e => simp [hLink] at hStep
+              | ok pL =>
+                obtain ⟨_, st5⟩ := pL
+                simp only [hLink, Except.ok.injEq, Prod.mk.injEq] at hStep
                 obtain ⟨_, hEq⟩ := hStep; subst hEq
-                have hInv2 := storeTcbIpcStateAndMessage_preserves_blockedThreadsPendingMessageConsistent
-                  st1 st2 caller (.blockedOnCall endpointId) none
-                  hObjInvEnq hMsg hInvEnq rfl
-                exact blockedThreadsPendingMessageConsistent_of_objectsAgreeOffRunLinks (recordSendCap_objectsAgreeOffRunLinks _ _ _ _) <| removeRunnable_preserves_blockedThreadsPendingMessageConsistent _ _ hInv2
+                have hInv5 := linkServerStashedReply_preserves_blockedThreadsPendingMessageConsistent
+                  st2 st5 caller pair.1 hObjInv2 hLink hInv2
+                exact removeRunnable_preserves_blockedThreadsPendingMessageConsistent _ _ hInv5
+      | none =>
+        -- Block path: enqueue + storeTcbIpcStateAndMessage(.blockedOnCall) + removeRunnable
+        cases hEnq : endpointQueueEnqueue endpointId false caller st with
+        | error e => simp [hHead, hEnq] at hStep
+        | ok st1 =>
+          simp only [hHead, hEnq] at hStep
+          have hObjInvEnq := endpointQueueEnqueue_preserves_objects_invExt
+            endpointId false caller st st1 hObjInv hEnq
+          have hInvEnq := endpointQueueEnqueue_preserves_blockedThreadsPendingMessageConsistent
+            endpointId false caller st st1 hObjInv hInv hEnq
+          cases hMsg : storeTcbIpcStateAndMessage st1 caller (.blockedOnCall endpointId) none with
+          | error e => simp [hMsg] at hStep
+          | ok st2 =>
+            simp only [hMsg, Except.ok.injEq, Prod.mk.injEq] at hStep
+            obtain ⟨_, hEq⟩ := hStep; subst hEq
+            have hInv2 := storeTcbIpcStateAndMessage_preserves_blockedThreadsPendingMessageConsistent
+              st1 st2 caller (.blockedOnCall endpointId) none
+              hObjInvEnq hMsg hInvEnq rfl
+            exact blockedThreadsPendingMessageConsistent_of_objectsAgreeOffRunLinks (recordSendCap_objectsAgreeOffRunLinks _ _ _ _) <| removeRunnable_preserves_blockedThreadsPendingMessageConsistent _ _ hInv2
 
 -- ============================================================================
 -- V3-G: endpointReply preservation

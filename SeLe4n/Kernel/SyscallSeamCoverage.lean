@@ -510,24 +510,6 @@ theorem dispatchWithCapChecked_coversWrites (ctx : LabelingContext)
       · rename_i st₃ hClr
         simp only [Except.ok.injEq, Prod.mk.injEq, true_and] at hDisp
         subst hDisp
-        have hObj₁ := (resolveExtraCaps_objects_scheduler_eq gate.cspaceRoot
-          (Architecture.SyscallArgDecode.decodeExtraCapAddrs decoded) gate.capDepth
-          (cap.rights.mem .grant) st).1
-        have hSch₁ := (resolveExtraCaps_objects_scheduler_eq gate.cspaceRoot
-          (Architecture.SyscallArgDecode.decodeExtraCapAddrs decoded) gate.capDepth
-          (cap.rights.mem .grant) st).2
-        have hObjInv₁ : (resolveExtraCaps gate.cspaceRoot
-            (Architecture.SyscallArgDecode.decodeExtraCapAddrs decoded) gate.capDepth
-            (cap.rights.mem .grant) st).2.objects.invExt := by
-          rw [hObj₁]; exact hObjInv
-        have hS₁ : LockSet.ofList? (schedLockSet_endpointSendOnCore (resolveExtraCaps gate.cspaceRoot
-            (Architecture.SyscallArgDecode.decodeExtraCapAddrs decoded) gate.capDepth
-            (cap.rights.mem .grant) st).2 epId e) = some S := by
-          rw [schedLockSet_endpointSendOnCore_congr_objects hObj₁]; exact hSched
-        refine footprintCoversWrites_trans S (st₂ := (resolveExtraCaps gate.cspaceRoot
-            (Architecture.SyscallArgDecode.decodeExtraCapAddrs decoded) gate.capDepth
-            (cap.rights.mem .grant) st).2)
-          (footprintCoversWrites_of_scheduler_eq S hTable hSch₁) ?_
         refine footprintCoversWrites_trans S (st₂ := st₂) ?_
           (footprintCoversWrites_trans S (st₂ := st₃)
             (footprintCoversWrites_of_scheduler_eq S hTable
@@ -535,48 +517,29 @@ theorem dispatchWithCapChecked_coversWrites (ctx : LabelingContext)
             (footprintCoversWrites_of_scheduler_eq S hTable
               (Architecture.stageWokenDelivery_scheduler_eq _ _ _)))
         rw [← show _ = st₂ from congrArg Prod.fst hSend]
-        exact schedLockSet_endpointSendOnCore_coversWrites ctx epId tid _ cap.rights
-          decoded.capRecvSlot e _ S hObjInv₁ hS₁
+        exact schedLockSet_endpointSendOnCore_coversWrites ctx epId tid _
+          decoded.capRecvSlot e _ S hObjInv hSched
   -- ---- `.call` ------------------------------------------------------------
   case call =>
     cases hT : cap.target <;> rw [hT] at hOps <;> simp only [Option.some.injEq, reduceCtorEq] at hOps
     rename_i epId
     subst hOps
     simp only [schedLockSetForSyscall, Option.bind_some] at hSched
-    rw [hTcb] at hSched
-    simp only [Option.bind_some] at hSched
-    rw [hRoot] at hSched
-    simp only [Option.bind_some] at hSched
     rw [hT] at hDisp
     subst hGateEq
     simp only at hDisp
-    simp only [abiEntryMessage] at hSched
     split at hDisp
     · rename_i st₂ summary x hCallC
       simp only [Except.ok.injEq, Prod.mk.injEq, true_and] at hDisp
       subst hDisp
-      have hSch₁ := (resolveExtraCaps_objects_scheduler_eq tcb.cspaceRoot
-        (Architecture.SyscallArgDecode.decodeExtraCapAddrs decoded) rootCn.depth
-        (cap.rights.mem .grant) st).2
-      have hObjInv₁ : (resolveExtraCaps tcb.cspaceRoot
-          (Architecture.SyscallArgDecode.decodeExtraCapAddrs decoded) rootCn.depth
-          (cap.rights.mem .grant) st).2.objects.invExt := by
-        rw [(resolveExtraCaps_objects_scheduler_eq tcb.cspaceRoot
-          (Architecture.SyscallArgDecode.decodeExtraCapAddrs decoded) rootCn.depth
-          (cap.rights.mem .grant) st).1]
-        exact hObjInv
       unfold endpointCallCrossCoreDispatchChecked at hCallC
       split at hCallC
-      · refine footprintCoversWrites_trans S (st₂ := (resolveExtraCaps tcb.cspaceRoot
-            (Architecture.SyscallArgDecode.decodeExtraCapAddrs decoded) rootCn.depth
-            (cap.rights.mem .grant) st).2)
-          (footprintCoversWrites_of_scheduler_eq S hTable hSch₁) ?_
-        refine footprintCoversWrites_trans S (st₂ := st₂) ?_
+      · refine footprintCoversWrites_trans S (st₂ := st₂) ?_
           (footprintCoversWrites_of_scheduler_eq S hTable
             (Architecture.stageWokenDelivery_scheduler_eq _ _ _))
         rw [← show _ = st₂ from congrArg Prod.fst hCallC]
-        exact schedLockSet_endpointCallOnCore_coversWrites epId tid _ cap.rights
-          decoded.capRecvSlot e _ S hObjInv₁ hSched
+        exact schedLockSet_endpointCallOnCore_coversWrites epId tid _
+          decoded.capRecvSlot e _ S hObjInv hSched
       · exact absurd (congrArg Prod.snd hCallC) (by simp)
     · exact absurd hDisp (by simp)
   -- ---- `.receive` ---------------------------------------------------------

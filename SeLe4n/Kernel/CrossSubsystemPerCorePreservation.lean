@@ -266,14 +266,14 @@ theorem passiveServerIdle_scheduledNowhere_of_ipcInvariantFull {st : SystemState
 
 theorem endpointSendDual_preserves_ipcSchedulerContractPredicates_smp
     (st st' : SystemState) (endpointId : SeLe4n.ObjId)
-    (sender : SeLe4n.ThreadId) (msg : IpcMessage)
+    (sender : SeLe4n.ThreadId) (payload : SendPayload)
     (hPre : ipcSchedulerContractPredicates_smp st)
     (hObjInv : st.objects.invExt)
-    (hStep : endpointSendDual endpointId sender msg st = .ok ((), st'))
+    (hStep : endpointSendDual endpointId sender payload st = .ok ((), st'))
     (hNonBootIdle : ∀ c, c ≠ bootCoreId → (st'.scheduler.runQueueOnCore c).toList = []) :
     ipcSchedulerContractPredicates_smp st' :=
   ipcSchedulerContractPredicates_smp_of_singleCore_and_idle
-    (endpointSendDual_preserves_ipcSchedulerContractPredicates st st' endpointId sender msg
+    (endpointSendDual_preserves_ipcSchedulerContractPredicates st st' endpointId sender payload
       (ipcSchedulerContractPredicates_smp_to_singleCore st hPre) hObjInv hStep)
     hNonBootIdle
 
@@ -292,14 +292,14 @@ theorem endpointReceiveDual_preserves_ipcSchedulerContractPredicates_smp
 
 theorem endpointCall_preserves_ipcSchedulerContractPredicates_smp
     (st st' : SystemState) (endpointId : SeLe4n.ObjId)
-    (caller : SeLe4n.ThreadId) (msg : IpcMessage)
+    (caller : SeLe4n.ThreadId) (payload : SendPayload)
     (hPre : ipcSchedulerContractPredicates_smp st)
     (hObjInv : st.objects.invExt)
-    (hStep : endpointCall endpointId caller msg st = .ok ((), st'))
+    (hStep : endpointCall endpointId caller payload st = .ok ((), st'))
     (hNonBootIdle : ∀ c, c ≠ bootCoreId → (st'.scheduler.runQueueOnCore c).toList = []) :
     ipcSchedulerContractPredicates_smp st' :=
   ipcSchedulerContractPredicates_smp_of_singleCore_and_idle
-    (endpointCall_preserves_ipcSchedulerContractPredicates st st' endpointId caller msg
+    (endpointCall_preserves_ipcSchedulerContractPredicates st st' endpointId caller payload
       (ipcSchedulerContractPredicates_smp_to_singleCore st hPre) hObjInv hStep)
     hNonBootIdle
 
