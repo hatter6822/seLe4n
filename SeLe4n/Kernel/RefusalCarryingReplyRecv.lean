@@ -231,7 +231,7 @@ them to `replyRecvOnCore_blocks_delivered`. -/
         | none => false)
    | none => false) &&
   (match st.getReply? rid with
-   | some rp => rp.consumed.isFree && !st.replyIsStashed rid
+   | some rp => rp.consumedIsFree && !st.replyIsStashed rid
    | none => false)
 
 theorem replyRecvBlocksFast_spec {st : SystemState} {epId : SeLe4n.ObjId}
@@ -287,7 +287,8 @@ theorem replyRecvBlocksFast_spec {st : SystemState} {epId : SeLe4n.ObjId}
   refine ⟨ct, ep0, rt, ep, rp, (SystemState.getTcb?_eq_some_iff _ _ _).mp hTc, hIpc', ?_, hW,
     hNe', (SystemState.getEndpoint?_eq_some_iff _ _ _).mp hEp, hS,
     (SystemState.getTcb?_eq_some_iff _ _ _).mp hTt, hA, ?_,
-    (SystemState.getReply?_eq_some_iff _ _ _).mp hR, hFree, hStash, ?_⟩
+    (SystemState.getReply?_eq_some_iff _ _ _).mp hR, (Reply.consumedIsFree_eq rp).symm.trans hFree,
+    hStash, ?_⟩
   · simp only [TCB.replyObject, beq_iff_eq.mp hRO, SeLe4n.ReplyId.ofOptCode]
   · rw [enqueuesInPlaceCode_eq, Endpoint.ofOptCode_recvTailCode] at hEnq; exact hEnq
   · simp only [receiveQueueTailCode, hEp]

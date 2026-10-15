@@ -246,6 +246,18 @@ def consumed (r : Reply) : Reply :=
 @[simp] theorem consumed_replyId (r : Reply) : r.consumed.replyId = r.replyId := by
   unfold consumed; split <;> rfl
 
+/-- Whether the reply is free once consumed (`consumedIsFree_eq`), read off its
+links without building the consumed record: only a stack head keeps them.
+WS-ZA ZA4.7. -/
+@[inline] def consumedIsFree (r : Reply) : Bool :=
+  match r.next with
+  | some (.head _) => false
+  | _ => true
+
+theorem consumedIsFree_eq (r : Reply) : r.consumedIsFree = r.consumed.isFree := by
+  unfold consumedIsFree consumed isFree
+  split <;> simp_all [caller, SeLe4n.ThreadId.ofOptCode]
+
 /-- A head keeps its links across consumption — the pop that follows clears them. -/
 theorem consumed_of_head (r : Reply) (sc : SeLe4n.SchedContextId)
     (h : r.next = some (.head sc)) : r.consumed = { r with callerCode := 0 } := by
