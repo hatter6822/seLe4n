@@ -865,9 +865,15 @@ theorem handleRescheduleSgiOnCore_eq_switch_of_outside (st : SystemState)
     (hc : chooseThreadEffectiveOnCore st c = .ok (some tid))
     (hOut : currentOutsideActiveDomainOnCore st c = true) :
     handleRescheduleSgiOnCore st c
-      = (switchToThreadOnCore st c tid).map (·.clearReschedulePendingOnCore c) := by
-  simp only [handleRescheduleSgiOnCore, hc, hOut, Bool.true_or, ↓reduceIte]
-  cases switchToThreadOnCore st c tid <;> rfl
+      = match switchToThreadOnCore st c tid with
+        | .ok s => .ok (s.clearReschedulePendingOnCore c)
+        | .error _ => .ok (rescheduleNoCandidateOnCore st c) := by
+  simp only [handleRescheduleSgiOnCore, hc, hOut, Bool.true_or, ↓reduceIte,
+    rescheduleNoCandidateOnCore]
+  cases switchToThreadOnCore st c tid with
+  | ok s => rfl
+  | error e =>
+    by_cases hO : currentOutsideActiveDomainOnCore st c = true <;> simp [hO]
 
 /-- WS-SM SM5.C.5 (audit-pass-3): when the budget-aware re-choose selects `tid`
 (`chooseThreadEffectiveOnCore = .ok (some tid)`) AND `tid` strictly outranks the
@@ -878,9 +884,15 @@ theorem handleRescheduleSgiOnCore_eq_switch_of_choose_some (st : SystemState)
     (hc : chooseThreadEffectiveOnCore st c = .ok (some tid))
     (hout : candidateOutranksCurrentOnCore st c tid = true) :
     handleRescheduleSgiOnCore st c
-      = (switchToThreadOnCore st c tid).map (·.clearReschedulePendingOnCore c) := by
-  simp only [handleRescheduleSgiOnCore, hc, hout, Bool.or_true, ↓reduceIte]
-  cases switchToThreadOnCore st c tid <;> rfl
+      = match switchToThreadOnCore st c tid with
+        | .ok s => .ok (s.clearReschedulePendingOnCore c)
+        | .error _ => .ok (rescheduleNoCandidateOnCore st c) := by
+  simp only [handleRescheduleSgiOnCore, hc, hout, Bool.or_true, ↓reduceIte,
+    rescheduleNoCandidateOnCore]
+  cases switchToThreadOnCore st c tid with
+  | ok s => rfl
+  | error e =>
+    by_cases hO : currentOutsideActiveDomainOnCore st c = true <;> simp [hO]
 
 /-- WS-SM SM5.C.5 (audit-pass-3 / Codex-P1): when the budget-aware candidate
 `tid` does NOT outrank the current thread (`candidateOutranksCurrentOnCore =
@@ -894,21 +906,20 @@ theorem handleRescheduleSgiOnCore_keeps_current_when_outranked (st : SystemState
     handleRescheduleSgiOnCore st c = .ok (st.clearReschedulePendingOnCore c) := by
   simp [handleRescheduleSgiOnCore, hc, hout, hIn]
 
-/-- WS-SM SM5.C.5: a successful SGI-handler dispatch (candidate outranks current)
-sets core `c`'s current thread to the re-chosen thread.  Composes the SM5.A
+/-- WS-SM SM5.C.5: an SGI-handler dispatch (candidate outranks current and the
+switch admits it) sets core `c`'s current thread to the re-chosen thread.  Composes the SM5.A
 selection with the SM5.B switch's `_sets_current` (Theorem 3.2.1). -/
 theorem handleRescheduleSgiOnCore_switches_current (st : SystemState) (c : CoreId)
     (tid : SeLe4n.ThreadId) (st' : SystemState)
     (hc : chooseThreadEffectiveOnCore st c = .ok (some tid))
     (hout : candidateOutranksCurrentOnCore st c tid = true)
+    (hSwOk : ∃ sSw, switchToThreadOnCore st c tid = .ok sSw)
     (h : handleRescheduleSgiOnCore st c = .ok st') :
     st'.scheduler.currentOnCore c = some tid := by
   rw [handleRescheduleSgiOnCore_eq_switch_of_choose_some st c tid hc hout] at h
-  cases hSw : switchToThreadOnCore st c tid with
-  | error e => rw [hSw] at h; cases h
-  | ok sSw =>
-    rw [hSw] at h
-    simp only [Except.map, Except.ok.injEq] at h
+  obtain ⟨sSw, hSw⟩ := hSwOk
+  · rw [hSw] at h
+    simp only [Except.ok.injEq] at h
     subst h
     rw [SystemState.clearReschedulePendingOnCore_scheduler,
       SchedulerState.clearReschedulePendingOnCore_currentOnCore]
@@ -933,7 +944,9 @@ theorem handleRescheduleSgiOnCore_preserves_objects_invExt (st : SystemState)
       · rename_i sSw hSw
         rw [Except.ok.injEq] at h; subst h
         exact switchToThreadOnCore_preserves_objects_invExt st c _ sSw hInv hSw
-      · exact absurd h (by simp)
+      · split at h
+        · rw [Except.ok.injEq] at h; subst h; exact preemptCurrentOnCore_preserves_objects_invExt st c _ hInv
+        · rw [Except.ok.injEq] at h; subst h; exact hInv
     · rw [Except.ok.injEq] at h; subst h; exact hInv
 
 /-- WS-RR RR2.17: the SGI handler's only object write is the preempted thread's
@@ -957,7 +970,9 @@ theorem handleRescheduleSgiOnCore_notification_backward (st : SystemState) (c : 
       · rename_i sSw hSw
         rw [Except.ok.injEq] at hStep; subst hStep
         exact switchToThreadOnCore_notification_backward st c _ sSw hInv oid ntfn hSw h
-      · exact absurd hStep (by simp)
+      · split at hStep
+        · rw [Except.ok.injEq] at hStep; subst hStep; exact preemptCurrentOnCore_notification_backward st c _ hInv oid ntfn h
+        · rw [Except.ok.injEq] at hStep; subst hStep; exact h
     · rw [Except.ok.injEq] at hStep; subst hStep; exact h
 
 /-- WS-SM SM5.F.6 (PR #811 P2-5 support): the SGI handler frames out **any** thread
@@ -985,7 +1000,10 @@ theorem handleRescheduleSgiOnCore_getTcb?_ne_current (st : SystemState) (c : Cor
       · rename_i sSw hSw
         rw [Except.ok.injEq] at h; subst h
         exact switchToThreadOnCore_getTcb?_ne_current st c _ tid sSw hInv hNe hSw
-      · exact absurd h (by simp)
+      · split at h
+        · rw [Except.ok.injEq] at h; subst h
+          exact preemptCurrentOnCore_getTcb?_ne_current st c _ tid hInv hNe
+        · rw [Except.ok.injEq] at h; subst h; rfl
     · rw [Except.ok.injEq] at h; subst h; rfl
 
 /-- WS-SM SM5.C.5 (preservation): the SGI handler preserves core `c`'s run-queue
@@ -1006,7 +1024,9 @@ theorem handleRescheduleSgiOnCore_preserves_runQueueOnCore_wellFormed (st : Syst
       · rename_i sSw hSw
         rw [Except.ok.injEq] at h; subst h
         exact switchToThreadOnCore_preserves_runQueueOnCore_wellFormed st c _ sSw hwf hSw
-      · exact absurd h (by simp)
+      · split at h
+        · rw [Except.ok.injEq] at h; subst h; exact preemptCurrentOnCore_preserves_runQueueOnCore_wellFormed st c _ hwf
+        · rw [Except.ok.injEq] at h; subst h; exact hwf
     · rw [Except.ok.injEq] at h; subst h; exact hwf
 
 /-- WS-SM SM5.C.5 (cross-core independence): the SGI handler on core `c` leaves
@@ -1029,7 +1049,9 @@ theorem handleRescheduleSgiOnCore_independent_of_other_core (st : SystemState)
       · rename_i sSw hSw
         rw [Except.ok.injEq] at h; subst h
         exact switchToThreadOnCore_independent_of_other_core st c c' _ sSw hcc hSw
-      · exact absurd h (by simp)
+      · split at h
+        · rw [Except.ok.injEq] at h; subst h; exact ⟨dropCurrentOnCore_currentOnCore_ne st c c' hcc, (dropCurrentOnCore_runQueueOnCore st c c').trans (preemptCurrentOnCore_runQueueOnCore_ne st c _ c' hcc)⟩
+        · rw [Except.ok.injEq] at h; subst h; exact ⟨rfl, rfl⟩
     · rw [Except.ok.injEq] at h; subst h; exact ⟨rfl, rfl⟩
 
 -- ── PR #880 round 7: per-conjunct SGI-handler preservation ──
@@ -1082,7 +1104,9 @@ theorem handleRescheduleSgiOnCore_replenishQueueOnCore (st : SystemState) (c : C
       · rename_i sSw hSw
         rw [Except.ok.injEq] at h; subst h
         exact switchToThreadOnCore_replenishQueueOnCore st c _ sSw c' hSw
-      · exact absurd h (by simp)
+      · split at h
+        · rw [Except.ok.injEq] at h; subst h; exact dropCurrentOnCore_replenishQueueOnCore st c c'
+        · rw [Except.ok.injEq] at h; subst h; rfl
     · rw [Except.ok.injEq] at h; subst h; rfl
 
 /-- WS-SM (PR #880 round 7): the SGI handler never advances the global timer. -/
@@ -1101,7 +1125,9 @@ theorem handleRescheduleSgiOnCore_machine_timer (st : SystemState) (c : CoreId)
       · rename_i sSw hSw
         rw [Except.ok.injEq] at h; subst h
         exact switchToThreadOnCore_machine_timer st c _ sSw hSw
-      · exact absurd h (by simp)
+      · split at h
+        · rw [Except.ok.injEq] at h; subst h; exact congrArg (·.timer) (dropCurrentOnCore_machine st c)
+        · rw [Except.ok.injEq] at h; subst h; rfl
     · rw [Except.ok.injEq] at h; subst h; rfl
 
 /-- WS-RR (bind/unbind affinity closure): the SGI handler preserves every
@@ -1124,7 +1150,9 @@ theorem handleRescheduleSgiOnCore_determineTargetCore (st : SystemState) (c : Co
       · rename_i sSw hSw
         rw [Except.ok.injEq] at h; subst h
         exact switchToThreadOnCore_determineTargetCore st c _ sSw hInv hSw t
-      · exact absurd h (by simp)
+      · split at h
+        · rw [Except.ok.injEq] at h; subst h; exact dropCurrentOnCore_determineTargetCore st c hInv t
+        · rw [Except.ok.injEq] at h; subst h; rfl
     · rw [Except.ok.injEq] at h; subst h; rfl
 
 /-- WS-RR (bind/unbind affinity closure): the SGI handler preserves every
@@ -1146,7 +1174,9 @@ theorem handleRescheduleSgiOnCore_boundThread (st : SystemState) (c : CoreId)
       · rename_i sSw hSw
         rw [Except.ok.injEq] at h; subst h
         exact switchToThreadOnCore_boundThread st c _ sSw hInv hSw scId
-      · exact absurd h (by simp)
+      · split at h
+        · rw [Except.ok.injEq] at h; subst h; exact preemptCurrentOnCore_boundThread st c _ hInv scId
+        · rw [Except.ok.injEq] at h; subst h; rfl
     · rw [Except.ok.injEq] at h; subst h; rfl
 
 
@@ -1169,7 +1199,9 @@ theorem handleRescheduleSgiOnCore_preserves_currentThreadValidOnCore (st : Syste
       · rename_i sSw hSw
         rw [Except.ok.injEq] at h; subst h
         exact switchToThreadOnCore_establishes_currentThreadValidOnCore st c _ sSw hInv hSw
-      · exact absurd h (by simp)
+      · split at h
+        · rw [Except.ok.injEq] at h; subst h; exact dropCurrentOnCore_currentThreadValidOnCore st c
+        · rw [Except.ok.injEq] at h; subst h; exact hValid
     · rw [Except.ok.injEq] at h; subst h; exact hValid
 
 /-- WS-SM (PR #880 round 7): the SGI handler preserves per-core
@@ -1190,7 +1222,9 @@ theorem handleRescheduleSgiOnCore_preserves_queueCurrentConsistentOnCore (st : S
       · rename_i sSw hSw
         rw [Except.ok.injEq] at h; subst h
         exact switchToThreadOnCore_establishes_queueCurrentConsistentOnCore st c _ sSw hSw
-      · exact absurd h (by simp)
+      · split at h
+        · rw [Except.ok.injEq] at h; subst h; exact dropCurrentOnCore_queueCurrentConsistentOnCore st c
+        · rw [Except.ok.injEq] at h; subst h; exact hQcc
     · rw [Except.ok.injEq] at h; subst h; exact hQcc
 
 /-- WS-SM (PR #880 round 7): the SGI handler preserves the per-core
@@ -1213,7 +1247,9 @@ theorem handleRescheduleSgiOnCore_preserves_contextMatchesCurrentOnCore (st : Sy
       · rename_i sSw hSw
         rw [Except.ok.injEq] at h; subst h
         exact switchToThreadOnCore_establishes_contextMatchesCurrentOnCore st c _ sSw hInv hCtx hSw
-      · exact absurd h (by simp)
+      · split at h
+        · rw [Except.ok.injEq] at h; subst h; exact dropCurrentOnCore_contextMatchesCurrentOnCore st c
+        · rw [Except.ok.injEq] at h; subst h; exact hCtx
     · rw [Except.ok.injEq] at h; subst h; exact hCtx
 
 /-- WS-SM (PR #880 round 7): the SGI handler preserves per-core
@@ -1236,7 +1272,9 @@ theorem handleRescheduleSgiOnCore_preserves_runnableThreadsAreTCBsOnCore (st : S
       · rename_i sSw hSw
         rw [Except.ok.injEq] at h; subst h
         exact switchToThreadOnCore_preserves_runnableThreadsAreTCBsOnCore st c _ sSw hInv hRat hValid hSw
-      · exact absurd h (by simp)
+      · split at h
+        · rw [Except.ok.injEq] at h; subst h; exact dropCurrentOnCore_runnableThreadsAreTCBsOnCore st c hInv hRat hValid
+        · rw [Except.ok.injEq] at h; subst h; exact hRat
     · rw [Except.ok.injEq] at h; subst h; exact hRat
 
 /-- WS-SM (PR #880 round 7): the SGI handler preserves per-core run-queue
@@ -1257,7 +1295,9 @@ theorem handleRescheduleSgiOnCore_preserves_runQueueOnCore_nodup (st : SystemSta
       · rename_i sSw hSw
         rw [Except.ok.injEq] at h; subst h
         exact switchToThreadOnCore_preserves_runQueueOnCore_nodup st c _ sSw hnd hSw
-      · exact absurd h (by simp)
+      · split at h
+        · rw [Except.ok.injEq] at h; subst h; exact preemptCurrentOnCore_preserves_runQueueOnCore_nodup st c _ hnd
+        · rw [Except.ok.injEq] at h; subst h; exact hnd
     · rw [Except.ok.injEq] at h; subst h; exact hnd
 
 /-- WS-SM (PR #880 round 7): the SGI handler preserves per-core
@@ -1298,7 +1338,9 @@ theorem handleRescheduleSgiOnCore_preserves_currentThreadInActiveDomainOnCore
           SchedulerState.clearReschedulePendingOnCore_currentOnCore,
           SchedulerState.clearReschedulePendingOnCore_activeDomainOnCore,
           SystemState.clearReschedulePendingOnCore_getTcb?, hCur, hg, hAct, hdom, hDomEq]
-      · exact absurd h (by simp)
+      · split at h
+        · rw [Except.ok.injEq] at h; subst h; exact dropCurrentOnCore_currentThreadInActiveDomainOnCore st c
+        · rw [Except.ok.injEq] at h; subst h; exact hDom
     · rw [Except.ok.injEq] at h; subst h; exact hDom
 
 -- ============================================================================
@@ -1341,29 +1383,29 @@ theorem wakeThread_then_handle_dispatches_current (st : SystemState)
                   (determineTargetCore st tid) = .ok (some tid))
     (hOutrank : candidateOutranksCurrentOnCore (wakeThread st tid executingCore).1
                   (determineTargetCore st tid) tid = true)
+    (hSwOk : ∃ sSw, switchToThreadOnCore (wakeThread st tid executingCore).1
+                  (determineTargetCore st tid) tid = .ok sSw)
     (hHandle : handleRescheduleSgiOnCore (wakeThread st tid executingCore).1
                   (determineTargetCore st tid) = .ok st2) :
     SchedReachable (wakeThread st tid executingCore).1 st2 ∧
       st2.scheduler.currentOnCore (determineTargetCore st tid) = some tid := by
   refine ⟨?_, ?_⟩
   · -- Genuine 2nd and 3rd `SchedStep`s: the handler reduces to a
-    -- `switchToThreadOnCore` (since the budget-aware choice is `.ok (some tid)`
-    -- and `tid` outranks current), a `.switch` step, followed by the handler's
-    -- closing clear of the target core's reschedule-pending flag.
+    -- `switchToThreadOnCore` (since the budget-aware choice is `.ok (some tid)`,
+    -- `tid` outranks current and the switch admits it), a `.switch` step,
+    -- followed by the handler's closing clear of the target core's
+    -- reschedule-pending flag.
     rw [handleRescheduleSgiOnCore_eq_switch_of_choose_some _ _ _ hChoose hOutrank] at hHandle
-    cases hSw : switchToThreadOnCore (wakeThread st tid executingCore).1
-        (determineTargetCore st tid) tid with
-    | error e => rw [hSw] at hHandle; cases hHandle
-    | ok sSw =>
-      rw [hSw] at hHandle
-      simp only [Except.map, Except.ok.injEq] at hHandle
-      subst hHandle
-      exact SchedReachable.tail _ _ _
-        (SchedReachable.tail _ _ _ (SchedReachable.refl _)
-          (SchedStep.switch _ _ (determineTargetCore st tid) tid hSw))
-        (SchedStep.clearPending _ _)
+    obtain ⟨sSw, hSw⟩ := hSwOk
+    rw [hSw] at hHandle
+    simp only [Except.ok.injEq] at hHandle
+    subst hHandle
+    exact SchedReachable.tail _ _ _
+      (SchedReachable.tail _ _ _ (SchedReachable.refl _)
+        (SchedStep.switch _ _ (determineTargetCore st tid) tid hSw))
+      (SchedStep.clearPending _ _)
   · exact handleRescheduleSgiOnCore_switches_current _ (determineTargetCore st tid) tid st2
-      hChoose hOutrank hHandle
+      hChoose hOutrank hSwOk hHandle
 
 /-- WS-SM SM5.C.6 (multi-step liveness, the full chain from the *pre*-wake state):
 the whole `wake → SGI handler → current` round-trip is a `SchedReachable` path
@@ -1380,12 +1422,15 @@ theorem wakeThread_roundtrip_reachable_current (st : SystemState)
                   (determineTargetCore st tid) = .ok (some tid))
     (hOutrank : candidateOutranksCurrentOnCore (wakeThread st tid executingCore).1
                   (determineTargetCore st tid) tid = true)
+    (hSwOk : ∃ sSw, switchToThreadOnCore (wakeThread st tid executingCore).1
+                  (determineTargetCore st tid) tid = .ok sSw)
     (hHandle : handleRescheduleSgiOnCore (wakeThread st tid executingCore).1
                   (determineTargetCore st tid) = .ok st2) :
     SchedReachable st st2 ∧
       st2.scheduler.currentOnCore (determineTargetCore st tid) = some tid := by
   obtain ⟨hReach, hCur⟩ :=
-    wakeThread_then_handle_dispatches_current st tid executingCore st2 hChoose hOutrank hHandle
+    wakeThread_then_handle_dispatches_current st tid executingCore st2 hChoose hOutrank hSwOk
+      hHandle
   refine ⟨?_, hCur⟩
   -- Prepend the wake's `enqueue` step: `st → (wakeThread …).1` is a `SchedStep`.
   have hWakeStep : SchedReachable st (wakeThread st tid executingCore).1 := by

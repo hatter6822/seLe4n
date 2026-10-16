@@ -126,6 +126,17 @@ the left-hand side and not the right, and the theorem fails. -/
         (cap.hasRight .grant = true ∨ cap.hasRight .grantReply = true)) := by
   simp [faultHandlerCapAuthorized, faultHandlerRequiredRights]
 
+/-- WS-ZA ZA5.2: the compiled `faultHandlerCapAuthorized` — the clauses
+unrolled into rights tests, so no clause list is walked and no predicate closure
+built. -/
+@[inline] def faultHandlerCapAuthorizedImpl (cap : Capability) : Bool :=
+  cap.hasRight .write && (cap.hasRight .grant || cap.hasRight .grantReply)
+
+@[csimp] theorem faultHandlerCapAuthorized_eq_impl :
+    @faultHandlerCapAuthorized = @faultHandlerCapAuthorizedImpl := by
+  funext cap
+  simp [faultHandlerCapAuthorized, faultHandlerCapAuthorizedImpl, faultHandlerRequiredRights]
+
 /-- PR #887 review round 3 (**the support relation**): the verdict is a
 function of the inventory's rights alone — two capabilities that agree on
 every right in `faultHandlerRights` are authorized alike.  This is what the
@@ -644,7 +655,7 @@ hands it here with its proof, so the write is `rewriteObject` under that proof
 rather than a raw insert of a record nothing tied to the store. -/
 def installFaultHandler (st : SystemState) (tid : SeLe4n.ThreadId) (tcb : TCB)
     (hTcb : st.getTcb? tid = some tcb) (cptr : SeLe4n.CPtr) : SystemState :=
-  st.rewriteObject tid.toObjId (.tcb { tcb with faultHandler := some cptr })
+  st.rewriteObject tid.toObjId (.tcb { tcb with faultHandlerSet := true, faultHandlerWord := cptr })
     (SystemState.rewriteAdmissible_tcb hTcb _)
 
 /-- **`seL4_TCB_SetSpace`'s fault endpoint, as a kernel operation.**  Install
@@ -679,6 +690,106 @@ def setThreadFaultHandlerOp (st : SystemState) (vTargetTid : SeLe4n.ValidThreadI
       match resolveFaultHandlerCPtr st tcb cptr with
       | .error e => .error e
       | .ok _ => .ok (installFaultHandler st vTargetTid.val tcb hTcb cptr)
+
+/-- WS-ZA ZA5.2: does `cptr` resolve, through `tcb`'s CSpace, to a handler
+(`resolveFaultHandlerCPtr` succeeds)?  The slot is resolved through
+`resolveCapAddressKUnrolled`, so no slot reference, capability result or
+handler record is built (`faultHandlerResolves_eq`). -/
+@[inline] def faultHandlerResolves (st : SystemState) (tcb : TCB) (cptr : SeLe4n.CPtr) : Bool :=
+  match st.getCNode? tcb.cspaceRoot with
+  | none => false
+  | some rootCn =>
+      resolveCapAddressKUnrolled tcb.cspaceRoot cptr rootCn.depth st (fun _ => false)
+        (fun cnode slot =>
+          match SystemState.lookupSlotCap st { cnode := cnode, slot := slot } with
+          | none => false
+          | some cap =>
+              faultHandlerCapAuthorized cap &&
+                (match cap.target with
+                 | .object epId => (st.getEndpoint? epId).isSome
+                 | _ => false))
+
+theorem faultHandlerResolves_eq (st : SystemState) (tcb : TCB) (cptr : SeLe4n.CPtr) :
+    faultHandlerResolves st tcb cptr =
+      (match resolveFaultHandlerCPtr st tcb cptr with
+       | .ok _ => true
+       | .error _ => false) := by
+  unfold faultHandlerResolves resolveFaultHandlerCPtr
+  cases st.getCNode? tcb.cspaceRoot with
+  | none => rfl
+  | some rootCn =>
+    simp only []
+    rw [resolveCapAddressKUnrolled_eq, resolveCapAddressK_eq]
+    cases resolveCapAddress tcb.cspaceRoot cptr rootCn.depth st with
+    | error e => rfl
+    | ok ref =>
+      obtain ⟨cnode, slot⟩ := ref
+      simp only []
+      cases SystemState.lookupSlotCap st { cnode := cnode, slot := slot } with
+      | none => rfl
+      | some cap =>
+        simp only []
+        cases faultHandlerCapAuthorized cap
+        · rfl
+        · simp only [Bool.true_and, ↓reduceIte]
+          cases cap.target with
+          | object epId => cases h : st.getEndpoint? epId <;> simp [h]
+          | _ => rfl
+
+/-- WS-ZA ZA5.2: the compiled `setThreadFaultHandlerOp` — the handler written
+into the TCB in its slot (`updateTcb`), so on an exclusively owned state the TCB
+is not rebuilt. -/
+def setThreadFaultHandlerOpImpl (st : SystemState) (vTargetTid : SeLe4n.ValidThreadId)
+    (cptr : SeLe4n.CPtr) : Except KernelError SystemState :=
+  match st.getTcb? vTargetTid.val with
+  | none => .error .objectNotFound
+  | some tcb =>
+      match resolveFaultHandlerCPtr st tcb cptr with
+      | .error e => .error e
+      | .ok _ => .ok (st.updateTcb vTargetTid.val (fun t => { t with faultHandlerSet := true, faultHandlerWord := cptr }))
+
+@[csimp] theorem setThreadFaultHandlerOp_eq_impl :
+    @setThreadFaultHandlerOp = @setThreadFaultHandlerOpImpl := by
+  funext st vTargetTid cptr
+  cases hT : st.getTcb? vTargetTid.val with
+  | none =>
+    unfold setThreadFaultHandlerOp setThreadFaultHandlerOpImpl
+    rw [SystemState.getTcbWitnessed?_eq_none hT]; simp only [hT]
+  | some tcb =>
+    unfold setThreadFaultHandlerOp setThreadFaultHandlerOpImpl
+    rw [SystemState.getTcbWitnessed?_eq_some hT]
+    simp only [hT]
+    cases resolveFaultHandlerCPtr st tcb cptr with
+    | error e => rfl
+    | ok _ =>
+      simp only [installFaultHandler]
+      rw [SystemState.rewriteObject_tcb_eq_updateTcb hT (fun t => { t with faultHandlerSet := true, faultHandlerWord := cptr })]
+
+/-- WS-ZA ZA5.2: `setThreadFaultHandlerOp`'s checks, read before anything is
+written: the thread is a stored TCB and the handler resolves through its
+CSpace.  When they pass the operation is the in-slot write
+(`setThreadFaultHandlerOp_of_admitted`). -/
+@[inline] def setThreadFaultHandlerAdmitted (st : SystemState)
+    (vTargetTid : SeLe4n.ValidThreadId) (cptr : SeLe4n.CPtr) : Bool :=
+  match st.getTcb? vTargetTid.val with
+  | none => false
+  | some tcb => faultHandlerResolves st tcb cptr
+
+theorem setThreadFaultHandlerOp_of_admitted (st : SystemState)
+    (vTargetTid : SeLe4n.ValidThreadId) (cptr : SeLe4n.CPtr)
+    (h : setThreadFaultHandlerAdmitted st vTargetTid cptr = true) :
+    setThreadFaultHandlerOp st vTargetTid cptr =
+      .ok (st.updateTcb vTargetTid.val (fun t => { t with faultHandlerSet := true, faultHandlerWord := cptr })) := by
+  rw [setThreadFaultHandlerOp_eq_impl]
+  unfold setThreadFaultHandlerAdmitted at h
+  cases hT : st.getTcb? vTargetTid.val with
+  | none => simp [hT] at h
+  | some tcb =>
+    unfold setThreadFaultHandlerOpImpl
+    simp only [hT, faultHandlerResolves_eq] at h ⊢
+    cases hR : resolveFaultHandlerCPtr st tcb cptr with
+    | error e => simp [hR] at h
+    | ok _ => rfl
 
 /-- On the success path the step *is* the one-field rewrite. -/
 theorem setThreadFaultHandlerOp_ok_eq (st : SystemState) (vTargetTid : SeLe4n.ValidThreadId)
@@ -716,7 +827,7 @@ theorem setThreadFaultHandlerOp_faultHandler (st st' : SystemState)
     (hTcb : st.getTcb? vTargetTid.val = some tcb)
     (hObjInv : st.objects.invExt)
     (hStep : setThreadFaultHandlerOp st vTargetTid cptr = .ok st') :
-    st'.getTcb? vTargetTid.val = some { tcb with faultHandler := some cptr } := by
+    st'.getTcb? vTargetTid.val = some { tcb with faultHandlerSet := true, faultHandlerWord := cptr } := by
   cases hR : resolveFaultHandlerCPtr st tcb cptr with
   | error e =>
       simp [setThreadFaultHandlerOp, SystemState.getTcbWitnessed?_eq_some hTcb, hR] at hStep

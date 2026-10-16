@@ -941,7 +941,7 @@ private def frozenBoundNotificationDelivery : IO Unit := do
   let ep : Endpoint := (Endpoint.ofQueues {} { head := some bound, tail := some bound })
   let ntfn : Notification :=
     { state := .idle, hasPendingBadge := false, pendingWord := SeLe4n.Badge.zero,
-      boundTCB := some bound }
+      boundTCBCode := SeLe4n.ThreadId.optCode (some bound) }
   let boundTcb : TCB :=
     (TCB.setIpcState { mkTcb 42 with queuePPrevCode := 1 } (.blockedOnReceive epId))
   let fst := mkFrozenState
@@ -1202,7 +1202,7 @@ private def differentialNotificationSignalAgrees : IO Unit := do
   let ep : Endpoint := (Endpoint.ofQueues {} { head := some diffA, tail := some diffA })
   let ntfn : Notification :=
     { state := .idle, hasPendingBadge := false, pendingWord := SeLe4n.Badge.zero,
-      boundTCB := some diffA }
+      boundTCBCode := SeLe4n.ThreadId.optCode (some diffA) }
   let boundTcb : TCB := (TCB.setIpcState { diffTcb 62 with queuePPrevCode := 1 } (.blockedOnReceive diffEpId))
   let ist := diffAddTcb (diffAddTcb (diffAddNotification
     (diffAddEndpoint (diffAddCSpace mkEmptyIntermediateState [(SeLe4n.Slot.ofNat 0, diffObjCap diffNotifId)]) diffEpId ep) diffNotifId ntfn) boundTcb) (diffTcb 63)
@@ -1302,7 +1302,7 @@ which FO-038's unbound fixture could not see (PR #886 review). -/
 private def differentialNotificationWaitParksBoundAgrees : IO Unit := do
   let ntfn : Notification :=
     { state := .idle, 
-      hasPendingBadge := false, pendingWord := SeLe4n.Badge.zero, boundTCB := some diffA }
+      hasPendingBadge := false, pendingWord := SeLe4n.Badge.zero, boundTCBCode := SeLe4n.ThreadId.optCode (some diffA) }
   let ist := diffAddTcb
     (diffAddNotification (diffAddCSpace mkEmptyIntermediateState [(SeLe4n.Slot.ofNat 0, diffObjCap diffNotifId)])
       diffNotifId ntfn) (diffTcb 62)
@@ -1324,7 +1324,7 @@ not endpoint-parked). -/
 private def differentialNotificationWaitConsumesBoundAgrees : IO Unit := do
   let ntfn : Notification :=
     { state := .active, 
-      hasPendingBadge := true, pendingWord := (SeLe4n.Badge.ofNatMasked 9), boundTCB := some diffA }
+      hasPendingBadge := true, pendingWord := (SeLe4n.Badge.ofNatMasked 9), boundTCBCode := SeLe4n.ThreadId.optCode (some diffA) }
   let ist := diffAddTcb
     (diffAddNotification (diffAddCSpace mkEmptyIntermediateState [(SeLe4n.Slot.ofNat 0, diffObjCap diffNotifId)])
       diffNotifId ntfn) (diffTcb 62)
@@ -2076,7 +2076,7 @@ private def differentialTaintedSignalAgrees : IO Unit := do
   let ep : Endpoint := (Endpoint.ofQueues {} { head := some diffA, tail := some diffA })
   let ntfn : Notification :=
     { state := .idle, hasPendingBadge := false, pendingWord := SeLe4n.Badge.zero,
-      boundTCB := some diffA }
+      boundTCBCode := SeLe4n.ThreadId.optCode (some diffA) }
   let boundTcb : TCB := (TCB.setIpcState { diffTcb 62 with queuePPrevCode := 1 } (.blockedOnReceive diffEpId))
   let ist0 := diffAddTcb (diffAddTcb (diffAddNotification
     (diffAddEndpoint (diffAddCSpace mkEmptyIntermediateState
@@ -3054,7 +3054,7 @@ private def differentialWakeAtUnqueuedPriorityAgrees : IO Unit := do
   let ep : Endpoint := (Endpoint.ofQueues {} { head := some diffA, tail := some diffA })
   let ntfn : Notification :=
     { state := .idle, hasPendingBadge := false, pendingWord := SeLe4n.Badge.zero,
-      boundTCB := some diffA }
+      boundTCBCode := SeLe4n.ThreadId.optCode (some diffA) }
   -- Priority 5: `diffTcb 63`, the only runnable thread, is at 0, so nothing put
   -- a bucket here and the wake is the first thing that needs one.
   let parkedServer : TCB := (TCB.setIpcState { diffTcb 62 with priority := ⟨5⟩, queuePPrevCode := 1 } (.blockedOnReceive diffEpId))
@@ -3170,7 +3170,7 @@ private def differentialComparisonHasBite : IO Unit := do
   let ep : Endpoint := (Endpoint.ofQueues {} { head := some diffA, tail := some diffA })
   let ntfn : Notification :=
     { state := .idle, hasPendingBadge := false, pendingWord := SeLe4n.Badge.zero,
-      boundTCB := some diffA }
+      boundTCBCode := SeLe4n.ThreadId.optCode (some diffA) }
   let boundTcb : TCB := (TCB.setIpcState { diffTcb 62 with queuePPrevCode := 1 } (.blockedOnReceive diffEpId))
   let ist := diffAddTcb (diffAddTcb (diffAddNotification
     (diffAddEndpoint mkEmptyIntermediateState diffEpId ep) diffNotifId ntfn) boundTcb) (diffTcb 63)

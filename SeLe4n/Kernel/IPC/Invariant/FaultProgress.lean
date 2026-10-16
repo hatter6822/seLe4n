@@ -344,7 +344,18 @@ theorem handleRescheduleSgiOnCore_preserves_not_dispatchable
         rintro (hm | hc)
         · exact hQ' hm
         · exact hC' hc
-      · exact absurd hStep (by simp)
+      · split at hStep
+        · rw [← Except.ok.inj hStep]
+          simp only [SystemState.clearReschedulePendingOnCore_scheduler,
+            SchedulerState.clearReschedulePendingOnCore_runQueueOnCore,
+            SchedulerState.clearReschedulePendingOnCore_currentOnCore,
+            dropCurrentOnCore_runQueueOnCore, dropCurrentOnCore_currentOnCore_self]
+          rintro (hm | hc)
+          · rcases preemptCurrentOnCore_mem_runQueueOnCore_self st c _ u hm with hm' | hc'
+            · exact hQ hm'
+            · exact hC hc'
+          · cases hc
+        · rw [← Except.ok.inj hStep]; exact h
     · rw [← Except.ok.inj hStep]; exact h
 
 end SeLe4n.Kernel

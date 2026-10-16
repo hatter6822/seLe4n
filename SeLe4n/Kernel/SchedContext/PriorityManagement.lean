@@ -293,7 +293,7 @@ the defensive no-op above, and the thread through `SystemState.updateTcb`.
 The record handed in classifies the binding; the write rewrites the record
 the store holds, so a caller that resolved `tcb` at an earlier state cannot
 write a stale copy of it back. -/
-def updatePrioritySource (st : SystemState) (tid : SeLe4n.ThreadId)
+@[inline] def updatePrioritySource (st : SystemState) (tid : SeLe4n.ThreadId)
     (tcb : TCB) (newPriority : SeLe4n.Priority) : SystemState :=
   match tcb.schedContextBinding.ownScId? with
   | some scId =>

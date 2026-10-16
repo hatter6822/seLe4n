@@ -731,7 +731,7 @@ private def stBoundMidQueue? : Option SystemState :=
     (BootstrapBuilder.empty
       |>.withObject nId (.notification
           { state := .idle, 
-            boundTCB := some boundTid })
+            boundTCBCode := SeLe4n.ThreadId.optCode (some boundTid) })
       |>.withObject epId (.endpoint {})
       |>.withObject signallerTid.toObjId (.tcb (mkTcb 501 40 none))
       |>.withObject queueA.toObjId (.tcb (mkTcb 505 30 none))

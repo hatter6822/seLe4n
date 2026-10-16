@@ -379,7 +379,7 @@ theorem bindNotification_preserves_ipcInvariantFull
             have hObjInv1 := storeObject_preserves_objects_invExt st _ nid _ hObjInv hStore1
             have hPre1 := storeObject_objects_ne st _ nid tcbId.toObjId _ hNeIds hObjInv hStore1
             exact storeObject_tcbFieldUpdate_preserves_ipcInvariantFull _ _ tcbId
-              tcb { tcb with boundNotification := some nid } hObjInv1 hInv1
+              tcb { tcb with boundNotificationCode := SeLe4n.ObjId.optCode (some nid) } hObjInv1 hInv1
               (hPre1.trans hTraw) hStore2 rfl rfl rfl rfl rfl rfl rfl rfl rfl
   · split at hStep <;> contradiction
 
@@ -405,7 +405,7 @@ theorem unbindNotification_preserves_ipcInvariantFull
         have hObjInv1 := storeObject_preserves_objects_invExt st _ tcbId.toObjId _
           hObjInv hStore1
         have hInv1 := storeObject_tcbFieldUpdate_preserves_ipcInvariantFull st _ tcbId
-          tcb { tcb with boundNotification := none } hObjInv hInv hTraw hStore1
+          tcb { tcb with boundNotificationCode := 0 } hObjInv hInv hTraw hStore1
           rfl rfl rfl rfl rfl rfl rfl rfl rfl
         split at hStep
         · rename_i ntfn hN1
@@ -2533,7 +2533,13 @@ theorem handleRescheduleSgiOnCore_preserves_ipcInvariantFull (st : SystemState)
         cases hStep
         exact clearReschedulePendingOnCore_preserves_ipcInvariantFull _ _
           (switchToThreadOnCore_preserves_ipcInvariantFull st c _ sSw hObjInv hInv hAdm hSw)
-      · contradiction
+      · split at hStep
+        · rename_i hOut
+          cases hStep
+          exact clearReschedulePendingOnCore_preserves_ipcInvariantFull _ _
+            (dropCurrentOnCore_preserves_ipcInvariantFull st c hObjInv hInv hAdm hOut)
+        · cases hStep
+          exact clearReschedulePendingOnCore_preserves_ipcInvariantFull _ _ hInv
     · cases hStep
       exact clearReschedulePendingOnCore_preserves_ipcInvariantFull _ _ hInv
 
@@ -4955,7 +4961,7 @@ theorem setThreadFaultHandlerOp_preserves_ipcInvariantFull
           cases hStep
           unfold installFaultHandler SystemState.rewriteObject
           exact insertObjects_tcbFieldUpdate_preserves_ipcInvariantFull st vtid.val tcb
-            { tcb with faultHandler := some cptr } hObjInv hInv
+            { tcb with faultHandlerSet := true, faultHandlerWord := cptr } hObjInv hInv
             ((SystemState.getTcb?_eq_some_iff st vtid.val tcb).mp hT)
             rfl rfl rfl rfl rfl rfl rfl rfl rfl
 

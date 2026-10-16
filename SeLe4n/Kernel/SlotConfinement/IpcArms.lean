@@ -1017,7 +1017,13 @@ theorem handleRescheduleSgiOnCore_confinedToCores (st st' : SystemState) (c : Co
         exact observableSlotsConfinedToCores_then_flagOnly
           (switchToThreadOnCore_confinedToCores st sSw c _ hSw)
           (clearReschedulePendingOnCore_confinedToCores sSw c)
-      · exact absurd h (by simp)
+      · split at h
+        · rw [Except.ok.injEq] at h; subst h
+          exact observableSlotsConfinedToCores_then_flagOnly
+            (dropCurrentOnCore_confinedToCores st c)
+            (clearReschedulePendingOnCore_confinedToCores _ c)
+        · rw [Except.ok.injEq] at h; subst h
+          exact observableSlotsConfinedToCores_widen_any (clearReschedulePendingOnCore_confinedToCores st c)
     · rw [Except.ok.injEq] at h; subst h
       exact observableSlotsConfinedToCores_widen_any (clearReschedulePendingOnCore_confinedToCores st c)
 

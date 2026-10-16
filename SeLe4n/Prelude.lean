@@ -111,6 +111,30 @@ instance : ToString ObjId where
 /-- H-06/WS-E3: An identifier is valid (non-sentinel) when its raw value is nonzero. -/
 def valid (id : ObjId) : Prop := id.val ≠ 0
 
+/-- An optional object as one scalar: `0` for `none`, `o + 1` for `some o`
+(`ThreadId.optCode`'s twin), so a field stored as a code holds no `some`
+cell. -/
+@[inline] def optCode : Option ObjId → Nat
+  | none => 0
+  | some o => o.val + 1
+
+/-- The optional object a code stands for; inverse of `optCode`. -/
+@[inline] def ofOptCode : Nat → Option ObjId
+  | 0 => none
+  | k + 1 => some ⟨k⟩
+
+@[simp] theorem ofOptCode_optCode (o : Option ObjId) : ofOptCode (optCode o) = o := by
+  cases o <;> rfl
+
+@[simp] theorem optCode_ofOptCode (n : Nat) : optCode (ofOptCode n) = n := by
+  cases n <;> rfl
+
+@[simp] theorem ofOptCode_zero : ofOptCode 0 = none := rfl
+
+@[simp] theorem optCode_none : optCode none = 0 := rfl
+
+theorem optCode_some (o : ObjId) : optCode (some o) = o.val + 1 := rfl
+
 end ObjId
 
 /-- Identifier for threads (TCBs). -/
@@ -160,6 +184,8 @@ field stored as a code and read through `ofOptCode` has exactly the values the
 @[simp] theorem ofOptCode_zero : ofOptCode 0 = none := rfl
 
 @[simp] theorem optCode_none : optCode none = 0 := rfl
+
+theorem optCode_some (t : ThreadId) : optCode (some t) = t.val + 1 := rfl
 
 @[simp] theorem ofOptCode_eq_none_iff (n : Nat) : ofOptCode n = none ↔ n = 0 := by
   cases n <;> simp [ofOptCode]

@@ -834,10 +834,10 @@ def endpointReferencesReservedIdleSlot (ep : Endpoint) : Bool :=
     and no capability can reach the idle TCB to clear it. -/
 def notificationReferencesReservedIdleSlot (notif : Notification) : Bool :=
   match notif with
-  | ⟨_state, waitHeadCode, waitTailCode, _hasPendingBadge, _pendingWord, _cleared, boundTCB⟩ =>
+  | ⟨_state, waitHeadCode, waitTailCode, _hasPendingBadge, _pendingWord, _cleared, boundTCBCode⟩ =>
     (SeLe4n.ThreadId.ofOptCode waitHeadCode).any SeLe4n.Kernel.isIdleThreadId ||
     (SeLe4n.ThreadId.ofOptCode waitTailCode).any SeLe4n.Kernel.isIdleThreadId ||
-    boundTCB.any SeLe4n.Kernel.isIdleThreadId
+    (SeLe4n.ThreadId.ofOptCode boundTCBCode).any SeLe4n.Kernel.isIdleThreadId
 
 /-- PR #889 review round 8: a boot **CNode**'s capabilities, by their targets
     (`capTargetsReservedIdleObject`). -/
@@ -881,7 +881,7 @@ def tcbReferencesReservedIdleSlot (tcb : TCB) : Bool :=
   match tcb with
   | ⟨tid, _priority, _domain, cspaceRoot, vspaceRoot, _ipcBuffer, _ipcObjectCode, _threadState,
      _timeSlice, _deadline, queuePrevCode, queuePPrevCode, queueNextCode, pendingMessage, _registerContext,
-     _faultHandler, boundNotification, schedContextBinding, timeoutBudget,
+     _faultHandlerSet, _faultHandlerWord, boundNotificationCode, schedContextBinding, timeoutBudget,
      _maxControlledPriority, _pipBoost, _timedOut, _cpuAffinity, replyObjectCode,
      pendingReceiveReplyCode, _pendingFault, _fpContext, ntfnPrevCode, ntfnNextCode,
      _runCoreCode, _runPrio, _runPrevCode, _runNextCode, _runBucketPrevCode, _runBucketNextCode,
@@ -889,7 +889,7 @@ def tcbReferencesReservedIdleSlot (tcb : TCB) : Bool :=
      _ipcBadge, _ipcBadged, _ipcCanGrant, _ipcFaultSend⟩ =>
     SeLe4n.Kernel.isIdleThreadId tid ||
     SeLe4n.Kernel.isIdleObjId cspaceRoot || SeLe4n.Kernel.isIdleObjId vspaceRoot ||
-    boundNotification.any SeLe4n.Kernel.isIdleObjId ||
+    (SeLe4n.ObjId.ofOptCode boundNotificationCode).any SeLe4n.Kernel.isIdleObjId ||
     (SeLe4n.ThreadId.ofOptCode queueNextCode).any SeLe4n.Kernel.isIdleThreadId ||
     (SeLe4n.ThreadId.ofOptCode queuePrevCode).any SeLe4n.Kernel.isIdleThreadId ||
     (match QueuePPrev.ofOptCode queuePPrevCode with
@@ -1707,7 +1707,7 @@ def bootSafeEndpointCheck (ep : Endpoint) : Bool :=
     reservation's `notificationReferencesReservedIdleSlot`. -/
 def bootSafeNotificationCheck (notif : Notification) : Bool :=
   match notif with
-  | ⟨_state, _waitHeadCode, _waitTailCode, _hasPendingBadge, _pendingWord, _cleared, _boundTCB⟩ =>
+  | ⟨_state, _waitHeadCode, _waitTailCode, _hasPendingBadge, _pendingWord, _cleared, _boundTCBCode⟩ =>
     decide (notif.state = .idle) && notif.waitHead.isNone && notif.waitTail.isNone &&
     notif.pendingBadge.isNone
 
@@ -1820,7 +1820,7 @@ def bootSafeTcbCheck (tcb : TCB) : Bool :=
   match tcb with
   | ⟨_tid, _priority, _domain, _cspaceRoot, _vspaceRoot, _ipcBuffer, _ipcObjectCode, _threadState,
      _timeSlice, _deadline, _queuePrev, _queuePPrev, _queueNext, _pendingMessage,
-     _registerContext, _faultHandler, _boundNotification, _schedContextBinding, _timeoutBudget,
+     _registerContext, _faultHandlerSet, _faultHandlerWord, _boundNotification, _schedContextBinding, _timeoutBudget,
      _maxControlledPriority, _pipBoost, _timedOut, _cpuAffinity, _replyObject,
      _pendingReceiveReply, _pendingFault, _fpContext, _ntfnPrevCode, _ntfnNextCode,
      _runCoreCode, _runPrio, _runPrevCode, _runNextCode, _runBucketPrevCode, _runBucketNextCode,
@@ -4026,7 +4026,7 @@ def tcbAffinityDeclared (cores : List SeLe4n.Kernel.Concurrency.CoreId) (tcb : T
   match tcb with
   | ⟨_tid, _priority, _domain, _cspaceRoot, _vspaceRoot, _ipcBuffer, _ipcObjectCode, _threadState,
      _timeSlice, _deadline, _queuePrev, _queuePPrev, _queueNext, _pendingMessage,
-     _registerContext, _faultHandler, _boundNotification, _schedContextBinding, _timeoutBudget,
+     _registerContext, _faultHandlerSet, _faultHandlerWord, _boundNotification, _schedContextBinding, _timeoutBudget,
      _maxControlledPriority, _pipBoost, _timedOut, _cpuAffinity, _replyObject,
      _pendingReceiveReply, _pendingFault, _fpContext, _ntfnPrevCode, _ntfnNextCode,
      _runCoreCode, _runPrio, _runPrevCode, _runNextCode, _runBucketPrevCode, _runBucketNextCode,

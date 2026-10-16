@@ -1,3 +1,63 @@
+## v0.36.97 — WS-ZA ZA5.2 part 1 (objects change in their slot): the thread and notification invocations allocate nothing
+
+**Ten capability invocations now read 0 allocations, at the first call and
+in steady state.**  ZA5.1 routed them onto the register file; what each
+still allocated was its own writes: a copy of the thread record taken while
+the pre-state was still held for a possible refusal, `some` cells for the
+fields it set, and the reschedule that followed.  Each now runs every check
+first and then writes the thread (or notification) in its slot.
+
+Normal-build allocations per call (QEMU exerciser, core 0), `v0.36.96` →
+`v0.36.97`:
+
+| Scenario | v0.36.96 | v0.36.97 |
+|---|---|---|
+| priority | 15 | 0 |
+| maximum priority | 9 | 0 |
+| affinity | 18 | 0 |
+| fault handler | 15 | 0 |
+| notification bind | 20 | 0 |
+| notification unbind | 15 | 0 |
+| CSpace and VSpace | 21 | 0 |
+| resume | 30 | 0 |
+| suspend | 34 | 0 |
+| IPC buffer | 11 | 0 |
+
+VSpace unmap reads 119 (was 120); every other scenario is unchanged.  The
+exerciser gate pins the ten at 0.
+
+- **Checks before writes.**  `RefusalCarrying.ofChecked admitted perform
+  general` runs `perform` once `admitted` holds and the general arm
+  otherwise; `RefusalCarrying.ofChecked_eq` makes it the general arm
+  whenever `general st = .ok ((), perform st)` on the admitted states.
+  `dispatchInvocationByR` uses it for priority, maximum priority, affinity,
+  fault handler, IPC buffer, CSpace and VSpace, suspend and resume, each
+  with its `…Admitted` predicate and an `…_of_admitted` theorem
+  (`setPriorityOnCore_of_admitted`, `setThreadCpuAffinityOnCore_of_admitted`,
+  `suspendThreadOnCore_of_admitted`, `resumeThreadOnCore_of_admitted`, …);
+  `dispatchInvocationByR_eq` still makes the routed arm the specification's.
+  Notification bind and unbind write the thread and the notification in
+  place (`bindNotification_of_inPlace`, `unbindNotification_of_inPlace`).
+- **Fields that held an `Option` hold words.**  `TCB.faultHandler` is a view
+  of `faultHandlerSet` and `faultHandlerWord`, and `TCB.boundNotification`
+  of `boundNotificationCode`, so setting either builds no cell.
+- **The local reschedule never refuses** (seL4's `schedule` does not).
+  When `switchToThreadOnCore` refuses the selector's candidate, which the
+  invariants rule out, `handleRescheduleSgiOnCore` now decides as if there
+  were no candidate (`rescheduleNoCandidateOnCore`) instead of returning the
+  error.  A resume's trailing reschedule can then sit after its writes.
+  `handleRescheduleSgiOnCore_eq_state` gives its result as a state, and the
+  liveness theorems that conclude a switch take its success as a premise.
+- **Reads that built values are word reads.**  `candidateOutranksCurrentOnCore`,
+  `placedCoreOf?`, `runningCoreOf?`, `runningOnSomeCore`, the deschedule's
+  `current` comparison, the affinity's running-core check and the VSpace
+  lookup (`VSpaceRoot.lookupByEntry`) each have a `@[csimp]` form that reads
+  codes and builds no `Option`, pair or list.
+- **Part 2** takes the scheduling-context arms (configure, routed with its
+  fifth word from the IPC buffer, bind and unbind, each with a scenario),
+  the suspend of a thread blocked in IPC or holding a reservation, and the
+  resume of a thread with a pending fault, which keep the general path.
+
 ## v0.36.96 — WS-ZA ZA5.1 (routed invocations): every capability invocation with plain arguments runs on the register file
 
 **The general syscall path is gone from 27 capability invocations.**  Each

@@ -193,11 +193,11 @@ def bindNotification (notificationId : SeLe4n.ObjId) (tcbId : SeLe4n.ThreadId) :
               .error .illegalState
             else
               match storeObject notificationId
-                  (.notification { ntfn with boundTCB := some tcbId }) st with
+                  (.notification { ntfn with boundTCBCode := SeLe4n.ThreadId.optCode (some tcbId) }) st with
               | .error e => .error e
               | .ok ((), st1) =>
                   match storeObject tcbId.toObjId
-                      (.tcb { tcb with boundNotification := some notificationId }) st1 with
+                      (.tcb { tcb with boundNotificationCode := SeLe4n.ObjId.optCode (some notificationId) }) st1 with
                   | .error e => .error e
                   | .ok ((), st2) => .ok ((), st2)
     | none =>
@@ -217,16 +217,157 @@ def unbindNotification (tcbId : SeLe4n.ThreadId) : Kernel Unit :=
         | none => .error .illegalState
         | some notificationId =>
             match storeObject tcbId.toObjId
-                (.tcb { tcb with boundNotification := none }) st with
+                (.tcb { tcb with boundNotificationCode := 0 }) st with
             | .error e => .error e
             | .ok ((), st1) =>
                 match st1.getNotification? notificationId with
                 | some ntfn =>
                     match storeObject notificationId
-                        (.notification { ntfn with boundTCB := none }) st1 with
+                        (.notification { ntfn with boundTCBCode := 0 }) st1 with
                     | .error e => .error e
                     | .ok ((), st2) => .ok ((), st2)
                 | none => .ok ((), st1)
+
+-- ============================================================================
+-- §1a  Bind / unbind in their slots (WS-ZA ZA5.2)
+-- ============================================================================
+
+/-- WS-ZA ZA5.2: a notification object updated through `f`; any other object is
+left as it is. -/
+@[inline] def mapNotificationObject (f : Notification → Notification) :
+    KernelObject → KernelObject
+  | .notification n => .notification (f n)
+  | o => o
+
+/-- WS-ZA ZA5.2: the bind's two writes, each in its slot: the notification's
+bound-thread code, then the thread's bound-notification code. -/
+@[inline] def storeBindNotification (st : SystemState) (notificationId : SeLe4n.ObjId)
+    (tcbId : SeLe4n.ThreadId) : SystemState :=
+  (st.modifyObject notificationId
+      (mapNotificationObject fun n => { n with boundTCBCode := tcbId.val + 1 })).updateTcb
+    tcbId (fun t => { t with boundNotificationCode := notificationId.val + 1 })
+
+/-- WS-ZA ZA5.2: **a bind that writes only its slots**: both ends present and
+unbound (`bindNotification`'s own checks), the thread unreserved, both stores
+changing only `objects` (`storeLeavesIndexAndTypes`), and the notification
+rewritten where it stands (`RHTable.findsInPlace`), so the thread's store
+after it still finds its slot. -/
+@[inline] def bindNotificationInPlace (st : SystemState) (notificationId : SeLe4n.ObjId)
+    (tcbId : SeLe4n.ThreadId) : Bool :=
+  !tcbId.isReserved &&
+  (match st.getNotification? notificationId with
+   | some n => n.boundTCBCode == 0
+   | none => false) &&
+  (match st.getTcb? tcbId with
+   | some t => t.boundNotificationCode == 0
+   | none => false) &&
+  storeLeavesIndexAndTypes st notificationId .notification &&
+  st.objects.findsInPlace notificationId &&
+  storeLeavesIndexAndTypes st tcbId.toObjId .tcb
+
+/-- WS-ZA ZA5.2: **a bind admitted in place is the specification's.** -/
+theorem bindNotification_of_inPlace (st : SystemState) (notificationId : SeLe4n.ObjId)
+    (tcbId : SeLe4n.ThreadId) (h : bindNotificationInPlace st notificationId tcbId = true) :
+    bindNotification notificationId tcbId st =
+      .ok ((), storeBindNotification st notificationId tcbId) := by
+  unfold bindNotificationInPlace at h
+  simp only [Bool.and_eq_true, Bool.not_eq_true'] at h
+  obtain ⟨⟨⟨⟨⟨hR, hN⟩, hT⟩, hLN⟩, hF⟩, hLT⟩ := h
+  cases hn : st.getNotification? notificationId with
+  | none => simp [hn] at hN
+  | some n =>
+  cases ht : st.getTcb? tcbId with
+  | none => simp [ht] at hT
+  | some t =>
+  simp only [hn, ht, beq_iff_eq] at hN hT
+  have hnObj := (SystemState.getNotification?_eq_some_iff st _ n).mp hn
+  have htObj := (SystemState.getTcb?_eq_some_iff st tcbId t).mp ht
+  have hNe : notificationId ≠ tcbId.toObjId := by
+    intro hEq; rw [hEq] at hnObj; rw [hnObj] at htObj; cases htObj
+  let n' : KernelObject := .notification { n with boundTCBCode := tcbId.val + 1 }
+  have hT1 : ({ st with objects := st.objects.insert notificationId n' } : SystemState).getTcb?
+      tcbId = some t := by
+    rw [SystemState.getTcb?_eq_some_iff]
+    exact (SeLe4n.Kernel.RobinHood.RHTable.get?_insert_ne_of_findsInPlace _ _ hF hNe).trans htObj
+  have hLT1 := storeLeavesIndexAndTypes_insert_inPlace
+    (v := .notification { n with boundTCBCode := tcbId.val + 1 }) hF
+    (fun r h => by cases h) hLT
+  unfold bindNotification
+  simp only [hn, lookupTcb, hR, Bool.false_eq_true, ↓reduceIte, ht, Notification.boundTCB,
+    TCB.boundNotification, hN, hT, SeLe4n.ThreadId.ofOptCode, SeLe4n.ObjId.ofOptCode,
+    Option.isSome_none, Bool.or_self, SeLe4n.ThreadId.optCode_some, SeLe4n.ObjId.optCode_some]
+  rw [storeObject_eq_of_leaves (obj := .notification _) hLN]
+  simp only []
+  rw [storeObject_eq_of_leaves (obj := .tcb _) hLT1]
+  unfold storeBindNotification SystemState.modifyObject
+  rw [SeLe4n.Kernel.RobinHood.RHTable.modify_of_get? hnObj]
+  simp only [mapNotificationObject]
+  rw [SystemState.updateTcb_eq_of_some hT1]
+
+/-- WS-ZA ZA5.2: the notification a thread is bound to, as its code (`0` for
+none), read before the unbind writes. -/
+@[inline] def boundNotificationCodeOf (st : SystemState) (tcbId : SeLe4n.ThreadId) : Nat :=
+  match st.getTcb? tcbId with
+  | some t => t.boundNotificationCode
+  | none => 0
+
+/-- WS-ZA ZA5.2: the unbind's two writes, each in its slot: the thread's
+bound-notification code, then the notification's bound-thread code. -/
+@[inline] def storeUnbindNotification (st : SystemState) (tcbId : SeLe4n.ThreadId)
+    (notificationId : SeLe4n.ObjId) : SystemState :=
+  (st.updateTcb tcbId (fun t => { t with boundNotificationCode := 0 })).modifyObject
+    notificationId (mapNotificationObject fun n => { n with boundTCBCode := 0 })
+
+/-- WS-ZA ZA5.2: **an unbind that writes only its slots**: the thread
+unreserved and bound, its notification present, both stores changing only
+`objects`, and the thread rewritten where it stands, so the notification's store
+after it still finds its slot.  A dangling binding (the notification gone) is
+the specification's fail-safe branch and is not admitted here. -/
+@[inline] def unbindNotificationInPlace (st : SystemState) (tcbId : SeLe4n.ThreadId) : Bool :=
+  let c := boundNotificationCodeOf st tcbId
+  !tcbId.isReserved && c != 0 &&
+  storeLeavesIndexAndTypes st tcbId.toObjId .tcb &&
+  st.objects.findsInPlace tcbId.toObjId &&
+  (st.getNotification? ⟨c - 1⟩).isSome &&
+  storeLeavesIndexAndTypes st ⟨c - 1⟩ .notification
+
+/-- WS-ZA ZA5.2: **an unbind admitted in place is the specification's.** -/
+theorem unbindNotification_of_inPlace (st : SystemState) (tcbId : SeLe4n.ThreadId)
+    (h : unbindNotificationInPlace st tcbId = true) :
+    unbindNotification tcbId st =
+      .ok ((), storeUnbindNotification st tcbId ⟨boundNotificationCodeOf st tcbId - 1⟩) := by
+  unfold unbindNotificationInPlace at h
+  cases ht : st.getTcb? tcbId with
+  | none => simp [boundNotificationCodeOf, ht] at h
+  | some t =>
+  simp only [boundNotificationCodeOf, ht, Bool.and_eq_true, Bool.not_eq_true',
+    bne_iff_ne, ne_eq] at h ⊢
+  obtain ⟨⟨⟨⟨⟨hR, hC⟩, hLT⟩, hF⟩, hN⟩, hLN⟩ := h
+  obtain ⟨k, hk⟩ := Nat.exists_eq_succ_of_ne_zero hC
+  simp only [hk, Nat.succ_sub_one] at hN hLN ⊢
+  cases hn : st.getNotification? ⟨k⟩ with
+  | none => simp [hn] at hN
+  | some n =>
+  have hnObj := (SystemState.getNotification?_eq_some_iff st _ n).mp hn
+  have htObj := (SystemState.getTcb?_eq_some_iff st tcbId t).mp ht
+  have hNe : tcbId.toObjId ≠ ⟨k⟩ := by
+    intro hEq; rw [hEq] at htObj; rw [htObj] at hnObj; cases hnObj
+  have hn1 : (st.updateTcb tcbId (fun t => { t with boundNotificationCode := 0 })).objects[
+      (⟨k⟩ : SeLe4n.ObjId)]? = some (.notification n) :=
+    (updateTcb_get?_ne_of_findsInPlace _ ht hF hNe).trans hnObj
+  have hLN1 := updateTcb_storeLeaves (fun t => { t with boundNotificationCode := 0 }) ht hF hLN
+  unfold unbindNotification
+  simp only [lookupTcb, hR, Bool.false_eq_true, ↓reduceIte, ht, TCB.boundNotification, hk,
+    SeLe4n.ObjId.ofOptCode]
+  rw [storeObject_eq_of_leaves (obj := .tcb _) hLT,
+    ← SystemState.updateTcb_eq_of_some ht (fun t => { t with boundNotificationCode := 0 })]
+  simp only []
+  rw [(SystemState.getNotification?_eq_some_iff _ _ n).mpr hn1]
+  simp only []
+  rw [storeObject_eq_of_leaves (obj := .notification _) hLN1]
+  unfold storeUnbindNotification SystemState.modifyObject
+  rw [SeLe4n.Kernel.RobinHood.RHTable.modify_of_get? hn1]
+  rfl
 
 -- ============================================================================
 -- §2  Bound-delivery pre-resolution

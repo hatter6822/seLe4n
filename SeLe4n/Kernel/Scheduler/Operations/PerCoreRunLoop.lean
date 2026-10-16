@@ -461,10 +461,11 @@ theorem perCoreRescheduleStep_switches_current (st : SystemState)
     (st' : SystemState)
     (hc : chooseThreadEffectiveOnCore st ⟨coreId.toNat, h⟩ = .ok (some tid))
     (hout : candidateOutranksCurrentOnCore st ⟨coreId.toNat, h⟩ tid = true)
+    (hSwOk : ∃ sSw, switchToThreadOnCore st ⟨coreId.toNat, h⟩ tid = .ok sSw)
     (hok : handleRescheduleSgiOnCore st ⟨coreId.toNat, h⟩ = .ok st') :
     (perCoreRescheduleStep st coreId).scheduler.currentOnCore ⟨coreId.toNat, h⟩
       = some tid := by
   rw [perCoreRescheduleStep_ok st coreId h st' hok]
-  exact handleRescheduleSgiOnCore_switches_current st _ tid st' hc hout hok
+  exact handleRescheduleSgiOnCore_switches_current st _ tid st' hc hout hSwOk hok
 
 end SeLe4n.Kernel

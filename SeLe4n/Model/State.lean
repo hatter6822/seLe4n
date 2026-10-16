@@ -1908,6 +1908,35 @@ def RefusalCarrying.ofKernel (k : Kernel α) : RefusalCarrying α :=
     | .error e => .error (e, st)
     | .ok r => .ok r
 
+/-- WS-ZA ZA5.2: `k` split as seL4 splits an invocation into its decode and its
+perform.  `admitted` is the checks, read from the state before anything is
+written; when they pass, `perform` is the write, total, and the state is handed
+to it alone, so every table it writes is written in place
+(`ofChecked_eq` is the obligation: an admitted `k` succeeds as `perform`).
+Otherwise `ofKernel k`, whose refusal precedes any write. -/
+@[inline] def RefusalCarrying.ofChecked (admitted : Bool) (perform : SystemState → SystemState)
+    (k : Kernel Unit) : RefusalCarrying Unit :=
+  fun st =>
+    if admitted then .ok ((), perform st)
+    else
+      -- `ofKernel k st` written out, so a partial application `k` is applied
+      -- here rather than built as a closure for a call.
+      match k st with
+      | .error e => .error (e, st)
+      | .ok r => .ok r
+
+/-- `ofChecked` is `ofKernel` when an admitted `k` is `perform`. -/
+theorem RefusalCarrying.ofChecked_eq (admitted : Bool) (perform : SystemState → SystemState)
+    (k : Kernel Unit) (st : SystemState)
+    (h : admitted = true → k st = .ok ((), perform st)) :
+    RefusalCarrying.ofChecked admitted perform k st = RefusalCarrying.ofKernel k st := by
+  unfold RefusalCarrying.ofChecked
+  cases admitted with
+  | false =>
+    simp only [Bool.false_eq_true, ↓reduceIte, RefusalCarrying.ofKernel]
+    cases k st <;> rfl
+  | true => simp only [↓reduceIte, RefusalCarrying.ofKernel, h rfl]
+
 def lookupObject (id : SeLe4n.ObjId) : Kernel KernelObject :=
   fun st =>
     match st.objects[id]? with
@@ -5917,6 +5946,14 @@ theorem updateTcb_eq_of_some {st : SystemState} {tid : SeLe4n.ThreadId} {t : TCB
   rw [getTcbWitnessed?_eq_some h]
   rfl
 
+/-- WS-ZA ZA5.2: a typed rewrite of a stored TCB to `f` of itself is
+`updateTcb`, so a compiled form can write it in its slot. -/
+theorem rewriteObject_tcb_eq_updateTcb {st : SystemState} {tid : SeLe4n.ThreadId} {t : TCB}
+    (h : st.getTcb? tid = some t) (f : TCB → TCB)
+    (hAdm : st.rewriteAdmissible tid.toObjId (.tcb (f t))) :
+    st.rewriteObject tid.toObjId (.tcb (f t)) hAdm = st.updateTcb tid f := by
+  rw [updateTcb_eq_of_some h]; rfl
+
 theorem updateTcb_eq_self_of_none {st : SystemState} {tid : SeLe4n.ThreadId}
     (h : st.getTcb? tid = none) (f : TCB → TCB) :
     st.updateTcb tid f = st := by
@@ -6124,6 +6161,32 @@ theorem updateSchedContext_eq_self_of_none {st : SystemState} {scId : SeLe4n.Sch
     st.updateSchedContext scId f = st := by
   unfold updateSchedContext
   rw [getSchedContextWitnessed?_eq_none h]
+
+/-- WS-ZA ZA4.3: the object update a SchedContext update performs, as
+`mapTcbObject` is a TCB's. -/
+@[inline] def mapSchedContextObject (f : SeLe4n.Kernel.SchedContext → SeLe4n.Kernel.SchedContext) :
+    KernelObject → KernelObject
+  | .schedContext sc => .schedContext (f sc)
+  | o => o
+
+/-- WS-ZA ZA5.2: the compiled `updateSchedContext` — the SchedContext updated in
+its slot (`RHTable.modify`), as `updateTcbImpl` is a TCB's. -/
+@[specialize] def updateSchedContextImpl (st : SystemState) (scId : SeLe4n.SchedContextId)
+    (f : SeLe4n.Kernel.SchedContext → SeLe4n.Kernel.SchedContext) : SystemState :=
+  match st.getSchedContext? scId with
+  | some _ => st.modifyObject scId.toObjId (mapSchedContextObject f)
+  | none => st
+
+@[csimp] theorem updateSchedContext_eq_impl : @updateSchedContext = @updateSchedContextImpl := by
+  funext st scId f
+  unfold updateSchedContextImpl
+  split
+  · next sc hs =>
+    have hx := (getSchedContext?_eq_some_iff st scId sc).mp hs
+    unfold modifyObject
+    rw [updateSchedContext_eq_of_some hs, RHTable.modify_of_get? hx]
+    rfl
+  · next hs => exact updateSchedContext_eq_self_of_none hs f
 
 /-- `updateSchedContext` writes the object table and nothing else (see
 `rewriteObject_eq_objects_update`). -/

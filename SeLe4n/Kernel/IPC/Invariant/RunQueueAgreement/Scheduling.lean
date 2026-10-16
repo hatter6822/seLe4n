@@ -437,7 +437,12 @@ theorem handleRescheduleSgiOnCore_runQueueEntryStage {st st' : SystemState}
               (chooseThreadEffectiveOnCore_some_mem_runQueueOnCore st c tid (hRf c)
                 hChoose))))).trans_stage
           (RunQueueStage.clearReschedulePendingOnCore _ _)).entry
-      · cases h
+      · split at h
+        · rw [Except.ok.injEq] at h; subst h
+          exact ((dropCurrentOnCore_runQueueSwitchStage st c).trans_stage
+            (RunQueueStage.clearReschedulePendingOnCore _ _)).entry
+        · rw [Except.ok.injEq] at h; subst h
+          exact (RunQueueStage.clearReschedulePendingOnCore _ _).entry
     · rw [Except.ok.injEq] at h; subst h
       exact (RunQueueStage.clearReschedulePendingOnCore _ _).entry
 

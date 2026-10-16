@@ -250,6 +250,138 @@ def setMCPriorityOnCore (st : SystemState) (vCallerTid vTargetTid : SeLe4n.Valid
       | none => .error .invalidArgument
   | none => .error .invalidArgument
 
+/-- WS-ZA ZA5.2: `setMCPriorityOnCore`'s checks for the case that writes only
+the ceiling, read before anything is written: both threads are stored TCBs, the
+caller may grant `newMCP`, and the target's priority does not exceed it, so no
+re-bucket or preemption follows.  When they pass the operation is the in-slot
+write (`setMCPriorityOnCore_of_admitted`); a ceiling that bites takes the
+general path. -/
+@[inline] def setMCPriorityAdmitted (st : SystemState)
+    (vCallerTid vTargetTid : SeLe4n.ValidThreadId) (newMCP : SeLe4n.Priority) : Bool :=
+  match st.getTcb? vCallerTid.val with
+  | none => false
+  | some callerTcb =>
+    match validatePriorityAuthority callerTcb newMCP with
+    | .error _ => false
+    | .ok () =>
+      match st.getTcb? vTargetTid.val with
+      | none => false
+      | some targetTcb => !decide (targetTcb.priority.val > newMCP.val)
+
+theorem setMCPriorityOnCore_of_admitted (st : SystemState)
+    (vCallerTid vTargetTid : SeLe4n.ValidThreadId) (newMCP : SeLe4n.Priority)
+    (executingCore : CoreId) (h : setMCPriorityAdmitted st vCallerTid vTargetTid newMCP = true) :
+    setMCPriorityOnCore st vCallerTid vTargetTid newMCP executingCore =
+      .ok (st.updateTcb vTargetTid.val (fun t => { t with maxControlledPriority := newMCP }),
+        none) := by
+  unfold setMCPriorityAdmitted at h
+  cases hC : st.getTcb? vCallerTid.val with
+  | none => simp [hC] at h
+  | some callerTcb =>
+    cases hA : validatePriorityAuthority callerTcb newMCP with
+    | error e => simp [hC, hA] at h
+    | ok u =>
+      cases hT : st.getTcb? vTargetTid.val with
+      | none => simp [hC, hA, hT] at h
+      | some targetTcb =>
+        simp only [hC, hA, hT, Bool.not_eq_true', decide_eq_false_iff_not] at h
+        unfold setMCPriorityOnCore
+        rw [SystemState.getTcbWitnessed?_eq_some hT]
+        simp only [hC, hA, getCurrentPriority_eq_priority, h, ↓reduceIte]
+        rw [SystemState.rewriteObject_tcb_eq_updateTcb hT
+          (fun t => { t with maxControlledPriority := newMCP })]
+
+/-- WS-ZA ZA5.2: the priority change's state effect (`applyPriorityChangeOnCore`
+before its preemption seam), with every read of the pre-state — the home core,
+the thread's old key as its three parts, the chain walk's fuel — made before the
+first write, so neither the state nor the thread's TCB is held across a write
+and each is written in its slot (`applyPriorityChangeState_eq`). -/
+@[inline] def applyPriorityChangeState (st : SystemState) (tid : SeLe4n.ThreadId) (tcb : TCB)
+    (newPriority : SeLe4n.Priority) (executingCore : CoreId) : SystemState :=
+  let home := determineTargetCore st tid
+  let p0 := tcb.boostedPriority
+  let d0 := effectiveDeadline st tcb
+  let dom0 := tcb.domain
+  let fuel := st.objectIndex.length
+  let st1 := updatePrioritySource st tid tcb newPriority
+  let st2 := migrateRunQueueBucketOnCore st1 tid newPriority home
+  let st3 := markKeyChangeParts st2 tid p0 d0 dom0
+  PriorityInheritance.repropagateFromWaiter st3 tid executingCore fuel
+
+theorem applyPriorityChangeState_eq (st : SystemState) (tid : SeLe4n.ThreadId) (tcb : TCB)
+    (newPriority : SeLe4n.Priority) (executingCore : CoreId) :
+    applyPriorityChangeState st tid tcb newPriority executingCore =
+      PriorityInheritance.repropagateFromWaiter
+        (markKeyChangeFor
+          (migrateRunQueueBucketOnCore (updatePrioritySource st tid tcb newPriority) tid
+            newPriority (determineTargetCore st tid))
+          tid (effectiveSchedParams st tcb))
+        tid executingCore st.objectIndex.length := by
+  rw [markKeyChangeFor_eq_parts, effectiveSchedParams_eq_parts]
+  rfl
+
+/-- WS-ZA ZA5.2: `setPriorityOnCore`'s state effect when it is admitted: the
+target's TCB read and the change applied (`applyPriorityChangeState`). -/
+@[inline] def setPriorityPerform (st : SystemState) (tid : SeLe4n.ThreadId)
+    (newPriority : SeLe4n.Priority) (executingCore : CoreId) : SystemState :=
+  match st.getTcb? tid with
+  | some tcb => applyPriorityChangeState st tid tcb newPriority executingCore
+  | none => st
+
+/-- WS-ZA ZA5.2: `setPriorityOnCore`'s checks, read before anything is written:
+the caller is a stored TCB whose maximum controlled priority admits the new one,
+the target is a stored TCB, and the change does not demote a thread the executing
+core runs (that reschedule runs here and may refuse, so it takes the general
+path).  When they pass the operation's state is `setPriorityPerform`
+(`setPriorityOnCore_of_admitted`). -/
+@[inline] def setPriorityAdmitted (st : SystemState)
+    (vCallerTid vTargetTid : SeLe4n.ValidThreadId) (newPriority : SeLe4n.Priority)
+    (executingCore : CoreId) : Bool :=
+  match st.getTcb? vCallerTid.val with
+  | none => false
+  | some callerTcb =>
+    match validatePriorityAuthority callerTcb newPriority with
+    | .error _ => false
+    | .ok () =>
+      match st.getTcb? vTargetTid.val with
+      | none => false
+      | some targetTcb =>
+        !(decide (newPriority.val < (getCurrentPriority st targetTcb).val) &&
+          (runningCoreOf? st vTargetTid.val).isEqSome executingCore)
+
+theorem setPriorityOnCore_of_admitted (st : SystemState)
+    (vCallerTid vTargetTid : SeLe4n.ValidThreadId) (newPriority : SeLe4n.Priority)
+    (executingCore : CoreId)
+    (h : setPriorityAdmitted st vCallerTid vTargetTid newPriority executingCore = true) :
+    ∃ sgi, setPriorityOnCore st vCallerTid vTargetTid newPriority executingCore =
+      .ok (setPriorityPerform st vTargetTid.val newPriority executingCore, sgi) := by
+  unfold setPriorityAdmitted at h
+  cases hC : st.getTcb? vCallerTid.val with
+  | none => simp [hC] at h
+  | some callerTcb =>
+    cases hA : validatePriorityAuthority callerTcb newPriority with
+    | error e => simp [hC, hA] at h
+    | ok u =>
+      cases hT : st.getTcb? vTargetTid.val with
+      | none => simp [hC, hA, hT] at h
+      | some targetTcb =>
+        simp only [hC, hA, hT] at h
+        unfold setPriorityOnCore setPriorityPerform applyPriorityChangeOnCore
+        simp only [hC, hA, hT, applyPriorityChangeState_eq]
+        unfold priorityRescheduleOnCore
+        by_cases hP : decide (newPriority.val < (getCurrentPriority st targetTcb).val) = true
+        · rw [if_pos hP]
+          rw [hP, Bool.true_and, Bool.not_eq_true'] at h
+          cases hR : runningCoreOf? st vTargetTid.val with
+          | none => exact ⟨none, rfl⟩
+          | some rc =>
+            rw [hR] at h
+            have hNe : (rc == executingCore) = false := h
+            simp only [hNe, Bool.false_eq_true, ↓reduceIte]
+            exact ⟨_, rfl⟩
+        · rw [if_neg hP]
+          exact ⟨none, rfl⟩
+
 /-- WS-SM SM8.B: a rejected authority check leaves the state untouched — both
 per-core ops are fail-closed, exactly as their single-core originals. -/
 theorem setPriorityOnCore_authority_rejected (st : SystemState)

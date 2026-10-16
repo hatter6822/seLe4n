@@ -5623,5 +5623,5 @@ theorem setThreadFaultHandlerOp_preserves_projection
           cases hStep
           unfold installFaultHandler SystemState.rewriteObject
           exact objects_insert_preserves_projection_high ctx observer st
-            vTargetTid.val.toObjId (.tcb { tcb with faultHandler := some cptr })
+            vTargetTid.val.toObjId (.tcb { tcb with faultHandlerSet := true, faultHandlerWord := cptr })
             hTargetObjHigh hObjInv

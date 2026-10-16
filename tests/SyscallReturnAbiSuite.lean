@@ -178,7 +178,7 @@ private def witnessState : SystemState :=
             [(SeLe4n.Slot.ofNat capPtrValue, ntfnCap)] })
     |>.withObject ntfnId (.notification
         { state := .idle, 
-          hasPendingBadge := false, pendingWord := SeLe4n.Badge.zero, boundTCB := none })
+          hasPendingBadge := false, pendingWord := SeLe4n.Badge.zero, boundTCBCode := 0 })
     |>.withObject callerTid.toObjId (.tcb
         { tid := callerTid, priority := ⟨40⟩, domain := ⟨0⟩,
           cspaceRoot := callerCn, vspaceRoot := callerVsp,
@@ -278,7 +278,7 @@ private def twoThreadState : SystemState :=
     |>.withObject callerCn (.cnode sharedCn)
     |>.withObject ntfnId (.notification
         { state := .idle, 
-          hasPendingBadge := false, pendingWord := SeLe4n.Badge.zero, boundTCB := none })
+          hasPendingBadge := false, pendingWord := SeLe4n.Badge.zero, boundTCBCode := 0 })
     |>.withObject epId (.endpoint {})
     |>.withObject callerTid.toObjId (.tcb
         { tid := callerTid, priority := ⟨40⟩, domain := ⟨0⟩,
@@ -306,7 +306,7 @@ private def replyPendingState : SystemState :=
     |>.withObject callerCn (.cnode sharedCn)
     |>.withObject ntfnId (.notification
         { state := .idle, 
-          hasPendingBadge := false, pendingWord := SeLe4n.Badge.zero, boundTCB := none })
+          hasPendingBadge := false, pendingWord := SeLe4n.Badge.zero, boundTCBCode := 0 })
     |>.withObject epId (.endpoint {})
     |>.withObject callerTid.toObjId (.tcb
         (TCB.setIpcState
@@ -673,7 +673,7 @@ private def auditWitnessState : SystemState :=
                    rights := AccessRightSet.ofList [.read] })] })
       |>.withObject ntfnId (.notification
           { state := .idle, 
-            hasPendingBadge := false, pendingWord := SeLe4n.Badge.zero, boundTCB := none })
+            hasPendingBadge := false, pendingWord := SeLe4n.Badge.zero, boundTCBCode := 0 })
       |>.withObject callerTid.toObjId (.tcb
           { tid := callerTid, priority := ⟨40⟩, domain := ⟨0⟩,
             cspaceRoot := callerCn, vspaceRoot := callerVsp,

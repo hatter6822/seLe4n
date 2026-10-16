@@ -251,9 +251,10 @@ example (st : SystemState) (c : CoreId) (tid : SeLe4n.ThreadId) (tcb : TCB)
 example (st : SystemState) (c : CoreId) (tid : SeLe4n.ThreadId) (st' : SystemState)
     (hc : chooseThreadEffectiveOnCore st c = .ok (some tid))
     (hOut : candidateOutranksCurrentOnCore st c tid = true)
+    (hSw : ∃ sSw, switchToThreadOnCore st c tid = .ok sSw)
     (h : handleRescheduleSgiOnCore st c = .ok st') :
     st'.scheduler.currentOnCore c = some tid :=
-  handleRescheduleSgiOnCore_switches_current st c tid st' hc hOut h
+  handleRescheduleSgiOnCore_switches_current st c tid st' hc hOut hSw h
 
 /-- SM5.C.8: setting affinity feeds the wake target. -/
 example (st : SystemState) (targetTid : SeLe4n.ThreadId) (c : CoreId) (st' : SystemState)
@@ -305,11 +306,13 @@ example (st : SystemState) (tid : SeLe4n.ThreadId) (executingCore : CoreId) (st2
                   (determineTargetCore st tid) = .ok (some tid))
     (hOut : candidateOutranksCurrentOnCore (wakeThread st tid executingCore).1
                   (determineTargetCore st tid) tid = true)
+    (hSw : ∃ sSw, switchToThreadOnCore (wakeThread st tid executingCore).1
+                  (determineTargetCore st tid) tid = .ok sSw)
     (hHandle : handleRescheduleSgiOnCore (wakeThread st tid executingCore).1
                   (determineTargetCore st tid) = .ok st2) :
     SchedReachable st st2 ∧
       st2.scheduler.currentOnCore (determineTargetCore st tid) = some tid :=
-  wakeThread_roundtrip_reachable_current st tid executingCore st2 hChoose hOut hHandle
+  wakeThread_roundtrip_reachable_current st tid executingCore st2 hChoose hOut hSw hHandle
 
 /-- audit-pass-1 (gap d): a ghost (non-TCB) wake emits no SGI. -/
 example (st : SystemState) (tid : SeLe4n.ThreadId) (executingCore : CoreId)

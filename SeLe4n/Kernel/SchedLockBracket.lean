@@ -288,10 +288,11 @@ theorem not_mem_handleRescheduleSgiOnCoreLockSet_replenishQueue (c d : CoreId) :
 reschedule-pending clear, one switch (then that clear), or the drop of an
 out-of-domain incumbent (then that clear) on the decoded core.
 
-`handleRescheduleSgiOnCore` propagates the selector's error, returns the
-decoded core's flag clear (the KSC-1 accumulator's scheduling-point write) when
-there is no candidate or the candidate does not outrank, and the switch followed
-by that clear otherwise; `perCoreRescheduleStep` swallows the error arms.  Naming
+`handleRescheduleSgiOnCore` never refuses (`handleRescheduleSgiOnCore_eq_state`):
+it returns the decoded core's flag clear (the KSC-1 accumulator's
+scheduling-point write) when there is no candidate, the candidate does not
+outrank or the switch does not admit it, and the switch followed by that clear
+otherwise; the identity arm is the error arm the proof still splits on.  Naming
 the disjunction once is what lets every frame below be an instance of the
 switch's own frames rather than a re-derivation. -/
 theorem perCoreRescheduleStep_id_or_switch (st : SystemState) (coreId : UInt64)
@@ -322,7 +323,11 @@ theorem perCoreRescheduleStep_id_or_switch (st : SystemState) (coreId : UInt64)
           candidateOutranksCurrentOnCore st ⟨coreId.toNat, h⟩ tid) = true
       · rw [if_pos hOut]
         cases hSw : switchToThreadOnCore st ⟨coreId.toNat, h⟩ tid with
-        | error e => exact Or.inl rfl
+        | error e =>
+          simp only
+          by_cases hDrop : currentOutsideActiveDomainOnCore st ⟨coreId.toNat, h⟩ = true
+          · rw [if_pos hDrop]; exact Or.inr (Or.inr (Or.inr rfl))
+          · rw [if_neg hDrop]; exact Or.inr (Or.inl rfl)
         | ok st' => exact Or.inr (Or.inr (Or.inl ⟨tid, st', hSw, rfl⟩))
       · rw [if_neg hOut]; exact Or.inr (Or.inl rfl)
 

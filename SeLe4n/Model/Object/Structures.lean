@@ -273,6 +273,22 @@ WS-H11: Returns `(PAddr × PagePermissions)` pair. -/
 def lookup (root : VSpaceRoot) (vaddr : SeLe4n.VAddr) : Option (SeLe4n.PAddr × PagePermissions) :=
   root.mappings[vaddr]?
 
+/-- WS-ZA ZA5.2: `lookup` as compiled: through the table's own entry
+(`RHTable.getEntry?`), so the inlined read's `some` meets its caller's `match`
+and is never built (`SystemState.objectEntry?`'s pattern). -/
+@[inline] def lookupByEntry (root : VSpaceRoot) (vaddr : SeLe4n.VAddr) :
+    Option (SeLe4n.PAddr × PagePermissions) :=
+  match root.mappings.getEntry? vaddr with
+  | some e => some e.value
+  | none => none
+
+@[csimp] theorem lookup_eq_byEntry : @lookup = @lookupByEntry := by
+  funext root vaddr
+  unfold lookup lookupByEntry
+  show root.mappings.get? vaddr = _
+  rw [SeLe4n.Kernel.RobinHood.RHTable.get?_eq_getEntry?_map]
+  cases root.mappings.getEntry? vaddr <;> rfl
+
 /-- WS-H11: O(1) amortized physical-address-only lookup for backward compatibility. -/
 def lookupAddr (root : VSpaceRoot) (vaddr : SeLe4n.VAddr) : Option SeLe4n.PAddr :=
   (root.lookup vaddr).map Prod.fst

@@ -412,6 +412,403 @@ theorem dispatchWithCapChecked_eq_invocationBy (ctx : LabelingContext)
       hIpcBuf, hAff, hFault, hSpace, hPt, decodeVSpaceUnifyInstructionArgs]
   all_goals rfl
 
+/-- WS-ZA ZA5.2: an admitted resume carries no fault, so answering one first is
+the identity. -/
+theorem retirePendingFaultForResume_of_resumeAdmitted {st : SystemState}
+    {tid : SeLe4n.ThreadId} (h : Lifecycle.Suspend.resumeAdmitted st tid = true) :
+    retirePendingFaultForResume st tid = st := by
+  unfold Lifecycle.Suspend.resumeAdmitted at h
+  unfold retirePendingFaultForResume
+  cases hT : st.getTcb? tid with
+  | none => rfl
+  | some tcb =>
+    rw [hT] at h
+    simp only [Bool.and_eq_true, Option.isNone_iff_eq_none] at h
+    simp only [h.1]
+
+/-- WS-ZA ZA5.2: `dispatchInvocationBy`, refusal-carrying, with each arm whose
+write has been split into its checks and its in-slot write
+(`RefusalCarrying.ofChecked`) reading the checks first and handing the state to
+the write alone.  An arm whose checks refuse, and every arm not yet split, is
+`ofKernel` of `dispatchInvocationBy`, whose refusal precedes any write
+(`dispatchInvocationByR_eq`). -/
+@[inline] def dispatchInvocationByR (ctx : LabelingContext) (sid : SyscallId)
+    (capAddr : SeLe4n.CPtr) (layout : SyscallRegisterLayout) (regs : RegisterFile)
+    (tid : SeLe4n.ThreadId) (executingCore : Concurrency.CoreId) (cap : Capability) :
+    RefusalCarrying Unit :=
+  fun st =>
+  match sid with
+  | .tcbSetPriority =>
+    match cap.target with
+    | .object objId =>
+      match decodeSetPriorityArgsBy (msgRegOfFile layout regs) with
+      | .error e => .error (e, st)
+      | .ok args =>
+        match validateThreadIdArg tid with
+        | .error e => .error (e, st)
+        | .ok vCallerTid =>
+          match validateThreadIdArg (ThreadId.ofNat objId.toNat) with
+          | .error e => .error (e, st)
+          | .ok vTargetTid =>
+            RefusalCarrying.ofChecked
+              (SchedContext.PriorityManagement.setPriorityAdmitted st vCallerTid vTargetTid
+                (Priority.ofNat args.newPriority) executingCore)
+              (fun st => SchedContext.PriorityManagement.setPriorityPerform st vTargetTid.val
+                (Priority.ofNat args.newPriority) executingCore)
+              (dispatchInvocationBy ctx sid capAddr layout regs tid executingCore cap) st
+    | _ => .error (.invalidCapability, st)
+  | .tcbSetMCPriority =>
+    match cap.target with
+    | .object objId =>
+      match decodeSetMCPriorityArgsBy (msgRegOfFile layout regs) with
+      | .error e => .error (e, st)
+      | .ok args =>
+        match validateThreadIdArg tid with
+        | .error e => .error (e, st)
+        | .ok vCallerTid =>
+          match validateThreadIdArg (ThreadId.ofNat objId.toNat) with
+          | .error e => .error (e, st)
+          | .ok vTargetTid =>
+            RefusalCarrying.ofChecked
+              (SchedContext.PriorityManagement.setMCPriorityAdmitted st vCallerTid vTargetTid
+                (Priority.ofNat args.newMCP))
+              (fun st => st.updateTcb vTargetTid.val
+                (fun t => { t with maxControlledPriority := Priority.ofNat args.newMCP }))
+              (dispatchInvocationBy ctx sid capAddr layout regs tid executingCore cap) st
+    | _ => .error (.invalidCapability, st)
+  | .tcbSetIPCBuffer =>
+    match cap.target with
+    | .object objId =>
+      match decodeSetIPCBufferArgsBy (msgRegOfFile layout regs) with
+      | .error e => .error (e, st)
+      | .ok args =>
+        match validateThreadIdArg (ThreadId.ofNat objId.toNat) with
+        | .error e => .error (e, st)
+        | .ok vtid =>
+          RefusalCarrying.ofChecked
+            (Architecture.IpcBufferValidation.setIPCBufferAdmitted st vtid args.bufferAddr)
+            (fun st => st.updateTcb vtid.val (fun t => { t with ipcBuffer := args.bufferAddr }))
+            (dispatchInvocationBy ctx sid capAddr layout regs tid executingCore cap) st
+    | _ => .error (.invalidCapability, st)
+  | .tcbSetAffinity =>
+    match cap.target with
+    | .object objId =>
+      match decodeSetAffinityArgsBy (msgRegOfFile layout regs) with
+      | .error e => .error (e, st)
+      | .ok args =>
+        match validateThreadIdArg (ThreadId.ofNat objId.toNat) with
+        | .error e => .error (e, st)
+        | .ok vtid =>
+          decodeAffinityK args.affinityRaw
+            (fun affinity =>
+              RefusalCarrying.ofChecked (setAffinityAdmitted st vtid.val affinity)
+                (fun st => setAffinityPerform st vtid.val affinity)
+                (dispatchInvocationBy ctx sid capAddr layout regs tid executingCore cap) st)
+            (fun e => .error (e, st))
+    | _ => .error (.invalidCapability, st)
+  | .tcbSuspend =>
+    match cap.target with
+    | .object objId =>
+      match validateThreadIdArg (ThreadId.ofNat objId.toNat) with
+      | .error e => .error (e, st)
+      | .ok vtid =>
+        RefusalCarrying.ofChecked (Lifecycle.Suspend.suspendAdmitted st vtid.val)
+          (fun st => Lifecycle.Suspend.suspendPerform st vtid executingCore)
+          (dispatchInvocationBy ctx sid capAddr layout regs tid executingCore cap) st
+    | _ => .error (.invalidCapability, st)
+  | .tcbResume =>
+    match cap.target with
+    | .object objId =>
+      match validateThreadIdArg (ThreadId.ofNat objId.toNat) with
+      | .error e => .error (e, st)
+      | .ok vtid =>
+        RefusalCarrying.ofChecked (Lifecycle.Suspend.resumeAdmitted st vtid.val)
+          (fun st => Lifecycle.Suspend.resumePerform st vtid.val executingCore)
+          (dispatchInvocationBy ctx sid capAddr layout regs tid executingCore cap) st
+    | _ => .error (.invalidCapability, st)
+  | .tcbSetFaultHandler =>
+    match cap.target with
+    | .object objId =>
+      match decodeSetFaultHandlerArgsBy (msgRegOfFile layout regs) with
+      | .error e => .error (e, st)
+      | .ok args =>
+        match validateThreadIdArg (ThreadId.ofNat objId.toNat) with
+        | .error e => .error (e, st)
+        | .ok vtid =>
+          RefusalCarrying.ofChecked (setThreadFaultHandlerAdmitted st vtid args.handlerCPtr)
+            (fun st => st.updateTcb vtid.val
+              (fun t => { t with faultHandlerSet := true, faultHandlerWord := args.handlerCPtr }))
+            (dispatchInvocationBy ctx sid capAddr layout regs tid executingCore cap) st
+    | _ => .error (.invalidCapability, st)
+  | .tcbSetSpace =>
+    match cap.target with
+    | .object objId =>
+      match decodeSetSpaceArgsBy (msgRegOfFile layout regs) with
+      | .error e => .error (e, st)
+      | .ok args =>
+        match validateThreadIdArg (ThreadId.ofNat objId.toNat) with
+        | .error e => .error (e, st)
+        | .ok vtid =>
+          resolveSetSpaceK tid args st (fun e => .error (e, st)) (fun cnId vrId =>
+            RefusalCarrying.ofChecked (setThreadSpaceAdmitted st vtid cnId vrId)
+              (fun st => st.updateTcb vtid.val
+                (fun t => { t with cspaceRoot := cnId, vspaceRoot := vrId }))
+              (dispatchInvocationBy ctx sid capAddr layout regs tid executingCore cap) st)
+    | _ => .error (.invalidCapability, st)
+  | .tcbBindNotification =>
+    match cap.target with
+    | .object tcbObjId =>
+      match decodeTcbBindNotificationArgsBy (msgRegOfFile layout regs) with
+      | .error e => .error (e, st)
+      | .ok args =>
+        match st.getTcb? tid with
+        | some callerTcb =>
+          match st.getCNode? callerTcb.cspaceRoot with
+          | some rootCn =>
+            resolveCapAddressKUnrolled callerTcb.cspaceRoot args.notificationCPtr rootCn.depth st
+              (fun e => .error (e, st))
+              (fun cnode slot =>
+                match SystemState.lookupSlotCap st { cnode := cnode, slot := slot } with
+                | none => .error (.invalidCapability, st)
+                | some ntfnCap =>
+                  if SeLe4n.Kernel.capTargetsReservedIdleObject ntfnCap then
+                    .error (.invalidCapability, st)
+                  else if ntfnCap.hasRight .write then
+                    match ntfnCap.target with
+                    | .object notifId =>
+                      RefusalCarrying.ofChecked
+                        (bindNotificationInPlace st notifId (SeLe4n.ThreadId.ofNat tcbObjId.toNat))
+                        (fun st => storeBindNotification st notifId
+                          (SeLe4n.ThreadId.ofNat tcbObjId.toNat))
+                        (dispatchInvocationBy ctx sid capAddr layout regs tid executingCore cap) st
+                    | _ => .error (.invalidCapability, st)
+                  else .error (.illegalAuthority, st))
+          | none => .error (.invalidCapability, st)
+        | none => .error (.objectNotFound, st)
+    | _ => .error (.invalidCapability, st)
+  | .tcbUnbindNotification =>
+    match cap.target with
+    | .object tcbObjId =>
+      let notificationId : SeLe4n.ObjId :=
+        ⟨boundNotificationCodeOf st (SeLe4n.ThreadId.ofNat tcbObjId.toNat) - 1⟩
+      RefusalCarrying.ofChecked
+        (unbindNotificationInPlace st (SeLe4n.ThreadId.ofNat tcbObjId.toNat))
+        (fun st => storeUnbindNotification st (SeLe4n.ThreadId.ofNat tcbObjId.toNat)
+          notificationId)
+        (dispatchInvocationBy ctx sid capAddr layout regs tid executingCore cap) st
+    | _ => .error (.invalidCapability, st)
+  | _ =>
+    match dispatchInvocationBy ctx sid capAddr layout regs tid executingCore cap st with
+    | .error e => .error (e, st)
+    | .ok r => .ok r
+
+theorem dispatchInvocationByR_eq (ctx : LabelingContext) (sid : SyscallId)
+    (capAddr : SeLe4n.CPtr) (layout : SyscallRegisterLayout) (regs : RegisterFile)
+    (tid : SeLe4n.ThreadId) (executingCore : Concurrency.CoreId) (cap : Capability)
+    (st : SystemState) :
+    dispatchInvocationByR ctx sid capAddr layout regs tid executingCore cap st =
+      RefusalCarrying.ofKernel
+        (dispatchInvocationBy ctx sid capAddr layout regs tid executingCore cap) st := by
+  rcases cap with ⟨target, rights, badge, mapping⟩
+  unfold dispatchInvocationByR
+  cases sid
+  case tcbSetPriority =>
+    cases target
+    case object objId =>
+      dsimp only
+      cases hD : decodeSetPriorityArgsBy (msgRegOfFile layout regs) with
+      | error e => simp [RefusalCarrying.ofKernel, dispatchInvocationBy, hD]
+      | ok args =>
+        cases hC : validateThreadIdArg tid with
+        | error e => simp [RefusalCarrying.ofKernel, dispatchInvocationBy, hD, hC]
+        | ok vC =>
+          cases hT : validateThreadIdArg (ThreadId.ofNat objId.toNat) with
+          | error e => simp [RefusalCarrying.ofKernel, dispatchInvocationBy, hD, hC, hT]
+          | ok vT =>
+            dsimp only
+            apply RefusalCarrying.ofChecked_eq
+            intro hA
+            obtain ⟨sgi, hS⟩ :=
+              SchedContext.PriorityManagement.setPriorityOnCore_of_admitted _ _ _ _ _ hA
+            simp only [dispatchInvocationBy, hD, hC, hT, hS]
+    all_goals rfl
+  case tcbSetMCPriority =>
+    cases target
+    case object objId =>
+      dsimp only
+      cases hD : decodeSetMCPriorityArgsBy (msgRegOfFile layout regs) with
+      | error e => simp [RefusalCarrying.ofKernel, dispatchInvocationBy, hD]
+      | ok args =>
+        cases hC : validateThreadIdArg tid with
+        | error e => simp [RefusalCarrying.ofKernel, dispatchInvocationBy, hD, hC]
+        | ok vC =>
+          cases hT : validateThreadIdArg (ThreadId.ofNat objId.toNat) with
+          | error e => simp [RefusalCarrying.ofKernel, dispatchInvocationBy, hD, hC, hT]
+          | ok vT =>
+            dsimp only
+            apply RefusalCarrying.ofChecked_eq
+            intro hA
+            simp only [dispatchInvocationBy, hD, hC, hT,
+              SchedContext.PriorityManagement.setMCPriorityOnCore_of_admitted _ _ _ _ _ hA]
+    all_goals rfl
+  case tcbSetIPCBuffer =>
+    cases target
+    case object objId =>
+      dsimp only
+      cases hD : decodeSetIPCBufferArgsBy (msgRegOfFile layout regs) with
+      | error e => simp [RefusalCarrying.ofKernel, dispatchInvocationBy, hD]
+      | ok args =>
+        cases hT : validateThreadIdArg (ThreadId.ofNat objId.toNat) with
+        | error e => simp [RefusalCarrying.ofKernel, dispatchInvocationBy, hD, hT]
+        | ok vT =>
+          dsimp only
+          apply RefusalCarrying.ofChecked_eq
+          intro hA
+          simp only [dispatchInvocationBy, hD, hT,
+            Architecture.IpcBufferValidation.setIPCBufferOp_of_admitted _ _ _ hA]
+    all_goals rfl
+  case tcbSetAffinity =>
+    cases target
+    case object objId =>
+      dsimp only
+      cases hD : decodeSetAffinityArgsBy (msgRegOfFile layout regs) with
+      | error e => simp [RefusalCarrying.ofKernel, dispatchInvocationBy, hD]
+      | ok args =>
+        cases hT : validateThreadIdArg (ThreadId.ofNat objId.toNat) with
+        | error e => simp [RefusalCarrying.ofKernel, dispatchInvocationBy, hD, hT]
+        | ok vT =>
+          dsimp only
+          rw [decodeAffinityK_eq]
+          cases hF : decodeAffinity args.affinityRaw with
+          | error e => simp [RefusalCarrying.ofKernel, dispatchInvocationBy, hD, hT, hF]
+          | ok affinity =>
+            dsimp only
+            apply RefusalCarrying.ofChecked_eq
+            intro hA
+            obtain ⟨sgi, hS⟩ := setThreadCpuAffinityOnCore_of_admitted _ _ _ executingCore hA
+            simp only [dispatchInvocationBy, hD, hT, hF, hS]
+    all_goals rfl
+  case tcbSuspend =>
+    cases target
+    case object objId =>
+      dsimp only
+      cases hT : validateThreadIdArg (ThreadId.ofNat objId.toNat) with
+      | error e => simp [RefusalCarrying.ofKernel, dispatchInvocationBy, hT]
+      | ok vT =>
+        dsimp only
+        apply RefusalCarrying.ofChecked_eq
+        intro hA
+        obtain ⟨sgi, hS⟩ := Lifecycle.Suspend.suspendThreadOnCore_of_admitted _ _ executingCore hA
+        simp only [dispatchInvocationBy, hT, hS]
+    all_goals rfl
+  case tcbResume =>
+    cases target
+    case object objId =>
+      dsimp only
+      cases hT : validateThreadIdArg (ThreadId.ofNat objId.toNat) with
+      | error e => simp [RefusalCarrying.ofKernel, dispatchInvocationBy, hT]
+      | ok vT =>
+        dsimp only
+        apply RefusalCarrying.ofChecked_eq
+        intro hA
+        obtain ⟨sgi, hS⟩ := Lifecycle.Suspend.resumeThreadOnCore_of_admitted _ _ executingCore hA
+        simp only [dispatchInvocationBy, hT, retirePendingFaultForResume_of_resumeAdmitted hA, hS]
+    all_goals rfl
+  case tcbSetFaultHandler =>
+    cases target
+    case object objId =>
+      dsimp only
+      cases hD : decodeSetFaultHandlerArgsBy (msgRegOfFile layout regs) with
+      | error e => simp [RefusalCarrying.ofKernel, dispatchInvocationBy, hD]
+      | ok args =>
+        cases hT : validateThreadIdArg (ThreadId.ofNat objId.toNat) with
+        | error e => simp [RefusalCarrying.ofKernel, dispatchInvocationBy, hD, hT]
+        | ok vT =>
+          dsimp only
+          apply RefusalCarrying.ofChecked_eq
+          intro hA
+          simp only [dispatchInvocationBy, hD, hT, setThreadFaultHandlerOp_of_admitted _ _ _ hA]
+    all_goals rfl
+  case tcbSetSpace =>
+    cases target
+    case object objId =>
+      dsimp only
+      cases hD : decodeSetSpaceArgsBy (msgRegOfFile layout regs) with
+      | error e => simp [RefusalCarrying.ofKernel, dispatchInvocationBy, hD]
+      | ok args =>
+        cases hT : validateThreadIdArg (ThreadId.ofNat objId.toNat) with
+        | error e => simp [RefusalCarrying.ofKernel, dispatchInvocationBy, hD, hT]
+        | ok vT =>
+          dsimp only
+          rw [resolveSetSpaceK_eq]
+          cases hR : resolveSetSpace tid args st with
+          | error e => simp [RefusalCarrying.ofKernel, dispatchInvocationBy, hD, hT, hR]
+          | ok ids =>
+            obtain ⟨cnId, vrId⟩ := ids
+            try dsimp only
+            apply RefusalCarrying.ofChecked_eq
+            intro hA
+            simp only [dispatchInvocationBy, hD, hT, hR, setThreadSpace_of_admitted _ _ _ _ hA]
+    all_goals rfl
+  case tcbBindNotification =>
+    cases target
+    case object objId =>
+      dsimp only
+      cases hD : decodeTcbBindNotificationArgsBy (msgRegOfFile layout regs) with
+      | error e => simp [RefusalCarrying.ofKernel, dispatchInvocationBy, hD]
+      | ok args =>
+        cases hC : st.getTcb? tid with
+        | none => simp [RefusalCarrying.ofKernel, dispatchInvocationBy, hD, hC]
+        | some callerTcb =>
+          dsimp only
+          cases hN : st.getCNode? callerTcb.cspaceRoot with
+          | none => simp [RefusalCarrying.ofKernel, dispatchInvocationBy, hD, hC, hN]
+          | some rootCn =>
+            dsimp only
+            rw [resolveCapAddressKUnrolled_eq, resolveCapAddressK_eq]
+            cases hRes : resolveCapAddress callerTcb.cspaceRoot args.notificationCPtr
+                rootCn.depth st with
+            | error e =>
+              simp [RefusalCarrying.ofKernel, dispatchInvocationBy, hD, hC, hN, syscallLookupCap,
+                syscallResolveCap, hRes]
+            | ok ref =>
+              obtain ⟨cnode, slot⟩ := ref
+              dsimp only
+              cases hL : SystemState.lookupSlotCap st { cnode := cnode, slot := slot } with
+              | none =>
+                simp [RefusalCarrying.ofKernel, dispatchInvocationBy, hD, hC, hN, syscallLookupCap,
+                  syscallResolveCap, hRes, hL]
+              | some ntfnCap =>
+                dsimp only
+                by_cases hIdle : SeLe4n.Kernel.capTargetsReservedIdleObject ntfnCap = true
+                · simp [RefusalCarrying.ofKernel, dispatchInvocationBy, hD, hC, hN,
+                    syscallLookupCap, syscallResolveCap, hRes, hL, hIdle]
+                · by_cases hRight : ntfnCap.hasRight .write = true
+                  · cases hTg : ntfnCap.target with
+                    | object notifId =>
+                      simp only [hIdle, hRight, hTg, Bool.false_eq_true, ↓reduceIte]
+                      apply RefusalCarrying.ofChecked_eq
+                      intro hA
+                      simp only [dispatchInvocationBy, hD, hC, hN, syscallLookupCap,
+                        syscallResolveCap, hRes, hL, hIdle, hRight, hTg, Bool.false_eq_true,
+                        ↓reduceIte, bindNotification_of_inPlace _ _ _ hA]
+                    | _ => simp [RefusalCarrying.ofKernel, dispatchInvocationBy, hD, hC, hN,
+                      syscallLookupCap, syscallResolveCap, hRes, hL, hIdle, hRight, hTg]
+                  · simp [RefusalCarrying.ofKernel, dispatchInvocationBy, hD, hC, hN,
+                      syscallLookupCap, syscallResolveCap, hRes, hL, hIdle, hRight]
+    all_goals rfl
+  case tcbUnbindNotification =>
+    cases target
+    case object objId =>
+      dsimp only
+      apply RefusalCarrying.ofChecked_eq
+      intro hA
+      simp only [dispatchInvocationBy, unbindNotification_of_inPlace _ _ hA]
+    all_goals rfl
+  all_goals
+    dsimp only [RefusalCarrying.ofKernel]
+    split <;> next h => rw [h]
+
 /-- A routed invocation's arm behind the operand check: the rights gate
 `syscallLookupCap` applies, then `dispatchInvocationBy` reading the caller's own
 registers.  Its taint step is the identity (`applySyscallTaintAfter_routed`), so
@@ -426,10 +823,8 @@ there is none. -/
     | some cap =>
         if SeLe4n.Kernel.capTargetsReservedIdleObject cap then .error (.invalidCapability, st)
         else if cap.hasRight (syscallRequiredRight sid) then
-          match dispatchInvocationBy ctx sid capAddr SeLe4n.arm64DefaultLayout regs tid
-              executingCore cap st with
-          | .error e => .error (e, st)
-          | .ok r => .ok r
+          dispatchInvocationByR ctx sid capAddr SeLe4n.arm64DefaultLayout regs tid
+            executingCore cap st
         else .error (.illegalAuthority, st)
 
 /-- `dispatchSyscallChecked` for a routed invocation, its operand address, syscall
@@ -461,6 +856,8 @@ theorem dispatchInvocationCheckedR_eq (ctx : LabelingContext)
     · simp only [hIdle, ↓reduceIte]
     · by_cases hRight : cap.hasRight (syscallRequiredRight decoded.syscallId) = true
       · simp only [hIdle, hRight, ↓reduceIte, Bool.false_eq_true]
+        rw [dispatchInvocationByR_eq]
+        simp only [RefusalCarrying.ofKernel]
         rw [← dispatchWithCapChecked_eq_invocationBy ctx decoded SeLe4n.arm64DefaultLayout regs
           tid executingCore
           { callerId := tid, cspaceRoot := tcb.cspaceRoot, capAddr := decoded.capAddr,

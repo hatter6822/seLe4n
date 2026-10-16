@@ -1699,6 +1699,43 @@ def runningOnSomeCore (st : SystemState) (tid : SeLe4n.ThreadId) : Bool :=
   (SeLe4n.Kernel.Concurrency.allCores).any
     (fun c => st.scheduler.currentOnCore c == some tid)
 
+/-- WS-ZA ZA5.2: whether a core runs a thread, asked of the core's
+current-thread code, so no `some` cell is built for the comparison. -/
+theorem currentOnCore_beq_some (st : SystemState) (c : SeLe4n.Kernel.Concurrency.CoreId)
+    (tid : SeLe4n.ThreadId) :
+    (st.scheduler.currentOnCore c == some tid) =
+      (st.scheduler.currentCode.get c == tid.val + 1) := by
+  simp only [SchedulerState.currentOnCore]
+  cases st.scheduler.currentCode.get c with
+  | zero => simp [SeLe4n.ThreadId.ofOptCode]
+  | succ k =>
+    simp only [SeLe4n.ThreadId.ofOptCode]
+    obtain ⟨v⟩ := tid
+    by_cases hk : k = v
+    · subst hk; simp
+    · rw [show (k + 1 == (⟨v⟩ : SeLe4n.ThreadId).val + 1) = false by simp [hk],
+        beq_eq_false_iff_ne]
+      intro h'; cases h'; exact hk rfl
+
+/-- WS-ZA ZA5.2: `runningOnSomeCore` over a core list, each core's current-thread
+code compared with the thread's, by recursion, so no predicate closure or `some`
+cell is built (`runningOnSomeCore_eq_impl`). -/
+def runningOnCoresImpl (st : SystemState) (tid : SeLe4n.ThreadId) :
+    List SeLe4n.Kernel.Concurrency.CoreId → Bool
+  | [] => false
+  | c :: cs => st.scheduler.currentCode.get c == tid.val + 1 || runningOnCoresImpl st tid cs
+
+/-- WS-ZA ZA5.2: the compiled `runningOnSomeCore`. -/
+@[inline] def runningOnSomeCoreImpl (st : SystemState) (tid : SeLe4n.ThreadId) : Bool :=
+  runningOnCoresImpl st tid SeLe4n.Kernel.Concurrency.allCores
+
+@[csimp] theorem runningOnSomeCore_eq_impl : @runningOnSomeCore = @runningOnSomeCoreImpl := by
+  funext st tid
+  unfold runningOnSomeCore runningOnSomeCoreImpl
+  induction SeLe4n.Kernel.Concurrency.allCores with
+  | nil => rfl
+  | cons c cs ih => rw [List.any_cons, runningOnCoresImpl, ← ih, currentOnCore_beq_some]
+
 /-- **PR #895 review round 10: the core a thread is actually placed on.**
 
 `runnableOnSomeCore` and `runningOnSomeCore` answer *whether* a thread is
@@ -2176,6 +2213,65 @@ is unchanged. -/
 def runningCoreOf? (st : SystemState) (tid : SeLe4n.ThreadId) : Option CoreId :=
   SeLe4n.Kernel.Concurrency.allCores.find? (fun c =>
     st.scheduler.currentOnCore c == some tid)
+
+/-- WS-ZA ZA5.2: every core, each as the `some` the running-core search answers:
+a closed list, so an answer drawn from it is never built. -/
+def allCoresSome : List (Option CoreId) := SeLe4n.Kernel.Concurrency.allCores.map some
+
+/-- WS-ZA ZA5.2: the running-core search over cores already wrapped in `some`,
+each core's current-thread code compared with the thread's, so the answer is the
+list's own cell and no closure is built (`runningCoreOf?_eq_impl`). -/
+def runningCoreOfOver (st : SystemState) (tid : SeLe4n.ThreadId) :
+    List (Option CoreId) → Option CoreId
+  | [] => none
+  | o :: os =>
+    match o with
+    | some c => if st.scheduler.currentCode.get c == tid.val + 1 then o
+                else runningCoreOfOver st tid os
+    | none => runningCoreOfOver st tid os
+
+/-- WS-ZA ZA5.2: the compiled `runningCoreOf?`. -/
+@[inline] def runningCoreOfImpl (st : SystemState) (tid : SeLe4n.ThreadId) : Option CoreId :=
+  runningCoreOfOver st tid allCoresSome
+
+@[csimp] theorem runningCoreOf?_eq_impl : @runningCoreOf? = @runningCoreOfImpl := by
+  funext st tid
+  unfold runningCoreOf? runningCoreOfImpl allCoresSome
+  induction SeLe4n.Kernel.Concurrency.allCores with
+  | nil => rfl
+  | cons c cs ih =>
+    rw [List.find?_cons, List.map_cons, runningCoreOfOver, currentOnCore_beq_some]
+    cases hc : (st.scheduler.currentCode.get c == tid.val + 1)
+    · simp only [Bool.false_eq_true, ↓reduceIte]; exact ih
+    · rfl
+
+/-- WS-ZA ZA5.2: the placement search over cores already wrapped in `some`, each
+core asked of the thread's own run-queue link and the core's current-thread
+code, so the answer is the list's own cell and no closure is built
+(`placedCoreOf?_eq_impl`). -/
+def placedCoreOfOver (st : SystemState) (tid : SeLe4n.ThreadId) :
+    List (Option CoreId) → Option CoreId
+  | [] => none
+  | o :: os =>
+    match o with
+    | some c => if st.queuedOn c tid || st.scheduler.currentCode.get c == tid.val + 1 then o
+                else placedCoreOfOver st tid os
+    | none => placedCoreOfOver st tid os
+
+/-- WS-ZA ZA5.2: the compiled `placedCoreOf?`. -/
+@[inline] def placedCoreOfImpl (st : SystemState) (tid : SeLe4n.ThreadId) : Option CoreId :=
+  placedCoreOfOver st tid allCoresSome
+
+@[csimp] theorem placedCoreOf?_eq_impl : @placedCoreOf? = @placedCoreOfImpl := by
+  funext st tid
+  unfold placedCoreOf? placedCoreOfImpl allCoresSome
+  induction SeLe4n.Kernel.Concurrency.allCores with
+  | nil => rfl
+  | cons c cs ih =>
+    rw [List.find?_cons, List.map_cons, placedCoreOfOver, currentOnCore_beq_some]
+    cases hc : (st.queuedOn c tid || st.scheduler.currentCode.get c == tid.val + 1)
+    · simp only [Bool.false_eq_true, ↓reduceIte]; exact ih
+    · rfl
 
 /-- A thread no core runs is current on no core. -/
 theorem runningCoreOf?_none_currentOnCore {st : SystemState} {tid : SeLe4n.ThreadId}
@@ -2967,6 +3063,73 @@ theorem candidateOutranksCurrentOnCore_eq_isBetterCandidate (st : SystemState)
   unfold candidateOutranksCurrentOnCore
   simp only [hCur, hCurTcb, hTidTcb]
 
+/-- WS-ZA ZA5.2: the deadline half of `resolveEffectivePrioDeadline`, as a
+word: the bound or donated reservation's deadline, else the thread's own. -/
+@[inline] def resolvedDeadlineCode (st : SystemState) (tcb : TCB) : Nat :=
+  match tcb.schedContextBinding with
+  | .unbound => tcb.deadline.val
+  | .bound scId | .donated scId _ =>
+    match st.getSchedContext? scId with
+    | some sc => sc.deadline.val
+    | none => tcb.deadline.val
+
+theorem resolvedDeadlineCode_eq (st : SystemState) (tcb : TCB) :
+    resolvedDeadlineCode st tcb = (resolveEffectivePrioDeadline st tcb).2.val := by
+  unfold resolvedDeadlineCode resolveEffectivePrioDeadline
+  cases tcb.schedContextBinding <;> simp only <;> split <;> rfl
+
+theorem resolveEffectivePrioDeadline_fst_raisedBy (st : SystemState) (tcb : TCB) :
+    (resolveEffectivePrioDeadline st tcb).1 = tcb.priority.raisedBy tcb.pipBoost := by
+  unfold resolveEffectivePrioDeadline
+  cases tcb.schedContextBinding <;> simp only <;> split <;> rfl
+
+/-- WS-ZA ZA5.2: `isBetterCandidate` over the words its arguments wrap. -/
+@[inline] def isBetterCandidateCode (incPrio incDeadline chalPrio chalDeadline : Nat) : Bool :=
+  if chalPrio > incPrio then true
+  else if chalPrio < incPrio then false
+  else
+    match chalDeadline, incDeadline with
+    | 0, _ => false
+    | _, 0 => true
+    | cd, id => cd < id
+
+/-- WS-ZA ZA5.2: the compiled `candidateOutranksCurrentOnCore`.  The core's
+current thread is read as its code and each side's parameters as words, so
+neither the `some` of the current slot nor a priority/deadline pair is built. -/
+def candidateOutranksCurrentOnCoreImpl (st : SystemState) (c : CoreId)
+    (tid : SeLe4n.ThreadId) : Bool :=
+  match st.scheduler.currentCode.get c with
+  | 0 => true
+  | k + 1 =>
+    match st.getTcb? ⟨k⟩ with
+    | none => true
+    | some curTcb =>
+      match st.getTcb? tid with
+      | none => true
+      | some tidTcb =>
+        isBetterCandidateCode (curTcb.priority.raisedBy curTcb.pipBoost).val
+          (resolvedDeadlineCode st curTcb)
+          (tidTcb.priority.raisedBy tidTcb.pipBoost).val (resolvedDeadlineCode st tidTcb)
+
+@[csimp] theorem candidateOutranksCurrentOnCore_eq_impl :
+    @candidateOutranksCurrentOnCore = @candidateOutranksCurrentOnCoreImpl := by
+  funext st c tid
+  unfold candidateOutranksCurrentOnCore candidateOutranksCurrentOnCoreImpl
+  simp only [SchedulerState.currentOnCore]
+  cases st.scheduler.currentCode.get c with
+  | zero => rfl
+  | succ k =>
+    simp only [SeLe4n.ThreadId.ofOptCode]
+    cases st.getTcb? ⟨k⟩ with
+    | none => rfl
+    | some curTcb =>
+      cases st.getTcb? tid with
+      | none => rfl
+      | some tidTcb =>
+        simp only [resolvedDeadlineCode_eq, resolveEffectivePrioDeadline_fst_raisedBy,
+          isBetterCandidateCode, isBetterCandidate]
+        rfl
+
 /-- WS-SM (PR #880 round 7): the preemption gate fires on EDF displacement over
 the **resolved** deadlines — at equal resolved effective priority, a candidate
 whose resolved deadline is set and earlier than the current thread's (where a
@@ -3049,7 +3212,9 @@ P2-5 — no SGI can poke the core that is already executing), and — PR #880
 round 7 — by `timerTickOnCore` after a local CBS-replenishment wake, the
 tick's own local counterpart of the same receiver decision.
 
-- `chooseThreadEffectiveOnCore` errors (corrupted run queue) → propagate.
+- `chooseThreadEffectiveOnCore` never errors (`chooseThreadEffectiveOnCore_ne_error`),
+  and a candidate `switchToThreadOnCore` refuses is treated as no candidate,
+  so the handler never refuses (`handleRescheduleSgiOnCore_eq_state`).
 - returns `none` (no budget-eligible thread) → no switch; core `c` keeps running
   (or idles).  Identity (`.ok st`); never invents a dispatch — unless the
   incumbent is outside the core's active domain
@@ -3096,8 +3261,69 @@ def handleRescheduleSgiOnCore (st : SystemState) (c : CoreId) :
       if currentOutsideActiveDomainOnCore st c || candidateOutranksCurrentOnCore st c tid then
         match switchToThreadOnCore st c tid with
         | .ok st' => .ok (st'.clearReschedulePendingOnCore c)
-        | .error e => .error e
+        -- WS-ZA ZA5.2: a candidate the core cannot run (one whose affinity
+        -- forbids `c`, which the kernel invariants keep off `c`'s queue) is
+        -- not dispatched: the core decides as if nothing were eligible, as
+        -- seL4's `schedule` never fails.  A scheduling point does not refuse,
+        -- so the operations that end in one check everything before writing.
+        | .error _ =>
+          if currentOutsideActiveDomainOnCore st c then
+            .ok ((dropCurrentOnCore st c).clearReschedulePendingOnCore c)
+          else .ok (st.clearReschedulePendingOnCore c)
       else .ok (st.clearReschedulePendingOnCore c)
+
+/-- WS-ZA ZA5.2: core `c`'s decision when nothing is dispatched: an incumbent
+outside the active domain is dropped, and the flag is cleared. -/
+@[inline] def rescheduleNoCandidateOnCore (st : SystemState) (c : CoreId) : SystemState :=
+  if currentOutsideActiveDomainOnCore st c then
+    (dropCurrentOnCore st c).clearReschedulePendingOnCore c
+  else st.clearReschedulePendingOnCore c
+
+/-- WS-ZA ZA5.2: `handleRescheduleSgiOnCore`'s state, which it always reaches
+(`handleRescheduleSgiOnCore_eq_state`): the handler never refuses.  The
+selection is read as a thread code (`chooseThreadEffectiveOnCore_eq_code`) and
+the switch's two checks (`switchToThreadOnCore`'s lookups) precede its writes,
+so nothing keeps the state for a refusal and the switch writes in place
+(WS-ZA ZA4.7 wrote this form for the local successor rule). -/
+def handleRescheduleOnCoreState (st : SystemState) (c : CoreId) : SystemState :=
+  match chooseThreadEffectiveOnCoreCode st c with
+  | 0 => rescheduleNoCandidateOnCore st c
+  | k + 1 =>
+    let tid : SeLe4n.ThreadId := ⟨k⟩
+    if currentOutsideActiveDomainOnCore st c || candidateOutranksCurrentOnCore st c tid then
+      match st.getTcb? tid with
+      | some tidTcb =>
+        if affinityAdmitsCore tidTcb c then
+          let stPreempt := preemptCurrentOnCore st c tid
+          let stDequeued := stPreempt.runRemoveOnCore c tid
+          let stRestored := restoreIncomingContextOnCoreUnlessCurrent stDequeued c tid
+          { stRestored with scheduler := (stRestored.scheduler.setCurrentOnCore c (some tid))
+            |>.clearReschedulePendingOnCore c }
+        else rescheduleNoCandidateOnCore st c
+      | none => rescheduleNoCandidateOnCore st c
+    else st.clearReschedulePendingOnCore c
+
+theorem handleRescheduleSgiOnCore_eq_state (st : SystemState) (c : CoreId) :
+    handleRescheduleSgiOnCore st c = .ok (handleRescheduleOnCoreState st c) := by
+  unfold handleRescheduleSgiOnCore handleRescheduleOnCoreState rescheduleNoCandidateOnCore
+  rw [chooseThreadEffectiveOnCore_eq_code]
+  cases chooseThreadEffectiveOnCoreCode st c with
+  | zero =>
+    by_cases hO : currentOutsideActiveDomainOnCore st c = true <;> simp only [hO] <;> rfl
+  | succ k =>
+    by_cases hG : (currentOutsideActiveDomainOnCore st c ||
+        candidateOutranksCurrentOnCore st c ⟨k⟩) = true
+    · simp only [hG, ↓reduceIte]
+      unfold switchToThreadOnCore
+      cases st.getTcb? ⟨k⟩ with
+      | none =>
+        by_cases hO : currentOutsideActiveDomainOnCore st c = true <;> simp only [hO] <;> rfl
+      | some tidTcb =>
+        by_cases hA : affinityAdmitsCore tidTcb c = true
+        · simp only [hA, ↓reduceIte]; rfl
+        · simp only [hA, Bool.false_eq_true, ↓reduceIte]
+          by_cases hO : currentOutsideActiveDomainOnCore st c = true <;> simp only [hO] <;> rfl
+    · simp only [hG, Bool.false_eq_true, ↓reduceIte]
 
 /-- WS-SM SM5.C.8 (plan §3.3, §4.1): set a thread's CPU affinity.
 

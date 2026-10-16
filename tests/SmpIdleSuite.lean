@@ -670,7 +670,7 @@ private def runBootValidationParityChecks : IO Unit := do
   -- references the slot; bound to an ordinary thread it does not.
   let ntfnBoundTo (t : SeLe4n.ThreadId) : KernelObject :=
     .notification { state := .idle, 
-                    hasPendingBadge := false, pendingWord := SeLe4n.Badge.zero, boundTCB := some t }
+                    hasPendingBadge := false, pendingWord := SeLe4n.Badge.zero, boundTCBCode := SeLe4n.ThreadId.optCode (some t) }
   assertBool "NEGATIVE: a boot notification bound to an idle thread references the slot"
     (SeLe4n.Platform.Boot.bootObjectReferencesReservedIdleSlot
         (ntfnBoundTo (idleThreadId ⟨0, by decide⟩)) == true)
