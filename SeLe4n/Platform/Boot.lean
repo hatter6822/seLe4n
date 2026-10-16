@@ -8,6 +8,7 @@
 -/
 
 import SeLe4n.Model.Builder
+import SeLe4n.Model.Object.Unshare
 import SeLe4n.Model.FreezeProofs
 import SeLe4n.Kernel.API
 -- WS-SM SM5.E: idle-thread identities (`idleThreadId` etc.) moved upstream so
@@ -277,7 +278,10 @@ theorem bootEntryAsidTable_invExtK (tbl : RHTable SeLe4n.ASID SeLe4n.ObjId)
     whole of `installBootVSpaceRoot`, so every object the boot installs is
     installed the way the kernel stores one. -/
 def createBootObject (ist : IntermediateState) (entry : ObjectEntry) : IntermediateState :=
-  let created := createObject ist entry.id entry.obj entry.hSlots entry.hMappings
+  -- WS-ZA: an initial object is a constant of the boot image, shared until
+  -- something writes it; `unshare` (the identity) gives it its own cells here,
+  -- so the first syscall that writes it in place does not copy it.
+  let created := createObject ist entry.id entry.obj.unshare entry.hSlots entry.hMappings
   { state := { created.state with
       asidTable := bootEntryAsidTable created.state.asidTable entry }
     hAllTables := by

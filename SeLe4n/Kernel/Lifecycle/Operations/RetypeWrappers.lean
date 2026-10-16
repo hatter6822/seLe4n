@@ -8,6 +8,7 @@
 -/
 
 import SeLe4n.Kernel.Lifecycle.Operations.ScrubAndUntyped
+import SeLe4n.Model.Object.Unshare
 import SeLe4n.Kernel.Architecture.TlbShootdownProtocol
 -- WS-SM SM7.F.4(b)(iii): the per-core TLB model — the retype-with-shootdown
 -- wrapper additionally retires the initiator's own `perCoreTlb` view for the
@@ -304,6 +305,10 @@ def objectOfTypeTag (typeTag : Nat) (sizeHint : Nat)
     **AJ4-D (L-09):** Same sentinel-initialization convention as `objectOfTypeTag`.
     See that function's docstring for the H-06/WS-E3 sentinel rationale. -/
 def objectOfKernelType (objType : KernelObjectType) (sizeHint : Nat) : KernelObject :=
+  -- WS-ZA: the defaults below are constants, so the compiled kernel holds each
+  -- as one shared value; `unshare` (the identity) gives the new object its own
+  -- cells here, so its first in-place write does not copy it.
+  KernelObject.unshare <|
   match objType with
   | .tcb => .tcb {
       tid := SeLe4n.ThreadId.sentinel       -- AJ4-D: reserved sentinel (H-06)

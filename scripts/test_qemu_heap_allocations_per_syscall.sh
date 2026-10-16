@@ -8,13 +8,13 @@
 # WS-CV CV0.1 — the heap allocations of one syscall round trip.
 #
 # The Tier-4 driver (`rust/sele4n-hal/src/smp_exercisers.rs`,
-# `heap_allocations_per_syscall`) dispatches one `NotificationSignal` through
-# the syscall seam on the boot core and reads that core's own slot of the
-# kernel heap's monotone allocation counter (`lean_heap.rs`,
-# `allocations_by_core`) before and after, with IRQs masked across both reads.
-# The number is evidence — the context-by-value plan's baseline, re-read at its
-# acceptance — and no gate pins it; this gate holds only that both reads
-# happened, the delta is their difference, and the round trip returned a frame
+# `heap_allocations_per_syscall`) dispatches each pinned syscall round trip
+# through the syscall seam on the boot core, twice (its first call and its
+# steady state), and reads that core's own slot of the kernel heap's monotone
+# allocation counter (`lean_heap.rs`, `allocations_by_core`) before and after,
+# with IRQs masked across both reads.  A syscall allocates nothing: this gate
+# holds that every reading happened, is the difference of its two reads, is
+# zero, and that its round trip returned a frame or blocked as it should
 # (`scripts/qemu_exerciser_lib.sh`).
 #
 # The syscall is the Lean kernel's, so this gate runs on the Lean-linked image
