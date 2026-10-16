@@ -355,7 +355,7 @@ resolved in continuation form; a reply-receive that may block in place
         let resolved := fun rid c badge =>
           replyRecvResolvedR ctx epId tid c rid badge layout rf len executingCore st
         resolveReplyRecvK st tid len
-          (SeLe4n.CPtr.ofWord (Architecture.RegisterDecode.readRegWord rf (layout.msgRegs[0]'h0)))
+          (SeLe4n.CPtr.ofWord (SeLe4n.readRegWord rf (layout.msgRegs[0]'h0)))
           (fun e => .error (e, st)) resolved
       else endpointReplyRecvCheckedArmRegsR ctx layout rf len extraCaps label tid executingCore
           cap st
@@ -385,7 +385,7 @@ theorem endpointReplyRecvCheckedArmR_eq_general (ctx : LabelingContext)
         rw [resolveReplyRecvK_eq st tid len _ (Architecture.regMessageRegs layout rf) _ _
           (fun _ => by
             simp [Architecture.regMessageRegs, h0, SeLe4n.CPtr.ofWord_toNat,
-              ← Architecture.RegisterDecode.readReg_val_eq_word])]
+              ← SeLe4n.readReg_val_eq_word])]
         cases resolveReplyRecvReplyR st tid len (Architecture.regMessageRegs layout rf) with
         | error e => rfl
         | ok r =>
@@ -458,7 +458,7 @@ The slot is resolved in continuation form, so nothing is built. -/
   if len = 0 then 0 else
   if h0 : 0 < layout.msgRegs.size then
     resolveCapAddressKUnrolled (callerCspaceRoot st tid)
-      (SeLe4n.CPtr.ofWord (Architecture.RegisterDecode.readRegWord rf (layout.msgRegs[0]'h0)))
+      (SeLe4n.CPtr.ofWord (SeLe4n.readRegWord rf (layout.msgRegs[0]'h0)))
       (callerCspaceDepth st tid) st (fun _ => 0)
       (fun cnode slot =>
         match SystemState.lookupSlotCap st { cnode := cnode, slot := slot } with
@@ -501,14 +501,14 @@ theorem replyRecvReplyLegEdges_eq (st : SystemState) (tid : SeLe4n.ThreadId)
     by_cases h0 : 0 < layout.msgRegs.size
     · rw [dif_pos h0]
       have hArgs : Architecture.SyscallArgDecode.decodeReplyRecvArgs decoded =
-          .ok { replyCPtr := SeLe4n.CPtr.ofWord (Architecture.RegisterDecode.readRegWord rf (layout.msgRegs[0]'h0)) } := by
+          .ok { replyCPtr := SeLe4n.CPtr.ofWord (SeLe4n.readRegWord rf (layout.msgRegs[0]'h0)) } := by
         have hs : 0 < decoded.msgRegs.size := by
           rw [← hRegs]; simp [Architecture.regMessageRegs, h0]
         simp only [Architecture.SyscallArgDecode.decodeReplyRecvArgs, requireMsgReg, hs,
           ↓reduceDIte, bind, Except.bind, pure, Except.pure]
         congr 2
         simp only [← hRegs, Architecture.regMessageRegs, Array.getElem_map,
-          Architecture.RegisterDecode.readReg_val_eq_word, SeLe4n.CPtr.ofWord_eq_ofNat]
+          SeLe4n.readReg_val_eq_word, SeLe4n.CPtr.ofWord_eq_ofNat]
       rw [hArgs]
       simp only [hOp, hCR, hCD]
       rw [resolveCapAddressKUnrolled_eq, resolveCapAddressK_eq]

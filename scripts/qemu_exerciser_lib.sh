@@ -208,17 +208,45 @@ for driver in drivers:
         # trip runs twice on the boot core, its first call and its steady
         # state; the gate holds that each run's reading happened once, after
         # the round trip returned a frame or blocked as it should, is a delta,
-        # and is zero.
-        readings = matches(r"\[smp-test\] heap-allocations-per-syscall: ([a-z-]+): core 0( \(first call\))?: before=(\d+) after=(\d+) delta=(\d+)")
-        returned = matches(r"\[smp-test\] heap-allocations-per-syscall: ([a-z-]+): core 0( \(first call\))?: (?:returned x0=0x[0-9a-f]+ x1=0x[0-9a-f]+|blocked, the other thread restored)$")
+        # and is its pinned reading: zero, or (WS-ZA ZA5.1) for a capability
+        # invocation a later row brings to zero, the reading it has today, so
+        # a change either way has to move the pin.
+        readings = matches(r"\[smp-test\] heap-allocations-per-syscall: ([a-z0-9-]+): core 0( \(first call\))?: before=(\d+) after=(\d+) delta=(\d+)")
+        returned = matches(r"\[smp-test\] heap-allocations-per-syscall: ([a-z0-9-]+): core 0( \(first call\))?: (?:returned x0=0x[0-9a-f]+ x1=0x[0-9a-f]+|blocked, the other thread restored)$")
         names = [m.group(1) for m in readings]
         # The scenario set is pinned: a round trip renamed or dropped from
-        # `ROUND_TRIPS` or `PARTNER_SCENARIOS` (smp_exercisers.rs) must change this pin too, so the
-        # evidence cannot disappear while the gate stays green.
-        expected = {"signal", "signal-wide-badge", "wait-pending", "yield",
-                    "receive-blocks", "send-to-receiver", "wait-blocks", "signal-to-waiter",
-                    "receive-for-call", "call", "reply-recv", "call-to-reply-receiver", "reply",
-                    "send-blocks", "receive-from-sender"}
+        # `ROUND_TRIPS`, `PARTNER_SCENARIOS` or `INVOCATION_SCENARIOS`
+        # (smp_exercisers.rs) must change this pin too, so the evidence cannot
+        # disappear while the gate stays green.
+        # Each scenario's pinned reading, (first call, steady state).
+        pinned = {name: (0, 0) for name in (
+            "signal", "signal-wide-badge", "wait-pending", "yield",
+            "receive-blocks", "send-to-receiver", "wait-blocks", "signal-to-waiter",
+            "receive-for-call", "call", "reply-recv", "call-to-reply-receiver", "reply",
+            "send-blocks", "receive-from-sender")}
+        # WS-ZA ZA5.1: the capability invocations' readings today, each the
+        # operation's own cells (slot, tree and object writes, the store's
+        # copy); the rows that bring them to zero lower these pins.
+        pinned.update({
+            "cspace-copy": (55, 46), "cspace-move": (45, 45), "cspace-delete": (31, 31),
+            "cspace-mint": (50, 51), "cspace-revoke": (67, 48),
+            "reply-cap-delete": (29, 29), "reply-cap-mint": (47, 47),
+            "tcb-set-priority": (15, 15), "tcb-set-mc-priority": (9, 9),
+            "tcb-set-affinity": (18, 18), "tcb-set-fault-handler": (15, 15),
+            "tcb-bind-notification": (20, 20), "tcb-unbind-notification": (15, 15),
+            "tcb-set-space": (21, 21), "tcb-resume": (30, 30), "tcb-suspend": (34, 34),
+            "untyped-retype-page-table-1": (100, 91), "page-table-map-1": (47, 47),
+            "untyped-retype-page-table-2": (91, 91), "page-table-map-2": (53, 53),
+            "untyped-retype-page-table-3": (93, 93), "page-table-map-3": (56, 56),
+            "untyped-retype-frame": (160, 94), "vspace-map": (109, 108),
+            "vspace-unify-instruction": (10, 10), "tcb-set-ipc-buffer": (11, 11),
+            "vspace-unmap": (120, 120), "frame-delete": (45, 47),
+            "page-table-unmap-3": (42, 42), "page-table-delete-3": (35, 35),
+            "page-table-unmap-2": (41, 41), "page-table-delete-2": (29, 29),
+            "page-table-unmap-1": (38, 38), "page-table-delete-1": (26, 26),
+            "untyped-reset": (137, 137),
+        })
+        expected = set(pinned)
         observed = set(names) | {m.group(1) for m in returned}
         if observed != expected:
             failures.append(f"heap-allocations-per-syscall: scenarios {sorted(observed)} are not the pinned set {sorted(expected)}")
@@ -231,10 +259,11 @@ for driver in drivers:
                     failures.append(f"heap-allocations-per-syscall: {name} ({which}): expected one reading and one returned or blocked round trip on core 0")
         for m in readings:
             before, after, delta = (int(g) for g in m.groups()[2:])
+            pin = pinned.get(m.group(1), (0, 0))[0 if m.group(2) else 1]
             if after < before or delta != after - before:
                 failures.append(f"heap-allocations-per-syscall: the reading is not a delta: {m.group(0)!r}")
-            elif delta != 0:
-                failures.append(f"heap-allocations-per-syscall: a syscall allocated: {m.group(0)!r}")
+            elif delta != pin:
+                failures.append(f"heap-allocations-per-syscall: a syscall read {delta}, pinned at {pin}: {m.group(0)!r}")
     else:
         failures.append(f"unknown driver {driver!r}")
 for failure in failures:

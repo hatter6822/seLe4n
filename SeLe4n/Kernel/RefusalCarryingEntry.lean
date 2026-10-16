@@ -9,6 +9,7 @@
 
 import SeLe4n.Kernel.RefusalCarryingEndpoint
 import SeLe4n.Kernel.RefusalCarryingReplyRecv
+import SeLe4n.Kernel.RefusalCarryingInvocation
 
 /-!
 # The checked syscall entry, refusing in the state it was refused in
@@ -28,7 +29,8 @@ open SeLe4n.Model
 /-- `syscallEntryChecked`, refusing in the state it was handed
 (`syscallEntryCheckedR_eq`), on the hardware's register layout
 (`arm64DefaultLayout`, 32 registers).  A signal, wait, yield, capability-free send or call,
-reply or receive whose arguments all sit in registers is routed on the register file
+reply, receive, or capability invocation (`routedInvocation`) whose arguments all
+sit in registers is routed on the register file
 itself (`registerRoutedSyscall`),
 before any decode record exists: the decode writes nothing and such a call
 fills no TLB entry (`tlbFillIpcBufferOnCore_zero`), so its dispatch is handed
@@ -82,6 +84,10 @@ specification's form. -/
         | .replyRecv capAddr msgInfo =>
           dispatchReplyRecvCheckedR ctx capAddr SeLe4n.arm64DefaultLayout tcb.registerContext msgInfo.length
             msgInfo.extraCaps msgInfo.label tid executingCore st
+        -- WS-ZA ZA5.1: a capability invocation outside IPC, its arguments
+        -- read from the caller's registers.
+        | .invoke sid capAddr =>
+          dispatchInvocationCheckedR ctx sid capAddr tcb.registerContext tid executingCore st
         | .viaDecode =>
           RefusalCarrying.ofKernel (syscallEntryChecked ctx SeLe4n.arm64DefaultLayout executingCore 32) st
       | some _ => .error (.illegalState, st)
@@ -199,6 +205,16 @@ theorem syscallEntryCheckedR_eq (ctx : LabelingContext) (executingCore : Concurr
           subst hCap hInfo
           rw [dispatchReplyRecvCheckedR_eq ctx decoded tid executingCore SeLe4n.arm64DefaultLayout tcb.registerContext
             hRR hRegs'.symm hSlot]
+          simp only [RefusalCarrying.ofKernel, syscallEntryChecked, hCtx, hCur, hRegs, hDec,
+            hZero, Bool.false_eq_true, ↓reduceIte,
+            SeLe4n.Kernel.Architecture.tlbFillIpcBufferOnCore_zero]
+        · next sid capAddr hInvRegs =>
+          obtain ⟨decoded, hDec, hSid, hRouted, hCap, hZero, hRegs'⟩ :=
+            SeLe4n.Kernel.Architecture.RegisterDecode.decodeSyscallArgsFromState_of_routedInvoke
+              st tid SeLe4n.arm64DefaultLayout tcb.registerContext 32 sid capAddr hInvRegs
+          subst hCap hSid
+          rw [dispatchInvocationCheckedR_eq ctx decoded tcb.registerContext tid executingCore
+            hRouted hRegs']
           simp only [RefusalCarrying.ofKernel, syscallEntryChecked, hCtx, hCur, hRegs, hDec,
             hZero, Bool.false_eq_true, ↓reduceIte,
             SeLe4n.Kernel.Architecture.tlbFillIpcBufferOnCore_zero]
