@@ -1,14 +1,19 @@
 ## v0.36.95 — WS-ZA ZA4.8 (capability pointers): an address of any value is a machine word
 
-**A syscall carrying a capability address `≥ 2^63` now allocates nothing at
-its decode.**  `CPtr` held a `Nat`, so every such address was a heap number.
+**A syscall carrying a capability address `≥ 2^63` now allocates nothing.**
+`CPtr` held a `Nat`, so every such address was a heap number, and so was the
+reply capability address a receive or reply-receive carries in its first
+message register.
 
-Normal-build allocations per syscall (QEMU exerciser, core 0), against
-`v0.36.94`:
+Normal-build allocations per syscall (QEMU exerciser, core 0, first call and
+steady state), with every address `≥ 2^63` (the root CNode's guard, below),
+before and after the argument addresses became words (the operand already a
+word in both):
 
-| Scenario | v0.36.94 | v0.36.95 |
+| Scenario | reply address a number | a word |
 |---|---|---|
-| yield carrying an address `≥ 2^63` | 1 | 0 |
+| receive holding a reply capability | 1 | 0 |
+| reply-receive | 2 | 0 |
 
 Every other scenario reads 0 on its first call and in steady state.
 
@@ -19,16 +24,24 @@ Every other scenario reads 0 on its first call and in steady state.
 - **Decoded as the word.**  The entry's register-file routing reads the
   capability register's word (`readRegWord`); the general decode gives the
   same address (`decodeCapPtr_readReg`).
+- **Every argument address is a word.**  `RecvArgs.replyCPtr`,
+  `ReplyRecvArgs.replyCPtr`, `SchedContextBindArgs.tcbCPtr` and
+  `TcbBindNotificationArgs.notificationCPtr` are `CPtr`s.  The routed receive
+  carries its reply address as a `CPtr` (`RegisterRoutedSyscall.receive`), and
+  the routed reply-receive and its taint step read theirs as the register's
+  word.
 - **Looked up on the word.**  Each CSpace level's slot index and guard are
   `CPtr.slotBits` and `CPtr.guardBits`, stated on the address's value and
   compiled as a shift and a mask of the word (`CPtr.slotBits_eq_impl`,
   `CPtr.guardBits_eq_impl`).  Every resolver uses them: `resolveCapAddress`,
   its continuation forms, the walk footprint, `CNode.resolveSlot` and the
   frozen lookup.
-- **Measured.**  The exerciser's yield carries the address in `x0`, which
-  every entry decodes.  The root CNode's guard is zero, so a lookup refuses
-  any such address, and the refusal is a capability fault: a syscall invoking
-  one is measured with the fault entry (plan row ZA4.10).
+- **Measured on every lookup.**  The QEMU `virt` root CNode's 60-bit guard
+  has its top bit set (`qemuVirtRootTaskCNodeGuard`), so the root task names
+  slot `n` at `2^63 + n` and every scenario resolves an address `≥ 2^63`
+  (`cap_address` in `smp_exercisers.rs`).  `Ak9PlatformSuite` checks that the
+  booted root CNode resolves `2^63 + 4` to its notification slot and refuses
+  `4`.
 
 ## v0.36.94 — WS-ZA ZA4.11 (first entry after boot): objects own their cells from the moment they enter the store
 

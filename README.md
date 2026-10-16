@@ -88,8 +88,8 @@ architectural improvements enabled by the Lean 4 proof framework:
 |-----------|-------|
 | **Version** | `0.36.95` |
 | **Lean toolchain** | `v4.28.0` |
-| **Production Lean LoC** | 472,386 across 429 files |
-| **Test Lean LoC** | 87,209 across 70 test suites |
+| **Production Lean LoC** | 472,404 across 429 files |
+| **Test Lean LoC** | 87,222 across 70 test suites |
 | **Proved declarations** | 16,695 theorem/lemma declarations (zero sorry/axiom) |
 | **Rust crates** | 4 (`sele4n-types`, `sele4n-abi`, `sele4n-sys`, `sele4n-hal`) across 80 source files |
 | **Target hardware** | Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A) |

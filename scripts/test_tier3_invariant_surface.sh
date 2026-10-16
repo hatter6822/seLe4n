@@ -10835,7 +10835,7 @@ run_check "INVARIANT" bash -lc 'rg -U -n "^def resolveSchedContextBindThread[^\n
 run_check "INVARIANT" bash -lc 'rg -U -n "\| \.schedContextBind =>\n    some <\| match cap\.target with\n    \| \.object scId =>\n      fun st => match resolveSchedContextBindThread tid decoded st with" SeLe4n/Kernel/API.lean'
 run_check "INVARIANT" rg -n '^theorem resolveSchedContextBindThread_ok_authorised($|[ ({:\[\]])' SeLe4n/Kernel/API.lean
 run_check "INVARIANT" rg -n '^theorem dispatchCapabilityOnly_schedContextBind_eq($|[ ({:\[\]])' SeLe4n/Kernel/API.lean
-run_check "INVARIANT" rg -n '^  tcbCPtr : Nat$' SeLe4n/Kernel/Architecture/SyscallArgDecode.lean
+run_check "INVARIANT" rg -n '^  tcbCPtr : SeLe4n\.CPtr$' SeLe4n/Kernel/Architecture/SyscallArgDecode.lean
 run_negative_check "INVARIANT" rg -n 'args\.threadId' SeLe4n/Kernel/API.lean
 run_negative_check "INVARIANT" rg -n 'args\.threadId' SeLe4n/Kernel/SyscallLockBracket.lean
 run_negative_check "INVARIANT" rg -n 'threadId : Nat' SeLe4n/Kernel/Architecture/SyscallArgDecode.lean

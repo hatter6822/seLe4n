@@ -374,7 +374,7 @@ theorem dispatchCapabilityOnly_runQueueEntryStage
               | some rootCn =>
                   simp only [hRoot] at hStep
                   try dsimp only [] at hStep
-                  cases hCap2 : syscallLookupCap { callerId := tid, cspaceRoot := callerTcb.cspaceRoot, capAddr := SeLe4n.CPtr.ofNat args.notificationCPtr, capDepth := rootCn.depth, requiredRight := .write } st with
+                  cases hCap2 : syscallLookupCap { callerId := tid, cspaceRoot := callerTcb.cspaceRoot, capAddr := args.notificationCPtr, capDepth := rootCn.depth, requiredRight := .write } st with
                   | error e => simp only [hCap2] at hStep; cases hStep
                   | ok pair =>
                       obtain ⟨ntfnCap, stL⟩ := pair

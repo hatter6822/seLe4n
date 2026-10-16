@@ -428,7 +428,7 @@ def resolveRecvReplyId (gate : SyscallGate) (decoded : SyscallDecodeResult)
   | .error e => .error e
   | .ok rargs =>
       let replyGate : SyscallGate :=
-        { gate with capAddr := SeLe4n.CPtr.ofNat rargs.replyCPtr, requiredRight := .write }
+        { gate with capAddr := rargs.replyCPtr, requiredRight := .write }
       match syscallLookupCap replyGate st with
       | .error e => .error e
       | .ok (rcap, _) =>
@@ -749,7 +749,7 @@ def resolveReplyRecvReply (gate : SyscallGate) (decoded : SyscallDecodeResult)
   | .error e => .error e
   | .ok rargs =>
       let replyGate : SyscallGate :=
-        { gate with capAddr := SeLe4n.CPtr.ofNat rargs.replyCPtr, requiredRight := .write }
+        { gate with capAddr := rargs.replyCPtr, requiredRight := .write }
       -- PR #822 review: propagate the explicit CSpace cap error (a missing slot or a
       -- cap without write authority is `invalidCapability` / `illegalAuthority`), not
       -- a collapsed `.replyCapInvalid` — the latter is reserved for a resolved Reply
@@ -1554,7 +1554,7 @@ def resolveSchedContextBindThread (callerTid : SeLe4n.ThreadId)
         let tcbGate : SyscallGate := {
           callerId      := callerTid
           cspaceRoot    := callerTcb.cspaceRoot
-          capAddr       := SeLe4n.CPtr.ofNat args.tcbCPtr
+          capAddr       := args.tcbCPtr
           capDepth      := rootCn.depth
           requiredRight := .write
         }
@@ -1584,7 +1584,7 @@ theorem resolveSchedContextBindThread_ok_authorised
       st.getCNode? callerTcb.cspaceRoot = some rootCn ∧
       syscallLookupCap
         { callerId := callerTid, cspaceRoot := callerTcb.cspaceRoot,
-          capAddr := SeLe4n.CPtr.ofNat args.tcbCPtr, capDepth := rootCn.depth,
+          capAddr := args.tcbCPtr, capDepth := rootCn.depth,
           requiredRight := .write } st = .ok (tcbCap, st) ∧
       tcbCap.hasRight .write = true ∧
       tcbCap.target = .object v.val.toObjId ∧
@@ -1607,7 +1607,7 @@ theorem resolveSchedContextBindThread_ok_authorised
         simp only at h
         cases hLk : syscallLookupCap
             { callerId := callerTid, cspaceRoot := callerTcb.cspaceRoot,
-              capAddr := SeLe4n.CPtr.ofNat args.tcbCPtr, capDepth := rootCn.depth,
+              capAddr := args.tcbCPtr, capDepth := rootCn.depth,
               requiredRight := .write } st with
         | error e => rw [hLk] at h; cases h
         | ok pair =>
@@ -1664,7 +1664,7 @@ theorem resolveSchedContextBindThread_refuses_idle_capability
     (hArgs : decodeSchedContextBindArgs decoded = .ok args)
     (hCaller : st.getTcb? callerTid = some callerTcb)
     (hRoot : st.getCNode? callerTcb.cspaceRoot = some rootCn)
-    (hRef : resolveCapAddress callerTcb.cspaceRoot (SeLe4n.CPtr.ofNat args.tcbCPtr)
+    (hRef : resolveCapAddress callerTcb.cspaceRoot (args.tcbCPtr)
       rootCn.depth st = .ok ref)
     (hSlot : SystemState.lookupSlotCap st ref = some idleCap)
     (hIdle : SeLe4n.Kernel.capTargetsReservedIdleObject idleCap = true) :
@@ -2747,7 +2747,7 @@ def dispatchCapabilityOnly (decoded : SyscallDecodeResult)
               let ntfnGate : SyscallGate := {
                 callerId      := tid
                 cspaceRoot    := callerTcb.cspaceRoot
-                capAddr       := SeLe4n.CPtr.ofNat args.notificationCPtr
+                capAddr       := args.notificationCPtr
                 capDepth      := rootCn.depth
                 requiredRight := .write
               }
@@ -3261,7 +3261,7 @@ theorem dispatchCapabilityOnly_preserves_ipcInvariantFull
               | some rootCn =>
                   simp only [hRoot] at hStep
                   try dsimp only [] at hStep
-                  cases hCap2 : syscallLookupCap { callerId := tid, cspaceRoot := callerTcb.cspaceRoot, capAddr := SeLe4n.CPtr.ofNat args.notificationCPtr, capDepth := rootCn.depth, requiredRight := .write } st with
+                  cases hCap2 : syscallLookupCap { callerId := tid, cspaceRoot := callerTcb.cspaceRoot, capAddr := args.notificationCPtr, capDepth := rootCn.depth, requiredRight := .write } st with
                   | error e => simp only [hCap2] at hStep; cases hStep
                   | ok pair =>
                       obtain ⟨ntfnCap, stL⟩ := pair

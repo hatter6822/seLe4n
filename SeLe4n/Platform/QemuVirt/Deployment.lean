@@ -103,12 +103,19 @@ theorem qemuVirtRootTaskUntyped_region :
     [(qemuVirtRootTaskUntyped.regionBase.toNat, qemuVirtRootTaskUntyped.regionSize)] =
       qemuVirtBootRamExtensions := rfl
 
+/-- The root CNode's 60-bit guard: its top bit set, so the root task's
+    capability address for slot `n` is `2^63 + n`.  WS-ZA ZA4.8: every
+    capability address the allocation exerciser resolves is then a word that
+    does not fit a scalar `Nat`, and its guard and slot are read from that word
+    on every lookup the gate measures. -/
+def qemuVirtRootTaskCNodeGuard : Nat := 2 ^ 59
+
 /-- The root task's CNode: its own TCB, CNode and VSpace, the interrupt
     notification, the untyped, and the allocation exerciser's partner thread,
     endpoint and reply object (slot 9 is left free for the reply capability
-    the exerciser mints from slot 8). -/
+    the exerciser mints from slot 8), guarded by `qemuVirtRootTaskCNodeGuard`. -/
 def qemuVirtRootTaskCNode : CNode :=
-  rpi5InitialCNode
+  { rpi5InitialCNode
     [ (SeLe4n.Slot.ofNat 1, rpi5InitialCap qemuVirtRootTaskTcbId [.read, .write, .grant, .grantReply])
     , (SeLe4n.Slot.ofNat 2, rpi5InitialCap qemuVirtRootTaskCNodeId [.read, .write, .grant, .grantReply])
     , (SeLe4n.Slot.ofNat 3, rpi5InitialCap qemuVirtRootTaskVSpaceId [.read, .write])
@@ -117,6 +124,7 @@ def qemuVirtRootTaskCNode : CNode :=
     , (SeLe4n.Slot.ofNat 6, rpi5InitialCap qemuVirtPartnerTcbId [.read, .write, .grant, .grantReply])
     , (SeLe4n.Slot.ofNat 7, rpi5InitialCap qemuVirtExerciserEndpointId [.read, .write, .grant, .grantReply])
     , (SeLe4n.Slot.ofNat 8, rpi5InitialCap qemuVirtExerciserReplyId [.read, .write, .grant]) ]
+    with guardValue := qemuVirtRootTaskCNodeGuard }
 
 /-- The untrusted thread's CNode: its own objects and nothing of the boot
     domain's. -/

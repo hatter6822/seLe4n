@@ -51,8 +51,8 @@ enforcement, and scheduling.
 |-----------|-------|
 | **Package version** | `0.36.95` (`lakefile.toml`) |
 | **Lean toolchain** | `v4.28.0` (`lean-toolchain`) |
-| **Production LoC** | 472,386 across 429 Lean files |
-| **Test LoC** | 87,209 across 70 Lean test suites |
+| **Production LoC** | 472,404 across 429 Lean files |
+| **Test LoC** | 87,222 across 70 Lean test suites |
 | **Proved declarations** | 16,695 theorem/lemma declarations (zero sorry/axiom) |
 | **Target hardware** | Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A) |
 | **Latest audit** | pre-SM10 completeness audit at `v0.34.3` — [`UNFINISHED_SMP_WORK.md`](../planning/UNFINISHED_SMP_WORK.md), 171 confirmed findings. Prior baselines in [`docs/audits/`](../audits) |
@@ -4998,7 +4998,13 @@ Every kernel object has a decidable well-formedness predicate:
   word (`decodeCapPtr_readReg`), and every CSpace resolver takes a level's
   slot index and guard from the word (`CPtr.slotBits`, `CPtr.guardBits`,
   compiled as a shift and a mask through `CPtr.slotBits_eq_impl` and
-  `CPtr.guardBits_eq_impl`).
+  `CPtr.guardBits_eq_impl`).  Every capability address an argument carries is
+  a `CPtr` too: the reply capability of `Recv` and `ReplyRecv`
+  (`RecvArgs.replyCPtr`, `ReplyRecvArgs.replyCPtr`, read by the entry as the
+  register's word), the thread of `SchedContextBind` and the notification of
+  `TcbBindNotification`.  The QEMU `virt` root CNode's guard has its top bit
+  set (`qemuVirtRootTaskCNodeGuard`), so the root task's addresses are all
+  `≥ 2^63`.
 - **MMIO adapter**: `mmioRead`/`mmioWrite` in `Platform/RPi5/MmioAdapter.lean`
   validate device-region membership. `mmioWrite32`/`mmioWrite64`/`mmioWrite32W1C`
   validate the full byte range of the write (AF3-B: prevents boundary-spill into

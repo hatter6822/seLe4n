@@ -599,7 +599,7 @@ def replyRecvReplyLegEdges (st : SystemState) (tid : SeLe4n.ThreadId)
     match Architecture.SyscallArgDecode.decodeReplyRecvArgs decoded with
     | .error _ => []
     | .ok rargs =>
-        match syscallOperandCap? st tid (SeLe4n.CPtr.ofNat rargs.replyCPtr) with
+        match syscallOperandCap? st tid (rargs.replyCPtr) with
         | none => []
         | some rcap =>
             match rcap.target with
@@ -1897,7 +1897,7 @@ theorem taintPropagation_replyRecv_reply_to_prevCaller (st post : SystemState)
     (hTarget : cap.target = .object epId)
     (hLen : (decoded.msgInfo.length == 0) = false)
     (hArgs : Architecture.SyscallArgDecode.decodeReplyRecvArgs decoded = .ok rargs)
-    (hRCap : syscallOperandCap? st tid (SeLe4n.CPtr.ofNat rargs.replyCPtr) = some rcap)
+    (hRCap : syscallOperandCap? st tid (rargs.replyCPtr) = some rcap)
     (hRTarget : rcap.target = .replyCap rid)
     (hCaller : (st.getReply? rid).bind (·.caller) = some prevCaller) {t : Nat}
     (hServer : (st.declassificationTaint tid.toObjId).contains t = true) :

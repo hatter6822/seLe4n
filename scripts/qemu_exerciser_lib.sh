@@ -215,7 +215,7 @@ for driver in drivers:
         # The scenario set is pinned: a round trip renamed or dropped from
         # `ROUND_TRIPS` or `PARTNER_SCENARIOS` (smp_exercisers.rs) must change this pin too, so the
         # evidence cannot disappear while the gate stays green.
-        expected = {"signal", "signal-wide-badge", "wait-pending", "yield", "yield-high-cap-address",
+        expected = {"signal", "signal-wide-badge", "wait-pending", "yield",
                     "receive-blocks", "send-to-receiver", "wait-blocks", "signal-to-waiter",
                     "receive-for-call", "call", "reply-recv", "call-to-reply-receiver", "reply",
                     "send-blocks", "receive-from-sender"}
