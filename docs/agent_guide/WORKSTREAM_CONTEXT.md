@@ -171,7 +171,9 @@ any nonzero reading.  At `v0.36.95` a capability address is a machine word
 (`CPtr` holds a `UInt64`), so an address `≥ 2^63` reads 0 at the decode.  At
 `v0.36.96` (ZA5.1) 27 capability invocations run on the register file, their
 arguments read as words; the exerciser pins each at its reading, the
-operation's own cells, which ZA5.2–ZA5.5 take to zero.  ZA6 covers the other
+operation's own cells, which ZA5.2–ZA5.5 take to zero.  At `v0.36.97`
+(ZA5.2 part 1) the ten thread and notification invocations check first and
+write in place, and read 0.  ZA6 covers the other
 entries and makes the rule standing.  Plan:
 [`docs/planning/ZERO_ALLOCATION_SYSCALL_PLAN.md`](../planning/ZERO_ALLOCATION_SYSCALL_PLAN.md)
 (phases ZA1–ZA6).
