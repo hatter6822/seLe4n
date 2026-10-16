@@ -242,7 +242,7 @@ theorem notificationWaitPark_preserves_ipcInvariant
         cases hStore : storeObject notificationId
             (.notification
               { state := .idle, 
-                hasPendingBadge := false, pendingWord := SeLe4n.Badge.zero, boundTCB := ntfn.boundTCB }) st with
+                hasPendingBadge := false, pendingWord := SeLe4n.Badge.zero, boundTCBCode := ntfn.boundTCBCode }) st with
         | error e => simp
         | ok pair =>
           simp only []
@@ -316,7 +316,7 @@ theorem notificationWaitPark_preserves_schedulerInvariantBundle
         cases hStore : storeObject notificationId
             (.notification
               { state := .idle, 
-                hasPendingBadge := false, pendingWord := SeLe4n.Badge.zero, boundTCB := ntfn.boundTCB }) st with
+                hasPendingBadge := false, pendingWord := SeLe4n.Badge.zero, boundTCBCode := ntfn.boundTCBCode }) st with
         | error e => simp
         | ok pair =>
           simp only []
@@ -630,7 +630,7 @@ theorem notificationWaitPark_preserves_ipcSchedulerContractPredicates
         cases hStore : storeObject notificationId
             (.notification
               { state := .idle, 
-                hasPendingBadge := false, pendingWord := SeLe4n.Badge.zero, boundTCB := ntfn.boundTCB }) st with
+                hasPendingBadge := false, pendingWord := SeLe4n.Badge.zero, boundTCBCode := ntfn.boundTCBCode }) st with
         | error e => simp
         | ok pair =>
           simp only []

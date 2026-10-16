@@ -1471,13 +1471,6 @@ object table rebuilt; proven equal to the specification
   simp only [RobinHood.RHTable.modify_of_get? hx]
   rfl
 
-/-- WS-ZA ZA4.3: the object update a SchedContext update performs, as
-`mapTcbObject` is a TCB's. -/
-@[inline] def mapSchedContextObject (f : SchedContext → SchedContext) :
-    KernelObject → KernelObject
-  | .schedContext sc => .schedContext (f sc)
-  | o => o
-
 /-- WS-ZA ZA4.3: the compiled `spendBudgetOnCore`.  The SchedContext is written
 in its slot, and the insert priority is read off the state before the refill
 is queued on it, so no state is read after a later one is built from it
@@ -1488,7 +1481,7 @@ is queued on it, so no state is read after a later one is built from it
     (_hSc : st.getSchedContext? scId = some sc) (ticks : Nat) : SystemState :=
   let now := st.machine.timer
   let consumedAmount : Budget := ⟨sc.budgetRemaining.val⟩
-  let st' := st.modifyObject scId.toObjId (mapSchedContextObject fun s =>
+  let st' := st.modifyObject scId.toObjId (SystemState.mapSchedContextObject fun s =>
     cbsUpdateDeadline (scheduleReplenishment (consumeBudget s ticks) now consumedAmount) now true)
   let prio := resolveInsertPriority st' tid sc
   let stReplenished := replenishOnCore st' c scId (now + sc.period.val)
@@ -3229,5 +3222,136 @@ theorem setThreadCpuAffinityOp_eq_onCore_state (st : SystemState)
         bootCoreId executingCore]
   cases setThreadCpuAffinityOnCore st vTargetTid affinity bootCoreId <;> rfl
 
-end SeLe4n.Kernel
+-- ============================================================================
+-- WS-ZA ZA5.2: the affinity write in its slot
+-- ============================================================================
 
+/-- WS-ZA ZA5.2: the `v`-th entry of a list of cores already wrapped in `some`,
+returned as the list's own cell (`none` past the end), so a decoded affinity is
+never built. -/
+def nthCoreSome : Nat → List (Option CoreId) → Option CoreId
+  | _, [] => none
+  | 0, o :: _ => o
+  | n + 1, _ :: os => nthCoreSome n os
+
+theorem nthCoreSome_allCoresSome (v : Nat) (h : v < SeLe4n.Kernel.Concurrency.numCores) :
+    nthCoreSome v allCoresSome = some ⟨v, h⟩ := by
+  have h4 : SeLe4n.Kernel.Concurrency.numCores = 4 := rfl
+  rcases v with _ | _ | _ | _ | v
+  · rfl
+  · rfl
+  · rfl
+  · rfl
+  · exact absurd h (by rw [h4]; omega)
+
+/-- WS-ZA ZA5.2: `decodeAffinity` in continuation form: the decoded affinity is
+handed to `k` (the bound core drawn from `allCoresSome`), a refusal to `err`, so
+neither an `Except` nor a `some` is built (`decodeAffinityK_eq`). -/
+@[inline] def decodeAffinityK {α : Type} (v : Nat) (k : Option CoreId → α)
+    (err : KernelError → α) : α :=
+  if v < SeLe4n.Kernel.Concurrency.numCores then k (nthCoreSome v allCoresSome)
+  else if v = affinityUnbindMarker then k none
+  else err .invalidArgument
+
+theorem decodeAffinityK_eq {α : Type} (v : Nat) (k : Option CoreId → α)
+    (err : KernelError → α) :
+    decodeAffinityK v k err =
+      (match decodeAffinity v with
+       | .ok a => k a
+       | .error e => err e) := by
+  unfold decodeAffinityK decodeAffinity
+  by_cases h : v < SeLe4n.Kernel.Concurrency.numCores
+  · simp only [h, dif_pos, if_pos, nthCoreSome_allCoresSome v h]
+  · simp only [h, dif_neg, if_neg, not_false_eq_true]
+    split <;> rfl
+
+/-- WS-ZA ZA5.2: is the thread running on a core its new affinity forbids?
+The rejection `setThreadCpuAffinityWithMigration` asks, over each core's
+current-thread code and with the affinity read directly, so no predicate
+closure, `some` cell or TCB copy is built (`affinityRunningForbidden_eq`). -/
+def affinityRunningForbidden (st : SystemState) (tid : SeLe4n.ThreadId)
+    (affinity : Option CoreId) : List CoreId → Bool
+  | [] => false
+  | c :: cs =>
+    (st.scheduler.currentCode.get c == tid.val + 1
+      && !(match affinity with | none => true | some c' => c' == c))
+    || affinityRunningForbidden st tid affinity cs
+
+theorem affinityRunningForbidden_eq (st : SystemState) (tid : SeLe4n.ThreadId)
+    (tcb : TCB) (affinity : Option CoreId) (cs : List CoreId) :
+    cs.any (fun c => st.scheduler.currentOnCore c == some tid
+        && !affinityAdmitsCore { tcb with cpuAffinity := affinity } c)
+      = affinityRunningForbidden st tid affinity cs := by
+  induction cs with
+  | nil => rfl
+  | cons c cs ih =>
+    simp only [affinityRunningForbidden]
+    rw [List.any_cons, ← ih, currentOnCore_beq_some]
+    rfl
+
+/-- WS-ZA ZA5.2: the checks `setThreadCpuAffinityWithMigration` makes, asked
+before any write: the target is a TCB found in its slot, a bound core is one the
+platform declares, and the thread runs on no core the new affinity forbids.  When
+they pass the operation's state is `setAffinityPerform`
+(`setThreadCpuAffinityOnCore_of_admitted`). -/
+@[inline] def setAffinityAdmitted (st : SystemState) (tid : SeLe4n.ThreadId)
+    (affinity : Option CoreId) : Bool :=
+  match st.getTcb? tid with
+  | none => false
+  | some _ =>
+    st.objects.findsInPlace tid.toObjId
+    && !(match affinity with
+         | some c => decide (c.val ≥ st.machine.declaredCoreCount)
+         | none => false)
+    && !affinityRunningForbidden st tid affinity SeLe4n.Kernel.Concurrency.allCores
+
+/-- WS-ZA ZA5.2: the affinity change once admitted.  Every read (the old home,
+the bound scheduling context) comes before the write, the TCB is rewritten in its
+slot, and then the replenishments and the run-queue entry follow the thread to
+its new home, as `setThreadCpuAffinityWithMigration`. -/
+def setAffinityPerform (st : SystemState) (tid : SeLe4n.ThreadId)
+    (affinity : Option CoreId) : SystemState :=
+  let oldCore := determineTargetCore st tid
+  let newCore := affinity.getD bootCoreId
+  match st.getTcb? tid with
+  | none => st
+  | some tcb =>
+    let st1 := st.updateTcb tid (fun t => { t with cpuAffinity := affinity })
+    let st2 := match tcb.schedContextBinding.scId? with
+      | some scId => migrateSchedContextReplenishment st1 scId oldCore newCore
+      | none => st1
+    migrateRunQueueOnAffinityChange st2 tid oldCore newCore
+
+theorem setThreadCpuAffinityOnCore_of_admitted (st : SystemState)
+    (vTargetTid : ValidThreadId) (affinity : Option CoreId) (executingCore : CoreId)
+    (h : setAffinityAdmitted st vTargetTid.val affinity = true) :
+    ∃ sgi, setThreadCpuAffinityOnCore st vTargetTid affinity executingCore =
+      .ok (setAffinityPerform st vTargetTid.val affinity, sgi) := by
+  unfold setAffinityAdmitted at h
+  cases hT : st.getTcb? vTargetTid.val with
+  | none => simp [hT] at h
+  | some tcb =>
+    simp only [hT, Bool.and_eq_true, Bool.not_eq_true'] at h
+    obtain ⟨⟨hF, hD⟩, hR⟩ := h
+    have hD' : (affinity.any (fun c => c.val ≥ st.machine.declaredCoreCount)) = false := by
+      cases affinity <;> simp_all
+    have hR' : (SeLe4n.Kernel.Concurrency.allCores).any (fun c =>
+        st.scheduler.currentOnCore c == some vTargetTid.val
+        && !affinityAdmitsCore { tcb with cpuAffinity := affinity } c) = false := by
+      rw [affinityRunningForbidden_eq]; exact hR
+    have hNew : determineTargetCore
+        (st.updateTcb vTargetTid.val (fun t => { t with cpuAffinity := affinity }))
+        vTargetTid.val = affinity.getD bootCoreId := by
+      unfold determineTargetCore
+      rw [SeLe4n.Kernel.updateTcb_getTcb?_self_of_findsInPlace _ hT hF]
+      cases affinity <;> rfl
+    unfold setThreadCpuAffinityOnCore setThreadCpuAffinityWithMigration setThreadCpuAffinity
+    simp only [hT, hD', hR', Bool.false_eq_true, ↓reduceIte,
+      SystemState.getTcbWitnessed?_eq_some hT]
+    rw [SystemState.rewriteObject_tcb_eq_updateTcb hT (fun t => { t with cpuAffinity := affinity }),
+      hNew]
+    unfold setAffinityPerform
+    simp only [hT]
+    exact ⟨_, rfl⟩
+
+end SeLe4n.Kernel

@@ -4401,6 +4401,121 @@ def suspendThreadOnCore (st : SystemState) (vtid : SeLe4n.ValidThreadId)
         runningCore?.isSome (currentDeboostedFrom st executingCore execCurPre)
   | none => .error .invalidArgument
 
+/-- WS-ZA ZA5.2: `suspendRescheduleOnCore`'s state, which it always reaches
+(`suspendRescheduleOnCore_eq_state`): the local scheduling point never refuses. -/
+def suspendRescheduleState (st : SystemState) (runningCore executingCore : CoreId)
+    (wasCurrent localDeboosted : Bool) : SystemState :=
+  if wasCurrent then
+    if runningCore == executingCore then handleRescheduleOnCoreState st executingCore
+    else if localDeboosted then handleRescheduleOnCoreState st executingCore
+    else st
+  else if localDeboosted then handleRescheduleOnCoreState st executingCore
+  else st
+
+theorem suspendRescheduleOnCore_eq_state (st : SystemState) (runningCore executingCore : CoreId)
+    (wasCurrent localDeboosted : Bool) :
+    ∃ sgi, suspendRescheduleOnCore st runningCore executingCore wasCurrent localDeboosted =
+      .ok (suspendRescheduleState st runningCore executingCore wasCurrent localDeboosted, sgi) := by
+  unfold suspendRescheduleOnCore suspendRescheduleState
+  simp only [handleRescheduleSgiOnCore_eq_state]
+  split <;> (try split) <;> (try split) <;> exact ⟨_, rfl⟩
+
+/-- WS-ZA ZA5.2: the executing core's current thread's effective priority as a
+code (`0` for none, else the priority plus one): `currentEffectivePrio?` without
+its pair or `some`. -/
+@[inline] def currentEffectivePrioCode (st : SystemState) (ec : CoreId) : Nat :=
+  match st.scheduler.currentCode.get ec with
+  | 0 => 0
+  | k + 1 =>
+    match st.getTcb? ⟨k⟩ with
+    | some t => t.boostedPriority.val + 1
+    | none => 0
+
+/-- WS-ZA ZA5.2: `currentDeboostedFrom` over the snapshot's codes
+(`currentDeboostedFrom_eq_code`). -/
+def currentDeboostedFromCode (post : SystemState) (ec : CoreId) (curCode prioCode : Nat) :
+    Bool :=
+  match prioCode, curCode with
+  | 0, _ => false
+  | _ + 1, 0 => false
+  | p + 1, k + 1 =>
+    post.scheduler.currentCode.get ec == k + 1 &&
+      (match post.getTcb? ⟨k⟩ with
+       | some t => decide (t.boostedPriority.val < p)
+       | none => false)
+
+theorem currentDeboostedFrom_eq_code (st post : SystemState) (ec : CoreId) :
+    currentDeboostedFrom post ec (currentEffectivePrio? st ec) =
+      currentDeboostedFromCode post ec (st.scheduler.currentCode.get ec)
+        (currentEffectivePrioCode st ec) := by
+  unfold currentEffectivePrio? currentEffectivePrioCode
+  simp only [SchedulerState.currentOnCore]
+  cases hc : st.scheduler.currentCode.get ec with
+  | zero => rfl
+  | succ k =>
+    simp only [SeLe4n.ThreadId.ofOptCode]
+    cases hT : st.getTcb? ⟨k⟩ with
+    | none => rfl
+    | some t =>
+      unfold currentDeboostedFrom currentDeboostedFromCode
+      simp only [resolveEffectivePrioDeadline_eq, TCB.boostedPriority]
+      rw [currentOnCore_beq_some]
+      rfl
+
+/-- WS-ZA ZA5.2: the checks `.tcbSuspend` makes on its quiescent arm, asked
+before any write: the victim is a TCB, not already `.Inactive`, blocked on no
+IPC (so no teardown, reclaim or priority-inheritance revert runs) and bound to no
+scheduling context (so no donation is cancelled).  When they pass the operation's
+state is `suspendPerform` (`suspendThreadOnCore_of_admitted`). -/
+@[inline] def suspendAdmitted (st : SystemState) (tid : SeLe4n.ThreadId) : Bool :=
+  match st.getTcb? tid with
+  | some tcb =>
+    !(tcb.threadState == .Inactive) && tcb.ipcObjectCode == 0 && tcb.ipcStateCode == 0
+      && (match tcb.schedContextBinding with | .unbound => true | _ => false)
+  | none => false
+
+/-- WS-ZA ZA5.2: the quiescent suspend once admitted.  The placement, the core
+running the victim and the executing core's current priority are read before
+anything is written, so the state is handed to the writes alone. -/
+def suspendPerform (st : SystemState) (vtid : SeLe4n.ValidThreadId) (executingCore : CoreId) :
+    SystemState :=
+  let tid := vtid.val
+  let placed := placedCoreOf? st tid
+  let runningCore? := runningCoreOf? st tid
+  let curCode := st.scheduler.currentCode.get executingCore
+  let prioCode := currentEffectivePrioCode st executingCore
+  let st1 := descheduleAt st tid placed
+  let st2 := clearPendingStateValid st1 vtid
+  let st3 := st2.updateTcb tid fun t => { t with threadState := .Inactive }
+  suspendRescheduleState st3 (runningCore?.getD executingCore) executingCore
+    runningCore?.isSome (currentDeboostedFromCode st3 executingCore curCode prioCode)
+
+theorem suspendThreadOnCore_of_admitted (st : SystemState) (vtid : SeLe4n.ValidThreadId)
+    (executingCore : CoreId) (h : suspendAdmitted st vtid.val = true) :
+    ∃ sgi, suspendThreadOnCore st vtid executingCore =
+      .ok (suspendPerform st vtid executingCore, sgi) := by
+  unfold suspendAdmitted at h
+  cases hT : st.getTcb? vtid.val with
+  | none => simp [hT] at h
+  | some tcb =>
+    simp only [hT, Bool.and_eq_true, Bool.not_eq_true', beq_iff_eq] at h
+    obtain ⟨⟨⟨hI, hO⟩, hS⟩, hB⟩ := h
+    have hReady : tcb.ipcState = .ready := by
+      simp only [TCB.ipcState, hO, hS]; rfl
+    have hC : cancelIpcBlockingReclaimed vtid.val tcb st = st := by
+      rw [cancelIpcBlockingReclaimed_of_no_donation _ _ _
+        (by unfold cancelledCallerDonation?; rw [hReady])]
+      unfold cancelIpcBlocking; rw [hReady]
+    have hBS : PriorityInheritance.blockingServer st vtid.val = none := by
+      unfold PriorityInheritance.blockingServer
+      rw [hT]; simp [TCB.blockingServer?, hReady]
+    have hU : tcb.schedContextBinding = .unbound := by
+      cases hb : tcb.schedContextBinding <;> simp_all
+    unfold suspendThreadOnCore suspendPerform
+    simp only [hT, hI, Bool.false_eq_true, ↓reduceIte, hC, hBS, Option.getD_some, hU,
+      currentDeboostedFrom_eq_code st]
+    exact suspendRescheduleOnCore_eq_state _ _ _ _ _
+
 -- ============================================================================
 -- §14  WS-RR RR2.17 — the `.tcbSuspend` operation preserves `ipcInvariant`
 -- ============================================================================
@@ -5223,7 +5338,9 @@ theorem handleRescheduleSgiOnCore_preserves_unplaced
       · rename_i sSw hSw
         rw [Except.ok.injEq] at hStep; subst hStep
         exact switchToThreadOnCore_preserves_unplaced st sSw c tid u hu hInv hSw h
-      · exact absurd hStep (by simp)
+      · split at hStep
+        · rw [← Except.ok.inj hStep]; exact dropCurrentOnCore_preserves_unplaced st c u hInv h
+        · rw [← Except.ok.inj hStep]; exact h
     · rw [← Except.ok.inj hStep]; exact h
 
 /-- **`v0.35.158`**: G7 — the suspend's scheduling point keeps an unplaced

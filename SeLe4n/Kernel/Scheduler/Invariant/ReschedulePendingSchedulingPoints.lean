@@ -166,7 +166,11 @@ theorem handleRescheduleSgiOnCore_stepCovers (e : CoreId) (st st' : SystemState)
         rename_i st₁ hSw
         exact stepCovers_trans (switchToThreadOnCore_stepCovers e st st₁ _ hInv hSw)
           (clearReschedulePendingOnCore_stepCovers e st₁)
-      · cases h
+      · split at h
+        · injection h with h; subst h
+          exact stepCovers_trans (dropCurrentOnCore_stepCovers e st hInv)
+            (clearReschedulePendingOnCore_stepCovers e _)
+        · injection h with h; subst h; exact clearReschedulePendingOnCore_stepCovers e st
     · injection h with h; subst h; exact clearReschedulePendingOnCore_stepCovers e st
 
 /-- The commit's local successor covers, whichever caller the seam captured. -/

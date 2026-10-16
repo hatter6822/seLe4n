@@ -2357,18 +2357,18 @@ theorem notificationSignal_result_wellFormed_wake
   cases next <;> simp
 
 theorem notificationSignal_result_wellFormed_merge
-    (mergedBadge : SeLe4n.Badge) (b : Option SeLe4n.ThreadId) :
+    (mergedBadge : SeLe4n.Badge) (b : Nat) :
     notificationQueueWellFormed
       { state := .active,
-        hasPendingBadge := true, pendingWord := mergedBadge, boundTCB := b } := by
+        hasPendingBadge := true, pendingWord := mergedBadge, boundTCBCode := b } := by
   unfold notificationQueueWellFormed; simp
 
 /-- notificationWait result notification is well-formed (badge-consume path):
     idle state, empty queue, no badge. -/
-theorem notificationWait_result_wellFormed_badge (b : Option SeLe4n.ThreadId) :
+theorem notificationWait_result_wellFormed_badge (b : Nat) :
     notificationQueueWellFormed
       { state := NotificationState.idle,
-        hasPendingBadge := false, pendingWord := SeLe4n.Badge.zero, boundTCB := b } := by
+        hasPendingBadge := false, pendingWord := SeLe4n.Badge.zero, boundTCBCode := b } := by
   unfold notificationQueueWellFormed; simp
 
 /-- WS-G7/F-P11, WS-ZA ZA4.4: notificationWait result notification is

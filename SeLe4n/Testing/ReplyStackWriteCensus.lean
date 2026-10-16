@@ -338,6 +338,8 @@ def chainNeutralConstructors : List (Name × String) :=
       "rebuilds both SchedContexts for their budget accounting; `scReply` is in neither assignment list")
   , (`SeLe4n.Kernel.SchedContext.PriorityManagement.updatePrioritySource,
       "`{ sc with priority := _ }` or `{ tcb with priority := _ }`; `scReply` is untouched")
+  , (`SeLe4n.Kernel.dispatchInvocationByR,
+      "WS-ZA ZA5.2: its own stores are `updateTcb` writes of `maxControlledPriority`, `ipcBuffer`, the fault handler and the CSpace/VSpace roots; every SchedContext or Reply it reaches is written by a helper (`updatePrioritySource`, the affinity's replenishment migration, the suspend and resume performs) that answers for its own update")
   , (`SeLe4n.Kernel.SchedContext.PriorityManagement.setMCPriorityOp,
       "`{ targetTcb with maxControlledPriority := _ }`; writes no SchedContext field at all")
   , (`SeLe4n.Kernel.SchedContext.PriorityManagement.setMCPriorityOnCore,

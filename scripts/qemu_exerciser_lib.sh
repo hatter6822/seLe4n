@@ -223,7 +223,12 @@ for driver in drivers:
             "signal", "signal-wide-badge", "wait-pending", "yield",
             "receive-blocks", "send-to-receiver", "wait-blocks", "signal-to-waiter",
             "receive-for-call", "call", "reply-recv", "call-to-reply-receiver", "reply",
-            "send-blocks", "receive-from-sender")}
+            "send-blocks", "receive-from-sender",
+            # WS-ZA ZA5.2: the thread and notification arms change their
+            # objects in place.
+            "tcb-set-priority", "tcb-set-mc-priority", "tcb-set-affinity",
+            "tcb-set-fault-handler", "tcb-bind-notification", "tcb-unbind-notification",
+            "tcb-set-space", "tcb-resume", "tcb-suspend", "tcb-set-ipc-buffer")}
         # WS-ZA ZA5.1: the capability invocations' readings today, each the
         # operation's own cells (slot, tree and object writes, the store's
         # copy); the rows that bring them to zero lower these pins.
@@ -231,16 +236,12 @@ for driver in drivers:
             "cspace-copy": (55, 46), "cspace-move": (45, 45), "cspace-delete": (31, 31),
             "cspace-mint": (50, 51), "cspace-revoke": (67, 48),
             "reply-cap-delete": (29, 29), "reply-cap-mint": (47, 47),
-            "tcb-set-priority": (15, 15), "tcb-set-mc-priority": (9, 9),
-            "tcb-set-affinity": (18, 18), "tcb-set-fault-handler": (15, 15),
-            "tcb-bind-notification": (20, 20), "tcb-unbind-notification": (15, 15),
-            "tcb-set-space": (21, 21), "tcb-resume": (30, 30), "tcb-suspend": (34, 34),
             "untyped-retype-page-table-1": (100, 91), "page-table-map-1": (47, 47),
             "untyped-retype-page-table-2": (91, 91), "page-table-map-2": (53, 53),
             "untyped-retype-page-table-3": (93, 93), "page-table-map-3": (56, 56),
             "untyped-retype-frame": (160, 94), "vspace-map": (109, 108),
-            "vspace-unify-instruction": (10, 10), "tcb-set-ipc-buffer": (11, 11),
-            "vspace-unmap": (120, 120), "frame-delete": (45, 47),
+            "vspace-unify-instruction": (10, 10),
+            "vspace-unmap": (119, 119), "frame-delete": (45, 47),
             "page-table-unmap-3": (42, 42), "page-table-delete-3": (35, 35),
             "page-table-unmap-2": (41, 41), "page-table-delete-2": (29, 29),
             "page-table-unmap-1": (38, 38), "page-table-delete-1": (26, 26),

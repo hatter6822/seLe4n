@@ -399,7 +399,10 @@ theorem handleRescheduleSgiOnCore_preserves_replenishQueueAffinityConsistentOnCo
                 = determineTargetCore sSw t from by
               unfold determineTargetCore; rw [SystemState.clearReschedulePendingOnCore_getTcb?]]
           exact switchToThreadOnCore_determineTargetCore st c _ sSw hInv hSw t
-        · exact absurd hStep (by simp)
+        · split at hStep
+          · rw [Except.ok.injEq] at hStep; subst hStep
+            exact dropCurrentOnCore_determineTargetCore st c hInv t
+          · rw [Except.ok.injEq] at hStep; subst hStep; rfl
       · rw [Except.ok.injEq] at hStep; subst hStep; rfl
   · intro scId
     unfold handleRescheduleSgiOnCore at hStep
@@ -415,7 +418,10 @@ theorem handleRescheduleSgiOnCore_preserves_replenishQueueAffinityConsistentOnCo
           rw [Except.ok.injEq] at hStep; subst hStep
           rw [SystemState.clearReschedulePendingOnCore_getSchedContext?]
           exact switchToThreadOnCore_boundThread st c _ sSw hInv hSw scId
-        · exact absurd hStep (by simp)
+        · split at hStep
+          · rw [Except.ok.injEq] at hStep; subst hStep
+            exact preemptCurrentOnCore_boundThread st c _ hInv scId
+          · rw [Except.ok.injEq] at hStep; subst hStep; rfl
       · rw [Except.ok.injEq] at hStep; subst hStep; rfl
   · exact hCons
 

@@ -1116,13 +1116,21 @@ structure TCB where
   /-- R7-D/L-06: Capability pointer to the fault handler endpoint.
       In seL4, when a thread faults (e.g., VM fault, cap fault), the kernel
       sends a fault IPC message to the endpoint identified by this capability.
-      `none` = no fault handler configured (faults are silently dropped). -/
-  faultHandler : Option SeLe4n.CPtr := none
+      `none` = no fault handler configured (faults are silently dropped).
+      WS-ZA ZA5.2: stored as a flag and the address's word, read through the
+      view `TCB.faultHandler`, so setting a handler writes no `some` cell and
+      boxes no word. -/
+  faultHandlerSet : Bool := false
+  /-- WS-ZA ZA5.2: the fault handler's capability address, meaningful when
+      `faultHandlerSet` holds (see `TCB.faultHandler`). -/
+  faultHandlerWord : SeLe4n.CPtr := SeLe4n.CPtr.ofNat 0
   /-- R7-D/L-06: Object ID of the bound notification object.
       In seL4, a thread may bind one notification object. Signals on the bound
       notification can wake the thread when it is waiting on an endpoint.
-      `none` = no bound notification. -/
-  boundNotification : Option SeLe4n.ObjId := none
+      `none` = no bound notification.  WS-ZA ZA5.2: stored as its scalar code
+      (`SeLe4n.ObjId.optCode`) and read through the view `TCB.boundNotification`,
+      so a bind writes no `some` cell. -/
+  boundNotificationCode : Nat := 0
   /-- WS-Z Z1-J: Scheduling context binding. Determines whether this thread
       uses legacy TCB scheduling fields or a first-class SchedContext object.
       Default `.unbound` preserves backward compatibility. -/
@@ -1384,6 +1392,17 @@ code alone reads the old value by `rfl`.  Written as
 @[reducible, inline] def TCB.replyObject (t : TCB) : Option SeLe4n.ReplyId :=
   SeLe4n.ReplyId.ofOptCode t.replyObjectCode
 
+/-- WS-ZA ZA5.2: the fault handler's capability address, `none` when none is
+configured: the view of the flag and word the TCB stores. -/
+@[reducible, inline] def TCB.faultHandler (t : TCB) : Option SeLe4n.CPtr :=
+  if t.faultHandlerSet then some t.faultHandlerWord else none
+
+/-- WS-ZA ZA5.2: the bound notification, read from its code.  Reducible, so a
+record update that leaves the code alone reads the old value by `rfl`.  Written
+as `boundNotificationCode := SeLe4n.ObjId.optCode n`. -/
+@[reducible, inline] def TCB.boundNotification (t : TCB) : Option SeLe4n.ObjId :=
+  SeLe4n.ObjId.ofOptCode t.boundNotificationCode
+
 /-- WS-ZA ZA4.7: the reply object a server stashed on its receive, read from its
 code.  Written as `pendingReceiveReplyCode := SeLe4n.ReplyId.optCode r`. -/
 @[reducible, inline] def TCB.pendingReceiveReply (t : TCB) : Option SeLe4n.ReplyId :=
@@ -1530,14 +1549,14 @@ every other field is the record's. -/
     (t.setIpcState s).replyWaitersCount = t.replyWaitersCount := rfl
 
 
-@[simp] theorem TCB.ipcState_mk (f1 f2 f3 f4 f5 f6 f7 f8 f9 f10 f11 f12 f13 f14 f15 f16 f17 f18 f19 f20 f21 f22 f23 f24 f25 f26 f27 f28 f29 f30 f31 f32 f33 f34 f35 f36 f37 f38 f39 f40 f41 f42 f43 f44) :
-    (TCB.mk f1 f2 f3 f4 f5 f6 f7 f8 f9 f10 f11 f12 f13 f14 f15 f16 f17 f18 f19 f20 f21 f22 f23 f24 f25 f26 f27 f28 f29 f30 f31 f32 f33 f34 f35 f36 f37 f38 f39 f40 f41 f42 f43 f44).ipcState = ThreadIpcState.ofCodes f7 f40 := rfl
+@[simp] theorem TCB.ipcState_mk (f1 f2 f3 f4 f5 f6 f7 f8 f9 f10 f11 f12 f13 f14 f15 f16 f17 f18 f19 f20 f21 f22 f23 f24 f25 f26 f27 f28 f29 f30 f31 f32 f33 f34 f35 f36 f37 f38 f39 f40 f41 f42 f43 f44 f45) :
+    (TCB.mk f1 f2 f3 f4 f5 f6 f7 f8 f9 f10 f11 f12 f13 f14 f15 f16 f17 f18 f19 f20 f21 f22 f23 f24 f25 f26 f27 f28 f29 f30 f31 f32 f33 f34 f35 f36 f37 f38 f39 f40 f41 f42 f43 f44 f45).ipcState = ThreadIpcState.ofCodes f7 f41 := rfl
 
-@[simp] theorem TCB.replyObject_mk (f1 f2 f3 f4 f5 f6 f7 f8 f9 f10 f11 f12 f13 f14 f15 f16 f17 f18 f19 f20 f21 f22 f23 f24 f25 f26 f27 f28 f29 f30 f31 f32 f33 f34 f35 f36 f37 f38 f39 f40 f41 f42 f43 f44) :
-    (TCB.mk f1 f2 f3 f4 f5 f6 f7 f8 f9 f10 f11 f12 f13 f14 f15 f16 f17 f18 f19 f20 f21 f22 f23 f24 f25 f26 f27 f28 f29 f30 f31 f32 f33 f34 f35 f36 f37 f38 f39 f40 f41 f42 f43 f44).replyObject = SeLe4n.ReplyId.ofOptCode f24 := rfl
+@[simp] theorem TCB.replyObject_mk (f1 f2 f3 f4 f5 f6 f7 f8 f9 f10 f11 f12 f13 f14 f15 f16 f17 f18 f19 f20 f21 f22 f23 f24 f25 f26 f27 f28 f29 f30 f31 f32 f33 f34 f35 f36 f37 f38 f39 f40 f41 f42 f43 f44 f45) :
+    (TCB.mk f1 f2 f3 f4 f5 f6 f7 f8 f9 f10 f11 f12 f13 f14 f15 f16 f17 f18 f19 f20 f21 f22 f23 f24 f25 f26 f27 f28 f29 f30 f31 f32 f33 f34 f35 f36 f37 f38 f39 f40 f41 f42 f43 f44 f45).replyObject = SeLe4n.ReplyId.ofOptCode f25 := rfl
 
-@[simp] theorem TCB.pendingReceiveReply_mk (f1 f2 f3 f4 f5 f6 f7 f8 f9 f10 f11 f12 f13 f14 f15 f16 f17 f18 f19 f20 f21 f22 f23 f24 f25 f26 f27 f28 f29 f30 f31 f32 f33 f34 f35 f36 f37 f38 f39 f40 f41 f42 f43 f44) :
-    (TCB.mk f1 f2 f3 f4 f5 f6 f7 f8 f9 f10 f11 f12 f13 f14 f15 f16 f17 f18 f19 f20 f21 f22 f23 f24 f25 f26 f27 f28 f29 f30 f31 f32 f33 f34 f35 f36 f37 f38 f39 f40 f41 f42 f43 f44).pendingReceiveReply = SeLe4n.ReplyId.ofOptCode f25 := rfl
+@[simp] theorem TCB.pendingReceiveReply_mk (f1 f2 f3 f4 f5 f6 f7 f8 f9 f10 f11 f12 f13 f14 f15 f16 f17 f18 f19 f20 f21 f22 f23 f24 f25 f26 f27 f28 f29 f30 f31 f32 f33 f34 f35 f36 f37 f38 f39 f40 f41 f42 f43 f44 f45) :
+    (TCB.mk f1 f2 f3 f4 f5 f6 f7 f8 f9 f10 f11 f12 f13 f14 f15 f16 f17 f18 f19 f20 f21 f22 f23 f24 f25 f26 f27 f28 f29 f30 f31 f32 f33 f34 f35 f36 f37 f38 f39 f40 f41 f42 f43 f44 f45).pendingReceiveReply = SeLe4n.ReplyId.ofOptCode f26 := rfl
 
 theorem TCB.ofCodes_ipcCodes (t : TCB) :
     ThreadIpcState.ofCodes t.ipcObjectCode t.ipcStateCode = t.ipcState := rfl
@@ -1582,14 +1601,14 @@ theorem TCB.ipcState_ext {a b : TCB} (h : a.ipcState = b.ipcState) :
 view when a code is copied from another record: together they let `simp` read
 a written link as the value written and an untouched link as the old view. -/
 
-@[simp] theorem TCB.queuePrev_mk (f1 f2 f3 f4 f5 f6 f7 f8 f9 f10 f11 f12 f13 f14 f15 f16 f17 f18 f19 f20 f21 f22 f23 f24 f25 f26 f27 f28 f29 f30 f31 f32 f33 f34 f35 f36 f37 f38 f39 f40 f41 f42 f43 f44) :
-    (TCB.mk f1 f2 f3 f4 f5 f6 f7 f8 f9 f10 f11 f12 f13 f14 f15 f16 f17 f18 f19 f20 f21 f22 f23 f24 f25 f26 f27 f28 f29 f30 f31 f32 f33 f34 f35 f36 f37 f38 f39 f40 f41 f42 f43 f44).queuePrev = SeLe4n.ThreadId.ofOptCode f11 := rfl
+@[simp] theorem TCB.queuePrev_mk (f1 f2 f3 f4 f5 f6 f7 f8 f9 f10 f11 f12 f13 f14 f15 f16 f17 f18 f19 f20 f21 f22 f23 f24 f25 f26 f27 f28 f29 f30 f31 f32 f33 f34 f35 f36 f37 f38 f39 f40 f41 f42 f43 f44 f45) :
+    (TCB.mk f1 f2 f3 f4 f5 f6 f7 f8 f9 f10 f11 f12 f13 f14 f15 f16 f17 f18 f19 f20 f21 f22 f23 f24 f25 f26 f27 f28 f29 f30 f31 f32 f33 f34 f35 f36 f37 f38 f39 f40 f41 f42 f43 f44 f45).queuePrev = SeLe4n.ThreadId.ofOptCode f11 := rfl
 
-@[simp] theorem TCB.queuePPrev_mk (f1 f2 f3 f4 f5 f6 f7 f8 f9 f10 f11 f12 f13 f14 f15 f16 f17 f18 f19 f20 f21 f22 f23 f24 f25 f26 f27 f28 f29 f30 f31 f32 f33 f34 f35 f36 f37 f38 f39 f40 f41 f42 f43 f44) :
-    (TCB.mk f1 f2 f3 f4 f5 f6 f7 f8 f9 f10 f11 f12 f13 f14 f15 f16 f17 f18 f19 f20 f21 f22 f23 f24 f25 f26 f27 f28 f29 f30 f31 f32 f33 f34 f35 f36 f37 f38 f39 f40 f41 f42 f43 f44).queuePPrev = QueuePPrev.ofOptCode f12 := rfl
+@[simp] theorem TCB.queuePPrev_mk (f1 f2 f3 f4 f5 f6 f7 f8 f9 f10 f11 f12 f13 f14 f15 f16 f17 f18 f19 f20 f21 f22 f23 f24 f25 f26 f27 f28 f29 f30 f31 f32 f33 f34 f35 f36 f37 f38 f39 f40 f41 f42 f43 f44 f45) :
+    (TCB.mk f1 f2 f3 f4 f5 f6 f7 f8 f9 f10 f11 f12 f13 f14 f15 f16 f17 f18 f19 f20 f21 f22 f23 f24 f25 f26 f27 f28 f29 f30 f31 f32 f33 f34 f35 f36 f37 f38 f39 f40 f41 f42 f43 f44 f45).queuePPrev = QueuePPrev.ofOptCode f12 := rfl
 
-@[simp] theorem TCB.queueNext_mk (f1 f2 f3 f4 f5 f6 f7 f8 f9 f10 f11 f12 f13 f14 f15 f16 f17 f18 f19 f20 f21 f22 f23 f24 f25 f26 f27 f28 f29 f30 f31 f32 f33 f34 f35 f36 f37 f38 f39 f40 f41 f42 f43 f44) :
-    (TCB.mk f1 f2 f3 f4 f5 f6 f7 f8 f9 f10 f11 f12 f13 f14 f15 f16 f17 f18 f19 f20 f21 f22 f23 f24 f25 f26 f27 f28 f29 f30 f31 f32 f33 f34 f35 f36 f37 f38 f39 f40 f41 f42 f43 f44).queueNext = SeLe4n.ThreadId.ofOptCode f13 := rfl
+@[simp] theorem TCB.queueNext_mk (f1 f2 f3 f4 f5 f6 f7 f8 f9 f10 f11 f12 f13 f14 f15 f16 f17 f18 f19 f20 f21 f22 f23 f24 f25 f26 f27 f28 f29 f30 f31 f32 f33 f34 f35 f36 f37 f38 f39 f40 f41 f42 f43 f44 f45) :
+    (TCB.mk f1 f2 f3 f4 f5 f6 f7 f8 f9 f10 f11 f12 f13 f14 f15 f16 f17 f18 f19 f20 f21 f22 f23 f24 f25 f26 f27 f28 f29 f30 f31 f32 f33 f34 f35 f36 f37 f38 f39 f40 f41 f42 f43 f44 f45).queueNext = SeLe4n.ThreadId.ofOptCode f13 := rfl
 
 /-- The notification-queue predecessor, read from its scalar code. -/
 @[inline] def TCB.ntfnPrev (t : TCB) : Option SeLe4n.ThreadId :=
@@ -1599,11 +1618,11 @@ a written link as the value written and an untouched link as the old view. -/
 @[inline] def TCB.ntfnNext (t : TCB) : Option SeLe4n.ThreadId :=
   SeLe4n.ThreadId.ofOptCode t.ntfnNextCode
 
-@[simp] theorem TCB.ntfnPrev_mk (f1 f2 f3 f4 f5 f6 f7 f8 f9 f10 f11 f12 f13 f14 f15 f16 f17 f18 f19 f20 f21 f22 f23 f24 f25 f26 f27 f28 f29 f30 f31 f32 f33 f34 f35 f36 f37 f38 f39 f40 f41 f42 f43 f44) :
-    (TCB.mk f1 f2 f3 f4 f5 f6 f7 f8 f9 f10 f11 f12 f13 f14 f15 f16 f17 f18 f19 f20 f21 f22 f23 f24 f25 f26 f27 f28 f29 f30 f31 f32 f33 f34 f35 f36 f37 f38 f39 f40 f41 f42 f43 f44).ntfnPrev = SeLe4n.ThreadId.ofOptCode f28 := rfl
+@[simp] theorem TCB.ntfnPrev_mk (f1 f2 f3 f4 f5 f6 f7 f8 f9 f10 f11 f12 f13 f14 f15 f16 f17 f18 f19 f20 f21 f22 f23 f24 f25 f26 f27 f28 f29 f30 f31 f32 f33 f34 f35 f36 f37 f38 f39 f40 f41 f42 f43 f44 f45) :
+    (TCB.mk f1 f2 f3 f4 f5 f6 f7 f8 f9 f10 f11 f12 f13 f14 f15 f16 f17 f18 f19 f20 f21 f22 f23 f24 f25 f26 f27 f28 f29 f30 f31 f32 f33 f34 f35 f36 f37 f38 f39 f40 f41 f42 f43 f44 f45).ntfnPrev = SeLe4n.ThreadId.ofOptCode f29 := rfl
 
-@[simp] theorem TCB.ntfnNext_mk (f1 f2 f3 f4 f5 f6 f7 f8 f9 f10 f11 f12 f13 f14 f15 f16 f17 f18 f19 f20 f21 f22 f23 f24 f25 f26 f27 f28 f29 f30 f31 f32 f33 f34 f35 f36 f37 f38 f39 f40 f41 f42 f43 f44) :
-    (TCB.mk f1 f2 f3 f4 f5 f6 f7 f8 f9 f10 f11 f12 f13 f14 f15 f16 f17 f18 f19 f20 f21 f22 f23 f24 f25 f26 f27 f28 f29 f30 f31 f32 f33 f34 f35 f36 f37 f38 f39 f40 f41 f42 f43 f44).ntfnNext = SeLe4n.ThreadId.ofOptCode f29 := rfl
+@[simp] theorem TCB.ntfnNext_mk (f1 f2 f3 f4 f5 f6 f7 f8 f9 f10 f11 f12 f13 f14 f15 f16 f17 f18 f19 f20 f21 f22 f23 f24 f25 f26 f27 f28 f29 f30 f31 f32 f33 f34 f35 f36 f37 f38 f39 f40 f41 f42 f43 f44 f45) :
+    (TCB.mk f1 f2 f3 f4 f5 f6 f7 f8 f9 f10 f11 f12 f13 f14 f15 f16 f17 f18 f19 f20 f21 f22 f23 f24 f25 f26 f27 f28 f29 f30 f31 f32 f33 f34 f35 f36 f37 f38 f39 f40 f41 f42 f43 f44 f45).ntfnNext = SeLe4n.ThreadId.ofOptCode f30 := rfl
 
 @[simp] theorem TCB.ofOptCode_ntfnPrevCode (t : TCB) :
     SeLe4n.ThreadId.ofOptCode t.ntfnPrevCode = t.ntfnPrev := rfl
@@ -1860,7 +1879,8 @@ instance : BEq TCB where
     a.queuePrev == b.queuePrev && a.queuePPrev == b.queuePPrev &&
     a.queueNext == b.queueNext && a.pendingMessage == b.pendingMessage &&
     a.registerContext == b.registerContext &&
-    a.faultHandler == b.faultHandler && a.boundNotification == b.boundNotification &&
+    a.faultHandlerSet == b.faultHandlerSet && a.faultHandlerWord == b.faultHandlerWord &&
+    a.boundNotification == b.boundNotification &&
     a.schedContextBinding == b.schedContextBinding &&
     a.timeoutBudget == b.timeoutBudget &&
     a.maxControlledPriority == b.maxControlledPriority &&
@@ -2054,7 +2074,8 @@ theorem TCB.ext {a b : TCB}
     (hQPrev : a.queuePrev = b.queuePrev) (hQPPrev : a.queuePPrev = b.queuePPrev)
     (hQNext : a.queueNext = b.queueNext) (hPend : a.pendingMessage = b.pendingMessage)
     (hRC : a.registerContext = b.registerContext)
-    (hFh : a.faultHandler = b.faultHandler) (hBn : a.boundNotification = b.boundNotification)
+    (hFhS : a.faultHandlerSet = b.faultHandlerSet) (hFhW : a.faultHandlerWord = b.faultHandlerWord)
+    (hBn : a.boundNotification = b.boundNotification)
     (hSc : a.schedContextBinding = b.schedContextBinding)
     (hTb : a.timeoutBudget = b.timeoutBudget)
     (hMcp : a.maxControlledPriority = b.maxControlledPriority)
@@ -2108,15 +2129,19 @@ theorem TCB.ext {a b : TCB}
     rw [← SeLe4n.ReplyId.optCode_ofOptCode a.pendingReceiveReplyCode,
       ← SeLe4n.ReplyId.optCode_ofOptCode b.pendingReceiveReplyCode]
     exact congrArg _ hPendReply
+  have hBnC : a.boundNotificationCode = b.boundNotificationCode := by
+    rw [← SeLe4n.ObjId.optCode_ofOptCode a.boundNotificationCode,
+      ← SeLe4n.ObjId.optCode_ofOptCode b.boundNotificationCode]
+    exact congrArg _ hBn
   have hPipC : a.pipBoostCode = b.pipBoostCode := by
     rw [← SeLe4n.Priority.optCode_ofOptCode a.pipBoostCode,
       ← SeLe4n.Priority.optCode_ofOptCode b.pipBoostCode]
     exact congrArg _ hPip
-  clear hReply hPendReply hPip
+  clear hReply hPendReply hPip hBn
   cases a; cases b
   simp at *
   exact ⟨hTid, hPrio, hDom, hCsp, hVsp, hBuf, hIpcO, hTs, hSlice, hDeadline,
-         hQPrevC, hQPPrevC, hQNextC, hPend, hRC, hFh, hBn, hSc, hTb, hMcp, hPipC, hTo,
+         hQPrevC, hQPPrevC, hQNextC, hPend, hRC, hFhS, hFhW, hBnC, hSc, hTb, hMcp, hPipC, hTo,
          hCpuAff, hReplyC, hPendReplyC, hPendFault, hFp, hNPrevC, hNNextC,
          hRCore, hRPrio, hRPrev, hRNext, hRBPrev, hRBNext, hWPrev, hWNext, hWHead, hWCount,
          hIpcS, hIBadge, hIBadged, hIGrant, hIFault⟩
@@ -2732,9 +2757,18 @@ structure Notification where
       while `t` is `BlockedOnReceive`, the signal is delivered directly to `t`
       (the bound-delivery path of `notificationSignalBound`) rather than stored as
       a pending badge.  Default `none` — a freshly-allocated notification is
-      unbound, so every existing construction site is unaffected. -/
-  boundTCB : Option SeLe4n.ThreadId := none
+      unbound, so every existing construction site is unaffected.  WS-ZA ZA5.2:
+      stored as its scalar code (`SeLe4n.ThreadId.optCode`) and read through
+      the view `Notification.boundTCB`, so a bind writes no `some` cell. -/
+  boundTCBCode : Nat := 0
   deriving Repr, DecidableEq
+
+/-- WS-ZA ZA5.2: the bound thread, read from its code.  Reducible, so a record
+update that leaves the code alone reads the old value by `rfl`.  Written as
+`boundTCBCode := SeLe4n.ThreadId.optCode t`. -/
+@[reducible, inline] def Notification.boundTCB (n : Notification) :
+    Option SeLe4n.ThreadId :=
+  SeLe4n.ThreadId.ofOptCode n.boundTCBCode
 
 /-- The pending badge, if any: the `Option` view of the `hasPendingBadge` /
     `pendingWord` pair every specification and proof reads. -/
@@ -2799,7 +2833,7 @@ notification with waiters holds none — and the binding is carried. -/
     waitHeadCode := SeLe4n.ThreadId.optCode next
     waitTailCode := if next.isSome then n.waitTailCode else 0
     hasPendingBadge := false, pendingWord := SeLe4n.Badge.zero
-    boundTCB := n.boundTCB }
+    boundTCBCode := n.boundTCBCode }
 
 /-- WS-ZA ZA4.4: the notification once `waiter` joins the back of its queue: the
 waiter is the new tail, and the head too when the queue was empty. -/
@@ -2810,7 +2844,7 @@ waiter is the new tail, and the head too when the queue was empty. -/
       else n.waitHeadCode
     waitTailCode := SeLe4n.ThreadId.optCode (some waiter)
     hasPendingBadge := false, pendingWord := SeLe4n.Badge.zero
-    boundTCB := n.boundTCB }
+    boundTCBCode := n.boundTCBCode }
 
 @[simp] theorem Notification.withHeadPopped_waitHead (n : Notification)
     (next : Option SeLe4n.ThreadId) : (n.withHeadPopped next).waitHead = next := by

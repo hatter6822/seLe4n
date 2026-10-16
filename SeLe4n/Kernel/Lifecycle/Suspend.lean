@@ -404,6 +404,57 @@ def resumeThreadOnCore (st : SystemState) (vtid : SeLe4n.ValidThreadId) (executi
         .ok (st3, some (target, SgiKind.reschedule))
   | none => .error .invalidArgument
 
+/-- WS-ZA ZA5.2: the checks `.tcbResume` makes, asked before any write: the
+target is a TCB in `.Inactive` carrying no pending fault (a faulted thread's
+resume first answers its fault, `retirePendingFaultForResume`, and takes the
+general path).  When they pass the operation's state is `resumePerform`
+(`resumeThreadOnCore_of_admitted`). -/
+@[inline] def resumeAdmitted (st : SystemState) (tid : SeLe4n.ThreadId) : Bool :=
+  match st.getTcb? tid with
+  | some tcb => tcb.pendingFault.isNone && !(tcb.threadState != .Inactive)
+  | none => false
+
+/-- WS-ZA ZA5.2: the resume once admitted.  The home core and the thread's
+entry-time scheduling key are read before anything is written, so the state is
+handed to the writes alone; the local reschedule never refuses
+(`handleRescheduleSgiOnCore_eq_state`). -/
+def resumePerform (st : SystemState) (tid : SeLe4n.ThreadId) (executingCore : CoreId) :
+    SystemState :=
+  match st.getTcb? tid with
+  | none => st
+  | some tcb =>
+    let target := determineTargetCore st tid
+    let p0 := tcb.boostedPriority
+    let d0 := effectiveDeadline st tcb
+    let dom0 := tcb.domain
+    let st2 := markKeyChangeParts (resumeReadyMidState st tid) tid p0 d0 dom0
+    let st3 := enqueueRunnableOnCore st2 target tid
+    if target == executingCore then handleRescheduleOnCoreState st3 executingCore
+    else st3
+
+theorem resumeThreadOnCore_of_admitted (st : SystemState) (vtid : SeLe4n.ValidThreadId)
+    (executingCore : CoreId) (h : resumeAdmitted st vtid.val = true) :
+    ∃ sgi, resumeThreadOnCore st vtid executingCore =
+      .ok (resumePerform st vtid.val executingCore, sgi) := by
+  unfold resumeAdmitted at h
+  cases hT : st.getTcb? vtid.val with
+  | none => simp [hT] at h
+  | some tcb =>
+    simp only [hT, Bool.and_eq_true, Bool.not_eq_true'] at h
+    obtain ⟨_, hS⟩ := h
+    unfold resumeThreadOnCore resumePerform
+    simp only [hT, hS, Bool.false_eq_true, ↓reduceIte]
+    have hM : markKeyChangeFrom st (resumeReadyMidState st vtid.val) vtid.val
+        = markKeyChangeParts (resumeReadyMidState st vtid.val) vtid.val tcb.boostedPriority
+            (effectiveDeadline st tcb) tcb.domain := by
+      unfold markKeyChangeFrom
+      simp only [hT]
+      rw [markKeyChangeFor_eq_parts, effectiveSchedParams_eq_parts]
+    rw [hM]
+    split
+    · rw [handleRescheduleSgiOnCore_eq_state]; exact ⟨none, rfl⟩
+    · exact ⟨_, rfl⟩
+
 -- WS-BP BP7.6 (v0.36.19): `resumeThreadEnqueueOnly` and `resumeThreadOnCoreLive`
 -- are retired.  They gated `resumeThreadOnCore`'s inline local dispatch on the
 -- context-restore seam, because a dispatch the hardware could not install left

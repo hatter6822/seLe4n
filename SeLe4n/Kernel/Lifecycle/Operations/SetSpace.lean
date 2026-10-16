@@ -65,6 +65,68 @@ def setThreadSpace (st : SystemState) (vtid : SeLe4n.ValidThreadId)
       (.tcb { tcb with cspaceRoot := cspaceRoot, vspaceRoot := vspaceRoot })
       (SystemState.rewriteAdmissible_tcb hTcb _))
 
+/-- WS-ZA ZA5.2: the compiled `setThreadSpace` — the two roots written into
+the TCB in its slot (`updateTcb`), so on an exclusively owned state the TCB is
+not rebuilt. -/
+def setThreadSpaceImpl (st : SystemState) (vtid : SeLe4n.ValidThreadId)
+    (cspaceRoot vspaceRoot : SeLe4n.ObjId) : Except KernelError SystemState :=
+  match st.getTcb? vtid.val with
+  | none => .error .objectNotFound
+  | some tcb =>
+    if tcb.threadState != .Inactive || inferThreadState st vtid.val tcb != .Inactive then
+      .error .illegalState
+    else if (st.getCNode? cspaceRoot).isNone then .error .invalidCapability
+    else if (st.getVSpaceRoot? vspaceRoot).isNone then .error .invalidCapability
+    else .ok (st.updateTcb vtid.val
+      (fun t => { t with cspaceRoot := cspaceRoot, vspaceRoot := vspaceRoot }))
+
+@[csimp] theorem setThreadSpace_eq_impl : @setThreadSpace = @setThreadSpaceImpl := by
+  funext st vtid cspaceRoot vspaceRoot
+  cases hT : st.getTcb? vtid.val with
+  | none =>
+    unfold setThreadSpace setThreadSpaceImpl
+    rw [SystemState.getTcbWitnessed?_eq_none hT]; simp only [hT]
+  | some tcb =>
+    unfold setThreadSpace setThreadSpaceImpl
+    rw [SystemState.getTcbWitnessed?_eq_some hT]
+    simp only [hT]
+    split <;> try rfl
+    split <;> try rfl
+    split <;> try rfl
+    rw [SystemState.rewriteObject_tcb_eq_updateTcb hT
+      (fun t => { t with cspaceRoot := cspaceRoot, vspaceRoot := vspaceRoot })]
+
+/-- WS-ZA ZA5.2: `setThreadSpace`'s checks, read before anything is written:
+the thread is a suspended TCB and both roots name objects of their kind.  When
+they pass the operation is the in-slot write (`setThreadSpace_of_admitted`). -/
+@[inline] def setThreadSpaceAdmitted (st : SystemState) (vtid : SeLe4n.ValidThreadId)
+    (cspaceRoot vspaceRoot : SeLe4n.ObjId) : Bool :=
+  match st.getTcb? vtid.val with
+  | none => false
+  | some tcb =>
+    !(tcb.threadState != .Inactive || inferThreadState st vtid.val tcb != .Inactive) &&
+      (st.getCNode? cspaceRoot).isSome && (st.getVSpaceRoot? vspaceRoot).isSome
+
+theorem setThreadSpace_of_admitted (st : SystemState) (vtid : SeLe4n.ValidThreadId)
+    (cspaceRoot vspaceRoot : SeLe4n.ObjId)
+    (h : setThreadSpaceAdmitted st vtid cspaceRoot vspaceRoot = true) :
+    setThreadSpace st vtid cspaceRoot vspaceRoot =
+      .ok (st.updateTcb vtid.val
+        (fun t => { t with cspaceRoot := cspaceRoot, vspaceRoot := vspaceRoot })) := by
+  rw [setThreadSpace_eq_impl]
+  unfold setThreadSpaceAdmitted at h
+  cases hT : st.getTcb? vtid.val with
+  | none => simp [hT] at h
+  | some tcb =>
+    unfold setThreadSpaceImpl
+    simp only [hT, Bool.and_eq_true, Bool.not_eq_true'] at h ⊢
+    obtain ⟨⟨hS, hC⟩, hV⟩ := h
+    have hC' : (st.getCNode? cspaceRoot).isNone = false := by
+      cases hc : st.getCNode? cspaceRoot <;> simp_all
+    have hV' : (st.getVSpaceRoot? vspaceRoot).isNone = false := by
+      cases hv : st.getVSpaceRoot? vspaceRoot <;> simp_all
+    simp only [hS, hC', hV', Bool.false_eq_true, ↓reduceIte]
+
 /-- **What a successful space change consists of**: the thread was a suspended
 TCB, both roots name objects of their kind, and the state is the one TCB
 rewrite. -/

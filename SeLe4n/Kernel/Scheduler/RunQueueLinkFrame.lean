@@ -695,35 +695,58 @@ def runDescheduleOnCore (st : SystemState) (c : CoreId) (t : SeLe4n.ThreadId) : 
         c (st.scheduler.currentOnCore c == some t) }
 
 /-- WS-ZA ZA4.7: the compiled `runDescheduleOnCore`.  The core's `current`
-slot is read before the dequeue, so nothing holds the state the dequeue
-rewrites, and the scheduler record and the state are rewritten in place. -/
+slot is compared as its code before the dequeue, so no `some` cell is built
+and nothing holds the state the dequeue rewrites.  When `t` is not the core's
+current thread the `current` slot and the accumulator are left as the dequeue
+left them (ZA5.2): writing the slot's own value back rebuilt it from a
+decoded `Option`, and the scheduler record with it. -/
 def runDescheduleOnCoreImpl (st : SystemState) (c : CoreId) (t : SeLe4n.ThreadId) :
     SystemState :=
-  let cur := st.scheduler.currentOnCore c
-  let wasT := cur.isEqSome t
-  let st' := st.runRemoveOnCore c t
-  -- One record update per branch: a branch inside the field makes a join point
-  -- the compiler rebuilds the state record at, rather than rewriting `st'`.
-  if wasT then
+  if st.scheduler.currentCode.get c == t.val + 1 then
+    let st' := st.runRemoveOnCore c t
     { st' with
         scheduler := SchedulerState.markReschedulePendingOnCoreIf
           (st'.scheduler.setCurrentOnCore c none) c true }
-  else
-    { st' with
-        scheduler := SchedulerState.markReschedulePendingOnCoreIf
-          (st'.scheduler.setCurrentOnCore c cur) c false }
+  else st.runRemoveOnCore c t
 
 @[csimp] theorem runDescheduleOnCore_eq_impl :
     @runDescheduleOnCore = @runDescheduleOnCoreImpl := by
   funext st c t
   unfold runDescheduleOnCore runDescheduleOnCoreImpl
-  cases h : st.scheduler.currentOnCore c with
-  | none => rfl
-  | some x =>
-    by_cases hx : x = t
-    · subst hx; simp [Option.isEqSome]
-    · have hb : (x == t) = false := by simp [hx]
-      simp [Option.isEqSome, hx, hb]
+  by_cases h : st.scheduler.currentCode.get c = t.val + 1
+  · have hs : st.scheduler.currentOnCore c = some t := by
+      simp [SchedulerState.currentOnCore, h]
+    simp [h, hs]
+  · have hs : (st.scheduler.currentOnCore c = some t) = False := by
+      simp [SchedulerState.currentOnCore, h]
+    have hb : (st.scheduler.currentOnCore c == some t) = false := by
+      simp [SchedulerState.currentOnCore, h]
+    have hd : (st.scheduler.currentCode.get c == t.val + 1) = false := by simp [h]
+    simp only [hs, hb, hd, if_false, Bool.false_eq_true]
+    have hc : (st.runRemoveOnCore c t).scheduler.currentCode = st.scheduler.currentCode := by
+      rw [runRemoveOnCore_scheduler]; rfl
+    generalize st.runRemoveOnCore c t = st' at hc ⊢
+    have hsch : SchedulerState.markReschedulePendingOnCoreIf
+        (st'.scheduler.setCurrentOnCore c (st.scheduler.currentOnCore c)) c false =
+          st'.scheduler := by
+      simp only [SchedulerState.markReschedulePendingOnCoreIf,
+        SchedulerState.setReschedulePendingOnCore, SchedulerState.reschedulePendingOnCore,
+        SchedulerState.setCurrentOnCore, SchedulerState.currentOnCore, Bool.or_false,
+        SeLe4n.ThreadId.optCode_ofOptCode, ← hc]
+      have h1 : st'.scheduler.currentCode.set c.val (st'.scheduler.currentCode.get c) c.isLt =
+          st'.scheduler.currentCode := by
+        apply Vector.ext; intro i hi
+        by_cases hic : c.val = i
+        · subst hic; simp [Vector.get]
+        · simp [hic]
+      have h2 : st'.scheduler.reschedulePending.set c (st'.scheduler.reschedulePending.get c) =
+          st'.scheduler.reschedulePending := by
+        apply PerCoreFlags.ext; intro c'
+        by_cases hcc : c = c'
+        · subst hcc; simp
+        · rw [PerCoreFlags.get_set_ne _ _ _ _ hcc]
+      rw [h1, h2]
+    rw [hsch]
 
 theorem runDescheduleOnCore_onlyObjectsSchedulerDiffer (st : SystemState) (c : CoreId)
     (t : SeLe4n.ThreadId) : onlyObjectsSchedulerDiffer (st.runDescheduleOnCore c t) st :=

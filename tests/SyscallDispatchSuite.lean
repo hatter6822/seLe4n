@@ -2252,7 +2252,7 @@ private def sd053g_bound_notification_wake_clears_stash : IO Unit := do
     (SeLe4n.Testing.BootstrapBuilder.empty
       |>.withObject epId (.endpoint {})
       |>.withObject nId (.notification
-          { state := .idle, boundTCB := some server })
+          { state := .idle, boundTCBCode := SeLe4n.ThreadId.optCode (some server) })
       |>.withObject server.toObjId
           (.tcb (TCB.setIpcState { mkTcb 1 with pendingReceiveReplyCode := SeLe4n.ReplyId.optCode (some rid) } (.blockedOnReceive epId)))
       |>.withObject rid.toObjId (.reply { replyId := rid })

@@ -135,6 +135,69 @@ def setIPCBufferOp (st : SystemState) (vtid : ValidThreadId)
       | .error e => .error e
     | none => .error .objectNotFound
 
+/-- WS-ZA ZA5.2: the compiled `setIPCBufferOp`.  When the store changes only
+`objects` (`storeLeavesIndexAndTypes`, every write to an existing TCB), the
+buffer address is written into the TCB in its slot (`updateTcb`), so on an
+exclusively owned state neither the TCB nor its table entry is rebuilt;
+otherwise the specification's body. -/
+def setIPCBufferOpImpl (st : SystemState) (vtid : ValidThreadId)
+    (addr : VAddr) : Except KernelError SystemState :=
+  match validateIpcBufferAddress st vtid.val addr with
+  | .error e => .error e
+  | .ok () =>
+    match st.getTcb? vtid.val with
+    | some tcb =>
+      if storeLeavesIndexAndTypes st vtid.val.toObjId .tcb then
+        .ok (st.updateTcb vtid.val (fun t => { t with ipcBuffer := addr }))
+      else
+      match storeObject vtid.val.toObjId (.tcb { tcb with ipcBuffer := addr }) st with
+      | .ok ((), st') => .ok st'
+      | .error e => .error e
+    | none => .error .objectNotFound
+
+@[csimp] theorem setIPCBufferOp_eq_impl : @setIPCBufferOp = @setIPCBufferOpImpl := by
+  funext st vtid addr
+  unfold setIPCBufferOp setIPCBufferOpImpl
+  cases validateIpcBufferAddress st vtid.val addr with
+  | error e => rfl
+  | ok u =>
+    cases hT : st.getTcb? vtid.val with
+    | none => rfl
+    | some tcb =>
+      simp only []
+      by_cases hL : storeLeavesIndexAndTypes st vtid.val.toObjId .tcb = true
+      · rw [if_pos hL, storeObject_eq_of_leaves (obj := .tcb { tcb with ipcBuffer := addr }) hL,
+          SystemState.updateTcb_eq_of_some hT]
+      · rw [if_neg hL]
+
+/-- WS-ZA ZA5.2: `setIPCBufferOp`'s checks, read before anything is written:
+the address validates, the thread is a stored TCB and the write changes only
+`objects`.  When they pass the operation is the in-slot write
+(`setIPCBufferOp_of_admitted`). -/
+@[inline] def setIPCBufferAdmitted (st : SystemState) (vtid : ValidThreadId)
+    (addr : VAddr) : Bool :=
+  (match validateIpcBufferAddress st vtid.val addr with
+    | .ok () => true
+    | .error _ => false) &&
+  (st.getTcb? vtid.val).isSome && storeLeavesIndexAndTypes st vtid.val.toObjId .tcb
+
+theorem setIPCBufferOp_of_admitted (st : SystemState) (vtid : ValidThreadId) (addr : VAddr)
+    (h : setIPCBufferAdmitted st vtid addr = true) :
+    setIPCBufferOp st vtid addr =
+      .ok (st.updateTcb vtid.val (fun t => { t with ipcBuffer := addr })) := by
+  rw [setIPCBufferOp_eq_impl]
+  unfold setIPCBufferAdmitted at h
+  unfold setIPCBufferOpImpl
+  cases hV : validateIpcBufferAddress st vtid.val addr with
+  | error e => simp [hV] at h
+  | ok u =>
+    cases hT : st.getTcb? vtid.val with
+    | none => simp [hV, hT] at h
+    | some tcb =>
+      have hL : storeLeavesIndexAndTypes st vtid.val.toObjId .tcb = true := by
+        simpa [hV, hT] using h
+      simp only [hL, ↓reduceIte]
+
 -- ============================================================================
 -- D3-G: Validation correctness theorems
 -- ============================================================================

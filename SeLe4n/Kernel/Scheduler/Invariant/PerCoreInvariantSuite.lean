@@ -745,7 +745,11 @@ theorem handleRescheduleSgiOnCore_preserves_schedulerInvariantStructural_smp
         rw [Except.ok.injEq] at h; subst h
         exact clearReschedulePendingOnCore_preserves_schedulerInvariantStructural_smp _ _
           (switchToThreadOnCore_preserves_schedulerInvariantStructural_smp st c₀ _ sSw hInv hPre hSw)
-      · exact absurd h (by simp)
+      · split at h
+        · rw [Except.ok.injEq] at h; subst h
+          exact clearReschedulePendingOnCore_preserves_schedulerInvariantStructural_smp _ _
+            (dropCurrentOnCore_preserves_schedulerInvariantStructural_smp st c₀ hInv hPre)
+        · rw [Except.ok.injEq] at h; subst h; exact hPre
     · rw [Except.ok.injEq] at h; subst h
       exact clearReschedulePendingOnCore_preserves_schedulerInvariantStructural_smp _ _ hPre           -- does not outrank: st' = st
 
@@ -1153,7 +1157,11 @@ theorem handleRescheduleSgiOnCore_preserves_schedulerInvariantStructuralReg_smp
         rw [Except.ok.injEq] at h; subst h
         exact clearReschedulePendingOnCore_preserves_schedulerInvariantStructuralReg_smp _ _
           (switchToThreadOnCore_preserves_schedulerInvariantStructuralReg_smp st c₀ _ sSw hInv hPre hSw)
-      · exact absurd h (by simp)
+      · split at h
+        · rw [Except.ok.injEq] at h; subst h
+          exact clearReschedulePendingOnCore_preserves_schedulerInvariantStructuralReg_smp _ _
+            (dropCurrentOnCore_preserves_schedulerInvariantStructuralReg_smp st c₀ hInv hPre)
+        · rw [Except.ok.injEq] at h; subst h; exact hPre
     · rw [Except.ok.injEq] at h; subst h
       exact clearReschedulePendingOnCore_preserves_schedulerInvariantStructuralReg_smp _ _ hPre
 
@@ -1832,7 +1840,11 @@ theorem handleRescheduleSgiOnCore_preserves_schedulerInvariantStructuralRegNodup
         rw [Except.ok.injEq] at h; subst h
         exact clearReschedulePendingOnCore_preserves_schedulerInvariantStructuralRegNodup_smp _ _
           (switchToThreadOnCore_preserves_schedulerInvariantStructuralRegNodup_smp st c₀ _ sSw hInv hPre hSw)
-      · exact absurd h (by simp)
+      · split at h
+        · rw [Except.ok.injEq] at h; subst h
+          exact clearReschedulePendingOnCore_preserves_schedulerInvariantStructuralRegNodup_smp _ _
+            (dropCurrentOnCore_preserves_schedulerInvariantStructuralRegNodup_smp st c₀ hInv hPre)
+        · rw [Except.ok.injEq] at h; subst h; exact hPre
     · rw [Except.ok.injEq] at h; subst h
       exact clearReschedulePendingOnCore_preserves_schedulerInvariantStructuralRegNodup_smp _ _ hPre
 
@@ -4596,7 +4608,12 @@ theorem handleRescheduleSgiOnCore_preserves_allThreadsTimeSlicePositive (st : Sy
               simp only [Except.ok.injEq] at hStep; subst hStep
               exact allThreadsTimeSlicePositive_of_objects_eq rfl
                 (switchToThreadOnCore_preserves_allThreadsTimeSlicePositive st c tid sSw hInv hSw h)
-            · exact absurd hStep (by simp)
+            · split at hStep
+              · simp only [Except.ok.injEq] at hStep; subst hStep
+                exact allThreadsTimeSlicePositive_of_objects_eq rfl
+                  (preemptCurrentOnCore_preserves_allThreadsTimeSlicePositive st c _ hInv h)
+              · simp only [Except.ok.injEq] at hStep; subst hStep
+                exact allThreadsTimeSlicePositive_of_objects_eq rfl h
           · simp only [Except.ok.injEq] at hStep; subst hStep
             exact allThreadsTimeSlicePositive_of_objects_eq rfl h
 
