@@ -51,7 +51,7 @@ enforcement, and scheduling.
 |-----------|-------|
 | **Package version** | `0.36.94` (`lakefile.toml`) |
 | **Lean toolchain** | `v4.28.0` (`lean-toolchain`) |
-| **Production LoC** | 472,275 across 429 Lean files |
+| **Production LoC** | 472,278 across 429 Lean files |
 | **Test LoC** | 87,209 across 70 Lean test suites |
 | **Proved declarations** | 16,682 theorem/lemma declarations (zero sorry/axiom) |
 | **Target hardware** | Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A) |
@@ -4989,7 +4989,7 @@ Every kernel object has a decidable well-formedness predicate:
 - **Objects own their cells from the moment they enter the store**
   (`v0.36.94`, WS-ZA ZA4.11).  `KernelObject.unshare` is the identity in the
   specification and, as compiled (`KernelObject.unshare_eq_impl`), rebuilds
-  the object's record, and its register file, slot table or mapping table,
+  the object's record, and its register file, slot table or mapping and epoch tables,
   into cells nobody else holds.  Boot (`createBootObject`) and retype
   (`objectOfKernelType`) apply it, so the first in-place write after boot
   copies nothing.

@@ -13,7 +13,7 @@ holds it as one shared static value, so the first in-place write to it (a
 signal's pending badge, a send's queue end) finds it shared and copies it.
 `KernelObject.unshare` is the identity in the specification; as compiled
 (`unshare_eq_impl`) it rebuilds the object's record, and the register file,
-slot table or mapping table an in-place write reaches, into cells nobody else
+slot table or mapping and epoch tables an in-place write reaches, into cells nobody else
 holds, so that copy happens once where the object enters the store and never
 on a syscall.
 -/
@@ -68,7 +68,7 @@ theorem _root_.SeLe4n.UniqueSlotMap.unshareImpl_eq {V : Type} (m : SeLe4n.Unique
 /-- `KernelObject.unshare` as compiled.  Each record is rebuilt with one field
 passed through `opaqueId`, so a shared record is copied and an exclusive one
 written in place; a thread's register file, a CNode's slot table and a VSpace
-root's mapping table are rebuilt the same way. -/
+root's mapping and epoch tables are rebuilt the same way. -/
 def KernelObject.unshareImpl : KernelObject → KernelObject
   | .tcb t => .tcb { t with
       tid := opaqueId t.tid
@@ -76,7 +76,10 @@ def KernelObject.unshareImpl : KernelObject → KernelObject
   | .endpoint e => .endpoint { e with sendHeadCode := opaqueId e.sendHeadCode }
   | .notification n => .notification { n with state := opaqueId n.state }
   | .cnode c => .cnode { c with depth := opaqueId c.depth, slots := c.slots.unshareImpl }
-  | .vspaceRoot v => .vspaceRoot { v with asid := opaqueId v.asid, mappings := v.mappings.unshare }
+  | .vspaceRoot v => .vspaceRoot { v with
+      asid := opaqueId v.asid
+      mappings := v.mappings.unshare
+      mappingEpochs := v.mappingEpochs.unshare }
   | .untyped u => .untyped { u with regionBase := opaqueId u.regionBase }
   | .schedContext sc => .schedContext { sc with scId := opaqueId sc.scId }
   | .reply r => .reply { r with replyId := opaqueId r.replyId }

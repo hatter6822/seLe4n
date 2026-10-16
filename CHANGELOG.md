@@ -19,7 +19,7 @@ Every other scenario reads 0 on its first call and in steady state.
   (`KernelObject.unshare_eq_impl`, `@[csimp]`) it rebuilds the object's
   record through `opaqueId`, an identity the compiler cannot see through, and
   rebuilds a thread's register file, a CNode's slot table
-  (`UniqueSlotMap.unshareImpl`) and a VSpace root's mapping table
+  (`UniqueSlotMap.unshareImpl`) and a VSpace root's mapping and epoch tables
   (`RHTable.unshare`) the same way.  Boot (`createBootObject`) and retype
   (`objectOfKernelType`) apply it, so the one copy happens where the object
   enters the store.  New module `SeLe4n/Model/Object/Unshare.lean`.
