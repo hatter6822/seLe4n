@@ -28,6 +28,7 @@ the root task holding one untyped over all the RAM outside the kernel's extent.
 | exerciser partner TCB (`.Inactive` until resumed) | `7` | boot |
 | exerciser endpoint | `8` | boot |
 | exerciser reply object | `9` | boot |
+| exerciser scheduling context (unconfigured, unbound) | `10` | boot |
 | untrusted initial TCB (the upper witness, pinned to core 1) | `0x10_0000` | untrusted |
 | its CNode | `0x10_0001` | untrusted |
 | its VSpace (ASID 2, pool page 1) | `0x10_0002` | untrusted |
@@ -72,6 +73,11 @@ def qemuVirtPartnerTcbId : SeLe4n.ObjId := ⟨7⟩
 def qemuVirtExerciserEndpointId : SeLe4n.ObjId := ⟨8⟩
 /-- The reply object a call's receiver answers through. -/
 def qemuVirtExerciserReplyId : SeLe4n.ObjId := ⟨9⟩
+/-- **WS-ZA ZA5.2**: the scheduling context the exerciser configures, binds to
+    the partner and unbinds.  Configured here for the reason the partner is:
+    the root task cannot make one (the untyped carve makes memory objects
+    only). -/
+def qemuVirtExerciserSchedContextId : SeLe4n.ObjId := ⟨10⟩
 /-- The untrusted domain's initial TCB — the upper separation witness. -/
 def qemuVirtUntrustedTcbId : SeLe4n.ObjId := ⟨qemuVirtUpperDomainBase⟩
 /-- Its CNode. -/
@@ -112,8 +118,10 @@ def qemuVirtRootTaskCNodeGuard : Nat := 2 ^ 59
 
 /-- The root task's CNode: its own TCB, CNode and VSpace, the interrupt
     notification, the untyped, and the allocation exerciser's partner thread,
-    endpoint and reply object (slot 9 is left free for the reply capability
-    the exerciser mints from slot 8), guarded by `qemuVirtRootTaskCNodeGuard`. -/
+    endpoint and reply object, and in slot 0 the exerciser's scheduling
+    context (slot 9 is left free for the reply capability the exerciser mints
+    from slot 8, and slots 10 to 15 for the objects it copies and carves),
+    guarded by `qemuVirtRootTaskCNodeGuard`. -/
 def qemuVirtRootTaskCNode : CNode :=
   { rpi5InitialCNode
     [ (SeLe4n.Slot.ofNat 1, rpi5InitialCap qemuVirtRootTaskTcbId [.read, .write, .grant, .grantReply])
@@ -123,7 +131,8 @@ def qemuVirtRootTaskCNode : CNode :=
     , (SeLe4n.Slot.ofNat 5, rpi5InitialCap qemuVirtRootTaskUntypedId [.read, .write, .retype])
     , (SeLe4n.Slot.ofNat 6, rpi5InitialCap qemuVirtPartnerTcbId [.read, .write, .grant, .grantReply])
     , (SeLe4n.Slot.ofNat 7, rpi5InitialCap qemuVirtExerciserEndpointId [.read, .write, .grant, .grantReply])
-    , (SeLe4n.Slot.ofNat 8, rpi5InitialCap qemuVirtExerciserReplyId [.read, .write, .grant]) ]
+    , (SeLe4n.Slot.ofNat 8, rpi5InitialCap qemuVirtExerciserReplyId [.read, .write, .grant])
+    , (SeLe4n.Slot.ofNat 0, rpi5InitialCap qemuVirtExerciserSchedContextId [.read, .write]) ]
     with guardValue := qemuVirtRootTaskCNodeGuard }
 
 /-- The untrusted thread's CNode: its own objects and nothing of the boot
@@ -172,6 +181,13 @@ private def replyEntry (id : SeLe4n.ObjId) : ObjectEntry :=
     hSlots := fun _ h => nomatch h
     hMappings := fun _ h => nomatch h }
 
+private def schedContextEntry (id : SeLe4n.ObjId) : ObjectEntry :=
+  { id := id
+    obj := .schedContext
+      (SeLe4n.Kernel.SchedContext.empty (SeLe4n.SchedContextId.ofObjId id))
+    hSlots := fun _ h => nomatch h
+    hMappings := fun _ h => nomatch h }
+
 /-- The deployment's initial objects. -/
 def qemuVirtInitialObjects : List ObjectEntry :=
   [ tcbEntry qemuVirtRootTaskTcbId
@@ -184,6 +200,7 @@ def qemuVirtInitialObjects : List ObjectEntry :=
       (rpi5InitialThread qemuVirtPartnerTcbId qemuVirtRootTaskCNodeId qemuVirtRootTaskVSpaceId)
   , endpointEntry qemuVirtExerciserEndpointId
   , replyEntry qemuVirtExerciserReplyId
+  , schedContextEntry qemuVirtExerciserSchedContextId
   , tcbEntry qemuVirtUntrustedTcbId qemuVirtUntrustedThread
   , cnodeEntry qemuVirtUntrustedCNodeId qemuVirtUntrustedCNode
   , vspaceEntry qemuVirtUntrustedVSpaceId (SeLe4n.ASID.ofNat 2) 1 ]

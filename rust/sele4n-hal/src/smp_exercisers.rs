@@ -1357,8 +1357,9 @@ struct RoundTrip {
     syscall: u64,
     /// The capability address in `x0`.
     cptr: u64,
-    /// The message length in `x1`'s `MessageInfo` (at most 4, so the kernel
-    /// reads no overflow register from an IPC buffer neither thread maps).
+    /// The message length in `x1`'s `MessageInfo`: at most 4, except for the
+    /// scheduling-context configure, whose fifth word the kernel reads from
+    /// the root task's IPC buffer, mapped for the duration of its group.
     msg_len: u64,
     /// The message registers `x2` to `x5`.
     msg: [u64; 4],
@@ -1415,6 +1416,12 @@ const VSPACE_MAP: u64 = 9;
 #[cfg(feature = "hw_target")]
 const VSPACE_UNMAP: u64 = 10;
 #[cfg(feature = "hw_target")]
+const SCHED_CONTEXT_CONFIGURE: u64 = 17;
+#[cfg(feature = "hw_target")]
+const SCHED_CONTEXT_BIND: u64 = 18;
+#[cfg(feature = "hw_target")]
+const SCHED_CONTEXT_UNBIND: u64 = 19;
+#[cfg(feature = "hw_target")]
 const TCB_SET_PRIORITY: u64 = 22;
 #[cfg(feature = "hw_target")]
 const TCB_SET_MC_PRIORITY: u64 = 23;
@@ -1462,6 +1469,8 @@ const fn cap_address(slot: u64) -> u64 {
 
 /// The root task's CNode slots the round trips name.
 #[cfg(feature = "hw_target")]
+const ROOT_TCB_SLOT: u64 = 1;
+#[cfg(feature = "hw_target")]
 const CNODE_SLOT: u64 = 2;
 #[cfg(feature = "hw_target")]
 const NOTIFICATION_SLOT: u64 = 4;
@@ -1491,10 +1500,18 @@ const FRAME_SLOT: u64 = 13;
 /// again once the copy sequence has deleted what it moved.
 #[cfg(feature = "hw_target")]
 const PAGE_TABLE_SLOTS: [u64; 3] = [14, 15, COPY_SLOT];
+/// The boot-configured scheduling context's slot, the one slot of the
+/// sixteen no other object or scenario uses.
+#[cfg(feature = "hw_target")]
+const SCHED_CONTEXT_SLOT: u64 = 0;
 
 /// The capability addresses of those slots.
 #[cfg(feature = "hw_target")]
+const ROOT_TCB_CAP: u64 = cap_address(ROOT_TCB_SLOT);
+#[cfg(feature = "hw_target")]
 const CNODE_CAP: u64 = cap_address(CNODE_SLOT);
+#[cfg(feature = "hw_target")]
+const SCHED_CONTEXT_CAP: u64 = cap_address(SCHED_CONTEXT_SLOT);
 #[cfg(feature = "hw_target")]
 const NOTIFICATION_CAP: u64 = cap_address(NOTIFICATION_SLOT);
 #[cfg(feature = "hw_target")]
@@ -1669,6 +1686,22 @@ const fn invocation(name: &'static str, syscall: u64, cptr: u64, msg: [u64; 4]) 
     }
 }
 
+/// The scheduling-context configure: five message words, the fifth (the
+/// domain) read from the root task's IPC buffer, which the kernel's model of
+/// memory holds as zero, so domain 0.
+#[cfg(feature = "hw_target")]
+const fn configure(name: &'static str, cptr: u64, msg: [u64; 4]) -> RoundTrip {
+    RoundTrip {
+        name,
+        syscall: SCHED_CONTEXT_CONFIGURE,
+        cptr,
+        msg_len: 5,
+        msg,
+        primed: None,
+        blocks: false,
+    }
+}
+
 /// The object ids the untyped scenarios carve a frame and three page tables
 /// at: boot-domain ids no boot object holds.
 #[cfg(feature = "hw_target")]
@@ -1691,6 +1724,16 @@ const FRAME_VADDR: u64 = 1 << 39;
 /// Read, write, user and cacheable (`PagePermissions.ofNat`).
 #[cfg(feature = "hw_target")]
 const FRAME_PERMS: u64 = 0b11011;
+/// The scheduling context's budget and period (one tenth of the processor)
+/// and its priority: the partner's, as the TCB scenarios leave it, since a
+/// bind writes the reservation's priority into the bound thread and the
+/// unbind keeps it.
+#[cfg(feature = "hw_target")]
+const SCHED_CONTEXT_BUDGET: u64 = 1_000;
+#[cfg(feature = "hw_target")]
+const SCHED_CONTEXT_PERIOD: u64 = 10_000;
+#[cfg(feature = "hw_target")]
+const PARTNER_PRIORITY: u64 = 255;
 
 /// The capability invocations outside IPC (WS-ZA ZA5.1), each sequence issued
 /// by the root task with the partner suspended, and each leaving the state it
@@ -1705,10 +1748,13 @@ const FRAME_PERMS: u64 = 0b11011;
 ///   task's VSpace, one per level of the walk to the frame's address; a frame
 ///   carved, mapped, its instruction cache unified, named as the partner's IPC
 ///   buffer, unmapped and deleted; the tables taken out deepest first and
-///   deleted; and the untyped reset.
+///   deleted; and the untyped reset.  While the frame is mapped it is also the
+///   root task's IPC buffer, and the image's scheduling context is configured
+///   (its fifth word read from that buffer), bound to the suspended partner
+///   and unbound.
 ///
-/// No scheduling context or service is in the image, so the
-/// scheduling-context binding and the service revoke and query are not issued.
+/// No service is in the image, so the service revoke and query are not
+/// issued.
 #[cfg(feature = "hw_target")]
 const INVOCATION_SCENARIOS: [&[RoundTrip]; 5] = [
     &[
@@ -1764,7 +1810,7 @@ const INVOCATION_SCENARIOS: [&[RoundTrip]; 5] = [
             "tcb-set-priority",
             TCB_SET_PRIORITY,
             PARTNER_TCB_CAP,
-            [255, 0, 0, 0],
+            [PARTNER_PRIORITY, 0, 0, 0],
         ),
         invocation(
             "tcb-set-mc-priority",
@@ -1880,6 +1926,34 @@ const INVOCATION_SCENARIOS: [&[RoundTrip]; 5] = [
             TCB_SET_IPC_BUFFER,
             PARTNER_TCB_CAP,
             [FRAME_VADDR, 0, 0, 0],
+        ),
+        invocation(
+            "root-set-ipc-buffer",
+            TCB_SET_IPC_BUFFER,
+            ROOT_TCB_CAP,
+            [FRAME_VADDR, 0, 0, 0],
+        ),
+        configure(
+            "sched-context-configure",
+            SCHED_CONTEXT_CAP,
+            [
+                SCHED_CONTEXT_BUDGET,
+                SCHED_CONTEXT_PERIOD,
+                PARTNER_PRIORITY,
+                SCHED_CONTEXT_PERIOD,
+            ],
+        ),
+        invocation(
+            "sched-context-bind",
+            SCHED_CONTEXT_BIND,
+            SCHED_CONTEXT_CAP,
+            [PARTNER_TCB_CAP, 0, 0, 0],
+        ),
+        invocation(
+            "sched-context-unbind",
+            SCHED_CONTEXT_UNBIND,
+            SCHED_CONTEXT_CAP,
+            [0; 4],
         ),
         invocation(
             "vspace-unmap",
