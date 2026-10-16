@@ -888,9 +888,6 @@ def cancelBoundDonation (st : SystemState) (tid : SeLe4n.ThreadId)
       { sc with boundThreadCode := 0, isActive := false, donationOrigin := none }
     -- AE3-C/SC-07: Remove SchedContext from replenish queue (consistent with schedContextUnbind)
     let st2 := { st1 with scheduler := st1.scheduler.setReplenishQueueOnCore bootCoreId (ReplenishQueue.remove (st1.scheduler.replenishQueueOnCore bootCoreId) scId) }
-    -- S-05/PERF-O1: Remove thread from per-SchedContext thread index
-    let st2 := { st2 with scThreadIndex :=
-      (scThreadIndexRemove st2.scThreadIndex scId tid) }
     -- Clear TCB binding
     -- AN10-B (DEF-AK7-F.reader.hygiene): typed-helper migration.  The binding
     -- write moves `tid`'s key, so it ends in the key hook (KSC-1), exactly as the

@@ -6488,11 +6488,11 @@ theorem dispatchWithCap_preservation_composition_witness :
     WITH their discharge recipes:
     - `.schedContextBind` → `schedContextBind_preserves_projection` (AK6F.14);
       discharge via `objects_insert_preserves_projection_high` × 2 +
-      `schedContextBind_frame_runQueue_rebucket` + `projectState_scThreadIndex_eq`.
+      `schedContextBind_frame_runQueue_rebucket`.
     - `.schedContextUnbind` → `schedContextUnbind_preserves_projection` (AK6F.15);
       discharge via `projectState_scheduler_current_cleared_when_high` +
       `removeRunnable_preserves_projection` + `objects_insert_preserves_projection_high` × 2 +
-      `projectState_replenishQueue_eq` + `projectState_scThreadIndex_eq`.
+      `projectState_replenishQueue_eq`.
     - `.schedContextConfigure` → `schedContextConfigure_preserves_projection` (AK6F.13);
       discharge via `projectState_replenishQueue_eq` +
       `objects_insert_preserves_projection_high` × 2 +

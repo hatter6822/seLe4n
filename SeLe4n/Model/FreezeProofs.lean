@@ -738,14 +738,7 @@ theorem lookup_freeze_objectIndexSet (ist : IntermediateState) (k : SeLe4n.ObjId
     ist.state.objectIndexSet.table.get? k =
       (freeze ist).objectIndexSet.get? k := by
   exact freezeMap_get?_eq ist.state.objectIndexSet.table k
-    ist.hAllTables.2.2.2.2.2.2.2.2.2.2.2.1.1
-
-/-- S-05/PERF-O1: Lookup equivalence for scThreadIndex across freeze. -/
-theorem lookup_freeze_scThreadIndex (ist : IntermediateState) (k : SeLe4n.SchedContextId) :
-    ist.state.scThreadIndex.get? k =
-      (freeze ist).scThreadIndex.get? k := by
-  exact freezeMap_get?_eq ist.state.scThreadIndex k
-    ist.hAllTables.2.2.2.2.2.2.2.2.2.2.2.2.1
+    ist.hAllTables.2.2.2.2.2.2.2.2.2.2.2.1
 
 -- ============================================================================
 -- AK7-B (F-H02 / HIGH): Lookup-equivalence for scheduler runQueue sub-maps
@@ -1345,7 +1338,7 @@ The conjuncts cover every field of `FrozenSystemState`:
   `freezeObject`), `irqHandlers`, `asidTable`, `serviceRegistry`,
   `interfaceRegistry`, `services`, `cdtChildMap`, `cdtParentMap`,
   `cdtSlotNode`, `cdtNodeSlot`, `objectTypes`,
-  `objectIndexSet`, `scThreadIndex`, plus scheduler sub-maps
+  `objectIndexSet`, plus scheduler sub-maps
   (`byPriority`, `threadPriority`, `membership`).
 - **Bitwise non-map fields:** `machine`, `objectIndex`, `tlb`,
   `cdtNextNode`, `cdtEdges`, `scheduler.{current, activeDomain,
@@ -1389,8 +1382,6 @@ def apiInvariantBundle_frozenDirectFull (fst : FrozenSystemState) : Prop :=
     -- Shadow indices
     (∀ (oid : ObjId),
         sst.objectIndexSet.table.get? oid = fst.objectIndexSet.get? oid) ∧
-    (∀ (scId : SeLe4n.SchedContextId),
-        sst.scThreadIndex.get? scId = fst.scThreadIndex.get? scId) ∧
     -- Scheduler sub-maps
     (∀ (p : SeLe4n.Priority),
         (sst.scheduler.runQueueOnCore bootCoreId).byPriorityTable.get? p = fst.scheduler.byPriority.get? p) ∧
@@ -1455,9 +1446,9 @@ theorem freeze_preserves_direct_invariants_full (ist : IntermediateState)
     (hInv : SeLe4n.Kernel.apiInvariantBundle ist.state) :
     apiInvariantBundle_frozenDirectFull (freeze ist) := by
   refine ⟨ist.state, hInv,
-    ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_,
+    ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_,
     ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_⟩
-  -- Map fields (16)
+  -- Map fields (15)
   · exact fun oid => lookup_freeze_objects ist oid
   · exact fun irq => lookup_freeze_irqHandlers ist irq
   · exact fun asid => lookup_freeze_asidTable ist asid
@@ -1470,7 +1461,6 @@ theorem freeze_preserves_direct_invariants_full (ist : IntermediateState)
   · exact fun k => lookup_freeze_cdtNodeSlot ist k
   · exact fun oid => lookup_freeze_objectTypes ist oid
   · exact fun oid => lookup_freeze_objectIndexSet ist oid
-  · exact fun scId => lookup_freeze_scThreadIndex ist scId
   · exact fun p => lookup_freeze_byPriority ist p (hInv.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2 bootCoreId)
   · exact fun tid => lookup_freeze_threadPriority ist tid (hInv.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2 bootCoreId)
   · exact fun tid => lookup_freeze_membership ist tid (hInv.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2 bootCoreId)

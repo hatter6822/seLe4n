@@ -2763,13 +2763,14 @@ private def runTimeoutEndpointTrace (_counter : IO.Ref Nat) (st1 : SystemState) 
   -- SCO-027: timeoutBlockedThreads — scans and times out matching threads
   -- Build state: tid1 is blockedOnSend with schedContextBinding matching scId 6010
   let scId : SeLe4n.SchedContextId := ⟨6010⟩
-  let sc : SeLe4n.Kernel.SchedContext := SeLe4n.Kernel.SchedContext.empty scId
+  -- The context names its bound thread (seL4's `sc->scTcb`); the timeout pass
+  -- reads it there (WS-ZA ZA5.2 retired the separate context-to-threads index).
+  let sc : SeLe4n.Kernel.SchedContext := { SeLe4n.Kernel.SchedContext.empty scId with
+    boundThreadCode := SeLe4n.ThreadId.optCode (some tid1) }
   let tcb1Bound : TCB := { tcb1 with
     scBindingScCode := SeLe4n.Kernel.SchedContextBinding.scCode (.bound scId), scBindingOwnerCode := 0 }
-  let stBound := { (stQ.withObjectStored scId.toObjId (.schedContext sc)
-        |>.withObjectStored tid1.toObjId (.tcb tcb1Bound)) with
-    -- S-05/PERF-O1: Populate scThreadIndex so timeoutBlockedThreads can find tid1
-    scThreadIndex := scThreadIndexAdd stQ.scThreadIndex scId tid1 }
+  let stBound := stQ.withObjectStored scId.toObjId (.schedContext sc)
+        |>.withObjectStored tid1.toObjId (.tcb tcb1Bound)
   let (stAfterTimeout, timeoutErrs, _timeoutSgis) := SeLe4n.Kernel.timeoutBlockedThreads stBound scId bootCoreId
   -- AG1-B audit: surface diagnostic errors if any
   if !timeoutErrs.isEmpty then
@@ -2918,9 +2919,17 @@ private def runTimeoutEndpointTrace (_counter : IO.Ref Nat) (st1 : SystemState) 
       IO.println s!"[SCO-034] timeoutThread blockedOnCall: ready={stateReady} errCode={timedOutSet}"
     | none => IO.println s!"[SCO-034] timeoutThread blockedOnCall: tcb not found"
 
-  -- SCO-035: timeoutBlockedThreads — multiple threads with same SC all timed out
+  -- SCO-035: timeoutBlockedThreads — two threads blocked on one endpoint, each
+  -- bound to its own context (a context binds at most one thread, seL4's
+  -- `sc->scTcb`): timing out one context times out its thread only.  Until
+  -- WS-ZA ZA5.2 this built two threads bound to one context, a state no
+  -- operation produces, and expected both timed out.
   let scIdMulti : SeLe4n.SchedContextId := ⟨6020⟩
-  let scMulti : SeLe4n.Kernel.SchedContext := SeLe4n.Kernel.SchedContext.empty scIdMulti
+  let scIdOther : SeLe4n.SchedContextId := ⟨6021⟩
+  let scMulti : SeLe4n.Kernel.SchedContext := { SeLe4n.Kernel.SchedContext.empty scIdMulti with
+    boundThreadCode := SeLe4n.ThreadId.optCode (some tid1) }
+  let scOther : SeLe4n.Kernel.SchedContext := { SeLe4n.Kernel.SchedContext.empty scIdOther with
+    boundThreadCode := SeLe4n.ThreadId.optCode (some tid2) }
   let epMulti : Endpoint := (Endpoint.ofQueues { head := some tid1, tail := some tid2 } {})
   let tcbM1 : TCB := (TCB.setIpcState {
     tid := tid1, priority := ⟨50⟩, domain := ⟨0⟩,
@@ -2930,24 +2939,23 @@ private def runTimeoutEndpointTrace (_counter : IO.Ref Nat) (st1 : SystemState) 
   let tcbM2 : TCB := (TCB.setIpcState {
     tid := tid2, priority := ⟨50⟩, domain := ⟨0⟩,
     cspaceRoot := ⟨10⟩, vspaceRoot := ⟨20⟩, ipcBuffer := (SeLe4n.VAddr.ofNat 8192),
-    scBindingScCode := SeLe4n.Kernel.SchedContextBinding.scCode (.bound scIdMulti), scBindingOwnerCode := 0,
+    scBindingScCode := SeLe4n.Kernel.SchedContextBinding.scCode (.bound scIdOther), scBindingOwnerCode := 0,
     queuePrevCode := SeLe4n.ThreadId.optCode (some tid1), queueNextCode := 0, queuePPrevCode := QueuePPrev.optCode (some (.tcbNext tid1)) } (.blockedOnSend epId))
-  let stMulti := { (st1.withObjectStored scIdMulti.toObjId (.schedContext scMulti)
+  let stMulti := st1.withObjectStored scIdMulti.toObjId (.schedContext scMulti)
+        |>.withObjectStored scIdOther.toObjId (.schedContext scOther)
         |>.withObjectStored epId (.endpoint epMulti)
         |>.withObjectStored tid1.toObjId (.tcb tcbM1)
-        |>.withObjectStored tid2.toObjId (.tcb tcbM2)) with
-    -- S-05/PERF-O1: Populate scThreadIndex so timeoutBlockedThreads can find both threads
-    scThreadIndex := scThreadIndexAdd (scThreadIndexAdd st1.scThreadIndex scIdMulti tid1) scIdMulti tid2 }
+        |>.withObjectStored tid2.toObjId (.tcb tcbM2)
   let (stAfterMulti, multiErrs, _multiSgis) := SeLe4n.Kernel.timeoutBlockedThreads stMulti scIdMulti bootCoreId
   if !multiErrs.isEmpty then
     IO.println s!"[SCO-035] DIAGNOSTIC: timeoutBlockedThreads returned {multiErrs.length} error(s)"
   let t1Ready := match stAfterMulti.getTcb? tid1 with
     | some t => t.ipcState == ThreadIpcState.ready
     | none => false
-  let t2Ready := match stAfterMulti.getTcb? tid2 with
-    | some t => t.ipcState == ThreadIpcState.ready
+  let t2Blocked := match stAfterMulti.getTcb? tid2 with
+    | some t => t.ipcState == ThreadIpcState.blockedOnSend epId
     | none => false
-  IO.println s!"[SCO-035] timeoutBlockedThreads multi: tid1_ready={t1Ready} tid2_ready={t2Ready}"
+  IO.println s!"[SCO-035] timeoutBlockedThreads one context: tid1_ready={t1Ready} tid2_still_blocked={t2Blocked}"
 
 -- ============================================================================
 -- Z7: SchedContext Donation / Passive Server trace tests

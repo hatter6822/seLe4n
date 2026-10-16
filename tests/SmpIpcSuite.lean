@@ -4849,7 +4849,7 @@ private def retiredRetypeTcbCleanup (st : SystemState) (tcb : TCB) : Option Syst
   | .ok st1 =>
       let st2 : SystemState := match tcb.schedContextBinding with
         | .bound scId =>
-            { st1 with scThreadIndex := scThreadIndexRemove st1.scThreadIndex scId tcb.tid }
+            st1
         | _ => st1
       some ((cleanupTcbReferences st2 tcb.tid).withObjectStored tcb.tid.toObjId retypeReplacement)
 

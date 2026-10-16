@@ -2919,10 +2919,10 @@ theorem timeoutBlockedThreads_preserves_schedulerInvariantStructuralRegNodup_smp
     (st : SystemState) (scId : SeLe4n.SchedContextId) (execCore : CoreId)
     (hInv : st.objects.invExt)
     (hNotCur : ∀ t c'', st.scheduler.currentOnCore c'' = some t →
-      t ∉ (st.scThreadIndex[scId]?.getD []))
+      t ∉ (schedContextTimeoutThreads st scId))
     (hPre : schedulerInvariantStructuralRegNodup_smp st) :
     schedulerInvariantStructuralRegNodup_smp (timeoutBlockedThreads st scId execCore).1 := by
-  unfold timeoutBlockedThreads
+  rw [timeoutBlockedThreads_eq_fold]; delta timeoutBlockedThreadStep
   suffices H : ∀ (L : List SeLe4n.ThreadId)
       (acc : SystemState × List (SeLe4n.ThreadId × KernelError) × List (CoreId × SgiKind)),
       schedulerInvariantStructuralRegNodup_smp acc.1 →
@@ -2941,7 +2941,7 @@ theorem timeoutBlockedThreads_preserves_schedulerInvariantStructuralRegNodup_smp
               | .error e => (st', errs ++ [(tid, e)], sgis)
             | none => (st', errs, sgis)
           | none => (st', errs, sgis)) acc).1 by
-    refine H (st.scThreadIndex[scId]?.getD []) (st, [], []) hPre hInv (fun _ => rfl) ?_
+    refine H (schedContextTimeoutThreads st scId) (st, [], []) hPre hInv (fun _ => rfl) ?_
     intro t ht c'' hc
     exact hNotCur t c'' hc ht
   intro L
@@ -3330,7 +3330,7 @@ theorem timeoutBlockedThreads_preserves_runQueueSafetyOnCore (st : SystemState)
     (scId : SeLe4n.SchedContextId) (execCore : CoreId) (c : CoreId)
     (hInv : st.objects.invExt) (h : runQueueSafetyOnCore st c) :
     runQueueSafetyOnCore (timeoutBlockedThreads st scId execCore).1 c := by
-  unfold timeoutBlockedThreads
+  rw [timeoutBlockedThreads_eq_fold]; delta timeoutBlockedThreadStep
   suffices H : ∀ (L : List SeLe4n.ThreadId)
       (acc : SystemState × List (SeLe4n.ThreadId × KernelError) × List (CoreId × SgiKind)),
       runQueueSafetyOnCore acc.1 c → acc.1.objects.invExt →
@@ -3346,7 +3346,7 @@ theorem timeoutBlockedThreads_preserves_runQueueSafetyOnCore (st : SystemState)
               | .error e => (st', errs ++ [(tid, e)], sgis)
             | none => (st', errs, sgis)
           | none => (st', errs, sgis)) acc).1 c by
-    exact H (st.scThreadIndex[scId]?.getD []) (st, [], []) h hInv
+    exact H (schedContextTimeoutThreads st scId) (st, [], []) h hInv
   intro L
   induction L with
   | nil => intro acc hP _; exact hP
@@ -3698,7 +3698,7 @@ theorem timeoutBlockedThreads_preserves_allThreadsTimeSlicePositive (st : System
     (scId : SeLe4n.SchedContextId) (execCore : CoreId) (hInv : st.objects.invExt)
     (h : allThreadsTimeSlicePositive st) :
     allThreadsTimeSlicePositive (timeoutBlockedThreads st scId execCore).1 := by
-  unfold timeoutBlockedThreads
+  rw [timeoutBlockedThreads_eq_fold]; delta timeoutBlockedThreadStep
   suffices H : ∀ (L : List SeLe4n.ThreadId)
       (acc : SystemState × List (SeLe4n.ThreadId × KernelError) × List (CoreId × SgiKind)),
       allThreadsTimeSlicePositive acc.1 → acc.1.objects.invExt →
@@ -3714,7 +3714,7 @@ theorem timeoutBlockedThreads_preserves_allThreadsTimeSlicePositive (st : System
               | .error e => (st', errs ++ [(tid, e)], sgis)
             | none => (st', errs, sgis)
           | none => (st', errs, sgis)) acc).1 by
-    exact H (st.scThreadIndex[scId]?.getD []) (st, [], []) h hInv
+    exact H (schedContextTimeoutThreads st scId) (st, [], []) h hInv
   intro L
   induction L with
   | nil => intro acc hP _; exact hP

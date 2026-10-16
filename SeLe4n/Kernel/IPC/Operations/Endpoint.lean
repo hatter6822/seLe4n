@@ -2440,27 +2440,20 @@ def donateSchedContext
                   match storeObject serverTid.toObjId (.tcb serverTcb') st3 with
                   | .error e => .error e
                   | .ok ((), st4) =>
-                    -- S-05/PERF-O1 + F-3: the SchedContext's referencing threads
-                    -- change from {donor} to {server}: add the server and remove
-                    -- the now-`.unbound` donor.  This keeps
-                    -- `scThreadIndexConsistent` (a thread is indexed under
-                    -- `scId` iff its binding references `scId`) and
-                    -- `timeoutBlockedThreads` accurate — only the server (which
-                    -- actually runs on the SchedContext) is iterated on budget
-                    -- exhaustion, never the descheduled donor.
+                    -- The context's `boundThread` now names the server (seL4's
+                    -- `sc->scTcb`), so `timeoutBlockedThreads` reaches only the
+                    -- server, which runs on the context, never the descheduled
+                    -- donor.
                     --
                     -- The reschedule-SGI accumulator (KSC-1): both bindings moved,
                     -- so both threads' effective deadlines may have; each one's key
                     -- is read on the pre-state and every core it stales is flagged.
                     .ok (markKeyChangeFrom st (markKeyChangeFrom st
-                      { st4 with scThreadIndex :=
-                        (scThreadIndexRemove
-                          (scThreadIndexAdd st4.scThreadIndex clientScId serverTid)
-                          clientScId clientTid) } clientTid) serverTid)
+                      st4 clientTid) serverTid)
   | none => .error .objectNotFound
 
 /-- WS-OD OD4.1: **the donation push *is* four store steps followed by a
-`scThreadIndex` update** — three `storeObject`s and one `storeDonationFramePush`
+reschedule-flag update** — three `storeObject`s and one `storeDonationFramePush`
 (itself one or two Reply stores, `storeDonationFramePush_cases`).
 
 The mirror of `returnDonatedSchedContext_ok_storeChain`, and the only description
@@ -2469,7 +2462,7 @@ object-store fact about `donateSchedContext` is a corollary of this one
 decomposition rather than a fresh case analysis over the chain.  Stated as a
 **complete** decomposition — the SchedContext read and its `boundThread` guard,
 the donor's TCB read, the resolved push frame, the four objects actually stored,
-and `st' = { s4 with scThreadIndex := st'.scThreadIndex }` for the final step —
+and `st'` as `s4` with only its reschedule-pending flags moved —
 so a field added to `TCB`, `Reply`, `SchedContext` or `SystemState` is covered by
 construction, and an incomplete description cannot license a conclusion the
 operation does not earn.
@@ -2509,8 +2502,7 @@ theorem donateSchedContext_ok_storeChain
         (.tcb { serverTcb with scBindingScCode := SeLe4n.Kernel.SchedContextBinding.scCode (.donated clientScId clientTid), scBindingOwnerCode := SeLe4n.Kernel.SchedContextBinding.ownerCode (.donated clientScId clientTid) })
         s3 = .ok ((), s4) ∧
       st' = { s4 with
-        scheduler := { s4.scheduler with reschedulePending := st'.scheduler.reschedulePending },
-        scThreadIndex := st'.scThreadIndex } := by
+        scheduler := { s4.scheduler with reschedulePending := st'.scheduler.reschedulePending } } := by
   unfold donateSchedContext at h
   revert h
   cases hObj : st.getSchedContext? clientScId with
@@ -3129,8 +3121,7 @@ is what keeps it from being re-derived by a two-way case split at each site. -/
 `.bound scId` and `.donated scId outer` differ in whether the target is itself a
 donor, never in *which* context it holds — so every consumer that only asks
 "which scheduling context does this thread reference" is insensitive to the
-stack depth, and `scThreadIndexConsistent` in particular is unchanged by the
-widening. -/
+stack depth. -/
 @[simp] theorem donationReturnBinding_scId? (scId : SeLe4n.SchedContextId)
     (newOwner? : Option SeLe4n.ThreadId) :
     (donationReturnBinding scId newOwner?).scId? = some scId := by
@@ -6784,10 +6775,9 @@ def returnDonatedSchedContext
                 match storeObject serverTid.toObjId (.tcb serverTcb') st3 with
                 | .error e => .error e
                 | .ok ((), st4) =>
-                  -- S-05/PERF-O1 + F-3: the SchedContext's referencing threads change
-                  -- from {server} back to {originalOwner}: remove the server and re-add the
-                  -- now-bound-or-donating donor (the inverse of `donateSchedContext`'s
-                  -- index update), keeping `scThreadIndexConsistent`.
+                  -- The context's `boundThread` names the original owner again
+                  -- (written with the context above), the inverse of
+                  -- `donateSchedContext`'s rebinding.
                   --
                   -- The reschedule-SGI accumulator (KSC-1): both bindings moved, so
                   -- both threads' effective deadlines may have -- the recipient's
@@ -6795,10 +6785,7 @@ def returnDonatedSchedContext
                   -- queued or running anywhere.  Each key is read on the pre-state
                   -- and every core it stales is flagged.
                   .ok (markKeyChangeFrom st (markKeyChangeFrom st
-                    { st4 with scThreadIndex :=
-                      (scThreadIndexAdd
-                        (scThreadIndexRemove st4.scThreadIndex scId serverTid)
-                        scId originalOwner) } originalOwner) serverTid)
+                    st4 originalOwner) serverTid)
   | none => .error .objectNotFound
 
 
@@ -7564,7 +7551,7 @@ private theorem storeObject_scheduler_eq_z7 (st : SystemState) (oid : SeLe4n.Obj
   unfold storeObject at h; cases h; rfl
 
 /-- **WS-RR RR7.22 (residual, remediation)**: the donation return **is** three
-`storeObject`s followed by a `scThreadIndex` update.
+`storeObject`s followed by the reschedule-flag update.
 
 The one derivation every field frame for this operation is a corollary of.  Three
 copies of its case analysis had accumulated — the scheduler frame here, the
@@ -7574,7 +7561,8 @@ in three places; they are now three-line consequences of this, and a fourth fiel
 frame is three more lines rather than a fourth copy.
 
 It is stated as a **complete** decomposition — the SchedContext read, the three
-objects actually stored, and `st' = { s3 with scThreadIndex := st'.scThreadIndex }`
+objects actually stored, and `st'` as the last stored state with only its
+reschedule-pending flags moved
 for the final step — rather than as a list of properties that happen to hold, so
 every consequence (which fields of a TCB move, which objects survive, which state
 fields agree) is a corollary rather than a fresh case analysis, and a field added
@@ -7613,8 +7601,7 @@ theorem returnDonatedSchedContext_ok_storeChain
       storeObject serverTid.toObjId
         (.tcb { serverTcb with scBindingScCode := 0, scBindingOwnerCode := 0 }) s3 = .ok ((), s4) ∧
       st' = { s4 with
-        scheduler := { s4.scheduler with reschedulePending := st'.scheduler.reschedulePending },
-        scThreadIndex := st'.scThreadIndex } := by
+        scheduler := { s4.scheduler with reschedulePending := st'.scheduler.reschedulePending } } := by
   unfold returnDonatedSchedContext SystemState.getSchedContext? at h
   revert h
   cases hObj : st.objects[scId.toObjId]? with
@@ -7831,7 +7818,7 @@ theorem returnDonatedSchedContext_rejects_bound_recipient
 store for store.**
 
 The right-hand side is the pre-OD3 body verbatim — three `storeObject`s and the
-`scThreadIndex` update, with the donor rebound `.bound` — written out *here*,
+reschedule-flag update, with the donor rebound `.bound` — written out *here*,
 where the elaborator checks it against the live definition, rather than retained
 as a second live definition the two could drift apart in.
 
@@ -7887,10 +7874,7 @@ theorem returnDonatedSchedContext_eq_legacy_of_none
                  | .error e => .error e
                  | .ok ((), st3) =>
                    .ok (markKeyChangeFrom st (markKeyChangeFrom st
-                     { st3 with scThreadIndex :=
-                       (scThreadIndexAdd
-                         (scThreadIndexRemove st3.scThreadIndex scId serverTid)
-                         scId originalOwner) } originalOwner) serverTid)) := by
+                     st3 originalOwner) serverTid)) := by
   have hSame : donationReturnSchedContext sc originalOwner
       ((none : Option (SeLe4n.ReplyId × Reply)).bind (fun p => p.2.prev)) none
       = { sc with boundThreadCode := SeLe4n.ThreadId.optCode (some originalOwner) } := by
@@ -8329,7 +8313,7 @@ theorem returnDonatedSchedContext_kindPreservingWrite
     lookupTcb_some_objects s3 serverTid serverTcb hL2
   have hW4 : kindPreservingWrite s3 s4 :=
     storeObject_kindPreservingWrite hInv3 hS4 hPre4 rfl (by simp [KernelObject.objectType])
-  -- The `scThreadIndex` rewrite that closes the chain touches no object.
+  -- The reschedule-flag write that closes the chain touches no object.
   have hLast : kindPreservingWrite s4 st' :=
     kindPreservingWrite.of_objects_eq (by rw [hEq])
   exact ((((hW1.trans hW2).trans hW3).trans hW4).trans hLast)
@@ -8704,8 +8688,8 @@ theorem returnDonatedSchedContext_serviceRegistry_eq
     storeDonationHeadPop_serviceRegistry_eq hClear,
     storeObject_serviceRegistry_eq st s1 _ _ h1]
 
-/-- WS-SM SM7.B: `returnDonatedSchedContext` only modifies `objects` and
-`scThreadIndex` — the TLB-shootdown state is framed.  Mirrors the proof
+/-- WS-SM SM7.B: `returnDonatedSchedContext` only modifies `objects` and the
+reschedule flags — the TLB-shootdown state is framed.  Mirrors the proof
 structure of `returnDonatedSchedContext_scheduler_eq` (Z7-C); a link of
 the `pendingBounded` bundle-carriage chain through the retype cleanup
 pipeline. -/

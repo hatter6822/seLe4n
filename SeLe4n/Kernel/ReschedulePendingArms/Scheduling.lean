@@ -786,7 +786,6 @@ theorem schedContextBind_stepCovers (st st' : SystemState) (vScId : SeLe4n.Valid
               (fun t h => by rw [hScRaw] at h; cases h) (fun t h => by cases h))
         refine ⟨stepCovers_markKeyChangeFor hT (hK2.trans_offRunLinks ?_ ?_) ?_ ?_, ?_⟩
         · intro x
-          dsimp only []
           split
           · exact SystemState.runRequeueOnCore_objectsAgreeOffRunLinks _ _ _ _ x
           · split
@@ -799,7 +798,6 @@ theorem schedContextBind_stepCovers (st st' : SystemState) (vScId : SeLe4n.Valid
             (by simp only [SystemState.updateTcb_scheduler, SystemState.rewriteObject_scheduler])
             (bindQueueStage_slots _ _ _ _ _ c)
         · intro c _ hF
-          dsimp only []
           split
           · rename_i hMem
             obtain ⟨_, _, hFl⟩ := runRequeue_slots _ _ c _ _ hMem
@@ -810,7 +808,6 @@ theorem schedContextBind_stepCovers (st st' : SystemState) (vScId : SeLe4n.Valid
                 (by simp only [SystemState.updateTcb_scheduler, SystemState.rewriteObject_scheduler]; exact hF)
             · simp only [SystemState.updateTcb_scheduler, SystemState.rewriteObject_scheduler]; exact hF
         · rw [markKeyChangeFor_objects]
-          dsimp only []
           split
           · exact SystemState.runRequeueOnCore_objects_invExt _ _ _ _ hInv2
           · split
@@ -924,20 +921,19 @@ theorem unbindQueueStage_flag_mono (S : SystemState) (home : CoreId) (tid : SeLe
     · exact runEnqueueMark_flag_mono S home c tid p hF
     · exact hF
 
-/-- The unbind's stage, purge and index write flag their core or keep every core's
-slots against the stage's input. -/
+/-- The unbind's stage and purge flag their core or keep every core's slots
+against the stage's input. -/
 theorem unbindTailStage_slots (S : SystemState) (home : CoreId) (tid : SeLe4n.ThreadId)
-    (p : SeLe4n.Priority) (wasCurrent : Bool) (scId : SchedContextId)
-    (idx : SeLe4n.Kernel.RobinHood.RHTable SchedContextId (List SeLe4n.ThreadId)) (c : CoreId) :
-    ({ SchedContextOps.purgeReplenishmentOnCore
-        (SchedContextOps.schedContextUnbindQueueStage S home tid p wasCurrent) home scId with
-        scThreadIndex := idx } : SystemState).scheduler.reschedulePendingOnCore c = true ∨
-    ((∀ t, ({ SchedContextOps.purgeReplenishmentOnCore
-        (SchedContextOps.schedContextUnbindQueueStage S home tid p wasCurrent) home scId with
-        scThreadIndex := idx } : SystemState).queuedOn c t = true → S.queuedOn c t = true) ∧
-      ({ SchedContextOps.purgeReplenishmentOnCore
-        (SchedContextOps.schedContextUnbindQueueStage S home tid p wasCurrent) home scId with
-        scThreadIndex := idx } : SystemState).scheduler.currentOnCore c = S.scheduler.currentOnCore c) := by
+    (p : SeLe4n.Priority) (wasCurrent : Bool) (scId : SchedContextId) (c : CoreId) :
+    (SchedContextOps.purgeReplenishmentOnCore
+        (SchedContextOps.schedContextUnbindQueueStage S home tid p wasCurrent) home scId
+        ).scheduler.reschedulePendingOnCore c = true ∨
+    ((∀ t, (SchedContextOps.purgeReplenishmentOnCore
+        (SchedContextOps.schedContextUnbindQueueStage S home tid p wasCurrent) home scId
+        ).queuedOn c t = true → S.queuedOn c t = true) ∧
+      (SchedContextOps.purgeReplenishmentOnCore
+        (SchedContextOps.schedContextUnbindQueueStage S home tid p wasCurrent) home scId
+        ).scheduler.currentOnCore c = S.scheduler.currentOnCore c) := by
   have h := unbindQueueStage_slots S home tid p wasCurrent c
   simp only [SchedContextOps.purgeReplenishmentOnCore_currentOnCore,
     SchedContextOps.purgeReplenishmentOnCore_reschedulePendingOnCore]
@@ -956,19 +952,12 @@ theorem unbindTail_stepCovers (e : CoreId) (st1 : SystemState) (vScId : SeLe4n.V
     (hAdm : st1.rewriteAdmissible vScId.val (.schedContext
       { sc with boundThreadCode := 0, isActive := false, donationOrigin := none })) :
     stepCovers e st1 (markKeyChangeFor
-      { SchedContextOps.purgeReplenishmentOnCore
+      (SchedContextOps.purgeReplenishmentOnCore
           (SchedContextOps.schedContextUnbindQueueStage
             ((st1.rewriteObject vScId.val _ hAdm).updateTcb tid fun t =>
               { t with scBindingScCode := 0, scBindingOwnerCode := 0 })
             home tid prio wasCurrent)
-          home ⟨vScId.val.toNat⟩ with
-        scThreadIndex := scThreadIndexRemove
-          (SchedContextOps.purgeReplenishmentOnCore
-            (SchedContextOps.schedContextUnbindQueueStage
-              ((st1.rewriteObject vScId.val _ hAdm).updateTcb tid fun t =>
-                { t with scBindingScCode := 0, scBindingOwnerCode := 0 })
-              home tid prio wasCurrent)
-            home ⟨vScId.val.toNat⟩).scThreadIndex ⟨vScId.val.toNat⟩ tid }
+          home ⟨vScId.val.toNat⟩)
       tid (effectiveSchedParams st1 tcb)) := by
   have hK1 : keyInputsEq st1 (st1.rewriteObject vScId.val _ hAdm) :=
     keyInputsEq_rewriteObject hAdm hInv (by rw [hSc]; rfl)
@@ -995,7 +984,7 @@ theorem unbindTail_stepCovers (e : CoreId) (st1 : SystemState) (vScId : SeLe4n.V
     (fun c _ => ?_) (fun c _ hF => ?_)
   · exact slots_bridge hA2
       (by simp only [SystemState.updateTcb_scheduler, SystemState.rewriteObject_scheduler])
-      (unbindTailStage_slots _ _ _ _ _ _ _ c)
+      (unbindTailStage_slots _ _ _ _ _ _ c)
   · simp only [SchedContextOps.purgeReplenishmentOnCore_reschedulePendingOnCore]
     exact unbindQueueStage_flag_mono _ _ _ _ _ c
       (by simp only [SystemState.updateTcb_scheduler, SystemState.rewriteObject_scheduler]; exact hF)
@@ -1027,7 +1016,6 @@ theorem schedContextUnbind_stepCovers (st st' : SystemState) (vScId : SeLe4n.Val
             · exact hScRaw
             · exact hT
           · rw [markKeyChangeFor_objects]
-            dsimp only []
             rw [SchedContextOps.purgeReplenishmentOnCore_objects]
             refine SchedContextOps.schedContextUnbindQueueStage_objects_invExt _ _ _ _ _
               (SystemState.updateTcb_preserves_objects_invExt _ _ _

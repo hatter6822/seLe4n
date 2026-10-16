@@ -193,7 +193,6 @@ open SeLe4n.Kernel.Concurrency (CoreId bootCoreId allCores)
 #check @onCore_setRegsOnCore_ne
 #check @onCore_setReplenishQueueOnCore
 #check @onCore_setLastTimeoutErrorsOnCore
-#check @onCore_scThreadIndex
 #check @onCore_machineTimer
 #check @onCore_perCoreTlb
 #check @onCore_perCoreICache

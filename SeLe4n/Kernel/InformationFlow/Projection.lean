@@ -969,15 +969,6 @@ noncomputable def projectState (ctx : LabelingContext) (observer : IfObserver) (
     serviceRegistry := projectServiceRegistry ctx observer st
   }
 
-/-- S-05/PERF-O1: Modifying `scThreadIndex` does not affect `projectState`.
-The `scThreadIndex` field is a kernel-internal performance index not included
-in the observable state projection, so any update to it is invisible to
-information-flow analysis. -/
-theorem projectState_scThreadIndex_eq (ctx : LabelingContext) (observer : IfObserver)
-    (st : SystemState) (idx : SeLe4n.Kernel.RobinHood.RHTable SeLe4n.SchedContextId (List SeLe4n.ThreadId)) :
-    projectState ctx observer { st with scThreadIndex := idx } =
-    projectState ctx observer st := by rfl
-
 /-- AK6-F.2a: Modifying `scheduler.replenishQueue` does not affect
 `projectState`. The CBS replenishment queue is a scheduler-internal
 ordering structure NOT included in the observable state projection, so

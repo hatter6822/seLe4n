@@ -372,7 +372,6 @@ theorem releaseSchedContextBinding_replenishQueueOnCore_ne (st : SystemState)
           dsimp only
           simp only [List.mem_singleton] at hne
           rw [markKeyChangeFor_replenishQueueOnCore]
-          dsimp only
           rw [SchedContextOps.purgeReplenishmentOnCore_replenishQueueOnCore_ne _ _ _ _
             (fun hc => hne hc.symm), SystemState.updateTcb_scheduler]
 

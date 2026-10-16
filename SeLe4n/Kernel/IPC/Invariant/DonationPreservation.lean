@@ -1363,7 +1363,7 @@ theorem donateSchedContext_preserves_objects_invExt
 
 /-- **WS-RR RR8.16** (`v0.35.200`): the donation push is a `kindPreservingWrite`
 — a SchedContext for a SchedContext, the frame push's Reply writes, then two
-TCBs for two TCBs, with the closing `scThreadIndex` rewrite touching no object.
+TCBs for two TCBs, with the closing reschedule-flag write touching no object.
 
 The `.call` chain's counterpart of `returnDonatedSchedContext_kindPreservingWrite`,
 composed by `.trans` off the same `_ok_storeChain` its `invExt` proof runs, so
@@ -3666,7 +3666,7 @@ is preserved by every kernel transition and `ipcReachable` carries it rather tha
 assuming it.
 
 The push's last two stores rewrite two TCBs' `schedContextBinding` and the
-closing step refreshes `scThreadIndex`; none of the three is chain data, so they
+closing step writes the reschedule flags; none of the three is chain data, so they
 compose through `donationChainFrame` exactly as the pop's do. -/
 theorem donateSchedContext_preserves_donationChainWellFormed
     (st st' : SystemState) (clientTid serverTid : SeLe4n.ThreadId)

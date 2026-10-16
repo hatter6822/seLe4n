@@ -1061,12 +1061,6 @@ theorem CurrentPlacementFrame.rewriteObject_tcb (c : CoreId) {st : SystemState}
   · rw [rewriteObject_getTcb?_ne _ _ _ h hInv y
       (fun e => hyt (SeLe4n.ThreadId.toObjId_injective _ _ e).symm)]
 
-/-- A write of the SchedContext thread index alone. -/
-theorem CurrentPlacementFrame.withScThreadIndex (s : SystemState)
-    (x : RobinHood.RHTable SeLe4n.SchedContextId (List SeLe4n.ThreadId)) (c : CoreId) :
-    CurrentPlacementFrame c s { s with scThreadIndex := x } :=
-  CurrentPlacementFrame.of_frame rfl rfl
-
 /-- A typed TCB read-modify-write keeping the run-queue core, with the scheduler
 untouched. -/
 theorem CurrentPlacementFrame.updateTcb (c : CoreId) (st : SystemState) (tid : SeLe4n.ThreadId)
@@ -2911,12 +2905,6 @@ theorem RunQueueStage.of_frame_vacate {st st' : SystemState} (hO : st'.objects =
     hC (fun c t h' => by
       rw [queuedOn_eq_runLinkOn, runLinkOn_of_objects hO, ← queuedOn_eq_runLinkOn] at h'
       exact h') (StateMono.of_objects hO)
-
-/-- A write of the SchedContext thread index alone. -/
-theorem RunQueueStage.withScThreadIndex (s : SystemState)
-    (x : RobinHood.RHTable SeLe4n.SchedContextId (List SeLe4n.ThreadId)) :
-    RunQueueStage s { s with scThreadIndex := x } :=
-  RunQueueStage.of_frame rfl rfl rfl
 
 /-- A TCB write that keeps the run-queue fields keeps the link agreement. -/
 theorem RunQueueLinkStage.updateTcb (st : SystemState) (tid : SeLe4n.ThreadId) {f : TCB → TCB}

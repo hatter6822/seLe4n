@@ -71,10 +71,11 @@ open SeLe4n.Kernel.Architecture.IpcBufferRead
 
 /-- The distinct pages a decode reading `overflowCount` overflow slots walks.
 
-    Distinct, because `tlbInsertOnCore` prepends without deduplicating and a
-    TLB caches one entry per page: the 116 slots of a page-aligned buffer all
-    live on one page, and filling per-slot would stack 116 copies of a single
-    translation into the modelled view. -/
+    Distinct, because a TLB caches one entry per page: the 116 slots of a
+    page-aligned buffer all live on one page, so the walk visits it once.
+    (`tlbInsertOnCore` also refuses to cache a translation twice, since WS-ZA
+    ZA5.2; the distinct list keeps the walk from re-checking one page per
+    slot.) -/
 def ipcBufferOverflowPages (ipcBuffer : VAddr) (overflowCount : Nat) :
     List VAddr :=
   ((List.range overflowCount).map (ipcBufferSlotPage ipcBuffer)).eraseDups
@@ -212,7 +213,7 @@ theorem tlbFillIpcBufferOnCore_scheduler
       simp only [List.foldl_cons]
       rw [ih]
       unfold tlbFillOnCore
-      cases tlbWalkEntry st plan.1 page <;> rfl
+      cases tlbWalkEntry st plan.1 page <;> simp
 
 /-- The fold leaves every other core's view untouched. -/
 private theorem foldl_tlbFillOnCore_tlbOnCore_ne
@@ -280,7 +281,7 @@ theorem tlbFillIpcBufferOnCore_preserves_tlbInvalidationConsistent_perCore
 -- SM7.F.5 — the fill caches what the read walked
 -- ============================================================================
 
-/-- A fill only ever prepends, so an entry already cached stays cached. -/
+/-- A fill only ever adds, so an entry already cached stays cached. -/
 private theorem tlbFillOnCore_entries_mono
     (st : SystemState) (c : CoreId) (asid : SeLe4n.ASID) (vaddr : VAddr)
     {e : TlbEntry} (h : e ∈ (tlbOnCore st c).entries) :
@@ -288,10 +289,7 @@ private theorem tlbFillOnCore_entries_mono
   unfold tlbFillOnCore
   cases hw : tlbWalkEntry st asid vaddr with
   | none => exact h
-  | some entry =>
-    unfold tlbInsertOnCore
-    simp only [setTlbOnCore_tlbOnCore_self]
-    exact List.mem_cons_of_mem _ h
+  | some entry => exact mem_tlbInsertOnCore_self.mpr (Or.inr h)
 
 private theorem foldl_tlbFillOnCore_entries_mono
     (c : CoreId) (asid : SeLe4n.ASID) :
@@ -330,13 +328,11 @@ private theorem foldl_tlbFillOnCore_mem
     simp only [List.foldl_cons]
     rcases List.mem_cons.mp hMem with rfl | hRest
     · -- the head is the page we care about: this step caches it, and every
-      -- later step only prepends.
+      -- later step only adds.
       refine foldl_tlbFillOnCore_entries_mono c asid rest _ ?_
       unfold tlbFillOnCore
       rw [hWalk]
-      unfold tlbInsertOnCore
-      simp only [setTlbOnCore_tlbOnCore_self]
-      simp
+      exact tlbInsertOnCore_mem _ _ _
     · -- a later page: the walk is unchanged by this step's fill (frame).
       refine ih (tlbFillOnCore st c asid p) hRest ?_
       have hFrame := tlbFillOnCore_frame st c asid p
@@ -421,7 +417,7 @@ private theorem tlbFillOnCore_eq_setPerCoreTlb
   unfold tlbFillOnCore
   cases tlbWalkEntry st asid vaddr with
   | none => exact ⟨st.perCoreTlb, rfl⟩
-  | some entry => exact ⟨_, rfl⟩
+  | some entry => exact tlbInsertOnCore_eq_with st c entry
 
 private theorem foldl_tlbFillOnCore_eq_setPerCoreTlb
     (c : CoreId) (asid : SeLe4n.ASID) :

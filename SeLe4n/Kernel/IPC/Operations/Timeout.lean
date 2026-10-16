@@ -570,7 +570,7 @@ def timeoutThread
     caller has witnessed that (i) an endpoint exists at `endpointId`, and
     (ii) a TCB exists at `tid.toObjId` (non-reserved `tid`). These
     preconditions are established by `timeoutBlockedThreads`'s outer
-    guards (`st.scThreadIndex[scId]?` lookup + `tcbBlockingInfo` +
+    guards (the context's `boundThread` read + `tcbBlockingInfo` +
     endpoint-member derivation from `tcb.ipcState`).
 
     This formally closes the gap between `endpointQueueRemove`'s

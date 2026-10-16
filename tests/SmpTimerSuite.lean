@@ -844,8 +844,7 @@ private def mkTimeoutWakeState (aff : Option CoreId) : SystemState :=
         scW.toObjId (.schedContext scObj)).withObject
         epW (.endpoint epObj)).build
   { stBase with
-    scheduler := stBase.scheduler.setCurrentOnCore core1 (some tidCur),
-    scThreadIndex := scThreadIndexAdd stBase.scThreadIndex scW tidW }
+    scheduler := stBase.scheduler.setCurrentOnCore core1 (some tidCur) }
 
 /-- §3.14 (PR #880 round 8 — affinity-aware budget-timeout wakes): a thread
 whose budget-bounded IPC times out on a secondary core's tick wakes onto its

@@ -594,8 +594,6 @@ def cancelBoundDonationOnCore (st : SystemState) (tid : SeLe4n.ThreadId)
       -- `_bootCoreId` bridge is `rfl`, so the two cannot differ by a field.
       { sc with boundThreadCode := 0, isActive := false, donationOrigin := none }
     let st2 := { st1 with scheduler := st1.scheduler.setReplenishQueueOnCore rqCore (ReplenishQueue.remove (st1.scheduler.replenishQueueOnCore rqCore) scId) }
-    let st2 := { st2 with scThreadIndex :=
-      (scThreadIndexRemove st2.scThreadIndex scId tid) }
     -- The binding write moves `tid`'s key (its deadline is no longer the
     -- context's), so it ends in the key hook (KSC-1), as the donation writers do.
     .ok (markKeyChangeFrom st
@@ -887,7 +885,7 @@ retype does not leave a thread bound to a destroyed object.**
 reply stack (`scReply.isSome`) and nothing else, so a context **bound** to a
 thread passed: the retype then left that thread `.bound scId` (or `.donated scId
 owner`, which is the binding a donee holds) naming an object the slot no longer
-carries, its `scThreadIndex` entry in place, and `scId`'s replenish entries
+carries, and `scId`'s replenish entries
 queued on that thread's home core under an id the slot's next occupant inherits.
 seL4's `finaliseCap` runs `schedContext_unbindAllTCBs` on a scheduling-context
 capability; this is that, per core.
@@ -896,7 +894,7 @@ capability; this is that, per core.
 primitives in the same order** (`SchedContext/Operations.lean` — this module
 imports it for exactly that reason): the bound thread's binding cleared through
 `updateTcb`, `scId`'s replenishments purged with `purgeReplenishmentOnCore` on
-that thread's home core, and the `scThreadIndex` entry removed.  What it does
+that thread's home core.  What it does
 **not** do is rewrite the SchedContext record — the retype replaces the object
 outright — or touch the scheduler's run queues and current slots, which is what
 keeps the arm's write set empty and the destroy path's confinement result
@@ -924,11 +922,11 @@ def releaseSchedContextBinding (st : SystemState) (scId : SeLe4n.SchedContextId)
       -- The reschedule-SGI accumulator (KSC-1): the bound thread's deadline
       -- reverts from the destroyed reservation's to its own, so a queued or
       -- current thread's core is flagged exactly when that key changed.
-      markKeyChangeFor { st2 with scThreadIndex := scThreadIndexRemove st2.scThreadIndex scId tid }
+      markKeyChangeFor st2
         tid (effectiveSchedParams st tcb)
     | none =>
       let st1 := SchedContextOps.purgeReplenishmentFromAllCores st scId
-      { st1 with scThreadIndex := scThreadIndexRemove st1.scThreadIndex scId tid }
+      st1
 
 /-- `v0.35.165`: a context bound to nothing has no binding to release. -/
 @[simp] theorem releaseSchedContextBinding_of_unbound (st : SystemState)
@@ -946,7 +944,7 @@ theorem releaseSchedContextBinding_of_bound (st : SystemState)
       (let st1 := st.updateTcb tid fun t =>
         { t with scBindingScCode := 0, scBindingOwnerCode := 0 }
        let st2 := SchedContextOps.purgeReplenishmentOnCore st1 (determineTargetCore st tid) scId
-       markKeyChangeFor { st2 with scThreadIndex := scThreadIndexRemove st2.scThreadIndex scId tid }
+       markKeyChangeFor st2
          tid (effectiveSchedParams st tcb)) := by
   simp only [releaseSchedContextBinding, hBound, hTcb]
 
@@ -958,15 +956,14 @@ theorem releaseSchedContextBinding_of_missing_tcb (st : SystemState)
     (hBound : sc.boundThread = some tid) (hTcb : st.getTcb? tid = none) :
     releaseSchedContextBinding st scId sc =
       (let st1 := SchedContextOps.purgeReplenishmentFromAllCores st scId
-       { st1 with scThreadIndex := scThreadIndexRemove st1.scThreadIndex scId tid }) := by
+       st1) := by
   simp only [releaseSchedContextBinding, hBound, hTcb]
 
 /-! ### Frames
 
 The release writes one TCB's `schedContextBinding`, one core's replenish queue
-(or every core's, on the TCB-absent arm) and the `scThreadIndex` — and nothing
-else.  A replenish queue is not one of the six `observableSlotsConfinedToCores`
-slots and neither is the index, so **every** per-core observable is the
+(or every core's, on the TCB-absent arm) — and nothing else.  A replenish
+queue is not one of the six `observableSlotsConfinedToCores` slots, so **every** per-core observable is the
 pre-state's, which is what keeps the destroy path's write set empty across this
 arm.  Stated as `@[simp]` frames on the release rather than left to unfold at
 each use site, for the reason the purges' own frames give. -/

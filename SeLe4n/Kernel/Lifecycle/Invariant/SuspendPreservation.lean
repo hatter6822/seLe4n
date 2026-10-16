@@ -895,8 +895,8 @@ private theorem cleanupDonatedSchedContext_serviceRegistry_eq
           (fun n s hs => returnDonatedSchedContext_serviceRegistry_eq st s tid _ _ n hs)
 
 /-- D1-I/R5.A: `cancelBoundDonation` preserves serviceRegistry. The bound
-arm only rewrites `objects`, `scheduler.replenishQueue`, and
-`scThreadIndex` — none of which is `serviceRegistry`. -/
+arm only rewrites `objects` and `scheduler` (the replenish queue and the
+reschedule flags) — neither of which is `serviceRegistry`. -/
 theorem cancelBoundDonation_serviceRegistry_eq
     (st st' : SystemState) (tid : SeLe4n.ThreadId) (tcb : TCB)
     (h : cancelBoundDonation st tid tcb = .ok st') :
@@ -1969,8 +1969,7 @@ theorem cancelIpcBlocking_getTcb?_none
 
 /-- WS-SM SM6.E: `cancelBoundDonation` preserves `objects.invExt` — the bound
 arm's object writes are the SchedContext deactivation insert and the TCB
-unbind insert (the replenish-queue and `scThreadIndex` edits do not touch
-`objects`). -/
+unbind insert (the replenish-queue edit does not touch `objects`). -/
 theorem cancelBoundDonation_preserves_objects_invExt
     (st st' : SystemState) (tid : SeLe4n.ThreadId) (tcb : TCB)
     (hInv : st.objects.invExt)
@@ -2115,8 +2114,7 @@ theorem cancelIpcBlocking_preserves_ipcInvariant
 
 /-- WS-SM SM6.E: `cancelBoundDonation` preserves `ipcInvariant` — the bound
 arm's object writes are the SchedContext deactivation insert and the TCB
-unbind insert; the replenish-queue and `scThreadIndex` edits do not touch
-the object store. -/
+unbind insert; the replenish-queue edit does not touch the object store. -/
 theorem cancelBoundDonation_preserves_ipcInvariant
     (st st' : SystemState) (tid : SeLe4n.ThreadId) (tcb : TCB)
     (hInv : st.objects.invExt) (hIpc : ipcInvariant st)

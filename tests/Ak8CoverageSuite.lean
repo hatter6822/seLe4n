@@ -200,7 +200,6 @@ private def emptyFrozenState : FrozenSystemState :=
     machine := default
     objectIndex := []
     objectIndexSet := freezeMap (SeLe4n.Kernel.RobinHood.RHTable.empty 16)
-    scThreadIndex := freezeMap (SeLe4n.Kernel.RobinHood.RHTable.empty 16)
     tlb := TlbState.empty
     perCoreTlb := _root_.Vector.replicate SeLe4n.Kernel.Concurrency.numCores TlbState.empty
     declassificationAuditLog := []

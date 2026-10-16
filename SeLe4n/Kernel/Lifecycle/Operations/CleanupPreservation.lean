@@ -1950,8 +1950,8 @@ def lifecyclePreRetypeCleanup (st : SystemState) (target : SeLe4n.ObjId)
           -- owner's home, an `.unbound` thread is left alone.  Until this
           -- version the arm was the bare `cleanupDonatedSchedContext` — a
           -- return that migrates nothing (register row 57's class, on the
-          -- destroy path) — and a `.bound` thread had only its `scThreadIndex`
-          -- entry removed below, leaving the SchedContext bound to a destroyed
+          -- destroy path) — and a `.bound` thread had only its entry in the
+          -- (since retired) context-to-threads index removed, leaving the SchedContext bound to a destroyed
           -- thread with its replenishment queued on that thread's home core:
           -- `schedContextBindingConsistent` and
           -- `replenishQueueAffinityConsistent_smp` were both false after a
@@ -1960,9 +1960,6 @@ def lifecyclePreRetypeCleanup (st : SystemState) (target : SeLe4n.ObjId)
     | _ => .ok st) with
   | .error e => .error e
   | .ok st =>
-  -- The `scThreadIndex` entry of a `.bound` thread used to be removed here on
-  -- its own (S-05/PERF-O1); `cancelBoundDonationOnCore` removes it as part of
-  -- the unbind, and a `.donated` holder's entry is the return's to move.
   let st := match currentObj with
     | .tcb tcb => cleanupTcbReferences st tcb.tid
     | _ => st
@@ -2080,8 +2077,7 @@ def lifecyclePreRetypeCleanup (st : SystemState) (target : SeLe4n.ObjId)
     -- The head guard above refuses a context frames still name; it says nothing
     -- about the thread the context is bound to, so a retype used to leave that
     -- thread `.bound scId` (or `.donated scId owner`, the binding a donee holds)
-    -- naming an object the slot no longer carries, with its `scThreadIndex`
-    -- entry in place and `scId`'s replenish entries queued on its home core
+    -- naming an object the slot no longer carries, with `scId`'s replenish entries queued on its home core
     -- under an id the slot's next occupant inherits.  seL4's `finaliseCap` runs
     -- `schedContext_unbindAllTCBs` on a scheduling-context capability;
     -- `releaseSchedContextBinding` is that, per core, composed from

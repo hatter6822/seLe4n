@@ -5328,7 +5328,6 @@ theorem schedContextBind_frame_runQueue_rebucket
     - `objects_insert_preserves_projection_high` at high scId (SC update).
     - `objects_insert_preserves_projection_high` at high threadId.toObjId (TCB update).
     - `schedContextBind_frame_runQueue_rebucket` at thread-high threadId.
-    - `projectState_scThreadIndex_eq` (trivial).
     Each phase composes via `Eq.trans`. ≈25 LOC total discharge. -/
 theorem schedContextBind_preserves_projection
     (ctx : LabelingContext) (observer : IfObserver)
@@ -5354,7 +5353,6 @@ theorem schedContextBind_preserves_projection
     - `removeRunnable_preserves_projection` (optional H2 runQueue-remove).
     - `objects_insert_preserves_projection_high` × 2 (SC and TCB updates).
     - `projectState_replenishQueue_eq` (H3 replenQueue-remove).
-    - `projectState_scThreadIndex_eq` (scThreadIndex-remove, trivial).
     Typical discharge: ≈30 LOC. -/
 theorem schedContextUnbind_preserves_projection
     (ctx : LabelingContext) (observer : IfObserver)
@@ -5408,7 +5406,7 @@ theorem lifecycleRetypeDirectWithCleanup_preserves_projection
     Closure form; substantive 3-arm discharge:
     - **`.unbound`** arm: `st' = st` directly. `rfl`.
     - **`.bound scId`** arm: SC unbind via `objects_insert_preserves_projection_high`
-      at high scId + `projectState_replenishQueue_eq` + `projectState_scThreadIndex_eq`.
+      at high scId + `projectState_replenishQueue_eq`.
     - **`.donated scId donor`** arm: uses `returnDonatedSchedContext` which
       internally performs SC insert + donor TCB insert. Requires donor high,
       derivable from the SC invariant `donationOwnerValid` plus the
@@ -5436,7 +5434,7 @@ theorem cancelDonation_preserves_projection
     in-place-unbind arm of the split. Substantive 1-arm discharge:
     `.bound scId` case performs SC unbind via
     `objects_insert_preserves_projection_high` at high scId +
-    `projectState_replenishQueue_eq` + `projectState_scThreadIndex_eq`;
+    `projectState_replenishQueue_eq`;
     wrong-variant inputs error out so no projection obligation arises.
     Typical discharge: ≈30 LOC. -/
 theorem cancelBoundDonation_preserves_projection

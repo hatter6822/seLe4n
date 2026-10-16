@@ -228,10 +228,6 @@ alone — the locality the sweep's subset lemma folds over. -/
     (c : SeLe4n.Kernel.Concurrency.CoreId) (scId : SchedContextId) :
     (purgeReplenishmentOnCore st c scId).serviceRegistry = st.serviceRegistry := rfl
 
-@[simp] theorem purgeReplenishmentOnCore_scThreadIndex (st : SystemState)
-    (c : SeLe4n.Kernel.Concurrency.CoreId) (scId : SchedContextId) :
-    (purgeReplenishmentOnCore st c scId).scThreadIndex = st.scThreadIndex := rfl
-
 @[simp] theorem purgeReplenishmentFromAllCores_tlbShootdown (st : SystemState)
     (scId : SchedContextId) :
     (purgeReplenishmentFromAllCores st scId).tlbShootdown = st.tlbShootdown :=
@@ -246,11 +242,6 @@ alone — the locality the sweep's subset lemma folds over. -/
     (scId : SchedContextId) :
     (purgeReplenishmentFromAllCores st scId).serviceRegistry = st.serviceRegistry :=
   purgeReplenishmentFromAllCores_frame (·.serviceRegistry) scId (fun _ _ => rfl) st
-
-@[simp] theorem purgeReplenishmentFromAllCores_scThreadIndex (st : SystemState)
-    (scId : SchedContextId) :
-    (purgeReplenishmentFromAllCores st scId).scThreadIndex = st.scThreadIndex :=
-  purgeReplenishmentFromAllCores_frame (·.scThreadIndex) scId (fun _ _ => rfl) st
 
 /-- **`v0.35.165`: the sweep only ever REMOVES entries.**  What a consumer needs
 to carry an invariant quantified over the entries a queue *holds*: every entry
@@ -875,14 +866,11 @@ def schedContextBind (vScId : ValidObjId) (vThreadId : ValidThreadId) : Kernel U
               (st2.runEnqueueOnCore bindHome vThreadId.val
                 (resolveInsertPriority st2 vThreadId.val sc)).markReschedulePendingOnCore bindHome
             else st2
-            -- S-05/PERF-O1: Add thread to per-SchedContext thread index
-            let st4 := { st3 with scThreadIndex :=
-              (scThreadIndexAdd st3.scThreadIndex scIdTyped vThreadId.val) }
             -- The reschedule-SGI accumulator (KSC-1): the bind moved the
             -- thread's effective key (its deadline is the reservation's now,
             -- its priority the reservation's); the hook flags a re-bucketed
             -- or current thread's core exactly when that key changed.
-            .ok ((), markKeyChangeFor st4 vThreadId.val (effectiveSchedParams st tcb))
+            .ok ((), markKeyChangeFor st3 vThreadId.val (effectiveSchedParams st tcb))
           | _ => .error .illegalState
         | none => .error .objectNotFound
     | none => .error .objectNotFound
@@ -1148,13 +1136,10 @@ def schedContextUnbind (vScId : ValidObjId) : Kernel Unit :=
           -- queued on its home core with nothing bound to consume it.
           let scIdTyped : SchedContextId := ⟨vScId.val.toNat⟩
           let st4 := purgeReplenishmentOnCore st3q unbindHome scIdTyped
-          -- S-05/PERF-O1: Remove thread from per-SchedContext thread index
-          let st5 := { st4 with scThreadIndex :=
-            (scThreadIndexRemove st4.scThreadIndex scIdTyped tid) }
           -- The reschedule-SGI accumulator (KSC-1): the thread's key is its
           -- legacy one now; a re-bucketed queued thread flags its home exactly
           -- when that differs from the reservation's key.
-          .ok ((), markKeyChangeFor st5 tid (effectiveSchedParams st tcb))
+          .ok ((), markKeyChangeFor st4 tid (effectiveSchedParams st tcb))
         -- Bound thread's TCB not found — clear SC side anyway
         | none =>
           -- **WS-HP HP10.4**: and the origin, for the bind's reason in the other
@@ -1171,11 +1156,7 @@ def schedContextUnbind (vScId : ValidObjId) : Kernel Unit :=
           -- reinstate exactly the boot-pinning being fixed.  Sweep instead, as
           -- the destroy path does for run queues.
           let scIdTyped : SchedContextId := ⟨vScId.val.toNat⟩
-          let st2 := purgeReplenishmentFromAllCores st1 scIdTyped
-          -- S-05/PERF-O1: Remove stale index entry even when TCB is missing
-          let st3 := { st2 with scThreadIndex :=
-            (scThreadIndexRemove st2.scThreadIndex scIdTyped tid) }
-          .ok ((), st3)
+          .ok ((), purgeReplenishmentFromAllCores st1 scIdTyped)
     | none => .error .objectNotFound
 
 -- ============================================================================
@@ -1304,11 +1285,6 @@ private theorem bindWrites_runCoresAgree (st : SystemState) (id : SeLe4n.ObjId)
       (SystemState.rewriteObject_preserves_objects_invExt st id _ pf hInv))
     (fun y => by rw [SystemState.rewriteObject_schedContext_getTcb? st id sc' pf hInv])
 
-/-- The thread index is not a run queue. -/
-private theorem runnableOnSomeCore_withScThreadIndex (s : SystemState) (idx)
-    (tid : SeLe4n.ThreadId) :
-    runnableOnSomeCore { s with scThreadIndex := idx } tid = runnableOnSomeCore s tid := rfl
-
 /-- **Cut B2 (`v0.35.182`): a parked runnable thread the bind admits ends up on a
 run queue.**
 
@@ -1351,8 +1327,7 @@ theorem schedContextBind_places_parked_thread
             · split at h
               · dsimp only at h
                 rw [Except.ok.injEq, Prod.mk.injEq] at h
-                rw [← h.2, markKeyChangeFor_runnableOnSomeCore,
-                  runnableOnSomeCore_withScThreadIndex]
+                rw [← h.2, markKeyChangeFor_runnableOnSomeCore]
                 -- The guard transports from the pre-state: both of the bind's
                 -- writes are object rewrites, so the intermediate state's
                 -- scheduler IS the pre-state's.
@@ -1557,7 +1532,6 @@ theorem schedContextUnbind_runQueueEntryStage (vScId : SeLe4n.ValidObjId) (st st
           refine SystemState.RunQueueEntryStage.of_cond ?_ fun hD =>
             SystemState.RunQueueStage.of_invExt fun hInv => ?_
           · refine SystemState.RunQueueLinkStage.trans ?_ (.of_stage (markKeyChangeFor_runQueueStage _ _ _))
-            refine SystemState.RunQueueLinkStage.trans ?_ (.of_stage (SystemState.RunQueueStage.withScThreadIndex _ _))
             refine SystemState.RunQueueLinkStage.trans (st' := schedContextUnbindQueueStage _ _ _ _ _) ?_
               (.of_stage (SystemState.RunQueueStage.of_frame rfl rfl rfl))
             refine SystemState.RunQueueLinkStage.trans (st' := SystemState.updateTcb _ _ _) ?_
@@ -1599,7 +1573,6 @@ theorem schedContextUnbind_runQueueEntryStage (vScId : SeLe4n.ValidObjId) (st st
                   SchedulerState.setCurrentOnCore_currentOnCore_ne _ _ _ _ hrc] at hc
                 exact hrc ((hD.current c tid hc).2.1 r hCurR)
           refine SystemState.RunQueueStage.trans ?_ (markKeyChangeFor_runQueueStage _ _ _)
-          refine SystemState.RunQueueStage.trans ?_ (SystemState.RunQueueStage.withScThreadIndex _ _)
           refine SystemState.RunQueueStage.trans (st' := schedContextUnbindQueueStage _ _ _ _ _) ?_
             (SystemState.RunQueueStage.of_frame rfl rfl rfl)
           refine SystemState.RunQueueStage.trans (st' := SystemState.updateTcb _ _ _) ?_
@@ -1637,7 +1610,6 @@ theorem schedContextUnbind_runQueueEntryStage (vScId : SeLe4n.ValidObjId) (st st
         have hScRaw := (SystemState.getSchedContext?_eq_some_iff st
           (SchedContextId.ofObjId vScId.val) sc).mp hSc
         refine SystemState.RunQueueStage.entry ?_
-        refine SystemState.RunQueueStage.trans ?_ (SystemState.RunQueueStage.withScThreadIndex _ _)
         refine SystemState.RunQueueStage.trans ?_ (SystemState.RunQueueStage.of_frame
           (purgeReplenishmentFromAllCores_frame (·.objects) _ (fun _ _ => rfl) _)
           (purgeReplenishmentFromAllCores_frame (·.scheduler.runQueue) _ (fun _ _ => rfl) _)
@@ -1671,7 +1643,6 @@ theorem schedContextUnbind_currentPlacementFrame (vScId : SeLe4n.ValidObjId) (st
         · cases hStep
           refine SystemState.CurrentPlacementFrame.trans ?_
             (markKeyChangeFor_currentPlacementFrame _ _ _ c)
-          refine SystemState.CurrentPlacementFrame.trans ?_ (SystemState.CurrentPlacementFrame.withScThreadIndex _ _ c)
           refine SystemState.CurrentPlacementFrame.trans (s2 := schedContextUnbindQueueStage _ _ _ _ _)
             ?_ (SystemState.CurrentPlacementFrame.of_frame rfl
               (purgeReplenishmentOnCore_currentOnCore _ _ _ c))
@@ -1718,7 +1689,6 @@ theorem schedContextUnbind_currentPlacementFrame (vScId : SeLe4n.ValidObjId) (st
           · exact hm
       · dsimp only [] at hStep
         cases hStep
-        refine SystemState.CurrentPlacementFrame.trans ?_ (SystemState.CurrentPlacementFrame.withScThreadIndex _ _ c)
         refine SystemState.CurrentPlacementFrame.trans ?_ (SystemState.CurrentPlacementFrame.of_frame
           (purgeReplenishmentFromAllCores_frame (·.objects) _ (fun _ _ => rfl) _)
           (purgeReplenishmentFromAllCores_currentOnCore _ _ c))

@@ -93,13 +93,6 @@ theorem markReschedulePendingOnCore_preserves_ipcInvariantFull (st : SystemState
     (fun _ => by simp [SystemState.markReschedulePendingOnCore])
     (fun _ => by simp [SystemState.markReschedulePendingOnCore]) h
 
-/-- The scheduling-context thread index is read by no conjunct. -/
-theorem ipcInvariantFull_withScThreadIndex (st : SystemState)
-    (idx : SeLe4n.Kernel.RobinHood.RHTable SeLe4n.SchedContextId (List SeLe4n.ThreadId))
-    (h : ipcInvariantFull st) :
-    ipcInvariantFull { st with scThreadIndex := idx } :=
-  ipcInvariantFull_of_flagOnlyWrite (s1 := st) rfl (fun _ => rfl) (fun _ => rfl) h
-
 /-- The pre-state form of the hook writes a flag or nothing. -/
 theorem markKeyChangeFrom_preserves_ipcInvariantFull (pre st : SystemState)
     (tid : SeLe4n.ThreadId) (h : ipcInvariantFull st) :
@@ -2309,10 +2302,8 @@ theorem schedContextBind_preserves_ipcInvariantFull
               rfl rfl rfl rfl rfl rfl rfl rfl
               (Or.inl ⟨hUnbound, rfl, hFree, rfl, hNotOwner, hNoOther⟩)
               hPassive2
-            -- The key-change hook at the bind's end writes a flag or nothing,
-            -- and the thread index is read by no conjunct.
-            refine markKeyChangeFor_preserves_ipcInvariantFull _ _ _
-              (ipcInvariantFull_withScThreadIndex _ _ ?_)
+            -- The key-change hook at the bind's end writes a flag or nothing.
+            refine markKeyChangeFor_preserves_ipcInvariantFull _ _ _ ?_
             split
             · -- The re-bucket arm: a re-key through the TCB run-queue links
               -- (WS-ZA ZA4.5).
@@ -2955,21 +2946,19 @@ theorem schedContextUnbind_preserves_ipcInvariantFull
                   exact hpre)
           cases hStep
           exact markKeyChangeFor_preserves_ipcInvariantFull _ _ _
-            (ipcInvariantFull_withScThreadIndex _ _
-              (purgeReplenishmentOnCore_preserves_ipcInvariantFull _ _ _
+            (purgeReplenishmentOnCore_preserves_ipcInvariantFull _ _ _
                 (schedContextUnbindQueueStage_preserves_ipcInvariantFull _ _ _ _ _
                   (schedContextUnbindTail_preserves_ipcInvariantFull _ vScId.val tid sc tcb
-                    _ hObjInv hStage hScRaw hTcbRaw hBound hAllowedIpc))))
+                    _ hObjInv hStage hScRaw hTcbRaw hBound hAllowedIpc)))
         | none =>
           rw [hRC] at hStep
           simp only [Option.isSome_none] at hStep
           cases hStep
           exact markKeyChangeFor_preserves_ipcInvariantFull _ _ _
-            (ipcInvariantFull_withScThreadIndex _ _
-              (purgeReplenishmentOnCore_preserves_ipcInvariantFull _ _ _
+            (purgeReplenishmentOnCore_preserves_ipcInvariantFull _ _ _
                 (schedContextUnbindQueueStage_preserves_ipcInvariantFull _ _ _ _ _
                   (schedContextUnbindTail_preserves_ipcInvariantFull _ vScId.val tid sc tcb
-                    _ hObjInv hInv hScRaw hTcbRaw hBound hAllowedIpc))))
+                    _ hObjInv hInv hScRaw hTcbRaw hBound hAllowedIpc)))
       · rename_i hTcbNone
         dsimp only [SystemState.rewriteObject] at hStep
         cases hStep
@@ -3190,7 +3179,7 @@ private theorem tlbFillOnCore_objects_scheduler (st : SystemState) (c : CoreId)
     (Architecture.tlbFillOnCore st c asid vaddr).objects = st.objects ∧
     (Architecture.tlbFillOnCore st c asid vaddr).scheduler = st.scheduler := by
   unfold Architecture.tlbFillOnCore
-  split <;> exact ⟨rfl, rfl⟩
+  split <;> simp
 
 /-- `.vspaceMap` (dispatch arm): the full initiator-atomic per-core wrapper —
 guards, page-table write, local flush, remap shootdown, initiator drain and
@@ -5223,7 +5212,7 @@ private theorem cancelBoundDonationOnCore_preserves_ipcInvariantFull
       have hObjInv1 : (st.objects.insert scId.toObjId
           (KernelObject.schedContext { sc with boundThreadCode := 0, isActive := false, donationOrigin := none })).invExt :=
         RHTable_insert_preserves_invExt _ _ _ hObjInv
-      have hT2 : ({ { { st with objects := st.objects.insert scId.toObjId (KernelObject.schedContext { sc with boundThreadCode := 0, isActive := false, donationOrigin := none }) } with scheduler := ({ st with objects := st.objects.insert scId.toObjId (KernelObject.schedContext { sc with boundThreadCode := 0, isActive := false, donationOrigin := none }) } : SystemState).scheduler.setReplenishQueueOnCore rqCore (ReplenishQueue.remove (({ st with objects := st.objects.insert scId.toObjId (KernelObject.schedContext { sc with boundThreadCode := 0, isActive := false, donationOrigin := none }) } : SystemState).scheduler.replenishQueueOnCore rqCore) scId) } with scThreadIndex := scThreadIndexRemove ({ { st with objects := st.objects.insert scId.toObjId (KernelObject.schedContext { sc with boundThreadCode := 0, isActive := false, donationOrigin := none }) } with scheduler := ({ st with objects := st.objects.insert scId.toObjId (KernelObject.schedContext { sc with boundThreadCode := 0, isActive := false, donationOrigin := none }) } : SystemState).scheduler.setReplenishQueueOnCore rqCore (ReplenishQueue.remove (({ st with objects := st.objects.insert scId.toObjId (KernelObject.schedContext { sc with boundThreadCode := 0, isActive := false, donationOrigin := none }) } : SystemState).scheduler.replenishQueueOnCore rqCore) scId) } : SystemState).scThreadIndex scId tid } : SystemState).getTcb? tid = some tcb := by
+      have hT2 : ({ { st with objects := st.objects.insert scId.toObjId (KernelObject.schedContext { sc with boundThreadCode := 0, isActive := false, donationOrigin := none }) } with scheduler := ({ st with objects := st.objects.insert scId.toObjId (KernelObject.schedContext { sc with boundThreadCode := 0, isActive := false, donationOrigin := none }) } : SystemState).scheduler.setReplenishQueueOnCore rqCore (ReplenishQueue.remove (({ st with objects := st.objects.insert scId.toObjId (KernelObject.schedContext { sc with boundThreadCode := 0, isActive := false, donationOrigin := none }) } : SystemState).scheduler.replenishQueueOnCore rqCore) scId) } : SystemState).getTcb? tid = some tcb := by
         refine (SystemState.getTcb?_eq_some_iff _ tid tcb).mpr ?_
         show (st.objects.insert scId.toObjId (KernelObject.schedContext { sc with boundThreadCode := 0, isActive := false, donationOrigin := none }))[tid.toObjId]? = some (.tcb tcb)
         simp only [RHTable_getElem?_eq_get?]
@@ -5352,7 +5341,7 @@ private theorem cancelBoundDonationOnCore_victim_shape
           have hObjInv1 : (st.objects.insert scId.toObjId
               (KernelObject.schedContext { sc with boundThreadCode := 0, isActive := false, donationOrigin := none })).invExt :=
             RHTable_insert_preserves_invExt _ _ _ hObjInv
-          have hT2 : ({ { { st with objects := st.objects.insert scId.toObjId (KernelObject.schedContext { sc with boundThreadCode := 0, isActive := false, donationOrigin := none }) } with scheduler := ({ st with objects := st.objects.insert scId.toObjId (KernelObject.schedContext { sc with boundThreadCode := 0, isActive := false, donationOrigin := none }) } : SystemState).scheduler.setReplenishQueueOnCore rqCore (ReplenishQueue.remove (({ st with objects := st.objects.insert scId.toObjId (KernelObject.schedContext { sc with boundThreadCode := 0, isActive := false, donationOrigin := none }) } : SystemState).scheduler.replenishQueueOnCore rqCore) scId) } with scThreadIndex := scThreadIndexRemove ({ { st with objects := st.objects.insert scId.toObjId (KernelObject.schedContext { sc with boundThreadCode := 0, isActive := false, donationOrigin := none }) } with scheduler := ({ st with objects := st.objects.insert scId.toObjId (KernelObject.schedContext { sc with boundThreadCode := 0, isActive := false, donationOrigin := none }) } : SystemState).scheduler.setReplenishQueueOnCore rqCore (ReplenishQueue.remove (({ st with objects := st.objects.insert scId.toObjId (KernelObject.schedContext { sc with boundThreadCode := 0, isActive := false, donationOrigin := none }) } : SystemState).scheduler.replenishQueueOnCore rqCore) scId) } : SystemState).scThreadIndex scId tid } : SystemState).getTcb? tid = some tcb := by
+          have hT2 : ({ { st with objects := st.objects.insert scId.toObjId (KernelObject.schedContext { sc with boundThreadCode := 0, isActive := false, donationOrigin := none }) } with scheduler := ({ st with objects := st.objects.insert scId.toObjId (KernelObject.schedContext { sc with boundThreadCode := 0, isActive := false, donationOrigin := none }) } : SystemState).scheduler.setReplenishQueueOnCore rqCore (ReplenishQueue.remove (({ st with objects := st.objects.insert scId.toObjId (KernelObject.schedContext { sc with boundThreadCode := 0, isActive := false, donationOrigin := none }) } : SystemState).scheduler.replenishQueueOnCore rqCore) scId) } : SystemState).getTcb? tid = some tcb := by
             refine (SystemState.getTcb?_eq_some_iff _ tid tcb).mpr ?_
             show (st.objects.insert scId.toObjId (KernelObject.schedContext { sc with boundThreadCode := 0, isActive := false, donationOrigin := none }))[tid.toObjId]? = some (.tcb tcb)
             simp only [RHTable_getElem?_eq_get?]
@@ -5372,7 +5361,7 @@ private theorem cancelBoundDonationOnCore_victim_shape
           exact ⟨rfl, rfl, rfl, rfl, rfl, rfl⟩
       | none =>
           rw [SystemState.updateSchedContext_eq_self_of_none hScLk] at hStep
-          have hT2 : ({ { st with scheduler := st.scheduler.setReplenishQueueOnCore rqCore (ReplenishQueue.remove (st.scheduler.replenishQueueOnCore rqCore) scId) } with scThreadIndex := scThreadIndexRemove ({ st with scheduler := st.scheduler.setReplenishQueueOnCore rqCore (ReplenishQueue.remove (st.scheduler.replenishQueueOnCore rqCore) scId) } : SystemState).scThreadIndex scId tid } : SystemState).getTcb? tid = some tcb := by
+          have hT2 : ({ st with scheduler := st.scheduler.setReplenishQueueOnCore rqCore (ReplenishQueue.remove (st.scheduler.replenishQueueOnCore rqCore) scId) } : SystemState).getTcb? tid = some tcb := by
             refine (SystemState.getTcb?_eq_some_iff _ tid tcb).mpr ?_
             exact hStored
           rw [SystemState.updateTcb_eq_of_some hT2] at hStep

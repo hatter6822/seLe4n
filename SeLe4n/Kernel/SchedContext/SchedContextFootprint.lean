@@ -353,9 +353,8 @@ theorem schedLockSet_schedContextUnbindOnCore_no_replenishQueue_of_unbound
 
 /-- **`v0.35.168`: a `.schedContextBind` writes no replenish queue at all.**
 
-Its four steps are the SchedContext rewrite, the TCB rewrite, an optional
-run-queue re-bucket and a `scThreadIndex` update; none of them moves a
-replenishment.  The exactness half of `schedLockSet_schedContextBindOnCore`'s
+Its steps are the SchedContext rewrite, the TCB rewrite, an optional run-queue
+re-bucket and the reschedule-flag update; none of them moves a replenishment.  The exactness half of `schedLockSet_schedContextBindOnCore`'s
 empty segment. -/
 theorem schedContextBind_replenishQueueOnCore (st st' : SystemState)
     (vScId : SeLe4n.ValidObjId) (vThreadId : SeLe4n.ValidThreadId) (c : CoreId)
@@ -515,7 +514,6 @@ theorem schedContextUnbind_replenishQueueOnCore_ne_of_tcb (st st' : SystemState)
   · exact absurd h (by simp)
   · rw [Except.ok.injEq, Prod.mk.injEq] at h
     rw [← h.2, markKeyChangeFor_replenishQueueOnCore]
-    dsimp only
     rw [SchedContextOps.purgeReplenishmentOnCore_replenishQueueOnCore_ne _ _ _ _ hne.symm,
       SchedContextOps.schedContextUnbindQueueStage_replenishQueueOnCore,
       SystemState.updateTcb_scheduler, SystemState.rewriteObject_scheduler]

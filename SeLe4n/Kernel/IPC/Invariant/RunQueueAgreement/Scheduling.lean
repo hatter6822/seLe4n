@@ -73,7 +73,6 @@ theorem schedContextBind_runQueueStage {vScId : SeLe4n.ValidObjId} {vTid : SeLe4
                 simp only [Except.ok.injEq, Prod.mk.injEq, true_and] at h
                 subst h
                 refine RunQueueStage.trans ?_ (markKeyChangeFor_runQueueStage _ _ _)
-                refine RunQueueStage.trans ?_ (RunQueueStage.withScThreadIndex _ _)
                 split
                 · rename_i hMem
                   refine RunQueueStage.trans ?_ (RunQueueStage.runRequeueOnCore_of_queuedOn _ _ _ _ hMem)
@@ -1034,7 +1033,7 @@ theorem timeoutBlockedThreads_runQueueWindowStage {p : SchedPoint}
     (hp : ∀ c, p ≠ .block c) (st : SystemState) (scId : SeLe4n.SchedContextId)
     (ec : Concurrency.CoreId) :
     SystemState.RunQueueWindowStage p st (timeoutBlockedThreads st scId ec).1 := by
-  unfold timeoutBlockedThreads
+  rw [timeoutBlockedThreads_eq_fold]; delta timeoutBlockedThreadStep
   suffices H : ∀ (l : List SeLe4n.ThreadId)
       (acc : SystemState × List (SeLe4n.ThreadId × KernelError) × List (Concurrency.CoreId × Concurrency.SgiKind)),
       SystemState.RunQueueWindowStage p st acc.1 →

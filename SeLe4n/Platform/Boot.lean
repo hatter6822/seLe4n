@@ -292,8 +292,7 @@ def createBootObject (ist : IntermediateState) (entry : ObjectEntry) : Intermedi
               h.2.2.2.1, h.2.2.2.2.1, h.2.2.2.2.2.1,
               h.2.2.2.2.2.2.1, h.2.2.2.2.2.2.2.1,
               h.2.2.2.2.2.2.2.2.1, h.2.2.2.2.2.2.2.2.2.1,
-              h.2.2.2.2.2.2.2.2.2.2.1, h.2.2.2.2.2.2.2.2.2.2.2.1,
-              h.2.2.2.2.2.2.2.2.2.2.2.2⟩
+              h.2.2.2.2.2.2.2.2.2.2.1, h.2.2.2.2.2.2.2.2.2.2.2⟩
     hPerObjectSlots := fun oid cn hLookup => created.hPerObjectSlots oid cn hLookup
     hPerObjectMappings := fun oid vs hLookup => created.hPerObjectMappings oid vs hLookup
     hLifecycleConsistent := created.hLifecycleConsistent }

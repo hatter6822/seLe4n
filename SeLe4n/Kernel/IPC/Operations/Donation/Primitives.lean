@@ -421,7 +421,7 @@ theorem donateSchedContext_atomicRegion
 
 /-- AG8-G.2: `returnDonatedSchedContext` preserves machine state.
 Symmetric coverage with `donateSchedContext_machine_eq`. The function
-performs 3 sequential `storeObject` calls and an `scThreadIndex` update,
+performs 3 sequential `storeObject` calls and a reschedule-flag update,
 none of which modify the machine state. -/
 theorem returnDonatedSchedContext_machine_eq
     (st st' : SystemState)
@@ -735,7 +735,7 @@ theorem donateSchedContext_getTcb?_map_eq {β : Type} (p : TCB → β)
   have e4 := storeObject_tcbAt_getTcb?_map_eq p s3 s4 serverTid serverTcb
     { serverTcb with scBindingScCode := SeLe4n.Kernel.SchedContextBinding.scCode (.donated clientScId clientTid), scBindingOwnerCode := SeLe4n.Kernel.SchedContextBinding.ownerCode (.donated clientScId clientTid) }
     hRaw2 (hp _ _ _) hInv3 hS4 tid
-  -- The `scThreadIndex` re-keying at the end is not an object write.
+  -- The reschedule-flag write at the end is not an object write.
   rw [hEq]
   show (s4.getTcb? tid).map p = _
   rw [e4, e3, e2, e1]

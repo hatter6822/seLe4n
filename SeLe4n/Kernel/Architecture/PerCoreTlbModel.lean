@@ -147,27 +147,89 @@ theorem setTlbOnCore_comm {c₁ c₂ : CoreId} (h : c₁ ≠ c₂) (st : SystemS
 -- SM7.C.2 — tlbInsertOnCore (models the hardware translation walker)
 -- ============================================================================
 
+/-- **WS-ZA ZA5.2**: whether a view already caches `e` — a walk compared by
+the entries' own decidable equality, with no closure and no value built. -/
+def tlbEntriesHold : List TlbEntry → TlbEntry → Bool
+  | [], _ => false
+  | x :: xs, e => if x = e then true else tlbEntriesHold xs e
+
+theorem tlbEntriesHold_iff (l : List TlbEntry) (e : TlbEntry) :
+    tlbEntriesHold l e = true ↔ e ∈ l := by
+  induction l with
+  | nil => simp [tlbEntriesHold]
+  | cons x xs ih =>
+    unfold tlbEntriesHold
+    by_cases h : x = e
+    · subst h; simp
+    · rw [if_neg h, ih, List.mem_cons]
+      exact ⟨Or.inr, fun hm => hm.elim (fun he => absurd he.symm h) id⟩
+
 /-- **WS-SM SM7.C.2**: the hardware page-table walker's effect — core `c`
 caches a fresh translation `entry` in its own TLB.  Models a TLB fill on
 a walk that resolved `(entry.asid, entry.vaddr)`; the entry is prepended
-to core `c`'s view (associative-cache membership, order-immaterial). -/
+to core `c`'s view (associative-cache membership, order-immaterial).
+
+**WS-ZA ZA5.2: a translation already cached is not cached twice.**  A TLB
+holds one entry per translation, and so does this view: a fill whose entry
+the core already holds leaves the state as it is.  Before this the fill
+prepended unconditionally, so every decode that read an IPC-buffer overflow
+slot grew the executing core's view by one entry — refused syscalls included —
+and the view, which no invalidation of an unrelated page shrinks, grew without
+bound under a user loop of such syscalls.  With the check, a core's view holds
+each translation at most once, so it is bounded by the translations live
+mappings resolve to, and a repeated fill writes nothing. -/
 def tlbInsertOnCore (st : SystemState) (c : CoreId) (entry : TlbEntry) :
     SystemState :=
-  setTlbOnCore st c { entries := entry :: (tlbOnCore st c).entries }
+  if tlbEntriesHold (tlbOnCore st c).entries entry then st
+  else setTlbOnCore st c { entries := entry :: (tlbOnCore st c).entries }
+
+/-- **WS-ZA ZA5.2**: after a fill, core `c`'s view holds exactly the entries
+it held before, and the inserted one — whichever branch the fill took. -/
+theorem mem_tlbInsertOnCore_self {st : SystemState} {c : CoreId}
+    {entry e : TlbEntry} :
+    e ∈ (tlbOnCore (tlbInsertOnCore st c entry) c).entries ↔
+      e = entry ∨ e ∈ (tlbOnCore st c).entries := by
+  unfold tlbInsertOnCore
+  split
+  · rename_i h
+    have hMem : entry ∈ (tlbOnCore st c).entries := (tlbEntriesHold_iff _ _).mp h
+    constructor
+    · exact Or.inr
+    · rintro (rfl | h')
+      · exact hMem
+      · exact h'
+  · simp only [setTlbOnCore_tlbOnCore_self, List.mem_cons]
+
+/-- **WS-ZA ZA5.2**: a fill of a translation the core already caches writes
+nothing. -/
+theorem tlbInsertOnCore_of_mem {st : SystemState} {c : CoreId} {entry : TlbEntry}
+    (h : entry ∈ (tlbOnCore st c).entries) : tlbInsertOnCore st c entry = st := by
+  unfold tlbInsertOnCore
+  rw [if_pos ((tlbEntriesHold_iff _ _).mpr h)]
+
+/-- **WS-ZA ZA5.2**: a fill never lengthens a core's view past one more entry,
+and a repeated fill leaves it as it is — the view holds no translation twice
+that it did not already hold twice. -/
+theorem tlbInsertOnCore_idem (st : SystemState) (c : CoreId) (entry : TlbEntry) :
+    tlbInsertOnCore (tlbInsertOnCore st c entry) c entry = tlbInsertOnCore st c entry :=
+  tlbInsertOnCore_of_mem (mem_tlbInsertOnCore_self.mpr (Or.inl rfl))
 
 /-- **WS-SM SM7.C.2**: after a fill, core `c`'s view contains the inserted
 entry. -/
 theorem tlbInsertOnCore_mem (st : SystemState) (c : CoreId) (entry : TlbEntry) :
-    entry ∈ (tlbOnCore (tlbInsertOnCore st c entry) c).entries := by
-  simp [tlbInsertOnCore]
+    entry ∈ (tlbOnCore (tlbInsertOnCore st c entry) c).entries :=
+  mem_tlbInsertOnCore_self.mpr (Or.inl rfl)
 
 /-- **WS-SM SM7.C.2**: a fill on core `c` leaves every other core's view
 unchanged — a hardware walk is a local event (the SMP asymmetry the
 shootdown protocol later closes). -/
 theorem tlbInsertOnCore_tlbOnCore_ne (st : SystemState) {c c' : CoreId}
     (entry : TlbEntry) (h : c ≠ c') :
-    tlbOnCore (tlbInsertOnCore st c entry) c' = tlbOnCore st c' :=
-  setTlbOnCore_tlbOnCore_ne st _ h
+    tlbOnCore (tlbInsertOnCore st c entry) c' = tlbOnCore st c' := by
+  unfold tlbInsertOnCore
+  split
+  · rfl
+  · exact setTlbOnCore_tlbOnCore_ne st _ h
 
 /-- **WS-SM SM7.C.2**: a fill touches only the TLB model — objects,
 scheduler, machine, ASID table, and shootdown state all frame. -/
@@ -176,8 +238,30 @@ theorem tlbInsertOnCore_frame (st : SystemState) (c : CoreId) (entry : TlbEntry)
     (tlbInsertOnCore st c entry).asidTable = st.asidTable ∧
     (tlbInsertOnCore st c entry).scheduler = st.scheduler ∧
     (tlbInsertOnCore st c entry).machine = st.machine ∧
-    (tlbInsertOnCore st c entry).tlbShootdown = st.tlbShootdown :=
-  ⟨rfl, rfl, rfl, rfl, rfl⟩
+    (tlbInsertOnCore st c entry).tlbShootdown = st.tlbShootdown := by
+  unfold tlbInsertOnCore
+  split <;> exact ⟨rfl, rfl, rfl, rfl, rfl⟩
+
+/-- **WS-ZA ZA5.2**: a fill is a `perCoreTlb`-only state update, on either
+branch. -/
+theorem tlbInsertOnCore_eq_with (st : SystemState) (c : CoreId) (entry : TlbEntry) :
+    ∃ t, tlbInsertOnCore st c entry = { st with perCoreTlb := t } := by
+  unfold tlbInsertOnCore
+  split
+  · exact ⟨st.perCoreTlb, rfl⟩
+  · exact ⟨_, rfl⟩
+
+@[simp] theorem tlbInsertOnCore_objects (st : SystemState) (c : CoreId) (entry : TlbEntry) :
+    (tlbInsertOnCore st c entry).objects = st.objects := (tlbInsertOnCore_frame st c entry).1
+
+@[simp] theorem tlbInsertOnCore_asidTable (st : SystemState) (c : CoreId) (entry : TlbEntry) :
+    (tlbInsertOnCore st c entry).asidTable = st.asidTable := (tlbInsertOnCore_frame st c entry).2.1
+
+@[simp] theorem tlbInsertOnCore_scheduler (st : SystemState) (c : CoreId) (entry : TlbEntry) :
+    (tlbInsertOnCore st c entry).scheduler = st.scheduler := (tlbInsertOnCore_frame st c entry).2.2.1
+
+@[simp] theorem tlbInsertOnCore_machine (st : SystemState) (c : CoreId) (entry : TlbEntry) :
+    (tlbInsertOnCore st c entry).machine = st.machine := (tlbInsertOnCore_frame st c entry).2.2.2.1
 
 -- ============================================================================
 -- SM7.C.3 — tlbInvalidateOnCore (local, this-core invalidation)
@@ -587,8 +671,7 @@ theorem tlbInsertOnCore_preserves_tlbInvalidationConsistent_perCore
   intro c' e he
   by_cases hcc : c = c'
   · subst hcc
-    simp only [tlbInsertOnCore, setTlbOnCore_tlbOnCore_self] at he
-    rcases List.mem_cons.mp he with heq | hmemOld
+    rcases mem_tlbInsertOnCore_self.mp he with heq | hmemOld
     · -- the fresh entry: consistent by construction (hEntry + page-table frame).
       subst heq
       exact Or.inl (tlbEntryConsistent_of_frame hObj hAsid hEntry)

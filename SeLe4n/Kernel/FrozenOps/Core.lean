@@ -1118,11 +1118,9 @@ handed one, and -- since WS-HP HP4.7 made this surface's pop head-driven -- so
 must the recipient.  The order is the live order, and all three precede every
 write.
 
-**`scThreadIndex` is deliberately not maintained**, and that is this surface's
-existing answer rather than an omission here: no frozen operation writes it --
-`frozenSchedContextBind` and `frozenSchedContextUnbind` rebind without touching
-it -- and `frozenStateAgrees` does not compare it.  Becoming its only writer
-would be a second answer to a question the surface has already settled. -/
+The context's own `boundThread` is the only record of which thread runs on it
+(seL4's `sc->scTcb`); WS-ZA ZA5.2 retired the separate context-to-threads index
+the live state used to keep beside it. -/
 def frozenReturnDonatedSchedContext (st : FrozenSystemState)
     (serverTid : SeLe4n.ThreadId) (scId : SeLe4n.SchedContextId)
     (originalOwner : SeLe4n.ThreadId) (newOwner? : Option SeLe4n.ThreadId) :

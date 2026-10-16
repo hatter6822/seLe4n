@@ -1205,7 +1205,7 @@ scenarios:
     source: SeLe4n/Testing/MainTraceHarness.lean
     function: runTimeoutEndpointTrace
     subsystem: IPC
-    description: "Z6-AUD-2: timeoutBlockedThreads multi-thread — both threads timed out"
+    description: "Z6-AUD-2: timeoutBlockedThreads times out the context's one bound thread; a thread bound elsewhere stays blocked"
   Z7D-001:
     source: SeLe4n/Testing/MainTraceHarness.lean
     function: runDonationTrace

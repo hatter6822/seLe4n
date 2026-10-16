@@ -314,7 +314,7 @@ machine unchanged (each step is a `timeoutThread`).  Mirrors
 theorem timeoutBlockedThreads_machine (st : SystemState) (scId : SeLe4n.SchedContextId)
     (execCore : CoreId) :
     (timeoutBlockedThreads st scId execCore).1.machine = st.machine := by
-  unfold timeoutBlockedThreads
+  rw [timeoutBlockedThreads_eq_fold]; delta timeoutBlockedThreadStep
   suffices hFold : ∀ (tids : List SeLe4n.ThreadId)
       (acc : SystemState × List (SeLe4n.ThreadId × KernelError) × List (CoreId × SgiKind)),
       (tids.foldl (fun (acc : SystemState × List (SeLe4n.ThreadId × KernelError) × List (CoreId × SgiKind)) tid =>
