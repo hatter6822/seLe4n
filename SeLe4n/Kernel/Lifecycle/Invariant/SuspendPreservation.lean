@@ -655,7 +655,7 @@ theorem returnDonationToCancelledCaller_tcb_lookup (st : SystemState)
       obtain ⟨n, _, hPop⟩ := returnDonatedSchedContextResolved_ok_decompose h
       obtain ⟨tB, hkB, hRw⟩ :=
         returnDonatedSchedContext_tcb_rewrite _ st' holder scId tid hInvA n hPop k tA hkA
-      obtain ⟨sb, rfl⟩ := hRw
+      obtain ⟨_, _, rfl⟩ := hRw
       exact ⟨_, hkB, hAffA⟩
     -- The refusal arm is all-or-nothing: it returns the *pre*-state, abort and
     -- all, so the pre-state's own TCB is the witness.
@@ -2131,10 +2131,10 @@ theorem cancelBoundDonation_preserves_ipcInvariant
     -- Two in-place rewrites, a SchedContext then a TCB — neither is a
     -- notification, so the notification lookups are the pre-state's.
     have hInv1 : (st.updateSchedContext scId fun sc =>
-        { sc with boundThread := none, isActive := false, donationOrigin := none }).objects.invExt :=
+        { sc with boundThreadCode := 0, isActive := false, donationOrigin := none }).objects.invExt :=
       SystemState.updateSchedContext_preserves_objects_invExt _ _ _ hInv
     have hIpc1 : ipcInvariant (st.updateSchedContext scId fun sc =>
-        { sc with boundThread := none, isActive := false, donationOrigin := none }) := by
+        { sc with boundThreadCode := 0, isActive := false, donationOrigin := none }) := by
       unfold SystemState.updateSchedContext
       split
       · intro oid ntfn hL

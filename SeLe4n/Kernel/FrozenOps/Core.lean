@@ -1176,15 +1176,16 @@ def frozenReturnDonatedSchedContext (st : FrozenSystemState)
             | some ownerTcb =>
               match frozenWithObjectStored st2 originalOwner.toObjId
                       (.tcb { ownerTcb with
-                        schedContextBinding :=
-                          SeLe4n.Kernel.donationReturnBinding scId newOwner? }) with
+                        scBindingScCode :=
+                          SeLe4n.Kernel.SchedContextBinding.scCode (SeLe4n.Kernel.donationReturnBinding scId newOwner?),
+                        scBindingOwnerCode := SeLe4n.Kernel.SchedContextBinding.ownerCode (SeLe4n.Kernel.donationReturnBinding scId newOwner?) }) with
               | .error e => .error e
               | .ok st3 =>
                 match frozenLookupTcb st3 serverTid with
                 | none => .error .objectNotFound
                 | some serverTcb =>
                   frozenWithObjectStored st3 serverTid.toObjId
-                    (.tcb { serverTcb with schedContextBinding := .unbound })
+                    (.tcb { serverTcb with scBindingScCode := 0, scBindingOwnerCode := 0 })
 
 /-- **WS-HP HP10.7/HP10.8, frozen mirror (`v0.35.157`)**: the origin may be rebound
 without invalidating a live donation -- the bind's own admissibility, asked of the

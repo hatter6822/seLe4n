@@ -364,7 +364,7 @@ theorem cancelIpcBlocking_unboundHolder_binding_or_allowed (st : SystemState)
       have hAllowedA : passiveServerIdleAllowed tA.ipcState :=
         Lifecycle.Suspend.abortHolderPendingIpc_holder_ipcState_allowed st holder pTcb hInv hMem
           hLkP tA ((SystemState.getTcb?_eq_some_iff _ holder tA).mpr hAtA)
-      obtain ⟨t1, hAt1, _, hEq1⟩ :=
+      obtain ⟨t1, hAt1, _, _, hEq1⟩ :=
         returnDonatedSchedContext_tcb_rewrite _ st' holder scId v hInvA n hPop
           holder.toObjId tA hAtA
       refine ⟨t1, hAt1, Or.inr ?_⟩

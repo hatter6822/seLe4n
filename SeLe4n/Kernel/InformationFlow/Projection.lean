@@ -283,7 +283,7 @@ def projectKernelObject (ctx : LabelingContext) (observer : IfObserver) (obj : K
       -- above (internal IPC/donation plumbing, not the thread's observable
       -- logical identity).  The matching `Reply.caller` back-link is erased by
       -- the `.reply` arm below.
-      .tcb { tcb with registerContext := default, schedContextBinding := .unbound,
+      .tcb { tcb with registerContext := default, scBindingScCode := 0, scBindingOwnerCode := 0,
                        pipBoostCode := SeLe4n.Priority.optCode none, pendingMessage := none, timedOut := false,
                        cpuAffinity := none, replyObjectCode := 0,
                        pendingReceiveReplyCode := 0,
@@ -341,7 +341,7 @@ def projectKernelObject (ctx : LabelingContext) (observer : IfObserver) (obj : K
       -- ends, so an un-erased origin would make a high client's Call visible
       -- through a low-visible scheduling context for as long as the loan lasts —
       -- strictly longer than the `scReply` head, which moves with every push.
-      .schedContext { sc with boundThread := none, scReply := none,
+      .schedContext { sc with boundThreadCode := 0, scReply := none,
                               donationOrigin := none }
   | .reply r =>
       -- WS-SM SM6.D (PR #822 review, Reply objects): Strip the Reply object's
@@ -594,8 +594,8 @@ TCB's SchedContext binding — `projectKernelObject` strips the field (AI4-A), s
 donation hand-off is invisible to any observer, not merely to a high one. -/
 theorem projectKernelObject_tcb_schedContextBinding_invariant
     (ctx : LabelingContext) (observer : IfObserver) (t : TCB)
-    (b : SchedContextBinding) :
-    projectKernelObject ctx observer (.tcb { t with schedContextBinding := b })
+    (c o : Nat) :
+    projectKernelObject ctx observer (.tcb { t with scBindingScCode := c, scBindingOwnerCode := o })
       = projectKernelObject ctx observer (.tcb t) := by
   simp [projectKernelObject]
 
@@ -605,7 +605,7 @@ set, stripped for the same reason. -/
 theorem projectKernelObject_schedContext_boundThread_invariant
     (ctx : LabelingContext) (observer : IfObserver) (sc : SchedContext)
     (bt : Option SeLe4n.ThreadId) :
-    projectKernelObject ctx observer (.schedContext { sc with boundThread := bt })
+    projectKernelObject ctx observer (.schedContext { sc with boundThreadCode := SeLe4n.ThreadId.optCode (bt) })
       = projectKernelObject ctx observer (.schedContext sc) := by
   simp [projectKernelObject]
 
@@ -643,7 +643,7 @@ theorem projectKernelObject_schedContext_donationWrite_invariant
     (bt : Option SeLe4n.ThreadId) (rid : Option SeLe4n.ReplyId)
     (origin : Option SeLe4n.ThreadId) :
     projectKernelObject ctx observer
-        (.schedContext { sc with boundThread := bt, scReply := rid,
+        (.schedContext { sc with boundThreadCode := SeLe4n.ThreadId.optCode (bt), scReply := rid,
                                  donationOrigin := origin })
       = projectKernelObject ctx observer (.schedContext sc) := by
   simp [projectKernelObject]

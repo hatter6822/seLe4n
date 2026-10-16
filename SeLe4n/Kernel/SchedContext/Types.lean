@@ -167,7 +167,11 @@ structure SchedContext where
   budgetRemaining : Budget
   periodStart : Nat := 0
   replenishments : List ReplenishmentEntry := []
-  boundThread : Option SeLe4n.ThreadId := none
+  /-- WS-ZA ZA5.2: the thread this context is bound to, as its code
+      (`SeLe4n.ThreadId.optCode`; `0` is none), read through
+      `SchedContext.boundThread`.  A bound thread written as `some t` was a heap
+      cell on every bind and donation. -/
+  boundThreadCode : Nat := 0
   /-- WS-OD OD2.1: the head of this SchedContext's MCS reply stack — seL4-MCS's
       `sc->scReply`.  A `Call` that donates this context pushes the donor's
       Reply object here (`Reply.next = some (.head scId)`, `Reply.prev` = the
@@ -228,6 +232,13 @@ structure SchedContext where
   donationOrigin : Option SeLe4n.ThreadId := none
   isActive : Bool := false
 deriving Repr
+
+/-- WS-ZA ZA5.2: the thread this context is bound to, read from its code.
+Reducible, so a record update that leaves the code alone reads the old value by
+`rfl`.  Written as `boundThreadCode := SeLe4n.ThreadId.optCode t`. -/
+@[reducible, inline] def SchedContext.boundThread (sc : SchedContext) :
+    Option SeLe4n.ThreadId :=
+  SeLe4n.ThreadId.ofOptCode sc.boundThreadCode
 
 -- ============================================================================
 -- Z1-G: SchedContext.wellFormed predicate
@@ -408,6 +419,55 @@ theorem ownScId?_eq_some_iff (b : SchedContextBinding)
 @[inline] def isBound : SchedContextBinding → Bool
   | .unbound => false
   | _ => true
+
+/-! WS-ZA ZA5.2: a binding as two scalar codes, the form the TCB stores it in
+(`TCB.scBindingScCode`, `TCB.scBindingOwnerCode`): a constructor with a payload
+is a heap cell, so a store of `.bound scId` allocated on every bind.  The context
+code is `0` for `unbound` and the context's id plus one otherwise; the owner code
+is the donation's original owner plus one, `0` for any other binding. -/
+
+/-- The context word of the binding's code. -/
+@[inline] def scCode : SchedContextBinding → Nat
+  | .unbound => 0
+  | .bound s => s.val + 1
+  | .donated s _ => s.val + 1
+
+/-- The owner word of the binding's code. -/
+@[inline] def ownerCode : SchedContextBinding → Nat
+  | .donated _ o => o.val + 1
+  | _ => 0
+
+/-- The binding a pair of codes stands for. -/
+@[inline] def ofCodes (sc owner : Nat) : SchedContextBinding :=
+  match sc with
+  | 0 => .unbound
+  | s + 1 =>
+    match owner with
+    | 0 => .bound ⟨s⟩
+    | o + 1 => .donated ⟨s⟩ ⟨o⟩
+
+@[simp] theorem ofCodes_codes (b : SchedContextBinding) :
+    ofCodes b.scCode b.ownerCode = b := by
+  cases b <;> rfl
+
+@[simp] theorem ownerCode_bound (s : SchedContextId) : (bound s).ownerCode = 0 := rfl
+@[simp] theorem ownerCode_unbound : unbound.ownerCode = 0 := rfl
+@[simp] theorem scCode_unbound : unbound.scCode = 0 := rfl
+
+/-- A `.bound` binding's codes read back as that binding once its owner word has
+been simplified to `0` (`ownerCode_bound`). -/
+@[simp] theorem ofCodes_scCode_bound (s : SchedContextId) : ofCodes (bound s).scCode 0 = bound s := rfl
+
+@[simp] theorem ofCodes_zero (owner : Nat) : ofCodes 0 owner = .unbound := rfl
+
+@[simp] theorem scCode_ofCodes (sc owner : Nat) : (ofCodes sc owner).scCode = sc := by
+  cases sc <;> cases owner <;> rfl
+
+/-- The owner word of a binding read from codes is the stored owner word, when
+the context word names a context: the one case the owner word is read in. -/
+theorem ownerCode_ofCodes_succ (s owner : Nat) :
+    (ofCodes (s + 1) owner).ownerCode = owner := by
+  cases owner <;> rfl
 
 end SchedContextBinding
 

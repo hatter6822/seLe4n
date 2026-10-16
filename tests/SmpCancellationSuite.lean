@@ -1053,7 +1053,7 @@ private def runLocalRunningCancelChecks : IO Unit := do
 -- ----------------------------------------------------------------------------
 
 private def mkSc (bound : Option SeLe4n.ThreadId) (active : Bool) : SchedContext :=
-  { scId := scId, boundThread := bound,
+  { scId := scId, boundThreadCode := SeLe4n.ThreadId.optCode (bound),
     budget := ⟨1000⟩, period := ⟨1000⟩,
     priority := ⟨10⟩, deadline := ⟨0⟩, domain := ⟨0⟩,
     budgetRemaining := ⟨1000⟩, isActive := active, replenishments := [] }
@@ -1062,7 +1062,7 @@ private def stBoundDonation : SystemState :=
   let base :=
     (BootstrapBuilder.empty
       |>.withObject victimTid.toObjId (.tcb { mkTcb 710 30 (some core1) with
-          schedContextBinding := .bound scId })
+          scBindingScCode := SeLe4n.Kernel.SchedContextBinding.scCode (.bound scId), scBindingOwnerCode := 0 })
       |>.withObject scId.toObjId (.schedContext (mkSc (some victimTid) true))
       |>.build)
   -- Seed a pending replenishment for the SC on the victim's home core (core 1),
@@ -1118,7 +1118,7 @@ private def stDonated : SystemState :=
   let base :=
     (BootstrapBuilder.empty
       |>.withObject victimTid.toObjId (.tcb { mkTcb 710 30 (some core1) with
-          schedContextBinding := .donated scId ownerTid })
+          scBindingScCode := SeLe4n.Kernel.SchedContextBinding.scCode (.donated scId ownerTid), scBindingOwnerCode := SeLe4n.Kernel.SchedContextBinding.ownerCode (.donated scId ownerTid) })
       |>.withObject ownerTid.toObjId (.tcb (mkTcb 711 25 none))
       |>.withObject scId.toObjId (.schedContext (mkSc (some victimTid) true))
       |>.build)
@@ -2115,9 +2115,9 @@ private def stFrameHeadReclaim : SystemState :=
           { replyId := rId, callerCode := SeLe4n.ThreadId.optCode (some victimTid), next := some (.head scId) })
       |>.withObject victimTid.toObjId (.tcb (TCB.setIpcState { mkTcb 710 30 (some core1) with
           replyObjectCode := SeLe4n.ReplyId.optCode (some rId),
-          schedContextBinding := .unbound } (.blockedOnReply epId (some serverTid))))
+          scBindingScCode := 0, scBindingOwnerCode := 0 } (.blockedOnReply epId (some serverTid))))
       |>.withObject serverTid.toObjId (.tcb { mkTcb 716 50 (some core2) with
-          schedContextBinding := .donated scId victimTid })
+          scBindingScCode := SeLe4n.Kernel.SchedContextBinding.scCode (.donated scId victimTid), scBindingOwnerCode := SeLe4n.Kernel.SchedContextBinding.ownerCode (.donated scId victimTid) })
       |>.withObject scId.toObjId (.schedContext (mkStackedSc (some serverTid) (some rId)))
       |>.build)
   let rq2 := (base.scheduler.replenishQueueOnCore core2).insert scId 42
@@ -2157,10 +2157,10 @@ private def stOrphanHeadReclaim : SystemState :=
           { replyId := rId, callerCode := SeLe4n.ThreadId.optCode (some victimTid), next := some (.head scId) })
       |>.withObject victimTid.toObjId (.tcb (TCB.setIpcState { mkTcb 710 30 (some core1) with
           replyObjectCode := SeLe4n.ReplyId.optCode (some rId),
-          schedContextBinding := .unbound } (.blockedOnReply epId (some serverTid))))
+          scBindingScCode := 0, scBindingOwnerCode := 0 } (.blockedOnReply epId (some serverTid))))
       |>.withObject serverTid.toObjId (.tcb (mkTcb 716 50 (some core2)))
       |>.withObject runnerTid.toObjId (.tcb { mkTcb 715 40 (some core2) with
-          schedContextBinding := .donated scId victimTid })
+          scBindingScCode := SeLe4n.Kernel.SchedContextBinding.scCode (.donated scId victimTid), scBindingOwnerCode := SeLe4n.Kernel.SchedContextBinding.ownerCode (.donated scId victimTid) })
       |>.withObject scId.toObjId (.schedContext (mkStackedSc (some runnerTid) (some rId)))
       |>.build)
   let rq2 := (base.scheduler.replenishQueueOnCore core2).insert scId 42
@@ -2308,9 +2308,9 @@ private def stRefusedReclaimRemoteHolder : SystemState :=
           { replyId := rId, callerCode := SeLe4n.ThreadId.optCode (some victimTid), next := some (.head scId) })
       |>.withObject victimTid.toObjId (.tcb (TCB.setIpcState { mkTcb 710 30 (some core1) with
           replyObjectCode := SeLe4n.ReplyId.optCode (some rId),
-          schedContextBinding := .bound scIdOther } (.blockedOnReply epId (some serverTid))))
+          scBindingScCode := SeLe4n.Kernel.SchedContextBinding.scCode (.bound scIdOther), scBindingOwnerCode := 0 } (.blockedOnReply epId (some serverTid))))
       |>.withObject serverTid.toObjId (.tcb { mkTcb 716 50 (some core2) with
-          schedContextBinding := .donated scId victimTid })
+          scBindingScCode := SeLe4n.Kernel.SchedContextBinding.scCode (.donated scId victimTid), scBindingOwnerCode := SeLe4n.Kernel.SchedContextBinding.ownerCode (.donated scId victimTid) })
       |>.withObject scId.toObjId (.schedContext (mkStackedSc (some serverTid) (some rId)))
       |>.build)
   let rq2 := (base.scheduler.replenishQueueOnCore core2).insert scId 42
@@ -2451,10 +2451,10 @@ private def stStrandedHolderReclaim : SystemState :=
       |>.withObject victimTid.toObjId (.tcb (TCB.setIpcState { mkTcb 710 30 (some core1) with
           threadState := .BlockedReply,
           replyObjectCode := SeLe4n.ReplyId.optCode (some rId),
-          schedContextBinding := .unbound } (.blockedOnReply epId (some serverTid))))
+          scBindingScCode := 0, scBindingOwnerCode := 0 } (.blockedOnReply epId (some serverTid))))
       |>.withObject serverTid.toObjId (.tcb (TCB.setIpcState { mkTcb 716 50 (some core2) with
           threadState := .BlockedCall,
-          schedContextBinding := .donated scId victimTid,
+          scBindingScCode := SeLe4n.Kernel.SchedContextBinding.scCode (.donated scId victimTid), scBindingOwnerCode := SeLe4n.Kernel.SchedContextBinding.ownerCode (.donated scId victimTid),
           queuePPrevCode := 1 } (.blockedOnCall epId)))
       |>.withObject scId.toObjId (.schedContext (mkStackedSc (some serverTid) (some rId)))
       |>.build)
@@ -2480,10 +2480,10 @@ private def stReadyHolderReclaim : SystemState :=
       |>.withObject victimTid.toObjId (.tcb (TCB.setIpcState { mkTcb 710 30 (some core1) with
           threadState := .BlockedReply,
           replyObjectCode := SeLe4n.ReplyId.optCode (some rId),
-          schedContextBinding := .unbound } (.blockedOnReply epId (some serverTid))))
+          scBindingScCode := 0, scBindingOwnerCode := 0 } (.blockedOnReply epId (some serverTid))))
       |>.withObject serverTid.toObjId (.tcb { mkTcb 716 50 (some core2) with
           threadState := .Ready,
-          schedContextBinding := .donated scId victimTid })
+          scBindingScCode := SeLe4n.Kernel.SchedContextBinding.scCode (.donated scId victimTid), scBindingOwnerCode := SeLe4n.Kernel.SchedContextBinding.ownerCode (.donated scId victimTid) })
       |>.withObject scId.toObjId (.schedContext (mkStackedSc (some serverTid) (some rId)))
       |>.build)
   let rq2 := (base.scheduler.replenishQueueOnCore core2).insert scId 42
@@ -2808,7 +2808,7 @@ private def runBindExhaustedReservationChecks : IO Unit := do
   let tcb := victimTcb st
   let parked :=
     ((cancelIpcBlockingReclaimed victimTid tcb st).withObjectStored auxTid.toObjId
-        (.tcb { mkTcb 717 20 none with schedContextBinding := .bound scIdOther })).withObjectStored
+        (.tcb { mkTcb 717 20 none with scBindingScCode := SeLe4n.Kernel.SchedContextBinding.scCode (.bound scIdOther), scBindingOwnerCode := 0 })).withObjectStored
       scIdOther.toObjId (.schedContext exhaustedSc)
   assertBool "setup: the holder is parked and the reservation is exhausted, bound to another thread"
     (decide (placedCoreOf? parked serverTid = none)

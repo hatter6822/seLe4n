@@ -176,12 +176,12 @@ theorem schedContextBind_confinedToCores (vScId : SeLe4n.ValidObjId)
             -- insert under the pre-state's TCB witness.
             rw [SystemState.updateTcb_after_rewriteObject_schedContext st vScId.val _ _
               vThreadId.val tcb _ hObjInv hTcb]
-            let sc1 : SchedContext := { sc with boundThread := some vThreadId.val,
+            let sc1 : SchedContext := { sc with boundThreadCode := SeLe4n.ThreadId.optCode (some vThreadId.val),
                                                 donationOrigin := none }
             let scObj : KernelObject := .schedContext sc1
             let st1 : SystemState := { st with objects := st.objects.insert vScId.val scObj }
             let tcb1 : TCB :=
-              { tcb with schedContextBinding := SchedContextBinding.bound ⟨vScId.val.toNat⟩,
+              { tcb with scBindingScCode := SeLe4n.Kernel.SchedContextBinding.scCode (SchedContextBinding.bound ⟨vScId.val.toNat⟩), scBindingOwnerCode := 0,
                          priority := sc.priority }
             let tcbObj : KernelObject := .tcb tcb1
             let st2 : SystemState :=

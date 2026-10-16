@@ -516,10 +516,10 @@ private def runRoundTripChecks : IO Unit := do
   let scIdCand : SeLe4n.SchedContextId := ⟨151⟩
   let mkBoundSc : SeLe4n.ThreadId → Nat → SchedContext := fun t dl =>
     { (default : SchedContext) with
-        priority := ⟨10⟩, deadline := ⟨dl⟩, boundThread := some t,
+        priority := ⟨10⟩, deadline := ⟨dl⟩, boundThreadCode := SeLe4n.ThreadId.optCode (some t),
         budgetRemaining := ⟨5⟩ }
   let mkBound : Nat → SeLe4n.SchedContextId → TCB := fun tidN scId =>
-    { mkTcb tidN 10 0 with schedContextBinding := .bound scId }
+    { mkTcb tidN 10 0 with scBindingScCode := SeLe4n.Kernel.SchedContextBinding.scCode (.bound scId), scBindingOwnerCode := 0 }
   let mkScEdfState : Nat → Nat → SystemState := fun curDl candDl =>
     (((((BootstrapBuilder.empty.withObject tidU.toObjId
           (.tcb (mkBound 200 scIdCur))).withObject

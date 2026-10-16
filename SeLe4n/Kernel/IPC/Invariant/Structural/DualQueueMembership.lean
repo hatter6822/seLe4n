@@ -6552,11 +6552,11 @@ theorem returnDonatedSchedContext_replyLinkageFrame
   have hF2 := hF1.trans (storeDonationHeadPop_replyLinkageFrame hInv1 hClear)
   have hF3 := hF2.trans (storeObject_modifiedTcb_replyLinkageFrame s2 s3
     originalOwner.toObjId clientTcb
-    { clientTcb with schedContextBinding := donationReturnBinding scId newOwner? }
+    { clientTcb with scBindingScCode := SeLe4n.Kernel.SchedContextBinding.scCode (donationReturnBinding scId newOwner?), scBindingOwnerCode := SeLe4n.Kernel.SchedContextBinding.ownerCode (donationReturnBinding scId newOwner?) }
     (lookupTcb_some_objects s2 originalOwner clientTcb hL1) rfl
     (fun _ ep rt hb => ⟨ep, rt, hb⟩) hInv2 hS3)
   have hF4 := hF3.trans (storeObject_modifiedTcb_replyLinkageFrame s3 s4
-    serverTid.toObjId serverTcb { serverTcb with schedContextBinding := .unbound }
+    serverTid.toObjId serverTcb { serverTcb with scBindingScCode := 0, scBindingOwnerCode := 0 }
     (lookupTcb_some_objects s3 serverTid serverTcb hL2) rfl
     (fun _ ep rt hb => ⟨ep, rt, hb⟩) hInv3 hS4)
   exact hF4.trans (replyLinkageFrame.of_objects_eq (by rw [hEq]))

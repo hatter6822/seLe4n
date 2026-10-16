@@ -311,10 +311,10 @@ private def lendOrigin : SeLe4n.ThreadId := ThreadId.ofNat 231
 private def stLent : SystemState :=
   let base := BootstrapBuilder.empty
     |>.withObject lendSrv.toObjId (.tcb { mkReadyTcb 230 5 (some core0) .Running with
-        schedContextBinding := .donated scLent lendOrigin })
+        scBindingScCode := SeLe4n.Kernel.SchedContextBinding.scCode (.donated scLent lendOrigin), scBindingOwnerCode := SeLe4n.Kernel.SchedContextBinding.ownerCode (.donated scLent lendOrigin) })
     |>.withObject lendOrigin.toObjId (.tcb (mkReadyTcb 231 6 (some core1) .Ready))
     |>.withObject scLent.toObjId (.schedContext { SchedContext.empty scLent with
-        boundThread := some lendSrv, deadline := ⟨9⟩ })
+        boundThreadCode := SeLe4n.ThreadId.optCode (some lendSrv), deadline := ⟨9⟩ })
     |>.build
   let q := enqueueAllOnCore base core1 [(lendOrigin, ⟨6⟩)]
   { q with scheduler := q.scheduler.setCurrentOnCore core0 (some lendSrv) }
@@ -338,13 +338,13 @@ private def scBound : SeLe4n.SchedContextId := SeLe4n.SchedContextId.ofNat 301
 private def boundTid : SeLe4n.ThreadId := ThreadId.ofNat 240
 
 private def boundTcb : TCB :=
-  { mkReadyTcb 240 6 (some core1) .Ready with schedContextBinding := .bound scBound }
+  { mkReadyTcb 240 6 (some core1) .Ready with scBindingScCode := SeLe4n.Kernel.SchedContextBinding.scCode (.bound scBound), scBindingOwnerCode := 0 }
 
 private def stBound : SystemState :=
   let base := BootstrapBuilder.empty
     |>.withObject boundTid.toObjId (.tcb boundTcb)
     |>.withObject scBound.toObjId (.schedContext { SchedContext.empty scBound with
-        boundThread := some boundTid, deadline := ⟨9⟩ })
+        boundThreadCode := SeLe4n.ThreadId.optCode (some boundTid), deadline := ⟨9⟩ })
     |>.build
   enqueueAllOnCore base core1 [(boundTid, ⟨6⟩)]
 
@@ -394,7 +394,7 @@ private def stBoundCurrent (withSrv : Bool) : SystemState :=
   let base := BootstrapBuilder.empty
     |>.withObject boundTid.toObjId (.tcb { boundTcb with threadState := .Running })
     |>.withObject scBound.toObjId (.schedContext { SchedContext.empty scBound with
-        boundThread := some boundTid, deadline := ⟨9⟩ })
+        boundThreadCode := SeLe4n.ThreadId.optCode (some boundTid), deadline := ⟨9⟩ })
     |>.withObject srv.toObjId (.tcb (mkReadyTcb 200 5 (some core1) .Ready))
     |>.build
   let withCurrent := { base with scheduler := base.scheduler.setCurrentOnCore core1 (some boundTid) }

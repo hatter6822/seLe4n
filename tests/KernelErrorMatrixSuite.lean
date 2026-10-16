@@ -862,7 +862,7 @@ private def row_invalidObjectType_cross_variant : KernelErrorRejection :=
           budget := ⟨100⟩, period := ⟨1000⟩
           priority := ⟨0⟩, deadline := ⟨0⟩
           domain := ⟨0⟩, budgetRemaining := ⟨100⟩
-          boundThread := none, isActive := false
+          boundThreadCode := 0, isActive := false
           replenishments := [] }
       let st : SystemState := { (default : SystemState) with
         objects := (default : SystemState).objects.insert oid (.tcb tcb) }

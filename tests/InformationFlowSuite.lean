@@ -152,7 +152,7 @@ def test_applyConfigureParamsFull_post_state_shape : IO Bool := do
       deadline := { val := 0 }
       domain := ⟨0⟩
       budgetRemaining := { val := 50 }
-      boundThread := none
+      boundThreadCode := 0
       isActive := false
       replenishments := [{ amount := { val := 50 },
                            eligibleAt := 0 }] }
@@ -189,7 +189,7 @@ def test_schedContext_configure_replenishment_eligibility : IO Bool := do
       deadline := { val := 0 }
       domain := ⟨0⟩
       budgetRemaining := { val := 50 }
-      boundThread := none
+      boundThreadCode := 0
       isActive := false
       replenishments := [] }
   let post := SeLe4n.Kernel.SchedContextOps.applyConfigureParamsFull
@@ -214,7 +214,7 @@ def test_schedContext_yield_self_returns_state_unchanged : IO Bool := do
       deadline := { val := 0 }
       domain := ⟨0⟩
       budgetRemaining := { val := 60 }
-      boundThread := none
+      boundThreadCode := 0
       isActive := true
       replenishments := [] }
   let st : SystemState := { (default : SystemState) with

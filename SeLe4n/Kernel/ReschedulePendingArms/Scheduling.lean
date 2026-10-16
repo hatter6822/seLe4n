@@ -760,7 +760,7 @@ theorem schedContextBind_stepCovers (st st' : SystemState) (vScId : SeLe4n.Valid
         have hScRaw : st.objects[vScId.val]? = some (.schedContext sc) :=
           (SystemState.getSchedContext?_eq_some_iff st _ sc).mp hSc
         have hAdm : st.rewriteAdmissible vScId.val (.schedContext
-            { sc with boundThread := some vTid.val, donationOrigin := none }) :=
+            { sc with boundThreadCode := SeLe4n.ThreadId.optCode (some vTid.val), donationOrigin := none }) :=
           SystemState.rewriteAdmissible_schedContext hSc _
         have hInv1 := SystemState.rewriteObject_preserves_objects_invExt st _ _ hAdm hObjInv
         have hK1 : keyInputsEq st (st.rewriteObject vScId.val _ hAdm) :=
@@ -769,17 +769,17 @@ theorem schedContextBind_stepCovers (st st' : SystemState) (vScId : SeLe4n.Valid
           (SystemState.rewriteObject_schedContext_getTcb? st _ _ hAdm hObjInv _).trans hT
         have hK2 := keyInputsEq.trans_keyInputsEqExcept hK1
           (keyInputsEqExcept_updateTcb (f := fun t => { t with
-            schedContextBinding := (SchedContextBinding.bound ⟨vScId.val.toNat⟩),
+            scBindingScCode := SeLe4n.Kernel.SchedContextBinding.scCode ((SchedContextBinding.bound ⟨vScId.val.toNat⟩)), scBindingOwnerCode := SeLe4n.Kernel.SchedContextBinding.ownerCode ((SchedContextBinding.bound ⟨vScId.val.toNat⟩)),
             priority := sc.priority }) hInv1 (by rw [hT1]; rfl))
         have hInv2 := SystemState.updateTcb_preserves_objects_invExt _ vTid.val
           (fun t => { t with
-            schedContextBinding := (SchedContextBinding.bound ⟨vScId.val.toNat⟩),
+            scBindingScCode := SeLe4n.Kernel.SchedContextBinding.scCode ((SchedContextBinding.bound ⟨vScId.val.toNat⟩)), scBindingOwnerCode := SeLe4n.Kernel.SchedContextBinding.ownerCode ((SchedContextBinding.bound ⟨vScId.val.toNat⟩)),
             priority := sc.priority }) hInv1
         -- The queue stage moves the thread through its TCB run-queue links
         -- (WS-ZA ZA4.5); only the thread's own run-queue core moves.
         have hA2 : SystemState.RunCoresAgree ((st.rewriteObject vScId.val _ hAdm).updateTcb vTid.val
             fun t => { t with
-              schedContextBinding := (SchedContextBinding.bound ⟨vScId.val.toNat⟩),
+              scBindingScCode := SeLe4n.Kernel.SchedContextBinding.scCode ((SchedContextBinding.bound ⟨vScId.val.toNat⟩)), scBindingOwnerCode := SeLe4n.Kernel.SchedContextBinding.ownerCode ((SchedContextBinding.bound ⟨vScId.val.toNat⟩)),
               priority := sc.priority }) st :=
           SystemState.RunCoresAgree.trans (SystemState.RunCoresAgree.updateTcb hInv1 fun _ => rfl)
             (SystemState.RunCoresAgree.rewriteObject_not_tcb hAdm hObjInv
@@ -954,19 +954,19 @@ theorem unbindTail_stepCovers (e : CoreId) (st1 : SystemState) (vScId : SeLe4n.V
     (hSc : st1.objects[vScId.val]? = some (.schedContext sc))
     (hT : st1.getTcb? tid = some tcb)
     (hAdm : st1.rewriteAdmissible vScId.val (.schedContext
-      { sc with boundThread := none, isActive := false, donationOrigin := none })) :
+      { sc with boundThreadCode := 0, isActive := false, donationOrigin := none })) :
     stepCovers e st1 (markKeyChangeFor
       { SchedContextOps.purgeReplenishmentOnCore
           (SchedContextOps.schedContextUnbindQueueStage
             ((st1.rewriteObject vScId.val _ hAdm).updateTcb tid fun t =>
-              { t with schedContextBinding := SchedContextBinding.unbound })
+              { t with scBindingScCode := 0, scBindingOwnerCode := 0 })
             home tid prio wasCurrent)
           home ⟨vScId.val.toNat⟩ with
         scThreadIndex := scThreadIndexRemove
           (SchedContextOps.purgeReplenishmentOnCore
             (SchedContextOps.schedContextUnbindQueueStage
               ((st1.rewriteObject vScId.val _ hAdm).updateTcb tid fun t =>
-                { t with schedContextBinding := SchedContextBinding.unbound })
+                { t with scBindingScCode := 0, scBindingOwnerCode := 0 })
               home tid prio wasCurrent)
             home ⟨vScId.val.toNat⟩).scThreadIndex ⟨vScId.val.toNat⟩ tid }
       tid (effectiveSchedParams st1 tcb)) := by
@@ -977,9 +977,9 @@ theorem unbindTail_stepCovers (e : CoreId) (st1 : SystemState) (vScId : SeLe4n.V
     (SystemState.rewriteObject_schedContext_getTcb? st1 _ _ hAdm hInv _).trans hT
   have hK2 := keyInputsEq.trans_keyInputsEqExcept hK1
     (keyInputsEqExcept_updateTcb (f := fun t => { t with
-      schedContextBinding := SchedContextBinding.unbound }) hInv1 (by rw [hT1]; rfl))
+      scBindingScCode := 0, scBindingOwnerCode := 0 }) hInv1 (by rw [hT1]; rfl))
   have hA2 : SystemState.RunCoresAgree ((st1.rewriteObject vScId.val _ hAdm).updateTcb tid
-      fun t => { t with schedContextBinding := SchedContextBinding.unbound }) st1 :=
+      fun t => { t with scBindingScCode := 0, scBindingOwnerCode := 0 }) st1 :=
     SystemState.RunCoresAgree.trans (SystemState.RunCoresAgree.updateTcb hInv1 fun _ => rfl)
       (SystemState.RunCoresAgree.rewriteObject_not_tcb hAdm hInv
         (fun t h => by rw [hSc] at h; cases h) (fun t h => by cases h))
@@ -1035,7 +1035,7 @@ theorem schedContextUnbind_stepCovers (st st' : SystemState) (vScId : SeLe4n.Val
             exact hObjInv
       · cases hStep
         have hAdm : st.rewriteAdmissible vScId.val (.schedContext
-            { sc with boundThread := none, isActive := false, donationOrigin := none }) :=
+            { sc with boundThreadCode := 0, isActive := false, donationOrigin := none }) :=
           SystemState.rewriteAdmissible_schedContext hSc _
         have hK1 : keyInputsEq st (st.rewriteObject vScId.val _ hAdm) :=
           keyInputsEq_rewriteObject hAdm hObjInv (by rw [hScRaw]; rfl)

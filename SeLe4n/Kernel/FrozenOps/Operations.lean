@@ -1584,7 +1584,7 @@ def frozenSchedContextBind (scId : SeLe4n.ObjId) (threadId : SeLe4n.ThreadId)
             -- which is the thread-id-reuse hazard the field's own docstring names.
             -- A field added to a shared record is a sweep of **both** surfaces,
             -- not of the one whose transition motivated it.
-            let updatedSc := { sc with boundThread := some threadId,
+            let updatedSc := { sc with boundThreadCode := SeLe4n.ThreadId.optCode (some threadId),
                                        donationOrigin := none }
             -- **AK2-B option B (S-H04), frozen mirror (PR #897 review)**: and the
             -- SchedContext's priority reaches the TCB, as the live bind's does.
@@ -1593,7 +1593,7 @@ def frozenSchedContextBind (scId : SeLe4n.ObjId) (threadId : SeLe4n.ThreadId)
             -- exists to establish -- so the mirror was not merely narrower than
             -- its subject but produced states the live kernel cannot reach.
             let updatedTcb := { tcb with
-              schedContextBinding := SeLe4n.Kernel.SchedContextBinding.bound scIdTyped,
+              scBindingScCode := SeLe4n.Kernel.SchedContextBinding.scCode (SeLe4n.Kernel.SchedContextBinding.bound scIdTyped), scBindingOwnerCode := 0,
               priority := sc.priority }
             match frozenWithObjectStored st scId (.schedContext updatedSc) with
             | .ok st1 =>
@@ -1675,10 +1675,10 @@ def frozenSchedContextUnbind (scId : SeLe4n.ObjId) : FrozenKernel Unit :=
           -- subject.  Both live arms of `schedContextUnbind` clear it; a mirror
           -- that keeps history the kernel erases is a mirror that answers a later
           -- pop differently.
-          let updatedSc := { sc with boundThread := none, isActive := false,
+          let updatedSc := { sc with boundThreadCode := 0, isActive := false,
                                      donationOrigin := none }
           let updatedTcb := { tcb with
-            schedContextBinding := SeLe4n.Kernel.SchedContextBinding.unbound }
+            scBindingScCode := 0, scBindingOwnerCode := 0 }
           match frozenWithObjectStored st0 scId (.schedContext updatedSc) with
           | .error e => .error e
           | .ok st1 =>

@@ -1609,8 +1609,8 @@ theorem cancelBoundDonationOnCore_preserves_replenishQueueAffinityConsistent_smp
     (fun x => determineTargetCore_congr _ _ x (by rw [markKeyChangeFrom_getTcb?]))).mpr ?_
   simp only [markKeyChangeFrom_replenishQueueOnCore] at hQself hQne
   exact unbind_shape_preserves_replenishQueueAffinityConsistent_smp st _ scId rqCore
-    (fun sc => { sc with boundThread := none, isActive := false, donationOrigin := none })
-    (fun _ => rfl) tid (fun tcb' => { tcb' with schedContextBinding := .unbound })
+    (fun sc => { sc with boundThreadCode := 0, isActive := false, donationOrigin := none })
+    (fun _ => rfl) tid (fun tcb' => { tcb' with scBindingScCode := 0, scBindingOwnerCode := 0 })
     (fun _ => rfl) hInv hQself hQne rfl hCons
 
 /-- **`v0.35.164`: the donated arm preserves replenish-queue affinity** -- the
@@ -1789,7 +1789,7 @@ theorem releaseSchedContextBinding_preserves_replenishQueueAffinityConsistent_sm
         rw [markKeyChangeFor_replenishQueueOnCore] at hMem
         have hMem' : e ∈ ((SchedContextOps.purgeReplenishmentOnCore
             (st.updateTcb tid fun t =>
-              { t with schedContextBinding := SchedContextBinding.unbound })
+              { t with scBindingScCode := 0, scBindingOwnerCode := 0 })
             (determineTargetCore st tid) scId).scheduler.replenishQueueOnCore c).entries := hMem
         simp only [SchedContextOps.purgeReplenishmentOnCore,
           SystemState.updateTcb_scheduler] at hMem'
@@ -1804,7 +1804,7 @@ theorem releaseSchedContextBinding_preserves_replenishQueueAffinityConsistent_sm
         dsimp only
         rw [markKeyChangeFor_getSchedContext?]
         show ((st.updateTcb tid fun t =>
-          { t with schedContextBinding := SchedContextBinding.unbound }).getSchedContext? k).map _
+          { t with scBindingScCode := 0, scBindingOwnerCode := 0 }).getSchedContext? k).map _
             = _
         rw [SystemState.updateTcb_getSchedContext? st tid _ hInv k]
       · -- Home cores: the TCB write moves no `cpuAffinity`.
@@ -1813,7 +1813,7 @@ theorem releaseSchedContextBinding_preserves_replenishQueueAffinityConsistent_sm
         dsimp only
         rw [markKeyChangeFor_getTcb?]
         show ((st.updateTcb tid fun t =>
-          { t with schedContextBinding := SchedContextBinding.unbound }).getTcb? x).map
+          { t with scBindingScCode := 0, scBindingOwnerCode := 0 }).getTcb? x).map
             (·.cpuAffinity) = _
         by_cases hx : tid.toObjId = x.toObjId
         · have hEq : tid = x := SeLe4n.ThreadId.toObjId_injective _ _ hx
@@ -3618,13 +3618,13 @@ theorem cancelBoundDonationOnCore_runQueueStage {st st' : SystemState}
     cases h
     have key : ∀ X : SystemState, SystemState.RunQueueStage st X →
         SystemState.RunQueueStage st (markKeyChangeFrom st
-          (X.updateTcb tid fun tcb' => { tcb' with schedContextBinding := .unbound }) tid) :=
+          (X.updateTcb tid fun tcb' => { tcb' with scBindingScCode := 0, scBindingOwnerCode := 0 }) tid) :=
       fun X hX => hX.trans ((SystemState.RunQueueStage.updateTcb X tid
-        (f := fun tcb' => { tcb' with schedContextBinding := .unbound }) (fun _ _ => rfl)).trans
+        (f := fun tcb' => { tcb' with scBindingScCode := 0, scBindingOwnerCode := 0 }) (fun _ _ => rfl)).trans
         (markKeyChangeFrom_runQueueStage st _ tid))
     apply key
     have hU := SystemState.updateSchedContext_scheduler st scId
-      (fun sc => { sc with boundThread := none, isActive := false, donationOrigin := none })
+      (fun sc => { sc with boundThreadCode := 0, isActive := false, donationOrigin := none })
     apply SystemState.RunQueueStage.of_placement
     · exact fun hInv => SystemState.updateSchedContext_preserves_objects_invExt _ _ _ hInv
     · show (st.updateSchedContext scId _).scheduler.runQueue = _
@@ -3693,14 +3693,14 @@ theorem cancelBoundDonationOnCore_currentPlacementFrame {st st' : SystemState}
     cases h
     refine SystemState.CurrentPlacementFrame.trans ?_ (markKeyChangeFrom_currentPlacementFrame _ _ _ c)
     have hU := SystemState.updateSchedContext_scheduler st scId
-      (fun sc => { sc with boundThread := none, isActive := false, donationOrigin := none })
+      (fun sc => { sc with boundThreadCode := 0, isActive := false, donationOrigin := none })
     have hInv1 := SystemState.updateSchedContext_preserves_objects_invExt st scId
-      (fun sc => { sc with boundThread := none, isActive := false, donationOrigin := none }) hInv
+      (fun sc => { sc with boundThreadCode := 0, isActive := false, donationOrigin := none }) hInv
     refine SystemState.CurrentPlacementFrame.trans ?_
       (SystemState.CurrentPlacementFrame.updateTcb c _ tid _ (fun _ => rfl) hInv1)
     refine SystemState.CurrentPlacementFrame.trans
       (SystemState.CurrentPlacementFrame.of_parts (st' := st.updateSchedContext scId
-        (fun sc => { sc with boundThread := none, isActive := false, donationOrigin := none }))
+        (fun sc => { sc with boundThreadCode := 0, isActive := false, donationOrigin := none }))
         (by rw [hU]) (fun y => by rw [SystemState.updateSchedContext_getTcb? _ _ _ hInv])) ?_
     exact SystemState.CurrentPlacementFrame.of_frame rfl rfl
   · cases h
@@ -3732,14 +3732,14 @@ theorem cancelBoundDonationOnCore_runCoresAgree {st st' : SystemState}
   · rename_i scId _
     cases h
     have hInv1 := SystemState.updateSchedContext_preserves_objects_invExt st scId
-      (fun sc => { sc with boundThread := none, isActive := false, donationOrigin := none }) hInv
+      (fun sc => { sc with boundThreadCode := 0, isActive := false, donationOrigin := none }) hInv
     refine SystemState.RunCoresAgree.trans
       (SystemState.RunCoresAgree.of_objects (markKeyChangeFrom_objects _ _ _)) ?_
     refine SystemState.RunCoresAgree.trans
       (SystemState.updateTcb_runCoreCode _ tid _ (by intro _; rfl) hInv1) ?_
     exact SystemState.RunCoresAgree.trans (SystemState.RunCoresAgree.of_objects
         (st := st.updateSchedContext scId
-          (fun sc => { sc with boundThread := none, isActive := false, donationOrigin := none })) rfl)
+          (fun sc => { sc with boundThreadCode := 0, isActive := false, donationOrigin := none })) rfl)
       (fun y => by rw [SystemState.updateSchedContext_getTcb? _ _ _ hInv])
   · cases h
 

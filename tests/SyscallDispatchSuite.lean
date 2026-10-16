@@ -1987,15 +1987,15 @@ private def sd052b_replyRecv_donation_switch : IO Unit := do
     (SeLe4n.Testing.BootstrapBuilder.empty
       |>.withObject epId (.endpoint {})
       |>.withObject server.toObjId
-          (.tcb (TCB.setIpcState { mkTcb 1 with schedContextBinding := .donated scA clientA } .ready))
+          (.tcb (TCB.setIpcState { mkTcb 1 with scBindingScCode := SeLe4n.Kernel.SchedContextBinding.scCode (.donated scA clientA), scBindingOwnerCode := SeLe4n.Kernel.SchedContextBinding.ownerCode (.donated scA clientA) } .ready))
       |>.withObject clientA.toObjId
           -- **WS-HP HP4.6**: a donor that has donated its context is `.unbound`,
           -- not `.bound` -- two threads bound to one SchedContext is the
           -- malformation the pop's recipient guard refuses, and the binding-driven
           -- trigger never looked at the recipient so nothing caught it here.
-          (.tcb (TCB.setIpcState { mkTcb 2 with replyObjectCode := SeLe4n.ReplyId.optCode (some rid), schedContextBinding := SeLe4n.Kernel.SchedContextBinding.unbound } (.blockedOnReply epId (some server))))
+          (.tcb (TCB.setIpcState { mkTcb 2 with replyObjectCode := SeLe4n.ReplyId.optCode (some rid), scBindingScCode := 0, scBindingOwnerCode := 0 } (.blockedOnReply epId (some server))))
       |>.withObject clientB.toObjId
-          (.tcb (TCB.setIpcState { mkTcb 3 with schedContextBinding := .bound scB } .ready))
+          (.tcb (TCB.setIpcState { mkTcb 3 with scBindingScCode := SeLe4n.Kernel.SchedContextBinding.scCode (.bound scB), scBindingOwnerCode := 0 } .ready))
       -- **WS-OD OD4.1 / WS-HP HP4**: a `.donated` binding always has a FRAME on
       -- the context's reply stack -- `donateSchedContext` is a four-store push
       -- that is fail-closed on the donor's `replyObject`, so a donation with no
@@ -2006,9 +2006,9 @@ private def sd052b_replyRecv_donation_switch : IO Unit := do
           (.reply { replyId := rid, callerCode := SeLe4n.ThreadId.optCode (some clientA), next := some (.head scA) })
       |>.withObject scA.toObjId
           (.schedContext { SeLe4n.Kernel.SchedContext.empty scA with
-            boundThread := some server, scReply := some rid })
+            boundThreadCode := SeLe4n.ThreadId.optCode (some server), scReply := some rid })
       |>.withObject scB.toObjId
-          (.schedContext { SeLe4n.Kernel.SchedContext.empty scB with boundThread := some clientB })
+          (.schedContext { SeLe4n.Kernel.SchedContext.empty scB with boundThreadCode := SeLe4n.ThreadId.optCode (some clientB) })
       |>.withRunnable [server]
       |>.build)
   -- **WS-HP HP4**: the pop is head-driven, so assert the trigger resolves on the
@@ -2060,15 +2060,15 @@ private def sd052c_replyRecv_delegated_returns_recorded_server_donation : IO Uni
     (SeLe4n.Testing.BootstrapBuilder.empty
       |>.withObject epId (.endpoint {})
       |>.withObject server.toObjId
-          (.tcb (TCB.setIpcState { mkTcb 1 with schedContextBinding := .donated scA clientA } .ready))
+          (.tcb (TCB.setIpcState { mkTcb 1 with scBindingScCode := SeLe4n.Kernel.SchedContextBinding.scCode (.donated scA clientA), scBindingOwnerCode := SeLe4n.Kernel.SchedContextBinding.ownerCode (.donated scA clientA) } .ready))
       |>.withObject clientA.toObjId
           -- **WS-HP HP4.6**: a donor that has donated its context is `.unbound`,
           -- not `.bound` -- two threads bound to one SchedContext is the
           -- malformation the pop's recipient guard refuses, and the binding-driven
           -- trigger never looked at the recipient so nothing caught it here.
-          (.tcb (TCB.setIpcState { mkTcb 2 with replyObjectCode := SeLe4n.ReplyId.optCode (some rid), schedContextBinding := SeLe4n.Kernel.SchedContextBinding.unbound } (.blockedOnReply epId (some server))))
+          (.tcb (TCB.setIpcState { mkTcb 2 with replyObjectCode := SeLe4n.ReplyId.optCode (some rid), scBindingScCode := 0, scBindingOwnerCode := 0 } (.blockedOnReply epId (some server))))
       |>.withObject delegate.toObjId
-          (.tcb (TCB.setIpcState { mkTcb 5 with schedContextBinding := .unbound } .ready))
+          (.tcb (TCB.setIpcState { mkTcb 5 with scBindingScCode := 0, scBindingOwnerCode := 0 } .ready))
       -- The reply stack the donating Call left, as in sd052b above: a `.donated`
       -- binding with no frame is unreachable, and the head-driven pop reads the
       -- frame rather than the binding.
@@ -2076,7 +2076,7 @@ private def sd052c_replyRecv_delegated_returns_recorded_server_donation : IO Uni
           (.reply { replyId := rid, callerCode := SeLe4n.ThreadId.optCode (some clientA), next := some (.head scA) })
       |>.withObject scA.toObjId
           (.schedContext { SeLe4n.Kernel.SchedContext.empty scA with
-            boundThread := some server, scReply := some rid })
+            boundThreadCode := SeLe4n.ThreadId.optCode (some server), scReply := some rid })
       |>.withRunnable [server, delegate]
       |>.build)
   let msg : IpcMessage :=

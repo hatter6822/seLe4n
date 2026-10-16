@@ -826,7 +826,7 @@ def schedContextBind (vScId : ValidObjId) (vThreadId : ValidThreadId) : Kernel U
             -- heads a reply stack, and the pop's bottom arm clears the field when
             -- a chain unwinds — but "no state reaches this" is an argument about
             -- every path into the operation, and clearing costs one field write.
-            let updatedSc := { sc with boundThread := some vThreadId.val,
+            let updatedSc := { sc with boundThreadCode := SeLe4n.ThreadId.optCode (some vThreadId.val),
                                        donationOrigin := none }
             -- Write both updated objects (`v0.35.71`): the SchedContext under the
             -- witness its own lookup carries, then the TCB through the typed
@@ -838,7 +838,7 @@ def schedContextBind (vScId : ValidObjId) (vThreadId : ValidThreadId) : Kernel U
             let st1 := st.rewriteObject vScId.val (KernelObject.schedContext updatedSc)
               (SystemState.rewriteAdmissible_schedContext hSc updatedSc)
             let st2 := st1.updateTcb vThreadId.val fun t =>
-              { t with schedContextBinding := SchedContextBinding.bound scIdTyped,
+              { t with scBindingScCode := SeLe4n.Kernel.SchedContextBinding.scCode (SchedContextBinding.bound scIdTyped), scBindingOwnerCode := 0,
                        priority := sc.priority }
             -- Z5-G3: If thread is in RunQueue, remove and re-insert at
             -- SchedContext-derived priority. Under dequeue-on-dispatch, only
@@ -1112,7 +1112,7 @@ def schedContextUnbind (vScId : ValidObjId) : Kernel Unit :=
           -- so clearing `current` leaves it nowhere; it is enqueued here.  A
           -- thread that was **queued** is removed and re-inserted at the legacy
           -- priority, which is the re-bucket the docstring always described.
-          let updatedTcb := { tcb with schedContextBinding := SchedContextBinding.unbound }
+          let updatedTcb := { tcb with scBindingScCode := 0, scBindingOwnerCode := 0 }
           let legacyPrio := updatedTcb.boostedPriority
           -- The current-slot stage is a scheduler-only update of the pre-state
           -- (`v0.35.71`): its object table IS the pre-state's, definitionally,
@@ -1123,7 +1123,7 @@ def schedContextUnbind (vScId : ValidObjId) : Kernel Unit :=
           -- **WS-HP HP10.4**: and the origin, for the bind's reason in the other
           -- direction — the reservation stops being owned at all, so a recorded
           -- departure from ownership has no subject.
-          let updatedSc := { sc with boundThread := none, isActive := false,
+          let updatedSc := { sc with boundThreadCode := 0, isActive := false,
                                      donationOrigin := none }
           let st2 := st1.rewriteObject vScId.val (KernelObject.schedContext updatedSc)
             (SystemState.rewriteAdmissible_schedContext hSc updatedSc)
@@ -1132,7 +1132,7 @@ def schedContextUnbind (vScId : ValidObjId) : Kernel Unit :=
           -- one with its binding cleared, which is `updatedTcb` on every state
           -- the two lookups above admit.
           let st3 := st2.updateTcb tid fun t =>
-            { t with schedContextBinding := SchedContextBinding.unbound }
+            { t with scBindingScCode := 0, scBindingOwnerCode := 0 }
           -- The run-queue stage, after the object writes (it reads none of
           -- them): through the thread's TCB run-queue links (WS-ZA ZA4.5).
           -- The reschedule-SGI accumulator (KSC-1): a thread that was current
@@ -1160,7 +1160,7 @@ def schedContextUnbind (vScId : ValidObjId) : Kernel Unit :=
           -- **WS-HP HP10.4**: and the origin, for the bind's reason in the other
           -- direction — the reservation stops being owned at all, so a recorded
           -- departure from ownership has no subject.
-          let updatedSc := { sc with boundThread := none, isActive := false,
+          let updatedSc := { sc with boundThreadCode := 0, isActive := false,
                                      donationOrigin := none }
           let st1 := st.rewriteObject vScId.val (KernelObject.schedContext updatedSc)
             (SystemState.rewriteAdmissible_schedContext hSc updatedSc)
@@ -1564,7 +1564,7 @@ theorem schedContextUnbind_runQueueEntryStage (vScId : SeLe4n.ValidObjId) (st st
               (schedContextUnbindQueueStage_runQueueLinkStage _ _ _ _ _)
             refine SystemState.RunQueueLinkStage.trans (st' := SystemState.rewriteObject _ _ _ _) ?_
               (.of_stage (SystemState.RunQueueStage.updateTcb _ _
-                (f := fun t => { t with schedContextBinding := SchedContextBinding.unbound })
+                (f := fun t => { t with scBindingScCode := 0, scBindingOwnerCode := 0 })
                 (by intro _ _; rfl)))
             refine SystemState.RunQueueLinkStage.trans
               (st' := { st with scheduler := match runningCoreOf? st tid with
@@ -1607,7 +1607,7 @@ theorem schedContextUnbind_runQueueEntryStage (vScId : SeLe4n.ValidObjId) (st st
               (fun hW => ?hRun))
           refine SystemState.RunQueueStage.trans (st' := SystemState.rewriteObject _ _ _ _) ?_
             (SystemState.RunQueueStage.updateTcb _ _
-              (f := fun t => { t with schedContextBinding := SchedContextBinding.unbound })
+              (f := fun t => { t with scBindingScCode := 0, scBindingOwnerCode := 0 })
               (by intro _ _; rfl))
           refine SystemState.RunQueueStage.trans
             (st' := { st with scheduler := match runningCoreOf? st tid with

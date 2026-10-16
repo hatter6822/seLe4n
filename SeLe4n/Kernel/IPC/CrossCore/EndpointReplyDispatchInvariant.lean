@@ -285,7 +285,7 @@ theorem applyReplyDonationOnCore_preserves_ipcInvariantFull
       (descheduleAtPlacement_passiveServerIdleFrame stM holderVtid.val
         (fun tcb hTcb => ?_))
     rw [hMObjs] at hTcb
-    have hEqT : { pTcb with schedContextBinding := .unbound } = tcb :=
+    have hEqT : { pTcb with scBindingScCode := 0, scBindingOwnerCode := 0 } = tcb :=
       Option.some.inj (hPPost.symm.trans ((getTcb?_eq_some_iff st' _ tcb).mpr hTcb))
     exact Or.inr (by rw [← hEqT]; exact hIdle pTcb hPPre)
 
@@ -400,7 +400,7 @@ theorem applyReplyDonationOnCore_establishes_ipcInvariantFull_of_except
         (descheduleAtPlacement_passiveServerIdleFrame stM holderVtid.val
           (fun tcb hTcb => ?_))
       rw [hMObjs] at hTcb
-      have hEqT : { pTcb with schedContextBinding := .unbound } = tcb :=
+      have hEqT : { pTcb with scBindingScCode := 0, scBindingOwnerCode := 0 } = tcb :=
         Option.some.inj (hPPost.symm.trans ((getTcb?_eq_some_iff st' _ tcb).mpr hTcb))
       exact Or.inr (by rw [← hEqT]; exact hIdle pTcb hPPre)
   · exact applyReplyDonationOnCore_preserves_ipcInvariantFull st st'' rid targetVtid

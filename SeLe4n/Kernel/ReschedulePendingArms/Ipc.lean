@@ -545,7 +545,7 @@ theorem donateSchedContext_stepCovers (e : CoreId) {st st' : SystemState}
             | some clientTcb =>
               simp only []
               cases hS3 : storeObject clientTid.toObjId
-                  (.tcb { clientTcb with schedContextBinding := .unbound }) s2 with
+                  (.tcb { clientTcb with scBindingScCode := 0, scBindingOwnerCode := 0 }) s2 with
               | error _ => intro h; cases h
               | ok p3 =>
                 obtain ⟨⟨⟩, s3⟩ := p3
@@ -556,7 +556,7 @@ theorem donateSchedContext_stepCovers (e : CoreId) {st st' : SystemState}
                   simp only []
                   cases hS4 : storeObject serverTid.toObjId
                       (.tcb { serverTcb with
-                        schedContextBinding := .donated clientScId clientTid }) s3 with
+                        scBindingScCode := SeLe4n.Kernel.SchedContextBinding.scCode (.donated clientScId clientTid), scBindingOwnerCode := SeLe4n.Kernel.SchedContextBinding.ownerCode (.donated clientScId clientTid) }) s3 with
                   | error _ => intro h; cases h
                   | ok p4 =>
                     obtain ⟨⟨⟩, s4⟩ := p4

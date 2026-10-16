@@ -286,8 +286,8 @@ private def sr017_suspendBoundSchedContext : IO Unit := do
   let sc : SeLe4n.Kernel.SchedContext := {
     scId := scId, budget := ⟨1000⟩, period := ⟨10000⟩,
     priority := ⟨10⟩, deadline := ⟨0⟩, domain := ⟨0⟩,
-    budgetRemaining := ⟨1000⟩, boundThread := some ⟨1⟩ }
-  let tcb := { mkTcb 1 .Ready with schedContextBinding := .bound scId }
+    budgetRemaining := ⟨1000⟩, boundThreadCode := SeLe4n.ThreadId.optCode (some ⟨1⟩) }
+  let tcb := { mkTcb 1 .Ready with scBindingScCode := SeLe4n.Kernel.SchedContextBinding.scCode (.bound scId), scBindingOwnerCode := 0 }
   let st := mkState [(⟨1⟩, .tcb tcb), (⟨50⟩, .schedContext sc)]
   match bootSuspendThread st ⟨tid, by decide⟩ with
   | .ok st' =>
@@ -360,11 +360,11 @@ private def sr022_cancelBoundDonationClearsBinding : IO Unit := do
   let tid : SeLe4n.ThreadId := ⟨1⟩
   let scId : SeLe4n.SchedContextId := SeLe4n.SchedContextId.ofNat 100
   let sc : SeLe4n.Kernel.SchedContext :=
-    { scId := scId, boundThread := some tid,
+    { scId := scId, boundThreadCode := SeLe4n.ThreadId.optCode (some tid),
       budget := ⟨1000⟩, period := ⟨1000⟩,
       priority := ⟨10⟩, deadline := ⟨0⟩, domain := ⟨0⟩,
       budgetRemaining := ⟨1000⟩, isActive := true, replenishments := [] }
-  let tcb := { mkTcb 1 .Ready with schedContextBinding := .bound scId }
+  let tcb := { mkTcb 1 .Ready with scBindingScCode := SeLe4n.Kernel.SchedContextBinding.scCode (.bound scId), scBindingOwnerCode := 0 }
   let st := mkState [(⟨1⟩, .tcb tcb), (scId.toObjId, .schedContext sc)]
   match cancelBoundDonation st tid tcb with
   | .ok st' =>
@@ -386,7 +386,7 @@ private def sr023_cancelBoundDonationRejectsDonated : IO Unit := do
   let tid : SeLe4n.ThreadId := ⟨1⟩
   let donor : SeLe4n.ThreadId := ⟨2⟩
   let scId : SeLe4n.SchedContextId := SeLe4n.SchedContextId.ofNat 100
-  let tcb := { mkTcb 1 .Ready with schedContextBinding := .donated scId donor }
+  let tcb := { mkTcb 1 .Ready with scBindingScCode := SeLe4n.Kernel.SchedContextBinding.scCode (.donated scId donor), scBindingOwnerCode := SeLe4n.Kernel.SchedContextBinding.ownerCode (.donated scId donor) }
   let st := mkState [(⟨1⟩, .tcb tcb)]
   match cancelBoundDonation st tid tcb with
   | .ok _ => throw <| IO.userError "cancelBoundDonation should reject .donated"
@@ -399,7 +399,7 @@ private def sr023_cancelBoundDonationRejectsDonated : IO Unit := do
 private def sr024_cancelDonatedDonationRejectsBound : IO Unit := do
   let tid : SeLe4n.ThreadId := ⟨1⟩
   let scId : SeLe4n.SchedContextId := SeLe4n.SchedContextId.ofNat 100
-  let tcb := { mkTcb 1 .Ready with schedContextBinding := .bound scId }
+  let tcb := { mkTcb 1 .Ready with scBindingScCode := SeLe4n.Kernel.SchedContextBinding.scCode (.bound scId), scBindingOwnerCode := 0 }
   let st := mkState [(⟨1⟩, .tcb tcb)]
   match cancelDonatedDonation st tid tcb with
   | .ok _ => throw <| IO.userError "cancelDonatedDonation should reject .bound"
@@ -410,7 +410,7 @@ private def sr024_cancelDonatedDonationRejectsBound : IO Unit := do
 /-- SR-025: The thin `cancelDonation` dispatcher on `.unbound` is identity. -/
 private def sr025_cancelDonationUnboundIdentity : IO Unit := do
   let tid : SeLe4n.ThreadId := ⟨1⟩
-  let tcb := { mkTcb 1 .Ready with schedContextBinding := .unbound }
+  let tcb := { mkTcb 1 .Ready with scBindingScCode := 0, scBindingOwnerCode := 0 }
   let st := mkState [(⟨1⟩, .tcb tcb)]
   match cancelDonation st tid tcb with
   | .ok st' =>

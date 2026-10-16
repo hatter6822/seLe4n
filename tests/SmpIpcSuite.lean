@@ -777,7 +777,7 @@ private def donReply : SeLe4n.ReplyId := ⟨844⟩
 /-- The client's own SchedContext (priority 60, above the passive server's base). -/
 private def donClientSc : SchedContext :=
   { scId := scClient, budget := ⟨100⟩, period := ⟨1000⟩, priority := ⟨60⟩, deadline := ⟨0⟩,
-    domain := ⟨0⟩, budgetRemaining := ⟨50⟩, boundThread := some donClient, isActive := true }
+    domain := ⟨0⟩, budgetRemaining := ⟨50⟩, boundThreadCode := SeLe4n.ThreadId.optCode (some donClient), isActive := true }
 
 /-- A bound-SC client (prio 60) and a passive `.unbound` server homed on core 1. -/
 private def stDonBase : SystemState :=
@@ -785,9 +785,9 @@ private def stDonBase : SystemState :=
     |>.withObject donEp (.endpoint {})
     |>.withObject scClient.toObjId (.schedContext donClientSc)
     |>.withObject donClient.toObjId
-        (.tcb { mkTcb 841 60 none with schedContextBinding := .bound scClient })
+        (.tcb { mkTcb 841 60 none with scBindingScCode := SeLe4n.Kernel.SchedContextBinding.scCode (.bound scClient), scBindingOwnerCode := 0 })
     |>.withObject donServer.toObjId
-        (.tcb { mkTcb 842 20 (some c1) with schedContextBinding := .unbound })
+        (.tcb { mkTcb 842 20 (some c1) with scBindingScCode := 0, scBindingOwnerCode := 0 })
     |>.withObject donReply.toObjId (.reply { replyId := donReply })
     |>.withRunnable [donClient]
     |>.build)
@@ -904,7 +904,7 @@ field at its `.Inactive` default, which `suspendThreadOnCore` rejects outright
 which is the state the live dispatch entry suspends from. -/
 private def donClientTcbRunning : TCB :=
   { mkTcb 841 60 none with
-      schedContextBinding := .bound scClient
+      scBindingScCode := SeLe4n.Kernel.SchedContextBinding.scCode (.bound scClient), scBindingOwnerCode := 0
       threadState := ThreadState.Running }
 
 private def donServerTcbReady : TCB :=
@@ -955,7 +955,7 @@ private def donCaller2 : SeLe4n.ThreadId := ⟨848⟩
 
 private def donCaller2Sc : SchedContext :=
   { scId := scCaller2, budget := ⟨100⟩, period := ⟨1000⟩, priority := ⟨40⟩, deadline := ⟨0⟩,
-    domain := ⟨0⟩, budgetRemaining := ⟨50⟩, boundThread := some donCaller2, isActive := true }
+    domain := ⟨0⟩, budgetRemaining := ⟨50⟩, boundThreadCode := SeLe4n.ThreadId.optCode (some donCaller2), isActive := true }
 
 /-- The queued caller's own reply object -- the frame **WS-OD OD4.1**'s push
 mounts on its context's stack when the receive leg hands that context on.  A
@@ -968,7 +968,7 @@ private def donCaller2Reply : SeLe4n.ReplyId := ⟨849⟩
 server, still holding its own SchedContext, and linked to its own Reply. -/
 private def donCaller2Tcb : TCB :=
   (TCB.setIpcState { mkTcb 848 40 (some c3) with
-      schedContextBinding := .bound scCaller2
+      scBindingScCode := SeLe4n.Kernel.SchedContextBinding.scCode (.bound scCaller2), scBindingOwnerCode := 0
       replyObjectCode := SeLe4n.ReplyId.optCode (some donCaller2Reply)
       threadState := ThreadState.Ready } (.blockedOnReply donEp (some donServer)))
 
@@ -1917,13 +1917,13 @@ private def popStoreShaped (outerTcb : TCB) (head? : Option SeLe4n.ReplyId)
   (BootstrapBuilder.empty
     |>.withObject chainSc.toObjId
         (.schedContext { SchedContext.empty chainSc with
-                           boundThread := some popServer, scReply := head? })
+                           boundThreadCode := SeLe4n.ThreadId.optCode (some popServer), scReply := head? })
     |>.withObject chainHeadReply.toObjId
         (.reply { replyId := chainHeadReply, callerCode := SeLe4n.ThreadId.optCode (some popClient),
                   next := some (.head chainSc), prev := prev? })
     |>.withObject chainOuterReply.toObjId (.reply outerReply)
     |>.withObject popServer.toObjId
-        (.tcb { mkTcb 81 50 none with schedContextBinding := .donated chainSc popClient })
+        (.tcb { mkTcb 81 50 none with scBindingScCode := SeLe4n.Kernel.SchedContextBinding.scCode (.donated chainSc popClient), scBindingOwnerCode := SeLe4n.Kernel.SchedContextBinding.ownerCode (.donated chainSc popClient) })
     |>.withObject popClient.toObjId (.tcb (mkTcb 82 40 none))
     -- WS-OD OD4.4: the outer caller must be a *waiting donor*, because the pop
     -- validates it before handing it the context.  A fixture that made it merely
@@ -1967,13 +1967,13 @@ private def popHeadLinkedTo (up : Option ReplyStackLink) : SystemState :=
   (BootstrapBuilder.empty
     |>.withObject chainSc.toObjId
         (.schedContext { SchedContext.empty chainSc with
-                           boundThread := some popServer,
+                           boundThreadCode := SeLe4n.ThreadId.optCode (some popServer),
                            scReply := some chainHeadReply })
     |>.withObject chainHeadReply.toObjId
         (.reply { replyId := chainHeadReply, callerCode := SeLe4n.ThreadId.optCode (some popClient), next := up })
     |>.withObject chainOuterReply.toObjId (.reply popOuterFrame)
     |>.withObject popServer.toObjId
-        (.tcb { mkTcb 81 50 none with schedContextBinding := .donated chainSc popClient })
+        (.tcb { mkTcb 81 50 none with scBindingScCode := SeLe4n.Kernel.SchedContextBinding.scCode (.donated chainSc popClient), scBindingOwnerCode := SeLe4n.Kernel.SchedContextBinding.ownerCode (.donated chainSc popClient) })
     |>.withObject popClient.toObjId (.tcb (mkTcb 82 40 none))
     |>.withObject popOuter.toObjId (.tcb popWaitingDonor)
     |>.build)
@@ -2080,7 +2080,7 @@ private def runDonationReturnPopChecks : IO Unit := do
      | .ok _ => false)
   assertBool "NEGATIVE: an outer caller that still holds a binding is refused"
     (match returnDonatedSchedContext
-        (popStoreWith { popWaitingDonor with schedContextBinding := .bound chainOtherSc }
+        (popStoreWith { popWaitingDonor with scBindingScCode := SeLe4n.Kernel.SchedContextBinding.scCode (.bound chainOtherSc), scBindingOwnerCode := 0 }
           (some chainHeadReply) (some chainOuterReply))
         popServer chainSc popClient (some popOuter) with
      | .error e => e == KernelError.invalidArgument
@@ -2188,14 +2188,14 @@ private def pushStoreShaped (donorBinding : SchedContextBinding)
   (BootstrapBuilder.empty
     |>.withObject pushSc.toObjId
         (.schedContext { SchedContext.empty pushSc with
-                           boundThread := some pushDonor, scReply := some pushOuterReply })
+                           boundThreadCode := SeLe4n.ThreadId.optCode (some pushDonor), scReply := some pushOuterReply })
     |>.withObject pushOuterReply.toObjId
         (.reply { replyId := pushOuterReply, callerCode := SeLe4n.ThreadId.optCode (some pushOuter),
                   next := some (.head pushSc) })
     |>.withObject pushDonorReply.toObjId (.reply headReply)
     |>.withObject pushDonor.toObjId
         (.tcb { mkTcb 91 40 none with
-                  schedContextBinding := donorBinding, replyObjectCode := SeLe4n.ReplyId.optCode donorReply? })
+                  scBindingScCode := SeLe4n.Kernel.SchedContextBinding.scCode (donorBinding), scBindingOwnerCode := SeLe4n.Kernel.SchedContextBinding.ownerCode (donorBinding), replyObjectCode := SeLe4n.ReplyId.optCode donorReply? })
     |>.withObject pushServer.toObjId (.tcb (mkTcb 92 30 none))
     -- **WS-HP HP5 (fixture correction)**: the outer caller names the reply object it
     -- is blocked on.  `pushOuterReply.caller` has always named it back, so the store
@@ -2587,7 +2587,7 @@ links its reply object *before* `applyCallDonation` runs, so `.bound` **and**
 private def pushOwnerStore : SystemState :=
   (BootstrapBuilder.empty
     |>.withObject pushSc.toObjId
-        (.schedContext { SchedContext.empty pushSc with boundThread := some pushOuter })
+        (.schedContext { SchedContext.empty pushSc with boundThreadCode := SeLe4n.ThreadId.optCode (some pushOuter) })
     |>.withObject pushOuterReply.toObjId
         (.reply { replyId := pushOuterReply, callerCode := SeLe4n.ThreadId.optCode (some pushOuter) })
     |>.withObject pushDonorReply.toObjId (.reply pushFreshHead)
@@ -2595,7 +2595,7 @@ private def pushOwnerStore : SystemState :=
         (.tcb { mkTcb 91 40 none with replyObjectCode := SeLe4n.ReplyId.optCode (some pushDonorReply) })
     |>.withObject pushServer.toObjId (.tcb (mkTcb 92 30 none))
     |>.withObject pushOuter.toObjId
-        (.tcb { pushOuterBlockedTcb with schedContextBinding := .bound pushSc })
+        (.tcb { pushOuterBlockedTcb with scBindingScCode := SeLe4n.Kernel.SchedContextBinding.scCode (.bound pushSc), scBindingOwnerCode := 0 })
     |>.build)
 
 /-- **WS-HP HP10.9**: the depth-2 chain, built by the live push **twice** — so the
@@ -2621,7 +2621,7 @@ depth-two accounting differential all need it and three of them used to spell it
 again locally. -/
 private def replyRemovalInOrderDonorTcb : TCB :=
   (TCB.setIpcState { mkTcb 91 40 none with
-      schedContextBinding := SchedContextBinding.unbound,
+      scBindingScCode := 0, scBindingOwnerCode := 0,
       replyObjectCode := SeLe4n.ReplyId.optCode (some pushDonorReply) } (ThreadIpcState.blockedOnReply (SeLe4n.ObjId.ofNat 97) (some pushServer)))
 
 /-- **WS-RM**: the removal witness's state, from a pushed depth-2 chain: the outer
@@ -2894,7 +2894,7 @@ private def loopCaller2Reply : SeLe4n.ReplyId := ⟨863⟩
 private def loopCaller2SchedContext : SchedContext :=
   { scId := loopCaller2Sc, budget := ⟨100⟩, period := ⟨1000⟩, priority := ⟨55⟩,
     deadline := ⟨0⟩, domain := ⟨0⟩, budgetRemaining := ⟨50⟩,
-    boundThread := some loopCaller2, isActive := true }
+    boundThreadCode := SeLe4n.ThreadId.optCode (some loopCaller2), isActive := true }
 
 /-- `stDonBase` plus a second, ready client holding its own context and its own
 free Reply object. -/
@@ -2902,7 +2902,7 @@ private def stLoopBase : SystemState :=
   { stDonBase with
       objects := ((stDonBase.objects.insert loopCaller2Sc.toObjId
           (.schedContext loopCaller2SchedContext)).insert loopCaller2.toObjId
-          (.tcb { mkTcb 861 55 none with schedContextBinding := .bound loopCaller2Sc })).insert
+          (.tcb { mkTcb 861 55 none with scBindingScCode := SeLe4n.Kernel.SchedContextBinding.scCode (.bound loopCaller2Sc), scBindingOwnerCode := 0 })).insert
           loopCaller2Reply.toObjId (.reply { replyId := loopCaller2Reply }) }
 
 private def runReplyRecvLoopCompletionChecks : IO Unit := do
@@ -3059,7 +3059,7 @@ private def scHandoffServer : SeLe4n.SchedContextId := SchedContextId.ofNat 845
 private def handoffServerSc : SchedContext :=
   { scId := scHandoffServer, budget := ⟨100⟩, period := ⟨1000⟩, priority := ⟨20⟩,
     deadline := ⟨0⟩, domain := ⟨0⟩, budgetRemaining := ⟨50⟩,
-    boundThread := some donServer, isActive := true }
+    boundThreadCode := SeLe4n.ThreadId.optCode (some donServer), isActive := true }
 
 /-- `stDonBase` with the server holding its own budget rather than passive. -/
 private def stHandoffActiveBase : SystemState :=
@@ -3068,7 +3068,7 @@ private def stHandoffActiveBase : SystemState :=
         (stDonBase.objects.insert scHandoffServer.toObjId
             (.schedContext handoffServerSc)).insert donServer.toObjId
           (.tcb { mkTcb 842 20 (some c1) with
-                    schedContextBinding := .bound scHandoffServer }) }
+                    scBindingScCode := SeLe4n.Kernel.SchedContextBinding.scCode (.bound scHandoffServer), scBindingOwnerCode := 0 }) }
 
 /-- WS-OD OD3.14: the client-first rendezvous, at runtime.
 
@@ -3217,7 +3217,7 @@ private def depth3Chain : Except KernelError SystemState :=
                 depth3Server.toObjId (.tcb (mkTcb 101 25 none))).insert
                 pushServer.toObjId
                 (.tcb (TCB.setIpcState { mkTcb 92 30 none with
-                          schedContextBinding := .donated pushSc pushDonor,
+                          scBindingScCode := SeLe4n.Kernel.SchedContextBinding.scCode (.donated pushSc pushDonor), scBindingOwnerCode := SeLe4n.Kernel.SchedContextBinding.ownerCode (.donated pushSc pushDonor),
                           replyObjectCode := SeLe4n.ReplyId.optCode (some depth3Reply) } (.blockedOnReply (SeLe4n.ObjId.ofNat 97) (some depth3Server)))) }
       match donateSchedContext stReady pushServer depth3Server pushSc with
       | .error e => .error e
@@ -3230,7 +3230,7 @@ private def depth3Chain : Except KernelError SystemState :=
           .ok { depth3 with
                   objects := depth3.objects.insert pushDonor.toObjId
                     (.tcb (TCB.setIpcState { mkTcb 91 40 none with
-                              schedContextBinding := .unbound,
+                              scBindingScCode := 0, scBindingOwnerCode := 0,
                               replyObjectCode := SeLe4n.ReplyId.optCode (some pushDonorReply) } (.blockedOnReply (SeLe4n.ObjId.ofNat 97) (some pushServer)))) }
 
 private def runMiddleRemovalDepthThreeChecks : IO Unit := do
@@ -3400,7 +3400,7 @@ private def depth4Chain : Except KernelError SystemState :=
                 depth4Server.toObjId (.tcb (mkTcb 103 20 none))).insert
                 depth3Server.toObjId
                 (.tcb (TCB.setIpcState { mkTcb 101 25 none with
-                          schedContextBinding := .donated pushSc pushServer,
+                          scBindingScCode := SeLe4n.Kernel.SchedContextBinding.scCode (.donated pushSc pushServer), scBindingOwnerCode := SeLe4n.Kernel.SchedContextBinding.ownerCode (.donated pushSc pushServer),
                           replyObjectCode := SeLe4n.ReplyId.optCode (some depth4Reply) } (.blockedOnReply (SeLe4n.ObjId.ofNat 97) (some depth4Server)))) }
       donateSchedContext stReady depth3Server depth4Server pushSc
 
@@ -3427,7 +3427,7 @@ private def runDonationOriginIdReuseChecks : IO Unit := do
     { pushStore with
         objects := pushStore.objects.insert pushSc.toObjId
           (.schedContext { SchedContext.empty pushSc with
-                             boundThread := some pushServer,
+                             boundThreadCode := SeLe4n.ThreadId.optCode (some pushServer),
                              scReply := some pushOuterReply,
                              donationOrigin := some pushOuter }) }
   let originOf (st : SystemState) : Option (Option SeLe4n.ThreadId) :=
@@ -3526,7 +3526,7 @@ private def runDonationOriginRedirectChecks : IO Unit := do
     { pushStore with
         objects := (((pushStore.objects.insert pushSc.toObjId
           (.schedContext { SchedContext.empty pushSc with
-                             boundThread := some pushDonor,
+                             boundThreadCode := SeLe4n.ThreadId.optCode (some pushDonor),
                              scReply := some redirectHeadReply,
                              donationOrigin := some pushOuter })).insert
             redirectHeadReply.toObjId
@@ -3537,7 +3537,7 @@ private def runDonationOriginRedirectChecks : IO Unit := do
                       replyObjectCode := SeLe4n.ReplyId.optCode (some redirectHeadReply) } (.blockedOnReply (SeLe4n.ObjId.ofNat 97) (some pushDonor))))).insert
             pushDonor.toObjId
             (.tcb { mkTcb 91 40 none with
-                      schedContextBinding := .donated pushSc pushServer,
+                      scBindingScCode := SeLe4n.Kernel.SchedContextBinding.scCode (.donated pushSc pushServer), scBindingOwnerCode := SeLe4n.Kernel.SchedContextBinding.ownerCode (.donated pushSc pushServer),
                       replyObjectCode := SeLe4n.ReplyId.optCode (some pushDonorReply) })
           |>.insert pushOuter.toObjId (.tcb outerTcb) }
   -- The re-called client: `.unbound`, reply-blocked on its NEXT call, whose frame
@@ -3621,11 +3621,11 @@ private def runDonationOriginRedirectChecks : IO Unit := do
                     next := some (.head redirectSc2) })).insert
             redirectSc2.toObjId
             (.schedContext { SchedContext.empty redirectSc2 with
-                               boundThread := some redirectSc2Holder,
+                               boundThreadCode := SeLe4n.ThreadId.optCode (some redirectSc2Holder),
                                scReply := some pushOuterReply })
           |>.insert redirectSc2Holder.toObjId
             (.tcb { mkTcb 100 20 none with
-                      schedContextBinding := .donated redirectSc2 pushOuter }) }
+                      scBindingScCode := SeLe4n.Kernel.SchedContextBinding.scCode (.donated redirectSc2 pushOuter), scBindingOwnerCode := SeLe4n.Kernel.SchedContextBinding.ownerCode (.donated redirectSc2 pushOuter) }) }
   assertBool "NEGATIVE (live owner): a binding NAMES the origin as owner"
     (pushBindingOf liveOwnerStore redirectSc2Holder == some (.donated redirectSc2 pushOuter))
   assertBool "NEGATIVE (live owner): ...its frame heads that context, so it is on a live stack"
@@ -3669,7 +3669,7 @@ private def runDonationOriginRedirectChecks : IO Unit := do
   -- NEGATIVE: an origin that already holds a reservation of its own is the case
   -- `donationRecipientAcceptable` has always covered.
   let stBoundOrigin : SystemState :=
-    redirectStore { mkTcb 93 50 none with schedContextBinding := .bound pushSc }
+    redirectStore { mkTcb 93 50 none with scBindingScCode := SeLe4n.Kernel.SchedContextBinding.scCode (.bound pushSc), scBindingOwnerCode := 0 }
   assertBool "NEGATIVE: a bound origin fails the recipient guard"
     (donationRecipientAcceptable stBoundOrigin pushOuter == false)
   -- CONTROL: and rebindability admits *it*, so the two guards are known to be
@@ -3697,7 +3697,7 @@ private def runDonationOriginRedirectChecks : IO Unit := do
     { pushStore with
         objects := pushStore.objects.insert pushSc.toObjId
           (.schedContext { SchedContext.empty pushSc with
-                             boundThread := some pushServer,
+                             boundThreadCode := SeLe4n.ThreadId.optCode (some pushServer),
                              scReply := some pushOuterReply,
                              donationOrigin := some staleOrigin }) }
   assertBool "CONTROL: the stale origin resolves to no thread"
@@ -4052,21 +4052,21 @@ private def stOrphanHeadReplyRecv : SystemState :=
     |>.withObject orphanClient.toObjId (.tcb (TCB.setIpcState { mkTcb 862 30 (some c1) with
         threadState := .BlockedReply,
         replyObjectCode := SeLe4n.ReplyId.optCode (some orphanReply),
-        schedContextBinding := SchedContextBinding.unbound } (.blockedOnReply orphanEp (some orphanS1))))
+        scBindingScCode := 0, scBindingOwnerCode := 0 } (.blockedOnReply orphanEp (some orphanS1))))
     |>.withObject orphanS1.toObjId (.tcb { mkTcb 861 40 (some c2) with
-        schedContextBinding := .bound orphanS1Sc })
+        scBindingScCode := SeLe4n.Kernel.SchedContextBinding.scCode (.bound orphanS1Sc), scBindingOwnerCode := 0 })
     |>.withObject orphanHolder.toObjId (.tcb { mkTcb 863 50 (some c3) with
-        schedContextBinding := .donated orphanSc orphanClient })
+        scBindingScCode := SeLe4n.Kernel.SchedContextBinding.scCode (.donated orphanSc orphanClient), scBindingOwnerCode := SeLe4n.Kernel.SchedContextBinding.ownerCode (.donated orphanSc orphanClient) })
     |>.withObject orphanSender.toObjId (.tcb (TCB.setIpcState { mkTcb 864 20 (some c0) with
         threadState := .BlockedSend,
         queuePPrevCode := 1,
         pendingMessage := some IpcMessage.empty } (.blockedOnSend orphanEp)))
     |>.withObject orphanDelegate.toObjId (.tcb { mkTcb 865 25 (some c0) with
-        schedContextBinding := SchedContextBinding.unbound })
+        scBindingScCode := 0, scBindingOwnerCode := 0 })
     |>.withObject orphanSc.toObjId (.schedContext { SchedContext.empty orphanSc with
-        boundThread := some orphanHolder, scReply := some orphanReply })
+        boundThreadCode := SeLe4n.ThreadId.optCode (some orphanHolder), scReply := some orphanReply })
     |>.withObject orphanS1Sc.toObjId (.schedContext { SchedContext.empty orphanS1Sc with
-        boundThread := some orphanS1 })
+        boundThreadCode := SeLe4n.ThreadId.optCode (some orphanS1) })
     |>.withRunnable [orphanS1, orphanHolder, orphanDelegate]
     |>.build)
 
@@ -4180,7 +4180,7 @@ replenishment there too, so the return's migration is the identity. -/
 private def stPreReturnSameCore : SystemState :=
   { stDonBase with
       objects := stDonBase.objects.insert donClient.toObjId
-        (.tcb { mkTcb 841 60 (some c1) with schedContextBinding := .bound scClient }),
+        (.tcb { mkTcb 841 60 (some c1) with scBindingScCode := SeLe4n.Kernel.SchedContextBinding.scCode (.bound scClient), scBindingOwnerCode := 0 }),
       scheduler :=
         stDonBase.scheduler.setReplenishQueueOnCore c1 (ReplenishQueue.empty.insert scClient 100) }
 
@@ -4338,7 +4338,7 @@ private def fpClient2Sc : SeLe4n.SchedContextId := SchedContextId.ofNat 872
 private def fpClient2SchedContext : SchedContext :=
   { scId := fpClient2Sc, budget := ⟨100⟩, period := ⟨1000⟩, priority := ⟨55⟩,
     deadline := ⟨0⟩, domain := ⟨0⟩, budgetRemaining := ⟨50⟩,
-    boundThread := some fpClient2, isActive := true }
+    boundThreadCode := SeLe4n.ThreadId.optCode (some fpClient2), isActive := true }
 
 /-- The shape (c) needs: a second endpoint with its own passive server (home core
 3) and a bound client pinned to core 2. -/
@@ -4351,7 +4351,7 @@ private def fpReplyX : SeLe4n.ReplyId := ⟨878⟩
 private def fpClientXSchedContext : SchedContext :=
   { scId := fpClientXSc, budget := ⟨100⟩, period := ⟨1000⟩, priority := ⟨45⟩,
     deadline := ⟨0⟩, domain := ⟨0⟩, budgetRemaining := ⟨50⟩,
-    boundThread := some fpClientX, isActive := true }
+    boundThreadCode := SeLe4n.ThreadId.optCode (some fpClientX), isActive := true }
 
 /-- `stDonBase` — a bound client homed on the boot core, a passive server homed on
 core 1 — plus the second client on core 2, with one replenishment per context on
@@ -4361,7 +4361,7 @@ private def stFpPassiveBase : SystemState :=
   let objs := stDonBase.objects
     |>.insert fpClient2Sc.toObjId (.schedContext fpClient2SchedContext)
     |>.insert fpClient2.toObjId
-        (.tcb { mkTcb 871 55 (some c2) with schedContextBinding := .bound fpClient2Sc })
+        (.tcb { mkTcb 871 55 (some c2) with scBindingScCode := SeLe4n.Kernel.SchedContextBinding.scCode (.bound fpClient2Sc), scBindingOwnerCode := 0 })
   let base : SystemState := { stDonBase with objects := objs }
   let sched := base.scheduler
     |>.setReplenishQueueOnCore c0 (ReplenishQueue.empty.insert scClient 100)
@@ -4374,9 +4374,9 @@ private def stFpLegacyBase : SystemState :=
   let objs := stDonBase.objects
     |>.insert fpClient2Sc.toObjId (.schedContext fpClient2SchedContext)
     |>.insert fpClient2.toObjId
-        (.tcb { mkTcb 871 55 (some c2) with schedContextBinding := .bound fpClient2Sc })
+        (.tcb { mkTcb 871 55 (some c2) with scBindingScCode := SeLe4n.Kernel.SchedContextBinding.scCode (.bound fpClient2Sc), scBindingOwnerCode := 0 })
     |>.insert donClient.toObjId
-        (.tcb { mkTcb 841 60 none with schedContextBinding := SchedContextBinding.unbound })
+        (.tcb { mkTcb 841 60 none with scBindingScCode := 0, scBindingOwnerCode := 0 })
   let base : SystemState := { stDonBase with objects := objs }
   let sched := base.scheduler
     |>.setReplenishQueueOnCore c2 (ReplenishQueue.empty.insert fpClient2Sc 100)
@@ -4389,9 +4389,9 @@ private def stFpDelegatedBase : SystemState :=
     |>.insert fpEp2 (.endpoint {})
     |>.insert fpClientXSc.toObjId (.schedContext fpClientXSchedContext)
     |>.insert fpClientX.toObjId
-        (.tcb { mkTcb 876 45 (some c2) with schedContextBinding := .bound fpClientXSc })
+        (.tcb { mkTcb 876 45 (some c2) with scBindingScCode := SeLe4n.Kernel.SchedContextBinding.scCode (.bound fpClientXSc), scBindingOwnerCode := 0 })
     |>.insert fpDelegate.toObjId
-        (.tcb { mkTcb 875 20 (some c3) with schedContextBinding := SchedContextBinding.unbound })
+        (.tcb { mkTcb 875 20 (some c3) with scBindingScCode := 0, scBindingOwnerCode := 0 })
     |>.insert fpReplyX.toObjId (.reply { replyId := fpReplyX })
   let base : SystemState := { stDonBase with objects := objs }
   let sched := base.scheduler
@@ -5020,7 +5020,7 @@ private def withUnboundSchedContext (st : SystemState) : Option SystemState :=
   match st.getSchedContext? scClient with
   | none => none
   | some sc =>
-      some (st.withObjectStored scClient.toObjId (.schedContext { sc with boundThread := none }))
+      some (st.withObjectStored scClient.toObjId (.schedContext { sc with boundThreadCode := 0 }))
 
 private def runRetypeSchedContextChecks : IO Unit := do
   IO.println "--- §3.32 register row 63: the retype's SchedContext arm releases the binding ---"
@@ -5222,7 +5222,7 @@ context — one field apart from the pristine one, so an assertion that separate
 them is about `boundThread` and nothing else. -/
 private def boundScReplacement : KernelObject :=
   .schedContext { SchedContext.empty (SchedContextId.ofObjId donEp) with
-    boundThread := some donServer }
+    boundThreadCode := SeLe4n.ThreadId.optCode (some donServer) }
 
 /-- The LIVE retype into a caller-supplied replacement. -/
 private def liveRetypeInto (st : SystemState) (target : SeLe4n.ObjId)
@@ -5290,7 +5290,7 @@ private def runRetypeReplacementGuardChecks : IO Unit := do
       (match freshScReplacement, boundScReplacement with
        | .schedContext a, .schedContext b =>
            a.boundThread.isNone && b.boundThread == some donServer
-             && { a with boundThread := some donServer } == b
+             && { a with boundThreadCode := SeLe4n.ThreadId.optCode (some donServer) } == b
        | _, _ => false)
 
 /-! ### §3.35 (`v0.35.187`) — a retyped object carries the slot's identity

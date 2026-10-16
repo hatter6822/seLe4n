@@ -2293,7 +2293,7 @@ private def runSchedContextOpsTrace (_counter : IO.Ref Nat) (st1 : SystemState) 
 
   -- Z5-AUD-08: schedContextBind — already bound rejected
   let scAlreadyBound : SeLe4n.Kernel.SchedContext := {
-    SeLe4n.Kernel.SchedContext.empty ⟨5000⟩ with boundThread := some ⟨99⟩ }
+    SeLe4n.Kernel.SchedContext.empty ⟨5000⟩ with boundThreadCode := SeLe4n.ThreadId.optCode (some ⟨99⟩) }
   let stAlreadyBound := st1.withObjectStored scId (.schedContext scAlreadyBound)
   match SeLe4n.Kernel.SchedContextOps.schedContextBind ⟨scId, by decide⟩ ⟨⟨2⟩, by decide⟩ stAlreadyBound with
   | .error err => IO.println s!"[SCO-008] schedContextBind already-bound: {reprStr err}"
@@ -2302,11 +2302,11 @@ private def runSchedContextOpsTrace (_counter : IO.Ref Nat) (st1 : SystemState) 
   -- Z5-AUD-09: schedContextUnbind — success path
   let scBoundForUnbind : SeLe4n.Kernel.SchedContext := {
     SeLe4n.Kernel.SchedContext.empty ⟨5000⟩ with
-    boundThread := some tid, isActive := true }
+    boundThreadCode := SeLe4n.ThreadId.optCode (some tid), isActive := true }
   let tcbBoundForUnbind : KernelObject := .tcb {
     tid := tid, priority := ⟨50⟩, domain := ⟨0⟩, cspaceRoot := ⟨10⟩,
     vspaceRoot := ⟨20⟩, ipcBuffer := (SeLe4n.VAddr.ofNat 4096),
-    schedContextBinding := .bound ⟨5000⟩ }
+    scBindingScCode := SeLe4n.Kernel.SchedContextBinding.scCode (.bound ⟨5000⟩), scBindingOwnerCode := 0 }
   let stForUnbind := st1.withObjectStored scId (.schedContext scBoundForUnbind)
       |>.withObjectStored tid.toObjId tcbBoundForUnbind
   match SeLe4n.Kernel.SchedContextOps.schedContextUnbind ⟨scId, by decide⟩ stForUnbind with
@@ -2386,11 +2386,11 @@ private def runSchedContextOpsTrace (_counter : IO.Ref Nat) (st1 : SystemState) 
   let tidCur : SeLe4n.ThreadId := ⟨1⟩
   let scBoundCur : SeLe4n.Kernel.SchedContext := {
     SeLe4n.Kernel.SchedContext.empty ⟨5000⟩ with
-    boundThread := some tidCur, isActive := true }
+    boundThreadCode := SeLe4n.ThreadId.optCode (some tidCur), isActive := true }
   let tcbBoundCur : KernelObject := .tcb {
     tid := tidCur, priority := ⟨50⟩, domain := ⟨0⟩, cspaceRoot := ⟨10⟩,
     vspaceRoot := ⟨20⟩, ipcBuffer := (SeLe4n.VAddr.ofNat 4096),
-    schedContextBinding := .bound ⟨5000⟩ }
+    scBindingScCode := SeLe4n.Kernel.SchedContextBinding.scCode (.bound ⟨5000⟩), scBindingOwnerCode := 0 }
   let stForCur := { (st1.withObjectStored scId (.schedContext scBoundCur)
         |>.withObjectStored tidCur.toObjId tcbBoundCur) with
       scheduler := st1.scheduler.setCurrentOnCore bootCoreId (some tidCur) }
@@ -2407,11 +2407,11 @@ private def runSchedContextOpsTrace (_counter : IO.Ref Nat) (st1 : SystemState) 
   let tidInRQ : SeLe4n.ThreadId := ⟨1⟩
   let scBoundRQ : SeLe4n.Kernel.SchedContext := {
     SeLe4n.Kernel.SchedContext.empty ⟨5000⟩ with
-    boundThread := some tidInRQ, isActive := true }
+    boundThreadCode := SeLe4n.ThreadId.optCode (some tidInRQ), isActive := true }
   let tcbBoundRQ : KernelObject := .tcb {
     tid := tidInRQ, priority := ⟨50⟩, domain := ⟨0⟩, cspaceRoot := ⟨10⟩,
     vspaceRoot := ⟨20⟩, ipcBuffer := (SeLe4n.VAddr.ofNat 4096),
-    schedContextBinding := .bound ⟨5000⟩ }
+    scBindingScCode := SeLe4n.Kernel.SchedContextBinding.scCode (.bound ⟨5000⟩), scBindingOwnerCode := 0 }
   let stForRQUnbind := queueBoot ((resetBootQueue st1).withObjectStored scId
         (.schedContext scBoundRQ) |>.withObjectStored tidInRQ.toObjId tcbBoundRQ)
       (atPrioZero [tidInRQ]) none
@@ -2442,7 +2442,7 @@ private def runSchedContextOpsTrace (_counter : IO.Ref Nat) (st1 : SystemState) 
   let targetScStarve : SeLe4n.Kernel.SchedContext := {
     SeLe4n.Kernel.SchedContext.empty ⟨5002⟩ with
     budget := ⟨200⟩, budgetRemaining := ⟨0⟩,   -- budget-starved!
-    boundThread := some tidTarget, priority := ⟨80⟩ }
+    boundThreadCode := SeLe4n.ThreadId.optCode (some tidTarget), priority := ⟨80⟩ }
   let fromIdS : SeLe4n.ObjId := ⟨5001⟩
   let targetIdS : SeLe4n.ObjId := ⟨5002⟩
   let stYieldStarve := queueBoot ((resetBootQueue st1).withObjectStored fromIdS
@@ -2477,7 +2477,7 @@ private def runSchedContextOpsTrace (_counter : IO.Ref Nat) (st1 : SystemState) 
   let tcbAlreadyBound : KernelObject := .tcb {
     tid := ⟨1⟩, priority := ⟨50⟩, domain := ⟨0⟩, cspaceRoot := ⟨10⟩,
     vspaceRoot := ⟨20⟩, ipcBuffer := (SeLe4n.VAddr.ofNat 4096),
-    schedContextBinding := .bound ⟨9999⟩ }  -- already bound to SC 9999
+    scBindingScCode := SeLe4n.Kernel.SchedContextBinding.scCode (.bound ⟨9999⟩), scBindingOwnerCode := 0 }  -- already bound to SC 9999
   let stBind2 := st1.withObjectStored scId (.schedContext scForBind2)
       |>.withObjectStored (SeLe4n.ThreadId.ofNat 1).toObjId tcbAlreadyBound
   match SeLe4n.Kernel.SchedContextOps.schedContextBind ⟨scId, by decide⟩ ⟨⟨1⟩, by decide⟩ stBind2 with
@@ -2608,11 +2608,11 @@ private def runTimeoutEndpointTrace (_counter : IO.Ref Nat) (st1 : SystemState) 
     tid := vTid, priority := ⟨50⟩, domain := ⟨0⟩,
     cspaceRoot := ⟨10⟩, vspaceRoot := ⟨20⟩, ipcBuffer := (SeLe4n.VAddr.ofNat 4096),
     replyObjectCode := SeLe4n.ReplyId.optCode (some rH),
-    schedContextBinding := .unbound } (.blockedOnReply epH (some hTid)))
+    scBindingScCode := 0, scBindingOwnerCode := 0 } (.blockedOnReply epH (some hTid)))
   let holderTcb : TCB := (TCB.setIpcState {
     tid := hTid, priority := ⟨50⟩, domain := ⟨0⟩,
     cspaceRoot := ⟨10⟩, vspaceRoot := ⟨20⟩, ipcBuffer := (SeLe4n.VAddr.ofNat 8192),
-    schedContextBinding := .donated scH vTid,
+    scBindingScCode := SeLe4n.Kernel.SchedContextBinding.scCode (.donated scH vTid), scBindingOwnerCode := SeLe4n.Kernel.SchedContextBinding.ownerCode (.donated scH vTid),
     queuePrevCode := 0, queueNextCode := 0, queuePPrevCode := 1 } (.blockedOnCall epH))
   -- The frame the victim's `Call` pushed: it heads `scH`, and `scH` names it back
   -- (`replyFrameHeadContext?` validates both directions).  `prev := none` makes it
@@ -2623,7 +2623,7 @@ private def runTimeoutEndpointTrace (_counter : IO.Ref Nat) (st1 : SystemState) 
   let holderSc : SeLe4n.Kernel.SchedContext := {
     scId := scH, budget := ⟨1000⟩, period := ⟨1000⟩, priority := ⟨50⟩,
     deadline := ⟨1000⟩, domain := ⟨0⟩, budgetRemaining := ⟨1000⟩,
-    boundThread := some hTid, scReply := some rH }
+    boundThreadCode := SeLe4n.ThreadId.optCode (some hTid), scReply := some rH }
   let epObj : Endpoint := (Endpoint.ofQueues { head := some hTid, tail := some hTid } {})
   let stR := st1.withObjectStored epH (.endpoint epObj)
       |>.withObjectStored scH.toObjId (.schedContext holderSc)
@@ -2765,7 +2765,7 @@ private def runTimeoutEndpointTrace (_counter : IO.Ref Nat) (st1 : SystemState) 
   let scId : SeLe4n.SchedContextId := ⟨6010⟩
   let sc : SeLe4n.Kernel.SchedContext := SeLe4n.Kernel.SchedContext.empty scId
   let tcb1Bound : TCB := { tcb1 with
-    schedContextBinding := .bound scId }
+    scBindingScCode := SeLe4n.Kernel.SchedContextBinding.scCode (.bound scId), scBindingOwnerCode := 0 }
   let stBound := { (stQ.withObjectStored scId.toObjId (.schedContext sc)
         |>.withObjectStored tid1.toObjId (.tcb tcb1Bound)) with
     -- S-05/PERF-O1: Populate scThreadIndex so timeoutBlockedThreads can find tid1
@@ -2925,12 +2925,12 @@ private def runTimeoutEndpointTrace (_counter : IO.Ref Nat) (st1 : SystemState) 
   let tcbM1 : TCB := (TCB.setIpcState {
     tid := tid1, priority := ⟨50⟩, domain := ⟨0⟩,
     cspaceRoot := ⟨10⟩, vspaceRoot := ⟨20⟩, ipcBuffer := (SeLe4n.VAddr.ofNat 4096),
-    schedContextBinding := .bound scIdMulti,
+    scBindingScCode := SeLe4n.Kernel.SchedContextBinding.scCode (.bound scIdMulti), scBindingOwnerCode := 0,
     queuePrevCode := 0, queueNextCode := SeLe4n.ThreadId.optCode (some tid2), queuePPrevCode := 1 } (.blockedOnSend epId))
   let tcbM2 : TCB := (TCB.setIpcState {
     tid := tid2, priority := ⟨50⟩, domain := ⟨0⟩,
     cspaceRoot := ⟨10⟩, vspaceRoot := ⟨20⟩, ipcBuffer := (SeLe4n.VAddr.ofNat 8192),
-    schedContextBinding := .bound scIdMulti,
+    scBindingScCode := SeLe4n.Kernel.SchedContextBinding.scCode (.bound scIdMulti), scBindingOwnerCode := 0,
     queuePrevCode := SeLe4n.ThreadId.optCode (some tid1), queueNextCode := 0, queuePPrevCode := QueuePPrev.optCode (some (.tcbNext tid1)) } (.blockedOnSend epId))
   let stMulti := { (st1.withObjectStored scIdMulti.toObjId (.schedContext scMulti)
         |>.withObjectStored epId (.endpoint epMulti)
@@ -2970,15 +2970,15 @@ private def runDonationTrace (_counter : IO.Ref Nat) (st1 : SystemState) : IO Un
     tid := callerTid, priority := ⟨100⟩, domain := ⟨0⟩,
     cspaceRoot := ⟨10⟩, vspaceRoot := ⟨20⟩, ipcBuffer := (SeLe4n.VAddr.ofNat 4096),
     replyObjectCode := SeLe4n.ReplyId.optCode (some callerReplyId),
-    schedContextBinding := .bound scId } (.blockedOnReply ⟨7010⟩ (some serverTid)))
+    scBindingScCode := SeLe4n.Kernel.SchedContextBinding.scCode (.bound scId), scBindingOwnerCode := 0 } (.blockedOnReply ⟨7010⟩ (some serverTid)))
   let serverTcb : KernelObject := .tcb {
     tid := serverTid, priority := ⟨50⟩, domain := ⟨0⟩,
     cspaceRoot := ⟨10⟩, vspaceRoot := ⟨20⟩, ipcBuffer := (SeLe4n.VAddr.ofNat 4096),
-    schedContextBinding := .unbound }  -- passive server
+    scBindingScCode := 0, scBindingOwnerCode := 0 }  -- passive server
   let sc : SeLe4n.Kernel.SchedContext := {
     SeLe4n.Kernel.SchedContext.empty scId with
     budget := ⟨1000⟩, budgetRemaining := ⟨800⟩,
-    boundThread := some callerTid, priority := ⟨100⟩ }
+    boundThreadCode := SeLe4n.ThreadId.optCode (some callerTid), priority := ⟨100⟩ }
   let stDon := st1.withObjectStored callerTid.toObjId callerTcb
       |>.withObjectStored serverTid.toObjId serverTcb
       |>.withObjectStored scId.toObjId (.schedContext sc)
@@ -3011,15 +3011,15 @@ private def runDonationTrace (_counter : IO.Ref Nat) (st1 : SystemState) : IO Un
     tid := callerTid, priority := ⟨100⟩, domain := ⟨0⟩,
     cspaceRoot := ⟨10⟩, vspaceRoot := ⟨20⟩, ipcBuffer := (SeLe4n.VAddr.ofNat 4096),
     replyObjectCode := SeLe4n.ReplyId.optCode (some callerReplyId),
-    schedContextBinding := .unbound } (.blockedOnReply ⟨7010⟩ (some serverTid)))
+    scBindingScCode := 0, scBindingOwnerCode := 0 } (.blockedOnReply ⟨7010⟩ (some serverTid)))
   let serverDonated : KernelObject := .tcb {
     tid := serverTid, priority := ⟨50⟩, domain := ⟨0⟩,
     cspaceRoot := ⟨10⟩, vspaceRoot := ⟨20⟩, ipcBuffer := (SeLe4n.VAddr.ofNat 4096),
-    schedContextBinding := .donated scId callerTid }
+    scBindingScCode := SeLe4n.Kernel.SchedContextBinding.scCode (.donated scId callerTid), scBindingOwnerCode := SeLe4n.Kernel.SchedContextBinding.ownerCode (.donated scId callerTid) }
   let scDonated : SeLe4n.Kernel.SchedContext := {
     SeLe4n.Kernel.SchedContext.empty scId with
     budget := ⟨1000⟩, budgetRemaining := ⟨500⟩,
-    boundThread := some serverTid, priority := ⟨100⟩ }
+    boundThreadCode := SeLe4n.ThreadId.optCode (some serverTid), priority := ⟨100⟩ }
   let stRet := st1.withObjectStored callerTid.toObjId callerDonated
       |>.withObjectStored serverTid.toObjId serverDonated
       |>.withObjectStored scId.toObjId (.schedContext scDonated)
@@ -3059,7 +3059,7 @@ private def runDonationTrace (_counter : IO.Ref Nat) (st1 : SystemState) : IO Un
   let activeServer : KernelObject := .tcb {
     tid := serverTid, priority := ⟨50⟩, domain := ⟨0⟩,
     cspaceRoot := ⟨10⟩, vspaceRoot := ⟨20⟩, ipcBuffer := (SeLe4n.VAddr.ofNat 4096),
-    schedContextBinding := .bound ⟨9999⟩ }  -- already has SC
+    scBindingScCode := SeLe4n.Kernel.SchedContextBinding.scCode (.bound ⟨9999⟩), scBindingOwnerCode := 0 }  -- already has SC
   let stActive := st1.withObjectStored callerTid.toObjId callerTcb
       |>.withObjectStored serverTid.toObjId activeServer
       |>.withObjectStored scId.toObjId (.schedContext sc)
@@ -3143,16 +3143,16 @@ private def runDonationTrace (_counter : IO.Ref Nat) (st1 : SystemState) : IO Un
     tid := outerTid, priority := ⟨120⟩, domain := ⟨0⟩,
     cspaceRoot := ⟨10⟩, vspaceRoot := ⟨20⟩, ipcBuffer := (SeLe4n.VAddr.ofNat 4096),
     replyObjectCode := SeLe4n.ReplyId.optCode (some outerReplyId),
-    schedContextBinding := .unbound } (.blockedOnReply ⟨7011⟩ (some callerTid)))
+    scBindingScCode := 0, scBindingOwnerCode := 0 } (.blockedOnReply ⟨7011⟩ (some callerTid)))
   let midTcb : KernelObject := .tcb (TCB.setIpcState {
     tid := callerTid, priority := ⟨100⟩, domain := ⟨0⟩,
     cspaceRoot := ⟨10⟩, vspaceRoot := ⟨20⟩, ipcBuffer := (SeLe4n.VAddr.ofNat 4096),
     replyObjectCode := SeLe4n.ReplyId.optCode (some callerReplyId),
-    schedContextBinding := .donated scId outerTid } (.blockedOnReply ⟨7010⟩ (some serverTid)))
+    scBindingScCode := SeLe4n.Kernel.SchedContextBinding.scCode (.donated scId outerTid), scBindingOwnerCode := SeLe4n.Kernel.SchedContextBinding.ownerCode (.donated scId outerTid) } (.blockedOnReply ⟨7010⟩ (some serverTid)))
   let scDepth2 : SeLe4n.Kernel.SchedContext := {
     SeLe4n.Kernel.SchedContext.empty scId with
     budget := ⟨1000⟩, budgetRemaining := ⟨600⟩,
-    boundThread := some callerTid, scReply := some outerReplyId, priority := ⟨100⟩ }
+    boundThreadCode := SeLe4n.ThreadId.optCode (some callerTid), scReply := some outerReplyId, priority := ⟨100⟩ }
   let stChain2 := st1.withObjectStored callerTid.toObjId midTcb
       |>.withObjectStored serverTid.toObjId serverTcb
       |>.withObjectStored scId.toObjId (.schedContext scDepth2)

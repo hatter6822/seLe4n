@@ -885,7 +885,7 @@ def cancelBoundDonation (st : SystemState) (tid : SeLe4n.ThreadId)
       -- being owned" — and two spellings of one loan-ender are free to diverge.
       -- The suspend path reaches it for a `.bound` victim, so a context whose
       -- origin survived a suspend would carry it into whatever binds it next.
-      { sc with boundThread := none, isActive := false, donationOrigin := none }
+      { sc with boundThreadCode := 0, isActive := false, donationOrigin := none }
     -- AE3-C/SC-07: Remove SchedContext from replenish queue (consistent with schedContextUnbind)
     let st2 := { st1 with scheduler := st1.scheduler.setReplenishQueueOnCore bootCoreId (ReplenishQueue.remove (st1.scheduler.replenishQueueOnCore bootCoreId) scId) }
     -- S-05/PERF-O1: Remove thread from per-SchedContext thread index
@@ -896,7 +896,7 @@ def cancelBoundDonation (st : SystemState) (tid : SeLe4n.ThreadId)
     -- write moves `tid`'s key, so it ends in the key hook (KSC-1), exactly as the
     -- per-core twin `cancelBoundDonationOnCore` does.
     .ok (markKeyChangeFrom st
-      (st2.updateTcb tid fun tcb' => { tcb' with schedContextBinding := .unbound }) tid)
+      (st2.updateTcb tid fun tcb' => { tcb' with scBindingScCode := 0, scBindingOwnerCode := 0 }) tid)
   | _ => .error .illegalState
 
 /-- D1-D / R5.A (DEEP-SUSP-02): Cancel a donated SchedContext binding.

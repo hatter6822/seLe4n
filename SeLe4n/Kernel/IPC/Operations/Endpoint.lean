@@ -2405,7 +2405,7 @@ def donateSchedContext
         -- step that ends one clears the field, so a `some` found here would be
         -- residue.  Writing unconditionally on this arm is therefore the
         -- fail-safe direction as well as the simple one.
-        let sc' := { sc with boundThread := some serverTid,
+        let sc' := { sc with boundThreadCode := SeLe4n.ThreadId.optCode (some serverTid),
                              scReply := some pushRid,
                              donationOrigin :=
                                if donationFirstPush donorTcb clientScId then some clientTid
@@ -2427,7 +2427,7 @@ def donateSchedContext
             match lookupTcb st2 clientTid with
             | none => .error .objectNotFound
             | some clientTcb =>
-              let clientTcb' := { clientTcb with schedContextBinding := .unbound }
+              let clientTcb' := { clientTcb with scBindingScCode := 0, scBindingOwnerCode := 0 }
               match storeObject clientTid.toObjId (.tcb clientTcb') st2 with
               | .error e => .error e
               | .ok ((), st3) =>
@@ -2436,7 +2436,7 @@ def donateSchedContext
                 | none => .error .objectNotFound
                 | some serverTcb =>
                   let serverTcb' := { serverTcb with
-                    schedContextBinding := .donated clientScId clientTid }
+                    scBindingScCode := SeLe4n.Kernel.SchedContextBinding.scCode (.donated clientScId clientTid), scBindingOwnerCode := SeLe4n.Kernel.SchedContextBinding.ownerCode (.donated clientScId clientTid) }
                   match storeObject serverTid.toObjId (.tcb serverTcb') st3 with
                   | .error e => .error e
                   | .ok ((), st4) =>
@@ -2488,7 +2488,7 @@ theorem donateSchedContext_ok_storeChain
       lookupTcb st clientTid = some donorTcb ∧
       donationPushFrame? st donorTcb = .ok (pushRid, pushReply) ∧
       storeObject clientScId.toObjId
-        (.schedContext { sc with boundThread := some serverTid,
+        (.schedContext { sc with boundThreadCode := SeLe4n.ThreadId.optCode (some serverTid),
                                  scReply := some pushRid,
                                  -- **WS-HP HP10.4**: and the origin, on a first
                                  -- push only.  Named in the decomposition rather
@@ -2503,10 +2503,10 @@ theorem donateSchedContext_ok_storeChain
       storeDonationFramePush clientScId pushRid pushReply sc.scReply s1 = .ok s2 ∧
       lookupTcb s2 clientTid = some clientTcb ∧
       storeObject clientTid.toObjId
-        (.tcb { clientTcb with schedContextBinding := .unbound }) s2 = .ok ((), s3) ∧
+        (.tcb { clientTcb with scBindingScCode := 0, scBindingOwnerCode := 0 }) s2 = .ok ((), s3) ∧
       lookupTcb s3 serverTid = some serverTcb ∧
       storeObject serverTid.toObjId
-        (.tcb { serverTcb with schedContextBinding := .donated clientScId clientTid })
+        (.tcb { serverTcb with scBindingScCode := SeLe4n.Kernel.SchedContextBinding.scCode (.donated clientScId clientTid), scBindingOwnerCode := SeLe4n.Kernel.SchedContextBinding.ownerCode (.donated clientScId clientTid) })
         s3 = .ok ((), s4) ∧
       st' = { s4 with
         scheduler := { s4.scheduler with reschedulePending := st'.scheduler.reschedulePending },
@@ -2531,7 +2531,7 @@ theorem donateSchedContext_ok_storeChain
             obtain ⟨pushRid, pushReply⟩ := frame
             simp only []
             cases hS1 : storeObject clientScId.toObjId
-                (.schedContext { sc with boundThread := some serverTid,
+                (.schedContext { sc with boundThreadCode := SeLe4n.ThreadId.optCode (some serverTid),
                                          scReply := some pushRid,
                                          donationOrigin :=
                                            if donationFirstPush donorTcb clientScId
@@ -2549,7 +2549,7 @@ theorem donateSchedContext_ok_storeChain
                 | some clientTcb =>
                   simp only []
                   cases hS3 : storeObject clientTid.toObjId
-                      (.tcb { clientTcb with schedContextBinding := .unbound }) s2 with
+                      (.tcb { clientTcb with scBindingScCode := 0, scBindingOwnerCode := 0 }) s2 with
                   | error _ => intro h; cases h
                   | ok p3 =>
                     simp only []
@@ -2559,7 +2559,7 @@ theorem donateSchedContext_ok_storeChain
                       simp only []
                       cases hS4 : storeObject serverTid.toObjId
                           (.tcb { serverTcb with
-                                    schedContextBinding := .donated clientScId clientTid })
+                                    scBindingScCode := SeLe4n.Kernel.SchedContextBinding.scCode (.donated clientScId clientTid), scBindingOwnerCode := SeLe4n.Kernel.SchedContextBinding.ownerCode (.donated clientScId clientTid) })
                           p3.2 with
                       | error _ => intro h; cases h
                       | ok p4 =>
@@ -2681,7 +2681,7 @@ theorem donateSchedContext_ok_pushedHead
       -- inherits its standard: a component the description does not mention is a
       -- write no consumer can reason about.
       st'.getSchedContext? clientScId =
-        some { sc with boundThread := some serverTid, scReply := some pushRid,
+        some { sc with boundThreadCode := SeLe4n.ThreadId.optCode (some serverTid), scReply := some pushRid,
                        donationOrigin :=
                          if donationFirstPush donorTcb clientScId then some clientTid
                          else sc.donationOrigin } ∧
@@ -2704,7 +2704,7 @@ theorem donateSchedContext_ok_pushedHead
     exact (SystemState.getReply?_eq_some_iff st pushRid pushReply).mp hRepPre
   -- Both readings are written by their own store and framed by the other three.
   have hSc1 : s1.getSchedContext? clientScId
-      = some { sc with boundThread := some serverTid, scReply := some pushRid,
+      = some { sc with boundThreadCode := SeLe4n.ThreadId.optCode (some serverTid), scReply := some pushRid,
                        donationOrigin :=
                          if donationFirstPush donorTcb clientScId then some clientTid
                          else sc.donationOrigin } := by
@@ -2829,7 +2829,7 @@ refutation and its control. -/
     (originalOwner : SeLe4n.ThreadId) (nextHead? : Option SeLe4n.ReplyId)
     (newOwner? : Option SeLe4n.ThreadId) : SchedContext :=
   { sc with
-      boundThread := some originalOwner,
+      boundThreadCode := SeLe4n.ThreadId.optCode (some originalOwner),
       scReply := nextHead?,
       donationOrigin := if newOwner?.isNone then none else sc.donationOrigin }
 
@@ -3934,15 +3934,16 @@ SchedContext binding rewritten — the complete description of what a donation
 hand-off does to a thread, stated as a record update rather than as a list of
 fields that agree, so a field added to `TCB` is covered by construction. -/
 def tcbBindingRewrite (a b : TCB) : Prop :=
-  ∃ sb, a = { b with schedContextBinding := sb }
+  ∃ c o, a = { b with scBindingScCode := c, scBindingOwnerCode := o }
 
-theorem tcbBindingRewrite.refl (t : TCB) : tcbBindingRewrite t t := ⟨t.schedContextBinding, rfl⟩
+theorem tcbBindingRewrite.refl (t : TCB) : tcbBindingRewrite t t :=
+  ⟨t.scBindingScCode, t.scBindingOwnerCode, rfl⟩
 
 theorem tcbBindingRewrite.trans {a b c : TCB}
     (h1 : tcbBindingRewrite a b) (h2 : tcbBindingRewrite b c) : tcbBindingRewrite a c := by
-  obtain ⟨sb1, rfl⟩ := h1
-  obtain ⟨sb2, rfl⟩ := h2
-  exact ⟨sb1, rfl⟩
+  obtain ⟨c1, o1, rfl⟩ := h1
+  obtain ⟨c2, o2, rfl⟩ := h2
+  exact ⟨c1, o1, rfl⟩
 
 /-- WS-OD OD3.2: **one Reply is another with its reply-stack links rewritten** —
 the complete description of what the donation return does to a Reply object,
@@ -6770,7 +6771,7 @@ def returnDonatedSchedContext
           | none => .error .objectNotFound
           | some clientTcb =>
             let clientTcb' := { clientTcb with
-              schedContextBinding := donationReturnBinding scId newOwner? }
+              scBindingScCode := SeLe4n.Kernel.SchedContextBinding.scCode (donationReturnBinding scId newOwner?), scBindingOwnerCode := SeLe4n.Kernel.SchedContextBinding.ownerCode (donationReturnBinding scId newOwner?) }
             match storeObject originalOwner.toObjId (.tcb clientTcb') st2 with
             | .error e => .error e
             | .ok ((), st3) =>
@@ -6779,7 +6780,7 @@ def returnDonatedSchedContext
               | none => .error .objectNotFound
               | some serverTcb =>
                 let serverTcb' := { serverTcb with
-                  schedContextBinding := .unbound }
+                  scBindingScCode := 0, scBindingOwnerCode := 0 }
                 match storeObject serverTid.toObjId (.tcb serverTcb') st3 with
                 | .error e => .error e
                 | .ok ((), st4) =>
@@ -7606,11 +7607,11 @@ theorem returnDonatedSchedContext_ok_storeChain
       lookupTcb s2 originalOwner = some clientTcb ∧
       storeObject originalOwner.toObjId
         (.tcb { clientTcb with
-                  schedContextBinding := donationReturnBinding scId newOwner? }) s2
+                  scBindingScCode := SeLe4n.Kernel.SchedContextBinding.scCode (donationReturnBinding scId newOwner?), scBindingOwnerCode := SeLe4n.Kernel.SchedContextBinding.ownerCode (donationReturnBinding scId newOwner?) }) s2
           = .ok ((), s3) ∧
       lookupTcb s3 serverTid = some serverTcb ∧
       storeObject serverTid.toObjId
-        (.tcb { serverTcb with schedContextBinding := .unbound }) s3 = .ok ((), s4) ∧
+        (.tcb { serverTcb with scBindingScCode := 0, scBindingOwnerCode := 0 }) s3 = .ok ((), s4) ∧
       st' = { s4 with
         scheduler := { s4.scheduler with reschedulePending := st'.scheduler.reschedulePending },
         scThreadIndex := st'.scThreadIndex } := by
@@ -7654,7 +7655,7 @@ theorem returnDonatedSchedContext_ok_storeChain
                 simp only []
                 cases hS3 : storeObject originalOwner.toObjId
                     (.tcb { clientTcb with
-                              schedContextBinding := donationReturnBinding scId newOwner? }) s2 with
+                              scBindingScCode := SeLe4n.Kernel.SchedContextBinding.scCode (donationReturnBinding scId newOwner?), scBindingOwnerCode := SeLe4n.Kernel.SchedContextBinding.ownerCode (donationReturnBinding scId newOwner?) }) s2 with
                 | error _ => intro h; cases h
                 | ok p3 =>
                   simp only []
@@ -7663,7 +7664,7 @@ theorem returnDonatedSchedContext_ok_storeChain
                   | some serverTcb =>
                     simp only []
                     cases hS4 : storeObject serverTid.toObjId
-                        (.tcb { serverTcb with schedContextBinding := .unbound }) p3.2 with
+                        (.tcb { serverTcb with scBindingScCode := 0, scBindingOwnerCode := 0 }) p3.2 with
                     | error _ => intro h; cases h
                     | ok p4 =>
                       simp only []
@@ -7868,21 +7869,21 @@ theorem returnDonatedSchedContext_eq_legacy_of_none
       (if sc.boundThread != some serverTid then .error .invalidArgument
        else
          match storeObject scId.toObjId
-             (.schedContext { sc with boundThread := some originalOwner }) st with
+             (.schedContext { sc with boundThreadCode := SeLe4n.ThreadId.optCode (some originalOwner) }) st with
          | .error e => .error e
          | .ok ((), st1) =>
            match lookupTcb st1 originalOwner with
            | none => .error .objectNotFound
            | some clientTcb =>
              match storeObject originalOwner.toObjId
-                 (.tcb { clientTcb with schedContextBinding := .bound scId }) st1 with
+                 (.tcb { clientTcb with scBindingScCode := SeLe4n.Kernel.SchedContextBinding.scCode (.bound scId), scBindingOwnerCode := 0 }) st1 with
              | .error e => .error e
              | .ok ((), st2) =>
                match lookupTcb st2 serverTid with
                | none => .error .objectNotFound
                | some serverTcb =>
                  match storeObject serverTid.toObjId
-                     (.tcb { serverTcb with schedContextBinding := .unbound }) st2 with
+                     (.tcb { serverTcb with scBindingScCode := 0, scBindingOwnerCode := 0 }) st2 with
                  | .error e => .error e
                  | .ok ((), st3) =>
                    .ok (markKeyChangeFrom st (markKeyChangeFrom st
@@ -7892,8 +7893,8 @@ theorem returnDonatedSchedContext_eq_legacy_of_none
                          scId originalOwner) } originalOwner) serverTid)) := by
   have hSame : donationReturnSchedContext sc originalOwner
       ((none : Option (SeLe4n.ReplyId × Reply)).bind (fun p => p.2.prev)) none
-      = { sc with boundThread := some originalOwner } := by
-    show ({ sc with boundThread := some originalOwner,
+      = { sc with boundThreadCode := SeLe4n.ThreadId.optCode (some originalOwner) } := by
+    show ({ sc with boundThreadCode := SeLe4n.ThreadId.optCode (some originalOwner),
                     scReply := (none : Option SeLe4n.ReplyId),
                     donationOrigin := (none : Option SeLe4n.ThreadId) } : SchedContext) = _
     rw [← hNoHead, ← hNoOrigin]
@@ -7904,7 +7905,8 @@ theorem returnDonatedSchedContext_eq_legacy_of_none
   -- **WS-HP HP4.6**: the recipient guard reduces away under its hypothesis.
   simp only [outerCallerAcceptable_none, hRecip, Bool.not_true, Bool.false_eq_true, if_false,
     donationHeadOf?_of_no_stack st scId sc hNoHead,
-    storeDonationHeadPop_none, donationReturnBinding_none, hSame]
+    storeDonationHeadPop_none, donationReturnBinding_none, hSame,
+    SchedContextBinding.ownerCode_bound]
 
 /-- WS-OD OD3.2: **the donation return's Reply frame.**
 
@@ -7996,14 +7998,14 @@ theorem returnDonatedSchedContext_tcb_rewrite
       have hEqU : clientTcb = u := by
         rw [lookupTcb_some_objects s2 originalOwner clientTcb hL1] at hu
         exact (KernelObject.tcb.inj (Option.some.inj hu))
-      exact ⟨_, rfl, by rw [hEqU]; exact ⟨_, rfl⟩⟩) k t1 hk2
+      exact ⟨_, rfl, by rw [hEqU]; exact ⟨_, _, rfl⟩⟩) k t1 hk2
   obtain ⟨t4, hk4, hR4⟩ := storeObject_tcb_bindingRewrite s3 s4 serverTid.toObjId _ hInv3 hS4
     (by
       intro u hu
       have hEqU : serverTcb = u := by
         rw [lookupTcb_some_objects s3 serverTid serverTcb hL2] at hu
         exact (KernelObject.tcb.inj (Option.some.inj hu))
-      exact ⟨_, rfl, by rw [hEqU]; exact ⟨_, rfl⟩⟩) k t3 hk3
+      exact ⟨_, rfl, by rw [hEqU]; exact ⟨_, _, rfl⟩⟩) k t3 hk3
   exact ⟨t4, by rw [hEq]; exact hk4, (hR4.trans hR3).trans hR1⟩
 
 /-- WS-OD OD3.2: **the backward half of `returnDonatedSchedContext_tcb_rewrite`.**
@@ -8037,7 +8039,7 @@ theorem returnDonatedSchedContext_tcb_rewrite_backward
         storeObject_objects_eq' s3 _ _ _ hInv3 hS4
       have hVal := KernelObject.tcb.inj (Option.some.inj (hStored.symm.trans h4))
       exact ⟨serverTcb, lookupTcb_some_objects s3 serverTid serverTcb hL2,
-        ⟨_, hVal.symm⟩⟩
+        ⟨_, _, hVal.symm⟩⟩
     · exact ⟨t', (storeObject_objects_ne s3 s4 serverTid.toObjId k _ hEqK hInv3 hS4).symm.trans h4,
         tcbBindingRewrite.refl t'⟩
   -- Third write: the client's binding.
@@ -8048,7 +8050,7 @@ theorem returnDonatedSchedContext_tcb_rewrite_backward
         storeObject_objects_eq' s2 _ _ _ hInv2 hS3
       have hVal := KernelObject.tcb.inj (Option.some.inj (hStored.symm.trans hk3))
       exact ⟨clientTcb, lookupTcb_some_objects s2 originalOwner clientTcb hL1,
-        ⟨_, hVal.symm⟩⟩
+        ⟨_, _, hVal.symm⟩⟩
     · exact ⟨t3,
         (storeObject_objects_ne s2 s3 originalOwner.toObjId k _ hEqK hInv2 hS3).symm.trans hk3,
         tcbBindingRewrite.refl t3⟩
@@ -8150,6 +8152,7 @@ theorem returnDonatedSchedContext_tcb_binding_cases
     have hStored : s4.objects[serverTid.toObjId]? = _ :=
       storeObject_objects_eq' s3 _ _ _ hInv3 hS4
     rw [← KernelObject.tcb.inj (Option.some.inj (hStored.symm.trans h4))]
+    rfl
   · intro hKs hKo
     have h3 : s3.objects[k]? = some (.tcb t') :=
       (storeObject_objects_ne s3 s4 serverTid.toObjId k _ hKs hInv3 hS4).symm.trans h4
@@ -8157,6 +8160,7 @@ theorem returnDonatedSchedContext_tcb_binding_cases
     have hStored : s3.objects[originalOwner.toObjId]? = _ :=
       storeObject_objects_eq' s2 _ _ _ hInv2 hS3
     rw [← KernelObject.tcb.inj (Option.some.inj (hStored.symm.trans h3))]
+    exact SeLe4n.Kernel.SchedContextBinding.ofCodes_codes _
   · intro hKs hKo
     have h3 : s3.objects[k]? = some (.tcb t') :=
       (storeObject_objects_ne s3 s4 serverTid.toObjId k _ hKs hInv3 hS4).symm.trans h4

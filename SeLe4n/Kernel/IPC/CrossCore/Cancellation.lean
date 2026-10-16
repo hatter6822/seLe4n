@@ -3274,10 +3274,10 @@ theorem cancelBoundDonationOnCore_preserves_ipcInvariant
     -- Two in-place rewrites, a SchedContext then a TCB — neither is a
     -- notification, so the notification lookups are the pre-state's.
     have hInv1 : (st.updateSchedContext scId fun sc =>
-        { sc with boundThread := none, isActive := false, donationOrigin := none }).objects.invExt :=
+        { sc with boundThreadCode := 0, isActive := false, donationOrigin := none }).objects.invExt :=
       SystemState.updateSchedContext_preserves_objects_invExt _ _ _ hInv
     have hIpc1 : ipcInvariant (st.updateSchedContext scId fun sc =>
-        { sc with boundThread := none, isActive := false, donationOrigin := none }) := by
+        { sc with boundThreadCode := 0, isActive := false, donationOrigin := none }) := by
       unfold SystemState.updateSchedContext
       split
       · intro oid ntfn hL

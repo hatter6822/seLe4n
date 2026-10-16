@@ -1683,7 +1683,7 @@ the TCB's, which is what `boundThreadPriorityConsistent` /
 private def faulterSc : SchedContext :=
   { scId := scFaulter, budget := ⟨100⟩, period := ⟨1000⟩, priority := ⟨40⟩,
     deadline := ⟨0⟩, domain := ⟨0⟩, budgetRemaining := ⟨50⟩,
-    boundThread := some faulter, isActive := true }
+    boundThreadCode := SeLe4n.ThreadId.optCode (some faulter), isActive := true }
 
 /-- `stFault`'s two-thread core, with the faulter **bound** to a reservation. -/
 private def stFaultBound : SystemState :=
@@ -1694,7 +1694,7 @@ private def stFaultBound : SystemState :=
       |>.withObject scFaulter.toObjId (.schedContext faulterSc)
       |>.withObject faulter.toObjId
           (.tcb { mkTcb 1121 40 none (some handlerCPtr) with
-                    schedContextBinding := .bound scFaulter })
+                    scBindingScCode := SeLe4n.Kernel.SchedContextBinding.scCode (.bound scFaulter), scBindingOwnerCode := 0 })
       |>.withObject handler.toObjId (.tcb (mkTcb 1122 50 (some c1) none))
       |>.withObject replyH.toObjId (.reply { replyId := replyH })
       |>.build)

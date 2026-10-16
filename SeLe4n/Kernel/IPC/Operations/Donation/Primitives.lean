@@ -269,7 +269,7 @@ theorem donateSchedContext_server_binding
   have hInv1 : s1.objects.invExt := storeObject_preserves_objects_invExt st s1 _ _ hObjInv hS1
   have hInv2 : s2.objects.invExt := storeDonationFramePush_preserves_objects_invExt hInv1 hS2
   have hInv3 : s3.objects.invExt := storeObject_preserves_objects_invExt s2 s3 _ _ hInv2 hS3
-  refine ⟨{ serverTcb with schedContextBinding := .donated clientScId clientTid }, ?_, rfl⟩
+  refine ⟨{ serverTcb with scBindingScCode := SeLe4n.Kernel.SchedContextBinding.scCode (.donated clientScId clientTid), scBindingOwnerCode := SeLe4n.Kernel.SchedContextBinding.ownerCode (.donated clientScId clientTid) }, ?_, rfl⟩
   rw [hEq]
   show s4.objects[serverTid.toObjId]? = _
   exact storeObject_objects_eq s3 s4 serverTid.toObjId _ hInv3 hS4
@@ -294,7 +294,7 @@ theorem returnDonatedSchedContext_server_unbound
   have hInv1 : s1.objects.invExt := storeObject_preserves_objects_invExt st s1 _ _ hObjInv hS1
   have hInv2 : s2.objects.invExt := storeDonationHeadPop_preserves_objects_invExt hInv1 hClear
   have hInv3 : s3.objects.invExt := storeObject_preserves_objects_invExt s2 s3 _ _ hInv2 hS3
-  refine ⟨{ serverTcb with schedContextBinding := .unbound }, ?_, rfl⟩
+  refine ⟨{ serverTcb with scBindingScCode := 0, scBindingOwnerCode := 0 }, ?_, rfl⟩
   rw [hEq]
   show s4.objects[serverTid.toObjId]? = _
   exact storeObject_objects_eq' s3 serverTid.toObjId _ _ hInv3 hS4
@@ -696,7 +696,7 @@ reading `determineTargetCore` is the same before and after the rebinding, which
 is what lets the replenishment migration's endpoints be resolved from the
 pre-state. -/
 theorem donateSchedContext_getTcb?_map_eq {β : Type} (p : TCB → β)
-    (hp : ∀ x b, p { x with schedContextBinding := b } = p x)
+    (hp : ∀ x c o, p { x with scBindingScCode := c, scBindingOwnerCode := o } = p x)
     (st st' : SystemState)
     (clientTid serverTid : SeLe4n.ThreadId)
     (clientScId : SeLe4n.SchedContextId)
@@ -731,10 +731,10 @@ theorem donateSchedContext_getTcb?_map_eq {β : Type} (p : TCB → β)
   have e1 := storeObject_schedContextAt_getTcb?_eq st s1 clientScId sc _ hObj hObjInv hS1 tid
   have e2 := storeDonationFramePush_getTcb?_eq hInv1 hRep1 hS2 tid
   have e3 := storeObject_tcbAt_getTcb?_map_eq p s2 s3 clientTid clientTcb
-    { clientTcb with schedContextBinding := .unbound } hRaw1 (hp _ _) hInv2 hS3 tid
+    { clientTcb with scBindingScCode := 0, scBindingOwnerCode := 0 } hRaw1 (hp _ _ _) hInv2 hS3 tid
   have e4 := storeObject_tcbAt_getTcb?_map_eq p s3 s4 serverTid serverTcb
-    { serverTcb with schedContextBinding := .donated clientScId clientTid }
-    hRaw2 (hp _ _) hInv3 hS4 tid
+    { serverTcb with scBindingScCode := SeLe4n.Kernel.SchedContextBinding.scCode (.donated clientScId clientTid), scBindingOwnerCode := SeLe4n.Kernel.SchedContextBinding.ownerCode (.donated clientScId clientTid) }
+    hRaw2 (hp _ _ _) hInv3 hS4 tid
   -- The `scThreadIndex` re-keying at the end is not an object write.
   rw [hEq]
   show (s4.getTcb? tid).map p = _
@@ -748,7 +748,7 @@ theorem donateSchedContext_getTcb?_placement_eq
     (h : donateSchedContext st clientTid serverTid clientScId = .ok st')
     (tid : SeLe4n.ThreadId) :
     (st'.getTcb? tid).map TCB.placement = (st.getTcb? tid).map TCB.placement :=
-  donateSchedContext_getTcb?_map_eq TCB.placement (fun _ _ => rfl) st st' clientTid serverTid clientScId hObjInv h tid
+  donateSchedContext_getTcb?_map_eq TCB.placement (fun _ _ _ => rfl) st st' clientTid serverTid clientScId hObjInv h tid
 
 /-- **WS-ZA ZA4.5**: the binding rewrite leaves every thread's IPC and thread
 state alone. -/
@@ -761,7 +761,7 @@ theorem donateSchedContext_getTcb?_stateFields_eq
     (tid : SeLe4n.ThreadId) :
     (st'.getTcb? tid).map (fun x => (x.ipcState, x.threadState)) =
       (st.getTcb? tid).map (fun x => (x.ipcState, x.threadState)) :=
-  donateSchedContext_getTcb?_map_eq _ (fun _ _ => rfl) st st' clientTid serverTid clientScId hObjInv h tid
+  donateSchedContext_getTcb?_map_eq _ (fun _ _ _ => rfl) st st' clientTid serverTid clientScId hObjInv h tid
 
 /-- WS-RR RR2.3: `donateSchedContext` frames every SchedContext **other than**
 the one it rebinds. -/
@@ -801,9 +801,9 @@ theorem donateSchedContext_getSchedContext?_ne
     hNe hObjInv hS1
   have e2 := storeDonationFramePush_getSchedContext?_eq hInv1 hRep1 hS2 scId
   have e3 := storeObject_tcbAt_getSchedContext?_eq s2 s3 clientTid clientTcb
-    { clientTcb with schedContextBinding := .unbound } hRaw1 hInv2 hS3 scId
+    { clientTcb with scBindingScCode := 0, scBindingOwnerCode := 0 } hRaw1 hInv2 hS3 scId
   have e4 := storeObject_tcbAt_getSchedContext?_eq s3 s4 serverTid serverTcb
-    { serverTcb with schedContextBinding := .donated clientScId clientTid }
+    { serverTcb with scBindingScCode := SeLe4n.Kernel.SchedContextBinding.scCode (.donated clientScId clientTid), scBindingOwnerCode := SeLe4n.Kernel.SchedContextBinding.ownerCode (.donated clientScId clientTid) }
     hRaw2 hInv3 hS4 scId
   rw [hEq]
   show s4.getSchedContext? scId = _
@@ -851,7 +851,7 @@ theorem donateSchedContext_post_boundThread
   -- being abstracted away — the record named here is the one the store actually
   -- wrote, which is what keeps `_ok_storeChain` the single description.
   have e1 : s1.getSchedContext? clientScId
-      = some { sc with boundThread := some serverTid, scReply := some pushRid,
+      = some { sc with boundThreadCode := SeLe4n.ThreadId.optCode (some serverTid), scReply := some pushRid,
                        donationOrigin :=
                          if donationFirstPush donorTcb clientScId then some clientTid
                          else sc.donationOrigin } := by
@@ -859,11 +859,11 @@ theorem donateSchedContext_post_boundThread
       storeObject_objects_eq st s1 clientScId.toObjId _ hObjInv hS1]
   have e2 := storeDonationFramePush_getSchedContext?_eq hInv1 hRep1 hS2 clientScId
   have e3 := storeObject_tcbAt_getSchedContext?_eq s2 s3 clientTid clientTcb
-    { clientTcb with schedContextBinding := .unbound } hRaw1 hInv2 hS3 clientScId
+    { clientTcb with scBindingScCode := 0, scBindingOwnerCode := 0 } hRaw1 hInv2 hS3 clientScId
   have e4 := storeObject_tcbAt_getSchedContext?_eq s3 s4 serverTid serverTcb
-    { serverTcb with schedContextBinding := .donated clientScId clientTid }
+    { serverTcb with scBindingScCode := SeLe4n.Kernel.SchedContextBinding.scCode (.donated clientScId clientTid), scBindingOwnerCode := SeLe4n.Kernel.SchedContextBinding.ownerCode (.donated clientScId clientTid) }
     hRaw2 hInv3 hS4 clientScId
-  refine ⟨{ sc with boundThread := some serverTid, scReply := some pushRid,
+  refine ⟨{ sc with boundThreadCode := SeLe4n.ThreadId.optCode (some serverTid), scReply := some pushRid,
                     donationOrigin :=
                       if donationFirstPush donorTcb clientScId then some clientTid
                       else sc.donationOrigin }, ?_, rfl⟩
@@ -916,7 +916,7 @@ second copy of the operation's case analysis.  The head clear is one extra hop
 derivation exists to keep: the pop added a store and this proof gained a
 rewrite, not an arm. -/
 theorem returnDonatedSchedContext_getTcb?_map_eq {β : Type} (p : TCB → β)
-    (hp : ∀ x b, p { x with schedContextBinding := b } = p x)
+    (hp : ∀ x c o, p { x with scBindingScCode := c, scBindingOwnerCode := o } = p x)
     (st st' : SystemState)
     (serverTid : SeLe4n.ThreadId)
     (scId : SeLe4n.SchedContextId)
@@ -941,10 +941,10 @@ theorem returnDonatedSchedContext_getTcb?_map_eq {β : Type} (p : TCB → β)
   have e1 := storeObject_schedContextAt_getTcb?_eq st s1 scId sc _ hScPre hObjInv hS1 tid
   have e2 := storeDonationHeadPop_getTcb?_eq hInv1 hClear tid
   have e3 := storeObject_tcbAt_getTcb?_map_eq p s2 s3 originalOwner clientTcb
-    { clientTcb with schedContextBinding := donationReturnBinding scId newOwner? }
-    hRaw1 (hp _ _) hInv2 hS3 tid
+    { clientTcb with scBindingScCode := SeLe4n.Kernel.SchedContextBinding.scCode (donationReturnBinding scId newOwner?), scBindingOwnerCode := SeLe4n.Kernel.SchedContextBinding.ownerCode (donationReturnBinding scId newOwner?) }
+    hRaw1 (hp _ _ _) hInv2 hS3 tid
   have e4 := storeObject_tcbAt_getTcb?_map_eq p s3 s4 serverTid serverTcb
-    { serverTcb with schedContextBinding := .unbound } hRaw2 (hp _ _) hInv3 hS4 tid
+    { serverTcb with scBindingScCode := 0, scBindingOwnerCode := 0 } hRaw2 (hp _ _ _) hInv3 hS4 tid
   have hGet : st'.getTcb? tid = s4.getTcb? tid := by rw [hEq]; rfl
   rw [hGet, e4, e3, e2, e1]
 
@@ -958,7 +958,7 @@ theorem returnDonatedSchedContext_getTcb?_placement_eq
     (h : returnDonatedSchedContext st serverTid scId originalOwner newOwner? = .ok st')
     (tid : SeLe4n.ThreadId) :
     (st'.getTcb? tid).map TCB.placement = (st.getTcb? tid).map TCB.placement :=
-  returnDonatedSchedContext_getTcb?_map_eq TCB.placement (fun _ _ => rfl) st st' serverTid scId originalOwner hObjInv newOwner? h tid
+  returnDonatedSchedContext_getTcb?_map_eq TCB.placement (fun _ _ _ => rfl) st st' serverTid scId originalOwner hObjInv newOwner? h tid
 
 /-- **WS-ZA ZA4.5**: the binding rewrite leaves every thread's IPC and thread
 state alone. -/
@@ -973,7 +973,7 @@ theorem returnDonatedSchedContext_getTcb?_stateFields_eq
     (tid : SeLe4n.ThreadId) :
     (st'.getTcb? tid).map (fun x => (x.ipcState, x.threadState)) =
       (st.getTcb? tid).map (fun x => (x.ipcState, x.threadState)) :=
-  returnDonatedSchedContext_getTcb?_map_eq _ (fun _ _ => rfl) st st' serverTid scId originalOwner hObjInv newOwner? h tid
+  returnDonatedSchedContext_getTcb?_map_eq _ (fun _ _ _ => rfl) st st' serverTid scId originalOwner hObjInv newOwner? h tid
 
 /-- **WS-ZA ZA4.5**: the donation return moves no thread's run-queue core. -/
 theorem returnDonatedSchedContext_runCoresAgree (st st' : SystemState)
@@ -1017,10 +1017,10 @@ theorem returnDonatedSchedContext_getSchedContext?_ne
   have e1 := storeObject_schedContext_getSchedContext?_ne st s1 scId scId' _ hNe hObjInv hS1
   have e2 := storeDonationHeadPop_getSchedContext?_eq hInv1 hClear scId'
   have e3 := storeObject_tcbAt_getSchedContext?_eq s2 s3 originalOwner clientTcb
-    { clientTcb with schedContextBinding := donationReturnBinding scId newOwner? }
+    { clientTcb with scBindingScCode := SeLe4n.Kernel.SchedContextBinding.scCode (donationReturnBinding scId newOwner?), scBindingOwnerCode := SeLe4n.Kernel.SchedContextBinding.ownerCode (donationReturnBinding scId newOwner?) }
     hRaw1 hInv2 hS3 scId'
   have e4 := storeObject_tcbAt_getSchedContext?_eq s3 s4 serverTid serverTcb
-    { serverTcb with schedContextBinding := .unbound } hRaw2 hInv3 hS4 scId'
+    { serverTcb with scBindingScCode := 0, scBindingOwnerCode := 0 } hRaw2 hInv3 hS4 scId'
   have hGet : st'.getSchedContext? scId' = s4.getSchedContext? scId' := by rw [hEq]; rfl
   rw [hGet, e4, e3, e2, e1]
 

@@ -474,7 +474,7 @@ theorem replyViews_eq_of_tcbs {st st' : SystemState}
 
 theorem replyView_of_tcbBindingRewrite {a b : TCB} (h : tcbBindingRewrite a b) :
     a.replyView = b.replyView := by
-  obtain ⟨_, rfl⟩ := h; rfl
+  obtain ⟨_, _, rfl⟩ := h; rfl
 
 /-- **The donation return rewrites scheduling-context bindings alone.** -/
 theorem returnDonatedSchedContext_replyViews_eq {st st' : SystemState} {s : ThreadId}

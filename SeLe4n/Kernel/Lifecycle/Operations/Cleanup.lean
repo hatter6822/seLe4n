@@ -430,7 +430,7 @@ theorem cleanupDonatedSchedContext_runCoresAgree
         (P := fun s => SystemState.RunCoresAgree s st) h (fun n s hs y => ?_)
       cases h0 : st.getTcb? y with
       | some t0 =>
-        obtain ⟨t', ht', sb, rfl⟩ := returnDonatedSchedContext_tcb_rewrite st s tid scId owner hInv n hs
+        obtain ⟨t', ht', _, _, rfl⟩ := returnDonatedSchedContext_tcb_rewrite st s tid scId owner hInv n hs
           y.toObjId t0 ((SystemState.getTcb?_eq_some_iff st y t0).mp h0)
         rw [(SystemState.getTcb?_eq_some_iff s y _).mpr ht']; rfl
       | none =>
@@ -592,14 +592,14 @@ def cancelBoundDonationOnCore (st : SystemState) (tid : SeLe4n.ThreadId)
     let st1 : SystemState := st.updateSchedContext scId fun sc =>
       -- **WS-HP HP10.4**: and the origin, as the single-core spelling does — the
       -- `_bootCoreId` bridge is `rfl`, so the two cannot differ by a field.
-      { sc with boundThread := none, isActive := false, donationOrigin := none }
+      { sc with boundThreadCode := 0, isActive := false, donationOrigin := none }
     let st2 := { st1 with scheduler := st1.scheduler.setReplenishQueueOnCore rqCore (ReplenishQueue.remove (st1.scheduler.replenishQueueOnCore rqCore) scId) }
     let st2 := { st2 with scThreadIndex :=
       (scThreadIndexRemove st2.scThreadIndex scId tid) }
     -- The binding write moves `tid`'s key (its deadline is no longer the
     -- context's), so it ends in the key hook (KSC-1), as the donation writers do.
     .ok (markKeyChangeFrom st
-      (st2.updateTcb tid fun tcb' => { tcb' with schedContextBinding := .unbound }) tid)
+      (st2.updateTcb tid fun tcb' => { tcb' with scBindingScCode := 0, scBindingOwnerCode := 0 }) tid)
   | _ => .error .illegalState
 
 /-- **`v0.35.183` (register row 63): the unbind's object store, in two writes.**
@@ -617,8 +617,8 @@ theorem cancelBoundDonationOnCore_objects (st st' : SystemState)
     (tid : SeLe4n.ThreadId) (tcb : TCB) (rqCore : SeLe4n.Kernel.Concurrency.CoreId)
     (scId : SeLe4n.SchedContextId) (hBinding : tcb.schedContextBinding = .bound scId)
     (h : cancelBoundDonationOnCore st tid tcb rqCore = .ok st') :
-    st'.objects = (((st.updateSchedContext scId (fun sc => { sc with boundThread := none, isActive := false, donationOrigin := none })).updateTcb tid
-      (fun t => { t with schedContextBinding := SchedContextBinding.unbound })).objects) := by
+    st'.objects = (((st.updateSchedContext scId (fun sc => { sc with boundThreadCode := 0, isActive := false, donationOrigin := none })).updateTcb tid
+      (fun t => { t with scBindingScCode := 0, scBindingOwnerCode := 0 })).objects) := by
   simp only [cancelBoundDonationOnCore, hBinding] at h
   injection h with h
   subst h
@@ -640,14 +640,14 @@ theorem cancelBoundDonationOnCore_getTcb? (st st' : SystemState)
     (hInv : st.objects.invExt)
     (h : cancelBoundDonationOnCore st tid tcb rqCore = .ok st') :
     st'.getTcb? tid
-        = (st.getTcb? tid).map (fun t => { t with schedContextBinding := .unbound })
+        = (st.getTcb? tid).map (fun t => { t with scBindingScCode := 0, scBindingOwnerCode := 0 })
       ∧ ∀ x : SeLe4n.ThreadId, x.toObjId ≠ tid.toObjId → st'.getTcb? x = st.getTcb? x := by
   have hObjs := cancelBoundDonationOnCore_objects st st' tid tcb rqCore scId hBinding h
-  have hMid : (st.updateSchedContext scId (fun sc => { sc with boundThread := none, isActive := false, donationOrigin := none })).objects.invExt :=
+  have hMid : (st.updateSchedContext scId (fun sc => { sc with boundThreadCode := 0, isActive := false, donationOrigin := none })).objects.invExt :=
     SystemState.updateSchedContext_preserves_objects_invExt _ _ _ hInv
   have hRead : ∀ x : SeLe4n.ThreadId, st'.getTcb? x
-      = ((st.updateSchedContext scId (fun sc => { sc with boundThread := none, isActive := false, donationOrigin := none })).updateTcb tid
-          (fun t => { t with schedContextBinding := SchedContextBinding.unbound })).getTcb? x := by
+      = ((st.updateSchedContext scId (fun sc => { sc with boundThreadCode := 0, isActive := false, donationOrigin := none })).updateTcb tid
+          (fun t => { t with scBindingScCode := 0, scBindingOwnerCode := 0 })).getTcb? x := by
     intro x; exact SystemState.getTcb?_frame hObjs x
   refine ⟨?_, fun x hNe => ?_⟩
   · rw [hRead tid, SystemState.updateTcb_getTcb?_self _ _ _ hMid,
@@ -670,11 +670,11 @@ theorem cancelBoundDonationOnCore_getSchedContext? (st st' : SystemState)
       ∧ ∀ s : SeLe4n.SchedContextId, s.toObjId ≠ scId.toObjId →
           st'.getSchedContext? s = st.getSchedContext? s := by
   have hObjs := cancelBoundDonationOnCore_objects st st' tid tcb rqCore scId hBinding h
-  have hMid : (st.updateSchedContext scId (fun sc => { sc with boundThread := none, isActive := false, donationOrigin := none })).objects.invExt :=
+  have hMid : (st.updateSchedContext scId (fun sc => { sc with boundThreadCode := 0, isActive := false, donationOrigin := none })).objects.invExt :=
     SystemState.updateSchedContext_preserves_objects_invExt _ _ _ hInv
   have hRead : ∀ s : SeLe4n.SchedContextId, st'.getSchedContext? s
-      = ((st.updateSchedContext scId (fun sc => { sc with boundThread := none, isActive := false, donationOrigin := none })).updateTcb tid
-          (fun t => { t with schedContextBinding := SchedContextBinding.unbound })).getSchedContext? s := by
+      = ((st.updateSchedContext scId (fun sc => { sc with boundThreadCode := 0, isActive := false, donationOrigin := none })).updateTcb tid
+          (fun t => { t with scBindingScCode := 0, scBindingOwnerCode := 0 })).getSchedContext? s := by
     intro s; exact SystemState.getSchedContext?_frame hObjs s
   refine ⟨?_, fun s hNe => ?_⟩
   · rw [hRead scId, SystemState.updateTcb_getSchedContext? _ _ _ hMid,
@@ -698,9 +698,9 @@ theorem cancelBoundDonationOnCore_target_unbound (st st' : SystemState)
     t.schedContextBinding = SchedContextBinding.unbound := by
   have hSelf := (cancelBoundDonationOnCore_getTcb? st st' tid tcb rqCore scId hBinding hInv h).1
   rw [hT, hTcb] at hSelf
-  have hEq : t = { tcb with schedContextBinding := SchedContextBinding.unbound } := by
-    simpa using hSelf
-  rw [hEq]
+  have hEq : t = { tcb with scBindingScCode := 0, scBindingOwnerCode := 0 } :=
+    Option.some.inj hSelf
+  rw [hEq]; rfl
 
 /-- **`v0.35.183` (register row 63): the unbind preserves Z4-O.**
 
@@ -745,10 +745,10 @@ theorem cancelBoundDonationOnCore_preserves_schedContextBindingConsistent
       have hXEq : x = tid := SeLe4n.ThreadId.toObjId_injective x tid hXT
       subst hXEq
       rw [hTSelf, hTcb] at hX
-      have hVal : ({ tcb with schedContextBinding := SchedContextBinding.unbound } : TCB) = tcbX :=
+      have hVal : ({ tcb with scBindingScCode := 0, scBindingOwnerCode := 0 } : TCB) = tcbX :=
         Option.some.inj hX
       rw [← hVal] at hBoundX
-      exact absurd hBoundX (by simp)
+      exact absurd hBoundX (by intro h; cases h)
     · rw [hTNe x hXT] at hX
       obtain ⟨sc0, hSc0Raw, hBound0⟩ := hCons.1 x tcbX
         ((SystemState.getTcb?_eq_some_iff st x tcbX).mp hX) s hBoundX
@@ -919,7 +919,7 @@ def releaseSchedContextBinding (st : SystemState) (scId : SeLe4n.SchedContextId)
     match st.getTcb? tid with
     | some tcb =>
       let st1 := st.updateTcb tid fun t =>
-        { t with schedContextBinding := SchedContextBinding.unbound }
+        { t with scBindingScCode := 0, scBindingOwnerCode := 0 }
       let st2 := SchedContextOps.purgeReplenishmentOnCore st1 (determineTargetCore st tid) scId
       -- The reschedule-SGI accumulator (KSC-1): the bound thread's deadline
       -- reverts from the destroyed reservation's to its own, so a queued or
@@ -944,7 +944,7 @@ theorem releaseSchedContextBinding_of_bound (st : SystemState)
     (hBound : sc.boundThread = some tid) (hTcb : st.getTcb? tid = some tcb) :
     releaseSchedContextBinding st scId sc =
       (let st1 := st.updateTcb tid fun t =>
-        { t with schedContextBinding := SchedContextBinding.unbound }
+        { t with scBindingScCode := 0, scBindingOwnerCode := 0 }
        let st2 := SchedContextOps.purgeReplenishmentOnCore st1 (determineTargetCore st tid) scId
        markKeyChangeFor { st2 with scThreadIndex := scThreadIndexRemove st2.scThreadIndex scId tid }
          tid (effectiveSchedParams st tcb)) := by
@@ -1071,7 +1071,7 @@ theorem releaseSchedContextBinding_objects_of_bound (st : SystemState)
     (hBound : sc.boundThread = some tid) (hTcb : st.getTcb? tid = some tcb) :
     (releaseSchedContextBinding st scId sc).objects =
       (st.updateTcb tid fun t =>
-        { t with schedContextBinding := SchedContextBinding.unbound }).objects := by
+        { t with scBindingScCode := 0, scBindingOwnerCode := 0 }).objects := by
   rw [releaseSchedContextBinding_of_bound st scId sc tid tcb hBound hTcb]
   simp only [markKeyChangeFor_objects, SchedContextOps.purgeReplenishmentOnCore_objects]
 
