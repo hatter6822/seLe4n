@@ -1,3 +1,35 @@
+## v0.36.95 — WS-ZA ZA4.8 (capability pointers): an address of any value is a machine word
+
+**A syscall carrying a capability address `≥ 2^63` now allocates nothing at
+its decode.**  `CPtr` held a `Nat`, so every such address was a heap number.
+
+Normal-build allocations per syscall (QEMU exerciser, core 0), against
+`v0.36.94`:
+
+| Scenario | v0.36.94 | v0.36.95 |
+|---|---|---|
+| yield carrying an address `≥ 2^63` | 1 | 0 |
+
+Every other scenario reads 0 on its first call and in steady state.
+
+- **The address is a word.**  `CPtr` holds a `UInt64`; `CPtr.val` is its
+  value, and `CPtr.ofNat` reduces a number to a word as a register holds it
+  (`CPtr.toNat_ofNat` is exact below `2^64`, `CPtr.toNat_ofNat_mod` in
+  general).
+- **Decoded as the word.**  The entry's register-file routing reads the
+  capability register's word (`readRegWord`); the general decode gives the
+  same address (`decodeCapPtr_readReg`).
+- **Looked up on the word.**  Each CSpace level's slot index and guard are
+  `CPtr.slotBits` and `CPtr.guardBits`, stated on the address's value and
+  compiled as a shift and a mask of the word (`CPtr.slotBits_eq_impl`,
+  `CPtr.guardBits_eq_impl`).  Every resolver uses them: `resolveCapAddress`,
+  its continuation forms, the walk footprint, `CNode.resolveSlot` and the
+  frozen lookup.
+- **Measured.**  The exerciser's yield carries the address in `x0`, which
+  every entry decodes.  The root CNode's guard is zero, so a lookup refuses
+  any such address, and the refusal is a capability fault: a syscall invoking
+  one is measured with the fault entry (plan row ZA4.10).
+
 ## v0.36.94 — WS-ZA ZA4.11 (first entry after boot): objects own their cells from the moment they enter the store
 
 **The first signal after boot now allocates nothing, and the exerciser fails
