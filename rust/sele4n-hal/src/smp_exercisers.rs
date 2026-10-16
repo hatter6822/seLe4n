@@ -1347,8 +1347,8 @@ fn per_core_stats() -> Option<bool> {
 /// One syscall the driver issues as whichever thread is current on core 0: the
 /// root task, or the partner thread the deployment configures beside it
 /// (`Platform/QemuVirt/Deployment.lean`, `qemuVirtPartnerTcbId`).  The capability
-/// addresses are slots of the root task's CNode, which the partner shares
-/// (`qemuVirtRootTaskCNode`).
+/// addresses name slots of the root task's CNode, which the partner shares
+/// (`qemuVirtRootTaskCNode`), through its guard ([`cap_address`]).
 #[cfg(feature = "hw_target")]
 struct RoundTrip {
     /// The name its printed lines carry.
@@ -1404,6 +1404,20 @@ const MINT_REPLY_CAP: u64 = 28;
 #[cfg(feature = "hw_target")]
 const YIELD: u64 = 41;
 
+/// The root CNode's guard bit (`qemuVirtRootTaskCNodeGuard`, the top bit of its
+/// 60-bit guard): a slot's capability address is the slot with bit 63 set, so
+/// every address the round trips resolve is a word `≥ 2^63`, read without a
+/// heap number at the decode and at every guard and slot extraction of the
+/// lookup (WS-ZA ZA4.8).
+#[cfg(feature = "hw_target")]
+const ROOT_CNODE_GUARD: u64 = 1 << 63;
+
+/// The capability address of the root task's CNode slot `slot`.
+#[cfg(feature = "hw_target")]
+const fn cap_address(slot: u64) -> u64 {
+    ROOT_CNODE_GUARD | slot
+}
+
 /// The root task's CNode slots the round trips name.
 #[cfg(feature = "hw_target")]
 const CNODE_SLOT: u64 = 2;
@@ -1419,13 +1433,25 @@ const REPLY_OBJECT_SLOT: u64 = 8;
 #[cfg(feature = "hw_target")]
 const REPLY_CAP_SLOT: u64 = 9;
 
+/// The capability addresses of those slots.
+#[cfg(feature = "hw_target")]
+const CNODE_CAP: u64 = cap_address(CNODE_SLOT);
+#[cfg(feature = "hw_target")]
+const NOTIFICATION_CAP: u64 = cap_address(NOTIFICATION_SLOT);
+#[cfg(feature = "hw_target")]
+const PARTNER_TCB_CAP: u64 = cap_address(PARTNER_TCB_SLOT);
+#[cfg(feature = "hw_target")]
+const ENDPOINT_CAP: u64 = cap_address(ENDPOINT_SLOT);
+#[cfg(feature = "hw_target")]
+const REPLY_CAP: u64 = cap_address(REPLY_CAP_SLOT);
+
 /// A signal on the interrupt notification with `badge`.
 #[cfg(feature = "hw_target")]
 const fn signal(name: &'static str, badge: u64) -> RoundTrip {
     RoundTrip {
         name,
         syscall: SIGNAL,
-        cptr: NOTIFICATION_SLOT,
+        cptr: NOTIFICATION_CAP,
         msg_len: 1,
         msg: [badge, 0],
         primed: None,
@@ -1445,7 +1471,7 @@ const ROUND_TRIPS: [RoundTrip; 4] = [
     RoundTrip {
         name: "wait-pending",
         syscall: WAIT,
-        cptr: NOTIFICATION_SLOT,
+        cptr: NOTIFICATION_CAP,
         msg_len: 1,
         msg: [0, 0],
         primed: Some(1),
@@ -1502,15 +1528,15 @@ const fn partner_step(
 #[cfg(feature = "hw_target")]
 const PARTNER_SCENARIOS: [&[RoundTrip]; 4] = [
     &[
-        partner_step("receive-blocks", RECEIVE, ENDPOINT_SLOT, 0, [0, 0], true),
-        partner_step("send-to-receiver", SEND, ENDPOINT_SLOT, 1, [0x55, 0], false),
+        partner_step("receive-blocks", RECEIVE, ENDPOINT_CAP, 0, [0, 0], true),
+        partner_step("send-to-receiver", SEND, ENDPOINT_CAP, 1, [0x55, 0], false),
     ],
     &[
-        partner_step("wait-blocks", WAIT, NOTIFICATION_SLOT, 0, [0, 0], true),
+        partner_step("wait-blocks", WAIT, NOTIFICATION_CAP, 0, [0, 0], true),
         partner_step(
             "signal-to-waiter",
             SIGNAL,
-            NOTIFICATION_SLOT,
+            NOTIFICATION_CAP,
             1,
             [1, 0],
             false,
@@ -1520,36 +1546,36 @@ const PARTNER_SCENARIOS: [&[RoundTrip]; 4] = [
         partner_step(
             "receive-for-call",
             RECEIVE,
-            ENDPOINT_SLOT,
+            ENDPOINT_CAP,
             1,
-            [REPLY_CAP_SLOT, 0],
+            [REPLY_CAP, 0],
             true,
         ),
-        partner_step("call", CALL, ENDPOINT_SLOT, 1, [0x66, 0], true),
+        partner_step("call", CALL, ENDPOINT_CAP, 1, [0x66, 0], true),
         partner_step(
             "reply-recv",
             REPLY_RECV,
-            ENDPOINT_SLOT,
+            ENDPOINT_CAP,
             2,
-            [REPLY_CAP_SLOT, 0x99],
+            [REPLY_CAP, 0x99],
             true,
         ),
         partner_step(
             "call-to-reply-receiver",
             CALL,
-            ENDPOINT_SLOT,
+            ENDPOINT_CAP,
             1,
             [0xaa, 0],
             true,
         ),
-        partner_step("reply", REPLY, REPLY_CAP_SLOT, 1, [0x77, 0], false),
+        partner_step("reply", REPLY, REPLY_CAP, 1, [0x77, 0], false),
     ],
     &[
-        partner_step("send-blocks", SEND, ENDPOINT_SLOT, 1, [0x88, 0], true),
+        partner_step("send-blocks", SEND, ENDPOINT_CAP, 1, [0x88, 0], true),
         partner_step(
             "receive-from-sender",
             RECEIVE,
-            ENDPOINT_SLOT,
+            ENDPOINT_CAP,
             0,
             [0, 0],
             false,
@@ -1565,7 +1591,7 @@ const PARTNER_SETUP: [RoundTrip; 2] = [
     partner_step(
         "resume-partner",
         TCB_RESUME,
-        PARTNER_TCB_SLOT,
+        PARTNER_TCB_CAP,
         0,
         [0, 0],
         false,
@@ -1573,7 +1599,7 @@ const PARTNER_SETUP: [RoundTrip; 2] = [
     partner_step(
         "mint-reply-cap",
         MINT_REPLY_CAP,
-        CNODE_SLOT,
+        CNODE_CAP,
         2,
         [REPLY_OBJECT_SLOT, REPLY_CAP_SLOT],
         false,
@@ -1679,7 +1705,7 @@ fn heap_allocations_per_syscall() -> Option<bool> {
     let suspend = partner_step(
         "suspend-partner",
         TCB_SUSPEND,
-        PARTNER_TCB_SLOT,
+        PARTNER_TCB_CAP,
         0,
         [0, 0],
         false,

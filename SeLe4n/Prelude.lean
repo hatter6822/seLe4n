@@ -722,22 +722,32 @@ theorem isWord64Dec_iff (n : Nat) : isWord64Dec n = true ↔ isWord64 n := by
     would exceed hardware width. -/
 structure CPtr where
   private mk ::
-  val : Nat
+  /-- The address's machine word.  WS-ZA ZA4.8: a `UInt64`, as a register
+  carries it, so an address of any value is a scalar — a `Nat` field made a
+  heap number of every address `≥ 2^63`, and a syscall naming one allocated. -/
+  word : UInt64
 deriving DecidableEq, Repr
 
 /-- AN2-B.1: Manual `Inhabited` (deriving requires public constructor). -/
 instance : Inhabited CPtr := ⟨⟨0⟩⟩
 
-/-- WS-G1: Hash instance for HashMap/HashSet keying. Delegates to Nat hash.
+/-- WS-G1: Hash instance for HashMap/HashSet keying: the word itself, which is
+    `hash` of the address's value (`Nat`'s hash is the value as a word).
     BEq is already provided by DecidableEq via instBEqOfDecidableEq. -/
 @[inline] instance : Hashable CPtr where
-  hash a := hash a.val
+  hash a := hash a.word
 
 namespace CPtr
 
-/-- Smart constructor — accepts any `Nat`. Pre-existing migration helper;
-    remains the default construction API for external callers. -/
-@[inline] def ofNat (n : Nat) : CPtr := ⟨n⟩
+/-- The address's value as a number. -/
+@[inline] def val (ptr : CPtr) : Nat := ptr.word.toNat
+
+/-- WS-ZA ZA4.8: the address a register's word names. -/
+@[inline] def ofWord (w : UInt64) : CPtr := ⟨w⟩
+
+/-- Smart constructor: the number reduced to a word, as a 64-bit register
+    holds it (`toNat_ofNat`: exact below `2^64`). -/
+@[inline] def ofNat (n : Nat) : CPtr := ⟨UInt64.ofNat n⟩
 
 /-- Projection helper kept explicit for migration ergonomics. -/
 @[inline] def toNat (ptr : CPtr) : Nat := ptr.val
@@ -747,7 +757,7 @@ instance : ToString CPtr where
 
 /-- WS-E4 preparation: CPtr 0 corresponds to seL4_CapNull (null capability pointer).
     Sentinel infrastructure parallels ObjId/ThreadId/ServiceId. -/
-@[inline] def isReserved (ptr : CPtr) : Bool := ptr.val = 0
+@[inline] def isReserved (ptr : CPtr) : Bool := ptr.word = 0
 
 /-- The null capability pointer (CPtr 0), analogous to seL4_CapNull. -/
 @[inline] def sentinel : CPtr := ⟨0⟩
@@ -1777,16 +1787,127 @@ theorem ServiceId.ofNat_injective {n₁ n₂ : Nat} (h : ServiceId.ofNat n₁ = 
 theorem ServiceId.ext {a b : ServiceId} (h : a.val = b.val) : a = b := by
   cases a; cases b; simp_all
 
-/-- WS-H14d: CPtr roundtrip — construct then project. -/
-theorem CPtr.toNat_ofNat (n : Nat) : (CPtr.ofNat n).toNat = n := rfl
+/-- WS-H14d: CPtr roundtrip — construct then project, exact for a number
+    that fits a word (WS-ZA ZA4.8). -/
+theorem CPtr.toNat_ofNat {n : Nat} (h : n < machineWordMax) : (CPtr.ofNat n).toNat = n := by
+  unfold CPtr.ofNat CPtr.toNat CPtr.val
+  rw [UInt64.toNat_ofNat']
+  exact Nat.mod_eq_of_lt (by simpa [machineWordMax, machineWordBits] using h)
+/-- WS-ZA ZA4.8: an address's value fits a word. -/
+theorem CPtr.toNat_lt (ptr : CPtr) : ptr.toNat < machineWordMax := by
+  unfold CPtr.toNat CPtr.val machineWordMax machineWordBits
+  exact ptr.word.toNat_lt
+/-- WS-ZA ZA4.8: the value of a constructed address is the number reduced to
+    a word. -/
+theorem CPtr.toNat_ofNat_mod (n : Nat) : (CPtr.ofNat n).toNat = n % machineWordMax := by
+  unfold CPtr.ofNat CPtr.toNat CPtr.val machineWordMax machineWordBits
+  exact UInt64.toNat_ofNat'
 /-- WS-H14d: CPtr roundtrip — project then reconstruct. -/
-theorem CPtr.ofNat_toNat (ptr : CPtr) : CPtr.ofNat ptr.toNat = ptr := rfl
-/-- WS-H14d: CPtr injectivity. -/
-theorem CPtr.ofNat_injective {n₁ n₂ : Nat} (h : CPtr.ofNat n₁ = CPtr.ofNat n₂) : n₁ = n₂ := by
-  cases h; rfl
+@[simp] theorem CPtr.ofNat_toNat (ptr : CPtr) : CPtr.ofNat ptr.toNat = ptr := by
+  unfold CPtr.ofNat CPtr.toNat CPtr.val
+  rw [UInt64.ofNat_toNat]
+/-- WS-ZA ZA4.8: `ofWord` is `ofNat` of the word's value. -/
+theorem CPtr.ofWord_eq_ofNat (w : UInt64) : CPtr.ofWord w = CPtr.ofNat w.toNat := by
+  unfold CPtr.ofWord CPtr.ofNat
+  rw [UInt64.ofNat_toNat]
+@[simp] theorem CPtr.ofWord_toNat (w : UInt64) : (CPtr.ofWord w).toNat = w.toNat := rfl
+/-- WS-H14d: CPtr injectivity, on numbers that fit a word. -/
+theorem CPtr.ofNat_injective {n₁ n₂ : Nat} (h₁ : n₁ < machineWordMax) (h₂ : n₂ < machineWordMax)
+    (h : CPtr.ofNat n₁ = CPtr.ofNat n₂) : n₁ = n₂ := by
+  rw [← CPtr.toNat_ofNat h₁, ← CPtr.toNat_ofNat h₂, h]
 /-- WS-H14d: CPtr extensionality. -/
 theorem CPtr.ext {a b : CPtr} (h : a.val = b.val) : a = b := by
-  cases a; cases b; simp_all
+  cases a; cases b
+  simp only [CPtr.val] at h
+  rw [UInt64.toNat_inj.mp h]
+
+/-! ### Address bits on the word (WS-ZA ZA4.8)
+
+A capability lookup takes each level's slot index and guard from bit fields of
+the address.  `CPtr.slotBits` and `CPtr.guardBits` state them on the address's
+value; as compiled (`slotBits_eq_impl`, `guardBits_eq_impl`) they shift and
+mask the word, so an address `≥ 2^63` builds no heap number. -/
+
+/-- The word shifted right by `s`, zero once `s` reaches the width. -/
+@[inline] def shiftWord (w : UInt64) (s : Nat) : UInt64 := if s < 64 then w >>> s.toUInt64 else 0
+
+/-- The word's low `k` bits, the whole word once `k` reaches the width. -/
+@[inline] def lowWord (w : UInt64) (k : Nat) : UInt64 :=
+  if k < 64 then w &&& ((1 <<< k.toUInt64) - 1) else w
+
+theorem toNat_shiftWord (w : UInt64) (s : Nat) : (shiftWord w s).toNat = w.toNat >>> s := by
+  unfold shiftWord
+  split
+  · rename_i h
+    rw [UInt64.toNat_shiftRight, Nat.toUInt64_eq, UInt64.toNat_ofNat']
+    congr 1
+    omega
+  · rename_i h
+    rw [Nat.shiftRight_eq_div_pow, UInt64.toNat_zero]
+    symm
+    apply Nat.div_eq_of_lt
+    exact Nat.lt_of_lt_of_le w.toNat_lt (Nat.pow_le_pow_right (by decide) (by omega))
+
+theorem toNat_lowWord (w : UInt64) (k : Nat) : (lowWord w k).toNat = w.toNat % 2 ^ k := by
+  unfold lowWord
+  split
+  · rename_i h
+    have hPow : 2 ^ k < 2 ^ 64 := Nat.pow_lt_pow_right (by decide) h
+    have hOne : ((1 : UInt64) <<< k.toUInt64).toNat = 2 ^ k := by
+      rw [UInt64.toNat_shiftLeft, Nat.toUInt64_eq, UInt64.toNat_ofNat', UInt64.toNat_one,
+        Nat.one_shiftLeft]
+      rw [Nat.mod_eq_of_lt (by omega : k < 2 ^ 64), Nat.mod_eq_of_lt h]
+      exact Nat.mod_eq_of_lt hPow
+    have hMask : (((1 : UInt64) <<< k.toUInt64) - 1).toNat = 2 ^ k - 1 := by
+      rw [UInt64.toNat_sub_of_le _ _ (by
+        rw [UInt64.le_iff_toNat_le, hOne, UInt64.toNat_one]; exact Nat.one_le_two_pow), hOne,
+        UInt64.toNat_one]
+    rw [UInt64.toNat_and, hMask, Nat.and_two_pow_sub_one_eq_mod]
+  · rename_i h
+    symm
+    apply Nat.mod_eq_of_lt
+    exact Nat.lt_of_lt_of_le w.toNat_lt (Nat.pow_le_pow_right (by decide) (by omega))
+
+/-- The address's value reduced to a word is its word's value. -/
+theorem CPtr.toNat_mod_machineWordMax (addr : CPtr) :
+    addr.toNat % machineWordMax = addr.word.toNat :=
+  Nat.mod_eq_of_lt addr.toNat_lt
+
+/-- The `radix` bits of the address above its low `s`: a CNode level's slot
+index. -/
+def CPtr.slotBits (addr : CPtr) (s radix : Nat) : Nat :=
+  ((addr.toNat % machineWordMax) >>> s) % 2 ^ radix
+
+/-- The `guard` bits of the address above its low `s + radix`: a CNode
+level's guard. -/
+def CPtr.guardBits (addr : CPtr) (s radix guard : Nat) : Nat :=
+  (((addr.toNat % machineWordMax) >>> s) / 2 ^ radix) % 2 ^ guard
+
+theorem CPtr.slotBits_lt (addr : CPtr) (s radix : Nat) : addr.slotBits s radix < 2 ^ radix :=
+  Nat.mod_lt _ (Nat.two_pow_pos radix)
+
+theorem CPtr.guardBits_lt (addr : CPtr) (s radix guard : Nat) :
+    addr.guardBits s radix guard < 2 ^ guard :=
+  Nat.mod_lt _ (Nat.two_pow_pos guard)
+
+/-- `CPtr.slotBits` on the word. -/
+def CPtr.slotBitsImpl (addr : CPtr) (s radix : Nat) : Nat :=
+  (lowWord (shiftWord addr.word s) radix).toNat
+
+/-- `CPtr.guardBits` on the word. -/
+def CPtr.guardBitsImpl (addr : CPtr) (s radix guard : Nat) : Nat :=
+  (lowWord (shiftWord addr.word (s + radix)) guard).toNat
+
+@[csimp] theorem CPtr.slotBits_eq_impl : @CPtr.slotBits = @CPtr.slotBitsImpl := by
+  funext addr s radix
+  unfold CPtr.slotBits CPtr.slotBitsImpl
+  rw [toNat_lowWord, toNat_shiftWord, CPtr.toNat_mod_machineWordMax]
+
+@[csimp] theorem CPtr.guardBits_eq_impl : @CPtr.guardBits = @CPtr.guardBitsImpl := by
+  funext addr s radix guard
+  unfold CPtr.guardBits CPtr.guardBitsImpl
+  rw [toNat_lowWord, toNat_shiftWord, CPtr.toNat_mod_machineWordMax, Nat.shiftRight_add,
+    Nat.shiftRight_eq_div_pow (addr.word.toNat >>> s)]
 
 /-- WS-H14d: Slot roundtrip — construct then project. -/
 theorem Slot.toNat_ofNat (n : Nat) : (Slot.ofNat n).toNat = n := rfl
@@ -1876,14 +1997,19 @@ theorem ServiceId.sentinel_not_valid : ¬ ServiceId.sentinel.valid := by
 /-- WS-H14f: CPtr validity — nonzero value. -/
 def CPtr.valid (ptr : CPtr) : Prop := ptr.val ≠ 0
 
+/-- WS-ZA ZA4.8: an address's value is zero exactly when its word is. -/
+theorem CPtr.val_eq_zero_iff (ptr : CPtr) : ptr.val = 0 ↔ ptr.word = 0 := by
+  unfold CPtr.val
+  rw [← UInt64.toNat_inj, UInt64.toNat_zero]
+
 /-- WS-H14f: CPtr valid iff not reserved. -/
 theorem CPtr.valid_iff_not_reserved (ptr : CPtr) :
     ptr.valid ↔ ptr.isReserved = false := by
-  simp [CPtr.valid, CPtr.isReserved]
+  simp [CPtr.valid, CPtr.isReserved, CPtr.val_eq_zero_iff]
 
 /-- WS-H14f: The sentinel CPtr is not valid. -/
 theorem CPtr.sentinel_not_valid : ¬ CPtr.sentinel.valid := by
-  simp [CPtr.valid, CPtr.sentinel]
+  simp [CPtr.valid, CPtr.sentinel, CPtr.val_eq_zero_iff]
 
 /-- WS-H14f: The sentinel ObjId is not valid. -/
 theorem ObjId.sentinel_not_valid : ¬ ObjId.sentinel.valid := by

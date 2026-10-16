@@ -127,11 +127,8 @@ def cspaceWalkPath (rootId : SeLe4n.ObjId) (addr : SeLe4n.CPtr) (bitsRemaining :
       if hCons : consumed = 0 then [rootId]
       else if bitsRemaining < consumed then [rootId]
       else
-        let maskedAddr := addr.toNat % SeLe4n.machineWordMax
-        let shiftedAddr := maskedAddr >>> (bitsRemaining - consumed)
-        let radixMask := 2 ^ cn.radixWidth
-        let slotIndex := shiftedAddr % radixMask
-        let guardExtracted := (shiftedAddr / radixMask) % (2 ^ cn.guardWidth)
+        let slotIndex := addr.slotBits (bitsRemaining - consumed) cn.radixWidth
+        let guardExtracted := addr.guardBits (bitsRemaining - consumed) cn.radixWidth cn.guardWidth
         if guardExtracted ≠ cn.guardValue then [rootId]
         else if bitsRemaining - consumed = 0 then [rootId]
         else

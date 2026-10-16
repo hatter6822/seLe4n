@@ -2714,6 +2714,19 @@ def qemuVirt_deployment_boots : IO Unit := do
       unless q0 root && !q0 untrusted && q1 untrusted && !q1 root do
         throw <| IO.userError "the virt deployment's initial threads are not queued one per core"
       IO.println "  PASS: the virt deployment boots and starts both initial threads, one per domain"
+      -- WS-ZA ZA4.8: the root CNode's guard has its top bit set, so the root
+      -- task names its interrupt notification at `2^63 + 4`; the slot number
+      -- alone fails the guard.
+      let notificationAddr := SeLe4n.CPtr.ofNat (2 ^ 63 + 4)
+      match SeLe4n.Kernel.resolveCapAddress qemuVirtRootTaskCNodeId notificationAddr 64 ist.state with
+      | .ok ref =>
+          unless ref.cnode == qemuVirtRootTaskCNodeId && ref.slot == SeLe4n.Slot.ofNat 4 do
+            throw <| IO.userError s!"2^63 + 4 resolves to {reprStr ref}, not the root CNode's slot 4"
+      | .error e => throw <| IO.userError s!"the root CNode refuses 2^63 + 4: {reprStr e}"
+      match SeLe4n.Kernel.resolveCapAddress qemuVirtRootTaskCNodeId (SeLe4n.CPtr.ofNat 4) 64 ist.state with
+      | .error .invalidCapability => pure ()
+      | other => throw <| IO.userError s!"the root CNode resolves 4 past its guard: {reprStr other}"
+      IO.println "  PASS: the root task's capability addresses carry the root CNode's guard bit"
   unless [(qemuVirtRootTaskUntyped.regionBase.toNat, qemuVirtRootTaskUntyped.regionSize)]
       == qemuVirtBootRamExtensions do
     throw <| IO.userError "the root task's untyped is not the RAM the boot maps"

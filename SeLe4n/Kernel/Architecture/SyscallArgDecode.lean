@@ -878,7 +878,7 @@ theorem decodeUntypedRetypeArgs_roundtrip (args : UntypedRetypeArgs) :
     rw [Nat.mod_eq_of_lt hLt]; cases t <;> rfl
   simp [hTag', decodeUntypedRetypeArgs, encodeUntypedRetypeArgs, stubDecoded,
     requireMsgReg, hDiv, bind, Except.bind, pure, Except.pure]
-  exact ⟨rfl, rfl, rfl⟩
+  exact ⟨rfl, rfl⟩
 
 /-- T6-C: Round-trip requires that the permissions encode to a valid range.
     `PagePermissions.toNat` always produces values < 32 (5-bit bitfield). -/
@@ -1157,7 +1157,7 @@ structure NotificationWaitArgs where
     The endpoint is resolved from the capability target. Message body comes
     from the standard message registers (same as send). -/
 structure ReplyRecvArgs where
-  replyCPtr : Nat
+  replyCPtr : SeLe4n.CPtr
   deriving Repr, DecidableEq
 
 /-- V2-I: Decode notification signal arguments from message registers.
@@ -1178,7 +1178,7 @@ def decodeNotificationWaitArgs (_decoded : SyscallDecodeResult)
 def decodeReplyRecvArgs (decoded : SyscallDecodeResult)
     : Except KernelError ReplyRecvArgs := do
   let r0 ← requireMsgReg decoded.msgRegs 0
-  pure { replyCPtr := r0.val }
+  pure { replyCPtr := SeLe4n.CPtr.ofNat r0.val }
 
 -- ============================================================================
 
@@ -1189,7 +1189,7 @@ def decodeReplyRecvArgs (decoded : SyscallDecodeResult)
     the reply capability pointer (the server-supplied Reply object cap slot the
     kernel links to a rendezvousing Call-caller). -/
 structure RecvArgs where
-  replyCPtr : Nat
+  replyCPtr : SeLe4n.CPtr
   deriving Repr, DecidableEq
 
 /-- WS-SM SM6.D: decode MCS `Recv` arguments (1 register: the reply capability
@@ -1198,12 +1198,12 @@ structure RecvArgs where
     capability, never from naming a raw `ReplyId`). -/
 def decodeRecvArgs (decoded : SyscallDecodeResult) : Except KernelError RecvArgs := do
   let r0 ← requireMsgReg decoded.msgRegs 0
-  pure { replyCPtr := r0.val }
+  pure { replyCPtr := SeLe4n.CPtr.ofNat r0.val }
 
 /-- WS-SM SM6.D: encode MCS `Recv` arguments into message registers.  Inverse of
     `decodeRecvArgs`. -/
 @[inline] def encodeRecvArgs (args : RecvArgs) : Array RegValue :=
-  #[⟨args.replyCPtr⟩]
+  #[⟨args.replyCPtr.toNat⟩]
 
 /-- WS-SM SM6.D: `Recv` decode fails iff fewer than 1 message register. -/
 theorem decodeRecvArgs_error_iff (d : SyscallDecodeResult) :
@@ -1226,7 +1226,8 @@ theorem decodeRecvArgs_error_iff (d : SyscallDecodeResult) :
     original. -/
 theorem decodeRecvArgs_roundtrip (args : RecvArgs) :
     decodeRecvArgs (stubDecoded (encodeRecvArgs args)) = .ok args := by
-  rcases args with ⟨c⟩; rfl
+  simp [decodeRecvArgs, encodeRecvArgs, stubDecoded, requireMsgReg,
+        Bind.bind, Except.bind, Pure.pure, Except.pure, SeLe4n.CPtr.ofNat_toNat]
 
 -- ============================================================================
 -- Z5-A/B/C: SchedContext argument structures
@@ -1255,7 +1256,7 @@ structure SchedContextConfigureArgs where
     its extra operand that way (`TcbBindNotificationArgs.notificationCPtr`); the
     bind now does too, through `Kernel.resolveSchedContextBindThread`. -/
 structure SchedContextBindArgs where
-  tcbCPtr : Nat
+  tcbCPtr : SeLe4n.CPtr
   deriving Repr, DecidableEq
 
 /-- Z5-C: Per-syscall argument structure for `schedContextUnbind`.
@@ -1336,7 +1337,7 @@ theorem decodeSchedContextConfigureArgsChecked_invariants
 def decodeSchedContextBindArgs (decoded : SyscallDecodeResult)
     : Except KernelError SchedContextBindArgs := do
   let r0 ← requireMsgReg decoded.msgRegs 0
-  pure { tcbCPtr := r0.val }
+  pure { tcbCPtr := SeLe4n.CPtr.ofNat r0.val }
 
 /-- Z5-C: Decode schedContextUnbind arguments. No message registers needed. -/
 def decodeSchedContextUnbindArgs (_decoded : SyscallDecodeResult)
@@ -1349,7 +1350,7 @@ def decodeSchedContextUnbindArgs (_decoded : SyscallDecodeResult)
     binding requires the caller to *hold* a notification capability, not merely
     name a raw `ObjId`. -/
 structure TcbBindNotificationArgs where
-  notificationCPtr : Nat
+  notificationCPtr : SeLe4n.CPtr
   deriving Repr, DecidableEq
 
 /-- WS-SM SM6.B: arguments for `tcbUnbindNotification` (none — the bound
@@ -1362,7 +1363,7 @@ structure TcbUnbindNotificationArgs where
 def decodeTcbBindNotificationArgs (decoded : SyscallDecodeResult)
     : Except KernelError TcbBindNotificationArgs := do
   let r0 ← requireMsgReg decoded.msgRegs 0
-  pure { notificationCPtr := r0.val }
+  pure { notificationCPtr := SeLe4n.CPtr.ofNat r0.val }
 
 /-- WS-SM SM6.B: decode `tcbUnbindNotification` arguments (none). -/
 def decodeTcbUnbindNotificationArgs (_decoded : SyscallDecodeResult)
@@ -1379,7 +1380,7 @@ def decodeTcbUnbindNotificationArgs (_decoded : SyscallDecodeResult)
 
 /-- Z5-B: Encode schedContextBind arguments into message registers. -/
 @[inline] def encodeSchedContextBindArgs (args : SchedContextBindArgs) : Array RegValue :=
-  #[⟨args.tcbCPtr⟩]
+  #[⟨args.tcbCPtr.toNat⟩]
 
 /-- Z5-C: Encode schedContextUnbind arguments (empty — no message registers). -/
 @[inline] def encodeSchedContextUnbindArgs (_args : SchedContextUnbindArgs) : Array RegValue :=
@@ -1397,7 +1398,8 @@ theorem decodeSchedContextConfigureArgs_roundtrip (args : SchedContextConfigureA
 /-- Z5-B: SchedContextBindArgs decode round-trip. -/
 theorem decodeSchedContextBindArgs_roundtrip (args : SchedContextBindArgs) :
     decodeSchedContextBindArgs (stubDecoded (encodeSchedContextBindArgs args)) = .ok args := by
-  rcases args with ⟨t⟩; rfl
+  simp [decodeSchedContextBindArgs, encodeSchedContextBindArgs, stubDecoded, requireMsgReg,
+        Bind.bind, Except.bind, Pure.pure, Except.pure, SeLe4n.CPtr.ofNat_toNat]
 
 /-- Z5-C: SchedContextUnbindArgs decode round-trip (trivial). -/
 theorem decodeSchedContextUnbindArgs_roundtrip (args : SchedContextUnbindArgs) :
@@ -1414,7 +1416,7 @@ theorem decodeSchedContextUnbindArgs_roundtrip (args : SchedContextUnbindArgs) :
 
 /-- V2-I: Encode replyRecv arguments into message registers. -/
 @[inline] def encodeReplyRecvArgs (args : ReplyRecvArgs) : Array RegValue :=
-  #[⟨args.replyCPtr⟩]
+  #[⟨args.replyCPtr.toNat⟩]
 
 /-- V2-I: NotificationSignalArgs decode round-trip.
     Requires badge validity for lossless round-trip through `ofNatMasked`. -/
@@ -1434,7 +1436,8 @@ theorem decodeNotificationWaitArgs_roundtrip (args : NotificationWaitArgs) :
 /-- V2-I: ReplyRecvArgs decode round-trip. -/
 theorem decodeReplyRecvArgs_roundtrip (args : ReplyRecvArgs) :
     decodeReplyRecvArgs (stubDecoded (encodeReplyRecvArgs args)) = .ok args := by
-  rcases args with ⟨t⟩; rfl
+  simp [decodeReplyRecvArgs, encodeReplyRecvArgs, stubDecoded, requireMsgReg,
+        Bind.bind, Except.bind, Pure.pure, Except.pure, SeLe4n.CPtr.ofNat_toNat]
 
 /-- Composed round-trip: all 15 argument structures satisfy the encode-decode
     round-trip property. R6-B: CSpaceMintArgs and NotificationSignalArgs require
@@ -1840,8 +1843,7 @@ def decodeSetFaultHandlerArgs (decoded : SyscallDecodeResult)
 theorem decodeSetFaultHandlerArgs_roundtrip (args : SetFaultHandlerArgs) :
     decodeSetFaultHandlerArgs (stubDecoded (encodeSetFaultHandlerArgs args)) = .ok args := by
   simp [decodeSetFaultHandlerArgs, encodeSetFaultHandlerArgs, stubDecoded, requireMsgReg,
-        Bind.bind, Except.bind, Pure.pure, Except.pure]
-  rfl
+        Bind.bind, Except.bind, Pure.pure, Except.pure, SeLe4n.CPtr.ofNat_toNat]
 
 -- ============================================================================
 -- WS-SM SM9.A.10: audit-trail read and drain arguments
@@ -1937,7 +1939,7 @@ def decodeSetSpaceArgs (decoded : SyscallDecodeResult)
 theorem decodeSetSpaceArgs_roundtrip (args : SetSpaceArgs) :
     decodeSetSpaceArgs (stubDecoded (encodeSetSpaceArgs args)) = .ok args := by
   simp [decodeSetSpaceArgs, encodeSetSpaceArgs, stubDecoded, requireMsgReg, Bind.bind,
-        Except.bind, Pure.pure, Except.pure, SeLe4n.CPtr.ofNat, SeLe4n.CPtr.toNat]
+        Except.bind, Pure.pure, Except.pure, SeLe4n.CPtr.ofNat_toNat]
 
 -- ============================================================================
 -- WS-BP BP7.1 (`v0.36.12`): page-table install decode (`pageTableMap`)
@@ -1968,7 +1970,7 @@ def decodePageTableMapArgs (decoded : SyscallDecodeResult)
 theorem decodePageTableMapArgs_roundtrip (args : PageTableMapArgs) :
     decodePageTableMapArgs (stubDecoded (encodePageTableMapArgs args)) = .ok args := by
   simp [decodePageTableMapArgs, encodePageTableMapArgs, stubDecoded, requireMsgReg, Bind.bind,
-        Except.bind, Pure.pure, Except.pure, SeLe4n.CPtr.ofNat, SeLe4n.CPtr.toNat,
+        Except.bind, Pure.pure, Except.pure, SeLe4n.CPtr.ofNat_toNat,
         SeLe4n.VAddr.ofNat, SeLe4n.VAddr.toNat]
 
 end SeLe4n.Kernel.Architecture.SyscallArgDecode

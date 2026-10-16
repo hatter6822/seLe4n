@@ -75,8 +75,8 @@ specification's form. -/
         -- WS-ZA ZA4.7: a receive, with or without a reply object; one that
         -- blocks checks everything, the reply object included, before its
         -- first write.
-        | .receive capAddr len mr0 =>
-          dispatchReceiveCheckedR ctx capAddr len mr0 tid executingCore st
+        | .receive capAddr len replyAddr =>
+          dispatchReceiveCheckedR ctx capAddr len replyAddr tid executingCore st
         -- WS-ZA ZA4.7: a reply-receive; one that answers a caller blocked on
         -- this server and then blocks writes in place, after every check.
         | .replyRecv capAddr msgInfo =>
@@ -182,13 +182,13 @@ theorem syscallEntryCheckedR_eq (ctx : LabelingContext) (executingCore : Concurr
           simp only [RefusalCarrying.ofKernel, syscallEntryChecked, hCtx, hCur, hRegs, hDec,
             hZero, Bool.false_eq_true, ↓reduceIte,
             SeLe4n.Kernel.Architecture.tlbFillIpcBufferOnCore_zero]
-        · next capAddr len mr0 hRecvRegs =>
-          obtain ⟨decoded, hDec, hRecv, hCap, hZero, hLen, hSlot, hMr0⟩ :=
+        · next capAddr len replyAddr hRecvRegs =>
+          obtain ⟨decoded, hDec, hRecv, hCap, hZero, hLen, hSlot, hReplyAddr⟩ :=
             SeLe4n.Kernel.Architecture.RegisterDecode.decodeSyscallArgsFromState_of_routedReceive
-              st tid SeLe4n.arm64DefaultLayout tcb.registerContext 32 capAddr len mr0 hRecvRegs
+              st tid SeLe4n.arm64DefaultLayout tcb.registerContext 32 capAddr len replyAddr hRecvRegs
           subst hCap
-          rw [dispatchReceiveCheckedR_eq ctx decoded tid executingCore len mr0 hRecv hLen hSlot
-            hMr0]
+          rw [dispatchReceiveCheckedR_eq ctx decoded tid executingCore len replyAddr hRecv hLen hSlot
+            hReplyAddr]
           simp only [RefusalCarrying.ofKernel, syscallEntryChecked, hCtx, hCur, hRegs, hDec,
             hZero, Bool.false_eq_true, ↓reduceIte,
             SeLe4n.Kernel.Architecture.tlbFillIpcBufferOnCore_zero]

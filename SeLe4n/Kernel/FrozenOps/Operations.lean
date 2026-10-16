@@ -1237,7 +1237,7 @@ def frozenCspaceLookup (st : FrozenSystemState) (cptr : SeLe4n.CPtr)
     (rootId : SeLe4n.ObjId) : Except KernelError Capability :=
   match st.getObject? rootId with
   | some (.cnode cn) =>
-      let slot := SeLe4n.Slot.ofNat (extractBits cptr.toNat 0 cn.radixWidth)
+      let slot := SeLe4n.Slot.ofNat (cptr.slotBits 0 cn.radixWidth)
       match cn.slots.lookup slot with
       | some cap => .ok cap
       | none => .error .invalidCapability

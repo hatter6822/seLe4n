@@ -167,7 +167,9 @@ its caller and blocks runs in place on the registers and reads 0.  At
 `v0.36.94` boot and retype store objects that own their cells
 (`KernelObject.unshare`), so the first signal after boot reads 0 too; the
 exerciser measures every scenario's first call and steady state and fails on
-any nonzero reading.  ZA4 measures the other syscalls and entries.  Plan:
+any nonzero reading.  At `v0.36.95` a capability address is a machine word
+(`CPtr` holds a `UInt64`), so an address `≥ 2^63` reads 0 at the decode.  ZA4
+measures the other syscalls and entries.  Plan:
 [`docs/planning/ZERO_ALLOCATION_SYSCALL_PLAN.md`](../planning/ZERO_ALLOCATION_SYSCALL_PLAN.md)
 (phases ZA1–ZA4).
 

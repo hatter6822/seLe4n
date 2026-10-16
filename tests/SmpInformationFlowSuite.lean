@@ -8861,19 +8861,19 @@ private def runRefusalReaderChecks : IO Unit := do
   -- the reconstruction claim is not carried by single-chunk arithmetic.
   assertBool "…including a field wide enough to need several chunks"
     (let wide : DeclassificationRefusal :=
-       { refusalDenied with requestedTarget := SeLe4n.CPtr.ofNat (2 ^ 70 + 12345) }
+       { refusalDenied with requestedTarget := SeLe4n.CPtr.ofNat (2 ^ 63 + 12345) }
      let wideLedger := recordRefusal RefusalLedger.initial wide
      let wideState : SystemState := { niState with declassificationRefusals := wideLedger }
      (match auditReadWord auditGenericCtx mc auditMonitorReader wideState
         (.refusalSlotFieldChunkCount 0 .requestedTarget) with
       | .error _ => false
       | .ok n =>
-          decide (n = 3) &&
+          decide (n = 2) &&
           decide (auditFoldChunks n (fun i =>
             match auditReadWord auditGenericCtx mc auditMonitorReader wideState
                 (.refusalSlotField 0 .requestedTarget i) with
             | .error _ => 0
-            | .ok c => c) = 2 ^ 70 + 12345)))
+            | .ok c => c) = 2 ^ 63 + 12345)))
   assertBool "an empty ring slot reads as absent, and a slot past the ring is refused"
     ((match auditReadWord auditGenericCtx mc auditMonitorReader refusalStateOne
         (.refusalSlotTags 1) with

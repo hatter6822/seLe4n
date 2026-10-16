@@ -187,14 +187,11 @@ def resolveCapAddress (rootId : SeLe4n.ObjId) (addr : SeLe4n.CPtr) (bitsRemainin
       if hCons : consumed = 0 then .error .illegalState  -- zero-width CNode
       else if bitsRemaining < consumed then .error .illegalState
       else
-        -- AE4-A (U-17/CAP-01): Mask CPtr to machine word width for consistency
-        -- with CNode.resolveSlot (S4-C). For Lean's unbounded Nat, addresses
-        -- beyond 2^64 must produce identical results to 64-bit hardware registers.
-        let maskedAddr := addr.toNat % SeLe4n.machineWordMax
-        let shiftedAddr := maskedAddr >>> (bitsRemaining - consumed)
-        let radixMask := 2 ^ cn.radixWidth
-        let slotIndex := shiftedAddr % radixMask
-        let guardExtracted := (shiftedAddr / radixMask) % (2 ^ cn.guardWidth)
+        -- The slot index and guard are bit fields of the address word, as in
+        -- CNode.resolveSlot (S4-C); compiled, they shift and mask the word
+        -- (`CPtr.slotBits_eq_impl`, WS-ZA ZA4.8).
+        let slotIndex := addr.slotBits (bitsRemaining - consumed) cn.radixWidth
+        let guardExtracted := addr.guardBits (bitsRemaining - consumed) cn.radixWidth cn.guardWidth
         if guardExtracted ≠ cn.guardValue then .error .invalidCapability
         else
           let slot := SeLe4n.Slot.ofNat slotIndex
@@ -303,11 +300,8 @@ result at once builds neither the `Except` nor the `SlotRef`
       if hCons : consumed = 0 then onErr .illegalState
       else if bitsRemaining < consumed then onErr .illegalState
       else
-        let maskedAddr := addr.toNat % SeLe4n.machineWordMax
-        let shiftedAddr := maskedAddr >>> (bitsRemaining - consumed)
-        let radixMask := 2 ^ cn.radixWidth
-        let slotIndex := shiftedAddr % radixMask
-        let guardExtracted := (shiftedAddr / radixMask) % (2 ^ cn.guardWidth)
+        let slotIndex := addr.slotBits (bitsRemaining - consumed) cn.radixWidth
+        let guardExtracted := addr.guardBits (bitsRemaining - consumed) cn.radixWidth cn.guardWidth
         if guardExtracted ≠ cn.guardValue then onErr .invalidCapability
         else
           let slot := SeLe4n.Slot.ofNat slotIndex
@@ -379,11 +373,8 @@ unboxed; only a deeper CSpace calls the recursive `resolveCapAddress`, whose
       if consumed = 0 then onErr .illegalState
       else if bitsRemaining < consumed then onErr .illegalState
       else
-        let maskedAddr := addr.toNat % SeLe4n.machineWordMax
-        let shiftedAddr := maskedAddr >>> (bitsRemaining - consumed)
-        let radixMask := 2 ^ cn.radixWidth
-        let slotIndex := shiftedAddr % radixMask
-        let guardExtracted := (shiftedAddr / radixMask) % (2 ^ cn.guardWidth)
+        let slotIndex := addr.slotBits (bitsRemaining - consumed) cn.radixWidth
+        let guardExtracted := addr.guardBits (bitsRemaining - consumed) cn.radixWidth cn.guardWidth
         if guardExtracted ≠ cn.guardValue then onErr .invalidCapability
         else
           let slot := SeLe4n.Slot.ofNat slotIndex
@@ -564,8 +555,8 @@ theorem resolveCapAddress_guard_reject
     (hConsPos : 0 < cn.guardWidth + cn.radixWidth)
     (hFit : cn.guardWidth + cn.radixWidth ≤ bits)
     (hBadGuard :
-      ((addr.toNat % SeLe4n.machineWordMax) >>> (bits - (cn.guardWidth + cn.radixWidth))) /
-        2 ^ cn.radixWidth % 2 ^ cn.guardWidth ≠ cn.guardValue) :
+      addr.guardBits (bits - (cn.guardWidth + cn.radixWidth)) cn.radixWidth cn.guardWidth ≠
+        cn.guardValue) :
     resolveCapAddress rootId addr bits st = .error .invalidCapability := by
   -- AN10-residual (R3): bridge raw-form hypothesis to typed-helper form.
   have hCN : st.getCNode? rootId = some cn :=
@@ -597,8 +588,8 @@ theorem resolveCapAddress_guard_match
     (hObj : st.objects[rootId]? = some (.cnode cn))
     (hOk : resolveCapAddress rootId addr bits st = .ok ref)
     (hLeaf : bits = cn.guardWidth + cn.radixWidth) :
-    ((addr.toNat % SeLe4n.machineWordMax) >>> (bits - (cn.guardWidth + cn.radixWidth))) /
-      2 ^ cn.radixWidth % 2 ^ cn.guardWidth = cn.guardValue := by
+    addr.guardBits (bits - (cn.guardWidth + cn.radixWidth)) cn.radixWidth cn.guardWidth =
+      cn.guardValue := by
   -- AN10-residual (R3): bridge the raw-form hypothesis to the typed-helper
   -- form so the simp set still collapses the inner match.
   have hCN : st.getCNode? rootId = some cn :=
