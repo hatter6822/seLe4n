@@ -1360,8 +1360,8 @@ struct RoundTrip {
     /// The message length in `x1`'s `MessageInfo` (at most 4, so the kernel
     /// reads no overflow register from an IPC buffer neither thread maps).
     msg_len: u64,
-    /// The first two message registers, `x2` and `x3`.
-    msg: [u64; 2],
+    /// The message registers `x2` to `x5`.
+    msg: [u64; 4],
     /// A signal of this badge issued first and not measured, so a wait finds
     /// the badge pending and consumes it without blocking.
     primed: Option<u64>,
@@ -1400,6 +1400,48 @@ const TCB_RESUME: u64 = 21;
 /// `MintReplyCap` (`SyscallId` 28).
 #[cfg(feature = "hw_target")]
 const MINT_REPLY_CAP: u64 = 28;
+/// The capability invocations the invocation scenarios issue (WS-ZA ZA5.1),
+/// by `SyscallId`.
+#[cfg(feature = "hw_target")]
+const CSPACE_MINT: u64 = 4;
+#[cfg(feature = "hw_target")]
+const CSPACE_COPY: u64 = 5;
+#[cfg(feature = "hw_target")]
+const CSPACE_MOVE: u64 = 6;
+#[cfg(feature = "hw_target")]
+const CSPACE_DELETE: u64 = 7;
+#[cfg(feature = "hw_target")]
+const VSPACE_MAP: u64 = 9;
+#[cfg(feature = "hw_target")]
+const VSPACE_UNMAP: u64 = 10;
+#[cfg(feature = "hw_target")]
+const TCB_SET_PRIORITY: u64 = 22;
+#[cfg(feature = "hw_target")]
+const TCB_SET_MC_PRIORITY: u64 = 23;
+#[cfg(feature = "hw_target")]
+const TCB_SET_IPC_BUFFER: u64 = 24;
+#[cfg(feature = "hw_target")]
+const TCB_SET_AFFINITY: u64 = 25;
+#[cfg(feature = "hw_target")]
+const TCB_BIND_NOTIFICATION: u64 = 26;
+#[cfg(feature = "hw_target")]
+const TCB_UNBIND_NOTIFICATION: u64 = 27;
+#[cfg(feature = "hw_target")]
+const VSPACE_UNIFY_INSTRUCTION: u64 = 29;
+#[cfg(feature = "hw_target")]
+const TCB_SET_FAULT_HANDLER: u64 = 34;
+#[cfg(feature = "hw_target")]
+const CSPACE_REVOKE: u64 = 35;
+#[cfg(feature = "hw_target")]
+const UNTYPED_RETYPE: u64 = 36;
+#[cfg(feature = "hw_target")]
+const UNTYPED_RESET: u64 = 37;
+#[cfg(feature = "hw_target")]
+const TCB_SET_SPACE: u64 = 38;
+#[cfg(feature = "hw_target")]
+const PAGE_TABLE_MAP: u64 = 39;
+#[cfg(feature = "hw_target")]
+const PAGE_TABLE_UNMAP: u64 = 40;
 /// `Yield` (`SyscallId` 41).
 #[cfg(feature = "hw_target")]
 const YIELD: u64 = 41;
@@ -1432,6 +1474,23 @@ const REPLY_OBJECT_SLOT: u64 = 8;
 /// The free slot the reply capability is minted into.
 #[cfg(feature = "hw_target")]
 const REPLY_CAP_SLOT: u64 = 9;
+#[cfg(feature = "hw_target")]
+const VSPACE_SLOT: u64 = 3;
+#[cfg(feature = "hw_target")]
+const UNTYPED_SLOT: u64 = 5;
+/// Free slots the invocation scenarios fill and empty again.
+#[cfg(feature = "hw_target")]
+const COPY_SLOT: u64 = 10;
+#[cfg(feature = "hw_target")]
+const MOVE_SLOT: u64 = 11;
+#[cfg(feature = "hw_target")]
+const MINT_SLOT: u64 = 12;
+#[cfg(feature = "hw_target")]
+const FRAME_SLOT: u64 = 13;
+/// The three intermediate page tables' slots; the last is the copy slot, free
+/// again once the copy sequence has deleted what it moved.
+#[cfg(feature = "hw_target")]
+const PAGE_TABLE_SLOTS: [u64; 3] = [14, 15, COPY_SLOT];
 
 /// The capability addresses of those slots.
 #[cfg(feature = "hw_target")]
@@ -1444,6 +1503,18 @@ const PARTNER_TCB_CAP: u64 = cap_address(PARTNER_TCB_SLOT);
 const ENDPOINT_CAP: u64 = cap_address(ENDPOINT_SLOT);
 #[cfg(feature = "hw_target")]
 const REPLY_CAP: u64 = cap_address(REPLY_CAP_SLOT);
+#[cfg(feature = "hw_target")]
+const VSPACE_CAP: u64 = cap_address(VSPACE_SLOT);
+#[cfg(feature = "hw_target")]
+const UNTYPED_CAP: u64 = cap_address(UNTYPED_SLOT);
+#[cfg(feature = "hw_target")]
+const FRAME_CAP: u64 = cap_address(FRAME_SLOT);
+#[cfg(feature = "hw_target")]
+const PAGE_TABLE_CAPS: [u64; 3] = [
+    cap_address(PAGE_TABLE_SLOTS[0]),
+    cap_address(PAGE_TABLE_SLOTS[1]),
+    cap_address(PAGE_TABLE_SLOTS[2]),
+];
 
 /// A signal on the interrupt notification with `badge`.
 #[cfg(feature = "hw_target")]
@@ -1453,7 +1524,7 @@ const fn signal(name: &'static str, badge: u64) -> RoundTrip {
         syscall: SIGNAL,
         cptr: NOTIFICATION_CAP,
         msg_len: 1,
-        msg: [badge, 0],
+        msg: [badge, 0, 0, 0],
         primed: None,
         blocks: false,
     }
@@ -1473,7 +1544,7 @@ const ROUND_TRIPS: [RoundTrip; 4] = [
         syscall: WAIT,
         cptr: NOTIFICATION_CAP,
         msg_len: 1,
-        msg: [0, 0],
+        msg: [0, 0, 0, 0],
         primed: Some(1),
         blocks: false,
     },
@@ -1482,7 +1553,7 @@ const ROUND_TRIPS: [RoundTrip; 4] = [
         syscall: YIELD,
         cptr: 0,
         msg_len: 0,
-        msg: [0, 0],
+        msg: [0, 0, 0, 0],
         primed: None,
         blocks: false,
     },
@@ -1504,7 +1575,7 @@ const fn partner_step(
         syscall,
         cptr,
         msg_len,
-        msg,
+        msg: [msg[0], msg[1], 0, 0],
         primed: None,
         blocks,
     }
@@ -1580,6 +1651,285 @@ const PARTNER_SCENARIOS: [&[RoundTrip]; 4] = [
             [0, 0],
             false,
         ),
+    ],
+];
+
+/// A capability invocation with all four message registers inline, which
+/// continues its caller.
+#[cfg(feature = "hw_target")]
+const fn invocation(name: &'static str, syscall: u64, cptr: u64, msg: [u64; 4]) -> RoundTrip {
+    RoundTrip {
+        name,
+        syscall,
+        cptr,
+        msg_len: 4,
+        msg,
+        primed: None,
+        blocks: false,
+    }
+}
+
+/// The object ids the untyped scenarios carve a frame and three page tables
+/// at: boot-domain ids no boot object holds.
+#[cfg(feature = "hw_target")]
+const FRAME_CHILD_ID: u64 = 16;
+#[cfg(feature = "hw_target")]
+const PAGE_TABLE_CHILD_IDS: [u64; 3] = [17, 18, 19];
+/// `KernelObjectType` tags of a frame and a page table, each one page (size
+/// bits 0 in the tag word's upper bits).
+#[cfg(feature = "hw_target")]
+const FRAME_TYPE: u64 = 8;
+#[cfg(feature = "hw_target")]
+const PAGE_TABLE_TYPE: u64 = 9;
+/// The root task's ASID and the user address the frame is mapped at: the
+/// first page of the user window (`VAddr.userWindowBase`, 2^39), whose walk
+/// the three page tables complete.
+#[cfg(feature = "hw_target")]
+const ROOT_ASID: u64 = 1;
+#[cfg(feature = "hw_target")]
+const FRAME_VADDR: u64 = 1 << 39;
+/// Read, write, user and cacheable (`PagePermissions.ofNat`).
+#[cfg(feature = "hw_target")]
+const FRAME_PERMS: u64 = 0b11011;
+
+/// The capability invocations outside IPC (WS-ZA ZA5.1), each sequence issued
+/// by the root task with the partner suspended, and each leaving the state it
+/// found, so its second run is its steady state:
+/// - a copy, a move of the copy and a delete of it;
+/// - a mint of a badged copy and a revoke of the source that destroys it;
+/// - the reply capability deleted and minted again from the reply object;
+/// - the partner thread's priority, maximum priority, affinity and fault
+///   handler set, a notification bound to it and unbound, its CSpace and
+///   VSpace set while it is suspended, then resumed and suspended;
+/// - three page tables carved from the untyped and installed in the root
+///   task's VSpace, one per level of the walk to the frame's address; a frame
+///   carved, mapped, its instruction cache unified, named as the partner's IPC
+///   buffer, unmapped and deleted; the tables taken out deepest first and
+///   deleted; and the untyped reset.
+///
+/// No scheduling context or service is in the image, so the
+/// scheduling-context binding and the service revoke and query are not issued.
+#[cfg(feature = "hw_target")]
+const INVOCATION_SCENARIOS: [&[RoundTrip]; 5] = [
+    &[
+        invocation(
+            "cspace-copy",
+            CSPACE_COPY,
+            CNODE_CAP,
+            [NOTIFICATION_SLOT, COPY_SLOT, 0, 0],
+        ),
+        invocation(
+            "cspace-move",
+            CSPACE_MOVE,
+            CNODE_CAP,
+            [COPY_SLOT, MOVE_SLOT, 0, 0],
+        ),
+        invocation(
+            "cspace-delete",
+            CSPACE_DELETE,
+            CNODE_CAP,
+            [MOVE_SLOT, 0, 0, 0],
+        ),
+    ],
+    &[
+        invocation(
+            "cspace-mint",
+            CSPACE_MINT,
+            CNODE_CAP,
+            [NOTIFICATION_SLOT, MINT_SLOT, 0x3, 5],
+        ),
+        invocation(
+            "cspace-revoke",
+            CSPACE_REVOKE,
+            CNODE_CAP,
+            [NOTIFICATION_SLOT, 0, 0, 0],
+        ),
+    ],
+    &[
+        invocation(
+            "reply-cap-delete",
+            CSPACE_DELETE,
+            CNODE_CAP,
+            [REPLY_CAP_SLOT, 0, 0, 0],
+        ),
+        invocation(
+            "reply-cap-mint",
+            MINT_REPLY_CAP,
+            CNODE_CAP,
+            [REPLY_OBJECT_SLOT, REPLY_CAP_SLOT, 0, 0],
+        ),
+    ],
+    &[
+        invocation(
+            "tcb-set-priority",
+            TCB_SET_PRIORITY,
+            PARTNER_TCB_CAP,
+            [255, 0, 0, 0],
+        ),
+        invocation(
+            "tcb-set-mc-priority",
+            TCB_SET_MC_PRIORITY,
+            PARTNER_TCB_CAP,
+            [255, 0, 0, 0],
+        ),
+        invocation(
+            "tcb-set-affinity",
+            TCB_SET_AFFINITY,
+            PARTNER_TCB_CAP,
+            [0, 0, 0, 0],
+        ),
+        invocation(
+            "tcb-set-fault-handler",
+            TCB_SET_FAULT_HANDLER,
+            PARTNER_TCB_CAP,
+            [ENDPOINT_CAP, 0, 0, 0],
+        ),
+        invocation(
+            "tcb-bind-notification",
+            TCB_BIND_NOTIFICATION,
+            PARTNER_TCB_CAP,
+            [NOTIFICATION_CAP, 0, 0, 0],
+        ),
+        invocation(
+            "tcb-unbind-notification",
+            TCB_UNBIND_NOTIFICATION,
+            PARTNER_TCB_CAP,
+            [0; 4],
+        ),
+        invocation(
+            "tcb-set-space",
+            TCB_SET_SPACE,
+            PARTNER_TCB_CAP,
+            [CNODE_CAP, VSPACE_CAP, 0, 0],
+        ),
+        invocation("tcb-resume", TCB_RESUME, PARTNER_TCB_CAP, [0; 4]),
+        invocation("tcb-suspend", TCB_SUSPEND, PARTNER_TCB_CAP, [0; 4]),
+    ],
+    &[
+        invocation(
+            "untyped-retype-page-table-1",
+            UNTYPED_RETYPE,
+            UNTYPED_CAP,
+            [
+                PAGE_TABLE_TYPE,
+                PAGE_TABLE_CHILD_IDS[0],
+                CNODE_CAP,
+                PAGE_TABLE_SLOTS[0],
+            ],
+        ),
+        invocation(
+            "page-table-map-1",
+            PAGE_TABLE_MAP,
+            PAGE_TABLE_CAPS[0],
+            [VSPACE_CAP, FRAME_VADDR, 0, 0],
+        ),
+        invocation(
+            "untyped-retype-page-table-2",
+            UNTYPED_RETYPE,
+            UNTYPED_CAP,
+            [
+                PAGE_TABLE_TYPE,
+                PAGE_TABLE_CHILD_IDS[1],
+                CNODE_CAP,
+                PAGE_TABLE_SLOTS[1],
+            ],
+        ),
+        invocation(
+            "page-table-map-2",
+            PAGE_TABLE_MAP,
+            PAGE_TABLE_CAPS[1],
+            [VSPACE_CAP, FRAME_VADDR, 0, 0],
+        ),
+        invocation(
+            "untyped-retype-page-table-3",
+            UNTYPED_RETYPE,
+            UNTYPED_CAP,
+            [
+                PAGE_TABLE_TYPE,
+                PAGE_TABLE_CHILD_IDS[2],
+                CNODE_CAP,
+                PAGE_TABLE_SLOTS[2],
+            ],
+        ),
+        invocation(
+            "page-table-map-3",
+            PAGE_TABLE_MAP,
+            PAGE_TABLE_CAPS[2],
+            [VSPACE_CAP, FRAME_VADDR, 0, 0],
+        ),
+        invocation(
+            "untyped-retype-frame",
+            UNTYPED_RETYPE,
+            UNTYPED_CAP,
+            [FRAME_TYPE, FRAME_CHILD_ID, CNODE_CAP, FRAME_SLOT],
+        ),
+        invocation(
+            "vspace-map",
+            VSPACE_MAP,
+            VSPACE_CAP,
+            [ROOT_ASID, FRAME_VADDR, FRAME_CAP, FRAME_PERMS],
+        ),
+        invocation(
+            "vspace-unify-instruction",
+            VSPACE_UNIFY_INSTRUCTION,
+            VSPACE_CAP,
+            [ROOT_ASID, FRAME_VADDR, 0, 0],
+        ),
+        invocation(
+            "tcb-set-ipc-buffer",
+            TCB_SET_IPC_BUFFER,
+            PARTNER_TCB_CAP,
+            [FRAME_VADDR, 0, 0, 0],
+        ),
+        invocation(
+            "vspace-unmap",
+            VSPACE_UNMAP,
+            VSPACE_CAP,
+            [ROOT_ASID, FRAME_VADDR, 0, 0],
+        ),
+        invocation(
+            "frame-delete",
+            CSPACE_DELETE,
+            CNODE_CAP,
+            [FRAME_SLOT, 0, 0, 0],
+        ),
+        invocation(
+            "page-table-unmap-3",
+            PAGE_TABLE_UNMAP,
+            PAGE_TABLE_CAPS[2],
+            [0; 4],
+        ),
+        invocation(
+            "page-table-delete-3",
+            CSPACE_DELETE,
+            CNODE_CAP,
+            [PAGE_TABLE_SLOTS[2], 0, 0, 0],
+        ),
+        invocation(
+            "page-table-unmap-2",
+            PAGE_TABLE_UNMAP,
+            PAGE_TABLE_CAPS[1],
+            [0; 4],
+        ),
+        invocation(
+            "page-table-delete-2",
+            CSPACE_DELETE,
+            CNODE_CAP,
+            [PAGE_TABLE_SLOTS[1], 0, 0, 0],
+        ),
+        invocation(
+            "page-table-unmap-1",
+            PAGE_TABLE_UNMAP,
+            PAGE_TABLE_CAPS[0],
+            [0; 4],
+        ),
+        invocation(
+            "page-table-delete-1",
+            CSPACE_DELETE,
+            CNODE_CAP,
+            [PAGE_TABLE_SLOTS[0], 0, 0, 0],
+        ),
+        invocation("untyped-reset", UNTYPED_RESET, UNTYPED_CAP, [0; 4]),
     ],
 ];
 
@@ -1716,6 +2066,16 @@ fn heap_allocations_per_syscall() -> Option<bool> {
         );
         return Some(false);
     }
+    for scenario in INVOCATION_SCENARIOS.iter() {
+        for first in [true, false] {
+            let which = if first { " (first call)" } else { "" };
+            for step in scenario.iter() {
+                if heap_allocations_round_trip(step, which) != Some(true) {
+                    return Some(false);
+                }
+            }
+        }
+    }
     Some(true)
 }
 
@@ -1739,6 +2099,8 @@ fn dispatch_round_trip(trip: &RoundTrip) -> (Dispatched, Option<u64>, Option<u64
     frame.gprs[1] = trip.msg_len;
     frame.gprs[2] = trip.msg[0];
     frame.gprs[3] = trip.msg[1];
+    frame.gprs[4] = trip.msg[2];
+    frame.gprs[5] = trip.msg[3];
     frame.gprs[7] = trip.syscall;
     let args = crate::svc_dispatch::SyscallArgs::from_trap_frame(&frame);
     let saved_daif = crate::interrupts::disable_interrupts();

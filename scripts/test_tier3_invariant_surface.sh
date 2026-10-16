@@ -4016,7 +4016,7 @@ run_check "INVARIANT" rg -n 'TPH-015q checked boot refuses a configured CNode ho
 # a RAM page is zeroed before the capability exists, the new capability is a
 # CDT child of the untyped's, only `.frame` is carved, and a device untyped
 # backs exactly the memory-backed kinds.
-run_check "INVARIANT" rg -n '^    \| \.object _ => untypedRetypeFromCap tid decoded$' SeLe4n/Kernel/API.lean
+run_check "INVARIANT" rg -n '^    \| \.object _ => untypedRetypeFromCap tid decoded\.capAddr \(decodeUntypedRetypeArgs decoded\)$' SeLe4n/Kernel/API.lean
 run_check "INVARIANT" rg -n -U 'def untypedRetypeFromCap[^\n]*(\n([ \t][^\n]*)?)*      match carveRequestOf\? st args\.newType args\.sizeBits with' SeLe4n/Kernel/API.lean
 # WS-BP BP7.1 slice 4b (v0.36.10): a VSpace root is carved, one page, under an
 # ASID the arm picks (never 0) and the carve itself checks is free before
@@ -4044,7 +4044,7 @@ run_check "INVARIANT" rg -n -U 'def carveRequestOf\?[^\n]*(\n([ \t][^\n]*)?)*  \
 run_check "INVARIANT" rg -n -U 'def untypedRetypeFromCap[^\n]*(\n([ \t][^\n]*)?)*          \| \.ok \(src, dst\) => untypedRetypeObject src vChild\.val dst req st' SeLe4n/Kernel/API.lean
 run_check "INVARIANT" rg -n -U 'def untypedRetypeFromCap[^\n]*(\n([ \t][^\n]*)?)*        match validateObjIdArg args\.childId with' SeLe4n/Kernel/API.lean
 run_check "INVARIANT" rg -n -U 'def resolveUntypedRetype[^\n]*(\n([ \t][^\n]*)?)*          capAddr       := args\.dstCNode\n          capDepth      := rootCn\.depth\n          requiredRight := \.write' SeLe4n/Kernel/API.lean
-run_check "INVARIANT" rg -n -U 'def resolveUntypedRetype[^\n]*(\n([ \t][^\n]*)?)*      match resolveCapAddress callerTcb\.cspaceRoot decoded\.capAddr rootCn\.depth st with' SeLe4n/Kernel/API.lean
+run_check "INVARIANT" rg -n -U 'def resolveUntypedRetype[^\n]*(\n([ \t][^\n]*)?)*      match resolveCapAddress callerTcb\.cspaceRoot srcAddr rootCn\.depth st with' SeLe4n/Kernel/API.lean
 run_check "INVARIANT" rg -n -U 'def untypedRetypeObject[^\n]*(\n([ \t][^\n]*)?)*          match retypeFromUntyped src untypedId childId \(req\.object untypedId ut\) req\.size st with' SeLe4n/Kernel/Lifecycle/Operations/ScrubAndUntyped.lean
 run_check "INVARIANT" rg -n -U 'def untypedRetypeObject[^\n]*(\n([ \t][^\n]*)?)*            match cspaceInsertSlot dst \(req\.capability childId\) \(req\.scrub st1 ut\) with' SeLe4n/Kernel/Lifecycle/Operations/ScrubAndUntyped.lean
 run_check "INVARIANT" rg -n -U 'def untypedRetypeObject[^\n]*(\n([ \t][^\n]*)?)*stDst\.cdt\.addEdge srcNode dstNode \.retype' SeLe4n/Kernel/Lifecycle/Operations/ScrubAndUntyped.lean
@@ -10832,7 +10832,7 @@ run_negative_check "INVARIANT" rg -n 'dispatchCapabilityOnly_schedContextBind_id
 # (`args.threadId`) must not come back on either side of the ABI.
 run_check "INVARIANT" rg -n '^def resolveSchedContextBindThread($|[ ({:\[\]])' SeLe4n/Kernel/API.lean
 run_check "INVARIANT" bash -lc 'rg -U -n "^def resolveSchedContextBindThread[^\n]*(\n([ \t][^\n]*)?)*          requiredRight := \.write" SeLe4n/Kernel/API.lean'
-run_check "INVARIANT" bash -lc 'rg -U -n "\| \.schedContextBind =>\n    some <\| match cap\.target with\n    \| \.object scId =>\n      fun st => match resolveSchedContextBindThread tid decoded st with" SeLe4n/Kernel/API.lean'
+run_check "INVARIANT" bash -lc 'rg -U -n "\| \.schedContextBind =>\n    some <\| match cap\.target with\n    \| \.object scId =>\n      fun st => match resolveSchedContextBindThread tid \(decodeSchedContextBindArgs decoded\) st with" SeLe4n/Kernel/API.lean'
 run_check "INVARIANT" rg -n '^theorem resolveSchedContextBindThread_ok_authorised($|[ ({:\[\]])' SeLe4n/Kernel/API.lean
 run_check "INVARIANT" rg -n '^theorem dispatchCapabilityOnly_schedContextBind_eq($|[ ({:\[\]])' SeLe4n/Kernel/API.lean
 run_check "INVARIANT" rg -n '^  tcbCPtr : SeLe4n\.CPtr$' SeLe4n/Kernel/Architecture/SyscallArgDecode.lean
@@ -20761,7 +20761,7 @@ run_negative_check "INVARIANT" bash -lc 'rg -U -n "\| \.replyRecv, \.object epId
 # raw `threadId` argument until then), the retype through the decoded
 # `targetObj`.
 run_check "INVARIANT" bash -lc 'rg -U -n "\| \.tcbSetAffinity, \.object objId =>(\n {8,}[^\n]*)*\n {8,}match decodeAffinity args\.affinityRaw with" SeLe4n/Kernel/SyscallLockBracket.lean'
-run_check "INVARIANT" bash -lc 'rg -U -n "\| \.schedContextBind, \.object _ =>\n          match resolveSchedContextBindThread tid decoded s with\n          \| \.error _ => none\n          \| \.ok v => some \(\.ofThreadTarget tid v\.val\)" SeLe4n/Kernel/SyscallLockBracket.lean'
+run_check "INVARIANT" bash -lc 'rg -U -n "\| \.schedContextBind, \.object _ =>\n          match resolveSchedContextBindThread tid\n              \(Architecture\.SyscallArgDecode\.decodeSchedContextBindArgs decoded\) s with\n          \| \.error _ => none\n          \| \.ok v => some \(\.ofThreadTarget tid v\.val\)" SeLe4n/Kernel/SyscallLockBracket.lean'
 run_check "INVARIANT" bash -lc 'rg -U -n "\| \.lifecycleRetype, \.object _ =>(\n {8,}[^\n]*)*\n {8,}\| \.ok args => some \(\.ofObjectTarget tid args\.targetObj\)" SeLe4n/Kernel/SyscallLockBracket.lean'
 # The witness: both domains at ONE entry, the object domain's answer measured to
 # be unmoved by the five new operands, and the scheduler footprint read off the

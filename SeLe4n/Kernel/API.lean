@@ -1540,9 +1540,9 @@ thread the transition binds cannot be two readings of one register.
 `resolveSchedContextBindThread_ok_authorised` is the fact the arm rests on, stated
 so a revert to a raw operand has to break a proof rather than a review. -/
 def resolveSchedContextBindThread (callerTid : SeLe4n.ThreadId)
-    (decoded : SyscallDecodeResult) (st : SystemState) :
+    (args? : Except KernelError SchedContextBindArgs) (st : SystemState) :
     Except KernelError SeLe4n.ValidThreadId :=
-  match decodeSchedContextBindArgs decoded with
+  match args? with
   | .error e => .error e
   | .ok args =>
     match st.getTcb? callerTid with
@@ -1574,12 +1574,13 @@ caller's own CSpace, and it is a TCB the store holds.  The read-only lookup
 returns the state it was given (`syscallLookupCap_preserves_state`), so the
 capability is exhibited at `st` itself. -/
 theorem resolveSchedContextBindThread_ok_authorised
-    (callerTid : SeLe4n.ThreadId) (decoded : SyscallDecodeResult) (st : SystemState)
+    (callerTid : SeLe4n.ThreadId) (args? : Except KernelError SchedContextBindArgs)
+    (st : SystemState)
     (v : SeLe4n.ValidThreadId)
-    (h : resolveSchedContextBindThread callerTid decoded st = .ok v) :
+    (h : resolveSchedContextBindThread callerTid args? st = .ok v) :
     ∃ (args : SchedContextBindArgs) (callerTcb : TCB) (rootCn : CNode)
       (tcbCap : Capability),
-      decodeSchedContextBindArgs decoded = .ok args ∧
+      args? = .ok args ∧
       st.getTcb? callerTid = some callerTcb ∧
       st.getCNode? callerTcb.cspaceRoot = some rootCn ∧
       syscallLookupCap
@@ -1590,7 +1591,7 @@ theorem resolveSchedContextBindThread_ok_authorised
       tcbCap.target = .object v.val.toObjId ∧
       (∃ tcb, st.getTcb? v.val = some tcb) := by
   unfold resolveSchedContextBindThread at h
-  cases hArgs : decodeSchedContextBindArgs decoded with
+  cases hArgs : args? with
   | error e => rw [hArgs] at h; cases h
   | ok args =>
     rw [hArgs] at h
@@ -1658,17 +1659,18 @@ The successor of `dispatchCapabilityOnly_schedContextBind_idle_operand_refused`
 (retired with the raw operand it was about): the idle threads are the kernel's
 own scheduling reserve, and no capability a thread can hold names one. -/
 theorem resolveSchedContextBindThread_refuses_idle_capability
-    (callerTid : SeLe4n.ThreadId) (decoded : SyscallDecodeResult) (st : SystemState)
+    (callerTid : SeLe4n.ThreadId) (args? : Except KernelError SchedContextBindArgs)
+    (st : SystemState)
     (args : SchedContextBindArgs) (callerTcb : TCB) (rootCn : CNode) (ref : SlotRef)
     (idleCap : Capability)
-    (hArgs : decodeSchedContextBindArgs decoded = .ok args)
+    (hArgs : args? = .ok args)
     (hCaller : st.getTcb? callerTid = some callerTcb)
     (hRoot : st.getCNode? callerTcb.cspaceRoot = some rootCn)
     (hRef : resolveCapAddress callerTcb.cspaceRoot (args.tcbCPtr)
       rootCn.depth st = .ok ref)
     (hSlot : SystemState.lookupSlotCap st ref = some idleCap)
     (hIdle : SeLe4n.Kernel.capTargetsReservedIdleObject idleCap = true) :
-    resolveSchedContextBindThread callerTid decoded st = .error .invalidCapability := by
+    resolveSchedContextBindThread callerTid args? st = .error .invalidCapability := by
   unfold resolveSchedContextBindThread
   rw [hArgs]
   simp only
@@ -1883,7 +1885,7 @@ resolves its frame: a carve installs a capability, and installing into a CNode i
 writing it, so a caller can deposit the new capability only in a CNode it holds a
 writable capability to.  The destination slot is MR3 verbatim — the install
 primitive refuses an index its CNode cannot address. -/
-def resolveUntypedRetype (callerTid : SeLe4n.ThreadId) (decoded : SyscallDecodeResult)
+def resolveUntypedRetype (callerTid : SeLe4n.ThreadId) (srcAddr : SeLe4n.CPtr)
     (args : UntypedRetypeArgs) (st : SystemState) :
     Except KernelError (CSpaceAddr × CSpaceAddr) :=
   match st.getTcb? callerTid with
@@ -1892,7 +1894,7 @@ def resolveUntypedRetype (callerTid : SeLe4n.ThreadId) (decoded : SyscallDecodeR
     match st.getCNode? callerTcb.cspaceRoot with
     | none => .error .invalidCapability
     | some rootCn =>
-      match resolveCapAddress callerTcb.cspaceRoot decoded.capAddr rootCn.depth st with
+      match resolveCapAddress callerTcb.cspaceRoot srcAddr rootCn.depth st with
       | .error e => .error e
       | .ok src =>
         let dstGate : SyscallGate := {
@@ -1975,16 +1977,16 @@ theorem carveRequestOf?_ok (st : SystemState) (newType : KernelObjectType) (size
 `.untypedRetype` arm's transition** — seL4's `seL4_Untyped_Retype` at the memory
 types: a frame, a child untyped, a VSpace root and a page table.
 
-Decode, then build the carve request (`carveRequestOf?`: a frame, a child
-untyped of a bounded size, a VSpace root under a fresh ASID, or a page table —
-anything else `.invalidArgument`).  The child id is
-a raw operand, so it passes `validateObjIdArg` — no reserved idle object and not
+The arm's decode of the message registers (`args?`), then the carve request
+(`carveRequestOf?`: a frame, a child untyped of a bounded size, a VSpace root
+under a fresh ASID, or a page table — anything else `.invalidArgument`).  The
+child id is a raw operand, so it passes `validateObjIdArg` — no reserved idle object and not
 the sentinel — before anything is resolved.  Then the two slots, then
 `untypedRetypeObject`, whose own guards decide everything else. -/
-def untypedRetypeFromCap (tid : SeLe4n.ThreadId) (decoded : SyscallDecodeResult) :
-    Kernel Unit :=
+def untypedRetypeFromCap (tid : SeLe4n.ThreadId) (srcAddr : SeLe4n.CPtr)
+    (args? : Except KernelError UntypedRetypeArgs) : Kernel Unit :=
   fun st =>
-    match decodeUntypedRetypeArgs decoded with
+    match args? with
     | .error e => .error e
     | .ok args =>
       match carveRequestOf? st args.newType args.sizeBits with
@@ -1993,7 +1995,7 @@ def untypedRetypeFromCap (tid : SeLe4n.ThreadId) (decoded : SyscallDecodeResult)
         match validateObjIdArg args.childId with
         | .error e => .error e
         | .ok vChild =>
-          match resolveUntypedRetype tid decoded args st with
+          match resolveUntypedRetype tid srcAddr args st with
           | .error e => .error e
           | .ok (src, dst) => untypedRetypeObject src vChild.val dst req st
 
@@ -2001,18 +2003,18 @@ def untypedRetypeFromCap (tid : SeLe4n.ThreadId) (decoded : SyscallDecodeResult)
 decode, the carve request, the validated child id, the resolved slots, and the
 carve.  The case analysis has one owner, so the invariant and non-interference
 proofs read these equations. -/
-theorem untypedRetypeFromCap_ok (tid : SeLe4n.ThreadId) (decoded : SyscallDecodeResult)
-    (st st' : SystemState)
-    (h : untypedRetypeFromCap tid decoded st = .ok ((), st')) :
+theorem untypedRetypeFromCap_ok (tid : SeLe4n.ThreadId) (srcAddr : SeLe4n.CPtr)
+    (args? : Except KernelError UntypedRetypeArgs) (st st' : SystemState)
+    (h : untypedRetypeFromCap tid srcAddr args? st = .ok ((), st')) :
     ∃ (args : UntypedRetypeArgs) (req : CarveRequest) (vChild : SeLe4n.ValidObjId)
       (src dst : CSpaceAddr),
-      decodeUntypedRetypeArgs decoded = .ok args ∧
+      args? = .ok args ∧
       carveRequestOf? st args.newType args.sizeBits = .ok req ∧
       validateObjIdArg args.childId = .ok vChild ∧
-      resolveUntypedRetype tid decoded args st = .ok (src, dst) ∧
+      resolveUntypedRetype tid srcAddr args st = .ok (src, dst) ∧
       untypedRetypeObject src vChild.val dst req st = .ok ((), st') := by
   unfold untypedRetypeFromCap at h
-  cases hD : decodeUntypedRetypeArgs decoded with
+  cases hD : args? with
   | error e => rw [hD] at h; cases h
   | ok args =>
     rw [hD] at h
@@ -2027,7 +2029,7 @@ theorem untypedRetypeFromCap_ok (tid : SeLe4n.ThreadId) (decoded : SyscallDecode
       | ok vChild =>
         rw [hV] at h
         simp only at h
-        cases hR : resolveUntypedRetype tid decoded args st with
+        cases hR : resolveUntypedRetype tid srcAddr args st with
         | error e => rw [hR] at h; cases h
         | ok pr =>
           obtain ⟨src, dst⟩ := pr
@@ -2533,7 +2535,7 @@ def dispatchCapabilityOnly (decoded : SyscallDecodeResult)
   -- `.vspaceMap` maps that page and no other.
   | .untypedRetype =>
     some <| match cap.target with
-    | .object _ => untypedRetypeFromCap tid decoded
+    | .object _ => untypedRetypeFromCap tid decoded.capAddr (decodeUntypedRetypeArgs decoded)
     | _ => fun _ => .error .invalidCapability
   -- **WS-BP BP7.1 (`v0.36.6`)**: seL4's `resetUntypedCap` — the untyped's memory
   -- returns to it once no capability names any carved child.  Every mapping of
@@ -2684,7 +2686,7 @@ def dispatchCapabilityOnly (decoded : SyscallDecodeResult)
   | .schedContextBind =>
     some <| match cap.target with
     | .object scId =>
-      fun st => match resolveSchedContextBindThread tid decoded st with
+      fun st => match resolveSchedContextBindThread tid (decodeSchedContextBindArgs decoded) st with
       | .error e => .error e
       | .ok vThreadId =>
           -- AL7-H / WS-AL AL8 (cascades AK7-E): type-level sentinel rejection
@@ -3010,7 +3012,8 @@ structure capabilityDispatchQuiescence (decoded : SyscallDecodeResult)
   boundThreadNotDonationOwner : ∀ (callerTid : SeLe4n.ThreadId)
       (vThreadId : SeLe4n.ValidThreadId),
     decoded.syscallId = .schedContextBind →
-    resolveSchedContextBindThread callerTid decoded st = .ok vThreadId →
+    resolveSchedContextBindThread callerTid (decodeSchedContextBindArgs decoded) st =
+      .ok vThreadId →
     ∀ (s : SeLe4n.ThreadId) (sTcb : TCB) (sc0 : SeLe4n.SchedContextId),
       st.objects[s.toObjId]? = some (.tcb sTcb) →
       sTcb.schedContextBinding ≠ .donated sc0 vThreadId.val
@@ -3097,7 +3100,7 @@ theorem dispatchCapabilityOnly_preserves_ipcInvariantFull
   case untypedRetype =>
     cases hTgt : cap.target <;> simp only [hTgt] at hStep
     case object _ =>
-      obtain ⟨_, _, _, _, _, _, _, _, _, hCarve⟩ := untypedRetypeFromCap_ok tid decoded st st' hStep
+      obtain ⟨_, _, _, _, _, _, _, _, _, hCarve⟩ := untypedRetypeFromCap_ok tid _ _ st st' hStep
       exact untypedRetypeObject_preserves_ipcInvariantFull _ _ _ _ st st' hObjInv hInv hCarve
     all_goals try cases hStep
   case untypedReset =>
@@ -3208,7 +3211,7 @@ theorem dispatchCapabilityOnly_preserves_ipcInvariantFull
     cases hTgt : cap.target <;> simp only [hTgt] at hStep
     case object scId =>
       try dsimp only [] at hStep
-      cases hRes : resolveSchedContextBindThread tid decoded st with
+      cases hRes : resolveSchedContextBindThread tid (decodeSchedContextBindArgs decoded) st with
       | error e => simp only [hRes] at hStep; cases hStep
       | ok vThreadId =>
           simp only [hRes] at hStep
@@ -8085,7 +8088,8 @@ theorem dispatchCapabilityOnly_schedContextBind_eq
     (vThreadId : SeLe4n.ValidThreadId)
     (hSyscall : decoded.syscallId = .schedContextBind)
     (hTarget : cap.target = .object scId)
-    (hRes : resolveSchedContextBindThread tid decoded st = .ok vThreadId)
+    (hRes : resolveSchedContextBindThread tid (decodeSchedContextBindArgs decoded) st =
+      .ok vThreadId)
     (hSc : validateObjIdArg scId = .ok vScId) :
     (dispatchCapabilityOnly decoded cap tid executingCore).map (fun f => f st)
       = some (SchedContextOps.schedContextBind vScId vThreadId st) := by
@@ -8105,7 +8109,7 @@ theorem dispatchCapabilityOnly_schedContextBind_idle_capability_refused
     (st : SystemState) (scId : SeLe4n.ObjId) (e : KernelError)
     (hSyscall : decoded.syscallId = .schedContextBind)
     (hTarget : cap.target = .object scId)
-    (hRes : resolveSchedContextBindThread tid decoded st = .error e) :
+    (hRes : resolveSchedContextBindThread tid (decodeSchedContextBindArgs decoded) st = .error e) :
     (dispatchCapabilityOnly decoded cap tid executingCore).map (fun f => f st) = some (.error e) := by
   unfold dispatchCapabilityOnly
   rw [hSyscall, hTarget]

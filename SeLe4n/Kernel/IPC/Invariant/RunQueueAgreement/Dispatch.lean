@@ -325,7 +325,7 @@ theorem dispatchCapabilityOnly_runQueueEntryStage
     cases hTgt : cap.target <;> simp only [hTgt] at hStep
     case object scId =>
       try dsimp only [] at hStep
-      cases hRes : resolveSchedContextBindThread tid decoded st with
+      cases hRes : resolveSchedContextBindThread tid (decodeSchedContextBindArgs decoded) st with
       | error e => simp only [hRes] at hStep; cases hStep
       | ok vThreadId =>
           simp only [hRes] at hStep

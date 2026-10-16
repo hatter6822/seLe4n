@@ -1277,6 +1277,20 @@ updates the single-core `regs` view. -/
 def readReg (rf : RegisterFile) (r : RegName) : RegValue :=
   rf.gpr r
 
+/-- WS-ZA ZA4.2: register `r`'s word, as `readReg` reads it, without the
+`RegValue` number — a word `≥ 2^63` as a number is a heap object. -/
+@[inline] def readRegWord (rf : RegisterFile) (r : RegName) : UInt64 :=
+  if r.val < 31 then rf.word r.val else 0
+
+theorem readReg_val_eq_word (rf : RegisterFile) (r : RegName) :
+    (readReg rf r).val = (readRegWord rf r).toNat := by
+  unfold readReg readRegWord RegisterFile.gpr
+  split <;> rfl
+
+theorem readReg_eq_word (rf : RegisterFile) (r : RegName) :
+    readReg rf r = ⟨(readRegWord rf r).toNat⟩ := by
+  rw [← readReg_val_eq_word]
+
 /-- `x`n` := v` for `n < 31`, indexed by a byte: a jump to one field update
 (in place when the file is unshared).  The identity past `x30`. -/
 def RegisterFile.setGprOfByte (rf : RegisterFile) : UInt8 → UInt64 → RegisterFile

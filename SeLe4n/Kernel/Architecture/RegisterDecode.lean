@@ -742,17 +742,45 @@ inductive RegisterRoutedSyscall where
       capability's address and its message info; the reply capability's
       address is the first message register and the reply's words the rest. -/
   | replyRecv (capAddr : CPtr) (msgInfo : MessageInfo)
+  /-- WS-ZA ZA5.1: a capability invocation the IPC forms do not route
+      (`routedInvocation`), with no overflow words: the syscall and its
+      operand address; its arguments are the layout's message registers. -/
+  | invoke (sid : SyscallId) (capAddr : CPtr)
   | viaDecode
 
-/-- WS-ZA ZA4.2: register `r`'s word, as `readReg` reads it, without the
-`RegValue` number — a word `≥ 2^63` as a number is a heap object. -/
-@[inline] def readRegWord (rf : RegisterFile) (r : RegName) : UInt64 :=
-  if r.val < 31 then rf.word r.val else 0
+/-- WS-ZA ZA5.1: the capability invocations the register file routes as
+`invoke`: every invocation whose arguments fit the layout's message registers,
+whose taint step is the identity and whose rights are checked in the classic
+order.  The in-place retype, the scheduling-context configure, the service
+register and the declassification and audit calls keep the decode. -/
+def routedInvocation : SyscallId → Bool
+  | .cspaceMint | .cspaceCopy | .cspaceMove | .cspaceDelete | .cspaceRevoke
+  | .mintReplyCap | .untypedRetype | .untypedReset
+  | .vspaceMap | .vspaceUnmap | .vspaceUnifyInstruction
+  | .serviceRevoke | .serviceQuery | .schedContextBind | .schedContextUnbind
+  | .tcbBindNotification | .tcbUnbindNotification | .tcbSuspend | .tcbResume
+  | .tcbSetPriority | .tcbSetMCPriority | .tcbSetIPCBuffer | .tcbSetAffinity
+  | .tcbSetFaultHandler | .tcbSetSpace | .pageTableMap | .pageTableUnmap => true
+  | _ => false
 
-theorem readReg_val_eq_word (rf : RegisterFile) (r : RegName) :
-    (readReg rf r).val = (readRegWord rf r).toNat := by
-  unfold readReg readRegWord RegisterFile.gpr
-  split <;> rfl
+/-- The routed invocation syscall number `n` names, if any. -/
+@[inline] def routedInvocationSid? (n : Nat) : Option SyscallId :=
+  match SyscallId.ofNat? n with
+  | some sid => if routedInvocation sid then some sid else none
+  | none => none
+
+theorem routedInvocationSid?_some {n : Nat} {sid : SyscallId}
+    (h : routedInvocationSid? n = some sid) :
+    routedInvocation sid = true ∧ n = sid.toNat := by
+  unfold routedInvocationSid? at h
+  split at h
+  · next sid' hOf =>
+    split at h
+    · next hR =>
+      cases h
+      exact ⟨hR, (SyscallId.toNat_ofNat hOf).symm⟩
+    · cases h
+  · cases h
 
 /-- WS-ZA ZA4.8: a register's capability address always decodes, to the
 address its word names — read as the word, an address `≥ 2^63` builds no
@@ -802,7 +830,10 @@ theorem decodeCapPtr_readReg (rf : RegisterFile) (r : RegName) :
           else .receive capAddr msgInfo.length (CPtr.ofWord 0)
         else if (readReg regs layout.syscallNumReg).val = SyscallId.replyRecv.toNat then
           .replyRecv capAddr msgInfo
-        else .viaDecode
+        else
+          match routedInvocationSid? (readReg regs layout.syscallNumReg).val with
+          | some sid => .invoke sid capAddr
+          | none => .viaDecode
       else .viaDecode
   else .viaDecode
 
@@ -1059,6 +1090,37 @@ theorem decodeSyscallArgsFromState_of_routedReplyRecv
       repeat' (first | (cases h; done) | split at h)
       cases h
       exact ⟨_, hD .replyRecv ‹_ = SyscallId.replyRecv.toNat›, rfl, rfl, rfl, rfl, rfl, rfl⟩
+    · cases h
+  · cases h
+
+/-- WS-ZA ZA5.1: what a routed invocation pins about the decode: it succeeds,
+as `sid`, a routed invocation, at `capAddr`, with no overflow words, its words
+the layout's message registers. -/
+theorem decodeSyscallArgsFromState_of_routedInvoke
+    (st : SystemState) (tid : ThreadId)
+    (layout : SyscallRegisterLayout) (regs : RegisterFile) (regCount : Nat)
+    (sid : SyscallId) (capAddr : CPtr)
+    (h : registerRoutedSyscall layout regs regCount = .invoke sid capAddr) :
+    ∃ decoded, decodeSyscallArgsFromState st tid layout regs regCount = .ok decoded ∧
+      decoded.syscallId = sid ∧ routedInvocation sid = true ∧ decoded.capAddr = capAddr ∧
+      decoded.overflowCount = 0 ∧
+      decoded.msgRegs = layout.msgRegs.map (readReg regs) := by
+  unfold registerRoutedSyscall at h
+  split at h
+  · next hB =>
+    have hC := decodeCapPtr_readReg regs layout.capPtrReg
+    rcases hM : decodeMsgInfo (readReg regs layout.msgInfoReg) with e | mi
+    · simp only [hM] at h; cases h
+    simp only [hM] at h
+    split at h
+    · next hLen =>
+      have hD := fun sid hS =>
+        decodeSyscallArgsFromState_of_routed st tid layout regs regCount _ mi sid hB hC hM hLen hS
+      repeat' (first | (cases h; done) | split at h)
+      next sid' hSid =>
+        cases h
+        obtain ⟨hR, hN⟩ := routedInvocationSid?_some hSid
+        exact ⟨_, hD sid hN, rfl, hR, rfl, rfl, rfl⟩
     · cases h
   · cases h
 

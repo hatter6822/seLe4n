@@ -1254,7 +1254,7 @@ theorem endpointReceiveCheckedArmR_eq (ctx : LabelingContext)
       cases resolveRecvReplyId gate decoded st with
       | error e => rfl
       | ok rid =>
-      simp only [endpointReceiveResolvedR, SeLe4n.ReplyId.ofOptCode_optCode]
+      simp only [endpointReceiveResolvedR]
       by_cases hF : receiveBlocksFast st epId tid (SeLe4n.ReplyId.optCode rid) = true
       · rw [if_pos hF]
         unfold receiveBlocksFast at hF

@@ -524,7 +524,8 @@ def abiEntryLockOperands (decoded : SyscallDecodeResult) (tid : SeLe4n.ThreadId)
       | .schedContextConfigure, .object scId
       | .schedContextUnbind, .object scId => some (.ofObjectTarget tid scId)
       | .schedContextBind, .object _ =>
-          match resolveSchedContextBindThread tid decoded s with
+          match resolveSchedContextBindThread tid
+              (Architecture.SyscallArgDecode.decodeSchedContextBindArgs decoded) s with
           | .error _ => none
           | .ok v => some (.ofThreadTarget tid v.val)
       | .lifecycleRetype, .object _ =>

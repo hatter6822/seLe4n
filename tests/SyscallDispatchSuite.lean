@@ -1074,7 +1074,8 @@ private def sd054_idleTargetCapabilityUnresolvable : IO Unit := do
   -- id in MR0 is an ADDRESS in the caller's CSpace now, and whatever slot it
   -- masks to, the resolver never answers the idle thread.
   expect "sd054_raw_idle_id_in_mr0_never_resolves_the_idle_thread"
-    (match resolveSchedContextBindThread caller (bindDecoded idle0Tid.toNat) st with
+    (match resolveSchedContextBindThread caller
+      (Architecture.SyscallArgDecode.decodeSchedContextBindArgs (bindDecoded idle0Tid.toNat)) st with
      | .ok v => decide (v.val ≠ idle0Tid)
      | .error _ => true)
     "a raw idle id in MR0 is a capability address and must resolve to no idle thread"
@@ -1764,7 +1765,8 @@ private def sd060_schedContextBind_requires_tcb_capability : IO Unit := do
       msgRegs := #[SeLe4n.RegValue.ofNat tcbCPtr], inlineCount := 1, overflowCount := 0 }
   -- The resolver: slot 1 IS the target thread, answered as a promoted id.
   expect "sd060_resolver_answers_the_held_tcb"
-    (match resolveSchedContextBindThread caller (decoded 1) st with
+    (match resolveSchedContextBindThread caller
+      (Architecture.SyscallArgDecode.decodeSchedContextBindArgs (decoded 1)) st with
      | .ok v => decide (v.val = tgtTid)
      | .error _ => false)
     "MR0 = 1 names a writable TCB capability at slot 1, so the resolver answers thread 70"

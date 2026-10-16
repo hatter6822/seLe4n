@@ -168,10 +168,13 @@ its caller and blocks runs in place on the registers and reads 0.  At
 (`KernelObject.unshare`), so the first signal after boot reads 0 too; the
 exerciser measures every scenario's first call and steady state and fails on
 any nonzero reading.  At `v0.36.95` a capability address is a machine word
-(`CPtr` holds a `UInt64`), so an address `≥ 2^63` reads 0 at the decode.  ZA4
-measures the other syscalls and entries.  Plan:
+(`CPtr` holds a `UInt64`), so an address `≥ 2^63` reads 0 at the decode.  At
+`v0.36.96` (ZA5.1) 27 capability invocations run on the register file, their
+arguments read as words; the exerciser pins each at its reading, the
+operation's own cells, which ZA5.2–ZA5.5 take to zero.  ZA6 covers the other
+entries and makes the rule standing.  Plan:
 [`docs/planning/ZERO_ALLOCATION_SYSCALL_PLAN.md`](../planning/ZERO_ALLOCATION_SYSCALL_PLAN.md)
-(phases ZA1–ZA4).
+(phases ZA1–ZA6).
 
 **What new code on the syscall path must assume**: the plan's rules D1–D5.
 No state value is used after a later state is built from it (an arm checks

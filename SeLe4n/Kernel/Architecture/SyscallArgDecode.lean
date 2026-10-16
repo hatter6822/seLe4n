@@ -1973,4 +1973,376 @@ theorem decodePageTableMapArgs_roundtrip (args : PageTableMapArgs) :
         Except.bind, Pure.pure, Except.pure, SeLe4n.CPtr.ofNat_toNat,
         SeLe4n.VAddr.ofNat, SeLe4n.VAddr.toNat]
 
+-- ============================================================================
+-- WS-ZA ZA5.1: the decoders over the caller's register file
+-- ============================================================================
+
+/-- A reader of message register `i`'s word.  The register-routed arms read the
+caller's register file itself (`msgRegOfFile`): no message-register array is
+built, and a word `≥ 2^63` — a capability address — is never a number. -/
+abbrev MsgRegReader := Nat → Except KernelError UInt64
+
+/-- Message register `i`'s word read straight from a register file through a
+layout, refusing an index past the layout's registers as `requireMsgReg` does. -/
+@[inline] def msgRegOfFile (layout : SyscallRegisterLayout) (regs : RegisterFile) :
+    MsgRegReader :=
+  fun i => if h : i < layout.msgRegs.size then .ok (readRegWord regs layout.msgRegs[i])
+    else .error .invalidMessageInfo
+
+/-- A decode whose message registers are the layout's, read from the file, reads
+each as the number of the file's word. -/
+theorem requireMsgReg_map_readReg (layout : SyscallRegisterLayout) (regs : RegisterFile)
+    (i : Nat) :
+    requireMsgReg (layout.msgRegs.map (readReg regs)) i =
+      (msgRegOfFile layout regs i).map (fun w => (⟨w.toNat⟩ : RegValue)) := by
+  unfold requireMsgReg msgRegOfFile
+  by_cases hi : i < layout.msgRegs.size
+  · simp only [Array.size_map, hi, ↓reduceDIte, Array.getElem_map, readReg_eq_word,
+      Except.map]
+  · simp only [Array.size_map, hi, ↓reduceDIte, Except.map]
+
+/-! Each decoder below is its `SyscallDecodeResult` form read from the register
+file: equal to it whenever the decode's message registers are the layout's, read
+from the file (the `_eq_by` theorems).  Capability addresses are built from the
+word (`CPtr.ofWord`), every other field from its number, as the decode does. -/
+
+@[inline] def decodeCSpaceMintArgsBy (get : MsgRegReader)
+    : Except KernelError CSpaceMintArgs := do
+  let r0 ← get 0
+  let r1 ← get 1
+  let r2 ← get 2
+  let r3 ← get 3
+  if r2.toNat > 0x1F then .error .invalidArgument
+  else
+    pure { srcSlot := Slot.ofNat r0.toNat
+           dstSlot := Slot.ofNat r1.toNat
+           rights  := AccessRightSet.ofNat r2.toNat
+           badge   := Badge.ofWord r3 }
+
+theorem decodeCSpaceMintArgs_eq_by (layout : SyscallRegisterLayout) (regs : RegisterFile)
+    (decoded : SyscallDecodeResult)
+    (h : decoded.msgRegs = layout.msgRegs.map (readReg regs)) :
+    decodeCSpaceMintArgs decoded = decodeCSpaceMintArgsBy (msgRegOfFile layout regs) := by
+  unfold decodeCSpaceMintArgs decodeCSpaceMintArgsBy
+  rw [h]
+  simp only [requireMsgReg_map_readReg]
+  generalize msgRegOfFile layout regs = g
+  cases g 0 <;> cases g 1 <;> cases g 2 <;> cases g 3 <;>
+    simp [Except.map, bind, Except.bind, pure, Except.pure, Functor.map,
+      SeLe4n.CPtr.ofWord_eq_ofNat, SeLe4n.Badge.ofWord_eq_ofNatMasked]
+
+@[inline] def decodeCSpaceCopyArgsBy (get : MsgRegReader)
+    : Except KernelError CSpaceCopyArgs := do
+  let r0 ← get 0
+  let r1 ← get 1
+  pure { srcSlot := Slot.ofNat r0.toNat, dstSlot := Slot.ofNat r1.toNat }
+
+theorem decodeCSpaceCopyArgs_eq_by (layout : SyscallRegisterLayout) (regs : RegisterFile)
+    (decoded : SyscallDecodeResult)
+    (h : decoded.msgRegs = layout.msgRegs.map (readReg regs)) :
+    decodeCSpaceCopyArgs decoded = decodeCSpaceCopyArgsBy (msgRegOfFile layout regs) := by
+  unfold decodeCSpaceCopyArgs decodeCSpaceCopyArgsBy
+  rw [h]
+  simp only [requireMsgReg_map_readReg]
+  generalize msgRegOfFile layout regs = g
+  cases g 0 <;> cases g 1 <;> cases g 2 <;> cases g 3 <;>
+    simp [Except.map, bind, Except.bind, pure, Except.pure, Functor.map,
+      SeLe4n.CPtr.ofWord_eq_ofNat, SeLe4n.Badge.ofWord_eq_ofNatMasked]
+
+@[inline] def decodeCSpaceMoveArgsBy (get : MsgRegReader)
+    : Except KernelError CSpaceMoveArgs := do
+  let r0 ← get 0
+  let r1 ← get 1
+  pure { srcSlot := Slot.ofNat r0.toNat, dstSlot := Slot.ofNat r1.toNat }
+
+theorem decodeCSpaceMoveArgs_eq_by (layout : SyscallRegisterLayout) (regs : RegisterFile)
+    (decoded : SyscallDecodeResult)
+    (h : decoded.msgRegs = layout.msgRegs.map (readReg regs)) :
+    decodeCSpaceMoveArgs decoded = decodeCSpaceMoveArgsBy (msgRegOfFile layout regs) := by
+  unfold decodeCSpaceMoveArgs decodeCSpaceMoveArgsBy
+  rw [h]
+  simp only [requireMsgReg_map_readReg]
+  generalize msgRegOfFile layout regs = g
+  cases g 0 <;> cases g 1 <;> cases g 2 <;> cases g 3 <;>
+    simp [Except.map, bind, Except.bind, pure, Except.pure, Functor.map,
+      SeLe4n.CPtr.ofWord_eq_ofNat, SeLe4n.Badge.ofWord_eq_ofNatMasked]
+
+@[inline] def decodeCSpaceDeleteArgsBy (get : MsgRegReader)
+    : Except KernelError CSpaceDeleteArgs := do
+  let r0 ← get 0
+  pure { targetSlot := Slot.ofNat r0.toNat }
+
+theorem decodeCSpaceDeleteArgs_eq_by (layout : SyscallRegisterLayout) (regs : RegisterFile)
+    (decoded : SyscallDecodeResult)
+    (h : decoded.msgRegs = layout.msgRegs.map (readReg regs)) :
+    decodeCSpaceDeleteArgs decoded = decodeCSpaceDeleteArgsBy (msgRegOfFile layout regs) := by
+  unfold decodeCSpaceDeleteArgs decodeCSpaceDeleteArgsBy
+  rw [h]
+  simp only [requireMsgReg_map_readReg]
+  generalize msgRegOfFile layout regs = g
+  cases g 0 <;> cases g 1 <;> cases g 2 <;> cases g 3 <;>
+    simp [Except.map, bind, Except.bind, pure, Except.pure, Functor.map,
+      SeLe4n.CPtr.ofWord_eq_ofNat, SeLe4n.Badge.ofWord_eq_ofNatMasked]
+
+@[inline] def decodeUntypedRetypeArgsBy (get : MsgRegReader)
+    : Except KernelError UntypedRetypeArgs := do
+  let r0 ← get 0
+  let r1 ← get 1
+  let r2 ← get 2
+  let r3 ← get 3
+  match KernelObjectType.ofNat? (r0.toNat % 256) with
+  | some objType =>
+    pure { newType  := objType
+           sizeBits := r0.toNat / 256
+           childId  := ObjId.ofNat r1.toNat
+           dstCNode := CPtr.ofWord r2
+           dstSlot  := Slot.ofNat r3.toNat }
+  | none => .error .invalidTypeTag
+
+theorem decodeUntypedRetypeArgs_eq_by (layout : SyscallRegisterLayout) (regs : RegisterFile)
+    (decoded : SyscallDecodeResult)
+    (h : decoded.msgRegs = layout.msgRegs.map (readReg regs)) :
+    decodeUntypedRetypeArgs decoded = decodeUntypedRetypeArgsBy (msgRegOfFile layout regs) := by
+  unfold decodeUntypedRetypeArgs decodeUntypedRetypeArgsBy
+  rw [h]
+  simp only [requireMsgReg_map_readReg]
+  generalize msgRegOfFile layout regs = g
+  cases g 0 <;> cases g 1 <;> cases g 2 <;> cases g 3 <;>
+    simp [Except.map, bind, Except.bind, pure, Except.pure, Functor.map,
+      SeLe4n.CPtr.ofWord_eq_ofNat, SeLe4n.Badge.ofWord_eq_ofNatMasked]
+
+@[inline] def decodeVSpaceMapArgsBy (get : MsgRegReader) (maxASID : Nat)
+    : Except KernelError VSpaceMapArgs := do
+  let r0 ← get 0
+  let r1 ← get 1
+  let r2 ← get 2
+  let r3 ← get 3
+  let asid := ASID.ofNat r0.toNat
+  if !asid.isValidForConfig maxASID then .error .asidNotBound
+  else
+  let vaddr := VAddr.ofNat r1.toNat
+  if !vaddr.isCanonical then .error .addressOutOfBounds
+  else
+    match PagePermissions.ofNat? r3.toNat with
+    | some perms =>
+      pure { asid  := asid
+             vaddr := vaddr
+             frame := CPtr.ofWord r2
+             perms := perms }
+    | none => .error .invalidSyscallArgument
+
+theorem decodeVSpaceMapArgs_eq_by (layout : SyscallRegisterLayout) (regs : RegisterFile)
+    (decoded : SyscallDecodeResult) (maxASID : Nat)
+    (h : decoded.msgRegs = layout.msgRegs.map (readReg regs)) :
+    decodeVSpaceMapArgs decoded maxASID = decodeVSpaceMapArgsBy (msgRegOfFile layout regs) maxASID := by
+  unfold decodeVSpaceMapArgs decodeVSpaceMapArgsBy
+  rw [h]
+  simp only [requireMsgReg_map_readReg]
+  generalize msgRegOfFile layout regs = g
+  cases g 0 <;> cases g 1 <;> cases g 2 <;> cases g 3 <;>
+    simp [Except.map, bind, Except.bind, pure, Except.pure, Functor.map,
+      SeLe4n.CPtr.ofWord_eq_ofNat, SeLe4n.Badge.ofWord_eq_ofNatMasked]
+
+@[inline] def decodeVSpaceUnmapArgsBy (get : MsgRegReader) (maxASID : Nat)
+    : Except KernelError VSpaceUnmapArgs := do
+  let r0 ← get 0
+  let r1 ← get 1
+  let asid := ASID.ofNat r0.toNat
+  if !asid.isValidForConfig maxASID then .error .asidNotBound
+  else
+  let vaddr := VAddr.ofNat r1.toNat
+  if !vaddr.isCanonical then .error .addressOutOfBounds
+  else
+  pure { asid  := asid
+         vaddr := vaddr }
+
+theorem decodeVSpaceUnmapArgs_eq_by (layout : SyscallRegisterLayout) (regs : RegisterFile)
+    (decoded : SyscallDecodeResult) (maxASID : Nat)
+    (h : decoded.msgRegs = layout.msgRegs.map (readReg regs)) :
+    decodeVSpaceUnmapArgs decoded maxASID = decodeVSpaceUnmapArgsBy (msgRegOfFile layout regs) maxASID := by
+  unfold decodeVSpaceUnmapArgs decodeVSpaceUnmapArgsBy
+  rw [h]
+  simp only [requireMsgReg_map_readReg]
+  generalize msgRegOfFile layout regs = g
+  cases g 0 <;> cases g 1 <;> cases g 2 <;> cases g 3 <;>
+    simp [Except.map, bind, Except.bind, pure, Except.pure, Functor.map,
+      SeLe4n.CPtr.ofWord_eq_ofNat, SeLe4n.Badge.ofWord_eq_ofNatMasked]
+
+@[inline] def decodeServiceRevokeArgsBy (get : MsgRegReader)
+    : Except KernelError ServiceRevokeArgs := do
+  let r0 ← get 0
+  pure { targetService := ⟨r0.toNat⟩ }
+
+theorem decodeServiceRevokeArgs_eq_by (layout : SyscallRegisterLayout) (regs : RegisterFile)
+    (decoded : SyscallDecodeResult)
+    (h : decoded.msgRegs = layout.msgRegs.map (readReg regs)) :
+    decodeServiceRevokeArgs decoded = decodeServiceRevokeArgsBy (msgRegOfFile layout regs) := by
+  unfold decodeServiceRevokeArgs decodeServiceRevokeArgsBy
+  rw [h]
+  simp only [requireMsgReg_map_readReg]
+  generalize msgRegOfFile layout regs = g
+  cases g 0 <;> cases g 1 <;> cases g 2 <;> cases g 3 <;>
+    simp [Except.map, bind, Except.bind, pure, Except.pure, Functor.map,
+      SeLe4n.CPtr.ofWord_eq_ofNat, SeLe4n.Badge.ofWord_eq_ofNatMasked]
+
+@[inline] def decodeSchedContextBindArgsBy (get : MsgRegReader)
+    : Except KernelError SchedContextBindArgs := do
+  let r0 ← get 0
+  pure { tcbCPtr := SeLe4n.CPtr.ofWord r0 }
+
+theorem decodeSchedContextBindArgs_eq_by (layout : SyscallRegisterLayout) (regs : RegisterFile)
+    (decoded : SyscallDecodeResult)
+    (h : decoded.msgRegs = layout.msgRegs.map (readReg regs)) :
+    decodeSchedContextBindArgs decoded = decodeSchedContextBindArgsBy (msgRegOfFile layout regs) := by
+  unfold decodeSchedContextBindArgs decodeSchedContextBindArgsBy
+  rw [h]
+  simp only [requireMsgReg_map_readReg]
+  generalize msgRegOfFile layout regs = g
+  cases g 0 <;> cases g 1 <;> cases g 2 <;> cases g 3 <;>
+    simp [Except.map, bind, Except.bind, pure, Except.pure, Functor.map,
+      SeLe4n.CPtr.ofWord_eq_ofNat, SeLe4n.Badge.ofWord_eq_ofNatMasked]
+
+@[inline] def decodeTcbBindNotificationArgsBy (get : MsgRegReader)
+    : Except KernelError TcbBindNotificationArgs := do
+  let r0 ← get 0
+  pure { notificationCPtr := SeLe4n.CPtr.ofWord r0 }
+
+theorem decodeTcbBindNotificationArgs_eq_by (layout : SyscallRegisterLayout) (regs : RegisterFile)
+    (decoded : SyscallDecodeResult)
+    (h : decoded.msgRegs = layout.msgRegs.map (readReg regs)) :
+    decodeTcbBindNotificationArgs decoded = decodeTcbBindNotificationArgsBy (msgRegOfFile layout regs) := by
+  unfold decodeTcbBindNotificationArgs decodeTcbBindNotificationArgsBy
+  rw [h]
+  simp only [requireMsgReg_map_readReg]
+  generalize msgRegOfFile layout regs = g
+  cases g 0 <;> cases g 1 <;> cases g 2 <;> cases g 3 <;>
+    simp [Except.map, bind, Except.bind, pure, Except.pure, Functor.map,
+      SeLe4n.CPtr.ofWord_eq_ofNat, SeLe4n.Badge.ofWord_eq_ofNatMasked]
+
+@[inline] def decodeSetPriorityArgsBy (get : MsgRegReader)
+    : Except KernelError SetPriorityArgs := do
+  let r0 ← get 0
+  if r0.toNat > 0xFF then .error .invalidArgument
+  else pure { newPriority := r0.toNat }
+
+theorem decodeSetPriorityArgs_eq_by (layout : SyscallRegisterLayout) (regs : RegisterFile)
+    (decoded : SyscallDecodeResult)
+    (h : decoded.msgRegs = layout.msgRegs.map (readReg regs)) :
+    decodeSetPriorityArgs decoded = decodeSetPriorityArgsBy (msgRegOfFile layout regs) := by
+  unfold decodeSetPriorityArgs decodeSetPriorityArgsBy
+  rw [h]
+  simp only [requireMsgReg_map_readReg]
+  generalize msgRegOfFile layout regs = g
+  cases g 0 <;> cases g 1 <;> cases g 2 <;> cases g 3 <;>
+    simp [Except.map, bind, Except.bind, pure, Except.pure, Functor.map,
+      SeLe4n.CPtr.ofWord_eq_ofNat, SeLe4n.Badge.ofWord_eq_ofNatMasked]
+
+@[inline] def decodeSetMCPriorityArgsBy (get : MsgRegReader)
+    : Except KernelError SetMCPriorityArgs := do
+  let r0 ← get 0
+  if r0.toNat > 0xFF then .error .invalidArgument
+  else pure { newMCP := r0.toNat }
+
+theorem decodeSetMCPriorityArgs_eq_by (layout : SyscallRegisterLayout) (regs : RegisterFile)
+    (decoded : SyscallDecodeResult)
+    (h : decoded.msgRegs = layout.msgRegs.map (readReg regs)) :
+    decodeSetMCPriorityArgs decoded = decodeSetMCPriorityArgsBy (msgRegOfFile layout regs) := by
+  unfold decodeSetMCPriorityArgs decodeSetMCPriorityArgsBy
+  rw [h]
+  simp only [requireMsgReg_map_readReg]
+  generalize msgRegOfFile layout regs = g
+  cases g 0 <;> cases g 1 <;> cases g 2 <;> cases g 3 <;>
+    simp [Except.map, bind, Except.bind, pure, Except.pure, Functor.map,
+      SeLe4n.CPtr.ofWord_eq_ofNat, SeLe4n.Badge.ofWord_eq_ofNatMasked]
+
+@[inline] def decodeSetIPCBufferArgsBy (get : MsgRegReader)
+    : Except KernelError SetIPCBufferArgs := do
+  let r0 ← get 0
+  let addr := SeLe4n.VAddr.ofNat r0.toNat
+  if addr.toNat % SeLe4n.ipcBufferAlignment != 0 then .error .alignmentError
+  else pure { bufferAddr := addr }
+
+theorem decodeSetIPCBufferArgs_eq_by (layout : SyscallRegisterLayout) (regs : RegisterFile)
+    (decoded : SyscallDecodeResult)
+    (h : decoded.msgRegs = layout.msgRegs.map (readReg regs)) :
+    decodeSetIPCBufferArgs decoded = decodeSetIPCBufferArgsBy (msgRegOfFile layout regs) := by
+  unfold decodeSetIPCBufferArgs decodeSetIPCBufferArgsBy
+  rw [h]
+  simp only [requireMsgReg_map_readReg]
+  generalize msgRegOfFile layout regs = g
+  cases g 0 <;> cases g 1 <;> cases g 2 <;> cases g 3 <;>
+    simp [Except.map, bind, Except.bind, pure, Except.pure, Functor.map,
+      SeLe4n.CPtr.ofWord_eq_ofNat, SeLe4n.Badge.ofWord_eq_ofNatMasked]
+
+@[inline] def decodeSetAffinityArgsBy (get : MsgRegReader)
+    : Except KernelError SetAffinityArgs := do
+  let r0 ← get 0
+  pure { affinityRaw := r0.toNat }
+
+theorem decodeSetAffinityArgs_eq_by (layout : SyscallRegisterLayout) (regs : RegisterFile)
+    (decoded : SyscallDecodeResult)
+    (h : decoded.msgRegs = layout.msgRegs.map (readReg regs)) :
+    decodeSetAffinityArgs decoded = decodeSetAffinityArgsBy (msgRegOfFile layout regs) := by
+  unfold decodeSetAffinityArgs decodeSetAffinityArgsBy
+  rw [h]
+  simp only [requireMsgReg_map_readReg]
+  generalize msgRegOfFile layout regs = g
+  cases g 0 <;> cases g 1 <;> cases g 2 <;> cases g 3 <;>
+    simp [Except.map, bind, Except.bind, pure, Except.pure, Functor.map,
+      SeLe4n.CPtr.ofWord_eq_ofNat, SeLe4n.Badge.ofWord_eq_ofNatMasked]
+
+@[inline] def decodeSetFaultHandlerArgsBy (get : MsgRegReader)
+    : Except KernelError SetFaultHandlerArgs := do
+  let r0 ← get 0
+  pure { handlerCPtr := SeLe4n.CPtr.ofWord r0 }
+
+theorem decodeSetFaultHandlerArgs_eq_by (layout : SyscallRegisterLayout) (regs : RegisterFile)
+    (decoded : SyscallDecodeResult)
+    (h : decoded.msgRegs = layout.msgRegs.map (readReg regs)) :
+    decodeSetFaultHandlerArgs decoded = decodeSetFaultHandlerArgsBy (msgRegOfFile layout regs) := by
+  unfold decodeSetFaultHandlerArgs decodeSetFaultHandlerArgsBy
+  rw [h]
+  simp only [requireMsgReg_map_readReg]
+  generalize msgRegOfFile layout regs = g
+  cases g 0 <;> cases g 1 <;> cases g 2 <;> cases g 3 <;>
+    simp [Except.map, bind, Except.bind, pure, Except.pure, Functor.map,
+      SeLe4n.CPtr.ofWord_eq_ofNat, SeLe4n.Badge.ofWord_eq_ofNatMasked]
+
+@[inline] def decodeSetSpaceArgsBy (get : MsgRegReader)
+    : Except KernelError SetSpaceArgs := do
+  let r0 ← get 0
+  let r1 ← get 1
+  pure { cspaceRoot := SeLe4n.CPtr.ofWord r0, vspaceRoot := SeLe4n.CPtr.ofWord r1 }
+
+theorem decodeSetSpaceArgs_eq_by (layout : SyscallRegisterLayout) (regs : RegisterFile)
+    (decoded : SyscallDecodeResult)
+    (h : decoded.msgRegs = layout.msgRegs.map (readReg regs)) :
+    decodeSetSpaceArgs decoded = decodeSetSpaceArgsBy (msgRegOfFile layout regs) := by
+  unfold decodeSetSpaceArgs decodeSetSpaceArgsBy
+  rw [h]
+  simp only [requireMsgReg_map_readReg]
+  generalize msgRegOfFile layout regs = g
+  cases g 0 <;> cases g 1 <;> cases g 2 <;> cases g 3 <;>
+    simp [Except.map, bind, Except.bind, pure, Except.pure, Functor.map,
+      SeLe4n.CPtr.ofWord_eq_ofNat, SeLe4n.Badge.ofWord_eq_ofNatMasked]
+
+@[inline] def decodePageTableMapArgsBy (get : MsgRegReader)
+    : Except KernelError PageTableMapArgs := do
+  let r0 ← get 0
+  let r1 ← get 1
+  pure { vspaceRoot := SeLe4n.CPtr.ofWord r0, vaddr := SeLe4n.VAddr.ofNat r1.toNat }
+
+theorem decodePageTableMapArgs_eq_by (layout : SyscallRegisterLayout) (regs : RegisterFile)
+    (decoded : SyscallDecodeResult)
+    (h : decoded.msgRegs = layout.msgRegs.map (readReg regs)) :
+    decodePageTableMapArgs decoded = decodePageTableMapArgsBy (msgRegOfFile layout regs) := by
+  unfold decodePageTableMapArgs decodePageTableMapArgsBy
+  rw [h]
+  simp only [requireMsgReg_map_readReg]
+  generalize msgRegOfFile layout regs = g
+  cases g 0 <;> cases g 1 <;> cases g 2 <;> cases g 3 <;>
+    simp [Except.map, bind, Except.bind, pure, Except.pure, Functor.map,
+      SeLe4n.CPtr.ofWord_eq_ofNat, SeLe4n.Badge.ofWord_eq_ofNatMasked]
+
+
 end SeLe4n.Kernel.Architecture.SyscallArgDecode
