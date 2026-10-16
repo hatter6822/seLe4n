@@ -572,52 +572,79 @@ def syscallDispatchCrossCoreBracketedStepWords (ctx : LabelingContext)
   unfold syscallDispatchCrossCoreBracketedStepWords syscallDispatchCrossCoreBracketedStepWordsImpl
   rw [syscallDispatchCrossCoreStepWords_eq, syscallDispatchCrossCoreBracketedStep_run]
 
-/-- **The sender's overflow words, from the batches the HAL answered**
-(`v0.36.47` audit): each run's `ByteArray` decoded to its `n` words
-(`IpcBufferRead.wordsOfBatches`) and zipped back onto the addresses the runs
-were built from.  A batch of any other size — or a different number of batches
-than runs — is a HAL defect the hardware never produces (it halts on a refused
-run instead), and the answer is to fail closed exactly as
-`syscallEntryContextOrFaulted` does: the `.faulted` tag, on which the entry
-commits nothing and the trap layer halts the PE.  Pure, so the host suite runs
-the decode and that arm (`tests/SyscallDispatchSuite.lean`).  Inlined with
-`readCallerOverflowWords` into the entry, so the entry's match on the answer
-is a match on the decode and no `Except` is built (WS-ZA). -/
-@[inline] def overflowWordsOrFaulted (addrs : List SeLe4n.PAddr) (runs : List (SeLe4n.PAddr × Nat))
-    (batches : List ByteArray) : Except UInt64 (List (SeLe4n.PAddr × UInt64)) :=
-  match Architecture.IpcBufferRead.wordsOfBatches runs batches with
-  | some ws => .ok (addrs.zip ws)
-  | none => .error Architecture.SyscallOutcome.faulted.tagWord
+/-- **WS-ZA ZA5.2: the sender a receive takes**, as a thread code (`0` for
+none, `k + 1` for thread `k`).  A receive or reply-receive that meets a blocked
+sender decodes that sender's saved frame at the rendezvous
+(`blockedSenderDecode`), its overflow registers read from the sender's IPC
+buffer, as seL4 reads them at the rendezvous.  The model's memory holds no
+thread's writes, so those words must be read from RAM by this entry, beside the
+caller's own: the sender at the head of the send queue of the endpoint the
+caller's capability names (`receiveRendezvousSender?`, the thread the receive
+dequeues and its lock footprint declares).  The resolution is the operand's
+(`resolveCapAddressKUnrolled`, as `dispatchOperandCheckedR` resolves it), on the
+state the step runs on; a capability that does not resolve or names no
+endpoint with a sender names none, and one the step then refuses only reads
+words the step never uses.  A code, so the entry builds no `Option`. -/
+@[inline] def rendezvousSenderCode (st : SystemState) (tid : SeLe4n.ThreadId)
+    (syscallId : UInt32) (capWord : UInt64) : Nat :=
+  if syscallId.toNat = SyscallId.receive.toNat ∨ syscallId.toNat = SyscallId.replyRecv.toNat then
+    match st.getTcb? tid with
+    | some tcb =>
+      match st.getCNode? tcb.cspaceRoot with
+      | some rootCn =>
+        resolveCapAddressKUnrolled tcb.cspaceRoot (SeLe4n.CPtr.ofWord capWord) rootCn.depth st
+          (fun _ => 0)
+          (fun cnode slot =>
+            match SystemState.lookupSlotCap st { cnode := cnode, slot := slot } with
+            | some cap =>
+              match cap.target with
+              | .object epId =>
+                match receiveRendezvousSender? st epId with
+                | some sender => sender.toNat + 1
+                | none => 0
+              | _ => 0
+            | none => 0)
+      | none => 0
+    | none => 0
+  else 0
 
-/-- **Every address gets its word**: on the runs of `addrs`, a decoded answer
-pairs the addresses in order with one word each — the pairs' addresses are
-`addrs` itself — so `syncUserWords` writes exactly the words the loop synced. -/
-theorem overflowWordsOrFaulted_addrs (addrs : List SeLe4n.PAddr) (batches : List ByteArray)
-    (pairs : List (SeLe4n.PAddr × UInt64))
-    (h : overflowWordsOrFaulted addrs (Architecture.IpcBufferRead.wordRuns addrs) batches
-        = .ok pairs) :
-    pairs.map Prod.fst = addrs := by
-  unfold overflowWordsOrFaulted at h
-  split at h
-  · rename_i ws hws
-    cases h
-    have hLen := Architecture.IpcBufferRead.wordsOfBatches_length _ _ _ hws
-    rw [Architecture.IpcBufferRead.expandRuns_wordRuns] at hLen
-    exact List.map_fst_zip (Nat.le_of_eq hLen.symm)
-  · cases h
+/-- **WS-ZA ZA5.2: the overflow words a receive reads from the sender it takes**
+(`rendezvousSenderCode`): that sender's slots, cut to the length in its saved
+message info.  The entry's capture reads exactly these (its second
+`captureOverflowRuns`); this list states them for the host suites. -/
+def rendezvousSenderOverflowAddrs (st : SystemState) (tid : SeLe4n.ThreadId)
+    (syscallId : UInt32) (capWord : UInt64) : List SeLe4n.PAddr :=
+  match rendezvousSenderCode st tid syscallId capWord with
+  | 0 => []
+  | k + 1 =>
+    match st.getTcb? ⟨k⟩ with
+    | some stcb =>
+      Architecture.IpcBufferRead.callerOverflowAddrs st ⟨k⟩
+        (readRegWord stcb.registerContext SeLe4n.arm64DefaultLayout.msgInfoReg)
+    | none => []
 
-/-- **Each run crosses as one `ByteArray`, read in order.**  The loop of
-`readCallerOverflowWords`, written as a recursion over the runs rather than a
-`mapM` over a lambda: a lambda that captures nothing compiles to a closure
-built once at module initialisation, and that closure would keep the
-`ffi_read_user_words` call — present only in the kernel archive — reachable in
-every host executable linking this module. -/
-def readWordRuns : List (SeLe4n.PAddr × Nat) → BaseIO (List ByteArray)
-  | [] => pure []
-  | run :: rest => do
-      let batch ← Platform.FFI.ffiReadUserWords run.1.toNat.toUInt64 run.2.toUInt64
-      let batches ← readWordRuns rest
-      pure (batch :: batches)
+/-- **WS-BP BP7.8 (batched at the `v0.36.47` audit; into the core's buffer at
+WS-ZA ZA5.2): read a thread's overflow slots from RAM**, run by run, into the
+executing core's entry-word buffer from pair `idx`, answering the next free
+pair.  The recursion is `IpcBufferRead.overflowRunsFrom`'s, step for step —
+the same `nextResolvedSlot` and `runExtent`, the same `fuel` — with each run
+handed to the HAL (`ffiCaptureUserWords`) where that one conses it onto a list,
+so the runs read are the runs `expandRuns_overflowRuns` proves are the slots
+the decode reads, and `overflowRuns_within_page` proves the HAL never refuses.
+Every argument and answer is a scalar, so nothing is allocated. -/
+def captureOverflowRuns (st : SystemState) (tcb : TCB) (stop : Nat) :
+    Nat → Nat → Nat → BaseIO Nat
+  | 0, _, idx => pure idx
+  | fuel + 1, i, idx =>
+    let s := Architecture.IpcBufferRead.nextResolvedSlot st tcb i (stop - i)
+    if s < stop then
+      match Architecture.IpcBufferRead.ipcBufferSlotPAddr? st tcb s false with
+      | some pa => do
+        let len := Architecture.IpcBufferRead.runExtent st tcb pa.toNat (s + 1) 1 (stop - (s + 1))
+        Platform.FFI.ffiCaptureUserWords idx.toUInt64 pa.toNat.toUInt64 len.toUInt64
+        captureOverflowRuns st tcb stop fuel (s + len) (idx + len)
+      | none => pure idx
+    else pure idx
 
 /-- **WS-BP BP7.8: the sender's message registers past the fourth, read from
 RAM.**  The decode reads a syscall's overflow message registers out of the
@@ -627,35 +654,41 @@ the model's memory, which holds no thread's writes.  So before this seam the
 kernel on hardware decoded a sender's `MR4` onward as whatever the model held
 for that frame (zeroes from the carve), never what the thread wrote.
 
-This reads each word the decode will read — the caller's slots the shared
-resolver answers (`IpcBufferRead.callerOverflowAddrs`) — from RAM through the
-HAL, and `syncUserWords` writes them into the model in the atomic step, before
-the decode runs.  The addresses are resolved on the state read here and the
-words written on the state the commit closure receives; those are one state,
+This reads each word the decode will read — the caller's slots
+(`IpcBufferRead.callerOverflowAddrs`) and, on a receive that takes a blocked
+sender, that sender's (`rendezvousSenderOverflowAddrs`) — from RAM into the
+executing core's entry-word buffer, and answers how many pairs it read; the
+atomic step hands the buffer to the state before the decode
+(`IpcBufferRead.syncUserWords`) and the committed state drops it
+(`IpcBufferRead.clearUserWords`).  The slots are resolved on the state read
+here and read on the state the commit closure receives; those are one state,
 because the kernel-entry lock serialises every committing entry and nothing
 between the two reads writes an address space.  A syscall that asks for no
-overflow reads nothing (`callerOverflowAddrs` answers `[]`).
+overflow reads nothing.
 
-**`v0.36.47` audit: the words cross in runs, not one per call.**  The slots
-are grouped into their contiguous same-page runs (`IpcBufferRead.wordRuns` —
-one run for a buffer inside a page, two for one straddling a boundary; on a
-116-word message that is one or two `ffiReadUserWords` calls where there were
-116), each run crosses as one `ByteArray` of `8 · n` bytes, and the pure
-`overflowWordsOrFaulted` decodes the batches back onto the addresses.  The
-runs name exactly the addresses the loop read, in order
-(`expandRuns_wordRuns`), and never leave a page
-(`wordRuns_within_page`), so the HAL's run bound is never the kernel's own
-refusal. -/
-@[inline] def readCallerOverflowWords (execCore : CoreId) (msgInfo : UInt64) :
-    BaseIO (Except UInt64 (List (SeLe4n.PAddr × UInt64))) := do
+**WS-ZA ZA5.2**: the words land in the core's persistent buffer, run by run
+(`captureOverflowRuns`), so no address list, run list, batch array or cell per
+word is built: the entry allocates nothing for its overflow words. -/
+@[inline] def captureEntryWords (execCore : CoreId) (syscallId : UInt32)
+    (capWord msgInfo : UInt64) : BaseIO Nat := do
   let st ← Platform.FFI.getKernelState
   match st.scheduler.currentOnCore execCore with
-  | none => pure (.ok [])
+  | none => pure 0
   | some tid =>
-      let addrs := Architecture.IpcBufferRead.callerOverflowAddrs st tid msgInfo
-      let runs := Architecture.IpcBufferRead.wordRuns addrs
-      let batches ← readWordRuns runs
-      pure (overflowWordsOrFaulted addrs runs batches)
+    match st.getTcb? tid with
+    | none => pure 0
+    | some tcb =>
+      let stop := Architecture.IpcBufferRead.overflowStop msgInfo
+      let n ← captureOverflowRuns st tcb stop stop 0 0
+      match rendezvousSenderCode st tid syscallId capWord with
+      | 0 => pure n
+      | k + 1 =>
+        match st.getTcb? ⟨k⟩ with
+        | some stcb =>
+          let sstop := Architecture.IpcBufferRead.overflowStop
+            (readRegWord stcb.registerContext SeLe4n.arm64DefaultLayout.msgInfoReg)
+          captureOverflowRuns st stcb sstop sstop 0 n
+        | none => pure n
 
 /-- **The context the syscall entry dispatches on, or the outcome it answers
 without one.**  An `SVC` handler always publishes its frame before it
@@ -748,11 +781,11 @@ def syscallDispatchCrossCoreEntry (syscallId : UInt32) : BaseIO UInt64 := do
     | .error tag => return tag
   let msgInfo := trapped.x1
   -- **WS-BP BP7.8**: the sender's overflow message registers, read from RAM
-  -- and synced into the model in the atomic step, so the decode reads what the
-  -- thread wrote.
-  let words ← match ← readCallerOverflowWords execCore msgInfo with
-    | .ok words => pure words
-    | .error tag => return tag
+  -- into this core's entry-word buffer and handed to the model in the atomic
+  -- step, so the decode reads what the thread wrote; the committed state drops
+  -- the buffer (WS-ZA ZA5.2).
+  let wordCount ← captureEntryWords execCore syscallId trapped.x0 msgInfo
+  let wordBytes ← Platform.FFI.ffiEntryWordBuffer
   -- **WS-ZA ZA3.1**: the restore target's parts are read off the committed
   -- state inside the atomic step (`syscallDispatchCrossCoreStep_restoreTarget`:
   -- the target the step reports is that state's), so what crosses the commit
@@ -765,11 +798,12 @@ def syscallDispatchCrossCoreEntry (syscallId : UInt32) : BaseIO UInt64 := do
     Platform.FFI.modifyGetKernelState fun st =>
       let r := syscallDispatchCrossCoreBracketedStepWords ctx execCore syscallId trapped
         (Architecture.IpcBufferRead.syncUserWords
-          (Architecture.saveCapturedSyscallFrame st execCore frame) words)
-      ((r.1, Architecture.restoreCommitKindOnCore r.2 execCore,
-          Architecture.restoreContextOnCore r.2 execCore,
-          Architecture.restoreTableBaseOnCore r.2 execCore,
-          Architecture.restoreAsidOnCore r.2 execCore), r.2)
+          (Architecture.saveCapturedSyscallFrame st execCore frame) wordBytes wordCount)
+      let post := Architecture.IpcBufferRead.clearUserWords r.2
+      ((r.1, Architecture.restoreCommitKindOnCore post execCore,
+          Architecture.restoreContextOnCore post execCore,
+          Architecture.restoreTableBaseOnCore post execCore,
+          Architecture.restoreAsidOnCore post execCore), post)
   -- WS-RA (plan §3.3): publish the return frame into this core's mailbox
   -- immediately after the commit — `dispatch_svc` reads it back inside the
   -- same `with_kernel_entry` critical section.  A `blocks` outcome publishes
@@ -837,19 +871,19 @@ theorem syscallDispatchCrossCoreEntry_def (syscallId : UInt32) :
           | .ok trapped => pure trapped
           | .error tag => return tag
         let msgInfo := trapped.x1
-        let words ← match ← readCallerOverflowWords execCore msgInfo with
-          | .ok words => pure words
-          | .error tag => return tag
+        let wordCount ← captureEntryWords execCore syscallId trapped.x0 msgInfo
+        let wordBytes ← Platform.FFI.ffiEntryWordBuffer
         let ((tag, w0, w1, w2, w3, w4, w5, rest), restoreKind, restoreContext,
             restoreTableBase, restoreAsid) ←
           Platform.FFI.modifyGetKernelState fun st =>
             let r := syscallDispatchCrossCoreBracketedStepWords ctx execCore syscallId trapped
               (Architecture.IpcBufferRead.syncUserWords
-                (Architecture.saveCapturedSyscallFrame st execCore frame) words)
-            ((r.1, Architecture.restoreCommitKindOnCore r.2 execCore,
-                Architecture.restoreContextOnCore r.2 execCore,
-                Architecture.restoreTableBaseOnCore r.2 execCore,
-                Architecture.restoreAsidOnCore r.2 execCore), r.2)
+                (Architecture.saveCapturedSyscallFrame st execCore frame) wordBytes wordCount)
+            let post := Architecture.IpcBufferRead.clearUserWords r.2
+            ((r.1, Architecture.restoreCommitKindOnCore post execCore,
+                Architecture.restoreContextOnCore post execCore,
+                Architecture.restoreTableBaseOnCore post execCore,
+                Architecture.restoreAsidOnCore post execCore), post)
         Platform.FFI.ffiSyscallReturnFrame w0 w1 w2 w3 w4 w5
         Platform.FFI.completePhysicalWrites rest.2.2.2.2.2.1
         Concurrency.fireRaisedReschedules rest.1

@@ -1030,6 +1030,21 @@ structure MachineState where
       (`Architecture.residentElsewhere`). -/
   residentCode : _root_.Vector Nat numCores :=
     _root_.Vector.replicate numCores 0
+  /-- **WS-ZA ZA5.2: the IPC-buffer words this entry read from RAM**, as
+      `entryWordCount` sixteen-byte pairs — each a physical address then the
+      word there, little-endian (`IpcBufferRead.pairAddr`, `pairWord`) — which
+      the syscall decode reads for an overflow message register ahead of
+      `memory` (`IpcBufferRead.userWordAt`).  The entry hands the step its
+      core's buffer (`IpcBufferRead.syncUserWords`) and the committed state
+      drops it (`IpcBufferRead.clearUserWords`), so no state outlives its
+      entry holding words and nothing accumulates.  Writing the words into
+      `memory` instead, as the entry did until this field, wrapped the memory
+      function in one closure per word on every syscall that carried overflow
+      registers: kernel heap growth without bound, reachable by any thread
+      with a mapped IPC buffer. -/
+  entryWordBytes : ByteArray := ByteArray.empty
+  /-- **WS-ZA ZA5.2**: how many pairs of `entryWordBytes` this entry read. -/
+  entryWordCount : Nat := 0
 
 instance : Inhabited MachineState where
   default := { coreRegs := _root_.Vector.replicate numCores default, memory := (fun _ => 0), timer := 0 }

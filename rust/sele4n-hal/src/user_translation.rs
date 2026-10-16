@@ -385,8 +385,8 @@ pub fn apply_physical_write(write: PhysicalWrite) {
 /// in `base`'s page (`base % PAGE_BYTES + 8 · count ≤ PAGE_BYTES`), so one
 /// translation of the base covers every word of it and every word is itself
 /// admissible.  The Lean kernel groups a sender's overflow slots into exactly
-/// such runs (`IpcBufferRead.wordRuns`, with `wordRuns_within_page` the proof
-/// that it never asks for a run leaving the page), so a refusal here is a
+/// such runs (`IpcBufferRead.overflowRuns`, with `overflowRuns_within_page` the
+/// proof that it never asks for a run leaving the page), so a refusal here is a
 /// kernel defect and the caller halts.  A zero-length run at an admissible
 /// base reads nothing.
 #[must_use]
@@ -400,13 +400,13 @@ pub fn user_word_run_admissible(base: u64, count: u64, covered: impl Fn(u64, u64
     user_word_admissible(base, covered) && end_in_page <= PAGE_BYTES
 }
 
-/// Read the admissible run `[base, base + 8 · count)` into `out` as `8 · count`
-/// little-endian bytes, word by word.  `None` when the run is not
-/// [`user_word_run_admissible`] or `out` is not exactly the run's size; the
-/// caller halts.  On a host build the words read as zero, as the single-word
-/// reader's did.
+/// Read the admissible run `[base, base + 8 · count)` into `out` as `count`
+/// sixteen-byte pairs, each the word's address then the word, little-endian.
+/// `None` when the run is not [`user_word_run_admissible`] or `out` is not
+/// exactly `16 · count` bytes; the caller halts.  On a host build the words
+/// read as zero.
 #[must_use]
-pub fn read_user_words(
+pub fn read_user_word_pairs(
     base: u64,
     count: u64,
     covered: impl Fn(u64, u64) -> bool,
@@ -418,11 +418,10 @@ pub fn read_user_words(
     let Ok(count) = usize::try_from(count) else {
         return None;
     };
-    if out.len() != count.checked_mul(8)? {
+    if out.len() != count.checked_mul(16)? {
         return None;
     }
-    for (i, slot) in out.chunks_exact_mut(8).enumerate() {
-        #[allow(unused_variables)]
+    for (i, slot) in out.chunks_exact_mut(16).enumerate() {
         let addr = base + 8 * i as u64;
         #[cfg(target_arch = "aarch64")]
         // SAFETY: as `apply_physical_write`'s user-word store: an admissible,
@@ -432,9 +431,130 @@ pub fn read_user_words(
         let word = unsafe { core::ptr::read_volatile(addr as *const u64) };
         #[cfg(not(target_arch = "aarch64"))]
         let word = 0u64;
-        slot.copy_from_slice(&word.to_le_bytes());
+        slot[..8].copy_from_slice(&addr.to_le_bytes());
+        slot[8..].copy_from_slice(&word.to_le_bytes());
     }
     Some(())
+}
+
+/// The message-register slots past the four a trap frame carries
+/// (`IpcBufferRead.maxOverflowSlots`).
+pub const OVERFLOW_SLOTS: usize = 116;
+
+/// **WS-ZA ZA5.2**: the user words one kernel entry may read — the caller's
+/// overflow slots and, on a receive that takes a blocked sender, the sender's
+/// (`SyscallDispatchEntry.rendezvousSenderOverflowAddrs`).
+pub const ENTRY_WORD_PAIRS: usize = 2 * OVERFLOW_SLOTS;
+
+const ENTRY_WORD_BYTES: usize = 16 * ENTRY_WORD_PAIRS;
+
+/// One core's entry-word buffer: a Lean `ByteArray` of [`ENTRY_WORD_BYTES`]
+/// bytes outside the heap.
+#[repr(C, align(8))]
+struct EntryWordCell {
+    header: crate::lean_runtime::SArrayObject,
+    data: [u8; ENTRY_WORD_BYTES],
+}
+
+/// The byte size of a core's buffer object.
+pub const ENTRY_WORD_OBJECT_BYTES: usize = core::mem::size_of::<EntryWordCell>();
+const _: () = assert!(ENTRY_WORD_OBJECT_BYTES == 24 + ENTRY_WORD_BYTES);
+
+/// **WS-ZA ZA5.2: each core's entry-word buffer**, the `ByteArray` the Lean
+/// syscall entry reads the caller's (and a blocked sender's) overflow words
+/// into (`Platform.FFI.ffiEntryWordBuffer`, `ffiCaptureUserWords`), so the
+/// words cross from RAM without a list, a batch array or a cell per word.
+///
+/// Each buffer lives outside the heap with a non-heap header (`m_rc = 0`, so
+/// `lean_inc`/`lean_dec` leave it alone and `lean_is_exclusive` is false, so
+/// compiled Lean never frees it or writes into it; `m_cs_sz` the object's byte
+/// size).  Core `c`'s buffer is written only by core `c`'s own entry, before
+/// the atomic step, and read only inside that step: the step hands the buffer
+/// to the state for the decode and the committed state drops it
+/// (`IpcBufferRead.clearUserWords`), so nothing reads a buffer after its entry
+/// returns, and entries on one core never nest.
+pub struct EntryWordBuffers {
+    cells: [core::cell::UnsafeCell<EntryWordCell>; crate::svc_dispatch::RETURN_FRAME_CORES],
+}
+
+// SAFETY: core `c`'s cell is written and read only by core `c`, inside its own
+// non-nesting kernel entries (the type's documentation).
+unsafe impl Sync for EntryWordBuffers {}
+
+impl EntryWordBuffers {
+    /// Every core's buffer, header set, bytes zero.
+    #[must_use]
+    pub const fn new() -> Self {
+        EntryWordBuffers {
+            cells: [const {
+                core::cell::UnsafeCell::new(EntryWordCell {
+                    header: crate::lean_runtime::SArrayObject {
+                        header: crate::lean_runtime::LeanObject {
+                            rc: 0,
+                            cs_sz: ENTRY_WORD_OBJECT_BYTES as u16,
+                            other: 1,
+                            tag: crate::lean_runtime::TAG_SCALAR_ARRAY,
+                        },
+                        size: ENTRY_WORD_BYTES,
+                        capacity: ENTRY_WORD_BYTES,
+                    },
+                    data: [0; ENTRY_WORD_BYTES],
+                })
+            }; crate::svc_dispatch::RETURN_FRAME_CORES],
+        }
+    }
+
+    /// Core `core`'s buffer object, or `None` past the last core.
+    #[must_use]
+    pub fn object(&self, core: usize) -> Option<crate::lean_runtime::Obj> {
+        Some(self.cells.get(core)?.get().cast())
+    }
+
+    /// Read the run `[base, base + 8 · count)` into core `core`'s buffer as
+    /// pairs `index, index + 1, …` — `None`, writing nothing, past the last
+    /// core, past the buffer's [`ENTRY_WORD_PAIRS`], or on a run
+    /// [`user_word_run_admissible`] refuses.
+    ///
+    /// # Safety
+    ///
+    /// The caller is core `core`'s own kernel entry (or a test that is the
+    /// only user of `self`), and nothing reads or writes core `core`'s buffer
+    /// for the duration of the call.
+    pub unsafe fn capture(
+        &self,
+        core: usize,
+        index: u64,
+        base: u64,
+        count: u64,
+        covered: impl Fn(u64, u64) -> bool,
+    ) -> Option<()> {
+        let cell = self.cells.get(core)?.get();
+        let index = usize::try_from(index).ok()?;
+        let end = index.checked_add(usize::try_from(count).ok()?)?;
+        if end > ENTRY_WORD_PAIRS {
+            return None;
+        }
+        // SAFETY: the caller is the only user of core `core`'s cell for the
+        // call (this function's contract).
+        let data = unsafe { &mut (*cell).data };
+        read_user_word_pairs(base, count, covered, &mut data[16 * index..16 * end])
+    }
+}
+
+impl Default for EntryWordBuffers {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+/// Every core's entry-word buffer.
+static ENTRY_WORD_BUFFERS: EntryWordBuffers = EntryWordBuffers::new();
+
+/// The per-core entry-word buffers, for `ffi::ffi_entry_word_buffer` and
+/// `ffi::ffi_capture_user_words`.
+#[must_use]
+pub fn entry_word_buffers() -> &'static EntryWordBuffers {
+    &ENTRY_WORD_BUFFERS
 }
 
 /// **The value `TTBR0_EL1` takes for an address space**: its table page in
@@ -801,42 +921,58 @@ mod tests {
         // RAM the boot map does not cover is refused.
         assert!(!user_word_admissible(RAM_PAGE, |_, _| false));
         // The read side answers exactly where the write side admits.
-        let mut one = [0xAAu8; 8];
+        let mut one = [0xAAu8; 16];
         assert_eq!(
-            read_user_words(RAM_PAGE + 8, 1, covered, &mut one),
+            read_user_word_pairs(RAM_PAGE + 8, 1, covered, &mut one),
             Some(())
         );
-        assert_eq!(one, [0u8; 8]);
-        assert_eq!(read_user_words(pool, 1, covered, &mut one), None);
-        assert_eq!(read_user_words(RAM_PAGE + 3, 1, covered, &mut one), None);
+        assert_eq!(one[..8], (RAM_PAGE + 8).to_le_bytes());
+        assert_eq!(one[8..], [0u8; 8]);
+        assert_eq!(read_user_word_pairs(pool, 1, covered, &mut one), None);
+        assert_eq!(
+            read_user_word_pairs(RAM_PAGE + 3, 1, covered, &mut one),
+            None
+        );
     }
 
     /// `v0.36.47` audit: a run of user words is admitted exactly when its base
     /// is an admissible word and the run stays in the base's page — the bound
-    /// the Lean side proves it never exceeds (`wordRuns_within_page`).
+    /// the Lean side proves it never exceeds (`overflowRuns_within_page`).
     #[test]
     fn a_user_word_run_is_bounded_by_its_page() {
         // The exact run: 116 words (the longest overflow message) ending on
         // the last byte of the page.
         let exact = RAM_PAGE + PAGE_BYTES - 8 * 116;
         assert!(user_word_run_admissible(exact, 116, covered));
-        let mut words = [0xAAu8; 8 * 116];
-        assert_eq!(read_user_words(exact, 116, covered, &mut words), Some(()));
-        assert!(words.iter().all(|b| *b == 0));
+        let mut words = [0xAAu8; 16 * 116];
+        assert_eq!(
+            read_user_word_pairs(exact, 116, covered, &mut words),
+            Some(())
+        );
+        assert!(words
+            .chunks_exact(16)
+            .enumerate()
+            .all(|(i, p)| p[..8] == (exact + 8 * i as u64).to_le_bytes() && p[8..] == [0u8; 8]));
         // One word further: the run leaves the page and is refused, although
         // its base and all but its last word are admissible.
         let crossing = exact + 8;
         assert!(user_word_admissible(crossing, covered));
         assert!(user_word_admissible(crossing + 8 * 114, covered));
         assert!(!user_word_run_admissible(crossing, 116, covered));
-        assert_eq!(read_user_words(crossing, 116, covered, &mut words), None);
+        assert_eq!(
+            read_user_word_pairs(crossing, 116, covered, &mut words),
+            None
+        );
         // Clipped to the page it is admitted again.
         assert!(user_word_run_admissible(crossing, 115, covered));
         // A zero-length run reads nothing — admitted at an admissible base,
         // refused where a single word would be.
         let mut none: [u8; 0] = [];
         assert!(user_word_run_admissible(RAM_PAGE, 0, covered));
-        assert_eq!(read_user_words(RAM_PAGE, 0, covered, &mut none), Some(()));
+        assert_eq!(
+            read_user_word_pairs(RAM_PAGE, 0, covered, &mut none),
+            Some(())
+        );
         assert!(!user_word_run_admissible(RAM_PAGE + 4, 0, covered));
         assert!(!user_word_run_admissible(
             crate::mmu::BOOT_TABLE_POOL_BASE,
@@ -844,10 +980,45 @@ mod tests {
             covered
         ));
         // A buffer of the wrong size is refused rather than partly filled.
-        let mut short = [0u8; 8];
-        assert_eq!(read_user_words(RAM_PAGE, 2, covered, &mut short), None);
+        let mut short = [0u8; 16];
+        assert_eq!(read_user_word_pairs(RAM_PAGE, 2, covered, &mut short), None);
         // A count whose byte size overflows is refused, not wrapped.
         assert!(!user_word_run_admissible(RAM_PAGE, u64::MAX / 4, covered));
+    }
+
+    /// WS-ZA ZA5.2: a core's entry-word buffer is a non-heap `ByteArray` of
+    /// every pair an entry may read, and a capture writes exactly its pairs,
+    /// refusing (and writing nothing) past the buffer or on a refused run.
+    #[test]
+    fn an_entry_word_capture_writes_its_pairs() {
+        let buffers = EntryWordBuffers::new();
+        let o = buffers.object(0).expect("core 0");
+        // SAFETY: `o` is core 0's live cell, which this test alone uses.
+        let header = unsafe { &*o.cast::<crate::lean_runtime::SArrayObject>() };
+        assert_eq!(header.header.rc, 0);
+        assert_eq!(header.header.tag, crate::lean_runtime::TAG_SCALAR_ARRAY);
+        assert_eq!(header.header.other, 1);
+        assert_eq!(header.size, 16 * ENTRY_WORD_PAIRS);
+        assert!(buffers
+            .object(crate::svc_dispatch::RETURN_FRAME_CORES)
+            .is_none());
+        // SAFETY: this test is the only user of `buffers`.
+        unsafe {
+            assert_eq!(buffers.capture(0, 2, RAM_PAGE + 16, 3, covered), Some(()));
+            // The last pair of the buffer is writable; one past it is not.
+            let last = ENTRY_WORD_PAIRS as u64 - 1;
+            assert_eq!(buffers.capture(0, last, RAM_PAGE, 1, covered), Some(()));
+            assert_eq!(buffers.capture(0, last, RAM_PAGE, 2, covered), None);
+            assert_eq!(buffers.capture(0, 0, RAM_PAGE + 3, 1, covered), None);
+        }
+        // SAFETY: as above.
+        let data = unsafe { &(*buffers.cells[0].get()).data };
+        for k in 0..3usize {
+            let p = &data[16 * (2 + k)..16 * (3 + k)];
+            assert_eq!(p[..8], (RAM_PAGE + 16 + 8 * k as u64).to_le_bytes());
+        }
+        // The refused captures wrote nothing: pair 0 is still zero.
+        assert!(data[..16].iter().all(|b| *b == 0));
     }
 
     #[test]

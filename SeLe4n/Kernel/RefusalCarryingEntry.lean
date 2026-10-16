@@ -88,6 +88,25 @@ specification's form. -/
         -- read from the caller's registers.
         | .invoke sid capAddr =>
           dispatchInvocationCheckedR ctx sid capAddr tcb.registerContext tid executingCore st
+        -- WS-ZA ZA5.2: a scheduling-context configure, its fifth word read from
+        -- overflow slot 0 of the caller's IPC buffer.  The decode's walk fills
+        -- this core's TLB; when the core already caches the translation the
+        -- fill writes nothing (`tlbFillIpcBufferOnCore_of_held`) and the
+        -- dispatch is handed the entry's own state.  Otherwise the fill is the
+        -- one write before the checks, and a refusal hands back the TLB the
+        -- entry held (`tlbFillIpcBufferOnCore_restore`).
+        | .configure capAddr =>
+          SeLe4n.Kernel.Architecture.IpcBufferRead.ipcBufferReadMrK st tid 0
+            (fun _ => .error (.invalidMessageInfo, st))
+            (fun w =>
+              if SeLe4n.Kernel.Architecture.ipcBufferFillHeld st executingCore tid 1 then
+                dispatchConfigureCheckedR capAddr tcb.registerContext w tid executingCore st
+              else
+                let tlb := st.perCoreTlb
+                match dispatchConfigureCheckedR capAddr tcb.registerContext w tid executingCore
+                    (SeLe4n.Kernel.Architecture.tlbFillIpcBufferOnCore st executingCore tid 1) with
+                | .error (e, stF) => .error (e, { stF with perCoreTlb := tlb })
+                | .ok r => .ok r)
         | .viaDecode =>
           RefusalCarrying.ofKernel (syscallEntryChecked ctx SeLe4n.arm64DefaultLayout executingCore 32) st
       | some _ => .error (.illegalState, st)
@@ -218,6 +237,37 @@ theorem syscallEntryCheckedR_eq (ctx : LabelingContext) (executingCore : Concurr
           simp only [RefusalCarrying.ofKernel, syscallEntryChecked, hCtx, hCur, hRegs, hDec,
             hZero, Bool.false_eq_true, ↓reduceIte,
             SeLe4n.Kernel.Architecture.tlbFillIpcBufferOnCore_zero]
+        · next capAddr hCfgRegs =>
+          obtain ⟨msgInfo, hDec⟩ :=
+            SeLe4n.Kernel.Architecture.RegisterDecode.decodeSyscallArgsFromState_of_routedConfigure
+              st tid SeLe4n.arm64DefaultLayout tcb.registerContext 32 capAddr hCfgRegs
+          rw [SeLe4n.Kernel.Architecture.IpcBufferRead.ipcBufferReadMrK_eq]
+          cases hR : SeLe4n.Kernel.Architecture.IpcBufferRead.ipcBufferReadMr st tid 0 with
+          | error e =>
+            simp only [RefusalCarrying.ofKernel, syscallEntryChecked, hCtx, hCur, hRegs, hDec,
+              SeLe4n.Kernel.Architecture.RegisterDecode.readOverflowWord, hR,
+              Bool.false_eq_true, ↓reduceIte]
+          | ok w =>
+            have hD := dispatchConfigureCheckedR_eq ctx
+              { capAddr, msgInfo, syscallId := .schedContextConfigure,
+                msgRegs := SeLe4n.arm64DefaultLayout.msgRegs.map (readReg tcb.registerContext) ++
+                  #[(⟨w.toNat⟩ : RegValue)],
+                inlineCount := SeLe4n.arm64DefaultLayout.msgRegs.size, overflowCount := 1 }
+              tcb.registerContext w tid executingCore rfl rfl
+            simp only [RefusalCarrying.ofKernel, syscallEntryChecked, hCtx, hCur, hRegs, hDec,
+              SeLe4n.Kernel.Architecture.RegisterDecode.readOverflowWord, hR,
+              Bool.false_eq_true, ↓reduceIte]
+            split
+            · next hHeld =>
+              rw [SeLe4n.Kernel.Architecture.tlbFillIpcBufferOnCore_of_held hHeld]
+              exact congrFun hD st
+            · rw [congrFun hD]
+              simp only [RefusalCarrying.ofKernel]
+              generalize dispatchSyscallChecked _ _ _ _
+                (SeLe4n.Kernel.Architecture.tlbFillIpcBufferOnCore st executingCore tid 1) = K
+              rcases K with e | r
+              · simp only [SeLe4n.Kernel.Architecture.tlbFillIpcBufferOnCore_restore]
+              · rfl
         · rfl
       · next o hNot hObj =>
         have hRegs : lookupThreadRegisterContext tid st = .error .illegalState := by

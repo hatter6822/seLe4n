@@ -3427,25 +3427,36 @@ def icMaintenanceBroadcast
 @[extern "mmu_apply_physical_write"]
 opaque ffiApplyPhysicalWrite : UInt64 → UInt64 → UInt64 → BaseIO Unit
 
-/-- **WS-BP BP7.8 (batched at the `v0.36.47` audit): the `count` user words
-    at `base`** — a run of the caller's own RAM frame, read so the kernel
-    decodes the message registers the thread wrote into its IPC buffer rather
-    than its model of that memory.  One call per contiguous run
-    (`IpcBufferRead.wordRuns`): the HAL translates the base once, bounds the
-    run against its page (`base % 4096 + 8 · count ≤ 4096`,
-    `user_translation::user_word_run_admissible`) and answers the words as a
-    `ByteArray` of exactly `8 · count` little-endian bytes — one scalar
-    allocation, no word boxed on the way over.  It admits only an eight-byte
-    aligned base of RAM past the kernel's reserved extent and a run that stays
-    in the page, and halts the system on anything else: the kernel never asks
-    for such a run (`IpcBufferRead.wordRuns_within_page`), so a refusal is a
-    kernel defect.  The Lean side checks the answer's size
-    (`IpcBufferRead.wordsOfBytes`) and fails the syscall entry closed on any
-    other (`Kernel.overflowWordsOrFaulted`).
+/-- **WS-ZA ZA5.2: the executing core's entry-word buffer** — a persistent
+    `ByteArray` outside the heap that this core's syscall entry reads the
+    caller's (and a blocked sender's) overflow message registers into, as
+    sixteen-byte address/word pairs (`IpcBufferRead.pairAddr`, `pairWord`).
+    Nothing is allocated; the step reads the buffer and the committed state
+    drops it (`IpcBufferRead.clearUserWords`), so it is never read after the
+    entry that filled it.
 
-    Rust: `ffi_read_user_words` in `sele4n-hal/src/ffi.rs`. -/
-@[extern "ffi_read_user_words"]
-opaque ffiReadUserWords : UInt64 → UInt64 → BaseIO ByteArray
+    Rust: `ffi_entry_word_buffer` in `sele4n-hal/src/ffi.rs`. -/
+@[extern "ffi_entry_word_buffer"]
+opaque ffiEntryWordBuffer : BaseIO ByteArray
+
+/-- **WS-BP BP7.8 (batched at the `v0.36.47` audit, into the entry-word buffer
+    at WS-ZA ZA5.2): the `count` user words at `base`**, read into the
+    executing core's entry-word buffer as pairs `index, index + 1, …` — a run
+    of a thread's own RAM frame, read so the kernel decodes the message
+    registers the thread wrote into its IPC buffer rather than its model of
+    that memory.  One call per contiguous run (`IpcBufferRead.overflowRuns`):
+    the HAL translates the base once and bounds the run against its page
+    (`base % 4096 + 8 · count ≤ 4096`,
+    `user_translation::user_word_run_admissible`) and the buffer.  It admits
+    only an eight-byte aligned base of RAM past the kernel's reserved extent
+    and a run that stays in the page and the buffer, and halts the system on
+    anything else: the kernel never asks for such a run
+    (`IpcBufferRead.overflowRuns_within_page`), so a refusal is a kernel
+    defect.  Nothing is allocated.
+
+    Rust: `ffi_capture_user_words` in `sele4n-hal/src/ffi.rs`. -/
+@[extern "ffi_capture_user_words"]
+opaque ffiCaptureUserWords : UInt64 → UInt64 → UInt64 → BaseIO Unit
 
 /-- **WS-BP BP7.2**: typed wrapper over `ffiApplyPhysicalWrite`. -/
 def physicalWriteApply (w : SeLe4n.Kernel.Architecture.PhysicalWrite) : BaseIO Unit :=

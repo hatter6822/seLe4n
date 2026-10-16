@@ -1312,8 +1312,10 @@ private def mappedBuffersState (rxWrite : Bool) : SystemState :=
 /-- What the entry does before the decode: read the caller's overflow words
 from RAM and write them into the model.  Here "RAM" is `overflowWords`. -/
 private def syncSenderOverflow (st : SystemState) (msgInfo : UInt64) : SystemState :=
-  let addrs := Kernel.Architecture.IpcBufferRead.callerOverflowAddrs st peerTid msgInfo
-  Kernel.Architecture.IpcBufferRead.syncUserWords st (addrs.zip overflowWords)
+  let pairs := (Kernel.Architecture.IpcBufferRead.callerOverflowAddrs st peerTid msgInfo).zip
+    overflowWords
+  Kernel.Architecture.IpcBufferRead.syncUserWords st
+    (Kernel.Architecture.IpcBufferRead.encodeWordPairs pairs) pairs.length
 
 /-- A seven-register message: length 7 in the `MessageInfo` word. -/
 private def sevenRegisters : UInt64 := 7
@@ -1334,6 +1336,37 @@ private def overflowSendRun (rxWrite sync : Bool) :
     SyscallId.send.toNat.toUInt32 epCapPtr.toUInt64 sevenRegisters 1 2 3 4 0
     0 0 0 0 stS
   pure (stagedFrame st2 callerTid, st2.pendingPhysicalWrites, addrs)
+
+/-- "RAM" at the sender's frame: its three overflow words at their slots. -/
+private def senderRamWordAt (pa : SeLe4n.PAddr) : UInt64 :=
+  if pa.toNat = txBufferPA then 0x55
+  else if pa.toNat = txBufferPA + 8 then 0x66
+  else if pa.toNat = txBufferPA + 16 then 0x77
+  else 0
+
+/-- WS-ZA ZA5.2: the other arrival order.  The sender sends seven registers to
+an endpoint with no receiver and blocks; then the receiver's entry reads from
+"RAM" the words the entry resolves and receives.  `senderToo` says whether the
+entry reads the blocked sender's slots as well as the caller's
+(`rendezvousSenderOverflowAddrs`). -/
+private def blockedSenderReceiveRun (senderToo : Bool) :
+    Except KernelError (List Kernel.Architecture.PhysicalWrite × List SeLe4n.PAddr) := do
+  let st0 := mappedBuffersState true
+  let (out1, st1) ← SeLe4n.Platform.FFI.syscallDispatchFromAbi trustedLabeling core1
+    SyscallId.send.toNat.toUInt32 epCapPtr.toUInt64 sevenRegisters 1 2 3 4 0
+    0 0 0 0 (syncSenderOverflow st0 sevenRegisters)
+  if out1 != .blocks then throw .illegalState
+  let addrs := Kernel.Architecture.IpcBufferRead.callerOverflowAddrs st1 callerTid 0 ++
+    (if senderToo then
+      Kernel.rendezvousSenderOverflowAddrs st1 callerTid SyscallId.receive.toNat.toUInt32
+        epCapPtr.toUInt64
+    else [])
+  let pairs := addrs.map fun pa => (pa, senderRamWordAt pa)
+  let stS := Kernel.Architecture.IpcBufferRead.syncUserWords st1
+    (Kernel.Architecture.IpcBufferRead.encodeWordPairs pairs) pairs.length
+  let (_, st2) ← dispatchFromAbiOn SeLe4n.Kernel.Concurrency.bootCoreId
+    SyscallId.receive.toNat 0 epCapPtr.toUInt64 0 0 0 stS
+  pure (st2.pendingPhysicalWrites, addrs)
 
 private def runOverflowDeliveryWitnesses : IO Unit := do
   IO.println "-- §12 WS-BP BP7.8: message registers past the fourth, read from and written to IPC buffers"
@@ -1375,6 +1408,73 @@ private def runOverflowDeliveryWitnesses : IO Unit := do
                              .storeUserWord (SeLe4n.PAddr.ofNat (rxBufferPA + 16)) 0x77])
       assertBool "12 SEAM: ...and the state it commits owes no physical write"
         stC.pendingPhysicalWrites.isEmpty
+  -- WS-ZA ZA5.2: the receive that takes a blocked sender reads the sender's
+  -- overflow words from RAM at the rendezvous, as the send that meets a waiting
+  -- receiver does.
+  match blockedSenderReceiveRun true with
+  | .error e => assertBool s!"12 BLOCKED SENDER: the send-then-receive runs (got .error {reprStr e})" false
+  | .ok (writes, addrs) => do
+      assertBool "12 BLOCKED SENDER: the receive's entry reads the blocked sender's three overflow slots"
+        (addrs == [SeLe4n.PAddr.ofNat txBufferPA, SeLe4n.PAddr.ofNat (txBufferPA + 8),
+                   SeLe4n.PAddr.ofNat (txBufferPA + 16)])
+      assertBool "12 BLOCKED SENDER: ...and the receiver is stored the words the sender wrote"
+        (writes == [.storeUserWord (SeLe4n.PAddr.ofNat rxBufferPA) 0x55,
+                    .storeUserWord (SeLe4n.PAddr.ofNat (rxBufferPA + 8)) 0x66,
+                    .storeUserWord (SeLe4n.PAddr.ofNat (rxBufferPA + 16)) 0x77])
+  -- CONTROL: an entry that reads the caller's slots alone hands the receiver
+  -- the model's zeroes, so the sender's read is what delivers its words.
+  match blockedSenderReceiveRun false with
+  | .error e => assertBool s!"12 BLOCKED SENDER CONTROL: the run (got .error {reprStr e})" false
+  | .ok (writes, _) =>
+      assertBool "12 BLOCKED SENDER CONTROL: without the sender's read the receiver is handed zeroes"
+        (writes == [.storeUserWord (SeLe4n.PAddr.ofNat rxBufferPA) 0,
+                    .storeUserWord (SeLe4n.PAddr.ofNat (rxBufferPA + 8)) 0,
+                    .storeUserWord (SeLe4n.PAddr.ofNat (rxBufferPA + 16)) 0])
+  -- WS-ZA ZA5.2: the runs the entry reads are the slots the decode reads, one
+  -- per contiguous stretch of a page.  The sender's three slots in one page are
+  -- one run; a buffer two words short of a page end, the next page mapped at the
+  -- physically following frame, is still two runs: a run never leaves its page.
+  let st0 := mappedBuffersState true
+  match st0.getTcb? peerTid with
+  | some tcb =>
+      let runs := Kernel.Architecture.IpcBufferRead.overflowRuns st0 tcb
+        (Kernel.Architecture.IpcBufferRead.overflowStop sevenRegisters)
+      assertBool "12 RUNS: three slots in one page are one run"
+        (runs == [(SeLe4n.PAddr.ofNat txBufferPA, 3)])
+      assertBool "12 RUNS: ...naming exactly the slots the decode reads"
+        (Kernel.Architecture.IpcBufferRead.expandRuns runs ==
+          Kernel.Architecture.IpcBufferRead.callerOverflowAddrs st0 peerTid sevenRegisters)
+      let tcbS := { tcb with ipcBuffer := SeLe4n.VAddr.ofNat (8192 + 4096 - 16) }
+      let stS : SystemState :=
+        match st0.objects[callerVsp]? with
+        | some (.vspaceRoot root) =>
+            let perms : SeLe4n.Model.PagePermissions := { read := true, write := true }
+            let entry : SeLe4n.PAddr × SeLe4n.Model.PagePermissions :=
+              (SeLe4n.PAddr.ofNat (txBufferPA + 4096), perms)
+            let mappings' := root.mappings.insert (SeLe4n.VAddr.ofNat 12288) entry
+            let root' := { root with mappings := mappings' }
+            let objs := (st0.objects.insert callerVsp (.vspaceRoot root')).insert
+              peerTid.toObjId (.tcb tcbS)
+            { st0 with objects := objs }
+        | _ => st0
+      let runsS := Kernel.Architecture.IpcBufferRead.overflowRuns stS tcbS 3
+      assertBool "12 RUNS: a buffer straddling a page boundary is two runs"
+        (runsS == [(SeLe4n.PAddr.ofNat (txBufferPA + 4096 - 16), 2),
+                   (SeLe4n.PAddr.ofNat (txBufferPA + 4096), 1)])
+  | none => assertBool "12 RUNS: the sender's TCB exists" false
+  -- WS-ZA ZA5.2: the entry's synced words replace the last entry's, and model
+  -- memory is never written: a thousand entries carrying overflow words leave
+  -- `memory` the closure it was and hold one message's words.
+  let stR := (List.range 1000).foldl
+    (fun st _ => syncSenderOverflow st sevenRegisters) (mappedBuffersState true)
+  assertBool "12: repeated overflow entries hold one message's words"
+    (stR.machine.entryWordCount == 3 && stR.machine.entryWordBytes.size == 48)
+  assertBool "12: ...and the committed state drops them"
+    (let stC := Kernel.Architecture.IpcBufferRead.clearUserWords stR
+     stC.machine.entryWordCount == 0 && stC.machine.entryWordBytes.size == 0)
+  assertBool "12: ...and leave model memory unwritten"
+    ((List.range 3).all fun i =>
+      Kernel.Architecture.readUInt64 stR.machine.memory (SeLe4n.PAddr.ofNat (txBufferPA + 8 * i)) == 0)
   -- A fault message's width: thirteen words (`unknownSyscall`) staged for a woken
   -- handler write nine words past the fourth — the delivery is the one every
   -- wake shares, so a fault handler reads every word the model encodes.

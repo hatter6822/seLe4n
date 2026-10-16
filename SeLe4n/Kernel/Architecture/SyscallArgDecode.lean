@@ -2202,6 +2202,66 @@ theorem decodeSchedContextBindArgs_eq_by (layout : SyscallRegisterLayout) (regs 
     simp [Except.map, bind, Except.bind, pure, Except.pure, Functor.map,
       SeLe4n.CPtr.ofWord_eq_ofNat, SeLe4n.Badge.ofWord_eq_ofNatMasked]
 
+/-- WS-ZA ZA5.2: message register `i`'s word for a call whose one overflow word
+`w` follows the layout's registers: the file's registers, then `w`, refusing any
+later index as `requireMsgReg` does past a decode's registers. -/
+@[inline] def msgRegOfFileThen (layout : SyscallRegisterLayout) (regs : RegisterFile)
+    (w : UInt64) : MsgRegReader :=
+  fun i => if h : i < layout.msgRegs.size then .ok (readRegWord regs layout.msgRegs[i])
+    else if i = layout.msgRegs.size then .ok w
+    else .error .invalidMessageInfo
+
+/-- A decode whose message registers are the layout's, read from the file, then
+one overflow word, reads each as the number of its word. -/
+theorem requireMsgReg_map_readReg_push (layout : SyscallRegisterLayout) (regs : RegisterFile)
+    (w : UInt64) (i : Nat) :
+    requireMsgReg (layout.msgRegs.map (readReg regs) ++ #[(⟨w.toNat⟩ : RegValue)]) i =
+      (msgRegOfFileThen layout regs w i).map (fun w => (⟨w.toNat⟩ : RegValue)) := by
+  unfold requireMsgReg msgRegOfFileThen
+  by_cases hi : i < layout.msgRegs.size
+  · have hi' : i < (layout.msgRegs.map (readReg regs) ++ #[(⟨w.toNat⟩ : RegValue)]).size := by
+      simp only [Array.size_append, Array.size_map, List.size_toArray, List.length_singleton]
+      omega
+    simp only [hi, hi', ↓reduceDIte, Except.map]
+    rw [Array.getElem_append_left (by simpa using hi)]
+    simp only [Array.getElem_map, readReg_eq_word]
+  · by_cases hEq : i = layout.msgRegs.size
+    · subst hEq
+      simp [Except.map, Array.getElem_push]
+    · have hi' : ¬ i < (layout.msgRegs.map (readReg regs) ++ #[(⟨w.toNat⟩ : RegValue)]).size := by
+        simp only [Array.size_append, Array.size_map, List.size_toArray, List.length_singleton]
+        omega
+      simp only [hi, hi', hEq, ↓reduceDIte, ↓reduceIte, Except.map]
+
+/-- WS-ZA ZA5.2: `decodeSchedContextConfigureArgsChecked` over a reader, each
+check in the decode's order. -/
+@[inline] def decodeSchedContextConfigureArgsCheckedBy (get : MsgRegReader)
+    : Except KernelError SchedContextConfigureArgs := do
+  let r0 ← get 0
+  let r1 ← get 1
+  let r2 ← get 2
+  let r3 ← get 3
+  let r4 ← get 4
+  if r2.toNat > 255 then .error .invalidArgument
+  else if r4.toNat ≥ 16 then .error .invalidArgument
+  else if r0.toNat = 0 then .error .invalidArgument
+  else if r1.toNat = 0 then .error .invalidArgument
+  else pure { budget := r0.toNat, period := r1.toNat, priority := r2.toNat,
+              deadline := r3.toNat, domain := r4.toNat }
+
+theorem decodeSchedContextConfigureArgsChecked_eq_by (layout : SyscallRegisterLayout)
+    (regs : RegisterFile) (w : UInt64) (decoded : SyscallDecodeResult)
+    (h : decoded.msgRegs = layout.msgRegs.map (readReg regs) ++ #[(⟨w.toNat⟩ : RegValue)]) :
+    decodeSchedContextConfigureArgsChecked decoded =
+      decodeSchedContextConfigureArgsCheckedBy (msgRegOfFileThen layout regs w) := by
+  unfold decodeSchedContextConfigureArgsChecked decodeSchedContextConfigureArgs
+    decodeSchedContextConfigureArgsCheckedBy
+  rw [h]
+  simp only [requireMsgReg_map_readReg_push]
+  generalize msgRegOfFileThen layout regs w = g
+  cases g 0 <;> cases g 1 <;> cases g 2 <;> cases g 3 <;> cases g 4 <;>
+    simp [Except.map, bind, Except.bind, pure, Except.pure, Functor.map]
+
 @[inline] def decodeTcbBindNotificationArgsBy (get : MsgRegReader)
     : Except KernelError TcbBindNotificationArgs := do
   let r0 ← get 0

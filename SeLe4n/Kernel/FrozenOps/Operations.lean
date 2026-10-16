@@ -532,7 +532,7 @@ def frozenNotificationWait (notificationId : SeLe4n.ObjId)
 
 /-- WS-ZA ZA4.7: an overflow word of a frozen thread's IPC buffer, read as the
 live `ipcBufferReadMr` reads it (slot bound, the thread's VSpace root, the page
-the slot resolves through, then memory), every failure the live decode's
+the slot resolves through, then the synced word or memory), every failure the live decode's
 `.invalidMessageInfo`. -/
 private def frozenReadOverflowWord (st : FrozenSystemState) (tid : SeLe4n.ThreadId)
     (idx : Nat) : Except KernelError UInt64 :=
@@ -544,7 +544,7 @@ private def frozenReadOverflowWord (st : FrozenSystemState) (tid : SeLe4n.Thread
     | some (.vspaceRoot root) =>
       match root.mappings.get? (Architecture.IpcBufferRead.ipcBufferSlotPage tcb.ipcBuffer idx) with
       | some (paddr, _) =>
-          .ok (Architecture.readUInt64 st.machine.memory
+          .ok (Architecture.IpcBufferRead.userWordAt st.machine
             (SeLe4n.PAddr.ofNat (paddr.toNat +
               (Architecture.IpcBufferRead.ipcBufferSlotAddr tcb.ipcBuffer idx).pageOffset)))
       | none => .error .invalidMessageInfo

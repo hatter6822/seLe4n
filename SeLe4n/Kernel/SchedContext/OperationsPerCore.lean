@@ -87,6 +87,28 @@ def schedContextRunningCore? (st : SystemState) (scObjId : SeLe4n.ObjId) :
   | some tid => Lifecycle.Suspend.runningCoreOf? st tid
   | none     => none
 
+/-- **WS-ZA ZA5.2**: the compiled `schedContextRunningCore?`, the bound thread
+read from the context's code, so no `Option` is built for it. -/
+@[inline] def schedContextRunningCoreImpl (st : SystemState) (scObjId : SeLe4n.ObjId) :
+    Option CoreId :=
+  match st.getSchedContext? (SeLe4n.SchedContextId.ofObjId scObjId) with
+  | some sc =>
+    match sc.boundThreadCode with
+    | 0 => none
+    | k + 1 => Lifecycle.Suspend.runningCoreOf? st ⟨k⟩
+  | none => none
+
+@[csimp] theorem schedContextRunningCore?_eq_impl :
+    @schedContextRunningCore? = @schedContextRunningCoreImpl := by
+  funext st scObjId
+  unfold schedContextRunningCore? schedContextBoundThread? schedContextRunningCoreImpl
+  cases st.getSchedContext? (SeLe4n.SchedContextId.ofObjId scObjId) with
+  | none => rfl
+  | some sc =>
+    have hB : sc.boundThread = SeLe4n.ThreadId.ofOptCode sc.boundThreadCode := rfl
+    simp only [hB]
+    cases sc.boundThreadCode <;> rfl
+
 /-- WS-SM SM8.B (operation): **unbind a SchedContext, across cores.**
 
 `schedContextUnbind`'s per-core form.  The revocation itself is unchanged — same
@@ -104,6 +126,44 @@ def schedContextUnbindOnCore (vScId : SeLe4n.ValidObjId) (executingCore : CoreId
   | .error e      => .error e
   | .ok ((), st') =>
       SchedContext.PriorityManagement.priorityRescheduleOnCore st' running? executingCore true
+
+/-- **WS-ZA ZA5.2**: the per-core unbind's state when its checks pass — the
+single-core perform, then the scheduling point, which never refuses. -/
+@[inline] def schedContextUnbindOnCorePerform (st : SystemState) (vScId : SeLe4n.ValidObjId)
+    (executingCore : CoreId) : SystemState :=
+  SchedContext.PriorityManagement.priorityRescheduleOnCoreState
+    (schedContextUnbindPerform st vScId) (schedContextRunningCore? st vScId.val) executingCore true
+
+/-- **WS-ZA ZA5.2**: the compiled `schedContextUnbindOnCorePerform`: whether the
+executing core runs the bound thread is read before the unbind writes, so the
+pre-state is not held across them. -/
+@[inline] def schedContextUnbindOnCorePerformImpl (st : SystemState)
+    (vScId : SeLe4n.ValidObjId) (executingCore : CoreId) : SystemState :=
+  let preempt : Bool := match schedContextRunningCore? st vScId.val with
+    | some rc => rc == executingCore
+    | none => false
+  let st' := schedContextUnbindPerform st vScId
+  if preempt then SeLe4n.Kernel.handleRescheduleOnCoreState st' executingCore
+  else st'
+
+@[csimp] theorem schedContextUnbindOnCorePerform_eq_impl :
+    @schedContextUnbindOnCorePerform = @schedContextUnbindOnCorePerformImpl := by
+  funext st vScId executingCore
+  unfold schedContextUnbindOnCorePerform schedContextUnbindOnCorePerformImpl
+    SchedContext.PriorityManagement.priorityRescheduleOnCoreState
+  cases schedContextRunningCore? st vScId.val with
+  | none => rfl
+  | some rc => by_cases h : (rc == executingCore) = true <;> simp [h]
+
+/-- **WS-ZA ZA5.2**: an admitted per-core unbind succeeds with the perform's
+state. -/
+theorem schedContextUnbindOnCore_of_admitted (st : SystemState) (vScId : SeLe4n.ValidObjId)
+    (executingCore : CoreId) (h : schedContextUnbindAdmitted st vScId = true) :
+    ∃ sgi, schedContextUnbindOnCore vScId executingCore st =
+      .ok (schedContextUnbindOnCorePerform st vScId executingCore, sgi) := by
+  unfold schedContextUnbindOnCore schedContextUnbindOnCorePerform
+  rw [schedContextUnbind_of_admitted st vScId h]
+  exact SchedContext.PriorityManagement.priorityRescheduleOnCore_eq_state _ _ _ _
 
 /-- WS-SM SM8.B: the per-core wrapper is fail-closed — it rejects exactly what
 the single-core transition rejects, and adds no state change on the error path. -/

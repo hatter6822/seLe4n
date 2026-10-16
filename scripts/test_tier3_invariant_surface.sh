@@ -4319,11 +4319,20 @@ run_check "INVARIANT" rg -n '^  pstate : UInt64 := 0$' SeLe4n/Machine.lean
 run_check "INVARIANT" rg -n '^  rf\.pstate % 16 == 0$' SeLe4n/Kernel/Architecture/TrapFrameSave.lean
 # PR #904 (v0.36.41): the syscall entry's save rewinds a vacated core's frame to
 # its SVC, so the resident thread re-issues the syscall its deschedule interrupted.
-run_check "INVARIANT" rg -n '^          \(Architecture\.saveCapturedSyscallFrame st execCore frame\) words\)$' SeLe4n/Kernel/SyscallDispatchEntry.lean
+run_check "INVARIANT" rg -n '^          \(Architecture\.saveCapturedSyscallFrame st execCore frame\) wordBytes wordCount\)$' SeLe4n/Kernel/SyscallDispatchEntry.lean
 run_negative_check "INVARIANT" rg -n 'Architecture\.saveCapturedTrapFrame st execCore frame' SeLe4n/Kernel/SyscallDispatchEntry.lean
 # WS-BP BP7.8: the sender's overflow words are read from RAM and synced into the
-# model before the decode, at the seam and in its structural marker.
-run_check "INVARIANT" rg -n '^  let words ← match ← readCallerOverflowWords execCore msgInfo with$' SeLe4n/Kernel/SyscallDispatchEntry.lean
+# model before the decode, at the seam and in its structural marker.  WS-ZA
+# ZA5.2: into the core's entry-word buffer, run by run as the proven runs are
+# planned, a receive's blocked sender's slots too, and the committed state
+# drops the buffer.
+run_check "INVARIANT" rg -n '^  let wordCount ← captureEntryWords execCore syscallId trapped\.x0 msgInfo$' SeLe4n/Kernel/SyscallDispatchEntry.lean
+run_check "INVARIANT" rg -n -U '^      let post := Architecture\.IpcBufferRead\.clearUserWords r\.2\n      \(\(r\.1, Architecture\.restoreCommitKindOnCore post execCore,$' SeLe4n/Kernel/SyscallDispatchEntry.lean
+run_check "INVARIANT" rg -n -U '^        Platform\.FFI\.ffiCaptureUserWords idx\.toUInt64 pa\.toNat\.toUInt64 len\.toUInt64\n        captureOverflowRuns st tcb stop fuel \(s \+ len\) \(idx \+ len\)$' SeLe4n/Kernel/SyscallDispatchEntry.lean
+run_check "INVARIANT" rg -n '^          captureOverflowRuns st stcb sstop sstop 0 n$' SeLe4n/Kernel/SyscallDispatchEntry.lean
+run_check "INVARIANT" rg -n '^theorem expandRuns_overflowRuns($|[ ({:\[\]])' SeLe4n/Kernel/Architecture/IpcBufferRead.lean
+run_check "INVARIANT" rg -n '^theorem overflowRuns_within_page($|[ ({:\[\]])' SeLe4n/Kernel/Architecture/IpcBufferRead.lean
+run_check "INVARIANT" rg -n -U '^    if captured\.is_none\(\) \{\n        crate::gic::halt_all\(\);$' rust/sele4n-hal/src/ffi.rs
 run_check "INVARIANT" rg -n '^        \(Architecture\.IpcBufferRead\.syncUserWords$' SeLe4n/Kernel/SyscallDispatchEntry.lean
 run_check "INVARIANT" rg -n -U '^      let st := Concurrency\.saveCapturedTrapFrameAt st0 coreId \(some frame\)\n      let \(sgis, st.\) := faultEntryStep lctx st ectx w coreId$' SeLe4n/Kernel/FaultEntry.lean
 run_check "INVARIANT" rg -n -U '^      let st := Concurrency\.saveCapturedSyscallFrameAt st0 coreId \(some frame\)\n      let \(sgis, st.\) := unknownSyscallEntryStep lctx st ectx w coreId$' SeLe4n/Kernel/FaultEntry.lean

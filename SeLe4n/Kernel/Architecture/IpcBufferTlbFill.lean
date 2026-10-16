@@ -157,6 +157,54 @@ def tlbFillIpcBufferOnCore (st : SystemState) (c : CoreId) (tid : ThreadId)
     subst hNil
     rfl
 
+/-- WS-ZA ZA5.2: whether core `c` already caches every translation the fill
+for `tid`'s `overflowCount` overflow slots would insert; when it does the fill
+writes nothing (`tlbFillIpcBufferOnCore_of_held`). -/
+@[inline] def ipcBufferFillHeld (st : SystemState) (c : CoreId) (tid : ThreadId)
+    (overflowCount : Nat) : Bool :=
+  match ipcBufferWalkPlan st tid overflowCount with
+  | none => true
+  | some plan =>
+    plan.2.all (fun page =>
+      match tlbWalkEntry st plan.1 page with
+      | none => true
+      | some entry => tlbEntriesHold (tlbOnCore st c).entries entry)
+
+private theorem foldl_tlbFillOnCore_of_held (c : CoreId) (asid : SeLe4n.ASID)
+    (st : SystemState) (pages : List VAddr)
+    (h : pages.all (fun page =>
+      match tlbWalkEntry st asid page with
+      | none => true
+      | some entry => tlbEntriesHold (tlbOnCore st c).entries entry) = true) :
+    pages.foldl (fun s page => tlbFillOnCore s c asid page) st = st := by
+  induction pages with
+  | nil => rfl
+  | cons page rest ih =>
+    simp only [List.all_cons, Bool.and_eq_true] at h
+    simp only [List.foldl_cons]
+    have hStep : tlbFillOnCore st c asid page = st := by
+      unfold tlbFillOnCore
+      have h1 := h.1
+      cases hW : tlbWalkEntry st asid page with
+      | none => rfl
+      | some entry =>
+        rw [hW] at h1
+        exact tlbInsertOnCore_of_mem ((tlbEntriesHold_iff _ _).mp h1)
+    rw [hStep]
+    exact ih h.2
+
+/-- A fill whose translations core `c` already caches writes nothing. -/
+theorem tlbFillIpcBufferOnCore_of_held {st : SystemState} {c : CoreId} {tid : ThreadId}
+    {overflowCount : Nat} (h : ipcBufferFillHeld st c tid overflowCount = true) :
+    tlbFillIpcBufferOnCore st c tid overflowCount = st := by
+  unfold ipcBufferFillHeld at h
+  unfold tlbFillIpcBufferOnCore
+  cases hPlan : ipcBufferWalkPlan st tid overflowCount with
+  | none => rfl
+  | some plan =>
+    rw [hPlan] at h
+    exact foldl_tlbFillOnCore_of_held c plan.1 st plan.2 h
+
 -- ============================================================================
 -- SM7.F.5 — frames
 -- ============================================================================
@@ -379,7 +427,7 @@ theorem tlbFillIpcBufferOnCore_caches_read_translation
       e.vaddr = ipcBufferSlotPage tcb.ipcBuffer idx ∧
       e.paddr = pa ∧
       ipcBufferReadMr st tid idx
-        = .ok (readUInt64 st.machine.memory
+        = .ok (userWordAt st.machine
                  (PAddr.ofNat
                    (e.paddr.toNat
                      + (ipcBufferSlotAddr tcb.ipcBuffer idx).pageOffset))) := by
@@ -446,6 +494,14 @@ theorem tlbFillIpcBufferOnCore_eq_setPerCoreTlb
   cases hPlan : ipcBufferWalkPlan st tid overflowCount with
   | none => exact ⟨st.perCoreTlb, rfl⟩
   | some plan => exact foldl_tlbFillOnCore_eq_setPerCoreTlb c plan.1 plan.2 st
+
+/-- WS-ZA ZA5.2: the fill undone: its state with the TLB it was handed is
+that state. -/
+theorem tlbFillIpcBufferOnCore_restore (st : SystemState) (c : CoreId) (tid : ThreadId)
+    (overflowCount : Nat) :
+    { tlbFillIpcBufferOnCore st c tid overflowCount with perCoreTlb := st.perCoreTlb } = st := by
+  obtain ⟨t, ht⟩ := tlbFillIpcBufferOnCore_eq_setPerCoreTlb st c tid overflowCount
+  rw [ht]
 
 /-!
 ### Whole-bundle carriage

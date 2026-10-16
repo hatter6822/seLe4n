@@ -634,7 +634,7 @@ theorem decodeSyscallArgsFromState_syscallId_eq
 /-- AK4-A.5 (NI): The decode wrapper's read scope on `SystemState` is
     exclusively what `ipcBufferReadMr` consults for each `tid`. If two
     states agree on the caller's TCB (via `tid.toObjId`), the caller's
-    VSpaceRoot object, and the full memory function, the decode result
+    VSpaceRoot object, the full memory function and the synced words, the decode result
     is identical.
 
     This is the top-level NI witness for Phase AK4 — it lifts the
@@ -652,7 +652,9 @@ theorem decodeSyscallArgsFromState_reads_only_caller
                  (fun o => match o with | .tcb t => some t.vspaceRoot | _ => none)
                  = some vs →
               st'.objects[vs]? = st.objects[vs]?)
-    (hMem  : st'.machine.memory = st.machine.memory) :
+    (hMem  : st'.machine.memory = st.machine.memory)
+    (hBytes : st'.machine.entryWordBytes = st.machine.entryWordBytes)
+    (hCount : st'.machine.entryWordCount = st.machine.entryWordCount) :
     decodeSyscallArgsFromState st' tid layout regs regCount
       = decodeSyscallArgsFromState st tid layout regs regCount := by
   -- The only places where `decodeSyscallArgsFromState` reads `SystemState`
@@ -664,7 +666,7 @@ theorem decodeSyscallArgsFromState_reads_only_caller
         = SeLe4n.Kernel.Architecture.IpcBufferRead.ipcBufferReadMr st tid i := by
     intro i
     exact SeLe4n.Kernel.Architecture.IpcBufferRead.ipcBufferReadMr_reads_only_caller_tcb
-            st st' tid i hTcb hVs hMem
+            st st' tid i hTcb hVs hMem hBytes hCount
   have hWord : readOverflowWord st' tid = readOverflowWord st tid := by
     funext i; simp only [readOverflowWord, hRead]
   unfold decodeSyscallArgsFromState
@@ -746,6 +748,11 @@ inductive RegisterRoutedSyscall where
       (`routedInvocation`), with no overflow words: the syscall and its
       operand address; its arguments are the layout's message registers. -/
   | invoke (sid : SyscallId) (capAddr : CPtr)
+  /-- WS-ZA ZA5.2: a scheduling-context configure with exactly one overflow word
+      (its fifth argument, the domain): its operand address; its first four
+      arguments are the layout's message registers and the fifth is overflow
+      slot 0 of the caller's IPC buffer. -/
+  | configure (capAddr : CPtr)
   | viaDecode
 
 /-- WS-ZA ZA5.1: the capability invocations the register file routes as
@@ -834,6 +841,9 @@ theorem decodeCapPtr_readReg (rf : RegisterFile) (r : RegName) :
           match routedInvocationSid? (readReg regs layout.syscallNumReg).val with
           | some sid => .invoke sid capAddr
           | none => .viaDecode
+      else if (readReg regs layout.syscallNumReg).val = SyscallId.schedContextConfigure.toNat ∧
+          msgInfo.length = layout.msgRegs.size + 1 then
+        .configure capAddr
       else .viaDecode
   else .viaDecode
 
@@ -887,7 +897,7 @@ theorem decodeSyscallArgsFromState_of_routedSignal
       refine ⟨_, hD .notificationSignal ‹_›, rfl, rfl, rfl,
         by simpa only [Array.size_map] using ‹0 < layout.msgRegs.size›,
         by simp only [Array.getElem_map, readReg_val_eq_word, Badge.ofWord_eq_ofNatMasked]⟩
-    · cases h
+    · split at h <;> cases h
   · cases h
 
 theorem decodeSyscallArgsFromState_of_routedWait
@@ -912,7 +922,7 @@ theorem decodeSyscallArgsFromState_of_routedWait
       repeat' (first | (cases h; done) | split at h)
       cases h
       exact ⟨_, hD .notificationWait ‹_›, rfl, rfl, rfl⟩
-    · cases h
+    · split at h <;> cases h
   · cases h
 
 /-- WS-ZA ZA4.3: what a routed yield pins about the decode — it succeeds, as
@@ -936,7 +946,7 @@ theorem decodeSyscallArgsFromState_of_routedYield
         decodeSyscallArgsFromState_of_routed st tid layout regs regCount _ mi sid hB hC hM hLen hS
       repeat' (first | (cases h; done) | split at h)
       exact ⟨_, hD .yield ‹_›, rfl, rfl⟩
-    · cases h
+    · split at h <;> cases h
   · cases h
 
 /-- WS-ZA ZA4.7: what a routed send pins about the decode — it succeeds, as
@@ -967,7 +977,7 @@ theorem decodeSyscallArgsFromState_of_routedSend
       cases h
       exact ⟨_, hD .send ‹_ = SyscallId.send.toNat ∧ _›.1, rfl, rfl, rfl, rfl,
         ‹_ = SyscallId.send.toNat ∧ _›.2, rfl, rfl⟩
-    · cases h
+    · split at h <;> cases h
   · cases h
 
 /-- WS-ZA ZA4.7: what a routed call pins about the decode — it succeeds, as
@@ -998,7 +1008,7 @@ theorem decodeSyscallArgsFromState_of_routedCall
       cases h
       exact ⟨_, hD .call ‹_ = SyscallId.call.toNat ∧ _›.1, rfl, rfl, rfl, rfl,
         ‹_ = SyscallId.call.toNat ∧ _›.2, rfl, rfl⟩
-    · cases h
+    · split at h <;> cases h
   · cases h
 
 /-- WS-ZA ZA4.7: what a routed reply pins about the decode — it succeeds, as
@@ -1027,7 +1037,7 @@ theorem decodeSyscallArgsFromState_of_routedReply
       repeat' (first | (cases h; done) | split at h)
       cases h
       exact ⟨_, hD .reply ‹_ = SyscallId.reply.toNat›, rfl, rfl, rfl, rfl, rfl⟩
-    · cases h
+    · split at h <;> cases h
   · cases h
 
 /-- WS-ZA ZA4.7: what a routed receive pins about the decode — it succeeds, as
@@ -1060,7 +1070,7 @@ theorem decodeSyscallArgsFromState_of_routedReceive
       · simp only [Array.getElem?_map, Array.getElem?_eq_getElem ‹0 < layout.msgRegs.size›,
           Option.map_some, CPtr.ofWord_toNat, ← readReg_val_eq_word]
       · exact absurd (Nat.lt_of_lt_of_le (Nat.pos_of_ne_zero hN) hLen) ‹¬0 < layout.msgRegs.size›
-    · cases h
+    · split at h <;> cases h
   · cases h
 
 /-- WS-ZA ZA4.7: what a routed reply-receive pins about the decode — it
@@ -1090,7 +1100,7 @@ theorem decodeSyscallArgsFromState_of_routedReplyRecv
       repeat' (first | (cases h; done) | split at h)
       cases h
       exact ⟨_, hD .replyRecv ‹_ = SyscallId.replyRecv.toNat›, rfl, rfl, rfl, rfl, rfl, rfl⟩
-    · cases h
+    · split at h <;> cases h
   · cases h
 
 /-- WS-ZA ZA5.1: what a routed invocation pins about the decode: it succeeds,
@@ -1121,7 +1131,49 @@ theorem decodeSyscallArgsFromState_of_routedInvoke
         cases h
         obtain ⟨hR, hN⟩ := routedInvocationSid?_some hSid
         exact ⟨_, hD sid hN, rfl, hR, rfl, rfl, rfl⟩
-    · cases h
+    · split at h <;> cases h
+  · cases h
+
+/-- WS-ZA ZA5.2: what a routed configure pins about the decode: as
+`.schedContextConfigure` at `capAddr`, with one overflow word, its words the
+layout's message registers and then overflow slot 0; it refuses exactly when
+that slot's read does. -/
+theorem decodeSyscallArgsFromState_of_routedConfigure
+    (st : SystemState) (tid : ThreadId)
+    (layout : SyscallRegisterLayout) (regs : RegisterFile) (regCount : Nat)
+    (capAddr : CPtr)
+    (h : registerRoutedSyscall layout regs regCount = .configure capAddr) :
+    ∃ msgInfo, decodeSyscallArgsFromState st tid layout regs regCount =
+      match readOverflowWord st tid 0 with
+      | .error e => .error e
+      | .ok w => .ok { capAddr, msgInfo, syscallId := .schedContextConfigure,
+                       msgRegs := layout.msgRegs.map (readReg regs) ++ #[(⟨w.toNat⟩ : RegValue)],
+                       inlineCount := layout.msgRegs.size, overflowCount := 1 } := by
+  unfold registerRoutedSyscall at h
+  split at h
+  · next hB =>
+    have hC := decodeCapPtr_readReg regs layout.capPtrReg
+    rcases hM : decodeMsgInfo (readReg regs layout.msgInfoReg) with e | mi
+    · simp only [hM] at h; cases h
+    simp only [hM] at h
+    split at h
+    · repeat' (first | (cases h; done) | split at h)
+    · next hLen =>
+      split at h
+      · next hS =>
+        cases h
+        refine ⟨mi, ?_⟩
+        rw [decodeSyscallArgsFromState_eq_impl]
+        unfold decodeSyscallArgsFromStateImpl
+        rw [if_pos hB]
+        have hId : decodeSyscallId (readReg regs layout.syscallNumReg) =
+            .ok .schedContextConfigure := by
+          simp only [decodeSyscallId, hS.1, SyscallId.ofNat_toNat]
+        simp only [hC, hM, hId, hS.2, Nat.not_succ_le_self, ↓reduceIte, mergeOverflowWords,
+          Array.size_map, Nat.add_sub_cancel_left, List.range_one, List.mapM_cons,
+          List.mapM_nil, bind, Except.bind, pure, Except.pure]
+        cases readOverflowWord st tid 0 <;> rfl
+      · cases h
   · cases h
 
 end SeLe4n.Kernel.Architecture.RegisterDecode

@@ -70,6 +70,35 @@ def priorityRescheduleOnCore (st : SystemState) (running? : Option CoreId)
     | none => .ok (st, none)
   else .ok (st, none)
 
+/-- **WS-ZA ZA5.2**: the seam's state, which every arm has — the local
+reschedule never refuses (`handleRescheduleSgiOnCore_eq_state`), so the seam
+never does either (`priorityRescheduleOnCore_eq_state`). -/
+@[inline] def priorityRescheduleOnCoreState (st : SystemState) (running? : Option CoreId)
+    (executingCore : CoreId) (shouldPreempt : Bool) : SystemState :=
+  if shouldPreempt then
+    match running? with
+    | some rc => if rc == executingCore then handleRescheduleOnCoreState st executingCore else st
+    | none => st
+  else st
+
+theorem priorityRescheduleOnCore_eq_state (st : SystemState) (running? : Option CoreId)
+    (executingCore : CoreId) (shouldPreempt : Bool) :
+    ∃ sgi, priorityRescheduleOnCore st running? executingCore shouldPreempt =
+      .ok (priorityRescheduleOnCoreState st running? executingCore shouldPreempt, sgi) := by
+  unfold priorityRescheduleOnCore priorityRescheduleOnCoreState
+  by_cases hP : shouldPreempt = true
+  · simp only [hP, ↓reduceIte]
+    cases running? with
+    | none => exact ⟨none, rfl⟩
+    | some rc =>
+      by_cases hE : (rc == executingCore) = true
+      · simp only [hE, ↓reduceIte, handleRescheduleSgiOnCore_eq_state]
+        exact ⟨none, rfl⟩
+      · simp only [hE, Bool.false_eq_true, ↓reduceIte]
+        exact ⟨_, rfl⟩
+  · simp only [hP, Bool.false_eq_true, ↓reduceIte]
+    exact ⟨none, rfl⟩
+
 -- WS-BP BP7.6 (v0.36.19): `priorityRescheduleEnqueueOnly` and
 -- `priorityRescheduleOnCoreLive` are retired.  They gated the local preemption on
 -- the context-restore seam; the restore is live, so the priority arms run

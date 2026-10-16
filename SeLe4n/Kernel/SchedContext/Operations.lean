@@ -64,6 +64,64 @@ def purgeReplenishmentOnCore (st : SystemState) (c : SeLe4n.Kernel.Concurrency.C
   let cleaned := ReplenishQueue.remove (st.scheduler.replenishQueueOnCore c) scId
   { st with scheduler := st.scheduler.setReplenishQueueOnCore c cleaned }
 
+/-- **WS-ZA ZA5.2**: does a replenish queue's entry list name `scId`? -/
+def replenishEntriesName (scId : SchedContextId) : List (SchedContextId × Nat) → Bool
+  | [] => false
+  | (id, _) :: rest => id == scId || replenishEntriesName scId rest
+
+/-- **WS-ZA ZA5.2**: the compiled `purgeReplenishmentOnCore`.  A queue that
+names no entry for `scId` and whose cached size is its length is what the
+removal would rebuild, so it is left as it is; a context with no pending
+replenishment is purged without a queue, scheduler or state cell. -/
+@[inline] def purgeReplenishmentOnCoreImpl (st : SystemState)
+    (c : SeLe4n.Kernel.Concurrency.CoreId) (scId : SchedContextId) : SystemState :=
+  if !replenishEntriesName scId (st.scheduler.replenishQueueOnCore c).entries &&
+      (st.scheduler.replenishQueueOnCore c).size ==
+        (st.scheduler.replenishQueueOnCore c).entries.length then st
+  else
+    let cleaned := ReplenishQueue.remove (st.scheduler.replenishQueueOnCore c) scId
+    { st with scheduler := st.scheduler.setReplenishQueueOnCore c cleaned }
+
+theorem replenishEntriesName_filter (scId : SchedContextId) :
+    ∀ l : List (SchedContextId × Nat), replenishEntriesName scId l = false →
+      l.filter (fun (id, _) => !(id == scId)) = l
+  | [], _ => rfl
+  | (id, t) :: rest, h => by
+    simp only [replenishEntriesName, Bool.or_eq_false_iff] at h
+    simp only [List.filter_cons, h.1, Bool.not_false, ↓reduceIte,
+      replenishEntriesName_filter scId rest h.2]
+
+@[csimp] theorem purgeReplenishmentOnCore_eq_impl :
+    @purgeReplenishmentOnCore = @purgeReplenishmentOnCoreImpl := by
+  funext st c scId
+  unfold purgeReplenishmentOnCore purgeReplenishmentOnCoreImpl
+  split
+  · next h =>
+    simp only [Bool.and_eq_true, Bool.not_eq_true', beq_iff_eq] at h
+    obtain ⟨hN, hS⟩ := h
+    have hRem : ReplenishQueue.remove (st.scheduler.replenishQueueOnCore c) scId =
+        st.scheduler.replenishQueueOnCore c := by
+      unfold ReplenishQueue.remove
+      rw [replenishEntriesName_filter scId _ hN]
+      cases hq : st.scheduler.replenishQueueOnCore c
+      simp only [hq] at hS
+      simp [hS]
+    have hSelf : st.scheduler.setReplenishQueueOnCore c (st.scheduler.replenishQueueOnCore c) =
+        st.scheduler := by
+      have hV : st.scheduler.replenishQueue.set c.val (st.scheduler.replenishQueue.get c)
+          c.isLt = st.scheduler.replenishQueue := by
+        apply Vector.ext
+        intro i hi
+        rw [Vector.getElem_set]
+        split
+        · next h => subst h; rfl
+        · rfl
+      simp only [SchedulerState.setReplenishQueueOnCore, SchedulerState.replenishQueueOnCore, hV]
+    rw [hRem]
+    dsimp only
+    rw [hSelf]
+  · rfl
+
 /-- WS-SM SM8.B: drop `scId`'s replenishment from **every** core's queue.
 
 The form for a purge whose home core cannot be computed — an unbind whose bound
@@ -329,6 +387,62 @@ def checkAdmission (st : SystemState) (candidate : SchedContext)
     (excludeId : Option ObjId := none) : Bool :=
   admissionCheck (collectSchedContexts st excludeId) candidate
 
+/-- **WS-ZA ZA5.2**: the utilization admission sums, added to `acc`, walking the
+object index itself: no list of contexts is collected and no closure is built.
+The context `ex` is left out when `hasEx` holds — a reconfiguration's own — as
+two plain arguments, so no `Option` is built to carry it. -/
+def admissionUtilizationFrom (st : SystemState) (hasEx : Bool) (ex : ObjId) :
+    List ObjId → Nat → Nat
+  | [], acc => acc
+  | oid :: rest, acc =>
+    admissionUtilizationFrom st hasEx ex rest
+      (if hasEx && ex == oid then acc
+       else match st.getSchedContext? (SchedContextId.ofObjId oid) with
+         | some sc => acc + sc.utilizationPerMille
+         | none => acc)
+
+/-- `admissionUtilizationFrom`'s two plain arguments for an optional exclusion. -/
+@[inline] def admissionUtilizationOf (st : SystemState) (excludeId : Option ObjId) : Nat :=
+  match excludeId with
+  | some e => admissionUtilizationFrom st true e st.objectIndex 0
+  | none => admissionUtilizationFrom st false ⟨0⟩ st.objectIndex 0
+
+theorem admissionUtilizationFrom_eq (st : SystemState) (excludeId : Option ObjId)
+    (l : List ObjId) (acc : Nat) :
+    admissionUtilizationFrom st excludeId.isSome (excludeId.getD ⟨0⟩) l acc =
+      (l.filterMap fun oid =>
+        if excludeId == some oid then none
+        else st.getSchedContext? (SchedContextId.ofObjId oid)).foldl
+        (fun acc sc => acc + sc.utilizationPerMille) acc := by
+  induction l generalizing acc with
+  | nil => rfl
+  | cons oid rest ih =>
+    have hEx : (excludeId.isSome && excludeId.getD ⟨0⟩ == oid) = (excludeId == some oid) := by
+      cases excludeId <;> simp
+    simp only [admissionUtilizationFrom, ih, List.filterMap_cons, hEx]
+    by_cases h : (excludeId == some oid) = true
+    · simp only [h, ↓reduceIte]
+    · simp only [h, Bool.false_eq_true, ↓reduceIte]
+      cases st.getSchedContext? (SchedContextId.ofObjId oid) <;> rfl
+
+theorem admissionUtilizationOf_eq (st : SystemState) (excludeId : Option ObjId) :
+    admissionUtilizationOf st excludeId =
+      (collectSchedContexts st excludeId).foldl
+        (fun acc sc => acc + sc.utilizationPerMille) 0 := by
+  rw [collectSchedContexts, ← admissionUtilizationFrom_eq]
+  cases excludeId <;> rfl
+
+/-- **WS-ZA ZA5.2**: the compiled `checkAdmission` — the sum taken over the
+object index in place (`admissionUtilizationFrom`), so admitting a
+reconfiguration builds nothing. -/
+@[inline] def checkAdmissionImpl (st : SystemState) (candidate : SchedContext)
+    (excludeId : Option ObjId := none) : Bool :=
+  admissionUtilizationOf st excludeId + candidate.utilizationPerMille ≤ 1000
+
+@[csimp] theorem checkAdmission_eq_impl : @checkAdmission = @checkAdmissionImpl := by
+  funext st candidate excludeId
+  simp only [checkAdmission, checkAdmissionImpl, admissionCheck, admissionUtilizationOf_eq]
+
 -- ============================================================================
 -- Z5-F3: schedContextConfigure
 -- ============================================================================
@@ -583,6 +697,135 @@ def schedContextConfigure (vScId : ValidObjId) (budget period priority deadline 
         else
           .error .resourceExhausted
       | none => .error .objectNotFound
+
+/-- **WS-ZA ZA5.2**: a configure's one fresh replenishment, written over the
+list it replaces: when the context held an entry, that cell is rewritten
+(`freshReplenishment_eq`), so a configure of an exclusively held context builds
+no list cell. -/
+@[inline] def freshReplenishment (old : List ReplenishmentEntry) (budget eligibleAt : Nat) :
+    List ReplenishmentEntry :=
+  match old with
+  | e :: _ => [{ e with amount := ⟨budget⟩, eligibleAt := eligibleAt }]
+  | [] => [{ amount := ⟨budget⟩, eligibleAt := eligibleAt }]
+
+theorem freshReplenishment_eq (old : List ReplenishmentEntry) (budget eligibleAt : Nat) :
+    freshReplenishment old budget eligibleAt = [{ amount := ⟨budget⟩, eligibleAt := eligibleAt }] := by
+  cases old <;> rfl
+
+/-- **WS-ZA ZA5.2**: the context `schedContextConfigure` stores, as a function of
+the stored one, so the store can rewrite it in its slot. -/
+@[inline] def configuredSchedContext (budget period priority deadline domain timer : Nat)
+    (sc : SchedContext) : SchedContext :=
+  { sc with
+    budget := ⟨budget⟩
+    period := ⟨period⟩
+    priority := ⟨priority⟩
+    deadline := ⟨deadline⟩
+    domain := ⟨domain⟩
+    budgetRemaining := ⟨budget⟩
+    replenishments := freshReplenishment sc.replenishments budget (timer + period) }
+
+/-- **WS-ZA ZA5.2**: `schedContextConfigure`'s checks, read before any write:
+the parameters, the context, admission (`checkAdmission` of the configured
+context, which reads only its budget and period) and a store that changes only
+the object table.  When they pass the configure's state is
+`schedContextConfigurePerform` (`schedContextConfigure_of_admitted`). -/
+@[inline] def schedContextConfigureAdmitted (st : SystemState) (vScId : ValidObjId)
+    (budget period priority deadline domain : Nat) : Bool :=
+  match validateSchedContextParams budget period priority deadline domain with
+  | .error _ => false
+  | .ok () =>
+    match st.getSchedContext? (SchedContextId.ofObjId vScId.val) with
+    | none => false
+    | some _ =>
+      decide (admissionUtilizationFrom st true vScId.val st.objectIndex 0 +
+          (Bandwidth.mk budget period).utilization ≤ 1000) &&
+        storeLeavesIndexAndTypes st vScId.val .schedContext
+
+/-- **WS-ZA ZA5.2**: `schedContextConfigure`'s writes: the replenishment purge,
+the context rewritten in its slot (`updateSchedContext`), and, for a bound
+context, the specification's propagation over the stored state. -/
+@[inline] def schedContextConfigurePerform (st : SystemState) (vScId : ValidObjId)
+    (budget period priority deadline domain : Nat) : SystemState :=
+  match st.getSchedContext? (SchedContextId.ofObjId vScId.val) with
+  | none => st
+  | some sc =>
+    let scIdTyped : SchedContextId := ⟨vScId.val.toNat⟩
+    let stCleaned := purgeReplenishmentOnCore st (schedContextReplenishHome st sc) scIdTyped
+    let stStored := stCleaned.updateSchedContext (SchedContextId.ofObjId vScId.val)
+      (configuredSchedContext budget period priority deadline domain st.machine.timer)
+    match sc.boundThread with
+    | none => stStored
+    | some boundTid =>
+      match stStored.getTcbWitnessed? boundTid with
+      | some ⟨boundTcb, hBound⟩ =>
+        PriorityInheritance.repropagateFromWaiter
+          (markKeyChangeFor (schedContextConfigureBoundPropagate stStored scIdTyped
+            boundTid boundTcb hBound priority domain) boundTid
+            (effectiveSchedParams st boundTcb)) boundTid
+          (determineTargetCore st boundTid) st.objectIndex.length
+      | none => stStored
+
+/-- **WS-ZA ZA5.2**: an admitted configure succeeds, and its state is the
+perform's. -/
+theorem schedContextConfigure_of_admitted (st : SystemState) (vScId : ValidObjId)
+    (budget period priority deadline domain : Nat)
+    (h : schedContextConfigureAdmitted st vScId budget period priority deadline domain = true) :
+    schedContextConfigure vScId budget period priority deadline domain st =
+      .ok ((), schedContextConfigurePerform st vScId budget period priority deadline domain) := by
+  unfold schedContextConfigureAdmitted at h
+  unfold schedContextConfigure schedContextConfigurePerform
+  cases hV : validateSchedContextParams budget period priority deadline domain with
+  | error e => simp [hV] at h
+  | ok u =>
+    cases u
+    cases hS : st.getSchedContext? (SchedContextId.ofObjId vScId.val) with
+    | none => simp [hV, hS] at h
+    | some sc =>
+      simp only [hV, hS, Bool.and_eq_true, decide_eq_true_eq] at h
+      obtain ⟨hAdm, hLeaves⟩ := h
+      have hCheck : checkAdmission st
+          { sc with budget := ⟨budget⟩, period := ⟨period⟩, priority := ⟨priority⟩,
+                    deadline := ⟨deadline⟩, domain := ⟨domain⟩, budgetRemaining := ⟨budget⟩,
+                    replenishments := [{ amount := ⟨budget⟩,
+                                         eligibleAt := st.machine.timer + period }] }
+          (some vScId.val) = true := by
+        rw [checkAdmission_eq_impl]
+        simpa [checkAdmissionImpl, admissionUtilizationOf, SchedContext.utilizationPerMille,
+          SchedContext.bandwidth] using hAdm
+      dsimp only
+      rw [if_pos hCheck]
+      have hCfg : configuredSchedContext budget period priority deadline domain st.machine.timer sc =
+          { sc with budget := ⟨budget⟩, period := ⟨period⟩, priority := ⟨priority⟩,
+                    deadline := ⟨deadline⟩, domain := ⟨domain⟩, budgetRemaining := ⟨budget⟩,
+                    replenishments := [{ amount := ⟨budget⟩,
+                                         eligibleAt := st.machine.timer + period }] } := by
+        simp only [configuredSchedContext, freshReplenishment_eq]
+      generalize hC : purgeReplenishmentOnCore st (schedContextReplenishHome st sc)
+        ⟨vScId.val.toNat⟩ = stC
+      have hCObj : stC.objects = st.objects := by rw [← hC]; rfl
+      have hCIdx : stC.objectIndexSet = st.objectIndexSet := by rw [← hC]; rfl
+      have hCLc : stC.lifecycle = st.lifecycle := by rw [← hC]; rfl
+      have hLeavesC : storeLeavesIndexAndTypes stC vScId.val
+          (KernelObject.schedContext (configuredSchedContext budget period priority deadline
+            domain st.machine.timer sc)).objectType = true := by
+        simpa [storeLeavesIndexAndTypes, hCObj, hCIdx, hCLc, KernelObject.objectType]
+          using hLeaves
+      rw [← hCfg, storeObject_eq_of_leaves hLeavesC]
+      have hSC : stC.getSchedContext? (SchedContextId.ofObjId vScId.val) = some sc := by
+        rw [SystemState.getSchedContext?_frame hCObj]; exact hS
+      have hStored : stC.updateSchedContext (SchedContextId.ofObjId vScId.val)
+          (configuredSchedContext budget period priority deadline domain st.machine.timer) =
+          { stC with objects := stC.objects.insert vScId.val (KernelObject.schedContext
+              (configuredSchedContext budget period priority deadline domain
+                st.machine.timer sc)) } :=
+        SystemState.updateSchedContext_eq_of_some hSC _
+      rw [hStored]
+      cases sc.boundThread with
+      | none => rfl
+      | some boundTid =>
+        simp only []
+        split <;> rfl
 
 -- ============================================================================
 -- Z5-G1/G2/G3: schedContextBind
@@ -875,6 +1118,147 @@ def schedContextBind (vScId : ValidObjId) (vThreadId : ValidThreadId) : Kernel U
         | none => .error .objectNotFound
     | none => .error .objectNotFound
 
+/-- **WS-ZA ZA5.2**: `schedContextBind`'s checks, read before anything is
+written: the context is stored, binds no thread and heads no reply stack; the
+thread is stored, shares the context's domain, is owed no context by a live
+reply stack, and is unbound.  When they pass the operation's state is
+`schedContextBindPerform` (`schedContextBind_of_admitted`), so the routed arm
+writes the context and the thread in place instead of holding the pre-state for
+a refusal that cannot come. -/
+@[inline] def schedContextBindAdmitted (st : SystemState) (vScId : ValidObjId)
+    (vThreadId : ValidThreadId) : Bool :=
+  match st.getSchedContextWitnessed? (SchedContextId.ofObjId vScId.val) with
+  | none => false
+  | some ⟨sc, _⟩ =>
+    if sc.boundThread.isSome then false
+    else if sc.scReply.isSome then false
+    else
+      match st.getTcb? vThreadId.val with
+      | none => false
+      | some tcb =>
+        if tcb.domain != sc.domain then false
+        else if replyFrameOnLiveStack st tcb then false
+        else
+          match tcb.schedContextBinding with
+          | .unbound => true
+          | _ => false
+
+/-- **WS-ZA ZA5.2**: `schedContextBind`'s writes, the operation's success arm
+written out over the same lookups: the context names the thread, the thread is
+bound at the context's priority, the run-queue stage re-keys or places it on its
+home core, and the key hook flags the cores whose decision the move stales. -/
+@[inline] def schedContextBindPerform (st : SystemState) (vScId : ValidObjId)
+    (vThreadId : ValidThreadId) : SystemState :=
+  match st.getSchedContextWitnessed? (SchedContextId.ofObjId vScId.val) with
+  | none => st
+  | some ⟨sc, hSc⟩ =>
+    match st.getTcb? vThreadId.val with
+    | none => st
+    | some tcb =>
+      let scIdTyped : SchedContextId := ⟨vScId.val.toNat⟩
+      let updatedSc := { sc with boundThreadCode := SeLe4n.ThreadId.optCode (some vThreadId.val),
+                                 donationOrigin := none }
+      let st1 := st.rewriteObject vScId.val (KernelObject.schedContext updatedSc)
+        (SystemState.rewriteAdmissible_schedContext hSc updatedSc)
+      let st2 := st1.updateTcb vThreadId.val fun t =>
+        { t with scBindingScCode := SeLe4n.Kernel.SchedContextBinding.scCode (SchedContextBinding.bound scIdTyped), scBindingOwnerCode := 0,
+                 priority := sc.priority }
+      let bindHome := determineTargetCore st2 vThreadId.val
+      let st3 := if st2.queuedOn bindHome vThreadId.val then
+        st2.runRequeueOnCore bindHome vThreadId.val (resolveInsertPriority st2 vThreadId.val sc)
+      else if bindPlacesParkedThread st2 vThreadId.val tcb sc then
+        (st2.runEnqueueOnCore bindHome vThreadId.val
+          (resolveInsertPriority st2 vThreadId.val sc)).markReschedulePendingOnCore bindHome
+      else st2
+      markKeyChangeFor st3 vThreadId.val (effectiveSchedParams st tcb)
+
+/-- **WS-ZA ZA5.2**: an admitted bind succeeds, and its state is the perform's. -/
+theorem schedContextBind_of_admitted (st : SystemState) (vScId : ValidObjId)
+    (vThreadId : ValidThreadId) (h : schedContextBindAdmitted st vScId vThreadId = true) :
+    schedContextBind vScId vThreadId st = .ok ((), schedContextBindPerform st vScId vThreadId) := by
+  unfold schedContextBindAdmitted at h
+  unfold schedContextBind schedContextBindPerform
+  cases hW : st.getSchedContextWitnessed? (SchedContextId.ofObjId vScId.val) with
+  | none => simp [hW] at h
+  | some w =>
+    obtain ⟨sc, hSc⟩ := w
+    simp only [hW] at h ⊢
+    by_cases hB : sc.boundThread.isSome = true
+    · simp [hB] at h
+    by_cases hR : sc.scReply.isSome = true
+    · simp [hB, hR] at h
+    simp only [hB, hR, Bool.false_eq_true, ↓reduceIte] at h ⊢
+    cases hT : st.getTcb? vThreadId.val with
+    | none => simp [hT] at h
+    | some tcb =>
+      simp only [hT] at h ⊢
+      by_cases hD : (tcb.domain != sc.domain) = true
+      · simp [hD] at h
+      by_cases hL : replyFrameOnLiveStack st tcb = true
+      · simp [hD, hL] at h
+      simp only [hD, hL, Bool.false_eq_true, ↓reduceIte] at h ⊢
+      cases hBind : tcb.schedContextBinding with
+      | unbound => rfl
+      | bound _ => simp [hBind] at h
+      | donated _ _ => simp [hBind] at h
+
+/-- **WS-ZA ZA5.2**: the compiled `schedContextBindPerform`.  Every read of the
+pre-state — the context's priority and budget, the thread's runnability and its
+old key as three parts — is made before the first write, so neither the state,
+the context nor the TCB is held across a write and each is written in its slot
+(`updateSchedContext`, `updateTcb`); the placement reads the written state only
+(`schedContextBindPerform_eq_impl`). -/
+@[inline] def schedContextBindPerformImpl (st : SystemState) (vScId : ValidObjId)
+    (vThreadId : ValidThreadId) : SystemState :=
+  match st.getSchedContext? (SchedContextId.ofObjId vScId.val) with
+  | none => st
+  | some sc =>
+    match st.getTcb? vThreadId.val with
+    | none => st
+    | some tcb =>
+      let scPrio := sc.priority
+      let scFunded := sc.budgetRemaining.isPositive
+      let runnable := tcb.isRunnable
+      let p0 := tcb.boostedPriority
+      let d0 := effectiveDeadline st tcb
+      let dom0 := tcb.domain
+      let scIdTyped : SchedContextId := ⟨vScId.val.toNat⟩
+      let st1 := st.updateSchedContext (SchedContextId.ofObjId vScId.val) fun s =>
+        { s with boundThreadCode := SeLe4n.ThreadId.optCode (some vThreadId.val),
+                 donationOrigin := none }
+      let st2 := st1.updateTcb vThreadId.val fun t =>
+        { t with scBindingScCode := SeLe4n.Kernel.SchedContextBinding.scCode (SchedContextBinding.bound scIdTyped), scBindingOwnerCode := 0,
+                 priority := scPrio }
+      let bindHome := determineTargetCore st2 vThreadId.val
+      let insertPrio : SeLe4n.Priority := match st2.getTcb? vThreadId.val with
+        | some t => (resolveEffectivePrioDeadline st2 t).1
+        | none => scPrio
+      let st3 := if st2.queuedOn bindHome vThreadId.val then
+        st2.runRequeueOnCore bindHome vThreadId.val insertPrio
+      else if !isIdleThreadId vThreadId.val && (placedCoreOf? st2 vThreadId.val).isNone &&
+          runnable && scFunded then
+        (st2.runEnqueueOnCore bindHome vThreadId.val insertPrio).markReschedulePendingOnCore bindHome
+      else st2
+      markKeyChangeParts st3 vThreadId.val p0 d0 dom0
+
+@[csimp] theorem schedContextBindPerform_eq_impl :
+    @schedContextBindPerform = @schedContextBindPerformImpl := by
+  funext st vScId vThreadId
+  unfold schedContextBindPerform schedContextBindPerformImpl
+  have hVal := SystemState.getSchedContextWitnessed?_val st (SchedContextId.ofObjId vScId.val)
+  rcases hW : st.getSchedContextWitnessed? (SchedContextId.ofObjId vScId.val) with _ | ⟨sc, hS⟩
+  · rw [hW] at hVal
+    simp only [Option.map_none] at hVal
+    simp only [← hVal]
+  · simp only [hS]
+    cases hT : st.getTcb? vThreadId.val with
+    | none => rfl
+    | some tcb =>
+      dsimp only
+      rw [SystemState.updateSchedContext_eq_of_some hS, markKeyChangeFor_eq_parts,
+        effectiveSchedParams_eq_parts]
+      rfl
+
 -- ============================================================================
 -- Z5-H1/H2/H3: schedContextUnbind
 -- ============================================================================
@@ -1158,6 +1542,154 @@ def schedContextUnbind (vScId : ValidObjId) : Kernel Unit :=
           let scIdTyped : SchedContextId := ⟨vScId.val.toNat⟩
           .ok ((), purgeReplenishmentFromAllCores st1 scIdTyped)
     | none => .error .objectNotFound
+
+/-- **WS-ZA ZA5.2**: `schedContextUnbind`'s checks: the context is stored and
+binds a thread, and that thread, if stored, holds the context by binding rather
+than by donation.  When they pass the operation's state is
+`schedContextUnbindPerform` (`schedContextUnbind_of_admitted`). -/
+@[inline] def schedContextUnbindAdmitted (st : SystemState) (vScId : ValidObjId) : Bool :=
+  match st.getSchedContextWitnessed? (SchedContextId.ofObjId vScId.val) with
+  | none => false
+  | some ⟨sc, _⟩ =>
+    match sc.boundThread with
+    | none => false
+    | some tid =>
+      match st.getTcb? tid with
+      | some tcb => !tcb.schedContextBinding.isDonated
+      | none => true
+
+/-- **WS-ZA ZA5.2**: `schedContextUnbind`'s writes, both success arms written
+out over the same lookups. -/
+@[inline] def schedContextUnbindPerform (st : SystemState) (vScId : ValidObjId) : SystemState :=
+  match st.getSchedContextWitnessed? (SchedContextId.ofObjId vScId.val) with
+  | none => st
+  | some ⟨sc, hSc⟩ =>
+    match sc.boundThread with
+    | none => st
+    | some tid =>
+      match st.getTcb? tid with
+      | some tcb =>
+        let unbindHome := determineTargetCore st tid
+        let runCore? := runningCoreOf? st tid
+        let wasCurrent := runCore?.isSome
+        let sched0 := match runCore? with
+          | some runCore => (st.scheduler.setCurrentOnCore runCore none)
+              |>.markReschedulePendingOnCore runCore
+          | none => st.scheduler
+        let updatedTcb := { tcb with scBindingScCode := 0, scBindingOwnerCode := 0 }
+        let legacyPrio := updatedTcb.boostedPriority
+        let st1 : SystemState := { st with scheduler := sched0 }
+        let updatedSc := { sc with boundThreadCode := 0, isActive := false,
+                                   donationOrigin := none }
+        let st2 := st1.rewriteObject vScId.val (KernelObject.schedContext updatedSc)
+          (SystemState.rewriteAdmissible_schedContext hSc updatedSc)
+        let st3 := st2.updateTcb tid fun t =>
+          { t with scBindingScCode := 0, scBindingOwnerCode := 0 }
+        let st3q := schedContextUnbindQueueStage st3 unbindHome tid legacyPrio wasCurrent
+        let scIdTyped : SchedContextId := ⟨vScId.val.toNat⟩
+        let st4 := purgeReplenishmentOnCore st3q unbindHome scIdTyped
+        markKeyChangeFor st4 tid (effectiveSchedParams st tcb)
+      | none =>
+        let updatedSc := { sc with boundThreadCode := 0, isActive := false,
+                                   donationOrigin := none }
+        let st1 := st.rewriteObject vScId.val (KernelObject.schedContext updatedSc)
+          (SystemState.rewriteAdmissible_schedContext hSc updatedSc)
+        let scIdTyped : SchedContextId := ⟨vScId.val.toNat⟩
+        purgeReplenishmentFromAllCores st1 scIdTyped
+
+/-- **WS-ZA ZA5.2**: an admitted unbind succeeds, and its state is the
+perform's. -/
+theorem schedContextUnbind_of_admitted (st : SystemState) (vScId : ValidObjId)
+    (h : schedContextUnbindAdmitted st vScId = true) :
+    schedContextUnbind vScId st = .ok ((), schedContextUnbindPerform st vScId) := by
+  unfold schedContextUnbindAdmitted at h
+  unfold schedContextUnbind schedContextUnbindPerform
+  cases hW : st.getSchedContextWitnessed? (SchedContextId.ofObjId vScId.val) with
+  | none => simp [hW] at h
+  | some w =>
+    obtain ⟨sc, hSc⟩ := w
+    simp only [hW] at h ⊢
+    cases hB : sc.boundThread with
+    | none => simp [hB] at h
+    | some tid =>
+      simp only [hB] at h ⊢
+      cases hT : st.getTcb? tid with
+      | none => rfl
+      | some tcb =>
+        simp only [hT] at h ⊢
+        have hD : tcb.schedContextBinding.isDonated = false := by simpa using h
+        simp only [hD, Bool.false_eq_true, ↓reduceIte]
+
+/-- **WS-ZA ZA5.2**: the compiled `schedContextUnbindPerform`.  The bound
+thread is read from the context's code, and every read of the pre-state — the
+home core, the core running the thread, its old key as three parts — is made
+before the first write, so neither the state, the context nor the TCB is held
+across a write and each is written in its slot
+(`schedContextUnbindPerform_eq_impl`). -/
+@[inline] def schedContextUnbindPerformImpl (st : SystemState) (vScId : ValidObjId) :
+    SystemState :=
+  match st.getSchedContext? (SchedContextId.ofObjId vScId.val) with
+  | none => st
+  | some sc =>
+    match sc.boundThreadCode with
+    | 0 => st
+    | k + 1 =>
+      let tid : SeLe4n.ThreadId := ⟨k⟩
+      let scIdTyped : SchedContextId := ⟨vScId.val.toNat⟩
+      let clear := fun (s : SchedContext) =>
+        { s with boundThreadCode := 0, isActive := false, donationOrigin := none }
+      match st.getTcb? tid with
+      | some tcb =>
+        let unbindHome := determineTargetCore st tid
+        let runCore? := runningCoreOf? st tid
+        let wasCurrent := runCore?.isSome
+        let legacyPrio := tcb.boostedPriority
+        let p0 := tcb.boostedPriority
+        let d0 := effectiveDeadline st tcb
+        let dom0 := tcb.domain
+        let sched0 := match runCore? with
+          | some runCore => (st.scheduler.setCurrentOnCore runCore none)
+              |>.markReschedulePendingOnCore runCore
+          | none => st.scheduler
+        let st1 : SystemState := { st with scheduler := sched0 }
+        let st2 := st1.updateSchedContext (SchedContextId.ofObjId vScId.val) clear
+        let st3 := st2.updateTcb tid fun t =>
+          { t with scBindingScCode := 0, scBindingOwnerCode := 0 }
+        let st3q := schedContextUnbindQueueStage st3 unbindHome tid legacyPrio wasCurrent
+        let st4 := purgeReplenishmentOnCore st3q unbindHome scIdTyped
+        markKeyChangeParts st4 tid p0 d0 dom0
+      | none =>
+        let st1 := st.updateSchedContext (SchedContextId.ofObjId vScId.val) clear
+        purgeReplenishmentFromAllCores st1 scIdTyped
+
+@[csimp] theorem schedContextUnbindPerform_eq_impl :
+    @schedContextUnbindPerform = @schedContextUnbindPerformImpl := by
+  funext st vScId
+  unfold schedContextUnbindPerform schedContextUnbindPerformImpl
+  have hVal := SystemState.getSchedContextWitnessed?_val st (SchedContextId.ofObjId vScId.val)
+  rcases hW : st.getSchedContextWitnessed? (SchedContextId.ofObjId vScId.val) with _ | ⟨sc, hS⟩
+  · rw [hW] at hVal
+    simp only [Option.map_none] at hVal
+    simp only [← hVal]
+  · simp only [hS]
+    have hB : sc.boundThread = SeLe4n.ThreadId.ofOptCode sc.boundThreadCode := rfl
+    rw [hB]
+    rcases hC : sc.boundThreadCode with _ | k
+    · rfl
+    · simp only [SeLe4n.ThreadId.ofOptCode]
+      cases hT : st.getTcb? (⟨k⟩ : SeLe4n.ThreadId) with
+      | none =>
+        dsimp only
+        have hS' : st.getSchedContext? (SchedContextId.ofObjId vScId.val) = some sc := hS
+        rw [SystemState.updateSchedContext_eq_of_some hS']
+        rfl
+      | some tcb =>
+        dsimp only
+        have hS1 : ∀ sch, ({ st with scheduler := sch } : SystemState).getSchedContext?
+            (SchedContextId.ofObjId vScId.val) = some sc := fun _ => hS
+        rw [SystemState.updateSchedContext_eq_of_some (hS1 _), markKeyChangeFor_eq_parts,
+          effectiveSchedParams_eq_parts]
+        rfl
 
 -- ============================================================================
 -- Z5-I1/I2: schedContextYieldTo (kernel-internal)
