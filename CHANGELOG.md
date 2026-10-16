@@ -1,3 +1,41 @@
+## v0.36.93 — WS-ZA ZA4.7 (reply-receive): a reply-receive that answers its caller and blocks allocates nothing
+
+**A reply-receive that answers its caller and then blocks now allocates
+nothing.**  This is a server's steady loop.  The entry decodes it straight from
+the register file, and the executed form, the reply's in-place writes
+followed by the receive's, is proven equal to the specification's.
+
+Normal-build allocations per syscall (QEMU exerciser, core 0), against
+`v0.36.92`:
+
+| Scenario | v0.36.92 | v0.36.93 |
+|---|---|---|
+| reply-receive | 118 | 0 |
+
+Every other measured scenario stays at 0.  The first signal after boot reads 2.
+
+- **Routed on the registers.**  The entry decodes a reply-receive from the
+  register file and proves the routed decode equal to the general one
+  (`decodeSyscallArgsFromState_of_routedReplyRecv`).
+- **Reply then block, in place.**  When the reply is at most four words and
+  no sender waits on the endpoint, the reply's message is read from the
+  server's registers, the caller's frame is written, and the server is parked
+  in place (`replyRecvOnCore_blocks_inPlace`,
+  `replyRecvOnCore_blocks_delivered`).  This is proven equal to the
+  specification arm (`endpointReplyRecvCheckedArmR_eq`,
+  `dispatchReplyRecvCheckedR_eq`).
+- **Checks before writes.**  Every check of the receive leg is decided on the
+  pre-state and carried across the reply leg
+  (`storeReplyRendezvous_receiveGuard`).  That includes the whole-table scan
+  for a stashed reply, which reads one code per object (`stashCode`) that no
+  write of the reply leg moves (`replyIsStashed_of_stashView`,
+  `RHTable.fold_eq_of_slotView`).  Whether the consumed reply is free is read
+  off its links rather than from a built record (`Reply.consumedIsFree`).
+- **Still to measure.**  A reply-receive whose receive leg finds a sender
+  already waiting runs the general arm.  The exerciser does not measure it
+  yet, so it is measured with ZA4's remaining scenarios
+  (`docs/planning/ZERO_ALLOCATION_SYSCALL_PLAN.md` ZA4.7 (d)).
+
 ## v0.36.92 — WS-ZA ZA4.7 (blocked senders): a sender that blocks keeps its message in its registers; send that blocks and receive from a blocked sender allocate nothing
 
 **A send that blocks and a receive that takes a blocked sender's message now

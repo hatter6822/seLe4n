@@ -946,7 +946,7 @@ or the footprint is about a different operation.  All three previously spelled
 out the two-level match, and both live spellings collapse a dangling reply and an
 unlinked one onto `.replyCapInvalid`, so nothing is lost by returning `Option`
 here and nothing can drift by having one place to change. -/
-def replyAnsweredCaller? (st : SystemState) (rid : SeLe4n.ReplyId) :
+@[inline] def replyAnsweredCaller? (st : SystemState) (rid : SeLe4n.ReplyId) :
     Option SeLe4n.ThreadId :=
   (st.getReply? rid).bind (·.caller)
 

@@ -121,4 +121,56 @@ theorem returnFrameOfMessage_regMessageBody (layout : SeLe4n.SyscallRegisterLayo
     regMessageInfoWord, regMessageBody_size,
     regMessageBody_word, Nat.add_zero]
 
+/-- The body a reply-receive delivers: its message registers after the first,
+which names the reply capability (MR0).  Read as the specification reads it,
+the register-routed body with its first word dropped. -/
+@[inline] def regReplyRecvBody (layout : SeLe4n.SyscallRegisterLayout) (rf : SeLe4n.RegisterFile)
+    (len : Nat) : Array SeLe4n.RegValue :=
+  (regMessageBody layout rf len).extract 1 (regMessageBody layout rf len).size
+
+theorem regReplyRecvBody_size (layout : SeLe4n.SyscallRegisterLayout) (rf : SeLe4n.RegisterFile)
+    (len : Nat) : (regReplyRecvBody layout rf len).size = regMessageLength layout len - 1 := by
+  simp only [regReplyRecvBody, Array.size_extract, regMessageBody_size]
+  omega
+
+theorem regReplyRecvBody_word (layout : SeLe4n.SyscallRegisterLayout) (rf : SeLe4n.RegisterFile)
+    (len : Nat) (i : Nat) :
+    ((((regReplyRecvBody layout rf len)[i]?).map SeLe4n.RegValue.val).getD 0).toUInt64 =
+      regMessageWord layout rf len (i + 1) := by
+  rw [← regMessageBody_word]
+  unfold regReplyRecvBody
+  rw [Array.getElem?_extract]
+  split
+  · next h => rw [Nat.add_comm]
+  · next h =>
+    rw [Array.getElem?_eq_none (by omega)]
+
+/-- The message-info word a reply-receive's delivered frame carries.  Out of
+line, as `regMessageInfoWord`. -/
+@[noinline] def regReplyRecvInfoWord (layout : SeLe4n.SyscallRegisterLayout) (len : Nat) :
+    UInt64 :=
+  (({ length := min (min (regMessageLength layout len - 1) 4) maxMessageRegisters
+      extraCaps := min 0 Model.maxExtraCaps
+      label := min 0 (errorLabelBase - 1) } : MessageInfo).encode).toUInt64
+
+/-- The frame a reply-receive of at most four delivered words writes:
+`returnFrameOfMessage` of its body (`returnFrameOfMessage_regReplyRecvBody`),
+each word read from the register file one register past MR0. -/
+@[inline] def regReplyRecvFrame (layout : SeLe4n.SyscallRegisterLayout)
+    (rf : SeLe4n.RegisterFile) (len : Nat) (badge : Option SeLe4n.Badge) : SyscallReturnFrame :=
+  { x0 := badgeWordOrZero badge
+    x1 := regReplyRecvInfoWord layout len
+    x2 := regMessageWord layout rf len 1
+    x3 := regMessageWord layout rf len 2
+    x4 := regMessageWord layout rf len 3
+    x5 := regMessageWord layout rf len 4 }
+
+theorem returnFrameOfMessage_regReplyRecvBody (layout : SeLe4n.SyscallRegisterLayout)
+    (rf : SeLe4n.RegisterFile) (len : Nat) (badge : Option SeLe4n.Badge) :
+    returnFrameOfMessage
+        { registers := regReplyRecvBody layout rf len, caps := #[], badge := badge } 0 0 =
+      regReplyRecvFrame layout rf len badge := by
+  simp only [returnFrameOfMessage, returnMessageInfo, regReplyRecvFrame, badgeWordOrZero,
+    regReplyRecvInfoWord, regReplyRecvBody_size, regReplyRecvBody_word, Nat.add_zero]
+
 end SeLe4n.Kernel.Architecture
