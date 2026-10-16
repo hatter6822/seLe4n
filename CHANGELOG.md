@@ -1,3 +1,68 @@
+## v0.36.96 — WS-ZA ZA5.1 (routed invocations): every capability invocation with plain arguments runs on the register file
+
+**The general syscall path is gone from 27 capability invocations.**  Each
+built a decode record, its message-register array, the taint plan, the
+dispatcher's arm closures and the resolver's result, and read its argument
+words as numbers.  They now run on the caller's register file, as the IPC
+syscalls do; what they still allocate is the operation's own (slot, tree and
+object writes and the store's copy), which ZA5.2 to ZA5.4 take to zero.
+
+Normal-build allocations per syscall (QEMU exerciser, core 0; first call /
+steady state where they differ), before on the `v0.36.95` general path and
+after:
+
+| Scenario | general path | routed |
+|---|---|---|
+| CSpace copy | 64–73 | 55 / 46 |
+| CSpace delete | 49 | 31 |
+| notification bind | 42 | 20 |
+| notification unbind | 34 | 15 |
+| suspend | 58 | 34 |
+| reply-capability mint | 83 | 47 |
+
+The IPC scenarios, the yield and both signals still read 0.
+
+- **Routed.**  `RegisterRoutedSyscall.invoke` carries the syscall and its
+  operand address for each invocation `routedInvocation` names: CSpace mint,
+  copy, move, delete and revoke, reply-capability mint, untyped retype and
+  reset, VSpace map, unmap and unify, service revoke and query,
+  scheduling-context bind and unbind, notification bind and unbind, suspend,
+  resume, priority, maximum priority, IPC buffer, affinity, fault handler,
+  CSpace and VSpace, and page-table map and unmap.  Each is inert, records no
+  declassification and checks its rights in the classic order
+  (`routedInvocation_classic`), so its taint step is the identity
+  (`applySyscallTaintAfter_routed`).  The decode at a routed register file is
+  pinned by `decodeSyscallArgsFromState_of_routedInvoke`.
+- **Arguments are read as words.**  Each argument decoder has a form over
+  the register file (`decodeXArgsBy (msgRegOfFile layout regs)`), equal to
+  the decoder whenever the decode's message registers are the file's
+  (`decodeXArgs_eq_by`).  A capability address an argument carries is built
+  from the word (`CPtr.ofWord`), so an address `≥ 2^63` is never a number.
+  `readRegWord` moved to `Machine.lean`, beside `readReg`
+  (`readReg_eq_word`).
+- **Proven equal.**  `dispatchInvocationBy` is `dispatchWithCapChecked` at a
+  routed invocation (`dispatchWithCapChecked_eq_invocationBy`), and
+  `dispatchInvocationCheckedR` runs it behind the shared operand check,
+  equal to `dispatchSyscallChecked` (`dispatchInvocationCheckedR_eq`), which
+  `syscallEntryCheckedR_eq` uses for the new arm.
+  `resolveSchedContextBindThread` and `untypedRetypeFromCap` take their
+  decode's result, so the specification and the routed arm share them.
+- **Seven keep the decode** until the row that owns them routes them:
+  scheduling-context configure (ZA5.2), the in-place retype (ZA5.4), and
+  service register, the two declassifications and the two audit calls
+  (ZA5.5).  The plan's rows say so.
+- **Measured and pinned.**  The exerciser issues every routed invocation the
+  QEMU image can (`INVOCATION_SCENARIOS`, 35 scenarios after the partner is
+  suspended): CSpace copy, move, delete, mint and revoke; the reply
+  capability deleted and minted; the partner's priorities, affinity, fault
+  handler, notification binding, spaces, resume and suspend; three page
+  tables carved and installed, a frame carved, mapped, unified, named as an
+  IPC buffer, unmapped and deleted, the tables taken out and deleted, and
+  the untyped reset.  The gate holds each to its reading
+  (`scripts/qemu_exerciser_lib.sh`).  The image holds no scheduling context
+  or service, so those four routed calls gain scenarios in ZA5.2 and ZA5.5.
+- Removed an unused `simp` argument in `RefusalCarryingEndpoint.lean`.
+
 ## v0.36.95 — WS-ZA ZA4.8 (capability pointers): an address of any value is a machine word
 
 **A syscall carrying a capability address `≥ 2^63` now allocates nothing.**
